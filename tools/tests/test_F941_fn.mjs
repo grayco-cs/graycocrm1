@@ -125,5 +125,32 @@ eq('tiny: L1 (Mar 12)', R7.lines.L1, 1); eq('tiny: L12', R7.lines.L12, r2(50 + 1
 const txt = F.copyText(R), csv = F.csv(R);
 eq('copy text has L12', txt.includes('Line 12 — ' + F.LINES.L12 + ': 26370.94'), true);
 eq('CSV header + month rows', [csv.split('\r\n')[0], /"16 total"/.test(csv)], ['"Line","Form wording","Value","Note"', true]);
+// ---- payroll register ----
+const G = R.register;
+eq('register: 7 + 7 + 6 checks = 20 rows', G.rows.length, 20);
+eq('register: first row', [G.rows[0].payDate, G.rows[0].name, G.rows[0].wages, G.rows[0].ss], ['2026-07-03', 'Emp A', 11000, 682]);
+eq('register: grand total wages = L2, fed = L3', [G.total.wages, G.total.fed, G.check.wagesEqL2, G.check.fedEqL3], [97709.95, 15643.33, true, true]);
+eq('register: SS + Medicare withheld = EE actual; difference to the form = L7', [r2(G.total.ss + G.total.med), r2(G.check.ssDiff + G.check.medDiff)], [5453.80, -0.01]);
+eq('register: Emp B quarter (7 × 2,000.37 gross, 7 × 100 pre-tax)', (({ gross, preTax, wages, checks }) => [gross, preTax, wages, checks])(G.emps.find(e => e.name === 'Emp B')), [14002.59, 700, 13302.59, 7]);
+eq('register: paid how', G.rows[0].paid, 'not recorded');
+eq('CSV carries the register + its grand total', [/PAYROLL REGISTER/.test(F.csv(R)), /"GRAND TOTAL","20 checks"/.test(F.csv(R))], [true, true]);
+// ---- the filled PDF: field map (IRS 2026 fillable form field names) ----
+eq('splitAmt', [F.splitAmt(97709.95), F.splitAmt(-0.01), F.splitAmt(7000)], [['97,709', '95'], ['-0', '01'], ['7,000', '00']]);
+eq('parseAddr', F.parseAddr('100 Test Way, Suite 2, Memphis, TN 38103'), { street: '100 Test Way, Suite 2', city: 'Memphis', state: 'TN', zip: '38103' });
+const PF = F.pdfFields(R, { name: 'Test Co LLC', ein: '12-3456789', addr: '100 Test Way, Memphis, TN 38103' }), T1 = 'topmostSubform[0].Page1[0].', T2 = 'topmostSubform[0].Page2[0].';
+eq('pdf: EIN + name + quarter 3 box', [PF.text[T1 + 'Header[0].EntityArea[0].f1_1[0]'], PF.text[T1 + 'Header[0].EntityArea[0].f1_2[0]'], PF.text[T1 + 'Header[0].EntityArea[0].f1_3[0]'], PF.check.includes(T1 + 'Header[0].ReportForQuarter[0].c1_1[2]')], ['12', '3456789', 'Test Co LLC', true]);
+eq('pdf: line 1, 2, 12, 13', [PF.text[T1 + 'f1_12[0]'], PF.text[T1 + 'f1_13[0]'], PF.text[T1 + 'f1_14[0]'], PF.text[T1 + 'f1_49[0]'], PF.text[T1 + 'f1_50[0]'], PF.text[T1 + 'f1_51[0]']], ['3', '97,709', '95', '26,370', '94', '26,370']);
+eq('pdf: line 7 −0.01', [PF.text[T1 + 'f1_39[0]'], PF.text[T1 + 'f1_40[0]']], ['-0', '01']);
+eq('pdf: line 14 zero left blank', PF.text[T1 + 'f1_53[0]'], undefined);
+eq('pdf: Part 2 monthly box + month 3 + total', [PF.check.includes(T2 + 'c2_1[1]'), PF.text[T2 + 'f2_5[0]'], PF.text[T2 + 'f2_6[0]'], PF.text[T2 + 'f2_7[0]'], PF.text[T2 + 'f2_8[0]']], [true, '6,275', '01', '26,370', '94']);
+eq('pdf: no signature / date / PIN / designee fields filled', Object.keys(PF.text).some(k => /f2_(9|1[0-9]|2[0-4])\[0\]$/.test(k)), false);
+eq('pdf: tiny quarter → box 1', F.pdfFields(R7, {}).check.includes(T2 + 'c2_1[0]'), true);
+if (process.env.PDFLIB_DIR) {   // optional: really fill forms/f941-2026.pdf with pdf-lib
+  const { createRequire } = await import('node:module'); const PDFLib = createRequire(process.env.PDFLIB_DIR + '/x.js')('pdf-lib');
+  const out = await F.fillPdf(PDFLib, fs.readFileSync(path.join(here, '..', '..', 'forms', 'f941-2026.pdf')), PF);
+  const doc = await PDFLib.PDFDocument.load(out), form = doc.getForm();
+  eq('pdf-lib: filled line 12 reads back', form.getTextField(T1 + 'f1_49[0]').getText(), '26,370');
+  eq('pdf-lib: quarter box checked', form.getCheckBox(T1 + 'Header[0].ReportForQuarter[0].c1_1[2]').isChecked(), true);
+}
 console.log((fail ? 'FAILED ' : 'OK ') + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

@@ -77,6 +77,7 @@ var ROWS = [
   ['payroll_check', 'staff', 'B', 0, 1, 'server', 'Thursday payroll check', 'Is Friday’s payroll draft there? → staff.'],
   ['approvals_digest', 'staff', 'B', 0, 1, 'server', 'Approvals digest, scorecard, noon nudge', 'Approvals digest, owner scorecard, noon "not opened" push.'],
   ['tax_alerts', 'staff', 'B', 0, 1, 'server', 'Tax deadline alerts', 'Tax deadlines 7 days before, on the day and when overdue.'],
+  ['f941_quarter_prep', 'staff', 'B', 0, 1, 'page', 'Form 941 quarter prep', 'After each quarter ends: ONE ✅ Approvals item for the owners and the office with the Form 941 numbers, warnings and the filled PDF (approve optional, Mark filed). Nothing is sent to the IRS.'],   /* patch F941: owner asked for it ON */
   ['mkt_internal_reports', 'staff', 'B', 0, 1, 'server', 'Marketing rank + report (staff)', 'Google ranking (Mon) and the monthly marketing report to admins.'],
   ['office_todos', 'staff', 'B', 0, 1, 'both', 'Office To-Do builders', 'Friday check task, supplier-bills task, lien-deadline and unsigned-CO To-Dos.'],
   /* ── customer sends (A) ── */

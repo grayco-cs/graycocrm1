@@ -4,8 +4,11 @@ usage: python3 tools/patch_F941.py [index.html]      (in place; idempotent: a pa
   1. Payroll page: a "🧾 Form 941" tab for admins / owners (P.isAdmin)
   2. the tab renders window._gcF941Render (tools/f941_tail.js)
   3. Tax calendar: the "Form 941 — quarterly federal payroll return" row (id 941q) gets a "📄 Form 941 numbers" button
-  4. tools/f941_tail.js after the last </script>
-Nothing is written to payroll data; nothing is sent anywhere."""
+  4. tools/f941_tail.js after the last </script>: the worksheet (every 941 line, Part 2, payroll register, FUTA / SUTA
+     estimates, Copy / CSV), "📄 Filled Form 941 (PDF)" (forms/f941-2026.pdf filled with pdf-lib from cdnjs), and the
+     quarterly ✅ Approvals item for owners + the office (gc_payroll_approvals, one record per quarter: approve optional,
+     Mark filed with date + confirmation; automation key f941_quarter_prep, default ON).
+Nothing is written to payroll data; nothing is sent to the IRS."""
 import sys, os
 here = os.path.dirname(os.path.abspath(__file__))
 path = sys.argv[1] if len(sys.argv) > 1 else os.path.join(here, '..', 'index.html')

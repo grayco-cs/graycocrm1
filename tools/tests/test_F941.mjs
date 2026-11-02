@@ -14,9 +14,11 @@ const shared = await chromium.launch({ args: ['--proxy-server=http://127.0.0.1:9
 chromium.launch = async () => ({ newContext: o => shared.newContext(o), close: async () => {} });
 let pass = 0, fail = 0; const ok = (c, m, info) => { if (c) { pass++; console.log('  ✓ ' + m); } else { fail++; console.log('  ✗ FAIL ' + m + (info !== undefined ? '  ' + JSON.stringify(info).slice(0, 600) : '')); } };
 
-const ADMIN = 'wjohnson@grayco-cs.com';
+const ADMIN = 'wjohnson@grayco-cs.com', OFFICE = 'office@grayco-cs.com';
+const PDFLIB = process.env.PDFLIB_JS || '/tmp/claude-0/-home-user-graycocrm1/6a5b2b6b-8a4d-5505-9f82-62521adb6674/scratchpad/wSG/deps/node_modules/pdf-lib/dist/pdf-lib.min.js';
 const USERS = [
   { id: 'UA1', name: 'Tess Owner', email: ADMIN, role: 'Admin', active: true, payType: 'owner' },
+  { id: 'U5', name: 'Office', email: OFFICE, role: 'Office', active: true, payType: 'salary' },
   { id: 'UT1', name: 'Avery Testworth', email: 'avery.test@example.test', role: 'Crew', active: true, payType: 'hourly', hourlyRate: 25 },
   { id: 'UT2', name: 'Blake Sampleton', email: 'blake.test@example.test', role: 'Crew', active: true, payType: 'salary', salary: 52000 }];
 const r2 = v => Math.round(v * 100) / 100;
@@ -30,14 +32,19 @@ const RUNS = PD.map((pd, i) => ({ id: 'RF' + i, from: back(pd, 13), to: pd, payD
 // per run: wages 3000, fed 280, EE FICA 124+29+62+14.5 = 229.50 → 941 liability 280 + 3000×0.153 = 739.00
 const PAYS = [{ id: 'TXPa', kind: '941', date: '2026-08-14', amount: 1478 }, { id: 'TXPb', kind: '941', date: '2026-09-15', amount: 1478 }];   // Sept's 1,478 not recorded
 resetCloud();
+cset('payrollSettings', { companyName: 'Test Co LLC', companyAddr: '100 Test Way, Memphis, TN 38103', ein: '12-3456789' }); cset('gc_payroll_approvals', []);
 cset('users', USERS); cset('payrollRuns', RUNS); cset('payrollTaxPayments', PAYS); cset('payrollProfiles', []); cset('gc_tombstones', {}); cset('timesheets', []);
 
+async function signIn(c, email){
+  const p = c.page(); await p.route(/pdf-lib\.min\.js/, r => r.fulfill({ path: PDFLIB, contentType: 'text/javascript' }));
+  await p.goto('https://app.local/index.html'); await sleep(2500);
+  if (await p.locator('#gc-auth-email').count()) { await p.locator('#gc-auth-email').fill(email); await p.locator('#gc-auth-password').fill(ACCOUNTS[email].pw); await sleep(300);
+    const bb = await p.locator('#gc-auth-submit').boundingBox(); await p.mouse.click(bb.x + bb.width / 2, bb.y + bb.height / 2); }
+  await waitFor(c, async () => !!(window.__GC_PAY && window._gcF941 && window.__GC_PAY.canSee()) && (await window.__GC_PAY.runs()).length >= 6, null, 120000, 400);
+}
 const A = await computer('A', { build });
 const p = A.page();
-await p.goto('https://app.local/index.html'); await sleep(2500);
-if (await p.locator('#gc-auth-email').count()) { await p.locator('#gc-auth-email').fill(ADMIN); await p.locator('#gc-auth-password').fill(ACCOUNTS[ADMIN].pw); await sleep(300);
-  const bb = await p.locator('#gc-auth-submit').boundingBox(); await p.mouse.click(bb.x + bb.width / 2, bb.y + bb.height / 2); }
-await waitFor(A, async () => !!(window.__GC_PAY && window._gcF941 && window.__GC_PAY.isAdmin()) && (await window.__GC_PAY.runs()).length >= 6, null, 120000, 400);
+await signIn(A, ADMIN);
 await sleep(5000);
 ok(await A.ev(() => !!window.__GC_F941__ && window._gcF941CanSee()), 'owner signed in; patch F941 loaded; the owner may see it');
 const before = await A.ev(async () => JSON.stringify([await window.idbGet('payrollRuns'), await window.idbGet('payrollTaxPayments')]));
@@ -59,6 +66,10 @@ ok(shown.L13 === '$2,956.00' && shown.L14 === '$1,478.00', 'line 13 = recorded d
 ok(shown.m1 === '$1,478.00' && shown.m3 === '$1,478.00' && shown.tot === '$4,434.00', 'Part 2 monthly liability totals line 12', [shown.m1, shown.m3, shown.tot]);
 ok(shown.warns.some(w => /does not equal line 12/.test(w)), 'the red warning: line 13 ≠ line 12', shown.warns);
 
+const reg = await A.ev(() => ({ rows: document.querySelectorAll('[data-f941-register] tr[data-f941-reg-row]').length, tot: (document.querySelector('[data-f941-register] tr[data-f941-reg-total]') || {}).innerText || '' }));
+ok(reg.rows === 12 && /\$18,000\.00/.test(reg.tot) && /\$1,680\.00/.test(reg.tot), 'Payroll register: 6 pay dates × 2 employees, grand total = line 2 / line 3', reg);
+const pdfName = await (async () => { const [dl] = await Promise.all([p.waitForEvent('download', { timeout: 20000 }).catch(() => null), p.locator('[data-f941-pdf]').click()]); return dl ? dl.suggestedFilename() : null; })();
+ok(pdfName === 'Form941_Q3_2026_DRAFT.pdf', '📄 Filled Form 941 (PDF) downloads', pdfName);
 const csvName = await (async () => { const [dl] = await Promise.all([p.waitForEvent('download', { timeout: 8000 }).catch(() => null), p.locator('[data-f941-csv]').click()]); return dl ? dl.suggestedFilename() : null; })();
 ok(csvName === 'Form941_Q3_2026.csv', 'Download CSV', csvName);
 await p.locator('[data-f941-copy]').click(); await sleep(600);
@@ -75,9 +86,33 @@ else {
   await p.locator('tr[data-tax-item="941q"] [data-f941-open]').first().click(); await sleep(3000);
   ok(await A.ev(() => !!document.querySelector('[data-f941]')), 'the button opens the worksheet');
 }
+// the quarterly approval item (one per quarter, owners + the office)
+await A.ev(() => window._gcF941Ensure(true)); await A.ev(() => window._gcF941Ensure(true));
+const recs = await A.ev(() => JSON.parse(localStorage.getItem('gc_payroll_approvals') || '[]').filter(x => x.kind === 'f941'));
+ok(recs.length === 1 && recs[0].id === 'f941_2026_Q3' && recs[0].status === 'waiting' && recs[0].due === '2026-11-02' && recs[0].numbers.L12 === 4434, 'ONE Form 941 approval record for Q3 2026 (asked twice), due 2026-11-02', recs);
+const it = await A.ev(() => window._gcF941Items().map(x => x.title + ' | ' + x.sub));
+ok(it.length === 1 && /Form 941 for Q3 2026 is ready/.test(it[0]) && /L12 \$4,434\.00/.test(it[0]), 'it is on ✅ Approvals with the key numbers', it);
+await A.ev(() => window._gcF941OpenCard('f941_2026_Q3')); await sleep(2500);
+ok(await A.ev(() => !!document.querySelector('#_gcF941Card [data-ok]') && /How to file/.test(document.querySelector('#_gcF941Card').innerText) && /EFTPS/.test(document.querySelector('#_gcF941Card').innerText)), 'the card: Approve (owner), How to file, EFTPS');
+await p.locator('#_gcF941Card [data-ok]').click(); await sleep(1500);
+ok(await A.ev(() => JSON.parse(localStorage.getItem('gc_payroll_approvals')).find(x => x.id === 'f941_2026_Q3').status === 'approved'), 'Approve → approved, ready to file');
+await A.ev(() => { const c = document.getElementById('_gcF941Card'); if (c) c.remove(); });
+const B = await computer('B', { build }); await signIn(B, OFFICE); await sleep(4000);
+let seen = null; for (let i = 0; i < 40 && !seen; i++) { await sleep(1500); seen = await B.ev(() => (window._gcF941Items() || []).map(x => x.title)[0] || null); }
+ok(!!seen && /approved, ready to file/.test(seen), 'the office sees the same item (synced)', seen);
+ok(await B.ev(() => !(window.__GC_PAY.isAdmin()) && !window._gcF941CanSee() && window._gcF941CanFile()), 'office: no worksheet tab, but may file');
+await B.ev(() => window._gcF941OpenCard('f941_2026_Q3')); await sleep(2500);
+const pb = B.page();
+ok(await B.ev(() => !document.querySelector('#_gcF941Card [data-ok]') && !!document.querySelector('#_gcF941Card [data-pdf]') && !!document.querySelector('#_gcF941Card [data-copy]')), 'office card: PDF + Copy all, no Approve button');
+await pb.locator('#_gcF941Card [data-fc]').fill('EFILE-TEST-1'); await pb.locator('#_gcF941Card [data-filed]').click(); await sleep(1500);
+const fr = await B.ev(() => JSON.parse(localStorage.getItem('gc_payroll_approvals')).find(x => x.id === 'f941_2026_Q3'));
+ok(fr && fr.status === 'filed' && fr.confirm === 'EFILE-TEST-1' && /^\d{4}-\d{2}-\d{2}$/.test(fr.filedOn), 'office: Mark filed with date + confirmation', fr && { st: fr.status, c: fr.confirm, d: fr.filedOn });
+ok(await B.ev(() => window._gcF941Items().length === 0), 'a filed quarter leaves ✅ Approvals');
+let cloudN = -1; for (let i = 0; i < 30; i++) { await sleep(1000); let v = cget('gc_payroll_approvals'); if (typeof v === 'string') v = JSON.parse(v); cloudN = (Array.isArray(v) ? v : []).filter(x => x.id === 'f941_2026_Q3' && x.status === 'filed').length; if (cloudN === 1) break; }
+ok(cloudN === 1, 'the cloud keeps ONE Q3 2026 record, filed', cloudN);
 const after = await A.ev(async () => JSON.stringify([await window.idbGet('payrollRuns'), await window.idbGet('payrollTaxPayments')]));
 ok(before === after, 'read-only: payroll runs and tax payments are unchanged');
-const errs = (A.errs || []).filter(e => /PAGEERROR/.test(e));
+const errs = (A.errs || []).concat(B.errs || []).filter(e => /PAGEERROR/.test(e));
 ok(!errs.length, 'no page errors', errs.slice(0, 5));
 await shared.close();
 console.log((fail ? 'FAILED ' : 'OK ') + pass + ' passed, ' + fail + ' failed');

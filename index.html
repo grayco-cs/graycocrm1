@@ -207207,6 +207207,12 @@ function lineKind(L){
   if(pt==='owner_draw') return (n2(L.ss)+n2(L.med)+n2(L.fed)>0) ? 'w2' : 'draw';
   return 'w2';
 }
+function paidHow(L){
+  var m=s(L.payMethod||L.method||L.paidVia).toLowerCase(), out='';
+  if(/dd|direct|ach|deposit/.test(m) || L.directDeposit) out='direct deposit'; else if(L.checkNo) out='check #'+s(L.checkNo); else if(m) out=m;
+  if(L.paidDate) out+=(out?', ':'')+'paid '+s(L.paidDate);
+  return out || 'not recorded';
+}
 function payKind(x){ return s(x && (x.kind||x.type)).toLowerCase(); }
 function payQuarterTag(x){ // an explicit "for which quarter" on a payment wins over its date
   var v=s(x && (x.forQuarter||x.quarter||x.period)).toUpperCase().replace(/\s+/g,'');
@@ -207235,7 +207241,7 @@ function compute(opt){
   var ytd={}, emp={};
   var T={ wages:0, fed:0, ssW:0, medW:0, addlW:0, eeSS:0, eeMed:0, eeAddl:0, storedSSW:0, futaW:0, futaStored:0, sutaStored:0, checks:0 };
   var month={}; qi.months.forEach(function(m){ month[m]={ fed:0, ssW:0, medW:0, addlW:0, ee:0, runs:0, checks:0 }; });
-  var futaYtd=0, futaQ=0, sutaBy={}, pretaxFlag={};
+  var futaYtd=0, futaQ=0, sutaBy={}, pretaxFlag={}, reg=[];
   yearRuns.forEach(function(r){
     var pd=s(r.payDate).slice(0,10), inQ = pd>=qi.from && pd<=qi.to, ru=null;
     if(inQ){ ru={ id:s(r.id), payDate:pd, from:s(r.from), to:s(r.to), status:r.status, checks:0, wages:0, fed:0, ee:0, excluded:0 }; usedRuns.push(ru); }
@@ -207268,6 +207274,8 @@ function compute(opt){
       T.eeSS+=n2(L.ss); T.eeMed+=n2(L.med); T.eeAddl+=n2(L.addlMed); T.storedSSW+=n2(L.ssWages!=null?L.ssWages:fw);
       T.futaStored+=n2(L.futa); T.sutaStored+=n2(L.suta); T.checks++;
       var mo=month[pd.slice(0,7)]; mo.fed+=n2(L.fed); mo.ssW+=ssW; mo.medW+=fw; mo.addlW+=addlW; mo.ee+=n2(L.ss)+n2(L.med)+n2(L.addlMed); mo.checks++;
+      reg.push({ payDate:pd, run:s(r.id), key:key, name:nm, hours:r2(n2(L.hours)+n2(L.otHours)), gross:r2(L.gross), preTax:r2(L.preTax), wages:r2(w),
+        fed:r2(L.fed), ss:r2(L.ss), med:r2(n2(L.med)+n2(L.addlMed)), net:r2(L.net), paid:paidHow(L) });
       ru.checks++; ru.wages+=w; ru.fed+=n2(L.fed); ru.ee+=n2(L.ss)+n2(L.med)+n2(L.addlMed);
       if(n2(L.gross)>0 && (L.fed==null || L.ss==null || L.med==null)) warn.push('Withholding is MISSING on '+nm+'’s check in the run paid '+pd+' (no '+[L.fed==null?'federal':'',L.ss==null?'Social Security':'',L.med==null?'Medicare':''].filter(Boolean).join(' / ')+' figure). Lines 3, 5 and 7 are wrong until it is fixed.');
       else if(fw>0 && n2(L.ss)===0 && n2(L.med)===0) warn.push('No Social Security or Medicare was withheld on '+nm+'’s check paid '+pd+' ('+money(fw)+' of wages). Line 7 will be off by the missing amount.');
@@ -207360,7 +207368,17 @@ function compute(opt){
   });
 
   var emps=Object.keys(emp).map(function(k){ var e=emp[k]; ['wages','fed','ssW','medW','addlW','ee','storedSSW'].forEach(function(f){ e[f]=r2(e[f]); }); return e; });
-  return { quarter:qi, lines:L, emps:emps, runs:usedRuns, l1Runs:l1runs, excluded:excluded, deposits:deps, part2:p2,
+  reg.sort(function(a,b){ return a.payDate<b.payDate?-1:a.payDate>b.payDate?1:(a.name<b.name?-1:1); });
+  var RF=['hours','gross','preTax','wages','fed','ss','med','net'], regEmp={}, regTot={ name:'TOTAL', checks:0 };
+  RF.forEach(function(f){ regTot[f]=0; });
+  reg.forEach(function(x){ var e=regEmp[x.key]||(regEmp[x.key]={ name:x.name, checks:0 }); e.checks++; regTot.checks++;
+    RF.forEach(function(f){ e[f]=(e[f]||0)+x[f]; regTot[f]+=x[f]; }); });
+  var regEmps=Object.keys(regEmp).map(function(k){ var e=regEmp[k]; RF.forEach(function(f){ e[f]=r2(e[f]||0); }); return e; }).sort(function(a,b){ return a.name<b.name?-1:1; });
+  RF.forEach(function(f){ regTot[f]=r2(regTot[f]); });
+  var register={ rows:reg, emps:regEmps, total:regTot,
+    check:{ wagesEqL2: Math.abs(regTot.wages-L.L2)<0.005, fedEqL3: Math.abs(regTot.fed-L.L3)<0.005,
+      ssForm: r2(L.L5a1*0.062), medForm: r2(r2(L.L5c1*0.0145)+L.L5d2), ssDiff: r2(regTot.ss-r2(L.L5a1*0.062)), medDiff: r2(regTot.med-r2(r2(L.L5c1*0.0145)+L.L5d2)) } };
+  return { register:register, quarter:qi, lines:L, emps:emps, runs:usedRuns, l1Runs:l1runs, excluded:excluded, deposits:deps, part2:p2,
     eeActual:eeActual, eeOnForm:eeOnForm, months:qi.months.map(function(m){ var o=month[m]; return { month:m, checks:o.checks, fed:r2(o.fed), ssW:r2(o.ssW), medW:r2(o.medW) }; }),
     futa:futa, suta:suta, warnings:warn, info:info, ssBase:ssBase, checks:T.checks };
 }
@@ -207392,11 +207410,56 @@ function copyText(R){
     + rows(R).map(function(r){ return 'Line '+r[0]+' — '+r[1]+': '+r[2]+(r[3]?('  ('+r[3]+')'):''); }).join('\n')
     + (R.warnings.length?('\n\nWARNINGS:\n- '+R.warnings.join('\n- ')):'');
 }
+function regRows(R){
+  var G=R.register, f=function(v){ return n2(v).toFixed(2); }, out=[['Pay date','Employee','Hours','Gross','Pre-tax deductions','Taxable wages (line 2)','Federal income tax','Social Security (6.2%)','Medicare (1.45% + additional)','Net pay','Paid how']];
+  G.rows.forEach(function(x){ out.push([x.payDate,x.name,x.hours.toFixed(2),f(x.gross),f(x.preTax),f(x.wages),f(x.fed),f(x.ss),f(x.med),f(x.net),x.paid]); });
+  G.emps.forEach(function(e){ out.push(['QUARTER TOTAL',e.name+' ('+e.checks+' checks)',e.hours.toFixed(2),f(e.gross),f(e.preTax),f(e.wages),f(e.fed),f(e.ss),f(e.med),f(e.net),'']); });
+  var T=G.total; out.push(['GRAND TOTAL',T.checks+' checks',T.hours.toFixed(2),f(T.gross),f(T.preTax),f(T.wages),f(T.fed),f(T.ss),f(T.med),f(T.net),'']);
+  out.push(['FORM','line 2 / line 3 / 6.2% of 5a / 1.45% of 5c + 5d','','','',f(R.lines.L2),f(R.lines.L3),f(G.check.ssForm),f(G.check.medForm),'','difference = line 7']);
+  return out;
+}
+function csvLine(r){ return r.map(function(c){ return '"'+String(c==null?'':c).replace(/"/g,'""')+'"'; }).join(','); }
 function csv(R){
-  return [['Line','Form wording','Value','Note']].concat(rows(R)).map(function(r){ return r.map(function(c){ return '"'+String(c==null?'':c).replace(/"/g,'""')+'"'; }).join(','); }).join('\r\n');
+  return [['Line','Form wording','Value','Note']].concat(rows(R)).map(csvLine).join('\r\n')
+    + '\r\n\r\n' + csvLine(['PAYROLL REGISTER — Q'+R.quarter.q+' '+R.quarter.year+' (by pay date)']) + '\r\n' + regRows(R).map(csvLine).join('\r\n');
 }
 
-var F941 = { compute:compute, qInfo:qInfo, lastEndedQuarter:lastEndedQuarter, LINES:LINES, rows:rows, copyText:copyText, csv:csv, money:money };
+/* ── the filled IRS PDF (forms/f941-2026.pdf, the IRS fillable form). Field names read from the 2026 form. ── */
+var PF='topmostSubform[0].Page1[0].', PH=PF+'Header[0].', PE=PH+'EntityArea[0].', P2='topmostSubform[0].Page2[0].';
+var AMT = { L2:[13,14], L3:[15,16], L5a1:[17,18], L5a2:[19,20], L5b1:[21,22], L5b2:[23,24], L5c1:[25,26], L5c2:[27,28], L5d1:[29,30], L5d2:[31,32],
+  L5e:[33,34], L5f:[35,36], L6:[37,38], L7:[39,40], L8:[41,42], L9:[43,44], L10:[45,46], L11:[47,48], L12:[49,50], L13:[51,52], L14:[53,54], L15:[55,56] };
+function splitAmt(v){ var n=r2(v), neg=n<0, a=Math.abs(n), d=Math.floor(a+1e-9), c=Math.round((a-d)*100); if(c===100){ d++; c=0; }
+  return [(neg?'-':'')+d.toLocaleString('en-US'), pad(c)]; }
+function parseAddr(a){ // "123 Main St, Suite 4, Memphis, TN 38103" → street / city / state / zip
+  var t=s(a).replace(/\s*\n\s*/g,', ').trim(), m=t.match(/^(.*?),\s*([^,]+?),?\s+([A-Z]{2})\.?\s+(\d{5}(?:-\d{4})?)\s*$/);
+  return m ? { street:m[1].trim(), city:m[2].trim(), state:m[3], zip:m[4] } : { street:t, city:'', state:'', zip:'' };
+}
+function pdfFields(R, co){
+  co=co||{}; var L=R.lines, f={ text:{}, check:[] }, ein=s(co.ein).replace(/\D/g,''), ad=parseAddr(co.addr);
+  if(ein.length===9){ f.text[PE+'f1_1[0]']=ein.slice(0,2); f.text[PE+'f1_2[0]']=ein.slice(2); f.text[P2+'EIN_Number[0].f1_1[0]']=ein.slice(0,2); f.text[P2+'EIN_Number[0].f1_2[0]']=ein.slice(2); }
+  if(co.name){ f.text[PE+'f1_3[0]']=s(co.name); f.text[P2+'Name_ReadOrder[0].f1_3[0]']=s(co.name); }
+  if(co.trade) f.text[PE+'f1_4[0]']=s(co.trade);
+  if(ad.street) f.text[PE+'f1_5[0]']=ad.street; if(ad.city) f.text[PE+'f1_6[0]']=ad.city; if(ad.state) f.text[PE+'f1_7[0]']=ad.state; if(ad.zip) f.text[PE+'f1_8[0]']=ad.zip;
+  f.check.push(PH+'ReportForQuarter[0].c1_1['+(R.quarter.q-1)+']');
+  f.text[PF+'f1_12[0]']=String(L.L1);
+  var BLANK0={L5b1:1,L5b2:1,L5d1:1,L5d2:1,L5f:1,L7:1,L8:1,L9:1,L11:1,L14:1,L15:1};
+  Object.keys(AMT).forEach(function(k){ var v=L[k]; if(v==null || (BLANK0[k] && r2(v)===0)) return; var p=splitAmt(v); f.text[PF+'f1_'+AMT[k][0]+'[0]']=p[0]; f.text[PF+'f1_'+AMT[k][1]+'[0]']=p[1]; });
+  if(L.L4) f.check.push(PF+'c1_3[0]');
+  if(L.L15>0) f.check.push(PF+'c1_4[0]');   // overpayment: "apply to next return" (change it on paper to ask for a refund)
+  if(R.part2.under2500) f.check.push(P2+'c2_1[0]');
+  else { f.check.push(P2+'c2_1[1]'); [0,1,2].forEach(function(i){ var p=splitAmt(R.part2.months[i]); f.text[P2+'f2_'+(2*i+1)+'[0]']=p[0]; f.text[P2+'f2_'+(2*i+2)+'[0]']=p[1]; });
+    var t=splitAmt(R.part2.total); f.text[P2+'f2_7[0]']=t[0]; f.text[P2+'f2_8[0]']=t[1]; }
+  return f;   // signature, date, phone, designee and PIN fields are left blank on purpose
+}
+async function fillPdf(PDFLib, bytes, fields){
+  var doc=await PDFLib.PDFDocument.load(bytes, { ignoreEncryption:true, updateMetadata:false }), form=doc.getForm();
+  try{ form.deleteXFA(); }catch(e){}
+  Object.keys(fields.text).forEach(function(n){ try{ var tf=form.getTextField(n); var ml=tf.getMaxLength(); var v=fields.text[n]; if(ml && v.length>ml) v=v.slice(0,ml); tf.setText(v); }catch(e){ if(typeof console!=='undefined') console.warn('F941 pdf field', n, e && e.message); } });
+  fields.check.forEach(function(n){ try{ form.getCheckBox(n).check(); }catch(e){ if(typeof console!=='undefined') console.warn('F941 pdf box', n, e && e.message); } });
+  return await doc.save();
+}
+
+var F941 = { regRows:regRows, pdfFields:pdfFields, fillPdf:fillPdf, splitAmt:splitAmt, parseAddr:parseAddr, compute:compute, qInfo:qInfo, lastEndedQuarter:lastEndedQuarter, LINES:LINES, rows:rows, copyText:copyText, csv:csv, money:money };
 W._gcF941 = F941;
 if(typeof document==='undefined') return;
 
@@ -207451,7 +207514,7 @@ async function render(body){
       + '<div><div style="font-size:18px;font-weight:800">🧾 Form 941 worksheet — Q'+q.q+' '+q.year+'</div>'
       + '<div style="font-size:12px;color:#64748b">'+esc(q.from)+' to '+esc(q.to)+' · approved payroll runs by <b>pay date</b> (cash basis) · W-2 employees only · return due <b>'+esc(q.dueDate)+'</b>. Read-only: nothing is saved or sent.</div></div>'
       + '<div><select data-f941-q style="padding:6px;border-radius:6px;border:1px solid #cbd5e1">'+opts.map(function(o){ return '<option value="'+o[0]+'-'+o[1]+'"'+(o[0]===q.year&&o[1]===q.q?' selected':'')+'>Q'+o[1]+' '+o[0]+'</option>'; }).join('')+'</select> '
-      + '<button data-f941-copy style="'+BTN+'">📋 Copy all numbers</button><button data-f941-csv style="'+BTN+'">⬇ Download CSV</button></div></div>'
+      + '<button data-f941-pdf style="'+BTN+'">📄 Filled Form 941 (PDF)</button><button data-f941-copy style="'+BTN+'">📋 Copy all numbers</button><button data-f941-csv style="'+BTN+'">⬇ Download CSV</button></div></div>'
     + R.warnings.map(function(w){ return '<div data-f941-warn="1" style="'+RED+'">⚠ '+esc(w)+'</div>'; }).join('')
     + R.info.map(function(w){ return '<div style="background:#eff6ff;border:1px solid #93c5fd;color:#1e3a8a;border-radius:8px;padding:8px 12px;margin:0 0 8px;font-size:12px">ℹ '+esc(w)+'</div>'; }).join('')
     + '<div style="'+CARD+'"><div style="font-weight:800;margin-bottom:6px">Part 1</div><table style="width:100%;border-collapse:collapse">'
@@ -207484,6 +207547,7 @@ async function render(body){
       + '<div style="font-size:12px;color:#64748b;margin-bottom:6px">By date, a deposit counts if it was made '+esc(q.depFrom)+' – '+esc(q.depTo)+' (a monthly depositor pays each month by the 15th of the next). Ticking only changes this screen.</div>'
       + '<table style="width:100%;border-collapse:collapse">'+depList+'</table></div>'
     + '<div style="'+CARD+'"><div style="font-weight:800;margin-bottom:6px">Payroll runs used</div><table style="width:100%;border-collapse:collapse"><tr style="font-size:11px;color:#64748b"><td style="'+TD+'">Pay date</td><td style="'+TD+'">Period</td><td style="'+TD+'text-align:right">Checks</td><td style="'+TD+'text-align:right">Wages</td><td style="'+TD+'text-align:right">Fed w/h</td><td style="'+TD+'text-align:right">EE SS+Med</td><td style="'+TD+'"></td></tr>'+runsList+'</table></div>'
+    + regHtml(R)
     + '<div style="'+CARD+'"><div style="font-weight:800;margin-bottom:2px">Unemployment — <span style="color:#b45309">estimate, check rates in ⚙ Payroll settings</span></div>'
       + '<table style="width:100%;border-collapse:collapse">'
       + lineRow('FUTA','FUTA wages this quarter (first '+m(futa.base)+' per employee per year)',m(futa.quarterWages),'')
@@ -207497,6 +207561,7 @@ async function render(body){
     + '</div>';
   var qs=body.querySelector('[data-f941-q]'); if(qs) qs.onchange=function(){ var v=qs.value.split('-'); UI.sel={year:+v[0],q:+v[1]}; UI.dep={}; render(body); };
   Array.prototype.forEach.call(body.querySelectorAll('[data-f941-dep]'),function(c){ c.onchange=function(){ UI.dep[c.getAttribute('data-f941-dep')]=c.checked; render(body); }; });
+  var pb=body.querySelector('[data-f941-pdf]'); if(pb) pb.onclick=function(){ downloadPdf(R, d.set, pb); };
   var cb=body.querySelector('[data-f941-copy]'); if(cb) cb.onclick=function(){ var t=copyText(R);
     var done=function(){ cb.textContent='✓ Copied'; setTimeout(function(){ cb.textContent='📋 Copy all numbers'; },1800); };
     try{ navigator.clipboard.writeText(t).then(done,function(){ fallback(t); done(); }); }catch(e){ fallback(t); done(); } };
@@ -207504,11 +207569,155 @@ async function render(body){
     var a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv(R)],{type:'text/csv'})); a.download='Form941_Q'+q.q+'_'+q.year+'.csv';
     document.body.appendChild(a); a.click(); setTimeout(function(){ try{ URL.revokeObjectURL(a.href); a.remove(); }catch(e){} },500); };
 }
+function regHtml(R){
+  var G=R.register, m=money, th='padding:5px 6px;border-bottom:2px solid #e2e8f0;font-size:11px;color:#64748b;text-align:right;white-space:nowrap', td='padding:4px 6px;border-bottom:1px solid #eef2f7;font-size:12px;text-align:right;white-space:nowrap';
+  var cols=function(x){ return '<td style="'+td+'">'+x.hours.toFixed(2)+'</td><td style="'+td+'">'+m(x.gross)+'</td><td style="'+td+'">'+m(x.preTax)+'</td><td style="'+td+'">'+m(x.wages)+'</td><td style="'+td+'">'+m(x.fed)+'</td><td style="'+td+'">'+m(x.ss)+'</td><td style="'+td+'">'+m(x.med)+'</td><td style="'+td+'">'+m(x.net)+'</td>'; };
+  var ok=function(b){ return b?'<span style="color:#16a34a">✓</span>':'<b style="color:#dc2626">✗</b>'; };
+  return '<div style="'+CARD+'" data-f941-register="1"><div style="font-weight:800;margin-bottom:2px">Payroll register — each pay date × each employee</div>'
+    + '<div style="font-size:12px;color:#64748b;margin-bottom:6px">Compare with the pay stubs and the bank statement. W-2 employees only (1099 / owner draws left out). Medicare includes any Additional Medicare.</div>'
+    + '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:860px"><tr><th style="'+th+';text-align:left">Pay date</th><th style="'+th+';text-align:left">Employee</th><th style="'+th+'">Hours</th><th style="'+th+'">Gross</th><th style="'+th+'">Pre-tax</th><th style="'+th+'">Taxable wages</th><th style="'+th+'">Federal w/h</th><th style="'+th+'">Soc. Sec. 6.2%</th><th style="'+th+'">Medicare 1.45%</th><th style="'+th+'">Net pay</th><th style="'+th+';text-align:left">Paid how</th></tr>'
+    + (G.rows.length ? G.rows.map(function(x){ return '<tr data-f941-reg-row="1"><td style="'+td+';text-align:left">'+esc(x.payDate)+'</td><td style="'+td+';text-align:left">'+esc(x.name)+'</td>'+cols(x)+'<td style="'+td+';text-align:left;color:#475569">'+esc(x.paid)+'</td></tr>'; }).join('')
+       : '<tr><td colspan="11" style="'+td+';text-align:left;color:#991b1b;font-weight:700">No W-2 paychecks in this quarter.</td></tr>')
+    + G.emps.map(function(e){ return '<tr style="background:#f8fafc;font-weight:700"><td style="'+td+';text-align:left">Quarter total</td><td style="'+td+';text-align:left">'+esc(e.name)+' ('+e.checks+')</td>'+cols(e)+'<td style="'+td+'"></td></tr>'; }).join('')
+    + '<tr data-f941-reg-total="1" style="background:#eef2ff;font-weight:800"><td style="'+td+';text-align:left">GRAND TOTAL</td><td style="'+td+';text-align:left">'+G.total.checks+' checks</td>'+cols(G.total)+'<td style="'+td+'"></td></tr>'
+    + '<tr style="font-size:11px;color:#475569"><td colspan="5" style="'+td+';text-align:left">On the form</td><td style="'+td+'">L2 '+m(R.lines.L2)+' '+ok(G.check.wagesEqL2)+'</td><td style="'+td+'">L3 '+m(R.lines.L3)+' '+ok(G.check.fedEqL3)+'</td><td style="'+td+'">6.2% × 5a '+m(G.check.ssForm)+'</td><td style="'+td+'">1.45% × 5c + 5d '+m(G.check.medForm)+'</td><td colspan="2" style="'+td+';text-align:left">difference '+m(r2(G.check.ssDiff+G.check.medDiff))+' = line 7</td></tr>'
+    + '</table></div></div>';
+}
 function fallback(t){ try{ var ta=document.createElement('textarea'); ta.value=t; ta.style.position='fixed'; ta.style.opacity='0'; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); }catch(e){} }
 W._gcF941Render = render;
 W._gcF941Open = function(year, q){
   if(year && q) { UI.sel={year:+year,q:+q}; UI.dep={}; }
   if(W._gcOpenPayrollTab) W._gcOpenPayrollTab('f941');
 };
+/* ── 📄 Filled Form 941 (PDF): the IRS form in the repo (forms/f941-2026.pdf) filled with pdf-lib (cdnjs) ── */
+var PDFLIB_URL='https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js', FORM_URL='forms/f941-2026.pdf';
+function loadPdfLib(){
+  if(W.PDFLib && W.PDFLib.PDFDocument) return Promise.resolve(W.PDFLib);
+  if(UI.libP) return UI.libP;
+  UI.libP=new Promise(function(ok, no){ var sc=document.createElement('script'); sc.src=PDFLIB_URL; sc.async=true;
+    sc.onload=function(){ W.PDFLib ? ok(W.PDFLib) : no(new Error('pdf-lib did not load')); };
+    sc.onerror=function(){ UI.libP=null; no(new Error('could not load pdf-lib from cdnjs')); }; document.head.appendChild(sc); });
+  return UI.libP;
+}
+async function company(set){ set=set||{}; return { name:s(set.companyName), addr:s(set.companyAddr), ein:s(set.ein), trade:s(set.tradeName) }; }
+async function pdfBlob(R, set){
+  var lib=await loadPdfLib();
+  var res=await fetch(FORM_URL, { cache:'force-cache' }); if(!res.ok) throw new Error('the blank Form 941 ('+FORM_URL+') could not be read: '+res.status);
+  var out=await fillPdf(lib, await res.arrayBuffer(), pdfFields(R, await company(set)));
+  return new Blob([out], { type:'application/pdf' });
+}
+async function downloadPdf(R, set, btn){
+  var old=btn&&btn.textContent; if(btn){ btn.disabled=true; btn.textContent='Filling…'; }
+  try{
+    var b=await pdfBlob(R, set), a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download='Form941_Q'+R.quarter.q+'_'+R.quarter.year+'_DRAFT.pdf';
+    document.body.appendChild(a); a.click(); setTimeout(function(){ try{ URL.revokeObjectURL(a.href); a.remove(); }catch(e){} }, 1500);
+    var miss=[]; if(!s(set&&set.ein)) miss.push('EIN'); if(!s(set&&set.companyName)) miss.push('company name'); if(!parseAddr(set&&set.companyAddr).zip) miss.push('address (street, city, ST ZIP)');
+    if(miss.length) alert('The PDF was made, but the '+miss.join(', ')+' is missing in Payroll → Settings — write it on the form by hand.');
+  }catch(e){ alert('The filled PDF could not be made: '+(e && e.message)+'\nThe numbers on the worksheet are still right — copy them onto the form.'); }
+  finally{ if(btn){ btn.disabled=false; btn.textContent=old; } }
+}
+W._gcF941Pdf = async function(year, q){ var d=await load(); var R=compute({ runs:d.runs, payments:d.pays, settings:d.set, year:year, q:q }); return pdfBlob(R, d.set); };
+
+/* ── the quarterly approval (owner, 11/02: "filed for us automatically every quarter, with approval in Admin") ──
+   After a quarter ends, the first admin / owner computer that has the CRM open puts ONE record per quarter on
+   gc_payroll_approvals (an admin-only payroll key that syncs by id): { id:'f941_2026_Q3', kind:'f941', status:
+   'waiting' → 'approved' → 'filed', numbers, warnings }. It shows on ✅ Approvals (Other approvals) for admins.
+   Approve = "approved, ready to file" + the filing steps; Mark filed = the date. NOTHING is sent to the IRS. */
+var AK='gc_payroll_approvals';
+function readA(){ var v=null; try{ v=JSON.parse(localStorage.getItem(AK)||'[]'); }catch(e){} return Array.isArray(v)?v.filter(function(x){ return x && typeof x==='object'; }):[]; }
+function writeA(list){ try{ localStorage.setItem(AK, JSON.stringify(list)); }catch(e){}
+  try{ if(W.idbSet) W.idbSet(AK, list); }catch(e){} try{ if(W._supaUpsert) W._supaUpsert(AK, list); }catch(e){}
+  try{ if(W._gcApprovalSetFresh) W._gcApprovalSetFresh(); }catch(e){} }
+function qid(y,q){ return 'f941_'+y+'_Q'+q; }
+function snap(R){ var L=R.lines; return { L1:L.L1, L2:L.L2, L3:L.L3, L5e:L.L5e, L7:L.L7, L12:L.L12, L13:L.L13, L14:L.L14, L15:L.L15, months:R.part2.months.slice(), under2500:R.part2.under2500, warnings:R.warnings.slice(0,12), runs:R.runs.length }; }
+function autoOn(){ try{ if(typeof W._gcAutoOn==='function'){ var v=W._gcAutoOn('f941_quarter_prep'); return Promise.resolve(v).then(function(x){ return x!==false; }); } }catch(e){} return Promise.resolve(true); }
+function canFile(){ try{ var p=P(); return !!(p && ((p.isAdmin && p.isAdmin()) || (p.isOffice && p.isOffice()))); }catch(e){ return false; } }
+W._gcF941CanFile = canFile;
+var ensuring=false;
+async function ensureQuarter(force){
+  if(ensuring || !canFile()) return null; ensuring=true;
+  try{
+    if(!(await autoOn())) return null;
+    var lq=lastEndedQuarter(todayStr()), id=qid(lq.year, lq.q), list=readA();
+    var have=list.filter(function(x){ return x.id===id; })[0];
+    if(have) return have;
+    var d=await load();
+    if(!force && !d.runs.length && (Date.now()-UI.boot)<180000) return null;   // payroll not on this computer yet: wait for the sync
+    var R=compute({ runs:d.runs, payments:d.pays, settings:d.set, year:lq.year, q:lq.q });
+    var now=new Date().toISOString(), meN=''; try{ meN=P().me(); }catch(e){}
+    list=readA(); if(list.some(function(x){ return x.id===id; })) return null;
+    var rec={ id:id, kind:'f941', year:lq.year, q:lq.q, status:'waiting', due:R.quarter.dueDate, createdAt:now, createdBy:meN||'CRM', updatedAt:now, at:now, numbers:snap(R) };
+    list.push(rec); writeA(list); return rec;
+  }catch(e){ try{ console.warn('F941 quarter prep', e); }catch(_e){} return null; }
+  finally{ ensuring=false; }
+}
+W._gcF941Ensure = ensureQuarter;
+async function setRec(id, patch){
+  var list=readA(), r=list.filter(function(x){ return x.id===id; })[0]; if(!r) return null;
+  Object.assign(r, patch, { updatedAt:new Date().toISOString(), at:new Date().toISOString() }); writeA(list); return r;
+}
+function items(){
+  if(!canFile()) return [];
+  return readA().filter(function(x){ return x.kind==='f941' && (x.status==='waiting' || x.status==='approved'); }).map(function(x){
+    var n=x.numbers||{}, w=(n.warnings||[]).length;
+    return { id:'f941:'+x.id, at:s(x.createdAt), urgency:'asap',
+      title: x.status==='waiting' ? ('🧾 Form 941 for Q'+x.q+' '+x.year+' is ready: review'+(canSee()?' and approve':'')+' and file') : ('🧾 Form 941 for Q'+x.q+' '+x.year+': approved, ready to file — mark it filed'),
+      sub: 'L2 '+money(n.L2)+' · L3 '+money(n.L3)+' · L12 '+money(n.L12)+' · L13 '+money(n.L13)+' · L14 '+money(n.L14)+(w?(' · ⚠ '+w+' warning'+(w>1?'s':'')):'')+' · due '+s(x.due),
+      act:{ l:'🧾 Review', f:function(){ openCard(x.id); } } };
+  });
+}
+function hookApprovals(){
+  var prev=W._gcHot1Approvals; if(prev && prev.__gcF941) return;
+  var w=function(){ var base=[]; try{ base = typeof prev==='function' ? (prev.apply(this, arguments)||[]) : []; }catch(e){} try{ return (Array.isArray(base)?base:[]).concat(items()); }catch(e){ return base; } };
+  try{ if(prev) Object.keys(prev).forEach(function(k){ w[k]=prev[k]; }); }catch(e){}
+  w.__gcF941=true; W._gcHot1Approvals=w;
+}
+W._gcF941Items = items;
+function steps(rec, n){ return '<ol style="margin:6px 0 0 18px;padding:0;font-size:13px;line-height:1.55">'
+  +'<li>Check the numbers (and any red warning above) against EFTPS — line 13 is the deposits.</li>'
+  +'<li><b>E-file</b> it through the e-file service (IRS-authorized e-file software / payroll provider): use <b>📋 Copy all numbers</b> or the filled PDF. <b>Or mail</b> the filled PDF, signed and dated by an owner, <b>postmarked by '+esc(rec.due||'')+'</b>, to the address for Tennessee in the Form 941 instructions (“Where Should You File?” — one address without a payment, another with one): <a href="https://www.irs.gov/filing/where-to-file-tax-returns-addresses-for-form-941" target="_blank" rel="noopener">irs.gov — where to file Form 941</a>.</li>'
+  +'<li>'+(n && n.L14>0 ? ('Pay the balance due, <b>'+money(n.L14)+'</b>,') : 'If there is a balance due (line 14), pay it')+' through <b>EFTPS</b>: tax type <b>941</b>, quarter <b>Q'+rec.q+' '+rec.year+'</b>.</li>'
+  +'<li>Press <b>📮 Mark filed</b> below with the date and the confirmation number.</li></ol>'; }
+async function openCard(id){
+  var rec=readA().filter(function(x){ return x.id===id; })[0]; if(!rec || !canFile()) return;
+  var old=document.getElementById('_gcF941Card'); if(old) old.remove();
+  var ov=document.createElement('div'); ov.id='_gcF941Card'; ov.setAttribute('data-gc-keep','1');
+  ov.style.cssText='position:fixed;inset:0;z-index:2147483000;background:rgba(15,23,42,.55);display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:24px 12px;';
+  ov.innerHTML='<div style="background:#fff;color:#0f2440;border-radius:12px;max-width:720px;width:100%;padding:16px 18px;font-size:14px"><div>Loading…</div></div>';
+  document.body.appendChild(ov);
+  var d=await load(), R=compute({ runs:d.runs, payments:d.pays, settings:d.set, year:rec.year, q:rec.q });
+  if(rec.status==='waiting'){ rec=await setRec(id, { numbers:snap(R) }) || rec; }
+  var adm=canSee();
+  var n=rec.status==='waiting' ? snap(R) : (rec.numbers||snap(R)), L=R.lines, card=ov.firstElementChild;
+  var changed = rec.status!=='waiting' && Math.abs(n.L12-L.L12)>=0.01;
+  card.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div style="font-size:18px;font-weight:800">🧾 Form 941 — Q'+rec.q+' '+rec.year+'</div><button data-x style="'+BTN+'">✕ Close</button></div>'
+    +'<div style="font-size:12px;color:#64748b;margin:2px 0 10px">Status: <b>'+(rec.status==='waiting'?'ready to file (an owner’s approval is optional)':rec.status==='approved'?('approved, ready to file — by '+esc(rec.approvedBy||'')+' '+esc(s(rec.approvedAt).slice(0,10))):('filed '+esc(rec.filedOn||'')+(rec.confirm?(' · confirmation '+esc(rec.confirm)):'')+(rec.filedBy?(' by '+esc(rec.filedBy)):'')))+'</b> · due <b>'+esc(rec.due||'')+'</b> (last day of the month after the quarter; a weekend moves it to Monday)'+' · nothing is sent to the IRS by the CRM</div>'
+    +(changed?'<div style="'+RED+'">⚠ The payroll data changed since this was approved: line 12 is now '+money(L.L12)+' (approved: '+money(n.L12)+'). Re-check before filing.</div>':'')
+    +(n.warnings||[]).map(function(w){ return '<div style="'+RED+'">⚠ '+esc(w)+'</div>'; }).join('')
+    +'<table style="width:100%;border-collapse:collapse">'
+    +[['1','Employees (pay period incl. the 12th)',String(n.L1)],['2','Wages, tips, other compensation',money(n.L2)],['3','Federal income tax withheld',money(n.L3)],['5e','Social Security + Medicare',money(n.L5e)],['7','Fractions of cents',money(n.L7)],['12','Total taxes after adjustments',money(n.L12)],['13','Deposits for the quarter',money(n.L13)],['14','Balance due',money(n.L14)],['15','Overpayment',money(n.L15)]]
+      .map(function(r){ return '<tr><td style="'+TD+'font-weight:800">'+r[0]+'</td><td style="'+TD+'">'+r[1]+'</td><td style="'+TD+'text-align:right;font-family:ui-monospace,monospace">'+r[2]+'</td></tr>'; }).join('')
+    +'</table>'
+    +'<div style="margin:12px 0;display:flex;flex-wrap:wrap;gap:6px"><button data-pdf style="'+BTN+'">📄 Filled Form 941 (PDF)</button><button data-copy style="'+BTN+'">📋 Copy all numbers</button><button data-csv style="'+BTN+'">⬇ CSV</button>'+(adm?'<button data-ws style="'+BTN+'">Open the worksheet</button>':'')+'</div>'
+    +(rec.status==='waiting' && adm?'<button data-ok style="'+BTN+'background:#16a34a;color:#fff;border-color:#16a34a">✅ Approve — ready to file</button> <span style="font-size:12px;color:#64748b">(optional — the office can file without it)</span>':'')
+    +(rec.status!=='filed'?'<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:10px 12px;margin-top:10px"><b>How to file</b>'+steps(rec, rec.status==='waiting'?snap(R):n)+'</div>':'')
+    +(rec.status!=='filed'?'<div style="margin-top:10px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">Filed on <input type="date" data-fd value="'+esc(todayStr())+'" style="padding:5px;border:1px solid #cbd5e1;border-radius:6px"> Confirmation # <input data-fc placeholder="e-file / EFTPS / mailed" style="padding:5px;border:1px solid #cbd5e1;border-radius:6px;width:170px"> <button data-filed style="'+BTN+'">📮 Mark filed</button></div>':'');
+  card.querySelector('[data-x]').onclick=function(){ ov.remove(); };
+  card.querySelector('[data-pdf]').onclick=function(){ downloadPdf(R, d.set, this); };
+  var wsb=card.querySelector('[data-ws]'); if(wsb) wsb.onclick=function(){ ov.remove(); W._gcF941Open(rec.year, rec.q); };
+  var cpb=card.querySelector('[data-copy]'); cpb.onclick=function(){ var tx=copyText(R); var done=function(){ cpb.textContent='✓ Copied'; };
+    try{ navigator.clipboard.writeText(tx).then(done,function(){ fallback(tx); done(); }); }catch(e){ fallback(tx); done(); } };
+  card.querySelector('[data-csv]').onclick=function(){ var a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv(R)],{type:'text/csv'})); a.download='Form941_Q'+rec.q+'_'+rec.year+'.csv'; document.body.appendChild(a); a.click(); setTimeout(function(){ try{ a.remove(); }catch(e){} },500); };
+  var okb=card.querySelector('[data-ok]'); if(okb) okb.onclick=async function(){ var me=''; try{ me=P().me(); }catch(e){}
+    await setRec(id, { status:'approved', approvedBy:me, approvedAt:new Date().toISOString(), numbers:snap(R) }); openCard(id); };
+  var fb=card.querySelector('[data-filed]'); if(fb) fb.onclick=async function(){ var dt=card.querySelector('[data-fd]').value; if(!/^\d{4}-\d{2}-\d{2}$/.test(dt)){ alert('Pick the date it was filed.'); return; }
+    var cf=s(card.querySelector('[data-fc]').value).trim(); if(!cf && !confirm('No confirmation number — mark it filed anyway?')) return;
+    var me=''; try{ me=P().me(); }catch(e){} await setRec(id, { status:'filed', filedOn:dt, confirm:cf, filedBy:me, numbersFiled:snap(R) }); openCard(id); };
+}
+W._gcF941OpenCard = openCard;
+UI.boot=Date.now();
+hookApprovals(); setTimeout(hookApprovals, 4000); setInterval(hookApprovals, 15000);
+setTimeout(function(){ ensureQuarter(); }, 20000); setInterval(function(){ ensureQuarter(); }, 10*60*1000);
+
 })(window);
 </script>
