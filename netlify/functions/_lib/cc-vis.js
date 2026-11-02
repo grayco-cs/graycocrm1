@@ -14,7 +14,12 @@
      • per job    — "ccj_<CRM job id>":   { mode: 'show' | 'hide', at, upto }            (covers the photos put in up to
                     "upto" (unix seconds) — a photo that comes in later still waits for its own click)
    A photo's time is when it went into CompanyCam (the later of captured_at / created_at).
-   Subs: "Subs see it" (hideSubs) wins; not set → the same as the customer (as for GrayCo's own photos). */
+   Subs: "Subs see it" (hideSubs) wins; not set → the same as the customer (as for GrayCo's own photos).
+
+   patch CUSTPORTAL (11/02, owner: "customer portal too: should all photos be in there"): the CUSTOMER now sees every
+   CompanyCam photo of the job by default (old or new); the clicks above are the opt-out ("🔒 Hide from customer").
+   A photo whose CompanyCam tag / description says insurance / adjuster / claim paperwork is never shown by default.
+   Subs keep the CCPHOTOS2 rule (a new photo waits for a click). */
 'use strict';
 const KEY = 'ccvis';
 
@@ -47,18 +52,35 @@ function jobRule(ix, jobId, up){
   if (!j || j.deleted === true || (j.mode !== 'show' && j.mode !== 'hide')) return null;
   return (+up || 0) <= (+j.upto || 0) ? j : null;
 }
-/* does the customer see this CompanyCam photo? */
-function customerSees(ccId, up, jobId, ix, since){
+/* a person's click on the photo or on its job: true / false, or null when nobody decided */
+function clicked(ccId, up, jobId, ix){
   const f = ix && ix.flags[s(ccId)], j = jobRule(ix, jobId, up);
   const fa = f && f.deleted !== true && f.shared != null ? stampOf(f) : '';
   if (fa && (!j || fa > s(j.at))) return f.shared === true;
   if (j) return j.mode === 'show';
-  return !(since > 0 && (+up || 0) >= since);
+  return null;
 }
-function subsSee(ccId, up, jobId, ix, since){
+/* patch CUSTPORTAL (owner 11/02: "customer portal too: should all photos be in there"): the customer sees a job's CompanyCam
+   photos BY DEFAULT — "🔒 Hide from customer" (on the photo, many at once, or the whole job) is the opt-out. Before, a photo put
+   in after the ccvis moment waited for a click, so every new job showed 0 photos. Never by default: a photo whose CompanyCam
+   tag / description says insurance, adjuster or claim paperwork (insOnly) — it waits for a click. */
+const INS_RE = /\b(insurance|insurer|adjust[eo]r|claim\s*(?:doc|docs|document|documents|paper|papers|form|forms|file|photos?)|xactimate|proof of loss|carrier)\b/i;
+function insOnly(x){ return !!x && INS_RE.test(s(x.tag) + ' ' + s(x.note)); }
+/* does the customer see this CompanyCam photo? (x: the photo — its tag / note, for insOnly) */
+function customerSees(ccId, up, jobId, ix, since, x){
+  const c = clicked(ccId, up, jobId, ix);
+  if (c !== null) return c;
+  return !insOnly(x);
+}
+/* subs: unchanged by CUSTPORTAL — "Subs see it" (hideSubs) wins; else a click on the photo / job; else a photo from before the
+   ccvis moment is shown and a newer one waits for its click (the rule CCPHOTOS2 gave both portals) */
+function subsSee(ccId, up, jobId, ix, since, x){
   const f = ix && ix.flags[s(ccId)], h = f && f.deleted !== true ? f.hideSubs : undefined;
   if (h === true) return false; if (h === false) return true;
-  return customerSees(ccId, up, jobId, ix, since);
+  const c = clicked(ccId, up, jobId, ix);
+  if (c !== null) return c;
+  if (insOnly(x)) return false;
+  return !(since > 0 && (+up || 0) >= since);
 }
 
 /* the moment "new" starts: gc_kv ccvis.since — written once (never moved by a later run) the first time it is needed */
@@ -103,7 +125,7 @@ function fromRow(row){
   return arr(row.ph).map(function(x){
     if (!Array.isArray(x)) return null;
     const id = s(x[0]), web = httpsOnly(x[2]), cap = +x[1] || 0;
-    return { ccId: id, f: web, t: httpsOnly(unpackThumb(x[3], s(x[2]))) || web, up: Math.max(cap, +x[7] || 0), cap: cap };
+    return { ccId: id, f: web, t: httpsOnly(unpackThumb(x[3], s(x[2]))) || web, up: Math.max(cap, +x[7] || 0), cap: cap, tag: s(x[5]), note: s(x[6]) };   /* patch CUSTPORTAL: tag / note for insOnly */
   }).filter(Boolean);
 }
 async function photosFor(p, recs, audience, deps, opts){
@@ -116,7 +138,7 @@ async function photosFor(p, recs, audience, deps, opts){
   if (row.done === true && Array.isArray(row.ph)) list = fromRow(row);
   else {
     let live = []; try { live = arr(await deps.live(ccId)); } catch (e) { live = []; }
-    list = live.length ? live.map(function(c){ return { ccId: s(c.ccId || s(c.id).replace(/^cc_/, '')), f: httpsOnly(c.f), t: httpsOnly(c.t) || httpsOnly(c.f), up: +c.up || 0, cap: +c.cap || +c.up || 0 }; })
+    list = live.length ? live.map(function(c){ return { ccId: s(c.ccId || s(c.id).replace(/^cc_/, '')), f: httpsOnly(c.f), t: httpsOnly(c.t) || httpsOnly(c.f), up: +c.up || 0, cap: +c.cap || +c.up || 0, tag: s(c.tag), note: s(c.note) }; })
       : fromRow(row);
   }
   const see = audience === 'sub' ? subsSee : customerSees;
@@ -125,7 +147,7 @@ async function photosFor(p, recs, audience, deps, opts){
     if (!x || !x.ccId || seen[x.ccId]) return false; seen[x.ccId] = 1;
     const c = copyOf(row.g, x.ccId); x.copy = c;
     if (!c && !x.f) return false;
-    return see(x.ccId, x.up, jobId, ix, since);
+    return see(x.ccId, x.up, jobId, ix, since, x);
   });
   pick.sort(function(a, b){ return (b.cap || 0) - (a.cap || 0); });
   pick = pick.slice(0, opts.max || 600);
@@ -141,4 +163,4 @@ async function photosFor(p, recs, audience, deps, opts){
     return o;
   }).filter(Boolean);
 }
-module.exports = { KEY, index, customerSees, subsSee, ensureSince, sinceOf, upOf, stampOf, photosFor, copyOf, fromRow, refOf, secOf, _reset: function(){ sinceCache = null; } };
+module.exports = { KEY, index, customerSees, subsSee, clicked, insOnly, INS_RE, ensureSince, sinceOf, upOf, stampOf, photosFor, copyOf, fromRow, refOf, secOf, _reset: function(){ sinceCache = null; } };

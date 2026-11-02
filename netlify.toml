@@ -426,6 +426,21 @@
   status = 200
   force = true
 
+# patch CUSTPORTAL: portal.html's FIRST script is /gc-address.js — the catch-all answered it with the page itself, so every portal
+# page opened with "Uncaught SyntaxError: Unexpected token '<'". The legal pages the sign flow opens (E-SIGN consent, Notice of
+# Cancellation, terms, privacy) show the white GrayCo logo from /img/ — it was a broken picture on this host.
+[[redirects]]
+  from = "https://portal.grayco-cs.com/gc-address.js"
+  to = "/gc-address.js"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "https://portal.grayco-cs.com/img/grayco-logo-white.png"
+  to = "/img/grayco-logo-white.png"
+  status = 200
+  force = true
+
 [[redirects]]
   from = "https://portal.grayco-cs.com/*"
   to = "/portal.html"

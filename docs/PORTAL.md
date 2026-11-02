@@ -48,10 +48,11 @@ Open the job. The **Customer portal** card is at the top.
 - The GrayCo logo, a call button (901-585-0944), their PM's name with Call and Text.
 - **Where the job is**: Lead → Contacted → Appointment booked → Estimate sent → Contract signed + scheduled → In progress → Punch list → Final invoice → Closed.
 - **Updates** from the PM, with photos.
-- **Photos**: every CompanyCam photo of the job, newest first. Plus "Open in CompanyCam".
+- **Photos**: the job's GrayCo Photos and CompanyCam photos, newest first (small thumbnails that load as you scroll; tap one to see it big). Every photo is shown by default; a photo marked **Hide from customer / Internal only** (on the photo, ☑ Select, or **🔒 Hide all** on the job), a Damage photo nobody turned on, and a CompanyCam photo whose tag / description says insurance or adjuster never are. Subs follow their own rule (the sub portal is unchanged).
+- **＋ Add photos**: the customer can add photos from the phone's camera or library (several at once, made smaller on the phone first). They go into the job's 📷 GrayCo Photos marked **From customer** — "Added by <name> (customer)" and the date — and show in the portal at once. Subs don't see them until you turn them on. One Office To-Do per job per day; nothing is e-mailed or texted.
 - **Documents**, by themselves: proposals (made in the CRM or in Google Docs), the contract, approved change orders, invoices, the final invoice, warranty, welcome & FAQ packet, completion certificate, final inspection sign-off, lien waivers — as soon as they are on the job. Change orders, lien waivers, completion certificates, warranties and work authorizations made with **Create Document** are saved to the job and shown by themselves.
 - **Warranty**: all roofs 5 years (residential, commercial and insurance roofs). Insurance / restoration 5 years. Everything else 1 year. It starts the day the job is complete.
-- **Invoices & payments**: contract, approved change orders, each invoice paid or open, every payment. "Pay by check or cash to your Project Manager. Every payment shows on your final invoice." No card payments.
+- **Invoices & payments**: contract, approved change orders, each invoice paid or open (**📄 Open invoice** opens that invoice's PDF in a new tab, on a phone too), every payment. "Pay by check or cash to your Project Manager. Every payment shows on your final invoice." No card payments.
 - **Their info** on file (name, address, phone, e-mail). To change it they call us.
 - At the end (final invoice / closed): **Leave a Google review** and **Facebook** buttons.
 

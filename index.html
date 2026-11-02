@@ -130099,7 +130099,8 @@ function ccFlag(r){ return r && r.source === 'companycam' && r.ccId ? (PH.map['c
 function sharedOf(r){ if (r && r.source === 'companycam') return ccShared(r);   /* patch CCPHOTOS2: a click decides */
   var f = ccFlag(r); if (f && f.deleted !== true && f.shared != null) return f.shared === true; if (r && r.source === 'sub') return r.shared === true && !!s(r.custOkBy);   /* patch SUBPHOTOS: a sub's photo only after an admin / the office */
   return r.shared === true || (r.shared == null && r.tag !== 'Damage'); }
-function subsOf(r){ var f = ccFlag(r), h = f && f.deleted !== true ? f.hideSubs : r.hideSubs; if (h === true) return false; if (h === false) return true; return sharedOf(r); }
+function subsOf(r){ var f = ccFlag(r), h = f && f.deleted !== true ? f.hideSubs : r.hideSubs; if (h === true) return false; if (h === false) return true; if (r && r.source === 'companycam' && !ccDecided(r)) return ccSubsDefault(r);   /* patch CUSTPORTAL */
+  return sharedOf(r); }
 function setCCFlag(r, patch){
   var id = 'ccf_' + r.ccId, o = PH.map[id];
   var n = Object.assign({ id: id, jobId: String(r.jobId), ccId: String(r.ccId), source: 'ccflag', at: nowIso(), by: myName(), byKey: myKey() }, o || {}, patch || {});
@@ -130131,7 +130132,7 @@ function visSet(list, on){
 function visJob(jobId, mode){
   if (!itemById(jobId)) return 0;
   var list = jobPhotos(jobId), on = mode === 'show';
-  if (!window.confirm(on ? 'Show all ' + list.length + ' photos of this job to the customer?\n\nPhotos added later still wait for their own "Customer can see".' : 'Hide all ' + list.length + ' photos of this job from the customer?')) return 0;
+  if (!window.confirm(on ? 'Show all ' + list.length + ' photos of this job to the customer?\n\nPhotos added later are shown too, unless you hide them.' : 'Hide all ' + list.length + ' photos of this job from the customer?\n\nPhotos added later are still shown to the customer (hide those one by one, or Hide all again).')) return 0;
   var at = nowIso(), id = 'ccj_' + jobId, o = PH.map[id];
   var rec = Object.assign({ id: id, jobId: String(jobId), source: 'ccflag', kind: 'job' }, o || {}, { mode: mode, at: at, visAt: at, upto: Math.floor(Date.now() / 1000), by: myName(), byKey: myKey(), deleted: false });
   delete rec._local; PH.save(rec, true);   /* every CompanyCam photo of the job up to now — one small record, not one a photo */
@@ -130427,8 +130428,14 @@ function ccShared(r){
   var f = ccFlag(r), j = ccJobRule(r), fa = f && f.deleted !== true && f.shared != null ? ccVisStamp(f) : '';
   if (fa && (!j || fa > s(j.at))) return f.shared === true;
   if (j) return j.mode === 'show';
-  return !(CCV.since > 0 && ccUp(r) >= CCV.since);
+  return !ccInsOnly(r);   /* patch CUSTPORTAL: the customer sees a job's CompanyCam photos by default; "Hide from customer" is the opt-out */
 }
+/* patch CUSTPORTAL: never by default — a CompanyCam photo whose tag / description says insurance, adjuster or claim paperwork
+   (the same words as netlify/functions/_lib/cc-vis.js INS_RE) */
+var CC_INS_RE = /\b(insurance|insurer|adjust[eo]r|claim\s*(?:doc|docs|document|documents|paper|papers|form|forms|file|photos?)|xactimate|proof of loss|carrier)\b/i;
+function ccInsOnly(r){ return !!r && CC_INS_RE.test(s(r.tag) + ' ' + s(r.note)); }
+/* subs keep the CCPHOTOS2 rule: a CompanyCam photo put in after the ccvis moment waits for a click */
+function ccSubsDefault(r){ return !ccInsOnly(r) && !(CCV.since > 0 && ccUp(r) >= CCV.since); }
 function ccDecided(r){ var f = ccFlag(r); return !!((f && f.deleted !== true && f.shared != null) || ccJobRule(r)); }
 /* the GrayCo copy of a CompanyCam photo (index row .g: [web file, thumb file | 0, bytes, removedAt?]) */
 function cixG(g, id, k){ var c = g && g[s(id)]; var f = Array.isArray(c) ? s(c[k]) : ''; return /^[0-9a-f]{64}\.(jpe?g|png|webp)$/.test(f) ? 'sb:crm-files/' + f : ''; }
@@ -131256,7 +131263,7 @@ function pvTile(r, mode){
   var cc = r.source === 'companycam', n = mode === 'job' ? commentCount(r.id) : 0, it = mode === 'feed' ? itemById(r.jobId) : null;
   var t = '<button class="gcu-t pv-t" data-a="photo" data-id="' + esc(r.id) + '" data-job="' + esc(r.jobId) + '" data-tag="' + esc(r.tag || '') + '" data-src-kind="' + (cc ? 'cc' : 'gc') + '" aria-label="' + esc((r.tag || 'Photo') + ' by ' + r.by + ', ' + (cc ? 'from CompanyCam' : 'GrayCo Photos')) + '">' +
     pvImg(r) + '<span class="pv-time">' + (mode === 'job' ? esc(hm(r.at).replace(' ', '').replace(/M$/, '').toLowerCase()) : esc(pvShort(r.at))) + '</span>' + av(dispName(r), 26) +
-    (n ? '<span class="gcu-cm">' + n + ' 💬</span>' : '') + (cc ? '<span class="gcu-ccb">CC</span>' : r.source === 'sub' ? '<span class="gcu-subb">SUB</span>' : '') +
+    (n ? '<span class="gcu-cm">' + n + ' 💬</span>' : '') + (cc ? '<span class="gcu-ccb">CC</span>' : r.source === 'sub' ? '<span class="gcu-subb">SUB</span>' : r.source === 'customer' ? '<span class="gcu-subb" style="background:#1D5E2C" title="Added by the customer in the portal">CUSTOMER</span>' : '') +
     (r._local || (!cc && !r.ref) ? '<span class="gcu-wait" title="Waiting to upload">⏳</span>' : '') + (!sharedOf(r) ? '<span class="gcu-lock" title="' + (subsOf(r) ? 'Hidden from the customer' : 'Internal only') + '">🔒</span>' : '') + '</button>';
   if (mode !== 'feed') return t;
   return '<div class="pv-ft">' + t + '<span class="pv-by">' + esc(short(dispName(r))) + '</span>' + (it ? '<span class="pv-pj">' + esc(it.name) + '</span>' : '') + '</div>';
@@ -131954,7 +131961,7 @@ function vJob(){
 function tileHtmlOld(r){
   var cc = r.source === 'companycam', n = commentCount(r.id);
   return '<button class="gcu-t" data-a="photo" data-id="' + esc(r.id) + '" data-tag="' + esc(r.tag || '') + '" data-src-kind="' + (cc ? 'cc' : 'gc') + '" aria-label="' + esc((r.tag || 'Photo') + ' by ' + r.by + ', ' + (cc ? 'from CompanyCam' : 'GrayCo Photos')) + '">' +
-    imgTag(r) + av(dispName(r), 22) + (n ? '<span class="gcu-cm">' + n + ' 💬</span>' : '') + (cc ? '<span class="gcu-ccb">CC</span>' : r.source === 'sub' ? '<span class="gcu-subb">SUB</span>' : '') +
+    imgTag(r) + av(dispName(r), 22) + (n ? '<span class="gcu-cm">' + n + ' 💬</span>' : '') + (cc ? '<span class="gcu-ccb">CC</span>' : r.source === 'sub' ? '<span class="gcu-subb">SUB</span>' : r.source === 'customer' ? '<span class="gcu-subb" style="background:#1D5E2C" title="Added by the customer in the portal">CUSTOMER</span>' : '') +
     (r._local || (!cc && !r.ref) ? '<span class="gcu-wait" title="Waiting to upload">⏳</span>' : '') + (!sharedOf(r) ? '<span class="gcu-lock" title="' + (subsOf(r) ? 'Hidden from the customer' : 'Internal only') + '">🔒</span>' : '') + '</button>';
 }
 function infoHtml(it, list){
@@ -131996,11 +132003,12 @@ function vPhoto(){
   if (pair) { var a = r.tag === 'After' ? pair : r, b = r.tag === 'After' ? r : pair;
     h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:6px 12px 0" id="gcu-pair"><div class="gcu-t" style="aspect-ratio:4/3">' + imgTag(a) + '<span class="gcu-tagp gcu-dark" style="left:6px;top:6px">' + esc(a.tag || 'Before') + '</span></div><div class="gcu-t" style="aspect-ratio:4/3">' + imgTag(b) + '<span class="gcu-tagp gcu-dark" style="left:6px;top:6px">' + esc(b.tag || 'After') + '</span></div></div>'; }
   if (r.source === 'sub') h += '<div class="gcu-subline" style="padding:6px 12px 0;font-size:12px;font-weight:700;color:#B45309">🧰 From sub portal · ' + esc(s(r.subCompany || r.subName || s(r.by).replace(/ \(sub( portal)?\)$/, ''))) + ' · ' + esc(s(r.at).slice(0, 10)) + (sharedOf(r) ? '' : ' · hidden from the customer') + '</div>';   /* patch SUBPHOTOS */
+  if (r.source === 'customer') h += '<div class="gcu-subline" data-gc-custphoto="1" style="padding:6px 12px 0;font-size:12px;font-weight:700;color:#1D5E2C">📱 Added by ' + esc(s(r.custName) || s(r.by).replace(/ \(customer\)$/, '') || 'the customer') + ' (customer) · ' + esc(s(r.at).slice(0, 10)) + ' · from the customer portal' + (sharedOf(r) ? '' : ' · hidden from the customer') + '</div>';   /* patch CUSTPORTAL */
   h += '<div class="gcu-pchips">' + (cc ? '<span class="gcu-pc" style="background:' + CCBLUE + ';display:flex;align-items:center">CompanyCam</span>' : '') +
     (cc && r.removed ? '<span class="gcu-pc gcu-ccgone" style="background:#7C2D12;color:#fff;display:flex;align-items:center">Removed in CompanyCam · GrayCo copy kept</span>' : cc && r.gRef ? '<span class="gcu-pc gcu-gcopy" style="background:#1D5E2C;color:#fff;display:flex;align-items:center">GrayCo copy</span>' : '') +   /* patch CCPHOTOS2 */
     '<button class="gcu-pc dl-one" data-a="dlone" aria-label="Download this photo">⬇ Download</button>' +
     '<button class="gcu-pc" data-a="retag">' + esc(r.tag || 'Tag it') + '</button>' +
-    '<button class="gcu-pc ' + (sharedOf(r) ? 'yes' : 'no') + '" data-a="share" aria-pressed="' + sharedOf(r) + '">' + (sharedOf(r) ? 'Customer sees it' : (cc && !ccDecided(r) ? '👁 Customer can see? (not shown yet)' : (subsOf(r) ? 'Hidden from customer' : 'Internal only'))) + '</button>' +   /* patch CCPHOTOS2 */
+    '<button class="gcu-pc ' + (sharedOf(r) ? 'yes' : 'no') + '" data-a="share" aria-pressed="' + sharedOf(r) + '">' + (sharedOf(r) ? 'Customer sees it' : (cc && !ccDecided(r) ? '👁 Customer can see? (not shown yet — insurance / adjuster)' : (subsOf(r) ? 'Hidden from customer' : 'Internal only'))) + '</button>' +   /* patch CCPHOTOS2 */
     '<button class="gcu-pc ' + (subsOf(r) ? 'yes' : 'no') + '" data-a="subs" aria-pressed="' + subsOf(r) + '">' + (subsOf(r) ? 'Subs see it' : 'Hidden from subs') + '</button>' +
     (cc ? '' : '<button class="gcu-pc" data-a="draw">Draw</button><button class="gcu-pc" data-a="pair">Before/after</button>') +
     '<button class="gcu-pc' + (sel[r.id] ? ' yes' : '') + '" data-a="addrep">' + (sel[r.id] ? 'In report ✓' : 'Add to report') + '</button>' +
@@ -132559,7 +132567,7 @@ function openSettings(){
       (st && st.lastErr ? ' Last error: ' + esc(st.lastErr) : '') + '</span>' +
       '<button class="gcu-btn" data-a="ccnow" id="gcu-ccnow">Check CompanyCam now</button><span class="gcu-sm" id="gcu-ccmsg" role="status"></span></div>' +
     '<div class="gcu-set"><b>Location on photos</b><div class="gcu-chips"><button class="gcu-chip' + (g === 'on' ? ' on' : '') + '" data-a="gpsset" data-v="on">On</button><button class="gcu-chip' + (g !== 'on' ? ' on' : '') + '" data-a="gpsset" data-v="off">Off</button></div></div>' +
-    '<div class="gcu-set"><b>Who sees a photo</b><span class="gcu-sm">Open a photo: <b>Customer sees it</b> puts it on the customer portal; <b>Subs see it</b> puts it on the sub portal for subs on that job. Damage photos start internal. CompanyCam photos added after 10/30 start hidden until someone taps <b>Customer sees it</b> (or <b>👁 Show all to customer</b> on the job). Notes, names and chat never leave GrayCo.</span></div>' +
+    '<div class="gcu-set"><b>Who sees a photo</b><span class="gcu-sm">Open a photo: <b>Customer sees it</b> puts it on the customer portal; <b>Subs see it</b> puts it on the sub portal for subs on that job. Damage photos start internal. CompanyCam photos are on the customer portal by default — tap <b>Hide from customer</b> (or <b>🔒 Hide all</b> on the job) for internal-only photos; one that says insurance / adjuster stays hidden until you show it. Photos the customer adds in the portal say <b>From customer</b>. Notes, names and chat never leave GrayCo.</span></div>' +
     '<button class="gcu-btn ghost" data-a="closelayer">Done</button>');
 }
 function ccCheckNow(b){
@@ -161015,7 +161023,7 @@ function openSign(pid){
   function row(left, right){ return '<div style="border-top:1px solid #EFEAE0;padding:10px 0;display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap"><div style="min-width:0;flex:1 1 220px">' + left + '</div><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">' + right + '</div></div>'; }
   function paint(msg){
     var ests = jobEstimates(p), cos = coList().filter(function(c){ return c && String(c.pid) === String(pid) && c.deleted !== true; });
-    var papers = docsNow().filter(function(d){ return d && String(d.pid) === String(pid) && d.deleted !== true && /^sb:crm-files\//.test(s(d.ref)) && /contract|agreement|authori[sz]ation|proposal|change.?order|addendum|waiver|sign/i.test(s(d.cat) + ' ' + s(d.name)) && d.source !== 'portal-signature'; });
+    var papers = docsNow().filter(function(d){ return d && String(d.pid) === String(pid) && d.deleted !== true && /^sb:crm-files\//.test(s(d.ref)) && /contract|agreement|authori[sz]ation|proposal|change.?order|addendum|waiver|sign|warrant|completion/i.test(s(d.cat) + ' ' + s(d.name)) && d.source !== 'portal-signature'   /* patch CUSTPORTAL: + warranty, certificate of completion */; });
     var h = '<div style="font-size:14px;color:#55626F;line-height:1.45;margin-bottom:6px">Every signature is collected in the customer’s GrayCo Portal. The e-mail asking them to sign waits on <b>✅ Approvals</b> (estimate / contract: the PM, then an admin; change order: the PM). They get their signed copy at once; it comes back into the job’s documents here. Day 2, 5 and 10 follow-ups on a sent estimate (only the first one needs approval).</div>' +
       (msg ? '<div id="gcau5-msg" style="font-weight:700;color:#166534;margin:6px 0">' + esc(msg) + '</div>' : '');
     h += '<h3 style="margin:12px 0 2px;font-size:15px">Requested</h3>';
