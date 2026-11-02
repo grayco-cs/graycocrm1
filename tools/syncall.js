@@ -19,6 +19,7 @@
   var STEPS = [1500, 4000, 8000, 14000, 22000, 35000, 50000, 70000, 95000, 125000];
   var MAX_WAIT_MS = 300000;                     /* still waiting for typing / an open job after 5 minutes: the next pull brings it */
   var NOT_LISTS = { ccCards: 1 };
+  var SCREEN_OF = { subs: 'vendors' };          /* the cloud's `subs` list is shown in the one subs + vendors list (patch ONELIST: a row from `subs` with no isSub is a sub) */
   var RECORD_KEYS = { projects: 1, customers: 1, leads: 1, subs: 1, vendors: 1 };
   var S = {};                                   /* key -> { list, at, step, oks, t } */
   var stats = { seen: 0, checks: 0, healed: {}, waited: 0, skipped: {} };
@@ -33,7 +34,7 @@
   function jp(s, d){ try { var v = JSON.parse(s); return v == null ? d : v; } catch (e) { return d; } }
   function asList(v){ if (typeof v === 'string' && /^\s*\[/.test(v)) v = jp(v, null); return isIdList(v) ? v : null; }
   function stamp(r){ var t = Date.parse((r && (r.updatedAt || r.savedAt)) || ''); return isFinite(t) ? t : 0; }
-  function setterOf(k){ try { return typeof W.__gcListSetterOf === 'function' ? W.__gcListSetterOf(k) : null; } catch (e) { return null; } }
+  function setterOf(k){ try { return typeof W.__gcListSetterOf === 'function' ? W.__gcListSetterOf(SCREEN_OF[k] || k) : null; } catch (e) { return null; } }
 
   /* deleted / put aside here: the same tests the tombstone guard uses */
   function deadTest(k){
@@ -49,9 +50,10 @@
     };
   }
   function cleanCloud(k, list){
-    var dead = deadTest(k), out = list;
+    var dead = deadTest(k), dead2 = SCREEN_OF[k] ? deadTest(SCREEN_OF[k]) : null, out = list;
+    if (k === 'subs') out = arr(out).map(function(r){ return r && typeof r === 'object' && !('isSub' in r) ? Object.assign({}, r, { isSub: true }) : r; });
     try { if (typeof W._gcApplyTombstoneFilter === 'function') out = W._gcApplyTombstoneFilter(k, out) || out; } catch (e) {}
-    out = arr(out).filter(function(r){ return !!idOf(r) && !dead(idOf(r)); });
+    out = arr(out).filter(function(r){ return !!idOf(r) && !dead(idOf(r)) && !(dead2 && dead2(idOf(r))); });
     if (k === 'expenses' || k === 'gcAcctRegister') out = out.filter(function(r){ var a = parseFloat(r.amt != null ? r.amt : r.amount); return isFinite(a) && Math.abs(a) > 0.001; });
     return out;
   }

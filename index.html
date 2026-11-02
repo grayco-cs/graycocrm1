@@ -126714,6 +126714,7 @@ try{ console.log('[GC] Thank-you e-mail waits on ✅ Approvals (patch APPR2).');
   var STEPS = [1500, 4000, 8000, 14000, 22000, 35000, 50000, 70000, 95000, 125000];
   var MAX_WAIT_MS = 300000;                     /* still waiting for typing / an open job after 5 minutes: the next pull brings it */
   var NOT_LISTS = { ccCards: 1 };
+  var SCREEN_OF = { subs: 'vendors' };          /* the cloud's `subs` list is shown in the one subs + vendors list (patch ONELIST: a row from `subs` with no isSub is a sub) */
   var RECORD_KEYS = { projects: 1, customers: 1, leads: 1, subs: 1, vendors: 1 };
   var S = {};                                   /* key -> { list, at, step, oks, t } */
   var stats = { seen: 0, checks: 0, healed: {}, waited: 0, skipped: {} };
@@ -126728,7 +126729,7 @@ try{ console.log('[GC] Thank-you e-mail waits on ✅ Approvals (patch APPR2).');
   function jp(s, d){ try { var v = JSON.parse(s); return v == null ? d : v; } catch (e) { return d; } }
   function asList(v){ if (typeof v === 'string' && /^\s*\[/.test(v)) v = jp(v, null); return isIdList(v) ? v : null; }
   function stamp(r){ var t = Date.parse((r && (r.updatedAt || r.savedAt)) || ''); return isFinite(t) ? t : 0; }
-  function setterOf(k){ try { return typeof W.__gcListSetterOf === 'function' ? W.__gcListSetterOf(k) : null; } catch (e) { return null; } }
+  function setterOf(k){ try { return typeof W.__gcListSetterOf === 'function' ? W.__gcListSetterOf(SCREEN_OF[k] || k) : null; } catch (e) { return null; } }
 
   /* deleted / put aside here: the same tests the tombstone guard uses */
   function deadTest(k){
@@ -126744,9 +126745,10 @@ try{ console.log('[GC] Thank-you e-mail waits on ✅ Approvals (patch APPR2).');
     };
   }
   function cleanCloud(k, list){
-    var dead = deadTest(k), out = list;
+    var dead = deadTest(k), dead2 = SCREEN_OF[k] ? deadTest(SCREEN_OF[k]) : null, out = list;
+    if (k === 'subs') out = arr(out).map(function(r){ return r && typeof r === 'object' && !('isSub' in r) ? Object.assign({}, r, { isSub: true }) : r; });
     try { if (typeof W._gcApplyTombstoneFilter === 'function') out = W._gcApplyTombstoneFilter(k, out) || out; } catch (e) {}
-    out = arr(out).filter(function(r){ return !!idOf(r) && !dead(idOf(r)); });
+    out = arr(out).filter(function(r){ return !!idOf(r) && !dead(idOf(r)) && !(dead2 && dead2(idOf(r))); });
     if (k === 'expenses' || k === 'gcAcctRegister') out = out.filter(function(r){ var a = parseFloat(r.amt != null ? r.amt : r.amount); return isFinite(a) && Math.abs(a) > 0.001; });
     return out;
   }
@@ -163553,7 +163555,7 @@ function rowEq(e, mine, now){
     doc: { l: '✉️ The e-mail', f: function(){ panelAt('[data-email="' + cssq(id) + '"]'); } } };
 }
 function rowExp(a, mine, now){
-  var pid = s(a.jobId || a.pid), p = proj(pid), id = s(a.id || a.expId);
+  var pid = s(a.jobId || a.pid), p = proj(pid), id = s(a.expId || a.id);   /* patch ACCTFIX3: the card key is the expense id */
   return { key: 'exp:' + id, id: id, src: 'exp', kind: 'expense', kindL: 'Expense', icon: '🧾', title: 'Expense — ' + (s(a.vendor || a.payee || a.desc) || 'expense'),
     pid: pid, job: jobLine(p, ''), pm: s(a.pm) || s(p && p.pm), step: a.status === 'escalated' ? 'office' : 'pm', waits: a.status === 'escalated' ? 'Escalated — needs attention' : 'PM ' + (s(a.pm) ? s(a.pm) + ' ' : '') + 'or the office',   /* patch APOFFICE */
     since: Date.parse(a.enteredAt || a.createdAt || a.at || 0) || 0, clock: '', amount: num(a.amount || a.amt), mine: mine, escalated: a.status === 'escalated', chain: '',
@@ -163603,8 +163605,8 @@ function build0(){
     });
     arr(g.subinv).forEach(function(e){ var a = S.filter(function(z){ return 'sub:' + s(z.id) === e.id || 'sub:' + s(z.invId) === e.id; })[0]; addMine(a ? rowSub(a, true, now) : stub(e, 'sub')); });
     arr(g.invsign).forEach(function(e){ var iv = I.filter(function(z){ return 'inv:' + s(z.id) === e.id; })[0]; addMine(iv ? rowInv(iv, true, now) : stub(e, 'inv')); });
-    arr(g.expense).forEach(function(e){ var a = X.filter(function(z){ return 'exp:' + s(z.id || z.expId) === e.id; })[0];
-      if (!a) { try { a = arr(JSON.parse(localStorage.getItem('gc_expense_approvals') || '[]')).filter(function(z){ return z && 'exp:' + s(z.id || z.expId) === e.id && (z.status === 'pending_pm' || z.status === 'escalated'); })[0] || null; } catch (x) { a = null; } }   /* patch ACCTFIX3: the office expense card */
+    arr(g.expense).forEach(function(e){ var a = X.filter(function(z){ return 'exp:' + s(z.expId || z.id) === e.id; })[0];
+      if (!a) { try { a = arr(JSON.parse(localStorage.getItem('gc_expense_approvals') || '[]')).filter(function(z){ return z && 'exp:' + s(z.expId || z.id) === e.id && (z.status === 'pending_pm' || z.status === 'escalated'); })[0] || null; } catch (x) { a = null; } }   /* patch ACCTFIX3: the office expense card */   /* the expense id first: the record's own id is 'expId:...' */
       addMine(a ? rowExp(a, true, now) : stub(e, 'exp')); });
     arr(g.other).forEach(function(e){ addMine(rowOther(e, true, now)); });
   }
