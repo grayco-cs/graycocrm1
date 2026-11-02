@@ -14,6 +14,7 @@ also add photos if they want in the portal, and it goes into GrayCo Photos and s
 3. Job → Customer portal → ✍️ Signatures: the warranty and the certificate of completion are on the "Send for signature"
    list too (they were left out by the paper-name filter).
 4. The emergency number in the CRM's customer papers / e-mails is (901) 582-8255 (owner 11/02); the office stays (901) 585-0944.
+5. ✅ Approvals: the preview of an invoice e-mail shows the CRM's own invoice (what the customer gets now), not the plain PDF.
 Idempotent: run it again and nothing changes. Usage: python3 tools/patch_CUSTPORTAL.py [index.html]"""
 import sys, os
 path = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(__file__), '..', 'index.html')
@@ -76,6 +77,15 @@ for old in ("Emergency (water, fire): call (901) 585-0944.",              # the 
             "Emergency services available 24/7 — call (901) 585-0944",    # the water damage scope / contract template
             "For an emergency call (901) 585-0944."):                     # the Customer Portal Terms of Use (doc library copy)
     EDITS.append((old, old.replace('585-0944', '582-8255'), 1))
+
+# 5. owner 11/02 "I want 1 invoice": the approval preview of an invoice e-mail shows what the customer gets — the CRM's own invoice
+#    (portal.js action invoice-pdf now answers with that page, _lib/invoice-view.js), not the plain PDF
+J = """      var box = q('._ap2PvPdfBox'), msg = q('._ap2PvPdfMsg'); if(!box) return;
+"""
+J2 = J + """      if(j && j.ok && j.html){ var hu = URL.createObjectURL(new Blob([j.html], { type:'text/html' })); msg.textContent = j.filename || ''; var dl0 = q('._ap2PvDl'); if(dl0){ dl0.href = hu; dl0.download = j.filename || 'Invoice.html'; dl0.style.display = 'inline'; }
+        box.innerHTML = '<iframe class="_ap2PvPdfFrame" title="Invoice" style="width:100%;height:620px;border:1px solid #cbd5e1;border-radius:8px;background:#060b16"></iframe>'; box.firstChild.srcdoc = j.html; ov.__pdfBytes = j.html.length; return; }   /* patch CUSTPORTAL: the ONE invoice look */
+"""
+EDITS.append((J, J2, 1))
 
 for old, new, n in EDITS:
     c = t.count(old)

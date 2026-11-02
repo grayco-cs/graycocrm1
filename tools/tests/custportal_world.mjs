@@ -109,6 +109,14 @@ export function pdfOf(title, lines){
   const sel = require(FNDIR + '/selections.js')._sel;
   return sel.buildPdf([{ t: 'title', text: 'GrayCo Construction Services' }, { t: 'h', text: title }].concat((lines || []).map(x => ({ t: 'p', text: x }))));
 }
+/* an estimate PDF a PM made elsewhere and UPLOADED to the CRM ("📎 Upload the estimate I sent") — a picture-like scan, kept byte for byte */
+let UPLOADED = null;
+export function uploadedPdf(){
+  if (UPLOADED) return UPLOADED;
+  try { UPLOADED = execFileSync('convert', ['-size', '612x792', 'xc:#fdfcf7', '-fill', '#1a1a1a', '-pointsize', '26', '-draw', "text 60,110 'ESTIMATE #2051 - Fence & gate'", '-pointsize', '15', '-draw', "text 60,150 'Uploaded to the CRM as a PDF (made in another program)'", '-draw', "text 60,190 'Cedar privacy fence, 140 ft, one 4 ft gate ........ $6,850.00'", '-draw', "text 60,230 'Total: $6,850.00'", 'pdf:-']); }
+  catch (e) { UPLOADED = pdfOf('Estimate #2051 — Fence & gate (uploaded PDF)', ['Cedar privacy fence, 140 ft, one 4 ft gate — $6,850.00']); }
+  return UPLOADED;
+}
 export function storeFile(buf, ext, type){ const name = sha(buf) + '.' + ext; FILES[name] = { bytes: buf, type: type || '' }; return 'sb:crm-files/' + name; }
 const PARKS = '/home/user/wt-tvfix/img/tv/parks';
 export function pictures(n){
@@ -141,7 +149,7 @@ export function seedSample(opts){
      est_p5.pdf: its 5-page proposal) — else a stand-in PDF */
   const CD = opts.crmDocs === false ? '' : (opts.crmDocs || process.env.CUSTPORTAL_CRMDOCS || '/tmp/claude-0/-home-user/6a5b2b6b-8a4d-5505-9f82-62521adb6674/scratchpad/cp/crmdocs');
   const crmPdf = f => { try { const b = CD && fs.readFileSync(path.join(CD, f)); return b && b.slice(0, 5).toString('latin1') === '%PDF-' ? b : null; } catch (e) { return null; } };
-  const BYTES = { DSAMPLE_EST: crmPdf('est_simple.pdf'), DSAMPLE_P5: crmPdf('est_p5.pdf') };
+  const BYTES = { DSAMPLE_EST: crmPdf('est_simple.pdf'), DSAMPLE_P5: crmPdf('est_p5.pdf'), DSAMPLE_UP: uploadedPdf() };
   const doc = (id, name, cat, extra, lines) => { const ref = storeFile(BYTES[id] || pdfOf(name.replace(/\.pdf$/, ''), lines || ['Job: Sample Customer — Roof & Kitchen', 'Address: ' + S.customer.address]), 'pdf', 'application/pdf'); pdfs[id] = ref;
     return Object.assign({ id, pid: S.pid, name, cat, ref, type: 'application/pdf', uploadedAt: day(20) + 'T15:00:00.000Z', portalShare: true }, extra || {}); };
   const docs = [
@@ -153,6 +161,7 @@ export function seedSample(opts){
     doc('DSAMPLE_LIEN', 'Lien waiver — final — Roof.pdf', 'Lien Waivers', { uploadedAt: day(30) + 'T15:00:00.000Z' }, ['Unconditional lien waiver on final payment']),
     doc('DSAMPLE_PHOTOREP', 'Photo report — Roof — Oct 30.pdf', 'Photo Reports', { uploadedAt: day(30) + 'T16:00:00.000Z' }, ['Before / during / after photos of the roof']),
     doc('DSAMPLE_MAINT', 'GrayCo Care maintenance plan — Silver.pdf', 'Maintenance', { uploadedAt: day(30) + 'T17:00:00.000Z' }, ['Two visits a year: gutters, roof check, caulk']),
+    doc('DSAMPLE_UP', 'Estimate #2051 — Fence & gate (uploaded).pdf', 'Estimates', { estimateId: 'ESAMPLE2', sentPdf: true, version: 1, uploadedAt: day(29) + 'T15:00:00.000Z', source: 'estimate-upload' }),
     ...(BYTES.DSAMPLE_P5 ? [doc('DSAMPLE_P5', 'Proposal — Kitchen remodel (GrayCo proposal).pdf', 'Proposals', { uploadedAt: day(28) + 'T16:00:00.000Z' })] : []),
     /* never shown: internal papers on the same job */
     Object.assign(doc('DSAMPLE_SUBAGR', 'Subcontract agreement — ' + S.sub + '.pdf', 'Sub Agreements', { portalShare: undefined }), {}),
@@ -183,6 +192,8 @@ export function seedSample(opts){
     notes: 'INTERNAL: sub is ' + S.sub + ' — keep margin over 30%', sentPdf: { ref: pdfs.DSAMPLE_EST, version: 1, sentAt: day(28) + 'T15:00:00.000Z', via: 'crm-email' }, scope: { text: 'Remove the old kitchen; new cabinets, quartz counters, tile backsplash, LVP floor, paint and trim.' },
     lines: [{ id: 'l1', cat: 'Demolition', desc: 'Remove cabinets, counters and flooring', qty: 1, cost: 1800, charge: 2600 }, { id: 'l2', cat: 'Cabinets', desc: 'Shaker cabinets, soft close', qty: 1, cost: 14200, charge: 19500 },
       { id: 'l3', cat: 'Countertops', desc: 'Quartz counters', qty: 1, cost: 7400, charge: 10300, sub: S.sub }, { id: 'l4', cat: 'Flooring', desc: 'LVP floor', qty: 320, cost: 9, charge: 5200 }, { id: 'l5', cat: 'Paint & trim', desc: 'Walls, ceiling, trim', qty: 1, cost: 6300, charge: 10650 }] };
+  const est2 = { id: 'ESAMPLE2', pid: S.pid, name: 'Fence & gate', num: '2051', status: 'Sent', portalShare: true, date: day(29), sentDate: day(29), createdAt: day(29) + 'T12:00:00Z', totalCharge: 6850, source: 'upload', sourceType: 'application/pdf',
+    sentPdf: { ref: pdfs.DSAMPLE_UP, version: 1, sentAt: day(29) + 'T15:00:00.000Z', via: 'upload', method: 'text' }, scope: { text: 'Cedar privacy fence, 140 ft, one 4 ft gate.' }, lines: [{ id: 'f1', cat: 'Fence', desc: 'Cedar privacy fence + gate', qty: 1, cost: 4100, charge: 6850 }] };
   const invs = [{ id: 'INVS1', pid: S.pid, po: 'S1001', invNum: '1001', type: 'client', drawType: 'Deposit', amt: 14475, status: 'Paid', date: day(7), paidDate: day(9), payMethod: 'Check' },
     { id: 'INVS2', pid: S.pid, po: 'S1001', invNum: '1002', type: 'client', drawType: 'Progress draw', amt: 19300, status: 'Sent', date: day(30), dueDate: '2026-11-14', emailedAt: day(30) + 'T15:00:00Z' },
     { id: 'INVSUB', pid: S.pid, type: 'sub', sub: S.sub, amt: S.subPrice, status: 'Approved', invNum: 'SUB-77' },
@@ -193,7 +204,7 @@ export function seedSample(opts){
     { id: 'sr_' + S.pid + '_change_order_CO2', pid: S.pid, kind: 'change_order', refId: 'CO2', title: 'Change order #2 — Upgrade to architectural shingles', amount: 2350, status: 'pending', createdAt: day(31) + 'T15:00:00.000Z', lines: [{ l: 'Architectural shingles instead of 3-tab', r: '+$2,350.00' }] },
     { id: 'sr_' + S.pid + '_contract_ROOF', pid: S.pid, kind: 'contract', refId: 'ROOF', title: 'Roof replacement contract', amount: 26450, status: 'signed', createdAt: day(5) + 'T15:00:00.000Z', docRef: pdfs.DSAMPLE_CONTRACT,
       signed: { name: 'Sample Customer', at: day(6) + 'T15:00:00.000Z', docRef: pdfs.DSAMPLE_CONTRACT, docName: 'Signed contract.pdf', sigId: 'ps_sample' } }];
-  const gate = [{ id: '_meta', since: '2026-10-24T00:00:00Z', gf: {} }, { id: 'e:ESAMPLE1', pid: S.pid, st: 'approved' }].concat(docs.filter(d => d.portalShare).map(d => ({ id: 'd:' + d.id, pid: S.pid, st: 'approved' })));
+  const gate = [{ id: '_meta', since: '2026-10-24T00:00:00Z', gf: {} }, { id: 'e:ESAMPLE1', pid: S.pid, st: 'approved' }, { id: 'e:ESAMPLE2', pid: S.pid, st: 'approved' }].concat(docs.filter(d => d.portalShare).map(d => ({ id: 'd:' + d.id, pid: S.pid, st: 'approved' })));
   /* CompanyCam: 3 photos put in after the ccvis moment (new, nobody clicked), one hidden by a click */
   const since = Math.floor(Date.parse('2026-10-30T16:22:06Z') / 1000);
   const ccPics = pics.slice(0, 4).map((p, i) => { const name = 'cc' + i + '.jpg'; FILES['cc/' + name] = { bytes: p.full, type: 'image/jpeg' }; FILES['cc/t_' + name] = { bytes: p.thumb, type: 'image/jpeg' }; return ['77000' + i, since + 3600 * (i + 1), CC_IMG + '/cc/' + name, CC_IMG + '/cc/t_' + name]; });
@@ -203,7 +214,7 @@ export function seedSample(opts){
   for (const k of Object.keys(KV)) delete KV[k];
   for (const k of Object.keys(TABLES)) delete TABLES[k];
   put('users', users); put('customers', [S.customer, { id: 'CUOTHER', name: 'Other Person', email: 'other.person@example.com' }]); put('projects', [job, other]);
-  put('estimates', [est]); put('projectDocs', docs); put('invs', invs); put('cos', cos); put('changeOrders', []); put('schedule', sched);
+  put('estimates', [est, est2]); put('projectDocs', docs); put('invs', invs); put('cos', cos); put('changeOrders', []); put('schedule', sched);
   put('subs', [{ id: 'SUB1', name: S.sub, contact: 'Rory Lane', phone: '901-555-0300', email: 'rory@ridgeline.test' }]);
   put('gc_photos', photoRecs.concat(ccFlags)); put('gc_sign_requests', signReqs); put('gc_portal_gate', gate);
   put('ccvis', { since: new Date(since * 1000).toISOString(), by: 'test' });

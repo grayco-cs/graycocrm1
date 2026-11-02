@@ -19,6 +19,7 @@
    Every text from the CRM is HTML-escaped first (the CRM writes it raw into its own window). */
 'use strict';
 const LOGO = require('./logo-wide.js');
+function whiteLogo(){ try { return 'data:image/png;base64,' + require('./logo-white.js').pngBase64; } catch (e) { return '/img/grayco-logo-white.png'; } }
 function s(v){ return v == null ? '' : String(v).trim(); }
 function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
 function escObj(o){ const out = {}; Object.keys(o || {}).forEach(function(k){ const v = o[k]; out[k] = typeof v === 'string' ? esc(v) : (v && typeof v === 'object' ? undefined : v); }); return out; }
@@ -33,7 +34,7 @@ function docHeader(o){
   const line2 = [a, PHONE, s(o.email), WEB].filter(Boolean).map(esc).join(' · ');
   const lw = Math.round(67 * (dk ? 340 / 192 : LOGO_RATIO)), lc = Math.round(67 * LOGO_RATIO);
   const img = function(src, cls, w){ return '<img data-gc-logo-img="1" class="' + cls + '" src="' + esc(src) + '" alt="' + NAME + '" width="' + w + '" height="67" style="height:0.7in;width:auto;margin:0 auto 4px;border:0' + (dual ? '' : ';display:block') + '">'; };
-  const WHITE = s(o.whiteLogo) || '/img/grayco-logo-white.png';
+  const WHITE = s(o.whiteLogo) || whiteLogo();
   return (dual ? '<style>.gc-dual img{display:block}.gc-dual .gc-p{display:none}@media print{.gc-dual .gc-d{display:none!important}.gc-dual .gc-p{display:block!important}.gc-dual .gc-t1{color:#0f2440!important;-webkit-text-fill-color:#0f2440!important}.gc-dual .gc-t2{color:#333!important}.gc-dual .gc-t3{color:#555!important}}</style>' : '')
     + '<div data-gc-logo="1" class="gc-doc-head' + (dual ? ' gc-dual' : '') + '" style="font-family:Arial,Helvetica,sans-serif;text-align:center;' + (dk ? 'margin:0;padding:0;' : 'border-bottom:2px solid #241968;padding:0 0 8px;margin:0 0 12px;') + 'page-break-inside:avoid;-webkit-print-color-adjust:exact;print-color-adjust:exact">'
     + (dual ? img(WHITE, 'gc-d', lw) + img(colourLogo(), 'gc-p', lc) : img(dk ? WHITE : colourLogo(), '', lw))
@@ -49,7 +50,7 @@ function build(o){
   const window = { _gcDocHeader: function(h){ return docHeader(Object.assign({}, h, { whiteLogo: o.whiteLogo })); } };   /* the CRM's global, for the verbatim block */
   /* ── as in index.html _gcViewInvoicePDF ── */
   const amt = parseFloat(inv.amt) || 0;
-  const invNum = inv.po ? ('INV-' + inv.po) : ('INV-' + String(invId).slice(-6));
+  const invNum = s(o.number) ? esc(o.number) : (inv.po ? ('INV-' + inv.po) : ('INV-' + String(invId).slice(-6)));   /* o.number: an invoice the CRM numbers itself (maintenance plans) */
   const fmt = function(v){ return '$' + (parseFloat(v) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
   const dt = function(d){ try { return new Date((d || '') + 'T12:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }); } catch (e) { return d || ''; } };
   const _acct = { name: proj.client || '', apContact: '', apEmail: '', apPhone: '', apAddress: proj.address || '', terms: 'Net 30' };
@@ -156,4 +157,16 @@ function build(o){
   /* ═══ end of the verbatim block ═══ */
   return { html: html, number: invNum };
 }
-module.exports = { build, docHeader, VERBATIM_START: '      var html = [', VERBATIM_END: "      ].join('');" };
+/* an invoice made on the server (portal-plus.js maintenance plans: the invoice-pdf.js doc shape) → the same CRM design */
+function fromDoc(doc){
+  doc = doc || {};
+  const lines = Array.isArray(doc.lines) ? doc.lines : [];
+  const paid = (+doc.balance || 0) <= 0 && (+doc.total || 0) > 0;
+  return { number: s(doc.number), inv: { id: s(doc.number), amt: +doc.total || 0, status: paid ? 'paid' : 'open', date: s(doc.date), due: s(doc.due), paidDate: paid ? s(doc.date) : '',
+      drawType: lines.length === 1 ? s(lines[0].desc) : (s(doc.job) || 'Invoice'), desc: lines.length > 1 ? lines.map(function(l){ return s(l.desc) + (l.amt != null ? ' ($' + (+l.amt || 0).toFixed(2) + ')' : ''); }).join(' · ') : '' },
+    proj: { name: s(doc.job), client: s(doc.client), address: s(doc.address), autoPO: s(doc.po) } };
+}
+/* the e-mail attachment: the invoice as one .html file — what the CRM itself attaches (_gcDownloadCustomerInvoice): the customer
+   opens it in any browser, sees it as designed, and its ⬇️ Download PDF saves the PDF */
+function attachment(o){ const v = build(o); return { filename: 'Invoice-' + v.number.replace(/[^A-Za-z0-9_.-]/g, '') + '.html', content: Buffer.from(v.html, 'utf8').toString('base64'), number: v.number }; }
+module.exports = { build, docHeader, fromDoc, attachment, VERBATIM_START: '      var html = [', VERBATIM_END: "      ].join('');" };

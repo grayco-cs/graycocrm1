@@ -1542,6 +1542,15 @@ function invoiceDoc(data, p, r){
     po: clip(p.autoPO || r.po || p.po, 20), lines: lines, total: total, paid: money(Math.max(0, total - bal)), balance: bal, isFinal: invFinal(r),
     pm: clip(pmName, 60), pmPhone: clip(pmUser.phone || pmUser.cell || pmUser.mobile || '', 40) };
 }
+/* patch CUSTPORTAL (owner 11/02: "I want 1 invoice"): the ONE invoice look — the CRM's own (_lib/invoice-view.js) — for the
+   portal's View invoice / Download PDF, the invoice e-mail's attachment and the approval preview. The plain PDF below
+   (invoice-pdf.js) is no longer given to a customer. */
+function invoiceView(data, p, r){
+  const flat = function(o){ const out = {}; Object.keys(o || {}).forEach(function(k){ const v = o[k]; if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') out[k] = v; }); return out; };
+  const both = scrub({ inv: flat(r), proj: flat(p) }, carrierWords(p).concat(claimWords(data, s(p.id), false)));
+  const review = jaAllows(data, p, 'reviewRequest') && (invFinal(r) || invPaid(r)) ? REVIEW_URL : '';
+  return { inv: both.inv, proj: both.proj, reviewUrl: review };
+}
 function invoicePdf(data, p, r){
   const doc = invoiceDoc(data, p, r);
   return { doc: doc, filename: 'GrayCo Invoice ' + doc.number.replace(/[^A-Za-z0-9 _.-]/g, '') + '.pdf', pdf: invPdfLib().build(doc) };
@@ -1561,10 +1570,10 @@ function invoiceMailHtml(doc, pmPhone){
     '<div style="font-size:18px;font-weight:bold">' + esc(doc.job) + '</div></div>' +
     '<div style="background:#fff;border:1px solid #E2DCCD;border-top:none;padding:20px;border-radius:0 0 12px 12px">' +
     '<p style="font-size:15px">Hi ' + esc(firstName(doc.client) || 'there') + ',</p>' +
-    '<p style="font-size:15px;line-height:1.5">Your ' + (doc.isFinal ? 'final ' : '') + 'invoice from GrayCo is attached as a PDF.</p>' +
+    '<p style="font-size:15px;line-height:1.5">Your ' + (doc.isFinal ? 'final ' : '') + 'invoice from GrayCo is attached \u2014 open it in any browser on your phone or computer; its \u2b07\ufe0f Download PDF button saves it as a PDF.</p>' +   /* patch CUSTPORTAL: the attachment is the CRM's own invoice */
     '<p style="font-size:15px;line-height:1.5"><b>Invoice #' + esc(doc.number) + ' \u2014 ' + usd(doc.total) + '</b>' + (doc.balance !== doc.total ? ' (balance due ' + usd(doc.balance) + ')' : '') + (doc.due ? '<br>Due ' + esc(doc.due) : '') + '</p>' +
     '<p style="font-size:15px;line-height:1.5">How to pay: a <b>check</b> made out to GrayCo Construction Services, or <b>cash</b> \u2014 hand it to ' + esc(doc.pm || 'your Project Manager') + '.</p>' +
-    '<p style="text-align:center;margin:22px 0"><a href="' + LINK_PH + '" style="background:#D4A017;color:#0F1D2F;font-weight:bold;text-decoration:none;padding:13px 22px;border-radius:10px;display:inline-block">See your invoices in my GrayCo Portal</a></p>' +
+    '<p style="text-align:center;margin:22px 0"><a href="' + LINK_PH + '" style="background:#D4A017;color:#0F1D2F;font-weight:bold;text-decoration:none;padding:13px 22px;border-radius:10px;display:inline-block">View your invoice in my GrayCo Portal</a></p>' +
     '<p style="font-size:13px;color:#55626F">Questions? Call us at ' + OFFICE_PHONE + (pmPhone ? ' or ' + esc(doc.pm) + ' at ' + esc(pmPhone) : '') + '.</p>' +
     '</div></div>';
 }
@@ -1605,7 +1614,7 @@ async function queueInvoiceMail(invId, who, opts){
   const title = 'Invoice #' + doc.number + ' ' + usd(doc.total) + ' to ' + (doc.client || to);
   const q = await queueApproval({ id: qid, kind: 'invoice', pid: s(p.id), jobName: p.name, pm: pmOf(data, p), to: to, title: title,
     subject: 'Invoice #' + doc.number + ' from GrayCo Construction Services \u2014 ' + usd(doc.balance || doc.total),
-    html: invoiceMailHtml(doc, doc.pmPhone), attachments: [{ name: 'GrayCo Invoice ' + doc.number + '.pdf', kind: 'pdf', invoiceId: s(r.id) }],
+    html: invoiceMailHtml(doc, doc.pmPhone), attachments: [{ name: 'Invoice ' + doc.number + ' (the CRM\u2019s invoice — opens in any browser, Download PDF inside)', kind: 'pdf', invoiceId: s(r.id) }],   /* patch CUSTPORTAL */
     meta: { invoiceId: s(r.id), invoiceNumber: doc.number, amount: doc.total, balance: doc.balance, isFinal: doc.isFinal, by: who && who.email || 'server' } });
   return { status: q ? 200 : 502, out: { ok: !!q, id: qid, queued: !!q, title: title } };
 }
@@ -1792,8 +1801,8 @@ async function aqSend(item, now){
       const data = await crmData(true);
       payload.attachments = pdfs.map(function(a){
         const ij = invoiceAndJob(data, a.invoiceId); if (!ij) throw new Error('invoice ' + a.invoiceId + ' not found');
-        const f = invoicePdf(data, ij.p, ij.r);
-        return { filename: f.filename, content: f.pdf.toString('base64') };
+        const att = require('./_lib/invoice-view.js').attachment(invoiceView(data, ij.p, ij.r));   /* patch CUSTPORTAL: the CRM's invoice, as the CRM attaches it */
+        return { filename: att.filename, content: att.content };
       });
     } catch (e) { return { ok: false, error: 'Could not make the invoice PDF (' + clip(e && e.message || e, 80) + ').' }; }
   }
@@ -2758,8 +2767,8 @@ exports.handler = async function (event) {
       try {
         const data = await crmData(true); const ij = invoiceAndJob(data, s(body.invoiceId));
         if (!ij) return reply(404, headers, { ok: false, error: 'That invoice (or its job) is not in the cloud yet.' });
-        const f = invoicePdf(data, ij.p, ij.r);
-        return reply(200, headers, { ok: true, filename: f.filename, pdf: f.pdf.toString('base64'), number: f.doc.number });
+        const v = require('./_lib/invoice-view.js').build(invoiceView(data, ij.p, ij.r));   /* patch CUSTPORTAL: what the customer gets is the CRM's invoice */
+        return reply(200, headers, { ok: true, filename: 'Invoice-' + v.number.replace(/[^A-Za-z0-9_.-]/g, '') + '.html', html: v.html, number: v.number });
       } catch (e) { return reply(500, headers, { ok: false, error: 'Could not make the PDF: ' + clip(e && e.message || e, 120) }); }
     }
     if (action === 'news') {          /* patch AP2: "News: subscribed / unsubscribed (date)" and an admin's re-subscribe */
@@ -2863,15 +2872,10 @@ exports.handler = async function (event) {
   if (action === 'invoice') {   /* patch AP2: one of this job's invoices as a PDF (never a draft, never another job's) */
     const r = listOf(data, ['invs', 'invoices']).find(function(x){ return s(x.id) === s(body.id) && invOfProject(x, p) && isCustomerInvoice(x); });
     if (!r) return reply(404, headers, { ok: false, error: 'That invoice is not in your portal.' });
-    if (body.view === true) {   /* patch CUSTPORTAL (owner 11/02): "my invoice … the way I made it in the CRM" — the CRM's own animated invoice (_lib/invoice-view.js) */
-      const flat = function(o){ const out = {}; Object.keys(o || {}).forEach(function(k){ const v = o[k]; if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') out[k] = v; }); return out; };
-      const both = scrub({ inv: flat(r), proj: flat(p) }, carrierWords(p).concat(claimWords(data, s(p.id), false)));
-      const review = jaAllows(data, p, 'reviewRequest') && (invFinal(r) || invPaid(r)) ? REVIEW_URL : '';
-      const v = require('./_lib/invoice-view.js').build({ inv: both.inv, proj: both.proj, reviewUrl: review });
-      return reply(200, headers, { ok: true, html: v.html, number: v.number });
-    }
-    const f = invoicePdf(data, p, r);
-    return reply(200, headers, { ok: true, filename: f.filename, pdf: f.pdf.toString('base64') });
+    /* patch CUSTPORTAL (owner 11/02: "I want 1 invoice … the blue animated screen should be my invoice"): the CRM's own invoice
+       (_lib/invoice-view.js) — View invoice and Download PDF (its print) both; the plain PDF is never sent to the page */
+    const v = require('./_lib/invoice-view.js').build(invoiceView(data, p, r));
+    return reply(200, headers, { ok: true, html: v.html, number: v.number });
   }
   const view = await buildView(data, p);
   try { const sa = await subcLib().readAll(exports._core); view.crew = subcLib().crewFor(p, sa.subs, subcLib().recOf(sa.list, p.id)); } catch (e) { view.crew = []; }   /* patch SUBCONTACT: only the approved subs' shared fields */

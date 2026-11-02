@@ -189,7 +189,14 @@ await t('4 documents: estimate, signed contract, change order, warranty, complet
 });
 await t('4 invoices: paid + open; "View invoice" → the CRM\'s own animated invoice; another job\'s / a sub\'s invoice is refused', async () => {
   const inv = VIEW.money.invoices; assert.deepStrictEqual(inv.map(x => x.number + ':' + x.status), ['1001:Paid', '1002:Sent']);
-  const r = await call('portal', { action: 'invoice', id: 'INVS2' }, L()); assert.ok(r.data.ok && isPdf(Buffer.from(r.data.pdf, 'base64')), 'the PDF file (e-mail attachment) still there');
+  const r = await call('portal', { action: 'invoice', id: 'INVS2' }, L()); assert.ok(r.data.ok && r.data.html && !r.data.pdf, 'the page only ever gets the CRM\'s invoice (owner: "I want 1 invoice")');
+  /* the invoice e-mail: the CRM's invoice attached (as the CRM attaches it), the approval preview shows the same */
+  W.RESEND.length = 0;
+  await C.aqSend({ id: 'aq_test_inv', kind: 'invoice_send', jobId: S.pid, to: S.customer.email, subject: 'Invoice', html: '<p>Hi</p><p><a href="' + C.LINK_PH + '">View</a></p>', pm: S.pm.name, pmEmail: S.pm.email, attachments: [{ name: 'Invoice', kind: 'pdf', invoiceId: 'INVS2' }], meta: {} }, new Date().toISOString());
+  const im = W.RESEND.find(x => JSON.stringify(x.to).includes(S.customer.email)); assert.ok(im && im.attachments && im.attachments.length === 1, 'sent with one attachment');
+  const ah = Buffer.from(im.attachments[0].content, 'base64').toString('utf8');
+  assert.ok(/^Invoice-INV-S1001\.html$/.test(im.attachments[0].filename) && /<div class="word">INVOICE<\/div>/.test(ah) && /\$19,300\.00/.test(ah) && /data:image\/png;base64/.test(ah) && !/%PDF/.test(ah), 'the e-mail carries the CRM\'s invoice (self-contained), not the plain PDF: ' + im.attachments[0].filename);
+  const pv = await call('portal', { action: 'invoice-pdf', invoiceId: 'INVS2' }, { authorization: 'Bearer good-pm' }); assert.ok(pv.data.ok && /<div class="word">INVOICE<\/div>/.test(pv.data.html) && !pv.data.pdf, 'the approval preview shows the same');
   assert.strictEqual((await call('portal', { action: 'invoice', id: 'INVO1' }, L())).status, 404);
   assert.strictEqual((await call('portal', { action: 'invoice', id: 'INVSUB' }, L())).status, 404);
   const vw = await call('portal', { action: 'invoice', id: 'INVS2', view: true }, L());
@@ -281,6 +288,14 @@ await t('9 netlify.toml parses (tomllib); on portal.grayco-cs.com every script /
   assert.deepStrictEqual(bad, [], 'swallowed by the catch-all: ' + bad.join(', '));
   const portalRules = rules.map((r, i) => [r, i]).filter(([r]) => /^https:\/\/portal\.grayco-cs\.com\//.test(r.from));
   assert.strictEqual(portalRules[portalRules.length - 1][0].from, 'https://portal.grayco-cs.com/*', 'the catch-all comes last');
+});
+await t('4 estimates: "View PDF" opens exactly the file the CRM holds — the template PDF the CRM sent, or the PDF uploaded to the CRM, byte for byte; never a portal-made PDF', async () => {
+  W.resetCaches(); const v = (await call('portal', { action: 'view' }, L())).data;
+  const e1 = v.estimates.find(x => x.id === 'ESAMPLE1'), e2 = v.estimates.find(x => x.id === 'ESAMPLE2'); assert.ok(e1 && e2, v.estimates.map(x => x.id).join());
+  const docs = W.get('projectDocs'), want1 = W.FILES[docs.find(d => d.id === 'DSAMPLE_EST').ref.slice(13)].bytes, want2 = W.FILES[docs.find(d => d.id === 'DSAMPLE_UP').ref.slice(13)].bytes;
+  assert.ok(fileOfUrl(e1.pdf) && fileOfUrl(e1.pdf).bytes.equals(want1), 'the sent template PDF'); assert.ok(fileOfUrl(e2.pdf) && fileOfUrl(e2.pdf).bytes.equals(want2) && want2.equals(W.uploadedPdf()), 'the uploaded PDF, exactly as uploaded');
+  const sg = (await call('portal-sign', { action: 'view' }, L())).data.items.find(x => x.kind === 'estimate'); assert.ok(sg && fileOfUrl(sg.doc).bytes.equals(want1), 'Papers to sign: "Read the estimate" is the same file');
+  assert.ok(!/estimate.*\.build\(|buildEstimatePdf|estimatePdf\(/i.test(fs.readFileSync(path.join(W.FNDIR, 'portal.js'), 'utf8')), 'the portal makes no estimate PDF of its own');
 });
 await t('4 the portal\'s invoice IS the CRM\'s: _lib/invoice-view.js carries index.html\'s _gcViewInvoicePDF design block verbatim', async () => {
   const crm = fs.readFileSync(path.join(W.ROOT, 'index.html'), 'utf8'), lib = fs.readFileSync(path.join(W.FNDIR, '_lib/invoice-view.js'), 'utf8');

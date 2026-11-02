@@ -443,7 +443,7 @@ async function maintInvoiceSend(item, now){
   if (mailOff()) return { ok: false, error: 'E-mail is switched off (PORTAL_MAIL_OFF).' };
   let subj = s(item.subject); try { subj = subj.indexOf('PO ') >= 0 ? subj : subj + ' — ' + jobTag(p); } catch (e) {}
   const payload = { from: require('./_lib/brand.js').billingFrom(), reply_to: require('./_lib/brand.js').billingEmail(), to: [to], subject: subj,   /* patch BILL */ html: html,
-    attachments: [{ filename: 'GrayCo Invoice ' + number + '.pdf', content: pdf.toString('base64') }], headers: { 'X-GrayCo-CRM': 'maint-invoice' } };
+    attachments: [(function(){ const a = require('./_lib/invoice-view.js').attachment(require('./_lib/invoice-view.js').fromDoc(doc)); return { filename: a.filename, content: a.content }; })()], headers: { 'X-GrayCo-CRM': 'maint-invoice' } };   /* patch CUSTPORTAL: the ONE invoice look (the CRM's) */
   if (Array.isArray(item.cc) && item.cc.length) payload.cc = item.cc.slice(0, 5);
   let r; try { r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); } catch (e) { return { ok: false, error: 'The e-mail service did not answer.' }; }
   if (!r.ok) return { ok: false, error: 'Resend answered ' + r.status };
@@ -500,7 +500,7 @@ async function combinedSend(item, now, A){
   let pdf; try { pdf = require('./_lib/invoice-pdf.js').build(doc); } catch (e) { return { ok: false, error: 'Could not make the invoice PDF.' }; }
   let html = s(item.html); try { html = await require('./_lib/brand.js').shellFor(html, { email: '', name: '' }); } catch (e) {}
   let r; try { r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' }, body: JSON.stringify({ from: require('./_lib/brand.js').billingFrom(), reply_to: require('./_lib/brand.js').billingEmail(), to: [to], subject: s(item.subject), html: html,
-    attachments: [{ filename: 'GrayCo Invoice ' + number + '.pdf', content: pdf.toString('base64') }], headers: { 'X-GrayCo-CRM': 'maint-invoice' } }) }); } catch (e) { return { ok: false, error: 'The e-mail service did not answer.' }; }
+    attachments: [(function(){ const a = require('./_lib/invoice-view.js').attachment(require('./_lib/invoice-view.js').fromDoc(doc)); return { filename: a.filename, content: a.content }; })()], headers: { 'X-GrayCo-CRM': 'maint-invoice' } }) }); }   /* patch CUSTPORTAL */ catch (e) { return { ok: false, error: 'The e-mail service did not answer.' }; }
   if (!r.ok) return { ok: false, error: 'Resend answered ' + r.status };
   for (const x of parts) await contractChange(x.contractId, function(c){ c.invoices = arr(c.invoices).map(function(v){ return s(v.year) === s(x.year) ? Object.assign({}, v, { status: 'sent', sentAt: nowIso(), number: number }) : v; }); });
   try { await core().officeTodo('maint_invc_' + s(item.id), '🧾 Record combined maintenance invoice ' + number + ' (' + usd(amount) + ') — ' + s(item.jobName), parts.length + ' plan(s). Enter it in QuickBooks so the payment can be matched.'); } catch (e) {}

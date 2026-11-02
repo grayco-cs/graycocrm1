@@ -136041,6 +136041,8 @@ function openPreview(id){
   if(pdf){
     post({ action:'invoice-pdf', invoiceId: pdf.invoiceId }).then(function(j){
       var box = q('._ap2PvPdfBox'), msg = q('._ap2PvPdfMsg'); if(!box) return;
+      if(j && j.ok && j.html){ var hu = URL.createObjectURL(new Blob([j.html], { type:'text/html' })); msg.textContent = j.filename || ''; var dl0 = q('._ap2PvDl'); if(dl0){ dl0.href = hu; dl0.download = j.filename || 'Invoice.html'; dl0.style.display = 'inline'; }
+        box.innerHTML = '<iframe class="_ap2PvPdfFrame" title="Invoice" style="width:100%;height:620px;border:1px solid #cbd5e1;border-radius:8px;background:#060b16"></iframe>'; box.firstChild.srcdoc = j.html; ov.__pdfBytes = j.html.length; return; }   /* patch CUSTPORTAL: the ONE invoice look */
       if(!j.ok || !j.pdf){ msg.textContent = '⚠ ' + (j.error || 'Could not make the PDF.'); return; }
       var url = URL.createObjectURL(b64Blob(j.pdf, 'application/pdf'));
       msg.textContent = j.filename || '';
