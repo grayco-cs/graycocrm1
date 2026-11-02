@@ -48,7 +48,8 @@ const MAX_SLOTS = 20;
 /* the owner's first order (10/28). Owner 1 / Owner 2 are looked up in the people list by name — an admin picks anyone else. */
 const GREETING = "Thanks for calling GrayCo Construction Services. If you need construction, remodeling, roofing, or water, fire or storm damage repair, press 1. If you're a current GrayCo customer, press 2. For anything else, including sales calls, press 3.";
 const SCREEN = { on: true, greeting: GREETING, askWhat: true, whisper: true, blocked: [] };
-const NIGHT_GREETING = "Thanks for calling GrayCo Construction Services. Our office is closed. If you have an emergency — water, fire, or storm or tree damage — press 1. For anything else, press 2 and we'll text you and call you back in the morning. For sales, press 3.";
+const NIGHT_GREETING = "Thanks for calling GrayCo Construction Services. Our office is closed. If you have an emergency — water, fire, or storm or tree damage — press 1. For anything else, press 2 and we'll text you and someone will call you shortly. For sales, press 3.";
+const NIGHT_GREETING_OLD = "Thanks for calling GrayCo Construction Services. Our office is closed. If you have an emergency — water, fire, or storm or tree damage — press 1. For anything else, press 2 and we'll text you and call you back in the morning. For sales, press 3.";   /* patch SALESBLOCK: the old default (a time promise) — a saved copy of it follows the new default; custom text is kept */
 const DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 const HOURS = { tz: 'America/Chicago', days: { sun: { open: false, start: '07:00', end: '18:00' }, mon: { open: true, start: '07:00', end: '18:00' }, tue: { open: true, start: '07:00', end: '18:00' },
   wed: { open: true, start: '07:00', end: '18:00' }, thu: { open: true, start: '07:00', end: '18:00' }, fri: { open: true, start: '07:00', end: '18:00' }, sat: { open: false, start: '07:00', end: '18:00' } }, holidays: [] };
@@ -125,7 +126,7 @@ function clean(v){
   const screen = { on: sc.on !== false, greeting: s(sc.greeting).slice(0, 600) || GREETING, askWhat: sc.askWhat !== false, whisper: sc.whisper !== false, blocked };
   const em = v.emerg && typeof v.emerg === 'object' ? v.emerg : {};   /* patch EMERGCALL: escalation calls after N minutes */
   const nt = v.night && typeof v.night === 'object' ? v.night : {};   /* patch AFTERHOURS */
-  const night = { greeting: s(nt.greeting).slice(0, 600) || NIGHT_GREETING, slots: Array.isArray(nt.slots) ? cleanSlots(nt.slots) : cleanSlots(NIGHT.slots) };
+  const night = { greeting: (s(nt.greeting) === NIGHT_GREETING_OLD ? '' : s(nt.greeting).slice(0, 600)) || NIGHT_GREETING, slots: Array.isArray(nt.slots) ? cleanSlots(nt.slots) : cleanSlots(NIGHT.slots) };
   const out = { on: v.on !== false, ringSeconds: clampInt(v.ringSeconds, 8, 60, 15), slots, screen, hours: cleanHours(v.hours), night, emerg: { on: em.on !== false, minutes: clampInt(em.minutes, 5, 120, 15) } };
   if (s(v.by)) out.by = low(v.by).slice(0, 120);
   if (s(v.at)) out.at = s(v.at).slice(0, 40);

@@ -95,13 +95,17 @@ async function queue(body, who, I){
   if (!auto) return { status: 200, out: { ok: true, id: qid, queued: true } };
   /* send it now, recorded on the list like an approval */
   const now = new Date().toISOString(), claim = 'auto' + Date.now().toString(36);
+  /* patch CUSTQUIET: 7 PM–7 AM Central the automatic approval is recorded and the item is SCHEDULED for 7:00 AM (cust-release.js) */
+  const CQ = require('./custquiet.js'), nowMs = Date.parse(now), cqHold = !CQ.off() && CQ.quiet(nowMs);
   const r = await I.kvListUpdate(I.AQ_KEY, function(l){
     const x = l.find(function(y){ return s(y.id) === qid; }); if (!x || x.status !== 'waiting') return null;
-    x.status = 'sending'; x.claim = claim; x.updatedAt = now;
+    if (cqHold) { x.status = 'scheduled'; x.releaseAt = new Date(CQ.nextRelease(nowMs)).toISOString(); x.scheduledAt = now; x.scheduledBy = 'Automatic'; } else x.status = 'sending';
+    x.claim = claim; x.updatedAt = now;
     x.approvals = (x.approvals || []).concat([{ step: x.step, by: 'Automatic (' + auto + ')', email: '', role: 'auto', at: now, auto: true }]);
     return { list: l, check: function(l2){ const z = l2.find(function(y){ return s(y.id) === qid; }); return !!(z && z.claim === claim); }, result: x };
   });
   if (!r || !r.ok || !r.result) return { status: 200, out: { ok: true, id: qid, queued: true } };   /* already handled: leave it */
+  if (cqHold) return { status: 200, out: { ok: true, id: qid, queued: true, sent: false, scheduled: true, releaseAt: r.result.releaseAt, say: CQ.SAY, auto: auto } };   /* patch CUSTQUIET */
   const sent = await I.aqSend(r.result, now);
   await I.kvListUpdate(I.AQ_KEY, function(l){
     const x = l.find(function(y){ return s(y.id) === qid; }); if (!x || x.claim !== claim) return null;

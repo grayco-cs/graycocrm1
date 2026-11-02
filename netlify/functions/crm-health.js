@@ -3,7 +3,10 @@
    the 1st of the month (Central time, once per month).
    GET (admin)                → the report as JSON (nothing is sent)
    POST {act:'send'} (admin)  → send the health e-mail to the admins now
-   GET ?ping=1                → alive.   CRM_HEALTH_OFF=1 stops the e-mail; EQUIP_REMIND_OFF=1 stops the reminder. */
+   GET ?ping=1                → alive.   CRM_HEALTH_OFF=1 stops the e-mail; EQUIP_REMIND_OFF=1 stops the reminder.
+   patch OFFICEFIX: the daily schedule is crm-health-scheduled.js (netlify.toml). A scheduled function cannot be called by
+   its URL in production — Netlify answered the GrayCo Systems ping and the ⚙ Admin health card 403. No "scheduled"
+   door by URL any more: everything here but the ping needs an admin's sign-in. */
 'use strict';
 require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const L = require('./bid-inbox.js')._lib;
@@ -17,7 +20,6 @@ function cors(event){
   return { 'Access-Control-Allow-Origin': allowed.indexOf(origin) > -1 ? origin : allowed[0], Vary: 'Origin', 'Access-Control-Allow-Headers': 'Content-Type, Authorization', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS' };
 }
 function reply(code, headers, o){ return { statusCode: code, headers, body: JSON.stringify(o) }; }
-function isScheduled(event){ try { const b = JSON.parse((event && event.body) || '{}'); return !!(b && b.next_run); } catch (e) { return false; } }
 function off(k){ return String(process.env[k] || '').trim() === '1'; }
 function centralDay(){ return new Date().toLocaleString('en-CA', { timeZone: 'America/Chicago' }).slice(0, 10); }
 async function daily(){
@@ -41,7 +43,6 @@ exports.handler = async function(event){
   const q = event.queryStringParameters || {};
   try {
     if (q.ping === '1') return reply(200, headers, { ok: true, service: 'GrayCo CRM health' });
-    if (isScheduled(event)) { const out = await daily(); try { console.log('[crm-health]', JSON.stringify(out)); } catch (e) {} return reply(200, headers, Object.assign({ ok: true }, out)); }
     const who = await require('./bid-inbox.js')._test.staffAuth(event);
     if (!who.ok) return reply(who.code || 401, headers, { ok: false, error: who.error });
     if (!who.admin && !/^owner$/i.test(String(who.role || ''))) return reply(403, headers, { ok: false, error: 'Only an owner or admin can see the CRM health (signed in as ' + (who.email || '?') + ', role ' + (who.role || '?') + ').' });

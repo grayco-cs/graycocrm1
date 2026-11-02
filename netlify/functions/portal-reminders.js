@@ -62,11 +62,20 @@ exports.handler = async function (event) {
        counts as the final-invoice e-mail, and the 15-day reminders follow it) */
     let invoiceMail = null;
     try { invoiceMail = await portal._core.queueNewInvoices({}); } catch (e) { invoiceMail = { error: String(e && e.message || e) }; }
+    /* patch CUSTQUIET: 7 PM–7 AM Central nothing goes to customers — the reminders, the new-papers notices and the estimate
+       follow-ups stay pending (nothing is claimed) and the first run after 7:00 AM sends them, each once */
+    const CQ = require('./_lib/custquiet.js');
+    if (!CQ.off() && CQ.quiet(Date.now())) {
+      try { await CQ.noteNotices(); } catch (e) {}
+      return { statusCode: 200, headers, body: JSON.stringify({ ok: true, quiet: true, invoiceMail, releaseAt: new Date(CQ.nextRelease(Date.now())).toISOString() }) };
+    }
     const rep = await portal._core.runReminders({});
     rep.invoiceMail = invoiceMail;
     try { rep.notices = await portal._core.notifyAll({}); } catch (e) { rep.notices = { error: String(e && e.message || e) }; }
     /* patch AUTO5: estimate follow-ups — day 2 (approval), day 5 and day 10 (the approved text, by themselves) */
     try { rep.estFollowups = await require('./portal-sign.js')._ps.runFollowups({}); } catch (e) { rep.estFollowups = { error: String(e && e.message || e) }; }
+    /* patch PORTALAPP: app pushes held through the customer quiet hours (7 PM–7 AM Central) go now — one per job */
+    try { rep.appPush = await require('./_lib/capp.js').flushHeld(portal._core); } catch (e) { rep.appPush = { error: String(e && e.message || e) }; }
     try { console.log('[portal-reminders]', JSON.stringify({ sent: rep.sent, reminded: rep.reminded, todos: rep.todos, skipped: rep.skipped, paused: rep.paused })); } catch (e) {}
     return { statusCode: 200, headers, body: JSON.stringify(rep) };
   } catch (e) {

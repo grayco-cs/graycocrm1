@@ -320,14 +320,22 @@ async function alertLead(rec){
 }
 
 /* ── the instant reply to the customer (approvals, owner rule) ─────────────── */
+const FIRST_REPLY = 'Thanks for reaching out to GrayCo Construction Services — we received your message and someone from our team will call you shortly.';
+function firstReply(f){
+  let em = false; try { em = require('./_lib/emergency.js').isEmergency({ title: s(f.message) }); } catch (e) {}
+  if (em) return 'Thanks for reaching out to GrayCo Construction Services — we received your message and our on-call team will call you right away. If water is coming in and it is safe, shut off the main water valve. Emergency line: 901-585-0944 (24/7).';
+  const topic = clip(s(f.service).replace(/[\r\n]+/g, ' '), 80);
+  return topic ? FIRST_REPLY.replace('received your message', 'received your message about ' + topic.toLowerCase()) : FIRST_REPLY;
+}
 function replyFor(f, extra){
   const first = s(f.name).split(/\s+/)[0];
   const hi = first ? 'Hi ' + first + ',' : 'Hello,';
   let body;
   if (f.type === 'careers') body = 'Thank you for applying to GrayCo Construction Services' + (f.position ? ' for the ' + f.position + ' position' : '') + '. We received your application and our team will review it. If it is a fit, we will reach out to set up a call.';
-  else if (f.type === 'problem') body = 'We received your message about a problem at your property. Someone from our office will contact you as soon as possible. If water is coming in right now, please call our office at 901-585-0944.';
-  else if (f.type === 'roofprice') body = 'Thanks for using our instant roof price. ' + (extra && extra.priceText ? 'Your ballpark range is ' + extra.priceText + '. ' : '') + 'A GrayCo estimator will contact you to schedule a free inspection and give you an exact price.';
-  else body = 'Thank you for contacting GrayCo Construction Services about your ' + (TYPES[f.type] ? TYPES[f.type].short.toLowerCase() : 'project') + '. We received your request and a member of our team will contact you shortly.';
+  /* patch SALESBLOCK (owner 11/01: "I don't want to give anyone a time unless it's emergencies, just say will call you shortly"):
+     no time promise; the topic only when they picked one on the form (the service); an emergency (the shared rules) may say "right away" */
+  else if (f.type === 'roofprice') body = 'Thanks for using our instant roof price. ' + (extra && extra.priceText ? 'Your ballpark range is ' + extra.priceText + '. ' : '') + 'A GrayCo estimator will call you shortly to set up a free inspection and give you an exact price.';
+  else body = firstReply(f) + (f.type === 'problem' ? ' If water is coming in right now, please call our office at 901-585-0944.' : '');
   const text = hi + '\n\n' + body + '\n\nGrayCo Construction Services\n' + require('./_lib/brand.js').companyAddress() + '\n901-585-0944 · office@grayco-cs.com';
   const html = '<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;color:#1a1a1a;line-height:1.55;max-width:560px"><p>' + esc(hi) + '</p><p>' + esc(body) + '</p>'
     + '<p style="margin-top:22px;padding-top:12px;border-top:1px solid #e2e8f0;font-size:12px;color:#666">GrayCo Construction Services<br>' + require('./_lib/brand.js').companyAddress() + '<br>901-585-0944 · office@grayco-cs.com</p></div>';
@@ -534,6 +542,8 @@ exports.handler = async function(event){
     if (!ts.ok) return J(event, 400, { ok: false, error: ts.why });
   }
   const spam = looksSpammy(f); if (spam) return J(event, 200, { ok: true, received: true });
+  /* patch SALESBLOCK: a blocked sender is ignored; a sales pitch waits in Leads → 🧹 Sales & spam — no lead, alert, page or reply */
+  try { if (await require('./_lib/salesguard.js').def().screenForm(f, { via: 'website', refile: { f: Object.assign({}, f, { token: '', turnstile: '', resume: null }), extra: {} } })) return J(event, 200, { ok: true, received: true }); } catch (e) {}
 
   /* what is required */
   if (!f.name) return J(event, 400, { ok: false, error: 'Please add your name.', field: 'name' });
@@ -603,7 +613,7 @@ exports.handler = async function(event){
     await refNote(lead);
     if (lead.action === 'added') await Promise.all([alertLead(lead.rec), autoReply(f, lead.id)]);
     return J(event, 200, { ok: true, received: true, kind: 'lead', leadId: lead.id, existingCustomer: !!lead.customer, duplicate: lead.action !== 'added',
-      message: f.type === 'problem' ? 'Thank you — we received your message and will contact you as soon as possible. If water is coming in right now, call 901-585-0944.' : 'Thank you — we received your request and will contact you shortly.' });
+      message: f.type === 'problem' ? 'Thank you — we received your message and someone from our team will call you shortly. If water is coming in right now, call 901-585-0944.' : 'Thank you — we received your message and someone from our team will call you shortly.' });   /* patch SALESBLOCK: no time promise */
   } catch (e) {
     return J(event, 503, { ok: false, error: 'We could not take this right now — please call us at 901-585-0944.', why: s(e && e.message) });
   }
@@ -677,6 +687,8 @@ exports.fromEmail = async function(mail){
   const f = readForm(b);
   if (!f.name && !f.email && !f.phone) return { ok: true, ignored: 'no name, e-mail or phone in it' };
   const spam = looksSpammy(f); if (spam) return { ok: true, ignored: 'spam (' + spam + ')' };
+  /* patch SALESBLOCK: a blocked sender / a sales pitch to leads@ → no lead (it waits in 🧹 Sales & spam) */
+  try { const sg = await require('./_lib/salesguard.js').def().screenForm(f, { via: 'email', from: sender, refile: { f: Object.assign({}, f, { token: '', turnstile: '', resume: null }), extra: { source: MAIL_SOURCE, how: 'from an e-mail to leads@grayco-cs.com' + (s(mail.subject) ? ' ("' + clip(mail.subject, 80) + '")' : '') } } }); if (sg) return { ok: true, ignored: 'salesblock (' + sg + ')' }; } catch (e) {}
   if (f.type === 'careers') {
     const app = await fileApplication(f); const al = await alertApplication(app);
     return { ok: true, application: app.id, alert: al };
@@ -708,7 +720,7 @@ exports.fromReferral = async function(o){
   return { ok: true, id: r.id, action: r.action };
 };
 
-exports._test = { bulk, staffLead, fieldsOf, splitAddress, MAIL_SOURCE, readForm, typeOf, tokenAge, newToken, quote, pricesSet, priceNum, findCustomer, rateLimited, originOk, looksSpammy, replyFor, PRICE_SEED, TYPES, SOURCE, KV_APPS, KV_PRICES,
+exports._test = { firstReply, FIRST_REPLY, bulk, staffLead, fieldsOf, splitAddress, MAIL_SOURCE, readForm, typeOf, tokenAge, newToken, quote, pricesSet, priceNum, findCustomer, rateLimited, originOk, looksSpammy, replyFor, PRICE_SEED, TYPES, SOURCE, KV_APPS, KV_PRICES,
   reset: () => { HITS.clear(); } };
 /* patch LOGOALL (owner 10/23: "should have our logo on it"): every customer / sub / GC e-mail this file sends
    straight to Resend gets the GrayCo shell (centered logo, office line, licenses). Internal @grayco-cs.com mail is untouched. */

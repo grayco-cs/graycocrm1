@@ -7,8 +7,8 @@
      opens when the phone is offline (the page then says it could not load the job);
    • only the page shell and its icons are kept, in one cache that is replaced by each new version of this file. */
 'use strict';
-var CACHE = 'gc-portal-shell-v1';
-var SHELL = ['/portal-logo.png', '/portal-icon-192.png', '/portal-icon-512.png', '/portal.webmanifest'];
+var CACHE = 'gc-portal-shell-v2';
+var SHELL = ['/portal-pwa.js', '/portal-logo.png', '/portal-icon-192.png', '/portal-icon-512.png', '/portal.webmanifest'];
 self.addEventListener('install', function(e){
   self.skipWaiting();
   e.waitUntil(caches.open(CACHE).then(function(c){ return c.addAll(SHELL).catch(function(){}); }));
@@ -42,4 +42,24 @@ self.addEventListener('fetch', function(e){
       });
     }));
   }
+});
+/* patch PORTALAPP: a push from GrayCo (only after the customer turned notifications on): show it, put the number on the
+   app icon, and a tap opens the portal on that section. The push carries a short title and the number — never the
+   item's words. Only addresses on this site are ever opened. */
+function sameSite(u){ try { var x = new URL(u || '/', self.location.origin); return x.origin === self.location.origin ? x.href : self.location.origin + '/'; } catch (e) { return self.location.origin + '/'; } }
+self.addEventListener('push', function(e){
+  var d = {}; try { d = e.data ? e.data.json() : {}; } catch (x) { d = {}; }
+  var n = typeof d.count === 'number' ? d.count : null, nav = self.navigator || {};
+  var jobs = [self.registration.showNotification(String(d.title || 'GrayCo').slice(0, 120), { body: String(d.body || 'Tap to open your GrayCo portal.').slice(0, 200), tag: String(d.tag || 'gc-portal'), renotify: true,
+    icon: '/portal-icon-192.png', badge: '/portal-icon-192.png', data: { url: sameSite(d.url) } })];
+  if (n != null && nav.setAppBadge) jobs.push((n > 0 ? nav.setAppBadge(n) : nav.clearAppBadge()).catch(function(){}));
+  e.waitUntil(Promise.all(jobs));
+});
+self.addEventListener('notificationclick', function(e){
+  e.notification.close();
+  var url = sameSite(e.notification.data && e.notification.data.url);
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(list){
+    for (var i = 0; i < list.length; i++) { var c = list[i]; if (c.url.indexOf(self.location.origin) === 0 && 'focus' in c) { return (c.navigate ? c.navigate(url).catch(function(){ return c; }) : Promise.resolve(c)).then(function(w){ return (w || c).focus(); }); } }
+    return self.clients.openWindow(url);
+  }));
 });

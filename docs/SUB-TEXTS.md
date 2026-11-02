@@ -22,7 +22,7 @@ A row with no time is treated as 8 AM. A sub who already answered Y the evening 
 - for a tentative schedule, a cancelled row, or a job that is not signed and active;
 - while ⏸ Data-entry mode is on;
 - to a number that texted STOP;
-- for the evening text, between 8 PM and 7 AM. The morning check may go before 7 AM.
+- between 7 PM and 7 AM Central (customer quiet hours, patch CUSTQUIET): the evening text waits; a morning check due before 7 AM is queued and goes at 7:00 AM.
 
 ## What happens with their answer
 

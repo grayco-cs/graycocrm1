@@ -105,7 +105,7 @@ const OF = require(path.join(FN, '_lib/office-access.js'));
   r = await code(LS.handler, ev('sbiffle@grayco-cs.com', 'GET', { log: '1' }));
   assert.strictEqual(r.code, 403, 'PM: no lead-source log');
   r = await code(LS.handler, ev('office@grayco-cs.com', 'GET', { log: '1' }));
-  assert.strictEqual(r.code, 200, 'the office reads the lead-source log ' + JSON.stringify(r)); n += 2;
+  assert.strictEqual(r.code, 403, 'patch OFFICEFIX (owner 11/01): lead-source admin is for the admins only — the office does not read the log ' + JSON.stringify(r)); n += 2;
   r = await code(BI.handler, ev('sbiffle@grayco-cs.com', 'GET', { sources: '1' }));
   assert.strictEqual(r.code, 403, 'PM: no bid boards');
   r = await code(BI.handler, ev('office@grayco-cs.com', 'GET', { sources: '1' }));

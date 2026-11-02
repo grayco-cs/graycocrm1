@@ -44,7 +44,10 @@ function clip(v, n){ v = s(v); return v.length > n ? v.slice(0, n) : v; }
 function ymd(v){ const m = /^(\d{4}-\d{2}-\d{2})/.exec(s(v)); return m ? m[1] : ''; }
 function hash(v, n){ return crypto.createHash('sha256').update('mktfeat|' + s(v)).digest('hex').slice(0, n || 12); }
 function okEmail(e){ return /^[^@\s,;<>"]+@[^@\s,;<>"]+\.[a-z]{2,}$/i.test(s(e)); }
-function staffEmail(e){ return okEmail(e) && /@([a-z0-9-]+\.)*grayco-cs\.com$/i.test(s(e)); }
+/* patch OFFICEFIX: staff = @grayco-cs.com or a gc_staff staff e-mail (the Marketing Manager's personal address); the list is
+   loaded (cached) by adminList / reportTo / sendMail before these sync checks */
+function staffEmail(e){ return okEmail(e) && require('./staff-mail.js').isStaffEmail(e); }
+async function loadStaff(){ try { await require('./staff-mail.js').load(); } catch (e) {} }
 function nowIso(){ return new Date(nowFn()).toISOString(); }
 function central(t){
   const parts = new Intl.DateTimeFormat('en-US', { timeZone: TZ, weekday: 'short', hour: 'numeric', hour12: false, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(t == null ? nowFn() : t));
@@ -298,9 +301,9 @@ function rankView(st, admin){
 }
 
 /* ══════════════ (6) THE OWNER'S MONTHLY MARKETING REPORT ══════════════ */
-async function adminList(){ try { return (await require('./agency.js').adminEmails()).filter(staffEmail); } catch (e) { return ['wjohnson@grayco-cs.com']; } }
+async function adminList(){ await loadStaff(); try { return (await require('./agency.js').adminEmails()).filter(staffEmail); } catch (e) { return ['wjohnson@grayco-cs.com']; } }
 function defaultTo(admins){ const first = s((process.env.OWNER_EMAILS || 'wjohnson@grayco-cs.com').split(',')[0]).toLowerCase(); return staffEmail(first) ? [first] : admins.slice(0, 1); }
-async function reportTo(st){ st = st || await stateGet(); const t = arr([]).concat(Array.isArray(st.report.to) ? st.report.to : []).map(low).filter(staffEmail); return st.report.to ? t : defaultTo(await adminList()); }
+async function reportTo(st){ await loadStaff(); st = st || await stateGet(); const t = arr([]).concat(Array.isArray(st.report.to) ? st.report.to : []).map(low).filter(staffEmail); return st.report.to ? t : defaultTo(await adminList()); }
 /* the numbers: the dashboard's own (agency.js summary / monthTable = the 📊 Dashboard's lead sources, marketing spend + the
    ad platforms' charges), the reviews and posts of the month, the best / worst campaign (mm.js scorecard) */
 async function reportData(month){
@@ -346,6 +349,7 @@ function reportHtml(R){
   return h;
 }
 async function sendMail(to, subject, html){
+  await loadStaff();
   to = Array.from(new Set(arr([]).concat(to || []).map(low).filter(staffEmail)));
   if (!to.length) return { ok: false, error: 'No staff address to send it to.' };
   const key = s(process.env.RESEND_API_KEY); if (!key || s(process.env.PORTAL_MAIL_OFF) === '1') return { ok: false, error: 'E-mail is not set up (RESEND_API_KEY).' };

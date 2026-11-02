@@ -13,6 +13,8 @@
 //   isOfficeRow(row, users, email) → true / false (pure; tests)
 //   isOffice(email, { row, users }) → Promise<boolean> (reads gc_staff / gc_kv "users" with the service key when not given)
 //   withOffice(who, opts) → Promise<who> (who.office = true / false added; who.ok false is passed through)
+//   officeOrAdmin(who, opts) → Promise<boolean> — patch OFFICEFIX: withOffice, then staff-role.isOfficeOrAdmin (the ONE
+//                              check every "the office or an admin" door uses)
 'use strict';
 const SB_DEFAULT = 'https://ieeonhpfahmwwecizdut.supabase.co';
 const SR = require('./staff-role.js');   /* patch AUTHFIX: the one admin rule */
@@ -73,6 +75,12 @@ async function withOffice(who, opts){
   try { who.office = await isOffice(who.email, opts); } catch (e) { who.office = false; }
   return who;
 }
+async function officeOrAdmin(who, opts){
+  if (!who || who.ok === false) return false;
+  if (SR.isAdmin(who)) return true;
+  if (who.office !== true && who.office !== false) await withOffice(who, opts);
+  return SR.isOfficeOrAdmin(who);
+}
 function _reset(){ PEOPLE = { at: 0, v: null }; }
 
-module.exports = { isOfficeRow, isOffice, withOffice, staffRow, people, _reset };
+module.exports = { isOfficeRow, isOffice, withOffice, officeOrAdmin, staffRow, people, _reset };

@@ -282,8 +282,8 @@ console.log('AFTERHOURS — closed: 1 emergency rings the after-hours order, 2 t
   ok(SMS.length === 0 && leads().length === 0, 'accepted → no text, no lead');
   NOW = NIGHT; world(chain());
   const p2 = base(), w3 = await walk(p2, { press: '2' });
-  ok(w3.rung.length === 0 && /call you back in the morning/.test(w3.last.body) && /<Hangup\/>/.test(w3.last.body), 'after hours 2 → no ring, "we\'ll call you back in the morning"', w3.last.body);
-  ok(SMS.length === 1 && /our office is closed\. We got your call and will call you back in the morning/.test(SMS[0].Body) && leads().length === 1 && !leads()[0].emergency, '2 → the after-hours text at once + a normal lead for the morning', { sms: SMS.map(x => x.Body), leads: leads().length });
+  ok(w3.rung.length === 0 && /someone from our team will call you shortly/.test(w3.last.body) && /<Hangup\/>/.test(w3.last.body), 'after hours 2 → no ring, "someone will call you shortly" (patch SALESBLOCK: no time promise)', w3.last.body);
+  ok(SMS.length === 1 && /our office is closed\. We got your call and someone from our team will call you shortly/.test(SMS[0].Body) && leads().length === 1 && !leads()[0].emergency, '2 → the after-hours text at once + a normal lead for the morning', { sms: SMS.map(x => x.Body), leads: leads().length });
   NOW = NIGHT; world(chain());
   const w4 = await walk(base(), { press: '3' });
   ok(w4.rung.length === 0 && /sales/.test(w4.last.body) && SMS.length === 0 && leads().length === 0, 'after hours 3 → sales message, nothing else');
@@ -298,7 +298,7 @@ console.log('AFTERHOURS — closed: 1 emergency rings the after-hours order, 2 t
   ok(/Our office is closed/.test((await post(VOICE, base())).body), 'a holiday → closed all day');
   NOW = DAY; world(chain({ screen: { on: false } }));
   NOW = NIGHT; const r8 = await post(VOICE, base());
-  ok(!dials(r8.body).length && /morning/.test(r8.body) && SMS.length === 1, 'screening off, after hours → no ring, the after-hours text + lead');
+  ok(!dials(r8.body).length && /call you shortly/.test(r8.body) && SMS.length === 1, 'screening off, after hours → no ring, the after-hours text + lead');
   NOW = DAY; world(chain());
   await walk(base(), { said: 'a pipe burst and the basement is flooding' });
   ok(leads().length === 1 && leads()[0].emergency === true, 'daytime: what they said sounds like an emergency (pipe burst, flooding) → an EMERGENCY lead too', leads().map(x => x.title));

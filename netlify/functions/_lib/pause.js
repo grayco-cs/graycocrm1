@@ -80,8 +80,11 @@ function addrList(v){
 function staffOnly(mail){
   const all = addrList(mail && mail.to).concat(addrList(mail && mail.cc), addrList(mail && mail.bcc));
   if (!all.length) return false;
-  return all.every(function(a){ const d = a.split('@')[1] || ''; return STAFF_DOMAIN.test(d); });
+  /* patch OFFICEFIX: staff = @grayco-cs.com, or a gc_staff staff e-mail (the Marketing Manager's personal address) — the
+     list is loaded by guardedFetch only when a paused e-mail has an outside address (_lib/staff-mail.js, cached 5 min) */
+  return all.every(function(a){ const d = a.split('@')[1] || ''; return STAFF_DOMAIN.test(d) || staffMail().isStaffEmail(a); });
 }
+function staffMail(){ return require('./staff-mail.js'); }
 function bodyText(opts){ const b = opts && opts.body; return typeof b === 'string' ? b : (b && typeof b.toString === 'function' && !(b instanceof ArrayBuffer) ? s(b) : ''); }
 function bodyJson(opts){ try { return JSON.parse(bodyText(opts)); } catch (e) { return null; } }
 
@@ -96,11 +99,11 @@ function classify(url, opts){
     if (/^\/emails\/batch\/?$/.test(path)) {
       const list = bodyJson(opts);
       if (Array.isArray(list) && list.length && list.every(staffOnly)) return null;
-      return { kind: 'e-mail (batch)', status: 200, fake: { data: (Array.isArray(list) ? list : [0]).map(function(_, i){ return { id: tag + '-' + i }; }) } };
+      return { kind: 'e-mail (batch)', mail: true, status: 200, fake: { data: (Array.isArray(list) ? list : [0]).map(function(_, i){ return { id: tag + '-' + i }; }) } };
     }
     if (/^\/emails\/?$/.test(path)) {
       if (staffOnly(bodyJson(opts))) return null;
-      return { kind: 'e-mail', status: 200, fake: { id: tag } };
+      return { kind: 'e-mail', mail: true, status: 200, fake: { id: tag } };
     }
     return null;   /* domains, receiving, … */
   }
@@ -157,13 +160,21 @@ async function logSend(kind, opts, status, res){
 async function guardedFetch(raw, url, opts){
   const target = url && typeof url === 'object' && url.url ? url.url : url;
   const o = opts || (url && typeof url === 'object' && url.method ? { method: url.method } : undefined);
-  const c = classify(target, o), lk = sendKind(target, o);
+  let c = classify(target, o); const lk = sendKind(target, o);
+  /* patch OFFICEFIX: an e-mail to staff at a personal address (a gc_staff row) still goes while paused — one cached read */
+  if (c && c.mail && await isPaused()) { try { await staffMail().load(); c = classify(target, o); } catch (e) {} }
   if (c && await isPaused()) {
     let host = ''; try { host = new URL(s(target)).hostname; } catch (e) {}
     try { console.log('[pause] skipped ' + c.kind + ' → ' + host + ' (data-entry mode' + (state.why && !/data-entry mode is on/.test(state.why) ? '; ' + state.why : '') + ')'); } catch (e) {}
     const fake = fakeResponse(c);
     if (lk) await logSend(lk, o, 'paused', fake);
     return fake;
+  }
+  /* patch CUSTQUIET: 7 PM–7 AM Central a text (or an e-mail marked as a customer notice) is queued for 7 AM, not sent.
+     After the data-entry check (paused = nothing, not even later). Logged when it really goes (the 7 AM release). */
+  if (lk) {
+    let CQ = null; try { CQ = require('./custquiet.js'); } catch (e) { CQ = null; }
+    if (CQ) { const held = await CQ.guard(target, o); if (held) return held; }
   }
   const res = await raw.call(globalThis, url, opts);
   if (lk) await logSend(lk, o, res && res.ok ? 'sent' : 'failed', res);

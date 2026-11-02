@@ -76,7 +76,7 @@ function purposeFor(data, ph){
 }
 function isOurs(num, set, env){ const d = phone10(num); return numbers(set, env).some(x => x.number === d); }
 
-function topics(body){ const t = s(body); let em = EMERGENCY.test(t); if (!em) { try { em = require('./emergency.js').isEmergency({ title: t }); } catch (e) {} } return { billing: BILLING.test(t), insurance: INSURANCE.test(t), emergency: em }; }   /* patch EMERG: the same words as every other lead source */
+function topics(body){ const t = s(body); let em = EMERGENCY.test(t); if (em) { try { em = require('./salesguard.js').emergencyGate({ title: t }).ok; } catch (e) {} } if (!em) { try { em = require('./emergency.js').isEmergency({ title: t }); } catch (e) {} } return { billing: BILLING.test(t), insurance: INSURANCE.test(t), emergency: em }; }   /* patch EMERG: the same words as every other lead source; patch SALESBLOCK: a pitch / "urgent" at night is no emergency */
 function firstName(n){ const w = s(n).split(/\s+/)[0]; return /^[A-Za-z][A-Za-z'-]*$/.test(w) ? w[0].toUpperCase() + w.slice(1) : ''; }
 /* "— Mike, GrayCo" once at the end (not when the text already ends with a signature) */
 function sign(text, name){
@@ -168,12 +168,12 @@ function tagsFor(people, users){
   });
   return out;
 }
-/* quiet hours for automatic texts: 8 PM – 7 AM Central */
+/* quiet hours for automatic texts: 7 PM – 7 AM Central (patch CUSTQUIET: the one customer clock, _lib/custquiet.js; was 8 PM) */
 function centralHour(ms){
   try { return parseInt(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', hour: 'numeric', hour12: false }).format(new Date(ms)), 10) % 24; }
   catch (e) { return new Date(ms).getUTCHours() - 5; }
 }
-function quiet(ms){ const h = centralHour(ms); return h >= 20 || h < 7; }
+function quiet(ms){ return require('./custquiet.js').quiet(ms); }
 
 /* the list other parts of the CRM read (gc_kv "gc_sms_numbers", window._gcSmsNumbers()): [{ number, purpose }] with
    purpose subs | customers | marketing | billing | insurance | other — the default number counts as customers when no
