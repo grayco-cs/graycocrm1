@@ -124,6 +124,31 @@ async function remind(body, who){
   return ok ? R(200, { ok: true, queued: true, id: qid }) : R(502, { ok: false, error: 'Could not put it on ✅ Approvals — try again.' });
 }
 
+/* ═══════════ (2b) patch ACCTFIX2: the customer STATEMENT (preview for 🖨 / 📄, or ONE e-mail on ✅ Approvals) ═══════════ */
+async function statement(body, who){
+  body = body || {};
+  const c = C(), data = await c.crmData(true), ST = require('./statement.js'), BR = require('./brand.js');
+  const st = ST.build({ invs: c.listOf(data, ['invs', 'invoices']), projects: arr(data.projects), customers: arr(data.customers) }, { customer: s(body.customer), pid: s(body.pid), from: ymd(body.from), to: ymd(body.to), today: today() });
+  if (!st.invoiceCount) return R(404, { ok: false, error: 'No invoices for ' + (s(body.customer) || 'this customer') + ' in the cloud yet.' });
+  let addr = ''; try { addr = BR.companyAddress(); } catch (e) {}
+  const page = ST.html(st, { BRAND: BR.BRAND, logo: BR.logoColorUrl(), address: addr, email: BR.billingEmail() });
+  if (body.send !== true) return R(200, { ok: true, statement: st, html: page });
+  const P = arr(data.projects);
+  const p = st.job ? c.findProject(data, st.job.id) : P.find(function(x){ return x && !x.deleted && low(x.client || x.customer) === low(st.customer.name); }) || null;
+  if (p && p.portalRemindersPaused === true) return R(200, { ok: false, off: 'paused', error: 'Customer e-mails are paused on this job (Customer portal → More). Print the statement instead.' });
+  const to = okEmail(body.to) ? low(body.to) : (okEmail(st.customer.email) ? low(st.customer.email) : (p ? custEmail(data, p) : ''));
+  if (!to) return R(200, { ok: false, noEmail: true, error: 'No customer e-mail on file — add it to the customer, or print the statement.' });
+  const list = await aqList(); if (!list) return R(502, { ok: false, error: 'Could not read ✅ Approvals — try again.' });
+  const key = low(st.customer.name) + '|' + s(st.job && st.job.id) + '|' + st.from + '|' + st.to;
+  const waiting = list.find(function(x){ return x && x.kind === 'customer_statement' && open(x) && s((x.meta || {}).key) === key; });
+  if (waiting) return R(200, { ok: true, already: true, id: s(waiting.id), error: 'This statement is already waiting on ✅ Approvals.' });
+  const qid = 'appr_stmt_' + safeId(low(st.customer.name).replace(/[^a-z0-9]+/g, '-')) + '_' + stamp();
+  const ok = await c.queueApproval({ id: qid, kind: 'customer_statement', pid: s(p && p.id), jobName: s(p && p.name), pm: null, officeOk: true, to: to,
+    title: '🧾 Statement — ' + st.customer.name + ' — balance due ' + usd(st.balanceDue), subject: 'Your GrayCo statement — balance due ' + usd(st.balanceDue),
+    html: page, attachments: [], meta: { key: key, customer: st.customer.name, from: st.from, to: st.to, balanceDue: st.balanceDue, by: s(who && who.email) || 'office', manual: true, from_: 'statement' } });
+  return ok ? R(200, { ok: true, queued: true, id: qid, balanceDue: st.balanceDue }) : R(502, { ok: false, error: 'Could not put it on ✅ Approvals — try again.' });
+}
+
 /* ═══════════ (7) CHANGE ORDERS: sent, not signed ═══════════ */
 function gcCoTitle(co){ return 'Change order #' + s(co.number) + (s(co.title) ? ' — ' + s(co.title) : ''); }
 async function cos(opts){
@@ -357,5 +382,5 @@ async function daily(opts){
   return rep;
 }
 
-module.exports = { K, remind, cos, nudge, queueSubDoc, subDoc, wording, wordingSet, fill, lienCustomer, daily, custEmail, hasW9, coiExpOf, isSub,
+module.exports = { K, remind, statement, cos, nudge, queueSubDoc, subDoc, wording, wordingSet, fill, lienCustomer, daily, custEmail, hasW9, coiExpOf, isSub,
   DEFAULT_WORDING, WORDING_KEYS, WORDING_KEY, STATE_KEY, PLACEHOLDERS, _D };
