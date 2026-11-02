@@ -121,7 +121,7 @@ try {
   ok(!tv, 'the draft dated today is not in what the today / TV readers see');
 
   /* 3. the job: 📋 Suggested schedule (16) — review */
-  await c.ev(id => window._crm.openProject(id), JOB); await sleep(3000);
+  await c.ev(id => window._navToJob(id), JOB); await sleep(3000);
   const bar = await waitFor(c, id => { const b = document.querySelector('.gcsp-bar[data-pid="' + id + '"]'); return b && /Suggested schedule/.test(b.textContent) ? b.textContent : null; }, JOB, 30000, 500);
   ok(bar && /📋 Suggested schedule \(17\) — review/.test(bar) && /🗓 Start from a template/.test(bar), 'the job shows "📋 Suggested schedule (N) — review" and "🗓 Start from a template"', bar);
   /* drop the today probe so the panel shows the real 16 */
@@ -156,7 +156,7 @@ try {
   const sched2 = await screenText('schedule');
   ok(/Pre-construction meeting/.test(sched2) && !/Long-lead procurement|Weekly OAC|Retainage release/.test(sched2), 'Schedule list: the added task shows, the suggestions still do not');
   /* 5. Dismiss all */
-  await c.ev(id => window._crm.openProject(id), JOB); await sleep(2000);
+  await c.ev(id => window._navToJob(id), JOB); await sleep(2000);
   await c.ev(() => { window.confirm = () => true; }); await c.ev(id => window._gcSchedPick.open(id), JOB); await sleep(600);
   await c.ev(() => [...document.querySelectorAll('#gcsp-ov .sp-ft button')].find(b => b.textContent === 'Dismiss all').click());
   const dis = await waitFor(c, id => { const raw = window._crm.schedule.filter(r => r && r.pid === id); return raw.some(r => window._gcSchedDraft(r)) ? null : raw.map(r => r.title); }, JOB, 30000, 500);
@@ -207,7 +207,7 @@ try {
   ok(off && off.template && (off.permits.permits.length + off.permits.inspections.length) > 0, 'the job offers its template (' + (off && off.template && off.template.name) + ') and the permit checklist instead', off && { t: off.template, p: off.permits });
 
   /* 10. one-time "added automatically — keep / remove" on ROTC (2 permit rows, the kickoff contract) */
-  await c.ev(id => window._crm.openProject(id), JOB); await sleep(1500);
+  await c.ev(id => window._navToJob(id), JOB); await sleep(1500);
   const al = await c.ev(id => window._gcTplOffer.autoAdded(id), JOB);
   ok(al.length === 3 && al.filter(x => x.kind === 'Permit').length === 2 && al.some(x => x.key === 'doc:contract'), 'ROTC: 3 things the automations added by themselves are listed for review (2 permits, the contract draft)', al);
   const barA = await waitFor(c, id => { window._gcSchedPick.paint(); const b = document.querySelector('.gcsp-bar[data-pid="' + id + '"]'); return b && /Added automatically \(3\)/.test(b.textContent) ? b.textContent : null; }, JOB, 20000, 700);
