@@ -189,6 +189,9 @@ cset('leads', [
 const POSTS = [];
 const lead = id => { let v = cget('leads'); if (typeof v === 'string') try { v = JSON.parse(v); } catch (e) {} return (Array.isArray(v) ? v : []).find(l => l && l.id === id) || null; };
 const cpu = await computer('LH', { build });
+/* patch AUTOPANEL: the page reads the ⚡ Automations switches; "5 PM lead auto-assign" is switched ON for this check */
+{ const AUTO = require(F('_lib/automations.js')), row = AUTO.before();
+  await cpu.ctx.route(/\/\.netlify\/functions\/automations/, rq => rq.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(rq.request().method() === 'GET' ? { ok: true, settings: AUTO.all(row), row: row, log: [], held: {}, admin: true } : { ok: true }) })); }
 await cpu.ctx.route(/\/\.netlify\/functions\/bid-inbox/, rq => { if (rq.request().method() === 'POST') { POSTS.push({ url: rq.request().url(), body: rq.request().postData() }); return rq.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' }); }
   return rq.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, items: [], settings: {}, notices: [] }) }); });
 try {
