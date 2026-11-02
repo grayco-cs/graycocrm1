@@ -24,7 +24,7 @@ const ADD_SCHED = [
   { id: 'SCH_DS1', pid: 'PRJ0sx249j6n8v', date: ymd(0), time: '09:00', type: 'inspection', title: T + 'ROTC Cordova — Framing inspection', assignee: 'Wesley Johnson', by: 'Wesley Johnson' },
   { id: 'SCH_DS2', pid: 'PRJn03ikrm783z', date: ymd(1), time: '08:00', type: 'work', title: T + 'Ginger ford — Gutter return visit', assignee: 'Steven Biffle', by: 'Wesley Johnson' },
   { id: 'SCH_DS3', pid: 'PRJcc_117464230', date: ymd(2), time: '10:30', type: 'appointment', title: T + 'Easley Transportation — Site visit', assignee: '', by: 'Automations' },
-  { id: 'SCH_DS4', pid: '', date: ymd(1), time: '15:00', type: 'reminder', scope: 'personal', title: T + 'Owner personal item', assignee: 'Wesley Johnson', by: 'Wesley Johnson' },
+  { id: 'SCH_DS4', pid: 'PRJ0sx249j6n8v', date: ymd(1), time: '15:00', type: 'reminder', scope: 'personal', title: T + 'Owner personal item', assignee: 'Wesley Johnson', by: 'Wesley Johnson' },
   { id: 'SCH_DS5', pid: 'PRJ3el70ml164', date: ymd(3), time: '07:30', type: 'sub_work', title: T + 'Loch Meade — Drywall', assignee: 'Nick Thomas', by: 'Nick Thomas' }];
 const OWNER_SEES = ['SCH_DS1', 'SCH_DS2', 'SCH_DS3', 'SCH_DS4', 'SCH_DS5'], PM_SEES = ['SCH_DS2', 'SCH_DS3'];
 const SUPPLIERS = [{ id: 'VDS_SUP1', name: 'DSTEST Lumber Supply', isSub: false, cat: 'Lumber', insExp: ymd(-40) }, { id: 'VDS_SUP2', name: 'DSTEST Materials Co', type: 'Supplier', insExp: ymd(-5) }];
@@ -71,7 +71,8 @@ const layout = c => c.ev(() => {
   const ins = grid && [...grid.children].find(k => /insurance/i.test((k.querySelector('b') || {}).textContent || ''));
   const kids = host ? [...host.children] : [];
   const old = kids.filter(e => { const b = e.querySelector('b'); const t = b ? b.textContent : ''; return /^📅 /.test(t) && (/ Week — /.test(t) || /^📅 (Company|My) Schedule$/.test(t)); });
-  const insRows = ins ? [...ins.children].filter(e => e.tagName === 'DIV' && e.querySelector('b')).map(e => { const r = e.getBoundingClientRect(); return { name: e.querySelector('b').textContent, txt: e.textContent, shown: r.height > 0, top: Math.round(r.top), exp: e.hasAttribute('data-gc-ds-exp'), color: getComputedStyle(e).color, mail: !!e.querySelector('button,a,[title]') }; }) : [];
+  const own = b => [...b.childNodes].filter(n => n.nodeType === 3).map(n => n.nodeValue).join('').trim();
+  const insRows = ins ? [...ins.children].filter(e => e.tagName === 'DIV' && e.querySelector('b')).map(e => { const r = e.getBoundingClientRect(); return { name: own(e.querySelector('b')), txt: e.textContent, shown: r.height > 0, top: Math.round(r.top), exp: e.hasAttribute('data-gc-ds-exp'), color: getComputedStyle(e).color, mail: !!e.querySelector('button,a,[title]') }; }) : [];
   return { h1: h1 && h1.textContent, card: box(card), cardNextIsGrid: !!(card && grid && card.nextElementSibling === grid), cardNextIsJobs: !!(card && jobs && card.nextElementSibling === jobs),
     jobs: box(jobs), grid: box(grid), ins: box(ins), insTitle: ins ? ins.querySelector('b').textContent : null, insRows, oldShown: old.filter(e => box(e).shown).length, oldN: old.length,
     cardText: card ? card.innerText : '', rowsPid: card ? [...card.querySelectorAll('[data-gc-ds-pid]')].map(b => b.getAttribute('data-gc-ds-pid')) : [] };
@@ -83,6 +84,11 @@ const desk = await c.ev(() => ({ on: !!(window._gcRA && window._gcRA.state().des
 if (desk.on) { ok(desk.n === 1 && /DSTEST ROTC Cordova/.test(desk.txt), 'admin Desk home: one 📅 Schedule card with the week\'s items', JSON.stringify(desk).slice(0, 300)); }
 else console.log('note: the owner opened on the classic dashboard (no Desk home on this build/profile)');
 await toDashboard(c);
+/* two suppliers with expired insurance into the CRM's own sub / vendor list (the mirror's list comes from its chunks), then
+   the dashboard is drawn again from it */
+const inj = await c.ev(sup => { const a = window._crm.subs; if (!Array.isArray(a)) return -1; sup.forEach(x => { if (!a.some(y => y && y.id === x.id)) a.push(x); }); return a.length; }, SUPPLIERS);
+await c.ev(() => window._setView('projects')); await sleep(1500); await c.ev(() => window._setView('dashboard'));
+await waitFor(c, () => !!document.getElementById('gc-dsched') && document.getElementById('gc-dsched').isConnected, null, 30000, 250); await sleep(1200);
 let L = await layout(c);
 console.log('owner layout', JSON.stringify({ h1: L.h1, card: L.card, jobs: L.jobs, grid: L.grid, ins: L.ins, oldN: L.oldN, oldShown: L.oldShown }));
 ok(L.card && L.card.shown && (L.cardNextIsGrid || L.cardNextIsJobs), 'the 📅 Schedule card sits where the alerts grid was (just before it in the page)');
@@ -96,12 +102,13 @@ const shownIns = L.insRows.filter(r => r.shown);
 console.log('insurance rows', JSON.stringify(shownIns.map(r => r.txt)));
 const today = ymd(0);
 ok(shownIns.length >= 1, 'the insurance card lists subs', String(shownIns.length));
+ok(L.insRows.filter(r => /DSTEST/.test(r.name)).length === 2, 'fixture: the two suppliers reach the React insurance list', 'subs ' + inj + ', ' + JSON.stringify(L.insRows.map(r => r.name)));
 ok(!L.insRows.some(r => r.shown && /DSTEST/.test(r.name)), 'no supplier in the insurance card (isSub:false / type Supplier)', JSON.stringify(L.insRows.filter(r => /DSTEST/.test(r.name)).map(r => [r.name, r.shown])));
 const expRows = shownIns.filter(r => r.exp);
 ok(expRows.length >= 1 && expRows.every(r => /expired/i.test(r.txt) && /rgb\(185, 28, 28\)/.test(r.color)), 'expired rows are red and say "expired"', expRows.length + ' expired');
 ok(shownIns.filter(r => !r.exp).every(r => !/expired/i.test(r.txt)), 'rows not yet expired do not say "expired"');
 const tops = shownIns.map(r => r.top), sorted = tops.every((t, i) => !i || t > tops[i - 1]);
-const order = await c.ev(() => { const ins = document.querySelector('[data-gc-ds-ins]'); if (!ins) return null; return [...ins.children].filter(e => e.tagName === 'DIV' && getComputedStyle(e).display !== 'none').sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top).map(e => { const n = e.querySelector('b').textContent; const r = (window._crm.subs || []).find(x => x && x.name === n); return r ? String(r.insExp).slice(0, 10) : '?'; }); });
+const order = await c.ev(() => { const ins = document.querySelector('[data-gc-ds-ins]'); if (!ins) return null; return [...ins.children].filter(e => e.tagName === 'DIV' && getComputedStyle(e).display !== 'none').sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top).map(e => { const n = [...e.querySelector('b').childNodes].filter(x => x.nodeType === 3).map(x => x.nodeValue).join('').trim(); const r = (window._crm.subs || []).find(x => x && x.name === n); return r ? String(r.insExp).slice(0, 10) : '?'; }); });
 ok(order && order.every((d, i) => !i || d >= order[i - 1]), 'soonest / most overdue first', JSON.stringify(order));
 /* an item opens its job */
 const opened = await c.ev(async () => {
@@ -115,11 +122,11 @@ await c.ev(() => window._setView('projects')); await sleep(2500);
 const away = await c.ev(() => window._gcDashSched.state());
 ok(!away.rootObs, 'off the dashboard: no #root-wide observer (only the parent childList one)', JSON.stringify(away));
 await c.ev(() => { window.__FR = []; window.__LT.length = 0; const t0 = performance.now(); const tick = () => { const j = document.querySelector('[data-gc-jobs]'), card = document.getElementById('gc-dsched'), g = document.querySelector('[data-gc-ds-grid]');
-  if (j) window.__FR.push({ card: !!(card && card.isConnected), above: !!(card && card.getBoundingClientRect().bottom <= j.getBoundingClientRect().top + 1), gridBelow: !g || g.getBoundingClientRect().top >= j.getBoundingClientRect().bottom - 1 });
+  if (j) window.__FR.push({ t: Math.round(performance.now() - t0), h1: (document.querySelector('#root h1') || {}).textContent, ds: window._gcDashSched.state().runs, card: !!(card && card.isConnected), above: !!(card && card.getBoundingClientRect().bottom <= j.getBoundingClientRect().top + 1), gridBelow: !g || g.getBoundingClientRect().top >= j.getBoundingClientRect().bottom - 1 });
   if (performance.now() - t0 < 4000) requestAnimationFrame(tick); }; requestAnimationFrame(tick); window._setView('dashboard'); });
 await sleep(4500);
-const fr = await c.ev(() => ({ n: window.__FR.length, bad: window.__FR.filter(f => !f.card || !f.above || !f.gridBelow).length, lt: window.__LT.map(x => Math.round(x.ms)), st: window._gcDashSched.state() }));
-ok(fr.n > 0 && fr.bad === 0, 'coming back to the dashboard: every painted frame already has the new layout (no flicker)', JSON.stringify({ frames: fr.n, bad: fr.bad }));
+const fr = await c.ev(() => ({ n: window.__FR.length, bad: window.__FR.filter(f => !f.card || !f.above || !f.gridBelow).length, badAt: window.__FR.map((f, i) => [i, f]).filter(([i, f]) => !f.card || !f.above || !f.gridBelow).slice(0, 4), lt: window.__LT.map(x => Math.round(x.ms)), st: window._gcDashSched.state() }));
+ok(fr.n > 0 && fr.bad === 0, 'coming back to the dashboard: every painted frame already has the new layout (no flicker)', JSON.stringify({ frames: fr.n, bad: fr.bad, badAt: fr.badAt }));
 ok(fr.st.maxMs < MAXTASK, 'the observer\'s longest run < ' + MAXTASK + ' ms', 'max ' + fr.st.maxMs + ' ms, avg ' + fr.st.avgMs + ' ms over ' + fr.st.runs + ' runs');
 /* idle: nothing written by the patch, no loop */
 const idle = await c.ev(() => new Promise(done => { const r0 = window._gcDashSched.state().runs; let n = 0; const h = document.querySelector('[data-gc-ds-host]');
@@ -133,7 +140,7 @@ ok(forced.max < MAXTASK && !forced.lt.length, 'a full redraw by the observer sta
 await sleep(500);
 L = await layout(c);
 ok(L.card && L.card.shown && L.ins && L.ins.top >= L.jobs.bottom - 1, 'after the redraws the layout is the same');
-if (SHOT) { await c.ev(() => window.scrollTo(0, 0)); await sleep(300); await c.page().screenshot({ path: SHOT }); console.log('screenshot ' + SHOT); }
+if (SHOT) { await c.ev(() => { [...document.querySelectorAll('button')].filter(b => /^Skip — just a meeting$/.test(b.textContent.trim()) && b.offsetParent).forEach(b => b.click()); window.scrollTo(0, 0); }); await sleep(300); await c.page().screenshot({ path: SHOT }); console.log('screenshot ' + SHOT); }
 /* kill switch */
 const ks = await c.ev(async () => { localStorage.setItem('gc_dashsched_off', '1'); window._gcDashSched.apply(); const a = { card: !!document.getElementById('gc-dsched'), host: !!document.querySelector('[data-gc-ds-host]') }; localStorage.removeItem('gc_dashsched_off'); window._gcDashSched.apply(); return a; });
 ok(!ks.card && !ks.host, 'kill switch gc_dashsched_off=1 puts the dashboard back as React drew it', JSON.stringify(ks));

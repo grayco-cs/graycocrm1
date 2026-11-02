@@ -198014,6 +198014,8 @@ function deskHtml(){
 
 /* ── the insurance rows ── */
 function isSupplier(r){ return !!r && (r.isSub === false || /supplier|vendor|material/i.test(s(r.type || r.kind || r.vendorType))); }
+/* the name in the row's <b>: its own text only (patch AP3 puts a ✉ icon inside it) */
+function ownText(b){ var t = ''; Array.prototype.forEach.call(b.childNodes, function(n){ if (n.nodeType === 3) t += n.nodeValue; }); return s(t) || s(b.textContent); }
 function recsByName(n){ n = low(n); return arr(C().subs).filter(function(r){ return r && low(r.name) === n; }); }
 function decorateIns(card){
   var t = addDays(0), rows = [];
@@ -198021,7 +198023,7 @@ function decorateIns(card){
     if (el.tagName === 'B') { if (el.textContent !== 'Sub insurance — expired / expiring') el.textContent = 'Sub insurance — expired / expiring'; if (el.style.order !== '-1') el.style.order = '-1'; return; }
     if (el.tagName !== 'DIV') return;
     var nb = el.querySelector('b'); if (!nb) return;
-    var R = recsByName(nb.textContent), withExp = R.filter(function(r){ return s(r.insExp); });
+    var R = recsByName(ownText(nb)), withExp = R.filter(function(r){ return s(r.insExp); });
     var rec = withExp.filter(function(r){ return !isSupplier(r); })[0] || withExp[0] || R[0] || null;
     var sup = !!rec && R.length > 0 && R.every(isSupplier);
     var exp = rec ? s(rec.insExp).slice(0, 10) : '', n = exp ? dayDiff(t, exp) : null;
