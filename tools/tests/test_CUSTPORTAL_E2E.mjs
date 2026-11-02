@@ -354,15 +354,17 @@ if (!process.argv.includes('--no-browser')) {
       const hrefs = await pg.$$eval('.doc a.btn', l => l.map(a => a.href)); assert.ok(hrefs.length >= 7, hrefs.length + ' papers');
       for (const u of hrefs) { const f = fileOfUrl(u); assert.ok(f && isPdf(f.bytes), u.slice(0, 80)); }
       await shot(pg, kind + '_07_documents');
-      const pop = ctx.waitForEvent('page', { timeout: 10000 });
-      await pg.click('.doc a.btn >> nth=3'); const dp = await pop; await dp.waitForLoadState('domcontentloaded').catch(() => {}); assert.ok(/\/crm-files\/[0-9a-f]{64}\.pdf/.test(dp.url()), dp.url()); await dp.close();
+      const want = await pg.$eval('.doc a.btn >> nth=3', a => a.href);
+      const rq = ctx.waitForEvent('request', { predicate: r => r.url() === want, timeout: 10000 });
+      await pg.click('.doc a.btn >> nth=3'); await rq; assert.ok(/\/crm-files\/[0-9a-f]{64}\.pdf/.test(want), want);
+      for (const extra of ctx.pages()) if (extra !== pg) await extra.close().catch(() => {});
       await pg.click('#tabs button[data-tab="pay"]'); await sleep(700);
       const pt = await pg.textContent('main'); assert.ok(/How to pay/.test(pt) && /check/.test(pt) && /1002/.test(pt) && /Paid/.test(pt), 'payments');
       await shot(pg, kind + '_08_payments');
-      const pop2 = ctx.waitForEvent('page', { timeout: 15000 });
-      await pg.click('[data-inv-open="INVS2"]'); const ip = await pop2;
-      await ip.waitForURL(/crm-files\/[0-9a-f]{64}\.pdf/, { timeout: 15000 }); const f = fileOfUrl(ip.url()); assert.ok(f && isPdf(f.bytes) && /1002/.test(execFileSync('pdftotext', ['-', '-'], { input: f.bytes }).toString()), 'the invoice PDF opened: ' + ip.url().slice(0, 90));
-      await ip.close(); await ctx.close();
+      const rq2 = ctx.waitForEvent('request', { predicate: r => /\/crm-files\/[0-9a-f]{64}\.pdf/.test(r.url()) && r.frame().page() !== pg, timeout: 15000 });
+      await pg.click('[data-inv-open="INVS2"]'); const ir = await rq2;
+      const f = fileOfUrl(ir.url()); assert.ok(f && isPdf(f.bytes) && /1002/.test(execFileSync('pdftotext', ['-', '-'], { input: f.bytes }).toString()), 'the invoice PDF opened in a new tab: ' + ir.url().slice(0, 90));
+      await ctx.close();
     });
     await t(kind + ': 5 sign the change order (consent, name, drawn signature) → ✓ Signed + "Open my signed copy"; 6 request a change → thanks; 2 send a message', async () => {
       const ctx = await W.context(browser, kind), pg = await ctx.newPage(); watch(pg, kind);
@@ -384,13 +386,13 @@ if (!process.argv.includes('--no-browser')) {
       await pg.click('#tabs button[data-tab="msgs"]'); await pg.waitForSelector('#cMsgText'); await pg.fill('#cMsgText', 'Thanks Dana! (' + kind + ')'); await pg.click('#cMsgSend');
       await pg.waitForFunction(k => /Thanks Dana! \(/.test(document.getElementById('cMsgList').textContent) && document.getElementById('cMsgList').textContent.includes(k), kind, { timeout: 10000 });
       await shot(pg, kind + '_12_messages');
-      const all = await pg.content(); assert.deepStrictEqual(LEAKS().filter(w => all.toLowerCase().includes(w.toLowerCase()) && !/crew note/.test(w)), [], '8 nothing internal anywhere in the page');
+      const all = await pg.evaluate(() => document.body.innerText); assert.deepStrictEqual(LEAKS().filter(w => all.toLowerCase().includes(w.toLowerCase())), [], '8 nothing internal anywhere on the page');
       await ctx.close();
     });
     await t(kind + ': 9 the portal host serves every asset the pages load (gc-address.js, legal pages, their logo, report.html, manifest, icons, sw)', async () => {
       const ctx = await W.context(browser, kind), pg = await ctx.newPage(); watch(pg, kind);
       await pg.goto(srv.ORIGIN + '/#t=' + S.link); await pg.waitForSelector('#track', { timeout: 20000 });
-      const res = await pg.evaluate(async () => { const out = {}; for (const u of ['/gc-address.js', '/legal2.js', '/portal-req.js', '/portal-pwa.js', '/portal-needs.js', '/portal-claimhelp.js', '/portal-plus.js', '/portal-home.js', '/portal-app.js', '/portal.webmanifest', '/portal-sw.js', '/portal-icon-180.png', '/portal-icon-192.png', '/portal-icon-512.png', '/portal-logo.png', '/report.html', '/esign-consent.html', '/cancel-notice.html', '/portal-terms.html', '/privacy.html', '/terms.html', '/sms-consent.html', '/mkt-pages.css', '/img/grayco-logo-white.png']) { const r = await fetch(u); const tx = await r.clone().text(); out[u] = r.status + ' ' + (r.headers.get('content-type') || '') + (/GrayCo Portal<\/title>|id="signinBox"|var FN = '\/\.netlify\/functions\/portal'/.test(tx) && u !== '/report.html' ? ' PORTAL-PAGE' : ''); } return out; });
+      const res = await pg.evaluate(async () => { const out = {}; for (const u of ['/gc-address.js', '/legal2.js', '/portal-req.js', '/portal-pwa.js', '/portal-needs.js', '/portal-claimhelp.js', '/portal-plus.js', '/portal-home.js', '/portal-app.js', '/portal.webmanifest', '/portal-sw.js', '/portal-icon-180.png', '/portal-icon-192.png', '/portal-icon-512.png', '/portal-logo.png', '/report.html', '/esign-consent.html', '/cancel-notice.html', '/portal-terms.html', '/privacy.html', '/terms.html', '/sms-consent.html', '/mkt-pages.css', '/img/grayco-logo-white.png']) { const r = await fetch(u); const tx = await r.clone().text(); out[u] = r.status + ' ' + (r.headers.get('content-type') || '') + (/var FN = '\/\.netlify\/functions\/portal'/.test(tx) ? ' PORTAL-PAGE' : ''); } return out; });
       const wrong = Object.entries(res).filter(([u, v]) => !/^200 /.test(v) || / PORTAL-PAGE$/.test(v) || (/\.js$/.test(u) && !/javascript/.test(v)) || (/\.png$/.test(u) && !/image\/png/.test(v)) || (/\.css$/.test(u) && !/text\/css/.test(v)));
       assert.deepStrictEqual(wrong, [], JSON.stringify(wrong));
       const ep = await ctx.newPage(); watch(ep, kind); await ep.goto(srv.ORIGIN + '/esign-consent.html'); await ep.waitForLoadState('load');
