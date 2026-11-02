@@ -721,7 +721,7 @@ function docs0(skip){
     h('div', { class: 'muted', text: 'Proposals made in Google Docs or in our system show up here by themselves.' })]);
   var wr = V.warranty, wcard = wr ? card('Your warranty', [h('div', { style: 'font-size:15px;font-weight:700', text: wr.title }),
     h('div', { class: 'muted', text: wr.start ? 'From ' + dt(wr.start) + ' to ' + dt(wr.end) + '.' : 'Starts the day your job is complete.' })]) : null;
-  if (!list.length) { box.appendChild(h('div', { class: 'empty', text: 'Nothing here yet — your proposal and papers will appear here.' })); return [box, wcard]; }
+  if (!list.length) { var folded = !!(skip && skip.id && Object.keys(skip.id).length); box.appendChild(h('div', { class: 'empty', text: folded ? (LANG === 'es' ? 'Su estimado está arriba. Otros documentos (contratos, órdenes de cambio, garantías) aparecerán aquí.' : 'Your estimate is above. Other papers — contracts, change orders, warranties — will appear here.') : 'Nothing here yet — your proposal and papers will appear here.' })); return [box, wcard]; }   /* patch ESTPDF2 */
   var firstPreview = true;
   list.forEach(function(d){
     var note = [d.kind === 'proposal' ? (d.status === 'Signed' ? 'Signed proposal' : 'Proposal') : (d.kind === 'gdoc' ? 'Google Doc' : (d.type === 'pdf' ? 'PDF' : (d.type === 'word' ? 'Word file' : 'File'))), dt(d.date), d.total ? usd(d.total) : ''].filter(Boolean).join(' · ');
