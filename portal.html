@@ -809,22 +809,22 @@ function invRow(x){
        verbatim copy of index.html _gcViewInvoicePDF) — in a new tab, on a phone too; its "⬇️ Download PDF" prints it, as in the
        CRM. The tab is opened at the tap (no pop-up blocker), then filled; blocked → the same page over this one. "Download"
        below is the PDF file. */
-    var view = h('button', { type: 'button', class: 'btn gold', 'data-inv-open': x.id, text: '📄 ' + (LANG === 'es' ? 'Abrir factura' : 'Open invoice'), on: { click: function(){
+    var openInv = function(printIt){
       msg.textContent = 'Opening…';
       var w = null; try { w = window.open('', '_blank'); } catch (e) { w = null; }
       try { if (w) { w.document.title = 'GrayCo invoice'; w.document.body.style.cssText = 'font:16px Arial;padding:24px;background:#060b16;color:#e8eefb'; w.document.body.textContent = 'Opening your invoice…'; } } catch (e) {}
       post(FN, { action: 'invoice', id: x.id, view: true, projectId: PID || undefined }, cred()).then(function(r){
         var j = r.data || {}; if (!j.ok || !j.html) throw new Error(j.error || 'not available');
         msg.textContent = '';
-        if (w && !w.closed) { w.document.open(); w.document.write(j.html); w.document.close(); return; }
+        /* "⬇️ Download PDF" is the CRM's own: its print → "Save as PDF" (the white paper version of the same design) */
+        var html = j.html + (printIt ? '<script>window.addEventListener("load",function(){setTimeout(function(){try{window.print()}catch(e){}},1600)});<\/script>' : '');
+        if (w && !w.closed) { w.document.open(); w.document.write(html); w.document.close(); return; }
         var ov = h('div', { class: 'lb', role: 'dialog', 'aria-label': 'Invoice' }, [h('div', { class: 'top' }, [h('span', { text: 'Invoice ' + (j.number || '') }), h('button', { type: 'button', 'aria-label': 'Close', text: '✕', on: { click: function(){ ov.remove(); } } })])]);
-        var fr = h('iframe', { title: 'Invoice', style: 'flex:1 1 auto;width:100%;border:0;background:#060b16' }); fr.srcdoc = j.html; ov.appendChild(fr); document.body.appendChild(ov);
+        var fr = h('iframe', { title: 'Invoice', style: 'flex:1 1 auto;width:100%;border:0;background:#060b16' }); fr.srcdoc = html; ov.appendChild(fr); document.body.appendChild(ov);
       }).catch(function(){ try { if (w) w.close(); } catch (e) {} msg.textContent = 'Could not open it — call GrayCo ' + OFFICE + '.'; });
-    } } });
-    var dl = h('button', { type: 'button', class: 'btn', text: 'Download', on: { click: function(){
-      msg.textContent = 'Getting it…';
-      load().then(function(f){ msg.textContent = ''; var a = document.createElement('a'); a.href = f.url; a.download = f.name; document.body.appendChild(a); a.click(); a.remove(); }, function(){ msg.textContent = 'Could not get it — call GrayCo ' + OFFICE + '.'; });
-    } } });
+    };
+    var view = h('button', { type: 'button', class: 'btn gold', 'data-inv-open': x.id, text: '📄 ' + (LANG === 'es' ? 'Ver factura' : 'View invoice'), on: { click: function(){ openInv(false); } } });
+    var dl = h('button', { type: 'button', class: 'btn', 'data-inv-pdf': x.id, text: '⬇️ ' + (LANG === 'es' ? 'Descargar PDF' : 'Download PDF'), on: { click: function(){ openInv(true); } } });   /* patch CUSTPORTAL (owner 11/02): the CRM's PDF of the same invoice — no separate portal look */
     act.appendChild(view); act.appendChild(dl); act.appendChild(msg);
     box.appendChild(act);
   }

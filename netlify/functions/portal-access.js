@@ -1335,7 +1335,7 @@ async function staffAction(action, body, who){
       /* the welcome note (the PM's click is the approval): by text when Twilio is set up, else from the PM's own phone */
       const link = portalBase() + '/#t=' + linkRow.token;
       const firstName = s(p.client).split(/\s+/)[0];
-      const msg = 'Hi ' + (firstName || 'there') + ', this is GrayCo. Your project page: ' + link + ' — or sign in at ' + portalBase().replace(/^https:\/\//, '') + ' · ' + (phone && !email ? 'Phone: ' + phone : 'E-mail: ' + email) + ' · Password: your first name';
+      const msg = 'Hi ' + (firstName || 'there') + ', this is GrayCo. Your project page: ' + link + ' — or sign in at ' + portalBase().replace(/^https:\/\//, '') + ' · ' + (phone && !email ? 'Phone: ' + phone : 'E-mail: ' + email) + (ch ? ' · Password: the one you chose' : ' · Your password is your first name: ' + (firstName.replace(/[^A-Za-z0-9'-]/g, '') || first || 'your first name') + ' (you can change it after you sign in).');   /* patch CUSTPORTAL (owner 11/02) */
       out.message = msg;
       let smsNo = false; try { const SC = require('./_lib/smsconsent.js'); smsNo = SC.statusFor({ projects: [p] }, phone, await SC.registry()) === 'no' || (await SC.live(phone)) === 'no'; } catch (e) {}   /* patch SMSCONSENT: declined → the PM sends it from their own phone */
       if (phone && textReady() && !smsNo && body.via !== 'pm-phone') { const tx = await sendText(phone, msg); out.sent = tx.ok ? 'text' : ''; if (tx.held) { out.held = true; out.scheduled = true; out.releaseAt = tx.held.releaseAt; out.say = require('./_lib/custquiet.js').SAY; } }   /* patch CUSTQUIET: 7 PM–7 AM it waits for 7 AM */

@@ -8,6 +8,8 @@ Every job has its own customer page. The customer opens it from a link. No passw
 2. Paste all of `docs/portal-setup.sql`. Click **Run**.
 3. The grid at the bottom must say **OK** on every line.
 
+Sign-in: e-mail (or mobile number) + password. The starter password is the customer's first name; every invite e-mail and text says so: "Your password is your first name: <First> (you can change it after you sign in)". Emergency line on every customer page and text: (901) 582-8255 (the office (901) 585-0944 is for questions and scheduling).
+
 That's it. These are already set on Netlify and are used as they are:
 `SUPABASE_SERVICE_KEY`, `COMPANYCAM_TOKEN`, `RESEND_API_KEY`.
 
@@ -52,7 +54,7 @@ Open the job. The **Customer portal** card is at the top.
 - **＋ Add photos**: the customer can add photos from the phone's camera or library (several at once, made smaller on the phone first). They go into the job's 📷 GrayCo Photos marked **From customer** — "Added by <name> (customer)" and the date — and show in the portal at once. Subs don't see them until you turn them on. One Office To-Do per job per day; nothing is e-mailed or texted.
 - **Documents**, by themselves: proposals (made in the CRM or in Google Docs), the contract, approved change orders, invoices, the final invoice, warranty, welcome & FAQ packet, completion certificate, final inspection sign-off, lien waivers — as soon as they are on the job. Change orders, lien waivers, completion certificates, warranties and work authorizations made with **Create Document** are saved to the job and shown by themselves.
 - **Warranty**: all roofs 5 years (residential, commercial and insurance roofs). Insurance / restoration 5 years. Everything else 1 year. It starts the day the job is complete.
-- **Invoices & payments**: contract, approved change orders, each invoice paid or open (**📄 Open invoice** opens that invoice's PDF in a new tab, on a phone too), every payment. "Pay by check or cash to your Project Manager. Every payment shows on your final invoice." No card payments.
+- **Invoices & payments**: contract, approved change orders, each invoice paid or open (**📄 View invoice** shows it exactly as the CRM makes it — the CRM's own invoice design; **⬇️ Download PDF** saves that invoice as a PDF), every payment. "Pay by check or cash to your Project Manager. Every payment shows on your final invoice." No card payments.
 - **Their info** on file (name, address, phone, e-mail). To change it they call us.
 - At the end (final invoice / closed): **Leave a Google review** and **Facebook** buttons.
 

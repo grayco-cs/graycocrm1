@@ -79,6 +79,31 @@ await t('1 forgot password: "Send me a code" e-mails a 6-digit code (also at nig
   const pw = await call('portal-access', { action: 'c-password', password: 'Maple-Street-77' }, { 'x-portal-session': v.data.session }); assert.ok(pw.data.ok, JSON.stringify(pw.data));
   const again = await call('portal-access', { action: 'signin-password', email: S.customer.email, password: 'Maple-Street-77' }); assert.ok(again.data.ok && again.data.starter === false, JSON.stringify(again.data));
 });
+await t('1 the invite says the starter password plainly (owner 11/02): the portal link e-mail (approval), a link e-mail sent after approval, the PM\'s welcome text, a follow-up — quiet hours kept', async () => {
+  const PM = { authorization: 'Bearer good-pm' };
+  const SENT = 'Your password is your first name: Sample (you can change it after you sign in).';
+  { const pj = W.get('projects'); pj[0].created = new Date(Date.now()).toISOString().slice(0, 10); pj[0].createdAt = new Date(Date.now()).toISOString(); W.put('projects', pj); W.resetCaches(); }   /* a NEW job gets the invite */
+  const r = await call('portal', { action: 'send-link', projectId: S.pid }, PM); assert.ok(r.data.ok, JSON.stringify(r.data));
+  assert.ok(r.data.approval || r.data.todo, JSON.stringify(r.data));
+  const ap = (W.get(C.AQ_KEY) || []).find(a => a.id === 'appr_link_' + S.pid);
+  assert.ok(ap && /Your password is your first name: <b>Sample<\/b> \(you can change it after you sign in\)\./.test(ap.html), 'the invite e-mail: ' + (ap ? ap.html.slice(ap.html.indexOf('Your password') - 20, ap.html.indexOf('Your password') + 140) : 'no approval'));
+  console.log('    INVITE E-MAIL TEXT: ' + ap.html.replace(/<[^>]+>/g, ' ').replace(/&#39;/g, "'").replace(/\s+/g, ' ').trim().slice(0, 900));
+  /* any e-mail with the portal button gets the line when it is sent (here: a "please sign" e-mail) */
+  W.RESEND.length = 0;
+  const sent = await C.aqSend({ id: 'aq_test_pw', kind: 'sign_doc', jobId: S.pid, to: S.customer.email, subject: 'Please sign', html: '<p>Hi Sample,</p><p style="text-align:center"><a href="' + C.LINK_PH + '">Review and sign</a></p><p>Thanks</p>', pm: S.pm.name, pmEmail: S.pm.email, meta: {} }, new Date().toISOString());
+  const m = W.RESEND.find(x => JSON.stringify(x.to).includes(S.customer.email)); assert.ok(m, 'sent: ' + JSON.stringify(sent));
+  assert.ok(m.html.replace(/<[^>]+>/g, ' ').includes(SENT) && /portal\.grayco-cs\.com|#t=/.test(m.html), 'the password line + the real link');
+  const wch = await call('portal-access', { action: 's-login', op: 'welcome', projectId: S.pid }, PM); assert.ok(/Password: the one you chose/.test(wch.data.message), 'a customer who chose a password is not told the first name: ' + wch.data.message);
+  W.TABLES.gc_portal_login = [];   /* back to the starter password */
+  const wel = await call('portal-access', { action: 's-login', op: 'welcome', projectId: S.pid }, PM);
+  assert.ok(wel.data.ok && wel.data.message.includes(SENT), 'the PM\'s welcome text: ' + wel.data.message); console.log('    WELCOME TEXT: ' + wel.data.message.replace(/#t=[A-Za-z0-9_-]+/, '#t=…'));
+  assert.ok(/pwSentence\(starterFirst\(data, p\)\)/.test(fs.readFileSync(path.join(W.FNDIR, 'portal.js'), 'utf8')), 'the link text (when texting is on) too');
+  /* quiet hours: an approval made at 8:30 PM is scheduled for 7 AM, the e-mail is not sent */
+  W.setAt('2026-11-03T02:30:00Z'); W.RESEND.length = 0;
+  const night = await C.approvalAction({ op: 'approve', id: 'appr_link_' + S.pid }, { email: S.pm.email, name: S.pm.name, role: 'staff' });
+  assert.ok(!W.RESEND.some(x => JSON.stringify(x.to).includes(S.customer.email)), 'nothing e-mailed at night: ' + JSON.stringify(night.out || night).slice(0, 200));
+  W.setDay();
+});
 await t('1 installable: manifest (name, icons, start_url, display standalone), service worker and icons exist', async () => {
   const m = JSON.parse(fs.readFileSync(path.join(W.ROOT, 'portal.webmanifest'), 'utf8'));
   assert.ok(m.name && /standalone|fullscreen|minimal-ui/.test(m.display) && m.start_url && (m.icons || []).length >= 2, JSON.stringify(m).slice(0, 200));
@@ -162,16 +187,15 @@ await t('4 documents: estimate, signed contract, change order, warranty, complet
   for (const d of VIEW.docs) { assert.ok(/^https:\/\//.test(d.url), d.title); const f = fileOfUrl(d.url); assert.ok(f && isPdf(f.bytes), d.title + ' is a PDF'); }
   assert.ok(VIEW.warranty && /5|year/i.test(VIEW.warranty.title), JSON.stringify(VIEW.warranty));
 });
-await t('4 invoices: paid + open; "Open invoice" → the CRM\'s own animated invoice; the PDF file behind a short-lived https link; another job\'s / a sub\'s invoice is refused', async () => {
+await t('4 invoices: paid + open; "View invoice" → the CRM\'s own animated invoice; another job\'s / a sub\'s invoice is refused', async () => {
   const inv = VIEW.money.invoices; assert.deepStrictEqual(inv.map(x => x.number + ':' + x.status), ['1001:Paid', '1002:Sent']);
-  const r = await call('portal', { action: 'invoice', id: 'INVS2', link: true }, L()); assert.ok(r.data.ok && /^https:\/\//.test(r.data.url), JSON.stringify(r.data));
-  const f = fileOfUrl(r.data.url); assert.ok(f && isPdf(f.bytes) && /1002/.test(execFileSync('pdftotext', ['-', '-'], { input: f.bytes }).toString()), 'the PDF of invoice 1002');
-  assert.strictEqual((await call('portal', { action: 'invoice', id: 'INVO1', link: true }, L())).status, 404);
+  const r = await call('portal', { action: 'invoice', id: 'INVS2' }, L()); assert.ok(r.data.ok && isPdf(Buffer.from(r.data.pdf, 'base64')), 'the PDF file (e-mail attachment) still there');
+  assert.strictEqual((await call('portal', { action: 'invoice', id: 'INVO1' }, L())).status, 404);
+  assert.strictEqual((await call('portal', { action: 'invoice', id: 'INVSUB' }, L())).status, 404);
   const vw = await call('portal', { action: 'invoice', id: 'INVS2', view: true }, L());
   assert.ok(vw.data.ok && /<div class="word">INVOICE<\/div>/.test(vw.data.html) && /id="topTotal">\$19,300\.00/.test(vw.data.html) && /orb a/.test(vw.data.html) && /Download PDF/.test(vw.data.html) && vw.data.number === 'INV-S1001', 'the CRM\'s own animated invoice: ' + String(vw.data.html).slice(0, 80));
   assert.deepStrictEqual(leakIn(String(vw.data.html).replace(/<style[\s\S]*?<\/style>/g, '').replace(/<script[\s\S]*?<\/script>/g, '').replace(/<[^>]+>/g, ' ')), [], 'nothing internal on the invoice');
   assert.strictEqual((await call('portal', { action: 'invoice', id: 'INVO1', view: true }, L())).status, 404);
-  assert.strictEqual((await call('portal', { action: 'invoice', id: 'INVSUB', link: true }, L())).status, 404);
 });
 /* ── 5. signing ── */
 const CO2 = 'sr_' + S.pid + '_change_order_CO2';
@@ -393,6 +417,9 @@ if (!process.argv.includes('--no-browser')) {
       const it = await ip.evaluate(() => document.body.innerText); assert.ok(/INVOICE/.test(it) && /INV-S1001/.test(it) && /\$19,300\.00/.test(it) && /Download PDF/.test(it), 'the CRM\'s animated invoice opened: ' + it.slice(0, 120));
       assert.ok(await ip.evaluate(() => Array.from(document.images).filter(i => /grayco-logo-white/.test(i.src)).every(i => i.complete && i.naturalWidth > 0)), 'the white GrayCo logo loads');
       await ip.screenshot({ path: path.join(SHOTS, kind + '_08b_invoice_view.png') }); await ip.close();
+      const pop3 = ctx.waitForEvent('page', { timeout: 15000 });
+      await pg.click('[data-inv-pdf="INVS2"]'); const pp = await pop3; await pp.waitForSelector('#topTotal', { timeout: 15000 });
+      assert.ok(/window\.print\(\)/.test(await pp.content()), '⬇️ Download PDF: the CRM\'s invoice with its print (Save as PDF)'); await pp.close();
       await ctx.close();
     });
     await t(kind + ': 5 sign the change order (consent, name, drawn signature) → ✓ Signed + "Open my signed copy"; 6 request a change → thanks; 2 send a message', async () => {

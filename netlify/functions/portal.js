@@ -1773,6 +1773,7 @@ async function aqSend(item, now){
   if (mailOff()) return { ok: false, error: 'E-mail is switched off (PORTAL_MAIL_OFF).' };
   let html = s(item.html), token = '';
   if (html.indexOf(LINK_PH) >= 0) {
+    html = withPwLine(html, await firstForPid(item.jobId));   /* patch CUSTPORTAL: the starter password, plainly */
     try { token = await createFor(item.jobId, 'approved: ' + item.kind); } catch (e) { return { ok: false, error: 'Could not make the portal link.' }; }
     html = html.split(LINK_PH).join(esc(linkFor(null, token)));
   }
@@ -2174,6 +2175,7 @@ async function sendApprovedReminder(tpl, pid){
   if (!s(process.env.RESEND_API_KEY) || mailOff()) return { ok: false, error: 'mail off' };
   let html = s(tpl.html);
   if (html.indexOf(LINK_PH) >= 0) {
+    html = withPwLine(html, await firstForPid(pid));   /* patch CUSTPORTAL */
     let token; try { token = await createFor(pid, 'auto: approved reminder'); } catch (e) { return { ok: false, error: 'no link' }; }
     html = html.split(LINK_PH).join(esc(linkFor(null, token)));
   }
@@ -2308,7 +2310,26 @@ function isNewJob(p, now){
 /* the portal's name and address as every GrayCo document prints it (owner 10/20: "all info for documents will be in
    your portal"). The link itself comes from PORTAL_BASE_URL (https://portal.grayco-cs.com once that address is live). */
 const PORTAL_HOST = 'portal.grayco-cs.com';
-function linkMailHtml(v, link){
+/* ── patch CUSTPORTAL (owner 11/02): the starter password stays the customer's first name — and every invite / e-mail / text
+   that carries the portal link says it plainly: "Your password is your first name: <First> (you can change it after you sign
+   in)". <First> is the word portal-access.js starterOf() accepts (the customer record's first name, else the job's client). ── */
+function starterFirst(data, p){
+  const custs = arr(data && data.customers);
+  const c = custs.find(function(x){ return s(p && p.client) && low(x.name || x.company) === low(p.client); }) || {};
+  return s(c.firstName || (p && p.clientFirstName) || (p && p.client) || c.name).split(/\s+/)[0].replace(/[^A-Za-z0-9'-]/g, '');
+}
+function pwSentence(first){ return first ? 'Your password is your first name: ' + first + ' (you can change it after you sign in).' : ''; }
+function withPwLine(html, first){
+  html = s(html);
+  if (!first || /Your password is your first name/.test(html)) return html;
+  const i = html.indexOf(LINK_PH); if (i < 0) return html;
+  const line = '<p style="font-size:14px;line-height:1.5;background:#F6F3EC;border-radius:8px;padding:10px 12px;color:#14202E">Sign in any time at <b>' + PORTAL_HOST + '</b> with your e-mail or mobile number. ' + esc(pwSentence(first)) + '</p>';
+  const j = html.indexOf('</p>', i), k = html.indexOf('</div>', i);
+  const at = j >= 0 && (k < 0 || j < k) ? j + 4 : (k >= 0 ? k + 6 : -1);
+  return at < 0 ? html + line : html.slice(0, at) + line + html.slice(at);
+}
+async function firstForPid(pid){ try { const d = await crmData(false); const p = findProject(d, pid); return p ? starterFirst(d, p) : ''; } catch (e) { return ''; } }
+function linkMailHtml(v, link, first){
   return '<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#14202E">' +
     '<div style="background:#0F1D2F;color:#fff;padding:18px 20px;border-radius:12px 12px 0 0;text-align:center">' +
     '<img src="' + esc((String(process.env.LOGO_BASE_URL || '').trim() || 'https://crm.grayco-cs.com').replace(/\/$/, '') + '/portal-logo.png') + '" alt="GrayCo Construction Services" width="180" style="display:block;margin:0 auto 6px">' +
@@ -2318,7 +2339,7 @@ function linkMailHtml(v, link){
     '<p style="font-size:15px;line-height:1.5">Thank you for choosing GrayCo! This is your <b>GrayCo Portal</b>, your own private project page. See your project\u2019s progress and updates from ' + esc(v.pm.name || 'your Project Manager') + ', job photos, every document (proposal, contract, change orders, invoices, warranty) and your payments, all in one place, on your phone or computer. Nothing to download: the button opens it, and your phone remembers you after that (you can also add it to your home screen like an app).</p>'   /* patch CUSTPORTAL: it said "No app or password needed" next to the password line below */ +
     '<p style="text-align:center;margin:22px 0"><a href="' + esc(link) + '" style="background:#D4A017;color:#0F1D2F;font-weight:bold;text-decoration:none;padding:13px 22px;border-radius:10px;display:inline-block">Open my GrayCo Portal</a></p>' +
     /* 33.151: the login too (owner rule): user name = this e-mail, starter password = the first name */
-    '<p style="font-size:14px;line-height:1.5;background:#F6F3EC;border-radius:8px;padding:10px 12px">Or sign in at <b>' + esc(PORTAL_HOST) + '</b> · E-mail: <b>' + esc(v.customer.email) + '</b> · Password: <b>your first name</b> (you can change it after you sign in).</p>' +
+    '<p style="font-size:14px;line-height:1.5;background:#F6F3EC;border-radius:8px;padding:10px 12px">Or sign in at <b>' + esc(PORTAL_HOST) + '</b> · E-mail: <b>' + esc(v.customer.email) + '</b> · ' + (first ? 'Your password is your first name: <b>' + esc(first) + '</b> (you can change it after you sign in).' : 'Password: <b>your first name</b> (you can change it after you sign in).') + '</p>' +   /* patch CUSTPORTAL */
     '<p style="font-size:13px;color:#55626F">Keep this e-mail — the button is your personal link and always opens your portal (' + PORTAL_HOST + '). Questions? Call us at ' + OFFICE_PHONE + '.</p></div></div>';
 }
 async function sendLink(pid, event, who){
@@ -2349,7 +2370,7 @@ async function sendLink(pid, event, who){
     const apprL = okEmail && s(process.env.RESEND_API_KEY) && !mailOff();
     if (apprL) {
       const q = await queueApproval({ id: 'appr_link_' + pid, kind: 'portal_link', pid: pid, jobName: p.name, pm: pmOf(data, p), to: to,
-        subject: 'Your GrayCo project page — ' + (view.job.name || 'your job'), html: linkMailHtml(view, LINK_PH), attachments: [], meta: {} });
+        subject: 'Your GrayCo project page — ' + (view.job.name || 'your job'), html: linkMailHtml(view, LINK_PH, starterFirst(data, p)), attachments: [], meta: {} });
       return { ok: true, todo: true, approval: true, queued: !!q };
     }
     await officeTodo('portal_link_' + pid, (apprL ? 'Approve & send portal link to ' : 'Send portal link to ') + name,
@@ -2363,7 +2384,7 @@ async function sendLink(pid, event, who){
   let res;
   try {
     const r = await CQ().run('customer', () => fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + s(process.env.RESEND_API_KEY), 'Content-Type': 'application/json' },   /* patch CUSTQUIET: 7 PM–7 AM it is queued for 7 AM */
-      body: JSON.stringify({ from: 'GrayCo Construction Services Portal <portal@grayco-cs.com>', reply_to: replyToFor((function(){ try { const m = pmOf(data, p); return m && m.email; } catch (e) { return ''; } })(), 'portal_link'), to: [to], subject: withJob('Your GrayCo Portal — ' + (view.job.name || 'your job'), p), html: linkMailHtml(view, link) }) }));
+      body: JSON.stringify({ from: 'GrayCo Construction Services Portal <portal@grayco-cs.com>', reply_to: replyToFor((function(){ try { const m = pmOf(data, p); return m && m.email; } catch (e) { return ''; } })(), 'portal_link'), to: [to], subject: withJob('Your GrayCo Portal — ' + (view.job.name || 'your job'), p), html: linkMailHtml(view, link, starterFirst(data, p)) }) }));
     res = { ok: r.ok, status: r.status };
   } catch (e) { res = { ok: false }; }
   if (!res.ok) {
@@ -2371,7 +2392,7 @@ async function sendLink(pid, event, who){
     return { ok: false, retry: true, error: 'The e-mail did not go out (' + (res.status || 'no answer') + ').' };
   }
   let via = 'email';
-  if (st.text) { const tx = await sendText(view.customer.phone, 'GrayCo: your GrayCo Portal (progress, photos, documents, payments) ' + link); if (tx.ok) via = 'email+text'; }
+  if (st.text) { const tx = await sendText(view.customer.phone, 'GrayCo: your GrayCo Portal (progress, photos, documents, payments) ' + link + (starterFirst(data, p) ? ' — ' + pwSentence(starterFirst(data, p)) : ''));   /* patch CUSTPORTAL */ if (tx.ok) via = 'email+text'; }
   return { ok: true, sent: via, sentAt: nowIso };
 }
 
@@ -2579,7 +2600,7 @@ async function autaiText(item){
   const sm = (item.meta || {}).sms;
   if (!sm || !s(sm.to)) return;
   let body = clip(sm.text || item.text, 600);
-  if (body.indexOf(LINK_PH) >= 0) { let tok = ''; try { tok = await createFor(item.jobId, 'approved: ' + item.kind); } catch (e) {} body = body.split(LINK_PH).join(tok ? linkFor(null, tok) : ''); }
+  if (body.indexOf(LINK_PH) >= 0) { const f1 = await firstForPid(item.jobId); if (f1 && !/Your password is your first name/.test(body)) body = clip(body + ' ' + pwSentence(f1), 900);   /* patch CUSTPORTAL */ let tok = ''; try { tok = await createFor(item.jobId, 'approved: ' + item.kind); } catch (e) {} body = body.split(LINK_PH).join(tok ? linkFor(null, tok) : ''); }
   let t; try { t = await sendText(s(sm.to), body); } catch (e) { t = { ok: false, skipped: 'error' }; }
   item.meta.smsResult = t && t.ok ? 'sent' : 'not sent (' + (t && t.skipped || 'no provider') + ')';
 }
@@ -2850,10 +2871,6 @@ exports.handler = async function (event) {
       return reply(200, headers, { ok: true, html: v.html, number: v.number });
     }
     const f = invoicePdf(data, p, r);
-    if (body.link === true) {   /* patch CUSTPORTAL: "📄 Open invoice" goes straight to the PDF on any phone — a short-lived signed link (the private bucket, named by its content) */
-      try { const st = await storeImage(f.pdf, { ext: 'pdf', type: 'application/pdf' }); const sg = await signRefs([st.ref]); if (sg[st.ref]) return reply(200, headers, { ok: true, filename: f.filename, url: sg[st.ref], expiresIn: SIGN_SECS }); } catch (e) {}
-      return reply(503, headers, { ok: false, error: 'We could not open the invoice just now. Please try again, or call GrayCo ' + OFFICE_PHONE + '.' });
-    }
     return reply(200, headers, { ok: true, filename: f.filename, pdf: f.pdf.toString('base64') });
   }
   const view = await buildView(data, p);
@@ -2867,7 +2884,7 @@ exports.handler = async function (event) {
 };
 
 /* for portal-reminders.js and the tests */
-exports._core = { seniorPm: async function(){ let d = {}; try { d = await crmData(true); } catch (e) {} return PEOPLE().seniorPm(d.users, d.gc_senior_pm); }, people: PEOPLE, JA: JA, jaAllows: jaAllows, pmByName: async function(name){ const n = s(name); if (!n) return null; let d = {}; try { d = await crmData(true); } catch (e) {} return pmOf(d, { pm: n }); }, officeTodo: officeTodo, taskListOf: taskListOf, kvListUpdate: kvListUpdate, queueApproval: queueApproval, gateScan: gateScan, gateState: gateState, gateGet: gateGet, gateAllows: gateAllows, gateKeyOf: gateKeyOf, gateSet: gateSet, GATE_KEY: GATE_KEY, _gateReset: function(){ GATE_LAST = null; GATE_AT = 0; }, approvalAction: approvalAction, aqMerge: aqMerge, AQ_KEY: AQ_KEY, LINK_PH: LINK_PH, notifyDocs: notifyDocs, notifyAll: notifyAll, noticeItems: noticeItems, sendLink: sendLink, settingsGet: settingsGet, warrantyOf: warrantyOf, buildView: buildView, runReminders: runReminders, stageOf: stageOf, gdocInfo: gdocInfo, ccIdOf: ccIdOf,
+exports._core = { starterFirst: starterFirst, pwSentence: pwSentence, withPwLine: withPwLine, firstForPid: firstForPid, seniorPm: async function(){ let d = {}; try { d = await crmData(true); } catch (e) {} return PEOPLE().seniorPm(d.users, d.gc_senior_pm); }, people: PEOPLE, JA: JA, jaAllows: jaAllows, pmByName: async function(name){ const n = s(name); if (!n) return null; let d = {}; try { d = await crmData(true); } catch (e) {} return pmOf(d, { pm: n }); }, officeTodo: officeTodo, taskListOf: taskListOf, kvListUpdate: kvListUpdate, queueApproval: queueApproval, gateScan: gateScan, gateState: gateState, gateGet: gateGet, gateAllows: gateAllows, gateKeyOf: gateKeyOf, gateSet: gateSet, GATE_KEY: GATE_KEY, _gateReset: function(){ GATE_LAST = null; GATE_AT = 0; }, approvalAction: approvalAction, aqMerge: aqMerge, AQ_KEY: AQ_KEY, LINK_PH: LINK_PH, notifyDocs: notifyDocs, notifyAll: notifyAll, noticeItems: noticeItems, sendLink: sendLink, settingsGet: settingsGet, warrantyOf: warrantyOf, buildView: buildView, runReminders: runReminders, stageOf: stageOf, gdocInfo: gdocInfo, ccIdOf: ccIdOf,
   newToken: newToken, grayCoPhotos: grayCoPhotos, escalateDue: escalateDue, escalatedOrDue: escalatedOrDue, ESC_MS: ESC_MS, approvedReminder: approvedReminder, aqSend: aqSend, replyToFor: replyToFor, invoiceDoc: invoiceDoc, invoicePdf: invoicePdf, invNumber: invNumber, invCustStatus: invCustStatus,
   queueInvoiceMail: queueInvoiceMail, queueNewInvoices: queueNewInvoices, invMailWanted: invMailWanted, news: function(){ return newsLib(); }, STAGES: STAGES, NOT_ACTIVE: NOT_ACTIVE, _reset: function(){ kvCache = null; photoCache.clear(); hits.clear(); GATE_LAST = null; GATE_AT = 0; } };
 /* patch AUTAI */
