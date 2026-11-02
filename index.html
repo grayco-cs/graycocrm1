@@ -207661,7 +207661,7 @@ function items(){
   return readA().filter(function(x){ return x.kind==='f941' && (x.status==='waiting' || x.status==='approved'); }).map(function(x){
     var n=x.numbers||{}, w=(n.warnings||[]).length;
     return { id:'f941:'+x.id, at:s(x.createdAt), urgency:'asap',
-      title: x.status==='waiting' ? ('🧾 Form 941 for Q'+x.q+' '+x.year+' is ready: review'+(canSee()?' and approve':'')+' and file') : ('🧾 Form 941 for Q'+x.q+' '+x.year+': approved, ready to file — mark it filed'),
+      title: x.status==='waiting' ? ('🧾 Form 941 for Q'+x.q+' '+x.year+(canSee()?' is ready: review and approve':' is ready to file')) : ('🧾 Form 941 for Q'+x.q+' '+x.year+': approved, ready to file — mark it filed'),
       sub: 'L2 '+money(n.L2)+' · L3 '+money(n.L3)+' · L12 '+money(n.L12)+' · L13 '+money(n.L13)+' · L14 '+money(n.L14)+(w?(' · ⚠ '+w+' warning'+(w>1?'s':'')):'')+' · due '+s(x.due),
       act:{ l:'🧾 Review', f:function(){ openCard(x.id); } } };
   });
