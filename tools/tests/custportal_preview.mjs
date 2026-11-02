@@ -9,7 +9,7 @@ import { execFileSync } from 'child_process';
 import * as W from './custportal_world.mjs';
 const OUT = path.resolve(process.argv[2] || '/tmp/claude-0/-home-user/6a5b2b6b-8a4d-5505-9f82-62521adb6674/scratchpad/preview/customer');
 fs.mkdirSync(OUT, { recursive: true });
-for (const f of fs.readdirSync(OUT)) if (/\.(png|txt)$/.test(f)) fs.unlinkSync(path.join(OUT, f));
+for (const f of fs.readdirSync(OUT)) if (/\.(png|txt)$/.test(f) && !/^99_/.test(f)) fs.unlinkSync(path.join(OUT, f));   /* 99_*: the CRM's own screens (custportal_crmdocs.mjs) */
 const INDEX = [], ERRS = [], BAD = [];
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const srv = await W.startServer();
@@ -152,7 +152,8 @@ for (const kind of ['phone', 'desktop']) {
     await pg.click('#tabs button[data-tab="docs"]'); await sleep(900);
     const est = await pg.evaluate(() => { const a = document.querySelector('[data-est-card] [data-est-pdf]'); return a ? a.href : ''; });
     const crmMade = fs.existsSync('/tmp/claude-0/-home-user/6a5b2b6b-8a4d-5505-9f82-62521adb6674/scratchpad/cp/crmdocs/est_simple.pdf');
-    if (est) await pdfShot(ctx, kind, est, 'estimate_pdf', crmMade ? 'Estimate #1042: "📄 View PDF" opens the PDF the CRM made from the owner\'s template and sent (_gcEstPdf.makePdf, ⚙ Proposal template) — the stored file, byte for byte' : 'Estimate #1042: "📄 View PDF" opens the stored sent PDF (a stand-in file here — the CRM generator run did not finish)');
+    let how = ''; try { how = fs.readFileSync('/tmp/claude-0/-home-user/6a5b2b6b-8a4d-5505-9f82-62521adb6674/scratchpad/cp/crmdocs/est_simple.how.txt', 'utf8').trim(); } catch (e) {}
+    if (est) await pdfShot(ctx, kind, est, 'estimate_pdf', crmMade ? 'Estimate #1042: "📄 View PDF" opens the stored estimate PDF, made from the owner\'s ⚙ Proposal template (' + (how || 'the CRM\'s _gcEstPdf.makePdf') + ') — the stored file, byte for byte' : 'Estimate #1042: "📄 View PDF" opens the stored sent PDF (a stand-in file here — the CRM generator run did not finish)');
     const up = await pg.evaluate(() => { const a = document.querySelector('[data-est-card="ESAMPLE2"] [data-est-pdf]'); return a ? a.href : ''; });
     if (up) await pdfShot(ctx, kind, up, 'estimate_uploaded_pdf', 'Estimate #2051: "📄 View PDF" opens the PDF that was uploaded to the CRM, exactly as uploaded');
     /* estimate #2060: "Customer sees" — My PDF (default) and Template version, as the portal shows each */
@@ -171,6 +172,7 @@ for (const kind of ['phone', 'desktop']) {
 }
 function require_reset(){ W.resetCaches(); }
 await browser.close(); await srv.close();
+try { const ci = '/tmp/claude-0/-home-user/6a5b2b6b-8a4d-5505-9f82-62521adb6674/scratchpad/cp/crmdocs/index_crm.txt'; if (fs.existsSync(ci)) INDEX.push(...fs.readFileSync(ci, 'utf8').trim().split('\n')); } catch (e) {}
 fs.writeFileSync(path.join(OUT, 'index.txt'), INDEX.join('\n') + '\n\nSample job (made up): Sample Customer, 123 Sample St, Memphis TN 38103 — PM Dana Rivers. Branch claude/custportal.\n' +
   (ERRS.length ? '\nPage errors / HTTP errors seen:\n' + [...new Set(ERRS)].join('\n') + '\n' : '\nNo page errors, no HTTP 4xx/5xx.\n') + (BAD.length ? '\nSteps that did not finish:\n' + BAD.join('\n') + '\n' : ''));
 console.log(INDEX.length + ' screenshots → ' + OUT); if (ERRS.length) console.log('ERRORS:\n' + [...new Set(ERRS)].join('\n')); if (BAD.length) console.log('STEPS:\n' + BAD.join('\n'));

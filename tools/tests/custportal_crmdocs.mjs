@@ -48,6 +48,17 @@ const b = await mk('p5'); if (b.err) got.errs.push(b.err); else { got.p5 = b.b; 
 console.log('design: ' + got.design + ' · simple: ' + (got.simple ? got.simpleHow : 'none') + ' · p5: ' + (got.p5 ? got.p5How : 'none') + ' · invoice html: ' + (got.inv || '').length + (got.errs.length ? ' · ' + got.errs.join(' | ') : ''));
 if (got.simple) fs.writeFileSync(path.join(OUT, 'est_simple.pdf'), Buffer.from(got.simple, 'base64'));
 if (got.p5) fs.writeFileSync(path.join(OUT, 'est_p5.pdf'), Buffer.from(got.p5, 'base64'));
+/* html2pdf in this offline harness can give a blank page (no fonts / pictures from the internet here); then the SAME template
+   HTML the CRM made (proposalHtml — ⚙ Proposal template) is printed to PDF by the browser, so the owner still sees his design */
+const pdfText = f => { try { return execFileSync('pdftotext', [f, '-']).toString().trim(); } catch (e) { return ''; } };
+let estHow = got.simpleHow || '';
+if (got.proposal && (!fs.existsSync(path.join(OUT, 'est_simple.pdf')) || !pdfText(path.join(OUT, 'est_simple.pdf')))) {
+  const cx = await C.b.newContext(); await cx.route('**/*', r => /^data:|^about:/.test(r.request().url()) ? r.continue() : r.fulfill({ status: 200, body: '' }));
+  const pp = await cx.newPage(); await pp.setContent(got.proposal, { waitUntil: 'load' }).catch(() => {}); await sleep(800);
+  fs.writeFileSync(path.join(OUT, 'est_simple.pdf'), await pp.pdf({ format: 'Letter', printBackground: true })); await cx.close();
+  estHow = 'the CRM template HTML (proposalHtml) printed to PDF here';
+}
+fs.writeFileSync(path.join(OUT, 'est_simple.how.txt'), estHow + '\n');
 if (got.inv) fs.writeFileSync(path.join(OUT, 'crm_invoice.html'), got.inv);
 if (got.proposal) fs.writeFileSync(path.join(OUT, 'proposal.html'), got.proposal);
 /* the choice on the job's estimate card: "Customer sees: ◉ My PDF ○ Template version" (patch CUSTPORTAL) */
