@@ -207833,7 +207833,8 @@ function buildRuns(rows, meta){
   return list;
 }
 /* who is offered: real W-2 employees only — a payroll profile with an hourly / salary / commission pay type, active,
-   and NOT a shared or role account (the "Office" sign-in: role Office, name Office, office@…), NOT an owner / admin
+   and NOT the shared "Office" sign-in (name exactly Office, office@…, or a shared-login flag — a real person with an
+   office role, e.g. "Office Admin", IS offered), NOT an owner / admin
    paid by draws, NOT a 1099 / owner-draw profile. (Payroll makes a profile for every active user, the Office account
    included, so the profile list alone is not enough.) */
 var W2_TYPES={ hourly:1, salary:1, commission:1, salary_commission:1 };
@@ -207843,7 +207844,9 @@ function w2Employees(profiles, users){
     if(!x || !s(x.name) || x.active===false || !W2_TYPES[low(x.payType)]) return false;
     var u=users.filter(function(y){ return y && ((x.userId && s(y.id)===s(x.userId)) || low(y.name)===low(x.name)); })[0]||null;
     var em=low((u&&u.email)||x.email), role=low(u&&u.role), nm=low(x.name);
-    if(nm==='office' || /^office@/.test(em) || /office/.test(role)) return false;
+    /* only the SHARED Office sign-in: named exactly "Office", the office@ mailbox, or flagged as a shared login.
+       A real person with an office role (e.g. "Office Admin") is a W-2 employee and IS offered. */
+    if(nm==='office' || /^office@/.test(em) || (u && (u.shared===true || u.sharedLogin===true || u.isShared===true))) return false;
     if(u && (u.active===false || low(u.payType)==='owner' || role==='admin' || role==='owner')) return false;
     return true;
   }).map(function(x){ return { name:s(x.name), key:s(x.userId||x.name), payType:s(x.payType), prof:x }; }).sort(function(a,b){ return a.name.localeCompare(b.name); });

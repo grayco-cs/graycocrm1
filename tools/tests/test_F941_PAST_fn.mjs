@@ -19,6 +19,10 @@ const PROFS = [{ name: 'Tess Owner', userId: 'U0', payType: 'salary' }, { name: 
   { name: 'Blake Test', userId: 'UB', payType: 'commission' }, { name: 'Gone Test', userId: 'UG', payType: 'hourly' }, { name: 'Ad Vendor', payType: 'contractor_1099' },
   { name: 'Draw Person', payType: 'owner_draw' }, { name: 'Old Hand', payType: 'hourly', active: false }, { name: 'Front Desk', userId: 'UF', payType: 'hourly', email: 'office@grayco-cs.com' }];
 eq('offered: only Avery and Blake', PP.w2Employees(PROFS, USERS).map(e => e.name), ['Avery Test', 'Blake Test']);
+const USERS2 = USERS.concat([{ id: 'UBP', name: 'Brittany Pucket', email: 'brittany@grayco-cs.com', role: 'Office Admin', active: true, payType: 'salary' },
+  { id: 'USH', name: 'Front Counter', email: 'counter@grayco-cs.com', role: 'Office', shared: true }]);
+const PROFS2 = PROFS.concat([{ name: 'Brittany Pucket', userId: 'UBP', payType: 'salary' }, { name: 'Front Counter', userId: 'USH', payType: 'salary' }]);
+eq('a real person with role "Office Admin" IS offered; the shared logins are not', PP.w2Employees(PROFS2, USERS2).map(e => e.name), ['Avery Test', 'Blake Test', 'Brittany Pucket']);
 eq('employee key = user id', PP.w2Employees(PROFS, USERS).map(e => e.key), ['UA', 'UB']);
 
 // the grid: "Make weekly rows" 7/3 → 9/25 for two employees
