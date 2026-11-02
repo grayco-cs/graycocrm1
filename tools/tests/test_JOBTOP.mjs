@@ -103,6 +103,16 @@ try {
       ok(Math.max(...tops) - Math.min(...tops) <= 1, tag + ': the summary strip never moved on the job page (' + Math.min(...tops) + '…' + Math.max(...tops) + ' px under the job page top; page y ' + Math.min(...abs) + '…' + Math.max(...abs) + ')', [...new Set(tops)]);
       ok(L.boxLast && !L.outside.length, tag + ': every card / bar is in the "Job tools" container, the last block (' + L.inBox.join(', ') + ')', { outside: L.outside, order: L.order });
       ok(L.widgetTops.every(y => y > L.tabsBottom), tag + ': every widget is drawn below the tab bar', { tabs: L.tabsBottom, w: L.widgetTops });
+      /* the bottom bars: on a computer only ROLEAPPS' Desk dock (#gc-ra-dock, by design: Home · Jobs · Approvals · Photos ·
+         More); the phone bars stay hidden; the dock never covers the summary strip or the tab bar, and main keeps room under it */
+      const bars = await c.ev(() => { const vis = id => { const e = document.getElementById(id); return !!e && e.getClientRects().length > 0 && getComputedStyle(e).display !== 'none' && getComputedStyle(e).visibility !== 'hidden'; };
+        const back = [...document.querySelectorAll('main button')].find(b => /^\s*←\s*All Projects\s*$/.test(b.textContent || '')), kids = back ? [...back.parentElement.children] : [];
+        const tabs = kids.find(k => [...k.children].some(b => b.tagName === 'BUTTON' && /^Files & Docs \(/.test((b.textContent || '').trim())));
+        const dock = document.getElementById('gc-ra-dock'), dr = dock && vis('gc-ra-dock') ? dock.getBoundingClientRect() : null, tr = tabs ? tabs.getBoundingClientRect() : null;
+        const main = document.querySelector('main');
+        return { view: window._gcView ? window._gcView.state() : null, phoneBars: ['gc-fh-tabs', 'gc-mobile-bottom-nav', '_gcAppTabs'].filter(vis), dock: !!dr, dockTop: dr && Math.round(dr.top), tabsBottom: tr && Math.round(tr.bottom), mainPad: main ? parseFloat(getComputedStyle(main).paddingBottom) : 0, dockH: dr ? Math.round(dr.height) : 0 }; });
+      ok(bars.view && bars.view.phone === false && !bars.view.field && !bars.phoneBars.length, tag + ': Desk view, no phone bottom bar', bars);
+      ok(!bars.dock || (bars.tabsBottom <= bars.dockTop && bars.mainPad >= bars.dockH), tag + ': the Desk dock (if shown) is below the strip and tabs and main keeps room for it', bars);
       if (i === 0) ok(L.inBox.length >= 2, tag + ': the widgets are still there (' + L.inBox.length + ')', L.inBox);
       const f = path.join(SHOTS, 'jobtop_' + w + 'x' + h + '_' + (i + 1) + '.png'); await p.screenshot({ path: f, fullPage: false }); shots.push(f);
       /* switch tabs: the container stays last, under the new tab's content */
