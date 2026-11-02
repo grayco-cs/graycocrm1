@@ -37814,6 +37814,7 @@ function buildNavSearch(){
   var inp = document.getElementById('gc-navsearch');
   var results = document.getElementById('gc-navsearch-results');
   var _activeIdx = -1;
+  inp._acInit = true;   /* patch TABSEARCH: never the projects / subs autocomplete over the tab list */
 
   function search(q){
     q = q.toLowerCase().trim();
@@ -37831,13 +37832,49 @@ function buildNavSearch(){
       return '<div class="gc-nsr-item" data-id="'+t.id+'" data-idx="'+i+'">'+t.label+(matchedAlias&&!t.label.toLowerCase().includes(q)?'<span class="gc-nsr-alias">'+matchedAlias+'</span>':'')+'</div>';
     }).join('');
     results.style.display = 'block';
-
-    results.querySelectorAll('.gc-nsr-item').forEach(function(el){
-      el.addEventListener('click', function(){
-        goTo(el.getAttribute('data-id'));
-      });
-    });
+    /* patch TABSEARCH: a result is picked by the press / release below (window, capture), not by a click on its node */
   }
+
+  var _pk = { id: '', at: 0, down: '', x: 0, y: 0, swallow: 0, n: 0, how: '' };   /* patch TABSEARCH */
+  function shown(){ return results.isConnected && results.style.display !== 'none' && results.offsetParent !== null; }
+  function itemAt(x, y){
+    if(!shown()) return null;
+    var its = results.querySelectorAll('.gc-nsr-item');
+    for(var i = 0; i < its.length; i++){ var b = its[i].getBoundingClientRect(); if(b.width && x >= b.left && x <= b.right && y >= b.top && y <= b.bottom) return its[i]; }
+    return null;
+  }
+  function pick(id, how){
+    if(!id) return;
+    var n = Date.now(); if(_pk.id === id && n - _pk.at < 900) return;   /* the release and its click: one open */
+    _pk.id = id; _pk.at = n; _pk.n++; _pk.how = how || '';
+    try{ window.__GC_USER_NAV__ = true; setTimeout(function(){ window.__GC_USER_NAV__ = false; }, 1500); }catch(e){}
+    if(/^dom:/.test(id)){ inp.value = ''; results.style.display = 'none'; try{ if(window._gcTabVisOpen) window._gcTabVisOpen(id); }catch(e){} return; }
+    goTo(id);
+  }
+  function eat(e){ e.preventDefault(); e.stopPropagation(); if(e.stopImmediatePropagation) e.stopImmediatePropagation(); }
+  /* the press: the result under the pointer, from the list's own boxes (whatever node the page says was pressed) */
+  function inList(e){ var t = e.target; return !!(t && t.closest && (t.closest('#gc-navsearch-results') || t.closest('aside'))); }
+  window.addEventListener('pointerdown', function(e){
+    _pk.down = '';
+    if(e.button !== 0 || !e.isPrimary) return;
+    var it = itemAt(e.clientX, e.clientY); if(!it || !inList(e)) return;
+    _pk.down = it.getAttribute('data-id') || ''; _pk.x = e.clientX; _pk.y = e.clientY;
+    if(e.pointerType === 'mouse') e.preventDefault();   /* the cursor stays in the box: no blur, nothing redrawn under the press */
+  }, true);
+  window.addEventListener('mousedown', function(e){ if(e.button === 0 && itemAt(e.clientX, e.clientY)) e.preventDefault(); }, true);
+  window.addEventListener('pointerup', function(e){
+    var id = _pk.down; _pk.down = ''; if(!id || e.button !== 0) return;
+    if(Math.abs(e.clientX - _pk.x) > 12 || Math.abs(e.clientY - _pk.y) > 12) return;   /* a touch that scrolled */
+    _pk.swallow = Date.now() + 700; eat(e); pick(id, 'press');
+  }, true);
+  window.addEventListener('pointercancel', function(){ _pk.down = ''; }, true);
+  window.addEventListener('click', function(e){
+    if(_pk.swallow && Date.now() < _pk.swallow){ _pk.swallow = 0; eat(e); return; }   /* the click after a picked press */
+    var it = e.target && e.target.closest ? e.target.closest('#gc-navsearch-results .gc-nsr-item') : null;
+    if(!it) return;
+    eat(e); pick(it.getAttribute('data-id'), 'click');
+  }, true);
+  window._gcNavSearch = { pick: function(id){ _pk.id = ''; pick(id, 'console'); }, state: function(){ return { shown: shown(), n: _pk.n, last: _pk.id, how: _pk.how, items: [].map.call(results.querySelectorAll('.gc-nsr-item'), function(x){ return x.getAttribute('data-id'); }) }; } };
 
   function goTo(id){
     inp.value = '';
@@ -37869,8 +37906,9 @@ function buildNavSearch(){
       _activeIdx = Math.max(_activeIdx-1, 0);
       items.forEach(function(el,i){ el.classList.toggle('active', i===_activeIdx); });
     } else if(e.key === 'Enter'){
-      if(_activeIdx >= 0 && items[_activeIdx]) goTo(items[_activeIdx].getAttribute('data-id'));
-      else if(items.length) goTo(items[0].getAttribute('data-id'));
+      if(!shown() || !items.length) return;   /* patch TABSEARCH: Enter picks from the list on screen */
+      e.preventDefault();
+      pick((_activeIdx >= 0 && items[_activeIdx] ? items[_activeIdx] : items[0]).getAttribute('data-id'), 'enter');
     } else if(e.key === 'Escape'){
       results.style.display = 'none'; inp.value = '';
     }
@@ -167058,6 +167096,8 @@ function css(){
     '#gc-est3-list{font:14px/1.4 Inter,Segoe UI,Arial,sans-serif;color:#0f172a;padding:16px;box-sizing:border-box;max-width:1200px}',
     '#gc-est3-list .hd{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}#gc-est3-list .hd h2{margin:0;font-size:22px}#gc-est3-list .hd .sp{flex:1}',
     '#gc-est3-list .new{background:#241968;color:#fff;border:0;border-radius:10px;padding:11px 18px;font:800 15px Inter,Arial,sans-serif;cursor:pointer}',
+    '#gc-est3-list .tpl{background:#fff;color:#4c1d95;border:1px solid #c4b5fd;border-radius:8px;padding:8px 12px;min-height:38px;font:700 13px Inter,Arial,sans-serif;cursor:pointer;white-space:nowrap}#gc-est3-list .new,#gc-est3-list .mor{white-space:nowrap}',   /* patch ESTTPLBTN */
+    '#gc-est3-more button small{display:block;font-weight:500;font-size:11.5px;color:#64748b;margin-top:1px}',
     '#gc-est3-list .mor{background:#fff;color:#0f172a;border:1px solid #cbd5e1;border-radius:10px;padding:10px 12px;font:700 13px Inter,Arial,sans-serif;cursor:pointer}',
     '#gc-est3-list .flt{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}#gc-est3-list .flt input,#gc-est3-list .flt select{padding:9px 11px;border:1px solid #cbd5e1;border-radius:9px;font:14px Inter,Arial,sans-serif;background:#fff;color:#0f172a}#gc-est3-list .flt input{flex:1;min-width:200px}',
     '#gc-est3-list .chips{display:flex;gap:6px;flex-wrap:wrap}#gc-est3-list .chips button{border:1px solid #cbd5e1;background:#fff;border-radius:999px;padding:6px 12px;font:700 12px Inter,Arial,sans-serif;cursor:pointer;color:#334155}#gc-est3-list .chips button.on{background:#241968;color:#fff;border-color:#241968}',
@@ -167078,7 +167118,7 @@ function css(){
 function menuEl(anchor, items){
   var old = D.getElementById('gc-est3-more'); if (old) { old.remove(); if (old.__for === anchor) return; }
   var m = D.createElement('div'); m.id = 'gc-est3-more'; m.__for = anchor; m.setAttribute('data-gc-keep', '1'); m.setAttribute('role', 'menu');
-  m.innerHTML = items.map(function(it, i){ return it === '-' ? '<hr>' : '<button type="button" role="menuitem" data-i="' + i + '">' + esc(it[0]) + '</button>'; }).join('');
+  m.innerHTML = items.map(function(it, i){ return it === '-' ? '<hr>' : '<button type="button" role="menuitem" data-i="' + i + '">' + esc(it[0]) + (it[2] ? '<small>' + esc(it[2]) + '</small>' : '') + '</button>'; }).join('');   /* patch ESTTPLBTN: a hint line */
   D.body.appendChild(m);
   var r = anchor.getBoundingClientRect(), w = m.offsetWidth, h = m.offsetHeight;
   m.style.left = Math.max(8, Math.min(innerWidth - w - 8, r.right - w)) + 'px';
@@ -167098,9 +167138,11 @@ function editMore(anchor){
     ['🔄 Refresh from the company', function(){ if (W._gcRefreshCompanyEstimates) W._gcRefreshCompanyEstimates(); }]
   ]);
 }
+function openTemplates(){ if (W.gcEstSubtabs) W.gcEstSubtabs.show('templates'); else if (W._setView) W._setView('templates'); }   /* patch ESTTPLBTN */
 function listMore(anchor){
   menuEl(anchor, [
-    ['📋 Templates', function(){ if (W.gcEstSubtabs) W.gcEstSubtabs.show('templates'); else if (W._setView) W._setView('templates'); }],
+    ['⧉ Copy from a similar job', function(){ if (typeof W._gcFromSimilar === 'function') W._gcFromSimilar(); else toast('Not available on this computer yet.'); }, 'start a new estimate from an old one\'s lines'], '-',   /* patch ESTTPLBTN */
+    ['📋 Templates', openTemplates],
     ['📥 Inbound bids (AI reader)', function(){ if (W.gcInboundBids) W.gcInboundBids.open(); }],
     ['📒 Rate book', function(){ newOrOpenTab('rates'); }], ['💲 Price log', function(){ newOrOpenTab('matlog'); }], ['⚙ Builder settings', function(){ newOrOpenTab('settings'); }], '-',
     ['🔄 Refresh from the company', function(){ if (W._gcRefreshCompanyEstimates) W._gcRefreshCompanyEstimates(); later(function(){ renderList(true); }, 800); }]
@@ -167161,7 +167203,7 @@ function listHost(){
   if (h && h.parentNode !== mt) { h.remove(); h = null; }
   if (!h) {
     h = D.createElement('div'); h.id = 'gc-est3-list'; h.setAttribute('data-gc-keep', '1');
-    h.innerHTML = '<div class="hd"><h2>📐 Estimates</h2><span class="m" id="gc-est3-count"></span><span class="sp"></span><button type="button" class="new" data-l="new">＋ New estimate</button><button type="button" class="mor" data-l="more" aria-haspopup="menu">⋯ More</button></div>' +
+    h.innerHTML = '<div class="hd"><h2>📐 Estimates</h2><span class="m" id="gc-est3-count"></span><span class="sp"></span><button type="button" class="new" data-l="new">＋ New estimate</button><button type="button" class="tpl" data-l="tpl" title="Estimate templates">📋 Templates</button><button type="button" class="mor" data-l="more" aria-haspopup="menu">⋯ More</button></div>' +   /* patch ESTTPLBTN */
       '<div class="flt"><label class="m" style="display:flex;align-items:center;gap:6px">Sort <select id="gc-est3-sort" aria-label="Sort estimates"><option value="created">Date created</option><option value="updated">Last updated</option><option value="name">Name</option></select></label></div>' +
       '<div class="flt"><input type="search" id="gc-est3-q" placeholder="Search name, customer, job, PO, address…" aria-label="Search estimates"><select id="gc-est3-who" aria-label="PM or estimator"><option value="">Everyone</option></select></div>' +
       '<div class="flt chips" id="gc-est3-chips" role="tablist">' + [['open', 'Open'], ['Draft', 'Draft'], ['Submitted', 'Sent'], ['won', 'Signed / won'], ['lost', 'Lost / declined'], ['pw', '⚠️ Prices up'], ['all', 'All']].map(function(c){ return '<button type="button" data-f="' + c[0] + '">' + c[1] + '</button>'; }).join('') + '</div>' +
@@ -167169,7 +167211,7 @@ function listHost(){
     mt.appendChild(h);
     h.addEventListener('click', function(ev){
       var t = ev.target;
-      var l = t.closest('[data-l]'); if (l) { var a = l.getAttribute('data-l'); if (a === 'new') newEst(); else if (a === 'more') listMore(l); return; }
+      var l = t.closest('[data-l]'); if (l) { var a = l.getAttribute('data-l'); if (a === 'new') newEst(); else if (a === 'tpl') openTemplates(); else if (a === 'more') listMore(l); return; }   /* patch ESTTPLBTN */
       var f = t.closest('[data-f]'); if (f) { M.fStatus = f.getAttribute('data-f'); renderList(true); return; }
       var ac = t.closest('[data-ac]'); if (ac) { ev.stopPropagation(); var id = ac.getAttribute('data-id'), k = ac.getAttribute('data-ac');
         if (k === 'open') openEst(id);
@@ -169687,7 +169729,9 @@ function fromSimilar(){
     };
   };
 }
+W._gcFromSimilar = fromSimilar;   /* patch ESTTPLBTN: ⋯ More → Copy from a similar job */
 function estBar(){
+  Array.prototype.forEach.call(D.querySelectorAll('.gcx12-simbtn'), function(x){ x.remove(); }); return;   /* patch ESTTPLBTN: not on the header */
   var main = D.querySelector('main'); if (!main || main.querySelector('.gcx12-simbtn')) return;
   var nb = null; Array.prototype.some.call(main.querySelectorAll('button'), function(b){ if (/^\s*＋\s*New estimate\s*$/i.test(s(b.textContent)) && b.offsetParent) { nb = b; return true; } return false; });
   if (!nb) return; css();
@@ -194843,6 +194887,7 @@ D.addEventListener('keydown', function(e){
   if (/^dom:/.test(id)) { e.preventDefault(); e.stopPropagation(); openDom(id); }
 }, true);
 
+W._gcTabVisOpen = openDom;   /* patch TABSEARCH: 🔍 Search tabs opens a patch tail's tab through here */
 W._gcTabVisAll = function(ALL){ try { return list(ALL); } catch (e) { try { console.warn('[GC tabvis]', e); } catch (x) {} return arr(ALL); } };
 W._gcTabVisIndex = function(TI){ try { return index(TI); } catch (e) { return arr(TI); } };
 /* what the person turned off himself in the window (per person, on this computer). A tailored profile (patch RP)
