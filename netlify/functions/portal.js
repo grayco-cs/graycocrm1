@@ -790,7 +790,9 @@ async function buildView(data, p, opts){
   const ests = rawEsts.filter(function(e){ return gateAllows(G, p, gateKeyOf('e', e), e, gatePend, { type: 'e', title: s(e.name) || 'Proposal', refId: s(e.id) }); });   /* patch PORTALGATE */
   const shownEst = {}; ests.forEach(function(e){ shownEst[s(e.id)] = 1; });
   const ins = isInsJob(p) || (p.isInsurance !== false && !!insClaim(data, pid));   /* patch INSP; patch BB2: a job with a claim (gc_claims) is an insurance job */
+  const estPick = {}; rawEsts.forEach(function(e){ const c = chooseEstPdf(e, estPdfsOf(data, e, pid)); if (c) estPick[s(e.id)] = s(c.id); });   /* patch CUSTPORTAL */
   const pdocs = arr(data.projectDocs).filter(function(d){ return ins ? insDocShown(d, pid, rawEst) : docShown(d, pid, rawEst); })
+    .filter(function(d){ const ek = s(d.estimateId); return !(ek && rawEst[ek] && estPick[ek] && d.source !== 'portal-signature' && d.sentPdf !== true && /\.pdf$/i.test(s(d.ref)) && s(d.id) !== estPick[ek]); })   /* never both: only the chosen estimate PDF */
     .filter(function(d){ const ek = s(d.estimateId); if (ek && rawEst[ek]) return !!shownEst[ek] || gateAllows(G, p, gateKeyOf('d', d), d, null, null);   /* an estimate's own PDF follows the estimate's approval */
       return gateAllows(G, p, gateKeyOf('d', d), d, gatePend, { type: 'd', title: s(d.name) || 'Document', refId: s(d.id) }); });
   const openPunch = arr(data.punch).some(function(x){ return pidOf(x) === pid && !/complete|done|closed/.test(low(x.status)); });
@@ -811,6 +813,7 @@ async function buildView(data, p, opts){
   const refs = [];
   posts.forEach(function(x){ arr(x.files).forEach(function(f){ refs.push(f.ref); }); });
   pdocs.forEach(function(d){ refs.push(d.ref); });
+  ests.forEach(function(e){ const c = chooseEstPdf(e, estPdfsOf(data, e, pid)); if (c) refs.push(c.ref); });   /* patch CUSTPORTAL: the chosen estimate PDF (an uploaded one is an internal job file) */
   invoices.concat(cos).forEach(function(r){ arr(r.files).concat(arr(r._files)).forEach(function(f){ refs.push(f.ref); }); });
   const signed = await signRefs(refs);
 
@@ -821,8 +824,7 @@ async function buildView(data, p, opts){
     const g = gdocInfo(e.gdocUrl);
     /* patch ESTPDF: the copy the customer was SENT (the newest version) — not the first file that happens to carry the estimate's id */
     const epds = arr(data.projectDocs).filter(function(d){ return s(d.estimateId) === s(e.id) && pidOf(d) === pid && d.deleted !== true && (refPath(d.ref) || httpsUrl(d.url)); });
-    const epCur = e.sentPdf && s(e.sentPdf.ref) ? s(e.sentPdf.ref) : '';
-    const pdf = (epCur && epds.find(function(d){ return s(d.ref) === epCur; })) || epds.filter(function(d){ return d.sentPdf === true && !d.supersededBy; }).sort(function(a, b){ return (+b.version || 0) - (+a.version || 0); })[0] || epds[0];
+    const pdf = chooseEstPdf(e, epds.filter(function(d){ return d.source !== 'portal-signature'; })) || epds[0];   /* patch CUSTPORTAL: the one chosen PDF */
     const total = num(e.totalCharge || e.quoteTotal || e.total || e.contract);
     addDoc({ kind: 'proposal', estId: clip(e.id, 90), title: clip(e.name || 'Your proposal', 90), date: ymd(e.sentDate || e.date || e.updatedAt),   /* patch ESTPDF2: estId — the portal shows this estimate once (its card) */
       total: total > 0 ? money(total) : null,
@@ -990,6 +992,21 @@ async function claimHelpAction(body, who){
    sent: the estimate's sentPdf, else its newest sent version), "✅ Accept & sign" (the portal's own e-sign paper for it,
    portal-sign.js), "💬 Ask a question" (portal messages) and its status: Sent → Viewed → Accepted / Declined.
    Never costs, margins, notes, sub / vendor names or carrier names. */
+/* patch CUSTPORTAL (owner 11/02: "I always want the PDF in the CRM, but I want to choose template or PDF"): the ONE estimate PDF the
+   customer sees — the PDF that was sent, else the estimate's choice (e.customerSees: 'pdf' = its own PDF, uploaded or made, as it
+   is — the default; 'template' = the GrayCo template proposal, ESTIN's DPROP_ file). Never both. */
+function estPdfsOf(data, e, pid){ return arr(data.projectDocs).filter(function(d){ return s(d.estimateId) === s(e.id) && pidOf(d) === pid && d.deleted !== true && d.source !== 'portal-signature' && refPath(d.ref) && /\.pdf$/i.test(s(d.ref)); }); }
+function chooseEstPdf(e, epds){
+  const cur = e.sentPdf && s(e.sentPdf.ref) ? s(e.sentPdf.ref) : '';
+  const hit = cur && epds.find(function(d){ return s(d.ref) === cur; }); if (hit) return hit;
+  const sent = epds.filter(function(d){ return d.sentPdf === true && !d.supersededBy; }).sort(function(a, b){ return (+b.version || 0) - (+a.version || 0); })[0]; if (sent) return sent;
+  const own = epds.find(function(d){ return s(e.sourceRef) && s(d.ref) === s(e.sourceRef) && d.source !== 'estin'; }) || epds.find(function(d){ return /^(estin-source|estimate-upload)$/.test(s(d.source)); });
+  const tpl = epds.find(function(d){ return s(d.source) === 'estin'; });
+  /* no choice made (an estimate from before): a template proposal the customer already got stays what they see */
+  const cs = s(e.customerSees) || (tpl && tpl.portalShare === true && tpl.estinWaiting !== true ? 'template' : 'pdf');
+  if (cs === 'template') return tpl || own || epds[0] || null;
+  return own || (tpl && s(tpl.ref) === s(e.sourceRef) ? tpl : null) || tpl || epds[0] || null;
+}
 async function estPortalCards(data, p, ests, signed){
   const pid = s(p.id);
   let reqs = [], views = [];
@@ -997,9 +1014,7 @@ async function estPortalCards(data, p, ests, signed){
   try { const v = await kvListRead('gc_est_views'); views = v ? v.list : []; } catch (e) {}
   const out = [], need = [];
   arr(ests).forEach(function(e){
-    const epds = arr(data.projectDocs).filter(function(d){ return s(d.estimateId) === s(e.id) && pidOf(d) === pid && d.deleted !== true && refPath(d.ref) && /\.pdf$/i.test(s(d.ref)); });
-    const cur = e.sentPdf && s(e.sentPdf.ref) ? s(e.sentPdf.ref) : '';
-    const pdf = (cur && epds.find(function(d){ return s(d.ref) === cur; })) || epds.filter(function(d){ return d.sentPdf === true && !d.supersededBy; }).sort(function(a, b){ return (+b.version || 0) - (+a.version || 0); })[0] || epds[0] || null;
+    const pdf = chooseEstPdf(e, estPdfsOf(data, e, pid));   /* patch CUSTPORTAL: the one chosen PDF */
     if (pdf && !signed[pdf.ref]) need.push(pdf.ref);
     out.push({ e: e, pdf: pdf });
   });

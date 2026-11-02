@@ -297,6 +297,23 @@ await t('4 estimates: "View PDF" opens exactly the file the CRM holds — the te
   const sg = (await call('portal-sign', { action: 'view' }, L())).data.items.find(x => x.kind === 'estimate'); assert.ok(sg && fileOfUrl(sg.doc).bytes.equals(want1), 'Papers to sign: "Read the estimate" is the same file');
   assert.ok(!/estimate.*\.build\(|buildEstimatePdf|estimatePdf\(/i.test(fs.readFileSync(path.join(W.FNDIR, 'portal.js'), 'utf8')), 'the portal makes no estimate PDF of its own');
 });
+await t('4 estimates — "Customer sees": My PDF (the default: the estimate\'s own PDF, as uploaded) or Template version (the GrayCo template proposal); the portal shows the choice, never both', async () => {
+  const card = async () => { W.resetCaches(); const v = (await call('portal', { action: 'view' }, L())).data; return { e: v.estimates.find(x => x.id === 'ESAMPLE3'), docs: v.docs.map(d => d.title) }; };
+  const docs = W.get('projectDocs'), own = W.FILES[docs.find(d => d.id === 'DESRC_ESAMPLE3').ref.slice(13)].bytes, tpl = W.FILES[docs.find(d => d.id === 'DPROP_ESAMPLE3').ref.slice(13)].bytes;
+  let c = await card(); assert.ok(c.e && fileOfUrl(c.e.pdf).bytes.equals(own), 'default: My PDF'); assert.ok(!c.docs.some(t => /Deck rebuild \(GrayCo template\)/.test(t)), 'the template is not listed too: ' + c.docs.join(' | '));
+  const es = W.get('estimates'); es.find(x => x.id === 'ESAMPLE3').customerSees = 'template'; W.put('estimates', es);
+  c = await card(); assert.ok(fileOfUrl(c.e.pdf).bytes.equals(tpl), 'Template version'); assert.ok(!c.docs.some(t => /Estimate source/.test(t)), 'the own PDF is not listed too');
+  es.find(x => x.id === 'ESAMPLE3').customerSees = 'pdf'; W.put('estimates', es); W.resetCaches();
+  const d2 = W.get('projectDocs'); const dp = d2.find(d => d.id === 'DPROP_ESAMPLE3'); delete es.find(x => x.id === 'ESAMPLE3').customerSees; W.put('estimates', es);
+  dp.portalShare = true; dp.estinWaiting = false; W.put('projectDocs', d2);
+  c = await card(); assert.ok(fileOfUrl(c.e.pdf).bytes.equals(tpl), 'an older estimate whose template proposal the customer already got (no choice made) keeps showing it');
+  dp.portalShare = false; dp.estinWaiting = true; W.put('projectDocs', d2); W.resetCaches();
+  const crm = fs.readFileSync(path.join(W.ROOT, 'index.html'), 'utf8');
+  assert.ok(/<b>Customer sees:<\/b>/.test(crm) && /data-ep="cs" data-v="pdf"/.test(crm) && /> My PDF<\/label>/.test(crm) && /> Template version<\/label>/.test(crm), 'the CRM card: Customer sees: ◉ My PDF ○ Template version');
+  assert.ok(/else if \(a === 'p5'\) \{ try \{ setEst\(estId, \{ customerSees: 'template'/.test(crm), '📘 Make proposal sets Template version');
+  assert.ok(/usePdf = e\.customerSees !== 'template' && \/\^sb:crm-files/.test(crm), '📨 Put proposal in customer portal + send carries the own PDF unless Template is chosen');
+  assert.ok(/if \(e && e\.customerSees === 'template'\) \{ var gT/.test(crm) && /what was sent is what the customer sees/.test(crm), '📤 Send estimate follows the choice and records it');
+});
 await t('4 the portal\'s invoice IS the CRM\'s: _lib/invoice-view.js carries index.html\'s _gcViewInvoicePDF design block verbatim', async () => {
   const crm = fs.readFileSync(path.join(W.ROOT, 'index.html'), 'utf8'), lib = fs.readFileSync(path.join(W.FNDIR, '_lib/invoice-view.js'), 'utf8');
   const i = crm.indexOf('window._gcViewInvoicePDF = function(invId, pid){'); assert.ok(i > 0);

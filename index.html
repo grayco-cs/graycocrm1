@@ -191278,7 +191278,7 @@ function storeProposal(e, pid, html){
 /* ════ which estimates get the proposal ══════════════════════════════════════════════════════════════ */
 function startedAt(e){ return s(e.createdAt || e.created || e.savedAt || e.date || e.updatedAt).slice(0, 10); }
 function changedAt(e){ return Date.parse(e.estinChangedAt || e.savedAt || e.updated || e.updatedAt || e.created || '') || 0; }
-function sigOf(e){ return h32(JSON.stringify([s(e.id), totalOf(e), linesOf(e).map(function(l){ return [s(l.desc), num(l.qty), num(l.cost), num(l.charge)]; }), s(e.name), s(e.client), s(e.address)])); }
+function sigOf(e){ return h32(JSON.stringify([s(e.id), totalOf(e), linesOf(e).map(function(l){ return [s(l.desc), num(l.qty), num(l.cost), num(l.charge)]; }), s(e.name), s(e.client), s(e.address)].concat(e.customerSees === 'template' ? ['tpl'] : []))); }   /* patch CUSTPORTAL: switching PDF / Template makes the proposal again */
 function fast(e){ return /upload|email|gdoc|draft-my-estimate/i.test(s(e.source)) || e.estinNow === true; }
 function eligible(e){
   if (!e || !s(e.id) || e.deleted === true) return 'deleted';
@@ -191350,8 +191350,11 @@ function process(e, force){
   function go(){
   var p = ensureJob(e);
   if (!s(e.pid) || s(e.pid) !== s(p.id)) setEst(e.id, { pid: p.id, autoPO: e.autoPO || p.autoPO });
-  var html = proposalHtml(Object.assign({}, e, { pid: p.id }));
-  return storeProposal(e, p.id, html).then(function(f){
+  /* patch CUSTPORTAL: "Customer sees: My PDF" (the default) → the estimate's own PDF, exactly as it is, goes in the approval and the portal;
+     "Template version" → the GrayCo template proposal (as before). The own PDF stays on the job either way ("Estimate source"). */
+  var ownRef = s(e.sourceRef), usePdf = e.customerSees !== 'template' && /^sb:crm-files\/[0-9a-f]{64}\.pdf$/.test(ownRef);
+  var html = usePdf ? '' : proposalHtml(Object.assign({}, e, { pid: p.id }));
+  return (usePdf ? Promise.resolve({ ref: ownRef, name: (s(e.sourceName) || ('Estimate — ' + s(e.name || p.name))).replace(/\.pdf$/i, '') + '.pdf', type: 'application/pdf' }) : storeProposal(e, p.id, html)).then(function(f){
     if (!f.ref) throw new Error("Couldn't save the PDF to the CRM — not sent. Try again.");   /* patch ESTPDF */
     var docId = 'DPROP_' + e.id;
     upsertDoc({ id: docId, pid: p.id, projectId: p.id, estimateId: e.id, cat: 'Proposals', name: f.name, ref: f.ref, type: f.type, uploadedAt: nowIso(), uploaded: today(), by: 'CRM (GrayCo template)', source: 'estin',
@@ -200613,6 +200616,7 @@ function viaFrame(html){
 }
 var DESIGNS = { p5: 'GrayCo 5-page proposal', simple: 'Simple estimate', uploaded: 'The uploaded estimate PDF' };
 function designDefault(p, e){
+  if (e && e.customerSees === 'template') { var gT = ''; try { gT = W._gcJA ? W._gcJA.groupOf(p || {}) : ''; } catch (x) {} return S.designs && S.designs[gT] === 'p5' ? 'p5' : 'simple'; }   /* patch CUSTPORTAL: "Customer sees: Template version" */
   if (isUploadPdf(e)) return 'uploaded';
   var g = ''; try { g = W._gcJA ? W._gcJA.groupOf(p || {}) : ''; } catch (x) {}
   var d = S.designs && S.designs[g]; return d === 'p5' || d === 'simple' ? d : 'simple';
@@ -200943,6 +200947,7 @@ function openSend(estId, opts){
 function send(estId, o, msg){
   msg = msg || function(){};
   var e = estById(estId); if (!e) return Promise.resolve({ ok: false, error: 'Estimate not found.' });
+  try { if (o && o.design && o.design !== 'upload') { var csNew = o.design === 'uploaded' ? 'pdf' : 'template'; if (s(e.customerSees) !== csNew && !(csNew === 'pdf' && !s(e.customerSees))) setEst(estId, { customerSees: csNew, customerSeesBy: meName(), customerSeesAt: nowIso() }); } } catch (x) {}   /* patch CUSTPORTAL: what was sent is what the customer sees */
   if (!/^[^@\s,;]+@[^@\s,;]+\.[a-z]{2,}$/i.test(s(o.to).split(/[,;\s]+/)[0] || '')) { msg('Check the "To" address.', true); return Promise.resolve({ ok: false, error: 'to' }); }
   if (!s(o.subject) || !s(o.body)) { msg('Add a subject and a message.', true); return Promise.resolve({ ok: false, error: 'subject' }); }
   if (S.busy) return Promise.resolve({ ok: false, error: 'busy' });
@@ -201082,6 +201087,10 @@ function paintSlot(el, estId, pid){
       h += '<span class="gcep-ns">Not sent yet</span><button type="button" class="gcep-sm" data-ep="send">📤 Send estimate</button><button type="button" class="gcep-sm" data-ep="upsent">📎 Upload the estimate I sent</button>';
       if (isUploadPdf(e)) h += '<button type="button" class="gcep-sm" data-ep="upl">📄 Uploaded PDF</button>';
     }
+    /* patch CUSTPORTAL: "Customer sees: ◉ My PDF ○ Template version" — switchable until it is sent or signed */
+    (function(){ var cs = s(e.customerSees) === 'template' ? 'template' : 'pdf', lock = !!c || /sign|won|accept|contract/i.test(s(e.status));
+      h += '<div class="gcep-cs" data-gc-cs="' + cs + '" style="flex-basis:100%;display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:12.5px"><b>Customer sees:</b>' + (lock ? '<span>' + (cs === 'template' ? 'Template' : 'PDF') + '</span>'
+        : '<label><input type="radio" name="gcep-cs-' + esc(e.id) + '" data-ep="cs" data-v="pdf"' + (cs === 'pdf' ? ' checked' : '') + '> My PDF</label><label><input type="radio" name="gcep-cs-' + esc(e.id) + '" data-ep="cs" data-v="template"' + (cs === 'template' ? ' checked' : '') + '> Template version</label>') + '</div>'; })();
     h += '<button type="button" class="gcep-sm" data-ep="p5">📘 Make proposal</button><button type="button" class="gcep-sm" data-ep="edit">✏ Open estimate</button>';
     var dr = draftsFor(e)[0];
     if (dr) h += '<div class="w" style="flex-basis:100%">✎ Unsaved changes from ' + esc(fmtDay(stampOf(dr))) + ' — <button type="button" class="gcep-sm" data-ep="dopen" data-d="' + esc(dr.id) + '">Open</button> <button type="button" class="gcep-sm" data-ep="ddisc" data-d="' + esc(dr.id) + '">Discard</button></div>';
@@ -201091,7 +201100,8 @@ function paintSlot(el, estId, pid){
     el.onclick = function(ev){
       var b = ev.target.closest('[data-ep]'); ev.stopPropagation(); if (!b) return;
       var a = b.getAttribute('data-ep');
-      if (a === 'pdf') view(estId); else if (a === 'all') versionsList(estId); else if (a === 'attach') attach(estId, { backfill: true }); else if (a === 'send') openSend(estId); else if (a === 'upsent') openUpload(estId); else if (a === 'p5') makeProposal(estId, pid);
+      if (a === 'pdf') view(estId); else if (a === 'all') versionsList(estId); else if (a === 'attach') attach(estId, { backfill: true }); else if (a === 'send') openSend(estId); else if (a === 'upsent') openUpload(estId); else if (a === 'p5') { try { setEst(estId, { customerSees: 'template', customerSeesBy: meName(), customerSeesAt: nowIso() }); } catch (x) {} makeProposal(estId, pid); }   /* patch CUSTPORTAL: 📘 Make proposal = the Template version */
+      else if (a === 'cs') { var cv = b.getAttribute('data-v') === 'template' ? 'template' : 'pdf'; setEst(estId, { customerSees: cv, customerSeesBy: meName(), customerSeesAt: nowIso() }); el.__h = ''; later(function(){ paintSlot(el, estId, pid); }, 50); toast('Customer sees: ' + (cv === 'template' ? 'the Template version' : 'your PDF') + '.'); }
       else if (a === 'edit') openEditor(estId, pid); else if (a === 'upl') { var x = estById(estId); if (x && W._gcFileUrl) W._gcFileUrl(x.sourceRef).then(function(u){ W.open(u, '_blank'); }); }
       else if (a === 'dopen') openEditor(b.getAttribute('data-d'), pid); else if (a === 'ddisc') discardDraft(b.getAttribute('data-d'), estId);
     };

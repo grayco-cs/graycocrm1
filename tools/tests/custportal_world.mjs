@@ -162,6 +162,10 @@ export function seedSample(opts){
     doc('DSAMPLE_PHOTOREP', 'Photo report — Roof — Oct 30.pdf', 'Photo Reports', { uploadedAt: day(30) + 'T16:00:00.000Z' }, ['Before / during / after photos of the roof']),
     doc('DSAMPLE_MAINT', 'GrayCo Care maintenance plan — Silver.pdf', 'Maintenance', { uploadedAt: day(30) + 'T17:00:00.000Z' }, ['Two visits a year: gutters, roof check, caulk']),
     doc('DSAMPLE_UP', 'Estimate #2051 — Fence & gate (uploaded).pdf', 'Estimates', { estimateId: 'ESAMPLE2', sentPdf: true, version: 1, uploadedAt: day(29) + 'T15:00:00.000Z', source: 'estimate-upload' }),
+    /* estimate #2060 (not sent yet): its own uploaded PDF (kept on the job, internal) + the GrayCo template proposal ESTIN made —
+       "Customer sees" picks one (patch CUSTPORTAL) */
+    doc('DESRC_ESAMPLE3', 'Estimate source — Deck rebuild.pdf', 'Estimates', { estimateId: 'ESAMPLE3', source: 'estin-source', portalShare: false, uploadedAt: day(31) + 'T14:00:00.000Z' }, ['(stand-in)']),
+    doc('DPROP_ESAMPLE3', 'Proposal — Deck rebuild (GrayCo template).pdf', 'Proposals', { estimateId: 'ESAMPLE3', source: 'estin', portalShare: false, estinWaiting: true, uploadedAt: day(31) + 'T14:05:00.000Z' }, ['GrayCo template proposal — Deck rebuild', 'Total $12,400.00']),
     ...(BYTES.DSAMPLE_P5 ? [doc('DSAMPLE_P5', 'Proposal — Kitchen remodel (GrayCo proposal).pdf', 'Proposals', { uploadedAt: day(28) + 'T16:00:00.000Z' })] : []),
     /* never shown: internal papers on the same job */
     Object.assign(doc('DSAMPLE_SUBAGR', 'Subcontract agreement — ' + S.sub + '.pdf', 'Sub Agreements', { portalShare: undefined }), {}),
@@ -192,6 +196,8 @@ export function seedSample(opts){
     notes: 'INTERNAL: sub is ' + S.sub + ' — keep margin over 30%', sentPdf: { ref: pdfs.DSAMPLE_EST, version: 1, sentAt: day(28) + 'T15:00:00.000Z', via: 'crm-email' }, scope: { text: 'Remove the old kitchen; new cabinets, quartz counters, tile backsplash, LVP floor, paint and trim.' },
     lines: [{ id: 'l1', cat: 'Demolition', desc: 'Remove cabinets, counters and flooring', qty: 1, cost: 1800, charge: 2600 }, { id: 'l2', cat: 'Cabinets', desc: 'Shaker cabinets, soft close', qty: 1, cost: 14200, charge: 19500 },
       { id: 'l3', cat: 'Countertops', desc: 'Quartz counters', qty: 1, cost: 7400, charge: 10300, sub: S.sub }, { id: 'l4', cat: 'Flooring', desc: 'LVP floor', qty: 320, cost: 9, charge: 5200 }, { id: 'l5', cat: 'Paint & trim', desc: 'Walls, ceiling, trim', qty: 1, cost: 6300, charge: 10650 }] };
+  const est3 = { id: 'ESAMPLE3', pid: S.pid, name: 'Deck rebuild', num: '2060', status: 'Sent', portalShare: true, date: day(31), createdAt: day(31) + 'T12:00:00Z', totalCharge: 12400, source: 'upload', sourceType: 'application/pdf', sourceRef: '', sourceName: 'Deck rebuild.pdf',
+    scope: { text: 'Tear off the old deck; new pressure-treated frame and composite boards.' }, lines: [{ id: 'd1', cat: 'Deck', desc: 'Deck rebuild', qty: 1, cost: 8000, charge: 12400 }] };
   const est2 = { id: 'ESAMPLE2', pid: S.pid, name: 'Fence & gate', num: '2051', status: 'Sent', portalShare: true, date: day(29), sentDate: day(29), createdAt: day(29) + 'T12:00:00Z', totalCharge: 6850, source: 'upload', sourceType: 'application/pdf',
     sentPdf: { ref: pdfs.DSAMPLE_UP, version: 1, sentAt: day(29) + 'T15:00:00.000Z', via: 'upload', method: 'text' }, scope: { text: 'Cedar privacy fence, 140 ft, one 4 ft gate.' }, lines: [{ id: 'f1', cat: 'Fence', desc: 'Cedar privacy fence + gate', qty: 1, cost: 4100, charge: 6850 }] };
   const invs = [{ id: 'INVS1', pid: S.pid, po: 'S1001', invNum: '1001', type: 'client', drawType: 'Deposit', amt: 14475, status: 'Paid', date: day(7), paidDate: day(9), payMethod: 'Check' },
@@ -204,7 +210,7 @@ export function seedSample(opts){
     { id: 'sr_' + S.pid + '_change_order_CO2', pid: S.pid, kind: 'change_order', refId: 'CO2', title: 'Change order #2 — Upgrade to architectural shingles', amount: 2350, status: 'pending', createdAt: day(31) + 'T15:00:00.000Z', lines: [{ l: 'Architectural shingles instead of 3-tab', r: '+$2,350.00' }] },
     { id: 'sr_' + S.pid + '_contract_ROOF', pid: S.pid, kind: 'contract', refId: 'ROOF', title: 'Roof replacement contract', amount: 26450, status: 'signed', createdAt: day(5) + 'T15:00:00.000Z', docRef: pdfs.DSAMPLE_CONTRACT,
       signed: { name: 'Sample Customer', at: day(6) + 'T15:00:00.000Z', docRef: pdfs.DSAMPLE_CONTRACT, docName: 'Signed contract.pdf', sigId: 'ps_sample' } }];
-  const gate = [{ id: '_meta', since: '2026-10-24T00:00:00Z', gf: {} }, { id: 'e:ESAMPLE1', pid: S.pid, st: 'approved' }, { id: 'e:ESAMPLE2', pid: S.pid, st: 'approved' }].concat(docs.filter(d => d.portalShare).map(d => ({ id: 'd:' + d.id, pid: S.pid, st: 'approved' })));
+  const gate = [{ id: '_meta', since: '2026-10-24T00:00:00Z', gf: {} }, { id: 'e:ESAMPLE1', pid: S.pid, st: 'approved' }, { id: 'e:ESAMPLE2', pid: S.pid, st: 'approved' }, { id: 'e:ESAMPLE3', pid: S.pid, st: 'approved' }].concat(docs.filter(d => d.portalShare).map(d => ({ id: 'd:' + d.id, pid: S.pid, st: 'approved' })));
   /* CompanyCam: 3 photos put in after the ccvis moment (new, nobody clicked), one hidden by a click */
   const since = Math.floor(Date.parse('2026-10-30T16:22:06Z') / 1000);
   const ccPics = pics.slice(0, 4).map((p, i) => { const name = 'cc' + i + '.jpg'; FILES['cc/' + name] = { bytes: p.full, type: 'image/jpeg' }; FILES['cc/t_' + name] = { bytes: p.thumb, type: 'image/jpeg' }; return ['77000' + i, since + 3600 * (i + 1), CC_IMG + '/cc/' + name, CC_IMG + '/cc/t_' + name]; });
@@ -214,7 +220,7 @@ export function seedSample(opts){
   for (const k of Object.keys(KV)) delete KV[k];
   for (const k of Object.keys(TABLES)) delete TABLES[k];
   put('users', users); put('customers', [S.customer, { id: 'CUOTHER', name: 'Other Person', email: 'other.person@example.com' }]); put('projects', [job, other]);
-  put('estimates', [est, est2]); put('projectDocs', docs); put('invs', invs); put('cos', cos); put('changeOrders', []); put('schedule', sched);
+  est3.sourceRef = docs.find(d => d.id === 'DESRC_ESAMPLE3').ref; put('estimates', [est, est2, est3]); put('projectDocs', docs); put('invs', invs); put('cos', cos); put('changeOrders', []); put('schedule', sched);
   put('subs', [{ id: 'SUB1', name: S.sub, contact: 'Rory Lane', phone: '901-555-0300', email: 'rory@ridgeline.test' }]);
   put('gc_photos', photoRecs.concat(ccFlags)); put('gc_sign_requests', signReqs); put('gc_portal_gate', gate);
   put('ccvis', { since: new Date(since * 1000).toISOString(), by: 'test' });

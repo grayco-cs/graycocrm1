@@ -15,6 +15,8 @@ also add photos if they want in the portal, and it goes into GrayCo Photos and s
    list too (they were left out by the paper-name filter).
 4. The emergency number in the CRM's customer papers / e-mails is (901) 582-8255 (owner 11/02); the office stays (901) 585-0944.
 5. ✅ Approvals: the preview of an invoice e-mail shows the CRM's own invoice (what the customer gets now), not the plain PDF.
+6. Estimates: "Customer sees: ◉ My PDF ○ Template version" on the job's estimate card (default My PDF; 📘 Make proposal sets
+   Template); 📤 Send estimate, ESTIN's "📨 Put proposal in customer portal + send" and the portal deliver only the choice.
 Idempotent: run it again and nothing changes. Usage: python3 tools/patch_CUSTPORTAL.py [index.html]"""
 import sys, os
 path = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(__file__), '..', 'index.html')
@@ -86,6 +88,46 @@ J2 = J + """      if(j && j.ok && j.html){ var hu = URL.createObjectURL(new Blob
         box.innerHTML = '<iframe class="_ap2PvPdfFrame" title="Invoice" style="width:100%;height:620px;border:1px solid #cbd5e1;border-radius:8px;background:#060b16"></iframe>'; box.firstChild.srcdoc = j.html; ov.__pdfBytes = j.html.length; return; }   /* patch CUSTPORTAL: the ONE invoice look */
 """
 EDITS.append((J, J2, 1))
+
+# 6. owner 11/02: "I always want the PDF in the CRM, but I want to choose template or PDF." Per estimate: e.customerSees =
+#    'pdf' (default — the estimate's own PDF, uploaded or made, exactly as it is) | 'template' (the GrayCo template proposal).
+#    The PDF always stays on the job (ESTIN's "Estimate source" file). Selection, routing and display only — the template's
+#    design and the tax math are not touched (shared functions: ESTPDF designDefault / send / paintSlot, ESTIN sigOf / process).
+K = """  if (isUploadPdf(e)) return 'uploaded';
+"""
+K2 = """  if (e && e.customerSees === 'template') { var gT = ''; try { gT = W._gcJA ? W._gcJA.groupOf(p || {}) : ''; } catch (x) {} return S.designs && S.designs[gT] === 'p5' ? 'p5' : 'simple'; }   /* patch CUSTPORTAL: "Customer sees: Template version" */
+""" + K
+EDITS.append((K, K2, 1))
+L = """function send(estId, o, msg){
+  msg = msg || function(){};
+  var e = estById(estId); if (!e) return Promise.resolve({ ok: false, error: 'Estimate not found.' });
+"""
+L2 = L + """  try { if (o && o.design && o.design !== 'upload') { var csNew = o.design === 'uploaded' ? 'pdf' : 'template'; if (s(e.customerSees) !== csNew && !(csNew === 'pdf' && !s(e.customerSees))) setEst(estId, { customerSees: csNew, customerSeesBy: meName(), customerSeesAt: nowIso() }); } } catch (x) {}   /* patch CUSTPORTAL: what was sent is what the customer sees */
+"""
+EDITS.append((L, L2, 1))
+M = """    h += '<button type="button" class="gcep-sm" data-ep="p5">📘 Make proposal</button><button type="button" class="gcep-sm" data-ep="edit">✏ Open estimate</button>';
+"""
+M2 = """    /* patch CUSTPORTAL: "Customer sees: ◉ My PDF ○ Template version" — switchable until it is sent or signed */
+    (function(){ var cs = s(e.customerSees) === 'template' ? 'template' : 'pdf', lock = !!c || /sign|won|accept|contract/i.test(s(e.status));
+      h += '<div class="gcep-cs" data-gc-cs="' + cs + '" style="flex-basis:100%;display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:12.5px"><b>Customer sees:</b>' + (lock ? '<span>' + (cs === 'template' ? 'Template' : 'PDF') + '</span>'
+        : '<label><input type="radio" name="gcep-cs-' + esc(e.id) + '" data-ep="cs" data-v="pdf"' + (cs === 'pdf' ? ' checked' : '') + '> My PDF</label><label><input type="radio" name="gcep-cs-' + esc(e.id) + '" data-ep="cs" data-v="template"' + (cs === 'template' ? ' checked' : '') + '> Template version</label>') + '</div>'; })();
+""" + M
+EDITS.append((M, M2, 1))
+N = """else if (a === 'p5') makeProposal(estId, pid);"""
+N2 = """else if (a === 'p5') { try { setEst(estId, { customerSees: 'template', customerSeesBy: meName(), customerSeesAt: nowIso() }); } catch (x) {} makeProposal(estId, pid); }   /* patch CUSTPORTAL: 📘 Make proposal = the Template version */
+      else if (a === 'cs') { var cv = b.getAttribute('data-v') === 'template' ? 'template' : 'pdf'; setEst(estId, { customerSees: cv, customerSeesBy: meName(), customerSeesAt: nowIso() }); el.__h = ''; later(function(){ paintSlot(el, estId, pid); }, 50); toast('Customer sees: ' + (cv === 'template' ? 'the Template version' : 'your PDF') + '.'); }"""
+EDITS.append((N, N2, 1))
+O = """s(e.name), s(e.client), s(e.address)])); }"""
+O2 = """s(e.name), s(e.client), s(e.address)].concat(e.customerSees === 'template' ? ['tpl'] : []))); }   /* patch CUSTPORTAL: switching PDF / Template makes the proposal again */"""
+EDITS.append((O, O2, 1))
+P = """  var html = proposalHtml(Object.assign({}, e, { pid: p.id }));
+  return storeProposal(e, p.id, html).then(function(f){"""
+P2 = """  /* patch CUSTPORTAL: "Customer sees: My PDF" (the default) → the estimate's own PDF, exactly as it is, goes in the approval and the portal;
+     "Template version" → the GrayCo template proposal (as before). The own PDF stays on the job either way ("Estimate source"). */
+  var ownRef = s(e.sourceRef), usePdf = e.customerSees !== 'template' && /^sb:crm-files\\/[0-9a-f]{64}\\.pdf$/.test(ownRef);
+  var html = usePdf ? '' : proposalHtml(Object.assign({}, e, { pid: p.id }));
+  return (usePdf ? Promise.resolve({ ref: ownRef, name: (s(e.sourceName) || ('Estimate — ' + s(e.name || p.name))).replace(/\\.pdf$/i, '') + '.pdf', type: 'application/pdf' }) : storeProposal(e, p.id, html)).then(function(f){"""
+EDITS.append((P, P2, 1))
 
 for old, new, n in EDITS:
     c = t.count(old)

@@ -18,7 +18,7 @@ let n = 0;
 const num = {};
 /* the numbers of the first preview stay (the owner refers to them: "page 20" …); pages added later come after them */
 ['signin', 'forgot_password', 'forgot_code', 'home_after_signin', 'home', 'home_full', 'papers_to_sign', 'requests_card', 'updates', 'your_info', 'sign_before', 'sign_filled', 'photos', 'photo_big', 'documents', 'documents_full', 'document_pdf', 'payments', 'payments_full', 'invoice_pdf', 'messages', 'request_change_form', 'request_sent', 'request_project_form', 'link_off',
-  'sign_after', 'signed_copy_pdf', 'spanish', 'estimate_pdf', 'estimate_uploaded_pdf', 'proposal_pdf', 'invoice_download_pdf'].forEach(function(k){ num[k] = String(++n).padStart(2, '0'); });
+  'sign_after', 'signed_copy_pdf', 'spanish', 'estimate_pdf', 'estimate_uploaded_pdf', 'proposal_pdf', 'invoice_download_pdf', 'estimate_choice_pdf', 'estimate_choice_template'].forEach(function(k){ num[k] = String(++n).padStart(2, '0'); });
 function nn(page){ if (!num[page]) num[page] = String(++n).padStart(2, '0'); return num[page]; }
 async function snap(pg, page, kind, what, opts){
   opts = opts || {};
@@ -154,6 +154,13 @@ for (const kind of ['phone', 'desktop']) {
     if (est) await pdfShot(ctx, kind, est, 'estimate_pdf', 'Estimate #1042: "📄 View PDF" opens the PDF the CRM made from the owner\'s template and sent (_gcEstPdf.makePdf, ⚙ Proposal template) — the stored file, byte for byte');
     const up = await pg.evaluate(() => { const a = document.querySelector('[data-est-card="ESAMPLE2"] [data-est-pdf]'); return a ? a.href : ''; });
     if (up) await pdfShot(ctx, kind, up, 'estimate_uploaded_pdf', 'Estimate #2051: "📄 View PDF" opens the PDF that was uploaded to the CRM, exactly as uploaded');
+    /* estimate #2060: "Customer sees" — My PDF (default) and Template version, as the portal shows each */
+    for (const [cv, key, what] of [['pdf', 'estimate_choice_pdf', 'Estimate #2060 with "Customer sees: My PDF" (the default): View PDF opens the uploaded PDF, as uploaded'], ['template', 'estimate_choice_template', 'Estimate #2060 with "Customer sees: Template version": View PDF opens the GrayCo template proposal']]) {
+      const es = W.get('estimates'); es.find(x => x.id === 'ESAMPLE3').customerSees = cv; W.put('estimates', es); W.resetCaches();
+      await pg.goto('about:blank'); await pg.goto(O + '/#t=' + W.S.link); await pg.waitForSelector('#track', { timeout: 20000 }); await pg.click('#tabs button[data-tab="docs"]'); await sleep(900);
+      const u = await pg.evaluate(() => { const a = document.querySelector('[data-est-card="ESAMPLE3"] [data-est-pdf]'); return a ? a.href : ''; });
+      if (u) await pdfShot(ctx, kind, u, key, what);
+    }
     const p5 = await pg.evaluate(() => { const a = [...document.querySelectorAll('.doc a.btn')].find(x => /GrayCo proposal/i.test(x.closest('.doc').textContent)); return a ? a.href : ''; });
     if (p5) await pdfShot(ctx, kind, p5, 'proposal_pdf', 'The 5-page GrayCo Customer Proposal (the CRM\'s generator), as it opens from Documents');
   });

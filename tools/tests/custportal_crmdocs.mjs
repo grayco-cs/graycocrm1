@@ -51,6 +51,21 @@ if (got.simple) fs.writeFileSync(path.join(OUT, 'est_simple.pdf'), Buffer.from(g
 if (got.p5) fs.writeFileSync(path.join(OUT, 'est_p5.pdf'), Buffer.from(got.p5, 'base64'));
 if (got.inv) fs.writeFileSync(path.join(OUT, 'crm_invoice.html'), got.inv);
 if (got.proposal) fs.writeFileSync(path.join(OUT, 'proposal.html'), got.proposal);
+/* the choice on the job's estimate card: "Customer sees: ◉ My PDF ○ Template version" (patch CUSTPORTAL) */
+try {
+  const cs = await p.evaluate(async () => {
+    const el = document.createElement('div'); el.id = 'cp-cs-demo'; el.style.cssText = 'position:fixed;left:20px;top:20px;z-index:2147483600;background:#fff;padding:16px;border:2px solid #0f2440;border-radius:12px;width:760px;font:14px Arial';
+    el.innerHTML = '<div style="font-weight:800;margin-bottom:8px">Job → 📝 Estimates → Estimate #2060 — Deck rebuild (not sent yet)</div><div id="cp-cs-slot"></div>'; document.body.appendChild(el);
+    window._gcEstPdf.paintSlot(document.getElementById('cp-cs-slot'), 'ESAMPLE3', 'PSAMPLE1');
+    return document.getElementById('cp-cs-slot').textContent;
+  });
+  console.log('choice card: ' + cs.replace(/\s+/g, ' ').slice(0, 160));
+  await p.screenshot({ path: path.join(SHOTS, '99_crm_customer_sees_pdf.png'), clip: { x: 0, y: 0, width: 820, height: 260 } });
+  await p.click('#cp-cs-slot [data-ep="cs"][data-v="template"]'); await sleep(600);
+  const st = await p.evaluate(() => { const e = (window._gcEstimatesState || []).find(x => x.id === 'ESAMPLE3'); return e && e.customerSees; });
+  console.log('after clicking Template version: customerSees=' + st);
+  await p.screenshot({ path: path.join(SHOTS, '99_crm_customer_sees_template.png'), clip: { x: 0, y: 0, width: 820, height: 260 } });
+} catch (e) { console.log('choice card: ' + e.message); }
 /* the CRM's own screens, for comparison */
 const shotHtml = async (html, name, kind) => {
   const ctx = await C.b.newContext(kind === 'phone' ? { viewport: { width: 390, height: 844 }, isMobile: true, deviceScaleFactor: 2 } : { viewport: { width: 1366, height: 768 } });
@@ -64,6 +79,7 @@ if (got.inv) { await shotHtml(got.inv, '99_crm_invoice_desktop.png', 'desktop');
 if (got.proposal) { await shotHtml(got.proposal, '99_crm_proposal_desktop.png', 'desktop'); idx.push('99_crm_proposal_desktop.png — the CRM\'s proposal template (⚙ Proposal template) for estimate #1042, as the CRM renders it'); }
 if (got.simple && pdfPng(path.join(OUT, 'est_simple.pdf'), '99_crm_estimate_pdf_page1.png')) idx.push('99_crm_estimate_pdf_page1.png — page 1 of the estimate PDF the CRM makes on "📤 Send estimate" (the file the portal shows)');
 if (got.p5 && pdfPng(path.join(OUT, 'est_p5.pdf'), '99_crm_proposal5_pdf_page1.png')) idx.push('99_crm_proposal5_pdf_page1.png — page 1 of the CRM\'s 5-page GrayCo Customer Proposal PDF');
+idx.push('99_crm_customer_sees_pdf.png / 99_crm_customer_sees_template.png — the job\'s estimate card in the CRM: "Customer sees: ◉ My PDF ○ Template version" (default My PDF; after a click on Template version)');
 fs.writeFileSync(path.join(OUT, 'index_crm.txt'), idx.join('\n') + '\n');
 const errs = C.errs.filter(e => !/ResizeObserver/.test(e));
 console.log(idx.length + ' CRM shots; page errors: ' + errs.length + (errs.length ? ' — ' + errs.slice(0, 3).join(' | ') : ''));
