@@ -130,14 +130,14 @@ try {
   });
   ok(pk.a >= 5, 'the message picker lists the owner\'s jobs', pk);
   ok(!/No jobs yet/.test(pk.txt) && pk.b >= 5, 'with the app\'s list still empty it never says "No jobs yet" — it fills in from the phone\'s copy', pk);
-  // the Jobs tab: Active / In progress (latest first) · other open stages · Completed
+  // the Jobs tab (patch JOBORDER): active-type (latest first) · bidding · other · Completed
   await tap(O, '#gc-fh-tabs [data-t="jobs"]'); await sleep(800);
   const jo = await O.ev(() => [...document.querySelectorAll('#_gcJobPick ._jpItem')].map(b => b.getAttribute('data-id')));
   await O.page().screenshot({ path: SHOTS + 'fieldportal_jobs.png' });
   const jl = await O.ev(() => ({ bg: getComputedStyle(document.getElementById('_gcJobPick')).backgroundColor, card: getComputedStyle(document.querySelector('#_gcJobPick ._jpItem')).backgroundColor }));
   ok(jl.bg === 'rgb(243, 245, 248)' && jl.card === 'rgb(255, 255, 255)', 'Pick a Job is light: light page, white cards', jl);
   const joT = await O.ev(() => [...document.querySelectorAll('#_gcJobPick ._jpItem')].map(b => { const p = window._crm.projects.find(x => String(x.id) === b.getAttribute('data-id')); return Math.max(Date.parse(p.updatedAt || 0) || 0, Date.parse(p.savedAt || 0) || 0); }));
-  ok(jo.slice(0, 3).sort().join() === 'P1,P2,P5' && jo[3] === 'P4' && jo[4] === 'P3' && joT[0] >= joT[1] && joT[1] >= joT[2], 'Jobs list: Active / In progress first (latest activity on top), then Approved, then Completed', { jo, joT });
+  ok(jo.slice(0, 4).sort().join() === 'P1,P2,P4,P5' && jo[4] === 'P3' && joT[0] >= joT[1] && joT[1] >= joT[2] && joT[2] >= joT[3], 'Jobs list (patch JOBORDER): active-type jobs (Active / In progress / Approved) latest activity first, Completed last', { jo, joT });
   // ── the job's field page ──
   await O.ev(() => { document.querySelectorAll('#_gcJobPick').forEach(o => o.remove()); window._gcJobDashboard('P1'); }); await sleep(1500);
   const jp = await O.ev(() => {
@@ -272,7 +272,7 @@ try {
   await P.ev(() => { document.querySelectorAll('#_gcJobDash').forEach(o => o.remove()); window._gcField.open(); }); await sleep(600);
   await tap(P, '#gc-fh-tabs [data-t="jobs"]'); await sleep(800);
   const pj = await P.ev(() => [...document.querySelectorAll('#_gcJobPick ._jpItem')].map(b => b.getAttribute('data-id')));
-  ok(pj.slice(0, 2).sort().join() === 'P1,P5' && pj[2] === 'P4' && pj[3] === 'P3' && pj.length === 4, 'PM Jobs list: his jobs, Active / In progress latest first, Approved, Completed last', pj);
+  ok(pj.slice(0, 3).sort().join() === 'P1,P4,P5' && pj[3] === 'P3' && pj.length === 4, 'PM Jobs list (patch JOBORDER): his jobs, active-type (Active / In progress / Approved) latest first, Completed last', pj);
   await home(P); await P.ev(() => window._gcField.settings()); await sleep(800);
   const ps = await P.ev(() => [...document.querySelectorAll('.gc-fh-sheet .gcfp-sec')].map(s => s.getAttribute('data-sec')));
   ok(ps.join(',') === 'profile,notif,oncall,custq,help', 'PM ⚙ Settings: no Data-entry mode and no Admin shortcuts', ps);
