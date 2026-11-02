@@ -1817,7 +1817,7 @@ async function approvalAction(body, who){
   const op = s(body.op), id = s(body.id);
   const admin = require('./_lib/staff-role.js').isAdmin(who);   /* patch AUTHFIX */
   let myName = s(who.name);
-  if (op === 'escalate') { const e = await escalateDue({}); return { status: e.ok ? 200 : 502, out: e }; }   /* patch AP4: the page asks when a list is shown */
+  if (op === 'escalate') { const AUTO = require('./_lib/automations.js'); if (!(await AUTO.isOn('approval_escalation'))) return { status: 200, out: Object.assign({ ok: true, escalated: 0 }, await AUTO.held('approval_escalation', null, [])) }; const e = await escalateDue({}); return { status: e.ok ? 200 : 502, out: e }; }   /* patch AUTOPANEL */   /* patch AP4: the page asks when a list is shown */
   const cur = await kvListRead(AQ_KEY);
   if (!cur) return { status: 502, out: { ok: false, error: 'Could not read the approvals list.' } };
   if (op === 'list') return { status: 200, out: { ok: true, items: cur.list } };
@@ -2253,6 +2253,8 @@ function linkMailHtml(v, link){
 async function sendLink(pid, event, who){
   const st = await settingsGet();
   if (!st.autoSend) return { ok: true, skipped: 'auto-send is turned off' };
+  /* patch AUTOPANEL: the new-job portal link e-mail is an ⚡ Automations switch (default OFF) */
+  if (!(await require('./_lib/automations.js').isOn('portal_invite_email'))) return Object.assign({ ok: true, skipped: 'new-job portal link e-mail is switched off in ⚡ Automations' }, await require('./_lib/automations.js').held('portal_invite_email', 1, [s(pid)]));
   const now = Date.now();
   const data = await crmData(true);
   const p = findProject(data, pid);

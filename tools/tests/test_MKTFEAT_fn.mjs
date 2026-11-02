@@ -108,6 +108,8 @@ put('gc_mkt_v1', { cfg: { main: { id: 'main', apprStage: { stage: 2 } } },
 const F = require(path.join(build, 'netlify/functions/_lib/mktfeat.js'));
 const soc = require(path.join(build, 'netlify/functions/soc.js'));
 const pauseLib = require(path.join(build, 'netlify/functions/_lib/pause.js'));
+/* patch AUTOPANEL: this test checks the before / after drafts and the marketing parts — switched ON here (⚙ Admin → ⚡ Automations, "Turn on everything I had before") */
+{ const AUTO = require(path.join(build, 'netlify/functions', '_lib/automations.js')); const on = AUTO.before(); AUTO._t.setStore({ get: async k => k === AUTO.KEY ? on : null, put: async () => true }); }
 const call = async (tok, body) => { const r = await soc.handler({ httpMethod: 'POST', headers: { authorization: 'Bearer ' + tok, origin: 'https://crm.grayco-cs.com' }, body: JSON.stringify(body) }); let j = {}; try { j = JSON.parse(r.body); } catch (e) {} return { status: r.statusCode, j, raw: r.body }; };
 const leaks = txt => SECRETS.filter(x => String(txt).indexOf(x) >= 0);
 

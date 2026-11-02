@@ -20,6 +20,8 @@ const CORE = portal._core;
 const BI = require(path.join(FN, 'bid-inbox.js'))._lib;
 const PAUSE = require(path.join(FN, '_lib/pause.js'));
 const OFF = require(path.join(FN, '_lib/offfeat.js'));
+/* patch AUTOPANEL: this test checks the W-9 requests — switched ON here (⚙ Admin → ⚡ Automations, "Turn on everything I had before") */
+{ const AUTO = require(path.join(FN, '_lib/automations.js')); const on = AUTO.before(); AUTO._t.setStore({ get: async k => k === AUTO.KEY ? on : null, put: async () => true }); }
 const LD = require(path.join(FN, '_lib/lien-deadlines.js'));
 const CARE = require(path.join(FN, '_lib/care11.js'));
 const LIEN = require(path.join(FN, '_lib/lien.js'));

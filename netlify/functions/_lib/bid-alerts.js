@@ -535,6 +535,8 @@ function make(d){
     live.forEach(l => { biddersFor(src, l).forEach(b => { if (gcWanted(l, b, t)) gcs.push({ l, b, due: s(b.due) || s(l.bidDue) }); }); });
     const want = live.filter(l => !biddersFor(src, l).length && resultsWanted(l, t));
     if (!want.length && !gcs.length) return { sent: 0 };
+    /* patch AUTOPANEL: "Bid-result e-mails to GCs" is an ⚡ Automations switch (default OFF): nothing is marked or sent */
+    { const AUTO = require('./automations.js'); if (!(await AUTO.isOn('bid_result_emails'))) return AUTO.held('bid_result_emails', want.length + gcs.length, want.map(l => s(l.name || l.title || l.id)).concat(gcs.map(x => s(x.l.name || x.l.id))).slice(0, 3)); }
     let mine = [], mineGc = [];
     const gk = x => 'results|' + x.l.id + '|' + x.b.id + '|' + x.due;
     await kvCas(KA, v => { const st = loadState(v); mine = want.filter(l => { const k = 'results|' + l.id + '|' + s(l.bidDue); if (st.reminded[k]) return false; st.reminded[k] = nowIso(); return true; });

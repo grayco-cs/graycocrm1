@@ -4,6 +4,7 @@
 'use strict';
 require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 exports.handler = async function(){
+  { const h = await require('./_lib/automations.js').gate('gdocs_sync'); if (h) return { statusCode: 200, body: JSON.stringify(h) }; }   /* patch AUTOPANEL */
   try {
     const r = await require('./_lib/gdocs').run({ budgetMs: 22000 });
     return { statusCode: 200, body: JSON.stringify({ ok: r.ok, added: r.added || 0, off: !!r.off }) };

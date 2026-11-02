@@ -12,6 +12,7 @@ const CP = require('./_lib/cc-photos.js');
 
 exports.handler = async function(){
   let r = null;
+  { const h = await require('./_lib/automations.js').gate('companycam_photos'); if (h) return { statusCode: 200, body: JSON.stringify(h) }; }   /* patch AUTOPANEL */
   try {
     r = await CP.run({ who: 'schedule', budgetMs: Math.min(18000, +process.env.CC_PHOTO_SCHED_MS || 18000) });
     if (r.more && !r.waiting && !r.busy && !r.skipped && r.ok !== false) r.handedOff = await CP.kickBackground('schedule');

@@ -12,9 +12,10 @@ require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every o
 const L = require('./_lib/mkt.js');
 exports.handler = async function(){
   const out = {};
-  try { out.due = await L.runDue({ budgetMs: 17000 }); } catch (e) { out.dueError = String(e && e.message || e); }
-  try { out.autopilot = await L.autopilot({}); } catch (e) { out.autopilotError = String(e && e.message || e); }
-  try { out.soc = await require('./_lib/soc.js').scheduled({}); } catch (e) { out.socError = String(e && e.message || e); }   /* patch SOC: Sunday plan, posting-tomorrow list, Friday digest */
-  try { const h = new Date().getUTCHours(), m = new Date().getUTCMinutes(); if (h === 12 && m < 15) out.insights = await L.refreshInsights(); } catch (e) {}
+  const AUTO = require('./_lib/automations.js');   /* patch AUTOPANEL */
+  try { out.due = (await AUTO.gate('scheduled_posts')) || await L.runDue({ budgetMs: 17000 }); } catch (e) { out.dueError = String(e && e.message || e); }
+  try { out.autopilot = (await AUTO.gate('mkt_autopilot')) || await L.autopilot({}); } catch (e) { out.autopilotError = String(e && e.message || e); }
+  try { out.soc = (await AUTO.gate('mkt_autopilot')) || await require('./_lib/soc.js').scheduled({}); } catch (e) { out.socError = String(e && e.message || e); }   /* patch SOC: Sunday plan, posting-tomorrow list, Friday digest */
+  try { const h = new Date().getUTCHours(), m = new Date().getUTCMinutes(); if (h === 12 && m < 15) out.insights = (await AUTO.gate('ads_insights')) || await L.refreshInsights(); } catch (e) {}
   return { statusCode: 200, body: JSON.stringify(out) };
 };

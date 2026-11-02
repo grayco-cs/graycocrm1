@@ -80,8 +80,11 @@ async function run(opts){
   const out = { due: list.length, sent: 0, alerts: 0, skipped: [] };
   if (!list.length) return out;
   const isPaused = await paused();
+  const AUTO = require('./_lib/automations.js'), subOn = await AUTO.isOn('sub_schedule_texts'), pmOn = await AUTO.isOn('sub_unconfirmed_pm'), heldS = [], heldP = [];   /* patch AUTOPANEL */
   let optout = {}; try { optout = (await MC().stateGet()).optout || {}; } catch (e) {}
   for (const d of list) {
+    if (d.kind === 'noreply' && !pmOn) { heldP.push(s(d.rec && d.rec.sub)); continue; }
+    if (d.kind !== 'noreply' && !subOn) { heldS.push(s(d.rec && d.rec.sub) + ' (' + d.kind + ')'); continue; }
     if (d.kind === 'noreply') {
       await patchState(st2 => { const r = st2.rows[d.key]; if (!r || r.noReplyAt || r.status !== 'sent') return undefined; r.noReplyAt = nowIso(); return true; });
       await alertPm(Object.assign({ key: d.key }, d.rec), '', 'noreply', data); out.alerts++; continue;
@@ -107,6 +110,8 @@ async function run(opts){
       out.skipped.push(d.key + ': Twilio ' + (r.status || r.why || 'failed'));
     }
   }
+  if (heldS.length) out.held = await AUTO.held('sub_schedule_texts', heldS.length, heldS.slice(0, 3));
+  if (heldP.length) out.heldPm = await AUTO.held('sub_unconfirmed_pm', heldP.length, heldP.slice(0, 3));
   return out;
 }
 
@@ -129,6 +134,7 @@ async function firstDayRun(opts){
   const list = SW().firstDayDue(data, set, st, now());
   const out = { due: list.length, sent: 0, skipped: [] };
   if (!list.length) return out;
+  if (!(await require('./_lib/automations.js').isOn('sub_firstday_text'))) return Object.assign(out, await require('./_lib/automations.js').held('sub_firstday_text', list.length, list.map(d => s(d.sub)).slice(0, 3)));   /* patch AUTOPANEL */
   if (await paused()) { out.skipped.push('data-entry mode'); return out; }
   if (!MC().ready()) { out.skipped.push('texting not set up'); return out; }
   let optout = {}; try { optout = (await MC().stateGet()).optout || {}; } catch (e) { out.skipped.push('STOP list unreadable'); return out; }   /* fail closed */

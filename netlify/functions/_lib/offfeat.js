@@ -371,12 +371,15 @@ async function daily(opts){
     const working = {}, since = A.addDays(t, -W9_ACTIVE_DAYS);
     arr(data.projects).forEach(function(p){ if (!p || /lost|dead|cancel|closed|complete/i.test(s(p.status))) return; arr(p.subs).concat(arr(p.subAgreements)).forEach(function(x){ if (x) { if (s(x.subId)) working['id:' + s(x.subId)] = 1; const nm = low(x.name || x.sub || x.vendor || x.subName); if (nm) working['n:' + nm] = 1; } }); });
     c.listOf(data, ['invs', 'invoices']).forEach(function(r){ if (!/sub/.test(low(r.type)) || (ymd(r.date || r.recvDate) || '') < since) return; if (s(r.subId)) working['id:' + s(r.subId)] = 1; const nm = low(r.sub || r.vendor); if (nm) working['n:' + nm] = 1; });
+    const w9On = await require('./automations.js').isOn('w9_requests'), w9Held = [];   /* patch AUTOPANEL: W-9 requests (default OFF) */
     for (const v of subs) {
       if (rep.w9Queued >= W9_PER_RUN) break;
+      if (!w9On) { if (working['id:' + s(v.id)] || working['n:' + low(v.name)] || working['n:' + low(v.company)]) w9Held.push(subName(v)); continue; }
       if (!working['id:' + s(v.id)] && !working['n:' + low(v.name)] && !working['n:' + low(v.company)]) continue;
       const q = await queueSubDoc({ subId: s(v.id), name: subName(v), email: subEmail(v), lang: v.lang === 'es' ? 'es' : 'en', need: ['w9'], auto: true, by: 'CRM (W-9 missing)' });
       if (q.ok && q.queued) { rep.w9Queued++; newly[s(v.id)] = { at: new Date(_D.now()).toISOString(), id: q.id }; }
     }
+    if (w9Held.length) rep.w9Held = await require('./automations.js').held('w9_requests', w9Held.length, w9Held.slice(0, 3));
     if (Object.keys(newly).length) await _D.kvCas(STATE_KEY, function(v){ const y = obj(v); y.w9 = Object.assign(obj(y.w9), newly); y.last = new Date(_D.now()).toISOString(); return y; });
   } catch (e) { rep.w9Error = clip(e && e.message || e, 120); }
   return rep;

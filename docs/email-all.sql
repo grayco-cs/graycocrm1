@@ -33,7 +33,7 @@ returns text language sql immutable set search_path = public, pg_temp as $$
       'gc_ach_details', 'gc_overhead_manual', 'gc_checkrun_settings',
       'gc_senior_pm', 'gc_team_settings', 'gc_reassign_log',        -- patch PMG
       'gc_mkt_admin',                                              -- patch MM: the admins' marketing settings
-      'gc_automation_pause', 'gc_automation_pause_log',          -- patch PAUSE: data-entry mode (admins only)
+      'gc_automation_pause', 'gc_automation_pause_log', 'gc_automations', 'gc_auto_held',          -- patch PAUSE: data-entry mode (admins only)
       'gc_doc_defaults'])                                          -- patch DOCLIB2: document defaults by job type (admins only)
       then 'adminwrite'
     when k = 'users' then 'users'

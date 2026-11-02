@@ -206,6 +206,7 @@ exports.handler = async function (event) {
   if (!(process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY)) return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: 'SUPABASE_SERVICE_KEY not set.' }) };
   if (sched && !isRunTime(new Date())) return { statusCode: 200, headers, body: JSON.stringify({ ok: true, notNow: true }) };
   if (!sched && !b.force && !b.projectId && !isRunTime(new Date())) return { statusCode: 200, headers, body: JSON.stringify({ ok: true, notNow: true, hint: 'send { "force": true } to draft now' }) };
+  if (sched) { const AUTO = require('./_lib/automations.js'); const h = await AUTO.gate('weekly_update'); if (h) return { statusCode: 200, headers, body: JSON.stringify(Object.assign({ ok: true }, h)) }; }   /* patch AUTOPANEL */
   try {
     const rep = await run({ projectId: s(b.projectId) });
     try { console.log('[weekly-update]', JSON.stringify({ queued: rep.queued, skipped: rep.skipped.length })); } catch (e) {}

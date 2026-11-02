@@ -96,6 +96,7 @@ exports.handler = async function(event){
   }
   const c = readCall(b);
   if (!c.id && !c.from) return J(200, { ok: true, skipped: 'not a call' });
+  { const h = await require('./_lib/automations.js').gate('callrail', 1, [String(c.from || '').slice(-4)]); if (h) return J(503, { ok: false, held: h.held }); }   /* patch AUTOPANEL */
   if (c.direction === 'outbound') return J(200, { ok: true, skipped: 'outbound' });
   const out = { ok: true };
   try {

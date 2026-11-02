@@ -28,11 +28,13 @@ async function once(id){
 async function runParts(opts){
   opts = opts || {};
   const now = opts.now != null ? opts.now : Date.now(), c = F.central(now), out = { at: new Date(now).toISOString(), central: c };
+  const AUTO_KEY = { ba: 'social_drafts', rank: 'mkt_internal_reports', report: 'mkt_internal_reports' };   /* patch AUTOPANEL */
   for (const P of PARTS) {
     if (opts.part && opts.part !== P.key) continue;
     try {
       if (!opts.force) {
         if (!P.when(c)) { out[P.key] = 'not now'; continue; }
+        { const h = await require('./_lib/automations.js').gate(AUTO_KEY[P.key]); if (h) { out[P.key] = h; continue; } }
         if (P.marker && !(await once(P.marker(c)))) { out[P.key] = 'done already'; continue; }
       }
       out[P.key] = await P.run({ now: now, force: !!opts.force });

@@ -183,6 +183,7 @@ exports.handler = async function (event) {
     }
   }
 
+  if (isScheduled(event)) { const h = await require('./_lib/automations.js').gate('backups'); if (h) return { statusCode: 200, headers, body: JSON.stringify(Object.assign({ ok: true }, h)) }; }   /* patch AUTOPANEL (default ON) */
   const report = [];
   for (const t of TABLES) {
     try {

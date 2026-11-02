@@ -115,6 +115,363 @@ try {
 } catch (e) { try { console.warn('[GC] BOOTSAFE not installed:', e && e.message || e); } catch (x) {} }
 })();
 </script>
+<script id="gc-patch-autopanel-core">
+/* __GC_PATCH_AUTOPANEL_TOOL__ */
+/* AUTOREG-BEGIN */
+/* ============================================================================
+   automations.js: ONE list of everything the CRM does by itself, and ONE switch per item (patch AUTOPANEL)
+
+   Owner (11/02): "make sure nothing is automatic in my CRM until I tell it to be auto, I have a lot of stuff to add,
+   fix and test this week."
+
+   1. THE LIST (LIST below). Every automation, server or page, with a key, a plain name, what it does, its effect
+      (A = sends to customers / subs / GCs / the public, B = staff only, C = creates or changes records,
+      D = read-only, sync or housekeeping), `critical` (safety, lead intake, backups: shown with a lock, a confirm to
+      turn off) and `defaultOn`.
+        ON by default: safety (missed-call text-back, call chain / emergency line, on-call paging + escalation, staff
+        text alerts), lead intake (website, lead-intake, partner API, CallRail, bids@ / leads@ / claims@, money intake),
+        sync and backups (backups, CompanyCam read / link / photos, mail indexing), staff-only alerts, CUSTQUIET's 7 AM
+        release of items people already approved, and posting already-approved scheduled posts.
+        Everything else that sends to customers / subs / GCs (A) or creates / changes records (C) is OFF by default.
+   2. THE SWITCHES: gc_kv "gc_automations" = { <key>: true | false, _log: [{ key, on, by, at }] }. A key that is not
+      there uses its default. Only admins change it (netlify/functions/automations.js checks; docs/automation-pause.sql
+      makes the row admin-write in the database too).
+   3. ONE CHECK. Server: `await isOn(key)` at the top of each part (cached 30 s per function instance; when the row
+      cannot be read every key uses its default, so A / C items stay OFF). Page: `window._gcAutoOn(key)` (same rule,
+      the row is read through the automations function). When OFF the part does nothing and records
+      "held: would have done N" (count + a short sample) in gc_kv "gc_auto_held" — nothing is queued to go later.
+   4. "Turn on everything I had before" = every key ON (how the CRM ran before this panel).
+
+   This file is copied word for word into index.html (window._gcAutoReg); the server-only part below is never called
+   on the page.
+   ============================================================================ */
+(function(root){
+'use strict';
+var KEY = 'gc_automations', HELD_KEY = 'gc_auto_held';
+var GROUPS = [
+  ['cust', 'Customer sends', 'E-mails, texts, portal posts and pushes to customers, GCs, adjusters or the public'],
+  ['sub', 'Sub sends', 'Texts and e-mails to subcontractors'],
+  ['rec', 'Record changes', 'Creates or changes jobs, invoices, expenses, prices, leads or approvals by itself'],
+  ['staff', 'Staff alerts', 'Only tells GrayCo staff (e-mail, push, text, To-Do)'],
+  ['safety', 'Safety', 'Missed calls, emergencies, on-call — kept ON'],
+  ['sync', 'Sync / backups / lead intake', 'Brings leads and data in, keeps copies safe']
+];
+/* [key, group, effect, critical, defaultOn, where, name, what it does] */
+var ROWS = [
+  /* ── safety ── */
+  ['missed_call_textback', 'safety', 'A', 1, 1, 'server', 'Missed-call text-back', 'A missed call gets a text back at once and becomes a lead.'],
+  ['call_chain', 'safety', 'B', 1, 1, 'server', 'Call menu / call chain', 'Rings staff in the 📞 Call order, screens robocalls, blocks blocked numbers.'],
+  ['emergency_line', 'safety', 'B', 1, 1, 'server', 'Emergency line', 'Emergency words or "press 1" phone and text staff until someone answers.'],
+  ['oncall_paging', 'safety', 'B', 1, 1, 'server', 'On-call paging + escalation', 'An after-hours emergency pages the on-call person; nobody accepts → the next person, then all admins.'],
+  ['staff_text_alerts', 'safety', 'B', 1, 1, 'server', 'Staff text alerts', 'Text alerts to staff cells (new lead, emergency, missed call); replies relayed.'],
+  /* ── lead intake, sync, backups ── */
+  ['website_intake', 'sync', 'C', 1, 1, 'server', 'Website leads', 'Website forms and the roof price widget go into the Lead Inbox.'],
+  ['lead_intake', 'sync', 'C', 1, 1, 'server', 'Partner lead intake (Roof Ignite …)', 'Leads posted by lead partners come into the CRM.'],
+  ['partner_api', 'sync', 'C', 1, 1, 'server', 'Partner API', 'Partners post leads, bids and jobs.'],
+  ['callrail', 'sync', 'C', 1, 1, 'server', 'CallRail calls', 'Logs tracking-number calls; a first-time caller becomes a lead.'],
+  ['bids_inbox', 'sync', 'C', 1, 1, 'server', 'bids@ / leads@ inbox', 'Bid invites and lead e-mails become leads; GC replies and sub bids are filed.'],
+  ['claims_inbox', 'sync', 'C', 1, 1, 'server', 'claims@ inbox', 'Claim e-mails are filed on the claim; a new claim becomes an Insurance lead.'],
+  ['money_intake', 'sync', 'C', 1, 1, 'server', 'Money intake (bills@, invoices@, receipts@, QuickBooks)', 'Money e-mails and QuickBooks events go into the review list (nothing is booked by this).'],
+  ['backups', 'sync', 'D', 1, 1, 'both', 'Backups', 'Nightly cloud backup (30 nights) and the CRM’s own snapshots.'],
+  ['cloud_sync', 'sync', 'D', 1, 1, 'page', 'Cloud sync', 'Keeps every open CRM in step with the cloud. Always on: the CRM cannot work without it.', 1],
+  ['companycam_read', 'sync', 'D', 0, 1, 'server', 'CompanyCam read / link', 'Reads changed CompanyCam projects and ties them to existing jobs; review list.'],
+  ['companycam_photos', 'sync', 'D', 0, 1, 'server', 'CompanyCam photo copy / indexing', 'Indexes every CompanyCam photo and copies it into GrayCo storage.'],
+  ['mail_index', 'sync', 'D', 0, 1, 'server', 'Mail indexing', 'Gmail metadata into the admins’ e-mail index.'],
+  ['gdocs_sync', 'sync', 'D', 0, 1, 'server', 'Google Docs list', 'The team’s new Google Docs show in the CRM (no e-mail).'],
+  ['photo_tags', 'sync', 'D', 0, 1, 'server', 'Photo AI tags', 'AI tags on new photos (read-only).'],
+  ['ads_insights', 'sync', 'D', 0, 1, 'server', 'Ads and social numbers', 'Google Ads, Meta and social likes / reach / clicks are read in.'],
+  ['text_thread_copy', 'sync', 'D', 0, 1, 'server', 'Texted lead → job conversation copy', 'A texted lead that became a job gets its text conversation and notes copied onto the job.'],
+  /* ── staff alerts ── */
+  ['bid_alerts_staff', 'staff', 'B', 0, 1, 'server', 'Bid-due and speed-to-lead alerts', '"Bid due in 1 h / today / tomorrow", "assign this lead", "reach out", RoofScout lead mail.'],
+  ['data_check', 'staff', 'B', 0, 1, 'server', 'Nightly data check', 'Keeps ONE Office To-Do of missing data; 7 AM alert to admins and office.'],
+  ['company_docs_expiry', 'staff', 'B', 0, 1, 'server', 'Company documents expiring', 'COI, W-9 or licence expiring: admins e-mailed and an Office To-Do.'],
+  ['field_dispatch', 'staff', 'B', 0, 1, 'server', '7 AM field dispatch', 'E-mail and push to each superintendent with today’s jobs.'],
+  ['field_staff_nudges', 'staff', 'B', 0, 1, 'server', 'Mortgage-check and warranty-ticket nudges', 'The PM is nudged about a stuck mortgage check; admins about a ticket unanswered 48 h.'],
+  ['x10_vehicle', 'staff', 'B', 0, 1, 'server', 'Vehicle reminders', 'Oil, registration and insurance reminders to the driver.'],
+  ['x10_mydata', 'staff', 'B', 0, 1, 'server', '"My data" monthly e-mails', 'Each person’s own monthly numbers.'],
+  ['crm_health', 'staff', 'B', 0, 1, 'server', 'CRM health + equipment reminders', 'Mitigation equipment-on-site To-Do; health e-mail on the 1st.'],
+  ['est_price_watch', 'staff', 'B', 0, 1, 'server', 'Estimate price watch', 'E-mail to the estimator when material prices on open estimates went up more than 5 %.'],
+  ['daily_plan', 'staff', 'B', 0, 1, 'server', 'Today’s plan', '"📅 Today’s plan" To-Do per person; 6 AM e-mail for those who opted in.'],
+  ['sub_unconfirmed_pm', 'staff', 'B', 0, 1, 'server', '"Sub hasn’t confirmed" to the PM', 'Tells the PM a sub has not confirmed tomorrow’s start.'],
+  ['mail_followup', 'staff', 'B', 0, 1, 'server', '"No reply — follow up" To-Dos', 'Office To-Dos for sent mail nobody answered.'],
+  ['payroll_check', 'staff', 'B', 0, 1, 'server', 'Thursday payroll check', 'Is Friday’s payroll draft there? → staff.'],
+  ['approvals_digest', 'staff', 'B', 0, 1, 'server', 'Approvals digest, scorecard, noon nudge', 'Approvals digest, owner scorecard, noon "not opened" push.'],
+  ['tax_alerts', 'staff', 'B', 0, 1, 'server', 'Tax deadline alerts', 'Tax deadlines 7 days before, on the day and when overdue.'],
+  ['mkt_internal_reports', 'staff', 'B', 0, 1, 'server', 'Marketing rank + report (staff)', 'Google ranking (Mon) and the monthly marketing report to admins.'],
+  ['office_todos', 'staff', 'B', 0, 1, 'both', 'Office To-Do builders', 'Friday check task, supplier-bills task, lien-deadline and unsigned-CO To-Dos.'],
+  /* ── customer sends (A) ── */
+  ['cust_release', 'cust', 'A', 0, 1, 'server', 'CUSTQUIET 7 AM release', 'At 7 AM sends what was held overnight — only items a person already approved or sent.'],
+  ['scheduled_posts', 'cust', 'A', 0, 1, 'server', 'Approved scheduled posts', 'Posts approved social posts and approved news@ campaigns at their scheduled time.'],
+  ['invoice_email_queue', 'cust', 'C', 0, 0, 'server', 'Invoice e-mail queueing', 'Every new client invoice gets an "Invoice … to customer" item on ✅ Approvals.'],
+  ['final_invoice_reminders', 'cust', 'A', 0, 0, 'server', 'Final-invoice e-mail + 15-day reminders', 'Final invoice e-mail, then a reminder every 15 days while unpaid (later ones go by themselves).'],
+  ['portal_docs_notice', 'cust', 'A', 0, 0, 'server', '"Something new in your portal" e-mails', 'Tells the customer new papers are in the portal.'],
+  ['estimate_followups', 'cust', 'A', 0, 0, 'server', 'Estimate follow-ups', 'Estimate nudges on day 2, 5 and 10 (only the first needs approval).'],
+  ['customer_app_push', 'cust', 'A', 0, 0, 'server', 'Customer app pushes (held overnight)', 'Portal-app push notifications held overnight go out.'],
+  ['weekly_update', 'cust', 'C', 0, 0, 'server', 'Weekly customer update queueing', 'Friday: an AI-drafted weekly update per active portal job goes on ✅ Approvals.'],
+  ['bid_result_emails', 'cust', 'A', 0, 0, 'server', 'Bid-result e-mails to GCs', '7 days after a bid is due, e-mails the GC asking for the result.'],
+  ['winback', 'cust', 'C', 0, 0, 'server', 'Lost-lead win-back', 'Leads lost 6 / 12 months ago get an approval item; 30–90 days get a draft.'],
+  ['inspection_offer', 'cust', 'C', 0, 0, 'server', 'Free roof inspection offer', 'From 15 Mar and 15 Sep: one approval item listing past customers.'],
+  ['social_drafts', 'cust', 'C', 0, 0, 'server', 'Before / after social drafts', 'Daily before/after social post drafts for ✅ Approvals.'],
+  ['mkt_autopilot', 'cust', 'C', 0, 0, 'server', 'Marketing autopilot', 'Weekly posts, monthly e-mail, door-hanger lists, review replies, Sunday plan.'],
+  ['adjuster_followups', 'cust', 'A', 0, 0, 'server', 'Adjuster closeout follow-ups', 'Follow-up to the adjuster every 7 days after the first packet was approved.'],
+  ['one_year_note', 'cust', 'A', 0, 0, 'server', 'One-year notes', 'A note one year after completion (approved once, then by itself).'],
+  ['maint_plans', 'cust', 'C', 0, 0, 'server', 'Maintenance plan queueing', 'Visit To-Dos, the yearly plan invoice on ✅ Approvals, "Offer a plan" To-Dos.'],
+  ['newsletter_drafts', 'cust', 'C', 0, 0, 'server', 'Newsletter drafts + thank-you To-Dos', 'Monthly newsletter draft; December and milestone thank-you To-Dos.'],
+  ['event_reminders', 'cust', 'A', 0, 0, 'server', 'Free roof check event reminders', 'Reminder the day before an event.'],
+  ['monthly_statements', 'cust', 'C', 0, 0, 'server', 'Monthly statement queueing', 'On the 1st every customer with a balance gets a statement on ✅ Approvals.'],
+  ['warranty_checkup_offer', 'cust', 'C', 0, 0, 'server', 'Warranty check-up offer', 'One approval item per day offering a check-up.'],
+  ['we_need_reminders', 'cust', 'A', 0, 0, 'server', '"We need from you" reminders', 'Day 3 reminder on Approvals; day 7 sent by itself.'],
+  ['mkt_report_external', 'cust', 'A', 0, 0, 'server', 'Marketing report to the agency', 'Monthly marketing report to the outside agency and the report list.'],
+  ['referral_credits', 'cust', 'C', 0, 0, 'server', 'Referral credit queueing', 'A referred job’s first payment puts a credit proposal on ✅ Approvals.'],
+  ['ar_reminders', 'cust', 'C', 0, 0, 'server', 'Past-due reminders (AUTO-AR)', 'Past-due reminders put on ✅ Approvals.'],
+  ['text_auto_answers', 'cust', 'A', 0, 0, 'server', 'Text auto-answers', 'Automatic replies to customers’ texts (rules, hours). STOP / HELP always answer.'],
+  ['portal_gate_queue', 'cust', 'C', 0, 0, 'server', 'New portal items → Approvals', 'New portal papers / photos / certificates are put on ✅ Approvals before the customer sees them. OFF: they stay hidden, not queued.'],
+  ['portal_invite_email', 'cust', 'C', 0, 0, 'both', 'New-job portal link e-mail', 'Every new job’s portal link e-mail is queued.'],
+  ['appt_confirmations', 'cust', 'A', 0, 0, 'page', 'Appointment confirmations', 'Confirmation on a schedule change, reminder at 4 PM the day before.'],
+  ['thank_you_queue', 'cust', 'C', 0, 0, 'page', 'Job-complete thank-you', 'Fully paid → thank-you on ✅ Approvals; commission unlocked flag.'],
+  ['proposal_maker', 'cust', 'C', 0, 0, 'page', 'Proposal maker', 'In the background (after load, every 5 minutes, after an estimate is saved) makes the GrayCo proposal PDF for each finished estimate, stores it on the job (a bidding job if it has none) and puts ONE "Put proposal in customer portal + send" item on ✅ Approvals. Sends nothing by itself. OFF: nothing runs in the background; "📨 Send for approval now", uploads and 📤 Send estimate still make it.'],
+  ['supplier_po_drafts', 'rec', 'C', 0, 0, 'page', 'Supplier order drafts', 'After an estimate or its job is signed, drafts one purchase order per supplier from its material lines and puts each PO e-mail on ✅ Approvals. OFF: nothing in the background; "🚚 Draft supplier orders" still makes them.'],
+  /* ── sub sends (A) ── */
+  ['sub_schedule_texts', 'sub', 'A', 0, 0, 'server', 'Sub schedule texts', '6 PM the evening before and about 1 h before each start.'],
+  ['sub_firstday_text', 'sub', 'A', 0, 0, 'server', 'Sub first-day text', 'A sub’s first-day text with the portal link.'],
+  ['lien_waiver_requests', 'sub', 'A', 0, 0, 'both', 'Lien waiver requests', 'Waiver requests to subs (first needs approval, later ones go by themselves).'],
+  ['coi_requests', 'sub', 'C', 0, 0, 'server', 'COI renewal requests', 'Approval item per sub whose insurance expires in 30 / 7 / 0 days.'],
+  ['w9_requests', 'sub', 'C', 0, 0, 'server', 'W-9 requests', 'W-9 requests put on ✅ Approvals.'],
+  /* ── record changes (C) ── */
+  ['price_index_monthly', 'rec', 'C', 0, 0, 'server', 'Monthly price update (PPI)', 'On the 3rd, moves every Products price by the national Producer Price Index change.'],
+  ['companycam_new_jobs', 'rec', 'C', 0, 0, 'both', 'CompanyCam "make new jobs"', 'A new 2026+ CompanyCam project becomes a Bidding job with its PM. This is how PM jobs arrive from CompanyCam — while it is OFF, new projects wait on the review list.'],
+  ['approval_escalation', 'rec', 'C', 0, 0, 'server', 'Approval escalation', 'An admin-step approval waiting 24 h becomes approvable by the office.'],
+  ['lead_auto_assign', 'rec', 'C', 0, 0, 'both', '5 PM lead auto-assign', 'A held lead is assigned to the suggested person at 5 PM. OFF: it stays "Suggested" until an admin acts.'],
+  ['bid_watch', 'rec', 'C', 0, 0, 'server', 'Public bid watch', 'Reads public bid listings; makes CRM leads and draft bid-portal jobs.'],
+  ['bid_portal_drafts', 'rec', 'C', 0, 0, 'server', 'Bid-portal drafts', 'Creates the draft bid-portal jobs that waited for the portal.'],
+  ['x10_code_wipe', 'rec', 'C', 0, 0, 'server', 'Access-code wipe', 'Deletes the stored door / gate codes of closed jobs.'],
+  ['invoice_autopost', 'rec', 'C', 0, 0, 'page', 'Invoice 1-day auto-post', 'A client draft waiting 24 h is approved by itself → sent (shows in the portal).'],
+  ['expense_autopost', 'rec', 'C', 0, 0, 'page', 'Expense 5-day auto-post', 'Matched expenses are posted to the job P&L after 5 days; unmatched ones escalated.'],
+  ['progress_autodraw', 'rec', 'C', 0, 0, 'page', 'Progress-slider auto-draw', 'Dragging progress past a draw milestone makes a draw invoice.'],
+  ['cc_pct_sync', 'rec', 'C', 0, 0, 'page', 'CompanyCam % -> job %', 'Every 2 minutes copies the progress % read from CompanyCam notes into the job % of each active job (a draw then still needs "Progress-slider auto-draw"). OFF: the job % is left alone.'],
+  ['auto_mark_paid', 'rec', 'C', 0, 0, 'page', 'Invoice auto-mark-paid (amount match)', 'Every 2 minutes marks an open client invoice PAID (and puts it on the books) when a payment recorded on the same job has the same amount. A guess: the payment names no invoice and the match is not saved. OFF: nothing is marked; mark invoices paid by hand.'],
+  ['legacy_progress_billing', 'rec', 'C', 0, 0, 'page', 'Legacy progress-billing timer', 'Schedule milestone passed + % reached → a draft client invoice.'],
+  ['legacy_autoflag_notes', 'rec', 'C', 0, 0, 'page', 'AUTO-FLAG job notes', 'Writes "⚠️ AUTO-FLAG …", "[PM] …", "🔴 CRITICAL …" lines into job notes.'],
+  ['legacy_po_route', 'rec', 'C', 0, 0, 'page', 'Invoice PO auto-route', 'An invoice with a PO and no job gets its job set.'],
+  ['job_stages', 'rec', 'C', 0, 0, 'page', 'AUT3 job stages', 'Kickoff (deposit draft, welcome), stage changes, schedule shifts and the % from the schedule, the final invoice at Complete, Certificate of Completion, check-ups. A draw because the % moved also needs "Progress-slider auto-draw" ON.'],
+  ['auto_100', 'rec', 'C', 0, 0, 'page', 'Auto-100 %', 'A completed job or a sent final invoice sets progress to 100 %.'],
+  ['closeout_autopilot', 'rec', 'C', 0, 0, 'page', 'Closeout autopilot', 'Final invoice fully paid → job completed and archived, warranty certificate, check-up.'],
+  ['commission_sweep', 'rec', 'C', 0, 0, 'page', 'Commission sweep', 'A fully collected job gets its commission worked out and a check queued on the pay run.'],
+  ['mailed_invoice_booking', 'rec', 'C', 0, 0, 'page', 'E-mailed invoice auto-booking', 'E-mailed sub invoices, supplier bills, receipts and QuickBooks copies are booked by themselves. OFF: they wait in 📥 Needs a job / review.'],
+  ['dup_invoice_delete', 'rec', 'C', 0, 0, 'page', 'Duplicate sub invoice / $0 row delete', 'Deletes duplicate sub invoices and $0 rows. OFF: they are only flagged.'],
+  ['ms_tax_add', 'rec', 'C', 0, 0, 'page', 'Mississippi tax auto-add', 'Adds 3.5 % MS contractor’s tax to Mississippi estimates.']
+];
+var LIST = ROWS.map(function(r){ return { key: r[0], group: r[1], effect: r[2], critical: !!r[3], defaultOn: !!r[4], where: r[5], name: r[6], desc: r[7], fixed: !!r[8] }; });
+var BY = {}; LIST.forEach(function(a){ BY[a.key] = a; });
+
+function parse(v){ if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } } return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; }
+/* the switch for one key, from the stored row (missing key = its default; an unknown key = OFF) */
+function valueOf(row, key){
+  var a = BY[key]; if (!a) return false;
+  if (a.fixed) return true;
+  var r = parse(row), v = r[key];
+  if (v && typeof v === 'object' && typeof v.on === 'boolean') v = v.on;
+  return typeof v === 'boolean' ? v : a.defaultOn;
+}
+function defaults(){ var o = {}; LIST.forEach(function(a){ o[a.key] = a.defaultOn; }); return o; }
+/* "Turn on everything I had before": every automation ran before the panel existed */
+function before(){ var o = {}; LIST.forEach(function(a){ o[a.key] = true; }); return o; }
+function all(row){ var o = {}; LIST.forEach(function(a){ o[a.key] = valueOf(row, a.key); }); return o; }
+/* a held record, merged into the gc_auto_held row: { n: times held, since, last, would: last count, sample } */
+function heldMerge(heldRow, key, n, sample, nowIso){
+  var h = parse(heldRow), e = parse(h[key]);
+  var out = Object.assign({}, h);
+  out[key] = { n: (+e.n || 0) + 1, since: e.since || nowIso, last: nowIso, would: n == null ? null : +n || 0, total: (+e.total || 0) + (+n || 0),
+    sample: (Array.isArray(sample) ? sample : sample == null ? [] : [sample]).slice(0, 3).map(function(x){ return String(x == null ? '' : x).slice(0, 120); }), ran: e.ran || null };
+  return out;
+}
+function ranMerge(heldRow, key, nowIso){
+  var h = parse(heldRow), out = Object.assign({}, h);
+  out[key] = Object.assign({}, parse(h[key]), { ran: nowIso });
+  return out;
+}
+
+var API = { V: 1, KEY: KEY, HELD_KEY: HELD_KEY, GROUPS: GROUPS, LIST: LIST, BY: BY, valueOf: valueOf, defaults: defaults, before: before, all: all, heldMerge: heldMerge, ranMerge: ranMerge, parse: parse };
+
+/* ── server only (Netlify functions): read the switches, record "held" / "ran" ── */
+if (typeof module !== 'undefined' && module.exports) {
+  var CACHE_MS = 30 * 1000, RAN_MS = 10 * 60 * 1000;
+  var cache = { at: 0, row: null, ok: false }, ranAt = {}, store = null, chain = Promise.resolve();
+  /* one read-modify-write of gc_auto_held at a time in this instance (a held and a ran record never overwrite each other) */
+  var serial = function(fn){ var p = chain.then(fn, fn); chain = p.catch(function(){}); return p; };
+  var sbUrl = function(){ return String(process.env.SUPABASE_URL || 'https://ieeonhpfahmwwecizdut.supabase.co').replace(/\/$/, ''); };
+  var svc = function(){ return String(process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || ''); };
+  var hdr = function(extra){ var k = svc(); return Object.assign({ apikey: k, Authorization: 'Bearer ' + k, 'Content-Type': 'application/json' }, extra || {}); };
+  var kv = {
+    get: async function(key){
+      if (store) return store.get(key);
+      if (!svc()) throw new Error('no SUPABASE_SERVICE_KEY');
+      var r = await globalThis.fetch(sbUrl() + '/rest/v1/gc_kv?select=value&key=eq.' + encodeURIComponent(key), { headers: hdr() });
+      if (!r || !r.ok) throw new Error('gc_kv answered ' + (r && r.status));
+      var rows = await r.json(); return Array.isArray(rows) && rows[0] ? rows[0].value : null;
+    },
+    put: async function(key, value){
+      if (store) return store.put(key, value);
+      if (!svc()) throw new Error('no SUPABASE_SERVICE_KEY');
+      var r = await globalThis.fetch(sbUrl() + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: hdr({ Prefer: 'resolution=merge-duplicates,return=minimal' }),
+        body: JSON.stringify({ key: key, value: value, updated_at: new Date().toISOString() }) });
+      if (!r || !r.ok) throw new Error('gc_kv write answered ' + (r && r.status));
+      return true;
+    }
+  };
+  var readRow = async function(fresh){
+    if (!fresh && cache.ok && Date.now() - cache.at < CACHE_MS) return cache.row;
+    try { var v = await kv.get(KEY); cache = { at: Date.now(), row: parse(v), ok: true }; }
+    catch (e) { cache = { at: Date.now(), row: {}, ok: false }; }   /* unreadable → every key uses its default (A / C stay OFF) */
+    return cache.row;
+  };
+  API.isOn = async function(key, opts){
+    var on = valueOf(await readRow(opts && opts.fresh), key);
+    if (on && !(opts && opts.noRan)) API.ran(key).catch(function(){});
+    return on;
+  };
+  API.row = function(fresh){ return readRow(fresh); };
+  /* "held: would have done N" — n = how many it would have done (null when unknown), sample = a few short labels */
+  API.held = async function(key, n, sample){
+    var now = new Date().toISOString();
+    try { console.log('[automations] held ' + key + ': would have done ' + (n == null ? '?' : n) + (sample && sample.length ? ' (' + [].concat(sample).slice(0, 3).join('; ').slice(0, 200) + ')' : '')); } catch (e) {}
+    try { await serial(async function(){ var cur = await kv.get(HELD_KEY); await kv.put(HELD_KEY, heldMerge(cur, key, n, sample, now)); }); } catch (e) {}
+    return { held: key, would: n == null ? null : n };
+  };
+  API.ran = async function(key){
+    if (ranAt[key] && Date.now() - ranAt[key] < RAN_MS) return;
+    ranAt[key] = Date.now();
+    try { await serial(async function(){ var cur = await kv.get(HELD_KEY); await kv.put(HELD_KEY, ranMerge(cur, key, new Date().toISOString())); }); } catch (e) {}
+  };
+  /* a part that is OFF: record it and say so in one line — `if (await AUTO.off('key', () => count)) return …` style */
+  API.gate = async function(key, count){
+    if (await API.isOn(key)) return null;
+    var n = null, sample = [];
+    if (typeof count === 'function') { try { var c = await count(); if (c && typeof c === 'object') { n = c.n; sample = c.sample || []; } else n = c; } catch (e) {} }
+    else if (count != null) n = count;
+    return API.held(key, n, sample);
+  };
+  API._t = { reset: function(){ cache = { at: 0, row: null, ok: false }; ranAt = {}; }, setStore: function(s){ store = s; cache = { at: 0, row: null, ok: false }; ranAt = {}; } };
+  module.exports = API;
+} else root._gcAutoReg = API;
+})(this);
+/* AUTOREG-END */
+/* __GC_PATCH_AUTOPANEL_CORE__ — ⚡ AUTOMATIONS: the ONE check every page automation asks first (patch AUTOPANEL)
+   Owner (11/02): "make sure nothing is automatic in my CRM until I tell it to be auto".
+   The list and the rule are window._gcAutoReg (netlify/functions/_lib/automations.js, word for word above). The switches are
+   gc_kv "gc_automations", read through /.netlify/functions/automations (any staff member reads; only admins change them).
+     window._gcAutoOn(key)            → true / false. Until the switches are read: an item that is OFF by default stays OFF,
+                                        an item ON by default stays ON (the last switches this computer saw decide it).
+     window._gcAutoGate(key, count)   → true = go ahead; false = it is OFF: do nothing. When OFF it records "held: would have
+                                        done N" (count = a number, { n, sample } or a function giving one) — at most once per
+                                        10 minutes per automation from this computer, sent in one small batch.
+     window._gcAutoSince(key)         → when the automation was last switched ON (ms; 0 = never). Time-based automations count
+                                        their waiting time from then, so switching one ON never fires a burst of old items.
+     window._gcAutomations = { load(), state(), set({ key: bool }), before(), defaults() } */
+(function(){
+'use strict';
+var W = window;
+if (W.__GC_PATCH_AUTOPANEL_CORE__) return; W.__GC_PATCH_AUTOPANEL_CORE__ = true;
+var R = W._gcAutoReg; if (!R) return;
+var FN = '/.netlify/functions/automations', CK = 'gc_automations_cache', HELD_MS = 10 * 60e3, RAN_MS = 30 * 60e3;
+var S = { row: null, loaded: false, held: {}, log: [], admin: false, at: 0, err: '' };
+var cache = null; try { cache = JSON.parse(localStorage.getItem(CK) || 'null'); } catch (e) { cache = null; }
+function T(f, ms){ var st = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout; return st.call(W, f, ms || 0); }
+function I(f, ms){ var si = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval; return si.call(W, f, ms); }
+function signedIn(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.email && W.__GC_AUTH__.email()); } catch (e) { return false; } }
+function F(){ return typeof W.__GC_AUTH_FETCH__ === 'function' ? W.__GC_AUTH_FETCH__ : W.fetch; }
+function on(key){
+  var a = R.BY[key]; if (!a) return false; if (a.fixed) return true;
+  if (S.loaded) return R.valueOf(S.row, key);
+  if (!a.defaultOn) return false;                         /* not read yet: OFF-by-default stays OFF */
+  return cache ? R.valueOf(cache, key) : true;
+}
+function since(key){
+  var t = 0; (S.log || []).forEach(function(x){ if (x && x.key === key && x.on === true) { var m = Date.parse(x.at); if (m > t) t = m; } }); return t;
+}
+/* held / ran records: batched, throttled */
+var lastHeld = {}, lastRan = {}, pendHeld = {}, pendRan = {}, flushT = 0;
+function flushSoon(){ if (flushT) return; flushT = T(flush, 4000); }
+/* __GC_PATCH_AUTOPANEL2__ */ /* this computer's "held" records and the batch not sent yet are kept across a page reload */
+var HK = 'gc_auto_held_local';
+function saveHeld(){ try { localStorage.setItem(HK, JSON.stringify({ held: S.held, pend: pendHeld, last: lastHeld })); } catch (e) {} }
+(function(){
+  try {
+    var o = JSON.parse(localStorage.getItem(HK) || 'null'); if (!o || typeof o !== 'object') return;
+    var now = Date.now(), cut = now - 30 * 864e5;
+    Object.keys(o.held || {}).forEach(function(k){ var h = o.held[k]; if (R.BY[k] && h && typeof h === 'object' && Date.parse(h.last || '') > cut) S.held[k] = h; });
+    Object.keys(o.pend || {}).forEach(function(k){ if (R.BY[k] && o.pend[k] && typeof o.pend[k] === 'object') pendHeld[k] = o.pend[k]; });
+    Object.keys(o.last || {}).forEach(function(k){ var t = +o.last[k]; if (R.BY[k] && t > now - HELD_MS && t <= now) lastHeld[k] = t; });
+    if (Object.keys(pendHeld).length) flushSoon();
+  } catch (e) {}
+})();
+function flush(){
+  flushT = 0;
+  if (!signedIn()) { if (Object.keys(pendHeld).length || Object.keys(pendRan).length) flushT = T(flush, 30000); return; }
+  var items = Object.keys(pendHeld).map(function(k){ return pendHeld[k]; }), keys = Object.keys(pendRan);
+  pendHeld = {}; pendRan = {}; saveHeld();   /* patch AUTOPANEL2 */
+  var post = function(body){ try { return Promise.resolve(F().call(W, FN, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })).catch(function(){}); } catch (e) { return Promise.resolve(); } };
+  if (items.length) post({ op: 'held', items: items });
+  if (keys.length) post({ op: 'ran', keys: keys });
+}
+function held(key, n, sample){
+  if (!R.BY[key]) return;
+  var now = Date.now(), loc = S.held[key] = S.held[key] || { n: 0, since: new Date(now).toISOString() };
+  loc.n++; loc.last = new Date(now).toISOString(); loc.would = n == null ? null : n; loc.sample = (sample || []).slice(0, 3);
+  if (lastHeld[key] && now - lastHeld[key] < HELD_MS) { saveHeld(); return; }   /* patch AUTOPANEL2 */
+  lastHeld[key] = now;
+  pendHeld[key] = { key: key, n: n == null ? null : +n || 0, sample: (Array.isArray(sample) ? sample : sample == null ? [] : [sample]).slice(0, 3).map(function(x){ return String(x == null ? '' : x).slice(0, 120); }) };
+  try { console.log('[GC] ⚡ held ' + key + ': would have done ' + (n == null ? '?' : n)); } catch (e) {}
+  saveHeld();   /* patch AUTOPANEL2 */
+  flushSoon();
+}
+function ran(key){ var now = Date.now(); if (lastRan[key] && now - lastRan[key] < RAN_MS) return; lastRan[key] = now; pendRan[key] = 1; flushSoon(); }
+function gate(key, count){
+  if (on(key)) { ran(key); return true; }
+  var n = null, sample = [];
+  try {
+    var c = typeof count === 'function' ? count() : count;
+    if (c && typeof c === 'object' && !Array.isArray(c)) { n = c.n; sample = c.sample || []; } else if (c != null) n = +c;
+  } catch (e) {}
+  if (arguments.length > 2 && Array.isArray(arguments[2])) sample = arguments[2];
+  held(key, n, sample);
+  return false;
+}
+/* the switches */
+function apply(o){
+  if (!o || typeof o !== 'object' || !o.settings) return false;
+  S.row = o.row || {}; S.log = o.log || []; S.admin = !!o.admin; S.serverHeld = o.held || {}; S.loaded = true; S.at = Date.now(); S.err = '';
+  try { localStorage.setItem(CK, JSON.stringify(S.row)); } catch (e) {}
+  try { W.dispatchEvent(new CustomEvent('gc-automations', { detail: { at: S.at } })); } catch (e) {}
+  return true;
+}
+function call(method, body){
+  var p; try { p = F().call(W, FN, method === 'GET' ? { method: 'GET' } : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) }); } catch (e) { p = Promise.reject(e); }
+  return Promise.resolve(p).then(function(r){ return r.text().then(function(t){ var o = {}; try { o = JSON.parse(t); } catch (e) { o = { error: t.slice(0, 200) }; } o.__status = r.status; return o; }); },
+    function(e){ return { error: 'Cannot reach the server right now.', __status: 0 }; });
+}
+var loading = null;
+function load(){
+  if (!signedIn()) return Promise.resolve(state());
+  if (loading) return loading;
+  loading = call('GET').then(function(o){ loading = null; if (o && o.__status === 200) apply(o); else S.err = (o && o.error) || ('answer ' + (o && o.__status)); return state(); }, function(){ loading = null; return state(); });
+  return loading;
+}
+function state(){ return { loaded: S.loaded, admin: S.admin, at: S.at, err: S.err, settings: R.all(S.loaded ? S.row : (cache || {})), row: S.row, log: S.log, held: S.serverHeld || {}, localHeld: S.held }; }
+function set(changes){ return call('POST', { set: changes }).then(function(o){ if (o && o.__status === 200) apply(o); return o; }); }
+function op(name){ return call('POST', { op: name }).then(function(o){ if (o && o.__status === 200) apply(o); return o; }); }
+
+W._gcAutoOn = on;
+W._gcAutoGate = gate;
+W._gcAutoHeld = held;
+W._gcAutoSince = since;
+W._gcAutomations = { load: load, state: state, set: set, before: function(){ return op('before'); }, defaults: function(){ return op('defaults'); }, flush: flush, reg: R };
+T(load, 1500);
+I(function(){ if (!document.hidden) load(); }, 60000);
+try { document.addEventListener('visibilitychange', function(){ if (!document.hidden) load(); }); } catch (e) {}
+try { console.log('[GC] ⚡ Automations: one switch per automation (patch AUTOPANEL) — _gcAutomations.state()'); } catch (e) {}
+})();
+</script>
 <script id="gc-patch-schedpick-core">
 /* patch SCHEDPICK */
 /* patch SCHEDPICK (core) — SUGGESTIONS ARE NOT THE SCHEDULE (owner 11/01, ROTC Cordova: "how did all of this get in
@@ -17928,6 +18285,7 @@ document.head.appendChild(s);
 setInterval(function(){
   var crm = window._crm;
   if (!crm || !crm.invoices || !crm.projects) return;
+  if (!(window._gcAutoGate ? window._gcAutoGate('legacy_po_route', function(){ return crm.invoices.filter(function(i){ return i && !i.pid && i.po; }).length; }) : false)) return;   /* patch AUTOPANEL */
   var changed = false;
   crm.invoices.forEach(function(inv) {
     if (inv.pid || !inv.po) return; // already matched or no PO
@@ -17981,6 +18339,7 @@ setInterval(function(){
   var crm = window._crm;
   if (!crm || !crm.projects) return;
   var now = new Date();
+  if (!(window._gcAutoGate ? window._gcAutoGate('legacy_autoflag_notes', function(){ return crm.projects.filter(function(p){ return p && (p.status === "active" || p.status === "approved") && p.pm && !p._pmFlagged; }).length; }) : false)) return;   /* patch AUTOPANEL */
   crm.projects.forEach(function(p) {
     if (p.status !== "active" && p.status !== "approved") return;
     if (!p.pm) return;
@@ -18013,6 +18372,7 @@ setInterval(function(){
   if (!crm || !crm.projects) return;
   crm.projects.forEach(function(p) {
     if (p.status !== "active" || p._autoCompleteSuggested) return;
+    if (!(window._gcAutoOn && window._gcAutoOn('legacy_autoflag_notes'))) return;   /* patch AUTOPANEL */
     var cl = p.checklist || [];
     if (cl.length < 5) return; // need a real checklist
     var allDone = cl.every(function(c) { return c.done; });
@@ -18044,6 +18404,7 @@ var _insEmailsSent = JSON.parse(localStorage.getItem("_insEmailsSent") || "{}");
 setInterval(function() {
   var crm = window._crm;
   if (!crm || !crm.subs) return;
+  if (!(window._gcAutoOn && window._gcAutoOn('coi_requests'))) return;   /* patch AUTOPANEL */
   var now = new Date();
   crm.subs.forEach(function(s) {
     if (!s.email || !s.isSub) return;
@@ -18092,6 +18453,7 @@ setInterval(function() {
   var crm = window._crm;
   if (!crm || !crm.invoices || !crm.projects) return;
   var now = new Date();
+  if (!(window._gcAutoOn && window._gcAutoOn('legacy_autoflag_notes'))) return;   /* patch AUTOPANEL */
   var flagged = JSON.parse(localStorage.getItem("_overdueFlags") || "{}");
   crm.invoices.forEach(function(inv) {
     if (inv.status === "paid" || !inv.dueDate) return;
@@ -18143,6 +18505,7 @@ setInterval(function() {
   crm.projects.forEach(function(p) {
     if (p.pm || p.status === "lost" || p.status === "completed") return;
     if (p._autoAssignChecked) return;
+    if (!(window._gcAutoOn && window._gcAutoOn('legacy_autoflag_notes'))) return;   /* patch AUTOPANEL */
     p._autoAssignChecked = true;
     // Don't auto-assign — just make it very visible
     p.customerNotes = (p.customerNotes || "") + "\n[PM] AUTO-FLAG " + new Date().toLocaleDateString() + 
@@ -18158,6 +18521,7 @@ setInterval(function() {
   if (!crm || !crm.projects) return;
   var now = new Date();
   var nowStr = now.toISOString().slice(0, 10);
+  if (!(window._gcAutoGate ? window._gcAutoGate('legacy_progress_billing', function(){ return crm.projects.filter(function(p){ return p && p.status === "active" && p.contract; }).length; }) : false)) return;   /* patch AUTOPANEL */
   var drawFlags = JSON.parse(localStorage.getItem("_drawFlags") || "{}");
   crm.projects.forEach(function(p) {
     if (p.status !== "active" || !p.contract) return;
@@ -18195,6 +18559,7 @@ setInterval(function() {
       drawFlags[key] = nowStr;
       localStorage.setItem("_drawFlags", JSON.stringify(drawFlags));
       var amt = (Math.round(p.contract * pct)/100);
+      if (window._gcAutoOn && window._gcAutoOn('legacy_autoflag_notes'))   /* patch AUTOPANEL */
       p.customerNotes = (p.customerNotes || "") + "\n[$] AUTO-FLAG " + now.toLocaleDateString() +
         ": Draw #" + (i + 1) + " (" + pct + "% = $" + amt.toLocaleString() + ") is due — milestone reached: " + milestone.title;
       opsLog("Draw due: " + p.name + " Draw #" + (i + 1) + " $" + amt.toLocaleString());
@@ -40209,6 +40574,7 @@ async function pollWebhook(){
         // Respect the master auto-create toggle. Default ON. Turn off in settings
         // to stop CompanyCam from creating any leads automatically.
         try{ var _t=JSON.parse(localStorage.getItem('gc_autoscan_toggles')||'{}'); if(_t.ccAutoCreate===false){ continue; } }catch(e){}
+        if(!(window._gcAutoGate ? window._gcAutoGate('companycam_new_jobs', 1, [item.name||'']) : false)) continue;   /* patch AUTOPANEL */
         // First: is this job ALREADY a project in the CRM? Match on CompanyCam id,
         // then name, then address. If so, just attach the CompanyCam URL to that
         // project — do NOT create a new lead, and make no AI call.
@@ -41225,6 +41591,8 @@ window._gcSetProjectPct = function(pid, val){
   var due = window._gcDrawMilestones(proj).filter(function(m){
     return pct >= m.at && !window._gcDrawInvoiced(pid, m.n);
   });
+  /* patch AUTOPANEL2: "Progress-slider auto-draw" is asked — and "held" recorded — BEFORE the % is saved below */
+  var _gcAdOn = due.length ? (window._gcAutoGate ? window._gcAutoGate('progress_autodraw', due.length, [proj.name||pid]) : false) : false;
 
   if(window._setProjects){
     window._setProjects(function(list){
@@ -41241,6 +41609,7 @@ window._gcSetProjectPct = function(pid, val){
   }
 
   if(!due.length) return;
+  if(!_gcAdOn) return;   /* patch AUTOPANEL (+2): the % is saved; no draw invoice while it is OFF */
   if(!parseFloat(proj.contract)){
     alert((proj.name||'This job') + ' reached ' + pct + '%, but it has no contract amount, so no invoice was created.');
     return;
@@ -53801,9 +54170,10 @@ console.log("[GC] Business Brain components loaded:", !!window.GrayCoBrain, !!wi
 
   // Sweep on load and periodically (paused during interaction). Belt-and-suspenders
   // so any dupes created by a sync race get cleaned up automatically.
-  setTimeout(function(){ try{ window._gcDedupeSubInvoices(true); }catch(e){} }, 6000);
+  setTimeout(function(){ if(!(window._gcAutoGate ? window._gcAutoGate('dup_invoice_delete') : false)) return; try{ window._gcDedupeSubInvoices(true); }catch(e){} }, 6000);   /* patch AUTOPANEL */
   setInterval(function(){
     if(window.__GC_IS_TYPING__ || window.__GC_IS_ACTIVE__) return;
+    if(!(window._gcAutoGate ? window._gcAutoGate('dup_invoice_delete') : false)) return;   /* patch AUTOPANEL */
     try{ window._gcDedupeSubInvoices(true); }catch(e){}
   }, 45000);
 
@@ -63993,8 +64363,8 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
     }catch(e){ console.warn('[GC] purgeZeros failed', e); }
   }
   // Run shortly after boot, then keep an eye out on a slow interval (cheap; only writes if it finds any).
-  setTimeout(purgeZeros, 5000);
-  setInterval(function(){ if(!window.__GC_IS_TYPING__) purgeZeros(); }, 60000);
+  setTimeout(function(){ if((window._gcAutoGate ? window._gcAutoGate('dup_invoice_delete') : false)) purgeZeros(); }, 5000);   /* patch AUTOPANEL */
+  setInterval(function(){ if(!window.__GC_IS_TYPING__ && (window._gcAutoGate ? window._gcAutoGate('dup_invoice_delete') : false)) purgeZeros(); }, 60000);
   window._gcPurgeZeroExpenses = purgeZeros;  // manual trigger if ever needed
   console.log('[GC] $0-expense purge active.');
 })();
@@ -64576,6 +64946,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
       if(window.__GC_IS_TYPING__) return;
       var missing=window._gcMSTaxMissing();
       if(!missing.length) return;
+      if(!(window._gcAutoGate ? window._gcAutoGate('ms_tax_add', missing.length, missing.slice(0,3).map(function(e){ return e.name||e.num||e.id; })) : false)) return;   /* patch AUTOPANEL */
       // Auto-add the tax (so the number is right) but mark it for PM review.
       missing.forEach(function(e){ window._gcApplyMSTax(e.id); });
       // One consolidated PM alert (don't spam - once per estimate id per session).
@@ -68693,6 +69064,10 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
   window._gcAutoInvoiceFromProgress = function(){
     try{
       var projs = (window._crm && window._crm.projects) || [];
+      /* __GC_PATCH_AUTOPANEL3__ */ /* "CompanyCam % -> job %" (cc_pct_sync, default OFF): OFF → the job % is left alone, "held" */
+      var _ccDue = projs.filter(function(p){ return p && p.status==='active' && typeof p.ccProgressPct==='number' && (p.pct||0) < p.ccProgressPct; });
+      if(!_ccDue.length) return;
+      if(!(window._gcAutoGate ? window._gcAutoGate('cc_pct_sync', { n: _ccDue.length, sample: _ccDue.slice(0,3).map(function(p){ return (p.name||p.id) + ' ' + (p.pct||0) + '% -> ' + p.ccProgressPct + '%'; }) }) : false)) return;
       projs.forEach(function(p){
         if(!p || p.status!=='active') return;
         var prog = (typeof p.ccProgressPct==='number') ? p.ccProgressPct : null;
@@ -68726,6 +69101,8 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
         });
         if(match){ changed.push({iv:iv, pm:match}); }
       });
+      /* patch AUTOPANEL3: "Invoice auto-mark-paid (amount match)" (auto_mark_paid, default OFF): a guess → OFF, "held" */
+      if(changed.length && !(window._gcAutoGate ? window._gcAutoGate('auto_mark_paid', { n: changed.length, sample: changed.slice(0,3).map(function(c){ return (c.iv.desc||c.iv.id) + ' $' + (parseFloat(c.iv.amt||c.iv.amount)||0); }) }) : false)) return;
       if(changed.length && window._setInvoices){
         window._setInvoices(function(list){
           return (list||[]).map(function(iv){
@@ -69679,8 +70056,11 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
     if(window.__GC_IS_TYPING__) return;
     var q=[]; try{ q=JSON.parse(localStorage.getItem('gc_invoice_approvals')||'[]'); }catch(e){ return; }
     var now=Date.now(); var changed=false;
+    /* patch AUTOPANEL: "Invoice 1-day auto-post" (default OFF). ON: the day counts from when it was switched on — no burst */
+    var _apSince = window._gcAutoSince ? window._gcAutoSince('invoice_autopost') : 0;
+    if(!(window._gcAutoGate ? window._gcAutoGate('invoice_autopost', function(){ var invs=(window._crm&&window._crm.invoices)||[]; var due=q.filter(function(a){ if(a.status!=='pending'||(now-a.createdAt)<DAY_MS) return false; var iv=invs.find(function(x){return x&&x.id===a.invId;}); return !!iv&&(iv.status==='draft'||iv.status==='pm_review'||iv.status==='pending'); }); return { n: due.length, sample: due.slice(0,3).map(function(a){ return a.desc||a.invId; }) }; }) : false)) return;
     q.forEach(function(a){
-      if(a.status==='pending' && (now - a.createdAt) >= DAY_MS){
+      if(a.status==='pending' && (now - Math.max(+a.createdAt||0, _apSince)) >= DAY_MS){
         // still a draft? auto-post it
         var invs=(window._crm&&window._crm.invoices)||[];
         var iv=invs.find(function(x){return x&&x.id===a.invId;});
@@ -71267,6 +71647,7 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
 
   window._gcRunJobCompleteChain = function(){
     if(window.__GC_IS_TYPING__ || document.hidden) return;
+    if(!(window._gcAutoGate ? window._gcAutoGate('thank_you_queue') : false)) return;   /* patch AUTOPANEL */
     var projects=(window._crm&&window._crm.projects)||[];
     var invoices=(window._crm&&window._crm.invoices)||[];
     var done={}; try{ done=JSON.parse(localStorage.getItem(DONE_KEY)||'{}'); }catch(e){}
@@ -71327,6 +71708,7 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
       if(!queue.length) return;
       var pending=queue.filter(function(q){return q&&!q._processed;});
       if(!pending.length) return;
+      if(!(window._gcAutoGate ? window._gcAutoGate('mailed_invoice_booking', pending.length) : false)) return;   /* patch AUTOPANEL */
 
       pending.forEach(function(item){
         // Build a sub invoice from the emailed data
@@ -71963,6 +72345,7 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
       });
       if(completed || finalSent) toBump.push(job.id);
     });
+    if(toBump.length && !(window._gcAutoGate ? window._gcAutoGate('auto_100', toBump.length, toBump.slice(0,3)) : false)) return;   /* patch AUTOPANEL */
     if(toBump.length && window._setProjects){
       window._setProjects(function(list){ return (list||[]).map(function(p){
         return (p&&toBump.indexOf(p.id)>=0) ? Object.assign({}, p, { pct:100 }) : p;
@@ -75214,9 +75597,12 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
   window._gcExpenseAging = function(){
     if(window.__GC_TESTING__){ return; }  // never auto-post/escalate real data during a test
     var q=loadQ(); var now=Date.now(); var changed=false;
+    /* patch AUTOPANEL: "Expense 5-day auto-post" (default OFF). ON: the 5 days count from when it was switched on — no burst */
+    var _exSince = window._gcAutoSince ? window._gcAutoSince('expense_autopost') : 0;
+    if(!(window._gcAutoGate ? window._gcAutoGate('expense_autopost', function(){ var due=q.filter(function(a){ return a.status==='pending_pm' && (now-new Date(a.enteredAt).getTime())/864e5>=5; }); return { n: due.length, sample: due.slice(0,3).map(function(a){ return a.payee||a.desc||a.expId; }) }; }) : false)) return;
     q.forEach(function(a){
       if(a.status!=='pending_pm') return;
-      var ageDays=(now - new Date(a.enteredAt).getTime())/(1000*60*60*24);
+      var ageDays=(now - Math.max(new Date(a.enteredAt).getTime()||0, _exSince))/(1000*60*60*24);
       if(ageDays>=5){
         if(a.matched){
           // auto-post to the job P&L
@@ -79328,8 +79714,8 @@ window._gcPickZ = window._gcPickZ || function(sel, base){   /* patch PICKZ: abov
   };
 
   // Auto-clean on load AND every 30s (the reconciler runs on a timer, so we keep it clean).
-  setTimeout(function(){ try{ window._gcPurgeZeroRegister(true); }catch(e){} }, 3000);
-  setInterval(function(){ try{ if(!window.__GC_IS_TYPING__) window._gcPurgeZeroRegister(true); }catch(e){} }, 30000);
+  setTimeout(function(){ if(!(window._gcAutoGate ? window._gcAutoGate('dup_invoice_delete') : false)) return; try{ window._gcPurgeZeroRegister(true); }catch(e){} }, 3000);   /* patch AUTOPANEL */
+  setInterval(function(){ if(!(window._gcAutoGate ? window._gcAutoGate('dup_invoice_delete') : false)) return; try{ if(!window.__GC_IS_TYPING__) window._gcPurgeZeroRegister(true); }catch(e){} }, 30000);
 
   console.log('[GC] $0 register cleanup ready.');
 })();
@@ -94108,6 +94494,7 @@ window._gcQueueCommissionForJob = async function(pid, opts){
 
 /* sweep: any job fully collected that hasn't had commission worked out */
 window._gcSweepCommissions = async function(quiet){
+  if(quiet && !(window._gcAutoGate ? window._gcAutoGate('commission_sweep') : false)) return [];   /* patch AUTOPANEL: the automatic sweep (a person's run still works) */
   var pj=[]; try{ pj=window.__GC_LIVE('projects',window.__GC_NE(window._crm&&window._crm.projects)||await window.idbGet('projects')||[]); }catch(e){}
   var log=commissionLog();
   var done=[], skipped=0;
@@ -105019,10 +105406,11 @@ RI.call(window, function(){
     if(window.__GC_IS_TYPING__) return;
     if(Date.now()-last < 8000) return;
     last=Date.now();
+    if(!(window._gcAutoGate ? window._gcAutoGate('dup_invoice_delete') : false)) return;   /* patch AUTOPANEL */
     window._gcNoDupesSweep(true);
   }catch(e){}
 }, 5000);
-setTimeout(function(){ window._gcNoDupesSweep(false); }, 9000);
+setTimeout(function(){ if((window._gcAutoGate ? window._gcAutoGate('dup_invoice_delete') : false)) window._gcNoDupesSweep(false); }, 9000);
 
 /* and the instant he opens the accounting register, so he never has to look at
    a screen full of copies while waiting for the next sweep */
@@ -105030,7 +105418,7 @@ document.addEventListener('click', function(){
   setTimeout(function(){
     try{
       if(document.getElementById('gc-exc-reg-search') || document.getElementById('gc-exc-reg-job')){
-        last=0; window._gcNoDupesSweep(true);
+        last=0; if((window._gcAutoGate ? window._gcAutoGate('dup_invoice_delete') : false)) window._gcNoDupesSweep(true);   /* patch AUTOPANEL */
       }
     }catch(e){}
   }, 500);
@@ -116938,6 +117326,7 @@ async function autoCreate(){
   try {
     await compute();
     if (!lastNew.length) return 0;
+    if (!(window._gcAutoGate ? window._gcAutoGate('companycam_new_jobs', lastNew.length, lastNew.slice(0, 3).map(function(p){ return p.name || p.address || p.id; })) : false)) return 0;   /* patch AUTOPANEL */
     var n = await makeJobs(lastNew, false);
     if (n) await compute();
     return n;
@@ -141234,6 +141623,7 @@ function apptHtml(kind, r, p){
 }
 function apptTick(force, at){   /* at: a Date to run as (tests) */
   if (!force && (D.hidden || W.__GC_IS_TYPING__)) return;
+  if (!(window._gcAutoGate ? window._gcAutoGate('appt_confirmations') : false)) return;   /* patch AUTOPANEL */
   var list = rows(); if (!list.length && !force) return;
   var seen = jget(SEEN, null), firstLook = !seen; seen = seen || {};
   var now0 = at instanceof Date ? at : new Date();
@@ -151850,6 +152240,7 @@ var LIVE = {};   /* jobs the bus saw change in this session: only these run stag
 function markLive(pid){ if (pid) LIVE[pid] = Date.now(); }
 var running = {};
 function evaluate(pid, prev){   /* prev: the stage just before this change (from the bus event), for jobs with no stage yet */
+  if (!(window._gcAutoGate ? window._gcAutoGate('job_stages') : false)) return;   /* patch AUTOPANEL */
   var p = A.proj(pid); if (!p || running[pid]) return;
   var d = derive(p); if (!d) return;
   var cur = p.jobStage && STAGE_KEYS.indexOf(p.jobStage) >= 0 ? p.jobStage : '';
@@ -151888,7 +152279,8 @@ function runStage(k, pid){
 
 /* ── draws: drafted when the progress reaches a milestone (any path) ── */
 var DRAFTED = {};
-function ensureDraws(pid){
+function ensureDraws(pid, why){   /* patch AUTOPANEL2: why 'pct' = the progress moved (needs progress_autodraw ON too) */
+  if (!(window._gcAutoGate ? window._gcAutoGate('job_stages', 1, [s(pid)]) : false)) return null;   /* patch AUTOPANEL */
   var p = A.proj(pid); if (!p || p.importedHistory || p.noAutomations || !A.jobAuto(p, 'invoiceEmail') && !A.jobAuto(p, 'drawInvoices')) return null;   /* patch JOBFILL: never for imported history */
   if (typeof W._gcDrawMilestones !== 'function' || typeof W._gcClientInvoiced !== 'function') return null;
   var contract = num(p.contract), pct = num(p.pct); if (!contract || !pct) return null;
@@ -151899,6 +152291,7 @@ function ensureDraws(pid){
   if (amt <= 0.01) return null;
   var id = 'INV_AUTO_' + p.id + '_' + top.at;
   if (DRAFTED[id] || arr(crm().invoices).some(function(r){ return r && r.id === id; })) return null;
+  if (why === 'pct' && !(window._gcAutoGate ? window._gcAutoGate('progress_autodraw', 1, [s(p.name || pid)]) : false)) return null;   /* patch AUTOPANEL2: OFF → held, no draw */
   DRAFTED[id] = Date.now();   /* this session: never twice, even before the CRM's copy shows it */
   var label = top.at >= 100 ? (billed > 0 ? 'Final' : 'Final (100%)') : ('Draw to ' + top.at + '%'), d = today();
   var inv = { id: id, pid: p.id, type: 'client', drawType: label, client: s(p.client), customer: s(p.client), po: s(p.autoPO || p.po), autoPO: s(p.autoPO || p.po), project: s(p.name),
@@ -152025,6 +152418,7 @@ function closeoutCoc(pid){
   });
 }
 function closeoutWarranty(pid){
+  if (!(window._gcAutoGate ? window._gcAutoGate('job_stages', 1, [s(pid)]) : false)) return Promise.resolve(null);   /* patch AUTOPANEL: the Certificate / warranty papers */
   var p = A.proj(pid); if (!p || (p._closeoutDocs || {}).warranty || !A.jobAuto(p, 'warrantyCert')) return Promise.resolve(null);
   return hdoc(p, 'warranty', { id: 'aut_warranty_' + pid }).then(function(rec){
     if (rec) A.saveProject(pid, function(q){ q._closeoutDocs = Object.assign({}, q._closeoutDocs || {}, { warranty: today() }); A.jobNote(q, 'Warranty certificate made and put in the customer portal.'); });
@@ -152033,6 +152427,7 @@ function closeoutWarranty(pid){
 }
 function fullyPaid(pid){ var l = invs(pid); return l.length > 0 && l.every(function(r){ return A.invPaid(r); }); }
 function checkupTick(){
+  if (!(window._gcAutoGate ? window._gcAutoGate('job_stages') : false)) return;   /* patch AUTOPANEL */
   var t = today();
   A.projects().forEach(function(p){
     if (!p || !p.checkupDue || s(p.checkupDue) > t || (p.autoRan || {}).checkup) return;
@@ -152344,13 +152739,14 @@ function prevStage(n, d){
 ['gc:job-status', 'gc:job-pct', 'gc:job-complete', 'gc:job-activated:ready'].forEach(function(n){
   A.on(n, function(d){ markLive(d.pid); evaluate(d.pid, prevStage(n, d)); });
 });
-A.on('gc:job-pct', function(d){ if (num(d.to) > num(d.from)) ST(function(){ ensureDraws(d.pid); }, 1500); });
+A.on('gc:job-pct', function(d){ if (num(d.to) > num(d.from)) ST(function(){ ensureDraws(d.pid, 'pct'); }, 1500); });
 A.on('gc:invoice-paid', function(d){
   var p = A.proj(d.pid); if (!p) return;
   if (d.final || (rank(p.jobStage) >= rank('complete') && fullyPaid(d.pid))) closeoutWarranty(d.pid);
 });
 function stageTick(){
   if (D.hidden || W.__GC_IS_TYPING__) return;
+  if (!(window._gcAutoGate ? window._gcAutoGate('job_stages') : false)) return;   /* patch AUTOPANEL: stages, schedule shifts, inspections, SLA to-dos, progress */
   depTick(); insTick(); slaTick(); contractTick(); permitHeal();
   /* schedule-driven: jobs on a template are checked every time (dates passing move them) */
   var seen = {};
@@ -152366,7 +152762,7 @@ function markAuto(pid){
     markLive(pid);
     var moved = false;
     A.saveProject(pid, function(q){ if (num(q.pct) >= best) return false; moved = true; A.jobNote(q, 'Progress ' + num(q.pct) + '% → ' + best + '% (schedule milestone reached).'); q.pct = best; q._pctUpdatedAt = nowIso(); q._pctBy = 'schedule'; })
-      .then(function(saved){ if (saved || moved) { A.nudge(); ST(function(){ ensureDraws(pid); }, 800); } });
+      .then(function(saved){ if (saved || moved) { A.nudge(); ST(function(){ ensureDraws(pid, 'pct'); }, 800); } });
   }
 }
 
@@ -161418,6 +161814,7 @@ function closeoutTick(){
 }
 function closeout(pid, paid){
   var p = A.proj(pid); if (!p || p.closeout) return Promise.resolve(null);
+  if (!(window._gcAutoGate ? window._gcAutoGate('closeout_autopilot', 1, [s(p.name || pid)]) : false)) return Promise.resolve(null);   /* patch AUTOPANEL: no complete + archive by itself */
   var due = addMonths(paid, 11), year = s(paid).slice(0, 4) || today().slice(0, 4);
   return A.saveProject(pid, function(q){
     if (q.closeout) return false;
@@ -161439,6 +161836,7 @@ function closeout(pid, paid){
 }
 function checkupTick(){
   if (!signedIn()) return 0;
+  if (!(window._gcAutoGate ? window._gcAutoGate('closeout_autopilot') : false)) return 0;   /* patch AUTOPANEL: the 11-month check-up after a closeout */
   var t = today(), n = 0;
   A.projects().forEach(function(p){
     if (!p || !p.checkup11Due || s(p.checkup11Due) > t || p.checkup11Todo) return;
@@ -173985,6 +174383,7 @@ function plan(l, r){
   if (!l || C.assignee(l)) return null;
   if (C.isHeld(l)) {   /* a Lead Inbox lead is released by the server (it sends the notice); the screen steps in only if that is 30 min late */
     var late = l.inboxId ? 30 * 60e3 : 0;
+    if (C.isDue(l, Date.now() - late) && !(window._gcAutoGate ? window._gcAutoGate('lead_auto_assign', 1, [String(l.name || l.id || '')]) : false)) return { r: null };   /* patch AUTOPANEL: stays "Suggested" until an admin acts */
     return C.isDue(l, Date.now() - late) ? { r: { release: true, field: l.hold.field, name: l.hold.name, email: l.hold.email, label: l.hold.label, k: l.hold.k } } : { r: null };
   }
   if (C.ccWhy(l) || C.storedSource(l) === 'self') return { r: null };   /* a PM's own lead is never routed to someone else */
@@ -177658,6 +178057,171 @@ D.addEventListener('visibilitychange', function(){ if (!D.hidden) refresh(); });
 
 W._gcPause = { state: function(){ return JSON.parse(JSON.stringify(STATE)); }, refresh: refresh, open: open, setOn: setOn, recordAll: recordAll };
 try { console.log('[GC] ⏸ Data-entry mode (patch PAUSE): _gcPause.state()'); } catch (e) {}
+})();
+</script>
+<script id="gc-patch-autopanel">
+/* __GC_PATCH_AUTOPANEL__ — ⚙ Admin → ⚡ Automations (owner 11/02: "make sure nothing is automatic in my CRM until I tell
+   it to be auto, I have a lot of stuff to add, fix and test this week").
+   Every automation of the CRM (window._gcAutoReg), grouped: Customer sends · Sub sends · Record changes · Staff alerts ·
+   Safety · Sync / backups / lead intake. Each line: what it does in plain words, its switch, when it last ran, and
+   "held N times since …" (what it would have done while OFF). Safety items show 🔒 ON — switching one off asks first.
+   "↺ Turn on everything I had before" puts every automation back ON (how the CRM ran before this panel).
+   Admins change it (the server checks too); the office sees it read-only (💎 → ⚡ Automations, or Admin).
+   API: window._gcAutoPanel = { open(), render(box) } */
+(function(){
+'use strict';
+if (window.__GC_PATCH_AUTOPANEL__) return; window.__GC_PATCH_AUTOPANEL__ = true;
+var W = window, D = document;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+var RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+var A = W._gcAutomations, R = W._gcAutoReg;
+if (!A || !R) return;
+function later(f, ms){ return ST.call(W, f, ms || 0); }
+function s(v){ return v == null ? '' : String(v).trim(); }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function isAdmin(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()); } catch (e) { return false; } }
+function isOffice(){ try { if (W._gcRP && typeof W._gcRP.role === 'function' && /office/i.test(s(W._gcRP.role()))) return true; } catch (e) {} try { return /office/i.test(s(W._gcMeNow && (W._gcMeNow.role || W._gcMeNow.title))); } catch (e) { return false; } }
+function when(iso){ var t = Date.parse(iso || ''); if (!t) return ''; try { return new Date(t).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); } catch (e) { return s(iso); } }
+/* patch AUTOPANEL (coordinator 11/02): automations that act on what is waiting NOW when switched on (not on a clock) — the
+   switch-on asks first and says how many items are waiting: the page counts the draws itself; otherwise the last
+   "would have done N" the automation recorded while it was OFF */
+var STATE = { proposal_maker: 'estimates (proposal PDFs)', supplier_po_drafts: 'signed estimates (supplier orders)', cc_pct_sync: 'job % updates from CompanyCam', auto_mark_paid: 'invoices marked paid', job_stages: 'draw invoices / stage steps', legacy_progress_billing: 'progress draws', progress_autodraw: 'draw invoices', appt_confirmations: 'appointment messages', bid_result_emails: 'bid-result e-mails to GCs',
+  auto_100: 'jobs set to 100 %', closeout_autopilot: 'job closeouts', mailed_invoice_booking: 'e-mailed invoices / receipts', ms_tax_add: 'Mississippi estimates', lead_auto_assign: 'held leads', companycam_new_jobs: 'new CompanyCam projects' };
+function drawsWaiting(){
+  try {
+    if (typeof W._gcDrawMilestones !== 'function' || typeof W._gcClientInvoiced !== 'function') return null;
+    var n = 0;
+    ((W._crm && W._crm.projects) || []).forEach(function(p){
+      if (!p || p.deleted || p.importedHistory || p.noAutomations || /lost|dead|cancel|complete|closed/i.test(s(p.status))) return;
+      var c = parseFloat(String(p.contract || '').replace(/[$,]/g, '')) || 0, pct = parseFloat(p.pct) || 0; if (!c || !pct) return;
+      var sur = W._gcDrawMilestones(p).filter(function(m){ return pct >= m.at; }); if (!sur.length) return;
+      if (Math.round(c * sur[sur.length - 1].at) / 100 - (W._gcClientInvoiced(p.id) || 0) > 0.01) n++;
+    });
+    return n;
+  } catch (e) { return null; }
+}
+function waiting(key, st){
+  if (!STATE[key]) return null;
+  var n = null;
+  if (key === 'job_stages' || key === 'legacy_progress_billing' || key === 'progress_autodraw') n = drawsWaiting();
+  if (n == null) { var h = (st.held || {})[key] || {}, l = (st.localHeld || {})[key] || {}; n = h.would != null ? h.would : l.would != null ? l.would : null; }
+  return { n: n, what: STATE[key] };
+}
+function waitingText(w){ return w ? (w.n == null ? 'an unknown number of waiting ' + w.what : w.n + ' waiting ' + w.what) : ''; }
+var EFFECT = { A: 'sends to customers / subs', B: 'staff only', C: 'changes records', D: 'sync / read' };
+function toast(msg, bad){
+  try { var t = D.createElement('div'); t.setAttribute('data-gc-keep', '1'); t.textContent = msg;
+    t.style.cssText = 'position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:100200;background:' + (bad ? '#7f1d1d' : '#14532d') + ';color:#fff;padding:10px 16px;border-radius:10px;font:600 13px Inter,sans-serif;box-shadow:0 6px 24px rgba(0,0,0,.3);max-width:90vw';
+    D.body.appendChild(t); later(function(){ try { t.remove(); } catch (e) {} }, 4500); } catch (e) {}
+}
+function css(){
+  if (D.getElementById('gcap-css')) return;
+  var st = D.createElement('style'); st.id = 'gcap-css';
+  st.textContent = '.gcap{font:14px Inter,sans-serif;color:#0f172a}.gcap h4{margin:16px 0 6px;font-size:15px}.gcap .gcap-gd{color:#64748b;font-size:12px;margin:-4px 0 6px}' +
+    '.gcap-row{display:flex;gap:10px;align-items:flex-start;padding:8px 6px;border-bottom:1px solid #eef2f7}.gcap-row:hover{background:#f8fafc}' +
+    '.gcap-main{flex:1;min-width:0}.gcap-name{font-weight:700}.gcap-desc{color:#475569;font-size:12.5px;margin-top:2px}.gcap-meta{color:#64748b;font-size:11.5px;margin-top:3px}' +
+    '.gcap-held{color:#92400e}.gcap-tag{display:inline-block;padding:1px 7px;border-radius:999px;font-size:10.5px;font-weight:700;background:#eef2ff;color:#3730a3;margin-left:6px;vertical-align:1px}' +
+    '.gcap-sw{display:inline-flex;align-items:center;gap:6px;font-weight:700;font-size:12px;white-space:nowrap;cursor:pointer}.gcap-sw input{width:18px;height:18px;cursor:pointer}' +
+    '.gcap-on{color:#166534}.gcap-off{color:#991b1b}.gcap-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0}' +
+    '.gcap-bar button{border:none;border-radius:8px;padding:8px 12px;font:700 13px Inter,sans-serif;cursor:pointer}.gcap-b1{background:#16a34a;color:#fff}.gcap-b2{background:#e2e8f0;color:#0f172a}' +
+    '.gcap-note{background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;font-size:13px;color:#78350f;margin:8px 0}' +
+    '.gcap-cc{background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:6px 8px;font-size:12px;color:#1e3a8a;margin-top:4px}';
+  (D.head || D.documentElement).appendChild(st);
+}
+function lineFor(a, st, adm){
+  var on = !!st.settings[a.key], h = st.held[a.key] || {}, loc = st.localHeld[a.key] || {};
+  var lock = a.group === 'safety', ro = !adm || a.fixed;
+  var meta = [];
+  if (h.ran) meta.push('last run ' + esc(when(h.ran)));
+  if (h.n) meta.push('<span class="gcap-held">held ' + h.n + ' time' + (h.n === 1 ? '' : 's') + ' since ' + esc(when(h.since)) + (h.would != null ? ' · last time it would have done ' + h.would : '') + (h.sample && h.sample.length ? ' (' + esc(h.sample.join('; ')) + ')' : '') + '</span>');
+  else if (loc.n && !on) meta.push('<span class="gcap-held">held on this computer since ' + esc(when(loc.since)) + '</span>');
+  if (!meta.length) meta.push(on ? 'no run recorded yet' : 'nothing held yet');
+  if (!on && STATE[a.key]) meta.push('<span class="gcap-held">⚠ switching it on acts on ' + esc(waitingText(waiting(a.key, st))) + ' at once</span>');
+  return '<div class="gcap-row" data-gcap-key="' + esc(a.key) + '"><div class="gcap-main"><div class="gcap-name">' + (lock ? '🔒 ' : '') + esc(a.name) +
+    '<span class="gcap-tag">' + esc(EFFECT[a.effect] || a.effect) + '</span>' + (a.where === 'page' ? '<span class="gcap-tag" style="background:#f1f5f9;color:#334155">in the CRM page</span>' : '') + '</div>' +
+    '<div class="gcap-desc">' + esc(a.desc) + '</div>' +
+    (a.key === 'companycam_new_jobs' ? '<div class="gcap-cc">📸 This is how PM jobs arrive from CompanyCam. While it is OFF, new CompanyCam projects wait on the 📸 CompanyCam review list (＋ Make it a new job). Reading, linking and photo copies keep running.</div>' : '') +
+    '<div class="gcap-meta">' + meta.join(' · ') + '</div></div>' +
+    '<label class="gcap-sw ' + (on ? 'gcap-on' : 'gcap-off') + '"><input type="checkbox" data-gcap-sw="' + esc(a.key) + '"' + (on ? ' checked' : '') + (ro ? ' disabled' : '') + '> ' + (a.fixed ? 'Always ON' : on ? 'ON' : 'OFF') + '</label></div>';
+}
+function render(box){
+  css();
+  var st = A.state(), adm = isAdmin() && st.admin !== false;
+  if (!st.loaded) { box.innerHTML = '<div class="gcap">Loading the automations…</div>'; A.load().then(function(){ if (A.state().loaded) render(box); else box.innerHTML = '<div class="gcap gcap-note">Could not read the automations: ' + esc(A.state().err || 'not signed in') + '</div>'; }); return; }
+  var onN = R.LIST.filter(function(a){ return st.settings[a.key]; }).length;
+  var html = '<div class="gcap">' +
+    '<div class="gcap-note"><b>Nothing runs by itself unless it is ON here.</b> An automation that is OFF does nothing and notes what it would have done ("held") — nothing is saved up to go out later. Safety (missed calls, emergencies, on-call), lead intake, sync and backups stay ON. ' + onN + ' of ' + R.LIST.length + ' are ON.</div>' +
+    (adm ? '<div class="gcap-bar"><button type="button" class="gcap-b1" data-gcap="before">↺ Turn on everything I had before</button><button type="button" class="gcap-b2" data-gcap="defaults">Back to the safe defaults</button><span class="gcap-gd">Changes are saved at once and logged (who / when).</span></div>'
+         : '<div class="gcap-gd" style="margin:6px 0">You can see the automations; only an admin (Wesley or Nick) can switch them.</div>');
+  R.GROUPS.forEach(function(g){
+    var list = R.LIST.filter(function(a){ return a.group === g[0]; }); if (!list.length) return;
+    html += '<h4>' + esc(g[1]) + ' <span class="gcap-gd">(' + list.filter(function(a){ return st.settings[a.key]; }).length + ' / ' + list.length + ' ON)</span></h4><div class="gcap-gd">' + esc(g[2]) + '</div>' +
+      list.map(function(a){ return lineFor(a, st, adm); }).join('');
+  });
+  var log = (st.log || []).slice(0, 12);
+  if (log.length) html += '<h4>Recent changes</h4>' + log.map(function(x){ var a = R.BY[x.key]; return '<div class="gcap-meta">' + esc(when(x.at)) + ' — ' + esc(x.byName || x.by) + ' turned <b>' + esc(a ? a.name : x.key) + '</b> ' + (x.on ? 'ON' : 'OFF') + (x.op && x.op !== 'set' ? ' (' + esc(x.op === 'before' ? 'everything I had before' : 'defaults') + ')' : '') + '</div>'; }).join('');
+  html += '</div>';
+  box.innerHTML = html;
+  box.onchange = function(ev){
+    var k = ev.target && ev.target.getAttribute && ev.target.getAttribute('data-gcap-sw'); if (!k) return;
+    var a = R.BY[k], want = !!ev.target.checked;
+    if (!adm) { ev.target.checked = !want; return; }
+    if (!want && a.critical && !confirm('Turn OFF "' + a.name + '"?\n\nThis is a ' + (a.group === 'safety' ? 'SAFETY' : 'lead-intake / backup') + ' automation. While it is off: ' + a.desc + ' — will NOT happen.' + (a.group === 'sync' && /intake|inbox/i.test(a.name + a.key) ? '\nLeads sent while it is off are refused (the sender may try again later).' : ''))) { ev.target.checked = true; return; }
+    /* patch AUTOPANEL2: a 🔒 safety switch asks before it is turned ON as well */
+    if (want && a.group === 'safety' && !confirm('Turn ON "' + a.name + '"?\n\nThis is a SAFETY automation' + (a.effect === 'A' ? ' that sends to customers by itself' : '') + '. From now on: ' + a.desc + (a.effect === 'A' ? '\nNobody approves each message — it goes out at once.' : ''))) { ev.target.checked = false; return; }
+    var wt = want ? waiting(k, st) : null;
+    if (want && (a.effect === 'A' || a.effect === 'C') && !a.critical && !confirm('Turn ON "' + a.name + '"?\n\n' + a.desc + '\n\n' + (wt ? '⚠ Turning this on will act on ' + waitingText(wt) + ' NOW (what piled up while it was off), then keep running by itself.' : 'It will run by itself from now on.'))) { ev.target.checked = false; return; }
+    var ch = {}; ch[k] = want; ev.target.disabled = true;
+    A.set(ch).then(function(o){ if (o && o.__status === 200) toast('⚡ ' + a.name + ' is ' + (want ? 'ON' : 'OFF')); else { toast('Could not change it: ' + ((o && o.error) || (o && o.__status)), true); } render(box); });
+  };
+  box.onclick = function(ev){
+    var t = ev.target && ev.target.getAttribute && ev.target.getAttribute('data-gcap'); if (!t || !adm) return;
+    var pile = Object.keys(STATE).filter(function(k){ return !st.settings[k]; }).map(function(k){ return '• ' + R.BY[k].name + ': ' + waitingText(waiting(k, st)); });
+    if (t === 'before' && confirm('Turn on EVERYTHING the CRM did before this panel?\n\nEvery automation goes back ON: invoice and expense auto-posts, draws, job stages, closeout, reminders, sub texts, the monthly price update, CompanyCam new jobs …' + (pile.length ? '\n\n⚠ These will act NOW on what is waiting:\n' + pile.join('\n') : ''))) {
+      A.before().then(function(o){ toast(o && o.__status === 200 ? '↺ Everything is ON again, as before.' : 'Could not change it: ' + ((o && o.error) || (o && o.__status)), !(o && o.__status === 200)); render(box); });
+    }
+    if (t === 'defaults' && confirm('Back to the safe defaults?\n\nSafety, lead intake, sync, backups and staff alerts ON; everything that sends to customers / subs or changes records by itself OFF.')) {
+      A.defaults().then(function(o){ toast(o && o.__status === 200 ? 'Back to the safe defaults.' : 'Could not change it: ' + ((o && o.error) || (o && o.__status)), !(o && o.__status === 200)); render(box); });
+    }
+  };
+}
+function open(){
+  css();
+  var ov = D.createElement('div'); ov.setAttribute('data-gc-keep', '1'); ov.id = 'gcap-ov';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:100100;background:rgba(6,12,20,.8);display:flex;align-items:center;justify-content:center;padding:16px';
+  var card = D.createElement('div'); card.style.cssText = 'background:#fff;color:#0f172a;width:100%;max-width:760px;border-radius:12px;padding:20px;max-height:90vh;overflow:auto;box-sizing:border-box';
+  card.innerHTML = '<button type="button" data-gcap-x style="float:right;border:none;background:#e2e8f0;border-radius:6px;padding:4px 10px;cursor:pointer;font-weight:700">Close</button><div style="font:800 18px Inter,sans-serif;margin-bottom:10px">⚡ Automations</div><div data-gcap-body></div>';
+  ov.appendChild(card); D.body.appendChild(ov);
+  card.querySelector('[data-gcap-x]').onclick = function(){ ov.remove(); };
+  ov.addEventListener('click', function(ev){ if (ev.target === ov) ov.remove(); });
+  var body = card.querySelector('[data-gcap-body]'); body.innerHTML = '<div class="gcap">Loading…</div>';
+  A.load().then(function(){ render(body); });
+}
+/* 💎 menu item (admins and the office) */
+function hubItem(){
+  try {
+    if (!isAdmin() && !isOffice()) return;
+    var all = D.querySelectorAll('.gc-hub-panel'), panel = null;
+    for (var i = 0; i < all.length; i++) if (all[i].getClientRects().length) { panel = all[i]; break; }
+    if (!panel || panel.querySelector('#gc-autopanel-hub')) return;
+    var it = D.createElement('div'); it.id = 'gc-autopanel-hub'; it.className = 'gc-hub-item'; it.textContent = '⚡ Automations — what runs by itself';
+    it.style.cssText = 'display:flex;align-items:center;gap:10px;padding:10px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:700;color:#1e3a8a;border-bottom:1px solid #f1f5f9;background:#eff6ff';
+    it.onclick = open;
+    var first = panel.querySelector('#gc-pause-hub') || panel.firstElementChild;
+    if (first && first.parentNode === panel) panel.insertBefore(it, first.nextSibling); else panel.appendChild(it);
+  } catch (e) {}
+}
+D.addEventListener('click', function(){ later(hubItem, 180); }, true);
+function addSection(){
+  if (typeof W._gcAdmAddSection !== 'function') return false;
+  W._gcAdmAddSection({ id: 'automations', after: 'pause', ic: '⚡', t: 'Automations', d: 'Every automation, one switch each — nothing runs by itself unless it is ON',
+    render: function(box){ box.innerHTML = '<div class="gcap">Loading…</div>'; A.load().then(function(){ render(box); }); },
+    count: function(){ var st = A.state(); return st.loaded ? R.LIST.filter(function(a){ return st.settings[a.key]; }).length + ' ON' : ''; } });
+  return true;
+}
+if (!addSection()) { var tries = 0, iv = RI.call(W, function(){ if (addSection() || ++tries > 120) clearInterval(iv); }, 500); }
+W._gcAutoPanel = { open: open, render: render };
+try { console.log('[GC] ⚡ Automations panel (patch AUTOPANEL): _gcAutoPanel.open()'); } catch (e) {}
 })();
 </script>
 <script src="legal2.js"></script>   <!-- LEGAL2-patch -->
@@ -187892,6 +188456,7 @@ function makeInvoices(){
   var have = {}; arr(crm().invoices).forEach(function(i){ if (i.mailId) have[i.mailId] = 1; have[s(i.id)] = 1; });
   var add = [];
   try { if (W._gcSubInv) W._gcSubInv.load(MM.list, MM.done); } catch (e) {}   /* patch SUBINV */
+  if (!(window._gcAutoGate ? window._gcAutoGate('mailed_invoice_booking', function(){ var l = MM.list.filter(function(x){ return x.kind === 'sub_invoice' && !have[x.mailId || x.id] && !have['INVM-' + s(x.id).replace(/^MM-/, '')]; }); return { n: l.length, sample: l.slice(0, 3).map(function(x){ return x.subject || x.from; }) }; }) : false)) return 0;   /* patch AUTOPANEL: OFF → they wait in 📥 Needs a job */
   MM.list.filter(function(x){ return x.kind === 'sub_invoice'; }).forEach(function(x){
     var id = 'INVM-' + x.id.replace(/^MM-/, '');
     if (have[x.mailId || x.id] || have[id]) return;
@@ -188291,6 +188856,7 @@ var P = { list: [], done: {}, at: 0, booked: 0 };
 function process(list, done){
   P.list = arr(list); P.done = obj(done); P.at = Date.now();
   if (!moneyPerson() || typeof W._setExpenses !== 'function') return 0;
+  if (!(window._gcAutoGate ? window._gcAutoGate('mailed_invoice_booking', function(){ var l = P.list.filter(function(r){ return r.si && r.si.route === 'book' && r.si.job && !isDone(r, P.done) && (r.kind === 'receipt' || r.si.payee === 'supplier' || r.kind === 'client_invoice' || r.si.payee === 'client'); }); return { n: l.length, sample: l.slice(0, 3).map(function(r){ return s(r.si.read && r.si.read.vendor) || r.from; }) }; }) : false)) return 0;   /* patch AUTOPANEL: OFF → 📥 Needs a job */
   var n = 0;
   P.list.forEach(function(rec){
     var si = rec.si; if (!si || isDone(rec, P.done)) return;
@@ -188315,14 +188881,14 @@ function cardCharge(e){ return /credit card|card/i.test(s(e.payMethod)) || /cc i
 function needs(){
   var out = [], SI = W._gcSubInv && W._gcSubInv.state ? W._gcSubInv.state() : null;
   /* e-mailed sub invoices that wait (patch SUBINV's held list) */
-  if (SI) arr(SI.list).forEach(function(x){ if (!x.si || x.kind !== 'sub_invoice' || (x.si.payee && x.si.payee !== 'sub') || isDone(x, SI.done) || isDone(x, P.done)) return; if (x.si.route === 'book' && !SI.held[x.id]) return;
+  if (SI) arr(SI.list).forEach(function(x){ if (!x.si || x.kind !== 'sub_invoice' || (x.si.payee && x.si.payee !== 'sub') || isDone(x, SI.done) || isDone(x, P.done)) return; if (x.si.route === 'book' && !SI.held[x.id] && W._gcAutoOn && W._gcAutoOn('mailed_invoice_booking')) return;   /* patch AUTOPANEL: OFF → listed here */
     if (arr(crm().invoices).some(function(i){ return i.mailId && s(i.mailId) === s(x.id); })) return;
     out.push({ k: 'subinv', rec: x, id: x.id, at: x.at,   /* patch BULKDROP: rec (the file) */ who: s(x.si.sub && x.si.sub.name) || x.fromName || x.from, amt: num(x.si.read && x.si.read.total), what: 'Sub invoice', why: s(x.si.why) || 'the job is not certain', top: arr(x.si.top) }); });
   /* supplier bills, receipts, client invoices */
   P.list.forEach(function(x){ var si = x.si; if (isDone(x, P.done)) return;
     var kind = x.kind === 'receipt' ? 'receipt' : si && si.payee === 'supplier' ? 'supplier' : (x.kind === 'client_invoice' || (si && si.payee === 'client')) ? 'client' : '';
     if (!kind) return;
-    if (si && si.route === 'book' && si.job && proj(si.job.pid)) return;   /* booked by process() */
+    if (si && si.route === 'book' && si.job && proj(si.job.pid) && W._gcAutoOn && W._gcAutoOn('mailed_invoice_booking')) return;   /* booked by process() (patch AUTOPANEL: OFF → listed here) */
     if (si && si.route === 'dup' && kind === 'client' && si.dup && si.dup.same) return;   /* QuickBooks copy of an invoice the CRM has */
     out.push({ k: kind, id: x.id, at: x.at, who: s(si && si.read && si.read.vendor) || x.fromName || x.from, amt: num(si && si.read && si.read.total), what: kind === 'receipt' ? 'Receipt' : kind === 'supplier' ? 'Supplier bill' : 'Client invoice (QuickBooks)',
       why: si ? s(si.why) || 'no job matched' : 'not read yet — open it', top: arr(si && si.top), rec: x }); });
@@ -191688,7 +192254,7 @@ function process(e, force){
   if (!force && !canRun(e)) return Promise.resolve({ skip: 'not this computer' });
   if (S.busy[e.id]) return Promise.resolve({ skip: 'busy' });
   if (paused()) { setEst(e.id, { estin: { sig: sig, state: 'skipped', reason: 'Entered in data-entry mode — no proposal', at: nowIso() } }); return Promise.resolve({ skip: 'data-entry mode' }); }
-  if (!force && tpl().autoSend === false && e.estinNow !== true) { if (st.state !== 'manual' || st.sig !== sig) setEst(e.id, { estin: { sig: sig, state: 'manual', reason: 'Automatic proposals are off (⚙ Proposal template)', at: nowIso() } }); return Promise.resolve({ skip: 'auto off' }); }
+  if (!force && e.estinNow !== true && (tpl().autoSend === false || !(window._gcAutoGate ? window._gcAutoGate('proposal_maker', 1, [String(e.name || e.id || '')]) : false))) {   /* patch AUTOPANEL */ if (st.state !== 'manual' || st.sig !== sig) setEst(e.id, { estin: { sig: sig, state: 'manual', reason: 'Automatic proposals are off (⚙ Proposal template)', at: nowIso() } }); return Promise.resolve({ skip: 'auto off' }); }
   if (!force && !fast(e) && Date.now() - changedAt(e) < QUIET) return Promise.resolve({ skip: 'still being edited' });
   S.busy[e.id] = true; S.runs++;
   return loadLists().then(function(){ return go(); });
@@ -192266,7 +192832,7 @@ function stateOf(e){
   if (st.state === 'needs-email') return ['bad', 'No customer e-mail — not in portal'];
   if (st.state === 'error') return ['bad', 'Problem: ' + s(st.reason)];
   if (st.state === 'skipped' || st.state === 'manual') return ['', s(st.reason)];
-  var why = eligible(e); return ['', why === 'ok' ? 'Proposal comes after 10 quiet minutes' : why];
+  var why = eligible(e); return ['', why === 'ok' ? (W._gcAutoOn && W._gcAutoOn('proposal_maker') ? 'Proposal comes after 10 quiet minutes' : 'Automatic proposals are OFF (⚡ Automations) — 📨 Send for approval now') : why];   /* patch AUTOPANEL4 */
 }
 function recent(){ return estList().filter(function(e){ return e && !e.deleted && !e.isTemplate && startedAt(e) >= BOOT; }).sort(function(a, b){ return s(b.createdAt || b.savedAt || b.date) < s(a.createdAt || a.savedAt || a.date) ? -1 : 1; }).slice(0, 80); }
 var TAB = 'all';
@@ -192493,14 +193059,29 @@ var tmr = null;
 function soon(ms){ if (tmr) return; tmr = later(function(){ tmr = null; scan(); }, ms || 4000); }
 function scan(){
   if (!signedIn() || D.hidden) return Promise.resolve();
-  return loadLists().then(function(){
-    var list = estList(), jobs = [];
+  /* __GC_PATCH_AUTOPANEL4__ */ /* the ⚡ switches are asked FIRST: OFF → no list reads, no PDF, no upload, nothing written ("held") */
+  var pmOn = !!(W._gcAutoOn && W._gcAutoOn('proposal_maker')), poOn = !!(W._gcAutoOn && W._gcAutoOn('supplier_po_drafts'));
+  function pick(list){
+    var pm = [], po = [];
     list.forEach(function(e){
       if (!e || startedAt(e) < BOOT) return;
       if (e.estin && e.estin.sig === sigOf(e) && e.estin.state && e.estin.state !== 'error' && !(signedEstimate(e) && !e.estinPO)) return;
-      if (signedEstimate(e) && !e.estinPO && canRun(e) && !paused()) { jobs.push(function(){ return makePOs(e); }); return; }
-      if (eligible(e) === 'ok') jobs.push(function(){ return process(e); });
+      if (signedEstimate(e) && !e.estinPO && canRun(e) && !paused()) { po.push(e); return; }
+      if (eligible(e) === 'ok') pm.push(e);
     });
+    return { pm: pm, po: po };
+  }
+  function hold(w){
+    var nm = function(e){ return s(e.name || e.id); };
+    if (!pmOn && w.pm.length && W._gcAutoGate) W._gcAutoGate('proposal_maker', { n: w.pm.length, sample: w.pm.slice(0, 3).map(nm) });
+    if (!poOn && w.po.length && W._gcAutoGate) W._gcAutoGate('supplier_po_drafts', { n: w.po.length, sample: w.po.slice(0, 3).map(nm) });
+  }
+  if (!pmOn && !poOn) { try { hold(pick(estList())); } catch (x) {} return Promise.resolve(); }
+  return loadLists().then(function(){
+    var w = pick(estList()), jobs = [];
+    hold(w);
+    if (poOn) w.po.forEach(function(e){ jobs.push(function(){ return makePOs(e); }); });
+    if (pmOn) w.pm.forEach(function(e){ jobs.push(function(){ return process(e); }); });
     return jobs.slice(0, 6).reduce(function(pr, f){ return pr.then(function(){ return f().catch(function(){}); }); }, Promise.resolve());
   });
 }

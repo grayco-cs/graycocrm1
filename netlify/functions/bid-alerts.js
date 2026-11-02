@@ -43,18 +43,21 @@ async function crmLeads(){
 }
 async function run(){
   const out = { at: L.nowIso() };
-  const A = L.alertsApi();
+  const A = L.alertsApi(), AUTO = require('./_lib/automations.js');   /* patch AUTOPANEL */
+  const staffOn = await AUTO.isOn('bid_alerts_staff');
   let crm0 = null;
   try {
     const crm = crm0 = await crmLeads(), items = await L.kvGet(L.KV);
-    out.remind = await A.remind({ leads: crm.leads, items: Array.isArray(items) ? items : [], tombs: crm.tombs, users: crm.users, bidders: crm.bidders });
+    out.remind = !staffOn ? await AUTO.held('bid_alerts_staff', null, []) : await A.remind({ leads: crm.leads, items: Array.isArray(items) ? items : [], tombs: crm.tombs, users: crm.users, bidders: crm.bidders });
     if (crm.why) out.remind.crmWhy = crm.why;
   } catch (e) { out.remind = { error: L.s(e && e.message) }; }
   /* patch LEADHOLD: held new leads whose 5 PM deadline passed go to the suggested person (+ the normal notice) */
   try { const crm = crm0 || await crmLeads(); out.holds = crm.why ? { skipped: 'the CRM lead list could not be read (' + crm.why + ')' } : await L.releaseHolds(crm.leads); } catch (e) { out.holds = { error: L.s(e && e.message) }; }
-  try { out.roofscout = await A.sweepRoofScout(); } catch (e) { out.roofscout = { error: L.s(e && e.message) }; }
-  try { out.retry = await A.retry(); } catch (e) { out.retry = { error: L.s(e && e.message) }; }
-  out.portalQueue = await L.flushPortal();
+  if (staffOn) {
+    try { out.roofscout = await A.sweepRoofScout(); } catch (e) { out.roofscout = { error: L.s(e && e.message) }; }
+    try { out.retry = await A.retry(); } catch (e) { out.retry = { error: L.s(e && e.message) }; }
+  }
+  out.portalQueue = (await AUTO.gate('bid_portal_drafts')) || await L.flushPortal();
   return out;
 }
 exports.handler = async function(){

@@ -164,6 +164,7 @@ exports.handler = async function (event) {
   if (!sched && !(await isAdmin(event))) return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Admins only.' }) };
   if (!(process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY)) return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: 'SUPABASE_SERVICE_KEY not set.' }) };
   const qs = event.queryStringParameters || {};
+  if (sched) { const h = await require('./_lib/automations.js').gate('est_price_watch'); if (h) return { statusCode: 200, headers, body: JSON.stringify(h) }; }   /* patch AUTOPANEL */
   try {
     const out = await run({ dry: !sched && qs.dry === '1' });
     try { console.log('[est-price-watch]', JSON.stringify({ people: out.people, sent: out.sent.length, skipped: out.skipped.length })); } catch (e) {}

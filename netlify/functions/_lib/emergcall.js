@@ -126,15 +126,17 @@ function make(d){
     const sid = env('TWILIO_ACCOUNT_SID'), tok = env('TWILIO_AUTH_TOKEN'), from = env('TWILIO_FROM'), who = rec.chain[step];
     if (!sid || !tok || !from || !who) return { ok: false, why: 'not set up' };
     try {
-      const r = await fetch('https://api.twilio.com/2010-04-01/Accounts/' + encodeURIComponent(sid) + '/Calls.json', { method: 'POST',
+      const r = await require('./custquiet.js').run('emergency', () => fetch('https://api.twilio.com/2010-04-01/Accounts/' + encodeURIComponent(sid) + '/Calls.json', { method: 'POST',   /* patch AUTOPANEL: tagged emergency — goes in data-entry mode */
         headers: { Authorization: 'Basic ' + Buffer.from(sid + ':' + tok).toString('base64'), 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({ To: '+1' + who.phone, From: from, Url: hook('ecall', { id: rec.id, step }), Method: 'POST', Timeout: String(RING_S),
-          StatusCallback: hook('ecallstatus', { id: rec.id, step }), StatusCallbackMethod: 'POST', StatusCallbackEvent: 'completed' }).toString() });
+          StatusCallback: hook('ecallstatus', { id: rec.id, step }), StatusCallbackMethod: 'POST', StatusCallbackEvent: 'completed' }).toString() }));
       let j = {}; try { j = await r.json(); } catch (e) {}
       return { ok: r.ok, sid: s(j.sid), status: r.status };
     } catch (e) { return { ok: false, why: 'Twilio unreachable' }; }
   }
-  async function paused(){ try { return await require('./pause').isPaused(); } catch (e) { return true; } }
+  /* patch AUTOPANEL: the emergency line keeps working in ⏸ data-entry mode (its calls are tagged 'emergency'); it stops only
+     when "Emergency line" is switched off in ⚡ Automations */
+  async function paused(){ try { return !(await require('./automations.js').isOn('emergency_line')); } catch (e) { return false; } }
   /* call step `step` of rec (claimed first, so a tick and a status callback never both call) */
   async function callStep(id, step, round){
     let rec = null;

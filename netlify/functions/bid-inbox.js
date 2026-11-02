@@ -1170,6 +1170,12 @@ async function releaseHolds(crmLeads){
   const LH = require('./_lib/lead-hold.js'), now = typeof exports._now === 'function' ? exports._now() : Date.now();
   const out = { assigned: [], dropped: 0, notified: 0, crmOnly: 0 };
   const plan = LH.dueItems(arr(await kvGet(KV)), crmLeads, now);
+  /* patch AUTOPANEL: "5 PM lead auto-assign" (default OFF) — a held lead stays "Suggested" until an admin acts; an admin's own
+     approve / reassign in the CRM (plan.drop) is still carried over */
+  if ((plan.assign.length || plan.crmOnly.length) && !(await require('./_lib/automations.js').isOn('lead_auto_assign'))) {
+    out.held = await require('./_lib/automations.js').held('lead_auto_assign', plan.assign.length + plan.crmOnly.length, plan.assign.concat(plan.crmOnly).map(x => s(x.title || x.name || x.id)).slice(0, 3));
+    plan.assign = []; plan.crmOnly = [];
+  }
   if (plan.assign.length || plan.drop.length) {
     const want = {}, drop = {}; plan.assign.forEach(it => { want[it.id] = 1; }); plan.drop.forEach(d => { drop[d.id] = d; });
     await kvCas(KV, v => { const list = arr(v); let ch = false; out.assigned = [];
@@ -1671,6 +1677,7 @@ exports.handler = async function(event){
   if (s(evt.type) && s(evt.type) !== 'email.received') return J(200, { ok: true, ignored: 'event ' + evt.type });
   /* cheap routing before the hand-off: mail plainly for bills@ / claims@ is not touched */
   if (otherInbox(evt.data || evt)) { try { await require('./_lib/mailcenter.js').log(evt, { status: 200, body: { ok: true, ignored: 'for bills@ / claims@ (their own inbox handles it)' } }, { kvCas }); } catch (e) {} return J(200, { ok: true, ignored: 'not addressed to the bid inbox' }); }
+  { const h = await require('./_lib/automations.js').gate('bids_inbox', 1, [s(evt.data && evt.data.subject).slice(0, 80)]); if (h) return J(503, { ok: false, held: h.held, error: 'bids@ / leads@ intake is switched off in ⚡ Automations — try again later.' }); }   /* patch AUTOPANEL */
   if (await handOff(raw)) return J(200, { ok: true, accepted: true, how: v.how });
   const t0 = Date.now(), r = await processEvent(evt, { inline: true });
   (r.status >= 500 ? console.error : console.log)(logLine(evt, r, Date.now() - t0));   /* patch MAILFIX */

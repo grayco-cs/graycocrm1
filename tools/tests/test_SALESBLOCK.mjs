@@ -48,6 +48,8 @@ global.fetch = async function(url, init = {}){
 };
 const SG = require(path.join(SRC, '_lib/salesguard.js'));
 const E = require(path.join(SRC, '_lib/emergency.js'));
+/* patch AUTOPANEL: this test checks the text auto-answers (⚡ "Text auto-answers", OFF by default) — switched ON here */
+{ const AUTO = require(path.join(SRC, '_lib/automations.js')); const on = AUTO.before(); AUTO._t.setStore({ get: async k => k === AUTO.KEY ? on : null, put: async () => true }); }
 const X = require(path.join(SRC, '_lib/x10.js'));
 const RT = require(path.join(SRC, '_lib/smsroute.js'));
 const MN = require(path.join(SRC, '_lib/smsmenu.js'));

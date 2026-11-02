@@ -17,6 +17,7 @@ exports.handler = async function(event){
   if (!isScheduled(event)) return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Scheduled only.' }) };
   if (String(process.env.MAIL_FOLLOWUP_OFF || '') === '1') return { statusCode: 200, headers, body: JSON.stringify({ ok: true, off: true }) };
   let out;
+  { const h = await require('./_lib/automations.js').gate('mail_followup'); if (h) return { statusCode: 200, headers, body: JSON.stringify(h) }; }   /* patch AUTOPANEL */
   try { out = await require('./_lib/sentlog.js').run(); } catch (e) { out = { ok: false, error: String(e && e.message || e).slice(0, 200) }; }
   try { console.log('[mail-followup]', JSON.stringify(out)); } catch (e) {}
   return { statusCode: 200, headers, body: JSON.stringify(out) };

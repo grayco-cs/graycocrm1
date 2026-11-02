@@ -522,6 +522,7 @@ exports.handler = async function(event){
   }
 
   if (m !== 'POST') return J(event, 405, { ok: false, error: 'Method not allowed' });
+  { const h = await require('./_lib/automations.js').gate('website_intake', 1, [s(qs.type || 'form')]); if (h) return J(event, 503, { ok: false, held: h.held, error: 'We could not take your request online right now — please call us.' }); }   /* patch AUTOPANEL */
 
   /* ── a public submission: the website form, the roof price, or Zapier ── */
   const viaZapier = !!env('WEBSITE_ZAPIER_KEY') && same(h['x-api-key'] || s(h.authorization).replace(/^Bearer\s+/i, ''), env('WEBSITE_ZAPIER_KEY'));

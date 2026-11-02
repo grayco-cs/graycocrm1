@@ -8,14 +8,14 @@ require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every o
 const X = require('./_lib/mkt2.js');
 function ctHour(){ return +new Date().toLocaleString('en-US', { timeZone: 'America/Chicago', hour: 'numeric', hour12: false }) % 24; }
 exports.handler = async function(){
-  const out = {};
-  try {
+  const out = {}, AUTO = require('./_lib/automations.js');   /* patch AUTOPANEL */
+  if (await AUTO.isOn('ads_insights')) try {
     const st = await X.adsStatus(), h = ctHour();
     const due = ['google', 'meta'].some(function(p){ return st[p].connected && (!st[p].lastSync || Date.now() - Date.parse(st[p].lastSync) > 20 * 3600e3); });
     if (due && h >= 6) out.ads = await X.syncAds({ days: 30 });
   } catch (e) { out.adsError = String(e && e.message || e).slice(0, 200); }
-  try { out.newsletter = await X.ensureNewsletter({}); } catch (e) { out.newsletterError = String(e && e.message || e).slice(0, 200); }
-  try { if (ctHour() >= 10) out.thanks = await X.thankYous({ officeTodo: require('./portal.js')._core.officeTodo }); } catch (e) { out.thanksError = String(e && e.message || e).slice(0, 200); }
-  try { if (ctHour() >= 9) out.events = await X.eventReminders(); } catch (e) { out.eventsError = String(e && e.message || e).slice(0, 200); }
+  try { out.newsletter = (await AUTO.gate('newsletter_drafts')) || await X.ensureNewsletter({}); } catch (e) { out.newsletterError = String(e && e.message || e).slice(0, 200); }
+  try { if (ctHour() >= 10) out.thanks = (await AUTO.gate('newsletter_drafts')) || await X.thankYous({ officeTodo: require('./portal.js')._core.officeTodo }); } catch (e) { out.thanksError = String(e && e.message || e).slice(0, 200); }
+  try { if (ctHour() >= 9) out.events = (await AUTO.gate('event_reminders')) || await X.eventReminders(); } catch (e) { out.eventsError = String(e && e.message || e).slice(0, 200); }
   return { statusCode: 200, body: JSON.stringify(out) };
 };

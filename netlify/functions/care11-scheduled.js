@@ -17,8 +17,9 @@ exports.handler = async function(event){
   if (!isScheduled(event)) return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Scheduled only.' }) };
   const CARE = require('./_lib/care11.js'), out = {};
   const OFF = require('./_lib/offfeat.js');   /* patch OFFFEAT: the office's lien-deadline / unsigned-CO To-Dos and the W-9 requests (all through ✅ Approvals) */
+  const AUTO = require('./_lib/automations.js'), KEYS = { coi: 'coi_requests', warranty: 'warranty_checkup_offer', needs: 'we_need_reminders', office: 'office_todos' };   /* patch AUTOPANEL */
   for (const [k, f] of [['coi', CARE.coiRun], ['warranty', CARE.warrRun], ['needs', CARE.needsRun], ['office', OFF.daily]]) {
-    try { out[k] = await f(); } catch (e) { out[k] = { error: String(e && e.message || e).slice(0, 200) }; }
+    try { out[k] = (await AUTO.gate(KEYS[k])) || await f(); } catch (e) { out[k] = { error: String(e && e.message || e).slice(0, 200) }; }
   }
   try { console.log('[care11]', JSON.stringify(out)); } catch (e) {}
   return { statusCode: 200, headers, body: JSON.stringify(Object.assign({ ok: true }, out)) };

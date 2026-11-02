@@ -304,6 +304,7 @@ exports.handler = async function (event) {
   }
 
   if (event.httpMethod !== 'POST') return J(405, { error: 'Method not allowed' });
+  { const h = await require('./_lib/automations.js').gate('money_intake', 1, []); if (h) return J(503, { error: 'Money intake is paused — please retry later.', held: h.held }); }   /* patch AUTOPANEL */
 
   /* QuickBooks webhook — signed by Intuit, not by a key */
   if (qs.qb === '1' || qs.qb === 'true' || h['intuit-signature']) {

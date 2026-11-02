@@ -29,6 +29,8 @@ const PARTS = [
   { key: 'tax', lib: './_lib/taxalerts.js', when: function(c){ return c.hour >= 8 && c.hour < 20; }, marker: function(c){ return 'taxrun:' + c.ymd; } }
   /* AUTO-PARTS */
 ];
+/* patch AUTOPANEL: the ⚡ Automations switch of each part (an admin's forced run is a person's action) */
+const AUTO_KEY = { ar: 'ar_reminders', pay: 'payroll_check', lien: 'lien_waiver_requests', digest: 'approvals_digest', score: 'approvals_digest', apprnoon: 'approvals_digest', tax: 'tax_alerts' };
 async function runParts(opts){
   opts = opts || {};
   await A.loadStaff();   /* patch OFFICEFIX: staff e-mail = @grayco-cs.com or a gc_staff staff e-mail (one read per run) */
@@ -38,6 +40,7 @@ async function runParts(opts){
     try {
       if (!opts.force) {
         if (!P.when(c)) { out[P.key] = 'not now'; continue; }
+        { const h = await require('./_lib/automations.js').gate(AUTO_KEY[P.key] || 'approvals_digest'); if (h) { out[P.key] = h; continue; } }   /* patch AUTOPANEL */
         if (P.marker && !(await A.once(P.marker(c)))) { out[P.key] = 'done already'; continue; }
       }
       out[P.key] = await require(P.lib).run({ now: now });

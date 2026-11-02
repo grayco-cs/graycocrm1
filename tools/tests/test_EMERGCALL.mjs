@@ -54,7 +54,7 @@ const min = n => { T = T0 + n * 60000; };
 
 const ONCALL = '9015559999', OFFICE = '9015850944', NICK = '9015551001', WES = '9015551002', SENIOR = '9015551003', CUST = '9015553333';
 function world(o = {}){
-  KV.clear(); CALLS.length = 0; SMS.length = 0; MAIL.length = 0; PAUSE.reset(); T0 = o.night ? NIGHTT : DAYT; T = T0;
+  KV.clear(); CALLS.length = 0; SMS.length = 0; MAIL.length = 0; PAUSE.reset(); require(path.join(SRC, '_lib/automations.js'))._t.reset(); T0 = o.night ? NIGHTT : DAYT; T = T0;
   setKv('users', [
     { id: 'u1', name: 'Nick Thomas', email: 'nick@grayco-cs.com', role: 'Admin', phone: NICK, active: true },
     { id: 'u2', name: 'Wesley Johnson', email: 'wesley@grayco-cs.com', role: 'Admin', phone: WES, active: true },
@@ -65,6 +65,7 @@ function world(o = {}){
   setKv('leads', []); setKv('gc_job_messages', []);
   if (o.order) setKv('gc_call_order', o.order);
   if (o.pause) setKv('gc_automation_pause', { on: true });
+  if (o.lineOff) setKv('gc_automations', { emergency_line: false });   /* patch AUTOPANEL: ⚙ Admin → ⚡ Automations */
 }
 const SITE = 'https://crm.grayco-cs.com/.netlify/functions/missed-call';
 function sign(url, p, token){ return crypto.createHmac('sha1', token || TOKEN).update(Buffer.from(url + Object.keys(p).sort().map(k => k + p[k]).join(''), 'utf8')).digest('base64'); }
@@ -136,8 +137,11 @@ console.log('EMERGCALL — acknowledged in the CRM, paused, off');
   world(); await EC().register(lead); await EC().ack('LI-1', 'replied to the alert text');
   min(16); await tick();
   ok(CALLS.length === 0 && rec().state === 'acked', 'ack() (a reply to the alert text — claude/smsalert hooks here) → no call');
+  /* patch AUTOPANEL: data-entry mode no longer stops the emergency line (its calls are tagged 'emergency'); the ⚡ switch does */
   world({ pause: true }); await EC().register(lead); min(16); await tick();
-  ok(CALLS.length === 0 && rec().state === 'waiting', 'data-entry mode on → no calls (still waiting)');
+  ok(CALLS.length === 1 && CALLS[0].To === '+1' + ONCALL, 'data-entry mode on → the emergency call still goes (safety keeps working)', CALLS);
+  world({ lineOff: true }); await EC().register(lead); min(16); await tick();
+  ok(CALLS.length === 0 && rec().state === 'waiting', '⚡ "Emergency line" switched OFF → no calls (still waiting)');
   world({ order: { slots: [{ id: 'office', kind: 'company' }], emerg: { on: false } } }); await EC().register(lead); min(30); await tick();
   ok(CALLS.length === 0, 'escalation calls turned off in the card → no calls');
   world({ order: { slots: [{ id: 'office', kind: 'company' }], emerg: { on: true, minutes: 30 } } }); await EC().register(lead); min(20); await tick();

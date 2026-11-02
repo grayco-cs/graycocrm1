@@ -30,10 +30,12 @@ async function runRelease(opts){
   CQ.setAfterSend(jobMsgReleased);
   const t = Date.now();
   if (CQ.quiet(t)) return { ok: true, quiet: true, releaseAt: new Date(CQ.nextRelease(t)).toISOString() };
+  const AUTO = require('./_lib/automations.js');   /* patch AUTOPANEL: the 7 AM release (default ON — only what a person approved) */
+  { const h = await AUTO.gate('cust_release'); if (h) return Object.assign({ ok: true }, h); }
   const out = { ok: true };
   try { out.queue = await CQ.release({}); } catch (e) { out.queue = { error: s(e && e.message || e) }; }
   try { out.approvals = await core().releaseScheduled({}); } catch (e) { out.approvals = { error: s(e && e.message || e) }; }
-  if (out.queue && out.queue.notices) { try { out.notices = await core().notifyAll({}); } catch (e) { out.notices = { error: s(e && e.message || e) }; } }
+  if (out.queue && out.queue.notices) { try { out.notices = (await AUTO.gate('portal_docs_notice')) || await core().notifyAll({}); } catch (e) { out.notices = { error: s(e && e.message || e) }; } }
   return out;
 }
 exports.handler = async function(event){

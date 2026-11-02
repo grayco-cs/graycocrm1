@@ -53,6 +53,13 @@ async function fleetDaily(data){
   return n;
 }
 /* ── 🔐 codes of closed jobs are wiped ── */
+/* patch AUTOPANEL: how many jobs' codes the wipe would clear (for "held: would have done N"), read only */
+async function codesWipeCount(data){
+  if (!data || !Array.isArray(data.projects) || !data.projects.length) return 0;
+  try { const v = await L().kvGet('gc_x10_codes'); const l = Array.isArray(v) ? v : [];
+    const gone = l.filter(function(r){ const p = C().findProject(data, r.pid); return !p || X.jobClosed(p); });
+    return { n: gone.length, sample: gone.slice(0, 3).map(function(r){ return s(r.pid); }) }; } catch (e) { return null; }
+}
 async function codesWipe(data){
   let wiped = 0;
   /* patch AUTOFIX-CODES: fail safe — when the job list did not load (a chunk read failed, Supabase hiccup) every job looks
@@ -116,22 +123,25 @@ async function myDataMonthly(data){
 async function run(){
   if (s(process.env.X10_OFF) === '1') return { off: true };
   const out = {};
+  const AUTO = require('./_lib/automations.js');   /* patch AUTOPANEL: each part has its ⚡ Automations switch */
   let data = null; const getData = async function(){ if (!data) data = await C().crmData(true); return data; };
   try {
     const pages = await OC.make({ env: function(k){ return s(process.env[k]); }, kvGet: L().kvGet, kvCas: L().kvCas, now: exports._now }).pages();
-    if (pages.some(function(p){ return !p.acceptedAt && !p.adminsAt; })) {
+    const open = pages.filter(function(p){ return !p.acceptedAt && !p.adminsAt; });
+    if (open.length && !(await AUTO.isOn('oncall_paging'))) out.oncall = await AUTO.held('oncall_paging', open.length, []);   /* patch AUTOPANEL: safety switch (default ON) */
+    else if (open.length) {
       const d = await getData();
       out.oncall = await OC.make({ env: function(k){ return s(process.env[k]); }, kvGet: L().kvGet, kvCas: L().kvCas, now: exports._now, push: function(to, p){ return C().pushTo(to, p); } }).escalate(C().adminEmails(d));
     }
   } catch (e) { out.oncallError = s(e && e.message); }
   /* patch EMERGCALL: an emergency nobody acknowledged in 15 min → the CRM phones on call, then the 📞 Call order */
-  try { out.emergcall = await require('./missed-call.js')._test.EC().tick(); } catch (e) { out.emergcallError = s(e && e.message); }
+  try { out.emergcall = (await AUTO.gate('emergency_line')) || await require('./missed-call.js')._test.EC().tick(); } catch (e) { out.emergcallError = s(e && e.message); }
   const w = X.wall(now());
   if (w.hm >= '07:00') {
-    try { out.daily = await once('daily:' + w.day, async function(){ const d = await getData(); return { fleet: await fleetDaily(d), codesWiped: await codesWipe(d) }; }); } catch (e) { out.dailyError = s(e && e.message); }
+    try { out.daily = await once('daily:' + w.day, async function(){ const d = await getData(); return { fleet: (await AUTO.gate('x10_vehicle')) || await fleetDaily(d), codesWiped: (await AUTO.gate('x10_code_wipe', function(){ return codesWipeCount(d); })) || await codesWipe(d) }; }); } catch (e) { out.dailyError = s(e && e.message); }
   }
   if (w.day.slice(8) === '01' && w.hm >= '08:00') {
-    try { out.monthly = await once('monthly:' + w.day.slice(0, 7), async function(){ const d = await getData(); return { statements: await statementsMonthly(d), mydata: await myDataMonthly(d) }; }); } catch (e) { out.monthlyError = s(e && e.message); }
+    try { out.monthly = await once('monthly:' + w.day.slice(0, 7), async function(){ const d = await getData(); return { statements: (await AUTO.gate('monthly_statements')) || await statementsMonthly(d), mydata: (await AUTO.gate('x10_mydata')) || await myDataMonthly(d) }; }); } catch (e) { out.monthlyError = s(e && e.message); }
   }
   return out;
 }

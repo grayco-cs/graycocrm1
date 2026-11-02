@@ -121,10 +121,17 @@ const to = r => r.sent.map(x => x.to).sort();
   await SA.leads([{ id: 'L5', key: 'L5', title: 'x', contact: {} }], { L5: {} }, () => false);
   assert.strictEqual(r.sent.length, 0);
 
-  /* ── 4. data-entry mode blocks; 5. STOP honored ── */
+  /* ── 4. patch AUTOPANEL: data-entry mode no longer blocks staff alerts (texts to staff cells are tagged 'staff', which
+     _lib/pause.js lets through); the ⚡ Automations switch "Staff text alerts" does; 5. STOP honored ── */
   r = rig({ paused: true });
   const pz = await SA.leads([{ id: 'E4', key: 'E4', title: 'Fire', contact: {} }], { E4: {} }, () => true);
-  assert.strictEqual(r.sent.length, 0); assert.ok(pz[0].paused);
+  assert.ok(r.sent.length > 0 && !pz[0].paused, 'data-entry mode: the staff alert still goes');
+  { const AUTO = require(path.join(FN, '_lib/automations.js'));
+    AUTO._t.setStore({ get: async k => k === AUTO.KEY ? { staff_text_alerts: false } : null, put: async () => true });
+    r = rig({});
+    const ho = await SA.leads([{ id: 'E4b', key: 'E4b', title: 'Fire', contact: {} }], { E4b: {} }, () => true);
+    assert.strictEqual(r.sent.length, 0, '⚡ Staff text alerts OFF → nothing'); assert.ok(ho[0].held === 'staff_text_alerts', JSON.stringify(ho[0]));
+    AUTO._t.setStore(null); }
   r = rig({ optout: { '9015550001': '2026-10-01' } });
   await SA.leads([{ id: 'E5', key: 'E5', title: 'Fire', contact: {} }], { E5: {} }, () => true);
   assert.deepStrictEqual(to(r), ['9015550002', '9015550004'], 'Nick texted STOP');

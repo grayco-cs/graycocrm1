@@ -330,6 +330,7 @@ exports.handler = async function(event){
 
   /* a partner */
   if (m !== 'POST') return J(405, { ok: false, error: 'POST JSON with your x-api-key.' });
+  { const h = await require('./_lib/automations.js').gate('partner_api', 1, []); if (h) return J(503, { ok: false, error: 'The GrayCo partner API is paused — please retry later.', held: h.held }); }   /* patch AUTOPANEL */
   if (env('PARTNER_API_OFF') === '1') return J(503, { ok: false, error: 'GrayCo is not taking posts right now — please try again later.' });
   const given = s(h['x-api-key']) || s(h.authorization).replace(/^Bearer\s+/i, '');
   const key = await whichKey(given);
