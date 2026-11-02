@@ -18,6 +18,11 @@ const by = {}; rows.forEach(r => { by[r.key] = val(r.v !== undefined ? r.v : r.v
 const PROJECTS = by.projects, USERS = by.users, ESTS = by.estimates, LEADS = by.leads || [];
 const clone = o => JSON.parse(JSON.stringify(o));
 const HYATT = clone(ESTS.find(e => e && e.id === 'mvpngqx4tzo'));
+/* the Lead Estimator: the same decision the page makes (patch EST4, netlify/functions/_lib/estimator.js) — a role, not a name */
+const EST = require(path.join(build, 'netlify', 'functions', '_lib', 'estimator.js'));
+const LE = EST.decide(USERS, null);
+const LEN = LE && !LE.ambiguous ? LE.name : '';
+const OWNER = USERS.find(u => /^admin$/i.test(u.role)), PMU = USERS.find(u => /project manager/i.test(u.role)), OFFICEU = USERS.find(u => /office/i.test(u.role));
 const S251 = PROJECTS.find(p => p.id === 'PRJMVPQN1E2FG');
 ok(!!HYATT && !!S251, 'mirror has the Hyatt estimate and S251');
 
@@ -51,6 +56,8 @@ function makeWin(opts){
   win._setProjects = f => { const next = typeof f === 'function' ? f(win._crm.projects) : f; win.made.push('setProjects'); return next; };
   win._supaUpsert = (k, v) => { win.upserts.push(k); };
   win._gcEstimatesState = opts.ests || [];
+  win._gcDefEst = () => EST.decide(win._crm.users, opts.estSetting || null);
+  if (opts.me) { win._gcMeNow = { name: opts.me.name, role: opts.me.role }; win.__GC_AUTH__ = { email: () => opts.me.email, isAdmin: () => /^admin$/i.test(opts.me.role), mode: () => 'sb' }; }
   win.window = win; win.self = win;
   win.__timers = timers;
   return win;
@@ -80,11 +87,11 @@ section('only a PM-role person or an owner is a PM; office, marketing, "Office",
   ok(w._gcPmCell(S251) === '⚠ Glenn Miller (not a PM)', 'S251\'s PM cell: the pm field only, flagged, not the workload line', w._gcPmCell(S251));
   ok(w._gcPmCell({ pm: 'Office' }) === '⚠ Office (not a PM)' && w._gcPmCell({ pm: 'Steven Biffle ' }) === 'Steven Biffle' && w._gcPmCell({ pm: '' }) === '', 'PM cell: "Office" flagged, a PM shown, blank blank');
   const np = w._gcNewJobPeople(HYATT, null);
-  ok(np.pm === '' && np.estimator === 'Glenn Miller', 'Hyatt\'s estimate (estimator = workload line): pm blank, estimator Glenn Miller', np);
+  ok(np.pm === '' && np.estimator === 'Glenn Miller', 'Hyatt\'s estimate (estimator = workload line): pm blank, estimator = that estimator', np);
   const np2 = w._gcNewJobPeople(Object.assign({}, HYATT, { estimator: 'Brittany Pucket' }), null);
-  ok(np2.pm === '' && np2.estimator === '', 'estimator Brittany (office, the 11/02 re-save): neither PM nor estimator', np2);
+  ok(np2.pm === '' && np2.estimator === LEN && !!LEN, 'estimator = the office user (the 11/02 re-save): no PM; the Lead Estimator is the estimator', [np2, LEN]);
   const np3 = w._gcNewJobPeople({ estimator: 'Office' }, { pm: 'Steven Biffle' });
-  ok(np3.pm === 'Steven Biffle' && np3.estimator === '', 'the lead\'s real PM stays; "Office" is no estimator', np3);
+  ok(np3.pm === 'Steven Biffle' && np3.estimator === LEN, 'the lead\'s real PM stays; "Office" is no estimator → the Lead Estimator', np3);
 }
 
 /* ═══ 2. job type ═══ */
@@ -185,11 +192,66 @@ section('ESTIN with S251 missing from the screen\'s list (the 11/02 19:06 condit
   ok(none.made.length === 0 && /could not be checked/.test(JSON.stringify(none.w._gcEstin.state().log)), 'patched: the job cannot be checked anywhere → it waits (no job), retried on the next scan', none.w._gcEstin.state().log.slice(0, 2));
   const fresh = await estinRun(path.join(build, 'index.html'), true, { fresh: true });
   const fj = fresh.made[0] || {};
-  ok(fresh.made.length === 1 && fj.pm === '' && fj.estimator === 'Glenn Miller' && fj.type === 'Commercial Reno', 'patched: a genuinely new estimate still gets its bidding job — no PM, Glenn as estimator, Commercial', fresh.made.map(p => ({ po: p.autoPO, pm: p.pm, est: p.estimator, type: p.type })));
+  ok(fresh.made.length === 1 && fj.pm === '' && fj.estimator === LEN && fj.type === 'Commercial Reno', 'patched: a genuinely new estimate still gets its bidding job — no PM, Glenn as estimator, Commercial', fresh.made.map(p => ({ po: p.autoPO, pm: p.pm, est: p.estimator, type: p.type })));
   if (OLD) {
     const was = await estinRun(OLD, false);
     ok(was.made.length === 1 && was.made[0].pm === 'Brittany Pucket' && was.made[0].type === 'Residential', 'before the patch: the same run makes a second "Hyatt Studios" with PM Brittany Pucket, type Residential (P276 reproduced)', was.made.map(p => ({ po: p.autoPO, pm: p.pm, type: p.type, est: p.estimateId })));
   }
 }
+
+/* ═══ 6. DUPJOB2: roles, not names ═══ */
+section('DUPJOB2: the Lead Estimator and the lead managers are role slots');
+{
+  ok(!!LEN && /estimat/i.test((USERS.find(u => u.name === LEN) || {}).role), 'the Lead Estimator comes from the Estimator role (one active estimator)', LE);
+  const two = USERS.concat([{ id: 'Ux', name: 'Second Estimator', role: 'Estimator', email: 'second.est@example.com', active: true }]);
+  ok(EST.decide(two, null).ambiguous === true, 'two estimators and no Lead Estimator picked → nobody is auto-picked (the admins / the lead assign)');
+  const w2 = makeWin({ projects: PROJECTS }); w2._crm.users = two; w2._gcDefEst = () => EST.decide(two, null); run(HELP, w2);
+  ok(w2._gcNewJobPeople({ estimator: 'Office' }, null).estimator === '', 'two estimators, none picked: a new job gets no estimator by itself');
+  w2._gcDefEst = () => EST.decide(two, { name: LEN, email: (USERS.find(u => u.name === LEN) || {}).email });
+  ok(w2._gcNewJobPeople({}, null).estimator === LEN, 'two estimators, the Lead Estimator picked in settings → the Lead Estimator gets it');
+  const w = makeWin({ projects: PROJECTS }); run(HELP, w);
+  ok(w._gcLeadSlot('estimator') && w._gcLeadSlot('estimator').name === LEN, '_gcLeadSlot("estimator") → the Lead Estimator');
+  ok(w._gcJobTypeFor({ est: { estimator: LEN, jobType: 'Residential' } }) === 'Commercial Reno', 'the Lead Estimator\'s work → Commercial Reno (role, not a name)');
+  w._gcPrimeSub = { of: l => l && l.gcRole === 'prime' ? 'prime' : 'sub' };
+  ok(w._gcJobTypeFor({ est: {}, lead: { leadKind: 'bid', source: 'BuildingConnected' } }) === 'Commercial Reno', 'a sub bid / bid invite → Commercial Reno');
+  ok(w._gcJobTypeFor({ est: { estimator: LEN }, lead: { leadKind: 'commercial', gcRole: 'prime' } }) === 'New Construction', 'GrayCo\'s own GC (prime) commercial bid → New Construction');
+  ok(w._gcAutoPmFor(OWNER.name) === '' && w._gcAutoPmFor(OFFICEU.name) === '' && w._gcAutoPmFor(PMU.name) === PMU.name.trim(), 'a form never fills in an owner or the office as PM; a PM yes');
+}
+section('DUPJOB2: a job an owner creates is GrayCo\'s, no PM, the owners assign it (every code path through the job stamp)');
+{
+  const vias = ['estimate', 'estbuilder', 'approval', 'bid', 'schedule', 'lead', 'roofscout'];
+  vias.forEach(via => {
+    const w = makeWin({ projects: PROJECTS, me: OWNER }); run(HELP, w);
+    const p = w._gcFixNewJob({ id: 'N_' + via, name: 'x', pm: OWNER.name, type: 'Roofing', createdBy: OWNER.name, commissionSource: 'self', leadSource: 'Self-generated (' + OWNER.name + ')', pmSourced: true }, via);
+    ok(p.pm === '' && p.needsPm === true && p.commissionSource === 'company' && p.owner === 'GrayCo' && p.leadSource === 'GrayCo' && p.pmSourced === false && p.estimator === LEN, 'via ' + via + ': an owner\'s new job → GrayCo lead, PM blank + needsPm, Lead Estimator', p);
+  });
+  const w = makeWin({ projects: PROJECTS, me: OWNER }); run(HELP, w);
+  const pl = w._gcFixNewJob({ id: 'L1', pm: PMU.name, type: 'Roofing', createdBy: OWNER.name }, 'launch');
+  ok(pl.pm === PMU.name && !pl.needsPm, 'Launch Job: the PM an owner picks in the form is kept');
+  const wp = makeWin({ projects: PROJECTS, me: PMU }); run(HELP, wp);
+  const pp = wp._gcFixNewJob({ id: 'P1', pm: PMU.name, type: 'Roofing', createdBy: PMU.name }, 'estimate');
+  ok(pp.pm === PMU.name && !pp.needsPm, 'a PM\'s own new job keeps him as PM');
+  ok(html.indexOf('pm:Le.pm||(window._gcAutoPmFor?window._gcAutoPmFor(n.name):"")') >= 0, 'Launch Job / New Project: the PM is not defaulted to an owner');
+  ok(/if\(\['active','approved'\]\.indexOf\(p\.status\) < 0 && !\(p\.needsPm === true/.test(html), 'the admins\' "no PM assigned" alert lists an owner\'s new job');
+  const J = require(path.join(build, 'netlify', 'functions', '_lib', 'jobdata.js'));
+  const IX = J.index({ customers: [], projects: [], invs: [], schedule: [], docs: [] });
+  ok(J.check({ id: 'Q', name: 'Q', address: '1 A', status: 'bidding', type: 'Roofing', needsPm: true }, IX).need.map(x => x.key).join() === 'pmAssign', 'Missing job data: "PM — an owner assigns it"');
+}
+section('DUPJOB2: a job / lead entered by hand (patch CC2 / LEADHOLD stamp)');
+{
+  const STAMP = scriptAround(html, 'W._gcSelfStamp = function');
+  ok(STAMP.length > 1000, 'the hand-entry stamp is in the page');
+  const stampAs = (u, kind) => { const w = makeWin({ projects: PROJECTS, me: u }); w.navigator = { clipboard: null }; w.document.documentElement = { classList: { contains: () => false } }; run(HELP, w); try { run(STAMP, w); } catch (e) { return { err: String(e) }; } return w._gcSelfStamp({ id: 'H1', name: 'Hand job', address: '9 Test Rd' }, kind, 'desk'); };
+  const o = stampAs(OWNER, 'job');
+  ok(!o.err && o.pm === undefined || o.pm === '', 'an owner enters a job → no PM', o);
+  ok(o.needsPm === true && o.estimator === LEN && o.leadSource === 'GrayCo' && !o.selfGenerated, 'an owner\'s job: needsPm, the Lead Estimator, a GrayCo lead', o);
+  const ol = stampAs(OWNER, 'lead');
+  ok(!s0(ol.pm) && ol.estimator === LEN, 'an owner enters a lead → no PM, the Lead Estimator', ol);
+  const of = stampAs(OFFICEU, 'job');
+  ok(!s0(of.pm), 'the office enters a job → no PM (never the office person)', of);
+  const pmj = stampAs(PMU, 'job');
+  ok(s0(pmj.pm) === s0(PMU.name), 'a PM enters a job → it is his', pmj);
+}
+function s0(v){ return v == null ? '' : String(v).trim(); }
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

@@ -329,8 +329,8 @@ function selfFields(pm){ return { pm: pm, leadSource: 'Self-generated (' + pm + 
   leadIsMine: true, ownLead: true, graycoOrigin: false, leadOwner: pm, leadSourceTag: 'PM’s own lead' }; }
 /* patch DUPJOB (owner 11/02): "when Nick or Wesley create leads into CompanyCam then they are GrayCo leads because we are
    owners; we will then assign PM". An owner's (Admin) project: a GrayCo lead, no PM, no estimator. A creator who is not a
-   PM (an estimator): their own lead as ESTIMATOR, never the PM. No default job type: the commercial estimator's are
-   Commercial, else the type is left to pick ("Pick job type" on 🧾 Missing job data). */
+   PM (an estimator): their own lead as ESTIMATOR, never the PM. No default job type: an estimator's (the Lead
+   Estimator's) are Commercial Reno, else the type is left to pick ("Pick job type" on 🧾 Missing job data). */
 function arrU(v){ if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { return []; } } return Array.isArray(v) ? v.filter(x => x && typeof x === 'object') : []; }
 function userNamed(users, name){ const k = normName(String(name || '').replace(/\s+[\u2014\u2013-]+\s+\d+\s+jobs?\b.*$/, '')); return k ? arrU(users).find(u => normName(u.name) === k) || null : null; }
 function officeUser(u){ return !!u && (/office|marketing|bookkeep|accounting|reception/.test(low(u.role) + ' ' + low(u.title)) || low(u.email).indexOf('office@') === 0); }
@@ -346,7 +346,7 @@ function creatorRule(j, users){
   if (kind === 'owner') Object.assign(j, { pm: '', estimator: '', commissionSource: 'company', leadSource: 'GrayCo', broughtInBy: '', pmSourced: false, selfGenerated: false, owner: 'GrayCo',
     leadIsMine: false, ownLead: false, graycoOrigin: true, leadOwner: '', leadSourceTag: 'GrayCo lead', ccOwnerMade: who, createdBy: who });
   else if (kind === 'other') { j.estimator = who; j.pm = ''; }
-  if (!s(j.type)) { const cu = userNamed(users, who || j.ccCreator); if (cu && /commercial/.test(low(cu.title) + ' ' + low(cu.role))) { j.type = 'Commercial Reno'; j.isCommercial = true; } else j.needsType = true; }
+  if (!s(j.type)) { const cu = userNamed(users, who || j.ccCreator); if (cu && !officeUser(cu) && /estimat/.test(low(cu.role) + ' ' + low(cu.profile))) {   /* DUPJOB2: an estimator's (the Lead Estimator's) work is commercial — a role, not a name */ j.type = 'Commercial Reno'; j.isCommercial = true; } else j.needsType = true; }
   return j;
 }
 function jobFor(p, pm, note, nowIso, senior){

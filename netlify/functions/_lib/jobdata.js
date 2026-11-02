@@ -166,6 +166,7 @@
     { key: 'customer', label: 'Customer linked', group: 'Customer', from: 'won', test: function(p, ix){ return !!custOf(p, ix) || (!!s(p.customerId) && !ix.haveCustomers); }, fix: { field: 'customerId', input: 'customer' } },
     { key: 'contact', label: 'Customer phone or e-mail', group: 'Customer', from: 'won', test: phoneOrMail, fix: { field: 'clientPhone', input: 'contact' } },
     { key: 'pm', label: 'PM', group: 'Job', from: 'won', test: function(p){ return !!s(p.pm || p.projectManager || p.pmName); }, fix: { field: 'pm', input: 'pm' } },
+    { key: 'pmAssign', label: 'PM — an owner assigns it', group: 'Job', from: 'bidding', to: 'estimate', test: function(p){ return !(p.needsPm === true && !s(p.pm || p.projectManager || p.pmName)); }, fix: { field: 'pm', input: 'pm' } },
     { key: 'type', label: 'Job type (pick one)', group: 'Job', from: 'bidding', test: function(p){ var t = s(p.type || p.jobType); return !!t && !/^(residential|commercial|insurance|construction)$/i.test(t); }, fix: { field: 'type', input: 'type' } },
     { key: 'status', label: 'Status', group: 'Job', from: 'won', test: function(p){ return !!s(p.status); }, fix: { field: 'status', input: 'status' } },
     { key: 'contract', label: 'Contract amount', group: 'Money', from: 'won', test: function(p){ return (num(p.contract) || num(p.contractAmt) || num(p.contractAmount) || num(p.contractValue)) > 0; }, fix: { field: 'contract', input: 'money' } },
