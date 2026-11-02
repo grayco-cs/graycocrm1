@@ -72,9 +72,10 @@ exports.handler = async function (event) {
   if (!isScheduled(event) && !(await isAdmin(event))) return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Admins only.' }) };
   if (!(process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY)) return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: 'SUPABASE_SERVICE_KEY not set.' }) };
   try {
-    const out = await portal._core.escalateDue({});
-    try { out.portalGate = await gateScanIfChanged(); } catch (e) { out.portalGate = { ok: false, error: String(e && e.message || e).slice(0, 120) }; }   /* patch PORTALGATE: new portal things → ✅ Approvals (patch AUTOFIX-GATE: only when something changed) */
-    try { out.textLeads = await require('./_lib/textlead.js').syncConverted(); } catch (e) { out.textLeads = { error: String(e && e.message || e).slice(0, 120) }; }   /* patch TEXTLEAD: a texted lead that became a job → its conversation + notes on the job */
+    const AUTO = require('./_lib/automations.js');   /* patch AUTOPANEL */
+    const out = (await AUTO.gate('approval_escalation')) ? { ok: true, held: 'approval_escalation' } : await portal._core.escalateDue({});
+    try { out.portalGate = (await AUTO.gate('portal_gate_queue')) || await gateScanIfChanged(); } catch (e) { out.portalGate = { ok: false, error: String(e && e.message || e).slice(0, 120) }; }   /* patch PORTALGATE: new portal things → ✅ Approvals (patch AUTOFIX-GATE: only when something changed) */
+    try { out.textLeads = (await AUTO.gate('text_thread_copy')) || await require('./_lib/textlead.js').syncConverted(); } catch (e) { out.textLeads = { error: String(e && e.message || e).slice(0, 120) }; }   /* patch TEXTLEAD: a texted lead that became a job → its conversation + notes on the job */
     try { console.log('[approval-escalate]', JSON.stringify({ escalated: out.escalated || 0 })); } catch (e) {}
     return { statusCode: out.ok ? 200 : 502, headers, body: JSON.stringify(out) };
   } catch (e) {

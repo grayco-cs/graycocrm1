@@ -2253,6 +2253,8 @@ function linkMailHtml(v, link){
 async function sendLink(pid, event, who){
   const st = await settingsGet();
   if (!st.autoSend) return { ok: true, skipped: 'auto-send is turned off' };
+  /* patch AUTOPANEL: the new-job portal link e-mail is an ⚡ Automations switch (default OFF) */
+  if (!(await require('./_lib/automations.js').isOn('portal_invite_email'))) return Object.assign({ ok: true, skipped: 'new-job portal link e-mail is switched off in ⚡ Automations' }, await require('./_lib/automations.js').held('portal_invite_email', 1, [s(pid)]));
   const now = Date.now();
   const data = await crmData(true);
   const p = findProject(data, pid);

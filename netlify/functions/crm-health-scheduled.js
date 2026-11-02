@@ -5,6 +5,7 @@
 'use strict';
 require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 exports.handler = async function(){
+  { const h = await require('./_lib/automations.js').gate('crm_health'); if (h) return { statusCode: 200, body: JSON.stringify(h) }; }   /* patch AUTOPANEL */
   const out = await require('./crm-health.js')._test.daily();
   try { console.log('[crm-health]', JSON.stringify(out)); } catch (e) {}
   return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ ok: true }, out)) };

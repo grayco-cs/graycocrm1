@@ -206,6 +206,11 @@ async function missed(p, how, extra){
   /* patch SMSCONSENT: a customer who declined texts on their contract gets no automatic text (STOP is already handled above) */
   if (textIt) { try { const SC = require('./_lib/smsconsent.js'), D0 = await core().kvRead(['customers', 'projects', 'leads']), s0 = await stateGet();
     if (SC.statusFor(D0, ph, s0.consent) === 'no') { textIt = false; out.consent = 'declined'; } } catch (e) {} }
+  if (textIt && !(await require('./_lib/automations.js').isOn('missed_call_textback'))) {   /* patch AUTOPANEL: safety switch (default ON) */
+    textIt = false; out.text = { skipped: 'missed-call text-back is switched off in ⚡ Automations' };
+    await require('./_lib/automations.js').held('missed_call_textback', 1, ['…' + ph.slice(-4)]);
+    await stateCas(st => { if (st.texted[ph] === at) delete st.texted[ph]; return true; }).catch(() => {});
+  }
   if (textIt) {
     /* patch CUSTQUIET: 7 PM–7 AM Central this text-back is queued for 7 AM — unless the caller has an EMERGENCY (after-hours
        "press 1", or emergency words in what they said): that reply goes now, as before */
@@ -213,7 +218,7 @@ async function missed(p, how, extra){
     out.text = await require('./_lib/custquiet.js').run(emerg0 ? 'emergency' : 'customer', () => sendSms(ph, s(extra.text) || TEXT));   /* patch AFTERHOURS: the after-hours wording */
     if (out.text && out.text.held) out.heldUntil = out.text.held.releaseAt;
     if (!out.text.ok) await stateCas(st => { if (st.texted[ph] === at) delete st.texted[ph]; return true; }).catch(() => {});
-  } else out.text = { skipped: 'texted recently or opted out' };
+  } else if (!out.text) out.text = { skipped: 'texted recently or opted out' };
   /* existing customer? */
   let cust = null; try { cust = await WI().findCustomer({ phone: ph, email: '' }); } catch (e) {}
   try { out.cellAlerts = await SA().missedCall({ ph, name: cust ? cust.client : s(p.CallerName), job: cust ? cust.job : '', pid: cust ? cust.pid : '', said: s(extra && extra.what) }); } catch (e) {}   /* patch SMSALERT */
@@ -534,6 +539,8 @@ async function inboundSms(p){
   /* 6) one automatic answer — never while data-entry mode is on, never to an opted-out number, limited per number */
   let reply = '', why = '';
   let paused = true; try { paused = await require('./_lib/pause').isPaused(); } catch (e) { paused = true; }
+  /* patch AUTOPANEL: "Text auto-answers" is an ⚡ Automations switch (default OFF); HELP / STOP above always answer */
+  if (set.autoOn) { try { if (!(await require('./_lib/automations.js').isOn('text_auto_answers'))) { set = Object.assign({}, set, { autoOn: false }); out.autoHeld = await require('./_lib/automations.js').held('text_auto_answers', 1, ['…' + ph.slice(-4)]); } } catch (e) {} }
   /* patch SMSMENU: customers (and unknown numbers) on the Customers / default number get the 1–5 menu, answered from the CRM;
      1–3 and the warranty only for the phone on file; 4 → the PM calls back; 5 → on call + the PM, ASAP; anything else → the PM */
   const MN = require('./_lib/smsmenu.js'), menu = { done: false };
@@ -673,8 +680,9 @@ exports.handler = async function(event){
     if (ev === 'ecallkey') return twiml(await EC().key(s(qs.id), parseInt(qs.step, 10) || 0, p.Digits, p.To || p.Called));
     if (ev === 'fcall') return twiml(require('./_lib/fieldcall.js').twiml(qs.to, env('TWILIO_FROM')));   /* patch FIELDCALL: staff answered → the customer, from the GrayCo number */
     if (ev === 'ecallstatus') { if (/^(completed|no-answer|busy|failed|canceled)$/i.test(s(p.CallStatus))) await EC().advance(s(qs.id), parseInt(qs.step, 10) || 0); return twiml(''); }
-    if (/^(voice|menu|what|whisper|accept|dialdone)$/.test(ev)) { const r = await callOrder(ev, p, qs); if (r) return r; }   /* patches CALLCHAIN + CALLSCREEN */
-    if (ev === 'voice' && CC().on()) {   /* patch CHAIN */
+    const chainOn = !/^(voice|menu|what|whisper|accept|dialdone)$/.test(ev) || await require('./_lib/automations.js').isOn('call_chain');   /* patch AUTOPANEL: safety switch (default ON) */
+    if (chainOn && /^(voice|menu|what|whisper|accept|dialdone)$/.test(ev)) { const r = await callOrder(ev, p, qs); if (r) return r; }   /* patches CALLCHAIN + CALLSCREEN */
+    if (ev === 'voice' && chainOn && CC().on()) {   /* patch CHAIN */
       const chain = await CC().start(s(p.CallSid), p.From).catch(() => []);
       if (chain.length) return twiml('<Say voice="Polly.Joanna">Thanks for calling GrayCo Construction Services. Please hold while we connect you.</Say>' + dialStep(0, chain));
     }

@@ -2,4 +2,4 @@
 'use strict';
 require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const PT = require('./_lib/phototag.js');
-exports.handler = async function(){ try { const r = await PT.run({}); console.log('[photo-tag]', JSON.stringify(r)); } catch (e) { console.log('[photo-tag] failed', e && e.message); } return { statusCode: 200, body: 'ok' }; };
+exports.handler = async function(){ { const h = await require('./_lib/automations.js').gate('photo_tags'); if (h) return { statusCode: 200, body: 'held' }; }   /* patch AUTOPANEL */ try { const r = await PT.run({}); console.log('[photo-tag]', JSON.stringify(r)); } catch (e) { console.log('[photo-tag] failed', e && e.message); } return { statusCode: 200, body: 'ok' }; };

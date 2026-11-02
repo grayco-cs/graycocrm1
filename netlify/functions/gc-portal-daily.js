@@ -17,8 +17,9 @@ exports.handler = async function(event){
   const G = require('./_lib/gcp.js'), C = require('./portal.js')._core, out = {};
   try {
     const data = await C.crmData(true);
-    try { out.docs = await G.complianceRun(data); } catch (e) { out.docs = { error: String(e && e.message || e) }; }
-    try { out.inspect = await G.inspectRun(data); } catch (e) { out.inspect = { error: String(e && e.message || e) }; }
+    const AUTO = require('./_lib/automations.js');   /* patch AUTOPANEL */
+    try { out.docs = (await AUTO.gate('company_docs_expiry')) || await G.complianceRun(data); } catch (e) { out.docs = { error: String(e && e.message || e) }; }
+    try { out.inspect = (await AUTO.gate('inspection_offer')) || await G.inspectRun(data); } catch (e) { out.inspect = { error: String(e && e.message || e) }; }
     try { console.log('[gc-portal-daily]', JSON.stringify(out)); } catch (e) {}
     return { statusCode: 200, headers, body: JSON.stringify(Object.assign({ ok: true }, out)) };
   } catch (e) { return { statusCode: 502, headers, body: JSON.stringify({ ok: false, error: String(e && e.message || e) }) }; }

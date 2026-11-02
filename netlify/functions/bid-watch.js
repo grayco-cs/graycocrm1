@@ -593,6 +593,7 @@ async function runAll(opts){
 
 exports.handler = async function(){
   if (!L.dbReady()) return { statusCode: 500, body: JSON.stringify({ error: 'Supabase is not configured on Netlify.' }) };
+  { const h = await require('./_lib/automations.js').gate('bid_watch'); if (h) return { statusCode: 200, body: JSON.stringify(h) }; }   /* patch AUTOPANEL */
   try { const out = await runAll({}); console.log('[bid-watch] ' + JSON.stringify({ found: out.found, added: out.added })); return { statusCode: 200, body: JSON.stringify(out) }; }
   catch (e) { console.error('[bid-watch] ' + (e && e.message)); return { statusCode: 500, body: JSON.stringify({ error: s(e && e.message) }) }; }
 };

@@ -61,7 +61,8 @@ exports.handler = async function (event) {
     /* patch AP2: every new client invoice gets its PDF e-mail on the approvals list first (a final one then
        counts as the final-invoice e-mail, and the 15-day reminders follow it) */
     let invoiceMail = null;
-    try { invoiceMail = await portal._core.queueNewInvoices({}); } catch (e) { invoiceMail = { error: String(e && e.message || e) }; }
+    const AUTO = require('./_lib/automations.js');   /* patch AUTOPANEL: each part runs only while its ⚡ Automations switch is ON */
+    try { invoiceMail = (await AUTO.gate('invoice_email_queue')) || await portal._core.queueNewInvoices({}); } catch (e) { invoiceMail = { error: String(e && e.message || e) }; }
     /* patch CUSTQUIET: 7 PM–7 AM Central nothing goes to customers — the reminders, the new-papers notices and the estimate
        follow-ups stay pending (nothing is claimed) and the first run after 7:00 AM sends them, each once */
     const CQ = require('./_lib/custquiet.js');
@@ -69,13 +70,13 @@ exports.handler = async function (event) {
       try { await CQ.noteNotices(); } catch (e) {}
       return { statusCode: 200, headers, body: JSON.stringify({ ok: true, quiet: true, invoiceMail, releaseAt: new Date(CQ.nextRelease(Date.now())).toISOString() }) };
     }
-    const rep = await portal._core.runReminders({});
+    const rep = (await AUTO.gate('final_invoice_reminders')) || await portal._core.runReminders({});
     rep.invoiceMail = invoiceMail;
-    try { rep.notices = await portal._core.notifyAll({}); } catch (e) { rep.notices = { error: String(e && e.message || e) }; }
+    try { rep.notices = (await AUTO.gate('portal_docs_notice')) || await portal._core.notifyAll({}); } catch (e) { rep.notices = { error: String(e && e.message || e) }; }
     /* patch AUTO5: estimate follow-ups — day 2 (approval), day 5 and day 10 (the approved text, by themselves) */
-    try { rep.estFollowups = await require('./portal-sign.js')._ps.runFollowups({}); } catch (e) { rep.estFollowups = { error: String(e && e.message || e) }; }
+    try { rep.estFollowups = (await AUTO.gate('estimate_followups')) || await require('./portal-sign.js')._ps.runFollowups({}); } catch (e) { rep.estFollowups = { error: String(e && e.message || e) }; }
     /* patch PORTALAPP: app pushes held through the customer quiet hours (7 PM–7 AM Central) go now — one per job */
-    try { rep.appPush = await require('./_lib/capp.js').flushHeld(portal._core); } catch (e) { rep.appPush = { error: String(e && e.message || e) }; }
+    try { rep.appPush = (await AUTO.gate('customer_app_push')) || await require('./_lib/capp.js').flushHeld(portal._core); } catch (e) { rep.appPush = { error: String(e && e.message || e) }; }
     try { console.log('[portal-reminders]', JSON.stringify({ sent: rep.sent, reminded: rep.reminded, todos: rep.todos, skipped: rep.skipped, paused: rep.paused })); } catch (e) {}
     return { statusCode: 200, headers, body: JSON.stringify(rep) };
   } catch (e) {

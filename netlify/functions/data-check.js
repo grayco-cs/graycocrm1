@@ -17,6 +17,7 @@ exports.handler = async function(event){
   const qs = event.queryStringParameters || {};
   if (qs.ping === '1') return { statusCode: 200, headers, body: JSON.stringify({ ok: true, service: 'GrayCo nightly data check', off: process.env.DATACHECK_OFF === '1' }) };
   if (!isScheduled(event)) return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Scheduled only.' }) };
+  { const h = await require('./_lib/automations.js').gate('data_check'); if (h) return { statusCode: 200, headers, body: JSON.stringify(h) }; }   /* patch AUTOPANEL */
   try {
     const DC = require('./_lib/datacheck.js'), core = require('./portal.js')._core;
     const h = require('./_lib/auto-common.js').central(Date.now()).hour;

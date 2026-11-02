@@ -33,6 +33,9 @@ const ALLOW_WRITE_HOSTS = [
   /^localhost$/i, /^127\.0\.0\.1$/i
 ];
 let state = { at: 0, paused: null, why: '' };
+/* patch AUTOPANEL: the custquiet tags that pass data-entry mode for texts / calls (see guardedFetch) */
+const PASS_TAGS = { staff: 1, emergency: 1, reply: 1 };
+function safetyTag(){ try { return String(require('./custquiet.js').tag() || ''); } catch (e) { return ''; } }
 
 function s(v){ return v == null ? '' : String(v); }
 function envHosts(){
@@ -108,8 +111,8 @@ function classify(url, opts){
     return null;   /* domains, receiving, … */
   }
   if (host === 'api.twilio.com') {
-    if (/\/Calls(\.json)?$/i.test(path)) return { kind: 'phone call', status: 201, fake: { sid: 'CA' + tag, status: 'queued' } };
-    return { kind: 'text message', status: 201, fake: { sid: 'SM' + tag, status: 'queued' } };
+    if (/\/Calls(\.json)?$/i.test(path)) return { kind: 'phone call', twilio: true, status: 201, fake: { sid: 'CA' + tag, status: 'queued' } };
+    return { kind: 'text message', twilio: true, status: 201, fake: { sid: 'SM' + tag, status: 'queued' } };
   }
   if (host === 'graph.facebook.com') return { kind: 'Facebook / Instagram post', status: 200, fake: { id: tag, post_id: tag } };
   if (host === 'open.tiktokapis.com') {
@@ -163,6 +166,11 @@ async function guardedFetch(raw, url, opts){
   let c = classify(target, o); const lk = sendKind(target, o);
   /* patch OFFICEFIX: an e-mail to staff at a personal address (a gc_staff row) still goes while paused — one cached read */
   if (c && c.mail && await isPaused()) { try { await staffMail().load(); c = classify(target, o); } catch (e) {} }
+  /* patch AUTOPANEL: safety keeps working in data-entry mode — a text or call (Twilio) that the sender tagged with
+     custquiet.run('staff' | 'emergency' | 'reply', …) still goes: staff alerts / on-call / staff relays ('staff'), the
+     emergency call chain and replies to an emergency the customer started ('emergency'), and the HELP answer / a sign-in
+     code the person just asked for ('reply'). Every other send stays skipped. */
+  if (c && c.twilio && PASS_TAGS[safetyTag()] && await isPaused()) { try { console.log('[pause] let through ' + c.kind + ' (tagged ' + safetyTag() + ')'); } catch (e) {} c = null; }
   if (c && await isPaused()) {
     let host = ''; try { host = new URL(s(target)).hostname; } catch (e) {}
     try { console.log('[pause] skipped ' + c.kind + ' → ' + host + ' (data-entry mode' + (state.why && !/data-entry mode is on/.test(state.why) ? '; ' + state.why : '') + ')'); } catch (e) {}
@@ -192,6 +200,6 @@ function install(){
   return module.exports;
 }
 /* for code that holds its own fetch: true when this send must be skipped right now */
-async function shouldSkip(url, opts){ return !!(classify(url, opts) && await isPaused()); }
+async function shouldSkip(url, opts){ const c = classify(url, opts); if (c && c.twilio && PASS_TAGS[safetyTag()]) return false; return !!(c && await isPaused()); }
 
-module.exports = { install, isPaused, why, reset, classify, staffOnly, shouldSkip, KEY, _t: { readFlag, addrList, fakeResponse, sendKind, logSend } };
+module.exports = { install, isPaused, why, reset, classify, staffOnly, shouldSkip, KEY, PASS_TAGS, _t: { readFlag, addrList, fakeResponse, sendKind, logSend } };

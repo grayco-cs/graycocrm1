@@ -346,6 +346,10 @@ async function run(opts){
   if (process.env.COMPANYCAM_TOKEN != null && String(process.env.COMPANYCAM_TOKEN).length) DIAG.tokenShape = ct.shape;
   if (!token) return { ok: false, skipped: 'COMPANYCAM_TOKEN is not set' };
   if (!e.url || !e.key) return { ok: false, skipped: 'SUPABASE_URL / SUPABASE_SERVICE_KEY are not set' };
+  /* patch AUTOPANEL: "CompanyCam read / link" (default ON) and "make new jobs" (default OFF — new projects wait on the review list) */
+  const AUTO = require('./_lib/automations.js');
+  if (!opts.person) { const h = await AUTO.gate('companycam_read'); if (h) return Object.assign({ ok: true, skipped: 'CompanyCam read / link is switched off in ⚡ Automations' }, h); }
+  const newJobsOn = !!opts.person || await AUTO.isOn('companycam_new_jobs'), heldNew = [];
   DIAG.whoami = await CCA.whoami(token);   /* is the token accepted at all (separate from the projects list)? */
   await CCA.saveWhoami(DIAG.whoami);
   const nowIso = new Date().toISOString();
@@ -436,6 +440,7 @@ async function run(opts){
     if (d.kind === 'linked') { R.linked++; if (d.attach) attachTo(d.attach, p, 'address'); continue; }
     if (d.kind === 'attach') { R.linked++; attachTo(d.job, p, d.by); continue; }
     if (d.kind === 'ask') { R.ask.push(p.id); R.review.push(revOf(p, 'link', d.why, d.jobs)); continue; }
+    if (!newJobsOn && !makeIds[p.id]) { heldNew.push(p); R.review.push(revOf(p, 'new', 'a new CompanyCam project — "Make new jobs" is OFF in ⚙ Admin → ⚡ Automations, so it waits here. ＋ Make it a new job adds it now.')); continue; }   /* patch AUTOPANEL */
     const j = await srcFix(jobFor(p, await pmOf(p), d.note, nowIso, senior));
     if (!s(j.pm) || j.pmBy === 'senior-pm') { R.senior.push(p.id); R.review.push(revOf(p, 'pm', 'nobody at GrayCo is set up as CompanyCam user "' + (p.creator || p.creatorId || '?') + '"' + (s(j.pm) ? ' — ' + j.pm + ' (Senior PM) has the job' : ' and no Senior PM is set') + '. Set that person\'s GrayCo Photos name in Admin → Employees.')); }
     jobs.push(j); idx.id[p.id] = { kind: 'job', id: j.id };
@@ -460,6 +465,8 @@ async function run(opts){
     R.pmFixed.push({ job: r.id, pm: pm });
   }
   const back = Object.keys(st.made).filter(cid => { const id = st.made[cid].id; return !have[id] && !dead[id] && !jobs.some(j => j.id === id) && ccById[cid]; });
+  if (!newJobsOn) back.length = 0;   /* patch AUTOPANEL: no job is put back by itself while "make new jobs" is OFF */
+  if (heldNew.length) R.held = await AUTO.held('companycam_new_jobs', heldNew.length, heldNew.map(p => s(p.name) || s(p.address) || s(p.id)).slice(0, 3));
   back.forEach(cid => { const p = ccById[cid]; if (p.created_at >= CUT && (!p.status || p.status === 'active') && !dis['id:' + cid] && !(idx.id[cid] && idx.id[cid].id !== st.made[cid].id)) jobs.push(jobFor(p, '', '', nowIso)); });
 
   if (jobs.length || Object.keys(fixes).length || Object.keys(attach).length) {

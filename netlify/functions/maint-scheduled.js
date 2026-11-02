@@ -154,6 +154,7 @@ exports.handler = async function(event){
     if (!who.ok || !who.admin) return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Admins only.' }) };
   }
   if (!(process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY)) return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: 'SUPABASE_SERVICE_KEY not set.' }) };
+  if (isScheduled(event)) { const h = await require('./_lib/automations.js').gate('maint_plans'); if (h) return { statusCode: 200, headers, body: JSON.stringify(Object.assign({ ok: true }, h)) }; }   /* patch AUTOPANEL */
   try { const out = await run(); try { console.log('[maint-scheduled]', JSON.stringify(out)); } catch (e) {} return { statusCode: 200, headers, body: JSON.stringify(Object.assign({ ok: true }, out)) }; }
   catch (e) { return { statusCode: 502, headers, body: JSON.stringify({ ok: false, error: 'Maintenance run failed: ' + (e && e.message || e) }) }; }
 };

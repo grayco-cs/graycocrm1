@@ -251,7 +251,9 @@ async function notify(o){
     want = Object.keys(R).filter(e => only.indexOf(e) >= 0);
   }
   if (!want.length) return out;
-  if (await _D.paused()) return Object.assign(out, { paused: true });
+  /* patch AUTOPANEL: staff text alerts are a safety switch (default ON); data-entry mode no longer stops them — they go to
+     staff cells, tagged 'staff', which _lib/pause.js lets through */
+  if (!(await require('./automations.js').isOn('staff_text_alerts'))) return Object.assign(out, await require('./automations.js').held('staff_text_alerts', want.length, [s(o.type)]));
   const opt = await _D.optouts();
   let hours = null; if (!o.emergency) { try { hours = await _D.hours(); } catch (e) { hours = null; } }
   const t = now(), at = new Date(t).toISOString(), day = centralDay(t), thread = s(o.thread) || o.type;
@@ -299,7 +301,7 @@ async function flushHeld(){
   await _D.kvCas(SKEY, v => { const st = loadState(v); held = {}; Object.keys(st.held).forEach(e => { const p = R[e]; if (p && !inQuiet(p, t)) { held[e] = st.held[e]; delete st.held[e]; } }); return Object.keys(held).length ? st : undefined; });
   const out = { sent: 0 };
   if (!Object.keys(held).length) return out;
-  if (await _D.paused()) return Object.assign(out, { paused: true });
+  if (!(await require('./automations.js').isOn('staff_text_alerts'))) return Object.assign(out, { held: 'staff_text_alerts' });   /* patch AUTOPANEL (staff texts go in data-entry mode) */
   const opt = await _D.optouts();
   for (const e of Object.keys(held)) {
     const p = R[e]; if (opt[p.phone] || !p.system) continue;
@@ -331,7 +333,7 @@ async function staffInbound(ph, body, sid){
     let hint = false;
     await _D.kvCas(SKEY, v => { const st = loadState(v); hint = false; if (st.hint[ph]) return undefined; st.hint[ph] = at; hint = true; return st; }).catch(() => {});
     const out = { handled: true, staff: email, ignored: 'no alert in the last 30 minutes' };
-    if (hint && !opt[ph] && !(await _D.paused())) { try { out.hint = await _D.send(ph, 'GrayCo: your text was not sent to anyone. Reply within 30 min of an alert to answer that person, or answer in the CRM. ' + site(), fromNum()); } catch (e) {} }
+    if (hint && !opt[ph]) {   /* patch AUTOPANEL: a staff-only hint, tagged 'staff' (goes in data-entry mode) */ try { out.hint = await _D.send(ph, 'GrayCo: your text was not sent to anyone. Reply within 30 min of an alert to answer that person, or answer in the CRM. ' + site(), fromNum()); } catch (e) {} }
     return out;
   }
   const to = rep.to, text = s(body).slice(0, 560);

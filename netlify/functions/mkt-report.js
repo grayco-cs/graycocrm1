@@ -13,6 +13,7 @@ exports.handler = async function(){
   const v = await A.read();
   const d = new Date(now.getTime() - 3 * 864e5), month = d.toISOString().slice(0, 7);   /* last month */
   if (v.lastReport && v.lastReport.month === month && v.lastReport.ok) return { statusCode: 200, body: 'already sent ' + month };
+  { const h = await require('./_lib/automations.js').gate('mkt_report_external', 1, [month]); if (h) return { statusCode: 200, body: JSON.stringify(h) }; }   /* patch AUTOPANEL */
   const r = await A.sendReport({ month: month });
   return { statusCode: r.ok ? 200 : 502, body: JSON.stringify(r) };
 };

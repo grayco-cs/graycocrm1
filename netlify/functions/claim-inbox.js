@@ -236,6 +236,7 @@ exports.handler = async function(event){
   const raw = rawBody(event), v = verified(event, raw); if (!v.ok) return J(v.code, { error: v.why });
   let evt; try { evt = JSON.parse(raw || '{}'); } catch (e) { return J(400, { error: 'Not JSON.' }); }
   if (s(evt.type) && s(evt.type) !== 'email.received') return J(200, { ok: true, ignored: 'event ' + evt.type });
+  { const h = await require('./_lib/automations.js').gate('claims_inbox', 1, [s(evt.data && evt.data.subject).slice(0, 80)]); if (h) return J(503, { ok: false, held: h.held, error: 'claims@ intake is switched off in ⚡ Automations — try again later.' }); }   /* patch AUTOPANEL */
   if (await handOff(raw)) return J(200, { ok: true, accepted: true });
   const r = await processEvent(evt); return J(r.status, r.body);
 };

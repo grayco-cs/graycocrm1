@@ -334,6 +334,7 @@ exports.handler = async function (event) {
   }
 
   if (event.httpMethod !== 'POST') return J(405, { error: 'Method not allowed' });
+  { const h = await require('./_lib/automations.js').gate('lead_intake', 1, []); if (h) return J(503, { error: 'Lead intake is paused — please retry later.', held: h.held }); }   /* patch AUTOPANEL */
 
   /* WHICH COMPANY IS THIS?
      One key shared by four lead sources would mean we could not tell who sent

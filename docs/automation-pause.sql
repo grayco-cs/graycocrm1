@@ -32,7 +32,7 @@ returns text language sql immutable set search_path = public, pg_temp as $$
       'gc_ach_details', 'gc_overhead_manual', 'gc_checkrun_settings',
       'gc_senior_pm', 'gc_team_settings', 'gc_reassign_log',        -- patch PMG
       'gc_mkt_admin',                                              -- patch MM: the admins' marketing settings
-      'gc_automation_pause', 'gc_automation_pause_log'])          -- patch PAUSE: data-entry mode (admins only)
+      'gc_automation_pause', 'gc_automation_pause_log', 'gc_automations', 'gc_auto_held'])          -- patch PAUSE: data-entry mode (admins only)
       then 'adminwrite'
     when k = 'users' then 'users'
     else 'staff'
@@ -64,3 +64,7 @@ union all
 select 'gc_mkt_admin still admin-write', case when public.gc_kv_class('gc_mkt_admin') = 'adminwrite' then 'OK' else 'PROBLEM' end
 union all
 select 'payroll keys still payroll-only', case when public.gc_kv_class('payrollRuns') = 'payroll' then 'OK' else 'PROBLEM' end;
+-- patch AUTOPANEL: ⚡ Automations switches (gc_automations) and their held / last-run counts (gc_auto_held) are admin-write
+select 'gc_automations is admin-write' as check, case when public.gc_kv_class('gc_automations') = 'adminwrite' then 'OK' else 'PROBLEM' end as result
+union all
+select 'gc_auto_held is admin-write', case when public.gc_kv_class('gc_auto_held') = 'adminwrite' then 'OK' else 'PROBLEM' end;

@@ -280,9 +280,11 @@ async function isAdmin(event){
   } catch (e) { return false; }
 }
 const RUNS = { dispatch: runDispatch, closeout: runCloseout, mortgage: runMortgage, tickets: runTickets, anniversary: runAnniversary };
+/* patch AUTOPANEL: the ⚡ Automations switch of each part (an admin's own "Run now" with force is a person's action) */
+const AUTO_KEY = { dispatch: 'field_dispatch', closeout: 'adjuster_followups', mortgage: 'field_staff_nudges', tickets: 'field_staff_nudges', anniversary: 'one_year_note' };
 async function runAll(o){
   const out = {};
-  for (const k of Object.keys(RUNS)) { if (o.run && o.run !== k) continue; try { out[k] = await RUNS[k](o); } catch (e) { out[k] = { error: s(e && e.message || e) }; } }
+  for (const k of Object.keys(RUNS)) { if (o.run && o.run !== k) continue; try { const h = o.force ? null : await require('./_lib/automations.js').gate(AUTO_KEY[k]); out[k] = h || await RUNS[k](o); } catch (e) { out[k] = { error: s(e && e.message || e) }; } }
   return out;
 }
 exports.handler = async function(event){

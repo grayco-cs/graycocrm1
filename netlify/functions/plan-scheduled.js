@@ -10,6 +10,7 @@ exports.handler = async function(){
   const headers = { 'Content-Type': 'application/json' };
   if (!s(process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY)) return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: 'SUPABASE_SERVICE_KEY not set.' }) };
   const out = {};
+  { const h = await require('./_lib/automations.js').gate('daily_plan'); if (h) return { statusCode: 200, headers, body: JSON.stringify(h) }; }   /* patch AUTOPANEL */
   try { out.plan = await N._run.plan({}); } catch (e) { out.plan = { error: s(e && e.message || e) }; }
   try { out.mail = await N._run.mail({}); } catch (e) { out.mail = { error: s(e && e.message || e) }; }
   try { console.log('[plan-scheduled]', JSON.stringify(out).slice(0, 400)); } catch (e) {}
