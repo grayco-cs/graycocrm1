@@ -63,7 +63,9 @@ await go('dashboard'); const dash = await view();
 console.log('  · direct: ' + JSON.stringify(want) + ' dashboard=' + JSON.stringify(dash));
 
 async function typeQuery(q){
-  await go('dashboard');
+  await go('dashboard');   /* every case starts fresh on the Dashboard */
+  const at = await view();
+  if (at.v !== 'dashboard' || at.h !== dash.h) { await go('dashboard'); }
   const box = await p.locator('#gc-navsearch').boundingBox();
   await p.mouse.click(box.x + 40, box.y + box.height / 2);
   await p.keyboard.press('Control+a'); await p.keyboard.press('Backspace');
@@ -72,10 +74,13 @@ async function typeQuery(q){
   return c.ev(() => { const r = document.getElementById('gc-navsearch-results'); if (!r || r.style.display === 'none') return [];
     return [].map.call(r.querySelectorAll('.gc-nsr-item'), x => ({ id: x.getAttribute('data-id'), t: x.textContent.trim() })); });
 }
-const opened = (k, got) => got.v === k.id && got.h === want[k.id].h && got.h !== dash.h;
+/* the app may store its own id for a tab (Estimates → estbuilder): compare with opening the tab directly */
+const opened = (k, got) => got.v === want[k.id].v && got.h === want[k.id].h && got.h !== dash.h;
 for (const k of CASES) {
   for (const how of ['click', 'enter']) {
     const items = await typeQuery(k.q);
+    const start = await view();
+    ok(start.v === 'dashboard' && start.h === dash.h, `"${k.q}" (${how}): starts on the Dashboard`, start);
     const idx = items.findIndex(x => x.id === k.id);
     if (idx < 0) { ok(false, `"${k.q}" lists ${k.label}`, items); continue; }
     await c.ev(() => { window.__TS.log.length = 0; });
@@ -88,6 +93,8 @@ for (const k of CASES) {
       await p.mouse.down(); await sleep(110); await p.mouse.up();   /* a person's press: ~0.1 s */
     } else {
       for (let i = 0; i <= idx; i++) { await p.keyboard.press('ArrowDown'); await sleep(60); }
+      hit = await c.ev(() => { const a = document.querySelector('#gc-navsearch-results .gc-nsr-item.active'); return a ? 'active:' + a.getAttribute('data-id') : 'active:none'; });
+      ok(hit === 'active:' + k.id, `"${k.q}" ↓×${idx + 1}: "${k.label}" is the highlighted result`, hit);
       await p.keyboard.press('Enter');
     }
     await sleep(2500);

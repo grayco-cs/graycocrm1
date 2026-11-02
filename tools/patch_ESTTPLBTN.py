@@ -5,7 +5,8 @@
 • Owner: "put From a similar job in the More, I don't know what that even is" — the header is now
   ＋ New estimate → 📋 Templates → ⋯ More, and ⋯ More starts with "Copy from a similar job" with the hint
   "start a new estimate from an old one's lines". It works as before (patch X12's fromSimilar, now window._gcFromSimilar).
-• The header wraps (flex-wrap) at 1093 px and on a phone; the buttons keep one line each.
+• The header wraps (flex-wrap) at 1093 px and on a phone: the buttons never run past the header (max-width 100%,
+  min-width 0, a label may wrap inside its button; smaller padding / font at 700 px and under).
 • The More menu can show a one-line hint under an item (third element of the item)."""
 import sys
 p = sys.argv[1] if len(sys.argv) > 1 else 'index.html'
@@ -23,7 +24,8 @@ once("""if (a === 'new') newEst(); else if (a === 'more') listMore(l); return; }
      """if (a === 'new') newEst(); else if (a === 'tpl') openTemplates(); else if (a === 'more') listMore(l); return; }   """ + MARK + """ */""")
 # 2. its look: outlined (the look "＋ From a similar job" had), one line, wraps with the row
 once("""    '#gc-est3-list .mor{background:#fff;""",
-     """    '#gc-est3-list .tpl{background:#fff;color:#4c1d95;border:1px solid #c4b5fd;border-radius:8px;padding:8px 12px;min-height:38px;font:700 13px Inter,Arial,sans-serif;cursor:pointer;white-space:nowrap}#gc-est3-list .new,#gc-est3-list .mor{white-space:nowrap}',   """ + MARK + """ */
+     """    '#gc-est3-list .tpl{background:#fff;color:#4c1d95;border:1px solid #c4b5fd;border-radius:8px;padding:8px 12px;min-height:38px;font:700 13px Inter,Arial,sans-serif;cursor:pointer}#gc-est3-list .hd{min-width:0;max-width:100%}#gc-est3-list .hd>*{min-width:0;max-width:100%;box-sizing:border-box}#gc-est3-list .hd h2{overflow-wrap:anywhere}#gc-est3-list .hd>button{white-space:normal;overflow-wrap:anywhere;line-height:1.2}',   """ + MARK + """: a narrow screen wraps the row and, if need be, a label */
+    '@media (max-width:700px){#gc-est3-list .hd{gap:6px}#gc-est3-list .hd>button{flex:1 1 auto}#gc-est3-list .new{padding:9px 12px;font-size:13.5px}#gc-est3-list .tpl,#gc-est3-list .mor{padding:8px 10px;font-size:12.5px}}',
     '#gc-est3-more button small{display:block;font-weight:500;font-size:11.5px;color:#64748b;margin-top:1px}',
     '#gc-est3-list .mor{background:#fff;""")
 # 3. the More menu: a hint line under an item; "Copy from a similar job" first

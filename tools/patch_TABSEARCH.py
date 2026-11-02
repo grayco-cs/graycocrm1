@@ -9,7 +9,9 @@ the way (or sits over the list), the 'click' never reaches the result: nothing h
   capture — before any page handler) notes the result under the pointer from the list's own boxes, the release picks it
   (a touch that moved to scroll does not), and the click that follows is swallowed so it can't press the tab that was
   under the list. A plain click on a result (no pointer events) still opens it. The press keeps the cursor in the box.
-• ↓ / ↑ / Enter pick from the list on screen (Enter with nothing highlighted takes the first one).
+• ↓ / ↑ / Enter / Esc are taken at the window (capture) while the cursor is in the box, so no page key handler can eat
+  them; the highlight is read from the list on screen (.active), Enter with nothing highlighted takes the first one,
+  and the list is redrawn only when the words change (a repeated 'input' no longer wipes the highlight).
 • Opening the tab is marked as the person's own move (page lock / Desk), once per pick (no double open).
 • The CRM's projects / subs / team autocomplete never attaches to this box (its fixed list at the top of every layer
   could sit right over the tab results and take the press).
@@ -97,15 +99,48 @@ once("""  function goTo(id){
     results.style.display = 'none';
     if(!id) return;""")
 
-# 3. Enter: the list on screen, through pick()
-once("""    } else if(e.key === 'Enter'){
+# 3. the keys: ↓ / ↑ / Enter / Esc taken at the window (capture) while the cursor is in the box — no page handler can
+#    eat them first; the highlight lives on the list itself (.active), so a redraw can't leave a stale index behind
+once("""  inp.addEventListener('keydown', function(e){
+    var items = results.querySelectorAll('.gc-nsr-item');
+    if(e.key === 'ArrowDown'){
+      e.preventDefault();
+      _activeIdx = Math.min(_activeIdx+1, items.length-1);
+      items.forEach(function(el,i){ el.classList.toggle('active', i===_activeIdx); });
+    } else if(e.key === 'ArrowUp'){
+      e.preventDefault();
+      _activeIdx = Math.max(_activeIdx-1, 0);
+      items.forEach(function(el,i){ el.classList.toggle('active', i===_activeIdx); });
+    } else if(e.key === 'Enter'){
       if(_activeIdx >= 0 && items[_activeIdx]) goTo(items[_activeIdx].getAttribute('data-id'));
       else if(items.length) goTo(items[0].getAttribute('data-id'));
-    } else if(e.key === 'Escape'){""", """    } else if(e.key === 'Enter'){
-      if(!shown() || !items.length) return;   """ + MARK + """: Enter picks from the list on screen */
-      e.preventDefault();
-      pick((_activeIdx >= 0 && items[_activeIdx] ? items[_activeIdx] : items[0]).getAttribute('data-id'), 'enter');
-    } else if(e.key === 'Escape'){""")
+    } else if(e.key === 'Escape'){
+      results.style.display = 'none'; inp.value = '';
+    }
+  });""", """  window.addEventListener('keydown', function(e){   """ + MARK + """: the keys of the box, before any page handler */
+    if(e.target !== inp || e.isComposing || e.altKey || e.ctrlKey || e.metaKey) return;
+    var k = e.key;
+    if(k !== 'ArrowDown' && k !== 'ArrowUp' && k !== 'Enter' && k !== 'Escape' && k !== 'Esc') return;
+    if(k === 'Escape' || k === 'Esc'){ if(shown() || inp.value){ eat(e); results.style.display = 'none'; inp.value = ''; } return; }
+    if(!shown()){ if(k === 'Enter' && inp.value.trim()){ search(inp.value); } if(!shown()) return; }
+    var items = [].slice.call(results.querySelectorAll('.gc-nsr-item')); if(!items.length) return;
+    var cur = -1; items.forEach(function(el, i){ if(el.classList.contains('active')) cur = i; });
+    eat(e);
+    if(k === 'Enter'){ pick(items[cur >= 0 ? cur : 0].getAttribute('data-id'), 'enter'); return; }
+    cur = k === 'ArrowDown' ? Math.min(cur + 1, items.length - 1) : Math.max(cur - 1, 0);
+    _activeIdx = cur;
+    items.forEach(function(el, i){ el.classList.toggle('active', i === cur); });
+    try{ items[cur].scrollIntoView({ block: 'nearest' }); }catch(x){}
+  }, true);""")
+# 3b. the list is drawn again only when the words in the box change (a repeat 'input' kept the list but lost the highlight)
+once("""  function search(q){
+    q = q.toLowerCase().trim();
+    if(!q){ results.style.display='none'; return; }""", """  var _lastQ = '';
+  function search(q){
+    q = q.toLowerCase().trim();
+    if(!q){ _lastQ = ''; results.style.display='none'; return; }
+    if(q === _lastQ && results.style.display !== 'none' && results.querySelector('.gc-nsr-item')) return;   """ + MARK + """ */
+    _lastQ = q;""")
 
 # 4. TABVIS: its own click / Enter handlers for a patch tail's tab stay; pick() opens one through it
 once("""W._gcTabVisAll = function(ALL){""", """W._gcTabVisOpen = openDom;   """ + MARK + """: 🔍 Search tabs opens a patch tail's tab through here */
