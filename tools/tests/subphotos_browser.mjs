@@ -172,6 +172,8 @@ async function crmPart(gcPhotos){
   await p.click('#gcuOv .pv-card[data-id="P1"]').catch(() => {});
   const tiles = await H.waitFor(c, () => { const cc = document.querySelectorAll('#gcuOv [data-src-kind="cc"]').length, gc = document.querySelectorAll('#gcuOv [data-src-kind="gc"]').length, sub = document.querySelectorAll('#gcuOv .gcu-subb').length; return cc >= 3 && sub >= 2 ? { cc, gc, sub } : null; }, null, 30000, 300);
   ok('📸 GrayCo Photos → the job: its CompanyCam photos (3, mocked) AND the 2 sub-portal photos (SUB)', !!tiles, JSON.stringify(tiles) + ' ' + c.errs.slice(0, 2).join(' | '));
+  const subby = await p.evaluate(() => Array.from(document.querySelectorAll('#gcuOv .gcu-subby')).map(x => x.textContent));
+  ok('a sub-portal photo tile says FROM SUB and "Added by Ridgeway Framing (sub) · <date>" (patch SUBPORTAL3)', subby.length >= 2 && subby.every(x => /^Added by Ridgeway Framing \(sub\) · \d{4}-\d{2}-\d{2}$/.test(x)) && /FROM SUB/.test(await p.evaluate(() => (document.querySelector('#gcuOv .gcu-subb') || {}).textContent || '')), JSON.stringify(subby));
   await p.click('#gcuOv [data-a="photo"][data-id="' + subId + '"]').catch(() => {});
   const line = await H.waitFor(c, () => { const x = document.querySelector('#gcuOv .gcu-subline'); const sh = document.querySelector('#gcuOv [data-a="share"]'); return x ? { line: x.textContent, share: sh ? sh.textContent : '' } : null; }, null, 15000, 250);
   ok('the sub photo says "🧰 Added by Ridgeway Framing (sub) · <day> · from the sub portal · hidden from the customer" (patch SUBPORTAL3)', !!line && /Added by Ridgeway Framing \(sub\) · \d{4}-\d{2}-\d{2} · from the sub portal · hidden from the customer/.test(line.line) && /Hidden from customer/.test(line.share), JSON.stringify(line));

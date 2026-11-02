@@ -490,6 +490,8 @@ function route(kind){
 }
 function startPartner(){
   $('tabs').hidden = true;
+  /* patch SUBPORTAL3: a sub's footer links the Sub Portal terms / privacy notice, not the customer portal's */
+  try { var lk = document.querySelector('[data-gc-legal-links]'); if (lk) lk.innerHTML = window.GCLegal && window.GCLegal.linksHtml ? window.GCLegal.linksHtml('', 'sub') : '<a href="/sub-terms.html" target="_blank" rel="noopener">Sub Portal Terms of Use</a> &middot; <a href="/sub-privacy.html" target="_blank" rel="noopener">Sub Portal Privacy Notice</a> &middot; <a href="/esign-consent.html" target="_blank" rel="noopener">E-SIGN Disclosure</a>'; } catch (e) {}
   $('main').innerHTML = '<div class="skel"></div><div class="skel"></div>';
   var host = {
     hello: function(big, small, line3){ $('hi').textContent = big; $('jobName').textContent = small; $('jobSub').textContent = line3 || ''; $('hello').hidden = false; },

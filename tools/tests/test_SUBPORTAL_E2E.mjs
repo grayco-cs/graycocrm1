@@ -195,7 +195,7 @@ async function shot(p, name, label){
 }
 async function browserFor(kind){
   const b = await chromium.launch({ args: ['--proxy-server=http://127.0.0.1:9'] });
-  const ctx = await b.newContext(kind === 'phone' ? { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 } : { viewport: { width: 1366, height: 768 } });
+  const ctx = await b.newContext(Object.assign({ serviceWorkers: 'block' }, kind === 'phone' ? { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 } : { viewport: { width: 1366, height: 768 } }));   /* the portal's service worker would fetch around the test's routes */
   const S = { b, ctx, errs: [], calls: [], bad: [], imgs: [] };
   await ctx.route('**/*', async r => {
     const u = new URL(r.request().url());
@@ -205,6 +205,7 @@ async function browserFor(kind){
     const fm = /^\/\.netlify\/functions\/([a-z-]+)$/.exec(u.pathname);
     if (fm) {
       const hd = r.request().headers(), body = r.request().postData() || '';
+      if (fm[1] === 'mkt-public') return r.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });   /* gc-address.js: the company address (not the sub portal's) */
       if (!handlers[fm[1]]) { S.bad.push('404 fn ' + fm[1]); return r.fulfill({ status: 404, contentType: 'application/json', body: '{"ok":false}' }); }
       let a = ''; try { a = JSON.parse(body).action; } catch (e) {}
       const resp = await handlers[fm[1]]({ httpMethod: r.request().method(), headers: Object.assign({ origin: 'https://portal.test', 'x-nf-client-connection-ip': '10.0.0.' + (kind === 'phone' ? 1 : 2) }, hd), body });
@@ -241,6 +242,7 @@ async function run(kind, job){
   await p0.waitForSelector('input', { timeout: 15000 }).catch(() => {});
   await shot(p0, N() + '_signin', 'Sign-in page (portal.grayco-cs.com): e-mail / mobile + password, or e-mail me a code');
   ok(tag + 'the sign-in page opens', /sign in|e-?mail/i.test(await text(p0)));
+  ok(tag + 'the sign-in page (customers use it too) never names the sub portal', !/sub portal|subcontractor/i.test(await text(p0)), (await text(p0)).slice(-300));
   await p0.close();
 
   const p = await S.page(DB.SESSION);
@@ -253,6 +255,8 @@ async function run(kind, job){
   p.__full = true; await shot(p, N() + '_home_full', 'Home (whole page)'); p.__full = false;
   let t0 = await text(p);
   ok(tag + 'Home: only the sub\'s own job (never the other sub\'s job)', t0.indexOf(job.name) >= 0 && t0.indexOf(JOB2.name) < 0);
+  const legal = await p.$eval('[data-gc-legal-links]', x => x.innerHTML).catch(() => '');
+  ok(tag + 'the sub\'s footer links the Sub Portal terms and privacy notice (not the customer portal\'s)', /sub-terms\.html/.test(legal) && /sub-privacy\.html/.test(legal) && !/portal-terms\.html/.test(legal), legal);
   await p.click('#tabs button[data-tab="jobs"]'); await sleep(300);
   await shot(p, N() + '_jobs', 'Jobs tab: the sub\'s jobs');
   await p.click('[data-job="' + pid + '"]'); await p.waitForSelector('#jobBack', { timeout: 15000 }); await sleep(600);
