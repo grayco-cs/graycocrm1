@@ -118271,8 +118271,8 @@ function kickExtras(){
   extrasKick=setTimeout(function(){
     if(EXTRA.loading) return;
     loadExtras().then(function(){
-      var n=computeMatch(badgeMemo.cc).total; badgeMemo.n=n; badgeMemo.at=EXTRA.loadedAt;
-      var b=document.getElementById('gck-navbadge'); if(b) b.setAttribute('data-n', String(n));
+      var _bm=computeMatch(badgeMemo.cc), n=_bm.total; badgeMemo.n=n; badgeMemo.c=_bm.counts; badgeMemo.at=EXTRA.loadedAt;
+      var b=document.getElementById('gck-navbadge'); if(b){ b.setAttribute('data-n', String(n)); b.title=acctTip(); }   /* patch LEADBADGE */
       if(V.root && document.contains(V.root)){ V.sig=sig(); render(); }
     });
   }, wait);
@@ -118290,7 +118290,7 @@ window._gcAcctBadge = function(ccTrans){
       cs+='|'+r2(s);
       if(cs===badgeMemo.cs && EXTRA.loadedAt===badgeMemo.at){ return badgeMemo.n ? badgeEl(R) : null; }
       var changed = cs!==badgeMemo.cs; badgeMemo.cs=cs; badgeMemo.at=EXTRA.loadedAt;
-      badgeMemo.n=computeMatch(ccTrans).total;
+      var _bm=computeMatch(ccTrans); badgeMemo.n=_bm.total; badgeMemo.c=_bm.counts;   /* patch LEADBADGE: + the kinds, for the hover */
       if(!changed){ return badgeMemo.n ? badgeEl(R) : null; }
       /* the duplicate check reads the register from disk: once after the lists change, not on a timer */
       if(inv.length) kickExtras();
@@ -118300,9 +118300,14 @@ window._gcAcctBadge = function(ccTrans){
   }catch(e){ return null; }
 };
 /* the number is drawn by CSS (data-n), so the item's text stays exactly "Accounting" for anything that finds it by its words */
+function acctTip(){   /* patch LEADBADGE: "8 to match / review in Accounting: 5 card transactions · 3 expenses to approve" */
+  var c=badgeMemo.c||{}, L={ cc:['card transaction not matched','card transactions not matched'], exp:['expense to approve','expenses to approve'], qb:['QuickBooks invoice to confirm','QuickBooks invoices to confirm'], qbtodo:['QuickBooks import to-do','QuickBooks import to-dos'], dup:['possible duplicate','possible duplicates'] };
+  var parts=Object.keys(c).filter(function(k){ return c[k]; }).map(function(k){ var l=L[k]||[k,k]; return c[k]+' '+(c[k]===1?l[0]:l[1]); });
+  return badgeMemo.n+' to match / review in Accounting'+(parts.length?': '+parts.join(' · '):'');
+}
 function badgeEl(R){
     ensureCss();
-    return R.createElement('span',{key:'gckb', id:'gck-navbadge', 'data-n':String(badgeMemo.n), 'aria-label':badgeMemo.n+' to match or review', title:'To match / review in Accounting', style:{marginLeft:'auto', background:'#dc2626', color:'#fff', borderRadius:9, padding:'0 6px', fontSize:9, fontWeight:800, lineHeight:'15px', minWidth:15, textAlign:'center'}});
+    return R.createElement('span',{key:'gckb', id:'gck-navbadge', 'data-n':String(badgeMemo.n), 'aria-label':badgeMemo.n+' to match or review', title:acctTip(), style:{marginLeft:'auto', background:'#dc2626', color:'#fff', borderRadius:9, padding:'0 6px', fontSize:9, fontWeight:800, lineHeight:'15px', minWidth:15, textAlign:'center'}});
 }
 
 /* ═══════════════════════════════ THE SCREEN ═══════════════════════════════ */
@@ -128329,8 +128334,7 @@ function badge(){
   /* To-Do: patch TD counts the Lead Inbox in its own badge; without it, the admins' unassigned leads show here */
   if (window.__GC_PATCH_TD__) return;
   if (!navEls.todo.length || navEls.todo.some(function(el){ return !el.isConnected; })) navEls.todo = findNav(/^To-?Do\b/i);
-  var m = isAdmin() ? assignList().length : 0;
-  paint(navEls.todo, m, m + ' lead' + (m === 1 ? '' : 's') + ' waiting for a PM (Lead Inbox)');
+  paint(navEls.todo, 0, '');   /* patch LEADBADGE: leads are counted on the Leads menu only, never on To-Do (this was the yellow number) */
 }
 
 /* ── dialogs ──────────────────────────────────────────────────────────────── */
@@ -128670,7 +128674,7 @@ window._gcUnassignedLeadCount = function(){ try { return assignList().length; } 
       els = []; var c = document.querySelectorAll('aside nav button, nav button, aside button, [role=navigation] button');
       for (var i = 0; i < c.length; i++) { if (c[i].closest('#gc-ldi, #gc-bw-sec')) continue; if (/^Leads$/.test(s(c[i].textContent).replace(/(\s*\d+\+?)+$/, '').replace(/^[^A-Za-z]+/, ''))) els.push(c[i]); }
     }
-    var n = isAdmin() && !(window._gcVAS && window._gcVAS.active()) ? window._gcUnassignedLeadCount() : 0;   /* patch VAS4 */
+    var n = isAdmin() && !(window._gcVAS && window._gcVAS.active()) && typeof window._gcLeadsNeedAction !== 'function' ? window._gcUnassignedLeadCount() : 0;   /* patch VAS4 */   /* patch LEADBADGE: the Leads block paints the one number */
     els.forEach(function(nav){
       var b = nav.querySelector('.gc-bw-unas');
       if (!n) { if (b) b.remove(); return; }
@@ -135864,7 +135868,7 @@ function findNav(){
   return out;
 }
 function badge(){
-  var n = onLeadsView() ? 0 : unseen().length;
+  var n = onLeadsView() || typeof W._gcLeadsNeedAction === 'function' ? 0 : unseen().length;   /* patch LEADBADGE: one number on the Leads menu */
   if (!navEls.length || navEls.some(function(el){ return !el.isConnected; })) navEls = findNav();
   navEls.forEach(function(el){
     var b = el.querySelector('.gc-la-badge');
@@ -141113,7 +141117,7 @@ function rollTitle(k, n){
   return ({ 'confirm': 'Confirm ' + n + ' imported items (invoices / expenses)', 'cctxn': 'Match ' + n + ' card transactions to jobs', 'match-exp': 'Fix ' + n + ' expenses with no job or category',
     'cc-assign': 'Assign ' + n + ' card charges to jobs', 'brain': n + ' data fixes found by Business Brain', 'qbconfirm': 'Confirm ' + n + ' QuickBooks invoices', 'costreview': 'Check ' + n + ' costs',
     'submatch': 'Assign ' + n + ' sub invoices to their jobs', 'lead-miss': n + ' bids are missing their due date', 'subdocs': n + ' subs are missing papers (W-9 / COI / workers comp)',
-    'info': n + ' jobs are missing customer phone / e-mail / address', 'prop': n + ' proposals to follow up', 'bill': n + ' jobs need an invoice', 'ar-old': n + ' invoices 30+ days late — collections', 'subappr': n + ' sub invoices to approve' })[k] || (n + ' items');
+    'info': n + ' jobs are missing customer phone / e-mail / address', 'prop': n + ' proposals to follow up', 'bill': n + ' jobs need an invoice', 'ar-old': n + ' invoices 30+ days late — collections', 'subappr': n + ' sub invoices to approve', 'contract-done': n + ' finished jobs have no signed contract on file', 'verify': 'Verify the costs on ' + n + ' jobs', 'closeout': n + ' finished jobs are missing the closeout checklist', 'maint': 'Offer a maintenance plan to ' + n + ' customers' })[k]   /* patch LEADBADGE: + 4 */ || (n + ' items');
 }
 function needNorm(n){
   n = s(n); if (!n) return '';
@@ -141171,6 +141175,11 @@ function build(){
     }
     if (g.thing.indexOf('ar|') === 0 && g.src !== 'st' && g.count < 2 && g.due && g.due < addDays(today(), -30)) g.roll = 'ar-old';
     if (g.thing.indexOf('info|') === 0) g.roll = 'info';
+    /* patch LEADBADGE: look-alike lines roll up (3+ → one line, each job still listed under it) */
+    if (!g.roll && g.thing.indexOf('contract|') === 0) { var pj0 = proj(g.thing.slice(9)); if (pj0 && /^(completed?|closed|archived|cancell?ed|done|paid|finished)$/i.test(s(pj0.status))) g.roll = 'contract-done'; }
+    if (!g.roll && g.src === 'om' && /^Verify all costs on\b/i.test(g.title)) g.roll = 'verify';
+    if (!g.roll && g.src === 'om' && /^Closeout checklist missing\b/i.test(g.title)) g.roll = 'closeout';
+    if (!g.roll && /^(🛠\s*)?Offer a maintenance plan\b/i.test(g.title)) g.roll = 'maint';
     if (g.thing === 'sub-all') g.hide = true;
     if (g.members.some(function(m){ return m.src === 'st'; }) && g.members.some(function(m){ return m.src !== 'st'; })) g.vis = 'company';
     var m2 = metaGet(g.key);
@@ -141231,6 +141240,34 @@ function build(){
   lastBuild = Date.now();
   return st;
 }
+/* patch LEADBADGE: what the To-Do menu number counts -- the open to-dos (not waiting on others) that have no tab of their
+   own: an approval is counted on Approvals, a lead / bid line on Leads, a message on Messages (they stay on the page) */
+function leadItem(g){
+  if (!g) return false;
+  if (g.src === 'lead' || g.roll === 'lead-miss' || s(g.thing) === 'roll|lead-miss') return true;
+  if (/(^|[|:])(lead|leadmiss|leadin|lead-inbox)[|:]/i.test(s(g.thing) + ' ' + s(g.key))) return true;
+  var r = g.rec; if (r && (r.leadId || /^lead inbox$/i.test(s(r.source)) || /^lead/i.test(s(r.kind)))) return true;
+  return /^(Bid due:|Add the bid due date:)/.test(s(g.title)) || /assign this lead|lead first contact/i.test(s(g.title));   /* "⏫ Approve: lead first contact", "↩ Fix and resend: 👤 Assign this lead" */
+}
+function msgItem(g){ return !!g && ((g.rec && g.rec.kind === 'mention') || /^(msg|message|chat|sms)/i.test(s(g.src)) || /(^|[|:])(msg|message|chat|thread|sms)[|:]/i.test(s(g.thing) + ' ' + s(g.key))); }   /* an @mention in a job's messages: 💬 Reply */
+function ownTab(items, c){
+  var t0 = today(), old = addDays(t0, -30), k = { over: 0, today: 0, week: 0, later: 0, none: 0 };
+  c.leadRows = 0; c.msgRows = 0; c.old30 = 0; c.todos = 0; c.others = 0; c.grouped = 0;
+  arr(items).forEach(function(g){
+    if (!g || g.waiting || g.cat === 'appr') return;
+    if (leadItem(g)) { c.leadRows++; return; }
+    if (msgItem(g)) { c.msgRows++; return; }
+    if (g.vis !== 'company' && g.who && g.who.length && !g.mine) { c.others++; return; }   /* someone else's (the Team view has it) */
+    if (g.children && g.children.length) c.grouped += g.children.length - 1;
+    c.todos++; k[g.dueCls === 'over' ? 'over' : g.dueCls === 'today' ? 'today' : g.dueCls === 'week' ? 'week' : g.due ? 'later' : 'none']++;
+    if (g.due && g.due < old) c.old30++;
+  });
+  c.byDue = k;
+  var parts = [k.over && k.over + ' overdue' + (c.old30 ? ' (' + c.old30 + ' over 30 days)' : ''), k.today && k.today + ' due today', k.week && k.week + ' this week', k.later && k.later + ' later', k.none && k.none + ' no date'].filter(Boolean);
+  var off = [c.leadRows && c.leadRows + ' lead & bid line' + (c.leadRows === 1 ? '' : 's') + ' (on Leads)', c.msgRows && c.msgRows + ' message' + (c.msgRows === 1 ? '' : 's') + ' (on Messages)', c.others && c.others + ' given to someone else (Team)'].filter(Boolean);
+  c.tip = c.todos + ' to-do' + (c.todos === 1 ? '' : 's') + (parts.length ? ': ' + parts.join(' · ') : '') + (c.grouped ? ' · look-alike lines grouped (' + c.grouped + ' more listed under them)' : '') + (off.length ? ' — not counted here: ' + off.join(', ') + '; approvals are on Approvals' : ' — approvals are on Approvals');
+  return c;
+}
 function counts(st){
   var c = { appr: st.ap2, over: 0, today: 0, week: 0, wait: 0, total: 0, mine: 0 }, apprRows = 0;
   st.items.forEach(function(g){
@@ -141242,6 +141279,7 @@ function counts(st){
   });
   try { var _set = W._gcApprovalSet ? W._gcApprovalSet(st) : null; if (_set) { c.appr = _set.total; c.apprSet = _set; } } catch (e) {}
   c.apprRows = apprRows; c.todos = Math.max(0, c.total - apprRows);   /* patch TODOPERF: the menu badge */
+  ownTab(st.items, c);   /* patch LEADBADGE */
   c.now = c.appr + c.over + c.today;
   return c;
 }
@@ -141408,7 +141446,7 @@ function headHtml(host, st){
   var views = [['today', 'Today'], ['everything', 'Everything']]; if (st.admin) views.push(['team', 'Team']);
   return '<div class="td2-h1"><div class="td2-ttl">'
     + (host === 'field' ? '<button type="button" class="td2-x" data-td2="close">‹ Back</button>' : '')
-    + '<div><div class="td2-big">' + (st && st.asName ? '✅ Office To-Do' : '✅ To-Do') + '</div><div class="td2-who">' + esc(d) + ' · ' + esc(who) + '</div></div></div>'
+    + '<div><div class="td2-big">' + (st && st.asName ? '✅ Office To-Do' : '✅ To-Do') + '</div><div class="td2-who">' + esc(d) + ' · ' + esc(who) + '</div>' + (st && st.counts && st.counts.tip != null ? '<div class="td2-who td2-cnt" data-td2-count="' + st.counts.todos + '" title="' + esc(st.counts.tip) + '"><b>' + st.counts.todos + ' to-do' + (st.counts.todos === 1 ? '' : 's') + '</b>' + (st.counts.leadRows ? ' · ' + st.counts.leadRows + ' lead &amp; bid line' + (st.counts.leadRows === 1 ? '' : 's') + ' counted on Leads' : '') + (st.counts.msgRows ? ' · ' + st.counts.msgRows + ' on Messages' : '') + '</div>' : '') + '</div></div>'   /* patch LEADBADGE: the menu's number, on the page */
     + '<div class="td2-views">' + views.map(function(v){ return '<button type="button" data-td2="view" data-v="' + v[0] + '" class="' + (UI.view === v[0] ? 'on' : '') + '">' + v[1] + '</button>'; }).join('') + '</div>'
     + (host === 'office' ? '<button type="button" class="td2-x" data-td2="close">Close</button>' : '')
     + '</div>';
@@ -141463,6 +141501,7 @@ function hosts(){
 }
 /* patch TODONOAPPR: the To-Do shows no approvals (they are on the Approvals tab); a view of the state, the data untouched */
 var NAV = null;
+function items0(v){ return v && v.items; }   /* patch LEADBADGE */
 function noAppr(st){
   if (!st || !Array.isArray(st.items)) return st;
   if (NAV && NAV.src === st) return NAV.v;
@@ -141472,7 +141511,7 @@ function noAppr(st){
   if (Array.isArray(st.snoozed)) v.snoozed = st.snoozed.filter(keep);
   var c = Object.assign({}, st.counts || {}); c.over = c.today = c.week = c.wait = c.total = c.mine = 0;
   v.items.forEach(function(g){ if (g.waiting) { c.wait++; return; } c.total++; if (g.dueCls === 'over') c.over++; else if (g.dueCls === 'today') c.today++; else if (g.dueCls === 'week') c.week++; if (g.mine) c.mine++; });
-  c.apprRows = 0; c.todos = c.total; c.now = c.over + c.today; v.counts = c;
+  c.apprRows = 0; c.todos = c.total; c.now = c.over + c.today; v.counts = c; ownTab(items0(v), c);   /* patch LEADBADGE */
   NAV = { src: st, v: v }; return v;
 }
 /* patch OFFICETAB: host "as" — another person's list (the office's, on an admin's 🏢 Office tab), from the same state:
@@ -141492,7 +141531,7 @@ function asState(st, host){
   var v = Object.assign({}, st, { items: items, snoozed: snz, admin: false, me: k2, asName: name || person(k2).name, asKey: k2 });
   var c = Object.assign({}, st.counts || {}); c.over = c.today = c.week = c.wait = c.total = c.mine = 0;
   items.forEach(function(g){ if (g.waiting) { c.wait++; return; } c.total++; if (g.dueCls === 'over') c.over++; else if (g.dueCls === 'today') c.today++; else if (g.dueCls === 'week') c.week++; if (g.mine) c.mine++; });
-  c.apprRows = 0; c.todos = c.total; c.now = c.over + c.today; v.counts = c;
+  c.apprRows = 0; c.todos = c.total; c.now = c.over + c.today; v.counts = c; ownTab(items0(v), c);   /* patch LEADBADGE */
   ASC = { src: st, key: key, name: name, v: v }; return v;
 }
 function setNote(it, txt){ if (!it || !it.store || vasRefuse()) return; storeMut(it.store.n, it.store.id, function(t){ t.note = s(txt).slice(0, 1000); t.noteBy = myName(); t.noteAt = nowIso(); }); dirty = true; paint(true); toast('Note saved: ' + it.title.slice(0, 50)); }
@@ -163958,7 +163997,8 @@ function navBadge(){
     if (!n) { if (b) b.remove(); return; }
     if (!b) { b = D.createElement('span'); b.className = 'apx-nb'; el.appendChild(b); }
     var v = String(n); if (b.textContent !== v) b.textContent = v;
-    var _tt = n + ' approval' + (n === 1 ? '' : 's') + ' waiting on you'; if (b.title !== _tt) b.title = _tt;   /* patch SWEEP2 */
+    var _tp = ''; try { var _cs = W._gcApprovalCurrent ? W._gcApprovalCurrent() : null; _tp = _cs && _cs.total === n + pendCount() && _cs.tip ? ': ' + _cs.tip : ''; } catch (e) {}   /* patch LEADBADGE: the breakdown */
+    var _tt = n + ' approval' + (n === 1 ? '' : 's') + ' waiting on you' + _tp; if (b.title !== _tt) b.title = _tt;   /* patch SWEEP2 */
   });
 }
 /* the field view's More sheet: 📋 Approvals */
@@ -171380,23 +171420,51 @@ function autoAssignBids(force){
   });
 }
 
-/* ── the Leads menu badge (admins): the unassigned count ─────────────────── */
+/* ── the Leads menu badge ─────────────────── */
+/* patch LEADBADGE */   /* one number on the Leads menu: the leads that need action -- the page's own boxes (Needs assigning ∪ Not
+   contacted, a lead in both counted once) over the same open leads in this person's scope, + Lead Inbox items not on
+   the lead list yet. Patch BW's and LA's menu numbers stand down for it. */
+var NA = { key: '', v: null };
+function inboxNotYet(r){
+  var it = []; try { var st = W._gcLeadInbox && W._gcLeadInbox._test && W._gcLeadInbox._test.state(); it = arr(st && st.items); } catch (e) {}
+  if (!it.length) return 0;
+  var have = {}; r.forEach(function(l){ if (l && l.inboxId) have[s(l.inboxId)] = 1; });
+  return it.filter(function(x){ return x && x.status === 'new' && !have[s(x.id)] && !(W._gcIsTombstoned && W._gcIsTombstoned('leads', 'LEADIN-' + s(x.id).replace(/^LI-/, ''))); }).length;
+}
+function needAction(){
+  var r = rawLeads(), sc = myScope(), nIt = 0; try { var st0 = W._gcLeadInbox && W._gcLeadInbox._test && W._gcLeadInbox._test.state(); nIt = arr(st0 && st0.items).length; } catch (e) {}
+  var key = [refId(r), OVL_V, sc.kind, sc.why, myName(), Object.keys(LC_GONE).length, nIt, s(inboxRaw()).length].join('|');
+  if (NA.key === key && NA.v) return NA.v;
+  var base = scoped().filter(function(l){ return !importedL(l) && !shut(l) && !LC_GONE[s(l.id)]; });   /* = model()'s base: the boxes */
+  var un = 0, nc = 0, both = 0, ids = [];
+  base.forEach(function(l){ var a = !assignee(l), c = !contacted(l); if (a) un++; if (c) nc++; if (a && c) both++; if (a || c) ids.push(s(l.id)); });
+  var inb = inboxNotYet(r);
+  NA = { key: key, v: { n: ids.length + inb, un: un, nc: nc, both: both, inbox: inb, ids: ids } };
+  return NA.v;
+}
+W._gcLeadsNeedAction = function(){ var v = needAction(); return { n: v.n, un: v.un, nc: v.nc, both: v.both, inbox: v.inbox, ids: v.ids.slice() }; };
 var navEls = [];
 function navBadge(){
-  /* patch BW badges the Leads menu itself (window._gcUnassignedLeadCount): then this one stays out, so there is one number */
-  if (!isAdmin() || typeof W._gcUnassignedLeadCount === 'function') { Array.prototype.forEach.call(D.querySelectorAll('.gcl-nb'), function(b){ b.remove(); }); return; }
   if (!navEls.length || navEls.some(function(el){ return !el.isConnected; })) {
-    navEls = Array.prototype.filter.call(D.querySelectorAll('aside nav button, nav button, aside button, [role=navigation] button'), function(el){ return /^Leads$/.test(s(el.textContent).replace(/\s*\d+\+?$/, '').replace(/^[^A-Za-z]+/, '').trim()); });
+    navEls = Array.prototype.filter.call(D.querySelectorAll('aside nav button, nav button, aside button, [role=navigation] button'), function(el){ return !el.closest('#gc-ldi') && /^Leads$/.test(s(el.textContent).replace(/(\s*\d+\+?)+$/, '').replace(/^[^A-Za-z]+/, '').trim()); });
   }
-  var n = unassignedCount();
+  var v = null; try { v = needAction(); } catch (e) { warn(e); }
+  var n = v ? v.n : 0;
+  var tip = v ? v.nc + ' not contacted · ' + v.un + ' need' + (v.un === 1 ? 's' : '') + ' assigning' + (v.inbox ? ' · ' + v.inbox + ' new in the Lead Inbox' : '') + (v.both ? ' (' + v.both + ' in both, counted once)' : '') : '';
   navEls.forEach(function(el){
+    Array.prototype.forEach.call(el.querySelectorAll('.gc-bw-unas,.gc-la-badge,.gc-ldi-badge'), function(x){ x.remove(); });   /* the old numbers */
     var b = el.querySelector('.gcl-nb');
     if (!n) { if (b) b.remove(); return; }
     if (!b) { b = D.createElement('span'); b.className = 'gcl-nb'; el.appendChild(b); }
-    var v = String(n); if (b.textContent !== v) b.textContent = v;
-    b.title = n + ' lead' + (n === 1 ? '' : 's') + ' not assigned yet';
+    var t = String(n); if (b.textContent !== t) b.textContent = t;
+    if (b.title !== tip) { b.title = tip; b.setAttribute('aria-label', n + ' lead' + (n === 1 ? '' : 's') + ' need action: ' + tip); }
   });
 }
+/* a lead assigned / dismissed / imported anywhere: read this computer's copy now (not in up to 4 s) and repaint */
+W.addEventListener('gc:leads-changed', function(){ LEADS_AT = 0; try { pullLeads(); } catch (e) {} [80, 500, 1300].forEach(function(ms){ later(function(){ try { navBadge(); } catch (e) {} }, ms); }); });
+/* and on the browser's own timer (the Leads block's tick can be held back while the screen is busy): a lead marked
+   contacted / assigned on this computer shows in the number within the second; unchanged lists cost a key compare */
+(W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval).call(W, function(){ if (!D.hidden) { try { navBadge(); } catch (e) {} } }, 700);
 
 /* patch HOT2b: window._gcLeadsAudit() — READ-ONLY. Where the leads came from and what the KPI tiles count. Changes nothing. */
 W._gcLeadsAudit = function(){
@@ -182596,14 +182664,14 @@ function counts(){
   var T = W._gcTD2; if (!T || typeof T.counts !== 'function') return null;
   var c; try { c = T.counts(); } catch (e) { return null; } if (!c) return null;
   var appr = Math.max(0, c.appr || 0), todos = c.todos != null ? c.todos : Math.max(0, (c.total || 0) - (c.apprRows || 0));
-  return { n: todos, todos: todos, appr: appr };   /* patch TODONOAPPR: approvals have their own badge */
+  return { n: todos, todos: todos, appr: appr, tip: c.tip || '' };   /* patch TODONOAPPR: approvals have their own badge */   /* patch LEADBADGE: + tip */
 }
 function tick(){
   try {
     if (D.hidden) return;
     var k = counts(); if (!k) return;
     if (!els.length || els.some(function(e){ return !e.isConnected; })) els = findEls();
-    var tt = k.todos + ' to-do' + (k.todos === 1 ? '' : 's');   /* patch TODONOAPPR */
+    var tt = k.tip || (k.todos + ' to-do' + (k.todos === 1 ? '' : 's'));   /* patch TODONOAPPR */   /* patch LEADBADGE: the breakdown */
     els.forEach(function(el){
       var b = el.querySelector('.gc-td-nb');
       if (!k.n) { if (b) b.remove(); return; }
@@ -197974,8 +198042,10 @@ function fieldBar(a){
   paintBadge();
 }
 function paintBadge(){
-  var n = apprCount(), tx = n > 0 ? String(n) : '';
-  ['gc-fh-badge', 'gc-ra-badge'].forEach(function(id){ var b = D.getElementById(id); if (!b) return; if (b.textContent !== tx) b.textContent = tx; var w = n > 0 ? 'inline-block' : 'none'; if (b.style.display !== w) b.style.display = w; });
+  var n = apprCount(), tx, tt = '';
+  try { n = Math.max(0, n - (typeof W._gcApprovalPending === 'function' ? +W._gcApprovalPending() || 0 : 0)); var cs = W._gcApprovalCurrent ? W._gcApprovalCurrent() : null; tt = n + ' approval' + (n === 1 ? '' : 's') + ' waiting on you' + (cs && cs.tip ? ': ' + cs.tip : ''); } catch (e) {}   /* patch LEADBADGE: = the menu's number, + its breakdown */
+  tx = n > 0 ? String(n) : '';
+  ['gc-fh-badge', 'gc-ra-badge'].forEach(function(id){ var b = D.getElementById(id); if (!b) return; if (b.title !== tt) b.title = tt; if (b.textContent !== tx) b.textContent = tx; var w = n > 0 ? 'inline-block' : 'none'; if (b.style.display !== w) b.style.display = w; });
 }
 /* a crew member on a computer: GrayCo Field there too — its job list opens GrayCo Field's home, as on a phone */
 function wrapPicker(){
