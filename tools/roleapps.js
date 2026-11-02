@@ -431,6 +431,7 @@ function deskCards(a){
     h += card('todo', "Today's to-dos", '<div class="gc-ra-item"><div class="t"><b>' + (td == null ? '—' : td) + '</b> to-do' + (td === 1 ? '' : 's') + ' open</div><div class="b"><button type="button" class="gc-ra-sm pri" data-ra-a="todo">Open To-Do</button></div></div>');
     h += card('msgs', '💬 Messages', '<div class="gc-ra-item"><div class="t"><b>Job messages, texts and the customer / sub threads</b></div><div class="b"><button type="button" class="gc-ra-sm pri" data-ra-a="msgs">Open</button></div></div>');
   }
+  try { (Array.isArray(W._gcRaCards) ? W._gcRaCards : []).forEach(function(f){ var x = typeof f === 'function' ? f(a, card) : ''; if (x) h += x; }); } catch (e) { warn(e); }   /* patch TAXALERTS: other patches' Desk cards (🧾 Taxes) */
   return h;
 }
 function deskHtml(a){

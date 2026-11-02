@@ -491,6 +491,8 @@
 # customer, sub or GC without an approval; data-entry mode pauses it.
 # patch OFFICEFIX: the schedule is on auto-wins-scheduled.js — auto-wins.js answers the CRM (📋 Approvals "opened today",
 # "who checked today"); a scheduled function cannot be called by its URL in production.
+# patch TAXALERTS: + 🧾 tax deadlines (_lib/taxalerts.js) — the first run at / after 8 AM Central: 7 days before, the due day and
+# every day while overdue (until ✓ Paid), staff e-mail + push to the admins + office (an owner's estimated tax: admins only).
 [functions."auto-wins-scheduled"]
   schedule = "19 * * * *"
 
