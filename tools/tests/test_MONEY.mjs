@@ -51,7 +51,10 @@ const before = await p.evaluate(() => { const m = window._gcAcctModel({ range: {
 /* a person at the computer: a real mouse move (after a minute with no input the CRM paces its background loops to 30 s, so the To-Do's
    money row would wait that long); it also keeps moving while the test waits */
 await p.mouse.move(400, 300); const mover = setInterval(() => { p.mouse.move(380 + Math.round(Math.random() * 40), 300).catch(() => {}); }, 15000);
-await p.evaluate(() => { const b = [...document.querySelectorAll('aside nav button, nav button')].find(y => y.offsetParent && /To-Do/.test(y.textContent)); if (b) b.click(); });
+/* the office opens on the Desk home (patch ROLEAPPS): To-Do the way a person does — the Desk's "Open To-Do" — else the menu */
+await waitFor(A, () => !!document.querySelector('#gc-ra-desk button'), null, 15000);
+if (await p.locator('#gc-ra-desk button', { hasText: /Open To-Do/ }).count()) await p.locator('#gc-ra-desk button', { hasText: /Open To-Do/ }).first().click();
+else await p.evaluate(() => { const b = [...document.querySelectorAll('aside nav button, nav button')].find(y => y.offsetParent && /To-Do/.test(y.textContent)); if (b) b.click(); });
 ok(await waitFor(A, () => !!document.querySelector('#gc-money-needs [data-mn="import"]'), null, 30000), 'the To-Do shows 💳 Import card statement (and 📥 Needs a job when something waits)');
 ok(await waitFor(A, () => /Needs a job \(1\)/.test((document.querySelector('#gc-money-needs') || {}).textContent || ''), null, 15000), '📥 Needs a job (1): the Shell charge with no job', await p.evaluate(() => (document.querySelector('#gc-money-needs') || {}).textContent));
 await p.click('#gc-money-needs [data-mn="import"]');
