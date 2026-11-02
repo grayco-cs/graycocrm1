@@ -110,7 +110,7 @@ const crypto = require('crypto');
 const JA = require('./_lib/job-auto.js');   /* patch JA: the job's automations (project.auto) */
 function CQ(){ return require('./_lib/custquiet.js'); }   /* patch CUSTQUIET: customer quiet hours 7 PM–7 AM Central */
 /* patch CUSTQUIET: an approved item that goes to a customer / sub / GC waits for 7 AM in the window; a staff-only one does not */
-const CQ_STAFF_KINDS = { announcement: 1 };
+const CQ_STAFF_KINDS = { announcement: 1, preq_change: 1, preq_project: 1 };   /* patch PORTALREQ: a portal request's own card is staff-only (its reply / decline note is held) */
 function cqHoldsKind(kind){ return !CQ_STAFF_KINDS[s(kind)]; }
 try { require('./_lib/brand.js').installResend(); } catch (e) {}   /* patch AUT2: every customer e-mail gets the GrayCo shell */
 
@@ -1619,6 +1619,7 @@ async function aqSend(item, now){
     if (k) return { ok: false, off: k, error: 'Turned off for this job (⚙ Automations) — not sent. Turn it back on on the job to send it.' };
   }
   if (s(item.kind) === 'portal_publish') return gateOnApproved(item, now);
+  if (/^preq_/.test(s(item.kind))) return require('./_lib/portalreq.js').onApproved(item, now);   /* patch PORTALREQ: a reply / "not possible" note shows in the customer's My requests (no e-mail) */
   if (s(item.kind) === 'sub_contact') return subcLib().onApproved(exports._core, item, now);   /* patch SUBCONTACT: the "Your crew" card — no e-mail */   /* patch PORTALGATE: approved → it shows in the portal (no e-mail) */
   if (mktLib().isMktKind(item.kind)) return mktLib().onApproved(item);
   if (s(item.kind) === 'bp_notice') return require('./_lib/bp-notice.js').onApproved(item, now);   /* patch SYS2: a bid-job addendum / update to the invited subs */
@@ -1845,7 +1846,8 @@ async function approvalAction(body, who){
     const m = it0.meta || {};
     if (mktLib().isMktKind(it0.kind)) { try { await mktLib().onRejected(r.result, me); } catch (e) {} }   /* patch MKT */
     if (s(it0.kind) === 'portal_publish' && (it0.meta || {}).gateKey) { try { await gateSet(it0.meta.gateKey, 'rejected', me, clip(body.reason, 100)); } catch (e) {} }
-    if (s(it0.kind) === 'sub_contact') { try { await subcLib().onRejected(exports._core, it0, me); } catch (e) {} }   /* patch SUBCONTACT: nothing is shared */   /* patch PORTALGATE: not approved → never in the portal */
+    if (s(it0.kind) === 'sub_contact') { try { await subcLib().onRejected(exports._core, it0, me); } catch (e) {} }
+    if (/^preq_/.test(s(it0.kind))) { try { await require('./_lib/portalreq.js').onRejected(it0, me); } catch (e) {} }   /* patch PORTALREQ: a reply not approved never shows */   /* patch SUBCONTACT: nothing is shared */   /* patch PORTALGATE: not approved → never in the portal */
     try {
       if (/final/.test(it0.kind) && m.invoiceId) await patchMail(m.invoiceId, { last_reminder_at: now, last_result: 'rejected' });
       if (it0.kind === 'portal_docs' && m.batch) await fetch(sbUrl() + '/rest/v1/gc_portal_notice?batch_id=eq.' + encodeURIComponent(m.batch), { method: 'PATCH', headers: H({ Prefer: 'return=minimal' }), body: JSON.stringify({ result: 'rejected' }) });
@@ -2723,6 +2725,7 @@ Object.assign(exports._core, { crmData: crmData, kvRead: kvRead, activeFor: acti
 Object.assign(exports._core, { gcStaffAuth: gcStaffAuth, signRefs: signRefs, tokenRow: tokenRow, sessionRow: sessionRow, ccPhotos: ccPhotos, ccHidden: ccHidden, ccCustomerPhotos: ccCustomerPhotos, grayCoRecords: grayCoRecords, withJob: withJob, jobTag: jobTag, pushTo: pushTo, ipOf: ipOf, limited: limited, noteBad: noteBad, gcCors: gcCors, gcHeader: gcHeader, adminEmails: adminEmails, officeEmails: officeEmails, listOf: listOf, TOKEN_RE: TOKEN_RE, OFFICE_PHONE: OFFICE_PHONE, MIN_FAIL_MS: MIN_FAIL_MS, SIGN_SECS: SIGN_SECS });
 /* patch INSP */
 Object.assign(exports._core, { esc: esc, isOffice: isOffice, kvListUpdate: kvListUpdate, queueApproval: queueApproval, AQ_KEY: AQ_KEY, approvalAction: approvalAction });   /* patch SUBCONTACT */
+Object.assign(exports._core, { COMMON_CARRIERS: COMMON_CARRIERS });   /* patch PORTALREQ: never a carrier in a portal request answer */
 Object.assign(exports._core, { releaseScheduled: releaseScheduled, sendScheduled: sendScheduled, cqHoldsKind: cqHoldsKind, kvListRead: kvListRead });   /* patch CUSTQUIET */
 Object.assign(exports._core, { claimHelpAction: claimHelpAction, chWords: chWords, chAttach: chAttach });   /* patch CLAIMHELP */
 Object.assign(exports._core, { isInsJob: isInsJob, insDocShown: insDocShown, insInternal: insInternal, insGroupOf: insGroupOf, insuranceView: insuranceView, INS_STEPS: INS_STEPS });

@@ -200,7 +200,7 @@ async function gcView(data, p, opts){
     schedule: await scheduleOf(p.id),
     updates: arr(v.posts).map(function(x){ return { at: x.at, by: x.by, text: x.text, photos: x.photos }; }),
     payapps: arr(st.payapps).filter(function(x){ return x.status !== 'void' && x.status !== 'draft' && x.status !== 'waiting'; }).map(payOut),
-    cos: arr(st.cos).filter(function(x){ return x.status !== 'void' && x.status !== 'pricing'; }).map(coOut),
+    cos: arr(st.cos).filter(function(x){ return x.status !== 'void' && x.status !== 'pricing' && !(x.preqId && x.status === 'requested' && !opts.staff); }).map(coOut),   /* patch PORTALREQ: a request from the page shows under My requests until it is priced */
     rfis: arr(st.rfis).filter(function(x){ return x.status !== 'void' && x.status !== 'draft'; }).map(rfiOut),
     docs: docs
   };

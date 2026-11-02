@@ -594,12 +594,12 @@ function liveTarget(items, it){ let x = it, n = 0; while (x && x.status === 'mer
 /* the existing item this record belongs to, or null */
 function findMatch(items, rec){
   /* patch WEB: a website / Business Brain lead is one person's request — matched only by its own id, and never a bid's match */
-  if (rec.origin === 'website' || rec.origin === 'brain') return items.find(x => x && x.id === rec.id) || null;
+  if (rec.origin === 'website' || rec.origin === 'brain' || rec.origin === 'portal') return items.find(x => x && x.id === rec.id) || null;   /* patch PORTALREQ: a portal request is one customer's own — never merged into another lead */
   const num = normNum(rec.bidNumber), nt = normTitle(rec.title), tk = tokens(rec.title), city = normCity(rec.city);
   let best = null, bestScore = 0;
   for (const it of items) {
     if (!it || it.id === rec.id) continue;
-    if (it.origin === 'website' || it.origin === 'brain') continue;   /* patch WEB */
+    if (it.origin === 'website' || it.origin === 'brain' || it.origin === 'portal') continue;   /* patch WEB; patch PORTALREQ */
     if (rec.watchKey && arr(it.watchKeys).indexOf(rec.watchKey) >= 0) return it;
     if (rec.emailId && arr(it.emailIds).indexOf(rec.emailId) >= 0 && normTitle(it.title) === nt) return it;
     const ic = normCity(it.city), cityOk = !city || !ic || ic === city;
