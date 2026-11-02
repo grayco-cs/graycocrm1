@@ -45,12 +45,11 @@ function J(event, code, body){
     'Access-Control-Allow-Headers': 'Content-Type, Authorization', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS' }, body: JSON.stringify(body) };
 }
 
-/* Netlify's scheduler: no HTTP method (older runtimes), or a POST with { next_run } and no Authorization header */
-function isScheduledCall(event){
-  if (!event.httpMethod) return true;
-  if (event.httpMethod !== 'POST') return false;
-  const h = event.headers || {}; if (s(h.authorization || h.Authorization)) return false;
-  try { const b = JSON.parse(event.body || '{}'); return !!(b && b.next_run); } catch (e) { return false; }
+/* the hourly sweep (referral-scheduled.js calls it; shared so the two files run the same thing) */
+async function hourly(){
+  if (env('REFERRAL_OFF') === '1' || !L().dbReady()) return { statusCode: 200, body: JSON.stringify({ ok: true, off: true }) };
+  try { const r = await R.sweep({}); return { statusCode: 200, body: JSON.stringify(Object.assign({ ok: true }, r)) }; }
+  catch (e) { console.error('[referral] sweep failed: ' + (e && e.message)); return { statusCode: 500, body: JSON.stringify({ ok: false }) }; }
 }
 /* patch MKTFIX2: the Marketing Manager's read-only view never names a customer — members are "Member 1, 2 …", the people they
    referred "a referred friend"; no member code / link, no gift-code owner, no ledger notes. The counts and totals stay. */
@@ -67,13 +66,9 @@ function mmView(o){
 exports.handler = async function(event){
   event = event || {};
   const m = event.httpMethod, qs = event.queryStringParameters || {};
-  /* the hourly run. patch AUTOFIX-REF: Netlify calls a scheduled function as a POST whose body is { "next_run": … } (no
-     sign-in), not with "no HTTP method" — before, the hourly run fell through to the sign-in check (401) and never swept */
-  if (isScheduledCall(event)) {
-    if (env('REFERRAL_OFF') === '1' || !L().dbReady()) return { statusCode: 200, body: JSON.stringify({ ok: true, off: true }) };
-    try { const r = await R.sweep({}); return { statusCode: 200, body: JSON.stringify(Object.assign({ ok: true }, r)) }; }
-    catch (e) { console.error('[referral] sweep failed: ' + (e && e.message)); return { statusCode: 500, body: JSON.stringify({ ok: false }) }; }
-  }
+  /* patch OFFICEFIX: the hourly run is referral-scheduled.js (netlify.toml). A scheduled function cannot be called by its URL
+     in production — Netlify answered the CRM's 🎁 Referral program calls 403 (owner and office alike). This file has no
+     schedule now, so the CRM's calls arrive; every call here needs a CRM sign-in (no "scheduled" door by URL). */
   if (m === 'OPTIONS') return J(event, 204, {});
   if (m === 'GET' && qs.ping === '1') return J(event, 200, { ok: true, service: 'GrayCo referral program', database: L().dbReady() });
   if (!L().dbReady()) return J(event, 503, { ok: false, error: 'The CRM database is not configured.' });
@@ -85,7 +80,7 @@ exports.handler = async function(event){
     if (m === 'GET' && qs.settings === '1') return J(event, 200, { ok: true, settings: await R.settings(), min: R.MIN, max: R.MAX });
     return J(event, 403, { ok: false, error: 'The Marketing Manager profile sees the referral program read-only.' });
   }
-  const office = who.admin || who.office === true || /office/.test(low(who.role));   /* patch OFFICEFULL: who.office */
+  const office = require('./_lib/staff-role.js').isOfficeOrAdmin(who);   /* patch OFFICEFIX: the one rule (staffAuth filled who.office from the data) */
   const by = who.name || who.email;
   let b = {};
   if (m === 'POST') { try { b = JSON.parse(event.body || '{}') || {}; } catch (e) { return J(event, 400, { ok: false, error: 'Body must be JSON.' }); } }
@@ -148,4 +143,4 @@ exports.handler = async function(event){
     return J(event, 503, { ok: false, error: 'The referral program could not do that right now — try again.' });
   }
 };
-exports._t = { isScheduledCall: isScheduledCall };
+exports._hourly = hourly;   /* patch OFFICEFIX: referral-scheduled.js */

@@ -1,6 +1,6 @@
 // tools/tests/test_AUTOFIX.js — Node only (no browser): the overnight automation fixes on claude/autofix, with a mocked
 // Supabase / Resend (tools/tests/autofix_mock.cjs) and a fake clock.
-//   REF     referral.js: the hourly run starts on Netlify's scheduled POST { next_run } (it used to need "no method")
+//   REF     referral-scheduled.js: the hourly run (OFFICEFIX: the schedule left referral.js, the CRM's door)
 //   CODES   x10-scheduled.js: the job list did not load → no access code is wiped
 //   ANNIV   field-auto.js: the one-year note follows ⚙ Automations yearlyCheckup (commercial off by default); DST-safe 10 AM
 //   BACKUP  _lib/health13.js: "Nightly backup" is the CRM data (gc_kv) snapshot, not the newest small table
@@ -25,17 +25,21 @@ const ISO = s => Date.parse(s);
   let swept = 0;
   stub('_lib/referral.js', { sweep: async () => { swept++; return { proposed: 0 }; } });
   const REF = require(path.join(FN, 'referral.js'));
-  await t('a scheduled POST { next_run } (no sign-in) runs the sweep', async () => {
-    const r = await REF.handler({ httpMethod: 'POST', headers: {}, body: JSON.stringify({ next_run: '2026-10-28T15:37:00.000Z' }) });
+  /* patch OFFICEFIX: the schedule moved to referral-scheduled.js (a scheduled function cannot be called by its URL in
+     production, so referral.js — the CRM's door — has no schedule and no "scheduled" door by URL any more) */
+  const REFS = require(path.join(FN, 'referral-scheduled.js'));
+  await t('the scheduled run (referral-scheduled.js, Netlify POST { next_run }) runs the sweep', async () => {
+    const r = await REFS.handler({ httpMethod: 'POST', headers: {}, body: JSON.stringify({ next_run: '2026-10-28T15:37:00.000Z' }) });
     assert.strictEqual(r.statusCode, 200); assert.strictEqual(swept, 1);
   });
-  await t('an older runtime with no HTTP method still runs it', async () => { await REF.handler({}); assert.strictEqual(swept, 2); });
-  await t('a POST without next_run, or with a sign-in token, is NOT the scheduler (sign-in check, no sweep)', async () => {
+  await t('an older runtime with no HTTP method still runs it', async () => { await REFS.handler({}); assert.strictEqual(swept, 2); });
+  await t('referral.js by URL: { next_run } without a sign-in, or any POST without one, is refused (no sweep)', async () => {
     const a = await REF.handler({ httpMethod: 'POST', headers: {}, body: '{}' });
-    const b = await REF.handler({ httpMethod: 'POST', headers: { authorization: 'Bearer x.y.z' }, body: JSON.stringify({ next_run: 'x' }) });
-    assert.notStrictEqual(a.statusCode, 200); assert.notStrictEqual(b.statusCode, 200); assert.strictEqual(swept, 2);
+    const b = await REF.handler({ httpMethod: 'POST', headers: {}, body: JSON.stringify({ next_run: 'x' }) });
+    const c = await REF.handler({});
+    assert.notStrictEqual(a.statusCode, 200); assert.notStrictEqual(b.statusCode, 200); assert.notStrictEqual(c.statusCode, 200); assert.strictEqual(swept, 2);
   });
-  await t('REFERRAL_OFF=1 still stops it', async () => { process.env.REFERRAL_OFF = '1'; const r = await REF.handler({ httpMethod: 'POST', headers: {}, body: '{"next_run":"x"}' }); delete process.env.REFERRAL_OFF; assert.ok(/off/.test(r.body)); assert.strictEqual(swept, 2); });
+  await t('REFERRAL_OFF=1 still stops it', async () => { process.env.REFERRAL_OFF = '1'; const r = await REFS.handler({ httpMethod: 'POST', headers: {}, body: '{"next_run":"x"}' }); delete process.env.REFERRAL_OFF; assert.strictEqual(r.statusCode, 200); assert.strictEqual(swept, 2); });
 
   /* ── CODES ── */
   console.log('CODES — x10 access codes of closed jobs');
