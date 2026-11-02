@@ -203221,17 +203221,21 @@ function paint(){
   /* patch AUTO8's old "📺 Office TV scoreboard" part, if an older AUTO8 bar is still drawn */
   var a8 = D.getElementById('gc-a8-admin');
   if (a8) { var ob = a8.querySelector('[data-a8adm="tv"]'); if (ob) { var sp = ob.previousElementSibling; if (sp && /Office TV/.test(sp.textContent || '')) sp.remove(); ob.remove(); } }
-  var o = OTV(); if (o && o._adm) { try { o._adm(); } catch (e) {} }   /* OFFICETV's cards now, not on its slowed timer */
-  var row = D.getElementById('gc-otv-lobbycard'), own = D.getElementById('gc-tvs-admin');
+  var o = OTV(), x10 = D.getElementById('gc-x10-admin'), own = D.getElementById('gc-tvs-admin');
+  /* our stand-in was drawn because patch X10's card box was not there yet (its timer is idle-paced too): now that the box is
+     there, it goes, so OFFICETV puts the TVs row and 🏁 Team goals in their places (under 🎯 Company goal, above 📟 On call) */
+  if (own && own.__noX10 && o && o._adm && x10) { own.remove(); own = null; }
+  if (o && o._adm) { try { o._adm(); } catch (e) {} }   /* OFFICETV's cards now, not on its slowed timer */
+  var row = D.getElementById('gc-otv-lobbycard');
   if (row && !(own && own.contains(row))) { dress(row, false); if (own) own.remove(); }
   else if (!row || (own && own.contains(row))) {
     /* no OFFICETV row (not loaded, or no card box after 3 s): ours, after the 🎯 Company goal box / the settings hub / the heading */
     if (!own) {
       if (o && D.getElementById('gc-x10-admin') && Date.now() - SEEN_AT < 3000) return;
-      css(); own = D.createElement('div'); own.id = 'gc-tvs-admin'; own.setAttribute('data-gc-keep', '1');
+      css(); own = D.createElement('div'); own.id = 'gc-tvs-admin'; own.setAttribute('data-gc-keep', '1'); own.__noX10 = !x10;
       own.innerHTML = '<div class="gcx10-bar" id="gc-otv-lobbycard"></div>' + (D.getElementById('gc-otv-goals') ? '' : '<div class="gcx10-bar" id="gc-otv-goals">' + goalsHtml() + '</div>');
       own.addEventListener('click', onOwn); dress(own.firstChild, true);
-      var x10 = D.getElementById('gc-x10-admin'), hub = D.getElementById('gc-adm-hub'), at = x10 && x10.parentNode ? x10 : hub && hub.parentNode ? hub : h1;
+      var hub = D.getElementById('gc-adm-hub'), at = x10 && x10.parentNode ? x10 : hub && hub.parentNode ? hub : h1;
       at.parentNode.insertBefore(own, at.nextSibling);
     }
   }
@@ -203313,7 +203317,7 @@ function extras(tv, th, refs){
     if (Date.now() - BG.at >= every) { BG.at = Date.now(); BG.i++; showPhoto(bg, th, refs); }
   }
   var hint = st.querySelector('.gc-tvs-hint'), needHint = th === 'album' && !refs.length;
-  if (needHint && !hint) { hint = D.createElement('div'); hint.className = 'gc-tvs-hint'; hint.textContent = '📷 No photos yet — add photos in ⚙ Admin → 📺 TVs'; st.appendChild(hint); }
+  if (needHint && !hint) { hint = D.createElement('div'); hint.className = 'gc-tvs-hint'; hint.textContent = '📷 Add photos in ⚙ Admin → 📺 TVs'; st.appendChild(hint); }
   if (!needHint && hint) hint.remove();
   var ck = st.querySelector('.gc-tvs-clock'), want = !!(CUR && CUR.mode !== 'office');
   if (want) {
@@ -203345,7 +203349,7 @@ var TCSS = B + '{background:#050B14;color:#fff}' +
   B + ' .paused-b{background:' + G + ';color:' + N + '}' +
   B + ' .cd{background:linear-gradient(180deg,rgba(255,255,255,.075),rgba(255,255,255,.04));border-color:' + LN + ';box-shadow:0 .6em 2.4em rgba(0,0,0,.35)}' +
   B + ' .lb{color:' + G2 + '}' + B + ' .mut,' + B + ' .ring .ct span,' + B + ' .tile .sub{color:' + MU + '}' +
-  B + ' .fine,' + B + ' .tg .tv small,' + B + ' .li li em,' + B + ' table.lbd td.nm small{color:#8FA0B8}' + B + ' .empty{color:#8FA0B8}' +
+  B + ' .fine,' + B + ' .tg .tv small,' + B + ' .li li em,' + B + ' table.lbd td.nm small{color:#B4C2D4}' + B + ' .empty{color:#B4C2D4}' +
   B + ' .ring circle:first-child{stroke:rgba(255,255,255,.12)}' +
   B + ' .bar{background:rgba(255,255,255,.12)}' + B + ' .bar em{background:#fff}' +
   B + ' .bar i[style*="#0F1D2F"]{background:linear-gradient(90deg,#5B84B8,#A9C4E6)!important}' +
@@ -203357,7 +203361,9 @@ var TCSS = B + '{background:#050B14;color:#fff}' +
   B + ' table.lbd th{color:' + G2 + '}' +
   B + ' table.lbd td{background:rgba(255,255,255,.06);border-color:' + LN + ';color:#fff}' +
   B + ' table.lbd tr.r1 td{background:rgba(212,160,23,.18);border-color:rgba(242,193,78,.6)}' +
-  B + ' table.lbd td.sc{color:' + G2 + '}' + B + ' table.lbd td .z{color:#8394AD}' +
+  B + ' table.lbd td.sc{color:' + G2 + '}' + B + ' table.lbd td .z{color:#B4C2D4}' +
+  /* the leader's row is tinted: its small print and zeros a step lighter, ≥ 5 : 1 on every dark look */
+  B + ' table.lbd tr.r1 td.nm small,' + B + ' table.lbd tr.r1 td .z{color:#E8EEF6}' +
   B + ' .brk{background:linear-gradient(90deg,#1C3456 0%,#13243B 100%)}' +
   /* ⛳ Golf: fairway greens, sand and flag accents */
   'html.gc-otv-golf #gc-otv{background:#06140E}' +
@@ -203365,7 +203371,7 @@ var TCSS = B + '{background:#050B14;color:#fff}' +
   'html.gc-otv-golf #gc-otv .hd{background:rgba(4,22,14,.55);border-bottom-color:rgba(233,210,122,.4)}html.gc-otv-golf #gc-otv .hd .tt{border-left-color:rgba(233,210,122,.4)}' +
   'html.gc-otv-golf #gc-otv .lb,html.gc-otv-golf #gc-otv table.lbd th,html.gc-otv-golf #gc-otv table.lbd td.sc,html.gc-otv-golf #gc-otv .hd .ck b small{color:#F1DD8E}' +
   'html.gc-otv-golf #gc-otv .mut,html.gc-otv-golf #gc-otv .ring .ct span,html.gc-otv-golf #gc-otv .tile .sub,html.gc-otv-golf #gc-otv .hd .tt span,html.gc-otv-golf #gc-otv .hd .ck span,html.gc-otv-golf #gc-otv .dots button,html.gc-otv-golf #gc-otv .ft .note{color:#BFDCCB}' +
-  'html.gc-otv-golf #gc-otv .fine,html.gc-otv-golf #gc-otv .tg .tv small,html.gc-otv-golf #gc-otv .li li em,html.gc-otv-golf #gc-otv table.lbd td.nm small,html.gc-otv-golf #gc-otv .empty,html.gc-otv-golf #gc-otv table.lbd td .z{color:#9CC5AE}' +
+  'html.gc-otv-golf #gc-otv .fine,html.gc-otv-golf #gc-otv .tg .tv small,html.gc-otv-golf #gc-otv .li li em,html.gc-otv-golf #gc-otv table.lbd td.nm small,html.gc-otv-golf #gc-otv .empty,html.gc-otv-golf #gc-otv table.lbd td .z{color:#BCD9C8}html.gc-otv-golf #gc-otv table.lbd tr.r1 td.nm small,html.gc-otv-golf #gc-otv table.lbd tr.r1 td .z{color:#F3F6F1}' +
   'html.gc-otv-golf #gc-otv .cd{background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045));border-color:rgba(255,255,255,.14)}' +
   'html.gc-otv-golf #gc-otv .dots button.on,html.gc-otv-golf #gc-otv .ctl button.on,html.gc-otv-golf #gc-otv .paused-b{background:#F1DD8E;color:#0C3B26;border-color:#F1DD8E}html.gc-otv-golf #gc-otv .dots button.on i{background:#C8102E}' +
   'html.gc-otv-golf #gc-otv .bar i{background:linear-gradient(90deg,#E9D27A,#F6E7A8)}html.gc-otv-golf #gc-otv table.lbd tr.r1 td{background:rgba(241,221,142,.16);border-color:rgba(241,221,142,.55)}' +
