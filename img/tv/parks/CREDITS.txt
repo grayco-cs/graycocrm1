@@ -1,0 +1,15 @@
+National park photos for the back office TV's "National parks" theme (patch TVFIX, tools/tvfix.js).
+All are National Park Service photos, credited "NPS" on nps.gov. Photos taken by NPS employees as
+part of their work are works of the U.S. federal government and are in the public domain
+(17 U.S.C. § 105). Each was downloaded on 2026-11-02 from the park's nps.gov home page and fitted
+to 1920×1080 JPEG.
+
+file             park                                  nps.gov credit             source
+grsm-fall.jpg    Great Smoky Mountains National Park   NPS Photo                  https://www.nps.gov/common/uploads/structured_data/3C80F1CC-1DD8-B71B-0B784AC1BCA74166.jpg (page: https://www.nps.gov/grsm/index.htm)
+grsm-winter.jpg  Great Smoky Mountains National Park   NPS / Bob Carr             https://www.nps.gov/common/uploads/structured_data/62D22291-ECC1-C9C6-D4C249F41BC599CC.jpg (page: https://www.nps.gov/grsm/index.htm)
+yell.jpg         Yellowstone National Park             NPS / Jacob W. Frank       https://www.nps.gov/common/uploads/structured_data/2815637A-9869-FC9C-99461D0B36AA1922.jpg (page: https://www.nps.gov/yell/index.htm)
+yose.jpg         Yosemite National Park                NPS Photo                  https://www.nps.gov/common/uploads/structured_data/232C02DC-BE31-0C6D-E1E2D2FB1EE7E251.jpg (page: https://www.nps.gov/yose/index.htm)
+grca.jpg         Grand Canyon National Park            NPS / M. Quinn             https://www.nps.gov/common/uploads/structured_data/6C7F2214-CE4D-E366-A283BE0F4E65F83B.jpg (page: https://www.nps.gov/grca/index.htm)
+zion.jpg         Zion National Park                    NPS Photo / Jesse Nelson   https://www.nps.gov/common/uploads/structured_data/69162F54-D4AF-8695-A42F97A8F9774C19.jpg (page: https://www.nps.gov/zion/index.htm)
+glac.jpg         Glacier National Park                 NPS Photo                  https://www.nps.gov/common/uploads/structured_data/1F147B77-D1E9-3D10-61ABDA0E4A8D803D.jpg (page: https://www.nps.gov/glac/index.htm)
+arch.jpg         Arches National Park                  NPS / Neal Herbert         https://www.nps.gov/common/uploads/structured_data/CDBBADB9-96FA-A432-50C0801C838743F9.jpg (page: https://www.nps.gov/arch/index.htm)

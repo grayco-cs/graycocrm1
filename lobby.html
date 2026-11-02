@@ -270,12 +270,13 @@ R.leavereview = function(sl){
     '<div class="steps" style="grid-template-columns:repeat(3,1fr);max-width:62em"><div class="st"><i>1</i><p>Scan the code with your phone camera</p></div><div class="st"><i>2</i><p>Tap the stars</p></div><div class="st"><i>3</i><p>Share a sentence about your project</p></div></div></div>' +
     '<div class="qrw">' + qrCard(F(sl, 'url') || brand().reviewUrl, sl.label || 'Leave a Google review') + '</div></div>';
 };
-var SVC = [['drop', 'Restoration & mitigation', 'Water, fire and storm damage — 24/7'], ['roof', 'Roofing', 'Replacement, repairs and free storm inspections'],
-  ['bldg', 'Commercial build-outs', 'Tenant improvements, renovations, new builds'], ['tool', 'Commercial maintenance', 'Roof & coating plans, make-ready, priority response'],
+/* patch TVFIX (owner 11/02): commercial build-outs, then restoration, then roofing; commercial maintenance offered; no numbers */
+var SVC = [['bldg', 'Commercial build-outs', 'Tenant improvements, renovations, new builds'], ['drop', 'Restoration & mitigation', 'Water, fire and storm damage — 24/7'],
+  ['roof', 'Roofing', 'Replacement, repairs and free storm inspections'], ['tool', 'Commercial maintenance', 'Roof & coating plans, make-ready, priority response'],
   ['shield', 'Insurance claim help', 'Photos, estimates and meeting your adjuster']];
 R.services = function(sl){
   return kick('Services') + '<h1>' + esc(F(sl, 'h')) + '</h1><div class="sub">' + esc(F(sl, 'sub')) + '</div><div class="svc">' +
-    SVC.map(function(x, i){ return '<div class="card"><div class="ci">' + ic(x[0]) + '</div><div class="num">0' + (i + 1) + '</div><h3>' + esc(x[1]) + '</h3><p>' + esc(x[2]) + '</p></div>'; }).join('') + '</div>' +
+    SVC.map(function(x, i){ return '<div class="card"><div class="ci">' + ic(x[0]) + '</div><h3>' + esc(x[1]) + '</h3><p>' + esc(x[2]) + '</p></div>'; }).join('') + '</div>' +
     '<div class="strip"><span class="live"></span>24/7 emergency line <b>' + esc(brand().emergency || '') + '</b><span style="flex:1"></span>' + esc(brand().states ? 'Licensed in ' + brand().states : '') + '</div>';
 };
 function svcSlide(k, icon, extra){

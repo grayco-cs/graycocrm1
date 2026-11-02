@@ -9,9 +9,14 @@
 //     1920×1080: nothing overlaps or spills, and the text contrast (Blue: ≥ 4.5 : 1 everywhere);
 //   • OFFICETV broken on purpose (throws while loading): the reason is caught, the TVs row is still there, the old scoreboard
 //     is the fallback, the perf report says so.
-//   • SHOTS: tvfix_admin.png (the TVs row, 1366×768), tvfix_blue.png / tvfix_white.png (🎯 Goals, 1920×1080).
+//   • ⛳ Golf, 🌲 National parks (NPS photos, the park named), 📷 Office photos (the back office album; none yet → a hint, Blue);
+//   • personal TV screens: ＋ New TV screen → its editor (link, photos, look, what it shows); photos added (3 test images through
+//     the CRM's upload pipeline); Open → photos + clock and date + the ticker; its link #tv=<id> after sign-in; another
+//     admin cannot open it; Delete asks first and takes its album.
+//   • SHOTS (1920×1080): tvfix_admin.png (the TVs row, 1366×768), tvfix_blue.png, tvfix_white.png, tvfix_golf.png,
+//     tvfix_parks.png, tvfix_officephotos.png, tvfix_personal.png, tvfix_personal_editor.png.
 // Env: MIRROR, SHOTS (folder), GC_HARNESS, DAY.
-import fs from 'fs'; import path from 'path'; import { pathToFileURL } from 'url';
+import fs from 'fs'; import path from 'path'; import zlib from 'zlib'; import { pathToFileURL } from 'url';
 const HARNESS = process.env.GC_HARNESS || '/tmp/claude-0/-home-user-graycocrm1/6a5b2b6b-8a4d-5505-9f82-62521adb6674/scratchpad/wN/harness_N.mjs';
 const H = await import(pathToFileURL(HARNESS).href);
 const { lobbyFn } = await import(pathToFileURL(path.join(path.dirname(new URL(import.meta.url).pathname), 'lobby_fn_mock.mjs')).href);
@@ -28,8 +33,19 @@ H.cset('gc_tv_goals', { reviews: 5, jobs: 6, leads: 25, at: '2026-10-01T12:00:00
 const V = k => { let v = H.cloud.get(k) && H.cloud.get(k).value; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) {} } return v; };
 const F = lobbyFn(build, H.cloud, tok => { const m = /^utok-(u-[a-z]+)-/.exec(tok); if (!m) return ''; return Object.keys(H.ACCOUNTS).find(k => H.ACCOUNTS[k].id === m[1]) || ''; });
 
+/* three small test photos (solid-colour PNGs with a band), as a phone would hand them over */
+function png(w, h, rgb, band){ const raw = Buffer.alloc((w * 3 + 1) * h); for (let y = 0; y < h; y++) { raw[y * (w * 3 + 1)] = 0; for (let x = 0; x < w; x++) { const o = y * (w * 3 + 1) + 1 + x * 3, c = Math.abs(y - h / 2) < h / 8 ? band : rgb; raw[o] = c[0]; raw[o + 1] = c[1]; raw[o + 2] = c[2]; } }
+  const chunk = (ty, d) => { const l = Buffer.alloc(4); l.writeUInt32BE(d.length); const td = Buffer.concat([Buffer.from(ty), d]); const cr = Buffer.alloc(4); cr.writeUInt32BE(zlib.crc32(td) >>> 0); return Buffer.concat([l, td, cr]); };
+  const ih = Buffer.alloc(13); ih.writeUInt32BE(w, 0); ih.writeUInt32BE(h, 4); ih[8] = 8; ih[9] = 2; ih[10] = 0; ih[11] = 0; ih[12] = 0;
+  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ih), chunk('IDAT', zlib.deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]); }
+const PHOTOS = [png(640, 400, [46, 125, 50], [255, 213, 79]), png(640, 400, [21, 101, 192], [255, 255, 255]), png(640, 400, [183, 28, 28], [255, 236, 179])].map((b, i) => ({ name: 'family-' + (i + 1) + '.png', mimeType: 'image/png', buffer: b }));
+const STORE = new Map();
 async function device(name, w, h, html){
   const c = await H.computer(name, { build });
+  await c.ctx.route(u => /\/storage\/v1\/object\//.test(String(u)), r => { const q = r.request(), k = new URL(q.url()).pathname.replace(/^.*\/object\/(public\/|authenticated\/|sign\/)?/, '');
+    if (q.method() === 'OPTIONS') return r.fulfill({ status: 200, headers: { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' } });
+    if (q.method() === 'POST' || q.method() === 'PUT') { STORE.set(k, q.postDataBuffer()); return r.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ Key: k }) }); }
+    const b = STORE.get(k); return b ? r.fulfill({ status: 200, contentType: 'image/jpeg', headers: { 'access-control-allow-origin': '*' }, body: b }) : r.fulfill({ status: 404, headers: { 'access-control-allow-origin': '*' }, body: '' }); });
   await c.ctx.addInitScript(([day]) => {   /* the page's clock on the mirror's day, so "this month" has data (timers untouched) */
     const OFF = Date.parse(day) - Date.now(), _D = Date;
     function D2(...a){ if (!(this instanceof D2)) return new _D(_D.now() + OFF).toString(); return a.length ? new _D(...a) : new _D(_D.now() + OFF); }
@@ -86,7 +102,7 @@ const OVL = () => { const tv = document.getElementById('gc-otv'), bd = tv.queryS
 const CONTRAST = () => {
   const P = s => { const m = /rgba?\(([^)]+)\)/.exec(s || ''); if (!m) return null; const a = m[1].split(/[,/ ]+/).filter(Boolean).map(Number); return [a[0], a[1], a[2], a.length > 3 ? a[3] : 1]; };
   const L = c => { const f = v => { v /= 255; return v <= .03928 ? v / 12.92 : Math.pow((v + .055) / 1.055, 2.4); }; return .2126 * f(c[0]) + .7152 * f(c[1]) + .0722 * f(c[2]); };
-  const blue = document.documentElement.classList.contains('gc-otv-blue'), base = blue ? [11, 22, 38] : [255, 255, 255];
+  const hc = document.documentElement.classList, base = hc.contains('gc-otv-photo') ? [4, 8, 15] : hc.contains('gc-otv-golf') ? [12, 59, 38] : hc.contains('gc-otv-dark') ? [11, 22, 38] : [255, 255, 255];
   const bgOf = e => { const stack = []; for (let x = e; x && x.id !== 'gc-otv'; x = x.parentElement) { const c = P(getComputedStyle(x).backgroundColor); if (c && c[3] > 0) stack.push(c); if (c && c[3] >= 1) break; if (/\bstg\b/.test(x.className)) break; }
     let col = base.slice(); for (let i = stack.length - 1; i >= 0; i--) { const c = stack[i]; col = [0, 1, 2].map(k => c[k] * c[3] + col[k] * (1 - c[3])); } return col; };
   const tv = document.getElementById('gc-otv'), out = [];
@@ -100,6 +116,7 @@ const CONTRAST = () => {
   out.sort((a, b) => a.r - b.r); return { n: out.length, low: out.slice(0, 6) };
 };
 const SL = ['goals', 'board', 'score', 'week'];
+let SCREEN_ID = '';
 
 for (const [W, Hh] of [[1366, 768], [1920, 1080]]) {
   console.log('— the owner, fresh sign-in, ' + W + '×' + Hh);
@@ -142,27 +159,84 @@ for (const [W, Hh] of [[1366, 768], [1920, 1080]]) {
   t = await tvs(A); ok(t.nw && !t.old, 'patch AUTO8\'s data-a8adm="tv" button (any copy of it) → the new TV', t); await closeTVs(A);
   /* 🔵 Blue / ⚪ White in the TV */
   await A.page().evaluate(() => { window._gcTVFIX.setTheme(null); window._gcOTV.open(); window._gcOTV.el().__set({ paused: true, money: true }); }); await sleep(1200);
-  const th0 = await A.page().evaluate(() => { const b = document.querySelector('#gc-otv .ctl [data-tvs-theme]'), x = document.querySelector('#gc-otv .ctl [data-k="x"]'), st = getComputedStyle(document.querySelector('#gc-otv .stg'));
-    return { cls: document.documentElement.classList.contains('gc-otv-blue'), btn: b && b.textContent, beforeClose: !!b && b.nextElementSibling === x, bg: st.backgroundColor, logo: document.querySelector('#gc-otv .hd img').getAttribute('src') }; });
-  ok(th0.cls && th0.btn === '🔵 Blue' && th0.beforeClose && /portal-logo/.test(th0.logo), 'the TV opens 🔵 Blue by default; the 🔵 / ⚪ switch is in its control bar (before Close); the logo for a dark screen', th0);
-  for (const look of ['blue', 'white']) {
-    if (look === 'white') { await A.page().locator('#gc-otv [data-tvs-theme]').click(); await sleep(500);
-      const w = await A.page().evaluate(() => ({ cls: document.documentElement.classList.contains('gc-otv-blue'), btn: document.querySelector('#gc-otv [data-tvs-theme]').textContent, ls: localStorage.getItem('gc_otv_theme'), open: !!document.getElementById('gc-otv'), logo: document.querySelector('#gc-otv .hd img').getAttribute('src') }));
-      ok(!w.cls && w.btn === '⚪ White' && w.ls === '"white"' && w.open && /grayco-logo-wide/.test(w.logo), 'the switch → ⚪ White (kept on this computer); the TV stays open', w); }
+  const th0 = await A.page().evaluate(() => { const b = document.querySelector('#gc-otv .ctl [data-tvs-theme]'), x = document.querySelector('#gc-otv .ctl [data-k="x"]');
+    return { cls: document.documentElement.classList.contains('gc-otv-blue'), btn: b && b.textContent, beforeClose: !!b && b.nextElementSibling === x, logo: document.querySelector('#gc-otv .hd img').getAttribute('src') }; });
+  ok(th0.cls && th0.btn === '🎨 🔵 Blue ▾' && th0.beforeClose && /portal-logo/.test(th0.logo), 'the TV opens 🔵 Blue by default; the 🎨 look menu is in its control bar (before Close); the logo for a dark screen', th0);
+  const pick = async k => { await A.page().locator('#gc-otv [data-tvs-theme]').click(); await sleep(300); await A.page().locator('#gc-otv .gc-tvs-menu [data-tvs-th="' + k + '"]').click(); await sleep(900); };
+  await A.page().locator('#gc-otv [data-tvs-theme]').click(); await sleep(300);
+  const items = await A.page().evaluate(() => [...document.querySelectorAll('#gc-otv .gc-tvs-menu [data-tvs-th]')].map(b => b.textContent));
+  ok(items.join('|') === '🔵 Blue|⚪ White|⛳ Golf|🌲 National parks|📷 Office photos', 'the 🎨 menu: Blue · White · Golf · National parks · Office photos', items);
+  await A.page().locator('#gc-otv [data-tvs-theme]').click(); await sleep(300);
+  for (const look of ['blue', 'white', 'golf', 'parks']) {
+    if (look !== 'blue') await pick(look);
+    if (look === 'white') { const w = await A.page().evaluate(() => ({ cls: document.documentElement.className, btn: document.querySelector('#gc-otv [data-tvs-theme]').textContent, ls: localStorage.getItem('gc_otv_theme'), open: !!document.getElementById('gc-otv'), logo: document.querySelector('#gc-otv .hd img').getAttribute('src') }));
+      ok(!/gc-otv-dark/.test(w.cls) && w.btn === '🎨 ⚪ White ▾' && w.ls === '"white"' && w.open && /grayco-logo-wide/.test(w.logo), '🎨 → ⚪ White (kept on this computer); the TV stays open', w); }
+    if (look === 'golf') ok(await A.page().evaluate(() => document.documentElement.classList.contains('gc-otv-golf') && /145A3A|20, 90, 58/i.test(getComputedStyle(document.querySelector('#gc-otv .stg')).backgroundImage)), '🎨 → ⛳ Golf: the green golf-course look');
+    if (look === 'parks') { await sleep(2500); const pk = await A.page().evaluate(() => { const on = document.querySelector('#gc-otv .gc-tvs-bg i.on'); return { photo: document.documentElement.classList.contains('gc-otv-photo'), bg: on ? on.style.backgroundImage : '', cap: (document.querySelector('#gc-otv .gc-tvs-bg .cap') || {}).textContent }; });
+      ok(pk.photo && /\/img\/tv\/parks\/[a-z-]+\.jpg/.test(pk.bg) && /National Park · NPS photo/.test(pk.cap), '🎨 → 🌲 National parks: an NPS photo behind the numbers, the park named (' + pk.cap + ')', pk); }
     const bads = [], lows = [];
     for (const k of SL) { await A.page().evaluate(k => window._gcOTV.el().__go(k), k); await sleep(1000);
       const b = await A.page().evaluate(OVL); if (b.length) bads.push(k + ': ' + b.join('; '));
       const c = await A.page().evaluate(CONTRAST); if (c.low.length && c.low[0].r < 4.5) lows.push(k + ': ' + JSON.stringify(c.low.filter(x => x.r < 4.5)));
-      if (look === 'blue' && k === 'goals' && W === 1920) await A.page().screenshot({ path: path.join(SHOTS, 'tvfix_blue.png') });
-      if (look === 'white' && k === 'goals' && W === 1920) await A.page().screenshot({ path: path.join(SHOTS, 'tvfix_white.png') }); }
+      if (k === 'goals' && W === 1920) await A.page().screenshot({ path: path.join(SHOTS, 'tvfix_' + look + '.png') }); }
     ok(!bads.length, W + '×' + Hh + ' ' + look + ': every slide — nothing overlaps or spills', bads);
-    if (look === 'blue') ok(!lows.length, W + '×' + Hh + ' blue: every text ≥ 4.5 : 1 contrast', lows);
+    if (look !== 'white') ok(!lows.length, W + '×' + Hh + ' ' + look + ': every text ≥ 4.5 : 1 contrast', lows);
     else console.log('    white (OFFICETV\'s own look, unchanged) — text under 4.5 : 1: ' + (lows.length ? lows.join(' | ') : 'none'));
   }
+  await pick('album'); await sleep(600);
+  const al = await A.page().evaluate(() => ({ hint: (document.querySelector('#gc-otv .gc-tvs-hint') || {}).textContent || '', blue: document.documentElement.classList.contains('gc-otv-blue') }));
+  ok(/Add photos in ⚙ Admin → 📺 TVs/.test(al.hint) && al.blue, '🎨 → 📷 Office photos with none yet: "add photos in ⚙ Admin → 📺 TVs", drawn Blue', al);
+  await pick('white');
   await A.page().evaluate(() => window._gcOTV.close()); await sleep(300);
-  await A.page().evaluate(() => window._gcOTV.open()); await sleep(600);
-  ok(await A.page().evaluate(() => !document.documentElement.classList.contains('gc-otv-blue')), 'reopened: still ⚪ White on this computer');
-  await A.page().locator('#gc-otv [data-tvs-theme]').click(); await sleep(300); await closeTVs(A);
+  await A.page().evaluate(() => window._gcOTV.open()); await sleep(800);
+  ok(await A.page().evaluate(() => !document.documentElement.classList.contains('gc-otv-dark')), 'reopened: still ⚪ White on this computer');
+  await pick('blue'); await closeTVs(A);
+  if (W === 1920) {
+    /* 📷 Office photos: the back office album, any admin */
+    await A.page().locator(ROW + ' [data-tvs-scr="office"]').click();
+    await H.waitFor(A, () => document.querySelector('#gc-tvs-ed [data-e="file"]') ? 1 : null, null, 15000, 300);
+    await A.page().setInputFiles('#gc-tvs-ed [data-e="file"]', PHOTOS.slice(0, 2));
+    const op = await H.waitFor(A, () => { const n = document.querySelectorAll('#gc-tvs-ed .ph .t').length; return n === 2 ? n : null; }, null, 30000, 400);
+    const ov = (V('gc_tv_screens') || {}).screens || [], of = ov.find(x => x.id === 'office');
+    ok(op === 2 && of && of.photos.length === 2 && of.photos.every(r => /^sb:crm-files\/[0-9a-f]{64}\.(jpg|png)$/.test(r)), '📷 Office photos: 2 photos added through the CRM\'s upload pipeline (crm-files refs in gc_kv gc_tv_screens)', of);
+    await A.page().evaluate(() => document.querySelector('#gc-tvs-ed [data-e="x"]').click());
+    await A.page().evaluate(() => { window._gcTVFIX.setTheme('album'); window._gcTVFIX.office(); }); await sleep(3000);
+    const ob = await A.page().evaluate(() => { const on = document.querySelector('#gc-otv .gc-tvs-bg i.on'); return { photo: document.documentElement.classList.contains('gc-otv-photo'), bg: on ? on.style.backgroundImage : '', hint: !!document.querySelector('#gc-otv .gc-tvs-hint') }; });
+    ok(ob.photo && /blob:/.test(ob.bg) && !ob.hint, 'the back office TV in 📷 Office photos: the album behind the numbers', ob);
+    await A.page().screenshot({ path: path.join(SHOTS, 'tvfix_officephotos.png') });
+    await A.page().evaluate(() => window._gcTVFIX.setTheme(null)); await closeTVs(A);
+    /* a personal TV screen */
+    A.prompts = ["Wesley's office"];
+    await A.page().locator(ROW + ' [data-tvs-scr="new"]').click();
+    await H.waitFor(A, () => document.querySelector('#gc-tvs-ed [data-e="link"]') ? 1 : null, null, 15000, 300);
+    await A.page().setInputFiles('#gc-tvs-ed [data-e="file"]', PHOTOS);
+    await H.waitFor(A, () => document.querySelectorAll('#gc-tvs-ed .ph .t img[src^="blob:"]').length === 3 ? 1 : null, null, 30000, 400);
+    await A.page().screenshot({ path: path.join(SHOTS, 'tvfix_personal_editor.png') });
+    const ps = ((V('gc_tv_screens') || {}).screens || []).find(x => x.name === "Wesley's office");
+    const link = await A.page().evaluate(() => document.querySelector('#gc-tvs-ed [data-e="link"]').value);
+    ok(ps && ps.owner === 'wjohnson@grayco-cs.com' && ps.photos.length === 3 && ps.mode === 'photos' && ps.ticker === true && link.endsWith('#tv=' + ps.id),
+      '＋ New TV screen "Wesley\'s office": his, its own link (#tv=' + (ps && ps.id) + '), 3 photos, photos + clock + ticker by default', { ps, link });
+    ok(await A.page().evaluate(() => !!document.querySelector('#gc-otv-lobbycard [data-tvs-scr^="s"]')), 'the screen is in the 📺 TVs row (🏠 Wesley\'s office)');
+    await A.page().evaluate(() => document.querySelector('#gc-tvs-ed [data-e="open"]').click()); await sleep(3500);
+    const pv = await A.page().evaluate(() => { const on = document.querySelector('#gc-otv .gc-tvs-bg i.on'), ck = document.querySelector('#gc-otv .gc-tvs-clock'), cs = e => e && getComputedStyle(e).display;
+      return { only: document.documentElement.classList.contains('gc-otv-photosonly'), bg: on ? on.style.backgroundImage : '', clock: ck && ck.innerText.replace(/\s+/g, ' '), bd: cs(document.querySelector('#gc-otv .bd')), tk: cs(document.querySelector('#gc-otv .tk')), screen: window._gcTVFIX.state().screen }; });
+    ok(pv.only && /blob:/.test(pv.bg) && /\d{1,2}:\d{2} (AM|PM)/.test(pv.clock || '') && /Wesley's office/.test(pv.clock || '') && pv.bd === 'none' && pv.tk !== 'none' && pv.screen === ps.id,
+      'Open: his photos, the clock and date, the screen\'s name, the ticker; no back office slides', pv);
+    await A.page().screenshot({ path: path.join(SHOTS, 'tvfix_personal.png') });
+    const bads = await A.page().evaluate(() => { const ck = document.querySelector('#gc-otv .gc-tvs-clock').getBoundingClientRect(), tk = document.querySelector('#gc-otv .tk').getBoundingClientRect(), ft = document.querySelector('#gc-otv .ft').getBoundingClientRect(); return ck.bottom > Math.min(tk.top, ft.top) + 1 ? ['clock over the footer'] : []; });
+    ok(!bads.length, 'the clock clears the footer and the ticker', bads);
+    await closeTVs(A); await sleep(1500);
+    ok(await A.page().evaluate(() => !window._gcTVFIX.state().screen && !document.documentElement.classList.contains('gc-otv-photosonly')), 'closed: back to the back office TV\'s look');
+    await A.page().evaluate(id => window._gcTVFIX.screens.edit(id), ps.id); await sleep(800);
+    await A.page().selectOption('#gc-tvs-ed [data-e="mode"]', 'office'); await sleep(1500);
+    ok((((V('gc_tv_screens') || {}).screens || []).find(x => x.id === ps.id) || {}).mode === 'office', 'Shows → 📊 back office slides: saved');
+    await A.page().evaluate(() => document.querySelector('#gc-tvs-ed [data-e="x"]').click());
+    await A.page().evaluate(id => window._gcTVFIX.screens.open(id), ps.id); await sleep(2500);
+    const pv2 = await A.page().evaluate(() => ({ only: document.documentElement.classList.contains('gc-otv-photosonly'), bd: getComputedStyle(document.querySelector('#gc-otv .bd')).display, photo: document.documentElement.classList.contains('gc-otv-photo') }));
+    ok(!pv2.only && pv2.bd !== 'none' && pv2.photo, 'in back office slides mode: the slides on top of his photos', pv2);
+    await closeTVs(A); await sleep(1200);
+    SCREEN_ID = ps.id;
+  }
   if (W === 1366) {
     await A.page().evaluate(() => window._setView('systems'));
     const tiles = await H.waitFor(A, () => { const m = document.getElementById('gc-sys-sys'); if (!m) return null; const g = [...m.querySelectorAll('.grp')].find(x => /The office/.test(x.textContent)); const box = g && g.nextElementSibling; return box ? [...box.querySelectorAll('[data-k]')].map(b => b.getAttribute('data-k') + ':' + b.querySelector('b').textContent) : null; }, null, 20000, 400);
@@ -179,6 +253,26 @@ for (const [W, Hh] of [[1366, 768], [1920, 1080]]) {
   }
   const pe = A.errs.filter(e => /PAGEERROR/.test(e)); ok(!pe.length, 'no page errors', pe.slice(0, 4));
   await A.b.close();
+}
+
+console.log('— a personal screen\'s link: its owner, then another admin');
+if (SCREEN_ID) {
+  const A = await device('MYLINK', 1920, 1080); await signInAt(A, 'wjohnson@grayco-cs.com', 'https://app.local/index.html#tv=' + SCREEN_ID);
+  const st = await H.waitFor(A, () => window._gcTVFIX && window._gcTVFIX.state().screen && document.getElementById('gc-otv') ? window._gcTVFIX.state() : null, null, 120000, 500);
+  ok(st && st.screen === SCREEN_ID, 'crm.grayco-cs.com/#tv=' + SCREEN_ID + ' → his screen, straight after sign-in', st);
+  await A.b.close();
+  const N = await device('NICK', 1366, 768); await signInAt(N, 'nthomas@grayco-cs.com', 'https://app.local/index.html#tv=' + SCREEN_ID);
+  await H.waitFor(N, () => (window._crm && (window._crm.projects || []).length > 100) || null, null, 120000, 500); await sleep(6000);
+  const nk = await N.page().evaluate(id => { const r = window._gcTVFIX.screens.open(id); return { opened: !!document.getElementById('gc-otv'), screen: window._gcTVFIX.state().screen, toast: [...document.querySelectorAll('.gc-tvs-toast')].map(x => x.textContent).join(' | ') }; }, SCREEN_ID);
+  ok(!nk.opened && !nk.screen && /someone else/.test(nk.toast), 'another admin (Nick): his link and _gcTVFIX.screens.open → refused, nothing shown', nk);
+  await N.b.close();
+  const D2 = await device('DEL', 1366, 768); await signInAt(D2, 'wjohnson@grayco-cs.com');
+  await H.waitFor(D2, () => (window._crm && (window._crm.projects || []).length > 100) || null, null, 120000, 500);
+  await D2.page().evaluate(() => window._setView('admin')); await waitRow(D2); await sleep(2500);
+  await D2.page().locator('#gc-otv-lobbycard [data-tvs-scr="' + SCREEN_ID + '"]').click(); await sleep(800);
+  D2.acceptConfirm = true; await D2.page().evaluate(() => document.querySelector('#gc-tvs-ed [data-e="del"]').click()); await sleep(2000);
+  ok(!(((V('gc_tv_screens') || {}).screens || []).some(x => x.id === SCREEN_ID)) && D2.dialogs.some(d => /Delete the TV screen/.test(d)), 'Delete (asked first): the screen and its album are gone', D2.dialogs.slice(-2));
+  await D2.b.close();
 }
 
 console.log('— the #tv link (fresh sign-in)');
