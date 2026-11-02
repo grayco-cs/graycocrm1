@@ -753,7 +753,7 @@ async function buildView(data, p, opts){
     const epCur = e.sentPdf && s(e.sentPdf.ref) ? s(e.sentPdf.ref) : '';
     const pdf = (epCur && epds.find(function(d){ return s(d.ref) === epCur; })) || epds.filter(function(d){ return d.sentPdf === true && !d.supersededBy; }).sort(function(a, b){ return (+b.version || 0) - (+a.version || 0); })[0] || epds[0];
     const total = num(e.totalCharge || e.quoteTotal || e.total || e.contract);
-    addDoc({ kind: 'proposal', title: clip(e.name || 'Your proposal', 90), date: ymd(e.sentDate || e.date || e.updatedAt),
+    addDoc({ kind: 'proposal', estId: clip(e.id, 90), title: clip(e.name || 'Your proposal', 90), date: ymd(e.sentDate || e.date || e.updatedAt),   /* patch ESTPDF2: estId — the portal shows this estimate once (its card) */
       total: total > 0 ? money(total) : null,
       status: /sign|approv|accept|won|contract/.test(low(e.status)) ? 'Signed' : 'Sent',
       url: (pdf && (signed[pdf.ref] || httpsUrl(pdf.url))) || (g ? g.url : ''), preview: (pdf && (signed[pdf.ref] || httpsUrl(pdf.url))) ? '' : (g ? g.preview : '') });   /* patch GDOCS: the PDF first — a private Google Doc does not open for the customer */

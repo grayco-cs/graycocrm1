@@ -305,6 +305,8 @@ async function portalPart(SHOTS){
   ok(w1280 && /^About estimate #1042/.test(w1280.info.ask || ''), '💬 Ask a question opens Messages with the estimate named', w1280 && w1280.info.ask);
   ok((tail.calls || []).indexOf('portal:est-viewed') >= 0, '📄 View PDF tells GrayCo it was viewed (portal est-viewed)', tail.calls);
   ok(w390 && !w390.info.docs.some(d => /Demo Kitchen Remodel.*Proposal/.test(d)), 'the Documents tab does not list the same estimate twice', w390 && w390.info.docs);
+  [w390, w1280].forEach(x => { const hm = x && x.info.home; ok(hm && /Estimate #1042/.test(hm.card) && hm.papers && hm.cardFirst, 'portal Home (' + (x && x.width) + ' wide): the Estimate card is there, ahead of ✍️ Papers to sign (patch ESTPDF2)', hm); ok(hm && hm.signReached, 'portal Home (' + (x && x.width) + ' wide): ✅ Accept & sign on the card reaches the signing box', hm); });
+  ok(w1280 && !w1280.info.docs.some(d => /Demo Kitchen Remodel.*Proposal/.test(d)), 'the Documents tab (1280 wide) does not list the same estimate twice', w1280 && w1280.info.docs);
   ok(!(tail.errs || []).length, 'portal: no page errors', tail.errs);
 }
 async function browser(build){

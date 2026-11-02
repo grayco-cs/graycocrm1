@@ -712,11 +712,11 @@ function estCards(){
 function docs(){
   if (V.insurance) return insDocs();   /* patch INSP */
   var ec = estCards();   /* patch ESTPDF */
-  if (ec.length) { var skip = {}; (V.estimates || []).forEach(function(x){ skip[x.title] = 1; }); return ec.concat(docs0(skip)); }   /* the estimate's own row is the card above */
+  if (ec.length) { var skip = { t: {}, id: {} }; (V.estimates || []).forEach(function(x){ skip.t[x.title] = 1; if (x.id) skip.id[x.id] = 1; }); return ec.concat(docs0(skip)); }   /* the estimate's own row is the card above (patch ESTPDF2: by its id, else its name) */
   return docs0({});
 }
 function docs0(skip){
-  var list = (V.docs || []).filter(function(d){ return !(d.kind === 'proposal' && skip && skip[d.title]); });
+  var list = (V.docs || []).filter(function(d){ return !(d.kind === 'proposal' && skip && ((d.estId && skip.id && skip.id[d.estId]) || (skip.t && skip.t[d.title]))); });   /* patch ESTPDF2: one estimate, shown once */
   var box = h('section', { class: 'card' }, [window.gcDocHead ? window.gcDocHead() : null, h('h2', { text: 'Documents & proposals' }),
     h('div', { class: 'muted', text: 'Proposals made in Google Docs or in our system show up here by themselves.' })]);
   var wr = V.warranty, wcard = wr ? card('Your warranty', [h('div', { style: 'font-size:15px;font-weight:700', text: wr.title }),
@@ -1474,7 +1474,11 @@ function place(){
   [card, rcard].forEach(function(cd){ if (cd && !show && cd.parentNode) cd.parentNode.removeChild(cd); });
   if (!show) return;
   var host = main.querySelector('.col-r') || main;
-  if (card && card.parentNode !== host) {
+  /* patch ESTPDF2: an open estimate's card (portal.html home()) comes first on Home; the paper to sign follows it, so
+     "✅ Accept & sign" on the card goes straight down to the signing box */
+  var ecs = host.querySelectorAll(':scope > [data-est-card]'), lastEc = ecs.length ? ecs[ecs.length - 1] : null;
+  if (card && lastEc) { if (card.parentNode !== host || card.previousElementSibling !== lastEc) host.insertBefore(card, lastEc.nextSibling); }
+  else if (card && card.parentNode !== host) {
     var after = document.getElementById('gcsel');
     var first = host.firstElementChild; while (first && first.classList && first.classList.contains('jobbar')) first = first.nextElementSibling;
     host.insertBefore(card, after && after.parentNode === host ? after.nextSibling : first || null);

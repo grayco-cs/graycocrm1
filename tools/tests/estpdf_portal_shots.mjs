@@ -71,6 +71,17 @@ for (const w of [390, 1280]) {
   await pg.goto('https://portal.test/portal.html#t=' + TOKEN);
   await pg.waitForTimeout(3500);
   await pg.screenshot({ path: OUT + '_' + w + '_home.png', fullPage: false });
+  /* Home (patch ESTPDF2): the Estimate card is there, ahead of "Papers to sign"; its ✅ Accept & sign reaches the signing box */
+  const home = await pg.evaluate(() => {
+    const card = document.querySelector('[data-est-card]'), papers = document.getElementById('gcesign');
+    const before = !!(card && papers && (card.compareDocumentPosition(papers) & Node.DOCUMENT_POSITION_FOLLOWING));
+    return { card: card ? card.textContent.replace(/\s+/g, ' ').trim().slice(0, 300) : '', papers: !!papers, cardFirst: before, cardTop: card ? Math.round(card.getBoundingClientRect().top) : null };
+  });
+  await pg.evaluate(() => { const b = document.querySelector('[data-est-card] [data-est-sign]'); if (b) b.click(); });
+  await pg.waitForTimeout(1500);
+  home.signReached = await pg.evaluate(() => { const el = document.querySelector('#gcesign .es-item[data-id]'); if (!el) return false; const r = el.getBoundingClientRect(); return r.top < innerHeight && r.bottom > 0; });
+  await pg.screenshot({ path: OUT + '_' + w + '_home_sign.png', fullPage: false });
+  await pg.evaluate(() => window.scrollTo(0, 0));
   /* the Documents tab */
   await pg.evaluate(() => { const b = [...document.querySelectorAll('#tabs button, nav button, [role=tab]')].find(x => /^\s*(📄\s*)?Documents/.test(x.textContent || '')); if (b) b.click(); });
   await pg.waitForTimeout(800);
@@ -93,6 +104,7 @@ for (const w of [390, 1280]) {
     await pg.waitForTimeout(900);
     info.ask = await pg.evaluate(() => { const t = document.getElementById('cMsgText'); return t ? t.value : null; });
   }
+  info.home = home;
   console.log(JSON.stringify({ width: w, info }));
   await ctx.close();
 }
