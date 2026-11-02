@@ -135,27 +135,38 @@ function lastUndo(){ var now = Date.now(); return arr(LOG || lsLog()).filter(fun
 
 /* ── apply / undo ── */
 function save(mut){ var k = kit(); if (k && typeof k.setLeads === 'function') return Promise.resolve(k.setLeads(mut)); return Promise.resolve(false); }
-/* a lead put back EXACTLY as the snapshot: its own fields and nothing else (a field the merge added is deleted, not blanked;
-   only the save stamps are new) */
+/* A lead put back EXACTLY as the snapshot. This CRM never lets a field simply disappear from a record: the disk guard
+   ("WHAT YOU TYPED STAYS TYPED", IndexedDB) melds a newer copy over the older one where the newer is blank or missing, and
+   the cloud push (patch N) is Object.assign(cloud, local). Both are proved in tools/tests/test_BIDMERGE.mjs against their
+   real code. So a field the merge added is written as an explicit null (the tombstone both honour: Object.assign keeps it,
+   and the disk guard stands aside while a person's delete is under way, __GC_DELETING_AT__, as for every delete in the
+   CRM). null reads as "not there" everywhere in this patch (arr(null) = [], s(null) = ''). Only the save stamps are new. */
 var STAMPS = { updatedAt: 1, savedAt: 1 };
-function exactly(snap, at){ var x = JSON.parse(JSON.stringify(snap)); x.updatedAt = x.savedAt = at; return x; }
+function exactly(snap, at, also){
+  var x = JSON.parse(JSON.stringify(snap));
+  (also || []).forEach(function(o){ Object.keys(o || {}).forEach(function(k){ if (!(k in snap) && !STAMPS[k]) x[k] = null; }); });
+  x.updatedAt = x.savedAt = at; return x;
+}
 function differs(snap, live){
   var bad = [];
-  Object.keys(Object.assign({}, snap, live)).forEach(function(k){ if (STAMPS[k]) return; if (!(k in snap)) { bad.push('+' + k); return; } if (!(k in live)) { bad.push('-' + k); return; } if (JSON.stringify(snap[k]) !== JSON.stringify(live[k])) bad.push(k); });
+  Object.keys(Object.assign({}, snap, live)).forEach(function(k){ if (STAMPS[k]) return; if (!(k in snap)) { if (live[k] != null) bad.push('+' + k); return; } if (!(k in live)) { bad.push('-' + k); return; } if (JSON.stringify(snap[k]) !== JSON.stringify(live[k])) bad.push(k); });
   return bad;
 }
-/* after the undo is saved, look again a few times: a background copy of the list that still had the merged lead must not
-   bring a merged field back. Only while the lead is still the undo's own save (nobody has changed it since). */
+/* a person's delete (of the fields the merge added): the CRM's guards stand aside for it, as for the lead delete */
+function deleting(what){ try { W.__GC_DELETING_AT__ = Date.now(); W.__GC_DELETING_WHAT__ = what; W.__GC_MANUAL_SAVE__ = true; if (typeof W._gcManualNow === 'function') W._gcManualNow(what); else W.__GC_MANUAL_AT__ = Date.now(); } catch (e) {} later(function(){ try { W.__GC_MANUAL_SAVE__ = false; } catch (e) {} }, 2500); }
+/* after the undo is saved, look again a few times: a copy of the list that still had the merged lead must not bring a
+   merged field back. Only while the lead is still the undo's own save (nobody has changed it since). */
 var VERIFY_MS = [600, 2000, 5000, 10000];
-function holdUndo(back, at, step){
+function holdUndo(back, after, at, step){
   step = step || 0; if (step >= VERIFY_MS.length) return;
   later(function(){
     var fix = {}, n = 0, why = [];
-    all().forEach(function(l){ var id = s(l && l.id); if (!back[id] || s(l.updatedAt) !== at) return; var d = differs(back[id], l); if (d.length) { fix[id] = 1; n++; why.push(id + ' ' + d.join(',')); } });
-    if (!n) return holdUndo(back, at, step + 1);
+    all().forEach(function(l){ var id = s(l && l.id); if (!back[id] || s(l.updatedAt) !== at) return; var d = differs(back[id], l); if (d.length) { fix[id] = l; n++; why.push(id + ' ' + d.join(',')); } });
+    if (!n) return holdUndo(back, after, at, step + 1);
     try { console.warn('[GC] 🔗 undo: put back again (a copy of the merged lead came back): ' + why.join('; ')); } catch (e) {}
-    save(function(list){ var c = 0, out = list.map(function(l){ var id = s(l && l.id); if (fix[id] && s(l.updatedAt) === at) { c++; return exactly(back[id], at); } return l; }); return c ? out : null; })
-      .then(function(){ holdUndo(back, at, step + 1); });
+    deleting('undo bid merge — remove the merged fields again');
+    save(function(list){ var c = 0, out = list.map(function(l){ var id = s(l && l.id); if (fix[id] && s(l.updatedAt) === at) { c++; return exactly(back[id], at, [after[id], l]); } return l; }); return c ? out : null; })
+      .then(function(){ holdUndo(back, after, at, step + 1); });
   }, VERIFY_MS[step] - (step ? VERIFY_MS[step - 1] : 0));
 }
 function apply(picks){
@@ -173,7 +184,7 @@ function apply(picks){
     if (!d || !d.ok) { toast('Nothing merged — the copies could not be moved to Recently deleted'); return false; }
     return save(function(list){ var n = 0, out = list.filter(function(l){ return !(l && gone[s(l.id)]); }).map(function(l){ if (l && keep[s(l.id)]) { n++; return keep[s(l.id)]; } return l; }); return n ? out : null; }).then(function(ok){
       R.inbox.forEach(inboxAct);
-      var entry = { id: 'bm_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), at: at, by: by, groups: R.groups, before: R.before, copies: copies, folded: R.folded, inbox: R.inbox, saved: !!ok };
+      var entry = { id: 'bm_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), at: at, by: by, groups: R.groups, before: R.before, after: R.keepers.map(function(k){ return JSON.parse(JSON.stringify(k)); }), copies: copies, folded: R.folded, inbox: R.inbox, saved: !!ok };
       return readLog().then(function(list){ var now = Date.now(); return writeLog(list.filter(function(e){ return e && now - tms(e.at) < KEEP_MS; }).concat([entry]).slice(-20)); }).then(function(){
         CNT.sig = ''; toast('🔗 Merged ' + R.groups + ' project' + (R.groups === 1 ? '' : 's') + ' — ' + R.folded.length + ' cop' + (R.folded.length === 1 ? 'y' : 'ies') + ' in 🗑 Recently deleted · "↩ Undo last merge" for 30 days');
         try { W._gcLeadsHub.redraw(); } catch (e) {}
@@ -186,18 +197,19 @@ function undo(){
   if (!can()) return Promise.resolve(false);
   return readLog().then(function(){
     var e = lastUndo(); if (!e) { toast('Nothing to undo (the last 30 days)'); return false; }
-    var at = nowIso(), back = {}; arr(e.before).forEach(function(l){ if (l && l.id) back[s(l.id)] = l; });
+    var at = nowIso(), back = {}, after = {}; arr(e.before).forEach(function(l){ if (l && l.id) back[s(l.id)] = l; }); arr(e.after).forEach(function(l){ if (l && l.id) after[s(l.id)] = l; });
     /* 1. the copies back from 🗑 Recently deleted, 2. then every touched lead exactly as it was (the snapshot, whole) */
     var rest = W._gcLDEL && W._gcLDEL.restore ? W._gcLDEL.restore(arr(e.folded)) : null;
     return Promise.resolve(rest).then(function(){
       var cps = {}; arr(e.copies).forEach(function(l){ if (l && l.id) cps[s(l.id)] = l; });
+      deleting('undo bid merge — remove the merged fields');   /* (after Recently deleted's restore, which closes the delete window) */
       return save(function(list){
-        var n = 0, have = {}, out = list.map(function(l){ if (!l) return l; have[s(l.id)] = 1; var id = s(l.id); if (back[id]) { n++; return exactly(back[id], at); } return l; });
+        var n = 0, have = {}, out = list.map(function(l){ if (!l) return l; have[s(l.id)] = 1; var id = s(l.id); if (back[id]) { n++; return exactly(back[id], at, [after[id], l]); } return l; });
         arr(e.folded).forEach(function(id){ if (!have[id] && cps[id]) { n++; out.push(exactly(cps[id], at)); } });   /* a copy Recently deleted could not give back */
         return n ? out : null;
       });
     }).then(function(){
-      holdUndo(back, at);
+      holdUndo(back, after, at);
       arr(e.inbox).forEach(function(b){ inboxAct({ id: b.id, op: b.undo || 'restore' }); });
       return writeLog(arr(LOG).map(function(x){ return x.id === e.id ? Object.assign({}, x, { undone: at, undoneBy: me() }) : x; }));
     }).then(function(){ CNT.sig = ''; toast('↩ Undone: the ' + arr(e.folded).length + ' lead' + (arr(e.folded).length === 1 ? '' : 's') + ' are back'); try { W._gcLeadsHub.redraw(); } catch (x) {} return true; });

@@ -241,6 +241,38 @@ await t('the patch is in once, the rules are the server\'s copied verbatim, the 
   assert.strictEqual(HTML.split('/* patch BIDMERGE */').length - 1, 9);
   ['window._gcBidMerge.fromItem(l, it, prev)', 'act: act,', 'window._gcBidMerge.rowTag(l)', 'window._gcBidMerge.paneHtml(l)', "arr(l.gcs).forEach(function(g){ add(g && g.name); })", 'W._gcBidMerge.chip(l)', "it('data-gcl-bidmerge'", 'data-gcl-bidmerge title='].forEach(h => assert.ok(HTML.includes(h), h));
 });
+/* ── the CRM's OWN save path, its real code taken from index.html: the disk guard under IndexedDB ("WHAT YOU TYPED STAYS
+   TYPED": repair / meld) and the cloud push (patch N "FIELD AND DESK SHARE RIGHT AWAY": union). Each runs in its own small
+   context; one line hands out the function the script keeps to itself. ── */
+function realCtx(){
+  const noop = () => {}, store = {};
+  class IDBObjectStore {} IDBObjectStore.prototype.put = function(v, k){ return { v, k }; }; IDBObjectStore.prototype.get = function(){ return { addEventListener: noop }; };
+  const W = { console: { log: noop, warn: noop }, setTimeout: () => 0, setInterval: () => 0, clearInterval: noop, clearTimeout: noop, IDBObjectStore,
+    document: { addEventListener: noop, removeEventListener: noop, getElementById: () => null, querySelector: () => null, querySelectorAll: () => [], hidden: false, visibilityState: 'visible', createElement: () => ({ style: {}, setAttribute: noop, appendChild: noop }), body: { appendChild: noop }, head: { appendChild: noop } },
+    addEventListener: noop, removeEventListener: noop, navigator: { onLine: true }, location: { href: 'https://app.local/', hash: '' }, performance: { now: () => Date.now() },
+    fetch: () => Promise.reject(new Error('offline')), Promise, JSON, Math, Date, Object, Array, String, Number, RegExp, Map, Set, WeakMap, isFinite, isNaN, parseInt, encodeURIComponent };
+  W.Storage = function(){}; W.Storage.prototype = { getItem(k){ return store[k] || null; }, setItem(k, v){ store[k] = String(v); }, removeItem(k){ delete store[k]; } };
+  W.localStorage = Object.create(W.Storage.prototype); W.window = W; W.self = W; vm.createContext(W); return W;
+}
+function realBlock(marker, hook, add){ const i = HTML.indexOf(marker); assert.ok(i > 0, marker); const a = HTML.lastIndexOf('<script', i), b = HTML.indexOf('</script>', i); const src = HTML.slice(HTML.indexOf('>', a) + 1, b); assert.strictEqual(src.split(hook).length, 2, hook); return src.replace(hook, add + hook); }
+const KEEP = realCtx(); vm.runInContext(realBlock('if(window.__GC_KEEPFOREVER__) return;', 'var lastGood = {};', 'window.__bmRepair = repair; '), KEEP);
+const LIVE = realCtx(); vm.runInContext(realBlock('if(window.__GC_LIVE_N__) return;', 'window._gcLiveStatus = function(){', 'window.__bmUnion = union; '), LIVE);
+const J = v => JSON.parse(JSON.stringify(v));
+await t('the CRM\'s own save path (real code): a field simply left out of a saved lead comes back — from the disk guard AND from the cloud push', () => {
+  const snap = { id: 'L1', name: 'Rothys - Nashville, TN: Drywall & Framing', trades: ['Drywall & Framing'], updatedAt: '2026-11-02T10:00:00.000Z' };
+  const merged = Object.assign({}, snap, { name: 'Rothys - Nashville, TN', nameWas: snap.name, gcs: [{ key: 'a' }, { key: 'b' }], mergedFrom: ['L2'], updatedAt: '2026-11-02T11:00:00.000Z' });
+  const undone = Object.assign({}, snap, { updatedAt: '2026-11-02T12:00:00.000Z' }), tomb = Object.assign({}, undone, { nameWas: null, gcs: null, mergedFrom: null });
+  KEEP.__GC_DELETING_AT__ = 0;
+  let d = J(KEEP.__bmRepair('leads', [merged], [undone]))[0];
+  assert.ok(d.gcs && d.gcs.length === 2 && d.nameWas && d.name === snap.name, 'disk guard: the old name back, gcs / nameWas back (what the probe saw) ' + JSON.stringify(d));
+  d = J(KEEP.__bmRepair('leads', [merged], [tomb]))[0]; assert.strictEqual(d.gcs.length, 2, 'disk guard: a null loses to a value outside a delete');
+  KEEP.__GC_DELETING_AT__ = Date.now(); assert.strictEqual(KEEP.__bmRepair('leads', [merged], [tomb]), null, 'disk guard: a person\'s delete under way — the write goes through as it is');
+  let c = J(LIVE.__bmUnion('leads', [merged], [undone], new Date().toISOString()))[0];
+  assert.ok(c.gcs && c.gcs.length === 2 && c.name === snap.name, 'cloud push: Object.assign(cloud, local) brings the left-out fields back ' + JSON.stringify(c));
+  c = J(LIVE.__bmUnion('leads', [merged], [tomb], new Date().toISOString()))[0];
+  assert.ok(c.gcs === null && c.nameWas === null && c.mergedFrom === null && c.name === snap.name, 'cloud push: an explicit null is kept ' + JSON.stringify(c));
+});
+
 /* the page script in a small fake browser: the Leads hub kit, 🗑 Recently deleted (_gcLDEL), the Lead Inbox, gc_kv */
 function page(leads, opt){
   opt = opt || {};
@@ -248,7 +280,13 @@ function page(leads, opt){
   const noop = () => {}, store = {}, acts = [], trash = {};
   const el = () => ({ style: {}, setAttribute: noop, getAttribute: () => null, appendChild: noop, remove: noop, addEventListener: noop, querySelector: () => null, querySelectorAll: () => [], classList: { add: noop, remove: noop, contains: () => false } });
   const doc = { addEventListener: noop, removeEventListener: noop, getElementById: () => null, querySelector: () => null, createElement: el, head: el(), body: el(), documentElement: el() };
-  let LIST = leads.slice();
+  let LIST = leads.slice(), DISK = J(leads), CLOUD = J(leads);
+  const round = n => {   /* a save: the disk (through the real guard), the cloud (the real push), and back again (through the guard) */
+    KEEP.__GC_DELETING_AT__ = W.__GC_DELETING_AT__ || 0;
+    DISK = J(KEEP.__bmRepair('leads', DISK, n) || n);
+    CLOUD = J(LIVE.__bmUnion('leads', CLOUD, DISK, new Date().toISOString()));
+    LIST = DISK = J(KEEP.__bmRepair('leads', DISK, CLOUD) || CLOUD);
+  };
   const W = { document: doc, console: { log: noop, warn: noop }, setTimeout: (f, ms) => setTimeout(f, (ms || 0) / 100),   /* the page's timers, 100× faster */ clearTimeout: noop, localStorage: { getItem: k => store[k] || null, setItem: (k, v) => { store[k] = String(v); } }, Date, JSON, Math, Promise, Object, Array, String, Number, RegExp, isFinite, isNaN, parseInt, encodeURIComponent };
   W.window = W;
   const kv = {};
@@ -257,14 +295,15 @@ function page(leads, opt){
     if (/gc_kv\?on_conflict/.test(u)) { writes.push('kv'); const b = JSON.parse(o.body); kv[b.key] = b.value; return { ok: true }; }
     return { ok: false, status: 404, json: async () => ({}) }; };
   const writes = [];
-  W._gcLeadsHubKit = { all: () => LIST.filter(l => !trash[l.id]), setLeads: mut => { writes.push('setLeads'); const n = mut(LIST.slice()); if (Array.isArray(n)) { LIST = n; return Promise.resolve(true); } return Promise.resolve(false); }, me: () => 'Office Person' };
+  W._gcLeadsHubKit = { all: () => LIST.filter(l => !trash[l.id]), setLeads: mut => { writes.push('setLeads'); const n = mut(LIST.slice()); if (Array.isArray(n)) { round(n); return Promise.resolve(true); } return Promise.resolve(false); }, me: () => 'Office Person' };
   W._gcLeadsHub = { kit: W._gcLeadsHubKit, redraw: noop };
   W._gcLDEL = { who: () => ({ all: opt.role !== 'pm', email: 'office@grayco-cs.com' }),
-    remove: async ids => { writes.push('remove'); ids.forEach(id => { trash[id] = LIST.find(l => l.id === id); }); LIST = LIST.filter(l => !trash[l.id]); return { ok: true, deleted: ids.length, ids }; },
-    restore: async ids => { writes.push('restore'); const back = ids.map(id => trash[id]).filter(Boolean); ids.forEach(id => { delete trash[id]; }); LIST = LIST.concat(back); return { ok: true, restored: back.length }; } };
+    /* as the real one: a delete opens the delete window, a restore closes it; both go through the same save path */
+    remove: async ids => { writes.push('remove'); W.__GC_DELETING_AT__ = Date.now(); ids.forEach(id => { trash[id] = LIST.find(l => l.id === id); }); CLOUD = CLOUD.filter(l => !trash[l.id]); round(LIST.filter(l => !trash[l.id])); return { ok: true, deleted: ids.length, ids }; },
+    restore: async ids => { writes.push('restore'); W.__GC_DELETING_AT__ = 0; const back = ids.map(id => trash[id]).filter(Boolean); ids.forEach(id => { delete trash[id]; }); round(LIST.concat(back)); return { ok: true, restored: back.length }; } };
   W._gcLeadInbox = { act: b => { writes.push('act'); acts.push(b); return Promise.resolve(); } };
   vm.createContext(W); vm.runInContext(code, W);
-  return { W, B: W._gcBidMerge, list: () => LIST, trash, acts, kv, writes, edit: (id, f) => { LIST = LIST.map(l => l.id === id ? f(Object.assign({}, l)) || l : l); } };
+  return { W, B: W._gcBidMerge, list: () => LIST, trash, acts, kv, writes, edit: (id, f) => { LIST = LIST.map(l => l.id === id ? f(Object.assign({}, l)) || l : l); }, cloud: () => CLOUD, disk: () => DISK };
 }
 const FAKE = [
   { id: 'LEADIN-aaa1', inboxId: 'LI-aaa1', name: 'UrgentVet - Memphis - Drywall & Framing', source: 'BuildingConnected', city: 'Memphis', address: '8050 Dexter Road, Suite 103, Memphis, TN 38016', bidDue: '2026-11-03T12:00', dueToCompany: 'Loberg Construction', email: 'estimating@lobergconstruction.com', phone: '(847) 392-4300', contactName: 'Dana Whitfield', trades: ['Drywall & Framing'], estimator: 'Glenn Miller', docs: [{ ref: 'sb:crm-files/a.pdf', name: 'A1.pdf', hash: 'a' }], notes: 'Plans in A1', activity: [{ type: 'note', text: 'called Dana', at: '2026-10-30T15:00:00Z', by: 'Glenn' }], inboxAt: '2026-10-29T18:51:00Z', stage: 'New Lead', leadKind: 'Commercial' },
@@ -309,14 +348,15 @@ await t('merge: the kept lead lists both GCs and every trade, contact, file, lin
   const u = await P.B.undo(); assert.strictEqual(u, true);
   assert.strictEqual(P.list().length, FAKE.length);
   /* exactly as before: the same keys (none added, none blanked), the same values; only the save stamps are new */
-  const STAMP = { updatedAt: 1, savedAt: 1, restoredAt: 1, restoredBy: 1 }, str = v => v === undefined ? 'undefined' : JSON.stringify(v);
-  const exact = () => { const bad = []; ['LEADIN-aaa1', 'LEADIN-aaa2', 'LEADIN-aaa3'].forEach(id => { const a = FAKE.find(l => l.id === id), b = P.list().find(l => l.id === id);
-    Object.keys(Object.assign({}, a, b)).forEach(k => { if (!STAMP[k] && str(a[k]) !== str(b[k])) bad.push(id + '.' + k + ': ' + str(a[k]).slice(0, 60) + ' → ' + str(b[k]).slice(0, 60)); }); }); return bad; };
-  assert.deepStrictEqual(exact(), []);
-  const K2 = P.list().find(l => l.id === 'LEADIN-aaa1'); assert.ok(!('gcs' in K2) && !('bidMerge' in K2) && !('nameWas' in K2) && !('mergedFrom' in K2), 'the merged fields are deleted, not blanked: ' + Object.keys(K2).join(','));
+  /* the null tombstone counts as "not there"; nothing else is excused (not '' or [], not a value) */
+  const STAMP = { updatedAt: 1, savedAt: 1, restoredAt: 1, restoredBy: 1 }, str = v => v === undefined || v === null ? 'undefined' : JSON.stringify(v);
+  const exact = src => { const bad = []; ['LEADIN-aaa1', 'LEADIN-aaa2', 'LEADIN-aaa3'].forEach(id => { const a = FAKE.find(l => l.id === id), b = (src || P.list()).find(l => l.id === id);
+    if (!b) { bad.push(id + ' missing'); return; } Object.keys(Object.assign({}, a, b)).forEach(k => { if (!STAMP[k] && str(a[k]) !== str(b[k])) bad.push(id + '.' + k + ': ' + str(a[k]).slice(0, 60) + ' → ' + str(b[k]).slice(0, 60)); }); }); return bad; };
+  assert.deepStrictEqual(exact(), [], 'the screen'); assert.deepStrictEqual(exact(P.disk()), [], 'the disk'); assert.deepStrictEqual(exact(P.cloud()), [], 'the cloud');
+  const K2 = P.list().find(l => l.id === 'LEADIN-aaa1'); assert.ok(['gcs', 'bidMerge', 'nameWas', 'mergedFrom'].every(k => K2[k] === null), 'the merged fields are tombstoned (null): ' + JSON.stringify(K2));
   /* a background copy of the list that still had the merged lead brings gcs / nameWas back onto the undo's own save → put back again */
   const M = JSON.parse(JSON.stringify(P.kv.gc_bidmerge_log.entries[0].before[0]));
-  P.edit('LEADIN-aaa1', l => Object.assign(l, { gcs: [{ key: 'x', name: 'Stale GC' }], nameWas: 'stale', name: l.name }));
+  P.edit('LEADIN-aaa1', l => Object.assign(l, { gcs: [{ key: 'x', name: 'Stale GC' }], nameWas: 'stale', name: l.name })); P.W.__GC_DELETING_AT__ = 0;
   await new Promise(r => setTimeout(r, 200));
   assert.deepStrictEqual(exact(), [], 'a merged field that came back is taken off again');
   /* …but never over a person's own change made after the undo */

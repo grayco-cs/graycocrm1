@@ -64,8 +64,9 @@ async function stable(p){ let a = JSON.stringify(await fullNow(p)); for (let i =
 const WATCH = {}; ('name title nameWas gcs trades docs files plansLinks emails contacts coAssignees stageHistory matchNotes sources alsoOn address city state zip gc owner bidNumber dueToCompany dueToContact dueToEmail '
   + 'dueToPhone submitMethod submitWhere contactName phone email scope preBid rawEmailRef estVal estValue notes note bidDue bidDueWas receivedAt activity mergedFrom bidMerge archived mergedInto stage').split(' ').forEach(k => { WATCH[k] = 1; });
 const SKIP = new Proxy({}, { get: (o, k) => !WATCH[k] });
-/* field by field: undefined vs set counts (a key added, deleted or blanked is a difference); the field and both values printed */
-const str = v => v === undefined ? 'undefined' : JSON.stringify(v);
+/* field by field: undefined vs set counts (a key added or blanked is a difference); the field and both values printed. A null
+   is the CRM's field tombstone (a field can only be removed as null here — see bidmerge_tail.js exactly()): it counts as not there. */
+const str = v => v === undefined || v === null ? 'undefined' : JSON.stringify(v);
 function diff(A, B){ const out = []; const by = {}; B.forEach(l => { by[l.id] = l; });
   A.forEach(a => { const b = by[a.id]; if (!b) { out.push(a.id + ': missing'); return; }
     Object.keys(Object.assign({}, a, b)).forEach(k => { if (SKIP[k]) return; const x = str(a[k]), y = str(b[k]); if (x !== y) out.push(a.id + '.' + k + ': ' + x.slice(0, 100) + ' → ' + y.slice(0, 100)); }); });
