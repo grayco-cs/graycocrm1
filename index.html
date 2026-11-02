@@ -178973,6 +178973,50 @@ function sgWhy(text, sender){
   return hit ? why.join('; ') + ' (score ' + score + ')' : '';
 }
 function sgIsSales(text, sender){ return !!sgWhy(text, sender); }
+/* patch SPAMGIB — a bot's random-letter form (owner 11/02, a 10:45 AM "NEW LEAD: IOwirBRUMGvsiaemuM … aElwvnTekCEguDEsBXoSmdl
+   Project location: Peuhzbszn": "Seems like a lead that should've never reached me"). Each field (name, message, location,
+   company) is cut into letter words (links, e-mails and anything with a digit are left out):
+   · "mixed-up case" — a word of 6+ letters whose upper / lower case flips 5+ times (4+ in 10+ letters) and is no normal
+     shape (McDonald, DeShawn, iPhone, HVACRepair, GrayCo, LLCs) — or flips 8+ times in under 2 letters a run (MkLoPnBhUy);
+   · "random letters" — a word of 6+ letters with no vowel, 6+ consonants in a row, or (8+ letters) under 15% vowels (a field counts
+     only when EVERY word in it is like that, so "Jon Hirschfeld" or "123 Knightsbridge Dr" never count);
+   · a Gmail address cut up by 4+ dots (y.ic.e.sax.i.t.o.v.6.4@gmail.com) counts as one more random field.
+   A bot: a mixed-up-case word and no real word anywhere, or 2+ random fields with no real word (or under 3 real words
+   with a mixed-up-case word). Real words (SG_BOT_WORDS) are everyday English and the trade's words; a customer who writes
+   any sentence is never a bot. → '' or SG_BOT_WHY. */
+var SG_BOT_WHY = 'looks like a bot (random text)';
+var SG_BOT_WORDS = /^(a|an|the|i|im|ive|id|me|my|we|us|our|you|your|he|she|his|her|it|its|they|them|their|is|am|are|was|were|be|been|being|have|has|had|do|does|did|dont|can|cant|could|would|will|wont|should|need|needs|needed|want|wants|wanted|looking|look|like|please|pls|thanks|thank|thx|hi|hello|hey|good|morning|afternoon|yes|yeah|no|not|ok|okay|and|or|but|so|if|for|to|of|in|on|at|by|with|from|about|into|over|after|before|this|that|these|those|there|here|what|when|where|how|who|why|which|get|got|getting|out|up|down|new|old|some|any|all|just|also|very|more|much|many|one|two|three|few|soon|today|tomorrow|week|next|last|time|day|call|calling|text|email|mail|reach|contact|asap|quote|quotes|estimate|estimates|bid|bids|bidding|price|pricing|cost|costs|free|roof|roofs|roofing|roofer|shingle|shingles|metal|leak|leaks|leaking|leaked|water|damage|damaged|repair|repairs|fix|replace|replaced|replacement|storm|hail|wind|tree|fell|fire|smoke|flood|mold|insurance|claim|adjuster|house|home|property|building|commercial|residential|project|projects|job|jobs|work|remodel|renovation|kitchen|bath|bathroom|basement|attic|garage|floor|floors|flooring|siding|gutter|gutters|window|windows|door|doors|paint|painting|drywall|ceiling|wall|walls|deck|fence|addition|construction|contractor|general|sub|plans|drawings|scope|office|store|church|school|unit|apartment|apartments|tenant|owner|street|st|road|rd|drive|dr|lane|ln|avenue|ave|cove|cv|court|ct|circle|cir|place|pl|way|blvd|parkway|pkwy|hwy|highway|north|south|east|west|memphis|bartlett|cordova|germantown|collierville|arlington|lakeland|millington|olive|branch|southaven|horn|lake|tennessee|mississippi|arkansas)$/;
+var SG_BOT_SHAPE = /^(?:[a-z]+|[A-Z]+s?|(?:[A-Z]{1,5}|[a-z]{1,3})?(?:[A-Z][a-z]+)+(?:[A-Z]{1,3}s?)?)$/;
+function sgBotCaseRuns(w){ var n = 1, i; for (i = 1; i < w.length; i++) if ((w.charAt(i) < 'a') !== (w.charAt(i - 1) < 'a')) n++; return n; }
+function sgBotMixed(w){ var r; if (w.length < 6) return false; r = sgBotCaseRuns(w); if (r >= 8 && w.length < 2 * r) return true; if (SG_BOT_SHAPE.test(w)) return false; return r >= 5 || (r >= 4 && w.length >= 10); }
+function sgBotRandom(w){
+  var t = w.toLowerCase(), v = (t.match(/[aeiouy]/g) || []).length;
+  if (t.length < 6) return false;
+  return v === 0 || /[^aeiouy]{6,}/.test(t) || (t.length >= 8 && v / t.length < 0.15);
+}
+function sgBotWords(v){
+  v = sgStr(v).replace(/https?:\/\/\S+|www\.\S+|\S+@\S+/gi, ' ').replace(/\S*\d\S*/g, ' ');
+  return v.match(/[A-Za-z]+/g) || [];
+}
+function sgBotWhy(f){
+  f = f && typeof f === 'object' ? f : {};
+  var msg = sgStr(f.message).replace(/\b(SUBCONTRACTOR INQUIRY|DIVISION 9 \/ EIFS BID)\.\s*/g, ' ').replace(/(^|\n)[ \t]*(project\s+location|location|company)[ \t]*:/gi, '$1 ');
+  var fields = [f.name, msg, f.location, f.company], real = 0, mixed = 0, rnd = 0, i, j, w, all, any;
+  for (i = 0; i < fields.length; i++) {
+    w = sgBotWords(fields[i]); if (!w.length) continue;
+    all = true; any = false;
+    for (j = 0; j < w.length; j++) {
+      if (SG_BOT_WORDS.test(w[j].toLowerCase())) real++;
+      if (sgBotMixed(w[j])) any = true;
+      else if (!sgBotRandom(w[j])) all = false;
+    }
+    if (any) mixed++; else if (all) rnd++;
+  }
+  var em = sgStr(f.email).toLowerCase(), at = em.lastIndexOf('@');
+  if (at > 0 && /^(gmail|googlemail)\.com$/.test(em.slice(at + 1)) && (em.slice(0, at).match(/\./g) || []).length >= 4) rnd++;
+  var hit = (mixed >= 1 && real === 0) || (mixed + rnd >= 2 && (real === 0 || (mixed >= 1 && real < 3)));
+  return hit ? SG_BOT_WHY : '';
+}
 /* RULES-END */
 function s(v){ return v == null ? '' : String(v).trim(); }
 function arr(v){ return Array.isArray(v) ? v : []; }
@@ -179133,8 +179177,9 @@ function decorateLead(){
   if (phone.length !== 10 && !email) return;
   css();
   var why = sgWhy(leadText(l), { email: email, company: s((l.said || {}).company) });
+  /* patch SPAMGIB */ var bot = sgBotWhy({ name: s(l.contactName || (l.contact && l.contact.name) || l.name), message: leadText(l), location: [l.address, l.city, l.state].filter(Boolean).join(', '), company: s(l.company || (l.said || {}).company || (l.leadExtra && l.leadExtra.company)), email: email });
   var el = D.createElement('div'); el.id = 'gcsb-lead'; el.setAttribute('data-gc-keep', '1');
-  el.innerHTML = (why ? '<span class="gcsb-chip" title="' + esc(why) + '">🧹 Looks like a sales pitch</span>' : '') + '<button type="button" class="gcsb-btn stop" data-gcsb-lead="1">🚫 Block sender</button><span style="color:#64748b">' + esc([phone.length === 10 ? tidy(phone) : '', email].filter(Boolean).join(' · ')) + '</span>';
+  el.innerHTML = (bot ? '<span class="gcsb-chip" title="' + esc(bot) + '">🤖 Looks like a bot (random text)</span>' : why ? '<span class="gcsb-chip" title="' + esc(why) + '">🧹 Looks like a sales pitch</span>' : '') + '<button type="button" class="gcsb-btn stop" data-gcsb-lead="1">' + (bot ? '🚫 Not a real lead — block sender' : '🚫 Block sender') + '</button><span style="color:#64748b">' + esc([phone.length === 10 ? tidy(phone) : '', email].filter(Boolean).join(' · ')) + '</span>';
   el.querySelector('[data-gcsb-lead]').onclick = function(e){ e.preventDefault(); e.stopPropagation(); block({ phone: phone.length === 10 ? phone : '', email: email }); };
   d.insertBefore(el, d.firstChild ? d.firstChild.nextSibling : null);
 }

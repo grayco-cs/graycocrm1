@@ -175,8 +175,9 @@ function decorateLead(){
   if (phone.length !== 10 && !email) return;
   css();
   var why = sgWhy(leadText(l), { email: email, company: s((l.said || {}).company) });
+  /* patch SPAMGIB */ var bot = sgBotWhy({ name: s(l.contactName || (l.contact && l.contact.name) || l.name), message: leadText(l), location: [l.address, l.city, l.state].filter(Boolean).join(', '), company: s(l.company || (l.said || {}).company || (l.leadExtra && l.leadExtra.company)), email: email });
   var el = D.createElement('div'); el.id = 'gcsb-lead'; el.setAttribute('data-gc-keep', '1');
-  el.innerHTML = (why ? '<span class="gcsb-chip" title="' + esc(why) + '">🧹 Looks like a sales pitch</span>' : '') + '<button type="button" class="gcsb-btn stop" data-gcsb-lead="1">🚫 Block sender</button><span style="color:#64748b">' + esc([phone.length === 10 ? tidy(phone) : '', email].filter(Boolean).join(' · ')) + '</span>';
+  el.innerHTML = (bot ? '<span class="gcsb-chip" title="' + esc(bot) + '">🤖 Looks like a bot (random text)</span>' : why ? '<span class="gcsb-chip" title="' + esc(why) + '">🧹 Looks like a sales pitch</span>' : '') + '<button type="button" class="gcsb-btn stop" data-gcsb-lead="1">' + (bot ? '🚫 Not a real lead — block sender' : '🚫 Block sender') + '</button><span style="color:#64748b">' + esc([phone.length === 10 ? tidy(phone) : '', email].filter(Boolean).join(' · ')) + '</span>';
   el.querySelector('[data-gcsb-lead]').onclick = function(e){ e.preventDefault(); e.stopPropagation(); block({ phone: phone.length === 10 ? phone : '', email: email }); };
   d.insertBefore(el, d.firstChild ? d.firstChild.nextSibling : null);
 }

@@ -72,6 +72,50 @@ function sgWhy(text, sender){
   return hit ? why.join('; ') + ' (score ' + score + ')' : '';
 }
 function sgIsSales(text, sender){ return !!sgWhy(text, sender); }
+/* patch SPAMGIB — a bot's random-letter form (owner 11/02, a 10:45 AM "NEW LEAD: IOwirBRUMGvsiaemuM … aElwvnTekCEguDEsBXoSmdl
+   Project location: Peuhzbszn": "Seems like a lead that should've never reached me"). Each field (name, message, location,
+   company) is cut into letter words (links, e-mails and anything with a digit are left out):
+   · "mixed-up case" — a word of 6+ letters whose upper / lower case flips 5+ times (4+ in 10+ letters) and is no normal
+     shape (McDonald, DeShawn, iPhone, HVACRepair, GrayCo, LLCs) — or flips 8+ times in under 2 letters a run (MkLoPnBhUy);
+   · "random letters" — a word of 6+ letters with no vowel, 6+ consonants in a row, or (8+ letters) under 15% vowels (a field counts
+     only when EVERY word in it is like that, so "Jon Hirschfeld" or "123 Knightsbridge Dr" never count);
+   · a Gmail address cut up by 4+ dots (y.ic.e.sax.i.t.o.v.6.4@gmail.com) counts as one more random field.
+   A bot: a mixed-up-case word and no real word anywhere, or 2+ random fields with no real word (or under 3 real words
+   with a mixed-up-case word). Real words (SG_BOT_WORDS) are everyday English and the trade's words; a customer who writes
+   any sentence is never a bot. → '' or SG_BOT_WHY. */
+var SG_BOT_WHY = 'looks like a bot (random text)';
+var SG_BOT_WORDS = /^(a|an|the|i|im|ive|id|me|my|we|us|our|you|your|he|she|his|her|it|its|they|them|their|is|am|are|was|were|be|been|being|have|has|had|do|does|did|dont|can|cant|could|would|will|wont|should|need|needs|needed|want|wants|wanted|looking|look|like|please|pls|thanks|thank|thx|hi|hello|hey|good|morning|afternoon|yes|yeah|no|not|ok|okay|and|or|but|so|if|for|to|of|in|on|at|by|with|from|about|into|over|after|before|this|that|these|those|there|here|what|when|where|how|who|why|which|get|got|getting|out|up|down|new|old|some|any|all|just|also|very|more|much|many|one|two|three|few|soon|today|tomorrow|week|next|last|time|day|call|calling|text|email|mail|reach|contact|asap|quote|quotes|estimate|estimates|bid|bids|bidding|price|pricing|cost|costs|free|roof|roofs|roofing|roofer|shingle|shingles|metal|leak|leaks|leaking|leaked|water|damage|damaged|repair|repairs|fix|replace|replaced|replacement|storm|hail|wind|tree|fell|fire|smoke|flood|mold|insurance|claim|adjuster|house|home|property|building|commercial|residential|project|projects|job|jobs|work|remodel|renovation|kitchen|bath|bathroom|basement|attic|garage|floor|floors|flooring|siding|gutter|gutters|window|windows|door|doors|paint|painting|drywall|ceiling|wall|walls|deck|fence|addition|construction|contractor|general|sub|plans|drawings|scope|office|store|church|school|unit|apartment|apartments|tenant|owner|street|st|road|rd|drive|dr|lane|ln|avenue|ave|cove|cv|court|ct|circle|cir|place|pl|way|blvd|parkway|pkwy|hwy|highway|north|south|east|west|memphis|bartlett|cordova|germantown|collierville|arlington|lakeland|millington|olive|branch|southaven|horn|lake|tennessee|mississippi|arkansas)$/;
+var SG_BOT_SHAPE = /^(?:[a-z]+|[A-Z]+s?|(?:[A-Z]{1,5}|[a-z]{1,3})?(?:[A-Z][a-z]+)+(?:[A-Z]{1,3}s?)?)$/;
+function sgBotCaseRuns(w){ var n = 1, i; for (i = 1; i < w.length; i++) if ((w.charAt(i) < 'a') !== (w.charAt(i - 1) < 'a')) n++; return n; }
+function sgBotMixed(w){ var r; if (w.length < 6) return false; r = sgBotCaseRuns(w); if (r >= 8 && w.length < 2 * r) return true; if (SG_BOT_SHAPE.test(w)) return false; return r >= 5 || (r >= 4 && w.length >= 10); }
+function sgBotRandom(w){
+  var t = w.toLowerCase(), v = (t.match(/[aeiouy]/g) || []).length;
+  if (t.length < 6) return false;
+  return v === 0 || /[^aeiouy]{6,}/.test(t) || (t.length >= 8 && v / t.length < 0.15);
+}
+function sgBotWords(v){
+  v = sgStr(v).replace(/https?:\/\/\S+|www\.\S+|\S+@\S+/gi, ' ').replace(/\S*\d\S*/g, ' ');
+  return v.match(/[A-Za-z]+/g) || [];
+}
+function sgBotWhy(f){
+  f = f && typeof f === 'object' ? f : {};
+  var msg = sgStr(f.message).replace(/\b(SUBCONTRACTOR INQUIRY|DIVISION 9 \/ EIFS BID)\.\s*/g, ' ').replace(/(^|\n)[ \t]*(project\s+location|location|company)[ \t]*:/gi, '$1 ');
+  var fields = [f.name, msg, f.location, f.company], real = 0, mixed = 0, rnd = 0, i, j, w, all, any;
+  for (i = 0; i < fields.length; i++) {
+    w = sgBotWords(fields[i]); if (!w.length) continue;
+    all = true; any = false;
+    for (j = 0; j < w.length; j++) {
+      if (SG_BOT_WORDS.test(w[j].toLowerCase())) real++;
+      if (sgBotMixed(w[j])) any = true;
+      else if (!sgBotRandom(w[j])) all = false;
+    }
+    if (any) mixed++; else if (all) rnd++;
+  }
+  var em = sgStr(f.email).toLowerCase(), at = em.lastIndexOf('@');
+  if (at > 0 && /^(gmail|googlemail)\.com$/.test(em.slice(at + 1)) && (em.slice(0, at).match(/\./g) || []).length >= 4) rnd++;
+  var hit = (mixed >= 1 && real === 0) || (mixed + rnd >= 2 && (real === 0 || (mixed >= 1 && real < 3)));
+  return hit ? SG_BOT_WHY : '';
+}
 /* RULES-END */
 
 const BKEY = 'gc_sales_block', SKEY = 'gc_sales_spam', TZ = 'America/Chicago';
@@ -202,7 +246,7 @@ function make(d){
     x = obj(x);
     const who = { phone: phone10(x.phone), email: low(x.email) };
     if (allowed(await blockList(), who)) return '';
-    const why = s(x.why) || sgWhy(x.text, { email: who.email, company: x.company });
+    const why = s(x.why) || (x.bot === false ? '' : sgBotWhy({ name: x.name, message: x.text, email: who.email })) || sgWhy(x.text, { email: who.email, company: x.company });   /* patch SPAMGIB: a bot's random letters */
     if (!why) return '';
     const id = 'SG-' + crypto.createHash('sha256').update([x.via, who.phone, who.email, s(x.id), s(x.text).slice(0, 400)].join('|')).digest('hex').slice(0, 16);
     const item = { id, at: iso(), via: s(x.via) || 'lead', why: clip(why, 300), phone: who.phone, email: who.email, name: clip(x.name, 80), company: clip(x.company, 80), text: clip(x.text, 3000),
@@ -218,7 +262,9 @@ function make(d){
     const b = await blocked(who, { via: o.via, text: f.message }); if (b) return b;
     if (/^(careers|referral|partner|magnet)$/.test(s(f.type))) return '';   /* applications / sign-ups are not leads */
     const text = [f.message, f.company && f.type !== 'commercial' ? 'Company: ' + f.company : ''].filter(Boolean).join('\n');
-    return hold({ via: o.via, phone: f.phone, email: f.email || o.from, name: f.name, company: f.company, text, page: f.page, refile: o.refile || null });
+    /* patch SPAMGIB: random letters in the name / message / location / company → held as a bot, never a lead */
+    const bot = sgBotWhy({ name: f.name, message: f.message, location: [f.address, f.city, f.state].filter(Boolean).join(', '), company: f.company, email: f.email || o.from });
+    return hold({ via: o.via, phone: f.phone, email: f.email || o.from, name: f.name, company: f.company, text, page: f.page, refile: o.refile || null, why: bot, bot: false });
   }
   /* a text, or what a caller said: → '' or the reason */
   async function screenText(x){
@@ -237,13 +283,16 @@ function make(d){
       const who = senderOf(it);
       const b = await blocked(who, { via: 'lead', text: ownText(it) });
       if (b) { drop.push(s(it.id)); why[s(it.id)] = b; continue; }
-      if (BID_KIND.test(s(it.type || it.leadKind)) || /bids@|bid\s*board|planhub|buildingconnected|isqft/i.test(s(it.source))) continue;   /* a bid invitation is never a pitch */
       if (allowed(await blockList(), who)) continue;
-      const w = sgWhy(ownText(it), who);
+      /* patch SPAMGIB: a bot's random letters (any kind of lead, a "Commercial bid inquiry" too) */
+      const bot = sgBotWhy({ name: who.name, message: ownText(it), location: [it.address, it.city, it.state].map(s).filter(Boolean).join(', '), company: who.company, email: who.email });
+      if (!bot && (BID_KIND.test(s(it.type || it.leadKind)) || /bids@|bid\s*board|planhub|buildingconnected|isqft/i.test(s(it.source)))) continue;   /* a bid invitation is never a pitch */
+      const w = bot || sgWhy(ownText(it), who);
       if (!w) continue;
+      const tag = bot ? bot : 'sales: ' + w;
       await hold({ via: 'lead', phone: who.phone, email: who.email, name: who.name, company: who.company, text: ownText(it), leadId: s(it.id), why: w });
-      drop.push(s(it.id)); why[s(it.id)] = 'sales: ' + w;
-      if (o.inboxKey) { try { await kvCas(o.inboxKey, v => { const l = arr(v), x = l.find(y => y && s(y.id) === s(it.id)); if (!x || x.status === 'dismissed') return undefined; x.status = 'dismissed'; x.dismissedBy = 'Sales & spam filter'; x.dismissReason = clip('sales: ' + w, 200); x.updatedAt = iso(); return l; }); } catch (e) {} }
+      drop.push(s(it.id)); why[s(it.id)] = tag;
+      if (o.inboxKey) { try { await kvCas(o.inboxKey, v => { const l = arr(v), x = l.find(y => y && s(y.id) === s(it.id)); if (!x || x.status === 'dismissed') return undefined; x.status = 'dismissed'; x.dismissedBy = 'Sales & spam filter'; x.dismissReason = clip(tag, 200); x.updatedAt = iso(); return l; }); } catch (e) {} }
     }
     return { drop, why };
   }
@@ -289,5 +338,6 @@ function _reset(){ DEF = null; }   /* tests: a fresh block-list cache */
 module.exports = {
   isSales: sgIsSales, why: sgWhy, ownText, senderOf, realWords, emergencyGate, isNight, centralHour, pressed1,
   cleanBlock, blockedBy, allowed, cleanStore, blockLink, sig, sigOk, make, def, BKEY, SKEY, _reset,
-  RULES: { SG_STRONG, SG_WEAK, SG_NEED, SG_TRUST, SG_DOMAIN }
+  RULES: { SG_STRONG, SG_WEAK, SG_NEED, SG_TRUST, SG_DOMAIN },
+  botWhy: sgBotWhy, BOT_WHY: SG_BOT_WHY   /* patch SPAMGIB */
 };
