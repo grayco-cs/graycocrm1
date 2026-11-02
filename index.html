@@ -169294,12 +169294,12 @@ function lcAskDel(id){
     + '<div class="n">' + esc(s(l.name || l.title) || 'Lead') + '</div>'
     + '<div class="w">It is removed on every computer. Undo is offered for 5 seconds; after that an admin can bring it back from “Recently deleted” (30 days).</div>'
     + '<div class="a"><button type="button" data-a="cancel">Cancel</button><button type="button" data-a="delete">🗑 Delete</button></div></div>';
-  function key(e){ if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(false); } }
+  function key(e){ if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(false); } else if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); var ae = D.activeElement; done(!(ae && ae.getAttribute && ae.getAttribute('data-a') === 'cancel' && ov.contains(ae))); } }   /* patch DELKEY: Enter = Delete (Undo + Recently deleted follow), Esc = Cancel */
   function done(yes){ D.removeEventListener('keydown', key, true); ov.remove(); if (yes) lcDelete(id); }
   ov.addEventListener('click', function(e){ var a = e.target && e.target.getAttribute && e.target.getAttribute('data-a'); if (e.target === ov || a === 'cancel') done(false); else if (a === 'delete') done(true); });
   D.addEventListener('keydown', key, true);
   D.body.appendChild(ov);
-  try { ov.querySelector('[data-a=cancel]').focus(); } catch (e) {}
+  try { ov.querySelector('[data-a=delete]').focus(); } catch (e) {}   /* patch DELKEY */
 }
 function lcDelete(id){
   LC_GONE[id] = 1; if (UI.open === id) closeDrawer(); redraw();
@@ -169649,7 +169649,7 @@ function css2(){
     '#gcl-lprio-pop{position:absolute;z-index:100200;background:#fff;border:1px solid #d6d3ea;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.18);padding:8px;display:flex;flex-wrap:wrap;gap:4px;max-width:250px;font:12px Arial}#gcl-lprio-pop .t{width:100%;color:#555;margin-bottom:2px}',
     '#gcl-delq{position:fixed;inset:0;z-index:2147483600;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:16px;font-family:Arial,sans-serif}',
     '#gcl-delq .b{background:#fff;color:#111;border-radius:12px;width:min(420px,94vw);padding:18px 20px;box-shadow:0 12px 40px rgba(0,0,0,.35)}#gcl-delq .q{font-size:16px;font-weight:800;margin-bottom:6px}#gcl-delq .n{font-size:14px;margin-bottom:8px;word-break:break-word}#gcl-delq .w{font-size:12px;color:#7f1d1d;margin-bottom:14px}',
-    '#gcl-delq .a{display:flex;gap:8px;justify-content:flex-end}#gcl-delq .a button{border-radius:7px;padding:9px 16px;font-weight:700;cursor:pointer;font-size:14px}#gcl-delq [data-a=cancel]{background:#0f2440;color:#fff;border:0}#gcl-delq [data-a=delete]{background:#fff;color:#b91c1c;border:1px solid #fca5a5}',
+    '#gcl-delq .a{display:flex;gap:8px;justify-content:flex-end}#gcl-delq .a button{border-radius:7px;padding:9px 16px;font-weight:700;cursor:pointer;font-size:14px}#gcl-delq [data-a=cancel]{background:#fff;color:#0f2440;border:1px solid #cbd5e1}#gcl-delq [data-a=delete]{background:#dc2626;color:#fff;border:1px solid #dc2626}#gcl-delq .a button:focus-visible{outline:3px solid #fbbf24;outline-offset:2px}',   /* patch DELKEY: Delete is the primary button, Cancel the outline one */
     '#gcl-deltoast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:2147483500;background:#1f2937;color:#fff;border-radius:999px;padding:8px 10px 8px 16px;display:flex;gap:8px;align-items:center;font:600 14px Arial;box-shadow:0 6px 20px rgba(0,0,0,.25)}#gcl-deltoast button{background:#fff;color:#1f2937;border:0;border-radius:999px;padding:5px 12px;font-weight:700;cursor:pointer}',
     '#gclu-oldbb{position:fixed;inset:0;z-index:2147483000;background:rgba(15,23,42,.5);display:flex;align-items:center;justify-content:center;padding:16px;font:14px Arial,sans-serif;color:#1b1640}#gclu-oldbb .b{background:#fff;border-radius:12px;width:min(860px,96vw);max-height:86vh;overflow:auto;box-shadow:0 12px 40px rgba(0,0,0,.3)}',
     '#gclu-oldbb .h{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid #eee;position:sticky;top:0;background:#fff}#gclu-oldbb .h button{border:1px solid #ddd;background:#fff;border-radius:7px;padding:6px 11px;cursor:pointer}#gclu-oldbb .c{padding:12px 16px}#gclu-oldbb table{width:100%;border-collapse:collapse}#gclu-oldbb td,#gclu-oldbb th{padding:6px;border-top:1px solid #f0eef8;text-align:left;font-size:13px;vertical-align:top}#gclu-oldbb .n{color:#666;font-size:12px}',
@@ -170388,12 +170388,12 @@ function bkAsk(){
     + '<div class="gclb-undo">Undo: right after the delete, or for 30 days in <b>Admin → Recycle bin → Restore</b> (also ⋯ More → 🗑 Recently deleted).</div>'
     + '<div class="a"><button type="button" data-a="cancel">Cancel</button><button type="button" data-a="delete">🗑 Delete ' + (n === 1 ? 'lead' : n + ' leads') + '</button></div></div>';
   var ids = sp.go.map(function(l){ return s(l.id); });
-  function key(e){ if (e.key === 'Escape' || e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); done(false); } }
+  function key(e){ if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(false); } else if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); var ae = D.activeElement; done(!(ae && ae.getAttribute && ae.getAttribute('data-a') === 'cancel' && ov.contains(ae))); } }   /* patch DELKEY: Enter = Delete, Esc = Cancel */
   function done(yes){ D.removeEventListener('keydown', key, true); ov.remove(); if (yes) bkDelete(ids); }
   ov.addEventListener('click', function(e){ var a = e.target && e.target.getAttribute && e.target.getAttribute('data-a'); if (e.target === ov || a === 'cancel') done(false); else if (a === 'delete') done(true); });
   D.addEventListener('keydown', key, true);
   D.body.appendChild(ov);
-  try { ov.querySelector('[data-a=cancel]').focus(); } catch (e) {}
+  try { ov.querySelector('[data-a=delete]').focus(); } catch (e) {}   /* patch DELKEY */
 }
 /* the CRM's own lead delete (one call for all of them): the delete list, the explicit-delete flag, Undo, Recently deleted */
 function bkDelete(ids){
