@@ -43,14 +43,16 @@ section('the checklist follows the job\'s stage and type');
     estimates: [{ id: 'E1', pid: 'E9', status: 'sent', sentPdf: { ref: 'sb:crm-files/' + 'a'.repeat(64) + '.pdf' } }],
     gc_claims: [{ id: 'CL1', projectId: 'N2', claimNumber: 'CLM-1', dateOfLoss: '2026-10-01', carrier: CARRIER, adjuster: { name: 'Adj', phone: '9015550199' } }] });
   const base = { pm: 'Sample PM', type: 'Residential Reno', customerId: 'C1', clientPhone: '9015550101', address: '1 Demo St', contract: 12000 };
-  const bid = J.check({ id: 'B1', name: 'Quick bid', address: '9 Demo Rd', status: 'bidding' }, ix);
+  const bid = J.check({ id: 'B1', name: 'Quick bid', address: '9 Demo Rd', status: 'bidding', type: 'Roofing' }, ix);
   ok(bid.stage === 'bidding' && bid.need.length === 0 && bid.score === 100, 'bidding job with a name and an address: complete (nothing else asked)', bid);
   ok(J.chip(bid) === 'Data: bidding', 'its chip is the quiet "Data: bidding"', J.chip(bid));
-  const bid2 = J.check({ id: 'B2', name: 'No address yet', status: 'bidding' }, ix);
+  const bid2 = J.check({ id: 'B2', name: 'No address yet', status: 'bidding', type: 'Roofing' }, ix);
   ok(keys(bid2) === 'address', 'bidding job with no address: only the address (no PM, contract, papers, schedule…)', keys(bid2));
-  const bid3 = J.check({ id: 'B3', name: 'Field job with photos', address: '3 Demo', status: 'bidding', photos: [{ id: 'ph' }] }, ix);
+  const bid4 = J.check({ id: 'B4', name: 'No type yet', address: '4 Demo', status: 'bidding' }, ix);   /* patch DUPJOB (owner 11/02): every job has its type */
+  ok(keys(bid4) === 'type', 'bidding job with no job type: "Job type (pick one)"', keys(bid4));
+  const bid3 = J.check({ id: 'B3', name: 'Field job with photos', address: '3 Demo', status: 'bidding', type: 'Residential Reno', photos: [{ id: 'ph' }] }, ix);
   ok(bid3.need.length === 0, 'a bidding job made in the field with photos is complete');
-  const est = J.check({ id: 'E9', name: 'Estimate going out', address: '5 Demo', status: 'bidding', client: 'Lee' }, ix);
+  const est = J.check({ id: 'E9', name: 'Estimate going out', address: '5 Demo', status: 'bidding', client: 'Lee', type: 'Residential Reno' }, ix);
   ok(est.stage === 'estimate' && keys(est) === 'billing,custEmail,custMobile,custName,prefContact', 'estimate being sent: the customer-ready list (ESTPDF\'s fields)', keys(est));
   const estI = J.check({ id: 'E8', name: 'Ins estimate', address: '5 Demo', status: 'Proposal sent', type: 'Insurance Claim', customerId: 'C1' }, ix);
   ok(estI.stage === 'estimate' && keys(estI) === 'claim,dol', 'insurance estimate: + claim number and date of loss', keys(estI));
@@ -108,7 +110,7 @@ console.log('    jobs checked ' + FULL.checked + ' · complete ' + FULL.complete
 console.log('    top missing: ' + FULL.top.slice(0, 8).map(t => t.label + ' ' + t.count).join(' | '));
 ok(FULL.checked > 300 && FULL.needInfo > 0 && FULL.complete > 0 && FULL.checked === FULL.complete + FULL.needInfo, 'every open job is checked: complete + need info = checked');
 ok(FULL.jobs.every((j, i, a) => i === 0 || a[i - 1].need.length >= j.need.length), 'most missing first');
-ok(FULL.jobs.filter(j => j.stage === 'bidding').every(j => j.need.every(m => m.key === 'name' || m.key === 'address')), 'bidding jobs are asked only for their name / address', FULL.jobs.filter(j => j.stage === 'bidding').slice(0, 2));
+ok(FULL.jobs.filter(j => j.stage === 'bidding').every(j => j.need.every(m => m.key === 'name' || m.key === 'address' || m.key === 'type')), 'bidding jobs are asked only for their name / address / job type (patch DUPJOB)', FULL.jobs.filter(j => j.stage === 'bidding').slice(0, 2));
 ok(FULL.jobs.every(j => j.score >= 0 && j.score < 100), 'scores 0–99 % for jobs that need something');
 const noSched = M.projects.filter(p => (M.schedule || []).some(e => e.pid === p.id) && (M.schedule || []).filter(e => e.pid === p.id).every(e => e.draft === true || e._autoBookend));
 const nsr = noSched.map(p => J.check(p, J.index(M))).filter(r => r.stage !== 'skip' && r.stage !== 'bidding' && r.stage !== 'estimate');
