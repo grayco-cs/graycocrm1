@@ -19313,6 +19313,17 @@ if (!localStorage.getItem("_helpShown")) {
       reader.readAsText(file);
     };
     window.GC_AUTO.uploadQuickBooksCSV = function(file){
+      /* patch ACCTFIX-3: a QuickBooks export goes to 📥 Expense inbox (the reader below took the export's first line — the company
+         name — as the column names and read nothing) */
+      if (window._gcExp2 && window._gcExp2.parseQB && window._gcExp2.importRows && file && typeof file.text === 'function') {
+        file.text().then(function(t){
+          var p = window._gcExp2.parseQB(t); if (p.error) { alert('QuickBooks import: ' + p.error); return; }
+          var r = window._gcExp2.importRows(p.rows);
+          alert('QuickBooks export → 📥 Expense inbox: ' + r.added + ' row(s) added' + (r.duplicates ? ', ' + r.duplicates + ' already in (skipped)' : '') + (p.credits ? ', ' + p.credits + ' credit(s) skipped' : '') + '. Put each one on its job there.');
+          try { if (window._gcExpInbox) window._gcExpInbox(); } catch (e) {}
+        }, function(e){ alert('Could not read that file: ' + (e && e.message || e)); });
+        return;
+      }
       var reader = new FileReader();
       reader.onload = function(e){
         var rows = _gcParseCSV(e.target.result);
@@ -117403,6 +117414,7 @@ function parseQb(text){
     rec.date=ymd(g('date'))||qbDate(g('date')); rec.num=g('num').replace(/^#/,''); rec.name=g('name')||curName; rec.memo=g('memo'); rec.due=ymd(g('due'))||qbDate(g('due'));
     var a=g('amount'); rec.amount=num(a); rec.open = (g('open')!=='' && !(d.kind==='transactions' && /^balance$/i.test(s(d.headers[m.open])))) ? num(g('open')) : null; rec.account=(curAcct && /^split/i.test(s(d.headers[m.account]))) ? curAcct : (g('account')||curAcct); rec.status=g('status');   /* patch STMTPDF: a running Balance is not an open balance; the heading is the account, Split the other side */
     if(!rec.date && !rec.num && !rec.amount) continue;
+    if(d.kind==='transactions' && !rec.date && !rec.num) continue;   /* patch ACCTFIX-1: P&L Detail's "Gross Profit" / "Net Income" lines are not invoices */
     if(rec.kind==='bill'||rec.kind==='billpayment'||rec.kind==='expense'||rec.kind==='check') rec.amount=Math.abs(rec.amount);
     rec.key='QB:'+rec.kind+':'+(rec.num?rec.num:(rec.date+':'+cents(rec.amount)))+':'+nk(rec.name).split(' ')[0];
     recs.push(rec);
@@ -181931,6 +181943,7 @@ function parseQB(text){
   var cD = col('date'), cA = col('amount', 'debit', 'total'), cN = col('name', 'vendor', 'payee'), cM = col('memo/description', 'memo', 'description'), cR = col('num', 'no.', 'ref no.', 'doc num'),
     cAcc = col('account', 'split', 'distribution account'), cT = col('transaction type', 'type'), cC = col('customer', 'customer/project', 'customer full name', 'class');
   var sect = '', out = [], skipped = 0, inc = false, income = 0;   /* patch ACCT-1 */
+  var accIsSplit = cAcc >= 0 && /^split/.test(low(rows[hi][cAcc]));   /* patch ACCTFIX-2: Split = the other side (bank / card), the heading = the account */
   rows.slice(hi + 1).forEach(function(r){
     var first = s(r.filter(function(x){ return s(x); })[0]);
     var d = isoDate(r[cD]), a = num(r[cA]);
@@ -181939,8 +181952,17 @@ function parseQB(text){
     if (isNaN(a) || a === 0) return;
     if (a < 0) { skipped++; return; }   /* refunds / credits are not costs */
     var vendor = s(cN >= 0 ? r[cN] : '') || sect;
-    out.push({ date: d, amount: Math.round(a * 100) / 100, vendor: vendor, memo: s(cM >= 0 ? r[cM] : ''), ref: s(cR >= 0 ? r[cR] : ''), account: s(cAcc >= 0 ? r[cAcc] : ''), type: s(cT >= 0 ? r[cT] : ''), customer: s(cC >= 0 ? r[cC] : '') });
+    var split = cAcc >= 0 ? s(r[cAcc]) : '', acct = (accIsSplit && cN >= 0 && sect) ? sect : split;   /* patch ACCTFIX-2 */
+    out.push({ date: d, amount: Math.round(a * 100) / 100, vendor: vendor, memo: s(cM >= 0 ? r[cM] : ''), ref: s(cR >= 0 ? r[cR] : ''), account: acct, type: s(cT >= 0 ? r[cT] : ''), customer: s(cC >= 0 ? r[cC] : ''), _sec: sect, _split: split });
   });
+  /* patch ACCTFIX-2: Transaction Detail by Account lists a card charge / bill under the card or A/P account AND under its expense
+     account (each side's Split names the other). QuickBooks lists the balance-sheet accounts first: the earlier twin is dropped. */
+  if (accIsSplit && cN >= 0) {
+    var drop = {};
+    out.forEach(function(x, i){ if (drop[i] || !x._sec) return; for (var j = i + 1; j < out.length; j++) { var y = out[j]; if (!drop[j] && y._sec && low(x._sec) === low(y._split) && low(y._sec) === low(x._split) && x.date === y.date && x.amount === y.amount && low(x.vendor) === low(y.vendor) && x.ref === y.ref) { drop[i] = 1; break; } } });
+    out = out.filter(function(x, i){ return !drop[i]; });
+  }
+  out.forEach(function(x){ delete x._sec; delete x._split; });
   return { rows: out, credits: skipped, income: income };   /* patch ACCT-1 */
 }
 
