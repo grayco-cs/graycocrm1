@@ -377,6 +377,11 @@ bok(kv('gc_automations').invoice_autopost === true && kv('gc_automations')._log[
 const sc = await ev(owner, async () => { const c0 = window.confirm; const asked = []; window.confirm = m => { asked.push(String(m)); return false; };
   const i = document.querySelector('#gcap-ov input[data-gcap-sw="missed_call_textback"]'); const was = i && i.checked; if (i) i.click(); await new Promise(r => setTimeout(r, 1500)); window.confirm = c0;
   const j = document.querySelector('#gcap-ov input[data-gcap-sw="missed_call_textback"]'); return { was, now: j && j.checked, asked, lock: /🔒/.test(j && j.closest('.gcap-row').textContent) }; });
+const ws = await ev(owner, async () => { const c0 = window.confirm; const asked = []; window.confirm = m => { asked.push(String(m)); return false; };
+  const i = document.querySelector('#gcap-ov input[data-gcap-sw="job_stages"]'); if (i) i.click(); await new Promise(r => setTimeout(r, 1200)); window.confirm = c0;
+  const j = document.querySelector('#gcap-ov input[data-gcap-sw="job_stages"]'); return { now: j && j.checked, asked, line: j && j.closest('.gcap-row').textContent }; });
+bok(ws.now === false && ws.asked.some(m => /will act on (\d+|an unknown number of) waiting/.test(m)) && /switching it on acts on/.test(ws.line) && !AUTO.valueOf(kv('gc_automations'), 'job_stages'),
+  'a state-based automation (AUT3 stages / draws) warns "Turning this on will act on N waiting … NOW" before switch-on (said no → still OFF)', ws);
 bok(sc.was === true && sc.now === true && sc.lock && sc.asked.some(m => /SAFETY/.test(m)) && AUTO.valueOf(kv('gc_automations'), 'missed_call_textback') === true, 'a safety switch shows 🔒 ON and asks first (said no → still ON)', sc);
 await ev(owner, () => { const b = document.querySelector('#gcap-ov [data-gcap="before"]'); b.click(); }); await sleep(3000);
 bok(AUTO.LIST.every(a => AUTO.valueOf(kv('gc_automations'), a.key) === true), '"↺ Turn on everything I had before" → every automation ON');

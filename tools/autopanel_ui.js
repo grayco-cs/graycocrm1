@@ -20,6 +20,32 @@ function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&am
 function isAdmin(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()); } catch (e) { return false; } }
 function isOffice(){ try { if (W._gcRP && typeof W._gcRP.role === 'function' && /office/i.test(s(W._gcRP.role()))) return true; } catch (e) {} try { return /office/i.test(s(W._gcMeNow && (W._gcMeNow.role || W._gcMeNow.title))); } catch (e) { return false; } }
 function when(iso){ var t = Date.parse(iso || ''); if (!t) return ''; try { return new Date(t).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); } catch (e) { return s(iso); } }
+/* patch AUTOPANEL (coordinator 11/02): automations that act on what is waiting NOW when switched on (not on a clock) — the
+   switch-on asks first and says how many items are waiting: the page counts the draws itself; otherwise the last
+   "would have done N" the automation recorded while it was OFF */
+var STATE = { job_stages: 'draw invoices / stage steps', legacy_progress_billing: 'progress draws', progress_autodraw: 'draw invoices', appt_confirmations: 'appointment messages', bid_result_emails: 'bid-result e-mails to GCs',
+  auto_100: 'jobs set to 100 %', closeout_autopilot: 'job closeouts', mailed_invoice_booking: 'e-mailed invoices / receipts', ms_tax_add: 'Mississippi estimates', lead_auto_assign: 'held leads', companycam_new_jobs: 'new CompanyCam projects' };
+function drawsWaiting(){
+  try {
+    if (typeof W._gcDrawMilestones !== 'function' || typeof W._gcClientInvoiced !== 'function') return null;
+    var n = 0;
+    ((W._crm && W._crm.projects) || []).forEach(function(p){
+      if (!p || p.deleted || p.importedHistory || p.noAutomations || /lost|dead|cancel|complete|closed/i.test(s(p.status))) return;
+      var c = parseFloat(String(p.contract || '').replace(/[$,]/g, '')) || 0, pct = parseFloat(p.pct) || 0; if (!c || !pct) return;
+      var sur = W._gcDrawMilestones(p).filter(function(m){ return pct >= m.at; }); if (!sur.length) return;
+      if (Math.round(c * sur[sur.length - 1].at) / 100 - (W._gcClientInvoiced(p.id) || 0) > 0.01) n++;
+    });
+    return n;
+  } catch (e) { return null; }
+}
+function waiting(key, st){
+  if (!STATE[key]) return null;
+  var n = null;
+  if (key === 'job_stages' || key === 'legacy_progress_billing' || key === 'progress_autodraw') n = drawsWaiting();
+  if (n == null) { var h = (st.held || {})[key] || {}, l = (st.localHeld || {})[key] || {}; n = h.would != null ? h.would : l.would != null ? l.would : null; }
+  return { n: n, what: STATE[key] };
+}
+function waitingText(w){ return w ? (w.n == null ? 'an unknown number of waiting ' + w.what : w.n + ' waiting ' + w.what) : ''; }
 var EFFECT = { A: 'sends to customers / subs', B: 'staff only', C: 'changes records', D: 'sync / read' };
 function toast(msg, bad){
   try { var t = D.createElement('div'); t.setAttribute('data-gc-keep', '1'); t.textContent = msg;
@@ -48,6 +74,7 @@ function lineFor(a, st, adm){
   if (h.n) meta.push('<span class="gcap-held">held ' + h.n + ' time' + (h.n === 1 ? '' : 's') + ' since ' + esc(when(h.since)) + (h.would != null ? ' · last time it would have done ' + h.would : '') + (h.sample && h.sample.length ? ' (' + esc(h.sample.join('; ')) + ')' : '') + '</span>');
   else if (loc.n && !on) meta.push('<span class="gcap-held">held on this computer since ' + esc(when(loc.since)) + '</span>');
   if (!meta.length) meta.push(on ? 'no run recorded yet' : 'nothing held yet');
+  if (!on && STATE[a.key]) meta.push('<span class="gcap-held">⚠ switching it on acts on ' + esc(waitingText(waiting(a.key, st))) + ' at once</span>');
   return '<div class="gcap-row" data-gcap-key="' + esc(a.key) + '"><div class="gcap-main"><div class="gcap-name">' + (lock ? '🔒 ' : '') + esc(a.name) +
     '<span class="gcap-tag">' + esc(EFFECT[a.effect] || a.effect) + '</span>' + (a.where === 'page' ? '<span class="gcap-tag" style="background:#f1f5f9;color:#334155">in the CRM page</span>' : '') + '</div>' +
     '<div class="gcap-desc">' + esc(a.desc) + '</div>' +
@@ -78,13 +105,15 @@ function render(box){
     var a = R.BY[k], want = !!ev.target.checked;
     if (!adm) { ev.target.checked = !want; return; }
     if (!want && a.critical && !confirm('Turn OFF "' + a.name + '"?\n\nThis is a ' + (a.group === 'safety' ? 'SAFETY' : 'lead-intake / backup') + ' automation. While it is off: ' + a.desc + ' — will NOT happen.' + (a.group === 'sync' && /intake|inbox/i.test(a.name + a.key) ? '\nLeads sent while it is off are refused (the sender may try again later).' : ''))) { ev.target.checked = true; return; }
-    if (want && (a.effect === 'A' || a.effect === 'C') && !a.critical && !confirm('Turn ON "' + a.name + '"?\n\n' + a.desc + '\n\nIt will run by itself from now on.')) { ev.target.checked = false; return; }
+    var wt = want ? waiting(k, st) : null;
+    if (want && (a.effect === 'A' || a.effect === 'C') && !a.critical && !confirm('Turn ON "' + a.name + '"?\n\n' + a.desc + '\n\n' + (wt ? '⚠ Turning this on will act on ' + waitingText(wt) + ' NOW (what piled up while it was off), then keep running by itself.' : 'It will run by itself from now on.'))) { ev.target.checked = false; return; }
     var ch = {}; ch[k] = want; ev.target.disabled = true;
     A.set(ch).then(function(o){ if (o && o.__status === 200) toast('⚡ ' + a.name + ' is ' + (want ? 'ON' : 'OFF')); else { toast('Could not change it: ' + ((o && o.error) || (o && o.__status)), true); } render(box); });
   };
   box.onclick = function(ev){
     var t = ev.target && ev.target.getAttribute && ev.target.getAttribute('data-gcap'); if (!t || !adm) return;
-    if (t === 'before' && confirm('Turn on EVERYTHING the CRM did before this panel?\n\nEvery automation goes back ON: invoice and expense auto-posts, draws, job stages, closeout, reminders, sub texts, the monthly price update, CompanyCam new jobs …')) {
+    var pile = Object.keys(STATE).filter(function(k){ return !st.settings[k]; }).map(function(k){ return '• ' + R.BY[k].name + ': ' + waitingText(waiting(k, st)); });
+    if (t === 'before' && confirm('Turn on EVERYTHING the CRM did before this panel?\n\nEvery automation goes back ON: invoice and expense auto-posts, draws, job stages, closeout, reminders, sub texts, the monthly price update, CompanyCam new jobs …' + (pile.length ? '\n\n⚠ These will act NOW on what is waiting:\n' + pile.join('\n') : ''))) {
       A.before().then(function(o){ toast(o && o.__status === 200 ? '↺ Everything is ON again, as before.' : 'Could not change it: ' + ((o && o.error) || (o && o.__status)), !(o && o.__status === 200)); render(box); });
     }
     if (t === 'defaults' && confirm('Back to the safe defaults?\n\nSafety, lead intake, sync, backups and staff alerts ON; everything that sends to customers / subs or changes records by itself OFF.')) {
