@@ -126798,8 +126798,9 @@ try{ console.log('[GC] Thank-you e-mail waits on ✅ Approvals (patch APPR2).');
     var s = S[k]; if (!s) return;
     s.t = null; stats.checks++;
     var set = setterOf(k);
-    if (!set) {                                                  /* the CRM has not started yet, or not a screen list */
-      if (Date.now() - s.at > STEPS[STEPS.length - 1]) { delete S[k]; return; }
+    if (!set) {
+      if (typeof W.__gcListSetterOf === 'function') { delete S[k]; return; }   /* the CRM is up and this is not one of its screen lists */
+      if (Date.now() - s.at > STEPS[STEPS.length - 1]) { delete S[k]; return; }   /* the CRM has not started yet: wait for it */
       return later(k, 1500);
     }
     var why = waitWhy(k);
@@ -126831,7 +126832,7 @@ try{ console.log('[GC] Thank-you e-mail waits on ✅ Approvals (patch APPR2).');
   }
   function note(k, v){
     k = String(k || '');
-    if (!k || NOT_LISTS[k] || /^gc_|__chunk\d+$/.test(k)) return;
+    if (!k || NOT_LISTS[k] || /^(gc_|__|ccw_)|__chunk\d+$/.test(k)) return;   /* shared to-do / approval lists, the estimator's and the calculator's keys: not screen lists */
     try { if (typeof W._gcPullSkip === 'function' && W._gcPullSkip(k)) return; } catch (e) {}   /* a per-computer key never comes from the cloud */
     var list = asList(v); if (!list || !list.length) return;
     stats.seen++;
