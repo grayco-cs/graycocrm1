@@ -361,7 +361,7 @@ const tedLead = { id: 'LI-40569a6f62ec9c86', type: 'insurance', leadKind: 'Insur
   ok(!/your roof/.test(LIm._t.firstEmail({ name: 'Al', jobType: '' }, {}).text), 'the lead-source e-mail no longer assumes "your roof"');
   /* emergencies still promise (and still go) */
   ok(/right away/.test(W.replyFor({ type: 'storm', name: 'Ann', message: 'I need help I have water everywhere !?' }, {}).text), 'a website emergency reply: "our on-call team will call you right away"');
-  ok(/within 15 minutes/.test(MN.answer('5', {})), 'the text menu emergency answer keeps its time');
+  ok(!/within|minutes?|hours?|today|tomorrow/i.test(MN.answer('5', {})) && /582-8255/.test(MN.answer('5', {})), 'the text menu emergency answer: no time promise, the 24/7 emergency line (901) 582-8255 (patch CUSTPORTAL, owner 11/02)');
   ok(COm.clean({ night: { greeting: "Thanks for calling GrayCo Construction Services. Our office is closed. If you have an emergency — water, fire, or storm or tree damage — press 1. For anything else, press 2 and we'll text you and call you back in the morning. For sales, press 3." } }).night.greeting === COm.NIGHT_GREETING
     && COm.clean({ night: { greeting: 'Custom words, call you in the morning.' } }).night.greeting === 'Custom words, call you in the morning.', 'a saved copy of the OLD night greeting follows the new default; custom text is kept');
   /* end to end: the approval card / auto answers that actually went out */

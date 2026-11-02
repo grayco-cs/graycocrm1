@@ -13,6 +13,7 @@ also add photos if they want in the portal, and it goes into GrayCo Photos and s
    "📱 Added by <name> (customer) · <date>" in the photo's details.
 3. Job → Customer portal → ✍️ Signatures: the warranty and the certificate of completion are on the "Send for signature"
    list too (they were left out by the paper-name filter).
+4. The emergency number in the CRM's customer papers / e-mails is (901) 582-8255 (owner 11/02); the office stays (901) 585-0944.
 Idempotent: run it again and nothing changes. Usage: python3 tools/patch_CUSTPORTAL.py [index.html]"""
 import sys, os
 path = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(__file__), '..', 'index.html')
@@ -68,6 +69,13 @@ EDITS.append((H, H2, 1))
 I = """/contract|agreement|authori[sz]ation|proposal|change.?order|addendum|waiver|sign/i.test(s(d.cat) + ' ' + s(d.name)) && d.source !== 'portal-signature'"""
 I2 = """/contract|agreement|authori[sz]ation|proposal|change.?order|addendum|waiver|sign|warrant|completion/i.test(s(d.cat) + ' ' + s(d.name)) && d.source !== 'portal-signature'   /* patch CUSTPORTAL: + warranty, certificate of completion */"""
 EDITS.append((I, I2, 1))
+
+# 4. owner 11/02: the EMERGENCY line is (901) 582-8255 (the 24/7 line); the office (901) 585-0944 stays for questions / scheduling
+for old in ("Emergency (water, fire): call (901) 585-0944.",              # the customer e-mails' "How to reach us" (patch EMAILMAP)
+            "For emergencies: (901) 585-0944.",                           # the welcome & FAQ packet
+            "Emergency services available 24/7 — call (901) 585-0944",    # the water damage scope / contract template
+            "For an emergency call (901) 585-0944."):                     # the Customer Portal Terms of Use (doc library copy)
+    EDITS.append((old, old.replace('585-0944', '582-8255'), 1))
 
 for old, new, n in EDITS:
     c = t.count(old)

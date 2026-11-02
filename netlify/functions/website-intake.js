@@ -323,7 +323,7 @@ async function alertLead(rec){
 const FIRST_REPLY = 'Thanks for reaching out to GrayCo Construction Services — we received your message and someone from our team will call you shortly.';
 function firstReply(f){
   let em = false; try { em = require('./_lib/emergency.js').isEmergency({ title: s(f.message) }); } catch (e) {}
-  if (em) return 'Thanks for reaching out to GrayCo Construction Services — we received your message and our on-call team will call you right away. If water is coming in and it is safe, shut off the main water valve. Emergency line: 901-585-0944 (24/7).';
+  if (em) return 'Thanks for reaching out to GrayCo Construction Services — we received your message and our on-call team will call you right away. If water is coming in and it is safe, shut off the main water valve. Emergency line: (901) 582-8255 (24/7).'   /* patch CUSTPORTAL (owner 11/02) */;
   const topic = clip(s(f.service).replace(/[\r\n]+/g, ' '), 80);
   return topic ? FIRST_REPLY.replace('received your message', 'received your message about ' + topic.toLowerCase()) : FIRST_REPLY;
 }

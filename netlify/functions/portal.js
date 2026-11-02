@@ -2842,6 +2842,13 @@ exports.handler = async function (event) {
   if (action === 'invoice') {   /* patch AP2: one of this job's invoices as a PDF (never a draft, never another job's) */
     const r = listOf(data, ['invs', 'invoices']).find(function(x){ return s(x.id) === s(body.id) && invOfProject(x, p) && isCustomerInvoice(x); });
     if (!r) return reply(404, headers, { ok: false, error: 'That invoice is not in your portal.' });
+    if (body.view === true) {   /* patch CUSTPORTAL (owner 11/02): "my invoice … the way I made it in the CRM" — the CRM's own animated invoice (_lib/invoice-view.js) */
+      const flat = function(o){ const out = {}; Object.keys(o || {}).forEach(function(k){ const v = o[k]; if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') out[k] = v; }); return out; };
+      const both = scrub({ inv: flat(r), proj: flat(p) }, carrierWords(p).concat(claimWords(data, s(p.id), false)));
+      const review = jaAllows(data, p, 'reviewRequest') && (invFinal(r) || invPaid(r)) ? REVIEW_URL : '';
+      const v = require('./_lib/invoice-view.js').build({ inv: both.inv, proj: both.proj, reviewUrl: review });
+      return reply(200, headers, { ok: true, html: v.html, number: v.number });
+    }
     const f = invoicePdf(data, p, r);
     if (body.link === true) {   /* patch CUSTPORTAL: "📄 Open invoice" goes straight to the PDF on any phone — a short-lived signed link (the private bucket, named by its content) */
       try { const st = await storeImage(f.pdf, { ext: 'pdf', type: 'application/pdf' }); const sg = await signRefs([st.ref]); if (sg[st.ref]) return reply(200, headers, { ok: true, filename: f.filename, url: sg[st.ref], expiresIn: SIGN_SECS }); } catch (e) {}

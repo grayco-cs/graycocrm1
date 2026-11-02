@@ -35,7 +35,7 @@ const fileOfUrl = u => { const m = /\/crm-files\/([0-9a-f]{64}\.[a-z0-9]+)/.exec
 const jpeg = (w, h) => execFileSync('convert', ['-size', w + 'x' + h, 'gradient:#88aacc-#334455', '-quality', '80', 'jpg:-']);
 const LEAKS = () => [S.carrier, 'Sample Mutual', S.sub, 'Ridgeline', '8765', 'INTERNAL', 'internal note', 'margin', 'Other Person', 'POTHER1', 'crew note', 'costTotal', '33100', '31000', 'adjuster measurements'];
 function leakIn(obj){ const j = JSON.stringify(obj); return LEAKS().filter(w => j.toLowerCase().includes(w.toLowerCase())); }
-function fresh(){ W.setDay(); W.seedSample(); W.resetCaches(); W.RESEND.length = 0; }
+function fresh(){ W.setDay(); W.seedSample({ crmDocs: false }); W.resetCaches(); W.RESEND.length = 0; }
 
 console.log('NODE');
 fresh();
@@ -162,11 +162,15 @@ await t('4 documents: estimate, signed contract, change order, warranty, complet
   for (const d of VIEW.docs) { assert.ok(/^https:\/\//.test(d.url), d.title); const f = fileOfUrl(d.url); assert.ok(f && isPdf(f.bytes), d.title + ' is a PDF'); }
   assert.ok(VIEW.warranty && /5|year/i.test(VIEW.warranty.title), JSON.stringify(VIEW.warranty));
 });
-await t('4 invoices: paid + open; "Open invoice" → a short-lived https link to THAT invoice\'s PDF; another job\'s / a sub\'s invoice is refused', async () => {
+await t('4 invoices: paid + open; "Open invoice" → the CRM\'s own animated invoice; the PDF file behind a short-lived https link; another job\'s / a sub\'s invoice is refused', async () => {
   const inv = VIEW.money.invoices; assert.deepStrictEqual(inv.map(x => x.number + ':' + x.status), ['1001:Paid', '1002:Sent']);
   const r = await call('portal', { action: 'invoice', id: 'INVS2', link: true }, L()); assert.ok(r.data.ok && /^https:\/\//.test(r.data.url), JSON.stringify(r.data));
   const f = fileOfUrl(r.data.url); assert.ok(f && isPdf(f.bytes) && /1002/.test(execFileSync('pdftotext', ['-', '-'], { input: f.bytes }).toString()), 'the PDF of invoice 1002');
   assert.strictEqual((await call('portal', { action: 'invoice', id: 'INVO1', link: true }, L())).status, 404);
+  const vw = await call('portal', { action: 'invoice', id: 'INVS2', view: true }, L());
+  assert.ok(vw.data.ok && /<div class="word">INVOICE<\/div>/.test(vw.data.html) && /id="topTotal">\$19,300\.00/.test(vw.data.html) && /orb a/.test(vw.data.html) && /Download PDF/.test(vw.data.html) && vw.data.number === 'INV-S1001', 'the CRM\'s own animated invoice: ' + String(vw.data.html).slice(0, 80));
+  assert.deepStrictEqual(leakIn(String(vw.data.html).replace(/<style[\s\S]*?<\/style>/g, '').replace(/<script[\s\S]*?<\/script>/g, '').replace(/<[^>]+>/g, ' ')), [], 'nothing internal on the invoice');
+  assert.strictEqual((await call('portal', { action: 'invoice', id: 'INVO1', view: true }, L())).status, 404);
   assert.strictEqual((await call('portal', { action: 'invoice', id: 'INVSUB', link: true }, L())).status, 404);
 });
 /* ── 5. signing ── */
@@ -253,6 +257,27 @@ await t('9 netlify.toml parses (tomllib); on portal.grayco-cs.com every script /
   assert.deepStrictEqual(bad, [], 'swallowed by the catch-all: ' + bad.join(', '));
   const portalRules = rules.map((r, i) => [r, i]).filter(([r]) => /^https:\/\/portal\.grayco-cs\.com\//.test(r.from));
   assert.strictEqual(portalRules[portalRules.length - 1][0].from, 'https://portal.grayco-cs.com/*', 'the catch-all comes last');
+});
+await t('4 the portal\'s invoice IS the CRM\'s: _lib/invoice-view.js carries index.html\'s _gcViewInvoicePDF design block verbatim', async () => {
+  const crm = fs.readFileSync(path.join(W.ROOT, 'index.html'), 'utf8'), lib = fs.readFileSync(path.join(W.FNDIR, '_lib/invoice-view.js'), 'utf8');
+  const i = crm.indexOf('window._gcViewInvoicePDF = function(invId, pid){'); assert.ok(i > 0);
+  const a = crm.indexOf('      var html = [', i), b = crm.indexOf("      ].join('');", a) + "      ].join('');".length;
+  assert.ok(a > i && b > a && lib.includes(crm.slice(a, b)), 'the design block differs from the CRM\'s — copy it again into _lib/invoice-view.js');
+});
+await t('owner 11/02: every customer-facing EMERGENCY line is (901) 582-8255 (portal EN/ES, requests, care plan, Report an issue, terms, texts, website, CRM papers); the office stays 585-0944', async () => {
+  const rd = f => fs.readFileSync(path.join(W.ROOT, f), 'utf8');
+  const html = rd('portal.html');
+  assert.ok(/Emergency \(water, fire\): call \(901\) 582-8255/.test(html) && /Emergencia \(agua, fuego\): llame al \(901\) 582-8255/.test(html) && /Questions or scheduling: office \(901\) 585-0944/.test(html));
+  assert.ok(/EMERGENCY = '\(901\) 582-8255'/.test(html) && /our 24\/7 emergency line ' \+ EMERGENCY/.test(html), 'Report an issue');
+  assert.ok(/EMERGENCY_TEL = 'tel:9015828255'/.test(rd('portal-req.js')) && !/tel:9015850944', text: OFFICE \}\), T\('em2'\)/.test(rd('portal-req.js')), 'request form');
+  assert.ok(/class: 'care-sos', href: EMERGENCY_TEL/.test(rd('portal-plus.js')), 'GrayCo Care 🚨');
+  assert.ok(/For an emergency call \(901\) 582-8255/.test(rd('portal-terms.html')));
+  const SMS = require(W.FNDIR + '/_lib/sms.js'); assert.strictEqual(SMS.EMERGENCY_PHONE, '(901) 582-8255'); assert.ok(/582-8255/.test(SMS.FALLBACK) && SMS.DEFAULT_RULES.find(r => r.id === 'emergency').answer.includes('{emergency_phone}'));
+  const MN = require(W.FNDIR + '/_lib/smsmenu.js'); assert.ok(/582-8255/.test(MN.answer('5', {})) && !/minutes/.test(MN.answer('5', {})));
+  assert.ok(/Emergency line: \(901\) 582-8255/.test(rd('netlify/functions/website-intake.js')));
+  const crm = rd('index.html'); for (const k of ['Emergency (water, fire): call (901) 582-8255.', 'For emergencies: (901) 582-8255.', 'Emergency services available 24/7 — call (901) 582-8255', 'For an emergency call (901) 582-8255.']) assert.ok(crm.includes(k), k);
+  const bad = []; for (const f of ['portal.html', 'portal-req.js', 'portal-plus.js', 'portal-home.js', 'portal-needs.js', 'portal-terms.html', 'index.html', 'netlify/functions/_lib/sms.js', 'netlify/functions/_lib/smsmenu.js', 'netlify/functions/website-intake.js', 'netlify/functions/portal.js', 'netlify/functions/portal-extra.js']) { const t2 = rd(f); for (const m of t2.matchAll(/emergenc[^\n]{0,90}?(585[-. ]?0944|9015850944)/gi)) bad.push(f + ': ' + m[0].slice(0, 90)); }
+  assert.deepStrictEqual(bad.filter(x => !/Roof Tarping|patch CUSTPORTAL|CUSTQUIET|office stays/.test(x)), []);
 });
 await t('9 the functions keep the pause guard and pass node --check', async () => {
   for (const f of ['portal.js', 'portal-access.js', 'portal-sign.js', 'portal-req.js']) { const src = fs.readFileSync(path.join(W.FNDIR, f), 'utf8'); assert.ok(/require\('\.\/_lib\/pause'\)\.install\(\)/.test(src), f); execFileSync(process.execPath, ['--check', path.join(W.FNDIR, f)]); }
@@ -362,9 +387,12 @@ if (!process.argv.includes('--no-browser')) {
       await pg.click('#tabs button[data-tab="pay"]'); await sleep(700);
       const pt = await pg.textContent('main'); assert.ok(/How to pay/.test(pt) && /check/.test(pt) && /1002/.test(pt) && /Paid/.test(pt), 'payments');
       await shot(pg, kind + '_08_payments');
-      const rq2 = ctx.waitForEvent('request', { predicate: r => /\/crm-files\/[0-9a-f]{64}\.pdf/.test(r.url()) && r.frame().page() !== pg, timeout: 15000 });
-      await pg.click('[data-inv-open="INVS2"]'); const ir = await rq2;
-      const f = fileOfUrl(ir.url()); assert.ok(f && isPdf(f.bytes) && /1002/.test(execFileSync('pdftotext', ['-', '-'], { input: f.bytes }).toString()), 'the invoice PDF opened in a new tab: ' + ir.url().slice(0, 90));
+      const pop2 = ctx.waitForEvent('page', { timeout: 15000 });
+      await pg.click('[data-inv-open="INVS2"]'); const ip = await pop2; watch(ip, kind + '-invoice');
+      await ip.waitForSelector('#topTotal', { timeout: 15000 }); await sleep(1800);
+      const it = await ip.evaluate(() => document.body.innerText); assert.ok(/INVOICE/.test(it) && /INV-S1001/.test(it) && /\$19,300\.00/.test(it) && /Download PDF/.test(it), 'the CRM\'s animated invoice opened: ' + it.slice(0, 120));
+      assert.ok(await ip.evaluate(() => Array.from(document.images).filter(i => /grayco-logo-white/.test(i.src)).every(i => i.complete && i.naturalWidth > 0)), 'the white GrayCo logo loads');
+      await ip.screenshot({ path: path.join(SHOTS, kind + '_08b_invoice_view.png') }); await ip.close();
       await ctx.close();
     });
     await t(kind + ': 5 sign the change order (consent, name, drawn signature) → ✓ Signed + "Open my signed copy"; 6 request a change → thanks; 2 send a message', async () => {

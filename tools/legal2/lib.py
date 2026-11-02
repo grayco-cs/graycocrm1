@@ -10,6 +10,7 @@ import json, re
 GCO = 'GrayCo Construction Services, LLC'
 ADDR = '4007 Broadway Rd, Bartlett, TN 38135'
 PHONE = '(901) 585-0944'
+EMERGENCY_PHONE = '(901) 582-8255'   # patch CUSTPORTAL (owner 11/02): the 24/7 emergency line; PHONE stays the office
 EMAIL = 'office@grayco-cs.com'
 LICS = 'TN #85034 BCB · AR #0486990627 · MS #27769'
 REV = 'Form rev. 10/26/2026'

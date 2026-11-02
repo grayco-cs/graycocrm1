@@ -60,7 +60,7 @@ function pct(job){
 function answer(c, ctx){
   ctx = ctx || {};
   const who = ctx.pmFirst || 'your project manager', hi = 'Hi' + (ctx.first ? ' ' + ctx.first : '') + '! ';
-  if (c === '5') return 'We\'re on it — someone will call you within 15 minutes. If it\'s safe, shut off the main water valve. Call (901) 585-0944 any time — 24/7.';
+  if (c === '5') return 'We\'re on it — someone from GrayCo is being alerted right now. If it\'s safe, shut off the main water valve. Our 24/7 emergency line: (901) 582-8255.';   /* patch CUSTPORTAL (owner 11/02): the emergency line; no time promise (was "within 15 minutes") */
   if (c === '4') return (ctx.pmFirst ? ctx.pmFirst + ' will' : 'Your project manager will') + ' call you shortly.';   /* patch SALESBLOCK: no time promise (was "today") */
   if (!ctx.onFile) return 'Please text from the number we have on file for your job, or ask your project manager. Thank you!';
   if (!ctx.job) return hi + 'We don\'t see an open job for this number. ' + (ctx.pmFirst ? ctx.pmFirst : 'Our office') + ' will text you back shortly.';

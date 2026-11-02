@@ -118,8 +118,11 @@ for (const kind of ['phone', 'desktop']) {
     await pg.click('#tabs button[data-tab="pay"]'); await sleep(1000);
     await snap(pg, 'payments', kind, 'Payments: contract, paid so far, balance, how to pay, final invoice, change orders, invoices (paid + open), history');
     await snap(pg, 'payments_full', kind, 'Payments, the whole page', { full: true });
-    const r = await W.handlerCall('portal', { action: 'invoice', id: 'INVS2' }, { 'x-portal-token': W.S.link });
-    if (r.data.ok) { const ref = W.storeFile(Buffer.from(r.data.pdf, 'base64'), 'pdf', 'application/pdf'); await pdfShot(ctx, kind, W.SB + '/storage/v1/object/sign/crm-files/' + ref.slice(13), 'invoice_pdf', 'Invoice #1002 as a PDF (what "📄 Open invoice" opens)'); }
+    const pop = ctx.waitForEvent('page', { timeout: 15000 });
+    await pg.click('[data-inv-open="INVS2"]'); const ip = await pop; watch(ip, kind + '-invoice');
+    await ip.waitForSelector('#topTotal', { timeout: 15000 }); await sleep(2600);
+    await snap(ip, 'invoice_pdf', kind, '📄 Open invoice → invoice 1002 as the CRM makes it: the CRM\'s own animated invoice (_gcViewInvoicePDF — "the blue animated screen"), with its ⬇️ Download PDF');
+    await ip.close();
   });
   /* 8. messages */
   await step('msgs', async () => {
@@ -140,6 +143,15 @@ for (const kind of ['phone', 'desktop']) {
   });
   /* 10. Spanish */
   await step('es', async () => { const p3 = await ctx.newPage(); watch(p3, kind); await p3.goto(O + '/#t=' + W.S.link); await p3.waitForSelector('#track', { timeout: 20000 }); await p3.click('#langBtn'); await sleep(1500); await snap(p3, 'spanish', kind, 'EN / ES switch: the portal in Spanish'); await p3.click('#langBtn'); await p3.close(); });
+  /* 12. the CRM's own estimate PDF (what "📤 Send estimate" stored) and its 5-page proposal, as they open from the portal */
+  await step('crm_pdfs', async () => {
+    await pg.goto('about:blank'); await pg.goto(O + '/#t=' + W.S.link); await pg.waitForSelector('#track', { timeout: 20000 });
+    await pg.click('#tabs button[data-tab="docs"]'); await sleep(900);
+    const est = await pg.evaluate(() => { const a = document.querySelector('[data-est-card] [data-est-pdf]'); return a ? a.href : ''; });
+    if (est) await pdfShot(ctx, kind, est, 'estimate_pdf', 'Estimate #1042: "📄 View PDF" opens the PDF the CRM made and sent (_gcEstPdf.makePdf, the ⚙ Proposal template design)');
+    const p5 = await pg.evaluate(() => { const a = [...document.querySelectorAll('.doc a.btn')].find(x => /GrayCo proposal/i.test(x.closest('.doc').textContent)); return a ? a.href : ''; });
+    if (p5) await pdfShot(ctx, kind, p5, 'proposal_pdf', 'The 5-page GrayCo Customer Proposal (the CRM\'s generator), as it opens from Documents');
+  });
   /* 11. a link that was turned off */
   await step('off', async () => { const p2 = await ctx.newPage(); watch(p2, kind + '-off'); await p2.goto(O + '/#t=' + W.tok()); await p2.waitForSelector('.off', { timeout: 15000 }); await snap(p2, 'link_off', kind, 'A link that is not active: "call GrayCo 901-585-0944" + Sign in'); await p2.close(); });
   await ctx.close();

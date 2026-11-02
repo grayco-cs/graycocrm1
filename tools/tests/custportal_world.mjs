@@ -137,7 +137,12 @@ export function seedSample(opts){
   const pics = pictures(opts.photos || 11);
   const day = d => '2026-10-' + String(d).padStart(2, '0');
   const pdfs = {};
-  const doc = (id, name, cat, extra, lines) => { const ref = storeFile(pdfOf(name.replace(/\.pdf$/, ''), lines || ['Job: Sample Customer — Roof & Kitchen', 'Address: ' + S.customer.address]), 'pdf', 'application/pdf'); pdfs[id] = ref;
+  /* the CRM's OWN papers for the sample job when custportal_crmdocs.mjs made them (est_simple.pdf: the estimate the CRM sends;
+     est_p5.pdf: its 5-page proposal) — else a stand-in PDF */
+  const CD = opts.crmDocs === false ? '' : (opts.crmDocs || process.env.CUSTPORTAL_CRMDOCS || '/tmp/claude-0/-home-user/6a5b2b6b-8a4d-5505-9f82-62521adb6674/scratchpad/cp/crmdocs');
+  const crmPdf = f => { try { const b = CD && fs.readFileSync(path.join(CD, f)); return b && b.slice(0, 5).toString('latin1') === '%PDF-' ? b : null; } catch (e) { return null; } };
+  const BYTES = { DSAMPLE_EST: crmPdf('est_simple.pdf'), DSAMPLE_P5: crmPdf('est_p5.pdf') };
+  const doc = (id, name, cat, extra, lines) => { const ref = storeFile(BYTES[id] || pdfOf(name.replace(/\.pdf$/, ''), lines || ['Job: Sample Customer — Roof & Kitchen', 'Address: ' + S.customer.address]), 'pdf', 'application/pdf'); pdfs[id] = ref;
     return Object.assign({ id, pid: S.pid, name, cat, ref, type: 'application/pdf', uploadedAt: day(20) + 'T15:00:00.000Z', portalShare: true }, extra || {}); };
   const docs = [
     doc('DSAMPLE_EST', 'Estimate #1042 — Kitchen remodel — sent ' + day(28) + '.pdf', 'Estimates', { estimateId: 'ESAMPLE1', sentPdf: true, version: 1, uploadedAt: day(28) + 'T15:00:00.000Z' }, ['Kitchen remodel', 'Cabinets, quartz counters, tile, LVP floor', 'Total $48,250.00']),
@@ -148,6 +153,7 @@ export function seedSample(opts){
     doc('DSAMPLE_LIEN', 'Lien waiver — final — Roof.pdf', 'Lien Waivers', { uploadedAt: day(30) + 'T15:00:00.000Z' }, ['Unconditional lien waiver on final payment']),
     doc('DSAMPLE_PHOTOREP', 'Photo report — Roof — Oct 30.pdf', 'Photo Reports', { uploadedAt: day(30) + 'T16:00:00.000Z' }, ['Before / during / after photos of the roof']),
     doc('DSAMPLE_MAINT', 'GrayCo Care maintenance plan — Silver.pdf', 'Maintenance', { uploadedAt: day(30) + 'T17:00:00.000Z' }, ['Two visits a year: gutters, roof check, caulk']),
+    ...(BYTES.DSAMPLE_P5 ? [doc('DSAMPLE_P5', 'Proposal — Kitchen remodel (GrayCo proposal).pdf', 'Proposals', { uploadedAt: day(28) + 'T16:00:00.000Z' })] : []),
     /* never shown: internal papers on the same job */
     Object.assign(doc('DSAMPLE_SUBAGR', 'Subcontract agreement — ' + S.sub + '.pdf', 'Sub Agreements', { portalShare: undefined }), {}),
     Object.assign(doc('DSAMPLE_INTERNAL', 'Job costing — budget.pdf', 'Internal', { portalShare: false, internal: true }), {})
@@ -177,8 +183,8 @@ export function seedSample(opts){
     notes: 'INTERNAL: sub is ' + S.sub + ' — keep margin over 30%', sentPdf: { ref: pdfs.DSAMPLE_EST, version: 1, sentAt: day(28) + 'T15:00:00.000Z', via: 'crm-email' }, scope: { text: 'Remove the old kitchen; new cabinets, quartz counters, tile backsplash, LVP floor, paint and trim.' },
     lines: [{ id: 'l1', cat: 'Demolition', desc: 'Remove cabinets, counters and flooring', qty: 1, cost: 1800, charge: 2600 }, { id: 'l2', cat: 'Cabinets', desc: 'Shaker cabinets, soft close', qty: 1, cost: 14200, charge: 19500 },
       { id: 'l3', cat: 'Countertops', desc: 'Quartz counters', qty: 1, cost: 7400, charge: 10300, sub: S.sub }, { id: 'l4', cat: 'Flooring', desc: 'LVP floor', qty: 320, cost: 9, charge: 5200 }, { id: 'l5', cat: 'Paint & trim', desc: 'Walls, ceiling, trim', qty: 1, cost: 6300, charge: 10650 }] };
-  const invs = [{ id: 'INVS1', pid: S.pid, invNum: '1001', type: 'client', drawType: 'Deposit', amt: 14475, status: 'Paid', date: day(7), paidDate: day(9), payMethod: 'Check' },
-    { id: 'INVS2', pid: S.pid, invNum: '1002', type: 'client', drawType: 'Progress draw', amt: 19300, status: 'Sent', date: day(30), dueDate: '2026-11-14', emailedAt: day(30) + 'T15:00:00Z' },
+  const invs = [{ id: 'INVS1', pid: S.pid, po: 'S1001', invNum: '1001', type: 'client', drawType: 'Deposit', amt: 14475, status: 'Paid', date: day(7), paidDate: day(9), payMethod: 'Check' },
+    { id: 'INVS2', pid: S.pid, po: 'S1001', invNum: '1002', type: 'client', drawType: 'Progress draw', amt: 19300, status: 'Sent', date: day(30), dueDate: '2026-11-14', emailedAt: day(30) + 'T15:00:00Z' },
     { id: 'INVSUB', pid: S.pid, type: 'sub', sub: S.sub, amt: S.subPrice, status: 'Approved', invNum: 'SUB-77' },
     { id: 'INVO1', pid: S.other, invNum: '2001', type: 'client', amt: 9999, status: 'Sent', date: day(30) }];
   const cos = [{ id: 'CO1', pid: S.pid, desc: 'Gutter guards, front and back', amt: 1450, status: 'Approved', date: day(14), files: [{ ref: pdfs.DSAMPLE_CO1, name: 'co1.pdf', type: 'application/pdf' }] }];
