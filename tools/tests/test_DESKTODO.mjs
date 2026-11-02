@@ -34,7 +34,7 @@ const old = new Date(Date.now() - 3600e3).toISOString(); for (const [k, r] of cl
 
 const A = await computer('A', { build });
 await A.ctx.route(u => new URL(u).pathname.startsWith('/.netlify/functions/'), r => r.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
-const p = A.page(); await p.setViewportSize({ width: 1366, height: 768 });
+const p = A.page(); await p.setViewportSize({ width: 1366, height: 768 }); const mover = setInterval(() => { p.mouse.move(600 + Math.round(Math.random() * 20), 700).catch(() => {}); }, 15000);   /* a person at the computer */
 await signIn(A, 'office@grayco-cs.com', 1500);
 ok(await waitFor(A, () => !!(window._gcMoney && window._crm && (window._crm.projects || []).length === 3 && (window._crm.expenses || []).length >= 3 && window._gcAddCardCharge && window._gcAcctModel), null, 90000), 'the CRM loaded with the made-up jobs and the money patch');
 await p.evaluate(() => { for (const b of [...document.querySelectorAll('button')]) if (b.offsetParent && /^(Later|Got it!?|Not now|×|✕)$/.test(b.textContent.trim())) b.click(); }).catch(() => {});
@@ -68,6 +68,7 @@ for (const [w, h] of [[1366, 768], [1920, 1080]]) {
   await reopen(); await p.evaluate(() => { location.hash = '#lead=L2'; }); await sleep(1500);
   ok(!(await deskShown()), tag + 'a notification link (#lead=…) opens: the Desk steps aside', await why());
   await p.evaluate(() => { try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {} });
+  await p.keyboard.press('Escape').catch(() => {}); await p.evaluate(() => { const d = document.getElementById('gcl-drawer'); if (d) d.remove(); });   /* close the lead it opened */
   /* a window opened over the page (a To-Do card's / @mention window) */
   await reopen(); await p.evaluate(() => { const ov = document.createElement('div'); ov.id = 'desktodo-probe-ov'; ov.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.4)'; document.body.appendChild(ov); }); await sleep(1200);
   ok(!(await deskShown()), tag + 'a window opened over the page: the Desk steps aside', await why());
@@ -87,4 +88,4 @@ for (const [w, h] of [[1366, 768], [1920, 1080]]) {
 }
 ok(!A.errs.length, 'no page errors', A.errs.slice(0, 3));
 console.log('\nDESKTODO ' + pass + '/' + (pass + fail) + (fail ? ' — ' + fail + ' FAILED' : ''));
-await A.b.close(); process.exit(fail ? 1 : 0);
+clearInterval(mover); await A.b.close(); process.exit(fail ? 1 : 0);

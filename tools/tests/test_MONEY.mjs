@@ -48,6 +48,9 @@ await p.evaluate(() => { for (const b of [...document.querySelectorAll('button')
 const before = await p.evaluate(() => { const m = window._gcAcctModel({ range: { from: '', to: '' } }); const j = id => (m.pnl.jobs.find(x => x.pid === id) || { cost: 0 }).cost; return { jobCosts: m.pnl.jobCosts, overhead: m.pnl.overhead, p1: j('P1'), p2: j('P2'), n: window._crm.expenses.length }; });
 
 /* ── To-Do → 💳 Import card statement ── */
+/* a person at the computer: a real mouse move (after a minute with no input the CRM paces its background loops to 30 s, so the To-Do's
+   money row would wait that long); it also keeps moving while the test waits */
+await p.mouse.move(400, 300); const mover = setInterval(() => { p.mouse.move(380 + Math.round(Math.random() * 40), 300).catch(() => {}); }, 15000);
 await p.evaluate(() => { const b = [...document.querySelectorAll('aside nav button, nav button')].find(y => y.offsetParent && /To-Do/.test(y.textContent)); if (b) b.click(); });
 ok(await waitFor(A, () => !!document.querySelector('#gc-money-needs [data-mn="import"]'), null, 30000), 'the To-Do shows 💳 Import card statement (and 📥 Needs a job when something waits)');
 ok(await waitFor(A, () => /Needs a job \(1\)/.test((document.querySelector('#gc-money-needs') || {}).textContent || ''), null, 15000), '📥 Needs a job (1): the Shell charge with no job', await p.evaluate(() => (document.querySelector('#gc-money-needs') || {}).textContent));
@@ -128,4 +131,4 @@ await p.click('.gc-money-ov [data-m="save"]');
 ok(await waitFor(A, () => (window._crm.expenses.find(e => e.id === 'E3') || {}).pid === 'P2', null, 10000), 'Save → the charge is on Brent\'s job');
 ok(A.errs.length === 0, 'no page errors', A.errs.slice(0, 5));
 console.log(`\n${pass} passed, ${fail} failed`);
-await A.b.close(); process.exit(fail ? 1 : 0);
+clearInterval(mover); await A.b.close(); process.exit(fail ? 1 : 0);
