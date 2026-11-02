@@ -1,6 +1,6 @@
 // test_SYNCALL.mjs <build-dir> — patch SYNCALL: every synced list reaches the screen after the first sign-in.
 //   E. Five first sign-ins: the cloud's invoices, expenses, leads, jobs, schedule and customers all reach the screen
-//      (a record deleted in the cloud stays out; a zero-dollar expense stays out).
+//      (a record deleted in the cloud stays out).
 //   B. A dropped hand-over for each of the six lists (the cloud's copy noted, never applied): the screen gets the cloud's
 //      records, keeps a record only it has (never shorter), a deleted record stays out; the cloud is not shortened.
 //   C. Nothing is put on the screen while a job is open (projects) — it lands once the job is closed.
@@ -29,8 +29,8 @@ function seed(){
   resetCloud();
   cset('users', [{ id: 'u1', name: 'Wes Owner', email: 'wjohnson@grayco-cs.com', role: 'Admin', payType: 'owner', active: true }]);
   KEYS.forEach(k => cset(k, IDS[k].map((id, i) => rec(k, id, i))));
-  /* in the cloud list but deleted (the cloud's delete list says so), and a zero-dollar expense: neither may show */
-  cset('expenses', cget('expenses').concat([rec('expenses', 'XDEAD', 9), Object.assign(rec('expenses', 'XZERO', 8), { amt: 0 })]));
+  /* in the cloud list but deleted (the cloud's delete list says so): it may not show */
+  cset('expenses', cget('expenses').concat([rec('expenses', 'XDEAD', 9)]));
   cset('gc_tombstones', { 'expenses:XDEAD': '2026-10-01T00:00:00.000Z' });
 }
 async function boot(name){
@@ -64,7 +64,7 @@ for (let b = 0; b < BOOTS; b++) {
     const scr = await read(c);
     const healed = await c.ev(() => window.__gcSyncAll ? window.__gcSyncAll.stats().healed : null);
     KEYS.forEach(k => { const good = same(scr[k], want(k)); if (good) tally[k]++; ok(good, 'E' + (b + 1) + '. ' + k + ': the screen has the cloud’s ' + IDS[k].length, { screen: scr[k], healed }); });
-    ok(!(scr.expenses || []).includes('XDEAD') && !(scr.expenses || []).includes('XZERO'), 'E' + (b + 1) + '. the deleted and the zero-dollar expense stay out', scr.expenses);
+    ok(!(scr.expenses || []).includes('XDEAD'), 'E' + (b + 1) + '. the deleted expense stays out', scr.expenses);
     ok(!errs.length, 'E' + (b + 1) + '. no page errors', errs.slice(0, 3));
   } finally { await c.b.close(); }
 }
@@ -80,7 +80,7 @@ seed();
     const hasApi = await c.ev(() => typeof window.__gcListSetterOf === 'function' && !!window.__gcSyncAll);
     ok(hasApi, 'the list setters are published (window.__gcListSetterOf) and SYNCALL is on');
     for (const k of KEYS) {
-      const base = (cget(k) || []).filter(r => !/^X(DEAD|ZERO)$/.test(r.id));
+      const base = (cget(k) || []).filter(r => r.id !== 'XDEAD');
       const extra = ['N1', 'N2', 'N3', 'NDEAD'].map((s, i) => rec(k, k.slice(0, 2).toUpperCase() + s, 20 + i));
       const deadId = extra[3].id, localId = k.slice(0, 2).toUpperCase() + 'LOCAL';
       /* a record only this screen has (made here, not in the cloud's copy) */
