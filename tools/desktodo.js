@@ -42,7 +42,10 @@
     } catch (e) { return false; }
   }
   try {
-    new MutationObserver(function(ms){
+    /* the browser's own observer: the CRM's observer governor holds callbacks while the person is moving the mouse, which is
+       exactly when a window is being opened */
+    var MO = (W.MutationObserver && W.MutationObserver.prototype && typeof W.MutationObserver.prototype.constructor === 'function') ? W.MutationObserver.prototype.constructor : W.MutationObserver;
+    new MO(function(ms){
       if (!shown()) return;
       for (var i = 0; i < ms.length; i++) { var a = ms[i].addedNodes; for (var j = 0; j < a.length; j++) if (covers(a[j])) { hide('window: ' + (a[j].id || String(a[j].className || '').slice(0, 30) || a[j].tagName)); return; } }
     }).observe(D.body || D.documentElement, { childList: true });
