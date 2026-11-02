@@ -236,7 +236,10 @@ async function viewAs(where){
     if (mobile || w === 'field') await c.ev(() => { try { if (!document.querySelector('#_gcJobPick.gc-fh')) window._gcField.open(); } catch (e) {} });
     const hh = await waitHome(c, w, a, 20000);
     const want = ROLES[{ pm: 'pm', est: 'est', ins: 'ins', crew: 'crew', office: 'office', admin: 'admin' }[a]][w];
-    const bl = await barLabels(c, w);
+    let bl = await barLabels(c, w);
+    /* a computer previewing a crew member: the home can be drawn a moment before the role app puts the computer in Field
+       (its next tick, under a second) and shows the bar — give it that moment (patch FIELDDESK) */
+    for (let i = 0; i < 12 && hh && JSON.stringify(bl) !== JSON.stringify(want); i++) { await sleep(250); bl = await barLabels(c, w); }
     ok(!!hh && JSON.stringify(bl) === JSON.stringify(want), `View as ${v || 'Admin (exit)'} (${where}): the ${a} ${w} home and bar ${want.join(' · ')}`, { st: await c.ev(() => window._gcRA.state()), bl });
     if (v && w === where) await c.page().screenshot({ path: SHOTS + `viewas_${a}_${where}.png` });
   }
