@@ -166,6 +166,7 @@ try {
   ok(cs.map(x => x.name).join(', ') === 'Pre-construction meeting, Permit, Demo', 'customer portal: exactly the 3 added steps (no suggestion)', cs);
 
   /* 7. 🗓 Start from a template → suggestions only, fitted, Demo before the end */
+  await sleep(1500);   /* the review window from step 6 closes itself a moment after "Dismiss all" (the same overlay id) */
   await c.ev(id => window._gcSchedPick.pick(id), JOB); await sleep(600);
   const pk = await c.ev(() => { const o = document.getElementById('gcsp-ov'); return { opts: [...o.querySelectorAll('input[name=gcsp-tpl]')].map(i => ({ v: i.value, on: i.checked })), fit: !!(o.querySelector('[data-k=fit]') || {}).checked }; });
   ok(pk.opts.length >= 8 && (pk.opts.find(x => x.on) || {}).v === 'large_com' && pk.fit, 'the picker: every template, the job type\'s one (Large commercial) marked, "fit to the job dates" on', pk);

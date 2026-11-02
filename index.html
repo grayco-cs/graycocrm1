@@ -163602,7 +163602,9 @@ function build0(){
     });
     arr(g.subinv).forEach(function(e){ var a = S.filter(function(z){ return 'sub:' + s(z.id) === e.id || 'sub:' + s(z.invId) === e.id; })[0]; addMine(a ? rowSub(a, true, now) : stub(e, 'sub')); });
     arr(g.invsign).forEach(function(e){ var iv = I.filter(function(z){ return 'inv:' + s(z.id) === e.id; })[0]; addMine(iv ? rowInv(iv, true, now) : stub(e, 'inv')); });
-    arr(g.expense).forEach(function(e){ var a = X.filter(function(z){ return 'exp:' + s(z.id || z.expId) === e.id; })[0]; addMine(a ? rowExp(a, true, now) : stub(e, 'exp')); });
+    arr(g.expense).forEach(function(e){ var a = X.filter(function(z){ return 'exp:' + s(z.id || z.expId) === e.id; })[0];
+      if (!a) { try { a = arr(JSON.parse(localStorage.getItem('gc_expense_approvals') || '[]')).filter(function(z){ return z && 'exp:' + s(z.id || z.expId) === e.id && (z.status === 'pending_pm' || z.status === 'escalated'); })[0] || null; } catch (x) { a = null; } }   /* patch ACCTFIX3: the office expense card */
+      addMine(a ? rowExp(a, true, now) : stub(e, 'exp')); });
     arr(g.other).forEach(function(e){ addMine(rowOther(e, true, now)); });
   }
   /* the rest this person may see (not waiting on them) */
@@ -186181,6 +186183,7 @@ function place(id, o){
   var inv = makeInv(rec, { pid: o.pid, sub: subRec ? subRec.name : o.sub, subId: subRec ? subRec.id : '', amt: o.amt });
   if (!(inv.amt > 0)) return null;
   inv._jobCertain = true; inv._matchConfirmed = true; inv.matchedBy = myName(); inv.matchedAt = nowIso();
+  try { if (typeof W._gcManualNow === 'function') W._gcManualNow('book a matched sub invoice'); } catch (e) {}   /* patch ACCTFIX3: booked by her own click */
   if (!addInvoice(inv)) return null;
   markDone(rec.id, { done: true, invId: inv.id, at: nowIso(), by: myName() });
   return inv;
