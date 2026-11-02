@@ -86,7 +86,7 @@ t('tax, overhead and profit', () => {
   near(T.material, 100); near(T.labor, 100); near(T.tax, 10); near(T.subtotal, 210); near(T.overhead, 21); near(T.profit, 21); near(T.grand, 252);
 });
 t('templates build and price without warnings', () => {
-  ['blank', 'ranch', 'twostory', 'commercial'].forEach(id => {
+  ['blank', 'ranch', 'twostory', 'commercial', 'office4056'].forEach(id => {
     const p = fromTemplate(id, DEFAULT_CATALOG); const T = computeTakeoff(p, DEFAULT_CATALOG);
     assert.deepEqual(T.warnings, [], id);
     if (id !== 'blank') assert.ok(T.totals.grand > 50000, id);
