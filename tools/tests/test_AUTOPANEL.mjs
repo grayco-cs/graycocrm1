@@ -203,6 +203,19 @@ ok(held.price_index_monthly && held.price_index_monthly.since && held.price_inde
 snap = snapshot();
 r = await call(null, 'POST', 'website-intake', '', { type: 'estimate', name: 'Test', phone: '9015550111', email: 't@example.com' });
 ok(r.status === 503 && jb(r).held === 'website_intake' && !changed(snap).filter(BUSINESS).length, 'website intake OFF → refused with "try later", held, nothing filed', [r.status, jb(r)]);
+/* the other intake doors and webhooks, all OFF: refused politely (the sender may retry), held, nothing filed */
+process.env.CALLRAIL_WEBHOOK_KEY = 'cr-test-key';
+for (const [name, search, body, key] of [['lead-intake', '', { name: 'Test Lead', phone: '9015550113' }, 'lead_intake'], ['partner-api', '', { kind: 'lead', name: 'Partner Test' }, 'partner_api'],
+  ['money-intake', '', { amount: 12 }, 'money_intake'], ['callrail', '?key=cr-test-key', { id: 'CRtest1', customer_phone_number: '+19015550114', answered: false }, 'callrail']]) {
+  snap = snapshot(); reset();
+  const rr = await call(null, 'POST', name, search, body);
+  ok(rr.status === 503 && jb(rr).held === key && !changed(snap).filter(BUSINESS).length, name + ' OFF → 503 "retry later", held, nothing filed', [rr.status, jb(rr)]);
+}
+snap = snapshot(); reset();
+r = await call(OWNER, 'POST', 'portal', '', { action: 'approval', op: 'escalate' });
+ok(r.status === 200 && jb(r).held === 'approval_escalation' && !changed(snap).filter(BUSINESS).length, 'approval escalation asked by the page OFF → nothing escalated, held', [r.status, jb(r)]);
+reset(); { const PC = req('./portal.js')._core; let sl = null; try { sl = await PC.sendLink((Array.isArray(kv('projects')) ? kv('projects') : [{ id: 'P1' }])[0].id, {}, 'test'); } catch (e) { sl = { error: e.message }; }
+  ok(sl && (sl.held === 'portal_invite_email' || /auto-send is turned off/.test(String(sl.skipped))), 'new-job portal link e-mail OFF → not sent (held)', sl); }
 const MC = req('./missed-call.js')._test;
 ext0 = bridge.EXT.length; reset();
 let mo = await MC.missed({ From: '+19015550177', CallSid: 'CAtestoff1', CallerName: 'Test Caller' }, 'test');

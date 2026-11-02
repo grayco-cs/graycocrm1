@@ -293,7 +293,9 @@ var API = { V: 1, KEY: KEY, HELD_KEY: HELD_KEY, GROUPS: GROUPS, LIST: LIST, BY: 
 /* ── server only (Netlify functions): read the switches, record "held" / "ran" ── */
 if (typeof module !== 'undefined' && module.exports) {
   var CACHE_MS = 30 * 1000, RAN_MS = 10 * 60 * 1000;
-  var cache = { at: 0, row: null, ok: false }, ranAt = {}, store = null;
+  var cache = { at: 0, row: null, ok: false }, ranAt = {}, store = null, chain = Promise.resolve();
+  /* one read-modify-write of gc_auto_held at a time in this instance (a held and a ran record never overwrite each other) */
+  var serial = function(fn){ var p = chain.then(fn, fn); chain = p.catch(function(){}); return p; };
   var sbUrl = function(){ return String(process.env.SUPABASE_URL || 'https://ieeonhpfahmwwecizdut.supabase.co').replace(/\/$/, ''); };
   var svc = function(){ return String(process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || ''); };
   var hdr = function(extra){ var k = svc(); return Object.assign({ apikey: k, Authorization: 'Bearer ' + k, 'Content-Type': 'application/json' }, extra || {}); };
@@ -330,13 +332,13 @@ if (typeof module !== 'undefined' && module.exports) {
   API.held = async function(key, n, sample){
     var now = new Date().toISOString();
     try { console.log('[automations] held ' + key + ': would have done ' + (n == null ? '?' : n) + (sample && sample.length ? ' (' + [].concat(sample).slice(0, 3).join('; ').slice(0, 200) + ')' : '')); } catch (e) {}
-    try { var cur = await kv.get(HELD_KEY); await kv.put(HELD_KEY, heldMerge(cur, key, n, sample, now)); } catch (e) {}
+    try { await serial(async function(){ var cur = await kv.get(HELD_KEY); await kv.put(HELD_KEY, heldMerge(cur, key, n, sample, now)); }); } catch (e) {}
     return { held: key, would: n == null ? null : n };
   };
   API.ran = async function(key){
     if (ranAt[key] && Date.now() - ranAt[key] < RAN_MS) return;
     ranAt[key] = Date.now();
-    try { var cur = await kv.get(HELD_KEY); await kv.put(HELD_KEY, ranMerge(cur, key, new Date().toISOString())); } catch (e) {}
+    try { await serial(async function(){ var cur = await kv.get(HELD_KEY); await kv.put(HELD_KEY, ranMerge(cur, key, new Date().toISOString())); }); } catch (e) {}
   };
   /* a part that is OFF: record it and say so in one line — `if (await AUTO.off('key', () => count)) return …` style */
   API.gate = async function(key, count){
