@@ -449,7 +449,7 @@ if (!process.argv.includes('--no-browser') && !process.argv.includes('--no-crm')
     await p.locator('[data-gcch-admin] [data-qa="1"] button[data-a="up"]').click(); await sleep(200);
     ok(await A.ev(() => window._gcClaimHelp.draft().qa[0].id === 'choose' && window._gcClaimHelp.draft().qa[1].a.startsWith('CRM-EDIT')), 'edit an answer and move a question up (↑)');
     await p.locator('[data-gcch-admin] button[data-a="add"][data-l="qa"]').click(); await sleep(300);
-    await p.locator('[data-gcch-admin] [data-qa]').last().locator('input').fill('Is the CRM editor working?');
+    await p.locator('[data-gcch-admin] [data-qa]').last().locator('input[data-k$=".q"]').fill('Is the CRM editor working?');
     await p.locator('[data-gcch-admin] [data-qa]').last().locator('textarea').fill('Yes — this answer was added in the CRM.');
     await p.locator('[data-gcch-admin] [data-step="4"] input[data-k="steps.4.hidden"]').check(); await sleep(300);
     await p.locator('[data-gcch-admin] button[data-a="publish"]').first().click();
