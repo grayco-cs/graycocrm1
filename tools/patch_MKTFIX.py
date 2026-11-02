@@ -119,8 +119,22 @@ patch('netlify/functions/soc.js', [
   if (/^mf_/.test(op)) { const a = await require('./_lib/mktfeat.js').op(op, body, who, { marketing: true }); return R(a.status, a.out); }"""),
 ])
 
-# ── 4. index.html: the Lobby TV editor reads / saves his offers (and the marketing document) through soc.js ─────────
+# ── 4. index.html
+#   a. his left menu: the OFFICEFIX Employees role list put "Marketing Manager": ["marketing", "myprofile"] in the page's role
+#      table, and that table won over patch MMTABS's own list — his tabs (My To-Do, My leads, Marketing approvals, E-mail,
+#      Social, Calendar, Reviews & referrals, Ads, Media, Ideas, Marketing logins) and 🧭 GrayCo Systems (marketing links,
+#      📺 Lobby TV) were gone and refused. His menu is MMTABS's list again (+ My Profile from the table).
+#   b. 💎 Team access listed him as "staff (off)" (he is never active staff on purpose) — no "(off)" for an active
+#      Marketing Manager (the Profile column says Marketing Manager).
+#   c. the Lobby TV editor reads / saves his offers (and the marketing document) through soc.js.
+MMT = "(role === 'Marketing Manager' ? MM_TABS[role].concat(arr(ux()[role]).filter(function(x){ return MM_TABS[role].indexOf(x) < 0; })) : null) || ux()[role] || MM_TABS[role]"
 patch('index.html', [
+    ("    var role = effRole(), order = ux()[role] || MM_TABS[role];",
+     "    var role = effRole(), order = " + MMT + ";   /* patch MKTFIX: his tabs (MMTABS) win over the role table's [marketing, myprofile] */"),
+    ("      var role = effRole(), l = ux()[role] || MM_TABS[role];",
+     "      var role = effRole(), l = " + MMT + ";   /* patch MKTFIX */"),
+    ("esc(p.role) + (p.active === false ? ' (off)' : '')",
+     "esc(p.role) + (p.active === false && p.mkt_active !== true /* patch MKTFIX: the Marketing Manager is on */ ? ' (off)' : '')"),
     ("""function kvGet(key){
   var c; try { c = creds(); } catch (e) { return Promise.resolve(undefined); }
   return W.fetch(c.u + '/rest/v1/gc_kv?key=eq.' + encodeURIComponent(key) + '&select=value,updated_at', { headers: sbH(), cache: 'no-store' })""",

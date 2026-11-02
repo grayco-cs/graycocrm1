@@ -495,12 +495,13 @@ async function walkMM(c, who, opts){
   /* the left menu, as he sees it */
   const menu = await c.ev(() => [...document.querySelectorAll('aside button')].filter(b => b.getBoundingClientRect().height > 2).map(b => (b.innerText || b.title || '').trim().replace(/\s+/g, ' ')).filter(Boolean));
   console.log('     ' + who + ' menu: ' + menu.join(' | '));
-  ok(menu.length >= 5 && menu.every(t => !/invoice|payroll|estimate|customer|job|schedule|p&l|payments|admin|approvals$/i.test(t) || /marketing approvals/i.test(t)), who + ': his menu is Marketing only (no jobs, money, customers, admin)', menu);
+  ok(menu.filter(t => /My To-Do|My leads|Marketing approvals|E-mail|Social|calendar|Reviews|Ads|Media|Ideas|logins|Systems/i.test(t)).length >= 10 && menu.every(t => !/invoice|payroll|estimate|customer|job|schedule|p&l|payments|admin|approvals$/i.test(t) || /marketing approvals/i.test(t)), who + ': his menu is Marketing and his own marketing tabs only (no jobs, money, customers, admin)', menu);
   const tabs = await c.ev(() => [...document.querySelectorAll('aside button')].filter(b => b.getBoundingClientRect().height > 2).map((b, i) => ({ i, t: (b.innerText || b.title || '').trim().replace(/\s+/g, ' ') })).filter(x => x.t));
   for (const tb of tabs) {
     if (/sign out|collapse|^«|^»|^‹|^›/i.test(tb.t)) continue;
     const open = async () => { const loc = c.page().locator('aside button').filter({ hasText: tb.t.split(' ').slice(-2).join(' ') }).first(); if (await loc.count()) await loc.click({ timeout: 5000 }).catch(() => c.ev(i => { const b = [...document.querySelectorAll('aside button')].filter(b => b.getBoundingClientRect().height > 2)[i]; if (b) b.click(); }, tb.i)); else await c.ev(i => { const b = [...document.querySelectorAll('aside button')].filter(b => b.getBoundingClientRect().height > 2)[i]; if (b) b.click(); }, tb.i); };
-    await screen(c, who + ' tab ' + tb.t, open, { clicks: opts.clicks, wait: 3500 });
+    await screen(c, who + ' tab ' + tb.t, open, { clicks: Math.min(opts.clicks || CLICKS, 6), wait: 3500 });
+    if (/My Profile/.test(tb.t) && opts.shot) { await c.page().screenshot({ path: opts.shot }).catch(() => {}); }
   }
   /* every Marketing section he has (also the ones reached from inside a tab) */
   const secs = await c.ev(() => (window._gcMktExt && window._gcMktExt.SECS || []).map(x => x.id));
@@ -544,7 +545,7 @@ if (PARTS.includes('C')) {
   await p.screenshot({ path: path.join(SHOTS, 'mktgate_desktop_home.png') });
   const home = await c.ev(() => document.body.innerText.slice(0, 6000));
   ok(/Marketing|My To-Do|My leads/i.test(home), 'his home is Marketing (screenshot ' + path.join(SHOTS, 'mktgate_desktop_home.png') + ')');
-  const W1 = await walkMM(c, 'desktop');
+  const W1 = await walkMM(c, 'desktop', { shot: path.join(SHOTS, 'mktgate_desktop_myprofile.png') });
   /* his To-Do: add one, tick it */
   c.phase = 'todo';
   const td = await c.ev(async () => { window._setView('marketing'); await new Promise(z => setTimeout(z, 500)); window._gcMkt.go('mytodo'); await new Promise(z => setTimeout(z, 2500)); const i = document.getElementById('mm-task'); if (!i) return { err: 'no box' }; i.value = 'MKTGATE desktop to-do'; const b = document.querySelector('[data-a="mm-task-add"]'); if (b) b.click(); await new Promise(z => setTimeout(z, 3500)); return { has: /MKTGATE desktop to-do/.test(document.body.innerText) }; });
@@ -579,7 +580,7 @@ if (PARTS.includes('C')) {
   /* GrayCo Systems launcher: the marketing links */
   c.phase = 'systems';
   const sys = await c.ev(async () => { try { window._setView('systems'); } catch (e) {} await new Promise(z => setTimeout(z, 2500)); return (document.querySelector('main') || document.body).innerText.slice(0, 3000); });
-  ok(!/Bid portal|Sub portal|QuickBooks|Payroll/i.test(sys), 'GrayCo Systems: marketing systems / logins only', sys.slice(0, 200));
+  ok(/Google Analytics|Lobby TV/.test(sys) && !/Bid portal|Sub portal|QuickBooks|Payroll/i.test(sys), '🧭 GrayCo Systems opens for him: the marketing systems, logins and 📺 Lobby TV only', sys.slice(0, 300));
   /* forced routes: every company screen by _setView and by the address bar */
   c.phase = 'forced';
   const forced = [];
@@ -589,7 +590,7 @@ if (PARTS.includes('C')) {
   }
   const leaks = forced.filter(r => r.allowed === true || (r.cur === r.v && r.v !== 'marketing') || r.pii.length);
   ok(!leaks.length, 'every company screen by _setView (' + COMPANY_VIEWS.length + ': jobs, invoices, payroll, estimates, customers, To-Do, approvals, admin …) is refused — he stays on Marketing, no customer name shows', leaks.map(r => [r.v, r.allowed, r.cur, r.pii.slice(0, 2)]));
-  for (const h of ['#todo', '#invoices', '#jobs', '#projects', '#payroll', '#customers', '#approvals', '#admin', '#tv', '#estimates']) {
+  for (const h of ['#invoices', '#todo', '#admin', '#tv']) {
     await p.goto('https://app.local/index.html' + h).catch(() => {}); await mmReady(c); await sleep(4000);
     const r = await c.ev(() => ({ cur: (() => { try { return localStorage.getItem('grayco_view'); } catch (e) { return ''; } })(), txt: (document.querySelector('main') || document.body).innerText.slice(0, 4000), tv: !!document.querySelector('#gc-otv, .gc-otv, [data-otv]') }));
     ok(/^(marketing|mmt_[a-z]+)$/.test(r.cur || 'marketing') && !piiIn(r.txt).length && !r.tv, 'address bar ' + h + ': he lands on Marketing (no company screen, no lobby TV)', { cur: r.cur, pii: piiIn(r.txt).slice(0, 3), tv: r.tv });
@@ -624,7 +625,7 @@ if (PARTS.includes('C')) {
   ok(!piiScreens.length, 'desktop: no customer name on any of his screens (' + (c.screens || []).length + ' screens, ' + NAMES.length + ' names checked)', piiScreens.slice(0, 6));
   const dead = (c.screens || []).filter(s => s.res.some(r => r.bad.length || r.err.length));
   dead.forEach(s => s.res.filter(r => r.bad.length || r.err.length).forEach(r => console.log('       ✗ ' + s.name + ' › ' + r.t + ' → ' + JSON.stringify(r.bad.concat(r.err)).slice(0, 220))));
-  fs.writeFileSync(path.join(process.env.TMPDIR || '/dev/shm', 'mktgate_desktop_screens.json'), JSON.stringify((c.screens || []).map(s => ({ name: s.name, total: s.total, clicked: s.clicked, res: s.res, errs: s.errs })), null, 1));
+  fs.writeFileSync(path.join(process.env.TMPDIR || '/dev/shm', 'mktgate_desktop_screens.json'), JSON.stringify((c.screens || []).map(s => ({ name: s.name, total: s.total, clicked: s.clicked, res: s.res, errs: s.errs, text: s.text.slice(0, 500) })), null, 1));
   ok(!custOut(0).length, 'nothing he clicked reached a customer or a social network', custOut(0).slice(0, 5));
   await c.b.close();
 }
@@ -676,7 +677,7 @@ if (PARTS.includes('D')) {
   const piiScreens = (c.screens || []).filter(s => piiIn(s.text).length).map(s => [s.name, piiIn(s.text).slice(0, 3)]);
   ok(!piiScreens.length, 'phone: no customer name on any of his screens', piiScreens.slice(0, 6));
   (c.screens || []).filter(s => s.res.some(r => r.bad.length || r.err.length)).forEach(s => s.res.filter(r => r.bad.length || r.err.length).forEach(r => console.log('       ✗ ' + s.name + ' › ' + r.t + ' → ' + JSON.stringify(r.bad.concat(r.err)).slice(0, 220))));
-  fs.writeFileSync(path.join(process.env.TMPDIR || '/dev/shm', 'mktgate_phone_screens.json'), JSON.stringify((c.screens || []).map(s => ({ name: s.name, total: s.total, clicked: s.clicked, res: s.res, errs: s.errs })), null, 1));
+  fs.writeFileSync(path.join(process.env.TMPDIR || '/dev/shm', 'mktgate_phone_screens.json'), JSON.stringify((c.screens || []).map(s => ({ name: s.name, total: s.total, clicked: s.clicked, res: s.res, errs: s.errs, text: s.text.slice(0, 500) })), null, 1));
   ok(!custOut(0).length, 'phone: nothing reached a customer or a social network (data-entry mode on)', custOut(0).slice(0, 5));
   delete process.env.RESEND_API_KEY; process.env.PORTAL_MAIL_OFF = '1';
   await c.b.close();

@@ -1607,7 +1607,7 @@ window._gcTeamAccess = async function(){
     if (!j.staff) { list.textContent = j.error || 'Could not load the list.'; return; }
     list.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:13px"><tr style="text-align:left;color:#475569"><th></th><th>Email</th><th>Name</th><th>Role</th><th>Profile</th><th></th></tr>'
       + j.staff.map(function(p){
-          return '<tr style="border-top:1px solid #f1f5f9"><td style="padding:6px 2px"><input type="checkbox" data-pick="' + esc(p.email) + '" aria-label="Tick ' + esc(p.email) + '"' + (low(p.email) === (S && S.email) ? ' disabled title="You — use Change my password"' : '') + '></td><td style="padding:6px 4px">' + esc(p.email) + '</td><td>' + esc(p.name) + '</td><td>' + esc(p.role) + (p.active === false ? ' (off)' : '') + '</td><td>' + (window._gcRP && window._gcRP.teamCell ? window._gcRP.teamCell(p) : esc(p.profile || '')) + '</td>'
+          return '<tr style="border-top:1px solid #f1f5f9"><td style="padding:6px 2px"><input type="checkbox" data-pick="' + esc(p.email) + '" aria-label="Tick ' + esc(p.email) + '"' + (low(p.email) === (S && S.email) ? ' disabled title="You — use Change my password"' : '') + '></td><td style="padding:6px 4px">' + esc(p.email) + '</td><td>' + esc(p.name) + '</td><td>' + esc(p.role) + (p.active === false && p.mkt_active !== true /* patch MKTFIX: the Marketing Manager is on */ ? ' (off)' : '') + '</td><td>' + (window._gcRP && window._gcRP.teamCell ? window._gcRP.teamCell(p) : esc(p.profile || '')) + '</td>'
             + '<td style="white-space:nowrap;text-align:right"><button data-reset="' + esc(p.email) + '" style="margin-right:4px;border:1px solid #cbd5e1;background:#fff;border-radius:6px;padding:3px 8px;cursor:pointer">Reset password</button>'
             + '<button data-remove="' + esc(p.email) + '" style="border:1px solid #fecaca;background:#fef2f2;color:#b91c1c;border-radius:6px;padding:3px 8px;cursor:pointer">Remove</button></td></tr>';
         }).join('') + '</table>';
@@ -157182,7 +157182,7 @@ function pmHas(kind){ var l = claimsVisible(); if (kind === 'mit') { var f = W._
 var OFFICE_TABS = ["dashboard","roofscout","todo","approvals","launchjob","projects","cordova","leads","bidportal","systems","scopes","estimates","templates","expenses","cctrans","invoices","payments","taxcenter","pnl","reports","subs","vendors","customers","products","schedule","changeorders","dailylogs","punchlist","crewboard","warranties","docs","forms","gmail","claude","allphotos","qbimport","quickadd","estbuilder","insurance","mitigation","messages","sitebook","myprofile","integrations","officemanager","payroll"];   /* patch VAS: = the page's office@ list */
 function menu(Uf, list){
   try {
-    var role = effRole(), order = ux()[role] || MM_TABS[role];
+    var role = effRole(), order = (role === 'Marketing Manager' ? MM_TABS[role].concat(arr(ux()[role]).filter(function(x){ return MM_TABS[role].indexOf(x) < 0; })) : null) || ux()[role] || MM_TABS[role];   /* patch MKTFIX: his tabs (MMTABS) win over the role table's [marketing, myprofile] */
     if ((!realAdmin() && W._gcIsOfficeFull && W._gcIsOfficeFull()) || (realAdmin() && viewAs() === 'Office')) {   /* patch OFFICEFULL: the admin's menu */
       var AD = arr(ux().Admin); if (!AD.length) AD = ['dashboard','roofscout','projects','scopes','estimates','leads','bidportal','systems','expenses','taxcenter','pnl','reports','schedule','changeorders','dailylogs','punchlist','gmail','claude','invoices','payments','subs','vendors','customers','products','quickadd','crewboard','warranties','templates','estvactual','docs','forms','mastercrm','integrations','cctrans','myprofile','admin','launchjob','cordova','payroll','estbuilder','insurance','mitigation','messages','sitebook','allphotos','todo','approvals','officemanager'];   /* the app's Admin list until it is published */
       return arr(Uf).filter(function(g){
@@ -157230,7 +157230,7 @@ function wrapAllowed(){
     try {
       if (realAdmin()) return true;
       try { if (W._gcIsOfficeFull && W._gcIsOfficeFull()) return true; } catch (e) {}   /* patch OFFICEFULL: every screen */
-      var role = effRole(), l = ux()[role] || MM_TABS[role];
+      var role = effRole(), l = (role === 'Marketing Manager' ? MM_TABS[role].concat(arr(ux()[role]).filter(function(x){ return MM_TABS[role].indexOf(x) < 0; })) : null) || ux()[role] || MM_TABS[role];   /* patch MKTFIX */
       if (role === 'Marketing Manager') return arr(l).indexOf(v) >= 0;   /* patch MM: every other screen is refused */
       if (MINE[v] && Array.isArray(l)) {
         if (role === 'Project Manager' && (v === 'insurance' || v === 'mitigation')) return pmHas(v === 'insurance' ? 'ins' : 'mit');
