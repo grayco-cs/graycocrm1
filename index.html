@@ -187851,6 +187851,7 @@ function paint(){
   if (!mount || !showAdmin()) { if (host) host.remove(); return; }
   css();
   if (!host) {
+    OS.sig = '';   /* patch TODOTOP: a bar made again (the To-Do left and opened again) is filled, never a bare "▶ Details" */
     host = D.createElement('details'); host.id = 'gc-ot'; host.setAttribute('data-gc-keep', '1'); host.setAttribute('data-gc-linked', '1');   /* the phone / e-mail linker leaves these lines alone */
     host.addEventListener('toggle', function(){ OS.open = host.open; });
     host.addEventListener('click', function(ev){
@@ -188399,14 +188400,21 @@ function openNeeds(){
 var lastSig = '';
 function paint(force){
   var mount = D.getElementById('_todoMount'), host = D.getElementById('gc-money-needs');
-  if (!mount || !moneyPerson()) { if (host) { host.remove(); lastSig = ''; } return; }   /* patch OFFICEFIX: gone with the To-Do list; drawn again on return */
+  /* patch TODOTOP: 💳 / 🏦 statement imports live on the Accounting screen's tool row, not on top of the To-Do (owner 11/2) */
+  var tools = D.querySelector('#gck-root .gck-tools'), ah = D.getElementById('gc-money-acct');
+  if (moneyPerson() && tools && low(lsGet('grayco_view')) === 'taxcenter') {
+    if (!ah) { ah = D.createElement('span'); ah.id = 'gc-money-acct'; ah.setAttribute('data-gc-keep', '1'); ah.setAttribute('data-gc-linked', '1'); ah.style.cssText = 'display:inline-flex;gap:6px;flex-wrap:wrap';
+      ah.innerHTML = '<button type="button" class="gck-btn" data-mn="import">💳 Import card statement</button><button type="button" class="gck-btn" data-mn="bank">🏦 Import bank statement</button>';
+      ah.addEventListener('click', function(ev){ var b = ev.target.closest && ev.target.closest('[data-mn]'); if (!b) return; openImport(b.getAttribute('data-mn') === 'bank' ? { mode: 'bank' } : null); }); }
+    if (ah.parentElement !== tools) tools.appendChild(ah);
+  } else if (ah) ah.remove();
   var n = needs().length;
+  if (mount && !n) { if (host) { host.remove(); lastSig = ''; } return; }
+  if (!mount || !moneyPerson()) { if (host) { host.remove(); lastSig = ''; } return; }   /* patch OFFICEFIX: gone with the To-Do list; drawn again on return */
   if (!host) { host = D.createElement('div'); host.id = 'gc-money-needs'; host.setAttribute('data-gc-keep', '1'); host.setAttribute('data-gc-linked', '1'); host.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;margin:6px 0';
     host.addEventListener('click', function(ev){ var b = ev.target.closest && ev.target.closest('[data-mn]'); if (!b) return; if (b.getAttribute('data-mn') === 'needs') openNeeds(); else openImport(b.getAttribute('data-mn') === 'bank' ? { mode: 'bank' } : null); }); }
   if (host.parentElement !== mount.parentElement) mount.parentElement.insertBefore(host, mount);
-  var html = (n ? '<button type="button" data-mn="needs" style="border:1px solid #b45309;background:#b45309;color:#fff;border-radius:8px;padding:7px 12px;font-weight:700;cursor:pointer">📥 Needs a job (' + n + ')</button>' : '') +
-    '<button type="button" data-mn="import" style="border:1px solid #1d4ed8;background:#fff;color:#1d4ed8;border-radius:8px;padding:7px 12px;font-weight:700;cursor:pointer">💳 Import card statement</button>' +
-    '<button type="button" data-mn="bank" style="border:1px solid #0f766e;background:#fff;color:#0f766e;border-radius:8px;padding:7px 12px;font-weight:700;cursor:pointer">🏦 Import bank statement</button>';   /* patch STMTPDF */
+  var html = '<button type="button" data-mn="needs" style="border:1px solid #b45309;background:#b45309;color:#fff;border-radius:8px;padding:7px 12px;font-weight:700;cursor:pointer">📥 Needs a job (' + n + ')</button>';   /* patch TODOTOP: the imports are on Accounting */
   if (force || html !== lastSig) { host.innerHTML = html; lastSig = html; }
 }
 
@@ -188516,7 +188524,7 @@ W._gcMoneyMkSpend = mkSpend;
 /* ════════ owner setup: "What to set up in Accounting once" (🔧 Owner setup on the admins' To-Do) ════════ */
 var SETUP = [
   { id: 'acct_cards', t: 'Add each credit card and bank account', how: '💎 → 💳 Credit cards → Add a card (name + last 4) for every company card. 💎 → 🏦 Bank Accounts → add each checking / savings account with today\'s balance.' },
-  { id: 'acct_stmt', t: 'Import last month\'s card statements', how: 'Bank website → the card → Statements → download the PDF statement (or Activity → Download → CSV). To-Do → 💳 Import card statement → choose the file → check the lines, the totals and the jobs → Import. Bank accounts the same way with 🏦 Import bank statement. Do it every month (about 10 minutes a card).' },
+  { id: 'acct_stmt', t: 'Import last month\'s card statements', how: 'Bank website → the card → Statements → download the PDF statement (or Activity → Download → CSV). Accounting → 💳 Import card statement → choose the file → check the lines, the totals and the jobs → Import. Bank accounts the same way with 🏦 Import bank statement. Do it every month (about 10 minutes a card).' },
   { id: 'acct_rules', t: 'Teach the vendor rules once', how: 'In the first import, set the category and job (or Overhead) for each regular vendor (Home Depot, fuel, phones, software, ads). The CRM remembers them; next month they fill themselves. Change a rule by picking a different job / category in the next import.' },
   { id: 'acct_cats', t: 'Check the expense categories', how: 'Accounting → 🧾 Expense Center → categories. Keep: Materials, Subcontractor, Equipment Rental, Fuel/Gas, Permits/Fees, Dumpster/Disposal, Advertising/Marketing, Software/Phone, Office Supplies, Meals, Travel, Insurance, Payroll, Rent/Lease, Utilities. Match them to the QuickBooks chart of accounts names.' },
   { id: 'acct_mkt', t: 'Set the marketing sources and monthly budgets', how: '📣 Marketing → 📊 Dashboard → ad spend: one line per source per month (Google Ads, Facebook/Instagram, Angi, Roof Ignite…) — or let card charges to those vendors count by themselves (category Advertising/Marketing). Make sure every lead has its Source filled in, so cost per lead and per won job are right.' },
@@ -190046,7 +190054,7 @@ function paintBtns(){
   var ok = moneyPerson();
   /* To-Do: right after patch MONEY's row (📥 Needs a job · 💳 Import card statement · 🏦 Import bank statement) */
   var mount = D.getElementById('_todoMount'), host = D.getElementById('gc-money-needs'), tb = D.getElementById('gc-bulkdrop-todo');
-  if (ok && mount && mount.parentElement) {
+  if (false) {   /* patch TODOTOP: not on the To-Do any more (owner 11/2) — the Accounting tool row has it */
     var anchor = host && host.parentElement === mount.parentElement ? host : null;
     ensureBtn('gc-bulkdrop-todo', mount.parentElement, anchor, anchor ? null : mount, '', 'display:inline-block;margin:0 0 8px;border:1px solid #7c3aed;background:#7c3aed;color:#fff;border-radius:8px;padding:7px 12px;font-weight:700;cursor:pointer');
   } else if (tb) tb.remove();
@@ -206069,11 +206077,12 @@ function bannerHtml(){
     '<button type="button" class="gc-df-b pri" data-df-home="board">Open board</button></div>';
 }
 function mountBanner(host, where){
-  if (!host) return;
+  if (!host) return null;
   var h = bannerHtml(), cur = host.querySelector(':scope > .gc-df-banner');
-  if (cur && cur.__h === h) return;
-  var w = D.createElement('div'); w.innerHTML = h; var el = w.firstChild; if (!el) return; el.__h = h; el.setAttribute('data-where', where);
+  if (cur && cur.__h === h) return cur;
+  var w = D.createElement('div'); w.innerHTML = h; var el = w.firstChild; if (!el) return null; el.__h = h; el.setAttribute('data-where', where); el.setAttribute('data-gc-keep', '1');
   if (cur) cur.replaceWith(el); else host.insertBefore(el, host.firstChild);
+  return el;
 }
 function adminHost(){
   if (low(lsGet('grayco_view')) !== 'admin') return null;
@@ -206085,10 +206094,10 @@ function mountHomes(){
   if (!canSee()) return;
   try { mountDesk(); } catch (e) { warn(e); }
   try { mountField(); } catch (e) { warn(e); }
-  if (full()) {
-    try { var om = D.getElementById('gc-om-mount'); if (om && om.firstElementChild) mountBanner(om, 'office'); } catch (e) { warn(e); }
-    try { var ah = adminHost(); if (ah) mountBanner(ah, 'admin'); } catch (e) { warn(e); }
-  }
+  /* patch TODOTOP: one banner, on the To-Do only (owner 11/2); any other copy (an old box, another page) is taken away */
+  var keep = null;
+  try { var tm = full() ? D.getElementById('_todoMount') : null; if (tm && tm.parentElement) keep = mountBanner(tm.parentElement, 'todo'); } catch (e) { warn(e); }
+  [].forEach.call(D.querySelectorAll('.gc-df-banner'), function(b){ if (b !== keep) b.remove(); });
 }
 D.addEventListener('click', function(e){
   var b = e.target && e.target.closest && e.target.closest('[data-df-home]'); if (!b) return;
