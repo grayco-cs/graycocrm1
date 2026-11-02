@@ -54,7 +54,7 @@ const same = await c.ev(([t, a, b]) => [window._gcSalesBlock.isSales(t, { email:
 ok(same[0] === SG.isSales(TED, { email: 'ted@growthvector.io' }) && same[0] && !same[1] && !same[2] && same[3] === SG.why(TED), 'the page\'s detector answers exactly like the server\'s', same);
 await c.ev(() => window._setView('leads'));
 const strip = await waitFor(c, () => { const e = document.getElementById('gcsb-strip'); return e && e.offsetParent && e.textContent; }, null, 30000, 300);
-ok(/Sales & spam: 2 held for review/.test(strip || ''), 'Leads: the quiet "🧹 Sales & spam: 2 held" line', strip);
+ok(/🧹 2 to review/.test(strip || '') && await c.ev(() => !!document.querySelector('#gc-leads-hub .gclu-top #gcsb-strip')), 'Leads: the small "🧹 2 to review" chip in the Leads header (patch BARSTILL2)', strip);
 await c.ev(() => document.querySelector('#gcsb-strip [data-gcsb="open"]').click());
 const items = await waitFor(c, () => document.querySelectorAll('#gcsb-ov .gcsb-it').length === 2 && [...document.querySelectorAll('#gcsb-ov .gcsb-it')].map(x => x.textContent), null, 15000, 200);
 ok(items && /Ted Cadet/.test(items[0]) && /AI agent/.test(items[0]) && /Website form/.test(items[0]), 'the list: who, how, why, what they wrote', items);
