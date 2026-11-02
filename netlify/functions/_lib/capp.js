@@ -109,8 +109,9 @@ async function msgUnread(core, pid){
     const rows = r.ok ? await r.json() : []; return Array.isArray(rows) ? rows.length : 0;
   } catch (e) { return 0; }
 }
+/* patch CUSTPORTAL: a photo the customer added themselves is not "new" for them (no number on Photos / the app icon) */
 async function photoTimes(core, pid){
-  try { const recs = await core.grayCoRecords(); return arr(recs).filter(function(r){ return r && r.deleted !== true && r.source !== 'ccflag' && s(r.jobId) === s(pid) && (r.shared === true || (r.shared == null && s(r.tag) !== 'Damage')) && (r.source !== 'sub' || (r.shared === true && s(r.custOkBy))); }).map(function(r){ return s(r.at); }); }
+  try { const recs = await core.grayCoRecords(); return arr(recs).filter(function(r){ return r && r.deleted !== true && r.source !== 'ccflag' && s(r.jobId) === s(pid) && (r.shared === true || (r.shared == null && s(r.tag) !== 'Damage')) && (r.source !== 'sub' || (r.shared === true && s(r.custOkBy))) && r.source !== 'customer'; }).map(function(r){ return s(r.at); }); }
   catch (e) { return []; }
 }
 function countsFrom(view, seen, extra){

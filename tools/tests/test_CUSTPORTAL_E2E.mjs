@@ -134,6 +134,7 @@ await t('10 ＋ Add photos: a JPEG (made smaller in the browser) → the job\'s 
   await call('portal', { action: 'photo-add', data: jpeg(800, 600).toString('base64') }, L());
   const todos = (W.get('gc_office_tasks') || []).filter(x => /^cust_photos_/.test(x.id)); assert.strictEqual(todos.length, 1, 'one office to-do per job per day'); assert.ok(/Sample Customer added photos/.test(todos[0].label));
   assert.ok(!W.RESEND.some(m => /photo/i.test(m.subject || '')), 'nothing is e-mailed');
+  const app = (await call('portal', { action: 'app', op: 'state' }, L())).data; assert.strictEqual(app.unread.photos, 0, 'their own photos are not counted as new for them');
 });
 await t('10 limits: pictures only (a PDF / text is refused), 4.5 MB at most, a preview cannot add, another job\'s link cannot add to this job', async () => {
   let r = await call('portal', { action: 'photo-add', data: W.pdfOf('x').toString('base64') }, L()); assert.strictEqual(r.status, 415);
@@ -299,7 +300,7 @@ if (!process.argv.includes('--no-browser')) {
   const shot = async (pg, name) => { await sleep(350); await pg.screenshot({ path: path.join(SHOTS, name + '.png') }); };
   function watch(pg, kind, allow404){
     pg.on('pageerror', e => ERRS.push(kind + ': ' + e.message));
-    pg.on('response', r => { const st = r.status(); if ((st === 401 || st === 403 || st >= 500 || (st === 404 && !allow404)) && !/favicon/.test(r.url())) HTTPERR.push(kind + ' ' + st + ' ' + r.url().replace(/token=[^&]+/, 'token=…').slice(0, 120)); });
+    pg.on('response', r => { const st = r.status(); if ((st === 401 || st === 403 || st >= 500 || (st === 404 && !allow404)) && !/favicon/.test(r.url())) { let a = ''; try { a = (JSON.parse(r.request().postData() || '{}') || {}).action || ''; } catch (e) {} HTTPERR.push(kind + ' ' + st + ' ' + r.url().replace(/token=[^&]+/, 'token=…').slice(0, 120) + (a ? ' action=' + a : '') + ' on ' + (r.frame().page().url().replace(/#.*/, '#…'))); } });
   }
   for (const kind of ['phone', 'desktop']) {
     fresh();
@@ -392,7 +393,7 @@ if (!process.argv.includes('--no-browser')) {
     await t(kind + ': 9 the portal host serves every asset the pages load (gc-address.js, legal pages, their logo, report.html, manifest, icons, sw)', async () => {
       const ctx = await W.context(browser, kind), pg = await ctx.newPage(); watch(pg, kind);
       await pg.goto(srv.ORIGIN + '/#t=' + S.link); await pg.waitForSelector('#track', { timeout: 20000 });
-      const res = await pg.evaluate(async () => { const out = {}; for (const u of ['/gc-address.js', '/legal2.js', '/portal-req.js', '/portal-pwa.js', '/portal-needs.js', '/portal-claimhelp.js', '/portal-plus.js', '/portal-home.js', '/portal-app.js', '/portal.webmanifest', '/portal-sw.js', '/portal-icon-180.png', '/portal-icon-192.png', '/portal-icon-512.png', '/portal-logo.png', '/report.html', '/esign-consent.html', '/cancel-notice.html', '/portal-terms.html', '/privacy.html', '/terms.html', '/sms-consent.html', '/mkt-pages.css', '/img/grayco-logo-white.png']) { const r = await fetch(u); const tx = await r.clone().text(); out[u] = r.status + ' ' + (r.headers.get('content-type') || '') + (/var FN = '\/\.netlify\/functions\/portal'/.test(tx) ? ' PORTAL-PAGE' : ''); } return out; });
+      const res = await pg.evaluate(async () => { const out = {}; for (const u of ['/gc-address.js', '/legal2.js', '/portal-req.js', '/portal-pwa.js', '/portal-needs.js', '/portal-claimhelp.js', '/portal-plus.js', '/portal-home.js', '/portal-app.js', '/portal.webmanifest', '/portal-sw.js', '/portal-icon-180.png', '/portal-icon-192.png', '/portal-icon-512.png', '/portal-logo.png', '/report.html', '/esign-consent.html', '/cancel-notice.html', '/portal-terms.html', '/privacy.html', '/terms.html', '/sms-consent.html', '/mkt-pages.css', '/img/grayco-logo-white.png']) { const r = await fetch(u); const tx = await r.clone().text(); out[u] = r.status + ' ' + (r.headers.get('content-type') || '') + (/<script src="\/gc-address\.js"><\/script>\s*<script>/.test(tx) && /id="tabs"/.test(tx) ? ' PORTAL-PAGE' : ''); } return out; });
       const wrong = Object.entries(res).filter(([u, v]) => !/^200 /.test(v) || / PORTAL-PAGE$/.test(v) || (/\.js$/.test(u) && !/javascript/.test(v)) || (/\.png$/.test(u) && !/image\/png/.test(v)) || (/\.css$/.test(u) && !/text\/css/.test(v)));
       assert.deepStrictEqual(wrong, [], JSON.stringify(wrong));
       const ep = await ctx.newPage(); watch(ep, kind); await ep.goto(srv.ORIGIN + '/esign-consent.html'); await ep.waitForLoadState('load');

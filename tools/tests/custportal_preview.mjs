@@ -28,7 +28,7 @@ async function snap(pg, page, kind, what, opts){
 async function step(name, fn){ try { await fn(); } catch (e) { BAD.push(name + ': ' + (e && e.message || e).split('\n')[0]); console.log('  ! ' + name + ': ' + (e && e.message || e).split('\n')[0]); } }
 function watch(pg, kind){
   pg.on('pageerror', e => ERRS.push(kind + ' pageerror: ' + e.message));
-  pg.on('response', r => { const u = r.url(); if (r.status() >= 400 && !/favicon/.test(u)) ERRS.push(kind + ' HTTP ' + r.status() + ' ' + u.replace(/token=[^&]+/, 'token=…').slice(0, 140)); });
+  pg.on('response', r => { const u = r.url(); if (r.status() >= 400 && !/favicon/.test(u) && !/-off$/.test(kind)) { let a = ''; try { a = (JSON.parse(r.request().postData() || '{}') || {}).action || ''; } catch (e) {} ERRS.push(kind + ' HTTP ' + r.status() + ' ' + u.replace(/token=[^&]+/, 'token=…').slice(0, 140) + (a ? ' action=' + a : '')); } });   /* the turned-off link answers 404 on purpose */
 }
 async function pdfShot(ctx, kind, url, page, what){
   const name = new URL(url).pathname.replace(/^.*\/crm-files\//, ''), f = W.FILES[name];
@@ -68,7 +68,7 @@ for (const kind of ['phone', 'desktop']) {
   });
   /* 3. the e-mailed link (what most customers tap) */
   await step('home', async () => {
-    await pg.evaluate(() => { localStorage.clear(); });
+    await pg.evaluate(() => { localStorage.clear(); }); await pg.goto('about:blank');   /* a full load (a hash-only change keeps the old page) */
     await pg.goto(O + '/#t=' + W.S.link); await pg.waitForSelector('#track', { timeout: 20000 }); await sleep(3000);
     await snap(pg, 'home', kind, 'Home (opened from the e-mailed link): hello, job name + address + PO, the estimate card, where the job is + schedule');
     await snap(pg, 'home_full', kind, 'Home, the whole page (full length)', { full: true });
@@ -119,7 +119,7 @@ for (const kind of ['phone', 'desktop']) {
     await snap(pg, 'payments', kind, 'Payments: contract, paid so far, balance, how to pay, final invoice, change orders, invoices (paid + open), history');
     await snap(pg, 'payments_full', kind, 'Payments, the whole page', { full: true });
     const r = await W.handlerCall('portal', { action: 'invoice', id: 'INVS2' }, { 'x-portal-token': W.S.link });
-    if (r.data.ok) { const ref = W.storeFile(Buffer.from(r.data.pdf, 'base64'), 'pdf', 'application/pdf'); await pdfShot(ctx, kind, W.SB + '/storage/v1/object/sign/crm-files/' + ref.slice(13), 'invoice_pdf', 'Invoice #1002 as a PDF (what "View PDF" shows)'); }
+    if (r.data.ok) { const ref = W.storeFile(Buffer.from(r.data.pdf, 'base64'), 'pdf', 'application/pdf'); await pdfShot(ctx, kind, W.SB + '/storage/v1/object/sign/crm-files/' + ref.slice(13), 'invoice_pdf', 'Invoice #1002 as a PDF (what "📄 Open invoice" opens)'); }
   });
   /* 8. messages */
   await step('msgs', async () => {
@@ -139,7 +139,7 @@ for (const kind of ['phone', 'desktop']) {
     await pg.keyboard.press('Escape'); await pg.evaluate(() => { const x = document.querySelector('#gcpr-sheet [data-x], #gcpr-sheet .gcpr-x, #gcpr-close'); if (x) x.click(); });
   });
   /* 10. Spanish */
-  await step('es', async () => { await pg.goto(O + '/#t=' + W.S.link); await pg.waitForSelector('#track'); await pg.click('#langBtn'); await sleep(1200); await snap(pg, 'spanish', kind, 'EN / ES switch: the portal in Spanish'); await pg.click('#langBtn'); });
+  await step('es', async () => { const p3 = await ctx.newPage(); watch(p3, kind); await p3.goto(O + '/#t=' + W.S.link); await p3.waitForSelector('#track', { timeout: 20000 }); await p3.click('#langBtn'); await sleep(1500); await snap(p3, 'spanish', kind, 'EN / ES switch: the portal in Spanish'); await p3.click('#langBtn'); await p3.close(); });
   /* 11. a link that was turned off */
   await step('off', async () => { const p2 = await ctx.newPage(); watch(p2, kind + '-off'); await p2.goto(O + '/#t=' + W.tok()); await p2.waitForSelector('.off', { timeout: 15000 }); await snap(p2, 'link_off', kind, 'A link that is not active: "call GrayCo 901-585-0944" + Sign in'); await p2.close(); });
   await ctx.close();
