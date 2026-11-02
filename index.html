@@ -140656,6 +140656,7 @@ function srcStored(out){
       if (t.kind === 'qb_home') o.act = { l: 'Find its job', f: function(){ call('_gcOpenQbHome', id); } };
       else if (/^SUPPLIERBILLS_/.test(id)) o.act = { l: 'Open bills', f: function(){ call('_gcOpenSupplierBills'); } };
       else if (/^AUTOCHECKS_/.test(id)) o.act = { l: 'Open checks', f: function(){ if (!call('_gcOpenCheckRun')) call('_gcOpenImportChecks'); } };
+      else if (t.kind === 'mention' && t.apxKey) o.act = { l: '📋 Open the card', f: function(){ if (!call('_gcApprOpenCard', t.apxKey)) go('approvals'); } };   /* patch APPRMENTION: a mention on an approval card */
       else if (t.kind === 'mention') o.act = { l: '💬 Reply', f: function(){ if (t.pid && call('_gcOpenJobMessages', t.pid)) return; if (W._gcPhotos && W._gcPhotos.open) { try { W._gcPhotos.open(); } catch (e) {} } } };
       else if (t.phone || /^call\b/i.test(s(t.label))) { var ph = s(t.phone) || phoneOf(t.pid, s(t.label).replace(/^call\s+/i, '').split(/\s+/)[0]); if (ph) o.act = actCall(ph); else if (t.pid) o.act = actJob(t.pid); }
       else if (t.kind === 'datacheck') o.act = { l: '🧹 Open list', f: function(){ call('_gcOpenDataCheck'); } };   /* patch AUTO6 */
@@ -162952,15 +162953,133 @@ var NOTEBOX = {}, NOTEDRAFT = {};
 function noteKeyOf(r){ return { t: 'apx-' + s(r.src), id: s(r.id) }; }
 function apxNotes(r){ var k = noteKeyOf(r), l = []; try { l = typeof W._gcGetApprovalNotes === 'function' ? arr(W._gcGetApprovalNotes(k.t, k.id)) : []; } catch (e) {} return l.filter(function(n){ return n && s(n.note); }); }
 function apxNotesHtml(r){ var l = apxNotes(r); if (!l.length) return '';
-  return '<div class="apx-notes" style="font-size:12px;color:#3730a3;background:#eef2ff;border-radius:7px;padding:4px 8px;margin:4px 0">' + l.slice(-3).map(function(n){ return '📝 <b>' + esc(s(n.by)) + '</b> ' + esc(when(n.at)) + ': ' + esc(s(n.note).slice(0, 200)); }).join('<br>') + (l.length > 3 ? '<br><span style="color:#64748b">+ ' + (l.length - 3) + ' earlier</span>' : '') + '</div>'; }
+  return '<div class="apx-notes" style="font-size:12px;color:#3730a3;background:#eef2ff;border-radius:7px;padding:4px 8px;margin:4px 0">' + l.slice(-3).map(function(n){ return '📝 <b>' + esc(s(n.by)) + '</b> ' + esc(when(n.at)) + ': ' + mnChips(esc(s(n.note).slice(0, 200))); })   /* patch APPRMENTION: @Name chips */.join('<br>') + (l.length > 3 ? '<br><span style="color:#64748b">+ ' + (l.length - 3) + ' earlier</span>' : '') + '</div>'; }
 function saveApxNote(r){
   var inp = D.querySelector('[data-apx-note-in="' + cssq(r.key) + '"]'), t = s((inp && inp.value) || NOTEDRAFT[r.key]);
   if (!t) { toast('Write the note first.'); return; }
   var k = noteKeyOf(r);
   try { if (typeof W._gcRecordApprovalNote === 'function') W._gcRecordApprovalNote(k.t, k.id, 'note', t.slice(0, 500)); else { toast('Notes are not ready yet — try again.'); return; } } catch (e) { warn(e); toast('Could not save the note.'); return; }
-  delete NOTEBOX[r.key]; delete NOTEDRAFT[r.key]; fresh(); paintSoon(); toast('📝 Note saved — the team sees it on this card (never sent to the customer).');
+  var mnd = []; try { mnd = mnNotify(r, t.slice(0, 500)); } catch (e) { warn(e); }   /* patch APPRMENTION: each person named gets one To-Do */ mnClose();
+  delete NOTEBOX[r.key]; delete NOTEDRAFT[r.key]; fresh(); paintSoon(); toast('📝 Note saved — the team sees it on this card (never sent to the customer).' + (mnd.length ? ' ' + mnd.join(', ') + (mnd.length === 1 ? ' was' : ' were') + ' told.' : ''));
 }
 D.addEventListener('input', function(ev){ var t = ev.target; if (t && t.getAttribute && t.hasAttribute('data-apx-note-in')) NOTEDRAFT[t.getAttribute('data-apx-note-in')] = t.value; }, true);
+/* patch APPRMENTION — @someone on the team in a card's note: the @ list, the mention To-Do, opening the card */
+var MN = { key: '', at: -1, q: '', i: 0, list: [] }, MNHL = { k: '', until: 0 };
+function mnFirst(n){ return s(n).split(/\s+/)[0] || s(n); }
+function mnOut(){ var o = {}; [crm().customers, crm().subs, crm().vendors].forEach(function(l){ arr(l).forEach(function(c){ if (!c) return; [c.email, c.email2, c.contactEmail, c.billingEmail].forEach(function(e){ e = low(e); if (e) o[e] = 1; }); }); }); return o; }
+/* the team: active people on the CRM's people list -- never a customer, a sub or a vendor */
+function mnStaff(){
+  var out = [], seen = {}, ext = mnOut();
+  users().forEach(function(u){
+    if (!u || u.active === false || u.disabled === true || u.terminated || u.letGo || /^(inactive|terminated|disabled|former|let go)$/i.test(s(u.status))) return;
+    var nm = s(u.name), em = low(u.email), rl = s(u.role) + ' ' + s(u.type) + ' ' + s(u.profile);
+    if (!nm || /\b(sub|subcontractor|customer|client|vendor|supplier|homeowner)\b/i.test(rl) || u.isCustomer || u.isSub || (em && ext[em])) return;
+    var k = low(nm); if (seen[k]) return; seen[k] = 1;
+    out.push({ n: nm, e: em, r: s(u.role) });
+  });
+  return out.sort(function(a, b){ return a.n.localeCompare(b.n); });
+}
+function mnMatch(q){
+  q = low(q).replace(/\s+/g, ' ');
+  return mnStaff().filter(function(x){ var n = low(x.n); if (!q) return true; if (n.indexOf(q) === 0) return true; return n.split(/\s+/).some(function(w){ return w.indexOf(q) === 0; }); }).slice(0, 8);
+}
+/* who a note names: "@First Last" (what the list puts in), or "@First" when only one person has that first name */
+function mnParse(text){
+  var t = ' ' + low(text) + ' ', st = mnStaff(), out = [], seen = {};
+  st.forEach(function(x){
+    var full = '@' + low(x.n), f = '@' + low(mnFirst(x.n)), hit = false, i = t.indexOf(full);
+    if (i >= 0 && !/[a-z0-9]/.test(t.charAt(i + full.length))) hit = true;
+    if (!hit) { var j = t.indexOf(f); if (j >= 0 && !/[a-z0-9]/.test(t.charAt(j + f.length)) && st.filter(function(y){ return low(mnFirst(y.n)) === low(mnFirst(x.n)); }).length === 1) hit = true; }
+    if (hit && !seen[low(x.n)]) { seen[low(x.n)] = 1; out.push(x); }
+  });
+  return out;
+}
+function mnBox(){ return D.getElementById('apx-mn'); }
+function mnClose(){ var b = mnBox(); if (b) b.remove(); MN.key = ''; MN.at = -1; MN.list = []; }
+function mnInput(){ return MN.key ? D.querySelector('[data-apx-note-in="' + cssq(MN.key) + '"]') : null; }
+function mnDraw(el){
+  var b = mnBox();
+  if (!MN.list.length) { if (b) b.remove(); return; }
+  if (!b) { b = D.createElement('div'); b.id = 'apx-mn'; b.setAttribute('data-gc-keep', '1'); b.setAttribute('role', 'listbox'); b.setAttribute('aria-label', 'Mention someone on the team');
+    b.style.cssText = 'position:fixed;z-index:2147483000;background:#fff;border:1px solid #c7d2fe;border-radius:9px;box-shadow:0 10px 28px rgba(15,23,42,.22);min-width:220px;max-width:92vw;max-height:260px;overflow:auto;font:14px Arial,sans-serif;color:#1e1b4b';
+    b.addEventListener('mousedown', function(ev){ ev.preventDefault(); });   /* the note box keeps the focus */
+    b.addEventListener('click', function(ev){ var o = ev.target.closest && ev.target.closest('[data-apx-mn-i]'); if (!o) return; ev.preventDefault(); ev.stopPropagation(); mnPick(+o.getAttribute('data-apx-mn-i')); });
+    D.body.appendChild(b); }
+  b.innerHTML = '<div style="padding:6px 10px;font-size:12px;color:#64748b;border-bottom:1px solid #eef2ff">Mention someone on the team</div>' + MN.list.map(function(x, i){
+    return '<button type="button" role="option" data-apx-mn-i="' + i + '" aria-selected="' + (i === MN.i) + '" style="display:flex;justify-content:space-between;gap:10px;width:100%;border:0;background:' + (i === MN.i ? '#eef2ff' : '#fff') + ';padding:9px 10px;text-align:left;cursor:pointer;font:14px Arial;min-height:40px;color:#1e1b4b"><b>@' + esc(x.n) + '</b><span style="color:#64748b;font-size:12px">' + esc(x.r) + '</span></button>'; }).join('');
+  var r = el.getBoundingClientRect(), h = Math.min(260, b.offsetHeight || 200);
+  b.style.left = Math.max(8, Math.min(r.left, W.innerWidth - b.offsetWidth - 8)) + 'px';
+  b.style.top = (r.bottom + 4 + h > W.innerHeight && r.top > h + 8 ? r.top - h - 4 : r.bottom + 4) + 'px';
+}
+function mnScan(el){
+  var key = el.getAttribute('data-apx-note-in'), v = el.value || '', c = typeof el.selectionStart === 'number' ? el.selectionStart : v.length;
+  var m = /(^|[\s(])@([A-Za-z][A-Za-z.'-]*(?: [A-Za-z][A-Za-z.'-]*)?)?$/.exec(v.slice(0, c));
+  if (!m) { mnClose(); return; }
+  var q = m[2] || '', list = mnMatch(q);
+  if (!list.length && / /.test(q)) { mnClose(); return; }
+  if (MN.key !== key || MN.q !== q) MN.i = 0;
+  MN.key = key; MN.at = c - q.length - 1; MN.q = q; MN.list = list; if (MN.i >= list.length) MN.i = 0;
+  mnDraw(el);
+}
+function mnPick(i){
+  var el = mnInput(), x = MN.list[i]; if (!el || !x || MN.at < 0) { mnClose(); return; }
+  var v = el.value || '', c = typeof el.selectionStart === 'number' ? el.selectionStart : v.length, ins = '@' + x.n + ' ';
+  var nv = v.slice(0, MN.at) + ins + v.slice(c).replace(/^\s+/, ''), pos = MN.at + ins.length;
+  mnClose();
+  el.value = nv; NOTEDRAFT[el.getAttribute('data-apx-note-in')] = nv;
+  try { el.focus(); el.setSelectionRange(pos, pos); } catch (e) {}
+}
+D.addEventListener('input', function(ev){ var t = ev.target; if (t && t.getAttribute && t.hasAttribute('data-apx-note-in')) mnScan(t); }, true);
+D.addEventListener('click', function(ev){ var t = ev.target; if (!mnBox()) return; if (t && t.closest && (t.closest('#apx-mn') || (t.hasAttribute && t.hasAttribute('data-apx-note-in')))) { if (t.hasAttribute && t.hasAttribute('data-apx-note-in')) mnScan(t); return; } mnClose(); }, true);
+/* the window sees the key before the note box's own Enter (= Save note) */
+W.addEventListener('keydown', function(ev){
+  var t = ev.target; if (!mnBox() || !MN.list.length || !t || !t.getAttribute || !t.hasAttribute('data-apx-note-in')) return;
+  var k = ev.key;
+  if (k === 'ArrowDown' || k === 'ArrowUp') { MN.i = (MN.i + (k === 'ArrowDown' ? 1 : -1) + MN.list.length) % MN.list.length; mnDraw(t); }
+  else if (k === 'Enter' || k === 'Tab') mnPick(MN.i);
+  else if (k === 'Escape') mnClose();
+  else return;
+  ev.preventDefault(); ev.stopImmediatePropagation();
+}, true);
+/* Save note: one To-Do per person named (not me) -- the GrayCo Photos chat's @mention channel */
+function mnTitle(r){ var t = s(r.title), k = s(r.kindL); return (k && low(t).indexOf(low(k)) !== 0 ? k + ' — ' : '') + t + (r.amount ? ' · ' + money(r.amount) : ''); }
+function mnNotify(r, text){
+  var who = mnParse(text), me = low(myName()), em = myEmail();
+  who = who.filter(function(x){ return low(x.n) !== me && (!x.e || x.e !== em); });
+  if (!who.length) return [];
+  var list = lsList('gc_office_tasks'), at = new Date().toISOString(), base = 'apxmn_' + Date.now().toString(36), by = myName() || 'Someone', added = [];
+  who.forEach(function(x){
+    var id = base + '_' + low(x.e || x.n).replace(/[^a-z0-9]/g, '');
+    if (list.some(function(t){ return t && t.id === id; })) return;
+    list.push({ id: id, kind: 'mention', label: '💬 ' + mnFirst(by) + ' mentioned you on: ' + mnTitle(r), note: s(text).slice(0, 300), addedBy: by, addedAt: at, updatedAt: at, done: false,
+      assignee: x.n, forUser: x.e || x.n, apxKey: s(r.key), pid: s(r.pid), source: 'Approvals' });
+    added.push(x.n);
+  });
+  if (!added.length) return [];
+  try { localStorage.setItem('gc_office_tasks', JSON.stringify(list)); } catch (e) { warn(e); return []; }
+  try { if (typeof W._gcOfficeTasksPush === 'function') W._gcOfficeTasksPush(); else if (W._gcSyncQ && W._gcSyncQ.add) W._gcSyncQ.add('gc_office_tasks', list); } catch (e) { warn(e); }
+  return added;
+}
+/* the card's notes: each "@Name" of the team as a chip */
+function mnChips(h){
+  try { mnStaff().forEach(function(x){ var e = esc('@' + x.n); h = h.split(e).join('<span class="apx-mnc" style="background:#c7d2fe;color:#1e1b4b;border-radius:9px;padding:0 6px;font-weight:700">' + e + '</span>'); }); } catch (e) {}
+  return h;
+}
+/* the To-Do's "📋 Open the card": Approvals, at that card (the list that holds it), outlined for a moment */
+W._gcApprOpenCard = function(key){
+  key = s(key); var r = null; try { fresh(); r = rowByKey(key); } catch (e) {}
+  if (!r) { open(''); later(function(){ toast('That card is not waiting any more — it was approved, denied or sent.'); }, 400); return false; }
+  UI.job = UI.kind = UI.pm = '';
+  var f = r.mine ? '' : r.pmOpt ? 'pmopt' : 'all'; UI.f = f;
+  var i = -1; try { i = filtered(scope(), build().rows).map(function(x){ return x.key; }).indexOf(key); } catch (e) {}
+  UI.lim = Math.max(UI.lim || 25, i + 1);
+  open(f);
+  MNHL = { k: key, until: Date.now() + 6000 };   /* the card is drawn outlined (every repaint) for 6 s */
+  var n = 0; (function find(){ var el = D.querySelector('.apx-list [data-k="' + cssq(key) + '"]'); if (el) { try { el.scrollIntoView({ block: 'center' }); } catch (e) {} return; } if (++n < 24) later(find, 250); })();
+  return true;
+};
+W._gcApprMention = { staff: mnStaff, parse: mnParse, match: mnMatch };
+
 D.addEventListener('keydown', function(ev){ var t = ev.target; if (ev.key === 'Enter' && t && t.getAttribute && t.hasAttribute('data-apx-note-in')) { var g = t.parentNode && t.parentNode.querySelector('[data-apx-act$="|notego"]'); if (g) { ev.preventDefault(); g.click(); } } }, true);
 function denyTodos(){
   if (Date.now() - DENYC.at < 1000) return DENYC;
@@ -163097,6 +163216,26 @@ function assignHere(r, el){
   later(function(){ try { W._gcLeadsHub.picker([lid], el && el.isConnected ? el : null); } catch (e) { warn(e); try { r.approve.f(); } catch (x) {} } }, 0);
 }
 W.addEventListener('gc-lead-assigned', function(ev){ var d = ev && ev.detail; if (d && d.id) goneNow('td:hot1:asg:' + s(d.id)); });
+/* patch ASSIGNFIX B: the bulk bar. Tickable = approves in place (approve.mode) or an "Assign this lead" card (internal; I may
+   assign). Routine = tickable and tier Routine (anything that goes to a customer is tier Soon or ASAP, never here). */
+function afLid(r){ var m = /^td:hot1:asg:(.+)$/.exec(bareKey(r && r.key)); return m ? m[1] : ''; }
+function afAsg(r){ return !!(r && r.approve && afLid(r) && canAssignHere()); }
+function afTick(r){ return !!(r && r.mine && r.approve && (r.approve.mode || afAsg(r)) && !PEND[r.key] && !DONE[r.key]); }
+function afRoutine(r){ return afTick(r) && !!W._gcApprovalTier && (W._gcApprovalTier(r) || {}).t === 2; }
+function afDefault(r){ try { return typeof W._gcHot1Default === 'function' ? s(W._gcHot1Default(afLid(r))) : ''; } catch (e) { return ''; } }
+function afBulkNote(){
+  var a = 0, b = 0; Object.keys(SEL).forEach(function(k){ var r = rowByKey(k); if (r && afAsg(r)) { if (afDefault(r)) a++; else b++; } });
+  return (a ? ' <span class="apx-afn" style="font-size:12px;color:#334155">👤 ' + a + ' lead' + (a === 1 ? '' : 's') + ' to ' + (a === 1 ? 'its' : 'their') + ' usual person</span>' : '') + (b ? ' <span class="apx-afn" style="font-size:12px;color:#334155">👤 ' + b + ' lead' + (b === 1 ? '' : 's') + ': you pick who next</span>' : '');
+}
+/* the ticked "Assign this lead" cards: the default person through the Leads hub's own assign (one after the other), the
+   rest in ONE picker. Each assign fires gc-lead-assigned: the card leaves and the count drops at once. */
+function afBulkAssign(rows, anchor){
+  var H = W._gcLeadsHub, pick = [], go = [];
+  rows.forEach(function(r){ var lid = afLid(r), to = afDefault(r); if (to && H && typeof H.assign === 'function') go.push([lid, to]); else pick.push(lid); });
+  go.reduce(function(pr, x){ return pr.then(function(){ return Promise.resolve(H.assign(x[0], x[1])).catch(function(e){ warn(e); }); }); }, Promise.resolve())
+    .then(function(){ if (go.length > 1) toast('👤 ' + go.length + ' leads assigned to their usual person'); });
+  if (pick.length && H && typeof H.picker === 'function') later(function(){ try { H.picker(pick, anchor && anchor.isConnected ? anchor : null); } catch (e) { warn(e); } }, 0);
+}
 W._gcApprCount = { state: function(){ return { gone: Object.keys(GONE), denying: Object.keys(DPEND) }; }, isGone: isGone, trim: trimSet, deny: function(key){ var r = rowByKey(s(key)); if (r) quickDeny(r); return !!r; } };
 wrapSetCount();
 function denyFilter(rows){
@@ -163399,8 +163538,8 @@ function btns(r, where){
   return '<div class="apx-bs">' + h + '</div>';
 }
 function rowHtml(r, now, where){
-  return '<div class="apx-row' + (r.escalated ? ' esc' : '') + (r.mine ? ' mine' : '') + (PEND[r.key] || DONE[r.key] ? ' done' : '') + '" data-k="' + esc(r.key) + '">'
-    + (where === 'tab' && r.mine && r.approve && r.approve.mode && !PEND[r.key] && !DONE[r.key] ? '<label class="apx-sel"><input type="checkbox" data-apx-sel="' + esc(r.key) + '"' + (SEL[r.key] ? ' checked' : '') + '> Select</label>' : '')
+  return '<div class="apx-row' + (r.escalated ? ' esc' : '') + (r.mine ? ' mine' : '') + (PEND[r.key] || DONE[r.key] ? ' done' : '') + '" data-k="' + esc(r.key) + '"' + (MNHL.k === r.key && Date.now() < MNHL.until ? ' data-apx-hl="1" style="outline:3px solid #6366f1;outline-offset:2px"' : '') + '>'   /* patch APPRMENTION: the card a mention opened */
+    + (where === 'tab' && afTick(r) ? '<label class="apx-sel"><input type="checkbox" data-apx-sel="' + esc(r.key) + '"' + (SEL[r.key] ? ' checked' : '') + '> Select' + (afAsg(r) ? (afDefault(r) ? ' — assign to ' + esc(afDefault(r)) : ' — you pick who') : '') + '</label>' : '')   /* patch ASSIGNFIX B */
     + (W._gcApprovalChip ? W._gcApprovalChip(r) : '')   /* patch APPRORDER */
     + '<div class="apx-t">' + r.icon + ' <span class="apx-kl">' + esc(r.kindL) + '</span> · ' + esc(r.title) + '</div>'
     + (r.job ? '<div class="apx-j">🏗 ' + esc(r.job) + '</div>' : '')
@@ -163457,7 +163596,7 @@ function tabHtml(){
   var chips = chipsFor(sc, rows), list = filtered(sc, rows);
   Object.keys(DONE).forEach(function(k){ var d = DONE[k]; if (d && d.r && !list.some(function(x){ return x.key === k; })) list.unshift(d.r); });   /* patch INLINEAPPR */
   var selN = list.filter(function(r){ return SEL[r.key] && !PEND[r.key] && !DONE[r.key]; }).length;
-  var routineN = list.filter(function(r){ return r.mine && r.approve && r.approve.mode && !PEND[r.key] && !DONE[r.key] && W._gcApprovalTier && (W._gcApprovalTier(r) || {}).t === 2; }).length;
+  var routineN = list.filter(afRoutine).length;   /* patch ASSIGNFIX B: + the Assign this lead cards */
   var jobs = {}, kinds = {}, pms = {};
   rows.forEach(function(r){ if (r.pid) jobs[r.pid] = r.job || r.pid; kinds[r.kindL] = 1; if (r.pm) pms[r.pm] = 1; });
   var h = '<div class="apx">'
@@ -163469,8 +163608,8 @@ function tabHtml(){
     + '<select data-apx="kind">' + opt('', 'Every kind', UI.kind) + Object.keys(kinds).sort().map(function(k){ return opt(k, k, UI.kind); }).join('') + '</select>'
     + (sc.kind === 'admin' ? '<select data-apx="pm">' + opt('', 'Every PM', UI.pm) + Object.keys(pms).sort().map(function(k){ return opt(k, k, UI.pm); }).join('') + '</select>' : '')
     + (UI.job || UI.kind || UI.pm ? '<button type="button" class="apx-b op" data-apx-clear="1">Clear</button>' : '') + '</div>';
-  if (list.some(function(r){ return r.mine && r.approve && r.approve.mode; })) h += '<div class="apx-bulk">'
-    + (BULK ? '<span>Approve <b>' + selN + '</b> item' + (selN === 1 ? '' : 's') + '? Nothing that goes to a customer is sent without its own look.</span><button type="button" class="apx-b go" data-apx-bulk="yes">✅ Yes, approve ' + selN + '</button><button type="button" class="apx-b op" data-apx-bulk="no">Cancel</button>'
+  if (list.some(afTick)) h += '<div class="apx-bulk">'   /* patch ASSIGNFIX B */
+    + (BULK ? '<span>Approve <b>' + selN + '</b> item' + (selN === 1 ? '' : 's') + '? Nothing that goes to a customer is sent without its own look.</span>' + afBulkNote() + '<button type="button" class="apx-b go" data-apx-bulk="yes">✅ Yes, approve ' + selN + '</button><button type="button" class="apx-b op" data-apx-bulk="no">Cancel</button>'
       : '<button type="button" class="apx-b op" data-apx-bulk="routine">☐ Select all routine (' + routineN + ')</button>' + (selN ? '<button type="button" class="apx-b op" data-apx-bulk="none">Clear (' + selN + ')</button>' : '') + '<button type="button" class="apx-b go" data-apx-bulk="ask"' + (selN ? '' : ' disabled') + '>✅ Approve selected (' + selN + ')</button>')
     + '</div>';
   var lim = UI.lim || 25;   /* patch TODOPERF: the first 25, then "Show more" */
@@ -163514,11 +163653,11 @@ D.addEventListener('click', function(ev){
   if (t.closest('[data-apx-jpx]')) { ev.preventDefault(); ev.stopPropagation(); PICK = { key: '', q: '' }; paintSoon(); return; }
   var sl = t.closest('[data-apx-sel]'); if (sl) { ev.stopPropagation(); var sk = sl.getAttribute('data-apx-sel'); if (sl.checked) SEL[sk] = 1; else delete SEL[sk]; later(function(){ drawTab(true); }, 0); return; }
   var bk = t.closest('[data-apx-bulk]'); if (bk) { ev.preventDefault(); ev.stopPropagation(); var bv = bk.getAttribute('data-apx-bulk');
-    if (bv === 'routine') { filtered(scope(), build().rows).forEach(function(r){ if (r.mine && r.approve && r.approve.mode && W._gcApprovalTier && (W._gcApprovalTier(r) || {}).t === 2) SEL[r.key] = 1; }); }
+    if (bv === 'routine') { filtered(scope(), build().rows).forEach(function(r){ if (afRoutine(r)) SEL[r.key] = 1; }); }   /* patch ASSIGNFIX B */
     else if (bv === 'none') SEL = {};
     else if (bv === 'ask') BULK = 1;
     else if (bv === 'no') BULK = 0;
-    else if (bv === 'yes') { BULK = 0; var keys = Object.keys(SEL); SEL = {}; keys.forEach(function(k){ var r = rowByKey(k); if (!r || !r.approve || !r.approve.mode) return; if (r.approve.mode === 'confirm') { CONF[k] = 1; return; } inlineApprove(r); }); }
+    else if (bv === 'yes') { BULK = 0; var keys = Object.keys(SEL), asg = []; SEL = {}; keys.forEach(function(k){ var r = rowByKey(k); if (r && afAsg(r) && r.mine) { asg.push(r); return; } if (!r || !r.approve || !r.approve.mode) return; if (r.approve.mode === 'confirm') { CONF[k] = 1; return; } inlineApprove(r); }); if (asg.length) afBulkAssign(asg, bk); }   /* patch ASSIGNFIX B */
     drawTab(true); return; }
   var a = t.closest('[data-apx-act]');
   if (a) { ev.preventDefault(); ev.stopPropagation(); var f = ACTS[a.getAttribute('data-apx-act')] || PIN_ACTS[a.getAttribute('data-apx-act')]; if (f) { try { f(a); } catch (e) { warn(e); } } if (/\|approve$/.test(a.getAttribute('data-apx-act'))) later(paintSoon, 400); return; }
@@ -170069,12 +170208,12 @@ function lcAskDel(id){
     + '<div class="n">' + esc(s(l.name || l.title) || 'Lead') + '</div>'
     + '<div class="w">It is removed on every computer. Undo is offered for 5 seconds; after that an admin can bring it back from “Recently deleted” (30 days).</div>'
     + '<div class="a"><button type="button" data-a="cancel">Cancel</button><button type="button" data-a="delete">🗑 Delete</button></div></div>';
-  function key(e){ if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(false); } }
+  function key(e){ if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(false); } else if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); var ae = D.activeElement; done(!(ae && ae.getAttribute && ae.getAttribute('data-a') === 'cancel' && ov.contains(ae))); } }   /* patch DELKEY: Enter = Delete (Undo + Recently deleted follow), Esc = Cancel */
   function done(yes){ D.removeEventListener('keydown', key, true); ov.remove(); if (yes) lcDelete(id); }
   ov.addEventListener('click', function(e){ var a = e.target && e.target.getAttribute && e.target.getAttribute('data-a'); if (e.target === ov || a === 'cancel') done(false); else if (a === 'delete') done(true); });
   D.addEventListener('keydown', key, true);
   D.body.appendChild(ov);
-  try { ov.querySelector('[data-a=cancel]').focus(); } catch (e) {}
+  try { ov.querySelector('[data-a=delete]').focus(); } catch (e) {}   /* patch DELKEY */
 }
 function lcDelete(id){
   LC_GONE[id] = 1; if (UI.open === id) closeDrawer(); redraw();
@@ -170424,7 +170563,7 @@ function css2(){
     '#gcl-lprio-pop{position:absolute;z-index:100200;background:#fff;border:1px solid #d6d3ea;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.18);padding:8px;display:flex;flex-wrap:wrap;gap:4px;max-width:250px;font:12px Arial}#gcl-lprio-pop .t{width:100%;color:#555;margin-bottom:2px}',
     '#gcl-delq{position:fixed;inset:0;z-index:2147483600;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:16px;font-family:Arial,sans-serif}',
     '#gcl-delq .b{background:#fff;color:#111;border-radius:12px;width:min(420px,94vw);padding:18px 20px;box-shadow:0 12px 40px rgba(0,0,0,.35)}#gcl-delq .q{font-size:16px;font-weight:800;margin-bottom:6px}#gcl-delq .n{font-size:14px;margin-bottom:8px;word-break:break-word}#gcl-delq .w{font-size:12px;color:#7f1d1d;margin-bottom:14px}',
-    '#gcl-delq .a{display:flex;gap:8px;justify-content:flex-end}#gcl-delq .a button{border-radius:7px;padding:9px 16px;font-weight:700;cursor:pointer;font-size:14px}#gcl-delq [data-a=cancel]{background:#0f2440;color:#fff;border:0}#gcl-delq [data-a=delete]{background:#fff;color:#b91c1c;border:1px solid #fca5a5}',
+    '#gcl-delq .a{display:flex;gap:8px;justify-content:flex-end}#gcl-delq .a button{border-radius:7px;padding:9px 16px;font-weight:700;cursor:pointer;font-size:14px}#gcl-delq [data-a=cancel]{background:#fff;color:#0f2440;border:1px solid #cbd5e1}#gcl-delq [data-a=delete]{background:#dc2626;color:#fff;border:1px solid #dc2626}#gcl-delq .a button:focus-visible{outline:3px solid #fbbf24;outline-offset:2px}',   /* patch DELKEY: Delete is the primary button, Cancel the outline one */
     '#gcl-deltoast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:2147483500;background:#1f2937;color:#fff;border-radius:999px;padding:8px 10px 8px 16px;display:flex;gap:8px;align-items:center;font:600 14px Arial;box-shadow:0 6px 20px rgba(0,0,0,.25)}#gcl-deltoast button{background:#fff;color:#1f2937;border:0;border-radius:999px;padding:5px 12px;font-weight:700;cursor:pointer}',
     '#gclu-oldbb{position:fixed;inset:0;z-index:2147483000;background:rgba(15,23,42,.5);display:flex;align-items:center;justify-content:center;padding:16px;font:14px Arial,sans-serif;color:#1b1640}#gclu-oldbb .b{background:#fff;border-radius:12px;width:min(860px,96vw);max-height:86vh;overflow:auto;box-shadow:0 12px 40px rgba(0,0,0,.3)}',
     '#gclu-oldbb .h{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid #eee;position:sticky;top:0;background:#fff}#gclu-oldbb .h button{border:1px solid #ddd;background:#fff;border-radius:7px;padding:6px 11px;cursor:pointer}#gclu-oldbb .c{padding:12px 16px}#gclu-oldbb table{width:100%;border-collapse:collapse}#gclu-oldbb td,#gclu-oldbb th{padding:6px;border-top:1px solid #f0eef8;text-align:left;font-size:13px;vertical-align:top}#gclu-oldbb .n{color:#666;font-size:12px}',
@@ -171163,12 +171302,12 @@ function bkAsk(){
     + '<div class="gclb-undo">Undo: right after the delete, or for 30 days in <b>Admin → Recycle bin → Restore</b> (also ⋯ More → 🗑 Recently deleted).</div>'
     + '<div class="a"><button type="button" data-a="cancel">Cancel</button><button type="button" data-a="delete">🗑 Delete ' + (n === 1 ? 'lead' : n + ' leads') + '</button></div></div>';
   var ids = sp.go.map(function(l){ return s(l.id); });
-  function key(e){ if (e.key === 'Escape' || e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); done(false); } }
+  function key(e){ if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(false); } else if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); var ae = D.activeElement; done(!(ae && ae.getAttribute && ae.getAttribute('data-a') === 'cancel' && ov.contains(ae))); } }   /* patch DELKEY: Enter = Delete, Esc = Cancel */
   function done(yes){ D.removeEventListener('keydown', key, true); ov.remove(); if (yes) bkDelete(ids); }
   ov.addEventListener('click', function(e){ var a = e.target && e.target.getAttribute && e.target.getAttribute('data-a'); if (e.target === ov || a === 'cancel') done(false); else if (a === 'delete') done(true); });
   D.addEventListener('keydown', key, true);
   D.body.appendChild(ov);
-  try { ov.querySelector('[data-a=cancel]').focus(); } catch (e) {}
+  try { ov.querySelector('[data-a=delete]').focus(); } catch (e) {}   /* patch DELKEY */
 }
 /* the CRM's own lead delete (one call for all of them): the delete list, the explicit-delete flag, Undo, Recently deleted */
 function bkDelete(ids){
@@ -171265,7 +171404,7 @@ W._gcLeadsHubKit = { all: function(){ return rawLeads().filter(function(l){ retu
   setLeads: function(mut){ return setLeads(function(list){ var n = mut(list); if (Array.isArray(n)) { LEADS_NOW = n; LEADS_SIG = ''; } return n; }); },   /* as patchLead: the hub's own copy follows at once (a later full-list push never carries the old list) */
   imported: importedL, archived: archivedL, shut: shut, stageOf: stageOf, value: value, isAdmin: isAdmin,
   me: function(){ return myName() || myEmail(); }, receivedMs: function(l){ return receivedMs(l) || born(l); }, typeOf: typeOf };   /* patch LCLEAN */
-W._gcLeadsHub = { kit: W._gcLeadsHubKit, redraw: redraw, open: openDrawer, close: closeDrawer, moveStage: moveStage, unassigned: unassignedCount, ui: function(){ return UI; }, scopeFromEstimate: scopeFromEstimate, scopeFromLines: scopeFromLines, xactFor: xactFor, sweep: sweepPortal, autoAssign: autoAssignBids, autoState: function(id){ var l = id ? leads().filter(function(x){ return x.id === id; })[0] : null; return { busy: AUTO_BUSY, tries: AUTO_TRIES, at: AUTO_AT, last: AUTO_LAST, lead: l ? { assignee: assignee(l), bid: isBidL(l), shut: shut(l), updatedAt: l.updatedAt } : null }; }, isBid: isBidL, picker: openPicker, canAssign: canAssignAll, filtered: function(){ return filtered().map(function(l){ return l.id; }); } };
+W._gcLeadsHub = { kit: W._gcLeadsHubKit, redraw: redraw, open: openDrawer, close: closeDrawer, moveStage: moveStage, unassigned: unassignedCount, ui: function(){ return UI; }, scopeFromEstimate: scopeFromEstimate, scopeFromLines: scopeFromLines, xactFor: xactFor, sweep: sweepPortal, autoAssign: autoAssignBids, autoState: function(id){ var l = id ? leads().filter(function(x){ return x.id === id; })[0] : null; return { busy: AUTO_BUSY, tries: AUTO_TRIES, at: AUTO_AT, last: AUTO_LAST, lead: l ? { assignee: assignee(l), bid: isBidL(l), shut: shut(l), updatedAt: l.updatedAt } : null }; }, isBid: isBidL, picker: openPicker, canAssign: canAssignAll, assign: assign,   /* patch ASSIGNFIX B */ filtered: function(){ return filtered().map(function(l){ return l.id; }); } };
 var n0 = 0;
 function tick(){ try { if (D.hidden) return; css(); mount(); luTick(); navBadge(); if (view() === 'leads') loadEsts(); if (view() === 'leads' && ++n0 % 20 === 3) sweepPortal(); } catch (e) { warn(e); } }
 /* patch HOT2: the head-estimator backfill keeps its own 3-second timeout loop — the interval governors hold tick()
@@ -171434,6 +171573,7 @@ var AUTO_BY = /lead inbox|Senior Estimator|system|auto|grayco crm|roofscout|webs
 /* nobody assigned — or only the automatic assignment that no person has confirmed yet */
 function needsAssign(l){
   if (W._gcLeadHold && W._gcLeadHold.isHeld(l)) return false;   /* patch LEADHOLD: the one "⏳ N new leads waiting" card instead */
+  try { if (W._gcLeadNC && typeof W._gcLeadNC.imported === 'function' && W._gcLeadNC.imported(l)) return false; } catch (e) {}   /* patch ASSIGNSKIP: a QuickBooks / CompanyCam importer row the Leads screen files under 📦 Imported (an existing customer, not an inquiry) */
   if (closed(l)) return false;
   var who = s(l.pm || l.estimator || l.apm);
   if (!who) return true;
@@ -171441,7 +171581,50 @@ function needsAssign(l){
   if ((l.autoAssignedAt || /^auto\b|senior estimator|senior insurance pm|senior roofing pm|lead inbox|head\s+estimator/i.test(s(l.assignedBy))) && W._gcLeadRoles && W._gcLeadRoles.autoOk && W._gcLeadRoles.autoOk(l)) return false;   /* patch HOT2: a lead its lead role took automatically */
   return !!(l.inboxId && AUTO_BY.test(s(l.assignedBy)) && !s(l.assignedBy).match(/@/));
 }
-W._gcLeadsToAssign = function(){ return leads().filter(needsAssign); };
+/* patch ASSIGNFIX A: copies of ONE lead (the same importer row, CompanyCam project or QuickBooks customer, or merged into one
+   another -- every QuickBooks sync filed the same customer again under a new id) are one card, and the lead counts as
+   assigned when any copy is. Owner: "i assigned these and they didnt go off the approvals" -- an identical card for
+   the other copy stayed. */
+function afKeys(l){
+  var k = ['id:' + s(l.id)];
+  if (s(l.fromProjectId)) k.push('p:' + s(l.fromProjectId));
+  if (s(l.ccamId || l.ccId)) k.push('cc:' + s(l.ccamId || l.ccId));
+  if (s(l.qbId || l.qbCustomerId)) k.push('qb:' + s(l.qbId || l.qbCustomerId));
+  var m = /^L(QB|CC)_(.+)$/.exec(s(l.id)); if (m) k.push('p:' + m[2]);
+  [].concat(arr(l._mergedFrom), arr(l.mergedFrom)).forEach(function(x){ x = s(x && typeof x === 'object' ? x.id : x); if (!x) return; k.push('id:' + x); var mm = /^L(QB|CC)_(.+)$/.exec(x); if (mm) k.push('p:' + mm[2]); });
+  return k;
+}
+function afImp(l){ return /^L(QB|CC|CCR)_/.test(s(l.id)); }
+function afGroups(list){
+  var par = {}, own = {};
+  function f(x){ while (par[x] !== x) { par[x] = par[par[x]]; x = par[x]; } return x; }
+  list.forEach(function(l, i){ par[i] = i; afKeys(l).forEach(function(k){ if (own[k] == null) own[k] = i; else par[f(i)] = f(own[k]); }); });
+  var g = {}; list.forEach(function(l, i){ var r = f(i); (g[r] = g[r] || []).push(l); });
+  return Object.keys(g).map(function(r){ return g[r]; });
+}
+var AFC = { sig: '', v: [] };
+W._gcLeadsToAssign = function(){
+  var L = leads(), sig = L.length + '|' + L.map(function(l){ return s(l && l.id) + ':' + s(l && l.updatedAt) + ':' + s(l && (l.pm || l.estimator || l.apm)); }).join(',');
+  try { if (W._gcLeadHold) sig += '|h' + W._gcLeadHold.approvals().length; } catch (e) {}
+  if (AFC.sig === sig && Date.now() - AFC.at < 5000) return AFC.v.slice();
+  var out = [];
+  afGroups(L.filter(function(l){ return l && l.id && !closed(l); })).forEach(function(g){
+    if (g.some(function(l){ return s(l.pm || l.estimator || l.apm) && !needsAssign(l); })) return;   /* a copy is assigned: the lead is */
+    var c = g.filter(needsAssign); if (!c.length) return;
+    c.sort(function(a, b){ return (afImp(a) - afImp(b)) || (s(b.updatedAt) < s(a.updatedAt) ? -1 : s(b.updatedAt) > s(a.updatedAt) ? 1 : 0); });
+    out.push(c[0]);
+  });
+  AFC = { sig: sig, v: out, at: Date.now() };
+  return out.slice();
+};
+/* patch ASSIGNFIX B: the person an "Assign this lead" card defaults to -- the one it was set to automatically, else the
+   holder of its lead role (Senior Estimator / Senior Insurance PM / Senior Roofing PM); '' = nobody (pick one) */
+W._gcHot1Default = function(id){
+  var l = byId(id); if (!l) return '';
+  var auto = s(l.pm || l.estimator); if (auto) return auto;
+  try { var R = W._gcLeadRoles, k = R && R.classify ? R.classify(l) : '', h = k && R.holder ? R.holder(k) : null; if (h && s(h.name)) return s(h.name); } catch (e) {}
+  return '';
+};
 
 /* ── who also sees them: every estimator (role / profile) and the Senior Estimator ──────────── */
 function estimators(){
