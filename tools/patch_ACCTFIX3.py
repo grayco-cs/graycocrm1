@@ -2,7 +2,8 @@
 """Idempotent patch ACCTFIX3 (r17j, on top of ACCTFIX2): the office's money flows in the ACCTGATE walkthrough.
 
 1. ✅ Approvals → "🧾 Match this invoice" → pick the job → "Book it on this job": the booked sub invoice is the person's
-   own action (window._gcManualNow), so the invoices list takes it at once. Before, the "hands off while she works" hold
+   own action (window._gcHerOwnNow, new: the hold's own "hers" mark; not _gcManualNow, which also lets the list floor
+   accept a cut for 20 s), so the invoices list takes it at once. Before, the "hands off while she works" hold
    parked it as a background redraw while the picker was open: "✓ Booked" showed but the invoice was not on the job or
    in ▥ Invoices until the screen went quiet (and a push in between could go up without it).
 2. ✅ Approvals → an expense the office may approve (routed to the office: no PM, or the PM had 24 h) now has its own
@@ -12,6 +13,9 @@
    record itself (gc_expense_approvals) when the narrower list lacks it. The approval records carry their own id
    ('expId:<expense>') beside expId; the cards matched on that id first, so no record ever matched its card (every
    expense card was the fallback): the match and the card key now use the expense id.
+3. 💳 / 🏦 statement imports: the expenses they add reach the screen as her own work. The import finishes seconds after
+   the click, so with the mouse moving the hold parked them: the P&L did not move, and the same statement imported
+   again did not see its lines as "already in".
 Usage: python3 tools/patch_ACCTFIX3.py [index.html]"""
 import os, sys
 HERE = os.path.dirname(os.path.abspath(__file__)); ROOT = os.path.dirname(HERE)
@@ -25,12 +29,31 @@ def once(s, old, new, label):
     return s.replace(old, new)
 
 
+# 0. the "hands off while she works" hold (it parks every list redraw that is not hers): one narrow way to say "this one
+#    is hers" that does NOT touch _gcManualNow (which also lets the list floor accept a cut for 20 s)
+M0 = '/* patch ACCTFIX3: her own work, for the hold only */'
+if M0 not in src:
+    src = once(src, 'function hersOwn(){',
+               'window._gcHerOwnNow = function(){ lastManualNow = Date.now(); };   ' + M0 + '\nfunction hersOwn(){', 'hands-off hold')
+HER = "try { if (typeof W._gcHerOwnNow === 'function') W._gcHerOwnNow(); } catch (e) {}"
+
+# 1. Match this invoice -> Book it
 M1 = '/* patch ACCTFIX3: booked by her own click */'
-if M1 not in src:
-    src = once(src, '  inv._jobCertain = true; inv._matchConfirmed = true; inv.matchedBy = myName(); inv.matchedAt = nowIso();\n  if (!addInvoice(inv)) return null;',
-               '  inv._jobCertain = true; inv._matchConfirmed = true; inv.matchedBy = myName(); inv.matchedAt = nowIso();\n'
-               '  try { if (typeof W._gcManualNow === \'function\') W._gcManualNow(\'book a matched sub invoice\'); } catch (e) {}   ' + M1 + '\n'
-               '  if (!addInvoice(inv)) return null;', 'Match this invoice: place()')
+A1 = '  inv._jobCertain = true; inv._matchConfirmed = true; inv.matchedBy = myName(); inv.matchedAt = nowIso();\n'
+OLD1 = A1 + '  try { if (typeof W._gcManualNow === \'function\') W._gcManualNow(\'book a matched sub invoice\'); } catch (e) {}   ' + M1 + '\n'
+NEW1 = A1 + '  ' + HER + '   ' + M1 + '\n'
+if NEW1 not in src:
+    if OLD1 in src: src = once(src, OLD1, NEW1, 'Match: first cut')
+    else: src = once(src, A1 + '  if (!addInvoice(inv)) return null;', NEW1 + '  if (!addInvoice(inv)) return null;', 'Match this invoice: place()')
+
+# 1b. the statement / card imports put their expenses on the screen as her own work (they finish seconds after the click)
+M1B = '/* patch ACCTFIX3: an import is her own work */'
+if M1B not in src:
+    a = '  try{ window.__GC_MANUAL_SAVE__=true; if(window._setExpenses) window._setExpenses(exp); }catch(e){}'
+    assert src.count(a) == 2, ('ACCTFIX3: card charge expense writes', src.count(a))
+    src = src.replace(a, "  try{ window.__GC_MANUAL_SAVE__=true; if(typeof window._gcHerOwnNow==='function') window._gcHerOwnNow(); if(window._setExpenses) window._setExpenses(exp); }catch(e){}   " + M1B)
+    src = once(src, "    try { W.__GC_MANUAL_SAVE__ = true; if (typeof W._setExpenses === 'function') W._setExpenses(l); } catch (e) {}",
+               "    try { W.__GC_MANUAL_SAVE__ = true; if (typeof W._gcHerOwnNow === 'function') W._gcHerOwnNow(); if (typeof W._setExpenses === 'function') W._setExpenses(l); } catch (e) {}   " + M1B, 'bank statement import')
 
 M2 = '/* patch ACCTFIX3: the office expense card */'
 ORIG2 = "    arr(g.expense).forEach(function(e){ var a = X.filter(function(z){ return 'exp:' + s(z.id || z.expId) === e.id; })[0]; addMine(a ? rowExp(a, true, now) : stub(e, 'exp')); });"

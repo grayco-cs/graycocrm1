@@ -102810,7 +102810,7 @@ async function syncOne(rec){
   for(var i=0;i<exp.length;i++){ if(exp[i] && exp[i].id===key){ at=i; break; } }
   if(at>=0) exp[at]=Object.assign({}, exp[at], row); else exp.push(row);
   try{ if(window._crm) window._crm.expenses=exp; }catch(e){}
-  try{ window.__GC_MANUAL_SAVE__=true; if(window._setExpenses) window._setExpenses(exp); }catch(e){}
+  try{ window.__GC_MANUAL_SAVE__=true; if(typeof window._gcHerOwnNow==='function') window._gcHerOwnNow(); if(window._setExpenses) window._setExpenses(exp); }catch(e){}   /* patch ACCTFIX3: an import is her own work */
   await put('expenses', exp);
   setTimeout(function(){ try{ window.__GC_MANUAL_SAVE__=false; }catch(e){} }, 1200);
 
@@ -102841,7 +102841,7 @@ window._gcDeleteCardCharge = async function(id){
   var exp=listOf('expenses'); if(!exp.length){ var db=await get('expenses'); if(Array.isArray(db)) exp=db; }
   exp=exp.filter(function(e){ return !(e && e.id===key); });
   try{ if(window._crm) window._crm.expenses=exp; }catch(e){}
-  try{ window.__GC_MANUAL_SAVE__=true; if(window._setExpenses) window._setExpenses(exp); }catch(e){}
+  try{ window.__GC_MANUAL_SAVE__=true; if(typeof window._gcHerOwnNow==='function') window._gcHerOwnNow(); if(window._setExpenses) window._setExpenses(exp); }catch(e){}   /* patch ACCTFIX3: an import is her own work */
   await put('expenses', exp);
   var reg=await get('gcAcctRegister');
   if(Array.isArray(reg)){ await put('gcAcctRegister', reg.filter(function(r){ return !(r && r.srcInvId===key); })); }
@@ -105278,6 +105278,7 @@ waitFor('_gcManualNow', function(orig){
   w.__handsoff = true;
   try{ window._gcManualNow = w; }catch(e){}
 });
+window._gcHerOwnNow = function(){ lastManualNow = Date.now(); };   /* patch ACCTFIX3: her own work, for the hold only */
 function hersOwn(){
   try{
     if(window.__GC_EXPLICIT_DELETE__ === true) return true;
@@ -186186,7 +186187,7 @@ function place(id, o){
   var inv = makeInv(rec, { pid: o.pid, sub: subRec ? subRec.name : o.sub, subId: subRec ? subRec.id : '', amt: o.amt });
   if (!(inv.amt > 0)) return null;
   inv._jobCertain = true; inv._matchConfirmed = true; inv.matchedBy = myName(); inv.matchedAt = nowIso();
-  try { if (typeof W._gcManualNow === 'function') W._gcManualNow('book a matched sub invoice'); } catch (e) {}   /* patch ACCTFIX3: booked by her own click */
+  try { if (typeof W._gcHerOwnNow === 'function') W._gcHerOwnNow(); } catch (e) {}   /* patch ACCTFIX3: booked by her own click */
   if (!addInvoice(inv)) return null;
   markDone(rec.id, { done: true, invId: inv.id, at: nowIso(), by: myName() });
   return inv;
@@ -187879,7 +187880,7 @@ function addExpenses(add){
     var have = {}; l.forEach(function(x){ if (x) have[s(x.id)] = 1; });
     var n = add.filter(function(x){ return !have[x.id]; }); l = l.concat(n);
     try { if (W._crm) W._crm.expenses = l; } catch (e) {}
-    try { W.__GC_MANUAL_SAVE__ = true; if (typeof W._setExpenses === 'function') W._setExpenses(l); } catch (e) {}
+    try { W.__GC_MANUAL_SAVE__ = true; if (typeof W._gcHerOwnNow === 'function') W._gcHerOwnNow(); if (typeof W._setExpenses === 'function') W._setExpenses(l); } catch (e) {}   /* patch ACCTFIX3: an import is her own work */
     return Promise.resolve(W.idbSet ? W.idbSet('expenses', l) : null).then(null, function(){}).then(function(){
       ST.call(W, function(){ try { W.__GC_MANUAL_SAVE__ = false; } catch (e) {} }, 1200);
       try { if (W._gcPushAll) ST.call(W, function(){ W._gcPushAll(); }, 900); } catch (e) {}
