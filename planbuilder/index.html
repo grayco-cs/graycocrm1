@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GrayCo PlanBuilder 3D</title>
+  <link rel="stylesheet" href="css/app.css">
+  <script type="importmap">
+  { "imports": { "three": "./vendor/three.module.min.js", "three/addons/controls/OrbitControls.js": "./vendor/OrbitControls.js", "three/addons/exporters/GLTFExporter.js": "./vendor/GLTFExporter.js" } }
+  </script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">▦</span><span>PlanBuilder <b>3D</b></span></div>
+    <input id="prj-name" class="prj-name" aria-label="Project name" spellcheck="false">
+    <span id="save-state" class="save-state" title="Saved in this browser"></span>
+    <div class="spacer"></div>
+    <nav class="views" role="tablist" aria-label="View">
+      <button data-view="plan" class="on">2D Plan</button>
+      <button data-view="split">Split</button>
+      <button data-view="3d">3D</button>
+      <button data-view="estimate">Estimate</button>
+    </nav>
+    <div class="spacer"></div>
+    <button id="btn-undo" class="icon" title="Undo (Ctrl+Z)">↶</button>
+    <button id="btn-redo" class="icon" title="Redo (Ctrl+Y)">↷</button>
+    <button id="btn-projects" class="btn">📁 Projects</button>
+    <button id="btn-catalog" class="btn">📦 Catalog</button>
+    <div class="menu-wrap">
+      <button id="btn-export" class="btn">⤓ Export ▾</button>
+      <div id="menu-export" class="menu" hidden>
+        <button data-exp="print">🖨 Print / PDF (plans + 3D + estimate)</button>
+        <button data-exp="csv">Estimate spreadsheet (.csv)</button>
+        <button data-exp="json">Project file (.json)</button>
+        <button data-exp="png">3D picture (.png)</button>
+        <button data-exp="planpng">2D plan picture (.png)</button>
+        <button data-exp="glb">3D model (.glb)</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="main">
+    <aside class="left" id="left">
+      <section class="tools" aria-label="Tools">
+        <button data-tool="select" class="on" title="Select / move (V)"><span>⬚</span>Select</button>
+        <button data-tool="wall" title="Draw walls (W)"><span>▬</span>Wall</button>
+        <button data-tool="room" title="Room – drag a rectangle (R)"><span>▭</span>Room</button>
+        <button data-tool="roompoly" title="Room – click its corners (P)"><span>⬠</span>Shape</button>
+        <button data-tool="opening" title="Doors & windows (D)"><span>🚪</span>Door/Win</button>
+        <button data-tool="item" title="Place a product (I)"><span>🛋</span>Product</button>
+        <button data-tool="roof" title="Roof – drag over the walls (F)"><span>⌂</span>Roof</button>
+        <button data-tool="measure" title="Measure (M)"><span>📏</span>Measure</button>
+      </section>
+      <section class="toggles">
+        <label><input type="checkbox" id="opt-ext"> Drawing outside walls</label>
+        <label><input type="checkbox" id="opt-autowalls" checked> Rooms make their walls</label>
+        <label><input type="checkbox" id="opt-dims" checked> Show dimensions</label>
+        <label><input type="checkbox" id="opt-roofs" checked> Show roofs on plan</label>
+      </section>
+      <section class="picker">
+        <div class="picker-head">
+          <select id="pick-cat" aria-label="Category"></select>
+          <input id="pick-q" type="search" placeholder="Search products" aria-label="Search products">
+        </div>
+        <p class="hint" id="pick-hint">Click a product: doors / windows and fixtures are placed on the plan; floors, paint and roofing are applied to what you have selected.</p>
+        <div id="pick-list" class="pick-list"></div>
+      </section>
+    </aside>
+
+    <section class="center">
+      <div class="levels" id="levels"></div>
+      <div class="stage" id="stage">
+        <div class="pane plan-pane" id="plan-pane"><canvas id="plan"></canvas>
+          <div class="plan-btns"><button id="plan-fit" title="Fit plan">⤢</button><button id="plan-zin" title="Zoom in">＋</button><button id="plan-zout" title="Zoom out">－</button></div>
+        </div>
+        <div class="pane view-pane" id="view-pane" hidden>
+          <div class="view-btns">
+            <select id="v-level" aria-label="Show levels"></select>
+            <label><input type="checkbox" id="v-roof" checked> Roof</label>
+            <label><input type="checkbox" id="v-cut"> Cutaway</label>
+            <label><input type="checkbox" id="v-ceil"> Ceilings</label>
+            <select id="v-preset" aria-label="Camera"><option value="">Camera…</option><option value="iso">Corner</option><option value="front">Front</option><option value="back">Back</option><option value="left">Left</option><option value="right">Right</option><option value="top">Top</option></select>
+            <button id="v-walk" title="Walk through: WASD / arrows, drag to look">🚶 Walk</button>
+          </div>
+        </div>
+        <div class="pane est-pane" id="est-pane" hidden></div>
+      </div>
+      <footer class="status">
+        <span id="status" class="status-msg"></span>
+        <label class="len" id="len-wrap" hidden>Length <input id="len" placeholder="12' 6&quot;" autocomplete="off"></label>
+        <span id="totals" class="totals"></span>
+      </footer>
+    </section>
+
+    <aside class="right" id="right"><div id="props"></div></aside>
+  </div>
+
+  <div id="modal" class="modal" hidden><div class="modal-card" role="dialog" aria-modal="true"><button class="modal-x" id="modal-x" aria-label="Close">×</button><div id="modal-body"></div></div></div>
+  <div id="toast" class="toast" hidden></div>
+  <div id="print" class="print-area"></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
