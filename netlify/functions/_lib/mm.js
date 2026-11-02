@@ -117,7 +117,13 @@ const APPR_COLLS = { posts: 1, campaigns: 1, neighbors: 1, socweeks: 1, addrafts
 const EXP_ORDER = { idea: 0, approved: 1, running: 2, results: 3, keep: 4, kill: 4 };
 function expStage(was, want){ was = was || 'idea'; if (!(want in EXP_ORDER) || want === was) return was; if (want === 'approved') return was; if (EXP_ORDER[was] === 0 && EXP_ORDER[want] > 0) return was; if (want === 'idea' && EXP_ORDER[was] > 0) return was; return want; }
 const PROTECTED_ST = /^(approved|posted|posting|sent|sending|waiting|active|paid|applied|live|published)$/;
-const LOCKED_FIELDS = ['apprId', 'approvedBy', 'approvedEmail', 'approvedAt', 'autoApproved', 'vetoUntil', 'claim', 'claimAt', 'postedAt', 'sentAt', 'stats', 'submits', 'submittedBy', 'weekApproved', 'apprStage', 'mm'];
+const LOCKED_FIELDS = ['apprId', 'approvedBy', 'approvedEmail', 'approvedAt', 'autoApproved', 'vetoUntil', 'claim', 'claimAt', 'postedAt', 'sentAt', 'stats', 'submits', 'submittedBy', 'weekApproved', 'apprStage', 'mm', 'approvedHtml', 'editedAfter'];   /* patch MKTFIX: + approvedHtml (what a campaign sends), editedAfter */
+/* patch MKTFIX */ /* what goes out to customers / the public is only ever what was approved: a waiting / approved / paused record of these
+   that he changes afterwards is a draft again (status, places, times — anything but the bookkeeping fields below) */
+const SEND_COLLS = { posts: 1, campaigns: 1, neighbors: 1, socweeks: 1, addrafts: 1, adchanges: 1, giveaways: 1, citypages: 1, outreach: 1, roofevents: 1 };
+const META_KEYS = { id: 1, at: 1, by: 1, status: 1, results: 1, updatedAt: 1, createdAt: 1, reason: 1, needsManual: 1, lastError: 1 };
+function normV(v){ v = redact(v); if (v === undefined || v === null || v === '' || (Array.isArray(v) && !v.length) || (typeof v === 'object' && !Array.isArray(v) && !Object.keys(v).length)) return 'null'; return JSON.stringify(v); }
+function contentChanged(cur, inc){ return Object.keys(inc || {}).some(function(k){ if (META_KEYS[k] || LOCKED_FIELDS.indexOf(k) >= 0 || PII_KEYS.test(k)) return false; return normV(cur[k]) !== normV(inc[k]); }); }
 const MM_COLLS_RO = { cfg: 0 };   /* cfg: only some fields (below) */
 const CFG_OK = ['gs', 'socPlan', 'socNetworks', 'socTimes', 'reviewLink', 'autopilot', 'pixels', 'trackNumbers', 'news', 'nlAuto'];
 function mergeWrite(real, mine, ctx){
@@ -146,6 +152,9 @@ function mergeWrite(real, mine, ctx){
             : !PROTECTED_ST.test(want);   /* other records: any status but approved / active / paid … (e.g. a partner he cannot make active) */
           rec.status = ok ? want : was;
           if (want === 'draft' && /^(waiting|approved|paused)$/.test(was)) { delete rec.apprId; rec.weekApproved = false; }
+        }
+        if (cur && SEND_COLLS[c] && /^(waiting|approved|paused)$/.test(was) && (rec.status === 'draft' || contentChanged(cur, inc))) {   /* patch MKTFIX: changed (or taken back) after approval → approve again; the old approval no longer counts */
+          rec.status = 'draft'; rec.weekApproved = false; rec.editedAfter = was; if (s(cur.apprId)) rec.apprId = 'edited:' + s(cur.apprId).replace(/^edited:/, '');
         }
         if (c === 'experiments') rec.stage = cur ? expStage(s(cur.stage), s(inc.stage)) : 'idea';
         if (c === 'experiments' && rec.stage === 'approved' && rec.status === 'draft') rec.stage = 'idea';   /* changed back to a draft: an admin approves it again */

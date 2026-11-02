@@ -207,6 +207,20 @@ async function mmOps(op, body, who, headers){
   if (op === 'mm_queue') { const a = await M.queueForApproval({ kind: String(body.kind || ''), recId: String(body.recId || ''), again: body.again === true }, who, { queueApproval: core().queueApproval, officeTodo: core().officeTodo }); return R(a.status, a.out); }
   if (op === 'mm_review_reply') { const a = await M.approveReply(String(body.id || ''), body.text, who); return R(a.status, a.out); }
   if (op === 'mm_website') { let v = null; try { v = (await M.crmData(['roofPriceRanges'])).roofPriceRanges || null; } catch (e) {} return R(200, { ok: true, roofPriceRanges: v || null, forms: ['general', 'roofing', 'storm', 'water', 'remodel', 'commercial', 'roofprice'] }); }
+  if (op === 'mm_lobby_offers') {   /* patch MKTFIX */ /* 📺 Lobby TV → 🏷 Offers: read; save his changes as waiting for an admin */
+    const K = 'gc_lobby_offers', row = await M.kvRow(K), cur = row.v && typeof row.v === 'object' && !Array.isArray(row.v) ? row.v : {}, offers = Object.assign({}, cur.offers || {});
+    const inc = body.value && body.value.offers && typeof body.value.offers === 'object' ? body.value.offers : null;
+    let n = 0;
+    if (inc) {
+      const norm = function(o){ const x = Object.assign({}, o || {}); ['at', 'by', 'pending', 'approvedBy', 'approvedAt'].forEach(function(k){ delete x[k]; }); return JSON.stringify(MM.redact(x)); };
+      Object.keys(inc).slice(0, 80).forEach(function(id){ const o = inc[id]; if (!/^[\w-]{1,60}$/.test(id) || !o || typeof o !== 'object' || Array.isArray(o)) return; if (offers[id] && norm(offers[id]) === norm(o)) return;
+        const nx = Object.assign({}, MM.redact(o), { id: id, pending: true, by: who.name || who.email, at: new Date().toISOString() }); delete nx.approvedBy; delete nx.approvedAt; offers[id] = nx; n++; });
+      if (n) { const sb = (process.env.SUPABASE_URL || 'https://ieeonhpfahmwwecizdut.supabase.co').replace(/\/$/, ''), k = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+        const w = await fetch(sb + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: { apikey: k, Authorization: 'Bearer ' + k, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ key: K, value: Object.assign({}, cur, { offers: offers, at: new Date().toISOString() }), updated_at: new Date().toISOString() }) });
+        if (!w.ok) return R(502, { ok: false, error: 'Could not save the offers (' + w.status + ').' }); }
+    }
+    return R(200, { ok: true, changed: n, value: Object.assign({}, cur, { offers: offers }) });
+  }
   if (/^mf_/.test(op)) { const a = await require('./_lib/mktfeat.js').op(op, body, who, { marketing: true }); return R(a.status, a.out); }   /* patch MKTFEAT: review tracker, rankings (redacted again by R) */
   return R(403, { ok: false, error: 'Not part of the Marketing Manager profile.' });
 }

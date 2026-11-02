@@ -237,8 +237,10 @@ async function queueForApproval(body, who, core){
 async function onApproved(item){
   const m = item.meta || {}, coll = m.coll || MKT_KINDS[item.kind], id = s(m.recId);
   const last = (item.approvals || []).slice(-1)[0] || {};
+  let edited = false;   /* patch MKTFIX */
   const r = await update(function(d){
     const rec = get(d, coll, id); if (!rec) return null;
+    if (/^edited:/.test(s(rec.apprId))) { edited = true; return null; }   /* patch MKTFIX: changed after it was sent for approval (_lib/mm.js) */
     rec[stKey(coll)] = 'approved'; rec.approvedBy = s(last.by) || 'admin'; rec.approvedEmail = s(last.email); rec.approvedAt = nowIso(); rec.apprId = s(item.id);
     if (coll === 'posts' && item.editedAt && s(item.text)) rec.caption = s(item.text);
     if (coll === 'campaigns' && item.editedAt) { rec.subject = s(item.subject) || rec.subject; rec.approvedHtml = String(item.html || ''); }
@@ -253,6 +255,7 @@ async function onApproved(item){
     }
     return ch;
   });
+  if (edited) return { ok: false, error: 'Not sent: the Marketing Manager changed this draft after it was sent for approval. It is back in his drafts — approve the new version when he sends it again.' };   /* patch MKTFIX */
   if (!r.ok) return { ok: false, error: 'Approved, but the marketing record could not be updated — try again.' };
   if (coll === 'adchanges' || coll === 'payouts' || coll === 'roofevents' || coll === 'giveaways' || coll === 'citypages' || coll === 'outreach') {   /* patch MKT2 */
     try { const r2 = get(r.doc, coll, id); if (r2) await mkt2().afterApproved(item.kind, r2, item, { officeTodo: require('../portal.js')._core.officeTodo }); } catch (e) {}
