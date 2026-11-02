@@ -132,6 +132,7 @@ function openReport(jobId){
   go('report');
   return true;
 }
+window._gcPhotosDeskBtn = function(){ try { deskJobBtn(); } catch (e) {} };   /* patch JOBTOP: the header's 📸 next to 💬 */
 window._gcPhotos = {
 """)
 t = rep(t, "  open: open, close: close, openRef: openRef, mountTab: mountTab,",
@@ -142,6 +143,15 @@ t = rep(t, "(S.screen === 'camera' && en.screen === 'camera'))) return close();"
 # desk: the Photos tab header (React)
 t = rep(t, '"data-gcu-cam":"1",children:"📷 Camera"}),',
         '"data-gcu-cam":"1",children:"📷 Camera"}),e.jsx("button",{type:"button","data-gc-sharephotos":j.id,title:"Pick photos and send a link (customer, sub, adjuster)",style:{...ht,padding:"5px 14px",background:"#0f766e",color:"#fff"},onClick:function(){try{if(window._gcPhotos&&window._gcPhotos.report)window._gcPhotos.report(j.id);else if(window._gcPhotos)window._gcPhotos.open(j.id);}catch(_e){}},children:"🔗 Share photos"}),/* patch JOBTOP */')
+
+# ── 2b. the job header's own late buttons (📸 Open in GrayCo Photos row, ✉️ E-mail, 💬 Job Messages, the list's Year
+#        bar above the page): their painters, so JOBTOP can paint them in the frame the header first appears (they ran
+#        on 1.5–4 s timers and grew the header after it was drawn: the strip moved down 50–110 px) ─────────────────
+t = rep(t, "  setInterval(showOnJob, 2000);", "  window._gcCCLinkPaint = showOnJob;   /* patch JOBTOP */\n  setInterval(showOnJob, 2000);")
+t = rep(t, "  setInterval(bar, 4000);", "  window._gcYearBarPaint = bar;   /* patch JOBTOP */\n  setInterval(bar, 4000);")
+t = rep(t, "window._gcAp3Scan = scan;", "window._gcAp3Scan = scan; window._gcAp3DeskJob = deskJob;   /* patch JOBTOP */")
+t = rep(t, "  setTimeout(inject, 700);\n  console.log('[GC] Job Messages button (light) ready.');",
+        "  setTimeout(inject, 700);\n  window._gcJobMsgInject = inject;   /* patch JOBTOP */\n  console.log('[GC] Job Messages button (light) ready.');")
 
 # ── 3. Field: the FIELDPORTAL job screen ─────────────────────────────────────────────────────────────────────────
 t = rep(t, "function canProfit(p){ try { if (typeof W._gcCanSeeMoney === 'function' && W._gcCanSeeMoney()) return true; } catch (e) {} return own(p) && pmRole(); }",
@@ -287,7 +297,44 @@ function wrapDash(){
 }
 SI.call(W, function(){ try { wrapDash(); if (!D.hidden && D.getElementById('_gcJobDash')) fieldSum(); } catch (e) { warn(e); } }, 1200);
 ST.call(W, wrapDash, 400);
-W._gcJobTop = { box: function(){ return D.getElementById('gc-job-widgets'); }, settle: settle, fieldSum: fieldSum };
+/* ── desk: the header is complete in the frame it first appears ──
+   The job header gets buttons from older patches on timers (📸 Open in GrayCo Photos row every 2 s, ✉️ E-mail every
+   1.5 s, 💬 Job Messages, the list's Year bar every 4 s): each one arriving made the header taller and moved the strip
+   down. A native observer notices the job header the moment React draws it and runs those same painters at once
+   (before the browser paints), so the strip is drawn where it stays. */
+var DRESSED = '', DRESS_AT = 0, DQ = false, MISS = 0, MISS_T = null;
+function jobHeader(){
+  var main = D.querySelector('main'); if (!main) return null;
+  var bs = main.getElementsByTagName('button');
+  for (var i = 0; i < bs.length && i < 80; i++) if (isBack(bs[i])) { var head = bs[i].nextElementSibling, h1 = head && head.querySelector('h1'); return h1 ? { back: bs[i], head: head, h1: h1 } : null; }
+  return null;
+}
+function byName(n){
+  var best = null, tie = false;
+  ((W._crm && W._crm.projects) || []).forEach(function(p){ if (!p || !p.id || s(p.name).trim() !== n) return; if (best) tie = true; else best = p; });
+  return best && !tie ? best : null;
+}
+function dress(){
+  if (D.hidden || D.documentElement.classList.contains('_fieldmode')) return;
+  var op = W._gcOpenProject, id = op && op.id ? s(op.id) : '';
+  var now = Date.now();
+  if (id && DRESSED === id) { var cc = D.getElementById('_gcCCLinkRow'); if ((cc && cc.isConnected && cc.getAttribute('data-pid') === id) || now - DRESS_AT < 1500) return; }
+  if (now - MISS < 120) { if (!MISS_T) MISS_T = ST.call(W, function(){ MISS_T = null; MISS = 0; dressSoon(); }, 130); return; }
+  var H = jobHeader();
+  if (!H) { MISS = now; return; }
+  var name = s(H.h1.textContent).trim(), p = id ? proj(id) : null;
+  if (!p || s(p.name).trim() !== name) {   /* the app records the open job a little later than the header (JOBSTILL "early"): read it from the header */
+    p = byName(name); if (!p) { MISS = now; return; }
+    try { W._gcOpenProject = p; } catch (e) {} id = s(p.id);
+  }
+  if (D.querySelector('h1') !== H.h1) { MISS = now; return; }   /* the 📸 row goes under the page's first h1: only when that is this job's */
+  DRESSED = id; DRESS_AT = now;
+  ['_gcYearBarPaint', '_gcCCLinkPaint', '_gcAp3DeskJob', '_gcJobMsgInject', '_gcPhotosDeskBtn'].forEach(function(k){ try { if (typeof W[k] === 'function') W[k](); } catch (e) {} });
+}
+function dressSoon(){ if (DQ) return; DQ = true; Promise.resolve().then(function(){ DQ = false; try { dress(); } catch (e) { warn(e); } }); }
+try { var dmo = new MO(function(){ dressSoon(); }); dmo.observe(D.documentElement, { childList: true, subtree: true }); } catch (e) { warn(e); }
+SI.call(W, dressSoon, 1000);
+W._gcJobTop = { box: function(){ return D.getElementById('gc-job-widgets'); }, settle: settle, fieldSum: fieldSum, dress: dress };
 try { console.log('[GC] Job page: header → summary → tabs → tab content → job tools (patch JOBTOP) — _gcJobBox'); } catch (e) {}
 })();
 </script>
