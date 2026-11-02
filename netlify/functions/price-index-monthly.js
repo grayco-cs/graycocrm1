@@ -312,6 +312,18 @@ exports.handler = async function (event) {
   if (!sched && !(await isAdmin(event))) return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Admins only.' }) };
   if (!(process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY)) return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: 'SUPABASE_SERVICE_KEY not set.' }) };
   const qs = event.queryStringParameters || {};
+  /* patch AUTOPANEL: the monthly run only moves prices while ⚙ Admin → ⚡ Automations "Monthly price update" is ON
+     (default OFF). OFF: nothing is written; a dry run counts what it would have changed ("held: would have done N").
+     An admin's own "Run now" from the Products tab is a person's action and still works. */
+  if (sched) {
+    const AUTO = require('./_lib/automations.js');
+    if (!(await AUTO.isOn('price_index_monthly'))) {
+      let n = null, sample = [];
+      try { const d = await run({ dry: true }); n = d.changed; sample = (d.series || []).slice(0, 3).map(function(x){ return x.label + ' ' + x.pct + ' (' + x.products + ')'; }); } catch (e) { sample = ['dry run failed: ' + s(e && e.message).slice(0, 80)]; }
+      const h = await AUTO.held('price_index_monthly', n, sample);
+      return { statusCode: 200, headers, body: JSON.stringify({ ok: true, held: h.held, would: h.would, sample: sample }) };
+    }
+  }
   try {
     const out = await run({ dry: !sched && qs.dry === '1' });
     try { console.log('[price-index-monthly]', JSON.stringify({ day: out.day, series: out.series.length, held: out.held.length, changed: out.changed })); } catch (e) {}
