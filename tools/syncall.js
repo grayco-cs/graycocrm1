@@ -82,9 +82,8 @@
     try { if (W.__GC_IS_TYPING__ || (typeof W.__GC_UNSAVED_TYPING__ === 'function' && W.__GC_UNSAVED_TYPING__())) return 'typing'; } catch (e) {}
     if (RECORD_KEYS[k]) {
       try {
-        var a = document.activeElement;
-        var typeable = a && ((a.tagName === 'INPUT' && !/^(button|checkbox|radio|submit|reset|file|range|color)$/i.test(a.type || 'text') && !a.readOnly) || a.tagName === 'TEXTAREA' || a.isContentEditable);
-        if (typeable || document.querySelector('#gc-editproj-overlay.visible') || W.__GC_EDIT_LOCK__) return 'an edit is open';
+        /* an edit box open, not just a focused box: the search bar takes the focus when the page opens and keeps it */
+        if (document.querySelector('#gc-editproj-overlay.visible') || W.__GC_EDIT_LOCK__ || (typeof W.__GC_FORM_ON_SCREEN__ === 'function' && W.__GC_FORM_ON_SCREEN__())) return 'an edit is open';
       } catch (e) {}
     }
     if (k === 'projects') { try { var p = W._gcOpenProject; if (p && p.id) return 'a job is open'; } catch (e) {} }
