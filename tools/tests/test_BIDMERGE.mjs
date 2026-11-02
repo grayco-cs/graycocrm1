@@ -189,6 +189,14 @@ await t('a date a person typed on the lead stays (no sooner note, no change)', (
   o = up(o.items, rec('b', '2026-11-08', 'GC B')); assert.ok(!o.sooner); assert.strictEqual(o.items[0].bidDue, '2026-11-12'); assert.strictEqual(o.items[0].gcs.length, 2);
 });
 
+await t('an invitation whose GC the AI missed is not counted as a second GC (it takes the board\'s one named GC)', () => {
+  let r = BM.addGc([BM.gcOf({ title: 'X', source: 'BuildingConnected', trades: ['Painting'] })], BM.gcOf({ title: 'X', source: 'BuildingConnected', dueToCompany: 'Loberg Construction', trades: ['Drywall'] }));
+  assert.strictEqual(r.gcs.length, 1); assert.strictEqual(r.gcs[0].name, 'Loberg Construction'); assert.strictEqual(r.gcs[0].trades.join('|'), 'Painting|Drywall');
+  r = BM.addGc(r.gcs, BM.gcOf({ title: 'X', source: 'BuildingConnected', dueToCompany: 'Brasfield & Gorrie', trades: ['Tile'] }));
+  r = BM.addGc(r.gcs, BM.gcOf({ title: 'X', source: 'BuildingConnected', trades: ['Roofing'] }));
+  assert.strictEqual(r.gcs.length, 3, 'two named GCs on the board: an unnamed one stays apart');
+});
+
 console.log('BIDMERGE — SALESBLOCK and the Lead Inbox\'s own-id matching');
 await t('a sales pitch with the project\'s name is never folded into the lead (added on its own → the Sales & spam filter)', () => {
   const up = BI._test.upsert;

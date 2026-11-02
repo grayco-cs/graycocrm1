@@ -217,6 +217,9 @@ function seedGcs(x){
 function addGc(list, g){
   list = arr(list).slice();
   var i = -1; list.forEach(function(x, j){ if (i < 0 && x && x.key === g.key) i = j; });
+  /* a row with no GC name from the same board (the AI missed it) is this named GC: it takes the name instead of counting twice */
+  if (i < 0 && !/^src:/.test(g.key)) list.forEach(function(x, j){ if (i < 0 && x && x.key === 'src:' + low(g.source || 'unknown')) { i = j; list[j] = Object.assign({}, x, { key: g.key, name: g.name }); } });
+  if (i < 0 && /^src:/.test(g.key)) { var named = []; list.forEach(function(x, j){ if (x && !/^src:/.test(x.key) && low(x.source) === low(g.source)) named.push(j); }); if (named.length === 1) i = named[0]; }   /* only when it can be only that one */
   if (i < 0) { list.push(g); return { gcs: list, added: true, newTrades: g.trades.slice(), changed: true, gc: g }; }
   var cur = Object.assign({}, list[i]), before = JSON.stringify(cur);
   var had = {}; arr(cur.trades).forEach(function(t){ had[low(t)] = 1; });
@@ -224,6 +227,7 @@ function addGc(list, g){
   cur.trades = uniq(arr(cur.trades).concat(arr(g.trades))).slice(0, 30);
   cur.packages = uniq(arr(cur.packages).concat(arr(g.packages))).slice(0, 8);
   ['contact', 'email', 'phone', 'link', 'source', 'name'].forEach(function(f){ if (!s(cur[f]) && s(g[f])) cur[f] = g[f]; });
+  if (/^src:/.test(g.key) && !/^src:/.test(cur.key)) { cur.name = list[i].name; }
   if (s(g.due) && !(s(cur.due).length > 10 && s(g.due).length === 10 && s(cur.due).slice(0, 10) === s(g.due))) cur.due = g.due;   /* the GC's latest date (a date alone never wipes the time it gave) */
   list[i] = cur;
   return { gcs: list, added: false, newTrades: newTrades, changed: JSON.stringify(cur) !== before, gc: cur };
