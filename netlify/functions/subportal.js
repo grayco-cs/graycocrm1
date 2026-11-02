@@ -1074,6 +1074,7 @@ async function kvRead(keys){
       } catch (e) {}
     }
     out[k] = (typeof val === 'string') ? (function(){ try { return JSON.parse(val); } catch (e) { return val; } })() : val;
+    if (k === 'schedule') out[k] = require('./_lib/schedvis.js').visible(out[k]);   /* patch SCHEDPICK: template suggestions are not the schedule (no sub sees them) */
   }
   return out;
 }

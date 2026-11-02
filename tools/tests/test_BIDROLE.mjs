@@ -183,12 +183,13 @@ try {
   ok(others.length === 0, 'worked out on screen: no other lead was re-saved with a bidRole', others);
   /* the Bids tab (Lead Inbox cards) */
   await p.evaluate(() => document.querySelector('#gc-leads-tabs [data-gc-tab="bidboard"]').click());   /* LEADSUI: the tab bar is hidden on Leads (⋯ More → Lead Inbox) */
-  const ib = await waitFor(c, () => { const r = document.getElementById('gc-ldi'); if (!r || r.offsetParent === null) return null; const sel = r.querySelector('select[data-f="show"]'); if (sel && sel.value !== 'open') { sel.value = 'open'; sel.dispatchEvent(new Event('change', { bubbles: true })); return null; } const o = {}; r.querySelectorAll('.card[data-id]').forEach(c => { const b = c.querySelector('.gc-role'); o[c.getAttribute('data-id')] = b ? b.textContent : ''; }); return Object.keys(o).length >= 4 ? o : null; }, null, 30000, 500);
-  ok(ib && ib.L_city === '🏛 PRIME' && ib.L_bc === '🔧 SUB' && ib.L_unk === '🏛 PRIME', 'Bids tab cards show the badge', ib);
+  const ib = await waitFor(c, () => { const r = document.getElementById('gc-ldi'); if (!r || r.offsetParent === null) return null; const sel = r.querySelector('select[data-f="show"]'); if (sel && sel.value !== 'open') { sel.value = 'open'; sel.dispatchEvent(new Event('change', { bubbles: true })); return null; } const o = {}; r.querySelectorAll('.lx-row[data-id]').forEach(c => { const b = c.querySelector('.c-ty .lx-chip'); o[c.getAttribute('data-id')] = b ? b.textContent : ''; });   /* patch INBOXLIST: rows */ return Object.keys(o).length >= 4 ? o : null; }, null, 30000, 500);
+  ok(ib && ib.L_city === '🏛 PRIME' && ib.L_bc === '🔧 SUB' && ib.L_unk === '🏛 PRIME', 'Bids tab rows show the badge', ib);
+  if (!(await p.evaluate(() => { const f = document.querySelector('#gc-ldi .lx-fl'); return !!f && f.getClientRects().length > 0; }))) { await p.locator('#gc-ldi .lx-fbtn').click(); await sleep(400); }   /* patch INBOXLIST: the filters sit behind "Filters" */
   const io = await p.evaluate(() => Array.from(document.querySelectorAll('#gc-ldi select[data-f="role"] option')).map(o => o.value + '=' + o.textContent));
   ok(io.length === 4 && /prime=.*\(3\)/.test(io[1]), 'Bids tab: the Prime & sub filter with counts', io);
   await p.selectOption('#gc-ldi select[data-f="role"]', 'sub'); await sleep(800);
-  const iv = await p.evaluate(() => Array.from(document.querySelectorAll('#gc-ldi .card[data-id]')).map(c => c.getAttribute('data-id')).sort());
+  const iv = await p.evaluate(() => Array.from(document.querySelectorAll('#gc-ldi .lx-row[data-id]')).map(c => c.getAttribute('data-id')).sort());
   ok(iv.length >= 2 && iv.every(id => /^(L_bc|L_ph)$/.test(id) || /LI-new|new/i.test(id)), 'Bids tab, Sub: only the plan room bids', iv);
   await p.selectOption('#gc-ldi select[data-f="role"]', '');
   ok(!c.errs.length, 'no page errors', c.errs.slice(0, 5));

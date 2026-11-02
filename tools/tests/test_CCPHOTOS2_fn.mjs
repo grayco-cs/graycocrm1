@@ -120,9 +120,10 @@ const call = (q, m, body) => WH.handler({ httpMethod: m || 'POST', queryStringPa
 const run = (ms) => CP.run({ who: 'test', budgetMs: ms || 60000 });
 KV.projects = [
   { id: 'J1', name: 'Henderson Kitchen', status: 'Active', ccProjectId: '701' },
-  { id: 'J2', name: 'Lopez Roof', status: 'Active', ccProjectId: '702' }
+  { id: 'J2', name: 'Lopez Roof', status: 'Active', ccProjectId: '702' },
+  { id: 'L3', name: 'Lead Lane', status: 'bidding', ccProjectId: '703' }   /* patch PHOTOCOVER: copies are for jobs (a lead that was never a job is not copied — test_PHOTOCOVER) */
 ];
-KV.leads = [{ id: 'L3', name: 'Lead Lane', status: 'New lead', ccProjectId: '703' }];
+KV.leads = [];
 
 /* ── 1. off by default ── */
 console.log('1. off by default');

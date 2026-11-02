@@ -80,7 +80,7 @@ async function getSchedule(){
     const resp = await fetch(q, { headers: { apikey: key, Authorization: 'Bearer '+key } });
     if(!resp.ok) return [];
     const rows = await resp.json();
-    return (rows[0] && rows[0].value) || [];
+    return require('./_lib/schedvis.js').visible((rows[0] && rows[0].value) || []);   /* patch SCHEDPICK: no template suggestions / hidden duplicate bookends in the phone calendar */
   } catch(e){ return []; }
 }
 

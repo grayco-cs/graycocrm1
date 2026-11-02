@@ -231,6 +231,7 @@ ul.tips{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;fo
 /* patch SUBTXT */.late-wrap{display:flex;flex-direction:column;gap:6px}.late-btn{min-height:38px;font-size:13px;border-color:#b45309;color:#9a3412;align-self:flex-start;padding:0 12px}.late-form{display:flex;flex-direction:column;gap:8px;padding:10px;border:1px solid var(--rule);border-radius:10px;background:#fffaf0}.late-ks{display:flex;gap:6px;flex-wrap:wrap}.late-ks .btn{min-height:38px;font-size:13px;padding:0 10px}.late-k[aria-pressed=true]{background:var(--navy2);color:#fff}.late-ta{width:100%;box-sizing:border-box;font:inherit;padding:8px;border:1px solid var(--rule);border-radius:8px}
 </style>
 <script src="/legal2.js"></script>   <!-- LEGAL2-patch: in the head so it is loaded before the signing code runs -->
+<script src="/portal-claimhelp.js"></script>   <!-- patch CLAIMHELP: "🛡 Your insurance claim" (insurance / restoration / mitigation jobs) -->
 </head>
 <body>
 <div class="wrap">
@@ -618,10 +619,20 @@ function ownPwCard(){
   c.id = 'ownPwCard';
   return c;
 }
+/* patch CLAIMHELP: "🛡 Your insurance claim" — the claim steps with "You are here", the claim box, Questions & answers and
+   "Ask us a question" (portal-claimhelp.js draws V.claimHelp; the server sends it only for an insurance / restoration /
+   mitigation job whose "Insurance claim help steps" feature is on). On an insurance job it takes the place of the claim
+   box + automatic timeline (one set of claim steps, not two). */
+function chCard(){
+  if (!V || !V.claimHelp || !window.GCClaimHelp) return null;
+  try { return window.GCClaimHelp.card(V.claimHelp, { extra: V.insurance && V.insurance.claim, preview: PREVIEW, onAsk: function(){ go('msgs'); } }); } catch (e) { return null; }
+}
 function home(){
-  var tr0 = V.insurance ? insHome() : [tracker()];   /* patch INSP: an insurance job shows its claim instead of the job steps */
-  if (wide()) return [ownPwCard()].concat(V.insurance ? tr0 : [], [updates(), photosButton(), reviewCard()]);
-  return [ownPwCard()].concat(tr0, [updates(), pmCard(), photosButton(), reviewCard(), infoCard()]);
+  var ch = chCard();
+  var tr0 = V.insurance ? (ch ? [ch] : insHome()) : [tracker()].concat(ch ? [ch] : []);   /* patch INSP: an insurance job shows its claim instead of the job steps */
+  var ec = estCards().filter(function(c){ return !/Accepted|Declined/.test(c.textContent || ''); });   /* patch ESTPDF: an open estimate is on the Home page too */
+  if (wide()) return [ownPwCard()].concat(ec, V.insurance ? tr0 : (ch ? [ch] : []), [updates(), photosButton(), reviewCard()]);
+  return [ownPwCard()].concat(ec, tr0, [updates(), pmCard(), photosButton(), reviewCard(), infoCard()]);
 }
 
 /* ── PHOTOS: GrayCo Photos of this job only ── */
@@ -672,15 +683,45 @@ function lightbox(list, i){
   show(); document.body.appendChild(ov);
 }
 
+/* ── patch ESTPDF: the ESTIMATE card — made from the same estimate as the PDF that was sent ──
+   name · date · total · the short scope (sections and amounts, as the PDF shows them) · 📄 View PDF (the exact sent PDF;
+   opening it marks the estimate "Viewed" for GrayCo) · ✅ Accept & sign (the e-sign paper under "Papers to sign") ·
+   💬 Ask a question (Messages) · status Sent → Viewed → Accepted / Declined. Nothing internal is in V.estimates. */
+var EST_ST = { Sent: ['Sent', 'pill now'], Viewed: ['Viewed', 'pill now'], Accepted: ['✓ Accepted', 'pill ok'], Declined: ['Declined', 'pill skip'] };
+function estCards(){
+  var L = (V && V.estimates) || [];
+  return L.map(function(x){
+    var st = EST_ST[x.status] || EST_ST.Sent;
+    var head = h('div', { class: 'row', style: 'display:flex;align-items:center;gap:8px;flex-wrap:wrap' }, [h('h2', { style: 'margin:0;flex:1', text: (LANG === 'es' ? 'Estimado' : 'Estimate') + (x.num ? ' #' + x.num : '') }), h('span', { class: st[1], 'data-est-status': x.status, text: st[0] })]);
+    var meta = h('div', { class: 'muted', text: [x.title, x.date ? (LANG === 'es' ? 'Enviado ' : 'Sent ') + dt(x.date) : '', x.version > 1 ? 'version ' + x.version : ''].filter(Boolean).join(' · ') });
+    var total = x.total != null ? h('div', { style: 'font-size:26px;font-weight:800;margin:8px 0 4px', 'data-est-total': '1', text: usd(x.total) }) : null;
+    var scope = (x.scope || []).length ? h('div', { class: 'est-scope', style: 'margin:6px 0 10px' }, (x.scope || []).map(function(l){ return h('div', { class: 'line' }, [h('span', { text: l.label }), h('span', { text: l.amount != null ? usd(l.amount) : '' })]); })) : null;
+    var act = h('div', { class: 'act', style: 'display:flex;gap:8px;flex-wrap:wrap' });
+    if (x.pdf) act.appendChild(h('a', { class: 'btn gold', href: x.pdf, target: '_blank', rel: 'noopener', 'data-est-pdf': '1', text: '📄 ' + (LANG === 'es' ? 'Ver PDF' : 'View PDF'), on: { click: function(){ try { post(FN, { action: 'est-viewed', estId: x.id, projectId: PID || undefined, preview: PREVIEW || undefined }, cred()); } catch (e) {} } } }));
+    if (x.status !== 'Accepted' && x.status !== 'Declined') act.appendChild(h('button', { type: 'button', class: 'btn', 'data-est-sign': '1', text: '✅ ' + (LANG === 'es' ? 'Aceptar y firmar' : 'Accept & sign'), on: { click: function(){
+      var go2 = function(){ var el = x.signId && document.querySelector('.es-item[data-id="' + x.signId + '"]'); if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); return true; } return false; };
+      if (TAB !== 'home') { go('home'); setTimeout(function(){ if (!go2()) alert('Your project manager will send it to you to sign — or ask a question below.'); }, 700); } else if (!go2()) alert('Your project manager will send it to you to sign — or ask a question below.'); } } }));
+    act.appendChild(h('button', { type: 'button', class: 'btn', 'data-est-ask': '1', text: '💬 ' + (LANG === 'es' ? 'Hacer una pregunta' : 'Ask a question'), on: { click: function(){
+      go('msgs'); setTimeout(function(){ var ta = $('cMsgText'); if (ta) { ta.value = 'About estimate' + (x.num ? ' #' + x.num : '') + ' (' + x.title + '): '; ta.focus(); } }, 300); } } }));
+    var note = x.status === 'Accepted' ? h('div', { class: 'muted', text: (LANG === 'es' ? 'Aceptado ' : 'Accepted ') + dt(x.signedAt) }) : null;
+    return h('section', { class: 'card', 'data-est-card': x.id }, [head, meta, total, scope, act, note]);
+  });
+}
+
 /* ── DOCUMENTS & PROPOSALS ── */
 function docs(){
   if (V.insurance) return insDocs();   /* patch INSP */
-  var list = V.docs || [];
+  var ec = estCards();   /* patch ESTPDF */
+  if (ec.length) { var skip = { t: {}, id: {} }; (V.estimates || []).forEach(function(x){ skip.t[x.title] = 1; if (x.id) skip.id[x.id] = 1; }); return ec.concat(docs0(skip)); }   /* the estimate's own row is the card above (patch ESTPDF2: by its id, else its name) */
+  return docs0({});
+}
+function docs0(skip){
+  var list = (V.docs || []).filter(function(d){ return !(d.kind === 'proposal' && skip && ((d.estId && skip.id && skip.id[d.estId]) || (skip.t && skip.t[d.title]))); });   /* patch ESTPDF2: one estimate, shown once */
   var box = h('section', { class: 'card' }, [window.gcDocHead ? window.gcDocHead() : null, h('h2', { text: 'Documents & proposals' }),
     h('div', { class: 'muted', text: 'Proposals made in Google Docs or in our system show up here by themselves.' })]);
   var wr = V.warranty, wcard = wr ? card('Your warranty', [h('div', { style: 'font-size:15px;font-weight:700', text: wr.title }),
     h('div', { class: 'muted', text: wr.start ? 'From ' + dt(wr.start) + ' to ' + dt(wr.end) + '.' : 'Starts the day your job is complete.' })]) : null;
-  if (!list.length) { box.appendChild(h('div', { class: 'empty', text: 'Nothing here yet — your proposal and papers will appear here.' })); return [box, wcard]; }
+  if (!list.length) { var folded = !!(skip && skip.id && Object.keys(skip.id).length); box.appendChild(h('div', { class: 'empty', text: folded ? (LANG === 'es' ? 'Su estimado está arriba. Otros documentos (contratos, órdenes de cambio, garantías) aparecerán aquí.' : 'Your estimate is above. Other papers — contracts, change orders, warranties — will appear here.') : 'Nothing here yet — your proposal and papers will appear here.' })); return [box, wcard]; }   /* patch ESTPDF2 */
   var firstPreview = true;
   list.forEach(function(d){
     var note = [d.kind === 'proposal' ? (d.status === 'Signed' ? 'Signed proposal' : 'Proposal') : (d.kind === 'gdoc' ? 'Google Doc' : (d.type === 'pdf' ? 'PDF' : (d.type === 'word' ? 'Word file' : 'File'))), dt(d.date), d.total ? usd(d.total) : ''].filter(Boolean).join(' · ');
@@ -828,7 +869,7 @@ function insHome(){
   row('Date of loss', dt(c.dateOfLoss));
   row('Type of loss', c.lossType);
   row('Policy deductible', c.deductible != null ? usd(c.deductible) : '');
-  row('Insurance', c.companyShown ? c.company : 'Your insurance company');
+  row('Insurance', 'Your insurance company');   /* owner 11/01: the carrier's name is never shown in the portal */
   if (c.adjuster) row('Adjuster', [c.adjuster.name, c.adjuster.phone].filter(Boolean).join(' · '));
   if (c.adjusterMeeting) row('Adjuster visit', dt(c.adjusterMeeting));
   if (c.mortgage) row('Mortgage company', c.mortgage);
@@ -1321,7 +1362,7 @@ function itemBox(x){
   /* OWNER4-patch: the Work Authorization AND the Direction to Pay carry the emergency / mitigation payment paragraph with its own acknowledgement */
   var isWa = /work authori[sz]ation/i.test(String(x.title || '')) || /^(work_auth|workauth)$/i.test(String(x.docType || x.tmpl || x.template || '')), denAck = null;
   if (isDtp) {
-    box.appendChild(h('div', { class: 'es-op', 'data-gc-op': '1' }, [h('b', { text: 'Cancellation / Overhead & Profit (Liquidated Damages). ' }), h('span', { text: ' ' + 'GrayCo performs substantial work before construction begins — inspecting the loss, preparing the estimate and scope, and documenting, negotiating, and securing approval of the insurance claim. I/we acknowledge that the value of this pre-construction work, and the overhead and profit GrayCo would have earned, are difficult to determine precisely at the time of signing. Therefore, if GrayCo secures approval of my/our insurance claim and I/we thereafter elect to have the approved work performed by another contractor (other than as permitted by the statutory cancellation rights described below), I/we agree to pay GrayCo, as liquidated damages and not as a penalty, an amount equal to twenty percent (20%) of the total approved estimate, which the parties agree is a reasonable pre-estimate of GrayCo\'s overhead, profit, and the value of the work performed in preparing, documenting, and securing the approved claim. This amount is due within thirty (30) days of my/our election to use another contractor. This fee applies whether or not the insurer\'s estimate includes a separate overhead and profit line.' })]));
+    box.appendChild(h('div', { class: 'es-op', 'data-gc-op': '1' }, [h('b', { text: 'Cancellation / Overhead & Profit (Liquidated Damages). ' }), h('span', { text: ' ' + 'GrayCo performs substantial work before construction begins — inspecting the loss, preparing the estimate and scope, and thoroughly documenting the damage, meeting with the adjuster, and providing detailed estimates and supporting documentation so the claim can be fully reviewed for approval. I/we acknowledge that the value of this pre-construction work, and the overhead and profit GrayCo would have earned, are difficult to determine precisely at the time of signing. Therefore, if my/our insurance claim is approved and I/we thereafter elect to have the approved work performed by another contractor (other than as permitted by the statutory cancellation rights described below), I/we agree to pay GrayCo, as liquidated damages and not as a penalty, an amount equal to twenty percent (20%) of the total approved estimate, which the parties agree is a reasonable pre-estimate of GrayCo\'s overhead, profit, and the value of the work performed in documenting the damage and preparing the estimates and supporting documentation for the claim. This amount is due within thirty (30) days of my/our election to use another contractor. This fee applies whether or not the insurer\'s estimate includes a separate overhead and profit line.' })]));
     box.appendChild(h('div', { class: 'muted es-cancel', text: 'CANCELLATION: Owner may cancel within 3 business days of signing. After 3 days, Owner is responsible for work completed and materials ordered. If the insurance claim is denied, Owner may cancel the remaining repair work as stated in the Notice of Right to Cancel (see the emergency and mitigation services paragraph below). The overhead & profit / liquidated-damages provision above applies only after these cancellation rights have expired.' }));
   }
   if (isDtp || isWa) box.appendChild(h('div', { class: 'es-op es-den', 'data-gc-den': '1' }, [h('b', { text: 'Emergency and mitigation services — payment. ' }), h('span', { text: ' Owner is responsible for payment for all emergency and mitigation services GrayCo performed (for example water extraction, drying, board-up, tarping) regardless of insurance coverage or the outcome of the claim. If the claim is denied, Owner may cancel the remaining repair work as stated in the Notice of Right to Cancel, and Owner remains responsible for the emergency/mitigation services already performed, at the rates in this agreement or, if none, GrayCo\'s standard rates.' })]));   /* OWNER4-patch */
@@ -1433,7 +1474,11 @@ function place(){
   [card, rcard].forEach(function(cd){ if (cd && !show && cd.parentNode) cd.parentNode.removeChild(cd); });
   if (!show) return;
   var host = main.querySelector('.col-r') || main;
-  if (card && card.parentNode !== host) {
+  /* patch ESTPDF2: an open estimate's card (portal.html home()) comes first on Home; the paper to sign follows it, so
+     "✅ Accept & sign" on the card goes straight down to the signing box */
+  var ecs = host.querySelectorAll(':scope > [data-est-card]'), lastEc = ecs.length ? ecs[ecs.length - 1] : null;
+  if (card && lastEc) { if (card.parentNode !== host || card.previousElementSibling !== lastEc) host.insertBefore(card, lastEc.nextSibling); }
+  else if (card && card.parentNode !== host) {
     var after = document.getElementById('gcsel');
     var first = host.firstElementChild; while (first && first.classList && first.classList.contains('jobbar')) first = first.nextElementSibling;
     host.insertBefore(card, after && after.parentNode === host ? after.nextSibling : first || null);
@@ -1575,6 +1620,7 @@ window._gcPortalWt = { reload: load, data: function(){ return D; } };
 <script src="/portal-plus.js" defer></script>
 <script src="/portal-home.js" defer></script>
 <script src="/portal-needs.js" defer></script>
+<script src="/portal-req.js" defer></script>   <!-- patch PORTALREQ: ➕ Request a change · 🏗 Request a new project · My requests (customers, property managers, GCs) -->
 <script src="/portal-pwa.js" defer></script>   <!-- patch PORTALAPP: "Make GrayCo Portal an app?", the numbers, notifications -->
 <script id="gc-portal-ref">
 /* patch REF — the "🎁 Referral program" card at the bottom of Home (not front and center).
@@ -1958,9 +2004,8 @@ function gcDraw(){
     }
     it.appendChild(msgEl(k)); cc.appendChild(it);
   });
-  var rq = h('details', {}, [h('summary', { class: 'btn', text: '＋ Request a change' })]);
-  var rt = h('input', { class: 'gcp-in', type: 'text', maxlength: '120', placeholder: 'What change? (short title)' }), rd = h('textarea', { class: 'gcp-in', maxlength: '3000', placeholder: 'Describe the change (where, what, any drawings or RFI #)' }), rn = nameIn('gcp-rq-n');
-  rq.appendChild(h('div', { class: 'gcp-item' }, [rt, rd, rn, h('button', { type: 'button', class: 'btn gold', text: 'Send the request to GrayCo', on: { click: function(){ if (!rt.value.trim() || rn.value.trim().length < 2) { G.msg.rq = '!Add a title and your name.'; return gcDraw(); } act('rq', { action: 'gc-co-request', title: rt.value, description: rd.value, name: rn.value }, '✓ Sent — GrayCo will price it and send it to you to sign.'); } } }), msgEl('rq')]));
+  /* patch PORTALREQ: the one "➕ Request a change" form (portal-req.js) — what, where, photos, urgency, how to reach them; it shows under My requests */
+  var rq = h('button', { type: 'button', class: 'btn', id: 'gcp-co-req', text: '➕ Request a change', on: { click: function(){ if (window.GCPortalReq) window.GCPortalReq.open('change'); } } });
   if (!v.cos.length) cc.appendChild(h('div', { class: 'muted', text: 'No change orders yet.' }));
   cc.appendChild(rq); main.appendChild(cc);
   /* RFIs */

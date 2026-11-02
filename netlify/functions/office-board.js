@@ -4,6 +4,8 @@
 //   GET  ?ping=1                                      → alive
 //   Signed in to the CRM (gc_staff):
 //   POST { action:'remind', invoiceId }               → "Send payment reminder" (kind payment_reminder; one open per invoice)
+//   POST { action:'statement', customer|pid, from?, to?, send?, to? } → (office + admins) the customer statement: { html } to print,
+//        or send:true → ONE e-mail on ✅ Approvals (kind customer_statement) — patch ACCTFIX2
 //   POST { action:'cos', pid? }                       → change orders sent and not signed (days waiting, open / last nudge)
 //   POST { action:'nudge', ref }                      → "Nudge" (kind sign_co_nudge / gcp_co_nudge; one open per change order)
 //   POST { action:'subdoc', subId, need? }            → "Request docs" (kind sub_doc_request; one open per sub)
@@ -33,6 +35,10 @@ exports.handler = async function(event){
   const act = s(b.action);
   try {
     if (act === 'remind') { const r = await OFF.remind(b, who); return J(r.status, r.out); }
+    if (act === 'statement') {   /* patch ACCTFIX2: the customer statement — office + admins (money of every job) */
+      if (!(await officeOrAdmin(who))) return J(403, { ok: false, error: 'Statements are for the office or an admin.' });
+      const r = await OFF.statement(b, who); return J(r.status, r.out);
+    }
     if (act === 'cos') return J(200, { ok: true, cos: await OFF.cos({ pid: s(b.pid) }) });
     if (act === 'nudge') { const r = await OFF.nudge(b, who); return J(r.status, r.out); }
     if (act === 'subdoc') { const r = await OFF.subDoc(b, who); return J(r.status, r.out); }

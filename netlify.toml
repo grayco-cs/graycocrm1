@@ -86,8 +86,10 @@
 # Nightly data check (patch AUTO6): 07:05 UTC = 2:05 AM Central (1:05 AM in winter). Duplicate customers, jobs missing
 # a PM / address / contract amount / signed contract, leads missing a due date / assignee → ONE item on the shared
 # Office To-Do. Never deletes or merges anything.
+# patch DATAFULL: also 12:05 and 13:05 UTC — the one that is 7 AM Central (daylight saving or not) sends the morning alert
+# "🧾 Job data check: N jobs need info" to the admins and the office (e-mail + phone push; never a text; not in data-entry mode).
 [functions."data-check"]
-  schedule = "5 7 * * *"
+  schedule = "5 7,12,13 * * *"
 
 # Lost-lead win-back (patch AUTO6): 15:20 UTC = 10:20 AM Central (9:20 AM in winter). Leads lost 6 / 12 months ago →
 # one approval item per batch; nothing goes out until an admin approves it (then one e-mail each from news@).
@@ -171,6 +173,13 @@
 # Tracked links (patch MKT2): crm.grayco-cs.com/go/<code> → the go function (it counts the click and sends the
 # visitor on with the UTM tags). Only this path; everything else is untouched.
 # The marketing agency portal (patch AGY, docs/AGENCY-PORTAL.md)
+# patch OFFICETV: the 📺 lobby TV page (no sign-in; content from functions/lobby.js with the link code)
+[[redirects]]
+  from = "/lobby"
+  to = "/lobby.html"
+  status = 200
+  force = true
+
 [[redirects]]
   from = "/agency"
   to = "/agency.html"
@@ -395,6 +404,20 @@
   status = 200
   force = true
 
+# patch CLAIMHELP: portal.html loads portal-claimhelp.js ("🛡 Your insurance claim") — without this rule the portal host answers it with the page
+[[redirects]]
+  from = "https://portal.grayco-cs.com/portal-claimhelp.js"
+  to = "/portal-claimhelp.js"
+  status = 200
+  force = true
+
+# patch PORTALREQ: portal.html loads portal-req.js (Request a change / a new project, My requests) — before the catch-all below
+[[redirects]]
+  from = "https://portal.grayco-cs.com/portal-req.js"
+  to = "/portal-req.js"
+  status = 200
+  force = true
+
 [[redirects]]
   from = "https://portal.grayco-cs.com/*"
   to = "/portal.html"
@@ -477,6 +500,8 @@
 # customer, sub or GC without an approval; data-entry mode pauses it.
 # patch OFFICEFIX: the schedule is on auto-wins-scheduled.js — auto-wins.js answers the CRM (📋 Approvals "opened today",
 # "who checked today"); a scheduled function cannot be called by its URL in production.
+# patch TAXALERTS: + 🧾 tax deadlines (_lib/taxalerts.js) — the first run at / after 8 AM Central: 7 days before, the due day and
+# every day while overdue (until ✓ Paid), staff e-mail + push to the admins + office (an owner's estimated tax: admins only).
 [functions."auto-wins-scheduled"]
   schedule = "19 * * * *"
 

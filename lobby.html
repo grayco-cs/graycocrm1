@@ -1,0 +1,496 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<title>GrayCo Construction Services</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap">
+<!-- patch OFFICETV: the 📺 LOBBY TV — the front-room screen for customers. NOT the CRM: no sign-in, no links, nothing to tap
+     into. Its content comes from netlify/functions/lobby.js (read only, with the lobby link's code — #t=… — sent in a
+     header, never in the address the server logs). Only owner-approved public content: the playlist and texts the admin /
+     office set in ⚙ Admin → 📺 Lobby TV, approved photos, 5★ reviews (first name + last initial), live offers.
+     A turned-off or replaced link shows nothing. ?preview=1: the CRM's editor sends the slides (postMessage, same site only). -->
+<style>
+:root{--navy:#0B1626;--navy2:#13243B;--ink:#0F1D2F;--gold:#D4A017;--gold2:#F2C14E;--cream:#F5F1E8;--mut:#A9B7CA;--line:rgba(255,255,255,.12)}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:#050B14;overflow:hidden;cursor:none}
+body{font-family:Inter,'Inter Display','Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#fff;-webkit-font-smoothing:antialiased;
+  font-size:min(calc(100vw / 120),calc(100vh / 67.5))}
+#stage{position:absolute;left:50%;top:50%;width:120em;height:67.5em;transform:translate(-50%,-50%);overflow:hidden;
+  background:radial-gradient(ellipse 80em 60em at 85% 0%,#1C3456 0%,rgba(28,52,86,0) 60%),radial-gradient(ellipse 70em 50em at 0% 100%,#122A47 0%,rgba(18,42,71,0) 65%),var(--navy)}
+#stage:before{content:'';position:absolute;inset:0;opacity:.07;pointer-events:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='120' viewBox='0 0 240 120'%3E%3Cpath d='M0 110 L60 60 L120 110 M120 110 L180 60 L240 110' fill='none' stroke='%23D4A017' stroke-width='2'/%3E%3C/svg%3E");background-size:30em 15em}
+.top{position:absolute;left:0;right:0;top:0;height:9em;display:flex;align-items:center;padding:0 4.5em;z-index:5;transition:opacity .8s}
+.top img{height:5.2em;width:auto}
+.top .sp{flex:1}
+.top .clk{text-align:right;line-height:1.1}
+.top .clk b{font-size:2.6em;font-weight:700;letter-spacing:-.01em}
+.top .clk b small{font-size:.5em;font-weight:600;margin-left:.25em;color:var(--gold2)}
+.top .clk span{display:block;font-size:1.25em;color:var(--mut);margin-top:.3em;font-weight:500}
+body.nohead .top{opacity:0}
+.bar{position:absolute;left:0;bottom:0;height:.45em;background:linear-gradient(90deg,var(--gold),var(--gold2));width:0;z-index:6}
+.bar.run{animation:bar linear forwards}
+@keyframes bar{from{width:0}to{width:100%}}
+.dots{position:absolute;bottom:1.6em;left:0;right:0;display:flex;justify-content:center;gap:.7em;z-index:6}
+.dots i{width:.8em;height:.8em;border-radius:50%;background:rgba(255,255,255,.22)}
+.dots i.on{background:var(--gold);width:2.4em;border-radius:.4em}
+.sl{position:absolute;inset:0;opacity:0;transition:opacity 1.3s ease;padding:10.5em 7em 6em}
+.sl.in{opacity:1}
+.kick{font-size:1.45em;font-weight:700;letter-spacing:.28em;text-transform:uppercase;color:var(--gold2);margin-bottom:1em;display:flex;align-items:center;gap:.7em}
+.kick:before{content:'';width:3em;height:.14em;background:var(--gold)}
+h1{font-size:5.4em;line-height:1.04;font-weight:800;letter-spacing:-.025em}
+h1.md{font-size:4.4em}
+h1.sm{font-size:3.6em}
+.sub{font-size:2.05em;line-height:1.4;color:#C9D4E3;margin-top:.7em;font-weight:400;max-width:34em}
+.gold{color:var(--gold2)}
+.row{display:flex;gap:4em;height:100%}
+.col{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center}
+.chk{list-style:none;margin-top:2.6em;display:grid;gap:1.25em}
+.chk li{font-size:2.15em;font-weight:500;display:flex;align-items:center;gap:.75em;line-height:1.25}
+.chk li:before{content:'';flex:0 0 1.35em;height:1.35em;border-radius:50%;background:var(--gold) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M6 12.5l4 4 8-9' fill='none' stroke='%230B1626' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/70% no-repeat}
+.chk.two{grid-template-columns:1fr 1fr;column-gap:3em}
+.chk.two li{font-size:1.9em}
+/* QR card */
+.qr{background:#fff;border-radius:1.8em;padding:1.8em 1.8em 1.4em;color:var(--ink);text-align:center;box-shadow:0 2.5em 5em rgba(0,0,0,.35);width:24em;flex:0 0 auto}
+.qr svg{width:100%;height:auto;display:block}
+.qr b{display:block;font-size:1.55em;margin-top:.7em;font-weight:800;line-height:1.2}
+.qr span{display:block;font-size:1.05em;color:#5A6678;margin-top:.35em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qr.sm{width:17em;padding:1.3em 1.3em 1em}.qr.sm b{font-size:1.25em}
+.qrw{display:flex;align-items:center;justify-content:center}
+.scan{display:flex;align-items:center;gap:.6em;font-size:1.3em;color:var(--gold2);font-weight:700;letter-spacing:.12em;text-transform:uppercase;margin-top:1.3em;justify-content:center}
+/* photo frames */
+.ph{position:relative;border-radius:1.6em;overflow:hidden;background:#0E1C30;box-shadow:0 2em 4em rgba(0,0,0,.4)}
+.ph img{width:100%;height:100%;object-fit:cover;display:block;animation:kb 18s ease-out both}
+@keyframes kb{from{transform:scale(1.08)}to{transform:scale(1)}}
+.ph .cap{position:absolute;left:0;right:0;bottom:0;padding:3em 1.6em 1.2em;font-size:1.5em;font-weight:600;background:linear-gradient(transparent,rgba(5,11,20,.85))}
+.ph .tag{position:absolute;left:1.2em;top:1.2em;background:var(--gold);color:var(--ink);font-weight:800;font-size:1.3em;letter-spacing:.18em;padding:.45em .9em;border-radius:.5em}
+.ph .tag.w{background:#fff}
+.ph.empty{background:repeating-linear-gradient(135deg,#0F2036 0 1.2em,#10233B 1.2em 2.4em);border:.2em dashed rgba(212,160,23,.55);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:1em;color:#B9C5D6;box-shadow:none}
+.ph.empty svg{width:5em;height:5em;opacity:.85;stroke:var(--gold2)}
+.ph.empty em{font-style:normal;font-size:1.6em;font-weight:600;text-align:center;padding:0 1em}
+/* emblems */
+.emb{width:34em;height:34em;border-radius:50%;flex:0 0 auto;display:flex;align-items:center;justify-content:center;position:relative;
+  background:radial-gradient(circle at 35% 30%,#22406A,#0F2038 70%);box-shadow:0 0 0 .5em rgba(212,160,23,.9),0 0 0 2.2em rgba(212,160,23,.12),0 3em 6em rgba(0,0,0,.45)}
+.emb svg{width:46%;height:46%;stroke:var(--gold2)}
+.ico{fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+/* cards */
+.cards{display:grid;gap:2em;margin-top:3em}
+.card{background:linear-gradient(180deg,rgba(255,255,255,.075),rgba(255,255,255,.035));border:1px solid var(--line);border-radius:1.6em;padding:2.4em 2.2em}
+.card .ci{width:5.4em;height:5.4em;border-radius:1.4em;background:rgba(212,160,23,.14);display:flex;align-items:center;justify-content:center;margin-bottom:1.4em}
+.card .ci svg{width:60%;height:60%;stroke:var(--gold2)}
+.card h3{font-size:2.15em;font-weight:800;line-height:1.15}
+.card p{font-size:1.5em;color:#C2CEDD;margin-top:.6em;line-height:1.4}
+.num{font-size:1.4em;font-weight:900;color:var(--gold2);letter-spacing:.08em}
+/* reviews */
+.stars{color:var(--gold2);letter-spacing:.12em}
+.quote{font-size:3.3em;line-height:1.32;font-weight:500;letter-spacing:-.01em;max-width:30em}
+.qm{font-size:14em;line-height:.6;color:var(--gold);font-family:Georgia,serif;height:.5em;display:block}
+.who{font-size:2em;font-weight:700;margin-top:1.4em;color:var(--gold2)}
+.who small{display:block;font-size:.65em;color:var(--mut);font-weight:500;margin-top:.3em;letter-spacing:.06em}
+.rv{display:flex;flex-direction:column}
+.rv p{font-size:1.55em;line-height:1.45;color:#E4EAF2;flex:1;display:-webkit-box;-webkit-line-clamp:6;-webkit-box-orient:vertical;overflow:hidden}
+.rv b{font-size:1.45em;color:var(--gold2);margin-top:1em}
+.rv .stars{font-size:1.7em;margin-bottom:.6em}
+/* big numbers */
+.mega{font-size:15em;font-weight:900;line-height:.9;letter-spacing:-.04em;background:linear-gradient(180deg,#FFE08A,#D4A017);-webkit-background-clip:text;background-clip:text;color:transparent}
+.phone{font-size:8.4em;font-weight:900;letter-spacing:-.02em;color:var(--gold2);line-height:1;margin-top:.35em;white-space:nowrap}
+.pill{display:inline-flex;align-items:center;gap:.6em;background:rgba(255,255,255,.08);border:1px solid var(--line);border-radius:3em;padding:.6em 1.3em;font-size:1.5em;font-weight:600}
+.live{display:inline-block;width:.8em;height:.8em;border-radius:50%;background:#EF4444;box-shadow:0 0 0 0 rgba(239,68,68,.7);animation:pulse 1.8s infinite}
+@keyframes pulse{70%{box-shadow:0 0 0 .9em rgba(239,68,68,0)}100%{box-shadow:0 0 0 0 rgba(239,68,68,0)}}
+.steps{display:grid;gap:1.6em;margin-top:3.4em;position:relative}
+.steps .st{position:relative;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.03));border:1px solid var(--line);border-radius:1.5em;padding:2.2em 2em 2.4em}
+.steps .st i{font-style:normal;display:flex;width:2.6em;height:2.6em;border-radius:50%;background:var(--gold);color:var(--ink);font-weight:900;font-size:1.6em;align-items:center;justify-content:center;margin-bottom:.9em}
+.steps .st p{font-size:1.85em;line-height:1.35;font-weight:600}
+.tier{border-radius:1.8em;padding:2.2em 2.4em;border:1px solid var(--line);background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.02));position:relative}
+.tier h3{font-size:3.2em;font-weight:900;letter-spacing:-.01em}
+.tier .medal{width:3.6em;height:3.6em;border-radius:50%;margin-bottom:1em;box-shadow:inset 0 -.4em .8em rgba(0,0,0,.25)}
+.tier ul{list-style:none;margin-top:1.4em;display:grid;gap:.9em}
+.tier li{font-size:1.55em;line-height:1.35;color:#DCE4EE;padding-left:1.3em;position:relative}
+.tier li:before{content:'✓';position:absolute;left:0;color:var(--gold2);font-weight:900}
+.tier.best{border:.2em solid var(--gold);transform:translateY(-1.2em);background:linear-gradient(180deg,rgba(212,160,23,.18),rgba(212,160,23,.04))}
+.tier .ribbon{position:absolute;top:-1.1em;right:2em;background:var(--gold);color:var(--ink);font-weight:800;font-size:1.2em;letter-spacing:.14em;padding:.5em 1em;border-radius:.6em}
+.price{display:inline-flex;align-items:baseline;gap:.3em;background:var(--gold);color:var(--ink);border-radius:1.2em;padding:.4em .9em .5em;margin-top:2em}
+.price b{font-size:4.6em;font-weight:900;letter-spacing:-.02em}
+.price span{font-size:1.6em;font-weight:700}
+.fine{font-size:1.25em;color:var(--mut);margin-top:1.6em;line-height:1.45;max-width:46em}
+.cd{display:flex;gap:1.6em;margin-top:2.6em}
+.cd div{background:rgba(255,255,255,.07);border:1px solid var(--line);border-radius:1.4em;width:11em;padding:1.4em 0 1.2em;text-align:center}
+.cd b{display:block;font-size:5.6em;font-weight:900;line-height:1;color:var(--gold2)}
+.cd span{font-size:1.3em;color:var(--mut);letter-spacing:.2em;text-transform:uppercase;font-weight:700}
+.chips{display:flex;flex-wrap:wrap;gap:1.4em;margin-top:3em}
+.chips span{font-size:2.3em;font-weight:700;padding:.75em 1.3em;border-radius:1.2em;background:linear-gradient(180deg,rgba(255,255,255,.1),rgba(255,255,255,.04));border:1px solid var(--line)}
+.chips span:nth-child(odd){border-color:rgba(212,160,23,.55)}
+.person{text-align:center}
+.person .av{width:16em;height:16em;border-radius:50%;margin:0 auto 1.4em;overflow:hidden;border:.35em solid var(--gold);background:#16304F;display:flex;align-items:center;justify-content:center;font-size:1em}
+.person .av img{width:100%;height:100%;object-fit:cover}
+.person .av b{font-size:5em;font-weight:800;color:var(--gold2)}
+.person h3{font-size:2.3em;font-weight:800}
+.person p{font-size:1.5em;color:var(--mut);margin-top:.3em}
+.wx{display:flex;gap:1.4em;margin-top:2.6em}
+.wx div{flex:1;background:rgba(255,255,255,.07);border:1px solid var(--line);border-radius:1.4em;padding:1.6em 1.4em;text-align:center}
+.wx b{display:block;font-size:1.5em;color:var(--mut);font-weight:700;letter-spacing:.06em}
+.wx strong{display:block;font-size:3.6em;font-weight:900;margin:.25em 0}
+.wx span{font-size:1.25em;color:#D6DEE9;line-height:1.3;display:block}
+.na{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#000;color:#3A4250;font-size:1.4em}
+.welcome{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;height:100%;padding-bottom:2em}
+.welcome img{width:30em;height:auto;margin-bottom:3.4em}
+.welcome h1{font-size:5em;max-width:22em}
+.welcome .sub{max-width:40em;margin-left:auto;margin-right:auto}
+.welcome .tm{display:flex;align-items:center;gap:1.4em;margin-top:3.6em;font-size:1.6em;color:#D6DEE9}
+.welcome .tm b{font-size:2.6em;font-weight:800;color:#fff}
+.welcome .tm i{width:.25em;height:2.4em;background:var(--gold);display:block}
+.svc{display:grid;grid-template-columns:repeat(5,1fr);gap:1.8em;margin-top:3.6em}
+.svc .card{padding:2.6em 1.8em 2.4em;text-align:left}
+.svc .card h3{font-size:1.95em}
+.svc .card p{font-size:1.35em}
+.strip .live{margin-right:-.4em}
+.strip{position:absolute;left:7em;right:7em;bottom:5em;display:flex;align-items:center;gap:1.4em;font-size:1.7em;color:#D6DEE9;font-weight:600}
+.strip b{color:var(--gold2);font-weight:800}
+.emerg h1{font-size:6.2em}
+.emerg .ics{display:flex;gap:1.6em;margin-top:3em}
+.emerg .ics span{display:flex;align-items:center;gap:.6em;font-size:1.9em;font-weight:700;padding:.6em 1.2em;border-radius:1em;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.35)}
+.emerg .ics svg{width:1.5em;height:1.5em;stroke:#FCA5A5}
+</style>
+</head>
+<body>
+<div id="stage"><div class="top" id="top"><img id="logo" src="/portal-logo.png" alt="GrayCo Construction Services"><span class="sp"></span><div class="clk"><b id="tm"></b><span id="dt"></span></div></div>
+<div class="dots" id="dots"></div><i class="bar" id="bar"></i></div>
+<script src="/lobby-types.js"></script>
+<script src="/lobby-qr.js"></script>
+<script>
+(function(){
+'use strict';
+var D = document, W = window, T = W.GC_LOBBY_TYPES || { by: {}, tipFor: function(){ return {}; } };
+var STAGE = D.getElementById('stage'), PREVIEW = /[?&]preview=1\b/.test(location.search);
+var DATA = null, LIST = [], AT = -1, TIMER = 0, SUBT = 0, CYC = {}, ONLY = null, ALIVE = true;
+function s(v){ return v == null ? '' : String(v).trim(); }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function tokenOf(){ var m = /[#&]t=([A-Za-z0-9_-]{20,})/.exec(location.hash || ''); return m ? m[1] : ''; }
+/* ── icons (line art, the GrayCo gold) ── */
+var IC = {
+  drop: '<path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/><path d="M9 14.5a3 3 0 0 0 3 3"/>',
+  roof: '<path d="M3 11.5L12 4l9 7.5"/><path d="M5.5 9.5V20h13V9.5"/><path d="M10 20v-5h4v5"/>',
+  bldg: '<path d="M4 21V5l8-2v18"/><path d="M12 8h8v13"/><path d="M7 8h2M7 12h2M7 16h2M15 12h2M15 16h2"/><path d="M2 21h20"/>',
+  tool: '<path d="M14.5 6.5a4 4 0 0 0-5.3 5.3L3.5 17.5a1.5 1.5 0 0 0 2.1 2.1l5.7-5.7a4 4 0 0 0 5.3-5.3l-2.4 2.4-2.1-.6-.6-2.1z"/>',
+  shield: '<path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/>',
+  phone: '<path d="M5 3h3l2 5-2.5 1.5a11 11 0 0 0 5 5L14 12l5 2v3a2 2 0 0 1-2 2A15 15 0 0 1 3 5a2 2 0 0 1 2-2z"/>',
+  fire: '<path d="M12 21a6 6 0 0 0 6-6c0-4-3-6-4-9-1 2-2 3-3.5 3.5C9 7 9 5 9.5 3 7 5 6 9 6 12v3a6 6 0 0 0 6 6z"/>',
+  storm: '<path d="M7 15a4 4 0 0 1-.5-8A5.5 5.5 0 0 1 17 6.5a4 4 0 0 1 .5 8"/><path d="M13 12l-3 5h4l-3 5"/>',
+  snow: '<path d="M12 2v20M4.5 6.5l15 11M19.5 6.5l-15 11"/><path d="M9.5 3.5L12 6l2.5-2.5M9.5 20.5L12 18l2.5 2.5"/>',
+  gift: '<path d="M4 11h16v10H4z"/><path d="M3 7h18v4H3zM12 7v14"/><path d="M12 7c-2-4-6-4-6-1.5S10 7 12 7zm0 0c2-4 6-4 6-1.5S14 7 12 7z"/>',
+  star: '<path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/>',
+  bulb: '<path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/>',
+  users: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="17" cy="9" r="2.5"/><path d="M16 14a5 5 0 0 1 5.5 5"/>',
+  card: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M7 15h4"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+  heart: '<path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/>',
+  tag: '<path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="7.5" r="1.5"/>',
+  cam: '<path d="M4 7h3l2-3h6l2 3h3v12H4z"/><circle cx="12" cy="13" r="3.5"/>',
+  check: '<path d="M4 12.5l5 5L20 6.5"/>',
+  msg: '<path d="M4 5h16v11H9l-5 4z"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  qr: '<path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h2v2h-2zM18 18h2v2h-2zM14 18h2M18 14h2"/>'
+};
+function ic(k, cls){ return '<svg class="ico ' + (cls || '') + '" viewBox="0 0 24 24">' + (IC[k] || IC.star) + '</svg>'; }
+/* ── QR (lobby-qr.js) → a crisp SVG ── */
+function qrSvg(url){
+  try { var q = W.qrcode(0, 'M'); q.addData(s(url)); q.make(); var n = q.getModuleCount(), m = 2, d = '';
+    for (var r = 0; r < n; r++) for (var c = 0; c < n; c++) if (q.isDark(r, c)) d += 'M' + (c + m) + ' ' + (r + m) + 'h1v1h-1z';
+    return '<svg viewBox="0 0 ' + (n + 2 * m) + ' ' + (n + 2 * m) + '" shape-rendering="crispEdges"><rect width="100%" height="100%" fill="#fff"/><path d="' + d + '" fill="#0F1D2F"/></svg>';
+  } catch (e) { return ''; }
+}
+function short(u){ return s(u).replace(/^https?:\/\/(www\.)?/, '').replace(/[?#].*$/, '').replace(/\/$/, ''); }
+function qrCard(url, label, sm){ if (!s(url)) return ''; return '<div class="qr' + (sm ? ' sm' : '') + '">' + qrSvg(url) + '<b>' + esc(label || 'Scan me') + '</b><span>' + esc(short(url)) + '</span></div>'; }
+function kick(t){ return t ? '<div class="kick">' + esc(t) + '</div>' : ''; }
+function items(l, two){ l = arr(l).filter(Boolean); return l.length ? '<ul class="chk' + (two ? ' two' : '') + '">' + l.map(function(x){ return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : ''; }
+function photo(p, w, h, tag, empty, tagW){
+  var st = 'width:' + w + 'em;height:' + h + 'em';
+  if (p && p.u) return '<div class="ph" style="' + st + '"><img src="' + esc(p.u) + '" alt="">' + (tag ? '<span class="tag' + (tagW ? ' w' : '') + '">' + esc(tag) + '</span>' : '') + (p.cap ? '<div class="cap">' + esc(p.cap) + '</div>' : '') + '</div>';
+  return '<div class="ph empty" style="' + st + '">' + ic('cam') + '<em>' + esc(empty || 'Your photo here') + '</em>' + (tag ? '<span class="tag' + (tagW ? ' w' : '') + '">' + esc(tag) + '</span>' : '') + '</div>';
+}
+function emblem(k){ return '<div class="emb">' + ic(k) + '</div>'; }
+function stars(n){ var o = ''; for (var i = 0; i < 5; i++) o += i < Math.round(n || 5) ? '★' : '☆'; return '<span class="stars">' + o + '</span>'; }
+function F(sl, k){ var v = sl[k]; var d = (T.by[sl.type] || {}).d || {}; if (Array.isArray(v) ? v.length : s(v)) return v; return d[k] != null ? d[k] : (Array.isArray(v) ? [] : ''); }
+function brand(){ return (DATA && DATA.brand) || {}; }
+function fmtDay(d){ try { return new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric' }); } catch (e) { return d; } }
+function daysLeft(end){ var t = Date.parse(s(end) + 'T23:59:59'); return isFinite(t) ? Math.ceil((t - Date.now()) / 864e5) : null; }
+/* ── the slide types (a new type: add it to lobby-types.js and here) ── */
+var R = {};
+R.welcome = function(sl){
+  var n = new Date();
+  return '<div class="welcome"><img src="/portal-logo.png" alt="GrayCo Construction Services"><h1>' + esc(F(sl, 'h')) + '</h1><div class="sub">' + esc(F(sl, 'sub')) + '</div>' +
+    '<div class="tm"><b data-tm2>' + esc(n.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })) + '</b><i></i><span data-dt2>' + esc(n.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })) + '</span></div></div>';
+};
+R.beforeafter = function(sl){
+  var pr = arr(sl.pairs), p = pr.length ? pr[cyc(sl, pr.length)] : null;
+  return kick(F(sl, 'h')) + '<div style="display:flex;gap:2.6em;align-items:flex-start">' +
+    photo(p && p.b, 51.5, 38, 'BEFORE', 'Your “before” photo here', true) + photo(p && p.a, 51.5, 38, 'AFTER', 'Your “after” photo here') + '</div>' +
+    '<div style="font-size:2.3em;font-weight:700;margin-top:1.1em">' + esc(p && p.cap || 'Your before / after photos here') + '</div>';
+};
+R.collage = function(sl){
+  var ph = arr(sl.photos).slice(0, 6), g = '';
+  for (var i = 0; i < 6; i++) g += photo(ph[i], 33.6, 20.2, '', i ? '' : 'Your project photos here');
+  return '<div style="display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:2em"><div>' + kick('Our work') + '<h1 class="md">' + esc(F(sl, 'h')) + '</h1></div><div class="sub" style="text-align:right;max-width:22em;margin:0">' + esc(F(sl, 'sub')) + '</div></div>' +
+    '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1.6em">' + g + '</div>';
+};
+R.hero = function(sl){
+  var p = arr(sl.photos)[0];
+  return '<div class="row" style="gap:5em;align-items:center">' + photo(p, 62, 46, '', 'Your featured project photo here') +
+    '<div class="col">' + kick(F(sl, 'h')) + '<h1 class="sm">' + esc((p && p.cap) || F(sl, 'sub')) + '</h1><div class="sub" style="font-size:1.9em">' + esc(F(sl, 't')) + '</div></div></div>';
+};
+function noReviews(sl){
+  var u = brand().reviewUrl || T.reviewUrl;
+  return '<div class="row" style="align-items:center"><div class="col">' + kick('Reviews') + '<h1>' + esc(F(sl, 'h')) + '</h1><div class="sub">Read what your neighbors say about GrayCo — and add your own.</div><div style="font-size:5em;margin-top:.6em">' + stars(5) + '</div></div>' +
+    '<div class="qrw">' + qrCard(u, 'Read our Google reviews') + '</div></div>';
+}
+R.review = function(sl){
+  var rv = arr(sl.reviews); if (!rv.length) return noReviews(sl);
+  var r = rv[cyc(sl, rv.length)];
+  return '<div class="row" style="align-items:center"><div class="col" style="flex:0 0 26em;align-items:flex-start">' + kick(F(sl, 'h')) + '<div style="font-size:4.4em">' + stars(r.stars) + '</div><div class="who" style="margin-top:.8em">' + esc(r.name) + '<small>VERIFIED GRAYCO CUSTOMER</small></div></div>' +
+    '<div class="col"><span class="qm">“</span><div class="quote">' + esc(r.text) + '</div></div></div>';
+};
+R.reviewwall = function(sl){
+  var rv = arr(sl.reviews).slice(0, 6); if (!rv.length) return noReviews(sl);
+  var cols = rv.length <= 2 ? rv.length : 3;
+  return kick('Reviews') + '<h1 class="md">' + esc(F(sl, 'h')) + '</h1><div class="cards" style="grid-template-columns:repeat(' + cols + ',1fr)">' +
+    rv.map(function(r){ return '<div class="card rv"><div class="stars">' + stars(r.stars).replace(/<\/?span[^>]*>/g, '') + '</div><p>“' + esc(r.text) + '”</p><b>— ' + esc(r.name) + '</b></div>'; }).join('') + '</div>';
+};
+R.rating = function(sl){
+  var avg = parseFloat(sl.rating), n = parseInt(sl.count, 10), u = F(sl, 'url') || brand().reviewUrl;
+  var big = isFinite(avg) && avg > 0 ? '<div class="mega">' + avg.toFixed(1) + '</div><div style="font-size:5em;margin-top:.3em">' + stars(avg) + '</div>' + (n > 0 ? '<div class="sub" style="font-size:2.4em">from ' + n + ' Google reviews</div>' : '') :
+    '<div style="font-size:7em">' + stars(5) + '</div><div class="sub" style="font-size:2.4em">Read what your neighbors say</div>';
+  return '<div class="row" style="align-items:center"><div class="col">' + kick('Google reviews') + '<h1 class="md" style="margin-bottom:.6em">' + esc(F(sl, 'h')) + '</h1>' + big + '</div><div class="qrw">' + qrCard(u, sl.label || 'Read our reviews') + '</div></div>';
+};
+R.leavereview = function(sl){
+  return '<div class="row" style="align-items:center"><div class="col">' + kick('Leave a review') + '<h1>' + esc(F(sl, 'h')) + '</h1><div class="sub">' + esc(F(sl, 'sub')) + '</div>' +
+    '<div class="steps" style="grid-template-columns:repeat(3,1fr);max-width:62em"><div class="st"><i>1</i><p>Scan the code with your phone camera</p></div><div class="st"><i>2</i><p>Tap the stars</p></div><div class="st"><i>3</i><p>Share a sentence about your project</p></div></div></div>' +
+    '<div class="qrw">' + qrCard(F(sl, 'url') || brand().reviewUrl, sl.label || 'Leave a Google review') + '</div></div>';
+};
+var SVC = [['drop', 'Restoration & mitigation', 'Water, fire and storm damage — 24/7'], ['roof', 'Roofing', 'Replacement, repairs and free storm inspections'],
+  ['bldg', 'Commercial build-outs', 'Tenant improvements, renovations, new builds'], ['tool', 'Commercial maintenance', 'Roof & coating plans, make-ready, priority response'],
+  ['shield', 'Insurance claim help', 'Photos, estimates and meeting your adjuster']];
+R.services = function(sl){
+  return kick('Services') + '<h1>' + esc(F(sl, 'h')) + '</h1><div class="sub">' + esc(F(sl, 'sub')) + '</div><div class="svc">' +
+    SVC.map(function(x, i){ return '<div class="card"><div class="ci">' + ic(x[0]) + '</div><div class="num">0' + (i + 1) + '</div><h3>' + esc(x[1]) + '</h3><p>' + esc(x[2]) + '</p></div>'; }).join('') + '</div>' +
+    '<div class="strip"><span class="live"></span>24/7 emergency line <b>' + esc(brand().emergency || '') + '</b><span style="flex:1"></span>' + esc(brand().states ? 'Licensed in ' + brand().states : '') + '</div>';
+};
+function svcSlide(k, icon, extra){
+  return function(sl){
+    var p = arr(sl.photos)[0];
+    return '<div class="row" style="align-items:center"><div class="col">' + kick(extra && extra.kick || 'Services') + '<h1>' + esc(F(sl, 'h')) + '</h1><div class="sub">' + esc(F(sl, 'sub')) + '</div>' + items(F(sl, 'items')) +
+      (extra && extra.strip ? '<div class="pill" style="margin-top:2.6em;font-size:1.8em"><span class="live"></span>24/7 · ' + esc(brand().emergency || '') + '</div>' : '') + '</div>' +
+      '<div class="qrw" style="flex-direction:column;gap:2em">' + (p ? photo(p, 44, 44) : (extra && extra.qr ? '' : emblem(icon))) + (extra && extra.qr ? qrCard(F(sl, 'url'), F(sl, 'label') || sl.label) : '') + '</div></div>';
+  };
+}
+R.restoration = svcSlide('restoration', 'drop', { strip: 1 });
+R.roofing = svcSlide('roofing', 'roof');
+R.commercial = svcSlide('commercial', 'bldg');
+R.commaint = svcSlide('commaint', 'tool', { qr: 1 });
+R.care = function(sl){ var x = Object.assign({}, sl); if (!arr(x.items).length) x.items = arr(DATA && DATA.care && DATA.care.plans).slice(0, 6); return svcSlide('care', 'tool', { qr: 1, kick: 'GrayCo Care' })(x); };
+R.snow = svcSlide('snow', 'snow', { qr: 1, kick: 'Priority response' });
+R.hiring = svcSlide('hiring', 'users', { qr: 1, kick: 'Careers' });
+R.claims = function(sl){
+  var st = arr(F(sl, 'items')).slice(0, 4);
+  return kick(F(sl, 'sub') || 'How it works') + '<h1 class="md" style="max-width:24em">' + esc(F(sl, 'h')) + '</h1><div class="steps" style="grid-template-columns:repeat(' + st.length + ',1fr)">' +
+    st.map(function(x, i){ return '<div class="st"><i>' + (i + 1) + '</i><p>' + esc(x) + '</p></div>'; }).join('') + '</div>' +
+    '<div class="fine" style="font-size:1.45em;margin-top:2.4em">Free inspections · Any insurance company · Ask our front desk how a claim works</div>';
+};
+R.emergency = function(sl){
+  return '<div class="row emerg" style="align-items:center"><div class="col"><div class="pill" style="align-self:flex-start;margin-bottom:2em;font-size:1.7em"><span class="live"></span>OPEN 24 HOURS · 7 DAYS</div>' +
+    '<h1>' + esc(F(sl, 'h')) + '</h1><div class="sub">' + esc(F(sl, 'sub')) + '</div><div class="phone">' + esc(brand().emergency || '') + '</div>' +
+    '<div class="ics"><span>' + ic('drop') + 'Water</span><span>' + ic('fire') + 'Fire & smoke</span><span>' + ic('storm') + 'Storm & wind</span><span>' + ic('roof') + 'Emergency tarping</span></div></div>' +
+    '<div class="emb" style="width:30em;height:30em;box-shadow:0 0 0 .5em rgba(239,68,68,.85),0 0 0 2.2em rgba(239,68,68,.12),0 3em 6em rgba(0,0,0,.45)">' + ic('phone') + '</div></div>';
+};
+R.process = function(sl){
+  var st = arr(F(sl, 'items')).slice(0, 6);
+  return kick('Our process') + '<h1>' + esc(F(sl, 'h')) + '</h1><div class="steps" style="grid-template-columns:repeat(' + st.length + ',1fr)">' +
+    st.map(function(x, i){ return '<div class="st"><i>' + (i + 1) + '</i><p>' + esc(x) + '</p></div>'; }).join('') + '</div>';
+};
+R.tiers = function(sl){
+  var tl = arr(DATA && DATA.tiers).length ? DATA.tiers : [{ k: 'bronze', name: 'Bronze', items: ['The plan visits'] }, { k: 'silver', name: 'Silver', items: ['The plan visits', '+1 extra service call a year'] }, { k: 'gold', name: 'Gold', items: ['The plan visits', '+2 extra service calls a year'] }];
+  var COL = { bronze: 'linear-gradient(135deg,#E3A06B,#9A5A2C)', silver: 'linear-gradient(135deg,#F1F4F8,#9AA5B4)', gold: 'linear-gradient(135deg,#FFE08A,#C8950F)' };
+  return '<div style="display:flex;align-items:center;gap:3em;margin-top:-2em"><div style="flex:1">' + kick('GrayCo Care') + '<h1 class="md">' + esc(F(sl, 'h')) + '</h1><div class="sub">' + esc(F(sl, 'sub')) + '</div></div>' + qrCard(F(sl, 'url'), F(sl, 'label'), 1) + '</div>' +
+    '<div class="cards" style="grid-template-columns:repeat(3,1fr);margin-top:2.8em">' + tl.map(function(t){
+      return '<div class="tier' + (t.k === 'gold' ? ' best' : '') + '">' + (t.k === 'gold' ? '<span class="ribbon">BEST VALUE</span>' : '') + '<div class="medal" style="background:' + (COL[t.k] || COL.gold) + '"></div><h3>' + esc(t.name) + '</h3><ul>' + arr(t.items).map(function(x){ x = s(x); return '<li>' + esc(x.charAt(0).toUpperCase() + x.slice(1)) + '</li>'; }).join('') + '</ul></div>'; }).join('') + '</div>';
+};
+R.handyman = function(sl){
+  var hm = (DATA && DATA.handyman) || {};
+  return '<div class="row" style="align-items:center"><div class="col">' + kick('GrayCo Care') + '<h1>' + esc(F(sl, 'h')) + '</h1><div class="sub">' + esc(F(sl, 'sub')) + '</div>' + items(arr(sl.items).length ? sl.items : arr(hm.tasks).slice(0, 10), true) + '</div>' +
+    '<div class="qrw" style="flex-direction:column;gap:1.4em;align-items:center">' + (hm.price ? '<div class="price"><b>' + esc(hm.price) + '</b><span>/ day</span></div><div style="font-size:1.3em;color:var(--mut);margin-bottom:1em">' + esc(hm.note || 'Materials billed separately') + '</div>' : '') + qrCard(F(sl, 'url'), F(sl, 'label'), !!hm.price) + '</div></div>';
+};
+function offerOf(sl){ var o = arr(DATA && DATA.offers); if (!o.length) return null; if (s(sl.offer)) { var f = o.filter(function(x){ return x.id === sl.offer; })[0]; if (f) return f; } return o[0]; }
+function offerHtml(o, sl, dots){
+  var dl = o && o.end ? daysLeft(o.end) : null, p = o && arr(o.photos)[0];
+  if (!o) return '<div class="row" style="align-items:center"><div class="col">' + kick('Offers') + '<h1>' + esc(F(sl, 'h')) + '</h1><div class="sub">' + esc(F(sl, 'sub') || 'Talk to our front desk for details.') + '</div></div>' + emblem('tag') + '</div>';
+  return '<div class="row" style="align-items:center"><div class="col">' + kick(o.kick || 'Limited-time offer') + '<h1 style="font-size:' + (s(o.h).length > 28 ? '4.6' : '6.4') + 'em">' + esc(o.h) + '</h1>' +
+    (o.t ? '<div class="sub" style="font-size:2.3em">' + esc(o.t) + '</div>' : '') +
+    (dl != null && dl >= 0 && dl <= 60 ? '<div class="pill" style="margin-top:2.4em;font-size:1.9em;align-self:flex-start">' + ic('clock').replace('class="ico ', 'style="width:1.2em;height:1.2em;stroke:#F2C14E" class="ico ') + (dl === 0 ? 'Ends today' : 'Ends ' + esc(fmtDay(o.end)) + ' · ' + dl + ' day' + (dl === 1 ? '' : 's') + ' left') + '</div>' : '') +
+    (o.fine ? '<div class="fine">' + esc(o.fine) + '</div>' : '') + (dots || '') + '</div>' +
+    '<div class="qrw" style="flex-direction:column;gap:2em">' + (p ? photo(p, 36, 24) : '') + (o.url ? qrCard(o.url, o.label || 'Scan to claim', !!p) : (p ? '' : emblem('tag'))) + '</div></div>';
+}
+R.offer = function(sl){ return offerHtml(offerOf(sl), sl); };
+R.promos = function(sl){
+  var o = arr(DATA && DATA.offers); if (!o.length) return offerHtml(null, sl);
+  var i = SUB.i % o.length;
+  var dots = o.length > 1 ? '<div style="display:flex;gap:.7em;margin-top:2.6em">' + o.map(function(x, j){ return '<i style="display:block;height:.7em;border-radius:.35em;width:' + (j === i ? 3 : .7) + 'em;background:' + (j === i ? 'var(--gold)' : 'rgba(255,255,255,.25)') + '"></i>'; }).join('') + '</div>' : '';
+  return offerHtml(o[i], sl, dots);
+};
+R.campaign = function(sl){
+  var p = arr(sl.photos)[0];
+  return '<div class="row" style="align-items:center"><div class="col">' + kick('This season') + '<h1>' + esc(F(sl, 'h')) + '</h1><div class="sub">' + esc(F(sl, 'sub')) + '</div>' + items(F(sl, 'items')) + '</div>' +
+    '<div class="qrw" style="flex-direction:column;gap:2em">' + (p ? photo(p, 40, 26) : '') + (F(sl, 'url') ? qrCard(F(sl, 'url'), F(sl, 'label') || sl.label, !!p) : emblem('sun')) + '</div></div>';
+};
+R.refoffer = function(sl){
+  var rf = (DATA && DATA.referral) || { min: 100, max: 500 };
+  return '<div class="row" style="align-items:center"><div class="col">' + kick('Referral program') + '<div class="mega" style="font-size:11em">$' + rf.min + '–$' + rf.max + '</div><h1 class="md" style="margin-top:.4em">' + esc(F(sl, 'h')) + '</h1>' +
+    '<div class="sub">' + esc(F(sl, 'sub')) + '</div><div class="fine">For every friend you refer whose job goes ahead · GrayCo credit for GrayCo work · approved by the office</div></div><div class="qrw">' + qrCard(F(sl, 'url'), F(sl, 'label')) + '</div></div>';
+};
+R.referral = function(sl){
+  var st = arr(F(sl, 'items')).slice(0, 4);
+  return '<div class="row" style="align-items:center"><div class="col">' + kick('Referral program') + '<h1 class="md">' + esc(F(sl, 'h')) + '</h1><div class="sub">' + esc(F(sl, 'sub')) + '</div>' +
+    '<div class="steps" style="grid-template-columns:repeat(2,1fr);max-width:60em">' + st.map(function(x, i){ return '<div class="st" style="padding:1.6em 1.8em"><i>' + (i + 1) + '</i><p>' + esc(x) + '</p></div>'; }).join('') + '</div></div>' +
+    '<div class="qrw">' + qrCard(F(sl, 'url'), F(sl, 'label')) + '</div></div>';
+};
+R.askus = function(sl){
+  return '<div style="display:flex;flex-direction:column;justify-content:center;height:100%">' + kick('Ask our front desk') + '<h1 style="font-size:7em">' + esc(F(sl, 'h')) + '</h1><div class="chips">' + arr(F(sl, 'items')).slice(0, 8).map(function(x){ return '<span>' + esc(x) + '</span>'; }).join('') + '</div></div>';
+};
+R.countdown = function(sl){
+  var end = s(sl.end), t = Date.parse(end + 'T23:59:59'), left = isFinite(t) ? t - Date.now() : -1, cd = '';
+  if (left > 0) { var d = Math.floor(left / 864e5), h = Math.floor(left % 864e5 / 36e5), m = Math.floor(left % 36e5 / 6e4);
+    cd = '<div class="cd"><div><b>' + d + '</b><span>days</span></div><div><b>' + h + '</b><span>hours</span></div><div><b>' + m + '</b><span>minutes</span></div></div><div class="fine">Until ' + esc(fmtDay(end)) + '</div>'; }
+  return '<div class="row" style="align-items:center"><div class="col">' + kick('Coming up') + '<h1>' + esc(F(sl, 'h')) + '</h1><div class="sub">' + esc(F(sl, 'sub')) + '</div>' + cd + '</div><div class="qrw">' + (F(sl, 'url') ? qrCard(F(sl, 'url'), F(sl, 'label')) : emblem('clock')) + '</div></div>';
+};
+R.team = function(sl){
+  var pp = arr(sl.people).slice(0, 5), body;
+  if (pp.length) body = '<div class="cards" style="grid-template-columns:repeat(' + pp.length + ',1fr);margin-top:4em">' + pp.map(function(p){
+    var ini = s(p.name).split(/\s+/).map(function(w){ return w.charAt(0); }).join('').slice(0, 2).toUpperCase();
+    return '<div class="person"><div class="av">' + (p.u ? '<img src="' + esc(p.u) + '" alt="">' : '<b>' + esc(ini) + '</b>') + '</div><h3>' + esc(p.name) + '</h3><p>' + esc(p.role) + '</p></div>'; }).join('') + '</div>';
+  else body = '<div class="cards" style="grid-template-columns:repeat(3,1fr);margin-top:4em">' + [['users', 'Local people', 'We live and work right here in the Mid-South.'], ['clock', 'On time', 'You know who is coming and when — every day.'], ['shield', 'We stand behind it', 'Licensed, insured and accountable for every job.']].map(function(x){
+    return '<div class="card"><div class="ci">' + ic(x[0]) + '</div><h3>' + x[1] + '</h3><p>' + x[2] + '</p></div>'; }).join('') + '</div>';
+  return kick('Our team') + '<h1>' + esc(F(sl, 'h')) + '</h1><div class="sub">' + esc(F(sl, 'sub')) + '</div>' + body;
+};
+R.warranty = function(sl){
+  var b = brand(), p = arr(sl.photos)[0];
+  return '<div class="row" style="align-items:center"><div class="col">' + kick('Peace of mind') + '<h1>' + esc(F(sl, 'h')) + '</h1><div class="sub">' + esc(F(sl, 'sub')) + '</div>' + items(F(sl, 'items')) +
+    (b.licenses ? '<div class="fine" style="font-size:1.5em;margin-top:2.4em">' + esc(b.licenses) + '</div>' : '') + '</div>' + (p ? photo(p, 44, 44) : emblem('shield')) + '</div>';
+};
+R.financing = function(sl){
+  var p = arr(sl.photos)[0];
+  return '<div class="row" style="align-items:center"><div class="col">' + kick('Payment options') + '<h1>' + esc(F(sl, 'h')) + '</h1><div class="sub">' + esc(F(sl, 'sub')) + '</div><div class="sub" style="color:#fff;font-weight:600;font-size:2.4em;margin-top:1.4em">' + esc(F(sl, 't')) + '</div></div>' + (p ? photo(p, 44, 44) : emblem('card')) + '</div>';
+};
+R.tip = function(sl){
+  var tp = T.tipFor(new Date()), p = arr(sl.photos)[0];
+  return '<div class="row" style="align-items:center"><div class="col">' + kick('GrayCo tip') + '<h1 class="md">' + esc(s(sl.h) || tp.h) + '</h1><div class="sub" style="font-size:2.3em;max-width:30em">' + esc(s(sl.t) || tp.t) + '</div></div>' + (p ? photo(p, 44, 44) : emblem('bulb')) + '</div>';
+};
+R.weather = function(sl){
+  var w = (DATA && DATA.weather) || null, wx = '';
+  if (w && arr(w.days).length) wx = '<div class="wx">' + w.days.slice(0, 4).map(function(d){ return '<div><b>' + esc(d.name) + '</b><strong>' + esc(d.temp) + '°</strong><span>' + esc(d.short) + '</span></div>'; }).join('') + '</div>';
+  return '<div class="row" style="align-items:center"><div class="col">' + kick(w && w.place ? 'Weather · ' + w.place : 'Weather watch') + '<h1>' + esc(F(sl, 'h')) + '</h1><div class="sub">' + esc(F(sl, 'sub')) + '</div>' + wx + '</div>' +
+    '<div class="qrw">' + (F(sl, 'url') ? qrCard(F(sl, 'url'), F(sl, 'label')) : emblem('storm')) + '</div></div>';
+};
+R.community = function(sl){
+  var ph = arr(sl.photos).slice(0, 3);
+  return '<div class="row" style="align-items:center"><div class="col" style="flex:0 0 46em">' + kick('Community') + '<h1 class="md">' + esc(F(sl, 'h')) + '</h1><div class="sub">' + esc(F(sl, 'sub')) + '</div><div class="sub" style="font-size:1.8em;color:#E4EAF2">' + esc(F(sl, 't')) + '</div></div>' +
+    (ph.length ? '<div style="display:grid;gap:1.4em;grid-template-columns:repeat(' + Math.min(2, ph.length) + ',1fr);flex:1">' + ph.map(function(p, i){ return photo(p, ph.length === 1 ? 52 : 26, ph.length === 1 ? 40 : (i === 0 && ph.length === 3 ? 19 : 19)); }).join('') + '</div>' : '<div class="col" style="align-items:center">' + emblem('heart') + '</div>') + '</div>';
+};
+R.social = function(sl){
+  return '<div class="row" style="align-items:center"><div class="col">' + kick('Follow along') + '<h1>' + esc(F(sl, 'h')) + '</h1><div class="sub">' + esc(F(sl, 'sub')) + '</div>' +
+    '<div class="chips"><span>Before & afters</span><span>Tips</span><span>Local news</span></div></div><div class="qrw">' + qrCard(F(sl, 'url'), F(sl, 'label')) + '</div></div>';
+};
+R.announce = function(sl){
+  var p = arr(sl.photos)[0];
+  return '<div class="row" style="align-items:center"><div class="col">' + kick(F(sl, 'sub')) + '<h1>' + esc(F(sl, 'h')) + '</h1><div class="sub" style="font-size:2.4em;color:#E4EAF2">' + esc(F(sl, 't')) + '</div></div>' + (p ? photo(p, 48, 40) : emblem('msg')) + '</div>';
+};
+R.qr = function(sl){
+  return '<div class="row" style="align-items:center"><div class="col">' + kick('Scan with your phone') + '<h1>' + esc(F(sl, 'h')) + '</h1><div class="sub">' + esc(F(sl, 'sub')) + '</div></div><div class="qrw">' + qrCard(F(sl, 'url'), F(sl, 'label')) + '</div></div>';
+};
+/* ── the show ── */
+function cyc(sl, n){ var k = sl.id || sl.type; return (CYC[k] || 0) % Math.max(1, n); }
+var SUB = { i: 0 };
+function usable(sl){
+  if (!sl || !R[sl.type]) return false;
+  if (PREVIEW) return true;
+  if (sl.type === 'beforeafter') return arr(sl.pairs).length > 0;   /* customers never see empty frames */
+  if (sl.type === 'collage') return arr(sl.photos).length >= 3;
+  if (sl.type === 'countdown' && s(sl.end)) { var t = Date.parse(s(sl.end) + 'T23:59:59'); if (isFinite(t) && t < Date.now()) return false; }
+  return true;
+}
+function ivMs(){ var v = +(DATA && DATA.interval) || 14; return Math.max(8, Math.min(30, v)) * 1000; }
+function draw(i){
+  var sl = LIST[i]; if (!sl) return;
+  var el = D.createElement('div'); el.className = 'sl sl-' + sl.type; el.setAttribute('data-type', sl.type);
+  try { el.innerHTML = R[sl.type](sl); } catch (e) { el.innerHTML = ''; }
+  D.body.classList.toggle('nohead', sl.type === 'welcome');
+  var old = STAGE.querySelectorAll('.sl'); STAGE.insertBefore(el, D.getElementById('dots'));
+  void el.offsetWidth; el.classList.add('in');
+  Array.prototype.forEach.call(old, function(o){ o.classList.remove('in'); setTimeout(function(){ if (o.parentNode) o.parentNode.removeChild(o); }, 1400); });
+  var dh = ''; if (LIST.length > 1 && ONLY == null) LIST.forEach(function(x, j){ dh += '<i' + (j === i ? ' class="on"' : '') + '></i>'; }); D.getElementById('dots').innerHTML = dh;
+  var bar = D.getElementById('bar'); bar.className = 'bar'; if (ONLY == null && LIST.length > 1) { void bar.offsetWidth; bar.style.animationDuration = ivMs() + 'ms'; bar.className = 'bar run'; }
+}
+function next(){
+  clearTimeout(TIMER); clearInterval(SUBT); if (!ALIVE || !LIST.length) return;
+  if (ONLY != null) { AT = Math.min(ONLY, LIST.length - 1); SUB.i = 0; draw(AT); subRotate(); return; }
+  var prev = LIST[AT]; if (prev) { var k = prev.id || prev.type; CYC[k] = (CYC[k] || 0) + 1; }
+  AT = (AT + 1) % LIST.length; SUB.i = 0; draw(AT); subRotate();
+  TIMER = setTimeout(next, ivMs());
+}
+function subRotate(){   /* the promo rotation: every live offer gets its turn inside the slide */
+  var sl = LIST[AT], n = arr(DATA && DATA.offers).length; if (!sl || sl.type !== 'promos' || n < 2) return;
+  SUBT = setInterval(function(){ SUB.i++; var cur = STAGE.querySelector('.sl.in'); if (cur && cur.getAttribute('data-type') === 'promos') { try { cur.innerHTML = R.promos(sl); } catch (e) {} } }, Math.max(3500, ivMs() / n));
+}
+function setData(d, only){
+  DATA = d; ONLY = only == null ? null : only;
+  LIST = arr(d && d.slides).filter(usable);
+  if (!LIST.length) { blank(PREVIEW ? '' : 'GrayCo Construction Services'); return; }
+  var na = D.querySelector('.na'); if (na) na.remove();
+  AT = ONLY == null ? -1 : ONLY; next();
+}
+function blank(msg){
+  clearTimeout(TIMER); clearInterval(SUBT); LIST = []; DATA = null;
+  Array.prototype.forEach.call(STAGE.querySelectorAll('.sl'), function(o){ o.remove(); });
+  D.getElementById('dots').innerHTML = ''; D.getElementById('bar').className = 'bar';
+  var na = D.querySelector('.na'); if (!na) { na = D.createElement('div'); na.className = 'na'; STAGE.appendChild(na); } na.textContent = msg || '';
+}
+function clock(){
+  var n = new Date(), t = n.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }), m = t.match(/^(.*?)\s*([AP]M)$/i);
+  D.getElementById('tm').innerHTML = m ? esc(m[1]) + '<small>' + esc(m[2]) + '</small>' : esc(t);
+  D.getElementById('dt').textContent = n.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+  var a = D.querySelector('[data-tm2]'); if (a) a.textContent = t;
+}
+clock(); setInterval(clock, 1000);
+/* keep the TV awake (where the browser allows it) */
+var WL = null; function wake(){ try { if (navigator.wakeLock && !WL && D.visibilityState === 'visible') navigator.wakeLock.request('screen').then(function(l){ WL = l; l.addEventListener('release', function(){ WL = null; }); }, function(){}); } catch (e) {} }
+D.addEventListener('visibilitychange', wake); wake();
+D.addEventListener('click', function(){ try { if (!D.fullscreenElement && D.documentElement.requestFullscreen) D.documentElement.requestFullscreen().catch(function(){}); } catch (e) {} wake(); });
+W.__lobby = { state: function(){ return { at: AT, n: LIST.length, type: LIST[AT] && LIST[AT].type, types: LIST.map(function(x){ return x.type; }), preview: PREVIEW, live: !!DATA }; }, show: function(i){ ONLY = i; next(); }, data: function(){ return DATA; } };
+if (PREVIEW) {
+  W.addEventListener('message', function(e){
+    if (e.origin !== location.origin || !e.data || e.data.gcLobby !== 'data') return;
+    setData(e.data.data || {}, e.data.only);
+  });
+  try { if (W.parent && W.parent !== W) W.parent.postMessage({ gcLobby: 'ready' }, location.origin); } catch (e) {}
+  return;
+}
+/* the live lobby: the content from lobby.js with the link's code; a turned-off code shows nothing */
+var TOK = tokenOf(), BUSY = false;
+function pull(){
+  if (BUSY) return; BUSY = true;
+  if (!TOK) { blank(''); BUSY = false; return; }
+  fetch('/.netlify/functions/lobby', { headers: { 'x-lobby-token': TOK }, cache: 'no-store' }).then(function(r){
+    return r.json().then(function(j){ return { st: r.status, j: j }; }, function(){ return { st: r.status, j: null }; });
+  }).then(function(x){
+    BUSY = false;
+    if (x.st === 200 && x.j && x.j.ok) { var same = DATA && JSON.stringify(DATA.slides) === JSON.stringify(x.j.slides); DATA = x.j; if (!same || !LIST.length) setData(x.j); return; }
+    if (x.st >= 400 && x.st < 500) blank('');   /* off / replaced / unknown: nothing on the screen */
+  }, function(){ BUSY = false; /* offline: keep showing what is on the screen */ });
+}
+pull(); setInterval(pull, 5 * 60e3);
+W.addEventListener('hashchange', function(){ TOK = tokenOf(); pull(); });
+})();
+</script>
+</body>
+</html>

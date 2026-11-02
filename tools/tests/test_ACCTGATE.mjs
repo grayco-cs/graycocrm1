@@ -15,6 +15,9 @@
 //   6. Collections / A/R: an invoice marked paid → A/R and cash.   7. Print / PDF statement for a customer.
 //   8. Permissions: office all; a PM only his jobs; marketing none.
 // Every step records: pass / fail, our functions' 4xx / 5xx, page errors, long tasks over 1 s, money before → after.
+// patch ACCTFIX2 (claude/acctfix2) adds: pending / denied costs out of job cost and the P&L ("⏳ Waiting for approval" apart),
+// card refunds exact, a bank deposit → 💵 Payment matches → confirm (A/R and cash exact), the customer statement (rows, balance,
+// aging, 🖨 / 📄 / ✉ on Approvals), and the 📥 Expense inbox's own message after every import.
 // Env: GC_HARNESS (default the wUPG harness), GC_PDFJS, ONLY (comma list of step groups: qb,stmt,mail,manual,appr,coll,stmt7,perm).
 // Exit 0 = PASS.
 import fs from 'fs'; import path from 'path'; import os from 'os'; import zlib from 'zlib'; import { pathToFileURL } from 'url';
@@ -46,7 +49,8 @@ fs.writeFileSync(FX + '/qb_exp_vendor_summary.csv', QB.expensesByVendorSummary()
 fs.writeFileSync(FX + '/qb_exp_vendor_detail.csv', QB.expensesByVendorDetail());
 fs.writeFileSync(FX + '/agt_bank.csv', ['Date,Description,Withdrawals,Deposits,Balance',
   '10/20/2026,"DEPOSIT - AGT HOLLIS INV 1043",,"5,000.00","17,425.00"',
-  '10/21/2026,"CHECK 1209",310.00,,"17,115.00"'].join('\n'));
+  '10/21/2026,"CHECK 1209",310.00,,"17,115.00"',
+  '10/22/2026,"MOBILE DEPOSIT",,"1,200.00","18,315.00"'].join('\n'));
 
 const rows = JSON.parse(fs.readFileSync(MIRROR, 'utf8'));
 const iso = t => new Date(t).toISOString(), NOW = Date.now(), HOURAGO = iso(NOW - 3600e3);
@@ -56,13 +60,15 @@ function loadCloud(){
   const rd = k => { const r = cloud.get(k); let v = r && r.value; let str = false; if (typeof v === 'string') { try { v = JSON.parse(v); str = true; } catch (e) {} } return { v, str }; };
   const edit = (k, fn) => { const o = rd(k); const nv = fn(Array.isArray(o.v) ? o.v : (o.v && typeof o.v === 'object' ? o.v : [])); cloud.set(k, { key: k, value: o.str ? JSON.stringify(nv) : nv, updated_at: HOURAGO }); };
   edit('projects', l => l.concat([
-    { id: A, name: 'Agt Hollis Reroof', address: '4471 Quarry Bend Dr, Bartlett, TN 38133', autoPO: 'A101', client: 'Agt Hollis', pm: 'Steven Biffle', status: 'Active', contract: 24000, type: 'Residential', created: '2026-09-01', savedAt: HOURAGO, updatedAt: HOURAGO },
+    { id: A, name: 'Agt Hollis Reroof', address: '4471 Quarry Bend Dr, Bartlett, TN 38133', autoPO: 'A101', client: 'Agt Hollis', clientEmail: 'agt.hollis@example.invalid', pm: 'Steven Biffle', status: 'Active', contract: 24000, type: 'Residential', created: '2026-09-01', savedAt: HOURAGO, updatedAt: HOURAGO },
     { id: BJ, name: 'Agt Brentley Gutters & Trim', address: '1880 Wren Hollow Rd, Germantown, TN 38138', autoPO: 'Q902', client: 'Agt Brentley', pm: '', status: 'Active', contract: 18000, type: 'Residential', created: '2026-09-10', savedAt: HOURAGO, updatedAt: HOURAGO }]));
   edit('subs', l => l.concat([
     { id: 'SUBagtR', name: 'Agt Ridgeline Roofing LLC', email: 'ap@agt-ridgeline.test', isSub: true, w9: false, insExp: '', wcExp: '', cat: 'Roofing', savedAt: HOURAGO, updatedAt: HOURAGO },
     { id: 'SUBagtD', name: 'Agt Delta Gutter Co', email: 'office@agt-delta.test', isSub: true, w9: true, insExp: '2027-06-30', wcExp: '2027-06-30', agreement: true, subAgreement: true, cat: 'Gutters', savedAt: HOURAGO, updatedAt: HOURAGO }]));
   edit('invs', l => l.concat([
     { id: 'INVagt1', type: 'client', pid: A, client: 'Agt Hollis', amt: 5000, invNum: '1043', status: 'sent', date: '2026-10-01', sentDate: '2026-10-01', dueDate: '2026-10-16', desc: 'Agt progress draw', savedAt: HOURAGO, updatedAt: HOURAGO },
+    { id: 'INVagt2', type: 'client', pid: A, client: 'Agt Hollis', amt: 2750, invNum: '1044', status: 'sent', date: '2026-09-10', sentDate: '2026-09-10', dueDate: '2026-09-25', desc: 'INTERNAL margin note — not for the customer', savedAt: HOURAGO, updatedAt: HOURAGO },
+    { id: 'INVagt3', type: 'client', pid: A, client: 'Agt Hollis', amt: 1200, invNum: '1045', status: 'sent', date: '2026-10-20', sentDate: '2026-10-20', dueDate: '2026-11-19', desc: 'Agt closing draw', savedAt: HOURAGO, updatedAt: HOURAGO },   /* not "final": a sent invoice that says final marks the job 100 % and the job's automatic draws then bill the rest of the contract (real behaviour, not under test here) */
     { id: 'INVagtS1', type: 'sub', pid: BJ, sub: 'Agt Delta Gutter Co', subId: 'SUBagtD', invNum: 'DG-5520', amt: 1850, status: 'received', recvDate: '2026-10-25', date: '2026-10-25', desc: 'Gutters phase 1', savedAt: HOURAGO, updatedAt: HOURAGO }]));
   const exp = (id, pid, vendor, amt, desc) => ({ id, pid, type: 'expense', vendor, payee: vendor, desc, amt, category: 'Materials', status: 'pending', date: '2026-10-29', by: 'Steven Biffle', enteredAt: HOURAGO, savedAt: HOURAGO, updatedAt: HOURAGO });
   edit('expenses', l => l.concat([exp('EXPagt1', BJ, 'Agt Supply House', 321, 'trim coil'), exp('EXPagt2', BJ, 'Agt Supply House', 77.5, 'wrong order (deny with reason)'), exp('EXPagt3', BJ, 'Agt Snack Bar', 18.25, 'lunch (deny)'), exp('EXPagtA1', A, 'Agt Supply House', 444, 'ridge vent')]));
@@ -93,6 +99,7 @@ async function person(email, name, opts){
     return J({ email, staff: true, admin: !!(row && row.role === 'admin'), payroll: !!(row && row.payroll), office: email === OFFICE, sec2: 1 });
   });
   await B.routeFunctions(c, bridge);
+  c.cons = []; c.ctx.on('console', m => { try { if (/warning|error/.test(m.type())) c.cons.push(m.type() + ' ' + m.text().slice(0, 220)); } catch (e) {} });
   await c.ctx.route(u => /pdf(\.worker)?\.min\.js$/.test(new URL(u).pathname), r => r.fulfill({ path: PDFJS + '/' + (/worker/.test(r.request().url()) ? 'pdf.worker.min.js' : 'pdf.min.js'), contentType: 'text/javascript' }));
   await c.ctx.addInitScript(() => {
     try { ['_helpShown', 'gc_help_welcomed', 'gc_tour_done'].forEach(k => localStorage.setItem(k, '1')); } catch (e) {}
@@ -131,13 +138,17 @@ const b64 = f => fs.readFileSync(f).toString('base64');
 const mk = (c) => async (fn, arg) => { try { return await c.page().evaluate(fn, arg); } catch (e) { if (/is not defined|is not a function/.test(e.message)) { await c.page().evaluate(H_JS); return c.page().evaluate(fn, arg); } throw e; } };
 
 /* ══════════ steps ══════════ */
-const RESULTS = []; let fails = 0, stepN = 0; const BG = new Set();
+const RESULTS = []; let fails = 0, stepN = 0; const BG = new Set(['referral ?pending', 'gdocs-sync ?op', 'auto-wins ', 'bid-inbox ?list', 'referral ?list', 'referral ?settings']);   /* the office's background refusals that claude/officefix fixes — counted in the session check */
 const IGNORE_ERR = /ResizeObserver|Failed to load resource|net::ERR|AbortError/i;
 async function step(c, group, name, f, o){
   o = o || {}; stepN++; const ph = 's' + stepN; c.phase = ph; const ev = mk(c);
   await ev(ph => { window.__PH = ph; }, ph).catch(() => {});
+  /* a person is at the computer: the mouse moves at the start of each step (a real input event). Without one for a minute the
+     CRM's background loops slow to every 30 s (patch SYNCPERF "nobody at the computer") and a screen opened by code — like
+     📋 Approvals here — is not drawn for up to 30 s. */
+  try { await c.page().mouse.move(40 + (stepN % 9) * 7, 300); } catch (e) {}
   const m0 = o.money === false ? null : await ev(() => window.__money()).catch(() => null);
-  const t0 = Date.now(), n0 = c.calls.length, e0 = c.errs.length;
+  const t0 = Date.now(), n0 = c.calls.length, e0 = c.errs.length, k0 = (c.cons || []).length;
   let r; try { r = await f(ev); } catch (e) { r = { ok: false, note: 'threw: ' + String(e.message).slice(0, 300) }; }
   await sleep(300);
   const m1 = o.money === false ? null : await ev(() => window.__money()).catch(() => null);
@@ -151,9 +162,10 @@ async function step(c, group, name, f, o){
   const ok = !!(r && r.ok) && !bad.length && !perrs.length;
   if (!ok) fails++;
   const delta = {}; if (m0 && m1 && !m0.err && !m1.err) Object.keys(m1).forEach(k => { const d = Math.round((m1[k] - m0[k]) * 100) / 100; if (d) delta[k] = d; });
-  const rec = { n: stepN, who: c.name, group, name, ok, ms, note: (r && r.note) || '', bad: bad.map(x => x.m + ' ' + x.fn + x.q.split('&')[0] + ' → ' + x.status + ' ' + (x.err || '').slice(0, 100)), allowed: calls.filter(x => x.status >= 400 && !bad.includes(x) && !bgBad.includes(x)).map(x => x.fn + ' ' + x.status), background: [...new Set(bgBad.map(x => x.m + ' ' + x.fn + x.q.split('&')[0] + ' → ' + x.status))], pageErrors: perrs.slice(0, 4), longTasks: lts, money: { before: m0, after: m1, delta }, data: r && r.data };
+  const cons = (c.cons || []).slice(k0).filter(x => /held your place|TypeError|ReferenceError|is not a function|Cannot read/.test(x));
+  const rec = { n: stepN, who: c.name, group, name, ok, ms, console: cons.slice(0, 6), note: (r && r.note) || '', bad: bad.map(x => x.m + ' ' + x.fn + x.q.split('&')[0] + ' → ' + x.status + ' ' + (x.err || '').slice(0, 100)), allowed: calls.filter(x => x.status >= 400 && !bad.includes(x) && !bgBad.includes(x)).map(x => x.fn + ' ' + x.status), background: [...new Set(bgBad.map(x => x.m + ' ' + x.fn + x.q.split('&')[0] + ' → ' + x.status))], pageErrors: perrs.slice(0, 4), longTasks: lts, money: { before: m0, after: m1, delta }, data: r && r.data };
   RESULTS.push(rec);
-  console.log((ok ? 'ok   ' : 'FAIL ') + stepN + '. [' + c.name + '] ' + name + ' — ' + ms + ' ms' + (lts.length ? ', long tasks ' + JSON.stringify(lts) : '') + (Object.keys(delta).length ? ', money ' + JSON.stringify(delta) : '') + (rec.note ? '\n        ' + rec.note : '') + (bad.length ? '\n        BAD ' + JSON.stringify(rec.bad) : '') + (rec.background.length ? '\n        (background) ' + JSON.stringify(rec.background) : '') + (perrs.length ? '\n        PAGE ERRORS ' + JSON.stringify(perrs.slice(0, 3)) : ''));
+  console.log((ok ? 'ok   ' : 'FAIL ') + stepN + '. [' + c.name + '] ' + name + ' — ' + ms + ' ms' + (lts.length ? ', long tasks ' + JSON.stringify(lts) : '') + (Object.keys(delta).length ? ', money ' + JSON.stringify(delta) : '') + (rec.note ? '\n        ' + rec.note : '') + (bad.length ? '\n        BAD ' + JSON.stringify(rec.bad) : '') + (rec.background.length ? '\n        (background) ' + JSON.stringify(rec.background) : '') + (perrs.length ? '\n        PAGE ERRORS ' + JSON.stringify(perrs.slice(0, 3)) : '') + (!ok && cons.length ? '\n        CONSOLE ' + JSON.stringify(cons.slice(0, 4)) : ''));
   return r;
 }
 const near = (a, b) => Math.abs((+a || 0) - (+b || 0)) < 0.011;
@@ -164,8 +176,9 @@ console.log('── signing in as the office (office@grayco-cs.com) …');
 const O = await person(OFFICE, 'office');
 const ev = mk(O);
 await step(O, 'perm', 'Office signs in: full office access, every money screen allowed', async ev => {
+  await waitFor(O, () => (window._crm.invoices || []).filter(i => /^INVagt/.test(i.id)).length >= 4, null, 30000, 500).catch(() => null);   /* a first sign-in: the cloud's lists arrive in the first seconds */
   const r = await ev(() => ({ full: window._gcFullAccess && window._gcFullAccess(), office: window._gcIsOfficeFull && window._gcIsOfficeFull(), notAllowed: ['payroll', 'pnl', 'invoices', 'payments', 'expenses', 'approvals', 'officemanager', 'todo'].filter(v => window._gcViewAllowed && !window._gcViewAllowed(v)), money: window.__money(), jobs: (window._crm.projects || []).filter(p => /^PRJagt/.test(p.id)).length, invs: (window._crm.invoices || []).filter(i => /^INVagt/.test(i.id)).length }));
-  return { ok: r.full && r.office && !r.notAllowed.length && r.jobs === 2 && r.invs === 2, note: JSON.stringify(r).slice(0, 400), data: r };
+  return { ok: r.full && r.office && !r.notAllowed.length && r.jobs === 2 && r.invs === 4, note: JSON.stringify(r).slice(0, 400), data: r };
 });
 
 /* ─────────── 1. QuickBooks CSV ─────────── */
@@ -185,11 +198,12 @@ if (want('qb')) {
         for (let i = 0; i < 40 && document.getElementById('_gcQbImpOv'); i++) await new Promise(z => setTimeout(z, 250));
         await new Promise(z => setTimeout(z, 1500));
         const newInv = window._crm.invoices.filter(i => i.source === 'quickbooks' && /QuickBooks/.test(i.by || '')).map(i => ({ id: i.id, client: i.client, amt: i.amt, pid: i.pid, status: i.status }));
-        return { has, label: plan && plan.label, counts: plan && plan.counts, rows: plan ? plan.rows.map(x => x.action + ' ' + x.rec.kind + ' ' + (x.rec.name || '') + ' ' + x.rec.amount).slice(0, 30) : [], summary, exp: window._crm.expenses.length - before.exp, inv: window._crm.invoices.length - before.inv, newInv };
+        const newOnes = window._crm.invoices.length > before.inv ? window._crm.invoices.slice().sort((a, b) => String(b.createdAt || b.at || '').localeCompare(String(a.createdAt || a.at || ''))).slice(0, 2).map(i => ({ id: i.id, amt: i.amt, pid: i.pid, src: i.source, by: i.by, st: i.status, at: i.createdAt || i.at, num: i.invNum })) : [];
+        return { newOnes, has, label: plan && plan.label, counts: plan && plan.counts, rows: plan ? plan.rows.map(x => x.action + ' ' + x.rec.kind + ' ' + (x.rec.name || '') + ' ' + x.rec.amount).slice(0, 30) : [], summary, exp: window._crm.expenses.length - before.exp, inv: window._crm.invoices.length - before.inv, newInv };
       }, [f, b64(FX + '/' + f)]);
       const dlg = O.dialogs.slice(-1)[0] || '';
       if (k === 'evs') return { ok: (!!r.err && /header row/.test(O.dialogs.slice(-1)[0] || '')) || (r.counts && r.exp === 0 && r.inv === 0), note: 'summary report: ' + (r.err ? r.err : (r.label + ' → ' + JSON.stringify(r.counts))) + ' · ' + dlg.slice(0, 160), data: r };
-      return { ok: r.has && !r.err && r.inv === 0, note: (r.label || r.err) + ' · ' + JSON.stringify(r.counts) + ' · new expenses ' + r.exp + ', new invoices ' + r.inv + ' (costs are NOT made into expenses by this door — it says to use 📥 Expense inbox) · ' + dlg.slice(0, 200), data: r };
+      return { ok: r.has && !r.err && r.inv === 0, note: (r.label || r.err) + ' · ' + JSON.stringify(r.counts) + ' · new expenses ' + r.exp + ', new invoices ' + r.inv + (r.inv ? ' ' + JSON.stringify(r.newOnes) : '') + ' (costs are NOT made into expenses by this door — it says to use 📥 Expense inbox) · ' + dlg.slice(0, 200), data: r };
     });
   }
   /* 📥 Expense inbox */
@@ -210,17 +224,17 @@ if (want('qb')) {
   if (!RESULTS[RESULTS.length - 1].ok) { fails++; RESULTS[RESULTS.length - 1].note += ' — WRONG: ' + rowsT.length + ' rows / ' + money$(sumT) + ' (right: 5 rows / $4,069.49: every cost once, the −212.00 return skipped). Rows: ' + rowsT.map(x => x.vendor + ' ' + x.amount + ' [' + x.account + ']').join('; '); console.log('FAIL ↑ ' + RESULTS[RESULTS.length - 1].note); }
   else console.log('     ↑ 5 rows, $4,069.49 — every cost once');
   const t2 = await inboxImport('qb_tdba.csv');
-  const ok2 = t2.data.added === 0;
+  const ok2 = t2.data.added === 0 && /0 rows added, 5 duplicates skipped/.test(t2.note) && /\(5 waiting\)/.test(t2.note);   /* the window redraws (ACCTFIX2-E1) */
   if (!ok2) { fails++; RESULTS[RESULTS.length - 1].ok = false; } RESULTS[RESULTS.length - 1].name += ' (again: duplicates skipped)';
   console.log((ok2 ? '     ↑ ' : 'FAIL ↑ ') + 're-import: ' + t2.data.added + ' added · ' + t2.note);
   const t3 = await inboxImport('qb_pnl_detail.csv');
-  const ok3 = t3.data.added === 2; if (!ok3) { fails++; RESULTS[RESULTS.length - 1].ok = false; }
+  const ok3 = t3.data.added === 2 && /✅ 2 rows added/.test(t3.note) && /\(7 waiting\)/.test(t3.note); if (!ok3) { fails++; RESULTS[RESULTS.length - 1].ok = false; }
   console.log((ok3 ? '     ↑ ' : 'FAIL ↑ ') + 'P&L Detail: ' + t3.data.added + ' new (right: 2 — print shop, landfill; the invoice and the rest are skipped)');
   const t4 = await inboxImport('qb_exp_vendor_summary.csv');
   console.log('     ↑ Expenses by Vendor SUMMARY (QuickBooks Online\'s own report): ' + t4.data.added + ' added · "' + t4.note + '"');
-  RESULTS[RESULTS.length - 1].ok = t4.data.added === 0; if (!RESULTS[RESULTS.length - 1].ok) fails++;
+  RESULTS[RESULTS.length - 1].ok = t4.data.added === 0 && /No "Date"/.test(t4.note); if (!RESULTS[RESULTS.length - 1].ok) fails++;
   const t5 = await inboxImport('qb_exp_vendor_detail.csv');
-  const ok5 = t5.data.added === 1; if (!ok5) { fails++; RESULTS[RESULTS.length - 1].ok = false; }
+  const ok5 = t5.data.added === 1 && /✅ 1 row added/.test(t5.note) && /\(8 waiting\)/.test(t5.note); if (!ok5) { fails++; RESULTS[RESULTS.length - 1].ok = false; }
   console.log((ok5 ? '     ↑ ' : 'FAIL ↑ ') + 'Expenses by Vendor DETAIL: ' + t5.data.added + ' new (right: 1 — Agt Rental Co $310.00)');
   await step(O, 'qb', '⚙️ Automation Inbox → QuickBooks CSV (GC_AUTO.uploadQuickBooksCSV) with Transaction Detail by Account (its 5 costs are already in 📥)', async ev => {
     const r = await ev(async ([b64s]) => {
@@ -310,13 +324,29 @@ if (want('stmt')) {
     await stOpen(O, 'import'); await stLoad(O, FX + '/capone_card.pdf'); const T2 = await stTable(ev); const n0 = await ev(() => window._crm.expenses.length); await stGo(O); await stClose(O); const n1 = await ev(() => window._crm.expenses.length);
     return { ok: T1.r.length > 0 && T2.r.length === T1.r.length && T2.r.every(x => x.dup) && n1 === n0, note: 'CSV ' + T1.r.length + ' lines (' + d1.slice(0, 60) + '); PDF ' + T2.r.filter(x => x.dup).length + '/' + T2.r.length + ' already in; added ' + (n1 - n0) };
   });
-  await step(O, 'stmt', '🏦 bank CSV with a customer deposit → shown as money in; matched to the open invoice #1043 ($5,000)?', async ev => {
+  await step(O, 'stmt', '🏦 bank CSV with deposits → $5,000 "AGT HOLLIS INV 1043" is a CERTAIN match (💵 Payment matches); "MOBILE DEPOSIT" $1,200 is listed, not applied', async ev => {
     await stOpen(O, 'bank'); await stLoad(O, FX + '/agt_bank.csv'); const T = await stTable(ev);
     const recon = await ev(async () => { const b = document.querySelector('.gc-money-imp [data-c="recon"]'); if (!b) return 'no 🧾 button'; b.click(); await new Promise(z => setTimeout(z, 2500)); return ((document.querySelector('.gc-money-imp [data-c="reconmsg"]') || {}).textContent || '').slice(0, 200); });
-    await stGo(O); await stClose(O);
-    const m = await ev(async () => { let pm = null; try { pm = window._gcAUTAI && window._gcAUTAI.payMatches ? await window._gcAUTAI.payMatches() : 'no _gcAUTAI.payMatches'; } catch (e) { pm = 'threw ' + e.message; } const inv = window._crm.invoices.find(i => i.id === 'INVagt1') || {}; return { pm: JSON.stringify(pm).slice(0, 300), status: inv.status, pmHit: /INVagt1|1043/.test(JSON.stringify(pm || '')) }; });
-    return { ok: T.x.some(x => /AGT HOLLIS/i.test(x)) && m.pmHit, note: 'deposit listed: ' + T.x.some(x => /AGT HOLLIS/i.test(x)) + ' · Monthly Bank Check: ' + recon + ' · 💵 Payment matches: ' + m.pm + ' · invoice #1043 still ' + m.status, data: { T, recon, m } };
+    await stGo(O); await sleep(2500);
+    const r = await ev(() => { const box = document.querySelector('.gc-money-imp [data-c="depmatch"]'); const ld = window._gcMoney && window._gcMoney.lastDeposits; return { panel: box ? box.innerText.replace(/\s+/g, ' ').slice(0, 400) : '', certain: ld ? ld.certain.map(x => x.invId + ' ' + x.amt) : null, unsure: ld ? ld.unsure.map(u => u.dep.amount + ' ' + u.why) : null, added: ld && ld.added,
+      pm: (() => { try { return JSON.parse(localStorage.getItem('gc_pay_matches') || '[]').filter(m => m.status === 'new').map(m => m.invId + ' ' + m.amt); } catch (e) { return []; } })(), i1: (window._crm.invoices.find(i => i.id === 'INVagt1') || {}).status, i3: (window._crm.invoices.find(i => i.id === 'INVagt3') || {}).status }; });
+    await stClose(O);
+    return { ok: T.x.some(x => /AGT HOLLIS/i.test(x)) && !!r.certain && r.certain.length === 1 && /^INVagt1 5000$/.test(r.certain[0]) && r.unsure.length === 1 && /amount only/.test(r.unsure[0]) && r.pm.includes('INVagt1 5000') && r.i1 !== 'paid' && r.i3 !== 'paid',
+      note: 'panel: ' + r.panel + ' · 💵 list: ' + JSON.stringify(r.pm) + ' · #1043 ' + r.i1 + ' (not applied until confirmed) · #1045 ' + r.i3 + ' · Monthly Bank Check: ' + recon, data: r };
   });
+  await step(O, 'stmt', '💵 Payment matches → ✅ Confirm the $5,000 deposit → invoice #1043 paid: A/R −$5,000.00, cash +$5,000.00 exactly', async ev => {
+    const r = await ev(async () => {
+      let pill = null; for (let i = 0; i < 20 && !pill; i++) { pill = document.getElementById('_gcPayPill'); if (!pill) await new Promise(z => setTimeout(z, 500)); }
+      if (pill) pill.click(); else if (window._gcAUTAI && window._gcAUTAI.openPayMatches) window._gcAUTAI.openPayMatches(); await new Promise(z => setTimeout(z, 1200));
+      const card = [...document.querySelectorAll('.gcautai-act')].find(c => /1043/.test(c.innerText)); if (!card) return { pill: !!pill, err: 'no 1043 card on 💵 Payment matches' };
+      card.querySelector('._ok').click(); for (let i = 0; i < 20; i++) { await new Promise(z => setTimeout(z, 500)); if ((window._crm.invoices.find(x => x.id === 'INVagt1') || {}).status === 'paid') break; }
+      const res = (card.querySelector('._res') || {}).textContent || ''; document.querySelectorAll('.gcautai-sheet, [class*=gcautai-ov]').forEach(x => { try { x.remove(); } catch (e) {} });
+      const i = window._crm.invoices.find(x => x.id === 'INVagt1') || {}; return { pill: !!pill, res, status: i.status, paidDate: i.paidDate, payments: (i.payments || []).map(p => p.amt + ' ' + p.date + ' ' + p.method) };
+    });
+    return { ok: r.status === 'paid' && r.paidDate === '2026-10-20', note: JSON.stringify(r), data: r };
+  });
+  { const last = RESULTS[RESULTS.length - 1], d = last.money.delta; const okp = near(d.ar, -5000) && near(d.cashIn, 5000);
+    console.log((okp ? '     ↑ ' : 'FAIL ↑ ') + 'A/R ' + money$(d.ar || 0) + ' (right −$5,000.00), cash ' + money$(d.cashIn || 0) + ' (right +$5,000.00)'); if (!okp) { fails += last.ok ? 1 : 0; last.ok = false; last.note += ' · A/R ' + money$(d.ar || 0) + ', cash ' + money$(d.cashIn || 0); } }
 }
 
 /* ─────────── 3. e-mailed receipts / sub invoices ─────────── */
@@ -344,6 +374,8 @@ if (want('mail')) {
     const sumr = k => out[k] && (out[k].route + (out[k].jobId ? ' → ' + out[k].jobId : '') + (out[k].why ? ' (' + String(out[k].why).slice(0, 60) + ')' : ''));
     return { ok: out.receipt.route === 'book' && out.receipt.jobId === A && out.sub.route === 'book' && out.sub.jobId === BJ && out.unknown.route === 'match' && r.exp && r.exp.pid === A && r.sub && r.sub.pid === BJ, note: 'server: receipt ' + sumr('receipt') + ' · sub ' + sumr('sub') + ' · unknown ' + sumr('unknown') + ' | office CRM read ' + r.list + ' e-mail(s): receipt → ' + JSON.stringify(r.exp) + ' · sub invoice → ' + JSON.stringify(r.sub), data: r };
   });
+  { const last = RESULTS[RESULTS.length - 1], d = last.money.delta; const pend = await ev(() => { const a = window._gcCostPending ? window._gcCostPending('PRJagtA') : { rows: [] }, b = window._gcCostPending ? window._gcCostPending('PRJagtB') : { rows: [] }; return { a: a.rows.map(r => r.amt), b: b.rows.map(r => r.amt) }; });
+    const okp = !d.jobA && !d.jobB && pend.a.includes(212.48) && pend.b.includes(1240); console.log((okp ? '     ↑ ' : 'FAIL ↑ ') + 'booked but not approved: job costs moved A ' + money$(d.jobA || 0) + ' / B ' + money$(d.jobB || 0) + ' (right $0.00); ⏳ waiting A ' + JSON.stringify(pend.a) + ' B ' + JSON.stringify(pend.b)); if (!okp) { if (last.ok) fails++; last.ok = false; } }
   await step(O, 'mail', '📋 Approvals: "🧾 Match this invoice" for the unknown sender → pick the job → booked', async ev => {
     const r = await ev(async () => { await window.__go('approvals'); window.__clickText('^\\d+\\s+All$'); await new Promise(z => setTimeout(z, 1500));
       const set = window._gcApprovalSet(); const all = []; Object.keys(set.groups).forEach(g => set.groups[g].forEach(x => all.push({ id: String(x.id), t: String(x.title || '') + ' ' + String(x.sub || x.who || '') })));
@@ -353,13 +385,22 @@ if (want('mail')) {
       row.scrollIntoView({ block: 'center' });
       const k = row.getAttribute('data-k'), text = row.innerText.slice(0, 300), btns = [...row.querySelectorAll('button')].filter(__vis).map(b => b.innerText.trim()), sels = [...row.querySelectorAll('select')];
       let picked = '';
-      const top = [...row.querySelectorAll('button')].filter(__vis).find(b => /Brentley|Q902/.test(b.innerText));
-      if (top) { top.click(); picked = 'top button'; }
-      else if (sels.length) { const s = sels[0]; const o = [...s.options].find(o => /Q902|Brentley/.test(o.text)); if (o) { __setV(s, o.value); picked = 'select'; await new Promise(z => setTimeout(z, 400)); const go = [...row.querySelectorAll('button')].filter(__vis).find(b => /Book|Put|Save|Approve|Match/.test(b.innerText)); if (go) go.click(); } }
-      else { const inp = [...row.querySelectorAll('input')].filter(__vis)[0]; if (inp) { inp.focus(); __setV(inp, 'Q902'); picked = 'input'; await new Promise(z => setTimeout(z, 600)); } }
-      await new Promise(z => setTimeout(z, 3000));
-      const inv = window._crm.invoices.find(i => Math.abs((+i.amt || 0) - 640) < 0.01 && /stranger/i.test(i.sub || i.vendor || '')) || window._crm.expenses.find(e => Math.abs((+e.amt || 0) - 640) < 0.01 && /stranger/i.test(e.vendor || ''));
-      return { found: true, k, text, btns, sels: sels.length, picked, booked: inv ? { id: inv.id, pid: inv.pid, type: inv.type, status: inv.status } : null, still: !!window.__row(k) };
+      const mb = [...row.querySelectorAll('button')].filter(__vis).find(b => /Match/.test(b.innerText)); if (mb) { mb.click(); await new Promise(z => setTimeout(z, 1500)); }
+      const top = [...document.querySelectorAll('button, [role=option], li, a')].filter(__vis).filter(b => !b.closest('.apx-row') || b.closest('.apx-row') === row).find(b => /Brentley|Q902/.test(b.innerText) && b.innerText.length < 160);
+      const pk = document.querySelector('[data-si="job"]'); const pov = pk && pk.closest('div[style]') ? pk.ownerDocument : document;
+      const rad = [...document.querySelectorAll('input[name="gcsi-j"]')].find(i => /Q902|Brentley/.test((i.closest('label') || i.parentElement || {}).innerText || ''));
+      if (rad) { rad.click(); picked = 'picker radio'; await new Promise(z => setTimeout(z, 400)); const go0 = document.querySelector('[data-si="ok"]'); if (go0) { go0.click(); picked += ' + ' + go0.innerText.trim().slice(0, 30); } }
+      const sels2 = rad ? [] : (pk && [...pk.options].some(o => /Q902|Brentley/.test(o.text)) ? [pk] : [...document.querySelectorAll('select')].filter(__vis).filter(x => [...x.options].some(o => /Q902|Brentley/.test(o.text))));   /* the picker's own job box first (never the Approvals tab's job filter) */
+      if (rad) {}
+      else if (top) { top.click(); picked = 'job button: ' + top.innerText.slice(0, 60); await new Promise(z => setTimeout(z, 800)); const go = [...document.querySelectorAll('[data-si="ok"]')].filter(__vis)[0] || [...document.querySelectorAll('button')].filter(__vis).find(b => /^(Book|Save|Put it on|Confirm|Match|✅)/.test(b.innerText.trim()) && !b.closest('.apx-row') && !b.closest('nav, aside, [class*=sidebar], [class*=nav]'));   /* the picker's own "Book it on this job" — never a menu item */ if (go) { go.click(); picked += ' + ' + go.innerText.trim().slice(0, 30); } }
+      else if (sels2.length) { const s2 = sels2[0]; __setV(s2, [...s2.options].find(o => /Q902|Brentley/.test(o.text)).value); picked = 'picker select'; await new Promise(z => setTimeout(z, 500)); const go = [...document.querySelectorAll('[data-si="ok"]')].filter(__vis)[0] || [...document.querySelectorAll('button')].filter(__vis).find(b => /^(Book|Save|Put it on|Confirm|Match|✅)/.test(b.innerText.trim()) && !b.closest('.apx-row') && !b.closest('nav, aside, [class*=sidebar], [class*=nav]'));   /* the picker's own "Book it on this job" — never a menu item */ if (go) { go.click(); picked += ' + ' + go.innerText.trim().slice(0, 30); } }
+      else picked = 'after Match: ' + [...document.querySelectorAll('button')].filter(__vis).map(b => b.innerText.trim()).filter(t => t && t.length < 40).slice(-12).join('|');
+      const fin = () => window._crm.invoices.find(i => Math.abs((+i.amt || 0) - 640) < 0.01 && /stranger/i.test(i.sub || i.vendor || '')) || window._crm.expenses.find(e => Math.abs((+e.amt || 0) - 640) < 0.01 && /stranger/i.test(e.vendor || ''));
+      for (let i = 0; i < 15 && !fin(); i++) await new Promise(z => setTimeout(z, 1000));
+      const doneMsg = ([...document.querySelectorAll('div')].filter(__vis).map(d => d.innerText).find(t => /^✓ Booked on/.test(t || '')) || '') + ((document.querySelector('[data-si="msg"]') || {}).textContent ? ' · picker says: ' + document.querySelector('[data-si="msg"]').textContent : '') + (document.querySelector('[data-si="job"]') ? ' · job box: ' + document.querySelector('[data-si="job"]').value : '');
+      const cl = [...document.querySelectorAll('[data-si="x"]')].filter(__vis).pop(); if (cl) cl.click();   /* close the picker, as a person would */
+      const inv = fin();
+      return { found: true, k, text, btns, sels: sels.length, picked, msg: doneMsg.slice(0, 120), booked: inv ? { id: inv.id, pid: inv.pid, type: inv.type, status: inv.status } : null, still: !!window.__row(k) };
     });
     return { ok: r.found && r.booked && r.booked.pid === BJ && !r.still, note: JSON.stringify(r).slice(0, 600), data: r };
   });
@@ -371,9 +412,10 @@ if (want('manual')) {
   await step(O, 'manual', '💵 + New Invoice: the job / PO autocomplete opens IN FRONT of the window', async ev => {
     await ev(async () => { await window.__go('invoices'); window.__clickText('^Client Invoices'); await new Promise(z => setTimeout(z, 800)); window.__clickText('^\\+ New Invoice$'); await new Promise(z => setTimeout(z, 1200)); const inp = [...document.querySelectorAll('input')].filter(__vis).find(i => /auto-fill|PO|project/i.test(i.placeholder || '')); if (inp) inp.setAttribute('data-agt', '1'); });
     if (!(await O.page().locator('input[data-agt="1"]').count())) return { ok: false, note: 'no PO / job box on + New Invoice' };
-    await O.page().locator('input[data-agt="1"]').click(); await O.page().keyboard.type('Agt', { delay: 40 }); await sleep(1200);
+    try { await O.page().locator('input[data-agt="1"]').click({ timeout: 10000 }); } catch (e) { const cover = await ev(() => { const i = document.querySelector('input[data-agt="1"]'); const b = i.getBoundingClientRect(); const e2 = document.elementFromPoint(b.left + 5, b.top + 5); return e2 ? (e2.id || e2.className || e2.tagName) + ' / ' + String(e2.innerText || '').slice(0, 80) : 'nothing'; }); await O.page().keyboard.press('Escape').catch(() => {}); await ev(() => window.__clickText('^Cancel$')); return { ok: false, note: 'the PO box could not be clicked — covered by ' + cover }; }
+    await O.page().keyboard.type('Agt', { delay: 40 }); await sleep(1200);
     const r = await ev(() => { const l = [...document.querySelectorAll('._ac-list, datalist, [role=listbox]')].filter(__vis)[0]; if (!l) return { ok: false, note: 'no list opened' }; const b = l.getBoundingClientRect(); const pts = [[b.left + 8, b.top + 8], [b.left + b.width / 2, b.top + b.height / 2]].map(([x, y]) => { const e = document.elementFromPoint(x, y); return !!(e && l.contains(e)); }); return { ok: pts.every(Boolean), note: pts.every(Boolean) ? 'list in front (' + l.innerText.split('\n').slice(0, 3).join(' | ') + ')' : 'the list is BEHIND the window' }; });
-    await ev(() => window.__clickText('^Cancel$'));
+    await O.page().keyboard.press('Escape').catch(() => {}); await ev(() => window.__clickText('^Cancel$'));   /* end the entry, as a person would (the typing guard holds a form for 90 s) */
     return r;
   });
   const upload = (label, o) => step(O, 'manual', label, async ev => ev(async (o) => {
@@ -393,7 +435,8 @@ if (want('manual')) {
     const save = [...ov.querySelectorAll('button')].find(b => /Save/.test(b.innerText)); save.click(); await new Promise(z => setTimeout(z, 2500));
     const iv = window._crm.invoices.find(i => String(i.invNum || '').indexOf(o.num) >= 0);
     let chk = null; try { const c = iv && window._gcSubPayCheck(iv.id); chk = c && { ok: c.ok, supplier: c.supplier, problems: c.problems }; } catch (e) { chk = 'threw ' + e.message; }
-    return { ok: !!(iv && (iv.fileData || (iv.files || []).length) && iv.pid === o.pid), note: 'sub picked "' + (so ? so.text : '(none matched ' + o.sub + ')') + '" · dropdowns in front: ' + front.join(',') + ' (z ' + zi + ') · saved ' + (iv ? iv.id + ' type ' + iv.type + ' status ' + iv.status + ' file ' + !!(iv.fileData || (iv.files || []).length) : 'NOT saved') + ' · pay check ' + JSON.stringify(chk), data: { id: iv && iv.id, chk, front } };
+    const sdiag = (so ? '' : ' · DIAG ' + JSON.stringify({ seen: window.__gcCloudSeen && window.__gcCloudSeen.subs && { n: window.__gcCloudSeen.subs.n, has: window.__gcCloudSeen.subs.ids.includes('SUBagtR') }, seenV: window.__gcCloudSeen && window.__gcCloudSeen.vendors && window.__gcCloudSeen.vendors.ids.includes('SUBagtR'), screen: (window._crm.subs || []).some(x => x && x.id === 'SUBagtR'), n: (window._crm.subs || []).length, sa: window.__gcSyncAll && window.__gcSyncAll.stats(), pend: window.__gcSyncAll && window.__gcSyncAll.pending() }));
+    return { ok: !!(iv && (iv.fileData || (iv.files || []).length) && iv.pid === o.pid), note: 'sub picked "' + (so ? so.text : '(none matched ' + o.sub + ' in ' + [...subSel.options].map(x => x.text).filter(t => /agt|ridge|roof/i.test(t)).slice(0, 8).join(' / ') + ')') + '"' + sdiag + ' · dropdowns in front: ' + front.join(',') + ' (z ' + zi + ') · saved ' + (iv ? iv.id + ' type ' + iv.type + ' status ' + iv.status + ' file ' + !!(iv.fileData || (iv.files || []).length) : 'NOT saved') + ' · pay check ' + JSON.stringify(chk), data: { id: iv && iv.id, chk, front } };
   }, o));
   const r1 = await upload('📎 Upload Invoice: SUPPLIER Farrell Calhoun (isSub false) on job Q902, PDF attached', { file: 'Farrell-Calhoun-INV-55123.pdf', b64: pdf(['FARREL CALHOUN', 'INVOICE 55123', 'PO Q902', 'Total $812.40']).toString('base64'), sub: 'Farrel+ Calhoun|Ferrel Calhoun', amt: '812.40', num: 'FC55123', pid: BJ });
   const r2 = await upload('📎 Upload Invoice: SUB Agt Ridgeline Roofing (no COI / W-9) on job Q902, PDF attached', { file: 'Ridgeline-RR-3001.pdf', b64: pdf(['AGT RIDGELINE ROOFING LLC', 'Invoice #: RR-3001', 'PO #: Q902', 'Total Due: $3,200.00']).toString('base64'), sub: 'Ridgeline', amt: '3200', num: 'RR3001', pid: BJ });
@@ -405,8 +448,10 @@ if (want('manual')) {
   await step(O, 'manual', 'the two hand-entered invoices show on the job (Q902) and in 📋 Approvals', async ev => ev(async (m) => {
     const onJob = window._crm.invoices.filter(i => i.pid === 'PRJagtB' && (i.id === m.sup || i.id === m.sub)).length;
     let page = ''; try { window._navToJob && window._navToJob('PRJagtB'); await new Promise(z => setTimeout(z, 3000)); window.__clickText('^Invoices'); await new Promise(z => setTimeout(z, 1500)); page = (document.querySelector('main') || {}).innerText || ''; } catch (e) {}
-    let inAp = [false, false]; for (let i = 0; i < 20 && !inAp.every(Boolean); i++) { const set = window.__apset(); inAp = [m.sup, m.sub].map(id => set.ids.some(k => k.indexOf(id) >= 0)); if (!inAp.every(Boolean)) await new Promise(z => setTimeout(z, 1000)); }
-    return { ok: onJob === 2 && inAp.every(Boolean), note: 'on the job: ' + onJob + '/2 (job page shows FC55123 ' + /FC55123/.test(page) + ', RR3001 ' + /RR3001/.test(page) + ') · in Approvals: supplier ' + inAp[0] + ', sub ' + inAp[1] };
+    let inAp = [false, false]; for (let i = 0; i < 70 && !inAp.every(Boolean); i++) { if (i % 10 === 0) { try { window._gcQueueSubApprovals && window._gcQueueSubApprovals(); } catch (e) {} }   /* the sub approval list is filled by a 60 s timer (skipped while typing) */
+      const set = window.__apset(); inAp = [m.sup, m.sub].map(id => set.ids.some(k => k.indexOf(id) >= 0)); if (!inAp.every(Boolean)) await new Promise(z => setTimeout(z, 1000)); }
+    const sq = (() => { try { return (JSON.parse(localStorage.getItem('gc_sub_approvals') || '[]') || []).filter(a => [m.sup, m.sub].includes(a.invId)).map(a => a.invId.slice(-6) + ':' + a.status + ':' + (a.pmName || '')); } catch (e) { return 'err'; } })();
+    return { ok: onJob === 2 && inAp.every(Boolean), note: 'queue ' + JSON.stringify(sq) + ' typing ' + !!window.__GC_IS_TYPING__ + ' · on the job: ' + onJob + '/2 (job page shows FC55123 ' + /FC55123/.test(page) + ', RR3001 ' + /RR3001/.test(page) + ') · in Approvals: supplier ' + inAp[0] + ', sub ' + inAp[1] };
   }, MANUAL), { money: false });
 }
 
@@ -424,7 +469,8 @@ if (want('appr')) {
     AP = await open(); const s = await ev(() => window.__apset());
     const subRow = AP.find(r => /^sub:/.test(r.k));
     const mine = AP.filter(r => /agt|Agt|EXPagt|INVagt|FC55123|RR3001|DG-5531/.test(r.k + r.t));
-    return { ok: AP.length > 0 && s.count === s.total && !!subRow && /Sub pay list closes Wednesday/.test(subRow.t), note: AP.length + ' cards on screen, set ' + s.total + ', count ' + s.count + ', badge ' + s.badge + ' · sub card: ' + (subRow ? subRow.t.slice(0, 120) : 'none') + ' · Agt cards: ' + mine.map(r => r.k).join(', '), data: { keys: AP.map(r => r.k), set: s } };
+    const diag = AP.length ? '' : ' · EMPTY SCREEN: view ' + (await ev(() => localStorage.getItem('grayco_view'))) + ', held ' + (await ev(() => window._gcHeldCount ? window._gcHeldCount() : -1)) + ', typing ' + (await ev(() => !!window.__GC_IS_TYPING__)) + ', main: ' + JSON.stringify((await ev(() => ((document.querySelector('main') || {}).innerText || '').replace(/\s+/g, ' ').slice(0, 300))));
+    return { ok: AP.length > 0 && s.count === s.total && !!subRow && /Sub pay list closes Wednesday/.test(subRow.t), note: diag + ' · ' + AP.length + ' cards on screen, set ' + s.total + ', count ' + s.count + ', badge ' + s.badge + ' · sub card: ' + (subRow ? subRow.t.slice(0, 120) : 'none') + ' · Agt cards: ' + mine.map(r => r.k).join(', '), data: { keys: AP.map(r => r.k), set: s } };
   }, { money: false });
   const act = (k, re, wait) => ev(async ({ k, re, wait }) => { const r = window.__row(k); if (!r) return 'NOROW'; const b = [...r.querySelectorAll('button')].filter(__vis).find(b => new RegExp(re).test(b.innerText)); if (!b) return 'NOBTN ' + [...r.querySelectorAll('button')].filter(__vis).map(b => b.innerText.trim()).join('|'); b.click(); await new Promise(z => setTimeout(z, wait || 1500)); return 'ok'; }, { k, re, wait });
   const cnt = () => ev(() => { const s = window.__apset(); return s.count; });
@@ -438,25 +484,32 @@ if (want('appr')) {
     return { ok: r === 'ok' && gone && c1 === c0 - 1 && extra.ok, note: k + ': ' + r + ' · card gone ' + gone + ' · count ' + c0 + ' → ' + c1 + (extra.note ? ' · ' + extra.note : ''), allow: extra.allow };
   });
   const expSt = id => ev(id => { const e = window._crm.expenses.find(x => x.id === id) || {}; let a = null; try { a = (JSON.parse(localStorage.getItem('gc_expense_approvals') || '[]') || []).find(x => x.expId === id); } catch (er) {} let t = null; try { t = (JSON.parse(localStorage.getItem('gc_office_tasks') || '[]') || []).filter(x => x && x._deny && String(x._deny.key || '').indexOf(id) >= 0).pop(); } catch (er) {} return { status: e.status, appr: a && a.status, todo: t ? (t.label || '').slice(0, 120) : null, reason: t && t._deny ? t._deny.reason : '' }; }, id);
-  await one('✅ Approve an expense (Agt Supply House $321, job Q902) — "Open the APPROVE panel" → Approve', pick(/EXPagt1/), async k => { const r = await act(k, 'Open the APPROVE panel|^✅|^Approve', 1500); const r2 = await ev(async k => { const row = window.__row(k); const pool = [...(row ? row.querySelectorAll('button') : []), ...document.querySelectorAll('[role=dialog] button, .apx-pop button, .apx-panel button')].filter(__vis); const b = pool.find(b => /approve/i.test(b.innerText) && !/Open the APPROVE panel|Approve & send/i.test(b.innerText)); if (!b) return 'no approve button in the panel: ' + pool.map(b => b.innerText.trim()).slice(0, 12).join('|'); b.click(); await new Promise(z => setTimeout(z, 2000)); const y = [...document.querySelectorAll('button')].filter(__vis).find(b => /^Yes|^Confirm/i.test(b.innerText.trim())); if (y) { y.click(); await new Promise(z => setTimeout(z, 1500)); } return 'ok'; }, k); return r === 'ok' ? r2 : r; }, async () => { const s = await expSt('EXPagt1'); return { ok: /approved|paid|posted/i.test(s.status), note: 'expense ' + JSON.stringify(s) }; });
+  await one('✅ Approve an expense (Agt Supply House $321, job Q902) — "Open the APPROVE panel" → Approve', pick(/EXPagt1/), async k => { const direct = await ev(k => { const r = window.__row(k); return !!(r && [...r.querySelectorAll('button')].filter(__vis).some(b => /^✅\s*Approve$/.test(b.innerText.trim()))); }, k);
+    if (direct) { const r0 = await act(k, '^✅\\s*Approve$', 1500); await sleep(6000); return r0; }   /* the card's own ✅ Approve (approved in place after the 5 s undo) */
+    const r = await act(k, 'Open the APPROVE panel|^✅|^Approve', 1500); const r2 = await ev(async k => { await new Promise(z => setTimeout(z, 1200)); const near = b => { let e = b; for (let i = 0; i < 6 && e; i++, e = e.parentElement) { const t = e.innerText || ''; if (/Agt Supply House/.test(t) && /321/.test(t)) return true; if (t.length > 600) return false; } return false; }; const pool = [...document.querySelectorAll('button')].filter(__vis).filter(b => !b.closest('.apx-row')); const b = pool.find(b => /approve/i.test(b.innerText) && !/Open the APPROVE panel|Approve & send|Approve all|selected/i.test(b.innerText) && near(b)); if (!b) return 'no approve button in the panel: ' + pool.map(b => b.innerText.trim()).slice(0, 12).join('|'); b.click(); await new Promise(z => setTimeout(z, 2000)); const y = [...document.querySelectorAll('button')].filter(__vis).find(b => /^Yes|^Confirm/i.test(b.innerText.trim())); if (y) { y.click(); await new Promise(z => setTimeout(z, 1500)); } return 'ok'; }, k); return r === 'ok' ? r2 : r; }, async () => { const s = await expSt('EXPagt1'); return { ok: /approved|paid|posted/i.test(s.status), note: 'expense ' + JSON.stringify(s) }; });
+  { const last = RESULTS[RESULTS.length - 1], d = last.money.delta; const okp = near(d.jobB, 321); console.log((okp ? '     ↑ ' : 'FAIL ↑ ') + 'job Q902 cost ' + money$(d.jobB || 0) + ' (right +$321.00 — counted once approved)'); if (!okp) { if (last.ok) fails++; last.ok = false; last.note += ' · job Q902 moved ' + money$(d.jobB || 0); } }
   await one('✅ Approve the sub invoice (Agt Delta $1,850 — papers OK)', pick(/INVagtS1/), k => act(k, '^✅|Approve'), async () => ev(() => { const i = window._crm.invoices.find(x => x.id === 'INVagtS1') || {}; return { ok: /approved|scheduled|paid/i.test(i.status), note: 'sub invoice ' + i.status }; }));
   await one('✕ Deny WITH a reason (expense $77.50, "wrong order — return it")', pick(/EXPagt2/), async k => { const r = await act(k, 'Deny', 800); await ev(k => { const i = document.querySelector('[data-apx-dwhy="' + k.replace(/^[^:]+:/, '') + '"]') || [...document.querySelectorAll('[data-apx-dk] input')].pop(); if (i) window.__setV(i, 'wrong order — return it'); const b = [...document.querySelectorAll('[data-apx-dk] button')].find(b => /Send back/.test(b.innerText)); if (b) b.click(); }, k); await sleep(2500); return r; },
     async () => { await sleep(1500); const s = await expSt('EXPagt2'); return { ok: !!s.todo && /wrong order/.test(s.reason || s.todo), note: 'sent back: ' + JSON.stringify(s) + (/denied|rejected/i.test(s.status + ' ' + s.appr) ? '' : ' — the expense itself stays "' + s.status + '" (still counted: see the money step)') }; });
   await one('✕ Deny WITHOUT a reason (expense $18.25) — the 10 s undo runs out', pick(/EXPagt3/), async k => { const r = await act(k, 'Deny', 800); await sleep(11500); return r; },
     async () => { const s = await expSt('EXPagt3'); return { ok: !!s.todo, note: 'sent back: ' + JSON.stringify(s) + (/denied|rejected/i.test(s.status + ' ' + s.appr) ? '' : ' — the expense itself stays "' + s.status + '"') }; });
-  const sendK = (AP.find(r => r.b.some(b => /Approve & send/.test(b)) && /agt/i.test(r.k + r.t)) || AP.find(r => r.b.some(b => /Approve & send/.test(b))) || {}).k;
+  const sendK = (AP.find(r => /^ap2:appr_agt_mail/.test(r.k) && r.b.some(b => /Approve & send/.test(b))) || AP.find(r => r.b.some(b => /Approve & send/.test(b)) && /agt/i.test(r.k + r.t)) || AP.find(r => r.b.some(b => /Approve & send/.test(b))) || {}).k;
   await one('✅ Approve & send (a customer e-mail; two-step confirm)', sendK, async k => { const r = await act(k, 'Approve & send', 1200); await act(k, 'Yes, approve', 4000); return r; },
     async k => { const call = O.calls.filter(x => x.fn === 'portal' && /"op":"approve"/.test(x.b)).pop(); return { ok: !!call && call.status === 200, note: 'portal approve → ' + (call ? call.status + ' ' + (call.err || '') : 'no call') }; });
-  const denyK = (AP.find(r => /^ap2:/.test(r.k) && r.k !== sendK && r.b.some(b => /Deny/.test(b)) && /agt/i.test(r.k + r.t)) || AP.find(r => /^ap2:/.test(r.k) && r.k !== sendK && r.b.some(b => /Deny/.test(b))) || {}).k;
+  const denyK = (AP.find(r => /^ap2:appr_agt_mail/.test(r.k) && r.k !== sendK && r.b.some(b => /Deny/.test(b))) || AP.find(r => /^ap2:/.test(r.k) && r.k !== sendK && r.b.some(b => /Deny/.test(b)) && /agt/i.test(r.k + r.t)) || AP.find(r => /^ap2:/.test(r.k) && r.k !== sendK && r.b.some(b => /Deny/.test(b))) || {}).k;
   await one('✕ Deny a customer e-mail (sent back)', denyK, async k => { const r = await act(k, 'Deny', 800); await sleep(11500); return r; },
     async k => { const call = O.calls.filter(x => x.fn === 'portal' && /"op":"reject"/.test(x.b)).pop(); return { ok: !!call && call.status === 200, note: 'portal reject → ' + (call ? call.status : 'no call') }; });
   const asgK = (AP.find(r => r.b.some(b => /Assign/.test(b)) && /Agt Held/.test(r.t)) || AP.find(r => r.b.some(b => /Assign/.test(b))) || {}).k;
   await one('👤 Assign this lead (picker → a person)', asgK, async k => { const r = await act(k, 'Assign', 1200); const p = await ev(() => { const pk = document.getElementById('gcl-asgpick'); if (!pk) return 'no picker'; const names = [...pk.querySelectorAll('button')].filter(__vis).map(b => b.innerText.trim()); const b = [...pk.querySelectorAll('button')].filter(__vis).find(b => /Steven Biffle|Glenn Miller|Nick Thomas/.test(b.innerText)); if (b) b.click(); return names.slice(0, 6).join('|'); }); await sleep(3000); return r === 'ok' ? 'ok' : r + ' / ' + p; },
     async () => { const L = await ev(() => { const l = window._crm.leads.find(x => x.id === 'LAGTHOLD1') || {}; return { pm: l.pm, hold: l.hold && l.hold.state }; }); return { ok: true, note: 'lead ' + JSON.stringify(L) }; });
-  await step(O, 'appr', 'money after approvals: approved costs on the job / P&L, denied ones not', async ev => ev(() => {
-    const ok = id => { const rows = window._gcAcctModel({ range: { from: '', to: '' } }).pnl.rows.job; return rows.some(r => r.id === id); };
-    const r = { approvedExp: ok('EXPagt1'), approvedSub: ok('INVagtS1'), deniedReason: ok('EXPagt2'), denied: ok('EXPagt3'), jobB: window.__money().jobB };
-    return { ok: r.approvedExp && r.approvedSub && !r.deniedReason && !r.denied, note: JSON.stringify(r) };
+  await step(O, 'appr', 'money after approvals: approved costs in job cost / P&L; pending shown apart ("⏳ Waiting"); denied nowhere', async ev => ev(async () => {
+    const inPnl = id => { const rows = window._gcAcctModel({ range: { from: '', to: '' } }).pnl.rows.job; return rows.some(r => r.id === id || (r.src && (r.src.srcInvId === 'SUB_' + id || r.src.subInvId === id || r.src.id === id))); };
+    let sub = false; for (let i = 0; i < 40 && !(sub = inPnl('INVagtS1')); i++) { try { window._gcRefreshSpend && window._gcRefreshSpend(); } catch (e) {} await new Promise(z => setTimeout(z, 1000)); }
+    const pend = window._gcCostPending ? window._gcCostPending() : { rows: [] }, pid = id => pend.rows.some(r => r.id === id);
+    let tile = null; try { const t = window._gcJobMoneyTiles((window._crm.projects || []).find(p => p.id === 'PRJagtA'), { spent: 0, contract: 24000, profit: 0, margin: 0 }, v => '$' + v, { grn: '', red: '' }, true); tile = (t.find(x => /Waiting for approval/.test(x.l)) || {}).v || null; } catch (e) { tile = 'err ' + e.message; }
+    let pl = ''; try { window._gcAcctOpen('k_pnl'); } catch (e) {} for (let i = 0; i < 20 && !pl; i++) { await new Promise(z => setTimeout(z, 500)); const w = document.querySelector('[data-acctfix2="waiting"]'); if (w) pl = w.innerText.replace(/\s+/g, ' '); }
+    const r = { approvedExp: inPnl('EXPagt1'), approvedSub: sub, deniedReason: inPnl('EXPagt2'), denied: inPnl('EXPagt3'), pendingA1: inPnl('EXPagtA1'), deniedPending: pid('EXPagt2') || pid('EXPagt3'), waitingA1: pid('EXPagtA1'), tileA: tile, plLine: pl, waitingTotal: pend.total };
+    return { ok: r.approvedExp && r.approvedSub && !r.deniedReason && !r.denied && !r.pendingA1 && !r.deniedPending && r.waitingA1 && /\$/.test(String(tile)) && /Waiting for approval/.test(pl), note: JSON.stringify(r) };
   }), { money: false });
   await step(O2, 'appr', 'the SECOND office computer (no reload): every acted card gone within 60 s, same count', async ev2 => {
     let s = null, left = ACTED; for (let i = 0; i < 30; i++) { s = await ev2(() => window.__apset()); left = ACTED.filter(k => s.ids.includes(k)); if (!left.length) break; await sleep(2000); }
@@ -473,36 +526,50 @@ if (want('appr')) {
 
 /* ─────────── 6. collections / A/R ─────────── */
 if (want('coll')) {
-  await step(O, 'coll', '📬 Collections lists the overdue invoice #1043 ($5,000, Agt Hollis)', async ev => ev(async () => {
-    window._gcOpenCollectionsDesk(); await new Promise(z => setTimeout(z, 2500)); const ov = document.getElementById('gcoff-coll-ov'); const t = ov ? ov.innerText : ''; const has = !!(ov && ov.querySelector('[data-offrem="INVagt1"]')) || /Agt Hollis/.test(t); if (ov) ov.remove();
+  await step(O, 'coll', '📬 Collections lists the overdue invoice #1044 ($2,750, Agt Hollis)', async ev => ev(async () => {
+    window._gcOpenCollectionsDesk(); await new Promise(z => setTimeout(z, 2500)); const ov = document.getElementById('gcoff-coll-ov'); const t = ov ? ov.innerText : ''; const has = !!(ov && ov.querySelector('[data-offrem="INVagt2"]')); if (ov) ov.remove();
     return { ok: has, note: has ? 'listed' : 'not listed (' + t.slice(0, 160) + ')' };
   }), { money: false });
-  await step(O, 'coll', '💵 mark invoice #1043 paid (job → Invoices → Mark Paid) → A/R −$5,000, cash +$5,000', async ev => {
-    O.prompts.push('5000', new Date().toISOString().slice(0, 10), 'Check');
-    const r = await ev(async () => { const pre = window._crm.invoices.find(i => i.id === 'INVagt1').status; try { await window.gcProjInvoices.markPaid('INVagt1'); } catch (e) { return { err: e.message }; } await new Promise(z => setTimeout(z, 3000)); const i = window._crm.invoices.find(i => i.id === 'INVagt1') || {}; return { pre, status: i.status, paidDate: i.paidDate, paid: i.paid }; });
+  await step(O, 'coll', '💵 mark invoice #1044 paid (job → Invoices → Mark Paid) → A/R −$2,750, cash +$2,750', async ev => {
+    O.prompts.push('2750', new Date().toISOString().slice(0, 10), 'Check');
+    const r = await ev(async () => { const pre = window._crm.invoices.find(i => i.id === 'INVagt2').status; try { await window.gcProjInvoices.markPaid('INVagt2'); } catch (e) { return { err: e.message }; } await new Promise(z => setTimeout(z, 3000)); const i = window._crm.invoices.find(i => i.id === 'INVagt2') || {}; return { pre, status: i.status, paidDate: i.paidDate, paid: i.paid }; });
     await sleep(1000);
     return { ok: /paid/i.test(r.status || ''), note: JSON.stringify(r), data: r };
   });
   {
     const last = RESULTS[RESULTS.length - 1], d = last.money.delta;
-    const okp = near(d.ar, -5000) && near(d.cashIn, 5000);
-    console.log((okp ? '     ↑ ' : 'FAIL ↑ ') + 'A/R ' + money$(d.ar || 0) + ' (right −$5,000.00), cash-basis income ' + money$(d.cashIn || 0) + ' (right +$5,000.00)');
+    const okp = near(d.ar, -2750) && near(d.cashIn, 2750);
+    console.log((okp ? '     ↑ ' : 'FAIL ↑ ') + 'A/R ' + money$(d.ar || 0) + ' (right −$2,750.00), cash-basis income ' + money$(d.cashIn || 0) + ' (right +$2,750.00)');
     if (!okp) { fails++; last.ok = false; last.note += ' · A/R moved ' + money$(d.ar || 0) + ', cash ' + money$(d.cashIn || 0); }
   }
 }
 
 /* ─────────── 7. print / PDF statement ─────────── */
 if (want('stmt7')) {
-  await step(O, 'stmt7', '🖨 Print / PDF STATEMENT for a customer (Agt Hollis: every invoice, paid and open)', async ev => ev(async () => {
-    window.__OPENED.length = 0;
-    const fns = Object.keys(window).filter(k => /statement/i.test(k) && /^_gc|^gc/.test(k));
-    await window.__go('customers'); await new Promise(z => setTimeout(z, 1000));
-    const btn = [...document.querySelectorAll('main button, main a')].filter(__vis).find(b => /statement/i.test(b.innerText || b.title || ''));
-    let printed = false; if (btn) { btn.click(); await new Promise(z => setTimeout(z, 2500)); printed = window.__OPENED.length > 0; }
-    await window.__go('invoices'); window.__clickText('^Client Invoices'); await new Promise(z => setTimeout(z, 1200));
-    const pr = [...document.querySelectorAll('main button')].filter(__vis).find(x => x.innerText.trim() === '🖨'); let inv = false; if (pr) { pr.click(); await new Promise(z => setTimeout(z, 2500)); inv = window.__OPENED.length > 0 || !!window.__OPENED_W; }
-    return { ok: !!btn && printed, note: (btn ? 'statement button "' + btn.innerText.trim() + '" printed ' + printed : 'NO customer statement anywhere (Customers screen has no Statement button; window functions: ' + JSON.stringify(fns) + ')') + ' · a single invoice prints with 🖨: ' + inv };
-  }), { money: false });
+  await step(O, 'stmt7', '🧾 Customer statement (Agt Hollis, Jan 1 → today): the doors, invoices / payments / balance / aging exact, no internal notes', async ev => {
+    const r = await ev(async () => {
+      try { if (window._gcPushAll) await window._gcPushAll(); } catch (e) {} await new Promise(z => setTimeout(z, 5000));
+      const out = {};
+      /* the doors: the customer's profile and the job's 🧰 Job tools */
+      try { window._gcOpenCustomerProfile('Agt Hollis'); await new Promise(z => setTimeout(z, 1200)); const ovs = document.querySelectorAll('._gcSheetOv'); const ov = ovs[ovs.length - 1]; out.profileBtn = !!(ov && ov.querySelector('[data-acctstmt]')); if (ov) ov.remove(); } catch (e) { out.profileBtn = 'err ' + e.message; }
+      try { const bar = document.createElement('div'); bar.setAttribute('data-pid', 'PRJagtA'); if (window._gcMkt2Deco) window._gcMkt2Deco(bar); out.jobBtn = !!bar.querySelector('[data-acctstmt-pid]'); } catch (e) { out.jobBtn = 'err ' + e.message; }
+      const ov = window._gcStatement.open({ customer: 'Agt Hollis' }); const j = await ov.__ready;
+      const page = ov.querySelector('[data-st="page"]'), st = ov.__statement || {};
+      out.ok = !!j.ok; out.err = j.error; out.rows = (st.rows || []).map(r => r.kind + ' ' + r.ref.replace(/^.*#/, '#').split(' ')[0] + ' ' + r.date + ' ' + (r.charge || -r.credit) + ' → ' + r.balance);
+      out.balanceDue = st.balanceDue; out.aging = st.aging; out.text = page.innerText.replace(/\s+/g, ' ');
+      out.leak = /INTERNAL|margin note|Agt progress draw|Agt closing draw|Supply House|Delta Gutter/.test(out.text);
+      window.__OPENED.length = 0; ov.querySelector('[data-st="print"]').click(); await new Promise(z => setTimeout(z, 800)); out.print = window.__OPENED.length > 0 && /STATEMENT/.test((window.__OPENED_W && window.__OPENED_W.document._h) || '');
+      window.__OPENED.length = 0; ov.querySelector('[data-st="pdf"]').click(); await new Promise(z => setTimeout(z, 3000)); out.pdf = window.__OPENED.length > 0 || /PDF saved/.test(ov.querySelector('[data-st="msg"]').textContent); out.pdfMsg = ov.querySelector('[data-st="msg"]').textContent;
+      window.__fspy = []; { const of = window.fetch; window.fetch = function(u, o){ const e = { u: String(u && u.url || u).slice(0, 70), b: String(o && o.body || '').slice(0, 50), t: Date.now() }; window.__fspy.push(e); const p = of.apply(this, arguments); Promise.resolve(p).then(r => { e.st = r && r.status; e.ms = Date.now() - e.t; }, x => { e.err = String(x).slice(0, 80); }); return p; }; }   /* which call the e-mail button made, and what came back */
+      ov.querySelector('[data-st="mail"]').click(); for (let i = 0; i < 240 && !/✉ On ✅ Approvals|already waiting|⚠|Not put|No customer|paused|[Ee]rror/.test(ov.querySelector('[data-st="msg"]').textContent); i++) await new Promise(z => setTimeout(z, 500)); out.mail = ov.querySelector('[data-st="msg"]').textContent; out.fspy = JSON.stringify(window.__fspy.filter(e => /functions/.test(e.u)).slice(0, 6)); out.mailMs = (window.__fspy.find(e => /office-board/.test(e.u)) || {}).ms;
+      ov.remove(); return out;
+    });
+    const q = (() => { const v = cloud.get('gc_approval_queue'); let l = v && v.value; if (typeof l === 'string') l = JSON.parse(l); return (l || []).filter(x => x.kind === 'customer_statement'); })();
+    const AG = r.aging || {}, rowsWant = ['Invoice #1044 2026-09-10 2750 → 2750', 'Invoice #1043 2026-10-01 5000 → 7750', 'Invoice #1045 2026-10-20 1200 → 8950', 'Payment #1043 2026-10-20 -5000 → 3950'];
+    const okRows = rowsWant.every((w, i) => r.rows && r.rows[i] === w) && r.rows.length === 5 && /^Payment #1044 \d{4}-\d\d-\d\d -2750 → 1200$/.test(r.rows[4]);
+    return { ok: r.ok && r.profileBtn === true && r.jobBtn === true && okRows && r.balanceDue === 1200 && AG.current === 1200 && !AG.d30 && !AG.d60 && !AG.d90 && !AG.d90p && !r.leak && r.print && r.pdf && /On ✅ Approvals/.test(r.mail) && q.length === 1 && q[0].to === 'agt.hollis@example.invalid' && q[0].status === 'waiting',
+      note: 'doors: profile ' + r.profileBtn + ', job tools ' + r.jobBtn + ' · rows ' + JSON.stringify(r.rows) + ' · balance due ' + r.balanceDue + ' · aging ' + JSON.stringify(AG) + ' · internal text shown: ' + r.leak + ' · 🖨 ' + r.print + ' · 📄 ' + r.pdf + ' (' + (r.pdfMsg || '') + ') · ✉ ' + r.mail + ' · Approvals items: ' + q.length + (q[0] ? ' to ' + q[0].to + ' (' + q[0].status + ')' : '') + (r.err ? ' · ERR ' + r.err : '') + (/On ✅ Approvals/.test(r.mail || '') ? '' : ' · page calls: ' + r.fspy + ' · office-board calls: ' + JSON.stringify(O.calls.filter(x => x.fn === 'office-board').slice(-3).map(x => x.status + ' ' + String(x.err || '').slice(0, 80) + ' ' + String(x.b || '').slice(0, 60)))), data: r };
+  }, { money: false });
 }
 
 /* ─────────── 8. permissions: a PM, marketing ─────────── */

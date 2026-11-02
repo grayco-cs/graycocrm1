@@ -397,7 +397,7 @@ function subOpenJobs(data, sub, now){
 /* a supplier (materials, rentals: an Expense on the job) or a sub (a Sub invoice to approve and pay) */
 const SUPPLIER_RE = /\b(home\s*depot|lowe'?s|84\s*lumber|abc\s+supply|beacon|srs\s+distribution|ferguson|sherwin|floor\s*(?:&|and)\s*decor|sunbelt|united\s+rentals|fastenal|white\s*cap|l\s*&\s*w\s+supply|johnstone|winsupply|grainger|menards|builders\s+firstsource|mccoy'?s|carrier\s+enterprise|graybar|hd\s+supply|rexel|daltile|ace\s+hardware|ppg|benjamin\s+moore|lumber|supply|supplies|rentals?|materials|wholesale|distribut\w*|hardware)\b/i;
 function payeeKind(rec, vendor){
-  if (rec && (rec._supplier || rec.isSub === false)) return 'supplier';
+  if (rec && (rec._supplier || rec.isSub === false || /supplier|vendor|material/i.test(s(rec.type || rec.kind || rec.vendorType)))) return 'supplier';   /* patch SUPPLIERPAY's rule (patch BULKDROP) */
   if (rec && rec.isSub === true) return 'sub';
   return SUPPLIER_RE.test(s(vendor)) ? 'supplier' : 'sub';
 }
@@ -508,13 +508,14 @@ async function analyze(mail, files, deps){
   /* the best paper: an invoice-looking file first (by name), then PDF / Word / sheet / photo */
   const rank = { pdf: 5, docx: 5, doc: 4, xlsx: 4, xls: 3, csv: 3, image: 2, txt: 1 };
   papers.sort(function(a, b){ return ((/inv|bill|statement|pay\s*app/i.test(b.name) ? 10 : 0) + rank[b.kind]) - ((/inv|bill|statement|pay\s*app/i.test(a.name) ? 10 : 0) + rank[a.kind]); });
-  let used = papers[0] || null, text = used ? textOf(used.buf, used.kind) : '';
+  let used = papers[0] || null, text = used && used.buf ? textOf(used.buf, used.kind) : '';   /* patch BULKDROP: a dropped file comes already read (deps.read), without its bytes */
   let src = used ? used.kind : '';
   const bodyText = s(mail.text).replace(/\n>.*$/gm, '');
   if (!used && /\b(invoice|amount\s+due|balance\s+due|total)\b/i.test(bodyText) && /\$?\s*\d[\d,]*\.\d{2}/.test(bodyText)) { text = bodyText; src = 'email body'; }
   const fileHay = papers.map(function(p){ return p.name; }).join(' ') + ' ' + subject;
   let f = null;
-  if (text || used) { try { f = await aiRead(deps.ai, used, text, ctx); } catch (e) { f = null; } }
+  if (deps.read && typeof deps.read === 'object') f = Object.assign({ by: 'crm' }, deps.read);   /* patch BULKDROP: read in the CRM (the 💳 receipt reader's AI) */
+  else if (text || used) { try { f = await aiRead(deps.ai, used, text, ctx); } catch (e) { f = null; } }
   const rx = parseText(text, { subject: subject, vendor: who.name });
   if (!f) f = rx;
   else { ['invoiceNumber', 'invoiceDate', 'dueDate', 'terms', 'po', 'jobAddress'].forEach(function(k){ if (!s(f[k]) && s(rx[k])) f[k] = rx[k]; }); if (!(f.total > 0) && rx.total > 0) f.total = rx.total; }
@@ -536,7 +537,9 @@ async function analyze(mail, files, deps){
     job = Object.assign(sc, { conf: Math.max(97, sc.conf), why: 'PO ' + s(pj.autoPO || pj.po) + ' on the invoice' + (sc.why && !/^PO /.test(sc.why) ? ' · ' + sc.why : '') });
     jm.top = [job].concat(arr(jm.top).filter(function(x){ return x.pid !== job.pid; })).slice(0, 3); jm.certain = true; how = 'po';
   }
-  const payKind = deps.kind === 'receipt' ? 'supplier' : deps.kind === 'client_invoice' ? 'client' : payeeKind(sub ? payees.find(function(x){ return s(x.id) === sub.id; }) : null, read.vendor || who.name);
+  let payKind = deps.kind === 'receipt' ? 'supplier' : deps.kind === 'client_invoice' ? 'client' : payeeKind(sub ? payees.find(function(x){ return s(x.id) === sub.id; }) : null, read.vendor || who.name);
+  /* patch BULKDROP: the reader said "a supplier's bill" — a supplier unless the payee is a sub on the CRM's list (isSub true) */
+  if (deps.payee === 'supplier' && payKind === 'sub' && !(sub && sub.conf >= 80 && (payees.find(function(x){ return s(x.id) === sub.id; }) || {}).isSub === true)) payKind = 'supplier';
   if (!jm.certain && payKind === 'sub' && sub && sub.conf >= 80) {
     const open = subOpenJobs(data, sub, now);
     if (open.length === 1 && (!job || job.conf < 85 || job.pid === open[0].pid)) { job = open[0]; jm.top = [job].concat(arr(jm.top).filter(function(x){ return x.pid !== job.pid; })).slice(0, 3); jm.certain = true; how = 'sub'; }

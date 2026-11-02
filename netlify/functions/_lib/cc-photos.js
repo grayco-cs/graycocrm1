@@ -39,11 +39,29 @@
      • A photo removed in CompanyCam that has a GrayCo copy STAYS in the row (marked removedAt) — even when the whole
        CompanyCam project is gone. Without a copy it drops as before.
      • ph rows: a photo put into CompanyCam well after it was taken carries that time as its 8th field (patch CCPHOTOS2: a
-       photo put in after this release waits for "Customer can see" — _lib/cc-vis.js). */
+       photo put in after this release waits for "Customer can see" — _lib/cc-vis.js).
+
+   patch PHOTOCOVER — "all my GrayCo Photos aren't CompanyCam photos yet, some jobs have 0 photos" + the owner's copy rules:
+     • st.cls = { <CompanyCam id>: [[job id, class, name?]] } — every CRM record carrying the id, LOST ones too (class: active |
+       bidding | completed | archived | lost | lead). linked (what is indexed) is unchanged.
+     • Copies are made only for a project on a job that is not lost (bidding, estimating, active, approved, on hold, completed)
+       and not marked "Not a job" (gc_kv ccidx_notjob — QuickBooks companies / vendors). Never for a lead that was never a job,
+       an archived job, a lost job (unless 📌 kept: gc_kv ccidx_keep { job: { at, by } }).
+     • A lost job: st.lost[<project>] = { since, jobs, names } from the first run that sees it lost. Its GrayCo copies STAY. After
+       30 days the admin gets a decision card (📌 Keep photos / 🗑 Delete photos). NOTHING is deleted without the admin's click:
+       ?proxy=photojob { act: 'delete' } puts the job on ccidx_request.del and the next run removes that project's GrayCo copies
+       (web + thumb files in crm-files) — only while the job is still lost, past 30 days and not kept; a file another project or a
+       GrayCo Photos upload also uses stays. The index row (CompanyCam's links) stays. Every removal is logged (gc_kv
+       ccidx_removed). CompanyCam is only ever READ. Un-lost / reopened, or kept later → copied again.
+     • ccidx_request.pids { <project>: at } — "Re-index this job": those projects are read again in full, first.
+     • CompanyCam's project list says how many photos a project has (photo_count): a linked project whose count differs from
+       the index is read again in full (a missed change never waits for the 12-hour re-read).
+     • A link is a CompanyCam link only: "…/projects/123" of another site is not taken for a CompanyCam project. */
 'use strict';
 const crypto = require('crypto');
 const CC_API = 'https://api.companycam.com/v2';
 const IDX = 'ccidx', STATE = 'ccidx_state', REQ = 'ccidx_request', ROW = 'ccidx:', COPY = 'ccidx_copy', VIS = 'ccvis';
+const KEEP = 'ccidx_keep', NOTJOB = 'ccidx_notjob', DELLOG = 'ccidx_removed', LOST_DAYS = 30, DAY_MS = 864e5;   /* patch PHOTOCOVER */
 const CAP_GB = 80, GB = 1e9, EST_PHOTO = 250000, MAX_IMG = 15 * 1048576, COPY_TRIES = 3, BUCKET = 'crm-files';
 const PER = 100, FEED = 150, NOTE = 200, OVERLAP = 3600, REFRESH_MS = 12 * 3600e3, REFRESH_PER_RUN = 25, LIST_PAGES = 12;
 const ID_FIELDS = ['ccProjectId', 'companyCamId', 'companycamId', 'ccId', 'ccamId', 'ccProjectUrl', 'companyCamUrl', 'ccamUrl', 'ccUrl', 'sourceUrl'];
@@ -62,10 +80,12 @@ function secOf(v){
   const d = Date.parse(v); return isNaN(d) ? 0 : Math.floor(d / 1000);
 }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+function now(){ const f = Number(process.env.CC_FAKE_NOW_MS); return isFinite(f) && f > 0 ? f : Date.now(); }   /* patch PHOTOCOVER: tests move the clock */
 function ccIdFromAny(v){
   if (v == null || v === '') return '';
-  const t = String(v), m = t.match(/projects\/(\d+)/) || t.match(/^PRJcc_(\d+)$/) || t.match(/^cc:(\d+)$/);
+  const t = String(v), m = t.match(/companycam\.com\/projects\/(\d+)/i) || t.match(/^PRJcc_(\d+)$/) || t.match(/^cc:(\d+)$/);
   if (m) return m[1];
+  if (/[\/:]/.test(t)) return '';   /* patch PHOTOCOVER: another site's link is not a CompanyCam project (it was read as one → "gone") */
   return /^\d{3,}$/.test(t.trim()) ? t.trim() : '';
 }
 function ccIdsOf(r){
@@ -87,6 +107,42 @@ function linkedMap(projects, leads, deadIds){
   arr(projects).forEach(r => add(r, 'job')); arr(leads).forEach(r => add(r, 'lead'));
   return out;
 }
+/* patch PHOTOCOVER: what a CRM record is, for the copy rules */
+const LOSTRX = /\b(lost|dead|cancel+ed|void|spam|junk|duplicate|declined)\b/i;
+function classOf(r, kind){
+  if (kind === 'lead') return 'lead';
+  const st = low(r.status) + ' ' + low(r.stage) + (r.archived === true ? ' ' + low(r.statusBeforeArchive) + ' ' + low(r.archivedWhy) : '');
+  if (LOSTRX.test(st)) return 'lost';
+  if (r.archived === true || /\barchived\b/.test(st)) return 'archived';
+  if (/complete|closed|done|paid in full|finished|warranty/.test(st) || r.paidInFull === true) return 'completed';
+  if (/active|approved|progress|hold|contract|scheduled|won|started|punch|final/.test(st)) return 'active';
+  return 'bidding';
+}
+const COPY_CLS = { active: 1, bidding: 1, completed: 1 };
+/* every CompanyCam id → every live CRM record carrying it, lost ones too: [[id, class, name (lost only)]] */
+function classMap(projects, leads, deadIds){
+  const out = {}, dead = deadIds || {};
+  function add(r, kind){
+    if (!r || typeof r !== 'object' || r.deleted === true || !r.id || dead[s(r.id)]) return;
+    const c = classOf(r, kind);
+    ccIdsOf(r).forEach(id => { const l = out[id] = out[id] || []; if (l.some(x => x[0] === s(r.id))) return; const e = [s(r.id), c]; if (c === 'lost') e.push(s(r.name || r.client || r.title).slice(0, 60)); l.push(e); });
+  }
+  arr(projects).forEach(r => add(r, 'job')); arr(leads).forEach(r => add(r, 'lead'));
+  return out;
+}
+/* may this project's photos be copied into GrayCo storage? */
+function copyOk(cls, keep, notjob){
+  const a = arr(cls); keep = obj(keep); notjob = obj(notjob);
+  if (a.some(x => COPY_CLS[x[1]] && !notjob[x[0]])) return true;
+  return a.some(x => x[1] === 'lost' && keep[x[0]]);   /* 📌 Keep photos */
+}
+/* lost = on lost jobs only (a live job, an archived job or a converted lead beside it keeps it from being lost) */
+function lostOf(cls){
+  const a = arr(cls), lost = a.filter(x => x[1] === 'lost');
+  if (!lost.length || a.some(x => x[1] !== 'lost' && x[1] !== 'lead')) return null;
+  return { jobs: lost.map(x => x[0]), names: lost.map(x => s(x[2])) };
+}
+function keptOf(L, keep){ keep = obj(keep); return arr(L && L.jobs).some(j => keep[j]); }
 
 /* ── one CompanyCam photo → its small row ── */
 function httpsOnly(u){ const t = s(u); return /^https:\/\/[^\s"'<>]+$/i.test(t) ? t : ''; }
@@ -242,9 +298,11 @@ async function jobsSig(){
 }
 async function linkedNow(st, R){
   let sig = ''; try { sig = await jobsSig(); } catch (e) { sig = ''; }
-  if (sig && sig === s(st.jobsSig) && st.linked && typeof st.linked === 'object') { R.jobsCached = true; return st.linked; }
+  if (sig && sig === s(st.jobsSig) && st.linked && typeof st.linked === 'object' && st.cls && typeof st.cls === 'object') { R.jobsCached = true; return st.linked; }
   const J = await readJobs();
   const l = linkedMap(J.projects, J.leads, J.dead);
+  const cm = classMap(J.projects, J.leads, J.dead);   /* patch PHOTOCOVER */
+  R.clsChanged = JSON.stringify(cm) !== JSON.stringify(obj(st.cls)); st.cls = cm;
   R.linkedChanged = JSON.stringify(l) !== JSON.stringify(obj(st.linked));
   st.jobsSig = sig; st.linked = l;
   return l;
@@ -317,10 +375,10 @@ async function run(opts){
   const R = { ok: true, who: opts.who || 'run', calls: 0, limited: 0, projects: 0, photos: 0, queued: 0, changed: 0, stop: '', more: false };
   if (!token) return Object.assign(R, { ok: false, skipped: 'COMPANYCAM_TOKEN is not set' });
   if (!e.url || !e.key) return Object.assign(R, { ok: false, skipped: 'SUPABASE_URL / SUPABASE_SERVICE_KEY are not set' });
-  const kv = await kvRead([STATE, REQ, COPY, VIS]);
+  const kv = await kvRead([STATE, REQ, COPY, VIS, KEEP, NOTJOB]);   /* patch PHOTOCOVER: + 📌 kept / "Not a job" */
   const st = Object.assign({ v: 1, cursor: 0, done: {}, queue: [], prog: null }, obj(kv[STATE]));
   st.done = obj(st.done); st.queue = arr(st.queue).filter(q => q && q.pid);
-  const nowMs = Date.now(), nowIso = new Date(nowMs).toISOString();
+  const nowMs = now(), nowIso = new Date(nowMs).toISOString();
   if (st.lock && Date.parse(s(st.lock.until)) > nowMs && s(st.lock.id) !== runId) return Object.assign(R, { skipped: 'another run is indexing (until ' + s(st.lock.until) + ')', busy: true });
   if (st.wait && Date.parse(s(st.wait)) > nowMs) return Object.assign(R, { skipped: 'CompanyCam asked to wait until ' + s(st.wait), waiting: true, more: st.queue.length > 0 });
   st.lock = { id: runId, until: new Date(nowMs + budget + 90000).toISOString() };
@@ -351,6 +409,12 @@ async function run(opts){
     st.reqDone = s(req.at);
     st.prog = { kind: 'request', by: s(req.by), at: s(req.at), startedAt: nowIso, total: Object.keys(linked).length, done: 0, photos: 0 };
   }
+  /* patch PHOTOCOVER: "Re-index this job" — its projects read again in full, first (a request older than 3 days is dropped) */
+  const rp = obj(req.pids); st.reqPids = obj(st.reqPids);
+  Object.keys(rp).forEach(pid => { const at = s(rp[pid]); if (!at || at === s(st.reqPids[pid]) || nowMs - Date.parse(at) > 3 * DAY_MS || !linked[pid]) return;
+    if (qHas[pid]) { qHas[pid].mode = 'full'; delete qHas[pid].started; } else enqueue(pid, 'full', true); st.reqPids[pid] = at; R.reindexed = (R.reindexed || 0) + 1; });
+  Object.keys(st.reqPids).forEach(pid => { if (nowMs - Date.parse(s(st.reqPids[pid])) > 7 * DAY_MS) delete st.reqPids[pid]; });
+  lostTrack();
   /* a linked project never indexed (the first run after a deploy = the whole backfill) */
   const fresh = Object.keys(linked).filter(pid => !st.done[pid] && !qHas[pid]);
   if (fresh.length) {
@@ -365,7 +429,7 @@ async function run(opts){
   const get = Caller(token, deadline - 1500, R);
 
   /* CompanyCam's project list, newest activity first, down to the bookmark: a changed linked project is read again */
-  let listTop = 0, listComplete = false; const listUpd = {};
+  let listTop = 0, listComplete = false; const listUpd = {}, listCount = {};
   try {
     if (st.cursor) {
       for (let page = 1; page <= LIST_PAGES; page++) {
@@ -377,6 +441,10 @@ async function run(opts){
           if (!p || p.id == null) return;
           const pid = s(p.id), up = Math.max(secOf(p.updated_at), secOf(p.last_activity_at), secOf(p.created_at));
           if (up > listTop) listTop = up;
+          /* patch PHOTOCOVER: CompanyCam's own photo count differs from the index → read it again in full */
+          const pc = p.photo_count != null && isFinite(+p.photo_count) ? +p.photo_count : null, d0 = st.done[pid];
+          if (pc != null) listCount[pid] = pc;
+          if (pc != null && linked[pid] && d0 && !d0.err && pc !== (+d0.n || 0) && pc !== +d0.ccn) { enqueue(pid, 'full', true); R.recount = (R.recount || 0) + 1; }
           if (up < (+st.cursor || 0) - OVERLAP) return;
           anyNew = true; listUpd[pid] = up;
           const d = st.done[pid];
@@ -392,6 +460,95 @@ async function run(opts){
     Object.keys(linked).filter(pid => st.done[pid] && !qHas[pid] && nowMs - Date.parse(s(st.done[pid].full || st.done[pid].at)) > REFRESH_MS)
       .sort((a, b) => s(st.done[a].full || st.done[a].at) < s(st.done[b].full || st.done[b].at) ? -1 : 1)
       .forEach(pid => { if (n++ < REFRESH_PER_RUN) enqueue(pid, 'full'); });
+  }
+
+  /* ── patch PHOTOCOVER: the copy rules, the lost jobs, the admin's decisions ── */
+  function mayCopy(pid){ return copyOk(obj(st.cls)[pid], kv[KEEP], kv[NOTJOB]); }
+  function lostTrack(){
+    const cls = obj(st.cls), keep = obj(kv[KEEP]); st.lost = obj(st.lost);
+    const C = st.copy = Object.assign({ need: {} }, obj(st.copy)); C.need = obj(C.need);
+    Object.keys(cls).forEach(pid => { const L = lostOf(cls[pid]); if (!L) return;
+      const cur = st.lost[pid]; if (cur) { cur.jobs = L.jobs; cur.names = L.names; } else st.lost[pid] = { since: nowIso, jobs: L.jobs, names: L.names }; });
+    Object.keys(st.lost).forEach(pid => {
+      const L = st.lost[pid];
+      if (lostOf(cls[pid])) { if (keptOf(L, keep) && !L.kept) { L.kept = nowIso; if (L.deletedAt) C.need[pid] = 1; } return; }
+      /* un-lost / reopened (or gone from the job list): no decision any more; copies that were removed are made again */
+      if (L.deletedAt && mayCopy(pid)) C.need[pid] = 1;
+      delete st.lost[pid];
+    });
+    /* a job that may be copied now (reopened, 📌 kept, "Not a job" taken back, a lead became a job) and has photos without a copy */
+    const sig = JSON.stringify([Object.keys(keep).sort(), Object.keys(obj(kv[NOTJOB])).sort()]);
+    if (R.clsChanged || sig !== s(st.cpSig)) {
+      Object.keys(st.done).forEach(pid => { const d = st.done[pid]; if (linked[pid] && !d.err && (+d.n || 0) > (+d.g || 0) && mayCopy(pid)) C.need[pid] = 1; });
+      st.cpSig = sig;
+    }
+  }
+  async function deletePhase(){
+    const del = obj(obj(kv[REQ]).del), keep = obj(kv[KEEP]); st.delDone = obj(st.delDone);
+    const jobs = Object.keys(del).filter(j => s(obj(del[j]).at) && s(obj(del[j]).at) !== s(st.delDone[j]));
+    if (!jobs.length) return;
+    let refs = null;
+    for (const job of jobs) {
+      if (Date.now() > deadline - 3000) break;
+      const ask = obj(del[job]), pids = Object.keys(obj(st.lost)).filter(pid => arr(st.lost[pid].jobs).indexOf(job) >= 0);
+      const res = [];
+      for (const pid of pids) {
+        const L = st.lost[pid];
+        /* never without every condition: still lost, 30 days since, not 📌 kept, not done already */
+        if (L.deletedAt) { res.push(pid + ': already removed'); continue; }
+        if (keptOf(L, keep)) { res.push(pid + ': kept'); continue; }
+        if (nowMs - Date.parse(s(L.since)) < LOST_DAYS * DAY_MS) { res.push(pid + ': not 30 days yet'); continue; }
+        if (!refs) refs = await otherRefs();
+        const out = await removeCopies(pid, L, refs, ask);
+        res.push(pid + ': ' + out);
+      }
+      if (!pids.length) res.push('the job is not lost (or has no photos) — nothing removed');
+      st.delDone[job] = s(ask.at); R.deleted = (R.deleted || []).concat([job + ' → ' + res.join('; ')]);
+    }
+  }
+  /* every file another project's copies or a GrayCo Photos upload uses (those are never removed) */
+  async function otherRefs(){
+    const files = {}, pids = Object.keys(st.done).filter(pid => (+st.done[pid].g || 0) > 0 || st.lost[pid]);
+    for (let i = 0; i < pids.length; i += 60) {
+      const part = pids.slice(i, i + 60), rows = await kvRead(part.map(p => ROW + p));
+      part.forEach(p => { Object.keys(obj(obj(rows[ROW + p]).g)).forEach(id => { const c = obj(rows[ROW + p]).g[id]; if (Array.isArray(c)) [c[0], c[1]].forEach(f => { if (f) (files[s(f)] = files[s(f)] || {})[p] = 1; }); }); });
+    }
+    const up = await readUploads();
+    return { files, uploads: up };
+  }
+  async function readUploads(){
+    const m = await kvRead(['gc_photos', 'gc_photos__manifest']); let txt = JSON.stringify(m.gc_photos || []);
+    const man = obj(m.gc_photos__manifest);
+    if (man.chunked && man.count > 0) { const keys = []; for (let i = 0; i < man.count; i++) keys.push('gc_photos__chunk' + i); const c = await kvRead(keys); txt += JSON.stringify(keys.map(k => c[k])); }
+    return txt;
+  }
+  async function removeCopies(pid, L, refs, ask){
+    const row = obj((await kvRead([ROW + pid]))[ROW + pid]), g = obj(row.g), ids = Object.keys(g).filter(id => Array.isArray(g[id]));
+    let bytes = 0, gone = 0; const names = {}, kept = {};
+    ids.forEach(id => { const c = g[id]; bytes += +c[2] || 0; if (+c[3]) gone++;
+      [c[0], c[1]].forEach(f => { f = s(f); if (!/^[0-9a-f]{64}\.(jpe?g|png|webp)$/.test(f)) return;
+        const other = Object.keys(obj(refs.files[f])).some(p => p !== pid);
+        if (other || refs.uploads.indexOf(f) >= 0) kept[f] = 1; else names[f] = 1; }); });
+    const list = Object.keys(names);
+    for (let i = 0; i < list.length; i += 100) {   /* GrayCo's own storage only (crm-files) — CompanyCam is never asked to delete anything */
+      const r = await fetch(sbEnv().url + '/storage/v1/object/' + BUCKET, { method: 'DELETE', headers: sbH({ 'Content-Type': 'application/json' }), body: JSON.stringify({ prefixes: list.slice(i, i + 100) }) });
+      if (!r.ok) { R.delError = 'file storage answered ' + r.status; return 'stopped: file storage answered ' + r.status + ' (nothing marked removed)'; }
+    }
+    /* the index row stays (CompanyCam's links: the photos still show while CompanyCam has them); a photo CompanyCam no longer has
+       and whose copy is gone now leaves the row */
+    const out = Object.assign({}, row); delete out.g; delete out.gx;
+    out.ph = arr(row.ph).filter(x => !(Array.isArray(g[s(x && x[0])]) && +g[s(x[0])][3])); out.n = out.ph.length;
+    if (!opts.dry) await kvWrite([{ key: ROW + pid, value: out }]);
+    rowsDone[pid] = out;
+    if (st.done[pid]) { Object.assign(st.done[pid], { g: 0, gb: 0, gr: 0, n: out.ph.length }); }
+    const C = st.copy = Object.assign({ need: {} }, obj(st.copy)); C.need = obj(C.need); delete C.need[pid];
+    C.freed = (+C.freed || 0) + bytes; C.freedN = (+C.freedN || 0) + ids.length;
+    const at = new Date().toISOString();
+    Object.assign(L, { deletedAt: at, deletedBy: s(ask.by), deleted: { photos: ids.length, bytes, files: list.length } });
+    const entry = { at, pid, jobs: arr(L.jobs), names: arr(L.names), photos: ids.length, bytes, files: list.length, sharedKept: Object.keys(kept).length, goneFromCompanyCam: gone,
+      why: 'job lost since ' + s(L.since).slice(0, 10) + ' (30+ days) — the admin chose 🗑 Delete photos', by: s(ask.by), asked: s(ask.at) };
+    if (!opts.dry) { const lg = arr((await kvRead([DELLOG]))[DELLOG]).concat([entry]).slice(-1000); await kvWrite([{ key: DELLOG, value: lg }]); }
+    return ids.length + ' copies removed (' + bytes + ' bytes)';
   }
 
   /* the queue, project by project */
@@ -416,7 +573,7 @@ async function run(opts){
     C.on = cfg.on; C.capGB = cfg.capGB;
     if (!cfg.on) { C.stop = 'off'; return; }
     if (C.cfgAt !== cfg.at || !C.seeded) {   /* turned on (again): every indexed project is looked at once */
-      Object.keys(st.done).forEach(pid => { if (linked[pid] && !st.done[pid].err) C.need[pid] = 1; });
+      Object.keys(st.done).forEach(pid => { if (linked[pid] && !st.done[pid].err && mayCopy(pid)) C.need[pid] = 1; });   /* patch PHOTOCOVER */
       C.seeded = true; C.cfgAt = cfg.at;
     }
     if (C.stop === 'off') C.stop = '';
@@ -457,8 +614,8 @@ async function run(opts){
       }
       return { fail: 'CompanyCam kept asking to wait' };
     }
-    const pids = Object.keys(C.need).filter(pid => st.done[pid]).sort();
-    Object.keys(C.need).forEach(pid => { if (!st.done[pid]) delete C.need[pid]; });
+    const pids = Object.keys(C.need).filter(pid => st.done[pid] && mayCopy(pid)).sort();
+    Object.keys(C.need).forEach(pid => { if (!st.done[pid] || !mayCopy(pid)) delete C.need[pid]; });   /* patch PHOTOCOVER: a lost / not-a-job / lead-only project is not copied */
     let stopped = '';
     for (const pid of pids) {
       if (stopped || Date.now() > deadline - 4000) break;
@@ -603,16 +760,19 @@ async function run(opts){
     if (Object.keys(g).length) out.g = g;
     if (inc && row.gx && Object.keys(obj(row.gx)).length) out.gx = row.gx;   /* a full re-read brings fresh links: the copier tries again */
     const cs = rowCopyStats(out);
-    if (ph.length > cs.g) { st.copy = st.copy && typeof st.copy === 'object' ? st.copy : {}; st.copy.need = obj(st.copy.need); st.copy.need[pid] = 1; }
+    if (ph.length > cs.g && mayCopy(pid)) { st.copy = st.copy && typeof st.copy === 'object' ? st.copy : {}; st.copy.need = obj(st.copy.need); st.copy.need[pid] = 1; }   /* patch PHOTOCOVER: only a job's that may be copied */
     if (!opts.dry) await kvWrite([{ key: ROW + pid, value: out }]);
     rowsDone[pid] = out;
     st.done[pid] = { at: nowIso, full: inc ? s(prev && prev.full) || nowIso : nowIso, upd: out.upd, n: ph.length, last: ph.length ? ph[0][1] : 0, gone: (gone && !ph.length) || undefined };
+    if (listCount[pid] != null) st.done[pid].ccn = listCount[pid]; else if (prev && prev.ccn != null) st.done[pid].ccn = prev.ccn;   /* patch PHOTOCOVER */
     if (cs.g) Object.assign(st.done[pid], cs);   /* patch CCPHOTOS2: copies made / their bytes / removed in CompanyCam */
     st.queue.shift(); delete qHas[pid];
     R.projects++; R.photos += inc ? added.length : ph.length;
     if (st.prog && !st.prog.doneAt) { st.prog.done = (+st.prog.done || 0) + 1; st.prog.photos = (+st.prog.photos || 0) + ph.length; }
     if (Date.now() - lastSave > 8000) await saveProgress(false);
   }
+  /* patch PHOTOCOVER: the admin's 🗑 Delete photos (lost jobs, past 30 days) — before any new copy */
+  if (Date.now() < deadline - 3000) { try { await deletePhase(); } catch (e) { R.delError = s(e && e.message || e).slice(0, 120); } }
   /* patch CCPHOTOS2: the GrayCo copies, with the time left (the index first: the copier works from it) */
   if (!R.stop || R.stop === 'time') await copyPhase();
   if (listComplete && !R.stop && listTop) st.cursor = Math.max(+st.cursor || 0, listTop);
@@ -652,14 +812,14 @@ async function kickBackground(why){
   } catch (e) { return false; }
 }
 /* what the CRM's "📸 CompanyCam sync status" window shows (never a secret) */
-function statusOf(st, copyV){
+function statusOf(st, copyV, keepV){
   st = obj(st); const p = obj(st.prog), t = obj(st.total), l = obj(st.last);
-  return { copy: copyStatus(st, copyV), linked: +t.linked || 0, indexed: +t.indexed || 0, photos: +t.photos || 0, queue: arr(st.queue).length, running: !!(st.lock && Date.parse(s(st.lock.until)) > Date.now()),
+  return { copy: copyStatus(st, copyV, keepV), linked: +t.linked || 0, indexed: +t.indexed || 0, photos: +t.photos || 0, queue: arr(st.queue).length, running: !!(st.lock && Date.parse(s(st.lock.until)) > Date.now()),
     wait: s(st.wait), last: { at: s(l.at), who: s(l.who), projects: +l.projects || 0, photos: +l.photos || 0, calls: +l.calls || 0, stop: s(l.stop), error: s(l.error).slice(0, 160) },
     prog: st.prog ? { kind: s(p.kind), total: +p.total || 0, done: +p.done || 0, photos: +p.photos || 0, startedAt: s(p.startedAt), doneAt: s(p.doneAt), by: s(p.by) } : null };
 }
 /* patch CCPHOTOS2: the storage meter — copies made / photos, GB used, the estimate for all of them, the switch and the cap */
-function copyStatus(st, copyV){
+function copyStatus(st, copyV, keepV){
   st = obj(st); const cfg = copyCfg(copyV), C = obj(st.copy), t = obj(st.total);
   const linked = st.linked && typeof st.linked === 'object' ? st.linked : null;
   const tl = copyTotals(st, linked), all = copyTotals(st, null);
@@ -668,7 +828,34 @@ function copyStatus(st, copyV){
   return { on: cfg.on, capGB: cfg.capGB, by: cfg.by, at: cfg.at, copied: tl.copied, total: total, removed: tl.removed, bytes: all.bytes,
     bucketBytes: C.bucket == null ? null : +C.bucket || 0, avgBytes: avg, measured: all.copied >= 10, estimateBytes: Math.round(total * avg),
     stop: s(C.stop), stopAt: s(C.stopAt), wait: s(C.wait), waiting: Object.keys(obj(C.need)).length, lastError: s(C.lastError).slice(0, 120),
-    last: lr.at ? { at: s(lr.at), photos: +lr.photos || 0, bytes: +lr.bytes || 0, failed: +lr.failed || 0, stop: s(lr.stop) } : null };
+    last: lr.at ? { at: s(lr.at), photos: +lr.photos || 0, bytes: +lr.bytes || 0, failed: +lr.failed || 0, stop: s(lr.stop) } : null,
+    meter: meterOf(st, keepV) };   /* patch PHOTOCOVER */
 }
-module.exports = { run, copyStatus, copyCfg, imgDims, sniffImg, COPY, VIS, CAP_GB, kickBackground, handoffOk, handoffSig, statusOf, linkedMap, ccIdsOf, packPhoto, packThumb, unpackThumb, unpackRow, summaryOf,
+/* patch PHOTOCOVER: the storage meter by kind of job — GB of active / bidding / completed / lost jobs, freed by the admin's
+   removals, waiting for a decision (lost, not kept, not removed) */
+const RANK = { active: 6, bidding: 5, completed: 4, archived: 3, lost: 2, lead: 1 };
+function bestClass(a){ let b = '', r = 0; arr(a).forEach(x => { const k = RANK[x[1]] || 0; if (k > r) { r = k; b = x[1]; } }); return b || 'other'; }
+function meterOf(st, keepV){
+  st = obj(st); const cls = obj(st.cls), done = obj(st.done), lost = obj(st.lost), C = obj(st.copy), keep = obj(keepV);
+  const by = { active: 0, bidding: 0, completed: 0, lost: 0, other: 0 };
+  Object.keys(done).forEach(pid => { const b = +done[pid].gb || 0; if (!b) return; let k = lost[pid] ? 'lost' : bestClass(cls[pid]); if (!(k in by)) k = 'other'; by[k] += b; });
+  let pend = 0, pendB = 0, due = 0, dueB = 0, kept = 0; const t = now();
+  Object.keys(lost).forEach(pid => { const L = lost[pid], b = +obj(done[pid]).gb || 0; if (L.deletedAt || !(+obj(done[pid]).g)) return;
+    if (keptOf(L, keep)) { kept++; return; } pend++; pendB += b; if (t - Date.parse(s(L.since)) >= LOST_DAYS * DAY_MS) { due++; dueB += b; } });
+  return { bytes: by, freedBytes: +C.freed || 0, freedPhotos: +C.freedN || 0, pending: { projects: pend, bytes: pendB, due, dueBytes: dueB }, kept, lostDays: LOST_DAYS };
+}
+/* patch PHOTOCOVER: 📸 Photo coverage — per CompanyCam project what the index has (no CompanyCam call, never a secret) */
+function coverOf(st, copyV, keepV, notjobV, logV, reqV){
+  st = obj(st); const done = obj(st.done), lost = obj(st.lost), keep = obj(keepV), nj = obj(notjobV), t = now();
+  const p = {};
+  Object.keys(done).forEach(pid => { const d = done[pid]; p[pid] = { n: +d.n || 0, last: +d.last || 0, g: +d.g || 0, gb: +d.gb || 0, gone: d.gone ? 1 : 0, err: s(d.err).slice(0, 80), at: s(d.full || d.at), cc: d.ccn != null ? +d.ccn : null }; });
+  const q = {}; arr(st.queue).forEach(x => { if (x && x.pid) q[s(x.pid)] = 1; });
+  const lostL = Object.keys(lost).map(pid => { const L = lost[pid], d = obj(done[pid]), dueAt = new Date(Date.parse(s(L.since)) + LOST_DAYS * DAY_MS).toISOString();
+    return { pid, jobs: arr(L.jobs), names: arr(L.names), since: s(L.since), dueAt, due: t >= Date.parse(dueAt), kept: keptOf(L, keep), deletedAt: s(L.deletedAt), deleted: L.deleted || null, n: +d.n || 0, g: +d.g || 0, gb: +d.gb || 0 }; });
+  const del = obj(obj(reqV).del), dd = obj(st.delDone), asked = {}; Object.keys(del).forEach(j => { if (s(obj(del[j]).at) !== s(dd[j])) asked[j] = s(obj(del[j]).at); });
+  const rq = obj(obj(reqV).pids), rd = obj(st.reqPids), reidx = {}; Object.keys(rq).forEach(pid => { if (s(rq[pid]) !== s(rd[pid])) reidx[pid] = s(rq[pid]); });
+  return { at: new Date(t).toISOString(), status: statusOf(st, copyV, keepV), p, queued: q, lost: lostL, keep, notjob: nj, deleteAsked: asked, reindexAsked: reidx, log: arr(logV).slice(-50), lostDays: LOST_DAYS };
+}
+module.exports = { coverOf, meterOf, classOf, classMap, copyOk, lostOf, KEEP, NOTJOB, DELLOG, LOST_DAYS, ccIdFromAny,   /* patch PHOTOCOVER */
+  run, copyStatus, copyCfg, imgDims, sniffImg, COPY, VIS, CAP_GB, kickBackground, handoffOk, handoffSig, statusOf, linkedMap, ccIdsOf, packPhoto, packThumb, unpackThumb, unpackRow, summaryOf,
   IDX, STATE, REQ, ROW, PER };

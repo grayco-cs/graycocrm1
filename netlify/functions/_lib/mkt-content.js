@@ -152,7 +152,7 @@ var TEMPLATES = [
     title: 'Is your roof ready for storm season?',
     body: P('Hi {{first_name}},') + P('Spring is the Mid-South’s hail and wind season. Small damage — a lifted shingle, a dented vent, a cracked boot — rarely leaks right away, but it shortens your roof’s life and can turn into a ceiling stain by summer.') +
       P('<b>What we check, free:</b>') + UL(['Shingles and flashing after hail or high wind', 'Pipe boots, vents and skylights', 'Gutters and downspouts (water going where it should)', 'Attic signs of a leak']) +
-      P('If we find storm damage, we document it with photos and help you through your insurance claim from start to finish.'),
+      P('If we find storm damage, we document it with photos, give you a detailed estimate, and meet your adjuster to show the damage.'),
     cta: { label: 'Book my free roof check', url: 'https://grayco-cs.com/?utm_source=news&utm_medium=email&utm_campaign=spring_storm' } },
   { id: 'summer_attic', ic: '☀️', name: 'Summer heat / attic ventilation', months: [6, 7, 8], audience: { type: 'all' },
     subject: 'Beat the Memphis heat: is your attic cooking your roof?', preheader: 'Good attic ventilation lowers cooling bills and protects your shingles.',
@@ -172,7 +172,7 @@ var TEMPLATES = [
     subject: 'Freeze warning: protect your home from ice and water damage', preheader: 'Ice backups and burst pipes — what to watch for this winter.',
     title: 'Winter is hard on homes. We’re here if it bites.',
     body: P('Hi {{first_name}},') + UL(['Keep gutters clear so melting ice can drain', 'Let faucets drip on nights below 20°', 'Know where your main water shut-off is', 'Look for ceiling stains after an ice storm']) +
-      P('If water gets in, call us right away — GrayCo does emergency water mitigation and the full repair, and we work with your insurance company for you.'),
+      P('If water gets in, call us right away — GrayCo does emergency water mitigation and the full repair, and we meet your adjuster to show the damage we documented.'),
     cta: { label: 'Save our number', url: 'tel:+19015850944' } },
   { id: 'holiday_thanks', ic: '🎁', name: 'Holiday thank-you', months: [11, 12], audience: { type: 'all' },
     subject: 'Thank you from all of us at GrayCo', preheader: 'From our family to yours — happy holidays.',
@@ -363,7 +363,7 @@ var TIPS = [
   { id: 'tip_attic', m: [6, 7, 8], t: '☀️ Memphis attics can hit 150° in July. Good ridge + soffit ventilation lowers your cooling bill and makes your shingles last longer.' },
   { id: 'tip_gutter', m: [9, 10, 11], t: '🍂 Clogged gutters = rotten fascia and water in the basement. Clean them after the leaves drop — or let us add gutter guards.' },
   { id: 'tip_ice', m: [12, 1, 2], t: '❄️ Freeze night? Drip your faucets, open sink cabinets on outside walls, and know where your main water shut-off is. Water in the house? Call GrayCo 24/7.' },
-  { id: 'tip_claim', m: [], t: '📋 Insurance claim tip: take photos before anything is moved, keep every receipt, and let your contractor meet the adjuster. We handle claims every week — ask us anything.' },
+  { id: 'tip_claim', m: [], t: '📋 Insurance claim tip: take photos before anything is moved, keep every receipt, and let your contractor meet the adjuster. We work on insurance repairs every week — ask us anything.' },
   { id: 'tip_boots', m: [], t: '🔧 The #1 roof leak we fix? Cracked pipe boots. A $40 part can ruin a ceiling. If your roof is 8+ years old, have them checked.' },
   { id: 'tip_age', m: [], t: '🏠 How old is your roof? Most architectural shingles in the Mid-South last 20–25 years. Curling, bald spots or granules in the gutter mean it’s time for a look.' },
   { id: 'tip_commercial', m: [1, 2, 3, 9, 10], t: '🏢 Business owners: a flat roof should be inspected twice a year. Clear drains and check seams before storm season — it’s far cheaper than a leak over inventory.' },
