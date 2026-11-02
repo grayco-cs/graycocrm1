@@ -389,11 +389,24 @@ function since(key){
 /* held / ran records: batched, throttled */
 var lastHeld = {}, lastRan = {}, pendHeld = {}, pendRan = {}, flushT = 0;
 function flushSoon(){ if (flushT) return; flushT = T(flush, 4000); }
+/* __GC_PATCH_AUTOPANEL2__ */ /* this computer's "held" records and the batch not sent yet are kept across a page reload */
+var HK = 'gc_auto_held_local';
+function saveHeld(){ try { localStorage.setItem(HK, JSON.stringify({ held: S.held, pend: pendHeld, last: lastHeld })); } catch (e) {} }
+(function(){
+  try {
+    var o = JSON.parse(localStorage.getItem(HK) || 'null'); if (!o || typeof o !== 'object') return;
+    var now = Date.now(), cut = now - 30 * 864e5;
+    Object.keys(o.held || {}).forEach(function(k){ var h = o.held[k]; if (R.BY[k] && h && typeof h === 'object' && Date.parse(h.last || '') > cut) S.held[k] = h; });
+    Object.keys(o.pend || {}).forEach(function(k){ if (R.BY[k] && o.pend[k] && typeof o.pend[k] === 'object') pendHeld[k] = o.pend[k]; });
+    Object.keys(o.last || {}).forEach(function(k){ var t = +o.last[k]; if (R.BY[k] && t > now - HELD_MS && t <= now) lastHeld[k] = t; });
+    if (Object.keys(pendHeld).length) flushSoon();
+  } catch (e) {}
+})();
 function flush(){
   flushT = 0;
   if (!signedIn()) { if (Object.keys(pendHeld).length || Object.keys(pendRan).length) flushT = T(flush, 30000); return; }
   var items = Object.keys(pendHeld).map(function(k){ return pendHeld[k]; }), keys = Object.keys(pendRan);
-  pendHeld = {}; pendRan = {};
+  pendHeld = {}; pendRan = {}; saveHeld();   /* patch AUTOPANEL2 */
   var post = function(body){ try { return Promise.resolve(F().call(W, FN, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })).catch(function(){}); } catch (e) { return Promise.resolve(); } };
   if (items.length) post({ op: 'held', items: items });
   if (keys.length) post({ op: 'ran', keys: keys });
@@ -402,10 +415,11 @@ function held(key, n, sample){
   if (!R.BY[key]) return;
   var now = Date.now(), loc = S.held[key] = S.held[key] || { n: 0, since: new Date(now).toISOString() };
   loc.n++; loc.last = new Date(now).toISOString(); loc.would = n == null ? null : n; loc.sample = (sample || []).slice(0, 3);
-  if (lastHeld[key] && now - lastHeld[key] < HELD_MS) return;
+  if (lastHeld[key] && now - lastHeld[key] < HELD_MS) { saveHeld(); return; }   /* patch AUTOPANEL2 */
   lastHeld[key] = now;
   pendHeld[key] = { key: key, n: n == null ? null : +n || 0, sample: (Array.isArray(sample) ? sample : sample == null ? [] : [sample]).slice(0, 3).map(function(x){ return String(x == null ? '' : x).slice(0, 120); }) };
   try { console.log('[GC] ⚡ held ' + key + ': would have done ' + (n == null ? '?' : n)); } catch (e) {}
+  saveHeld();   /* patch AUTOPANEL2 */
   flushSoon();
 }
 function ran(key){ var now = Date.now(); if (lastRan[key] && now - lastRan[key] < RAN_MS) return; lastRan[key] = now; pendRan[key] = 1; flushSoon(); }
@@ -41194,6 +41208,8 @@ window._gcSetProjectPct = function(pid, val){
   var due = window._gcDrawMilestones(proj).filter(function(m){
     return pct >= m.at && !window._gcDrawInvoiced(pid, m.n);
   });
+  /* patch AUTOPANEL2: "Progress-slider auto-draw" is asked — and "held" recorded — BEFORE the % is saved below */
+  var _gcAdOn = due.length ? (window._gcAutoGate ? window._gcAutoGate('progress_autodraw', due.length, [proj.name||pid]) : false) : false;
 
   if(window._setProjects){
     window._setProjects(function(list){
@@ -41210,7 +41226,7 @@ window._gcSetProjectPct = function(pid, val){
   }
 
   if(!due.length) return;
-  if(!(window._gcAutoGate ? window._gcAutoGate('progress_autodraw', due.length, [proj.name||pid]) : false)) return;   /* patch AUTOPANEL: the % is saved; no draw invoice while it is OFF */
+  if(!_gcAdOn) return;   /* patch AUTOPANEL (+2): the % is saved; no draw invoice while it is OFF */
   if(!parseFloat(proj.contract)){
     alert((proj.name||'This job') + ' reached ' + pct + '%, but it has no contract amount, so no invoice was created.');
     return;
@@ -151763,7 +151779,7 @@ function runStage(k, pid){
 
 /* ── draws: drafted when the progress reaches a milestone (any path) ── */
 var DRAFTED = {};
-function ensureDraws(pid){
+function ensureDraws(pid, why){   /* patch AUTOPANEL2: why 'pct' = the progress moved (needs progress_autodraw ON too) */
   if (!(window._gcAutoGate ? window._gcAutoGate('job_stages', 1, [s(pid)]) : false)) return null;   /* patch AUTOPANEL */
   var p = A.proj(pid); if (!p || p.importedHistory || p.noAutomations || !A.jobAuto(p, 'invoiceEmail') && !A.jobAuto(p, 'drawInvoices')) return null;   /* patch JOBFILL: never for imported history */
   if (typeof W._gcDrawMilestones !== 'function' || typeof W._gcClientInvoiced !== 'function') return null;
@@ -151775,6 +151791,7 @@ function ensureDraws(pid){
   if (amt <= 0.01) return null;
   var id = 'INV_AUTO_' + p.id + '_' + top.at;
   if (DRAFTED[id] || arr(crm().invoices).some(function(r){ return r && r.id === id; })) return null;
+  if (why === 'pct' && !(window._gcAutoGate ? window._gcAutoGate('progress_autodraw', 1, [s(p.name || pid)]) : false)) return null;   /* patch AUTOPANEL2: OFF → held, no draw */
   DRAFTED[id] = Date.now();   /* this session: never twice, even before the CRM's copy shows it */
   var label = top.at >= 100 ? (billed > 0 ? 'Final' : 'Final (100%)') : ('Draw to ' + top.at + '%'), d = today();
   var inv = { id: id, pid: p.id, type: 'client', drawType: label, client: s(p.client), customer: s(p.client), po: s(p.autoPO || p.po), autoPO: s(p.autoPO || p.po), project: s(p.name),
@@ -152222,7 +152239,7 @@ function prevStage(n, d){
 ['gc:job-status', 'gc:job-pct', 'gc:job-complete', 'gc:job-activated:ready'].forEach(function(n){
   A.on(n, function(d){ markLive(d.pid); evaluate(d.pid, prevStage(n, d)); });
 });
-A.on('gc:job-pct', function(d){ if (num(d.to) > num(d.from)) ST(function(){ ensureDraws(d.pid); }, 1500); });
+A.on('gc:job-pct', function(d){ if (num(d.to) > num(d.from)) ST(function(){ ensureDraws(d.pid, 'pct'); }, 1500); });
 A.on('gc:invoice-paid', function(d){
   var p = A.proj(d.pid); if (!p) return;
   if (d.final || (rank(p.jobStage) >= rank('complete') && fullyPaid(d.pid))) closeoutWarranty(d.pid);
@@ -152245,7 +152262,7 @@ function markAuto(pid){
     markLive(pid);
     var moved = false;
     A.saveProject(pid, function(q){ if (num(q.pct) >= best) return false; moved = true; A.jobNote(q, 'Progress ' + num(q.pct) + '% → ' + best + '% (schedule milestone reached).'); q.pct = best; q._pctUpdatedAt = nowIso(); q._pctBy = 'schedule'; })
-      .then(function(saved){ if (saved || moved) { A.nudge(); ST(function(){ ensureDraws(pid); }, 800); } });
+      .then(function(saved){ if (saved || moved) { A.nudge(); ST(function(){ ensureDraws(pid, 'pct'); }, 800); } });
   }
 }
 
@@ -177650,6 +177667,8 @@ function render(box){
     var a = R.BY[k], want = !!ev.target.checked;
     if (!adm) { ev.target.checked = !want; return; }
     if (!want && a.critical && !confirm('Turn OFF "' + a.name + '"?\n\nThis is a ' + (a.group === 'safety' ? 'SAFETY' : 'lead-intake / backup') + ' automation. While it is off: ' + a.desc + ' — will NOT happen.' + (a.group === 'sync' && /intake|inbox/i.test(a.name + a.key) ? '\nLeads sent while it is off are refused (the sender may try again later).' : ''))) { ev.target.checked = true; return; }
+    /* patch AUTOPANEL2: a 🔒 safety switch asks before it is turned ON as well */
+    if (want && a.group === 'safety' && !confirm('Turn ON "' + a.name + '"?\n\nThis is a SAFETY automation' + (a.effect === 'A' ? ' that sends to customers by itself' : '') + '. From now on: ' + a.desc + (a.effect === 'A' ? '\nNobody approves each message — it goes out at once.' : ''))) { ev.target.checked = false; return; }
     var wt = want ? waiting(k, st) : null;
     if (want && (a.effect === 'A' || a.effect === 'C') && !a.critical && !confirm('Turn ON "' + a.name + '"?\n\n' + a.desc + '\n\n' + (wt ? '⚠ Turning this on will act on ' + waitingText(wt) + ' NOW (what piled up while it was off), then keep running by itself.' : 'It will run by itself from now on.'))) { ev.target.checked = false; return; }
     var ch = {}; ch[k] = want; ev.target.disabled = true;

@@ -320,7 +320,12 @@ async function person(email){
 const ev = (c, f, a) => c.page().evaluate(f, a);
 let bf = 0; const bok = (c, m, info) => { ok(c, m, info); if (!c) bf++; };
 loadCloud(); cloud.delete('gc_auto_held');
-setKv('gc_automations', ALL_OFF); reset();
+/* every automation OFF except the 🔒 safety ones, which stay at their default ON (what the owner has in production: e.g. a
+   missed call gets its text back). B checks the page automations (none of them is safety) and, below, that a safety switch
+   shows 🔒 ON and asks before it is turned OFF — and before it is turned back ON (patch AUTOPANEL2). With every safety
+   switch stored OFF here, that check started from OFF and could never see "🔒 ON". */
+const B_ROW = Object.assign({}, ALL_OFF); AUTO.LIST.filter(a => a.group === 'safety').forEach(a => { B_ROW[a.key] = true; });
+setKv('gc_automations', B_ROW); reset();
 /* a job to drag, an old pending invoice approval, an old matched expense */
 const projs0 = kv('projects') || [], jobB = (Array.isArray(projs0) ? projs0 : []).find(p => p && !/complete|closed|lost|cancel|archiv/i.test(String(p.status || '')) && parseFloat(String(p.contract || '').replace(/[$,]/g, '')) > 1000 && (+p.pct || 0) < 40 && !p.deleted) || null;
 const flagsBefore = JSON.stringify(kv('projects') || '').split('AUTO-FLAG').length;
@@ -383,6 +388,14 @@ const ws = await ev(owner, async () => { const c0 = window.confirm; const asked 
 bok(ws.now === false && ws.asked.some(m => /will act on (\d+|an unknown number of) waiting/.test(m)) && /switching it on acts on/.test(ws.line) && !AUTO.valueOf(kv('gc_automations'), 'job_stages'),
   'a state-based automation (AUT3 stages / draws) warns "Turning this on will act on N waiting … NOW" before switch-on (said no → still OFF)', ws);
 bok(sc.was === true && sc.now === true && sc.lock && sc.asked.some(m => /SAFETY/.test(m)) && AUTO.valueOf(kv('gc_automations'), 'missed_call_textback') === true, 'a safety switch shows 🔒 ON and asks first (said no → still ON)', sc);
+/* and back ON asks first too (patch AUTOPANEL2): yes → OFF, then said no to ON → stays OFF ("Turn on everything" below puts it back) */
+const sc2 = await ev(owner, async () => { const c0 = window.confirm; const asked = []; const sw = () => document.querySelector('#gcap-ov input[data-gcap-sw="missed_call_textback"]');
+  window.confirm = m => { asked.push(String(m)); return true; }; if (sw()) sw().click(); await new Promise(r => setTimeout(r, 2500));
+  const off = !!sw() && sw().checked === false;
+  window.confirm = m => { asked.push(String(m)); return false; }; if (sw()) sw().click(); await new Promise(r => setTimeout(r, 1500)); window.confirm = c0;
+  return { off, now: sw() && sw().checked, asked, lock: /🔒/.test(sw() && sw().closest('.gcap-row').textContent) }; });
+bok(sc2.off && sc2.now === false && sc2.lock && sc2.asked.length === 2 && /Turn OFF/.test(sc2.asked[0]) && /Turn ON/.test(sc2.asked[1]) && /SAFETY/.test(sc2.asked[1]) && AUTO.valueOf(kv('gc_automations'), 'missed_call_textback') === false,
+  'a safety switch that is OFF asks before it is turned back ON (said no → stays OFF)', sc2);
 await ev(owner, () => { const b = document.querySelector('#gcap-ov [data-gcap="before"]'); b.click(); }); await sleep(3000);
 bok(AUTO.LIST.every(a => AUTO.valueOf(kv('gc_automations'), a.key) === true), '"↺ Turn on everything I had before" → every automation ON');
 const r3 = await ev(owner, async () => { await window._gcAutomations.load(); return { a: window._gcAutoOn('invoice_autopost'), b: window._gcAutoOn('expense_autopost'), c: window._gcAutoSince('expense_autopost'), st: window._gcAutomations.state().err, log: (window._gcAutomations.state().log || []).length }; });
