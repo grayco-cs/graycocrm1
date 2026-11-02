@@ -4,8 +4,8 @@
    every screen change (the wrapper is gone until ROLEAPPS' next check, which slows to every 30 s when nobody touches
    the computer), and links, notifications, To-Do cards, @mention To-Dos and search results also open windows on top
    without a screen change. Here: (1) every screen change (the CRM always writes localStorage grayco_view), (2) a link
-   opened by its address (#lead=…, #appr=…, #tv, …: notifications), (3) a window put up over the page (a fixed layer that
-   covers most of it) hide the Desk at once. Its own sheets, the dock, toasts and small bars never do. The dock's 🏠 Home
+   opened by its address (#lead=…, #appr=…, #tv, …: notifications), (3) a window put up over the page (whatever is on top at
+   the middle of the window is not the Desk) hide the Desk at once. Its own sheets, the dock, toasts and small bars never do. The dock's 🏠 Home
    brings it back. window._gcDeskToDo.state() tells what hid it last. */
 (function(){
   'use strict';
@@ -32,23 +32,18 @@
   } catch (e) {}
   /* 2. a link opened by its address (a notification, an e-mailed link, a To-Do link) */
   W.addEventListener('hashchange', function(){ if ((location.hash || '').length > 1) hide('link: ' + location.hash.slice(0, 40)); });
-  /* 3. a window put up over the page */
-  function ours(el){ return !!(el.id === 'gc-ra-desk' || el.id === 'gc-ra-dock' || (el.closest && el.closest('#gc-ra-desk, #gc-ra-dock, .gc-ra-sheet')) || /gc-ra-|toast|apx-undo/i.test(String(el.className || '') + ' ' + el.id)); }
-  function covers(el){
+  /* 3. a window put up over the page: whatever is on top at the middle of the window is not the Desk (checked twice a second
+     with the browser's own timer; the CRM's governed timers and observers wait while the mouse moves) */
+  function ours(el){ return !!(el && el.closest && el.closest('#gc-ra-desk, #gc-ra-dock, .gc-ra-sheet, .apx-toast, [class*="toast"]')); }
+  var RI = W.__GC_REAL_SETINTERVAL__ || W.setInterval;
+  RI.call(W, function(){
     try {
-      if (!el || el.nodeType !== 1 || ours(el)) return false;
-      var cs = getComputedStyle(el); if (cs.position !== 'fixed' || cs.display === 'none' || cs.visibility === 'hidden') return false;
-      var r = el.getBoundingClientRect(); return r.width * r.height > 0.5 * innerWidth * innerHeight;
-    } catch (e) { return false; }
-  }
-  try {
-    /* the browser's own observer: the CRM's observer governor holds callbacks while the person is moving the mouse, which is
-       exactly when a window is being opened */
-    var MO = (W.MutationObserver && W.MutationObserver.prototype && typeof W.MutationObserver.prototype.constructor === 'function') ? W.MutationObserver.prototype.constructor : W.MutationObserver;
-    new MO(function(ms){
-      if (!shown()) return;
-      for (var i = 0; i < ms.length; i++) { var a = ms[i].addedNodes; for (var j = 0; j < a.length; j++) if (covers(a[j])) { hide('window: ' + (a[j].id || String(a[j].className || '').slice(0, 30) || a[j].tagName)); return; } }
-    }).observe(D.body || D.documentElement, { childList: true });
-  } catch (e) {}
+      if (D.hidden || !shown()) return;
+      var top = D.elementFromPoint(Math.round(innerWidth / 2), Math.round(innerHeight / 2));
+      if (!top || ours(top) || top === D.documentElement || top === D.body) return;
+      var layer = top; while (layer.parentElement && layer.parentElement !== D.body) layer = layer.parentElement;
+      hide('window: ' + (layer.id || String(layer.className || '').slice(0, 30) || layer.tagName));
+    } catch (e) {}
+  }, 500);
   W._gcDeskToDo = { state: function(){ return { shown: shown(), last: last, hides: n }; }, hide: hide };
 })();
