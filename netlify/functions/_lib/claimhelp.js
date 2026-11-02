@@ -58,7 +58,7 @@ const DEFAULT_STEPS = [
     us: 'We write our estimate of the repairs and share it and our photos with you. With your OK, we can send them to your insurance company.' },
   { id: 'scope', title: 'Estimate / scope received',
     you: 'Your insurance company sends you its estimate (the “scope” of what it will pay for). Please share a copy with us.',
-    us: 'We compare their scope with the damage we documented and explain, in plain words, any differences we see in the repair work. Decisions about your claim are between you and your insurance company.' },
+    us: 'We review their scope against the damage we documented and explain, in plain words, any differences we see in the repair work. Decisions about your claim are between you and your insurance company.' },
   { id: 'supplement', title: 'Supplement (if needed)', optional: true,
     you: 'If damage was missed, or more is found once work starts, a “supplement” asks your insurance company to review the added items. We will ask for your OK first.',
     us: 'We document the added damage with photos and a line-item estimate and, with your OK, send that documentation to your insurance company for its review. Your insurance company decides what it covers.' },
@@ -161,7 +161,7 @@ function insuranceType(p, data){
   if (p.isInsurance === true) return true;
   if (p.isInsurance === false) return false;   /* ruled out by hand on the job — final, as everywhere in the CRM */
   if (INS_TYPE.test([p.type, p.jobType, p.jobTypeLabel].filter(function(v){ return typeof v === 'string'; }).join(' '))) return true;
-  return !!(s(p.claimNumber) || s(p.claimNo) || claimOf(data, p.id));
+  return !!claimOf(data, p.id);   /* a claim record (patch BB2) makes it an insurance job; a bare claim number does not (INSP rule) */
 }
 /* job.features (per-job customer features, patch ESTPDF's branch): { claimHelp: true | false } or a list of the ones on.
    Missing → the job type decides (ON for insurance-type jobs). */

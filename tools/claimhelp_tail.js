@@ -281,7 +281,7 @@ function insuranceType(p){
   if (p.isInsurance === true) return true;
   if (p.isInsurance === false) return false;
   if (INS_TYPE.test([p.type, p.jobType, p.jobTypeLabel].filter(function(v){ return typeof v === 'string'; }).join(' '))) return true;
-  return !!(s(p.claimNumber) || s(p.claimNo) || hasClaim(p));
+  return hasClaim(p);   /* a bare claim number does not make an insurance job (patch INSP rule) */
 }
 function featureSetting(p){
   var f = p && p.features;
@@ -409,7 +409,7 @@ function openJob(pid){
   O.body.addEventListener('change', function(e){
     var t = e.target, q = t && t.getAttribute && t.getAttribute('data-ch');
     if (t && t.tagName === 'SELECT') { setStep(pid, t.value).then(function(){ draw(); toast('Step saved.'); }); return; }
-    if (q === 'hideadj') saveProject(pid, function(x){ x.claimHelp = Object.assign({}, state(x), { hideAdjuster: !!t.checked }); }).then(draw);
+    if (q === 'hideadj') saveProject(pid, function(x){ x.claimHelp = Object.assign({}, state(x), { hideAdjuster: !!t.checked }); x.portalShowAdjuster = !t.checked; }).then(draw);   /* the same switch as the 🛡 Insurance portal panel's */
     if (q === 'feature') setFeature(pid, !!t.checked).then(function(){ draw(); toast(t.checked ? 'Claim help steps are on for this customer.' : 'Claim help steps are off for this customer.'); });
   });
   O.body.addEventListener('click', function(e){

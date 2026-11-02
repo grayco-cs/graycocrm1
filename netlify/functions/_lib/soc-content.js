@@ -162,7 +162,7 @@ var REST_TIPS = [
   { id: 'rt_freeze', sub: 'water', t: 'Freeze coming? Drip the faucets on outside walls, open the sink cabinets and keep the heat at 55°F or more — even when you travel.' },
   { id: 'rt_photos', sub: 'storm', t: 'After a storm, take photos of the roof, siding, gutters and windows before anything is moved or cleaned up. Good photos make the insurance claim go smoother.' },
   { id: 'rt_tarp', sub: 'storm', t: 'Storm opened up your roof? An emergency tarp the same day stops the second round of damage — and your insurance policy expects you to protect the home.' },
-  { id: 'rt_claim', sub: 'storm', t: 'Filing an insurance claim? Keep every receipt, write down every call, and have your contractor meet the adjuster so nothing gets missed. We help with claims every week.' },
+  { id: 'rt_claim', sub: 'storm', t: 'Filing an insurance claim? Keep every receipt, write down every call, and have your contractor meet the adjuster so nothing gets missed. We work on insurance repairs every week.' },
   { id: 'rt_hidden', sub: 'water', t: 'A small ceiling stain is often a big leak above it. Moisture meters and thermal cameras find the water you can\'t see — before it becomes mold.' },
   { id: 'rt_fire_soot', sub: 'fire', t: 'After a fire, soot and smoke keep damaging the home for days — they etch glass, stain walls and get into the HVAC. Fast professional cleanup saves more than you think.' },
   { id: 'rt_fire_safe', sub: 'fire', t: 'Smoke alarm check: test them monthly, change the batteries twice a year, and replace any alarm older than 10 years.' },
@@ -519,7 +519,7 @@ function adCopy(sub, city){
   var H = ['24/7 ' + w + ' Help', w + ' ' + c, ({ water: 'Emergency Water Removal', fire: 'Smoke & Soot Cleanup', storm: 'Emergency Roof Tarping' })[sub], 'We Restore and Rebuild', 'Unlimited Licensed GC', 'Insurance Claim Help', 'Call (901) 585-0944', 'Local ' + c + ' Restoration'];
   var Dd = ['Unlimited licensed general contractor — we restore and rebuild. 24/7 emergency response.',
     ({ water: 'Water extraction, drying and the rebuild — one company. Call us 24/7.', fire: 'Board-up, smoke and soot cleanup, then the rebuild — one company. 24/7.', storm: 'Emergency tarp, storm damage repair and the rebuild — one company. 24/7.' })[sub] || 'Mitigation to full rebuild — one company. Call us 24/7.',
-    'We help with your insurance claim from the first call to the final repair.',
+    'We document the damage for your insurance claim and handle the repair, from the first call to the final walk-through.',
     'Serving ' + c + ' and the Mid-South. Call (901) 585-0944 any time, day or night.'];
   var fit = function(l, n){ return l.filter(Boolean).filter(function(x, i, a){ return x.length <= n && a.indexOf(x) === i; }); };
   return { sub: sub, city: c, headlines: fit(H, AD_LIMITS.headline), descriptions: fit(Dd, AD_LIMITS.description),

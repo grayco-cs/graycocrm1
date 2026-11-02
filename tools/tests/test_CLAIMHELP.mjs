@@ -123,12 +123,15 @@ const PROJECTS = [
   { id: 'PJR', name: 'Cara Charlie Kitchen', type: 'Residential Reno', client: 'Cara Charlie', clientEmail: 'cara@example.test', pm: 'Steven Park', status: 'Active' },
   { id: 'PJF', name: 'Dan Delta Roof Claim', type: 'Insurance Claim', isInsurance: true, features: { claimHelp: false }, client: 'Dan Delta', pm: 'Steven Park', status: 'Active' },
   { id: 'PJX', name: 'Eve Echo Fire', type: 'Fire Damage', isInsurance: false, client: 'Eve Echo', pm: 'Steven Park', status: 'Active' },
-  { id: 'PJS', name: 'Fay Foxtrot Storm', type: 'Insurance Claim', isInsurance: true, portalShowCarrier: true, portalShowAdjuster: true, insCarrier: 'Bluff City Casualty', claimNumber: 'TST-77', client: 'Fay Foxtrot', pm: 'Steven Park', status: 'Active' }
+  { id: 'PJS', name: 'Fay Foxtrot Storm', type: 'Insurance Claim', isInsurance: true, portalShowCarrier: true, portalShowAdjuster: true, auto: { showCarrier: true }, insCarrier: 'Bluff City Casualty', claimNumber: 'TST-77', deductible: 1500, mortgageCo: 'Delta Home Loans',
+    insChecks: [{ id: 'ck1', amount: 4200, date: '2026-10-20', kind: 'First check (ACV)', status: 'to endorse', memo: 'Bluff City Casualty check' }], client: 'Fay Foxtrot', pm: 'Steven Park', status: 'Active' }
 ];
 function world(){
   KVM.clear(); TABLES.gc_portal.length = 0; SENT.mail.length = 0; SENT.sms.length = 0;
   STORE.set('users', USERS); STORE.set('projects', JSON.parse(JSON.stringify(PROJECTS)));
   STORE.set('gc_claims', [{ id: 'CLI', projectId: 'PJI', carrier: 'Test Mutual', program: 'Riverbend TPA Services', adjuster: { name: 'Dana Reed', phone: '901-555-0142', company: 'Acme Adjusting LLC' }, claimNumber: 'TST-2026-0042', dateOfLoss: '2026-10-02', phase: 'Inspection' }]);
+  STORE.set('projectDocs', [{ id: 'DS1', pid: 'PJS', name: 'Bluff City Casualty estimate.pdf', cat: 'Insurance', type: 'application/pdf', url: 'https://files.example.test/ds1.pdf', uploadedAt: '2026-10-20' },
+    { id: 'DI1', pid: 'PJI', name: 'Test Mutual adjuster report.pdf', cat: 'Insurance', type: 'application/pdf', url: 'https://files.example.test/di1.pdf', uploadedAt: '2026-10-21' }]);
   STORE.set('gc_approval_queue', '[]'); STORE.set('gc_portal_auto_posts', '[]'); STORE.set('gc_automation_pause', { on: false }); STORE.set('gc_office_tasks', '[]');
 }
 const LINKS = {};
@@ -166,7 +169,7 @@ await t('which jobs', async () => {
   ok(!E({ id: 'i', type: 'Fire Damage', isInsurance: false }), 'a job marked "not insurance" by hand: off');
   ok(!E({ id: 'j', type: 'Insurance Claim', features: { claimHelp: false } }) && E({ id: 'k', type: 'Insurance Claim', features: { claimHelp: true } }) && E({ id: 'l', type: 'Insurance Claim', features: { otherThing: true } }), 'job.features.claimHelp decides when set; other features leave the default ON');
   ok(!E({ id: 'm', type: 'Residential Reno', features: { claimHelp: true } }), 'the feature alone does not make a regular job an insurance job');
-  ok(E({ id: 'n', type: 'Residential Reno' }, { gc_claims: [{ projectId: 'n' }] }) && E({ id: 'o', type: 'Residential', claimNumber: 'X1' }), 'a job with a claim record or a claim number counts');
+  ok(E({ id: 'n', type: 'Residential Reno' }, { gc_claims: [{ projectId: 'n' }] }) && !E({ id: 'o', type: 'Residential', claimNumber: 'X1' }), 'a job with a claim record counts; a regular job with only a claim number does not (INSP rule: its claim number is never shown)');
   ok(E({ id: 'p', type: 'Insurance Claim', features: ['claimHelp'] }) && !E({ id: 'q', type: 'Insurance Claim', features: ['estPdf'] }), 'job.features as a list of what is on');
 });
 let V = null;
@@ -189,6 +192,20 @@ await t('the portal view', async () => {
   const sv = (await viewFor(LINKS.PJS)).data;
   ok(sv.claimHelp && !hasCarrier(JSON.stringify(sv.claimHelp)).length, 'owner rule: even with "Show carrier name" on, the claim help section never has the carrier', hasCarrier(JSON.stringify(sv.claimHelp || {})));
   ok(sv.claimHelp && sv.claimHelp.auto === true && sv.claimHelp.now >= 0, 'no step set yet on an insurance job: the marker follows the claim automatically', { now: sv.claimHelp && sv.claimHelp.now });
+});
+await t('owner 11/01: carrier names never shown anywhere in the portal (even with "Show carrier name" ON)', async () => {
+  const v = (await viewFor(LINKS.PJS)).data;
+  ok(v.insurance && v.insurance.claim.companyShown === false && v.insurance.claim.company === 'your insurance company', 'the insurance claim box: "your insurance company" although the job’s switch and ⚡ Automations say show', v.insurance && v.insurance.claim);
+  ok(!hasCarrier(JSON.stringify(v)).length, 'no carrier name anywhere in the whole view (claim box, papers, checks, claim help)', hasCarrier(JSON.stringify(v)));
+  ok((v.docs || []).some(d => /your insurance company estimate/i.test(d.title)), 'a paper named after the carrier reaches the portal as “your insurance company estimate”', (v.docs || []).map(d => d.title));
+  const r = (await viewFor(LINKS.PJR)).data;   /* a regular job's view too */
+  ok(!hasCarrier(JSON.stringify(r)).length, 'a regular job: no carrier either');
+});
+await t('adjuster: shown by default when entered; a per-job "hide adjuster"', async () => {
+  const base = { id: 'x', type: 'Insurance Claim', adjusterName: 'Dana Reed', adjusterPhone: '901-555-0142' };
+  ok(!!CH.view(CH.defaults(), base, {}).claim.adjuster, 'shown by default');
+  ok(CH.view(CH.defaults(), Object.assign({}, base, { claimHelp: { hideAdjuster: true } }), {}).claim.adjuster === null, 'claimHelp.hideAdjuster → hidden');
+  ok(CH.view(CH.defaults(), Object.assign({}, base, { portalShowAdjuster: false }), {}).claim.adjuster === null, 'the 🛡 Insurance portal panel’s adjuster switch turned off → hidden too');
 });
 await t('staff: who may read and write', async () => {
   ok((await call({ action: 'claimhelp', op: 'get' })).status === 401, 'not signed in → 401');
@@ -278,6 +295,15 @@ await t('files', async () => {
   const idx = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
   ok(idx.split('/* patch CLAIMHELP */').length === 2 && idx.includes('<script id="gc-patch-claimhelp">'), 'index.html: patch CLAIMHELP applied once');
   ok(!/lawyer/i.test(fs.readFileSync(path.join(ROOT, 'portal-claimhelp.js'), 'utf8')) && !/lawyer/i.test(html), 'the portal files never say "lawyer"');
+  const NEW = 'thoroughly documenting the damage, meeting with the adjuster, and providing detailed estimates and supporting documentation so the claim can be fully reviewed for approval';
+  const bad = /negotiating, and securing approval|secures approval of my\/our|securing the approved claim|claim approval work|work directly with your insurance carrier on your behalf|we work with your insurance company for you|help you through your insurance claim from start to finish|We handle claims every week|We help with claims every week|We help with your insurance claim from|We work with your insurance from start to finish/;
+  ok(html.split(NEW).length === 2 && idx.split(NEW).length === 17 && !bad.test(html) && !bad.test(idx), 'owner 11/01: the O&P clause says documenting / meeting the adjuster / estimates (portal 1, CRM 16) — no negotiating, no "GrayCo secures approval"');
+  const srv = ['netlify/functions/_lib/mkt-content.js', 'netlify/functions/_lib/soc-content.js', 'netlify/functions/_lib/mkt2.js', 'netlify/functions/portal.js', 'netlify/functions/portal-sign.js', 'portal-claimhelp.js'].map(f => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n');
+  ok(!bad.test(srv), 'the e-mail / social / ad templates no longer say GrayCo works the claim for the customer');
+  const claimNeg = (html + srv).split('\n').filter(l => /negotiat/i.test(l) && /claim|insur|adjust/i.test(l) && !/(does|do) not (adjust, )?negotiate|not negotiate|no negotiating|not negotiating|never negotiat|NEVER|owner 11\/01|negotiating\)|estimat\|sent\|negotiat|negotiat\\w|Negotiating/.test(l));
+  ok(!claimNeg.length, 'no customer-facing line says GrayCo negotiates a claim', claimNeg.map(l => l.trim().slice(0, 160)));
+  ok(/DRAFT — for lawyer review: O&P clause and the insurance-claim wording/.test(idx) && /Admin note: DRAFT — for lawyer review — O&P clause/.test(idx) && !/for lawyer review/.test(html), 'the changed legal text is marked "DRAFT — for lawyer review" in the admin notes only (never in the portal)');
+  ok(idx.includes("ck('carrier', false, 'Show carrier name to customer', 'GrayCo never shows the insurance company’s name to customers.") && idx.includes("nev = k === 'showCarrier'"), 'CRM: both "show carrier" switches are disabled with "GrayCo never shows the insurance company’s name to customers."');
 });
 
 /* ═════════ BROWSER: portal.html ═════════ */
@@ -363,7 +389,19 @@ if (!process.argv.includes('--no-browser')) {
       const has = !!(await pg.$('#gc-claimhelp'));
       ok(has === want, what + ': ' + (want ? 'the section' : 'no section'));
       if (pid === 'PJM') ok(await pg.evaluate(() => !!document.querySelector('ol.steps') && !document.querySelector('#gc-claimhelp .gch-here') && /marks where your claim is/.test(document.getElementById('gc-claimhelp').innerText)), 'mitigation job: the job steps stay; no marker until staff set one');
-      if (pid === 'PJS') { const f = await domCarriers(pg); ok(!f.length, '…and still no carrier name on the Home page', f); }
+      if (pid === 'PJS') {
+        const seen = {};
+        for (const tab of ['home', 'photos', 'docs', 'pay', 'msgs']) { await pg.click('#tabs button[data-tab="' + tab + '"]'); await sleep(900); seen[tab] = await domCarriers(pg); }
+        ok(Object.values(seen).every(x => !x.length), '"Show carrier name" ON: no carrier name on Home, Photos, Documents, Payments or Messages', seen);
+        await pg.click('#tabs button[data-tab="docs"]'); await sleep(600);
+        ok(/your insurance company estimate/i.test(await pg.evaluate(() => document.body.innerText)), '…the carrier-named paper shows as “your insurance company estimate”');
+        await pg.click('#tabs button[data-tab="home"]'); await sleep(400);
+        const wide = await browser.newContext({ viewport: { width: 1280, height: 900 } }); const pw = await wide.newPage(); pw.on('pageerror', e => ERRS.push('PJS@1280: ' + e.message));
+        await pw.goto(ORIGIN + '/portal.html#t=' + LINKS.PJS); await pw.waitForSelector('#tabs:not([hidden])', { timeout: 15000 }); await sleep(1200);
+        const seenW = {}; for (const tab of ['home', 'docs', 'pay']) { await pw.click('#tabs button[data-tab="' + tab + '"]'); await sleep(800); seenW[tab] = await domCarriers(pw); }
+        ok(Object.values(seenW).every(x => !x.length), '…and on a computer (1280): Home, Documents, Payments', seenW);
+        await wide.close();
+      }
       await ctx.close();
     }
   });
@@ -381,7 +419,7 @@ if (!process.argv.includes('--no-browser') && !process.argv.includes('--no-crm')
   const crmUsers = [{ id: 'u1', name: 'Wesley Johnson', email: 'wjohnson@grayco-cs.com', role: 'Admin', payType: 'owner', active: true }, { id: 'u2', name: 'Steven Park', email: 'steven.test@grayco-cs.com', role: 'Project Manager', active: true }];
   cset('users', crmUsers);
   cset('projects', [
-    { id: 'PCI', name: 'Gina Golf Water Loss', type: 'Insurance Claim', isInsurance: true, client: 'Gina Golf', clientEmail: 'gina@example.test', address: '7 Test Ave, Memphis TN', pm: 'Steven Park', status: 'Active', contract: 12000, autoPO: 'C701', created: '2026-10-01', claimNumber: 'TST-555', dateOfLoss: '2026-09-28', insCarrier: 'Volunteer Mutual Test Co', portalUrl: 'https://portal.grayco-cs.com/portal.html#t=' + 'A'.repeat(43) },
+    { id: 'PCI', name: 'Gina Golf Water Loss', type: 'Insurance Claim', isInsurance: true, client: 'Gina Golf', clientEmail: 'gina@example.test', address: '7 Test Ave, Memphis TN', pm: 'Steven Park', status: 'Active', contract: 12000, autoPO: 'C701', created: '2026-10-01', claimNumber: 'TST-555', dateOfLoss: '2026-09-28', insCarrier: 'Volunteer Mutual Test Co', portalShowCarrier: true, portalUrl: 'https://portal.grayco-cs.com/portal.html#t=' + 'A'.repeat(43) },
     { id: 'PCR', name: 'Hank Hotel Deck', type: 'Residential Reno', client: 'Hank Hotel', pm: 'Steven Park', status: 'Active', contract: 8000, autoPO: 'C702', created: '2026-10-01' }]);
   cset('gc_approval_queue', '[]'); cset('gc_portal_auto_posts', '[]'); cset('gc_automation_pause', { on: false });
   const A = await computer('CH', { build: ROOT });
@@ -445,6 +483,10 @@ if (!process.argv.includes('--no-browser') && !process.argv.includes('--no-crm')
     const hasBar = await H.waitFor(A, () => { const b = document.querySelector('main .gcch-bar[data-pid="PCI"]'); return b && b.querySelector('select') && b.querySelectorAll('select option').length >= 10; }, null, 20000);
     ok(!!hasBar, 'the insurance job: "🛡 Claim step ▾" under the 🏠 Portal card', await A.ev(() => [!!document.querySelector('.gcq-card'), document.querySelectorAll('.gcch-bar').length, (window._gcOpenProject || {}).id]));
     ok(await A.ev(() => { const b = document.querySelector('main .gcch-bar[data-pid="PCI"]'); const pv = b.previousElementSibling; return !!pv && (pv.classList.contains('gcinsp-panel') || pv.classList.contains('gcq-card')); }), '…right under the portal card / the 🛡 Insurance portal panel');
+    const insp = await A.ev(async () => { const el = document.querySelector('main .gcinsp-panel[data-pid="PCI"]'); if (!el) return null; const tg = el.querySelector('[data-i=toggle]'); if (tg && tg.getAttribute('aria-expanded') !== 'true') tg.click(); await new Promise(r => setTimeout(r, 1200));
+      const cb = el.querySelector('input[data-i=carrier]'), adj = el.querySelector('input[data-i=adjuster]'); return { adjOn: !!(adj && adj.checked && !adj.disabled), has: !!cb, disabled: cb && cb.disabled, checked: cb && cb.checked, note: /GrayCo never shows the insurance company’s name to customers/.test(el.innerText), head: /carrier never shown/.test(el.innerText) }; });
+    ok(insp && insp.adjOn, 'the panel’s "Show adjuster name & phone" is ticked by default (owner 11/01) and can still be unticked per job', insp);
+    ok(insp && insp.has && insp.disabled && !insp.checked && insp.note && insp.head, '🛡 Insurance portal panel: "Show carrier name to customer" disabled (even with the job’s switch ON) — "GrayCo never shows the insurance company’s name to customers"', insp);
     await p.locator('main .gcch-bar[data-pid="PCI"] select').selectOption('scope'); await sleep(1500);
     ok(await A.ev(() => { const x = window._crm.projects.find(p => p.id === 'PCI'); return x && x.claimHelp && x.claimHelp.step === 'scope' && !!x.claimHelp.at; }), 'picking a step saves it on the job (claimHelp.step)');
     ok((kvv('gc_approval_queue') || []).length === 0, '…and tells nobody by itself');

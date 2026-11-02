@@ -815,7 +815,7 @@ async function buildView(data, p, opts){
       payments: arr(p.drawPayments).concat(arr(p.payments), arr(data.projectPayments).filter(function(x){ return pidOf(x) === pid && x.deleted !== true; })) });
     return chAttach(scrub(view, insWords(data, p)), data, p, view.insurance.now);   /* patch CLAIMHELP */
   }
-  const showC = jaAllows(data, p, 'showCarrier') && p.portalShowCarrier !== false;   /* patch BB2: the claim's TPA / adjusting companies are always scrubbed, its carrier unless shown */
+  const showC = false;   /* owner 11/01 (CLAIMWORDS): the carrier's name is NEVER shown anywhere in the portal — "Show carrier name" (job / ⚡ Automations) has no effect */
   return chAttach(scrub(view, (showC ? [] : carrierWords(p)).concat(claimWords(data, pid, showC))), data, p, null);   /* patch CLAIMHELP */
 }
 
@@ -906,8 +906,8 @@ async function claimHelpAction(body, who){
    way. Regular and commercial jobs get exactly what they got before (no view.insurance at all).
    Owner rules kept here:
    • the carrier's name never reaches the customer ("your insurance company") unless the PM turns on
-     "Show carrier name to customer" for that job (project.portalShowCarrier — default OFF);
-   • the adjuster's name and phone only when the PM allows it (project.portalShowAdjuster — default OFF);
+     — owner 11/01: NEVER, the "Show carrier name to customer" switch has no effect any more;
+   • the adjuster's name and phone — owner 11/01: shown by default when entered; project.portalShowAdjuster false hides them;
    • internal papers (GrayCo-vs-carrier compare, margins / O&P / costs, sub scopes, anything marked internal)
      are NEVER shown, even if someone ticked them;
    • never GrayCo's costs, margins, O&P or the compare — only the customer's own numbers.
@@ -946,7 +946,7 @@ function insClaim(data, pid){ return arr(data && data.gc_claims).find(function(c
 function insWords(data, p){
   /* what is replaced by "your insurance company": the carrier (unless the PM shows it), the TPA / program, the adjusting company */
   const c = insClaim(data, p.id) || {}, out = [];
-  const showCarrier = p.portalShowCarrier === true || (p.portalShowCarrier !== false && JA.effective(p, jaAdmin(data)).showCarrier === true);   /* patch JA */
+  const showCarrier = false;   /* owner 11/01 (CLAIMWORDS): never — whatever the job's / ⚡ Automations' switch says */
   if (!showCarrier) { carrierWords(p).forEach(function(w){ out.push(w); }); if (s(c.carrier).length >= 3) out.push(s(c.carrier)); out.push(COMMON_CARRIERS); }
   claimWords(data, p.id).forEach(function(w){ if (w !== s(c.carrier) || !showCarrier) out.push(w); });   /* patch BB2: TPA / adjusting company always; the carrier unless shown */
   [p.adjusterCompany, p.adjustingCompany, p.tpa, c.adjuster && c.adjuster.company, c.deskAdjuster && c.deskAdjuster.company, /^none/i.test(s(c.program)) ? '' : c.program]
@@ -1152,8 +1152,8 @@ function insuranceView(data, p, ctx){
   ctx.complete = ctx.stage >= 7 || !!ymd(p.completionDate || p.completedAt);
   const m = insMoney(p, c, ctx);
   const tl = insTimeline(p, c, ctx.stage, f, m, groups, ctx.cos, ctx.invoices);
-  const showCarrier = p.portalShowCarrier === true && !!f.carrier;
-  const showAdj = p.portalShowAdjuster === true && !!(f.adjusterName || f.adjusterPhone);
+  const showCarrier = false;   /* owner 11/01 (CLAIMWORDS): never */
+  const showAdj = p.portalShowAdjuster !== false && !!(f.adjusterName || f.adjusterPhone);   /* owner 11/01: shown by default when entered; the job's switch hides them */
   delete m.today;
   return {
     claim: {
@@ -1559,7 +1559,7 @@ function withJob(subject, p){
   subject = s(subject); if (!p) return clip(subject, 240);
   const po = s(p.autoPO || p.po);
   if (po && subject.indexOf('PO ' + po) >= 0) return clip(subject, 240);
-  const words = p.portalShowCarrier === true ? [] : carrierWords(p).map(function(w){ return new RegExp(w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'); }).concat([COMMON_CARRIERS]);
+  const words = carrierWords(p).map(function(w){ return new RegExp(w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'); }).concat([COMMON_CARRIERS]);
   const clean = function(x){ x = s(x); words.forEach(function(re){ re.lastIndex = 0; x = x.replace(re, ''); }); return x.replace(/\s*[\u2014\-\u2013]\s*(claim)?\s*$/i, '').replace(/\s{2,}/g, ' ').trim(); };   /* owner rule: never the carrier in a customer subject */
   const name = clean(p.name), addr = clean(p.address || p.jobAddress), has = function(x){ return x && low(subject).indexOf(low(x)) >= 0; };
   const t = [po ? 'PO ' + po : '', has(name) ? '' : name, addr && !has(addr) && low(addr) !== low(name) ? addr : ''].filter(Boolean).join(' \u00b7 ');
