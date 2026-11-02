@@ -75,7 +75,8 @@ function jobInspections(){
 function items(sc, from, to){
   var P = projMap(), me = low(sc.name), out = [], seen = {};
   var mineJob = {}; if (!sc.all) arr(C().projects).forEach(function(p){ if (p && p.id && jobVisibleTo(p, sc.u)) mineJob[p.id] = 1; });
-  arr(C().schedule).forEach(function(x){
+  var SV = W._gcSchedVisible;   /* patch SCHEDPICK: suggestions (drafts) are not the schedule */
+  arr(typeof SV === 'function' ? SV(arr(C().schedule)) : C().schedule).forEach(function(x){
     if (!x || !x.date || x.deleted || x._deleted) return;
     var d = s(x.date).slice(0, 10); if (d < from || d > to) return;
     var p = x.pid ? P[x.pid] : null; if (deadJob(p)) return;
