@@ -12,6 +12,15 @@ const eq = (name, got, want) => { const ok = typeof want === 'number' ? Math.abs
   if (ok) pass++; else { fail++; console.log('FAIL', name, 'got', JSON.stringify(got), 'want', JSON.stringify(want)); } };
 const set = { ssWageBase: 184500, addlMedThreshold: 200000, futaRate: 0.006, futaWageBase: 7000, sutaRate: 0.027, sutaWageBase: 7000 };
 
+// who is offered: real W-2 employees only (the shared "Office" account, owners on draws, 1099s, inactive people are not)
+const USERS = [{ id: 'U0', name: 'Tess Owner', email: 'owner@x.test', role: 'Admin', payType: 'owner' }, { id: 'U5', name: 'Office', email: 'office@grayco-cs.com', role: 'Office', payType: 'salary' },
+  { id: 'UA', name: 'Avery Test', role: 'Crew' }, { id: 'UB', name: 'Blake Test', role: 'Sales' }, { id: 'UG', name: 'Gone Test', role: 'Crew', active: false }];
+const PROFS = [{ name: 'Tess Owner', userId: 'U0', payType: 'salary' }, { name: 'Office', userId: 'U5', payType: 'salary' }, { name: 'Avery Test', userId: 'UA', payType: 'hourly' },
+  { name: 'Blake Test', userId: 'UB', payType: 'commission' }, { name: 'Gone Test', userId: 'UG', payType: 'hourly' }, { name: 'Ad Vendor', payType: 'contractor_1099' },
+  { name: 'Draw Person', payType: 'owner_draw' }, { name: 'Old Hand', payType: 'hourly', active: false }, { name: 'Front Desk', userId: 'UF', payType: 'hourly', email: 'office@grayco-cs.com' }];
+eq('offered: only Avery and Blake', PP.w2Employees(PROFS, USERS).map(e => e.name), ['Avery Test', 'Blake Test']);
+eq('employee key = user id', PP.w2Employees(PROFS, USERS).map(e => e.key), ['UA', 'UB']);
+
 // the grid: "Make weekly rows" 7/3 → 9/25 for two employees
 const rows = PP.fillRows('2026-07-03', '2026-09-25', [{ name: 'Avery Test', key: 'UA', payType: 'commission' }, { name: 'Blake Test', key: 'UB', payType: 'hourly' }]);
 eq('13 weekly paydays × 2 = 26 rows', rows.length, 26);
@@ -67,6 +76,9 @@ PP.calc(r3, { set, ytdBase: () => ({}) });
 eq('no W-4 → error until "amount on the check stub"', r3[0].out.err.length, 1);
 r3[0].fedMode = 'stub'; r3[0].fed = '20'; PP.calc(r3, { set, ytdBase: () => ({}) });
 eq('stub federal → ok', [r3[0].out.err.length, r3[0].out.fed], [0, 20]);
+eq('an empty row (no gross) makes no check and no run', PP.buildRuns(PP.calc(PP.fillRows('2026-07-10', '2026-07-10', [{ name: 'A', key: 'A' }]), { set })).length, 0);
+const mix = PP.fillRows('2026-07-10', '2026-07-10', [{ name: 'A', key: 'A' }, { name: 'B', key: 'B' }]); mix[0].gross = '100'; mix[0].fedCalc = 0;
+eq('a run counts only real checks', PP.buildRuns(PP.calc(mix, { set })).map(r => r.lines.length), [1]);
 eq('a row with an error is not saved', PP.buildRuns([{ payDate: '2026-07-10', name: 'X', gross: '', out: { err: ['gross missing'] } }]).length, 0);
 // YTD from runs already saved: Social Security stops at the wage base
 const r4 = PP.fillRows('2026-09-25', '2026-09-25', [{ name: 'Big', key: 'B' }]); r4[0].gross = '5000'; r4[0].fedCalc = 900;

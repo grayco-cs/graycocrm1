@@ -70,7 +70,7 @@ function calc(rows, ctx){
 function buildRuns(rows, meta){
   meta=meta||{}; var by={}, list=[], now=meta.now||new Date().toISOString(), who=s(meta.by);
   rows.forEach(function(r){
-    var o=r.out; if(!o || o.err.length) return;
+    var o=r.out; if(!o || o.err.length || !(n2(o.gross)>0)) return;   // a run holds only real checks (gross over 0)
     var from=s(r.from)||addDays(r.payDate,-6), to=s(r.to)||s(r.payDate), key=s(r.payDate)+'|'+from+'|'+to;
     var run=by[key];
     if(!run){ run=by[key]={ id:'PS'+(meta.idSeed||Date.now().toString(36))+'_'+list.length, from:from, to:to, payDate:s(r.payDate), payday:s(r.payDate), date:s(r.payDate),
@@ -95,6 +95,22 @@ function buildRuns(rows, meta){
   });
   return list;
 }
+/* who is offered: real W-2 employees only — a payroll profile with an hourly / salary / commission pay type, active,
+   and NOT a shared or role account (the "Office" sign-in: role Office, name Office, office@…), NOT an owner / admin
+   paid by draws, NOT a 1099 / owner-draw profile. (Payroll makes a profile for every active user, the Office account
+   included, so the profile list alone is not enough.) */
+var W2_TYPES={ hourly:1, salary:1, commission:1, salary_commission:1 };
+function w2Employees(profiles, users){
+  users=Array.isArray(users)?users:[];
+  return (profiles||[]).filter(function(x){
+    if(!x || !s(x.name) || x.active===false || !W2_TYPES[low(x.payType)]) return false;
+    var u=users.filter(function(y){ return y && ((x.userId && s(y.id)===s(x.userId)) || low(y.name)===low(x.name)); })[0]||null;
+    var em=low((u&&u.email)||x.email), role=low(u&&u.role), nm=low(x.name);
+    if(nm==='office' || /^office@/.test(em) || /office/.test(role)) return false;
+    if(u && (u.active===false || low(u.payType)==='owner' || role==='admin' || role==='owner')) return false;
+    return true;
+  }).map(function(x){ return { name:s(x.name), key:s(x.userId||x.name), payType:s(x.payType), prof:x }; }).sort(function(a,b){ return a.name.localeCompare(b.name); });
+}
 /* weekly paydays first..last (inclusive) × employees → blank rows */
 function fillRows(first, last, emps){
   var out=[]; if(!s(first)||!s(last)||first>last) return out;
@@ -103,7 +119,7 @@ function fillRows(first, last, emps){
   }
   return out;
 }
-var PP={ calc:calc, buildRuns:buildRuns, fillRows:fillRows, MODES:MODES };
+var PP={ calc:calc, buildRuns:buildRuns, fillRows:fillRows, w2Employees:w2Employees, MODES:MODES };
 W._gcPastPay=PP;
 if(typeof document==='undefined') return;
 
@@ -125,8 +141,8 @@ W._gcPastPayOpen = async function(){
   if(!isAdmin()){ alert('Entering past payroll is for an owner / admin.'); return; }
   var set={}, profs=[], runs=[];
   try{ set=await p.settings(); }catch(e){} try{ profs=(await p.profiles())||[]; }catch(e){} try{ runs=(await p.runs())||[]; }catch(e){}
-  var emps=profs.filter(function(x){ return x && x.name && x.active!==false && ['owner_draw','contractor_1099'].indexOf(s(x.payType))<0; })
-    .map(function(x){ return { name:s(x.name), key:s(x.userId||x.name), payType:s(x.payType), prof:x }; }).sort(function(a,b){ return a.name.localeCompare(b.name); });
+  var users=[]; try{ users=(p.users && p.users())||[]; }catch(e){}
+  var emps=w2Employees(profs, users);
   function empOf(name){ return emps.filter(function(e){ return low(e.name)===low(name); })[0]||null; }
   var lq=lastQ(), qs=lq.y+'-'+pad((lq.q-1)*3+1)+'-01', qe=new Date(lq.y, lq.q*3, 0), qeS=qe.getFullYear()+'-'+pad(qe.getMonth()+1)+'-'+pad(qe.getDate());
   var rows=readDraft()||[];

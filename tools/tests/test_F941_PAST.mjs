@@ -17,11 +17,12 @@ const ADMIN = 'wjohnson@grayco-cs.com';
 const USERS = [
   { id: 'UA1', name: 'Tess Owner', email: ADMIN, role: 'Admin', active: true, payType: 'owner' },
   { id: 'UT1', name: 'Avery Testworth', email: 'avery.test@example.test', role: 'Crew', active: true, payType: 'hourly', hourlyRate: 25 },
-  { id: 'UT2', name: 'Blake Sampleton', email: 'blake.test@example.test', role: 'Sales', active: true, payType: 'commission' }];
+  { id: 'UT2', name: 'Blake Sampleton', email: 'blake.test@example.test', role: 'Sales', active: true, payType: 'commission' },
+  { id: 'U5', name: 'Office', email: 'office@grayco-cs.com', role: 'Office', active: true, payType: 'salary' }];   // the shared Office sign-in (production has it)
 const prof = (id, u, x) => Object.assign({ id, userId: u.id, name: u.name, email: u.email, payType: 'hourly', annualSalary: 0, hourlyRate: 0, otAfter: 40, otMultiplier: 1.5,
   period: 'weekly', filing: 'single', dependentsCredit: 0, otherIncome: 0, deductions: 0, extra: 0, state: 'TN', otherDeductions: [], active: true }, x);
 const PROFILES = [prof('PPUT1', USERS[1], { payType: 'hourly', hourlyRate: 25 }), prof('PPUT2', USERS[2], { payType: 'commission' }),
-  prof('PPOWN', USERS[0], { payType: 'owner_draw' })];
+  prof('PPOWN', USERS[0], { payType: 'owner_draw' }), prof('PPOFF', USERS[3], { payType: 'salary' })];
 const REG0 = [{ id: 'RGQB1', srcInvId: 'QB-IMPORT-1', type: 'expense', category: 'Payroll — Wages', payee: 'from QuickBooks', amt: 1000, date: '2026-07-03', status: 'paid' }];
 resetCloud();
 cset('users', USERS); cset('payrollProfiles', PROFILES); cset('payrollRuns', []); cset('payrollTaxPayments', []); cset('gcAcctRegister', REG0);
@@ -40,7 +41,7 @@ ok(await A.ev(() => !!document.getElementById('_pPast')), 'Run Payroll has "📥
 await p.locator('#_pPast').click(); await sleep(2500);
 ok(await A.ev(() => !!document.getElementById('_gcPpOv')), 'it opens the grid');
 const emps = await A.ev(() => [...document.querySelectorAll('#_gcPpOv [data-pp-emp]')].map(c => c.parentElement.textContent.trim()));
-ok(emps.length === 2 && !emps.some(e => /Tess/.test(e)), 'the two employees are offered (the owner, paid by draws, is not)', emps);
+ok(emps.length === 2 && !emps.some(e => /Tess|Office/.test(e)), 'only the two W-2 employees are offered (not the owner on draws, not the shared Office account)', emps);
 const range = await A.ev(() => [document.querySelector('[data-pp="first"]').value, document.querySelector('[data-pp="last"]').value]);
 ok(range[0] === '2026-07-03' && range[1] === '2026-09-25', 'it starts on Q3 2026: first payday Fri 7/3, last Fri 9/25', range);
 await p.locator('[data-pp="fill"]').click(); await sleep(1500);
