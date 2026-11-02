@@ -19,7 +19,8 @@
   var STEPS = [1500, 4000, 8000, 14000, 22000, 35000, 50000, 70000, 95000, 125000];
   var MAX_WAIT_MS = 300000;                     /* still waiting for typing / an open job after 5 minutes: the next pull brings it */
   var NOT_LISTS = { ccCards: 1 };
-  var SCREEN_OF = { subs: 'vendors' };          /* the cloud's `subs` list is shown in the one subs + vendors list (patch ONELIST: a row from `subs` with no isSub is a sub) */
+  var SCREEN_OF = {};   /* not the cloud's `subs` list: it is shown in the one subs + vendors list, which patch ONELIST owns and a
+                           `vendors` pull replaces whole — putting `subs` rows in here only made the two take turns (r17j check) */
   var RECORD_KEYS = { projects: 1, customers: 1, leads: 1, subs: 1, vendors: 1 };
   var S = {};                                   /* key -> { list, at, step, oks, t } */
   var stats = { seen: 0, checks: 0, healed: {}, waited: 0, skipped: {} };
