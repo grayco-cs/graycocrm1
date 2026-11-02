@@ -135,14 +135,28 @@ function lastUndo(){ var now = Date.now(); return arr(LOG || lsLog()).filter(fun
 
 /* ── apply / undo ── */
 function save(mut){ var k = kit(); if (k && typeof k.setLeads === 'function') return Promise.resolve(k.setLeads(mut)); return Promise.resolve(false); }
-/* a lead put back exactly as the snapshot: every field of it, and every field added since set back to blank (not left out:
-   a key that is simply missing is filled in again from another copy of the list, so gcs [] — not "no gcs") */
-function blankOf(v){ return Array.isArray(v) ? [] : v && typeof v === 'object' ? {} : typeof v === 'number' ? 0 : typeof v === 'boolean' ? false : ''; }
-function exactly(snap, cur, at){
-  var x = JSON.parse(JSON.stringify(snap));
-  Object.keys(cur || {}).forEach(function(k){ if (!(k in x)) x[k] = blankOf(cur[k]); });
-  x.updatedAt = x.savedAt = at; x.bidMergeUndoneAt = at;
-  return x;
+/* a lead put back EXACTLY as the snapshot: its own fields and nothing else (a field the merge added is deleted, not blanked;
+   only the save stamps are new) */
+var STAMPS = { updatedAt: 1, savedAt: 1 };
+function exactly(snap, at){ var x = JSON.parse(JSON.stringify(snap)); x.updatedAt = x.savedAt = at; return x; }
+function differs(snap, live){
+  var bad = [];
+  Object.keys(Object.assign({}, snap, live)).forEach(function(k){ if (STAMPS[k]) return; if (!(k in snap)) { bad.push('+' + k); return; } if (!(k in live)) { bad.push('-' + k); return; } if (JSON.stringify(snap[k]) !== JSON.stringify(live[k])) bad.push(k); });
+  return bad;
+}
+/* after the undo is saved, look again a few times: a background copy of the list that still had the merged lead must not
+   bring a merged field back. Only while the lead is still the undo's own save (nobody has changed it since). */
+var VERIFY_MS = [600, 2000, 5000, 10000];
+function holdUndo(back, at, step){
+  step = step || 0; if (step >= VERIFY_MS.length) return;
+  later(function(){
+    var fix = {}, n = 0, why = [];
+    all().forEach(function(l){ var id = s(l && l.id); if (!back[id] || s(l.updatedAt) !== at) return; var d = differs(back[id], l); if (d.length) { fix[id] = 1; n++; why.push(id + ' ' + d.join(',')); } });
+    if (!n) return holdUndo(back, at, step + 1);
+    try { console.warn('[GC] 🔗 undo: put back again (a copy of the merged lead came back): ' + why.join('; ')); } catch (e) {}
+    save(function(list){ var c = 0, out = list.map(function(l){ var id = s(l && l.id); if (fix[id] && s(l.updatedAt) === at) { c++; return exactly(back[id], at); } return l; }); return c ? out : null; })
+      .then(function(){ holdUndo(back, at, step + 1); });
+  }, VERIFY_MS[step] - (step ? VERIFY_MS[step - 1] : 0));
 }
 function apply(picks){
   if (!can()) { toast('Only an admin or the office merges leads'); return Promise.resolve(false); }
@@ -178,11 +192,12 @@ function undo(){
     return Promise.resolve(rest).then(function(){
       var cps = {}; arr(e.copies).forEach(function(l){ if (l && l.id) cps[s(l.id)] = l; });
       return save(function(list){
-        var n = 0, have = {}, out = list.map(function(l){ if (!l) return l; have[s(l.id)] = 1; var id = s(l.id); if (back[id]) { n++; return exactly(back[id], l, at); } return l; });
-        arr(e.folded).forEach(function(id){ if (!have[id] && cps[id]) { n++; out.push(exactly(cps[id], {}, at)); } });   /* a copy Recently deleted could not give back */
+        var n = 0, have = {}, out = list.map(function(l){ if (!l) return l; have[s(l.id)] = 1; var id = s(l.id); if (back[id]) { n++; return exactly(back[id], at); } return l; });
+        arr(e.folded).forEach(function(id){ if (!have[id] && cps[id]) { n++; out.push(exactly(cps[id], at)); } });   /* a copy Recently deleted could not give back */
         return n ? out : null;
       });
     }).then(function(){
+      holdUndo(back, at);
       arr(e.inbox).forEach(function(b){ inboxAct({ id: b.id, op: b.undo || 'restore' }); });
       return writeLog(arr(LOG).map(function(x){ return x.id === e.id ? Object.assign({}, x, { undone: at, undoneBy: me() }) : x; }));
     }).then(function(){ CNT.sig = ''; toast('↩ Undone: the ' + arr(e.folded).length + ' lead' + (arr(e.folded).length === 1 ? '' : 's') + ' are back'); try { W._gcLeadsHub.redraw(); } catch (x) {} return true; });

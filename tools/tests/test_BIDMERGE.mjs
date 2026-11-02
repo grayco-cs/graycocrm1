@@ -249,26 +249,22 @@ function page(leads, opt){
   const el = () => ({ style: {}, setAttribute: noop, getAttribute: () => null, appendChild: noop, remove: noop, addEventListener: noop, querySelector: () => null, querySelectorAll: () => [], classList: { add: noop, remove: noop, contains: () => false } });
   const doc = { addEventListener: noop, removeEventListener: noop, getElementById: () => null, querySelector: () => null, createElement: el, head: el(), body: el(), documentElement: el() };
   let LIST = leads.slice();
-  const W = { document: doc, console: { log: noop, warn: noop }, setTimeout: () => 0, clearTimeout: noop, localStorage: { getItem: k => store[k] || null, setItem: (k, v) => { store[k] = String(v); } }, Date, JSON, Math, Promise, Object, Array, String, Number, RegExp, isFinite, isNaN, parseInt, encodeURIComponent };
+  const W = { document: doc, console: { log: noop, warn: noop }, setTimeout: (f, ms) => setTimeout(f, (ms || 0) / 100),   /* the page's timers, 100× faster */ clearTimeout: noop, localStorage: { getItem: k => store[k] || null, setItem: (k, v) => { store[k] = String(v); } }, Date, JSON, Math, Promise, Object, Array, String, Number, RegExp, isFinite, isNaN, parseInt, encodeURIComponent };
   W.window = W;
   const kv = {};
   W.fetch = async (u, o) => { u = String(u); o = o || {};
     if (/gc_kv\?key=eq\./.test(u)) { const k = decodeURIComponent(/key=eq\.([^&]+)/.exec(u)[1]); return { ok: true, json: async () => (kv[k] ? [{ value: kv[k] }] : []) }; }
     if (/gc_kv\?on_conflict/.test(u)) { writes.push('kv'); const b = JSON.parse(o.body); kv[b.key] = b.value; return { ok: true }; }
     return { ok: false, status: 404, json: async () => ({}) }; };
-  /* the CRM keeps "what a person changed": a key that is simply missing from a saved lead is filled in again from the copy it
-     had before (as the live page did to the probe's undo); a blank value ([] / '') is a change and stays */
-  const SH = {}; const keepFill = n => n.map(l => { if (!l || !l.id) return l; const o = SH[l.id]; let x = l; if (o) { x = Object.assign({}, l); Object.keys(o).forEach(k => { if (!(k in x)) x[k] = o[k]; }); } SH[l.id] = x; return x; });
   const writes = [];
-  W._gcLeadsHubKit = { all: () => LIST.filter(l => !trash[l.id]), setLeads: mut => { writes.push('setLeads'); const n = mut(LIST.slice()); if (Array.isArray(n)) { LIST = keepFill(n); return Promise.resolve(true); } return Promise.resolve(false); }, me: () => 'Office Person' };
-  LIST.forEach(l => { SH[l.id] = l; });
+  W._gcLeadsHubKit = { all: () => LIST.filter(l => !trash[l.id]), setLeads: mut => { writes.push('setLeads'); const n = mut(LIST.slice()); if (Array.isArray(n)) { LIST = n; return Promise.resolve(true); } return Promise.resolve(false); }, me: () => 'Office Person' };
   W._gcLeadsHub = { kit: W._gcLeadsHubKit, redraw: noop };
   W._gcLDEL = { who: () => ({ all: opt.role !== 'pm', email: 'office@grayco-cs.com' }),
     remove: async ids => { writes.push('remove'); ids.forEach(id => { trash[id] = LIST.find(l => l.id === id); }); LIST = LIST.filter(l => !trash[l.id]); return { ok: true, deleted: ids.length, ids }; },
     restore: async ids => { writes.push('restore'); const back = ids.map(id => trash[id]).filter(Boolean); ids.forEach(id => { delete trash[id]; }); LIST = LIST.concat(back); return { ok: true, restored: back.length }; } };
   W._gcLeadInbox = { act: b => { writes.push('act'); acts.push(b); return Promise.resolve(); } };
   vm.createContext(W); vm.runInContext(code, W);
-  return { W, B: W._gcBidMerge, list: () => LIST, trash, acts, kv, writes };
+  return { W, B: W._gcBidMerge, list: () => LIST, trash, acts, kv, writes, edit: (id, f) => { LIST = LIST.map(l => l.id === id ? f(Object.assign({}, l)) || l : l); } };
 }
 const FAKE = [
   { id: 'LEADIN-aaa1', inboxId: 'LI-aaa1', name: 'UrgentVet - Memphis - Drywall & Framing', source: 'BuildingConnected', city: 'Memphis', address: '8050 Dexter Road, Suite 103, Memphis, TN 38016', bidDue: '2026-11-03T12:00', dueToCompany: 'Loberg Construction', email: 'estimating@lobergconstruction.com', phone: '(847) 392-4300', contactName: 'Dana Whitfield', trades: ['Drywall & Framing'], estimator: 'Glenn Miller', docs: [{ ref: 'sb:crm-files/a.pdf', name: 'A1.pdf', hash: 'a' }], notes: 'Plans in A1', activity: [{ type: 'note', text: 'called Dana', at: '2026-10-30T15:00:00Z', by: 'Glenn' }], inboxAt: '2026-10-29T18:51:00Z', stage: 'New Lead', leadKind: 'Commercial' },
@@ -312,10 +308,21 @@ await t('merge: the kept lead lists both GCs and every trade, contact, file, lin
   /* undo */
   const u = await P.B.undo(); assert.strictEqual(u, true);
   assert.strictEqual(P.list().length, FAKE.length);
-  const K2 = P.list().find(l => l.id === 'LEADIN-aaa1'); assert.strictEqual((K2.gcs || []).length, 0, 'gcs back to none (not filled in again)'); assert.ok(!(K2.bidMerge && K2.bidMerge.at)); assert.strictEqual(K2.trades.join('|'), 'Drywall & Framing');
-  const SKIP = { updatedAt: 1, savedAt: 1, bidMergeUndoneAt: 1, restoredAt: 1, restoredBy: 1 }, blank = v => v == null || v === '' || v === false || v === 0 || (Array.isArray(v) && !v.length) || (v && typeof v === 'object' && !Array.isArray(v) && !Object.keys(v).length);
-  ['LEADIN-aaa1', 'LEADIN-aaa2', 'LEADIN-aaa3'].forEach(id => { const a = FAKE.find(l => l.id === id), b = P.list().find(l => l.id === id);
-    Object.keys(Object.assign({}, a, b)).forEach(k => { if (SKIP[k] || (blank(a[k]) && blank(b[k]))) return; assert.strictEqual(JSON.stringify(b[k]), JSON.stringify(a[k]), id + '.' + k + ' after undo'); }); });
+  /* exactly as before: the same keys (none added, none blanked), the same values; only the save stamps are new */
+  const STAMP = { updatedAt: 1, savedAt: 1, restoredAt: 1, restoredBy: 1 }, str = v => v === undefined ? 'undefined' : JSON.stringify(v);
+  const exact = () => { const bad = []; ['LEADIN-aaa1', 'LEADIN-aaa2', 'LEADIN-aaa3'].forEach(id => { const a = FAKE.find(l => l.id === id), b = P.list().find(l => l.id === id);
+    Object.keys(Object.assign({}, a, b)).forEach(k => { if (!STAMP[k] && str(a[k]) !== str(b[k])) bad.push(id + '.' + k + ': ' + str(a[k]).slice(0, 60) + ' → ' + str(b[k]).slice(0, 60)); }); }); return bad; };
+  assert.deepStrictEqual(exact(), []);
+  const K2 = P.list().find(l => l.id === 'LEADIN-aaa1'); assert.ok(!('gcs' in K2) && !('bidMerge' in K2) && !('nameWas' in K2) && !('mergedFrom' in K2), 'the merged fields are deleted, not blanked: ' + Object.keys(K2).join(','));
+  /* a background copy of the list that still had the merged lead brings gcs / nameWas back onto the undo's own save → put back again */
+  const M = JSON.parse(JSON.stringify(P.kv.gc_bidmerge_log.entries[0].before[0]));
+  P.edit('LEADIN-aaa1', l => Object.assign(l, { gcs: [{ key: 'x', name: 'Stale GC' }], nameWas: 'stale', name: l.name }));
+  await new Promise(r => setTimeout(r, 200));
+  assert.deepStrictEqual(exact(), [], 'a merged field that came back is taken off again');
+  /* …but never over a person's own change made after the undo */
+  P.edit('LEADIN-aaa1', l => Object.assign(l, { notes: 'typed after the undo', updatedAt: new Date(Date.now() + 1000).toISOString() }));
+  await new Promise(r => setTimeout(r, 200));
+  assert.strictEqual(P.list().find(l => l.id === 'LEADIN-aaa1').notes, 'typed after the undo'); void M;
   assert.ok(P.list().find(l => l.id === 'LEADIN-aaa3'), 'the copy is back');
   assert.strictEqual(P.acts.slice(2).map(a => a.op + ':' + a.id).sort().join('|'), 'unmerge:LI-aaa2|unmerge:LI-aaa3');
   assert.ok(P.kv.gc_bidmerge_log.entries[0].undone); assert.strictEqual(P.B.count(), 1);

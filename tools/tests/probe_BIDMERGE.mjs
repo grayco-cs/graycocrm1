@@ -64,10 +64,11 @@ async function stable(p){ let a = JSON.stringify(await fullNow(p)); for (let i =
 const WATCH = {}; ('name title nameWas gcs trades docs files plansLinks emails contacts coAssignees stageHistory matchNotes sources alsoOn address city state zip gc owner bidNumber dueToCompany dueToContact dueToEmail '
   + 'dueToPhone submitMethod submitWhere contactName phone email scope preBid rawEmailRef estVal estValue notes note bidDue bidDueWas receivedAt activity mergedFrom bidMerge archived mergedInto stage').split(' ').forEach(k => { WATCH[k] = 1; });
 const SKIP = new Proxy({}, { get: (o, k) => !WATCH[k] });
-const blank = v => v == null || v === '' || v === false || v === 0 || (Array.isArray(v) && !v.length) || (v && typeof v === 'object' && !Array.isArray(v) && !Object.keys(v).length);
+/* field by field: undefined vs set counts (a key added, deleted or blanked is a difference); the field and both values printed */
+const str = v => v === undefined ? 'undefined' : JSON.stringify(v);
 function diff(A, B){ const out = []; const by = {}; B.forEach(l => { by[l.id] = l; });
   A.forEach(a => { const b = by[a.id]; if (!b) { out.push(a.id + ': missing'); return; }
-    Object.keys(Object.assign({}, a, b)).forEach(k => { if (SKIP[k]) return; const x = a[k], y = b[k]; if (blank(x) && blank(y)) return; if (JSON.stringify(x) !== JSON.stringify(y)) out.push(a.id + '.' + k + ': ' + JSON.stringify(x).slice(0, 80) + ' → ' + JSON.stringify(y).slice(0, 80)); }); });
+    Object.keys(Object.assign({}, a, b)).forEach(k => { if (SKIP[k]) return; const x = str(a[k]), y = str(b[k]); if (x !== y) out.push(a.id + '.' + k + ': ' + x.slice(0, 100) + ' → ' + y.slice(0, 100)); }); });
   B.forEach(b => { if (!A.some(a => a.id === b.id)) out.push(b.id + ': new'); }); return out; }
 /* every write the page makes while the dry run is open: the lead list setters, Recently deleted, the inbox, gc_kv */
 const spyOn = p => p.evaluate(() => { const W = window; W.__BMW = []; const wrap = (o, k, tag) => { if (!o || typeof o[k] !== 'function' || o[k].__bmspy) return; const f = o[k]; o[k] = function(){ (W.__BMW || []).push(tag); return f.apply(this, arguments); }; o[k].__bmspy = 1; };
@@ -126,7 +127,7 @@ try {
   await p.evaluate(() => window._gcBidMerge.open()); await sleep(800);
   const hasUndo = await p.evaluate(() => !!document.querySelector('#gc-bidmerge [data-bm="undo"]'));
   ok(hasUndo, '"↩ Undo last merge" is offered');
-  if (hasUndo) { await p.locator('#gc-bidmerge [data-bm="undo"]').click(); await waitFor(c, () => !document.getElementById('gc-bidmerge'), null, 20000, 200); await sleep(3000); }
+  if (hasUndo) { await p.locator('#gc-bidmerge [data-bm="undo"]').click(); await waitFor(c, () => !document.getElementById('gc-bidmerge'), null, 20000, 200); await sleep(11000); }   /* the undo looks again for 10 s */
   const back = await leadsNow(p), full2 = await stable(p), d2 = diff(full0.filter(l => /dup/.test(l.id)), full2.filter(l => /dup/.test(l.id)));
   ok(back.length === before.length && back.find(l => l.id === 'LEADIN-dup1').gcs === 0 && !!back.find(l => l.id === 'LEADIN-dup3'), 'undo: the three leads are back as they were', back);
   ok(!d2.length, 'undo: every field of the three leads as before the merge (the kept lead\'s gcs, name, trades, mergedFrom …)', { d2, merged: fullMerged.filter(l => l.id === 'LEADIN-dup1').map(l => ({ gcs: (l.gcs || []).length, name: l.name })) });
