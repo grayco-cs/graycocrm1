@@ -128,7 +128,7 @@ function readFile(f){
   });
 }
 function close(){ var s = $('gcpr-sheet'); if (s) s.remove(); try { document.body.style.overflow = ''; } catch (e) {} }
-function field(label, el, opt){ return h('div', { class: 'gcpr-f' }, [h('label', {}, [label, opt ? h('span', { class: 'opt', text: ' (optional)' }) : null]), el]); }
+function field(label, el, opt){ var id = el.id || (el.querySelector && (el.querySelector('input,select,textarea') || {}).id) || null; return h('div', { class: 'gcpr-f' }, [h('label', { for: id }, [label, opt ? h('span', { class: 'opt', text: ' (optional)' }) : null]), el]); }
 function open(kind){
   if (!D) { load().then(function(){ if (D) open(kind); }); return; }
   css(); close();
