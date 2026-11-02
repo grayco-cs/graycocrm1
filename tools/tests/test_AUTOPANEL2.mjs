@@ -6,7 +6,8 @@
 //   3. AUT3 ensureDraws: job stages ON + progress auto-draw OFF → a draw because the % moved is held, not made; the
 //      Complete-stage final invoice (job stages) still is;
 //   4. missed-call text-back: one default for the server and the panel (ON, 🔒 safety); the panel asks before ON and OFF;
-//   5. AUTOPANEL3: "CompanyCam % -> job %" and "Invoice auto-mark-paid" have switches, OFF by default (held, nothing changed).
+//   5. AUTOPANEL3: "CompanyCam % -> job %" and "Invoice auto-mark-paid" have switches, OFF by default (held, nothing changed);
+//   6. AUTOPANEL4: the ESTIN background proposal maker / supplier-order drafter do nothing while OFF; on demand still works.
 // Exit 0 = PASS.
 import fs from 'fs'; import path from 'path'; import vm from 'vm'; import { createRequire } from 'module';
 const BUILD = path.resolve(process.argv[2] || path.join(path.dirname(new URL(import.meta.url).pathname), '..', '..'));
@@ -149,7 +150,7 @@ console.log('5. AUTOPANEL3: CompanyCam % -> job % and invoice auto-mark-paid hav
   ok(/Progress-slider auto-draw/.test(js.desc) && !/milestone \/ final draws/.test(js.desc), 'job_stages says a draw because the % moved also needs progress auto-draw', js.desc);
   const mm = /\/\* AUTOREG-BEGIN \*\/\n([\s\S]*?)\/\* AUTOREG-END \*\//.exec(html);
   ok(!!mm && mm[1] === fs.readFileSync(path.join(BUILD, 'netlify', 'functions', '_lib', 'automations.js'), 'utf8'), 'the page still carries _lib/automations.js word for word');
-  ok(/var STATE = \{ cc_pct_sync: [^}]*auto_mark_paid: /.test(html), 'the panel warns how many are waiting before either is switched ON');
+  ok(/var STATE = \{[^}]*cc_pct_sync: [^}]*auto_mark_paid: /.test(html), 'the panel warns how many are waiting before either is switched ON');
   const CCF = between('window._gcAutoInvoiceFromProgress = function(){', '\n  };\n') + '\n  };\n';
   const MPF = between('window._gcAutoMarkPaid = function(){', '\n  };\n') + '\n  };\n';
   async function acct(row){
@@ -176,6 +177,50 @@ console.log('5. AUTOPANEL3: CompanyCam % -> job % and invoice auto-mark-paid hav
   none._crm = { projects: [{ id: 'P1', status: 'active', pct: 60, ccProgressPct: 60 }], invoices: [], projectPayments: [] };
   vm.runInContext(CCF + MPF, none); none._gcAutoInvoiceFromProgress(); none._gcAutoMarkPaid();
   ok(!none._gcAutomations.state().localHeld.cc_pct_sync && !none._gcAutomations.state().localHeld.auto_mark_paid, 'nothing waiting → nothing held');
+}
+/* ══ 6. AUTOPANEL4: the ESTIN background proposal maker / supplier-order drafter ══ */
+console.log('6. AUTOPANEL4: the background proposal maker does nothing while OFF; on demand still works');
+{
+  const pm = AUTO.BY.proposal_maker, po = AUTO.BY.supplier_po_drafts;
+  ok(pm && pm.defaultOn === false && /Sends nothing by itself/.test(pm.desc) && /Send for approval now/.test(pm.desc), 'registry: proposal_maker OFF by default, says it sends nothing and how to make one by hand', pm);
+  ok(po && po.defaultOn === false && po.effect === 'C' && /Draft supplier orders/.test(po.desc), 'registry: supplier_po_drafts (new) OFF by default', po);
+  const mm = /\/\* AUTOREG-BEGIN \*\/\n([\s\S]*?)\/\* AUTOREG-END \*\//.exec(html);
+  ok(!!mm && mm[1] === fs.readFileSync(path.join(BUILD, 'netlify', 'functions', '_lib', 'automations.js'), 'utf8'), 'the page still carries _lib/automations.js word for word');
+  const i0 = html.indexOf('/* __GC_PATCH_ESTIN__'), i1 = html.indexOf('</script>', i0), EST = html.slice(i0, i1);
+  const SCAN = between('function scan(){\n  if (!signedIn() || D.hidden) return Promise.resolve();\n  /* __GC_PATCH_AUTOPANEL4__ */', '\n}\n') + '\n}\n';
+  ok(EST.indexOf(SCAN.trim()) > 0, 'the gated scan() is the ESTIN one');
+  /* every background trigger goes through scan(): 20 s after load, every 5 min, 5 s after an estimate save */
+  ok(/later\(function\(\)\{ loadTpl\(\); loadPos\(\); scan\(\); pullInbox\(\); \}, 20000\);/.test(EST) && /SI\.call\(W, function\(\)\{ if \(!D\.hidden\) scan\(\); \}, 5 \* 60e3\);/.test(EST) && /function soon\(ms\)\{ if \(tmr\) return; tmr = later\(function\(\)\{ tmr = null; scan\(\); \}/.test(EST),
+    'the background triggers (20 s, 5 min, after a save) all go through scan()');
+  /* process() / makePOs() outside scan(): only a person's action */
+  const calls = EST.split('\n').filter(l => /\bprocess\(|makePOs\(/.test(l) && !/^function (process|makePOs)\(/.test(l) && SCAN.indexOf(l) < 0);
+  ok(calls.length === 5 && calls.every(l => /k === 'now'|k === 'accept'|k === 'pos'|savePending|toast\(est\.estinReview|later\(function\(\)\{ process\(estById\(est\.id\) \|\| est\); \}, 400\)/.test(l)), 'outside the background run, a proposal / PO is made only from a person\'s action (Send now, Accept, an upload, Draft supplier orders)', calls.map(l => l.trim().slice(0, 90)));
+  ok(/k === 'now' && e\) \{[^\n]*process\(Object\.assign\(\{\}, e, \{ estinNow: true \}\), true\)/.test(EST) && /if \(!force && e\.estinNow !== true && \(tpl\(\)\.autoSend === false \|\| !\(window\._gcAutoGate/.test(EST), '"📨 Send for approval now" forces it; a person\'s upload / Accept passes the switch (on demand)');
+  ok(/'📤 Send estimate|Send estimate/.test(html) && between('function pdfBlob(r){', '\n}\n').length > 0, '📤 Send estimate has its own PDF maker (patch ESTPDF), not the background run');
+  ok(!/AUTOPANEL4/.test(between('function pdfBlob(html){', '\n}\n')), 'pdfBlob() itself is not touched (patch DESKFRAME changes it)');
+  async function estScan(row, list){
+    const w = page(new Map(), { row }); await w._gcAutomations.load();
+    const t = { lists: 0, proc: [], pos: [] };
+    const make = vm.runInContext('(function(W, D, signedIn, estList, startedAt, BOOT, sigOf, signedEstimate, canRun, paused, eligible, s, loadLists, makePOs, process){ ' + SCAN + ' return scan; })', w);
+    const scan = make(w, { hidden: false }, () => true, () => list, e => e.createdAt, '2026-11-01', e => 'sig-' + e.id, e => !!e.signedAt, () => true, () => false, e => e.total > 0 ? 'ok' : 'no total yet',
+      v => v == null ? '' : String(v), () => { t.lists++; return Promise.resolve(); }, e => { t.pos.push(e.id); return Promise.resolve(); }, e => { t.proc.push(e.id); return Promise.resolve(); });
+    await scan();
+    return Object.assign(t, { lh: w._gcAutomations.state().localHeld });
+  }
+  const L = [{ id: 'E1', name: 'Smith roof', createdAt: '2026-11-02', total: 9000 },
+    { id: 'E2', name: 'Upload that failed', createdAt: '2026-11-02', total: 500, estinNow: true, estin: { sig: 'sig-E2', state: 'error', reason: 'PDF failed' } },
+    { id: 'E3', name: 'Signed job', createdAt: '2026-11-02', total: 700, signedAt: '2026-11-02', estin: { sig: 'sig-E3', state: 'waiting' } },
+    { id: 'E4', name: 'Old', createdAt: '2026-10-01', total: 100 }];
+  const off = await estScan({}, L);
+  ok(off.lists === 0 && off.proc.length === 0 && off.pos.length === 0, 'both OFF: the background run reads no lists, makes no PDF / proposal / PO (not even the retry of a failed upload)', off);
+  ok((off.lh.proposal_maker || {}).would === 2 && (off.lh.supplier_po_drafts || {}).would === 1, 'both OFF: "held: would have done 2" (proposals) and "1" (supplier orders)', off.lh);
+  const on = await estScan({ proposal_maker: true }, L);
+  ok(on.lists === 1 && on.proc.join() === 'E1,E2' && on.pos.length === 0 && (on.lh.supplier_po_drafts || {}).would === 1, 'proposal maker ON only: proposals made (and the failed one retried), supplier orders still held', on);
+  const both = await estScan({ proposal_maker: true, supplier_po_drafts: true }, L);
+  ok(both.pos.join() === 'E3' && both.proc.join() === 'E1,E2' && !both.lh.proposal_maker, 'both ON: as before (orders for the signed one, proposals for the rest)', both);
+  const many = await estScan({ proposal_maker: true }, Array.from({ length: 9 }, (_, i) => ({ id: 'M' + i, createdAt: '2026-11-02', total: 1 })));
+  ok(many.proc.length === 6, 'ON: still at most 6 a run', many.proc.length);
+  ok(/Automatic proposals are OFF \(⚡ Automations\) — 📨 Send for approval now/.test(html) && /var STATE = \{ proposal_maker: [^}]*supplier_po_drafts: /.test(html), 'the estimate chip says automatic proposals are OFF; the panel warns how many are waiting before switching ON');
 }
 console.log('\n' + (fail ? 'FAIL' : 'PASS') + ' — ' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

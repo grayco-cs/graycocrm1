@@ -229,7 +229,8 @@ var ROWS = [
   ['portal_invite_email', 'cust', 'C', 0, 0, 'both', 'New-job portal link e-mail', 'Every new job’s portal link e-mail is queued.'],
   ['appt_confirmations', 'cust', 'A', 0, 0, 'page', 'Appointment confirmations', 'Confirmation on a schedule change, reminder at 4 PM the day before.'],
   ['thank_you_queue', 'cust', 'C', 0, 0, 'page', 'Job-complete thank-you', 'Fully paid → thank-you on ✅ Approvals; commission unlocked flag.'],
-  ['proposal_maker', 'cust', 'C', 0, 0, 'page', 'Proposal maker', 'Makes the proposal PDF for every finished estimate → ✅ Approvals.'],
+  ['proposal_maker', 'cust', 'C', 0, 0, 'page', 'Proposal maker', 'In the background (after load, every 5 minutes, after an estimate is saved) makes the GrayCo proposal PDF for each finished estimate, stores it on the job (a bidding job if it has none) and puts ONE "Put proposal in customer portal + send" item on ✅ Approvals. Sends nothing by itself. OFF: nothing runs in the background; "📨 Send for approval now", uploads and 📤 Send estimate still make it.'],
+  ['supplier_po_drafts', 'rec', 'C', 0, 0, 'page', 'Supplier order drafts', 'After an estimate or its job is signed, drafts one purchase order per supplier from its material lines and puts each PO e-mail on ✅ Approvals. OFF: nothing in the background; "🚚 Draft supplier orders" still makes them.'],
   /* ── sub sends (A) ── */
   ['sub_schedule_texts', 'sub', 'A', 0, 0, 'server', 'Sub schedule texts', '6 PM the evening before and about 1 h before each start.'],
   ['sub_firstday_text', 'sub', 'A', 0, 0, 'server', 'Sub first-day text', 'A sub’s first-day text with the portal link.'],
@@ -177593,7 +177594,7 @@ function when(iso){ var t = Date.parse(iso || ''); if (!t) return ''; try { retu
 /* patch AUTOPANEL (coordinator 11/02): automations that act on what is waiting NOW when switched on (not on a clock) — the
    switch-on asks first and says how many items are waiting: the page counts the draws itself; otherwise the last
    "would have done N" the automation recorded while it was OFF */
-var STATE = { cc_pct_sync: 'job % updates from CompanyCam', auto_mark_paid: 'invoices marked paid', job_stages: 'draw invoices / stage steps', legacy_progress_billing: 'progress draws', progress_autodraw: 'draw invoices', appt_confirmations: 'appointment messages', bid_result_emails: 'bid-result e-mails to GCs',
+var STATE = { proposal_maker: 'estimates (proposal PDFs)', supplier_po_drafts: 'signed estimates (supplier orders)', cc_pct_sync: 'job % updates from CompanyCam', auto_mark_paid: 'invoices marked paid', job_stages: 'draw invoices / stage steps', legacy_progress_billing: 'progress draws', progress_autodraw: 'draw invoices', appt_confirmations: 'appointment messages', bid_result_emails: 'bid-result e-mails to GCs',
   auto_100: 'jobs set to 100 %', closeout_autopilot: 'job closeouts', mailed_invoice_booking: 'e-mailed invoices / receipts', ms_tax_add: 'Mississippi estimates', lead_auto_assign: 'held leads', companycam_new_jobs: 'new CompanyCam projects' };
 function drawsWaiting(){
   try {
@@ -192286,7 +192287,7 @@ function stateOf(e){
   if (st.state === 'needs-email') return ['bad', 'No customer e-mail — not in portal'];
   if (st.state === 'error') return ['bad', 'Problem: ' + s(st.reason)];
   if (st.state === 'skipped' || st.state === 'manual') return ['', s(st.reason)];
-  var why = eligible(e); return ['', why === 'ok' ? 'Proposal comes after 10 quiet minutes' : why];
+  var why = eligible(e); return ['', why === 'ok' ? (W._gcAutoOn && W._gcAutoOn('proposal_maker') ? 'Proposal comes after 10 quiet minutes' : 'Automatic proposals are OFF (⚡ Automations) — 📨 Send for approval now') : why];   /* patch AUTOPANEL4 */
 }
 function recent(){ return estList().filter(function(e){ return e && !e.deleted && !e.isTemplate && startedAt(e) >= BOOT; }).sort(function(a, b){ return s(b.createdAt || b.savedAt || b.date) < s(a.createdAt || a.savedAt || a.date) ? -1 : 1; }).slice(0, 80); }
 var TAB = 'all';
@@ -192513,14 +192514,29 @@ var tmr = null;
 function soon(ms){ if (tmr) return; tmr = later(function(){ tmr = null; scan(); }, ms || 4000); }
 function scan(){
   if (!signedIn() || D.hidden) return Promise.resolve();
-  return loadLists().then(function(){
-    var list = estList(), jobs = [];
+  /* __GC_PATCH_AUTOPANEL4__ */ /* the ⚡ switches are asked FIRST: OFF → no list reads, no PDF, no upload, nothing written ("held") */
+  var pmOn = !!(W._gcAutoOn && W._gcAutoOn('proposal_maker')), poOn = !!(W._gcAutoOn && W._gcAutoOn('supplier_po_drafts'));
+  function pick(list){
+    var pm = [], po = [];
     list.forEach(function(e){
       if (!e || startedAt(e) < BOOT) return;
       if (e.estin && e.estin.sig === sigOf(e) && e.estin.state && e.estin.state !== 'error' && !(signedEstimate(e) && !e.estinPO)) return;
-      if (signedEstimate(e) && !e.estinPO && canRun(e) && !paused()) { jobs.push(function(){ return makePOs(e); }); return; }
-      if (eligible(e) === 'ok') jobs.push(function(){ return process(e); });
+      if (signedEstimate(e) && !e.estinPO && canRun(e) && !paused()) { po.push(e); return; }
+      if (eligible(e) === 'ok') pm.push(e);
     });
+    return { pm: pm, po: po };
+  }
+  function hold(w){
+    var nm = function(e){ return s(e.name || e.id); };
+    if (!pmOn && w.pm.length && W._gcAutoGate) W._gcAutoGate('proposal_maker', { n: w.pm.length, sample: w.pm.slice(0, 3).map(nm) });
+    if (!poOn && w.po.length && W._gcAutoGate) W._gcAutoGate('supplier_po_drafts', { n: w.po.length, sample: w.po.slice(0, 3).map(nm) });
+  }
+  if (!pmOn && !poOn) { try { hold(pick(estList())); } catch (x) {} return Promise.resolve(); }
+  return loadLists().then(function(){
+    var w = pick(estList()), jobs = [];
+    hold(w);
+    if (poOn) w.po.forEach(function(e){ jobs.push(function(){ return makePOs(e); }); });
+    if (pmOn) w.pm.forEach(function(e){ jobs.push(function(){ return process(e); }); });
     return jobs.slice(0, 6).reduce(function(pr, f){ return pr.then(function(){ return f().catch(function(){}); }); }, Promise.resolve());
   });
 }
