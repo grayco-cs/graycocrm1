@@ -195,12 +195,20 @@ function jobTag(p, T){
 /* ── the shared list ── */
 async function readReqs(){ const cur = await core().kvListRead(KEY); return cur ? cur.list : null; }
 function apprId(r){ return 'appr_sign_' + r.id; }
-async function approvals(){ try { const cur = await core().kvListRead(core().AQ_KEY); return cur ? cur.list : []; } catch (e) { return []; } }
+async function approvals(){
+  let l = []; try { const cur = await core().kvListRead(core().AQ_KEY); l = cur ? cur.list : []; } catch (e) { l = []; }
+  try { l.__gate = await core().gateGet(null); } catch (e) {}   /* patch ESTPDF: a paper already e-mailed from the CRM shows once its portal approval is given */
+  return l;
+}
 function apprOf(list, r){ return list.find(function(x){ return x && s(x.id) === apprId(r); }) || null; }
 /* what the customer sees: a request a person made at once; one the CRM made by itself once its e-mail went out */
 function visible(r, aq){
   if (!r || r.status === 'void') return false;
   if (r.status !== 'pending') return true;
+  if (r.mailed === true) {   /* patch ESTPDF: e-mailed by the estimator from the CRM — in the portal once "Put in the customer portal" is approved */
+    const G = aq && aq.__gate, k = s(r.gateKey);
+    return !!(G && G.ok && k && ((G.map[k] && G.map[k].st === 'approved') || (G.gf[s(r.pid)] && G.gf[s(r.pid)][k])));
+  }
   if (!r.auto) return true;
   if (!needsApproval()) return true;
   const a = apprOf(aq, r); return !!(a && a.status === 'sent');
@@ -235,22 +243,24 @@ async function request(body, who){
     const open = mine.find(function(x){ return x.status === 'pending'; });
     if (open) {   /* asked already: the same paper again is the same request (its amount / lines brought up to date) */
       existing = open;
-      const same = (isNaN(amount) ? open.amount == null : open.amount === money(amount)) && s(open.title) === title;
+      const same = (isNaN(amount) ? open.amount == null : open.amount === money(amount)) && s(open.title) === title && (!docRef || s(open.docRef) === docRef);   /* patch ESTPDF: a re-sent PDF replaces the paper's copy */
       if (same) return null;
-      const up = Object.assign({}, open, { title: title, amount: isNaN(amount) ? null : money(amount), lines: cleanLines(body.lines), docRef: docRef || open.docRef || '', url: url || open.url || '', updatedAt: now });
+      const up = Object.assign({}, open, { title: title, amount: isNaN(amount) ? null : money(amount), lines: cleanLines(body.lines), docRef: docRef || open.docRef || '', url: url || open.url || '', updatedAt: now },
+        docRef && s(open.docRef) && docRef !== s(open.docRef) ? { docName: clip(body.docName, 120) || open.docName, supersededRefs: [].concat(open.supersededRefs || [], [open.docRef]).slice(-10) } : {});   /* patch ESTPDF */
       existing = up;
       return { list: l.map(function(x){ return s(x.id) === s(open.id) ? up : x; }), check: function(l2){ return l2.some(function(x){ return s(x.id) === up.id && x.updatedAt === now; }); } };
     }
     if (mine.some(function(x){ return x.status === 'signed' && (isNaN(amount) || x.amount === money(amount)); }) && body.again !== true) { existing = mine.find(function(x){ return x.status === 'signed'; }); return null; }
     const id = mine.length ? base + '_v' + (mine.length + 1) : base;
     made = { id: id, pid: pid, kind: kind, refId: refId, title: title, amount: isNaN(amount) ? null : money(amount), lines: cleanLines(body.lines), docRef: docRef, url: url, docName: clip(body.docName, 120),
-      note: clip(body.note, 500), auto: body.auto === true, status: 'pending', createdBy: s(who.name) || who.email, createdByEmail: who.email, createdAt: now, updatedAt: now };
+      note: clip(body.note, 500), auto: body.auto === true || body.mailed === true, mailed: body.mailed === true ? true : undefined, sentAt: body.mailed === true ? (/^\d{4}-\d{2}-\d{2}T/.test(s(body.sentAt)) ? s(body.sentAt) : now) : undefined, sentVia: body.mailed === true ? clip(body.sentVia, 30) : undefined, gateKey: body.mailed === true && kind === 'estimate' && refId ? 'e:' + refId : undefined, status: 'pending', createdBy: s(who.name) || who.email, createdByEmail: who.email, createdAt: now, updatedAt: now };
     return { list: l.concat([made]), check: function(l2){ return l2.some(function(x){ return s(x.id) === id; }); } };
   });
   if (!res.ok) return { status: 503, out: { ok: false, error: 'Could not save it just now — try again.' } };
   const r = made || existing;
   if (!r) return { status: 200, out: { ok: true, nothing: true } };
   if (!made) return { status: 200, out: { ok: true, id: r.id, already: true, status: r.status } };
+  if (made.mailed) return { status: 200, out: { ok: true, id: r.id, queued: false, mailed: true } };   /* patch ESTPDF: the e-mail already went from the estimator; no second "please sign" e-mail */
   /* the e-mail asking the customer to sign → ✅ Approvals (owner rule) */
   let pm = pmFull(data, p); const to = custEmail(p), label = KINDS[kind];
   /* patch ESTIN: a GrayCo-template proposal goes to the job's (or its lead's) PM; no PM → the estimator who owns it; else the admins */
@@ -515,7 +525,7 @@ async function runFollowups(opts){
   reqs.forEach(function(r){
     if (!/^(estimate|contract)$/.test(s(r.kind))) return;
     const a = apprOf(aq, r);
-    const sentAt = a && a.status === 'sent' ? s(a.sentAt || a.updatedAt) : (!needsApproval() ? s(r.createdAt) : '');
+    const sentAt = r.mailed === true ? s(r.sentAt || r.createdAt) : (a && a.status === 'sent' ? s(a.sentAt || a.updatedAt) : (!needsApproval() ? s(r.createdAt) : ''));   /* patch ESTPDF: sent from the CRM / uploaded as sent: that is nudge 0 */
     cands.push({ key: 'r_' + r.id, pid: s(r.pid), r: r, sentAt: sentAt });
   });
   arr(data.projects).forEach(function(p){

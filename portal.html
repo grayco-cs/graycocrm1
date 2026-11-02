@@ -630,8 +630,9 @@ function chCard(){
 function home(){
   var ch = chCard();
   var tr0 = V.insurance ? (ch ? [ch] : insHome()) : [tracker()].concat(ch ? [ch] : []);   /* patch INSP: an insurance job shows its claim instead of the job steps */
-  if (wide()) return [ownPwCard()].concat(V.insurance ? tr0 : (ch ? [ch] : []), [updates(), photosButton(), reviewCard()]);
-  return [ownPwCard()].concat(tr0, [updates(), pmCard(), photosButton(), reviewCard(), infoCard()]);
+  var ec = estCards().filter(function(c){ return !/Accepted|Declined/.test(c.textContent || ''); });   /* patch ESTPDF: an open estimate is on the Home page too */
+  if (wide()) return [ownPwCard()].concat(ec, V.insurance ? tr0 : (ch ? [ch] : []), [updates(), photosButton(), reviewCard()]);
+  return [ownPwCard()].concat(ec, tr0, [updates(), pmCard(), photosButton(), reviewCard(), infoCard()]);
 }
 
 /* ── PHOTOS: GrayCo Photos of this job only ── */
@@ -682,10 +683,40 @@ function lightbox(list, i){
   show(); document.body.appendChild(ov);
 }
 
+/* ── patch ESTPDF: the ESTIMATE card — made from the same estimate as the PDF that was sent ──
+   name · date · total · the short scope (sections and amounts, as the PDF shows them) · 📄 View PDF (the exact sent PDF;
+   opening it marks the estimate "Viewed" for GrayCo) · ✅ Accept & sign (the e-sign paper under "Papers to sign") ·
+   💬 Ask a question (Messages) · status Sent → Viewed → Accepted / Declined. Nothing internal is in V.estimates. */
+var EST_ST = { Sent: ['Sent', 'pill now'], Viewed: ['Viewed', 'pill now'], Accepted: ['✓ Accepted', 'pill ok'], Declined: ['Declined', 'pill skip'] };
+function estCards(){
+  var L = (V && V.estimates) || [];
+  return L.map(function(x){
+    var st = EST_ST[x.status] || EST_ST.Sent;
+    var head = h('div', { class: 'row', style: 'display:flex;align-items:center;gap:8px;flex-wrap:wrap' }, [h('h2', { style: 'margin:0;flex:1', text: (LANG === 'es' ? 'Estimado' : 'Estimate') + (x.num ? ' #' + x.num : '') }), h('span', { class: st[1], 'data-est-status': x.status, text: st[0] })]);
+    var meta = h('div', { class: 'muted', text: [x.title, x.date ? (LANG === 'es' ? 'Enviado ' : 'Sent ') + dt(x.date) : '', x.version > 1 ? 'version ' + x.version : ''].filter(Boolean).join(' · ') });
+    var total = x.total != null ? h('div', { style: 'font-size:26px;font-weight:800;margin:8px 0 4px', 'data-est-total': '1', text: usd(x.total) }) : null;
+    var scope = (x.scope || []).length ? h('div', { class: 'est-scope', style: 'margin:6px 0 10px' }, (x.scope || []).map(function(l){ return h('div', { class: 'line' }, [h('span', { text: l.label }), h('span', { text: l.amount != null ? usd(l.amount) : '' })]); })) : null;
+    var act = h('div', { class: 'act', style: 'display:flex;gap:8px;flex-wrap:wrap' });
+    if (x.pdf) act.appendChild(h('a', { class: 'btn gold', href: x.pdf, target: '_blank', rel: 'noopener', 'data-est-pdf': '1', text: '📄 ' + (LANG === 'es' ? 'Ver PDF' : 'View PDF'), on: { click: function(){ try { post(FN, { action: 'est-viewed', estId: x.id, projectId: PID || undefined, preview: PREVIEW || undefined }, cred()); } catch (e) {} } } }));
+    if (x.status !== 'Accepted' && x.status !== 'Declined') act.appendChild(h('button', { type: 'button', class: 'btn', 'data-est-sign': '1', text: '✅ ' + (LANG === 'es' ? 'Aceptar y firmar' : 'Accept & sign'), on: { click: function(){
+      var go2 = function(){ var el = x.signId && document.querySelector('.es-item[data-id="' + x.signId + '"]'); if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); return true; } return false; };
+      if (TAB !== 'home') { go('home'); setTimeout(function(){ if (!go2()) alert('Your project manager will send it to you to sign — or ask a question below.'); }, 700); } else if (!go2()) alert('Your project manager will send it to you to sign — or ask a question below.'); } } }));
+    act.appendChild(h('button', { type: 'button', class: 'btn', 'data-est-ask': '1', text: '💬 ' + (LANG === 'es' ? 'Hacer una pregunta' : 'Ask a question'), on: { click: function(){
+      go('msgs'); setTimeout(function(){ var ta = $('cMsgText'); if (ta) { ta.value = 'About estimate' + (x.num ? ' #' + x.num : '') + ' (' + x.title + '): '; ta.focus(); } }, 300); } } }));
+    var note = x.status === 'Accepted' ? h('div', { class: 'muted', text: (LANG === 'es' ? 'Aceptado ' : 'Accepted ') + dt(x.signedAt) }) : null;
+    return h('section', { class: 'card', 'data-est-card': x.id }, [head, meta, total, scope, act, note]);
+  });
+}
+
 /* ── DOCUMENTS & PROPOSALS ── */
 function docs(){
   if (V.insurance) return insDocs();   /* patch INSP */
-  var list = V.docs || [];
+  var ec = estCards();   /* patch ESTPDF */
+  if (ec.length) { var skip = {}; (V.estimates || []).forEach(function(x){ skip[x.title] = 1; }); return ec.concat(docs0(skip)); }   /* the estimate's own row is the card above */
+  return docs0({});
+}
+function docs0(skip){
+  var list = (V.docs || []).filter(function(d){ return !(d.kind === 'proposal' && skip && skip[d.title]); });
   var box = h('section', { class: 'card' }, [window.gcDocHead ? window.gcDocHead() : null, h('h2', { text: 'Documents & proposals' }),
     h('div', { class: 'muted', text: 'Proposals made in Google Docs or in our system show up here by themselves.' })]);
   var wr = V.warranty, wcard = wr ? card('Your warranty', [h('div', { style: 'font-size:15px;font-weight:700', text: wr.title }),

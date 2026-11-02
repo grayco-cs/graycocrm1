@@ -748,7 +748,10 @@ async function buildView(data, p, opts){
   function addDoc(d){ const key = d.url || d.title; if (seenUrl[key]) return; seenUrl[key] = 1; docs.push(d); }
   ests.forEach(function(e){
     const g = gdocInfo(e.gdocUrl);
-    const pdf = arr(data.projectDocs).find(function(d){ return s(d.estimateId) === s(e.id) && pidOf(d) === pid && (refPath(d.ref) || httpsUrl(d.url)); });
+    /* patch ESTPDF: the copy the customer was SENT (the newest version) — not the first file that happens to carry the estimate's id */
+    const epds = arr(data.projectDocs).filter(function(d){ return s(d.estimateId) === s(e.id) && pidOf(d) === pid && d.deleted !== true && (refPath(d.ref) || httpsUrl(d.url)); });
+    const epCur = e.sentPdf && s(e.sentPdf.ref) ? s(e.sentPdf.ref) : '';
+    const pdf = (epCur && epds.find(function(d){ return s(d.ref) === epCur; })) || epds.filter(function(d){ return d.sentPdf === true && !d.supersededBy; }).sort(function(a, b){ return (+b.version || 0) - (+a.version || 0); })[0] || epds[0];
     const total = num(e.totalCharge || e.quoteTotal || e.total || e.contract);
     addDoc({ kind: 'proposal', title: clip(e.name || 'Your proposal', 90), date: ymd(e.sentDate || e.date || e.updatedAt),
       total: total > 0 ? money(total) : null,
@@ -769,7 +772,8 @@ async function buildView(data, p, opts){
   pdocs.forEach(function(d){
     const u = signed[d.ref] || (d.ref ? '' : httpsUrl(d.url));
     if (!u) return;
-    addDoc({ kind: 'file', title: clip(d.name || 'Document', 90), date: ymd(d.uploadedAt || d.uploaded || d.savedAt),
+    if (d.internal === true || d.portalNever === true) return;   /* patch ESTPDF: never an internal paper */
+    addDoc({ kind: 'file', title: clip((d.name || 'Document') + (d.supersededBy ? ' (superseded)' : ''), 90), date: ymd(d.uploadedAt || d.uploaded || d.savedAt), superseded: d.supersededBy ? true : undefined,   /* patch ESTPDF: an older sent version stays, marked */
       type: fileType(d.type + ' ' + d.name), url: u });
   });
   /* the papers behind approved change orders and customer invoices (when a PDF is attached) */
@@ -814,6 +818,7 @@ async function buildView(data, p, opts){
     posts: posts.map(function(x){ return { id: clip(x.id, 40), at: s(x.at).slice(0, 25), by: firstName(x.by), text: clip(x.text, 2000),
       photos: arr(x.files).map(function(f){ return signed[f.ref] || ''; }).filter(Boolean).slice(0, 12) }; }),
     docs: docs.slice(0, 60),
+    estimates: await estPortalCards(data, p, ests, signed),   /* patch ESTPDF: the Estimate card — the same estimate the PDF was made from */
     companyCam: { url: '', linked: !!ccId },          /* patch U2: the portal never links to CompanyCam */
     warranty: warrantyOf(insClaim(data, pid) ? Object.assign({}, p, { isInsurance: true }) : p, stage),   /* patch BB2: claim jobs = insurance / restoration, 5 years */
     showReview: stage >= 7,
@@ -906,6 +911,59 @@ async function claimHelpAction(body, who){
   } else return { status: 400, out: { ok: false, error: 'Bad request' } };
   await chStoreWrite(next);
   return { status: 200, out: Object.assign({ ok: true, canEdit: true, defaults: L.defaults() }, L.forEditor(next)) };
+}
+
+/* ── patch ESTPDF: the customer's Estimate card (owner 11/01: "How does the estimate show in the portal?") ──
+   One card per estimate the portal shows (the gate decides that, as for the proposal row): its name, date, total and a
+   short scope (the trade sections with their SELL amounts — what the PDF shows), "📄 View PDF" (the exact PDF that was
+   sent: the estimate's sentPdf, else its newest sent version), "✅ Accept & sign" (the portal's own e-sign paper for it,
+   portal-sign.js), "💬 Ask a question" (portal messages) and its status: Sent → Viewed → Accepted / Declined.
+   Never costs, margins, notes, sub / vendor names or carrier names. */
+async function estPortalCards(data, p, ests, signed){
+  const pid = s(p.id);
+  let reqs = [], views = [];
+  try { const r = await kvListRead('gc_sign_requests'); reqs = r ? r.list : []; } catch (e) {}
+  try { const v = await kvListRead('gc_est_views'); views = v ? v.list : []; } catch (e) {}
+  const out = [], need = [];
+  arr(ests).forEach(function(e){
+    const epds = arr(data.projectDocs).filter(function(d){ return s(d.estimateId) === s(e.id) && pidOf(d) === pid && d.deleted !== true && refPath(d.ref) && /\.pdf$/i.test(s(d.ref)); });
+    const cur = e.sentPdf && s(e.sentPdf.ref) ? s(e.sentPdf.ref) : '';
+    const pdf = (cur && epds.find(function(d){ return s(d.ref) === cur; })) || epds.filter(function(d){ return d.sentPdf === true && !d.supersededBy; }).sort(function(a, b){ return (+b.version || 0) - (+a.version || 0); })[0] || epds[0] || null;
+    if (pdf && !signed[pdf.ref]) need.push(pdf.ref);
+    out.push({ e: e, pdf: pdf });
+  });
+  if (need.length) { try { Object.assign(signed, await signRefs(need)); } catch (e) {} }
+  const strip = function(v){ return s(v).replace(COMMON_CARRIERS, 'your insurance company'); };
+  return out.map(function(x){
+    const e = x.e, groups = {}, order = [];
+    arr(e.lines).forEach(function(l){
+      if (!l || l.hidden === true) return;
+      const c = clip(strip(l.cat || l.category || 'Work'), 60) || 'Work';
+      if (!groups[c]) { groups[c] = 0; order.push(c); }
+      const q = num(l.qty) || 1;
+      groups[c] += l.charge != null ? num(l.charge) : (l.sell != null ? num(l.sell) : 0);
+    });
+    let scope = order.slice(0, 14).map(function(c){ return { label: c, amount: groups[c] > 0 ? money(groups[c]) : null }; });
+    if (!scope.length) { const st = strip(e.scopeNotes || e.description || (e.scope && e.scope.text)); if (st) scope = [{ label: clip(st, 300), amount: null }]; }
+    const req = arr(reqs).filter(function(r){ return r && s(r.kind) === 'estimate' && s(r.refId) === s(e.id) && s(r.pid) === pid && r.status !== 'void'; }).sort(function(a, b){ return s(b.updatedAt || b.createdAt).localeCompare(s(a.updatedAt || a.createdAt)); })[0] || null;
+    const seen = arr(views).filter(function(v){ return v && s(v.estId) === s(e.id); }).map(function(v){ return s(v.at); }).sort()[0] || '';
+    const st = low(e.status);
+    const status = (req && req.status === 'signed') || /won|signed|accept|contract/.test(st) ? 'Accepted' : (req && req.status === 'declined') || /lost|declin|reject/.test(st) ? 'Declined' : seen ? 'Viewed' : 'Sent';
+    const total = num(e.totalCharge || e.quoteTotal || e.total);
+    return { id: clip(e.id, 90), title: clip(strip(e.name) || 'Your estimate', 90), num: clip(e.num, 20), date: ymd(e.sentDate || (e.sentPdf && e.sentPdf.sentAt) || e.date || e.updatedAt),
+      total: total > 0 ? money(total) : null, scope: scope, pdf: x.pdf ? (signed[x.pdf.ref] || '') : '', version: x.pdf ? (+x.pdf.version || (e.sentPdf && +e.sentPdf.version) || 1) : null,
+      status: status, viewedAt: seen ? ymd(seen) : '', signId: req && req.status === 'pending' ? clip(req.id, 120) : '', signedAt: req && req.status === 'signed' && req.signed ? ymd(req.signed.at) : '' };
+  });
+}
+async function estViewed(p, estId){
+  estId = s(estId); if (!/^[A-Za-z0-9_.:-]{1,90}$/.test(estId)) return false;
+  const now = new Date(Date.now()).toISOString();
+  const r = await kvListUpdate('gc_est_views', function(l){
+    if (l.some(function(v){ return v && s(v.estId) === estId && s(v.at).slice(0, 10) === now.slice(0, 10); })) return null;
+    const v = { id: 'ev_' + Date.now().toString(36) + crypto.randomBytes(3).toString('hex'), estId: estId, pid: s(p.id), at: now };
+    return { list: l.concat([v]).slice(-2000), check: function(l2){ return l2.some(function(y){ return y && y.id === v.id; }); } };
+  });
+  return !!(r && r.ok);
 }
 
 /* ── INSURANCE JOBS (patch INSP) ────────────────────────────────────────────────
@@ -2657,7 +2715,7 @@ exports.handler = async function (event) {
   }
 
   /* PUBLIC */
-  if (action !== 'view' && action !== 'photos' && action !== 'invoice' && action !== 'referral' && action !== 'crew' && action !== 'app') return reply(400, headers, { ok: false, error: 'Bad request' });
+  if (action !== 'view' && action !== 'photos' && action !== 'invoice' && action !== 'referral' && action !== 'crew' && action !== 'app' && action !== 'est-viewed') return reply(400, headers, { ok: false, error: 'Bad request' });   /* patch ESTPDF: est-viewed */
   const ip = ipOf(event);
   if (limited(ip)) { await sleep(MIN_FAIL_MS); return reply(429, headers, { ok: false, error: 'Too many tries. Please call GrayCo ' + OFFICE_PHONE + '.' }); }
   const token = s(gcHeader(event, 'x-portal-token') || body.t);
@@ -2675,6 +2733,12 @@ exports.handler = async function (event) {
   let data, p;
   try { data = await crmData(false); p = findProject(data, row.project_id); } catch (e) { return reply(503, headers, { ok: false, error: 'We could not load your job just now. Please try again in a minute, or call GrayCo ' + OFFICE_PHONE + '.' }); }
   if (!p) return notActive(headers, t0);
+  if (action === 'est-viewed') {   /* patch ESTPDF: the customer opened the estimate's PDF → "Viewed" (a staff preview never counts) */
+    if (body.preview === true) return reply(200, headers, { ok: true, preview: true });
+    const shown = arr(data.estimates).some(function(e){ return e && s(e.id) === s(body.estId) && proposalShown(e, s(p.id), p); });
+    if (!shown) return reply(404, headers, { ok: false });
+    return reply(200, headers, { ok: await estViewed(p, body.estId) });
+  }
   if (action === 'photos') {
     const ccId = ccIdOf(p);
     const recs = await grayCoRecords();
@@ -2726,6 +2790,13 @@ Object.assign(exports._core, { gcStaffAuth: gcStaffAuth, signRefs: signRefs, tok
 /* patch INSP */
 Object.assign(exports._core, { esc: esc, isOffice: isOffice, kvListUpdate: kvListUpdate, queueApproval: queueApproval, AQ_KEY: AQ_KEY, approvalAction: approvalAction });   /* patch SUBCONTACT */
 Object.assign(exports._core, { COMMON_CARRIERS: COMMON_CARRIERS });   /* patch PORTALREQ: never a carrier in a portal request answer */
+/* patch ESTPDF: every approval that carries an estimate (the proposal e-mail, the "please sign" e-mail, "Put in the customer
+   portal") goes out only with its PDF in the CRM, and what went out is recorded (gc_kv gc_est_sent) — _lib/estpdf.js.
+   aqSend is the one place approvals are sent (at approve time, or at 7 AM for a quiet-hours approval), so the sentAt is
+   the real time. */
+const aqSendRaw = aqSend;
+aqSend = async function(item, now){ return require('./_lib/estpdf.js').aroundSend(exports._core, item, now, aqSendRaw); };   /* patch ESTPDF */
+Object.assign(exports._core, { aqSend: function(item, now){ return aqSend(item, now); }, buildView: function(data, p, opts){ return buildView(data, p, opts); }, estViewed: estViewed });   /* patch ESTPDF (tests: the portal's copy) */
 Object.assign(exports._core, { releaseScheduled: releaseScheduled, sendScheduled: sendScheduled, cqHoldsKind: cqHoldsKind, kvListRead: kvListRead });   /* patch CUSTQUIET */
 Object.assign(exports._core, { claimHelpAction: claimHelpAction, chWords: chWords, chAttach: chAttach });   /* patch CLAIMHELP */
 Object.assign(exports._core, { isInsJob: isInsJob, insDocShown: insDocShown, insInternal: insInternal, insGroupOf: insGroupOf, insuranceView: insuranceView, INS_STEPS: INS_STEPS });

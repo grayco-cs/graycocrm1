@@ -242,6 +242,7 @@ async function sendPersonal(body, who, key, headers){
     pid: String(body.pid || '').slice(0, 80), customer: String(body.customer || '').slice(0, 120), about: String(body.about || '').slice(0, 40),
     attachments: att.files.map(function(f){ return f.filename; }), resendId: data && data.id || '' };
   let logged = false; try { logged = await logSent(entry); } catch (e) {}
+  await noteEstAttachments(body, { to: to.join(', '), by: name, byEmail: me, via: 'compose', emailId: entry.id, pid: body.pid });   /* patch ESTPDF */
   return { statusCode: 200, headers, body: JSON.stringify({ ok: true, id: data && data.id, from: payload.from, logged: logged, entry: entry }) };
 }
 
@@ -296,7 +297,113 @@ async function sendBid(body, who, key, headers){
     pid: String(body.pid || '').slice(0, 80), customer: String(body.gc || '').slice(0, 120), about: 'bid', messageId: ownId ? messageId : '',
     attachments: att.files.map(function(f){ return f.filename; }), resendId: data && data.id || '' };
   let logged = false; try { logged = await logSent(entry); } catch (e) {}
+  await noteEstAttachments(body, { to: to.join(', '), by: name, byEmail: me, via: 'bid', emailId: entry.id, pid: body.pid });   /* patch ESTPDF */
   return { statusCode: 200, headers, body: JSON.stringify({ ok: true, id: data && data.id, from: payload.from, replyTo: bidsAt, messageId: ownId ? messageId : '', logged: logged, entry: entry }) };
+}
+
+/* ── patch ESTPDF — "📤 Send estimate" (owner 11/01: "estimates need to come FROM the CRM … The PDF has to be in the CRM
+   to be sent out"):
+   { mode:'estimate', estId, pid?, leadId?, to, cc?, subject, html, pdf: { ref: 'sb:crm-files/<sha256>.pdf', sha256, name } }
+   The PDF must already be in the CRM's file storage: it is read back from there, it must be a real PDF whose bytes are
+   its fingerprint (= pdf.sha256 the CRM computed), and THOSE bytes are attached — the customer gets exactly the file the
+   CRM keeps. Anything else → 409 "Couldn't save the PDF to the CRM — not sent. Try again." and nothing is sent.
+   From (owner 11/01: "estimates from CRM come from that PM's email") — decided HERE from the job in the cloud, never by
+   the page: the job's PM's own @grayco-cs.com address ("<PM> <pm@grayco-cs.com>", Reply-To the PM); no PM on the job →
+   the signed-in sender's own address; a PM with no @grayco-cs.com address → "<PM> · GrayCo <office@grayco-cs.com>" with
+   Reply-To the PM's own e-mail. BCC the PM and the sender. (The whole grayco-cs.com domain is verified in Resend, so
+   any @grayco-cs.com From works with no extra setup.) A customer e-mail: 7 PM–7 AM Central it is held for 7:00 AM (patch
+   CUSTQUIET) and its sentAt is the release time. Recorded in gc_kv "gc_est_sent" (the version) and gc_email_log
+   (the job / lead history). ── */
+function EP(){ return require('./_lib/estpdf.js'); }
+function portalCore(){ return require('./portal.js')._core; }
+async function noteEstAttachments(body, o){
+  try {
+    const refs = (Array.isArray(body.attachments) ? body.attachments : []).map(function(a){ return a && a.ref; }).filter(function(r){ return EP().isPdfRef(r); });
+    if (refs.length) await EP().noteAttached(portalCore(), refs, o);
+  } catch (e) {}
+}
+/* who an estimate e-mail is FROM: the job's PM (their own @grayco-cs.com address), else the sender; see above */
+async function estimateFrom(pid, who, name){
+  const me = String(who.email || '').toLowerCase();
+  const mine = { from: name + ' <' + me + '>', replyTo: me, bcc: [me], sig: who, how: 'sender' };
+  let pm = null;
+  try { const C = portalCore(), data = await C.crmData(true), p = C.findProject(data, String(pid || '')); pm = p ? C.pmOf(data, p) : null; } catch (e) { pm = null; }
+  if (!pm || !pm.name) return mine;
+  const pmName = cleanName(pm.name) || 'GrayCo', pmEmail = String(pm.email || '').toLowerCase();
+  if (/^[^@\s<>"]+@grayco-cs\.com$/.test(pmEmail) && !/^(office|billing|news|portal)@/.test(pmEmail)) {
+    return { from: pmName + ' <' + pmEmail + '>', replyTo: pmEmail, bcc: [pmEmail].concat(pmEmail === me ? [] : [me]), sig: { email: pmEmail, name: pm.name }, how: pmEmail === me ? 'sender (the PM)' : 'the job\'s PM' };
+  }
+  const reply = EMAIL_RE.test(pmEmail) ? pmEmail : me;
+  return { from: pmName + ' · GrayCo <office@grayco-cs.com>', replyTo: reply, bcc: [me], sig: { email: me, name: name }, how: 'company address for the PM (no @grayco-cs.com e-mail)' };
+}
+async function sendEstimate(body, who, key, headers){
+  const me = String(who.email || '').toLowerCase();
+  const J = function(code, o){ return { statusCode: code, headers, body: JSON.stringify(o) }; };
+  if (!/@grayco-cs\.com$/.test(me)) return J(403, { error: 'Your sign-in (' + me + ') is not a @grayco-cs.com address, so it cannot send as you.' });
+  const estId = String(body.estId || '').trim();
+  if (!/^[A-Za-z0-9_.:-]{1,90}$/.test(estId)) return J(400, { error: 'Pick the estimate first.' });
+  const to = emails(body.to), cc = emails(body.cc);
+  if (!to.length || to.length > 5 || to.some(function(e){ return !EMAIL_RE.test(e); })) return J(400, { error: 'Check the "To" address.' });
+  if (cc.length > 5 || cc.some(function(e){ return !EMAIL_RE.test(e); })) return J(400, { error: 'Check the CC addresses.' });
+  const subject = String(body.subject || '').trim().slice(0, 250), html = String(body.html || '');
+  if (!subject || !html.trim()) return J(400, { error: 'Add a subject and a message.' });
+  const pdf = body.pdf && typeof body.pdf === 'object' ? body.pdf : {};
+  const ref = String(pdf.ref || ''), want = String(pdf.sha256 || '').toLowerCase();
+  const got = EP().isPdfRef(ref) ? await EP().readPdf(ref) : { ok: false, why: 'no PDF reference' };
+  if (!got.ok || (want && got.sha256 !== want)) return J(409, { ok: false, blocked: true, error: EP().BLOCK, why: got.ok ? 'the PDF is not the one the CRM made' : got.why });
+  const fname = (String(pdf.name || 'Estimate.pdf').replace(/[\\/\r\n\0"]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 140) || 'Estimate.pdf').replace(/(\.pdf)?$/i, '.pdf');
+  const name = cleanName(who.name) || cleanName(body.fromName) || me.split('@')[0];
+  const snd = await estimateFrom(body.pid, who, name);
+  const payload = { from: snd.from, reply_to: snd.replyTo, to: to, subject: subject, html: await shellOut(html, snd.sig, body), bcc: snd.bcc.filter(function(b){ return to.indexOf(b) < 0; }),
+    headers: { 'X-GrayCo-CRM': 'estimate' }, attachments: [{ filename: fname, content: got.buf.toString('base64'), content_type: 'application/pdf' }] };
+  if (cc.length) payload.cc = cc;
+  const sentId = EP().newId();
+  let CQ = null; try { CQ = require('./_lib/custquiet.js'); } catch (e) { CQ = null; }
+  let data = {}, resp;
+  try {
+    const go = function(){ return fetch(RESEND_URL, { method: 'POST', headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); };
+    resp = CQ ? await CQ.run('customer', go, { estSentId: sentId, estId: estId }) : await go();   /* a customer e-mail: held 7 PM–7 AM */
+    data = await resp.json().catch(function(){ return {}; });
+  } catch (e) { return J(502, { error: 'The e-mail service did not answer — not sent.' }); }
+  if (!resp.ok) return J(resp.status, { error: (data && (data.message || data.error)) || 'Send failed — not sent.' });
+  const held = (CQ && CQ.heldOf(resp)) || (data && data.held && data.held.id ? data.held : null);
+  const paused = !!(data && data.paused);
+  const nowIso = new Date(Date.now()).toISOString();
+  let rec = null;
+  try {
+    rec = await EP().record(portalCore(), { id: sentId, estId: estId, pid: String(body.pid || '').slice(0, 80), leadId: String(body.leadId || '').slice(0, 80), name: fname, ref: ref, sha256: got.sha256, size: got.size,
+      status: held ? 'held' : (paused ? 'paused' : 'sent'), sentAt: held || paused ? '' : nowIso, heldAt: held ? nowIso : '', releaseAt: held ? String(held.releaseAt || '') : '',
+      sentTo: to.join(', '), cc: cc.join(', '), sentBy: name, sentByEmail: me, via: 'crm-email', resendId: data && data.id || '' });
+  } catch (e) { rec = null; }
+  const entry = { id: 'em_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), at: nowIso, kind: 'estimate',
+    by: name, from: me, to: to, cc: cc, subject: subject, text: html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300),
+    pid: String(body.pid || '').slice(0, 80), leadId: String(body.leadId || '').slice(0, 80), estId: estId, customer: String(body.customer || '').slice(0, 120), about: 'estimate',
+    attachments: [fname], pdfRef: ref, held: held ? String(held.releaseAt || '') : '', resendId: data && data.id || '' };
+  let logged = false; try { logged = await logSent(entry); } catch (e) {}
+  return J(200, { ok: true, id: data && data.id, from: payload.from, replyTo: snd.replyTo, fromHow: snd.how, held: !!held, releaseAt: held ? String(held.releaseAt || '') : '', paused: paused,
+    sha256: got.sha256, sent: rec, logged: logged, entry: entry });
+}
+
+/* patch ESTPDF — "📎 Upload the estimate I sent" (owner 11/01: "they can send estimates in text or from Google Docs, they just
+   need to upload it so it all goes in the portal"): { mode:'estimate-record', estId, pid?, leadId?, method: 'text' | 'gdocs' |
+   'email' | 'other', sentAt?, sentTo?, gdocUrl?, pdf: { ref, sha256, name } } — the PDF must be in the CRM's storage (same check
+   as a send); it is recorded as that estimate's next version (gc_kv gc_est_sent, via 'upload'). Nothing is e-mailed. */
+async function recordEstimate(body, who, headers){
+  const me = String(who.email || '').toLowerCase();
+  const J = function(code, o){ return { statusCode: code, headers, body: JSON.stringify(o) }; };
+  const estId = String(body.estId || '').trim();
+  if (!/^[A-Za-z0-9_.:-]{1,90}$/.test(estId)) return J(400, { error: 'Pick the estimate first.' });
+  const pdf = body.pdf && typeof body.pdf === 'object' ? body.pdf : {};
+  const got = EP().isPdfRef(pdf.ref) ? await EP().readPdf(pdf.ref) : { ok: false, why: 'no PDF reference' };
+  if (!got.ok || (pdf.sha256 && got.sha256 !== String(pdf.sha256).toLowerCase())) return J(409, { ok: false, blocked: true, error: EP().BLOCK, why: got.ok ? 'fingerprint' : got.why });
+  const method = /^(text|gdocs|email|other)$/.test(String(body.method || '')) ? String(body.method) : 'other';
+  const at = /^\d{4}-\d{2}-\d{2}(T[\d:.]+Z)?$/.test(String(body.sentAt || '')) ? (String(body.sentAt).length === 10 ? String(body.sentAt) + 'T12:00:00.000Z' : String(body.sentAt)) : new Date().toISOString();
+  const gdoc = /^https:\/\/docs\.google\.com\/[^\s"'<>]{4,400}$/.test(String(body.gdocUrl || '')) ? String(body.gdocUrl) : '';
+  const rec = await EP().record(portalCore(), { estId: estId, pid: String(body.pid || '').slice(0, 80), leadId: String(body.leadId || '').slice(0, 80), name: String(pdf.name || 'Estimate.pdf').slice(0, 140),
+    ref: String(pdf.ref), sha256: got.sha256, size: got.size, status: 'sent', sentAt: at, sentTo: String(body.sentTo || '').slice(0, 200), sentBy: cleanName(who.name) || me.split('@')[0], sentByEmail: me,
+    via: 'upload', method: method, gdocUrl: gdoc });
+  if (!rec) return J(503, { ok: false, error: 'Could not record it just now — try again.' });
+  return J(200, { ok: true, sent: rec, sha256: got.sha256 });
 }
 
 exports.handler = async function (event) {
@@ -317,6 +424,8 @@ exports.handler = async function (event) {
 
   if (body.mode === 'personal') return sendPersonal(body, who, key, headers);   /* patch AP2 */
   if (body.mode === 'bid') return sendBid(body, who, key, headers);             /* patch BIDSEND */
+  if (body.mode === 'estimate') return sendEstimate(body, who, key, headers);   /* patch ESTPDF */
+  if (body.mode === 'estimate-record') return recordEstimate(body, who, headers);   /* patch ESTPDF */
 
   const to = body.to;
   const subject = body.subject;
