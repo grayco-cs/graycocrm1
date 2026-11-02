@@ -206518,8 +206518,15 @@ function warn(e){ try { console.warn('[GC JOBORDER]', e && e.message || e); } ca
 
 /* ── the order ── */
 var RANK = { active: 0, bidding: 1, other: 2, finished: 3, lost: 4 };
+/* patch JOBACTIVE: the old QuickBooks customer import wrote status "Active" (the customer is active in QuickBooks) on
+   every row it made; such a row still at that exact status is no working job: the All card only, as before r17j.
+   A person's choice is lower case ("active"), and a non-QuickBooks "Active" (maintenance, typed) stays active. */
+function qbImportStatus(p){
+  return s(p.status) === 'Active' && (low(p.source) === 'quickbooks' || !!s(p.qbId) || !!s(p.qbCustomerId));
+}
 function cls(p){
   if (!p) return 'other';
+  if (qbImportStatus(p)) return 'other';
   var st = low(p.status).replace(/[\s_-]+/g, ' ');
   if (/\blost\b|\bdead\b|cancel/.test(st)) return 'lost';
   if (/^(active|approved|in progress|inprogress|on hold|onhold|started|underway|production|working|scheduled|signed)$/.test(st)) return 'active';
