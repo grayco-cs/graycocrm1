@@ -15,6 +15,10 @@ const { computer, sleep, waitFor, resetCloud, ACCOUNTS, cloud, mclick } = H;
 const build = path.resolve(process.argv[2] || '.'), MIRROR = process.argv[3] || '/tmp/claude-0/-home-user/6a5b2b6b-8a4d-5505-9f82-62521adb6674/scratchpad/loop/mirror.json';
 const email = 'wjohnson@grayco-cs.com', WHO = 'Wesley Johnson';
 resetCloud(); for (const r of JSON.parse(fs.readFileSync(MIRROR, 'utf8'))) cloud.set(r.key, { key: r.key, value: r.value !== undefined ? r.value : r.v, updated_at: r.updated_at });
+/* three real leads nobody has assigned (the mirror's own real leads are assigned or held): a website form, a text, a referral */
+const ago = new Date(Date.now() - 3 * 864e5).toISOString(), mk = (id, name, source, x) => Object.assign({ id, name, company: name, source, status: 'new', stage: 'New Lead', created: ago.slice(0, 10), createdAt: Date.parse(ago), updatedAt: ago, savedAt: ago, phone: '(901) 555-0100', notes: 'ASSIGNFIX test lead' }, x || {});
+const REAL = [mk('LWEB_TEST_ASK', 'Skip Test Website Lead', 'Website', { websiteLead: true, receivedAt: ago, message: 'Need a quote for a kitchen remodel' }), mk('LTXT_TEST_ASK', 'Skip Test Text Lead', 'Text message', { textMessage: true, receivedAt: ago }), mk('LMAN_TEST_ASK', 'Skip Test Referral Lead', 'Referral')];
+{ const row = cloud.get('leads'); row.value = (row.value || []).concat(REAL); row.updated_at = new Date().toISOString(); }
 let pass = 0, fail = 0; const ok = (c, m) => { if (c) { pass++; console.log('  ✓ ' + m); } else { fail++; console.log('  ✗ FAIL ' + m); } };
 async function signIn(c){
   const p = c.page();
@@ -36,6 +40,22 @@ const assignedTo = (p, id) => p.evaluate(id => { const l = (window.__gcLeadsLive
 const c = await computer('AF', { build }); const p = c.page();
 await signIn(c);
 let s0 = await settle(p);
+// 0. ASSIGNSKIP: importer rows (📦 Imported on the Leads screen) make no card; a real lead still does
+const sk = await p.evaluate(() => {
+  const set = window._gcApprovalSet(), carded = new Set(); Object.keys(set.groups).forEach(g => set.groups[g].forEach(x => { const m = /^td:hot1:asg:(.+?)(#\d+)?$/.exec(String(x.id)); if (m) carded.add(m[1]); }));
+  const L = (window.__gcLeadsLive || []).filter(l => l && l.id), NC = window._gcLeadNC;
+  const open = l => !(l.pm || l.estimator || l.apm) && !l.pid && !l.jobId && !l.converted && !l.deleted && !/won|lost|dead|archiv|closed|converted/i.test(String(l.stage || '') + ' ' + String(l.status || ''));
+  const imp = L.filter(l => NC && NC.imported(l)), impOpen = imp.filter(open), grp = new Set(impOpen.map(l => String(l.ccamId || l.fromProjectId || l.id)));
+  const own = imp.filter(l => /altus|eavenson|vanderbilt/i.test(String(l.name || l.company || '')));
+  const real = ['LWEB_TEST_ASK', 'LTXT_TEST_ASK', 'LMAN_TEST_ASK'].map(id => { const l = L.find(x => x.id === id); return id + ': ' + (!l ? 'not on the list' : carded.has(id) ? 'card' : window._gcLeadHold && window._gcLeadHold.isHeld(l) ? 'held (⏳ new leads card)' : NC && NC.imported(l) ? 'IMPORTED' : 'NO CARD'); });
+  return { carded: carded.size, impCarded: imp.filter(l => carded.has(l.id)).map(l => l.id), own: own.map(l => l.id + (carded.has(l.id) ? ' CARD' : '')), impGroups: grp.size, real: real,
+    badge: +((document.querySelector('.apx-nb') || {}).textContent || 0), count: window._gcApprovalCount() };
+});
+console.log('  importer rows', JSON.stringify(sk));
+ok(!sk.impCarded.length, 'no "Assign this lead" card for a 📦 Imported QuickBooks / CompanyCam row (' + sk.impCarded.slice(0, 3).join(', ') + ')');
+ok(sk.own.length >= 3 && sk.own.every(x => !/CARD/.test(x)), 'the Altus / Eavenson / Vanderbilt importer rows make no card: ' + sk.own.join(', '));
+ok(sk.real.every(x => /: (card|held)/.test(x)), 'a real website / text / referral lead still gets its card: ' + sk.real.join(' | '));
+ok(sk.impGroups > 0 && sk.badge === sk.count, `the badge counts what is shown: ${sk.badge} (${sk.impGroups} importer lead(s) no longer carded)`);
 // A. the owner's cards
 const OWN = /Assign this lead: (Altus Construction|S\.W\. Eavenson Construction|Vanderbilt mortgage and Finance)/i;
 const own = await p.evaluate(re => { const set = window._gcApprovalSet(); const o = []; Object.keys(set.groups).forEach(g => set.groups[g].forEach(x => { if (/^td:hot1:asg:/.test(x.id) && new RegExp(re, 'i').test(x.title)) o.push({ k: String(x.id).replace(/#\d+$/, ''), t: x.title + ' — ' + (x.sub || '') }); })); return o; }, OWN.source);
@@ -43,7 +63,7 @@ console.log('  start', JSON.stringify({ badge: s0.badge, count: s0.count, asg: s
 const byName = {}; own.forEach(x => { const n = OWN.exec(x.t)[1].toLowerCase(); byName[n] = (byName[n] || 0) + 1; });
 ok(own.length > 0 && Object.values(byName).every(n => n === 1), 'one card per lead, not per copy (' + JSON.stringify(byName) + '; the mirror has Altus twice: companycam + QuickBooks)');
 let keys = [...new Set(own.map(x => x.k))];
-if (keys.length < 3) keys = keys.concat(s0.ids.filter(k => /^td:hot1:asg:/.test(k) && !keys.includes(k))).slice(0, 3);
+if (keys.length < 3) keys = keys.concat(s0.ids.filter(k => /^td:hot1:asg:/.test(k) && !keys.includes(k) && !/TEST_ASK/.test(k))).concat(s0.ids.filter(k => /^td:hot1:asg:/.test(k) && /TEST_ASK/.test(k))).filter((k, i, a) => a.indexOf(k) === i).slice(0, 3);   /* the test leads last: they are for the bulk part */
 ok(keys.length === 3, 'three "Assign this lead" cards to assign (' + keys.join(', ') + ')');
 let s = s0;
 for (const k of keys) {

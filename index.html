@@ -170778,6 +170778,7 @@ var AUTO_BY = /lead inbox|Senior Estimator|system|auto|grayco crm|roofscout|webs
 /* nobody assigned — or only the automatic assignment that no person has confirmed yet */
 function needsAssign(l){
   if (W._gcLeadHold && W._gcLeadHold.isHeld(l)) return false;   /* patch LEADHOLD: the one "⏳ N new leads waiting" card instead */
+  try { if (W._gcLeadNC && typeof W._gcLeadNC.imported === 'function' && W._gcLeadNC.imported(l)) return false; } catch (e) {}   /* patch ASSIGNSKIP: a QuickBooks / CompanyCam importer row the Leads screen files under 📦 Imported (an existing customer, not an inquiry) */
   if (closed(l)) return false;
   var who = s(l.pm || l.estimator || l.apm);
   if (!who) return true;
