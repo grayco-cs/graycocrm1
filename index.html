@@ -22856,6 +22856,234 @@ function lineCharge(line){
   if((line.type||'labor')==='mh')return line.qty*(settings.mhCharge||75);
   return lineBaseCost(line)*effMult(line);
 }
+/* patch ESTMATH */
+/* patch ESTMATH — honest line math in the Estimate Builder (inserted right after lineCharge()).
+   1. Every line shows every factor, in order, with the numbers the builder really uses:
+        qty × unit = subtotal · + sales tax % (materials) · + MS contractor tax 3.5% (Mississippi jobs, every line but
+        man-hours) · × margin (the one effMult() really applies, named) = charge.
+      "Base" and "Charge" on the line are the same numbers the text shows (one computation, lineBaseCost / lineCharge).
+   2. The margin is named the same way on the chip, in the "Line margin" pulldown and in the text. THE RULE (effMult):
+        a margin set on the line wins; else the "Override" margin when it is on; else the estimate's JOB margin (the
+        margin bar at the top: a commercial default, a margin chosen by hand, or the margin the estimate was saved at);
+        the type default from Settings applies only when the job margin is "By type".
+      The pulldown's first choice used to say "Type default (1.4286x)" even when the job margin (e.g. 1.25x) was the one
+      charged, and the chip said "(material dflt)". Both now say "Job margin".
+   3. Drywall screws are a takeoff from the board count: sheets × screws per board (48, editable per estimate) ÷ screws
+      per box (the price-book item's pack size; asked once and saved on the item) = boxes, rounded up, at the item's
+      price per box. Change the sheets and the screws follow; type a different qty and the line says "overridden".
+      Estimates saved with the old rule (35 per board) are not changed: they show "Math updated — review" and the new
+      count beside the old one until the estimate is saved again.
+   Nothing here changes how a total is computed; only the screws takeoff (new lines, or "Use" on an old one) does. */
+var GC_SCREWS_PER_BOARD = 48, GC_SCREWS_PER_BOX = 5000;
+function _gcMf(m){ m = parseFloat(m); if(!isFinite(m)) return '1'; return String(Math.round(m * 1e4) / 1e4); }
+function _gcQf(q){ q = parseFloat(q) || 0; return q.toLocaleString('en-US', { maximumFractionDigits: 4 }); }
+function _gcEsc(s){ return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+function _gcMultInfo(l){
+  var t = (l && l.type) || 'labor', m = effMult(l) || 1;
+  if(t === 'mh') return { m: 1, src: 'mh', label: 'man-hour rate' };
+  if(l.mult && l.mult !== 'type' && !isNaN(parseFloat(l.mult)) && parseFloat(l.mult) > 0) return { m: m, src: 'line', label: 'this line' };
+  if(useOvr) return { m: m, src: 'ovr', label: 'override' };
+  if(jobMult === 'mat') return { m: m, src: 'type', label: t + ' default' };
+  var s = (typeof openSlots !== 'undefined' && openSlots[activeSlot]) || {};
+  return { m: m, src: 'job', label: 'job margin ' + (Math.round((1 - 1 / m) * 1000) / 10) + '%' + (s._pinned ? ', as saved' : '') };
+}
+window._gcMultInfo = _gcMultInfo;
+function _gcMultChip(l){ var i = _gcMultInfo(l); return i.src === 'mh' ? 'MH rate' : _gcMf(i.m) + 'x (' + i.label + ')'; }
+function _gcTypeOptLabel(l){
+  var t = (l && l.type) || 'labor';
+  if(t === 'mh') return 'Man-hour rate (no margin)';
+  if(useOvr) return 'Override (' + _gcMf(ovrMult) + 'x)';
+  if(jobMult === 'mat') return 'Type default (' + _gcMf(typeMultiplier(t)) + 'x)';
+  return 'Job margin (' + _gcMf(parseFloat(jobMult)) + 'x)';
+}
+function _gcMsPct(){ return settings.jobState === 'MS' ? (parseFloat(settings.msContractorTax) || 3.5) : 0; }
+/* the steps, as text; the last two numbers are exactly lineBaseCost(l) and lineCharge(l) */
+function _gcLineMathText(l){
+  var t = l.type || 'labor', q = parseFloat(l.qty) || 0, c = parseFloat(l.cost) || 0, base = lineBaseCost(l), charge = lineCharge(l), ms = _gcMsPct();
+  if(t === 'mh') return _gcQf(q) + ' MH × $' + (settings.mhCost || 44.44) + '/hr cost = ' + fmt(base) + ' · charged ' + _gcQf(q) + ' MH × $' + (settings.mhCharge || 75) + '/hr = ' + fmt(charge) + ' (man-hours: hourly rate, no margin' + (ms ? ', no MS tax' : '') + ')';
+  var raw = c * q, out = [_gcQf(q) + ' × ' + fmt(c) + ' = ' + fmt(raw)];
+  if(t === 'material') out.push('+ ' + settings.tax + '% sales tax = ' + fmt(ms ? taxed(raw) : base));
+  if(ms) out.push('+ ' + ms + '% MS contractor tax = ' + fmt(base));
+  var mi = _gcMultInfo(l);
+  out.push('× ' + _gcMf(mi.m) + ' (' + mi.label + ') = ' + fmt(charge));
+  return out.join(' · ');
+}
+window._gcLineMathText = _gcLineMathText;
+function _gcLineMathHTML(l){
+  var t = l.type || 'labor';
+  return '<span data-math style="color:' + (t === 'material' ? 'var(--amber)' : t === 'mh' ? 'var(--teal)' : 'var(--text2)') + ';font-size:10px">' + _gcEsc(_gcLineMathText(l)) + '</span>';
+}
+/* MS contractor tax actually in the lines (lineBaseCost adds it to every line but man-hours) */
+window._gcMsTaxTotal = function(){
+  var ms = _gcMsPct(); if(!ms) return 0;
+  return lines.reduce(function(s, l){ if((l.type || 'labor') === 'mh') return s; var b = lineBaseCost(l); return s + (b - b / (1 + ms / 100)); }, 0);
+};
+
+/* ── drywall screws takeoff ─────────────────────────────────────────────────────────────────────────────────── */
+var GC_OLD_SCREW_NOTE = /^([\d,]+) sheets × (\d+(?:\.\d+)?) = ([\d,]+) screws ÷ ([\d,]+)\/box$/;
+function _gcNum(v){ return parseFloat(String(v == null ? '' : v).replace(/,/g, '')) || 0; }
+function _gcIsScrewLine(l){ return !!l && /^Drywall screws\b/.test(String(l.desc || '')); }
+function _gcLegacyScrew(l){
+  if(!_gcIsScrewLine(l) || l.takeoff) return null;
+  var m = String(l.calcNote || '').match(GC_OLD_SCREW_NOTE); if(!m) return null;
+  return { sheets: _gcNum(m[1]), perBoard: +m[2], perBox: _gcNum(m[4]) };
+}
+function _gcScrewsPerBoard(){
+  var s = (typeof openSlots !== 'undefined' && openSlots[activeSlot]) || {}, v = parseFloat(s.screwsPerBoard);
+  if(v > 0) return v;
+  for(var i = 0; i < lines.length; i++){ var tk = lines[i] && lines[i].takeoff; if(tk && tk.rule === 'dwScrews' && parseFloat(tk.perBoard) > 0) return parseFloat(tk.perBoard); }
+  return GC_SCREWS_PER_BOARD;
+}
+window._gcScrewsPerBoard = _gcScrewsPerBoard;
+function _gcAreaTag(d){ d = String(d || ''); var i = d.lastIndexOf(' — '); return i >= 0 ? d.slice(i) : ''; }
+function _gcIsBoardLine(x){ return !!x && (x.type || 'labor') === 'material' && /^Drywall\b/.test(String(x.desc || '')) && !/screws|hang labor|tape|corner|compound|sanding/i.test(String(x.desc || '')) && (x.unit === 'sheet' || /\d+×\d+/.test(String(x.desc || ''))); }
+function _gcTkSheetLines(l){
+  var tk = l.takeoff;
+  if(tk && Array.isArray(tk.srcIds) && tk.srcIds.length) return lines.filter(function(x){ return x && tk.srcIds.indexOf(x.id) >= 0; });
+  if(tk) return [];
+  var tag = _gcAreaTag(l.desc);
+  return lines.filter(function(x){ return x !== l && _gcIsBoardLine(x) && _gcAreaTag(x.desc) === tag; });
+}
+function _gcTkCompute(l){
+  var tk = l.takeoff, leg = tk ? null : _gcLegacyScrew(l);
+  if(!(tk && tk.rule === 'dwScrews') && !leg) return null;
+  var src = _gcTkSheetLines(l), sheets = src.length ? src.reduce(function(s, x){ return s + (parseFloat(x.qty) || 0); }, 0) : (tk ? (parseFloat(tk.sheets) || 0) : leg.sheets);
+  var perBoard = _gcScrewsPerBoard(), perBox = (tk ? parseFloat(tk.perBox) : leg.perBox) || GC_SCREWS_PER_BOX, screws = sheets * perBoard;
+  return { sheets: sheets, perBoard: perBoard, perBox: perBox, screws: screws, boxes: sheets > 0 ? Math.max(1, Math.ceil(screws / perBox - 1e-9)) : 0, srcIds: src.map(function(x){ return x.id; }), legacy: leg };
+}
+window._gcTkCompute = _gcTkCompute;
+function _gcTkNote(c){ return fmtN(c.sheets) + ' sheets × ' + _gcQf(c.perBoard) + ' = ' + fmtN(c.screws) + ' screws ÷ ' + fmtN(c.perBox) + '/box = ' + fmtN(c.boxes) + ' box' + (c.boxes === 1 ? '' : 'es'); }
+window._gcTkNote = _gcTkNote;
+/* bring a takeoff line up to date (its qty only when it is not overridden); true when something changed */
+function _gcTkRefresh(l){
+  var c = _gcTkCompute(l); if(!c || !l.takeoff) return false;
+  var before = JSON.stringify([l.qty, l.calcNote, l.takeoff]);
+  l.takeoff.sheets = c.sheets; l.takeoff.perBoard = c.perBoard;
+  if(!l.qtyOverride) l.qty = c.boxes;
+  else if(parseFloat(l.qty) === c.boxes) l.qtyOverride = false;
+  l.calcNote = _gcTkNote(c) + (l.qtyOverride ? ' · qty overridden to ' + _gcQf(l.qty) : '');
+  return JSON.stringify([l.qty, l.calcNote, l.takeoff]) !== before;
+}
+/* called from ul() after a field changes; true = redraw the lines */
+window._gcTkOnEdit = function(l, f){
+  try{
+    if(f !== 'qty' && f !== 'type' && f !== 'cost') return false;
+    var redraw = false;
+    if(f === 'qty' && l.takeoff && l.takeoff.rule === 'dwScrews'){
+      var c = _gcTkCompute(l); l.qtyOverride = !!c && parseFloat(l.qty) !== c.boxes; _gcTkRefresh(l); redraw = true;
+    } else if(f === 'qty' && _gcLegacyScrew(l)) redraw = true;
+    if(f === 'qty' || f === 'type'){
+      lines.forEach(function(x){ if(x && x !== l && x.takeoff && x.takeoff.rule === 'dwScrews' && (x.takeoff.srcIds || []).indexOf(l.id) >= 0){ if(_gcTkRefresh(x)) redraw = true; } });
+      if(lines.some(function(x){ return _gcLegacyScrew(x) && _gcTkSheetLines(x).indexOf(l) >= 0; })) redraw = true;
+    }
+    return redraw;
+  }catch(e){ return false; }
+};
+function _gcTkPersist(){
+  try{ var s = openSlots[activeSlot]; if(s) s.lines = [...lines]; }catch(e){}
+  try{ renderLines(); renderSummary(); }catch(e){}
+  try{ if(typeof _gcPersistLineEdit === 'function') _gcPersistLineEdit(); }catch(e){}
+}
+/* "Use N": the line takes the rule's count (an old line becomes a takeoff line) */
+window._gcTkUse = function(id){
+  var l = lines.find(function(x){ return x && x.id === id; }); if(!l) return false;
+  var c = _gcTkCompute(l); if(!c) return false;
+  if(!l.takeoff) l.takeoff = { rule: 'dwScrews', srcIds: c.srcIds, perBoard: c.perBoard, perBox: c.perBox, packFrom: 'note', sheets: c.sheets, was: l.calcNote || '' };
+  l.qtyOverride = false; _gcTkRefresh(l); _gcTkPersist(); return true;
+};
+/* screws per board, for this estimate */
+window._gcTkSetPerBoard = function(v){
+  var n = parseFloat(v); if(!(n > 0)){ try{ renderLines(); }catch(e){} return false; }
+  var s = openSlots[activeSlot]; if(s) s.screwsPerBoard = n;
+  lines.forEach(function(x){ if(x && x.takeoff && x.takeoff.rule === 'dwScrews'){ x.takeoff.perBoard = n; _gcTkRefresh(x); } });
+  _gcTkPersist(); return true;
+};
+function _gcRateOf(tk){ try{ return (tk && (tk.itemId || tk.itemDesc)) ? rates.find(function(r){ return r && ((tk.itemId && r.id === tk.itemId) || (!tk.itemId && r.desc === tk.itemDesc)); }) || null : null; }catch(e){ return null; } }
+/* ask (once) how many screws come in one box of the item, and keep it on the item */
+function _gcAskPack(tk, desc){
+  var r = _gcRateOf(tk), name = (r && r.desc) || tk.itemDesc || desc || 'drywall screws';
+  var a = window.prompt('How many screws come in one box of "' + name + '"?\n(Saved on the item, so you are asked once.)', String(tk.perBox || GC_SCREWS_PER_BOX));
+  var n = parseInt(String(a == null ? '' : a).replace(/[^\d]/g, ''), 10);
+  if(!(n > 0)) return false;
+  tk.perBox = n; tk.packFrom = 'item';
+  if(r){ r.packSize = n; try{ saveRatesDB(); }catch(e){} }
+  return true;
+}
+window._gcTkSetPack = function(id){
+  var l = lines.find(function(x){ return x && x.id === id; }); if(!l || !l.takeoff) return false;
+  if(!_gcAskPack(l.takeoff, l.desc)) return false;
+  _gcTkRefresh(l); _gcTkPersist(); return true;
+};
+/* new calculator lines: link each screws line to its board line(s); ask the pack size once per item */
+window._gcTkLink = function(newLines){
+  try{
+    var asked = {};
+    newLines.forEach(function(l){
+      if(!l || !l.takeoff || !l.takeoff.src) return;
+      var src = l.takeoff.src;
+      l.takeoff.srcIds = newLines.filter(function(x){ return x && x.tkSrc === src; }).map(function(x){ return x.id; });
+      delete l.takeoff.src;
+    });
+    newLines.forEach(function(l){ if(l && l.tkSrc) delete l.tkSrc; });
+    newLines.forEach(function(l){
+      var tk = l && l.takeoff; if(!tk || tk.packFrom !== 'assumed' || !(tk.itemId || tk.itemDesc)) return;
+      var k = tk.itemId || tk.itemDesc;
+      if(asked[k] === undefined){ asked[k] = _gcAskPack(tk, l.desc) ? tk.perBox : 0; }
+      else if(asked[k] > 0){ tk.perBox = asked[k]; tk.packFrom = 'item'; }
+    });
+    newLines.forEach(function(l){
+      var tk = l && l.takeoff; if(!tk || tk.rule !== 'dwScrews') return;
+      var sheets = 0; newLines.forEach(function(x){ if(x && (tk.srcIds || []).indexOf(x.id) >= 0) sheets += parseFloat(x.qty) || 0; });
+      var c = { sheets: sheets, perBoard: parseFloat(tk.perBoard) || GC_SCREWS_PER_BOARD, perBox: parseFloat(tk.perBox) || GC_SCREWS_PER_BOX };
+      c.screws = c.sheets * c.perBoard; c.boxes = c.sheets > 0 ? Math.max(1, Math.ceil(c.screws / c.perBox - 1e-9)) : 0;
+      tk.sheets = c.sheets; l.qty = c.boxes; l.qtyOverride = false; l.calcNote = _gcTkNote(c);
+    });
+  }catch(e){ console.warn('ESTMATH link', e); }
+  return newLines;
+};
+/* the takeoff row under a screws line */
+function _gcTkLineHTML(l){
+  try{
+    var c = _gcTkCompute(l); if(!c) return '';
+    var id = _gcEsc(l.id), b = 'margin-left:6px;padding:1px 7px;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer;border:.5px solid var(--bdr2);background:var(--bg);color:var(--text)';
+    var pb = '<input type="number" data-tk-perboard min="1" step="1" value="' + _gcQf(c.perBoard) + '" title="Screws per board, this estimate" style="width:46px;font-size:10px;padding:1px 3px" onchange="_gcTkSetPerBoard(this.value)">';
+    var rule = fmtN(c.sheets) + ' sheets × ' + pb + ' screws/board = ' + fmtN(c.screws) + ' screws ÷ ' + fmtN(c.perBox) + '/box = <b>' + fmtN(c.boxes) + ' box' + (c.boxes === 1 ? '' : 'es') + '</b>';
+    var h = '<div data-tk style="flex-basis:100%;font-size:10px;color:var(--text2);margin-top:3px">';
+    if(c.legacy){
+      var lg = c.legacy, oldN = Math.max(1, Math.ceil(lg.sheets * lg.perBoard / lg.perBox - 1e-9));
+      h += '<span style="color:var(--amber);font-weight:700">Math updated — review:</span> figured at ' + _gcQf(lg.perBoard) + ' screws/board (' + fmtN(lg.sheets) + ' sheets × ' + _gcQf(lg.perBoard) + ' ÷ ' + fmtN(lg.perBox) + '/box = ' + fmtN(oldN) + ' boxes; this line has ' + _gcQf(l.qty) + '). Now: ' + rule
+        + (parseFloat(l.qty) !== c.boxes ? '<button type="button" data-tk-use style="' + b + '" onclick="_gcTkUse(\'' + id + '\')">Use ' + fmtN(c.boxes) + '</button>' : '');
+    } else {
+      h += 'Takeoff: ' + rule;
+      if(l.qtyOverride) h += ' · <b style="color:var(--amber)">qty overridden</b> (' + _gcQf(l.qty) + ')<button type="button" data-tk-use style="' + b + '" onclick="_gcTkUse(\'' + id + '\')">Use ' + fmtN(c.boxes) + '</button>';
+      if(l.takeoff.packFrom === 'assumed') h += ' · box size assumed<button type="button" data-tk-pack style="' + b + '" onclick="_gcTkSetPack(\'' + id + '\')">Set box size</button>';
+    }
+    return h + '</div>';
+  }catch(e){ return ''; }
+}
+/* the estimate-level notice: an estimate figured with the old screws rule */
+window._gcMathBannerHTML = function(){
+  try{
+    var old = lines.filter(_gcLegacyScrew); if(!old.length) return '';
+    var diff = old.filter(function(l){ var c = _gcTkCompute(l); return c && parseFloat(l.qty) !== c.boxes; }).length;
+    return '<div id="gc-estmath-banner" style="background:rgba(186,117,23,0.10);border:.5px solid var(--amber);border-radius:var(--r);padding:.45rem .7rem;margin-bottom:.5rem;font-size:11px">'
+      + '<b style="color:var(--amber)">Math updated — review.</b> Drywall screws are now figured from the board count at ' + _gcQf(_gcScrewsPerBoard()) + ' screws per board; this estimate was figured at ' + _gcQf(_gcLegacyScrew(old[0]).perBoard) + '. '
+      + 'Nothing on it was changed — its lines and saved total are as saved. ' + (diff ? diff + ' screws line' + (diff === 1 ? '' : 's') + ' would change (see below: “Use” takes the new count). ' : '')
+      + 'Saving marks it reviewed; a line you leave keeps its count and shows as overridden.</div>';
+  }catch(e){ return ''; }
+};
+/* explicit Save = reviewed: old screws lines become takeoff lines, keeping their qty (overridden when it differs) */
+window._gcMathOnSave = function(){
+  try{
+    lines.forEach(function(l){
+      var c = _gcLegacyScrew(l) && _gcTkCompute(l); if(!c) return;
+      l.takeoff = { rule: 'dwScrews', srcIds: c.srcIds, perBoard: c.perBoard, perBox: c.perBox, packFrom: 'note', sheets: c.sheets, was: l.calcNote || '' };
+      l.qtyOverride = parseFloat(l.qty) !== c.boxes;
+      l.calcNote = _gcTkNote(c) + (l.qtyOverride ? ' · qty overridden to ' + _gcQf(l.qty) : '');
+    });
+    var s = openSlots[activeSlot]; if(s) s.lines = [...lines];
+  }catch(e){ console.warn('ESTMATH save', e); }
+};
 
 // ─── INIT ────────────────────────────────────────────────────────────────────
 // ── SEARCHABLE SELECT via input+datalist overlay ─────────────────────────────
@@ -24142,7 +24370,7 @@ function renderLines(){try{
       +'<button class="btn sm" onclick="window.__gcEstShown='+(_ebCap+100)+';renderLines()">Show '+Math.min(100,_ebN-_ebCap)+' more</button>'
       +(_ebD<_ebN?' <span style="color:var(--amber)">Only '+_ebD+' of these lines are different; the rest are copies and the totals count every copy. Do not save or send this estimate until the office cleans it up.</span>':'')+'</div>';
   }
-  wrap.innerHTML=lines.slice(0,_ebCap).map(l=>{try{
+  wrap.innerHTML=(window._gcMathBannerHTML?window._gcMathBannerHTML():'')+lines.slice(0,_ebCap).map(l=>{try{   /* patch ESTMATH */
     if(!l||!l.id)return '';
     l.cost=parseFloat(l.cost)||0;
     l.qty=parseFloat(l.qty)||1;
@@ -24153,7 +24381,7 @@ function renderLines(){try{
     const baseCost=lineBaseCost(l),charge=lineCharge(l);
     const taxNote=isMat?` <span class="tax-pill">+${settings.tax}%T</span>`:'';
     const em=effMult(l)||1;
-    const _lineSet=(l.mult && l.mult!=='type' && !isNaN(parseFloat(l.mult)) && parseFloat(l.mult)>0); const ml=_lineSet?`${em.toFixed(2)}x (this line)`:useOvr?`ovr ${ovrMult}x`:(!l.mult||l.mult==='type')?`${em.toFixed(2)}x (${l.type} dflt)`:`${em.toFixed(2)}x`;
+    const _lineSet=(l.mult && l.mult!=='type' && !isNaN(parseFloat(l.mult)) && parseFloat(l.mult)>0); const ml=_gcMultChip(l);   /* patch ESTMATH */
     return`<div class="el" data-lineid="${l.id}">
       <div class="elm">
         <div>
@@ -24176,7 +24404,7 @@ function renderLines(){try{
             title="${(l.calcNote&&l.calcNote.includes('MH'))||l.unit==='per MH'?'Rate per man-hour ($44.44 = $400/9hr day)':'Unit cost pre-tax for materials, total for labor/sub'}">
         </div>
         <div class="sm-hide">
-          <div style="font-size:9px;color:var(--text2)">Base${isMat?' w/tax':''}</div>
+          <div style="font-size:9px;color:var(--text2)">Base${isMat?' w/tax':''}${settings.jobState==='MS'&&(l.type||'labor')!=='mh'?' + MS '+(settings.msContractorTax||3.5)+'%':''}</div>
           <div data-base style="font-weight:600;margin-top:4px;font-size:12px">${fmt(baseCost)}</div>
         </div>
         <div>
@@ -24203,8 +24431,8 @@ function renderLines(){try{
       </div>
       <div class="elb">
         <span style="color:var(--text2)">Line margin:</span>
-        <select style="padding:3px 6px;border:.5px solid var(--bdr2);border-radius:var(--r);font-size:11px;background:var(--bg);color:var(--text)" onchange="ul('${l.id}','mult',this.value)" title="Set this line's own margin (overrides the global override for this line)">
-          <option value="type" ${!l.mult||l.mult==='type'?'selected':''}>Type default (${typeMultiplier(l.type||'labor')}x)</option>
+        <select style="padding:3px 6px;border:.5px solid var(--bdr2);border-radius:var(--r);font-size:11px;background:var(--bg);color:var(--text)" onchange="ul('${l.id}','mult',this.value)" title="The margin this line is charged at. A margin set here wins; otherwise the Override when it is on; otherwise the job margin (top of the estimate); the type default (Settings) only when the job margin is By type.">
+          <option value="type" ${!l.mult||l.mult==='type'?'selected':''}>${_gcTypeOptLabel(l)}</option>
           <option value="2.0" ${l.mult==='2.0'?'selected':''}>2.00x</option>           <option value="1.9" ${l.mult==='1.9'?'selected':''}>1.90x</option>           <option value="1.8" ${l.mult==='1.8'?'selected':''}>1.80x</option>           <option value="1.7" ${l.mult==='1.7'?'selected':''}>1.70x</option>           <option value="1.6" ${l.mult==='1.6'?'selected':''}>1.60x</option>
           <option value="1.5" ${l.mult==='1.5'?'selected':''}>1.50x</option>
           <option value="1.2821" ${l.mult==='1.2821'?'selected':''}>22% margin (1.28x)</option>
@@ -24217,8 +24445,7 @@ function renderLines(){try{
           <option value="1.0" ${l.mult==='1.0'?'selected':''}>1.00x (cost only)</option>
           <option value="custom" ${l.mult&&['type','2.0','1.9','1.8','1.7','1.6','1.5','1.42','1.4','1.35','1.3','1.25','1.2','1.2821','1.0'].indexOf(String(l.mult))<0?'selected':''}>${l.mult&&['type','2.0','1.9','1.8','1.7','1.6','1.5','1.42','1.4','1.35','1.3','1.25','1.2','1.2821','1.0'].indexOf(String(l.mult))<0?('Custom '+l.mult+'x'):'Custom\u2026'}</option>
         </select>
-        ${isMat?`<span style="color:var(--amber);font-size:10px">${fmt(l.cost*l.qty)} + ${settings.tax}% tax = ${fmt(taxed(l.cost*l.qty))} -> x${em.toFixed(2)} = ${fmt(charge)}</span>`:''}
-              ${(l.type||'labor')==='mh'?`<span style="color:var(--teal);font-size:10px">${l.qty} MH x $${l.cost}/hr cost -> $${settings.mhCharge||75}/hr charge = ${fmt(charge)}</span>`:''}
+        ${_gcLineMathHTML(l)}${_gcTkLineHTML(l)}   <!-- /* patch ESTMATH */ -->
         ${useOvr?`<span style="color:var(--blue);font-size:10px">Override active  --  all lines at ${ovrMult}x</span>`:''}
       </div>
     </div>`;
@@ -24253,6 +24480,7 @@ function ul(id,f,v){
     v=String(_n);
   }
   l[f]=v;
+  var _gcTkRedraw=false; try{ _gcTkRedraw=!!(window._gcTkOnEdit&&window._gcTkOnEdit(l,f)); }catch(_te){}   /* patch ESTMATH */
   if(openSlots[activeSlot])openSlots[activeSlot].lines=[...lines];
   // IMMEDIATE, synchronous persist to the estimate record so the edit can NEVER be lost or reverted.
   try{
@@ -24280,11 +24508,13 @@ function ul(id,f,v){
         // Update margin badge
         const mlEl=row.querySelector('[data-ml]');
         if(mlEl){
-          const _lineSet=(l.mult && l.mult!=='type' && !isNaN(parseFloat(l.mult)) && parseFloat(l.mult)>0); const ml=_lineSet?`${em.toFixed(2)}x (this line)`:useOvr?`ovr ${ovrMult}x`:(!l.mult||l.mult==='type')?`${em.toFixed(2)}x (${l.type} dflt)`:`${em.toFixed(2)}x`;
+          const _lineSet=(l.mult && l.mult!=='type' && !isNaN(parseFloat(l.mult)) && parseFloat(l.mult)>0); const ml=_gcMultChip(l);   /* patch ESTMATH */
           mlEl.textContent=ml;
         }
+        const mathEl=row.querySelector('[data-math]'); if(mathEl) mathEl.outerHTML=_gcLineMathHTML(l);   /* patch ESTMATH */
       }catch(e){}
     }
+    if(_gcTkRedraw){ try{ renderLines(); }catch(_re){} }   /* patch ESTMATH */
     // Also update summary + persist after short delay
     clearTimeout(_saveTimer);
     _saveTimer=setTimeout(()=>{
@@ -24453,10 +24683,11 @@ function renderSummary(){try{try{_gcAutoComMargin();}catch(_e){}try{_gcTypeBadge
     ${matLines2.length?`<div class="sr"><span style="color:var(--text2)">📦 Material (${matLines2.length} lines)</span><span>${fmt(matCharge)} <span style="font-size:10px;color:var(--amber)">+tax ${fmt(taxTotal)}</span></span></div>`:''}
     ${subLines.length?`<div class="sr"><span style="color:var(--text2)">🤝 Subs (${subLines.length} lines)</span><span>${fmt(subCharge)} <span style="font-size:10px;color:var(--text2)">cost ${fmt(subCost)}</span></span></div>`:''}
     ${eqLines.length?`<div class="sr"><span style="color:var(--text2)">🚜 Equipment (${eqLines.length} lines)</span><span>${fmt(eqCharge)}</span></div>`:''}
+    ${(function(){const _mh=lines.filter(l=>(l.type||'labor')==='mh');return _mh.length?`<div class="sr"><span style="color:var(--text2)">⏱ Man-hours (${_mh.length} lines)</span><span>${fmt(_mh.reduce((s,l)=>s+lineCharge(l),0))}</span></div>`:'';})()}   <!-- /* patch ESTMATH */ -->
     <div style="border-top:.5px solid var(--bdr);margin:.375rem 0"></div>
     <div class="sr" style="font-size:11px"><span style="color:var(--text2)">Material pre-tax total</span><span style="color:var(--text2)">${fmt(matCostPre)}</span></div>
     <div class="sr" style="font-size:11px"><span style="color:var(--text2)">Tax on materials (${settings.tax}%)</span><span style="color:var(--amber)">${fmt(taxTotal)}</span></div>
-    ${settings.jobState==='MS'?`<div class="sr" style="font-size:11px;color:var(--amber);font-weight:600"><span>⚠ MS contractor tax (${settings.msContractorTax||3.5}% on ALL lines)</span><span>${fmt(lines.reduce((s,l)=>{const b=(l.type||'labor')==='material'?taxed(l.cost*l.qty):l.cost*l.qty;return s+b*((settings.msContractorTax||3.5)/100);},0))}</span></div>`:''}
+    ${settings.jobState==='MS'?`<div class="sr" style="font-size:11px;color:var(--amber);font-weight:600"><span>⚠ MS contractor tax (${settings.msContractorTax||3.5}% of each line's cost, before margin; not on man-hours)</span><span>${fmt(window._gcMsTaxTotal?window._gcMsTaxTotal():0)}</span></div>`:''}
     <div class="sr" style="font-size:11px"><span style="color:var(--text2)">Labor cost (no tax)</span><span style="color:var(--text2)">${fmt(labCost)}</span></div>
     ${subCost?`<div class="sr" style="font-size:11px"><span style="color:var(--text2)">Sub cost (no tax)</span><span style="color:var(--text2)">${fmt(subCost)}</span></div>`:''}`;
 
@@ -25177,7 +25408,7 @@ function renderDwZones(){
             oninput="dwZones.find(x=>x.id==='${z.id}').labor=parseFloat(this.value)||0;calcDw()" onblur="renderDwZones()"></div>
         <div class="f"><label style="font-size:10px" style="color:var(--green)">Auto accessories</label>
           <div style="font-size:10px;color:var(--green);padding:4px 0;line-height:1.6">
-            ${z.sf?'Mud: '+Math.ceil(sheets/8)+' box · Tape: '+Math.ceil(z.sf*0.7/500)+' roll · Pads: '+Math.ceil(z.sf/1000*20)+' · Screws: '+fmtN(sheets*35):'Enter SF above'}
+            ${z.sf?'Mud: '+Math.ceil(sheets/8)+' box · Tape: '+Math.ceil(z.sf*0.7/500)+' roll · Pads: '+Math.ceil(z.sf/1000*20)+' · Screws: '+fmtN(sheets*(window._gcScrewsPerBoard?window._gcScrewsPerBoard():48)):'Enter SF above'}
           </div></div>
         <div class="f"><label style="font-size:10px">Margin</label>
           <select onchange="dwZones.find(x=>x.id==='${z.id}').mult=this.value;calcDw()">
@@ -25227,7 +25458,7 @@ function calcDw(){try{
     totalSheets+=sheets; totalMat+=matTaxed; totalLabor+=laborCost;
 
     // ── Board material ────────────────────────────────────────────────────────
-    allLines.push({desc:`Drywall${typeTag} ${sz.label}${areaTag}`,cost:matPre/(sheets||1),qty:sheets,unit:'sheet',cat:'Drywall',type:'material',mult:zMult,calcNote:`${DW_TYPE_LABELS[typeKey]||typeKey} pre-tax`});
+    allLines.push({desc:`Drywall${typeTag} ${sz.label}${areaTag}`,cost:matPre/(sheets||1),qty:sheets,unit:'sheet',cat:'Drywall',type:'material',mult:zMult,calcNote:`${DW_TYPE_LABELS[typeKey]||typeKey} pre-tax`,tkSrc:'dwz:'+z.id});   /* patch ESTMATH */
     if(typeKey==='cement')allLines.push({desc:`Cement board mesh+thinset${areaTag}`,cost:4,qty:sheets,unit:'sheet',cat:'Drywall',type:'material',mult:zMult,calcNote:'$4/sheet'});
     // ── Backer board screws (cement board only) — box pricing ────────────────
     if(sz.isCement||typeKey==='cement'){
@@ -25240,19 +25471,21 @@ function calcDw(){try{
     }
 
     // ── Screws: 35 per sheet, bought BY THE BOX ──────────────────────────────
-    const screwsPerSheet=35;
+    const screwsPerSheet=(window._gcScrewsPerBoard?window._gcScrewsPerBoard():48);   /* patch ESTMATH */ // was 35
     const totalScrews=sheets*screwsPerSheet;
     // GrayCo buys drywall screws by the box: 5,000 per box (25 lb). Default to that.
     // If a matching box/bucket rate is in the list, use its price (and count if stated).
     const screwBoxRM=rates.find(r=>/screw/i.test(r.desc)&&/box|bucket|ct\b|count|lb\b/i.test((r.desc+' '+(r.unit||'')))&&/drywall|sheetrock/i.test(r.desc));
-    let perBox=5000, boxCost=44.98;
+    let perBox=5000, boxCost=44.98, packFrom='assumed';
     if(screwBoxRM){
       boxCost=screwBoxRM.cost||boxCost;
       const cm=(screwBoxRM.desc||'').match(/([\d,]{3,6})\s*(?:ct|count|pc|piece)/i);
-      if(cm) perBox=parseFloat(cm[1].replace(/,/g,''))||perBox;
+      if(parseFloat(screwBoxRM.packSize)>0){ perBox=parseFloat(screwBoxRM.packSize); packFrom='item'; }   /* patch ESTMATH */
+      else if(cm){ perBox=parseFloat(cm[1].replace(/,/g,''))||perBox; packFrom='item'; }
     }
     const screwBoxes=Math.max(1,Math.ceil(totalScrews/perBox));
-    allLines.push({desc:`Drywall screws${areaTag}`,cost:boxCost/(screwBoxes||1),qty:screwBoxes,unit:'box',cat:'Drywall',type:'material',unit:'box',mult:zMult,calcNote:`${fmtN(sheets)} sheets × ${screwsPerSheet} = ${fmtN(totalScrews)} screws ÷ ${fmtN(perBox)}/box`});
+    /* patch ESTMATH: the price is PER BOX (it was box price / boxes: the whole lot priced as one box) */
+    allLines.push({desc:`Drywall screws${areaTag}`,cost:boxCost,qty:screwBoxes,unit:'box',cat:'Drywall',type:'material',mult:zMult,calcNote:`${fmtN(sheets)} sheets × ${screwsPerSheet} = ${fmtN(totalScrews)} screws ÷ ${fmtN(perBox)}/box = ${fmtN(screwBoxes)} box${screwBoxes===1?'':'es'}`,takeoff:{rule:'dwScrews',src:'dwz:'+z.id,perBoard:screwsPerSheet,perBox:perBox,packFrom:packFrom,itemId:(screwBoxRM&&screwBoxRM.id)||'',itemDesc:(screwBoxRM&&screwBoxRM.desc)||''}});
 
     // ── Mud: 1 box per 8 sheets @ $15 ────────────────────────────────────────
     const mudBoxes=Math.ceil(sheets/8);
@@ -26265,6 +26498,7 @@ function addCalcToSlot(key, slotIdx){
     if(calc.rafterLines&&calc.rafterLines.length)allCalcLines=[...allCalcLines,...calc.rafterLines];
   }
   const newLines=allCalcLines.map(l=>({id:uid(),...l,mult:(_calcMult!=='type'?_calcMult:(l.mult||'type'))}));
+  try{ if(window._gcTkLink) window._gcTkLink(newLines); }catch(_tk){}   /* patch ESTMATH */
   if(slotIdx===null||slotIdx===undefined||slotIdx>=(openSlots.length)){
     // Create new slot
     const d=new Date().toISOString().split('T')[0];
@@ -26429,10 +26663,10 @@ window._gcGenerateMyProposal = function(){
       scope:Object.assign({}, scope),
       lines:_lines.map(function(l){
         var qty=parseFloat(l.qty)||1, cost=parseFloat(l.cost)||0;
-        var charge=(typeof lineCharge==='function')?lineCharge(l)*qty:cost*qty;
+        var charge=(typeof lineCharge==='function')?lineCharge(l):cost*qty;   /* patch ESTMATH */ // was lineCharge x qty
         return { desc:l.desc||'', cat:l.cat||l.category||'General', type:l.type||'material', qty:qty, cost:cost, charge:charge };
       }),
-      totalCharge:_lines.reduce(function(s,l){ return s+((typeof lineCharge==='function')?lineCharge(l)*(parseFloat(l.qty)||1):(parseFloat(l.cost)||0)*(parseFloat(l.qty)||1)); },0)
+      totalCharge:_lines.reduce(function(s,l){ return s+((typeof lineCharge==='function')?lineCharge(l):(parseFloat(l.cost)||0)*(parseFloat(l.qty)||1)); },0)   /* patch ESTMATH */
     };
     if(!est.lines.length){ alert('Add some line items first, then generate the proposal.'); return; }
     // Save the sub scopes (scope of work broken out by trade) whenever a proposal is generated,
@@ -26463,6 +26697,7 @@ function doSaveAndProposal(update){
 }
 function doSave(update){
   closeModal('save-modal');saveSlotState();
+  try{ if(window._gcMathOnSave) window._gcMathOnSave(); }catch(_ms){}   /* patch ESTMATH */
   const name=qs('ej-name').value.trim(),num=qs('ej-num').value.trim();
   const tc=lines.reduce((s,l)=>s+lineBaseCost(l),0),tch=lines.reduce((s,l)=>s+lineCharge(l),0);
   const taxAmt=lines.filter(l=>(l.type||'labor')==='material').reduce((s,l)=>s+(taxed(l.cost*l.qty)-l.cost*l.qty),0);
@@ -63937,7 +64172,8 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
     var out=[];
     // 1) Native builder format: a single `lines` array (already typed).
     if(Array.isArray(e.lines) && e.lines.length){
-      return e.lines.map(function(l){ return toLine(l, null); }).filter(Boolean);
+      /* patch ESTMATH: a builder line keeps its own fields (takeoff, calcNote) and type (man-hours / equipment came back as taxed materials) */
+      return e.lines.map(function(l){ var L=toLine(l, null); if(L && l && typeof l==='object' && l.id){ L=Object.assign({}, l, L); var _t=String(l.type||''); if(/^(labor|material|sub|equipment|mh)$/.test(_t)) L.type=_t; } return L; }).filter(Boolean);
     }
     // 2) Separate materials / labor / subs arrays.
     var found=false;
