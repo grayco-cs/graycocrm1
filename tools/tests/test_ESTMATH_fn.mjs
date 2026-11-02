@@ -22,7 +22,7 @@ const ctx = {
   console, window: {}, settings: { tax: 9.75, matMult: 1.4286, labMult: 1.4286, subMult: 1.4286, eqMult: 1.4286, mhCharge: 75, mhCost: 44.44, jobState: 'MS', msContractorTax: 3.5 },
   lines: [], jobMult: 1.25, useOvr: false, ovrMult: 1.5, openSlots: [{ lines: [] }], activeSlot: 0, rates: [],
   fmt: n => '$' + (parseFloat(n) || 0).toFixed(2), fmtN: n => Math.round(n || 0).toLocaleString(),
-  renderLines(){}, renderSummary(){}, saveRatesDB(){ ctx.__ratesSaved = (ctx.__ratesSaved || 0) + 1; }, _gcPersistLineEdit(){},
+  setTimeout: () => 0, renderLines(){}, renderSummary(){}, saveRatesDB(){ ctx.__ratesSaved = (ctx.__ratesSaved || 0) + 1; }, _gcPersistLineEdit(){},
 };
 ctx.window.prompt = (m, d) => { prompts.push(m); return ctx.__ans === undefined ? null : ctx.__ans; };
 vm.createContext(ctx);
