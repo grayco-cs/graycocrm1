@@ -247,7 +247,7 @@ ok(!leak.length, 'the button is on no other page (Dashboard, Projects, Leads, Sc
 const order = await ev(A.c, () => { const a = document.getElementById('gc-money-needs'), b = document.getElementById('gc-bulkdrop-acct'); return { acct: !!(b && b.closest('#gck-root .gck-tools')) }; });
 ok(order.acct, 'Accounting: inside #gck-root .gck-tools', order);
 await view(A.c, 'todo'); await sleep(2500);
-ok(await ev(A.c, () => { const a = document.getElementById('gc-money-needs'), b = document.getElementById('gc-bulkdrop-todo'); return !!(a && b && a.nextElementSibling === b); }), 'To-Do: right after patch MONEY\'s row');
+ok(await ev(A.c, () => { const a = document.getElementById('gc-money-needs'), b = document.getElementById('gc-bulkdrop-todo'); if (!(a && b)) return false; let x = a.nextElementSibling, n = 0; while (x && x !== b && n < 3) { x = x.nextElementSibling; n++; } return x === b; }), 'To-Do: right after patch MONEY\'s row (other features\' rows may sit between)');
 
 /* ── the mixed batch of 30 (a, b, c, d, duplicates) — mid-batch screenshot, then the summary ── */
 aiDelay = 700;
@@ -290,11 +290,12 @@ ok(pids === 'PBD1,PBD1,PBD2,PBD2,PBD3,PBD3', '(b) each on the job its address na
 const costRows = await ev(A.c, () => window._crm.expenses.filter(e => e.subInvId && /^INVM-/.test(e.subInvId) && e.status === 'pending').length);
 ok(costRows === 6, '(b) one pending job cost per sub invoice (SUBINV)', costRows);
 await view(A.c, 'approvals'); await sleep(3500);
+for (let i = 0; i < 30; i++) { const n = await ev(A.c, () => { try { window._gcQueueSubApprovals && window._gcQueueSubApprovals(); } catch (e) {} let q = []; try { q = JSON.parse(localStorage.getItem('gc_sub_approvals') || '[]'); } catch (e) {} return q.filter(a => /^INVM-/.test(String(a.invId || a.id || ''))).length; }); if (n >= 6) break; await sleep(1000); }   /* the sub approval list is filled by a 60 s timer (skipped while typing) */
 const appr = await ev(A.c, () => { let q = []; try { q = JSON.parse(localStorage.getItem('gc_sub_approvals') || '[]'); } catch (e) {} const mine = q.filter(a => /^INVM-/.test(String(a.invId || a.id || ''))); const g = window._gcApprovalSet ? window._gcApprovalSet() : null;
   return { queued: mine.length, pm: [...new Set(mine.map(a => a.pmName))], status: [...new Set(mine.map(a => a.status))], seen: g ? (g.groups.subinv || []).length : -1, routed: window._crm.invoices.filter(i => /^INVM-/.test(i.id) && (i._subRouted || i._autoRouted)).length }; });
 ok(appr && ((appr.queued >= 6 && appr.status.includes('pending_pm')) || appr.routed >= 6), '(b) in the ✅ Approvals queue (pending, asked of the job\'s PM first — SUBINV routing)', appr);
 /* (c) */
-const exp = await ev(A.c, () => window._crm.expenses.filter(e => /^EXPM-/.test(e.id) && e.source === 'bulkdrop').map(e => ({ pid: e.pid, amt: e.amt, status: e.status, ref: e.receipt, v: e.vendor, desc: e.desc })));
+const exp = await ev(A.c, () => window._crm.expenses.filter(e => /^EXPM-/.test(e.id) && e.source === 'bulkdrop' && !e.subInvId).map(e => ({ pid: e.pid, amt: e.amt, status: e.status, ref: e.receipt, v: e.vendor, desc: e.desc })));
 ok(exp.length === 5 && exp.every(e => e.status === 'pending' && /^sb:crm-files\//.test(e.ref)), '(c) 5 PENDING expenses with their files (the usual approval)', exp);
 const fx = v => (exp.find(e => e.amt === v) || {}).pid;
 ok(fx(312.18) === 'PBD2' && fx(48.09) === 'PBD1' && fx(1290) === 'PBD3' && fx(733.4) === 'PBD1' && fx(19.99) === 'PBD2', '(c) each on its job (PO / address)', exp.map(e => [e.v, e.amt, e.pid]));
@@ -313,8 +314,8 @@ ok(fileOpen && /^sb:crm-files\//.test(fileOpen[0]), '(d) "📄 Open the file" op
 await ev(A.c, () => { const x = document.querySelector('.gc-money-ov'); if (x) x.remove(); });
 /* duplicates */
 ok(/same file was dropped in this batch/.test(by('zed-0-copy.pdf').why) && /invoice # ZD-099/.test(by('zed-099.pdf').why) && by('zed-099.pdf').link && by('zed-099.pdf').link.id === 'IBDDOC1' && /same file is on an expense/.test(by('haverford.pdf').why) && by('haverford.pdf').link.id === 'EDOC1', 'duplicates: the same file in the batch, the same vendor + invoice # with its file, the same file on an expense — each linked', ['zed-0-copy.pdf', 'zed-099.pdf', 'haverford.pdf'].map(n => [by(n).why, by(n).link]));
-const counts = await ev(A.c, () => ({ inv: window._crm.invoices.filter(i => /^INVM-/.test(i.id)).length, exp: window._crm.expenses.filter(e => /^EXPM-/.test(e.id) && e.source === 'bulkdrop').length }));
-ok(counts.inv === 6 && counts.exp === 5, 'nothing booked twice (6 sub invoices, 5 expenses)', counts);
+const counts = await ev(A.c, () => ({ inv: window._crm.invoices.filter(i => /^INVM-/.test(i.id)).length, exp: window._crm.expenses.filter(e => /^EXPM-/.test(e.id) && e.source === 'bulkdrop' && !e.subInvId).length, subCost: window._crm.expenses.filter(e => e.subInvId && /^INVM-/.test(e.subInvId)).length }));
+ok(counts.inv === 6 && counts.exp === 5 && counts.subCost === 6, 'nothing booked twice (6 sub invoices + their 6 job-cost rows, 5 expenses)', counts);
 const mm = mmList(cget('gc_mail_money'));
 ok(mm.filter(r => r.via === 'bulk drop').length === 15 && mm.every(r => r.files && r.files[0] && /^sb:crm-files\//.test(r.files[0].ref)), 'the server kept the 15 placed by it (b, c, d) with their files', mm.length);
 /* the summary rows are clickable */
