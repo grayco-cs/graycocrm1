@@ -247,10 +247,12 @@ var ROWS = [
   ['invoice_autopost', 'rec', 'C', 0, 0, 'page', 'Invoice 1-day auto-post', 'A client draft waiting 24 h is approved by itself → sent (shows in the portal).'],
   ['expense_autopost', 'rec', 'C', 0, 0, 'page', 'Expense 5-day auto-post', 'Matched expenses are posted to the job P&L after 5 days; unmatched ones escalated.'],
   ['progress_autodraw', 'rec', 'C', 0, 0, 'page', 'Progress-slider auto-draw', 'Dragging progress past a draw milestone makes a draw invoice.'],
+  ['cc_pct_sync', 'rec', 'C', 0, 0, 'page', 'CompanyCam % -> job %', 'Every 2 minutes copies the progress % read from CompanyCam notes into the job % of each active job (a draw then still needs "Progress-slider auto-draw"). OFF: the job % is left alone.'],
+  ['auto_mark_paid', 'rec', 'C', 0, 0, 'page', 'Invoice auto-mark-paid (amount match)', 'Every 2 minutes marks an open client invoice PAID (and puts it on the books) when a payment recorded on the same job has the same amount. A guess: the payment names no invoice and the match is not saved. OFF: nothing is marked; mark invoices paid by hand.'],
   ['legacy_progress_billing', 'rec', 'C', 0, 0, 'page', 'Legacy progress-billing timer', 'Schedule milestone passed + % reached → a draft client invoice.'],
   ['legacy_autoflag_notes', 'rec', 'C', 0, 0, 'page', 'AUTO-FLAG job notes', 'Writes "⚠️ AUTO-FLAG …", "[PM] …", "🔴 CRITICAL …" lines into job notes.'],
   ['legacy_po_route', 'rec', 'C', 0, 0, 'page', 'Invoice PO auto-route', 'An invoice with a PO and no job gets its job set.'],
-  ['job_stages', 'rec', 'C', 0, 0, 'page', 'AUT3 job stages', 'Kickoff (deposit draft, welcome), milestone / final draws, stage changes, schedule shifts, Certificate of Completion, check-ups.'],
+  ['job_stages', 'rec', 'C', 0, 0, 'page', 'AUT3 job stages', 'Kickoff (deposit draft, welcome), stage changes, schedule shifts and the % from the schedule, the final invoice at Complete, Certificate of Completion, check-ups. A draw because the % moved also needs "Progress-slider auto-draw" ON.'],
   ['auto_100', 'rec', 'C', 0, 0, 'page', 'Auto-100 %', 'A completed job or a sent final invoice sets progress to 100 %.'],
   ['closeout_autopilot', 'rec', 'C', 0, 0, 'page', 'Closeout autopilot', 'Final invoice fully paid → job completed and archived, warranty certificate, check-up.'],
   ['commission_sweep', 'rec', 'C', 0, 0, 'page', 'Commission sweep', 'A fully collected job gets its commission worked out and a check queued on the pay run.'],
@@ -68650,6 +68652,10 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
   window._gcAutoInvoiceFromProgress = function(){
     try{
       var projs = (window._crm && window._crm.projects) || [];
+      /* __GC_PATCH_AUTOPANEL3__ */ /* "CompanyCam % -> job %" (cc_pct_sync, default OFF): OFF → the job % is left alone, "held" */
+      var _ccDue = projs.filter(function(p){ return p && p.status==='active' && typeof p.ccProgressPct==='number' && (p.pct||0) < p.ccProgressPct; });
+      if(!_ccDue.length) return;
+      if(!(window._gcAutoGate ? window._gcAutoGate('cc_pct_sync', { n: _ccDue.length, sample: _ccDue.slice(0,3).map(function(p){ return (p.name||p.id) + ' ' + (p.pct||0) + '% -> ' + p.ccProgressPct + '%'; }) }) : false)) return;
       projs.forEach(function(p){
         if(!p || p.status!=='active') return;
         var prog = (typeof p.ccProgressPct==='number') ? p.ccProgressPct : null;
@@ -68683,6 +68689,8 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
         });
         if(match){ changed.push({iv:iv, pm:match}); }
       });
+      /* patch AUTOPANEL3: "Invoice auto-mark-paid (amount match)" (auto_mark_paid, default OFF): a guess → OFF, "held" */
+      if(changed.length && !(window._gcAutoGate ? window._gcAutoGate('auto_mark_paid', { n: changed.length, sample: changed.slice(0,3).map(function(c){ return (c.iv.desc||c.iv.id) + ' $' + (parseFloat(c.iv.amt||c.iv.amount)||0); }) }) : false)) return;
       if(changed.length && window._setInvoices){
         window._setInvoices(function(list){
           return (list||[]).map(function(iv){
@@ -177585,7 +177593,7 @@ function when(iso){ var t = Date.parse(iso || ''); if (!t) return ''; try { retu
 /* patch AUTOPANEL (coordinator 11/02): automations that act on what is waiting NOW when switched on (not on a clock) — the
    switch-on asks first and says how many items are waiting: the page counts the draws itself; otherwise the last
    "would have done N" the automation recorded while it was OFF */
-var STATE = { job_stages: 'draw invoices / stage steps', legacy_progress_billing: 'progress draws', progress_autodraw: 'draw invoices', appt_confirmations: 'appointment messages', bid_result_emails: 'bid-result e-mails to GCs',
+var STATE = { cc_pct_sync: 'job % updates from CompanyCam', auto_mark_paid: 'invoices marked paid', job_stages: 'draw invoices / stage steps', legacy_progress_billing: 'progress draws', progress_autodraw: 'draw invoices', appt_confirmations: 'appointment messages', bid_result_emails: 'bid-result e-mails to GCs',
   auto_100: 'jobs set to 100 %', closeout_autopilot: 'job closeouts', mailed_invoice_booking: 'e-mailed invoices / receipts', ms_tax_add: 'Mississippi estimates', lead_auto_assign: 'held leads', companycam_new_jobs: 'new CompanyCam projects' };
 function drawsWaiting(){
   try {

@@ -5,7 +5,8 @@
 //      fails), no draw invoice; ON: the draw invoice is made;
 //   3. AUT3 ensureDraws: job stages ON + progress auto-draw OFF → a draw because the % moved is held, not made; the
 //      Complete-stage final invoice (job stages) still is;
-//   4. missed-call text-back: one default for the server and the panel (ON, 🔒 safety); the panel asks before ON and OFF.
+//   4. missed-call text-back: one default for the server and the panel (ON, 🔒 safety); the panel asks before ON and OFF;
+//   5. AUTOPANEL3: "CompanyCam % -> job %" and "Invoice auto-mark-paid" have switches, OFF by default (held, nothing changed).
 // Exit 0 = PASS.
 import fs from 'fs'; import path from 'path'; import vm from 'vm'; import { createRequire } from 'module';
 const BUILD = path.resolve(process.argv[2] || path.join(path.dirname(new URL(import.meta.url).pathname), '..', '..'));
@@ -138,6 +139,43 @@ console.log('4. missed-call text-back: one default, asks both ways');
   const w = page(new Map(), { row: {} }); await w._gcAutomations.load();
   ok(w._gcAutomations.state().settings.missed_call_textback === true, 'the panel\'s switch state with no row → ON');
   ok(/if \(want && a\.group === 'safety' && !confirm\('Turn ON "'/.test(html) && /if \(!want && a\.critical && !confirm\('Turn OFF "'/.test(html), 'the panel confirms a safety switch before ON and before OFF');
+}
+/* ══ 5. AUTOPANEL3: the two timers that had no switch ══ */
+console.log('5. AUTOPANEL3: CompanyCam % -> job % and invoice auto-mark-paid have switches (default OFF)');
+{
+  const cc = AUTO.BY.cc_pct_sync, mp = AUTO.BY.auto_mark_paid, js = AUTO.BY.job_stages;
+  ok(cc && cc.defaultOn === false && cc.effect === 'C' && cc.group === 'rec' && cc.where === 'page' && !cc.critical, 'registry: cc_pct_sync — record change, page, OFF by default', cc);
+  ok(mp && mp.defaultOn === false && mp.effect === 'C' && mp.group === 'rec' && mp.where === 'page' && !mp.critical && /guess/i.test(mp.desc), 'registry: auto_mark_paid — record change (a guess), OFF by default', mp);
+  ok(/Progress-slider auto-draw/.test(js.desc) && !/milestone \/ final draws/.test(js.desc), 'job_stages says a draw because the % moved also needs progress auto-draw', js.desc);
+  const mm = /\/\* AUTOREG-BEGIN \*\/\n([\s\S]*?)\/\* AUTOREG-END \*\//.exec(html);
+  ok(!!mm && mm[1] === fs.readFileSync(path.join(BUILD, 'netlify', 'functions', '_lib', 'automations.js'), 'utf8'), 'the page still carries _lib/automations.js word for word');
+  ok(/var STATE = \{ cc_pct_sync: [^}]*auto_mark_paid: /.test(html), 'the panel warns how many are waiting before either is switched ON');
+  const CCF = between('window._gcAutoInvoiceFromProgress = function(){', '\n  };\n') + '\n  };\n';
+  const MPF = between('window._gcAutoMarkPaid = function(){', '\n  };\n') + '\n  };\n';
+  async function acct(row){
+    const w = page(new Map(), { row }); await w._gcAutomations.load();
+    const pctCalls = [], invSets = [];
+    w._crm = { projects: [{ id: 'P1', name: 'Smith roof', status: 'active', pct: 10, ccProgressPct: 60 }, { id: 'P2', name: 'Done', status: 'active', pct: 50, ccProgressPct: 50 }],
+      invoices: [{ id: 'I1', pid: 'P1', type: 'client', status: 'sent', amt: 5000, desc: 'Draw 1' }, { id: 'I2', pid: 'P1', type: 'client', status: 'sent', amt: 1234 }],
+      projectPayments: [{ id: 'PAY1', pid: 'P1', amount: 5000, method: 'check' }] };
+    w._gcSetProjectPct = (pid, v) => pctCalls.push([pid, v]);
+    w._setInvoices = f => { invSets.push(f(w._crm.invoices)); };
+    w.__GC_ALERT_BAR__ = null;
+    vm.runInContext(CCF + MPF, w);
+    w._gcAutoInvoiceFromProgress(); w._gcAutoMarkPaid();
+    return { w, pctCalls, invSets, lh: w._gcAutomations.state().localHeld };
+  }
+  const off = await acct({});
+  ok(off.pctCalls.length === 0 && (off.lh.cc_pct_sync || {}).would === 1 && /Smith roof 10% -> 60%/.test((off.lh.cc_pct_sync || {}).sample[0]), 'OFF: the job % is left alone, held "would have done 1" (Smith roof 10% -> 60%)', [off.pctCalls, off.lh.cc_pct_sync]);
+  ok(off.invSets.length === 0 && !off.w._crm.projectPayments[0]._linkedInv && (off.lh.auto_mark_paid || {}).would === 1, 'OFF: no invoice marked paid, payment not linked, held "would have done 1"', [off.invSets, off.lh.auto_mark_paid]);
+  const on = await acct({ cc_pct_sync: true, auto_mark_paid: true });
+  ok(on.pctCalls.length === 1 && on.pctCalls[0][0] === 'P1' && on.pctCalls[0][1] === 60 && !on.lh.cc_pct_sync, 'ON: the CompanyCam % is copied to the job (P1 → 60)', on.pctCalls);
+  const paid = on.invSets[0] || [];
+  ok(paid.length === 2 && paid.find(i => i.id === 'I1').status === 'paid' && paid.find(i => i.id === 'I1')._autoPaid && paid.find(i => i.id === 'I2').status === 'sent', 'ON: the same-job, same-amount invoice is marked paid (as before)', paid);
+  const none = page(new Map(), { row: {} }); await none._gcAutomations.load();
+  none._crm = { projects: [{ id: 'P1', status: 'active', pct: 60, ccProgressPct: 60 }], invoices: [], projectPayments: [] };
+  vm.runInContext(CCF + MPF, none); none._gcAutoInvoiceFromProgress(); none._gcAutoMarkPaid();
+  ok(!none._gcAutomations.state().localHeld.cc_pct_sync && !none._gcAutomations.state().localHeld.auto_mark_paid, 'nothing waiting → nothing held');
 }
 console.log('\n' + (fail ? 'FAIL' : 'PASS') + ' — ' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
