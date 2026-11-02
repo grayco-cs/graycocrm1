@@ -308,12 +308,56 @@ await t('the GC page: a change request → the job\'s 🏗 GC portal change orde
   r = await P({ action: 'mine' }, A); assert.ok(!r.data.requests.some(x => x.id === gcReq.id), 'and the GC\'s not on a customer\'s');
   r = await P({ action: 'mine' }, GC); assert.deepStrictEqual(r.data.properties.map(x => x.label), ['500 Commerce Dr, Memphis TN']);
 });
+await t('🏗 a NEW address typed by a known customer: a lead linked to THEM only (customerId), flagged "new address from the portal"; never another customer\'s job', async () => {
+  const before = JSON.stringify(PROJECTS.find(x => x.id === 'PJB')), bobCust = JSON.stringify(get('customers').find(x => x.id === 'CU2'));
+  /* a lead already on the inbox with the very same title must not swallow it */
+  put('gc_lead_inbox', (get('gc_lead_inbox') || []).concat([{ id: 'LI-other', title: 'Portal request (new address) — Roofing — Ann Alpha — 2 Bravo St', origin: 'email', source: 'leads@', status: 'new', city: '' }]));
+  let r = await P({ action: 'project', property: 'new', newAddress: 'somewhere', workType: 'roofing', text: 'Roof at my rental' }, A);
+  assert.strictEqual(r.status, 400); assert.strictEqual(r.data.field, 'newAddress');
+  r = await P({ action: 'project', property: 'new', newAddress: '2 Bravo St, Cordova TN', workType: 'roofing', text: 'I bought the house on Bravo St — it needs a roof', contact: 'call' }, A);
+  assert.strictEqual(r.status, 200, r.raw);
+  assert.ok(r.data.request.newAddress === true && r.data.request.property === '2 Bravo St, Cordova TN' && r.data.request.workTypeId === 'roofing', JSON.stringify(r.data.request));
+  const sreq = store().find(x => x.id === r.data.request.id); assert.ok(sreq.pid === '' && sreq.fromPid === 'PJA' && sreq.property.isNew === true, JSON.stringify(sreq));
+  const leads = (get('gc_lead_inbox') || []), lead = leads.find(x => x.leadExtra && x.leadExtra.portalRequest === r.data.request.id);
+  assert.ok(lead && lead.id !== 'LI-other', 'its own lead (not merged into another)');
+  assert.strictEqual(leads.find(x => x.id === 'LI-other').sources, undefined, 'the other lead is untouched');
+  assert.strictEqual(lead.address, '2 Bravo St, Cordova TN'); assert.strictEqual(lead.source, 'Portal request');
+  assert.strictEqual(lead.leadExtra.customerId, 'CU1'); assert.strictEqual(lead.customerId, 'CU1'); assert.strictEqual(lead.leadExtra.customerPid, 'PJA'); assert.strictEqual(lead.leadExtra.customerName, 'Ann Alpha');
+  assert.strictEqual(lead.leadExtra.newAddress, true); assert.strictEqual(lead.leadExtra.newAddressNote, 'new address from the portal');
+  assert.ok(lead.notes.some(n => /NEW ADDRESS FROM THE PORTAL/.test(n)) && /\(new address\)/.test(lead.title), lead.title);
+  assert.ok(!JSON.stringify(lead).includes('PJB') && !JSON.stringify(lead).includes('CU2') && !/Bob/.test(JSON.stringify(lead)), 'nothing of the other customer');
+  assert.strictEqual(JSON.stringify(get('projects').find(x => x.id === 'PJB')), before); assert.strictEqual(JSON.stringify(get('customers').find(x => x.id === 'CU2')), bobCust);
+  const card = aq().find(x => x.id === 'appr_preq_' + r.data.request.id); assert.ok(/NEW ADDRESS FROM THE PORTAL/.test(card.text) && card.jobId === 'PJA', card.text);
+  r = await P({ action: 'project', property: 'new', newAddress: '77 Lake Cabin Road, Counce TN', workType: 'other', text: 'Deck repair at the cabin' }, A);
+  assert.strictEqual(store().find(x => x.id === r.data.request.id).property.id, 'c:CU1:1', 'an address already on file is used as it is');
+  r = await P({ action: 'project', property: 'new', newAddress: '900 New Warehouse Rd, Memphis TN', workType: 'buildout', text: 'New tenant space for us' }, GC);
+  const gl = (get('gc_lead_inbox') || []).find(x => x.leadExtra && x.leadExtra.portalRequest === r.data.request.id);
+  assert.ok(gl && gl.leadExtra.customerId === 'CUGC' && gl.leadExtra.newAddress === true && gl.type === 'commercial', JSON.stringify(gl).slice(0, 300));
+});
+await t('Español: the page\'s ES gets Spanish messages from the server; the card / forms / statuses / My requests have every string in EN and ES', async () => {
+  let r = await P({ action: 'change', text: 'x', lang: 'es' }, A); assert.strictEqual(r.data.error, 'Díganos qué le gustaría cambiar (unas palabras están bien).');
+  r = await P({ action: 'project', property: 'new', newAddress: 'x', workType: 'roofing', text: 'Un techo nuevo', lang: 'es' }, A); assert.strictEqual(r.data.error, 'Escriba la dirección completa (número, calle, ciudad).');
+  r = await P({ action: 'change', text: 'Cambiar el color de la puerta', lang: 'es' }, A); assert.ok(/^Gracias — recibimos su solicitud\. Alguien de nuestro equipo/.test(r.data.say), r.data.say);
+  const PR = require(FNDIR + '/_lib/portalreq.js'); assert.ok(/Ya nos envió 10 solicitudes hoy/.test(PR.esOf('You have sent us 10 requests today — that is the most for one day. ' + PR.SHORTLY + ' Urgent? Call 901-585-0944.')));
+  /* the page script, run with a stub page: both languages carry the same keys, none empty */
+  const vm = await import('vm'); const ctx = { console, setInterval: () => 0, setTimeout: () => 0, location: { hash: '' }, localStorage: { getItem: () => null },
+    document: { documentElement: { lang: 'es' }, getElementById: () => null, querySelector: () => null, head: { appendChild(){} } }, MutationObserver: function(){ return { observe(){} }; } };
+  ctx.window = ctx; vm.createContext(ctx); vm.runInContext(fs.readFileSync(path.join(ROOT, 'portal-req.js'), 'utf8'), ctx);
+  const S = ctx.GCPortalReq._i18n, en = Object.keys(S.en), es = Object.keys(S.es);
+  assert.deepStrictEqual(en.filter(k => !S.es[k]), [], 'missing in ES'); assert.deepStrictEqual(es.filter(k => !S.en[k]), [], 'missing in EN');
+  const need = Object.keys(PR.STATUS.change).concat(Object.keys(PR.STATUS.project)).map(k => 'st_' + k).concat(Object.keys(PR.WORK).map(k => 'w_' + k), Object.keys(PR.URGENCY).map(k => 'u_' + k), Object.keys(PR.CONTACT).map(k => 'c_' + k));
+  assert.deepStrictEqual(need.filter(k => !S.es[k] || !S.en[k]), [], 'every status / work type / urgency / contact has both');
+  assert.strictEqual(ctx.GCPortalReq._t('st_co_sent'), 'Orden de cambio enviada'); assert.strictEqual(ctx.GCPortalReq._t('change'), '➕ Pedir un cambio');
+  ctx.document.documentElement.lang = 'en'; assert.strictEqual(ctx.GCPortalReq._t('st_co_sent'), 'Change order sent');
+  assert.ok(!/hvac|pressure|climatiz|lavado a presi/i.test(JSON.stringify(S)), 'never HVAC / pressure washing, in either language');
+});
 await t('10 requests a day (Central day), then a polite no; the next day it works again', async () => {
   world(); TABLES.gc_portal.length; let ok = 0, last = null;
   for (let i = 0; i < 11; i++) { last = await P({ action: 'change', text: 'Request number ' + (i + 1) + ' please', contact: 'call' }, B); if (last.status === 200) ok++; }
   assert.strictEqual(ok, 10); assert.strictEqual(last.status, 429); assert.ok(/10 requests today/.test(last.data.error) && /901-585-0944/.test(last.data.error));
   let m = await P({ action: 'mine' }, B); assert.strictEqual(m.data.left, 0);
   const pr = await P({ action: 'project', property: 'j:PJB', workType: 'roofing', text: 'One more, a project this time' }, B); assert.strictEqual(pr.status, 429, 'projects count too');
+  const na = await P({ action: 'project', property: 'new', newAddress: '12 Elm St, Arlington TN', workType: 'roofing', text: 'A new address counts too' }, B); assert.strictEqual(na.status, 429, 'a new address counts too');
   NOW += 864e5; m = await P({ action: 'mine' }, B); assert.strictEqual(m.data.left, 10);
   const r = await P({ action: 'change', text: 'A new day, a new request', contact: 'call' }, B); assert.strictEqual(r.status, 200);
 });
@@ -406,15 +450,19 @@ if (!process.argv.includes('--no-browser')) {
       if (kind === 'phone') custReq = s.id;
       await pg.click('#gcpr-project'); await pg.waitForSelector('#gcpr-sheet #gcpr-wt');
       const opts = await pg.$$eval('#gcpr-prop option', o => o.map(x => x.textContent));
-      assert.deepStrictEqual(opts, ['1 Alpha Ln, Bartlett TN', '77 Lake Cabin Rd, Counce TN']);
+      assert.deepStrictEqual(opts, ['1 Alpha Ln, Bartlett TN', '77 Lake Cabin Rd, Counce TN', '＋ A different address']);
+      assert.ok(await pg.isHidden('#gcpr-newaddr'), 'the address box shows only for a different address');
       const wts = await pg.$$eval('#gcpr-wt option', o => o.map(x => x.textContent).join('|')); assert.ok(!/hvac|pressure/i.test(wts), wts);
-      await pg.selectOption('#gcpr-prop', { label: '77 Lake Cabin Rd, Counce TN' }); await pg.selectOption('#gcpr-wt', 'roofing');
+      if (kind === 'desktop') { await pg.selectOption('#gcpr-prop', 'new'); await pg.waitForSelector('#gcpr-newaddr', { state: 'visible' }); await pg.fill('#gcpr-newaddr', '45 Oak Hollow Cv, Collierville TN 38017'); }
+      else await pg.selectOption('#gcpr-prop', { label: '77 Lake Cabin Rd, Counce TN' });
+      await pg.selectOption('#gcpr-wt', 'roofing');
       await pg.fill('#gcpr-text', 'New metal roof on the lake cabin (' + kind + ')');
       await shot(pg, 'customer_project_form_' + kind);
       await pg.click('#gcpr-send'); await pg.waitForSelector('#gcpr-thanks', { timeout: 15000 });
       const pr = store().filter(x => x.kind === 'project' && x.text.includes(kind)).slice(-1)[0];
       const lead = (get('gc_lead_inbox') || []).find(x => x.leadExtra && x.leadExtra.portalRequest === pr.id);
-      assert.ok(lead && lead.source === 'Portal request' && lead.leadExtra.customerId === 'CU1' && lead.address === '77 Lake Cabin Rd, Counce TN', JSON.stringify(lead || {}).slice(0, 300));
+      assert.ok(lead && lead.source === 'Portal request' && lead.leadExtra.customerId === 'CU1' && lead.address === (kind === 'desktop' ? '45 Oak Hollow Cv, Collierville TN 38017' : '77 Lake Cabin Rd, Counce TN'), JSON.stringify(lead || {}).slice(0, 300));
+      if (kind === 'desktop') { assert.strictEqual(lead.leadExtra.newAddress, true); await pg.click('#gcpr-done'); await pg.waitForSelector('[data-preq="' + pr.id + '"] .gcpr-new'); }
       await ctx.close();
     });
   }
@@ -439,7 +487,7 @@ if (!process.argv.includes('--no-browser')) {
       assert.ok(/Requests for your properties/.test(await pg.textContent('#gcpr-card')));
       await shot(pg, 'pm_' + kind, '#gcpr-card');
       await pg.click('#gcpr-project'); await pg.waitForSelector('#gcpr-sheet #gcpr-prop');
-      assert.deepStrictEqual(await pg.$$eval('#gcpr-prop option', o => o.map(x => x.textContent)), ['100 Pine St, Memphis TN', '200 Pine St, Memphis TN', '300 Pine St, Memphis TN']);
+      assert.deepStrictEqual(await pg.$$eval('#gcpr-prop option', o => o.map(x => x.textContent)), ['100 Pine St, Memphis TN', '200 Pine St, Memphis TN', '300 Pine St, Memphis TN', '＋ A different address']);
       await pg.selectOption('#gcpr-prop', { label: '200 Pine St, Memphis TN' }); await pg.selectOption('#gcpr-wt', 'commaint');
       await pg.fill('#gcpr-text', 'Twice-a-year roof and gutter check for building B (' + kind + ')');
       await shot(pg, 'pm_project_form_' + kind);
@@ -467,11 +515,24 @@ if (!process.argv.includes('--no-browser')) {
       await pg.click('#gcpr-done'); await pg.waitForSelector('[data-preq="' + s.id + '"]');
       assert.ok(!/TV wall/.test(await pg.textContent('#gcp-co')), 'not twice: the requested change order is under My requests until priced');
       await pg.click('#gcpr-project'); await pg.waitForSelector('#gcpr-sheet #gcpr-prop');
-      assert.deepStrictEqual(await pg.$$eval('#gcpr-prop option', o => o.map(x => x.textContent)), ['500 Commerce Dr, Memphis TN']);
+      assert.deepStrictEqual(await pg.$$eval('#gcpr-prop option', o => o.map(x => x.textContent)), ['500 Commerce Dr, Memphis TN', '＋ A different address']);
       await shot(pg, 'gc_project_form_' + kind);
       await ctx.close();
     });
   }
+  await t('Español: the portal\'s ES shows the card, the form, the statuses and My requests in Spanish', async () => {
+    const { ctx, pg } = await open('phone', '/#t=' + LINK_A, { gc_lang: 'es' });
+    await pg.waitForFunction(() => /¿Necesita algo\?/.test((document.querySelector('#gcpr-card') || {}).textContent || ''), null, { timeout: 8000 });
+    const tx = await pg.textContent('#gcpr-card');
+    assert.ok(/Pedir un cambio/.test(tx) && /Pedir un proyecto nuevo/.test(tx) && /Mis solicitudes/.test(tx) && /Orden de cambio enviada|Recibida|Con nuestro equipo/.test(tx), tx);
+    await shot(pg, 'customer_es_phone', '#gcpr-card');
+    await pg.click('#gcpr-project'); await pg.waitForSelector('#gcpr-sheet #gcpr-wt');
+    const st = await pg.textContent('#gcpr-sheet');
+    assert.ok(/Tipo de trabajo/.test(st) && /Otra dirección/.test(st) && /Enviar mi solicitud/.test(st) && /Techos/.test(st), st);
+    await pg.click('#gcpr-send'); assert.strictEqual(await pg.textContent('#gcpr-sheet .gcpr-err'), 'Escoja el tipo de trabajo.');
+    await shot(pg, 'customer_es_project_form_phone');
+    await ctx.close();
+  });
   await t('the sub portal never shows the request card', async () => {
     const src = fs.readFileSync(path.join(ROOT, 'portal-req.js'), 'utf8'); assert.ok(/if \(window\.GCPartner\) return '';/.test(src));
   });

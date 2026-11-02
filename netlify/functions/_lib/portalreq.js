@@ -64,7 +64,7 @@ function phone10(v){ let d = s(v).replace(/\D/g, ''); if (d.length === 11 && d[0
 function firstName(n){ const w = s(n).replace(/^(mr|mrs|ms|dr)\.?\s+/i, '').split(/[\s,&]+/)[0] || ''; return /^[A-Za-z][A-Za-z'-]{0,20}$/.test(w) ? w[0].toUpperCase() + w.slice(1) : ''; }
 function cleanText(v, n){ return clip(s(v).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '').replace(/\r\n?/g, '\n').replace(/\n{4,}/g, '\n\n\n'), n); }
 function cleanName(v){ return clip(s(v).replace(/[<>"\\\u0000-\u001F]/g, '').replace(/\s+/g, ' '), 80); }
-function streetKey(a){ return low(a).split(',')[0].replace(/[^a-z0-9]+/g, ' ').trim(); }
+function streetKey(a){ try { const k = require('./custall.js').street(a); if (k) return k; } catch (e) {} return low(a).split(',')[0].replace(/[^a-z0-9]+/g, ' ').trim(); }   /* CUSTALL's street rule: "Road" = "Rd" */
 /* the Central calendar day (the 10-a-day limit) */
 function centralDay(ms){
   try { return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(ms)); }
@@ -230,7 +230,7 @@ function custOut(req, sc, clean, gc){
   const replies = arr(req.replies).filter(function(x){ return x && x.state === 'shown'; }).map(function(x){ return { at: s(x.shownAt || x.at), by: (firstName(x.by) ? firstName(x.by) + ' · ' : '') + 'GrayCo', text: clean(x.text) }; });
   return { id: s(req.id), kind: req.kind, at: s(req.createdAt), title: clean(req.kind === 'project' ? (WORK[req.workType] || WORK.other).label + ' — ' + s(req.property && req.property.label) : clip(s(req.text).split('\n')[0], 90)),
     text: clean(req.text), where: clean(req.where), urgency: req.urgency, urgencyLabel: URGENCY[req.urgency] || 'Normal', contact: CONTACT[req.contact] || '', job: req.kind === 'change' ? clean(req.jobName) : '',
-    property: req.kind === 'project' ? clean(s(req.property && req.property.label)) : '', workType: req.kind === 'project' ? (WORK[req.workType] || WORK.other).label : '',
+    workTypeId: req.kind === 'project' ? (WORK[req.workType] ? req.workType : 'other') : '', property: req.kind === 'project' ? clean(s(req.property && req.property.label)) : '', newAddress: !!(req.kind === 'project' && req.property && req.property.isNew), workType: req.kind === 'project' ? (WORK[req.workType] || WORK.other).label : '',
     files: arr(req.files).length, status: st, statusLabel: labels[st] || labels.received,
     next: st === 'co_sent' && gc ? 'Your change order is ready — sign it under 📝 Change orders on this page.' : NEXT[st] || '',
     note: st === 'declined' && req.decline && req.decline.state === 'shown' ? clean(req.decline.note) : '', replies: replies };
@@ -271,7 +271,7 @@ async function signRefs(refs){
 /* ── the staff card ───────────────────────────────────────────────────────────────────────────────────────── */
 function cardHtml(req, p){
   const rows = [['Job', s(p.name) + (p.address ? ' · ' + s(p.address) : '')], ['From', s(req.by) + ' (' + (req.portal === 'gc' ? 'GC project page' : req.portal === 'pm' ? 'property manager, customer portal' : 'customer portal') + ')'],
-    req.kind === 'project' ? ['Property', s(req.property && req.property.label)] : null, req.kind === 'project' ? ['Work', (WORK[req.workType] || WORK.other).label] : null,
+    req.kind === 'project' ? ['Property', s(req.property && req.property.label) + (req.property && req.property.isNew ? ' (NEW ADDRESS FROM THE PORTAL — not on file; confirm it with them)' : '')] : null, req.kind === 'project' ? ['Work', (WORK[req.workType] || WORK.other).label] : null,
     ['What', s(req.text)], req.where ? ['Where', s(req.where)] : null, ['Urgency', URGENCY[req.urgency]], ['Reach them', (CONTACT[req.contact] || '') + (req.contactNote ? ' — ' + s(req.contactNote) : '')]].filter(Boolean);
   return rows.map(function(r){ return '<p><b>' + esc(r[0]) + ':</b> ' + esc(r[1]).replace(/\n/g, '<br>') + '</p>'; }).join('')
     + (req.kind === 'project' ? '<p>It is on 📥 Lead Inbox as a lead (source “Portal request”).</p>' : '<p>Make a change order, reply, or decline with a note. Nothing goes to them until it is approved.</p>');
@@ -366,7 +366,16 @@ async function requestChange(who, body){
 }
 async function requestProject(who, body){
   const ctx = await context(who);
-  const props = properties(ctx), prop = props.find(function(x){ return x.id === s(body.property); });
+  const props = properties(ctx);
+  let prop = props.find(function(x){ return x.id === s(body.property); });
+  /* a property not on file (owner: "customers often have other properties"): THEIR new address, typed — the lead is linked to
+     them only (their customerId); it is never matched to, linked to or changes any other customer's job or address */
+  if (!prop && s(body.property) === 'new') {
+    const a = cleanText(body.newAddress, 200).replace(/\s+/g, ' ');
+    if (a.length < 8 || !/\d/.test(a) || !/[a-z]{2}/i.test(a)) return out(400, { ok: false, field: 'newAddress', error: 'Type the full address (number, street, city).' });
+    const known = props.find(function(x){ return streetKey(x.address) === streetKey(a); });
+    prop = known || { id: 'new', label: a, address: a, pid: '', isNew: true };
+  }
   if (!prop) return out(400, { ok: false, field: 'property', error: 'Pick one of your properties.' });
   const wt = s(body.workType); if (!WORK[wt]) return out(400, { ok: false, field: 'workType', error: 'Pick the type of work.' });
   const f = common(body); if (f.text.length < 5) return out(400, { ok: false, field: 'text', error: 'Tell us what you need (a few words is fine).' });
@@ -375,7 +384,7 @@ async function requestProject(who, body){
   const base = (prop.pid && core().findProject(ctx.data, prop.pid)) || from;
   const now = nowIso(), by = cleanName(body.name) || s(base.client) || (who.portal === 'gc' ? 'The GC' : 'Customer');
   const req = Object.assign({ id: 'PRQ-' + hex(6), kind: 'project', portal: ctx.kind, pid: s(prop.pid), fromPid: s(from.id), rk: rkOf(who.portal, from), jobName: clip(base.name, 120), by: by,
-    property: { id: prop.id, label: prop.label, address: prop.address }, workType: wt, files: [], status: 'received', replies: [], createdAt: now, updatedAt: now,
+    property: { id: prop.id, label: prop.label, address: prop.address, isNew: prop.isNew === true }, workType: wt, files: [], status: 'received', replies: [], createdAt: now, updatedAt: now,
     history: [{ at: now, by: by, what: 'asked for a new project' }] }, f);
   const w = await add(req);
   if (w === 'limit') return out(429, { ok: false, error: LIMIT_MSG });
@@ -389,7 +398,7 @@ async function requestProject(who, body){
       email: (jobEmails(ctx.data, base)[0]) || (ctx.portfolio ? low(ctx.portfolio.email) : ''), phone: s(base.clientPhone || base.phone || c.phone) || (ctx.portfolio ? s(ctx.portfolio.phone) : ''),
       address: prop.address, workType: wt, workLabel: WORK[wt].label, leadKind: wt === 'roofing' || wt === 'other' ? (ctx.kind === 'customer' ? 'residential' : 'commercial') : WORK[wt].kind,
       text: req.text, urgency: req.urgency, contact: CONTACT[req.contact], contactNote: req.contactNote, customerId: customerIdOf(ctx.data, base),
-      customerPid: s(base.id), customerJob: s(base.name), pm: pm, portfolio: ctx.portfolio ? { id: s(ctx.portfolio.id), name: s(ctx.portfolio.name) } : null });
+      customerPid: s(base.id), customerJob: s(base.name), pm: pm, newAddress: prop.isNew === true, portfolio: ctx.portfolio ? { id: s(ctx.portfolio.id), name: s(ctx.portfolio.name) } : null });
   } catch (e) { try { console.log('[portalreq] lead failed: ' + (e && e.message || e)); } catch (x) {} }
   if (lead && lead.id) { const ch = await change(req.id, function(x){ x.leadId = lead.id; }); if (ch.req) Object.assign(req, ch.req); }
   await queueCard(req, base, ctx.data);
@@ -405,7 +414,33 @@ async function attach(who, body){
   const ch = await change(req.id, function(x){ if (arr(x.files).length >= MAX_FILES || arr(x.files).some(function(y){ return y.ref === st.file.ref; })) return false; x.files = arr(x.files).concat([Object.assign({ at: nowIso() }, st.file)]); });
   return out(200, { ok: true, files: arr((ch.req || req).files).length });
 }
+/* the portal's Spanish (the page sends lang 'es' when its EN / ES button says so): every message a customer can get here */
+const ES = {
+  'Send a photo (JPG, PNG, HEIC) or a PDF.': 'Envíe una foto (JPG, PNG, HEIC) o un PDF.', 'That file is empty.': 'Ese archivo está vacío.',
+  'That file is over 4 MB — send a smaller one.': 'Ese archivo pesa más de 4 MB — envíe uno más pequeño.', 'That PDF could not be read.': 'No se pudo leer ese PDF.',
+  'We could not save that file just now — try again.': 'No pudimos guardar ese archivo ahora — intente otra vez.', 'That job is not in your portal.': 'Ese trabajo no está en su portal.',
+  'Tell us what you would like changed (a few words is fine).': 'Díganos qué le gustaría cambiar (unas palabras están bien).', 'Tell us what you need (a few words is fine).': 'Díganos qué necesita (unas palabras están bien).',
+  'Type the full address (number, street, city).': 'Escriba la dirección completa (número, calle, ciudad).', 'Pick one of your properties.': 'Escoja una de sus propiedades.', 'Pick the type of work.': 'Escoja el tipo de trabajo.',
+  'That request is not in your portal.': 'Esa solicitud no está en su portal.', 'Add photos to a new request, or send them in Messages.': 'Agregue fotos a una solicitud nueva, o envíelas en Mensajes.',
+  'Preview — only the customer can send a request.': 'Vista previa — solo el cliente puede enviar una solicitud.', 'Bad request': 'Solicitud no válida'
+};
+function esOf(t){
+  t = s(t); if (!t) return t;
+  if (ES[t]) return ES[t];
+  if (t === LIMIT_MSG) return 'Ya nos envió ' + DAY_LIMIT + ' solicitudes hoy — es el máximo para un día. Alguien de nuestro equipo se comunicará con usted en breve. ¿Es urgente? Llame al ' + OFFICE_PHONE + '.';
+  if (/^We could not save it just now/.test(t)) return 'No pudimos guardarla ahora — intente otra vez, o llame al ' + OFFICE_PHONE + '.';
+  if (/^Too many tries/.test(t)) return 'Demasiados intentos. Por favor llame a GrayCo al ' + OFFICE_PHONE + '.';
+  if (/^At most \d+ photos/.test(t)) return 'Máximo ' + MAX_FILES + ' fotos o archivos por solicitud.';
+  if (/^Thank you — we have your request\./.test(t)) return 'Gracias — recibimos su solicitud. Alguien de nuestro equipo se comunicará con usted en breve.';
+  if (/^This link is not active/.test(t)) return 'Este enlace no está activo — llame a GrayCo ' + OFFICE_PHONE;
+  return t;
+}
 async function portal(event, body){
+  const r = await portalEn(event, body);
+  if (s(body.lang) === 'es' && r && r.body) { if (r.body.error) r.body.error = esOf(r.body.error); if (r.body.say) r.body.say = esOf(r.body.say); }
+  return r;
+}
+async function portalEn(event, body){
   const C = core(), ip = C.ipOf(event), action = s(body.action || 'mine');
   if (C.limited(ip)) return out(429, { ok: false, error: 'Too many tries. Please call GrayCo ' + OFFICE_PHONE + '.' });
   let who = null; try { who = await whoOf(event, body); } catch (e) { who = null; }
@@ -500,4 +535,4 @@ async function onRejected(item){
   });
 }
 
-module.exports = { KEY, DAY_LIMIT, MAX_FILE, MAX_FILES, WORK, URGENCY, CONTACT, STATUS, SHORTLY, NOT_OFFERED, portal, staff, onApproved, onRejected, whoOf, properties, context, statusOf, custOut, inScope, storeFile, centralDay };
+module.exports = { ES, esOf, KEY, DAY_LIMIT, MAX_FILE, MAX_FILES, WORK, URGENCY, CONTACT, STATUS, SHORTLY, NOT_OFFERED, portal, staff, onApproved, onRejected, whoOf, properties, context, statusOf, custOut, inScope, storeFile, centralDay };

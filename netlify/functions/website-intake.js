@@ -723,13 +723,14 @@ exports.fromPortalRequest = async function(o){
   const notes = ['PORTAL REQUEST ' + s(o.reqId) + ' — ' + clip(o.requester || o.name, 80) + ' asked in ' + who + ' (signed in: a known customer — no sales filter).',
     'Work: ' + s(o.workLabel) + ' · urgency: ' + (em ? 'EMERGENCY' : s(o.urgency) || 'normal') + ' · reach them: ' + s(o.contact) + (o.contactNote ? ' — ' + clip(o.contactNote, 120) : '') + '.'];
   if (o.portfolio) notes.push('Property manager portfolio: ' + clip(o.portfolio.name, 80) + '.');
+  if (o.newAddress) notes.push('NEW ADDRESS FROM THE PORTAL — ' + clip(o.address, 200) + ' is not on file for this customer. Confirm it with them; it is linked to this customer only.');
   if (/\b(hvac|furnace|pressure[\s-]*wash|power[\s-]*wash)/i.test(s(o.text))) notes.push('They mention HVAC / pressure washing — GrayCo does not offer those services.');
-  const title = ('Portal request — ' + s(o.workLabel) + ' — ' + clip(o.company || o.name, 60) + (s(o.address) ? ' — ' + s(o.address).split(',')[0] : '')).slice(0, 200);
+  const title = ('Portal request' + (o.newAddress ? ' (new address)' : '') + ' — ' + s(o.workLabel) + ' — ' + clip(o.company || o.name, 60) + (s(o.address) ? ' — ' + s(o.address).split(',')[0] : '')).slice(0, 200);
   const r = await fileLead(f, { sid, source: PORTAL_SOURCE, how: 'from ' + who, title,
     customer: o.customerPid || o.customerId ? { pid: s(o.customerPid), job: s(o.customerJob), client: s(o.name), pm: s(o.pm && o.pm.name), by: 'portal sign-in', customerId: s(o.customerId) } : null,
     notes,
     leadExtra: { websiteLead: false, websiteForm: '', portalRequest: s(o.reqId), portalKind: s(o.portal), knownCustomer: true, salesFilter: 'skipped — known customer (portal sign-in)', leadSource: PORTAL_SOURCE,
-      customerId: s(o.customerId), workType: s(o.workType), urgency: em ? 'emergency' : s(o.urgency), emergency: em || undefined, customerPm: s(o.pm && o.pm.name) },
+      customerId: s(o.customerId), workType: s(o.workType), newAddress: o.newAddress === true || undefined, newAddressNote: o.newAddress ? 'new address from the portal' : undefined, urgency: em ? 'emergency' : s(o.urgency), emergency: em || undefined, customerPm: s(o.pm && o.pm.name) },
     patch: { origin: 'portal', sourceKind: 'portal', websiteLead: false, websiteForm: '', sourceRef: PORTAL_SOURCE, type: s(o.leadKind) || 'residential', customerId: s(o.customerId),
       emergency: em, urgency: em ? 'emergency' : s(o.urgency), service: s(o.workLabel) } });
   if (r.action === 'added') { try { await alertLead(r.rec); } catch (e) {} }

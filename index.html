@@ -197927,7 +197927,7 @@ function blockHtml(id){
   if (!d) return '<div class="gcpr-n bad">⚠ ' + esc(c.err || 'Could not load the request.') + '</div>';
   var r = d.request, j = d.job || {}, h = '<dl>';
   var row = function(k, v, cls){ if (s(v)) h += '<dt>' + esc(k) + '</dt><dd' + (cls ? ' class="' + cls + '"' : '') + '>' + esc(v) + '</dd>'; };
-  row('Status', d.statusLabel); row(r.kind === 'project' ? 'Property' : 'Job', r.kind === 'project' ? s(r.property && r.property.label) : [j.po ? 'PO ' + j.po : '', j.name].filter(Boolean).join(' · '));
+  row('Status', d.statusLabel); row(r.kind === 'project' ? 'Property' : 'Job', r.kind === 'project' ? s(r.property && r.property.label) + (r.property && r.property.isNew ? '  🆕 new address from the portal (not on file — confirm it)' : '') : [j.po ? 'PO ' + j.po : '', j.name].filter(Boolean).join(' · '));
   if (r.kind === 'project') row('Work', ({ restoration: 'Restoration / mitigation', roofing: 'Roofing', buildout: 'Commercial build-out', commaint: 'Commercial maintenance', other: 'Other' })[r.workType] || r.workType);
   row('From', s(r.by) + (r.portal === 'gc' ? ' (GC page)' : r.portal === 'pm' ? ' (property manager)' : ' (customer portal)'));
   row('What', r.text); row('Where', r.where); row('Urgency', URG[r.urgency] || r.urgency, r.urgency === 'emergency' ? 'em' : '');
