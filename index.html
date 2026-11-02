@@ -656,7 +656,8 @@ function send(){
 }
 SI.call(W, send, 120000); ST.call(W, send, 60000);
 try { W.addEventListener('pagehide', function(){ try { cycle(); } catch (e) {} send(); }); } catch (e) {}
-W._gcPerfRep = { report: report, send: function(){ dirty = true; send(); } };
+W._gcPerfRep = { report: report, send: function(){ dirty = true; send(); },
+  note: function(k){ try { bump(NET, 'note: ' + s(k).slice(0, 120), null, 60); } catch (e) {} } };   /* patch CCBANNER: a quiet note (an inconclusive check), not shown to anyone */
 })();
 </script>
 <style id="gc-hot2b-css">
@@ -111885,7 +111886,7 @@ function urlOf(input){
 
 /* ── 1. the dead table ──────────────────────────────────────────────────── */
 var CC_OFF = true;   /* 33.144: not the switch any more — ccAllowed() asks patch I (server key status) */
-function ccAllowed(u, init){ try{ return typeof window.__gcCCAllow === 'function' && !!window.__gcCCAllow(u, init); }catch(e){ return false; } }
+function ccAllowed(u, init, input){ try{ return typeof window.__gcCCAllow === 'function' && !!window.__gcCCAllow(u, init, input); }catch(e){ return false; } }   /* patch CCBANNER: + the Request */
 function isCompanyCam(u){
   try{
     var s = String(u||'');
@@ -112118,7 +112119,7 @@ async function splitReadOnce(u, init){
        through since the key died.
 
        _gcCompanyCamOn(true) turns it back on the moment a new key is in. */
-    if(isCompanyCam(u) && !ccAllowed(u, init)){   /* patch CCS2: answered empty AND marked X-GC-Gate: blocked (it is not CompanyCam's answer) */
+    if(isCompanyCam(u) && !ccAllowed(u, init, input)){   /* patch CCS2: answered empty AND marked X-GC-Gate: blocked (it is not CompanyCam's answer) */
       stats.cc++;
       if(stats.cc === 1){
         try{ console.log('%c[GC] Old CompanyCam code paths are answered empty here (they were the request '
@@ -115784,16 +115785,20 @@ function hdrGet(h, name){
   try {
     if (!h) return '';
     if (typeof h.get === 'function') return h.get(name) || '';
+    /* patch CCBANNER: a [[name, value]] list is a legal way to give headers too */
+    if (Array.isArray(h)) { for (var i = 0; i < h.length; i++) if (h[i] && String(h[i][0]).toLowerCase() === name) return s(h[i][1]); return ''; }
     var k = Object.keys(h).filter(function(x){ return x.toLowerCase() === name; })[0];
     return k ? s(h[k]) : '';
   } catch (e) { return ''; }
 }
-window.__gcCCAllow = function(u, init){
+window.__gcCCAllow = function(u, init, input){
   try {
     var url = String(u || '');
     if (url.indexOf('api.companycam.com') >= 0) return false;
     if (url.indexOf('companycam-webhook') < 0) return false;
-    if (hdrGet(init && init.headers, 'x-gc-cc') !== '1') return false;   /* an old code path */
+    /* patch CCBANNER: the mark may ride on the Request itself (a layer above may hand the gate a Request and no init) */
+    var mark = hdrGet(init && init.headers, 'x-gc-cc') || (input && typeof input === 'object' && input.headers ? hdrGet(input.headers, 'x-gc-cc') : '');
+    if (mark !== '1') return false;   /* an old code path */
     if (/[?&]proxy=(status|sync|syncnow|review)\b/.test(url)) return true;   /* the one question (+ patch CCS: what the sync recorded; + patch CCSYNC: the status window's answers) */
     return on();
   } catch (e) { return false; }
@@ -129771,6 +129776,9 @@ function photoIndex(){
 /* ── header / nav / fab / compose ── */
 function syncPill(compact){
   var n = qn;
+  /* patch CCBANNER: "All synced" only while the CompanyCam verdict the 📷 Photos banner shows is not red */
+  var ccv = null; try { ccv = !n && window._gcCCSync && window._gcCCSync.verdict ? window._gcCCSync.verdict() : null; } catch (e) {}
+  if (ccv && ccv.show) return '<span class="gcu-pill off" id="gcu-sync" data-cc="bad" role="status" title="' + esc(ccv.text) + '">CompanyCam not syncing</span>';
   if (compact && !n) return '<span class="gcu-pill gcu-dot" id="gcu-sync" title="All synced" role="status"><span class="gcu-vh">All synced</span></span>';
   if (n && !online()) return '<span class="gcu-pill off" id="gcu-sync">' + n + ' waiting · offline</span>';
   if (n) return '<span class="gcu-pill up" id="gcu-sync">' + n + ' uploading</span>';
@@ -131326,6 +131334,7 @@ function ccCheckNow(b){
     .then(function(){ if (b) { b.disabled = false; b.textContent = 'Check CompanyCam now'; } });
 }
 function bindHead(){ /* the search box lives in the header: keep focus while the list redraws */ }
+window._gcPhotosRepill = function(){ try { if (!root) return; var b = root.querySelector('#gcu-sync'); if (!b) return; var h = syncPill(inner()); if (b.outerHTML !== h) { b.outerHTML = h; var hd = root.querySelector('.gcu-hd'); if (hd) hd.__h = ''; } } catch (e) {} };   /* patch CCBANNER: the CompanyCam verdict changed */
 function renderHeaderOnly(){ if (!root) return; var a = document.activeElement; if (a && a.id === 'gcu-q') { var b = root.querySelector('#gcu-sync'); if (b) b.outerHTML = syncPill(inner()); root.querySelector('.gcu-hd').__h = ''; return; } setHTML(root.querySelector('.gcu-hd'), headHtml()); setHTML(root.querySelector('.gcu-nav'), navHtml()); }
 
 /* ══ OPEN / CLOSE ═══════════════════════════════════════════════════════════════════════════ */
@@ -174663,18 +174672,36 @@ function when(iso){
 var HOW = 'Netlify → Site configuration → Environment variables → COMPANYCAM_TOKEN, then Deploys → Trigger deploy';
 
 /* ── the server's answer ── */
-var H = { data: null, at: 0, err: '', busy: false };
+var H = { data: null, at: 0, err: '', busy: false, fails: 0, next: 0, okAt: 0 };
+/* patch CCBANNER: an answer is the server's status record or nothing. Anything else (no answer, 401 / 5xx, the CompanyCam
+   gate's stand-in, a page that is not JSON) is INCONCLUSIVE: the last real answer stays, the check is tried again quietly
+   (30 s, 1, 2, 4, then every 5 min) and the reason goes to the freeze / error report — never to the screen. The last
+   answer any part of the CRM saw (gc_ccsync_last: this line, the status window, GrayCo Photos) is where it starts. */
+var BACK = [30e3, 60e3, 120e3, 240e3, EVERY];
+function isStatus(j){ return !!(j && typeof j === 'object' && !Array.isArray(j) && 'tokenSet' in j); }
+try { var lc0 = JSON.parse(localStorage.getItem('gc_ccsync_last') || 'null'); if (lc0 && isStatus(lc0.data) && Date.now() - (+lc0.at || 0) < 2 * EVERY) H.data = lc0.data; } catch (e) {}
+function quiet(why){
+  H.fails++; H.err = why; H.next = Date.now() + BACK[Math.min(H.fails - 1, BACK.length - 1)];
+  try { if (W._gcPerfRep && W._gcPerfRep.note) W._gcPerfRep.note('CompanyCam status check inconclusive: ' + why); } catch (e) {}
+  try { if (H.fails === 1 || H.fails % 10 === 0) console.info('[GC] CompanyCam status check inconclusive (' + why + ') — trying again quietly (patch CCBANNER)'); } catch (e) {}
+}
 function poll(force){
   if (H.busy || isMM() || !signedIn()) return Promise.resolve(H);
-  if (!force && H.at && Date.now() - H.at < EVERY) return Promise.resolve(H);
+  var now = Date.now();
+  if (!force) { if (H.fails) { if (now < H.next) return Promise.resolve(H); } else if (H.at && now - H.at < EVERY) return Promise.resolve(H); }
   H.busy = true;
   return W.fetch(FN, { headers: { 'x-gc-cc': '1' }, cache: 'no-store' }).then(function(r){
+    if (W._gcCCGated && W._gcCCGated(r)) return 'not asked — the CompanyCam gate answered for the server';
     return r.text().then(function(t){
       var j = null; try { j = JSON.parse(t); } catch (e) {}
-      if (r.ok && j && typeof j === 'object' && !Array.isArray(j) && 'tokenSet' in j) { H.data = j; H.err = ''; }
-      else H.err = r.status === 404 ? 'the CompanyCam connector is not on the site (404)' : r.status === 401 || r.status === 403 ? 'the server did not accept this sign-in (' + r.status + ')' : 'could not ask the server' + (r.status ? ' (' + r.status + ')' : '');
-    });
-  }, function(){ H.err = 'could not reach the server'; }).then(function(){ H.at = Date.now(); H.busy = false; paint(); return H; });
+      if (r.ok && isStatus(j)) { H.data = j; H.okAt = Date.now(); try { localStorage.setItem('gc_ccsync_last', JSON.stringify({ at: Date.now(), data: j })); } catch (e) {} return ''; }
+      return 'the server answered ' + r.status + (j == null ? ' (not JSON: ' + String(t || '').slice(0, 30).replace(/\s+/g, ' ') + ')' : ' without its status record');
+    }, function(){ return 'the server answered ' + r.status + ' (unreadable)'; });
+  }, function(e){ return 'no answer (' + String(e && e.message || 'network') + ')'; }).then(function(why){
+    H.at = Date.now(); H.busy = false;
+    if (why) quiet(why); else { H.fails = 0; H.next = 0; H.err = ''; }
+    paint(); return H;
+  });
 }
 
 /* ── one line: { ok, text } ── patch CCS2: ONE truth for the token. "✅ Token accepted (checked 11:42 PM)" only after a
@@ -174709,26 +174736,36 @@ W._gcCCTruth = function(force){
   return Promise.resolve(a).then(function(){ return poll(true); }, function(){ return poll(true); }).then(function(){ paint(); return truthNow(); });
 };
 function judge(){
+  /* patch CCBANNER: ok:false (red) only for what the server says is really wrong — the token is not set, the sync failed run
+     after run, the key is rejected. Everything else is a plain line (ok:null) on the CompanyCam screens, never a red banner. */
   var d = H.data, h = d && d.health;
-  if (!d) return H.err ? { ok: false, text: '⚠ CompanyCam sync status unknown — ' + H.err } : { ok: null, text: 'CompanyCam sync: checking…' };
-  if (!d.tokenSet && (!h || /COMPANYCAM_TOKEN/.test(s(h.skipped)) || !h.ok))
+  if (!d) return { ok: null, text: 'CompanyCam sync: checking…' };
+  if (!d.tokenSet)
     return { ok: false, text: '⚠ CompanyCam token not set in Netlify — nothing syncs and GrayCo Photos stays empty. Add it: ' + HOW + '.' };
   var tr = truthNow(), tokenOk = tr.token === 'ok', pre = tr.text.split(' · ')[0] + ' · ', line;
   if (tr.token === 'bad') return { ok: false, text: pre + 'make a new token in CompanyCam (Settings → Access tokens) and paste it into ' + HOW + '.' };
   if (!h) {
-    if (d.serviceKey === false) return { ok: false, text: pre + '⚠ No CompanyCam sync run recorded — SUPABASE_SERVICE_KEY is not set in Netlify, so the 15-minute sync cannot run.' };
-    return { ok: false, text: pre + '⚠ No CompanyCam sync run recorded yet — it runs every 15 minutes after a deploy (Netlify → Deploys → Trigger deploy if it never has).' };
+    if (d.serviceKey === false) return { ok: null, text: pre + '⚠ No CompanyCam sync run recorded — SUPABASE_SERVICE_KEY is not set in Netlify, so the 15-minute sync cannot run.' };
+    return { ok: null, text: pre + '⚠ No CompanyCam sync run recorded yet — it runs every 15 minutes after a deploy (Netlify → Deploys → Trigger deploy if it never has).' };
   }
   var age = Date.now() - (Date.parse(h.at) || 0), at = when(h.at), shape = h.tokenShape && h.tokenShape.malformed ? ' (the token in Netlify had extra spaces, quotes or "Bearer " — cleaned automatically; re-paste it when you can)' : '';
-  if (/COMPANYCAM_TOKEN/.test(s(h.skipped))) return { ok: false, text: pre + '⚠ Last sync ' + at + ': the token was not set then. It is set now — the next 15-minute run will pick it up (or Trigger deploy).' };
-  if (h.skipped) return { ok: false, text: pre + '⚠ Last sync ' + at + ' skipped: ' + s(h.skipped) + ' (Netlify environment variables).' };
-  if (projErr()) return { ok: false, text: tr.text + ' (last try ' + at + ' — the CRM tries again every 15 minutes)' + shape };
-  if (h.error) return { ok: false, text: pre + '⚠ Last sync ' + at + ' failed: ' + s(h.error) + shape };
-  if (age > STALE) return { ok: false, text: pre + '⚠ No CompanyCam sync in the last hour (last run ' + at + ') — check Netlify → Logs → Functions → companycam-sync.' };
+  /* failing: the last run failed AND the one before it (fails, written by companycam-sync); a row from before fails was
+     written counts as failing */
+  var bad = h.ok === false && (h.fails == null || +h.fails >= 2), runs = bad && +h.fails >= 2 ? ' (' + (+h.fails) + ' runs in a row)' : '';
+  if (/COMPANYCAM_TOKEN/.test(s(h.skipped))) return { ok: null, text: pre + '⚠ Last sync ' + at + ': the token was not set then. It is set now — the next 15-minute run will pick it up (or Trigger deploy).' };
+  if (h.skipped) return { ok: bad ? false : null, text: pre + '⚠ Last sync ' + at + ' skipped: ' + s(h.skipped) + runs + ' (Netlify environment variables).' };
+  if (projErr()) return { ok: bad ? false : null, text: tr.text + ' (last try ' + at + runs + ' — the CRM tries again every 15 minutes)' + shape };
+  if (h.error) return { ok: bad ? false : null, text: pre + '⚠ Last sync ' + at + ' failed' + runs + ': ' + s(h.error) + shape };
+  if (h.ok === false) return { ok: bad ? false : null, text: pre + '⚠ Last sync ' + at + ' did not finish' + runs + shape };
+  if (age > STALE) return { ok: null, text: pre + '⚠ No CompanyCam sync in the last hour (last run ' + at + ') — check Netlify → Logs → Functions → companycam-sync.' };
   line = 'Last sync: ' + at + ' — OK, ' + (+h.read || 0) + ' project' + (+h.read === 1 ? '' : 's') + ' read, ' + (+h.made || 0) + ' job' + (+h.made === 1 ? '' : 's') + ' made';
   if (h.ccError && +h.ccError.status >= 500) line += ' · CompanyCam had a server error (' + h.ccError.status + ') — retried another way';
   return { ok: tokenOk ? true : null, text: pre + line + shape };
 }
+/* patch CCBANNER: THE verdict — the 📷 Photos banner and the Photos header pill both read this, so they cannot disagree.
+   show: the red banner / red pill are up (a real problem, and this person is an admin). */
+function isAdmin(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()); } catch (e) { return false; } }
+function verdict(j){ j = j || judge(); return { ok: j.ok, text: j.text, show: j.ok === false && isAdmin() && !isMM() && signedIn() }; }
 
 /* ── painting: only when something changed (no idle churn) ── */
 function css(){
@@ -174776,9 +174813,10 @@ function paint(){
   });
   /* Admin's CompanyCam setup panel */
   ['gc-cc-setup', 'gcx-cc-diag'].forEach(function(id){ var p = D.getElementById(id); if (p && visible(p)) lineIn(p, j, 'gc-ccs-bar', true); });
-  /* 📸 GrayCo Photos: a banner only when CompanyCam is not working */
-  var ban = D.getElementById('gc-ccs-photos');
-  if (view() === 'allphotos' && j.ok === false) {
+  /* 📸 GrayCo Photos: a banner only when CompanyCam is not working — patch CCBANNER: the one verdict, admins only, 📷 Photos only */
+  var ban = D.getElementById('gc-ccs-photos'), vd = verdict(j), pk = vd.show ? vd.text : '';
+  if (pk !== H.pill) { H.pill = pk; try { if (W._gcPhotosRepill) W._gcPhotosRepill(); } catch (e) {} }   /* the header pill follows the same verdict */
+  if (view() === 'allphotos' && vd.show) {
     var host = D.getElementById('gcu-tabhost');   /* the GrayCo Photos tab's own mount: the banner goes right above it */
     if (host && host.parentElement) {
       if (!ban) { ban = D.createElement('div'); ban.id = 'gc-ccs-photos'; ban.setAttribute('data-gc-keep', '1'); }
@@ -174807,7 +174845,8 @@ function tick(){
   } catch (e) { try { console.warn('[GC] patch CCS', e); } catch (x) {} }
 }
 RI.call(W, tick, 1500); later(tick, 4000);
-W._gcCCSync = { state: function(){ return JSON.parse(JSON.stringify({ data: H.data, at: H.at, err: H.err })); }, poll: function(){ return poll(true); }, text: function(){ return judge(); }, _judgeFor: function(data, err){ var o = H.data, e = H.err; H.data = data; H.err = err || ''; try { return judge(); } finally { H.data = o; H.err = e; } } };
+W._gcCCSync = { state: function(){ return JSON.parse(JSON.stringify({ data: H.data, at: H.at, err: H.err, fails: H.fails, next: H.next, okAt: H.okAt })); }, poll: function(){ return poll(true); }, text: function(){ return judge(); },
+  verdict: function(){ return verdict(); },   /* patch CCBANNER */ _judgeFor: function(data, err){ var o = H.data, e = H.err; H.data = data; H.err = err || ''; try { return judge(); } finally { H.data = o; H.err = e; } } };
 try { console.log('[GC] CompanyCam sync status line (patch CCS) — _gcCCSync.state()'); } catch (e) {}
 })();
 </script>
@@ -175062,7 +175101,8 @@ try {
         /* patch PHOTOLINK: no CompanyCam fetch from the To-Do — the last answer seen here (status window / GrayCo Photos) */
         if (!S.data) { try { var lc = JSON.parse(localStorage.getItem('gc_ccsync_last') || 'null'); if (lc && lc.data && typeof lc.data === 'object' && !Array.isArray(lc.data)) S.data = lc.data; } catch (e) {} }
         var rv = review(), d = S.data, h = d && d.health;
-        if (d && (!d.tokenSet || d.serviceKey === false || !h || h.error || h.skipped || (h.at && Date.now() - Date.parse(h.at) > 2 * 3600e3)))
+        var ccv = null; try { ccv = d && W._gcCCSync && W._gcCCSync._judgeFor ? W._gcCCSync._judgeFor(d) : null; } catch (e) {}   /* patch CCBANNER: the one verdict */
+        if (d && ccv && ccv.ok === false)
           out.push({ id: 'ccsync_broken', cat: 'CompanyCam', label: '📸 CompanyCam sync isn\'t working', sub: plainLine(), color: '#dc2626', action: open });
         if (rv.length) out.push({ id: 'ccsync_review', cat: 'CompanyCam', label: '📸 CompanyCam: ' + rv.length + ' project' + (rv.length === 1 ? '' : 's') + ' to review',
           sub: 'New CompanyCam projects that need a person (look-alike jobs, a finished job at the same address, or the Senior PM got them).', color: '#0ea5e9', action: open });

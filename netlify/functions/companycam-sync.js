@@ -547,6 +547,13 @@ function withDiag(h){
 }
 async function saveHealth(h){
   const e = sbEnv(); if (!e.url || !e.key) return false;   /* no service key: nothing can be written (the CRM then says "no run recorded") */
+  /* patch CCBANNER: failed runs in a row (fails) and the last good run (lastOkAt) — the CRM shows a red "can't come in"
+     banner only for a sync that keeps failing, never for one run that hiccuped */
+  try {
+    const prev = obj((await kvRead([HEALTH_KEY]))[HEALTH_KEY]);
+    h.fails = h.ok ? 0 : (+prev.fails || (prev.ok === false ? 1 : 0)) + 1;
+    h.lastOkAt = h.ok ? h.at : s(prev.lastOkAt || (prev.ok ? prev.at : ''));
+  } catch (err) { h.fails = h.ok ? 0 : 1; }
   try { await kvWrite([{ key: HEALTH_KEY, value: h }]); return true; } catch (err) { return false; }
 }
 
@@ -564,4 +571,4 @@ exports.handler = async function(event){
     return { statusCode: 200, body: JSON.stringify({ ok: false, error: String(e && e.message || e) }) };
   }
 };
-exports._t = { run, compact, decide, candidates, ccIdsOf, knownIndex, pmFinder, listChanged, rsNear, CUT, healthOf, HEALTH_KEY, LINK_V, posIn, poKey };
+exports._t = { run, compact, decide, candidates, ccIdsOf, knownIndex, pmFinder, listChanged, rsNear, CUT, healthOf, saveHealth, HEALTH_KEY, LINK_V, posIn, poKey };
