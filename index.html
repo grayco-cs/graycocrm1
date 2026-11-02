@@ -26668,6 +26668,7 @@ window._gcGenerateMyProposal = function(){
       date:(qs('ej-date')?qs('ej-date').value:'')||new Date().toISOString().slice(0,10),
       client:(qs('ej-subto-company')?qs('ej-subto-company').value:'')||'',
       scope:Object.assign({}, scope),
+      msInLines:settings.jobState==='MS', settings:{jobState:settings.jobState, msContractorTax:settings.msContractorTax},   /* patch ESTMATH4 */
       lines:_lines.map(function(l){
         var qty=parseFloat(l.qty)||1, cost=parseFloat(l.cost)||0;
         var charge=(typeof lineCharge==='function')?lineCharge(l):cost*qty;   /* patch ESTMATH */ // was lineCharge x qty
@@ -28293,7 +28294,8 @@ function gcMakeProposal(){
       scope:{ text:(qs('ej-notes')?qs('ej-notes').value:'') },
       scopeSummary:(qs('ej-notes')?qs('ej-notes').value:''),
       lines:estLines,
-      totalCharge:totalCharge
+      totalCharge:totalCharge,
+      msInLines:settings.jobState==='MS', settings:{jobState:settings.jobState, msContractorTax:settings.msContractorTax}   /* patch ESTMATH4 */
     };
     if(window._gcOpenGrayCoProposal){ window._gcOpenGrayCoProposal(est); }
     else { alert('Proposal generator not loaded - hard refresh and try again.'); }
@@ -42148,11 +42150,11 @@ function generateHTML(docId, filled){
         var _isResidential=/residential|home|house/.test(_jt);
         if(_isMS){
           if(!_isResidential && _amt>10000){
-            var _tax=_amt*0.035; var _tot=_amt+_tax;
+            var _tax=_amt*0.035/1.035; var _tot=_amt;   /* patch ESTMATH4 */ // included in the price (it was added on top: x1.035)
             return '<div class="hdr">CONTRACTOR\'S TAX (MISSISSIPPI)</div>'
               +'<table>'
-              +'<tr><td style="width:55%">Mississippi Contractor\'s Tax (3.5% of contract price)</td><td style="text-align:right;font-weight:700">'+fmt$(_tax)+'</td></tr>'
-              +'<tr><td><b>Total Including Contractor\'s Tax</b></td><td style="text-align:right;font-weight:800;color:#1a3a5f">'+fmt$(_tot)+'</td></tr>'
+              +'<tr><td style="width:55%">Mississippi Contractor\'s Tax (3.5%), included in the contract price</td><td style="text-align:right;font-weight:700">'+fmt$(_tax)+'</td></tr>'
+              +'<tr><td><b>Total Contract Price (contractor\'s tax included)</b></td><td style="text-align:right;font-weight:800;color:#1a3a5f">'+fmt$(_tot)+'</td></tr>'
               +'</table>'
               +'<p style="font-size:9px;color:#666">Mississippi imposes a 3.5% contractor\'s tax on non-residential construction where the total contract price exceeds $10,000 (Miss. Code Title 27, Ch. 65). This tax is included above and remitted by GrayCo as prime contractor.</p>';
           }
@@ -64415,6 +64417,29 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
     var s=String((est&&(est.state||est.address))||'').toUpperCase();
     return /\bMS\b|MISSISSIPPI/.test(s);
   }
+  /* patch ESTMATH4: are the estimate's prices ALREADY carrying the 3.5% (the builder adds it to every line's cost on
+     an MS job)? The builder says so (msInLines), or the saved estimate's settings were MS when it was priced. An estimate
+     the MS check flagged afterwards (_msTaxApplied) or an uploaded proposal that listed the tax apart does not. */
+  function msInLines(est){
+    if(!est) return false;
+    if(est.msInLines === true) return true;
+    if(est.msInLines === false) return false;
+    return !!(est.settings && String(est.settings.jobState || '').toUpperCase() === 'MS') && est._msTaxApplied !== true;
+  }
+  window._gcProposalMsInLines = msInLines;
+  /* the MS tax on a document whose (sub)total is `subtotal`: charged once */
+  window._gcProposalMs = function(est, subtotal){
+    est = est || {}; subtotal = parseFloat(subtotal) || 0;
+    var rate = (est.settings && parseFloat(est.settings.msContractorTax) > 0 ? parseFloat(est.settings.msContractorTax) : 3.5) / 100;
+    var inl = msInLines(est), ms = inl || isMS(est);
+    if(!ms) return { ms: false, inLines: false, tax: 0, included: 0, grand: subtotal, rate: rate };
+    if(!inl) return { ms: true, inLines: false, tax: subtotal * rate, included: 0, grand: subtotal * (1 + rate), rate: rate };
+    var L = Array.isArray(est.lines) ? est.lines : [], withCharge = L.length && L.every(function(l){ return l && l.charge != null; });
+    var mhRate = (est.settings && parseFloat(est.settings.mhCharge) > 0) ? parseFloat(est.settings.mhCharge) : 75;   /* man-hour lines carry no MS tax */
+    var base = withCharge ? L.reduce(function(a, l){ return a + (String(l.type || '') === 'mh' ? 0 : (parseFloat(l.charge) || 0)); }, 0)
+      : subtotal - L.reduce(function(a, l){ return a + (l && String(l.type || '') === 'mh' ? (parseFloat(l.qty) || 0) * mhRate : 0); }, 0);
+    return { ms: true, inLines: true, tax: 0, included: base * rate / (1 + rate), grand: subtotal, rate: rate };
+  };
 
   // Build the numbered SCOPE OF WORK from the estimate's line items, grouped by trade/category so
   // each numbered line reads like "Insulation ... - $13,940.53" (the way GrayCo writes proposals).
@@ -64449,9 +64474,10 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
     var subtotal = lines.reduce(function(s,l){ return s+l.total; }, 0);
     // If the estimate carried its own total, prefer it (keeps parity with the builder).
     if(est.totalCharge && Math.abs(est.totalCharge - subtotal) > 1) subtotal = est.totalCharge;
-    var ms = isMS(est);
-    var msTax = ms ? (subtotal*0.035) : 0;
-    var grand = subtotal + msTax;
+    var _msx = window._gcProposalMs(est, subtotal);   /* patch ESTMATH4 */ // charged once: inside the lines, or as its own line
+    var ms = _msx.ms;
+    var msTax = _msx.tax;
+    var grand = _msx.grand;
     var contractor = est.estimator || est.by || 'Nicholas Thomas';
     var dateStr = todayLong();  // ALWAYS today
 
@@ -64503,8 +64529,9 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
       + '<h2 style="margin-top:18px">SCOPE OF WORK:</h2>'
       + '<ol class="scope">'+scopeHTML+'</ol>'
       + '<div class="total">The total amount of this Proposal is: $'+money(subtotal)+'</div>'
-      + (ms ? ('<div class="total" style="font-size:11.5pt">Ms contractors tax (3.5%) = $'+money(msTax)+'</div>'
-             +'<div class="total">Total with contractors tax = $'+money(grand)+'</div>') : '')
+      + (ms && msTax ? ('<div class="total" style="font-size:11.5pt">Ms contractors tax (3.5%) = $'+money(msTax)+'</div>'
+             +'<div class="total">Total with contractors tax = $'+money(grand)+'</div>')
+        : ms && _msx.inLines ? ('<div style="font-size:10.5pt;margin:-6px 0 12px">Includes the Mississippi contractor\u2019s tax (3.5%): $'+money(_msx.included)+'</div>') : '')
       + '<div class="small" style="margin:10px 0">GrayCo Construction Services, LLC will furnish all labor, supervision, equipment, materials, and insurance necessary to perform all work described above in accordance with manufacturer specifications and accepted industry practices.</div>'
       + '<h2>Notes:</h2>'
       + '<ul class="notes small">'
@@ -82011,7 +82038,9 @@ window._gcForceFixSchedule = async function(silent){
     if(est.totalCharge && Math.abs(est.totalCharge-subtotal)>1) subtotal=est.totalCharge;
     var state=String(est.state||est.stateCode||'').toUpperCase();
     var isMS = state==='MS' || /(,|\s)MS(\s|$|\.)/.test(est.address||est.location||'');
-    var msTax = isMS ? subtotal*0.035 : 0;
+    var _msx = window._gcProposalMs ? window._gcProposalMs(est, subtotal) : null;   /* patch ESTMATH4 */ // charged once
+    if(_msx && _msx.inLines) isMS = true;
+    var msTax = (isMS && !(_msx && _msx.inLines)) ? subtotal*((_msx&&_msx.rate)||0.035) : 0;
     var grand = subtotal+msTax;
     var proj = est.name||est.projectName||est.title||'Project';
     var loc  = est.address||est.location||'';
@@ -82040,6 +82069,7 @@ window._gcForceFixSchedule = async function(silent){
     +'<br>'
     +'<p><b>Total for this project = '+money(subtotal)+'</b></p>'
     +(msTax>0?('<br><p><b>Ms contractors tax = '+money(msTax)+'</b></p><br><p><b>Total with contractors tax = '+money(grand)+'</b></p>'):'')
+    +(_msx&&_msx.inLines?('<p>Includes the Mississippi contractor\u2019s tax (3.5%): '+money(_msx.included)+'</p>'):'')   /* patch ESTMATH4 */
     +'<br><br>'
     +'<p>GrayCo Construction Services, LLC will furnish all labor, supervision, equipment, materials, and insurance necessary to perform all work described above in accordance with manufacturer specifications and accepted industry practices.</p>'
     +'</body></html>';
