@@ -13,3 +13,8 @@ grca.jpg         Grand Canyon National Park            NPS / M. Quinn           
 zion.jpg         Zion National Park                    NPS Photo / Jesse Nelson   https://www.nps.gov/common/uploads/structured_data/69162F54-D4AF-8695-A42F97A8F9774C19.jpg (page: https://www.nps.gov/zion/index.htm)
 glac.jpg         Glacier National Park                 NPS Photo                  https://www.nps.gov/common/uploads/structured_data/1F147B77-D1E9-3D10-61ABDA0E4A8D803D.jpg (page: https://www.nps.gov/glac/index.htm)
 arch.jpg         Arches National Park                  NPS / Neal Herbert         https://www.nps.gov/common/uploads/structured_data/CDBBADB9-96FA-A432-50C0801C838743F9.jpg (page: https://www.nps.gov/arch/index.htm)
+grte.jpg         Grand Teton National Park             NPS Photo/Tobiason         https://www.nps.gov/common/uploads/structured_data/769E01AF-98C8-ECA3-7799030A09A7F685.jpg (page: https://www.nps.gov/grte/index.htm)
+romo.jpg         Rocky Mountain National Park          NPS/J.Marino               https://www.nps.gov/common/uploads/structured_data/8824D3C2-F84D-A622-C2DE87AC4B9A8BC9.jpg (page: https://www.nps.gov/romo/index.htm)
+brca.jpg         Bryce Canyon National Park            NPS Photo / Keith Moore    https://www.nps.gov/common/uploads/structured_data/600067EF-E1B2-18B1-6120394EC23521DB.jpg (page: https://www.nps.gov/brca/index.htm)
+mora.jpg         Mount Rainier National Park           NPS Photo                  https://www.nps.gov/common/uploads/structured_data/1FD67031-C1A8-4462-6B815FF24500A576.jpeg (page: https://www.nps.gov/mora/index.htm)
+(Acadia was considered; its nps.gov page had no NPS-credited landscape photo, so Mount Rainier was used instead.)

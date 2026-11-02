@@ -217,7 +217,7 @@ function paint(){
      🔵 Blue (default) — the GrayCo navy of the lobby TV: dark navy, white type, gold accents
      ⚪ White          — OFFICETV's own look
      ⛳ Golf           — a clean green golf-course look (no photos)
-     🌲 National parks — public-domain NPS photos (img/tv/parks, CREDITS.txt), a new one every 2 minutes, the park named
+     🌲 National parks — 12 public-domain NPS photos (img/tv/parks, CREDITS.txt), a new one every 2 minutes, the park named
                           in a small caption; the numbers sit on dark panels so they stay readable
      📷 Office photos  — the back office TV's own album (⚙ Admin → 📺 TVs → 📷 Office photos; any admin adds / removes)
    A personal TV screen (6.) has the same list, its own album first ("📷 My photos").
@@ -228,7 +228,8 @@ function paint(){
    else Blue. An album with no photos yet shows "Add photos in ⚙ Admin → 📺 TVs" and is drawn Blue. ── */
 var THEMES = [{ k: 'blue', l: '🔵 Blue' }, { k: 'white', l: '⚪ White' }, { k: 'golf', l: '⛳ Golf' }, { k: 'parks', l: '🌲 National parks' }, { k: 'album', l: '📷 Office photos' }];
 var PARKS = [['grsm-fall', 'Great Smoky Mountains National Park'], ['yell', 'Yellowstone National Park'], ['yose', 'Yosemite National Park'], ['grca', 'Grand Canyon National Park'],
-  ['zion', 'Zion National Park'], ['glac', 'Glacier National Park'], ['arch', 'Arches National Park'], ['grsm-winter', 'Great Smoky Mountains National Park']];
+  ['zion', 'Zion National Park'], ['glac', 'Glacier National Park'], ['arch', 'Arches National Park'], ['grsm-winter', 'Great Smoky Mountains National Park'],
+  ['grte', 'Grand Teton National Park'], ['romo', 'Rocky Mountain National Park'], ['brca', 'Bryce Canyon National Park'], ['mora', 'Mount Rainier National Park']];
 var TKEY = 'gc_otv_theme';
 function okTheme(v){ return THEMES.some(function(t){ return t.k === v; }) ? v : ''; }
 function tkey(){ return CUR ? TKEY + ':' + CUR.id : TKEY; }
