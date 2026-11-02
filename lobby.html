@@ -272,7 +272,7 @@ R.leavereview = function(sl){
 };
 var SVC = [['drop', 'Restoration & mitigation', 'Water, fire and storm damage — 24/7'], ['roof', 'Roofing', 'Replacement, repairs and free storm inspections'],
   ['bldg', 'Commercial build-outs', 'Tenant improvements, renovations, new builds'], ['tool', 'Commercial maintenance', 'Roof & coating plans, make-ready, priority response'],
-  ['shield', 'Insurance claim help', 'Help documenting the damage and working through your claim']];
+  ['shield', 'Insurance claim help', 'Photos, estimates and meeting your adjuster']];
 R.services = function(sl){
   return kick('Services') + '<h1>' + esc(F(sl, 'h')) + '</h1><div class="sub">' + esc(F(sl, 'sub')) + '</div><div class="svc">' +
     SVC.map(function(x, i){ return '<div class="card"><div class="ci">' + ic(x[0]) + '</div><div class="num">0' + (i + 1) + '</div><h3>' + esc(x[1]) + '</h3><p>' + esc(x[2]) + '</p></div>'; }).join('') + '</div>' +
@@ -297,7 +297,7 @@ R.claims = function(sl){
   var st = arr(F(sl, 'items')).slice(0, 4);
   return kick(F(sl, 'sub') || 'How it works') + '<h1 class="md" style="max-width:24em">' + esc(F(sl, 'h')) + '</h1><div class="steps" style="grid-template-columns:repeat(' + st.length + ',1fr)">' +
     st.map(function(x, i){ return '<div class="st"><i>' + (i + 1) + '</i><p>' + esc(x) + '</p></div>'; }).join('') + '</div>' +
-    '<div class="fine" style="font-size:1.45em;margin-top:2.4em">Free inspections · We work with every insurance company · Ask our front desk how a claim works</div>';
+    '<div class="fine" style="font-size:1.45em;margin-top:2.4em">Free inspections · Any insurance company · Ask our front desk how a claim works</div>';
 };
 R.emergency = function(sl){
   return '<div class="row emerg" style="align-items:center"><div class="col"><div class="pill" style="align-self:flex-start;margin-bottom:2em;font-size:1.7em"><span class="live"></span>OPEN 24 HOURS · 7 DAYS</div>' +

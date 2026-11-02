@@ -52,7 +52,7 @@ var T = [
       url: 'https://grayco-cs.com/contact?utm_source=lobby_tv&utm_medium=qr&utm_campaign=commercial-maintenance', label: 'Sign up for maintenance' } },
   { k: 'claims', name: 'Insurance claim help', ic: '🛡', chk: 'check the steps', cat: 'Services', f: ['h', 'sub', 'items'],
     d: { h: 'Insurance claim? We walk you through it.', sub: 'How it works',
-      items: ['Free inspection — we document every bit of damage with photos', 'We help you file and meet the adjuster on site', 'We repair or rebuild — to the approved scope', 'Updates at every step until the job is done'] } },
+      items: ['Free inspection — we document every bit of damage with photos', 'We document the damage, meet your adjuster on site and give you a detailed estimate', 'We repair or rebuild — to the approved scope', 'Updates at every step until the job is done'] } },
   { k: 'emergency', name: '🚨 24/7 emergency line', ic: '🚨', cat: 'Services', f: ['h', 'sub'],
     d: { h: 'Water, fire or storm damage?', sub: 'Call us any time, day or night — our team responds fast to stop the damage.' } },
   { k: 'process', name: 'Our process', ic: '🧭', chk: 'check the steps', cat: 'Services', f: ['h', 'items'],
