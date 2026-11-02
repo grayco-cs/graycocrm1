@@ -254,16 +254,21 @@ function page(leads, opt){
   const kv = {};
   W.fetch = async (u, o) => { u = String(u); o = o || {};
     if (/gc_kv\?key=eq\./.test(u)) { const k = decodeURIComponent(/key=eq\.([^&]+)/.exec(u)[1]); return { ok: true, json: async () => (kv[k] ? [{ value: kv[k] }] : []) }; }
-    if (/gc_kv\?on_conflict/.test(u)) { const b = JSON.parse(o.body); kv[b.key] = b.value; return { ok: true }; }
+    if (/gc_kv\?on_conflict/.test(u)) { writes.push('kv'); const b = JSON.parse(o.body); kv[b.key] = b.value; return { ok: true }; }
     return { ok: false, status: 404, json: async () => ({}) }; };
-  W._gcLeadsHubKit = { all: () => LIST.filter(l => !trash[l.id]), setLeads: mut => { const n = mut(LIST.slice()); if (Array.isArray(n)) { LIST = n; return Promise.resolve(true); } return Promise.resolve(false); }, me: () => 'Office Person' };
+  /* the CRM keeps "what a person changed": a key that is simply missing from a saved lead is filled in again from the copy it
+     had before (as the live page did to the probe's undo); a blank value ([] / '') is a change and stays */
+  const SH = {}; const keepFill = n => n.map(l => { if (!l || !l.id) return l; const o = SH[l.id]; let x = l; if (o) { x = Object.assign({}, l); Object.keys(o).forEach(k => { if (!(k in x)) x[k] = o[k]; }); } SH[l.id] = x; return x; });
+  const writes = [];
+  W._gcLeadsHubKit = { all: () => LIST.filter(l => !trash[l.id]), setLeads: mut => { writes.push('setLeads'); const n = mut(LIST.slice()); if (Array.isArray(n)) { LIST = keepFill(n); return Promise.resolve(true); } return Promise.resolve(false); }, me: () => 'Office Person' };
+  LIST.forEach(l => { SH[l.id] = l; });
   W._gcLeadsHub = { kit: W._gcLeadsHubKit, redraw: noop };
   W._gcLDEL = { who: () => ({ all: opt.role !== 'pm', email: 'office@grayco-cs.com' }),
-    remove: async ids => { ids.forEach(id => { trash[id] = LIST.find(l => l.id === id); }); LIST = LIST.filter(l => !trash[l.id]); return { ok: true, deleted: ids.length, ids }; },
-    restore: async ids => { const back = ids.map(id => trash[id]).filter(Boolean); ids.forEach(id => { delete trash[id]; }); LIST = LIST.concat(back); return { ok: true, restored: back.length }; } };
-  W._gcLeadInbox = { act: b => { acts.push(b); return Promise.resolve(); } };
+    remove: async ids => { writes.push('remove'); ids.forEach(id => { trash[id] = LIST.find(l => l.id === id); }); LIST = LIST.filter(l => !trash[l.id]); return { ok: true, deleted: ids.length, ids }; },
+    restore: async ids => { writes.push('restore'); const back = ids.map(id => trash[id]).filter(Boolean); ids.forEach(id => { delete trash[id]; }); LIST = LIST.concat(back); return { ok: true, restored: back.length }; } };
+  W._gcLeadInbox = { act: b => { writes.push('act'); acts.push(b); return Promise.resolve(); } };
   vm.createContext(W); vm.runInContext(code, W);
-  return { W, B: W._gcBidMerge, list: () => LIST, trash, acts, kv };
+  return { W, B: W._gcBidMerge, list: () => LIST, trash, acts, kv, writes };
 }
 const FAKE = [
   { id: 'LEADIN-aaa1', inboxId: 'LI-aaa1', name: 'UrgentVet - Memphis - Drywall & Framing', source: 'BuildingConnected', city: 'Memphis', address: '8050 Dexter Road, Suite 103, Memphis, TN 38016', bidDue: '2026-11-03T12:00', dueToCompany: 'Loberg Construction', email: 'estimating@lobergconstruction.com', phone: '(847) 392-4300', contactName: 'Dana Whitfield', trades: ['Drywall & Framing'], estimator: 'Glenn Miller', docs: [{ ref: 'sb:crm-files/a.pdf', name: 'A1.pdf', hash: 'a' }], notes: 'Plans in A1', activity: [{ type: 'note', text: 'called Dana', at: '2026-10-30T15:00:00Z', by: 'Glenn' }], inboxAt: '2026-10-29T18:51:00Z', stage: 'New Lead', leadKind: 'Commercial' },
@@ -281,6 +286,12 @@ await t('dry run: one group (the 3 UrgentVet leads), nothing changed; same-GC an
   assert.strictEqual(g[0].gcs.length, 2); assert.strictEqual(g[0].due, '2026-11-03T12:00'); assert.ok(g[0].why.length);
   assert.strictEqual(P.B.count(), 1); assert.strictEqual(P.B.label(), '🔗 Merge duplicate bid leads (1)');
   assert.strictEqual(P.list().length, FAKE.length); assert.strictEqual(JSON.stringify(P.list()), JSON.stringify(FAKE)); assert.strictEqual(P.acts.length, 0);
+});
+await t('the dry run (open + the groups + the count + the row tags) writes nothing and changes no lead', async () => {
+  const P = page(FAKE), before = JSON.stringify(P.list());
+  P.B.groups(); P.B.count(); P.B.label(); P.B.show(); P.list().forEach(l => { P.B.rowTag(l); P.B.chip(l); P.B.paneHtml(l); });
+  P.B.open(); await new Promise(r => setImmediate(r)); P.B.close();
+  assert.strictEqual(P.writes.length, 0, JSON.stringify(P.writes)); assert.strictEqual(JSON.stringify(P.list()), before);
 });
 await t('a PM does not get the tool', () => { const P = page(FAKE, { role: 'pm' }); assert.strictEqual(P.B.can(), false); assert.strictEqual(P.B.count(), 0); });
 await t('merge: the kept lead lists both GCs and every trade, contact, file, link, note and history line; the copies go to Recently deleted; the inbox is told', async () => {
@@ -301,7 +312,10 @@ await t('merge: the kept lead lists both GCs and every trade, contact, file, lin
   /* undo */
   const u = await P.B.undo(); assert.strictEqual(u, true);
   assert.strictEqual(P.list().length, FAKE.length);
-  const K2 = P.list().find(l => l.id === 'LEADIN-aaa1'); assert.ok(!K2.gcs && !K2.bidMerge, 'the kept lead is as it was'); assert.strictEqual(K2.trades.join('|'), 'Drywall & Framing');
+  const K2 = P.list().find(l => l.id === 'LEADIN-aaa1'); assert.strictEqual((K2.gcs || []).length, 0, 'gcs back to none (not filled in again)'); assert.ok(!(K2.bidMerge && K2.bidMerge.at)); assert.strictEqual(K2.trades.join('|'), 'Drywall & Framing');
+  const SKIP = { updatedAt: 1, savedAt: 1, bidMergeUndoneAt: 1, restoredAt: 1, restoredBy: 1 }, blank = v => v == null || v === '' || v === false || v === 0 || (Array.isArray(v) && !v.length) || (v && typeof v === 'object' && !Array.isArray(v) && !Object.keys(v).length);
+  ['LEADIN-aaa1', 'LEADIN-aaa2', 'LEADIN-aaa3'].forEach(id => { const a = FAKE.find(l => l.id === id), b = P.list().find(l => l.id === id);
+    Object.keys(Object.assign({}, a, b)).forEach(k => { if (SKIP[k] || (blank(a[k]) && blank(b[k]))) return; assert.strictEqual(JSON.stringify(b[k]), JSON.stringify(a[k]), id + '.' + k + ' after undo'); }); });
   assert.ok(P.list().find(l => l.id === 'LEADIN-aaa3'), 'the copy is back');
   assert.strictEqual(P.acts.slice(2).map(a => a.op + ':' + a.id).sort().join('|'), 'unmerge:LI-aaa2|unmerge:LI-aaa3');
   assert.ok(P.kv.gc_bidmerge_log.entries[0].undone); assert.strictEqual(P.B.count(), 1);

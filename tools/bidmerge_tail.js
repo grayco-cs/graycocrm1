@@ -98,19 +98,19 @@ function own(l){ return !!l && !!s(l.inboxId) && s(l.id) === 'LEADIN-' + s(l.inb
 /* pure: fold each group into its keeper; the copies stay on the list (Recently deleted takes them next) */
 function mergeGroups(list, picks, by, at){
   var out = list.slice(), byId = {}; out.forEach(function(l, i){ if (l && l.id) byId[s(l.id)] = i; });
-  var before = [], folded = [], inbox = [], n = 0;
+  var before = [], folded = [], inbox = [], keepers = [], n = 0;
   picks.forEach(function(g){
     var ki = byId[s(g.keeper)]; if (ki == null) return;
     var keeper = out[ki], others = arr(g.ids).filter(function(id){ return id !== g.keeper && byId[s(id)] != null; }).map(function(id){ return out[byId[s(id)]]; }).filter(function(l){ return BM.liveLead(l); });
     if (!others.length) return;
     before.push(JSON.parse(JSON.stringify(keeper)));
-    out[ki] = BM.mergeLeads(keeper, others, { at: at, by: by }); n++;
+    out[ki] = BM.mergeLeads(keeper, others, { at: at, by: by }); keepers.push(out[ki]); n++;
     others.forEach(function(o){
       folded.push(s(o.id));
       if (own(o)) inbox.push(own(keeper) ? { id: o.inboxId, op: 'merged', into: keeper.inboxId, undo: 'unmerge' } : { id: o.inboxId, op: 'dismissed', reason: 'merged into the lead "' + s(keeper.name) + '" (🔗 duplicate bid leads)', undo: 'restore' });
     });
   });
-  return { list: out, groups: n, before: before, folded: folded, inbox: inbox };
+  return { list: out, groups: n, before: before, folded: folded, inbox: inbox, keepers: keepers };
 }
 function inboxAct(b){
   var body = { id: b.id, op: b.op }; if (b.into) body.into = b.into; if (b.reason) body.reason = b.reason;
@@ -135,15 +135,31 @@ function lastUndo(){ var now = Date.now(); return arr(LOG || lsLog()).filter(fun
 
 /* ── apply / undo ── */
 function save(mut){ var k = kit(); if (k && typeof k.setLeads === 'function') return Promise.resolve(k.setLeads(mut)); return Promise.resolve(false); }
+/* a lead put back exactly as the snapshot: every field of it, and every field added since set back to blank (not left out:
+   a key that is simply missing is filled in again from another copy of the list, so gcs [] — not "no gcs") */
+function blankOf(v){ return Array.isArray(v) ? [] : v && typeof v === 'object' ? {} : typeof v === 'number' ? 0 : typeof v === 'boolean' ? false : ''; }
+function exactly(snap, cur, at){
+  var x = JSON.parse(JSON.stringify(snap));
+  Object.keys(cur || {}).forEach(function(k){ if (!(k in x)) x[k] = blankOf(cur[k]); });
+  x.updatedAt = x.savedAt = at; x.bidMergeUndoneAt = at;
+  return x;
+}
 function apply(picks){
   if (!can()) { toast('Only an admin or the office merges leads'); return Promise.resolve(false); }
-  var by = me() || 'GrayCo', at = nowIso(), R = null;
-  return save(function(list){ var r = mergeGroups(list, arr(picks), by, at); if (!r.groups) return null; R = r; return r.list; }).then(function(ok){
-    if (!ok || !R) { toast('Nothing merged — the leads changed; open the list again'); return false; }
-    var del = W._gcLDEL && W._gcLDEL.remove ? W._gcLDEL.remove(R.folded, { silent: true }) : Promise.resolve({ ok: false });
-    return Promise.resolve(del).then(function(d){
+  if (!W._gcLDEL || typeof W._gcLDEL.remove !== 'function') { toast('🗑 Recently deleted is not ready yet — try again in a moment'); return Promise.resolve(false); }
+  var by = me() || 'GrayCo', at = nowIso();
+  /* the plan on a copy of the list (nothing is saved yet) */
+  var now0 = all(), R = mergeGroups(now0.map(function(l){ return l; }), arr(picks), by, at);
+  if (!R.groups) { toast('Nothing merged — the leads changed; open the list again'); return Promise.resolve(false); }
+  var keep = {}; R.keepers.forEach(function(k){ keep[s(k.id)] = k; });
+  var gone = {}; R.folded.forEach(function(id){ gone[id] = 1; });
+  var copies = now0.filter(function(l){ return l && gone[s(l.id)]; }).map(function(l){ return JSON.parse(JSON.stringify(l)); });
+  /* 1. the copies to 🗑 Recently deleted (that also writes this computer's saved list), 2. then the kept leads on top of it */
+  return Promise.resolve(W._gcLDEL.remove(R.folded, { silent: true })).then(function(d){
+    if (!d || !d.ok) { toast('Nothing merged — the copies could not be moved to Recently deleted'); return false; }
+    return save(function(list){ var n = 0, out = list.filter(function(l){ return !(l && gone[s(l.id)]); }).map(function(l){ if (l && keep[s(l.id)]) { n++; return keep[s(l.id)]; } return l; }); return n ? out : null; }).then(function(ok){
       R.inbox.forEach(inboxAct);
-      var entry = { id: 'bm_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), at: at, by: by, groups: R.groups, before: R.before, folded: R.folded, inbox: R.inbox, deleted: !!(d && d.ok) };
+      var entry = { id: 'bm_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), at: at, by: by, groups: R.groups, before: R.before, copies: copies, folded: R.folded, inbox: R.inbox, saved: !!ok };
       return readLog().then(function(list){ var now = Date.now(); return writeLog(list.filter(function(e){ return e && now - tms(e.at) < KEEP_MS; }).concat([entry]).slice(-20)); }).then(function(){
         CNT.sig = ''; toast('🔗 Merged ' + R.groups + ' project' + (R.groups === 1 ? '' : 's') + ' — ' + R.folded.length + ' cop' + (R.folded.length === 1 ? 'y' : 'ies') + ' in 🗑 Recently deleted · "↩ Undo last merge" for 30 days');
         try { W._gcLeadsHub.redraw(); } catch (e) {}
@@ -157,12 +173,19 @@ function undo(){
   return readLog().then(function(){
     var e = lastUndo(); if (!e) { toast('Nothing to undo (the last 30 days)'); return false; }
     var at = nowIso(), back = {}; arr(e.before).forEach(function(l){ if (l && l.id) back[s(l.id)] = l; });
-    return save(function(list){ var n = 0, out = list.map(function(l){ if (l && back[s(l.id)]) { n++; var x = JSON.parse(JSON.stringify(back[s(l.id)])); x.updatedAt = x.savedAt = at; return x; } return l; }); return n ? out : null; })
-      .then(function(){ return W._gcLDEL && W._gcLDEL.restore ? W._gcLDEL.restore(arr(e.folded)) : null; })
-      .then(function(){
-        arr(e.inbox).forEach(function(b){ inboxAct({ id: b.id, op: b.undo || 'restore' }); });
-        return writeLog(arr(LOG).map(function(x){ return x.id === e.id ? Object.assign({}, x, { undone: at, undoneBy: me() }) : x; }));
-      }).then(function(){ CNT.sig = ''; toast('↩ Undone: the ' + arr(e.folded).length + ' lead' + (arr(e.folded).length === 1 ? '' : 's') + ' are back'); try { W._gcLeadsHub.redraw(); } catch (x) {} return true; });
+    /* 1. the copies back from 🗑 Recently deleted, 2. then every touched lead exactly as it was (the snapshot, whole) */
+    var rest = W._gcLDEL && W._gcLDEL.restore ? W._gcLDEL.restore(arr(e.folded)) : null;
+    return Promise.resolve(rest).then(function(){
+      var cps = {}; arr(e.copies).forEach(function(l){ if (l && l.id) cps[s(l.id)] = l; });
+      return save(function(list){
+        var n = 0, have = {}, out = list.map(function(l){ if (!l) return l; have[s(l.id)] = 1; var id = s(l.id); if (back[id]) { n++; return exactly(back[id], l, at); } return l; });
+        arr(e.folded).forEach(function(id){ if (!have[id] && cps[id]) { n++; out.push(exactly(cps[id], {}, at)); } });   /* a copy Recently deleted could not give back */
+        return n ? out : null;
+      });
+    }).then(function(){
+      arr(e.inbox).forEach(function(b){ inboxAct({ id: b.id, op: b.undo || 'restore' }); });
+      return writeLog(arr(LOG).map(function(x){ return x.id === e.id ? Object.assign({}, x, { undone: at, undoneBy: me() }) : x; }));
+    }).then(function(){ CNT.sig = ''; toast('↩ Undone: the ' + arr(e.folded).length + ' lead' + (arr(e.folded).length === 1 ? '' : 's') + ' are back'); try { W._gcLeadsHub.redraw(); } catch (x) {} return true; });
   });
 }
 
