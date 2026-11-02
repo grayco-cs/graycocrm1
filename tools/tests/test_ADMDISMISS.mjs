@@ -49,7 +49,7 @@ section('offline: the pay check on the real-data mirror (AUTO6 as patched)');
   const ws = []; (W._gcAdmExtraWarnings || []).forEach(f => { try { (f() || []).forEach(x => ws.push(x)); } catch (e) {} });
   const sp = ws.find(x => x.id === 'sub-pay-check');
   ok(sp && /Rapid Air/.test(sp.text) && /Sub not picked/.test(sp.text) && !/invoice-22902[^<]*is not on the Subs list/.test(sp.text) && sp.fixes[0].label === 'Pick the sub', 'the Admin card: the sub by name, "Sub not picked", a "Pick the sub" button', sp && { text: sp.text.slice(0, 300), fixes: sp.fixes.map(f => f.label) });
-  ok(sp && Array.isArray(sp.items) && sp.items.every(x => /^inv:/.test(x)), 'its content is one item per failing invoice (for the ✕)', sp && sp.items);
+  ok(sp && Array.isArray(sp.items) && sp.items.every(x => /^inv:[^|]+$/.test(x)), 'its content is one item per failing invoice (for the ✕)', sp && sp.items);
   const cantor = "Cantor Property Services LLC (America's Best Carpet & Tile)";
   W._crm.invoices.push({ id: 'INVOFFCAN', type: 'sub', pid: 'PRJ0evqm2s6m36', sub: cantor, amt: 1020.96, status: 'received' });
   q.push({ id: 'invId:INVOFFCAN', invId: 'INVOFFCAN', sub: cantor, amt: 1020.96, status: 'pending_pm' }); ls.set('gc_sub_approvals', JSON.stringify(q));
@@ -88,6 +88,7 @@ section('offline: the dismissal helper (two computers, one cloud)');
   ok(H.hidden(pay(['I2'])), 'fewer items: stays hidden');
   ok(!H.hidden(pay(['I1', 'I2', 'I3'])), 'a new failing invoice: back');
   ok(!H.hidden(dup('Nick Thomas', 'Steven Biffle', 'sbiffle@grayco-cs.com')) && !H.hidden(dup('Brittany Pucket', 'Glenn Miller', 'office@grayco-cs.com')), 'a different pair on one e-mail: back');
+  ok(H.hidden(dup('Office', 'Brittany Pucket', 'office@grayco-cs.com')), 'the same pair listed in the other order: still hidden');
   ok(H.hidden({ id: undefined, title: '💾 File storage is 85% full', text: 'Admin → 💾 Storage' }), 'a number changing on a card is not new content');
   H.dismiss(pay(['I1', 'I2', 'I3']), 7); await flush(); await flush();
   const n0 = Date.now; let d3, d8, newIn7;
@@ -113,7 +114,7 @@ const extraInv = [
   { id: 'INVADMDCANTOR', type: 'sub', pid: PID, sub: CANTOR, desc: 'E-mailed invoice', amt: 1020.96, status: 'received', source: 'email', recvDate: '2026-11-01', updatedAt: '2026-11-01T12:00:00.000Z' }];
 const extraRows = extraInv.map(iv => ({ id: 'invId:' + iv.id, invId: iv.id, sub: iv.sub, amt: iv.amt, pid: PID, desc: iv.desc, status: 'pending_pm', pmName: 'Nick Thomas', createdAt: Date.now(), updatedAt: '2026-11-01T12:00:00.000Z' }));
 ['invs', 'invoices'].forEach(k => H.cset(k, (get(k) || []).concat(extraInv)));
-H.cset('gc_sub_approvals', (get('gc_sub_approvals') || []).concat(extraRows));
+H.cset('gc_sub_approvals', extraRows.concat(get('gc_sub_approvals') || []));   /* first in the list: the card shows the first 4 */
 const dcItem = (val(get('gc_office_tasks')) || []).find(t => t.id === 'DATACHECK_NIGHTLY');
 console.log('    mirror: DATACHECK_NIGHTLY refs ' + (dcItem ? dcItem.refs.length : 'none') + ' · note “' + (dcItem ? dcItem.note.slice(0, 80) : '') + '”');
 
@@ -156,10 +157,11 @@ try {
   let all = await cards(A);
   console.log('    cards: ' + all.map(x => x.id).join(', '));
   const sp = all.find(x => x.id === 'sub-pay-check');
-  ok(sp && /Sub not picked/.test(sp.text) && /Pick the sub/.test(sp.text) && /Rapid Air/.test(sp.text) && !/invoice-22902[^.]*is not on the Subs list/.test(sp.text), 'the pay check card: Rapid Air by name, “Sub not picked … Pick the sub” for the one with no sub — no “invoice-22902 is not on the Subs list”', sp && sp.text.slice(0, 400));
+  ok(sp && /Sub not picked/.test(sp.text) && /Pick the sub/.test(sp.text) && /Cantor Property Services/.test(sp.text) && !/invoice-(22902|31337)[^.]*is not on the Subs list/.test(sp.text), 'the pay check card: “Sub not picked … Pick the sub” for the one with no sub, Cantor by name — no “invoice-… is not on the Subs list”', sp && sp.text.slice(0, 400));
   ok(sp && sp.btns.some(b => /^Pick the sub$/.test(b)) && sp.btns.some(b => /^＋ Add “Cantor Property Services/.test(b)) && sp.btns.some(b => /^Mark “Cantor Property Services.*as supplier$/.test(b)), 'its buttons: Pick the sub · ＋ Add “Cantor…” to Subs list · Mark “Cantor…” as supplier', sp && sp.btns);
   ok(sp && sp.btns.includes('🔕 7 days') && sp.btns.includes('✕'), 'every card has 🔕 7 days and ✕', sp && sp.btns);
-  ok(all.some(x => x.id === 'dup-email' && /Brittany Pucket and Office both use office@grayco-cs.com/.test(x.text)) && all.some(x => x.id === 'name-spaces' && /Steven Biffle/.test(x.text)), 'the two-people-one-e-mail and extra-spaces cards are there (real data)');
+  const dupC = all.find(x => x.id === 'dup-email' && /both use \S+@/.test(x.text));
+  ok(dupC && all.some(x => x.id === 'name-spaces' && /Steven Biffle/.test(x.text)), 'the two-people-one-e-mail and extra-spaces cards are there (real data)', dupC && dupC.text.slice(0, 120));
 
   section('no duplicate data-check cards');
   ok(await A.ev(() => window._gcDataFull.state().canSee) === true, 'the 🧾 Missing job data board (DATAFULL) is on for this admin');
@@ -171,7 +173,7 @@ try {
   await A.page().screenshot({ path: SHOT2 });
 
   section('✕ stays dismissed: reload, second computer');
-  ok(await clickIn(A, 'name-spaces', '✕') && await clickIn(A, 'dup-email', '✕'), '✕ on “Steven Biffle has extra spaces” and on “Brittany Pucket and Office both use office@”');
+  ok(await clickIn(A, 'name-spaces', '✕') && await clickIn(A, 'dup-email', '✕'), '✕ on “Steven Biffle has extra spaces” and on “… both use …@”');
   await H.sleep(300);
   ok(await clickIn(A, 'sub-pay-check', '✕'), '✕ on “N sub invoices fail the pay check”');
   await H.sleep(800);
@@ -179,7 +181,7 @@ try {
   ok(!all.some(x => ['name-spaces', 'dup-email', 'sub-pay-check'].includes(x.id)), 'gone at once (the three cards)', all.map(x => x.id));
   const foot = await A.ev(() => { const f = document.querySelector('#gc-adm-top .gc-adm-hidden'); return f ? f.textContent : ''; });
   ok(/🔕 3 hidden cards/.test(foot), 'under the cards: “🔕 3 hidden cards”', foot);
-  ok(await waitCloud(cc => ['name-spaces:', 'dup-email:office@grayco-cs.com', 'sub-pay-check:subpay'].every(k => Object.keys(cc).some(x => x.indexOf(k) === 0))), 'saved in the cloud for this person (gc_kv ' + KEY + ')', Object.keys(cloudCards()));
+  ok(await waitCloud(cc => ['name-spaces:', 'dup-email:', 'sub-pay-check:subpay'].every(k => Object.keys(cc).some(x => x.indexOf(k) === 0))), 'saved in the cloud for this person (gc_kv ' + KEY + ')', Object.keys(cloudCards()));
   const rec = cloudCards()['sub-pay-check:subpay'];
   ok(rec && Array.isArray(rec.h) && rec.h.length >= 3 && rec.by === EMAIL && !rec.until, 'the record: the card’s content (one hash per failing invoice), who, no end date', rec);
   await A.page().reload(); await H.sleep(3000);
@@ -195,7 +197,7 @@ try {
   ok(!all.some(x => ['name-spaces', 'dup-email', 'sub-pay-check'].includes(x.id)), 'on a second computer (nothing on it before; from the cloud): still gone', { cards: all.map(x => x.id), local: bLocal });
 
   section('it comes back only on new content');
-  const fewer = await B.ev(() => { const q = JSON.parse(localStorage.getItem('gc_sub_approvals')); localStorage.setItem('gc_sub_approvals', JSON.stringify(q.filter(a => a.invId !== 'INVADMDNOSUB1'))); window._gcAdmPaintTop(); return !document.querySelector('#gc-adm-warns [data-adm-warn="sub-pay-check"]'); });
+  const fewer = await B.ev(() => { const q = JSON.parse(localStorage.getItem('gc_sub_approvals')); localStorage.setItem('gc_sub_approvals', JSON.stringify(q.filter(a => a.invId !== 'INVADMDNOSUB1'))); window._gcAdmPaintTop(); const hid = !document.querySelector('#gc-adm-warns [data-adm-warn="sub-pay-check"]'); localStorage.setItem('gc_sub_approvals', JSON.stringify(q)); window._gcAdmPaintTop(); return hid; });
   ok(fewer, 'one failing invoice fewer: the pay check card stays hidden');
   const pair = await B.ev(() => { const C = window._crm, keep = C.users; C.users = keep.map(u => u.name === 'Nick Thomas' ? Object.assign({}, u, { email: 'sbiffle@grayco-cs.com' }) : u); window._gcAdmPaintTop();
     const t = [...document.querySelectorAll('#gc-adm-warns [data-adm-warn="dup-email"]')].map(x => x.querySelector('b.h').textContent); C.users = keep; window._gcAdmPaintTop(); return t; });

@@ -52,6 +52,8 @@ function keyOf(w){ return s(w && w.id || 'card') + ':' + s(w && (w.key != null &
 function items(w){
   if (!w) return [];
   if (Array.isArray(w.items)) return w.items.map(String);
+  /* two people on one e-mail: one item per person (the title lists them in whatever order the people list has) */
+  if (s(w.id) === 'dup-email') return String(w.title || '').replace(/<[^>]*>/g, '').replace(/\s+both use\s+.*$/i, '').split(/\s+and\s+/).map(function(n){ return 'person:' + normLine(n) + '|' + low(w.key); }).sort();
   var out = [normLine(w.title)];
   if (!TITLE_ONLY.test(s(w.id))) String(w.text || '').split(/<br\s*\/?>/i).forEach(function(l){ var n = normLine(l); if (n && n !== '…' && n !== '...') out.push(n); });
   return out;
