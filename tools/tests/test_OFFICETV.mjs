@@ -142,8 +142,17 @@ await A.page().evaluate(() => window._gcOTV.close());
 /* ⚙ Admin: Team goals + Lobby TV cards */
 await A.page().evaluate(() => { try { window._setView('admin'); } catch (e) {} });
 await sleep(3000); console.log('    admin debug: ' + await A.page().evaluate(() => { try { window._gcOTV._adm(); } catch (e) { return 'ERR ' + e.message + ' ' + (e.stack || '').split('\n')[1]; } return 'ran; goals=' + !!document.getElementById('gc-otv-goals') + ' box=' + !!document.getElementById('gc-x10-admin'); }));
-const cards = await H.waitFor(A, () => { const g = document.getElementById('gc-otv-goals'), l = document.getElementById('gc-otv-lobbycard'); return g && l ? { g: g.innerText.slice(0, 120), inputs: g.querySelectorAll('input').length, near: !!g.previousElementSibling && /Company goal/.test(g.previousElementSibling.innerText) } : null; }, null, 30000, 500);
-ok(cards && cards.inputs === 3 && cards.near, '⚙ Admin: 🏁 Team goals (3 inputs) right under 🎯 Company goal, and the 📺 Lobby TV card', cards || await A.page().evaluate(() => ({ h1: [...document.querySelectorAll('main h1')].map(h => h.textContent).slice(0, 4), x10: !!document.getElementById('gc-x10-admin'), view: localStorage.getItem('grayco_view') })));
+/* the order by the rows' own buttons (patch X10: data-a="goal" / "oc"), not adjacency; with patch TVFIX the 📺 Lobby TV card is the
+   "📺 TVs" row (📺 Back office TV · 🖥 Front room (lobby) TV). Waited for: a stand-in drawn before X10's card box exists moves in. */
+const ORDER = () => { const F = (a, b) => !!(a && b) && !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+  const g = document.getElementById('gc-otv-goals'), l = document.getElementById('gc-otv-lobbycard'), x = document.getElementById('gc-x10-admin');
+  const gb = x && x.querySelector('[data-a="goal"]'), goal = gb && (gb.closest('.gcx10-bar') || gb.parentNode), ob = x && x.querySelector('[data-a="oc"]'), oc = ob && (ob.closest('.gcx10-bar') || ob.parentNode);
+  if (!g || !l) return null;
+  const tvs = !!l.querySelector('[data-tvs-b="office"]') && !!l.querySelector('[data-tvs-b="lobby"]'), lob = !!l.querySelector('[data-otv="lobby"]');
+  return { g: g.innerText.slice(0, 120), inputs: g.querySelectorAll('input').length, card: tvs ? 'TVs row' : lob ? 'Lobby TV card' : '?',
+    near: !!x && x.contains(g) && x.contains(l) && F(goal, g) && F(g, l) && (!oc || F(l, oc)) && (tvs || lob) }; };
+const cards = await H.waitFor(A, ORDER => { const r = (0, eval)('(' + ORDER + ')')(); return r && r.near ? r : null; }, ORDER.toString(), 30000, 500) || await A.page().evaluate(ORDER => (0, eval)('(' + ORDER + ')')(), ORDER.toString());
+ok(cards && cards.inputs === 3 && cards.near, '⚙ Admin: 🎯 Company goal → 🏁 Team goals (3 inputs) → the ' + (cards && cards.card) + ' → 📟 On call', cards || await A.page().evaluate(() => ({ h1: [...document.querySelectorAll('main h1')].map(h => h.textContent).slice(0, 4), x10: !!document.getElementById('gc-x10-admin'), view: localStorage.getItem('grayco_view') })));
 await A.page().screenshot({ path: path.join(SHOTS, 'admin_goal_cards.png') });
 /* the lobby editor (admin) */
 await A.page().evaluate(() => window._gcLobbyAdmin.open());
