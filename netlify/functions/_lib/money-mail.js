@@ -96,4 +96,63 @@ function kindFromWords(mail){
   if (/\b(invoice|amount\s+due|balance\s+due)\b/i.test(s(mail.text).slice(0, 3000)) && ((mail.files || []).length || /docs\.google\.com|drive\.google\.com/.test(s(mail.text)))) return 'sub_invoice';
   return '';
 }
-module.exports = { fromEmail, seenFile, kindOf, mailId, receiptAddrs, invoiceAddrs, kindFromWords, KEY, DONE_KEY: 'gc_mail_money_done' };
+/* ════ patch BULKDROP: 📥 Drop invoices & receipts — files the office dropped into the CRM (owner 11/01: "yes add the drop many
+   invoices button"). The CRM has already KEPT each file (crm-files, its SHA-256 name) and READ it (the 💳 receipt reader's AI,
+   through claude-proxy); here each one is placed exactly like an e-mailed one — the same analyze() (the PO, the job-site
+   address, the sub's only open job, the sub pay rule, retainage, duplicates) — and kept in gc_kv "gc_mail_money" (via
+   "bulk drop"), so the CRM books it the same way: a sub's invoice → ▥ Invoices → ✅ Approvals (patch SUBINV), a supplier's bill
+   or a receipt → a PENDING expense on the job (patch MONEY), anything not certain → 📥 Needs a job. Nothing is sent to anyone.
+   items: [{ id, name, type, size, ref, sha, srcSha, kind: sub_invoice | supplier_invoice | receipt | other, read: { vendor,
+   invoiceNumber, date, dueDate, total, subtotal, tax, jobAddress, po, jobName, paid, lines } }] → { results: [{ id, mmId, rec,
+   already }] }. deps = { kvListUpdate, kvListRead, crmData, doneRead, now, by } ════ */
+const DROP_KINDS = { sub_invoice: 1, supplier_invoice: 1, receipt: 1, other: 1 };
+function dropId(it){ return 'MM-' + crypto.createHash('sha256').update('bulkdrop|' + (s(it.srcSha) || s(it.sha) || s(it.ref))).digest('hex').slice(0, 16); }
+function num(v){ const n = parseFloat(s(v).replace(/[$,\s]/g, '')); return isFinite(n) ? n : 0; }
+function ymd(v){ const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s(v)); return m ? m[0] : ''; }
+function dropRead(it){
+  const r = it.read && typeof it.read === 'object' ? it.read : {}, k = DROP_KINDS[s(it.kind)] ? s(it.kind) : 'other';
+  const total = Math.round(Math.abs(num(r.total)) * 100) / 100;
+  return { vendor: s(r.vendor).slice(0, 120), vendorEmail: low(r.vendorEmail).slice(0, 120), invoiceNumber: s(r.invoiceNumber).slice(0, 60), invoiceDate: ymd(r.date || r.invoiceDate), dueDate: ymd(r.dueDate),
+    terms: s(r.terms).slice(0, 60), jobAddress: s(r.jobAddress).slice(0, 200), po: s(r.po).toUpperCase().slice(0, 40), customer: s(r.jobName || r.customer).slice(0, 120),
+    lines: (Array.isArray(r.lines) ? r.lines : []).slice(0, 10).map(function(l){ return { desc: s(l && l.desc).slice(0, 120), amount: Math.round(num(l && l.amount) * 100) / 100 }; }),
+    subtotal: Math.round(num(r.subtotal) * 100) / 100, tax: Math.round(num(r.tax) * 100) / 100, retainage: 0, total: total,
+    isInvoice: k !== 'other', weOwe: k === 'receipt' ? true : r.paid !== true };
+}
+async function fromDrop(items, deps){
+  deps = deps || {};
+  items = (Array.isArray(items) ? items : []).filter(function(it){ return it && /^sb:crm-files\/[0-9a-f]{64}\.[a-z0-9]{1,8}$/.test(s(it.ref)); }).slice(0, 8);
+  if (!items.length) return { ok: false, error: 'no stored file' };
+  let cur = null; try { cur = deps.kvListRead ? await deps.kvListRead(KEY) : null; } catch (e) { cur = null; }
+  const list = cur && Array.isArray(cur.list) ? cur.list : [];
+  let done = {}; try { done = deps.doneRead ? (await deps.doneRead()) || {} : {}; } catch (e) { done = {}; }
+  let data = {}; try { data = deps.crmData ? (await deps.crmData()) || {} : {}; } catch (e) { data = {}; }
+  const mailList = list.filter(function(x){ return !(x && done[x.id] && done[x.id].skip); });
+  const now = deps.now || Date.now(), at = new Date(now).toISOString(), out = [], add = [];
+  for (const it of items) {
+    const id = dropId(it), have = list.find(function(x){ return x && s(x.id) === id; });
+    if (have) { out.push({ id: s(it.id), mmId: id, rec: have, already: true }); continue; }
+    const k = DROP_KINDS[s(it.kind)] ? s(it.kind) : 'other', read = dropRead(it), name = s(it.name).slice(0, 160) || 'file';
+    const kind = k === 'receipt' || k === 'other' ? 'receipt' : 'sub_invoice';   /* "other" waits in 📥 Needs a job like a receipt (Save on a job / Not ours) */
+    const type = SI().typeFor(name, it.type);
+    const file = { name: name, type: type, size: Math.max(0, parseInt(it.size, 10) || 0), ref: s(it.ref), sha: s(it.sha) || s(it.ref).replace(/^.*\/|\..*$/g, '') };
+    if (s(it.srcSha) && s(it.srcSha) !== file.sha) file.srcSha = s(it.srcSha);
+    const mail = { from: { email: '', name: read.vendor }, subject: name, text: '', date: at };
+    let si;
+    try { si = await SI().analyze(mail, [{ name: name, type: type, ref: file.ref, hash: file.sha }], { data: data, mailList: mailList.concat(add), selfId: id, kind: kind, payee: k === 'supplier_invoice' ? 'supplier' : '', read: read, now: now }); }
+    catch (e) { si = { v: 1, route: 'match', why: 'it could not be placed (' + s(e && e.message).slice(0, 80) + ')', read: read, top: [], at: at }; }
+    if (k === 'other') { si.route = 'review'; si.why = 'the CRM could not tell it is an invoice or a receipt'; }
+    else if (!(read.total > 0) && si.route !== 'dup') { si.route = 'match'; si.why = 'the amount could not be read'; }
+    if (si.read) si.read.lines = (si.read.lines || []).slice(0, 10);
+    si.src = 'bulk drop'; si.dropKind = k;
+    const rec = { id: id, kind: kind, at: at, from: '', fromName: read.vendor || name, subject: name, text: '', files: [file], skipped: [], via: 'bulk drop', by: s(deps.by).slice(0, 120), dropId: s(it.id).slice(0, 60), si: si };
+    add.push(rec); out.push({ id: s(it.id), mmId: id, rec: rec });
+  }
+  if (add.length) {
+    const ids = add.map(function(r){ return r.id; });
+    const has = function(l){ return ids.every(function(i){ return l.some(function(x){ return x && s(x.id) === i; }); }); };
+    const w = await deps.kvListUpdate(KEY, function(l){ const fresh = add.filter(function(r){ return !l.some(function(x){ return x && s(x.id) === r.id; }); }); return fresh.length ? { list: l.concat(fresh).slice(-KEEP), check: has } : null; });
+    if (!w.ok) throw new Error('could not save them (' + (w.error || 'busy') + ')');
+  }
+  return { ok: true, results: out };
+}
+module.exports = { fromEmail, seenFile, kindOf, mailId, receiptAddrs, invoiceAddrs, kindFromWords, fromDrop, dropId, KEY, DONE_KEY: 'gc_mail_money_done' };

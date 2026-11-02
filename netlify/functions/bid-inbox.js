@@ -1404,6 +1404,7 @@ function noticeGate(ai, saved){
   return { dropped: arr(ai.leads).length - keep.length, leads: keep };
 }
 
+const DROP_DATA = { at: 0, v: null };   /* patch BULKDROP: the CRM's lists for a batch of dropped files (45 s) */
 /* ── handlers ──────────────────────────────────────────────────────────────── */
 exports.handler = async function(event){
   const qs = event.queryStringParameters || {};
@@ -1434,6 +1435,21 @@ exports.handler = async function(event){
       catch (e) { return J(502, { error: 'Could not read the e-mailed invoices.' }, C); }
     }
     let b = {}; try { b = JSON.parse(rawBody(event) || '{}'); } catch (e) { return J(400, { error: 'Not JSON.' }, C); }
+    /* patch BULKDROP: 📥 Drop invoices & receipts — files the CRM already kept and read, placed like e-mailed ones (admins + the office).
+       Data-entry mode: placed the same way — nothing here sends anything to anyone; the answer says paused so the CRM can say so. */
+    if (s(b.op) === 'drop') {
+      if (!Array.isArray(b.items) || !b.items.length || b.items.length > 8) return J(400, { error: 'Send { op: "drop", items: [1-8] }.' }, C);
+      let paused = true; try { paused = await require('./_lib/pause').isPaused(); } catch (e) { paused = true; }
+      try {
+        const deps = require('./_lib/money-box.js').moneyDeps(storeFile, { via: 'bulk drop' });
+        const read0 = deps.crmData;
+        deps.crmData = async function(){ if (DROP_DATA.v && Date.now() - DROP_DATA.at < 45000) return DROP_DATA.v; const v = await read0(); DROP_DATA.v = v; DROP_DATA.at = Date.now(); return v; };   /* a batch reads the CRM once, not per file */
+        deps.by = who.email; deps.now = exports._now ? exports._now() : Date.now();
+        const r = await MMK.fromDrop(b.items, deps);
+        if (!r.ok) return J(400, { error: r.error || 'nothing to place' }, C);
+        return J(200, { ok: true, paused: !!paused, results: r.results, at: nowIso() }, C);
+      } catch (e) { return J(502, { error: 'Could not place the files: ' + s(e && e.message).slice(0, 160) }, C); }
+    }
     if (s(b.op) !== 'done' || !/^MM-[0-9a-f]{8,40}$/.test(s(b.id)) || !b.val || typeof b.val !== 'object') return J(400, { error: 'Send { op: "done", id, val }.' }, C);
     const val = { done: b.val.done !== false, skip: !!b.val.skip, why: s(b.val.why).slice(0, 120), invId: s(b.val.invId).slice(0, 80), expId: s(b.val.expId).slice(0, 80), at: s(b.val.at).slice(0, 40) || nowIso(), by: s(b.val.by).slice(0, 80) || who.email };
     for (let t = 0; t < 4; t++) {
