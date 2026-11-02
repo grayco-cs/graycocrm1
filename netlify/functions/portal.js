@@ -40,6 +40,7 @@
    No token / bad token → 401.  Signed in but not staff → 403.
    (Kept inline in every function on purpose: each function is bundled alone.) */
 require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
+const SCHEDVIS = require('./_lib/schedvis.js');   /* patch SCHEDPICK */
 const GC_SB_DEFAULT_URL = 'https://ieeonhpfahmwwecizdut.supabase.co';
 /* the PUBLIC anon key (it is already in index.html — not a secret) */
 const GC_SB_DEFAULT_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImllZW9uaHBmYWhtd3dlY2l6ZHV0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyNTU2MDgsImV4cCI6MjA4ODgzMTYwOH0.imxBPB0xD4LKy40smBWSUq27iwpCy6fEOMtVx8Cu8ls';
@@ -123,7 +124,8 @@ const KV_KEYS = ['projects', 'invs', 'invoices', 'cos', 'changeOrders', 'estimat
                  'customers', 'leads', 'punch', 'projectPayments', 'gc_deleted_projects', 'gc_claims', 'jobAutoDefaults',
                  'gc_portal_auto_posts',   /* patch AUTAI: approved weekly updates / voice posts */
                  'gc_senior_pm', 'gc_team_settings',   /* patch PMG: the Senior PM, "APMs may approve" (Admin → Employees) */
-                 'gc_claim_help'];   /* patch CLAIMHELP: "🛡 Your insurance claim" — the published steps + Q&A (_lib/claimhelp.js) */
+                 'gc_claim_help',   /* patch CLAIMHELP: "🛡 Your insurance claim" — the published steps + Q&A (_lib/claimhelp.js) */
+                 'schedule'];   /* patch SCHEDPICK: the plan steps the customer sees must be on the real schedule (no suggestions) */
 const KV_TTL = 30e3, PHOTO_TTL = 5 * 60e3, SIGN_SECS = 3600, MIN_FAIL_MS = 250;
 
 /* ── small helpers ─────────────────────────────────────────────────────────── */
@@ -199,6 +201,7 @@ async function kvRead(keys){
       } catch (e) {}
     }
     out[k] = (typeof val === 'string') ? (function(){ try { return JSON.parse(val); } catch (e) { return val; } })() : val;
+    if (k === 'schedule') out[k] = SCHEDVIS.visible(out[k]);   /* patch SCHEDPICK: suggestions (template drafts) and hidden duplicate bookends are not the schedule */
   }
   return out;
 }
@@ -389,10 +392,15 @@ function invFinal(r){ return r.isFinal === true || r.final === true || /^final/i
 /* patch AUT3: the job's real stage (the CRM moves it: status, the progress slider, schedule milestones) and the
    schedule-template steps the customer may see (p.schedPlan.steps with portal: true) */
 const AUT_STAGE = { signed: 4, materials: 4, in_progress: 5, inspection: 5, substantial: 6, complete: 7 };
-function portalSteps(p){
+/* patch SCHEDPICK: a step is shown only when it is on the real schedule — a template SUGGESTION (draft) never reaches
+   the customer. With the job's schedule rows (sched, already without suggestions) a step needs its row (tplTask); a
+   step marked draft is never shown. */
+function portalSteps(p, sched){
   const pl = p && p.schedPlan; if (!pl || !Array.isArray(pl.steps)) return [];
   const t = new Date().toISOString().slice(0, 10);
-  const l = pl.steps.filter(function(x){ return x && x.portal === true && s(x.name); }).slice(0, 40).map(function(x){ const e = ymd(x.end) || ymd(x.date); return { name: clip(x.name, 90), date: ymd(x.date), end: ymd(x.end), done: !!x.done || (!!e && e < t) }; });
+  let live = null;
+  if (Array.isArray(sched)) { live = {}; SCHEDVIS.visible(sched).forEach(function(r){ if (r && s(r.pid || r.projectId) === s(p.id) && s(r.tplTask) && r.customerVisible !== false) live[s(r.tplTask)] = 1; }); }
+  const l = pl.steps.filter(function(x){ return x && x.portal === true && s(x.name) && x.draft !== true && (!live || live[s(x.id)]); }).slice(0, 40).map(function(x){ const e = ymd(x.end) || ymd(x.date); return { name: clip(x.name, 90), date: ymd(x.date), end: ymd(x.end), done: !!x.done || (!!e && e < t) }; });
   const i = l.findIndex(function(x){ return !x.done; }); if (i >= 0) l[i].now = true;
   return l;
 }
@@ -700,6 +708,8 @@ async function gateState(pid){
 async function buildView(data, p, opts){
   opts = opts || {};
   const pid = s(p.id);
+  let schedNow = data.schedule;   /* patch SCHEDPICK: the plan steps are checked against the real schedule */
+  if (!Array.isArray(schedNow)) { try { schedNow = arr((await kvRead(['schedule'])).schedule); } catch (e) { schedNow = []; } }
   const G = await gateGet(data), gatePend = [];   /* patch PORTALGATE */
   const users = arr(data.users), customers = arr(data.customers);
   const invoices = listOf(data, ['invs', 'invoices']).filter(function(r){ return invOfProject(r, p) && isCustomerInvoice(r); });   /* invoices: not gated (owner, 10/24) */
@@ -796,7 +806,7 @@ async function buildView(data, p, opts){
       address: clip(p.address || p.jobAddress || cust.address, 160),
       phone: clip(p.clientPhone || p.customerPhone || p.phone || cust.phone, 40),
       email: clip(p.clientEmail || p.customerEmail || p.email || cust.email, 120) },
-    job: { name: clip(p.name, 90), address: clip(p.address || p.jobAddress, 160), po: clip(p.autoPO || p.po, 20), stage: stage, stageName: STAGES[stage], stages: STAGES, steps: portalSteps(p) },
+    job: { name: clip(p.name, 90), address: clip(p.address || p.jobAddress, 160), po: clip(p.autoPO || p.po, 20), stage: stage, stageName: STAGES[stage], stages: STAGES, steps: portalSteps(p, schedNow) },
     pm: { name: clip(pmName, 60), phone: clip(pmUser.phone || pmUser.cell || pmUser.mobile || '', 40), email: clip(pmUser.email || '', 120) },
     money: { contract: contract, changeOrders: cos.map(function(c){ return { title: clip(c.desc || c.description || c.title || c.name || 'Change order', 120), amount: money(num(c.amt != null ? c.amt : (c.amount != null ? c.amount : c.total))), date: ymd(c.date || c.approvedDate || c.savedAt) }; }),
       invoices: invOut, payments: payments, paid: paid, due: due,
