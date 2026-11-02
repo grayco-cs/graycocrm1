@@ -4,9 +4,10 @@
    every screen change (the wrapper is gone until ROLEAPPS' next check, which slows to every 30 s when nobody touches
    the computer), and links, notifications, To-Do cards, @mention To-Dos and search results also open windows on top
    without a screen change. Here: (1) every screen change (the CRM always writes localStorage grayco_view), (2) a link
-   opened by its address (#lead=…, #appr=…, #tv, …: notifications), (3) a window put up over the page (whatever is on top at
-   the middle of the window is not the Desk) hide the Desk at once. Its own sheets, the dock, toasts and small bars never do. The dock's 🏠 Home
-   brings it back. window._gcDeskToDo.state() tells what hid it last. */
+   opened by its address (#lead=…, #appr=…, #tv, …: notifications) hide the Desk at once. Windows the CRM puts up over the
+   page (z-index 100000+) already sit above the Desk (9000) and are used as they are. The dock's 🏠 Home
+   brings it back. A menu click and the CRM's own window._setView (patch_DESKTODO.py) also hide it, so a link to the screen that is already under
+   the Desk shows it too. window._gcDeskToDo.state() tells what hid it last. */
 (function(){
   'use strict';
   var W = window, D = document;
@@ -30,20 +31,9 @@
       return r;
     };
   } catch (e) {}
+  /* 1b. the menu (a menu item clicked, even to the screen already open under the Desk) */
+  D.addEventListener('click', function(e){ try { var el = e.target; if (el && el.closest && el.closest('aside nav, aside [draggable="true"]') && !el.closest('#gc-ra-desk, #gc-ra-dock')) hide('menu'); } catch (x) {} }, true);
   /* 2. a link opened by its address (a notification, an e-mailed link, a To-Do link) */
   W.addEventListener('hashchange', function(){ if ((location.hash || '').length > 1) hide('link: ' + location.hash.slice(0, 40)); });
-  /* 3. a window put up over the page: whatever is on top at the middle of the window is not the Desk (checked twice a second
-     with the browser's own timer; the CRM's governed timers and observers wait while the mouse moves) */
-  function ours(el){ return !!(el && el.closest && el.closest('#gc-ra-desk, #gc-ra-dock, .gc-ra-sheet, .apx-toast, [class*="toast"]')); }
-  var RI = W.__GC_REAL_SETINTERVAL__ || W.setInterval;
-  RI.call(W, function(){
-    try {
-      if (D.hidden || !shown()) return;
-      var top = D.elementFromPoint(Math.round(innerWidth / 2), Math.round(innerHeight / 2));
-      if (!top || ours(top) || top === D.documentElement || top === D.body) return;
-      var layer = top; while (layer.parentElement && layer.parentElement !== D.body) layer = layer.parentElement;
-      hide('window: ' + (layer.id || String(layer.className || '').slice(0, 30) || layer.tagName));
-    } catch (e) {}
-  }, 500);
   W._gcDeskToDo = { state: function(){ return { shown: shown(), last: last, hides: n }; }, hide: hide };
 })();

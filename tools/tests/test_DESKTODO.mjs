@@ -1,5 +1,5 @@
 // test_DESKTODO.mjs <build-dir> — patch DESKTODO: the office's Desk home steps aside whenever another screen opens, by any path
-//   (a code call, a notification link, a window opened over the page, the menu, the Desk's own Open To-Do), and the To-Do's
+//   (a code call, a notification link, the menu, the Desk's own Open To-Do; a window opened over the page sits above it), and the To-Do's
 //   import buttons can then be clicked; the Desk's own More sheet does not hide it. 1366×768 and 1920×1080. Made-up data, offline.
 import { pathToFileURL } from 'url';
 const SPD = '/tmp/claude-0/-home-user-graycocrm1/6a5b2b6b-8a4d-5505-9f82-62521adb6674/scratchpad';
@@ -73,7 +73,7 @@ for (const [w, h] of [[1366, 768], [1920, 1080]]) {
   await p.evaluate(() => { ['gcl-drawer', 'gcl-shade'].forEach(id => { const d = document.getElementById(id); if (d) d.remove(); }); });
   /* a window opened over the page (a To-Do card's / @mention window) */
   await reopen(); await p.evaluate(() => { const ov = document.createElement('div'); ov.id = 'desktodo-probe-ov'; ov.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.4)'; document.body.appendChild(ov); }); await sleep(1200);
-  ok(!(await deskShown()), tag + 'a window opened over the page: the Desk steps aside', await why());
+  ok(await p.evaluate(() => { const e = document.elementFromPoint(innerWidth / 2, innerHeight / 2); return !!(e && e.closest('#desktodo-probe-ov')); }), tag + 'a window opened over the page (a To-Do card, an @mention) is on top of the Desk and can be used');
   await p.evaluate(() => { const o = document.getElementById('desktodo-probe-ov'); if (o) o.remove(); });
   /* the left menu reached from code, as test_MONEY does */
   await reopen(); await p.evaluate(() => { const b = [...document.querySelectorAll('aside nav button, nav button')].find(y => /To-Do/.test(y.textContent)); if (b) b.click(); }); await sleep(1500);
