@@ -405,7 +405,8 @@ async function leads(list, raw, isEm){
     /* owner 10/28: "GrayCo NEW LEAD: <name> (901) 555-0100 — "<their message…>" <link>"; emergency "🚨 GrayCo EMERGENCY: …" */
     const head = em ? '🚨 GrayCo EMERGENCY' : 'GrayCo NEW LEAD', link = site() + '/#leads';
     const only = !em && isSubBid(r, x) ? await estimatorsFor(r, x) : null;   /* patch SUBALERT */
-    const body = more => leadText(head, more, clip(name, 40) + (callPh.length === 10 ? ' ' + tidy(callPh) : ''), msg, link);
+    let tail = link; if (em && callPh.length === 10) { try { tail = link + ' Not real? Block: ' + require('./salesguard.js').blockLink(site(), callPh); } catch (e) {} }   /* patch SALESBLOCK: one tap to block (signed; admins / office, asked first) */
+    const body = more => leadText(head, more, clip(name, 40) + (callPh.length === 10 ? ' ' + tidy(callPh) : ''), msg, tail);
     const text = body(0);
     try { out.push(await notify({ type: 'lead', text, body, link, only, thread: ph ? 'p:' + ph : 'lead:' + s(x.key || x.id), mine: [x.assigneeEmail].concat(x.coEmails || []).filter(Boolean), emergency: em,
       replyTo: ph || em ? { phone: ph, pid: '', name, leadId: s(x.id) } : null })); } catch (e) { out.push({ error: s(e && e.message) }); }

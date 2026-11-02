@@ -76,7 +76,7 @@ function purposeFor(data, ph){
 }
 function isOurs(num, set, env){ const d = phone10(num); return numbers(set, env).some(x => x.number === d); }
 
-function topics(body){ const t = s(body); let em = EMERGENCY.test(t); if (!em) { try { em = require('./emergency.js').isEmergency({ title: t }); } catch (e) {} } return { billing: BILLING.test(t), insurance: INSURANCE.test(t), emergency: em }; }   /* patch EMERG: the same words as every other lead source */
+function topics(body){ const t = s(body); let em = EMERGENCY.test(t); if (em) { try { em = require('./salesguard.js').emergencyGate({ title: t }).ok; } catch (e) {} } if (!em) { try { em = require('./emergency.js').isEmergency({ title: t }); } catch (e) {} } return { billing: BILLING.test(t), insurance: INSURANCE.test(t), emergency: em }; }   /* patch EMERG: the same words as every other lead source; patch SALESBLOCK: a pitch / "urgent" at night is no emergency */
 function firstName(n){ const w = s(n).split(/\s+/)[0]; return /^[A-Za-z][A-Za-z'-]*$/.test(w) ? w[0].toUpperCase() + w.slice(1) : ''; }
 /* "— Mike, GrayCo" once at the end (not when the text already ends with a signature) */
 function sign(text, name){

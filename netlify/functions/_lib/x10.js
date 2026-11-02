@@ -67,7 +67,9 @@ function chain(t, cfg, activeEmails){
   return out;
 }
 const EMERG = /(emergenc|\b24\s*\/\s*7\b|water\s*damage|water\s*in\s*(my|the)|flood|burst|broken\s*pipe|pipe\s*(burst|broke|leak)|sewage|sewer\s*back|standing\s*water|active\s*leak|leaking\s*(now|into|through)|ceiling\s*(is\s*)?(leak|fall|collaps|drip)|\bfire\b|smoke\s*damage|\bmitigation\b|water\s*mitigation|tree\s*(fell|on\s*(my|the)\s*(roof|house)))/i;
-function isEmergency(it){
+/* patch SALESBLOCK: the sales / night gate (_lib/salesguard.js) — a pitch is never an emergency; 7 PM – 7 AM a page needs real words */
+function isEmergency(it, o){ if (!isEmergency0(it)) return false; if (o && o.noGate) return true; try { return require('./salesguard.js').emergencyGate(it).ok; } catch (e) { return true; } }
+function isEmergency0(it){
   if (!it) return false;
   if (it.emergency === true || /^emergency$/i.test(s(it.type)) || /^emergency$/i.test(s(it.websiteForm))) return true;
   if (/commercial|government/i.test(s(it.type || it.leadKind)) && !/emergenc/i.test(s(it.title) + ' ' + s(it.detail))) return false;   /* a bid invitation mentioning "fire station" is not an emergency */

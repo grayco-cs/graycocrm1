@@ -39,7 +39,7 @@ const IN = {
 /* a free-text question → '5' / '1' / '2' / '3' / '4' / 'w' when it clearly is one; else '' */
 function intent(body){
   const t = s(body);
-  if (IN.emergency.test(t)) return '5';
+  if (IN.emergency.test(t)) { let ok = true; try { ok = require('./salesguard.js').emergencyGate({ title: t }).ok; } catch (e) {} if (ok) return '5'; }   /* patch SALESBLOCK: never for a sales pitch */
   try { if (require('./emergency.js').isEmergency({ title: t })) return '5'; } catch (e) {}   /* patch EMERG: the same words as every lead source */
   const hits = ['status', 'link', 'balance', 'pm', 'warranty'].filter(k => IN[k].test(t));
   if (hits.length !== 1) return '';   /* none, or more than one kind → a person answers */
@@ -61,7 +61,7 @@ function answer(c, ctx){
   ctx = ctx || {};
   const who = ctx.pmFirst || 'your project manager', hi = 'Hi' + (ctx.first ? ' ' + ctx.first : '') + '! ';
   if (c === '5') return 'We\'re on it — someone will call you within 15 minutes. If it\'s safe, shut off the main water valve. Call (901) 585-0944 any time — 24/7.';
-  if (c === '4') return (ctx.pmFirst ? ctx.pmFirst + ' will' : 'Your project manager will') + ' call you back today.';
+  if (c === '4') return (ctx.pmFirst ? ctx.pmFirst + ' will' : 'Your project manager will') + ' call you shortly.';   /* patch SALESBLOCK: no time promise (was "today") */
   if (!ctx.onFile) return 'Please text from the number we have on file for your job, or ask your project manager. Thank you!';
   if (!ctx.job) return hi + 'We don\'t see an open job for this number. ' + (ctx.pmFirst ? ctx.pmFirst : 'Our office') + ' will text you back shortly.';
   if (c === '1') {

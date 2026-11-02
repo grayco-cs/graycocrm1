@@ -190,6 +190,7 @@ async function missed(p, how, extra){
   if (ph.length !== 10 || /^(anonymous|restricted|unknown|private)/i.test(s(p.From))) return { skipped: 'no caller id' };
   /* patch CALLCHAIN: our own office line / Twilio number as the caller ID (a forward that shows the forwarding line) is no lead and gets no text */
   if (ph === CO().companyPhone() || ph === phone10(env('TWILIO_FROM'))) return { skipped: 'our own number' };
+  try { const sg = await require('./_lib/salesguard.js').def().screenText({ via: 'call', phone: ph, text: s(extra.what), id: s(p.CallSid), logBlocked: false }); if (sg) return { skipped: 'salesblock (' + sg + ')' }; } catch (e) {}   /* patch SALESBLOCK */
   /* claim the call (a retry from Twilio or a second webhook for the same call does nothing) */
   let first = false, textIt = false;
   await stateCas(st => {
@@ -232,7 +233,7 @@ async function missed(p, how, extra){
   let emerg = !!extra.emergency; if (!emerg && s(extra.what)) { try { emerg = require('./_lib/emergency.js').isEmergency({ title: s(extra.what), detail: s(extra.what) }); } catch (e) {} }
   if (emerg) out.emergency = true;
   const r = await WI().fileLead(f, { sid, source: 'Missed call', how: 'a missed call to the GrayCo number', formLabel: 'Missed call', customer: null,
-    title: (emerg ? '🚨 EMERGENCY call — ' : 'Missed call — ') + (who || tidy(ph)) + (city ? ' — ' + city : ''), patch: emerg ? { emergency: true, urgency: 'Emergency' } : undefined, leadExtra: Object.assign({ missedCall: true, callSid }, s(extra.what) ? { callerSaid: clip(extra.what, 300) } : {}) });
+    title: (emerg ? '🚨 EMERGENCY call — ' : 'Missed call — ') + (who || tidy(ph)) + (city ? ' — ' + city : ''), patch: emerg ? { emergency: true, urgency: 'Emergency' } : undefined, leadExtra: Object.assign({ missedCall: true, callSid }, extra.emergency ? { pressed1: true } : {}, s(extra.what) ? { callerSaid: clip(extra.what, 300) } : {}) });
   out.lead = r.id; out.action = r.action;
   await stateCas(st => { st.owner[ph] = { lead: r.id, at }; return true; }).catch(() => {});
   try { out.textLead = await TL().onMissed({ leadId: r.id, ph, said: s(extra && extra.what), autoText: out.text && out.text.ok ? TEXT : '', callSid, at }); } catch (e) {}   /* patch TEXTLEAD */
@@ -306,11 +307,11 @@ function menuTwiml(cfg, n, ah){
     + SAYV + esc(ah ? cfg.night.greeting : cfg.screen.greeting) + '</Say></Gather><Redirect method="POST">' + esc(u) + '</Redirect>');
 }
 /* patch AFTERHOURS: "2" after hours — no ring: a text at once and a lead for the morning */
-const AH_TEXT = 'Thanks for calling GrayCo — our office is closed. We got your call and will call you back in the morning. Reply here with any details.';
+const AH_TEXT = 'Thanks for calling GrayCo Construction Services — our office is closed. We got your call and someone from our team will call you shortly. Reply here with any details.';   /* patch SALESBLOCK: no time promise (was "in the morning") */
 async function nightText(p, row){
   await logPut(s(p.CallSid), { outcome: 'after hours — texted, lead for the morning' });
   await missed(p, 'after hours (pressed 2): texted, lead for the morning', { text: AH_TEXT, what: s(row && row.what) });
-  return twiml(SAYV + "Thank you. We've sent you a text and will call you back in the morning. Goodbye.</Say><Hangup/>");
+  return twiml(SAYV + "Thank you. We've sent you a text and someone from our team will call you shortly. Goodbye.</Say><Hangup/>");   /* patch SALESBLOCK: no time promise */
 }
 const isAh = (row, qs) => s(row && row.ah) === '1' || s(qs && qs.ah) === '1';
 function dialTwiml(cfg, list, i, sid, sayText, c, ah){   /* c = the menu answer, carried in the signed URL too (the log is the first source) */
@@ -369,6 +370,7 @@ async function callOrder(ev, p, qs){
     const row0 = await logGet(sid), c0 = s(row0 && row0.choice) || s(qs.c), ah = isAh(row0, qs);
     if (['1', '2', 'direct'].indexOf(c0) < 0) return twiml(SAYV + BYE_NOINPUT + '</Say><Hangup/>');   /* never rings without a 1 / 2 */
     const row = await logPut(sid, { what: clip(s(p.SpeechResult), 200) });
+    try { if (await require('./_lib/salesguard.js').def().screenText({ via: 'call', phone: p.From, text: s(p.SpeechResult), id: sid })) { await logPut(sid, { outcome: 'sales pitch (what they said) — 🧹 Sales & spam' }); return twiml(SAYV + esc(SALES) + '</Say><Hangup/>'); } } catch (e) {}   /* patch SALESBLOCK: a pitch never rings anyone */
     return startRing(cfg, p, row || { choice: c0, what: clip(s(p.SpeechResult), 200) }, HOLD2, c0, ah);
   }
   if (ev === 'whisper') {   /* the person's phone answered: "GrayCo call: … press 1 to accept" (a voicemail does not press 1) */
@@ -426,6 +428,7 @@ async function inboundSms(p){
   const sid = s(p.MessageSid || p.SmsSid) || crypto.createHash('sha256').update(ph + '|' + body + '|' + at.slice(0, 16)).digest('hex').slice(0, 24);
   if (ph.length !== 10) return { skipped: 'no number' };
   if (STOP.test(body)) { await stateCas(st => { st.optout[ph] = at; return true; }); return { optout: true }; }
+  try { if (await require('./_lib/salesguard.js').def().blocked({ phone: ph }, { via: 'sms', text: body })) return { blocked: true }; } catch (e) {}   /* patch SALESBLOCK: a blocked number — no reply, lead or alert (logged, counted) */
   try { const sa = await SA().staffInbound(ph, body, s(p.MessageSid || p.SmsSid)); if (sa) return Object.assign({ cellAlerts: true }, sa); } catch (e) {}   /* patch SMSALERT: a staff cell in the alerts table — a reply to the last alert, never a lead */
   if (START.test(body)) { await stateCas(st => { delete st.optout[ph]; return true; }); return { optin: true }; }
   /* Twilio retries a webhook it thinks failed: the same message is handled once */
@@ -452,6 +455,9 @@ async function inboundSms(p){
   const RT = require('./_lib/smsroute.js'), toNum = phone10(p.To), purpose = RT.purposeOf(toNum, set, env);
   if (!who) { const su = arrL(data.users).find(u => [u.phone, u.cell, u.mobile].map(phone10).indexOf(ph) >= 0); if (su) who = { kind: 'staff', pid: '', name: s(su.name), email: low(su.email) }; }
   if (who && who.kind === 'sub') who.sub = arrL(data.subs).concat(arrL(data.vendors)).find(x => x && s(x.id) === s(who.subId)) || null;
+  /* patch SALESBLOCK: a sales pitch from a number not on file (or a lead's) → Leads → 🧹 Sales & spam only: no Job Message, lead, alert, page or reply */
+  if (!who || who.kind === 'lead') { let sg = ''; try { sg = await require('./_lib/salesguard.js').def().screenText({ via: 'sms', phone: ph, text: body, name: s(who && who.name), id: sid, refile: { f: { type: INS_WORDS.test(body) ? 'storm' : 'estimate', name: s(who && who.name) || 'Texter ' + tidy(ph), email: '', phone: ph, message: 'Text message ' + at.slice(0, 16).replace('T', ' ') + ' UTC: ' + clip(body, 1200) },
+    extra: { source: 'Text message', how: 'a text message to the GrayCo number', formLabel: 'Text message', title: 'Text message — ' + (s(who && who.name) || tidy(ph)), leadExtra: { textMessage: true, smsFrom: ph, textBody: clip(body, 8000) } } } }); } catch (e) {} if (sg) { out.salesblock = sg; return out; } }
   let insP = null; try { const h = require('./_lib/lead-roles.js').holder('insurance', data.gc_team_settings, data.users); if (h && (h.email || h.name)) insP = { name: s(h.name), email: low(h.email) }; } catch (e) {}
   let onP = null; try { const X = require('./_lib/x10.js'); const o = X.onCallNow(now(), X.oncallCfg(await L().kvGet('gc_x10_oncall'))); if (o) onP = { name: s(o.name), email: low(o.email), phone: s(o.phone) }; } catch (e) {}
   const rt = RT.route({ data, who, purpose, body, last: (st0.lastOut || {})[ph], pmOf: j => { try { return core().pmOf(data, j); } catch (e) { return null; } },
@@ -552,7 +558,7 @@ async function inboundSms(p){
     if (c === 'menu') menu.reply = MN.menuText(mctx.first, S.HELP.test(body));
     else if (c) menu.reply = MN.answer(c, mctx);
     else { menu.reply = MN.forwarded(pmFirst); menu.needHuman = true; }
-    if (c === '4') { menu.needHuman = true; menu.callback = true; rt.urgent = true; }
+    if (c === '4') { menu.needHuman = true; menu.callback = true; rt.urgent = !require('./_lib/salesguard.js').isNight(); }   /* patch SALESBLOCK: a call-back request is no emergency page 7 PM – 7 AM */
     if (c === '5') { menu.needHuman = true; rt.urgent = true; if (onP && !rt.to.some(x => low(x.email) === low(onP.email))) rt.to.push(Object.assign({ why: 'on call (emergency)' }, onP)); if (!job) rt.office = true; }
     if (!onFile && ['1', '2', '3', 'w'].indexOf(c) >= 0) { menu.needHuman = true; rt.office = true; }
     /* a runaway loop (an auto-responder texting back) gets at most 12 menu answers a day */
@@ -661,6 +667,7 @@ exports.handler = async function(event){
   if (!signed(event, p)) return J(403, { ok: false, error: 'Bad signature' });
   const ev = s(qs.event) || 'voice';
   try {
+    if (ev === 'voice') { let bl = ''; try { bl = await require('./_lib/salesguard.js').def().blocked({ phone: p.From }, { via: 'call' }); } catch (e) {} if (bl) return twiml('<Reject reason="busy"/>'); }   /* patch SALESBLOCK: a blocked number is rejected (busy) */
     if (ev === 'sms') { await inboundSms(p); return twiml(''); }
     if (ev === 'ecall') return twiml(await EC().twimlCall(s(qs.id), parseInt(qs.step, 10) || 0));   /* patch EMERGCALL: our outbound call answered */
     if (ev === 'ecallkey') return twiml(await EC().key(s(qs.id), parseInt(qs.step, 10) || 0, p.Digits, p.To || p.Called));
@@ -716,4 +723,4 @@ exports.handler = async function(event){
     return ev === 'sms' || ev === 'status' ? twiml('') : sayBye();
   }
 };
-exports._test = { EC, callOrder, orderCfg, logGet, hookUrl, dialStep, CC, sigFor, signed, params, missed, inboundSms, loadState, ready, sendSms, stateGet, stateCas, TEXT, STOP, START, KS };
+exports._test = { AH_TEXT, EC, callOrder, orderCfg, logGet, hookUrl, dialStep, CC, sigFor, signed, params, missed, inboundSms, loadState, ready, sendSms, stateGet, stateCas, TEXT, STOP, START, KS };
