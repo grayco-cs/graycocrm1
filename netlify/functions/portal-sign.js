@@ -111,7 +111,7 @@ function carrierWords(p){
   return out;
 }
 function scrubber(p){
-  if (p && p.portalShowCarrier === true) return function(t){ return s(t); };
+  /* owner 11/01 (CLAIMWORDS): the carrier's name is never shown to the customer, whatever portalShowCarrier says */
   const res = carrierWords(p).map(function(w){ return new RegExp(w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'); }).concat([COMMON_CARRIERS]);
   return function(t){ t = s(t); res.forEach(function(re){ re.lastIndex = 0; t = t.replace(re, 'your insurance company'); }); return t; };
 }

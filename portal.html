@@ -231,6 +231,7 @@ ul.tips{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;fo
 /* patch SUBTXT */.late-wrap{display:flex;flex-direction:column;gap:6px}.late-btn{min-height:38px;font-size:13px;border-color:#b45309;color:#9a3412;align-self:flex-start;padding:0 12px}.late-form{display:flex;flex-direction:column;gap:8px;padding:10px;border:1px solid var(--rule);border-radius:10px;background:#fffaf0}.late-ks{display:flex;gap:6px;flex-wrap:wrap}.late-ks .btn{min-height:38px;font-size:13px;padding:0 10px}.late-k[aria-pressed=true]{background:var(--navy2);color:#fff}.late-ta{width:100%;box-sizing:border-box;font:inherit;padding:8px;border:1px solid var(--rule);border-radius:8px}
 </style>
 <script src="/legal2.js"></script>   <!-- LEGAL2-patch: in the head so it is loaded before the signing code runs -->
+<script src="/portal-claimhelp.js"></script>   <!-- patch CLAIMHELP: "🛡 Your insurance claim" (insurance / restoration / mitigation jobs) -->
 </head>
 <body>
 <div class="wrap">
@@ -618,9 +619,18 @@ function ownPwCard(){
   c.id = 'ownPwCard';
   return c;
 }
+/* patch CLAIMHELP: "🛡 Your insurance claim" — the claim steps with "You are here", the claim box, Questions & answers and
+   "Ask us a question" (portal-claimhelp.js draws V.claimHelp; the server sends it only for an insurance / restoration /
+   mitigation job whose "Insurance claim help steps" feature is on). On an insurance job it takes the place of the claim
+   box + automatic timeline (one set of claim steps, not two). */
+function chCard(){
+  if (!V || !V.claimHelp || !window.GCClaimHelp) return null;
+  try { return window.GCClaimHelp.card(V.claimHelp, { extra: V.insurance && V.insurance.claim, preview: PREVIEW, onAsk: function(){ go('msgs'); } }); } catch (e) { return null; }
+}
 function home(){
-  var tr0 = V.insurance ? insHome() : [tracker()];   /* patch INSP: an insurance job shows its claim instead of the job steps */
-  if (wide()) return [ownPwCard()].concat(V.insurance ? tr0 : [], [updates(), photosButton(), reviewCard()]);
+  var ch = chCard();
+  var tr0 = V.insurance ? (ch ? [ch] : insHome()) : [tracker()].concat(ch ? [ch] : []);   /* patch INSP: an insurance job shows its claim instead of the job steps */
+  if (wide()) return [ownPwCard()].concat(V.insurance ? tr0 : (ch ? [ch] : []), [updates(), photosButton(), reviewCard()]);
   return [ownPwCard()].concat(tr0, [updates(), pmCard(), photosButton(), reviewCard(), infoCard()]);
 }
 
@@ -828,7 +838,7 @@ function insHome(){
   row('Date of loss', dt(c.dateOfLoss));
   row('Type of loss', c.lossType);
   row('Policy deductible', c.deductible != null ? usd(c.deductible) : '');
-  row('Insurance', c.companyShown ? c.company : 'Your insurance company');
+  row('Insurance', 'Your insurance company');   /* owner 11/01: the carrier's name is never shown in the portal */
   if (c.adjuster) row('Adjuster', [c.adjuster.name, c.adjuster.phone].filter(Boolean).join(' · '));
   if (c.adjusterMeeting) row('Adjuster visit', dt(c.adjusterMeeting));
   if (c.mortgage) row('Mortgage company', c.mortgage);
@@ -1321,7 +1331,7 @@ function itemBox(x){
   /* OWNER4-patch: the Work Authorization AND the Direction to Pay carry the emergency / mitigation payment paragraph with its own acknowledgement */
   var isWa = /work authori[sz]ation/i.test(String(x.title || '')) || /^(work_auth|workauth)$/i.test(String(x.docType || x.tmpl || x.template || '')), denAck = null;
   if (isDtp) {
-    box.appendChild(h('div', { class: 'es-op', 'data-gc-op': '1' }, [h('b', { text: 'Cancellation / Overhead & Profit (Liquidated Damages). ' }), h('span', { text: ' ' + 'GrayCo performs substantial work before construction begins — inspecting the loss, preparing the estimate and scope, and documenting, negotiating, and securing approval of the insurance claim. I/we acknowledge that the value of this pre-construction work, and the overhead and profit GrayCo would have earned, are difficult to determine precisely at the time of signing. Therefore, if GrayCo secures approval of my/our insurance claim and I/we thereafter elect to have the approved work performed by another contractor (other than as permitted by the statutory cancellation rights described below), I/we agree to pay GrayCo, as liquidated damages and not as a penalty, an amount equal to twenty percent (20%) of the total approved estimate, which the parties agree is a reasonable pre-estimate of GrayCo\'s overhead, profit, and the value of the work performed in preparing, documenting, and securing the approved claim. This amount is due within thirty (30) days of my/our election to use another contractor. This fee applies whether or not the insurer\'s estimate includes a separate overhead and profit line.' })]));
+    box.appendChild(h('div', { class: 'es-op', 'data-gc-op': '1' }, [h('b', { text: 'Cancellation / Overhead & Profit (Liquidated Damages). ' }), h('span', { text: ' ' + 'GrayCo performs substantial work before construction begins — inspecting the loss, preparing the estimate and scope, and thoroughly documenting the damage, meeting with the adjuster, and providing detailed estimates and supporting documentation so the claim can be fully reviewed for approval. I/we acknowledge that the value of this pre-construction work, and the overhead and profit GrayCo would have earned, are difficult to determine precisely at the time of signing. Therefore, if my/our insurance claim is approved and I/we thereafter elect to have the approved work performed by another contractor (other than as permitted by the statutory cancellation rights described below), I/we agree to pay GrayCo, as liquidated damages and not as a penalty, an amount equal to twenty percent (20%) of the total approved estimate, which the parties agree is a reasonable pre-estimate of GrayCo\'s overhead, profit, and the value of the work performed in documenting the damage and preparing the estimates and supporting documentation for the claim. This amount is due within thirty (30) days of my/our election to use another contractor. This fee applies whether or not the insurer\'s estimate includes a separate overhead and profit line.' })]));
     box.appendChild(h('div', { class: 'muted es-cancel', text: 'CANCELLATION: Owner may cancel within 3 business days of signing. After 3 days, Owner is responsible for work completed and materials ordered. If the insurance claim is denied, Owner may cancel the remaining repair work as stated in the Notice of Right to Cancel (see the emergency and mitigation services paragraph below). The overhead & profit / liquidated-damages provision above applies only after these cancellation rights have expired.' }));
   }
   if (isDtp || isWa) box.appendChild(h('div', { class: 'es-op es-den', 'data-gc-den': '1' }, [h('b', { text: 'Emergency and mitigation services — payment. ' }), h('span', { text: ' Owner is responsible for payment for all emergency and mitigation services GrayCo performed (for example water extraction, drying, board-up, tarping) regardless of insurance coverage or the outcome of the claim. If the claim is denied, Owner may cancel the remaining repair work as stated in the Notice of Right to Cancel, and Owner remains responsible for the emergency/mitigation services already performed, at the rates in this agreement or, if none, GrayCo\'s standard rates.' })]));   /* OWNER4-patch */
