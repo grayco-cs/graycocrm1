@@ -1,0 +1,374 @@
+<script>
+/* __GC_F941__ — 🧾 Form 941 worksheet (patch F941). READ-ONLY: it reads payrollRuns / payrollTaxPayments /
+   payrollSettings and works out every Form 941 line for a quarter, plus FUTA (Form 940) and TN SUTA estimates.
+   Nothing is written to the data, nothing is sent anywhere. The pure core (F941.compute) is also run by
+   tools/tests/test_F941_fn.mjs in Node. */
+(function(W){
+'use strict';
+if(W.__GC_F941__) return; W.__GC_F941__ = true;
+
+function n2(v){ var n=parseFloat(v); return isFinite(n)?n:0; }
+function r2(v){ return Math.round((n2(v)+(n2(v)>=0?1e-9:-1e-9))*100)/100; }
+function money(v){ var n=r2(v); return (n<0?'-$':'$')+Math.abs(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function pad(n){ return String(n).padStart(2,'0'); }
+function s(v){ return v==null?'':String(v); }
+
+var LINES = {
+  L1:  'Number of employees who received wages, tips, or other compensation for the pay period including the 12th of the 3rd month',
+  L2:  'Wages, tips, and other compensation',
+  L3:  'Federal income tax withheld from wages, tips, and other compensation',
+  L4:  'If no wages, tips, and other compensation are subject to social security or Medicare tax (check box)',
+  L5a: 'Taxable social security wages',
+  L5b: 'Taxable social security tips',
+  L5c: 'Taxable Medicare wages & tips',
+  L5d: 'Taxable wages & tips subject to Additional Medicare Tax withholding',
+  L5e: 'Total social security and Medicare taxes (add Column 2 of 5a–5d)',
+  L5f: 'Section 3121(q) Notice and Demand — tax due on unreported tips',
+  L6:  'Total taxes before adjustments (lines 3 + 5e + 5f)',
+  L7:  'Current quarter’s adjustment for fractions of cents',
+  L8:  'Current quarter’s adjustment for sick pay',
+  L9:  'Current quarter’s adjustments for tips and group-term life insurance',
+  L10: 'Total taxes after adjustments (lines 6 through 9)',
+  L11: 'Qualified small business payroll tax credit for increasing research activities (Form 8974)',
+  L12: 'Total taxes after adjustments and nonrefundable credits (line 10 − line 11)',
+  L13: 'Total deposits for this quarter, including overpayment applied from a prior quarter',
+  L14: 'Balance due (line 12 more than line 13)',
+  L15: 'Overpayment (line 13 more than line 12)',
+  M1:  'Part 2, line 16 — tax liability, Month 1',
+  M2:  'Part 2, line 16 — tax liability, Month 2',
+  M3:  'Part 2, line 16 — tax liability, Month 3',
+  MT:  'Part 2, line 16 — total liability for quarter (must equal line 12)'
+};
+var MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+function qInfo(year, q){
+  year=parseInt(year,10); q=parseInt(q,10);
+  var m0=(q-1)*3+1, m3=m0+2, last=new Date(year, m3, 0).getDate();
+  var nm = m3===12 ? {y:year+1,m:1} : {y:year,m:m3+1};
+  // monthly depositor: the deposit for the quarter's last month is due the 15th of the next month
+  return { year:year, q:q, from:year+'-'+pad(m0)+'-01', to:year+'-'+pad(m3)+'-'+pad(last),
+    months:[year+'-'+pad(m0), year+'-'+pad(m0+1), year+'-'+pad(m3)],
+    day12: year+'-'+pad(m3)+'-12',
+    depFrom: year+'-'+pad(m0)+'-16', depTo: nm.y+'-'+pad(nm.m)+'-15',
+    dueDate: nextBiz(nm.y+'-'+pad(nm.m)+'-'+pad(new Date(nm.y, nm.m, 0).getDate())) };
+}
+function nextBiz(ds){ var d=new Date(ds+'T12:00:00'); while(d.getDay()===0||d.getDay()===6) d.setDate(d.getDate()+1);
+  return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()); }
+function lastEndedQuarter(todayStr){
+  var y=+todayStr.slice(0,4), m=+todayStr.slice(5,7), q=Math.floor((m-1)/3)+1;
+  return q===1 ? {year:y-1,q:4} : {year:y,q:q-1};
+}
+function isLive(r){ return r && ['approved','paid'].indexOf(r.status)>=0; }
+function lineWages(L){ return L.taxable!=null ? n2(L.taxable) : r2(n2(L.gross)-n2(L.preTax)); }
+function lineFicaWages(L){ return L.medWages!=null ? n2(L.medWages) : lineWages(L); }
+function lineKind(L){
+  var pt=s(L.payType);
+  if(pt==='contractor_1099') return '1099';
+  if(pt==='owner_draw') return (n2(L.ss)+n2(L.med)+n2(L.fed)>0) ? 'w2' : 'draw';
+  return 'w2';
+}
+function payKind(x){ return s(x && (x.kind||x.type)).toLowerCase(); }
+function payQuarterTag(x){ // an explicit "for which quarter" on a payment wins over its date
+  var v=s(x && (x.forQuarter||x.quarter||x.period)).toUpperCase().replace(/\s+/g,'');
+  var m=v.match(/^(\d{4})-?Q([1-4])$/)||v.match(/^Q([1-4])-?(\d{4})$/);
+  if(!m){ // a payment made from the tax calendar carries its due date: taxKey '941dep|2026-08-15' (July's taxes) or '941q|2026-10-31' (Q3)
+    var k=s(x && x.taxKey).match(/^941(?:dep|q)\|(\d{4})-(\d{2})-\d{2}$/); if(!k) return null;
+    var yy=+k[1], mm=+k[2]-1; if(mm<1){ mm=12; yy--; }
+    return { year:yy, q:Math.floor((mm-1)/3)+1 };
+  }
+  return /^\d{4}/.test(v) ? {year:+m[1], q:+m[2]} : {year:+m[2], q:+m[1]};
+}
+
+/* ── the pure core ─────────────────────────────────────────────────────────── */
+function compute(opt){
+  opt=opt||{};
+  var set=opt.settings||{}, qi=qInfo(opt.year, opt.q);
+  var ssBase=n2(set.ssWageBase)||184500, ssRate2=0.124, medRate2=0.029, addlRate=0.009,
+      addlThr=n2(set.addlMedThreshold)||200000, futaRate=set.futaRate!=null?n2(set.futaRate):0.006,
+      futaBase=n2(set.futaWageBase)||7000, sutaRate=set.sutaRate!=null?n2(set.sutaRate):0.027, sutaBase=n2(set.sutaWageBase)||7000;
+  var allRuns=(opt.runs||[]).filter(Boolean);
+  var yr=String(qi.year);
+  var W2=[], warn=[], info=[], usedRuns=[], excluded=[];
+  // year-to-date order: every live run of the year by pay date (cash basis)
+  var yearRuns=allRuns.filter(function(r){ return isLive(r) && s(r.payDate).slice(0,4)===yr; })
+    .sort(function(a,b){ return s(a.payDate)<s(b.payDate)?-1:s(a.payDate)>s(b.payDate)?1:(s(a.id)<s(b.id)?-1:1); });
+  var ytd={}, emp={};
+  var T={ wages:0, fed:0, ssW:0, medW:0, addlW:0, eeSS:0, eeMed:0, eeAddl:0, storedSSW:0, futaW:0, futaStored:0, sutaStored:0, checks:0 };
+  var month={}; qi.months.forEach(function(m){ month[m]={ fed:0, ssW:0, medW:0, addlW:0, ee:0, runs:0, checks:0 }; });
+  var futaYtd=0, futaQ=0, sutaBy={}, pretaxFlag={};
+  yearRuns.forEach(function(r){
+    var pd=s(r.payDate).slice(0,10), inQ = pd>=qi.from && pd<=qi.to, ru=null;
+    if(inQ){ ru={ id:s(r.id), payDate:pd, from:s(r.from), to:s(r.to), status:r.status, checks:0, wages:0, fed:0, ee:0, excluded:0 }; usedRuns.push(ru); }
+    (r.lines||[]).forEach(function(L){
+      if(!L || L.status==='denied') return;
+      var k=lineKind(L), key=s(L.empId||L.name), nm=s(L.name||L.empId);
+      if(k!=='w2'){
+        if(inQ){ excluded.push({ run:s(r.id), payDate:pd, name:nm, kind:k, gross:r2(L.gross) }); ru.excluded++; }
+        return;
+      }
+      var w=lineWages(L), fw=lineFicaWages(L);
+      var y=ytd[key]||(ytd[key]={ ss:0, med:0, futa:0, suta:{} });
+      var ssW=Math.max(0, Math.min(fw, ssBase-y.ss));
+      var addlW=Math.max(0, y.med+fw-addlThr) - Math.max(0, y.med-addlThr);
+      var futaW=Math.max(0, Math.min(w, futaBase-y.futa));
+      var sst=s(L.sutaState||L.workState||'TN').toUpperCase()||'TN';
+      var sb = sst==='TN' ? sutaBase : n2(((set.suta||{})[sst]||{}).base)||sutaBase;
+      var sy=n2(y.suta[sst]); var sutaW=Math.max(0, Math.min(w, sb-sy));
+      y.ss+=ssW; y.med+=fw; y.futa+=futaW; y.suta[sst]=sy+w;
+      futaYtd+=futaW;
+      if(!inQ) return;
+      futaQ+=futaW;
+      var bs=sutaBy[sst]||(sutaBy[sst]={ state:sst, wages:0, taxable:0, excess:0, stored:0, emps:{} });
+      bs.wages+=w; bs.taxable+=sutaW; bs.excess+=(w-sutaW); bs.stored+=n2(L.suta);
+      var be=bs.emps[key]||(bs.emps[key]={ name:nm, wages:0, taxable:0 }); be.wages+=w; be.taxable+=sutaW;
+      var e=emp[key]||(emp[key]={ key:key, name:nm, wages:0, fed:0, ssW:0, medW:0, addlW:0, ee:0, storedSSW:0, checks:0 });
+      e.wages+=w; e.fed+=n2(L.fed); e.ssW+=ssW; e.medW+=fw; e.addlW+=addlW; e.ee+=n2(L.ss)+n2(L.med)+n2(L.addlMed);
+      e.storedSSW+=n2(L.ssWages!=null?L.ssWages:fw); e.checks++;
+      T.wages+=w; T.fed+=n2(L.fed); T.ssW+=ssW; T.medW+=fw; T.addlW+=addlW;
+      T.eeSS+=n2(L.ss); T.eeMed+=n2(L.med); T.eeAddl+=n2(L.addlMed); T.storedSSW+=n2(L.ssWages!=null?L.ssWages:fw);
+      T.futaStored+=n2(L.futa); T.sutaStored+=n2(L.suta); T.checks++;
+      var mo=month[pd.slice(0,7)]; mo.fed+=n2(L.fed); mo.ssW+=ssW; mo.medW+=fw; mo.addlW+=addlW; mo.ee+=n2(L.ss)+n2(L.med)+n2(L.addlMed); mo.checks++;
+      ru.checks++; ru.wages+=w; ru.fed+=n2(L.fed); ru.ee+=n2(L.ss)+n2(L.med)+n2(L.addlMed);
+      if(n2(L.gross)>0 && (L.fed==null || L.ss==null || L.med==null)) warn.push('Withholding is MISSING on '+nm+'’s check in the run paid '+pd+' (no '+[L.fed==null?'federal':'',L.ss==null?'Social Security':'',L.med==null?'Medicare':''].filter(Boolean).join(' / ')+' figure). Lines 3, 5 and 7 are wrong until it is fixed.');
+      else if(fw>0 && n2(L.ss)===0 && n2(L.med)===0) warn.push('No Social Security or Medicare was withheld on '+nm+'’s check paid '+pd+' ('+money(fw)+' of wages). Line 7 will be off by the missing amount.');
+      (L.otherList||[]).forEach(function(d){ if(d && d.pretax && /401|403|457|retire|ira\b/i.test(s(d.label))) pretaxFlag[s(d.label)]=1; });
+    });
+  });
+  usedRuns.forEach(function(ru){ ['wages','fed','ee'].forEach(function(k){ ru[k]=r2(ru[k]); }); });
+  // runs in the quarter that are not approved yet
+  allRuns.forEach(function(r){ var pd=s(r.payDate).slice(0,10);
+    if(!isLive(r) && pd>=qi.from && pd<=qi.to && ['deleted','void','voided','denied'].indexOf(s(r.status))<0) warn.push('A payroll run paid '+pd+' is “'+s(r.status||'draft')+'” — it is NOT counted. Approve or delete it first.');
+    if(isLive(r) && !s(r.payDate)) warn.push('An approved payroll run ('+s(r.id)+') has no pay date — it cannot be placed in a quarter.'); });
+  qi.months.forEach(function(m,i){ if(!month[m].checks) warn.push('No approved payroll was paid in '+MONTHS[+m.slice(5,7)-1]+' '+m.slice(0,4)+' (month '+(i+1)+'). If people were paid that month, that payroll is missing from the CRM.'); });
+
+  // L1 — the pay period that includes the 12th of the 3rd month
+  var l1set={}, l1runs=[];
+  allRuns.forEach(function(r){
+    if(!isLive(r) || !r.from || !r.to) return;
+    if(s(r.from)<=qi.day12 && s(r.to)>=qi.day12){
+      l1runs.push(s(r.id));
+      (r.lines||[]).forEach(function(L){ if(L && L.status!=='denied' && lineKind(L)==='w2' && n2(L.gross)>0) l1set[s(L.empId||L.name)]=1; });
+    }
+  });
+  var L1=Object.keys(l1set).length;
+  if(!l1runs.length) warn.push('No approved payroll run has a pay period that includes '+qi.day12+' — line 1 (employee count) could not be worked out. Count the people on the payroll for that pay period by hand.');
+
+  var L = {};
+  L.L1=L1; L.L2=r2(T.wages); L.L3=r2(T.fed); L.L4=(T.medW===0 && T.wages>0);
+  L.L5a1=r2(T.ssW); L.L5a2=r2(T.ssW*ssRate2);
+  L.L5b1=0; L.L5b2=0;
+  L.L5c1=r2(T.medW); L.L5c2=r2(T.medW*medRate2);
+  L.L5d1=r2(T.addlW); L.L5d2=r2(T.addlW*addlRate);
+  L.L5e=r2(L.L5a2+L.L5b2+L.L5c2+L.L5d2); L.L5f=0;
+  L.L6=r2(L.L3+L.L5e+L.L5f);
+  var eeActual=r2(T.eeSS+T.eeMed+T.eeAddl);
+  var eeOnForm=r2(r2(L.L5a1*0.062)+r2(L.L5c1*0.0145)+L.L5d2);
+  L.L7=r2(eeActual-eeOnForm); L.L8=0; L.L9=0;
+  L.L10=r2(L.L6+L.L7+L.L8+L.L9); L.L11=0; L.L12=r2(L.L10-L.L11);
+
+  // L13 — 941 deposits for this quarter's liabilities
+  var deps=[], sel=opt.depositSel||{};
+  (opt.payments||[]).forEach(function(x){
+    if(!x || payKind(x)!=='941') return;
+    var d=s(x.date).slice(0,10), tag=payQuarterTag(x), def;
+    if(tag) def=(tag.year===qi.year && tag.q===qi.q);
+    else def=(d>=qi.depFrom && d<=qi.depTo);
+    var near = d>=qi.from && d<=qi.dueDate;
+    if(!def && !near) return;
+    var on = sel[s(x.id)]!=null ? !!sel[s(x.id)] : def;
+    deps.push({ id:s(x.id), date:d, amount:r2(x.amount), confirm:s(x.confirm), note:s(x.note), counted:on, byRule:def, tagged:!!tag });
+  });
+  deps.sort(function(a,b){ return a.date<b.date?-1:1; });
+  L.L13=r2(deps.filter(function(d){return d.counted;}).reduce(function(a,d){return a+d.amount;},0));
+  L.L14=r2(Math.max(0, L.L12-L.L13)); L.L15=r2(Math.max(0, L.L13-L.L12));
+  if(!deps.some(function(d){return d.counted;}) && L.L12>0) warn.push('No Form 941 deposits are recorded for this quarter (Payroll → Withholding & Taxes → record a payment, type “Federal 941 deposit”). Line 13 shows $0 — check EFTPS for what was actually paid.');
+  if(Math.abs(L.L13-L.L12)>=0.01) warn.push('Line 13 (deposits '+money(L.L13)+') does not equal line 12 (tax '+money(L.L12)+') — '+(L.L12>L.L13?('balance due '+money(L.L14)):('overpayment '+money(L.L15)))+'. Check EFTPS: a deposit may be missing from the CRM, or a deposit may be short.');
+
+  // Part 2 — monthly liability by pay date; month 3 takes the rounding so the total equals line 12
+  var mRaw=qi.months.map(function(m){ var o=month[m];
+    return r2(o.fed + r2(o.ssW*ssRate2) + r2(o.medW*medRate2) + r2(o.addlW*addlRate) + (o.ee - (r2(o.ssW*0.062)+r2(o.medW*0.0145)+r2(o.addlW*addlRate)))); });
+  var M=[mRaw[0], mRaw[1], r2(L.L12-mRaw[0]-mRaw[1])];
+  var plug=r2(M[2]-mRaw[2]);
+  var p2={ under2500: L.L12<2500, months:M, monthsRaw:mRaw, total:r2(M[0]+M[1]+M[2]), plug:plug };
+  if(Math.abs(plug)>0.05) warn.push('The monthly liabilities computed from the checks add up to '+money(mRaw[0]+mRaw[1]+mRaw[2])+', not line 12 '+money(L.L12)+' — month 3 was adjusted by '+money(plug)+'. Check for missing withholding.');
+  var semi=[]; if(L.L12*4>=50000) semi.push('This quarter’s tax ('+money(L.L12)+') × 4 is over $50,000. If the total of line 12 on the four 941s for the lookback period (July 1, '+(qi.year-2)+' – June 30, '+(qi.year-1)+') was more than $50,000, GrayCo is a SEMIWEEKLY depositor: check the third box and attach Schedule B instead of the monthly lines. The CRM cannot know the lookback — ask the CPA / check last year’s 941s.');
+  M.forEach(function(v,i){ if(v>=100000) semi.push('Month '+(i+1)+' liability is '+money(v)+' — a $100,000 next-day deposit rule may have applied (Schedule B required).'); });
+  p2.semi=semi;
+
+  var tolL7=r2(0.01*T.checks+0.01);
+  if(Math.abs(L.L7)>tolL7) warn.push('Line 7 is '+money(L.L7)+' — more than fractions of cents ('+T.checks+' checks allow about ±'+money(tolL7)+'). The Social Security / Medicare actually withheld does not match the wages. Find the check that is wrong before filing.');
+  if(Math.abs(r2(T.storedSSW)-L.L5a1)>0.01) warn.push('Social Security wages saved on the checks ('+money(T.storedSSW)+') differ from what the '+money(ssBase)+' wage base gives ('+money(L.L5a1)+'). The worksheet uses the wage-base figure; the checks may have over- or under-withheld.');
+  var pf=Object.keys(pretaxFlag); if(pf.length) warn.push('Pre-tax deduction(s) that look like retirement ('+pf.join(', ')+'): a 401(k)/403(b) lowers line 2 but NOT Social Security/Medicare wages. The CRM payroll takes every pre-tax deduction out of SS/Medicare wages too, so lines 5a/5c (and the withholding) may be too low — ask the CPA.');
+  if(excluded.length){ var e1=excluded.filter(function(x){return x.kind==='1099';}), ed=excluded.filter(function(x){return x.kind==='draw';});
+    if(e1.length) info.push(e1.length+' payment(s) to 1099 contractors in this quarter ('+money(e1.reduce(function(a,x){return a+x.gross;},0))+') are left out — they go on a 1099-NEC, not Form 941.');
+    if(ed.length) info.push(ed.length+' “Owner draw” line(s) with nothing withheld ('+money(ed.reduce(function(a,x){return a+x.gross;},0))+') are treated as owner draws, not wages, and left out.'); }
+  var ownerW2=0; yearRuns.forEach(function(r){ var pd=s(r.payDate).slice(0,10); if(pd<qi.from||pd>qi.to) return;
+    (r.lines||[]).forEach(function(Ln){ if(Ln && Ln.status!=='denied' && s(Ln.payType)==='owner_draw' && lineKind(Ln)==='w2') ownerW2++; }); });
+  if(ownerW2) info.push(ownerW2+' “Owner draw” check(s) had taxes withheld, so they are counted as W-2 wages (an S-corp owner’s salary). If GrayCo is an LLC/partnership and these are draws, they do not belong on Form 941 — ask the CPA.');
+  if(ssBase!==184500) info.push('Social Security wage base from ⚙ Payroll settings: '+money(ssBase)+' (the 2026 IRS figure is $184,500).');
+
+  // FUTA / SUTA estimates
+  var futa={ rate:futaRate, base:futaBase, quarterWages:r2(futaQ), quarterTax:r2(futaQ*futaRate), ytdWages:r2(futaYtd), ytdTax:r2(futaYtd*futaRate), stored:r2(T.futaStored) };
+  var futaPaid=r2((opt.payments||[]).filter(function(x){ return x && payKind(x)==='futa' && s(x.date).slice(0,4)===yr && s(x.date).slice(0,10)<=qi.dueDate; }).reduce(function(a,x){return a+n2(x.amount);},0));
+  futa.paidYtd=futaPaid; futa.undeposited=r2(Math.max(0, futa.ytdTax-futaPaid));
+  futa.depositDue = qi.q<4 && futa.undeposited>500;
+  futa.dueDate=qi.dueDate; futa.f940Due=nextBiz((qi.year+1)+'-01-31');
+  var suta=Object.keys(sutaBy).sort().map(function(k){ var b=sutaBy[k];
+    var rate = k==='TN' ? sutaRate : n2(((set.suta||{})[k]||{}).rate)||sutaRate;
+    return { state:k, rate:rate, base:(k==='TN'?sutaBase:(n2(((set.suta||{})[k]||{}).base)||sutaBase)), wages:r2(b.wages), taxable:r2(b.taxable), excess:r2(b.excess), tax:r2(b.taxable*rate), stored:r2(b.stored),
+      emps:Object.keys(b.emps).map(function(e){ var x=b.emps[e]; return { name:x.name, wages:r2(x.wages), taxable:r2(x.taxable) }; }) };
+  });
+
+  var emps=Object.keys(emp).map(function(k){ var e=emp[k]; ['wages','fed','ssW','medW','addlW','ee','storedSSW'].forEach(function(f){ e[f]=r2(e[f]); }); return e; });
+  return { quarter:qi, lines:L, emps:emps, runs:usedRuns, l1Runs:l1runs, excluded:excluded, deposits:deps, part2:p2,
+    eeActual:eeActual, eeOnForm:eeOnForm, months:qi.months.map(function(m){ var o=month[m]; return { month:m, checks:o.checks, fed:r2(o.fed), ssW:r2(o.ssW), medW:r2(o.medW) }; }),
+    futa:futa, suta:suta, warnings:warn, info:info, ssBase:ssBase, checks:T.checks };
+}
+
+/* the "Copy all numbers" text and the CSV, both from the same rows */
+function rows(R){
+  var L=R.lines, q=R.quarter, out=[];
+  function a(line,label,val,note){ out.push([line,label,val,note||'']); }
+  a('1',LINES.L1,String(L.L1),'pay period including '+q.day12);
+  a('2',LINES.L2,L.L2.toFixed(2)); a('3',LINES.L3,L.L3.toFixed(2));
+  a('4',LINES.L4,L.L4?'CHECK':'leave blank');
+  a('5a col 1',LINES.L5a,L.L5a1.toFixed(2)); a('5a col 2','× 0.124',L.L5a2.toFixed(2));
+  a('5b col 1',LINES.L5b,L.L5b1.toFixed(2)); a('5b col 2','× 0.124',L.L5b2.toFixed(2));
+  a('5c col 1',LINES.L5c,L.L5c1.toFixed(2)); a('5c col 2','× 0.029',L.L5c2.toFixed(2));
+  a('5d col 1',LINES.L5d,L.L5d1.toFixed(2)); a('5d col 2','× 0.009',L.L5d2.toFixed(2));
+  a('5e',LINES.L5e,L.L5e.toFixed(2)); a('5f',LINES.L5f,L.L5f.toFixed(2));
+  a('6',LINES.L6,L.L6.toFixed(2)); a('7',LINES.L7,L.L7.toFixed(2)); a('8',LINES.L8,L.L8.toFixed(2)); a('9',LINES.L9,L.L9.toFixed(2));
+  a('10',LINES.L10,L.L10.toFixed(2)); a('11',LINES.L11,L.L11.toFixed(2)); a('12',LINES.L12,L.L12.toFixed(2));
+  a('13',LINES.L13,L.L13.toFixed(2)); a('14',LINES.L14,L.L14.toFixed(2)); a('15',LINES.L15,L.L15.toFixed(2));
+  if(R.part2.under2500) a('16','Line 12 is less than $2,500','check box 1','no monthly lines needed');
+  else { a('16 M1',LINES.M1,R.part2.months[0].toFixed(2)); a('16 M2',LINES.M2,R.part2.months[1].toFixed(2)); a('16 M3',LINES.M3,R.part2.months[2].toFixed(2)); a('16 total',LINES.MT,R.part2.total.toFixed(2)); }
+  a('FUTA','FUTA tax on this quarter’s wages (estimate)',R.futa.quarterTax.toFixed(2),'0.6% of first $7,000 per employee — check rates in ⚙ Payroll settings');
+  R.suta.forEach(function(x){ a('SUTA '+x.state,x.state+' unemployment premium (estimate): total wages '+x.wages.toFixed(2)+', excess '+x.excess.toFixed(2)+', taxable '+x.taxable.toFixed(2),x.tax.toFixed(2),'rate '+(x.rate*100).toFixed(2)+'% — check rates in ⚙ Payroll settings'); });
+  return out;
+}
+function copyText(R){
+  var q=R.quarter;
+  return 'Form 941 — Q'+q.q+' '+q.year+' ('+q.from+' to '+q.to+') — worked out by the GrayCo CRM from its payroll runs. Check before filing.\n'
+    + rows(R).map(function(r){ return 'Line '+r[0]+' — '+r[1]+': '+r[2]+(r[3]?('  ('+r[3]+')'):''); }).join('\n')
+    + (R.warnings.length?('\n\nWARNINGS:\n- '+R.warnings.join('\n- ')):'');
+}
+function csv(R){
+  return [['Line','Form wording','Value','Note']].concat(rows(R)).map(function(r){ return r.map(function(c){ return '"'+String(c==null?'':c).replace(/"/g,'""')+'"'; }).join(','); }).join('\r\n');
+}
+
+var F941 = { compute:compute, qInfo:qInfo, lastEndedQuarter:lastEndedQuarter, LINES:LINES, rows:rows, copyText:copyText, csv:csv, money:money };
+W._gcF941 = F941;
+if(typeof document==='undefined') return;
+
+/* ── the page (Payroll → 🧾 Form 941) ─────────────────────────────────────── */
+function esc(v){ return s(v).replace(/[&<>"']/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+function P(){ return W.__GC_PAY || null; }
+function canSee(){ try{ var p=P(); return !!(p && p.isAdmin && p.isAdmin()); }catch(e){ return false; } }
+W._gcF941CanSee = canSee;
+function todayStr(){ var d=new Date(); return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()); }
+var UI = { sel:null, dep:{}, last:null };
+async function load(){
+  var p=P(); var runs=[], pays=[], set={};
+  try{ runs=await p.runs(); }catch(e){}
+  try{ pays=W._gcPayrollTaxPayments ? await W._gcPayrollTaxPayments() : ((await p.get('payrollTaxPayments'))||[]); }catch(e){}
+  try{ set=await p.settings(); }catch(e){}
+  return { runs:Array.isArray(runs)?runs:[], pays:Array.isArray(pays)?pays:[], set:set||{} };
+}
+W._gcF941Load = load;
+var RED='background:#fef2f2;border:2px solid #dc2626;color:#991b1b;border-radius:8px;padding:10px 12px;margin:0 0 8px;font-weight:700;font-size:13px;';
+var CARD='background:#fff;border:1px solid #dde5ef;border-radius:10px;padding:14px 16px;margin-bottom:12px;';
+var TD='padding:6px 8px;border-bottom:1px solid #eef2f7;font-size:13px;vertical-align:top;';
+var BTN='padding:7px 12px;border-radius:7px;border:1px solid #cbd5e1;background:#fff;cursor:pointer;font-weight:700;font-size:12px;margin-right:6px;';
+function lineRow(no, label, val, how, strong){
+  return '<tr data-f941-line="'+esc(no)+'"><td style="'+TD+'font-weight:800;white-space:nowrap;">'+esc(no)+'</td><td style="'+TD+'">'+esc(label)
+    +(how?'<div style="font-size:11px;color:#64748b;margin-top:2px;">'+how+'</div>':'')+'</td><td style="'+TD+'text-align:right;font-family:ui-monospace,monospace;white-space:nowrap;'+(strong?'font-weight:800;font-size:15px;':'')+'">'+val+'</td></tr>';
+}
+async function render(body){
+  if(!body) return;
+  if(!canSee()){ body.innerHTML='<div style="'+CARD+'"><b>Form 941 is for admins / owners only.</b></div>'; return; }
+  if(!UI.sel) UI.sel=lastEndedQuarter(todayStr());
+  body.innerHTML='<div style="'+CARD+'">Loading payroll…</div>';
+  var d=await load(), R;
+  try{ R=compute({ runs:d.runs, payments:d.pays, settings:d.set, year:UI.sel.year, q:UI.sel.q, depositSel:UI.dep }); }
+  catch(e){ body.innerHTML='<div style="'+RED+'">The Form 941 worksheet could not be worked out: '+esc(e && e.message)+'</div>'; return; }
+  UI.last=R; var L=R.lines, q=R.quarter, m=money;
+  var opts=[]; var ty=+todayStr().slice(0,4); for(var y=ty; y>=ty-2; y--) for(var k=4;k>=1;k--) opts.push([y,k]);
+  var runsList = R.runs.length ? R.runs.map(function(r){ return '<tr><td style="'+TD+'">'+esc(r.payDate)+'</td><td style="'+TD+'">'+esc(r.from)+' → '+esc(r.to)+'</td><td style="'+TD+'text-align:right">'+r.checks+(r.excluded?(' <span style="color:#b45309">(+'+r.excluded+' left out)</span>'):'')+'</td><td style="'+TD+'text-align:right">'+m(r.wages)+'</td><td style="'+TD+'text-align:right">'+m(r.fed)+'</td><td style="'+TD+'text-align:right">'+m(r.ee)+'</td><td style="'+TD+'font-size:11px;color:#94a3b8">'+esc(r.id)+'</td></tr>'; }).join('')
+    : '<tr><td colspan="7" style="'+TD+'color:#991b1b;font-weight:700">No approved payroll runs were paid in this quarter.</td></tr>';
+  var depList = R.deposits.length ? R.deposits.map(function(x){ return '<tr><td style="'+TD+'"><input type="checkbox" data-f941-dep="'+esc(x.id)+'"'+(x.counted?' checked':'')+'></td><td style="'+TD+'">'+esc(x.date)+'</td><td style="'+TD+'text-align:right">'+m(x.amount)+'</td><td style="'+TD+'font-size:12px;color:#475569">'+esc(x.confirm||'')+' '+esc(x.note||'')+'<div style="font-size:11px;color:#94a3b8">'+(x.tagged?'marked for a quarter on the payment':(x.byRule?'counted by date (for this quarter’s months)':'not counted by date — probably the prior/next quarter'))+'</div></td></tr>'; }).join('')
+    : '<tr><td colspan="4" style="'+TD+'color:#991b1b;font-weight:700">No 941 deposits recorded.</td></tr>';
+  var p2 = R.part2.under2500
+    ? '<div style="font-size:13px"><b>Line 12 is under $2,500</b> — check the FIRST box on line 16 (no monthly lines needed). You may pay the balance with the return.</div>'
+    : '<table style="width:100%;border-collapse:collapse">'+lineRow('Month 1',MONTHS[+q.months[0].slice(5)-1]+' — liability by pay date',m(R.part2.months[0]),'')
+      +lineRow('Month 2',MONTHS[+q.months[1].slice(5)-1],m(R.part2.months[1]),'')
+      +lineRow('Month 3',MONTHS[+q.months[2].slice(5)-1],m(R.part2.months[2]),Math.abs(R.part2.plug)>0?('includes '+m(R.part2.plug)+' rounding so the total equals line 12'):'')
+      +lineRow('Total','Total liability for quarter (must equal line 12)',m(R.part2.total),R.part2.total===L.L12?'✓ equals line 12':'<b style="color:#dc2626">does NOT equal line 12</b>',true)+'</table>'
+      +'<div style="font-size:12px;color:#475569;margin-top:6px">For a monthly schedule depositor (check the SECOND box). Each month = federal withheld + Social Security & Medicare (both halves) on checks PAID that month.</div>';
+  var semi = R.part2.semi.map(function(t){ return '<div style="background:#fffbeb;border:1px solid #f59e0b;border-radius:7px;padding:8px 10px;margin-top:6px;font-size:12px;color:#92400e">⚠ '+esc(t)+'</div>'; }).join('');
+  var futa=R.futa;
+  body.innerHTML='<div data-f941="1">'
+    + '<div style="'+CARD+'display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between">'
+      + '<div><div style="font-size:18px;font-weight:800">🧾 Form 941 worksheet — Q'+q.q+' '+q.year+'</div>'
+      + '<div style="font-size:12px;color:#64748b">'+esc(q.from)+' to '+esc(q.to)+' · approved payroll runs by <b>pay date</b> (cash basis) · W-2 employees only · return due <b>'+esc(q.dueDate)+'</b>. Read-only: nothing is saved or sent.</div></div>'
+      + '<div><select data-f941-q style="padding:6px;border-radius:6px;border:1px solid #cbd5e1">'+opts.map(function(o){ return '<option value="'+o[0]+'-'+o[1]+'"'+(o[0]===q.year&&o[1]===q.q?' selected':'')+'>Q'+o[1]+' '+o[0]+'</option>'; }).join('')+'</select> '
+      + '<button data-f941-copy style="'+BTN+'">📋 Copy all numbers</button><button data-f941-csv style="'+BTN+'">⬇ Download CSV</button></div></div>'
+    + R.warnings.map(function(w){ return '<div data-f941-warn="1" style="'+RED+'">⚠ '+esc(w)+'</div>'; }).join('')
+    + R.info.map(function(w){ return '<div style="background:#eff6ff;border:1px solid #93c5fd;color:#1e3a8a;border-radius:8px;padding:8px 12px;margin:0 0 8px;font-size:12px">ℹ '+esc(w)+'</div>'; }).join('')
+    + '<div style="'+CARD+'"><div style="font-weight:800;margin-bottom:6px">Part 1</div><table style="width:100%;border-collapse:collapse">'
+      + lineRow('1',LINES.L1,String(L.L1),'Distinct W-2 employees on approved runs whose pay period includes '+esc(q.day12)+(R.l1Runs.length?(' (run '+esc(R.l1Runs.join(', '))+')'):''))
+      + lineRow('2',LINES.L2,m(L.L2),'Gross pay minus pre-tax deductions (the “taxable” figure on each check), all W-2 checks paid in the quarter. Reimbursements are not wages. 1099 contractors left out.')
+      + lineRow('3',LINES.L3,m(L.L3),'Federal income tax withheld on those checks.')
+      + lineRow('4',LINES.L4,L.L4?'CHECK':'leave blank','')
+      + lineRow('5a',LINES.L5a+' — column 1',m(L.L5a1),'Social Security wages per employee, stopping at the '+m(R.ssBase)+' wage base (counted year-to-date from Jan 1 by pay date).')
+      + lineRow('5a','× 0.124 = column 2',m(L.L5a2),'')
+      + lineRow('5b',LINES.L5b,m(0),'The CRM has no tips — 0.')
+      + lineRow('5c',LINES.L5c+' — column 1',m(L.L5c1),'All Medicare wages (no cap).')
+      + lineRow('5c','× 0.029 = column 2',m(L.L5c2),'')
+      + lineRow('5d',LINES.L5d+' — column 1',m(L.L5d1),'Each employee’s wages above $200,000 year-to-date.')
+      + lineRow('5d','× 0.009 = column 2',m(L.L5d2),'')
+      + lineRow('5e',LINES.L5e,m(L.L5e),'5a + 5b + 5c + 5d, column 2.')
+      + lineRow('5f',LINES.L5f,m(0),'Only if the IRS sent a Section 3121(q) notice.')
+      + lineRow('6',LINES.L6,m(L.L6),'Line 3 + 5e + 5f.',true)
+      + lineRow('7',LINES.L7,m(L.L7),'Employee Social Security + Medicare actually withheld ('+m(R.eeActual)+') minus the employee half the form works out ('+m(R.eeOnForm)+' = 6.2% of 5a + 1.45% of 5c + 5d col 2).')
+      + lineRow('8',LINES.L8,m(0),'The CRM has no third-party sick pay — 0.')
+      + lineRow('9',LINES.L9,m(0),'The CRM has no tips or group-term life insurance — 0.')
+      + lineRow('10',LINES.L10,m(L.L10),'Lines 6 through 9.',true)
+      + lineRow('11',LINES.L11,m(0),'No research credit (Form 8974) — 0.')
+      + lineRow('12',LINES.L12,m(L.L12),'Line 10 − line 11.',true)
+      + lineRow('13',LINES.L13,m(L.L13),'Checked “Federal 941 deposit” payments below. Add any overpayment applied from a prior quarter by hand.')
+      + lineRow('14',LINES.L14,m(L.L14),L.L14>0?'Pay through EFTPS (or with Form 941-V). Under $1 need not be paid.':'',true)
+      + lineRow('15',LINES.L15,m(L.L15),L.L15>0?'Choose “apply to next return” or “send a refund”.':'',true)
+    + '</table></div>'
+    + '<div style="'+CARD+'"><div style="font-weight:800;margin-bottom:6px">Part 2 — line 16, deposit schedule and tax liability</div>'+p2+semi+'</div>'
+    + '<div style="'+CARD+'"><div style="font-weight:800;margin-bottom:6px">Deposits (Form 941 type) — tick the ones made for this quarter</div>'
+      + '<div style="font-size:12px;color:#64748b;margin-bottom:6px">By date, a deposit counts if it was made '+esc(q.depFrom)+' – '+esc(q.depTo)+' (a monthly depositor pays each month by the 15th of the next). Ticking only changes this screen.</div>'
+      + '<table style="width:100%;border-collapse:collapse">'+depList+'</table></div>'
+    + '<div style="'+CARD+'"><div style="font-weight:800;margin-bottom:6px">Payroll runs used</div><table style="width:100%;border-collapse:collapse"><tr style="font-size:11px;color:#64748b"><td style="'+TD+'">Pay date</td><td style="'+TD+'">Period</td><td style="'+TD+'text-align:right">Checks</td><td style="'+TD+'text-align:right">Wages</td><td style="'+TD+'text-align:right">Fed w/h</td><td style="'+TD+'text-align:right">EE SS+Med</td><td style="'+TD+'"></td></tr>'+runsList+'</table></div>'
+    + '<div style="'+CARD+'"><div style="font-weight:800;margin-bottom:2px">Unemployment — <span style="color:#b45309">estimate, check rates in ⚙ Payroll settings</span></div>'
+      + '<table style="width:100%;border-collapse:collapse">'
+      + lineRow('FUTA','FUTA wages this quarter (first '+m(futa.base)+' per employee per year)',m(futa.quarterWages),'')
+      + lineRow('FUTA','FUTA tax on this quarter ('+(futa.rate*100).toFixed(2)+'%)',m(futa.quarterTax),'On the checks: '+m(futa.stored)+'.')
+      + lineRow('FUTA','Year-to-date FUTA (Form 940, due '+esc(futa.f940Due)+')',m(futa.ytdTax),'FUTA deposits recorded this year: '+m(futa.paidYtd)+'. Not yet deposited: '+m(futa.undeposited)+'.')
+      + lineRow('FUTA','Quarterly FUTA deposit',futa.depositDue?('<b style="color:#dc2626">DUE '+esc(futa.dueDate)+'</b>'):'not required','A deposit is required when undeposited FUTA is more than $500; otherwise it carries to the next quarter.')
+      + R.suta.map(function(x){ return lineRow('SUTA '+x.state, x.state+' unemployment — total wages / excess over the '+m(x.base)+' base / taxable', m(x.wages)+' / '+m(x.excess)+' / '+m(x.taxable), x.emps.length+' employee(s)')
+          + lineRow('SUTA '+x.state, x.state+' premium at '+(x.rate*100).toFixed(2)+'%', m(x.tax), 'On the checks: '+m(x.stored)+'.'+(x.state==='TN'?' Filed quarterly on TNTAP.':'')); }).join('')
+      + '</table></div>'
+    + '<div style="font-size:11px;color:#94a3b8;margin:4px 2px 20px">The CRM does not e-file and does not send anything to the IRS. Compare with your payroll provider / EFTPS before filing.</div>'
+    + '</div>';
+  var qs=body.querySelector('[data-f941-q]'); if(qs) qs.onchange=function(){ var v=qs.value.split('-'); UI.sel={year:+v[0],q:+v[1]}; UI.dep={}; render(body); };
+  Array.prototype.forEach.call(body.querySelectorAll('[data-f941-dep]'),function(c){ c.onchange=function(){ UI.dep[c.getAttribute('data-f941-dep')]=c.checked; render(body); }; });
+  var cb=body.querySelector('[data-f941-copy]'); if(cb) cb.onclick=function(){ var t=copyText(R);
+    var done=function(){ cb.textContent='✓ Copied'; setTimeout(function(){ cb.textContent='📋 Copy all numbers'; },1800); };
+    try{ navigator.clipboard.writeText(t).then(done,function(){ fallback(t); done(); }); }catch(e){ fallback(t); done(); } };
+  var cv=body.querySelector('[data-f941-csv]'); if(cv) cv.onclick=function(){
+    var a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv(R)],{type:'text/csv'})); a.download='Form941_Q'+q.q+'_'+q.year+'.csv';
+    document.body.appendChild(a); a.click(); setTimeout(function(){ try{ URL.revokeObjectURL(a.href); a.remove(); }catch(e){} },500); };
+}
+function fallback(t){ try{ var ta=document.createElement('textarea'); ta.value=t; ta.style.position='fixed'; ta.style.opacity='0'; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); }catch(e){} }
+W._gcF941Render = render;
+W._gcF941Open = function(year, q){
+  if(year && q) { UI.sel={year:+year,q:+q}; UI.dep={}; }
+  if(W._gcOpenPayrollTab) W._gcOpenPayrollTab('f941');
+};
+})(window);
+</script>
