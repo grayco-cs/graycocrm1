@@ -214,7 +214,7 @@ async function browserFor(kind){
     }
     const f = path.join(BUILD, u.pathname === '/' ? 'portal.html' : decodeURIComponent(u.pathname));
     if (fs.existsSync(f) && fs.statSync(f).isFile()) return r.fulfill({ path: f });
-    S.bad.push('404 ' + u.pathname);
+    if (!/favicon/.test(u.pathname)) S.bad.push('404 ' + u.pathname);
     return r.fulfill({ status: 404, body: '' });
   });
   S.page = async (session) => {
@@ -271,7 +271,7 @@ async function run(kind, job){
   if (cb) { await cb.click(); await sleep(600); }
   const t2 = await text(p);
   ok(tag + '1. lockbox / gate codes on a scheduled day', /2468/.test(t2) && /Lockbox/.test(t2));
-  await (await p.$('.gc-codes')).scrollIntoViewIfNeeded().catch(() => {});
+  const gcc = await p.$('.gc-codes'); if (gcc) await gcc.scrollIntoViewIfNeeded().catch(() => {});
   await shot(p, N() + '_access_codes', 'Access codes (only on the sub\'s scheduled days; every look is logged)');
   const docCard = await p.$('[data-subdocs]');
   if (docCard) { await docCard.scrollIntoViewIfNeeded(); await shot(p, N() + '_job_documents', 'Plans & documents shared with subs'); }
@@ -340,8 +340,8 @@ async function run(kind, job){
   ok(tag + '6. the sub\'s punch items (2), never another sub\'s', /nail pops/.test(pt) && /corner bead/.test(pt) && !/OTHER-SUB/.test(pt));
   const [fc2] = await Promise.all([p.waitForEvent('filechooser', { timeout: 5000 }), p.click('[data-punch="PU1"]')]);
   await fc2.setFiles([{ name: 'fixed.png', mimeType: 'image/png', buffer: png(90, 90, 200, 32) }]);
-  await p.waitForFunction(() => /Done/.test(document.body.innerText), null, { timeout: 20000 }).catch(() => {});
-  await sleep(800);
+  for (let k = 0; k < 80 && !DB.T.gc_sub_event.some(e => e.kind === 'punch' && e.data.punchId === 'PU1'); k++) await sleep(250);
+  await sleep(1200);
   ok(tag + '6. a punch item marked done with a photo', DB.T.gc_sub_event.some(e => e.kind === 'punch' && e.data.punchId === 'PU1'));
   await shot(p, N() + '_punch_done', 'Punch item marked done (with its photo)');
   /* invoices */
@@ -400,7 +400,7 @@ for (const kind of ['phone', 'desktop']) {
 }
 if (REALJOB && !PREVIEW) {
   console.log('\n— real job from the mirror (' + REALJOB.id + '), phone');
-  const keep = SHOTS; await run('phone', Object.assign({}, REALJOB, { siteNotes: REALJOB.siteNotes || null }));
+  await run('phone', Object.assign({}, REALJOB, { pm: 'Sample PM' }));   /* the sample PM (the mirror's people are not loaded) */
 }
 if (SHOTS) fs.writeFileSync(path.join(SHOTS, 'index.txt'), INDEX.join('\n') + '\n');
 const bad = out.filter(x => !x[1]);
