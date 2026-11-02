@@ -69,7 +69,7 @@ function analyze(data, t){
     const st = s(p.status || p.stage);
     if (CLOSED_JOB.test(st)) return;
     const pre = PRE_JOB.test(st), miss = [];
-    if (!s(p.pm || p.projectManager || p.pmName)) miss.push('no PM');
+    if (!pre && !s(p.pm || p.projectManager || p.pmName)) miss.push('no PM');   /* patch DATAFULL: a bidding job needs only its name and address */
     if (!s(p.address || p.jobAddress)) miss.push('no address');
     if (!pre && !(contractAmount(p) > 0)) miss.push('no contract amount');
     if (!pre && !hasSigned(p, docs)) miss.push('no signed contract');
@@ -113,8 +113,11 @@ function todoFor(rep, prev){
 /* the nightly run (core = portal.js _core) */
 async function run(core, t){
   if (String(process.env.DATACHECK_OFF || '') === '1') return { off: true };
-  const data = await core.kvRead(['customers', 'projects', 'leads', 'gc_deleted_projects', 'projectDocs']);
+  const data = await core.kvRead(JOB_KEYS);
   const rep = analyze(data, t);
+  /* patch DATAFULL: the per-job data checklist (_lib/jobdata.js) — kept for the morning alert and the CRM's board */
+  let full = null;
+  try { data.docs = await docRows(); full = JD.checkAll(data, { now: t }); await saveReport(core, full, null); } catch (e) { full = { error: String(e && e.message || e) }; }
   let wrote = false;
   const r = await core.kvListUpdate('gc_office_tasks', function(l){
     const i = l.findIndex(function(x){ return x && s(x.id) === ID; });
@@ -124,7 +127,91 @@ async function run(core, t){
     wrote = true;
     return { list: l, check: function(l2){ return l2.some(function(x){ return x && s(x.id) === ID && x.updatedAt === next.updatedAt; }); } };
   });
-  return { ok: !!(r && r.ok), count: rep.count, wrote, kinds: rep.problems.reduce(function(a, p){ a[p.kind] = (a[p.kind] || 0) + 1; return a; }, {}) };
+  return { ok: !!(r && r.ok), count: rep.count, wrote, kinds: rep.problems.reduce(function(a, p){ a[p.kind] = (a[p.kind] || 0) + 1; return a; }, {}),
+    jobs: full && !full.error ? { checked: full.checked, complete: full.complete, needInfo: full.needInfo } : full };
 }
 
-module.exports = { ID, analyze, todoFor, sigOf, run, contractAmount, hasSigned };
+/* ── patch DATAFULL: the job data checklist, the report and the 7 AM alert ─────────────────────────────────────────
+   gc_kv "gc_datafull_report" (JSON text, a one-item list): the last check — totals, the top missing items, each job that
+   needs something (most missing first: pid, name, PO, PM, stage, score, the missing keys) and the leads; plus
+   alert: { ymd, at, text, to } once the morning alert went out (the CRM shows it once to the admins and the office).
+   gc_kv "gc_datafull_prefs" (JSON text list): [{ email, mail, push, app }] — each person's own choice for the
+   morning alert (no row = all on). Written by the person on the 🧾 Missing job data board.
+   THE MORNING ALERT — about 7 AM Central, Monday to Saturday (data-check.js runs at 12:05 and 13:05 UTC; the run that
+   is 7–9 AM in Memphis, daylight saving or not, sends): ONE e-mail + phone push to each admin and the office,
+   "🧾 Job data check: 12 jobs need info", the top items and a link (#datafull). Staff only. Never in data-entry mode
+   (nothing at all — not even the staff e-mail the pause would let through). Never texts. Claimed once per day
+   (gc_autowins_log "datafull:<day>"), so two runs can never send it twice. */
+const JD = require('./jobdata.js');
+const JOB_KEYS = ['customers', 'projects', 'leads', 'gc_deleted_projects', 'projectDocs', 'schedule', 'invs', 'invoices', 'estimates', 'gc_est_sent', 'gc_claims', 'gc_photo_ai'];
+const REPORT = 'gc_datafull_report', PREFS = 'gc_datafull_prefs';
+function sbUrl(){ return s(process.env.SUPABASE_URL || 'https://ieeonhpfahmwwecizdut.supabase.co').replace(/\/$/, ''); }
+function svcKey(){ return s(process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY); }
+/* the per-document rows (gc_kv "doc:<id>") — only the fields the rule reads, never the file itself */
+async function docRows(){
+  const k = svcKey(); if (!k) return [];
+  try {
+    const r = await fetch(sbUrl() + '/rest/v1/gc_kv?select=key,id:value->>id,pid:value->>pid,projectId:value->>projectId,cat:value->>cat,name:value->>name,type:value->>type,ref:value->>ref,deleted:value->>deleted&key=like.doc:*', { headers: { apikey: k, Authorization: 'Bearer ' + k } });
+    if (!r.ok) return [];
+    const rows = await r.json();
+    return (Array.isArray(rows) ? rows : []).map(function(x){ return { id: s(x.id) || s(x.key).replace(/^doc:/, ''), pid: s(x.pid), projectId: s(x.projectId), cat: s(x.cat), name: s(x.name), type: s(x.type), ref: s(x.ref), deleted: x.deleted === 'true' }; });
+  } catch (e) { return []; }
+}
+/* what is kept: no values, only which items are missing */
+function compact(full){
+  return { version: full.version, at: full.at, checked: full.checked, complete: full.complete, needInfo: full.needInfo, byStage: full.byStage, top: full.top,
+    jobs: full.jobs.slice(0, 400).map(function(j){ return { pid: j.pid, name: j.name, po: j.po, pm: j.pm, stage: j.stage, score: j.score, need: j.need.map(function(m){ return m.key; }) }; }),
+    leads: full.leads.slice(0, 200).map(function(l){ return { id: l.id, name: l.name, score: l.score, need: l.need.map(function(m){ return m.key; }) }; }) };
+}
+async function saveReport(core, full, alert){
+  const rep = Object.assign({ id: 'latest' }, compact(full));
+  return core.kvListUpdate(REPORT, function(l){
+    const prev = l.find(function(x){ return x && x.id === 'latest'; }) || {};
+    rep.alert = alert || prev.alert || null;
+    return { list: [rep], check: function(l2){ return l2.some(function(x){ return x && x.at === rep.at && (!alert || (x.alert && x.alert.at === alert.at)); }); } };
+  });
+}
+function alertText(full){ return '🧾 Job data check: ' + full.needInfo + ' job' + (full.needInfo === 1 ? '' : 's') + ' need' + (full.needInfo === 1 ? 's' : '') + ' info'; }
+function alertHtml(full, base){
+  const A = require('./auto-common.js'), esc = A.esc, link = base + '/#datafull';
+  const items = full.top.slice(0, 6).map(function(t){ return '<li style="margin:3px 0"><b>' + esc(t.label) + '</b> — ' + t.count + ' job' + (t.count === 1 ? '' : 's') + '</li>'; }).join('');
+  const jobs = full.jobs.slice(0, 10).map(function(j){ return '<li style="margin:3px 0"><a href="' + esc(base + '/#datafull=' + encodeURIComponent(j.pid)) + '" style="color:#0F1D2F;font-weight:bold">' + esc(A.clip((j.po ? j.po + ' · ' : '') + (j.name || 'Job'), 90)) + '</a> <span style="color:#55626F">— ' + j.score + '% · ' + esc(j.need.slice(0, 4).map(function(m){ return m.label; }).join(', ')) + (j.need.length > 4 ? ' +' + (j.need.length - 4) + ' more' : '') + (j.pm ? ' · PM ' + esc(j.pm) : '') + '</span></li>'; }).join('');
+  return A.shell(alertText(full),
+    '<p style="font-size:15px;margin:0 0 10px"><b>' + full.needInfo + ' of ' + full.checked + ' jobs</b> are missing something their stage needs (' + full.complete + ' complete). Bidding jobs only need a name and an address.</p>' +
+    (items ? '<p style="margin:10px 0 4px"><b>Most missing</b></p><ul style="padding-left:18px;margin:0">' + items + '</ul>' : '') +
+    (jobs ? '<p style="margin:12px 0 4px"><b>Most missing first</b></p><ul style="padding-left:18px;margin:0">' + jobs + '</ul>' : '') +
+    (full.leads.length ? '<p style="font-size:13px;color:#55626F">📥 ' + full.leads.length + ' open lead' + (full.leads.length === 1 ? '' : 's') + ' missing who it is assigned to, the source or the next step.</p>' : '') +
+    '<p><a href="' + esc(link) + '" style="display:inline-block;background:#0F1D2F;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;font-weight:bold">Open 🧾 Missing job data</a></p>' +
+    '<p style="font-size:12px;color:#55626F">Nothing was changed or filled in. An item that does not apply to a job can be marked “N/A for this job” on the board. Turn this e-mail or the phone push off on the board (🔔 My morning alert).</p>');
+}
+async function prefsOf(core){
+  try { const r = await core.kvListRead(PREFS); const o = {}; (r ? r.list : []).forEach(function(x){ if (x && x.email) o[low(x.email)] = x; }); return o; } catch (e) { return {}; }
+}
+/* the morning alert (core = portal.js _core). opts: { now, force (ignore the clock — the marker still holds) } */
+async function morning(core, opts){
+  opts = opts || {};
+  const A = require('./auto-common.js'), now = opts.now != null ? opts.now : Date.now(), c = A.central(now);
+  if (String(process.env.DATACHECK_OFF || '') === '1') return { off: true };
+  if (!opts.force && (c.hour < 7 || c.hour >= 10)) return { skipped: 'not 7–9 AM Central (' + c.hour + ':00)' };
+  if (!opts.force && c.wd === 'Sun') return { skipped: 'Sunday' };
+  if (await A.paused()) return { skipped: 'data-entry mode' };
+  const data = await core.kvRead(JOB_KEYS);
+  data.docs = await docRows();
+  const full = JD.checkAll(data, { now: now });
+  if (!full.needInfo) { await saveReport(core, full, null); return { ok: true, needInfo: 0, sent: 0, skipped: 'every job has what its stage needs' }; }
+  if (!(await A.once('datafull:' + c.ymd))) return { skipped: 'done already', needInfo: full.needInfo };
+  let users = {}; try { users = await core.crmData(true); } catch (e) { users = data; }
+  const to = core.adminEmails(users).concat(core.officeEmails(users)).map(low).filter(A.staffEmail).filter(function(e, i, a){ return a.indexOf(e) === i; });
+  const prefs = await prefsOf(core), base = A.crmBase(), text = alertText(full), html = alertHtml(full, base);
+  const rep = { ok: true, needInfo: full.needInfo, to: to, mailed: 0, pushed: 0, off: [] };
+  for (const email of to) {
+    const pf = prefs[email] || {};
+    if (pf.mail === false) rep.off.push(email + ':mail'); else { const m = await A.staffMail(email, text + ' — GrayCo CRM', html); if (m.ok) rep.mailed++; }
+    if (pf.push === false) rep.off.push(email + ':push'); else { try { const p = await core.pushTo([email], { title: text, body: full.top.slice(0, 3).map(function(t){ return t.label + ' (' + t.count + ')'; }).join(' · '), tag: 'gc-datafull' }); rep.pushed += (p && p.sent) || 0; } catch (e) {} }
+  }
+  const alert = { ymd: c.ymd, at: new Date(now).toISOString(), text: text, top: full.top.slice(0, 3).map(function(t){ return t.label; }), to: to.filter(function(e){ return (prefs[e] || {}).app !== false; }) };
+  await saveReport(core, full, alert);
+  return rep;
+}
+
+module.exports = { ID, analyze, todoFor, sigOf, run, contractAmount, hasSigned, morning, alertText, alertHtml, compact, JOB_KEYS, REPORT, PREFS };
