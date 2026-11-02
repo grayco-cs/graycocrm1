@@ -118,7 +118,7 @@ var ROWS = [
   ['w9_requests', 'sub', 'C', 0, 0, 'server', 'W-9 requests', 'W-9 requests put on ✅ Approvals.'],
   /* ── record changes (C) ── */
   ['price_index_monthly', 'rec', 'C', 0, 0, 'server', 'Monthly price update (PPI)', 'On the 3rd, moves every Products price by the national Producer Price Index change.'],
-  ['companycam_new_jobs', 'rec', 'C', 0, 0, 'server', 'CompanyCam "make new jobs"', 'A new 2026+ CompanyCam project becomes a Bidding job with its PM. This is how PM jobs arrive from CompanyCam — while it is OFF, new projects wait on the review list.'],
+  ['companycam_new_jobs', 'rec', 'C', 0, 0, 'both', 'CompanyCam "make new jobs"', 'A new 2026+ CompanyCam project becomes a Bidding job with its PM. This is how PM jobs arrive from CompanyCam — while it is OFF, new projects wait on the review list.'],
   ['approval_escalation', 'rec', 'C', 0, 0, 'server', 'Approval escalation', 'An admin-step approval waiting 24 h becomes approvable by the office.'],
   ['lead_auto_assign', 'rec', 'C', 0, 0, 'both', '5 PM lead auto-assign', 'A held lead is assigned to the suggested person at 5 PM. OFF: it stays "Suggested" until an admin acts.'],
   ['bid_watch', 'rec', 'C', 0, 0, 'server', 'Public bid watch', 'Reads public bid listings; makes CRM leads and draft bid-portal jobs.'],
@@ -136,8 +136,7 @@ var ROWS = [
   ['commission_sweep', 'rec', 'C', 0, 0, 'page', 'Commission sweep', 'A fully collected job gets its commission worked out and a check queued on the pay run.'],
   ['mailed_invoice_booking', 'rec', 'C', 0, 0, 'page', 'E-mailed invoice auto-booking', 'E-mailed sub invoices, supplier bills, receipts and QuickBooks copies are booked by themselves. OFF: they wait in 📥 Needs a job / review.'],
   ['dup_invoice_delete', 'rec', 'C', 0, 0, 'page', 'Duplicate sub invoice / $0 row delete', 'Deletes duplicate sub invoices and $0 rows. OFF: they are only flagged.'],
-  ['ms_tax_add', 'rec', 'C', 0, 0, 'page', 'Mississippi tax auto-add', 'Adds 3.5 % MS contractor’s tax to Mississippi estimates.'],
-  ['companycam_page_jobs', 'rec', 'C', 0, 0, 'page', 'CompanyCam jobs (page copy)', 'The page’s copy of "make new jobs" from CompanyCam projects.']
+  ['ms_tax_add', 'rec', 'C', 0, 0, 'page', 'Mississippi tax auto-add', 'Adds 3.5 % MS contractor’s tax to Mississippi estimates.']
 ];
 var LIST = ROWS.map(function(r){ return { key: r[0], group: r[1], effect: r[2], critical: !!r[3], defaultOn: !!r[4], where: r[5], name: r[6], desc: r[7], fixed: !!r[8] }; });
 var BY = {}; LIST.forEach(function(a){ BY[a.key] = a; });

@@ -1817,7 +1817,7 @@ async function approvalAction(body, who){
   const op = s(body.op), id = s(body.id);
   const admin = require('./_lib/staff-role.js').isAdmin(who);   /* patch AUTHFIX */
   let myName = s(who.name);
-  if (op === 'escalate') { const e = await escalateDue({}); return { status: e.ok ? 200 : 502, out: e }; }   /* patch AP4: the page asks when a list is shown */
+  if (op === 'escalate') { const AUTO = require('./_lib/automations.js'); if (!(await AUTO.isOn('approval_escalation'))) return { status: 200, out: Object.assign({ ok: true, escalated: 0 }, await AUTO.held('approval_escalation', null, [])) }; const e = await escalateDue({}); return { status: e.ok ? 200 : 502, out: e }; }   /* patch AUTOPANEL */   /* patch AP4: the page asks when a list is shown */
   const cur = await kvListRead(AQ_KEY);
   if (!cur) return { status: 502, out: { ok: false, error: 'Could not read the approvals list.' } };
   if (op === 'list') return { status: 200, out: { ok: true, items: cur.list } };

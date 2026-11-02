@@ -88,6 +88,8 @@ global.fetch = async function(url, init){
   throw new Error('unexpected ' + u);
 };
 const CP = require(path.join(FN, '_lib/cc-photos.js'));
+/* patch AUTOPANEL: this test checks CompanyCam "make new jobs" — switched ON here (⚙ Admin → ⚡ Automations, "Turn on everything I had before") */
+{ const AUTO = require(path.join(FN, '_lib/automations.js')); const on = AUTO.before(); AUTO._t.setStore({ get: async k => k === AUTO.KEY ? on : null, put: async () => true }); }
 function rowOf(pid){ return KV['ccidx:' + pid]; }
 function idsOf(pid){ return CP.unpackRow(rowOf(pid)).map(x => x.id); }
 const uniq = l => new Set(l).size === l.length;

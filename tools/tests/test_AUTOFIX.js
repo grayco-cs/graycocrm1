@@ -28,6 +28,8 @@ const ISO = s => Date.parse(s);
   /* patch OFFICEFIX: the schedule moved to referral-scheduled.js (a scheduled function cannot be called by its URL in
      production, so referral.js — the CRM's door — has no schedule and no "scheduled" door by URL any more) */
   const REFS = require(path.join(FN, 'referral-scheduled.js'));
+  /* patch AUTOPANEL: the referral credit run is an ⚡ Automations switch (OFF by default) — switched ON for this check */
+  { const AUTO = require(path.join(FN, '_lib/automations.js')); const on = AUTO.before(); AUTO._t.setStore({ get: async k => k === AUTO.KEY ? on : null, put: async () => true }); }
   await t('the scheduled run (referral-scheduled.js, Netlify POST { next_run }) runs the sweep', async () => {
     const r = await REFS.handler({ httpMethod: 'POST', headers: {}, body: JSON.stringify({ next_run: '2026-10-28T15:37:00.000Z' }) });
     assert.strictEqual(r.statusCode, 200); assert.strictEqual(swept, 1);

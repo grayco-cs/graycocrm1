@@ -124,12 +124,15 @@ exports.handler = async function(event){
   const now = new Date().toISOString();
   /* the page's own held / ran records (any staff; counts only, never a switch) */
   if (body.op === 'held' || body.op === 'ran') {
-    if (!AUTO.BY[s(body.key)]) return J(400, { error: 'Unknown automation.' });
+    /* one { key, n, sample } or a batch: items [{ key, n, sample }] (held) / keys [key] (ran) */
+    const items = body.op === 'held' ? (Array.isArray(body.items) ? body.items : [{ key: body.key, n: body.n, sample: body.sample }]) : (Array.isArray(body.keys) ? body.keys : [body.key]).map(function(k){ return { key: k }; });
+    const ok = items.filter(function(x){ return x && AUTO.BY[s(x.key)]; }).slice(0, 100);
+    if (!ok.length) return J(400, { error: 'Unknown automation.' });
     try {
-      const cur = await kvGet(AUTO.HELD_KEY);
-      const next = body.op === 'held' ? AUTO.heldMerge(cur, s(body.key), body.n == null ? null : +body.n || 0, Array.isArray(body.sample) ? body.sample : [], now) : AUTO.ranMerge(cur, s(body.key), now);
+      let next = await kvGet(AUTO.HELD_KEY);
+      ok.forEach(function(x){ next = body.op === 'held' ? AUTO.heldMerge(next, s(x.key), x.n == null ? null : +x.n || 0, Array.isArray(x.sample) ? x.sample : [], now) : AUTO.ranMerge(next, s(x.key), now); });
       await kvPut(AUTO.HELD_KEY, next);
-      return J(200, { ok: true });
+      return J(200, { ok: true, n: ok.length });
     } catch (e) { return J(502, { error: 'Could not record it: ' + s(e && e.message) }); }
   }
   if (!require('./_lib/staff-role.js').isAdmin(who)) return J(403, { error: 'Only an admin can switch automations on or off.' });

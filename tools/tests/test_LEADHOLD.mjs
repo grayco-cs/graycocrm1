@@ -138,6 +138,10 @@ NOW = CT('2026-10-28T21:55:00Z');   /* 4:55 PM: nothing yet */
 let out = await BA.run();
 ok(out.holds && !out.holds.error && out.holds.assigned.length === 0 && !it('LI-roof').pm, 'the 10-minute run at 4:55 PM: nothing assigned yet', out.holds);
 ok(it('LI-appr').hold.state === 'approved' && it('LI-re').hold.state === 'manual' && it('LI-re').pm === 'Pat PM', 'the admin’s approve / reassign in the CRM ends the server hold (the reassigned one goes to Pat PM, not the suggestion)', { a: it('LI-appr').hold.state, r: it('LI-re').hold.state, pm: it('LI-re').pm });
+/* patch AUTOPANEL: "5 PM lead auto-assign" is an ⚡ Automations switch, OFF by default — then nothing is assigned */
+{ const AUTO = require(F('_lib/automations.js')); AUTO._t.reset(); NOW = CT('2026-10-28T22:05:00Z');
+  const o0 = await BA.run(); ok(!it('LI-roof').pm && it('LI-roof').hold.state === 'held' && o0.holds && o0.holds.held && o0.holds.held.held === 'lead_auto_assign', '⚡ 5 PM lead auto-assign OFF (the default): at 5:05 PM nothing is assigned, it stays "Suggested", held', o0.holds);
+  put('gc_kv', 'gc_automations', AUTO.before()); AUTO._t.reset(); }   /* switched ON ("Turn on everything I had before") for the checks below */
 MAIL.length = 0; NOW = CT('2026-10-28T22:05:00Z');   /* 5:05 PM */
 out = await BA.run();
 x = it('LI-roof');
