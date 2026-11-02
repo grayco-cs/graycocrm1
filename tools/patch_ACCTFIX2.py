@@ -124,6 +124,16 @@ D6n = ("      (card ? importCard(pick, dups) : importBank(pick, dups).then(funct
        "        q('prev').innerHTML = out;\n")
 PARTS.append(('/* patch ACCTFIX2-D5:', [(D5, D5n), (D6, D6n)]))
 
+# ── E. the 📥 Expense inbox redraws after every import. Cause: the two "what he is typing in" guards (NOTHING REDRAWS THE
+#    SCREEN EXCEPT YOU, WHAT HE IS TYPING IN CANNOT BE TORN DOWN) count ANY <input> as typing — a FILE input too — so picking a
+#    file held the inbox card for 90 s and its own redraw (the "rows added / duplicates" line, the new rows) was refused.
+#    A file pick / a button-like input is not typing; and the inbox's redraw after the import is the person's own action. ──
+E1 = "  try{ return !!el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName||'') || el.isContentEditable===true); }\n"
+E1n = "  try{ return !!el && ((/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName||'') && !(el.tagName==='INPUT' && /^(file|button|submit|reset|image)$/i.test(el.type||''))) || el.isContentEditable===true); }   /* patch ACCTFIX2-E1: a file pick is not typing */\n"
+E2 = "      render();\n    }, function(e){ msg = '⚠ Could not read that file: ' + s(e && e.message || e); render(); });\n"
+E2n = "      W.__GC_MANUAL_SAVE__ = true; try { render(); } finally { W.__GC_MANUAL_SAVE__ = false; }   /* patch ACCTFIX2-E1: her own import — always redrawn */\n    }, function(e){ msg = '⚠ Could not read that file: ' + s(e && e.message || e); W.__GC_MANUAL_SAVE__ = true; try { render(); } finally { W.__GC_MANUAL_SAVE__ = false; } });\n"
+PARTS.append(('/* patch ACCTFIX2-E1:', [(E1, E1n, 2), (E2, E2n)]))
+
 done = 0
 for mark, edits in PARTS:
     if mark in src:

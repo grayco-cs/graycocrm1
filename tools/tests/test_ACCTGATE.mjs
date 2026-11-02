@@ -46,7 +46,8 @@ fs.writeFileSync(FX + '/qb_exp_vendor_summary.csv', QB.expensesByVendorSummary()
 fs.writeFileSync(FX + '/qb_exp_vendor_detail.csv', QB.expensesByVendorDetail());
 fs.writeFileSync(FX + '/agt_bank.csv', ['Date,Description,Withdrawals,Deposits,Balance',
   '10/20/2026,"DEPOSIT - AGT HOLLIS INV 1043",,"5,000.00","17,425.00"',
-  '10/21/2026,"CHECK 1209",310.00,,"17,115.00"'].join('\n'));
+  '10/21/2026,"CHECK 1209",310.00,,"17,115.00"',
+  '10/22/2026,"MOBILE DEPOSIT",,"1,200.00","18,315.00"'].join('\n'));
 
 const rows = JSON.parse(fs.readFileSync(MIRROR, 'utf8'));
 const iso = t => new Date(t).toISOString(), NOW = Date.now(), HOURAGO = iso(NOW - 3600e3);
@@ -56,13 +57,15 @@ function loadCloud(){
   const rd = k => { const r = cloud.get(k); let v = r && r.value; let str = false; if (typeof v === 'string') { try { v = JSON.parse(v); str = true; } catch (e) {} } return { v, str }; };
   const edit = (k, fn) => { const o = rd(k); const nv = fn(Array.isArray(o.v) ? o.v : (o.v && typeof o.v === 'object' ? o.v : [])); cloud.set(k, { key: k, value: o.str ? JSON.stringify(nv) : nv, updated_at: HOURAGO }); };
   edit('projects', l => l.concat([
-    { id: A, name: 'Agt Hollis Reroof', address: '4471 Quarry Bend Dr, Bartlett, TN 38133', autoPO: 'A101', client: 'Agt Hollis', pm: 'Steven Biffle', status: 'Active', contract: 24000, type: 'Residential', created: '2026-09-01', savedAt: HOURAGO, updatedAt: HOURAGO },
+    { id: A, name: 'Agt Hollis Reroof', address: '4471 Quarry Bend Dr, Bartlett, TN 38133', autoPO: 'A101', client: 'Agt Hollis', clientEmail: 'agt.hollis@example.invalid', pm: 'Steven Biffle', status: 'Active', contract: 24000, type: 'Residential', created: '2026-09-01', savedAt: HOURAGO, updatedAt: HOURAGO },
     { id: BJ, name: 'Agt Brentley Gutters & Trim', address: '1880 Wren Hollow Rd, Germantown, TN 38138', autoPO: 'Q902', client: 'Agt Brentley', pm: '', status: 'Active', contract: 18000, type: 'Residential', created: '2026-09-10', savedAt: HOURAGO, updatedAt: HOURAGO }]));
   edit('subs', l => l.concat([
     { id: 'SUBagtR', name: 'Agt Ridgeline Roofing LLC', email: 'ap@agt-ridgeline.test', isSub: true, w9: false, insExp: '', wcExp: '', cat: 'Roofing', savedAt: HOURAGO, updatedAt: HOURAGO },
     { id: 'SUBagtD', name: 'Agt Delta Gutter Co', email: 'office@agt-delta.test', isSub: true, w9: true, insExp: '2027-06-30', wcExp: '2027-06-30', agreement: true, subAgreement: true, cat: 'Gutters', savedAt: HOURAGO, updatedAt: HOURAGO }]));
   edit('invs', l => l.concat([
     { id: 'INVagt1', type: 'client', pid: A, client: 'Agt Hollis', amt: 5000, invNum: '1043', status: 'sent', date: '2026-10-01', sentDate: '2026-10-01', dueDate: '2026-10-16', desc: 'Agt progress draw', savedAt: HOURAGO, updatedAt: HOURAGO },
+    { id: 'INVagt2', type: 'client', pid: A, client: 'Agt Hollis', amt: 2750, invNum: '1044', status: 'sent', date: '2026-09-10', sentDate: '2026-09-10', dueDate: '2026-09-25', desc: 'INTERNAL margin note — not for the customer', savedAt: HOURAGO, updatedAt: HOURAGO },
+    { id: 'INVagt3', type: 'client', pid: A, client: 'Agt Hollis', amt: 1200, invNum: '1045', status: 'sent', date: '2026-10-20', sentDate: '2026-10-20', dueDate: '2026-11-19', desc: 'Agt final draw', savedAt: HOURAGO, updatedAt: HOURAGO },
     { id: 'INVagtS1', type: 'sub', pid: BJ, sub: 'Agt Delta Gutter Co', subId: 'SUBagtD', invNum: 'DG-5520', amt: 1850, status: 'received', recvDate: '2026-10-25', date: '2026-10-25', desc: 'Gutters phase 1', savedAt: HOURAGO, updatedAt: HOURAGO }]));
   const exp = (id, pid, vendor, amt, desc) => ({ id, pid, type: 'expense', vendor, payee: vendor, desc, amt, category: 'Materials', status: 'pending', date: '2026-10-29', by: 'Steven Biffle', enteredAt: HOURAGO, savedAt: HOURAGO, updatedAt: HOURAGO });
   edit('expenses', l => l.concat([exp('EXPagt1', BJ, 'Agt Supply House', 321, 'trim coil'), exp('EXPagt2', BJ, 'Agt Supply House', 77.5, 'wrong order (deny with reason)'), exp('EXPagt3', BJ, 'Agt Snack Bar', 18.25, 'lunch (deny)'), exp('EXPagtA1', A, 'Agt Supply House', 444, 'ridge vent')]));
@@ -165,7 +168,7 @@ const O = await person(OFFICE, 'office');
 const ev = mk(O);
 await step(O, 'perm', 'Office signs in: full office access, every money screen allowed', async ev => {
   const r = await ev(() => ({ full: window._gcFullAccess && window._gcFullAccess(), office: window._gcIsOfficeFull && window._gcIsOfficeFull(), notAllowed: ['payroll', 'pnl', 'invoices', 'payments', 'expenses', 'approvals', 'officemanager', 'todo'].filter(v => window._gcViewAllowed && !window._gcViewAllowed(v)), money: window.__money(), jobs: (window._crm.projects || []).filter(p => /^PRJagt/.test(p.id)).length, invs: (window._crm.invoices || []).filter(i => /^INVagt/.test(i.id)).length }));
-  return { ok: r.full && r.office && !r.notAllowed.length && r.jobs === 2 && r.invs === 2, note: JSON.stringify(r).slice(0, 400), data: r };
+  return { ok: r.full && r.office && !r.notAllowed.length && r.jobs === 2 && r.invs === 4, note: JSON.stringify(r).slice(0, 400), data: r };
 });
 
 /* ─────────── 1. QuickBooks CSV ─────────── */
@@ -210,17 +213,17 @@ if (want('qb')) {
   if (!RESULTS[RESULTS.length - 1].ok) { fails++; RESULTS[RESULTS.length - 1].note += ' — WRONG: ' + rowsT.length + ' rows / ' + money$(sumT) + ' (right: 5 rows / $4,069.49: every cost once, the −212.00 return skipped). Rows: ' + rowsT.map(x => x.vendor + ' ' + x.amount + ' [' + x.account + ']').join('; '); console.log('FAIL ↑ ' + RESULTS[RESULTS.length - 1].note); }
   else console.log('     ↑ 5 rows, $4,069.49 — every cost once');
   const t2 = await inboxImport('qb_tdba.csv');
-  const ok2 = t2.data.added === 0;
+  const ok2 = t2.data.added === 0 && /0 rows added, 5 duplicates skipped/.test(t2.note) && /\(5 waiting\)/.test(t2.note);   /* the window redraws (ACCTFIX2-E1) */
   if (!ok2) { fails++; RESULTS[RESULTS.length - 1].ok = false; } RESULTS[RESULTS.length - 1].name += ' (again: duplicates skipped)';
   console.log((ok2 ? '     ↑ ' : 'FAIL ↑ ') + 're-import: ' + t2.data.added + ' added · ' + t2.note);
   const t3 = await inboxImport('qb_pnl_detail.csv');
-  const ok3 = t3.data.added === 2; if (!ok3) { fails++; RESULTS[RESULTS.length - 1].ok = false; }
+  const ok3 = t3.data.added === 2 && /✅ 2 rows added/.test(t3.note) && /\(7 waiting\)/.test(t3.note); if (!ok3) { fails++; RESULTS[RESULTS.length - 1].ok = false; }
   console.log((ok3 ? '     ↑ ' : 'FAIL ↑ ') + 'P&L Detail: ' + t3.data.added + ' new (right: 2 — print shop, landfill; the invoice and the rest are skipped)');
   const t4 = await inboxImport('qb_exp_vendor_summary.csv');
   console.log('     ↑ Expenses by Vendor SUMMARY (QuickBooks Online\'s own report): ' + t4.data.added + ' added · "' + t4.note + '"');
-  RESULTS[RESULTS.length - 1].ok = t4.data.added === 0; if (!RESULTS[RESULTS.length - 1].ok) fails++;
+  RESULTS[RESULTS.length - 1].ok = t4.data.added === 0 && /No "Date"/.test(t4.note); if (!RESULTS[RESULTS.length - 1].ok) fails++;
   const t5 = await inboxImport('qb_exp_vendor_detail.csv');
-  const ok5 = t5.data.added === 1; if (!ok5) { fails++; RESULTS[RESULTS.length - 1].ok = false; }
+  const ok5 = t5.data.added === 1 && /✅ 1 row added/.test(t5.note) && /\(8 waiting\)/.test(t5.note); if (!ok5) { fails++; RESULTS[RESULTS.length - 1].ok = false; }
   console.log((ok5 ? '     ↑ ' : 'FAIL ↑ ') + 'Expenses by Vendor DETAIL: ' + t5.data.added + ' new (right: 1 — Agt Rental Co $310.00)');
   await step(O, 'qb', '⚙️ Automation Inbox → QuickBooks CSV (GC_AUTO.uploadQuickBooksCSV) with Transaction Detail by Account (its 5 costs are already in 📥)', async ev => {
     const r = await ev(async ([b64s]) => {
@@ -310,13 +313,29 @@ if (want('stmt')) {
     await stOpen(O, 'import'); await stLoad(O, FX + '/capone_card.pdf'); const T2 = await stTable(ev); const n0 = await ev(() => window._crm.expenses.length); await stGo(O); await stClose(O); const n1 = await ev(() => window._crm.expenses.length);
     return { ok: T1.r.length > 0 && T2.r.length === T1.r.length && T2.r.every(x => x.dup) && n1 === n0, note: 'CSV ' + T1.r.length + ' lines (' + d1.slice(0, 60) + '); PDF ' + T2.r.filter(x => x.dup).length + '/' + T2.r.length + ' already in; added ' + (n1 - n0) };
   });
-  await step(O, 'stmt', '🏦 bank CSV with a customer deposit → shown as money in; matched to the open invoice #1043 ($5,000)?', async ev => {
+  await step(O, 'stmt', '🏦 bank CSV with deposits → $5,000 "AGT HOLLIS INV 1043" is a CERTAIN match (💵 Payment matches); "MOBILE DEPOSIT" $1,200 is listed, not applied', async ev => {
     await stOpen(O, 'bank'); await stLoad(O, FX + '/agt_bank.csv'); const T = await stTable(ev);
     const recon = await ev(async () => { const b = document.querySelector('.gc-money-imp [data-c="recon"]'); if (!b) return 'no 🧾 button'; b.click(); await new Promise(z => setTimeout(z, 2500)); return ((document.querySelector('.gc-money-imp [data-c="reconmsg"]') || {}).textContent || '').slice(0, 200); });
-    await stGo(O); await stClose(O);
-    const m = await ev(async () => { let pm = null; try { pm = window._gcAUTAI && window._gcAUTAI.payMatches ? await window._gcAUTAI.payMatches() : 'no _gcAUTAI.payMatches'; } catch (e) { pm = 'threw ' + e.message; } const inv = window._crm.invoices.find(i => i.id === 'INVagt1') || {}; return { pm: JSON.stringify(pm).slice(0, 300), status: inv.status, pmHit: /INVagt1|1043/.test(JSON.stringify(pm || '')) }; });
-    return { ok: T.x.some(x => /AGT HOLLIS/i.test(x)) && m.pmHit, note: 'deposit listed: ' + T.x.some(x => /AGT HOLLIS/i.test(x)) + ' · Monthly Bank Check: ' + recon + ' · 💵 Payment matches: ' + m.pm + ' · invoice #1043 still ' + m.status, data: { T, recon, m } };
+    await stGo(O); await sleep(2500);
+    const r = await ev(() => { const box = document.querySelector('.gc-money-imp [data-c="depmatch"]'); const ld = window._gcMoney && window._gcMoney.lastDeposits; return { panel: box ? box.innerText.replace(/\s+/g, ' ').slice(0, 400) : '', certain: ld ? ld.certain.map(x => x.invId + ' ' + x.amt) : null, unsure: ld ? ld.unsure.map(u => u.dep.amount + ' ' + u.why) : null, added: ld && ld.added,
+      pm: ((window._gcAUTAI && window._gcAUTAI.payMatches ? window._gcAUTAI.payMatches() : []) || []).filter(m => m.status === 'new').map(m => m.invId + ' ' + m.amt), i1: (window._crm.invoices.find(i => i.id === 'INVagt1') || {}).status, i3: (window._crm.invoices.find(i => i.id === 'INVagt3') || {}).status }; });
+    await stClose(O);
+    return { ok: T.x.some(x => /AGT HOLLIS/i.test(x)) && !!r.certain && r.certain.length === 1 && /^INVagt1 5000$/.test(r.certain[0]) && r.unsure.length === 1 && /amount only/.test(r.unsure[0]) && r.pm.includes('INVagt1 5000') && r.i1 !== 'paid' && r.i3 !== 'paid',
+      note: 'panel: ' + r.panel + ' · 💵 list: ' + JSON.stringify(r.pm) + ' · #1043 ' + r.i1 + ' (not applied until confirmed) · #1045 ' + r.i3 + ' · Monthly Bank Check: ' + recon, data: r };
   });
+  await step(O, 'stmt', '💵 Payment matches → ✅ Confirm the $5,000 deposit → invoice #1043 paid: A/R −$5,000.00, cash +$5,000.00 exactly', async ev => {
+    const r = await ev(async () => {
+      let pill = null; for (let i = 0; i < 20 && !pill; i++) { pill = document.getElementById('_gcPayPill'); if (!pill) await new Promise(z => setTimeout(z, 500)); }
+      if (pill) pill.click(); else if (window._gcAUTAI && window._gcAUTAI.openPayMatches) window._gcAUTAI.openPayMatches(); await new Promise(z => setTimeout(z, 1200));
+      const card = [...document.querySelectorAll('.gcautai-act')].find(c => /1043/.test(c.innerText)); if (!card) return { pill: !!pill, err: 'no 1043 card on 💵 Payment matches' };
+      card.querySelector('._ok').click(); for (let i = 0; i < 20; i++) { await new Promise(z => setTimeout(z, 500)); if ((window._crm.invoices.find(x => x.id === 'INVagt1') || {}).status === 'paid') break; }
+      const res = (card.querySelector('._res') || {}).textContent || ''; document.querySelectorAll('.gcautai-sheet, [class*=gcautai-ov]').forEach(x => { try { x.remove(); } catch (e) {} });
+      const i = window._crm.invoices.find(x => x.id === 'INVagt1') || {}; return { pill: !!pill, res, status: i.status, paidDate: i.paidDate, payments: (i.payments || []).map(p => p.amt + ' ' + p.date + ' ' + p.method) };
+    });
+    return { ok: r.status === 'paid' && r.paidDate === '2026-10-20', note: JSON.stringify(r), data: r };
+  });
+  { const last = RESULTS[RESULTS.length - 1], d = last.money.delta; const okp = near(d.ar, -5000) && near(d.cashIn, 5000);
+    console.log((okp ? '     ↑ ' : 'FAIL ↑ ') + 'A/R ' + money$(d.ar || 0) + ' (right −$5,000.00), cash ' + money$(d.cashIn || 0) + ' (right +$5,000.00)'); if (!okp) { fails += last.ok ? 1 : 0; last.ok = false; last.note += ' · A/R ' + money$(d.ar || 0) + ', cash ' + money$(d.cashIn || 0); } }
 }
 
 /* ─────────── 3. e-mailed receipts / sub invoices ─────────── */
@@ -344,6 +363,8 @@ if (want('mail')) {
     const sumr = k => out[k] && (out[k].route + (out[k].jobId ? ' → ' + out[k].jobId : '') + (out[k].why ? ' (' + String(out[k].why).slice(0, 60) + ')' : ''));
     return { ok: out.receipt.route === 'book' && out.receipt.jobId === A && out.sub.route === 'book' && out.sub.jobId === BJ && out.unknown.route === 'match' && r.exp && r.exp.pid === A && r.sub && r.sub.pid === BJ, note: 'server: receipt ' + sumr('receipt') + ' · sub ' + sumr('sub') + ' · unknown ' + sumr('unknown') + ' | office CRM read ' + r.list + ' e-mail(s): receipt → ' + JSON.stringify(r.exp) + ' · sub invoice → ' + JSON.stringify(r.sub), data: r };
   });
+  { const last = RESULTS[RESULTS.length - 1], d = last.money.delta; const pend = await ev(() => { const a = window._gcCostPending ? window._gcCostPending('PRJagtA') : { rows: [] }, b = window._gcCostPending ? window._gcCostPending('PRJagtB') : { rows: [] }; return { a: a.rows.map(r => r.amt), b: b.rows.map(r => r.amt) }; });
+    const okp = !d.jobA && !d.jobB && pend.a.includes(212.48) && pend.b.includes(1240); console.log((okp ? '     ↑ ' : 'FAIL ↑ ') + 'booked but not approved: job costs moved A ' + money$(d.jobA || 0) + ' / B ' + money$(d.jobB || 0) + ' (right $0.00); ⏳ waiting A ' + JSON.stringify(pend.a) + ' B ' + JSON.stringify(pend.b)); if (!okp) { if (last.ok) fails++; last.ok = false; } }
   await step(O, 'mail', '📋 Approvals: "🧾 Match this invoice" for the unknown sender → pick the job → booked', async ev => {
     const r = await ev(async () => { await window.__go('approvals'); window.__clickText('^\\d+\\s+All$'); await new Promise(z => setTimeout(z, 1500));
       const set = window._gcApprovalSet(); const all = []; Object.keys(set.groups).forEach(g => set.groups[g].forEach(x => all.push({ id: String(x.id), t: String(x.title || '') + ' ' + String(x.sub || x.who || '') })));
@@ -438,7 +459,8 @@ if (want('appr')) {
     return { ok: r === 'ok' && gone && c1 === c0 - 1 && extra.ok, note: k + ': ' + r + ' · card gone ' + gone + ' · count ' + c0 + ' → ' + c1 + (extra.note ? ' · ' + extra.note : ''), allow: extra.allow };
   });
   const expSt = id => ev(id => { const e = window._crm.expenses.find(x => x.id === id) || {}; let a = null; try { a = (JSON.parse(localStorage.getItem('gc_expense_approvals') || '[]') || []).find(x => x.expId === id); } catch (er) {} let t = null; try { t = (JSON.parse(localStorage.getItem('gc_office_tasks') || '[]') || []).filter(x => x && x._deny && String(x._deny.key || '').indexOf(id) >= 0).pop(); } catch (er) {} return { status: e.status, appr: a && a.status, todo: t ? (t.label || '').slice(0, 120) : null, reason: t && t._deny ? t._deny.reason : '' }; }, id);
-  await one('✅ Approve an expense (Agt Supply House $321, job Q902) — "Open the APPROVE panel" → Approve', pick(/EXPagt1/), async k => { const r = await act(k, 'Open the APPROVE panel|^✅|^Approve', 1500); const r2 = await ev(async k => { const row = window.__row(k); const pool = [...(row ? row.querySelectorAll('button') : []), ...document.querySelectorAll('[role=dialog] button, .apx-pop button, .apx-panel button')].filter(__vis); const b = pool.find(b => /approve/i.test(b.innerText) && !/Open the APPROVE panel|Approve & send/i.test(b.innerText)); if (!b) return 'no approve button in the panel: ' + pool.map(b => b.innerText.trim()).slice(0, 12).join('|'); b.click(); await new Promise(z => setTimeout(z, 2000)); const y = [...document.querySelectorAll('button')].filter(__vis).find(b => /^Yes|^Confirm/i.test(b.innerText.trim())); if (y) { y.click(); await new Promise(z => setTimeout(z, 1500)); } return 'ok'; }, k); return r === 'ok' ? r2 : r; }, async () => { const s = await expSt('EXPagt1'); return { ok: /approved|paid|posted/i.test(s.status), note: 'expense ' + JSON.stringify(s) }; });
+  await one('✅ Approve an expense (Agt Supply House $321, job Q902) — "Open the APPROVE panel" → Approve', pick(/EXPagt1/), async k => { const r = await act(k, 'Open the APPROVE panel|^✅|^Approve', 1500); const r2 = await ev(async k => { await new Promise(z => setTimeout(z, 1200)); const near = b => { let e = b; for (let i = 0; i < 6 && e; i++, e = e.parentElement) { const t = e.innerText || ''; if (/Agt Supply House/.test(t) && /321/.test(t)) return true; if (t.length > 600) return false; } return false; }; const pool = [...document.querySelectorAll('button')].filter(__vis).filter(b => !b.closest('.apx-row')); const b = pool.find(b => /approve/i.test(b.innerText) && !/Open the APPROVE panel|Approve & send|Approve all|selected/i.test(b.innerText) && near(b)); if (!b) return 'no approve button in the panel: ' + pool.map(b => b.innerText.trim()).slice(0, 12).join('|'); b.click(); await new Promise(z => setTimeout(z, 2000)); const y = [...document.querySelectorAll('button')].filter(__vis).find(b => /^Yes|^Confirm/i.test(b.innerText.trim())); if (y) { y.click(); await new Promise(z => setTimeout(z, 1500)); } return 'ok'; }, k); return r === 'ok' ? r2 : r; }, async () => { const s = await expSt('EXPagt1'); return { ok: /approved|paid|posted/i.test(s.status), note: 'expense ' + JSON.stringify(s) }; });
+  { const last = RESULTS[RESULTS.length - 1], d = last.money.delta; const okp = near(d.jobB, 321); console.log((okp ? '     ↑ ' : 'FAIL ↑ ') + 'job Q902 cost ' + money$(d.jobB || 0) + ' (right +$321.00 — counted once approved)'); if (!okp) { if (last.ok) fails++; last.ok = false; last.note += ' · job Q902 moved ' + money$(d.jobB || 0); } }
   await one('✅ Approve the sub invoice (Agt Delta $1,850 — papers OK)', pick(/INVagtS1/), k => act(k, '^✅|Approve'), async () => ev(() => { const i = window._crm.invoices.find(x => x.id === 'INVagtS1') || {}; return { ok: /approved|scheduled|paid/i.test(i.status), note: 'sub invoice ' + i.status }; }));
   await one('✕ Deny WITH a reason (expense $77.50, "wrong order — return it")', pick(/EXPagt2/), async k => { const r = await act(k, 'Deny', 800); await ev(k => { const i = document.querySelector('[data-apx-dwhy="' + k.replace(/^[^:]+:/, '') + '"]') || [...document.querySelectorAll('[data-apx-dk] input')].pop(); if (i) window.__setV(i, 'wrong order — return it'); const b = [...document.querySelectorAll('[data-apx-dk] button')].find(b => /Send back/.test(b.innerText)); if (b) b.click(); }, k); await sleep(2500); return r; },
     async () => { await sleep(1500); const s = await expSt('EXPagt2'); return { ok: !!s.todo && /wrong order/.test(s.reason || s.todo), note: 'sent back: ' + JSON.stringify(s) + (/denied|rejected/i.test(s.status + ' ' + s.appr) ? '' : ' — the expense itself stays "' + s.status + '" (still counted: see the money step)') }; });
@@ -453,10 +475,14 @@ if (want('appr')) {
   const asgK = (AP.find(r => r.b.some(b => /Assign/.test(b)) && /Agt Held/.test(r.t)) || AP.find(r => r.b.some(b => /Assign/.test(b))) || {}).k;
   await one('👤 Assign this lead (picker → a person)', asgK, async k => { const r = await act(k, 'Assign', 1200); const p = await ev(() => { const pk = document.getElementById('gcl-asgpick'); if (!pk) return 'no picker'; const names = [...pk.querySelectorAll('button')].filter(__vis).map(b => b.innerText.trim()); const b = [...pk.querySelectorAll('button')].filter(__vis).find(b => /Steven Biffle|Glenn Miller|Nick Thomas/.test(b.innerText)); if (b) b.click(); return names.slice(0, 6).join('|'); }); await sleep(3000); return r === 'ok' ? 'ok' : r + ' / ' + p; },
     async () => { const L = await ev(() => { const l = window._crm.leads.find(x => x.id === 'LAGTHOLD1') || {}; return { pm: l.pm, hold: l.hold && l.hold.state }; }); return { ok: true, note: 'lead ' + JSON.stringify(L) }; });
-  await step(O, 'appr', 'money after approvals: approved costs on the job / P&L, denied ones not', async ev => ev(() => {
-    const ok = id => { const rows = window._gcAcctModel({ range: { from: '', to: '' } }).pnl.rows.job; return rows.some(r => r.id === id); };
-    const r = { approvedExp: ok('EXPagt1'), approvedSub: ok('INVagtS1'), deniedReason: ok('EXPagt2'), denied: ok('EXPagt3'), jobB: window.__money().jobB };
-    return { ok: r.approvedExp && r.approvedSub && !r.deniedReason && !r.denied, note: JSON.stringify(r) };
+  await step(O, 'appr', 'money after approvals: approved costs in job cost / P&L; pending shown apart ("⏳ Waiting"); denied nowhere', async ev => ev(async () => {
+    const inPnl = id => { const rows = window._gcAcctModel({ range: { from: '', to: '' } }).pnl.rows.job; return rows.some(r => r.id === id || (r.src && (r.src.srcInvId === 'SUB_' + id || r.src.subInvId === id || r.src.id === id))); };
+    let sub = false; for (let i = 0; i < 40 && !(sub = inPnl('INVagtS1')); i++) { try { window._gcRefreshSpend && window._gcRefreshSpend(); } catch (e) {} await new Promise(z => setTimeout(z, 1000)); }
+    const pend = window._gcCostPending ? window._gcCostPending() : { rows: [] }, pid = id => pend.rows.some(r => r.id === id);
+    let tile = null; try { const t = window._gcJobMoneyTiles((window._crm.projects || []).find(p => p.id === 'PRJagtA'), { spent: 0, contract: 24000, profit: 0, margin: 0 }, v => '$' + v, { grn: '', red: '' }, true); tile = (t.find(x => /Waiting for approval/.test(x.l)) || {}).v || null; } catch (e) { tile = 'err ' + e.message; }
+    let pl = ''; for (const v of ['pnl', 'accounting']) { if (pl) break; window._setView(v); await new Promise(z => setTimeout(z, 3000)); const w = document.querySelector('[data-acctfix2="waiting"]'); if (w) pl = w.innerText.replace(/\s+/g, ' '); }
+    const r = { approvedExp: inPnl('EXPagt1'), approvedSub: sub, deniedReason: inPnl('EXPagt2'), denied: inPnl('EXPagt3'), pendingA1: inPnl('EXPagtA1'), deniedPending: pid('EXPagt2') || pid('EXPagt3'), waitingA1: pid('EXPagtA1'), tileA: tile, plLine: pl, waitingTotal: pend.total };
+    return { ok: r.approvedExp && r.approvedSub && !r.deniedReason && !r.denied && !r.pendingA1 && !r.deniedPending && r.waitingA1 && /\$/.test(String(tile)) && /Waiting for approval/.test(pl), note: JSON.stringify(r) };
   }), { money: false });
   await step(O2, 'appr', 'the SECOND office computer (no reload): every acted card gone within 60 s, same count', async ev2 => {
     let s = null, left = ACTED; for (let i = 0; i < 30; i++) { s = await ev2(() => window.__apset()); left = ACTED.filter(k => s.ids.includes(k)); if (!left.length) break; await sleep(2000); }
@@ -473,36 +499,49 @@ if (want('appr')) {
 
 /* ─────────── 6. collections / A/R ─────────── */
 if (want('coll')) {
-  await step(O, 'coll', '📬 Collections lists the overdue invoice #1043 ($5,000, Agt Hollis)', async ev => ev(async () => {
-    window._gcOpenCollectionsDesk(); await new Promise(z => setTimeout(z, 2500)); const ov = document.getElementById('gcoff-coll-ov'); const t = ov ? ov.innerText : ''; const has = !!(ov && ov.querySelector('[data-offrem="INVagt1"]')) || /Agt Hollis/.test(t); if (ov) ov.remove();
+  await step(O, 'coll', '📬 Collections lists the overdue invoice #1044 ($2,750, Agt Hollis)', async ev => ev(async () => {
+    window._gcOpenCollectionsDesk(); await new Promise(z => setTimeout(z, 2500)); const ov = document.getElementById('gcoff-coll-ov'); const t = ov ? ov.innerText : ''; const has = !!(ov && ov.querySelector('[data-offrem="INVagt2"]')); if (ov) ov.remove();
     return { ok: has, note: has ? 'listed' : 'not listed (' + t.slice(0, 160) + ')' };
   }), { money: false });
-  await step(O, 'coll', '💵 mark invoice #1043 paid (job → Invoices → Mark Paid) → A/R −$5,000, cash +$5,000', async ev => {
-    O.prompts.push('5000', new Date().toISOString().slice(0, 10), 'Check');
-    const r = await ev(async () => { const pre = window._crm.invoices.find(i => i.id === 'INVagt1').status; try { await window.gcProjInvoices.markPaid('INVagt1'); } catch (e) { return { err: e.message }; } await new Promise(z => setTimeout(z, 3000)); const i = window._crm.invoices.find(i => i.id === 'INVagt1') || {}; return { pre, status: i.status, paidDate: i.paidDate, paid: i.paid }; });
+  await step(O, 'coll', '💵 mark invoice #1044 paid (job → Invoices → Mark Paid) → A/R −$2,750, cash +$2,750', async ev => {
+    O.prompts.push('2750', new Date().toISOString().slice(0, 10), 'Check');
+    const r = await ev(async () => { const pre = window._crm.invoices.find(i => i.id === 'INVagt2').status; try { await window.gcProjInvoices.markPaid('INVagt2'); } catch (e) { return { err: e.message }; } await new Promise(z => setTimeout(z, 3000)); const i = window._crm.invoices.find(i => i.id === 'INVagt2') || {}; return { pre, status: i.status, paidDate: i.paidDate, paid: i.paid }; });
     await sleep(1000);
     return { ok: /paid/i.test(r.status || ''), note: JSON.stringify(r), data: r };
   });
   {
     const last = RESULTS[RESULTS.length - 1], d = last.money.delta;
-    const okp = near(d.ar, -5000) && near(d.cashIn, 5000);
-    console.log((okp ? '     ↑ ' : 'FAIL ↑ ') + 'A/R ' + money$(d.ar || 0) + ' (right −$5,000.00), cash-basis income ' + money$(d.cashIn || 0) + ' (right +$5,000.00)');
+    const okp = near(d.ar, -2750) && near(d.cashIn, 2750);
+    console.log((okp ? '     ↑ ' : 'FAIL ↑ ') + 'A/R ' + money$(d.ar || 0) + ' (right −$2,750.00), cash-basis income ' + money$(d.cashIn || 0) + ' (right +$2,750.00)');
     if (!okp) { fails++; last.ok = false; last.note += ' · A/R moved ' + money$(d.ar || 0) + ', cash ' + money$(d.cashIn || 0); }
   }
 }
 
 /* ─────────── 7. print / PDF statement ─────────── */
 if (want('stmt7')) {
-  await step(O, 'stmt7', '🖨 Print / PDF STATEMENT for a customer (Agt Hollis: every invoice, paid and open)', async ev => ev(async () => {
-    window.__OPENED.length = 0;
-    const fns = Object.keys(window).filter(k => /statement/i.test(k) && /^_gc|^gc/.test(k));
-    await window.__go('customers'); await new Promise(z => setTimeout(z, 1000));
-    const btn = [...document.querySelectorAll('main button, main a')].filter(__vis).find(b => /statement/i.test(b.innerText || b.title || ''));
-    let printed = false; if (btn) { btn.click(); await new Promise(z => setTimeout(z, 2500)); printed = window.__OPENED.length > 0; }
-    await window.__go('invoices'); window.__clickText('^Client Invoices'); await new Promise(z => setTimeout(z, 1200));
-    const pr = [...document.querySelectorAll('main button')].filter(__vis).find(x => x.innerText.trim() === '🖨'); let inv = false; if (pr) { pr.click(); await new Promise(z => setTimeout(z, 2500)); inv = window.__OPENED.length > 0 || !!window.__OPENED_W; }
-    return { ok: !!btn && printed, note: (btn ? 'statement button "' + btn.innerText.trim() + '" printed ' + printed : 'NO customer statement anywhere (Customers screen has no Statement button; window functions: ' + JSON.stringify(fns) + ')') + ' · a single invoice prints with 🖨: ' + inv };
-  }), { money: false });
+  await step(O, 'stmt7', '🧾 Customer statement (Agt Hollis, Jan 1 → today): the doors, invoices / payments / balance / aging exact, no internal notes', async ev => {
+    const r = await ev(async () => {
+      try { if (window._gcPushAll) await window._gcPushAll(); } catch (e) {} await new Promise(z => setTimeout(z, 5000));
+      const out = {};
+      /* the doors: the customer's profile and the job's 🧰 Job tools */
+      try { window._gcOpenCustomerProfile('Agt Hollis'); await new Promise(z => setTimeout(z, 1200)); const ovs = document.querySelectorAll('._gcSheetOv'); const ov = ovs[ovs.length - 1]; out.profileBtn = !!(ov && ov.querySelector('[data-acctstmt]')); if (ov) ov.remove(); } catch (e) { out.profileBtn = 'err ' + e.message; }
+      try { const bar = document.createElement('div'); bar.setAttribute('data-pid', 'PRJagtA'); if (window._gcMkt2Deco) window._gcMkt2Deco(bar); out.jobBtn = !!bar.querySelector('[data-acctstmt-pid]'); } catch (e) { out.jobBtn = 'err ' + e.message; }
+      const ov = window._gcStatement.open({ customer: 'Agt Hollis' }); const j = await ov.__ready;
+      const page = ov.querySelector('[data-st="page"]'), st = ov.__statement || {};
+      out.ok = !!j.ok; out.err = j.error; out.rows = (st.rows || []).map(r => r.kind + ' ' + r.ref.replace(/^.*#/, '#').split(' ')[0] + ' ' + r.date + ' ' + (r.charge || -r.credit) + ' → ' + r.balance);
+      out.balanceDue = st.balanceDue; out.aging = st.aging; out.text = page.innerText.replace(/\s+/g, ' ');
+      out.leak = /INTERNAL|margin note|Agt progress draw|Agt final draw|Supply House|Delta Gutter/.test(out.text);
+      window.__OPENED.length = 0; ov.querySelector('[data-st="print"]').click(); await new Promise(z => setTimeout(z, 800)); out.print = window.__OPENED.length > 0 && /STATEMENT/.test((window.__OPENED_W && window.__OPENED_W.document._h) || '');
+      window.__OPENED.length = 0; ov.querySelector('[data-st="pdf"]').click(); await new Promise(z => setTimeout(z, 3000)); out.pdf = window.__OPENED.length > 0 || /PDF saved/.test(ov.querySelector('[data-st="msg"]').textContent); out.pdfMsg = ov.querySelector('[data-st="msg"]').textContent;
+      ov.querySelector('[data-st="mail"]').click(); for (let i = 0; i < 20 && !/Approvals/.test(ov.querySelector('[data-st="msg"]').textContent); i++) await new Promise(z => setTimeout(z, 500)); out.mail = ov.querySelector('[data-st="msg"]').textContent;
+      ov.remove(); return out;
+    });
+    const q = (() => { const v = cloud.get('gc_approval_queue'); let l = v && v.value; if (typeof l === 'string') l = JSON.parse(l); return (l || []).filter(x => x.kind === 'customer_statement'); })();
+    const AG = r.aging || {}, rowsWant = ['Invoice #1044 2026-09-10 2750 → 2750', 'Invoice #1043 2026-10-01 5000 → 7750', 'Invoice #1045 2026-10-20 1200 → 8950', 'Payment #1043 2026-10-20 -5000 → 3950'];
+    const okRows = rowsWant.every((w, i) => r.rows && r.rows[i] === w) && r.rows.length === 5 && /^Payment #1044 \d{4}-\d\d-\d\d -2750 → 1200$/.test(r.rows[4]);
+    return { ok: r.ok && r.profileBtn === true && r.jobBtn === true && okRows && r.balanceDue === 1200 && AG.current === 1200 && !AG.d30 && !AG.d60 && !AG.d90 && !AG.d90p && !r.leak && r.print && r.pdf && /On ✅ Approvals/.test(r.mail) && q.length === 1 && q[0].to === 'agt.hollis@example.invalid' && q[0].status === 'waiting',
+      note: 'doors: profile ' + r.profileBtn + ', job tools ' + r.jobBtn + ' · rows ' + JSON.stringify(r.rows) + ' · balance due ' + r.balanceDue + ' · aging ' + JSON.stringify(AG) + ' · internal text shown: ' + r.leak + ' · 🖨 ' + r.print + ' · 📄 ' + r.pdf + ' (' + (r.pdfMsg || '') + ') · ✉ ' + r.mail + ' · Approvals items: ' + q.length + (q[0] ? ' to ' + q[0].to + ' (' + q[0].status + ')' : '') + (r.err ? ' · ERR ' + r.err : ''), data: r };
+  }, { money: false });
 }
 
 /* ─────────── 8. permissions: a PM, marketing ─────────── */

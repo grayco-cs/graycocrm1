@@ -96372,7 +96372,7 @@ var inner      = {};
 var entryRoot = null, entryAt = 0;
 
 function isField(el){
-  try{ return !!el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName||'') || el.isContentEditable===true); }
+  try{ return !!el && ((/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName||'') && !(el.tagName==='INPUT' && /^(file|button|submit|reset|image)$/i.test(el.type||''))) || el.isContentEditable===true); }   /* patch ACCTFIX2-E1: a file pick is not typing */
   catch(e){ return false; }
 }
 function rootOf(el){
@@ -100962,7 +100962,7 @@ if(window.__GC_HOLDFORM__) return; window.__GC_HOLDFORM__=true;
 var HOLD_MS=90000;          // if he walks away mid-entry, let go after a minute and a half
 
 function isField(el){
-  try{ return !!el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName||'') || el.isContentEditable===true); }
+  try{ return !!el && ((/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName||'') && !(el.tagName==='INPUT' && /^(file|button|submit|reset|image)$/i.test(el.type||''))) || el.isContentEditable===true); }   /* patch ACCTFIX2-E1: a file pick is not typing */
   catch(e){ return false; }
 }
 
@@ -181967,8 +181967,8 @@ function openInbox(){
       if (p.error) { msg = '⚠ ' + p.error; render(); return; }
       var r = importRows(p.rows);
       msg = '✅ ' + r.added + ' row' + (r.added === 1 ? '' : 's') + ' added' + (r.duplicates ? ', ' + r.duplicates + ' duplicate' + (r.duplicates === 1 ? '' : 's') + ' skipped' : '') + (p.credits ? ', ' + p.credits + ' credit' + (p.credits === 1 ? '' : 's') + ' skipped' : '');
-      render();
-    }, function(e){ msg = '⚠ Could not read that file: ' + s(e && e.message || e); render(); });
+      W.__GC_MANUAL_SAVE__ = true; try { render(); } finally { W.__GC_MANUAL_SAVE__ = false; }   /* patch ACCTFIX2-E1: her own import — always redrawn */
+    }, function(e){ msg = '⚠ Could not read that file: ' + s(e && e.message || e); W.__GC_MANUAL_SAVE__ = true; try { render(); } finally { W.__GC_MANUAL_SAVE__ = false; } });
   });
   render(); pullInbox().then(render);
 }
