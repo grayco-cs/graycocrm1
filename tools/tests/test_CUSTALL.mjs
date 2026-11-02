@@ -48,6 +48,7 @@ try {
   const read = async name => { for (let i = 0; ; i++) { try { return await c.ev(n => new Promise(r => { const set = (n === '_setCustomers' ? window.__gcSetCustomersNow : null) || window[n]; set(prev => { r(JSON.parse(JSON.stringify(prev || []))); return prev; }); }), name); } catch (e) { if (crashed || i > 6 || !/context was destroyed|navigation/i.test(String(e))) throw e; await sleep(4000); await ready(); await sleep(2000); } } };
   const custs = () => read('_setCustomers'), jobs = () => read('_setProjects');
   const n0 = (await custs()).length;
+  if (process.env.CA_DEBUG) console.log('    after load: customers ' + n0 + ', dirty ' + await c.ev(() => localStorage.getItem('grayco_dirty')) + ', cloud seen ' + await c.ev(() => JSON.stringify(window.__gcCloudSeen || null)));
   ok(n0 === 3, 'loading adds nothing by itself (old records wait for the backfill)', n0);
 
   /* 1. a new job (desktop / Field / Activate all save through the job list) */
