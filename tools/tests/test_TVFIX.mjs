@@ -119,6 +119,8 @@ const CONTRAST = () => {
   out.sort((a, b) => a.r - b.r); return { n: out.length, low: out.slice(0, 6) };
 };
 const SL = ['goals', 'board', 'score', 'week'];
+/* ⛳ Golf's course photos are put in by tools/golf_photos.py (Commons, licences checked); with them the look must use them */
+const HAS_GOLF = (() => { try { return JSON.parse(fs.readFileSync(path.join(build, 'img', 'tv', 'golf', 'golf.json'), 'utf8')).length >= 2; } catch (e) { return false; } })();
 let SCREEN_ID = '';
 
 for (const [W, Hh] of [[1366, 768], [1920, 1080]]) {
@@ -174,7 +176,19 @@ for (const [W, Hh] of [[1366, 768], [1920, 1080]]) {
     if (look !== 'blue') await pick(look);
     if (look === 'white') { const w = await A.page().evaluate(() => ({ cls: document.documentElement.className, btn: document.querySelector('#gc-otv [data-tvs-theme]').textContent, ls: localStorage.getItem('gc_otv_theme'), open: !!document.getElementById('gc-otv'), logo: document.querySelector('#gc-otv .hd img').getAttribute('src') }));
       ok(!/gc-otv-dark/.test(w.cls) && w.btn === '🎨 ⚪ White ▾' && w.ls === '"white"' && w.open && /grayco-logo-wide/.test(w.logo), '🎨 → ⚪ White (kept on this computer); the TV stays open', w); }
-    if (look === 'golf') ok(await A.page().evaluate(() => document.documentElement.classList.contains('gc-otv-golf') && /145A3A|20, 90, 58/i.test(getComputedStyle(document.querySelector('#gc-otv .stg')).backgroundImage)), '🎨 → ⛳ Golf: the green golf-course look');
+    if (look === 'golf' && !HAS_GOLF) { await sleep(800);
+      const gp = await A.page().evaluate(() => ({ golf: document.documentElement.classList.contains('gc-otv-golf'), photo: document.documentElement.classList.contains('gc-otv-photo'), stripes: /repeating-linear-gradient/.test(getComputedStyle(document.querySelector('#gc-otv .stg')).backgroundImage) }));
+      console.log('    (no img/tv/golf/golf.json in this build yet — run tools/golf_photos.py; checking the plain green look)');
+      ok(gp.golf && !gp.photo && !gp.stripes, '🎨 → ⛳ Golf with no course photos yet: the plain green look, no stripes', gp); }
+    if (look === 'golf' && HAS_GOLF) { await sleep(2500);
+      const gf = () => A.page().evaluate(() => { const on = document.querySelector('#gc-otv .gc-tvs-bg i.on'), st = getComputedStyle(document.querySelector('#gc-otv .stg'));
+        return { golf: document.documentElement.classList.contains('gc-otv-golf'), photo: document.documentElement.classList.contains('gc-otv-photo'), bg: on ? on.style.backgroundImage : '', cap: (document.querySelector('#gc-otv .gc-tvs-bg .cap') || {}).textContent || '', stripes: /repeating-linear-gradient/.test(st.backgroundImage) }; });
+      const g1 = await gf();
+      ok(g1.golf && g1.photo && /\/img\/tv\/golf\/[a-z0-9-]+\.jpg/.test(g1.bg) && /^📍 .+ · photo: .+, (CC BY(-SA)? [0-9.]+|CC0|public domain)$/i.test(g1.cap) && !g1.stripes,
+        '🎨 → ⛳ Golf: a famous course behind the numbers, the course + author + licence in the caption (' + g1.cap + '), no stripes', g1);
+      await A.page().evaluate(() => window._gcOTV.el().__go('board')); await sleep(2800); const g2 = await gf();
+      ok(g2.bg && g2.bg !== g1.bg && g2.cap !== g1.cap, '⛳ Golf: the next slide brings a different course (' + g2.cap + ')', { g1: g1.bg, g2: g2.bg });
+      await A.page().evaluate(() => window._gcOTV.el().__go('goals')); await sleep(800); }
     if (look === 'parks') { await sleep(2500); const pk = await A.page().evaluate(() => { const on = document.querySelector('#gc-otv .gc-tvs-bg i.on'); return { photo: document.documentElement.classList.contains('gc-otv-photo'), bg: on ? on.style.backgroundImage : '', cap: (document.querySelector('#gc-otv .gc-tvs-bg .cap') || {}).textContent }; });
       ok(pk.photo && /\/img\/tv\/parks\/[a-z-]+\.jpg/.test(pk.bg) && /National Park · NPS photo/.test(pk.cap), '🎨 → 🌲 National parks: an NPS photo behind the numbers, the park named (' + pk.cap + ')', pk); }
     const bads = [], lows = [];

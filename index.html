@@ -203249,7 +203249,9 @@ function paint(){
    golf / nature TV in the repo's history — these are new):
      🔵 Blue (default) — the GrayCo navy of the lobby TV: dark navy, white type, gold accents
      ⚪ White          — OFFICETV's own look
-     ⛳ Golf           — a clean green golf-course look (no photos)
+     ⛳ Golf           — famous golf courses (freely licensed Commons photos put in by tools/golf_photos.py: img/tv/golf,
+                          golf.json, CREDITS.txt), a different course with every slide, the course, the author and the
+                          licence in the caption; until the photos are in, a plain green look
      🌲 National parks — 12 public-domain NPS photos (img/tv/parks, CREDITS.txt), a new one every 2 minutes, the park named
                           in a small caption; the numbers sit on dark panels so they stay readable
      📷 Office photos  — the back office TV's own album (⚙ Admin → 📺 TVs → 📷 Office photos; any admin adds / removes)
@@ -203263,6 +203265,17 @@ var THEMES = [{ k: 'blue', l: '🔵 Blue' }, { k: 'white', l: '⚪ White' }, { k
 var PARKS = [['grsm-fall', 'Great Smoky Mountains National Park'], ['yell', 'Yellowstone National Park'], ['yose', 'Yosemite National Park'], ['grca', 'Grand Canyon National Park'],
   ['zion', 'Zion National Park'], ['glac', 'Glacier National Park'], ['arch', 'Arches National Park'], ['grsm-winter', 'Great Smoky Mountains National Park'],
   ['grte', 'Grand Teton National Park'], ['romo', 'Rocky Mountain National Park'], ['brca', 'Bryce Canyon National Park'], ['mora', 'Mount Rainier National Park']];
+/* ⛳ Golf: famous courses, freely licensed photos from Wikimedia Commons (public domain, CC0, CC BY, CC BY-SA), put in by
+   tools/golf_photos.py: img/tv/golf/*.jpg + golf.json [{ f, course, detail, author, lic, page }] + CREDITS.txt. Read once, the
+   first time the look is used; the caption names the course and credits the author and licence on screen. No golf.json yet:
+   a plain green look (no stripes). */
+var GOLF = [], GOLFST = 0;
+function golfLoad(){
+  if (GOLFST) return; GOLFST = 1;
+  W.fetch('/img/tv/golf/golf.json', { cache: 'no-cache' }).then(function(r){ return r.ok ? r.json() : []; }).then(function(j){
+    GOLF = arr(j).filter(function(x){ return x && /^[a-z0-9-]+\.jpg$/.test(s(x.f)) && s(x.course) && s(x.author) && s(x.lic); }); GOLFST = 2; BG.k = ''; themeApply();
+  }, function(){ GOLFST = 2; });
+}
 var TKEY = 'gc_otv_theme';
 function okTheme(v){ return THEMES.some(function(t){ return t.k === v; }) ? v : ''; }
 function tkey(){ return CUR ? TKEY + ':' + CUR.id : TKEY; }
@@ -203276,7 +203289,8 @@ function arr(v){ return Array.isArray(v) ? v.filter(function(x){ return x != nul
 var BG = { k: '', i: -1, at: 0, hint: '' };
 function themeApply(){
   var th = theme(), de = D.documentElement; if (!de) return th;
-  var refs = th === 'album' ? albumRefs() : [], photo = th === 'parks' || (th === 'album' && refs.length > 0);
+  if (th === 'golf') golfLoad();
+  var refs = th === 'album' ? albumRefs() : [], photo = th === 'parks' || (th === 'golf' && GOLF.length > 0) || (th === 'album' && refs.length > 0);
   var cls = { 'gc-otv-dark': th !== 'white', 'gc-otv-blue': th === 'blue' || (th === 'album' && !refs.length), 'gc-otv-golf': th === 'golf', 'gc-otv-photo': photo,
     'gc-otv-photosonly': !!(CUR && CUR.mode !== 'office'), 'gc-otv-noticker': !!(CUR && CUR.ticker === false) };
   Object.keys(cls).forEach(function(c){ if (de.classList.contains(c) !== cls[c]) de.classList.toggle(c, cls[c]); });
@@ -203308,13 +203322,15 @@ function menu(tv, b){
 function extras(tv, th, refs){
   var st = tv.querySelector('.stg'); if (!st) return;
   var bg = st.querySelector('.gc-tvs-bg');
-  var photo = th === 'parks' || (th === 'album' && refs.length);
+  var photo = th === 'parks' || (th === 'golf' && GOLF.length) || (th === 'album' && refs.length);
   if (!photo) { if (bg) bg.remove(); BG.k = ''; }
   else {
     if (!bg) { bg = D.createElement('div'); bg.className = 'gc-tvs-bg'; bg.innerHTML = '<i></i><i></i><span class="cap"></span>'; st.insertBefore(bg, st.firstChild); BG.k = ''; }
     var key = th + ':' + (th === 'album' ? refs.join(',') : ''), every = CUR && CUR.mode !== 'office' ? 30000 : 120000;
     if (BG.k !== key) { BG.k = key; BG.i = -1; BG.at = 0; }
-    if (Date.now() - BG.at >= every) { BG.at = Date.now(); BG.i++; showPhoto(bg, th, refs); }
+    /* ⛳ Golf: a different course with every slide (owner: "each screen a different photo") */
+    var sl = ''; if (th === 'golf') { try { sl = s(tv.__state && tv.__state().slide); } catch (e) {} }
+    if (th === 'golf' ? (BG.slide !== sl || BG.at === 0) : Date.now() - BG.at >= every) { BG.at = Date.now(); BG.slide = sl; BG.i++; showPhoto(bg, th, refs); }
   }
   var hint = st.querySelector('.gc-tvs-hint'), needHint = th === 'album' && !refs.length;
   if (needHint && !hint) { hint = D.createElement('div'); hint.className = 'gc-tvs-hint'; hint.textContent = '📷 Add photos in ⚙ Admin → 📺 TVs'; st.appendChild(hint); }
@@ -203333,6 +203349,7 @@ function showPhoto(bg, th, refs){
   var L = bg.querySelectorAll('i'), next = L[BG.i % 2], prev = L[(BG.i + 1) % 2], cap = bg.querySelector('.cap');
   function put(url, caption){ var im = new Image(); im.onload = function(){ next.style.backgroundImage = 'url("' + url + '")'; next.classList.add('on'); prev.classList.remove('on'); cap.textContent = caption || ''; }; im.src = url; }
   if (th === 'parks') { var p = PARKS[BG.i % PARKS.length]; put('/img/tv/parks/' + p[0] + '.jpg', '📍 ' + p[1] + ' · NPS photo'); return; }
+  if (th === 'golf') { var g = GOLF[BG.i % GOLF.length]; put('/img/tv/golf/' + g.f, '📍 ' + g.course + (g.detail ? ' · ' + g.detail : '') + ' · photo: ' + g.author + ', ' + g.lic); return; }
   var ref = refs[BG.i % refs.length];
   if (typeof W._gcFileUrl !== 'function') return;
   Promise.resolve(W._gcFileUrl(ref)).then(function(u){ put(u, ''); }, function(){ note('a TV photo could not be loaded'); });
@@ -203367,7 +203384,7 @@ var TCSS = B + '{background:#050B14;color:#fff}' +
   B + ' .brk{background:linear-gradient(90deg,#1C3456 0%,#13243B 100%)}' +
   /* ⛳ Golf: fairway greens, sand and flag accents */
   'html.gc-otv-golf #gc-otv{background:#06140E}' +
-  'html.gc-otv-golf #gc-otv .stg{background:radial-gradient(ellipse 70em 40em at 85% 0%,rgba(233,210,122,.10),rgba(233,210,122,0) 60%),repeating-linear-gradient(100deg,rgba(255,255,255,.035) 0 7em,rgba(255,255,255,0) 7em 14em),linear-gradient(180deg,#145A3A 0%,#0C3B26 55%,#082A1B 100%)}' +
+  'html.gc-otv-golf #gc-otv .stg{background:radial-gradient(ellipse 70em 40em at 85% 0%,rgba(233,210,122,.10),rgba(233,210,122,0) 60%),linear-gradient(180deg,#145A3A 0%,#0C3B26 55%,#082A1B 100%)}' +
   'html.gc-otv-golf #gc-otv .hd{background:rgba(4,22,14,.55);border-bottom-color:rgba(233,210,122,.4)}html.gc-otv-golf #gc-otv .hd .tt{border-left-color:rgba(233,210,122,.4)}' +
   'html.gc-otv-golf #gc-otv .lb,html.gc-otv-golf #gc-otv table.lbd th,html.gc-otv-golf #gc-otv table.lbd td.sc,html.gc-otv-golf #gc-otv .hd .ck b small{color:#F1DD8E}' +
   'html.gc-otv-golf #gc-otv .mut,html.gc-otv-golf #gc-otv .ring .ct span,html.gc-otv-golf #gc-otv .tile .sub,html.gc-otv-golf #gc-otv .hd .tt span,html.gc-otv-golf #gc-otv .hd .ck span,html.gc-otv-golf #gc-otv .dots button,html.gc-otv-golf #gc-otv .ft .note{color:#BFDCCB}' +
@@ -203380,7 +203397,7 @@ var TCSS = B + '{background:#050B14;color:#fff}' +
   'html.gc-otv-photo #gc-otv .stg{background:#04080F}' +
   '#gc-otv .gc-tvs-bg{position:absolute;inset:0;z-index:-1;overflow:hidden}#gc-otv .gc-tvs-bg i{position:absolute;inset:0;background:#04080F center/cover no-repeat;opacity:0;transition:opacity 2s ease}#gc-otv .gc-tvs-bg i.on{opacity:1}' +
   '#gc-otv .gc-tvs-bg:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(4,8,15,.55) 0%,rgba(4,8,15,.30) 35%,rgba(4,8,15,.45) 70%,rgba(4,8,15,.80) 100%)}' +
-  '#gc-otv .gc-tvs-bg .cap{position:absolute;right:3.6em;top:8.9em;z-index:1;font-size:1.05em;font-weight:600;color:rgba(255,255,255,.85);text-shadow:0 .1em .4em rgba(0,0,0,.8)}' +
+  '#gc-otv .gc-tvs-bg .cap{position:absolute;right:3.6em;top:8.9em;z-index:1;max-width:80em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:1.05em;font-weight:600;color:rgba(255,255,255,.9);text-shadow:0 .1em .4em rgba(0,0,0,.85)}' +
   'html.gc-otv-photo #gc-otv .hd{background:rgba(4,8,15,.62)}' +
   'html.gc-otv-photo #gc-otv .cd{background:rgba(6,12,22,.74);border-color:rgba(255,255,255,.14)}' +
   'html.gc-otv-photo #gc-otv table.lbd td{background:rgba(6,12,22,.76)}html.gc-otv-photo #gc-otv table.lbd tr.r1 td{background:rgba(70,52,8,.82)}' +
