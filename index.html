@@ -195143,7 +195143,7 @@ function isRoleBox(sel){ return !!sel && sel.tagName === 'SELECT' && [].some.cal
 function formRoot(sel){ var r = sel; for (var i = 0; i < 14 && r; i++) { r = r.parentElement; if (r && [].some.call(r.querySelectorAll('button'), function(b){ return /^(Create Employee|Save Changes)$/.test(t(b)); })) return r; } return null; }
 function field(root, label){
   if (!root) return null;
-  var l = [].filter.call(root.querySelectorAll('label, div, span, b'), function(e){ return e.children.length === 0 && t(e) === label; })[0]; if (!l) return null;
+  var l = [].filter.call(root.querySelectorAll('label, div, span, b'), function(e){ return e.children.length === 0 && (e.textContent || '').trim().toLowerCase() === label.toLowerCase(); })[0]; if (!l) return null;   /* the label is shown in capitals: textContent */
   var p = l.parentElement; for (var i = 0; i < 3 && p; i++) { var inp = p.querySelector('input'); if (inp) return inp; p = p.parentElement; } return null;
 }
 function openTeam(name, email){

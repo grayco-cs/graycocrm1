@@ -31,11 +31,16 @@ await c.ctx.addInitScript(() => { try { ['_helpShown', 'gc_help_welcomed', 'gc_t
 await signIn(c, OWNER, 1000);
 await waitFor(c, () => document.querySelectorAll('aside button[draggable="true"]').length > 5 && !!(window._crm && window._crm.projects && window._crm.projects.length), null, 150000, 500);
 await sleep(6000);
+await sleep(6000); await waitFor(c, () => !!(window._setView && window._crm && window._crm.projects && window._crm.projects.length), null, 60000, 500);
 const p = c.page();
-await p.evaluate(`window.__vis = e => { const r = e.getBoundingClientRect(); const st = getComputedStyle(e); return r.width > 2 && r.height > 2 && st.visibility !== 'hidden' && st.display !== 'none'; };
+const HJS = `window.__vis = e => { const r = e.getBoundingClientRect(); const st = getComputedStyle(e); return r.width > 2 && r.height > 2 && st.visibility !== 'hidden' && st.display !== 'none'; };
 window.__click = re => { re = new RegExp(re); const b = [...document.querySelectorAll('button, [role=tab], a')].filter(__vis).find(e => re.test((e.innerText || '').trim())); if (!b) return false; b.scrollIntoView({ block: 'center' }); b.click(); return true; };
 window.__setV = (el, v) => { const P = el.tagName === 'SELECT' ? HTMLSelectElement.prototype : HTMLInputElement.prototype; Object.getOwnPropertyDescriptor(P, 'value').set.call(el, v); el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); };
-window.__field = (root, label) => { const l = [...root.querySelectorAll('label, div, span, b')].filter(e => e.children.length === 0 && (e.innerText || e.textContent || '').trim() === label)[0]; if (!l) return null; let q = l.parentElement; for (let i = 0; i < 3 && q; i++) { const x = q.querySelector('input'); if (x) return x; q = q.parentElement; } return null; }; true;`);
+window.__field = (root, label) => { const l = [...root.querySelectorAll('label, div, span, b')].filter(e => e.children.length === 0 && (e.textContent || '').trim().toLowerCase() === label.toLowerCase())[0]; if (!l) return null; let q = l.parentElement; for (let i = 0; i < 3 && q; i++) { const x = q.querySelector('input'); if (x) return x; q = q.parentElement; } return null; }; true;`;
+await p.evaluate(HJS);
+/* a late sign-in reload can replace the page under a step: wait for it, put the helpers back, try once more */
+const _ev = p.evaluate.bind(p);
+p.evaluate = async (f, a) => { try { return await _ev(f, a); } catch (e) { if (!/context was destroyed|navigation|is not defined/i.test(e.message)) throw e; await sleep(4000); for (let i = 0; i < 120; i++) { const r = await _ev(() => !!(window._setView && window._crm && window._crm.projects && window._crm.projects.length)).catch(() => false); if (r) break; await sleep(500); } await sleep(3000); await _ev(HJS); return _ev(f, a); } };
 /* ⚙ Admin → 👤 Employees → + Add Employee */
 const opened = await p.evaluate(async () => {
   window._setView('admin'); await new Promise(z => setTimeout(z, 3000));
@@ -60,12 +65,12 @@ const ta = await p.evaluate(async () => { document.querySelector('[data-ofx-mm-o
   return { email: e && e.value, name: n && n.value, profile: pr && pr.value, role: rl && rl.value, hasMkt: !!pr && [...pr.options].some(o => o.value === 'marketing') }; });
 ok(ta.email === MM && ta.name === NAME && ta.profile === 'marketing' && ta.role === 'staff', '🔐 Open Team access (filled in): e-mail, name and the Marketing Manager profile are filled in', ta);
 const n0 = c.calls.length;
-const added = await p.evaluate(async () => { document.getElementById('gcTaAdd').click(); await new Promise(z => setTimeout(z, 3000)); const m = document.getElementById('gcTaEmail'); const box = m && m.closest('div'); return (document.body.innerText.match(/(temporary password|Temporary password|added|Failed|error)[^\n]{0,120}/i) || [''])[0]; });
+const added = await p.evaluate(async () => { document.getElementById('gcTaAdd').click(); await new Promise(z => setTimeout(z, 3000)); const m = document.getElementById('gcTaEmail'); const box = m && m.closest('div'); return (document.body.innerText.match(/[^\n]{0,60}can now sign in with this temporary password[^\n]{0,40}/) || [''])[0]; });
 const call = c.calls.slice(n0).find(x => x.fn === 'staff-admin' && /"action":"add"/.test(x.b));
 ok(!!call && call.status === 200, 'Team access → Add: staff-admin add answered 200', call && [call.status, call.err]);
 const row = bridge.tables.get('gc_staff').get(MM);
 ok(!!row && row.profile === 'marketing' && row.active === false && row.mkt_active === true && row.role === 'staff', 'gc_staff: profile marketing, NOT active staff, mkt_active on (the Marketing Manager rule)', row);
-ok(/password|added/i.test(added), 'the result is shown to the admin (the temporary password, once)', added);
+ok(/malcolm@adventuresmedia\.com can now sign in with this temporary password/.test(added), 'the result is shown to the admin (the temporary password, once)', added);
 /* close Team access, then Create Employee */
 const made = await p.evaluate(async ({ MM }) => {
   [...document.querySelectorAll('body > div')].forEach(d => { if (d.querySelector('#gcTaEmail')) d.remove(); });
