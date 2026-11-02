@@ -57,6 +57,9 @@ const iso = t => new Date(t).toISOString(), NOW = Date.now(), HOURAGO = iso(NOW 
 const A = 'PRJagtA', BJ = 'PRJagtB';
 function loadCloud(){
   cloud.clear(); for (const r of rows) cloud.set(r.key, { key: r.key, value: r.value !== undefined ? r.value : r.v, updated_at: r.updated_at });
+  /* patch AUTOPANEL: this gate checks the e-mailed invoice booking and the other money automations — switched ON here
+     (⚙ Admin → ⚡ Automations, "Turn on everything I had before"); they are OFF by default */
+  { const AUTO = createRequire(import.meta.url)(path.join(BUILD, 'netlify/functions/_lib/automations.js')); cloud.set(AUTO.KEY, { key: AUTO.KEY, value: AUTO.before(), updated_at: new Date().toISOString() }); }
   const rd = k => { const r = cloud.get(k); let v = r && r.value; let str = false; if (typeof v === 'string') { try { v = JSON.parse(v); str = true; } catch (e) {} } return { v, str }; };
   const edit = (k, fn) => { const o = rd(k); const nv = fn(Array.isArray(o.v) ? o.v : (o.v && typeof o.v === 'object' ? o.v : [])); cloud.set(k, { key: k, value: o.str ? JSON.stringify(nv) : nv, updated_at: HOURAGO }); };
   edit('projects', l => l.concat([

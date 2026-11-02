@@ -322,13 +322,13 @@ let bf = 0; const bok = (c, m, info) => { ok(c, m, info); if (!c) bf++; };
 loadCloud(); cloud.delete('gc_auto_held');
 setKv('gc_automations', ALL_OFF); reset();
 /* a job to drag, an old pending invoice approval, an old matched expense */
-const projs0 = kv('projects') || [], jobB = (Array.isArray(projs0) ? projs0 : []).find(p => p && /active/i.test(String(p.status || '')) && +p.contract > 1000 && (+p.pct || 0) < 40) || null;
+const projs0 = kv('projects') || [], jobB = (Array.isArray(projs0) ? projs0 : []).find(p => p && !/complete|closed|lost|cancel|archiv/i.test(String(p.status || '')) && parseFloat(String(p.contract || '').replace(/[$,]/g, '')) > 1000 && (+p.pct || 0) < 40 && !p.deleted) || null;
 const flagsBefore = JSON.stringify(kv('projects') || '').split('AUTO-FLAG').length;
 const owner = await person(OWNER);
 bok(!!(await ev(owner, () => !!(window._gcAutoReg && window._gcAutoGate && window._gcAutomations && window._gcAutoPanel))), 'the page has the list, the one check and the panel');
 await waitFor(owner, () => window._gcAutomations.state().loaded, null, 30000, 300);
 bok(await ev(owner, () => window._gcAutomations.state().loaded && window._gcAutoOn('invoice_autopost') === false && window._gcAutoOn('backups') === false && window._gcAutoOn('cloud_sync') === true), 'the page read the switches (all OFF; cloud sync always on)');
-const invN0 = await ev(owner, () => ((window._crm && window._crm.invoices) || []).length);
+const invN0 = await ev(owner, () => ((window._crm && window._crm.invoices) || []).filter(i => i && /auto-draw/.test(String(i.createdBy || ''))).length);
 const r1 = await ev(owner, async (pid) => {
   const out = {};
   const old = Date.now() - 3 * 864e5;
@@ -339,9 +339,12 @@ const r1 = await ev(owner, async (pid) => {
   try { window._gcExpenseAging(); } catch (e) { out.expErr = String(e.message); }
   out.exp = (JSON.parse(localStorage.getItem('gc_expense_approvals') || '[]').find(a => a.expId === 'EXP-autopanel') || {}).status;
   try { out.sweep = await window._gcSweepCommissions(true); } catch (e) { out.sweepErr = String(e.message); }
-  try { window._gcAutoProgress100(); } catch (e) { out.a100 = String(e.message); }
+  try { const jp = ((window._crm && window._crm.projects) || []).find(p => p && (+p.pct || 0) < 100 && !p.deleted && /complete|closed/i.test(String(p.status || ''))) || ((window._crm && window._crm.projects) || []).find(p => p && (+p.pct || 0) < 100 && !p.deleted);
+    if (jp) { out.a100job = jp.id; if (!/complete|closed/i.test(String(jp.status || ''))) { window._setProjects(l => l.map(p => p && p.id === jp.id ? Object.assign({}, p, { _manualComplete: true }) : p)); await new Promise(r => setTimeout(r, 800)); } }
+    window._gcAutoProgress100(); await new Promise(r => setTimeout(r, 500)); const j2 = ((window._crm && window._crm.projects) || []).find(p => p && p.id === out.a100job); out.a100pct = j2 ? j2.pct : null; } catch (e) { out.a100 = String(e.message); }
   try { if (window._gcCheckMSTax) window._gcCheckMSTax(); } catch (e) { out.ms = String(e.message); }
   try { if (window._gcAut3 && window._gcAut3.stageTick) window._gcAut3.stageTick(); } catch (e) { out.st = String(e.message); }
+  pid = (((window._crm && window._crm.projects) || []).find(p => p && parseFloat(String(p.contract || '').replace(/[$,]/g, '')) > 1000 && (+p.pct || 0) < 50 && !/complete|closed|lost|cancel/i.test(String(p.status || '')) && window._gcDrawMilestones && window._gcDrawMilestones(p).some(m => !window._gcDrawInvoiced(p.id, m.n))) || {}).id || pid; out.dragPid = pid;
   if (pid) { try { window.__alerts = []; const a = window.alert; window.alert = m => window.__alerts.push(String(m)); window._gcSetProjectPct(pid, 100); window.alert = a; out.alerts = window.__alerts.slice(); } catch (e) { out.drag = String(e.message); } }
   return out;
 }, jobB && jobB.id);
@@ -352,7 +355,8 @@ const r2 = await ev(owner, () => ({ inv: (JSON.parse(localStorage.getItem('gc_in
 bok(r1.exp === 'pending_pm', 'expense 5-day auto-post OFF: the 8-day-old matched expense is still waiting (not auto-posted, not escalated)', r1);
 bok(Array.isArray(r1.sweep) && r1.sweep.length === 0, 'the automatic commission sweep OFF: nothing queued', r1.sweep);
 bok(r2.inv === 'pending', 'invoice 1-day auto-post OFF: the 3-day-old draft is still pending (not sent)', r2);
-bok(r2.invs === 0 && !(r1.alerts || []).some(a => /DRAFT/.test(a)), 'progress-slider auto-draw OFF: dragging ' + (jobB ? jobB.name : '(no job)') + ' to 100 % made no invoice', [r2.invs, r1.alerts]);
+bok(!!jobB && r2.invs === invN0 && !(r1.alerts || []).some(a => /DRAFT/.test(a)), 'progress-slider auto-draw OFF: dragging ' + (jobB ? jobB.name : '(no job)') + ' to 100 % made no invoice', [invN0, r2.invs, r1.alerts]);
+bok(!!r1.a100job && r1.a100pct !== 100, 'auto-100 % OFF: a completed job is not moved to 100 %', r1);
 const PAGE_KEYS = ['invoice_autopost', 'expense_autopost', 'commission_sweep', 'progress_autodraw', 'auto_100', 'job_stages', 'legacy_progress_billing', 'legacy_autoflag_notes', 'dup_invoice_delete'];
 bok(PAGE_KEYS.every(k => r2.held.indexOf(k) >= 0), 'every page automation that came due recorded "held" on this computer', PAGE_KEYS.filter(k => r2.held.indexOf(k) < 0));
 await ev(owner, () => window._gcAutomations.flush()); await sleep(2500);
@@ -370,14 +374,14 @@ bok(pan && pan.locks === AUTO.LIST.filter(a => a.group === 'safety').length && p
 await ev(owner, () => { const i = document.querySelector('#gcap-ov input[data-gcap-sw="invoice_autopost"]'); i.click(); }); await sleep(2500);
 bok(kv('gc_automations').invoice_autopost === true && kv('gc_automations')._log[0].key === 'invoice_autopost' && kv('gc_automations')._log[0].by === OWNER, 'owner: the switch in the panel turns "Invoice 1-day auto-post" ON (saved, logged)', (kv('gc_automations')._log || [])[0]);
 /* a safety switch asks first */
-owner.acceptConfirm = false;
-await ev(owner, () => { const i = document.querySelector('#gcap-ov input[data-gcap-sw="missed_call_textback"]'); i.click(); }); await sleep(1500);
-bok(kv('gc_automations').missed_call_textback === false && owner.dialogs.some(d => /SAFETY/.test(d)), 'a safety switch asks first (said no → unchanged)', owner.dialogs.slice(-2));
-owner.acceptConfirm = true;
+const sc = await ev(owner, async () => { const c0 = window.confirm; const asked = []; window.confirm = m => { asked.push(String(m)); return false; };
+  const i = document.querySelector('#gcap-ov input[data-gcap-sw="missed_call_textback"]'); const was = i && i.checked; if (i) i.click(); await new Promise(r => setTimeout(r, 1500)); window.confirm = c0;
+  const j = document.querySelector('#gcap-ov input[data-gcap-sw="missed_call_textback"]'); return { was, now: j && j.checked, asked, lock: /🔒/.test(j && j.closest('.gcap-row').textContent) }; });
+bok(sc.was === true && sc.now === true && sc.lock && sc.asked.some(m => /SAFETY/.test(m)) && AUTO.valueOf(kv('gc_automations'), 'missed_call_textback') === true, 'a safety switch shows 🔒 ON and asks first (said no → still ON)', sc);
 await ev(owner, () => { const b = document.querySelector('#gcap-ov [data-gcap="before"]'); b.click(); }); await sleep(3000);
 bok(AUTO.LIST.every(a => AUTO.valueOf(kv('gc_automations'), a.key) === true), '"↺ Turn on everything I had before" → every automation ON');
-const r3 = await ev(owner, async () => { await window._gcAutomations.load(); return window._gcAutoOn('invoice_autopost') && window._gcAutoOn('expense_autopost') && window._gcAutoSince('invoice_autopost') > 0; });
-bok(r3, 'the page sees them ON again; time-based ones count from now (no burst)');
+const r3 = await ev(owner, async () => { await window._gcAutomations.load(); return { a: window._gcAutoOn('invoice_autopost'), b: window._gcAutoOn('expense_autopost'), c: window._gcAutoSince('expense_autopost'), st: window._gcAutomations.state().err, log: (window._gcAutomations.state().log || []).length }; });
+bok(r3.a && r3.b && r3.c > 0, 'the page sees them ON again; time-based ones count from now (no burst)', r3);
 const lt = (await ev(owner, () => window.__LT)).filter(x => x.d > MAXTASK);
 bok(!lt.length, 'owner: no long task over ' + MAXTASK + ' ms', lt.slice(0, 5));
 bok(!owner.errs.length, 'owner: no page error', owner.errs.slice(0, 5));
