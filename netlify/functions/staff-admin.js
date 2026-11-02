@@ -127,6 +127,15 @@ async function listStaff(){
    Every staff rule in the database and the functions refuses him by construction; only the marketing calls let him in.
    Moving someone off the marketing profile makes them ordinary active staff again. */
 async function staffRow(email){ try { const r = await fetch(sbUrl() + '/rest/v1/gc_staff?select=*&email=eq.' + encodeURIComponent(email), { headers: svcHeaders() }); if (!r.ok) return null; return (await r.json())[0] || null; } catch (e) { return null; } }
+/* patch MKTFIX */ /* the signed-in Marketing Manager himself: his token, then his gc_staff row (profile marketing, mkt_active, never
+   active staff — the staff check above refuses him by construction). Used only for his OWN "choose your own password" mark. */
+async function marketingSelf(event){
+  const m = /^Bearer\s+(\S+)$/i.exec(gcHeader(event, 'authorization').trim()); if (!m) return null;
+  let user = null;
+  try { const r = await fetch(sbUrl() + '/auth/v1/user', { headers: { apikey: process.env.SUPABASE_ANON_KEY || GC_SB_DEFAULT_ANON, Authorization: 'Bearer ' + m[1] } }); if (r.ok) user = await r.json(); } catch (e) { return null; }
+  const email = cleanEmail(user && user.email); if (!email || !user.id) return null;
+  return require('./_lib/mm.js').isMarketingRow(await staffRow(email)) ? { email: email, userId: user.id } : null;
+}
 async function setProfile(email, profile){
   const row = await staffRow(email), body = { profile: profile || null };
   if (profile === 'marketing') {
@@ -138,7 +147,7 @@ async function setProfile(email, profile){
     method: 'PATCH', headers: svcHeaders({ Prefer: 'return=representation' }), body: JSON.stringify(body)
   });
   const txt = await r.text();
-  if (!r.ok) return { ok: false, status: r.status, error: /profile/.test(txt) ? 'Run docs/role-profiles.sql in Supabase first (it adds the Profile column).' : 'Could not save the profile (' + r.status + '): ' + txt.slice(0, 200) };
+  if (!r.ok) return { ok: false, status: r.status, error: profile === 'marketing' && /profile|check constraint|mkt_active/i.test(txt) ? 'Run docs/marketing-role.sql in Supabase first (it adds the Marketing Manager profile).' : /profile/.test(txt) ? 'Run docs/role-profiles.sql in Supabase first (it adds the Profile column).' : 'Could not save the profile (' + r.status + '): ' + txt.slice(0, 200) };
   let rows = []; try { rows = JSON.parse(txt); } catch (e) {}
   if (!Array.isArray(rows) || !rows.length) return { ok: false, status: 404, error: email + ' is not on the staff list.' };
   return { ok: true };
@@ -199,6 +208,11 @@ exports.handler = async function (event) {
   if (!svcKey()) return J(500, { error: 'SUPABASE_SERVICE_KEY is not set on Netlify.' });
 
   const who = await gcStaffAuth(event);
+  /* patch MKTFIX: the Marketing Manager finishes his own "choose your own password" (else he stays on that screen) */
+  if (!who.ok && who.statusCode === 403 && event.httpMethod === 'POST' && /"action"\s*:\s*"password-changed"/.test(String(event.body || ''))) {
+    const mm = await marketingSelf(event);
+    if (mm) { const ok = await setAuthUser(mm.userId, { app_metadata: mustChangeMeta(false) }); return ok ? J(200, { ok: true }) : J(502, { error: 'Could not finish the password change. Try again.' }); }
+  }
   if (!who.ok) return J(who.statusCode, { error: who.error });
 
   const q = event.queryStringParameters || {};
@@ -275,7 +289,7 @@ exports.handler = async function (event) {
         headers: svcHeaders({ Prefer: 'resolution=merge-duplicates,return=minimal' }),
         body: JSON.stringify(Object.assign({ email: email, name: name, role: role, active: profile !== 'marketing', added_by: who.email }, profile === 'marketing' ? { profile: 'marketing', mkt_active: true } : {}))   /* patch MM: never active staff */
       });
-      if (!up.ok) return J(502, { error: 'Could not add to gc_staff (' + up.status + '): ' + (await up.text()).slice(0, 200) });
+      if (!up.ok) { const ut = (await up.text()).slice(0, 300); if (profile === 'marketing' && /mkt_active|profile|check constraint|schema cache/i.test(ut)) return J(409, { error: 'Run docs/marketing-role.sql in Supabase first (it adds the Marketing Manager profile), then Add him again. Nothing was changed.' }); return J(502, { error: 'Could not add to gc_staff (' + up.status + '): ' + ut.slice(0, 200) }); }   /* patch MKTFIX */
       // 2. a sign-in for them
       const pw = tempPassword();
       const cr = await fetch(sbUrl() + '/auth/v1/admin/users', {

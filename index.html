@@ -202028,13 +202028,18 @@ function toast(msg, bad){
 function lsRaw(k){ try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }
 function creds(){ return { u: (s(lsRaw('grayco_sb_url')) || 'https://ieeonhpfahmwwecizdut.supabase.co').replace(/\/$/, ''), k: s(lsRaw('grayco_sb_key')) }; }
 function sbH(extra){ var c = creds(), h = { 'Content-Type': 'application/json' }; if (c.k) { h.apikey = c.k; h.Authorization = 'Bearer ' + c.k; } return Object.assign(h, extra || {}); }
+/* patch MKTFIX */ /* the Marketing Manager's page may not read / write gc_kv: his offers and the marketing document come through soc.js */
+function mmLobby(key){ return isMM() && !allowed() && !!W._gcMMData && (key === 'gc_lobby_offers' || key === 'gc_mkt_v1'); }
 function kvGet(key){
+  if (mmLobby(key)) return key === 'gc_mkt_v1' ? (W._gcMMKv ? W._gcMMKv.read(key).then(function(v){ return v; }, function(){ return undefined; }) : Promise.resolve(undefined))
+    : W._gcMMData.call({ op: 'mm_lobby_offers' }).then(function(j){ return j && j.ok ? j.value : undefined; });
   var c; try { c = creds(); } catch (e) { return Promise.resolve(undefined); }
   return W.fetch(c.u + '/rest/v1/gc_kv?key=eq.' + encodeURIComponent(key) + '&select=value,updated_at', { headers: sbH(), cache: 'no-store' })
     .then(function(r){ return r.ok ? r.json() : Promise.reject(new Error('read ' + r.status)); })
     .then(function(rows){ var v = rows && rows[0] ? rows[0].value : null; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) {} } return v; }, function(){ return undefined; });
 }
 function kvPut(key, value){
+  if (mmLobby(key)) return key === 'gc_lobby_offers' ? W._gcMMData.call({ op: 'mm_lobby_offers', value: value }).then(function(j){ return !!(j && j.ok); }, function(){ return false; }) : Promise.resolve(false);
   var c = creds();
   return W.fetch(c.u + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: sbH({ Prefer: 'resolution=merge-duplicates,return=minimal' }),
     body: JSON.stringify({ key: key, value: value, updated_at: nowIso() }) }).then(function(r){ return r.ok; }, function(){ return false; });
