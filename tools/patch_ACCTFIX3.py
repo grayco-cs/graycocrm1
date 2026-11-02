@@ -16,6 +16,8 @@
 3. 💳 / 🏦 statement imports: the expenses they add reach the screen as her own work. The import finishes seconds after
    the click, so with the mouse moving the hold parked them: the P&L did not move, and the same statement imported
    again did not see its lines as "already in".
+4. An expense or sub invoice approved or sent back stamps updatedAt, so the shared approval list keeps the decision when it merges with
+   the cloud's older "waiting" copy (the card left, but the count and the other office computer still had it).
 Usage: python3 tools/patch_ACCTFIX3.py [index.html]"""
 import os, sys
 HERE = os.path.dirname(os.path.abspath(__file__)); ROOT = os.path.dirname(HERE)
@@ -70,6 +72,18 @@ M3 = '/* patch ACCTFIX3: the card key is the expense id */'
 if M3 not in src:
     src = once(src, "  var pid = s(a.jobId || a.pid), p = proj(pid), id = s(a.id || a.expId);",
                "  var pid = s(a.jobId || a.pid), p = proj(pid), id = s(a.expId || a.id);   " + M3, 'rowExp id')
+
+# 4. an expense approved / sent back carries the time of that decision (updatedAt), so the shared list's merge (newest
+#    updatedAt wins) keeps the decision instead of the older waiting copy coming back from the cloud
+M4 = '/* patch ACCTFIX3: decided now */'
+if M4 not in src:
+    for st in ('approved', 'rejected'):
+        src = once(src, "Object.assign({},a,{status:'" + st + "', approvedBy:myName(), approvedAt:new Date().toISOString()})",
+                   "Object.assign({},a,{status:'" + st + "', approvedBy:myName(), approvedAt:new Date().toISOString(), updatedAt:new Date().toISOString()" + ("" if st == 'rejected' else "") + "})", 'expense ' + st)
+    src = once(src, "window._gcApproveExpense = function(expId){", "window._gcApproveExpense = function(expId){   " + M4, 'approve expense')
+    a4 = "      pmDecidedBy:who, pmDecidedAt:Date.now(), decidedBy:who,"
+    assert src.count(a4) == 2, ('ACCTFIX3: sub decisions', src.count(a4))
+    src = src.replace(a4, "      pmDecidedBy:who, pmDecidedAt:Date.now(), decidedBy:who, updatedAt:new Date().toISOString(),   " + M4)
 
 if src == orig:
     print('ACCTFIX3: already patched'); sys.exit(0)

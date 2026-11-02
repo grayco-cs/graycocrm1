@@ -74844,16 +74844,16 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
   };
 
   // PM (or admin) approves an expense -> posts to P&L
-  window._gcApproveExpense = function(expId){
+  window._gcApproveExpense = function(expId){   /* patch ACCTFIX3: decided now */
     var q=loadQ();
-    q=q.map(function(a){ return a.expId===expId ? Object.assign({},a,{status:'approved', approvedBy:myName(), approvedAt:new Date().toISOString()}) : a; });
+    q=q.map(function(a){ return a.expId===expId ? Object.assign({},a,{status:'approved', approvedBy:myName(), approvedAt:new Date().toISOString(), updatedAt:new Date().toISOString()}) : a; });
     saveQ(q);
     _postExpense(expId, 'approved by '+myName());
     if(window.__GC_REFRESH_UI__) setTimeout(window.__GC_REFRESH_UI__,150);
   };
   window._gcRejectExpense = function(expId, note){
     var q=loadQ();
-    q=q.map(function(a){ return a.expId===expId ? Object.assign({},a,{status:'rejected', approvedBy:myName(), approvedAt:new Date().toISOString()}) : a; });
+    q=q.map(function(a){ return a.expId===expId ? Object.assign({},a,{status:'rejected', approvedBy:myName(), approvedAt:new Date().toISOString(), updatedAt:new Date().toISOString()}) : a; });
     saveQ(q);
     // mark expense as rejected (not posted)
     var crm=window._crm||{};
@@ -85929,7 +85929,7 @@ window._gcPmDecideSub = function(invId, approve, note){
     else newStatus='pm_denied';
     return Object.assign({}, a, {
       status:newStatus,
-      pmDecidedBy:who, pmDecidedAt:Date.now(), decidedBy:who,
+      pmDecidedBy:who, pmDecidedAt:Date.now(), decidedBy:who, updatedAt:new Date().toISOString(),   /* patch ACCTFIX3: decided now */
       denyNote:(!approve?(note||a.denyNote||''):a.denyNote),
       approveNote:(approve?(note||a.approveNote||''):a.approveNote),
       deniedBy:(!approve?who:a.deniedBy),
@@ -85939,7 +85939,7 @@ window._gcPmDecideSub = function(invId, approve, note){
   // if the queue row vanished (storage wipe), still record the decision
   if(!found){
     q.unshift({ invId:invId, status: approve?'pm_approved':'pm_denied',
-      pmDecidedBy:who, pmDecidedAt:Date.now(), decidedBy:who, createdAt:Date.now() });
+      pmDecidedBy:who, pmDecidedAt:Date.now(), decidedBy:who, updatedAt:new Date().toISOString(),   /* patch ACCTFIX3: decided now */ createdAt:Date.now() });
   }
   writeQ(q);
   stampInvoice(invId, approve, who, note);

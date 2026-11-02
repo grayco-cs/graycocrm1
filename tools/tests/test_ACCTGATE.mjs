@@ -198,11 +198,12 @@ if (want('qb')) {
         for (let i = 0; i < 40 && document.getElementById('_gcQbImpOv'); i++) await new Promise(z => setTimeout(z, 250));
         await new Promise(z => setTimeout(z, 1500));
         const newInv = window._crm.invoices.filter(i => i.source === 'quickbooks' && /QuickBooks/.test(i.by || '')).map(i => ({ id: i.id, client: i.client, amt: i.amt, pid: i.pid, status: i.status }));
-        return { has, label: plan && plan.label, counts: plan && plan.counts, rows: plan ? plan.rows.map(x => x.action + ' ' + x.rec.kind + ' ' + (x.rec.name || '') + ' ' + x.rec.amount).slice(0, 30) : [], summary, exp: window._crm.expenses.length - before.exp, inv: window._crm.invoices.length - before.inv, newInv };
+        const newOnes = window._crm.invoices.length > before.inv ? window._crm.invoices.slice().sort((a, b) => String(b.createdAt || b.at || '').localeCompare(String(a.createdAt || a.at || ''))).slice(0, 2).map(i => ({ id: i.id, amt: i.amt, pid: i.pid, src: i.source, by: i.by, st: i.status, at: i.createdAt || i.at, num: i.invNum })) : [];
+        return { newOnes, has, label: plan && plan.label, counts: plan && plan.counts, rows: plan ? plan.rows.map(x => x.action + ' ' + x.rec.kind + ' ' + (x.rec.name || '') + ' ' + x.rec.amount).slice(0, 30) : [], summary, exp: window._crm.expenses.length - before.exp, inv: window._crm.invoices.length - before.inv, newInv };
       }, [f, b64(FX + '/' + f)]);
       const dlg = O.dialogs.slice(-1)[0] || '';
       if (k === 'evs') return { ok: (!!r.err && /header row/.test(O.dialogs.slice(-1)[0] || '')) || (r.counts && r.exp === 0 && r.inv === 0), note: 'summary report: ' + (r.err ? r.err : (r.label + ' → ' + JSON.stringify(r.counts))) + ' · ' + dlg.slice(0, 160), data: r };
-      return { ok: r.has && !r.err && r.inv === 0, note: (r.label || r.err) + ' · ' + JSON.stringify(r.counts) + ' · new expenses ' + r.exp + ', new invoices ' + r.inv + ' (costs are NOT made into expenses by this door — it says to use 📥 Expense inbox) · ' + dlg.slice(0, 200), data: r };
+      return { ok: r.has && !r.err && r.inv === 0, note: (r.label || r.err) + ' · ' + JSON.stringify(r.counts) + ' · new expenses ' + r.exp + ', new invoices ' + r.inv + (r.inv ? ' ' + JSON.stringify(r.newOnes) : '') + ' (costs are NOT made into expenses by this door — it says to use 📥 Expense inbox) · ' + dlg.slice(0, 200), data: r };
     });
   }
   /* 📥 Expense inbox */
@@ -448,7 +449,8 @@ if (want('manual')) {
     let page = ''; try { window._navToJob && window._navToJob('PRJagtB'); await new Promise(z => setTimeout(z, 3000)); window.__clickText('^Invoices'); await new Promise(z => setTimeout(z, 1500)); page = (document.querySelector('main') || {}).innerText || ''; } catch (e) {}
     let inAp = [false, false]; for (let i = 0; i < 70 && !inAp.every(Boolean); i++) { if (i % 10 === 0) { try { window._gcQueueSubApprovals && window._gcQueueSubApprovals(); } catch (e) {} }   /* the sub approval list is filled by a 60 s timer (skipped while typing) */
       const set = window.__apset(); inAp = [m.sup, m.sub].map(id => set.ids.some(k => k.indexOf(id) >= 0)); if (!inAp.every(Boolean)) await new Promise(z => setTimeout(z, 1000)); }
-    return { ok: onJob === 2 && inAp.every(Boolean), note: 'on the job: ' + onJob + '/2 (job page shows FC55123 ' + /FC55123/.test(page) + ', RR3001 ' + /RR3001/.test(page) + ') · in Approvals: supplier ' + inAp[0] + ', sub ' + inAp[1] };
+    const sq = (() => { try { return (JSON.parse(localStorage.getItem('gc_sub_approvals') || '[]') || []).filter(a => [m.sup, m.sub].includes(a.invId)).map(a => a.invId.slice(-6) + ':' + a.status + ':' + (a.pmName || '')); } catch (e) { return 'err'; } })();
+    return { ok: onJob === 2 && inAp.every(Boolean), note: 'queue ' + JSON.stringify(sq) + ' typing ' + !!window.__GC_IS_TYPING__ + ' · on the job: ' + onJob + '/2 (job page shows FC55123 ' + /FC55123/.test(page) + ', RR3001 ' + /RR3001/.test(page) + ') · in Approvals: supplier ' + inAp[0] + ', sub ' + inAp[1] };
   }, MANUAL), { money: false });
 }
 
