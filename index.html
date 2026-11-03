@@ -154835,12 +154835,18 @@ function regPatchCloud(id, row){
       body: JSON.stringify({ key: 'gcAcctRegister', value: wasText ? JSON.stringify(l) : l, updated_at: nowIso() }) }).then(function(r){ return r.ok; });
   }, function(){ return false; });
 }
+/* patch PAYMATCH: the list on screen keeps what was just saved, even when this browser's localStorage is full */
+function pmKeep(saved){
+  var by = {}, order = [];
+  PM.list.concat(arr(lsGet(PMK)), arr(saved)).forEach(function(m){ if (!m || m.id == null) return; var k = String(m.id); if (!(k in by)) order.push(k); by[k] = m; });
+  PM.list = order.map(function(k){ return by[k]; });
+}
 function scanPayments(){
   if (!myEmail() || !isOffice()) return;
   loadReg().then(function(){ return kvGet(PMK); }).then(function(v){ return arr(v); }, function(){ return arr(lsGet(PMK)); }).then(function(cloud){
     PM.list = cloud;
     var fresh = findMatches().filter(function(m){ return !cloud.some(function(c){ return c.id === m.id; }); });
-    if (fresh.length) return kvAdd(PMK, fresh).then(function(){ PM.list = arr(lsGet(PMK)); });
+    if (fresh.length) return kvAdd(PMK, fresh).then(function(){ pmKeep(fresh); });
   }).then(function(){ PM.at = Date.now(); paintPills(); });
 }
 SI(function(){ if (!D.hidden) scanPayments(); }, 90000); ST(scanPayments, 20000);
@@ -154872,7 +154878,7 @@ function confirmPayment(m){
   }
   var rec = Object.assign({}, m, { status: 'confirmed', confirmedBy: by, confirmedAt: at, updatedAt: at });
   return kvAdd(PMK, [rec]).then(function(){
-    PM.list = arr(lsGet(PMK));
+    pmKeep([rec]);
     return sendReceipt({ invoiceId: m.invId, amount: m.amt, date: m.date, method: 'bank deposit', paymentId: m.regId, balanceAfter: full ? 0 : left }, 0);
   }).then(function(j){ paintPills(); return { ok: true, receipt: j }; });
 }
@@ -154883,7 +154889,7 @@ function sendReceipt(body, n){
     return new Promise(function(res){ ST(res, 6000); }).then(function(){ return sendReceipt(body, n + 1); });
   });
 }
-function dismissMatch(m){ return kvAdd(PMK, [Object.assign({}, m, { status: 'dismissed', dismissedBy: myName(), updatedAt: nowIso() })]).then(function(){ PM.list = arr(lsGet(PMK)); paintPills(); }); }
+function dismissMatch(m){ var rec = Object.assign({}, m, { status: 'dismissed', dismissedBy: myName(), updatedAt: nowIso() }); return kvAdd(PMK, [rec]).then(function(){ pmKeep([rec]); paintPills(); }); }
 function openPayMatches(){
   var ov = sheet('💵 Payments that match invoices', '');
   function draw(){
@@ -154921,7 +154927,7 @@ function paintPills(){
 SI(paintPills, 5000);
 
 /* patch ACCTFIX2-D1: bank-statement deposits that match an open invoice (window._gcDepositMatch) join this list */
-function addMatches(l){ var fresh = arr(l).filter(function(m){ return m && m.id && !PM.list.some(function(c){ return c.id === m.id; }); }); if (!fresh.length) return Promise.resolve(0); return kvAdd(PMK, fresh).then(function(){ PM.list = arr(lsGet(PMK)); paintPills(); return fresh.length; }); }
+function addMatches(l){ var fresh = arr(l).filter(function(m){ return m && m.id && !PM.list.some(function(c){ return c.id === m.id; }); }); if (!fresh.length) return Promise.resolve(0); return kvAdd(PMK, fresh).then(function(){ pmKeep(fresh); paintPills(); return fresh.length; }); }
 W._gcAUTAI = {
   mic: function(pid, preset){ return openMic(pid, preset); }, closeMic: closeMic,
   route: function(text, pid){ return fn('voice-intake', { action: 'route', text: text, projectId: pid || '', jobs: jobList(), people: peopleNames(), today: today() }); },
