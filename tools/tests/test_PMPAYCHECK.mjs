@@ -52,7 +52,7 @@ const SET = () => p.evaluate(() => { window._gcApprovalSetFresh && window._gcApp
 const s1 = await SET(); console.log('   set', JSON.stringify(s1));
 await p.evaluate(() => window._gcOpenPmApprovals());
 const sh = await waitFor(c, () => { const t = document.body.innerText; return /PM pay: Steven Biffle/.test(t) && /PM pay: PMPTest NoSetup/.test(t) ? true : null; }, null, 10000, 300);
-const head = await p.evaluate(() => { const h = document.querySelector('[data-gc-appr-total]'); return h ? { n: +h.getAttribute('data-gc-appr-total'), t: h.textContent } : null; });
+let head = null; for (let i = 0; i < 20 && !head; i++) { head = await p.evaluate(() => { const h = document.querySelector('[data-gc-appr-total]'); return h ? { n: +h.getAttribute('data-gc-appr-total'), t: h.textContent } : null; }); if (!head) await new Promise(r => setTimeout(r, 250)); }   // the sheet redraws itself in place (APPROVALSFIX): wait for the header
 const s1b = await SET(); console.log('   sheet head', JSON.stringify(head), JSON.stringify(s1b));
 ok(sh && s1.pm >= 2, 'My Approvals lists the PM pay flags as other approvals', s1);
 ok(head && s1b.inSet === s1b.pm && s1b.pm >= 2 && /other approval/.test(head.t), 'the header count includes them: the counted set holds every PM pay item as an other approval', { head, s1b });
