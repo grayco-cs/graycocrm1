@@ -146,6 +146,31 @@ try {
   v = await viewer();
   ok(!!v && /Invoice 1001/.test(v.name) && v.frame, 'a generated document (_gcOpenDocHTML) opens in the viewer', v);
   await O.ev(() => document.querySelector('#gc-viewer [data-gv="back"]').click());
+
+  /* 6. DOCOPEN2: ✏️ Edit */
+  if (html.includes('__GC_PATCH_DOCOPEN2__')) {
+    await pg.locator('.gcfp-docs .gcfp-doc[data-id="TDOC_DOCX"]').tap();
+    await waitFor(O, () => !!document.querySelector('#gc-viewer [data-gv="edit"]'), null, 10000);
+    v = await viewer();
+    ok(!!v && v.btns.includes('✏️ Edit') && v.btns.indexOf('✏️ Edit') < v.btns.indexOf('⬇️ Download'), 'an uploaded file\'s page has ✏️ Edit next to ‹ Back and ⬇️ Download', v && v.btns);
+    await pg.locator('#gc-viewer [data-gv="edit"]').tap();
+    ok(!!(await waitFor(O, () => !!document.querySelector('#gcv2-props [data-p="name"]'), null, 5000)), 'Edit → the file\'s details: name, category, 👁 Customer sees it, Replace file');
+    await pg.locator('#gcv2-props [data-p="name"]').fill('Potts proposal v2.docx');
+    await pg.locator('#gcv2-props [data-p="cat"]').selectOption('Proposals');
+    await pg.locator('#gcv2-props [data-p="shown"]').uncheck();
+    await pg.locator('#gcv2-props [data-p="file"]').setInputFiles({ name: 'Potts proposal v2.docx', mimeType: DOCX_T, buffer: DOCX2 });
+    await pg.locator('#gcv2-props [data-p="save"]').tap();
+    const vers = await waitFor(O, async () => { const all = (await window.idbGet('projectDocs')) || []; const o = all.find(d => d && d.id === 'TDOC_DOCX'); const n = o && all.find(d => d && d.id === o.supersededBy); return o && n ? { old: { sup: o.supersededBy, shown: o.portalShare }, nu: { name: n.name, cat: n.cat, shown: n.portalShare, ref: n.ref, hist: (n.history || []).map(h => h.name), versionOf: n.versionOf } } : null; }, null, 15000);
+    ok(!!vers && vers.nu.name === 'Potts proposal v2.docx' && vers.nu.cat === 'Proposals' && vers.nu.shown === false && /^sb:crm-files\/[0-9a-f]{64}\.docx$/.test(vers.nu.ref) && vers.nu.hist.join() === 'GrayCo_Proposal_Potts_Flooring.docx' && vers.old.shown === false, 'Save → a new version (renamed, filed under Proposals, hidden from the customer); the old one kept in its history, never shown to the customer', vers);
+    await waitFor(O, () => !!document.querySelector('.gcfp-docs .gcfp-doc'), null, 10000); await sleep(800);
+    const listed = await O.ev(() => [...document.querySelectorAll('.gcfp-docs .gcfp-doc[data-k="doc"]')].map(b => b.innerText.split('\n')[0]));
+    ok(listed.some(t => /Potts proposal v2\.docx/.test(t)) && !listed.some(t => /GrayCo_Proposal_Potts_Flooring/.test(t)), 'the Documents list shows the new version only', listed);
+    const fns = await O.ev(pid => { const V = window._gcViewer; return { scope: typeof V.editFor({ k: 'paper', id: 'x', t: '📋 Scope of Work' }, { id: pid }), est: typeof V.editFor({ k: 'est', id: 'E1' }, { id: pid }), sign: V.editFor({ k: 'sign', id: 'S1' }, { id: pid }) }; }, PID);
+    ok(fns.scope === 'function' && fns.est === 'function' && fns.sign === null, 'Edit for the Scope of Work paper (the job\'s Scope of Work) and a proposal (the estimate); none for a signature request', fns);
+    await O.ev(pid => window._gcViewer.editFor({ k: 'paper', id: 'x', t: '📋 Scope of Work' }, { id: pid })(), PID);
+    ok(!!(await waitFor(O, () => document.activeElement && document.activeElement.id === '_jpScopeText', null, 5000)), '… the Scope of Work paper\'s Edit opens the job\'s Scope of Work, ready to type');
+    await O.ev(() => document.querySelectorAll('body > div').forEach(d => { if (d.querySelector && d.querySelector('#_jpScopeText')) d.remove(); }));
+  }
   ok((await O.ev(() => window.__opens.length)) === 0 && newPages() === 0, 'through all of it: no window.open, no new tab', await O.ev(() => window.__opens));
   ok(await O.ev(() => Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) <= window.innerWidth + 1), 'no sideways scroll');
   ok(!O.errs.length, 'no page errors', O.errs.slice(0, 3));

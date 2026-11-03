@@ -127,7 +127,7 @@ function papers(p){
     Promise.resolve(W._gcDocSet && W._gcDocSet.forJob ? W._gcDocSet.forJob(pid) : null).then(function(v){ return v; }, function(){ return null; })]).then(function(a){
     var out = [], on = function(x){ return x && x.deleted !== true && (s(x.pid) === pid || s(x.jobId) === pid || s(x.projectId) === pid); };
     /* the job's files: what the desk Documents tab and the portal read */
-    var docs = uniq(arr(C().projectDocs).concat(arr(W._gcProjectDocs), a[0])).filter(on);
+    var docs = uniq(arr(C().projectDocs).concat(arr(W._gcProjectDocs), a[0])).filter(function(d){ return on(d) && !s(d.supersededBy); });   /* patch DOCOPEN2: a replaced version stays in its history */
     docs.forEach(function(d){
       var t = [d.cat, d.name, d.kind].join(' '), mail = /mail|gmail|email/i.test(s(d.source) + s(d.cat));
       out.push({ k: 'doc', id: s(d.id), g: groupOf(t), t: s(d.name || d.fileName || 'Document'), sub: [mail ? '✉️ from e-mail' : '', s(d.cat), d.subName ? 'from ' + s(d.subName) : ''].filter(Boolean).join(' · '),
@@ -173,11 +173,13 @@ function openItem(it, p){
   /* in the tap: a new tab first (iPhone), then its address */
   if (it.url) return;   /* a real link: the <a> does it */
   if (it.k === 'inv' && !it.ref && typeof W._gcInvoiceEditor === 'function') { W._gcInvoiceEditor(it.id); return; }
+  var ed = W._gcViewer && W._gcViewer.editFor ? W._gcViewer.editFor(it, p) : null;   /* patch DOCOPEN2: ✏️ Edit */
+  if (it.k === 'paper' && W._gcDocLib && W._gcDocLib.render && W._gcViewer) { W._gcDocLib.render(it.id, s(p.id)).then(function(r){ if (!r) { toast('Could not open that document.'); return; } W._gcViewer.open({ html: r.page, name: s(r.t && r.t.name) + ' — ' + s(p.name), edit: ed }); }); return; }
   if (it.k === 'paper' && W._gcDocLib && W._gcDocLib.open) { W._gcDocLib.open(it.id, s(p.id)); return; }
   /* patch DOCOPEN: a file opens as a page in the CRM (‹ Back, ⬇️ Download, 📤 Share) — no pop-up, no about:blank */
   var nm = s(it.d && (it.d.name || it.d.fileName)) || s(it.t).replace(/^\W+/, ''), ty = s(it.d && (it.d.type || it.d.mime));
-  if (it.ref && W._gcViewer) { W._gcViewer.open({ ref: it.ref, name: nm, type: ty }); return; }
-  if (it.data && it.d && W._gcViewer) { W._gcViewer.open({ data: it.d.data, name: nm, type: ty }); return; }
+  if (it.ref && W._gcViewer) { W._gcViewer.open({ ref: it.ref, name: nm, type: ty, edit: ed }); return; }
+  if (it.data && it.d && W._gcViewer) { W._gcViewer.open({ data: it.d.data, name: nm, type: ty, edit: ed }); return; }
   if (it.k === 'est') { toast('This proposal has no PDF yet — open it from 📐 Estimates.'); return; }
   toast(it.t + ' — ' + it.sub);
 }
