@@ -234,7 +234,7 @@ export class View3D {
       const hingeX = (o.hinge === 'right' ? 1 : -1) * (width / 2 - fr);
       const pivot = new THREE.Group(); pivot.position.set(hingeX, 0, 0); grp.add(pivot);
       grp.remove(leaf); leaf.position.set(-hingeX, -fr / 2, 0); pivot.add(leaf);
-      pivot.rotation.y = (o.flip ? -1 : 1) * (o.hinge === 'right' ? -1 : 1) * 0.35;
+      pivot.rotation.y = -(o.flip ? -1 : 1) * (o.hinge === 'right' ? -1 : 1) * 0.35;   // same side as the swing arc on the plan
       const knob = new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 8), this.mat('#b08d57', { metalness: 0.8, roughness: 0.3 }));
       knob.position.set(-hingeX * 1.8, -0.6, 0.12); pivot.add(knob);
     } else if (o.type === 'garage') {

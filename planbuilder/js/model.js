@@ -1,7 +1,7 @@
 // PlanBuilder project model: creating projects, levels, walls, rooms and the starter templates.
 // A project is plain JSON so it can be saved, exported, imported and (later) synced to the CRM.
 
-import { dist, projectOnSeg, footprintRect } from './geom.js';
+import { dist, projectOnSeg, footprintRect, pointInPoly } from './geom.js';
 
 export const SCHEMA = 1;
 
@@ -106,6 +106,29 @@ export function addOpening(level, wall, t, product) {
   const o = { id: uid('op'), wallId: wall.id, t, productId: product ? product.id : '', type: (product && product.openingType) || 'door', width: (product && product.w) || 3, height: (product && product.h) || 6.67, sill: (product && product.sill) || 0, flip: false, hinge: 'left' };
   level.openings.push(o);
   return o;
+}
+
+// Turn every door so it swings into a room, not into a hall: a room beats outside, outside beats a hall.
+// (A door between a hall and the outside, like a warehouse door, swings out of the hall.) Returns how many changed.
+export const HALL_RE = /hall|corridor|vestibule/i;
+export function swingDoorsIntoRooms(level) {
+  let changed = 0;
+  level.openings.forEach(o => {
+    if (o.type !== 'door') return;
+    const w = level.walls.find(x => x.id === o.wallId); if (!w) return;
+    const L = dist(w.a, w.b) || 1, d = { x: (w.b.x - w.a.x) / L, y: (w.b.y - w.a.y) / L }, n = { x: -d.y, y: d.x };
+    const c = { x: w.a.x + d.x * L * o.t, y: w.a.y + d.y * L * o.t }, off = (w.thickness || 0.5) / 2 + 1;
+    const score = sg => {
+      const p = { x: c.x + n.x * off * sg, y: c.y + n.y * off * sg };
+      const r = level.rooms.find(rm => pointInPoly(p, rm.points));
+      return !r ? 1 : (HALL_RE.test(r.name) ? 0 : 2);
+    };
+    const right = score(1), left = score(-1);
+    if (right === left) return;
+    const flip = left > right;            // the plan swings a door to the wall's right side unless flipped
+    if (!!o.flip !== flip) { o.flip = flip; changed++; }
+  });
+  return changed;
 }
 
 // ---- Rooms ----
@@ -348,6 +371,7 @@ export function fromTemplate(id, catalog) {
     b.item('ap-fridge', 38.75, 27.5, 90, catalog); b.item('fn-table', 35.5, 18, 0, catalog, { w: 3, d: 3 });
     b.item('cm-ada-wc', 38.75, 35, 90, catalog); b.item('cab-vanity', 39.1, 39, 90, catalog);
     b.item('cm-ada-wc', 38.75, 46, 90, catalog); b.item('cab-vanity', 39.1, 51, 90, catalog);
+    swingDoorsIntoRooms(L1);
   }
   restack(p);
   return p;

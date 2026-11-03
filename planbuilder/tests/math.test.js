@@ -1,7 +1,7 @@
 // Unit tests for the PlanBuilder math: node planbuilder/tests/math.test.js  (no browser, no network)
 import assert from 'assert';
 import { fmtFtIn, parseFtIn, polyArea, roofMeasure, wallPieces, pitchFactor } from '../js/geom.js';
-import { fromTemplate, newProject, addWall, addOpening, addRoom, rectPts, splitWall, markExterior } from '../js/model.js';
+import { fromTemplate, newProject, addWall, addOpening, addRoom, rectPts, splitWall, markExterior, swingDoorsIntoRooms } from '../js/model.js';
 import { DEFAULT_CATALOG, catalogFromCSV, toCSV, CSV_COLUMNS } from '../js/catalog.js';
 import { computeTakeoff, roundQty, convert, roomStats } from '../js/takeoff.js';
 
@@ -101,6 +101,15 @@ t('catalog CSV round trip', () => {
   assert.equal(products[0].id, DEFAULT_CATALOG[0].id); near(products[0].price, DEFAULT_CATALOG[0].price);
   const r2 = catalogFromCSV('name,price,unit\n"Shingle, premium","$1,250.00",SQ\n,5,EA\n');
   assert.equal(r2.products.length, 1); near(r2.products[0].price, 1250); assert.equal(r2.errors.length, 1);
+});
+
+t('doors swing into rooms, not halls', () => {
+  const p = newProject(); const L = p.levels[0];
+  addRoom(L, rectPts(0, 0, 12, 10), { name: 'Office' }); addRoom(L, rectPts(0, 10, 12, 4), { name: 'Hall' });
+  const w1 = addWall(L, { x: 0, y: 10 }, { x: 12, y: 10 });   // right side of this wall is +y = the hall
+  const w2 = addWall(L, { x: 12, y: 10 }, { x: 0, y: 10 });   // right side is -y = the office
+  const d1 = addOpening(L, w1, 0.5, { w: 3, h: 6.67, openingType: 'door' }), d2 = addOpening(L, w2, 0.5, { w: 3, h: 6.67, openingType: 'door' });
+  assert.equal(swingDoorsIntoRooms(L), 1); assert.equal(d1.flip, true); assert.equal(d2.flip, false);
 });
 
 console.log(`PlanBuilder math: ${n} tests passed`);

@@ -2,7 +2,7 @@
 
 import { Plan2D } from './plan2d.js';
 import { fmtFtIn, parseFtIn, wallLength, wallDir, roofMeasure, bbox } from './geom.js';
-import { newLevel, restack, normalize, fromTemplate, TEMPLATES, PROJECT_TYPES, splitWall, wallsForRoom, autoRoof, markExterior, uid } from './model.js';
+import { newLevel, restack, normalize, fromTemplate, TEMPLATES, PROJECT_TYPES, splitWall, wallsForRoom, autoRoof, markExterior, uid, swingDoorsIntoRooms } from './model.js';
 import { CATEGORIES, UNITS, KINDS, findProduct, categoryName, CSV_COLUMNS, toCSV, catalogFromCSV } from './catalog.js';
 import { computeTakeoff, estimateCSV, roomStats } from './takeoff.js';
 import * as store from './store.js';
@@ -455,6 +455,7 @@ const app = {
     el.append(lengthField('Wall height', L.height, v => { if (v > 2) { L.height = v; restack(P); this.commit('Wall height'); } }));
     el.append(h('div', { class: 'row' },
       h('button', { class: 'btn small', title: 'Marks the walls around the outside of the plan as outside walls', onclick: () => { const n = markExterior(L, s); this.commit(n ? `${n} walls marked outside` : 'No change'); } }, 'Find outside walls'),
+      h('button', { class: 'btn small', title: 'Turns every door so it swings into its room, not into a hall', onclick: () => { const n = swingDoorsIntoRooms(L); this.commit(n ? `${n} doors turned to swing into their rooms` : 'Every door already swings into its room'); } }, 'Doors swing into rooms'),
       h('button', { class: 'btn small', onclick: () => { const r = autoRoof(P, L, this.roofDefaults()); if (r) { this.select({ kind: 'roof', id: r.id }); this.commit('Auto roof'); } else this.toast('Draw the walls first.'); } }, '⌂ Auto roof'),
       P.levels.length > 1 ? h('button', { class: 'btn small danger', onclick: () => { if (!confirm(`Delete ${L.name} and everything drawn on it?`)) return; P.roofs = P.roofs.filter(r => r.levelId !== L.id); P.levels = P.levels.filter(x => x !== L); restack(P); this.level = P.levels[0]; this.commit('Delete level'); } }, 'Delete level') : null));
     el.append(h('hr', { class: 'sep' }), h('h3', {}, 'Defaults'));
