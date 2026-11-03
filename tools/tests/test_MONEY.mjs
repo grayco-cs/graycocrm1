@@ -31,7 +31,7 @@ cset('invs', [{ id: 'I1', type: 'client', pid: 'P1', amt: 10000, status: 'paid',
 cset('expenses', [
   { id: 'E1', pid: 'P2', type: 'purchase', vendor: 'THE HOME DEPOT #6620', desc: 'lumber', amt: 120, category: 'Materials', status: 'approved', approved: true, date: day(-12), payMethod: 'Credit Card', savedAt: iso, updatedAt: iso },
   { id: 'E2', pid: 'P2', type: 'purchase', vendor: 'HOME DEPOT 6620', desc: 'screws', amt: 40, category: 'Materials', status: 'approved', approved: true, date: day(-8), payMethod: 'Credit Card', savedAt: iso, updatedAt: iso },
-  { id: 'E3', pid: '', type: 'purchase', vendor: 'SHELL OIL 5741', desc: 'Card charge PO T724', amt: 61.5, category: 'Fuel/Gas', status: 'approved', date: day(-3), payMethod: 'Credit Card', by: 'CC Import', savedAt: iso, updatedAt: iso }
+  { id: 'E3', pid: '', type: 'purchase', vendor: 'SHELL OIL 5741', desc: 'Card charge 123 SENATOBIA DR', amt: 61.5, category: 'Fuel/Gas', status: 'approved', date: day(-3), payMethod: 'Credit Card', by: 'CC Import', savedAt: iso, updatedAt: iso }
 ]);
 /* (every row is an hour old, like a real cloud: the CRM's catch-up poll must not think the seed just changed) */
 const seedLeads = [1, 2, 3, 4].map(i => ({ id: 'L' + i, name: 'Demo lead ' + i, source: 'Facebook/Instagram Ads', status: i === 1 ? 'won' : 'new', stage: i === 1 ? 'Won' : 'New Lead', createdAt: day(-i) + 'T12:00:00Z', created: day(-i), projectId: i === 1 ? 'P1' : '' }));
@@ -126,13 +126,15 @@ ok(mk.sp.length >= 1 && mk.sp.reduce((a, x) => a + (x.channel === 'Facebook/Inst
 ok(mk.row && typeof mk.row === 'object' && mk.row.spend === 450 && mk.row.leads >= 1 && mk.row.cpl === Math.round(450 / mk.row.leads * 100) / 100, '📣 Marketing numbers: spend $450, cost per lead from the leads\' source', mk.row);
 ok(mk.typed.length === 1 && mk.typed[0].amount === 999 || mk.typed.every(x => x.month !== new Date().toISOString().slice(0, 7) || x.amount === 999), 'spend typed in for that source and month wins (never doubled)', mk.typed);
 
-/* ── 📥 Needs a job: the Shell charge (PO T724 in its memo → suggested Brent) → Save ── */
+/* ── 📥 Needs a job: the Shell charge (Brent's job address in its memo → suggested Brent) → Save ──
+   No PO in this memo: a charge with exactly one job's PO is placed on that job by itself (patch JOBFILL), so it never waits in
+   📥 Needs a job. The re-visit: To-Do → Accounting (the imports above) → back to the To-Do, and the money row is there again. */
 await p.evaluate(() => { const b = [...document.querySelectorAll('aside nav button, nav button')].find(y => y.offsetParent && /To-Do/.test(y.textContent)); if (b) b.click(); else window._setView('todo'); });   /* back on the To-Do for 📥 Needs a job, the way the test opened it first */
-ok(await waitFor(A, () => !!document.querySelector('#gc-money-needs [data-mn="needs"]'), null, 30000), 'back on the To-Do: 📥 Needs a job is there', await p.evaluate(() => (document.querySelector('#gc-money-needs') || {}).textContent || 'no #gc-money-needs'));
+ok(await waitFor(A, () => /Needs a job \(1\)/.test((document.querySelector('#gc-money-needs [data-mn="needs"]') || {}).textContent || ''), null, 30000), 'To-Do → Accounting → back to the To-Do: the 📥 money row is there again with 📥 Needs a job (1)', await p.evaluate(() => (document.querySelector('#gc-money-needs') || {}).textContent || 'no #gc-money-needs'));
 await p.click('#gc-money-needs [data-mn="needs"]');
 await waitFor(A, () => !!document.querySelector('.gc-money-ov [data-i]'), null, 10000);
 const nj = await p.evaluate(() => [...document.querySelectorAll('.gc-money-ov [data-i]')].map(r => ({ t: r.textContent.slice(0, 160), sel: (r.querySelector('[data-m="job"]') || {}).value })));
-ok(nj.length === 1 && /SHELL/.test(nj[0].t) && nj[0].sel === 'P2' && /PO T724 in the memo/.test(nj[0].t), 'Needs a job: the Shell charge, PO T724 suggested', nj);
+ok(nj.length === 1 && /SHELL/.test(nj[0].t) && nj[0].sel === 'P2' && /the open job at 123 Senatobia Dr/.test(nj[0].t), 'Needs a job: the Shell charge, Brent\'s job suggested by the address in the memo', nj);
 await p.click('.gc-money-ov [data-m="save"]');
 ok(await waitFor(A, () => (window._crm.expenses.find(e => e.id === 'E3') || {}).pid === 'P2', null, 10000), 'Save → the charge is on Brent\'s job');
 ok(A.errs.length === 0, 'no page errors', A.errs.slice(0, 5));
