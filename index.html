@@ -210795,7 +210795,8 @@ function w2Employees(profiles, users){
     /* only the SHARED Office sign-in: named exactly "Office", the office@ mailbox, or flagged as a shared login.
        A real person with an office role (e.g. "Office Admin") is a W-2 employee and IS offered. */
     if(nm==='office' || /^office@/.test(em) || (u && (u.shared===true || u.sharedLogin===true || u.isShared===true))) return false;
-    if(u && (u.active===false || low(u.payType)==='owner' || role==='admin' || role==='owner')) return false;
+    if(users.length && !u) return false;   /* patch PASTPAYFIX: only people on Admin → Team — a leftover payroll profile of someone who left is never offered */
+    if(u && (u.active===false || u.disabled===true || u.deleted===true || u.archived===true || u.terminated===true || /inactive|terminat|former|left|fired|quit|disabled|removed/.test(low(u.status)) || low(u.payType)==='owner' || role==='admin' || role==='owner')) return false;
     return true;
   }).map(function(x){ return { name:s(x.name), key:s(x.userId||x.name), payType:s(x.payType), prof:x }; }).sort(function(a,b){ return a.name.localeCompare(b.name); });
 }
@@ -210861,7 +210862,7 @@ W._gcPastPayOpen = async function(){
     +'<label style="font-size:11px;font-weight:700;color:#64748b">LAST PAYDAY<br><input data-pp="last" type="date" value="'+lastFri(qeS)+'" style="'+IN+'"></label>'
     +'<div style="font-size:11px;font-weight:700;color:#64748b">EMPLOYEES<br>'+(emps.length?emps.map(function(e,i){ return '<label style="font-weight:600;color:#0f2440;margin-right:8px"><input type="checkbox" data-pp-emp="'+i+'" checked> '+esc(e.name)+'</label>'; }).join(''):'<span style="color:#b91c1c">No employees yet — add them in Payroll → Employees (name, pay type, W-4).</span>')+'</div>'
     +'<button data-pp="fill" style="'+BT+'background:#0f2440;color:#fff">Make weekly rows</button>'
-    +'<button data-pp="add" style="'+BT+'">+ One row</button>'
+    +'<button data-pp="add" style="'+BT+'border-color:#16a34a;color:#166534">+ Add a past check</button>'
     +'<button data-pp="clear" style="'+BT+'color:#b91c1c">Clear all rows</button></div>'
     +'<div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;min-width:1380px"><thead><tr style="background:#f1f5f9">'
     +['Pay date','Period start','Period end','Employee','Hours','Gross','Commission','Federal withheld','Social Security / Medicare withheld','Other ded.','Net pay','Check #',''].map(function(h){ return '<th style="padding:6px 4px;font-size:10px;color:#64748b;text-transform:uppercase;text-align:left">'+h+'</th>'; }).join('')
@@ -210885,7 +210886,7 @@ W._gcPastPayOpen = async function(){
         +'<td style="padding:3px">'+inp(i,'other',r.other,66)+'</td><td style="padding:3px">'+inp(i,'net',r.net,86)+'</td><td style="padding:3px">'+inp(i,'checkNo',r.checkNo,70)+'</td>'
         +'<td style="padding:3px"><button data-rm="'+i+'" style="border:none;background:#fee2e2;color:#b91c1c;border-radius:5px;padding:4px 8px;cursor:pointer">✕</button></td></tr>'
         +'<tr data-note="'+i+'"><td colspan="13" style="padding:0 4px 4px"></td></tr>';
-    }).join('') : '<tr><td colspan="13" style="padding:14px;color:#64748b;font-size:13px">No rows yet — pick the first and last payday and press <b>Make weekly rows</b>.</td></tr>';
+    }).join('') : '<tr><td colspan="13" style="padding:14px;color:#64748b;font-size:13px">No checks yet. <b>One check:</b> press <b>+ Add a past check</b>, then pick the employee, the pay date and type the gross from the stub. <b>A whole quarter:</b> pick the first and last payday and press <b>Make weekly rows</b>.</td></tr>';
     paint();
   }
   function paint(){
