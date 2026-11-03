@@ -141395,6 +141395,8 @@ function warnings(){
   act.forEach(function(u){ var e = low(u.email); if (!e) return; (byMail[e] = byMail[e] || []).push(u); });
   Object.keys(byMail).forEach(function(e){
     var g = byMail[e]; if (g.length < 2) return;
+    var accNames = g.map(function(u){ return s(u.name).replace(/\s+/g, ' '); });   /* patch ADMWARN */
+    try { if (W._gcAdmAccept && W._gcAdmAccept.has(e, accNames)) return; } catch (x) {}   /* patch ADMWARN */
     var keep = g.filter(isPlaceholder)[0] || g[0];
     var move = g.filter(function(u){ return u !== keep; });
     var dom = e.split('@')[1] || 'grayco-cs.com';
@@ -141405,7 +141407,8 @@ function warnings(){
         + fix.map(function(f){ return 'Give ' + esc(s(f.u.name)) + ' their own address' + (f.email ? ' (for example <b>' + esc(f.email) + '</b>)' : ''); }).join('; ')
         + ' — EDIT their record here, then add the new address in Team access so they can sign in.',
       fixes: fix.map(function(f){ return { label: 'Edit ' + (s(f.u.name).split(/\s+/)[0] || 'them'), run: function(){ editRow(f.u); } }; })
-        .concat([{ label: 'Team access', run: function(){ call('_gcTeamAccess'); } }]) });
+        .concat([{ label: 'Team access', run: function(){ call('_gcTeamAccess'); } }])
+        .concat(W._gcAdmAccept ? [{ label: '✓ That’s right — leave it', run: function(){ W._gcAdmAccept.accept(e, accNames); paintTop(); } }] : []) });   /* patch ADMWARN */
   });
   /* no role */
   act.filter(function(u){ return !s(u.role); }).forEach(function(u){
@@ -141431,7 +141434,8 @@ function warnings(){
   });
   /* stray spaces in a name */
   act.filter(function(u){ return u.name && u.name !== s(u.name).replace(/\s+/g, ' '); }).forEach(function(u){
-    out.push({ id: 'name-spaces', level: 'amber', key: u.id, title: '“' + esc(u.name) + '” has extra spaces in the name',
+    out.push({ id: 'name-spaces', level: 'amber', key: u.id, items: ['person:' + s(u.id || u.email || low(u.name).replace(/\s+/g, ' '))],   /* patch ADMWARN */
+      title: '“' + esc(u.name) + '” has extra spaces in the name',
       text: 'Jobs, pay and approvals match people by name; a stray space can make a job look unassigned. EDIT → Name and remove the space.',
       fixes: [{ label: 'Edit', run: function(){ editRow(u); } }] });
   });
@@ -211173,6 +211177,109 @@ later(tick, 300); RI.call(W, tick, 1000);
 W._gcAdmDismiss = { hidden: hidden, dismiss: dismiss, restore: restore, keyOf: keyOf, items: items, until: until, pull: pull, push: push,
   state: function(){ sync(); return { email: S.email, cards: JSON.parse(JSON.stringify(S.cards)), pulledAt: S.pulledAt, dirty: S.dirty, err: S.err, key: S.email ? rowKey() : '' }; } };
 try { console.log('[GC] ⚙ Admin: a ✕ stays dismissed until something new shows up (patch ADMDISMISS) — _gcAdmDismiss.state()'); } catch (e) {}
+})();
+</script>
+<script id="gc-patch-admwarn">
+/* patch ADMWARN */
+/* __GC_PATCH_ADMWARN__ — ⚙ Admin → Team: names without stray spaces everywhere they are loaded or saved; "✓ That's right —
+   leave it" for two people on one e-mail (see tools/patch_ADMWARN.py). API: window._gcAdmAccept, window._gcCleanName */
+(function(){
+'use strict';
+if (window.__GC_PATCH_ADMWARN__) return; window.__GC_PATCH_ADMWARN__ = true;
+var W = window, ST = W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout, RI = W.__GC_NATIVE_SETINTERVAL__ || W.setInterval;
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function clean(v){ return typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : v; }
+function parse(v){ if (typeof v === 'string') { try { return JSON.parse(v); } catch (e) { return null; } } return v; }
+function lsGet(k){ try { return localStorage.getItem(k); } catch (e) { return null; } }
+function lsSet(k, v){ try { localStorage.setItem(k, v); } catch (e) {} }
+W._gcCleanName = clean;
+
+/* ── names: trimmed on load and on save ── */
+var FIELDS = { users: ['name'], projects: ['pm', 'pmName', 'owner', 'broughtInBy', 'createdBy'], leads: ['pm', 'pmName', 'owner', 'broughtInBy', 'createdBy'] };
+function cleanList(key, list){
+  var f = FIELDS[key]; if (!f || !Array.isArray(list)) return list;
+  var out = null;
+  for (var i = 0; i < list.length; i++) {
+    var r = list[i]; if (!r || typeof r !== 'object') continue;
+    var ch = null;
+    f.forEach(function(k){ var v = r[k]; if (typeof v === 'string' && clean(v) !== v) { ch = ch || {}; ch[k] = clean(v); } });
+    if (ch) { if (!out) out = list.slice(); out[i] = Object.assign({}, r, ch); }
+  }
+  return out || list;
+}
+function cleanVal(key, v){
+  if (!FIELDS[key]) return v;
+  if (Array.isArray(v)) return cleanList(key, v);
+  if (typeof v === 'string' && /^\s*\[/.test(v)) { var a = parse(v); if (Array.isArray(a)) { var c = cleanList(key, a); return c === a ? v : JSON.stringify(c); } }
+  return v;
+}
+W._gcCleanList = cleanList;
+function wrap(name, mk){
+  var f = W[name]; if (typeof f !== 'function' || f.__gcAdmwarn) return;
+  var g = mk(f); g.__gcAdmwarn = true;
+  try { Object.keys(f).forEach(function(k){ if (!(k in g)) g[k] = f[k]; }); } catch (e) {}
+  W[name] = g;
+}
+function arm(){
+  wrap('_healUsers', function(f){ return function(loaded, defs){ return cleanList('users', f.call(this, cleanList('users', loaded), defs)); }; });
+  ['_gcApplySync', '_supaUpsert', 'idbSet'].forEach(function(n){
+    wrap(n, function(f){ return function(key, value){ var a = Array.prototype.slice.call(arguments); try { if (typeof key === 'string' && FIELDS[key]) a[1] = cleanVal(key, value); } catch (e) {} return f.apply(this, a); }; });
+  });
+  /* the list on the screen (loaded before this ran, or set by a sync that went round the wrappers) */
+  try { var U = W._crm && W._crm.users, C = cleanList('users', U); if (C !== U && typeof W._gcUsersRaw === 'function' && !(D.activeElement && /^(INPUT|TEXTAREA|SELECT)$/.test(D.activeElement.tagName))) { W._crm.users = C; W._gcUsersRaw(C.slice()); } } catch (e) {}
+}
+var D = document;
+arm(); RI.call(W, arm, 1500);
+
+/* ── "✓ That's right — leave it": an accepted pair on one e-mail (company-wide) ── */
+var ROW = 'gc_adm_accept', LOC = 'gc_adm_accept_local', A = { pairs: {}, pulledAt: 0, err: '', dirty: false };
+function namesKey(names){ return (names || []).map(function(n){ return low(clean(n)); }).sort().join('|'); }
+function me(){ try { var x = W.__GC_AUTH__; var e = x && x.email && x.email(); if (e) return low(e); } catch (e) {} return ''; }
+function creds(){ return { u: (lsGet('grayco_sb_url') || 'https://ieeonhpfahmwwecizdut.supabase.co').replace(/\/$/, ''), k: lsGet('grayco_sb_key') || '' }; }
+function merge(a, b){ var out = {}; [a, b].forEach(function(m){ Object.keys(m || {}).forEach(function(k){ var r = m[k]; if (r && typeof r === 'object' && (!out[k] || s(r.at) > s(out[k].at))) out[k] = r; }); }); return out; }
+(function(){ var l = parse(lsGet(LOC)); if (l && l.pairs) { A.pairs = merge({}, l.pairs); A.dirty = !!l.dirty; } })();
+function saveLocal(){ lsSet(LOC, JSON.stringify({ pairs: A.pairs, dirty: A.dirty })); }
+function cloudRead(){
+  var c = creds(); if (!c.k) return Promise.reject(new Error('not connected'));
+  return W.fetch(c.u + '/rest/v1/gc_kv?select=value&key=eq.' + ROW, { headers: { apikey: c.k, Authorization: 'Bearer ' + c.k }, cache: 'no-store' })
+    .then(function(r){ return r.ok ? r.json() : Promise.reject(new Error('read ' + r.status)); })
+    .then(function(rows){ var v = parse(rows && rows[0] ? rows[0].value : null); return v && v.pairs && typeof v.pairs === 'object' ? v.pairs : {}; });
+}
+function cloudWrite(){
+  var c = creds(); if (!c.k) return Promise.reject(new Error('not connected'));
+  return W.fetch(c.u + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: { apikey: c.k, Authorization: 'Bearer ' + c.k, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify({ key: ROW, value: JSON.stringify({ v: 1, pairs: A.pairs }), updated_at: new Date().toISOString() }) })
+    .then(function(r){ if (!r.ok) throw new Error('save ' + r.status); return true; });
+}
+function repaint(){ try { if (typeof W._gcAdmPaintTop === 'function') W._gcAdmPaintTop(); } catch (e) {} }
+function pull(){
+  return cloudRead().then(function(cl){ var before = JSON.stringify(A.pairs); A.pairs = merge(A.pairs, cl); A.pulledAt = Date.now(); A.err = ''; saveLocal(); if (A.dirty) push(); if (JSON.stringify(A.pairs) !== before) repaint(); return true; },
+    function(e){ A.err = s(e && e.message); return false; });
+}
+function push(){
+  A.dirty = true; saveLocal();
+  return cloudRead().then(function(cl){ A.pairs = merge(cl, A.pairs); return cloudWrite(); })
+    .then(function(){ A.dirty = false; A.err = ''; saveLocal(); return true; }, function(e){ A.err = s(e && e.message); return false; });
+}
+function has(email, names){ var r = A.pairs[low(email)]; return !!(r && !r.off && r.k === namesKey(names)); }
+function accept(email, names){
+  var e = low(email); if (!e) return false;
+  A.pairs[e] = { email: e, names: (names || []).map(clean), k: namesKey(names), at: new Date().toISOString(), by: me() };
+  saveLocal(); push(); return true;
+}
+function undo(email){ var e = low(email); A.pairs[e] = { email: e, off: true, at: new Date().toISOString(), by: me() }; saveLocal(); push(); repaint(); return true; }
+W._gcAdmAccept = { has: has, accept: accept, undo: undo, pull: pull, push: push, state: function(){ return JSON.parse(JSON.stringify(A)); } };
+var lastPull = 0;
+RI.call(W, function(){
+  try {
+    var adm = low(lsGet('grayco_view')) === 'admin', now = Date.now();
+    if (!me()) return;
+    if ((adm && now - lastPull > 120000) || !lastPull) { lastPull = now; pull(); }
+    else if (A.dirty && now - lastPull > 30000) { lastPull = now; push(); }
+  } catch (e) {}
+}, 1000);
+try { console.log('[GC] ⚙ Admin: names trimmed on load and save; "✓ That’s right — leave it" for one e-mail (patch ADMWARN) — _gcAdmAccept.state()'); } catch (e) {}
 })();
 </script>
 <script>
