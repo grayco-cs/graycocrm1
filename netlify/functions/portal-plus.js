@@ -366,7 +366,7 @@ async function staffAct(body, who){
         const ao = (Array.isArray(it.addOns) ? it.addOns : []).map(function(x){ const d = (A.settings.addOns || []).find(function(y){ return y.id === s(x && x.id || x); }); return d && d.id !== 'handyman' && M.addonFits(d, c.planId) ? { id: d.id, name: d.name, price: money(x && x.price != null ? x.price : d.price), note: d.note } : null; }).filter(Boolean);
         c.addOns = ao; if (ao.length) c.includes = (c.includes ? c.includes + ' ' : '') + ao.map(function(x){ return 'Add-on: ' + x.name + ' (included in the price) — ' + x.note; }).join(' ');
         c.tier = c.tier || tierQ;
-        /* owner: the 🔧 Handyman Day ($289.99 a day, 8 AM – 5 PM, materials extra) on any plan — days a year, the tasks it covers, the tier discount */
+        /* owner: the 🔧 Handyman Day ($349.99 a day, 8 AM – 5 PM, materials extra) on any plan — days a year, the tasks it covers, the tier discount */
         const hdx = (Array.isArray(it.addOns) ? it.addOns : []).find(function(x){ return x && s(x.id) === 'handyman'; }), hdd = (A.settings.addOns || []).find(function(y){ return y.id === 'handyman'; });
         if (hdx && hdd) { const days = Math.max(1, Math.min(12, parseInt(hdx.qty || hdx.days, 10) || 1)), disc = (A.settings.tiers[M.tierOf(c)] || {}).discount || 0, total = money(hdd.price * days * (100 - disc) / 100);
           const tasks = (Array.isArray(hdx.tasks) ? hdx.tasks : []).map(function(x){ return clip(x, 100); }).filter(Boolean).slice(0, 30), other = (Array.isArray(hdx.other) ? hdx.other : []).map(function(x){ return clip(x, 120); }).filter(Boolean).slice(0, 10);

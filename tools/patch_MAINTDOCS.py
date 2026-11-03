@@ -30,7 +30,7 @@ def once(old, new, n=1):
 once('<li><a href=\\"about:srcdoc#quick\\">Quick reference<\\/a><\\/li>',
      '<li><a href=\\"about:srcdoc#quick\\">Quick reference<\\/a><\\/li>\\n  <li><a href=\\"about:srcdoc#maint\\">Maintenance plans<\\/a><\\/li>')
 SEC = ('<section id=\\"maint\\"><!-- ' + MARK + ' -->\\n    <h2><span class=\\"n\\">🛠<\\/span>Maintenance plans (GrayCo Care)<\\/h2>\\n'
-       '    <p>Every finished job is a chance to sell a plan. Roof, home and commercial plans, HVAC and pressure washing (our own service lines), a 🔧 Handyman Day ($289.99 a day, 8 AM – 5 PM, materials extra) and the free roof inspection for commercial prospects. Everything is in the <b>🛠 Maintenance<\\/b> tab.<\\/p>\\n'
+       '    <p>Every finished job is a chance to sell a plan. Roof, home and commercial plans, HVAC and pressure washing (our own service lines), a 🔧 Handyman Day ($349.99 a day, 8 AM – 5 PM, materials extra) and the free roof inspection for commercial prospects. Everything is in the <b>🛠 Maintenance<\\/b> tab.<\\/p>\\n'
        '    <ul>\\n'
        '      <li><b>Sell it:<\\/b> on the job, 🛠 Maintenance → tick the plans → Send quote, or 🛠 Maintenance → 🏗 Plan builder (property → services → tier → review → send to sign). The customer signs in the portal; the e-mail waits on ✅ Approvals.<\\/li>\\n'
        '      <li><b>Tiers:<\\/b> every plan customer starts at Bronze. Silver 10% and Gold 20% off repairs we find (Gold: the yearly free-plan drawing). Commercial plan customers are on the ⭐ priority list for snow and emergency mitigation.<\\/li>\\n'

@@ -91,7 +91,7 @@ const an = live.slides.find(x => x.type === 'announce');
 ok(!an.h && !an.t, 'an announcement with a customer\'s name / address is not shown (the default text takes its place)', an);
 ok(live.offers.length === 1 && live.offers[0].id === 'of1', 'offers: only the approved, live one (pending marketing / ended / off → never)', live.offers.map(o => o.id));
 ok(live.brand.emergency === '(901) 582-8255' && /TN #85034/.test(live.brand.licenses), 'the 24/7 line (call order number) and the licenses');
-ok(live.tiers.length === 3 && !/\$/.test(JSON.stringify(live.tiers)) && live.handyman.price === '$289.99', 'tiers without prices; the Handyman Day price (the one that is set)');
+ok(live.tiers.length === 3 && !/\$/.test(JSON.stringify(live.tiers)) && live.handyman.price === '$349.99', 'tiers without prices; the Handyman Day price (the one that is set)');
 ok(!/drawing/i.test(JSON.stringify(live)) && /10% off repairs/.test(JSON.stringify(live.tiers)), 'tiers from the plan catalog (repair discounts, extra calls); never the Gold drawing');
 ok(live.slides.every(x => !TY.by[x.type].chk || x.type === 'announce'), 'slides with unchecked default words ("edit me") never play on the lobby', live.slides.filter(x => TY.by[x.type].chk).map(x => x.type));
 ok(live.brand.states === 'TN · AR · MS', 'license states from the company brand settings (_lib/brand.js licenses)', live.brand.states);
