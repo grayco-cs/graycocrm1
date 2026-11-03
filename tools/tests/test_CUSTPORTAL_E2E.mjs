@@ -82,10 +82,22 @@ await t('1 forgot password: "Send me a code" e-mails a 6-digit code (also at nig
 await t('1 the invite says the starter password plainly (owner 11/02): the portal link e-mail (approval), a link e-mail sent after approval, the PM\'s welcome text, a follow-up — quiet hours kept', async () => {
   const PM = { authorization: 'Bearer good-pm' };
   const SENT = 'Your password is your first name: Sample (you can change it after you sign in).';
-  { const g = W.get('gc_automations'); W.put('gc_automations', Object.assign({}, g && typeof g === 'object' ? g : {}, { portal_invite_email: true })); try { require(W.FNDIR + '/_lib/automations.js')._t.reset(); } catch (e) {} }   /* patch AUTOPANEL (live since r17o): the new-job portal link e-mail is a ⚡ switch, OFF by default — ON for this check */
   { const pj = W.get('projects'); pj[0].created = new Date(Date.now()).toISOString().slice(0, 10); pj[0].createdAt = new Date(Date.now()).toISOString(); W.put('projects', pj); W.resetCaches(); }   /* a NEW job gets the invite */
+  /* patch AUTOPANEL (live main): the AUTOMATIC new-job invite is the ⚡ switch portal_invite_email (default OFF) — held while OFF;
+     a person's deliberate send (approving the invite on ✅ Approvals) is never held by it */
+  let AUTO = null; try { AUTO = require(W.FNDIR + '/_lib/automations.js'); } catch (e) { AUTO = null; }
+  const autoSet = on => { W.put('gc_automations', { portal_invite_email: on }); try { AUTO && AUTO._t && AUTO._t.reset(); } catch (e) {} };
+  const gated = /isOn\('portal_invite_email'\)/.test(fs.readFileSync(path.join(W.FNDIR, 'portal.js'), 'utf8'));   /* the switch is in this build (live main) */
+  if (AUTO && gated) {
+    autoSet(false);
+    const off = await call('portal', { action: 'send-link', projectId: S.pid }, PM);
+    assert.ok(off.data.held === 'portal_invite_email' || /switched off/.test(String(off.data.skipped)), 'the automatic invite is held while the switch is OFF: ' + JSON.stringify(off.data));
+    assert.ok(!(W.get(C.AQ_KEY) || []).some(a => a.id === 'appr_link_' + S.pid), 'nothing queued by itself');
+    autoSet(true);
+  }
   const r = await call('portal', { action: 'send-link', projectId: S.pid }, PM); assert.ok(r.data.ok, JSON.stringify(r.data));
   assert.ok(r.data.approval || r.data.todo, JSON.stringify(r.data));
+  if (AUTO && gated) autoSet(false);   /* from here on OFF again: approving is a person's deliberate send — it must still go out */
   const ap = (W.get(C.AQ_KEY) || []).find(a => a.id === 'appr_link_' + S.pid);
   assert.ok(ap && /Your password is your first name: <b>Sample<\/b> \(you can change it after you sign in\)\./.test(ap.html), 'the invite e-mail: ' + (ap ? ap.html.slice(ap.html.indexOf('Your password') - 20, ap.html.indexOf('Your password') + 140) : 'no approval'));
   console.log('    INVITE E-MAIL TEXT: ' + ap.html.replace(/<[^>]+>/g, ' ').replace(/&#39;/g, "'").replace(/\s+/g, ' ').trim().slice(0, 900));
@@ -99,9 +111,17 @@ await t('1 the invite says the starter password plainly (owner 11/02): the porta
   const wel = await call('portal-access', { action: 's-login', op: 'welcome', projectId: S.pid }, PM);
   assert.ok(wel.data.ok && wel.data.message.includes(SENT), 'the PM\'s welcome text: ' + wel.data.message); console.log('    WELCOME TEXT: ' + wel.data.message.replace(/#t=[A-Za-z0-9_-]+/, '#t=…'));
   assert.ok(/pwSentence\(starterFirst\(data, p\)\)/.test(fs.readFileSync(path.join(W.FNDIR, 'portal.js'), 'utf8')), 'the link text (when texting is on) too');
-  /* quiet hours: an approval made at 8:30 PM is scheduled for 7 AM, the e-mail is not sent */
+  /* a person approves the invite (daytime) → it goes out at once, with the password line — whatever the ⚡ switch says */
+  W.setDay(); W.RESEND.length = 0;
+  const ok = await C.approvalAction({ op: 'approve', id: 'appr_link_' + S.pid }, { email: 'admin.sample@grayco-cs.com', name: 'Avery Admin', role: 'admin' });
+  const inv = W.RESEND.find(x => JSON.stringify(x.to).includes(S.customer.email));
+  assert.ok(inv && inv.html.replace(/<[^>]+>/g, ' ').includes('Your password is your first name:') && /#t=/.test(inv.html), 'approved by a person → sent (switch OFF does not stop it): ' + JSON.stringify(ok && (ok.out || ok)).slice(0, 240));
+  const crmMsg = fs.readFileSync(path.join(W.ROOT, 'index.html'), 'utf8');
+  assert.ok(!/No app or password needed: ' \+ url; \}/.test(crmMsg) && /Open it here: ' \+ url \+ ' — or sign in at portal\.grayco-cs\.com with your e-mail or mobile number\. Your password is your first name: /.test(crmMsg), 'the job card\'s Copy link / Text it / Email it message says the password too');
+  /* quiet hours: an invite approved at 8:30 PM is scheduled for 7 AM, the e-mail is not sent */
+  await C.queueApproval({ id: 'appr_link_night', kind: 'portal_link', pid: S.pid, jobName: 'x', to: S.customer.email, subject: 'Your GrayCo project page', html: '<p><a href="' + C.LINK_PH + '">Open</a></p>', attachments: [], meta: {} });
   W.setAt('2026-11-03T02:30:00Z'); W.RESEND.length = 0;
-  const night = await C.approvalAction({ op: 'approve', id: 'appr_link_' + S.pid }, { email: S.pm.email, name: S.pm.name, role: 'staff' });
+  const night = await C.approvalAction({ op: 'approve', id: 'appr_link_night' }, { email: 'admin.sample@grayco-cs.com', name: 'Avery Admin', role: 'admin' });
   assert.ok(!W.RESEND.some(x => JSON.stringify(x.to).includes(S.customer.email)), 'nothing e-mailed at night: ' + JSON.stringify(night.out || night).slice(0, 200));
   W.setDay();
 });
