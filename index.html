@@ -84100,7 +84100,7 @@ var TABLES = {   /* patch PAY: tables rebuilt from the IRS brackets and standard
   2026: {
     single: [[0,0,0,0],[7500,0,0.1,7500],[19900,1240,0.12,19900],[57900,5800,0.22,57900],[113200,17966,0.24,113200],[209275,41024,0.32,209275],[263725,58448,0.35,263725],[648100,192979.25,0.37,648100]],
     married:[[0,0,0,0],[19300,0,0.1,19300],[44100,2480,0.12,44100],[120100,11600,0.22,120100],[230700,35932,0.24,230700],[422850,82048,0.32,422850],[531750,116896,0.35,531750],[788000,206583.5,0.37,788000]],
-    hoh:    [[0,0,0,0],[15550,0,0.1,15550],[33250,1770,0.12,33250],[83000,7740,0.22,83000],[121250,16155,0.24,121250],[217325,39213,0.32,217325],[271750,56629,0.35,271750],[656150,191169,0.37,656150]]
+    hoh:    [[0,0,0,0],[15550,0,0.1,15550],[33250,1770,0.12,33250],[83000,7740,0.22,83000],[121250,16155,0.24,121250],[217300,39207,0.32,217300],[271750,56631,0.35,271750],[656150,191171,0.37,656150]]   /* patch PAYCHECK: HoH 32% from $201,750 */
   }
 };
 var TABLES_STEP2 = {
@@ -84112,7 +84112,7 @@ var TABLES_STEP2 = {
   2026: {
     single: [[0,0,0,0],[8050,0,0.1,8050],[14250,620,0.12,14250],[33250,2900,0.22,33250],[60900,8983,0.24,60900],[108937.5,20512,0.32,108937.5],[136162.5,29224,0.35,136162.5],[328350,96489.63,0.37,328350]],
     married:[[0,0,0,0],[16100,0,0.1,16100],[28500,1240,0.12,28500],[66500,5800,0.22,66500],[121800,17966,0.24,121800],[217875,41024,0.32,217875],[272325,58448,0.35,272325],[400450,103291.75,0.37,400450]],
-    hoh:    [[0,0,0,0],[12075,0,0.1,12075],[20925,885,0.12,20925],[45800,3870,0.22,45800],[64925,8077.5,0.24,64925],[112962.5,19606.5,0.32,112962.5],[140175,28314.5,0.35,140175],[332375,95584.5,0.37,332375]]
+    hoh:    [[0,0,0,0],[12075,0,0.1,12075],[20925,885,0.12,20925],[45800,3870,0.22,45800],[64925,8077.5,0.24,64925],[112950,19603.5,0.32,112950],[140175,28315.5,0.35,140175],[332375,95585.5,0.37,332375]]
   }
 };
 function tablesFor(year, step2){ var S = step2 ? TABLES_STEP2 : TABLES; return S[String(year)] || S[2026]; }   /* patch PAY: W-4 step 2 */
@@ -84307,6 +84307,17 @@ function fedAnnualTax(adjAnnual, filing, year, step2){
   var tax = row[1] + (adjAnnual - row[3]) * row[2];
   return { tax: Math.max(0,tax), row: row };
 }
+/* patch PAYCHECK: Pub 15-T Worksheet 1A in one place — line 1g, the 2019-or-earlier W-4, Step 3, Step 4(c) */
+var W4_ALLOW = 4300;
+function _pcOldW4(pf){ return String((pf && pf.w4Form) || '') === '2019'; }
+function _pc1g(pf){ return (pf.multipleJobs || _pcOldW4(pf)) ? 0 : (pf.filing === 'married' ? 12900 : 8600); }
+function _pcFed(amt, ppy, pf, year){
+  pf = pf || {}; if(pf.exemptFed) return 0;
+  var old = _pcOldW4(pf), annual = r2(n2(amt) * ppy);
+  var adj = old ? annual - n2(pf.allowances) * W4_ALLOW : annual + n2(pf.otherIncome) - n2(pf.deductions) - _pc1g(pf);
+  var ft = fedAnnualTax(Math.max(0, adj), pf.filing, year, !old && !!pf.multipleJobs);
+  return r2(r2(Math.max(0, ft.tax - (old ? 0 : n2(pf.dependentsCredit))) / ppy) + n2(pf.extra));
+}
 
 async function computeLine(prof, from, to, set, ytd, manualGross, extras){
   var ppy = (window._gcRunPPY && window._gcRunPPY(from, to)) || PERIODS[prof.period] || 26;   /* patch BUGV: a 7-day run is 1/52 of the year, 14 days 1/26 */
@@ -84419,8 +84430,11 @@ async function computeLine(prof, from, to, set, ytd, manualGross, extras){
     var adj = annual + n2(prof.otherIncome) - n2(prof.deductions);
     if(n2(prof.otherIncome)) T('W-4 step 4(a) other income', '+ '+money(prof.otherIncome), null);
     if(n2(prof.deductions))  T('W-4 step 4(b) deductions', '− '+money(prof.deductions), null);
+    var _old = _pcOldW4(prof);   /* patch PAYCHECK: Worksheet 1A line 1g / 2019-or-earlier W-4 */
+    if(_old){ adj = annual - n2(prof.allowances) * W4_ALLOW; T('W-4 from 2019 or earlier', n2(prof.allowances)+' allowance(s) × '+money(W4_ALLOW)+' taken off (Steps 3 and 4(a)/(b) do not apply)', null); }
+    else if(_pc1g(prof)){ adj -= _pc1g(prof); T('IRS Worksheet 1A line 1g', '− '+money(_pc1g(prof))+' (Step 2 not checked; with the table this is the standard deduction)', null); }
     adj = Math.max(0, adj);
-    var ft = fedAnnualTax(adj, prof.filing, set.taxYear, !!prof.multipleJobs);   /* patch PAY */
+    var ft = fedAnnualTax(adj, prof.filing, set.taxYear, !_old && !!prof.multipleJobs);   /* patch PAY */
     if(prof.multipleJobs) T('W-4 step 2 checked', 'Two jobs / working spouse — the IRS Step 2 checkbox table is used', null);
     var statusName = {single:'Single',married:'Married filing jointly',hoh:'Head of household'}[prof.filing]||'Single';
     if(ft.tax<=0){
@@ -84433,7 +84447,7 @@ async function computeLine(prof, from, to, set, ytd, manualGross, extras){
       T('IRS table ('+statusName+')',
         money(ft.row[1])+' + '+(ft.row[2]*100).toFixed(0)+'% of the amount over '+money(ft.row[3])+' (tax year '+set.taxYear+')', r2(ft.tax));
     }
-    var afterCredit = Math.max(0, ft.tax - n2(prof.dependentsCredit));
+    var afterCredit = Math.max(0, ft.tax - (_old ? 0 : n2(prof.dependentsCredit)));   /* patch PAYCHECK */
     if(n2(prof.dependentsCredit)) T('W-4 step 3 dependents credit', '− '+money(prof.dependentsCredit)+' a year', r2(afterCredit));
     fed = r2(afterCredit / ppy);
     T('Federal per paycheck', money(afterCredit)+' ÷ '+ppy, fed);
@@ -84481,6 +84495,30 @@ async function computeLine(prof, from, to, set, ytd, manualGross, extras){
         : ('worked out from the '+whSt+' tables'+(whSt!==resSt?(' (works in '+workSt+', lives in '+resSt+')'):'')
            +(whSt==='MS' && !(stTbl && stTbl.verified) ? ' — RATES NOT YET VERIFIED by your CPA (Payroll → State tax settings)' : ''));
     }catch(e){ state = 0; stateHow = 'could not work out '+prof.state; }
+  }
+  /* patch PAYCHECK: commission method — 'aggregate' (one check, W-4 on the total: the default, as ADP's combined check),
+     'separate' (its own check, annualized on its own with the default W-4 — Single, nothing else — as ADP's
+     commission-only check), 'flat22' (IRS optional 22% supplemental rate). Salary keeps the employee's W-4. */
+  var _cm = String((extras && extras.commMethod) || set.commissionMethod || 'aggregate'), _checks = null;
+  var _comm = (typeof comm === 'number' && comm > 0 && (manualGross == null || manualGross === '') && pt !== 'contractor_1099') ? r2(Math.min(comm, taxable)) : 0;
+  if(_comm > 0 && (_cm === 'separate' || _cm === 'flat22')){
+    var _salT = r2(taxable - _comm);
+    var _stOf = function(amt){ if(amt <= 0) return 0; if(storedRate !== null && storedRate > 0) return r2(amt * storedRate/100);
+      if(!whSt || !window._gcStateWithholding) return 0;
+      try{ var c = window._gcStateWithholding({ state: whSt, table: stTbl, exemptionClaimed: prof.msExemption, grossPerCheck: amt, taxable: amt, periodsPerYear: ppy,
+        filing: prof.msFiling||prof.filing||'single', dependents: n2(prof.stateDependents||prof.dependents), age65: !!prof.age65, blind: !!prof.blind,
+        year: parseInt(String(set.taxYear||new Date().getFullYear()),10) }); return r2(n2(c && c.amount)); }catch(e){ return 0; } };
+    var _fS = _pcFed(_salT, ppy, prof, set.taxYear), _fC = prof.exemptFed ? 0 : (_cm === 'flat22' ? r2(_comm * 0.22) : _pcFed(_comm, ppy, { filing: 'single' }, set.taxYear));
+    var _sS = _stOf(_salT), _sC = _stOf(_comm);
+    var _capped = r2(ssWages) < taxable, _ssS = _capped ? r2(ss * _salT / Math.max(0.01, taxable)) : r2(_salT * n2(set.ssRate)), _ssC = _capped ? r2(ss - _ssS) : r2(_comm * n2(set.ssRate));
+    var _mS = r2(_salT * n2(set.medRate)), _mC = r2(_comm * n2(set.medRate));
+    fed = r2(_fS + _fC); state = r2(_sS + _sC); ss = r2(_ssS + _ssC); med = r2(_mS + _mC);
+    var _g1 = r2(gross - _comm), _sx = n2(prof.stateExtra);
+    _checks = [
+      { label: 'Salary check', gross: _g1, fed: _fS, ss: _ssS, med: _mS, addlMed: addlMed, state: r2(_sS + _sx), net: r2(_g1 - preTax - postTax - _ssS - _mS - addlMed - _fS - _sS - _sx) },
+      { label: 'Commission check', gross: _comm, fed: _fC, ss: _ssC, med: _mC, addlMed: 0, state: _sC, net: r2(_comm - _ssC - _mC - _fC - _sC) } ];
+    T('Commission on its own check', (_cm === 'flat22' ? 'federal at the flat 22% supplemental rate' : 'annualized on its own, default W-4 (Single, nothing else) — as ADP does')
+      + ' · salary check: federal '+money(_fS)+', state '+money(_sS)+' · commission check: federal '+money(_fC)+', state '+money(_sC), null);
   }
   state = r2(state + n2(prof.stateExtra));
   if(state>0 || n2(prof.stateExtra)>0 || whSt==='MS'){
@@ -84542,7 +84580,7 @@ async function computeLine(prof, from, to, set, ytd, manualGross, extras){
     ss: ss, med: med, addlMed: addlMed, fed: fed, state: state, stateName: whSt,
     net: net, employerSS: erSS, employerMed: erMed, futa: futa, suta: suta,
     withholdState: whSt, workState: workSt, residentState: resSt, sutaState: (pt!=='contractor_1099' ? sutaSt : ''), stateTaxVerified: !!(stTbl && stTbl.verified),   /* patch PAY2 */
-    filing: prof.filing, trace: trace, zeroFedReason: zeroFedReason, taxYear: set.taxYear,
+    filing: prof.filing, checks: _checks, commMethod: _cm, trace: trace,   /* patch PAYCHECK */ zeroFedReason: zeroFedReason, taxYear: set.taxYear,
     status: 'pending', checkNo: ''
   };
 }
@@ -84702,6 +84740,7 @@ async function renderRun(body){
       + '<div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap;">'
       + fld('Period start','<input id="_pFrom" type="date" value="'+S.from+'" style="'+CSS.inp+'">')
       + fld('Period end','<input id="_pTo" type="date" value="'+S.to+'" style="'+CSS.inp+'">')
+      + fld('Commission','<select id="_pComm" style="'+CSS.inp+'">'+[['aggregate','Same check as salary'],['separate','Its own check (like ADP)'],['flat22','Flat 22% supplemental']].map(function(o){ return '<option value="'+o[0]+'"'+((S.commMethod||'aggregate')===o[0]?' selected':'')+'>'+o[1]+'</option>'; }).join('')+'</select>')   /* patch PAYCHECK */
       + fld('Check date','<input id="_pPay" type="date" value="'+S.payDate+'" style="'+CSS.inp+'">')
       + '<button id="_pQuick1" style="'+CSS.btn2+'">This Friday’s week</button>'
       + '<button id="_pQuick2" style="'+CSS.btn2+'">The week before</button>'
@@ -84716,7 +84755,7 @@ async function renderRun(body){
   body.querySelector('#_pQuick1').onclick=function(){ _wk(false); };
   body.querySelector('#_pQuick2').onclick=function(){ _wk(true); };
   body.querySelector('#_pCalc').onclick=async function(){
-    S.from=body.querySelector('#_pFrom').value; S.to=body.querySelector('#_pTo').value; S.payDate=body.querySelector('#_pPay').value||P.today();
+    S.from=body.querySelector('#_pFrom').value; S.to=body.querySelector('#_pTo').value; S.payDate=body.querySelector('#_pPay').value||P.today(); var _pcSel=body.querySelector('#_pComm'); if(_pcSel) S.commMethod=_pcSel.value;   /* patch PAYCHECK */
     if(!S.from||!S.to){ alert('Pick a period start and end.'); return; }
     this.textContent='Calculating…'; this.disabled=true;
     await calculate(profs);
@@ -84737,7 +84776,7 @@ async function calculate(profs){
     var key=pr.userId||pr.name;
     var ytd=P.ytdFor(all, key, year, S.payDate);
     var manual=S.manual[key];
-    var L=await P.computeLine(pr, S.from, S.to, set, ytd, manual, (window.__GC_PAY_EXTRAS||{})[key]);   /* patch PAY: bonus / reimbursement */
+    var L=await P.computeLine(pr, S.from, S.to, set, ytd, manual, Object.assign({ commMethod: S.commMethod||'' }, (window.__GC_PAY_EXTRAS||{})[key]||{}));   /* patch PAYCHECK · patch PAY: bonus / reimbursement */
     L.ytdBefore=ytd;
     if(L.gross>0 || manual!=null) lines.push(L);
   }
@@ -85327,12 +85366,14 @@ window._gcRenderEmployeeProfile = async function(body, S, render){
         +fld('Step 4(a) other income ($/yr)','<input data-p="otherIncome" value="'+esc(p.otherIncome)+'" style="'+CSS.inp+'width:100%;">')
         +fld('Step 4(b) deductions ($/yr)','<input data-p="deductions" value="'+esc(p.deductions)+'" style="'+CSS.inp+'width:100%;">')
         +fld('Step 4(c) extra per check','<input data-p="extra" value="'+esc(p.extra)+'" style="'+CSS.inp+'width:100%;">')
+        +fld('W-4 form year','<select data-p="w4Form" style="'+CSS.inp+'width:100%;"><option value="">2020 or later</option><option value="2019"'+(String(p.w4Form||'')==='2019'?' selected':'')+'>2019 or earlier (allowances)</option></select>')   /* patch PAYCHECK */
+        +fld('Allowances (2019-or-earlier W-4 only)','<input data-p="allowances" value="'+esc(p.allowances||0)+'" style="'+CSS.inp+'width:100%;">')
         +fld('Claims exempt','<select data-p="exemptFed" style="'+CSS.inp+'width:100%;"><option value="no"'+(!p.exemptFed?' selected':'')+'>No</option><option value="yes"'+(p.exemptFed?' selected':'')+'>Yes — withhold no federal</option></select>')
         +fld('Resident state (lives in)','<select data-p="state" style="'+CSS.inp+'width:100%;">'+['TN','MS','AR','AL','GA','KY','MO','LA'].map(function(v){ return '<option'+(String(p.state||'TN').toUpperCase()===v?' selected':'')+'>'+v+'</option>'; }).join('')+'</select>')   /* patch PAY2 */
         +fld('Work state','<select data-p="workState" style="'+CSS.inp+'width:100%;">'+['','TN','MS','AR','AL','GA','KY','MO','LA'].map(function(v){ return '<option value="'+v+'"'+(String(p.workState||'').toUpperCase()===v?' selected':'')+'>'+(v||'Same as resident')+'</option>'; }).join('')+'</select>')
         +fld('Unemployment (SUTA) state','<select data-p="sutaState" style="'+CSS.inp+'width:100%;">'+['','TN','MS'].map(function(v){ return '<option value="'+v+'"'+(String(p.sutaState||'').toUpperCase()===v?' selected':'')+'>'+(v||'Same as work state')+'</option>'; }).join('')+'</select>')
         +fld('MS 89-350 filing status','<select data-p="msFiling" style="'+CSS.inp+'width:100%;">'+[['','Same as federal'],['single','Single'],['married','Married (spouse not employed)'],['married_sep','Married (spouse employed)'],['head','Head of family']].map(function(v){ return '<option value="'+v[0]+'"'+((p.msFiling||'')===v[0]?' selected':'')+'>'+v[1]+'</option>'; }).join('')+'</select>')
-        +fld('MS 89-350 exemption claimed ($/yr)','<input data-p="msExemption" value="'+esc(p.msExemption||'')+'" placeholder="blank = figured" style="'+CSS.inp+'width:100%;">')
+        +fld('MS 89-350 exemption claimed ($/yr)','<input data-p="msExemption" value="'+esc(p.msExemption==null?'':p.msExemption)+'" placeholder="blank = figured" style="'+CSS.inp+'width:100%;">')
         +fld('MS dependents','<input data-p="stateDependents" value="'+esc(p.stateDependents||'')+'" style="'+CSS.inp+'width:100%;">')
         +fld('State income tax rate (%)','<input data-p="stateRate" value="'+esc(p.stateRate)+'" style="'+CSS.inp+'width:100%;">')
         +fld('State extra per check','<input data-p="stateExtra" value="'+esc(p.stateExtra)+'" style="'+CSS.inp+'width:100%;">')
@@ -85421,7 +85462,7 @@ window._gcRenderEmployeeProfile = async function(body, S, render){
       if(k==='active')        p.active = (v==='yes');
       else if(k==='exemptFed')p.exemptFed = (v==='yes');
       else if(k==='multipleJobs')p.multipleJobs = (v==='yes');   /* patch PAY */
-      else if(['payType','period','filing','state','hireDate','ssn4','workState','sutaState','msFiling'].indexOf(k)>=0){ if(k==='period' && v && v!==p.period) p.periodExplicit=true; p[k]=v; }   /* patch PAY2 · AUTO-PAYWEEK: a schedule picked here is kept */
+      else if(['payType','period','filing','state','hireDate','ssn4','workState','sutaState','msFiling','w4Form'].indexOf(k)>=0){ if(k==='period' && v && v!==p.period) p.periodExplicit=true; p[k]=v; }   /* patch PAY2 · AUTO-PAYWEEK: a schedule picked here is kept */
       else if(k==='msExemption') p[k] = (String(v).trim()==='' ? '' : n2(v));
       else if(k==='stateRate'){ p.stateRate=n2(v); if(n2(v)>0) p.stateAuto=false; }
       else p[k]=n2(v);
@@ -99790,7 +99831,7 @@ window._gcMSWithholding = function(o){
   why.push({step:'Mississippi income tax for the year',
             detail:money(over)+' × '+(rate*100).toFixed(2)+'% ('+year+' rate)', amount:annualTax});
 
-  var perCheck=r2(annualTax/ppy) + n2(o.extra);
+  var perCheck=((TB && TB.roundWhole===false) ? r2(annualTax/ppy) : Math.round(annualTax/ppy)) + n2(o.extra);   /* patch PAYCHECK: whole dollars, as ADP */
   perCheck=r2(Math.max(0, perCheck));
   why.push({step:'Withheld from this check', detail:money(annualTax)+' ÷ '+ppy
             +(n2(o.extra)?(' + '+money(o.extra)+' extra'):''), amount:perCheck});
