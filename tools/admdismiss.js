@@ -12,6 +12,9 @@
      before every write. Survives reloads, other computers and sync. Nothing else is stored or changed.
    • A dismissed card comes back ONLY when its CONTENT changes — something on it that was not there when it was dismissed:
      a new failing invoice, a new item in the data check, a different pair on one e-mail… Fewer items keep it hidden.
+     The content settles first: a card still loading (w.loading) is never "new"; what a card shows in the 90 s after
+     the ✕ is part of what was dismissed; and something new must stay 45 s before the card comes back. Dismissing a card
+     again keeps what was dismissed before (the content only grows, until "Show again").
      The content is each card's list of items (its own `items` when the card gives them, else its title — counts left
      out — and its lines), kept as short hashes.
    • 🔕 7 days: hidden for 7 days, or sooner if something new shows up on it.
@@ -112,21 +115,45 @@ function push(){
 
 /* ── the rule ── */
 function rec(w){ sync(); return S.cards[keyOf(w)] || null; }
+function active(r){ return !!(r && !r.clr && !(r.until && Date.parse(r.until) <= Date.now())); }
+/* A card's lists load in steps (the approvals queue, the invoices, the Subs / Vendors list, the cloud's merge): what it
+   shows in the first seconds is not its content yet. So:
+   • a card that says it is still loading (w.loading) never counts as new content;
+   • for GROW after a ✕ the dismissed content takes in what the card shows (it finished loading);
+   • something new must stay on the card SETTLE before the card comes back (a list half-loaded on this computer, an
+     item that flickers while two copies merge, do not bring it back). */
+var GROW = 90000, SETTLE = 45000, SEEN = {}, HERE = {}, SAVE_T = 0, PAINT_T = 0;
+function saveSoon(){ saveLocal(); if (SAVE_T) return; SAVE_T = later(function(){ SAVE_T = 0; push(); }, 3000); }
 function hidden(w){
-  var r = rec(w); if (!r || r.clr) return false;
-  if (r.until && Date.parse(r.until) <= Date.now()) return false;                 /* the 7 days are over */
-  var have = {}; (Array.isArray(r.h) ? r.h : []).forEach(function(x){ have[x] = 1; });
-  return hashes(w).every(function(x){ return have[x]; });                         /* nothing new on it */
+  var r = rec(w); if (!active(r)) return false;
+  var k = keyOf(w), cur = hashes(w), have = {}, now = Date.now();
+  (Array.isArray(r.h) ? r.h : []).forEach(function(x){ have[x] = 1; });
+  var fresh = cur.filter(function(x){ return !have[x]; });
+  if (!fresh.length) { delete SEEN[k]; return true; }                              /* nothing new on it */
+  if (r.grow && Date.parse(r.grow) > now && HERE[k]) {                              /* just dismissed on this computer: still loading */
+    r.h = (r.h || []).concat(fresh); r.at = nowIso(); saveSoon(); delete SEEN[k]; return true;
+  }
+  if (w.loading) return true;
+  var seen = SEEN[k] = SEEN[k] || {}, keep = {};
+  fresh.forEach(function(x){ keep[x] = 1; if (!seen[x]) seen[x] = now; });
+  Object.keys(seen).forEach(function(x){ if (!keep[x]) delete seen[x]; });
+  if (fresh.some(function(x){ return now - seen[x] >= SETTLE; })) return false;   /* something new, and it stayed */
+  if (!PAINT_T) PAINT_T = later(function(){ PAINT_T = 0; repaint(); }, SETTLE + 500);
+  return true;
 }
 function dismiss(w, days){
   if (!sync() || !w) return false;
-  S.cards[keyOf(w)] = { h: hashes(w), until: days ? new Date(Date.now() + days * DAY).toISOString() : '', at: nowIso(), by: S.email, t: s(String(w.title || '').replace(/<[^>]*>/g, '')).slice(0, 90) };
+  var old = rec(w), h = hashes(w);
+  if (active(old) && Array.isArray(old.h)) old.h.forEach(function(x){ if (h.indexOf(x) < 0) h.push(x); });   /* what was dismissed before stays dismissed */
+  S.cards[keyOf(w)] = { h: h, until: days ? new Date(Date.now() + days * DAY).toISOString() : '', grow: new Date(Date.now() + GROW).toISOString(), at: nowIso(), by: S.email, t: s(String(w.title || '').replace(/<[^>]*>/g, '')).slice(0, 90) };
+  delete SEEN[keyOf(w)]; HERE[keyOf(w)] = 1;
   saveLocal(); push();
   return true;
 }
 function restore(key){
   if (!sync() || !key) return false;
   S.cards[key] = { clr: true, at: nowIso(), by: S.email };
+  delete SEEN[key];
   saveLocal(); push(); repaint();
   return true;
 }
