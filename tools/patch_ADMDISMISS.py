@@ -163,11 +163,11 @@ edit('AUTO6: the pay check cards',
       unl.slice(0, 2).forEach(function(n){ pfx.push({ label: '＋ Add “' + short(n) + '” to Subs list', run: function(){ addPayee(n, false); } }); pfx.push({ label: 'Mark “' + short(n) + '” as supplier', run: function(){ addPayee(n, true); } }); });
       out.push({ id: 'sub-pay-check', level: 'red', key: 'subpay', title: fl.length + ' sub invoice' + (fl.length === 1 ? '' : 's') + ' fail the pay check',
         text: fl.slice(0, 4).map(function(x){ return subLabel(x) + ' ' + money(x.r.amount) + ': ' + esc(x.r.problems.join('; ')); }).join('<br>') + (fl.length > 4 ? '<br>…' : '') + '<br>COI / W-9 / over the sub agreement. They cannot be approved or paid until fixed or overridden by an admin.',
-        items: fl.map(function(x){ return 'inv:' + x.id + '|' + x.r.problems.join('|'); }), fixes: pfx });
+        items: fl.map(function(x){ return 'inv:' + x.id; }), fixes: pfx });   /* the invoice ids only: the reasons' wording can change while the lists load */
     }
     var wl = W._gcSubPayWarns();
     if (wl.length) out.push({ id: 'sub-pay-warn', level: 'amber', key: 'subpaywarn', title: wl.length + ' sub invoice' + (wl.length === 1 ? '' : 's') + ' waiting without a signed sub agreement',
-      items: wl.map(function(a){ return 'inv:' + s(a.invId || a.id) + '|' + strs(a.payWarn && a.payWarn.warnings).join('|'); }),
+      items: wl.map(function(a){ return 'inv:' + s(a.invId || a.id); }),
       text: wl.slice(0, 4).map(function(a){ var r = liveCheck(s(a.invId || a.id)) || {}; return (r.noSub ? '<b>Sub not picked</b>' : esc(s(r.sub || a.sub || a.vendor) || 'Sub')) + ' ' + money(a.amt || a.amount) + ': ' + esc(strs(a.payWarn && a.payWarn.warnings).join('; ')); }).join('<br>') + '<br>These do not block payment. Send the sub agreement to the sub to sign in their portal so the amount can be checked.',""")
 edit('AUTO6: the old nightly card',
 """    var it = dcItem(); var n = it && !it.done ? arr(it.refs).length : 0;
@@ -182,7 +182,7 @@ edit('AUTO6: the old nightly card',
         text: dups.slice(0, 4).map(function(r){ return esc(s(r.label)); }).join('<br>') + (dups.length > 4 ? '<br>…' : '') + '<br>Jobs and leads missing info are on the 🧾 Missing job data board.',
         items: dups.map(function(r){ return s(r.key); }), fixes: [{ label: 'Open list', run: function(){ W._gcOpenDataCheck(); } }, { label: 'Open board', run: function(){ try { W._gcDataFull.open(); } catch (e) {} } }] });
     } else if (n) out.push({ id: 'data-check', level: 'amber', key: 'datacheck', title: '🧹 Last night’s data check found ' + n + ' thing' + (n === 1 ? '' : 's') + ' to fix',
-      items: drefs.map(function(r){ return s(r.key) + '|' + strs(r.why).join(','); }),
+      items: drefs.map(function(r){ return s(r.key); }),
       text: esc(s(it.note)), fixes: [{ label: 'Open list', run: function(){ W._gcOpenDataCheck(); } }] });""")
 
 # ── the Schedule templates row (SCHEDPICK: templates are suggestions a person picks) ──
