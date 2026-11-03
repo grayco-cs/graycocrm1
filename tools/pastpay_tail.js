@@ -159,7 +159,7 @@ function lastFri(ds){ var d=new Date(ds+'T12:00:00'); while(d.getDay()!==5) d.se
 var IN='box-sizing:border-box;padding:4px 5px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px;font-family:inherit;color:#0f2440;background:#fff;';
 var BT='padding:8px 13px;border-radius:7px;border:1px solid #cbd5e1;background:#fff;color:#0f2440;font-weight:800;font-size:12.5px;cursor:pointer;font-family:inherit;';
 
-W._gcPastPayOpen = async function(){
+W._gcPastPayOpen = async function(_pe2){ _pe2=(_pe2&&_pe2.runId)?_pe2:null; var _only='';   /* patch PAYEDIT2 */
   var p=P(); if(!p){ alert('Payroll is still loading — try again in a moment.'); return; }
   if(!isAdmin()){ alert('Entering past payroll is for an owner / admin.'); return; }
   var set={}, profs=[], runs=[];
@@ -285,7 +285,7 @@ W._gcPastPayOpen = async function(){
   var _loaded={};
   $('load').onclick=async function(){ var msg=$('msg'); var all=[]; try{ all=(await p.runs())||[]; }catch(e){}
     var a=s($('first').value), b=s($('last').value);
-    var pick=all.filter(function(x){ return x && x.source==='paystub-entry' && !x.tombstoned && !x.deleted && (!a || s(x.payDate)>=a) && (!b || s(x.payDate)<=b) && !_loaded[x.id]; });
+    var pick=all.filter(function(x){ return x && x.source==='paystub-entry' && !x.tombstoned && !x.deleted && (!a || s(x.payDate)>=a) && (!b || s(x.payDate)<=b) && !_loaded[x.id] && (!_only || String(x.id)===_only); });
     if(!pick.length){ msg.style.color='#b91c1c'; msg.textContent='No saved checks between those paydays.'; return; }
     if(rows.length && !confirm('Add '+pick.length+' saved run(s) below the '+rows.length+' row(s) already on screen?')) return;
     var n=0; pick.forEach(function(run){ _loaded[run.id]=1; (run.lines||[]).forEach(function(L){ var st=(s(L.withholdState||L.stateName)||'TN').toUpperCase(), cm=r2(n2(L.commission));
@@ -323,6 +323,12 @@ W._gcPastPayOpen = async function(){
     try{ if(W._gcPayrollRender) W._gcPayrollRender(); }catch(e){}
   };
   if(rows.length){ draw(); await recalc(); paint(); } else draw();
+  if(_pe2){   /* patch PAYEDIT2 */   // ✏️ Edit from Approvals: just this run, loaded
+    var _er=runs.filter(function(x){ return x && String(x.id)===String(_pe2.runId); })[0];
+    if(_er){ $('first').value=s(_er.payDate); $('last').value=s(_er.payDate); _only=String(_er.id); try{ await $('load').onclick(); }finally{ _only=''; } }
+    else { $('msg').style.color='#b91c1c'; $('msg').textContent='That saved run is not here any more.'; }
+  }
 };
+W._gcPastPayEditRun = function(runId){ return W._gcPastPayOpen({ runId:runId }); };   /* patch PAYEDIT2 */
 })(window);
 </script>

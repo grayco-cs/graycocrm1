@@ -5291,7 +5291,7 @@ window.__GC_LIVE=function(key, v){
   return v;
 };
 </script>
-<!-- GrayCo CRM Build: 33.163-2026-11-03-r17q14 -->
+<!-- GrayCo CRM Build: 33.163-2026-11-03-r17q15 -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6239,7 +6239,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.163-2026-11-03-r17q14");
+  console.log("[GC] Build 33.163-2026-11-03-r17q15");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6287,7 +6287,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.163-2026-11-03-r17q14"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.163-2026-11-03-r17q15"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -85009,7 +85009,7 @@ function _prTotals(lines){
 function _prDrop(list, keep, why, out){   /* keep(run, idx) false -> that line leaves; empty runs leave the list */
   var res=[];
   list.forEach(function(r){
-    if(!r || _prRunDone(r) || !Array.isArray(r.lines)){ res.push(r); return; }
+    if(!r || _prRunDone(r) || !Array.isArray(r.lines) || r.reopenedForEdit){ res.push(r); return; }   /* patch PAYEDIT2 */
     var kept=[], gone=0;
     r.lines.forEach(function(L, i){ if(L && !_prLineDone(L) && !keep(r, L, i)){ gone++; out.retired.push({ runId:r.id, payDate:r.payDate, from:r.from, to:r.to, status:r.status, why:why(r, L), line:L }); } else kept.push(L); });
     if(!gone){ res.push(r); return; }
@@ -85439,6 +85439,12 @@ async function renderApprovals(body, pend){
   Array.prototype.forEach.call(body.querySelectorAll('[data-del]'), function(b){   /* patch PAYMANUAL: who may delete is checked there; the delete list keeps it deleted */
     b.onclick=function(){ if(window._gcPayRunDelete) window._gcPayRunDelete(b.getAttribute('data-del')); };
   });
+  Array.prototype.forEach.call(body.querySelectorAll('[data-redit]'), function(b){   /* patch PAYEDIT2 */
+    b.onclick=function(){ if(window._gcPayRunEdit) window._gcPayRunEdit(b.getAttribute('data-redit')); };
+  });
+  Array.prototype.forEach.call(body.querySelectorAll('[data-ledit]'), function(b){
+    b.onclick=function(){ if(window._gcEditPayLine) window._gcEditPayLine(b.getAttribute('data-ledit'), +b.getAttribute('data-idx')); };
+  });
   Array.prototype.forEach.call(body.querySelectorAll('[data-void]'), function(b){
     b.onclick=function(){ if(window._gcPayRunVoid) window._gcPayRunVoid(b.getAttribute('data-void')); };
   });
@@ -85449,7 +85455,7 @@ function statusChip(s){
   return '<span style="background:'+c[0]+';color:#fff;border-radius:20px;padding:3px 10px;font-size:10px;font-weight:800;">'+c[1]+'</span>';
 }
 function runCard(r){
-  var t=r.totals||{}, open=(S.openRun===r.id);
+  var t=(r.reopenedForEdit&&r.status==='pending')?totalsOf(r.lines):(r.totals||{}), open=(S.openRun===r.id);   /* patch PAYEDIT2 */
   var canApprove = P.isAdmin() && r.status==='pending';
   var h='<div style="'+CSS.card+'">'
     +'<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">'
@@ -85465,6 +85471,8 @@ function runCard(r){
         +(function(){ var c=window._gcPayRunCan?window._gcPayRunCan(r):{del:r.status==='draft'};   /* patch PAYMANUAL */
             return (c.del?('<button data-del="'+esc(r.id)+'" title="'+esc(c.why||'')+'" style="'+CSS.btn2+'color:#dc2626;">'+(r.status==='draft'?'🗑 Delete draft':'🗑 Delete run')+'</button>'):'')
               +(c.voidIt?('<button data-void="'+esc(r.id)+'" title="A paid run is not deleted — void it: it stays on record and stops counting" style="'+CSS.btn2+'color:#991b1b;">⊘ Void</button>'):''); })()
+        +((P.isAdmin()&&window._gcPayRunEdit&&(r.status==='approved'||r.status==='paid'))?('<button data-redit="'+esc(r.id)+'" title="'+(r.source==='paystub-entry'?'Open it in Enter past payroll to fix and replace it':'Back to Waiting on admin: change any line, then approve it again')+'" style="'+CSS.btn2+'color:#1d4ed8;">✏️ Edit</button>'):'')   /* patch PAYEDIT2 */
+        +((r.reopenedForEdit&&r.status==='pending')?('<span style="background:#dbeafe;border:1px solid #93c5fd;color:#1d4ed8;border-radius:20px;padding:3px 9px;font-size:10px;font-weight:800;">✏️ reopened for edit by '+esc(r.reopenedBy||'')+' — approve it again</span>'):'')
       +'</div>'
     +'</div>';
   if(!P.isAdmin() && r.status==='pending') h+='<div style="margin-top:8px;font-size:12px;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:8px 10px;">Sent to an admin. Only an admin can approve these checks.</div>';
@@ -85486,6 +85494,7 @@ function runCard(r){
           +'<td style="'+CSS.td+'">'+statusChip(L.status==='denied'?'denied':(r.status==='approved'||r.status==='paid'?'approved':(L.status||'pending')))+'</td>'
           +'<td style="'+CSS.td+'white-space:nowrap;">'
             +'<button data-stub="'+r.id+'" data-idx="'+i+'" style="'+CSS.btn2+'padding:4px 9px;font-size:11px;">Pay stub</button> '
+            +((P.isAdmin()&&r.status==='pending'&&r.reopenedForEdit&&window._gcEditPayLine)?('<button data-ledit="'+esc(r.id)+'" data-idx="'+i+'" style="'+CSS.btn2+'padding:4px 9px;font-size:11px;color:#1d4ed8;">✏️ Edit</button> '):'')   /* patch PAYEDIT2 */
             +(P.isAdmin()&&r.status==='pending'?('<button data-line="'+r.id+'" data-idx="'+i+'" data-act="'+(L.status==='denied'?'pending':'denied')+'" style="'+CSS.btn2+'padding:4px 9px;font-size:11px;color:#dc2626;">'+(L.status==='denied'?'Undo':'Hold this one')+'</button>'):'')
           +'</td></tr>';
       }).join('')
@@ -85522,9 +85531,11 @@ async function approveRun(runId){
   set.nextCheckNo=no; await P.saveSettings(set);
 
   r.status='approved'; r.approvedBy=P.me(); r.approvedAt=new Date().toISOString(); r.totals=t;
+  var _pe2Skip=false; if(r.reopenedForEdit && !(String(r.reapprovedAt||'')>String(r.reopenedForEdit))){ r.reapprovedAt=r.approvedAt; if(r.reopenedFrom==='paid'){ r.status='paid'; live.forEach(function(L){ L.status='paid'; }); } _pe2Skip=!r.reopenBooked;   /* patch PAYEDIT2 */
+    r.history=(Array.isArray(r.history)?r.history:[]).concat([{ at:r.approvedAt, by:r.approvedBy, action:'approved again', note:'after edit (reopened '+String(r.reopenedForEdit).slice(0,10)+')' }]); r.reopenedForEdit=''; r.reopenBooked=false; }
   await P.saveRuns(all);
   try{ if(P.replaceDrafts) await P.replaceDrafts(live); }catch(_rpE){}   /* patch PAYREPLACE */
-  try{ await postToBooks(r, live, t); }catch(e){ console.warn('payroll posting', e); }
+  if(!_pe2Skip) try{ await postToBooks(r, live, t); }catch(e){ console.warn('payroll posting', e); }
   alert('Approved.\n\nChecks '+ (live[0]&&live[0].checkNo) +'–'+ (live[live.length-1]&&live[live.length-1].checkNo) +
         ' recorded. Books updated. Open any check to print its pay stub.');
   render();
@@ -200290,6 +200301,40 @@ W._gcPayRunVoid = async function(runId, opts){
   rerender();
   return { ok:true, booked:booked, run:r };
 };
+/* ── ✏️ Edit a saved run: reopen it for re-approval ── */   /* patch PAYEDIT2 */
+W._gcPayRunUnbook = unbook;
+W._gcPayRunReopen = async function(runId, opts){
+  opts = opts || {};
+  var p = P(); if(!p) return { ok:false, why:'Payroll is still loading.' };
+  if(!isAdmin()){ if(!opts.quiet) alert('Only an admin can reopen payroll.'); return { ok:false, why:'Only an admin can reopen payroll.' }; }
+  var all = await allRuns();
+  var r = all.filter(function(x){ return x && String(x.id) === String(runId); })[0];
+  if(!r){ if(!opts.quiet) alert('That payroll run is not here any more.'); return { ok:false, why:'not found' }; }
+  var st = low(r.status);
+  if(st !== 'approved' && st !== 'paid'){ var w0 = 'Only an approved or paid run is reopened — this one is '+stLabel(r)+'.'; if(!opts.quiet) alert(w0); return { ok:false, why:w0 }; }
+  var t = runTotals(r), n = (r.lines||[]).length;
+  var written = !!r.checksWritten || (r.lines||[]).some(function(L){ return L && (L.paidOut === true || low(L.status) === 'paid'); });
+  var q = 'Edit the '+stLabel(r).toUpperCase()+' payroll run for the week '+runWeekLabel(r)+'?'
+    + (written ? '\n\n⚠ Its checks were already written. Editing does not void or reprint them — make the figures match what was really paid.' : '')
+    + '\n\n'+n+' check'+(n===1?'':'s')+' · total '+money(t.net)+' net ('+money(t.gross)+' gross).\n\n'
+    + 'It goes back to Waiting on admin: change any line, then it has to be approved again. Its wages come out of the books until it is.';
+  if(!opts.noAsk && !confirm(q)) return { ok:false, why:'cancelled' };
+  var now = nowISO(), who = me();
+  var booked = await unbook(r);
+  r.reopenedFrom = st; r.reopenedForEdit = now; r.reopenedBy = who; r.reopenBooked = !!(booked && (booked.register || booked.payments)); r.status = 'pending'; r.updatedAt = now;
+  (r.lines||[]).forEach(function(L){ if(L && low(L.status) !== 'denied'){ L.statusBeforeReopen = L.status; L.status = 'pending'; } });
+  r.history = (Array.isArray(r.history) ? r.history : []).concat([{ at:now, by:who, action:'reopened for edit', from:st, note:'reopened for edit by '+who+(written ? ' · checks were already written' : '') }]);
+  await p.saveRuns(all);
+  try{ console.log('[GC] Payroll run reopened for edit: '+runWeekLabel(r)+' (was '+st+', by '+who+')'); }catch(e){}
+  rerender();
+  return { ok:true, run:r, booked:booked, written:written };
+};
+W._gcPayRunEdit = async function(runId){
+  if(!isAdmin()){ alert('Only an admin can edit a saved payroll run.'); return { ok:false, why:'admin only' }; }
+  var r = (await allRuns()).filter(function(x){ return x && String(x.id) === String(runId); })[0];
+  if(r && r.source === 'paystub-entry' && W._gcPastPayEditRun) return W._gcPastPayEditRun(r.id);
+  return W._gcPayRunReopen(runId);
+};
 /* what has been entered by hand, voided or deleted (this computer's delete log + each run's history) */
 W._gcPayrollChanges = async function(){
   var out = [];
@@ -212512,7 +212557,7 @@ function lastFri(ds){ var d=new Date(ds+'T12:00:00'); while(d.getDay()!==5) d.se
 var IN='box-sizing:border-box;padding:4px 5px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px;font-family:inherit;color:#0f2440;background:#fff;';
 var BT='padding:8px 13px;border-radius:7px;border:1px solid #cbd5e1;background:#fff;color:#0f2440;font-weight:800;font-size:12.5px;cursor:pointer;font-family:inherit;';
 
-W._gcPastPayOpen = async function(){
+W._gcPastPayOpen = async function(_pe2){ _pe2=(_pe2&&_pe2.runId)?_pe2:null; var _only='';   /* patch PAYEDIT2 */
   var p=P(); if(!p){ alert('Payroll is still loading — try again in a moment.'); return; }
   if(!isAdmin()){ alert('Entering past payroll is for an owner / admin.'); return; }
   var set={}, profs=[], runs=[];
@@ -212638,7 +212683,7 @@ W._gcPastPayOpen = async function(){
   var _loaded={};
   $('load').onclick=async function(){ var msg=$('msg'); var all=[]; try{ all=(await p.runs())||[]; }catch(e){}
     var a=s($('first').value), b=s($('last').value);
-    var pick=all.filter(function(x){ return x && x.source==='paystub-entry' && !x.tombstoned && !x.deleted && (!a || s(x.payDate)>=a) && (!b || s(x.payDate)<=b) && !_loaded[x.id]; });
+    var pick=all.filter(function(x){ return x && x.source==='paystub-entry' && !x.tombstoned && !x.deleted && (!a || s(x.payDate)>=a) && (!b || s(x.payDate)<=b) && !_loaded[x.id] && (!_only || String(x.id)===_only); });
     if(!pick.length){ msg.style.color='#b91c1c'; msg.textContent='No saved checks between those paydays.'; return; }
     if(rows.length && !confirm('Add '+pick.length+' saved run(s) below the '+rows.length+' row(s) already on screen?')) return;
     var n=0; pick.forEach(function(run){ _loaded[run.id]=1; (run.lines||[]).forEach(function(L){ var st=(s(L.withholdState||L.stateName)||'TN').toUpperCase(), cm=r2(n2(L.commission));
@@ -212676,7 +212721,13 @@ W._gcPastPayOpen = async function(){
     try{ if(W._gcPayrollRender) W._gcPayrollRender(); }catch(e){}
   };
   if(rows.length){ draw(); await recalc(); paint(); } else draw();
+  if(_pe2){   /* patch PAYEDIT2 */   // ✏️ Edit from Approvals: just this run, loaded
+    var _er=runs.filter(function(x){ return x && String(x.id)===String(_pe2.runId); })[0];
+    if(_er){ $('first').value=s(_er.payDate); $('last').value=s(_er.payDate); _only=String(_er.id); try{ await $('load').onclick(); }finally{ _only=''; } }
+    else { $('msg').style.color='#b91c1c'; $('msg').textContent='That saved run is not here any more.'; }
+  }
 };
+W._gcPastPayEditRun = function(runId){ return W._gcPastPayOpen({ runId:runId }); };   /* patch PAYEDIT2 */
 })(window);
 </script>
 <script id="gc-patch-jobupdates">
@@ -213730,5 +213781,122 @@ function hookApprovals(){
 }
 hookApprovals(); setTimeout(hookApprovals, 4000); setInterval(hookApprovals, 15000);
 setTimeout(function(){ if(canSee()) refresh(); }, 8000); setInterval(function(){ if(canSee()) refresh(); }, 60000);
+})(window);
+</script>
+<script>
+/* __GC_PAYEDIT2__ — owners get no commission (patch PAYEDIT2, owner 11/03: "owners do no commission this shouldn't be here").
+   The commission engine (_gcQueueCommissionForJob) queued a commission check in gc_check_queue for the job's PM whenever a
+   job was collected in full — and the owner runs jobs as PM, so Wesley got six "— commission" checks on the 2026-09-18 run.
+   Owners are paid by draws. From here: anyone who is an owner / admin (role Admin or Owner, payType owner, _gcOwnerNames)
+   or who was let go (gc_fired_users) never earns commission, is never queued a commission check, and gets no commission in
+   payroll (_gcCommissionForPM). Unpaid owner / let-go commission checks already waiting are taken off the queue (only when
+   there are any), and each one is kept in gc_owner_comm_removed. Real employees' checks are never touched. */
+(function(W){
+'use strict';
+if(W.__GC_PAYEDIT2__) return; W.__GC_PAYEDIT2__ = true;
+var HIST = 'gc_owner_comm_removed';
+function s(v){ return String(v == null ? '' : v).trim(); }
+function low(v){ return s(v).toLowerCase().replace(/\s+/g, ' '); }
+function lsJ(k, d){ try{ var v = JSON.parse(W.localStorage.getItem(k) || 'null'); return v == null ? d : v; }catch(e){ return d; } }
+function lsPut(k, v){ try{ W.localStorage.setItem(k, JSON.stringify(v)); }catch(e){} try{ if(W._supaUpsert) W._supaUpsert(k, v); }catch(e){} }
+
+/* pure: the names (lower case) who never get commission */
+function noCommSet(ctx){
+  ctx = ctx || {}; var out = {};
+  (ctx.users || []).forEach(function(u){
+    if(!u) return;
+    var r = low(u.role), pt = low(u.payType);
+    if(/^(admin|owner)$/.test(r) || pt === 'owner' || pt === 'owner_draw'){ if(u.name) out[low(u.name)] = 'owner'; if(u.email) out[low(u.email)] = 'owner'; }
+  });
+  (ctx.ownerNames || []).forEach(function(n){ if(s(n)) out[low(n)] = 'owner'; });
+  var f = ctx.fired || {};
+  if(Array.isArray(f)) f.forEach(function(n){ var k = low(n && typeof n === 'object' ? n.name : n); if(k && !out[k]) out[k] = 'let go'; });
+  else Object.keys(f).forEach(function(n){ if(f[n] && low(n) && !out[low(n)]) out[low(n)] = 'let go'; });
+  delete out[''];
+  return out;
+}
+function isComm(c){ return !!c && /commission/i.test(s(c.type) + ' ' + s(c.kind)); }
+/* pure: split the check queue — unpaid commission checks for an owner / someone let go come out, everything else stays */
+function healQueue(q, set){
+  var keep = [], removed = [];
+  (Array.isArray(q) ? q : []).forEach(function(c){
+    var why = c && set[low(c.emp || c.payee)];
+    if(why && isComm(c) && low(c.status) === 'entered' && low(c.dir || 'out') === 'out') removed.push({ why:why, check:c }); else keep.push(c);
+  });
+  return { keep:keep, removed:removed };
+}
+var CORE = { noCommSet:noCommSet, healQueue:healQueue, isComm:isComm };
+W._gcPayEdit2Core = CORE;
+
+function liveSet(){
+  var users = []; try{ users = (W._crm && W._crm.users) || []; }catch(e){}
+  var own = []; try{ own = W._gcOwnerNames ? W._gcOwnerNames() : []; }catch(e){}
+  try{ (W._gcOwnerUsers ? W._gcOwnerUsers() : []).forEach(function(u){ if(u && u.name) own.push(u.name); }); }catch(e){}
+  return noCommSet({ users:users, ownerNames:own, fired:lsJ('gc_fired_users', {}) });
+}
+W._gcNoCommission = function(name){ var k = low(name); return !!k && !!liveSet()[k]; };
+
+/* the self-heal: only when an owner / let-go commission check is waiting */
+W._gcOwnerCommHeal = function(){
+  var q = lsJ('gc_check_queue', []); if(!Array.isArray(q) || !q.length) return 0;
+  var res = healQueue(q, liveSet()); if(!res.removed.length) return 0;
+  var at = new Date().toISOString(), by = ''; try{ by = W.localStorage.getItem('grayco_user') || ''; }catch(e){}
+  var h = lsJ(HIST, []); if(!Array.isArray(h)) h = [];
+  var seen = {}; h.forEach(function(x){ if(x && x.check) seen[x.check.id] = 1; });
+  res.removed.forEach(function(x){ if(!seen[x.check.id]) h.push({ at:at, by:by || 'auto', why:x.why + ' — no commission (paid by draws)', check:x.check }); });
+  if(h.length > 300) h = h.slice(h.length - 300);
+  lsPut(HIST, h);
+  try{ if(W._gcTombstoneMany) W._gcTombstoneMany('gc_check_queue', res.removed.map(function(x){ return x.check.id; }).filter(Boolean)); }catch(e){}
+  lsPut('gc_check_queue', res.keep);
+  try{ console.log('[GC] PAYEDIT2: ' + res.removed.length + ' unpaid commission check(s) for an owner / someone let go taken off the checks due (copies in ' + HIST + ')'); }catch(e){}
+  try{ if(W._gcRefreshCheckRun) W._gcRefreshCheckRun(); }catch(e){}
+  return res.removed.length;
+};
+
+/* gates on every path that makes or shows commission */
+function wrapAll(){
+  var d = W._gcDraftCheck;
+  if(typeof d === 'function' && !d.__noOwnerComm){
+    var wd = function(check){
+      if(check && isComm(check) && low(check.dir || 'out') === 'out' && W._gcNoCommission(check.emp || check.payee)){
+        try{ console.log('[GC] PAYEDIT2: no commission check for ' + s(check.emp || check.payee) + ' (owner / let go)'); }catch(e){}
+        return null;
+      }
+      return d.apply(this, arguments);
+    };
+    wd.__noOwnerComm = true; W._gcDraftCheck = wd;
+  }
+  var qj = W._gcQueueCommissionForJob;
+  if(typeof qj === 'function' && !qj.__noOwnerComm){
+    var wq = async function(pid){
+      var res = await qj.apply(this, arguments);
+      try{
+        var log = lsJ('gc_commission_paid', {}), e = log && !Array.isArray(log) ? log[pid] : null;
+        if(e && e.pm && W._gcNoCommission(e.pm) && !e.noCommission){ e.ownerAmount = e.amount; e.amount = 0; e.checkId = ''; e.noCommission = 'owner / let go — paid by draws'; lsPut('gc_commission_paid', log); }
+      }catch(err){}
+      return res;
+    };
+    wq.__noOwnerComm = true; W._gcQueueCommissionForJob = wq;
+  }
+  var cp = W._gcCommissionForPM;
+  if(typeof cp === 'function' && !cp.__noOwnerComm){
+    var wc = async function(pmName){
+      if(W._gcNoCommission(pmName)) return { total:0, earned:0, alreadyOnACheck:0, detail:[], note:'no commission — ' + s(pmName) + ' is an owner (paid by draws) or was let go' };
+      return cp.apply(this, arguments);
+    };
+    Object.keys(cp).forEach(function(k){ wc[k] = cp[k]; });
+    wc.__noOwnerComm = true; W._gcCommissionForPM = wc;
+  }
+  var qd = W._gcQueuedChecksDue;
+  if(typeof qd === 'function' && !qd.__noOwnerComm){
+    var wqd = function(){
+      var l = qd.apply(this, arguments);
+      return Array.isArray(l) ? l.filter(function(c){ return !(c && /commission/i.test(s(c.kind)) && W._gcNoCommission(c.who)); }) : l;
+    };
+    wqd.__noOwnerComm = true; W._gcQueuedChecksDue = wqd;
+  }
+}
+wrapAll(); setTimeout(wrapAll, 3000); setInterval(wrapAll, 7000);
+setTimeout(W._gcOwnerCommHeal, 8000); setTimeout(W._gcOwnerCommHeal, 30000); setInterval(W._gcOwnerCommHeal, 300000);
 })(window);
 </script>

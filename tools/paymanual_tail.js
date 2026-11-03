@@ -489,6 +489,40 @@ W._gcPayRunVoid = async function(runId, opts){
   rerender();
   return { ok:true, booked:booked, run:r };
 };
+/* ── ✏️ Edit a saved run: reopen it for re-approval ── */   /* patch PAYEDIT2 */
+W._gcPayRunUnbook = unbook;
+W._gcPayRunReopen = async function(runId, opts){
+  opts = opts || {};
+  var p = P(); if(!p) return { ok:false, why:'Payroll is still loading.' };
+  if(!isAdmin()){ if(!opts.quiet) alert('Only an admin can reopen payroll.'); return { ok:false, why:'Only an admin can reopen payroll.' }; }
+  var all = await allRuns();
+  var r = all.filter(function(x){ return x && String(x.id) === String(runId); })[0];
+  if(!r){ if(!opts.quiet) alert('That payroll run is not here any more.'); return { ok:false, why:'not found' }; }
+  var st = low(r.status);
+  if(st !== 'approved' && st !== 'paid'){ var w0 = 'Only an approved or paid run is reopened — this one is '+stLabel(r)+'.'; if(!opts.quiet) alert(w0); return { ok:false, why:w0 }; }
+  var t = runTotals(r), n = (r.lines||[]).length;
+  var written = !!r.checksWritten || (r.lines||[]).some(function(L){ return L && (L.paidOut === true || low(L.status) === 'paid'); });
+  var q = 'Edit the '+stLabel(r).toUpperCase()+' payroll run for the week '+runWeekLabel(r)+'?'
+    + (written ? '\n\n⚠ Its checks were already written. Editing does not void or reprint them — make the figures match what was really paid.' : '')
+    + '\n\n'+n+' check'+(n===1?'':'s')+' · total '+money(t.net)+' net ('+money(t.gross)+' gross).\n\n'
+    + 'It goes back to Waiting on admin: change any line, then it has to be approved again. Its wages come out of the books until it is.';
+  if(!opts.noAsk && !confirm(q)) return { ok:false, why:'cancelled' };
+  var now = nowISO(), who = me();
+  var booked = await unbook(r);
+  r.reopenedFrom = st; r.reopenedForEdit = now; r.reopenedBy = who; r.reopenBooked = !!(booked && (booked.register || booked.payments)); r.status = 'pending'; r.updatedAt = now;
+  (r.lines||[]).forEach(function(L){ if(L && low(L.status) !== 'denied'){ L.statusBeforeReopen = L.status; L.status = 'pending'; } });
+  r.history = (Array.isArray(r.history) ? r.history : []).concat([{ at:now, by:who, action:'reopened for edit', from:st, note:'reopened for edit by '+who+(written ? ' · checks were already written' : '') }]);
+  await p.saveRuns(all);
+  try{ console.log('[GC] Payroll run reopened for edit: '+runWeekLabel(r)+' (was '+st+', by '+who+')'); }catch(e){}
+  rerender();
+  return { ok:true, run:r, booked:booked, written:written };
+};
+W._gcPayRunEdit = async function(runId){
+  if(!isAdmin()){ alert('Only an admin can edit a saved payroll run.'); return { ok:false, why:'admin only' }; }
+  var r = (await allRuns()).filter(function(x){ return x && String(x.id) === String(runId); })[0];
+  if(r && r.source === 'paystub-entry' && W._gcPastPayEditRun) return W._gcPastPayEditRun(r.id);
+  return W._gcPayRunReopen(runId);
+};
 /* what has been entered by hand, voided or deleted (this computer's delete log + each run's history) */
 W._gcPayrollChanges = async function(){
   var out = [];
