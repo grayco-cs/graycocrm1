@@ -99,12 +99,12 @@ function compute(opt){
   var yearRuns=allRuns.filter(function(r){ return isLive(r) && s(r.payDate).slice(0,4)===yr; })
     .sort(function(a,b){ return s(a.payDate)<s(b.payDate)?-1:s(a.payDate)>s(b.payDate)?1:(s(a.id)<s(b.id)?-1:1); });
   var ytd={}, emp={};
-  var T={ wages:0, fed:0, ssW:0, medW:0, addlW:0, eeSS:0, eeMed:0, eeAddl:0, storedSSW:0, futaW:0, futaStored:0, sutaStored:0, checks:0 };
+  var T={ wages:0, fed:0, ssW:0, medW:0, addlW:0, eeSS:0, eeMed:0, eeAddl:0, storedSSW:0, futaW:0, futaStored:0, sutaStored:0, checks:0, eeL7:0, erPaysEE:0, noFica:[], noFed:[] };
   var month={}; qi.months.forEach(function(m){ month[m]={ fed:0, ssW:0, medW:0, addlW:0, ee:0, runs:0, checks:0 }; });
   var futaYtd=0, futaQ=0, sutaBy={}, pretaxFlag={}, reg=[];
   yearRuns.forEach(function(r){
     var pd=s(r.payDate).slice(0,10), inQ = pd>=qi.from && pd<=qi.to, ru=null;
-    if(inQ){ ru={ id:s(r.id), payDate:pd, from:s(r.from), to:s(r.to), status:r.status, checks:0, wages:0, fed:0, ee:0, excluded:0 }; usedRuns.push(ru); }
+    if(inQ){ ru={ id:s(r.id), source:s(r.source), payDate:pd, from:s(r.from), to:s(r.to), status:r.status, checks:0, wages:0, fed:0, ee:0, excluded:0 }; usedRuns.push(ru); }
     (r.lines||[]).forEach(function(L){
       if(!L || L.status==='denied') return;
       var k=lineKind(L), key=s(L.empId||L.name), nm=s(L.name||L.empId);
@@ -128,17 +128,24 @@ function compute(opt){
       bs.wages+=w; bs.taxable+=sutaW; bs.excess+=(w-sutaW); bs.stored+=n2(L.suta);
       var be=bs.emps[key]||(bs.emps[key]={ name:nm, wages:0, taxable:0 }); be.wages+=w; be.taxable+=sutaW;
       var e=emp[key]||(emp[key]={ key:key, name:nm, wages:0, fed:0, ssW:0, medW:0, addlW:0, ee:0, storedSSW:0, checks:0 });
-      e.wages+=w; e.fed+=n2(L.fed); e.ssW+=ssW; e.medW+=fw; e.addlW+=addlW; e.ee+=n2(L.ss)+n2(L.med)+n2(L.addlMed);
+      /* patch PASTPAY: a check paid with NO Social Security / Medicare withheld (the stub entry's "none withheld") —
+         the company still owes both halves on line 5; the employee half it did not withhold is ITS cost, not a
+         line-7 adjustment (line 7 is fractions of cents only). So that line counts at the form's own figure. */
+      var noFica = !!L.ficaNotWithheld, eeFormL = r2(r2(ssW*0.062)+r2(fw*0.0145)+r2(addlW*addlRate));
+      var eeL = noFica ? eeFormL : (n2(L.ss)+n2(L.med)+n2(L.addlMed));
+      if(noFica){ T.erPaysEE+=eeFormL; T.noFica.push(nm+' '+pd); }
+      if(L.fedNotWithheld && w>0) T.noFed.push(nm+' '+pd);
+      e.wages+=w; e.fed+=n2(L.fed); e.ssW+=ssW; e.medW+=fw; e.addlW+=addlW; e.ee+=eeL;
       e.storedSSW+=n2(L.ssWages!=null?L.ssWages:fw); e.checks++;
       T.wages+=w; T.fed+=n2(L.fed); T.ssW+=ssW; T.medW+=fw; T.addlW+=addlW;
-      T.eeSS+=n2(L.ss); T.eeMed+=n2(L.med); T.eeAddl+=n2(L.addlMed); T.storedSSW+=n2(L.ssWages!=null?L.ssWages:fw);
+      T.eeSS+=n2(L.ss); T.eeMed+=n2(L.med); T.eeAddl+=n2(L.addlMed); T.eeL7+=eeL; T.storedSSW+=n2(L.ssWages!=null?L.ssWages:fw);
       T.futaStored+=n2(L.futa); T.sutaStored+=n2(L.suta); T.checks++;
-      var mo=month[pd.slice(0,7)]; mo.fed+=n2(L.fed); mo.ssW+=ssW; mo.medW+=fw; mo.addlW+=addlW; mo.ee+=n2(L.ss)+n2(L.med)+n2(L.addlMed); mo.checks++;
+      var mo=month[pd.slice(0,7)]; mo.fed+=n2(L.fed); mo.ssW+=ssW; mo.medW+=fw; mo.addlW+=addlW; mo.ee+=eeL; mo.checks++;
       reg.push({ payDate:pd, run:s(r.id), key:key, name:nm, hours:r2(n2(L.hours)+n2(L.otHours)), gross:r2(L.gross), preTax:r2(L.preTax), wages:r2(w),
         fed:r2(L.fed), ss:r2(L.ss), med:r2(n2(L.med)+n2(L.addlMed)), net:r2(L.net), paid:paidHow(L) });
-      ru.checks++; ru.wages+=w; ru.fed+=n2(L.fed); ru.ee+=n2(L.ss)+n2(L.med)+n2(L.addlMed);
+      ru.checks++; ru.wages+=w; ru.fed+=n2(L.fed); ru.ee+=eeL;
       if(n2(L.gross)>0 && (L.fed==null || L.ss==null || L.med==null)) warn.push('Withholding is MISSING on '+nm+'’s check in the run paid '+pd+' (no '+[L.fed==null?'federal':'',L.ss==null?'Social Security':'',L.med==null?'Medicare':''].filter(Boolean).join(' / ')+' figure). Lines 3, 5 and 7 are wrong until it is fixed.');
-      else if(fw>0 && n2(L.ss)===0 && n2(L.med)===0) warn.push('No Social Security or Medicare was withheld on '+nm+'’s check paid '+pd+' ('+money(fw)+' of wages). Line 7 will be off by the missing amount.');
+      else if(!noFica && fw>0 && n2(L.ss)===0 && n2(L.med)===0) warn.push('No Social Security or Medicare was withheld on '+nm+'’s check paid '+pd+' ('+money(fw)+' of wages). Line 7 will be off by the missing amount.');
       (L.otherList||[]).forEach(function(d){ if(d && d.pretax && /401|403|457|retire|ira\b/i.test(s(d.label))) pretaxFlag[s(d.label)]=1; });
     });
   });
@@ -169,7 +176,9 @@ function compute(opt){
   L.L5d1=r2(T.addlW); L.L5d2=r2(T.addlW*addlRate);
   L.L5e=r2(L.L5a2+L.L5b2+L.L5c2+L.L5d2); L.L5f=0;
   L.L6=r2(L.L3+L.L5e+L.L5f);
-  var eeActual=r2(T.eeSS+T.eeMed+T.eeAddl);
+  var eeActual=r2(T.eeL7);
+  if(T.noFica.length) warn.push('Social Security / Medicare were NOT withheld on '+T.noFica.length+' check(s) ('+T.noFica.slice(0,4).join(', ')+(T.noFica.length>4?' …':'')+'). Line 5 still reports both halves; the employee half, '+money(T.erPaysEE)+', is owed by the company (its cost — it is not a line 7 adjustment). Talk to your CPA.');
+  if(T.noFed.length) warn.push('No federal income tax was withheld on '+T.noFed.length+' check(s) ('+T.noFed.slice(0,4).join(', ')+(T.noFed.length>4?' …':'')+'). Line 3 shows only what was actually withheld. Talk to your CPA; Social Security / Medicare are still owed.');
   var eeOnForm=r2(r2(L.L5a1*0.062)+r2(L.L5c1*0.0145)+L.L5d2);
   L.L7=r2(eeActual-eeOnForm); L.L8=0; L.L9=0;
   L.L10=r2(L.L6+L.L7+L.L8+L.L9); L.L11=0; L.L12=r2(L.L10-L.L11);
@@ -240,7 +249,7 @@ function compute(opt){
       ssForm: r2(L.L5a1*0.062), medForm: r2(r2(L.L5c1*0.0145)+L.L5d2), ssDiff: r2(regTot.ss-r2(L.L5a1*0.062)), medDiff: r2(regTot.med-r2(r2(L.L5c1*0.0145)+L.L5d2)) } };
   return { register:register, quarter:qi, lines:L, emps:emps, runs:usedRuns, l1Runs:l1runs, excluded:excluded, deposits:deps, part2:p2,
     eeActual:eeActual, eeOnForm:eeOnForm, months:qi.months.map(function(m){ var o=month[m]; return { month:m, checks:o.checks, fed:r2(o.fed), ssW:r2(o.ssW), medW:r2(o.medW) }; }),
-    futa:futa, suta:suta, warnings:warn, info:info, ssBase:ssBase, checks:T.checks };
+    futa:futa, suta:suta, erPaysEE:r2(T.erPaysEE), warnings:warn, info:info, ssBase:ssBase, checks:T.checks };
 }
 
 /* the "Copy all numbers" text and the CSV, both from the same rows */
@@ -356,7 +365,7 @@ async function render(body){
   catch(e){ body.innerHTML='<div style="'+RED+'">The Form 941 worksheet could not be worked out: '+esc(e && e.message)+'</div>'; return; }
   UI.last=R; var L=R.lines, q=R.quarter, m=money;
   var opts=[]; var ty=+todayStr().slice(0,4); for(var y=ty; y>=ty-2; y--) for(var k=4;k>=1;k--) opts.push([y,k]);
-  var runsList = R.runs.length ? R.runs.map(function(r){ return '<tr><td style="'+TD+'">'+esc(r.payDate)+'</td><td style="'+TD+'">'+esc(r.from)+' → '+esc(r.to)+'</td><td style="'+TD+'text-align:right">'+r.checks+(r.excluded?(' <span style="color:#b45309">(+'+r.excluded+' left out)</span>'):'')+'</td><td style="'+TD+'text-align:right">'+m(r.wages)+'</td><td style="'+TD+'text-align:right">'+m(r.fed)+'</td><td style="'+TD+'text-align:right">'+m(r.ee)+'</td><td style="'+TD+'font-size:11px;color:#94a3b8">'+esc(r.id)+'</td></tr>'; }).join('')
+  var runsList = R.runs.length ? R.runs.map(function(r){ return '<tr><td style="'+TD+'">'+esc(r.payDate)+'</td><td style="'+TD+'">'+esc(r.from)+' → '+esc(r.to)+'</td><td style="'+TD+'text-align:right">'+r.checks+(r.excluded?(' <span style="color:#b45309">(+'+r.excluded+' left out)</span>'):'')+'</td><td style="'+TD+'text-align:right">'+m(r.wages)+'</td><td style="'+TD+'text-align:right">'+m(r.fed)+'</td><td style="'+TD+'text-align:right">'+m(r.ee)+'</td><td style="'+TD+'font-size:11px;color:#94a3b8">'+esc(r.id)+(r.source==='paystub-entry'?' · from paystubs':'')+'</td></tr>'; }).join('')
     : '<tr><td colspan="7" style="'+TD+'color:#991b1b;font-weight:700">No approved payroll runs were paid in this quarter.</td></tr>';
   var depList = R.deposits.length ? R.deposits.map(function(x){ return '<tr><td style="'+TD+'"><input type="checkbox" data-f941-dep="'+esc(x.id)+'"'+(x.counted?' checked':'')+'></td><td style="'+TD+'">'+esc(x.date)+'</td><td style="'+TD+'text-align:right">'+m(x.amount)+'</td><td style="'+TD+'font-size:12px;color:#475569">'+esc(x.confirm||'')+' '+esc(x.note||'')+'<div style="font-size:11px;color:#94a3b8">'+(x.tagged?'marked for a quarter on the payment':(x.byRule?'counted by date (for this quarter’s months)':'not counted by date — probably the prior/next quarter'))+'</div></td></tr>'; }).join('')
     : '<tr><td colspan="4" style="'+TD+'color:#991b1b;font-weight:700">No 941 deposits recorded.</td></tr>';
@@ -374,6 +383,7 @@ async function render(body){
       + '<div><div style="font-size:18px;font-weight:800">🧾 Form 941 worksheet — Q'+q.q+' '+q.year+'</div>'
       + '<div style="font-size:12px;color:#64748b">'+esc(q.from)+' to '+esc(q.to)+' · approved payroll runs by <b>pay date</b> (cash basis) · W-2 employees only · return due <b>'+esc(q.dueDate)+'</b>. Read-only: nothing is saved or sent.</div></div>'
       + '<div><select data-f941-q style="padding:6px;border-radius:6px;border:1px solid #cbd5e1">'+opts.map(function(o){ return '<option value="'+o[0]+'-'+o[1]+'"'+(o[0]===q.year&&o[1]===q.q?' selected':'')+'>Q'+o[1]+' '+o[0]+'</option>'; }).join('')+'</select> '
+      + (W._gcPastPayOpen?'<button data-f941-past style="'+BTN+'">📥 Enter past payroll</button>':'')
       + '<button data-f941-pdf style="'+BTN+'">📄 Filled Form 941 (PDF)</button><button data-f941-copy style="'+BTN+'">📋 Copy all numbers</button><button data-f941-csv style="'+BTN+'">⬇ Download CSV</button></div></div>'
     + R.warnings.map(function(w){ return '<div data-f941-warn="1" style="'+RED+'">⚠ '+esc(w)+'</div>'; }).join('')
     + R.info.map(function(w){ return '<div style="background:#eff6ff;border:1px solid #93c5fd;color:#1e3a8a;border-radius:8px;padding:8px 12px;margin:0 0 8px;font-size:12px">ℹ '+esc(w)+'</div>'; }).join('')
@@ -421,6 +431,7 @@ async function render(body){
     + '</div>';
   var qs=body.querySelector('[data-f941-q]'); if(qs) qs.onchange=function(){ var v=qs.value.split('-'); UI.sel={year:+v[0],q:+v[1]}; UI.dep={}; render(body); };
   Array.prototype.forEach.call(body.querySelectorAll('[data-f941-dep]'),function(c){ c.onchange=function(){ UI.dep[c.getAttribute('data-f941-dep')]=c.checked; render(body); }; });
+  var ppb=body.querySelector('[data-f941-past]'); if(ppb) ppb.onclick=function(){ W._gcPastPayOpen(); };
   var pb=body.querySelector('[data-f941-pdf]'); if(pb) pb.onclick=function(){ downloadPdf(R, d.set, pb); };
   var cb=body.querySelector('[data-f941-copy]'); if(cb) cb.onclick=function(){ var t=copyText(R);
     var done=function(){ cb.textContent='✓ Copied'; setTimeout(function(){ cb.textContent='📋 Copy all numbers'; },1800); };
