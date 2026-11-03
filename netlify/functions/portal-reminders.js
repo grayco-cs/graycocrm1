@@ -70,7 +70,8 @@ exports.handler = async function (event) {
       try { await CQ.noteNotices(); } catch (e) {}
       return { statusCode: 200, headers, body: JSON.stringify({ ok: true, quiet: true, invoiceMail, releaseAt: new Date(CQ.nextRelease(Date.now())).toISOString() }) };
     }
-    const rep = (await AUTO.gate('final_invoice_reminders')) || await portal._core.runReminders({});
+    let pjs = []; try { pjs = (await portal._core.crmData(false)).projects || []; } catch (e) {}
+    const rep = (await AUTO.gateJobs('final_invoice_reminders', pjs)) || await portal._core.runReminders({});   /* patch JOBSETUP: a job switched on for itself still runs */
     rep.invoiceMail = invoiceMail;
     try { rep.notices = (await AUTO.gate('portal_docs_notice')) || await portal._core.notifyAll({}); } catch (e) { rep.notices = { error: String(e && e.message || e) }; }
     /* patch AUTO5: estimate follow-ups — day 2 (approval), day 5 and day 10 (the approved text, by themselves) */

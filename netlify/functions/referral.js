@@ -46,9 +46,9 @@ function J(event, code, body){
 }
 
 /* the hourly sweep (referral-scheduled.js calls it; shared so the two files run the same thing) */
-async function hourly(){
+async function hourly(o){
   if (env('REFERRAL_OFF') === '1' || !L().dbReady()) return { statusCode: 200, body: JSON.stringify({ ok: true, off: true }) };
-  try { const r = await R.sweep({}); return { statusCode: 200, body: JSON.stringify(Object.assign({ ok: true }, r)) }; }
+  try { const r = await R.sweep({ globalOn: o && o.globalOn });   /* patch JOBSETUP */ return { statusCode: 200, body: JSON.stringify(Object.assign({ ok: true }, r)) }; }
   catch (e) { console.error('[referral] sweep failed: ' + (e && e.message)); return { statusCode: 500, body: JSON.stringify({ ok: false }) }; }
 }
 /* patch MKTFIX2: the Marketing Manager's read-only view never names a customer — members are "Member 1, 2 …", the people they

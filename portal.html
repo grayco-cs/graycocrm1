@@ -239,6 +239,11 @@ ul.tips{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;fo
 </style>
 <script src="/legal2.js"></script>   <!-- LEGAL2-patch: in the head so it is loaded before the signing code runs -->
 <script src="/portal-claimhelp.js"></script>   <!-- patch CLAIMHELP: "🛡 Your insurance claim" (insurance / restoration / mitigation jobs) -->
+<style id="gc-jobsetup-css">/* patch JOBSETUP: sections switched off for this job */
+body.sec-off-photos nav.tabs button[data-tab="photos"], body.sec-off-docs nav.tabs button[data-tab="docs"],
+body.sec-off-payments nav.tabs button[data-tab="pay"], body.sec-off-messages nav.tabs button[data-tab="msgs"],
+body.sec-off-requests #gcpr-card, body.sec-off-care #gcpp-maint, body.sec-off-care #gcpp-heard, body.sec-off-home #gcph-home { display: none !important; }
+</style>
 </head>
 <body>
 <div class="wrap">
@@ -601,13 +606,14 @@ function infoCard(){
       h('dt', { text: 'Phone' }), h('dd', { text: c.phone || '—' }), h('dt', { text: 'Email' }), h('dd', { text: c.email || '—' })]),
     h('div', { class: 'muted' }, ['Something wrong? ', h('a', { href: 'tel:9015850944', text: 'Call us to change it' }), ' — ' + OFFICE + '.']), reachBlock()]);
 }
-function photosButton(){
+function photosButton(){ if (V && V.sections && V.sections.photos === false) return null;   /* patch JOBSETUP */
   return h('button', { type: 'button', class: 'cc btn navy', id: 'gp-open', style: 'justify-content:flex-start;min-height:56px', on: { click: function(){ go('photos'); } } }, [
     h('span', { 'aria-hidden': 'true', style: 'color:#D4A017;font-size:22px', text: '📷' }),
     h('span', { style: 'flex:1 1 auto;display:flex;flex-direction:column;gap:2px;text-align:left' }, [h('span', { text: tr('seeAll') }), h('span', { class: 'muted', style: 'color:#C9D3DF', text: tr('photosAll') })]),
     h('span', { 'aria-hidden': 'true', style: 'color:#D4A017;font-size:20px', text: '›' })]);
 }
-function updates(){ var posts = V.posts || []; return card('Updates from your team', posts.length ? posts.slice(0, 10).map(postEl) : [h('div', { class: 'empty', text: 'Your Project Manager posts updates and photos here.' })]); }
+function updates(){ if (V.sections && V.sections.updates === false) return null;   /* patch JOBSETUP */
+  var posts = V.posts || []; return card('Updates from your team', posts.length ? posts.slice(0, 10).map(postEl) : [h('div', { class: 'empty', text: 'Your Project Manager posts updates and photos here.' })]); }
 function reviewCard(){
   if (!(V.showReview && V.review)) return null;
   return card('Thank you for choosing GrayCo!', [
@@ -1016,10 +1022,17 @@ function insPay(){
   return out;
 }
 
+/* patch JOBSETUP: the job's portal sections (server view.sections; the job's "Job setup" in the CRM) — a section that is off is not shown */
+var TABSEC = { photos: 'photos', docs: 'docs', pay: 'payments', msgs: 'messages' };
+function secApply(sec){
+  var b = document.body; if (!b) return;
+  ['photos', 'docs', 'updates', 'payments', 'messages', 'requests', 'care', 'home'].forEach(function(k){ b.classList.toggle('sec-off-' + k, sec[k] === false); });
+}
 /* ── frame ── */
 function go(t){ TAB = t; draw(); window.scrollTo(0, 0); }
 function draw(){
   var main = $('main'); main.innerHTML = '';
+  var SEC = (V && V.sections) || {}; secApply(SEC); if (TABSEC[TAB] && SEC[TABSEC[TAB]] === false) TAB = 'home';   /* patch JOBSETUP */
   var parts = TAB === 'photos' ? photos() : TAB === 'docs' ? docs() : TAB === 'pay' ? pay() : TAB === 'msgs' ? msgs() : home();
   var top = [];
   if (JOBS && JOBS.length > 1) top.push(h('div', { class: 'jobbar' }, [h('button', { type: 'button', class: 'back', id: 'allJobs', text: tr('allProjects'), on: { click: function(){ V = null; PID = ''; picker(); } } })]));

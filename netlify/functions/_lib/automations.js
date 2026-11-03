@@ -212,6 +212,18 @@ if (typeof module !== 'undefined' && module.exports) {
     return on;
   };
   API.row = function(fresh){ return readRow(fresh); };
+  /* patch JOBSETUP (owner 11/03: "choose the automations we will use … if it's default just say OK"): a job's own choice in its
+     "Job setup" step (job.autoOverrides { <key>: true | false }) beats the ⚡ company switch for THAT job only — an OFF-by-default
+     automation can be switched ON for one job, and the reverse. No override → the switch. */
+  API.override = function(key, p){ var o = p && p.autoOverrides; return o && typeof o === 'object' && typeof o[key] === 'boolean' ? o[key] : null; };
+  API.forJob = async function(key, p){ var o = API.override(key, p); return o === null ? API.isOn(key) : o; };
+  API.forJobSync = function(key, p, globalOn){ var o = API.override(key, p); return o === null ? !!globalOn : o; };
+  /* the gate of a run over many jobs: null (run) when the switch is on OR some job has it switched on for itself */
+  API.gateJobs = async function(key, projects){
+    if (await API.isOn(key)) return null;
+    if ((Array.isArray(projects) ? projects : []).some(function(p){ return API.override(key, p) === true; })) return null;
+    return API.held(key, null, []);
+  };
   /* "held: would have done N" — n = how many it would have done (null when unknown), sample = a few short labels */
   API.held = async function(key, n, sample){
     var now = new Date().toISOString();

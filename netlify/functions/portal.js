@@ -108,7 +108,8 @@ async function gcStaffAuth(event){
 
 const crypto = require('crypto');
 const JA = require('./_lib/job-auto.js');   /* patch JA: the job's automations (project.auto) */
-function CQ(){ return require('./_lib/custquiet.js'); }   /* patch CUSTQUIET: customer quiet hours 7 PM–7 AM Central */
+function CQ(){ return require('./_lib/custquiet.js'); }
+function AUTO_J(){ return require('./_lib/automations.js'); }   /* patch JOBSETUP */   /* patch CUSTQUIET: customer quiet hours 7 PM–7 AM Central */
 /* patch CUSTQUIET: an approved item that goes to a customer / sub / GC waits for 7 AM in the window; a staff-only one does not */
 const CQ_STAFF_KINDS = { announcement: 1, preq_change: 1, preq_project: 1 };   /* patch PORTALREQ: a portal request's own card is staff-only (its reply / decline note is held) */
 function cqHoldsKind(kind){ return !CQ_STAFF_KINDS[s(kind)]; }
@@ -116,6 +117,31 @@ try { require('./_lib/brand.js').installResend(); } catch (e) {}   /* patch AUT2
 
 const OFFICE_PHONE = '901-585-0944';
 const NOT_ACTIVE = 'This link is not active — call GrayCo ' + OFFICE_PHONE;
+/* patch JOBSETUP (owner 11/03: "choose what the customer gets … if it's default just say OK"): the portal sections of a job.
+   Defaults: everything on; the GC variant (we are the sub) leaves out GrayCo Care and Warranty / My home. The job's own
+   choice (job.portalSections { photos, docs, updates, payments, messages, requests, care, home: true | false }) wins. */
+const SECTION_KEYS = ['photos', 'docs', 'updates', 'payments', 'messages', 'requests', 'care', 'home'];
+function sectionDefaults(gc){ const o = {}; SECTION_KEYS.forEach(function(k){ o[k] = !(gc && (k === 'care' || k === 'home')); }); return o; }
+function isGcStyle(data, p, view){
+  if (view && view.variant) return view.variant === 'gc';
+  try { if (typeof portalStyle === 'function') return !!portalStyle(data, p).gc; } catch (e) {}
+  return s(p && p.portalStyle) === 'gc';
+}
+function sectionsOf(p, gc){
+  const o = sectionDefaults(gc), own = p && p.portalSections && typeof p.portalSections === 'object' ? p.portalSections : {};
+  SECTION_KEYS.forEach(function(k){ if (typeof own[k] === 'boolean') o[k] = own[k]; });
+  return o;
+}
+function applySections(view, data, p){
+  if (!view || !view.ok) return view;
+  const sec = view.sections = sectionsOf(p, isGcStyle(data, p, view));
+  if (!sec.updates) view.posts = [];
+  if (!sec.photos) view.posts = (view.posts || []).map(function(x){ return Object.assign({}, x, { photos: [] }); });
+  if (!sec.docs) view.docs = [];
+  if (!sec.payments && view.money) view.money = Object.assign({}, view.money, { invoices: [], payments: [], paid: 0, due: 0, finalInvoice: null });
+  if (!sec.home) { view.warranty = null; }
+  return view;
+}
 const STAGES = ['Lead', 'Contacted', 'Appointment booked', 'Estimate sent', 'Contract signed + scheduled',
                 'In progress', 'Punch list', 'Final invoice', 'Closed'];
 const REVIEW_URL = 'https://share.google/quDuhdlL0ckxPLLY3';
@@ -218,7 +244,11 @@ function listOf(data, keys){
 }
 /* patch JA: what this job's automations say (its own choices, else the company defaults for its type) */
 function jaAdmin(data){ return JA.parseAdmin(data && data.jobAutoDefaults); }
-function jaAllows(data, p, key){ return JA.allows(p, key, jaAdmin(data)); }
+function jaAllows(data, p, key){
+  /* patch JOBSETUP: "Review request / thank-you" switched off in this job's "Job setup" → no review ask in the portal or on its invoice */
+  if ((key === 'reviewRequest' || key === 'thankYou') && AUTO_J().override('thank_you_queue', p) === false) return false;
+  return JA.allows(p, key, jaAdmin(data));
+}
 function findProject(data, pid){
   const delList = Array.isArray(data.gc_deleted_projects) ? data.gc_deleted_projects : [];
   if (delList.map(String).indexOf(String(pid)) >= 0) return null;
@@ -901,10 +931,10 @@ async function buildView(data, p, opts){
     insTagDocs(view.docs, pdocs, signed);
     view.insurance = insuranceView(data, p, { stage: stage, cos: cos, invoices: invoices, docs: view.docs,
       payments: arr(p.drawPayments).concat(arr(p.payments), arr(data.projectPayments).filter(function(x){ return pidOf(x) === pid && x.deleted !== true; })) });
-    return chAttach(scrub(view, insWords(data, p)), data, p, view.insurance.now);   /* patch CLAIMHELP */
+    return applySections(chAttach(scrub(view, insWords(data, p)), data, p, view.insurance.now), data, p);   /* patch CLAIMHELP · JOBSETUP */
   }
   const showC = false;   /* owner 11/01 (CLAIMWORDS): the carrier's name is NEVER shown anywhere in the portal — "Show carrier name" (job / ⚡ Automations) has no effect */
-  return chAttach(scrub(view, (showC ? [] : carrierWords(p)).concat(claimWords(data, pid, showC))), data, p, null);   /* patch CLAIMHELP */
+  return applySections(chAttach(scrub(view, (showC ? [] : carrierWords(p)).concat(claimWords(data, pid, showC))), data, p, null), data, p);   /* patch CLAIMHELP · JOBSETUP */
 }
 
 /* ── patch CLAIMHELP: "🛡 Your insurance claim" (netlify/functions/_lib/claimhelp.js) ─────────────────────────
@@ -2225,6 +2255,7 @@ async function runReminders(opts){
   const report = { sent: 0, reminded: 0, todos: 0, skipped: 0, paused: 0, details: [] };
   const projects = arr(data.projects).filter(function(p){ return !opts.projectId || s(p.id) === s(opts.projectId); });
   const invs = listOf(data, ['invs', 'invoices']);
+  try { report.globalOn = await AUTO_J().isOn('final_invoice_reminders'); } catch (e) { report.globalOn = false; }   /* patch JOBSETUP */
   for (const p of projects) {
     const pid = s(p.id);
     if (/lost|dead|cancel/.test(low(p.status))) continue;
@@ -2232,6 +2263,7 @@ async function runReminders(opts){
     if (!finals.length) continue;
     if (p.portalRemindersPaused === true || (p.importedHistory === true || p.noSend === true || p.historyOnly === true)) { report.paused++; continue; }   /* patch LCLEAN-H: a history job is never reminded */
     if (!jaAllows(data, p, 'finalReminders')) { report.off = (report.off || 0) + 1; continue; }   /* patch JA: off for this job */
+    if (!AUTO_J().forJobSync('final_invoice_reminders', p, report.globalOn)) { report.off = (report.off || 0) + 1; continue; }   /* patch JOBSETUP: the job's own choice / the ⚡ switch */
     for (const inv of finals) {
       const invId = s(inv.id); if (!invId) continue;
       const prev = rows[invId] || null;
@@ -2374,7 +2406,8 @@ async function sendLink(pid, event, who){
   const st = await settingsGet();
   if (!st.autoSend) return { ok: true, skipped: 'auto-send is turned off' };
   /* patch AUTOPANEL: the new-job portal link e-mail is an ⚡ Automations switch (default OFF) */
-  if (!(await require('./_lib/automations.js').isOn('portal_invite_email'))) return Object.assign({ ok: true, skipped: 'new-job portal link e-mail is switched off in ⚡ Automations' }, await require('./_lib/automations.js').held('portal_invite_email', 1, [s(pid)]));
+  { const AUTO = require('./_lib/automations.js'); let pj = null; try { pj = findProject(await crmData(false), pid); } catch (e) {}   /* patch JOBSETUP: the job's own choice beats the switch */
+    if (!(await AUTO.forJob('portal_invite_email', pj))) return Object.assign({ ok: true, skipped: 'new-job portal link e-mail is switched off in ⚡ Automations' }, await AUTO.held('portal_invite_email', 1, [s(pid)])); }
   const now = Date.now();
   const data = await crmData(true);
   const p = findProject(data, pid);
@@ -2861,6 +2894,9 @@ exports.handler = async function (event) {
     if (!shown) return reply(404, headers, { ok: false });
     return reply(200, headers, { ok: await estViewed(p, body.estId) });
   }
+  if ((action === 'photo-add' || action === 'photos') && !sectionsOf(p, isGcStyle(data, p)).photos) {   /* patch JOBSETUP: Photos is off for this job */
+    return reply(action === 'photos' ? 200 : 403, headers, action === 'photos' ? { ok: true, photos: [], off: true } : { ok: false, error: 'Photos are not part of this portal.' });
+  }
   if (action === 'photo-add') {   /* patch CUSTPORTAL: the customer adds a photo to the job's GrayCo Photos */
     if (body.preview === true) return reply(403, headers, { ok: false, error: 'Preview — only the customer can add photos.' });
     try { const r = await custPhotoAdd(p, body); return reply(r.status || 200, headers, r.out); }
@@ -2890,6 +2926,7 @@ exports.handler = async function (event) {
     try { const cr = await subcLib().portal(exports._core, data, p, body, {}); return reply(cr.code || 200, headers, cr.body); }
     catch (e) { return reply(503, headers, { ok: false, error: 'We could not load that just now. Please try again, or call GrayCo ' + OFFICE_PHONE + '.' }); }
   }
+  if (action === 'invoice' && body.preview !== true && !sectionsOf(p, isGcStyle(data, p)).payments) return reply(404, headers, { ok: false, error: 'Payments are not part of this portal.' });   /* patch JOBSETUP */
   if (action === 'invoice') {   /* patch AP2: one of this job's invoices as a PDF (never a draft, never another job's) */
     const r = listOf(data, ['invs', 'invoices']).find(function(x){ return s(x.id) === s(body.id) && invOfProject(x, p) && isCustomerInvoice(x); });
     if (!r) return reply(404, headers, { ok: false, error: 'That invoice is not in your portal.' });
@@ -2913,6 +2950,7 @@ exports._core = { starterFirst: starterFirst, pwSentence: pwSentence, withPwLine
   newToken: newToken, grayCoPhotos: grayCoPhotos, escalateDue: escalateDue, escalatedOrDue: escalatedOrDue, ESC_MS: ESC_MS, approvedReminder: approvedReminder, aqSend: aqSend, replyToFor: replyToFor, invoiceDoc: invoiceDoc, invoicePdf: invoicePdf, invNumber: invNumber, invCustStatus: invCustStatus,
   queueInvoiceMail: queueInvoiceMail, queueNewInvoices: queueNewInvoices, invMailWanted: invMailWanted, news: function(){ return newsLib(); }, STAGES: STAGES, NOT_ACTIVE: NOT_ACTIVE, _reset: function(){ kvCache = null; photoCache.clear(); hits.clear(); GATE_LAST = null; GATE_AT = 0; } };
 /* patch AUTAI */
+Object.assign(exports._core, { sectionsOf: sectionsOf, sectionDefaults: sectionDefaults, SECTION_KEYS: SECTION_KEYS, applySections: applySections });   /* patch JOBSETUP */
 Object.assign(exports._core, { crmData: crmData, kvRead: kvRead, activeFor: activeFor, sendText: sendText, LINK_PH_: LINK_PH, pmOf: pmOf, findProject: findProject, textHtml: textHtml, kvListRead: kvListRead, autaiReceipt: autaiReceipt, autaiQueue: autaiQueue, AUTAI_POST: AUTAI_POST });
 /* patch GCP: the GC portal and the customer-portal extras (gc-portal.js, _lib/gcp.js) */
 Object.assign(exports._core, { gcStaffAuth: gcStaffAuth, signRefs: signRefs, tokenRow: tokenRow, sessionRow: sessionRow, ccPhotos: ccPhotos, ccHidden: ccHidden, ccCustomerPhotos: ccCustomerPhotos, grayCoRecords: grayCoRecords, withJob: withJob, jobTag: jobTag, pushTo: pushTo, ipOf: ipOf, limited: limited, noteBad: noteBad, gcCors: gcCors, gcHeader: gcHeader, adminEmails: adminEmails, officeEmails: officeEmails, listOf: listOf, TOKEN_RE: TOKEN_RE, OFFICE_PHONE: OFFICE_PHONE, MIN_FAIL_MS: MIN_FAIL_MS, SIGN_SECS: SIGN_SECS });

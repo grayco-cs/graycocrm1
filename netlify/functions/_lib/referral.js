@@ -537,6 +537,7 @@ async function sweep(opt){
     const p = matchJob(data, r, inbox);
     if (!p) continue;
     if (s(r.pid) !== s(p.id)) { await patchReferral(r.id, function(z){ z.pid = s(p.id); z.jobName = s(p.name); z.status = 'job'; z.jobAt = z.jobAt || nowIso(); }); out.matched++; }
+    if (opt.globalOn !== undefined && !require('./automations.js').forJobSync('referral_credits', p, opt.globalOn)) continue;   /* patch JOBSETUP: this job's own choice */
     const ready = st.trigger === 'signed' ? signed(p) || hasPayment(data, p) : hasPayment(data, p);
     if (!ready) continue;
     const m = mems.find(function(x){ return x.id === r.memberId; }); if (!m) continue;

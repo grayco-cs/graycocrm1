@@ -171,6 +171,7 @@ async function run(opts){
     const why = function(w){ rep.skipped.push({ project: pid, why: w }); };
     if (p.importedHistory === true || p.noSend === true || p.historyOnly === true) { why('history job (back-entered) — never sent'); continue; }   /* patch AUTOFIX-WEEKLY: like every other customer e-mail (patch LCLEAN-H) */
     if (!sw(p, 'weeklyUpdate', defs, true)) { why('weekly update switched off'); continue; }
+    if (opts.globalOn !== undefined && !require('./_lib/automations.js').forJobSync('weekly_update', p, opts.globalOn)) { why('weekly update switched off for this job (job setup)'); continue; }   /* patch JOBSETUP */
     if (sw(p, 'portalLink', defs, true) === false) { why('portal switched off'); continue; }
     let row = null; try { row = await C.activeFor(pid); } catch (e) { row = null; }
     if (!row) { why('no active portal link'); continue; }
@@ -206,9 +207,11 @@ exports.handler = async function (event) {
   if (!(process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY)) return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: 'SUPABASE_SERVICE_KEY not set.' }) };
   if (sched && !isRunTime(new Date())) return { statusCode: 200, headers, body: JSON.stringify({ ok: true, notNow: true }) };
   if (!sched && !b.force && !b.projectId && !isRunTime(new Date())) return { statusCode: 200, headers, body: JSON.stringify({ ok: true, notNow: true, hint: 'send { "force": true } to draft now' }) };
-  if (sched) { const AUTO = require('./_lib/automations.js'); const h = await AUTO.gate('weekly_update'); if (h) return { statusCode: 200, headers, body: JSON.stringify(Object.assign({ ok: true }, h)) }; }   /* patch AUTOPANEL */
+  if (sched) { const AUTO = require('./_lib/automations.js'); let pjs = []; try { pjs = (await portal._core.crmData(false)).projects || []; } catch (e) {} const h = await AUTO.gateJobs('weekly_update', pjs);   /* patch JOBSETUP */ if (h) return { statusCode: 200, headers, body: JSON.stringify(Object.assign({ ok: true }, h)) }; }   /* patch AUTOPANEL */
   try {
-    const rep = await run({ projectId: s(b.projectId) });
+    /* patch JOBSETUP: the scheduled run follows each job's own choice (job setup) over the ⚡ switch; a deliberate run from the CRM drafts as asked */
+    let globalOn; if (sched) { try { globalOn = await require('./_lib/automations.js').isOn('weekly_update'); } catch (e) { globalOn = false; } }
+    const rep = await run({ projectId: s(b.projectId), globalOn: globalOn });
     try { console.log('[weekly-update]', JSON.stringify({ queued: rep.queued, skipped: rep.skipped.length })); } catch (e) {}
     return { statusCode: 200, headers, body: JSON.stringify(rep) };
   } catch (e) {

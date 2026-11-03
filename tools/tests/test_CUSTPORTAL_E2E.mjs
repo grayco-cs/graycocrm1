@@ -87,7 +87,7 @@ await t('1 the invite says the starter password plainly (owner 11/02): the porta
      a person's deliberate send (approving the invite on ✅ Approvals) is never held by it */
   let AUTO = null; try { AUTO = require(W.FNDIR + '/_lib/automations.js'); } catch (e) { AUTO = null; }
   const autoSet = on => { W.put('gc_automations', { portal_invite_email: on }); try { AUTO && AUTO._t && AUTO._t.reset(); } catch (e) {} };
-  const gated = /isOn\('portal_invite_email'\)/.test(fs.readFileSync(path.join(W.FNDIR, 'portal.js'), 'utf8'));   /* the switch is in this build (live main) */
+  const gated = /(isOn|forJob)\('portal_invite_email'/.test(fs.readFileSync(path.join(W.FNDIR, 'portal.js'), 'utf8'));   /* the switch is in this build (live main) */
   if (AUTO && gated) {
     autoSet(false);
     const off = await call('portal', { action: 'send-link', projectId: S.pid }, PM);
