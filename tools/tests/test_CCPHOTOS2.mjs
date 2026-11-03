@@ -85,7 +85,7 @@ cset('ccidx_copy', Object.assign({}, cget('ccidx_copy'), { on: true }));
 const r1 = cget('ccidx:9001');
 ok('server: 14 photos indexed, the 10 of P1 copied into crm-files (<sha256>.png)', ir.ok && cget('ccidx').n === 14 && Object.keys(r1.g).length === 10 && Object.values(r1.g).every(g => /^[0-9a-f]{64}\.png$/.test(g[0]) && STORE[g[0]] && crypto.createHash('sha256').update(STORE[g[0]]).digest('hex') + '.png' === g[0]), JSON.stringify(ir.copy));
 const portal0 = await PJ.ccCustomerPhotos({ id: 'P1', ccProjectId: '9001' }, [], 'customer');
-ok('portal before any click: the 5 photos from before this release, none of the 5 new ones', portal0.length === 5 && portal0.every(x => OLD.includes(x.id)), portal0.map(x => x.id).join(' '));
+ok('patch CUSTPORTAL: portal before any click: all 10 photos — the 5 from before this release and the 5 new ones (shown by default)', portal0.length === 10 && OLD.concat(NEW).every(id => portal0.some(x => x.id === id)), portal0.map(x => x.id).join(' '));
 ok('portal serves P1\'s photos from the GrayCo copies (signed crm-files links)', portal0.every(x => x.copy && /\/storage\/v1\/object\/sign\/crm-files\/[0-9a-f]{64}\.png/.test(x.f)));
 const portalP2 = await PJ.ccCustomerPhotos({ id: 'P2', ccProjectId: '9002' }, [], 'customer');
 ok('portal, a job without copies: CompanyCam\'s own links (as before)', portalP2.length === 4 && portalP2.every(x => /^https:\/\/img\.cc\.test\//.test(x.f) && !x.copy));
