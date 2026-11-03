@@ -93,7 +93,13 @@ const rowInfo = c => c.page().evaluate(ROW => { const r = document.querySelector
     goals: g ? { inputs: g.querySelectorAll('input[data-tg]').length, underGoal: !!goalBar && F(goalBar, g) && F(g, r) && !!g.closest('#gc-x10-admin') } : null,
     rows: document.querySelectorAll('#gc-otv-lobbycard').length, goalRows: document.querySelectorAll('#gc-otv-goals').length,
     oldText: /Office TV scoreboard/.test(main), oldBtn: !!document.querySelector('[data-a8adm="tv"]'), a8: document.getElementById('gc-a8-admin') ? document.getElementById('gc-a8-admin').innerText.replace(/\s+/g, ' ').slice(0, 80) : null }; }, ROW);
-const waitRow = c => H.waitFor(c, ROW => { const r = document.querySelector(ROW); return r && r.getClientRects().length ? 1 : null; }, ROW, 20000, 250);
+/* the row on screen, in patch X10's card box once that box is drawn. The box comes from an idle-paced timer (every 30 s when nobody
+   has touched the computer for a minute): a person at the screen moves the mouse, which puts it back on its pace — so do we. */
+const waitRow = async c => { const t0 = Date.now(); let r = 0;
+  while (Date.now() - t0 < 45000) { try { await c.page().mouse.move(300 + Math.round(Math.random() * 300), 300 + Math.round(Math.random() * 200)); } catch (e) {}
+    r = await c.page().evaluate(ROW => { const x = document.querySelector(ROW); if (!x || !x.getClientRects().length) return 0; return document.getElementById('gc-x10-admin') ? (x.closest('#gc-x10-admin') ? 2 : 1) : 1; }, ROW).catch(() => 0);
+    if (r === 2) return 2; if (r === 1 && Date.now() - t0 > 40000) return 1; await sleep(500); }
+  return r || null; };
 
 /* in the TV: nothing overlapping / spilling (OFFICETV's check), and the text contrast */
 const OVL = () => { const tv = document.getElementById('gc-otv'), bd = tv.querySelector('.bd').getBoundingClientRect(), ft = tv.querySelector('.ft').getBoundingClientRect(), bad = [];

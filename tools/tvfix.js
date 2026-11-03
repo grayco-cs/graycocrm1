@@ -114,8 +114,8 @@ var CSS = '#gc-otv-lobbycard.gc-tvs{align-items:center}#gc-otv-lobbycard.gc-tvs 
   '#gc-otv-lobbycard.gc-tvs button[data-otv="tv"],#gc-otv-lobbycard.gc-tvs button[data-tvs="office"]{background:#0F1D2F;color:#fff}' +
   '#gc-otv-lobbycard.gc-tvs button[data-otv="lobby"],#gc-otv-lobbycard.gc-tvs button[data-tvs="lobby"]{background:#D4A017;color:#0F1D2F}' +
   '#gc-otv-lobbycard.gc-tvs select{padding:7px 8px;border:1px solid #cbd5e1;border-radius:8px;font:inherit;min-height:38px;background:#fff;color:#0f172a}' +
-  '#gc-tvs-admin .gcx10-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;background:#fff;border:1px solid #e2e8f0;border-left:3px solid #D4A017;border-radius:10px;padding:8px 12px;margin:8px 0;color:#0f172a;font:13px Inter,Arial,sans-serif}' +
-  '#gc-tvs-admin .gcx10-bar button{padding:8px 14px;border-radius:8px;border:none;background:#e2e8f0;color:#0f172a;font-weight:800;cursor:pointer;min-height:38px}#gc-tvs-admin input{width:64px}' +
+  '.gcx10-bar[data-tvs-own="1"]{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;background:#fff;border:1px solid #e2e8f0;border-left:3px solid #D4A017;border-radius:10px;padding:8px 12px;margin:8px 0;color:#0f172a;font:13px Inter,Arial,sans-serif}' +
+  '.gcx10-bar[data-tvs-own="1"] button{padding:8px 14px;border-radius:8px;border:none;background:#e2e8f0;color:#0f172a;font-weight:800;cursor:pointer;min-height:38px}.gcx10-bar[data-tvs-own="1"] input{width:64px}' +
   '.gc-tvs-toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);z-index:2147483600;background:#0F1D2F;color:#fff;padding:10px 16px;border-radius:10px;font:600 14px Inter,Arial,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.25)}.gc-tvs-toast.bad{background:#b91c1c}';
 function css(){ if (D.getElementById('gc-tvs-css')) return; var st = D.createElement('style'); st.id = 'gc-tvs-css'; st.textContent = CSS + TCSS; (D.head || D.documentElement).appendChild(st); }
 function adminH1(){
@@ -184,36 +184,56 @@ function dress(row, own){
   try { paintScreens(true); } catch (e) {}
   if (!row.__tvsDef) { row.__tvsDef = 1; row.addEventListener('change', onDef); }
 }
-var PULLED = 0, SEEN_AT = 0;
+var PULLED = 0, HAND = 0;
+/* where the rows go, every time Admin is drawn or changes (owner: "the lobby TV should be by back office TV", in the old Lobby TV
+   spot): inside patch X10's card box, 🏁 Team goals right under 🎯 Company goal and the 📺 TVs row right under it (so above
+   📟 On call). X10's box can come late (its timer is idle-paced, and a heavy page draws it later): until it is there a stand-in
+   pair stands after the settings hub; the moment the box is there the rows are put in their places (OFFICETV's own when it is
+   loaded, the stand-ins moved in when it is not). Never two of either: extra copies are taken off. */
+function one(id){ var L = D.querySelectorAll('[id="' + id + '"]'), keep = null; Array.prototype.forEach.call(L, function(x){ if (!keep && (x.getAttribute('data-tvs-own') !== '1' || L.length === 1)) keep = x; }); keep = keep || L[0] || null;
+  Array.prototype.forEach.call(L, function(x){ if (x !== keep) x.remove(); }); return keep; }
+function after(el, ref){ if (el && ref && ref.parentNode && el.previousElementSibling !== ref) ref.parentNode.insertBefore(el, ref.nextSibling); }
+function standIns(){
+  css();
+  var g = D.createElement('div'); g.className = 'gcx10-bar'; g.id = 'gc-otv-goals'; g.setAttribute('data-tvs-own', '1'); g.style.borderLeftColor = '#D4A017'; g.innerHTML = goalsHtml(); g.addEventListener('click', onOwn);
+  var r = D.createElement('div'); r.className = 'gcx10-bar'; r.id = 'gc-otv-lobbycard'; r.setAttribute('data-tvs-own', '1'); r.addEventListener('click', onOwn); dress(r, true);
+  return { g: g, r: r };
+}
 function paint(){
   var h1 = adminH1();
-  if (!h1 || !canTV()) { SEEN_AT = 0; var f = D.getElementById('gc-tvs-admin'); if (f && !h1) f.remove(); return; }
-  if (!SEEN_AT) SEEN_AT = Date.now();
+  if (!h1 || !canTV()) { if (!h1) Array.prototype.forEach.call(D.querySelectorAll('[data-tvs-own="1"]'), function(x){ x.remove(); }); return; }
   /* patch AUTO8's old "📺 Office TV scoreboard" part, if an older AUTO8 bar is still drawn */
   var a8 = D.getElementById('gc-a8-admin');
   if (a8) { var ob = a8.querySelector('[data-a8adm="tv"]'); if (ob) { var sp = ob.previousElementSibling; if (sp && /Office TV/.test(sp.textContent || '')) sp.remove(); ob.remove(); } }
-  var o = OTV(), x10 = D.getElementById('gc-x10-admin'), own = D.getElementById('gc-tvs-admin');
-  /* our stand-in was drawn because patch X10's card box was not there yet (its timer is idle-paced too): now that the box is
-     there, it goes, so OFFICETV puts the TVs row and 🏁 Team goals in their places (under 🎯 Company goal, above 📟 On call) */
-  if (own && own.__noX10 && o && o._adm && x10) { own.remove(); own = null; }
-  if (o && o._adm) { try { o._adm(); } catch (e) {} }   /* OFFICETV's cards now, not on its slowed timer */
-  var row = D.getElementById('gc-otv-lobbycard');
-  if (row && !(own && own.contains(row))) { dress(row, false); if (own) own.remove(); }
-  else if (!row || (own && own.contains(row))) {
-    /* no OFFICETV row (not loaded, or no card box after 3 s): ours, after the 🎯 Company goal box / the settings hub / the heading */
-    if (!own) {
-      if (o && D.getElementById('gc-x10-admin') && Date.now() - SEEN_AT < 3000) return;
-      css(); own = D.createElement('div'); own.id = 'gc-tvs-admin'; own.setAttribute('data-gc-keep', '1'); own.__noX10 = !x10;
-      own.innerHTML = '<div class="gcx10-bar" id="gc-otv-lobbycard"></div>' + (D.getElementById('gc-otv-goals') ? '' : '<div class="gcx10-bar" id="gc-otv-goals">' + goalsHtml() + '</div>');
-      own.addEventListener('click', onOwn); dress(own.firstChild, true);
-      var hub = D.getElementById('gc-adm-hub'), at = x10 && x10.parentNode ? x10 : hub && hub.parentNode ? hub : h1;
-      at.parentNode.insertBefore(own, at.nextSibling);
+  var o = OTV(), x10 = D.getElementById('gc-x10-admin'), gb = x10 && x10.querySelector('[data-a="goal"]'), goalBar = gb && (gb.closest('.gcx10-bar') || gb.parentNode);
+  if (x10 && goalBar && goalBar.parentNode === x10) {
+    if (o && o._adm) {
+      /* OFFICETV draws its own two rows in the box: the stand-ins step aside so it does; one it did not draw comes back */
+      var owns = D.querySelectorAll('[data-tvs-own="1"]'), held = [];
+      if (!owns.length || Date.now() - HAND > 5000) {   /* a failed hand-over is tried again at most every 5 s (no redraw loop) */
+        if (owns.length) HAND = Date.now();
+        held = Array.prototype.map.call(owns, function(x){ var h = { x: x, p: x.parentNode, n: x.nextSibling }; x.remove(); return h; });
+        try { o._adm(); } catch (e) {}
+      }
+      held.forEach(function(h){ if (!D.getElementById(h.x.id) && h.p) h.p.insertBefore(h.x, h.n && h.n.parentNode === h.p ? h.n : null); });
     }
+    var g = one('gc-otv-goals'), r = one('gc-otv-lobbycard');
+    if (!g || !r) { var si = standIns(); if (!g) g = si.g; if (!r) r = si.r; }
+    after(g, goalBar); after(r, g);
+    if (r.getAttribute('data-tvs-own') !== '1') dress(r, false);
+  } else {
+    /* no X10 box yet: OFFICETV cannot draw; the stand-ins after the settings hub (or the heading) */
+    var g2 = one('gc-otv-goals'), r2 = one('gc-otv-lobbycard');
+    if (!g2 || !r2) { var s2 = standIns(); if (!g2) g2 = s2.g; if (!r2) r2 = s2.r; }
+    var hub = D.getElementById('gc-adm-hub'), at = hub && hub.parentNode ? hub : h1;
+    if (!g2.isConnected || g2.parentNode !== at.parentNode) after(g2, at);
+    after(r2, g2);
+    if (r2.getAttribute('data-tvs-own') !== '1') dress(r2, false);
   }
   if (Date.now() - PULLED > 60000) { PULLED = Date.now();
     goalsGet().then(function(v){ if (!v) return; lsSet('gc_tv_goals_cache', v); themeApply();
       var sel = D.querySelector('#gc-otv-lobbycard [data-tvs-def]'); if (sel && D.activeElement !== sel) sel.value = okTheme(v.theme) || 'blue';
-      Array.prototype.forEach.call(D.querySelectorAll('#gc-tvs-admin [data-tg]'), function(i){ if (D.activeElement !== i) i.value = v[i.getAttribute('data-tg')] || ''; }); }); }
+      Array.prototype.forEach.call(D.querySelectorAll('#gc-otv-goals[data-tvs-own="1"] [data-tg]'), function(i){ if (D.activeElement !== i) i.value = v[i.getAttribute('data-tg')] || ''; }); }); }
 }
 
 /* ── 5. THE LOOKS (owner 11/02: "I had different themes, a regular one, a golf one, a nature one etc"; there was no earlier
@@ -572,6 +592,10 @@ function tick(){
 var RAW = W.__GC_REAL_SETINTERVAL__ || RI;
 hookA8(); try { themeApply(); } catch (e) {} RAW.call(W, tick, 1000); later(function(){ pullScreens(true); }, 4000); later(tick, 300);
 W.addEventListener('hashchange', function(){ later(tick, 400); });
+/* Admin redrawn (X10's card box arriving late, React re-drawing the page): the rows are put back in their places at once */
+var MOQ = 0;
+try { new W.MutationObserver(function(){ if (MOQ) return; MOQ = later(function(){ MOQ = 0; try { if (adminH1()) paint(); } catch (e) {} }, 60); })
+  .observe(D.body || D.documentElement, { childList: true, subtree: true }); } catch (e) {}
 D.addEventListener('click', function(e){
   /* OFFICETV's 🏁 Team goals Save writes the row without the look: save it here, merged */
   var b = e.target && e.target.closest ? e.target.closest('#gc-otv-goals [data-otv="tg"]') : null;
@@ -582,6 +606,6 @@ D.addEventListener('click', function(e){
 W._gcTVFIX = { office: office, lobby: lobby, paint: paint, canTV: canTV, canLobby: canLobby, theme: theme, themeApply: themeApply,
   setTheme: function(v){ if (okTheme(v)) lsSet(tkey(), v); else { try { localStorage.removeItem(tkey()); } catch (e) {} } BG.k = ''; return themeApply(); },
   screens: { list: screens, pull: pullScreens, open: openScreen, edit: edit, make: newScreen, link: screenLink, current: function(){ return CUR; } },
-  state: function(){ return { otv: !!OTV(), lobby: !!LOBA(), load: LOADERR || loadState(), a8: !!(W._gcA8 && W._gcA8.tv && W._gcA8.tv.__tvfix), classicShown: VIA_CLASSIC, bar: !!D.querySelector('#gc-otv-lobbycard.gc-tvs'), own: !!D.getElementById('gc-tvs-admin'), theme: theme(), screen: CUR ? CUR.id : '', notes: Object.keys(NOTED), ticks: TICKS, err: TERR }; } };
+  state: function(){ return { otv: !!OTV(), lobby: !!LOBA(), load: LOADERR || loadState(), a8: !!(W._gcA8 && W._gcA8.tv && W._gcA8.tv.__tvfix), classicShown: VIA_CLASSIC, bar: !!D.querySelector('#gc-otv-lobbycard.gc-tvs'), own: !!D.querySelector('[data-tvs-own="1"]'), theme: theme(), screen: CUR ? CUR.id : '', notes: Object.keys(NOTED), ticks: TICKS, err: TERR }; } };
 try { console.log('[GC] TVFIX: every Office TV entry → the new TV; ⚙ Admin 📺 TVs bar (back office TV · lobby editor · team goals) — _gcTVFIX.state()'); } catch (e) {}
 })();
