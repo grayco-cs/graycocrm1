@@ -148,6 +148,11 @@ function cleaner(data){
 }
 let EMERG_DIGITS = '';
 function phoneFmt(v){ const d = s(v).replace(/\D/g, '').replace(/^1(\d{10})$/, '$1'); return d.length === 10 ? '(' + d.slice(0, 3) + ') ' + d.slice(3, 6) + '-' + d.slice(6) : ''; }
+/* patch TVMUSIC: the company music for the lobby TV (gc_kv gc_tv_goals.lobbyMusic, set in ⚙ Admin → 📺 TVs → 🎵 Music). Only
+   the plain forms the CRM saves — a YouTube video / playlist / live stream or a Spotify playlist / album / song / artist /
+   podcast — anything else is not served. */
+const MUSIC_RE = /^(https:\/\/www\.youtube\.com\/(watch\?v=[A-Za-z0-9_-]{11}(&list=[A-Za-z0-9_-]{2,80})?(&t=\d{1,6})?|playlist\?list=[A-Za-z0-9_-]{2,80}|live\/[A-Za-z0-9_-]{11}|channel\/UC[A-Za-z0-9_-]{22}\/live)|https:\/\/open\.spotify\.com\/(playlist|album|track|artist|episode|show)\/[A-Za-z0-9]{22})$/;
+function musicUrl(v){ v = s(v); return v.length <= 200 && MUSIC_RE.test(v) ? v : ''; }
 function httpsUrl(v){ v = s(v); return /^https:\/\/[^\s<>"']{3,400}$/i.test(v) ? v : ''; }
 function shortName(n){ const p = s(n).replace(/[^A-Za-zÀ-ɏ' .-]/g, '').split(/\s+/).filter(Boolean); if (!p.length) return 'A GrayCo customer'; return p[0].charAt(0).toUpperCase() + p[0].slice(1).toLowerCase() + (p.length > 1 ? ' ' + p[p.length - 1].charAt(0).toUpperCase() + '.' : ''); }
 /* the photos: GrayCo Photos the customer may see (the portal's rule) or an upload made in the editor */
@@ -310,12 +315,13 @@ exports.handler = async function(event){
     if (!acc.on || !/^[A-Za-z0-9_-]{32,128}$/.test(s(acc.token)) || !crypto.timingSafeEqual(digest(acc.token), digest(tok))) return J(404, NOPE);
     const key = digest(tok).toString('hex') + '|' + s(acc.at);
     if (CACHE.key === key && Date.now() - CACHE.at < 60e3) return J(200, CACHE.body);
-    const kv2 = await kvRead(['gc_lobby', 'gc_lobby_offers']);
+    const kv2 = await kvRead(['gc_lobby', 'gc_lobby_offers', 'gc_tv_goals']);   /* patch TVMUSIC: + the lobby's company music */
     const doc = obj(kv2.gc_lobby);
     if (!arr(doc.slides).length) doc.slides = TY.defaults.map(function(k){ return { id: 'd_' + k, type: k, on: true }; });
     const out = await build(doc, obj(kv2.gc_lobby_offers), {});
+    const mu = musicUrl(obj(kv2.gc_tv_goals).lobbyMusic); if (mu) out.music = mu;   /* patch TVMUSIC */
     CACHE = { key: key, at: Date.now(), body: out };
     return J(200, out);
   } catch (e) { return J(503, { ok: false, error: 'The lobby could not be loaded right now.' }); }
 };
-exports._test = { cleaner: cleaner, build: build, reset: function(){ CACHE = { key: '', at: 0, body: null }; RL.clear(); WX = { at: 0, v: null }; } };
+exports._test = { cleaner: cleaner, build: build, musicUrl: musicUrl, reset: function(){ CACHE = { key: '', at: 0, body: null }; RL.clear(); WX = { at: 0, v: null }; } };

@@ -14,3 +14,14 @@
 # patch CUSTPORTAL: the portal app's manifest with its own type (it was application/octet-stream)
 /portal.webmanifest
   Content-Type: application/manifest+json
+
+# patch TVMUSIC: the 🖥 front room (lobby) TV page may frame only the 🎵 music players (YouTube, Spotify) and run only its own
+# scripts plus the YouTube / Spotify player scripts; autoplay is handed to those players only. The site-wide lines above are
+# repeated in full, so the page is right whether Netlify adds these to /* or puts them in its place. The CRM (index.html,
+# the back office TV) keeps the site-wide rules: they do not limit frames or scripts.
+/lobby
+  Content-Security-Policy: frame-ancestors 'self'; object-src 'none'; base-uri 'self'; frame-src https://www.youtube.com https://www.youtube-nocookie.com https://open.spotify.com; script-src 'self' 'unsafe-inline' https://www.youtube.com https://s.ytimg.com https://open.spotify.com
+  Permissions-Policy: camera=(self), microphone=(self), geolocation=(self), payment=(), usb=(), autoplay=(self "https://www.youtube.com" "https://www.youtube-nocookie.com" "https://open.spotify.com")
+/lobby.html
+  Content-Security-Policy: frame-ancestors 'self'; object-src 'none'; base-uri 'self'; frame-src https://www.youtube.com https://www.youtube-nocookie.com https://open.spotify.com; script-src 'self' 'unsafe-inline' https://www.youtube.com https://s.ytimg.com https://open.spotify.com
+  Permissions-Policy: camera=(self), microphone=(self), geolocation=(self), payment=(), usb=(), autoplay=(self "https://www.youtube.com" "https://www.youtube-nocookie.com" "https://open.spotify.com")
