@@ -5291,7 +5291,7 @@ window.__GC_LIVE=function(key, v){
   return v;
 };
 </script>
-<!-- GrayCo CRM Build: 33.163-2026-11-03-r17q9 -->
+<!-- GrayCo CRM Build: 33.163-2026-11-03-r17q10 -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6239,7 +6239,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.163-2026-11-03-r17q9");
+  console.log("[GC] Build 33.163-2026-11-03-r17q10");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6287,7 +6287,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.163-2026-11-03-r17q9"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.163-2026-11-03-r17q10"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -84595,6 +84595,10 @@ async function profiles(){
     });
   }catch(_me){}
 
+  /* patch PAYFIRED: anyone let go (gc_fired_users) is off payroll for good */
+  try{ var _fu = JSON.parse(localStorage.getItem('gc_fired_users') || '{}') || {};
+    list.forEach(function(p){ if(!p || p.active === false) return; var nm = String(p.name || '').trim().toLowerCase(), em = String(p.email || '').trim().toLowerCase();
+      if(_fu[nm] || (em && _fu[em])){ p.active = false; p.firedOff = true; p.updatedAt = new Date().toISOString(); _migChanged = true; } }); }catch(_fe){}
   if(_migChanged || _pdRemoved){ try{ await put(K_PROF, list); }catch(_pe){} }   /* patch PROFDUP: once */
 
   // migrate the old name-keyed payrollW4 object once
