@@ -21,7 +21,7 @@ Every photo in GrayCo Photos has two switches on its photo screen (staff only):
 | field on the record (`gc_kv` "gc_photos") | button | customer portal | sub portal |
 | --- | --- | --- | --- |
 | `shared` | **Customer sees it** / **Hidden from customer** | shown when `shared === true`, or when it is not set and the tag is not Damage | — |
-| `hideSubs` | **Subs see it** / **Hidden from subs** | — | `true` hides, `false` shows, **not set = the same as the customer** |
+| `hideSubs` | **Subs see it** / **Hidden from subs** | — | `true` hides; anything else shows (patch SUBPORTAL3, owner 11/02: subs see every photo of their job, whether or not the customer sees it) |
 
 So:
 - An **Internal only** photo (customer off, subs not set), including a Damage photo nobody turned on, is never
@@ -147,7 +147,7 @@ The response is that link's one job only:
 
 `test_U2_api.mjs`. Run it with `node test_U2_api.mjs <build>/netlify/functions`. It checks:
 - the sub gets only the jobs it is on;
-- Internal-only, customer-only and Hidden-from-subs photos are hidden from subs;
+- Hidden-from-subs photos (and so Internal-only = hidden from both) are hidden from subs; since patch SUBPORTAL3 a photo the customer does not see still shows to the subs on the job;
 - CompanyCam flags are honoured;
 - links are signed and expire;
 - uploads are tagged with the sub;

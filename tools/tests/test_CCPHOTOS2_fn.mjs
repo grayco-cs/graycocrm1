@@ -275,7 +275,7 @@ ok('a click on one photo after "Show all" wins for that photo', CV.customerSees(
 ok('another job is not touched by J1\'s "Show all"', CV.customerSees('5', since + 60, 'J2', ix, since) === false);
 recs.push({ id: 'ccj_J2', source: 'ccflag', jobId: 'J2', mode: 'hide', at: t2, upto: since + 600 }); ix = CV.index(recs);
 ok('"Hide all" hides even the old ones', CV.customerSees('6', since - 3600, 'J2', ix, since) === false);
-ok('subs: "Subs see it" wins, else the same as the customer', CV.subsSee('2', since + 60, 'J1', CV.index([{ id: 'ccf_2', source: 'ccflag', ccId: '2', hideSubs: false, shared: false }]), since) === true && CV.subsSee('9', since + 60, 'J1', ix0, since) === false && CV.subsSee('9', since - 60, 'J1', ix0, since) === true);
+ok('subs (patch SUBPORTAL3): every photo, new or old, customer-visible or not — only "Hidden from subs" hides', CV.subsSee('2', since + 60, 'J1', CV.index([{ id: 'ccf_2', source: 'ccflag', ccId: '2', hideSubs: false, shared: false }]), since) === true && CV.subsSee('9', since + 60, 'J1', ix0, since) === true && CV.subsSee('9', since - 60, 'J1', ix0, since) === true && CV.subsSee('2', since - 60, 'J1', CV.index([{ id: 'ccf_2', source: 'ccflag', ccId: '2', hideSubs: true, shared: true }]), since) === false);
 /* the customer portal itself (portal.js), server-side, from the index + GrayCo copies */
 const PJ = require(path.join(FN, 'portal.js'))._core;
 /* 702: make 2 photos "new" (put in after the release), the rest are old */
@@ -298,8 +298,8 @@ const p703 = { id: 'L3', name: 'Lead Lane', ccProjectId: '703' };
 list = await PJ.ccCustomerPhotos(p703, [], 'customer');
 ok('portal: a project deleted in CompanyCam still shows its (old, visible) photos from the GrayCo copies', list.length === 10 && list.every(x => x.copy));
 const SP = require(path.join(FN, 'sub-photos.js'))._core;
-const subList = await SP.jobPhotos({ gc_photos: [{ id: 'ccf_' + newIds[1], source: 'ccflag', ccId: newIds[1], jobId: 'J2', hideSubs: false, at: t2 }] }, p702, 'sub', null);
-ok('sub portal: old photos + the one "Subs see it" new one; the other new one waits', subList.some(x => x.id === 'cc_' + newIds[1]) && !subList.some(x => x.id === 'cc_' + newIds[0]) && subList.length === r702.ph.length - 1, subList.length);
+const subList = await SP.jobPhotos({ gc_photos: [{ id: 'ccf_' + newIds[1], source: 'ccflag', ccId: newIds[1], jobId: 'J2', hideSubs: true, at: t2 }] }, p702, 'sub', null);
+ok('sub portal (patch SUBPORTAL3): every photo — the new ones too — except the one "Hidden from subs"', !subList.some(x => x.id === 'cc_' + newIds[1]) && subList.some(x => x.id === 'cc_' + newIds[0]) && subList.length === r702.ph.length - 1, subList.length);
 /* the live fallback (a project not indexed yet) follows the same rule */
 delete KV['ccidx:701'];
 CCP[701].photos[0].created_at = since + 300; CCP[701].photos[0].captured_at = since + 290;

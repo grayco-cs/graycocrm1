@@ -426,6 +426,20 @@
   status = 200
   force = true
 
+# patch SUBPORTAL3: portal.html loads /gc-address.js and the legal pages show /img/grayco-logo-white.png — without these rules the
+# catch-all below answered both with the portal page (a script error on every portal open, a broken logo on the legal pages)
+[[redirects]]
+  from = "https://portal.grayco-cs.com/gc-address.js"
+  to = "/gc-address.js"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "https://portal.grayco-cs.com/img/grayco-logo-white.png"
+  to = "/img/grayco-logo-white.png"
+  status = 200
+  force = true
+
 [[redirects]]
   from = "https://portal.grayco-cs.com/*"
   to = "/portal.html"
@@ -439,6 +453,62 @@
   from = "https://bids.grayco-cs.com/subportal/*"
   to = "https://bids.grayco-cs.com/:splat"
   status = 301
+  force = true
+
+# patch SUBPORTAL3: the bid site's legal links (legal2.js: /sub-terms.html, /sub-privacy.html, /esign-consent.html …) and what those
+# pages load answered 404 on bids.grayco-cs.com (the rule below sends every path into /subportal/). Served from the site root here.
+[[redirects]]
+  from = "https://bids.grayco-cs.com/sub-terms.html"
+  to = "/sub-terms.html"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "https://bids.grayco-cs.com/sub-privacy.html"
+  to = "/sub-privacy.html"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "https://bids.grayco-cs.com/esign-consent.html"
+  to = "/esign-consent.html"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "https://bids.grayco-cs.com/privacy.html"
+  to = "/privacy.html"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "https://bids.grayco-cs.com/terms.html"
+  to = "/terms.html"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "https://bids.grayco-cs.com/portal-terms.html"
+  to = "/portal-terms.html"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "https://bids.grayco-cs.com/mkt-pages.css"
+  to = "/mkt-pages.css"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "https://bids.grayco-cs.com/gc-address.js"
+  to = "/gc-address.js"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "https://bids.grayco-cs.com/img/grayco-logo-white.png"
+  to = "/img/grayco-logo-white.png"
+  status = 200
   force = true
 
 [[redirects]]

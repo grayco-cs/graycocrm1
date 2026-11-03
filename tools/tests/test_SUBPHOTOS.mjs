@@ -79,6 +79,7 @@ const KV = {}, EVENTS = [], STORE = {};
 const kput = (k, v) => { KV[k] = { value: v, updated_at: new Date().toISOString() }; };
 Object.keys(DATA).forEach(k => kput(k, DATA[k]));
 kput('gc_photos', []); kput('gc_sub_portal_settings', {});
+kput('gc_automations', { sub_firstday_text: true });   /* ⚡ AUTOPANEL: the sub first-day text is OFF by default; these checks need it ON */
 const res = (status, body) => ({ ok: status >= 200 && status < 300, status, json: async () => body, text: async () => JSON.stringify(body) });
 const val = v => String(v || '').replace(/^eq\./, '');
 const inList = v => String(v || '').replace(/^in\.\(/, '').replace(/\)$/, '').split(',').map(x => x.replace(/"/g, ''));

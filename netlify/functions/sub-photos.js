@@ -5,7 +5,7 @@
 // that code here in the x-sub-token header (never in the address, so it is never in a log). This function:
 //   POST {action:'jobs'}                       → the jobs this sub is on (id, name, address, photo count)
 //   POST {action:'photos', jobId}              → that job's photos the sub may see, as short-lived signed links
-//   POST {action:'upload', jobId, name, data, tag?, note?}
+//   POST {action:'upload', jobId, name, data, thumb?, tag?, note?}   (thumb: patch SUBPORTAL3, a ≤ 400 px copy for the grids)
 //                                              → a photo the sub took goes into that job's GrayCo Photos,
 //                                                tagged with the sub (source 'sub'); staff decide if the customer sees it
 // READ-ONLY for everything else: it never changes a job, a photo record of GrayCo's, or a setting.
@@ -16,9 +16,8 @@
 // Which jobs: the job's subs list in the CRM (projects[].subs: {id|vendorId, name, email, status}) names the
 // sub and the sub is not removed / declined there, OR the code's row lists the job in job_ids.
 // What a sub sees: GrayCo Photos records of that job (gc_kv "gc_photos": not deleted, not a flag record) that
-// are not "Hidden from subs" — hideSubs true hides, false shows, not set follows "Customer sees it", so an
-// "Internal only" photo (and a Damage photo nobody turned on) is never shown — plus the job's CompanyCam photos
-// (server key) unless a person hid that one (flag record ccf_<id>). One per picture. Notes, who took it (other
+// are not "Hidden from subs" (patch SUBPORTAL3: hideSubs true hides; anything else shows, whether or not the customer sees
+// it) — plus the job's CompanyCam photos (server key) unless a person hid that one from subs (flag record ccf_<id>). One per picture. Notes, who took it (other
 // than "you"), comments and chat are never sent. Pictures from the private bucket crm-files: signed links that
 // expire after SIGN_SECS (1 hour).
 //
@@ -105,7 +104,9 @@ async function crm(force){
 
 /* ── who sees what (the same rules as the app: parts/01_core.js sharedOf / subsOf) ── */
 function sharedOf(r, f){ if (f && f.deleted !== true && f.shared != null) return f.shared === true; return r.shared === true || (r.shared == null && s(r.tag) !== 'Damage'); }
-function subsOf(r, f){ const h = f && f.deleted !== true ? f.hideSubs : r.hideSubs; if (h === true) return false; if (h === false) return true; return sharedOf(r, f); }
+/* patch SUBPORTAL3 (owner 11/02: "all photos should be in the sub portal from GrayCo Photos"): a sub on the job sees EVERY photo of it —
+   whether or not the customer sees it — except one a person marked "Hidden from subs" (hideSubs true; "Internal only" = hidden from both) */
+function subsOf(r, f){ const h = f && f.deleted !== true ? f.hideSubs : r.hideSubs; return h !== true; }
 /* patch SUBPHOTOS: a photo from the sub portal is NEVER on the customer portal unless an admin / the office turned it on (custOkBy) */
 function subPhotoCustomerOk(r){ return !(r && r.source === 'sub') || (r.shared === true && !!s(r.custOkBy)); }
 function custOf(r, f){ return subPhotoCustomerOk(r) && sharedOf(r, f); }
@@ -163,6 +164,7 @@ async function ccPhotos(ccId){
 }
 
 function CCV(){ return require('./_lib/cc-vis.js'); }   /* patch CCPHOTOS2 */
+function SS(){ return require('./_lib/subsafe.js'); }   /* patch SUBPORTAL3 */
 /* ── the private bucket: short-lived signed links ── */
 function refPath(ref){ const m = /^sb:crm-files\/([0-9a-f]{64}\.[a-z0-9]{1,8})$/.exec(s(ref)); return m ? m[1] : ''; }
 async function signRefs(refs){
@@ -219,7 +221,7 @@ async function subByToken(token){
 /* ── the three things a sub can do ── */
 async function jobsForSub(sub){
   const data = await crm(false);
-  return { ok: true, jobs: jobsOf(data, sub).slice(0, 200).map(function(p){ return { id: s(p.id), name: clip(p.name, 120), address: clip(p.address || p.jobAddress, 160) }; }) };
+  return { ok: true, jobs: jobsOf(data, sub).slice(0, 200).map(function(p){ p = SS().job(p); return { id: s(p.id), name: clip(p.name, 120), address: clip(p.address || p.jobAddress, 160) }; }) };   /* patch SUBPORTAL3: never the carrier / claim # */
 }
 async function photosForSub(sub, jobId){
   const pid = s(jobId);
@@ -227,7 +229,8 @@ async function photosForSub(sub, jobId){
   const data = await crm(false), p = assigned(data, sub, pid);
   if (!p) return { ok: false, status: 404, error: 'This job is not on your list.' };
   const photos = await jobPhotos(data, p, 'sub', sub);
-  return { ok: true, job: { id: s(p.id), name: clip(p.name, 120), address: clip(p.address || p.jobAddress, 160) }, photos: photos, expiresIn: SIGN_SECS };
+  const q = SS().job(p);   /* patch SUBPORTAL3: never the carrier / claim # */
+  return { ok: true, job: { id: s(q.id), name: clip(q.name, 120), address: clip(q.address || q.jobAddress, 160) }, photos: photos, expiresIn: SIGN_SECS };
 }
 function sniff(buf){
   if (buf.length > 3 && buf[0] === 0xFF && buf[1] === 0xD8 && buf[2] === 0xFF) return { ext: 'jpg', type: 'image/jpeg' };
@@ -256,6 +259,18 @@ async function addRecord(rec){
   }
   return false;
 }
+/* patch SUBPORTAL3: a small copy (≤ 400 px, made on the phone) is stored too, so no photo grid downloads the full picture */
+async function storeThumb(b64){
+  if (typeof b64 !== 'string' || !b64) return '';
+  let buf = null; try { buf = Buffer.from(b64.replace(/^data:[^,]*,/, ''), 'base64'); } catch (e) { return ''; }
+  if (!buf || !buf.length || buf.length > 400 * 1024) return '';
+  const kind = sniff(buf); if (!kind || kind.ext === 'heic') return '';
+  const name = crypto.createHash('sha256').update(buf).digest('hex') + '.' + kind.ext;
+  try {
+    const r = await fetch(sbUrl() + '/storage/v1/object/crm-files/' + name, { method: 'POST', headers: Object.assign(keyHeaders(svcKey()), { 'Content-Type': kind.type, 'x-upsert': 'true', 'cache-control': 'max-age=31536000' }), body: buf });
+    return r.ok || r.status === 409 ? 'sb:crm-files/' + name : '';
+  } catch (e) { return ''; }
+}
 async function uploadForSub(sub, jobId, file){
   const pid = s(jobId);
   if (!/^[A-Za-z0-9_.:-]{1,80}$/.test(pid)) return { ok: false, status: 400, error: 'Which job? (jobId)' };
@@ -273,7 +288,8 @@ async function uploadForSub(sub, jobId, file){
   const up = await fetch(sbUrl() + '/storage/v1/object/crm-files/' + path, { method: 'POST', headers: Object.assign(keyHeaders(svcKey()), { 'Content-Type': kind.type, 'x-upsert': 'true', 'cache-control': 'max-age=31536000' }), body: buf });
   if (!up.ok && up.status !== 409) return { ok: false, status: 502, error: 'The photo could not be stored. Try again.' };
   const now = new Date().toISOString(), tag = TAGS.indexOf(s(file.tag)) >= 0 ? s(file.tag) : 'During';
-  const rec = { id: 'ph_sub_' + Date.now().toString(36) + crypto.randomBytes(4).toString('hex'), jobId: pid, ref: 'sb:crm-files/' + path, thumbRef: 'sb:crm-files/' + path,
+  const thumbRef = await storeThumb(file.thumb) || 'sb:crm-files/' + path;   /* patch SUBPORTAL3: the phone's small copy for the photo grids */
+  const rec = { id: 'ph_sub_' + Date.now().toString(36) + crypto.randomBytes(4).toString('hex'), jobId: pid, ref: 'sb:crm-files/' + path, thumbRef: thumbRef,
     tag: tag, note: clip(file.note, 300), by: clip(sub.company || sub.name || 'Subcontractor', 80) + ' (sub)',
     /* patch SUBPHOTOS: tagged with the sub's company, the day and "From sub portal"; hidden from the customer (shared:false) */
     subCompany: clip(sub.company || sub.name, 80), fromSubPortal: true, label: 'From sub portal', labels: ['From sub portal', clip(sub.company || sub.name, 80), now.slice(0, 10)].filter(Boolean), shareSet: true, byKey: 'sub:' + (s(sub.id) || low(sub.email) || low(sub.name)), subId: s(sub.id), subName: clip(sub.name, 80),
@@ -303,7 +319,7 @@ exports.handler = async function(event){
   if (!sub) { noteBad(ip); return notActive(); }
   try {
     const out = action === 'jobs' ? await jobsForSub(sub) : action === 'photos' ? await photosForSub(sub, b.jobId)
-      : await uploadForSub(sub, b.jobId, { data: b.data, name: b.name, tag: b.tag, note: b.note });
+      : await uploadForSub(sub, b.jobId, { data: b.data, thumb: b.thumb, name: b.name, tag: b.tag, note: b.note });
     if (out.ok) return reply(200, headers, out);
     const code = out.status || 400; delete out.status; return reply(code, headers, out);
   } catch (e) {

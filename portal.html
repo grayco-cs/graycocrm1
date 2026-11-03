@@ -22,7 +22,7 @@ window.gcDocHead = function(){
 <meta name="referrer" content="no-referrer">
 <meta name="theme-color" content="#0F1D2F">
 <link rel="manifest" href="/portal.webmanifest"><link rel="apple-touch-icon" href="/portal-icon-180.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="GrayCo"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><!-- patch GCP -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; img-src https: data: blob:; frame-src https: blob:; connect-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; img-src https: data: blob:; frame-src https: blob:; connect-src 'self' https://ieeonhpfahmwwecizdut.supabase.co; base-uri 'none'; form-action 'none'; object-src 'none'">
 <title>GrayCo Portal</title>
 <style>
 :root{--navy:#0F1D2F;--navy2:#1A3A5F;--line:#22344D;--gold:#D4A017;--goldDk:#8A5A00;--goldBg:#FCF0CF;--bg:#F6F3EC;--ink:#14202E;--mute:#55626F;--soft:#C9D3DF;--card:#FFFFFF;--rule:#EFEAE0;--edge:#E2DCCD;--green:#1D5E2C;--greenBg:#E3F1E6}
@@ -80,6 +80,11 @@ li.todo{color:#6B7682}
 .pics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
 .pics button{padding:0;border:0;background:#E9E4D8;border-radius:8px;overflow:hidden;aspect-ratio:1/1;cursor:pointer;display:block;width:100%}
 .pics img{width:100%;height:100%;object-fit:cover;display:block}
+/* patch SUBPORTAL3: the sub portal's photo days */
+.phday{font-weight:700;font-size:13px;color:var(--goldDk,#8A5A00);margin:12px 0 6px}
+.pics button.ph{position:relative}
+.phtag{position:absolute;left:4px;bottom:4px;background:rgba(15,29,47,.78);color:#fff;font-size:11px;font-weight:700;border-radius:6px;padding:1px 6px}
+@media(min-width:700px){#grid .pics{grid-template-columns:repeat(5,minmax(0,1fr))}}
 .doc{min-height:52px;display:flex;align-items:center;gap:12px;border-top:1px solid var(--rule);padding-top:10px}
 .doc:first-of-type{border-top:0;padding-top:0}
 .doc .n{font-size:14px;font-weight:600;overflow-wrap:anywhere}
@@ -485,6 +490,8 @@ function route(kind){
 }
 function startPartner(){
   $('tabs').hidden = true;
+  /* patch SUBPORTAL3: a sub's footer links the Sub Portal terms / privacy notice, not the customer portal's */
+  try { var lk = document.querySelector('[data-gc-legal-links]'); if (lk) lk.innerHTML = window.GCLegal && window.GCLegal.linksHtml ? window.GCLegal.linksHtml('', 'sub') : '<a href="/sub-terms.html" target="_blank" rel="noopener">Sub Portal Terms of Use</a> &middot; <a href="/sub-privacy.html" target="_blank" rel="noopener">Sub Portal Privacy Notice</a> &middot; <a href="/esign-consent.html" target="_blank" rel="noopener">E-SIGN Disclosure</a>'; } catch (e) {}
   $('main').innerHTML = '<div class="skel"></div><div class="skel"></div>';
   var host = {
     hello: function(big, small, line3){ $('hi').textContent = big; $('jobName').textContent = small; $('jobSub').textContent = line3 || ''; $('hello').hidden = false; },
@@ -494,7 +501,7 @@ function startPartner(){
   document.title = tr('title');
   function go(){ window.GCPartner.start({ session: session, host: host, lang: LANG }); }
   if (window.GCPartner) return go();
-  var s = document.createElement('script'); s.src = '/portal-app.js?v=33.151-subphotos'; s.onload = go; s.onerror = function(){ notActive(tr('loadFail')); };
+  var s = document.createElement('script'); s.src = '/portal-app.js?v=33.151-subportal3'; s.onload = go; s.onerror = function(){ notActive(tr('loadFail')); };
   document.head.appendChild(s);
 }
 

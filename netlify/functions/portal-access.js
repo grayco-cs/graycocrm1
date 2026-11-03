@@ -379,16 +379,21 @@ async function subLinkRevoke(subId){
 /* GrayCo Photos (patch U2, netlify/functions/sub-photos.js) checks its own short codes (table gc_sub_portal). This
    portal hands a signed-in sub one of those codes, good for a day and turned off with their link; the page then asks
    sub-photos for that job's photos and sends the sub's photos there (tagged with the sub). No photos code is kept here. */
-async function photosCode(sub){
+async function photosCode(sub, jobIds){
+  jobIds = (Array.isArray(jobIds) ? jobIds : []).map(s).filter(okId).slice(0, 200);   /* patch SUBPORTAL3: the jobs the portal gives this sub (a scope-only job too) */
   try {
     const now = Date.now();
-    const r = await fetch(sbUrl() + '/rest/v1/gc_sub_portal?select=token,expires_at&revoked=eq.false&sub_id=' + eq(sub.id) + '&expires_at=gt.' + encodeURIComponent(new Date(now + 3600e3).toISOString()) + '&order=expires_at.desc&limit=1', { headers: H() });
+    const r = await fetch(sbUrl() + '/rest/v1/gc_sub_portal?select=token,expires_at,job_ids&revoked=eq.false&sub_id=' + eq(sub.id) + '&expires_at=gt.' + encodeURIComponent(new Date(now + 3600e3).toISOString()) + '&order=expires_at.desc&limit=1', { headers: H() });
     if (!r.ok) return null;                                        /* GrayCo Photos is not set up: the portal shows its own list */
     const have = ((await r.json()) || [])[0];
-    if (have && TOKEN_RE.test(have.token)) return have.token;
+    if (have && TOKEN_RE.test(have.token)) {
+      if (JSON.stringify((Array.isArray(have.job_ids) ? have.job_ids : []).map(String).sort()) !== JSON.stringify(jobIds.slice().sort()))
+        await fetch(sbUrl() + '/rest/v1/gc_sub_portal?token=' + eq(have.token), { method: 'PATCH', headers: H({ Prefer: 'return=minimal' }), body: JSON.stringify({ job_ids: jobIds }) }).catch(function(){});
+      return have.token;
+    }
     const token = newToken();
     const w = await fetch(sbUrl() + '/rest/v1/gc_sub_portal', { method: 'POST', headers: H({ Prefer: 'return=minimal' }),
-      body: JSON.stringify({ token: token, sub_id: s(sub.id), sub_name: clip(sub.name, 120), sub_email: low(sub.email) || null, job_ids: [], revoked: false, expires_at: new Date(now + 86400e3).toISOString() }) });
+      body: JSON.stringify({ token: token, sub_id: s(sub.id), sub_name: clip(sub.name, 120), sub_email: low(sub.email) || null, job_ids: jobIds, revoked: false, expires_at: new Date(now + 86400e3).toISOString() }) });
     return w.ok ? token : null;
   } catch (e) { return null; }
 }
@@ -726,7 +731,7 @@ async function partnerCtx(sess){
   const scopePids = new Set(scopes.map(function(x){ return s(x.project_id); }));
   const jobs = liveProjects(data).filter(function(p){
     return arr(p.subs).some(function(r){ return rowIsSub(r, sub) && !/reject|declin/i.test(s(r.status)); }) || scopePids.has(s(p.id));
-  });
+  }).map(SS().job);   /* patch SUBPORTAL3: the job's name / address as a sub sees them — never the carrier or a claim number */
   return { data: data, sub: sub, jobs: jobs, scopes: scopes };
 }
 function rowFor(p, sub){ return arr(p.subs).find(function(r){ return rowIsSub(r, sub); }) || {}; }
@@ -773,8 +778,8 @@ function scopeOut(x, signed){
   const d = x.data || {};
   const files = arr(d.files).map(function(f){ return fileOut(f, signed); }).filter(Boolean);
   const photos = arr(d.photos).map(function(f){ return fileOut(f, signed); }).filter(Boolean);
-  return { id: s(x.id), kind: x.kind === 'co' ? 'co' : 'scope', version: Number(x.version) || 1, date: ymd(x.approved_at || x.updated_at), title: clip(x.title || d.title, 160),
-    lines: arr(d.lines).slice(0, 400).map(function(l){ return { area: clip(l.room || l.area, 80), desc: clip(l.desc || l.description, 400), qty: l.qty === '' || l.qty == null ? '' : num(l.qty), unit: clip(l.unit, 20), meas: clip(l.meas || l.measurement, 120) }; }),
+  return { id: s(x.id), kind: x.kind === 'co' ? 'co' : 'scope', version: Number(x.version) || 1, date: ymd(x.approved_at || x.updated_at), title: clip(SS().clean(x.title || d.title), 160),   /* patch SUBPORTAL3: SS().clean */
+    lines: arr(d.lines).slice(0, 400).map(function(l){ return { area: clip(l.room || l.area, 80), desc: clip(SS().clean(l.desc || l.description), 400), qty: l.qty === '' || l.qty == null ? '' : num(l.qty), unit: clip(l.unit, 20), meas: clip(l.meas || l.measurement, 120) }; }),
     included: clip(d.included, 4000), excluded: clip(d.excluded, 4000), matGc: clip(d.matGc, 2000), matSub: clip(d.matSub, 2000), notes: clip(d.notes, 4000),
     start: ymd(d.start), end: ymd(d.end), total: money(x.total), files: files, photos: photos,
     status: x.status === 'accepted' && Number(x.accepted_version) === Number(x.version) ? 'accepted' : (x.status === 'question' ? 'question' : 'new'),
@@ -816,7 +821,7 @@ async function pHome(ctx){
   const papers = papersOf(sub, events);
   const needs = [];
   scopes.filter(function(x){ return x.status === 'new'; }).forEach(function(x){ const p = ctx.jobs.find(function(j){ return s(j.id) === s(ctx.scopes.find(function(y){ return s(y.id) === x.id; }).project_id); }) || {}; needs.push({ kind: x.kind === 'co' ? 'co' : 'scope', pid: s(p.id), job: s(p.name), title: x.title }); });
-  punch.forEach(function(x){ const p = ctx.jobs.find(function(j){ return s(j.id) === s(x.pid); }) || {}; needs.push({ kind: 'punch', pid: s(p.id), job: s(p.name), title: clip(x.item, 160) }); });
+  punch.forEach(function(x){ const p = ctx.jobs.find(function(j){ return s(j.id) === s(x.pid); }) || {}; needs.push({ kind: 'punch', pid: s(p.id), job: s(p.name), title: clip(SS().clean(x.item), 160) }); });   /* patch SUBPORTAL3: SS().clean */
   Object.keys(unread).forEach(function(pid){ const p = ctx.jobs.find(function(j){ return s(j.id) === pid; }) || {}; needs.push({ kind: 'message', pid: pid, job: s(p.name), count: unread[pid] }); });
   if (papers.coi.days != null && papers.coi.days <= 30 && !papers.coi.sent) needs.push({ kind: papers.coi.days < 0 ? 'coi-expired' : 'coi-expiring', days: papers.coi.days, exp: papers.coi.exp });
   if (!papers.w9.onFile && !papers.w9.sent) needs.push({ kind: 'w9' });
@@ -876,7 +881,7 @@ function punchIsSub(x, sub){ return s(x.subId) ? s(x.subId) === s(sub.id) : rowI
 function schedFor(data, jobs, sub){
   const pids = new Set(jobs.map(function(p){ return s(p.id); })), nm = jobs.reduce(function(m, p){ m[s(p.id)] = s(p.name); return m; }, {});
   return arr(data.schedule).filter(function(x){ return x.deleted !== true && x.private !== true && x.scope !== 'personal' && pids.has(s(x.pid)) && (s(x.subId) === s(sub.id) || rowIsSub({ name: x.vendor || x.sub || x.assignee }, sub)); })   /* patch VOICESCHED: never a deleted or 🔒 personal row */
-    .map(function(x){ return { id: clip(x.id, 90), date: ymd(x.date), time: clip(x.time, 10), endTime: clip(x.endTime, 10), title: clip(x.title, 160), pid: s(x.pid), job: nm[s(x.pid)] || '' }; })   /* patch SUBTXT: + id */
+    .map(function(x){ return { id: clip(x.id, 90), date: ymd(x.date), time: clip(x.time, 10), endTime: clip(x.endTime, 10), title: clip(SS().clean(x.title), 160), pid: s(x.pid), job: nm[s(x.pid)] || '' }; })   /* patch SUBPORTAL3: SS().clean */   /* patch SUBTXT: + id */
     .filter(function(x){ return x.date; }).sort(function(a, b){ return (a.date + a.time).localeCompare(b.date + b.time); });
 }
 async function pJob(ctx, pid){
@@ -908,7 +913,7 @@ async function pJob(ctx, pid){
     punch: arr(data.punch).filter(function(x){ return s(x.pid) === s(p.id) && punchIsSub(x, sub); }).map(function(x){
       const ev = doneBy[s(x.id)];
       const done = /complete|done|closed/.test(low(x.status)) || !!ev;
-      return { id: s(x.id), item: clip(x.item || x.title, 200), details: clip(x.details, 1000), due: ymd(x.dueDate), priority: clip(x.priority, 20), done: done,
+      return { id: s(x.id), item: clip(SS().clean(x.item || x.title), 200), details: clip(SS().clean(x.details), 1000), due: ymd(x.dueDate), priority: clip(x.priority, 20), done: done,
         doneAt: ev ? ymd(ev.created_at) : ymd(x.completedAt || x.doneAt), photo: ev ? (arr(ev.data.files).map(function(f){ return fileOut(f, signed); }).filter(Boolean)[0] || null) : null };
     }),
     progress: events.filter(function(e){ return e.kind === 'progress'; }).slice(0, 40).map(function(e){ return { at: e.created_at, pct: num((e.data || {}).pct), note: clip((e.data || {}).note, 1000),
@@ -916,7 +921,8 @@ async function pJob(ctx, pid){
     files: events.filter(function(e){ return e.kind === 'photos'; }).slice(0, 60).map(function(e){ return { at: e.created_at, note: clip((e.data || {}).note, 500),
       files: arr((e.data || {}).files).map(function(f){ return fileOut(f, signed); }).filter(Boolean) }; }),
     invoices: inv, unread: (await unreadFor([s(p.id)], 's:' + sub.id))[s(p.id)] || 0,
-    lien: { required: sub.lien === true || p.lienRequired === true }
+    lien: { required: sub.lien === true || p.lienRequired === true },
+    docs: await subDocs(data, p)   /* patch SUBPORTAL3: plans / drawings / specs on the job, and files a person shared with subs */
   };
   return out;
 }
@@ -970,6 +976,8 @@ async function partnerAction(action, body, ctx){
     await dbPatch('gc_sub_event', 'id=' + eq(id), { applied_at: new Date().toISOString(), applied_by: 'upload' });   /* a raw upload is not something for the CRM to file */
     return { ok: true, id: id, name: f.name, type: f.type };
   }
+  if (action === 'p-upload-url') return bigUploadUrl(ctx, body);     /* patch SUBPORTAL3: an invoice PDF up to 15 MB, straight to file storage */
+  if (action === 'p-upload-done') return bigUploadDone(ctx, body);
   if (action === 'p-scope') {
     const rows = await dbGet('gc_sub_scope', 'select=*&id=' + eq(body.id) + '&sub_id=' + eq(sub.id));
     const x = rows[0];
@@ -1080,9 +1088,9 @@ async function partnerAction(action, body, ctx){
   }
   if (action === 'p-photos') {
     const p = jobOf(ctx, body.projectId);
-    return { ok: true, photos: await jobPhotos(ctx.data, p, sub) };
+    return { ok: true, photos: await allPhotos(ctx, p) };   /* patch SUBPORTAL3: ALL the job's GrayCo Photos (sub-photos rules) + the sub's own */
   }
-  if (action === 'p-photos-code') return { ok: true, code: await photosCode(sub) };
+  if (action === 'p-photos-code') return { ok: true, code: await photosCode(sub, ctx.jobs.map(function(j){ return s(j.id); })) };
   if (action === 'p-bids') return bidsAccept(sub, body);
   throw Fail(400, 'Bad request');
 }
@@ -1096,6 +1104,78 @@ async function jobPhotos(data, p, sub){
     .forEach(function(d){ items.push({ ref: d.ref, at: ymd(d.uploadedAt || d.uploaded || d.savedAt), by: 'GrayCo' }); });
   const signed = await signRefs(items.map(function(x){ return x.ref; }));
   return items.map(function(x){ const u = signed[x.ref]; return u ? { t: u, f: u, at: x.at, by: x.by } : null; }).filter(Boolean).slice(0, 400);
+}
+/* patch SUBPORTAL3 (owner 11/02: "all photos should be in the sub portal from GrayCo Photos; the sub portal should have everything they
+   need on it to do work at the customer's house") ─────────────────────────────────────────────────────────────────────────────────
+   • photos: EVERY photo of the job in GrayCo Photos (GrayCo's uploads whether or not the customer sees them, the job's CompanyCam
+     photos, other uploads), never one a person marked "Hidden from subs" — the rule is sub-photos.js / _lib/cc-vis.js (subsOf / subsSee);
+     then the sub's own portal photos that are not in GrayCo Photos. Small copies (t) for the grid, the picture (f) to enlarge. No notes,
+     no names, no customer flags.
+   • documents: the job's plans / drawings / specs (Files & Docs, by category or name) and any file a person shared with subs
+     (shareSubs: true); never one marked hideFromSubs, never a proposal, estimate, contract, invoice, insurance / claim paper or price. */
+function SS(){ return require('./_lib/subsafe.js'); }
+function SPH(){ return require('./sub-photos.js')._core; }
+async function allPhotos(ctx, p){
+  const kv = await kvRead(['gc_photos']);
+  let list = [];
+  try { list = await SPH().jobPhotos(Object.assign({}, ctx.data, { gc_photos: kv.gc_photos }), p, 'sub', ctx.sub); } catch (e) { list = []; }
+  const inG = new Set();
+  arr(kv.gc_photos).forEach(function(r){ if (s(r.jobId) === s(p.id) && r.deleted !== true) [r.ref, r.annotatedRef, r.thumbRef].forEach(function(x){ if (s(x)) inG.add(s(x)); }); });
+  const out = list.map(function(x){ const o = { t: x.t, f: x.f, at: s(x.at), tag: s(x.tag), src: s(x.src) || 'grayco' }; if (x.mine) o.mine = true; return o; });
+  const ev = await dbGet('gc_sub_event', 'select=data,created_at&kind=in.(photos,progress,punch)&project_id=' + eq(p.id) + '&sub_id=' + eq(ctx.sub.id) + '&order=created_at.desc&limit=200');
+  const own = [];
+  ev.forEach(function(e){ arr((e.data || {}).files).forEach(function(f){ if (/^image\//.test(s(f.type)) && refPath(f.ref) && !inG.has(s(f.ref))) { inG.add(s(f.ref)); own.push({ ref: f.ref, at: ymd(e.created_at) }); } }); });
+  const signed = await signRefs(own.map(function(x){ return x.ref; }));
+  own.forEach(function(x){ const u = signed[x.ref]; if (u) out.push({ t: u, f: u, at: x.at, tag: '', src: 'sub', mine: true }); });
+  out.sort(function(a, b){ return a.at < b.at ? 1 : a.at > b.at ? -1 : 0; });
+  return out.slice(0, 500);
+}
+const SUBDOC_OK = /plan|drawing|blue.?print|\bspec|survey|elevation|layout|architect|engineer|structural|submittal|cut.?sheet|install(ation)? (guide|instructions)/i;
+const SUBDOC_NO = /proposal|estimate|contract|invoice|insurance|\bclaim|carrier|adjust|\bcost|budget|pric|\bbid|quote|agreement|w-?9|\bcoi\b|payment|check|receipt|lien|statement|change.?order|xactimate|scope of loss|\btax|payroll|commission|profit|margin|\$/i;
+async function subDocs(data, p){
+  const pick = arr(data.projectDocs).filter(function(d){
+    if (s(d.pid || d.projectId) !== s(p.id) || d.deleted === true || d.hideFromSubs === true || d.hideSubs === true || !refPath(d.ref)) return false;
+    if (d.shareSubs === true) return true;
+    const t = s(d.cat) + ' | ' + s(d.name) + ' | ' + s(d.kind);
+    return SUBDOC_OK.test(t) && !SUBDOC_NO.test(t);
+  }).slice(0, 60);
+  const signed = await signRefs(pick.map(function(d){ return d.ref; }));
+  return pick.map(function(d){ const u = signed[s(d.ref)]; return u ? { name: clip(SS().clean(d.name) || 'File', 120), cat: clip(d.cat, 40), type: s(d.type) || (/\.pdf$/i.test(s(d.ref)) ? 'application/pdf' : ''), url: u, at: ymd(d.uploadedAt || d.uploaded || d.savedAt) } : null; }).filter(Boolean);
+}
+/* patch SUBPORTAL3 (owner 11/02: "be able to upload a PDF for an invoice in the sub portal, and that invoice PDF goes into the CRM also")
+   A file too big for the function's body (a scanned invoice PDF, up to 15 MB) goes from the phone straight into the CRM's private
+   bucket crm-files with a one-time signed upload link (never overwriting a file that is there), named by its SHA-256 like every CRM
+   file. Then p-upload-done checks the stored file really is a PDF / picture and records it as the sub's upload — from there it is the
+   same as p-upload (p-invoice attaches it; the CRM files it into Sub Invoices, the invoice's files, 📋 Approvals). */
+const BIG_MAX = 15 * 1024 * 1024;
+const BIG_TYPES = { 'application/pdf': 'pdf', 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/heic': 'heic' };
+async function bigUploadUrl(ctx, body){
+  const hash = low(body.hash), type = s(body.type).toLowerCase(), size = Math.round(num(body.size));
+  if (!/^[0-9a-f]{64}$/.test(hash)) throw Fail(400, 'Bad request');
+  const ext = BIG_TYPES[type]; if (!ext) throw Fail(415, 'Send a PDF or a photo.');
+  if (!(size > 0) || size > BIG_MAX) throw Fail(413, 'That file is too big (15 MB at most).');
+  if (body.projectId) jobOf(ctx, body.projectId);
+  const path = hash + '.' + ext;
+  let r; try { r = await fetch(sbUrl() + '/storage/v1/object/upload/sign/crm-files/' + path, { method: 'POST', headers: H(), body: '{}' }); } catch (e) { throw Fail(503, 'File storage cannot be reached just now. Try again in a minute.'); }
+  const j = await r.json().catch(function(){ return {}; });
+  if (!r.ok) { if (r.status === 409 || /exist|duplicate/i.test(JSON.stringify(j))) return { ok: true, exists: true, path: path }; throw Fail(502, 'The file could not be stored (' + r.status + '). Try again.'); }
+  const u = s(j.url || j.signedURL || j.signedUrl);
+  if (!/token=/.test(u)) throw Fail(502, 'The file could not be stored. Try again.');
+  /* apikey: the PUBLIC anon key the storage gateway asks for (as the bid site's uploads send it); the one-time token is the permission */
+  return { ok: true, path: path, url: /^https:/.test(u) ? u : sbUrl() + '/storage/v1' + (u[0] === '/' ? '' : '/') + u, apikey: process.env.SUPABASE_ANON_KEY || GC_SB_DEFAULT_ANON, max: BIG_MAX };
+}
+async function bigUploadDone(ctx, body){
+  const path = s(body.path); if (!/^[0-9a-f]{64}\.(pdf|jpg|png|webp|heic)$/.test(path)) throw Fail(400, 'Bad request');
+  let pid = null; if (body.projectId) pid = s(jobOf(ctx, body.projectId).id);
+  let r; try { r = await fetch(sbUrl() + '/storage/v1/object/crm-files/' + path, { headers: Object.assign(keyHeaders(svcKey()), { Range: 'bytes=0-63' }) }); } catch (e) { r = null; }
+  if (!r || !(r.ok || r.status === 206)) throw Fail(409, 'The file did not arrive. Try again.');
+  let head = Buffer.alloc(0); try { head = Buffer.from(await r.arrayBuffer()); } catch (e) {}
+  const type = sniff(head.length >= 12 ? head : Buffer.concat([head, Buffer.alloc(12)]));
+  if (!type || FILE_TYPES[type] !== path.split('.').pop().replace('jpeg', 'jpg')) throw Fail(415, 'Send a PDF or a photo.');
+  const f = { ref: 'sb:crm-files/' + path, name: clip(body.name || ('invoice.' + path.split('.').pop()), 120), type: type, size: Math.round(num(body.size)) || 0, hash: path.split('.')[0] };
+  const id = await addEvent('upload', ctx.sub, pid, Object.assign({ purpose: clip(body.purpose, 20), big: true, uploadedBy: 'Uploaded by ' + s(ctx.sub.company || ctx.sub.name) + ' (sub)' }, f));
+  await dbPatch('gc_sub_event', 'id=' + eq(id), { applied_at: new Date().toISOString(), applied_by: 'upload' });   /* a raw upload is not something for the CRM to file */
+  return { ok: true, id: id, name: f.name, type: f.type };
 }
 /* "You're invited to bid": the bid-site account (sp_rows users, as the bid site keeps it) waits for an owner's approval */
 async function bidsAccept(sub, body){

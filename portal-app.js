@@ -62,6 +62,11 @@ var L = {
     awarded: 'Adjudicado', inprogress: 'En progreso', complete: 'Terminado', bidding: 'Licitando'
   }
 };
+/* patch SUBPORTAL3 */
+Object.assign(L.en, { invAttach: '📎 Attach your invoice PDF', invAttachHow: 'Attach your own invoice (PDF, or a photo of it — up to 15 MB) and enter the amount. GrayCo gets the file with the invoice.', tooBig15: 'That file is too big (15 MB at most).' });
+Object.assign(L.es, { invAttach: '📎 Adjuntar su factura en PDF', invAttachHow: 'Adjunte su propia factura (PDF, o una foto — hasta 15 MB) y escriba el monto. GrayCo recibe el archivo con la factura.', tooBig15: 'El archivo es muy grande (15 MB como máximo).' });
+Object.assign(L.en, { phCount: '{n} photos of this job', noDate: 'No date', jobDocs: 'Plans & documents', noDocs: 'No plans or documents shared with you yet. Ask your PM in Messages.' });
+Object.assign(L.es, { phCount: '{n} fotos de este trabajo', noDate: 'Sin fecha', jobDocs: 'Planos y documentos', noDocs: 'Todavía no hay planos ni documentos para usted. Pregúntele a su PM en Mensajes.' });
 /* patch X10 */
 Object.assign(L.en, { avail: 'My schedule & days off', availBtn: 'Open my calendar', availNote: 'Tap a day to mark it busy (you can’t work that day); tap again to clear it. Your PM sees it when scheduling.',
   busy: 'Busy', free: 'Open', scheduled: 'Scheduled', availSaved: 'Saved — your PM will see it', availLoad: 'Loading your calendar…', codes: 'Access codes', codesBtn: 'Show access codes',
@@ -221,6 +226,29 @@ function readFile(file){
     }
   });
 }
+/* patch SUBPORTAL3: the sub's own invoice PDF (or a photo of it), up to 15 MB: a PDF / a big file goes straight to the CRM's file
+   storage with a one-time link from the server (no 4 MB limit); a small photo the usual way (made small first) */
+var BIG_MAX = 15 * 1024 * 1024;
+function invoiceUpload(file, pid){
+  if (!file) return Promise.resolve(null);
+  if (file.size > BIG_MAX) return Promise.reject(new Error(t('tooBig15')));
+  if (!/pdf/i.test(file.type || '') && !/\.pdf$/i.test(file.name || '') && file.size <= 4 * 1024 * 1024) return upload(file, 'invoice', pid);
+  return bigUpload(file, 'invoice', pid).catch(function(e){ if (file.size <= 4.4 * 1024 * 1024 && !/15 MB|PDF or a photo/.test(e.message || '')) return upload(file, 'invoice', pid); throw e; });
+}
+function bigUpload(file, purpose, pid){
+  var type = /\.pdf$/i.test(file.name || '') && !file.type ? 'application/pdf' : (file.type || '').toLowerCase();
+  if (type === 'image/jpg') type = 'image/jpeg';
+  return file.arrayBuffer().then(function(buf){
+    return crypto.subtle.digest('SHA-256', buf).then(function(d){
+      var hash = Array.prototype.map.call(new Uint8Array(d), function(b){ return ('0' + b.toString(16)).slice(-2); }).join('');
+      return api('p-upload-url', { projectId: pid || undefined, hash: hash, type: type, size: file.size, name: file.name }).then(function(r){
+        var put = r.exists ? Promise.resolve() : fetch(r.url, { method: 'PUT', headers: Object.assign({ 'Content-Type': type, 'x-upsert': 'false' }, r.apikey ? { apikey: r.apikey } : {}), body: buf, credentials: 'omit' })
+          .then(function(x){ if (!x.ok && x.status !== 409) throw new Error(t('failed')); });
+        return put.then(function(){ return api('p-upload-done', { projectId: pid || undefined, path: r.path, name: file.name, size: file.size, purpose: purpose }); });
+      });
+    });
+  });
+}
 function upload(file, purpose, pid){ return readFile(file).then(function(f){ return api('p-upload', { projectId: pid || undefined, purpose: purpose, name: f.name, data: f.data }); }); }
 function picker(accept, multiple, cb, cap){ var i = h('input', { type: 'file', accept: accept, multiple: multiple ? true : null, capture: cap || null, style: 'display:none' }); i.addEventListener('change', function(){ cb(Array.prototype.slice.call(i.files || [])); i.remove(); }); document.body.appendChild(i); i.click(); }
 function busy(btn, on){ if (!btn) return; btn.disabled = !!on; if (on) { btn.__t = btn.textContent; btn.textContent = t('sending'); } else if (btn.__t) btn.textContent = btn.__t; }
@@ -337,14 +365,14 @@ function invoiceSheet(pid){
   var poBox = h('input', { class: 'inp', id: 'invPo', readonly: true });
   var note = h('input', { class: 'inp', id: 'invNote' });
   var file = null, fname = h('span', { class: 'muted', text: '' });
-  var pick = h('button', { type: 'button', class: 'btn', id: 'invPick', text: '📎 ' + t('invFile'), on: { click: function(){ picker('application/pdf,image/*', false, function(fs){ file = fs[0] || null; fname.textContent = file ? file.name : ''; }); } } });
+  var pick = h('button', { type: 'button', class: 'btn', id: 'invPick', text: t('invAttach'), on: { click: function(){ picker('application/pdf,image/*', false, function(fs){ file = fs[0] || null; if (file && file.size > BIG_MAX) { toast(t('tooBig15'), true); file = null; } fname.textContent = file ? file.name + ' (' + Math.max(1, Math.round(file.size / 1024)) + ' KB)' : ''; }); } } });   /* patch SUBPORTAL3 */
   var go = h('button', { type: 'button', class: 'btn gold', id: 'invSend', text: t('send') });
   sel.addEventListener('change', fillScopes);
-  var sh = sheet(t('newInvoice'), [h('div', { class: 'how', text: t('payRule') }), field(t('jobs'), sel), field(t('againstScope'), scopeSel), field(t('amount'), amt), field(t('invNum'), num), field(t('po'), poBox), field(t('invNote'), note), h('div', { class: 'row' }, [pick, fname]), go]);
+  var sh = sheet(t('newInvoice'), [h('div', { class: 'how', text: t('payRule') }), field(t('jobs'), sel), field(t('againstScope'), scopeSel), field(t('amount'), amt), field(t('invNum'), num), field(t('po'), poBox), field(t('invNote'), note), h('div', { class: 'muted', text: t('invAttachHow') }), h('div', { class: 'row inv-attach' }, [pick, fname]), go]);
   fillScopes();
   go.addEventListener('click', function(){
     busy(go, true);
-    (file ? upload(file, 'invoice', sel.value) : Promise.resolve(null)).then(function(u){
+    (file ? invoiceUpload(file, sel.value) : Promise.resolve(null)).then(function(u){
       return api('p-invoice', { projectId: sel.value, amount: amt.value, invNum: num.value, note: note.value, scopeId: scopeSel.value, uploadId: u ? u.id : undefined });
     }).then(function(r){ sh.close(); toast(t('saved') + ' · ' + t('payOn') + ' ' + dt(r.payDate)); reloadHome(); if (JOB) openJob(JOB.job.id, 'invoices'); }, function(e){ busy(go, false); toast(e.message, true); });
   });
@@ -418,6 +446,9 @@ function overview(){
   out.push(card(t('schedule'), sch.length ? sch.map(function(x){ return lateRow(x, h('div', { class: 'line' }, [h('span', { text: dts(x.date) }), h('span', { text: [x.time && x.endTime ? x.time + '–' + x.endTime : x.time, x.title].filter(Boolean).join(' · ') })])); }) : [h('div', { class: 'empty', text: t('noWeek') })]));
   var rows = [['gate', s.gate], ['parking', s.parking], ['hours', s.hours], ['dumpster', s.dumpster], ['power', s.power], ['water', s.water], ['notes', s.notes]].filter(function(x){ return x[1]; });
   out.push(codesCard(j.id || (JOB.job && JOB.job.id)));   /* patch X10 */
+  /* patch SUBPORTAL3: the job's plans / drawings / specs and files shared with subs (opened in the portal) */
+  var docs = JOB.docs || [];
+  out.push(h('section', { class: 'card', 'data-subdocs': '1' }, [h('h2', { text: t('jobDocs') })].concat(docs.length ? docs.map(function(f){ return h('div', { class: 'doc' }, [h('span', { text: /pdf/.test(f.type) ? '📄' : /image/.test(f.type) ? '🖼️' : '📎' }), h('span', { class: 'grow', text: f.name }), h('button', { type: 'button', class: 'btn', 'data-subdoc': f.name, text: t('open'), on: { click: function(){ viewer(f); } } })]); }) : [h('div', { class: 'empty', text: t('noDocs') })])));
   out.push(card(t('site'), rows.length ? [h('dl', { class: 'info' }, [].concat.apply([], rows.map(function(x){ return [h('dt', { text: t(x[0]) }), h('dd', { text: x[1] })]; })))] : [h('div', { class: 'empty', text: t('none') })]));
   return out;
 }
@@ -486,7 +517,17 @@ function photosPane(){
     var e = box.querySelector('#phLoad'); if (!e) return;
     if (!list.length) { e.textContent = t('noPhotos'); return; }
     e.remove();
-    box.appendChild(h('div', { class: 'pics', id: 'grid' }, list.map(function(p, i){ return h('button', { type: 'button', 'aria-label': t('photos'), on: { click: function(){ lightbox(list, i); } } }, [h('img', { src: p.t, alt: '', loading: 'lazy' })]); })));
+    /* patch SUBPORTAL3: every photo of the job, newest day first, one group per day; the grid shows the small copies (lazy), a tap
+       opens the picture */
+    box.appendChild(h('div', { class: 'muted', id: 'phCount', text: t('phCount', { n: list.length }) }));
+    var grid = h('div', { id: 'grid' }), day = null, row = null;
+    list.forEach(function(p, i){
+      var d = p.at || '';
+      if (d !== day || !row) { day = d; grid.appendChild(h('div', { class: 'phday', 'data-phday': d || 'undated', text: d ? dt(d) : t('noDate') })); row = h('div', { class: 'pics' }); grid.appendChild(row); }
+      row.appendChild(h('button', { type: 'button', 'aria-label': t('photos') + ' ' + (i + 1), class: 'ph' + (p.mine ? ' mine' : ''), on: { click: function(){ lightbox(list, i); } } },
+        [h('img', { src: p.t, alt: '', loading: 'lazy', decoding: 'async', width: '160', height: '160' }), p.tag ? h('span', { class: 'phtag', text: p.tag }) : (p.mine ? h('span', { class: 'phtag', text: t('you') }) : null)]));
+    });
+    box.appendChild(grid);
   });
   return [box];
 }
@@ -501,15 +542,23 @@ function gphotos(body){
       .then(function(r){ return r.ok ? r.json() : null; }, function(){ return null; });
   });
 }
+/* patch SUBPORTAL3: one call — the portal's own server applies the GrayCo Photos rules (every photo of the job but "Hidden from subs") */
 function loadPhotos(pid){
-  return gphotos({ action: 'photos', jobId: pid }).then(function(j){
-    if (j && j.ok && Array.isArray(j.photos)) return j.photos.map(function(p){ return { t: p.t || p.thumb || p.f, f: p.f || p.url || p.t, at: p.at || '' }; }).filter(function(p){ return p.t && p.f; });
-    return api('p-photos', { projectId: pid }).then(function(r){ return r.photos || []; }, function(){ return []; });
-  });
+  return api('p-photos', { projectId: pid }).then(function(r){ return (r.photos || []).map(function(p){ return { t: p.t || p.f, f: p.f || p.t, at: p.at || '', tag: p.tag || '', mine: !!p.mine }; }).filter(function(p){ return p.t && p.f; }); }, function(){ return []; });
 }
 /* a photo the sub took → the job's GrayCo Photos, tagged with the sub (false when GrayCo Photos is not there) */
 function toGPhotos(file, pid, tag, note){
-  return readFile(file).then(function(f){ return gphotos({ action: 'upload', jobId: pid, name: f.name, data: f.data, tag: tag || 'During', note: note || '' }); }).then(function(j){ return !!(j && j.ok); }, function(){ return false; });
+  return Promise.all([readFile(file), thumbOf(file)]).then(function(x){ var f = x[0]; return gphotos({ action: 'upload', jobId: pid, name: f.name, data: f.data, thumb: x[1] || undefined, tag: tag || 'During', note: note || '' }); }).then(function(j){ return !!(j && j.ok); }, function(){ return false; });
+}
+/* patch SUBPORTAL3: a 400 px copy for the photo grids (JPEG / PNG / WebP the phone can draw; none for others) */
+function thumbOf(file){
+  return new Promise(function(res){
+    if (!file || !/^image\/(jpeg|png|webp)$/.test(file.type)) return res('');
+    var img = new Image(), url = URL.createObjectURL(file);
+    img.onload = function(){ try { var k = Math.min(1, 400 / Math.max(img.width, img.height)), c = document.createElement('canvas'); c.width = Math.max(1, Math.round(img.width * k)); c.height = Math.max(1, Math.round(img.height * k)); c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url); res(c.toDataURL('image/jpeg', 0.7).split(',')[1]); } catch (e) { res(''); } };
+    img.onerror = function(){ URL.revokeObjectURL(url); res(''); };
+    img.src = url;
+  });
 }
 function addPhotos(pid0){
   var files = [], list = h('div', { class: 'muted', id: 'phList' }), note = h('input', { class: 'inp', id: 'phNote' });
