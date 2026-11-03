@@ -69,52 +69,65 @@ section('offline: the dismissal helper (two computers, one cloud)');
   const cloud = new Map();
   const fetchFor = () => async (url, o) => { const u = new URL(url); if ((o && o.method) === 'POST') { const b = JSON.parse(o.body); cloud.set(b.key, b.value); return { ok: true, json: async () => [] }; }
     const k = decodeURIComponent((u.searchParams.get('key') || '').replace(/^eq\./, '')); return { ok: true, json: async () => cloud.has(k) ? [{ value: cloud.get(k) }] : [] }; };
-  const comp = (ls) => { ls = ls || new Map([['grayco_sb_key', 'anon'], ['grayco_view', 'dashboard']]); const W = fakeWindow(ls, { __GC_AUTH__: { email: () => EMAIL }, fetch: fetchFor() }); vm.runInNewContext(fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'admdismiss.js'), 'utf8'), W); return { W, ls }; };
+  const SRC = fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'admdismiss.js'), 'utf8');
+  const comp = (ls) => { ls = ls || new Map([['grayco_sb_key', 'anon'], ['grayco_view', 'dashboard']]); const W = fakeWindow(ls, { __GC_AUTH__: { email: () => EMAIL }, fetch: fetchFor() }); vm.runInNewContext(SRC, W); return { W, ls }; };
   const flush = () => new Promise(f => setTimeout(f, 30));
-  const pay = ids => ({ id: 'sub-pay-check', key: 'subpay', level: 'red', title: ids.length + ' sub invoices fail the pay check', text: '', items: ids.map(i => 'inv:' + i + '|no COI') });
-  const dup = (a, b, e) => ({ id: 'dup-email', key: e, title: a + ' and ' + b + ' both use ' + e, text: 'for example <b>x' + Math.random() + '@grayco-cs.com</b>' });
-  const sp = { id: 'name-spaces', key: 'U1', title: '“Steven Biffle ” has extra spaces in the name', text: 'EDIT → Name' };
-  const store = { id: undefined, title: '💾 File storage is 82% full', text: 'Admin → 💾 Storage' };
-  const A1 = comp(); await flush();
-  A1.W._gcAdmDismiss.dismiss(pay(['I1', 'I2']), 0); A1.W._gcAdmDismiss.dismiss(dup('Brittany Pucket', 'Office', 'office@grayco-cs.com'), 0); A1.W._gcAdmDismiss.dismiss(sp, 0); A1.W._gcAdmDismiss.dismiss(store, 0);
-  await flush(); await flush();
-  const row = offVal(cloud.get('gc_adm_dismiss__' + EMAIL));
-  ok(row && Object.keys(row.cards).length === 4 && row.email === EMAIL, 'saved in the cloud per person: gc_kv gc_adm_dismiss__<e-mail>, one entry per card', row && Object.keys(row.cards));
-  const A2 = comp(A1.ls); await flush();
-  ok(A2.W._gcAdmDismiss.hidden(pay(['I1', 'I2'])) && A2.W._gcAdmDismiss.hidden(sp), 'a reload (same computer): still hidden');
-  const B1 = comp(); await B1.W._gcAdmDismiss.pull();
-  const H = B1.W._gcAdmDismiss;
-  ok(H.hidden(pay(['I1', 'I2'])) && H.hidden(sp) && H.hidden(dup('Brittany Pucket', 'Office', 'office@grayco-cs.com')), 'a second computer (empty storage): hidden, from the cloud');
-  ok(H.hidden(pay(['I2'])), 'fewer items: stays hidden');
-  ok(!H.hidden(pay(['I1', 'I2', 'I3'])), 'a new failing invoice: back');
-  ok(!H.hidden(dup('Nick Thomas', 'Steven Biffle', 'sbiffle@grayco-cs.com')) && !H.hidden(dup('Brittany Pucket', 'Glenn Miller', 'office@grayco-cs.com')), 'a different pair on one e-mail: back');
-  ok(H.hidden(dup('Office', 'Brittany Pucket', 'office@grayco-cs.com')), 'the same pair listed in the other order: still hidden');
-  ok(H.hidden({ id: undefined, title: '💾 File storage is 85% full', text: 'Admin → 💾 Storage' }), 'a number changing on a card is not new content');
-  H.dismiss(pay(['I1', 'I2', 'I3']), 7); await flush(); await flush();
-  const n0 = Date.now; let d3, d8, newIn7;
-  try { Date.now = () => n0() + 3 * 864e5; d3 = H.hidden(pay(['I1', 'I2', 'I3'])); newIn7 = H.hidden(pay(['I1', 'I4'])); Date.now = () => n0() + 8 * 864e5; d8 = H.hidden(pay(['I1', 'I2', 'I3'])); } finally { Date.now = n0; }
-  ok(d3 && !d8 && !newIn7, '🔕 7 days: hidden on day 3, back on day 8, back sooner on new content', { d3, d8, newIn7 });
-  await A2.W._gcAdmDismiss.pull();
-  ok(A2.W._gcAdmDismiss.until(pay(['I1', 'I2', 'I3'])) !== '', 'the first computer picks the 7-day hide up from the cloud (newest change per card wins)');
-  H.restore(H.keyOf(sp)); await flush(); await flush(); await A2.W._gcAdmDismiss.pull();
-  ok(!A2.W._gcAdmDismiss.hidden(sp), '"Show again" on one computer shows it on the other');
+  /* the clock: +ms from now (the helper reads Date.now) */
+  const real = Date.now; let shift = 0; Date.now = () => real() + shift; const later = ms => { shift += ms; };
+  try {
+    const pay = (ids, loading) => ({ id: 'sub-pay-check', key: 'subpay', level: 'red', title: ids.length + ' sub invoices fail the pay check', text: '', items: ids.map(i => 'inv:' + i), loading: !!loading });
+    const dup = (a, b, e) => ({ id: 'dup-email', key: e, title: a + ' and ' + b + ' both use ' + e, text: 'for example <b>x' + Math.random() + '@grayco-cs.com</b>' });
+    const sp = { id: 'name-spaces', key: 'U1', title: '“Steven Biffle ” has extra spaces in the name', text: 'EDIT → Name' };
+    const store = { id: undefined, title: '💾 File storage is 82% full', text: 'Admin → 💾 Storage' };
+    const A1 = comp(); await flush();
+    const HA = () => A1.W._gcAdmDismiss;
+    HA().dismiss(pay(['I1', 'I2']), 0); HA().dismiss(dup('Brittany Pucket', 'Office', 'office@grayco-cs.com'), 0); HA().dismiss(sp, 0); HA().dismiss(store, 0);
+    ok(HA().hidden(pay(['I1', 'I2', 'I0'])), 'right after the ✕ the card is still loading: what shows up then is part of what was dismissed');
+    later(100000); await flush(); await flush(); await new Promise(f => setTimeout(f, 3200)); await flush();
+    const row = offVal(cloud.get('gc_adm_dismiss__' + EMAIL));
+    ok(row && Object.keys(row.cards).length === 4 && row.email === EMAIL && row.cards['sub-pay-check:subpay'].h.length === 3, 'saved in the cloud per person: gc_kv gc_adm_dismiss__<e-mail>, one entry per card (with what loaded after the ✕)', row && Object.keys(row.cards).map(k => k + ':' + (row.cards[k].h || []).length));
+    const A2 = comp(A1.ls); await flush();
+    ok(A2.W._gcAdmDismiss.hidden(pay(['I1', 'I2', 'I0'])) && A2.W._gcAdmDismiss.hidden(sp), 'a reload (same computer): still hidden');
+    const B1 = comp(); await B1.W._gcAdmDismiss.pull();
+    const H = B1.W._gcAdmDismiss;
+    ok(H.hidden(pay(['I2', 'I0', 'I1'])) && H.hidden(sp) && H.hidden(dup('Brittany Pucket', 'Office', 'office@grayco-cs.com')), 'a second computer (empty storage): hidden, from the cloud (any order)');
+    ok(H.hidden(pay(['I2'])), 'fewer items: stays hidden');
+    ok(H.hidden(pay(['I1', 'I2', 'I3'])), 'a new failing invoice that just showed up: not yet (the lists may still be loading)');
+    later(20000); ok(H.hidden(pay(['I1', 'I2', 'I3'], true)), 'while the card says it is loading: never new');
+    later(30000); ok(!H.hidden(pay(['I1', 'I2', 'I3'])), 'a new failing invoice that stayed 45 s: back');
+    ok(H.hidden(pay(['I1', 'I4'])), 'one that only flickered in: not back');
+    ok(!H.hidden(dup('Nick Thomas', 'Steven Biffle', 'sbiffle@grayco-cs.com')) && H.hidden(dup('Office', 'Brittany Pucket', 'office@grayco-cs.com')), 'a different pair on one e-mail shows (no ✕ on it); the same pair in the other order stays hidden');
+    ok(H.hidden({ id: undefined, title: '💾 File storage is 85% full', text: 'Admin → 💾 Storage' }), 'a number changing on a card is not new content');
+    H.dismiss(pay(['I3']), 7); later(100000); await new Promise(f => setTimeout(f, 3200)); await flush();
+    ok(H.hidden(pay(['I0', 'I1', 'I2', 'I3'])), 'dismissing again keeps what was dismissed before (I0–I2) and adds I3');
+    let d3, d8, newIn7;
+    const base = shift;
+    shift = base + 3 * 864e5; d3 = H.hidden(pay(['I1', 'I2', 'I3'])); H.hidden(pay(['I1', 'I5'])); shift += 50000; newIn7 = H.hidden(pay(['I1', 'I5']));
+    shift = base + 8 * 864e5; d8 = H.hidden(pay(['I1', 'I2', 'I3'])); shift = base;
+    ok(d3 && !d8 && !newIn7, '🔕 7 days: hidden on day 3, back on day 8, back sooner on new content', { d3, d8, newIn7 });
+    await A2.W._gcAdmDismiss.pull();
+    ok(A2.W._gcAdmDismiss.until(pay(['I1'])) !== '' && A2.W._gcAdmDismiss.hidden(pay(['I0', 'I1', 'I2', 'I3'])), 'the first computer picks the 7-day hide up from the cloud (newest change per card wins)');
+    H.restore(H.keyOf(sp)); await flush(); await flush(); await A2.W._gcAdmDismiss.pull();
+    ok(!A2.W._gcAdmDismiss.hidden(sp), '"Show again" on one computer shows it on the other');
+  } finally { Date.now = real; }
 }
 if (process.env.NOBROWSER === '1') { console.log((fail ? 'FAILED ' : 'ALL PASS ') + pass + ' passed, ' + fail + ' failed'); process.exit(fail ? 1 : 0); }
 const H = await import(pathToFileURL(HARNESS).href);
 
-/* ── the mirror + three test sub invoices (only in the test cloud) ── */
+/* ── the mirror + two test sub invoices (only in the test cloud). The rest of the pay check's list is the real data's:
+   the test reads what the page says fails (window._gcSubPayFails) and checks the card against that. ── */
 const rows = JSON.parse(fs.readFileSync(MIRROR, 'utf8'));
 const val = v => { if (typeof v === 'string') { try { return JSON.parse(v); } catch (e) { return v; } } return v; };
 H.resetCloud(); rows.forEach(r => { if (!/^gc_cc_token/.test(r.key)) H.cset(r.key, r.v); });
 const get = k => val((rows.find(r => r.key === k) || {}).v);
 const PID = (get('invs') || []).find(x => x.id === 'INV0cn960fkw35').pid;
-const CANTOR = "Cantor Property Services LLC (America's Best Carpet & Tile)";
+const PAYEE = 'Zzyzx Test Payee LLC';   /* on no list, anywhere */
 const extraInv = [
   { id: 'INVADMDNOSUB1', type: 'sub', pid: PID, sub: 'invoice-31337', desc: 'Uploaded: invoice-31337.pdf', fileName: 'invoice-31337.pdf', amt: 1500, status: 'received', source: 'upload', recvDate: '2026-11-01', updatedAt: '2026-11-01T12:00:00.000Z' },
-  { id: 'INVADMDCANTOR', type: 'sub', pid: PID, sub: CANTOR, desc: 'E-mailed invoice', amt: 1020.96, status: 'received', source: 'email', recvDate: '2026-11-01', updatedAt: '2026-11-01T12:00:00.000Z' }];
+  { id: 'INVADMDPAYEE', type: 'sub', pid: PID, sub: PAYEE, desc: 'E-mailed invoice', amt: 1020.96, status: 'received', source: 'email', recvDate: '2026-11-01', updatedAt: '2026-11-01T12:00:00.000Z' }];
 const extraRows = extraInv.map(iv => ({ id: 'invId:' + iv.id, invId: iv.id, sub: iv.sub, amt: iv.amt, pid: PID, desc: iv.desc, status: 'pending_pm', pmName: 'Nick Thomas', createdAt: Date.now(), updatedAt: '2026-11-01T12:00:00.000Z' }));
 ['invs', 'invoices'].forEach(k => H.cset(k, (get(k) || []).concat(extraInv)));
-H.cset('gc_sub_approvals', extraRows.concat(get('gc_sub_approvals') || []));   /* first in the list: the card shows the first 4 */
+H.cset('gc_sub_approvals', extraRows.concat(get('gc_sub_approvals') || []));
 const dcItem = (val(get('gc_office_tasks')) || []).find(t => t.id === 'DATACHECK_NIGHTLY');
 console.log('    mirror: DATACHECK_NIGHTLY refs ' + (dcItem ? dcItem.refs.length : 'none') + ' · note “' + (dcItem ? dcItem.note.slice(0, 80) : '') + '”');
 
@@ -124,12 +137,16 @@ async function device(name){
   await c.page().setViewportSize({ width: 1366, height: 900 });
   return c;
 }
+const fails = c => c.ev(() => window._gcSubPayFails());
+/* signed in, ⚙ Admin open, the cloud dismissals pulled, and the pay check's lists settled (loaded, the approvals queue
+   rebuilt, the same failing invoices on two reads 6 s apart) */
 async function ready(c){
-  await H.waitFor(c, () => (window._crm && (window._crm.projects || []).length > 20 && typeof window._gcSubPayCheck === 'function' && window._gcAdmDismiss && typeof window._gcAdmPaintTop === 'function') || null, null, 120000, 500);
+  await H.waitFor(c, () => (window._crm && (window._crm.projects || []).length > 20 && typeof window._gcSubPayFails === 'function' && window._gcAdmDismiss && typeof window._gcAdmPaintTop === 'function') || null, null, 120000, 500);
   await c.ev(() => { try { window._gcRA && window._gcRA.hide(); } catch (e) {} window._setView('admin'); });
   await H.waitFor(c, () => { const t = document.getElementById('gc-adm-top'); return t && t.querySelector('.gc-adm-roles') ? true : null; }, null, 60000, 400);
-  /* the waiting sub invoices are on this computer, the cloud dismissals pulled */
-  await H.waitFor(c, () => { try { const q = JSON.parse(localStorage.getItem('gc_sub_approvals') || '[]'); return q.some(a => a.invId === 'INVADMDCANTOR') && window._gcAdmDismiss.state().pulledAt > 0; } catch (e) { return null; } }, null, 60000, 500);
+  await H.waitFor(c, () => { try { return window._gcAdmDismiss.state().pulledAt > 0 && !window._gcSubPayLoading() && JSON.parse(localStorage.getItem('gc_sub_approvals') || '[]').some(a => a.invId === 'INVADMDPAYEE') || null; } catch (e) { return null; } }, null, 90000, 500);
+  let prev = '', same = 0;
+  for (let i = 0; i < 20 && same < 1; i++) { const ids = (await fails(c)).map(x => x.id).sort().join(','); if (ids === prev) same++; else { same = 0; prev = ids; } await H.sleep(6000); }
   await c.ev(() => window._gcAdmPaintTop()); await H.sleep(600);
 }
 const cards = c => c.ev(() => [...document.querySelectorAll('#gc-adm-warns .gc-adm-warn')].map(el => ({ id: el.getAttribute('data-adm-warn'), text: el.textContent, btns: [...el.querySelectorAll('button')].map(b => b.textContent) })));
@@ -137,29 +154,36 @@ const card = async (c, id) => (await cards(c)).find(x => x.id === id) || null;
 const clickIn = (c, id, label) => c.ev(([id, label]) => { const el = document.querySelector('#gc-adm-warns [data-adm-warn="' + id + '"]'); const b = el && [...el.querySelectorAll('button')].find(x => x.textContent.trim() === label || x.textContent.indexOf(label) === 0); if (b) b.click(); return !!b; }, [id, label]);
 const cloudCards = () => { const v = val(H.cget(KEY)); return v && v.cards ? v.cards : {}; };
 async function waitCloud(fn, ms = 20000){ const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn(cloudCards())) return true; await H.sleep(400); } return false; }
+/* past the 45 s a new item has to stay before a card comes back, repainting */
+async function settledCards(c, ms = 52000){ await H.sleep(ms); await c.ev(() => window._gcAdmPaintTop()); await H.sleep(400); return cards(c); }
+const short = n => n.length > 26 ? n.slice(0, 25) + '…' : n;
 
 const A = await device('A'); let B = null;
 try {
   section('sign in (admin) → ⚙ Admin');
   await H.signIn(A, EMAIL, 9000); await ready(A);
-  await H.waitFor(A, () => { try { return window._gcDataFull.state().canSee || null; } catch (e) { return null; } }, null, 30000, 500);
 
   section('the pay check reads the invoice\'s sub field, not its file name');
-  const pc = await A.ev(() => ['INV0cn960fkw35', 'INVADMDNOSUB1', 'INVADMDCANTOR'].map(id => { const r = window._gcSubPayCheck(id); return { id, sub: r.sub, subId: r.subId, ok: r.ok, noSub: !!r.noSub, notListed: !!r.notListed, problems: r.problems }; }));
+  const pc = await A.ev(() => ['INV0cn960fkw35', 'INVADMDNOSUB1', 'INVADMDPAYEE'].map(id => { const r = window._gcSubPayCheck(id); return { id, sub: r.sub, subId: r.subId, ok: r.ok, noSub: !!r.noSub, notListed: !!r.notListed, problems: r.problems }; }));
   console.log('    ' + JSON.stringify(pc).slice(0, 600));
   ok(/rapid air/i.test(pc[0].sub) && pc[0].subId === 'SUBfk2webh' && !pc[0].problems.some(p => /invoice-22902/.test(p)), 'invoice-22902.pdf (picked sub: Rapid Air, subId) is checked as Rapid Air — its own COI / W-9 — not as “invoice-22902”', pc[0]);
   ok(pc[1].noSub && pc[1].sub === '' && /^Pick the sub/.test(pc[1].problems[0]) && !pc[1].problems.some(p => /is not on the Subs list/.test(p)), 'an uploaded invoice with no sub set: “Pick the sub”, not “‘invoice-31337’ is not on the Subs list”', pc[1]);
-  ok(pc[2].notListed && pc[2].problems[0] === '“' + CANTOR + '” is not on the Subs list — no COI or W-9 on file.', 'a real name not on the Subs list still says so (Cantor Property Services)', pc[2]);
+  ok(pc[2].notListed && pc[2].problems[0] === '“' + PAYEE + '” is not on the Subs list — no COI or W-9 on file.', 'a name on no list still says so', pc[2]);
   const so = await A.ev(() => window._gcSubOfInvoice('INV0cn960fkw35'));
   ok(so.subId === 'SUBfk2webh' && so.file === 'invoice-22902.pdf', 'the file name is known as the file, the sub by its id', so);
 
-  section('the cards at the top of ⚙ Admin');
+  section('the cards at the top of ⚙ Admin (checked against what the page says fails)');
   let all = await cards(A);
-  console.log('    cards: ' + all.map(x => x.id).join(', '));
+  const F = await fails(A);
+  console.log('    cards: ' + all.map(x => x.id).join(', ') + ' · failing: ' + F.map(x => (x.noSub ? '(no sub)' : x.sub) + (x.notListed ? ' [not listed]' : '')).join(' | ').slice(0, 400));
+  ok(F.some(x => x.id === 'INVADMDNOSUB1') && F.some(x => x.id === 'INVADMDPAYEE'), 'the two test invoices are among the failing ones', F.map(x => x.id));
+  ok(!F.some(x => x.notListed && /^invoice[-_ ]?\d+$/i.test(x.sub)), 'no failing invoice uses a file name as its sub', F.filter(x => x.notListed).map(x => x.sub));
   const sp = all.find(x => x.id === 'sub-pay-check');
-  ok(sp && /Sub not picked/.test(sp.text) && /Pick the sub/.test(sp.text) && /Cantor Property Services/.test(sp.text) && !/invoice-(22902|31337)[^.]*is not on the Subs list/.test(sp.text), 'the pay check card: “Sub not picked … Pick the sub” for the one with no sub, Cantor by name — no “invoice-… is not on the Subs list”', sp && sp.text.slice(0, 400));
-  ok(sp && sp.btns.some(b => /^Pick the sub$/.test(b)) && sp.btns.some(b => /^＋ Add “Cantor Property Services/.test(b)) && sp.btns.some(b => /^Mark “Cantor Property Services.*as supplier$/.test(b)), 'its buttons: Pick the sub · ＋ Add “Cantor…” to Subs list · Mark “Cantor…” as supplier', sp && sp.btns);
-  ok(sp && sp.btns.includes('🔕 7 days') && sp.btns.includes('✕'), 'every card has 🔕 7 days and ✕', sp && sp.btns);
+  const first4 = F.slice(0, 4), unl = []; F.forEach(x => { if (x.notListed && x.sub && unl.indexOf(x.sub) < 0) unl.push(x.sub); });
+  ok(sp && new RegExp('^⛔' + F.length + ' sub invoices? fail the pay check').test(sp.text), 'the pay check card counts them (' + F.length + ')', sp && sp.text.slice(0, 60));
+  ok(sp && first4.every(x => x.noSub ? /Sub not picked/.test(sp.text) : sp.text.indexOf(x.sub) >= 0) && !/invoice-\d+” is not on the Subs list/.test(sp.text), 'it lists the first four by the sub’s name (“Sub not picked” when there is none) — never “invoice-… is not on the Subs list”', sp && sp.text.slice(0, 400));
+  const wantBtns = [F.some(x => x.noSub) ? 'Pick the sub' : 'Open approvals'].concat(...unl.slice(0, 2).map(n => ['＋ Add “' + short(n) + '” to Subs list', 'Mark “' + short(n) + '” as supplier']), ['🔕 7 days', '✕']);
+  ok(sp && JSON.stringify(sp.btns) === JSON.stringify(wantBtns), 'its buttons: ' + wantBtns.join(' · '), sp && sp.btns);
   const dupC = all.find(x => x.id === 'dup-email' && /both use \S+@/.test(x.text));
   ok(dupC && all.some(x => x.id === 'name-spaces' && /Steven Biffle/.test(x.text)), 'the two-people-one-e-mail and extra-spaces cards are there (real data)', dupC && dupC.text.slice(0, 120));
 
@@ -175,7 +199,7 @@ try {
   section('✕ stays dismissed: reload, second computer');
   ok(await clickIn(A, 'name-spaces', '✕') && await clickIn(A, 'dup-email', '✕'), '✕ on “Steven Biffle has extra spaces” and on “… both use …@”');
   await H.sleep(300);
-  ok(await clickIn(A, 'sub-pay-check', '✕'), '✕ on “N sub invoices fail the pay check”');
+  ok(await clickIn(A, 'sub-pay-check', '✕'), '✕ on “' + F.length + ' sub invoices fail the pay check”');
   await H.sleep(800);
   all = await cards(A);
   ok(!all.some(x => ['name-spaces', 'dup-email', 'sub-pay-check'].includes(x.id)), 'gone at once (the three cards)', all.map(x => x.id));
@@ -183,38 +207,47 @@ try {
   ok(/🔕 3 hidden cards/.test(foot), 'under the cards: “🔕 3 hidden cards”', foot);
   ok(await waitCloud(cc => ['name-spaces:', 'dup-email:', 'sub-pay-check:subpay'].every(k => Object.keys(cc).some(x => x.indexOf(k) === 0))), 'saved in the cloud for this person (gc_kv ' + KEY + ')', Object.keys(cloudCards()));
   const rec = cloudCards()['sub-pay-check:subpay'];
-  ok(rec && Array.isArray(rec.h) && rec.h.length >= 3 && rec.by === EMAIL && !rec.until, 'the record: the card’s content (one hash per failing invoice), who, no end date', rec);
+  ok(rec && Array.isArray(rec.h) && rec.h.length >= F.length && rec.by === EMAIL && !rec.until, 'the record: one hash per failing invoice (' + F.length + '), who, no end date', rec);
+  all = await settledCards(A);
+  ok(!all.some(x => ['name-spaces', 'dup-email', 'sub-pay-check'].includes(x.id)), 'a minute later: still gone', all.map(x => x.id));
   await A.page().reload(); await H.sleep(3000);
   if (await A.page().locator('#gc-auth-email').count() && await A.page().locator('#gc-auth-email').isVisible()) await H.signIn(A, EMAIL, 9000);
-  await ready(A); await H.sleep(2500); await A.ev(() => window._gcAdmPaintTop());
-  all = await cards(A);
-  ok(!all.some(x => ['name-spaces', 'dup-email', 'sub-pay-check'].includes(x.id)), 'after a reload: still gone', all.map(x => x.id));
+  await ready(A); all = await settledCards(A);
+  ok(!all.some(x => ['name-spaces', 'dup-email', 'sub-pay-check'].includes(x.id)), 'after a reload (lists settled, + a minute): still gone', all.map(x => x.id));
 
   B = await device('B');
-  await H.signIn(B, EMAIL, 9000); await ready(B); await H.sleep(2500); await B.ev(() => window._gcAdmPaintTop());
-  all = await cards(B);
-  const bLocal = await B.ev(() => { try { return localStorage.getItem('gc_adm_dismiss_local') ? 'had' : 'none'; } catch (e) { return 'err'; } });
-  ok(!all.some(x => ['name-spaces', 'dup-email', 'sub-pay-check'].includes(x.id)), 'on a second computer (nothing on it before; from the cloud): still gone', { cards: all.map(x => x.id), local: bLocal });
+  await H.signIn(B, EMAIL, 9000); await ready(B);
+  const bLocal = await B.ev(() => { try { return JSON.parse(localStorage.getItem('gc_adm_dismiss_local') || '{}'); } catch (e) { return 'err'; } });
+  const FB = await fails(B);
+  all = await settledCards(B);
+  ok(!all.some(x => ['name-spaces', 'dup-email', 'sub-pay-check'].includes(x.id)), 'on a second computer (from the cloud; lists settled, + a minute): still gone',
+    { cards: all.map(x => x.id), failingA: F.map(x => x.id), failingB: FB.map(x => x.id), localB: Object.keys(bLocal || {}) });
 
   section('it comes back only on new content');
   const fewer = await B.ev(() => { const q = JSON.parse(localStorage.getItem('gc_sub_approvals')); localStorage.setItem('gc_sub_approvals', JSON.stringify(q.filter(a => a.invId !== 'INVADMDNOSUB1'))); window._gcAdmPaintTop(); const hid = !document.querySelector('#gc-adm-warns [data-adm-warn="sub-pay-check"]'); localStorage.setItem('gc_sub_approvals', JSON.stringify(q)); window._gcAdmPaintTop(); return hid; });
   ok(fewer, 'one failing invoice fewer: the pay check card stays hidden');
   const pair = await B.ev(() => { const C = window._crm, keep = C.users; C.users = keep.map(u => u.name === 'Nick Thomas' ? Object.assign({}, u, { email: 'sbiffle@grayco-cs.com' }) : u); window._gcAdmPaintTop();
     const t = [...document.querySelectorAll('#gc-adm-warns [data-adm-warn="dup-email"]')].map(x => x.querySelector('b.h').textContent); C.users = keep; window._gcAdmPaintTop(); return t; });
-  ok(pair.length === 1 && /both use sbiffle@grayco-cs.com/.test(pair[0]), 'a different pair on one e-mail shows (the dismissed Brittany / Office one stays hidden)', pair);
-  const back = await B.ev(() => { const C = window._crm; const iv = { id: 'INVADMDNEW1', type: 'sub', pid: C.invoices.find(x => x.id === 'INV0cn960fkw35').pid, sub: 'Brand New Sub Co', amt: 777, status: 'received' };
-    C.invoices = C.invoices.concat([iv]); const q = JSON.parse(localStorage.getItem('gc_sub_approvals')); q.push({ id: 'invId:INVADMDNEW1', invId: 'INVADMDNEW1', sub: 'Brand New Sub Co', amt: 777, pid: iv.pid, status: 'pending_pm' }); localStorage.setItem('gc_sub_approvals', JSON.stringify(q));
+  ok(pair.length === 1 && /both use sbiffle@grayco-cs.com/.test(pair[0]), 'a different pair on one e-mail shows (the dismissed pair stays hidden)', pair);
+  const addNew = () => B.ev(() => { const C = window._crm; if (!C.invoices.some(x => x.id === 'INVADMDNEW1')) C.invoices = C.invoices.concat([{ id: 'INVADMDNEW1', type: 'sub', pid: C.invoices.find(x => x.id === 'INV0cn960fkw35').pid, sub: 'Brand New Sub Co', amt: 777, status: 'received' }]);
+    const q = JSON.parse(localStorage.getItem('gc_sub_approvals')); if (!q.some(a => a.invId === 'INVADMDNEW1')) { q.unshift({ id: 'invId:INVADMDNEW1', invId: 'INVADMDNEW1', sub: 'Brand New Sub Co', amt: 777, pid: C.invoices.find(x => x.id === 'INV0cn960fkw35').pid, status: 'pending_pm' }); localStorage.setItem('gc_sub_approvals', JSON.stringify(q)); }
     window._gcAdmPaintTop(); const el = document.querySelector('#gc-adm-warns [data-adm-warn="sub-pay-check"]'); return el ? el.textContent : null; });
-  ok(back && /Brand New Sub Co/.test(back), 'a NEW failing invoice: the pay check card is back', back && back.slice(0, 200));
+  const soon = await addNew();
+  ok(!soon, 'a NEW failing invoice that just showed up: not yet (it has to stay 45 s)');
+  let back = null; for (let i = 0; i < 14 && !back; i++) { await H.sleep(5000); back = await addNew(); }
+  ok(back && /Brand New Sub Co/.test(back), 'it stayed: the pay check card is back', back && back.slice(0, 200));
   all = await cards(B);
-  ok(!all.some(x => x.id === 'name-spaces' || x.id === 'dup-email'), 'the others stay hidden');
+  ok(!all.some(x => x.id === 'name-spaces' || (x.id === 'dup-email' && !/sbiffle/.test(x.text))), 'the others stay hidden');
 
-  section('＋ Add to Subs list / Mark as supplier (Cantor Property Services)');
+  section('＋ Add to Subs list / Mark as supplier');
   B.acceptConfirm = true;
-  ok(await clickIn(B, 'sub-pay-check', 'Mark “Cantor'), 'Mark “Cantor…” as supplier (confirm: OK)');
-  const sup = await H.waitFor(B, () => { const r = window._gcSubPayCheck('INVADMDCANTOR'); return r.ok && r.supplier ? r : null; }, null, 15000, 500);
+  const lbl = 'Mark “' + short(PAYEE) + '” as supplier';
+  const viaBtn = await clickIn(B, 'sub-pay-check', lbl);
+  if (!viaBtn) await B.ev(n => window._gcAddPayee(n, true), PAYEE);   /* two other names on the real list come first */
+  ok(true, (viaBtn ? 'clicked ' : 'called window._gcAddPayee for ') + lbl + ' (confirm: OK)');
+  const sup = await H.waitFor(B, () => { const r = window._gcSubPayCheck('INVADMDPAYEE'); return r.ok && r.supplier ? r : null; }, null, 15000, 500);
   ok(sup && sup.ok && sup.supplier, 'its invoice now passes as a supplier’s (SUPPLIERPAY rule)', sup);
-  ok(B.dialogs.some(d => /^confirm: Mark “Cantor Property Services/.test(d)), 'only after a confirm', B.dialogs.slice(-2));
+  ok(B.dialogs.some(d => d.indexOf('confirm: Mark “' + PAYEE) === 0), 'only after a confirm', B.dialogs.slice(-2));
 
   section('🔕 Hide for 7 days');
   await B.ev(() => window._gcAdmPaintTop()); await H.sleep(300);
@@ -222,11 +255,13 @@ try {
   await H.sleep(500);
   ok(!(await card(B, 'sub-pay-check')), 'hidden');
   ok(await waitCloud(cc => cc['sub-pay-check:subpay'] && cc['sub-pay-check:subpay'].until && Date.parse(cc['sub-pay-check:subpay'].until) - Date.now() > 6.9 * 864e5), 'saved with an end date 7 days out', cloudCards()['sub-pay-check:subpay']);
+  const snz = cloudCards()['sub-pay-check:subpay'];
+  ok(snz && rec && rec.h.every(x => snz.h.indexOf(x) >= 0), 'and it keeps what was dismissed on the first computer (the content only grows)');
   const t3 = await B.ev(() => { const n0 = Date.now; Date.now = () => n0() + 3 * 864e5; try { window._gcAdmPaintTop(); return !!document.querySelector('#gc-adm-warns [data-adm-warn="sub-pay-check"]'); } finally { Date.now = n0; } });
   const t8 = await B.ev(() => { const n0 = Date.now; Date.now = () => n0() + 8 * 864e5; try { window._gcAdmPaintTop(); return !!document.querySelector('#gc-adm-warns [data-adm-warn="sub-pay-check"]'); } finally { Date.now = n0; window._gcAdmPaintTop(); } });
   ok(!t3 && t8, 'still hidden 3 days later; back after 7 days', { day3: t3, day8: t8 });
-  const name7 = await A.ev(async () => { await window._gcAdmDismiss.pull(); window._gcAdmPaintTop(); return !document.querySelector('#gc-adm-warns [data-adm-warn="sub-pay-check"]'); });
-  ok(name7, 'the first computer picks the 7-day hide up from the cloud');
+  const a7 = await A.ev(async () => { await window._gcAdmDismiss.pull(); window._gcAdmPaintTop(); const st = window._gcAdmDismiss.state().cards['sub-pay-check:subpay']; return { hidden: !document.querySelector('#gc-adm-warns [data-adm-warn="sub-pay-check"]'), until: st && st.until }; });
+  ok(a7.hidden && a7.until, 'the first computer picks the 7-day hide up from the cloud', a7);
 
   section('Show again');
   const sh = await A.ev(async () => { document.querySelector('#gc-adm-top [data-adm-showhid]').click(); await new Promise(f => setTimeout(f, 200));
