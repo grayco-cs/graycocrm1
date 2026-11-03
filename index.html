@@ -5291,7 +5291,7 @@ window.__GC_LIVE=function(key, v){
   return v;
 };
 </script>
-<!-- GrayCo CRM Build: 33.163-2026-11-03-r17q13 -->
+<!-- GrayCo CRM Build: 33.163-2026-11-03-r17q14 -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6239,7 +6239,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.163-2026-11-03-r17q13");
+  console.log("[GC] Build 33.163-2026-11-03-r17q14");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6287,7 +6287,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.163-2026-11-03-r17q13"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.163-2026-11-03-r17q14"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -211722,7 +211722,8 @@ function compute(opt){
   allRuns.forEach(function(r){ var pd=s(r.payDate).slice(0,10);
     if(!isLive(r) && pd>=qi.from && pd<=qi.to && ['deleted','void','voided','denied'].indexOf(s(r.status))<0) warn.push('A payroll run paid '+pd+' is “'+s(r.status||'draft')+'” — it is NOT counted. Approve or delete it first.');
     if(isLive(r) && !s(r.payDate)) warn.push('An approved payroll run ('+s(r.id)+') has no pay date — it cannot be placed in a quarter.'); });
-  qi.months.forEach(function(m,i){ if(!month[m].checks) warn.push('No approved payroll was paid in '+MONTHS[+m.slice(5,7)-1]+' '+m.slice(0,4)+' (month '+(i+1)+'). If people were paid that month, that payroll is missing from the CRM.'); });
+  var _np=(Array.isArray(set.f941NoPayMonths)?set.f941NoPayMonths:[]), nopayAsk=[];   /* patch F941ACK */
+  qi.months.forEach(function(m,i){ if(!month[m].checks && _np.indexOf(m)>=0){ info.push('No payroll in '+MONTHS[+m.slice(5,7)-1]+' '+m.slice(0,4)+' — marked “nobody was paid that month”.'); return; } if(!month[m].checks) nopayAsk.push(m); if(!month[m].checks) warn.push('No approved payroll was paid in '+MONTHS[+m.slice(5,7)-1]+' '+m.slice(0,4)+' (month '+(i+1)+'). If people were paid that month, that payroll is missing from the CRM.'); });
 
   // L1 — the pay period that includes the 12th of the 3rd month
   var l1set={}, l1runs=[];
@@ -211766,8 +211767,10 @@ function compute(opt){
   deps.sort(function(a,b){ return a.date<b.date?-1:1; });
   L.L13=r2(deps.filter(function(d){return d.counted;}).reduce(function(a,d){return a+d.amount;},0));
   L.L14=r2(Math.max(0, L.L12-L.L13)); L.L15=r2(Math.max(0, L.L13-L.L12));
-  if(!deps.some(function(d){return d.counted;}) && L.L12>0) warn.push('No Form 941 deposits are recorded for this quarter (Payroll → Withholding & Taxes → record a payment, type “Federal 941 deposit”). Line 13 shows $0 — check EFTPS for what was actually paid.');
-  if(Math.abs(L.L13-L.L12)>=0.01) warn.push('Line 13 (deposits '+money(L.L13)+') does not equal line 12 (tax '+money(L.L12)+') — '+(L.L12>L.L13?('balance due '+money(L.L14)):('overpayment '+money(L.L15)))+'. Check EFTPS: a deposit may be missing from the CRM, or a deposit may be short.');
+  var _pl=!!(set.f941PayLater && set.f941PayLater[qi.year+'-Q'+qi.q]) && !deps.some(function(d){return d.counted;});   /* patch F941ACK */
+  if(_pl) info.push('No deposits were made this quarter — the balance due '+money(L.L14)+' (line 14) is being paid now. Pay it on EFTPS (or a same-day wire / an IRS-approved card processor), then record it: Payroll → Withholding & Taxes → record a payment, type “Federal 941 deposit”.');
+  if(!_pl && !deps.some(function(d){return d.counted;}) && L.L12>0) warn.push('No Form 941 deposits are recorded for this quarter (Payroll → Withholding & Taxes → record a payment, type “Federal 941 deposit”). Line 13 shows $0 — check EFTPS for what was actually paid.');
+  if(!_pl && Math.abs(L.L13-L.L12)>=0.01) warn.push('Line 13 (deposits '+money(L.L13)+') does not equal line 12 (tax '+money(L.L12)+') — '+(L.L12>L.L13?('balance due '+money(L.L14)):('overpayment '+money(L.L15)))+'. Check EFTPS: a deposit may be missing from the CRM, or a deposit may be short.');
 
   // Part 2 — monthly liability by pay date; month 3 takes the rounding so the total equals line 12
   var mRaw=qi.months.map(function(m){ var o=month[m];
@@ -211817,7 +211820,7 @@ function compute(opt){
       ssForm: r2(L.L5a1*0.062), medForm: r2(r2(L.L5c1*0.0145)+L.L5d2), ssDiff: r2(regTot.ss-r2(L.L5a1*0.062)), medDiff: r2(regTot.med-r2(r2(L.L5c1*0.0145)+L.L5d2)) } };
   return { register:register, quarter:qi, lines:L, emps:emps, runs:usedRuns, l1Runs:l1runs, excluded:excluded, deposits:deps, part2:p2,
     eeActual:eeActual, eeOnForm:eeOnForm, months:qi.months.map(function(m){ var o=month[m]; return { month:m, checks:o.checks, fed:r2(o.fed), ssW:r2(o.ssW), medW:r2(o.medW) }; }),
-    futa:futa, suta:suta, erPaysEE:r2(T.erPaysEE), warnings:warn, info:info, ssBase:ssBase, checks:T.checks };
+    futa:futa, suta:suta, erPaysEE:r2(T.erPaysEE), warnings:warn, info:info, ssBase:ssBase, checks:T.checks, nopayAsk:nopayAsk, payLaterAsk:(!_pl && !deps.some(function(d){return d.counted;}) && L.L12>0) };
 }
 
 /* the "Copy all numbers" text and the CSV, both from the same rows */
@@ -211929,6 +211932,9 @@ async function render(body){
   if(!UI.sel) UI.sel=lastEndedQuarter(todayStr());
   body.innerHTML='<div style="'+CARD+'">Loading payroll…</div>';
   var d=await load(), R;
+  /* patch F941ACK: retire old unpaid drafts of people who have paid checks (copy kept), then reload */
+  try{ if(W._gcPayReplace){ var _em={}; (d.runs||[]).forEach(function(r){ if(r && ['paid','approved'].indexOf(s(r.status))>=0) (r.lines||[]).forEach(function(L){ var k=String(L.empId||L.name||''); if(k) _em[k]={ empId:k, name:L.name }; }); });
+    var _rp=await W._gcPayReplace(Object.keys(_em).map(function(k){ return _em[k]; })); if(_rp && _rp.changed) d=await load(); } }catch(_rpE){}
   try{ R=compute({ runs:d.runs, payments:d.pays, settings:d.set, year:UI.sel.year, q:UI.sel.q, depositSel:UI.dep }); }
   catch(e){ body.innerHTML='<div style="'+RED+'">The Form 941 worksheet could not be worked out: '+esc(e && e.message)+'</div>'; return; }
   UI.last=R; var L=R.lines, q=R.quarter, m=money;
@@ -211954,6 +211960,9 @@ async function render(body){
       + (W._gcPastPayOpen?'<button data-f941-past style="'+BTN+'">📥 Enter past payroll</button>':'')
       + '<button data-f941-pdf style="'+BTN+'">📄 Filled Form 941 (PDF)</button><button data-f941-copy style="'+BTN+'">📋 Copy all numbers</button><button data-f941-csv style="'+BTN+'">⬇ Download CSV</button></div></div>'
     + R.warnings.map(function(w){ return '<div data-f941-warn="1" style="'+RED+'">⚠ '+esc(w)+'</div>'; }).join('')
+    + ((R.nopayAsk&&R.nopayAsk.length)||R.payLaterAsk ? ('<div style="display:flex;gap:8px;flex-wrap:wrap;margin:-2px 0 10px">'   /* patch F941ACK */
+      + (R.nopayAsk||[]).map(function(mk){ return '<button data-f941-nopay="'+esc(mk)+'" style="'+BTN+'">✓ Nobody was paid in '+esc(MONTHS[+mk.slice(5,7)-1])+'</button>'; }).join('')
+      + (R.payLaterAsk?'<button data-f941-paylater="1" style="'+BTN+'">✓ No deposits were made — we’re paying the balance now</button>':'')+'</div>') : '')
     + R.info.map(function(w){ return '<div style="background:#eff6ff;border:1px solid #93c5fd;color:#1e3a8a;border-radius:8px;padding:8px 12px;margin:0 0 8px;font-size:12px">ℹ '+esc(w)+'</div>'; }).join('')
     + '<div style="'+CARD+'"><div style="font-weight:800;margin-bottom:6px">Part 1</div><table style="width:100%;border-collapse:collapse">'
       + lineRow('1',LINES.L1,String(L.L1),'Distinct W-2 employees on approved runs whose pay period includes '+esc(q.day12)+(R.l1Runs.length?(' (run '+esc(R.l1Runs.join(', '))+')'):''))
@@ -212000,6 +212009,10 @@ async function render(body){
   var qs=body.querySelector('[data-f941-q]'); if(qs) qs.onchange=function(){ var v=qs.value.split('-'); UI.sel={year:+v[0],q:+v[1]}; UI.dep={}; render(body); };
   Array.prototype.forEach.call(body.querySelectorAll('[data-f941-dep]'),function(c){ c.onchange=function(){ UI.dep[c.getAttribute('data-f941-dep')]=c.checked; render(body); }; });
   var ppb=body.querySelector('[data-f941-past]'); if(ppb) ppb.onclick=function(){ W._gcPastPayOpen(); };
+  /* patch F941ACK: the two acknowledgements, saved in payroll settings */
+  async function _ack(fn){ try{ var p=P(), st=(await p.settings())||{}; fn(st); await p.saveSettings(st); }catch(e){ alert('Could not save: '+(e&&e.message)); return; } render(body); }
+  Array.prototype.forEach.call(body.querySelectorAll('[data-f941-nopay]'), function(b){ b.onclick=function(){ var mk=b.getAttribute('data-f941-nopay'); if(!confirm('Nobody at all was paid wages in '+MONTHS[+mk.slice(5,7)-1]+' '+mk.slice(0,4)+'?')) return; _ack(function(st){ var a=Array.isArray(st.f941NoPayMonths)?st.f941NoPayMonths:[]; if(a.indexOf(mk)<0) a.push(mk); st.f941NoPayMonths=a; }); }; });
+  var plb=body.querySelector('[data-f941-paylater]'); if(plb) plb.onclick=function(){ if(!confirm('No 941 deposits were made for Q'+UI.sel.q+' '+UI.sel.year+', and you are paying the balance now?')) return; _ack(function(st){ st.f941PayLater=Object.assign({}, st.f941PayLater||{}); st.f941PayLater[UI.sel.year+'-Q'+UI.sel.q]=new Date().toISOString(); }); };
   var pb=body.querySelector('[data-f941-pdf]'); if(pb) pb.onclick=function(){ downloadPdf(R, d.set, pb); };
   var cb=body.querySelector('[data-f941-copy]'); if(cb) cb.onclick=function(){ var t=copyText(R);
     var done=function(){ cb.textContent='✓ Copied'; setTimeout(function(){ cb.textContent='📋 Copy all numbers'; },1800); };
