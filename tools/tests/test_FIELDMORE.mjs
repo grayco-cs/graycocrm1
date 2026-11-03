@@ -47,13 +47,14 @@ const readMore = c => c.ev(() => {
 /* tap one button; evidence it opened something; then put the Field home back */
 async function tryTap(c, sel, home){
   const before = await c.ev(() => { window.__fmViews.length = 0; const t = document.getElementById('gc-ra-toast'); if (t) { t.textContent = ''; t.style.display = 'none'; } return [...document.body.children].map(e => e); }).catch(() => null);
-  await c.ev(() => { window.__fmBody = new Set([...document.body.children]); });
+  await c.ev(() => { const vis = e => { const s = getComputedStyle(e); return s.display !== 'none' && s.visibility !== 'hidden'; }; window.__fmBody = new Set([...document.body.children]); window.__fmVis = new Set([...document.body.children].filter(vis)); window.__fmLV = localStorage.getItem('grayco_view'); });
   await c.page().locator(sel).first().scrollIntoViewIfNeeded({ timeout: 3000 }).catch(() => {}); await sleep(250);
   const bb = await c.page().locator(sel).first().boundingBox().catch(() => null);
   if (bb) await c.page().touchscreen.tap(bb.x + bb.width / 2, bb.y + bb.height / 2); else await c.page().locator(sel).first().evaluate(e => e.click());
   await sleep(1300);
   const r = await c.ev(() => {
-    const added = [...document.body.children].filter(e => !window.__fmBody.has(e) && e.id !== 'gc-ra-toast' && getComputedStyle(e).display !== 'none' && e.tagName !== 'SCRIPT' && e.tagName !== 'STYLE');
+    const added = [...document.body.children].filter(e => !window.__fmVis.has(e) && e.id !== 'gc-ra-toast' && !/toast/i.test(e.id + ' ' + e.className) && getComputedStyle(e).display !== 'none' && getComputedStyle(e).visibility !== 'hidden' && e.tagName !== 'SCRIPT' && e.tagName !== 'STYLE' && !/^_ac-list$/.test(e.className));
+    if (localStorage.getItem('grayco_view') !== window.__fmLV) window.__fmViews.push('ls:' + localStorage.getItem('grayco_view'));
     const toast = [document.getElementById('gc-ra-toast'), document.getElementById('gcfp-toast'), document.querySelector('.gc-fh-toast,#gc-fh-toast')].filter(Boolean).filter(t => t.style.display !== 'none').map(t => t.textContent).join(' | ');
     const ph = !!(window._gcPhotos && window._gcPhotos.state && window._gcPhotos.state.open);
     return { added: added.map(e => e.id || e.className || e.tagName).slice(0, 4), views: window.__fmViews.slice(), toast, photos: ph, moreGone: !document.querySelector('.gc-fh-sheet[data-ra-more]') };
@@ -62,6 +63,7 @@ async function tryTap(c, sel, home){
   await c.ev(() => {
     try { if (window._gcPhotos && window._gcPhotos.state && window._gcPhotos.state.open) window._gcPhotos.close(); } catch (e) {}
     try { if (window._gcClaims && window._gcClaims.close) window._gcClaims.close(); } catch (e) {}
+    try { if (window.gcAddCO && window.gcAddCO.close) window.gcAddCO.close(); } catch (e) {}
     [...document.body.children].forEach(e => { if (!window.__fmBody.has(e) && !/^(gc-ra-toast|_gcJobPick|gc-fh-tabs)$/.test(e.id) && e.tagName !== 'SCRIPT' && e.tagName !== 'STYLE' && !e.hasAttribute('data-gc-keep-test')) { if (getComputedStyle(e).position === 'fixed') e.remove(); } });
     document.querySelectorAll('.gc-ra-sheet,.gc-fh-sheet,._gcSheetOv,.gcfp-sheet,#_gcTD2Ov').forEach(o => o.remove());
   });
@@ -121,7 +123,8 @@ async function account(email, who){
     ok(e.top0.every((k, i) => g.top[i] === k || (who === 'PM' && !g.all.includes(k))), `${who} ${pid}: the type's tiles on top (${e.top0.join(', ')} …)`, g.top);
     ok(g.more && g.hiddenOk, `${who} ${pid}: "➕ More for this job" holds the rest, closed until tapped`, g);
     ok(!e.hidden.some(k => g.all.includes(k)), `${who} ${pid}: never-applies tiles are not offered (${e.hidden.join(', ')})`, g.all);
-    ok(['progress', 'info', 'update', 'photo', 'docs', 'create', 'invoice', 'jobfin'].every(k => g.all.includes(k)), `${who} ${pid}: every existing tile is still there (top or More for this job)`, g.all);
+    ok(['progress', 'info', 'update', 'photo', 'docs', 'create', 'invoice', 'money'].every(k => g.all.includes(k)), `${who} ${pid}: every existing tile is still there (top or More for this job)`, g.all);
+    ok(!g.all.includes('jobfin') && g.all.filter(k => k === 'money').length === 1, `${who} ${pid}: one money tile (FIELDTAP2: Job Financials folded into Financials, Invoices & COs)`, g.all);
     await c.page().screenshot({ path: SHOTS + `fieldmore_${who.toLowerCase()}_${pid}_job.png` });
     await c.page().locator('#_gcJobDash [data-fm-more]').first().evaluate(b => b.click()); await sleep(500);
     const open = await c.ev(() => [...document.querySelectorAll('#_gcJobDash .gcfp-grid > .gcfm-ov')].every(x => getComputedStyle(x).display !== 'none'));
