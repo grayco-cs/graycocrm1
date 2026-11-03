@@ -206312,7 +206312,9 @@ function hostLive(){
 var P = { key: '', info: null, kind: '', yt: null, sp: null, frame: null, ready: false, playing: false, state: -1, made: 0, err: '', want: false,
   autoPaused: false, lastPlay: 0, tries: 0, gaveUp: false, errs: 0, live: false, fallback: false, spStarted: false, spPos: 0, spDur: 0, spSeek: 0 };
 var GEST = false;   /* a person has touched this page since it loaded */
-function activated(){ if (GEST) return true; try { return !!(navigator.userActivation && navigator.userActivation.hasBeenActive); } catch (e) { return false; } }
+/* our own flag, not navigator.userActivation: after every load the TV asks for its one tap (some browsers report an
+   activation the page never had, then keep the sound off) */
+function activated(){ return GEST; }
 var BOX = null;
 function box(){
   if (BOX && BOX.isConnected) return BOX;

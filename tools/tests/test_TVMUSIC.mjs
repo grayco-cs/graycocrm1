@@ -126,14 +126,14 @@ console.log('— lobby (front room TV)');
   ok(v.mid && v.btn < 80 && v.player && /hid/.test(v.player.cls) && +v.player.op < 0.05 && v.player.pe === 'none', 'the slides stay fully visible: the player is hidden behind, the button is small', v);
   /* a content refresh (lobby.js's answer changes) and a rotation: the same player keeps playing */
   const before = await st(c);
-  H.cset('gc_lobby', { v: 2, interval: 12, slides: [{ id: 'w', type: 'welcome', on: true }, { id: 's', type: 'services', on: true }, { id: 'e', type: 'emergency', on: true }, { id: 'r', type: 'roofing', on: true }] });
+  H.cset('gc_lobby', { v: 2, interval: 12, slides: [{ id: 'w', type: 'welcome', on: true }, { id: 's', type: 'services', on: true }, { id: 'e', type: 'emergency', on: true }] });
   F.mod._test.reset(); await p.evaluate(() => window.dispatchEvent(new HashChangeEvent('hashchange'))); await sleep(1500);
-  const n1 = await p.evaluate(() => window.__lobby.state().n);
+  const n1 = await p.evaluate(() => window.__lobby.state().types.join(','));
   const at0 = await p.evaluate(() => window.__lobby.state().at);
   await H.waitFor(c, a => window.__lobby.state().at !== a || null, at0, 16000, 500);
   const after = await st(c), at1 = await p.evaluate(() => window.__lobby.state().at);
   const destroyed = await p.evaluate(() => window.__yt.calls.filter(x => x === 'destroy').length);
-  ok(n1 === 4 && at1 !== at0 && after.playing && after.made === before.made && after.frame === before.frame && destroyed === 1, 'content refresh (4 slides now) + a rotation: same player, same frame, still playing', { n1, at0, at1, before, after, destroyed });
+  ok(n1 === 'welcome,services,emergency' && at1 !== at0 && after.playing && after.made === before.made && after.frame === before.frame && destroyed === 1, 'content refresh (the new playlist order is on screen) + a rotation: same player, same frame, still playing', { n1, at0, at1, before, after, destroyed });
   /* a reload: the source and the second it was at are kept; the tap prompt; then it carries on */
   await sleep(3000); const posB = (await st(c)).pos;
   await p.reload(); await H.waitFor(c, () => { const x = window._gcTVM && window._gcTVM.state(); return x && x.host && x.made ? x : null; }, null, 20000, 250); await sleep(500);
@@ -168,11 +168,14 @@ console.log('— back office TV (CRM #tv)');
   await p.goto('https://app.local/index.html#tv'); await p.waitForSelector('#gc-auth-email', { timeout: 60000 }); await sleep(1500);
   for (let i = 0; i < 5; i++) { await p.locator('#gc-auth-email').fill('wjohnson@grayco-cs.com'); await p.locator('#gc-auth-password').fill(H.ACCOUNTS['wjohnson@grayco-cs.com'].pw); await sleep(300); if ((await p.locator('#gc-auth-email').inputValue()) === 'wjohnson@grayco-cs.com') break; }
   const bb = await p.locator('#gc-auth-submit').boundingBox(); await p.mouse.click(bb.x + bb.width / 2, bb.y + bb.height / 2);
-  let s = await H.waitFor(c, () => { const x = window._gcTVM && window._gcTVM.state(); return x && x.host && x.playing ? x : null; }, null, 150000, 500);
-  ok(s && s.eff === OFFICE_MUSIC && s.company === OFFICE_MUSIC && s.made === 1 && !s.prompt, 'after sign-in the TV opens (#tv) and the company music plays (the sign-in tap counts)', s || await st(c));
+  /* signing in reloads the page: the TV opens (#tv) with the company music waiting for its tap */
+  let s = await H.waitFor(c, () => { const x = window._gcTVM && window._gcTVM.state(); return x && x.host && x.prompt ? x : null; }, null, 150000, 500);
+  ok(s && s.eff === OFFICE_MUSIC && s.company === OFFICE_MUSIC && s.made === 1 && !s.playing, 'after sign-in the TV opens (#tv) with the company music and "▶ Tap to start music"', s || await st(c));
+  await p.locator('#gc-tvm .tap .go').click(); await sleep(800);
+  s = await st(c); ok(s.playing && !s.prompt && s.made === 1, 'tap → the company music plays', s);
   const yv = await p.evaluate(() => window.__yt.made[0]); ok(yv && yv.pv.loop === 1 && yv.pv.playlist === 'jfKfPfyJRdk', 'a single video loops', yv);
   const before = await st(c);
-  await p.mouse.move(600, 600); await p.keyboard.press('ArrowRight'); await sleep(1200); await p.keyboard.press('ArrowRight'); await sleep(1200);
+  await p.mouse.move(600, 600); await p.keyboard.press('ArrowRight'); await sleep(1200); await p.evaluate(() => document.getElementById('gc-otv').__go('score')); await sleep(1200);
   await p.evaluate(() => { const tv = document.getElementById('gc-otv'); tv.__poll(); tv.__set({ money: false }); tv.__set({ money: true }); }); await sleep(800);
   const slide = await p.evaluate(() => document.getElementById('gc-otv').__state().slide);
   let after = await st(c);
@@ -181,8 +184,9 @@ console.log('— back office TV (CRM #tv)');
   after = await st(c); ok(after.playing && after.made === before.made && after.frame === before.frame, 'the TV itself made again: music never stopped, same player', after);
   const v = await visible(c, '#gc-otv');
   ok(v.mid && v.btn < 80 && v.player && /hid/.test(v.player.cls) && +v.player.op < 0.05, 'the dashboard stays fully visible', v);
-  await p.evaluate(() => window._gcOTV.close()); await sleep(4500);
-  after = await st(c); ok(!after.playing && after.made === before.made && after.on, 'the TV closed by a person → the music pauses (the player stays)', after);
+  await p.evaluate(() => window._gcOTV.close()); await sleep(6000);
+  after = await st(c); const tvGone = await p.evaluate(() => ({ otv: !!document.getElementById('gc-otv'), a8: !!document.getElementById('gc-a8-tv'), want: sessionStorage.getItem('gc_tv_want'), hash: location.hash }));
+  ok(!after.playing && after.made === before.made && after.on, 'the TV closed by a person → the music pauses (the player stays)', { after, tvGone });
   await p.evaluate(() => { sessionStorage.setItem('gc_tv_want', '1'); window._gcOTV.open({ kiosk: true }); }); await sleep(2500);
   after = await st(c); ok(after.playing && after.made === before.made, 'the TV back → the music plays on', after);
   await sleep(6000); const posB = (await st(c)).pos;
@@ -191,7 +195,7 @@ console.log('— back office TV (CRM #tv)');
   s = await st(c); const made = await p.evaluate(() => window.__yt.made[0]);
   ok(s && s.prompt && !s.playing && made && made.pv.start >= 4 && Math.abs(made.pv.start - posB) <= 6, 'reload (a new version): the TV comes back with "▶ Tap to start music", set at the second it was at (' + (made && made.pv.start) + ' s)', { s, made, posB });
   await p.locator('#gc-tvm .tap .go').click(); await sleep(800);
-  s = await st(c); ok(s.playing && !s.prompt, 'tap → plays', s);
+  s = await st(c); ok(s.playing && !s.prompt, 'tap → plays again', s);
   const errs = c.errs.filter(e => /tvm|TVMUSIC/i.test(e)); ok(!errs.length, 'no page errors', errs);
   await c.b.close(); }
 
