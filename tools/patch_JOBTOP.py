@@ -149,6 +149,8 @@ t = rep(t, '"data-gcu-cam":"1",children:"📷 Camera"}),',
 #        on 1.5–4 s timers and grew the header after it was drawn: the strip moved down 50–110 px) ─────────────────
 t = rep(t, "  setInterval(showOnJob, 2000);", "  window._gcCCLinkPaint = showOnJob;   /* patch JOBTOP */\n  setInterval(showOnJob, 2000);")
 t = rep(t, "  setInterval(bar, 4000);", "  window._gcYearBarPaint = bar;   /* patch JOBTOP */\n  setInterval(bar, 4000);")
+t = rep(t, "  setInterval(addBtn, 2000);\n  console.log('[GC] Word doc estimate export ready.');",
+        "  window._gcWordDocPaint = addBtn;   /* patch JOBTOP: the header's 📝 Word Doc (it came ~15 s late and widened the right column) */\n  setInterval(addBtn, 2000);\n  console.log('[GC] Word doc estimate export ready.');")
 t = rep(t, "window._gcAp3Scan = scan;", "window._gcAp3Scan = scan; window._gcAp3DeskJob = deskJob;   /* patch JOBTOP */")
 t = rep(t, "  setTimeout(inject, 700);\n  console.log('[GC] Job Messages button (light) ready.');",
         "  setTimeout(inject, 700);\n  window._gcJobMsgInject = inject;   /* patch JOBTOP */\n  console.log('[GC] Job Messages button (light) ready.');")
@@ -332,7 +334,7 @@ function dress(urgent){
   try { if (sessionStorage.getItem('grayco_openpid') !== id) sessionStorage.setItem('grayco_openpid', id); } catch (e) {}   /* what the app writes a moment later */
   if (D.querySelector('h1') !== H.h1) { MISS = now; return; }   /* the 📸 row goes under the page's first h1: only when that is this job's */
   DRESSED = id; DNAME = name; DH = H.h1; DRESS_AT = now;
-  ['_gcYearBarPaint', '_gcCCLinkPaint', '_gcAp3DeskJob', '_gcJobMsgInject', '_gcPhotosDeskBtn'].forEach(function(k){ try { if (typeof W[k] === 'function') W[k](); } catch (e) {} });
+  ['_gcYearBarPaint', '_gcWordDocPaint', '_gcCCLinkPaint', '_gcAp3DeskJob', '_gcJobMsgInject', '_gcPhotosDeskBtn'].forEach(function(k){ try { if (typeof W[k] === 'function') W[k](); } catch (e) {} });
 }
 /* ── desk: ROLEAPPS' Desk dock on a short screen (the owner's laptop at 125 %: about 1093 × 480) ──
    The floating dock (Home · Jobs · Approvals · Photos · More, ~87 px tall, centered at the bottom) covered the job

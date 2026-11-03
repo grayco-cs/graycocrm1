@@ -81804,6 +81804,7 @@ window._gcForceFixSchedule = async function(silent){
       gp.parentNode.insertBefore(b, gp.nextSibling);
     }catch(e){}
   }
+  window._gcWordDocPaint = addBtn;   /* patch JOBTOP: the header's 📝 Word Doc (it came ~15 s late and widened the right column) */
   setInterval(addBtn, 2000);
   console.log('[GC] Word doc estimate export ready.');
 })();
@@ -120440,7 +120441,7 @@ function dress(urgent){
   try { if (sessionStorage.getItem('grayco_openpid') !== id) sessionStorage.setItem('grayco_openpid', id); } catch (e) {}   /* what the app writes a moment later */
   if (D.querySelector('h1') !== H.h1) { MISS = now; return; }   /* the 📸 row goes under the page's first h1: only when that is this job's */
   DRESSED = id; DNAME = name; DH = H.h1; DRESS_AT = now;
-  ['_gcYearBarPaint', '_gcCCLinkPaint', '_gcAp3DeskJob', '_gcJobMsgInject', '_gcPhotosDeskBtn'].forEach(function(k){ try { if (typeof W[k] === 'function') W[k](); } catch (e) {} });
+  ['_gcYearBarPaint', '_gcWordDocPaint', '_gcCCLinkPaint', '_gcAp3DeskJob', '_gcJobMsgInject', '_gcPhotosDeskBtn'].forEach(function(k){ try { if (typeof W[k] === 'function') W[k](); } catch (e) {} });
 }
 /* ── desk: ROLEAPPS' Desk dock on a short screen (the owner's laptop at 125 %: about 1093 × 480) ──
    The floating dock (Home · Jobs · Approvals · Photos · More, ~87 px tall, centered at the bottom) covered the job
