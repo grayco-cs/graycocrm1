@@ -312,7 +312,7 @@ export function fromTemplate(id, catalog) {
     const b = builder(p, L1);
     const [n, e, s, w] = b.box(0, 0, 40, 56);
     const mid = b.wall(20.5, 0, 20.5, 14); mid.thickness = 1;           // 1' wall between conference and lobby
-    const back = b.wall(0, 14, 40, 14);                                  // back of conference / lobby
+    const back = b.wall(0, 14, 28, 14); b.wall(33, 14, 40, 14);          // back of conference / lobby; open 5' from the lobby into the right hall
     const c2 = b.wall(12, 14, 12, 56);                                   // offices 2 / 3 | center hall, office 4
     b.wall(0, 34, 12, 34);                                               // office 2 | office 3
     const o1w = b.wall(16, 14, 16, 34);                                  // center hall | office 1
@@ -322,7 +322,6 @@ export function fromTemplate(id, catalog) {
     b.wall(33, 29, 40, 29); b.wall(33, 41, 40, 41);
     b.open(n, 24, 'dr-sf-storefront', catalog);                         // front entry into the lobby
     b.open(back, 14, 'dr-int-6p', catalog);                              // conference -> center hall
-    b.open(back, 30.5, 'dr-int-6p', catalog);                            // lobby -> right hall
     b.open(o1w, 17.5, 'dr-int-6p', catalog);                             // office 1 (bottom left, off the center hall)
     b.open(c2, 17.5, 'dr-int-6p', catalog);                              // office 2
     b.open(c2, 22, 'dr-int-6p', catalog);                                // office 3
