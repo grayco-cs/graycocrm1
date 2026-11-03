@@ -201511,17 +201511,43 @@ function subSheet(p, key){
 
 /* owner 10/30: the job page header's "📸 GrayCo Photos" pill is hidden in Field view (📷 Add Photo/File and the bottom bar's 📸 Photos cover it) */
 (function(){ try { var st = document.createElement('style'); st.id = 'gcfp-nophotopill'; st.textContent = 'html._fieldmode button[data-u="open"][aria-label="GrayCo Photos for this job"]{display:none!important}'; (document.head || document.documentElement).appendChild(st); } catch (e) {} })();
-/* ── 📷 Add Photo/File: photos → GrayCo Photos' own upload; any other file → the job's Documents (job profile input) ── */
+/* ── 📷 Add Photo/File: photos → GrayCo Photos' own upload; any other file → the job's Documents ── */
+/* __GC_PATCH_FIELDFILE__ (owner 11/03): a file is stored on the job's Documents right here (the CRM's file storage + the
+   job's projectDocs) — the job page stays on the screen; the old Job Info sheet is no longer opened for it */
+function addJobDoc(rec){
+  return Promise.resolve(W.idbGet ? W.idbGet('projectDocs') : null).then(null, function(){ return null; }).then(function(all){
+    if (typeof all === 'string') { try { all = JSON.parse(all); } catch (e) { all = null; } }
+    if (!Array.isArray(all)) all = arr(C().projectDocs || W._gcProjectDocs).slice();
+    if (all.some(function(d){ return d && d.id === rec.id; })) return false;
+    var next = all.concat([rec]);
+    try { W.__GC_MANUAL_SAVE__ = true; if (W._gcManualNow) W._gcManualNow('field file'); } catch (e) {}
+    return Promise.resolve(W.idbSet ? W.idbSet('projectDocs', next) : null).then(null, function(){}).then(function(){
+      try { if (W._setProjectDocs) W._setProjectDocs(function(prev){ return Array.isArray(prev) ? (prev.some(function(d){ return d && d.id === rec.id; }) ? prev : prev.concat([rec])) : next; }); } catch (e) {}
+      try { if (W._crm) W._crm.projectDocs = next; } catch (e) {}
+      try { if (W._supaUpsert) W._supaUpsert('projectDocs', next); } catch (e) {}
+      try { if (W._gcTabChangeSync) W._gcTabChangeSync('field file'); } catch (e) {}
+      (W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout).call(W, function(){ try { W.__GC_MANUAL_SAVE__ = false; } catch (e) {} }, 1500);
+      return true;
+    });
+  });
+}
 function docsUpload(p, files){
-  if (typeof W._gcOpenJobProfile !== 'function') { toast('Documents are not on this phone yet.'); return false; }
-  W._gcOpenJobProfile(p.id);
-  var inp = D.getElementById('_jpFileInput');
-  if (inp && typeof W.DataTransfer === 'function') {
-    try { var dt = new W.DataTransfer(); files.forEach(function(f){ dt.items.add(f); }); inp.files = dt.files; inp.dispatchEvent(new Event('change')); return true; } catch (e) {}
-  }
-  toast('Tap 📄 Add Document to attach the file.');
-  var b = D.getElementById('_jpFileBtn'); if (b) try { b.scrollIntoView({ block: 'center' }); } catch (e) {}
-  return false;
+  if (typeof W._gcStoreFile !== 'function') { toast('File storage is not ready yet — try again in a moment.'); return Promise.resolve(0); }
+  var pid = s(p.id), by = s((meU() || {}).name) || s(lsGet('grayco_user')), done = 0, bad = [];
+  toast('Saving ' + files.length + ' file' + (files.length === 1 ? '' : 's') + ' to this job…');
+  return files.reduce(function(pr, f){
+    return pr.then(function(){
+      return W._gcStoreFile(f, { kind: 'doc', pid: pid, name: f.name }).then(function(m){
+        if (!m || !m.ref) throw new Error('no file reference');
+        var t = new Date().toISOString();
+        return addJobDoc({ id: 'fdoc_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), pid: pid, projectId: pid, name: s(f.name) || 'File', fileName: s(f.name),
+          cat: 'document', type: s(m.type || f.type), size: m.size || f.size || 0, ref: m.ref, hash: s(m.hash), uploaded: today(), uploadedAt: t, by: by, source: 'field', savedAt: t, updatedAt: t });
+      }).then(function(){ done++; }, function(e){ bad.push(s(f.name) + ' (' + s(e && e.message || e) + ')'); });
+    });
+  }, Promise.resolve()).then(function(){
+    toast(bad.length ? 'Not saved: ' + bad.join(', ') + (done ? ' · ' + done + ' saved' : '') : '📄 ' + done + ' file' + (done === 1 ? '' : 's') + ' added to this job\'s Documents');
+    return done;
+  });
 }
 function addPhotoFile(p){
   var i = D.createElement('input'); i.type = 'file'; i.multiple = true; i.accept = 'image/*,application/pdf,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt';
