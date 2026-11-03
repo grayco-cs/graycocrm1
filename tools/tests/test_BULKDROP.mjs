@@ -240,19 +240,19 @@ ok(A.up, 'the office signed in on the production mirror (+ the made-up jobs)');
 /* ── the button: To-Do and Accounting only ── */
 const where = {};
 for (const v of ['dashboard', 'projects', 'leads', 'schedule', 'subs', 'invoices', 'expenses', 'approvals', 'todo', 'taxcenter']) { await view(A.c, v); await sleep(2600); where[v] = await btns(A.c); }
-ok(where.todo.includes('gc-bulkdrop-todo') && where.todo.length === 1, 'To-Do: 📥 Drop invoices & receipts (next to Needs a job / Import card statement)', where.todo);
+ok(!where.todo.length, 'To-Do: no 📥 Drop invoices & receipts (it moved to Accounting, patch TODOTOP)', where.todo);
 ok(where.taxcenter.includes('gc-bulkdrop-acct') && where.taxcenter.length === 1, 'Accounting: the button in its tool row', where.taxcenter);
-const leak = Object.entries(where).filter(([v, l]) => v !== 'todo' && v !== 'taxcenter' && l.length);
+const leak = Object.entries(where).filter(([v, l]) => v !== 'taxcenter' && l.length);
 ok(!leak.length, 'the button is on no other page (Dashboard, Projects, Leads, Schedule, Subs, Invoices, Expenses, Approvals)', leak);
 const order = await ev(A.c, () => { const a = document.getElementById('gc-money-needs'), b = document.getElementById('gc-bulkdrop-acct'); return { acct: !!(b && b.closest('#gck-root .gck-tools')) }; });
 ok(order.acct, 'Accounting: inside #gck-root .gck-tools', order);
-await view(A.c, 'todo'); await sleep(2500);
-ok(await ev(A.c, () => { const a = document.getElementById('gc-money-needs'), b = document.getElementById('gc-bulkdrop-todo'); if (!(a && b)) return false; let x = a.nextElementSibling, n = 0; while (x && x !== b && n < 3) { x = x.nextElementSibling; n++; } return x === b; }), 'To-Do: right after patch MONEY\'s row (other features\' rows may sit between)');
+await view(A.c, 'taxcenter'); await sleep(2500);   /* patch TODOTOP: the drop button lives on Accounting only */
+ok(await ev(A.c, () => !!document.getElementById('gc-bulkdrop-acct')), 'Accounting: 📥 Drop invoices & receipts is there to click');
 
 /* ── the mixed batch of 30 (a, b, c, d, duplicates) — mid-batch screenshot, then the summary ── */
 aiDelay = 700;
 const lt0 = await ev(A.c, () => performance.now());
-await A.p.click('#gc-bulkdrop-todo');
+await A.p.click('#gc-bulkdrop-acct');
 await dropFiles(A.c, files);
 await waitEv(A.c, () => { const s = window._gcBulkDrop.summary(); return s.files === 30 && s.left > 5 && s.left < 25; }, null, 120000);
 await A.p.screenshot({ path: path.join(SHOTS, 'bulkdrop_midbatch.png') });

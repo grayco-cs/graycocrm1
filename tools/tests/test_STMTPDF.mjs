@@ -60,6 +60,7 @@ async function parseIn(C, n, mode){
 const key = r => r.date + ' ' + r.dir + ' ' + Number(r.amount != null ? r.amount : r.amt).toFixed(2) + ' ' + r.kind + (r.checkNo || r.check ? ' #' + (r.checkNo || r.check) : '');
 const closeX = async p => { await p.evaluate(() => { const x = document.querySelector('.gc-money-imp [data-c="x"]'); if (x) x.click(); }); };
 async function openTodo(p){ await p.evaluate(() => { const b = [...document.querySelectorAll('aside nav button, nav button')].find(y => y.offsetParent && /To-Do/.test(y.textContent)); if (b) b.click(); }); }
+async function openAcct(p){ await p.evaluate(() => window._setView('taxcenter')); await new Promise(z => setTimeout(z, 2500)); }   /* patch TODOTOP (owner 11/2): the statement imports live on the Accounting tool row (#gc-money-acct); the To-Do keeps 📥 Needs a job */
 async function loadFile(C, file){
   const p = C.page();
   await p.setInputFiles('.gc-money-imp [data-c="file"]', file);
@@ -99,10 +100,10 @@ for (const n of NAMES) {
 const scan = await parseIn(A, 'scan', 'card');
 ok(scan.error === 'image' && /picture, not text/.test(scan.message) && !(scan.rows || []).length, 'a picture-only PDF → "This PDF is a picture, not text…", nothing read', scan);
 
-/* 2. To-Do → 💳 Import card statement → the Chase PDF → review → Import */
-await openTodo(p);
-ok(await waitFor(A, () => !!document.querySelector('#gc-money-needs [data-mn="import"]') && !!document.querySelector('#gc-money-needs [data-mn="bank"]'), null, 40000), 'the To-Do shows 💳 Import card statement and 🏦 Import bank statement');
-await p.click('#gc-money-needs [data-mn="import"]');
+/* 2. Accounting → 💳 Import card statement → the Chase PDF → review → Import */
+await openAcct(p);
+ok(await waitFor(A, () => !!document.querySelector('#gc-money-acct [data-mn="import"]') && !!document.querySelector('#gc-money-acct [data-mn="bank"]'), null, 40000), 'Accounting shows 💳 Import card statement and 🏦 Import bank statement');
+await p.click('#gc-money-acct [data-mn="import"]');
 await waitFor(A, () => !!document.querySelector('.gc-money-imp [data-c="file"]'), null, 10000);
 ok(/\.pdf/.test(await p.getAttribute('.gc-money-imp [data-c="file"]', 'accept')), 'the file button takes a PDF');
 const n0 = await expCount(p);
@@ -124,7 +125,7 @@ ok(ex1.n === n0 + 7 && ex1.lowes === 'P1' && ex1.abc === 'P1' && ex1.refund.leng
 await closeX(p);
 
 /* 3. the same PDF again → every line already in */
-await p.click('#gc-money-needs [data-mn="import"]');
+await p.click('#gc-money-acct [data-mn="import"]');
 await waitFor(A, () => [...document.querySelectorAll('.gc-money-imp [data-c="card"] option')].some(o => /4421/.test(o.textContent)), null, 15000);
 await loadFile(A, FX + '/chase_card.pdf');
 T = await table(p);
@@ -139,7 +140,7 @@ await closeX(p);
 const capCsv = ['Transaction Date,Posted Date,Card No.,Description,Category,Debit,Credit']
   .concat(EXP.capone_card.rows.map(r => `${r.date},${r.date},9902,"${r.desc}",Other,${r.dir === 'out' ? r.amt.toFixed(2) : ''},${r.dir === 'in' ? r.amt.toFixed(2) : ''}`)).join('\n');
 fs.writeFileSync(FX + '/capone.csv', capCsv);
-await p.click('#gc-money-needs [data-mn="import"]');
+await p.click('#gc-money-acct [data-mn="import"]');
 await waitFor(A, () => !!document.querySelector('.gc-money-imp [data-c="file"]'), null, 10000);
 await p.fill('.gc-money-imp [data-c="newcard"]', 'Capital One 9902');
 await loadFile(A, FX + '/capone.csv');
@@ -152,7 +153,7 @@ ok(/^✓ 5 charges added · 1 refunds/.test(csvDone), 'the CSV imported: 5 charg
 await sleep(800);
 const n2 = await expCount(p);
 await closeX(p);
-await p.click('#gc-money-needs [data-mn="import"]');
+await p.click('#gc-money-acct [data-mn="import"]');
 await waitFor(A, () => [...document.querySelectorAll('.gc-money-imp [data-c="card"] option')].some(o => /9902/.test(o.textContent)), null, 15000);
 await loadFile(A, FX + '/capone_card.pdf');
 T = await table(p);
@@ -162,7 +163,7 @@ ok(await expCount(p) === n2, 'CSV + PDF of one statement: not double-counted', {
 await closeX(p);
 
 /* 5. 🏦 Import bank statement (the office, before docs/office-full-access.sql) */
-await p.click('#gc-money-needs [data-mn="bank"]');
+await p.click('#gc-money-acct [data-mn="bank"]');
 await waitFor(A, () => document.querySelector('.gc-money-imp') && document.querySelector('.gc-money-imp').getAttribute('data-mode') === 'bank', null, 10000);
 const n3 = await expCount(p);
 ok(await loadFile(A, FX + '/firsthorizon_bank.pdf'), 'the First Horizon PDF is read');
@@ -180,7 +181,7 @@ await sleep(600);
 const bx = await p.evaluate(() => window._crm.expenses.filter(e => e.source === 'bank-statement').map(e => ({ ref: e.ref, amt: e.amt, pm: e.payMethod, st: e.status, acct: e.bankAcct })));
 ok(bx.length === 6 && bx.filter(e => e.pm === 'Check' && /^12\d\d$/.test(e.ref)).length === 3 && bx.every(e => e.st === 'paid' && /8832/.test(e.acct)), 'paid expenses with check # and the account', bx);
 await closeX(p);
-await p.click('#gc-money-needs [data-mn="bank"]');
+await p.click('#gc-money-acct [data-mn="bank"]');
 await waitFor(A, () => !!document.querySelector('.gc-money-imp [data-c="file"]'), null, 10000);
 await loadFile(A, FX + '/firsthorizon_bank.pdf');
 T = await table(p);
