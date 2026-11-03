@@ -351,6 +351,7 @@ function run(a, p){
   if (a === 'fp-add' && pm.photos) { addPhotoFile(p); return true; }
   if (a === 'fp-money' && pm.photos) { moneySheet(p); return true; }
   if (a === 'fp-sched' && pm.photos) { schedSheet(p); return true; }
+  if (a === 'fp-estup' && pm.cust) { if (W._gcEstUp && W._gcEstUp.menu) W._gcEstUp.menu(p); else if (W._gcEstin && W._gcEstin.upload) W._gcEstin.upload({ pid: s(p.id), stay: true }); else toast('Estimates are not on this phone yet.'); return true; }   /* patch ESTUPLOAD: 📤 Upload · 📘 Templates · this job's estimates */
   if (a === 'fp-log' && pm.photos) { try { W._gcRP.site().open(p.id, 'log'); } catch (e) { toast('The daily log is not on this phone yet.'); } return true; }
   return false;
 }
@@ -391,7 +392,7 @@ function decorate(pid){
     if (tpl && tpl.children[0]) i.style.cssText = tpl.children[0].style.cssText; if (tpl && tpl.children[1]) l.style.cssText = tpl.children[1].style.cssText;
     b.appendChild(i); b.appendChild(l); return b;
   }
-  var order = [by.progress, by.info, pm.cust && mk('cust', '👤', 'Customer portal'), pm.sub && mk('sub', '🔧', 'Sub portal'), by.update, pm.msg && mk('msg', '💬', 'Message'), by.photo, pm.photos && hasLog() && mk('log', '📒', 'Daily Log'), pm.photos && mk('money', '💰', 'Financials, Invoices & COs'), pm.photos && mk('sched', '📅', 'Schedule & Inspections'), by.docs, by.create]
+  var order = [by.progress, by.info, pm.cust && mk('cust', '👤', 'Customer portal'), pm.sub && mk('sub', '🔧', 'Sub portal'), by.update, pm.msg && mk('msg', '💬', 'Message'), by.photo, pm.photos && hasLog() && mk('log', '📒', 'Daily Log'), pm.photos && mk('money', '💰', 'Financials, Invoices & COs'), pm.photos && mk('sched', '📅', 'Schedule & Inspections'), by.docs, pm.cust && W._gcEstin && typeof W._gcEstin.upload === 'function' && mk('estup', '📄', 'Upload estimate'), by.create]   /* __GC_PATCH_ESTUPLOAD__ */
     .concat(olds.filter(function(b){ return ['progress', 'info', 'update', 'photo', 'docs', 'create'].indexOf(b.getAttribute('data-fn')) < 0; }))
     .filter(Boolean);   /* owner 10/30: no separate GrayCo Photos tile -- 📷 Add Photo/File is GrayCo Photos */
   order.forEach(function(b){ grid.appendChild(b); });
