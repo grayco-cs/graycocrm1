@@ -96,6 +96,7 @@ const crypto = require('crypto');
 const BD = require('./_lib/bid-due.js');
 const BF = require('./_lib/bid-filter.js');   /* patch BIDFILTER: the always-on construction gate */
 const BR = require('./_lib/bid-role.js');   /* patch PRIMESUB: 🏛 prime (to the owner) or 🔧 sub (to a GC) */
+const BM = require('./_lib/bid-merge.js');   /* patch BIDMERGE: one lead per project, every GC and trade on it */
 
 const KV = 'gc_lead_inbox', KV_SET = 'gc_lead_inbox_settings', KV_NOTE = 'gc_lead_inbox_notices';
 const KEEP_ACTIVE = 600, KEEP_DISMISSED = 3000;
@@ -278,7 +279,9 @@ function liteItem(x){
    'bidNumber', 'gc', 'owner', 'scope', 'estValue', 'contact', 'pm', 'pmEmail', 'estimator', 'estimatorEmail', 'pid', 'leadId', 'hold', 'flag', 'addendumCount', 'needsReview', 'rawRef', 'portal',
    'bidRole', 'bidRoleWhy', 'dueToCompany', 'dueToContact', 'dueToEmail', 'dueToPhone', 'submitMethod', 'submitWhere', 'dueSnippet', 'receivedAt', 'updatedAt', 'importedAt', 'assignedBy', 'assignedAt',
    'autoAssignedAt', 'leadExtra', 'alsoOn'].forEach(k => { if (x[k] !== undefined && x[k] !== null && x[k] !== '') o[k] = x[k]; });
-  o.trades = arr(x.trades).slice(0, 12); o.notes = arr(x.notes).slice(-8);
+  o.trades = arr(x.trades).slice(0, 40); o.notes = arr(x.notes).slice(-8);   /* patch BIDMERGE: 40 trades (was 12) */
+  if (arr(x.gcs).length) o.gcs = arr(x.gcs).slice(0, 40);   /* patch BIDMERGE: every GC on the project */
+  if (arr(x.history).length) o.history = arr(x.history).slice(-20);   /* patch BIDMERGE: the quiet "+1 GC" lines */
   o.plansLinks = arr(x.plansLinks).slice(0, 25).map(l => ({ url: l.url, label: l.label, board: l.board }));
   o.files = arr(x.files).filter(f => f && f.ref).slice(0, 40).map(f => ({ ref: f.ref, name: f.name, type: f.type, size: f.size, hash: f.hash, kind: f.kind, addendum: f.addendum }));
   o.emails = arr(x.emails).slice(-10).map(e => ({ subject: e.subject, from: e.from, fromName: e.fromName, date: e.date, rawRef: e.rawRef }));
@@ -595,11 +598,14 @@ function liveTarget(items, it){ let x = it, n = 0; while (x && x.status === 'mer
 function findMatch(items, rec){
   /* patch WEB: a website / Business Brain lead is one person's request — matched only by its own id, and never a bid's match */
   if (rec.origin === 'website' || rec.origin === 'brain' || rec.origin === 'portal') return items.find(x => x && x.id === rec.id) || null;   /* patch PORTALREQ: a portal request is one customer's own — never merged into another lead */
+  if (bmBid(rec) && bmPitch(rec)) return items.find(x => x && x.id === rec.id) || null;   /* patch BIDMERGE + SALESBLOCK: a pitch is never filed on a bid */
+  { const bm = bmFind(items, rec); if (bm) return bm; }   /* patch BIDMERGE: the same project from another trade / GC / board */
   const num = normNum(rec.bidNumber), nt = normTitle(rec.title), tk = tokens(rec.title), city = normCity(rec.city);
   let best = null, bestScore = 0;
   for (const it of items) {
     if (!it || it.id === rec.id) continue;
     if (it.origin === 'website' || it.origin === 'brain' || it.origin === 'portal') continue;   /* patch WEB; patch PORTALREQ */
+    if (it.dismissedBy === 'Sales & spam filter' && bmBid(rec)) continue;   /* patch BIDMERGE + SALESBLOCK: a real invitation is never filed on a held pitch */
     if (rec.watchKey && arr(it.watchKeys).indexOf(rec.watchKey) >= 0) return it;
     if (rec.emailId && arr(it.emailIds).indexOf(rec.emailId) >= 0 && normTitle(it.title) === nt) return it;
     const ic = normCity(it.city), cityOk = !city || !ic || ic === city;
@@ -618,6 +624,53 @@ function findMatch(items, rec){
   }
   return best;
 }
+/* ── patch BIDMERGE (owner 11/02: "9 invitations for the same job but different trades … only alert us the one time … just have
+   it list for 2 GCs"): a bid invitation (an e-mail, a public bid, the BuildingConnected API) joins the lead of the SAME PROJECT
+   — the rules are _lib/bid-merge.js same(): the board's project id, the public bid #, the street address, or the name without
+   its trade / package part, in the same city, the bid due within a few days; never only because the GC is the same. The lead
+   keeps every GC (gcs: name, contact, due, trades / packages, link, source) and a quiet "+1 GC" history line; its bid due is
+   the earliest. Only the FIRST invitation is a new lead (one alert); a later one alerts again only when it brings the
+   project's earliest bid due SOONER (one "📅 due date moved sooner" note, _lib/bid-alerts.js notifySooner). A website / Brain /
+   portal / partner / referral lead is never matched this way (they match by their own id); a sales pitch is never folded in
+   (patch SALESBLOCK: it is added on its own and held by the Sales & spam filter). ── */
+function bmBid(x){ return !!x && (!x.origin || x.origin === 'email' || x.origin === 'watch' || x.origin === 'api'); }
+function bmPitch(rec){
+  if (/buildingconnected|planhub|constructconnect|isqft|planroom|government/i.test(s(rec.source))) return false;
+  try { const G = require('./_lib/salesguard.js'), e = arr(rec.emails)[0] || {}; return G.isSales([rec.title, rec.scope, e.subject, e.snippet].join('\n'), { email: e.from, name: e.fromName }); } catch (e) { return false; }
+}
+const BM_RANK = [/BuildingConnected|PlanHub|board/, /bid number/, /address/, /./];
+function bmFind(items, rec){
+  if (!bmBid(rec)) return null;
+  let best = null, rank = 9;
+  for (const it of arr(items)) {
+    if (!it || it.id === rec.id || !bmBid(it) || it.status === 'merged' || it.dismissedBy === 'Sales & spam filter') continue;   /* never a project held as a sales pitch */
+    const gap = BM.gapDays(rec.bidDue, it.bidDue); if (gap != null && gap > 60) continue;   /* (quick: no rule joins bids due 2 months apart) */
+    const r = BM.same(rec, it); if (!r.ok) continue;
+    let k = BM_RANK.findIndex(re => re.test(r.why)); if (it.status === 'dismissed') k += 0.5;   /* an open lead first; a dismissed project stays dismissed */
+    if (k < rank) { rank = k; best = it; }
+  }
+  return best;
+}
+const BM_LISTS = ['sources', 'plansLinks', 'files', 'emails', 'emailIds', 'watchKeys', 'trades'];
+function bmKeyOf(f, x){ return f === 'sources' ? low(x && x.name) : f === 'plansLinks' ? low(x && x.url).replace(/[#?].*$/, '') : f === 'files' ? s(x && (x.hash || x.ref)) : f === 'emails' ? s(x && (x.id || x.subject)) : low(x); }
+function bmListKeys(it){ const o = {}; BM_LISTS.forEach(f => { o[f] = {}; arr(it[f]).forEach(x => { o[f][bmKeyOf(f, x)] = 1; }); }); return o; }
+function bmAddedKeys(before, it){ const o = {}; BM_LISTS.forEach(f => { const k = arr(it[f]).map(x => bmKeyOf(f, x)).filter(x => x && !before[f][x]); if (k.length) o[f] = k; }); return o; }
+/* fold one invitation's GC into the project; returns { from, to } when the project's earliest bid due moved SOONER */
+function bmFold(hit, rec, seed, dueWas, t){
+  const g = BM.addGc(seed, BM.gcOf(rec, t));
+  hit.gcs = g.gcs.slice(0, 40);
+  hit.trades = uniqBy(arr(hit.trades).concat(BM.tradesOf(hit)), x => low(x)).slice(0, 40);
+  const line = g.added && hit.gcs.length > 1 ? '+1 GC: ' + BM.gcLine(g.gc) : g.newTrades.length ? '+ ' + BM.gcLine(Object.assign({}, g.gc, { packages: [] }), g.newTrades) : '';
+  if (line) hit.history = arr(hit.history).concat([{ at: t, type: 'bidmerge', text: line.slice(0, 300) }]).slice(-40);
+  if (hit.bidDueManual) return null;   /* LA: a date a person typed stays */
+  const e = BM.earliest(hit.gcs.map(x => x.due).concat(hit.gcs.length > 1 ? [] : [hit.bidDue]));
+  if (e && e !== s(hit.bidDue) && (hit.gcs.length > 1 || BM.sooner(e, hit.bidDue))) hit.bidDue = e;
+  if (dueWas && BM.sooner(hit.bidDue, dueWas)) {
+    hit.bidDueWas = dueWas; hit.flag = '📅 Bid due moved sooner (' + (s(rec.dueToCompany) || s(rec.gc) || s(rec.source) || 'new invitation') + ')';
+    return { from: dueWas, to: s(hit.bidDue) };
+  }
+  return null;
+}
 function uniqBy(list, key){ const seen = {}, out = []; list.forEach(x => { const k = key(x); if (!k || seen[k]) return; seen[k] = 1; out.push(x); }); return out; }
 function fill(dst, src, fields){ fields.forEach(f => { if ((dst[f] == null || dst[f] === '' || (Array.isArray(dst[f]) && !dst[f].length)) && src[f] != null && src[f] !== '') dst[f] = src[f]; }); }
 /* put one record into the list; returns { items, action, id } */
@@ -630,6 +683,7 @@ function upsert(items, rec){
     const it = Object.assign({}, rec, { status: 'new', rev: 1, receivedAt: t, updatedAt: t, sources: rec.sources || [{ name: rec.source, at: t, ref: rec.sourceRef || '' }] });
     delete it.addendum; delete it.sourceRef;
     { const br = BR.roleOf(it); if (br.role) { it.bidRole = br.role; it.bidRoleWhy = br.why; } }   /* patch PRIMESUB: stored on the item, copied to its lead */
+    if (bmBid(rec)) { it.gcs = [BM.gcOf(rec, t)]; const ct = BM.cleanTitle(it.title, it.city); if (ct && ct !== it.title) { it.titleRaw = it.title; it.title = ct.slice(0, 200); } }   /* patch BIDMERGE: the project, not one trade ('UrgentVet - Memphis') */
     if (rec.addendum) { it.addenda = [{ n: rec.addendum, at: t, subject: rec.sourceRef || '' }]; it.addendumCount = rec.addendum; it.flag = 'Addendum #' + rec.addendum + ' received'; }
     items.push(it);
     return { items: trim(items), action: 'added', id: it.id };
@@ -640,6 +694,7 @@ function upsert(items, rec){
   }
   if (!hit.bidRole) { const br = BR.roleOf(Object.assign({}, rec, hit)); if (br.role) { hit.bidRole = br.role; hit.bidRoleWhy = br.why; } }   /* patch PRIMESUB: an older item gets it when the project comes in again (quietly: no new revision, no re-draft for this alone) */
   const before = JSON.stringify(hit);
+  const bmSeed = bmBid(rec) && bmBid(hit) ? BM.seedGcs(hit) : null, bmWas = s(hit.bidDue);   /* patch BIDMERGE: the GCs and the earliest due before this one */
   const srcs = arr(hit.sources);
   if (!srcs.some(x => low(x.name) === low(rec.source))) srcs.push({ name: rec.source, at: t, ref: rec.sourceRef || '' });
   hit.sources = srcs;
@@ -660,9 +715,10 @@ function upsert(items, rec){
     'dueToCompany', 'dueToContact', 'dueToEmail', 'dueToPhone', 'submitMethod', 'submitWhere']);
   if (rec.contact && hit.contact && !s(hit.contact.email) && s(rec.contact.email)) hit.contact = rec.contact;
   hit.notes = uniqBy(arr(hit.notes).concat(arr(rec.notes)), x => x).slice(-20);
+  const soon = bmSeed ? bmFold(hit, rec, bmSeed, bmWas, t) : null;   /* patch BIDMERGE */
   if (JSON.stringify(hit) === before) return { items: trim(items), action: 'same', id: hit.id };
   hit.rev = (hit.rev || 1) + 1; hit.updatedAt = t;
-  return { items: trim(items), action: rec.addendum ? 'addendum' : 'merged', id: hit.id };
+  return Object.assign({ items: trim(items), action: rec.addendum ? 'addendum' : 'merged', id: hit.id }, soon ? { sooner: soon } : {});
 }
 /* keep the list small: oldest finished items go first; dismissed ones shrink to a stub (enough to never re-import) */
 function stub(it){ return { id: it.id, status: it.status, title: it.title, city: it.city, bidDue: it.bidDue, bidNumber: it.bidNumber, source: it.source, watchKeys: it.watchKeys, portal: it.portal, emailIds: arr(it.emailIds).slice(-5), reason: it.reason, by: it.by, mergedInto: it.mergedInto, updatedAt: it.updatedAt, stub: true }; }
@@ -1004,10 +1060,10 @@ async function processEventCore(evt, opts){
   const recs = recordsFrom(mail, ai, links, hint, stored, raw.ref);
   const results = []; let stored2 = [];
   try {
-    await kvCas(KV, v => { let items = arr(v); results.length = 0; recs.forEach(r => { const o = upsert(items, r); items = o.items; results.push({ action: o.action, id: o.id, title: r.title }); }); stored2 = items; return items; });
+    await kvCas(KV, v => { let items = arr(v); results.length = 0; recs.forEach(r => { const o = upsert(items, r); items = o.items; results.push({ action: o.action, id: o.id, title: r.title, sooner: o.sooner }); });   /* patch BIDMERGE: + sooner */ stored2 = items; return items; });
   } catch (e) { return { status: 503, body: { ok: false, error: 'GrayCo could not store this yet (' + (e && e.message) + ') — retry.' } }; }
   const after = await afterStore(results, stored2, { group: true });   /* one e-mail → one alert, listing every new lead it brought */
-  return { status: 200, body: { ok: true, leads: results, read: ai.ok, files: stored.length, skipped: mail.skipped, portal: after.portal, alerts: after.alerts } };
+  return { status: 200, body: { ok: true, leads: results, read: ai.ok, files: stored.length, skipped: mail.skipped, portal: after.portal, alerts: after.alerts, sooner: after.sooner } };   /* patch BIDMERGE: + sooner */
 }
 
 /* ── after the inbox changed: the bid portal draft and the admins' alert (LD2, LA) ─
@@ -1097,6 +1153,9 @@ async function afterStore(results, items, opt){
     }
   } catch (e) { out.private = { error: s(e && e.message) }; }
   try { out.alerts = await alertsApi().notifyNew(added, { group: !!(opt && opt.group) }); } catch (e) { out.alerts = { error: s(e && e.message) }; }
+  /* patch BIDMERGE: another trade / GC for a project we have is quiet; only an earlier bid due than the project had sends one short note */
+  const soon = arr(results).filter(r => r && r.sooner && r.action !== 'added' && byId[r.id] && byId[r.id].status !== 'dismissed');
+  if (soon.length) { try { out.sooner = await alertsApi().notifySooner(soon.map(r => Object.assign({}, byId[r.id], { dueWas: r.sooner.from }))); } catch (e) { out.sooner = { error: s(e && e.message) }; } }
   return out;
 }
 const PLAN_FILE_RE = /\.(pdf|zip|dwg|dxf|png|jpe?g|tiff?|docx?|xlsx?)(\?|#|$)/i, PLAN_MAX = 25 * 1024 * 1024;
@@ -1267,7 +1326,7 @@ async function isEstimator(email){
 }
 
 /* ── what a person did in the CRM ──────────────────────────────────────────── */
-const OPS = { portal: 'staff', imported: 'staff', assigned: 'admin', job: 'staff', dismissed: 'admin', merged: 'admin', restore: 'admin', publish: 'admin', due: 'staff' };
+const OPS = { portal: 'staff', imported: 'staff', assigned: 'admin', job: 'staff', dismissed: 'admin', merged: 'admin', unmerge: 'admin', restore: 'admin', publish: 'admin', due: 'staff' };   /* patch BIDMERGE: + unmerge */
 function applyAct(items, b, who){
   items = arr(items);
   const t = nowIso(), op = s(b.op), id = s(b.id);
@@ -1280,6 +1339,7 @@ function applyAct(items, b, who){
   else if (op === 'merged') {
     const into = items.find(x => x && x.id === s(b.into)); if (!into || into.id === it.id) return { err: 'merge target not found' };
     const tgt = items.find(x => x.id === into.id);
+    const bmKeys = bmListKeys(tgt), bmDue = s(tgt.bidDue), bmGcs = BM.seedGcs(tgt);   /* patch BIDMERGE: what the merge adds, so "unmerge" can take it off again */
     tgt.sources = uniqBy(arr(tgt.sources).concat(arr(it.sources)), x => low(x.name));
     tgt.alsoOn = uniqBy(tgt.sources.map(x => x.name).filter(n => low(n) !== low(tgt.source)), x => low(x));
     tgt.plansLinks = uniqBy(arr(tgt.plansLinks).concat(arr(it.plansLinks)), l => low(l.url).replace(/[#?].*$/, ''));
@@ -1288,8 +1348,27 @@ function applyAct(items, b, who){
     tgt.emailIds = uniqBy(arr(tgt.emailIds).concat(arr(it.emailIds)), x => x);
     tgt.watchKeys = uniqBy(arr(tgt.watchKeys).concat(arr(it.watchKeys)), x => x);
     fill(tgt, it, ['owner', 'gc', 'address', 'city', 'state', 'bidDue', 'preBid', 'bidNumber', 'scope']);
+    { let g = bmGcs; BM.seedGcs(it).forEach(x => { g = BM.addGc(g, x).gcs; }); tgt.gcs = g.slice(0, 40);   /* patch BIDMERGE: every GC and trade of both */
+      tgt.trades = uniqBy(arr(tgt.trades).concat(arr(it.trades), BM.tradesOf(tgt)), x => low(x)).slice(0, 40);
+      tgt.history = arr(tgt.history).concat([{ at: t, type: 'bidmerge', text: ('🔗 Merged "' + s(it.title) + '" — ' + BM.seedGcs(it).map(x => BM.gcLine(x)).join('; ')).slice(0, 300) }]).slice(-40);
+      if (!tgt.bidDueManual && tgt.gcs.length > 1) { const e = BM.earliest(tgt.gcs.map(x => x.due)); if (e && e !== s(tgt.bidDue)) { tgt.bidDueWas = s(tgt.bidDue); tgt.bidDue = e; } }
+      it.bmAdded = { into: tgt.id, at: t, keys: bmAddedKeys(bmKeys, tgt), gcs: tgt.gcs.filter(x => !bmGcs.some(y => y.key === x.key)).map(x => x.key), gcsBefore: bmGcs, bidDue: bmDue, bidDueNow: s(tgt.bidDue) }; }
     tgt.rev = (tgt.rev || 1) + 1; tgt.updatedAt = t;
     it.status = 'merged'; it.mergedInto = tgt.id; it.by = who.email;
+  }
+  else if (op === 'unmerge') {   /* patch BIDMERGE: undo of "🔗 Merge duplicate bid leads" — the item is its own again, the target loses what the merge gave it */
+    if (it.status !== 'merged') return { err: 'not merged' };
+    const tgt = items.find(x => x && x.id === s(it.mergedInto || (it.bmAdded && it.bmAdded.into)));
+    const A = it.bmAdded || null;
+    if (tgt && A && A.into === tgt.id) {
+      Object.keys(A.keys || {}).forEach(f => { const gone = {}; arr(A.keys[f]).forEach(k => { gone[k] = 1; }); tgt[f] = arr(tgt[f]).filter(x => !gone[bmKeyOf(f, x)]); });
+      tgt.gcs = arr(A.gcsBefore).concat(arr(tgt.gcs).filter(x => x && arr(A.gcs).indexOf(x.key) < 0 && !arr(A.gcsBefore).some(y => y.key === x.key)));
+      tgt.alsoOn = uniqBy(arr(tgt.sources).map(x => x.name).filter(n => n && low(n) !== low(tgt.source)), x => low(x));
+      if (s(tgt.bidDue) === s(A.bidDueNow) && !tgt.bidDueManual) tgt.bidDue = s(A.bidDue);
+      tgt.history = arr(tgt.history).concat([{ at: t, type: 'bidmerge', text: ('↩ Un-merged "' + s(it.title) + '"').slice(0, 300) }]).slice(-40);
+      tgt.rev = (tgt.rev || 1) + 1; tgt.updatedAt = t;
+    }
+    it.status = it.leadId ? 'imported' : 'new'; delete it.mergedInto; delete it.bmAdded; it.by = who.email;
   }
   else if (op === 'restore') { it.status = it.leadId ? 'imported' : 'new'; it.reason = ''; }
   else if (op === 'due') {   /* LA: the bid due date typed on the lead in the CRM ('' clears it) */

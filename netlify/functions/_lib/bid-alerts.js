@@ -377,6 +377,34 @@ function make(d){
     if (env('ONCALL_OFF') !== '1') { try { out.oncall = await require('./oncall.js').make({ env: env, kvGet: kvGet, kvCas: kvCas, now: now, push: push }).maybePage(mine); } catch (e) { out.oncall = { error: s(e && e.message) }; } }
     return out;
   }
+  /* patch BIDMERGE (owner 11/02): another trade or another GC for a project we already have is NOT a new lead and sends nothing —
+     except when it brings the project's earliest bid due SOONER: then one short note, once per project and new date */
+  function mailSooner(x, was){
+    const subject = ('📅 Bid due date moved sooner: ' + x.title + ' — now ' + fmtDue(x.bidDue) + (was ? ' (was ' + fmtDue(was) + ')' : '')).slice(0, 250);
+    const gcs = arr(x.gcs).length > 1 ? ' It is on ' + arr(x.gcs).length + ' GCs\' invitations; the lead lists them all.' : '';
+    const html = frame('GrayCo — bid due date moved sooner', 'A new invitation for <b>' + esc(x.title) + '</b> is due <b>' + esc(fmtDue(x.bidDue)) + '</b>' + (was ? ' — sooner than ' + esc(fmtDue(was)) : '') + '.' + esc(gcs), rowHtml(x), FOOT);
+    const text = subject + '\n\n' + x.title + ' — ' + dueLine(x) + (was ? ' (was ' + fmtDue(was) + ')' : '') + '\n\nOpen Leads: ' + site() + '/#leads';
+    return { subject, html, text, leadKey: x.key, push: { title: subject.slice(0, 100), body: (x.title + ' — now ' + fmtDue(x.bidDue)).slice(0, 180), tag: 'lead-sooner-' + x.key } };
+  }
+  async function notifySooner(items){
+    if (off()) return { sent: 0, off: true };
+    let mine = [];
+    await kvCas(KA, v => {
+      const st = loadState(v); st.sooner = st.sooner && typeof st.sooner === 'object' ? st.sooner : {};
+      mine = arr(items).filter(it => it && it.id && s(it.bidDue) && !st.sooner[s(it.id) + '|' + s(it.bidDue)]);
+      if (!mine.length) return undefined;
+      mine.forEach(it => { st.sooner[s(it.id) + '|' + s(it.bidDue)] = nowIso(); });
+      const keys = Object.keys(st.sooner); if (keys.length > 400) keys.sort((a, b) => st.sooner[a] < st.sooner[b] ? -1 : 1).slice(0, keys.length - 400).forEach(k => { delete st.sooner[k]; });
+      return st;
+    });
+    const out = { sent: 0, messages: 0 };
+    for (const it of mine) {
+      const x = Object.assign(entry(it), { gcs: arr(it.gcs) });
+      const r = await deliver(mailSooner(x, s(it.dueWas)), [x.assigneeEmail].concat(x.coEmails || []));
+      out.messages++; if (r.ok) out.sent++; else out.why = r.why;
+    }
+    return out;
+  }
   /* a new-lead message that could not be sent: tried again on each 10-minute run, for 24 hours */
   async function retry(){
     if (off()) return { sent: 0, off: true };
@@ -808,7 +836,7 @@ function make(d){
     return { mode: 'instant', retrying: st.retry.length, reminders: Object.keys(st.reminded).length, last: st.last || null, remindMinutes: [REMIND_EARLY, REMIND_LATE], todayAt: TODAY_AT };
   }
 
-  return { _emergency: emergency, mitigationList, emergencyList, notifyNew, notifyAssigned, sweepAssigned, nag, retry, remind, sweepRoofScout, speedToLead, resultsAsk, resultsWanted, gcWanted, kvAppendResult, speedKinds, speedCandidates, contacted, inbound, recipients, adminRecipients, alertList, state, candidates, reminderKind, reminderKinds, closed, loadPeople, _mailNew: mailNew, _mailRemind: mailRemind, KA,
+  return { _emergency: emergency, mitigationList, emergencyList, notifyNew, notifySooner, _mailSooner: mailSooner, notifyAssigned, sweepAssigned, nag, retry, remind, sweepRoofScout, speedToLead, resultsAsk, resultsWanted, gcWanted, kvAppendResult, speedKinds, speedCandidates, contacted, inbound, recipients, adminRecipients, alertList, state, candidates, reminderKind, reminderKinds, closed, loadPeople, _mailNew: mailNew, _mailRemind: mailRemind, KA,
     /* LD2's name for "a new opportunity was stored": now one message per call (bid-inbox: one e-mail) */
     enqueue: (items, o) => notifyNew(items, o) };
 }
