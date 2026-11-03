@@ -22,6 +22,7 @@ const html = fs.readFileSync(path.join(build, 'index.html'), 'utf8');
 ok(html.includes('__GC_PATCH_JOBTOP__') && html.indexOf('id="gc-patch-jobtop"') < html.indexOf('__GC_PATCH_Q__'), 'JOBTOP is in, before the first job-page injector (patch Q)');
 ok((html.match(/window\._gcJobBox\(/g) || []).length >= 11, 'the 11 desk injectors use the one container (window._gcJobBox)', (html.match(/window\._gcJobBox\(/g) || []).length);
 ok(!/var root = back\.parentElement, have = root\.querySelector\(':scope > \.(gcja-bar|gc-a8-bar|gcx9-bars|gcx10-jobbar|gcgp-bar|gca11-jobbar|gcx12-bar|gcsrc-line\[data-desk\]|gcsp-bar)'\)/.test(html), 'no injector puts its bar next to the job header any more');
+ok(['window._gcCCLinkPaint = showOnJob', 'window._gcYearBarPaint = bar', 'window._gcAp3DeskJob = deskJob', 'window._gcJobMsgInject = inject', 'window._gcPhotosDeskBtn'].every(x => html.includes(x)), 'the header\'s late buttons can be painted when the header first appears');
 ok(html.includes('"data-gc-sharephotos":j.id') && html.includes("mk('share', '🔗', 'Share photos')") && html.includes('report: openReport'), '🔗 Share photos: desk Photos tab, Field tile, _gcPhotos.report');
 
 const { computer, sleep, waitFor, resetCloud, ACCOUNTS, cset, cget } = await import(pathToFileURL(HARNESS).href);
@@ -53,7 +54,7 @@ const LAYOUT = (W) => {
   const outside = [...root.querySelectorAll(':scope > :is(' + W + ')')].map(x => x.className.split(' ')[0]);
   const inBox = box ? [...box.children].map(x => (x.className || x.id || x.tagName).toString().split(' ')[0]) : [];
   const h1 = back.nextElementSibling && back.nextElementSibling.querySelector('h1');
-  return { order: kids.map(name), iBack: kids.indexOf(back), iTiles: kids.indexOf(tiles), iTabs: kids.indexOf(tabBar), iBox: kids.indexOf(box), n: kids.length,
+  return { yBack: top(back), order: kids.map(name), iBack: kids.indexOf(back), iTiles: kids.indexOf(tiles), iTabs: kids.indexOf(tabBar), iBox: kids.indexOf(box), n: kids.length,
     boxLast: !!box && root.lastElementChild === box, boxInRoot: !!box && box.parentElement === root, outside, inBox, name: h1 ? h1.textContent.trim() : '',
     yTiles: top(tiles), yTabs: top(tabBar), yBox: box && box.children.length ? top(box) : null, tabsBottom: tabBar ? Math.round(tabBar.getBoundingClientRect().bottom + window.scrollY) : null,
     widgetTops: [...root.querySelectorAll(W)].filter(x => x.offsetParent).map(x => top(x)) };
@@ -87,10 +88,10 @@ try {
       const up = await waitFor(c, LAYOUT, WIDGETS, 20000, 150);
       if (!up || up.iTabs < 0) { ok(false, tag + ': the job page opened', up); continue; }
       await c.ev(ARM);
-      const t0 = Date.now(), tops = []; let bad = null;
+      const t0 = Date.now(), tops = [], abs = []; let bad = null;
       while (Date.now() - t0 < WATCH_MS) {
         const L = await c.ev(LAYOUT, WIDGETS);
-        if (L) { tops.push(L.yTiles); if (!bad && !(L.iTiles === L.iBack + 2 && L.iTabs === L.iTiles + 1)) bad = L.order; }
+        if (L) { tops.push(L.yTiles - L.yBack); abs.push(L.yTiles); if (!bad && !(L.iTiles === L.iBack + 2 && L.iTabs === L.iTiles + 1)) bad = L.order; }
         await sleep(500);
       }
       const L = await c.ev(LAYOUT, WIDGETS), above = await c.ev(() => window.__jtWatch.above.slice());
@@ -98,9 +99,20 @@ try {
       ok(L.iBack === 0 && L.iTiles === 2 && L.iTabs === 3, tag + ': header → summary strip → tab bar are the first blocks', L.order);
       ok(!bad, tag + ': …at every look over ' + WATCH_MS / 1000 + ' s', bad);
       ok(!above.length, tag + ': nothing was inserted above the tab bar in ' + WATCH_MS / 1000 + ' s', above);
-      ok(Math.max(...tops) - Math.min(...tops) <= 1, tag + ': the summary strip never moved (y ' + Math.min(...tops) + '…' + Math.max(...tops) + ')');
+      /* measured from the job page's own top ("← All Projects"): a banner above the whole page (Connect Google …) is not the job page */
+      ok(Math.max(...tops) - Math.min(...tops) <= 1, tag + ': the summary strip never moved on the job page (' + Math.min(...tops) + '…' + Math.max(...tops) + ' px under the job page top; page y ' + Math.min(...abs) + '…' + Math.max(...abs) + ')', [...new Set(tops)]);
       ok(L.boxLast && !L.outside.length, tag + ': every card / bar is in the "Job tools" container, the last block (' + L.inBox.join(', ') + ')', { outside: L.outside, order: L.order });
       ok(L.widgetTops.every(y => y > L.tabsBottom), tag + ': every widget is drawn below the tab bar', { tabs: L.tabsBottom, w: L.widgetTops });
+      /* the bottom bars: on a computer only ROLEAPPS' Desk dock (#gc-ra-dock, by design: Home · Jobs · Approvals · Photos ·
+         More); the phone bars stay hidden; the dock never covers the summary strip or the tab bar, and main keeps room under it */
+      const bars = await c.ev(() => { const vis = id => { const e = document.getElementById(id); return !!e && e.getClientRects().length > 0 && getComputedStyle(e).display !== 'none' && getComputedStyle(e).visibility !== 'hidden'; };
+        const back = [...document.querySelectorAll('main button')].find(b => /^\s*←\s*All Projects\s*$/.test(b.textContent || '')), kids = back ? [...back.parentElement.children] : [];
+        const tabs = kids.find(k => [...k.children].some(b => b.tagName === 'BUTTON' && /^Files & Docs \(/.test((b.textContent || '').trim())));
+        const dock = document.getElementById('gc-ra-dock'), dr = dock && vis('gc-ra-dock') ? dock.getBoundingClientRect() : null, tr = tabs ? tabs.getBoundingClientRect() : null;
+        const main = document.querySelector('main');
+        return { view: window._gcView ? window._gcView.state() : null, phoneBars: ['gc-fh-tabs', 'gc-mobile-bottom-nav', '_gcAppTabs'].filter(vis), dock: !!dr, dockTop: dr && Math.round(dr.top), tabsBottom: tr && Math.round(tr.bottom), mainPad: main ? parseFloat(getComputedStyle(main).paddingBottom) : 0, dockH: dr ? Math.round(dr.height) : 0 }; });
+      ok(bars.view && bars.view.phone === false && !bars.view.field && !bars.phoneBars.length, tag + ': Desk view, no phone bottom bar', bars);
+      ok(!bars.dock || (bars.tabsBottom <= bars.dockTop && bars.mainPad >= bars.dockH), tag + ': the Desk dock (if shown) is below the strip and tabs and main keeps room for it', bars);
       if (i === 0) ok(L.inBox.length >= 2, tag + ': the widgets are still there (' + L.inBox.length + ')', L.inBox);
       const f = path.join(SHOTS, 'jobtop_' + w + 'x' + h + '_' + (i + 1) + '.png'); await p.screenshot({ path: f, fullPage: false }); shots.push(f);
       /* switch tabs: the container stays last, under the new tab's content */
@@ -146,7 +158,9 @@ try {
     for (let k = 0; k < 16 && r; k++) { await sleep(500); r = await m.ev(F); if (r) seen.push(r.vis.slice(0, 2).join('>')); }
     ok(r && r.vis[0] === 'gcjt-fsum' && r.vis[1] === 'gcfp-top' && r.ySum < r.yTop, 'field "' + job.name.slice(0, 28) + '": the summary first, then the tiles, the rest below', r && r.vis);
     ok(seen.every(x => x === 'gcjt-fsum>gcfp-top'), 'field: …and it stays that way for 8 s', [...new Set(seen)]);
-    ok(r && /Contract/.test(r.text) && /Spent/.test(r.text) && /Estimates/.test(r.text) && /Change orders/.test(r.text) && /Profit/.test(r.text), 'field: the summary reads Contract · Spent · Profit · Margin · Estimates · Change orders (owner)', r && r.text);
+    /* the labels are upper-cased by CSS (innerText); a bidding job without a contract reads "Contract: No contract yet" + "Bid / Estimate" like the desk strip */
+    ok(r && /^\s*(contract|contract \+ cos)\b/i.test(r.text) && /\bspent\b/i.test(r.text) && /\bprofit\b/i.test(r.text) && /\bmargin\b/i.test(r.text) && /\bestimates\b/i.test(r.text) && /\bchange orders\b/i.test(r.text)
+      && (!/no contract yet/i.test(r.text) || /bid \/ estimate/i.test(r.text)), 'field: the summary reads Contract (or No contract yet + Bid / Estimate) · Spent · Profit · Margin · Estimates · Change orders (owner)', r && r.text);
     ok(r && r.share, 'field: the 🔗 Share photos tile is on the job screen');
     if (i === 0) {
       const f = path.join(SHOTS, 'jobtop_field_390.png'); await q.screenshot({ path: f }); shots.push(f);
