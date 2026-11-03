@@ -102,7 +102,7 @@ eq('Office Admin on office@ + blank pay type are offered', PP.w2Employees(PROFS.
 // patch PASTPAYCUT: a check paid after the cutoff always uses the formulas, even if set to the stub
 { const r = [{ payDate: '2026-11-06', from: '2026-10-31', to: '2026-11-06', name: 'Avery Test', empKey: 'UA', gross: '1000', comm: '', fedMode: 'stub', fed: '5', fedCalc: 80, ficaMode: 'stub', ss: '1', med: '1', other: '', net: '', netTyped: false, st: 'TN', stMode: 'calc' }];
   PP.calc(r, { set });
-  eq('after 11/3: federal from the formula, not the typed stub', [r[0].out.fed, r[0].out.fedMode, r[0].out.ss], [80, 'calc', 62]);
+  eq('after 11/3: a typed amount is allowed but flagged', [r[0].out.fed, r[0].out.fedMode, r[0].out.warn.some(w => /changed from the CRM formula/.test(w))], [5, 'stub', true]);
   const r2 = [{ payDate: '2026-11-03', from: '2026-10-28', to: '2026-11-03', name: 'Avery Test', empKey: 'UA', gross: '1000', comm: '', fedMode: 'stub', fed: '5', fedCalc: 80, ficaMode: 'stub', ss: '62', med: '14.5', other: '', net: '', netTyped: false, st: 'TN', stMode: 'calc' }];
   PP.calc(r2, { set });
   eq('on 11/3: the typed paper amount stands', r2[0].out.fed, 5); }
