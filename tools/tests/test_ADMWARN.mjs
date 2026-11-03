@@ -56,8 +56,8 @@ try {
   console.log('== the name: edit, reload, sync');
   await A.ev(sid => { const old = window._crm.users.find(x => x.id === sid), ne = { name: 'Steven Biffle' }; window._gcOnUserRenamed(old, ne);
     const next = window._crm.users.map(u => u.id === sid ? Object.assign({}, u, ne) : u); window._crm.users = next; window._gcUsersRaw(next); window._supaUpsert('users', next); }, SID);
-  await H.sleep(6000);
   const cl = () => (val(H.cget('users')) || []).find(u => u.id === SID);
+  for (let i = 0; i < 90 && !(cl() && cl().name === 'Steven Biffle'); i++) await H.sleep(500);   /* the users upload is queued (sync queue / typing guard) */
   ok(cl() && cl().name === 'Steven Biffle', 'the edit is saved trimmed to the cloud', cl() && cl().name);
   await reload(); c = await cards();
   ok(await steven() === 'Steven Biffle' && noSpaces(c), 'after a reload: “Steven Biffle”, no card', { name: await steven(), cards: c.map(x => x.id) });
