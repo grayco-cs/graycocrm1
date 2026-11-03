@@ -121390,7 +121390,7 @@ ST.call(W, wrapDash, 400);
    1.5 s, 💬 Job Messages, the list's Year bar every 4 s): each one arriving made the header taller and moved the strip
    down. A native observer notices the job header the moment React draws it and runs those same painters at once
    (before the browser paints), so the strip is drawn where it stays. */
-var DRESSED = '', DRESS_AT = 0, DQ = false, MISS = 0, MISS_T = null;
+var DRESSED = '', DNAME = '', DH = null, DRESS_AT = 0, DQ = false, MISS = 0, MISS_T = null;
 function jobHeader(){
   var main = D.querySelector('main'); if (!main) return null;
   var bs = main.getElementsByTagName('button');
@@ -121404,25 +121404,60 @@ function byName(n){
 }
 function dress(){
   if (D.hidden || D.documentElement.classList.contains('_fieldmode')) return;
-  var op = W._gcOpenProject, id = op && op.id ? s(op.id) : '';
   var now = Date.now();
-  if (id && DRESSED === id) { var cc = D.getElementById('_gcCCLinkRow'); if ((cc && cc.isConnected && cc.getAttribute('data-pid') === id) || now - DRESS_AT < 1500) return; }
+  /* already dressed: this header (same element, same job) has its 📸 row */
+  if (DH && DH.isConnected && s(DH.textContent).trim() === DNAME) { var cc = D.getElementById('_gcCCLinkRow'); if (cc && cc.parentElement === DH.parentElement && cc.getAttribute('data-pid') === DRESSED) return; }
   if (now - MISS < 120) { if (!MISS_T) MISS_T = ST.call(W, function(){ MISS_T = null; MISS = 0; dressSoon(); }, 130); return; }
   var H = jobHeader();
   if (!H) { MISS = now; return; }
-  var name = s(H.h1.textContent).trim(), p = id ? proj(id) : null;
-  if (!p || s(p.name).trim() !== name) {   /* the app records the open job a little later than the header (JOBSTILL "early"): read it from the header */
-    p = byName(name); if (!p) { MISS = now; return; }
-    try { W._gcOpenProject = p; } catch (e) {} id = s(p.id);
-  }
+  var name = s(H.h1.textContent).trim();
+  if (H.h1 === DH && name === DNAME && now - DRESS_AT < 1500) return;
+  /* the job on the screen: React draws the header BEFORE its effect records the open job (_gcOpenProject and the
+     session's grayco_openpid still name the job opened before, or none) — read it from the header */
+  var op = W._gcOpenProject, id = op && op.id ? s(op.id) : '', p = id ? proj(id) : null;
+  if (!p || s(p.name).trim() !== name) { p = byName(name); if (!p) { MISS = now; return; } id = s(p.id); }
+  try { if (!op || s(op.id) !== id) W._gcOpenProject = p; } catch (e) {}
+  try { if (sessionStorage.getItem('grayco_openpid') !== id) sessionStorage.setItem('grayco_openpid', id); } catch (e) {}   /* what the app writes a moment later */
   if (D.querySelector('h1') !== H.h1) { MISS = now; return; }   /* the 📸 row goes under the page's first h1: only when that is this job's */
-  DRESSED = id; DRESS_AT = now;
+  DRESSED = id; DNAME = name; DH = H.h1; DRESS_AT = now;
   ['_gcYearBarPaint', '_gcCCLinkPaint', '_gcAp3DeskJob', '_gcJobMsgInject', '_gcPhotosDeskBtn'].forEach(function(k){ try { if (typeof W[k] === 'function') W[k](); } catch (e) {} });
 }
+/* ── desk: ROLEAPPS' Desk dock on a short screen (the owner's laptop at 125 %: about 1093 × 480) ──
+   The floating dock (Home · Jobs · Approvals · Photos · More, ~87 px tall, centered at the bottom) covered the job
+   page's tab bar there. Under 600 px of window height it becomes a compact icon row at the bottom of the left menu
+   (each button keeps its name as a tooltip); taller again, it floats as before. Its buttons are the same ones
+   (ROLEAPPS handles their clicks by #gc-ra-dock [data-t], wherever the dock is). */
+var SHORT = 600;
+function dockPlace(){
+  var d = D.getElementById('gc-ra-dock'); if (!d) return;
+  var short = (W.innerHeight || 999) < SHORT, aside = D.querySelector('#root aside') || D.querySelector('aside');
+  if (short && aside && !D.documentElement.classList.contains('_fieldmode')) {
+    if (!d.classList.contains('gcjt-dock-side')) d.classList.add('gcjt-dock-side');
+    if (d.parentElement !== aside || aside.lastElementChild !== d) aside.appendChild(d);
+    var lab = {}; try { (W._gcRA && W._gcRA.bar ? W._gcRA.bar() : []).forEach(function(x){ lab[x.k] = x.label; }); } catch (e) {}
+    Array.prototype.forEach.call(d.querySelectorAll('[data-t]'), function(b){ var l = lab[b.getAttribute('data-t')] || s(b.textContent).replace(/[^A-Za-z /]+/g, ' ').trim(); if (l && b.title !== l) b.title = l; if (l && !b.getAttribute('aria-label')) b.setAttribute('aria-label', l); });
+  } else if (d.classList.contains('gcjt-dock-side')) {
+    d.classList.remove('gcjt-dock-side');
+    if (d.parentElement !== D.body) D.body.appendChild(d);
+  }
+}
+function dockCss(){
+  if (D.getElementById('gc-jobtop-dock-css')) return;
+  var st = D.createElement('style'); st.id = 'gc-jobtop-dock-css';
+  st.textContent = '#gc-ra-dock.gcjt-dock-side{position:static!important;transform:none!important;left:auto!important;right:auto!important;bottom:auto!important;flex:0 0 auto;display:flex;flex-wrap:wrap;justify-content:space-around;gap:2px;margin:4px 6px 6px;padding:3px 4px;border-radius:12px;box-shadow:none;z-index:auto}'
+    + '#gc-ra-dock.gcjt-dock-side button{min-width:34px!important;min-height:0!important;padding:4px 5px!important;font-size:0!important;gap:0;border-radius:9px}'
+    + '#gc-ra-dock.gcjt-dock-side button .e,#gc-ra-dock.gcjt-dock-side button .c{font-size:17px!important;line-height:1.1}'
+    + '#gc-ra-dock.gcjt-dock-side .gc-fh-badge{font-size:10px!important;top:-3px;right:-6px;padding:0 4px}';
+  (D.head || D.documentElement).appendChild(st);
+}
+dockCss();
+W.addEventListener('resize', function(){ try { dockPlace(); } catch (e) {} });
+SI.call(W, function(){ try { dockPlace(); } catch (e) {} }, 700);
+try { new MO(function(ms){ for (var i = 0; i < ms.length; i++) for (var j = 0; j < ms[i].addedNodes.length; j++) if (ms[i].addedNodes[j].id === 'gc-ra-dock') { dockPlace(); return; } }).observe(D.body || D.documentElement, { childList: true }); } catch (e) {}
 function dressSoon(){ if (DQ) return; DQ = true; Promise.resolve().then(function(){ DQ = false; try { dress(); } catch (e) { warn(e); } }); }
 try { var dmo = new MO(function(){ dressSoon(); }); dmo.observe(D.documentElement, { childList: true, subtree: true }); } catch (e) { warn(e); }
 SI.call(W, dressSoon, 1000);
-W._gcJobTop = { box: function(){ return D.getElementById('gc-job-widgets'); }, settle: settle, fieldSum: fieldSum, dress: dress };
+W._gcJobTop = { box: function(){ return D.getElementById('gc-job-widgets'); }, settle: settle, fieldSum: fieldSum, dress: dress, dock: dockPlace };
 try { console.log('[GC] Job page: header → summary → tabs → tab content → job tools (patch JOBTOP) — _gcJobBox'); } catch (e) {}
 })();
 </script>
