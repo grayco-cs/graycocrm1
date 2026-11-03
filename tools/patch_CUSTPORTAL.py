@@ -139,6 +139,15 @@ R = """kind: 'estimate', refId: s(e.id), title: title.slice(0, 120), amount: num
 R2 = """kind: 'estimate', refId: s(e.id), title: title.slice(0, 120), amount: (isUploadPdf(e) && s(row.ref) === s(e.sourceRef)) || /upload/i.test(s(row.via)) ? null : (num(e.totalCharge) || null), lines: [], docRef: row.ref,   /* patch CUSTPORTAL: an uploaded PDF carries its own numbers */"""
 EDITS.append((R, R2, 1))
 
+# patch SUBPORTAL3 (claude/subportal) rewrote subsOf ("subs see every photo of their job unless a person hid it from subs") and
+# the sub line's comment: on such a page the sub rule is SUBPORTAL3's (edit 1b is skipped) and the "Added by … (customer)" line
+# goes after the new ending
+if 'patch SUBPORTAL3: subs see every photo' in t:
+    EDITS = [e for e in EDITS if e[0] != B]
+H_SP3 = """(sharedOf(r) ? '' : ' · hidden from the customer') + '</div>';   /* patch SUBPHOTOS + SUBPORTAL3 */"""
+if t.count(H) == 0 and t.count(H_SP3) == 1:
+    EDITS = [(H_SP3, H_SP3 + H2[len(H):], 1) if e[0] == H else e for e in EDITS]
+
 for old, new, n in EDITS:
     c = t.count(old)
     if c != n:
