@@ -109,10 +109,14 @@ try {
         const back = [...document.querySelectorAll('main button')].find(b => /^\s*←\s*All Projects\s*$/.test(b.textContent || '')), kids = back ? [...back.parentElement.children] : [];
         const tabs = kids.find(k => [...k.children].some(b => b.tagName === 'BUTTON' && /^Files & Docs \(/.test((b.textContent || '').trim())));
         const dock = document.getElementById('gc-ra-dock'), dr = dock && vis('gc-ra-dock') ? dock.getBoundingClientRect() : null, tr = tabs ? tabs.getBoundingClientRect() : null;
+        const tiles = kids.find(k => k !== tabs && [...k.children].some(c => /^Change Orders/.test((c.textContent || '').trim())));
+        const hit = (a, b) => !!a && !!b && a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+        const covers = !!dr && (hit(dr, tr) || hit(dr, tiles && tiles.getBoundingClientRect()));
         const main = document.querySelector('main');
-        return { view: window._gcView ? window._gcView.state() : null, phoneBars: ['gc-fh-tabs', 'gc-mobile-bottom-nav', '_gcAppTabs'].filter(vis), dock: !!dr, dockTop: dr && Math.round(dr.top), tabsBottom: tr && Math.round(tr.bottom), mainPad: main ? parseFloat(getComputedStyle(main).paddingBottom) : 0, dockH: dr ? Math.round(dr.height) : 0 }; });
+        return { view: window._gcView ? window._gcView.state() : null, phoneBars: ['gc-fh-tabs', 'gc-mobile-bottom-nav', '_gcAppTabs'].filter(vis), dock: !!dr, dockTop: dr && Math.round(dr.top), tabsBottom: tr && Math.round(tr.bottom), mainPad: main ? parseFloat(getComputedStyle(main).paddingBottom) : 0, dockH: dr ? Math.round(dr.height) : 0, covers, side: !!dock && !!dock.closest('aside'), innerH: window.innerHeight }; });
       ok(bars.view && bars.view.phone === false && !bars.view.field && !bars.phoneBars.length, tag + ': Desk view, no phone bottom bar', bars);
-      ok(!bars.dock || (bars.tabsBottom <= bars.dockTop && bars.mainPad >= bars.dockH), tag + ': the Desk dock (if shown) is below the strip and tabs and main keeps room for it', bars);
+      ok(!bars.dock || (!bars.covers && (bars.side || bars.mainPad >= bars.dockH)), tag + ': the Desk dock (if shown) never covers the summary strip or the tab bar (' + (bars.side ? 'compact, in the left menu' : 'floating; main keeps room for it') + ')', bars);
+      if (bars.innerH < 600 && bars.dock) ok(bars.side, tag + ': a short window (' + bars.innerH + ' px): the dock is the compact icon row in the left menu', bars);
       if (i === 0) ok(L.inBox.length >= 2, tag + ': the widgets are still there (' + L.inBox.length + ')', L.inBox);
       const f = path.join(SHOTS, 'jobtop_' + w + 'x' + h + '_' + (i + 1) + '.png'); await p.screenshot({ path: f, fullPage: false }); shots.push(f);
       /* switch tabs: the container stays last, under the new tab's content */
@@ -122,6 +126,17 @@ try {
       await c.ev(() => { const b = [...document.querySelectorAll('main button')].find(x => /^Overview$/.test((x.textContent || '').trim())); if (b) b.click(); }); await sleep(400);
       await c.ev(() => { try { window.__jtWatch.mo.disconnect(); } catch (e) {} });
     }
+  }
+  /* a short window: the compact dock's Home still opens the role's Desk home */
+  if (SIZES.some(([w, h]) => h < 600)) {
+    await p.setViewportSize({ width: 1093, height: 480 }); await sleep(1500);
+    const hasDock = await c.ev(() => !!document.querySelector('aside #gc-ra-dock [data-t="home"]'));
+    if (hasDock) {
+      await c.ev(() => document.querySelector('aside #gc-ra-dock [data-t="home"]').click());
+      const home = await waitFor(c, () => document.documentElement.classList.contains('gc-ra-home') && !!document.getElementById('gc-ra-desk') && getComputedStyle(document.getElementById('gc-ra-desk')).display !== 'none', null, 8000, 250);
+      ok(!!home, '1093x480: the compact dock\'s Home opens the role\'s Desk home');
+      { const f = path.join(SHOTS, 'jobtop_1093x480_home.png'); await p.screenshot({ path: f }); shots.push(f); }
+    } else ok(true, '1093x480: no Desk dock for this role');
   }
   /* desk: 🔗 Share photos on the Photos tab → the Photo report of this job */
   const job = pick[0];
