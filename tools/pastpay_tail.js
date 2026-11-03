@@ -300,6 +300,7 @@ W._gcPastPayOpen = async function(){
       +'\n\nSaved as already paid: no checks to write, no alerts, nothing booked to accounting.')) return;
     fresh.push.apply(fresh, made);
     try{ await p.saveRuns(fresh); }catch(e){ msg.style.color='#b91c1c'; msg.textContent='Could not save: '+(e&&e.message); return; }
+    try{ var _rp=p.replaceDrafts ? await p.replaceDrafts(live.map(function(r){ return { empId:r.empKey, name:r.name }; })) : null; if(_rp && _rp.changed) fresh=_rp.list; }catch(_rpE){}   /* patch PAYREPLACE */
     runs=fresh; rows=rows.filter(function(r){ return live.indexOf(r)<0; }); saveDraft(rows); draw();
     msg.style.color='#166534'; msg.innerHTML='✅ Saved '+made.length+' paid run'+(made.length===1?'':'s')+' ('+live.length+' checks). Open <b>🧾 Form 941</b> to see the quarter.';
     try{ console.log('[GC] PASTPAY: '+made.length+' paid run(s) entered from paystubs (source paystub-entry, not booked).'); }catch(e){}

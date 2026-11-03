@@ -201,6 +201,7 @@ W._gcPayManualSave = async function(spec){
   all.push(run);
   await p.saveRuns(all);
   if(status === 'pending'){ try{ if(W._gcPayrollNotify) W._gcPayrollNotify(run); }catch(e){} }
+  if(status === 'approved' || status === 'paid'){ try{ if(p.replaceDrafts) await p.replaceDrafts(lines); }catch(_rpE){} }   /* patch PAYREPLACE */
   try{ console.log('[GC] Payroll week entered by hand: '+run.period+' · '+status+' · '+lines.length+' check(s) · net '+money(t.net)); }catch(e){}
   return { ok:true, run:run, dup:dup };
 };
