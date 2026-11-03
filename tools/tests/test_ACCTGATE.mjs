@@ -296,11 +296,37 @@ const stTable = ev => ev(() => ({
   okTxt: !!document.querySelector('.gc-money-imp [data-c="stmtok"]'), warn: !!document.querySelector('.gc-money-imp [data-c="stmtwarn"]'),
   msg: (document.querySelector('.gc-money-imp [data-c="msg"]') || {}).textContent || '' }));
 const stLoad = async (c, file) => { await c.page().setInputFiles('.gc-money-imp [data-c="file"]', file); return waitFor(c, () => document.querySelectorAll('.gc-money-imp tr[data-r], .gc-money-imp tr[data-x]').length > 0 || !!document.querySelector('.gc-money-imp [data-c="image"]') || /No transactions|could not|password/i.test((document.querySelector('.gc-money-imp [data-c="msg"]') || {}).textContent || ''), null, 45000); };
-const stOpen = async (c, which) => { await mk(c)(async w => { if (!document.querySelector('#gc-money-needs [data-mn="' + w + '"]')) await window.__go('todo'); for (let i = 0; i < 30 && !document.querySelector('#gc-money-needs [data-mn="' + w + '"]'); i++) await new Promise(z => setTimeout(z, 500)); const b = document.querySelector('#gc-money-needs [data-mn="' + w + '"]'); if (b) b.click(); }, which); return waitFor(c, () => !!document.querySelector('.gc-money-imp [data-c="file"]'), null, 15000); };
+/* patch TODOTOP (owner 11/2): 💳 / 🏦 statement imports and 📥 Drop invoices & receipts live on the Accounting screen's tool row
+   (#gck-root .gck-tools → #gc-money-acct, #gc-bulkdrop-acct), no longer on top of the To-Do (#gc-money-needs keeps 📥 Needs a job) */
+const stOpen = async (c, which) => { await mk(c)(async w => { const sel = '#gc-money-acct [data-mn="' + w + '"]'; if (!document.querySelector(sel)) await window.__go('taxcenter'); for (let i = 0; i < 30 && !document.querySelector(sel); i++) await new Promise(z => setTimeout(z, 500)); const b = document.querySelector(sel); if (b) b.click(); }, which); return waitFor(c, () => !!document.querySelector('.gc-money-imp [data-c="file"]'), null, 15000); };
+/* the doors: on Accounting's tool row, each opens its own window; none of them on the To-Do */
+const acctDoors = (c) => step(c, 'stmt', 'Accounting tool row: 💳 Import card statement · 🏦 Import bank statement · 📥 Drop invoices & receipts — each opens its window; not on the To-Do', async ev => {
+  const r = await ev(async () => {
+    const out = { onTodo: [], shown: [], opened: [] }, wait = async f => { for (let i = 0; i < 30 && !f(); i++) await new Promise(z => setTimeout(z, 250)); return !!f(); };
+    await window.__go('todo'); await new Promise(z => setTimeout(z, 1500));
+    out.todo = !!document.getElementById('_todoMount');
+    out.onTodo = ['#gc-money-needs [data-mn="import"]', '#gc-money-needs [data-mn="bank"]', '#gc-bulkdrop-todo'].filter(s => document.querySelector(s));
+    await window.__go('taxcenter');
+    const sel = { card: '#gc-money-acct [data-mn="import"]', bank: '#gc-money-acct [data-mn="bank"]', drop: '#gc-bulkdrop-acct' };
+    await wait(() => Object.values(sel).every(s => document.querySelector(s)));
+    out.shown = Object.keys(sel).filter(k => { const b = document.querySelector(sel[k]); return !!(b && b.closest('#gck-root .gck-tools') && __vis(b)); });
+    for (const k of ['card', 'bank']) {
+      const b = document.querySelector(sel[k]); if (!b) continue; b.click();
+      if (await wait(() => document.querySelector('.gc-money-imp [data-c="file"]'))) out.opened.push(k + ': ' + ((document.querySelector('.gc-money-imp b') || {}).textContent || '').trim());
+      const x = document.querySelector('.gc-money-imp [data-c="x"]'); if (x) x.click(); await new Promise(z => setTimeout(z, 400));
+    }
+    const d = document.querySelector(sel.drop);
+    if (d) { d.click(); if (await wait(() => document.querySelector('.gc-bd-card'))) out.opened.push('drop: ' + ((document.querySelector('.gc-bd-card b') || {}).textContent || '').trim()); const x = document.querySelector('.gc-bd-card [data-bd="x"]'); if (x) x.click(); await new Promise(z => setTimeout(z, 400)); }
+    return out;
+  });
+  const ok = r.todo && !r.onTodo.length && r.shown.length === 3 && r.opened.length === 3 && /card statement/i.test(r.opened[0]) && /bank statement/i.test(r.opened[1]) && /Drop invoices/i.test(r.opened[2]);
+  return { ok, note: 'on Accounting: ' + r.shown.join(', ') + ' · opened: ' + r.opened.join(' | ') + ' · on the To-Do: ' + (r.onTodo.join(', ') || 'none'), data: r };
+}, { money: false });
 const stGo = async (c) => { await c.page().click('.gc-money-imp [data-c="go"]'); await waitFor(c, () => !!document.querySelector('.gc-money-imp [data-c="done"]'), null, 30000); await sleep(1200); return mk(c)(() => (document.querySelector('.gc-money-imp [data-c="done"]') || {}).textContent || ''); };
 const stClose = c => mk(c)(() => { const x = document.querySelector('.gc-money-imp [data-c="x"]'); if (x) x.click(); });
 const stNet = (name, bank) => Math.round(SEXP[name].rows.filter(r => bank ? (r.dir === 'out' && r.kind !== 'transfer') : r.kind !== 'payment').reduce((a, r) => a + (r.dir === 'out' ? r.amt : -r.amt), 0) * 100) / 100;
 if (want('stmt')) {
+  await acctDoors(O);
   for (const [file, mode, last4] of [['chase_card', 'import', '4421'], ['amex_card', 'import', ''], ['firsthorizon_bank', 'bank', '']]) {
     const e = SEXP[file], bank = mode === 'bank';
     const wantR = e.rows.filter(r => bank ? (r.dir === 'out' && r.kind !== 'transfer') : r.kind !== 'payment').length, wantX = e.rows.length - wantR, net = stNet(file, bank);
@@ -350,6 +376,8 @@ if (want('stmt')) {
   });
   { const last = RESULTS[RESULTS.length - 1], d = last.money.delta; const okp = near(d.ar, -5000) && near(d.cashIn, 5000);
     console.log((okp ? '     ↑ ' : 'FAIL ↑ ') + 'A/R ' + money$(d.ar || 0) + ' (right −$5,000.00), cash ' + money$(d.cashIn || 0) + ' (right +$5,000.00)'); if (!okp) { fails += last.ok ? 1 : 0; last.ok = false; last.note += ' · A/R ' + money$(d.ar || 0) + ', cash ' + money$(d.cashIn || 0); } }
+  /* the owner sees the same doors on Accounting (patch TODOTOP) */
+  { console.log('── the owner signs in (wjohnson@grayco-cs.com) …'); const OW = await person('wjohnson@grayco-cs.com', 'owner'); await acctDoors(OW); await OW.b.close(); }
 }
 
 /* ─────────── 3. e-mailed receipts / sub invoices ─────────── */
