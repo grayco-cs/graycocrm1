@@ -116538,7 +116538,24 @@ function mergeRecords(key, local, inc){
   return out;
 }
 function isEmpty(v){ return v === '' || (Array.isArray(v) && !v.length) || (isObj(v) && !Object.keys(v).length); }
+/* patch LSSLIM (__GC_PATCH_LSSLIM__): gc_active_no_deposit is one entry per job — {id, pid, name, at, cleared}, newest first, at
+   most 50. Its entries had no id, so every pull added copies with chained content ids (1.5 M characters on a phone). */
+var DNA_KEY = 'gc_active_no_deposit';
+function dnaSlim(list){
+  var by = {};
+  (Array.isArray(list) ? list : []).forEach(function(r){
+    if(!isObj(r) || r.pid == null || r.pid === '') return;
+    var p = String(r.pid), at = String(r.at || ''), cur = by[p];
+    if(cur && cur.at >= at) return;
+    var e = { id: 'dna:' + p, pid: r.pid, name: String(r.name == null ? '' : r.name).slice(0, 200), at: at };
+    if(r.cleared) e.cleared = r.cleared;
+    by[p] = e;
+  });
+  return Object.keys(by).map(function(p){ return by[p]; }).sort(function(a, b){ return a.at < b.at ? 1 : a.at > b.at ? -1 : 0; }).slice(0, 50);
+}
+window._gcDnaSlim = dnaSlim;
 function mergeVal(key, local, inc){
+  if(key === DNA_KEY && (Array.isArray(local) || Array.isArray(inc))) return dnaSlim([].concat(Array.isArray(local) ? local : [], Array.isArray(inc) ? inc : []));   /* patch LSSLIM */
   if(local === undefined || local === null || isEmpty(local)) return (inc === undefined ? local : inc);
   if(inc === undefined || inc === null || isEmpty(inc)) return local;
   /* a list of ids here, a map of the same ids there (gc_commission_paid was written both ways) */
@@ -116574,6 +116591,8 @@ function mergeVal(key, local, inc){
   return local;                                                 /* settings / text / different shapes */
 }
 window._gcMergeValue = mergeVal;
+/* patch LSSLIM: the copy this computer already has is slimmed once at load (the next sync keeps it slim) */
+try{ var _dnaRaw = localStorage.getItem(DNA_KEY); if(_dnaRaw){ var _dnaV = JSON.parse(_dnaRaw); if(Array.isArray(_dnaV)){ var _dnaS = JSON.stringify(dnaSlim(_dnaV)); if(_dnaS !== _dnaRaw) localStorage.setItem(DNA_KEY, _dnaS); } } }catch(_dnaE){}
 function lsRead(k){ var raw = null; try{ raw = localStorage.getItem(k); }catch(e){} if(raw==null) return undefined; try{ return JSON.parse(raw); }catch(e){ return raw; } }
 function lsWrite(k, v){ try{ if(k==='gc_sub_approvals' && Array.isArray(v) && typeof window._gcFoldSubApprovals==='function') v = window._gcFoldSubApprovals(v); var _s = typeof v==='string' ? v : JSON.stringify(v); if(localStorage.getItem(k) !== _s) localStorage.setItem(k, _s); }catch(e){} }   /* patch TODOPERF */
 window._gcPullMerge = async function(key, inc, idbLocal){
