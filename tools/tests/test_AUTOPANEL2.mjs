@@ -7,7 +7,8 @@
 //      Complete-stage final invoice (job stages) still is;
 //   4. missed-call text-back: one default for the server and the panel (ON, 🔒 safety); the panel asks before ON and OFF;
 //   5. AUTOPANEL3: "CompanyCam % -> job %" and "Invoice auto-mark-paid" have switches, OFF by default (held, nothing changed);
-//   6. AUTOPANEL4: the ESTIN background proposal maker / supplier-order drafter do nothing while OFF; on demand still works.
+//   6. AUTOPANEL4: the ESTIN background proposal maker / supplier-order drafter do nothing while OFF; on demand still works;
+//   7. AUTOPANEL5: JOBFILL's expense → job by PO in the memo: OFF by default (held), by hand still works, a link sticks.
 // Exit 0 = PASS.
 import fs from 'fs'; import path from 'path'; import vm from 'vm'; import { createRequire } from 'module';
 const BUILD = path.resolve(process.argv[2] || path.join(path.dirname(new URL(import.meta.url).pathname), '..', '..'));
@@ -220,7 +221,58 @@ console.log('6. AUTOPANEL4: the background proposal maker does nothing while OFF
   ok(both.pos.join() === 'E3' && both.proc.join() === 'E1,E2' && !both.lh.proposal_maker, 'both ON: as before (orders for the signed one, proposals for the rest)', both);
   const many = await estScan({ proposal_maker: true }, Array.from({ length: 9 }, (_, i) => ({ id: 'M' + i, createdAt: '2026-11-02', total: 1 })));
   ok(many.proc.length === 6, 'ON: still at most 6 a run', many.proc.length);
-  ok(/Automatic proposals are OFF \(⚡ Automations\) — 📨 Send for approval now/.test(html) && /var STATE = \{ proposal_maker: [^}]*supplier_po_drafts: /.test(html), 'the estimate chip says automatic proposals are OFF; the panel warns how many are waiting before switching ON');
+  ok(/Automatic proposals are OFF \(⚡ Automations\) — 📨 Send for approval now/.test(html) && /var STATE = \{[^}]*proposal_maker: [^}]*supplier_po_drafts: /.test(html), 'the estimate chip says automatic proposals are OFF; the panel warns how many are waiting before switching ON');
+}
+/* ══ 7. AUTOPANEL5: JOBFILL's "put an expense on the job whose PO is in its memo" ══ */
+console.log('7. AUTOPANEL5: expense → job by the PO in its memo has a switch (default OFF); a link sticks');
+{
+  const a = AUTO.BY.expense_job_autofill;
+  ok(a && a.name === 'Put card charges on a job by PO in the memo' && a.group === 'rec' && a.effect === 'C' && a.where === 'page' && a.defaultOn === false && !a.critical, 'registry: expense_job_autofill — record change, page, OFF by default', a);
+  const mm = /\/\* AUTOREG-BEGIN \*\/\n([\s\S]*?)\/\* AUTOREG-END \*\//.exec(html);
+  ok(!!mm && mm[1] === fs.readFileSync(path.join(BUILD, 'netlify', 'functions', '_lib', 'automations.js'), 'utf8'), 'the page still carries _lib/automations.js word for word');
+  ok(/var STATE = \{ expense_job_autofill: /.test(html), 'the panel warns how many are waiting before it is switched ON');
+  const JF = between('<script id="gc-patch-jobfill">', '</script>').replace('<script id="gc-patch-jobfill">', '');
+  async function jobfill(row, role){
+    const store = new Map([['grayco_user', JSON.stringify({ name: 'Wesley Johnson', role: role || 'Admin' })]]);
+    const w = page(store, { row }); await w._gcAutomations.load();
+    w._crm = { projects: [{ id: 'P1', name: 'Smith roof', autoPO: '24117', status: 'active', client: 'Ann Smith' }, { id: 'P2', name: 'Jones gutters', autoPO: '24120', status: 'active', client: 'Bo Jones' }],
+      expenses: [{ id: 'X1', vendor: 'Lowes', desc: 'shingles PO 24117', amt: 412.5, updatedAt: '2026-11-01T10:00:00.000Z' },
+        { id: 'X2', vendor: 'Home Depot', memo: 'PO 24117 / 24120', amt: 90 },
+        { id: 'X3', vendor: 'Shell', desc: 'gas', amt: 40 },
+        { id: 'X4', vendor: 'Lowes', desc: 'PO 24120 nails', amt: 12, overhead: true }],
+      estimates: [], projectDocs: [] };
+    w._setExpenses = f => { w._crm.expenses = f(w._crm.expenses); };
+    w.document = Object.assign(w.document, { getElementById: () => null, querySelectorAll: () => [], querySelector: () => null, createElement: () => ({ style: {}, setAttribute(){}, appendChild(){} }), head: { appendChild(){} }, body: { appendChild(){} } });
+    w.sessionStorage = { getItem: () => null, setItem(){} };
+    vm.runInContext(JF, w);
+    return w;
+  }
+  const ex = (w, id) => w._crm.expenses.find(x => x.id === id);
+  const off = await jobfill({});
+  const before = JSON.stringify(off._crm.expenses);
+  off._gcJobFill.autofill(); await off.__run();
+  const lh = off._gcAutomations.state().localHeld.expense_job_autofill || {};
+  ok(JSON.stringify(off._crm.expenses) === before, 'OFF: no expense moves', off._crm.expenses);
+  ok(lh.would === 1 && /^Lowes \$412\.50 → PO 24117$/.test(lh.sample[0]), 'OFF: held "would have done 1" with an example (Lowes $412.50 → PO 24117)', lh);
+  const sug = off._gcJobFill.suggest(off._crm.projects[0], 'expenses');
+  ok(sug.some(r => r.item.id === 'X1' && r.score >= 60), 'OFF: the job\'s 🔗 Unmatched expenses still suggests it (PO in the memo)', sug.map(r => [r.item.id, r.score]));
+  off._gcJobFill.link('expenses', 'X1', 'P1', 'suggested'); await off.__run();
+  const m = ex(off, 'X1');
+  ok(m.pid === 'P1' && m.jobLinkedHow === 'suggested' && m.updatedAt > '2026-11-01T10:00:00.000Z' && m.updatedAt === m.jobLinkedAt, 'by hand (OFF): Link puts it on the job and stamps updatedAt', m);
+  const on = await jobfill({ expense_job_autofill: true });
+  const n = on._gcJobFill.autofill(); await on.__run();
+  ok(n === 1 && ex(on, 'X1').pid === 'P1' && /^auto: PO 24117$/.test(ex(on, 'X1').jobLinkedHow) && !!ex(on, 'X1').updatedAt && !ex(on, 'X2').pid && !ex(on, 'X3').pid && !ex(on, 'X4').pid, 'ON: only the expense with exactly one job\'s PO moves (two POs, none, overhead stay)', on._crm.expenses);
+  ok(!on._gcAutomations.state().localHeld.expense_job_autofill, 'ON: nothing held');
+  const pm = await jobfill({ expense_job_autofill: true }, 'PM');
+  ok(pm._gcJobFill.autofill() === 0 && !ex(pm, 'X1').pid && !pm._gcAutomations.state().localHeld.expense_job_autofill, 'a non-admin computer does nothing (as before)');
+  /* the merge every list goes through: the linked copy now wins over another computer's unlinked copy */
+  const UM = between('  function newer(x, prev){\n    /* SYNC-A: only real save stamps', "\n  console.log('[GC] Never-lose-data");
+  const um = vm.runInNewContext('(function(window, deadSet, QALT, qRank){ ' + UM + ' return window._gcUnionMerge; })', {})({ _gcEnsureRecordIds(){} }, () => ({}), {}, () => 0);
+  const stale = { id: 'X1', pid: '', vendor: 'Lowes', desc: 'shingles PO 24117', amt: 412.5, updatedAt: '2026-11-01T10:00:00.000Z' };   /* an expense on no job carries pid: '' */
+  ok(um('expenses', [m], [stale])[0].pid === 'P1' && um('expenses', [stale], [m])[0].pid === 'P1', 'a stale unlinked copy from another computer no longer undoes the link (either order of the merge)');
+  const unstamped = Object.assign({}, m, { updatedAt: stale.updatedAt });
+  ok(!um('expenses', [unstamped], [stale])[0].pid, '(why: without the new stamp the incoming stale copy won the tie — the flapping)');
+  ok(/'is listed below to link \(⚡ Automations: putting it on the job by itself is OFF\)'/.test(html), 'the Expenses tab says it is listed to link while the switch is OFF');
 }
 console.log('\n' + (fail ? 'FAIL' : 'PASS') + ' — ' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

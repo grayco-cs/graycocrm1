@@ -110,6 +110,7 @@ var ROWS = [
   ['appt_confirmations', 'cust', 'A', 0, 0, 'page', 'Appointment confirmations', 'Confirmation on a schedule change, reminder at 4 PM the day before.'],
   ['thank_you_queue', 'cust', 'C', 0, 0, 'page', 'Job-complete thank-you', 'Fully paid → thank-you on ✅ Approvals; commission unlocked flag.'],
   ['proposal_maker', 'cust', 'C', 0, 0, 'page', 'Proposal maker', 'In the background (after load, every 5 minutes, after an estimate is saved) makes the GrayCo proposal PDF for each finished estimate, stores it on the job (a bidding job if it has none) and puts ONE "Put proposal in customer portal + send" item on ✅ Approvals. Sends nothing by itself. OFF: nothing runs in the background; "📨 Send for approval now", uploads and 📤 Send estimate still make it.'],
+  ['expense_job_autofill', 'rec', 'C', 0, 0, 'page', 'Put card charges on a job by PO in the memo', 'Every minute (every 5 s while the CRM loads) an expense on no job whose memo carries exactly one job\'s PO is put on that job. OFF: nothing moves; the job\'s Expenses tab lists it under "🔗 Unmatched expenses" to link with one tap.'],
   ['supplier_po_drafts', 'rec', 'C', 0, 0, 'page', 'Supplier order drafts', 'After an estimate or its job is signed, drafts one purchase order per supplier from its material lines and puts each PO e-mail on ✅ Approvals. OFF: nothing in the background; "🚚 Draft supplier orders" still makes them.'],
   /* ── sub sends (A) ── */
   ['sub_schedule_texts', 'sub', 'A', 0, 0, 'server', 'Sub schedule texts', '6 PM the evening before and about 1 h before each start.'],

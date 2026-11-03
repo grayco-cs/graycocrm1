@@ -230,6 +230,7 @@ var ROWS = [
   ['appt_confirmations', 'cust', 'A', 0, 0, 'page', 'Appointment confirmations', 'Confirmation on a schedule change, reminder at 4 PM the day before.'],
   ['thank_you_queue', 'cust', 'C', 0, 0, 'page', 'Job-complete thank-you', 'Fully paid → thank-you on ✅ Approvals; commission unlocked flag.'],
   ['proposal_maker', 'cust', 'C', 0, 0, 'page', 'Proposal maker', 'In the background (after load, every 5 minutes, after an estimate is saved) makes the GrayCo proposal PDF for each finished estimate, stores it on the job (a bidding job if it has none) and puts ONE "Put proposal in customer portal + send" item on ✅ Approvals. Sends nothing by itself. OFF: nothing runs in the background; "📨 Send for approval now", uploads and 📤 Send estimate still make it.'],
+  ['expense_job_autofill', 'rec', 'C', 0, 0, 'page', 'Put card charges on a job by PO in the memo', 'Every minute (every 5 s while the CRM loads) an expense on no job whose memo carries exactly one job\'s PO is put on that job. OFF: nothing moves; the job\'s Expenses tab lists it under "🔗 Unmatched expenses" to link with one tap.'],
   ['supplier_po_drafts', 'rec', 'C', 0, 0, 'page', 'Supplier order drafts', 'After an estimate or its job is signed, drafts one purchase order per supplier from its material lines and puts each PO e-mail on ✅ Approvals. OFF: nothing in the background; "🚚 Draft supplier orders" still makes them.'],
   /* ── sub sends (A) ── */
   ['sub_schedule_texts', 'sub', 'A', 0, 0, 'server', 'Sub schedule texts', '6 PM the evening before and about 1 h before each start.'],
@@ -177594,7 +177595,7 @@ function when(iso){ var t = Date.parse(iso || ''); if (!t) return ''; try { retu
 /* patch AUTOPANEL (coordinator 11/02): automations that act on what is waiting NOW when switched on (not on a clock) — the
    switch-on asks first and says how many items are waiting: the page counts the draws itself; otherwise the last
    "would have done N" the automation recorded while it was OFF */
-var STATE = { proposal_maker: 'estimates (proposal PDFs)', supplier_po_drafts: 'signed estimates (supplier orders)', cc_pct_sync: 'job % updates from CompanyCam', auto_mark_paid: 'invoices marked paid', job_stages: 'draw invoices / stage steps', legacy_progress_billing: 'progress draws', progress_autodraw: 'draw invoices', appt_confirmations: 'appointment messages', bid_result_emails: 'bid-result e-mails to GCs',
+var STATE = { expense_job_autofill: 'expenses to put on jobs', proposal_maker: 'estimates (proposal PDFs)', supplier_po_drafts: 'signed estimates (supplier orders)', cc_pct_sync: 'job % updates from CompanyCam', auto_mark_paid: 'invoices marked paid', job_stages: 'draw invoices / stage steps', legacy_progress_billing: 'progress draws', progress_autodraw: 'draw invoices', appt_confirmations: 'appointment messages', bid_result_emails: 'bid-result e-mails to GCs',
   auto_100: 'jobs set to 100 %', closeout_autopilot: 'job closeouts', mailed_invoice_booking: 'e-mailed invoices / receipts', ms_tax_add: 'Mississippi estimates', lead_auto_assign: 'held leads', companycam_new_jobs: 'new CompanyCam projects' };
 function drawsWaiting(){
   try {
@@ -183783,7 +183784,10 @@ function patchList(setter, id, fields, after){
 }
 function link(kind, id, pid, how){
   var job = jobById(pid); if (!job) return false;
-  var f = { pid: pid, jobLinkedAt: new Date().toISOString(), jobLinkedBy: s(me().name), jobLinkedHow: how || 'manual' };
+  /* __GC_PATCH_AUTOPANEL5__ */ /* the link stamps updatedAt: every list merge keeps the newer copy (a tie keeps the INCOMING one), so an
+     unlinked copy from another computer can no longer undo it */
+  var _at = new Date().toISOString();
+  var f = { pid: pid, jobLinkedAt: _at, jobLinkedBy: s(me().name), jobLinkedHow: how || 'manual', updatedAt: _at };
   var ok = false, done = function(){ log({ kind: kind, id: id, to: pid, toLabel: label(job), how: how || 'manual' }); };
   if (kind === 'expenses') ok = patchList(W._setExpenses, id, f, done);
   else if (kind === 'invoices') ok = patchList(W._setInvoices, id, Object.assign(f, { po: job.autoPO || '' }), done);
@@ -183820,7 +183824,7 @@ function reasonFor(job, tab){
     case 'expenses':
       sug = suggest(job, 'expenses');
       if (c.expenses && !sug.length) return null;
-      return { tab: tab, empty: !c.expenses, text: (c.expenses ? '' : 'No expenses yet. ') + 'The office puts expenses and receipts on the job (💳 Enter expenses) or imports the QuickBooks export into the 📥 Expense inbox; a QuickBooks memo with PO ' + po + ' goes on this job by itself. Card charges wait in 🔗 Match to Jobs.', fix: sug.length ? { k: 'expenses', t: '🔗 Unmatched expenses that look like this job (' + sug.length + ')' } : null, more: [{ k: 'matchall', t: '🔗 Match to Jobs (all)' }] };
+      return { tab: tab, empty: !c.expenses, text: (c.expenses ? '' : 'No expenses yet. ') + 'The office puts expenses and receipts on the job (💳 Enter expenses) or imports the QuickBooks export into the 📥 Expense inbox; a QuickBooks memo with PO ' + po + ' ' + (W._gcAutoOn && W._gcAutoOn('expense_job_autofill') ? 'goes on this job by itself' : 'is listed below to link (⚡ Automations: putting it on the job by itself is OFF)') + '. Card charges wait in 🔗 Match to Jobs.', fix: sug.length ? { k: 'expenses', t: '🔗 Unmatched expenses that look like this job (' + sug.length + ')' } : null, more: [{ k: 'matchall', t: '🔗 Match to Jobs (all)' }] };
     case 'projectinvoices':
       sug = suggest(job, 'invoices');
       if (c.invoices && !sug.length) return null;
@@ -184030,13 +184034,21 @@ function autofill(){
     FILLED['d' + d.id] = (FILLED['d' + d.id] || 0) + 1;   /* tried again next round if the list was not loaded yet (12 tries, a minute) */
     if (link('docs', d.id, pid, 'auto: estimate ' + (e.name || e.id))) n++;
   });
-  /* an unlinked expense whose memo carries exactly ONE job's PO → that job */
+  /* an unlinked expense whose memo carries exactly ONE job's PO → that job — patch AUTOPANEL5: only while ⚡ "Put card
+     charges on a job by PO in the memo" (expense_job_autofill) is ON; OFF → "held", it waits in 🔗 Unmatched expenses */
+  var dueE = [];
   expenses().forEach(function(x){
     if (s(x.pid) || x.overhead || (FILLED['e' + x.id] || 0) >= 12) return;
     var hits = posIn(textOf(x)); if (hits.length !== 1) return;
-    FILLED['e' + x.id] = (FILLED['e' + x.id] || 0) + 1;
-    if (link('expenses', x.id, hits[0].id, 'auto: PO ' + poOf(hits[0]))) n++;
+    dueE.push({ x: x, job: hits[0] });
   });
+  if (dueE.length && (W._gcAutoGate ? W._gcAutoGate('expense_job_autofill', { n: dueE.length, sample: dueE.slice(0, 3).map(function(d){
+      return (s(d.x.vendor || d.x.payee || d.x.desc || d.x.description) || s(d.x.id)) + ' ' + money(d.x.amt != null ? d.x.amt : d.x.amount) + ' → PO ' + poOf(d.job); }) }) : false)) {
+    dueE.forEach(function(d){
+      FILLED['e' + d.x.id] = (FILLED['e' + d.x.id] || 0) + 1;
+      if (link('expenses', d.x.id, d.job.id, 'auto: PO ' + poOf(d.job))) n++;
+    });
+  }
   return n;
 }
 
