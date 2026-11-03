@@ -151,7 +151,9 @@ const ORDER = () => { const F = (a, b) => !!(a && b) && !!(a.compareDocumentPosi
   const tvs = !!l.querySelector('[data-tvs-b="office"]') && !!l.querySelector('[data-tvs-b="lobby"]'), lob = !!l.querySelector('[data-otv="lobby"]');
   return { g: g.innerText.slice(0, 120), inputs: g.querySelectorAll('input').length, card: tvs ? 'TVs row' : lob ? 'Lobby TV card' : '?',
     near: !!x && x.contains(g) && x.contains(l) && F(goal, g) && F(g, l) && (!oc || F(l, oc)) && (tvs || lob) }; };
-const cards = await H.waitFor(A, ORDER => { const r = (0, eval)('(' + ORDER + ')')(); return r && r.near ? r : null; }, ORDER.toString(), 30000, 500) || await A.page().evaluate(ORDER => (0, eval)('(' + ORDER + ')')(), ORDER.toString());
+/* patch X10's card box comes from an idle-paced timer: a person at the screen moves the mouse (puts it back on pace) — so do we */
+let cards = null; for (let t0 = Date.now(); Date.now() - t0 < 45000 && !(cards && cards.near); ) { try { await A.page().mouse.move(300 + Math.round(Math.random() * 300), 300 + Math.round(Math.random() * 200)); } catch (e) {}
+  cards = await A.page().evaluate(ORDER => (0, eval)('(' + ORDER + ')')(), ORDER.toString()).catch(() => null); if (!(cards && cards.near)) await sleep(500); }
 ok(cards && cards.inputs === 3 && cards.near, '⚙ Admin: 🎯 Company goal → 🏁 Team goals (3 inputs) → the ' + (cards && cards.card) + ' → 📟 On call', cards || await A.page().evaluate(() => ({ h1: [...document.querySelectorAll('main h1')].map(h => h.textContent).slice(0, 4), x10: !!document.getElementById('gc-x10-admin'), view: localStorage.getItem('grayco_view') })));
 await A.page().screenshot({ path: path.join(SHOTS, 'admin_goal_cards.png') });
 /* the lobby editor (admin) */
