@@ -82,6 +82,7 @@ await t('1 forgot password: "Send me a code" e-mails a 6-digit code (also at nig
 await t('1 the invite says the starter password plainly (owner 11/02): the portal link e-mail (approval), a link e-mail sent after approval, the PM\'s welcome text, a follow-up — quiet hours kept', async () => {
   const PM = { authorization: 'Bearer good-pm' };
   const SENT = 'Your password is your first name: Sample (you can change it after you sign in).';
+  { const g = W.get('gc_automations'); W.put('gc_automations', Object.assign({}, g && typeof g === 'object' ? g : {}, { portal_invite_email: true })); try { require(W.FNDIR + '/_lib/automations.js')._t.reset(); } catch (e) {} }   /* patch AUTOPANEL (live since r17o): the new-job portal link e-mail is a ⚡ switch, OFF by default — ON for this check */
   { const pj = W.get('projects'); pj[0].created = new Date(Date.now()).toISOString().slice(0, 10); pj[0].createdAt = new Date(Date.now()).toISOString(); W.put('projects', pj); W.resetCaches(); }   /* a NEW job gets the invite */
   const r = await call('portal', { action: 'send-link', projectId: S.pid }, PM); assert.ok(r.data.ok, JSON.stringify(r.data));
   assert.ok(r.data.approval || r.data.todo, JSON.stringify(r.data));
