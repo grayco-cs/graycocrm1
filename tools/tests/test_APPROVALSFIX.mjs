@@ -4,7 +4,7 @@
 //   1. the sheet never says "You're all caught up!" while its header counts something to approve;
 //   2. the red "🧾 1 expense to approve" button opens the expense view ON TOP and in view: its Approve button is the topmost
 //      element at its own centre and inside the viewport, at 1280x720 and 610x720, without the page itself scrolling;
-//   3. Approve there → the My Approvals sheet is back by itself, refreshed in place: no expense button, header one less,
+//   3. Approve there → the My Approvals sheet is back by itself, refreshed in place: no expense button, the header matches the live set (no expense),
 //      the 941 still listed, no "caught up" — no click-away, no close-and-reopen.
 // Env: GC_HARNESS (default scratchpad wN/harness_N.mjs). Run under the scratchpad's browser_lock.sh.
 import path from 'path'; import fs from 'fs'; import { pathToFileURL } from 'url';
@@ -21,7 +21,8 @@ const projs = (V('projects') || []).filter(p => p && p.id && /active/i.test(Stri
 const today = new Date().toISOString().slice(0, 10), ent = new Date(Date.now() - 864e5).toISOString();
 /* only our two cards: the mirror's other pending approvals are cleared so the counts are exact */
 put('gc_sub_approvals', []); put('gc_email_queue', []); put('gc_approval_queue', []);
-put('expenses', (V('expenses') || []).concat([{ id: 'EXPAFTEST1', type: 'expense', vendor: 'AFTest Lumber', desc: 'AFTest boards', amt: 77.5, pid: job.id, category: 'Materials', status: 'pending', date: today, by: 'Wesley Johnson', enteredAt: ent, updatedAt: ent }]));
+/* the mirror's own expenses are marked approved, so ours is the only expense the scan finds */
+put('expenses', (V('expenses') || []).map(e => e && typeof e === 'object' ? Object.assign({}, e, { approved: true }) : e).concat([{ id: 'EXPAFTEST1', type: 'expense', vendor: 'AFTest Lumber', desc: 'AFTest boards', amt: 77.5, pid: job.id, category: 'Materials', status: 'pending', date: today, by: 'Wesley Johnson', enteredAt: ent, updatedAt: ent }]));
 const EQ = [{ id: 'expId:EXPAFTEST1', expId: 'EXPAFTEST1', jobId: job.id, pm: 'Wesley Johnson', amount: 77.5, payee: 'AFTest Lumber', desc: 'AFTest boards', matched: true, status: 'pending_pm', enteredAt: ent }];
 put('gc_expense_approvals', EQ);
 const F941 = [{ id: 'f941_2026_Q3', kind: 'f941', year: 2026, q: 3, status: 'waiting', due: '2026-11-02', createdAt: ent, createdBy: 'CRM', updatedAt: ent, at: ent, numbers: { L2: 1000, L3: 100, L12: 250, L13: 250, L14: 0, warnings: [] } }];
@@ -44,7 +45,8 @@ const sheet = () => p.evaluate(() => {
   if (!ov) return null; const card = ov.firstElementChild, vis = e => !!e && e.offsetParent !== null && getComputedStyle(e).display !== 'none';
   const caught = [...card.querySelectorAll('div')].some(d => /^\s*✓ You're all caught up!?\s*$/.test(d.textContent) && vis(d));
   const head = card.querySelector('[data-gc-appr-total]');
-  return { head: head ? head.textContent : '', n: head ? +head.getAttribute('data-gc-appr-total') : null, caught, exp: !!card.querySelector('#_paExp'), other: /Form 941 for Q3 2026/.test(card.textContent) };
+  const hr = (head || card).getBoundingClientRect(), at = document.elementFromPoint(hr.left + hr.width / 2, hr.top + Math.min(hr.height / 2, 10));
+  return { onTop: !!at && ov.contains(at), head: head ? head.textContent : '', n: head ? +head.getAttribute('data-gc-appr-total') : null, caught, exp: !!card.querySelector('#_paExp'), other: /Form 941 for Q3 2026/.test(card.textContent) };
 });
 await p.evaluate(() => window._gcOpenPmApprovals());
 let s1 = await waitFor(c, () => { const h = document.querySelector('[data-gc-appr-total]'); return h && /other approval/.test(h.textContent) ? true : null; }, null, 8000, 300); await sleep(1200);
@@ -67,9 +69,10 @@ for (const [w, h] of [[610, 720], [1280, 720]]) {
   ok(r.found && r.onTop && r.inView && r.pageScroll === 0, w + 'x' + h + ': the expense view is on top, its Approve button in view (no page scroll)', r);
 }
 await mclick(p, [...await p.locator('button', { hasText: /Approve\s*→\s*P&L/ }).all()].pop()); await sleep(2500);
-const s2 = await sheet(); console.log('   after approve', JSON.stringify(s2), JSON.stringify(await SET()));
-ok(s2, 'after Approve the My Approvals sheet is back by itself (no close-and-reopen)', s2);
-ok(s2 && s1 && !s2.exp && s2.other && s2.n === s1.n - 1 && !s2.caught, 'refreshed in place: expense gone, header one less, the 941 still there, no "caught up"', s2);
+const s2 = await sheet(), set2 = await SET(); console.log('   after approve', JSON.stringify(s2), JSON.stringify(set2));
+ok(s2 && s2.onTop, 'after Approve the My Approvals sheet is back on top by itself (no close-and-reopen)', s2);
+/* (the mirror's other cards may sync back meanwhile: the header must match the live set, without the expense) */
+ok(s2 && !s2.exp && s2.other && s2.n === set2.total && !/expense/.test(s2.head) && !s2.caught, 'refreshed in place: expense gone, header = the live count with no expense, the 941 still there, no "caught up"', s2);
 ok(!c.errs.length, 'no page errors', c.errs.slice(0, 5));
 console.log((fail ? 'FAILED ' : 'ALL PASS ') + pass + ' passed, ' + fail + ' failed');
 await c.b.close(); process.exit(fail ? 1 : 0);
