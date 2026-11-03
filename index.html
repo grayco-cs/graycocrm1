@@ -5291,7 +5291,7 @@ window.__GC_LIVE=function(key, v){
   return v;
 };
 </script>
-<!-- GrayCo CRM Build: 33.163-2026-11-03-r17q8 -->
+<!-- GrayCo CRM Build: 33.163-2026-11-03-r17q9 -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6239,7 +6239,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.163-2026-11-03-r17q8");
+  console.log("[GC] Build 33.163-2026-11-03-r17q9");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6287,7 +6287,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.163-2026-11-03-r17q8"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.163-2026-11-03-r17q9"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -85080,16 +85080,18 @@ async function render(){
   var tabs=[['run','Run Payroll'],['approvals','Approvals'+(pend.length?(' ('+pend.length+')'):'')],
             ['employees','Employees'],['withholding','Withholding & Taxes'],['settings','Settings']].concat((P.isAdmin()&&window._gcF941Render)?[['f941','🧾 Form 941']]:[]).concat((P.isAdmin()&&window._gcMsTaxRender)?[['mstax','🏛 MS contractor tax']]:[]);   /* patch F941 · patch MSCONTAX */
   m.innerHTML='<div style="'+CSS.page+'">'
-    + (pend.length ? redBar(pend) : '')
-    + (due && (due.subs.length||due.payroll.length) ? checksDueBar(due) : '')
-    + ((P.canSee()&&window._gcPmPayCard) ? '<div id="_gcPmPayCardMount"></div>' : '')   /* patch PMPAYCHECK */
     + '<div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:10px;flex-wrap:wrap;gap:8px;">'
       + '<div><h1 style="'+CSS.h1+'">💵 Payroll</h1>'
       + '<p style="'+CSS.sub+'">'+(P.isAdmin()?'Admin — you approve every check.':'Office — prepare a run and send it to an admin to approve.')+'</p></div>'
       + '<div style="font-size:11px;color:#64748b;">Signed in as <b>'+esc(P.me())+'</b></div></div>'
     + '<div style="display:flex;border-bottom:2px solid #e2e8f0;margin-bottom:14px;flex-wrap:wrap;">'
       + tabs.map(function(t){ return '<button data-tab="'+t[0]+'" style="'+(S.tab===t[0]?CSS.tabOn:CSS.tab)+'">'+t[1]+'</button>'; }).join('')
-    + '</div><div id="_payBody"></div></div>';
+    + '</div>'   /* patch PMPAY2: heading + tabs first, then the bars, the tab, and the PM pay check last */
+    + (pend.length ? redBar(pend) : '')
+    + (due && (due.subs.length||due.payroll.length) ? checksDueBar(due) : '')
+    + '<div id="_payBody"></div>'
+    + ((P.canSee()&&window._gcPmPayCard) ? '<div id="_gcPmPayCardMount" style="margin-top:18px"></div>' : '')
+    + '</div>';
   Array.prototype.forEach.call(m.querySelectorAll('[data-tab]'), function(b){
     b.onclick=function(){ S.tab=b.getAttribute('data-tab'); S.emp=null; render(); };
   });
@@ -213218,6 +213220,15 @@ function compute(o){
       pms.push({ key:s((u && u.id) || nm), name:s(nm), prof:null, user:u });
     });
   });
+  /* patch PMPAY2: only active Team people who are not let go and not an owner / admin */
+  (function(){ var fired = {}; try{ fired = JSON.parse(localStorage.getItem('gc_fired_users') || '{}') || {}; }catch(_f){}
+    var owners = {}; try{ (window._gcOwnerNames ? window._gcOwnerNames() : []).forEach(function(n){ owners[low(n)] = 1; }); }catch(_o){}
+    pms = pms.filter(function(pm){ var u = pm.user, nm = low(pm.name), em = low(u && u.email);
+      if(fired[nm] || (em && fired[em])) return false;
+      if(users.length && !u) return false;
+      if(u && (u.active === false || u.fired === true || u.terminated === true || /inactive|terminat|former|fired|let go|removed/.test(low(u.status)))) return false;
+      if(owners[nm] || (u && (/^(admin|owner)$/.test(low(u.role)) || low(u.payType) === 'owner'))) return false;
+      return true; }); })();
 
   var flags = [], rows = [];
   pms.forEach(function(pm){

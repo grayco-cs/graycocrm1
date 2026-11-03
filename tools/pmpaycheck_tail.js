@@ -98,6 +98,15 @@ function compute(o){
       pms.push({ key:s((u && u.id) || nm), name:s(nm), prof:null, user:u });
     });
   });
+  /* patch PMPAY2: only active Team people who are not let go and not an owner / admin */
+  (function(){ var fired = {}; try{ fired = JSON.parse(localStorage.getItem('gc_fired_users') || '{}') || {}; }catch(_f){}
+    var owners = {}; try{ (window._gcOwnerNames ? window._gcOwnerNames() : []).forEach(function(n){ owners[low(n)] = 1; }); }catch(_o){}
+    pms = pms.filter(function(pm){ var u = pm.user, nm = low(pm.name), em = low(u && u.email);
+      if(fired[nm] || (em && fired[em])) return false;
+      if(users.length && !u) return false;
+      if(u && (u.active === false || u.fired === true || u.terminated === true || /inactive|terminat|former|fired|let go|removed/.test(low(u.status)))) return false;
+      if(owners[nm] || (u && (/^(admin|owner)$/.test(low(u.role)) || low(u.payType) === 'owner'))) return false;
+      return true; }); })();
 
   var flags = [], rows = [];
   pms.forEach(function(pm){

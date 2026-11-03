@@ -15,7 +15,7 @@ let pass = 0, fail = 0; const ok = (c, m, info) => { if (c) { pass++; console.lo
 resetCloud(); for (const r of JSON.parse(fs.readFileSync(MIRROR, 'utf8'))) cloud.set(r.key, { key: r.key, value: r.value !== undefined ? r.value : r.v, updated_at: r.updated_at });
 const put = (k, v) => cloud.set(k, { key: k, value: v, updated_at: new Date().toISOString() });
 const SID = 'Ub5608wjnv2t';
-const PROFS = [{ id: 'PPT1', name: 'Steven Biffle', userId: SID, payType: 'salary_commission', annualSalary: 52000, period: 'weekly', active: true },
+const PROFS = [{ id: 'PPTD', name: 'Dale Perritt', payType: 'commission', period: 'weekly', active: true }, { id: 'PPT1', name: 'Steven Biffle', userId: SID, payType: 'salary_commission', annualSalary: 52000, period: 'weekly', active: true },
   { id: 'PPT2', name: 'PMPTest NoSetup', payType: 'commission', period: 'weekly', active: true }];
 const L = (empId, name, sal, comm) => ({ empId, name, period: 'weekly', gross: sal + comm, commission: comm, grossParts: [{ label: 'Salary', amount: sal }].concat(comm ? [{ label: 'Commission', amount: comm }] : []), status: 'paid' });
 const RUNS = [{ id: 'PMPT_R1', payDate: '2026-09-25', from: '2026-09-19', to: '2026-09-25', status: 'paid', lines: [L(SID, 'Steven Biffle', 1000, 900)] },
@@ -31,11 +31,14 @@ if (await p.locator('#gc-auth-email').count()) { await p.locator('#gc-auth-email
 await waitFor(c, () => (window._crm && window._crm.projects || []).length > 20, null, 150000, 500);
 await sleep(10000);
 /* the same seed on this computer (idb + localStorage), whatever the sync has brought down */
+await p.evaluate(() => { const us = (window._crm && window._crm.users) || []; if (!us.some(u => u && u.name === 'PMPTest NoSetup')) us.push({ id: 'UPNS', name: 'PMPTest NoSetup', role: 'Project Manager', active: true });
+  if (!us.some(u => u && u.name === 'Dale Perritt')) us.push({ id: 'UDALE', name: 'Dale Perritt', role: 'Project Manager', active: false }); });   // PMPAY2: only active Team people
 await p.evaluate(async ([pr, ru, le]) => { localStorage.setItem('gc_commission_paid', JSON.stringify(le)); localStorage.setItem('gc_payroll_approvals', '[]');
   await window.__GC_PAY.saveProfiles(pr); await window.__GC_PAY.saveRuns(ru); }, [PROFS, RUNS, LEDGER]);
 const R = await p.evaluate(async () => { const r = await window._gcPmPayRefresh(); return { alerts: r.alerts.map(f => f.id), known: r.known.count, over: r.known.over }; });
 console.log('   check', JSON.stringify(R));
-ok(R.alerts.includes('comm|' + SID + '|2026-10-23') && R.alerts.includes('nosetup|PMPTest NoSetup'), 'Q4 commission owed and "no pay setup" are alerts', R);
+ok(!R.alerts.some(x => /Dale|Wesley/.test(x)), 'nobody let go (Dale) and no owner (Wesley) is checked (PMPAY2)', R);
+ok(R.alerts.includes('comm|' + SID + '|2026-10-23') && R.alerts.includes('nosetup|UPNS'), 'Q4 commission owed and "no pay setup" are alerts', R);
 ok(!R.alerts.some(id => id.includes('2026-09-25')) && R.known === 1 && R.over === 400, 'Q3 overpay is known (no alert): 1 gap, $400 over', R);
 
 /* Payroll page card */
@@ -60,13 +63,13 @@ await p.evaluate(() => { [...document.querySelectorAll('body > div')].forEach(o 
 
 /* ✓ Checked — this is right */
 await p.evaluate(() => { window.prompt = () => 'test: owner set this up by hand'; });
-await p.evaluate(() => window._gcPmPayOpen('nosetup|PMPTest NoSetup'));
-await waitFor(c, () => document.querySelector('#_gcPmPayOv [data-pmp-ok="nosetup|PMPTest NoSetup"]') ? true : null, null, 10000, 300);
-await p.locator('#_gcPmPayOv [data-pmp-ok="nosetup|PMPTest NoSetup"]').click(); await sleep(2500);
+await p.evaluate(() => window._gcPmPayOpen('nosetup|UPNS'));
+await waitFor(c, () => document.querySelector('#_gcPmPayOv [data-pmp-ok="nosetup|UPNS"]') ? true : null, null, 10000, 300);
+await p.locator('#_gcPmPayOv [data-pmp-ok="nosetup|UPNS"]').click(); await sleep(2500);
 const after = await p.evaluate(async () => { const r = await window._gcPmPayRefresh(); const rec = JSON.parse(localStorage.getItem('gc_payroll_approvals') || '[]').filter(x => x.kind === 'pmpay_check');
   return { alerts: r.alerts.map(f => f.id), rec: rec.map(x => ({ flagId: x.flagId, by: x.by, note: x.note, sig: x.sig })) }; });
 const s2 = await SET(); console.log('   after', JSON.stringify(after), JSON.stringify(s2));
-ok(!after.alerts.includes('nosetup|PMPTest NoSetup') && after.alerts.includes('comm|' + SID + '|2026-10-23'), '✓ Checked clears that flag only', after);
+ok(!after.alerts.includes('nosetup|UPNS') && after.alerts.includes('comm|' + SID + '|2026-10-23'), '✓ Checked clears that flag only', after);
 ok(after.rec.length === 1 && after.rec[0].by && /by hand/.test(after.rec[0].note) && after.rec[0].sig === '0.00|0.00', 'the check is stored with who, the note and the amounts', after.rec);
 ok(s2.pm === s1.pm - 1 && s2.inSet === s1.inSet - 1, 'the PM pay items in the counted set drop by one', { s1, s2 });
 ok(!c.errs.length, 'no page errors', c.errs.slice(0, 5));
