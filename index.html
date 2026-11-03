@@ -122135,6 +122135,8 @@ function cardHtml(p, compact){
   if (posts.length) h += '<div style="font-size:12px;font-weight:800;color:#8A5A00">LATEST POSTS</div>' + posts.slice(0, 3).map(function(x){
     return '<div style="font-size:13px;line-height:1.4"><b>' + esc(first(x.by) || 'GrayCo') + '</b> · <span style="color:#55626F">' + esc(ago(x.at)) + '</span>' + (x.files && x.files.length ? ' · 📷 ' + x.files.length : '') + '<div style="overflow-wrap:anywhere">' + esc(s(x.text).slice(0, 160)) + '</div></div>';
   }).join('');
+  h += '<label style="display:flex;align-items:center;gap:8px" title="Automatic: a GC job, a GC client account or a bid we made as the sub gets the GC style (no maintenance plans, My home, referral or review asks; commercial sub stages)">Portal style <select data-q="pstyle" style="flex:1;min-height:36px;border-radius:8px;border:1px solid #C9C2B2;font-size:14px">' +   /* patch GCPORTAL */
+    [['', 'Automatic'], ['home', 'Homeowner'], ['gc', 'GC (we\u2019re the sub)']].map(function(o){ return '<option value="' + o[0] + '"' + (String(p.portalStyle || '') === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></label>';
   h += '<label style="display:flex;align-items:center;gap:8px">Stage the customer sees <select data-q="stage" style="flex:1;min-height:36px;border-radius:8px;border:1px solid #C9C2B2;font-size:14px">' +
       '<option value="auto"' + (stage === 'auto' ? ' selected' : '') + '>Automatic</option>' + STAGES.map(function(n, i){ return '<option value="' + i + '"' + (stage === String(i) ? ' selected' : '') + '>' + esc(n) + '</option>'; }).join('') + '</select></label>' +
     '<label style="display:flex;align-items:center;gap:8px"><input type="checkbox" data-q="pause"' + (p.portalRemindersPaused ? ' checked' : '') + ' style="width:22px;height:22px"> Pause automatic e-mails to this customer (payment reminders and "new in your portal" notes)</label>' +
@@ -122179,6 +122181,7 @@ function wire(el, pid){
   el.addEventListener('change', function(ev){
     var t = ev.target, q = t && t.getAttribute && t.getAttribute('data-q');
     if (q === 'autosend') api({ action: 'settings', set: { autoSend: !!t.checked } }).then(function(r){ if (r.ok) { settings = r.data; toast(t.checked ? 'New customers get their portal link by e-mail automatically.' : 'Automatic portal e-mails are OFF for every job.', t.checked ? null : '#92400e'); } else { t.checked = !t.checked; toast('Could not change it: ' + (r.data.error || r.status), '#991b1b'); } });
+    if (q === 'pstyle') saveProject(pid, function(x){ x.portalStyle = t.value === 'gc' || t.value === 'home' ? t.value : ''; }).then(function(){ toast('Portal style: ' + (t.value === 'gc' ? 'GC (we\u2019re the sub)' : t.value === 'home' ? 'Homeowner' : 'Automatic')); });   /* patch GCPORTAL */
     if (q === 'stage') saveProject(pid, function(x){ x.portalStage = t.value === 'auto' ? '' : Number(t.value); }).then(function(){ toast('The customer now sees: ' + (t.value === 'auto' ? 'automatic stage' : STAGES[+t.value])); });
     if (q === 'pause') saveProject(pid, function(x){ x.portalRemindersPaused = !!t.checked; }).then(function(){ toast(t.checked ? 'Payment reminders paused for this job.' : 'Payment reminders are on again.'); });
   });

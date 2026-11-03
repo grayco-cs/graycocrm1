@@ -471,6 +471,44 @@ function portalSteps(p, sched){
   const i = l.findIndex(function(x){ return !x.done; }); if (i >= 0) l[i].now = true;
   return l;
 }
+/* ── patch GCPORTAL (owner 11/03: "this is A&B and this is commercial … this is also a sub, so we won't offer maintenance for
+   jobs we're working for big GCs. Make this portal template different for when we're subbing for a big GC.")
+   portalStyle(data, p) → { gc, why }: the job's own choice first (job.portalStyle 'gc' | 'home', set on its Customer portal card),
+   else a GC job: the GC-portal rule (_lib/gcp.js isGcJob: job.gcJob / hiredBy gc / the customer account's type is 'gc'), a bid
+   we made as the SUB (_lib/bid-role.js, PRIMESUB — the job's lead, or the job itself: BuildingConnected, PlanHub, A&B, …), or a
+   commercial job whose client is a contractor / builder. ── */
+const GC_STAGES = ['Bid submitted', 'Awarded / subcontract signed', 'Scheduled / mobilizing', 'In progress', 'Punch list', 'Pay application / final invoice', 'Closed'];
+const COMMERCIAL_TYPE = /commercial|new construction|tenant|\bti\b|government|municipal|school|church|industrial|warehouse|retail|office build|multi.?family/i;
+const GC_NAME = /\b(construction|constructors?|contractors?|contracting|builders?|building group|general contract)/i;
+const COMPANY_NAME = /\b(inc|llc|l\.l\.c|co|corp|corporation|company|construction|constructors?|contractors?|contracting|builders?|group|ltd|lp|llp|pllc|services|enterprises|properties|property management|management|holdings|partners|associates|church|school|district|city of|county|authority|university|hospital|apartments|investments|realty|industries)\b\.?/i;
+function jobLead(data, p){ const pid = s(p.id); return arr(data.leads).find(function(l){ return l && (s(l.projectId) === pid || s(l.pid) === pid || s(l.fromProjectId) === pid || (s(p.leadId) && s(l.id) === s(p.leadId)) || (s(p.fromLeadId) && s(l.id) === s(p.fromLeadId))); }) || null; }
+function custRecOf(data, p){ const nm = low(p.client || p.customer || p.clientName); return arr(data.customers).find(function(c){ return c && c.deleted !== true && ((s(c.id) && s(c.id) === s(p.customerId)) || (nm && low(c.name || c.company) === nm)); }) || null; }
+function portalStyle(data, p){
+  const o = low(p && p.portalStyle);
+  if (o === 'gc') return { gc: true, why: 'set on the job (GC — we are the sub)' };
+  if (o === 'home' || o === 'homeowner') return { gc: false, why: 'set on the job (homeowner)' };
+  try { if (require('./_lib/gcp.js').isGcJob(data, p)) return { gc: true, why: p.gcJob === true || low(p.hiredBy) === 'gc' ? 'a GC job' : 'the client is a GC account' }; } catch (e) {}
+  try {
+    const BR = require('./_lib/bid-role.js'), l = jobLead(data, p);
+    if (l && BR.role(l) === 'sub') return { gc: true, why: 'we bid it as the sub (' + (s(l.source) || 'bid') + ')' };
+    if (BR.role({ source: s(p.source || p.leadSource), type: s(p.type || p.jobType), gc: p.gc, owner: p.owner }) === 'sub') return { gc: true, why: 'we bid it as the sub (' + s(p.source || p.leadSource) + ')' };
+  } catch (e) {}
+  const c = custRecOf(data, p), nm = s(p.client || (c && (c.name || c.company)));
+  if (COMMERCIAL_TYPE.test(s(p.type || p.jobType)) && GC_NAME.test(nm)) return { gc: true, why: 'a commercial job for a contractor' };
+  return { gc: false, why: '' };
+}
+/* the client is a company (greet it by its name — never "Hi A" from "A & B Construction Co., Inc.") */
+function clientIsCompany(data, p){
+  const c = custRecOf(data, p), nm = s(p.client || p.customer || p.clientName || (c && (c.name || c.company)));
+  if (c && /^(gc|commercial|company|business|government|property_manager|pm)$/i.test(s(c.type))) return true;
+  if (c && s(c.company) && low(c.company) === low(nm) && !s(c.firstName)) return true;
+  return COMPANY_NAME.test(nm);
+}
+function gcStageOf(h, p, steps){
+  if (h <= 3) return 0;
+  if (h === 4) { const t = new Date().toISOString().slice(0, 10), st = ymd(p.startDate); return st || (steps && steps.length) ? 2 : 1; }
+  return Math.min(6, h - 2);
+}
 function stageOf(p, ctx){
   const o = p.portalStage;
   if (o != null && o !== '' && o !== 'auto') {
@@ -902,6 +940,22 @@ async function buildView(data, p, opts){
     view.insurance = insuranceView(data, p, { stage: stage, cos: cos, invoices: invoices, docs: view.docs,
       payments: arr(p.drawPayments).concat(arr(p.payments), arr(data.projectPayments).filter(function(x){ return pidOf(x) === pid && x.deleted !== true; })) });
     return chAttach(scrub(view, insWords(data, p)), data, p, view.insurance.now);   /* patch CLAIMHELP */
+  }
+  /* patch GCPORTAL: the company client is greeted by its name; a GC job gets the GC variant — commercial sub stages, no homeowner
+     offers (GrayCo Care, My home, referral, review ask, the residential warranty), GrayCo's own COI / W-9 (shared with GCs) */
+  if (clientIsCompany(data, p)) { view.customer.company = true; view.customer.firstName = ''; }
+  const style = portalStyle(data, p);
+  view.variant = style.gc ? 'gc' : 'home';
+  if (style.gc) {
+    const g = gcStageOf(stage, p, view.job.steps);
+    view.job.stages = GC_STAGES; view.job.stage = g; view.job.stageName = GC_STAGES[g];
+    view.showReview = false; view.review = null; view.warranty = null;
+    try {
+      const GCP = require('./_lib/gcp.js'), cd = GCP.docsForGc(await GCP.companyDocs()), full = arr(await GCP.companyDocs());
+      const refs = cd.map(function(d){ const r = full.find(function(x){ return s(x.id) === d.id; }); return r && refPath(r.ref) ? r.ref : ''; }).filter(Boolean);
+      const sg = refs.length ? await signRefs(refs) : {};
+      cd.forEach(function(d){ const r = full.find(function(x){ return s(x.id) === d.id; }); const u = r && sg[r.ref]; if (u) view.docs.push({ kind: 'company', title: clip('GrayCo — ' + d.title, 90), date: ymd(r.at), type: 'pdf', url: u, expires: d.expires }); });
+    } catch (e) {}
   }
   const showC = false;   /* owner 11/01 (CLAIMWORDS): the carrier's name is NEVER shown anywhere in the portal — "Show carrier name" (job / ⚡ Automations) has no effect */
   return chAttach(scrub(view, (showC ? [] : carrierWords(p)).concat(claimWords(data, pid, showC))), data, p, null);   /* patch CLAIMHELP */
@@ -2918,7 +2972,8 @@ Object.assign(exports._core, { crmData: crmData, kvRead: kvRead, activeFor: acti
 Object.assign(exports._core, { gcStaffAuth: gcStaffAuth, signRefs: signRefs, tokenRow: tokenRow, sessionRow: sessionRow, ccPhotos: ccPhotos, ccHidden: ccHidden, ccCustomerPhotos: ccCustomerPhotos, grayCoRecords: grayCoRecords, withJob: withJob, jobTag: jobTag, pushTo: pushTo, ipOf: ipOf, limited: limited, noteBad: noteBad, gcCors: gcCors, gcHeader: gcHeader, adminEmails: adminEmails, officeEmails: officeEmails, listOf: listOf, TOKEN_RE: TOKEN_RE, OFFICE_PHONE: OFFICE_PHONE, MIN_FAIL_MS: MIN_FAIL_MS, SIGN_SECS: SIGN_SECS });
 /* patch INSP */
 Object.assign(exports._core, { esc: esc, isOffice: isOffice, kvListUpdate: kvListUpdate, queueApproval: queueApproval, AQ_KEY: AQ_KEY, approvalAction: approvalAction });   /* patch SUBCONTACT */
-Object.assign(exports._core, { COMMON_CARRIERS: COMMON_CARRIERS });   /* patch PORTALREQ: never a carrier in a portal request answer */
+Object.assign(exports._core, { COMMON_CARRIERS: COMMON_CARRIERS });
+Object.assign(exports._core, { portalStyle: portalStyle, clientIsCompany: clientIsCompany, GC_STAGES: GC_STAGES });   /* patch GCPORTAL */   /* patch PORTALREQ: never a carrier in a portal request answer */
 /* patch ESTPDF: every approval that carries an estimate (the proposal e-mail, the "please sign" e-mail, "Put in the customer
    portal") goes out only with its PDF in the CRM, and what went out is recorded (gc_kv gc_est_sent) — _lib/estpdf.js.
    aqSend is the one place approvals are sent (at approve time, or at 7 AM for a quiet-hours approval), so the sentAt is

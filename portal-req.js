@@ -142,13 +142,16 @@ function paint(){
   css();
   var m = mode(); if (!m || !D) { if (card && card.parentNode) card.parentNode.removeChild(card); return; }
   var c = h('section', { class: 'card', id: 'gcpr-card', lang: lang() });
-  c.appendChild(h('h2', { text: m === 'gc' ? T('cardGc') : D.portal === 'pm' ? T('cardPm') : T('cardCust') }));
+  /* patch GCPORTAL: the customer portal of a job we do as the SUB for a GC — "Request a change order" only (no "new project":
+     a GC invites us to bid through its own plan room) */
+  var gcv = m === 'customer' && cur().variant === 'gc';
+  c.appendChild(h('h2', { text: gcv ? (lang() === 'es' ? '🛠 Órdenes de cambio' : '🛠 Change orders') : m === 'gc' ? T('cardGc') : D.portal === 'pm' ? T('cardPm') : T('cardCust') }));
   c.appendChild(h('div', { class: 'gcpr-acts' }, [
-    h('button', { type: 'button', class: 'btn gold', id: 'gcpr-change', text: T('change'), on: { click: function(){ open('change'); } } }),
-    h('button', { type: 'button', class: 'btn', id: 'gcpr-project', text: T('project'), on: { click: function(){ open('project'); } } })]));
+    h('button', { type: 'button', class: 'btn gold', id: 'gcpr-change', text: gcv ? (lang() === 'es' ? '➕ Solicitar una orden de cambio' : '➕ Request a change order') : T('change'), on: { click: function(){ open('change'); } } }),
+    gcv ? null : h('button', { type: 'button', class: 'btn', id: 'gcpr-project', text: T('project'), on: { click: function(){ open('project'); } } })]));
   var list = D.requests || [];
   c.appendChild(h('h3', { style: 'margin:6px 0 0;font-size:15px', text: T('mine') + (list.length ? ' (' + list.length + ')' : '') }));
-  if (!list.length) c.appendChild(h('div', { class: 'gcpr-note', text: T('none') }));
+  if (!list.length) c.appendChild(h('div', { class: 'gcpr-note', text: gcv ? (lang() === 'es' ? 'Todavía nada. Pida una orden de cambio para este trabajo.' : 'Nothing yet. Ask for a change order on this job.') : T('none') }));
   var box = h('div', { id: 'gcpr-list' }); (showAll ? list : list.slice(0, 4)).forEach(function(r){ box.appendChild(itemEl(r)); }); c.appendChild(box);
   if (list.length > 4 && !showAll) c.appendChild(h('button', { type: 'button', class: 'btn', text: T('showAll', { n: list.length }), on: { click: function(){ showAll = true; paint(); } } }));
   if (card && card.parentNode) card.parentNode.replaceChild(c, card); card = c;

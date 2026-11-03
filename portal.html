@@ -85,6 +85,9 @@ li.todo{color:#6B7682}
 .pics button.ph{position:relative}
 .phtag{position:absolute;left:4px;bottom:4px;background:rgba(15,29,47,.78);color:#fff;font-size:11px;font-weight:700;border-radius:6px;padding:1px 6px}
 @media(min-width:700px){#grid .pics{grid-template-columns:repeat(5,minmax(0,1fr))}}
+/* patch GCPORTAL: subbing for a GC — no homeowner offers: GrayCo Care / maintenance plans, "how did you hear", My home,
+   the testimonial ask, referral gifts, the residential warranty block, "Request a new project" */
+body.gc-variant #gcpp-maint,body.gc-variant #gcpp-heard,body.gc-variant #gcph-home,body.gc-variant #gcph-testi,body.gc-variant #gcRefCard,body.gc-variant #gcrefer,body.gc-variant #gcpr-project{display:none!important}
 .pics button{position:relative}.gp-you{position:absolute;left:4px;bottom:4px;font-size:10px;font-weight:800;color:#fff;background:#1D5E2C;padding:1px 5px;border-radius:4px}   /* patch CUSTPORTAL */
 .gp-add{display:flex;flex-direction:column;gap:6px;margin:4px 0 10px}.gp-add .btn{align-self:flex-start}
 .doc{min-height:52px;display:flex;align-items:center;gap:12px;border-top:1px solid var(--rule);padding-top:10px}
@@ -309,7 +312,7 @@ try { session = localStorage.getItem('gc_portal_s') || ''; } catch (e) {}
    opened inside the app still wins. The app's session is copied to gc_portal_s so every card of the page uses it. */
 var APPMODE = (function(){ try { return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true; } catch (e) { return false; } })();
 try { var appS0 = localStorage.getItem('gc_portal_app') || ''; if (APPMODE && appS0 && !/(?:^#|&)t=/.test(location.hash || '')) { session = appS0; token = ''; localStorage.setItem('gc_portal_s', appS0); localStorage.removeItem('gc_portal_t'); } } catch (e) {}
-window.GCPortalMain = { cur: function(){ return { pid: PID, tab: TAB, shown: !!V && !window.GCPartner, session: session, token: token, preview: PREVIEW, app: APPMODE }; }, go: function(t){ if (V && !window.GCPartner) go(t); } };
+window.GCPortalMain = { cur: function(){ return { variant: V && V.variant || 'home', pid: PID, tab: TAB, shown: !!V && !window.GCPartner, session: session, token: token, preview: PREVIEW, app: APPMODE }; }, go: function(t){ if (V && !window.GCPartner) go(t); } };
 
 function $(id){ return document.getElementById(id); }
 function h(tag, attrs, kids){
@@ -535,7 +538,9 @@ function loadView(){
     if (!r.data || !r.data.ok) { notActive(r.data && r.data.error); return; }
     V = r.data;
     var c = V.customer || {}, j = V.job || {};
-    $('hi').textContent = (LANG === 'es' ? 'Hola ' : 'Hi ') + (c.firstName || (LANG === 'es' ? '' : 'there')) + (LANG === 'es' ? ' — su proyecto' : ' — your project');
+    /* patch GCPORTAL: a company client is greeted by its name ("A & B Construction Co., Inc. — your project", never "Hi A") */
+    $('hi').textContent = c.company && c.name ? c.name + (LANG === 'es' ? ' — su proyecto' : ' — your project') : (LANG === 'es' ? 'Hola ' : 'Hi ') + (c.firstName || (LANG === 'es' ? '' : 'there')) + (LANG === 'es' ? ' — su proyecto' : ' — your project');
+    try { document.body.classList.toggle('gc-variant', V.variant === 'gc'); } catch (e) {}   /* patch GCPORTAL: the GC (we are the sub) portal */
     $('jobName').textContent = j.name || 'Your project';
     $('jobSub').textContent = [j.address, j.po ? 'Job ' + j.po : ''].filter(Boolean).join(' · ');
     $('hello').hidden = false; $('tabs').hidden = false;
@@ -1304,6 +1309,7 @@ function draw(){
   if (mats) c.appendChild(h('div', { class: 'gc7-mat', style: 'background:#FFF6DC;border-radius:10px;padding:10px 12px;font-weight:700' }, ['🚚 Materials arriving ' + day(mats.day)]));
   var w = D.warranty || {};
   c.appendChild(h('div', { style: 'display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:' + (mats ? '10px' : '0') }, [
+    D.warranty === null ? h('div', { style: 'flex:1;min-width:180px' }, [h('b', { text: 'Something wrong on the job?' })]) :   /* patch GCPORTAL: no residential warranty block for a GC's job */
     h('div', { style: 'flex:1;min-width:180px' }, [h('b', { text: w.label || 'Your warranty' }), h('div', { class: 'muted', text: w.start ? (w.inWarranty ? 'Covered until ' + dt(w.end) + '.' : 'Ended ' + dt(w.end) + ' — we are still glad to help.') : 'Starts the day your job is complete.' })]),
     h('button', { type: 'button', class: 'btn gold', id: 'gc7Report', 'aria-expanded': open ? 'true' : 'false', text: open ? 'Close' : '🛠 Report an issue', on: { click: function(){ open = !open; msg = ''; draw(); } } })
   ]));
