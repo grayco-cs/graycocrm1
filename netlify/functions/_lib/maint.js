@@ -91,9 +91,9 @@ const TIERS = { bronze: { name: 'Bronze', discount: 0, visits: 'The plan visits'
 /* add-ons the plan builder offers on some plans (owner round 3): graffiti removal on pressure washing, an infrared scan on roof inspections */
 const ADDONS = [
   { id: 'graffiti', name: 'Graffiti removal', price: 250, on: ['wash', 'c_wash'], note: 'Graffiti removed on each visit (paint-safe methods; heavy tags quoted first).' },
-  /* owner: "Maintenance plans can offer 1 handyman day for multiple things and list those items included" — $289.99 a day
+  /* owner: "Maintenance plans can offer 1 handyman day for multiple things and list those items included" — $349.99 a day
      (set by the owner: a real price), 8 AM – 5 PM, materials billed separately; any plan; days per year; tier discount applies */
-  { id: 'handyman', name: '🔧 Handyman Day', price: 289.99, priceSet: true, unit: 'day', on: ['*'], note: 'One tech, 8 AM – 5 PM. Materials are billed separately, on top of the day price. Having materials on site before the visit lets us get more done in your day.' },
+  { id: 'handyman', name: '🔧 Handyman Day', price: 349.99, priceSet: true, unit: 'day', on: ['*'], note: 'One tech, 8 AM – 5 PM. Materials are billed separately, on top of the day price. Having materials on site before the visit lets us get more done in your day.' },
   { id: 'infrared', name: 'Infrared roof scan', price: 400, on: ['roof', 'c_roof', 'c_free', 'c_coat'], note: 'Scanner on order — book it and we will schedule the scan as soon as it arrives.' }
 ];
 const HANDYMAN_NOTE = 'Having materials on site before the visit lets us get more done in your day.';
