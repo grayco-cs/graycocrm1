@@ -211101,12 +211101,17 @@ var BUILD = {
   },
   punch: function(p){
     var pid = s(p.id), open = function(x){ return !(x.done === true || x.completed === true || /^(done|closed|complete|completed|fixed|resolved)$/i.test(s(x.status))); };
-    var pu = arr(C().punch).filter(onJob(pid)).filter(open).map(function(x){ return [s(x.item || x.text || x.title), s(x.location || x.area), s(x.assignee || x.by), md(x.date || x.due)]; });
+    var pu = punchList().filter(onJob(pid)).filter(open).map(function(x){ return [s(x.item || x.text || x.title), s(x.location || x.area), s(x.assignee || x.by), md(x.date || x.due)]; });
     var tl = arr(C().gc_office_tasks); if (!tl.length) tl = arr(lsGet('gc_office_tasks'));
     var td = tl.filter(onJob(pid)).filter(open).map(function(x){ return [s(x.text || x.label || x.title), s(x.assignee), md(x.due || x.dueDate)]; });
     return (pu.length ? '<h3>Punch list</h3>' + tbl(['Item', 'Where', 'Who', 'Date'], pu) : '') + (td.length ? '<h3>To-Dos</h3>' + tbl(['To-Do', 'Who', 'Due'], td) : '');
   }
 };
+
+/* the punch list lives in this device's store (idb 'punch'); read it when the packet opens */
+var PUNCH = null;
+function punchList(){ return PUNCH || arr(C().punch).concat(arr(C().punchlist)); }
+function loadPunch(){ return Promise.resolve(W.idbGet ? W.idbGet('punch') : null).then(function(v){ v = arr(v); if (v.length) PUNCH = v; return v.length; }, function(){ return 0; }); }
 
 /* ── the blank forms (paper to write on) ── */
 function lines(n){ var h = ''; for (var i = 0; i < n; i++) h += '<div class="gcjp-ln"></div>'; return h; }
@@ -211240,6 +211245,7 @@ function open(pid){
     '<div class="gcjp-doc">' + body(p, sel) + '</div></div>';
   D.body.appendChild(o);
   D.documentElement.classList.add('gcjp-open');
+  loadPunch().then(function(n){ if (n && D.body.contains(o)) o.querySelector('.gcjp-doc').innerHTML = body(proj(pid) || p, picked()); });
   o.addEventListener('change', function(e){
     var t = e.target; if (!t || !t.getAttribute || !t.getAttribute('data-k')) return;
     var v = {}; Array.prototype.forEach.call(o.querySelectorAll('.gcjp-opts input[data-k]'), function(i){ v[i.getAttribute('data-k')] = i.checked; });

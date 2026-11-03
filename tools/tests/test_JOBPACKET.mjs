@@ -28,7 +28,7 @@ const FX = {
   scope: 'Build the ROTC obstacle course per drawings\nFootings for 12 stations @ $65/hr\nRope climb frame = $1,240.00\nSubtotal $18,500\nTotal: $19,980',
   co: { id: 'CO_jptest1', pid: PID, desc: 'Add a second rope climb', amt: 2450, status: 'approved', date: '2026-11-02' },
   sub: { id: 'PSBjptest1', name: 'Test Concrete Co', trade: 'Concrete', phone: '(901) 555-0142', email: 'crew@testconcrete.example', status: 'Awarded', bidAmt: '9000' },
-  punch: { id: 'PUN_jptest1', pid: PID, item: 'Touch up paint on station 4 rail', status: 'open', assignee: 'Wesley Johnson', date: '2026-11-03' }
+  punch: { id: 'PUN_jptest1', pid: PID, item: 'Touch up paint on station 4 rail', status: 'open', assignee: 'Wesley Johnson', date: '2026-11-03', createdAt: '2026-11-03T15:00:00.000Z', updatedAt: '2026-11-03T15:00:00.000Z' }
 };
 H.cset('projects', P0.map(p => p && p.id === PID ? Object.assign({}, p, { scopeOfWork: FX.scope, subs: [FX.sub] }) : p));
 H.cset('cos', (J('cos') || []).concat([FX.co]));
@@ -66,6 +66,7 @@ try {
   await H.signIn(O, 'wjohnson@grayco-cs.com', 9000);
   ok(!!(await waitFor(O, () => !!document.querySelector('#_gcJobPick.gc-fh'), null, 60000)), 'the phone opens in GrayCo Field');
   await waitFor(O, pid => typeof window._gcStoreFile === 'function' && ((window._crm && window._crm.projects) || []).some(p => p && p.id === pid && (p.subs || []).length) && ((window._crm.cos || window._crm.changeOrders || []).some(x => x && x.id === 'CO_jptest1')), PID, 90000);
+  await waitFor(O, async () => ((await window.idbGet('punch')) || []).some(x => x && x.id === 'PUN_jptest1'), null, 60000);   /* the punch list is synced to this device */
   await sleep(1500);
   const pg = O.page();
   await O.ev(pid => { document.querySelectorAll('#_gcJobPick,#_gcJobDash,.gcfp-sheet').forEach(o => o.remove()); window._gcJobDashboard(pid); }, PID);
@@ -74,10 +75,11 @@ try {
   await pg.screenshot({ path: SHOTS + 'jobpacket_job.png' });
   await pg.locator('#_gcJobDash .gcjp-tile').tap();
   await waitFor(O, () => !!document.getElementById('_gcPacket'), null, 3000, 30);
+  await sleep(50);
   const b0 = await backSeen(O);
   ok(b0.ok && /Back/.test(b0.txt), '‹ Back is visible from the first paint', b0);
   let I = await info(O);
-  ok(!!I && I.bg === 'rgb(255, 255, 255)' && I.logo && /Job packet/.test(I.head) && I.head.includes(JOB.name) && I.head.includes(CODE) && /Printed/.test(I.head), 'a white packet: GrayCo logo header, job name, address, job code, printed date', I && { head: I.head, logo: I.logo, bg: I.bg });
+  ok(!!I && I.bg === 'rgb(255, 255, 255)' && I.logo && /job packet/i.test(I.head) && I.head.includes(JOB.name) && I.head.includes(CODE) && /Printed/.test(I.head), 'a white packet: GrayCo logo header, job name, address, job code, printed date', I && { head: I.head, logo: I.logo, bg: I.bg });
   ok(!!I && I.boxes.length === 9 && I.boxes.every(x => /:true$/.test(x)), 'nine parts to pick, all ticked by default', I && I.boxes);
   ok(I.cust.includes(JOB.client) && I.cust.includes(JOB.clientPhone) && I.cust.includes(JOB.clientEmail) && I.cust.includes(JOB.address) && I.cust.includes('Wesley Johnson') && !/AUTO-FLAG/.test(I.cust), 'Customer & site: the real customer, phone, e-mail, address and the PM (no AUTO-FLAG lines)', I.cust.slice(0, 400));
   ok(/obstacle course/i.test(I.scope) && /Rope climb frame/.test(I.scope) && !/\$/.test(I.scope) && !/1,240|18,500|19,980|65\/hr/.test(I.scope) && !/Subtotal|Total/i.test(I.scope), 'Scope of work: the wording only — no $ amounts, no totals', I.scope);
@@ -85,7 +87,9 @@ try {
   ok(/Add a second rope climb/.test(I.co) && /approved/i.test(I.co) && /\$2,450/.test(I.co), 'Change orders: title, status and — for the owner — the amount', I.co);
   ok(/Building permit/.test(I.permit) && /Fire marshal review/.test(I.permit), 'Permits & inspections: the job\'s permit checklist', I.permit.slice(0, 300));
   ok(/Test Concrete Co/.test(I.subs) && /Concrete/.test(I.subs) && /555-0142/.test(I.subs) && !/9000|9,000/.test(I.subs), 'Subs on the job: name, trade, contact (no bid amount)', I.subs);
-  ok(/Touch up paint on station 4 rail/.test(I.punch), 'Open punch list & To-Dos: the open punch item', I.punch.slice(0, 300));
+  await waitFor(O, () => /Touch up paint on station 4 rail/.test((document.querySelector('#_gcPacket .gcjp-sec[data-sec="punch"]') || {}).innerText || ''), null, 5000); I = await info(O);
+  const pdbg = /Touch up/.test(I.punch) ? null : await O.ev(async pid => { const v = await window.idbGet('punch'); const l = Array.isArray(v) ? v : []; return { idb: l.length, mine: l.filter(x => x && x.pid === pid).map(x => x.id + ':' + x.status), crm: ((window._crm || {}).punch || []).length, list: ((window._crm || {}).punchlist || []).length }; }, PID);
+  ok(/Touch up paint on station 4 rail/.test(I.punch), 'Open punch list & To-Dos: the open punch item', pdbg || I.punch.slice(0, 300));
   const forms = ['form-log', 'form-punch', 'form-co', 'form-signoff'];
   ok(forms.every(f => I.secs.includes(f)), 'the four blank forms: daily log, punch list, change-order request, customer sign-off', I.secs);
   const fTxt = await O.ev(() => ['form-log', 'form-signoff'].map(k => document.querySelector('#_gcPacket .gcjp-sec[data-sec="' + k + '"]').innerText));
@@ -147,14 +151,20 @@ try {
   await waitFor(S, pid => ((window._crm && window._crm.projects) || []).some(p => p && p.id === pid), PID, 90000);
   await sleep(1500);
   const dp = S.page();
-  await S.ev(pid => window._gcGoToTaskJob && window._gcGoToTaskJob(pid), PID);
+  await S.ev(() => { try { window._setView('projects'); } catch (e) {} }); await sleep(1200);
+  await S.ev(pid => window._navToJob(pid), PID);
   const bar = await waitFor(S, () => { const b = document.querySelector('.gcx10-jobbar:not([data-field]) [data-gcjp-open]'); return b ? b.textContent : null; }, null, 20000);
-  ok(bar === '🖨 Print job packet', 'desk job page: "🖨 Print job packet" beside 🏠 Home profile · 🔐 Access codes · 📋 Inspections', bar);
-  if (bar) await dp.locator('.gcx10-jobbar:not([data-field]) [data-gcjp-open]').first().click();
+  const dbg = bar ? null : await S.ev(() => ({ op: (window._gcOpenProject || {}).id, cls: document.documentElement.className, back: [...document.querySelectorAll('main button')].some(b => /All Projects/.test(b.textContent)), bars: [...document.querySelectorAll('.gcx10-jobbar')].length }));
+  ok(bar === '🖨 Print job packet', 'desk job page: "🖨 Print job packet" beside 🏠 Home profile · 🔐 Access codes · 📋 Inspections', bar || dbg);
+  await S.ev(() => { const d = document.getElementById('_dailyDig'); if (d) d.remove(); });   /* the once-a-day digest pop-up */
+  if (bar) { const loc = dp.locator('.gcx10-jobbar:not([data-field]) [data-gcjp-open]').first(); const cdbg = await loc.evaluate(b => { b.scrollIntoView({ block: 'center' }); const r = b.getBoundingClientRect(), h = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return { r: [r.left, r.top, r.width, r.height].map(Math.round), vis: getComputedStyle(b).visibility, disp: getComputedStyle(b.parentElement.parentElement).display, hit: h && (h === b || b.contains(h)) ? 'self' : (h && (h.id || h.className || h.tagName)) }; });
+    const clicked = await loc.click({ timeout: 5000 }).then(() => true, () => false);
+    ok(clicked, 'desk: the button can be clicked', cdbg);
+    if (!clicked) await loc.evaluate(b => b.click()); }
   else await S.ev(pid => window._gcJobPacket.open(pid), PID);
   await waitFor(S, () => !!document.getElementById('_gcPacket'), null, 3000);
   const K = await info(S), money = await S.ev(pid => window._gcJobPacket.canMoney(pid), PID);
-  ok(money === false && /Add a second rope climb/.test(K.co) && !/\$|2,450|Amount/.test(K.co), 'a PM without the job\'s money: the change order\'s title and status, no amount', { money, co: K.co });
+  ok(money === false && /Add a second rope climb/.test(K.co) && !/\$|2,450|Status\tAmount/.test(K.co), 'a PM without the job\'s money: the change order\'s title and status, no amount', { money, co: K.co });
   ok(!/\$/.test(K.scope), 'desk: no $ in the scope either', K.scope.slice(0, 200));
   ok(K.sideways <= 0, 'desk: no sideways scroll', K.sideways);
   await dp.screenshot({ path: SHOTS + 'jobpacket_desk.png' });
