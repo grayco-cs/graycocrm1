@@ -67,6 +67,7 @@ const W = []; const close = async () => { for (const c of W) await c.b.close().c
 const ORDER = ['Update Progress', 'Job Info', 'Customer portal', 'Sub portal', 'Post Update', 'Message', 'Add Photo/File', 'Daily Log', 'Financials, Invoices & COs', 'Schedule & Inspections'];
 try {
   // ══════════ OWNER ══════════
+  ORDER[ORDER.indexOf('Post Update')] = 'Updates & notes';   /* patch JOBUPDATES: the tile is 📝 Updates & notes (same place) */
   const O = await H.computer('OWN', { build, mobile: true }); W.push(O); await mocks(O);
   await H.signIn(O, 'wjohnson@grayco-cs.com', 9000);
   ok(!!(await fh(O)), 'owner: the phone opens in GrayCo Field with job cards');
