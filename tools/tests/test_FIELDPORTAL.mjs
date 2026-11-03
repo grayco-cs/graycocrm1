@@ -64,7 +64,7 @@ const tap = async (c, sel) => { const l = c.page().locator(sel).first(); await l
 const noSideways = c => c.page().evaluate(() => Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) <= window.innerWidth + 1);
 const SHOTS = '/tmp/claude-0/-home-user/6a5b2b6b-8a4d-5505-9f82-62521adb6674/scratchpad/';
 const W = []; const close = async () => { for (const c of W) await c.b.close().catch(() => {}); };
-const ORDER = ['Update Progress', 'Job Info', 'Customer portal', 'Sub portal', 'Post Update', 'Message', 'Add Photo/File', 'Daily Log', 'Financials, Invoices & COs', 'Schedule & Inspections'];
+const ORDER = ['Update Progress', 'Job Info', 'Customer portal', 'Sub portal', 'Post Update', 'Message', 'Add Photo/File', 'Share photos', 'Daily Log', 'Financials, Invoices & COs', 'Schedule & Inspections'];   /* JOBTOP: 🔗 Share photos after Add Photo/File */
 try {
   // ══════════ OWNER ══════════
   const O = await H.computer('OWN', { build, mobile: true }); W.push(O); await mocks(O);
@@ -152,8 +152,8 @@ try {
     body.scrollTop = 0;
     return { tiles, gridTop: g.top, mailTop: mail ? mail.getBoundingClientRect().top : null, mapTop: map ? map.getBoundingClientRect().top : null, cols, h0, h1, st, lastBottom: last.bottom, tabsTop: tabs.top, bv, minH, nameOne: getComputedStyle(ov.querySelector('.gcfp-name')).whiteSpace, ta: getComputedStyle(ov.querySelector('.gcfp-grid > button')).touchAction };
   });
-  ok(JSON.stringify(jp.tiles.slice(0, 10)) === JSON.stringify(ORDER), 'job page: the tiles in the owner\'s order (1–10)', jp.tiles);
-  ok(jp.tiles.indexOf('Documents') === 10 && jp.tiles.indexOf('Create Document') === 11, 'then Documents, Create Document and the rest', jp.tiles);
+  ok(JSON.stringify(jp.tiles.slice(0, 11)) === JSON.stringify(ORDER), 'job page: the tiles in the owner\'s order (1–11)', jp.tiles);
+  ok(jp.tiles.indexOf('Documents') === 11 && jp.tiles.indexOf('Create Document') > 11, 'then Documents, Create Document and the rest', jp.tiles);
   ok(jp.cols === 2 && jp.minH >= 44, 'tiles: 2 columns × 5 rows, every tile 44 px+', { cols: jp.cols, minH: jp.minH });
   ok(jp.mailTop != null && jp.mapTop != null && jp.gridTop < jp.mailTop && jp.gridTop < jp.mapTop, 'the tiles are above ✉️ E-mail the customer and 📍 Map', jp);
   ok(jp.st > 100 && Math.abs(jp.h1 - jp.h0) < 1, 'the header stays fixed while the content scrolls', { h0: jp.h0, h1: jp.h1, st: jp.st });
@@ -201,13 +201,12 @@ try {
   const inCloud = await (async () => { const t0 = Date.now(); while (Date.now() - t0 < 40000) { const v = JSON.stringify(H.cget('gc_photos') || ''); if (v.includes('"jobId":"P1"') && v.includes('"source":"grayco"')) return true; await sleep(700); } return false; })();
   ok(inCloud, 'the photo is in GrayCo Photos for that job and in the cloud (gc_photos, jobId P1)');
   await O.ev(() => { document.querySelectorAll('._gcSheetOv,.gc-custq').forEach(o => o.remove()); window._gcJobDashboard('P1'); }); await sleep(1000);
-  await O.ev(() => { const o = window._gcOpenJobProfile; window.__fpDocs = []; window._gcOpenJobProfile = function(){ const r = o.apply(this, arguments); const inp = document.getElementById('_jpFileInput'); if (inp && inp.onchange && !inp.onchange.__fp) { const h = inp.onchange; const w = function(){ window.__fpDocs.push([...(inp.files || [])].map(f => f.name)); return h.apply(this, arguments); }; w.__fp = true; inp.onchange = w; } return r; }; window.__fpRestore = o; });
+  /* patch FIELDFILE: a file is stored on the job's Documents right there — the Job Info sheet is not opened */
   fc = O.page().waitForEvent('filechooser', { timeout: 8000 });
   await tap(O, '#_gcJobDash .gcfp-grid > button[data-fn="photo"]');
   await (await fc).setFiles({ name: 'fp-permit.pdf', mimeType: 'application/pdf', buffer: PDF }); await sleep(2500);
-  const pdfHanded = await O.ev(() => JSON.stringify(window.__fpDocs || []).includes('fp-permit.pdf'));
-  await O.ev(() => { if (window.__fpRestore) window._gcOpenJobProfile = window.__fpRestore; });
-  ok(pdfHanded, 'a PDF from 📷 Add Photo/File goes to the job\'s Documents upload (the job profile\'s own file input, as before)');
+  const noInfo = await O.ev(() => !document.getElementById('_jpFileInput') && !!document.getElementById('_gcJobDash'));
+  ok(noInfo, 'a PDF from 📷 Add Photo/File does not open the Job Info sheet; the job page stays (patch FIELDFILE)');
   const pdfDoc = await (async () => { const t0 = Date.now(); while (Date.now() - t0 < 20000) { const loc = await O.ev(async () => [].concat((window._crm && window._crm.projectDocs) || [], (await window.idbGet('projectDocs')) || [], JSON.parse(localStorage.getItem('grayco_docs') || '[]')).some(d => d && d.pid === 'P1' && d.name === 'fp-permit.pdf')); if (loc || JSON.stringify(H.cget('projectDocs') || '').includes('fp-permit.pdf')) return true; await sleep(700); } return false; })();
   await O.ev(() => { document.querySelectorAll('._gcSheetOv,[data-gcnav-pad]').forEach(o => { if (!o.closest('#_gcJobDash')) o.remove(); }); });
   if (!pdfDoc) console.log('  · (the CRM\'s own Documents save had not reached the phone store / cloud in 20 s — not part of this patch)');
@@ -263,8 +262,8 @@ try {
   const p2 = await P.ev(() => [...document.querySelectorAll('#_gcJobDash .gcfp-t')].map(b => b.getAttribute('data-fp')));
   ok(p2.length === 0, 'PM on another PM\'s job page: no portal / photo / message tiles', p2);
   await P.ev(() => window._gcJobDashboard('P1')); await sleep(1000);
-  const p1 = await P.ev(() => [...document.querySelectorAll('#_gcJobDash .gcfp-grid > button')].slice(0, 10).map(b => (b.children[1] || b).textContent.trim()));
-  ok(JSON.stringify(p1) === JSON.stringify(ORDER), 'PM on his job page: the same ten tiles in order', p1);
+  const p1 = await P.ev(() => [...document.querySelectorAll('#_gcJobDash .gcfp-grid > button')].slice(0, 11).map(b => (b.children[1] || b).textContent.trim()));
+  ok(JSON.stringify(p1) === JSON.stringify(ORDER), 'PM on his job page: the same eleven tiles in order', p1);
   await tap(P, '#_gcJobDash .gcfp-t[data-fp="money"]');
   const pmo = await P.ev(() => (document.querySelector('.gcfp-sheet .bd') || {}).innerText || '');
   ok(/Contract/.test(pmo) && /Profit/.test(pmo), 'PM sees profit / margin on his own job (the existing rule)', pmo.slice(0, 200));
