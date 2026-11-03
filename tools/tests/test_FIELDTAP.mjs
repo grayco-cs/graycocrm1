@@ -83,6 +83,21 @@ try {
   todo.changed = await O.ev(() => !document.getElementById('_gcTD2Ov') || !!document.getElementById('_gcJobDash') || !!document.querySelector('.gc-jd,.gcjd,main'));
   todo.ov = await O.ev(() => !!document.getElementById('_gcTD2Ov'));
   ok(todo.changed, 'To-Do: a tap on the row (not the title) opens the to-do', todo);
+  // FIELDTAP2: one money tile; the full money page from it; no floating ⚙ on the job page
+  await O.ev(() => { document.querySelectorAll('#_gcTD2Ov,._gcSheetOv,.gcfp-sheet,#_gcJobDash').forEach(o => o.remove()); window._gcJobDashboard('P1'); }); await sleep(1200);
+  const jt = await O.ev(() => ({ jobfin: !!document.querySelector('#_gcJobDash ._jdAct[data-fn="jobfin"]'), money: !!document.querySelector('#_gcJobDash .gcfp-t[data-fp="money"]'),
+    tiles: [...document.querySelectorAll('#_gcJobDash .gcfp-grid > button')].map(b => b.textContent.trim()), gear: (() => { const g = document.getElementById('gc-br-settings'); return g ? getComputedStyle(g).display : 'none'; })() }));
+  ok(!jt.jobfin && jt.money && jt.tiles.filter(x => /Financials/.test(x)).length === 1, 'job page: one money tile (💰 Financials, Invoices & COs); 💰 Job Financials is gone', jt.tiles);
+  ok(jt.gear === 'none', 'job page: the desk\'s floating ⚙ CRM Settings is not over the Field tiles', jt.gear);
+  await pg.locator('#_gcJobDash .gcfp-t[data-fp="money"]').first().evaluate(b => b.click()); await sleep(900);
+  const full = await O.ev(() => !!document.querySelector('.gcfp-sheet [data-g="full"]'));
+  ok(full, 'Financials, Invoices & COs has "💰 The job\'s full money page" (what Job Financials opened)');
+  if (full) {
+    await O.ev(() => { window.__fmJF = 0; const f = window._gcJobFinancials; window._gcJobFinancials = function(){ window.__fmJF++; return f.apply(this, arguments); }; document.querySelector('.gcfp-sheet [data-g="full"]').click(); }); await sleep(900);
+    const jf = await O.ev(() => ({ n: window.__fmJF, body: document.body.innerText.slice(-1500) }));
+    ok(jf.n === 1, 'tapping it opens the job\'s full money page (_gcJobFinancials)', jf.n);
+  }
+  await pg.screenshot({ path: SHOTS + 'fieldtap2_job.png' });
   ok(!O.errs.length, 'no page errors', O.errs.slice(0, 3));
 } catch (e) { fail++; console.log('  ✗ FAIL threw: ' + (e && e.stack || e)); }
 for (const c of W) await c.b.close().catch(() => {});
