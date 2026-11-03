@@ -195416,6 +195416,7 @@ function css(){
     /* the role sections replace patch RP's dark profile card (Drying today / Estimating / Claims) — one of each, light */
     '#_gcJobPick.gc-fh #gc-rp-fcard{display:none!important}',
     'html.gc-fh-on #_gcAppTabs,html.gc-fh-on #_gcApprovalsBtn,html.gc-fh-on #_gcDeskBtn,html.gc-fh-on #_jpDesk,html.gc-fh-on #_fhDesk,html.gc-fh-on ._fmToggleBtn{display:none!important}',
+    'html._fieldmode #gc-br-settings,html.gc-fh-on #gc-br-settings{display:none!important}',   /* patch FIELDTAP2: the desk's ⚙ CRM Settings, not over the Field tiles */
     'html:has(#_gcJobPick.gc-fh) #gcu-pick-btn,html:has(#_gcJobPick.gc-fh) #gcb-fieldbtn,html:has(#_gcJobPick.gc-fh) #gc-br-settings{display:none!important}',
     '#gc-fh-tabs{display:none;position:fixed;left:0;right:0;bottom:0;z-index:100050;background:#fff;border-top:1px solid #e5e7eb;padding:6px 4px calc(8px + env(safe-area-inset-bottom,0px));justify-content:space-around;align-items:flex-end;font-family:Inter,-apple-system,sans-serif}',
     'html.gc-fh-on #gc-fh-tabs{display:flex}',
@@ -201678,6 +201679,9 @@ function decorate(pid){
   var order = [by.progress, by.info, pm.cust && mk('cust', '👤', 'Customer portal'), pm.sub && mk('sub', '🔧', 'Sub portal'), by.update, pm.msg && mk('msg', '💬', 'Message'), by.photo, pm.photos && mk('share', '🔗', 'Share photos'), pm.photos && hasLog() && mk('log', '📒', 'Daily Log'), pm.photos && mk('money', '💰', 'Financials, Invoices & COs'), pm.photos && mk('sched', '📅', 'Schedule & Inspections'), by.docs, by.create]
     .concat(olds.filter(function(b){ return ['progress', 'info', 'update', 'photo', 'docs', 'create'].indexOf(b.getAttribute('data-fn')) < 0; }))
     .filter(Boolean);   /* owner 10/30: no separate GrayCo Photos tile -- 📷 Add Photo/File is GrayCo Photos */
+  /* __GC_PATCH_FIELDTAP2__ (owner 11/03 "2 financial buttons, delete the last one"): 💰 Job Financials goes when 💰 Financials,
+     Invoices & COs is there — its sheet ends with "💰 The job's full money page" (the same _gcJobFinancials screen) */
+  if (pm.photos && by.jobfin) { order = order.filter(function(b){ return b !== by.jobfin; }); by.jobfin.remove(); }
   order.forEach(function(b){ grid.appendChild(b); });
   if (by.photo && pm.photos) by.photo.onclick = function(e){ if (e) e.stopPropagation(); addPhotoFile(proj(p.id) || p); };
   grid.classList.add('gcfp-grid');
