@@ -33,13 +33,13 @@ await t('subsafe: the carrier and the claim number never reach a sub; ordinary n
 });
 
 const SPH = require(path.join(FN, 'sub-photos.js'))._core, CV = require(path.join(FN, '_lib/cc-vis.js'));
-await t('the rule: subs see every photo but "Hidden from subs"; the customer rule is unchanged', () => {
+await t('the rule: subs see every photo but "Hidden from subs"; the customer sees CompanyCam photos by default (CUSTPORTAL)', () => {
   eq([SPH.subsOf({ shared: true }), SPH.subsOf({ shared: false }), SPH.subsOf({ tag: 'Damage' }), SPH.subsOf({ shared: false, hideSubs: false }), SPH.subsOf({ shared: true, hideSubs: true })], [true, true, true, true, false]);
   eq(SPH.subsOf({ source: 'companycam' }, { hideSubs: true }), false); eq(SPH.subsOf({ source: 'companycam' }, { shared: false }), true);
   eq([SPH.custOf({ shared: true }), SPH.custOf({ shared: false }), SPH.custOf({ tag: 'Damage' }), SPH.custOf({ source: 'sub', shared: true }), SPH.custOf({ source: 'sub', shared: true, custOkBy: 'Office' })], [true, false, false, false, true]);
   const since = 1000000, ix = CV.index([{ id: 'ccf_5', source: 'ccflag', ccId: '5', hideSubs: true }, { id: 'ccf_6', source: 'ccflag', ccId: '6', shared: false }]);
   eq([CV.subsSee('1', since + 50, 'J', ix, since), CV.subsSee('1', since - 50, 'J', ix, since), CV.subsSee('5', 1, 'J', ix, since), CV.subsSee('6', 1, 'J', ix, since)], [true, true, false, true]);
-  eq(CV.customerSees('1', since + 50, 'J', ix, since), false);
+  eq(CV.customerSees('1', since + 50, 'J', ix, since), true);   /* patch CUSTPORTAL: the customer now sees a CompanyCam photo by default (was: a new one waits) */
 });
 
 /* ── an in-memory Supabase ── */
