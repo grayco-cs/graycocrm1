@@ -192,7 +192,7 @@ W._gcPastPayOpen = async function(){
   ov.innerHTML='<div style="background:#fff;color:#0f2440;border-radius:12px;width:min(1500px,99vw);padding:16px 18px;box-sizing:border-box;">'
     +'<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:flex-start"><div><div style="font-size:19px;font-weight:800">📥 Enter past payroll (from paystubs)</div>'
     +'<div style="font-size:12px;color:#64748b;max-width:900px">One row per employee per payday. Salaried pay fills in (salary ÷ 52); type hourly pay and any <b>commission</b> separately. Social Security 6.2%, Medicare 1.45% and federal tax fill in — federal from the employee’s W-4 on the whole check (salary + commission together, the way ADP does it). <b>For checks already paid, use "amount on the check stub" so Form 941 matches what was really withheld.</b> — change any figure to match the stub. '
-    +'Saved as <b>already paid</b>: no checks to write, no alerts, nothing sent, nothing booked to accounting (it is already in QuickBooks). Then open 🧾 Form 941.</div></div>'
+    +'Saved as <b>already paid</b>: no checks to write, no alerts, nothing sent, nothing booked to accounting (it is already in QuickBooks). Then open 🧾 Form 941.<br><b style="color:#166534">Check already paid? Tap 📄 Stub on its row and type Federal, SS, Medicare and State from the paper. Paid salary and commission as two checks? Make two rows with the same pay date.</b></div></div>'
     +'<button data-pp="x" style="'+BT+'">Close</button></div>'
     +'<div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin:12px 0 8px;padding:10px;background:#f8fafc;border-radius:8px">'
     +'<label style="font-size:11px;font-weight:700;color:#64748b">FIRST PAYDAY<br><input data-pp="first" type="date" value="'+firstFri(qs)+'" style="'+IN+'"></label>'
@@ -222,7 +222,7 @@ W._gcPastPayOpen = async function(){
         +'<td style="padding:3px">'+modeSel(i,'ficaMode',r.ficaMode)+'<br><span style="font-size:10px;color:#64748b">SS</span> '+inp(i,'ss',r.ss,72)+' <span style="font-size:10px;color:#64748b">Med</span> '+inp(i,'med',r.med,68)+'</td>'
         +'<td style="padding:3px"><select data-i="'+i+'" data-k="st" style="'+IN+'width:150px">'+['TN','MS','AR','AL','GA','KY','MO','LA'].map(function(v){ return '<option value="'+v+'"'+((s(r.st)||'TN').toUpperCase()===v?' selected':'')+'>'+(v==='TN'?'TN — no state tax':v)+'</option>'; }).join('')+'</select><br>'+modeSel(i,'stMode',r.stMode||'calc')+'<br>'+inp(i,'stw',r.stw,86)+'</td>'
         +'<td style="padding:3px">'+inp(i,'other',r.other,66)+'</td><td style="padding:3px">'+inp(i,'net',r.net,86)+'</td><td style="padding:3px">'+inp(i,'checkNo',r.checkNo,70)+'</td>'
-        +'<td style="padding:3px"><button data-rm="'+i+'" style="border:none;background:#fee2e2;color:#b91c1c;border-radius:5px;padding:4px 8px;cursor:pointer">✕</button></td></tr>'
+        +'<td style="padding:3px;white-space:nowrap"><button data-stub="'+i+'" title="Already paid: type every tax from the paper" style="border:1px solid #16a34a;background:#f0fdf4;color:#166534;border-radius:5px;padding:4px 8px;cursor:pointer;font-weight:800;margin-right:4px">📄 Stub</button><button data-rm="'+i+'" style="border:none;background:#fee2e2;color:#b91c1c;border-radius:5px;padding:4px 8px;cursor:pointer">✕</button></td></tr>'
         +'<tr data-note="'+i+'"><td colspan="14" style="padding:0 4px 4px"></td></tr>';
     }).join('') : '<tr><td colspan="14" style="padding:14px;color:#64748b;font-size:13px">No checks yet. <b>One check:</b> press <b>+ Add a past check</b>, then pick the employee, the pay date and type the gross from the stub. <b>A whole quarter:</b> pick the first and last payday and press <b>Make weekly rows</b>.</td></tr>';
     paint();
@@ -260,6 +260,10 @@ W._gcPastPayOpen = async function(){
     if(k==='fedMode' || k==='ficaMode' || k==='stMode' || k==='st'){ r.netTyped=false; r.net=''; }
     later(); });
   ov.addEventListener('click', function(e){ var b=e.target.closest&&e.target.closest('[data-rm]'); if(!b) return; rows.splice(+b.getAttribute('data-rm'),1); draw(); later(); });
+  /* patch PASTPAYSTUB: one tap = every tax on this row comes from the paper */
+  ov.addEventListener('click', function(e){ var b=e.target.closest&&e.target.closest('[data-stub]'); if(!b) return; var i=+b.getAttribute('data-stub'), r=rows[i]; if(!r) return;
+    r.fedMode='stub'; r.ficaMode='stub'; r.fed=''; r.ss=''; r.med=''; if((s(r.st)||'TN').toUpperCase()!=='TN'){ r.stMode='stub'; r.stw=''; } r.netTyped=false; r.net='';
+    draw(); later(); setTimeout(function(){ var f=ov.querySelector('tr[data-row="'+i+'"] [data-k="fed"]'); if(f){ f.focus(); try{ f.scrollIntoView({block:'center'}); }catch(_e){} } }, 50); });
   $('x').onclick=function(){ ov.remove(); };
   $('fill').onclick=function(){
     var pick=emps.filter(function(e,i){ var c=ov.querySelector('[data-pp-emp="'+i+'"]'); return c && c.checked; });
