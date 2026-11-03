@@ -91,5 +91,27 @@ eq('a row with an error is not saved', PP.buildRuns([{ payDate: '2026-07-10', na
 const r4 = PP.fillRows('2026-09-25', '2026-09-25', [{ name: 'Big', key: 'B' }]); r4[0].gross = '5000'; r4[0].fedCalc = 900;
 PP.calc(r4, { set, ytdBase: () => ({ ss: 182500, med: 182500, futa: 182500, suta: 182500 }) });
 eq('wage base: only $2,000 more is SS wages; FUTA/SUTA 0', [r4[0].out.ssWages, r4[0].out.ss, r4[0].out.futa, r4[0].out.suta], [2000, 124, 0, 0]);
-console.log((fail ? 'FAILED ' : 'OK ') + pass + ' passed, ' + fail + ' failed');
-process.exit(fail ? 1 : 0);
+
+// patch PASTPAYMS (owner 11/03): MS state tax on a past check
+{
+  const rows = [
+    { payDate: '2026-09-25', from: '2026-09-19', to: '2026-09-25', name: 'Ms Test', empKey: 'UM', gross: '1000', comm: '', fedMode: 'stub', fed: '80', ficaMode: 'calc', other: '', net: '', netTyped: false, st: 'MS', stMode: 'calc', stCalc: 31.5, sutaSt: 'MS' },
+    { payDate: '2026-09-25', from: '2026-09-19', to: '2026-09-25', name: 'Ms Stub', empKey: 'UN', gross: '1000', comm: '', fedMode: 'stub', fed: '80', ficaMode: 'calc', other: '', net: '', netTyped: false, st: 'MS', stMode: 'stub', stw: '29.00' },
+    { payDate: '2026-09-25', from: '2026-09-19', to: '2026-09-25', name: 'Tn Test', empKey: 'UT', gross: '1000', comm: '', fedMode: 'stub', fed: '80', ficaMode: 'calc', other: '', net: '', netTyped: false, st: 'TN', stMode: 'calc', stCalc: 99 },
+    { payDate: '2026-09-25', from: '2026-09-19', to: '2026-09-25', name: 'Ms NoFig', empKey: 'UX', gross: '1000', comm: '', fedMode: 'stub', fed: '80', ficaMode: 'calc', other: '', net: '', netTyped: false, st: 'MS', stMode: 'calc', stCalc: null }];
+  PP.calc(rows, { set });
+  eq('MS as calculated: state 31.50', rows[0].out.state, 31.5);
+  eq('MS net = 1000 − 80 − 62 − 14.50 − 31.50', rows[0].out.net, 812);
+  eq('MS from the stub: 29.00', rows[1].out.state, 29);
+  eq('TN: no state tax even if a figure is passed', rows[2].out.state, 0);
+  eq('TN net unchanged', rows[2].out.net, 843.5);
+  eq('MS with no figure = row error', rows[3].out.err.length > 0, true);
+  const runs = PP.buildRuns(rows.slice(0, 3), { by: 't', idSeed: 'x', now: '2026-11-03T00:00:00Z' });
+  const L = runs[0].lines.find(l => l.name === 'Ms Test');
+  eq('run line carries MS state', [L.state, L.stateName, L.withholdState, L.sutaState], [31.5, 'MS', 'MS', 'MS']);
+  eq('run totals include state', runs[0].totals.state, 60.5);
+  eq('default state: lives TN works MS → MS', PP.defSt({ state: 'TN', workState: 'MS' }), 'MS');
+  eq('default state: none → TN', PP.defSt({}), 'TN');
+  console.log((fail ? 'FAILED ' : 'OK ') + pass + ' passed, ' + fail + ' failed (with PASTPAYMS)');
+  if (fail) process.exit(1);
+}

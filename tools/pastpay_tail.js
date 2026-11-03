@@ -53,7 +53,11 @@ function calc(rows, ctx){
     var erSS=ssC, erMed=medC;
     var futaW=r2(Math.max(0, Math.min(gt, futaBase-y.futa))), sutaW=r2(Math.max(0, Math.min(gt, sutaBase-y.suta)));
     var other=r2(r.other);
-    var netC=r2(gt-fed-ss-med-addl-other);
+    /* patch PASTPAYMS: state income tax — TN has none; MS (or another state) as calculated / from the stub / none */
+    var stc=(s(r.st)||'TN').toUpperCase(), sm=MODES[r.stMode]?r.stMode:'calc', stw=0;
+    if(stc!=='TN'){ if(sm==='calc'){ if(r.stCalc==null){ if(gt>0) out.err.push('No '+stc+' state tax figure for '+(r.name||'this row')+' — set the employee\'s state in Payroll → Employees, or pick "amount on the check stub" under State tax'); } else stw=r2(r.stCalc); }
+      else if(sm==='stub') stw=r2(r.stw); else out.note.push('No '+stc+' state tax was withheld on this check.'); }
+    var netC=r2(gt-fed-ss-med-addl-stw-other);
     var net=r.netTyped ? r2(r.net) : netC;
     if(r.netTyped && Math.abs(net-netC)>0.02) out.warn.push('Net '+money(net)+' ≠ gross − taxes − deductions ('+money(netC)+').');
     if(!s(r.payDate)) out.err.push('pay date missing'); if(!s(r.name)) out.err.push('employee missing');
@@ -61,7 +65,7 @@ function calc(rows, ctx){
     if(s(r.from) && s(r.to) && s(r.from)>s(r.to)) out.err.push('period start is after period end');
     add.ss+=ssW; add.med+=gt; add.futa+=futaW; add.suta+=gt;
     r.out=Object.assign(out, { gross:gt, fed:fed, ss:ss, med:med, addlMed:addl, ssWages:ssW, medWages:gt, erSS:erSS, erMed:erMed,
-      futa:r2(futaW*futaRate), suta:r2(sutaW*sutaRate), net:net, ssCalc:ssC, medCalc:r2(medC+addC), fedMode:fm, ficaMode:xm, other:other });
+      futa:r2(futaW*futaRate), suta:r2(sutaW*sutaRate), net:net, ssCalc:ssC, medCalc:r2(medC+addC), fedMode:fm, ficaMode:xm, other:other, state:stw, st:stc, stMode:sm });
   });
   return rows;
 }
@@ -80,7 +84,7 @@ function buildRuns(rows, meta){
     run.lines.push({ empId:s(r.empKey||r.name), name:s(r.name), payType:s(r.payType)||'hourly', period:'weekly', hours:r2(r.hours), otHours:0, rate:0,
       grossParts:[{ label:'Wages (from the stub)', amount:r2(n2(r.gross)) }].concat(n2(r.comm)?[{ label:'Commission', amount:r2(r.comm) }]:[]),
       gross:o.gross, commission:r2(r.comm), preTax:0, postTax:o.other, otherDed:o.other, allDeductions:o.other, taxable:o.gross, ssWages:o.ssWages, medWages:o.medWages,
-      ss:o.ss, med:o.med, addlMed:o.addlMed, fed:o.fed, state:0, stateName:'TN', withholdState:'TN', sutaState:'TN',
+      ss:o.ss, med:o.med, addlMed:o.addlMed, fed:o.fed, state:r2(o.state), stateName:s(o.st||'TN'), withholdState:s(o.st||'TN'), sutaState:(s(r.sutaSt)||'TN').toUpperCase(),
       employerSS:o.erSS, employerMed:o.erMed, futa:o.futa, suta:o.suta, net:o.net,
       fedMode:o.fedMode, ficaMode:o.ficaMode, fedNotWithheld:o.fedMode==='none', ficaNotWithheld:o.ficaMode==='none',
       status:'paid', paidOut:true, paidDate:s(r.payDate), checkNo:s(r.checkNo), manual:true, enteredManually:true, source:'paystub-entry',
@@ -119,11 +123,15 @@ function w2Employees(profiles, users){
 function fillRows(first, last, emps){
   var out=[]; if(!s(first)||!s(last)||first>last) return out;
   for(var d=first, n=0; d<=last && n<60; d=addDays(d,7), n++){
-    emps.forEach(function(e){ out.push({ payDate:d, from:addDays(d,-6), to:d, name:e.name, empKey:e.key, payType:e.payType, hours:'', gross:'', comm:'', fedMode:'calc', ficaMode:'calc', fed:'', ss:'', med:'', other:'', net:'', netTyped:false, checkNo:'' }); });
+    emps.forEach(function(e){ out.push({ payDate:d, from:addDays(d,-6), to:d, name:e.name, empKey:e.key, payType:e.payType, hours:'', gross:weeklySalary(e), comm:'', fedMode:'calc', ficaMode:'calc', fed:'', ss:'', med:'', other:'', net:'', netTyped:false, checkNo:'', st:defSt(e.prof), stMode:'calc', stw:'' }); });
   }
   return out;
 }
-var PP={ calc:calc, buildRuns:buildRuns, fillRows:fillRows, w2Employees:w2Employees, MODES:MODES };
+/* patch PASTPAYMS: the row's default state — MS when the employee lives or works in MS (as the payroll engine withholds), else their state, else TN */
+/* patch PASTPAYMS2: a salaried employee's weekly pay fills in by itself (annual salary ÷ 52) — typed over to match the stub */
+function weeklySalary(e){ var p=(e&&e.prof)||{}, t=low(p.payType); var a=n2(p.annualSalary); return ((t==='salary'||t==='salary_commission') && a>0) ? r2(a/52).toFixed(2) : ''; }
+function defSt(p){ p=p||{}; var r=(s(p.state)||'TN').toUpperCase(), w=(s(p.workState)||r).toUpperCase(); return (r==='MS'||w==='MS')?'MS':r; }
+var PP={ calc:calc, buildRuns:buildRuns, fillRows:fillRows, w2Employees:w2Employees, MODES:MODES, defSt:defSt, weeklySalary:weeklySalary };
 W._gcPastPay=PP;
 if(typeof document==='undefined') return;
 
@@ -150,18 +158,25 @@ W._gcPastPayOpen = async function(){
   function empOf(name){ return emps.filter(function(e){ return low(e.name)===low(name); })[0]||null; }
   var lq=lastQ(), qs=lq.y+'-'+pad((lq.q-1)*3+1)+'-01', qe=new Date(lq.y, lq.q*3, 0), qeS=qe.getFullYear()+'-'+pad(qe.getMonth()+1)+'-'+pad(qe.getDate());
   var rows=readDraft()||[];
-  var fedCache={};
+  var fedCache={}, stCache={}, sutaCache={};
   function ytdBase(k, pd){ try{ var y=p.ytdFor(runs, k, pd.slice(0,4), pd); return { ss:y.ssWages, med:y.medWages, futa:y.gross, suta:(y.sutaBy&&y.sutaBy.TN!=null)?y.sutaBy.TN:y.gross }; }catch(e){ return {}; } }
   async function fedFor(r){
     var e=empOf(r.name); var gt=r2(n2(r.gross)+n2(r.comm));
     if(!e || !(gt>0) || !s(r.payDate)) return e ? 0 : null;
-    var from=s(r.from)||addDays(r.payDate,-6), to=s(r.to)||r.payDate, ck=[e.key,from,to,gt].join('|');
-    if(fedCache[ck]!=null) return fedCache[ck];
-    try{ var L=await p.computeLine(Object.assign({}, e.prof, { period:'weekly', payType:(e.prof.payType==='contractor_1099'?'hourly':e.prof.payType) }), from, to, set, { gross:0, ssWages:0, medWages:0, sutaBy:{} }, gt, {});
-      fedCache[ck]=r2(L && L.fed); return fedCache[ck]; }catch(err){ return null; }
+    var stx=(s(r.st)||defSt(e.prof)).toUpperCase(), ck=[e.key,s(r.from)||addDays(r.payDate,-6),s(r.to)||r.payDate,gt,stx,r2(r.comm)].join('|');   /* patch PASTPAYMS */
+    var from=s(r.from)||addDays(r.payDate,-6), to=s(r.to)||r.payDate;
+    if(fedCache[ck]!=null){ r.stCalc=stCache[ck]; r.sutaSt=sutaCache[ck]; return fedCache[ck]; }
+    var stOv=(stx===defSt(e.prof)) ? {} : { state:stx, workState:stx };
+    /* patch PASTPAYMS2: commission = supplemental wages → regular pay through the W-4 calc + a flat 22% on the commission */
+    var _pf=Object.assign({}, e.prof, stOv, { period:'weekly', payType:(e.prof.payType==='contractor_1099'?'hourly':e.prof.payType) }), _cm=r2(n2(r.comm)), _rg=r2(n2(r.gross));
+    try{ var L=await p.computeLine(_pf, from, to, set, { gross:0, ssWages:0, medWages:0, sutaBy:{} }, gt, {});
+      var _fedReg = (_cm>0) ? (_rg>0 ? r2(((await p.computeLine(_pf, from, to, set, { gross:0, ssWages:0, medWages:0, sutaBy:{} }, _rg, {}))||{}).fed) : 0) : r2(L && L.fed);
+      fedCache[ck]=r2(_fedReg + (_cm>0 ? r2(_cm*0.22) : 0)); stCache[ck]=(L && L.state!=null) ? r2(L.state) : null; sutaCache[ck]=s(L && L.sutaState)||'TN'; r.stCalc=stCache[ck]; r.sutaSt=sutaCache[ck]; return fedCache[ck]; }catch(err){ r.stCalc=null; return null; }
   }
   async function recalc(){
-    for(var i=0;i<rows.length;i++){ var r=rows[i]; r.empKey=(empOf(r.name)||{}).key||r.name; r.payType=(empOf(r.name)||{}).payType||r.payType; r.fedCalc = r.fedMode==='calc' ? await fedFor(r) : null; }
+    for(var i=0;i<rows.length;i++){ var r=rows[i]; r.empKey=(empOf(r.name)||{}).key||r.name; r.payType=(empOf(r.name)||{}).payType||r.payType;
+      if(!s(r.st) && empOf(r.name)){ r.st=defSt(empOf(r.name).prof); var _tr=ov.querySelector('tr[data-row="'+i+'"] [data-k="st"]'); if(_tr) _tr.value=r.st; }   /* patch PASTPAYMS */
+      var _fc = await fedFor(r); r.fedCalc = r.fedMode==='calc' ? _fc : null; }
     calc(rows, { set:set, ytdBase:ytdBase }); saveDraft(rows);
   }
   var old=document.getElementById('_gcPpOv'); if(old) old.remove();
@@ -169,7 +184,7 @@ W._gcPastPayOpen = async function(){
   ov.style.cssText='position:fixed;inset:0;z-index:2147483400;background:rgba(6,12,20,.78);display:flex;align-items:flex-start;justify-content:center;padding:12px;overflow:auto;font-family:inherit;';
   ov.innerHTML='<div style="background:#fff;color:#0f2440;border-radius:12px;width:min(1500px,99vw);padding:16px 18px;box-sizing:border-box;">'
     +'<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:flex-start"><div><div style="font-size:19px;font-weight:800">📥 Enter past payroll (from paystubs)</div>'
-    +'<div style="font-size:12px;color:#64748b;max-width:900px">One row per employee per payday. Type the <b>gross</b> (and commission); Social Security 6.2%, Medicare 1.45% and federal tax from the W-4 fill in — change any figure to match the stub. '
+    +'<div style="font-size:12px;color:#64748b;max-width:900px">One row per employee per payday. Salaried pay fills in (salary ÷ 52); type hourly pay and any <b>commission</b> separately. Social Security 6.2%, Medicare 1.45% and federal tax fill in — federal from the W-4 on the regular pay plus a flat 22% on commission (the IRS supplemental rate, the way ADP does it) — change any figure to match the stub. '
     +'Saved as <b>already paid</b>: no checks to write, no alerts, nothing sent, nothing booked to accounting (it is already in QuickBooks). Then open 🧾 Form 941.</div></div>'
     +'<button data-pp="x" style="'+BT+'">Close</button></div>'
     +'<div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin:12px 0 8px;padding:10px;background:#f8fafc;border-radius:8px">'
@@ -179,8 +194,8 @@ W._gcPastPayOpen = async function(){
     +'<button data-pp="fill" style="'+BT+'background:#0f2440;color:#fff">Make weekly rows</button>'
     +'<button data-pp="add" style="'+BT+'border-color:#16a34a;color:#166534">+ Add a past check</button>'
     +'<button data-pp="clear" style="'+BT+'color:#b91c1c">Clear all rows</button></div>'
-    +'<div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;min-width:1380px"><thead><tr style="background:#f1f5f9">'
-    +['Pay date','Period start','Period end','Employee','Hours','Gross','Commission','Federal withheld','Social Security / Medicare withheld','Other ded.','Net pay','Check #',''].map(function(h){ return '<th style="padding:6px 4px;font-size:10px;color:#64748b;text-transform:uppercase;text-align:left">'+h+'</th>'; }).join('')
+    +'<div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;min-width:1560px"><thead><tr style="background:#f1f5f9">'
+    +['Pay date','Period start','Period end','Employee','Hours','Gross','Commission','Federal withheld','Social Security / Medicare withheld','State tax (TN none · MS)','Other ded.','Net pay','Check #',''].map(function(h){ return '<th style="padding:6px 4px;font-size:10px;color:#64748b;text-transform:uppercase;text-align:left">'+h+'</th>'; }).join('')
     +'</tr></thead><tbody data-pp="body"></tbody><tfoot data-pp="foot"></tfoot></table></div>'
     +'<div data-pp="msg" style="font-size:12.5px;font-weight:700;margin-top:10px"></div>'
     +'<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button data-pp="save" style="'+BT+'background:#16a34a;color:#fff;border-color:#16a34a">✅ Save all (already paid)</button>'
@@ -198,10 +213,11 @@ W._gcPastPayOpen = async function(){
         +'<td style="padding:3px">'+inp(i,'hours',r.hours,56)+'</td><td style="padding:3px">'+inp(i,'gross',r.gross,86)+'</td><td style="padding:3px">'+inp(i,'comm',r.comm,80)+'</td>'
         +'<td style="padding:3px">'+modeSel(i,'fedMode',r.fedMode)+'<br>'+inp(i,'fed',r.fed,86)+'</td>'
         +'<td style="padding:3px">'+modeSel(i,'ficaMode',r.ficaMode)+'<br><span style="font-size:10px;color:#64748b">SS</span> '+inp(i,'ss',r.ss,72)+' <span style="font-size:10px;color:#64748b">Med</span> '+inp(i,'med',r.med,68)+'</td>'
+        +'<td style="padding:3px"><select data-i="'+i+'" data-k="st" style="'+IN+'width:150px">'+['TN','MS','AR','AL','GA','KY','MO','LA'].map(function(v){ return '<option value="'+v+'"'+((s(r.st)||'TN').toUpperCase()===v?' selected':'')+'>'+(v==='TN'?'TN — no state tax':v)+'</option>'; }).join('')+'</select><br>'+modeSel(i,'stMode',r.stMode||'calc')+'<br>'+inp(i,'stw',r.stw,86)+'</td>'
         +'<td style="padding:3px">'+inp(i,'other',r.other,66)+'</td><td style="padding:3px">'+inp(i,'net',r.net,86)+'</td><td style="padding:3px">'+inp(i,'checkNo',r.checkNo,70)+'</td>'
         +'<td style="padding:3px"><button data-rm="'+i+'" style="border:none;background:#fee2e2;color:#b91c1c;border-radius:5px;padding:4px 8px;cursor:pointer">✕</button></td></tr>'
-        +'<tr data-note="'+i+'"><td colspan="13" style="padding:0 4px 4px"></td></tr>';
-    }).join('') : '<tr><td colspan="13" style="padding:14px;color:#64748b;font-size:13px">No checks yet. <b>One check:</b> press <b>+ Add a past check</b>, then pick the employee, the pay date and type the gross from the stub. <b>A whole quarter:</b> pick the first and last payday and press <b>Make weekly rows</b>.</td></tr>';
+        +'<tr data-note="'+i+'"><td colspan="14" style="padding:0 4px 4px"></td></tr>';
+    }).join('') : '<tr><td colspan="14" style="padding:14px;color:#64748b;font-size:13px">No checks yet. <b>One check:</b> press <b>+ Add a past check</b>, then pick the employee, the pay date and type the gross from the stub. <b>A whole quarter:</b> pick the first and last payday and press <b>Make weekly rows</b>.</td></tr>';
     paint();
   }
   function paint(){
@@ -212,6 +228,8 @@ W._gcPastPayOpen = async function(){
       set1('fed', r.fedMode==='calc'?(r.fedCalc==null?'':r2(o.fed).toFixed(2)):(r.fedMode==='none'?'0.00':r.fed), r.fedMode!=='stub');
       set1('ss', r.ficaMode==='stub'?r.ss:r2(o.ss).toFixed(2), r.ficaMode!=='stub');
       set1('med', r.ficaMode==='stub'?r.med:r2(r2(o.med)+r2(o.addlMed)).toFixed(2), r.ficaMode!=='stub');
+      var _st=(s(r.st)||'TN').toUpperCase(), _sm=r.stMode||'calc'; var _sms=tr.querySelector('[data-k="stMode"]'); if(_sms) _sms.style.display=_st==='TN'?'none':'';   /* patch PASTPAYMS */
+      set1('stw', _st==='TN' ? '0.00' : (_sm==='calc' ? (r.stCalc==null?'':r2(o.state).toFixed(2)) : (_sm==='none'?'0.00':r.stw)), _st==='TN' || _sm!=='stub');
       if(!r.netTyped) set1('net', o.net!=null && o.gross>0 ? r2(o.net).toFixed(2) : '', false);
       var nt=ov.querySelector('tr[data-note="'+i+'"] td');
       nt.innerHTML=(o.err||[]).map(function(x){ return '<div style="color:#b91c1c;font-size:11.5px;font-weight:700">✗ '+esc(x)+'</div>'; }).join('')
@@ -231,7 +249,8 @@ W._gcPastPayOpen = async function(){
     var r=rows[+i]; if(!r) return; r[k]=el.value;
     if(k==='fedMode' && el.value==='stub' && r.fed==='' && r.out) r.fed=r2(r.out.fed).toFixed(2);
     if(k==='ficaMode' && el.value==='stub' && r.out){ if(r.ss==='') r.ss=r2(r.out.ssCalc).toFixed(2); if(r.med==='') r.med=r2(r.out.medCalc).toFixed(2); }
-    if(k==='fedMode' || k==='ficaMode'){ r.netTyped=false; r.net=''; }
+    if(k==='stMode' && el.value==='stub' && r.stw==='' && r.out) r.stw=r2(r.out.state).toFixed(2);   /* patch PASTPAYMS */
+    if(k==='fedMode' || k==='ficaMode' || k==='stMode' || k==='st'){ r.netTyped=false; r.net=''; }
     later(); });
   ov.addEventListener('click', function(e){ var b=e.target.closest&&e.target.closest('[data-rm]'); if(!b) return; rows.splice(+b.getAttribute('data-rm'),1); draw(); later(); });
   $('x').onclick=function(){ ov.remove(); };
@@ -241,7 +260,7 @@ W._gcPastPayOpen = async function(){
     if(!nw.length){ alert('Pick the first and last payday and at least one employee.'); return; }
     if(rows.length && !confirm('Add '+nw.length+' rows to the '+rows.length+' already here?')) return;
     rows=rows.concat(nw); draw(); later(); };
-  $('add').onclick=function(){ var l=rows[rows.length-1]; var d=l?l.payDate:firstFri(qs); rows.push({ payDate:d, from:addDays(d,-6), to:d, name:'', hours:'', gross:'', comm:'', fedMode:'calc', ficaMode:'calc', fed:'', ss:'', med:'', other:'', net:'', netTyped:false, checkNo:'' }); draw(); later(); };
+  $('add').onclick=function(){ var l=rows[rows.length-1]; var d=l?l.payDate:firstFri(qs); rows.push({ payDate:d, from:addDays(d,-6), to:d, name:'', hours:'', gross:'', comm:'', fedMode:'calc', ficaMode:'calc', fed:'', ss:'', med:'', other:'', net:'', netTyped:false, checkNo:'', st:'', stMode:'calc', stw:'' }); draw(); later(); };
   $('clear').onclick=function(){ if(rows.length && confirm('Clear all '+rows.length+' rows from this screen? (Nothing saved is touched.)')){ rows=[]; draw(); saveDraft(rows); } };
   $('f941').onclick=function(){ ov.remove(); if(W._gcF941Open) W._gcF941Open(); };
   $('save').onclick=async function(){

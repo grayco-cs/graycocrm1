@@ -38,7 +38,8 @@ await sleep(4000);
 ok(await A.ev(() => !!window.__GC_PASTPAY__ && !!window.__GC_F941__), 'owner signed in; PASTPAY + F941 loaded');
 await A.ev(() => window._gcOpenPayrollTab('run')); await sleep(2500);
 ok(await A.ev(() => !!document.getElementById('_pPast')), 'Run Payroll has "📥 Enter past payroll (from paystubs)"');
-await p.locator('#_pPast').click(); await sleep(2500);
+await A.ev(() => document.getElementById('_pPast').click()); await sleep(2500);   // the ROLEAPPS desk layer sits over the tab in this harness
+ok(await A.ev(() => [...document.querySelectorAll('#_gcPpOv th')].some(th => /State tax/i.test(th.textContent))), 'grid has a State tax column (PASTPAYMS)');
 ok(await A.ev(() => !!document.getElementById('_gcPpOv')), 'it opens the grid');
 const emps = await A.ev(() => [...document.querySelectorAll('#_gcPpOv [data-pp-emp]')].map(c => c.parentElement.textContent.trim()));
 ok(emps.length === 2 && !emps.some(e => /Tess|Office/.test(e)), 'only the two W-2 employees are offered (not the owner on draws, not the shared Office account)', emps);
