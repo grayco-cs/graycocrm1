@@ -38927,6 +38927,15 @@ function buildNavSearch(){
   var results = document.getElementById('gc-navsearch-results');
   var _activeIdx = -1;
   inp._acInit = true;   /* patch TABSEARCH: never the projects / subs autocomplete over the tab list */
+  /* patch NAVCLEAR: never a leftover word in the box — after sign-in, a page restore, or a list left open */
+  (function(){
+    function clr(force){ try{ if(!force && document.activeElement === inp) return; if(inp.value){ inp.value = ''; } _lastQ = ''; results.style.display = 'none'; }catch(e){} }
+    try{ inp.setAttribute('name', 'gc-tabsearch-' + Date.now().toString(36)); inp.setAttribute('autocomplete', 'off'); inp.setAttribute('data-lpignore', 'true'); }catch(e){}
+    clr(true); setTimeout(function(){ clr(); }, 0); setTimeout(function(){ clr(); }, 1500);
+    window.addEventListener('pageshow', function(){ clr(); });
+    inp.addEventListener('blur', function(){ setTimeout(function(){ if(document.activeElement !== inp && !(_pk && _pk.down)) clr(); }, 1000); });
+    setInterval(function(){ try{ var a = document.getElementById('gc-auth-email'); if(a && a.offsetParent !== null) clr(true); }catch(e){} }, 2000);
+  })();
 
   var _lastQ = '';
   function search(q){
