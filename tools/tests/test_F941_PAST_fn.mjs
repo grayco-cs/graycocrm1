@@ -24,6 +24,9 @@ const USERS2 = USERS.concat([{ id: 'UBP', name: 'Brittany Pucket', email: 'britt
 const PROFS2 = PROFS.concat([{ name: 'Brittany Pucket', userId: 'UBP', payType: 'salary' }, { name: 'Front Counter', userId: 'USH', payType: 'salary' }]);
 eq('a real person with role "Office Admin" IS offered; the shared logins are not', PP.w2Employees(PROFS2, USERS2).map(e => e.name), ['Avery Test', 'Blake Test', 'Brittany Pucket']);
 eq('employee key = user id', PP.w2Employees(PROFS, USERS).map(e => e.key), ['UA', 'UB']);
+// patch PASTPAYFIX (owner 11/03): a leftover payroll profile of someone NOT on Admin → Team (Dale) is never offered; Team status Inactive/Terminated is not either
+eq('not on Admin → Team = not offered (leftover profile)', PP.w2Employees(PROFS.concat([{ name: 'Dale Leftover', payType: 'hourly' }]), USERS).map(e => e.name), ['Avery Test', 'Blake Test']);
+eq('Team status Inactive / Terminated = not offered', PP.w2Employees(PROFS.concat([{ name: 'Ina Test', userId: 'UI', payType: 'hourly' }, { name: 'Ter Test', userId: 'UT', payType: 'salary' }]), USERS.concat([{ id: 'UI', name: 'Ina Test', role: 'Crew', status: 'Inactive' }, { id: 'UT', name: 'Ter Test', role: 'Crew', status: 'Terminated' }])).map(e => e.name), ['Avery Test', 'Blake Test']);
 
 // the grid: "Make weekly rows" 7/3 → 9/25 for two employees
 const rows = PP.fillRows('2026-07-03', '2026-09-25', [{ name: 'Avery Test', key: 'UA', payType: 'commission' }, { name: 'Blake Test', key: 'UB', payType: 'hourly' }]);
