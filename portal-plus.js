@@ -5,7 +5,7 @@
 (function(){
 'use strict';
 if (window.__GC_PPLUS__) return; window.__GC_PPLUS__ = true;
-var FN = '/.netlify/functions/portal-plus', OFFICE = '901-585-0944';
+var FN = '/.netlify/functions/portal-plus', OFFICE = '901-585-0944', EMERGENCY_TEL = 'tel:9015828255';   /* patch CUSTPORTAL (owner 11/02): the 24/7 emergency line is (901) 582-8255 */
 var token = '';
 try { var m = /(?:^#|&)t=([A-Za-z0-9_-]{20,80})/.exec(location.hash || ''); if (m) token = m[1]; } catch (e) {}
 try { if (!token) token = localStorage.getItem('gc_portal_t') || ''; } catch (e) {}
@@ -129,7 +129,7 @@ function dashboard(c, M, signed){
     M.pm ? h('div', { class: 'care-pm' }, [h('span', { class: 'care-av', text: M.pm.initial }), h('span', null, [h('b', { text: M.pm.name }), h('br'), h('span', { class: 'muted', text: 'Your Project Manager' })])]) : null]);
   c.appendChild(st);
   if (M.member) c.appendChild(h('div', { class: 'muted', 'data-member': M.member.tier, text: M.member.discount + '% off repairs · ' + M.member.perks + (M.member.note ? ' · ' + M.member.note : '') }));
-  if (pri) c.appendChild(h('a', { class: 'care-sos', href: 'tel:' + String(M.phone || OFFICE).replace(/\D/g, ''), text: '🚨 Emergency? Call GrayCo now' }));
+  if (pri) c.appendChild(h('a', { class: 'care-sos', href: EMERGENCY_TEL, text: '🚨 Emergency? Call GrayCo now — (901) 582-8255' }));
   signed.forEach(function(k){
     var box = h('div', { class: 'care-plan', 'data-plan': k.planId }, [h('div', { class: 'care-ph' }, [h('b', { text: k.planName }), h('span', { class: 'pp-freq', text: k.freqLabel || '' }), k.priority ? h('span', { class: 'pp-freq gold', text: '⭐ Priority: snow + emergency' }) : null]),
       h('div', { class: 'care-line' }, [h('span', { class: 'pp-st', text: '✓ Signed by ' + (k.signName || 'you') + ' on ' + dt(k.signedAt) + ' · ' + usd(k.price) + ' / year' + (k.billing === 'monthly' ? ' (' + usd(k.monthly) + ' a month)' : k.billsPerYear > 1 ? ' (' + usd(Math.round(k.price * 100 / k.billsPerYear) / 100) + ' every ' + (12 / k.billsPerYear) + ' months)' : '') }),

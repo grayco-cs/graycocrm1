@@ -428,6 +428,9 @@
 
 # patch SUBPORTAL3: portal.html loads /gc-address.js and the legal pages show /img/grayco-logo-white.png — without these rules the
 # catch-all below answered both with the portal page (a script error on every portal open, a broken logo on the legal pages)
+# patch CUSTPORTAL: portal.html's FIRST script is /gc-address.js — the catch-all answered it with the page itself, so every portal
+# page opened with "Uncaught SyntaxError: Unexpected token '<'". The legal pages the sign flow opens (E-SIGN consent, Notice of
+# Cancellation, terms, privacy) show the white GrayCo logo from /img/ — it was a broken picture on this host.
 [[redirects]]
   from = "https://portal.grayco-cs.com/gc-address.js"
   to = "/gc-address.js"

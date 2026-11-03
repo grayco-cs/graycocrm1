@@ -7,7 +7,7 @@
 (function(){
 'use strict';
 if (window.__GC_PREQ__) return; window.__GC_PREQ__ = true;
-var FN = '/.netlify/functions/portal-req', OFFICE = '901-585-0944', MAX = 4 * 1024 * 1024, MAXF = 4;
+var FN = '/.netlify/functions/portal-req', OFFICE = '901-585-0944', EMERGENCY = '(901) 582-8255', EMERGENCY_TEL = 'tel:9015828255', MAX = 4 * 1024 * 1024, MAXF = 4;
 var D = null, card = null, loading = false, lastKey = '', showAll = false, busy = false;
 
 /* ── English / Spanish (the portal's own EN / ES: portal.html sets <html lang> and gc_lang) ── */
@@ -224,7 +224,7 @@ function open(kind){
   fi.addEventListener('change', function(){ Array.prototype.forEach.call(fi.files || [], function(f){ if (F.files.length < MAXF) F.files.push(f); }); fi.value = ''; drawChips(); if (F.files.length >= MAXF) err.textContent = T('upTo'); });
   body.appendChild(field(T('photos'), h('div', { class: 'gcpr-f' }, [h('label', { class: 'gcpr-file' }, [T('addPhotos'), fi]), chips, h('div', { class: 'gcpr-note', text: T('photoNote') })]), true));
   /* urgency */
-  var emNote = h('div', { class: 'gcpr-em', hidden: true }, [T('em1'), h('a', { href: 'tel:9015850944', text: OFFICE }), T('em2')]);
+  var emNote = h('div', { class: 'gcpr-em', hidden: true }, [T('em1'), h('a', { href: EMERGENCY_TEL, text: EMERGENCY }), T('em2')]   /* patch CUSTPORTAL (owner 11/02): the 24/7 emergency line */);
   var seg = h('div', { class: 'gcpr-seg', role: 'group', 'aria-label': T('soon') });
   ['normal', 'soon', 'emergency'].forEach(function(u){
     seg.appendChild(h('button', { type: 'button', class: u === 'emergency' ? 'em' : '', 'data-u': u, 'aria-pressed': u === F.urgency ? 'true' : 'false', text: T('u_' + u), on: { click: function(){ F.urgency = u; Array.prototype.forEach.call(seg.children, function(b){ b.setAttribute('aria-pressed', b.getAttribute('data-u') === F.urgency ? 'true' : 'false'); }); emNote.hidden = F.urgency !== 'emergency'; } } }));
@@ -263,7 +263,7 @@ function open(kind){
       function done(){
         busy = false; body.innerHTML = '';
         body.appendChild(h('div', { class: 'gcpr-ok', id: 'gcpr-thanks' }, [h('b', { text: T('thanks') }), h('div', { text: T('shortly') })]));
-        if (F.urgency === 'emergency') body.appendChild(h('div', { class: 'gcpr-em' }, [T('emAlso'), h('a', { href: 'tel:9015850944', text: OFFICE }), '.']));
+        if (F.urgency === 'emergency') body.appendChild(h('div', { class: 'gcpr-em' }, [T('emAlso'), h('a', { href: EMERGENCY_TEL, text: EMERGENCY }), '.']));   /* patch CUSTPORTAL: the 24/7 emergency line */
         if (bad.length) body.appendChild(h('div', { class: 'gcpr-err', text: T('filesBad', { n: bad.length }) + bad.join('; ') + T('filesBad2') }));
         body.appendChild(h('div', { class: 'gcpr-note', text: T('follow') }));
         body.appendChild(h('button', { type: 'button', class: 'btn', id: 'gcpr-done', text: T('done'), on: { click: close } }));

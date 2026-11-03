@@ -39,7 +39,7 @@ TOU_CUSTOMER = [
  ('li', ["Give us true and current information and keep it up to date.",
          "Do not try to get into another customer's project, to test or probe the security of the Portal, to overload it, or to copy it with automated tools.",
          "Do not upload anything unlawful, harmful (such as viruses), or that you do not have the right to share.",
-         "Use the message tool for project matters, not for emergencies. For an emergency call " + PHONE + "."]),
+         "Use the message tool for project matters, not for emergencies. For an emergency call " + EMERGENCY_PHONE + " (24/7)."]),
  ('h', '5. Photos and files'),
  ('p', "Project photos and documents shown in the Portal belong to GrayCo or to you, as the case may be, and are shown for your project. You may download and keep what is yours. What you upload or write in the Portal may be used by GrayCo to do the work, document it, and handle insurance, warranty and legal matters about your project. GrayCo will not post your photos publicly without your permission."),
  ('h', '6. Privacy and text messages'),

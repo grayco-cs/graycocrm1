@@ -10,3 +10,7 @@
   Document-Policy: js-profiling
   Permissions-Policy: camera=(self), microphone=(self), geolocation=(self), payment=(), usb=()
   Content-Security-Policy: frame-ancestors 'self'; object-src 'none'; base-uri 'self'
+
+# patch CUSTPORTAL: the portal app's manifest with its own type (it was application/octet-stream)
+/portal.webmanifest
+  Content-Type: application/manifest+json

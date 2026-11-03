@@ -25,7 +25,7 @@ The owner asked (10/23): "Can customers text the number for advice? Texts go to 
 
    | Answer | Default text (editable) |
    |---|---|
-   | 🚨 Emergency (water / fire / storm…) | "Call (901) 585-0944 now — 24/7…" + staff alerted + a lead for a new number |
+   | 🚨 Emergency (water / fire / storm…) | "Call (901) 582-8255 now — 24/7…" (the emergency line; the office (901) 585-0944 is for questions) + staff alerted + a lead for a new number |
    | 📅 Where's my project (customers on a job) | the next item on that job's CRM schedule + the PM's name |
    | 💳 Payments | billing@ / call the office / the portal |
    | 🛡 Insurance claim help | general steps; never names an insurance company, never promises coverage |

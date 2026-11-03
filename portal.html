@@ -85,6 +85,8 @@ li.todo{color:#6B7682}
 .pics button.ph{position:relative}
 .phtag{position:absolute;left:4px;bottom:4px;background:rgba(15,29,47,.78);color:#fff;font-size:11px;font-weight:700;border-radius:6px;padding:1px 6px}
 @media(min-width:700px){#grid .pics{grid-template-columns:repeat(5,minmax(0,1fr))}}
+.pics button{position:relative}.gp-you{position:absolute;left:4px;bottom:4px;font-size:10px;font-weight:800;color:#fff;background:#1D5E2C;padding:1px 5px;border-radius:4px}   /* patch CUSTPORTAL */
+.gp-add{display:flex;flex-direction:column;gap:6px;margin:4px 0 10px}.gp-add .btn{align-self:flex-start}
 .doc{min-height:52px;display:flex;align-items:center;gap:12px;border-top:1px solid var(--rule);padding-top:10px}
 .doc:first-of-type{border-top:0;padding-top:0}
 .doc .n{font-size:14px;font-weight:600;overflow-wrap:anywhere}
@@ -590,7 +592,7 @@ function reachBlock(){
     es ? 'Preguntas o citas: oficina (901) 585-0944, texto (901) 582-8255 o su Portal GrayCo.' : 'Questions or scheduling: office (901) 585-0944, text (901) 582-8255, or your GrayCo Portal.', h('br'),
     es ? 'Pagos y facturación: ' : 'Payments and billing: ', h('a', { href: 'mailto:billing@grayco-cs.com', text: 'billing@grayco-cs.com' }), h('br'),
     es ? 'Reclamos de seguro: ' : 'Insurance claims: ', h('a', { href: 'mailto:claims@grayco-cs.com', text: 'claims@grayco-cs.com' }), h('br'),
-    es ? 'Emergencia (agua, fuego): llame al (901) 585-0944.' : 'Emergency (water, fire): call (901) 585-0944.']);
+    es ? 'Emergencia (agua, fuego): llame al (901) 582-8255 (24/7).' : 'Emergency (water, fire): call (901) 582-8255 (24/7).']);   /* patch CUSTPORTAL (owner 11/02): the emergency line is 582-8255; the office stays 585-0944 */
 }   /* EMAILMAP-patch */
 function infoCard(){
   var c = V.customer || {};
@@ -646,13 +648,15 @@ function home(){
 function photos(){
   var box = h('section', { class: 'card', id: 'gp-gallery' }, [h('h2', { text: LANG === 'es' ? 'Fotos GrayCo de su trabajo' : 'GrayCo Photos of your job' })]);
   if (!PHOTOS) { box.appendChild(h('div', { class: 'empty', text: 'Loading photos…' })); loadPhotos(); return [box]; }
+  box.appendChild(addPhotosBox());   /* patch CUSTPORTAL: ＋ Add photos */
   if (!PHOTOS.length) { box.appendChild(h('div', { class: 'empty', text: LANG === 'es' ? 'Todavía no hay fotos — aparecen aquí en cuanto su equipo GrayCo las tome.' : 'No photos yet — they show up here as soon as your GrayCo team takes them.' })); return [box]; }
   box.appendChild(h('div', { class: 'muted', text: PHOTOS.length + ' photo' + (PHOTOS.length === 1 ? '' : 's') + ' · newest first · tap one to see it big' }));
   var grid = h('div', { class: 'pics', id: 'grid' }), shown = 0, sentinel = h('div', { style: 'height:1px' });
   function more(){
     var end = Math.min(PHOTOS.length, shown + 60);
     for (var i = shown; i < end; i++) (function(i){
-      grid.appendChild(h('button', { type: 'button', 'aria-label': 'Open photo', on: { click: function(){ lightbox(PHOTOS, i); } } }, [h('img', { src: PHOTOS[i].t, alt: PHOTOS[i].at ? 'Photo ' + dt(PHOTOS[i].at) : 'Job photo', loading: 'lazy', decoding: 'async' })]));
+      grid.appendChild(h('button', { type: 'button', 'aria-label': 'Open photo', 'data-src': PHOTOS[i].src || '', on: { click: function(){ lightbox(PHOTOS, i); } } }, [h('img', { src: PHOTOS[i].t, alt: PHOTOS[i].at ? 'Photo ' + dt(PHOTOS[i].at) : 'Job photo', loading: 'lazy', decoding: 'async' }),
+        PHOTOS[i].src === 'customer' ? h('span', { class: 'gp-you', text: LANG === 'es' ? 'Usted' : 'You' }) : null]));   /* patch CUSTPORTAL: a photo the customer added */
     })(i);
     shown = end;
     if (shown >= PHOTOS.length && sentinel.parentNode) sentinel.parentNode.removeChild(sentinel);
@@ -667,11 +671,50 @@ function loadPhotos(){
   if (photosLoading || PHOTOS) return; photosLoading = true;
   /* GrayCo Photos of this one job (portal.js {action:'photos'}, patch U2): photos marked "hidden from customer"
      never come, and there is never a link to another site */
-  api('photos').then(function(x){ return (x.data && x.data.ok && Array.isArray(x.data.photos)) ? x.data.photos.map(function(p){ return { t: p.t || p.thumb, f: p.f || p.url || p.t, at: p.at || '' }; }) : []; })
+  api('photos').then(function(x){ return (x.data && x.data.ok && Array.isArray(x.data.photos)) ? x.data.photos.map(function(p){ return { t: p.t || p.thumb, f: p.f || p.url || p.t, at: p.at || '', src: p.src || '' }; }) : []; })
     .then(function(list){ PHOTOS = (list || []).filter(function(p){ return p && p.t && p.f; }); }, function(){ PHOTOS = []; })
     .then(function(){ photosLoading = false; photosAt = Date.now(); if (TAB === 'photos') draw(); });
   /* the links expire after an hour: a page left open asks again before then */
   setTimeout(function(){ if (photosAt && Date.now() - photosAt > 50 * 60e3) { PHOTOS = null; if (TAB === 'photos') draw(); } }, 51 * 60e3);
+}
+/* ── patch CUSTPORTAL: ＋ Add photos — the phone's camera or library, several at once. Each one is made smaller here first (at most
+   1920 px, JPEG, with a 400 px thumbnail), then goes into the job's GrayCo Photos as "Added by <you> (customer)" and shows at once. ── */
+function shrink(file, max, q){
+  return new Promise(function(res, rej){
+    function draw(src, w, hh, done){
+      var k = Math.min(1, max / Math.max(w, hh)), cv = document.createElement('canvas');
+      cv.width = Math.max(1, Math.round(w * k)); cv.height = Math.max(1, Math.round(hh * k));
+      cv.getContext('2d').drawImage(src, 0, 0, cv.width, cv.height); if (done) done();
+      res(cv.toDataURL('image/jpeg', q).split(',')[1]);
+    }
+    if (window.createImageBitmap) { createImageBitmap(file, { imageOrientation: 'from-image' }).then(function(b){ draw(b, b.width, b.height, function(){ try { b.close(); } catch (e) {} }); }, fallback); } else fallback();
+    function fallback(){ var u = URL.createObjectURL(file), im = new Image(); im.onload = function(){ draw(im, im.naturalWidth, im.naturalHeight, function(){ URL.revokeObjectURL(u); }); }; im.onerror = function(){ URL.revokeObjectURL(u); rej(new Error('unreadable')); }; im.src = u; }
+  });
+}
+function rawB64(file){ return new Promise(function(res, rej){ var r = new FileReader(); r.onload = function(){ res(String(r.result).split(',')[1] || ''); }; r.onerror = rej; r.readAsDataURL(file); }); }
+function addPhotosBox(){
+  if (PREVIEW) return h('div', { class: 'muted', text: 'Preview — the customer sees a "＋ Add photos" button here.' });
+  var es = LANG === 'es';
+  var inp = h('input', { type: 'file', accept: 'image/*', multiple: true, id: 'gpAddFiles', hidden: true, 'aria-label': es ? 'Agregar fotos' : 'Add photos' });
+  var msg = h('div', { class: 'muted', id: 'gpAddMsg', role: 'status' });
+  var btn = h('button', { type: 'button', class: 'btn gold', id: 'gpAdd', text: es ? '＋ Agregar fotos' : '＋ Add photos', on: { click: function(){ inp.click(); } } });
+  inp.addEventListener('change', function(){
+    var files = Array.prototype.slice.call(inp.files || []).filter(function(f){ return /^image\//.test(f.type) || /\.(jpe?g|png|webp|hei[cf])$/i.test(f.name || ''); }).slice(0, 20);
+    inp.value = ''; if (!files.length) { msg.textContent = es ? 'Escoja fotos (imágenes).' : 'Pick photos (pictures only).'; return; }
+    btn.disabled = true; var ok = 0, bad = 0;
+    files.reduce(function(pr, f, i){ return pr.then(function(){
+      msg.textContent = (es ? 'Subiendo foto ' : 'Adding photo ') + (i + 1) + (es ? ' de ' : ' of ') + files.length + '…';
+      return shrink(f, 1920, 0.85).then(function(d){ return shrink(f, 400, 0.7).then(function(t){ return { d: d, t: t }; }); }, function(){ return f.size <= 4.5 * 1024 * 1024 ? rawB64(f).then(function(d){ return { d: d, t: '' }; }) : Promise.reject(new Error('big')); })
+        .then(function(x){ return post(FN, { action: 'photo-add', projectId: PID || undefined, data: x.d, thumb: x.t || undefined, name: String(f.name || '').slice(0, 120) }, cred()); })
+        .then(function(r){ if (r.data && r.data.ok) { ok++; if (r.data.photo && PHOTOS && !r.data.duplicate) PHOTOS.unshift(r.data.photo); } else { bad++; msg.textContent = (r.data && r.data.error) || ''; } }, function(){ bad++; });
+    }); }, Promise.resolve()).then(function(){
+      btn.disabled = false;
+      var t = ok ? (es ? '✓ ' + ok + (ok === 1 ? ' foto agregada' : ' fotos agregadas') + ' — su equipo GrayCo también las ve.' : '✓ ' + ok + ' photo' + (ok === 1 ? '' : 's') + ' added — your GrayCo team sees ' + (ok === 1 ? 'it' : 'them') + ' too.') : '';
+      if (bad) t += (t ? ' ' : '') + (es ? bad + ' no se pudo(ieron) subir — intente otra vez o llame a GrayCo ' + OFFICE + '.' : bad + ' could not be added — try again, or call GrayCo ' + OFFICE + '.');
+      if (TAB === 'photos') { draw(); var m2 = $('gpAddMsg'); if (m2) m2.textContent = t; } else msg.textContent = t;
+    });
+  });
+  return h('div', { class: 'gp-add' }, [btn, inp, msg, h('div', { class: 'muted', text: es ? 'Desde la cámara o la galería de su teléfono — varias a la vez.' : 'From your phone’s camera or photo library — several at once.' })]);
 }
 function lightbox(list, i){
   var img = h('img', { alt: 'Job photo' }), count = h('span');
@@ -768,20 +811,27 @@ function invRow(x){
     var act = h('div', { class: 'act' }), got = null, frame = null;
     var msg = h('span', { class: 'muted', style: 'align-self:center' });
     var load = function(){ return got ? Promise.resolve(got) : invPdf(x.id).then(function(f){ got = f; return f; }); };
-    var view = h('button', { type: 'button', class: 'btn', text: 'View PDF', on: { click: function(){
-      view.disabled = true; msg.textContent = 'Opening…';
-      load().then(function(f){
+    /* patch CUSTPORTAL (owner 11/02: "my invoice … the way I made it in the CRM. The blue animated screen should be my invoice"):
+       "📄 Open invoice" opens the CRM's OWN invoice — the animated navy page the CRM shows and e-mails (_lib/invoice-view.js, a
+       verbatim copy of index.html _gcViewInvoicePDF) — in a new tab, on a phone too; its "⬇️ Download PDF" prints it, as in the
+       CRM. The tab is opened at the tap (no pop-up blocker), then filled; blocked → the same page over this one. "Download"
+       below is the PDF file. */
+    var openInv = function(printIt){
+      msg.textContent = 'Opening…';
+      var w = null; try { w = window.open('', '_blank'); } catch (e) { w = null; }
+      try { if (w) { w.document.title = 'GrayCo invoice'; w.document.body.style.cssText = 'font:16px Arial;padding:24px;background:#060b16;color:#e8eefb'; w.document.body.textContent = 'Opening your invoice…'; } } catch (e) {}
+      post(FN, { action: 'invoice', id: x.id, view: true, projectId: PID || undefined }, cred()).then(function(r){
+        var j = r.data || {}; if (!j.ok || !j.html) throw new Error(j.error || 'not available');
         msg.textContent = '';
-        if (!frame) { frame = h('iframe', { class: 'pdf', title: 'Invoice ' + (x.number || '') }); frame.src = f.url; box.appendChild(frame); }
-        var open = h('a', { class: 'btn', target: '_blank', rel: 'noopener', text: 'Open in a new tab' }); open.href = f.url;
-        if (!act.querySelector('a[target]')) act.insertBefore(open, msg);
-        view.textContent = 'PDF below';
-      }, function(){ view.disabled = false; msg.textContent = 'Could not open it — call GrayCo ' + OFFICE + '.'; });
-    } } });
-    var dl = h('button', { type: 'button', class: 'btn', text: 'Download', on: { click: function(){
-      msg.textContent = 'Getting it…';
-      load().then(function(f){ msg.textContent = ''; var a = document.createElement('a'); a.href = f.url; a.download = f.name; document.body.appendChild(a); a.click(); a.remove(); }, function(){ msg.textContent = 'Could not get it — call GrayCo ' + OFFICE + '.'; });
-    } } });
+        /* "⬇️ Download PDF" is the CRM's own: its print → "Save as PDF" (the white paper version of the same design) */
+        var html = j.html + (printIt ? '<script>window.addEventListener("load",function(){setTimeout(function(){try{window.print()}catch(e){}},1600)});<\/script>' : '');
+        if (w && !w.closed) { w.document.open(); w.document.write(html); w.document.close(); return; }
+        var ov = h('div', { class: 'lb', role: 'dialog', 'aria-label': 'Invoice' }, [h('div', { class: 'top' }, [h('span', { text: 'Invoice ' + (j.number || '') }), h('button', { type: 'button', 'aria-label': 'Close', text: '✕', on: { click: function(){ ov.remove(); } } })])]);
+        var fr = h('iframe', { title: 'Invoice', style: 'flex:1 1 auto;width:100%;border:0;background:#060b16' }); fr.srcdoc = html; ov.appendChild(fr); document.body.appendChild(ov);
+      }).catch(function(){ try { if (w) w.close(); } catch (e) {} msg.textContent = 'Could not open it — call GrayCo ' + OFFICE + '.'; });
+    };
+    var view = h('button', { type: 'button', class: 'btn gold', 'data-inv-open': x.id, text: '📄 ' + (LANG === 'es' ? 'Ver factura' : 'View invoice'), on: { click: function(){ openInv(false); } } });
+    var dl = h('button', { type: 'button', class: 'btn', 'data-inv-pdf': x.id, text: '⬇️ ' + (LANG === 'es' ? 'Descargar PDF' : 'Download PDF'), on: { click: function(){ openInv(true); } } });   /* patch CUSTPORTAL (owner 11/02): the CRM's PDF of the same invoice — no separate portal look */
     act.appendChild(view); act.appendChild(dl); act.appendChild(msg);
     box.appendChild(act);
   }
@@ -1217,7 +1267,7 @@ window._gcPortalSel = { reload: load, data: function(){ return D; } };
 (function(){
 'use strict';
 if (window.__GC_PAUTO7__) return; window.__GC_PAUTO7__ = true;
-var FN = '/.netlify/functions/portal-extra', OFFICE = '901-585-0944';
+var FN = '/.netlify/functions/portal-extra', OFFICE = '901-585-0944', EMERGENCY = '(901) 582-8255';   /* patch CUSTPORTAL: the 24/7 emergency line (owner 11/02) */
 var token = '';
 try { var m = /(?:^#|&)t=([A-Za-z0-9_-]{20,80})/.exec(location.hash || ''); if (m) token = m[1]; } catch (e) {}
 try { if (!token) token = localStorage.getItem('gc_portal_t') || ''; } catch (e) {}
@@ -1269,7 +1319,7 @@ function draw(){
       h('button', { type: 'button', class: 'btn gold', id: 'gc7Send', disabled: busy ? true : null, text: busy ? 'Sending…' : 'Send to my Project Manager', on: { click: send } })
     ]));
     if (msg) c.appendChild(h('div', { role: 'status', style: 'margin-top:6px;font-weight:700', text: msg }));
-    c.appendChild(h('div', { class: 'muted', style: 'margin-top:6px', text: 'Water coming in right now or anything unsafe? Call ' + OFFICE + '.' }));
+    c.appendChild(h('div', { class: 'muted', style: 'margin-top:6px', text: 'Water coming in right now or anything unsafe? Call our 24/7 emergency line ' + EMERGENCY + '.' }));   /* patch CUSTPORTAL: the emergency line */
   } else if (msg) c.appendChild(h('div', { role: 'status', style: 'margin-top:6px;font-weight:700', text: msg }));
   (D.tickets || []).slice(0, 5).forEach(function(t){
     c.appendChild(h('div', { class: 'gc7-t', style: 'border-top:1px solid #eee;margin-top:8px;padding-top:8px' }, [h('b', { text: (t.open ? '🛠 ' : '✅ ') + t.statusText }), h('div', { class: 'muted', text: dt(t.at) + ' — ' + t.text }), t.reply ? h('div', { text: 'Your PM: ' + t.reply }) : null, t.visit ? h('div', { text: 'Visit: ' + day(t.visit) }) : null]));

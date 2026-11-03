@@ -267,7 +267,8 @@ async function ccPhotos(ccId){
       const full = by.web || by.original || by.large || '';
       const thumb = by.thumbnail || by.web || full;
       if (!full || !thumb) return;
-      out.push({ id: 'cc_' + s(ph.id), t: thumb, f: full, at: ymd(ph.captured_at || ph.created_at), src: 'companycam', ccId: s(ph.id), up: CCV().upOf(ph), cap: CCV().secOf(ph.captured_at || ph.created_at) });   /* patch CCPHOTOS2: when it went in */
+      out.push({ id: 'cc_' + s(ph.id), t: thumb, f: full, at: ymd(ph.captured_at || ph.created_at), src: 'companycam', ccId: s(ph.id), up: CCV().upOf(ph), cap: CCV().secOf(ph.captured_at || ph.created_at),   /* patch CCPHOTOS2: when it went in */
+        note: clip([s(ph.description)].concat(arr(ph.tags).map(function(t){ return s(t && (t.display_value || t.value || t.name) || t); })).join(' '), 300) });   /* patch CUSTPORTAL: for cc-vis insOnly (never sent to the page) */
     });
     if (chunk.length < 100) break;
   }
@@ -310,11 +311,11 @@ async function grayCoPhotos(pid, recs){
     if (r.deleted === true || r.source === 'ccflag' || s(r.jobId) !== String(pid)) return;
     if (!gcSharedOf(r)) return;
     if (r.source === 'sub' && !(r.shared === true && s(r.custOkBy))) return;   /* patch SUBPHOTOS: a sub's photo only after an admin / the office turned it on */
-    if ([r.at, r.visAt, r.custOkAt, r.sharedAt].some(function(t){ return CQ().heldNow(t); })) return;   /* patch CUSTQUIET: added / shown 7 PM–7 AM → on the portal from 7 AM */
+    if (r.source !== 'customer' && [r.at, r.visAt, r.custOkAt, r.sharedAt].some(function(t){ return CQ().heldNow(t); })) return;   /* patch CUSTQUIET: added / shown 7 PM–7 AM → on the portal from 7 AM (patch CUSTPORTAL: not the customer's own photo — it shows at once) */
     const full = refPath(r.annotatedRef) ? r.annotatedRef : r.ref;
     if (!refPath(full)) return;
     const k = s(r.hash) || full; if (seen[k]) return; seen[k] = 1;
-    pick.push({ id: s(r.id), full: full, thumb: refPath(r.thumbRef) ? r.thumbRef : full, at: s(r.at), tag: s(r.tag) });
+    pick.push({ id: s(r.id), full: full, thumb: refPath(r.thumbRef) ? r.thumbRef : full, at: s(r.at), tag: s(r.tag), cust: r.source === 'customer' });
   });
   pick.sort(function(a, b){ return a.at < b.at ? 1 : -1; });
   const top = pick.slice(0, 300), signed = {};
@@ -322,7 +323,73 @@ async function grayCoPhotos(pid, recs){
     const refs = []; top.slice(i, i + 50).forEach(function(x){ refs.push(x.full, x.thumb); });
     Object.assign(signed, await signRefs(refs));
   }
-  return top.map(function(x){ const f = signed[x.full], t = signed[x.thumb] || f; return f ? { id: clip(x.id, 60), t: t, f: f, at: ymd(x.at), src: 'grayco', tag: clip(x.tag, 20) } : null; }).filter(Boolean);
+  return top.map(function(x){ const f = signed[x.full], t = signed[x.thumb] || f; return f ? { id: clip(x.id, 60), t: t, f: f, at: ymd(x.at), src: x.cust ? 'customer' : 'grayco', tag: clip(x.tag, 20) } : null; }).filter(Boolean);   /* patch CUSTPORTAL: src 'customer' = a photo the customer added */
+}
+/* ── patch CUSTPORTAL (owner 11/02): "the GrayCo photos will be in their portal, but they can also add photos if they want in the
+   portal, and it goes into GrayCo Photos and shows who added the photo too." One photo per call — the page makes it smaller first
+   (at most 1920 px, JPEG) and sends its thumbnail too. Pictures only (JPEG / PNG / WebP / HEIC, by their bytes), 4.5 MB at most,
+   CUST_PHOTO_DAY a (Central) day per job. Stored like every GrayCo photo: the private bucket crm-files + a record in gc_kv
+   "gc_photos" — source 'customer', by "<name> (customer)", label "From customer", shown to the customer at once, hidden from
+   subs until staff turn it on. One Office To-Do per job per day ("📷 <customer> added photos"); nothing is e-mailed or texted. ── */
+const CUST_PHOTO_MAX = 4.5 * 1024 * 1024, CUST_THUMB_MAX = 600 * 1024, CUST_PHOTO_DAY = 40;
+function imgKind(buf){
+  if (!buf || buf.length < 12) return null;
+  if (buf[0] === 0xFF && buf[1] === 0xD8 && buf[2] === 0xFF) return { ext: 'jpg', type: 'image/jpeg' };
+  if (buf.slice(0, 8).equals(Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]))) return { ext: 'png', type: 'image/png' };
+  if (buf.slice(0, 4).toString('latin1') === 'RIFF' && buf.slice(8, 12).toString('latin1') === 'WEBP') return { ext: 'webp', type: 'image/webp' };
+  if (buf.slice(4, 8).toString('latin1') === 'ftyp' && /hei[cfsx]|mif1|msf1/.test(buf.slice(8, 12).toString('latin1'))) return { ext: 'heic', type: 'image/heic' };
+  return null;
+}
+function b64buf(v){ if (typeof v !== 'string' || !v) return null; try { const b = Buffer.from(v.replace(/^data:[^,]*,/, ''), 'base64'); return b.length ? b : null; } catch (e) { return null; } }
+async function storeImage(buf, kind){
+  const hash = crypto.createHash('sha256').update(buf).digest('hex'), name = hash + '.' + kind.ext;
+  const up = await fetch(sbUrl() + '/storage/v1/object/crm-files/' + name, { method: 'POST', headers: Object.assign(keyHeaders(svcKey()), { 'Content-Type': kind.type, 'x-upsert': 'true', 'cache-control': 'max-age=31536000' }), body: buf });
+  if (!up.ok && up.status !== 409) throw new Error('storage ' + up.status);
+  return { ref: 'sb:crm-files/' + name, hash: hash };
+}
+/* gc_photos is the GrayCo Photos list (a JSON list, as the app and sub-photos.js write it): read, add, write back, check */
+async function photoRecAdd(rec){
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const r = await fetch(sbUrl() + '/rest/v1/gc_kv?key=eq.gc_photos&select=value,updated_at', { headers: H() });
+    if (!r.ok) throw new Error('gc_photos read ' + r.status);
+    const rows = await r.json(); let list = rows.length ? rows[0].value : [];
+    if (typeof list === 'string') { try { list = JSON.parse(list); } catch (e) { list = null; } }
+    if (!Array.isArray(list)) throw new Error('gc_photos unreadable');   /* never write over a list we cannot read */
+    if (!list.some(function(x){ return x && x.id === rec.id; })) {
+      list.push(rec);
+      const w = await fetch(sbUrl() + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: H({ Prefer: 'resolution=merge-duplicates,return=minimal' }), body: JSON.stringify({ key: 'gc_photos', value: list, updated_at: new Date().toISOString() }) });
+      if (!w.ok) throw new Error('gc_photos write ' + w.status);
+    }
+    await sleep(attempt === 0 ? 250 : 400);
+    const c = await fetch(sbUrl() + '/rest/v1/gc_kv?key=eq.gc_photos&select=value', { headers: H() });
+    if (c.ok) { const cr = await c.json(); let v = cr.length ? cr[0].value : []; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = []; } } if (Array.isArray(v) && v.some(function(x){ return x && x.id === rec.id; })) return true; }
+  }
+  return false;
+}
+function centralDay(t){ try { return new Date(t).toLocaleDateString('en-CA', { timeZone: 'America/Chicago' }); } catch (e) { return s(t).slice(0, 10); } }
+async function custPhotoAdd(p, body){
+  const pid = s(p.id);
+  const buf = b64buf(body.data);
+  if (!buf) return { status: 400, out: { ok: false, error: 'No photo was sent.' } };
+  if (buf.length > CUST_PHOTO_MAX) return { status: 413, out: { ok: false, error: 'That photo is too big (4 MB at most).' } };
+  const kind = imgKind(buf); if (!kind) return { status: 415, out: { ok: false, error: 'Only photos (JPEG, PNG, WebP or HEIC) can be added.' } };
+  let tb = b64buf(body.thumb), tk = tb && tb.length <= CUST_THUMB_MAX ? imgKind(tb) : null; if (!tk) tb = null;
+  const recs = await grayCoRecords(); if (!recs) return { status: 503, out: { ok: false, error: 'We could not add that photo just now. Please try again in a minute.' } };
+  const now = new Date().toISOString(), today = centralDay(now);
+  const mine = recs.filter(function(r){ return r && r.deleted !== true && r.source === 'customer' && s(r.jobId) === pid; });
+  const hash = crypto.createHash('sha256').update(buf).digest('hex');
+  const dup = mine.find(function(r){ return s(r.hash) === hash || s(r.srcHash) === hash; });
+  if (dup) return { status: 200, out: { ok: true, id: s(dup.id), duplicate: true } };
+  if (mine.filter(function(r){ return centralDay(r.at) === today; }).length >= CUST_PHOTO_DAY) return { status: 429, out: { ok: false, error: 'That is a lot of photos for one day — please send the rest tomorrow, or text them to your Project Manager.' } };
+  const full = await storeImage(buf, kind), th = tb ? await storeImage(tb, tk) : full;
+  const name = clip(p.client || p.clientName || p.customer, 80) || 'Customer';
+  const rec = { id: 'ph_cust_' + Date.now().toString(36) + crypto.randomBytes(4).toString('hex'), jobId: pid, ref: full.ref, thumbRef: th.ref, tag: 'During', note: clip(body.note, 300),
+    by: name + ' (customer)', byKey: 'customer:' + pid, source: 'customer', fromCustomer: true, custName: name, label: 'From customer', labels: ['From customer', name, today],
+    at: now, addedAt: now, updatedAt: now, lat: null, lng: null, shared: true, shareSet: true, hideSubs: true, annotatedRef: '', pairId: '', hash: hash, srcHash: hash, size: buf.length, fileName: clip(body.name, 120) };
+  if (!(await photoRecAdd(rec))) return { status: 503, out: { ok: false, error: 'The photo was saved but could not be added to your job yet. Please try again in a minute.' } };
+  try { await officeTodo('cust_photos_' + pid + '_' + today, '📷 ' + name + ' added photos in the customer portal — ' + clip(p.name, 80), 'Open the job → 📷 GrayCo Photos: the photos marked "From customer" (' + today + '). The customer already sees them; subs do not until you turn them on.'); } catch (e) {}
+  const sg = await signRefs([rec.ref, rec.thumbRef]);
+  return { status: 200, out: { ok: true, id: rec.id, photo: sg[rec.ref] ? { id: rec.id, t: sg[rec.thumbRef] || sg[rec.ref], f: sg[rec.ref], at: ymd(now), src: 'customer' } : null } };
 }
 /* patch CCPHOTOS2: a job's CompanyCam photos for the customer (or the GC link): the server's index with GrayCo's own copies
    first (they outlive CompanyCam), CompanyCam itself for a project not indexed yet; a photo put in after this release only
@@ -587,6 +654,10 @@ async function gateGet(data, force){
    made (patch PM3 posts it) — never gated. Tagged kind / docType / tmpl / template 'work_auth', or named "Work Authorization". */
 function gateExempt(p, key, rec){
   if (!rec || key.slice(0, 2) !== 'd:') return false;
+  /* patch CUSTPORTAL: the copy of a paper the customer signed in the portal (portal-sign.js; the CRM files it on the job as
+     source 'portal-signature') is theirs already — never gated (the gate's rule: "Not gated: … the papers the customer signs").
+     Before, it waited on ✅ Approvals as "Put in the customer portal" and was missing from the customer's Documents. */
+  if (s(rec.source) === 'portal-signature' && s(rec.signRequestId) && rec.deleted !== true && rec.portalShare !== false) return true;
   const tag = low([rec.kind, rec.docType, rec.tmpl, rec.template, rec.genKind, rec.portalAuto].filter(function(v){ return typeof v === 'string'; }).join(' '));
   const isWa = /\bwork_auth\b/.test(tag) || /work[\s_-]*auth/i.test(s(rec.name) + ' ' + s(rec.cat));
   if (!isWa) return false;
@@ -719,7 +790,9 @@ async function buildView(data, p, opts){
   const ests = rawEsts.filter(function(e){ return gateAllows(G, p, gateKeyOf('e', e), e, gatePend, { type: 'e', title: s(e.name) || 'Proposal', refId: s(e.id) }); });   /* patch PORTALGATE */
   const shownEst = {}; ests.forEach(function(e){ shownEst[s(e.id)] = 1; });
   const ins = isInsJob(p) || (p.isInsurance !== false && !!insClaim(data, pid));   /* patch INSP; patch BB2: a job with a claim (gc_claims) is an insurance job */
+  const estPick = {}; rawEsts.forEach(function(e){ const c = chooseEstPdf(e, estPdfsOf(data, e, pid)); if (c) estPick[s(e.id)] = s(c.id); });   /* patch CUSTPORTAL */
   const pdocs = arr(data.projectDocs).filter(function(d){ return ins ? insDocShown(d, pid, rawEst) : docShown(d, pid, rawEst); })
+    .filter(function(d){ const ek = s(d.estimateId); return !(ek && rawEst[ek] && estPick[ek] && d.source !== 'portal-signature' && d.sentPdf !== true && /\.pdf$/i.test(s(d.ref)) && s(d.id) !== estPick[ek]); })   /* never both: only the chosen estimate PDF */
     .filter(function(d){ const ek = s(d.estimateId); if (ek && rawEst[ek]) return !!shownEst[ek] || gateAllows(G, p, gateKeyOf('d', d), d, null, null);   /* an estimate's own PDF follows the estimate's approval */
       return gateAllows(G, p, gateKeyOf('d', d), d, gatePend, { type: 'd', title: s(d.name) || 'Document', refId: s(d.id) }); });
   const openPunch = arr(data.punch).some(function(x){ return pidOf(x) === pid && !/complete|done|closed/.test(low(x.status)); });
@@ -740,6 +813,7 @@ async function buildView(data, p, opts){
   const refs = [];
   posts.forEach(function(x){ arr(x.files).forEach(function(f){ refs.push(f.ref); }); });
   pdocs.forEach(function(d){ refs.push(d.ref); });
+  ests.forEach(function(e){ const c = chooseEstPdf(e, estPdfsOf(data, e, pid)); if (c) refs.push(c.ref); });   /* patch CUSTPORTAL: the chosen estimate PDF (an uploaded one is an internal job file) */
   invoices.concat(cos).forEach(function(r){ arr(r.files).concat(arr(r._files)).forEach(function(f){ refs.push(f.ref); }); });
   const signed = await signRefs(refs);
 
@@ -750,8 +824,7 @@ async function buildView(data, p, opts){
     const g = gdocInfo(e.gdocUrl);
     /* patch ESTPDF: the copy the customer was SENT (the newest version) — not the first file that happens to carry the estimate's id */
     const epds = arr(data.projectDocs).filter(function(d){ return s(d.estimateId) === s(e.id) && pidOf(d) === pid && d.deleted !== true && (refPath(d.ref) || httpsUrl(d.url)); });
-    const epCur = e.sentPdf && s(e.sentPdf.ref) ? s(e.sentPdf.ref) : '';
-    const pdf = (epCur && epds.find(function(d){ return s(d.ref) === epCur; })) || epds.filter(function(d){ return d.sentPdf === true && !d.supersededBy; }).sort(function(a, b){ return (+b.version || 0) - (+a.version || 0); })[0] || epds[0];
+    const pdf = chooseEstPdf(e, epds.filter(function(d){ return d.source !== 'portal-signature'; })) || epds[0];   /* patch CUSTPORTAL: the one chosen PDF */
     const total = num(e.totalCharge || e.quoteTotal || e.total || e.contract);
     addDoc({ kind: 'proposal', estId: clip(e.id, 90), title: clip(e.name || 'Your proposal', 90), date: ymd(e.sentDate || e.date || e.updatedAt),   /* patch ESTPDF2: estId — the portal shows this estimate once (its card) */
       total: total > 0 ? money(total) : null,
@@ -919,6 +992,21 @@ async function claimHelpAction(body, who){
    sent: the estimate's sentPdf, else its newest sent version), "✅ Accept & sign" (the portal's own e-sign paper for it,
    portal-sign.js), "💬 Ask a question" (portal messages) and its status: Sent → Viewed → Accepted / Declined.
    Never costs, margins, notes, sub / vendor names or carrier names. */
+/* patch CUSTPORTAL (owner 11/02: "I always want the PDF in the CRM, but I want to choose template or PDF"): the ONE estimate PDF the
+   customer sees — the PDF that was sent, else the estimate's choice (e.customerSees: 'pdf' = its own PDF, uploaded or made, as it
+   is — the default; 'template' = the GrayCo template proposal, ESTIN's DPROP_ file). Never both. */
+function estPdfsOf(data, e, pid){ return arr(data.projectDocs).filter(function(d){ return s(d.estimateId) === s(e.id) && pidOf(d) === pid && d.deleted !== true && d.source !== 'portal-signature' && refPath(d.ref) && /\.pdf$/i.test(s(d.ref)); }); }
+function chooseEstPdf(e, epds){
+  const cur = e.sentPdf && s(e.sentPdf.ref) ? s(e.sentPdf.ref) : '';
+  const hit = cur && epds.find(function(d){ return s(d.ref) === cur; }); if (hit) return hit;
+  const sent = epds.filter(function(d){ return d.sentPdf === true && !d.supersededBy; }).sort(function(a, b){ return (+b.version || 0) - (+a.version || 0); })[0]; if (sent) return sent;
+  const own = epds.find(function(d){ return s(e.sourceRef) && s(d.ref) === s(e.sourceRef) && d.source !== 'estin'; }) || epds.find(function(d){ return /^(estin-source|estimate-upload)$/.test(s(d.source)); });
+  const tpl = epds.find(function(d){ return s(d.source) === 'estin'; });
+  /* no choice made (an estimate from before): a template proposal the customer already got stays what they see */
+  const cs = s(e.customerSees) || (tpl && tpl.portalShare === true && tpl.estinWaiting !== true ? 'template' : 'pdf');
+  if (cs === 'template') return tpl || own || epds[0] || null;
+  return own || (tpl && s(tpl.ref) === s(e.sourceRef) ? tpl : null) || tpl || epds[0] || null;
+}
 async function estPortalCards(data, p, ests, signed){
   const pid = s(p.id);
   let reqs = [], views = [];
@@ -926,9 +1014,7 @@ async function estPortalCards(data, p, ests, signed){
   try { const v = await kvListRead('gc_est_views'); views = v ? v.list : []; } catch (e) {}
   const out = [], need = [];
   arr(ests).forEach(function(e){
-    const epds = arr(data.projectDocs).filter(function(d){ return s(d.estimateId) === s(e.id) && pidOf(d) === pid && d.deleted !== true && refPath(d.ref) && /\.pdf$/i.test(s(d.ref)); });
-    const cur = e.sentPdf && s(e.sentPdf.ref) ? s(e.sentPdf.ref) : '';
-    const pdf = (cur && epds.find(function(d){ return s(d.ref) === cur; })) || epds.filter(function(d){ return d.sentPdf === true && !d.supersededBy; }).sort(function(a, b){ return (+b.version || 0) - (+a.version || 0); })[0] || epds[0] || null;
+    const pdf = chooseEstPdf(e, estPdfsOf(data, e, pid));   /* patch CUSTPORTAL: the one chosen PDF */
     if (pdf && !signed[pdf.ref]) need.push(pdf.ref);
     out.push({ e: e, pdf: pdf });
   });
@@ -949,7 +1035,11 @@ async function estPortalCards(data, p, ests, signed){
     const seen = arr(views).filter(function(v){ return v && s(v.estId) === s(e.id); }).map(function(v){ return s(v.at); }).sort()[0] || '';
     const st = low(e.status);
     const status = (req && req.status === 'signed') || /won|signed|accept|contract/.test(st) ? 'Accepted' : (req && req.status === 'declined') || /lost|declin|reject/.test(st) ? 'Declined' : seen ? 'Viewed' : 'Sent';
-    const total = num(e.totalCharge || e.quoteTotal || e.total);
+    /* patch CUSTPORTAL: when what the customer gets is the estimate's OWN uploaded PDF, the card shows no numbers read off it (no
+       re-made total / sections — the PDF says them, tax included, exactly as it was made) */
+    const ownPdf = !!x.pdf && (/^(estin-source|estimate-upload)$/.test(s(x.pdf.source)) || (s(e.sourceRef) && s(x.pdf.ref) === s(e.sourceRef)));
+    if (ownPdf) scope = [];
+    const total = ownPdf ? 0 : num(e.totalCharge || e.quoteTotal || e.total);
     return { id: clip(e.id, 90), title: clip(strip(e.name) || 'Your estimate', 90), num: clip(e.num, 20), date: ymd(e.sentDate || (e.sentPdf && e.sentPdf.sentAt) || e.date || e.updatedAt),
       total: total > 0 ? money(total) : null, scope: scope, pdf: x.pdf ? (signed[x.pdf.ref] || '') : '', version: x.pdf ? (+x.pdf.version || (e.sentPdf && +e.sentPdf.version) || 1) : null,
       status: status, viewedAt: seen ? ymd(seen) : '', signId: req && req.status === 'pending' ? clip(req.id, 120) : '', signedAt: req && req.status === 'signed' && req.signed ? ymd(req.signed.at) : '' };
@@ -1471,6 +1561,15 @@ function invoiceDoc(data, p, r){
     po: clip(p.autoPO || r.po || p.po, 20), lines: lines, total: total, paid: money(Math.max(0, total - bal)), balance: bal, isFinal: invFinal(r),
     pm: clip(pmName, 60), pmPhone: clip(pmUser.phone || pmUser.cell || pmUser.mobile || '', 40) };
 }
+/* patch CUSTPORTAL (owner 11/02: "I want 1 invoice"): the ONE invoice look — the CRM's own (_lib/invoice-view.js) — for the
+   portal's View invoice / Download PDF, the invoice e-mail's attachment and the approval preview. The plain PDF below
+   (invoice-pdf.js) is no longer given to a customer. */
+function invoiceView(data, p, r){
+  const flat = function(o){ const out = {}; Object.keys(o || {}).forEach(function(k){ const v = o[k]; if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') out[k] = v; }); return out; };
+  const both = scrub({ inv: flat(r), proj: flat(p) }, carrierWords(p).concat(claimWords(data, s(p.id), false)));
+  const review = jaAllows(data, p, 'reviewRequest') && (invFinal(r) || invPaid(r)) ? REVIEW_URL : '';
+  return { inv: both.inv, proj: both.proj, reviewUrl: review };
+}
 function invoicePdf(data, p, r){
   const doc = invoiceDoc(data, p, r);
   return { doc: doc, filename: 'GrayCo Invoice ' + doc.number.replace(/[^A-Za-z0-9 _.-]/g, '') + '.pdf', pdf: invPdfLib().build(doc) };
@@ -1490,10 +1589,10 @@ function invoiceMailHtml(doc, pmPhone){
     '<div style="font-size:18px;font-weight:bold">' + esc(doc.job) + '</div></div>' +
     '<div style="background:#fff;border:1px solid #E2DCCD;border-top:none;padding:20px;border-radius:0 0 12px 12px">' +
     '<p style="font-size:15px">Hi ' + esc(firstName(doc.client) || 'there') + ',</p>' +
-    '<p style="font-size:15px;line-height:1.5">Your ' + (doc.isFinal ? 'final ' : '') + 'invoice from GrayCo is attached as a PDF.</p>' +
+    '<p style="font-size:15px;line-height:1.5">Your ' + (doc.isFinal ? 'final ' : '') + 'invoice from GrayCo is attached \u2014 open it in any browser on your phone or computer; its \u2b07\ufe0f Download PDF button saves it as a PDF.</p>' +   /* patch CUSTPORTAL: the attachment is the CRM's own invoice */
     '<p style="font-size:15px;line-height:1.5"><b>Invoice #' + esc(doc.number) + ' \u2014 ' + usd(doc.total) + '</b>' + (doc.balance !== doc.total ? ' (balance due ' + usd(doc.balance) + ')' : '') + (doc.due ? '<br>Due ' + esc(doc.due) : '') + '</p>' +
     '<p style="font-size:15px;line-height:1.5">How to pay: a <b>check</b> made out to GrayCo Construction Services, or <b>cash</b> \u2014 hand it to ' + esc(doc.pm || 'your Project Manager') + '.</p>' +
-    '<p style="text-align:center;margin:22px 0"><a href="' + LINK_PH + '" style="background:#D4A017;color:#0F1D2F;font-weight:bold;text-decoration:none;padding:13px 22px;border-radius:10px;display:inline-block">See your invoices in my GrayCo Portal</a></p>' +
+    '<p style="text-align:center;margin:22px 0"><a href="' + LINK_PH + '" style="background:#D4A017;color:#0F1D2F;font-weight:bold;text-decoration:none;padding:13px 22px;border-radius:10px;display:inline-block">View your invoice in my GrayCo Portal</a></p>' +
     '<p style="font-size:13px;color:#55626F">Questions? Call us at ' + OFFICE_PHONE + (pmPhone ? ' or ' + esc(doc.pm) + ' at ' + esc(pmPhone) : '') + '.</p>' +
     '</div></div>';
 }
@@ -1534,7 +1633,7 @@ async function queueInvoiceMail(invId, who, opts){
   const title = 'Invoice #' + doc.number + ' ' + usd(doc.total) + ' to ' + (doc.client || to);
   const q = await queueApproval({ id: qid, kind: 'invoice', pid: s(p.id), jobName: p.name, pm: pmOf(data, p), to: to, title: title,
     subject: 'Invoice #' + doc.number + ' from GrayCo Construction Services \u2014 ' + usd(doc.balance || doc.total),
-    html: invoiceMailHtml(doc, doc.pmPhone), attachments: [{ name: 'GrayCo Invoice ' + doc.number + '.pdf', kind: 'pdf', invoiceId: s(r.id) }],
+    html: invoiceMailHtml(doc, doc.pmPhone), attachments: [{ name: 'Invoice ' + doc.number + ' (the CRM\u2019s invoice — opens in any browser, Download PDF inside)', kind: 'pdf', invoiceId: s(r.id) }],   /* patch CUSTPORTAL */
     meta: { invoiceId: s(r.id), invoiceNumber: doc.number, amount: doc.total, balance: doc.balance, isFinal: doc.isFinal, by: who && who.email || 'server' } });
   return { status: q ? 200 : 502, out: { ok: !!q, id: qid, queued: !!q, title: title } };
 }
@@ -1702,6 +1801,7 @@ async function aqSend(item, now){
   if (mailOff()) return { ok: false, error: 'E-mail is switched off (PORTAL_MAIL_OFF).' };
   let html = s(item.html), token = '';
   if (html.indexOf(LINK_PH) >= 0) {
+    html = withPwLine(html, await firstForPid(item.jobId));   /* patch CUSTPORTAL: the starter password, plainly */
     try { token = await createFor(item.jobId, 'approved: ' + item.kind); } catch (e) { return { ok: false, error: 'Could not make the portal link.' }; }
     html = html.split(LINK_PH).join(esc(linkFor(null, token)));
   }
@@ -1720,8 +1820,8 @@ async function aqSend(item, now){
       const data = await crmData(true);
       payload.attachments = pdfs.map(function(a){
         const ij = invoiceAndJob(data, a.invoiceId); if (!ij) throw new Error('invoice ' + a.invoiceId + ' not found');
-        const f = invoicePdf(data, ij.p, ij.r);
-        return { filename: f.filename, content: f.pdf.toString('base64') };
+        const att = require('./_lib/invoice-view.js').attachment(invoiceView(data, ij.p, ij.r));   /* patch CUSTPORTAL: the CRM's invoice, as the CRM attaches it */
+        return { filename: att.filename, content: att.content };
       });
     } catch (e) { return { ok: false, error: 'Could not make the invoice PDF (' + clip(e && e.message || e, 80) + ').' }; }
   }
@@ -2103,6 +2203,7 @@ async function sendApprovedReminder(tpl, pid){
   if (!s(process.env.RESEND_API_KEY) || mailOff()) return { ok: false, error: 'mail off' };
   let html = s(tpl.html);
   if (html.indexOf(LINK_PH) >= 0) {
+    html = withPwLine(html, await firstForPid(pid));   /* patch CUSTPORTAL */
     let token; try { token = await createFor(pid, 'auto: approved reminder'); } catch (e) { return { ok: false, error: 'no link' }; }
     html = html.split(LINK_PH).join(esc(linkFor(null, token)));
   }
@@ -2237,17 +2338,36 @@ function isNewJob(p, now){
 /* the portal's name and address as every GrayCo document prints it (owner 10/20: "all info for documents will be in
    your portal"). The link itself comes from PORTAL_BASE_URL (https://portal.grayco-cs.com once that address is live). */
 const PORTAL_HOST = 'portal.grayco-cs.com';
-function linkMailHtml(v, link){
+/* ── patch CUSTPORTAL (owner 11/02): the starter password stays the customer's first name — and every invite / e-mail / text
+   that carries the portal link says it plainly: "Your password is your first name: <First> (you can change it after you sign
+   in)". <First> is the word portal-access.js starterOf() accepts (the customer record's first name, else the job's client). ── */
+function starterFirst(data, p){
+  const custs = arr(data && data.customers);
+  const c = custs.find(function(x){ return s(p && p.client) && low(x.name || x.company) === low(p.client); }) || {};
+  return s(c.firstName || (p && p.clientFirstName) || (p && p.client) || c.name).split(/\s+/)[0].replace(/[^A-Za-z0-9'-]/g, '');
+}
+function pwSentence(first){ return first ? 'Your password is your first name: ' + first + ' (you can change it after you sign in).' : ''; }
+function withPwLine(html, first){
+  html = s(html);
+  if (!first || /Your password is your first name/.test(html)) return html;
+  const i = html.indexOf(LINK_PH); if (i < 0) return html;
+  const line = '<p style="font-size:14px;line-height:1.5;background:#F6F3EC;border-radius:8px;padding:10px 12px;color:#14202E">Sign in any time at <b>' + PORTAL_HOST + '</b> with your e-mail or mobile number. ' + esc(pwSentence(first)) + '</p>';
+  const j = html.indexOf('</p>', i), k = html.indexOf('</div>', i);
+  const at = j >= 0 && (k < 0 || j < k) ? j + 4 : (k >= 0 ? k + 6 : -1);
+  return at < 0 ? html + line : html.slice(0, at) + line + html.slice(at);
+}
+async function firstForPid(pid){ try { const d = await crmData(false); const p = findProject(d, pid); return p ? starterFirst(d, p) : ''; } catch (e) { return ''; } }
+function linkMailHtml(v, link, first){
   return '<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#14202E">' +
     '<div style="background:#0F1D2F;color:#fff;padding:18px 20px;border-radius:12px 12px 0 0;text-align:center">' +
     '<img src="' + esc((String(process.env.LOGO_BASE_URL || '').trim() || 'https://crm.grayco-cs.com').replace(/\/$/, '') + '/portal-logo.png') + '" alt="GrayCo Construction Services" width="180" style="display:block;margin:0 auto 6px">' +
     '<div style="font-size:18px;font-weight:bold">' + esc(v.job.name) + '</div></div>' +
     '<div style="background:#fff;border:1px solid #E2DCCD;border-top:none;padding:20px;border-radius:0 0 12px 12px">' +
     '<p style="font-size:15px">Hi ' + esc(v.customer.firstName || 'there') + ',</p>' +
-    '<p style="font-size:15px;line-height:1.5">Thank you for choosing GrayCo! This is your <b>GrayCo Portal</b>, your own private project page. See your project\u2019s progress and updates from ' + esc(v.pm.name || 'your Project Manager') + ', job photos, every document (proposal, contract, change orders, invoices, warranty) and your payments, all in one place, on your phone or computer. No app or password needed.</p>' +
+    '<p style="font-size:15px;line-height:1.5">Thank you for choosing GrayCo! This is your <b>GrayCo Portal</b>, your own private project page. See your project\u2019s progress and updates from ' + esc(v.pm.name || 'your Project Manager') + ', job photos, every document (proposal, contract, change orders, invoices, warranty) and your payments, all in one place, on your phone or computer. Nothing to download: the button opens it, and your phone remembers you after that (you can also add it to your home screen like an app).</p>'   /* patch CUSTPORTAL: it said "No app or password needed" next to the password line below */ +
     '<p style="text-align:center;margin:22px 0"><a href="' + esc(link) + '" style="background:#D4A017;color:#0F1D2F;font-weight:bold;text-decoration:none;padding:13px 22px;border-radius:10px;display:inline-block">Open my GrayCo Portal</a></p>' +
     /* 33.151: the login too (owner rule): user name = this e-mail, starter password = the first name */
-    '<p style="font-size:14px;line-height:1.5;background:#F6F3EC;border-radius:8px;padding:10px 12px">Or sign in at <b>' + esc(PORTAL_HOST) + '</b> · E-mail: <b>' + esc(v.customer.email) + '</b> · Password: <b>your first name</b> (you can change it after you sign in).</p>' +
+    '<p style="font-size:14px;line-height:1.5;background:#F6F3EC;border-radius:8px;padding:10px 12px">Or sign in at <b>' + esc(PORTAL_HOST) + '</b> · E-mail: <b>' + esc(v.customer.email) + '</b> · ' + (first ? 'Your password is your first name: <b>' + esc(first) + '</b> (you can change it after you sign in).' : 'Password: <b>your first name</b> (you can change it after you sign in).') + '</p>' +   /* patch CUSTPORTAL */
     '<p style="font-size:13px;color:#55626F">Keep this e-mail — the button is your personal link and always opens your portal (' + PORTAL_HOST + '). Questions? Call us at ' + OFFICE_PHONE + '.</p></div></div>';
 }
 async function sendLink(pid, event, who){
@@ -2280,7 +2400,7 @@ async function sendLink(pid, event, who){
     const apprL = okEmail && s(process.env.RESEND_API_KEY) && !mailOff();
     if (apprL) {
       const q = await queueApproval({ id: 'appr_link_' + pid, kind: 'portal_link', pid: pid, jobName: p.name, pm: pmOf(data, p), to: to,
-        subject: 'Your GrayCo project page — ' + (view.job.name || 'your job'), html: linkMailHtml(view, LINK_PH), attachments: [], meta: {} });
+        subject: 'Your GrayCo project page — ' + (view.job.name || 'your job'), html: linkMailHtml(view, LINK_PH, starterFirst(data, p)), attachments: [], meta: {} });
       return { ok: true, todo: true, approval: true, queued: !!q };
     }
     await officeTodo('portal_link_' + pid, (apprL ? 'Approve & send portal link to ' : 'Send portal link to ') + name,
@@ -2294,7 +2414,7 @@ async function sendLink(pid, event, who){
   let res;
   try {
     const r = await CQ().run('customer', () => fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + s(process.env.RESEND_API_KEY), 'Content-Type': 'application/json' },   /* patch CUSTQUIET: 7 PM–7 AM it is queued for 7 AM */
-      body: JSON.stringify({ from: 'GrayCo Construction Services Portal <portal@grayco-cs.com>', reply_to: replyToFor((function(){ try { const m = pmOf(data, p); return m && m.email; } catch (e) { return ''; } })(), 'portal_link'), to: [to], subject: withJob('Your GrayCo Portal — ' + (view.job.name || 'your job'), p), html: linkMailHtml(view, link) }) }));
+      body: JSON.stringify({ from: 'GrayCo Construction Services Portal <portal@grayco-cs.com>', reply_to: replyToFor((function(){ try { const m = pmOf(data, p); return m && m.email; } catch (e) { return ''; } })(), 'portal_link'), to: [to], subject: withJob('Your GrayCo Portal — ' + (view.job.name || 'your job'), p), html: linkMailHtml(view, link, starterFirst(data, p)) }) }));
     res = { ok: r.ok, status: r.status };
   } catch (e) { res = { ok: false }; }
   if (!res.ok) {
@@ -2302,7 +2422,7 @@ async function sendLink(pid, event, who){
     return { ok: false, retry: true, error: 'The e-mail did not go out (' + (res.status || 'no answer') + ').' };
   }
   let via = 'email';
-  if (st.text) { const tx = await sendText(view.customer.phone, 'GrayCo: your GrayCo Portal (progress, photos, documents, payments; no app or password) ' + link); if (tx.ok) via = 'email+text'; }
+  if (st.text) { const tx = await sendText(view.customer.phone, 'GrayCo: your GrayCo Portal (progress, photos, documents, payments) ' + link + (starterFirst(data, p) ? ' — ' + pwSentence(starterFirst(data, p)) : ''));   /* patch CUSTPORTAL */ if (tx.ok) via = 'email+text'; }
   return { ok: true, sent: via, sentAt: nowIso };
 }
 
@@ -2510,7 +2630,7 @@ async function autaiText(item){
   const sm = (item.meta || {}).sms;
   if (!sm || !s(sm.to)) return;
   let body = clip(sm.text || item.text, 600);
-  if (body.indexOf(LINK_PH) >= 0) { let tok = ''; try { tok = await createFor(item.jobId, 'approved: ' + item.kind); } catch (e) {} body = body.split(LINK_PH).join(tok ? linkFor(null, tok) : ''); }
+  if (body.indexOf(LINK_PH) >= 0) { const f1 = await firstForPid(item.jobId); if (f1 && !/Your password is your first name/.test(body)) body = clip(body + ' ' + pwSentence(f1), 900);   /* patch CUSTPORTAL */ let tok = ''; try { tok = await createFor(item.jobId, 'approved: ' + item.kind); } catch (e) {} body = body.split(LINK_PH).join(tok ? linkFor(null, tok) : ''); }
   let t; try { t = await sendText(s(sm.to), body); } catch (e) { t = { ok: false, skipped: 'error' }; }
   item.meta.smsResult = t && t.ok ? 'sent' : 'not sent (' + (t && t.skipped || 'no provider') + ')';
 }
@@ -2668,8 +2788,8 @@ exports.handler = async function (event) {
       try {
         const data = await crmData(true); const ij = invoiceAndJob(data, s(body.invoiceId));
         if (!ij) return reply(404, headers, { ok: false, error: 'That invoice (or its job) is not in the cloud yet.' });
-        const f = invoicePdf(data, ij.p, ij.r);
-        return reply(200, headers, { ok: true, filename: f.filename, pdf: f.pdf.toString('base64'), number: f.doc.number });
+        const v = require('./_lib/invoice-view.js').build(invoiceView(data, ij.p, ij.r));   /* patch CUSTPORTAL: what the customer gets is the CRM's invoice */
+        return reply(200, headers, { ok: true, filename: 'Invoice-' + v.number.replace(/[^A-Za-z0-9_.-]/g, '') + '.html', html: v.html, number: v.number });
       } catch (e) { return reply(500, headers, { ok: false, error: 'Could not make the PDF: ' + clip(e && e.message || e, 120) }); }
     }
     if (action === 'news') {          /* patch AP2: "News: subscribed / unsubscribed (date)" and an admin's re-subscribe */
@@ -2717,7 +2837,7 @@ exports.handler = async function (event) {
   }
 
   /* PUBLIC */
-  if (action !== 'view' && action !== 'photos' && action !== 'invoice' && action !== 'referral' && action !== 'crew' && action !== 'app' && action !== 'est-viewed') return reply(400, headers, { ok: false, error: 'Bad request' });   /* patch ESTPDF: est-viewed */
+  if (action !== 'view' && action !== 'photos' && action !== 'invoice' && action !== 'referral' && action !== 'crew' && action !== 'app' && action !== 'est-viewed' && action !== 'photo-add') return reply(400, headers, { ok: false, error: 'Bad request' });   /* patch ESTPDF: est-viewed; patch CUSTPORTAL: photo-add */
   const ip = ipOf(event);
   if (limited(ip)) { await sleep(MIN_FAIL_MS); return reply(429, headers, { ok: false, error: 'Too many tries. Please call GrayCo ' + OFFICE_PHONE + '.' }); }
   const token = s(gcHeader(event, 'x-portal-token') || body.t);
@@ -2740,6 +2860,11 @@ exports.handler = async function (event) {
     const shown = arr(data.estimates).some(function(e){ return e && s(e.id) === s(body.estId) && proposalShown(e, s(p.id), p); });
     if (!shown) return reply(404, headers, { ok: false });
     return reply(200, headers, { ok: await estViewed(p, body.estId) });
+  }
+  if (action === 'photo-add') {   /* patch CUSTPORTAL: the customer adds a photo to the job's GrayCo Photos */
+    if (body.preview === true) return reply(403, headers, { ok: false, error: 'Preview — only the customer can add photos.' });
+    try { const r = await custPhotoAdd(p, body); return reply(r.status || 200, headers, r.out); }
+    catch (e) { return reply(503, headers, { ok: false, error: 'We could not add that photo just now. Please try again, or call GrayCo ' + OFFICE_PHONE + '.' }); }
   }
   if (action === 'photos') {
     const ccId = ccIdOf(p);
@@ -2768,8 +2893,10 @@ exports.handler = async function (event) {
   if (action === 'invoice') {   /* patch AP2: one of this job's invoices as a PDF (never a draft, never another job's) */
     const r = listOf(data, ['invs', 'invoices']).find(function(x){ return s(x.id) === s(body.id) && invOfProject(x, p) && isCustomerInvoice(x); });
     if (!r) return reply(404, headers, { ok: false, error: 'That invoice is not in your portal.' });
-    const f = invoicePdf(data, p, r);
-    return reply(200, headers, { ok: true, filename: f.filename, pdf: f.pdf.toString('base64') });
+    /* patch CUSTPORTAL (owner 11/02: "I want 1 invoice … the blue animated screen should be my invoice"): the CRM's own invoice
+       (_lib/invoice-view.js) — View invoice and Download PDF (its print) both; the plain PDF is never sent to the page */
+    const v = require('./_lib/invoice-view.js').build(invoiceView(data, p, r));
+    return reply(200, headers, { ok: true, html: v.html, number: v.number });
   }
   const view = await buildView(data, p);
   try { const sa = await subcLib().readAll(exports._core); view.crew = subcLib().crewFor(p, sa.subs, subcLib().recOf(sa.list, p.id)); } catch (e) { view.crew = []; }   /* patch SUBCONTACT: only the approved subs' shared fields */
@@ -2782,7 +2909,7 @@ exports.handler = async function (event) {
 };
 
 /* for portal-reminders.js and the tests */
-exports._core = { seniorPm: async function(){ let d = {}; try { d = await crmData(true); } catch (e) {} return PEOPLE().seniorPm(d.users, d.gc_senior_pm); }, people: PEOPLE, JA: JA, jaAllows: jaAllows, pmByName: async function(name){ const n = s(name); if (!n) return null; let d = {}; try { d = await crmData(true); } catch (e) {} return pmOf(d, { pm: n }); }, officeTodo: officeTodo, taskListOf: taskListOf, kvListUpdate: kvListUpdate, queueApproval: queueApproval, gateScan: gateScan, gateState: gateState, gateGet: gateGet, gateAllows: gateAllows, gateKeyOf: gateKeyOf, gateSet: gateSet, GATE_KEY: GATE_KEY, _gateReset: function(){ GATE_LAST = null; GATE_AT = 0; }, approvalAction: approvalAction, aqMerge: aqMerge, AQ_KEY: AQ_KEY, LINK_PH: LINK_PH, notifyDocs: notifyDocs, notifyAll: notifyAll, noticeItems: noticeItems, sendLink: sendLink, settingsGet: settingsGet, warrantyOf: warrantyOf, buildView: buildView, runReminders: runReminders, stageOf: stageOf, gdocInfo: gdocInfo, ccIdOf: ccIdOf,
+exports._core = { starterFirst: starterFirst, pwSentence: pwSentence, withPwLine: withPwLine, firstForPid: firstForPid, seniorPm: async function(){ let d = {}; try { d = await crmData(true); } catch (e) {} return PEOPLE().seniorPm(d.users, d.gc_senior_pm); }, people: PEOPLE, JA: JA, jaAllows: jaAllows, pmByName: async function(name){ const n = s(name); if (!n) return null; let d = {}; try { d = await crmData(true); } catch (e) {} return pmOf(d, { pm: n }); }, officeTodo: officeTodo, taskListOf: taskListOf, kvListUpdate: kvListUpdate, queueApproval: queueApproval, gateScan: gateScan, gateState: gateState, gateGet: gateGet, gateAllows: gateAllows, gateKeyOf: gateKeyOf, gateSet: gateSet, GATE_KEY: GATE_KEY, _gateReset: function(){ GATE_LAST = null; GATE_AT = 0; }, approvalAction: approvalAction, aqMerge: aqMerge, AQ_KEY: AQ_KEY, LINK_PH: LINK_PH, notifyDocs: notifyDocs, notifyAll: notifyAll, noticeItems: noticeItems, sendLink: sendLink, settingsGet: settingsGet, warrantyOf: warrantyOf, buildView: buildView, runReminders: runReminders, stageOf: stageOf, gdocInfo: gdocInfo, ccIdOf: ccIdOf,
   newToken: newToken, grayCoPhotos: grayCoPhotos, escalateDue: escalateDue, escalatedOrDue: escalatedOrDue, ESC_MS: ESC_MS, approvedReminder: approvedReminder, aqSend: aqSend, replyToFor: replyToFor, invoiceDoc: invoiceDoc, invoicePdf: invoicePdf, invNumber: invNumber, invCustStatus: invCustStatus,
   queueInvoiceMail: queueInvoiceMail, queueNewInvoices: queueNewInvoices, invMailWanted: invMailWanted, news: function(){ return newsLib(); }, STAGES: STAGES, NOT_ACTIVE: NOT_ACTIVE, _reset: function(){ kvCache = null; photoCache.clear(); hits.clear(); GATE_LAST = null; GATE_AT = 0; } };
 /* patch AUTAI */

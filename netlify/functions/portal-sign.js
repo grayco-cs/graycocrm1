@@ -502,6 +502,7 @@ async function sendFromPm(item, p, pm){
   const key = s(process.env.RESEND_API_KEY); if (!key || mailOff()) return { ok: false, error: 'mail off' };
   let html = s(item.html);
   if (html.indexOf(core().LINK_PH) >= 0) {
+    try { html = core().withPwLine(html, await core().firstForPid(s(p.id))); } catch (e) {}   /* patch CUSTPORTAL: the starter password, plainly */
     let token; try { token = await core().createFor(s(p.id), 'auto: estimate follow-up'); } catch (e) { return { ok: false, error: 'no link' }; }
     html = html.split(core().LINK_PH).join(esc(core().linkFor(null, token)));
   }

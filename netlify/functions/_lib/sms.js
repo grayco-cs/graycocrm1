@@ -28,25 +28,26 @@ function tidy(v){ const d = phone10(v); return d.length === 10 ? '(' + d.slice(0
 function clip(v, n){ v = s(v); return v.length > n ? v.slice(0, n - 1) + '…' : v; }
 
 const OFFICE_PHONE = '(901) 585-0944';
-const FALLBACK = 'Thanks for texting GrayCo Construction Services! Someone from our team will text you back shortly. For an emergency call ' + OFFICE_PHONE + ' — 24/7.';
+const EMERGENCY_PHONE = '(901) 582-8255';   /* patch CUSTPORTAL (owner 11/02): the 24/7 emergency line — OFFICE_PHONE stays for questions / scheduling */
+const FALLBACK = 'Thanks for texting GrayCo Construction Services! Someone from our team will text you back shortly. For an emergency call ' + EMERGENCY_PHONE + ' — 24/7.';
 const HELP_TEXT = 'GrayCo Construction Services: text your question here or call ' + OFFICE_PHONE + '. Msg & data rates may apply. Reply STOP to opt out.';
 const HELP = /^\s*(help|info)\s*[.!?]*\s*$/i;
 /* patch SMSCONSENT: the one-time subscription notice for a brand-new texter (prepended to the first reply) */
 const NOTICE_PREFIX = "GrayCo Construction Services: you're subscribed to job texts. Msg freq varies. Msg&data rates may apply. Reply HELP for help, STOP to opt out.";
 
 /* the approved answers — admins edit the wording, keywords and on/off in Admin → 💬 Text auto-answers.
-   Order is priority: the first rule whose keywords match answers. {office_phone} {address} {billing_email} {portal}
+   Order is priority: the first rule whose keywords match answers. {office_phone} {emergency_phone} {address} {billing_email} {portal}
    {first} {job} {pm} {next_visit} are filled in. */
 const DEFAULT_RULES = [
   { id: 'emergency', label: '🚨 Emergency (water / fire / storm)', on: true, alert: true, lead: true,
     keywords: 'emergency, flood, flooding, flooded, burst, pipe broke, pipe burst, water coming, water everywhere, water in, leaking, leak, sewage, backup, fire, smoke, tree fell, tree on, caved, collapsed, storm damage',
-    answer: 'If this is an emergency, call us now at {office_phone} — we answer 24/7. If water is coming in and it is safe, shut off the main water valve. Someone from GrayCo is being alerted right now.' },
+    answer: 'If this is an emergency, call us now at {emergency_phone} — we answer 24/7. If water is coming in and it is safe, shut off the main water valve. Someone from GrayCo is being alerted right now.' },
   { id: 'status', label: '📅 Where is my project / when are you coming (customers on a job)', on: true, needsJob: true,
     keywords: 'when are, when is, when will, where is my, where\'s my, status, schedule, coming today, coming tomorrow, on the way, on your way, update, start date, what day',
     answer: '{next_visit}' },
   { id: 'payment', label: '💳 Payments / invoices', on: true,
     keywords: 'pay, payment, invoice, bill, balance, owe, receipt, check, card',
-    answer: 'For invoices and payments, e-mail {billing_email} or call {office_phone}. Your GrayCo portal also shows your invoices and lets you pay online.' },
+    answer: 'For invoices and payments, e-mail {billing_email} or call {office_phone}. Your GrayCo portal also shows your invoices.' },   /* patch CUSTPORTAL: there is no online payment (check / cash to the PM) */
   { id: 'insurance', label: '🛡 Insurance claim help', on: true,
     keywords: 'insurance, claim, adjuster, deductible, covered, coverage, policy',
     answer: 'We help homeowners through insurance claims every day: we document the damage with photos and moisture readings, write the estimate and meet your adjuster. Your policy and your insurance company decide what is covered — we can\'t promise coverage, but we\'ll walk you through every step. Want us to come look? Reply with the property address.' },
@@ -58,7 +59,7 @@ const DEFAULT_RULES = [
     answer: 'GrayCo handles water, fire and storm damage restoration, roofing, remodels and commercial construction — one licensed general contractor (unlimited) from mitigation to the full rebuild. Want a free inspection? Reply with your address and a good time.' },
   { id: 'hours', label: '🕘 Office hours', on: true,
     keywords: 'hours, open, close, closed, closing, what time',
-    answer: 'Our office is open Monday–Friday, 8 AM–5 PM. For water, fire or storm emergencies call {office_phone} any time — 24/7.' },
+    answer: 'Our office is open Monday–Friday, 8 AM–5 PM. For water, fire or storm emergencies call {emergency_phone} any time — 24/7.' },
   { id: 'address', label: '📍 Office address', on: true,
     keywords: 'address, where are you, location, located, directions, office at',
     answer: 'GrayCo Construction Services is at {address}. Call {office_phone} before you stop by so we can be there.' }
@@ -203,6 +204,7 @@ function fill(text, ctx){
   ctx = ctx || {};
   return s(text).replace(/\{(\w+)\}/g, (m, k) => {
     if (k === 'office_phone') return OFFICE_PHONE;
+    if (k === 'emergency_phone') return EMERGENCY_PHONE;   /* patch CUSTPORTAL */
     if (k === 'address') return s(ctx.address);
     if (k === 'billing_email') return s(ctx.billing) || 'billing@grayco-cs.com';
     if (k === 'portal') return s(ctx.portal) || 'https://portal.grayco-cs.com';
@@ -224,5 +226,5 @@ function nextVisitText(ctx){
 /* nothing a customer reads may name a sub portal or a sub's details */
 function safe(text){ return s(text).replace(/sub(contractor)?\s*portal/gi, 'our team').slice(0, 600); }
 
-module.exports = { NOTICE_PREFIX, SETTINGS_KEY, DEFAULTS, DEFAULT_RULES, FALLBACK, HELP_TEXT, HELP, OFFICE_PHONE, settings, staffOnly, pickRule, aiPick, hits, businessHours, whenAllows,
+module.exports = { NOTICE_PREFIX, SETTINGS_KEY, DEFAULTS, DEFAULT_RULES, FALLBACK, HELP_TEXT, HELP, OFFICE_PHONE, EMERGENCY_PHONE, settings, staffOnly, pickRule, aiPick, hits, businessHours, whenAllows,
   match, nextVisit, nextVisitText, fill, firstName, safe, phone10, tidy, clip };
