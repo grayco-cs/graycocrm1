@@ -1020,6 +1020,10 @@ async function estPortalCards(data, p, ests, signed){
   });
   if (need.length) { try { Object.assign(signed, await signRefs(need)); } catch (e) {} }
   const strip = function(v){ return s(v).replace(COMMON_CARRIERS, 'your insurance company'); };
+  /* patch SCOPEWORDS: the same wording-only rule as window._gcScopeWords (index.html) */
+  const scopeWords = function(v){ return s(v).split(/\r?\n/).map(function(t){ t = t.replace(/\s+/g, ' ').trim(); if (/^\s*(?:sub\s*-?\s*total|grand\s*total|total|tax|sales\s*tax|balance|deposit|discount|payment|price|cost)\b/i.test(t) && /\d/.test(t)) return '';
+    let q; do { q = t; t = t.replace(/\s*@\s*\$?\s*\d[\d,]*(?:\.\d+)?(?:\s*(?:\/|per)\s*[a-z]+\.?)?/gi, '').replace(/\s*=\s*\$?\s*-?\d[\d,]*(?:\.\d+)?/g, '').replace(/\(?\s*[$]\s?-?\d[\d,]*(?:\.\d+)?(?:\s*(?:\/|per)\s*[a-z]+\.?)?\s*\)?/gi, '').replace(/(?:\s+-?\d{1,3}(?:,\d{3})*\.\d{2}|\s+-?\d+\.\d{2})+\s*$/, '').replace(/[\s:=\-–—|,;x×*\/]+$/i, '').replace(/\s{2,}/g, ' ').trim(); } while (t !== q);
+    return /[A-Za-z]{2,}/.test(t) ? t : ''; }).filter(Boolean).join('\n'); };
   return out.map(function(x){
     const e = x.e, groups = {}, order = [];
     arr(e.lines).forEach(function(l){
@@ -1029,8 +1033,9 @@ async function estPortalCards(data, p, ests, signed){
       const q = num(l.qty) || 1;
       groups[c] += l.charge != null ? num(l.charge) : (l.sell != null ? num(l.sell) : 0);
     });
-    let scope = order.slice(0, 14).map(function(c){ return { label: c, amount: groups[c] > 0 ? money(groups[c]) : null }; });
-    if (!scope.length) { const st = strip(e.scopeNotes || e.description || (e.scope && e.scope.text)); if (st) scope = [{ label: clip(st, 300), amount: null }]; }
+    /* __GC_PATCH_SCOPEWORDS__: a scope is wording only — the sections, never their amounts (the card's total stays) */
+    let scope = order.slice(0, 14).map(function(c){ return { label: scopeWords(c) || c.replace(/[$][\d,.]+/g, '').trim(), amount: null }; });
+    if (!scope.length) { const st = scopeWords(strip(e.scopeNotes || e.description || (e.scope && e.scope.text))).replace(/\n+/g, ' · '); if (st) scope = [{ label: clip(st, 300), amount: null }]; }
     const req = arr(reqs).filter(function(r){ return r && s(r.kind) === 'estimate' && s(r.refId) === s(e.id) && s(r.pid) === pid && r.status !== 'void'; }).sort(function(a, b){ return s(b.updatedAt || b.createdAt).localeCompare(s(a.updatedAt || a.createdAt)); })[0] || null;
     const seen = arr(views).filter(function(v){ return v && s(v.estId) === s(e.id); }).map(function(v){ return s(v.at); }).sort()[0] || '';
     const st = low(e.status);

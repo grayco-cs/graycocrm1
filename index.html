@@ -65290,7 +65290,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
     var dateStr = todayLong();  // ALWAYS today
 
     var scopeHTML = lines.map(function(l, i){
-      return '<li style="margin:4px 0"><b>'+esc(l.label)+'</b>'+(l.total? (' - <b>$'+money(l.total)+'</b>') : '')+'</li>';
+      return '<li style="margin:4px 0"><b>'+esc(window._gcScopeWordsLine ? (window._gcScopeWordsLine(l.label) || l.label.replace(/[$][\d,.]+/g, '')) : l.label)+'</b></li>';   /* patch SCOPEWORDS: no price on a scope line (the total is below) */
     }).join('');
 
     var css = 'body{font-family:\"Times New Roman\",Georgia,serif;color:#111;font-size:12pt;line-height:1.5;margin:0 auto;padding:40px 54px;max-width:8.5in}'
@@ -65842,13 +65842,14 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
     trades.forEach(function(t, i){
       var items=info.byTrade[t].map(function(l){ return (l.desc||'').trim(); }).filter(Boolean);
       var sub=info.byTrade[t].reduce(function(s,l){ var q=parseFloat(l.qty)||1,c=parseFloat(l.cost)||0; return s+(parseFloat(l.charge)||c*q); },0);
-      out.push((i+1)+'. '+t+' - '+(items.join('; '))+(sub?(' = '+money(sub)):''));
+      out.push((i+1)+'. '+t+' - '+(window._gcScopeWords ? window._gcScopeWords(items, { lines: true }) : items).join('; '));   /* patch SCOPEWORDS: wording only, no "= $" */
     });
     out.push('');
     out.push('GrayCo Construction Services, LLC will furnish all labor, supervision, equipment, materials, and insurance necessary to perform the work described above in accordance with manufacturer specifications and accepted industry practices.');
     return out.join('\n');
   }
 
+  window._gcScopeFromEstimate = scopeFromEstimate;   /* patch SCOPEWORDS: the estimate's lines → a wording-only scope (ESTUPLOAD) */
   // Ask Claude (via the existing proxy) to write a clean professional scope from the line items.
   function askClaudeForScope(est, cb){
     try{
@@ -82901,7 +82902,7 @@ window._gcForceFixSchedule = async function(silent){
     var dt = est.date || new Date().toLocaleDateString('en-US',{year:'numeric',month:'short',day:'numeric'});
 
     var scopeRows = cats.map(function(c,i){
-      return '<p style="margin:2px 0 2px 40px;"><b>'+(i+1)+'. '+esc(c.cat)+' = '+money(c.total)+'</b></p>';
+      return '<p style="margin:2px 0 2px 40px;"><b>'+(i+1)+'. '+esc(c.cat)+'</b></p>';   /* patch SCOPEWORDS: no price on a scope row (the totals are below) */
     }).join('');
 
     // Word opens HTML-with-Office-namespace as a fully editable .doc
@@ -162444,7 +162445,7 @@ function estTitle(e){ return 'Estimate' + (s(e.num) ? ' #' + s(e.num) : '') + (s
 /* what the customer may see of an estimate: the scope words and the price — never costs, margins, labor or materials */
 function estLines(e){
   var sc = e.scope && typeof e.scope === 'object' ? e.scope : {}, out = [];
-  var t = s(e.scopeNotes || e.description || sc.text); if (t) out.push({ l: 'Scope: ' + t.slice(0, 135) });
+  var t = s(e.scopeNotes || e.description || sc.text); if (t && W._gcScopeWords) t = s(W._gcScopeWords(t)).replace(/\n+/g, ' · '); if (t) out.push({ l: 'Scope: ' + t.slice(0, 135) });   /* patch SCOPEWORDS */
   if (s(sc.inc)) out.push({ l: 'Included: ' + s(sc.inc).slice(0, 130) }); if (s(sc.exc)) out.push({ l: 'Not included: ' + s(sc.exc).slice(0, 126) });
   return out;
 }
@@ -193451,6 +193452,49 @@ RI.call(W, function(){ if (!D.hidden && canSet()) { try { stamp(); } catch (e) {
 try { console.log('[GC] ⚡ Pay ASAP for sub bills armed (patch AUTO-ASAP)'); } catch (e) {}
 })();
 </script>
+<script id="gc-patch-scopewords">
+/* __GC_PATCH_SCOPEWORDS__ — one wording-only scope for every builder (owner 11/03: "NO prices on any scope, just the wording").
+   window._gcScopeWords(text | [lines] [, { lines: true }]) → the text with every amount removed (or the cleaned lines).
+   Removed: $ figures, unit prices (@ $65, $45/hr), "= $520" totals, trailing money columns, and whole money lines
+   (subtotal, total, tax, contractor's tax, balance, deposit, discount, O&P, payment). Kept: the wording. */
+(function(){
+  'use strict';
+  var MONEYLINE = /^\s*(?:[-•*·\d.)\s]*)(?:sub\s*-?\s*total|grand\s*total|total(?:\s+(?:amount|price|cost|due|estimate|contract|project|bid|with\b.*|of\b.*))?|the\s+total\b.*|(?:ms\s+|mississippi\s+)?contractor'?s?\s+tax|(?:state\s+|local\s+|sales\s+|material\s+)*tax(?:es)?|balance(?:\s+due)?|amount\s+due|deposit|down\s+payment|discount|o\s*&\s*p|overhead(?:\s*(?:and|&)\s*profit)?|profit|markup|payment(?:s)?|price|cost)\b/i;
+  function one(v){
+    var t = String(v == null ? '' : v).replace(/\s+/g, ' ').trim();
+    if (!t) return '';
+    if (MONEYLINE.test(t) && /\d/.test(t)) return '';
+    var prev;
+    do {
+      prev = t;
+      t = t.replace(/\s*@\s*\$?\s*\d[\d,]*(?:\.\d+)?(?:\s*(?:\/|per)\s*[a-z]+\.?)?/gi, '')                  /* @ $65, @ 65/hr */
+        .replace(/\s*=\s*\$?\s*-?\d[\d,]*(?:\.\d+)?/g, '')                                                    /* = $520 */
+        .replace(/\(?\s*[$€£]\s?-?\d[\d,]*(?:\.\d+)?(?:\s*(?:\/|per)\s*[a-z]+\.?)?\s*\)?/gi, '')            /* $1,240.00, $45/hr */
+        .replace(/\b(?:unit\s*price|price|cost|total|sub\s*total|amount|charge|rcv|acv|line\s*total)\s*[:=]?\s*-?\d[\d,]*(?:\.\d+)?/gi, '')
+        .replace(/(?:\s+-?\d{1,3}(?:,\d{3})*\.\d{2}|\s+-?\d+\.\d{2})+\s*$/, '')                                 /* trailing money columns */
+        .replace(/[\s:=\-–—|,;x×*\/]+$/i, '').replace(/^\s*[:=\-–—|,;]+\s*/, '')
+        .replace(/\(\s*\)/g, '').replace(/\s{2,}/g, ' ').trim();
+    } while (t !== prev);
+    return /[A-Za-z]{2,}/.test(t) ? t : '';
+  }
+  function words(input, opt){
+    opt = opt || {};
+    var src = Array.isArray(input) ? input.map(function(x){ return x && typeof x === 'object' ? (x.desc || x.description || x.name || x.text || x.label || '') : x; })
+      : String(input == null ? '' : input).split(/\r?\n/);
+    var out = [];
+    src.forEach(function(l){
+      var raw = String(l == null ? '' : l), lead = (/^\s*((?:\d{1,2}[.)]|[-•*·])\s+)/.exec(raw) || ['', ''])[1];
+      var w = one(raw.slice(lead.length));
+      if (w) out.push(lead + w); else if (!s0(raw) && !opt.lines) out.push('');
+    });
+    var txt = out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+    return opt.lines ? out.filter(Boolean) : txt;
+  }
+  function s0(v){ return String(v == null ? '' : v).trim(); }
+  window._gcScopeWords = words;
+  window._gcScopeWordsLine = one;
+})();
+</script>
 <script id="gc-patch-estin">
 /* __GC_PATCH_ESTIN__ ══════════════════════════════════════════════════════════
    GrayCo — ONE DOOR FOR ESTIMATES, ALWAYS THE GRAYCO PROPOSAL (patch ESTIN).
@@ -193736,7 +193780,7 @@ function ensureJob(e){
 }
 function scopeWords(e){
   var sc = e.scope && typeof e.scope === 'object' ? e.scope : {}, out = [];
-  var t = s(e.scopeNotes || e.description || sc.text); if (t) out.push({ l: 'Scope: ' + t.slice(0, 135) });
+  var t = s(e.scopeNotes || e.description || sc.text); if (t && W._gcScopeWords) t = s(W._gcScopeWords(t)).replace(/\n+/g, ' · '); if (t) out.push({ l: 'Scope: ' + t.slice(0, 135) });   /* patch SCOPEWORDS */
   return out;
 }
 function priorityOf(e, p){
