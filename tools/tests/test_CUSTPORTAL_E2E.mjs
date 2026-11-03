@@ -142,9 +142,10 @@ await t('3 photos: GrayCo Photos + the job\'s CompanyCam photos by default (new 
   assert.deepStrictEqual(leakIn(PH), []);
   const html = fs.readFileSync(path.join(W.ROOT, 'portal.html'), 'utf8'); assert.ok(/src: PHOTOS\[i\]\.t, alt: [^}]*loading: 'lazy', decoding: 'async'/.test(html), 'the grid loads thumbnails lazily');
 });
-await t('3 subs keep their own rule: a new CompanyCam photo still waits for a click in the sub portal', async () => {
+await t('3 subs follow SUBPORTAL3: every CompanyCam photo of their job, unless hidden from subs', async () => {
   const V = require(W.FNDIR + '/_lib/cc-vis.js'); const since = 1000;
-  assert.strictEqual(V.customerSees('1', 2000, 'J', V.index([]), since), true); assert.strictEqual(V.subsSee('1', 2000, 'J', V.index([]), since), false); assert.strictEqual(V.subsSee('1', 500, 'J', V.index([]), since), true);
+  assert.strictEqual(V.customerSees('1', 2000, 'J', V.index([]), since), true); assert.strictEqual(V.subsSee('1', 2000, 'J', V.index([]), since), true); assert.strictEqual(V.subsSee('1', 500, 'J', V.index([]), since), true);
+  assert.strictEqual(V.subsSee('5', 2000, 'J', V.index([{ id: 'ccf_5', source: 'ccflag', ccId: '5', hideSubs: true }]), since), false);   /* patch SUBPORTAL3 (owner 11/02 "all photos should be in the sub portal"): only "Hidden from subs" keeps one out */
 });
 /* ── 10. customer photo upload ── */
 await t('10 ＋ Add photos: a JPEG (made smaller in the browser) → the job\'s GrayCo Photos as "Sample Customer (customer)", shown at once, hidden from subs, one office to-do', async () => {
