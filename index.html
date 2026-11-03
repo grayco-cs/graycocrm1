@@ -5290,7 +5290,7 @@ window.__GC_LIVE=function(key, v){
   return v;
 };
 </script>
-<!-- GrayCo CRM Build: 33.163-2026-11-03-r17q3d -->
+<!-- GrayCo CRM Build: 33.163-2026-11-03-r17q3e -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6238,7 +6238,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.163-2026-11-03-r17q3d");
+  console.log("[GC] Build 33.163-2026-11-03-r17q3e");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6286,7 +6286,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.163-2026-11-03-r17q3d"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.163-2026-11-03-r17q3e"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -206509,10 +206509,11 @@ function extras(tv, th, refs){
   else {
     if (!bg) { bg = D.createElement('div'); bg.className = 'gc-tvs-bg'; bg.innerHTML = '<i></i><i></i><span class="cap"></span>'; st.insertBefore(bg, st.firstChild); BG.k = ''; }
     var key = th + ':' + (th === 'album' ? refs.join(',') : ''), every = CUR && CUR.mode !== 'office' ? 30000 : 120000;
-    if (BG.k !== key) { BG.k = key; BG.i = -1; BG.at = 0; }
+    if (BG.k !== key) { BG.k = key; BG.i = -1; BG.at = 0; BG.ord = null; }
     /* ⛳ Golf: a different course with every slide (owner: "each screen a different photo") */
     var sl = ''; if (th === 'golf') { try { sl = s(tv.__state && tv.__state().slide); } catch (e) {} }
-    if (th === 'golf' ? (BG.slide !== sl || BG.at === 0) : Date.now() - BG.at >= every) { BG.at = Date.now(); BG.slide = sl; BG.i++; showPhoto(bg, th, refs); }
+    var perSlide = !(CUR && CUR.mode !== 'office'); /* patch TVPHOTO */ try { sl = s(tv.__state && tv.__state().slide); } catch (e) {}
+    if (perSlide ? (BG.slide !== sl || BG.at === 0) : Date.now() - BG.at >= every) { BG.at = Date.now(); BG.slide = sl; BG.i++; showPhoto(bg, th, refs); }
   }
   var hint = st.querySelector('.gc-tvs-hint'), needHint = th === 'album' && !refs.length;
   if (needHint && !hint) { hint = D.createElement('div'); hint.className = 'gc-tvs-hint'; hint.textContent = '📷 Add photos in ⚙ Admin → 📺 TVs'; st.appendChild(hint); }
@@ -206527,12 +206528,20 @@ function extras(tv, th, refs){
     if (ck.children[2].textContent !== CUR.name) ck.children[2].textContent = CUR.name;
   } else if (ck) ck.remove();
 }
+/* patch TVPHOTO: the next photo of n — a shuffled pass through all n, never the one just shown */
+function bgPick(n){
+  if (!BG.ord || BG.ord.n !== n || !BG.ord.length) { var o = [], i, j, t; for (i = 0; i < n; i++) o.push(i);
+    for (i = n - 1; i > 0; i--) { j = Math.floor(Math.random() * (i + 1)); t = o[i]; o[i] = o[j]; o[j] = t; }
+    if (n > 1 && o[0] === BG.last) { t = o[0]; o[0] = o[n - 1]; o[n - 1] = t; } o.n = n; BG.ord = o; }
+  BG.last = BG.ord.shift(); return BG.last; }
+function bgPre(url){ try { (new Image()).src = url; } catch (e) {} }
 function showPhoto(bg, th, refs){
   var L = bg.querySelectorAll('i'), next = L[BG.i % 2], prev = L[(BG.i + 1) % 2], cap = bg.querySelector('.cap');
   function put(url, caption){ var im = new Image(); im.onload = function(){ next.style.backgroundImage = 'url("' + url + '")'; next.classList.add('on'); prev.classList.remove('on'); cap.textContent = caption || ''; }; im.src = url; }
-  if (th === 'parks') { var p = PARKS[BG.i % PARKS.length]; put('/img/tv/parks/' + p[0] + '.jpg', '📍 ' + p[1] + ' · NPS photo'); return; }
-  if (th === 'golf') { var g = GOLF[BG.i % GOLF.length]; put('/img/tv/golf/' + g.f, '📍 ' + g.course + (g.detail ? ' · ' + g.detail : '') + ' · photo: ' + g.author + ', ' + g.lic); return; }
-  var ref = refs[BG.i % refs.length];
+  var n = th === 'parks' ? PARKS.length : th === 'golf' ? GOLF.length : refs.length, k = bgPick(n), nx = BG.ord.length ? BG.ord[0] : -1;
+  if (th === 'parks') { var p = PARKS[k]; put('/img/tv/parks/' + p[0] + '.jpg', '📍 ' + p[1] + ' · NPS photo'); if (nx >= 0) bgPre('/img/tv/parks/' + PARKS[nx][0] + '.jpg'); return; }
+  if (th === 'golf') { if (nx >= 0) bgPre('/img/tv/golf/' + GOLF[nx].f); var g = GOLF[k]; put('/img/tv/golf/' + g.f, '📍 ' + g.course + (g.detail ? ' · ' + g.detail : '') + ' · photo: ' + g.author + ', ' + g.lic); return; }
+  var ref = refs[k]; if (nx >= 0 && typeof W._gcFileUrl === 'function') Promise.resolve(W._gcFileUrl(refs[nx])).then(bgPre, function(){});
   if (typeof W._gcFileUrl !== 'function') return;
   Promise.resolve(W._gcFileUrl(ref)).then(function(u){ put(u, ''); }, function(){ note('a TV photo could not be loaded'); });
 }
