@@ -159947,8 +159947,23 @@ W._gcApprShared = { key: K, has: has, mark: mark, take: take, seen: seen, push: 
   /* always the live set (To-Do's own approval rows are taken from its last build), so the chip, the badge and
      the panel are painted from the same numbers in the same second */
   var memo = null;
-  function current(){ if (memo && Date.now() - memo.at < 800) return memo; memo = window._gcApprovalSet(); return memo; }
-  window._gcApprovalSetFresh = function(){ memo = null; };   /* patch APPRCOUNT */
+  /* patch FIELDPERF (__GC_PATCH_FIELDPERF__): about ten timers ask for this set every 0.7-1.5 s; rebuilding it walks every invoice x
+     project and parses the approval queues. Reused for up to 5 s while its inputs are the same objects / text;
+     any change rebuilds it at once (Off: localStorage gc_fieldperf_off = '1'). */
+  var FPOFF = (function(){ try { return localStorage.getItem('gc_fieldperf_off') === '1'; } catch (e) { return false; } })(), memoIn = null;
+  function memoInputs(){
+    var c = window._crm || {}, g = function(k){ try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }, v = '';
+    try { v = window._gcVAS && window._gcVAS.active() ? String(window._gcVAS.label()) : ''; } catch (e) {}
+    return [c.projects, c.invoices, c.users, window._gcTD2 && window._gcTD2.__lastItems, g('gc_email_queue'), g('gc_sub_approvals'), g('gc_expense_approvals'), g('grayco_user'), v];
+  }
+  function sameIn(a, b){ if (!a || !b || a.length !== b.length) return false; for (var i = 0; i < a.length; i++) if (a[i] !== b[i]) return false; return true; }
+  function current(){
+    var now = Date.now(); if (memo && now - memo.at < 800) return memo;
+    var inp = FPOFF ? null : memoInputs();
+    if (memo && inp && now - memo.at < 5000 && sameIn(inp, memoIn)) return memo;
+    memo = window._gcApprovalSet(); memoIn = inp; return memo;
+  }
+  window._gcApprovalSetFresh = function(){ memo = null; memoIn = null; };   /* patch APPRCOUNT */   /* patch FIELDPERF */
   window._gcApprovalCurrent = function(){ return current(); };   /* patch APPRSYNC */
   function chipSync(set){
     Array.prototype.forEach.call(document.querySelectorAll('.td2-chip[data-f="appr"]'), function(ch){
@@ -195886,7 +195901,12 @@ function dryRows(){
     .filter(function(c){ return isAdmin() || !c.tech || low(c.tech) === n || low(c.pm) === n || true; }).slice(0, 12)
     .map(function(c){ var p = proj(c.projectId) || {}; var pts = arr(c.drying && c.drying.points || c.points || c.readings); var due = pts.filter(function(x){ return x && s(x.lastReadAt || x.at).slice(0, 10) !== today(); }).length; return { id: s(c.id), t: s(c.title) || s(p.name) || s(c.insured), due: due, eq: arr(c.equipment).filter(function(x){ return x && !x.removedAt; }).length }; });
 }
-function scoreNums(){ try { var v = W._gcA8 && W._gcA8.tvNumbers ? W._gcA8.tvNumbers() : null; return v ? { newWeek: v.newWeek, close: v.close, jobs: v.jobs, collected: Math.round(v.collected || 0), ar: Math.round(v.ar || 0), bids: v.bidsWeek, appr: v.appr } : null; } catch (e) { return null; } }
+/* patch FIELDPERF: the week's figures walk every lead, invoice and payment — reused for up to 10 s while the lists are the same */
+var SNC = null, SNOFF = (function(){ try { return localStorage.getItem('gc_fieldperf_off') === '1'; } catch (e) { return false; } })();
+function scoreNums(){ var c = C(), k = [c.leads, c.invoices, c.projects, c.payments, W.__gcLeadsLive];
+  if (!SNOFF && SNC && Date.now() - SNC.at < 10000 && SNC.k.every(function(x, i){ return x === k[i]; })) return SNC.v;
+  var r = scoreNums0(); if (!SNOFF) SNC = { k: k, v: r, at: Date.now() }; return r; }
+function scoreNums0(){ try { var v = W._gcA8 && W._gcA8.tvNumbers ? W._gcA8.tvNumbers() : null; return v ? { newWeek: v.newWeek, close: v.close, jobs: v.jobs, collected: Math.round(v.collected || 0), ar: Math.round(v.ar || 0), bids: v.bidsWeek, appr: v.appr } : null; } catch (e) { return null; } }
 function todoCounts(){ try { var c = W._gcTodoBadge && W._gcTodoBadge.counts ? W._gcTodoBadge.counts() : null; return c ? { n: +(c.n || c.total || c.todo || 0) || 0, a: +(c.appr || c.approvals || 0) || 0 } : null; } catch (e) { return null; } }
 var TILES = {
   photos: ['📸', 'GrayCo Photos', 'ph'], addjob: ['＋', 'Add job', 'add'], measure: ['📏', 'Measure', ''], roofscout: ['🏠', 'RoofScout', ''], safety: ['🦺', 'Safety', ''],
@@ -204210,6 +204230,14 @@ function fieldBottom(a){
       (L.length > CAP ? '<button type="button" class="gc-ra-allbtn" data-fa="alljobs">All ' + L.length + ' jobs ›</button>' : '') : '<div class="fh-empty">No open jobs.</div>');
 }
 var homeObs = null, homeEl = null, injecting = false;
+/* patch FIELDPERF: what the Home's quick buttons and the admin's job cards are made from */
+var FPH = null, FPOFF = (function(){ try { return localStorage.getItem('gc_fieldperf_off') === '1'; } catch (e) { return false; } })();
+function fpKey(a){
+  if (FPOFF) return null;
+  var c = C(), v = '', n = null; try { v = vas(); } catch (e) {} try { n = apprCount(); } catch (e) {}
+  var fj = null; try { fj = typeof W._gcFPJobs === 'function' ? W._gcFPJobs : null; } catch (e) {}
+  return [a, mode(a), c.projects, c.leads, c.invoices, c.users, c.schedule, W.__gcLeadsLive, fj, v, n, myName()];
+}
 function fieldInject(){
   var el = D.querySelector('#_gcJobPick.gc-fh'); if (!el) return;
   if (el !== homeEl) { homeEl = el; try { if (homeObs) homeObs.disconnect(); homeObs = new MutationObserver(function(){ if (!injecting) fieldInject(); }); homeObs.observe(el, { childList: true }); } catch (e) {} }
@@ -204222,7 +204250,10 @@ function fieldInject(){
     if (!a || mode(a) !== 'field') { if (top) top.remove(); if (bot) bot.remove(); el.removeAttribute('data-ra'); return; }
     fieldBar(a);
     if (el.getAttribute('data-ra') !== a) el.setAttribute('data-ra', a);
-    var th = fieldTop(a), bh = fieldBottom(a);
+    /* patch FIELDPERF: built at most every 3 s while the role, the lists and the approval count are the same */
+    var fk = fpKey(a), th, bh;
+    if (FPH && fk && FPH.k.length === fk.length && FPH.k.every(function(x, i){ return x === fk[i]; }) && Date.now() - FPH.at < 3000) { th = FPH.th; bh = FPH.bh; }
+    else { th = fieldTop(a); bh = fieldBottom(a); FPH = fk ? { k: fk, th: th, bh: bh, at: Date.now() } : null; }
     if (!top) { top = D.createElement('div'); top.className = 'gc-ra-top'; wrap.insertBefore(top, wrap.firstChild); }
     if (top.__h !== th) { top.innerHTML = th; top.__h = th; }
     var tiles = wrap.querySelector('.fh-tiles'); if (tiles && !tiles.children.length && tiles.style.display !== 'none') tiles.style.display = 'none';
