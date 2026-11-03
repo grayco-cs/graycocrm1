@@ -127,7 +127,8 @@ ok(mk.row && typeof mk.row === 'object' && mk.row.spend === 450 && mk.row.leads 
 ok(mk.typed.length === 1 && mk.typed[0].amount === 999 || mk.typed.every(x => x.month !== new Date().toISOString().slice(0, 7) || x.amount === 999), 'spend typed in for that source and month wins (never doubled)', mk.typed);
 
 /* ── 📥 Needs a job: the Shell charge (PO T724 in its memo → suggested Brent) → Save ── */
-await p.evaluate(() => window._setView('todo')); await waitFor(A, () => !!document.querySelector('#gc-money-needs [data-mn="needs"]'), null, 30000);   /* back on the To-Do for 📥 Needs a job */
+await p.evaluate(() => { const b = [...document.querySelectorAll('aside nav button, nav button')].find(y => y.offsetParent && /To-Do/.test(y.textContent)); if (b) b.click(); else window._setView('todo'); });   /* back on the To-Do for 📥 Needs a job, the way the test opened it first */
+ok(await waitFor(A, () => !!document.querySelector('#gc-money-needs [data-mn="needs"]'), null, 30000), 'back on the To-Do: 📥 Needs a job is there', await p.evaluate(() => (document.querySelector('#gc-money-needs') || {}).textContent || 'no #gc-money-needs'));
 await p.click('#gc-money-needs [data-mn="needs"]');
 await waitFor(A, () => !!document.querySelector('.gc-money-ov [data-i]'), null, 10000);
 const nj = await p.evaluate(() => [...document.querySelectorAll('.gc-money-ov [data-i]')].map(r => ({ t: r.textContent.slice(0, 160), sel: (r.querySelector('[data-m="job"]') || {}).value })));
