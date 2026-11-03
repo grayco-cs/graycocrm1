@@ -92,6 +92,8 @@ const r4 = PP.fillRows('2026-09-25', '2026-09-25', [{ name: 'Big', key: 'B' }]);
 PP.calc(r4, { set, ytdBase: () => ({ ss: 182500, med: 182500, futa: 182500, suta: 182500 }) });
 eq('wage base: only $2,000 more is SS wages; FUTA/SUTA 0', [r4[0].out.ssWages, r4[0].out.ss, r4[0].out.futa, r4[0].out.suta], [2000, 124, 0, 0]);
 
+// patch PASTPAYEMP: Brittany (Office Admin) on the shared office@ mailbox IS offered; a profile with no pay type yet is offered
+eq('Office Admin on office@ + blank pay type are offered', PP.w2Employees(PROFS.concat([{ name: 'Britt Test', userId: 'UBT', payType: 'salary' }, { name: 'Glen Test', userId: 'UGT', payType: '' }]), USERS.concat([{ id: 'UBT', name: 'Britt Test', email: 'office@grayco-cs.com', role: 'Office Admin' }, { id: 'UGT', name: 'Glen Test', role: 'Estimator' }])).map(e => e.name), ['Avery Test', 'Blake Test', 'Britt Test', 'Glen Test']);
 // patch PASTPAYMS (owner 11/03): MS state tax on a past check
 {
   const rows = [

@@ -108,12 +108,12 @@ var W2_TYPES={ hourly:1, salary:1, commission:1, salary_commission:1 };
 function w2Employees(profiles, users){
   users=Array.isArray(users)?users:[];
   return (profiles||[]).filter(function(x){
-    if(!x || !s(x.name) || x.active===false || !W2_TYPES[low(x.payType)]) return false;
+    if(!x || !s(x.name) || x.active===false || /^(contractor_1099|1099|owner_draw|owner)$/.test(low(x.payType))) return false;   /* patch PASTPAYEMP: no pay type yet = still an employee */
     var u=users.filter(function(y){ return y && ((x.userId && s(y.id)===s(x.userId)) || low(y.name)===low(x.name)); })[0]||null;
     var em=low((u&&u.email)||x.email), role=low(u&&u.role), nm=low(x.name);
     /* only the SHARED Office sign-in: named exactly "Office", the office@ mailbox, or flagged as a shared login.
        A real person with an office role (e.g. "Office Admin") is a W-2 employee and IS offered. */
-    if(nm==='office' || /^office@/.test(em) || (u && (u.shared===true || u.sharedLogin===true || u.isShared===true))) return false;
+    if(nm==='office' || (/^office@/.test(em) && !/office admin/.test(role)) || (u && (u.shared===true || u.sharedLogin===true || u.isShared===true))) return false;
     if(users.length && !u) return false;   /* patch PASTPAYFIX: only people on Admin → Team — a leftover payroll profile of someone who left is never offered */
     if(u && (u.active===false || u.disabled===true || u.deleted===true || u.archived===true || u.terminated===true || /inactive|terminat|former|left|fired|quit|disabled|removed/.test(low(u.status)) || low(u.payType)==='owner' || role==='admin' || role==='owner')) return false;
     return true;

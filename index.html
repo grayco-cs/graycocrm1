@@ -5290,7 +5290,7 @@ window.__GC_LIVE=function(key, v){
   return v;
 };
 </script>
-<!-- GrayCo CRM Build: 33.163-2026-11-03-r17q3a -->
+<!-- GrayCo CRM Build: 33.163-2026-11-03-r17q3b -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6238,7 +6238,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.163-2026-11-03-r17q3a");
+  console.log("[GC] Build 33.163-2026-11-03-r17q3b");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6286,7 +6286,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.163-2026-11-03-r17q3a"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.163-2026-11-03-r17q3b"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -212057,12 +212057,12 @@ var W2_TYPES={ hourly:1, salary:1, commission:1, salary_commission:1 };
 function w2Employees(profiles, users){
   users=Array.isArray(users)?users:[];
   return (profiles||[]).filter(function(x){
-    if(!x || !s(x.name) || x.active===false || !W2_TYPES[low(x.payType)]) return false;
+    if(!x || !s(x.name) || x.active===false || /^(contractor_1099|1099|owner_draw|owner)$/.test(low(x.payType))) return false;   /* patch PASTPAYEMP: no pay type yet = still an employee */
     var u=users.filter(function(y){ return y && ((x.userId && s(y.id)===s(x.userId)) || low(y.name)===low(x.name)); })[0]||null;
     var em=low((u&&u.email)||x.email), role=low(u&&u.role), nm=low(x.name);
     /* only the SHARED Office sign-in: named exactly "Office", the office@ mailbox, or flagged as a shared login.
        A real person with an office role (e.g. "Office Admin") is a W-2 employee and IS offered. */
-    if(nm==='office' || /^office@/.test(em) || (u && (u.shared===true || u.sharedLogin===true || u.isShared===true))) return false;
+    if(nm==='office' || (/^office@/.test(em) && !/office admin/.test(role)) || (u && (u.shared===true || u.sharedLogin===true || u.isShared===true))) return false;
     if(users.length && !u) return false;   /* patch PASTPAYFIX: only people on Admin → Team — a leftover payroll profile of someone who left is never offered */
     if(u && (u.active===false || u.disabled===true || u.deleted===true || u.archived===true || u.terminated===true || /inactive|terminat|former|left|fired|quit|disabled|removed/.test(low(u.status)) || low(u.payType)==='owner' || role==='admin' || role==='owner')) return false;
     return true;
