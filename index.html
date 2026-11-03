@@ -144001,10 +144001,13 @@ function menu(it, btn, root){
     D.addEventListener('pointerdown', off, true);
   }, 0);
 }
+/* patch FIELDTAP: in Field a tap anywhere on a to-do row opens it (its checkbox / buttons keep their own action) */
+function rowTap(el, root){ if (!el || !el.closest || el.closest('a,button,input,select,textarea,label')) return null; var r = el.closest('.td2-row[data-k]'); return r && root.contains(r) ? r.querySelector('[data-td2="open"]') : null; }
 function wire(root){
   root.addEventListener('click', function(e){ var _as = root.getAttribute('data-td2-host') === 'as' && asIn(); try { clickH(e); } finally { if (_as) asOut(); } });   /* patch OFFICETAB: the "as" host's own view */
   function clickH(e){
-    var b = e.target.closest('[data-td2]'); if (!b || !root.contains(b)) return;
+    var b = e.target.closest('[data-td2]'); if (!b && isField()) b = rowTap(e.target, root);   /* patch FIELDTAP */
+    if (!b || !root.contains(b)) return;
     var a = b.getAttribute('data-td2'), row = b.closest('[data-k]'), it = row ? ITEMS[row.getAttribute('data-k')] : null;
     if (a === 'chip') { var f = b.getAttribute('data-f'); UI.filter = UI.filter === f ? '' : f; paint(true); if (UI.filter === 'appr') { var sec = root.querySelector('._gcAp2Sec'); if (sec) try { sec.scrollIntoView({ block: 'nearest' }); } catch (x) {} } return; }
     if (a === 'view') { UI.view = b.getAttribute('data-v'); UI.filter = ''; uiSave(); paint(true); return; }
@@ -144213,6 +144216,7 @@ var CSS = '.td2{--td2-bg:#fff;--td2-ln:#e2e8f0;--td2-tx:#0f172a;--td2-mu:#64748b
  + '.td2-sh{display:flex;align-items:center;gap:8px;width:100%;border:none;background:none;padding:10px 12px;text-align:left;font-weight:800;font-size:14px;color:#0f172a}.td2-sec .td2-sec>.td2-sh{padding:7px 12px 7px 26px;font-size:13px;font-weight:700;background:#fafbfc}'
  + '.td2-car{display:inline-block;transition:transform .15s;color:#94a3b8;width:12px}.td2-sec.col>.td2-sh .td2-car{transform:rotate(-90deg)}.td2-sec.col>.td2-sbody{display:none}'
  + '.td2-st{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;gap:6px}.td2-n{background:#e2e8f0;color:#334155;border-radius:10px;padding:0 8px;font-size:12px;font-weight:800}.td2-chipm{font-size:11px;font-weight:800;border-radius:10px;padding:0 7px;margin-left:auto}.td2-chipm.over{background:#fee2e2;color:#b91c1c}'
+ + '#_gcTD2Ov .td2-row[data-k]{min-height:44px;cursor:pointer;-webkit-tap-highlight-color:transparent}#_gcTD2Ov .td2-row[data-k]:active{background:#f1f5f9}'   /* patch FIELDTAP */
  + '.td2-row{display:flex;align-items:center;gap:8px;min-height:42px;padding:5px 10px 5px 12px;border-top:1px solid #f1f5f9;transition:opacity .3s}.td2-row.d1{padding-left:34px;background:#fbfdff}.td2-row.gone{opacity:.35;text-decoration:line-through}'
  + '.td2-ck{appearance:none;-webkit-appearance:none;width:20px;height:20px;border:2px solid #94a3b8;border-radius:50%;margin:0;flex:0 0 auto;cursor:pointer;background:#fff;position:relative}.td2-ck:hover{border-color:#16a34a}.td2-ck:checked{background:#16a34a;border-color:#16a34a}.td2-ck:checked:after{content:"✓";color:#fff;font-size:12px;font-weight:900;position:absolute;left:3px;top:-1px}'
  + '.td2-ckd{color:#16a34a;font-weight:900;width:20px;text-align:center}.td2-dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto;background:#cbd5e1}.p-high .td2-dot{background:#dc2626}.p-med .td2-dot{background:#f59e0b}.p-low .td2-dot{background:#cbd5e1}'
@@ -195384,6 +195388,7 @@ function css(){
     '.gc-fh .fh-sec button{background:none;border:none;color:#2563eb;font-weight:800;font-size:12px;letter-spacing:.04em;min-height:0!important;padding:4px}',
     '/* FIELDFIX8 */.gc-fh .fh-sec button{padding:12px 8px!important;margin:-10px -6px!important}.gc-fh .fh-n{padding:10px 0!important;margin:-10px 0!important}',
     '.gc-fh .fh-job{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:12px;margin-bottom:12px}',
+    '.gc-fh .fh-job[data-job]{cursor:pointer;-webkit-tap-highlight-color:transparent;transition:background .12s,border-color .12s;min-height:44px;box-sizing:border-box}.gc-fh .fh-job.fh-press{background:#f1f5f9;border-color:#94a3b8}.gc-fh .fh-job .fp-row,.gc-fh .fh-job .fh-g3,.gc-fh .fh-job .fh-g4{cursor:default}',   /* patch FIELDTAP */
     '.gc-fh .fh-n{font-weight:800;font-size:16.5px;background:none;border:none;padding:0;text-align:left;color:#111827;min-height:0!important;cursor:pointer}',
     '.gc-fh .fh-a{color:#4b5563;font-size:13px;margin-top:2px}',
     '.gc-fh .fh-prog{display:flex;align-items:center;gap:8px;margin:10px 0 8px}.gc-fh .fh-bar{flex:1;height:10px;background:#e5e7eb;border-radius:99px;overflow:hidden}.gc-fh .fh-bar i{display:block;height:100%;background:#2563eb}',
@@ -195957,7 +195962,7 @@ function openHome(){
   Array.prototype.forEach.call(D.querySelectorAll('._gcSheetOv,#_gcJobDash,#_gcJobPick'), function(o){ o.remove(); });
   W._gcCurrentJob = null;
   var ov = D.createElement('div'); ov.id = '_gcJobPick'; ov.className = 'gc-fh'; D.body.appendChild(ov);
-  ov.addEventListener('click', onClick);
+  ov.addEventListener('click', onClick); pressWire(ov);   /* patch FIELDTAP */
   lastSig = ''; render(true); tabs(); setOn(); pullFset();
   return ov;
 }
@@ -195972,8 +195977,18 @@ function wrapPicker(){
   };
   w.__gcField = true; w.__orig = orig; W._gcJobPicker = w;
 }
+/* __GC_PATCH_FIELDTAP__ (owner 11/03): "click the whole button to click the job … small buttons, big fingers" — a tap
+   anywhere on a job card opens the job, except on its own buttons / links (and the gaps between them) */
+var CARD_SKIP = 'a,button,input,select,textarea,label,.fp-row,.fh-g3,.fh-g4,.fh-lock';
+function cardTap(el){ if (!el || !el.closest || el.closest(CARD_SKIP)) return null; var c = el.closest('.fh-job[data-job]'); return c ? c.querySelector('[data-fa="open"]') : null; }
+function pressWire(ov){
+  var on = null, clr = function(){ if (on) { on.classList.remove('fh-press'); on = null; } };
+  ov.addEventListener('pointerdown', function(e){ clr(); if (cardTap(e.target)) { on = e.target.closest('.fh-job'); on.classList.add('fh-press'); } });
+  ['pointerup', 'pointercancel'].forEach(function(n){ ov.addEventListener(n, function(){ later(clr, 140); }); });
+  ov.addEventListener('scroll', clr, true);
+}
 function onClick(ev){
-  var t = ev.target.closest('[data-fa]'); if (!t) return;
+  var t = ev.target.closest('[data-fa]'); if (!t) t = cardTap(ev.target); if (!t) return;   /* patch FIELDTAP */
   var a = t.getAttribute('data-fa'), pid = t.getAttribute('data-pid'), p = pid ? proj(pid) : null;
   if (t.hasAttribute('disabled')) { ev.preventDefault(); toast('🔒 The contract isn\'t signed yet — work can\'t start.'); return; }
   if (t.tagName === 'A') return;   /* Navigate / Call: the link does it */
