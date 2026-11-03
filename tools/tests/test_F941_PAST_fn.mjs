@@ -94,6 +94,11 @@ eq('wage base: only $2,000 more is SS wages; FUTA/SUTA 0', [r4[0].out.ssWages, r
 
 // patch PASTPAYEMP: Brittany (Office Admin) on the shared office@ mailbox IS offered; a profile with no pay type yet is offered
 eq('Office Admin on office@ + blank pay type are offered', PP.w2Employees(PROFS.concat([{ name: 'Britt Test', userId: 'UBT', payType: 'salary' }, { name: 'Glen Test', userId: 'UGT', payType: '' }]), USERS.concat([{ id: 'UBT', name: 'Britt Test', email: 'office@grayco-cs.com', role: 'Office Admin' }, { id: 'UGT', name: 'Glen Test', role: 'Estimator' }])).map(e => e.name), ['Avery Test', 'Blake Test', 'Britt Test', 'Glen Test']);
+// patch PASTPAYDEDUP: 300 copies of one person's profile → offered once
+{ const many = Array.from({ length: 300 }, (_, i) => ({ name: 'Britt Test', userId: 'UBT', payType: 'salary', filing: i === 7 ? 'married' : '' }));
+  const got = PP.w2Employees(PROFS.concat(many), USERS.concat([{ id: 'UBT', name: 'Britt Test', email: 'office@grayco-cs.com', role: 'Office Admin' }]));
+  eq('duplicates offered once', got.map(e => e.name), ['Avery Test', 'Blake Test', 'Britt Test']);
+  eq('the most complete copy is kept', got.find(e => e.name === 'Britt Test').prof.filing, 'married'); }
 // patch PASTPAYMS (owner 11/03): MS state tax on a past check
 {
   const rows = [

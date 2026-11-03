@@ -117,7 +117,13 @@ function w2Employees(profiles, users){
     if(users.length && !u) return false;   /* patch PASTPAYFIX: only people on Admin → Team — a leftover payroll profile of someone who left is never offered */
     if(u && (u.active===false || u.disabled===true || u.deleted===true || u.archived===true || u.terminated===true || /inactive|terminat|former|left|fired|quit|disabled|removed/.test(low(u.status)) || low(u.payType)==='owner' || role==='admin' || role==='owner')) return false;
     return true;
-  }).map(function(x){ return { name:s(x.name), key:s(x.userId||x.name), payType:s(x.payType), prof:x }; }).sort(function(a,b){ return a.name.localeCompare(b.name); });
+  }).map(function(x){ return { name:s(x.name), key:s(x.userId||x.name), payType:s(x.payType), prof:x }; }).sort(function(a,b){ return a.name.localeCompare(b.name); })
+  .filter((function(){ /* patch PASTPAYDEDUP: one entry per person, however many copies the profile list holds */
+    var seen={}; function score(p){ p=p||{}; var n=0; ['filing','w4Step3','dependents','stepTwo','annualSalary','hourlyRate','state','workState','msFiling','w4Year','allowances'].forEach(function(k){ if(p[k]!=null && p[k]!=='' && p[k]!==0) n++; }); return n; }
+    return function(e, i, all){ var k=low(s(e.name)); if(seen[k]!=null) return false;
+      var best=e; all.forEach(function(o){ if(low(s(o.name))===k && score(o.prof)>score(best.prof)) best=o; });
+      if(best!==e){ e.prof=best.prof; e.key=best.key; e.payType=best.payType; } seen[k]=i; return true; };
+  })());
 }
 /* weekly paydays first..last (inclusive) × employees → blank rows */
 function fillRows(first, last, emps){

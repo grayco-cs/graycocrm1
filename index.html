@@ -5290,7 +5290,7 @@ window.__GC_LIVE=function(key, v){
   return v;
 };
 </script>
-<!-- GrayCo CRM Build: 33.163-2026-11-03-r17q3b -->
+<!-- GrayCo CRM Build: 33.163-2026-11-03-r17q3c -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6238,7 +6238,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.163-2026-11-03-r17q3b");
+  console.log("[GC] Build 33.163-2026-11-03-r17q3c");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6286,7 +6286,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.163-2026-11-03-r17q3b"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.163-2026-11-03-r17q3c"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -212066,7 +212066,13 @@ function w2Employees(profiles, users){
     if(users.length && !u) return false;   /* patch PASTPAYFIX: only people on Admin → Team — a leftover payroll profile of someone who left is never offered */
     if(u && (u.active===false || u.disabled===true || u.deleted===true || u.archived===true || u.terminated===true || /inactive|terminat|former|left|fired|quit|disabled|removed/.test(low(u.status)) || low(u.payType)==='owner' || role==='admin' || role==='owner')) return false;
     return true;
-  }).map(function(x){ return { name:s(x.name), key:s(x.userId||x.name), payType:s(x.payType), prof:x }; }).sort(function(a,b){ return a.name.localeCompare(b.name); });
+  }).map(function(x){ return { name:s(x.name), key:s(x.userId||x.name), payType:s(x.payType), prof:x }; }).sort(function(a,b){ return a.name.localeCompare(b.name); })
+  .filter((function(){ /* patch PASTPAYDEDUP: one entry per person, however many copies the profile list holds */
+    var seen={}; function score(p){ p=p||{}; var n=0; ['filing','w4Step3','dependents','stepTwo','annualSalary','hourlyRate','state','workState','msFiling','w4Year','allowances'].forEach(function(k){ if(p[k]!=null && p[k]!=='' && p[k]!==0) n++; }); return n; }
+    return function(e, i, all){ var k=low(s(e.name)); if(seen[k]!=null) return false;
+      var best=e; all.forEach(function(o){ if(low(s(o.name))===k && score(o.prof)>score(best.prof)) best=o; });
+      if(best!==e){ e.prof=best.prof; e.key=best.key; e.payType=best.payType; } seen[k]=i; return true; };
+  })());
 }
 /* weekly paydays first..last (inclusive) × employees → blank rows */
 function fillRows(first, last, emps){
