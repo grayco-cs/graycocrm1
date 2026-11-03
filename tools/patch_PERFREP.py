@@ -9,14 +9,9 @@ t = open(p, encoding='utf-8').read()
 MARK = '<script id="gc-patch-perfrep">'
 js_new = open(os.path.join(here, 'perfrep.js'), encoding='utf-8').read()
 if MARK in t:
-    i = t.index(MARK) + len(MARK) + 1; j = t.index('</script>', i)
-    if t[i:j] == js_new:
-        print('PERFREP: already patched')
-    else:   # patch PERFREP2: an older reporter is replaced by the current tools/perfrep.js
-        assert '</script' not in js_new
-        t = t[:i] + js_new + t[j:]
-        open(p, 'w', encoding='utf-8').write(t)
-        print('PERFREP: reporter updated', p)
+    # never rewrite a current page: LSGUARD, PERFMM, CCBANNER and PERFSAFARI extend this script in place, and replacing it
+    # with tools/perfrep.js (the old PERFREP2 'reporter updated' path) silently dropped them (r17p3, 11/03)
+    print('PERFREP: already patched (PERFREP; later patches extend it, re-running would drop LSGUARD/PERFMM/CCBANNER/PERFSAFARI)')
 else:
     anchor = '<script id="gc-patch-perfclick-watch">'
     assert t.count(anchor) == 1, ('PERFREP anchor count', t.count(anchor))
