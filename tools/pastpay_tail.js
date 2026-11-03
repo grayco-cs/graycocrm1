@@ -170,8 +170,9 @@ W._gcPastPayOpen = async function(){
     /* patch PASTPAYMS2: commission = supplemental wages → regular pay through the W-4 calc + a flat 22% on the commission */
     var _pf=Object.assign({}, e.prof, stOv, { period:'weekly', payType:(e.prof.payType==='contractor_1099'?'hourly':e.prof.payType) }), _cm=r2(n2(r.comm)), _rg=r2(n2(r.gross));
     try{ var L=await p.computeLine(_pf, from, to, set, { gross:0, ssWages:0, medWages:0, sutaBy:{} }, gt, {});
-      var _fedReg = (_cm>0) ? (_rg>0 ? r2(((await p.computeLine(_pf, from, to, set, { gross:0, ssWages:0, medWages:0, sutaBy:{} }, _rg, {}))||{}).fed) : 0) : r2(L && L.fed);
-      fedCache[ck]=r2(_fedReg + (_cm>0 ? r2(_cm*0.22) : 0)); stCache[ck]=(L && L.state!=null) ? r2(L.state) : null; sutaCache[ck]=s(L && L.sutaState)||'TN'; r.stCalc=stCache[ck]; r.sutaSt=sutaCache[ck]; return fedCache[ck]; }catch(err){ r.stCalc=null; return null; }
+      /* patch PASTPAYMS3: aggregate method (as ADP and Run Payroll do) — the flat-22% split is off */
+      var _fedReg = (false && _cm>0) ? (_rg>0 ? r2(((await p.computeLine(_pf, from, to, set, { gross:0, ssWages:0, medWages:0, sutaBy:{} }, _rg, {}))||{}).fed) : 0) : r2(L && L.fed);
+      fedCache[ck]=r2(_fedReg); stCache[ck]=(L && L.state!=null) ? r2(L.state) : null; sutaCache[ck]=s(L && L.sutaState)||'TN'; r.stCalc=stCache[ck]; r.sutaSt=sutaCache[ck]; return fedCache[ck]; }catch(err){ r.stCalc=null; return null; }
   }
   async function recalc(){
     for(var i=0;i<rows.length;i++){ var r=rows[i]; r.empKey=(empOf(r.name)||{}).key||r.name; r.payType=(empOf(r.name)||{}).payType||r.payType;
@@ -184,7 +185,7 @@ W._gcPastPayOpen = async function(){
   ov.style.cssText='position:fixed;inset:0;z-index:2147483400;background:rgba(6,12,20,.78);display:flex;align-items:flex-start;justify-content:center;padding:12px;overflow:auto;font-family:inherit;';
   ov.innerHTML='<div style="background:#fff;color:#0f2440;border-radius:12px;width:min(1500px,99vw);padding:16px 18px;box-sizing:border-box;">'
     +'<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:flex-start"><div><div style="font-size:19px;font-weight:800">📥 Enter past payroll (from paystubs)</div>'
-    +'<div style="font-size:12px;color:#64748b;max-width:900px">One row per employee per payday. Salaried pay fills in (salary ÷ 52); type hourly pay and any <b>commission</b> separately. Social Security 6.2%, Medicare 1.45% and federal tax fill in — federal from the W-4 on the regular pay plus a flat 22% on commission (the IRS supplemental rate, the way ADP does it) — change any figure to match the stub. '
+    +'<div style="font-size:12px;color:#64748b;max-width:900px">One row per employee per payday. Salaried pay fills in (salary ÷ 52); type hourly pay and any <b>commission</b> separately. Social Security 6.2%, Medicare 1.45% and federal tax fill in — federal from the employee’s W-4 on the whole check (salary + commission together, the way ADP does it). <b>For checks already paid, use "amount on the check stub" so Form 941 matches what was really withheld.</b> — change any figure to match the stub. '
     +'Saved as <b>already paid</b>: no checks to write, no alerts, nothing sent, nothing booked to accounting (it is already in QuickBooks). Then open 🧾 Form 941.</div></div>'
     +'<button data-pp="x" style="'+BT+'">Close</button></div>'
     +'<div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin:12px 0 8px;padding:10px;background:#f8fafc;border-radius:8px">'
