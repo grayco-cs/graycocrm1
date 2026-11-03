@@ -105,9 +105,11 @@ function daysTo(d){ var t = Date.parse(String(d).slice(0, 10) + 'T12:00:00'); re
 /* patch CAREYEARLY (owner 11/03: "Yearly selected, the cards still show the monthly prices"): Yearly → the yearly price the
    owner set (maintenance-plan settings: yearly.<residential|commercial>.<tier>), else 12 × the monthly price, "/yr" */
 function tierPrice(t){
-  var mo = Number(t && t.monthly) || 0, yr = Number(t && t.yearly) || Math.round(mo * 12 * 100) / 100;
+  /* owner 11/03: "a 10% discount on yearly payments at one time" — 12 × monthly × (1 − the yearly discount, 10% unless set) */
+  var mo = Number(t && t.monthly) || 0, dc = t && t.yearlyDiscount != null && t.yearlyDiscount !== '' ? Number(t.yearlyDiscount) || 0 : 10;
+  var yr = Number(t && t.yearly) || Math.round(mo * 12 * (100 - dc)) / 100;
   var n = function(v){ return (Math.round(v * 100) % 100 ? v.toFixed(2) : String(Math.round(v))).replace(/\B(?=(\d{3})+(?!\d))/g, ','); };
-  return ui.billing === 'yearly' ? 'from $' + n(yr) + '/yr' : 'from $' + n(mo) + '/mo';
+  return ui.billing === 'yearly' ? 'from $' + n(yr) + '/yr' + (!(Number(t && t.yearly) > 0) && dc > 0 ? ' · paid once a year: save ' + dc + '%' : '') : 'from $' + n(mo) + '/mo';
 }
 function priceOf(k){ return ui.billing === 'monthly' ? usd(Math.ceil((Number(k.price) || 0) / 12 * 100) / 100) + ' a month' : usd(k.price) + ' per year'; }
 function maintCard(){
