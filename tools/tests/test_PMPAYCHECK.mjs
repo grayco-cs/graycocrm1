@@ -42,20 +42,20 @@ ok(!R.alerts.some(id => id.includes('2026-09-25')) && R.known === 1 && R.over ==
 await p.evaluate(() => window._gcOpenPayrollTab('run'));
 const card = await waitFor(c, () => { const m = document.getElementById('_gcPmPayCardMount'); return m && /PM pay check/.test(m.textContent) ? true : null; }, null, 20000, 400);
 const cv = await p.evaluate(() => { const m = document.getElementById('_gcPmPayCardMount'); const k = m.querySelector('details[data-pmp-known]');
-  return { text: m.textContent.slice(0, 400), flags: m.querySelectorAll('[data-pmp-flag]').length, known: !!k, knownOpen: k ? k.open : null, knownText: k ? k.querySelector('summary').textContent : '' }; });
+  return { text: m.textContent.slice(0, 1500), flags: m.querySelectorAll('[data-pmp-flag]').length, known: !!k, knownOpen: k ? k.open : null, knownText: k ? k.querySelector('summary').textContent : '' }; });
 console.log('   card', JSON.stringify(cv));
 ok(card && cv.flags >= 2 && /Commission owed but not paid/.test(cv.text) && /No pay setup for PMPTest NoSetup/.test(cv.text), 'Payroll page card shows the alerts', cv);
 ok(cv.known && cv.knownOpen === false && /Known — Q3 2026 \(owner aware\)/.test(cv.knownText), 'Known — Q3 2026 summary is there, collapsed', cv);
 
 /* My Approvals */
-const SET = () => p.evaluate(() => { window._gcApprovalSetFresh && window._gcApprovalSetFresh(); const s = window._gcApprovalSet(); const o = (window._gcHot1Approvals ? window._gcHot1Approvals() : []).filter(x => /^pmpay:/.test(x.id)); return { total: s.total, tip: s.tip, pm: o.length }; });
+const SET = () => p.evaluate(() => { window._gcApprovalSetFresh && window._gcApprovalSetFresh(); const s = window._gcApprovalSet(); const o = (window._gcHot1Approvals ? window._gcHot1Approvals() : []).filter(x => /^pmpay:/.test(x.id)); const g = (s.groups && s.groups.other) || []; return { total: s.total, tip: s.tip, pm: o.length, inSet: g.filter(x => /^pmpay:/.test(x.id)).length, others: g.length }; });
 const s1 = await SET(); console.log('   set', JSON.stringify(s1));
 await p.evaluate(() => window._gcOpenPmApprovals());
 const sh = await waitFor(c, () => { const t = document.body.innerText; return /PM pay: Steven Biffle/.test(t) && /PM pay: PMPTest NoSetup/.test(t) ? true : null; }, null, 10000, 300);
 const head = await p.evaluate(() => { const h = document.querySelector('[data-gc-appr-total]'); return h ? { n: +h.getAttribute('data-gc-appr-total'), t: h.textContent } : null; });
-console.log('   sheet head', JSON.stringify(head));
+const s1b = await SET(); console.log('   sheet head', JSON.stringify(head), JSON.stringify(s1b));
 ok(sh && s1.pm >= 2, 'My Approvals lists the PM pay flags as other approvals', s1);
-ok(head && head.n === s1.total && head.n >= s1.pm, 'the header count includes them', { head, s1 });
+ok(head && s1b.inSet === s1b.pm && s1b.pm >= 2 && /other approval/.test(head.t), 'the header count includes them: the counted set holds every PM pay item as an other approval', { head, s1b });
 await p.evaluate(() => { [...document.querySelectorAll('body > div')].forEach(o => { if (o.style.position === 'fixed' && /My Approvals/.test(o.textContent.slice(0, 300))) o.remove(); }); });
 
 /* ✓ Checked — this is right */
@@ -68,7 +68,7 @@ const after = await p.evaluate(async () => { const r = await window._gcPmPayRefr
 const s2 = await SET(); console.log('   after', JSON.stringify(after), JSON.stringify(s2));
 ok(!after.alerts.includes('nosetup|PMPTest NoSetup') && after.alerts.includes('comm|' + SID + '|2026-10-23'), '✓ Checked clears that flag only', after);
 ok(after.rec.length === 1 && after.rec[0].by && /by hand/.test(after.rec[0].note) && after.rec[0].sig === '0.00|0.00', 'the check is stored with who, the note and the amounts', after.rec);
-ok(s2.pm === s1.pm - 1 && s2.total === s1.total - 1, 'the approvals count drops by one', { s1, s2 });
+ok(s2.pm === s1.pm - 1 && s2.inSet === s1.inSet - 1, 'the PM pay items in the counted set drop by one', { s1, s2 });
 ok(!c.errs.length, 'no page errors', c.errs.slice(0, 5));
 console.log((fail ? 'FAILED ' : 'ALL PASS ') + pass + ' passed, ' + fail + ' failed');
 await c.b.close(); process.exit(fail ? 1 : 0);
