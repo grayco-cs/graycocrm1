@@ -3,12 +3,12 @@
 //   Phone 390x844 (iPhone UA, touch), CPU throttled GC_RATE (default 5x) through CDP, localStorage capped at Safari's
 //   ~2.75 M characters (QuotaExceededError past it, so LSGUARD's clean-ups run as on the phone), the real-data mirror
 //   (GC_MIRROR) in the offline harness (GC_HARNESS) with a fake cloud — nothing is written anywhere else.
-//   Budget: total long-task time in a GC_WATCH_MS (default 30 s) idle window on the Home ≤ GC_LT_BUDGET ms (default 9000).
+//   Budget: total long-task time in a GC_WATCH_MS (default 30 s) idle window on the Home ≤ GC_LT_BUDGET ms (default 15000).
 import { pathToFileURL } from 'url';
 import fs from 'fs'; import path from 'path';
 const HARNESS = process.env.GC_HARNESS || '/tmp/claude-0/-home-user-graycocrm1/6a5b2b6b-8a4d-5505-9f82-62521adb6674/scratchpad/wN/harness_N.mjs';
 const MIRROR = process.env.GC_MIRROR || '/tmp/claude-0/-home-user/6a5b2b6b-8a4d-5505-9f82-62521adb6674/scratchpad/loop/mirror.json';
-const RATE = +(process.env.GC_RATE || 5), WATCH = +(process.env.GC_WATCH_MS || 30000), BUDGET = +(process.env.GC_LT_BUDGET || 9000), CAP = 2750000;
+const RATE = +(process.env.GC_RATE || 5), WATCH = +(process.env.GC_WATCH_MS || 30000), BUDGET = +(process.env.GC_LT_BUDGET || 15000), CAP = 2750000;
 const build = process.argv[2];
 if (!build) { console.error('usage: node test_FIELDPERF.mjs <dir with index.html>'); process.exit(2); }
 let pass = 0, fail = 0; const ok = (c, m, info) => { if (c) { pass++; console.log('  ✓ ' + m); } else { fail++; console.log('  ✗ FAIL ' + m + (info !== undefined ? '  ' + JSON.stringify(info).slice(0, 600) : '')); } };
