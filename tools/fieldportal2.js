@@ -174,12 +174,10 @@ function openItem(it, p){
   if (it.url) return;   /* a real link: the <a> does it */
   if (it.k === 'inv' && !it.ref && typeof W._gcInvoiceEditor === 'function') { W._gcInvoiceEditor(it.id); return; }
   if (it.k === 'paper' && W._gcDocLib && W._gcDocLib.open) { W._gcDocLib.open(it.id, s(p.id)); return; }
-  if (it.ref && typeof W._gcFileUrl === 'function') {
-    var w = W.open('', '_blank');
-    Promise.resolve(W._gcFileUrl(it.ref)).then(function(u){ if (w && u) { try { w.opener = null; } catch (e) {} w.location.href = u; } else { if (w) w.close(); toast('That file could not be opened.'); } }, function(){ if (w) w.close(); toast('That file could not be opened.'); });
-    return;
-  }
-  if (it.data && it.d) { var w2 = W.open(''); if (w2) { if (/image/.test(s(it.d.type))) w2.document.write('<img src="' + it.d.data + '" style="max-width:100%">'); else w2.location.href = it.d.data; } return; }
+  /* patch DOCOPEN: a file opens as a page in the CRM (‹ Back, ⬇️ Download, 📤 Share) — no pop-up, no about:blank */
+  var nm = s(it.d && (it.d.name || it.d.fileName)) || s(it.t).replace(/^\W+/, ''), ty = s(it.d && (it.d.type || it.d.mime));
+  if (it.ref && W._gcViewer) { W._gcViewer.open({ ref: it.ref, name: nm, type: ty }); return; }
+  if (it.data && it.d && W._gcViewer) { W._gcViewer.open({ data: it.d.data, name: nm, type: ty }); return; }
   if (it.k === 'est') { toast('This proposal has no PDF yet — open it from 📐 Estimates.'); return; }
   toast(it.t + ' — ' + it.sub);
 }

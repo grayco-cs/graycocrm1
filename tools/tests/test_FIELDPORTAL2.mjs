@@ -112,9 +112,10 @@ try {
   ok(q.length === dl.files.length && mine === theirs, 'each file\'s 👁 matches "What the customer sees" (the portal\'s rule): the contract and lien waiver yes; the sub job sheet and the CompanyCam photo no', { mine, theirs });
   await O.ev(() => { const o = document.getElementById('gcq-docs'); if (o) o.remove(); });
   // opening: an invoice opens the invoice; a file opens a new tab in the tap
-  const pg = O.ctx.waitForEvent('page', { timeout: 6000 }).catch(() => null);
+  const pg = O.ctx.waitForEvent('page', { timeout: 4000 }).catch(() => null);
   await O.page().locator('.gcfp-docs .gcfp-doc[data-k="doc"][data-id="D1"]').evaluate(e => e.click());
-  ok(!!(await pg), 'tapping a file opens it in a new tab from the tap (iPhone-safe)');
+  ok(!(await pg) && !!(await O.ev(() => !!document.querySelector('#gc-viewer [data-gv="back"]'))), 'tapping a file opens it as a page in the CRM with ‹ Back — no new tab, no pop-up (patch DOCOPEN)');
+  await O.ev(() => { const b = document.querySelector('#gc-viewer [data-gv="back"]'); if (b) b.click(); });
   for (const x of O.pages.slice(1)) await x.close().catch(() => {});
   ok(await noSide(O), 'Documents: no sideways scroll');
   ok(!O.errs.length, 'phone: no page errors', O.errs.slice(0, 3));
