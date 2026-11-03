@@ -102,6 +102,13 @@ function heardCard(){
 var ui = { billing: 'yearly', pick: {}, open: '' };
 function initials(n){ return String(n || '?').trim().charAt(0).toUpperCase() || '?'; }
 function daysTo(d){ var t = Date.parse(String(d).slice(0, 10) + 'T12:00:00'); return isFinite(t) ? Math.round((t - Date.now()) / 864e5) : null; }
+/* patch CAREYEARLY (owner 11/03: "Yearly selected, the cards still show the monthly prices"): Yearly → the yearly price the
+   owner set (maintenance-plan settings: yearly.<residential|commercial>.<tier>), else 12 × the monthly price, "/yr" */
+function tierPrice(t){
+  var mo = Number(t && t.monthly) || 0, yr = Number(t && t.yearly) || Math.round(mo * 12 * 100) / 100;
+  var n = function(v){ return (Math.round(v * 100) % 100 ? v.toFixed(2) : String(Math.round(v))).replace(/\B(?=(\d{3})+(?!\d))/g, ','); };
+  return ui.billing === 'yearly' ? 'from $' + n(yr) + '/yr' : 'from $' + n(mo) + '/mo';
+}
 function priceOf(k){ return ui.billing === 'monthly' ? usd(Math.ceil((Number(k.price) || 0) / 12 * 100) / 100) + ' a month' : usd(k.price) + ' per year'; }
 function maintCard(){
   var M = D.maint || {}; if (!M.offered) return null;
@@ -179,7 +186,7 @@ function offer(c, M, cs, byPlan, chosen, quoted){
   var my = (quoted[0] && quoted[0].tier) || 'bronze';
   c.appendChild(h('div', { class: 'care-tog', role: 'group', 'aria-label': 'Billing' }, [['monthly', 'Monthly'], ['yearly', 'Yearly']].map(function(o){ return h('button', { type: 'button', class: ui.billing === o[0] ? 'on' : '', 'aria-pressed': ui.billing === o[0] ? 'true' : 'false', 'data-billing': o[0], text: o[1], on: { click: function(){ ui.billing = o[0]; paint(); } } }); })));
   if ((M.tiers || []).length) c.appendChild(h('div', { class: 'care-tiers' }, M.tiers.map(function(t){ return h('div', { class: 'care-tier t-' + t.id + (t.id === 'silver' ? ' pop' : '') + (t.id === my && quoted.length ? ' mine' : '') }, [
-    t.id === 'silver' ? h('span', { class: 'care-pop', text: 'Most popular' }) : null, h('div', { class: 'care-tn', text: t.name }), h('div', { class: 'care-tp', text: 'from $' + t.monthly + '/mo' }),
+    t.id === 'silver' ? h('span', { class: 'care-pop', text: 'Most popular' }) : null, h('div', { class: 'care-tn', text: t.name }), h('div', { class: 'care-tp', 'data-tier-price': t.id, text: tierPrice(t) }),   /* patch CAREYEARLY: the Monthly / Yearly switch changes the tier prices too */
     h('ul', null, [t.discount ? h('li', { text: t.discount + '% off repairs we find' }) : h('li', { text: 'Every plan customer starts here' }), h('li', { text: t.perks }), M.market === 'commercial' ? h('li', { text: '⭐ Priority emergency + snow' }) : h('li', { text: 'Photo report after every visit' }), t.note ? h('li', { text: t.note }) : null]),
     t.id === my && quoted.length ? h('div', { class: 'pp-st', text: 'Your plan' }) : null]); })));
   var all = (M.plans || []).slice(), info = {}; all.forEach(function(p){ info[p.id] = p; });
