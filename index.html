@@ -191363,7 +191363,7 @@ function process(e, force){
     if (s(e.sourceRef) && !docs().some(function(d){ return d.id === 'DESRC_' + e.id; })) upsertDoc({ id: 'DESRC_' + e.id, pid: p.id, projectId: p.id, estimateId: e.id, cat: 'Estimates', name: 'Estimate source — ' + (s(e.sourceName) || 'file'), ref: e.sourceRef, type: s(e.sourceType), uploadedAt: nowIso(), uploaded: today(), by: s(e.by) || 'Upload', source: 'estin-source', portalShare: false, noNotice: true, confirmed: true });
     var old = st.reqId && st.sig !== sig && st.state === 'waiting' ? call(SIGN_FN, { action: 'void', id: st.reqId }) : Promise.resolve(null);
     return old.then(function(){
-      return signReq({ action: 'request', projectId: String(p.id), kind: 'estimate', refId: s(e.id), title: ('Proposal — ' + s(e.name || p.name)).slice(0, 120), amount: totalOf(e) || null, lines: scopeWords(e),
+      return signReq({ action: 'request', projectId: String(p.id), kind: 'estimate', refId: s(e.id), title: ((usePdf ? 'Estimate — ' : 'Proposal — ') + s(e.name || p.name)).slice(0, 120), amount: usePdf ? null : (totalOf(e) || null), lines: usePdf ? [] : scopeWords(e),   /* patch CUSTPORTAL */
         docRef: f.ref, docName: f.name, auto: true, estin: true, owner: s(e.estimator || e.by), again: st.state === 'signed', priority: priorityOf(e, p), apprTitle: ('📨 Put proposal in customer portal + send — ' + s(e.name || p.name)).slice(0, 120) });
     }).then(function(j){
       var state = j.ok ? (j.noEmail ? 'needs-email' : 'waiting') : 'error';
@@ -201002,7 +201002,7 @@ function afterSent(e, p, l, row, o, line){
    approval (PORTALGATE) decides when it shows, and the portal's e-sign paper points at the same file (no second e-mail) */
 function portalPublish(e, p, row, docId){
   var title = 'Estimate' + (s(e.num) ? ' #' + s(e.num) : '') + ' — ' + scrub(s(e.name || p.name), wordsFor(e, p));
-  return call('portal-sign', { action: 'request', projectId: String(p.id), kind: 'estimate', refId: s(e.id), title: title.slice(0, 120), amount: num(e.totalCharge) || null, lines: [], docRef: row.ref, docName: row.name, mailed: true, again: true,
+  return call('portal-sign', { action: 'request', projectId: String(p.id), kind: 'estimate', refId: s(e.id), title: title.slice(0, 120), amount: (isUploadPdf(e) && s(row.ref) === s(e.sourceRef)) || /upload/i.test(s(row.via)) ? null : (num(e.totalCharge) || null), lines: [], docRef: row.ref,   /* patch CUSTPORTAL: an uploaded PDF carries its own numbers */ docName: row.name, mailed: true, again: true,
       sentAt: s(row.sentAt || row.releaseAt) || nowIso(), sentVia: s(row.method || row.via) })
     .then(function(j){ return call('portal', { action: 'gate', op: 'scan', projectId: String(p.id) }).then(function(){ return j; }, function(){ return j; }); });
 }

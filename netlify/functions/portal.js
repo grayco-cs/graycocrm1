@@ -1035,7 +1035,11 @@ async function estPortalCards(data, p, ests, signed){
     const seen = arr(views).filter(function(v){ return v && s(v.estId) === s(e.id); }).map(function(v){ return s(v.at); }).sort()[0] || '';
     const st = low(e.status);
     const status = (req && req.status === 'signed') || /won|signed|accept|contract/.test(st) ? 'Accepted' : (req && req.status === 'declined') || /lost|declin|reject/.test(st) ? 'Declined' : seen ? 'Viewed' : 'Sent';
-    const total = num(e.totalCharge || e.quoteTotal || e.total);
+    /* patch CUSTPORTAL: when what the customer gets is the estimate's OWN uploaded PDF, the card shows no numbers read off it (no
+       re-made total / sections — the PDF says them, tax included, exactly as it was made) */
+    const ownPdf = !!x.pdf && (/^(estin-source|estimate-upload)$/.test(s(x.pdf.source)) || (s(e.sourceRef) && s(x.pdf.ref) === s(e.sourceRef)));
+    if (ownPdf) scope = [];
+    const total = ownPdf ? 0 : num(e.totalCharge || e.quoteTotal || e.total);
     return { id: clip(e.id, 90), title: clip(strip(e.name) || 'Your estimate', 90), num: clip(e.num, 20), date: ymd(e.sentDate || (e.sentPdf && e.sentPdf.sentAt) || e.date || e.updatedAt),
       total: total > 0 ? money(total) : null, scope: scope, pdf: x.pdf ? (signed[x.pdf.ref] || '') : '', version: x.pdf ? (+x.pdf.version || (e.sentPdf && +e.sentPdf.version) || 1) : null,
       status: status, viewedAt: seen ? ymd(seen) : '', signId: req && req.status === 'pending' ? clip(req.id, 120) : '', signedAt: req && req.status === 'signed' && req.signed ? ymd(req.signed.at) : '' };

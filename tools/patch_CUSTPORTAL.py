@@ -129,6 +129,16 @@ P2 = """  /* patch CUSTPORTAL: "Customer sees: My PDF" (the default) → the est
   return (usePdf ? Promise.resolve({ ref: ownRef, name: (s(e.sourceName) || ('Estimate — ' + s(e.name || p.name))).replace(/\\.pdf$/i, '') + '.pdf', type: 'application/pdf' }) : storeProposal(e, p.id, html)).then(function(f){"""
 EDITS.append((P, P2, 1))
 
+# 6b. (estmath agent, 11/02): an UPLOADED estimate on "My PDF" — no re-made template numbers anywhere: the approval / the customer's
+#     paper carry the uploaded PDF and no amount or lines read off it (the PDF says them, tax included, as the owner made it)
+Q = """title: ('Proposal — ' + s(e.name || p.name)).slice(0, 120), amount: totalOf(e) || null, lines: scopeWords(e),"""
+Q2 = """title: ((usePdf ? 'Estimate — ' : 'Proposal — ') + s(e.name || p.name)).slice(0, 120), amount: usePdf ? null : (totalOf(e) || null), lines: usePdf ? [] : scopeWords(e),   /* patch CUSTPORTAL */"""
+EDITS.append((Q, Q2, 1))
+
+R = """kind: 'estimate', refId: s(e.id), title: title.slice(0, 120), amount: num(e.totalCharge) || null, lines: [], docRef: row.ref,"""
+R2 = """kind: 'estimate', refId: s(e.id), title: title.slice(0, 120), amount: (isUploadPdf(e) && s(row.ref) === s(e.sourceRef)) || /upload/i.test(s(row.via)) ? null : (num(e.totalCharge) || null), lines: [], docRef: row.ref,   /* patch CUSTPORTAL: an uploaded PDF carries its own numbers */"""
+EDITS.append((R, R2, 1))
+
 for old, new, n in EDITS:
     c = t.count(old)
     if c != n:
