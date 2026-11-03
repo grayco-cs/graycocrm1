@@ -201,7 +201,7 @@ export const TEMPLATES = [
   { id: 'ranch', name: 'Ranch 3 bed / 2 bath – 1,800 SF', desc: '60×30 single story, hip roof 6/12, open kitchen and living.' },
   { id: 'twostory', name: 'Two-story 4 bed – 2,560 SF', desc: '40×32 two floors, gable roof 8/12, attached garage.' },
   { id: 'commercial', name: 'Commercial suite build-out – 2,400 SF', desc: '60×40 tenant space: storefront, offices, conference, restrooms, flat roof.' },
-  { id: 'office4056', name: 'Office in front of warehouse – 40×56', desc: 'Lobby + conference across the front, kitchen and restrooms along the right wall, five 12×14 offices, storage / IT, two doors to the warehouse.' },
+  { id: 'office4056', name: 'Office in front of warehouse – 40×56', desc: 'Drawn from the owner sketch: conference + lobby across the front, center hall and right hall, 5 offices, kitchen and restrooms along the right wall.' },
 ];
 
 export function fromTemplate(id, catalog) {
@@ -303,49 +303,50 @@ export function fromTemplate(id, catalog) {
     [27, 41, 54].forEach(x => b.item('fn-desk', x, 4, 0, catalog));
     addRoof(p, L1, { x: 0, y: 0, w: 60, h: 40 }, { style: 'flat', pitch: 0, overhang: 0, materialId: 'rf-tpo', parapet: 3 });
   } else if (t.id === 'office4056') {
-    // 40' wide × 56' deep. Front (y = 0) is the street side, back (y = 56) is the warehouse.
-    // Kitchen, men's and women's restrooms stay where they are: a strip along the right wall (x 32–40),
-    // opening onto a 4' hall (x 28–32) that runs from the lobby to the warehouse door.
-    // Offices: 5 at 12' × 14', reached by that hall plus a second 4' hall (x 12–16) with its own warehouse door.
+    // The owner's hand sketch, 40' wide × 56' deep. Front (y = 0) is the street side, back (y = 56) the warehouse.
+    // Given on the sketch: conference 20', lobby 19' (1' wall between), 14' deep; 4' center hall; Office 1 20' deep;
+    // 4' cross hall; Office 3 22'; Offices 4 and 5 18'; 42' behind the lobby. Widths not written on the sketch were
+    // taken from its proportions: office columns 12', right hall 5', kitchen / restroom strip 7'.
     p.settings.exteriorFinishId = 'sid-metal-panel'; p.settings.drywallId = 'dw-5-8x'; p.settings.ceilingFinishId = '';
     L1.height = 10; L1.name = 'Office';
     const b = builder(p, L1);
     const [n, e, s, w] = b.box(0, 0, 40, 56);
-    const cl = b.wall(20, 0, 20, 14);                        // conference | lobby
-    b.wall(0, 14, 20, 14); b.wall(32, 14, 40, 14);           // back of conference; front of kitchen (lobby opens to both halls)
-    const h2 = b.wall(12, 14, 12, 56), h2r = b.wall(16, 18, 16, 56);   // second hall
-    b.wall(16, 18, 28, 18); b.wall(28, 18, 28, 56);          // cross link + main hall west wall
-    const wet = b.wall(32, 14, 32, 56);                      // main hall east wall = wet wall
-    b.wall(0, 28, 12, 28); b.wall(0, 42, 12, 42);            // left offices
-    b.wall(16, 32, 28, 32); b.wall(16, 46, 28, 46);          // middle offices / storage
-    b.wall(32, 29, 40, 29); b.wall(32, 41, 40, 41);          // kitchen | men's | women's
-    b.open(n, 33, 'dr-sf-storefront', catalog); b.open(n, 8.5, 'wn-storefront', catalog); b.open(n, 24.5, 'wn-storefront', catalog);
-    [[w, 49], [w, 35], [w, 21], [w, 7]].forEach(([wl, at]) => b.open(wl, at, 'wn-sh-3050', catalog));   // conference + 3 left offices
-    b.open(e, 21, 'wn-sh-3050', catalog);                    // kitchen
-    b.open(cl, 11, 'dr-int-6p', catalog);                    // conference from the lobby
-    b.open(h2, 11, 'dr-int-6p', catalog); b.open(h2, 25, 'dr-int-6p', catalog); b.open(h2, 39, 'dr-int-6p', catalog);   // left offices
-    b.open(h2r, 2.5, 'dr-int-6p', catalog); b.open(h2r, 16.5, 'dr-int-6p', catalog); b.open(h2r, 30, 'dr-int-6p', catalog); // middle offices + storage
-    b.open(wet, 12, 'dr-int-6p', catalog); b.open(wet, 17, 'dr-int-6p', catalog); b.open(wet, 40, 'dr-int-6p', catalog);   // kitchen, men's, women's
-    b.open(s, 10, 'dr-ext-steel', catalog); b.open(s, 26, 'dr-ext-steel', catalog);   // two doors into the warehouse
-    b.room('Conference', 0, 0, 20, 14, 'flr-carpet', 'pnt-int-greige');
-    b.room('Lobby / reception', 20, 0, 20, 14, 'flr-lvp-gray', 'pnt-int-greige');
-    addRoom(L1, [{ x: 16, y: 14 }, { x: 32, y: 14 }, { x: 32, y: 56 }, { x: 28, y: 56 }, { x: 28, y: 18 }, { x: 16, y: 18 }], { name: 'Main hall', floorId: 'flr-lvp-gray', wallFinishId: 'pnt-int-greige' });
-    b.room('Office hall', 12, 14, 4, 42, 'flr-lvp-gray', 'pnt-int-greige');
-    b.room('Office 1', 16, 18, 12, 14, 'flr-carpet', 'pnt-int-white');
-    b.room('Office 2', 0, 14, 12, 14, 'flr-carpet', 'pnt-int-white');
-    b.room('Office 3', 16, 32, 12, 14, 'flr-carpet', 'pnt-int-white');
-    b.room('Office 4', 0, 28, 12, 14, 'flr-carpet', 'pnt-int-white');
-    b.room('Office 5', 0, 42, 12, 14, 'flr-carpet', 'pnt-int-white');
-    b.room('Storage / IT', 16, 46, 12, 10, 'flr-sealed-conc', 'pnt-int-white');
-    b.room('Kitchen / breakroom', 32, 14, 8, 15, 'flr-vct', 'pnt-int-white');
-    b.room("Men's RR", 32, 29, 8, 12, 'flr-tile-porc', 'pnt-int-white');
-    b.room("Women's RR", 32, 41, 8, 15, 'flr-tile-porc', 'pnt-int-white');
-    L1.rooms.forEach(r => { if (!/RR|Storage/.test(r.name)) r.ceilingId = 'cm-act'; });
+    const mid = b.wall(20.5, 0, 20.5, 14); mid.thickness = 1;           // 1' wall between conference and lobby
+    const back = b.wall(0, 14, 40, 14);                                  // back of conference / lobby
+    const c2 = b.wall(12, 14, 12, 56);                                   // offices 2 / 3 | center hall, office 4
+    b.wall(0, 34, 12, 34);                                               // office 2 | office 3
+    const o1w = b.wall(16, 14, 16, 34);                                  // center hall | office 1
+    b.wall(16, 34, 28, 34); b.wall(28, 14, 28, 34);                      // office 1
+    const t45 = b.wall(12, 38, 28, 38); b.wall(20, 38, 20, 56); b.wall(28, 38, 28, 56);   // offices 4 / 5
+    const wet = b.wall(33, 14, 33, 56);                                  // right hall | kitchen + restrooms
+    b.wall(33, 29, 40, 29); b.wall(33, 41, 40, 41);
+    b.open(n, 24, 'dr-sf-storefront', catalog);                         // front entry into the lobby
+    b.open(back, 14, 'dr-int-6p', catalog);                              // conference -> center hall
+    b.open(back, 30.5, 'dr-int-6p', catalog);                            // lobby -> right hall
+    b.open(o1w, 17.5, 'dr-int-6p', catalog);                             // office 1 (bottom left, off the center hall)
+    b.open(c2, 17.5, 'dr-int-6p', catalog);                              // office 2
+    b.open(c2, 22, 'dr-int-6p', catalog);                                // office 3
+    b.open(t45, 6.5, 'dr-int-6p', catalog); b.open(t45, 9.5, 'dr-int-6p', catalog);   // offices 4 and 5
+    b.open(wet, 12, 'dr-int-6p', catalog); b.open(wet, 16.5, 'dr-int-6p', catalog); b.open(wet, 40, 'dr-int-6p', catalog);   // kitchen, men's, women's
+    b.open(s, 9.5, 'dr-ext-steel', catalog);                             // warehouse door at the end of the right hall
+    void e; void w;
+    b.room('Conference room', 0, 0, 20, 14, 'flr-carpet', 'pnt-int-greige');
+    b.room('Lobby', 21, 0, 19, 14, 'flr-lvp-gray', 'pnt-int-greige');
+    addRoom(L1, [{ x: 12, y: 14 }, { x: 16, y: 14 }, { x: 16, y: 34 }, { x: 28, y: 34 }, { x: 28, y: 14 }, { x: 33, y: 14 }, { x: 33, y: 56 }, { x: 28, y: 56 }, { x: 28, y: 38 }, { x: 12, y: 38 }], { name: 'Halls', floorId: 'flr-lvp-gray', wallFinishId: 'pnt-int-greige' });
+    b.room('Office 1', 16, 14, 12, 20, 'flr-carpet', 'pnt-int-white');
+    b.room('Office 2', 0, 14, 12, 20, 'flr-carpet', 'pnt-int-white');
+    b.room('Office 3', 0, 34, 12, 22, 'flr-carpet', 'pnt-int-white');
+    b.room('Office 4', 12, 38, 8, 18, 'flr-carpet', 'pnt-int-white');
+    b.room('Office 5', 20, 38, 8, 18, 'flr-carpet', 'pnt-int-white');
+    b.room('Kitchen / breakroom', 33, 14, 7, 15, 'flr-vct', 'pnt-int-white');
+    b.room("Men's RR", 33, 29, 7, 12, 'flr-tile-porc', 'pnt-int-white');
+    b.room("Women's RR", 33, 41, 7, 15, 'flr-tile-porc', 'pnt-int-white');
+    L1.rooms.forEach(r => { if (!/RR/.test(r.name)) r.ceilingId = 'cm-act'; });
     b.item('fn-table', 10, 7, 0, catalog, { w: 12, d: 4 });
-    b.item('cm-reception', 30, 9.5, 180, catalog);
-    [[22, 26], [6, 21], [22, 40], [6, 35], [6, 49]].forEach(([x, y]) => b.item('fn-desk', x, y, 0, catalog));
+    b.item('cm-reception', 30.5, 8, 180, catalog);
+    [[22, 22], [6, 22], [6, 45], [16, 49], [24, 49]].forEach(([x, y]) => b.item('fn-desk', x, y, 0, catalog, x === 16 || x === 24 ? { w: 4.5, d: 2.5 } : {}));
     b.item('cab-base', 39, 21, 90, catalog, { w: 10 }); b.item('cab-wall', 39.5, 21, 90, catalog, { w: 10 });
-    b.item('ap-fridge', 38.75, 27.5, 90, catalog); b.item('fn-table', 34.5, 18, 0, catalog, { w: 3, d: 3 });
+    b.item('ap-fridge', 38.75, 27.5, 90, catalog); b.item('fn-table', 35.5, 18, 0, catalog, { w: 3, d: 3 });
     b.item('cm-ada-wc', 38.75, 35, 90, catalog); b.item('cab-vanity', 39.1, 39, 90, catalog);
     b.item('cm-ada-wc', 38.75, 46, 90, catalog); b.item('cab-vanity', 39.1, 51, 90, catalog);
   }
