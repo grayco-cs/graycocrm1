@@ -314,12 +314,12 @@ function byName(n){
   ((W._crm && W._crm.projects) || []).forEach(function(p){ if (!p || !p.id || s(p.name).trim() !== n) return; if (best) tie = true; else best = p; });
   return best && !tie ? best : null;
 }
-function dress(){
+function dress(urgent){
   if (D.hidden || D.documentElement.classList.contains('_fieldmode')) return;
   var now = Date.now();
   /* already dressed: this header (same element, same job) has its 📸 row */
   if (DH && DH.isConnected && s(DH.textContent).trim() === DNAME) { var cc = D.getElementById('_gcCCLinkRow'); if (cc && cc.parentElement === DH.parentElement && cc.getAttribute('data-pid') === DRESSED) return; }
-  if (now - MISS < 120) { if (!MISS_T) MISS_T = ST.call(W, function(){ MISS_T = null; MISS = 0; dressSoon(); }, 130); return; }
+  if (!urgent && now - MISS < 120) { if (!MISS_T) MISS_T = ST.call(W, function(){ MISS_T = null; MISS = 0; dressSoon(); }, 130); return; }
   var H = jobHeader();
   if (!H) { MISS = now; return; }
   var name = s(H.h1.textContent).trim();
@@ -366,9 +366,21 @@ dockCss();
 W.addEventListener('resize', function(){ try { dockPlace(); } catch (e) {} });
 SI.call(W, function(){ try { dockPlace(); } catch (e) {} }, 700);
 try { new MO(function(ms){ for (var i = 0; i < ms.length; i++) for (var j = 0; j < ms[i].addedNodes.length; j++) if (ms[i].addedNodes[j].id === 'gc-ra-dock') { dockPlace(); return; } }).observe(D.body || D.documentElement, { childList: true }); } catch (e) {}
-function dressSoon(){ if (DQ) return; DQ = true; Promise.resolve().then(function(){ DQ = false; try { dress(); } catch (e) { warn(e); } }); }
-try { var dmo = new MO(function(){ dressSoon(); }); dmo.observe(D.documentElement, { childList: true, subtree: true }); } catch (e) { warn(e); }
-SI.call(W, dressSoon, 1000);
+/* a burst that draws or changes an h1 (a job header appearing, or the next job's name in it) is looked at at once — the
+   120 ms rest after a miss (a list page redrawing) must never let a new header paint without its buttons */
+var URG = false;
+function urgentRecs(ms){
+  for (var i = 0; i < (ms ? ms.length : 0); i++) {
+    var r = ms[i], tg = r.target; if (tg && tg.nodeType === 3) tg = tg.parentNode;
+    if (tg && tg.tagName === 'H1') return true;
+    var ad = r.addedNodes;
+    for (var j = 0; j < ad.length; j++) { var n = ad[j]; if (n.nodeType === 1 && (n.tagName === 'H1' || (n.firstElementChild && n.querySelector('h1')))) return true; }
+  }
+  return false;
+}
+function dressSoon(urgent){ if (urgent) URG = true; if (DQ) return; DQ = true; Promise.resolve().then(function(){ DQ = false; var u = URG; URG = false; try { dress(u); } catch (e) { warn(e); } }); }
+try { var dmo = new MO(function(ms){ dressSoon(urgentRecs(ms)); }); dmo.observe(D.documentElement, { childList: true, subtree: true, characterData: true }); } catch (e) { warn(e); }
+SI.call(W, function(){ dressSoon(false); }, 1000);
 W._gcJobTop = { box: function(){ return D.getElementById('gc-job-widgets'); }, settle: settle, fieldSum: fieldSum, dress: dress, dock: dockPlace };
 try { console.log('[GC] Job page: header → summary → tabs → tab content → job tools (patch JOBTOP) — _gcJobBox'); } catch (e) {}
 })();
