@@ -45,7 +45,8 @@ await p.evaluate(() => { for (const b of [...document.querySelectorAll('button')
 const deskShown = () => p.evaluate(() => { const el = document.getElementById('gc-ra-desk'); return !!(el && el.isConnected && el.style.display !== 'none' && el.getBoundingClientRect().width > 0); });
 const why = () => p.evaluate(() => (window._gcDeskToDo && window._gcDeskToDo.state().last.why) || '');
 const reopen = async () => { await p.evaluate(() => { try { window._gcRA.open(); } catch (e) {} }); await sleep(800); return deskShown(); };
-const BTN = ['#gc-money-needs [data-mn="import"]', '#gc-money-needs [data-mn="bank"]', '#gc-money-needs [data-mn="needs"]', '#gc-bulkdrop-todo'];
+const BTN = ['#gc-money-needs [data-mn="needs"]', '#_todoMount button'];   /* patch TODOTOP (owner 11/2): the statement imports live on the Accounting tool row (#gc-money-acct); the To-Do keeps 📥 Needs a job */
+/* (the Accounting doors are checked by test_ACCTGATE's acctDoors step) */
 async function clickable(){
   const out = {};
   for (const sel of BTN) {
@@ -54,7 +55,7 @@ async function clickable(){
   }
   return out;
 }
-const allOk = c => Object.values(c).every(v => v === 'ok' || v === 'absent') && c[BTN[0]] === 'ok' && c[BTN[1]] === 'ok';
+const allOk = c => Object.values(c).every(v => v === 'ok' || v === 'absent') && c[BTN[1]] === 'ok';
 for (const [w, h] of [[1366, 768], [1920, 1080]]) {
   await p.setViewportSize({ width: w, height: h }); await sleep(1200);
   const tag = w + '×' + h + ': ';
@@ -62,8 +63,8 @@ for (const [w, h] of [[1366, 768], [1920, 1080]]) {
   /* a code call (the screen opened by the CRM itself, no click) */
   await p.evaluate(() => window._setView('todo')); await sleep(1500);
   ok(!(await deskShown()), tag + 'a code call opens the To-Do: the Desk steps aside', await why());
-  await waitFor(A, () => !!document.querySelector('#gc-money-needs [data-mn="import"]'), null, 15000);
-  let c = await clickable(); ok(allOk(c), tag + 'the import buttons can be clicked (card, bank, needs a job, drop invoices)', c);
+  await waitFor(A, () => !!document.querySelector('#_todoMount button'), null, 15000);
+  let c = await clickable(); ok(allOk(c), tag + 'the To-Do\'s buttons can be clicked (needs a job, its own buttons)', c);
   /* a notification / e-mailed link */
   await reopen(); await p.evaluate(() => { location.hash = '#appr=ap2-desktodo-probe'; }); await sleep(1500);
   ok(!(await deskShown()), tag + 'a notification link (#appr=…) opens: the Desk steps aside', await why());

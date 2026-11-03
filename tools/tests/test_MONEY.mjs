@@ -55,9 +55,10 @@ await p.mouse.move(400, 300); const mover = setInterval(() => { p.mouse.move(380
 await waitFor(A, () => !!document.querySelector('#gc-ra-desk button'), null, 15000);
 if (await p.locator('#gc-ra-desk button', { hasText: /Open To-Do/ }).count()) await p.locator('#gc-ra-desk button', { hasText: /Open To-Do/ }).first().click();
 else await p.evaluate(() => { const b = [...document.querySelectorAll('aside nav button, nav button')].find(y => y.offsetParent && /To-Do/.test(y.textContent)); if (b) b.click(); });
-ok(await waitFor(A, () => !!document.querySelector('#gc-money-needs [data-mn="import"]'), null, 30000), 'the To-Do shows 💳 Import card statement (and 📥 Needs a job when something waits)');
+ok(await waitFor(A, () => !!document.querySelector('#gc-money-needs'), null, 30000), 'the To-Do shows the 📥 money row (the imports are on Accounting, patch TODOTOP)');   /* patch TODOTOP (owner 11/2): the statement imports live on the Accounting tool row (#gc-money-acct); the To-Do keeps 📥 Needs a job */
 ok(await waitFor(A, () => /Needs a job \(1\)/.test((document.querySelector('#gc-money-needs') || {}).textContent || ''), null, 15000), '📥 Needs a job (1): the Shell charge with no job', await p.evaluate(() => (document.querySelector('#gc-money-needs') || {}).textContent));
-await p.click('#gc-money-needs [data-mn="import"]');
+await p.evaluate(() => window._setView('taxcenter')); await waitFor(A, () => !!document.querySelector('#gc-money-acct [data-mn="import"]'), null, 30000);
+await p.click('#gc-money-acct [data-mn="import"]');
 await waitFor(A, () => !!document.querySelector('.gc-money-imp textarea'), null, 10000);
 const d1 = day(-6), d2 = day(-5), d3 = day(-4), d4 = day(-3), d5 = day(-2);
 const CHASE = ['Transaction Date,Post Date,Description,Category,Type,Amount,Memo',
@@ -100,7 +101,7 @@ const CAP1 = ['Transaction Date,Posted Date,Card No.,Description,Category,Debit,
   `${d6},${d6},4421,FACEBK *ADS 9QQ,Other Services,150.00,`,
   `${d1},${d1},4421,THE HOME DEPOT #6620,Merchandise,245.10,`,
   `${d6},${d6},4421,CAPITAL ONE AUTOPAY PYMT,Payment/Credit,,500.00`].join('\n');
-await p.click('#gc-money-needs [data-mn="import"]');
+await p.click('#gc-money-acct [data-mn="import"]');
 await waitFor(A, () => !!document.querySelector('.gc-money-imp textarea'), null, 10000);
 await waitFor(A, () => [...document.querySelectorAll('.gc-money-imp [data-c="card"] option')].some(o => /4421/.test(o.textContent)), null, 10000);
 await p.evaluate(() => { const s = document.querySelector('.gc-money-imp [data-c="card"]'); const o = [...s.options].find(o => /4421/.test(o.textContent)); s.value = o.value; });
@@ -126,6 +127,7 @@ ok(mk.row && typeof mk.row === 'object' && mk.row.spend === 450 && mk.row.leads 
 ok(mk.typed.length === 1 && mk.typed[0].amount === 999 || mk.typed.every(x => x.month !== new Date().toISOString().slice(0, 7) || x.amount === 999), 'spend typed in for that source and month wins (never doubled)', mk.typed);
 
 /* ── 📥 Needs a job: the Shell charge (PO T724 in its memo → suggested Brent) → Save ── */
+await p.evaluate(() => window._setView('todo')); await waitFor(A, () => !!document.querySelector('#gc-money-needs [data-mn="needs"]'), null, 30000);   /* back on the To-Do for 📥 Needs a job */
 await p.click('#gc-money-needs [data-mn="needs"]');
 await waitFor(A, () => !!document.querySelector('.gc-money-ov [data-i]'), null, 10000);
 const nj = await p.evaluate(() => [...document.querySelectorAll('.gc-money-ov [data-i]')].map(r => ({ t: r.textContent.slice(0, 160), sel: (r.querySelector('[data-m="job"]') || {}).value })));
