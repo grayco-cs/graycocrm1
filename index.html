@@ -120555,7 +120555,7 @@ function copy(text){
 function custPhone(p){ return s(p.clientPhone || p.customerPhone || p.phone || custRec(p).phone); }
 function custEmail(p){ return s(p.clientEmail || p.customerEmail || p.email || custRec(p).email); }
 function custRec(p){ var n = low(p.client || p.customer); return (crm().customers || window._graycoCustomers || []).find(function(c){ return c && n && low(c.name || c.company) === n; }) || {}; }
-function message(p, url){ return 'Hi ' + (first(p.client) || 'there') + ', this is ' + (first(me()) || 'your Project Manager') + ' with GrayCo. Here is your GrayCo Portal, your own project page: progress and updates, job photos, every document and your payments, all in one place. No app or password needed: ' + url; }
+function message(p, url){ return 'Hi ' + (first(p.client) || 'there') + ', this is ' + (first(me()) || 'your Project Manager') + ' with GrayCo. Here is your GrayCo Portal, your own project page: progress and updates, job photos, every document and your payments, all in one place. Open it here: ' + url + ' — or sign in at portal.grayco-cs.com with your e-mail or mobile number. Your password is your first name: ' + (s(p.client).split(/\s+/)[0].replace(/[^A-Za-z0-9'-]/g, '') || 'your first name') + ' (you can change it after you sign in).'; }   /* patch CUSTPORTAL */
 function smsHref(p, url){ var ph = custPhone(p).replace(/[^0-9+]/g, ''); return 'sms:' + ph + '?&body=' + encodeURIComponent(message(p, url)); }
 function mailHref(p, url){ return 'mailto:' + encodeURIComponent(custEmail(p)) + '?subject=' + encodeURIComponent('Your GrayCo Portal') + '&body=' + encodeURIComponent(message(p, url)); }
 function sheet(id, title){
