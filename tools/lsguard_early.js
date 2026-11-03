@@ -68,6 +68,17 @@ try {
   }
 
   var G = W.__gcLsGuard = { events: [], count: 0, freed: 0, evicted: 0, refused: 0, viewHeld: 0, toasted: false, onEvent: null, tierOf: tierOf };
+  /* patch PERFSAFARI: while the iPhone / Safari lag detector asks (G.bigW = a size), each localStorage write of at least
+     that many characters is noted — name, size, when it started, how long it held the page (the last 30, and totals per
+     name, at most 20 names) — so a stall can be tied to storage churn. Off (0) everywhere else: one comparison per write. */
+  var PF = W.performance; function pnow(){ try { return PF.now(); } catch (e) { return Date.now(); } }
+  G.bigW = 0; G.writes = []; G.bigK = {};
+  function bigNote(k, n, t0){
+    try { var ms = Math.round(pnow() - t0), kk = String(k).slice(0, 60);
+      G.writes.push({ k: kk, n: n, ms: ms, t: t0 }); if (G.writes.length > 30) G.writes.shift();
+      var a = G.bigK[kk]; if (!a) { if (Object.keys(G.bigK).length >= 20) return; a = G.bigK[kk] = { n: 0, chars: 0, ms: 0 }; }
+      a.n++; a.chars += n; a.ms += ms; } catch (e) {}
+  }
 
   /* ── make room: the listed copies of a lower tier, biggest first, until the write fits ── */
   function relieve(key, val){
@@ -132,7 +143,8 @@ try {
     if (this !== LS) return nSet.apply(this, arguments);
     var key = String(k), isView = key === VIEWK;
     if (isView) { MEM.has = true; MEM.v = String(v); }
-    try { var r = nSet.apply(this, arguments); if (isView) ssView(MEM.v, true); return r; }
+    var bw = G.bigW && typeof v === 'string' && v.length >= G.bigW ? pnow() : -1;   /* patch PERFSAFARI */
+    try { var r = nSet.apply(this, arguments); if (isView) ssView(MEM.v, true); if (bw >= 0) bigNote(key, v.length, bw); return r; }
     catch (e) {
       if (busy || !isQuota(e)) throw e;
       var val = String(v), res = null;

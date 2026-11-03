@@ -72,6 +72,17 @@ try {
   }
 
   var G = W.__gcLsGuard = { events: [], count: 0, freed: 0, evicted: 0, refused: 0, viewHeld: 0, toasted: false, onEvent: null, tierOf: tierOf };
+  /* patch PERFSAFARI: while the iPhone / Safari lag detector asks (G.bigW = a size), each localStorage write of at least
+     that many characters is noted — name, size, when it started, how long it held the page (the last 30, and totals per
+     name, at most 20 names) — so a stall can be tied to storage churn. Off (0) everywhere else: one comparison per write. */
+  var PF = W.performance; function pnow(){ try { return PF.now(); } catch (e) { return Date.now(); } }
+  G.bigW = 0; G.writes = []; G.bigK = {};
+  function bigNote(k, n, t0){
+    try { var ms = Math.round(pnow() - t0), kk = String(k).slice(0, 60);
+      G.writes.push({ k: kk, n: n, ms: ms, t: t0 }); if (G.writes.length > 30) G.writes.shift();
+      var a = G.bigK[kk]; if (!a) { if (Object.keys(G.bigK).length >= 20) return; a = G.bigK[kk] = { n: 0, chars: 0, ms: 0 }; }
+      a.n++; a.chars += n; a.ms += ms; } catch (e) {}
+  }
 
   /* ── make room: the listed copies of a lower tier, biggest first, until the write fits ── */
   function relieve(key, val){
@@ -136,7 +147,8 @@ try {
     if (this !== LS) return nSet.apply(this, arguments);
     var key = String(k), isView = key === VIEWK;
     if (isView) { MEM.has = true; MEM.v = String(v); }
-    try { var r = nSet.apply(this, arguments); if (isView) ssView(MEM.v, true); return r; }
+    var bw = G.bigW && typeof v === 'string' && v.length >= G.bigW ? pnow() : -1;   /* patch PERFSAFARI */
+    try { var r = nSet.apply(this, arguments); if (isView) ssView(MEM.v, true); if (bw >= 0) bigNote(key, v.length, bw); return r; }
     catch (e) {
       if (busy || !isQuota(e)) throw e;
       var val = String(v), res = null;
@@ -1192,6 +1204,105 @@ try { new PerformanceObserver(function(l){ l.getEntries().forEach(function(e){
   if (LOAF.length > 40) LOAF.shift(); dirty = true;
 }); }).observe({ type: 'long-animation-frame', buffered: true }); } catch (e) {}
 
+/* patch PERFSAFARI: Safari / iPhone (and Firefox) have no 'longtask' / 'long-animation-frame' report, so 1-2 above never
+   fire there. Instead: a 100 ms heartbeat while the page is visible, plus a frame-gap check for 10 s after each tap / key /
+   scroll. A gap >= 300 ms longer than expected is a stall: it goes into lt (src 'hb') and stats like a long task, with the
+   screen, the last tap within 2 s (a short label, no personal data) and the large localStorage writes in those 2 s.
+   Hidden page / app in the background: stopped; a gap over 30 s (the phone slept): ignored. Chrome / Edge: not run.
+   localStorage gc_perfsafari = 'on' forces it, 'off' turns it off. */
+var HB = null;
+(function(){
+  var force = ''; try { force = localStorage.getItem('gc_perfsafari') || ''; } catch (e) {}
+  if (force === 'off') return;
+  var sup = null; try { sup = W.PerformanceObserver && W.PerformanceObserver.supportedEntryTypes; } catch (e) {}
+  if (force !== 'on' && sup && typeof sup.indexOf === 'function' && sup.indexOf('longtask') >= 0) return;   /* the browser reports long tasks itself */
+  var D = W.document, PF = W.performance, RAF = W.requestAnimationFrame, CI = W.clearInterval;
+  if (!D || typeof SI !== 'function') return;
+  function now(){ try { return PF.now(); } catch (e) { return Date.now(); } }
+  var INT = 100, FRAME = 17, OVER = 300, SLEEP = 30000, ACTW = 2000, RAFW = 10000, BIGW = 20000;
+  var iv = null, run = false, last = 0, fOn = false, fLast = 0, fUntil = 0, act = null, scr = -1e9, cur = null;
+  var LSG = W.__gcLsGuard; if (LSG && 'bigW' in LSG) LSG.bigW = BIGW;
+  var H = HB = { det: 'hb', since: new Date().toISOString(), n: 0, slept: 0, why: force === 'on' ? 'forced' : (sup ? 'no longtask' : 'no entry-type list') };
+  stats.det = 'hb';
+  function mask(t){ return s(t).replace(/\s+/g, ' ').trim().replace(/\S+@\S+/g, '@').replace(/\d/g, '#').slice(0, 24); }
+  function label(el){
+    try {
+      var first = el;
+      for (var i = 0; el && el.nodeType === 1 && i < 6; i++, el = el.parentElement) {
+        var a = el.getAttribute('data-a'); if (a) return 'a:' + mask(a);
+        var tg = el.tagName.toLowerCase(), r = el.getAttribute('role') || '';
+        if (tg === 'input' || tg === 'textarea' || tg === 'select') return tg + ':' + mask(el.getAttribute('name') || el.getAttribute('type') || '');
+        if (tg === 'button' || r === 'button' || r === 'tab' || r === 'menuitem') return tg + ':' + mask(el.getAttribute('aria-label') || el.getAttribute('title') || el.textContent);
+      }
+      if (first && first.nodeType === 1) { var c = s(first.getAttribute('class')).trim().split(/\s+/)[0]; return first.tagName.toLowerCase() + (first.id ? '#' + mask(first.id) : '') + (c ? '.' + mask(c) : ''); }
+    } catch (e) {}
+    return '';
+  }
+  var KIND = { pointerdown: 'tap', click: 'click', keydown: 'key', change: 'change' };
+  function onAct(ev){
+    try { act = { t: now(), l: KIND[ev.type] + (ev.type === 'keydown' ? '' : ' ' + label(ev.target)) }; } catch (e) {}
+    wake();
+  }
+  function add(ms, sg){ if (ms >= 1000) stats.n1s += sg; if (ms >= 3000) stats.n3s += sg; stats.totalMs += sg * ms; if (sg > 0 && ms > stats.worst) stats.worst = ms; }
+  function record(a, b, ms, via){
+    var e;
+    if (cur && a < cur.e) {                       /* the same stall, seen by the other check */
+      e = cur.rec; cur.e = Math.max(cur.e, b); if (e.via !== via) e.via = 'both';
+      if (ms > e.ms) { add(e.ms, -1); e.ms = ms; add(ms, 1); }
+      dirty = true; return;
+    }
+    e = { t: Math.round(a), ms: ms, v: view(), at: Date.now(), src: 'hb', via: via };
+    if (act && act.t >= a - ACTW && act.t <= b) { e.act = act.l; e.actMs = Math.round(a - act.t); }
+    if (scr >= a - ACTW && scr <= b) e.scr = 1;
+    try { if (LSG && LSG.writes && LSG.writes.length) {
+      var w = LSG.writes.filter(function(x){ return x.t >= a - ACTW && x.t <= b; }).sort(function(p, q){ return q.n - p.n; }).slice(0, 3)
+        .map(function(x){ return { k: s(x.k).slice(0, 40), n: x.n, ms: x.ms }; });
+      if (w.length) e.lsw = w; } } catch (x) {}
+    cur = { e: b, rec: e }; H.n++; add(ms, 1);
+    LT.push(e);
+    if (ms < LIM) { var sm = 0, i0 = -1; for (var i = 0; i < LT.length; i++) if (LT[i].ms < LIM) { sm++; if (i0 < 0) i0 = i; }
+      if (sm > 20) LT.splice(i0, 1); }          /* at most 20 short (< 1 s) ones: they never push the >= 1 s ones out of the report */
+    if (LT.length > 60) LT.shift();               /* as today */
+    dirty = true;
+  }
+  function check(a, b, exp, via){
+    var gap = b - a; if (gap - exp < OVER) return;
+    if (gap > SLEEP) { H.slept++; return; }      /* the phone slept / the app was frozen: not lag */
+    record(a, b, Math.round(gap - exp), via);
+  }
+  function tick(){
+    if (!run) return;
+    if (D.hidden) { stop(); return; }
+    var t = now(); if (last) check(last, t, INT, 'tick'); last = t;
+  }
+  function frame(){
+    var t = now();
+    if (!run || t > fUntil) { fOn = false; fLast = 0; return; }
+    if (fLast) check(fLast, t, FRAME, 'frame'); fLast = t;
+    try { RAF.call(W, frame); } catch (e) { fOn = false; }
+  }
+  function wake(){
+    fUntil = now() + RAFW;
+    if (run && !fOn && typeof RAF === 'function') { fOn = true; fLast = 0; try { RAF.call(W, frame); } catch (e) { fOn = false; } }
+  }
+  function start(){ if (run || D.hidden) return; run = true; last = now(); fLast = 0; cur = null; if (!iv) iv = SI.call(W, tick, INT); }
+  function stop(){ run = false; last = 0; fLast = 0; cur = null; if (iv) { try { CI.call(W, iv); } catch (e) {} iv = null; } }
+  try {
+    ['pointerdown', 'click', 'keydown', 'change'].forEach(function(t){ W.addEventListener(t, onAct, { capture: true, passive: true }); });
+    D.addEventListener('scroll', function(){ scr = now(); if (now() > fUntil - RAFW + 500) wake(); }, { capture: true, passive: true });
+    D.addEventListener('visibilitychange', function(){ if (D.hidden) stop(); else start(); });
+    W.addEventListener('pagehide', stop); W.addEventListener('pageshow', start);
+    if (MOBILE || (navigator.maxTouchPoints || 0) > 1) { W.addEventListener('blur', stop); W.addEventListener('focus', start); }   /* app switcher / Control Center */
+  } catch (e) {}
+  start();
+  H.rep = function(){
+    var o = { det: H.det, since: H.since, n: H.n, slept: H.slept, why: H.why };
+    try { var k = LSG && LSG.bigK; if (k) o.lsw = Object.keys(k).sort(function(p, q){ return k[q].ms - k[p].ms || k[q].n - k[p].n; }).slice(0, 10)
+      .map(function(x){ return { k: x.slice(0, 40), n: k[x].n, chars: k[x].chars, ms: k[x].ms }; }); } catch (e) {}
+    return o;
+  };
+})();
+
 /* 3. sampling profile of the stalled seconds (Chromium / Edge, only when the page is served with Document-Policy: js-profiling) */
 var P = null, pStart = 0;
 function startProf(){ try { if (MOBILE || typeof W.Profiler !== 'function') return; P = new W.Profiler({ sampleInterval: 20, maxBufferSize: 8000 }); pStart = performance.now(); } catch (e) { P = null; } }
@@ -1256,6 +1367,8 @@ if (!DEV) { DEV = 'P' + Date.now().toString(36) + Math.random().toString(36).sli
 function report(){ return { dev: DEV, build: s(W.__GC_BUILD_ID__), at: new Date().toISOString(), view: view(), cores: navigator.hardwareConcurrency || 0,
   memGB: navigator.deviceMemory || 0, ua: UA.slice(0, 160), profiler: typeof W.Profiler === 'function', stats: stats, lt: LT.slice(-40), loaf: LOAF.slice(-25), prof: PROF.slice(-6),
   err: ERR, net: NET, ls: lsUse() }; }
+/* patch PERFSAFARI: the fallback's summary (only where it runs) */
+if (HB) { var report0 = report; report = function(){ var r = report0(); try { r.hb = HB.rep(); } catch (e) {} return r; }; }
 function signedIn(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.email && W.__GC_AUTH__.email()); } catch (e) { return false; } }
 function send(){
   if (!dirty || !signedIn() || typeof W._supaUpsert !== 'function') return;
