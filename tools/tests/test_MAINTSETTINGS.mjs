@@ -1,0 +1,36 @@
+/* patch MAINTSETTINGS — Maintenance → 📦 Plans & offers: one settings source for the plans, tiers, yearly discount, repair margin.
+   node tools/tests/test_MAINTSETTINGS.mjs — made-up numbers only. */
+import fs from 'fs';
+import path from 'path';
+import vm from 'vm';
+import { execFileSync } from 'child_process';
+import { createRequire } from 'module';
+import { fileURLToPath } from 'url';
+const require = createRequire(import.meta.url);
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+let pass = 0, fail = 0;
+const ok = (c, m, x) => { if (c) { pass++; console.log('  ✓ ' + m); } else { fail++; console.log('  ✗ ' + m + (x !== undefined ? ' — ' + JSON.stringify(x) : '')); } };
+const M = require(path.join(ROOT, 'netlify/functions/_lib/maint.js'));
+const d = M.settingsOf({});
+ok(d.yearlyDiscount === 10 && d.repairMargin === 60 && d.popularTier === 'silver', 'defaults: save 10% yearly, 60% repair margin, Silver most popular', [d.yearlyDiscount, d.repairMargin, d.popularTier]);
+ok(d.tiers.bronze.extraCalls === 0 && d.tiers.silver.extraCalls === 1 && d.tiers.gold.extraCalls === 2 && d.tiers.silver.discount === 10 && d.tiers.gold.discount === 20 && /drawing/.test(d.tiers.gold.note), 'tiers: extra calls 0 / 1 / 2, repair discount 0 / 10 / 20, the Gold perk');
+const e = M.settingsOf({ yearlyDiscount: 15, repairMargin: 55, popularTier: 'gold', tiers: { gold: { discount: 25, extraCalls: 3, note: 'Free gutter clean', bullets: ['A', '', 'B'] } }, changedBy: 'Owner', changedAt: '2026-11-03T10:00:00Z' });
+ok(e.yearlyDiscount === 15 && e.repairMargin === 55 && e.popularTier === 'gold' && e.tiers.gold.discount === 25 && e.tiers.gold.extraCalls === 3 && e.tiers.gold.note === 'Free gutter clean' && JSON.stringify(e.tiers.gold.bullets) === '["A","B"]' && e.changedBy === 'Owner', 'every field is kept when edited', e.tiers.gold);
+ok(M.repairPrice(100, 60) === 250 && M.marginAfter(60, 10) === 55.6 && M.marginAfter(60, 20) === 50 && M.marginAfter(60, 0) === 60, 'repair price = cost ÷ (1 − 60%) = $250; margin after 10% off 55.6%, after 20% off 50%');
+const tab = fs.readFileSync(path.join(ROOT, 'netlify/functions/_lib/maint-tab.js'), 'utf8');
+ok(/'yearly', 'yearlyDiscount', 'repairMargin', 'popularTier'\]/.test(tab) && /patch\.changedBy = s\(who/.test(tab), 'settings-set saves the new fields with "last changed by / at"');
+ok(/if \(!\(M\.num\(x\.price\) > 0\) && M\.num\(x\.cost\) > 0\) x = Object\.assign\(\{\}, x, \{ price: M\.repairPrice\(x\.cost, A\.settings\.repairMargin\) \}\)/.test(tab), 'a repair found on a plan visit with only its cost is priced at the target margin, then the tier discount');
+const lob = fs.readFileSync(path.join(ROOT, 'netlify/functions/lobby.js'), 'utf8');
+ok(/MS = M\.settingsOf\(mp\), T3 = MS\.tiers/.test(lob) && /arr\(MS\.addOns\)/.test(lob), 'the lobby TV reads the saved tiers and Handyman Day price (it read the built-in defaults / a wrong key)');
+const pp = fs.readFileSync(path.join(ROOT, 'netlify/functions/portal-plus.js'), 'utf8'), pg = fs.readFileSync(path.join(ROOT, 'portal-plus.js'), 'utf8');
+ok(/bullets: x\.bullets \|\| \[\], popular: \(st\.popularTier \|\| 'silver'\) === k/.test(pp) && /popOf\(t\)/.test(pg) && /\(t\.bullets \|\| \[\]\)\.length \?/.test(pg), 'the customer portal\'s tier cards: the owner\'s bullets and ⭐ most popular');
+const src = pg.slice(pg.indexOf('function tierPrice(t){'), pg.indexOf('function priceOf(k){')); const ctx = { ui: { billing: 'yearly' } }; vm.createContext(ctx); vm.runInContext(src, ctx);
+ok(vm.runInContext('tierPrice({ monthly: 39, yearlyDiscount: 15 })', ctx) === 'from $397.80/yr · paid once a year: save 15%', 'the portal\'s yearly price follows the saved discount');
+const tmp = '/tmp/claude-0/-home-user/6a5b2b6b-8a4d-5505-9f82-62521adb6674/scratchpad/cp/ms_idx.html';
+execFileSync('git', ['-C', ROOT, 'show', 'origin/main:index.html'], { maxBuffer: 1 << 30 }).length && fs.writeFileSync(tmp, execFileSync('git', ['-C', ROOT, 'show', 'origin/main:index.html'], { maxBuffer: 1 << 30 }));
+const a1 = execFileSync('python3', [path.join(ROOT, 'tools/patch_MAINTSETTINGS.py'), tmp]).toString(), a2 = execFileSync('python3', [path.join(ROOT, 'tools/patch_MAINTSETTINGS.py'), tmp]).toString();
+ok(/applied/.test(a1) && /already patched/.test(a2), 'the CRM patch applies on main and is idempotent');
+const crm = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+ok(/data-tierx=/.test(crm) && /data-tierpop=/.test(crm) && /data-tierb=/.test(crm) && /data-yrdisc=/.test(crm) && /data-rmargin=/.test(crm) && /data-yr="/.test(crm) && /last changed/.test(crm), 'the card: extra calls, ⭐ popular, bullets, yearly discount + prices, repair margin, last changed');
+console.log((fail ? 'FAILED ' : 'OK ') + pass + '/' + (pass + fail));
+process.exit(fail ? 1 : 0);

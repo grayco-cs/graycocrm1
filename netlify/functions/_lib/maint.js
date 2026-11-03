@@ -181,7 +181,12 @@ function areaOf(addr){
   return { county: county, inArea: !!county, snowOk: county === 'Shelby, TN' || /bartlett/i.test(a), known: !!(z || county) };
 }
 function tiersOf(v){ const o = v && typeof v === 'object' ? v : {}; const out = {}; Object.keys(TIERS).forEach(function(k){ const x = o[k] && typeof o[k] === 'object' ? o[k] : {}, d = TIERS[k];
-  const dc = x.discount != null && s(x.discount) !== '' ? num(x.discount) : d.discount; out[k] = { name: d.name, discount: Math.max(0, Math.min(50, dc)), visits: s(x.visits || d.visits).slice(0, 200), priority: d.priority, note: d.note || '' }; }); return out; }
+  const dc = x.discount != null && s(x.discount) !== '' ? num(x.discount) : d.discount; out[k] = { name: d.name, discount: Math.max(0, Math.min(50, dc)), visits: s(x.visits || d.visits).slice(0, 200), priority: d.priority, note: x.note != null ? s(x.note).slice(0, 160) : (d.note || ''),
+    /* patch MAINTSETTINGS: extra service calls a year, the card's bullet list (one per line; empty = the standard lines) */
+    extraCalls: x.extraCalls != null && s(x.extraCalls) !== '' ? Math.max(0, Math.min(12, Math.round(num(x.extraCalls)))) : ({ bronze: 0, silver: 1, gold: 2 })[k], bullets: (Array.isArray(x.bullets) ? x.bullets : []).map(function(b){ return s(b).slice(0, 120); }).filter(Boolean).slice(0, 8) }; }); return out; }
+/* patch MAINTSETTINGS: a repair / service price from its cost at the target margin, and the margin left after a tier's discount */
+function repairPrice(cost, margin){ const m = Math.max(0, Math.min(90, num(margin))) / 100; return Math.round(num(cost) / (1 - m) * 100) / 100; }
+function marginAfter(margin, discount){ const m = num(margin) / 100, d = num(discount) / 100; return d >= 1 ? 0 : Math.round((1 - (1 - m) / (1 - d)) * 1000) / 10; }
 function tierOf(c){ const t = low(c && c.tier); return TIERS[t] ? t : 'bronze'; }
 function bestTier(list){ let b = 'bronze'; arr(list).forEach(function(c){ const t = tierOf(c); if (TIERS[t].priority < TIERS[b].priority) b = t; }); return b; }
 function discounted(price, tier, tiers){ const d = (tiers || tiersOf(null))[tierOf({ tier: tier })].discount; return { discount: d, net: Math.round(num(price) * (100 - d)) / 100 }; }
@@ -268,6 +273,11 @@ function settingsOf(v){
     monthly: (function(v){ const out = {}; ['residential', 'commercial'].forEach(function(m){ out[m] = {}; ['bronze', 'silver', 'gold'].forEach(function(k){ const x = v && v[m] && v[m][k]; out[m][k] = x != null && s(x) !== '' ? Math.max(0, num(x)) : MONTHLY[m][k]; }); }); return out; })(o.monthly),
     yearly: (function(v){ const out = {}; ['residential', 'commercial'].forEach(function(m){ out[m] = {}; ['bronze', 'silver', 'gold'].forEach(function(k){ const x = v && v[m] && v[m][k]; if (x != null && s(x) !== '' && num(x) > 0) out[m][k] = num(x); }); }); return out; })(o.yearly),   /* patch CAREYEARLY: an optional yearly tier price (else 12 × monthly less the yearly discount) */
     yearlyDiscount: o.yearlyDiscount != null && s(o.yearlyDiscount) !== '' ? Math.max(0, Math.min(50, num(o.yearlyDiscount))) : 10,   /* owner 11/03: paid once a year — save 10% */
+    /* patch MAINTSETTINGS (owner 11/03): "our goal for maintenance is to do the jobs at 60% margins on the services/work other than the
+       inspections/maintenance" — repairs / service work found on plan visits are priced cost ÷ (1 − margin), then the member's discount */
+    repairMargin: o.repairMargin != null && s(o.repairMargin) !== '' ? Math.max(0, Math.min(90, num(o.repairMargin))) : 60,
+    popularTier: /^(bronze|silver|gold)$/.test(s(o.popularTier)) ? s(o.popularTier) : 'silver',
+    changedBy: s(o.changedBy).slice(0, 80), changedAt: s(o.changedAt).slice(0, 40),
     areaDays: (function(v){ const out = {}; if (v && typeof v === 'object') Object.keys(v).slice(0, 30).forEach(function(k){ const n = parseInt(v[k], 10); if (n >= 0 && n <= 6) out[s(k).slice(0, 40)] = n; }); return out; })(o.areaDays),
     pamphletPhotos: (function(v){ const out = {}; if (v && typeof v === 'object') Object.keys(v).slice(0, 8).forEach(function(k){ out[k] = (Array.isArray(v[k]) ? v[k] : []).map(s).filter(function(r){ return /^sb:crm-files\/[A-Za-z0-9._\/-]+$/.test(r); }).slice(0, 3); }); return out; })(o.pamphletPhotos), updatedAt: s(o.updatedAt), by: s(o.by), saved: !!(o && o.plans) };
 }
@@ -321,4 +331,4 @@ function heardChannel(v){
 }
 function nextYear(iso, months){ const d = new Date(iso || Date.now()); if (isNaN(d)) return ''; d.setUTCMonth(d.getUTCMonth() + (months || 12)); return d.toISOString().slice(0, 10); }
 
-module.exports = { HANDYMAN_NOTE, HANDYMAN_TASKS, addonFits, MONTHLY, monthlyOf, ROUTE, routeArea, onAreaDay, commissionLines, commission, areaOf, AREA, ADDONS, planVisits, TIERS, tiersOf, tierOf, bestTier, discounted, templatesOf, nextFrom, priorityList, matchPriority, digits, CATALOG_V, FREQS, FREQ_N, marketOf, firstVisit, freqOf, freqLabel, billsPerYear, plainIncludes, PLANS_KEY, LIST_KEY, HEARD_KEY, DEFAULT_PLANS, HEARD_OPTS, settingsOf, plansFor, eligible, workOf, groupOf, contractsFor, offerLine, heardNorm, heardChannel, nextYear, num };
+module.exports = { repairPrice, marginAfter, HANDYMAN_NOTE, HANDYMAN_TASKS, addonFits, MONTHLY, monthlyOf, ROUTE, routeArea, onAreaDay, commissionLines, commission, areaOf, AREA, ADDONS, planVisits, TIERS, tiersOf, tierOf, bestTier, discounted, templatesOf, nextFrom, priorityList, matchPriority, digits, CATALOG_V, FREQS, FREQ_N, marketOf, firstVisit, freqOf, freqLabel, billsPerYear, plainIncludes, PLANS_KEY, LIST_KEY, HEARD_KEY, DEFAULT_PLANS, HEARD_OPTS, settingsOf, plansFor, eligible, workOf, groupOf, contractsFor, offerLine, heardNorm, heardChannel, nextYear, num };

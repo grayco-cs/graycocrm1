@@ -254,7 +254,7 @@ async function build(doc, offersDoc, opts){
     if (o._pp) { o.people = o._pp.map(function(pp){ const ph = U(pp.ph); return { name: pp.name, role: pp.role, u: ph ? ph.u : '' }; }); delete o._pp; }
   });
   /* the maintenance tiers (what each includes — never a price that is not set) and the Handyman Day */
-  const T3 = M.TIERS || {}, mp = obj(data.gc_maint_plans);
+  const mp = obj(data.gc_maint_plans), MS = M.settingsOf(mp), T3 = MS.tiers || M.TIERS || {};   /* patch MAINTSETTINGS: the saved tiers (Maintenance → 📦 Plans & offers), not the defaults */
   const tiers = ['bronze', 'silver', 'gold'].filter(function(k){ return T3[k]; }).map(function(k){
     const t = T3[k], items = [s(t.visits)];
     if (+t.discount > 0) items.push(Math.round(+t.discount) + '% off repairs');
@@ -262,7 +262,7 @@ async function build(doc, offersDoc, opts){
     return { k: k, name: s(t.name), items: items.map(function(x){ return C.text(x, 80); }).filter(Boolean) };
   });
   let hm = arr(M.ADDONS).filter(function(a){ return a.id === 'handyman'; })[0] || null;
-  const hmOver = arr(mp.addons).filter(function(a){ return a && a.id === 'handyman'; })[0]; if (hmOver) hm = Object.assign({}, hm || {}, hmOver);
+  const hmOver = arr(MS.addOns).concat(arr(mp.addons)).filter(function(a){ return a && a.id === 'handyman'; })[0];   /* patch MAINTSETTINGS: the saved add-ons are 'addOns' */ if (hmOver) hm = Object.assign({}, hm || {}, hmOver);
   const handyman = hm && hm.priceSet === true && +hm.price > 0 ? { price: '$' + (+hm.price).toFixed(2).replace(/\.00$/, ''), note: 'Materials billed separately' } : {};
   handyman.tasks = arr(M.HANDYMAN_TASKS).filter(function(x){ return !HVAC.test(x) && !/filter|pressure[-\s]?wash/i.test(x); }).map(function(x){ return C.text(x, 60); }).filter(Boolean);
   /* GrayCo Care: the residential plans of the catalog GrayCo itself performs (no HVAC, no pressure washing, no sub-performed plan) */

@@ -131,7 +131,8 @@ function make(ctx){
     if (a === 'settings-set') {
       if (!staffOk) return { status: 403, out: { ok: false, error: 'Only an admin or the office changes these.' } };
       const v = body.set && typeof body.set === 'object' ? body.set : {}, patch = {};
-      ['tiers', 'products', 'unitPrices', 'templates', 'letters', 'addOns', 'pamphletPhotos', 'handymanTasks', 'monthly', 'areaDays'].forEach(function(k){ if (v[k] !== undefined) patch[k] = v[k]; });
+      ['tiers', 'products', 'unitPrices', 'templates', 'letters', 'addOns', 'pamphletPhotos', 'handymanTasks', 'monthly', 'areaDays', 'yearly', 'yearlyDiscount', 'repairMargin', 'popularTier'].forEach(function(k){ if (v[k] !== undefined) patch[k] = v[k]; });   /* patch MAINTSETTINGS: + yearly prices / discount, repair margin, the popular tier */
+      patch.changedBy = s(who && (who.name || who.email)); patch.changedAt = nowIso();   /* patch MAINTSETTINGS: last changed by / at */
       if (v.commercialFirst !== undefined) patch.commercialFirst = v.commercialFirst === true;
       const st = await saveSettings(A, patch, who);
       return st ? { status: 200, out: { ok: true, settings: st } } : { status: 502, out: { ok: false, error: 'Could not save.' } };
@@ -195,7 +196,7 @@ function make(ctx){
       const text = clip(body.text, 1800), photos = cleanRefs(body.photos), at = nowIso();
       if (!text && !photos.length && !arr(body.repairs).length) return { status: 400, out: { ok: false, error: 'Write what was done (and add photos).' } };
       const tier = M.bestTier(A.list.filter(function(c){ return s(c.pid) === s(c0.pid) && c.status === 'signed'; }));
-      const repairs = arr(body.repairs).slice(0, 12).map(function(x){ const d = M.discounted(x.price, tier, A.settings.tiers); return { id: rid('rp_'), desc: clip(x.desc, 300), price: money(x.price), discount: d.discount, net: d.net, photo: cleanRefs(x.photo ? [x.photo] : [])[0] || null, at: at, status: 'waiting' }; }).filter(function(x){ return x.desc && x.price > 0; });
+      const repairs = arr(body.repairs).slice(0, 12).map(function(x){ if (!(M.num(x.price) > 0) && M.num(x.cost) > 0) x = Object.assign({}, x, { price: M.repairPrice(x.cost, A.settings.repairMargin) });   /* patch MAINTSETTINGS: priced from its cost at the target margin */ const d = M.discounted(x.price, tier, A.settings.tiers); return { id: rid('rp_'), desc: clip(x.desc, 300), price: money(x.price), discount: d.discount, net: d.net, photo: cleanRefs(x.photo ? [x.photo] : [])[0] || null, at: at, status: 'waiting' }; }).filter(function(x){ return x.desc && x.price > 0; });
       let postId = '';
       if (text || photos.length) {
         const q = await C().autaiQueue({ kind: 'portal_post', projectId: s(c0.pid), text: '🛠 ' + s(c0.planName) + ' — visit ' + at.slice(0, 10) + (text ? '\n\n' + text : ''), photos: photos, by: who.name || who.email, source: 'maintenance' }, who);
