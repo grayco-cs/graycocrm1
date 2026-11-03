@@ -189608,7 +189608,7 @@ function route(){
 
 function tick(){ try { hookItems(); route(); } catch (e) {} }
 tick(); RI.call(W, tick, 2000);
-W._gcSubInv = { take: take, post: post, load: load, items: items, place: place, dismiss: dismiss, open: open, route: route, routeGroups: routeGroups, state: function(){ return S; } };
+W._gcSubInv = { take: take, post: post, add: addInvoice,   /* patch BULKDROP2: a person's drop books its own invoice */ load: load, items: items, place: place, dismiss: dismiss, open: open, route: route, routeGroups: routeGroups, state: function(){ return S; } };
 try { console.log('[GC] 🧾 Sub invoices e-mailed in are booked by themselves; job-cost approvals: PM → office after 24 h; sooner from 👷 PM approvals (patch SUBINV, APOFFICE2)'); } catch (e) {}
 })();
 </script>
@@ -190335,6 +190335,14 @@ function process(list, done){
   P.booked += n;
   return n;
 }
+/* patch BULKDROP2: ONE record a person dropped (📥 Drop invoices & receipts) — booked now when it is certain. The ⚡ switch
+   "E-mailed invoice auto-booking" is for what arrives by itself (process() above); a person's drop is not held by it. */
+function bookOne(rec, by){
+  var si = rec && rec.si; if (!si || isDone(rec, P.done) || si.route !== 'book' || !si.job || !proj(si.job.pid)) return null;
+  if (rec.kind === 'receipt' || si.payee === 'supplier') return bookExpense(rec, { pid: si.job.pid, why: si.job.why, by: by });
+  if (rec.kind === 'client_invoice' || si.payee === 'client') return bookClientInvoice(rec, { pid: si.job.pid, by: by });
+  return null;
+}
 /* patch SUBINV keeps the SUB invoices; suppliers / receipts / client invoices are booked here instead (an Expense / a client invoice) */
 function hookSubInv(){
   var S = W._gcSubInv; if (!S || S.__gcMoney) return;
@@ -190586,7 +190594,7 @@ function tick(){
 }
 tick(); RI.call(W, tick, 2500); later(function(){ loadRules(); }, 4000);
 W._gcMoneyRepaint = function(){ try { paint(true); } catch (e) {} };   /* patch STMTPDF */
-W._gcMoney = { parseStatement: parseStatement, suggest: suggest, vendorKey: vendorKey, catFor: catFor, rules: function(){ return R.rules; }, loadRules: loadRules, learn: learn, needs: needs, openNeeds: openNeeds, openImport: openImport, process: process, mkSpend: mkSpend, state: function(){ return P; }, SETUP: SETUP };
+W._gcMoney = { parseStatement: parseStatement, suggest: suggest, vendorKey: vendorKey, catFor: catFor, rules: function(){ return R.rules; }, loadRules: loadRules, learn: learn, needs: needs, openNeeds: openNeeds, openImport: openImport, process: process, bookOne: bookOne,   /* patch BULKDROP2 */ mkSpend: mkSpend, state: function(){ return P; }, SETUP: SETUP };
 try { console.log('[GC] 📥 Needs a job · 💳 card statement import with vendor rules · e-mailed supplier bills / receipts / QuickBooks invoices booked · marketing spend from the books (patch MONEY)'); } catch (e) {}
 })();
 </script>
@@ -191826,6 +191834,25 @@ function inject(rec){
 /* patch SUBINV / MONEY book what is certain (one pass for many files) */
 var bookT = null;
 function bookSoon(){ if (bookT) return; bookT = later(function(){ bookT = null; try { if (W._gcMoneyMail && W._gcMoneyMail.makeInvoices) W._gcMoneyMail.makeInvoices(); } catch (e) { try { console.warn('[GC] bulk drop: booking', e); } catch (x) {} } }, 400); }
+/* patch BULKDROP2: the person's drop books THIS file now (owner: "nothing automatic unless I turn it on" — a person's action still
+   works). Not held by the ⚡ "E-mailed invoice auto-booking" switch, and it books nothing else that waits. false = the CRM is
+   still loading: the file waits and tries again. */
+function bookMine(rec, out){
+  try {
+    if (out.k === 'subinv') {
+      if (typeof W._setInvoices !== 'function' || typeof W._setExpenses !== 'function' || !W._gcSubInv || !W._gcSubInv.add) return false;
+      var tk = W._gcSubInv.take(rec, { invoices: arr(crm().invoices), expenses: arr(crm().expenses) });
+      if (tk && tk.inv) W._gcSubInv.add(tk.inv);
+      return true;
+    }
+    if (out.k === 'expense') {
+      if (typeof W._setExpenses !== 'function' || !W._gcMoney || !W._gcMoney.bookOne) return false;
+      W._gcMoney.bookOne(rec, myName());
+      return true;
+    }
+  } catch (e) { try { console.warn('[GC] bulk drop: booking', e); } catch (x) {} return false; }
+  return true;
+}
 function guessOf(si){ var j = si.job && proj(si.job.pid) ? si.job : arr(si.top).filter(function(x){ return proj(x.pid); })[0]; return j ? { pid: s(j.pid), name: s(j.name || (proj(j.pid) || {}).name), conf: num(j.conf), why: s(j.why) } : null; }
 function dupTarget(d){
   if (!d) return null;
@@ -191893,7 +191920,7 @@ function stepPlace(it){
       var c = hit.c, x = c.x;
       return finish(it, { k: 'attached', src: c.src, why: 'attached to the ' + srcLabel(c) + ' line: ' + s(x.vendor || x.payee || x.sub || x.desc).slice(0, 50) + ' · ' + money(c.amt) + ' · ' + ymd(c.date) + ' (' + hit.why + ')', link: linkFor(c.t, x) });
     }
-    if (hit && hit.ambiguous) it.note = hit.ambiguous + ' lines fit — not attached';
+    if (hit && hit.ambiguous) { it.note = hit.ambiguous + ' lines fit — not attached'; it.amb = hit.ambiguous; }   /* patch BULKDROP2: kept for the row's why */
   }
   return ensurePulled().then(function(){
     var read = it.read || {};
@@ -191912,8 +191939,10 @@ function stepPlace(it){
     inject(rec);
     var out = outcomeOf(rec, it);
     if (!it.read && out.k === 'needs') out.why = (it.readErr ? it.readErr + ' — ' : 'not read — ') + 'open it and pick the job';
+    if (out.k === 'needs' && it.amb && !/duplicate/i.test(out.why)) out.why = 'possibly a duplicate: ' + it.amb + ' lines fit (same vendor and amount) — not attached; ' + out.why;   /* patch BULKDROP2 */
     if (out.k === 'dup') { try { if (W._gcMoneyDone) W._gcMoneyDone(rec.id, { done: true, skip: true, why: 'duplicate (bulk drop)', at: nowIso(), by: myName() }); } catch (e) {} }
-    else bookSoon();
+    else if (!bookMine(rec, out)) { it.placeTries = (it.placeTries || 0) + 1; it.wait = Date.now() + Math.min(60000, 5000 * it.placeTries); it.note = 'waiting — the CRM is still loading'; return save(it); }   /* patch BULKDROP2: booked here, by the person's drop */
+    if (out.k !== 'dup') bookSoon();   /* patch BULKDROP2: still refreshes SUBINV / MONEY's lists (📥 Needs a job shows the new ones); its own booking stays behind the ⚡ switch */
     return finish(it, out);
   });
 }
