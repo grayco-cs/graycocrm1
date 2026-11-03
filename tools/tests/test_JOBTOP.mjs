@@ -22,7 +22,7 @@ const html = fs.readFileSync(path.join(build, 'index.html'), 'utf8');
 ok(html.includes('__GC_PATCH_JOBTOP__') && html.indexOf('id="gc-patch-jobtop"') < html.indexOf('__GC_PATCH_Q__'), 'JOBTOP is in, before the first job-page injector (patch Q)');
 ok((html.match(/window\._gcJobBox\(/g) || []).length >= 11, 'the 11 desk injectors use the one container (window._gcJobBox)', (html.match(/window\._gcJobBox\(/g) || []).length);
 ok(!/var root = back\.parentElement, have = root\.querySelector\(':scope > \.(gcja-bar|gc-a8-bar|gcx9-bars|gcx10-jobbar|gcgp-bar|gca11-jobbar|gcx12-bar|gcsrc-line\[data-desk\]|gcsp-bar)'\)/.test(html), 'no injector puts its bar next to the job header any more');
-ok(['window._gcCCLinkPaint = showOnJob', 'window._gcYearBarPaint = bar', 'window._gcAp3DeskJob = deskJob', 'window._gcJobMsgInject = inject', 'window._gcPhotosDeskBtn'].every(x => html.includes(x)), 'the header\'s late buttons can be painted when the header first appears');
+ok(['window._gcCCLinkPaint = showOnJob', 'window._gcYearBarPaint = bar', 'window._gcAp3DeskJob = deskJob', 'window._gcJobMsgInject = inject', 'window._gcPhotosDeskBtn', 'window._gcWordDocPaint = addBtn'].every(x => html.includes(x)), 'the header\'s late buttons can be painted when the header first appears');
 ok(html.includes('"data-gc-sharephotos":j.id') && html.includes("mk('share', '🔗', 'Share photos')") && html.includes('report: openReport'), '🔗 Share photos: desk Photos tab, Field tile, _gcPhotos.report');
 
 const { computer, sleep, waitFor, resetCloud, ACCOUNTS, cset, cget } = await import(pathToFileURL(HARNESS).href);

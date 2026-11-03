@@ -618,6 +618,7 @@ var ROWS = [
   ['appt_confirmations', 'cust', 'A', 0, 0, 'page', 'Appointment confirmations', 'Confirmation on a schedule change, reminder at 4 PM the day before.'],
   ['thank_you_queue', 'cust', 'C', 0, 0, 'page', 'Job-complete thank-you', 'Fully paid → thank-you on ✅ Approvals; commission unlocked flag.'],
   ['proposal_maker', 'cust', 'C', 0, 0, 'page', 'Proposal maker', 'In the background (after load, every 5 minutes, after an estimate is saved) makes the GrayCo proposal PDF for each finished estimate, stores it on the job (a bidding job if it has none) and puts ONE "Put proposal in customer portal + send" item on ✅ Approvals. Sends nothing by itself. OFF: nothing runs in the background; "📨 Send for approval now", uploads and 📤 Send estimate still make it.'],
+  ['expense_job_autofill', 'rec', 'C', 0, 0, 'page', 'Put card charges on a job by PO in the memo', 'Every minute (every 5 s while the CRM loads) an expense on no job whose memo carries exactly one job\'s PO is put on that job. OFF: nothing moves; the job\'s Expenses tab lists it under "🔗 Unmatched expenses" to link with one tap.'],
   ['supplier_po_drafts', 'rec', 'C', 0, 0, 'page', 'Supplier order drafts', 'After an estimate or its job is signed, drafts one purchase order per supplier from its material lines and puts each PO e-mail on ✅ Approvals. OFF: nothing in the background; "🚚 Draft supplier orders" still makes them.'],
   /* ── sub sends (A) ── */
   ['sub_schedule_texts', 'sub', 'A', 0, 0, 'server', 'Sub schedule texts', '6 PM the evening before and about 1 h before each start.'],
@@ -83306,6 +83307,7 @@ window._gcForceFixSchedule = async function(silent){
       gp.parentNode.insertBefore(b, gp.nextSibling);
     }catch(e){}
   }
+  window._gcWordDocPaint = addBtn;   /* patch JOBTOP: the header's 📝 Word Doc (it came ~15 s late and widened the right column) */
   setInterval(addBtn, 2000);
   console.log('[GC] Word doc estimate export ready.');
 })();
@@ -122056,12 +122058,12 @@ function byName(n){
   ((W._crm && W._crm.projects) || []).forEach(function(p){ if (!p || !p.id || s(p.name).trim() !== n) return; if (best) tie = true; else best = p; });
   return best && !tie ? best : null;
 }
-function dress(){
+function dress(urgent){
   if (D.hidden || D.documentElement.classList.contains('_fieldmode')) return;
   var now = Date.now();
   /* already dressed: this header (same element, same job) has its 📸 row */
   if (DH && DH.isConnected && s(DH.textContent).trim() === DNAME) { var cc = D.getElementById('_gcCCLinkRow'); if (cc && cc.parentElement === DH.parentElement && cc.getAttribute('data-pid') === DRESSED) return; }
-  if (now - MISS < 120) { if (!MISS_T) MISS_T = ST.call(W, function(){ MISS_T = null; MISS = 0; dressSoon(); }, 130); return; }
+  if (!urgent && now - MISS < 120) { if (!MISS_T) MISS_T = ST.call(W, function(){ MISS_T = null; MISS = 0; dressSoon(); }, 130); return; }
   var H = jobHeader();
   if (!H) { MISS = now; return; }
   var name = s(H.h1.textContent).trim();
@@ -122074,7 +122076,7 @@ function dress(){
   try { if (sessionStorage.getItem('grayco_openpid') !== id) sessionStorage.setItem('grayco_openpid', id); } catch (e) {}   /* what the app writes a moment later */
   if (D.querySelector('h1') !== H.h1) { MISS = now; return; }   /* the 📸 row goes under the page's first h1: only when that is this job's */
   DRESSED = id; DNAME = name; DH = H.h1; DRESS_AT = now;
-  ['_gcYearBarPaint', '_gcCCLinkPaint', '_gcAp3DeskJob', '_gcJobMsgInject', '_gcPhotosDeskBtn'].forEach(function(k){ try { if (typeof W[k] === 'function') W[k](); } catch (e) {} });
+  ['_gcYearBarPaint', '_gcWordDocPaint', '_gcCCLinkPaint', '_gcAp3DeskJob', '_gcJobMsgInject', '_gcPhotosDeskBtn'].forEach(function(k){ try { if (typeof W[k] === 'function') W[k](); } catch (e) {} });
 }
 /* ── desk: ROLEAPPS' Desk dock on a short screen (the owner's laptop at 125 %: about 1093 × 480) ──
    The floating dock (Home · Jobs · Approvals · Photos · More, ~87 px tall, centered at the bottom) covered the job
@@ -122108,9 +122110,21 @@ dockCss();
 W.addEventListener('resize', function(){ try { dockPlace(); } catch (e) {} });
 SI.call(W, function(){ try { dockPlace(); } catch (e) {} }, 700);
 try { new MO(function(ms){ for (var i = 0; i < ms.length; i++) for (var j = 0; j < ms[i].addedNodes.length; j++) if (ms[i].addedNodes[j].id === 'gc-ra-dock') { dockPlace(); return; } }).observe(D.body || D.documentElement, { childList: true }); } catch (e) {}
-function dressSoon(){ if (DQ) return; DQ = true; Promise.resolve().then(function(){ DQ = false; try { dress(); } catch (e) { warn(e); } }); }
-try { var dmo = new MO(function(){ dressSoon(); }); dmo.observe(D.documentElement, { childList: true, subtree: true }); } catch (e) { warn(e); }
-SI.call(W, dressSoon, 1000);
+/* a burst that draws or changes an h1 (a job header appearing, or the next job's name in it) is looked at at once — the
+   120 ms rest after a miss (a list page redrawing) must never let a new header paint without its buttons */
+var URG = false;
+function urgentRecs(ms){
+  for (var i = 0; i < (ms ? ms.length : 0); i++) {
+    var r = ms[i], tg = r.target; if (tg && tg.nodeType === 3) tg = tg.parentNode;
+    if (tg && tg.tagName === 'H1') return true;
+    var ad = r.addedNodes;
+    for (var j = 0; j < ad.length; j++) { var n = ad[j]; if (n.nodeType === 1 && (n.tagName === 'H1' || (n.firstElementChild && n.querySelector('h1')))) return true; }
+  }
+  return false;
+}
+function dressSoon(urgent){ if (urgent) URG = true; if (DQ) return; DQ = true; Promise.resolve().then(function(){ DQ = false; var u = URG; URG = false; try { dress(u); } catch (e) { warn(e); } }); }
+try { var dmo = new MO(function(ms){ dressSoon(urgentRecs(ms)); }); dmo.observe(D.documentElement, { childList: true, subtree: true, characterData: true }); } catch (e) { warn(e); }
+SI.call(W, function(){ dressSoon(false); }, 1000);
 W._gcJobTop = { box: function(){ return D.getElementById('gc-job-widgets'); }, settle: settle, fieldSum: fieldSum, dress: dress, dock: dockPlace };
 try { console.log('[GC] Job page: header → summary → tabs → tab content → job tools (patch JOBTOP) — _gcJobBox'); } catch (e) {}
 })();
@@ -179436,7 +179450,7 @@ function when(iso){ var t = Date.parse(iso || ''); if (!t) return ''; try { retu
 /* patch AUTOPANEL (coordinator 11/02): automations that act on what is waiting NOW when switched on (not on a clock) — the
    switch-on asks first and says how many items are waiting: the page counts the draws itself; otherwise the last
    "would have done N" the automation recorded while it was OFF */
-var STATE = { proposal_maker: 'estimates (proposal PDFs)', supplier_po_drafts: 'signed estimates (supplier orders)', cc_pct_sync: 'job % updates from CompanyCam', auto_mark_paid: 'invoices marked paid', job_stages: 'draw invoices / stage steps', legacy_progress_billing: 'progress draws', progress_autodraw: 'draw invoices', appt_confirmations: 'appointment messages', bid_result_emails: 'bid-result e-mails to GCs',
+var STATE = { expense_job_autofill: 'expenses to put on jobs', proposal_maker: 'estimates (proposal PDFs)', supplier_po_drafts: 'signed estimates (supplier orders)', cc_pct_sync: 'job % updates from CompanyCam', auto_mark_paid: 'invoices marked paid', job_stages: 'draw invoices / stage steps', legacy_progress_billing: 'progress draws', progress_autodraw: 'draw invoices', appt_confirmations: 'appointment messages', bid_result_emails: 'bid-result e-mails to GCs',
   auto_100: 'jobs set to 100 %', closeout_autopilot: 'job closeouts', mailed_invoice_booking: 'e-mailed invoices / receipts', ms_tax_add: 'Mississippi estimates', lead_auto_assign: 'held leads', companycam_new_jobs: 'new CompanyCam projects' };
 function drawsWaiting(){
   try {
@@ -186271,7 +186285,10 @@ function patchList(setter, id, fields, after){
 }
 function link(kind, id, pid, how){
   var job = jobById(pid); if (!job) return false;
-  var f = { pid: pid, jobLinkedAt: new Date().toISOString(), jobLinkedBy: s(me().name), jobLinkedHow: how || 'manual' };
+  /* __GC_PATCH_AUTOPANEL5__ */ /* the link stamps updatedAt: every list merge keeps the newer copy (a tie keeps the INCOMING one), so an
+     unlinked copy from another computer can no longer undo it */
+  var _at = new Date().toISOString();
+  var f = { pid: pid, jobLinkedAt: _at, jobLinkedBy: s(me().name), jobLinkedHow: how || 'manual', updatedAt: _at };
   var ok = false, done = function(){ log({ kind: kind, id: id, to: pid, toLabel: label(job), how: how || 'manual' }); };
   if (kind === 'expenses') ok = patchList(W._setExpenses, id, f, done);
   else if (kind === 'invoices') ok = patchList(W._setInvoices, id, Object.assign(f, { po: job.autoPO || '' }), done);
@@ -186308,7 +186325,7 @@ function reasonFor(job, tab){
     case 'expenses':
       sug = suggest(job, 'expenses');
       if (c.expenses && !sug.length) return null;
-      return { tab: tab, empty: !c.expenses, text: (c.expenses ? '' : 'No expenses yet. ') + 'The office puts expenses and receipts on the job (💳 Enter expenses) or imports the QuickBooks export into the 📥 Expense inbox; a QuickBooks memo with PO ' + po + ' goes on this job by itself. Card charges wait in 🔗 Match to Jobs.', fix: sug.length ? { k: 'expenses', t: '🔗 Unmatched expenses that look like this job (' + sug.length + ')' } : null, more: [{ k: 'matchall', t: '🔗 Match to Jobs (all)' }] };
+      return { tab: tab, empty: !c.expenses, text: (c.expenses ? '' : 'No expenses yet. ') + 'The office puts expenses and receipts on the job (💳 Enter expenses) or imports the QuickBooks export into the 📥 Expense inbox; a QuickBooks memo with PO ' + po + ' ' + (W._gcAutoOn && W._gcAutoOn('expense_job_autofill') ? 'goes on this job by itself' : 'is listed below to link (⚡ Automations: putting it on the job by itself is OFF)') + '. Card charges wait in 🔗 Match to Jobs.', fix: sug.length ? { k: 'expenses', t: '🔗 Unmatched expenses that look like this job (' + sug.length + ')' } : null, more: [{ k: 'matchall', t: '🔗 Match to Jobs (all)' }] };
     case 'projectinvoices':
       sug = suggest(job, 'invoices');
       if (c.invoices && !sug.length) return null;
@@ -186518,13 +186535,21 @@ function autofill(){
     FILLED['d' + d.id] = (FILLED['d' + d.id] || 0) + 1;   /* tried again next round if the list was not loaded yet (12 tries, a minute) */
     if (link('docs', d.id, pid, 'auto: estimate ' + (e.name || e.id))) n++;
   });
-  /* an unlinked expense whose memo carries exactly ONE job's PO → that job */
+  /* an unlinked expense whose memo carries exactly ONE job's PO → that job — patch AUTOPANEL5: only while ⚡ "Put card
+     charges on a job by PO in the memo" (expense_job_autofill) is ON; OFF → "held", it waits in 🔗 Unmatched expenses */
+  var dueE = [];
   expenses().forEach(function(x){
     if (s(x.pid) || x.overhead || (FILLED['e' + x.id] || 0) >= 12) return;
     var hits = posIn(textOf(x)); if (hits.length !== 1) return;
-    FILLED['e' + x.id] = (FILLED['e' + x.id] || 0) + 1;
-    if (link('expenses', x.id, hits[0].id, 'auto: PO ' + poOf(hits[0]))) n++;
+    dueE.push({ x: x, job: hits[0] });
   });
+  if (dueE.length && (W._gcAutoGate ? W._gcAutoGate('expense_job_autofill', { n: dueE.length, sample: dueE.slice(0, 3).map(function(d){
+      return (s(d.x.vendor || d.x.payee || d.x.desc || d.x.description) || s(d.x.id)) + ' ' + money(d.x.amt != null ? d.x.amt : d.x.amount) + ' → PO ' + poOf(d.job); }) }) : false)) {
+    dueE.forEach(function(d){
+      FILLED['e' + d.x.id] = (FILLED['e' + d.x.id] || 0) + 1;
+      if (link('expenses', d.x.id, d.job.id, 'auto: PO ' + poOf(d.job))) n++;
+    });
+  }
   return n;
 }
 
