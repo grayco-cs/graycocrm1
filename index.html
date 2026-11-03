@@ -5291,7 +5291,7 @@ window.__GC_LIVE=function(key, v){
   return v;
 };
 </script>
-<!-- GrayCo CRM Build: 33.163-2026-11-03-r17q12 -->
+<!-- GrayCo CRM Build: 33.163-2026-11-03-r17q13 -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6239,7 +6239,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.163-2026-11-03-r17q12");
+  console.log("[GC] Build 33.163-2026-11-03-r17q13");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6287,7 +6287,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.163-2026-11-03-r17q12"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.163-2026-11-03-r17q13"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -85750,6 +85750,15 @@ var money=P.money, esc=P.esc, n2=P.n2, r2=P.r2, CSS=P.CSS, tile=P.tile, fld=P.fl
 /* ── employee list ───────────────────────────────────────────────────────── */
 window._gcRenderEmployeeList = async function(body, S, render){
   var profs=await P.profiles(), all=await P.runs(), yr=String(new Date().getFullYear());
+  /* patch EMPLIST: only current people — not anyone inactive or let go, not the shared Office sign-in */
+  var _fu={}; try{ _fu=JSON.parse(localStorage.getItem('gc_fired_users')||'{}')||{}; }catch(_e){}
+  var _hid=profs.filter(function(p){ var nm=String(p.name||'').trim().toLowerCase(), em=String(p.email||'').trim().toLowerCase();
+    var u=P.users().find(function(x){ return x.id===p.userId || x.name===p.name; })||null;
+    return p.active===false || _fu[nm] || (em && _fu[em]) || nm==='office' || (u && (u.active===false || u.shared===true || u.sharedLogin===true)); });
+  if(!S._empShowAll) profs=profs.filter(function(p){ return _hid.indexOf(p)<0; });
+  setTimeout(function(){ try{ if(!_hid.length || body.querySelector('[data-emp-showall]')) return; var a=document.createElement('a'); a.href='#'; a.setAttribute('data-emp-showall','1');
+    a.style.cssText='display:inline-block;margin-top:8px;font-size:11px;color:#64748b;'; a.textContent=S._empShowAll?'Hide former / shared':'Show '+_hid.length+' former / shared';
+    a.onclick=function(ev){ ev.preventDefault(); S._empShowAll=!S._empShowAll; render(); }; body.appendChild(a); }catch(_e2){} }, 0);
   var rows=profs.map(function(p){
     var ytd=P.ytdFor(all, p.userId||p.name, yr);
     var u=P.users().find(function(x){ return x.id===p.userId || x.name===p.name; })||{};
@@ -212499,7 +212508,7 @@ W._gcPastPayOpen = async function(){
   var emps=w2Employees(profs, users);
   function empOf(name){ return emps.filter(function(e){ return low(e.name)===low(name); })[0]||null; }
   var lq=lastQ(), qs=lq.y+'-'+pad((lq.q-1)*3+1)+'-01', qe=new Date(lq.y, lq.q*3, 0), qeS=qe.getFullYear()+'-'+pad(qe.getMonth()+1)+'-'+pad(qe.getDate());
-  var rows=readDraft()||[];
+  var rows=(readDraft()||[]).filter(function(r){ return !(r && r._fromRun); });   /* patch PASTPAYEDIT: loaded checks are reloaded fresh, never from an old draft */
   var fedCache={}, stCache={}, sutaCache={};
   function ytdBase(k, pd){ try{ var y=p.ytdFor(runs, k, pd.slice(0,4), pd); return { ss:y.ssWages, med:y.medWages, futa:y.gross, suta:(y.sutaBy&&y.sutaBy.TN!=null)?y.sutaBy.TN:y.gross }; }catch(e){ return {}; } }
   async function fedFor(r){
@@ -212537,6 +212546,7 @@ W._gcPastPayOpen = async function(){
     +'<div style="font-size:11px;font-weight:700;color:#64748b">EMPLOYEES<br>'+(emps.length?emps.map(function(e,i){ return '<label style="font-weight:600;color:#0f2440;margin-right:8px"><input type="checkbox" data-pp-emp="'+i+'" checked> '+esc(e.name)+'</label>'; }).join(''):'<span style="color:#b91c1c">No employees yet — add them in Payroll → Employees (name, pay type, W-4).</span>')+'</div>'
     +'<button data-pp="fill" style="'+BT+'background:#0f2440;color:#fff">Make weekly rows</button>'
     +'<button data-pp="add" style="'+BT+'border-color:#16a34a;color:#166534">+ Add a past check</button>'
+    +'<button data-pp="load" style="'+BT+'border-color:#2563eb;color:#1d4ed8">✏️ Edit saved checks</button>'
     +'<button data-pp="clear" style="'+BT+'color:#b91c1c">Clear all rows</button></div>'
     +'<div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;min-width:1560px"><thead><tr style="background:#f1f5f9">'
     +['Pay date','Period start','Period end','Employee','Hours','Gross','Commission','Federal withheld','Social Security / Medicare withheld','State tax (TN none · MS)','Other ded.','Net pay','Check #',''].map(function(h){ return '<th style="padding:6px 4px;font-size:10px;color:#64748b;text-transform:uppercase;text-align:left">'+h+'</th>'; }).join('')
@@ -212610,7 +212620,19 @@ W._gcPastPayOpen = async function(){
     if(rows.length && !confirm('Add '+nw.length+' rows to the '+rows.length+' already here?')) return;
     rows=rows.concat(nw); draw(); later(); };
   $('add').onclick=function(){ var l=rows[rows.length-1]; var d=l?l.payDate:firstFri(qs); rows.push({ payDate:d, from:addDays(d,-6), to:d, name:'', hours:'', gross:'', comm:'', fedMode:'calc', ficaMode:'calc', fed:'', ss:'', med:'', other:'', net:'', netTyped:false, checkNo:'', st:'', stMode:'calc', stw:'' }); draw(); later(); };
-  $('clear').onclick=function(){ if(rows.length && confirm('Clear all '+rows.length+' rows from this screen? (Nothing saved is touched.)')){ rows=[]; draw(); saveDraft(rows); } };
+  $('clear').onclick=function(){ if(rows.length && confirm('Clear all '+rows.length+' rows from this screen? (Nothing saved is touched.)')){ rows=[]; _loaded={}; draw(); saveDraft(rows); } };
+  /* patch PASTPAYEDIT: load the checks already saved from paystubs back in, to fix them */
+  var _loaded={};
+  $('load').onclick=async function(){ var msg=$('msg'); var all=[]; try{ all=(await p.runs())||[]; }catch(e){}
+    var a=s($('first').value), b=s($('last').value);
+    var pick=all.filter(function(x){ return x && x.source==='paystub-entry' && !x.tombstoned && !x.deleted && (!a || s(x.payDate)>=a) && (!b || s(x.payDate)<=b) && !_loaded[x.id]; });
+    if(!pick.length){ msg.style.color='#b91c1c'; msg.textContent='No saved checks between those paydays.'; return; }
+    if(rows.length && !confirm('Add '+pick.length+' saved run(s) below the '+rows.length+' row(s) already on screen?')) return;
+    var n=0; pick.forEach(function(run){ _loaded[run.id]=1; (run.lines||[]).forEach(function(L){ var st=(s(L.withholdState||L.stateName)||'TN').toUpperCase(), cm=r2(n2(L.commission));
+      rows.push({ payDate:s(run.payDate), from:s(run.from), to:s(run.to), name:s(L.name), empKey:s(L.empId||L.name), payType:s(L.payType), hours:(n2(L.hours)?String(L.hours):''),
+        gross:r2(n2(L.gross)-cm).toFixed(2), comm:(cm?cm.toFixed(2):''), fedMode:(L.fedNotWithheld?'none':'stub'), fed:r2(L.fed).toFixed(2), ficaMode:(L.ficaNotWithheld?'none':'stub'), ss:r2(L.ss).toFixed(2), med:r2(n2(L.med)+n2(L.addlMed)).toFixed(2),
+        st:st, stMode:(st==='TN'?'calc':'stub'), stw:r2(L.state).toFixed(2), sutaSt:s(L.sutaState), other:(n2(L.otherDed)?r2(L.otherDed).toFixed(2):''), net:'', netTyped:false, checkNo:s(L.checkNo), _mset:1, _fromRun:run.id }); n++; }); });
+    draw(); later(); msg.style.color='#1d4ed8'; msg.innerHTML='✏️ Loaded '+n+' saved check'+(n===1?'':'s')+' from '+pick.length+' run'+(pick.length===1?'':'s')+'. Fix anything, then <b>Save all</b> — the saved ones are replaced (✕ a row to delete that check).'; };
   $('f941').onclick=function(){ ov.remove(); if(W._gcF941Open) W._gcF941Open(); };
   $('save').onclick=async function(){
     var msg=$('msg'); await recalc(); paint();
@@ -212621,18 +212643,21 @@ W._gcPastPayOpen = async function(){
     var blank=rows.length-live.length;
     var fresh=[]; try{ fresh=(await p.runs())||[]; }catch(e){}
     var dates={}; live.forEach(function(r){ dates[r.payDate]=1; });
-    var dup=fresh.filter(function(x){ return x && ['approved','paid'].indexOf(low(x.status))>=0 && dates[s(x.payDate)]; });
+    var dup=fresh.filter(function(x){ return x && !_loaded[x.id] && ['approved','paid'].indexOf(low(x.status))>=0 && dates[s(x.payDate)]; });
+    var _rep=Object.keys(_loaded).filter(function(id){ return fresh.some(function(x){ return x && x.id===id; }); });   /* patch PASTPAYEDIT */
     var me=''; try{ me=p.me(); }catch(e){}
     var made=buildRuns(live, { by:me });
     var g=0, f=0; made.forEach(function(x){ g+=x.totals.gross; f+=x.totals.fed; });
     if(!confirm('Save '+made.length+' paid payroll run'+(made.length===1?'':'s')+' ('+live.length+' checks, gross '+money(g)+', federal '+money(f)+')?'
       +(blank?('\n\n'+blank+' row(s) with no gross are left out.'):'')
       +(dup.length?('\n\n⚠ '+dup.length+' payroll run(s) already exist on '+Object.keys(dates).filter(function(d){ return dup.some(function(x){ return s(x.payDate)===d; }); }).join(', ')+' — saving adds more. Cancel if these are already in.'):'')
+      +(_rep.length?('\n\n✏️ This REPLACES '+_rep.length+' saved run(s) you loaded to edit.'):'')
       +'\n\nSaved as already paid: no checks to write, no alerts, nothing booked to accounting.')) return;
+    if(_rep.length){ fresh=fresh.filter(function(x){ return !(x && _loaded[x.id]); }); try{ if(W._gcTombstoneMany) W._gcTombstoneMany('payrollRuns', _rep); }catch(_tE){} }   /* patch PASTPAYEDIT */
     fresh.push.apply(fresh, made);
     try{ await p.saveRuns(fresh); }catch(e){ msg.style.color='#b91c1c'; msg.textContent='Could not save: '+(e&&e.message); return; }
     try{ var _rp=p.replaceDrafts ? await p.replaceDrafts(live.map(function(r){ return { empId:r.empKey, name:r.name }; })) : null; if(_rp && _rp.changed) fresh=_rp.list; }catch(_rpE){}   /* patch PAYREPLACE */
-    runs=fresh; rows=rows.filter(function(r){ return live.indexOf(r)<0; }); saveDraft(rows); draw();
+    runs=fresh; _loaded={}; rows=rows.filter(function(r){ return live.indexOf(r)<0 && !r._fromRun; }); saveDraft(rows); draw();
     msg.style.color='#166534'; msg.innerHTML='✅ Saved '+made.length+' paid run'+(made.length===1?'':'s')+' ('+live.length+' checks). Open <b>🧾 Form 941</b> to see the quarter.';
     try{ console.log('[GC] PASTPAY: '+made.length+' paid run(s) entered from paystubs (source paystub-entry, not booked).'); }catch(e){}
     try{ if(W._gcPayrollRender) W._gcPayrollRender(); }catch(e){}
