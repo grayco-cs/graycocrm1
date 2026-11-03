@@ -27,7 +27,7 @@ const REG0 = [{ id: 'RGQB1', srcInvId: 'QB-IMPORT-1', type: 'expense', category:
 resetCloud();
 cset('users', USERS); cset('payrollProfiles', PROFILES); cset('payrollRuns', []); cset('payrollTaxPayments', []); cset('gcAcctRegister', REG0);
 cset('gc_check_queue', []); cset('gc_tombstones', {}); cset('timesheets', []);
-cset('payrollSettings', { companyName: 'Test Co LLC', companyAddr: '100 Test Way, Memphis, TN 38103', ein: '12-3456789' });
+cset('payrollSettings', { pastPayCutoff: '2026-12-31', pastPayAutoStub: false, companyName: 'Test Co LLC', companyAddr: '100 Test Way, Memphis, TN 38103', ein: '12-3456789' });
 
 const A = await computer('A', { build }); const p = A.page();
 await p.goto('https://app.local/index.html'); await sleep(2500);

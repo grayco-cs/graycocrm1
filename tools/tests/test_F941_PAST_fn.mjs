@@ -99,6 +99,13 @@ eq('Office Admin on office@ + blank pay type are offered', PP.w2Employees(PROFS.
   const got = PP.w2Employees(PROFS.concat(many), USERS.concat([{ id: 'UBT', name: 'Britt Test', email: 'office@grayco-cs.com', role: 'Office Admin' }]));
   eq('duplicates offered once', got.map(e => e.name), ['Avery Test', 'Blake Test', 'Britt Test']);
   eq('the most complete copy is kept', got.find(e => e.name === 'Britt Test').prof.filing, 'married'); }
+// patch PASTPAYCUT: a check paid after the cutoff always uses the formulas, even if set to the stub
+{ const r = [{ payDate: '2026-11-06', from: '2026-10-31', to: '2026-11-06', name: 'Avery Test', empKey: 'UA', gross: '1000', comm: '', fedMode: 'stub', fed: '5', fedCalc: 80, ficaMode: 'stub', ss: '1', med: '1', other: '', net: '', netTyped: false, st: 'TN', stMode: 'calc' }];
+  PP.calc(r, { set });
+  eq('after 11/3: federal from the formula, not the typed stub', [r[0].out.fed, r[0].out.fedMode, r[0].out.ss], [80, 'calc', 62]);
+  const r2 = [{ payDate: '2026-11-03', from: '2026-10-28', to: '2026-11-03', name: 'Avery Test', empKey: 'UA', gross: '1000', comm: '', fedMode: 'stub', fed: '5', fedCalc: 80, ficaMode: 'stub', ss: '62', med: '14.5', other: '', net: '', netTyped: false, st: 'TN', stMode: 'calc' }];
+  PP.calc(r2, { set });
+  eq('on 11/3: the typed paper amount stands', r2[0].out.fed, 5); }
 // patch PASTPAYMS (owner 11/03): MS state tax on a past check
 {
   const rows = [
