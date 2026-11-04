@@ -59,7 +59,7 @@ function stLabel(r){ var s = low(r && r.status); return LABEL[s] || (s ? s : 'No
 function weekOf(dateStr){
   var d = ymd(dateStr) || today();
   try{ if(W._gcPayPeriodContaining){ var p = W._gcPayPeriodContaining(d); if(p && p.end) return p; } }catch(e){}
-  return { start:addDays(d,-6), end:d, payday:addDays(d,2), label:addDays(d,-6)+' → '+d };
+  return { start:addDays(d,-6), end:d, payday:addDays(d,2), label:addDays(d,-6)+' → '+d };   /* fallback only; the company schedule (patch PAYWEEK) answers first */
 }
 function thisWeek(){
   try{ var c = W._gcCurrentPayPeriod && W._gcCurrentPayPeriod(); if(c && c.end) return c; }catch(e){}
@@ -329,7 +329,7 @@ W._gcPayManualOpen = async function(opts){
     wk = w;
     $('_pmEnd').value = wk.end;
     if(!payTyped) $('_pmPay').value = wk.payday;
-    $('_pmWk').textContent = 'Week ' + nice(wk.start) + ' → ' + nice(wk.end) + ' · paid ' + nice(wk.payday);
+    $('_pmWk').textContent = 'Work week ' + nice(wk.start).replace(/\/\d{4}$/,'') + ' → ' + nice(wk.end).replace(/\/\d{4}$/,'') + ' · paid ' + nice(wk.payday).replace(/\/\d{4}$/,'');   /* patch PAYWEEK */
     var dup = await runsForWeek(wk);
     var box = $('_pmDup');
     if(dup.length){
