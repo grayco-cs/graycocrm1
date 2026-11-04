@@ -258,6 +258,11 @@ W._gcPastPayOpen = async function(_pe2){ _pe2=(_pe2&&_pe2.runId)?_pe2:null; var 
   var tmr=null; function later(){ clearTimeout(tmr); tmr=setTimeout(function(){ recalc().then(paint); }, 250); }
   ov.addEventListener('input', function(e){ var el=e.target, i=el.getAttribute&&el.getAttribute('data-i'), k=el.getAttribute&&el.getAttribute('data-k'); if(i==null||!k) return;
     var r=rows[+i]; if(!r) return; r[k]=el.value; if(k==='net') r.netTyped=el.value!=='';
+    /* patch PASTPAYHRS: hours × the hourly rate fills Gross (over 40 at 1.5×), until a Gross is typed by hand */
+    if(k==='gross') r._grossAuto=false;
+    if(k==='hours'){ var _e=empOf(r.name), _rt=_e && _e.prof ? n2(_e.prof.hourlyRate) : 0, _h=n2(r.hours);
+      if(_rt>0 && (r._grossAuto || !s(r.gross))){ var _g=r2(Math.min(_h,40)*_rt + Math.max(0,_h-40)*_rt*1.5); r.gross=_h>0?_g.toFixed(2):''; r._grossAuto=true;
+        var _gi=ov.querySelector('tr[data-row="'+i+'"] [data-k="gross"]'); if(_gi) _gi.value=r.gross; } }
     if(k==='payDate' && el.value){ r.from=addDays(el.value,-6); r.to=el.value; var tr=ov.querySelector('tr[data-row="'+i+'"]'); tr.querySelector('[data-k="from"]').value=r.from; tr.querySelector('[data-k="to"]').value=r.to; }
     later(); });
   ov.addEventListener('change', function(e){ var el=e.target, i=el.getAttribute&&el.getAttribute('data-i'), k=el.getAttribute&&el.getAttribute('data-k'); if(i==null||!k) return;
