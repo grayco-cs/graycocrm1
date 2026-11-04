@@ -216,7 +216,10 @@ function compute(opt){
   p2.semi=semi;
 
   var tolL7=r2(0.01*T.checks+0.01);
-  if(Math.abs(L.L7)>tolL7) warn.push('Line 7 is '+money(L.L7)+' — more than fractions of cents ('+T.checks+' checks allow about ±'+money(tolL7)+'). The Social Security / Medicare actually withheld does not match the wages. Find the check that is wrong before filing.');
+  var _l7k=qi.year+'-Q'+qi.q, _l7ok=!!(set.f941L7Ok && set.f941L7Ok[_l7k]!=null && Math.abs(n2(set.f941L7Ok[_l7k])-L.L7)<0.005), l7Ask=false;   /* patch F941L7 */
+  if(Math.abs(L.L7)>tolL7 && _l7ok) info.push('Line 7 is '+money(L.L7)+' — marked as rounding from salary and commission paid as separate checks. That is what line 7 is for.');
+  if(Math.abs(L.L7)>tolL7 && !_l7ok && Math.abs(L.L7)<=1) l7Ask=true;
+  if(Math.abs(L.L7)>tolL7 && !_l7ok) warn.push('Line 7 is '+money(L.L7)+' — more than fractions of cents ('+T.checks+' checks allow about ±'+money(tolL7)+'). The Social Security / Medicare actually withheld does not match the wages. Find the check that is wrong before filing.');
   if(Math.abs(r2(T.storedSSW)-L.L5a1)>0.01) warn.push('Social Security wages saved on the checks ('+money(T.storedSSW)+') differ from what the '+money(ssBase)+' wage base gives ('+money(L.L5a1)+'). The worksheet uses the wage-base figure; the checks may have over- or under-withheld.');
   var pf=Object.keys(pretaxFlag); if(pf.length) warn.push('Pre-tax deduction(s) that look like retirement ('+pf.join(', ')+'): a 401(k)/403(b) lowers line 2 but NOT Social Security/Medicare wages. The CRM payroll takes every pre-tax deduction out of SS/Medicare wages too, so lines 5a/5c (and the withholding) may be too low — ask the CPA.');
   if(excluded.length){ var e1=excluded.filter(function(x){return x.kind==='1099';}), ed=excluded.filter(function(x){return x.kind==='draw';});
@@ -252,7 +255,7 @@ function compute(opt){
       ssForm: r2(L.L5a1*0.062), medForm: r2(r2(L.L5c1*0.0145)+L.L5d2), ssDiff: r2(regTot.ss-r2(L.L5a1*0.062)), medDiff: r2(regTot.med-r2(r2(L.L5c1*0.0145)+L.L5d2)) } };
   return { register:register, quarter:qi, lines:L, emps:emps, runs:usedRuns, l1Runs:l1runs, excluded:excluded, deposits:deps, part2:p2,
     eeActual:eeActual, eeOnForm:eeOnForm, months:qi.months.map(function(m){ var o=month[m]; return { month:m, checks:o.checks, fed:r2(o.fed), ssW:r2(o.ssW), medW:r2(o.medW) }; }),
-    futa:futa, suta:suta, erPaysEE:r2(T.erPaysEE), warnings:warn, info:info, ssBase:ssBase, checks:T.checks, nopayAsk:nopayAsk, payLaterAsk:(!_pl && !deps.some(function(d){return d.counted;}) && L.L12>0) };
+    futa:futa, suta:suta, erPaysEE:r2(T.erPaysEE), warnings:warn, info:info, ssBase:ssBase, checks:T.checks, nopayAsk:nopayAsk, payLaterAsk:(!_pl && !deps.some(function(d){return d.counted;}) && L.L12>0), l7Ask:l7Ask, l7:L.L7 };
 }
 
 /* the "Copy all numbers" text and the CSV, both from the same rows */
@@ -392,9 +395,10 @@ async function render(body){
       + (W._gcPastPayOpen?'<button data-f941-past style="'+BTN+'">📥 Enter past payroll</button>':'')
       + '<button data-f941-pdf style="'+BTN+'">📄 Filled Form 941 (PDF)</button><button data-f941-copy style="'+BTN+'">📋 Copy all numbers</button><button data-f941-csv style="'+BTN+'">⬇ Download CSV</button></div></div>'
     + R.warnings.map(function(w){ return '<div data-f941-warn="1" style="'+RED+'">⚠ '+esc(w)+'</div>'; }).join('')
-    + ((R.nopayAsk&&R.nopayAsk.length)||R.payLaterAsk ? ('<div style="display:flex;gap:8px;flex-wrap:wrap;margin:-2px 0 10px">'   /* patch F941ACK */
+    + ((R.nopayAsk&&R.nopayAsk.length)||R.payLaterAsk||R.l7Ask ? ('<div style="display:flex;gap:8px;flex-wrap:wrap;margin:-2px 0 10px">'   /* patch F941ACK */
       + (R.nopayAsk||[]).map(function(mk){ return '<button data-f941-nopay="'+esc(mk)+'" style="'+BTN+'">✓ Nobody was paid in '+esc(MONTHS[+mk.slice(5,7)-1])+'</button>'; }).join('')
-      + (R.payLaterAsk?'<button data-f941-paylater="1" style="'+BTN+'">✓ No deposits were made — we’re paying the balance now</button>':'')+'</div>') : '')
+      + (R.payLaterAsk?'<button data-f941-paylater="1" style="'+BTN+'">✓ No deposits were made — we’re paying the balance now</button>':'')
+      + (R.l7Ask?'<button data-f941-l7ok="1" style="'+BTN+'">✓ Line 7 is rounding from separate checks — file it</button>':'')+'</div>') : '')
     + R.info.map(function(w){ return '<div style="background:#eff6ff;border:1px solid #93c5fd;color:#1e3a8a;border-radius:8px;padding:8px 12px;margin:0 0 8px;font-size:12px">ℹ '+esc(w)+'</div>'; }).join('')
     + '<div style="'+CARD+'"><div style="font-weight:800;margin-bottom:6px">Part 1</div><table style="width:100%;border-collapse:collapse">'
       + lineRow('1',LINES.L1,String(L.L1),'Distinct W-2 employees on approved runs whose pay period includes '+esc(q.day12)+(R.l1Runs.length?(' (run '+esc(R.l1Runs.join(', '))+')'):''))
@@ -444,6 +448,7 @@ async function render(body){
   /* patch F941ACK: the two acknowledgements, saved in payroll settings */
   async function _ack(fn){ try{ var p=P(), st=(await p.settings())||{}; fn(st); await p.saveSettings(st); }catch(e){ alert('Could not save: '+(e&&e.message)); return; } render(body); }
   Array.prototype.forEach.call(body.querySelectorAll('[data-f941-nopay]'), function(b){ b.onclick=function(){ var mk=b.getAttribute('data-f941-nopay'); if(!confirm('Nobody at all was paid wages in '+MONTHS[+mk.slice(5,7)-1]+' '+mk.slice(0,4)+'?')) return; _ack(function(st){ var a=Array.isArray(st.f941NoPayMonths)?st.f941NoPayMonths:[]; if(a.indexOf(mk)<0) a.push(mk); st.f941NoPayMonths=a; }); }; });
+  var l7b=body.querySelector('[data-f941-l7ok]'); if(l7b) l7b.onclick=function(){ var v=UI.last&&UI.last.l7; if(!confirm('Every check is entered exactly as paid, and Line 7 ('+money(v)+') is just the cents from checks paid separately?')) return; _ack(function(st){ st.f941L7Ok=Object.assign({}, st.f941L7Ok||{}); st.f941L7Ok[UI.sel.year+'-Q'+UI.sel.q]=v; }); };   /* patch F941L7 */
   var plb=body.querySelector('[data-f941-paylater]'); if(plb) plb.onclick=function(){ if(!confirm('No 941 deposits were made for Q'+UI.sel.q+' '+UI.sel.year+', and you are paying the balance now?')) return; _ack(function(st){ st.f941PayLater=Object.assign({}, st.f941PayLater||{}); st.f941PayLater[UI.sel.year+'-Q'+UI.sel.q]=new Date().toISOString(); }); };
   var pb=body.querySelector('[data-f941-pdf]'); if(pb) pb.onclick=function(){ downloadPdf(R, d.set, pb); };
   var cb=body.querySelector('[data-f941-copy]'); if(cb) cb.onclick=function(){ var t=copyText(R);
