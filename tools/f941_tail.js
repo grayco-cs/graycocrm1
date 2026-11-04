@@ -541,16 +541,18 @@ async function ensureQuarter(force){
   finally{ ensuring=false; }
 }
 W._gcF941Ensure = ensureQuarter;
-async function setRec(id, patch){
+async function setRec(id, patch, quiet){
   var list=readA(), r=list.filter(function(x){ return x.id===id; })[0]; if(!r) return null;
-  Object.assign(r, patch, { updatedAt:new Date().toISOString(), at:new Date().toISOString() }); writeA(list); return r;
+  /* patch OFFICEAPPR: quiet = the numbers shown on opening: not a decision, so no new stamp (a stale "waiting" copy must never become the newest) */
+  Object.assign(r, patch, quiet ? {} : { updatedAt:new Date().toISOString(), at:new Date().toISOString() }); writeA(list); return r;
 }
 function items(){
   if(!canFile()) return [];
-  return readA().filter(function(x){ return x.kind==='f941' && (x.status==='waiting' || x.status==='approved'); }).map(function(x){
+  /* patch OFFICEAPPR: approved = the admins are done; the office (who files) keeps one "file it" line until it is filed */
+  return readA().filter(function(x){ return x.kind==='f941' && (x.status==='waiting' || (x.status==='approved' && !canSee())); }).map(function(x){
     var n=x.numbers||{}, w=(n.warnings||[]).length;
     return { id:'f941:'+x.id, at:s(x.createdAt), urgency:'asap',
-      title: x.status==='waiting' ? ('🧾 Form 941 for Q'+x.q+' '+x.year+(canSee()?' is ready: review and approve':' is ready to file')) : ('🧾 Form 941 for Q'+x.q+' '+x.year+': approved, ready to file — mark it filed'),
+      title: x.status==='waiting' ? ('🧾 Form 941 for Q'+x.q+' '+x.year+(canSee()?' is ready: review and approve':' is ready to file')) : ('📮 File Form 941 for Q'+x.q+' '+x.year+': approved, ready to file'+(x.approvedBy?(' (by '+s(x.approvedBy)+')'):'')+' — mark it filed'),
       sub: 'L2 '+money(n.L2)+' · L3 '+money(n.L3)+' · L12 '+money(n.L12)+' · L13 '+money(n.L13)+' · L14 '+money(n.L14)+(w?(' · ⚠ '+w+' warning'+(w>1?'s':'')):'')+' · due '+s(x.due),
       act:{ l:'🧾 Review', f:function(){ openCard(x.id); } } };
   });
@@ -575,7 +577,7 @@ async function openCard(id){
   ov.innerHTML='<div style="background:#fff;color:#0f2440;border-radius:12px;max-width:720px;width:100%;padding:16px 18px;font-size:14px"><div>Loading…</div></div>';
   document.body.appendChild(ov);
   var d=await load(), R=compute({ runs:d.runs, payments:d.pays, settings:d.set, year:rec.year, q:rec.q });
-  if(rec.status==='waiting'){ rec=await setRec(id, { numbers:snap(R) }) || rec; }
+  if(rec.status==='waiting'){ rec=await setRec(id, { numbers:snap(R) }, true) || rec; }   /* patch OFFICEAPPR */
   var adm=canSee();
   var n=rec.status==='waiting' ? snap(R) : (rec.numbers||snap(R)), L=R.lines, card=ov.firstElementChild;
   var changed = rec.status!=='waiting' && Math.abs(n.L12-L.L12)>=0.01;

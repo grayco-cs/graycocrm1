@@ -273,7 +273,10 @@ W._gcPmPayOpen = openOverlay;
 /* ✅ My Approvals — one "other approval" per open flag (counted in the header like the Form 941 one) */
 function items(){
   if(!canSee() || !LAST) return [];
-  return LAST.alerts.map(function(f){
+  /* patch OFFICEAPPR: a "✓ Checked" synced from another computer clears the flag now (not at the next re-check); on a non-admin
+     computer any check of that flag does (the admin's figures come from the full pay records) */
+  var chk = readA(), adm = false; try{ adm = !!(P() && P().isAdmin && P().isAdmin()); }catch(e){}
+  return LAST.alerts.filter(function(f){ var c = checkFor(chk, f.id); return !(c && (c.sig === f.sig || !adm)); }).map(function(f){
     return { id:'pmpay:' + f.id, at:f.payDate || '', urgency:'asap',
       title:'🔎 PM pay: ' + f.name + (f.payDate ? ' · ' + f.payDate : '') + (f.kind === 'nosetup' ? ' — no pay setup' : f.kind === 'salary' ? ' — salary differs' : f.kind === 'comm_owed' ? ' — commission owed, not paid' : ' — commission paid, not earned'),
       sub:f.reason, act:{ l:'🔎 Look', f:function(){ openOverlay(f.id); } } };

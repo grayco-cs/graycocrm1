@@ -527,7 +527,11 @@ function tap(b, ev){
     case 'claim': closeSheets(); openClaims({ claimId: id }); return;
     case 'dry': openClaims({ claimId: id, mode: 'mitigation', screen: 'drying' }); return;
     case 'dryeq': openClaims({ claimId: id, mode: 'mitigation', screen: 'equipment' }); return;
-    case 'approne': var x = apprItems().filter(function(y){ return y.id === id; })[0]; if (x && typeof x.act === 'function') { try { x.act(); return; } catch (e) {} } openApprovals(); return;
+    case 'approne': var x = apprItems().filter(function(y){ return y.id === id; })[0];
+      /* patch OFFICEAPPR: the item's own action ({ l, f } on Form 941 / PM pay / To-Do approvals); the Desk steps aside when it changes screen */
+      var xf = x && (typeof x.act === 'function' ? x.act : (x.act && typeof x.act.f === 'function' ? x.act.f : null));
+      if (xf) { var v0 = ''; try { v0 = localStorage.getItem('grayco_view') || ''; } catch (e) {} try { xf.call(x.act); later(function(){ var v1 = ''; try { v1 = localStorage.getItem('grayco_view') || ''; } catch (e) {} if (v1 !== v0) deskHide(); }, 400); return; } catch (e) { warn(e); } }
+      openApprovals(); return;
     case 'apprnow': try { if (W._gcApproveInPlace && W._gcApproveInPlace(id)) { b.disabled = true; b.textContent = '✓ Approved'; later(function(){ deskRender(true); }, 5600); return; } } catch (e) {} openApprovals(); return;
   }
   if (/^j-/.test(a) && p) {

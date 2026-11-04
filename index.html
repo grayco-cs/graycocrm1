@@ -117410,6 +117410,8 @@ function deadSetFor(key){
 var ALT_ID = { gc_expense_approvals:'expId', gc_sub_approvals:'invId', gc_invoice_approvals:'invId' };   /* patch DEDUP: queues keyed by the record they wait on */
 function recId(r, key){ if(!isObj(r)) return null; if(r.id!=null && r.id!=='') return String(r.id); if(r._id!=null && r._id!=='') return String(r._id); var f = key && ALT_ID[key]; if(f && r[f]!=null && r[f]!=='') return f + ':' + String(r[f]); return null; }
 function qRank(r){ var st = String(r && r.status || '').toLowerCase(); if(/approved|rejected|denied|posted|paid|void|recorded|done/.test(st)) return 3; if(st === 'escalated') return 2; return st ? 1 : 0; }   /* patch DEDUP: a decided entry beats a waiting one */
+/* patch OFFICEAPPR: a payroll approval (Form 941) never goes back — filed > approved > waiting, whatever the stamps say */
+function payApRank(r){ var st = String(r && r.status || '').toLowerCase(); return st === 'filed' ? 3 : st === 'approved' ? 2 : st === 'waiting' ? 1 : 0; }
 function mergeRecords(key, local, inc){
   var dead = deadSetFor(key), out = [], at = {}, seenJ = {};
   local.forEach(function(r){
@@ -117425,6 +117427,7 @@ function mergeRecords(key, local, inc){
     if(dead[id]) return;
     if(!(id in at)){ at[id] = out.length; out.push(r); return; }
     var mine = out[at[id]], a = tsOf(r), b = tsOf(mine);
+    if(key === 'gc_payroll_approvals'){ var ra = payApRank(r), rb = payApRank(mine); if(ra && rb && ra !== rb){ if(ra > rb) out[at[id]] = r; return; } }   /* patch OFFICEAPPR */
     if(a && b && a > b) out[at[id]] = r;                       /* strictly newer elsewhere */
     else if(!(a && b) && ALT_ID[key] && qRank(r) > qRank(mine)) out[at[id]] = r;   /* patch DEDUP: a queue entry decided elsewhere wins */
   });
@@ -196285,6 +196288,7 @@ function openAppr(id){
   var x = apprItems().filter(function(y){ return y.id === id; })[0]; if (!x) { openAllAppr(); return; }
   if (/^mat:/.test(x.id)) { matSheet(x.id.slice(4)); return; }
   if (typeof x.act === 'function') { try { x.act(); return; } catch (e) {} }
+  if (x.act && typeof x.act.f === 'function') { try { x.act.f(); return; } catch (e) {} }   /* patch OFFICEAPPR: { l, f } actions (Form 941, PM pay, To-Do) */
   (KIND_OPEN[x.g] || openAllAppr)();
 }
 
@@ -205592,7 +205596,11 @@ function tap(b, ev){
     case 'claim': closeSheets(); openClaims({ claimId: id }); return;
     case 'dry': openClaims({ claimId: id, mode: 'mitigation', screen: 'drying' }); return;
     case 'dryeq': openClaims({ claimId: id, mode: 'mitigation', screen: 'equipment' }); return;
-    case 'approne': var x = apprItems().filter(function(y){ return y.id === id; })[0]; if (x && typeof x.act === 'function') { try { x.act(); return; } catch (e) {} } openApprovals(); return;
+    case 'approne': var x = apprItems().filter(function(y){ return y.id === id; })[0];
+      /* patch OFFICEAPPR: the item's own action ({ l, f } on Form 941 / PM pay / To-Do approvals); the Desk steps aside when it changes screen */
+      var xf = x && (typeof x.act === 'function' ? x.act : (x.act && typeof x.act.f === 'function' ? x.act.f : null));
+      if (xf) { var v0 = ''; try { v0 = localStorage.getItem('grayco_view') || ''; } catch (e) {} try { xf.call(x.act); later(function(){ var v1 = ''; try { v1 = localStorage.getItem('grayco_view') || ''; } catch (e) {} if (v1 !== v0) deskHide(); }, 400); return; } catch (e) { warn(e); } }
+      openApprovals(); return;
     case 'apprnow': try { if (W._gcApproveInPlace && W._gcApproveInPlace(id)) { b.disabled = true; b.textContent = '✓ Approved'; later(function(){ deskRender(true); }, 5600); return; } } catch (e) {} openApprovals(); return;
   }
   if (/^j-/.test(a) && p) {
@@ -212303,16 +212311,18 @@ async function ensureQuarter(force){
   finally{ ensuring=false; }
 }
 W._gcF941Ensure = ensureQuarter;
-async function setRec(id, patch){
+async function setRec(id, patch, quiet){
   var list=readA(), r=list.filter(function(x){ return x.id===id; })[0]; if(!r) return null;
-  Object.assign(r, patch, { updatedAt:new Date().toISOString(), at:new Date().toISOString() }); writeA(list); return r;
+  /* patch OFFICEAPPR: quiet = the numbers shown on opening: not a decision, so no new stamp (a stale "waiting" copy must never become the newest) */
+  Object.assign(r, patch, quiet ? {} : { updatedAt:new Date().toISOString(), at:new Date().toISOString() }); writeA(list); return r;
 }
 function items(){
   if(!canFile()) return [];
-  return readA().filter(function(x){ return x.kind==='f941' && (x.status==='waiting' || x.status==='approved'); }).map(function(x){
+  /* patch OFFICEAPPR: approved = the admins are done; the office (who files) keeps one "file it" line until it is filed */
+  return readA().filter(function(x){ return x.kind==='f941' && (x.status==='waiting' || (x.status==='approved' && !canSee())); }).map(function(x){
     var n=x.numbers||{}, w=(n.warnings||[]).length;
     return { id:'f941:'+x.id, at:s(x.createdAt), urgency:'asap',
-      title: x.status==='waiting' ? ('🧾 Form 941 for Q'+x.q+' '+x.year+(canSee()?' is ready: review and approve':' is ready to file')) : ('🧾 Form 941 for Q'+x.q+' '+x.year+': approved, ready to file — mark it filed'),
+      title: x.status==='waiting' ? ('🧾 Form 941 for Q'+x.q+' '+x.year+(canSee()?' is ready: review and approve':' is ready to file')) : ('📮 File Form 941 for Q'+x.q+' '+x.year+': approved, ready to file'+(x.approvedBy?(' (by '+s(x.approvedBy)+')'):'')+' — mark it filed'),
       sub: 'L2 '+money(n.L2)+' · L3 '+money(n.L3)+' · L12 '+money(n.L12)+' · L13 '+money(n.L13)+' · L14 '+money(n.L14)+(w?(' · ⚠ '+w+' warning'+(w>1?'s':'')):'')+' · due '+s(x.due),
       act:{ l:'🧾 Review', f:function(){ openCard(x.id); } } };
   });
@@ -212337,7 +212347,7 @@ async function openCard(id){
   ov.innerHTML='<div style="background:#fff;color:#0f2440;border-radius:12px;max-width:720px;width:100%;padding:16px 18px;font-size:14px"><div>Loading…</div></div>';
   document.body.appendChild(ov);
   var d=await load(), R=compute({ runs:d.runs, payments:d.pays, settings:d.set, year:rec.year, q:rec.q });
-  if(rec.status==='waiting'){ rec=await setRec(id, { numbers:snap(R) }) || rec; }
+  if(rec.status==='waiting'){ rec=await setRec(id, { numbers:snap(R) }, true) || rec; }   /* patch OFFICEAPPR */
   var adm=canSee();
   var n=rec.status==='waiting' ? snap(R) : (rec.numbers||snap(R)), L=R.lines, card=ov.firstElementChild;
   var changed = rec.status!=='waiting' && Math.abs(n.L12-L.L12)>=0.01;
@@ -213925,7 +213935,10 @@ W._gcPmPayOpen = openOverlay;
 /* ✅ My Approvals — one "other approval" per open flag (counted in the header like the Form 941 one) */
 function items(){
   if(!canSee() || !LAST) return [];
-  return LAST.alerts.map(function(f){
+  /* patch OFFICEAPPR: a "✓ Checked" synced from another computer clears the flag now (not at the next re-check); on a non-admin
+     computer any check of that flag does (the admin's figures come from the full pay records) */
+  var chk = readA(), adm = false; try{ adm = !!(P() && P().isAdmin && P().isAdmin()); }catch(e){}
+  return LAST.alerts.filter(function(f){ var c = checkFor(chk, f.id); return !(c && (c.sig === f.sig || !adm)); }).map(function(f){
     return { id:'pmpay:' + f.id, at:f.payDate || '', urgency:'asap',
       title:'🔎 PM pay: ' + f.name + (f.payDate ? ' · ' + f.payDate : '') + (f.kind === 'nosetup' ? ' — no pay setup' : f.kind === 'salary' ? ' — salary differs' : f.kind === 'comm_owed' ? ' — commission owed, not paid' : ' — commission paid, not earned'),
       sub:f.reason, act:{ l:'🔎 Look', f:function(){ openOverlay(f.id); } } };
