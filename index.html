@@ -5291,7 +5291,7 @@ window.__GC_LIVE=function(key, v){
   return v;
 };
 </script>
-<!-- GrayCo CRM Build: 33.163-2026-11-04-r17q16 -->
+<!-- GrayCo CRM Build: 33.164-2026-11-04-r17q17 -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6239,7 +6239,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.163-2026-11-04-r17q16");
+  console.log("[GC] Build 33.164-2026-11-04-r17q17");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6287,7 +6287,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.163-2026-11-04-r17q16"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.164-2026-11-04-r17q17"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -85236,13 +85236,13 @@ async function renderRun(body){
       + fld('Period end','<input id="_pTo" type="date" value="'+S.to+'" style="'+CSS.inp+'">')
       + fld('Commission','<select id="_pComm" style="'+CSS.inp+'">'+[['aggregate','Same check as salary'],['separate','Its own check (like ADP)'],['flat22','Flat 22% supplemental']].map(function(o){ return '<option value="'+o[0]+'"'+((S.commMethod||'aggregate')===o[0]?' selected':'')+'>'+o[1]+'</option>'; }).join('')+'</select>')   /* patch PAYCHECK */
       + fld('Check date','<input id="_pPay" type="date" value="'+S.payDate+'" style="'+CSS.inp+'">')
-      + '<button id="_pQuick1" style="'+CSS.btn2+'">This Friday’s week</button>'
+      + '<button id="_pQuick1" style="'+CSS.btn2+'" title="The work week that ended most recently, and the check date that pays it (Payroll → Settings → Pay schedule)">Week paid this Friday</button>'   /* patch PAYWEEK */
       + '<button id="_pQuick2" style="'+CSS.btn2+'">The week before</button>'
       + '<button id="_pCalc" style="'+CSS.btn+'">Calculate payroll</button>'
       + '<button id="_pManual" title="Type in a week of payroll yourself — any week" style="'+CSS.btnG+'margin-left:auto;">✍ Enter a week by hand</button>'   /* patch PAYMANUAL */
       + ((P.isAdmin() && window._gcPastPayOpen) ? '<button id="_pPast" onclick="window._gcPastPayOpen()" title="Weeks already paid: type each employee\'s gross from the paystubs — taxes fill in; saved as paid, nothing sent or booked" style="'+CSS.btnG+'">📥 Enter past payroll (from paystubs)</button>' : '')   /* patch PASTPAY */
       + '</div>'
-      + '<div style="'+CSS.sub+'margin-top:8px;">Payroll is every week, paid Friday. Hours come from Timesheets (through the hours cut-off in Settings) · commission is the commission due that Friday by the Wednesday cut-off · salary follows the run’s length (a week = 1/52). Nothing is paid until it is approved.</div>'
+      + '<div style="'+CSS.sub+'margin-top:8px;"><b>'+((window._gcPaySchedule&&window._gcPaySchedule().label)||'Payroll is every week, paid Friday')+'</b> (Payroll → Settings). Hours come from Timesheets for the work week · commission is the commission due that Friday by the Wednesday cut-off · salary follows the run’s length (a week = 1/52). Nothing is paid until it is approved.</div>'
     + '</div>'
     + '<div id="_pOut"></div>';
   function _wk(back){ var c=window._gcCurrentPayPeriod&&window._gcCurrentPayPeriod(); if(c&&back) c=window._gcPayPeriodFor(P.addDays(c.payday,-7)); if(c&&c.start){ S.from=c.start; S.to=c.end; S.payDate=c.payday; } S.lines=null; renderRun(body); }   /* patch AUTO-PAYWEEK */
@@ -85730,10 +85730,12 @@ async function renderSettings(body){
       +row('companyName','Company name on stubs',s.companyName,'')
       +row('companyAddr','Company address on stubs',s.companyAddr,'')
       +row('ein','EIN',s.ein,'Shown on pay stubs')
-      +(function(){ var hc=(s.hoursCutoffDay==null||s.hoursCutoffDay==='')?3:parseInt(s.hoursCutoffDay,10);   /* patch AUTO-PAYWEEK */
-          return '<tr><td style="'+CSS.td+'"><b>Hours cut-off</b><div style="font-size:10px;color:#94a3b8;">Payroll is every week, paid Friday. Hours clocked through this day count on that Friday’s check; later hours roll to the next week. Overtime weeks start the day after.</div></td>'
-            +'<td style="'+CSS.td+'"><select data-set="hoursCutoffDay" style="'+CSS.inp+'width:230px;">'
-            +[[3,'Wednesday 11:59 PM (Thu–Fri roll to next week)'],[6,'Saturday 11:59 PM'],[0,'Sunday 11:59 PM']].map(function(o){ return '<option value="'+o[0]+'"'+(hc===o[0]?' selected':'')+'>'+o[1]+'</option>'; }).join('')
+      +(function(){ var sc=window._gcPayScheduleFrom(s), cur=sc.weekStartDay+'|'+sc.payLagDays;   /* patch PAYWEEK: one company pay schedule */
+          var opts=[['4|2','Work week Thursday–Wednesday, paid that Friday (default)'],['1|5','Work week Monday–Sunday, paid the Friday after']];
+          if(!opts.some(function(o){ return o[0]===cur; })) opts.push([cur, sc.label]);
+          return '<tr><td style="'+CSS.td+'"><b>Pay schedule</b><div style="font-size:10px;color:#94a3b8;">Payroll is every week. Run Payroll, Enter a week by hand, the automatic draft, timesheet hours and overtime weeks all use this week and check date. Runs already saved keep their dates.</div></td>'
+            +'<td style="'+CSS.td+'"><select data-paysched="1" style="'+CSS.inp+'width:330px;">'
+            +opts.map(function(o){ return '<option value="'+o[0]+'"'+(cur===o[0]?' selected':'')+'>'+o[1]+'</option>'; }).join('')
             +'</select></td></tr>'; })()
     +'</table>'
     +'<button id="_setSave" style="'+CSS.btn+'margin-top:10px;">Save settings</button>'
@@ -85747,7 +85749,8 @@ async function renderSettings(body){
       var k=i.getAttribute('data-set'), v=i.value;
       out[k] = (['companyName','companyAddr','ein'].indexOf(k)>=0) ? v : n2(v);
     });
-    await P.saveSettings(out); try{ localStorage.setItem('gc_pay_hours_cutoff', String(out.hoursCutoffDay==null?3:out.hoursCutoffDay)); }catch(e){} alert('Payroll settings saved.'); render();   /* patch AUTO-PAYWEEK */
+    var _ps=body.querySelector('[data-paysched]'); if(_ps && window._gcPaySetSchedule){ var _pv=_ps.value.split('|'); var _sc=window._gcPaySetSchedule({weekStartDay:+_pv[0], payLagDays:+_pv[1]}); out.weekStartDay=_sc.weekStartDay; out.payLagDays=_sc.payLagDays; out.hoursCutoffDay=_sc.endDay; }   /* patch PAYWEEK */
+    await P.saveSettings(out); alert('Payroll settings saved.'); render();   /* patch AUTO-PAYWEEK */
   };
 }
 
@@ -91847,15 +91850,29 @@ console.log('[GC] Approve sticks — one click, saved to device + cloud, invoice
   // Wednesday as the commission cut-off, so Thursday's 6 AM draft has every hour
   // of its week and Thursday–Friday hours roll into next week's check.
   // There is no anchor any more: every Friday is a payday.
-  window._gcPayHoursCutoff=function(){
-    var v=null; try{ v=localStorage.getItem('gc_pay_hours_cutoff'); }catch(e){}
-    var n=parseInt(v,10);
-    return (n===0 || n===3 || n===6) ? n : 3;   // 0 Sunday · 3 Wednesday · 6 Saturday
+  /* patch PAYWEEK: ONE company pay schedule — payrollSettings.weekStartDay + payLagDays (days from the
+     period's last day to the check). Default Thursday → Wednesday, paid that Friday (4, 2). */
+  var _DN=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  window._gcPayScheduleFrom=function(s){
+    s=s||{}; var ws=parseInt(s.weekStartDay,10), lag=parseInt(s.payLagDays,10);
+    if(!(ws>=0 && ws<=6)){ var c=parseInt(s.hoursCutoffDay,10);   // the old hours cut-off: same schedule as before
+      if(c===0||c===3||c===6){ ws=(c+1)%7; if(!(lag>=0)) lag=((5-c+7)%7)||7; } else ws=4; }
+    if(!(lag>=0 && lag<=27)) lag=((5-(ws+6)%7+7)%7)||7;
+    var end=(ws+6)%7, pay=(end+lag)%7;
+    return { weekStartDay:ws, payLagDays:lag, endDay:end, payDay:pay,
+             label:'Work week '+_DN[ws]+'–'+_DN[end]+', paid '+(lag<=3?'that ':'the ')+_DN[pay]+(lag<=3?'':' after') };
   };
+  window._gcPaySchedule=function(){
+    var o={}; try{ var v=JSON.parse(localStorage.getItem('gc_pay_schedule')||'null'); if(v) o=v; else { var c=localStorage.getItem('gc_pay_hours_cutoff'); if(c!=null) o={hoursCutoffDay:c}; } }catch(e){}
+    return window._gcPayScheduleFrom(o);
+  };
+  window._gcPaySetSchedule=function(s){ var x=window._gcPayScheduleFrom(s); try{ localStorage.setItem('gc_pay_schedule', JSON.stringify({weekStartDay:x.weekStartDay, payLagDays:x.payLagDays})); localStorage.setItem('gc_pay_hours_cutoff', String(x.endDay)); }catch(e){} return x; };
+  window._gcPayHoursCutoff=function(){ return window._gcPaySchedule().endDay; };   // the period's last day
   function cutDay(){ return window._gcPayHoursCutoff(); }
+  function lagDays(){ return window._gcPaySchedule().payLagDays; }
   setTimeout(function(){   // the setting lives in payrollSettings; keep a copy here for the synchronous read
     try{ if(window.__GC_PAY && window.__GC_PAY.settings) window.__GC_PAY.settings().then(function(s){
-      if(s && s.hoursCutoffDay!=null && s.hoursCutoffDay!=='') try{ localStorage.setItem('gc_pay_hours_cutoff', String(parseInt(s.hoursCutoffDay,10))); }catch(e){}
+      if(s && ((s.weekStartDay!=null && s.weekStartDay!=='') || (s.hoursCutoffDay!=null && s.hoursCutoffDay!==''))) window._gcPaySetSchedule(s);
     }, function(){}); }catch(e){}
   }, 1500);
   window._gcSetPayrollAnchor=function(){
@@ -91863,7 +91880,7 @@ console.log('[GC] Approve sticks — one click, saved to device + cloud, invoice
     console.log('[GC] Payroll is every week now — every Friday is a payday, so there is no anchor to set.');
   };
   function period(endD){
-    var pd=new Date(endD.getTime()+(((5-endD.getDay()+7)%7)||7)*86400000);   // the Friday after the week's last day
+    var pd=new Date(endD.getTime()+lagDays()*86400000);   // the check date: the period's last day + payLagDays (patch PAYWEEK)
     var start=new Date(endD.getTime()-6*86400000);
     return { start:ymd(start), end:ymd(endD), payday:ymd(pd), frequency:'weekly',
              label:ymd(start)+' → '+ymd(endD) };
@@ -91871,9 +91888,8 @@ console.log('[GC] Approve sticks — one click, saved to device + cloud, invoice
   // The run paid on the Friday on or after a date (on a Thursday: tomorrow's run).
   window._gcPayPeriodFor=function(dateStr){
     var t=d(dateStr)||d(ymd(new Date()));
-    var pd=new Date(t.getTime()+((5-t.getDay()+7)%7)*86400000);
-    var back=((pd.getDay()-cutDay()+7)%7)||7;
-    return period(new Date(pd.getTime()-back*86400000));
+    var pd=new Date(t.getTime()+((window._gcPaySchedule().payDay-t.getDay()+7)%7)*86400000);   // patch PAYWEEK: the next check date on or after
+    return period(new Date(pd.getTime()-lagDays()*86400000));
   };
   // The week a date's hours (or a turned-in job) belong to, and the Friday that pays it.
   window._gcPayPeriodContaining=function(dateStr){
@@ -91892,7 +91908,7 @@ console.log('[GC] Approve sticks — one click, saved to device + cloud, invoice
   window._gcCommissionWindow=function(from,to){
     if(!from || !to) return { from:from, to:to };
     var a=d(from), b=d(to);
-    if(!a || !b || b.getDay()===5) return { from:from, to:to };
+    if(!a || !b || (b.getDay()===5 && cutDay()!==5)) return { from:from, to:to };   /* patch PAYWEEK */
     var first=d(window._gcPayPeriodContaining(from).payday), last=window._gcPayPeriodContaining(to).payday;
     return { from:ymd(new Date(first.getTime()-6*86400000)), to:last };
   };
@@ -108967,7 +108983,8 @@ function period(){
   /* no period helper: the week ending the Wednesday before the next payday (patch AUTO-PAYWEEK) */
   var pay = today();
   try{ if(window._gcNextPayrollDate) pay = ymd(window._gcNextPayrollDate(today())); }catch(e){}
-  return { from: addDays(pay, -8), to: addDays(pay, -2), payDate: pay };
+  var _lag=2; try{ _lag=window._gcPaySchedule().payLagDays; }catch(e){}   /* patch PAYWEEK */
+  return { from: addDays(pay, -_lag-6), to: addDays(pay, -_lag), payDate: pay };
 }
 
 /* ── the arithmetic, using the engine that already exists ───────────────── */
@@ -199882,7 +199899,7 @@ function stLabel(r){ var s = low(r && r.status); return LABEL[s] || (s ? s : 'No
 function weekOf(dateStr){
   var d = ymd(dateStr) || today();
   try{ if(W._gcPayPeriodContaining){ var p = W._gcPayPeriodContaining(d); if(p && p.end) return p; } }catch(e){}
-  return { start:addDays(d,-6), end:d, payday:addDays(d,2), label:addDays(d,-6)+' → '+d };
+  return { start:addDays(d,-6), end:d, payday:addDays(d,2), label:addDays(d,-6)+' → '+d };   /* fallback only; the company schedule (patch PAYWEEK) answers first */
 }
 function thisWeek(){
   try{ var c = W._gcCurrentPayPeriod && W._gcCurrentPayPeriod(); if(c && c.end) return c; }catch(e){}
@@ -200152,7 +200169,7 @@ W._gcPayManualOpen = async function(opts){
     wk = w;
     $('_pmEnd').value = wk.end;
     if(!payTyped) $('_pmPay').value = wk.payday;
-    $('_pmWk').textContent = 'Week ' + nice(wk.start) + ' → ' + nice(wk.end) + ' · paid ' + nice(wk.payday);
+    $('_pmWk').textContent = 'Work week ' + nice(wk.start).replace(/\/\d{4}$/,'') + ' → ' + nice(wk.end).replace(/\/\d{4}$/,'') + ' · paid ' + nice(wk.payday).replace(/\/\d{4}$/,'');   /* patch PAYWEEK */
     var dup = await runsForWeek(wk);
     var box = $('_pmDup');
     if(dup.length){
