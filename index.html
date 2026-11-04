@@ -5403,7 +5403,82 @@ window.__GC_LIVE=function(key, v){
   return v;
 };
 </script>
-<!-- GrayCo CRM Build: 33.164-2026-11-04-r17q22 -->
+<script id="gc-patch-statusfix-core">
+/* patch STATUSFIX (owner 11/04): "nobody changed these" — completed / lost jobs came back as active / approved / bidding.
+   Found: two computers opened with an old copy of the jobs (an iPhone at 16:54Z, the Office PC at 18:12Z / 18:14Z, each
+   within a minute of signing in). The "a manual save always wins" writers stamped EVERY job of the list with
+   updatedAt = now on any save made while someone was clicking or typing (the password box counts), so the old copy
+   looked newer than the cloud; the person-edit ledger (SYNC_A) then took the old values as that person's edits
+   (7 and 8 jobs in one save) and they won on every computer. 19:33:47Z: the same writer re-stamped 382 jobs at once.
+   Here:
+   · stampChanged(key, list): a save stamps only the records that changed since the last write of that list
+     (updatedAt / savedAt / jobYear do not count as a change); every write, stamped or not, is remembered.
+   · holdTerminal(): a job that was completed / lost / cancelled / closed only leaves that status by a person's
+     explicit status change (a status picker, a status / reopen / mark button, a drag on the board, the CRM's own
+     job-status writer) or a copy carrying a newer person status edit.
+   · firstYear(): a job dated by its schedule or its own dates belongs to the year it starts. */
+(function(W){
+'use strict';
+if (W.__GC_STATUSFIX__) return;
+var TERM = { completed:1, complete:1, lost:1, cancelled:1, canceled:1, closed:1 };
+function norm(v){ return v == null ? '' : String(v).trim().toLowerCase(); }
+function isTerm(v){ return !!TERM[norm(v)]; }
+function ts(v){ if (!v) return 0; if (typeof v === 'number') return v; var d = Date.parse(v); return isFinite(d) ? d : 0; }
+function idOf(r){ return (r && typeof r === 'object' && r.id != null && r.id !== '') ? String(r.id) : null; }
+var VOL = { updatedAt:1, updated_at:1, savedAt:1, updatedBy:1, jobYear:1, jobYearFrom:1, _fe:1, _lastEdit:1 };
+var HOP = Object.prototype.hasOwnProperty;
+function sig(r){ var o = {}, k; for (k in r) if (HOP.call(r, k) && !VOL[k]) o[k] = r[k]; try { return JSON.stringify(o); } catch (e) { return 'x' + Math.random(); } }
+var LAST = {}, stats = { writes:0, stamped:0, kept:0, held:0 };
+
+/* a save stamps only what it changed. seedOnly: a background write — remember it, stamp nothing. */
+function stampChanged(key, list, now, seedOnly){
+  if (!Array.isArray(list)) return 0;
+  key = String(key || '?');
+  var prev = LAST[key], next = {}, n = 0;
+  now = now || new Date().toISOString();
+  for (var i = 0; i < list.length; i++){
+    var r = list[i]; if (!r || typeof r !== 'object') continue;
+    var id = idOf(r);
+    if (id == null){ if (prev && !seedOnly){ r.updatedAt = now; if (!r.savedAt) r.savedAt = now; n++; } continue; }
+    var g = sig(r); next[id] = g;
+    if (seedOnly || !prev) continue;                 /* first write seen here: the baseline, not a change */
+    if (prev[id] === g){ stats.kept++; continue; }   /* unchanged: keeps the stamp of its last real change */
+    r.updatedAt = now; if (!r.savedAt) r.savedAt = now; n++;
+  }
+  LAST[key] = next; stats.writes++; stats.stamped += n;
+  return n;
+}
+
+/* prev: id -> { status } as last written here. o: { gesture, forced:{id:1}, fe:{id:{status:E}}, max } */
+function holdTerminal(prev, list, o){
+  o = o || {}; var held = [], allowed = 0, max = o.max == null ? 3 : o.max;
+  if (!prev || !Array.isArray(list)) return held;
+  for (var i = 0; i < list.length; i++){
+    var r = list[i], id = idOf(r); if (id == null || !prev[id]) continue;
+    var was = prev[id].status; if (!isTerm(was) || norm(r.status) === norm(was)) continue;
+    if (o.forced && o.forced[id]) continue;                                   /* the CRM's own status writer, for this job */
+    var own = r._fe && r._fe.status, L = o.fe && o.fe[id] && o.fe[id].status;
+    if (own && own.at && norm(own.v) === norm(r.status) && (!L || ts(own.at) >= ts(L.at))) continue;   /* a newer person status edit */
+    if (o.gesture && allowed < max){ allowed++; continue; }                    /* a person just changed a status */
+    held.push({ id:id, name:r.name || '', from:was, to:r.status });
+    try { r.status = was; } catch (e) {}
+    stats.held++;
+  }
+  return held;
+}
+
+function yr(v){ var m = String(v || '').match(/(20\d{2})/); var y = m ? parseInt(m[1], 10) : 0; return y >= 2000 && y <= 2100 ? y : 0; }
+function firstYear(dates){ var ys = (dates || []).map(yr).filter(Boolean); return ys.length ? Math.min.apply(null, ys) : 0; }
+function lastYear(dates){ var ys = (dates || []).map(yr).filter(Boolean); return ys.length ? Math.max.apply(null, ys) : 0; }
+/* money (payments / invoices): the most recent real activity. The calendar and the job's own dates: the year it starts
+   (the year bar put ROTC Cordova, starting 2026-11-16, in 2027 because its punch list is in January). */
+function jobYearOf(dates, src){ return /^(schedule|job dates)$/.test(String(src || '')) ? firstYear(dates) : lastYear(dates); }
+
+W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChanged, holdTerminal:holdTerminal,
+  firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
+})(window);
+</script>
+<!-- GrayCo CRM Build: 33.164-2026-11-04-r17q23 -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6352,7 +6427,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.164-2026-11-04-r17q22");
+  console.log("[GC] Build 33.164-2026-11-04-r17q23");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6400,7 +6475,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.164-2026-11-04-r17q22"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.164-2026-11-04-r17q23"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -33885,9 +33960,9 @@ function _gcRecIDBput(key,val){
   // nothing can bypass the "manual change always wins" rule.
   try{
     var _CORE={projects:1,invs:1,invoices:1,estimates:1,expenses:1,schedule:1,cos:1,changeOrders:1,subs:1,vendors:1,customers:1,leads:1,scopes:1,projectPayments:1,projectDocs:1,gcAcctRegister:1};
-    if(_CORE[key] && Array.isArray(val) && (window.__GC_IS_ACTIVE__ || window.__GC_IS_TYPING__ || window.__GC_MANUAL_SAVE__)){
-      var _now=new Date().toISOString();
-      val.forEach(function(r){ if(r && typeof r==='object'){ r.updatedAt=_now; if(!r.savedAt) r.savedAt=_now; } });
+    if(_CORE[key] && Array.isArray(val) && window.__GC_STATUSFIX__){   /* patch STATUSFIX */ // only the records that changed get the new stamp
+      var _act=!!(window.__GC_IS_ACTIVE__ || window.__GC_IS_TYPING__ || window.__GC_MANUAL_SAVE__);
+      window.__GC_STATUSFIX__.stampChanged(key, val, null, !_act);
     }
   }catch(e){}
   return new Promise(function(res){
@@ -68960,10 +69035,9 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
               subs:1,vendors:1,customers:1,leads:1,scopes:1,projectPayments:1,projectDocs:1,gcAcctRegister:1};
 
   // Stamp a list so its records are the newest copy (wins every merge).
-  function stampAll(list){
+  function stampAll(list, key, seedOnly){   /* patch STATUSFIX */ // only the records that changed since the last write of this list
     if(!Array.isArray(list)) return list;
-    var now=new Date().toISOString();
-    list.forEach(function(r){ if(r && typeof r==='object'){ r.updatedAt=now; if(!r.savedAt) r.savedAt=now; } });
+    if(window.__GC_STATUSFIX__) window.__GC_STATUSFIX__.stampChanged(key, list, null, !!seedOnly);
     return list;
   }
 
@@ -68977,8 +69051,8 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
         try{
           // Only stamp genuine data lists, and only when the user is actively doing
           // something (so a background sync pull is NOT treated as a manual edit).
-          if(CORE[key] && Array.isArray(value) && (window.__GC_IS_ACTIVE__ || window.__GC_IS_TYPING__ || window.__GC_MANUAL_SAVE__)){
-            stampAll(value);
+          if(CORE[key] && Array.isArray(value)){
+            stampAll(value, key, !(window.__GC_IS_ACTIVE__ || window.__GC_IS_TYPING__ || window.__GC_MANUAL_SAVE__));   /* patch STATUSFIX */
           }
         }catch(e){}
         return _origIdbSet.apply(this, [key, value]);
@@ -68989,7 +69063,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
   // Explicit helper any code can call to force a manual save that STAYS.
   window._gcSaveForGood = async function(key, list){
     try{
-      stampAll(list);
+      stampAll(list, key);   /* patch STATUSFIX */
       if(window.idbSet) await window.idbSet(key, list);
       if(window._applyOrQueue) try{ window._applyOrQueue(key, list); }catch(e){}
       // push right now, bypassing the shrink guard (deliberate manual save)
@@ -86559,10 +86633,12 @@ var _wkLast = {};
 function writeKV(key, value){
   try{
     // keep the "a manual save always wins" stamping the app relies on
-    if(CORE[key] && Array.isArray(value) && (window.__GC_IS_ACTIVE__ || window.__GC_IS_TYPING__ || window.__GC_MANUAL_SAVE__)){
+    if(CORE[key] && Array.isArray(value)){
+      var _act = !!(window.__GC_IS_ACTIVE__ || window.__GC_IS_TYPING__ || window.__GC_MANUAL_SAVE__);   /* patch STATUSFIX */
       var now=new Date().toISOString();
       var big = value.length > 2000 && typeof WeakSet === 'function', had = big ? _wkLast[key] : null;
-      value.forEach(function(r){ if(r && typeof r==='object'){ if(had && had.has(r)) return; r.updatedAt=now; if(!r.savedAt) r.savedAt=now; } });
+      if(big){ if(_act) value.forEach(function(r){ if(r && typeof r==='object'){ if(had && had.has(r)) return; r.updatedAt=now; if(!r.savedAt) r.savedAt=now; } }); }
+      else if(window.__GC_STATUSFIX__) window.__GC_STATUSFIX__.stampChanged(key, value, now, !_act);
     }
   }catch(e){}
   try{ if(CORE[key] && Array.isArray(value) && value.length > 2000 && typeof WeakSet === 'function'){ var ws = new WeakSet(); for(var _i=0; _i<value.length; _i++){ var _r = value[_i]; if(_r && typeof _r==='object') ws.add(_r); } _wkLast[key] = ws; } }catch(e){}
@@ -91082,7 +91158,7 @@ console.log('[GC] Approve sticks — one click, saved to device + cloud, invoice
     // 5) last resort: the import stamp (which is the day of the import)
     if(!dates.length && proj.created){ dates.push(proj.created); src='import date (unconfirmed)'; }
 
-    var y=best(dates);
+    var y=(window.__GC_STATUSFIX__ && window.__GC_STATUSFIX__.jobYearOf) ? window.__GC_STATUSFIX__.jobYearOf(dates, src) : best(dates);   /* patch STATUSFIX */
     return {year:y, from:src||'none'};
   };
 
@@ -126670,6 +126746,24 @@ RI.call(window, function(){
   }catch(e){}
 }, 2000);
 function okE(e){ return e && typeof e === 'object' && e.at && ('v' in e); }
+/* patch STATUSFIX */ // a person's explicit status change: a status picker, a status / reopen / mark button, a drag on the board
+var SF = window.__GC_STATUSFIX__ || null, stGest = [];
+function statusGesture(){ var n = Date.now(); while(stGest.length && n - stGest[0] > 30000) stGest.shift(); return stGest.length > 0; }
+window._gcStatusIntent = function(){ stGest.push(Date.now()); };
+document.addEventListener('change', function(e){
+  try{ if(!e.isTrusted) return; var t = e.target; if(!t || t.tagName !== 'SELECT' || !t.options) return;
+    for(var i = 0; i < t.options.length; i++){ var v = norm(t.options[i].value || t.options[i].text); if(v === 'completed' || v === 'lost'){ stGest.push(Date.now()); return; } } }catch(x){}
+}, true);
+document.addEventListener('click', function(e){
+  try{ if(!e.isTrusted) return; var t = e.target;
+    for(var d = 0; t && d < 4; d++, t = t.parentElement){
+      var a = t.getAttribute ? ((t.getAttribute('data-status') || '') + ' ' + (t.getAttribute('title') || '')) : '';
+      var x = a + ' ' + (d < 2 ? String(t.textContent || '').slice(0, 60) : '');
+      if(/\b(re-?open|status|mark (as )?(active|approved|bidding|on.?hold|lost|completed?|won)|put back)\b/i.test(x)){ stGest.push(Date.now()); return; }
+      if(d < 2 && /^\s*[^a-z]{0,3}\s*(active|approved|bidding|on.?hold|in progress|completed?|lost|won|cancell?ed)\s*$/i.test(String(t.textContent || '').slice(0, 40))){ stGest.push(Date.now()); return; }
+    } }catch(x){}
+}, true);
+document.addEventListener('drop', function(e){ if(e.isTrusted) stGest.push(Date.now()); }, true);
 function learnRec(r){
   var id = idOf(r); if(!id || !r._fe || typeof r._fe !== 'object') return false;
   var ch = false;
@@ -126699,7 +126793,8 @@ function fixRec(r){
        nothing at all); anything else is a later change made some other way, and stays */
     var was = (E.was || []).some(function(w){ return same(w, cur); });
     var olderEdit = own && okE(own) && ts(own.at) < ts(E.at) && same(own.v, cur);
-    if(!(was || olderEdit || cur === undefined || cur === null || cur === '')) return;
+    var termHold = f === 'status' && E.by && SF && SF.isTerm(E.v);   /* patch STATUSFIX */ // a person's completed / lost wins over a copy without a newer person status edit
+    if(!(was || olderEdit || termHold || cur === undefined || cur === null || cur === '')) return;
     o = o || Object.assign({}, r); o._fe = Object.assign({}, r._fe || {});
     o[f] = E.v; o._fe[f] = E; o.__gcxFixed = 1;
   });
@@ -126772,12 +126867,13 @@ function stampEdits(list){
     if(!fw && u && u !== p.u && n - ts(u) > 60000) continue;
     cand.push({ r:r, id:id, p:p, fs:fs });
   }
-  if(!cand.length || (!fw && cand.length > 40)) return;                 /* a sweep over the whole list is no person */
+  if(!cand.length || (!fw && cand.length > 2)) return;                  /* patch STATUSFIX */ // one save of 3+ jobs is a sweep (the 11/04 old copies were 7 and 8)                 /* a sweep over the whole list is no person */
   var at = nowISO(), by = me();
   cand.forEach(function(c){
     var r = c.r, fe = Object.assign({}, r._fe || {}), any = false;
     c.fs.forEach(function(f){
       var own = r._fe && r._fe[f];
+      if(f === 'status' && !fw && SF && SF.isTerm(c.p[f]) && !statusGesture()) return;   /* patch STATUSFIX */
       if(own && okE(own) && same(own.v, r[f]) && n - ts(own.at) < 120000) return;      /* already stamped by whoever made it */
       var L = FE[c.id] && FE[c.id][f];
       if(L && same(L.v, r[f])) return;                                  /* the edit we already know of (arriving here) */
@@ -126820,6 +126916,7 @@ function captureScreen(){
     ch.forEach(function(c){
       c.fs.forEach(function(f){
         var v = c.r[f], own = c.r._fe && c.r._fe[f], Lf = FE[c.id] && FE[c.id][f];
+        if(f === 'status' && SF && SF.isTerm(c.p[f]) && !statusGesture()) return;   /* patch STATUSFIX */
         if(own && okE(own) && same(own.v, v)) return;
         if(Lf && same(Lf.v, v)) return;
         /* the screen going BACK to a value an edit replaced, with no click after that edit, is a sweep redrawing an old copy */
@@ -126841,6 +126938,16 @@ document.addEventListener('change', function(){ ST.call(window, captureScreen, 0
     try{
       if(key === KEY && Array.isArray(value) && this.name === 'kv' && this.transaction && this.transaction.db && this.transaction.db.name === 'grayco_crm'){
         learnAll(value);
+        if(SF && lastRows){ try{   /* patch STATUSFIX */ // a completed / lost job keeps it unless a person changed a status
+          var _fw = forced && forced.until > Date.now() ? forced.ids : null;
+          var _held = SF.holdTerminal(lastRows, value, { gesture:statusGesture(), forced:_fw, fe:FE });
+          if(_held.length){
+            stats.held = (stats.held || 0) + _held.length;
+            var _hm = {}; _held.forEach(function(h){ _hm[h.id] = h.from; });
+            try{ console.log('%c[GC] status kept (no person changed it): ' + _held.map(function(h){ return (h.name || h.id) + ' ' + h.from + ' (not ' + h.to + ')'; }).join('; '), 'background:#7c2d12;color:#fff;padding:2px 6px'); }catch(e){}
+            ST.call(window, function(){ try{ if(window._setProjects) window._setProjects(function(prev){ return Array.isArray(prev) ? prev.map(function(p){ return p && _hm[p.id] && !same(p.status, _hm[p.id]) ? Object.assign({}, p, { status:_hm[p.id] }) : p; }) : prev; }); }catch(e){} }, 0);
+          }
+        }catch(e){} }
         stampEdits(value);
         var g = guard(value);
         if(g !== value){ arguments[0] = value = g; stats.disk++; }
@@ -214176,5 +214283,119 @@ async function otherEdit(runId, idx){
     });
   })();
 }
+})(window);
+</script>
+<script id="gc-patch-statusfix">
+/* patch STATUSFIX repair card (admin, Projects page): the jobs whose status was rewritten on 11/04 by the old-copy saves,
+   with the 10/29 status → the status now, pre-ticked; "Put back" writes each ticked job through the CRM's own person-edit
+   job writer (window._gcxPatchJob — stamped, logged on the job, pushed). The other fields the same saves changed are listed
+   unticked. The card goes away once nothing on it differs any more, or when dismissed. */
+(function(W){
+'use strict';
+if (W.__GC_PATCH_STATUSFIX__) return; W.__GC_PATCH_STATUSFIX__ = true;
+var D = document, ST = W.__GC_NATIVE_SETTIMEOUT__ || setTimeout, RI = W.__GC_NATIVE_SETINTERVAL__ || setInterval;
+var DONE_KEY = 'gc_statusfix_1104_done';
+/* f: field, want: the value on 10/29, bad: the value the old-copy save wrote, tick: pre-ticked, note */
+var FIX = [
+  { id:'PRJf570wdyf36b',   name:'Jason Watkins- reroof',                     f:'status', want:'completed', bad:'active',   tick:1 },
+  { id:'PRJqwpno4m',       name:'Zoo Boardwalk Redecking',                   f:'status', want:'completed', bad:'approved', tick:1 },
+  { id:'PRJ3b2y5z3',       name:'Somerville ceilings',                       f:'status', want:'completed', bad:'approved', tick:1 },
+  { id:'PRJmrjnbxgi',      name:'EAN Holdings- 600 W. church St.- remodel',  f:'status', want:'completed', bad:'approved', tick:1 },
+  { id:'PRJf5rtc0gzn73',   name:'Roof 2 (was Brad Potts- reroof)',           f:'status', want:'completed', bad:'bidding',  tick:1 },
+  { id:'PRJ0sx249j6n8v',   name:'ROTC Cordova',                              f:'status', want:'approved',  bad:'active',   tick:1,
+    note:'set to Active by Wesley Johnson on 11/02 — untick if Active is right' },
+  { id:'PRJ_mstd56bh4hcb', name:'Fayette County Fire Station',               f:'status', want:'lost',      bad:'bidding',  tick:1 },
+  { id:'PRJejk50lxun18',   name:'ISmash Memphis',                            f:'status', want:'lost',      bad:'bidding',  tick:1 },
+  { id:'PRJ3aw4kp1u31r',   name:'EAH - Wash Bay Jonesboro',                  f:'status', want:'lost',      bad:'bidding',  tick:1 },
+  { id:'PRJep9czbdsn5k',   name:'Custom Bathroom  remodel',                  f:'status', want:'lost',      bad:'bidding',  tick:1 },
+  /* the same two old-copy saves also wrote these (not asked about: unticked) */
+  { id:'PRJf570wdyf36b',   name:'Jason Watkins- reroof',       f:'contract', want:20185,  bad:0 },
+  { id:'PRJf570wdyf36b',   name:'Jason Watkins- reroof',       f:'type',     want:'Insurance Claim', bad:'Residential Reno' },
+  { id:'PRJf5rtc0gzn73',   name:'Roof 2',                      f:'name',     want:'Brad Potts- reroof', bad:'Roof 2' },
+  { id:'PRJf5rtc0gzn73',   name:'Roof 2',                      f:'type',     want:'Insurance Claim', bad:'Residential Reno' },
+  { id:'PRJ_mstd56bh4hcb', name:'Fayette County Fire Station', f:'type',     want:'Commercial Reno', bad:'Residential Reno' },
+  { id:'PRJejk50lxun18',   name:'ISmash Memphis',              f:'contract', want:350000, bad:0 },
+  { id:'PRJep9czbdsn5k',   name:'Custom Bathroom  remodel',    f:'contract', want:101000, bad:150000 },
+  { id:'PRJ8v8yl0h',       name:'Mister Car Wash',             f:'contract', want:147978, bad:247978 }
+];
+function s(v){ return v == null ? '' : String(v); }
+function same(a, b){ return s(a).trim().toLowerCase() === s(b).trim().toLowerCase(); }
+function esc(v){ return s(v).replace(/[&<>"]/g, function(c){ return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]; }); }
+function me(){ try { return (W.meUser && W.meUser()) || {}; } catch (e) { return {}; } }
+function isAdmin(){ var r = s(me().role).toLowerCase(); return r === 'admin' || r === 'owner'; }
+function who(){ var u = me(); return u.name || u.email || ''; }
+function view(){ try { return localStorage.getItem('grayco_view') || ''; } catch (e) { return ''; } }
+function done(){ try { return localStorage.getItem(DONE_KEY) === '1'; } catch (e) { return false; } }
+function jobs(){ return (W._crm && Array.isArray(W._crm.projects)) ? W._crm.projects : []; }
+function show(f, v){ return f === 'contract' ? '$' + (Number(v) || 0).toLocaleString() : s(v) || '—'; }
+
+/* the rows still to put back: the job is there and the field is not the 10/29 value */
+function pending(list){
+  var by = {}; (list || jobs()).forEach(function(p){ if (p && p.id) by[p.id] = p; });
+  return FIX.map(function(x, i){ var p = by[x.id]; return p && !same(p[x.f], x.want) ? Object.assign({ i:i, cur:p[x.f] }, x) : null; }).filter(Boolean);
+}
+
+/* one patch per job, through the person-edit job writer; the job's autoLog says what was put back and by whom */
+async function putBack(rows){
+  var byJob = {}, out = { ok:0, fail:0 };
+  rows.forEach(function(x){ (byJob[x.id] = byJob[x.id] || []).push(x); });
+  for (var id in byJob){
+    var p = jobs().filter(function(j){ return j && j.id === id; })[0]; if (!p){ out.fail++; continue; }
+    var patch = {}, txt = [];
+    byJob[id].forEach(function(x){ patch[x.f] = x.want; txt.push(x.f + ': ' + show(x.f, p[x.f]) + ' → ' + show(x.f, x.want)); });
+    var log = Array.isArray(p.autoLog) ? p.autoLog.slice() : [];
+    log.push({ at:new Date().toISOString(), by:who() || 'Admin', text:'Put back after the 11/04 old-copy save (STATUSFIX): ' + txt.join(', ') });
+    patch.autoLog = log;
+    try { W._gcStatusIntent && W._gcStatusIntent(); } catch (e) {}
+    var ok = false;
+    try { ok = W._gcxPatchJob ? await W._gcxPatchJob(id, patch, 'STATUSFIX put back') : false; } catch (e) { ok = false; }
+    if (ok) out.ok += byJob[id].length; else out.fail += byJob[id].length;
+  }
+  return out;
+}
+
+function paint(){
+  try {
+    var host = D.getElementById('_gcStatusFix');
+    if (view() !== 'projects' || !isAdmin() || done()){ if (host) host.remove(); return; }
+    var rows = pending();
+    if (!rows.length){ if (host) host.remove(); return; }
+    var key = rows.map(function(x){ return x.i + ':' + s(x.cur); }).join('|');
+    if (host && host.getAttribute('data-k') === key) return;
+    var main = D.querySelector('main') || D.getElementById('root'); if (!main) return;
+    var keep = {}; if (host) host.querySelectorAll('input[data-i]').forEach(function(c){ keep[c.getAttribute('data-i')] = c.checked; });
+    if (!host){
+      host = D.createElement('div'); host.id = '_gcStatusFix';
+      host.style.cssText = 'background:#fff7ed;border:2px solid #f59e0b;border-radius:10px;padding:12px 14px;margin:8px 0;color:#1f2937;font-size:13px;max-width:100%;box-sizing:border-box;overflow-x:auto';
+      var yb = D.getElementById('_gcYearBar'), t = main.querySelector('table');
+      var at = yb || t; if (at && at.parentElement) at.parentElement.insertBefore(host, at); else main.insertBefore(host, main.firstChild);
+    }
+    host.setAttribute('data-k', key);
+    host.innerHTML = '<div style="font-weight:800;font-size:14px;margin-bottom:4px">⚠️ Job statuses changed by an old copy on 11/04</div>'
+      + '<div style="font-size:12px;color:#57534e;margin-bottom:8px">Two computers opened with an old copy of the jobs and saved it over the newer one. Ticked rows go back to the 10/29 value.</div>'
+      + '<table style="border-collapse:collapse;font-size:12px;width:100%"><tr style="text-align:left;color:#78716c"><th></th><th>Job</th><th>Field</th><th>10/29</th><th></th><th>Now</th></tr>'
+      + rows.map(function(x){
+          var on = (x.i in keep) ? keep[x.i] : !!x.tick;
+          return '<tr style="border-top:1px solid #fde68a"><td style="padding:4px 6px"><input type="checkbox" data-i="' + x.i + '"' + (on ? ' checked' : '') + '></td>'
+            + '<td style="padding:4px 6px;font-weight:700">' + esc(x.name) + (x.note ? '<div style="font-weight:400;color:#92400e">' + esc(x.note) + '</div>' : '') + '</td>'
+            + '<td style="padding:4px 6px">' + esc(x.f) + '</td><td style="padding:4px 6px;color:#166534;font-weight:700">' + esc(show(x.f, x.want)) + '</td><td>←</td>'
+            + '<td style="padding:4px 6px;color:#b91c1c">' + esc(show(x.f, x.cur)) + '</td></tr>';
+        }).join('') + '</table>'
+      + '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center">'
+      + '<button data-a="go" style="background:#166534;color:#fff;border:none;border-radius:6px;padding:7px 14px;font-weight:800;cursor:pointer;font-family:inherit">Put back</button>'
+      + '<button data-a="no" style="background:#e5e7eb;color:#111;border:none;border-radius:6px;padding:7px 12px;font-weight:700;cursor:pointer;font-family:inherit">Dismiss</button>'
+      + '<span data-msg style="font-size:12px;color:#57534e"></span></div>';
+    host.querySelector('[data-a="no"]').onclick = function(){ try { localStorage.setItem(DONE_KEY, '1'); } catch (e) {} host.remove(); };
+    host.querySelector('[data-a="go"]').onclick = function(){
+      var pick = [].slice.call(host.querySelectorAll('input[data-i]:checked')).map(function(c){ return +c.getAttribute('data-i'); });
+      var sel = pending().filter(function(x){ return pick.indexOf(x.i) >= 0; });
+      var msg = host.querySelector('[data-msg]'); if (!sel.length){ msg.textContent = 'Nothing ticked.'; return; }
+      this.disabled = true; msg.textContent = 'Putting back ' + sel.length + '…';
+      putBack(sel).then(function(r){ msg.textContent = r.ok + ' put back' + (r.fail ? ', ' + r.fail + ' could not be saved' : '') + '.'; host.setAttribute('data-k', ''); ST(paint, 1500); });
+    };
+  } catch (e) {}
+}
+W._gcStatusFixPending = pending; W._gcStatusFixPutBack = putBack; W._gcStatusFixPaint = paint;
+RI(paint, 3000); ST(paint, 2500);
 })(window);
 </script>
