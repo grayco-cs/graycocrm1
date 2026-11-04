@@ -5291,7 +5291,7 @@ window.__GC_LIVE=function(key, v){
   return v;
 };
 </script>
-<!-- GrayCo CRM Build: 33.163-2026-11-03-r17q15 -->
+<!-- GrayCo CRM Build: 33.163-2026-11-04-r17q16 -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6239,7 +6239,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.163-2026-11-03-r17q15");
+  console.log("[GC] Build 33.163-2026-11-04-r17q16");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6287,7 +6287,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.163-2026-11-03-r17q15"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.163-2026-11-04-r17q16"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -85420,7 +85420,18 @@ async function renderApprovals(body, pend){
   var all=await P.runs();
   var list=all.slice().sort(function(a,b){ return String(b.createdAt||'').localeCompare(String(a.createdAt||'')); });
   if(!list.length){ body.innerHTML='<div style="'+CSS.card+'">No payroll runs yet. Start one on the <b>Run Payroll</b> tab.</div>'; return; }
-  body.innerHTML=list.map(runCard).join('');
+  /* patch PAYGROUP: one card per payday — every person paid that day under it */
+  (function(){ var g={}, order=[]; list.forEach(function(r){ var k=String(r.payDate||r.to||'—'); if(!g[k]){ g[k]=[]; order.push(k); } g[k].push(r); });
+    order.sort(function(a,b){ return b.localeCompare(a); });
+    body.innerHTML=order.map(function(k){ var rs=g[k]; if(rs.length===1) return runCard(rs[0]);
+      var live=rs.filter(function(r){ return r.status==='paid'||r.status==='approved'; }), names={}, gross=0, net=0, fed=0, n=0;
+      rs.forEach(function(r){ (r.lines||[]).forEach(function(L){ names[L.name||'']=1; }); });
+      live.forEach(function(r){ var t=r.totals||{}; gross+=+t.gross||0; net+=+t.net||0; fed+=+t.fed||0; n+=(r.lines||[]).length; });
+      var from=rs.map(function(r){ return String(r.from||''); }).sort()[0], to=rs.map(function(r){ return String(r.to||''); }).sort().slice(-1)[0];
+      return '<div style="border:2px solid #cbd5e1;border-radius:14px;padding:10px 10px 2px;margin-bottom:14px;background:#f8fafc">'
+        +'<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:2px 6px 10px"><div><b style="font-size:15px">💵 Payroll — checks dated '+esc(k)+'</b>'
+        +'<div style="'+CSS.sub+'">Week '+esc(from)+' → '+esc(to)+' · '+Object.keys(names).filter(Boolean).length+' people ('+esc(Object.keys(names).filter(Boolean).join(', '))+') · '+n+' check'+(n===1?'':'s')+' · gross '+money(gross)+' · federal '+money(fed)+' · net '+money(net)+(live.length<rs.length?(' · '+(rs.length-live.length)+' not paid yet'):'')+'</div></div></div>'
+        +rs.map(runCard).join('')+'</div>'; }).join(''); })();
   Array.prototype.forEach.call(body.querySelectorAll('[data-appr]'), function(b){
     b.onclick=function(){ approveRun(b.getAttribute('data-appr')); };
   });
