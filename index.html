@@ -5478,7 +5478,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.166-2026-11-05-r17q25 -->
+<!-- GrayCo CRM Build: 33.167-2026-11-05-r17q26 -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6427,7 +6427,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.166-2026-11-05-r17q25");
+  console.log("[GC] Build 33.167-2026-11-05-r17q26");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6475,7 +6475,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.166-2026-11-05-r17q25"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.167-2026-11-05-r17q26"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -84865,6 +84865,7 @@ window._gcPayrollHours = hoursFor;
 /* ── year-to-date, from approved/paid runs ───────────────────────────────── */
 async function runs(){ var l=await get(K_RUNS); l=Array.isArray(l)?l:[];   /* patch PAYMANUAL: a deleted run (gc_tombstones) is never read back */
   try{ if(window._gcxDead){ var _pmF=l.filter(function(r){ return !(r && r.id!=null && window._gcxDead('payrollRuns', String(r.id))); }); if(_pmF.length!==l.length) l=_pmF; } }catch(_pmE){}
+  try{ var _sd=window._gcLineAppr&&window._gcLineAppr.shadowDrafts(l); if(_sd&&_sd.changed){ l=_sd.list; await put(K_RUNS, l); await _prArchive(_sd, 'automatic draft for a payday already being paid'); _sd.deadIds.forEach(function(id){ try{ if(window._gcxDel) window._gcxDel(K_RUNS, id); }catch(_xe){} }); } }catch(_sdE){}   /* patch LINEAPPR */
   try{ var _fd=foldDupRuns(l); if(_fd.changed){ l=_fd.list; await put(K_RUNS, l); await _prArchive(_fd, 'duplicate drafts folded'); } }catch(_fdE){}   /* patch PAYREPLACE: no-op once there are no copies */
   return l; }
 async function saveRuns(l){ await put(K_RUNS, l); }
@@ -85645,6 +85646,13 @@ async function renderApprovals(body, pend){
     window._gcPayTotalsOf=totalsOf;   /* patch DRAFTEDIT */
     b.onclick=function(){ var f=window._gcDraftEditLine||window._gcEditPayLine; if(f) f(b.getAttribute('data-ledit'), +b.getAttribute('data-idx')); };
   });
+  window._gcPayApproveRun=approveRun;   /* patch LINEAPPR */
+  Array.prototype.forEach.call(body.querySelectorAll('[data-lappr]'), function(b){
+    b.onclick=function(){ if(window._gcLineApprove) window._gcLineApprove(b.getAttribute('data-lappr'), +b.getAttribute('data-idx')); };
+  });
+  Array.prototype.forEach.call(body.querySelectorAll('[data-ldeny]'), function(b){
+    b.onclick=function(){ if(window._gcLineDeny) window._gcLineDeny(b.getAttribute('data-ldeny'), +b.getAttribute('data-idx')); };
+  });
   Array.prototype.forEach.call(body.querySelectorAll('[data-void]'), function(b){
     b.onclick=function(){ if(window._gcPayRunVoid) window._gcPayRunVoid(b.getAttribute('data-void')); };
   });
@@ -85663,7 +85671,8 @@ function runCard(r){
       +'<div style="'+CSS.sub+'">Checks dated '+esc(r.payDate||'—')+' · '+((r.lines||[]).length)+' checks · gross '+money(t.gross)+' · net '+money(t.net)
       +(r.submittedBy?(' · prepared by '+esc(r.submittedBy)):'')
       +(r.approvedBy?(' · approved by '+esc(r.approvedBy)+' on '+String(r.approvedAt||'').slice(0,10)):'')
-      +(r.deniedBy?(' · denied by '+esc(r.deniedBy)+(r.denyReason?(' — '+esc(r.denyReason)):'')):'')+(r.voidedBy?(' · voided by '+esc(r.voidedBy)+' on '+String(r.voidedAt||'').slice(0,10)+' — kept for the record, not counted'):'')
+      +(r.deniedBy?(' · denied by '+esc(r.deniedBy)+(r.denyReason?(' — '+esc(r.denyReason)):'')):'')+(r.splitFrom?' · <b>approved alone</b>':'')+((r.splitOff||[]).length?(' · approved alone: '+esc(r.splitOff.map(function(x){ return x.name; }).join(', '))):'')   /* patch LINEAPPR */
+      +(r.voidedBy?(' · voided by '+esc(r.voidedBy)+' on '+String(r.voidedAt||'').slice(0,10)+' — kept for the record, not counted'):'')
       +'</div></div>'
       +'<div style="display:flex;gap:8px;flex-wrap:wrap;">'
         +'<button data-open="'+r.id+'" style="'+CSS.btn2+'">'+(open?'Hide checks':'See every check')+'</button>'
@@ -85684,7 +85693,7 @@ function runCard(r){
       +'<th style="'+CSS.th+'">Check #</th><th style="'+CSS.th+'">Status</th><th style="'+CSS.th+'"></th></tr></thead><tbody>'
       +(r.lines||[]).map(function(L,i){
         return '<tr>'
-          +'<td style="'+CSS.td+'">'+esc(L.name)+'</td>'
+          +'<td style="'+CSS.td+'">'+esc(L.name)+((L.status==='denied'&&L.denyReason)?('<div style="font-size:11px;color:#991b1b;">denied: '+esc(L.denyReason)+'</div>'):'')+'</td>'   /* patch LINEAPPR */
           +'<td style="'+CSS.num+'">'+money(L.gross)+'</td>'
           +'<td style="'+CSS.num+'">'+money(L.fed)+'</td>'
           +'<td style="'+CSS.num+'">'+money(r2(n2(L.ss)+n2(L.med)+n2(L.addlMed)))+'</td>'
@@ -85696,7 +85705,9 @@ function runCard(r){
             +'<button data-stub="'+r.id+'" data-idx="'+i+'" style="'+CSS.btn2+'padding:4px 9px;font-size:11px;">Pay stub</button> '
             +((P.isAdmin()&&(r.status==='pending'||r.status==='draft')&&(window._gcDraftEditLine||window._gcEditPayLine))?(   /* patch DRAFTEDIT */
             '<button data-ledit="'+esc(r.id)+'" data-idx="'+i+'" style="'+CSS.btn2+'padding:4px 9px;font-size:11px;color:#1d4ed8;">✏️ Edit</button> '):'')   /* patch PAYEDIT2 */
-            +(P.isAdmin()&&r.status==='pending'?('<button data-line="'+r.id+'" data-idx="'+i+'" data-act="'+(L.status==='denied'?'pending':'denied')+'" style="'+CSS.btn2+'padding:4px 9px;font-size:11px;color:#dc2626;">'+(L.status==='denied'?'Undo':'Hold this one')+'</button>'):'')
+            +(P.isAdmin()&&r.status==='pending'?(L.status==='denied'?('<button data-line="'+r.id+'" data-idx="'+i+'" data-act="pending" style="'+CSS.btn2+'padding:4px 9px;font-size:11px;color:#dc2626;">Undo</button>'):   /* patch LINEAPPR */
+              ('<button data-lappr="'+esc(r.id)+'" data-idx="'+i+'" style="'+CSS.btn2+'padding:4px 9px;font-size:11px;color:#166534;font-weight:800;">✓ Approve this check</button> '
+              +'<button data-ldeny="'+esc(r.id)+'" data-idx="'+i+'" style="'+CSS.btn2+'padding:4px 9px;font-size:11px;color:#dc2626;">✕ Deny this check</button>')):'')
           +'</td></tr>';
       }).join('')
       +'</tbody></table></div>';
@@ -85706,7 +85717,7 @@ function runCard(r){
 async function toggleLine(runId, idx, act){
   var all=await P.runs(), r=all.find(function(x){ return x.id===runId; }); if(!r) return;
   var L=(r.lines||[])[+idx]; if(!L) return;
-  L.status = act;
+  L.status = act; if(act!=='denied'){ delete L.denyReason; delete L.deniedBy; delete L.deniedAt; }   /* patch LINEAPPR */
   r.totals = totalsOf(r.lines);
   await P.saveRuns(all); render();
 }
@@ -85718,12 +85729,12 @@ async function denyRun(runId){
   alert('Denied. The office can fix it and send it again.');
   render();
 }
-async function approveRun(runId){
+async function approveRun(runId, _la){   /* patch LINEAPPR */
   if(!P.isAdmin()){ alert('Only an admin can approve payroll.'); return; }
   var all=await P.runs(), r=all.find(function(x){ return x.id===runId; }); if(!r) return;
   var live=(r.lines||[]).filter(function(L){ return L.status!=='denied'; });
   var t=totalsOf(r.lines);
-  if(!confirm('Approve '+live.length+' check'+(live.length>1?'s':'')+' totaling '+money(t.net)+'?\n\n'
+  if(!(_la&&_la.yes) && !confirm('Approve '+live.length+' check'+(live.length>1?'s':'')+' totaling '+money(t.net)+'?\n\n'
     +'This records every check, posts '+money(t.gross)+' of wages and '+money(t.employerTotal)+' of employer taxes to the books, and draws '+money(t.net)+' from the payroll account.')) return;
 
   var set=await P.settings();
@@ -85737,7 +85748,7 @@ async function approveRun(runId){
   await P.saveRuns(all);
   try{ if(P.replaceDrafts) await P.replaceDrafts(live); }catch(_rpE){}   /* patch PAYREPLACE */
   if(!_pe2Skip) try{ await postToBooks(r, live, t); }catch(e){ console.warn('payroll posting', e); }
-  alert('Approved.\n\nChecks '+ (live[0]&&live[0].checkNo) +'–'+ (live[live.length-1]&&live[live.length-1].checkNo) +
+  if(!(_la&&_la.quiet)) alert('Approved.\n\nChecks '+ (live[0]&&live[0].checkNo) +'–'+ (live[live.length-1]&&live[live.length-1].checkNo) +
         ' recorded. Books updated. Open any check to print its pay stub.');
   render();
 }
@@ -111709,6 +111720,7 @@ window._gcCanApprovePayrollNow = function(run){
 
 window._gcPayrollWaitingToApprove = async function(){
   var runs=[]; try{ runs = (await window.idbGet('payrollRuns'))||[]; }catch(e){}
+  try{ if(window._gcLineAppr) runs = window._gcLineAppr.shadowDrafts(runs).list; }catch(_sdE){}   /* patch LINEAPPR */
   return runs.filter(function(r){
     return r && ['draft','pending',''].indexOf(low(r.status))>=0
              && Array.isArray(r.lines) && r.lines.length;
@@ -214783,4 +214795,138 @@ D.addEventListener('change', function(ev){
 }, true);
 try { console.log('[GC] ＋ New job… in the money inboxes (patch INBOXNEWJOB)'); } catch (e) {}
 })();
+</script>
+<script id="gc-patch-lineappr">
+/* __GC_PATCH_LINEAPPR__ (owner 11/05, Payroll → Approvals → "See every check"):
+   "need to approve checks and runs by themself and deny by themself if something is wrong and edit hours or one if i need to change it".
+   Each line of a pending run (admin): ✓ Approve this check / ✕ Deny this check (with a reason), beside Pay stub and ✏️ Edit.
+   APPROVE ONE: the line moves out of the run into its own run (same from / to / payDate, history "approved alone by <me>")
+   and that run goes through the page's own approveRun (check number, payroll register, employer taxes, payroll account,
+   payment history, PAYREPLACE) — nothing is booked here. The line LEAVES the original run, so every reader (941, PMPAY,
+   YTD, withholding) sees it once. The last waiting line is approved with the run itself (approveRun).
+   DENY ONE: the line is denied with a reason. When nothing is left waiting, the run closes: approved if any check of it
+   was approved alone, denied if every check was denied.
+   SHADOW DRAFT: an automatic draft (status 'draft', auto:true) for a payDate that already has a pending / approved / paid
+   run is retired on read (the engine's runs(), archived in payrollRetired + tombstoned) — condition-gated, a no-op otherwise. */
+(function(W){
+'use strict';
+function s(v){ return v == null ? '' : String(v); }
+function n2(v){ var x = parseFloat(s(v).replace(/[$,]/g, '')); return isFinite(x) ? x : 0; }
+function r2(v){ return Math.round(n2(v) * 100) / 100; }
+function clone(o){ return JSON.parse(JSON.stringify(o)); }
+var BUSY = { pending: 1, approved: 1, paid: 1 };
+
+/* pure: auto drafts whose payday is already being paid -> { list, retired, deadIds, changed } (PAYREPLACE's shape) */
+function shadowDrafts(list){
+  var out = { retired: [], deadIds: [], changed: false }, busy = {};
+  (list || []).forEach(function(r){ if (r && r.payDate && BUSY[s(r.status)]) busy[s(r.payDate)] = 1; });
+  out.list = (list || []).filter(function(r){
+    if (!(r && s(r.status) === 'draft' && r.auto === true && busy[s(r.payDate)])) return true;
+    out.changed = true; out.deadIds.push(s(r.id));
+    (r.lines || []).forEach(function(L){ if (L) out.retired.push({ runId: r.id, payDate: r.payDate, from: r.from, to: r.to, status: r.status, why: 'automatic draft for a payday that already has a pending / approved / paid run', line: L }); });
+    return false;
+  });
+  return out;
+}
+function totals(lines){
+  var t = { gross: 0, fed: 0, ss: 0, med: 0, addlMed: 0, state: 0, otherDed: 0, net: 0, employerSS: 0, employerMed: 0, futa: 0, suta: 0, hours: 0 };
+  (lines || []).forEach(function(L){ if (!L || L.status === 'denied') return; Object.keys(t).forEach(function(k){ t[k] += k === 'hours' ? n2(L.hours) + n2(L.otHours) : n2(L[k]); }); });
+  Object.keys(t).forEach(function(k){ t[k] = r2(t[k]); });
+  t.irs941 = r2(t.fed + t.ss * 2 + t.med * 2 + t.addlMed); t.employerTotal = r2(t.employerSS + t.employerMed + t.futa + t.suta); t.totalCost = r2(t.gross + t.employerTotal);
+  return t;
+}
+function hist(r, h){ r.history = (Array.isArray(r.history) ? r.history : []).concat([h]); }
+/* pure: take line idx out of run R (in list) into its own pending run, placed right after R -> the new run */
+function splitLine(list, runId, idx, me, now){
+  var R = (list || []).filter(function(r){ return r && s(r.id) === s(runId); })[0], L = R && (R.lines || [])[idx];
+  if (!L) throw new Error('could not find that check');
+  if (s(R.status) !== 'pending') throw new Error('this run is ' + s(R.status) + ', not waiting on admin');
+  if (L.status === 'denied') throw new Error('that check is denied — Undo it first');
+  now = now || new Date().toISOString();
+  var N = clone(R), X = clone(L); X.status = 'pending';
+  ['approvedBy', 'approvedAt', 'deniedBy', 'deniedAt', 'denyReason', 'reopenedForEdit', 'reopenedBy', 'reopenedFrom', 'reopenBooked', 'reapprovedAt', 'splitOff', 'approvedByOffice', 'reviewedAt', 'problems'].forEach(function(k){ delete N[k]; });
+  N.id = s(R.id) + '-L' + Date.now().toString(36) + Math.random().toString(36).slice(2, 4);
+  N.lines = [X]; N.status = 'pending'; N.auto = false; N.splitFrom = s(R.id); N.approvedAlone = true; N.createdAt = now; N.updatedAt = now;
+  N.history = [{ at: now, by: me, action: 'approved alone', note: 'approved alone by ' + me + ' — ' + s(X.name) + ' (net ' + r2(X.net).toFixed(2) + ') taken from run ' + s(R.id) }];
+  N.totals = totals(N.lines);
+  R.lines.splice(idx, 1);
+  R.splitOff = (Array.isArray(R.splitOff) ? R.splitOff : []).concat([{ runId: N.id, name: s(X.name), empId: s(X.empId), net: r2(X.net), at: now, by: me }]);
+  R.totals = totals(R.lines); R.updatedAt = now;
+  hist(R, { at: now, by: me, action: 'check approved alone', note: s(X.name) + ' approved alone by ' + me + ' → run ' + N.id });
+  list.splice(list.indexOf(R) + 1, 0, N);
+  return N;
+}
+/* pure: nothing left waiting -> close: approved if any check went out alone, else denied. Returns the new status or '' */
+function closeIfDone(R, me, now){
+  if (!R || s(R.status) !== 'pending') return '';
+  if ((R.lines || []).some(function(L){ return L && L.status !== 'denied'; })) return '';
+  now = now || new Date().toISOString(); R.totals = totals(R.lines); R.updatedAt = now;
+  if ((R.splitOff || []).length){
+    R.status = 'approved'; R.approvedBy = me; R.approvedAt = now; R.closedByLines = true;
+    hist(R, { at: now, by: me, action: 'closed', note: 'every check decided — ' + R.splitOff.length + ' approved alone, the rest denied' });
+  } else {
+    R.status = 'denied'; R.deniedBy = me; R.deniedAt = now; R.closedByLines = true;
+    R.denyReason = (R.lines || []).map(function(L){ return s(L.name) + (L.denyReason ? ': ' + s(L.denyReason) : ''); }).join('; ');
+    hist(R, { at: now, by: me, action: 'closed', note: 'every check denied' });
+  }
+  return R.status;
+}
+function denyLine(R, idx, why, me, now){
+  var L = R && (R.lines || [])[idx]; if (!L) throw new Error('could not find that check');
+  if (s(R.status) !== 'pending') throw new Error('this run is ' + s(R.status) + ', not waiting on admin');
+  now = now || new Date().toISOString();
+  L.status = 'denied'; L.denyReason = s(why); L.deniedBy = me; L.deniedAt = now;
+  R.totals = totals(R.lines); R.updatedAt = now;
+  hist(R, { at: now, by: me, action: 'check denied', note: s(L.name) + ' denied by ' + me + (why ? ' — ' + s(why) : '') });
+  return closeIfDone(R, me, now);
+}
+W._gcLineAppr = { shadowDrafts: shadowDrafts, splitLine: splitLine, closeIfDone: closeIfDone, denyLine: denyLine, totals: totals };
+if (typeof document === 'undefined') return;
+
+function P(){ return W.__GC_PAY || null; }
+function who(){ var p = P(); try { return s(p && p.me && p.me()) || 'admin'; } catch (e) { return 'admin'; } }
+function money(v){ return '$' + n2(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function rerender(){ try { if (W._gcOpenPayrollTab) W._gcOpenPayrollTab('approvals'); } catch (e) {} }
+function find(all, id){ return all.filter(function(r){ return r && s(r.id) === s(id); })[0]; }
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout, busyNow = false;
+
+W._gcLineApprove = async function(runId, idx){
+  var p = P(); if (!p) return; if (!p.isAdmin()) { alert('Only an admin can approve payroll.'); return; }
+  if (busyNow) return; busyNow = true;
+  try {
+    var all = await p.runs(), R = find(all, runId), L = R && (R.lines || [])[idx];
+    if (!L || s(R.status) !== 'pending' || L.status === 'denied') { alert('That check is not waiting on admin any more.'); rerender(); return; }
+    var waiting = R.lines.filter(function(x){ return x && x.status !== 'denied'; });
+    if (!W._gcPayApproveRun) { alert('Payroll is still loading — try again in a moment.'); return; }
+    if (waiting.length === 1) { await W._gcPayApproveRun(R.id); return; }   /* the last one: the run itself (its own confirm) */
+    if (!confirm('Approve only ' + s(L.name) + '\'s check — net ' + money(L.net) + ' (gross ' + money(L.gross) + ')?\n\n'
+      + 'It is recorded and booked now (check number, wages, employer taxes, payroll account) as its own run for ' + s(R.from) + ' → ' + s(R.to) + ', checks dated ' + s(R.payDate) + '.\n'
+      + 'The other ' + (waiting.length - 1) + ' check' + (waiting.length > 2 ? 's stay' : ' stays') + ' Waiting on admin.')) return;
+    var me = who(), N = splitLine(all, R.id, idx, me);
+    await p.saveRuns(all);
+    try { await W._gcPayApproveRun(N.id, { yes: true, quiet: true }); }
+    catch (e) { console.warn('[GC LINEAPPR] approve', e); }
+    var after = find(await p.runs(), N.id), X = after && after.lines[0];
+    if (!after || ['approved', 'paid'].indexOf(s(after.status)) < 0) { alert('Not approved: ' + s(L.name) + '\'s check is in its own run, still Waiting on admin.'); rerender(); return; }
+    alert('Approved ' + s(X.name) + ' — check ' + s(X.checkNo) + ', net ' + money(X.net) + '. Recorded and booked.\n\nThe other checks are still Waiting on admin.');
+    rerender();
+  } catch (e) { alert('Not approved: ' + (e && e.message || e)); rerender(); }
+  finally { busyNow = false; }
+};
+
+W._gcLineDeny = async function(runId, idx){
+  var p = P(); if (!p) return; if (!p.isAdmin()) { alert('Only an admin can deny payroll.'); return; }
+  var all = await p.runs(), R = find(all, runId), L = R && (R.lines || [])[idx];
+  if (!L || s(R.status) !== 'pending') { alert('That check is not waiting on admin any more.'); rerender(); return; }
+  var why = prompt('Deny ' + s(L.name) + '\'s check (' + money(L.net) + ') — what is wrong?'); if (why === null) return;
+  try { var st = denyLine(R, idx, why.trim(), who()); await p.saveRuns(all);
+    if (st) alert(st === 'denied' ? 'Every check on this run is denied — the run is closed as Denied.' : 'Every check on this run is decided — the run is closed (the approved ones went out alone).');
+  } catch (e) { alert('Not denied: ' + (e && e.message || e)); }
+  rerender();
+};
+
+/* on load: retire a shadow auto draft once (the engine's runs() does it; nothing is written when there is none) */
+(function heal(n){ var p = P(); if (!p || !p.runs || !p.isAdmin) { if (n < 120) ST(function(){ heal(n + 1); }, 1000); return; }
+  ST(function(){ try { p.runs(); } catch (e) {} }, 5000); })(0);
+})(window);
 </script>
