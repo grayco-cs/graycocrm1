@@ -5478,7 +5478,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.167-2026-11-05-r17q26 -->
+<!-- GrayCo CRM Build: 33.167-2026-11-05-r17q27 -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6427,7 +6427,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.167-2026-11-05-r17q26");
+  console.log("[GC] Build 33.167-2026-11-05-r17q27");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6475,7 +6475,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.167-2026-11-05-r17q26"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.167-2026-11-05-r17q27"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -120102,14 +120102,14 @@ function qbDate(v){ var m=s(v).match(/^([A-Za-z]{3})[a-z]*\.?\s+(\d{1,2}),?\s+(\
 function parseQb(text){
   var rows=csvRows(text), d=detect(rows);
   if(!d) return { error:'No QuickBooks header row found (looked for Date / Num / Name / Amount …).', recs:[] };
-  var m=d.map, recs=[], curName='', curAcct='';
+  var m=d.map, recs=[], curName='', curAcct='', sawHead=false;/*QBMULTI*/
   for(var i=d.row+1;i<rows.length;i++){
     var r=rows[i]; if(!r || !r.some(function(x){ return x; })) continue;
     var g=function(f){ return m[f]!==undefined ? s(r[m[f]]) : ''; };
     var first=s(r[0]);
     if(/^total\b/i.test(first) || /^total\b/i.test(g('name')) || /^(tuesday|monday|wednesday|thursday|friday|saturday|sunday)\b/i.test(first) || /^accrual basis|^cash basis/i.test(first)) continue;
     /* Sales by Customer Detail groups rows under a customer heading row */
-    if(r.filter(function(x){ return x; }).length===1 && first && m.date!==undefined && !ymd(first)){ if(d.kind==='transactions') curAcct=first; else curName=first; continue; }   /* patch STMTPDF: Transaction Detail by Account headings are accounts */
+    if(r.filter(function(x){ return x; }).length===1 && first && m.date!==undefined && !ymd(first)){ if(d.kind==='transactions'){ curAcct=first; sawHead=true; } else curName=first; continue; }   /* patch STMTPDF: Transaction Detail by Account headings are accounts */
     var rec={ line:i+1, raw:r };
     if(d.kind==='customers' || d.kind==='vendors'){
       rec.kind=d.kind==='customers'?'customer':'vendor';
@@ -120133,7 +120133,7 @@ function parseQb(text){
   }
   /* patch STMTPDF: Transaction Detail by Account lists an invoice under A/R (its total) and again under each income account
      (its lines): keep the total, once */
-  if(d.kind==='transactions'){ var byK={}, keepR=[]; recs.forEach(function(r){ var k=r.key, big=/^(invoice|bill|salesreceipt|creditmemo)$/.test(r.kind); if(!big || !byK[k]){ if(big) byK[k]=r; keepR.push(r); return; } if(Math.abs(r.amount)>Math.abs(byK[k].amount)){ keepR[keepR.indexOf(byK[k])]=r; byK[k]=r; } }); recs=keepR; }
+  if(d.kind==='transactions'){ var byK={}, keepR=[]; recs.forEach(function(r){ var k=r.key, big=/^(invoice|bill|salesreceipt|creditmemo)$/.test(r.kind); if(!big || !byK[k]){ if(big){ byK[k]=r; r.lines=1; } keepR.push(r); return; } if(!sawHead){ var b0=byK[k]; b0.amount=Math.round((b0.amount+r.amount)*100)/100; b0.lines=(b0.lines||1)+1; if(!b0.memo && r.memo) b0.memo=r.memo; return; }   /* QBMULTI: a plain Transaction List = one row per line → add them up */ if(Math.abs(r.amount)>Math.abs(byK[k].amount)){ keepR[keepR.indexOf(byK[k])]=r; byK[k]=r; } }); recs=keepR; }
   /* Sales by Customer Detail: one invoice = several product lines → add them up per invoice number */
   if(d.kind==='salesbycustomer'){
     var by={}, order=[];
@@ -120180,6 +120180,7 @@ window._gcQbCsvPlan = async function(text){
       plan.rows.push(row); return;
     }
     var already=hasKey(I, r.key)||hasKey(E, r.key);
+    if(already && /^(invoice|bill|salesreceipt)$/.test(r.kind) && /quickbooks/i.test(s(already.source)) && I.indexOf(already)>=0 && Math.abs(cents(amtOf(already))-cents(r.amount))>1){ row.target=already; row.action='update'; row.changes={ amt:r.amount, qbAmountWas:num(amtOf(already)) }; if(already.amount!=null) row.changes.amount=r.amount; row.why='QuickBooks is fact: '+r.qbType+(r.num?' #'+r.num:'')+' is '+money(r.amount)+(r.lines>1?' ('+r.lines+' lines)':'')+' — the CRM had '+money(amtOf(already)); plan.counts.updated++; plan.counts.matched++; plan.counts.amountFixed=(plan.counts.amountFixed||0)+1; plan.rows.push(row); return; }   /* QBMULTI */
     if(already){ row.action='already'; row.target=already; row.why='imported before (same QuickBooks '+r.qbType+' '+(r.num||'')+')'; plan.counts.already++; plan.rows.push(row); return; }
     if(taskKeys[r.key]){ row.action='already'; row.why='already on the office to-do list'; plan.counts.already++; plan.rows.push(row); return; }
     if(r.kind==='invoice' || r.kind==='salesreceipt'){
@@ -120200,7 +120201,8 @@ window._gcQbCsvPlan = async function(text){
       } else if(byNo.length===1){
         var x=byNo[0];
         if(revHit.length) row.reviewTwins=revHit;
-        if(Math.abs(cents(amtOf(x))-cents(r.amount))>1){ row.action='todo'; row.why='amount conflict: CRM has '+money(amtOf(x))+' for QuickBooks #'+r.num+', this file says '+money(r.amount); row.candidates=[x]; }
+        if(Math.abs(cents(amtOf(x))-cents(r.amount))>1 && /quickbooks/i.test(s(x.source))){ row.target=x; row.action='update'; row.changes={ amt:r.amount, qbAmountWas:num(amtOf(x)) }; if(x.amount!=null) row.changes.amount=r.amount; if(r.open===0 && low(x.status)!=='paid'){ row.changes.status='paid'; row.changes.paid=true; } row.why='QuickBooks is fact: #'+r.num+' is '+money(r.amount)+(r.lines>1?' ('+r.lines+' lines)':'')+' — the CRM had '+money(amtOf(x)); plan.counts.amountFixed=(plan.counts.amountFixed||0)+1; }   /* QBMULTI */
+        else if(Math.abs(cents(amtOf(x))-cents(r.amount))>1){ row.action='todo'; row.why='amount conflict: CRM has '+money(amtOf(x))+' for QuickBooks #'+r.num+', this file says '+money(r.amount); row.candidates=[x]; }
         else {
           row.target=x; row.action='update';
           if(!x.date && r.date) row.changes.date=r.date;
@@ -120240,7 +120242,8 @@ window._gcQbCsvPlan = async function(text){
     } else if(r.kind==='bill'){
       var ve=findVendor(r.name);
       var bl=I.filter(function(x){ return x && isSubInv(x) && sameParty(party(x), r.name) && ((r.num && invNo(x)===r.num) || (Math.abs(cents(amtOf(x))-cents(r.amount))<=1 && (!r.date || ymd(x.recvDate||x.date)===r.date))); });
-      if(bl.length===1){ row.target=bl[0]; row.action='match'; row.why='bill already in the CRM'; if(!invNo(bl[0]) && r.num){ row.action='update'; row.changes={ invNum:r.num }; row.why='bill matched — QuickBooks number linked'; } }
+      if(bl.length===1 && /quickbooks/i.test(s(bl[0].source)) && Math.abs(cents(amtOf(bl[0]))-cents(r.amount))>1){ row.target=bl[0]; row.action='update'; row.changes={ amt:r.amount, qbAmountWas:num(amtOf(bl[0])) }; if(bl[0].amount!=null) row.changes.amount=r.amount; if(!invNo(bl[0]) && r.num) row.changes.invNum=r.num; row.why='QuickBooks is fact: bill'+(r.num?' #'+r.num:'')+' is '+money(r.amount)+(r.lines>1?' ('+r.lines+' lines)':'')+' — the CRM had '+money(amtOf(bl[0])); plan.counts.amountFixed=(plan.counts.amountFixed||0)+1; }   /* QBMULTI */
+      else if(bl.length===1){ row.target=bl[0]; row.action='match'; row.why='bill already in the CRM'; if(!invNo(bl[0]) && r.num){ row.action='update'; row.changes={ invNum:r.num }; row.why='bill matched — QuickBooks number linked'; } }
       else if(bl.length>1){ row.action='todo'; row.why='ambiguous: '+bl.length+' sub bills match'; row.candidates=bl; }
       else if(ve){ row.action='createUnassigned'; row.why='new bill from '+ve.name+' — created with NO job'; row.todoToo=true; }
       else { row.action='todo'; row.why='no vendor / sub named "'+r.name+'" in the CRM'; }
