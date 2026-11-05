@@ -5478,7 +5478,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.165-2026-11-05-r17q24 -->
+<!-- GrayCo CRM Build: 33.166-2026-11-05-r17q25 -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6427,7 +6427,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.165-2026-11-05-r17q24");
+  console.log("[GC] Build 33.166-2026-11-05-r17q25");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6475,7 +6475,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.165-2026-11-05-r17q24"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.166-2026-11-05-r17q25"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -120401,7 +120401,7 @@ window._gcOpenQbHome = function(taskId){
   var custs=customersAll();
   var ov=overlay('_gcQbHomeOv','<div style="font-size:17px;font-weight:800">QuickBooks row that needs a home</div><div style="font-size:13px;line-height:1.7;margin:8px 0"><b>'+esc(t.label)+'</b><br>'+esc(t.note)+'</div>'
     +((t.candidates||[]).length?'<div style="font-size:12.5px;margin-bottom:8px"><b>Best candidates</b>'+t.candidates.map(function(c){ return '<div><button class="_jLinkC" data-id="'+esc(c.id)+'" style="'+BTN+'background:#2563eb;color:#fff;margin:2px 6px 2px 0">Link</button>'+esc(c.text)+'</div>'; }).join('')+'</div>':'')
-    +((isInv||isBill)?'<div style="margin:6px 0"><select id="_jJob" style="padding:6px;max-width:70%"><option value="">— link to a job —</option>'+jobs.map(function(p){ return '<option value="'+esc(p.id)+'">'+esc((p.autoPO?'['+p.autoPO+'] ':'')+p.name)+'</option>'; }).join('')+'</select> <button id="_jLinkJob" style="'+BTN+'background:#2563eb;color:#fff">Link to job</button></div>':'')
+    +((isInv||isBill)?'<div style="margin:6px 0"><select id="_jJob" data-gcnj-from="QuickBooks: '+esc(q.name||'')+'" style="padding:6px;max-width:70%"><option value="">— link to a job —</option>'+(window._gcNewJobOpt ? window._gcNewJobOpt() : '')+jobs.map(function(p){ return '<option value="'+esc(p.id)+'">'+esc((p.autoPO?'['+p.autoPO+'] ':'')+p.name)+'</option>'; }).join('')+'</select> <button id="_jLinkJob" style="'+BTN+'background:#2563eb;color:#fff">Link to job</button></div>':'')
     +(isInv?'<div style="margin:6px 0"><select id="_jCust" style="padding:6px;max-width:70%"><option value="">— link to a customer —</option>'+custs.map(function(c){ return '<option value="'+esc(c.name)+'">'+esc(c.name)+'</option>'; }).join('')+'</select> <button id="_jLinkCust" style="'+BTN+'background:#2563eb;color:#fff">Link to customer</button> <button id="_jMkCust" style="'+BTN+'background:#0f766e;color:#fff">Create customer "'+esc(q.name||'')+'"</button></div>':'')
     +'<div style="margin-top:10px"><button id="_jNotNeeded" style="'+BTN+'background:#7f1d1d;color:#fff">Mark not needed</button> <button id="_jHx" style="'+BTN+'background:#e5e7eb">Close</button></div>');
   ov.querySelector('#_jHx').onclick=function(){ ov.remove(); };
@@ -140114,6 +140114,9 @@ function ensureEntry(e){
   }, ms); });
 }
 W._gcSelfApptLink = function(e){ return apptLink(e, me(), false).then(function(x){ ensureEntry(x); return x; }); };
+W._gcSelfAddJob = function(o, via){ o = o || {}; var m = me(); if (!m.name) return null; var j = newJob(o, m, via || 'inbox'); try { if (W._gcJA && W._gcJA.stamp) j = W._gcJA.stamp(j, 'inbox'); } catch (e) {} if (o.extra) Object.assign(j, o.extra);   /* patch INBOXNEWJOB */
+  try { if (W._crm && Array.isArray(W._crm.projects) && !W._crm.projects.some(function(x){ return x && x.id === j.id; })) W._crm.projects = W._crm.projects.concat([j]); } catch (e) {}
+  return addJob(j); };
 
 /* ── "＋ New project" (field view, GrayCo Photos) ── */
 W._gcSelfNewJob = function(opts){
@@ -191029,7 +191032,7 @@ function paintMM(){
   if (host.innerHTML !== html) host.innerHTML = html;
 }
 function jobOptions(sel){
-  return '<option value="">— pick the job —</option><option value="__office"' + (sel === '__office' ? ' selected' : '') + '>Office / overhead (no job)</option>' + projects().filter(function(p){ return !/^(completed?|closed|lost|cancel+ed|dead|archived)$/i.test(s(p.status)); }).map(function(p){ var l = (p.autoPO ? 'PO ' + p.autoPO + ' · ' : '') + s(p.name); return '<option value="' + esc(p.id) + '"' + (sel === p.id ? ' selected' : '') + '>' + esc(l) + '</option>'; }).join('');
+  return '<option value="">— pick the job —</option>' + (window._gcNewJobOpt ? window._gcNewJobOpt() : '') + '<option value="__office"' + (sel === '__office' ? ' selected' : '') + '>Office / overhead (no job)</option>' + projects().filter(function(p){ return !/^(completed?|closed|lost|cancel+ed|dead|archived)$/i.test(s(p.status)); }).map(function(p){ var l = (p.autoPO ? 'PO ' + p.autoPO + ' · ' : '') + s(p.name); return '<option value="' + esc(p.id) + '"' + (sel === p.id ? ' selected' : '') + '>' + esc(l) + '</option>'; }).join('');
 }
 function openReceipts(){
   var ov = D.createElement('div'); ov.className = 'gc-mm-ov'; ov.setAttribute('data-gc-keep', '1'); ov.setAttribute('data-gc-linked', '1');
@@ -191256,6 +191259,14 @@ function suggest(o){
   }
   return { pid: '', conf: 0, how: '', why: '' };
 }
+/* patch INBOXNEWJOB: the PO on a bill → its job ("po:ENTERPRISE" in gc_money_rules, or the one open job with that PO) */
+function poKeyN(v){ return s(v).toUpperCase().replace(/[^A-Z0-9]/g, ''); }
+function poRulePid(si){ var k = poKeyN(si && si.read && si.read.po); if (k.length < 3) return '';
+  var r = R.rules['po:' + k]; if (r && r.pid && proj(r.pid)) return s(r.pid);
+  var h = projects().filter(function(p){ return poKeyN(poOf(p)) === k; }); return h.length === 1 ? s(h[0].id) : ''; }
+function learnPO(po, pid){ var k = poKeyN(po); if (k.length < 3 || !pid) return Promise.resolve(R.rules);
+  R.rules['po:' + k] = { pid: s(pid), po: s(po), at: nowIso(), by: myName() };
+  return kvGet('gc_money_rules').then(function(cur){ var m = obj(cur); m['po:' + k] = Object.assign({}, m['po:' + k] || {}, R.rules['po:' + k]); R.rules = Object.assign({}, R.rules, m); lsSet('gc_money_rules_cache', JSON.stringify(R.rules)); return kvPut('gc_money_rules', m).then(function(){ return m; }); }); }   /* patch INBOXNEWJOB */
 function learn(list){
   /* list: [{ vendor, category, pid, overhead, how }] → gc_kv "gc_money_rules" (merged with what is there) */
   var add = {};
@@ -191401,6 +191412,10 @@ function process(list, done){
   var n = 0;
   P.list.forEach(function(rec){
     var si = rec.si; if (!si || isDone(rec, P.done)) return;
+    if (si.route === 'match') { var nj = poRulePid(si); if (nj) {   /* patch INBOXNEWJOB */
+      if (rec.kind === 'receipt' || si.payee === 'supplier') { if (bookExpense(rec, { pid: nj, why: 'PO ' + s(si.read && si.read.po) + ' (remembered)' })) n++; }
+      else if (rec.kind === 'client_invoice' || si.payee === 'client') { if (bookClientInvoice(rec, { pid: nj })) n++; }
+      return; } }
     if (si.route !== 'book' || !si.job || !proj(si.job.pid)) return;
     if (rec.kind === 'receipt' || si.payee === 'supplier') { if (bookExpense(rec, { pid: si.job.pid, why: si.job.why })) n++; }
     else if (rec.kind === 'client_invoice' || si.payee === 'client') { if (bookClientInvoice(rec, { pid: si.job.pid })) n++; }
@@ -191450,7 +191465,7 @@ function needs(){
 }
 function jobOptions(sel, top){
   var tops = arr(top).filter(function(j){ return proj(j.pid); });
-  var o = '<option value="">— pick the job —</option><option value="__oh"' + (sel === '__oh' ? ' selected' : '') + '>Overhead — no job</option>';
+  var o = '<option value="">— pick the job —</option>' + (window._gcNewJobOpt ? window._gcNewJobOpt() : '') + '<option value="__oh"' + (sel === '__oh' ? ' selected' : '') + '>Overhead — no job</option>';   /* patch INBOXNEWJOB */
   if (tops.length) o += '<optgroup label="Best matches">' + tops.map(function(j){ return '<option value="' + esc(j.pid) + '"' + (sel === j.pid ? ' selected' : '') + '>' + esc((poOf(proj(j.pid)) ? 'PO ' + poOf(proj(j.pid)) + ' · ' : '') + s(j.name) + ' (' + s(j.conf) + '%)') + '</option>'; }).join('') + '</optgroup>';
   return o + '<optgroup label="Open jobs">' + projects().filter(openJob).map(function(p){ return '<option value="' + esc(p.id) + '"' + (sel === s(p.id) ? ' selected' : '') + '>' + esc((poOf(p) ? 'PO ' + poOf(p) + ' · ' : '') + s(p.name) + (p.address ? ' · ' + s(p.address) : '')) + '</option>'; }).join('') + '</optgroup>';
 }
@@ -191482,13 +191497,14 @@ function openNeeds(){
     '<div style="font-size:12.5px;color:#475569;margin:4px 0 10px">E-mailed invoices, receipts and card charges the CRM could not place by itself. Pick the job (or Overhead) and tap Save — it is booked and the CRM remembers the vendor.' + (sure ? '' : '') + '</div>' +
     (sure ? '<button type="button" data-m="auto" style="margin-bottom:10px;padding:8px 12px;border:none;border-radius:8px;background:#0f766e;color:#fff;font-weight:700;cursor:pointer">✨ Use the suggestions (' + sure + ' sure ones)</button>' : '') +
     (L.length ? L.map(function(it, i){
-      var sel = it.sg && it.sg.pid ? it.sg.pid : (it.top && it.top[0] && it.top[0].conf >= 60 ? it.top[0].pid : '');
+      var sel = (it.rec && it.rec.si && poRulePid(it.rec.si)) || (it.sg && it.sg.pid ? it.sg.pid : (it.top && it.top[0] && it.top[0].conf >= 60 ? it.top[0].pid : ''));   /* patch INBOXNEWJOB */
+      var rd = (it.rec && it.rec.si && it.rec.si.read) || {}, njA = ' data-gcnj-po="' + esc(s(rd.po)) + '" data-gcnj-name="' + esc(s(rd.jobName || rd.job || rd.project) || s(rd.po)) + '" data-gcnj-addr="' + esc(s(rd.jobAddress)) + '" data-gcnj-from="' + esc(it.what + ': ' + it.who + (it.amt ? ' · ' + money(it.amt) : '')) + '"';
       return '<div data-i="' + i + '" style="border:1px solid #e2e8f0;border-radius:10px;padding:10px;margin:6px 0">' +
         '<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><b>' + esc(it.what) + ': ' + esc(it.who) + (it.amt ? ' · ' + money(it.amt) : '') + '</b><span style="font-size:12px;color:#64748b">' + esc(s(it.at).slice(0, 10)) + '</span></div>' +
         '<div style="font-size:12.5px;color:#92400e;margin:3px 0">' + esc(it.why) + '</div>' +
         (it.rec && arr(it.rec.files)[0] && arr(it.rec.files)[0].ref ? '<button type="button" data-m="file" style="margin:0 0 6px;padding:5px 10px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;cursor:pointer;font-size:12.5px">📄 Open the file' + (it.rec.via === 'bulk drop' ? ' (dropped in)' : '') + '</button>' : '') +   /* patch BULKDROP */
         (it.k === 'subinv' ? '<button type="button" data-m="open" style="padding:7px 12px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;cursor:pointer">🧾 Match this sub invoice</button>' :
-          '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><select data-m="job" style="flex:1;min-width:220px;padding:7px">' + jobOptions(sel, it.top) + '</select>' +
+          '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><select data-m="job"' + njA + ' style="flex:1;min-width:220px;padding:7px">' + jobOptions(sel, it.top) + '</select>' +
           '<button type="button" data-m="save" style="padding:7px 14px;border:none;border-radius:8px;background:#16a34a;color:#fff;font-weight:700;cursor:pointer">Save</button>' +
           (it.k !== 'card' ? '<button type="button" data-m="skip" style="padding:7px 10px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;cursor:pointer">Not ours</button>' : '') + '</div>') +
         '<div data-m="msg" style="font-size:12.5px;margin-top:4px"></div></div>';
@@ -191506,6 +191522,7 @@ function openNeeds(){
       var v = s(row.querySelector('[data-m="job"]').value);
       if (!v) { msg.textContent = 'Pick the job (or Overhead) first.'; return; }
       var r = place(it, v === '__oh' ? '' : v, v === '__oh');
+      if (r === 'ok' && v !== '__oh' && it.rec && it.rec.si && it.rec.si.read && s(it.rec.si.read.po)) { try { learnPO(it.rec.si.read.po, v); } catch (e) {} }   /* patch INBOXNEWJOB */
       if (r === 'ok') { row.innerHTML = '<div style="color:#15803d;font-weight:700">✓ Saved' + (v === '__oh' ? ' as overhead' : ' on ' + esc((proj(v) || {}).name)) + '</div>'; paint(true); }
       else if (r !== 'open') msg.textContent = 'The CRM is still loading — try again in a moment.';
     }
@@ -191667,7 +191684,7 @@ function tick(){
 }
 tick(); RI.call(W, tick, 2500); later(function(){ loadRules(); }, 4000);
 W._gcMoneyRepaint = function(){ try { paint(true); } catch (e) {} };   /* patch STMTPDF */
-W._gcMoney = { parseStatement: parseStatement, suggest: suggest, vendorKey: vendorKey, catFor: catFor, rules: function(){ return R.rules; }, loadRules: loadRules, learn: learn, needs: needs, openNeeds: openNeeds, openImport: openImport, process: process, bookOne: bookOne,   /* patch BULKDROP2 */ mkSpend: mkSpend, state: function(){ return P; }, SETUP: SETUP };
+W._gcMoney = { poRule: poRulePid, learnPO: learnPO, parseStatement: parseStatement, suggest: suggest, vendorKey: vendorKey, catFor: catFor, rules: function(){ return R.rules; }, loadRules: loadRules, learn: learn, needs: needs, openNeeds: openNeeds, openImport: openImport, process: process, bookOne: bookOne,   /* patch BULKDROP2 */ mkSpend: mkSpend, state: function(){ return P; }, SETUP: SETUP };
 try { console.log('[GC] 📥 Needs a job · 💳 card statement import with vendor rules · e-mailed supplier bills / receipts / QuickBooks invoices booked · marketing spend from the books (patch MONEY)'); } catch (e) {}
 })();
 </script>
@@ -192270,7 +192287,7 @@ function jobOpts(sel){
   /* the open jobs' options are built once per table (a statement can have hundreds of lines) */
   if (Date.now() - JOC.at > 2000) { JOC.html = projects().filter(openJob).map(function(p){ return '<option value="' + esc(p.id) + '">' + esc((poOf(p) ? 'PO ' + poOf(p) + ' · ' : '') + s(p.name) + (p.address ? ' · ' + s(p.address) : '')) + '</option>'; }).join(''); JOC.at = Date.now(); }
   var list = sel && sel !== '__oh' ? JOC.html.replace('<option value="' + esc(sel) + '">', '<option value="' + esc(sel) + '" selected>') : JOC.html;
-  return '<option value="">— pick the job —</option><option value="__oh"' + (sel === '__oh' ? ' selected' : '') + '>Overhead — no job</option><optgroup label="Open jobs">' + list + '</optgroup>';
+  return '<option value="">— pick the job —</option>' + (window._gcNewJobOpt ? window._gcNewJobOpt() : '') + '<option value="__oh"' + (sel === '__oh' ? ' selected' : '') + '>Overhead — no job</option><optgroup label="Open jobs">' + list + '</optgroup>';   /* patch INBOXNEWJOB */
 }
 function importable(r, mode){ return mode === 'card' ? /^(charge|refund|fee|interest)$/.test(r.kind) : (r.dir === 'out' && r.kind !== 'transfer'); }
 function myName(){ var u = me(); return s(u.name) || s(u.email).split('@')[0] || 'office'; }
@@ -214649,4 +214666,121 @@ W._gcQbFact = { is: is, state: state, silent: silent, paid: paid, cfg: cfg, revi
 wrapAll(); ST(wrapAll, 0); ST(wrapAll, 1500); RI(wrapAll, 3000);
 try { console.log('[GC] QuickBooks is fact (patch QBFACT) — window._gcQbFact'); } catch (e) {}
 })(window);
+</script>
+<script id="gc-patch-inboxnewjob">
+/* __GC_PATCH_INBOXNEWJOB__ ════════════════════════════════════════════════════
+   GrayCo — "＋ New job…" in the money inboxes' job pickers.   (patch INBOXNEWJOB)
+   Office (Brittany, 11/05): "The job on the invoice says Enterprise. Need to be able to create a job."
+   Owner: "need on office profile to be able to create projects for invoices that may come in without projects etc".
+
+   • Every "pick the job" select for unplaced money (📥 Needs a job, 📧 Receipts e-mailed in, 💳/🏦 statement import,
+     QuickBooks "needs a home") has "＋ New job…" (admins and the office only — never the crew: _gcCanCreateProject).
+   • Picking it opens a small form: job name (from the PO / job text on the item), customer (optional, search the
+     customers), type (Residential / Commercial / Insurance), address (optional), PO# (the item's PO, else the CRM's own
+     auto-PO), status (Active by default). The job is made the way "＋ New project" makes one (patch CC2 newJob + addJob
+     via _setProjects: the auto-PO, the sync, the customer link, the ⚡ automations and every new-job hook run as usual).
+   • The new job is selected in the picker, so Save books the bill to it; 📥 Needs a job remembers the PO → job
+     (gc_kv gc_money_rules "po:<PO>"), so the next bill with that PO lands there by itself.
+   Console: _gcNewJobFor(selectEl) · _gcCanCreateProject()
+   ═════════════════════════════════════════════════════════════════════════════ */
+(function(){
+'use strict';
+if (window.__GC_PATCH_INBOXNEWJOB__) return; window.__GC_PATCH_INBOXNEWJOB__ = true;
+var W = window, D = document;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v.filter(function(x){ return x && typeof x === 'object'; }) : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function me(){ try { if (typeof W._gcMeUser === 'function') return W._gcMeUser() || {}; } catch (e) {} try { return JSON.parse(localStorage.getItem('grayco_user') || '{}') || {}; } catch (e) { return {}; } }
+function title(t){ t = s(t); return /^[A-Z0-9 &'.-]+$/.test(t) && /[A-Z]{2}/.test(t) ? t.toLowerCase().replace(/(^|[\s-])([a-z])/g, function(m, a, b){ return a + b.toUpperCase(); }) : t; }
+
+/* who may make a job: the owners / admins and the office (Office, Office Admin, Office Manager) — not the crew */
+W._gcCanCreateProject = function(){
+  var u = me(), r = low(u.role), pf = low(u.profile);
+  try { if (W._gcVAS && W._gcVAS.role && W._gcVAS.role()) { var va = low(W._gcVAS.role()); return /^(admin|office)/.test(va); } } catch (e) {}
+  if (low(u.payType) === 'owner' || /^admin/.test(r) || /office/.test(r) || /office/.test(pf)) return true;
+  try { if (W._gcIsOfficeFull && W._gcIsOfficeFull()) return true; } catch (e) {}
+  try { var S = W.__GC_AUTH__ && W.__GC_AUTH__.session && W.__GC_AUTH__.session(); if (S && S.roleKnown && /^(admin|office)/.test(low(S.role))) return true; } catch (e) {}
+  return false;
+};
+W._gcNewJobOpt = function(){ try { return W._gcCanCreateProject() ? '<option value="__newjob">＋ New job…</option>' : ''; } catch (e) { return ''; } };
+
+var TYPES = { Residential: 'Residential Reno', Commercial: 'Commercial Reno', Insurance: 'Insurance' };
+/* the customers (Customers list first, then the jobs' customers not on it) */
+function customers(){
+  var seen = {}, out = [];
+  arr(W._crm && W._crm.customers).forEach(function(c){ var n = s(c.name || c.company); if (!c.deleted && n && !seen[low(n)]) { seen[low(n)] = 1; out.push(c); } });
+  arr(W._crm && W._crm.projects).forEach(function(p){ var n = s(p.client || p.customer); if (!p.deleted && n && !seen[low(n)]) { seen[low(n)] = 1; out.push({ name: n, phone: s(p.clientPhone), email: s(p.clientEmail), id: s(p.customerId) }); } });
+  return out;
+}
+function autoPO(){ try { var used = arr(W._crm && W._crm.projects).map(function(p){ return p.autoPO || p.po; }).filter(Boolean); if (typeof W.nextPO === 'function') return W.nextPO(used); } catch (e) {} return ''; }
+
+/* the form; resolves the new job (or null on Cancel) */
+function form(pre){
+  pre = pre || {};
+  return new Promise(function(res){
+    var old = D.getElementById('gc-inj-ov'); if (old) old.remove();
+    var ov = D.createElement('div'); ov.id = 'gc-inj-ov'; ov.setAttribute('data-gc-keep', '1'); ov.setAttribute('data-gc-linked', '1');
+    ov.style.cssText = 'position:fixed;inset:0;z-index:2147483600;background:rgba(15,23,42,.6);display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow:auto;font-family:inherit';
+    var I = 'display:block;width:100%;box-sizing:border-box;padding:8px;margin-top:3px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px', L = 'display:block;font-size:12.5px;font-weight:700;color:#334155;margin-top:9px';
+    var po = s(pre.po).toUpperCase(), auto = po ? '' : autoPO();
+    ov.innerHTML = '<div role="dialog" aria-label="New job" style="background:#fff;color:#0f172a;border-radius:12px;width:min(460px,100%);padding:18px;margin-top:40px">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:17px">＋ New job</b><button type="button" data-j="x" aria-label="Close" style="border:none;background:none;font-size:20px;cursor:pointer">✕</button></div>' +
+      (pre.from ? '<div style="font-size:12.5px;color:#475569;margin-top:2px">For ' + esc(pre.from) + '</div>' : '') +
+      '<label style="' + L + '">Job name<input data-j="name" style="' + I + '" value="' + esc(pre.name) + '" autocomplete="off"></label>' +
+      '<label style="' + L + '">Customer (optional)<input data-j="cust" list="gc-inj-custs" style="' + I + '" placeholder="Search the customers…" value="' + esc(pre.customer) + '" autocomplete="off"><datalist id="gc-inj-custs">' +
+        customers().slice(0, 2000).map(function(c){ return '<option value="' + esc(c.name || c.company) + '">'; }).join('') + '</datalist></label>' +
+      '<label style="' + L + '">Type<select data-j="type" style="' + I + '">' + Object.keys(TYPES).map(function(k){ return '<option' + (k === pre.type ? ' selected' : '') + '>' + k + '</option>'; }).join('') + '</select></label>' +
+      '<label style="' + L + '">Address (optional)<input data-j="addr" style="' + I + '" value="' + esc(pre.address) + '" autocomplete="off"></label>' +
+      '<label style="' + L + '">PO#' + (po ? ' (from the invoice)' : ' (the CRM\'s own)') + '<input data-j="po" style="' + I + '" value="' + esc(po || auto) + '" autocomplete="off"></label>' +
+      '<label style="' + L + '">Status<select data-j="status" style="' + I + '"><option value="active" selected>Active</option><option value="bidding">Bidding</option></select></label>' +
+      '<div data-j="err" role="alert" style="color:#b91c1c;font-size:12.5px;margin-top:8px"></div>' +
+      '<div style="display:flex;gap:8px;margin-top:12px"><button type="button" data-j="ok" style="flex:1;padding:10px;border:none;border-radius:8px;background:#16a34a;color:#fff;font-weight:700;cursor:pointer">Create job</button>' +
+      '<button type="button" data-j="x" style="padding:10px 14px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;cursor:pointer">Cancel</button></div></div>';
+    D.body.appendChild(ov);
+    var q = function(k){ return ov.querySelector('[data-j="' + k + '"]'); };
+    ST.call(W, function(){ try { q('name').focus(); q('name').select(); } catch (e) {} }, 30);
+    var done = function(v){ ov.remove(); res(v); };
+    ov.addEventListener('click', function(ev){ var b = ev.target.closest && ev.target.closest('[data-j]'); if (ev.target === ov || (b && b.getAttribute('data-j') === 'x')) done(null); });
+    q('ok').onclick = function(){
+      var name = s(q('name').value), addr = s(q('addr').value), cn = s(q('cust').value), p = s(q('po').value).toUpperCase(), type = q('type').value;
+      if (!name) { q('err').textContent = 'Type the job name.'; return; }
+      if (p && arr(W._crm && W._crm.projects).some(function(x){ return !x.deleted && s(x.autoPO || x.po).toUpperCase() === p; })) { q('err').textContent = 'PO ' + p + ' is already a job — pick that job in the list instead.'; return; }
+      if (typeof W._gcSelfAddJob !== 'function') { q('err').textContent = 'The CRM is still loading — try again in a moment.'; return; }
+      var c = customers().filter(function(x){ return low(x.name || x.company) === low(cn); })[0];
+      var extra = { autoPO: p || '', createdFrom: s(pre.from) || 'money inbox', commercial: type === 'Commercial' || undefined, insurance: type === 'Insurance' || undefined };
+      if (pre.po && p === s(pre.po).toUpperCase()) extra.po = p;
+      if (c) { extra.customerId = s(c.id); if (!addr) addr = s(c.address); }
+      Object.keys(extra).forEach(function(k){ if (extra[k] === undefined || extra[k] === '') delete extra[k]; });
+      var j = null;
+      try { j = W._gcSelfAddJob({ name: name, client: c ? s(c.name || c.company) : cn, phone: c ? s(c.phone) : '', email: c ? s(c.email) : '', address: addr, type: TYPES[type] || type, kind: q('status').value === 'active' ? 'active' : '', extra: extra }, 'money inbox'); } catch (e) { q('err').textContent = 'Could not make the job: ' + (e && e.message || e); return; }
+      done(j);
+    };
+  });
+}
+
+/* a select that was set to "＋ New job…": the form, then the new job is chosen in it */
+W._gcNewJobFor = function(sel){
+  var pre = { name: title(sel.getAttribute('data-gcnj-name') || sel.getAttribute('data-gcnj-po')), po: sel.getAttribute('data-gcnj-po') || '', address: sel.getAttribute('data-gcnj-addr') || '', customer: sel.getAttribute('data-gcnj-cust') || '', from: sel.getAttribute('data-gcnj-from') || '' };
+  var prev = sel.getAttribute('data-gcnj-prev') || '';
+  sel.value = ''; try { if ([].some.call(sel.options, function(o){ return o.value === prev; })) sel.value = prev; } catch (e) {}
+  return form(pre).then(function(j){
+    if (!j || !j.id) return null;
+    var o = D.createElement('option'); o.value = s(j.id); o.textContent = (s(j.autoPO) ? 'PO ' + s(j.autoPO) + ' · ' : '') + s(j.name) + ' (new)';
+    var nj = [].filter.call(sel.options, function(x){ return x.value === '__newjob'; })[0];
+    if (nj && nj.parentNode) nj.parentNode.insertBefore(o, nj.nextSibling); else sel.appendChild(o);
+    sel.value = s(j.id); sel.setAttribute('data-gcnj-made', s(j.id));
+    try { sel.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {}
+    return j;
+  });
+};
+D.addEventListener('focusin', function(ev){ var t = ev.target; if (t && t.tagName === 'SELECT' && t.value !== '__newjob') t.setAttribute('data-gcnj-prev', t.value); }, true);
+D.addEventListener('change', function(ev){
+  var t = ev.target; if (!t || t.tagName !== 'SELECT' || t.value !== '__newjob') return;
+  ev.stopImmediatePropagation();
+  W._gcNewJobFor(t);
+}, true);
+try { console.log('[GC] ＋ New job… in the money inboxes (patch INBOXNEWJOB)'); } catch (e) {}
+})();
 </script>
