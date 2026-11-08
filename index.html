@@ -5478,7 +5478,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.168-2026-11-08-r18c -->
+<!-- GrayCo CRM Build: 33.168-2026-11-08-r18d -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6427,7 +6427,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.168-2026-11-08-r18c");
+  console.log("[GC] Build 33.168-2026-11-08-r18d");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6475,7 +6475,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.168-2026-11-08-r18c"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.168-2026-11-08-r18d"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -76608,6 +76608,11 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
   function saveQ(q){ try{ localStorage.setItem('gc_expense_approvals', JSON.stringify(q)); }catch(e){} }
 
   // Scan expenses; any new expense on a job (not yet approved/posted) enters the queue as pending
+  /* POAUTO: the open job whose PO this expense carries (PO field, memo, description, notes, job name) */
+  function _gcPoJob(e){ try{ var P=((window._crm||{}).projects||[]).filter(function(p){ return p && !p.deleted && !/complete|closed|lost|cancel|archiv|warrant/i.test(String(p.status||'')); });
+    var txt=' '+[e.po,e.poNumber,e.memo,e.description,e.desc,e.notes,e.jobName,e.job,e.reference,e.ref].filter(Boolean).join(' ')+' ';
+    var hit=null; P.some(function(p){ return [p.po,p.autoPO].some(function(c){ c=String(c||'').trim(); if(c.length<3) return false; var re=new RegExp('(^|[^A-Za-z0-9])(PO\\s*#?\\s*)?'+c.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'([^A-Za-z0-9]|$)','i'); if(String(e.po||e.poNumber||'').trim().toLowerCase()===c.toLowerCase() || re.test(txt)){ hit={ p:p, code:c }; return true; } return false; }); });
+    return hit; }catch(_e){ return null; } }
   window._gcScanExpenses = function(){
     var crm=window._crm||{};
     var exps=(crm.expenses||[]);
@@ -76617,6 +76622,11 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
     exps.forEach(function(e){
       if(!e || !e.id) return;
       if(e._posted || e.approved) return;           // already posted/approved
+      /*POAUTO*/ if(!byId[e.id]){ var _pj=_gcPoJob(e); if(_pj){ var _now=new Date().toISOString(), _code=_pj.code;
+        q.unshift({ expId:e.id, jobId:_pj.p.id, pm:_pj.p.pm||null, amount:(e.amt||e.amount||0), payee:(e.payee||e.vendor||e.sub||''), desc:(e.description||e.category||''), matched:true, status:'approved', autoPO:_code, approvedBy:'Auto-filed by PO '+_code, approvedAt:_now, enteredAt:e.enteredAt||e.createdAt||e.date||_now, source:(e.source||'crm') });
+        try{ var _pp={ pid:_pj.p.id, jobId:_pj.p.id, _posted:true, approved:true, postedHow:'Auto-filed by PO '+_code, autoFiledByPo:_code, postedAt:_now, updatedAt:_now }; var _mf=function(list){ var o=(list||[]).map(function(x){ return (x&&x.id===e.id) ? Object.assign({},x,_pp) : x; }); try{ if(window._gcApplySync) window._gcApplySync('expenses', o); }catch(_x){} return o; };
+          if(window._setExpenses) window._setExpenses(_mf); else { var _o=_mf((window._crm||{}).expenses); if(window._crm) window._crm.expenses=_o; } Object.assign(e,_pp); }catch(_pe){}
+        changed=true; return; } }
       var job=window._gcExpenseHasMatch(e);
       var jobId=job?job.id:(e.pid||e.jobId||null);
       var pm=job?job.pm:(e.pm||null);
