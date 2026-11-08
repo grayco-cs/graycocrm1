@@ -10,6 +10,7 @@ var L = {
   en: {
     hi: 'Welcome', portal: 'GrayCo Portal', home: 'Home', jobs: 'Jobs', pay: 'Pay', papers: 'Papers', back: '‹ Back', close: 'Close',
     needs: 'Needs you', nothingNeeded: 'Nothing waiting on you. Thank you!', week: 'This week', noWeek: 'Nothing on the schedule this week.',
+    toBid: '📝 To bid', jobsNow: '🔨 Jobs I\'m on now', jobsNext: '✅ Awarded / coming up', jobsDone: '✔ Done', poHint: 'Use this PO at Home Depot, Lowe\'s and the supply house so it lands on the right job.',
     money: 'Money', submitted: 'Submitted', approvedM: 'Approved', paidMonth: 'Paid this month', yourJobs: 'Your jobs', noJobs: 'No jobs with GrayCo yet. Your Project Manager adds you to a job, and it shows up here.',
     newScope: 'New scope', unread: 'new message', unreads: 'new messages', starts: 'starts', ends: 'ends', done: 'done',
     nScope: 'Sub agreement to sign', nCo: 'Change order to sign', nPunch: 'Punch item', nMsg: 'Messages from GrayCo', nCoiExp: 'Insurance certificate has run out — upload a new one', nCoiSoon: 'Insurance certificate runs out in {d} days — upload a new one', nW9: 'GrayCo needs your W-9',
@@ -37,6 +38,7 @@ var L = {
   es: {
     hi: 'Bienvenido', portal: 'Portal GrayCo', home: 'Inicio', jobs: 'Trabajos', pay: 'Pagos', papers: 'Papeles', back: '‹ Atrás', close: 'Cerrar',
     needs: 'Pendiente para usted', nothingNeeded: 'Nada pendiente. ¡Gracias!', week: 'Esta semana', noWeek: 'Nada en el calendario esta semana.',
+    toBid: '📝 Para licitar', jobsNow: '🔨 Trabajos en curso', jobsNext: '✅ Adjudicados / próximos', jobsDone: '✔ Terminados', poHint: 'Use este PO en Home Depot, Lowe\'s y el proveedor para que se cargue al trabajo correcto.',
     money: 'Dinero', submitted: 'Enviado', approvedM: 'Aprobado', paidMonth: 'Pagado este mes', yourJobs: 'Sus trabajos', noJobs: 'Todavía no tiene trabajos con GrayCo. Su Gerente de Proyecto lo agrega a un trabajo y aparece aquí.',
     newScope: 'Alcance nuevo', unread: 'mensaje nuevo', unreads: 'mensajes nuevos', starts: 'empieza', ends: 'termina', done: 'hecho',
     nScope: 'Acuerdo de subcontrato para firmar', nCo: 'Orden de cambio para firmar', nPunch: 'Pendiente de la lista final', nMsg: 'Mensajes de GrayCo', nCoiExp: 'El certificado de seguro venció — suba uno nuevo', nCoiSoon: 'El certificado de seguro vence en {d} días — suba uno nuevo', nW9: 'GrayCo necesita su W-9',
@@ -327,12 +329,26 @@ function home(){
   var wk = v.week || [];
   out.push(card(t('week'), wk.length ? wk.map(function(x){ return lateRow(x, h('div', { class: 'line' }, [h('span', { text: dts(x.date) + (x.time ? ' · ' + x.time : '') }), h('span', { text: x.job + (x.title ? ' — ' + x.title : '') })])); }) : [h('div', { class: 'empty', text: t('noWeek') })]));
   out.push(card(t('avail'), [h('button', { type: 'button', class: 'btn', text: '📅 ' + t('availBtn'), on: { click: availSheet } })]));   /* patch X10 */
-  out.push(card(t('yourJobs'), (v.jobs || []).length ? v.jobs.map(jobRow) : [h('div', { class: 'empty', text: t('noJobs') })]));
+  /* SUBHOME3: To bid · Jobs I'm on now · Awarded / coming up · Done */
   var bc = bidsCard(v.bids); if (bc) out.push(bc);
+  var G = jobGroups(v.jobs || []);
+  if (!(v.jobs || []).length) out.push(card(t('yourJobs'), [h('div', { class: 'empty', text: t('noJobs') })]));
+  if (G.now.length) out.push(card(t('jobsNow'), G.now.map(jobRowPo), 'jobs-now'));
+  if (G.next.length) out.push(card(t('jobsNext'), G.next.map(jobRowPo), 'jobs-next'));
+  if (G.done.length) out.push(card(t('jobsDone'), [h('details', null, [h('summary', { text: G.done.length + ' ' + t('jobsDone').replace(/^\W+/, '') })].concat(G.done.map(jobRow)))], 'jobs-done'));
   var pm = (v.jobs || [])[0] && v.jobs[0].pm;
   out.push(contactCard(pm && pm.name && pm.name !== 'GrayCo office' ? t('pm') : t('office'), pm ? pm.name : t('office'), pm ? pm.phone : OFFICE, pm ? pm.email : 'office@grayco-cs.com'));
   return out;
 }
+function jobGroups(list){
+  var today = todayYmd(), G = { now: [], next: [], done: [] };
+  list.forEach(function(j){ var st = String(j.status || '').toLowerCase();
+    if (/complete|done|closed|finished|paid/.test(st) || (j.end && j.end < today && (j.pct || 0) >= 100)) G.done.push(j);
+    else if ((j.start && j.start <= today) || (j.pct || 0) > 0 || /progress|active|started|working/.test(st)) G.now.push(j);
+    else G.next.push(j); });
+  return G;
+}
+function jobRowPo(j){ var row = jobRow(j); if (!j.po) return row; return h('div', { class: 'jobrow-po' }, [row, h('div', { class: 'muted', style: 'margin:2px 0 8px 4px' }, [poRow(j.po), ' ', h('span', { text: t('poHint') })])]); }
 function jobsTab(){ return [card(t('yourJobs'), (HOME.jobs || []).length ? HOME.jobs.map(jobRow) : [h('div', { class: 'empty', text: t('noJobs') })])]; }
 
 /* ── PAY ── */

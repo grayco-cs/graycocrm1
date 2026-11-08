@@ -747,7 +747,7 @@ function payDateFor(recv){
   const d = new Date((ymd(recv) || new Date().toISOString().slice(0, 10)) + 'T12:00:00Z');
   const day = d.getUTCDay(), cut = new Date(d);
   if (day <= 3) cut.setUTCDate(d.getUTCDate() + (3 - day)); else cut.setUTCDate(d.getUTCDate() + (7 - day) + 3);
-  const pay = new Date(cut); pay.setUTCDate(cut.getUTCDate() + 2 + 7);
+  const pay = new Date(cut); pay.setUTCDate(cut.getUTCDate() + 2);   /* SUBHOME3 / SUBPAYWED: in by Wednesday → that Friday */
   return pay.toISOString().slice(0, 10);
 }
 async function partnerInvoices(ctx){
