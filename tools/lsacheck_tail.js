@@ -14,7 +14,7 @@ if (W.__GC_PATCH_LSACHECK__) return; W.__GC_PATCH_LSACHECK__ = true;
 var D = W.document, ST = W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout, SI = W.__GC_NATIVE_SETINTERVAL__ || W.setInterval;
 function s(v){ return v == null ? '' : String(v).trim(); }
 function low(v){ return s(v).toLowerCase(); }
-function me(){ try { var u = JSON.parse(localStorage.getItem('grayco_user') || '{}'); return s(u.name || u.email); } catch (e) { return ''; } }
+function me(){ var n = ''; try { var u = JSON.parse(localStorage.getItem('grayco_user') || '{}'); n = s(u.name); } catch (e) {} if (n) return n; try { var em = low(W.__GC_AUTH__ && W.__GC_AUTH__.email && W.__GC_AUTH__.email()), x = ((W._crm && W._crm.users) || []).find(function(u){ return u && low(u.email) === em; }); return x ? s(x.name) : em; } catch (e) { return ''; } }
 function admin(){ try { if (W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()) return true; } catch (e) {} try { var u = JSON.parse(localStorage.getItem('grayco_user') || '{}'); return /admin/i.test(s(u.role)) || /owner/i.test(s(u.payType)); } catch (e) { return false; } }
 function leads(){ return (W._crm && W._crm.leads) || []; }
 function lead(id){ return leads().find(function(l){ return l && s(l.id) === s(id); }) || null; }
