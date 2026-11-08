@@ -210,7 +210,7 @@ async function queueFirstEmail(lead) {
     const pm = who ? await core.pmByName(who) : null;
     const msg = firstEmail(lead, await contactFor(pm));
     const ok = await core.queueApproval({ id: 'appr_lead_' + lead.id, kind: 'lead_first_contact', pid: lead.id, jobName: 'New lead — ' + lead.name + (lead.leadSource ? ' (' + lead.leadSource + ')' : ''),
-      pm: pm, to: lead.email, subject: msg.subject, html: msg.html, attachments: [], meta: { leadId: lead.id, leadSource: lead.leadSource || '', phone: lead.phone || '', address: lead.address || '' } });
+      pm: pm, to: lead.email, subject: msg.subject, html: msg.html, attachments: [], meta: { leadId: lead.id, leadSource: lead.leadSource || '', phone: lead.phone || '', address: lead.address || '', name: lead.name || '', email: lead.email || '', message: String(lead.notes || lead.message || '').slice(0, 3000), at: new Date().toISOString() } });   /* APPRLEAD */
     return ok ? { sent: false, queued: true, why: 'waiting for approval (' + (pm ? pm.name : 'admins') + ')' } : { sent: false, why: 'could not put it on the approvals list' };
   } catch (e) { return { sent: false, why: 'could not put it on the approvals list' }; }
 }

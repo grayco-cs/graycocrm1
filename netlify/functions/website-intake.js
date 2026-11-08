@@ -356,7 +356,7 @@ async function autoReply(f, id, extra){
   try {
     const ok = await core().queueApproval({ id: 'appr_web_' + id, kind: f.type === 'careers' ? 'applicant_reply' : 'lead_first_contact', pid: f.type === 'careers' ? '' : 'LEADIN-' + id.replace(/^LI-/, ''),
       jobName: (f.type === 'careers' ? 'Job application — ' : 'Website lead — ') + f.name, pm: null, to: f.email, subject: m.subject, html: m.html, attachments: [],
-      meta: { source: SOURCE, websiteForm: (TYPES[f.type] || {}).label || '', phone: tidyPhone(f.phone), address: fullAddr(f) } });
+      meta: { source: SOURCE, websiteForm: (TYPES[f.type] || {}).label || '', phone: tidyPhone(f.phone), address: fullAddr(f), name: f.name || '', email: f.email || '', message: clip(f.message, 3000), at: new Date().toISOString() } });   /* APPRLEAD */
     return ok ? { queued: true } : { why: 'could not put it on the approvals list' };
   } catch (e) { return { why: 'could not put it on the approvals list' }; }
 }

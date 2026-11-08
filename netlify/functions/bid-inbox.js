@@ -1423,10 +1423,12 @@ function cleanSettings(b, cur){
   }
   if (b.alertTo != null) {   /* patch ALERTTO */
     const l = (Array.isArray(b.alertTo) ? b.alertTo : s(b.alertTo).split(/[,;\s]+/)).map(x => low(x && typeof x === 'object' ? x.email : x)).filter(Boolean);
+    if (l.indexOf('none') >= 0) { out.alertTo = ['none']; } else {   /* PMBID: "No e-mails" */
     const bad = l.filter(x => !/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(x));
     if (bad.length) throw new Error('The alert e-mail "' + bad[0] + '" does not look right.');
     out.alertTo = Array.from(new Set(l)).slice(0, 12);
     if (!out.alertTo.length) out.alertTo = ['office@grayco-cs.com'];
+    }
   }
   if (b.emergenciesTo != null) {   /* patch OWNER4 */
     const l = (Array.isArray(b.emergenciesTo) ? b.emergenciesTo : s(b.emergenciesTo).split(/[,;\s]+/)).map(x => low(x && typeof x === 'object' ? x.email : x)).filter(Boolean);

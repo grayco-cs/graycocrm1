@@ -108,8 +108,11 @@ function make(d){
 
   /* patch ALERTTO: Leads ⚙ "Lead & bid alert e-mails go to:" (gc_lead_inbox_settings.alertTo) — default office@ only */
   const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/;
+  let MAIL_OFF = false;
   async function alertList(){
     let v = await gcKvVal('gc_lead_inbox_settings'); if (v && !Array.isArray(v) && v.v && typeof v.v === 'object' && !v.alertTo) v = v.v;
+    MAIL_OFF = !!(v && Array.isArray(v.alertTo) && v.alertTo.some(x => low(x) === 'none'));
+    if (MAIL_OFF) return [];   /* PMBID: "No e-mails (leads are in the CRM)" */
     const l = v && Array.isArray(v.alertTo) ? v.alertTo.map(x => low(x && typeof x === 'object' ? x.email : x)).filter(x => EMAIL_RE.test(x)) : [];
     return Array.from(new Set(l.length ? l : ['office@grayco-cs.com']));
   }
@@ -251,8 +254,8 @@ function make(d){
     m = linkify(m);   /* patch HOT1 */
     if (m && m.html) { try { m = Object.assign({}, m, { html: LM().telify(m.html) }); } catch (e) {} }   /* patch LEADMAILMSG: every phone number is a tel: link */
     const to = only ? Array.from(new Set(arr(only).map(low).filter(Boolean))) : await recipients(extra);
-    const r = await sendMail(to, m);
-    const p = await push(to, m.push);   /* the push goes out even when the e-mail could not */
+    const r = (!only && !to.length && MAIL_OFF) ? { ok: true, why: 'lead e-mails are off' } : await sendMail(to, m);   /* PMBID */
+    const p = await push(to.length ? to : (MAIL_OFF ? ['office@grayco-cs.com'] : to), m.push);   /* the push goes out even when the e-mail could not */
     return { ok: r.ok, why: r.why, to, pushed: p.sent, pushWhy: p.why };
   }
   async function note(last){ try { await kvCas(KA, v => { const st = loadState(v); st.last = last; return st; }); } catch (e) {} }
