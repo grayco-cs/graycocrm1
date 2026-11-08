@@ -144330,6 +144330,7 @@ function storedWho(t){
 }
 function storedCat(t, who){
   var L = s(t.label) + ' ' + s(t.note), id = s(t.id);
+  if (t.kind === 'job_done') return 'appr';   /* JOBDONE */
   if (t.kind === 'mention') return 'personal';
   if (who.length === 1 && (t.personal || t.self || t.kind === 'quick' || t.kind === 'admin_seed')) return 'personal';
   if (/^portal_/.test(id)) return 'cust';
@@ -144374,7 +144375,8 @@ function srcStored(out){
       if (/^(AUTOCHECKS|SUPPLIERBILLS)_/.test(id)) o.due = o.due || day10(t.addedAt) || today();
       if (t.addedBy && low(t.addedBy) === low(myName()) && who.length && who.indexOf(me) < 0) { o.waiting = true; o.vis = 'both'; o.waitWho = who; }
       /* the one thing to tap */
-      if (t.kind === 'qb_home') o.act = { l: 'Find its job', f: function(){ call('_gcOpenQbHome', id); } };
+      if (t.kind === 'job_done') o.act = { l: '🏁 Mark complete', f: function(){ call('_gcJobDoneApprove', id); } };   /* JOBDONE */
+      else if (t.kind === 'qb_home') o.act = { l: 'Find its job', f: function(){ call('_gcOpenQbHome', id); } };
       else if (/^SUPPLIERBILLS_/.test(id)) o.act = { l: 'Open bills', f: function(){ call('_gcOpenSupplierBills'); } };
       else if (/^AUTOCHECKS_/.test(id)) o.act = { l: 'Open checks', f: function(){ if (!call('_gcOpenCheckRun')) call('_gcOpenImportChecks'); } };
       else if (t.kind === 'mention' && t.apxKey) o.act = { l: '📋 Open the card', f: function(){ if (!call('_gcApprOpenCard', t.apxKey)) go('approvals'); } };   /* patch APPRMENTION: a mention on an approval card */
@@ -181957,6 +181959,8 @@ var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
 var FN = '/.netlify/functions/salesblock';
 /* RULES-BEGIN — patch SALESBLOCK: the same text runs in the CRM page (index.html); keep it ES5 */
 var SG_STRONG = [
+  ['vendor intro: "we are a … firm / agency"', /\b(we\s+are|we\x27re|i\s+am|i\x27m)\s+(a|an)\s+[^.!?\n]{0,40}\b(firm|agency|consultancy|consulting\s+(firm|company)|outsourcing\s+company|service\s+provider)\b/i],
+  ['bookkeeping / accounting services', /\b(bookkeeping|book\s*keeping|accounting\s+(firm|services|team)|tax\s+(preparation|services)|payroll\s+services|fractional\s+cfo|virtual\s+cfo)\b/i],
   ['pitch: "we build / help businesses like…"', /\b(i|we)\s+(build|create|design|develop|make|do|help|provide|offer|specialize\s+in|work\s+with|serve)\b[^.!?\n]{0,80}\b(businesses|companies|contractors|roofers|business\s+owners|brands|agencies|home\s*service)/i],
   ['pitch: "businesses like yours / GrayCo"', /\b(businesses|companies|contractors|roofers|brands|owners)\s+like\s+(yours|you|grayco|your\s+(company|business))\b/i],
   ['AI agent / AI receptionist', /\bai[\s-]*(agents?|receptionists?|assistants?|chat\s*bots?|voice\s*(agents?|assistants?)|phone\s*(agents?|answering)|employees?|sales\s*reps?|powered)\b/i],
@@ -181975,6 +181979,8 @@ var SG_STRONG = [
   ['reviews / listing', /\breview\s+(management|generation)\b|\b(google|business)\s+(listing|profile)\b[^.]{0,60}\b(suspend|verif|update|optimi|claim)/i]
 ];
 var SG_WEAK = [
+  ['"can we connect"', /\b(can|could|may)\s+we\s+connect\b|\blet\x27?s\s+connect\b|\bhappy\s+to\s+connect\b/i],
+  ['project far outside TN / MS / AR', /\b(los\s+angeles|san\s+diego|san\s+francisco|new\s+york|chicago|houston|dallas|phoenix|las\s+vegas|seattle|miami|denver|boston|atlanta|california|florida|new\s+jersey|ontario|london|india|pakistan|philippines)\b/i],
   ['mentions "your website / business"', /\byour\s+(website|site|online\s+presence|google\s+(listing|profile)|business|company|brand)\b/i],
   ['introduces a company ("I\'m X from Y")', /\b(I'?m|I\s+am|[Tt]his\s+is|[Mm]y\s+name\s+is)\s+[A-Z][a-z]+(\s+[A-Z][a-z]+)?\s*,?\s*(from|with|at|of|here\s+from)\s+[A-Z][\w&.'-]*/],
   ['demo / quick call', /\bdemo\b|\bquick\s+(call|chat|question\s+for\s+the\s+owner)\b|\bowner\s+or\s+manager\b|\bdecision\s+maker\b/i],
@@ -215096,5 +215102,48 @@ W._gcBidGC = { list: list, add: add, set: setOne, remove: remove, won: won, look
     var out = L.map(function(b){ if (!b) return b; var c = null; ["assignedTo", "pm", "estimator", "assignee"].forEach(function(k){ var v = String(b[k] || "").trim().toLowerCase(); if (v && f[v]) { c = c || Object.assign({}, b); c[k] = "Unassigned"; c.formerAssignee = b[k]; } }); if (c) { c.updatedAt = new Date().toISOString(); ch++; return c; } return b; });
     if (ch) { W.idbSet && W.idbSet("bidLists", out); var u = W._supaUpsertNow || W._supaUpsert; u && u("bidLists", out); if (W._crm) W._crm.bidLists = out; } }).catch(function(){}); } catch (e) {} }
   var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout; [8, 20, 40, 60, 90, 120, 160, 200, 250, 300].forEach(function(t){ ST.call(W, run, t * 1000); });
+})(window);
+</script>
+
+<script id="gc-patch-jobdone">/* __GC_JOBDONE__ — patch JOBDONE: a job at 100 % → "mark it complete?" on the owner's approvals (see tools/patch_JOBDONE.py) */
+(function(W){ if (W.__GC_JOBDONE__) return; W.__GC_JOBDONE__ = true;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout, SI = W.__GC_NATIVE_SETINTERVAL__ || W.setInterval;
+function s(v){ return v == null ? '' : String(v).trim(); }
+function admin(){ try { if (W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()) return true; } catch (e) {} try { var u = JSON.parse(localStorage.getItem('grayco_user') || '{}'); return /admin/i.test(s(u.role)) || /owner/i.test(s(u.payType)); } catch (e) { return false; } }
+function tasks(){ try { var l = JSON.parse(localStorage.getItem('gc_office_tasks') || '[]'); return Array.isArray(l) ? l : []; } catch (e) { return []; } }
+function saveTasks(l){ try { localStorage.setItem('gc_office_tasks', JSON.stringify(l)); } catch (e) {} try { if (W._gcOfficeTasksPush) W._gcOfficeTasksPush(); } catch (e) {} try { var u = W._supaUpsertNow || W._supaUpsert; if (u) u('gc_office_tasks', l); } catch (e) {} }
+var DONE_ST = /complete|closed|lost|cancel|warrant|paid in full|archiv/i;
+function sweep(){
+  try {
+    if (!admin()) return;
+    var P = (W._crm && W._crm.projects) || []; if (!P.length) return;
+    var l = tasks(), have = {}, ch = false;
+    l.forEach(function(t){ if (t && t.kind === 'job_done') have[t.pid] = t; });
+    P.forEach(function(p){
+      if (!p || !p.id || p.deleted || p.mergedInto) return;
+      var pct = parseFloat(p.pct), done = DONE_ST.test(s(p.status));
+      var t = have[p.id];
+      if (pct >= 100 && !done && !t) {
+        var c = parseFloat(String(p.contract || p.contractAmount || '').replace(/[$,]/g, '')) || 0, now = new Date().toISOString();
+        l.push({ id: 'JOBDONE_' + p.id, kind: 'job_done', pid: p.id, label: '🏁 ' + s(p.name || 'Job') + ' is at 100 % — mark it complete?', note: (s(p.pm) ? 'PM ' + s(p.pm) + ' set it to 100 %. ' : '') + (c ? 'Then send the final invoice.' : 'It has no contract amount yet — add it so the final invoice can go out.') + (/bid/i.test(s(p.status)) ? ' (It is still marked "' + s(p.status) + '".)' : ''), addedBy: 'CRM', addedAt: now, updatedAt: now, done: false, prio: 'high' });
+        ch = true;
+      } else if (t && !t.done && (done || !(pct >= 100))) { t.done = true; t.doneAt = new Date().toISOString(); t.updatedAt = t.doneAt; t.resolution = done ? 'marked complete' : 'progress went back under 100 %'; ch = true; }
+    });
+    if (ch) saveTasks(l);
+  } catch (e) {}
+}
+W._gcJobDoneApprove = function(id){
+  var l = tasks(), t = l.find(function(x){ return x && x.id === id; }); if (!t) return;
+  var p = ((W._crm && W._crm.projects) || []).find(function(x){ return x && x.id === t.pid; }); if (!p) return;
+  if (!W.confirm('Mark ' + s(p.name) + ' complete?\n\nStatus → Complete, completion date today (the 30-day tracking, warranty and closeout start).')) return;
+  var now = new Date().toISOString(), day = now.slice(0, 10);
+  var fn = function(list){ var out = (list || []).map(function(x){ return x && x.id === p.id ? Object.assign({}, x, { status: 'Complete', completionDate: x.completionDate || day, completedAt: x.completedAt || now, updatedAt: now }) : x; }); try { if (W._gcApplySync) W._gcApplySync('projects', out); } catch (e) {} return out; };
+  if (W._setProjects) W._setProjects(fn); else if (W._gcApplySync) W._gcApplySync('projects', fn((W._crm && W._crm.projects) || []));
+  t.done = true; t.doneAt = now; t.updatedAt = now; t.resolution = 'marked complete'; saveTasks(l);
+  var c = parseFloat(String(p.contract || p.contractAmount || '').replace(/[$,]/g, '')) || 0;
+  try { W.alert('🏁 ' + s(p.name) + ' is Complete.\n\n' + (c ? 'Next: the final invoice (job page → Invoices & Payments).' : 'Next: add the contract amount (Edit Project), then send the final invoice.')); } catch (e) {}
+};
+W._gcJobDone = { sweep: sweep };
+ST.call(W, sweep, 15000); SI.call(W, sweep, 60000);
 })(window);
 </script>

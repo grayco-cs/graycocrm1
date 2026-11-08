@@ -24,6 +24,8 @@ const crypto = require('crypto');
 
 /* RULES-BEGIN — patch SALESBLOCK: the same text runs in the CRM page (index.html); keep it ES5 */
 var SG_STRONG = [
+  ['vendor intro: "we are a … firm / agency"', /\b(we\s+are|we\x27re|i\s+am|i\x27m)\s+(a|an)\s+[^.!?\n]{0,40}\b(firm|agency|consultancy|consulting\s+(firm|company)|outsourcing\s+company|service\s+provider)\b/i],
+  ['bookkeeping / accounting services', /\b(bookkeeping|book\s*keeping|accounting\s+(firm|services|team)|tax\s+(preparation|services)|payroll\s+services|fractional\s+cfo|virtual\s+cfo)\b/i],
   ['pitch: "we build / help businesses like…"', /\b(i|we)\s+(build|create|design|develop|make|do|help|provide|offer|specialize\s+in|work\s+with|serve)\b[^.!?\n]{0,80}\b(businesses|companies|contractors|roofers|business\s+owners|brands|agencies|home\s*service)/i],
   ['pitch: "businesses like yours / GrayCo"', /\b(businesses|companies|contractors|roofers|brands|owners)\s+like\s+(yours|you|grayco|your\s+(company|business))\b/i],
   ['AI agent / AI receptionist', /\bai[\s-]*(agents?|receptionists?|assistants?|chat\s*bots?|voice\s*(agents?|assistants?)|phone\s*(agents?|answering)|employees?|sales\s*reps?|powered)\b/i],
@@ -42,6 +44,8 @@ var SG_STRONG = [
   ['reviews / listing', /\breview\s+(management|generation)\b|\b(google|business)\s+(listing|profile)\b[^.]{0,60}\b(suspend|verif|update|optimi|claim)/i]
 ];
 var SG_WEAK = [
+  ['"can we connect"', /\b(can|could|may)\s+we\s+connect\b|\blet\x27?s\s+connect\b|\bhappy\s+to\s+connect\b/i],
+  ['project far outside TN / MS / AR', /\b(los\s+angeles|san\s+diego|san\s+francisco|new\s+york|chicago|houston|dallas|phoenix|las\s+vegas|seattle|miami|denver|boston|atlanta|california|florida|new\s+jersey|ontario|london|india|pakistan|philippines)\b/i],
   ['mentions "your website / business"', /\byour\s+(website|site|online\s+presence|google\s+(listing|profile)|business|company|brand)\b/i],
   ['introduces a company ("I\'m X from Y")', /\b(I'?m|I\s+am|[Tt]his\s+is|[Mm]y\s+name\s+is)\s+[A-Z][a-z]+(\s+[A-Z][a-z]+)?\s*,?\s*(from|with|at|of|here\s+from)\s+[A-Z][\w&.'-]*/],
   ['demo / quick call', /\bdemo\b|\bquick\s+(call|chat|question\s+for\s+the\s+owner)\b|\bowner\s+or\s+manager\b|\bdecision\s+maker\b/i],
