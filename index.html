@@ -91355,9 +91355,11 @@ console.log('[GC] Approve sticks — one click, saved to device + cloud, invoice
       var url=ccUrlOf(proj);
       var existing=document.getElementById('_gcCCLinkRow');
       /* patch U2: every job gets "Open in GrayCo Photos"; the CompanyCam link only when there is one */
-      if(existing && existing.getAttribute('data-pid')===proj.id && existing.getAttribute('data-cc')===(url?'1':'0')) return;
+      if(existing && existing.getAttribute('data-pid')===proj.id && existing.getAttribute('data-cc')===(url?'1':'0') && [].some.call(document.querySelectorAll('main button'), function(b){ return /^\s*←\s*All Projects\s*$/.test(b.textContent||''); })) return;
       if(existing) existing.remove();
 
+      /*CCROWFIX*/ var _onJob=[].some.call(document.querySelectorAll('main button'), function(b){ return /^\s*←\s*All Projects\s*$/.test(b.textContent||''); });
+      if(!_onJob){ var _o=document.getElementById('_gcCCLinkRow'); if(_o) _o.remove(); return; }
       // sit it just under the job title
       var h1=document.querySelector('h1');
       if(!h1) return;
@@ -140868,9 +140870,22 @@ function scopeEditor(pid, sb, x, kind, back){
   var sh = sheet('gcsub-scope', (kind === 'co' ? '➕ Change order' : '🧾 Scope') + ' for ' + sb.name, back);
   function lineRow(l, i){ return '<div class="gcsub-line" data-i="' + i + '"><input class="gcsub-inp" data-f="room" placeholder="Area" value="' + esc(l.room) + '"><input class="gcsub-inp w" data-f="desc" placeholder="Work" value="' + esc(l.desc) + '"><input class="gcsub-inp" data-f="meas" placeholder="Measurement" value="' + esc(l.meas) + '"><input class="gcsub-inp n" data-f="qty" placeholder="Qty" inputmode="decimal" value="' + esc(l.qty) + '"><input class="gcsub-inp n" data-f="unit" placeholder="Unit" value="' + esc(l.unit) + '"><button type="button" class="gcsub-x2" data-del="' + i + '" aria-label="Remove line">✕</button></div>'; }
   function scSources(){ return (Array.isArray(p.subScopes) ? p.subScopes : []).filter(function(z){ return z && Array.isArray(z.lines) && z.lines.length; }); }
+  /*SCOPEPROP*/ function propLines(){ try {
+    var E = (window._gcEST && window._gcEST.all) ? window._gcEST.all() : (window._gcEstimatesState || (window._crm && window._crm.estimates) || []);
+    var codes = [p.po, p.autoPO].filter(Boolean).map(function(c){ return String(c).toLowerCase(); }), nm = String(p.name || '').toLowerCase();
+    var mine = (Array.isArray(E) ? E : []).filter(function(e){ return e && !e._isDraft && (String(e.pid || e.projectId || '') === String(pid) || (e.po && codes.indexOf(String(e.po).toLowerCase()) > -1) || (nm && String(e.name || '').toLowerCase() === nm)); });
+    if (!mine.length) return [];
+    var est = mine.sort(function(a, b){ return String(b.savedAt || b.updatedAt || '') < String(a.savedAt || a.updatedAt || '') ? -1 : 1; })[0];
+    var tr = String(sb.trade || sb.cat || '').toLowerCase().replace(/[^a-z ]/g, ' ').trim(), words = tr.split(/\s+/).filter(function(w){ return w.length > 2; });
+    var fit = function(cat){ cat = String(cat || '').toLowerCase(); return !words.length || words.some(function(w){ return cat.indexOf(w) > -1 || (cat && w.indexOf(cat) > -1); }); };
+    var seen = {}, out = [];
+    (est.lines || []).concat((est.labor || []).map(function(l){ return { cat: l.cat, desc: l.desc, qty: '', unit: '' }; })).forEach(function(l){ if (!l || !fit(l.cat)) return; var d = String(l.desc || l.name || '').replace(/\s+/g, ' ').trim(); if (!d || seen[d.toLowerCase()]) return; seen[d.toLowerCase()] = 1; out.push({ room: String(l.cat || ''), desc: d, meas: '', qty: l.qty == null ? '' : l.qty, unit: l.unit || '' }); });
+    return out.slice(0, 80);
+  } catch (e) { return []; } }
   function paint(){
     var src = scSources();
     sh.body.innerHTML = '<label class="gcsub-fld">Title<input class="gcsub-inp" id="sc-title" value="' + esc(x ? x.title : (kind === 'co' ? 'Change order — ' : 'Scope — ') + (sb.trade || '')) + '"></label>' +
+      (propLines().length ? '<div class="gcsub-cta"><button type="button" class="gcsub-btn g" id="sc-prop">📝 Draft from our proposal (' + esc(sb.trade || 'all trades') + ' · ' + propLines().length + ' lines)</button><span class="gcsub-muted">Work and quantities only — never our prices. Edit before sending.</span></div>' : '') +
       (src.length ? '<div class="gcsub-cta"><select class="gcsub-inp" id="sc-src"><option value="">Copy lines from a sub scope (estimate / Xactimate)…</option>' + src.map(function(z, i){ return '<option value="' + i + '">' + esc((z.title || z.name || 'Sub scope') + ' — ' + (z.lines.length) + ' lines') + '</option>'; }).join('') + '</select></div>' : '') +
       '<div class="gcsub-h">Lines — measurements and quantities, no prices</div><div id="sc-lines">' + lines.map(lineRow).join('') + '</div><button type="button" class="gcsub-btn" id="sc-add">＋ Add a line</button>' +
       '<label class="gcsub-fld">Included<textarea class="gcsub-inp" id="sc-inc" rows="2">' + esc(d.included || '') + '</textarea></label>' +
@@ -140893,6 +140908,7 @@ function scopeEditor(pid, sb, x, kind, back){
   paint();
   sh.body.addEventListener('click', function(e){
     var t = e.target;
+    if (t.id === 'sc-prop') { var keepP = read(); var pl = propLines(); var blank = lines.length === 1 && !lines[0].desc; lines = (blank ? [] : lines).concat(pl); paint(); restore(keepP); toast('Drafted ' + pl.length + ' lines from the proposal — check and edit them.'); return; }   /* SCOPEPROP */
     if (t.id === 'sc-add') { read(); lines.push({ room: '', desc: '', meas: '', qty: '', unit: '' }); var keep = read(); paint(); restore(keep); return; }
     if (t.hasAttribute('data-del')) { read(); var keep2 = read(); lines.splice(+t.getAttribute('data-del'), 1); if (!lines.length) lines.push({ room: '', desc: '', meas: '', qty: '', unit: '' }); paint(); restore(keep2); return; }
     if (t.id === 'sc-draft' || t.id === 'sc-send') {
