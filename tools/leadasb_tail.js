@@ -78,6 +78,7 @@ function html(p){
     + '<div class="f">' + dt('leadFound', '🧪 Lead found on') + dt('asbFound', '🧪 Asbestos found / suspected on') + '</div>';
   if (a.asbFound && comm) h += '<div class="warn">Commercial / 5+ units with asbestos: an asbestos survey and the state notice (TDEC / MDEQ / ADEQ) at least 10 working days before demolition — the licensed abatement sub files it.</div>';
   if (a.hud) h += '<div class="warn">HUD-assisted: HUD notice to the occupant within 15 days of completion and clearance testing by a certified inspector / risk assessor (setup guide).</div>';
+  if (N.some(function(x){ return (x.k === 'L01' || x.k === 'A01') && !x.given; }) && /progress|active|started/i.test(s(p.status))) h += '<div class="warn" style="background:#fef2f2;border-color:#fca5a5;color:#991b1b"><b>Stop:</b> work has started but ' + N.filter(function(x){ return (x.k === 'L01' || x.k === 'A01') && !x.given; }).map(function(x){ return DOCS[x.k][0]; }).join(' and ') + ' is not given yet. EPA: before day 1.</div>';
   if (!N.length) h += '<div class="m">No lead / asbestos papers needed yet. Fill in the year built; tick what applies or add the date lead or asbestos was found.</div>';
   N.forEach(function(x){
     var d = DOCS[x.k];
@@ -130,9 +131,10 @@ function sweep(){
       var N = need(p).filter(function(x){ return !x.given; }), id = 'LEADASB_' + p.id, t = l.find(function(x){ return x && x.id === id; });
       if (N.length) {
         var due = N.map(function(x){ return x.due; }).filter(Boolean).sort()[0] || '', over = N.some(function(x){ return x.over; });
-        var lab = (over ? '⚠️ OVERDUE — ' : '☣️ ') + 'Give ' + s(p.client || p.name) + ' the lead / asbestos papers' + (due ? ' — due ' + nice(due) : '') + ' (' + N.map(function(x){ return x.k.replace('L', 'Lead ').replace('A', 'Asbestos '); }).join(', ') + ')';
-        if (!t) { l.push({ id: id, kind: 'leadasb', pid: p.id, label: lab, note: 'Job ' + s(p.name) + ' → ☣️ Lead & asbestos card: the forms and ✓ Given. Keep signed papers 3 years.', assignee: s(p.pm), addedBy: 'CRM', addedAt: now, updatedAt: now, done: false, prio: over ? 'high' : 'med' }); ch = true; }
-        else if (t.label !== lab || t.done) { t.label = lab; t.done = false; t.updatedAt = now; t.prio = over ? 'high' : 'med'; ch = true; }
+        var soon = !over && due && due <= plus(today(), 10);   /* LEADASB2: within 10 days (day 20 of 30, 7 days before start) → high */
+        var lab = (over ? '⚠️ OVERDUE — ' : soon ? '⏰ ' : '☣️ ') + 'Give ' + s(p.client || p.name) + ' the lead / asbestos papers' + (due ? ' — due ' + nice(due) : '') + ' (' + N.map(function(x){ return x.k.replace('L', 'Lead ').replace('A', 'Asbestos '); }).join(', ') + ')';
+        if (!t) { l.push({ id: id, kind: 'leadasb', pid: p.id, label: lab, note: 'Job ' + s(p.name) + ' → ☣️ Lead & asbestos card: the forms and ✓ Given. Keep signed papers 3 years.', assignee: s(p.pm), addedBy: 'CRM', addedAt: now, updatedAt: now, done: false, prio: (over || soon) ? 'high' : 'med' }); ch = true; }
+        else if (t.label !== lab || t.done) { t.label = lab; t.done = false; t.updatedAt = now; t.prio = (over || soon) ? 'high' : 'med'; ch = true; }
       } else if (t && !t.done) { t.done = true; t.doneAt = t.updatedAt = now; t.resolution = 'every paper given'; ch = true; }
     });
     if (ch) { try { localStorage.setItem('gc_office_tasks', JSON.stringify(l)); } catch (e) {} try { if (W._gcOfficeTasksPush) W._gcOfficeTasksPush(); } catch (e) {} try { var u = W._supaUpsertNow || W._supaUpsert; if (u) u('gc_office_tasks', l); } catch (e) {} }

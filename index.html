@@ -5478,7 +5478,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.168-2026-11-08-r18b -->
+<!-- GrayCo CRM Build: 33.168-2026-11-08-r18c -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6427,7 +6427,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.168-2026-11-08-r18b");
+  console.log("[GC] Build 33.168-2026-11-08-r18c");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6475,7 +6475,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.168-2026-11-08-r18b"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.168-2026-11-08-r18c"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -41886,9 +41886,11 @@ window.gcCCIntegration = {
           type: 'Other',
           priority: 'Medium'
         };
+        /*CCCONTACT*/ var _ccHas = /\d{10}/.test(String(ccPhone||'').replace(/\D/g,'').slice(-10)) || /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(String(ccEmail||'').trim());
+        if(!_ccHas){ _ccProj.needsContact = true; _ccProj.notes = 'Synced from CompanyCam. 📷 Needs contact info — add the customer\u2019s phone or e-mail, then convert it to a job.'; }
         existingLeads.unshift(_ccProj);
         // Add to the projects pipeline as a BIDDING job.
-        try{
+        if(_ccHas) try{
           var _pl = (window._crm && Array.isArray(window._crm.projects)) ? window._crm.projects.slice() : [];
           if(!_pl.some(function(p){ return p && (p.ccId===ccId || (p.name||'').toLowerCase()===(_ccProj.name||'').toLowerCase()); })){
             _pl.unshift(Object.assign({}, _ccProj, { id: uid(), status:'bidding' }));
@@ -215542,6 +215544,7 @@ function html(p){
     + '<div class="f">' + dt('leadFound', '🧪 Lead found on') + dt('asbFound', '🧪 Asbestos found / suspected on') + '</div>';
   if (a.asbFound && comm) h += '<div class="warn">Commercial / 5+ units with asbestos: an asbestos survey and the state notice (TDEC / MDEQ / ADEQ) at least 10 working days before demolition — the licensed abatement sub files it.</div>';
   if (a.hud) h += '<div class="warn">HUD-assisted: HUD notice to the occupant within 15 days of completion and clearance testing by a certified inspector / risk assessor (setup guide).</div>';
+  if (N.some(function(x){ return (x.k === 'L01' || x.k === 'A01') && !x.given; }) && /progress|active|started/i.test(s(p.status))) h += '<div class="warn" style="background:#fef2f2;border-color:#fca5a5;color:#991b1b"><b>Stop:</b> work has started but ' + N.filter(function(x){ return (x.k === 'L01' || x.k === 'A01') && !x.given; }).map(function(x){ return DOCS[x.k][0]; }).join(' and ') + ' is not given yet. EPA: before day 1.</div>';
   if (!N.length) h += '<div class="m">No lead / asbestos papers needed yet. Fill in the year built; tick what applies or add the date lead or asbestos was found.</div>';
   N.forEach(function(x){
     var d = DOCS[x.k];
@@ -215594,9 +215597,10 @@ function sweep(){
       var N = need(p).filter(function(x){ return !x.given; }), id = 'LEADASB_' + p.id, t = l.find(function(x){ return x && x.id === id; });
       if (N.length) {
         var due = N.map(function(x){ return x.due; }).filter(Boolean).sort()[0] || '', over = N.some(function(x){ return x.over; });
-        var lab = (over ? '⚠️ OVERDUE — ' : '☣️ ') + 'Give ' + s(p.client || p.name) + ' the lead / asbestos papers' + (due ? ' — due ' + nice(due) : '') + ' (' + N.map(function(x){ return x.k.replace('L', 'Lead ').replace('A', 'Asbestos '); }).join(', ') + ')';
-        if (!t) { l.push({ id: id, kind: 'leadasb', pid: p.id, label: lab, note: 'Job ' + s(p.name) + ' → ☣️ Lead & asbestos card: the forms and ✓ Given. Keep signed papers 3 years.', assignee: s(p.pm), addedBy: 'CRM', addedAt: now, updatedAt: now, done: false, prio: over ? 'high' : 'med' }); ch = true; }
-        else if (t.label !== lab || t.done) { t.label = lab; t.done = false; t.updatedAt = now; t.prio = over ? 'high' : 'med'; ch = true; }
+        var soon = !over && due && due <= plus(today(), 10);   /* LEADASB2: within 10 days (day 20 of 30, 7 days before start) → high */
+        var lab = (over ? '⚠️ OVERDUE — ' : soon ? '⏰ ' : '☣️ ') + 'Give ' + s(p.client || p.name) + ' the lead / asbestos papers' + (due ? ' — due ' + nice(due) : '') + ' (' + N.map(function(x){ return x.k.replace('L', 'Lead ').replace('A', 'Asbestos '); }).join(', ') + ')';
+        if (!t) { l.push({ id: id, kind: 'leadasb', pid: p.id, label: lab, note: 'Job ' + s(p.name) + ' → ☣️ Lead & asbestos card: the forms and ✓ Given. Keep signed papers 3 years.', assignee: s(p.pm), addedBy: 'CRM', addedAt: now, updatedAt: now, done: false, prio: (over || soon) ? 'high' : 'med' }); ch = true; }
+        else if (t.label !== lab || t.done) { t.label = lab; t.done = false; t.updatedAt = now; t.prio = (over || soon) ? 'high' : 'med'; ch = true; }
       } else if (t && !t.done) { t.done = true; t.doneAt = t.updatedAt = now; t.resolution = 'every paper given'; ch = true; }
     });
     if (ch) { try { localStorage.setItem('gc_office_tasks', JSON.stringify(l)); } catch (e) {} try { if (W._gcOfficeTasksPush) W._gcOfficeTasksPush(); } catch (e) {} try { var u = W._supaUpsertNow || W._supaUpsert; if (u) u('gc_office_tasks', l); } catch (e) {} }
