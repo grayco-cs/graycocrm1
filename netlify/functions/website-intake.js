@@ -696,7 +696,7 @@ exports.fromEmail = async function(mail){
   }
   if (f.type === 'roofprice') f.type = 'estimate';
   const sid = crypto.createHash('sha256').update('leads@|' + (s(mail.messageId) || s(mail.id) || (low(f.email) + '|' + f.phone + '|' + s(mail.subject) + '|' + s(mail.date)))).digest('hex').slice(0, 24);
-  const r = await fileLead(f, { sid, source: lsa ? 'Google LSA' : MAIL_SOURCE, leadExtra: lsa ? { mkSource: 'Google Ads', leadSource: 'Google LSA' } : undefined, how: 'from an e-mail to leads@grayco-cs.com' + (s(mail.subject) ? ' ("' + clip(mail.subject, 80) + '")' : ''), notes: mail.rawRef ? ['The e-mail is kept on the lead (Lead Inbox).'] : [] });
+  const r = await fileLead(f, { sid, source: lsa ? 'Google LSA' : MAIL_SOURCE, leadExtra: lsa ? { mkSource: 'Google Ads', leadSource: 'Google LSA', lsaCheck: 'pending' } : undefined /* LSACHECK */, how: 'from an e-mail to leads@grayco-cs.com' + (s(mail.subject) ? ' ("' + clip(mail.subject, 80) + '")' : ''), notes: mail.rawRef ? ['The e-mail is kept on the lead (Lead Inbox).'] : [] });
   const alerts = r.action === 'added' ? await alertLead(r.rec) : { skipped: r.action };
   return { ok: true, lead: r.id, action: r.action, alerts, type: f.type };
 };
