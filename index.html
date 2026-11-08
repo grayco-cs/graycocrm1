@@ -139150,7 +139150,7 @@ function isBid(l){
 }
 W._gcIsBidLead = isBid;
 /* expired: the bid date went by over a week ago and it was never submitted */
-function expiredBid(l){ var ms = dueMs(l && l.bidDue); return !!(l && validDue(l.bidDue) && isFinite(ms) && Date.now() - ms > 7 * 86400000 && !/submit|won|lost/i.test(s(l.bidStatus) + ' ' + s(l.stage))); }
+function expiredBid(l){ var ms = dueMs(l && l.bidDue); return !!(l && validDue(l.bidDue) && isFinite(ms) && Date.now() - ms > 0 /*LEADPASTDUE*/ && !/submit|won|lost/i.test(s(l.bidStatus) + ' ' + s(l.stage))); }
 W._gcBidExpired = expiredBid;
 W._gcLaLeads = function(){ return arr(LEADS); };   /* patch HOT2: the leads LA already holds, for 🧮 Estimating's count */
 var STATUSES = ['Reviewing', 'Estimating', 'Submitted', 'Won', 'Lost', 'No bid'];
@@ -173890,7 +173890,7 @@ function closed(l){ var st = stageOf(l); return st === 'Won' || st === 'Lost' ||
 function isBidL(l){ var k = s(l && l.id) + '|' + s(l && (l.updatedAt || l.savedAt)) + '|' + s(l && l.leadKind) + '|' + s(l && l.type) + '|' + s(l && l.source); var v = ISB_M[k]; if (v !== undefined) return v; if (++ISB_N > 6000) { ISB_M = {}; ISB_N = 0; } return (ISB_M[k] = isBidL0(l)); }   /* patch LEADSUI: remembered per lead version */
 var ISB_M = {}, ISB_N = 0;
 function isBidL0(l){ try { if (typeof W._gcIsBidLead === 'function') return !!W._gcIsBidLead(l); } catch (e) {} return /commercial|government/.test(typeOf(l)); }
-function expired(l){ if (!l || closed(l)) return false; try { if (typeof W._gcBidExpired === 'function') return !!W._gcBidExpired(l); } catch (e) {} var t = dueMs(l); return isFinite(t) && Date.now() - t > 7 * 864e5 && !/submit/i.test(s(l.bidStatus)); }
+function expired(l){ if (!l || closed(l)) return false; try { if (typeof W._gcBidExpired === 'function') return !!W._gcBidExpired(l); } catch (e) {} var t = dueMs(l); return isFinite(t) && Date.now() - t > 0 && !/submit/i.test(s(l.bidStatus)); }
 var SHUT_HOT2 = /^(won|lost|dead|deleted|declined|not\s*bidding|no\s*bid|archived|cancell?ed|closed|dismissed|converted)$/i;
 function shut(l){ return closed(l) || !!(l.noBid || l.dismissed) || [l.status, l.inboxState, l.bidStatus].some(function(v){ return SHUT_HOT2.test(s(v)); }) || expired(l); }
 function receivedMs(l){ var t = Date.parse(s(l.receivedAt || (l.leadExtra && l.leadExtra.receivedAt) || l.createdAt || l.created || l.dateAdded || l.date)); return isFinite(t) ? t : 0; }
