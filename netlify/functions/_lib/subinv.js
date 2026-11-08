@@ -14,8 +14,8 @@
      route 'dup'   → ✅ Approvals "Possible duplicate" — never booked twice;
      route 'link'  → ✅ Approvals "🔗 Open this invoice link" — a Google link the CRM could not open;
      route 'review'→ ✅ Approvals "Match this invoice" — it does not say GrayCo owes it (paid / a statement / not an invoice).
-   Pay date: the CRM's sub pay rule — in by Wednesday (Central) → paid the Friday of the following week; later → the
-   Friday after that; the invoice's own due date when that is later. No pay-when-paid. Retainage per the subcontract.
+   Pay date: the CRM's sub pay rule — in by Wednesday (Central) → paid that Friday; later → the
+   following Friday; the invoice's own due date when that is later. No pay-when-paid. Retainage per the subcontract.
    No packages: a .docx / .xlsx is a ZIP (read with zlib), a PDF's text layer is read with zlib, the rest goes to the AI
    reader (_lib/ai.js) when ANTHROPIC_API_KEY is set.
    ========================================================================== */
@@ -435,8 +435,8 @@ function payRule(recvYmd){
   const wd = new Date(recvYmd + 'T12:00:00Z').getUTCDay();          /* 0 Sun … 3 Wed */
   const made = wd <= 3;
   const cut = addDays(recvYmd, made ? 3 - wd : 7 - wd + 3);
-  const pay = addDays(cut, 2 + 7);
-  return { cutoff: cut, payDate: pay, made: made, rule: made ? 'in by Wednesday ' + cut + ' → paid the Friday of the following week, ' + pay : 'after Wednesday → waits for the ' + cut + ' cut-off, paid Friday ' + pay };
+  const pay = addDays(cut, 2);   /* SUBPAYWED: that Friday (owner 11/4) */
+  return { cutoff: cut, payDate: pay, made: made, rule: made ? 'in by Wednesday ' + cut + ' → paid that Friday, ' + pay : 'after Wednesday → waits for the ' + cut + ' cut-off, paid Friday ' + pay };
 }
 /* the later of the rule and the invoice's own terms (net N from its date, or its due date) */
 function payDateFor(recvYmd, f){
