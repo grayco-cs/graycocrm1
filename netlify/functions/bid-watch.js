@@ -52,6 +52,8 @@ const PAUSE_MS = 1500, TIMEOUT_MS = 10000, MAX_PAGE = 3 * 1024 * 1024, CONCURREN
 /* West Tennessee counties / towns within about 100 miles of Memphis (STREAM lists the whole state) */
 const TN_WEST = /\b(Shelby|Fayette|Tipton|Lauderdale|Haywood|Hardeman|Madison|Crockett|Dyer|Gibson|Chester|Henderson|McNairy|Obion|Weakley|Hardin|Memphis|Millington|Bartlett|Germantown|Collierville|Covington|Somerville|Union City|Dyersburg)\b/;
 const SOURCES = [
+  /*MRPLANROOM*/ { id: 'mr-planroom', name: 'Memphis Reprographics — public plan room (mrplanroom.com)', label: 'MR plan room', owner: '', city: '', state: '', type: 'commercial',
+    auto: true, kind: 'rka', companyIs: 'owner', url: 'https://www.mrplanroom.com/projects/public', noAi: true },
   /*RKAROOM*/ { id: 'rka-planroom', name: 'RKA Construction — public plan room', label: 'RKA plan room', owner: '', city: '', state: 'MS', type: 'commercial',
     auto: true, kind: 'rka', url: 'https://www.rkaplanroom.build/projects/public', noAi: true },
   { id: 'shelby-county', name: 'Shelby County Government — bid postings', label: 'Shelby County', owner: 'Shelby County Government', city: 'Memphis', state: 'TN',
@@ -303,7 +305,7 @@ function toRecord(src, it, hits){
   let host = ''; try { host = new URL(it.url).hostname; } catch (e) {}
   return {
     id: itemId('watch|' + src.id + '|' + it.id), title: it.title, source: src.label, sourceKind: 'public_bid', sourceRef: src.name, type: src.type || 'government',
-    owner: src.owner || '', gc: it.gc || '', address: '', city: it.city || src.city || '', state: it.state || src.state || '', zip: '', bidDue: it.due || '', preBid: '', trades: [], scope: it.context ? it.context.slice(0, 300) : '',
+    owner: (src.companyIs === 'owner' ? it.gc : '') || src.owner || '', gc: src.companyIs === 'owner' ? '' : (it.gc || ''), address: '', city: it.city || src.city || '', state: it.state || src.state || '', zip: '', bidDue: it.due || '', preBid: '', trades: [], scope: it.context ? it.context.slice(0, 300) : '',
     bidNumber: it.number || '', contact: { name: '', email: '', phone: '' }, estValue: null,
     plansLinks: it.url ? [{ url: it.url, label: 'Solicitation & documents (' + src.label + ')', board: 'Government', host }] : [],
     files: [], emails: [], emailIds: [], watchKeys: ['w:' + src.id + ':' + it.id], notes: ['Found on ' + src.name + '. Matched: ' + hits.join(', ') + '.'],
