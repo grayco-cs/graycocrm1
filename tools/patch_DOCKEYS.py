@@ -42,3 +42,5 @@ src = src.replace(o4, "    var docSet = { ids: out, src: src, waived: waived, of
 open(P, 'w', encoding='utf-8').write(src); print('patched')
 
 # + the 'from the notes' badge (BADGE and the job panel's lab map) added by hand on 11/9, see git
+
+# + HAZARDTAG (11/9): the word "hazard" on a job → the lead, asbestos and mold papers (and steps); added by hand, see git

@@ -793,12 +793,32 @@ function papersOf(sub, events){
   return { w9: { onFile: sub.w9 === true, sent: pend('w9') }, coi: { onFile: sub.coi === true || !!exp, exp: exp, days: days, sent: pend('coi') },
     agreement: { onFile: !!sub.subAgreement, sent: pend('agreement') }, lien: { required: sub.lien === true, sent: pend('lien') } };
 }
+/* BIDLIST: the bid jobs this approved sub can bid on (invited or public, open) + the ones they bid on, newest due first */
+async function bidJobsFor(p, sub){
+  try {
+    const H = require('./subportal.js')._hub, mail = low(p.email || sub.email);
+    const all = await Promise.all([H.listRows([H.eq('collection', 'jobs')]), mail ? H.listRows([H.eq('collection', 'invites'), H.eq('email', mail)]) : [], s(p.id) ? H.listRows([H.eq('collection', 'bids'), H.eq('user_id', s(p.id))]) : []]);
+    const inv = new Set(arr(all[1]).map(function(r){ return r.job_id; })), mine = {};
+    arr(all[2]).forEach(function(r){ mine[r.job_id] = r.data || {}; });
+    const out = [];
+    arr(all[0]).forEach(function(r){ const j = r.data || {}; const st = low(j.status);
+      if (j.draft === true || st === 'draft' || H.isGone(j)) return;
+      const open = ['closed', 'won', 'lost'].indexOf(st) < 0, canSee = (j.visibility || 'public') === 'public' || inv.has(r.id), b = mine[r.id];
+      if (!(canSee && open) && !b) return;
+      const bs = low(b && (b.status || b.result)), res = !b ? (inv.has(r.id) ? 'invited' : 'open') : /award|won|accept|select/.test(bs) && !/not/.test(bs) ? 'awarded' : (/lost|declin|reject|not/.test(bs) || (!open && st !== 'closed')) ? 'not-selected' : 'sent';
+      const parts = s(j.address).split(',').map(function(x){ return x.trim(); }).filter(Boolean);
+      out.push({ id: s(r.id), title: s(j.title) || 'Bid job', area: parts.slice(-2).join(', '), due: s(j.bidDueDate).slice(0, 10), trades: (Array.isArray(j.tradesSought) ? j.tradesSought : []).map(function(x){ return s(x && x.trade || x); }).filter(Boolean).slice(0, 6), state: res });
+    });
+    out.sort(function(a, b){ return (a.state === 'invited' ? 0 : 1) - (b.state === 'invited' ? 0 : 1) || s(a.due || '9').localeCompare(s(b.due || '9')); });
+    return out.slice(0, 40);
+  } catch (e) { return []; }
+}
 async function bidsState(sub){
   try {
     const rows = await dbGet('sp_rows', 'select=id,data&collection=eq.users&order=key.asc');
     const p = rows.map(function(r){ return r.data || {}; }).find(function(u){ return u.role === 'sub' && (s(u.crmSubId) === s(sub.id) || (okEmail(sub.email) && low(u.email) === low(sub.email))); });
     if (!p) return { state: 'invite', url: bidsBase(), email: maskEmail(sub.email), canAccept: okEmail(sub.email) };
-    if (p.approved === true) return { state: 'approved', url: bidsBase() };
+    if (p.approved === true) return { state: 'approved', url: bidsBase(), jobs: await bidJobsFor(p, sub) };   /* BIDLIST */
     if (p.bidsRevoked === true) return { state: 'off', url: bidsBase() };
     return { state: 'waiting', url: bidsBase() };
   } catch (e) { return { state: 'unavailable', url: bidsBase() }; }
@@ -1526,4 +1546,4 @@ exports._core = { msgInsert: function(){ return msgInsert.apply(null, arguments)
   _reset: function(){ kvCache = null; hits.clear(); }, payDateFor: payDateFor, sha: sha, hmac: hmac, linkFor: linkFor, cleanScope: cleanScope, crmSubs: crmSubs, pwHash: pwHash, pwOk: pwOk, starterOf: starterOf };
 
 /* LEGAL2-patch */
-exports._sched = { schedFor: schedFor };   /* patch VOICESCHED: tests */
+exports._sched = { schedFor: schedFor, bidJobsFor: bidJobsFor };   /* patch VOICESCHED: tests · BIDLIST */

@@ -10,7 +10,7 @@ var L = {
   en: {
     hi: 'Welcome', portal: 'GrayCo Portal', home: 'Home', jobs: 'Jobs', pay: 'Pay', papers: 'Papers', back: '‹ Back', close: 'Close',
     needs: 'Needs you', nothingNeeded: 'Nothing waiting on you. Thank you!', week: 'This week', noWeek: 'Nothing on the schedule this week.',
-    toBid: '📝 To bid', jobsNow: '🔨 Jobs I\'m on now', jobsNext: '✅ Awarded / coming up', jobsDone: '✔ Done', poHint: 'Use this PO at Home Depot, Lowe\'s and the supply house so it lands on the right job.',
+    bidDue: 'Bid due', bidOpenBid: 'Open & bid', bidsNone: 'No jobs to bid right now — GrayCo invites you when one fits your trade.', toBid: '📝 To bid', jobsNow: '🔨 Jobs I\'m on now', jobsNext: '✅ Awarded / coming up', jobsDone: '✔ Done', poHint: 'Use this PO at Home Depot, Lowe\'s and the supply house so it lands on the right job.',
     money: 'Money', submitted: 'Submitted', approvedM: 'Approved', paidMonth: 'Paid this month', yourJobs: 'Your jobs', noJobs: 'No jobs with GrayCo yet. Your Project Manager adds you to a job, and it shows up here.',
     newScope: 'New scope', unread: 'new message', unreads: 'new messages', starts: 'starts', ends: 'ends', done: 'done',
     nScope: 'Sub agreement to sign', nCo: 'Change order to sign', nPunch: 'Punch item', nMsg: 'Messages from GrayCo', nCoiExp: 'Insurance certificate has run out — upload a new one', nCoiSoon: 'Insurance certificate runs out in {d} days — upload a new one', nW9: 'GrayCo needs your W-9',
@@ -38,7 +38,7 @@ var L = {
   es: {
     hi: 'Bienvenido', portal: 'Portal GrayCo', home: 'Inicio', jobs: 'Trabajos', pay: 'Pagos', papers: 'Papeles', back: '‹ Atrás', close: 'Cerrar',
     needs: 'Pendiente para usted', nothingNeeded: 'Nada pendiente. ¡Gracias!', week: 'Esta semana', noWeek: 'Nada en el calendario esta semana.',
-    toBid: '📝 Para licitar', jobsNow: '🔨 Trabajos en curso', jobsNext: '✅ Adjudicados / próximos', jobsDone: '✔ Terminados', poHint: 'Use este PO en Home Depot, Lowe\'s y el proveedor para que se cargue al trabajo correcto.',
+    bidDue: 'Fecha límite', bidOpenBid: 'Abrir y licitar', bidsNone: 'No hay trabajos para licitar ahora — GrayCo le invita cuando uno sea de su oficio.', toBid: '📝 Para licitar', jobsNow: '🔨 Trabajos en curso', jobsNext: '✅ Adjudicados / próximos', jobsDone: '✔ Terminados', poHint: 'Use este PO en Home Depot, Lowe\'s y el proveedor para que se cargue al trabajo correcto.',
     money: 'Dinero', submitted: 'Enviado', approvedM: 'Aprobado', paidMonth: 'Pagado este mes', yourJobs: 'Sus trabajos', noJobs: 'Todavía no tiene trabajos con GrayCo. Su Gerente de Proyecto lo agrega a un trabajo y aparece aquí.',
     newScope: 'Alcance nuevo', unread: 'mensaje nuevo', unreads: 'mensajes nuevos', starts: 'empieza', ends: 'termina', done: 'hecho',
     nScope: 'Acuerdo de subcontrato para firmar', nCo: 'Orden de cambio para firmar', nPunch: 'Pendiente de la lista final', nMsg: 'Mensajes de GrayCo', nCoiExp: 'El certificado de seguro venció — suba uno nuevo', nCoiSoon: 'El certificado de seguro vence en {d} días — suba uno nuevo', nW9: 'GrayCo necesita su W-9',
@@ -304,10 +304,17 @@ function bidsCard(b){
     } } }));
     else kids.push(h('p', { class: 'muted', text: t('bidsNoEmail') }));
   } else if (b.state === 'waiting') kids.push(h('div', { class: 'row' }, [h('span', { text: t('bidsWaiting') }), pill(t('bidsTitle'))]));
-  else if (b.state === 'approved') kids.push(h('p', { class: 'muted', text: t('bidsApproved') }), h('a', { class: 'btn navy', href: b.url, target: '_blank', rel: 'noopener', text: t('bidsOpen') }));
+  else if (b.state === 'approved') {   /* BIDLIST: the jobs to bid */
+    var J = b.jobs || [], W2 = { invited: '📨 Invited', open: 'Open to bid', sent: '✓ Bid sent', awarded: '✅ Awarded', 'not-selected': 'Not selected' };
+    if (J.length) J.forEach(function(j){ kids.push(h('div', { class: 'post', 'data-bidjob': j.id }, [h('div', { class: 'row' }, [h('b', { text: j.title }), pill(W2[j.state] || j.state, j.state === 'awarded' || j.state === 'sent' ? 'ok' : j.state === 'invited' ? 'due' : '')]),
+      h('div', { class: 'muted', text: [j.area, j.due ? t('bidDue') + ' ' + dt(j.due) : '', (j.trades || []).join(', ')].filter(Boolean).join(' · ') }),
+      (j.state === 'invited' || j.state === 'open') ? h('a', { class: 'btn gold', href: b.url + '/?job=' + encodeURIComponent(j.id), target: '_blank', rel: 'noopener', text: t('bidOpenBid') }) : null])); });
+    else kids.push(h('p', { class: 'muted', text: t('bidsNone') }));
+    kids.push(h('a', { class: 'btn navy', href: b.url, target: '_blank', rel: 'noopener', text: t('bidsOpen') }));
+  }
   else if (b.state === 'off') kids.push(h('p', { class: 'muted', text: t('bidsOff') }));
   if (!kids.length) return null;
-  return card(t('bidsTitle'), kids, 'bids');
+  return card(b.state === 'approved' ? t('toBid') : t('bidsTitle'), kids, 'bids');
 }
 function contactCard(title, name, phone, email){
   var ini = String(name || 'G').split(/\s+/).map(function(x){ return x[0] || ''; }).join('').slice(0, 2).toUpperCase();

@@ -503,7 +503,7 @@ function startPartner(){
   document.title = tr('title');
   function go(){ window.GCPartner.start({ session: session, host: host, lang: LANG }); }
   if (window.GCPartner) return go();
-  var s = document.createElement('script'); s.src = '/portal-app.js?v=33.168-subhome3'; s.onload = go; s.onerror = function(){ notActive(tr('loadFail')); };
+  var s = document.createElement('script'); s.src = '/portal-app.js?v=33.169-bidlist'; s.onload = go; s.onerror = function(){ notActive(tr('loadFail')); };
   document.head.appendChild(s);
 }
 

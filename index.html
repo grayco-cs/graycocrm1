@@ -181458,6 +181458,8 @@ function keyDocs(pj){
   var t = ' ' + [pj.name, pj.type, pj.jobType, pj.scope, pj.notes, pj.description, pj.internalNotes, pj.scopeNotes, pj.desc, pj.workDescription].filter(Boolean).join(' ').toLowerCase() + ' ';
   var out = [], add = function(a){ a.forEach(function(x){ if (out.indexOf(x) < 0) out.push('gcb_' + x); }); }, has = function(re){ return re.test(t); };
   if (has(/\blead\b(?![ -]?(time|gen|source|in\b|s?\s+(to|from|for)))|lead[- ]based|lead paint|\brrp\b/) || la.leadFound || (la.disturbsPaint && parseInt(la.yearBuilt, 10) < 1978)) { add(['lead_01', 'lead_03', 'lead_05']); if (has(/school|daycare|day care|head start|child[- ]occupied|preschool|pre-k/)) add(['lead_02']); }
+  /* HAZARDTAG (owner 11/9): "for lead and asbestos have hazard as the tag … including with mold" */
+  if (has(/\bhazard|hazmat|haz-?mat/)) { add(['lead_01', 'lead_03', 'lead_05', 'asb_testing_auth', 'asb_01', 'asb_02', 'mold', 'mold_assessment_auth', 'mold_contract', 'mold_containment_notice', 'mold_clearance_cert']); if (has(/school|daycare|day care|head start|child[- ]occupied|preschool|pre-k/)) add(['lead_02']); }
   if (has(/asbestos|\bacm\b|vermiculite|transite/) || la.asbFound) add(['asb_testing_auth', 'asb_01', 'asb_02']);
   if (has(/\bmold|mould|mildew/)) add(['mold', 'mold_assessment_auth', 'mold_contract', 'mold_containment_notice', 'mold_clearance_cert']);
   if (has(/\bwater\b|flood|\bleak|burst|mitigation|dry ?out|drying|sewage|\bcat ?[123]\b/)) add(['water_emergency_auth', 'mitigation', 'water_category_report', 'water_equipment_resp', 'antimicrobial_consent', 'drying_log', 'water_dry_cert', 'equipment_removal_signoff', 'work_auth']);
