@@ -215693,30 +215693,40 @@ function save(pid, fn){
   ST.call(W, function(){ paint(true); sweep(); }, 300);
 }
 function css(){
-  if (D.getElementById('gc-la-css')) return;
-  var st = D.createElement('style'); st.id = 'gc-la-css';
+  if (D.getElementById('gc-lasb-css')) return;   /* LACLEAR: 'gc-la-css' is the bid-lead module's — the card never got its own styles */
+  var st = D.createElement('style'); st.id = 'gc-lasb-css';
   st.textContent = '.gc-la{background:#fff;border:1px solid #e2e8f0;border-left:4px solid #b45309;border-radius:12px;padding:12px 14px;margin:0 0 10px;font:14px Inter,Arial,sans-serif;color:#0f172a}'
     + '.gc-la h4{margin:0 0 6px;font-size:15px}.gc-la .f{display:flex;flex-wrap:wrap;gap:10px 16px;margin:4px 0 8px;font-size:13px}.gc-la .f label{display:flex;gap:5px;align-items:center}'
     + '.gc-la input[type=date],.gc-la input[type=number]{padding:4px 6px;border:1px solid #cbd5e1;border-radius:6px;font:13px Inter,Arial,sans-serif}'
     + '.gc-la .p{display:flex;flex-wrap:wrap;gap:8px;align-items:center;border-top:1px solid #f1f5f9;padding:7px 0}.gc-la .p b{min-width:250px}'
     + '.gc-la .m{color:#64748b;font-size:12.5px}.gc-la .bad{color:#b91c1c;font-weight:800}.gc-la .ok{color:#166534;font-weight:700}'
     + '.gc-la a,.gc-la button{border:1px solid #cbd5e1;background:#fff;border-radius:7px;padding:4px 10px;font:600 12.5px Inter,Arial,sans-serif;cursor:pointer;color:#0f172a;text-decoration:none}'
+    + '.gc-la .q{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 12px;align-items:center;padding:7px 0;border-top:1px solid #f1f5f9;font-size:13.5px}.gc-la .q .h{color:#64748b;font-size:12px;grid-column:1/-1;margin-top:-4px}'
+    + '.gc-la .q input[type=checkbox]{width:20px;height:20px}.gc-la .sec{font-weight:800;font-size:13px;color:#7c2d12;margin:10px 0 2px;text-transform:uppercase;letter-spacing:.03em}.gc-la .intro{color:#475569;font-size:12.5px;margin:0 0 6px}'
     + '.gc-la button.g{background:#166534;color:#fff;border-color:#166534}.gc-la .warn{background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:7px 9px;margin:6px 0;font-size:13px}';
   D.head.appendChild(st);
 }
 function html(p){
   var a = la(p), pr = pre78(p), N = need(p), comm = p.isCommercial === true || /commercial/i.test(s(p.type)) || a.units5;
-  var cb = function(k, t){ return '<label><input type="checkbox" data-la-c="' + k + '"' + (a[k] ? ' checked' : '') + '> ' + t + '</label>'; };
-  var dt = function(k, t){ return '<label>' + t + ' <input type="date" data-la-d="' + k + '" value="' + esc(s(a[k]).slice(0, 10)) + '"></label>'; };
+  /* LACLEAR (owner 11/9: "glitching — need to be more specific what I'm making or what I'm doing here"): one plain question per line */
+  var cb = function(k, t, hlp){ return '<label class="q"><span>' + t + '</span><input type="checkbox" data-la-c="' + k + '"' + (a[k] ? ' checked' : '') + '>' + (hlp ? '<span class="h">' + hlp + '</span>' : '') + '</label>'; };
+  var dt = function(k, t, hlp){ return '<label class="q"><span>' + t + '</span><input type="date" data-la-d="' + k + '" value="' + esc(s(a[k]).slice(0, 10)) + '">' + (hlp ? '<span class="h">' + hlp + '</span>' : '') + '</label>'; };
   var h = '<h4>☣️ Lead &amp; asbestos' + (N.some(function(x){ return x.over; }) ? ' <span class="bad">· OVERDUE</span>' : N.length ? ' <span class="m">· ' + N.filter(function(x){ return !x.given; }).length + ' paper(s) to give</span>' : '') + '</h4>'
-    + '<div class="f"><label>Year built <input type="number" min="1700" max="2100" data-la-y value="' + esc(a.yearBuilt || p.yearBuilt || '') + '" style="width:80px"></label>'
-    + (pr === true ? '<span class="bad">Pre-1978</span>' : pr === false ? '<span class="ok">1978 or newer</span>' : '<span class="m">(required — pre-1978 is worked out)</span>')
-    + cb('disturbsPaint', 'Disturbs paint (>6 SF in / 20 SF out, windows, demo)') + cb('childOccupied', 'Child-occupied (school, daycare, Head Start, child under 6)') + cb('hud', 'HUD-assisted') + cb('units5', 'Commercial / 5+ units') + cb('testKit', 'Lead test kit used') + '</div>'
-    + '<div class="f">' + dt('leadFound', '🧪 Lead found on') + dt('asbFound', '🧪 Asbestos found / suspected on') + '</div>';
+    + '<div class="intro">Answer these about the building and the work. The CRM then lists the lead / asbestos papers this job needs and when each is due (EPA lead-safe rule, asbestos rules). Nothing is sent from this card.</div>'
+    + '<div class="sec">1 · The building</div>'
+    + '<label class="q"><span>What year was the building built?</span><input type="number" min="1700" max="2100" data-la-y value="' + esc(a.yearBuilt || p.yearBuilt || '') + '" style="width:90px" placeholder="e.g. 1965">'
+    + '<span class="h">' + (pr === true ? '<span class="bad">Before 1978 — the lead-safe rules can apply</span>' : pr === false ? '<span class="ok">1978 or newer — the lead rules do not apply</span>' : 'Before 1978 = lead paint is possible') + '</span></label>'
+    + cb('childOccupied', 'Is it a school, daycare, Head Start, or a home with a child under 6?', 'Adds the child-occupied notice (Lead 02)') + cb('hud', 'Is it HUD-assisted housing?') + cb('units5', 'Is it commercial, or 5 or more units?')
+    + '<div class="sec">2 · The work</div>'
+    + cb('disturbsPaint', 'Will the work disturb painted surfaces?', 'More than 6 sq ft inside or 20 sq ft outside, any window replacement, or demolition')
+    + cb('testKit', 'Did you use a lead test kit?', 'Adds the test kit results report (Lead 05)')
+    + '<div class="sec">3 · What was found</div>'
+    + dt('leadFound', 'Date lead was found (leave empty if none)') + dt('asbFound', 'Date asbestos was found or suspected (leave empty if none)')
+    + '<div class="sec">Papers this job needs</div>';
   if (a.asbFound && comm) h += '<div class="warn">Commercial / 5+ units with asbestos: an asbestos survey and the state notice (TDEC / MDEQ / ADEQ) at least 10 working days before demolition — the licensed abatement sub files it.</div>';
   if (a.hud) h += '<div class="warn">HUD-assisted: HUD notice to the occupant within 15 days of completion and clearance testing by a certified inspector / risk assessor (setup guide).</div>';
   if (N.some(function(x){ return (x.k === 'L01' || x.k === 'A01') && !x.given; }) && /progress|active|started/i.test(s(p.status))) h += '<div class="warn" style="background:#fef2f2;border-color:#fca5a5;color:#991b1b"><b>Stop:</b> work has started but ' + N.filter(function(x){ return (x.k === 'L01' || x.k === 'A01') && !x.given; }).map(function(x){ return DOCS[x.k][0]; }).join(' and ') + ' is not given yet. EPA: before day 1.</div>';
-  if (!N.length) h += '<div class="m">No lead / asbestos papers needed yet. Fill in the year built; tick what applies or add the date lead or asbestos was found.</div>';
+  if (!N.length) h += '<div class="m">None yet — they appear here as soon as the answers above call for them.</div>';
   N.forEach(function(x){
     var d = DOCS[x.k];
     h += '<div class="p" data-k="' + x.k + '"><b>' + esc(d[0]) + '</b>'
@@ -215734,13 +215744,17 @@ function paint(force){
     var _rel = p && ((p.leadAsb && Object.keys(p.leadAsb).some(function(k){ return p.leadAsb[k]; })) || (typeof W._gcDocKeys === 'function' && W._gcDocKeys(p).some(function(id){ return /lead_0|asb_/.test(id); })));   /* JOBSTEPS: only on jobs whose words say lead / asbestos */
     if (!p || !_rel) { if (cur) cur.remove(); return; }
     var back = findBack(); if (!back || typeof W._gcJobBox !== 'function') return;
-    var box = W._gcJobBox(back); if (!box) return; css();
-    var sig = JSON.stringify([p.id, p.status, p.startDate, p.completionDate, la(p)]);
-    if (cur && cur.parentElement === box && (cur.getAttribute('data-sig') === sig || (typing(cur) && !force))) return;
+    var box = W._gcJobBox(back); if (!box) { W.__gcLaStep = 'nobox'; return; } css(); W.__gcLaStep = 'box';
+    /* LACLEAR: draw from the answers every time and replace the card when the result differs (no sig bookkeeping) */
     if (!cur) { cur = D.createElement('div'); cur.id = 'gc-la'; cur.className = 'gc-la'; cur.setAttribute('data-gc-keep', '1'); }
-    cur.setAttribute('data-pid', p.id); cur.setAttribute('data-sig', sig); cur.innerHTML = html(p);
+    var body = html(p);
+    if (cur.__body === body && cur.getAttribute('data-pid') === s(p.id) && cur.parentElement === box) { W.__gcLaStep = 'same'; return; }
+    var ae = D.activeElement, keep = ae && cur.contains(ae) ? ['data-la-y', 'data-la-c', 'data-la-d'].map(function(k){ return ae.hasAttribute(k) ? '[' + k + (ae.getAttribute(k) ? '="' + ae.getAttribute(k) + '"' : '') + ']' : ''; }).join('') : '';
+    var nu = D.createElement('div'); nu.id = 'gc-la'; nu.className = 'gc-la'; nu.setAttribute('data-gc-keep', '1'); nu.setAttribute('data-pid', p.id); nu.innerHTML = body; nu.__body = body;
+    if (cur.parentElement) cur.parentElement.replaceChild(nu, cur); cur = nu; W.__gcLaStep = 'drew';   /* LACLEAR: a fresh card swapped in (writes into the live one were being undone) */
+    if (keep) { try { var f = cur.querySelector(keep); if (f) f.focus({ preventScroll: true }); } catch (e) {} }   /* LACLEAR: the cursor stays where the person is */
     if (cur.parentElement !== box) box.appendChild(cur);
-  } catch (e) {}
+  } catch (e) { W.__gcLaErr = String(e && e.stack || e); }
 }
 D.addEventListener('change', function(e){
   var c = D.getElementById('gc-la'); if (!c || !c.contains(e.target)) return; var pid = c.getAttribute('data-pid'), t = e.target;
@@ -215779,7 +215793,7 @@ function sweep(){
   } catch (e) {}
 }
 SI.call(W, function(){ paint(false); }, 1300); ST.call(W, sweep, 30000); SI.call(W, sweep, 300000);
-W._gcLeadAsb = { need: need, paint: paint, sweep: sweep };
+W._gcLeadAsb = { need: need, paint: paint, sweep: sweep, html: html, proj: proj };
 })(window);
 </script>
 <script id="gc-patch-jobsteps">
