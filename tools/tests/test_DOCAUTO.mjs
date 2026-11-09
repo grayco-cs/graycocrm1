@@ -43,4 +43,12 @@ await t('no carrier name in the e-mail or the portal view', async () => {
   const j = JSON.stringify(W.RESEND) + JSON.stringify((await call('portal-sign', { action: 'view' }, L())).data);
   assert.ok(!j.toLowerCase().includes(String(S.carrier).toLowerCase()), 'carrier leaked');
 });
+await t('DOCAUTO2: attach:true → the e-mail carries the PDFs (lead / asbestos / mold papers in hand without the portal)', async () => {
+  W.RESEND.length = 0; const r3 = W.storeFile(W.pdfOf('Mold disclosure', ['Mold']), 'pdf', 'application/pdf');
+  const q2 = await call('portal-sign', { action: 'request-many', projectId: S.pid, attach: true, items: [{ refId: 'dl_gcb_mold', title: 'Mold Disclosure', docRef: r3, docName: 'Mold Disclosure.pdf' }] }, pm);
+  assert.ok(q2.data.ok && q2.data.made === 1, JSON.stringify(q2.data));
+  const m = W.RESEND.find(x => JSON.stringify(x).includes('review and sign')); assert.ok(m, 'mail sent');
+  const body = typeof m.body === 'string' ? JSON.parse(m.body) : (m.payload || m); const att = (body.attachments || m.attachments || []);
+  assert.ok(JSON.stringify(m).includes('Mold Disclosure.pdf'), 'attachment named: ' + JSON.stringify(Object.keys(m)));
+});
 console.log('DOCAUTO: ' + passed + ' passed, ' + failed + ' failed'); process.exit(failed ? 1 : 0);

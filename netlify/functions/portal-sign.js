@@ -288,7 +288,7 @@ async function request(body, who){
   for (const it of items) {
     if (!it || !refPath(it.docRef)) continue;
     const r = await request({ projectId: pid, kind: 'doc', refId: s(it.refId), title: it.title, docRef: it.docRef, docName: it.docName, note: clip(it.note, 300) || 'Please read it and sign that you got it.', direct: true }, who);
-    if (r.out && r.out.made) made.push({ id: r.out.id, title: clip(it.title, 120) }); else if (r.out && r.out.ok) had.push(s(r.out.id)); else return { status: r.status, out: r.out };
+    if (r.out && r.out.made) made.push({ id: r.out.id, title: clip(it.title, 120), docRef: s(it.docRef), docName: clip(it.docName, 120) }); else if (r.out && r.out.ok) had.push(s(r.out.id)); else return { status: r.status, out: r.out };
   }
   if (!made.length) return { status: 200, out: { ok: true, made: 0, already: had.length } };
   const data = await jobData(true), p = core().findProject(data, pid), T = scrubber(p), pm = pmFull(data, p), to = custEmail(p);
@@ -301,7 +301,13 @@ async function request(body, who){
     '<p>Please read them and sign — it takes a minute, on your phone or computer. You get a copy of everything you sign.</p>' +
     '<p style="text-align:center;margin:22px 0"><a href="' + core().LINK_PH + '" style="background:#D4A017;color:#0F1D2F;font-weight:bold;text-decoration:none;padding:13px 22px;border-radius:10px;display:inline-block">Review and sign</a></p>' +
     '<p style="font-size:13px;color:#55626F">Questions? Call ' + esc(pm ? pm.name : 'us') + (pm && pm.phone ? ' at ' + esc(pm.phone) : '') + ' or the office at ' + OFFICE_PHONE + '.</p>';
-  const sent = await sendFromPm({ to: to, subject: (made.length === 1 ? 'Please review and sign: ' + T(made[0].title) : made.length + ' papers to review and sign'), html: html }, p, pm);
+  /*DOCAUTO2*/ let atts = [];
+  if (body.attach === true) { let tot = 0;
+    for (const m of made) { try { const path = refPath(m.docRef); if (!path) continue;
+      const r = await fetch(sbUrl() + '/storage/v1/object/crm-files/' + path, { headers: keyHeaders(svcKey()) }); if (!r.ok) continue;
+      const b = Buffer.from(await r.arrayBuffer()); if (tot + b.length > 30 * 1048576) continue; tot += b.length;
+      atts.push({ filename: (clip(m.docName || m.title, 110) || 'paper').replace(/[^\w .()#-]+/g, '-') + (/\.pdf$/i.test(m.docName) ? '' : '.pdf'), content: b.toString('base64') }); } catch (e) {} } }
+  const sent = await sendFromPm({ to: to, subject: (made.length === 1 ? 'Please review and sign: ' + T(made[0].title) : made.length + ' papers to review and sign'), html: html + (atts.length ? '<p style="font-size:13px;color:#55626F">' + (atts.length === 1 ? 'A copy is attached' : 'Copies are attached') + ' to this e-mail too.</p>' : ''), attachments: atts }, p, pm);
   return { status: 200, out: { ok: true, made: made.length, mailed: !!sent.ok, mailError: sent.ok ? '' : sent.error } };
 }
 async function listFor(pid){
@@ -534,6 +540,7 @@ async function sendFromPm(item, p, pm){
   const payload = { from: fromPm ? pm.name.replace(/[<>"]/g, '') + ' — GrayCo Construction Services <' + pm.email + '>' : 'GrayCo Construction Services Portal <portal@grayco-cs.com>',
     reply_to: fromPm ? pm.email : (s(process.env.REPLY_TO_ADMIN) || 'replies@grayco-cs.com'), to: [item.to], subject: core().withJob(item.subject, p), html: html };
   if (Array.isArray(item.cc) && item.cc.length) payload.cc = item.cc.slice(0, 5);
+  if (Array.isArray(item.attachments) && item.attachments.length) payload.attachments = item.attachments.slice(0, 10);   /* DOCAUTO2 */
   try { const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); return { ok: r.ok, error: r.ok ? '' : String(r.status) }; }
   catch (e) { return { ok: false, error: 'no answer' }; }
 }

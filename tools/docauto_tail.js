@@ -28,10 +28,21 @@ function byId(id){ var L = lib(); return L ? (L.builtins() || []).find(function(
 /* owner 11/9: "i barely want 3 or 4" — only these go by themselves, in this order, at most MAX:
    the situation's work authorization (or the general one), Direction to Pay, then the one disclosure the job needs. */
 var MAX = 4;
+/* DOCAUTO2 (owner 11/9: "asbestos, lead, mold documents are a must — do not let the job go beyond that step unless these documents are
+   in the customer's hands and/or portal"): HAZARD papers go even on older jobs, ride on the e-mail as attachments, are filed in the
+   job's documents, and the job cannot move to active / in progress / complete until each is in the portal, signed, or given by hand. */
+var HAZ = ['gcb_lead_01', 'gcb_lead_02', 'gcb_asb_01', 'gcb_mold'];
+var GIVEN_K = { gcb_lead_01: 'L01', gcb_lead_02: 'L02', gcb_asb_01: 'A01' };
+function delivered(p, id){ var da = p.docAuto || {}; if ((da.sent || {})[id] || (da.given || {})[id]) return true; var k = GIVEN_K[id], la = p.leadAsb || {}; return !!(k && la.given && la.given[k]); }
+var HZ = {};   /* pid → { at, ids } — the job's hazard papers (worked out from its document set) */
+function hazNeeded(pid){ return setOf(pid).then(function(ids){ var h = ids.filter(function(id){ return HAZ.indexOf(id) > -1; }); HZ[pid] = { at: Date.now(), ids: h }; return h; }); }
+function missing(p){ var h = HZ[p.id]; return h ? h.ids.filter(function(id){ return !delivered(p, id); }) : []; }
+W._gcHazGate = { missing: function(p){ return p ? missing(p) : []; }, needed: hazNeeded, HAZ: HAZ };
 var AUTH = ['gcb_water_emergency_auth', 'gcb_fire_work_auth', 'gcb_board_up_auth', 'gcb_storm_inspection_auth'], GEN = 'gcb_work_auth';
 var AUTO = ['gcb_direction_to_pay', 'gcb_sewage_notice', 'gcb_mold', 'gcb_lead_01', 'gcb_lead_02', 'gcb_asb_01', 'gcb_roof_preinstall'];
 function rank(ids){
   var out = [], has = function(id){ return ids.indexOf(id) > -1; };
+  HAZ.filter(has).forEach(function(id){ out.push(id); });   /* DOCAUTO2: the must-have papers first */
   var auth = AUTH.filter(has); if (auth.length) out.push(auth[0]); else if (has(GEN)) out.push(GEN);
   AUTO.filter(has).forEach(function(id){ if (out.indexOf(id) < 0) out.push(id); });
   return out.slice(0, MAX);
@@ -63,6 +74,43 @@ async function fileOf(r, name){
   } catch (e) {}
   return new File([r.page], safe + '.html', { type: 'text/html' });
 }
+async function fileDocs(pid, items, now){
+  var all = null; try { all = await W.idbGet('projectDocs'); } catch (e) {} if (!Array.isArray(all)) all = ((W._crm && W._crm.projectDocs) || []).slice();
+  var have = {}; all.forEach(function(d){ if (d && d.ref) have[d.ref] = 1; });
+  var recs = items.filter(function(x){ return !have[x.docRef]; }).map(function(x){ return { id: 'pdoc_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), pid: String(pid), name: x.docName, cat: HAZ.indexOf(x._id) > -1 ? 'Lead / asbestos / mold papers' : 'Customer papers', ref: x.docRef,
+    type: /\.pdf$/i.test(x.docName) ? 'application/pdf' : 'text/html', uploaded: now.slice(0, 10), uploadedAt: now, by: 'CRM (sent to the customer to sign)', fromTemplate: x._id, sentForSignature: true, hideFromSubs: true, savedAt: now, updatedAt: now }; });
+  if (!recs.length) return; var next = all.concat(recs);
+  try { await W.idbSet('projectDocs', next); } catch (e) {}
+  try { if (W._setProjectDocs) W._setProjectDocs(function(prev){ return Array.isArray(prev) ? prev.concat(recs.filter(function(r){ return !prev.some(function(d){ return d && d.id === r.id; }); })) : next; }); } catch (e) {}
+  try { if (W._crm) W._crm.projectDocs = next; } catch (e) {}
+  try { if (W._supaUpsert) W._supaUpsert('projectDocs', next); } catch (e) {}
+}
+/* DOCAUTO2: the gate — a job whose hazard papers are not in the customer's hands goes back to where it was when someone starts it */
+var STARTED = /^(active|in progress|completed|complete)$/i, LASTST = {};
+function gate(){
+  try {
+    var P = (W._crm && W._crm.projects) || [];
+    P.forEach(function(p){
+      if (!p || !p.id) return; var st = s(p.status).toLowerCase(), prev = LASTST[p.id]; LASTST[p.id] = st;
+      if (!HZ[p.id] || Date.now() - HZ[p.id].at > 120000) hazNeeded(p.id);
+      if (prev == null || prev === st || !STARTED.test(st) || STARTED.test(prev)) return;
+      var miss = missing(p); if (!miss.length) return;
+      LASTST[p.id] = prev;
+      var f = function(list){ return (list || []).map(function(q){ if (!q || q.id !== p.id) return q; var n = Object.assign({}, q, { status: prev, updatedAt: new Date().toISOString() }); n.statusLog = (Array.isArray(q.statusLog) ? q.statusLog : []).concat([{ from: st, to: prev, at: new Date().toISOString(), why: 'lead / asbestos / mold papers not given yet', by: 'gate' }]).slice(-30); return n; }); };
+      if (W._setProjects) W._setProjects(f); else if (W._crm) W._crm.projects = f(W._crm.projects);
+      try { if (W._gcApplySync && W._crm) W._gcApplySync('projects', W._crm.projects); } catch (e) {}
+      var names = miss.map(function(id){ var b = byId(id); return b ? b.name : id; }).join(', ');
+      try { W.alert('⛔ "' + s(p.name) + '" cannot be ' + st + ' yet.\n\nThese must be in the customer\'s hands first (portal, e-mail or signed):\n• ' + names.split(', ').join('\n• ') + '\n\nOpen the job → ✍️ Customer papers → send them, or mark "✓ Given in person".'); } catch (e) {}
+    });
+  } catch (e) {}
+}
+setInterval(gate, 2000);
+function giveByHand(pid, id){
+  var now = new Date().toISOString(), who = ''; try { who = s(JSON.parse(localStorage.getItem('grayco_user') || '{}').name); } catch (e) {}
+  var f = function(list){ return (list || []).map(function(q){ if (!q || q.id !== pid) return q; var n = Object.assign({}, q), da = Object.assign({}, q.docAuto || {}), g = Object.assign({}, da.given || {}); g[id] = { at: now, by: who || 'someone' }; da.given = g; n.docAuto = da; n.updatedAt = now; return n; }); };
+  if (W._setProjects) W._setProjects(f); else if (W._crm) W._crm.projects = f(W._crm.projects);
+  try { if (W._gcApplySync && W._crm) W._gcApplySync('projects', W._crm.projects); } catch (e) {}
+}
 var BUSY = {};
 /* send the job's papers that are not in its portal yet. opts.force: an older job (a person tapped the button) */
 async function run(pid, opts){
@@ -70,12 +118,13 @@ async function run(pid, opts){
   if (!p || BUSY[pid]) return { ok: false, why: 'busy' };
   if (paused()) return { ok: false, why: 'paused' };
   if (!active(p)) return { ok: false, why: 'not an active job' };
-  if (!opts.force && !started(p) && !(p.docAuto && p.docAuto.on)) return { ok: false, why: 'older job' };
+  var hazOnly = false;
+  if (!opts.force && !started(p) && !(p.docAuto && p.docAuto.on)) { if (!(await hazNeeded(pid)).length) return { ok: false, why: 'older job' }; hazOnly = true; }   /* DOCAUTO2: hazard papers go on every live job */
   if (typeof W._gcStoreFile !== 'function') return { ok: false, why: 'storage' };
   BUSY[pid] = 1;
   try {
     var list = opts.ids ? opts.ids.map(byId).filter(function(b){ return b && b.clientFacing && !NEVER.test(b.name + ' ' + b.id + ' ' + (b.category || '')); }) : await papers(pid), sent = (p.docAuto && p.docAuto.sent) || {};
-    var todo = list.filter(function(b){ return !sent[b.id]; }).slice(0, opts.ids ? 10 : MAX);
+    var todo = list.filter(function(b){ return !sent[b.id] && (!hazOnly || HAZ.indexOf(b.id) > -1); }).slice(0, opts.ids ? 10 : MAX);
     if (!todo.length) return { ok: true, made: 0 };
     var items = [];
     for (var i = 0; i < todo.length; i++) {
@@ -85,13 +134,14 @@ async function run(pid, opts){
       items.push({ refId: 'dl_' + todo[i].id.replace(/[^A-Za-z0-9_.:-]/g, ''), title: r.t.name, docRef: meta.ref, docName: f.name, _id: todo[i].id });
     }
     if (!items.length) return { ok: false, why: 'nothing made' };
-    var j = await call({ action: 'request-many', projectId: String(pid), items: items.map(function(x){ return { refId: x.refId, title: x.title, docRef: x.docRef, docName: x.docName }; }) });
+    var j = await call({ action: 'request-many', projectId: String(pid), attach: items.some(function(x){ return HAZ.indexOf(x._id) > -1; }) || !!opts.attach, items: items.map(function(x){ return { refId: x.refId, title: x.title, docRef: x.docRef, docName: x.docName }; }) });
     if (!j || !j.ok) return { ok: false, why: (j && j.error) || 'server' };
     var now = new Date().toISOString();
     var fx = function(L){ return (L || []).map(function(q){ if (!q || s(q.id) !== s(pid)) return q; var n = Object.assign({}, q), da = Object.assign({}, q.docAuto || {}), st = Object.assign({}, da.sent || {});
       items.forEach(function(x){ st[x._id] = now; }); da.sent = st; if (opts.force && !opts.ids) da.on = true; da.at = now; n.docAuto = da; n.updatedAt = now; return n; }); };
     if (W._setProjects) W._setProjects(fx); else if (W._crm) W._crm.projects = fx(W._crm.projects);
     try { if (W._gcApplySync && W._crm) W._gcApplySync('projects', W._crm.projects); } catch (e) {}
+    try { await fileDocs(pid, items, now); } catch (e) {}   /* DOCAUTO2: in the job's documents too */
     return { ok: true, made: j.made || 0, mailed: !!j.mailed, noEmail: !!j.noEmail };
   } finally { delete BUSY[pid]; }
 }
@@ -118,7 +168,7 @@ function paint(force){
     if (!PAPERS[p.id] || Date.now() - PAPERS[p.id].at > 60000) { PAPERS[p.id] = { at: Date.now(), list: PAPERS[p.id] ? PAPERS[p.id].list : null, more: PAPERS[p.id] ? PAPERS[p.id].more : [] }; papers(p.id).then(function(l){ PAPERS[p.id].list = l; return others(p.id); }).then(function(m){ PAPERS[p.id].more = m || []; paint(true); }); }
     if (!LISTS[p.id] || Date.now() - LISTS[p.id].at > 120000) { LISTS[p.id] = LISTS[p.id] || { at: 0, items: [] }; LISTS[p.id].at = Date.now(); status(p.id); }
     var list = PAPERS[p.id].list || [], more = PAPERS[p.id].more || [], reqs = LISTS[p.id].items || [], sent = (p.docAuto && p.docAuto.sent) || {};
-    var sig = JSON.stringify([p.id, list.map(function(b){ return b.id; }), more.map(function(b){ return b.id; }), reqs.map(function(r){ return r.id + r.status + r.inPortal; }), sent]);
+    var sig = JSON.stringify([p.id, missing(p), list.map(function(b){ return b.id; }), more.map(function(b){ return b.id; }), reqs.map(function(r){ return r.id + r.status + r.inPortal; }), sent]);
     if (!force && cur && cur.parentElement === box && cur.getAttribute('data-sig') === sig) return;
     if (!cur) { cur = D.createElement('div'); cur.id = 'gc-da'; cur.setAttribute('data-gc-keep', '1'); cur.style.cssText = 'background:#fff;border:1px solid #e2e8f0;border-left:4px solid #D4A017;border-radius:12px;padding:12px 14px;margin:0 0 10px;font:14px Inter,Arial,sans-serif;color:#0f172a'; }
     cur.setAttribute('data-pid', p.id); cur.setAttribute('data-sig', sig);
@@ -127,6 +177,7 @@ function paint(force){
     var h = '<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center"><b style="font-size:15px">✍️ Customer papers · ' + signed + '/' + list.length + ' signed</b>' +
       (waiting ? '<button type="button" data-da-go style="border:0;background:#0F1D2F;color:#fff;border-radius:8px;padding:8px 12px;font:700 13px Inter,Arial,sans-serif;min-height:40px;cursor:pointer">✍️ Put ' + waiting + ' paper' + (waiting === 1 ? '' : 's') + ' in the portal</button>' : '') + '</div>' +
       '<div style="color:#64748b;font-size:12.5px;margin:2px 0 6px">At most ' + MAX + ' papers, picked by job type and the words on the job. They go to the customer\'s portal to e-sign — no approval; the customer gets one e-mail. ' + (started(p) || (p.docAuto && p.docAuto.on) ? 'This job sends them by itself.' : 'Older job: tap the button to send.') + '</div>';
+    var mz = missing(p); if (mz.length) h += '<div style="background:#fef2f2;border:1px solid #fca5a5;color:#991b1b;border-radius:8px;padding:8px 10px;margin:4px 0 6px;font-size:13px"><b>⛔ This job cannot start</b> until these are in the customer\'s hands (portal, e-mail or signed): ' + mz.map(function(id){ var b = byId(id); return esc(b ? b.name : id) + ' <button type="button" data-da-hand="' + esc(id) + '" style="border:1px solid #fca5a5;background:#fff;border-radius:6px;padding:2px 8px;font:600 12px Inter,Arial,sans-serif;cursor:pointer">✓ Given in person</button>'; }).join(' · ') + '</div>';
     h += list.map(function(b){ var r = rq(b), st = !r ? (sent[b.id] ? '⏳ sending…' : '— not sent yet') : r.status === 'signed' ? '✅ Signed' + (r.signed && r.signed.name ? ' by ' + esc(r.signed.name) : '') : r.status === 'declined' ? '⚠️ Declined' : r.inPortal ? '📬 In the portal — waiting to sign' : '⏳ waiting';
       return '<div style="display:flex;justify-content:space-between;gap:8px;border-top:1px solid #f1f5f9;padding:5px 0;flex-wrap:wrap"><span>' + esc(b.name) + '</span><span style="font-size:12.5px;color:#334155">' + st + '</span></div>'; }).join('') || '<div style="color:#64748b;font-size:12.5px">No customer papers for this job.</div>';
     if (more.length) h += '<details style="margin-top:6px"><summary style="cursor:pointer;font-weight:700;font-size:13px">More papers for this job (' + more.length + ') — send when it is time</summary>' + more.map(function(b){ var r = rq(b);
@@ -136,6 +187,9 @@ function paint(force){
   } catch (e) {}
 }
 D.addEventListener('click', function(e){
+  var hb = e.target && e.target.closest ? e.target.closest('#gc-da [data-da-hand]') : null;
+  if (hb) { var hid = hb.getAttribute('data-da-hand'), hp = D.getElementById('gc-da').getAttribute('data-pid'), hbn = byId(hid);
+    if (W.confirm('Mark "' + (hbn ? hbn.name : hid) + '" as given to the customer in person (signed paper copy)?\nKeep the signed copy — upload it to the job\'s documents.')) { giveByHand(hp, hid); setTimeout(function(){ paint(true); }, 400); } return; }
   var b = e.target && e.target.closest ? e.target.closest('#gc-da [data-da-go], #gc-da [data-da-one]') : null; if (!b) return;
   var pid = D.getElementById('gc-da').getAttribute('data-pid'), one = b.getAttribute('data-da-one');
   if (paused()) { W.alert('⏸ Data-entry mode is on — nothing is sent.'); return; }
@@ -148,6 +202,6 @@ D.addEventListener('click', function(e){
 });
 setInterval(paint, 1500);
 setTimeout(function(){ setInterval(sweep, 60000); sweep(); }, 45000);
-W._gcDocAuto = { run: run, papers: papers, others: others, rank: rank, MAX: MAX, sweep: function(){ LAST = 0; sweep(); }, active: active, started: started, NEVER: NEVER };
+W._gcDocAuto = { gate: gate, giveByHand: giveByHand, missing: missing, run: run, papers: papers, others: others, rank: rank, MAX: MAX, sweep: function(){ LAST = 0; sweep(); }, active: active, started: started, NEVER: NEVER };
 })(window);
 </script>

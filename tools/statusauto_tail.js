@@ -30,6 +30,7 @@ function next(p, E){
   else if (i < 2 && signed(p, mine)) { to = 'approved'; why = signed(p, mine); }
   else if (i < 1 && mine.length) { to = 'estimating'; why = 'an estimate was started in the CRM'; }
   if (to === 'active' && i < 2 && !signed(p, mine) && pct <= 0) to = null;   /* a bid with a start date is not started work */
+  if (to === 'active') { try { if (W._gcHazGate && W._gcHazGate.missing(p).length) to = null; } catch (e) {} }   /* DOCAUTO2 gate: lead / asbestos / mold papers first */
   return to && ORDER.indexOf(to) > i ? { to: to, why: why, from: st } : null;
 }
 var LAST = 0;
