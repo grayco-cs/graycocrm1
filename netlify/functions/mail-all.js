@@ -74,6 +74,7 @@ async function syncBox(box, state, match, deadline){
   try { const inb = rows.filter(r => r.dir === 'in'); if (inb.length) await require('./_lib/sentlog.js').onInbound(inb); } catch (e) {}
   /* patch SUBINV: invoices / receipts / orders in the office@ mailbox → queued for the money readers */
   try { st.money = await require('./_lib/money-box.js').queue(box, rows); } catch (e) {}
+  try { st.sentPdf = await require('./_lib/sent-pdf.js').queue(box, rows); } catch (e) {}   /* patch SENTPDF: PDFs GrayCo staff e-mail out → kept in the CRM */
   st.at = new Date().toISOString(); st.n = rows.length; st.err = rows.length < ids.length && Date.now() > deadline ? 'time ran out — the rest next run' : '';
   if (rows.length < ids.length && Date.now() > deadline) st.historyId = hid || '';   /* not all read: keep the old point so nothing is skipped */
   return st;
@@ -103,7 +104,16 @@ async function runSync(opts){
       if (!bg && deadline - Date.now() > 4000) await MB.drain({ budgetMs: deadline - Date.now() - 2000, max: 3 });
     }
   } catch (e) {}
-  return { ok: true, synced: Object.keys(done).length, boxes: boxes.length, errors: Object.keys(done).filter(k => done[k].err).length, moneyQueued: money };
+  /* patch SENTPDF: the sent PDFs are fetched and stored in the background too */
+  let sentQ = 0; Object.keys(done).forEach(k => { sentQ += done[k].sentPdf || 0; });
+  try {
+    const SP = require('./_lib/sent-pdf.js'), q2 = await require('./portal.js')._core.kvListRead(SP.QKEY);
+    if (q2 && q2.list.some(x => x && !x.done)) {
+      const bg = await require('./bid-inbox.js')._lib.handOffJson({ type: 'sentpdf.pull' });
+      if (!bg && deadline - Date.now() > 4000) await SP.drain({ budgetMs: deadline - Date.now() - 2000, max: 3 });
+    }
+  } catch (e) {}
+  return { ok: true, synced: Object.keys(done).length, boxes: boxes.length, errors: Object.keys(done).filter(k => done[k].err).length, moneyQueued: money, sentPdfQueued: sentQ };
 }
 
 /* links an admin made + the PM rule */
