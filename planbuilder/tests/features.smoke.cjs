@@ -95,9 +95,10 @@ const assert = require('assert');
   await p.click('[data-view="3d"]'); await p.waitForTimeout(800);
   const it = await ev(() => { const i = PlanBuilder.level.items.find(x => x.productId === 'fn-sofa-3' || x.productId === 'fn-sofa-sect'); PlanBuilder.pickFrom3D({ kind: 'item', id: i.id, levelId: PlanBuilder.level.id }); return { id: i.id, x: i.x, y: i.y }; });
   await ev(() => { const v = PlanBuilder.view3d; v.setPreset('top'); });
-  await p.waitForTimeout(300);
+  await p.waitForTimeout(100); await p.waitForFunction(() => !PlanBuilder.view3d.flying); await p.waitForTimeout(600);   // the camera glides to the top view and settles
   const scr = await ev(id => { const v = PlanBuilder.view3d, i = PlanBuilder.level.items.find(x => x.id === id); const THREE_v = v.camera.position.clone(); THREE_v.set(i.x, PlanBuilder.level.elevation + 1, i.y); THREE_v.project(v.camera); const r = v.renderer.domElement.getBoundingClientRect(); return [r.left + (THREE_v.x + 1) / 2 * r.width, r.top + (1 - THREE_v.y) / 2 * r.height]; }, it.id);
-  await p.mouse.move(scr[0], scr[1]); await p.mouse.down(); await p.mouse.move(scr[0] + 60, scr[1] + 10, { steps: 8 }); await p.mouse.up();
+  await p.mouse.move(scr[0], scr[1]); await p.mouse.down();
+  await p.mouse.move(scr[0] + 60, scr[1] + 10, { steps: 8 }); await p.mouse.up();
   const moved = await ev(id => { const i = PlanBuilder.level.items.find(x => x.id === id); return [i.x, i.y]; }, it.id);
   console.log('sofa', it.x, it.y, '->', moved);
   assert.ok(Math.abs(moved[0] - it.x) > 0.5, 'dragged in 3D');

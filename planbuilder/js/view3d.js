@@ -626,6 +626,7 @@ export class View3D {
     this.render();
   }
   get building() { return !!this._anim; }
+  get flying() { return !!this._flying; }
 
   counterMat() {
     return this._counter || (this._counter = new THREE.MeshPhysicalMaterial({ color: '#ebe8e2', roughness: 0.22, clearcoat: 1, clearcoatRoughness: 0.1 }));
@@ -677,8 +678,9 @@ export class View3D {
       const k = ease(Math.min(1, (now - start) / ms));
       this.camera.position.lerpVectors(p0, pos, k); this.controls.target.lerpVectors(t0, target, k);
       this.controls.update(); this.render();
-      if (k < 1) requestAnimationFrame(step);
+      if (k < 1) requestAnimationFrame(step); else this._flying = false;
     };
+    this._flying = true;
     requestAnimationFrame(step);
   }
   _fitShadows(c, size) {
