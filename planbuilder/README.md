@@ -38,6 +38,19 @@ What's next is in [ROADMAP.md](ROADMAP.md).
 - 3D: soft studio lighting with reflections, sky and haze, rounded furniture and cabinets, glossy stone counters, glass that reflects, and real-looking surfaces drawn in each product's own color: wood planks, tile, hex mosaic, carpet, concrete, brick, block, stone, lap siding, board & batten, shakes, stucco, metal panels, shingles, standing seam, clay tile, slate, grass, mulch, rock, pavers, flagstone, decking (`js/surfaces.js`). A picture added in the catalog replaces the drawn surface.
 - **✦ Holo** shows the model as glowing lines and glass on a dark grid (products and openings in amber). **⟳ Turntable** turns the model slowly. Camera presets and double-clicking a piece glide the camera there.
 
+## Import a plan you already have (picture, PDF, AutoCAD)
+Click **Import a plan** at the top of the left panel (or drop a file on the drawing, or type `IMPORT`).
+- **Pictures and scans** (JPG / PNG, phone photos of prints) and **PDFs**: the thick dark lines are read as walls. Text, dimension lines, door swings and furniture are left out. Gaps in walls become doors, or windows when window lines sit in the gap. Every closed space becomes a room. Type the **overall width** of the building from the plan's dimensions (outside to outside) and everything is sized from it. **Line darkness** and **Thinnest wall** fine-tune what counts as a wall. In a PDF, room names printed on the plan name the rooms.
+- **AutoCAD DXF** (in AutoCAD: SAVEAS → DXF): lines and polylines in the file's own units (inches, feet, mm …). Pairs of parallel lines a wall-thickness apart become one wall; layers named like walls (A-WALL …) are used first; TEXT / MTEXT inside a room names it. Blocks are expanded. Walls at any angle work. DWG files: export to DXF or PDF first.
+- The preview shows walls (orange), doors (green), windows (blue) and rooms with their square feet before anything is drawn. Then choose new work or the existing house, a new job or this level, wall height, a roof, keeping the picture underneath to check against, and building the 3D right away.
+- Pictures are read for square (horizontal / vertical) walls; angled walls in a picture are traced by hand over the kept picture. Names that are not printed in the file are guessed by size (Closet, Hall, Living, Room 1 …) — rename them on the right.
+
+## AutoCAD-style command line
+The bar under the plan takes commands like AutoCAD: type and press **Enter** (or Space). **Space** jumps to it from the plan; typing a number or `@` while drawing goes there too.
+- `L` / `WALL` walls · `REC` / `ROOM` rectangle room (`20x14` makes one that size) · `PL` / `SHAPE` room by corners · `D` doors and windows · `I` products · `F` roof · `DI` measure · `E` erase · `U` / `REDO` · `Z` fit · `C` close back to the start · `IMPORT` · `3D` · `STUDIO` · `EST` · `HELP`.
+- Points: `x,y` absolute, `@dx,dy` from the last point, `@length<angle` (0 = right, 90 = up), `length<angle`, or just a length in the direction the mouse points. Feet-inches everywhere: `12'6"`, `12-6`, `12.5`.
+- **ORTHO** (F8) square angles only · **OSNAP** (F3) snap to wall ends, corners and walls · **SNAP** (F9) grid snap. The cursor position shows next to them. ↑ / ↓ bring back earlier commands; Enter on an empty line finishes or repeats the last command.
+
 ## Studio: systems, budget and build timeline
 Click **Studio** in the top bar. The model is shown the way it gets built, on a dark stage with the plan drawn as a blueprint underneath.
 - **Left:** the job total, $ / SF, area, concrete (CY), steel (tons) or slab rebar, studs, and every building system with its cost: sitework + demo, foundations, underground plumbing, rebar + vapor, slab, structural steel or wall framing, joists + deck or trusses, roofing (+ RTUs), exterior framing / sheathing, envelope, windows / storefront, interior framing, HVAC, plumbing, electrical, fire sprinkler, drywall, ceilings, interior finishes, site + landscape. The eye shows or hides a system; clicking one lights it up and ghosts the rest.
@@ -117,10 +130,14 @@ Each project's estimate is priced from **your catalog prices** (the default) or 
 | `js/app.js` | Panels, picker, properties, estimate screen, projects, catalog editor, print |
 | `js/systems.js` | Construction systems: structure, MEP and site quantities from the drawing, unit rates, the 16 build steps, and the budget by system |
 | `js/studio3d.js`, `js/studio.js` | Studio: the systems drawn in 3D (x-ray, ghost, explode, cutaway, timeline, hover labels) and its panels |
+| `js/planimport.js`, `js/importui.js` | Plan import: walls, openings and rooms from pictures, PDFs (pdf.js) and AutoCAD DXF; the import window |
+| `js/cmdline.js` | The AutoCAD-style command line, ORTHO / OSNAP / SNAP |
 | `js/surfaces.js` | Drawn surfaces for the 3D view (wood, tile, brick, siding, shingles, grass …) in each product's color |
+| `vendor/pdfjs/` | pdf.js 4.10 (Apache-2.0, see `PDFJS-LICENSE.txt`) for reading PDF plans, served from here |
 | `vendor/` | Three.js r170 and its add-ons in `vendor/addons/` (orbit controls, studio light, rounded boxes, glow, .glb export; MIT, see `THREE-LICENSE.txt`), served from here so it works without the internet |
 | `tests/math.test.js` | `node planbuilder/tests/math.test.js` — geometry, roof, takeoff and CSV numbers |
 | `tests/features.smoke.cjs` | Browser test of existing + addition, styles, furnish, Make 3D, before / after, walk, entered estimate, customer view, renditions, 3D drag (same way to run as below) |
 | `tests/studio.smoke.cjs` | Browser test of Studio: budget, picking a system, timeline, explode / ortho / finished, cutaway, hover, customer view (same way to run) |
+| `tests/import.smoke.cjs` | Browser test of importing a picture, a PDF with room names and a DXF (`tests/fixtures/`), and of the command line (same way to run) |
 | `tests/save.smoke.cjs` | Browser test of saving to the computer, Done – save & remove, reopening a job (with its custom products, photos, renditions), versions, the note after saving, and the weekly clean-up (same way to run) |
 | `tests/ui.smoke.cjs` | Browser test that draws with every tool: start `python3 -m http.server 8765` in the repo, then `NODE_PATH=$(npm root -g) node planbuilder/tests/ui.smoke.cjs` |

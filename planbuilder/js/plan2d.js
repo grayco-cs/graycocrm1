@@ -71,11 +71,11 @@ export class Plan2D {
     this.level.walls.forEach(wl => { consider(wl.a, 'end'); consider(wl.b, 'end'); });
     this.level.rooms.forEach(r => r.points.forEach(p => consider(p, 'corner')));
     if (this.chain && this.chain.pts.length > 2) consider(this.chain.pts[0], 'close');
-    if (best && !(ev && ev.altKey)) { this.snapMark = best; return { x: best.x, y: best.y }; }
+    if (best && !(ev && ev.altKey) && this.osnap !== false) { this.snapMark = best; return { x: best.x, y: best.y }; }
     // 2) angle from the previous point, then grid
     let p = { ...w };
-    if (from && !(ev && ev.shiftKey)) p = snapAngle(from, p, this.settings.angleSnap || 15);
-    if (!(ev && ev.altKey)) {
+    if (from && !(ev && ev.shiftKey)) p = snapAngle(from, p, this.ortho ? 90 : (this.settings.angleSnap || 15));
+    if (!(ev && ev.altKey) && this.gridSnap !== false) {
       if (from && !(ev && ev.shiftKey)) {
         // keep the angle, snap the length to the grid step
         const L = dist(from, p), step = this.settings.snap || 0.5;
@@ -85,7 +85,7 @@ export class Plan2D {
       } else p = snapPt(p, this.settings.snap || 0.5);
     }
     // 3) onto a wall line
-    if (!(ev && ev.altKey)) {
+    if (!(ev && ev.altKey) && this.osnap !== false) {
       for (const wl of this.level.walls) {
         const pr = projectOnSeg(p, wl.a, wl.b);
         if (pr.d < tolW * 0.6 && pr.t > 0.001 && pr.t < 0.999) { this.snapMark = { ...pr.p, kind: 'on' }; return pr.p; }
@@ -197,6 +197,7 @@ export class Plan2D {
 
   onMove(e) {
     const P = this._pos(e);
+    if (this.app.showCoords) this.app.showCoords(P.w);
     if (this.pointers.has(e.pointerId)) this.pointers.set(e.pointerId, { x: P.sx, y: P.sy });
     if (this.pinch && this.pointers.size === 2) {
       const [a, b] = [...this.pointers.values()];
@@ -230,13 +231,8 @@ export class Plan2D {
       const { a, b, tool } = this.dragRect; this.dragRect = null;
       const r = { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(b.x - a.x), h: Math.abs(b.y - a.y) };
       if (r.w >= 1 && r.h >= 1) {
-        if (tool === 'room') {
-          const pts = rectPts(r.x, r.y, r.w, r.h);
-          const room = addRoom(this.level, pts, { name: this.app.nextRoomName() });
-          if (this.app.autoWalls) wallsForRoom(this.level, pts, this.settings, !this.level.walls.length);
-          this.app.select({ kind: 'room', id: room.id });
-          this.app.commit('Add room');
-        } else {
+        if (tool === 'room') this.makeRectRoom(r);
+        else {
           const rf = addRoof(this.project, this.level, { x: r.x, y: r.y, w: r.w, h: r.h }, this.app.roofDefaults());
           this.app.select({ kind: 'roof', id: rf.id });
           this.app.commit('Add roof');
@@ -260,6 +256,15 @@ export class Plan2D {
     }
   }
 
+  // A rectangle room { x, y, w, h } (drag, or typed on the command line).
+  makeRectRoom(r) {
+    const pts = rectPts(r.x, r.y, r.w, r.h);
+    const room = addRoom(this.level, pts, { name: this.app.nextRoomName() });
+    if (this.app.autoWalls) wallsForRoom(this.level, pts, this.settings, !this.level.walls.length);
+    this.app.select({ kind: 'room', id: room.id });
+    this.app.commit('Add room');
+    return room;
+  }
   finishTool() {
     if (this.chain) { const n = this.chain.made; this.chain = null; if (n) this.app.commit('Draw walls'); else this.app.dropSnapshot(); }
     if (this.poly) { const pts = this.poly; this.poly = null; if (pts.length >= 3) this.makePolyRoom(pts); }

@@ -7,6 +7,9 @@ import { computeTakeoff, roundQty, convert, roomStats, lineItemsCSV } from '../j
 import { priceBookFromCSV, convertUnit, parseEstimateText } from '../js/pricebook.js';
 import { STYLES, styleProductIds, applyStyle, autoFurnish, roomType } from '../js/styles.js';
 import { setDrawPhase } from '../js/model.js';
+import { cleanWalls, findRooms, nameRooms, parseDXF, dxfScale, planFromDXF, normalizePlan, isRoomLabel } from '../js/planimport.js';
+import { parsePoint } from '../js/cmdline.js';
+import { readFileSync } from 'fs';
 import { buildSystems, analyzeSystems, structureType, systemOfLine, isFixture } from '../js/systems.js';
 
 let n = 0; const t = (name, fn) => { fn(); n++; };
@@ -233,6 +236,41 @@ t('systems: estimate lines sort into systems', () => {
   assert.equal(systemOfLine({ category: 'labor', productId: 'lb-demo-wall', name: 'Demo wall' }), 'site');
   assert.equal(systemOfLine({ category: 'structure', name: 'x' }), null);
   assert.ok(isFixture({ id: 'cm-ada-wc', name: 'ADA toilet', category: 'commercial' }));
+});
+
+t('import: gaps become doors, corners join, rooms close', () => {
+  const segs = [
+    { a: { x: -0.25, y: 0 }, b: { x: 10, y: 0 }, t: 0.5 }, { a: { x: 13, y: 0 }, b: { x: 30.25, y: 0 }, t: 0.5 },
+    { a: { x: 30, y: -0.25 }, b: { x: 30, y: 20.25 }, t: 0.5 }, { a: { x: -0.25, y: 20 }, b: { x: 30.25, y: 20 }, t: 0.5 },
+    { a: { x: 0, y: -0.25 }, b: { x: 0, y: 20.25 }, t: 0.5 }, { a: { x: 16, y: 0.25 }, b: { x: 16, y: 19.75 }, t: 0.375 },
+  ];
+  const cw = cleanWalls(segs);
+  assert.equal(cw.walls.length, 5); assert.equal(cw.openings.length, 1);
+  near(cw.openings[0].width, 3); near(cw.openings[0].c, 11.5, 0.01);
+  cw.walls.forEach(w => [w.a, w.b].forEach(p => assert.ok([0, 16, 30].includes(Math.round(p.x * 100) / 100) && [0, 20].includes(Math.round(p.y * 100) / 100), 'joined at a centerline ' + JSON.stringify(p))));
+  const fr = findRooms(cw.walls);
+  assert.deepEqual(fr.rooms.map(r => Math.round(r.area)).sort((a, b) => a - b), [280, 320]);
+  assert.ok(fr.outside(-1, 5) && !fr.outside(5, 5));
+  nameRooms(fr.rooms, [{ x: 20, y: 10, text: 'KITCHEN' }, { x: 21, y: 12, text: "12'-0\" x 14'" }]);
+  assert.ok(fr.rooms.some(r => r.name === 'Kitchen'));
+  assert.ok(isRoomLabel('Master Bedroom') && !isRoomLabel("12'-6\"") && !isRoomLabel('120 SF'));
+});
+t('import: AutoCAD DXF with double-line walls', () => {
+  const D = parseDXF(readFileSync(new URL('./fixtures/plan-30x24.dxf', import.meta.url), 'utf8'));
+  assert.equal(D.units, 1); near(dxfScale(D.units), 1 / 12);
+  const P = normalizePlan(planFromDXF(D, dxfScale(D.units)));
+  assert.equal(P.mode, 'pairs'); assert.equal(P.walls.length, 5); assert.equal(P.openings.length, 2);
+  assert.deepEqual(P.rooms.map(r => r.name).sort(), ['Bedroom', 'Great Room']);
+  near(P.rooms.reduce((a, r) => a + r.area, 0), 720, 0.5);
+});
+t('command line points', () => {
+  const last = { x: 10, y: 5 };
+  assert.deepEqual(parsePoint('3,4', last).p, { x: 3, y: 4 });
+  assert.deepEqual(parsePoint('@12,0', last).p, { x: 22, y: 5 });
+  assert.deepEqual(parsePoint('@10<90', last).p, { x: 10, y: -5 });
+  assert.deepEqual(parsePoint(`@12'6"<0`, last).p, { x: 22.5, y: 5 });
+  near(parsePoint(`12' 6"`, last).len, 12.5);
+  assert.equal(parsePoint('abc', last), null);
 });
 
 console.log(`PlanBuilder math: ${n} tests passed`);

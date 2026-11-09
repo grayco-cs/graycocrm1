@@ -47,4 +47,4 @@ The first build is the foundation: drawing, levels, 3D, catalog and estimate all
 ## Phase 7: commercial
 - Ceiling grids, storefront systems, demising walls, door hardware schedules.
 - ADA clearance checks, egress / occupancy notes.
-- DXF / DWG import and export for architects.
+- DXF / DWG import and export for architects. *(DXF, PDF and picture import done; next: DXF export, DWG direct, angled walls from pictures, reading dimension text for the scale, door swings from arcs.)*

@@ -10,6 +10,8 @@ import { computeTakeoff, estimateCSV, lineItemsCSV, roomStats } from './takeoff.
 import { priceBookFromCSV } from './pricebook.js';
 import * as store from './store.js';
 import { installStudio } from './studio.js';
+import { installImport } from './importui.js';
+import { installCmd } from './cmdline.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -46,6 +48,8 @@ const app = {
     this.plan = new Plan2D($('#plan'), this);
     this.bindUI();
     installStudio(this);
+    installImport(this);
+    installCmd(this);
     try { this.setCustomer(localStorage.getItem('pb.customer') === '1', true); } catch (e) { /* storage blocked */ }
     try { this.setTheme(localStorage.getItem('pb.theme') || 'dark', true); } catch (e) { this.setTheme('dark', true); }
     if (p) this.open(p); else this.open(fromTemplate('ranch', this.catalog), false);   // the sample is kept only once you change it
@@ -174,7 +178,7 @@ const app = {
     if (this.plan.chain || this.plan.poly) this.plan.finishTool();
     this.tool = t;
     $$('.tools button').forEach(b => b.classList.toggle('on', b.dataset.tool === t));
-    $('#len-wrap').hidden = !(t === 'wall' || t === 'roompoly');
+    if (this.cmdPrompt) this.cmdPrompt();
     if ((t === 'opening' && (!this.activeProduct || this.activeProduct.kind !== 'opening')) ) { this.activeProduct = this.catalog.find(p => p.kind === 'opening') || null; $('#pick-cat').value = 'door'; this.renderPicker(); }
     if ((t === 'item' && (!this.activeProduct || this.activeProduct.kind !== 'object'))) { this.activeProduct = this.catalog.find(p => p.kind === 'object') || null; $('#pick-cat').value = 'cabinet'; this.renderPicker(); }
     this.plan.cv.style.cursor = t === 'select' ? 'default' : 'crosshair';
@@ -246,6 +250,10 @@ const app = {
     $('#plan-zout').addEventListener('click', () => this.plan.zoomAt(this.plan.w / 2, this.plan.h / 2, 0.8));
     $('#btn-make3d').addEventListener('click', () => this.make3D());
     $('#btn-theme').addEventListener('click', () => { const light = document.documentElement.dataset.theme !== 'light'; this.setTheme(light ? 'light' : 'dark'); });
+    $('#btn-import').addEventListener('click', () => this.showImport());
+    // drop a plan file anywhere on the drawing to import it
+    $('#plan-pane').addEventListener('dragover', e => { if ([...(e.dataTransfer.items || [])].some(it => it.kind === 'file')) e.preventDefault(); });
+    $('#plan-pane').addEventListener('drop', e => { const f = e.dataTransfer.files && e.dataTransfer.files[0]; if (f && /\.(pdf|dxf|png|jpe?g|webp|gif|bmp)$/i.test(f.name)) { e.preventDefault(); this.showImport(f); } });
     $('#v-holo').addEventListener('click', async e => { const v = this.ensure3D(); const on = !v.opts.holo; e.currentTarget.classList.toggle('on', on); await v.setHolo(on); });
     $('#v-spin').addEventListener('click', e => { const v = this.ensure3D(); const on = !v.opts.spin; e.currentTarget.classList.toggle('on', on); v.setSpin(on); });
     $$('#phase-seg button').forEach(b => b.addEventListener('click', () => this.setPhase(b.dataset.phase)));
@@ -304,8 +312,12 @@ const app = {
     if (typing) return;
     if (this.view3d && this.view3d.walk) return;
     if ((this.tool === 'wall' && this.plan.chain) || (this.tool === 'roompoly' && this.plan.poly)) {
-      if (/^[0-9.]$/.test(e.key)) { const len = $('#len'); len.focus(); len.value = ''; return; }
+      if (/^[0-9.@]$/.test(e.key)) { const c = $('#cmd'); c.focus(); c.value = ''; return; }
     }
+    if (e.key === ' ' && this.view !== '3d' && this.view !== 'studio' && $('#modal').hidden) { e.preventDefault(); $('#cmd').focus(); return; }
+    if (e.key === 'F8') { e.preventDefault(); this.cadToggle('ortho'); return; }
+    if (e.key === 'F3') { e.preventDefault(); this.cadToggle('osnap'); return; }
+    if (e.key === 'F9') { e.preventDefault(); this.cadToggle('grid'); return; }
     const k = e.key.toLowerCase();
     if (e.key === 'Escape') { if (!$('#modal').hidden) return this.closeModal(); if (this.plan.chain || this.plan.poly || this.plan.measure) this.plan.finishTool(); else { this.setTool('select'); this.select(null); } return; }
     if (e.key === 'Delete' || e.key === 'Backspace') { if (this.plan.deleteSelection()) e.preventDefault(); return; }
@@ -945,6 +957,7 @@ const app = {
     const body = h('div', {});
     body.append(h('h2', {}, 'Projects'));
     body.append(h('h4', {}, 'Start a new one'));
+    body.append(h('div', { class: 'import-card' }, h('h4', {}, '📐 Start from a plan you have'), h('p', {}, 'Picture, scan, PDF or AutoCAD DXF: the walls, doors, windows and rooms are drawn for you and built in 3D.'), h('button', { class: 'btn primary small', onclick: () => this.showImport() }, 'Import a plan')));
     body.append(h('div', { class: 'grid-cards' }, TEMPLATES.map(t => h('div', { class: 'card' }, h('h4', {}, t.name), h('p', {}, t.desc), h('button', { class: 'btn primary small', onclick: () => { const p = fromTemplate(t.id, this.catalog); this.open(p, true); this.closeModal(); this.toast('New project: ' + p.name); } }, 'Start')))));
     body.append(h('div', { class: 'row' }, h('button', { class: 'btn', onclick: async () => {
       const f = await store.pickFile('.json,application/json'); if (!f) return;
