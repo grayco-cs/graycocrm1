@@ -69,6 +69,9 @@ function roleOf(x){
   if (NOT_BID_TYPE.test(typ) && !/commerc|gov/.test(typ)) return out('', 'a ' + typ + ' lead, not a bid');
   /* 2. / 3. the source */
   var st = srcText(x), org = low(x.origin), kind = low(x.sourceKind);
+  /* MRPRIME (owner 11/9): Memphis Reprographics' plan room / e-mails are public projects GrayCo bids as the prime */
+  var mrHosts = arr(x.plansLinks).map(function(l){ return l ? (low(l.host) || hostOf(l.url)) : ''; }), mrFrom = domOf(x.fromEmail || x.from || (x.contact && x.contact.email) || (arr(x.emails)[0] || {}).from);
+  if (/mr\s*plan\s*room|mrplanroom|memphis\s*reprographics/i.test(st) || /(^|\.)(mrplanroom|memphisreprographics)\.com$/.test(mrFrom) || mrHosts.some(function(h){ return /(^|\.)mrplanroom\.com$/.test(h); })) return out('prime', 'Memphis Reprographics plan room — public projects, bid as the prime');
   if (SUB_SRC.test(st)) return out('sub', 'came from ' + srcName(x) + ' (a plan room / GC)');
   if (org === 'api') return out('sub', 'came from the BuildingConnected bid board');
   if (PRIME_SRC.test(st)) return out('prime', 'came from ' + srcName(x) + ' (a public owner)');
