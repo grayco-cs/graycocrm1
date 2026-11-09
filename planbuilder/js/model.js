@@ -31,6 +31,9 @@ export function defaultSettings() {
     drywallId: 'dw-half',
     ceilingFinishId: 'pnt-ceiling',
     baseboardId: 'trm-base',
+    pricing: 'catalog',     // 'catalog' = your own prices, or the id of an imported price list
+    xmActivity: 'rr',       // with a price list: 'rr' remove & replace, 'replace', 'remove'
+    estimateLayout: 'category',   // 'category' (by trade) or 'room' (room by room, the way adjusters read it)
     roofAccessories: { tearoff: 'rf-tearoff', ridgecap: 'rf-ridge', drip: 'rf-drip', starter: 'rf-starter', ice: 'rf-ice', gutter: '' },
   };
 }

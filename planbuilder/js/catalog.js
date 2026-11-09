@@ -121,7 +121,7 @@ export function findProduct(catalog, id) { return catalog.find(p => p.id === id)
 export function categoryName(id) { const c = CATEGORIES.find(c => c[0] === id); return c ? c[1] : id; }
 
 // CSV columns, in order. Same columns are written by export and read by import.
-export const CSV_COLUMNS = ['id', 'category', 'kind', 'name', 'brand', 'colorName', 'finish', 'material', 'unit', 'price', 'labor', 'color', 'sku', 'vendor', 'w', 'd', 'h', 'sill', 'elev', 'depth', 'openingType', 'objType', 'roofPart', 'notes'];
+export const CSV_COLUMNS = ['id', 'category', 'kind', 'name', 'brand', 'colorName', 'finish', 'material', 'unit', 'price', 'labor', 'color', 'sku', 'vendor', 'w', 'd', 'h', 'sill', 'elev', 'depth', 'openingType', 'objType', 'roofPart', 'xmCode', 'notes'];
 
 export function toCSV(rows, cols) {
   const q = v => { const s = v == null ? '' : String(v); return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
@@ -166,7 +166,7 @@ export function catalogFromCSV(text) {
     if (!/^#[0-9a-f]{6}$/i.test(p.color || '')) p.color = '#b0b0b0';
     if (p.price == null) p.price = 0;
     if (p.labor == null) p.labor = 0;
-    ['openingType', 'objType', 'roofPart', 'sku', 'vendor', 'notes', 'brand', 'colorName', 'finish', 'material'].forEach(c => { if (p[c] === '') delete p[c]; });
+    ['openingType', 'objType', 'roofPart', 'sku', 'vendor', 'notes', 'brand', 'colorName', 'finish', 'material', 'xmCode'].forEach(c => { if (p[c] === '') delete p[c]; });
     products.push(p);
   });
   return { products, errors };

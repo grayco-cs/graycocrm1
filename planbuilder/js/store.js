@@ -61,3 +61,9 @@ export function pickFile(accept) {
 }
 export function readText(file) { return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result)); r.onerror = rej; r.readAsText(file); }); }
 export function readDataURL(file) { return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result)); r.onerror = rej; r.readAsDataURL(file); }); }
+
+// Price lists (Xactimate exports, supplier lists): [{ id, name, kind, imported, count, hasMaterial, items }]
+const K_BOOKS = 'pb.pricebooks.v1';
+export function listBooks() { return get(K_BOOKS, []); }
+export function saveBooks(b) { return put(K_BOOKS, b); }
+export function getBook(id) { return listBooks().find(b => b.id === id) || null; }

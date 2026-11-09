@@ -34,6 +34,14 @@ Each product has: name, **brand**, **color name**, **finish / sheen**, **species
 | `object` | each, or LF of its width, or SF (w × d; panels w × h) | cabinets, countertops, backsplash, fixtures, appliances, trees, fences |
 | `labor` | added by hand on the estimate | demo, dumpster, permit |
 
+## Pricing: your prices or Xactimate
+Each project's estimate is priced from **your catalog prices** (the default) or from a **price list you import** (Estimate → *Prices from*, or 📥 Price lists…).
+- **Xactimate:** PlanBuilder does not include Xactimate prices (they are licensed by Verisk). In Xactimate, export your price list report for the area and month to Excel, save it as CSV, and import it. Columns are found by name: Code (or Category + Selector), Description, Unit, Remove, Replace (or Price / Unit price), optionally Material and Labor. Any supplier list in that shape works too.
+- **Linking:** give catalog products their **Xactimate code** (📦 Catalog, *Xactimate code* column, or the `xmCode` CSV column). On a price-list estimate a product with a code found in the list takes the list's description, unit and price; one without keeps your catalog price and is marked ⚑ *own price*.
+- **Activity:** Remove & replace (R&R), Replace only or Remove only. **Layout:** by trade, or room by room the way adjusters read it.
+- **Tax** is figured on the material part: the list's Material column, or your catalog's material price.
+- **Export → Line items, Xactimate-ready (.csv):** room / group, code, description, activity, quantity, unit and price, to key into Xactimate or send with a supplement. (Pushing straight into Xactimate needs Verisk's partner program; see ROADMAP.md.)
+
 ## How quantities are figured
 - **Floor:** room polygon area + floor waste %. Carpet in SY (÷ 9).
 - **Room walls (paint):** room perimeter × ceiling height − doors and windows on its edges, + wall waste %.

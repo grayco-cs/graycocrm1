@@ -22,6 +22,8 @@ The first build is the foundation: drawing, levels, 3D, catalog and estimate all
 - Gutters / downspouts, vents, skylights, chimneys and their flashing.
 
 ## Phase 4: insurance tools
+- Done so far: imported price lists (Xactimate exports or supplier lists), Xactimate codes on products, R&R / replace / remove, room-by-room layout, Xactimate-ready line-item export.
+- Sending the sketch and line items straight into Xactimate (ESX) through Verisk's partner program, if GrayCo is approved for it.
 - Your own line-item codes per catalog product; remove / replace / detach-reset lines; depreciation, ACV / RCV, recoverable depreciation.
 - Damage marking per room / wall / roof face (affected area only), with CompanyCam photos pinned to the plan.
 - Scope sheet and supplement tracking (what was added after the first estimate, why).

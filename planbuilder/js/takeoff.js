@@ -3,6 +3,7 @@
 
 import { polyArea, polyPerimeter, centroid, pointInPoly, projectOnSeg, wallLength, wallPieces, wallHeight, openingArea, roofMeasure, ridgeAxis } from './geom.js';
 import { findProduct, categoryName } from './catalog.js';
+import { normCode, convertUnit } from './pricebook.js';
 
 export const GAL_COVERAGE = 350;   // SF per gallon per coat
 export const COATS = 2;
@@ -71,15 +72,19 @@ export function gableArea(sec) {
   return sec.style === 'gable' ? span * (span / 2 * slope) : span * (span * slope);   // two triangles
 }
 
-export function computeTakeoff(project, catalog) {
+// opts.book: a price list ({ name, items: {CODE: {desc, unit, replace, remove, material}} }) to price from
+// instead of the catalog. Lines whose product has no code in that list keep the catalog price and are flagged.
+export function computeTakeoff(project, catalog, opts = {}) {
   const s = project.settings;
+  const book = opts.book || null;
+  const byRoom = s.estimateLayout === 'room';
   const lines = new Map();
   const warnings = [];
   const add = (productId, baseQty, base, source, wastePct = 0, group = '') => {
     if (!(baseQty > 0)) return;
     const p = findProduct(catalog, productId);
     if (!p) { if (productId) warnings.push(`Product "${productId}" is not in the catalog (${source}).`); return; }
-    const key = productId + '|' + group;
+    const key = productId + '|' + group + (byRoom ? '|' + source : '');
     const q = convert(baseQty, base, p.unit, p);
     const L = lines.get(key) || { key, productId, category: p.category, name: p.name + (group ? ` – ${group}` : ''), unit: p.unit, raw: 0, waste: wastePct, price: +p.price || 0, labor: +p.labor || 0, sources: [] };
     L.raw += q; if (!L.sources.includes(source)) L.sources.push(source);
@@ -161,50 +166,87 @@ export function computeTakeoff(project, catalog) {
     }
   });
 
+  // Price from the list when the product has a code in it: replace, remove, or both (R&R).
+  const act = s.xmActivity || 'rr';
+  const fromBook = (p, rawQty, unit) => {
+    if (!book || !p || !p.xmCode) return null;
+    const e = book.items[normCode(p.xmCode)];
+    if (!e) return null;
+    const u = e.unit || unit, c = convertUnit(rawQty, unit, u);
+    if (!c.ok) warnings.push(`${normCode(p.xmCode)}: the price list sells it per ${u} but the drawing measures ${unit}; check the quantity.`);
+    const qty = roundQty(c.qty, u);
+    const price = act === 'replace' ? e.replace : act === 'remove' ? e.remove : e.replace + e.remove;
+    const matUnit = e.material != null ? (act === 'remove' ? 0 : e.material) : 0;
+    return { code: normCode(p.xmCode), name: e.desc || p.name, unit: u, qty, price, labor: 0, material: qty * price, laborTotal: 0, total: qty * price, taxBase: qty * matUnit, priced: 'list' };
+  };
   // Finish each line: waste, rounding, money
   const out = [];
   for (const L of lines.values()) {
     if (L.category === 'furniture' && !L.price && !L.labor) continue;   // display-only pieces
     const withWaste = L.raw * (1 + (L.waste || 0) / 100);
+    const p = findProduct(catalog, L.productId);
+    const b = fromBook(p, withWaste, L.unit);
+    const group = (L.key.split('|')[1] || '');
+    if (b) { out.push({ ...L, ...b, name: b.name + (group ? ` – ${group}` : ''), source: L.sources.join('; ') }); continue; }
     const qty = roundQty(withWaste, L.unit);
-    out.push({ ...L, qty, material: qty * L.price, laborTotal: qty * L.labor, total: qty * (L.price + L.labor), source: L.sources.join('; ') });
+    out.push({ ...L, code: p && p.xmCode ? normCode(p.xmCode) : '', qty, material: qty * L.price, laborTotal: qty * L.labor, total: qty * (L.price + L.labor), taxBase: qty * L.price, priced: book ? 'own' : 'catalog', source: L.sources.join('; ') });
   }
   // Hand-added lines
   (project.extraLines || []).forEach(x => {
     const p = x.productId ? findProduct(catalog, x.productId) : null;
+    const qty = +x.qty || 0;
+    const hasOwn = (x.price != null && x.price !== '') || (x.labor != null && x.labor !== '');
+    const b = !hasOwn ? fromBook(p, qty, p ? p.unit : 'EA') : null;
+    const base = { key: 'x|' + x.id, extraId: x.id, productId: x.productId || '', category: x.category || (p ? p.category : 'other'), raw: qty, waste: 0, source: x.note || 'Added by hand', sources: [x.note || 'Added by hand'] };
+    if (b) { out.push({ ...base, ...b, qty }); return; }
     const price = x.price != null && x.price !== '' ? +x.price : (p ? +p.price : 0);
     const labor = x.labor != null && x.labor !== '' ? +x.labor : (p ? +p.labor : 0);
-    const qty = +x.qty || 0;
-    out.push({ key: 'x|' + x.id, extraId: x.id, productId: x.productId || '', category: x.category || (p ? p.category : 'other'), name: x.name || (p ? p.name : 'Line item'), unit: x.unit || (p ? p.unit : 'EA'), raw: qty, qty, waste: 0, price, labor, material: qty * price, laborTotal: qty * labor, total: qty * (price + labor), source: x.note || 'Added by hand' });
+    out.push({ ...base, code: p && p.xmCode ? normCode(p.xmCode) : '', name: x.name || (p ? p.name : 'Line item'), unit: x.unit || (p ? p.unit : 'EA'), qty, price, labor, material: qty * price, laborTotal: qty * labor, total: qty * (price + labor), taxBase: qty * price, priced: book ? 'own' : 'catalog' });
   });
+  if (book) {
+    const own = out.filter(l => l.priced === 'own').length;
+    if (own) warnings.push(`${own} line${own > 1 ? 's' : ''} use your catalog price: their product has no code, or the code is not in "${book.name}". Add codes in 📦 Catalog (Xactimate code column).`);
+    if (!book.hasMaterial) warnings.push(`"${book.name}" has no Material column, so sales tax is figured only on lines priced from your catalog.`);
+  }
   const order = ['roofing', 'siding', 'masonry', 'window', 'door', 'drywall', 'paint', 'trim', 'flooring', 'tile', 'cabinet', 'countertop', 'plumbing', 'appliance', 'electrical', 'commercial', 'outdoor', 'hardscape', 'landscape', 'furniture', 'labor', 'other'];
   out.sort((a, b) => (order.indexOf(a.category) - order.indexOf(b.category)) || a.name.localeCompare(b.name));
 
   const material = out.reduce((t, l) => t + l.material, 0);
   const labor = out.reduce((t, l) => t + l.laborTotal, 0);
-  const tax = material * (s.taxRate || 0) / 100;
+  const tax = out.reduce((t, l) => t + (l.taxBase || 0), 0) * (s.taxRate || 0) / 100;
   const subtotal = material + labor + tax;
   const overhead = subtotal * (s.overheadPct || 0) / 100;
   const profit = subtotal * (s.profitPct || 0) / 100;
   const totals = { material, labor, tax, subtotal, overhead, profit, grand: subtotal + overhead + profit };
 
   const groups = [];
-  out.forEach(l => { let g = groups.find(x => x.category === l.category); if (!g) { g = { category: l.category, name: categoryName(l.category), lines: [], total: 0 }; groups.push(g); } g.lines.push(l); g.total += l.total; });
-  return { lines: out, groups, totals, summary, warnings };
+  const gkey = l => byRoom ? (l.sources && l.sources[0]) || l.source || 'Other' : l.category;
+  out.forEach(l => { const k = gkey(l); let g = groups.find(x => x.key === k); if (!g) { g = { key: k, category: l.category, name: byRoom ? k : categoryName(l.category), lines: [], total: 0 }; groups.push(g); } g.lines.push(l); g.total += l.total; });
+  if (byRoom) groups.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+  return { lines: out, groups, totals, summary, warnings, pricedFrom: book ? book.name : 'Your catalog prices', book: !!book, byRoom };
 }
 
 export function estimateCSV(project, t) {
   const q = v => { const s = v == null ? '' : String(v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
-  const rows = [['Category', 'Item', 'Qty', 'Unit', 'Material/unit', 'Labor/unit', 'Material', 'Labor', 'Total', 'Where']];
-  t.lines.forEach(l => rows.push([categoryName(l.category), l.name, l.qty.toFixed(2), l.unit, l.price.toFixed(2), l.labor.toFixed(2), l.material.toFixed(2), l.laborTotal.toFixed(2), l.total.toFixed(2), l.source]));
+  const rows = [['Group', 'Code', 'Item', 'Qty', 'Unit', 'Material/unit', 'Labor/unit', 'Material', 'Labor', 'Total', 'Priced from', 'Where']];
+  t.groups.forEach(g => g.lines.forEach(l => rows.push([g.name, l.code || '', l.name, l.qty.toFixed(2), l.unit, l.price.toFixed(2), l.labor.toFixed(2), l.material.toFixed(2), l.laborTotal.toFixed(2), l.total.toFixed(2), l.priced === 'list' ? t.pricedFrom : 'Catalog', l.source])));
   rows.push([]);
   const T = t.totals, st = project.settings;
-  rows.push(['', 'Material', '', '', '', '', '', '', T.material.toFixed(2)]);
-  rows.push(['', 'Labor', '', '', '', '', '', '', T.labor.toFixed(2)]);
-  rows.push(['', `Tax ${st.taxRate}% on material`, '', '', '', '', '', '', T.tax.toFixed(2)]);
-  rows.push(['', `Overhead ${st.overheadPct}%`, '', '', '', '', '', '', T.overhead.toFixed(2)]);
-  rows.push(['', `Profit ${st.profitPct}%`, '', '', '', '', '', '', T.profit.toFixed(2)]);
-  rows.push(['', 'Total', '', '', '', '', '', '', T.grand.toFixed(2)]);
+  const tot = (label, v) => rows.push(['', '', label, '', '', '', '', '', '', v.toFixed(2)]);
+  tot(t.book ? 'Line items' : 'Material', t.book ? T.material + T.labor : T.material);
+  if (!t.book) tot('Labor', T.labor);
+  tot(`Tax ${st.taxRate}% on material`, T.tax); tot(`Overhead ${st.overheadPct}%`, T.overhead); tot(`Profit ${st.profitPct}%`, T.profit); tot('Total', T.grand);
+  rows.push([]); rows.push(['', '', 'Prices from: ' + t.pricedFrom]);
   return rows.map(r => r.map(q).join(',')).join('\r\n');
 }
 
+
+// Line items laid out for keying into Xactimate (or any estimating program): room / group, code,
+// description, activity, quantity, unit. Prices are included for checking against the program.
+export function lineItemsCSV(project, t) {
+  const q = v => { const s = v == null ? '' : String(v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  const act = { rr: 'R&R', replace: 'Replace', remove: 'Remove' }[project.settings.xmActivity || 'rr'];
+  const rows = [['Room / group', 'Code', 'Description', 'Activity', 'Qty', 'Unit', 'Unit price', 'Total', 'Notes']];
+  t.groups.forEach(g => g.lines.forEach(l => rows.push([g.name, l.code || '', l.name, l.code ? act : '', l.qty.toFixed(2), l.unit, (l.price + l.labor).toFixed(2), l.total.toFixed(2), l.priced === 'own' ? 'Priced from catalog (no code in price list)' : (l.code ? '' : 'No code')])));
+  return rows.map(r => r.map(q).join(',')).join('\r\n');
+}

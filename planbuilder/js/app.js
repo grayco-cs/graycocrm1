@@ -4,7 +4,8 @@ import { Plan2D } from './plan2d.js';
 import { fmtFtIn, parseFtIn, wallLength, wallDir, roofMeasure, bbox } from './geom.js';
 import { newLevel, restack, normalize, fromTemplate, TEMPLATES, PROJECT_TYPES, splitWall, wallsForRoom, autoRoof, markExterior, uid, swingDoorsIntoRooms } from './model.js';
 import { CATEGORIES, UNITS, KINDS, findProduct, categoryName, CSV_COLUMNS, toCSV, catalogFromCSV, EXTERIOR_CATS, OUTDOOR_CATS } from './catalog.js';
-import { computeTakeoff, estimateCSV, roomStats } from './takeoff.js';
+import { computeTakeoff, estimateCSV, lineItemsCSV, roomStats } from './takeoff.js';
+import { priceBookFromCSV } from './pricebook.js';
 import * as store from './store.js';
 
 const $ = (s, el = document) => el.querySelector(s);
@@ -97,7 +98,7 @@ const app = {
   refresh(full = true, fast = false) {
     this.plan.draw();
     if (fast) { if (this.view === '3d' || this.view === 'split') this.schedule3D(); return; }
-    this.takeoff = computeTakeoff(this.project, this.catalog);
+    this.takeoff = this.takeoffNow();
     $('#totals').textContent = `${Math.round(this.takeoff.summary.floorArea).toLocaleString()} SF · ${this.takeoff.summary.roofSquares.toFixed(1)} SQ roof · ${money0(this.takeoff.totals.grand)}`;
     this.renderLevels();
     this.renderProps();
@@ -504,17 +505,64 @@ const app = {
     }
   },
 
+  // ---------- pricing ----------
+  activeBook() {
+    const id = this.project.settings.pricing;
+    if (!id || id === 'catalog') return null;
+    if (!this._book || this._book.id !== id) this._book = { id, book: store.getBook(id) };   // read once, not on every change
+    return this._book.book;
+  },
+  takeoffNow() { return computeTakeoff(this.project, this.catalog, { book: this.activeBook() }); },
+  showPriceLists() {
+    const body = h('div', {});
+    const draw = () => {
+      const books = store.listBooks();
+      body.innerHTML = '';
+      body.append(h('h2', {}, 'Price lists'));
+      body.append(h('p', { class: 'hint', style: 'margin:0 0 12px;font-size:13px' }, 'Price an estimate from your own catalog prices, or from a price list you import: your Xactimate price list for the area and month, or a supplier list. PlanBuilder does not include Xactimate prices (they are licensed by Verisk): in Xactimate, export the price list report to Excel, save it as CSV, and import it here. Products link to a line through their Xactimate code in 📦 Catalog (category + selector, e.g. the code you key in Xactimate).'));
+      const name = h('input', { placeholder: 'Name, e.g. Xactimate TNME – Nov 2026', style: 'min-width:300px' });
+      body.append(h('div', { class: 'row' }, name, h('button', { class: 'btn primary', onclick: async () => {
+        const f = await store.pickFile('.csv,text/csv'); if (!f) return;
+        const r = priceBookFromCSV(await store.readText(f));
+        if (!r.count) { alert('No price lines were found.\n\n' + r.errors.slice(0, 10).join('\n')); return; }
+        const b = { id: uid('pl'), name: name.value.trim() || f.name.replace(/\.csv$/i, ''), kind: 'xactimate', imported: new Date().toISOString(), count: r.count, hasMaterial: r.hasMaterial, items: r.items };
+        const all = store.listBooks(); all.push(b); this._book = null;
+        if (!store.saveBooks(all)) { alert('The price list is too big for this browser\'s storage. Remove an old list, or import only the categories you use.'); return; }
+        alert(`Imported ${r.count} price lines.` + (r.errors.length ? `\n\n${r.errors.length} rows skipped, e.g.:\n` + r.errors.slice(0, 8).join('\n') : ''));
+        draw();
+      } }, '⤒ Import price list (CSV)')));
+      body.append(h('p', { class: 'hint', style: 'margin:4px 0 12px' }, 'Columns are found by their names: Code (or Category + Selector), Description, Unit, Remove, Replace (or Price / Unit price), and optionally Material and Labor.'));
+      const tbl = h('table', { class: 'cat-table' }, h('thead', {}, h('tr', {}, ['Name', 'Lines', 'Imported', 'Material column', 'Used by this project', ''].map(x => h('th', {}, x)))));
+      const tb = h('tbody');
+      tb.append(h('tr', {}, h('td', {}, h('b', {}, 'Your catalog prices')), h('td', {}, String(this.catalog.length)), h('td', {}, '—'), h('td', {}, 'yes'), h('td', {}, this.project.settings.pricing === 'catalog' ? '✓' : h('button', { class: 'btn small', onclick: () => { this.project.settings.pricing = 'catalog'; this.commit('Prices: your catalog'); draw(); } }, 'Use')), h('td')));
+      books.forEach(b => tb.append(h('tr', {}, h('td', {}, h('b', {}, b.name)), h('td', {}, String(b.count)), h('td', {}, new Date(b.imported).toLocaleDateString()), h('td', {}, b.hasMaterial ? 'yes' : 'no (no tax on its lines)'),
+        h('td', {}, this.project.settings.pricing === b.id ? '✓' : h('button', { class: 'btn small', onclick: () => { this.project.settings.pricing = b.id; this.commit('Prices: ' + b.name); draw(); } }, 'Use')),
+        h('td', {}, h('button', { class: 'btn small danger', onclick: () => { if (!confirm(`Delete the price list "${b.name}"?`)) return; store.saveBooks(store.listBooks().filter(x => x.id !== b.id)); this._book = null; if (this.project.settings.pricing === b.id) { this.project.settings.pricing = 'catalog'; this.commit('Prices: your catalog'); } draw(); } }, '×')))));
+      tbl.append(tb); body.append(tbl);
+      const coded = this.catalog.filter(p => p.xmCode).length;
+      body.append(h('p', { class: 'hint', style: 'margin:12px 0 0' }, `${coded} of ${this.catalog.length} catalog products have an Xactimate code. Products without one keep your price on a price-list estimate and are flagged.`));
+    };
+    draw(); this.modal(body);
+  },
+
   // ---------- estimate ----------
   renderEstimate() {
     const pane = $('#est-pane'); const P = this.project, s = P.settings;
-    const t = this.takeoff = computeTakeoff(P, this.catalog);
+    const t = this.takeoff = this.takeoffNow();
     const pct = (label, key) => h('label', {}, label, h('input', { type: 'number', step: '0.25', value: s[key], onchange: e => { s[key] = num(e.target.value); this.commit(label); } }));
     const acc = s.roofAccessories;
     const accSel = (label, key, part) => h('label', {}, label, productSelect(this.catalog, p => p.roofPart === part, acc[key], v => { acc[key] = v; this.commit(label); }, 'Off'));
     const wrap = h('div', { class: 'est' });
     wrap.append(h('div', { class: 'est-head' },
       h('div', {}, h('h2', {}, P.name), h('div', { class: 'sub', style: 'color:var(--muted)' }, [P.client, P.address, P.claimNo ? 'Claim ' + P.claimNo : '', P.carrier].filter(Boolean).join(' · ') || 'Add client / address / claim on the Plan screen (nothing selected).')),
-      h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => this.exportAs('csv') }, '⤓ Spreadsheet'), h('button', { class: 'btn primary', onclick: () => this.exportAs('print') }, '🖨 Print / PDF'))));
+      h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => this.exportAs('csv') }, '⤓ Spreadsheet'), h('button', { class: 'btn', onclick: () => this.exportAs('lines') }, '⤓ Line items (Xactimate-ready)'), h('button', { class: 'btn primary', onclick: () => this.exportAs('print') }, '🖨 Print / PDF'))));
+    const books = store.listBooks();
+    const priceSel = select([['catalog', 'Your catalog prices'], ...books.map(b => [b.id, b.name])], s.pricing || 'catalog', v => { s.pricing = v; this.commit('Prices from ' + (v === 'catalog' ? 'your catalog' : (books.find(b => b.id === v) || {}).name)); });
+    wrap.append(h('div', { class: 'est-set', style: 'margin-bottom:8px' },
+      h('label', {}, 'Prices from', priceSel),
+      t.book ? h('label', {}, 'Activity', select([['rr', 'Remove & replace (R&R)'], ['replace', 'Replace only'], ['remove', 'Remove only']], s.xmActivity || 'rr', v => { s.xmActivity = v; this.commit('Activity'); })) : null,
+      h('label', {}, 'Layout', select([['category', 'By trade'], ['room', 'Room by room']], s.estimateLayout || 'category', v => { s.estimateLayout = v; this.commit('Layout'); })),
+      h('label', {}, '\u00a0', h('button', { class: 'btn', onclick: () => this.showPriceLists() }, '📥 Price lists…'))));
     wrap.append(h('div', { class: 'est-set' }, pct('Tax % (material)', 'taxRate'), pct('Overhead %', 'overheadPct'), pct('Profit %', 'profitPct'), pct('Floor waste %', 'floorWaste'), pct('Wall waste %', 'wallWaste'), pct('Roof waste %', 'roofWaste')));
     wrap.append(h('div', { class: 'est-set', style: 'margin-top:8px' }, accSel('Tear-off', 'tearoff', 'tearoff'), accSel('Ridge cap', 'ridgecap', 'ridgecap'), accSel('Drip edge', 'drip', 'drip'), accSel('Starter', 'starter', 'starter'), accSel('Ice & water', 'ice', 'ice'), accSel('Gutters', 'gutter', 'gutter')));
     const sm = t.summary;
@@ -525,18 +573,19 @@ const app = {
       h('div', {}, h('b', {}, String(sm.openings)), h('span', {}, 'Doors & windows')),
       h('div', {}, h('b', {}, money0(t.totals.grand)), h('span', {}, 'Total'))));
     t.warnings.forEach(w => wrap.append(h('div', { class: 'warn' }, '⚠ ' + w)));
-    const tbl = h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'Item'), h('th', { class: 'n' }, 'Qty'), h('th', {}, 'Unit'), h('th', { class: 'n' }, 'Material'), h('th', { class: 'n' }, 'Labor'), h('th', { class: 'n' }, 'Total'), h('th', {}, ''))));
+    const tbl = h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'Code'), h('th', {}, 'Item'), h('th', { class: 'n' }, 'Qty'), h('th', {}, 'Unit'), h('th', { class: 'n' }, t.book ? 'Unit price' : 'Material'), h('th', { class: 'n' }, t.book ? '' : 'Labor'), h('th', { class: 'n' }, 'Total'), h('th', {}, ''))));
     const tb = h('tbody');
     t.groups.forEach(g => {
-      tb.append(h('tr', { class: 'grp' }, h('td', { colspan: 5 }, g.name), h('td', { class: 'n' }, money(g.total)), h('td')));
+      tb.append(h('tr', { class: 'grp' }, h('td', { colspan: 6 }, g.name), h('td', { class: 'n' }, money(g.total)), h('td')));
       g.lines.forEach(l => {
         const x = l.extraId ? P.extraLines.find(e => e.id === l.extraId) : null;
         const qtyCell = x ? h('input', { type: 'number', step: '0.01', value: x.qty, onchange: e => { x.qty = num(e.target.value); this.commit('Quantity'); } }) : l.qty.toLocaleString('en-US', { maximumFractionDigits: 2 });
         tb.append(h('tr', {},
-          h('td', {}, l.name, h('div', { class: 'src' }, l.source + (l.waste ? ` · +${l.waste}% waste` : ''))),
+          h('td', { class: 'code' }, l.code || '', l.priced === 'own' ? h('div', { class: 'src', title: 'Priced from your catalog: no code, or the code is not in the price list' }, '⚑ own price') : null),
+          h('td', {}, l.name, h('div', { class: 'src' }, (t.byRoom ? '' : l.source) + (l.waste ? `${t.byRoom ? '' : ' · '}+${l.waste}% waste` : ''))),
           h('td', { class: 'n' }, qtyCell), h('td', {}, l.unit),
-          h('td', { class: 'n' }, money(l.material), h('div', { class: 'src' }, money(l.price) + '/' + l.unit)),
-          h('td', { class: 'n' }, money(l.laborTotal), h('div', { class: 'src' }, money(l.labor) + '/' + l.unit)),
+          t.book && l.priced === 'list' ? h('td', { class: 'n' }, money(l.price) + '/' + l.unit) : h('td', { class: 'n' }, money(l.material), h('div', { class: 'src' }, money(l.price) + '/' + l.unit)),
+          t.book && l.priced === 'list' ? h('td') : h('td', { class: 'n' }, money(l.laborTotal), h('div', { class: 'src' }, money(l.labor) + '/' + l.unit)),
           h('td', { class: 'n' }, h('b', {}, money(l.total))),
           h('td', {}, x ? h('button', { class: 'btn small danger', title: 'Remove line', onclick: () => { P.extraLines = P.extraLines.filter(e => e !== x); this.commit('Removed line'); } }, '×') : '')));
       });
@@ -550,14 +599,14 @@ const app = {
       h('button', { class: 'btn', onclick: () => this.customLine() }, '+ Custom line')));
     const T = t.totals;
     wrap.append(h('div', { class: 'tot' },
-      h('div', {}, h('span', {}, 'Material'), h('span', {}, money(T.material))),
-      h('div', {}, h('span', {}, 'Labor'), h('span', {}, money(T.labor))),
+      t.book ? h('div', {}, h('span', {}, 'Line items'), h('span', {}, money(T.material + T.labor))) : h('div', {}, h('span', {}, 'Material'), h('span', {}, money(T.material))),
+      t.book ? null : h('div', {}, h('span', {}, 'Labor'), h('span', {}, money(T.labor))),
       h('div', {}, h('span', {}, `Tax ${s.taxRate}% on material`), h('span', {}, money(T.tax))),
       h('div', {}, h('span', {}, 'Subtotal'), h('span', {}, money(T.subtotal))),
       h('div', {}, h('span', {}, `Overhead ${s.overheadPct}%`), h('span', {}, money(T.overhead))),
       h('div', {}, h('span', {}, `Profit ${s.profitPct}%`), h('span', {}, money(T.profit))),
       h('div', { class: 'grand' }, h('span', {}, 'Total'), h('span', {}, money(T.grand)))));
-    wrap.append(h('p', { class: 'hint', style: 'margin:14px 0' }, 'Quantities come from the drawing: floors from room areas, walls from wall lengths × heights less doors and windows, roofs from the roof sections with pitch and overhang. Prices come from 📦 Catalog. Check every number before sending.'));
+    wrap.append(h('p', { class: 'hint', style: 'margin:14px 0' }, `Quantities come from the drawing: floors from room areas, walls from wall lengths × heights less doors and windows, roofs from the roof sections with pitch and overhang. Prices come from ${t.pricedFrom === 'Your catalog prices' ? '📦 Catalog' : '“' + t.pricedFrom + '” (lines without a code there use your catalog price, marked ⚑)'}. Check every number before sending.`));
     pane.innerHTML = ''; pane.append(wrap);
   },
   customLine() {
@@ -619,7 +668,7 @@ const app = {
         h('button', { class: 'btn', onclick: () => store.download('planbuilder-catalog.csv', toCSV(this.catalog, CSV_COLUMNS), 'text/csv') }, '⤓ Export CSV'),
         h('button', { class: 'btn danger', onclick: () => { if (!confirm('Put the catalog back to the starting products? Your price edits and added products will be lost (export a CSV first to keep them).')) return; this.catalog = store.resetCatalog(); this.saveCat(); drawRows(); } }, 'Reset')));
       const tbl = h('table', { class: 'cat-table' });
-      tbl.append(h('thead', {}, h('tr', {}, ['', 'Name', 'Brand / color name', 'Finish / material', 'Category', 'Kind', 'Unit', 'Price', 'Labor', 'W', 'D', 'H', 'Sill / elev', 'SKU / vendor', ''].map(x => h('th', {}, x)))));
+      tbl.append(h('thead', {}, h('tr', {}, ['', 'Name', 'Brand / color name', 'Finish / material', 'Xactimate code', 'Category', 'Kind', 'Unit', 'Price', 'Labor', 'W', 'D', 'H', 'Sill / elev', 'SKU / vendor', ''].map(x => h('th', {}, x)))));
       const tb = h('tbody'); tbl.append(tb); body.append(tbl);
       body.append(h('datalist', { id: 'pb-brands' }, [...new Set(this.catalog.map(p => p.brand).filter(Boolean))].sort().map(b => h('option', { value: b }))));
       const drawRows = () => {
@@ -627,7 +676,7 @@ const app = {
         const q = filter.value.trim().toLowerCase();
         const list = this.catalog.filter(p => (!catF.value || p.category === catF.value) && (!q || q.split(/\s+/).every(w => productText(p).includes(w))));
         const MAX = 150;
-        if (list.length > MAX) tb.append(h('tr', {}, h('td', { colspan: 15, class: 'hint' }, `Showing ${MAX} of ${list.length}. Type in Filter or pick a category to narrow it.`)));
+        if (list.length > MAX) tb.append(h('tr', {}, h('td', { colspan: 16, class: 'hint' }, `Showing ${MAX} of ${list.length}. Type in Filter or pick a category to narrow it.`)));
         list.slice(0, MAX).forEach(p => {
           const upd = (k, v) => { p[k] = v; this.saveCat(); };
           const n = (k, w = 60) => h('td', { class: 'num' }, h('input', { type: 'number', step: '0.01', style: `width:${w}px`, value: p[k] ?? '', onchange: e => upd(k, e.target.value === '' ? undefined : num(e.target.value)) }));
@@ -640,6 +689,7 @@ const app = {
             h('td', {}, h('input', { value: p.name, style: 'min-width:200px', onchange: e => upd('name', e.target.value) })),
             h('td', {}, h('input', { value: p.brand || '', placeholder: 'Brand', list: 'pb-brands', style: 'width:110px', onchange: e => upd('brand', e.target.value.trim()) }), h('input', { value: p.colorName || '', placeholder: 'Color name / #', style: 'width:110px', onchange: e => upd('colorName', e.target.value.trim()) })),
             h('td', {}, h('input', { value: p.finish || '', placeholder: 'Finish / sheen', style: 'width:100px', onchange: e => upd('finish', e.target.value.trim()) }), h('input', { value: p.material || '', placeholder: 'Species / material', style: 'width:100px', onchange: e => upd('material', e.target.value.trim()) })),
+            h('td', {}, h('input', { value: p.xmCode || '', placeholder: 'e.g. CAT SEL', title: 'The Xactimate category + selector (or any price-list code) this product is priced at', style: 'width:90px;text-transform:uppercase', onchange: e => upd('xmCode', e.target.value.trim().toUpperCase()) })),
             h('td', {}, select(CATEGORIES, p.category, v => upd('category', v))),
             h('td', {}, select(KINDS.map(k => [k, k]), p.kind, v => upd('kind', v))),
             h('td', {}, select(UNITS.map(u => [u, u]), p.unit, v => upd('unit', v))),
@@ -666,7 +716,8 @@ const app = {
     $('#menu-export').hidden = true;
     const P = this.project, base = (P.name || 'plan').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-') || 'plan';
     if (kind === 'json') store.download(base + '.planbuilder.json', JSON.stringify(P, null, 1));
-    else if (kind === 'csv') store.download(base + '-estimate.csv', estimateCSV(P, computeTakeoff(P, this.catalog)), 'text/csv');
+    else if (kind === 'csv') store.download(base + '-estimate.csv', estimateCSV(P, this.takeoffNow()), 'text/csv');
+    else if (kind === 'lines') store.download(base + '-line-items.csv', lineItemsCSV(P, this.takeoffNow()), 'text/csv');
     else if (kind === 'planpng') { const a = document.createElement('a'); a.href = await brandStamp(this.plan.snapshot()); a.download = base + '-' + this.level.name.replace(/\s+/g, '-') + '.png'; a.click(); }
     else if (kind === 'png' || kind === 'glb') {
       const v = await this.load3D(); if (!v) return;
@@ -682,7 +733,7 @@ const app = {
     }
   },
   async buildPrint(with3D) {
-    const P = this.project, t = computeTakeoff(P, this.catalog), s = P.settings;
+    const P = this.project, t = this.takeoffNow(), s = P.settings;
     const out = $('#print'); out.innerHTML = '';
     const phead = (title) => h('div', { class: 'print-head' }, h('div', {}, h('h1', {}, title || P.name), h('div', { style: 'color:#555' }, [P.address, P.client].filter(Boolean).join(' · '))), h('img', { class: 'print-logo', src: 'img/grayco-logo-navy.png', alt: 'GrayCo Construction Services' }));
     const pfoot = () => h('div', { class: 'print-foot' }, `GrayCo Construction Services · Prepared ${new Date().toLocaleDateString()} with GrayCo PlanBuilder 3D · Drawings are for estimating; verify all dimensions in the field.`);
@@ -711,13 +762,13 @@ const app = {
       }
     }
     // estimate
-    const tbl = h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'Item'), h('th', { class: 'n' }, 'Qty'), h('th', {}, 'Unit'), h('th', { class: 'n' }, 'Unit price'), h('th', { class: 'n' }, 'Total'))));
+    const tbl = h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'Code'), h('th', {}, 'Item'), h('th', { class: 'n' }, 'Qty'), h('th', {}, 'Unit'), h('th', { class: 'n' }, 'Unit price'), h('th', { class: 'n' }, 'Total'))));
     const tb = h('tbody');
-    t.groups.forEach(g => { tb.append(h('tr', {}, h('td', { colspan: 4 }, h('b', {}, g.name)), h('td', { class: 'n' }, h('b', {}, money(g.total))))); g.lines.forEach(l => tb.append(h('tr', {}, h('td', {}, l.name), h('td', { class: 'n' }, l.qty.toLocaleString('en-US', { maximumFractionDigits: 2 })), h('td', {}, l.unit), h('td', { class: 'n' }, money(l.price + l.labor)), h('td', { class: 'n' }, money(l.total))))); });
+    t.groups.forEach(g => { tb.append(h('tr', {}, h('td', { colspan: 5 }, h('b', {}, g.name)), h('td', { class: 'n' }, h('b', {}, money(g.total))))); g.lines.forEach(l => tb.append(h('tr', {}, h('td', {}, l.code || ''), h('td', {}, l.name), h('td', { class: 'n' }, l.qty.toLocaleString('en-US', { maximumFractionDigits: 2 })), h('td', {}, l.unit), h('td', { class: 'n' }, money(l.price + l.labor)), h('td', { class: 'n' }, money(l.total))))); });
     tbl.append(tb);
     const T = t.totals;
-    const tot = h('table', { style: 'width:50%;margin:10px 0 0 auto' }, h('tbody', {}, ...[['Material', T.material], ['Labor', T.labor], [`Tax ${s.taxRate}%`, T.tax], ['Subtotal', T.subtotal], [`Overhead ${s.overheadPct}%`, T.overhead], [`Profit ${s.profitPct}%`, T.profit], ['Total', T.grand]].map(([k, v]) => h('tr', {}, h('td', {}, k === 'Total' ? h('b', {}, k) : k), h('td', { class: 'n' }, k === 'Total' ? h('b', {}, money(v)) : money(v))))));
-    out.append(h('div', {}, phead(), h('h2', {}, 'Estimate'), tbl, tot, P.notes ? h('p', {}, h('b', {}, 'Notes: '), P.notes) : null, pfoot()));
+    const tot = h('table', { style: 'width:50%;margin:10px 0 0 auto' }, h('tbody', {}, ...[...(t.book ? [['Line items', T.material + T.labor]] : [['Material', T.material], ['Labor', T.labor]]), [`Tax ${s.taxRate}%`, T.tax], ['Subtotal', T.subtotal], [`Overhead ${s.overheadPct}%`, T.overhead], [`Profit ${s.profitPct}%`, T.profit], ['Total', T.grand]].map(([k, v]) => h('tr', {}, h('td', {}, k === 'Total' ? h('b', {}, k) : k), h('td', { class: 'n' }, k === 'Total' ? h('b', {}, money(v)) : money(v))))));
+    out.append(h('div', {}, phead(), h('h2', {}, 'Estimate'), h('div', { style: 'color:#555;margin-bottom:4px' }, 'Prices from: ' + t.pricedFrom), tbl, tot, P.notes ? h('p', {}, h('b', {}, 'Notes: '), P.notes) : null, pfoot()));
   },
 };
 

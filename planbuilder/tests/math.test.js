@@ -3,7 +3,8 @@ import assert from 'assert';
 import { fmtFtIn, parseFtIn, polyArea, roofMeasure, wallPieces, pitchFactor } from '../js/geom.js';
 import { fromTemplate, newProject, addWall, addOpening, addRoom, rectPts, splitWall, markExterior, swingDoorsIntoRooms } from '../js/model.js';
 import { DEFAULT_CATALOG, catalogFromCSV, toCSV, CSV_COLUMNS } from '../js/catalog.js';
-import { computeTakeoff, roundQty, convert, roomStats } from '../js/takeoff.js';
+import { computeTakeoff, roundQty, convert, roomStats, lineItemsCSV } from '../js/takeoff.js';
+import { priceBookFromCSV, convertUnit } from '../js/pricebook.js';
 
 let n = 0; const t = (name, fn) => { fn(); n++; };
 const near = (a, b, eps = 1e-6, msg) => assert.ok(Math.abs(a - b) < eps, `${msg || ''} ${a} ≈ ${b}`);
@@ -128,6 +129,36 @@ t('library products are complete', () => {
   const ids = new Set();
   DEFAULT_CATALOG.forEach(p => { assert.ok(!ids.has(p.id), 'duplicate ' + p.id); ids.add(p.id); assert.ok(/^#[0-9a-f]{6}$/i.test(p.color), p.id + ' color'); assert.ok(p.unit && p.kind && p.category, p.id); });
   ['brk-used-antique', 'rf-gaf-hdz-charcoal', 'flr-solid-white-oak', 'sid-hardie-hardieplank-lap-siding-iron-gray', 'ls-plant-live-oak-3-cal', 'hs-pavers-holland-red', 'ctr-granite-uba-tuba'].forEach(id => assert.ok(ids.has(id), id));
+});
+
+t('price list import (Xactimate-style export)', () => {
+  const csv = 'Price list TNME8X_NOV26\nCat,Sel,Description,Unit,Remove,Replace,Material\nRFG,TST1,"Test shingle, laminated",SQ,60.00,"$310.00",150.00\nDRY,TST2,Test drywall,SF,0.50,2.75,0.80\nXX,BAD,No price,EA,,,\n';
+  const r = priceBookFromCSV(csv);
+  assert.equal(r.count, 2); assert.equal(r.errors.length, 1); assert.ok(r.hasMaterial);
+  near(r.items['RFG TST1'].replace, 310); near(r.items['RFG TST1'].remove, 60); assert.equal(r.items['DRY TST2'].unit, 'SF');
+  near(convertUnit(250, 'SF', 'SQ').qty, 2.5); assert.equal(convertUnit(3, 'EA', 'LF').ok, false);
+});
+t('estimate priced from a price list, R&R, own-price fallback, by room', () => {
+  const p = newProject(); const L = p.levels[0]; const s = p.settings;
+  Object.assign(s, { taxRate: 10, overheadPct: 0, profitPct: 0, floorWaste: 0, roofWaste: 0, wallWaste: 0, drywallId: '', ceilingFinishId: '', baseboardId: '', exteriorFinishId: '' });
+  s.roofAccessories = {};
+  addRoom(L, rectPts(0, 0, 10, 10), { name: 'Den', floorId: 'flr-lvp-oak', wallFinishId: '' });
+  p.roofs.push({ id: 'r1', levelId: L.id, x: 0, y: 0, w: 10, d: 10, style: 'flat', pitch: 0, overhang: 0, materialId: 'rf-tpo' });
+  const cat = DEFAULT_CATALOG.map(x => x.id === 'rf-tpo' ? { ...x, xmCode: 'rfg tst1' } : x);   // codes are matched without case
+  const book = { name: 'Test list', hasMaterial: true, items: priceBookFromCSV('Cat,Sel,Description,Unit,Remove,Replace,Material\nRFG,TST1,Test roof,SQ,60,310,150\n').items };
+  s.xmActivity = 'rr';
+  const T = computeTakeoff(p, cat, { book });
+  const roof = T.lines.find(l => l.code === 'RFG TST1'), floor = T.lines.find(l => l.productId === 'flr-lvp-oak');
+  assert.equal(roof.priced, 'list'); near(roof.qty, 1); near(roof.price, 370); near(roof.total, 370);
+  assert.equal(floor.priced, 'own');                           // no code: keeps the catalog price, flagged
+  near(T.totals.tax, (150 + floor.material) * 0.1);
+  assert.ok(T.warnings.some(w => w.includes('catalog price')));
+  s.xmActivity = 'replace'; near(computeTakeoff(p, cat, { book }).lines.find(l => l.code === 'RFG TST1').total, 310);
+  s.estimateLayout = 'room';
+  const R = computeTakeoff(p, cat, { book });
+  assert.ok(R.groups.some(g => g.name === 'First floor: Den')); assert.ok(R.byRoom);
+  assert.ok(lineItemsCSV(p, R).includes('RFG TST1'));
+  near(computeTakeoff(p, cat).lines.find(l => l.productId === 'rf-tpo').price, 380);   // without a list: catalog price
 });
 
 console.log(`PlanBuilder math: ${n} tests passed`);
