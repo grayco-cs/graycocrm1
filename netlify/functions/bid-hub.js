@@ -91,7 +91,7 @@ async function subBids(jobId){
     const viaPortal = s(b.via) === 'portal' || !!(u.crmSubId || u.bidsRequested);
     return { source: viaPortal ? 'subportal' : 'portal', id: s(b.id), sub: s(b.userName || u.name), company: s(b.userCompany || u.company), email: low(b.userEmail || u.email),
       trade: s(b.trade) || tradeOf(u, crmByEmail, b.userEmail || u.email), amount: b.amount == null || b.amount === '' ? null : Number(b.amount),
-      files: arr(b.docs).map(f => ({ name: s(f && (f.name || f.fileName)) || 'file' })), at: s(b.submittedAt || b.updatedAt), awarded: !!b.accepted, scope: s(b.scope).slice(0, 600) };
+      files: arr(b.docs).map(f => ({ name: s(f && (f.name || f.fileName)) || 'file' })), at: s(b.submittedAt || b.updatedAt), awarded: !!b.accepted, notSelected: !b.accepted && !!b.rejected, scope: s(b.scope).slice(0, 600) };
   });
   arr(await L.kvGet(T.KV_SUBBIDS).catch(() => [])).filter(x => x && x.jobId === jobId).forEach(x => {
     const sub = x.sub || {};
@@ -208,8 +208,18 @@ async function award(who, b){
   }
   const row = await SP.getRow('bids', id); if (!row || (s(b.jobId) && row.job_id !== s(b.jobId))) return { code: 404, error: 'No such sub bid.' };
   const bid = Object.assign({}, row.data, on ? { accepted: true, rejected: false, acceptedAt: at, acceptedBy: who.email } : { accepted: false, acceptedAt: '' });
-  await SP.upsertRows([SP.rowFor('bids', bid)], who.email);
-  return { ok: true, awarded: on };
+  /*AWARDFLOW: the other portal bids on this job in the same trade → Not selected (Undo puts them back) */
+  const others = [];
+  try {
+    const tr = s(bid.trade).toLowerCase(), tag = 'award:' + id;
+    (await SP.listRows([SP.eq('collection', 'bids'), SP.eq('job_id', row.job_id)])).forEach(function(r){ const o = r.data || {};
+      if (!o.id || o.id === id || s(o.trade).toLowerCase() !== tr) return;
+      if (on && !o.accepted && !o.rejected) others.push(Object.assign({}, o, { rejected: true, rejectedAt: at, rejectedBy: tag, notSelected: true }));
+      if (!on && o.rejected && o.rejectedBy === tag) others.push(Object.assign({}, o, { rejected: false, rejectedAt: '', rejectedBy: '', notSelected: false }));
+    });
+  } catch (e) {}
+  await SP.upsertRows([SP.rowFor('bids', bid)].concat(others.map(function(o){ return SP.rowFor('bids', o); })), who.email);
+  return { ok: true, awarded: on, notSelected: on ? others.length : 0 };
 }
 
 /* the backfill: every estimator lead's DRAFT bid job → PRIVATE (a public job is never touched) */

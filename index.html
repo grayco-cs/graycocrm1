@@ -178079,7 +178079,7 @@ function bidsTable(list, jobId, opts){
         + '<td>' + (b.files.length ? b.files.map(function(f){ return '📄 ' + esc(f.name); }).join('<br>') : '<span class="mut">—</span>') + '</td>'
         + '<td class="mut">' + esc(when(b.at)) + '</td><td>' + srcTag(b.source) + '</td>'
         + '<td>' + (b.awarded ? '<b style="color:#166534">🏆 Awarded</b>' + (aw ? ' <button type="button" class="b" data-sys="unaward" data-src="' + esc(b.source) + '" data-id="' + esc(b.id) + '" data-job="' + esc(jobId) + '">Undo</button>' : '')
-          : aw ? '<button type="button" class="b" data-sys="award" data-src="' + esc(b.source) + '" data-id="' + esc(b.id) + '" data-job="' + esc(jobId) + '">🏆 Mark awarded</button>' : '') + '</td></tr>';
+          : (b.notSelected ? '<span class="mut">Not selected</span> ' : '') /*AWARDFLOW*/ + (aw ? '<button type="button" class="b" data-sys="award" data-src="' + esc(b.source) + '" data-id="' + esc(b.id) + '" data-job="' + esc(jobId) + '">🏆 Mark awarded</button>' : '')) + '</td></tr>';
     }).join('');
   }).join('') + '</tbody></table>';
 }
@@ -178258,7 +178258,7 @@ function setVis(jobId, mode){
 }
 function award(t, on){
   fn('bid-hub', { op: 'award', jobId: t.getAttribute('data-job'), source: t.getAttribute('data-src'), id: t.getAttribute('data-id'), on: on }).then(function(){
-    toast(on ? '🏆 Marked awarded' : 'Award taken off');
+    toast(on ? '🏆 Marked awarded' + (arguments[0] && arguments[0].notSelected ? ' · ' + arguments[0].notSelected + ' other bid' + (arguments[0].notSelected === 1 ? '' : 's') + ' in this trade → Not selected' : '') : 'Award taken off');
     if (D.getElementById('gcsys-modal')) openBids(t.getAttribute('data-job'));
     LSB.at = 0; LSB.key = '';
   }, function(e){ toast(e.message, true); });

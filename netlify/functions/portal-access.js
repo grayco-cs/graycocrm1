@@ -805,7 +805,7 @@ async function bidJobsFor(p, sub){
       if (j.draft === true || st === 'draft' || H.isGone(j)) return;
       const open = ['closed', 'won', 'lost'].indexOf(st) < 0, canSee = (j.visibility || 'public') === 'public' || inv.has(r.id), b = mine[r.id];
       if (!(canSee && open) && !b) return;
-      const bs = low(b && (b.status || b.result)), res = !b ? (inv.has(r.id) ? 'invited' : 'open') : /award|won|accept|select/.test(bs) && !/not/.test(bs) ? 'awarded' : (/lost|declin|reject|not/.test(bs) || (!open && st !== 'closed')) ? 'not-selected' : 'sent';
+      const bs = low(b && (b.status || b.result)) /*AWARDFLOW*/ + (b && b.accepted ? ' accepted' : b && b.rejected ? ' rejected' : ''), res = !b ? (inv.has(r.id) ? 'invited' : 'open') : /award|won|accept|select/.test(bs) && !/not|reject/.test(bs) ? 'awarded' : (/lost|declin|reject|not/.test(bs) || (!open && st !== 'closed')) ? 'not-selected' : 'sent';
       const parts = s(j.address).split(',').map(function(x){ return x.trim(); }).filter(Boolean);
       out.push({ id: s(r.id), title: s(j.title) || 'Bid job', area: parts.slice(-2).join(', '), due: s(j.bidDueDate).slice(0, 10), trades: (Array.isArray(j.tradesSought) ? j.tradesSought : []).map(function(x){ return s(x && x.trade || x); }).filter(Boolean).slice(0, 6), state: res });
     });
