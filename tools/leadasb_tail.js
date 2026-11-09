@@ -94,7 +94,8 @@ function paint(force){
   try {
     if (D.hidden || D.documentElement.classList.contains('_fieldmode')) return;
     var op = W._gcOpenProject, p = op && op.id ? proj(op.id) : null, cur = D.getElementById('gc-la');
-    if (!p) { if (cur) cur.remove(); return; }
+    var _rel = p && ((p.leadAsb && Object.keys(p.leadAsb).some(function(k){ return p.leadAsb[k]; })) || (typeof W._gcDocKeys === 'function' && W._gcDocKeys(p).some(function(id){ return /lead_0|asb_/.test(id); })));   /* JOBSTEPS: only on jobs whose words say lead / asbestos */
+    if (!p || !_rel) { if (cur) cur.remove(); return; }
     var back = findBack(); if (!back || typeof W._gcJobBox !== 'function') return;
     var box = W._gcJobBox(back); if (!box) return; css();
     var sig = JSON.stringify([p.id, p.status, p.startDate, p.completionDate, la(p)]);
