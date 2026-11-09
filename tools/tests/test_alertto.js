@@ -23,21 +23,19 @@ function rig(opts){
 }
 const toOf = sent => sent.map(b => b.to).reduce((a, b) => a.concat(b), []);
 (async () => {
-  /* 1. BuildingConnected-style bid: one alert, office only */
+  /* 1. BuildingConnected-style bid, nobody routed yet: LEADROUTE2 (owner 11/9) — office@ no longer gets bids → no e-mail (it waits in the CRM for its 5 PM assignment) */
   let r = rig();
   await r.A.loadPeople([]);
   await r.A.notifyNew([{ id: 'bc1', title: 'Roof at ACME school', source: 'BuildingConnected', type: 'bid', bidDue: '2026-11-05T14:00' }]);
-  assert.strictEqual(r.sent.length, 1, 'exactly one e-mail');
-  assert.deepStrictEqual(r.sent[0].to, ['office@grayco-cs.com']);
-  assert.ok(!toOf(r.sent).some(x => /wjohnson|nthomas/.test(x)));
+  assert.strictEqual(r.sent.length, 0, 'no e-mail to office@ (LEADROUTE2)');
   /* 2. assigned: the assignee too (same single message) */
   r = rig();
   await r.A.notifyNew([{ id: 'bc2', title: 'Bid for Bob', source: 'PlanHub', type: 'bid', bidDue: '2026-11-05T14:00', pm: 'Pat PM', pmEmail: 'pat@grayco-cs.com' }]);
-  assert.deepStrictEqual(r.sent[0].to.slice().sort(), ['office@grayco-cs.com', 'pat@grayco-cs.com']);
+  assert.deepStrictEqual(r.sent[0].to.slice().sort(), ['pat@grayco-cs.com'], 'only the assignee (LEADROUTE2: never office@)');
   /* 3. setting with two addresses */
   r = rig({ settings: { alertTo: ['leads@grayco-cs.com', 'Office@grayco-cs.com'] } });
   await r.A.notifyNew([{ id: 'bc3', title: 'Another', source: 'BuildingConnected', type: 'bid', bidDue: '2026-11-05T14:00' }]);
-  assert.deepStrictEqual(r.sent[0].to.slice().sort(), ['leads@grayco-cs.com', 'office@grayco-cs.com']);
+  assert.deepStrictEqual(r.sent[0].to.slice().sort(), ['leads@grayco-cs.com'], 'the setting, minus office@ (LEADROUTE2)');
   assert.ok(!toOf(r.sent).some(x => /wjohnson|nthomas/.test(x)));
   /* 4. emergency (patch OWNER4): general = office + CRM only; the full routing tests are in test_owner4.js */
   r = rig();
@@ -45,5 +43,6 @@ const toOf = sent => sent.map(b => b.to).reduce((a, b) => a.concat(b), []);
   const em = r.sent.filter(b => /EMERGENCY/.test(b.subject));
   assert.strictEqual(em.length, 1, 'emergency e-mail sent');
   assert.ok(em[0].to.includes('office@grayco-cs.com'));
+  assert.ok(em[0].to.includes('wjohnson@grayco-cs.com') && em[0].to.includes('nthomas@grayco-cs.com'), 'LEADROUTE2: every emergency → the admins (mitigation list) at once');
   console.log('alertto tests: all passed');
 })().catch(e => { console.error(e); process.exit(1); });

@@ -26,6 +26,9 @@ const ROLES = {
   roofing: { key: 'roofingMgr', label: 'Senior Roofing PM' }
 };
 const SOFT = /giveaway|guide download|lead magnet|free guide/i;
+/*LEADROUTE2: an insurance PROGRAM bid → the Senior Insurance PM (owner 11/9) */
+const INS_PROGRAM = /\b(insurance|carrier|tpa|preferred.vendor|managed.repair|restoration)\s+(program|network)s?\b|\bprogram\s+(bid|assignment|work.order|job)s?\b|contractor connection|alacrity|accuserve|code blue|sedgwick|crawford (contractor|&)|cotality|\bTPA\b/i;
+function insProgram(l){ return !!l && INS_PROGRAM.test(textOf(l) + ' | ' + s(l.source) + ' | ' + s(l.fromEmail || l.from) + ' | ' + s(l.gc || l.company)); }
 const INS_TYPE = /insur|claim|mitig|restor|water|fire|mold|storm/;
 /* restoration = water, fire and storm (owner 10/22): fire, smoke, soot · water, flood, leak, mitigation, mold ·
    storm, hail, wind, tree · insurance, claim */
@@ -42,6 +45,7 @@ function textOf(l){
 function classify(l, isBid){
   if (!l) return '';
   if (l.softLead || (l.leadExtra && l.leadExtra.softLead) || SOFT.test(s(l.source)) || /^(careers|partner)$/i.test(s(l.type))) return '';
+  if (insProgram(l)) return 'insurance';   /* LEADROUTE2 */
   if (typeof isBid === 'function' && isBid(l)) return 'bid';
   const typ = low(l.leadKind || l.type);
   if (/commerc|gov/.test(typ)) return 'bid';
@@ -136,4 +140,4 @@ function inScope(l, scope, person, isBid){
   if (scope === 'roofing') return k === 'roofing' || (k === 'bid' ? roofBid(l) : isRoofing(l));   /* patch SPAMROLE: a bid only when it is a roofing bid */
   return false;
 }
-module.exports = { ROLES, classify, coRole, isRoofing, roofBid, coList, holder, state, roleSetting, scopeFor, inScope, assignedTo, TEAM_KEY: 'gc_team_settings' };
+module.exports = { ROLES, insProgram, classify, coRole, isRoofing, roofBid, coList, holder, state, roleSetting, scopeFor, inScope, assignedTo, TEAM_KEY: 'gc_team_settings' };

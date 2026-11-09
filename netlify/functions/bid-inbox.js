@@ -1135,7 +1135,7 @@ async function afterStore(results, items, opt){
   const added = touched.filter(t => t.action === 'added').map(t => t.it);
   try {
     const est = await estimatorOf();
-    const mine = added.filter(it => !it.pm && !it.estimator && est.email && isCommercial(it));
+    const mine = added.filter(it => !it.pm && !it.estimator && est.email && isCommercial(it) && !require('./_lib/lead-roles.js').insProgram(it));   /* LEADROUTE2: an insurance program bid → the Senior Insurance PM below */
     if (mine.length) {
       const ids = {}, hl = {}, at = nowIso();
       mine.forEach(it => { ids[it.id] = 1; const h = holdPick(it, { field: 'estimator', name: est.name, email: est.email, label: 'Senior Estimator', k: 'bid' }); if (h) { hl[it.id] = h; it.hold = h; it.leadRole = 'bid'; return; }   /* patch LEADHOLD: suggested, assigned at 5 PM unless an admin changes it */

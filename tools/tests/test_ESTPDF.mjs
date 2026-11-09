@@ -133,6 +133,23 @@ console.log('— NODE: 📤 Send estimate (send-email.js mode estimate) —');
   const r4 = await sendEst('tok-glenn', { estId: 'E1', pid: 'P1', to: 'cust1@example.com' });
   ok(r4.__s === 409 && MAIL.length === 0, 'no PDF at all → blocked');
 }
+/* ESTSEND2: the sender picks who it is from — PM / estimator / admin / themself; anyone else is refused */
+{
+  MAIL.length = 0;
+  const f = put('hyatt from-pick');
+  const r = await sendEst('tok-glenn', { estId: 'E1', pid: 'P1', to: 'cust1@example.com', fromEmail: 'glenn@grayco-cs.com', pdf: { ref: f.ref, sha256: f.sha256, name: f.name } });
+  const m = MAIL[0] || {};
+  ok(r.__s === 200 && /<glenn@grayco-cs\.com>/.test(m.from) && m.reply_to === 'glenn@grayco-cs.com', 'From "me" (the estimator) instead of the job\'s PM', [r.__s, m.from, m.reply_to]);
+  MAIL.length = 0;
+  const f2 = put('hyatt from-pm');
+  const r2 = await sendEst('tok-glenn', { estId: 'E1', pid: 'P1', to: 'cust1@example.com', fromEmail: 'pam@grayco-cs.com', pdf: { ref: f2.ref, sha256: f2.sha256, name: f2.name } });
+  ok(r2.__s === 200 && /<pam@grayco-cs\.com>/.test((MAIL[0] || {}).from), 'From the PM picked → the PM', (MAIL[0] || {}).from);
+  MAIL.length = 0;
+  const f3 = put('hyatt from-bad');
+  const r3 = await sendEst('tok-glenn', { estId: 'E1', pid: 'P1', to: 'cust1@example.com', fromEmail: 'outsidepm@example.net', pdf: { ref: f3.ref, sha256: f3.sha256, name: f3.name } });
+  const r4 = await sendEst('tok-glenn', { estId: 'E1', pid: 'P1', to: 'cust1@example.com', fromEmail: 'nobody@grayco-cs.com', pdf: { ref: f3.ref, sha256: f3.sha256, name: f3.name } });
+  ok(r3.__s === 403 && r4.__s === 403 && MAIL.length === 0, 'From someone who is not GrayCo staff (or not on the team list) → refused, nothing e-mailed', [r3.__s, r4.__s]);
+}
 {
   MAIL.length = 0;
   const f = put('shed v1');
@@ -481,7 +498,7 @@ async function browser(build){
   await p.evaluate(() => { window._gcEstPdf._S.busy = false; window._gcEstPdf.openSend('ESTTEST1'); });
   await waitFor(C, () => !!document.querySelector('#gc-estpdf-send [data-design]'), null, 8000);
   const dz = await p.evaluate(() => { const s = document.querySelector('#gc-estpdf-send [data-design]'); return { v: s.value, opts: [...s.options].map(o => o.value + '|' + o.textContent) }; });
-  ok(dz.opts.some(o => /^p5\|.*5-page/.test(o)) && dz.opts.some(o => /^simple\|Simple estimate/.test(o)) && dz.opts.some(o => /^upload\|Upload the one I sent/.test(o)) && dz.v === 'simple', 'PDF design: GrayCo 5-page proposal · Simple estimate · Upload the one I sent (default simple)', dz);
+  ok(dz.opts.some(o => /^p5\|.*5-page/.test(o)) && dz.opts.some(o => /^simple\|.*Simple estimate/.test(o)) && dz.opts.some(o => /^upload\|.*Upload the one I sent/.test(o)) && dz.v === 'simple', 'PDF design: GrayCo 5-page proposal · Simple estimate · Upload the one I sent (default simple)', dz);
   await p.evaluate(() => { const b = document.querySelector('#gc-estpdf-send'); b.scrollTop = 0; const s = b.querySelector('[data-design]'); s.scrollIntoView({ block: 'center' }); });
   await sleep(300);
   await p.locator('#gc-estpdf-send .gcep-box').screenshot({ path: path.join(SHOTS, 'send_dialog_pdf_design.png') }).catch(() => {});

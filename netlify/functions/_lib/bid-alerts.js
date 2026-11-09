@@ -253,8 +253,8 @@ function make(d){
   async function deliver(m, extra, only){
     m = linkify(m);   /* patch HOT1 */
     if (m && m.html) { try { m = Object.assign({}, m, { html: LM().telify(m.html) }); } catch (e) {} }   /* patch LEADMAILMSG: every phone number is a tel: link */
-    const to = only ? Array.from(new Set(arr(only).map(low).filter(Boolean))) : await recipients(extra);
-    const r = (!only && !to.length && MAIL_OFF) ? { ok: true, why: 'lead e-mails are off' } : await sendMail(to, m);   /* PMBID */
+    const to = only ? Array.from(new Set(arr(only).map(low).filter(Boolean))) : (await recipients(extra)).filter(x => x !== 'office@grayco-cs.com');   /* LEADROUTE2 (owner 11/9): lead / bid e-mails never go to office@ — the routed estimator / PM gets them */
+    const r = (!only && !to.length && (MAIL_OFF || true)) ? { ok: true, why: 'lead e-mails are off' } : await sendMail(to, m);   /* PMBID */
     const p = await push(to.length ? to : (MAIL_OFF ? ['office@grayco-cs.com'] : to), m.push);   /* the push goes out even when the e-mail could not */
     return { ok: r.ok, why: r.why, to, pushed: p.sent, pushWhy: p.why };
   }
@@ -288,7 +288,7 @@ function make(d){
     /* patch OWNER4 (owner 10/26): GENERAL emergency → the on-call PM + the office ("Lead & bid alert e-mails go to:", default office@) [+ the CRM lead, already in the Lead Inbox];
        MITIGATION emergency (water / flood / leak / burst pipe / sewage / mold / fire / smoke / storm-damage dry-out — E.isMitigation; a tree alone is general) →
        the office + the "Mitigation emergencies also go to:" setting (default Nick + Wesley) + the mitigation manager (role / title) + the on-call PM. No longer every admin / OWNER_EMAILS. */
-    const officeTo = (await alertList()).concat(await emergencyList());   /* office + the "Emergencies also go to:" list (empty by default) */
+    const officeTo = (await alertList()).concat(await emergencyList()).concat(await mitigationList()).concat(E.mitigationMgrs(users));   /* LEADROUTE2: every emergency → mitigation + the admins at once */   /* office + the "Emergencies also go to:" list (empty by default) */
     const mitTo = (await mitigationList()).concat(E.mitigationMgrs(users));
     const planFor = x => E.people({ oncall, insurance: ins, office: officeTo, mitigation: E.isMitigation(Object.assign({}, raw[x.id] || {}, x)) ? mitTo : null });
     const plan = E.people({ oncall, insurance: ins, office: officeTo });

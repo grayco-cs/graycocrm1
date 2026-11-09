@@ -353,7 +353,20 @@ async function sendEstimate(body, who, key, headers){
   if (!got.ok || (want && got.sha256 !== want)) return J(409, { ok: false, blocked: true, error: EP().BLOCK, why: got.ok ? 'the PDF is not the one the CRM made' : got.why });
   const fname = (String(pdf.name || 'Estimate.pdf').replace(/[\\/\r\n\0"]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 140) || 'Estimate.pdf').replace(/(\.pdf)?$/i, '.pdf');
   const name = cleanName(who.name) || cleanName(body.fromName) || me.split('@')[0];
-  const snd = await estimateFrom(body.pid, who, name);
+  let snd = await estimateFrom(body.pid, who, name);
+  /*ESTSEND2: the sender picked who it is from — the job's PM, the estimator, an admin or themself. Only an active
+    @grayco-cs.com staff member whose role is admin / owner / estimator / PM (or the sender) is accepted. */
+  const pick = String(body.fromEmail || '').trim().toLowerCase();
+  if (pick && pick !== me && !(snd.sig && String(snd.sig.email || '').toLowerCase() === pick && /PM/.test(snd.how))) {
+    let u = null;
+    try { const C = portalCore(), data = await C.crmData(true); u = (Array.isArray(data.users) ? data.users : []).find(function(x){ return x && String(x.email || '').toLowerCase() === pick; }) || null; } catch (e) { u = null; }
+    const okRole = u && u.active !== false && /^[^@\s<>"]+@grayco-cs\.com$/.test(pick) && !/^(office|billing|news|portal)@/.test(pick) && /admin|owner|estimat|project manager|\bpm\b/i.test(String(u.role || '') + ' ' + String(u.payType || ''));
+    if (!okRole) return J(403, { error: 'You cannot send as ' + pick + ' — pick the PM, the estimator, an admin or yourself.' });
+    const nm = cleanName(u.name) || pick.split('@')[0];
+    snd = { from: nm + ' <' + pick + '>', replyTo: pick, bcc: [pick].concat(pick === me ? [] : [me]), sig: { email: pick, name: u.name }, how: 'picked by the sender' };
+  } else if (pick && pick === me && snd.sig && String(snd.sig.email || '').toLowerCase() !== me) {
+    snd = { from: name + ' <' + me + '>', replyTo: me, bcc: [me], sig: who, how: 'sender' };
+  }
   const payload = { from: snd.from, reply_to: snd.replyTo, to: to, subject: subject, html: await shellOut(html, snd.sig, body), bcc: snd.bcc.filter(function(b){ return to.indexOf(b) < 0; }),
     headers: { 'X-GrayCo-CRM': 'estimate' }, attachments: [{ filename: fname, content: got.buf.toString('base64'), content_type: 'application/pdf' }] };
   if (cc.length) payload.cc = cc;

@@ -33,12 +33,12 @@ const has = (to, e) => to.includes(e);
     .forEach(([t, want]) => { assert.ok(E.isEmergency({ title: t }), 'is emergency: ' + t); assert.strictEqual(E.isMitigation({ title: t }), want, 'mitigation(' + t + ')'); });
   assert.ok(!E.isMitigation({ title: 'Bid for new roof' }));
 
-  /* 1. general emergency (tree only): on-call + office only; NOT Nick / Wesley / other admins */
+  /* 1. general emergency (tree only): on-call + office + (LEADROUTE2, owner 11/9: "emergency → mitigation and admin immediately") the mitigation list (Nick + Wesley); no other admin */
   let r = rig();
   await r.A.notifyNew([lead('g1', 'Tree fell on my house', 'tree fell on the house, please call')]);
   assert.strictEqual(em(r).length, 1);
   let to = em(r)[0].to.slice().sort();
-  assert.deepStrictEqual(to, ['office@grayco-cs.com', 'pat@grayco-cs.com']);
+  assert.deepStrictEqual(to, ['nthomas@grayco-cs.com', 'office@grayco-cs.com', 'pat@grayco-cs.com', 'wjohnson@grayco-cs.com']);
 
   /* 2. mitigation emergency: office + Nick + Wesley (prefilled) + on-call; no other admin */
   r = rig();
@@ -54,10 +54,10 @@ const has = (to, e) => to.includes(e);
   to = em(r)[0].to;
   ['mia.mit@grayco-cs.com', 'gus@grayco-cs.com', 'nthomas@grayco-cs.com', 'wjohnson@grayco-cs.com', 'office@grayco-cs.com', 'pat@grayco-cs.com'].forEach(e => assert.ok(has(to, e), e));
   assert.ok(!has(to, 'tech@grayco-cs.com'), 'a plain Mitigation tech is not the manager');
-  /* a general emergency does not reach the mitigation list */
+  /* LEADROUTE2 (owner 11/9): a general emergency now reaches the mitigation list too */
   r = rig({ settings: { mitigationTo: ['mia.mit@grayco-cs.com'] } });
   await r.A.notifyNew([lead('g2', 'Tree on the house', 'tree fell on my home')]);
-  assert.ok(!has(em(r)[0].to, 'mia.mit@grayco-cs.com'));
+  assert.ok(has(em(r)[0].to, 'mia.mit@grayco-cs.com'));
 
   /* 4. the general list "Emergencies also go to:" defaults empty; an address added there receives general (and mitigation) emergencies */
   r = rig();
@@ -65,7 +65,7 @@ const has = (to, e) => to.includes(e);
   r = rig({ settings: { emergenciesTo: ['Nick@grayco-cs.com', 'bad address'] } });
   await r.A.notifyNew([lead('g3', 'Tree fell on my house', 'tree fell on my house')]);
   to = em(r)[0].to.slice().sort();
-  assert.deepStrictEqual(to, ['nick@grayco-cs.com', 'office@grayco-cs.com', 'pat@grayco-cs.com']);
+  assert.deepStrictEqual(to, ['nick@grayco-cs.com', 'nthomas@grayco-cs.com', 'office@grayco-cs.com', 'pat@grayco-cs.com', 'wjohnson@grayco-cs.com']);   /* + the mitigation list (LEADROUTE2) */
   r = rig({ settings: { emergenciesTo: ['nick@grayco-cs.com'] } });
   await r.A.notifyNew([lead('m3', 'Burst pipe flood', 'water everywhere')]);
   assert.ok(has(em(r)[0].to, 'nick@grayco-cs.com') && has(em(r)[0].to, 'wjohnson@grayco-cs.com'));
@@ -74,11 +74,11 @@ const has = (to, e) => to.includes(e);
   r = rig({ oncall: { email: 'wjohnson@grayco-cs.com', name: 'Wesley', phone: '9015550102' } });
   await r.A.notifyNew([lead('g4', 'Tree fell on my house', 'tree fell on my house')]);
   to = em(r)[0].to.slice().sort();
-  assert.deepStrictEqual(to, ['office@grayco-cs.com', 'wjohnson@grayco-cs.com']);
+  assert.deepStrictEqual(to, ['nthomas@grayco-cs.com', 'office@grayco-cs.com', 'wjohnson@grayco-cs.com']);   /* + the mitigation list (LEADROUTE2) */
 
   /* 6. the office setting is honoured; no OWNER_EMAILS blast */
   r = rig({ settings: { alertTo: ['leads@grayco-cs.com'] } });
   await r.A.notifyNew([lead('g5', 'Tree fell on my house', 'tree fell on my house')]);
-  assert.deepStrictEqual(em(r)[0].to.slice().sort(), ['leads@grayco-cs.com', 'pat@grayco-cs.com']);
+  assert.deepStrictEqual(em(r)[0].to.slice().sort(), ['leads@grayco-cs.com', 'nthomas@grayco-cs.com', 'pat@grayco-cs.com', 'wjohnson@grayco-cs.com']);   /* + the mitigation list (LEADROUTE2) */
   console.log('owner4 tests: all passed');
 })().catch(e => { console.error(e); process.exit(1); });

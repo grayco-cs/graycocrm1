@@ -5490,7 +5490,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.180-2026-11-09-r19l -->
+<!-- GrayCo CRM Build: 33.181-2026-11-09-r19m -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6439,7 +6439,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.180-2026-11-09-r19l");
+  console.log("[GC] Build 33.181-2026-11-09-r19m");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6487,7 +6487,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.180-2026-11-09-r19l"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.181-2026-11-09-r19m"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -170139,6 +170139,7 @@ function pmNames(){ var h = senior(), l = pms().map(function(u){ return s(u.name
 /* ── patch HOT2: LEAD ROLES — a new lead goes by its TYPE to a role holder (same rules as _lib/lead-roles.js) ── */
 var LR_ROLES = { insurance: { key: 'insurancePm', label: 'Senior Insurance PM', what: 'insurance claims and restoration (water, fire, mold, storm damage, mitigation)' },
   roofing: { key: 'roofingMgr', label: 'Senior Roofing PM', what: 'roofing leads (re-roof, roof repair); a commercial roofing bid stays the Senior Estimator\'s and adds the Senior Roofing PM as a second person' } };
+var LR_INS_PROGRAM = /\b(insurance|carrier|tpa|preferred.vendor|managed.repair|restoration)\s+(program|network)s?\b|\bprogram\s+(bid|assignment|work.order|job)s?\b|contractor connection|alacrity|accuserve|code blue|sedgwick|crawford (contractor|&)|cotality|\bTPA\b/i;   /* LEADROUTE2 (same as _lib/lead-roles.js) */
 var LR_SOFT = /giveaway|guide download|lead magnet|free guide/i, LR_INS_TYPE = /insur|claim|mitig|restor|water|fire|mold|storm/,
   LR_INS_TEXT = /\b(fire|smoke|soot|water|flood(s|ed|ing)?|leak(s|ed|ing|y)?|mitigation|mold|mould|storm|hail|wind|tree|insurance|insured|claims?|adjuster|restoration|xactimate)\b/i,   /* water, fire and storm */
   LR_ROOF_TEXT = /\broof|re-?roof|shingle/i;
@@ -170148,6 +170149,7 @@ function lrIsBid(l){ try { return typeof W._gcIsBidLead === 'function' && !!W._g
 function lrClassify(l){
   if (!l) return '';
   if (l.softLead || (l.leadExtra && l.leadExtra.softLead) || LR_SOFT.test(s(l.source)) || /^(careers|partner)$/i.test(s(l.type))) return '';
+  if (LR_INS_PROGRAM.test(lrText(l) + ' | ' + s(l.source) + ' | ' + s(l.fromEmail || l.from) + ' | ' + s(l.gc || l.company))) return 'insurance';   /* LEADROUTE2 */
   if (lrIsBid(l)) return 'bid';
   var typ = low(l.leadKind || l.type);
   if (/commerc|gov/.test(typ)) return 'bid';
@@ -204543,6 +204545,12 @@ function isUploadPdf(e){ return !!(e && isPdfRef(e.sourceRef) && /upload|email/i
 /* → { blob, name, how } or null (no PDF → no send) */
 function makePdf(e, design){
   design = design || (isUploadPdf(e) ? 'uploaded' : 'simple');
+  if (/^file:/.test(design)) {   /* ESTSEND2: a PDF already in the job's Files, as it is */
+    var fd = docs().filter(function(d){ return d && s(d.id) === design.slice(5); })[0];
+    if (!fd) return Promise.resolve(null);
+    var got = s(fd.ref) && typeof W._gcFileBlob === 'function' ? Promise.resolve(W._gcFileBlob(fd.ref)) : (s(fd.dataUrl) ? fetch(fd.dataUrl).then(function(r){ return r.blob(); }) : Promise.reject(new Error('no file')));
+    return got.then(function(b){ return b ? { blob: b, how: 'job file: ' + s(fd.name) } : null; }, function(){ return null; });
+  }
   if (design === 'uploaded' && isUploadPdf(e) && typeof W._gcFileBlob === 'function') return W._gcFileBlob(e.sourceRef).then(function(b){ return { blob: b, how: 'uploaded PDF' }; }, function(){ return null; });   /* an uploaded estimate IS its PDF */
   if (design === 'p5') { var h5 = proposal5Html(e); if (!h5) return Promise.resolve(null); return viaFrame(h5).then(function(b){ return b ? { blob: b, how: DESIGNS.p5 } : null; }); }   /* the 5-page design or nothing (never a different design in its place) */
   var html = proposalHtml(e);
@@ -204789,6 +204797,26 @@ function pmOf(p){
   var u = arr(crm().users).filter(function(x){ return low(x.name) === low(n); })[0];
   return { name: n, email: low((u && u.email) || (p && p.pmEmail)) };
 }
+/*ESTSEND2*/ function staffU(){ return arr(crm().users).filter(function(u){ return u && /^[^@\s]+@grayco-cs\.com$/i.test(s(u.email)) && u.active !== false && !/^(office|billing|news|portal)@/i.test(s(u.email)); }); }
+function fromChoices(p, e){
+  var out = [], seen = {}, add = function(email, name, why){ email = low(email); if (!/^[^@\s]+@grayco-cs\.com$/.test(email) || seen[email]) return; seen[email] = 1; out.push({ email: email, name: s(name) || email, why: why }); };
+  var U = staffU(), byName = function(n){ n = low(n); return n ? U.filter(function(u){ return low(u.name) === n; })[0] : null; };
+  var pm = pmOf(p); if (pm) add(pm.email, pm.name, 'PM');
+  var en = s((e && (e.estimator || e.by)) || (p && (p.estimator || p.estimatorName))), eu = byName(en); if (eu) add(eu.email, eu.name, 'estimator');
+  add(myEmail(), meName(), 'me');
+  U.filter(function(u){ return /admin|owner/i.test(s(u.role) + ' ' + s(u.payType)); }).forEach(function(u){ add(u.email, u.name, 'admin'); });
+  U.filter(function(u){ return /estimat/i.test(s(u.role)); }).forEach(function(u){ add(u.email, u.name, 'estimator'); });
+  return out;
+}
+function fromPickHtml(p, e){
+  var ch = fromChoices(p, e); if (!ch.length) return fromLine(p);
+  return '<label for="gcep-from" style="margin-top:6px">From</label><select id="gcep-from" data-from>' + ch.map(function(c, i){ return '<option value="' + esc(c.email) + '"' + (i === 0 ? ' selected' : '') + '>' + esc(c.name) + ' &lt;' + esc(c.email) + '&gt; — ' + esc(c.why) + '</option>'; }).join('') + '</select><div class="sub" style="margin-top:2px">Replies go to the person it is from; you get a copy.</div>';
+}
+function jobPdfs(p){
+  if (!p) return [];
+  return docs().filter(function(d){ return d && (s(d.pid) === s(p.id) || s(d.projectId) === s(p.id)) && !d.superseded && !d.deleted && (s(d.ref) || /^data:application\/pdf/.test(s(d.dataUrl))) && /pdf/i.test(s(d.type) + ' ' + s(d.name) + ' ' + s(d.ref)); })
+    .sort(function(a, b){ return s(b.uploadedAt || b.uploaded).localeCompare(s(a.uploadedAt || a.uploaded)); }).slice(0, 20);
+}
 function fromLine(p){
   var pm = pmOf(p);
   if (!pm) return 'From <b>' + esc(meName()) + '</b> &lt;' + esc(myEmail()) + '&gt; (no PM on the job) — replies come to you.';
@@ -204802,6 +204830,7 @@ function designHtml(p, e){
   var opt = function(v, l){ return '<option value="' + v + '"' + (d === v ? ' selected' : '') + '>' + l + '</option>'; };
   return '<label for="gcep-design">PDF design</label><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><select id="gcep-design" data-design style="flex:1;min-width:220px">' +
     opt('p5', '📘 GrayCo 5-page proposal (cover, scope, estimate, schedule, warranty, contact)') + opt('simple', '📄 Simple estimate') + (isUploadPdf(e) ? opt('uploaded', '📎 The uploaded estimate PDF (as it is)') : '') +
+    (function(){ var L = jobPdfs(p); return L.length ? '<optgroup label="📁 A PDF from the job\'s Files">' + L.map(function(d){ return opt('file:' + s(d.id), '📁 ' + s(d.name).slice(0, 70)); }).join('') + '</optgroup>' : ''; })() +   /* ESTSEND2 */
     opt('upload', '📤 Upload the one I sent (text / Google Docs)') + '</select><button type="button" class="gcep-sm" data-dprev>👁 Preview</button>' +
     (realAdmin() && g ? '<button type="button" class="gcep-sm" data-ddef data-g="' + esc(g) + '">⚙ Default for ' + esc(g) + ' jobs</button>' : '') + '</div>';
 }
@@ -204819,8 +204848,8 @@ function wireDesign(ov, p, e, toUpload){
   };
 }
 function quietNow(){ try { return !!(W._gcCQ && W._gcCQ.quiet()); } catch (e) { return false; } }
-function pickEstimate(then){
-  var me = low(meName()), list = estAll().filter(function(e){ return e && !e._isDraft && !/^draft_/.test(s(e.id)) && !isMarker(e) && !e.isTemplate && !deadMap()[e.id] && (s(e.name) || s(e.num)); })
+function pickEstimate(then, onlyPid){
+  var me = low(meName()), list = estAll().filter(function(e){ if (onlyPid && !(s(e && (e.pid || e.projectId || e.jobId)) === s(onlyPid) || s((jobOf(e) || {}).id) === s(onlyPid))) return false; return e && !e._isDraft && !/^draft_/.test(s(e.id)) && !isMarker(e) && !e.isTemplate && !deadMap()[e.id] && (s(e.name) || s(e.num)); })
     .sort(function(a, b){ var am = low(a.estimator || a.by) === me ? 1 : 0, bm = low(b.estimator || b.by) === me ? 1 : 0; return bm - am || stampOf(b).localeCompare(stampOf(a)); }).slice(0, 80);
   var ov = overlay('gc-estpdf-pick', '<h3>📤 Send estimate</h3><div class="sub">Pick the estimate. It goes from your own address, the PDF is kept in the CRM.</div><input type="text" data-q placeholder="Search name, customer, PO…" aria-label="Search estimates"><div data-rows></div><div class="row"><button type="button" class="gcep-b" data-x>Cancel</button></div>');
   var draw = function(q){ q = low(q); ov.querySelector('[data-rows]').innerHTML = list.filter(function(e){ var p = jobOf(e); return !q || low([e.name, e.num, e.client, p && p.name, p && p.autoPO].join(' ')).indexOf(q) >= 0; }).map(function(e){ var p = jobOf(e), c = current(e); return '<button type="button" class="gcep-ver" data-id="' + esc(e.id) + '"><b>' + esc(e.name || e.num) + '</b> ' + (num(e.totalCharge) ? money(e.totalCharge) : '') + '<div style="font-size:12px;color:#64748b">' + esc([p ? 'PO ' + s(p.autoPO) + ' · ' + s(p.name) : 'no job yet', c ? verLine(c) : 'Not sent yet'].join(' · ')) + '</div></button>'; }).join('') || '<div class="sub">No estimates.</div>'; };
@@ -204831,7 +204860,7 @@ function pickEstimate(then){
 }
 function openSend(estId, opts){
   opts = opts || {};
-  if (!estId) { pickEstimate(function(id){ openSend(id, opts); }); return; }
+  if (!estId) { pickEstimate(function(id){ openSend(id, opts); }, opts.pid); return; }
   var e = estById(estId);
   if (!e) { toast('Estimate not found — open it once, then Send.', true); return; }
   if (!/@grayco-cs\.com$/.test(myEmail())) { toast('Sign in with your @grayco-cs.com account to send from the CRM.', true); return; }
@@ -204840,8 +204869,8 @@ function openSend(estId, opts){
   var to = s(prof.email || v.email), cust = s(prof.name || v.name || v.company);
   var feat = p ? featuresHtml(p) : '<div class="sub" style="margin-top:8px">⚙ Customer features: chosen on the job when it is made at this send.</div>';
   var ov = overlay('gc-estpdf-send', '<h3>📤 Send estimate</h3>' +
-    '<div class="sub"><b>' + esc(e.name || e.num || 'Estimate') + '</b>' + (num(e.totalCharge) ? ' · ' + money(e.totalCharge) : '') + (p ? ' · PO ' + esc(p.autoPO) : '') + '<br>' + fromLine(p) +
-    (quietNow() ? '<br><b style="color:#92400e">⏰ 7 PM–7 AM: it is saved now and goes to the customer at 7:00 AM.</b>' : '') + '</div>' +
+    '<div class="sub"><b>' + esc(e.name || e.num || 'Estimate') + '</b>' + (num(e.totalCharge) ? ' · ' + money(e.totalCharge) : '') + (p ? ' · PO ' + esc(p.autoPO) : '') + (quietNow() ? '<br><b style="color:#92400e">⏰ 7 PM–7 AM: it is saved now and goes to the customer at 7:00 AM.</b>' : '') + '</div>' +
+    fromPickHtml(p, e) +   /* ESTSEND2 */
     '<label for="gcep-to">To</label><input id="gcep-to" type="email" inputmode="email" data-to value="' + esc(to) + '">' +
     '<label for="gcep-cc">CC</label><input id="gcep-cc" type="email" inputmode="email" data-cc placeholder="(optional)">' +
     '<label for="gcep-subj">Subject</label><input id="gcep-subj" type="text" data-subj value="' + esc('Your GrayCo estimate — ' + scrub(s(e.name || (p && p.name) || 'your project'), wordsFor(e, p))) + '">' +
@@ -204857,7 +204886,7 @@ function openSend(estId, opts){
   wireDesign(ov, p, e, function(){ ov.remove(); openUpload(estId, opts); });
   q('[data-send]').onclick = function(){
     var b = q('[data-send]'); b.disabled = true;
-    var o = { to: s(q('[data-to]').value), cc: s(q('[data-cc]').value), subject: s(q('[data-subj]').value), body: String(q('[data-body]').value || ''), portal: true, features: readFeatures(ov), design: s(q('[data-design]').value) || 'simple' };
+    var o = { to: s(q('[data-to]').value), cc: s(q('[data-cc]').value), subject: s(q('[data-subj]').value), body: String(q('[data-body]').value || ''), portal: true, features: readFeatures(ov), design: s(q('[data-design]').value) || 'simple', fromEmail: q('[data-from]') ? s(q('[data-from]').value) : '' };
     send(e.id, o, msg).then(function(r){ if (r && r.ok) { later(function(){ ov.remove(); }, 1200); if (typeof opts.after === 'function') opts.after(r); } else b.disabled = false; }, function(err){ b.disabled = false; msg(s(err && err.message) || 'Not sent — try again.', true); });
   };
   return ov;
@@ -204866,7 +204895,7 @@ function openSend(estId, opts){
 function send(estId, o, msg){
   msg = msg || function(){};
   var e = estById(estId); if (!e) return Promise.resolve({ ok: false, error: 'Estimate not found.' });
-  try { if (o && o.design && o.design !== 'upload') { var csNew = o.design === 'uploaded' ? 'pdf' : 'template'; if (s(e.customerSees) !== csNew && !(csNew === 'pdf' && !s(e.customerSees))) setEst(estId, { customerSees: csNew, customerSeesBy: meName(), customerSeesAt: nowIso() }); } } catch (x) {}   /* patch CUSTPORTAL: what was sent is what the customer sees */
+  try { if (o && o.design && o.design !== 'upload') { var csNew = (o.design === 'uploaded' || /^file:/.test(o.design)) ? 'pdf' : 'template'; if (s(e.customerSees) !== csNew && !(csNew === 'pdf' && !s(e.customerSees))) setEst(estId, { customerSees: csNew, customerSeesBy: meName(), customerSeesAt: nowIso() }); } } catch (x) {}   /* patch CUSTPORTAL: what was sent is what the customer sees */
   if (!/^[^@\s,;]+@[^@\s,;]+\.[a-z]{2,}$/i.test(s(o.to).split(/[,;\s]+/)[0] || '')) { msg('Check the "To" address.', true); return Promise.resolve({ ok: false, error: 'to' }); }
   if (!s(o.subject) || !s(o.body)) { msg('Add a subject and a message.', true); return Promise.resolve({ ok: false, error: 'subject' }); }
   if (S.busy) return Promise.resolve({ ok: false, error: 'busy' });
@@ -204881,9 +204910,9 @@ function send(estId, o, msg){
     return storeConfirmed(r.blob, nm).catch(function(err){ warn(err); S.blocked++; var x = new Error(BLOCK); x.block = true; throw x; });
   }).then(function(f){
     file = f;
-    msg('Sending from ' + myEmail() + '…');
+    msg('Sending from ' + (s(o.fromEmail) || myEmail()) + '…');
     var html = '<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#14202E;white-space:pre-wrap">' + esc(o.body) + '</div>';
-    return call('send-email', { mode: 'estimate', estId: e.id, pid: p ? p.id : '', leadId: l ? l.id : '', to: o.to, cc: o.cc, subject: o.subject, html: html, fromName: meName(), customer: s(p && p.client),
+    return call('send-email', { mode: 'estimate', estId: e.id, pid: p ? p.id : '', leadId: l ? l.id : '', to: o.to, cc: o.cc, subject: o.subject, html: html, fromName: meName(), customer: s(p && p.client), fromEmail: s(o.fromEmail), estimator: s(e.estimator || e.by),
       pdf: { ref: f.ref, sha256: f.sha256, name: f.name } });
   }).then(function(j){
     if (!j || !j.ok) { var er = new Error(j && j.blocked ? BLOCK : ('Not sent: ' + s(j && j.error || 'try again'))); er.block = !!(j && j.blocked); throw er; }
@@ -204994,12 +205023,22 @@ function draftsFor(e){
   return estAll().filter(function(d){ return d && /^draft_/.test(s(d.id)) && !isMarker(d) && !deadMap()[d.id] && !s(d.pid) && norm(d.name) === n && (arr(d.lines).length || arr(d.mats).length) && stampOf(d) > stampOf(e); });
 }
 function paintSlot(el, estId, pid){
+  try {   /* ESTSEND2: one "📤 Send estimate" bar on top of the job's estimates */
+    var card = el.parentElement, list = card && card.parentElement;
+    if (list && pid && !list.querySelector(':scope > .gcep-jobsend')) {
+      var bar = D.createElement('div'); bar.className = 'gcep-jobsend'; bar.style.cssText = 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 8px';
+      bar.innerHTML = '<button type="button" class="gcep-sm" style="font-weight:700">📤 Send estimate</button><span style="font-size:12px;opacity:.75">PDF from the estimate or the job\'s Files · from the PM, estimator or an admin</span>';
+      bar.querySelector('button').onclick = function(ev){ ev.stopPropagation(); openSend(null, { pid: pid }); };
+      list.insertBefore(bar, list.firstChild);
+    }
+  } catch (x) {}
   try {
     var e = estById(estId) || { id: estId }, v = versions(e), c = v[v.length - 1], h = '';
     if (c) {
       var seen = arr(S.views).filter(function(x){ return s(x.estId) === s(e.id) && s(x.at) >= s(c.sentAt || c.heldAt); }).map(function(x){ return s(x.at); }).sort()[0];
       h += '<button type="button" class="gcep-pdf" data-ep="pdf">📄 Sent PDF</button><span class="m" data-ep-line>' + esc(verLine(c)) + (seen ? ' · 👁 Viewed in the portal ' + esc(fmtDay(seen)) : '') + '</span>';
       if (v.length > 1) h += '<button type="button" class="gcep-sm" data-ep="all">All versions (' + v.length + ')</button>';
+      h += '<button type="button" class="gcep-sm" data-ep="send">📤 Send again</button>';   /* ESTSEND2 */
     } else if (wasSent(e)) {
       h += '<span class="w">Sent before PDF saving started — no copy on file</span><button type="button" class="gcep-sm" data-ep="attach">📎 Attach the sent PDF</button>';
     } else {
