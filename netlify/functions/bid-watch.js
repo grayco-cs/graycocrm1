@@ -52,6 +52,8 @@ const PAUSE_MS = 1500, TIMEOUT_MS = 10000, MAX_PAGE = 3 * 1024 * 1024, CONCURREN
 /* West Tennessee counties / towns within about 100 miles of Memphis (STREAM lists the whole state) */
 const TN_WEST = /\b(Shelby|Fayette|Tipton|Lauderdale|Haywood|Hardeman|Madison|Crockett|Dyer|Gibson|Chester|Henderson|McNairy|Obion|Weakley|Hardin|Memphis|Millington|Bartlett|Germantown|Collierville|Covington|Somerville|Union City|Dyersburg)\b/;
 const SOURCES = [
+  /*RKAROOM*/ { id: 'rka-planroom', name: 'RKA Construction — public plan room', label: 'RKA plan room', owner: '', city: '', state: 'MS', type: 'commercial',
+    auto: true, kind: 'rka', url: 'https://www.rkaplanroom.build/projects/public', noAi: true },
   { id: 'shelby-county', name: 'Shelby County Government — bid postings', label: 'Shelby County', owner: 'Shelby County Government', city: 'Memphis', state: 'TN',
     auto: true, kind: 'links', url: 'https://bids.shelbycountytn.gov/', hrefRe: /\/node\/\d+/, listing: 'https://www.shelbycountytn.gov/3243/Bids-Listing' },
   { id: 'city-of-memphis', name: 'City of Memphis — RFPs & RFQs', label: 'City of Memphis', owner: 'City of Memphis', city: 'Memphis', state: 'TN',
@@ -247,6 +249,25 @@ function parseAccordion(html, base, opt){
   return out;
 }
 /* CivicPlus "Bid Postings" page (Bids.aspx): each bid is a link to bids.aspx?bidID=n with Bid No., Status, Closes */
+/* RKAROOM: rkaplanroom.build/projects/public — <a class="row" href=".../projects/<id>/details/<slug>"> … <div class="bid-date">11/18/26 2:00pm</div>
+   … <div class="name">Name</div> … <div class="company">GC</div> <div class="location">City, ST</div> <div class="description">…</div></a> */
+function parseRka(html, base){
+  const H = String(html || ''), out = [], seen = {};
+  const re = /<a\b[^>]*class=["'][^"']*\brow\b[^"']*["'][^>]*href=["']([^"']*\/projects\/(\d+)\/details\/[^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi; let m;
+  const pick = (blk, cls) => { const r = new RegExp('<div[^>]*class=["\'][^"\']*\\b' + cls + '\\b[^"\']*["\'][^>]*>([\\s\\S]*?)<\\/div>', 'i').exec(blk); return r ? htmlToText(r[1].replace(/<svg[\s\S]*?<\/svg>/gi, '')).replace(/\s+/g, ' ').trim() : ''; };
+  while ((m = re.exec(H))) {
+    const id = m[2], blk = m[3]; if (seen[id]) continue; seen[id] = 1;
+    const name = pick(blk, 'name'); if (!name) continue;
+    if (/bidding\s+closed/i.test(blk.replace(/<[^>]+>/g, ' '))) continue;
+    const bd = pick(blk, 'bid-date'), dm = /(\d{1,2})\/(\d{1,2})\/(\d{2,4})/.exec(bd);
+    const due = dm ? (dm[3].length === 2 ? '20' + dm[3] : dm[3]) + '-' + ('0' + dm[1]).slice(-2) + '-' + ('0' + dm[2]).slice(-2) : '';
+    const loc = pick(blk, 'location'), lm = /([^,]+),\s*([A-Z]{2}|Mississippi|Tennessee|Arkansas|Alabama)\s*$/i.exec(loc);
+    const ST = { mississippi: 'MS', tennessee: 'TN', arkansas: 'AR', alabama: 'AL' };
+    out.push({ id: 'rka' + id, title: name.slice(0, 180), number: '', due: due, url: absUrl(m[1], base), context: (pick(blk, 'description') + ' — ' + loc).slice(0, 600), status: '',
+      city: lm ? s(lm[1]).replace(/^the university of mississippi$/i, 'Oxford') : '', state: lm ? (ST[low(lm[2])] || s(lm[2]).toUpperCase()) : '', gc: pick(blk, 'company') });
+  }
+  return out;
+}
 function parseCivicBids(html, base){
   const H = String(html || ''), out = [], seen = {};
   const re = /<a\b[^>]*href\s*=\s*["']([^"']*bids\.aspx\?bidID=(\d+)[^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi; let m; const hits = [];
@@ -281,8 +302,8 @@ function expired(due){ if (!due) return false; const d = Date.parse(s(due).slice
 function toRecord(src, it, hits){
   let host = ''; try { host = new URL(it.url).hostname; } catch (e) {}
   return {
-    id: itemId('watch|' + src.id + '|' + it.id), title: it.title, source: src.label, sourceKind: 'public_bid', sourceRef: src.name, type: 'government',
-    owner: src.owner || '', gc: '', address: '', city: src.city || '', state: src.state || '', zip: '', bidDue: it.due || '', preBid: '', trades: [], scope: it.context ? it.context.slice(0, 300) : '',
+    id: itemId('watch|' + src.id + '|' + it.id), title: it.title, source: src.label, sourceKind: 'public_bid', sourceRef: src.name, type: src.type || 'government',
+    owner: src.owner || '', gc: it.gc || '', address: '', city: it.city || src.city || '', state: it.state || src.state || '', zip: '', bidDue: it.due || '', preBid: '', trades: [], scope: it.context ? it.context.slice(0, 300) : '',
     bidNumber: it.number || '', contact: { name: '', email: '', phone: '' }, estValue: null,
     plansLinks: it.url ? [{ url: it.url, label: 'Solicitation & documents (' + src.label + ')', board: 'Government', host }] : [],
     files: [], emails: [], emailIds: [], watchKeys: ['w:' + src.id + ':' + it.id], notes: ['Found on ' + src.name + '. Matched: ' + hits.join(', ') + '.'],
@@ -520,7 +541,7 @@ async function runAll(opts){
       st.http = page.status;
       if (page.status === 304) { st.why = 'no change since the last look'; st.parsed = prev.parsed || 0; st.etag = prev.etag; st.lastModified = prev.lastModified; st.ok = true; }
       else if (page.status === 200) {
-        items = src.kind === 'rss' ? parseRss(page.text) : src.kind === 'civic' ? parseCivicBids(page.text, src.url) : src.kind === 'stream' ? parseAccordion(page.text, src.url, { near: src.near }) : parseLinks(page.text, src.url, { hrefRe: src.hrefRe, anyRow: src.anyRow, docs: src.docs });
+        items = src.kind === 'rss' ? parseRss(page.text) : src.kind === 'civic' ? parseCivicBids(page.text, src.url) : src.kind === 'rka' ? parseRka(page.text, src.url) : src.kind === 'stream' ? parseAccordion(page.text, src.url, { near: src.near }) : parseLinks(page.text, src.url, { hrefRe: src.hrefRe, anyRow: src.anyRow, docs: src.docs });
         if (src.kind === 'civic' && !items.length) items = parseLinks(page.text, src.url, {});   /* a CivicPlus page laid out differently */
         if (!items.length && src.kind === 'rss' && src.html) {   /* feed empty or switched off: the listing page */
           await new Promise(r => setTimeout(r, opts.pauseMs != null ? opts.pauseMs : PAUSE_MS));
@@ -601,4 +622,4 @@ exports.runAll = runAll;
 exports.SOURCES = SOURCES;
 /* patch BW */
 exports.testRead = testRead; exports.samKey = samKey; exports.samKeySet = samKeySet; exports.samTest = samTest; exports.cleanCustom = cleanCustom; exports.customSources = customSources; exports.samSettings = samSettings; exports.SAM_DEFAULT = SAM_DEFAULT; exports.urlOk = urlOk;
-exports._test = { BF, parseAccordion, samRun, samRecord, safeRe, urlOk, testRead, cleanCustom, customSources, chiDay, parseLinks, parseRss, parseCivicBids, robotsAllows, matchWords, toRecord, firstDue, numberOf, bcRecord, bcRun, seal, unseal, expired, UA };
+exports._test = { parseRka, BF, parseAccordion, samRun, samRecord, safeRe, urlOk, testRead, cleanCustom, customSources, chiDay, parseLinks, parseRss, parseCivicBids, robotsAllows, matchWords, toRecord, firstDue, numberOf, bcRecord, bcRun, seal, unseal, expired, UA };

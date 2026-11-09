@@ -1047,6 +1047,35 @@ async function processEventCore(evt, opts){
   }
   return bidPath(mail, opts);
 }
+/* RADIUS: leads farther than settings.maxMiles (default 300) from Memphis are not made */
+const MEM = [35.1495, -90.0490], KV_GEO = 'gc_geo_places';
+function miles(a, b){ const R = 3958.8, r = x => x * Math.PI / 180, dLat = r(b[0] - a[0]), dLng = r(b[1] - a[1]); const h = Math.sin(dLat / 2) ** 2 + Math.cos(r(a[0])) * Math.cos(r(b[0])) * Math.sin(dLng / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(h)); }
+async function placeOf(L, cache){
+  const zip = s(L.zip).slice(0, 5), city = s(L.city).replace(/\b(county|parish)\b/i, '').trim(), st = s(L.state).toUpperCase().slice(0, 2);
+  const key = /^\d{5}$/.test(zip) ? 'z:' + zip : (city && /^[A-Z]{2}$/.test(st) ? 'c:' + low(city) + ',' + st : (/^[A-Z]{2}$/.test(st) ? '' : ''));
+  if (!key) return null;
+  if (cache[key] !== undefined) return cache[key];
+  const q = key[0] === 'z' ? 'postalcode=' + zip : 'city=' + encodeURIComponent(city) + '&state=' + encodeURIComponent(st);
+  try { const ac = new AbortController(); const tm = setTimeout(() => ac.abort(), 6000);
+    const r = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=us&' + q, { headers: { 'User-Agent': 'GrayCoLeads/1.0 (+https://crm.grayco-cs.com; leads@grayco-cs.com)' }, signal: ac.signal }); clearTimeout(tm);
+    const j = r.ok ? await r.json() : []; const p = Array.isArray(j) && j[0] ? [Number(j[0].lat), Number(j[0].lon)] : null;
+    cache[key] = p && isFinite(p[0]) && isFinite(p[1]) ? p : null; cache.__new = true; return cache[key];
+  } catch (e) { return null; }
+}
+async function radiusGate(leads, settings){
+  const max = settings && settings.maxMiles != null && settings.maxMiles !== '' ? Number(settings.maxMiles) : 300;
+  if (!(max > 0)) return { leads: leads, dropped: [] };
+  let cache = {}; try { cache = Object.assign({}, (dbReady() && await kvGet(KV_GEO)) || {}); } catch (e) {}
+  const keep = [], dropped = [];
+  for (const L of arr(leads).slice(0, 20)) {
+    const p = await placeOf(L, cache);
+    if (!p) { keep.push(L); continue; }   /* where it is cannot be told: kept */
+    const d = Math.round(miles(MEM, p));
+    if (d > max) dropped.push({ title: s(L.project_name || L.title).slice(0, 120), where: [s(L.city), s(L.state)].filter(Boolean).join(', '), miles: d }); else { L.milesFromMemphis = d; keep.push(L); }
+  }
+  if (cache.__new) { delete cache.__new; try { if (dbReady()) await kvPut(KV_GEO, cache); } catch (e) {} }
+  return { leads: keep, dropped: dropped };
+}
 /*LEADPASTE*/ async function bidPath(mail, opts){
   opts = opts || {};
   const links = linksOf(mail), hint = sourceHint(mail, links);
@@ -1056,6 +1085,7 @@ async function processEventCore(evt, opts){
   /* patch BIDFILTER: a bid NOTICE (a public solicitation / a bid board telling of new projects) is held to the same construction
      gate as the public bid watcher; a GC's own invitation to bid (invitation, gc_direct, addendum …) is always construction */
   if (ai.ok) { const g = noticeGate(ai, dbReady() ? await kvGet(KV_SET).catch(() => null) : null); if (g.dropped) { ai.leads = g.leads; if (!ai.leads.length) return { status: 200, body: { ok: true, ignored: 'not construction work', skipped: g.dropped } }; } }
+  /*RADIUS*/ if (ai.ok && ai.leads.length) { const rg = await radiusGate(ai.leads, dbReady() ? await kvGet(KV_SET).catch(() => null) : null); if (rg.dropped.length) { ai.leads = rg.leads; if (!ai.leads.length) return { status: 200, body: { ok: true, ignored: 'too far from Memphis', skipped: rg.dropped } }; } }
   if (!ai.ok && !pdfs && !hint && !BID_WORDS.test(mail.subject + ' ' + mail.text.slice(0, 2000))) return { status: 200, body: { ok: true, ignored: 'not a bid opportunity (not read by the AI)' } };
   /* the files, then the e-mail itself as a text document */
   const stored = [];
@@ -1396,6 +1426,7 @@ const DEFAULT_SETTINGS = {
   exclude: BF.merge(['vehicle', 'truck', 'automobile', 'software', 'laptop', 'computer', 'it services', 'telecommunication', 'janitorial', 'custodial', 'uniform', 'food', 'catering',
     'fuel', 'lobbying', 'audit', 'consultant', 'consulting services', 'legal services', 'staffing', 'insurance broker', 'printing services', 'printing', 'mowing', 'lawn care',
     'medical', 'pharmaceutical', 'pharmacy', 'office supplies', 'textbook', 'furniture', 'bus', 'tires', 'ammunition', 'firearms'], BF.EXCLUDE),
+  maxMiles: 300,   /* RADIUS (owner 11/9): leads within 300 miles of Memphis; 0 = no limit */
   allBids: true,   /* patch BW + BIDFILTER: "All construction bids, any trade" — no keyword needed, but the construction gate (_lib/bid-filter.js) always applies */
   sources: {},
   /* LA / EST4: "Senior Estimator" (Leads ⚙) — empty: the one person with the Estimator role (_lib/estimator.js) */
@@ -1562,6 +1593,11 @@ exports.handler = async function(event){
     if (!text && !url) return J(400, { error: 'Paste an e-mail or a web address.' }, C);
     if (url) {
       if (!/^https?:\/\/[^\s"'<>]{4,500}$/i.test(url)) return J(400, { error: 'That web address does not look right.' }, C);
+      /* RKAROOM: a site whose robots.txt says Content-Signal ai-input=no is never fed to the AI reader (or one that disallows all) */
+      try { const ro = new URL(url).origin + '/robots.txt', rr = await fetch(ro, { headers: { 'User-Agent': 'GrayCoLeads/1.0' } });
+        if (rr.ok) { const rt = await rr.text(); const star = (rt.split(/\n(?=\s*user-agent\s*:)/i).find(g => /user-agent\s*:\s*\*/i.test(g)) || '');
+          if (/content-signal\s*:[^\n]*ai-input\s*=\s*no/i.test(star)) return J(200, { ok: false, error: 'That website asks not to be read by AI tools. GrayCo watches it with a plain reader instead (ask Claude to add it to the morning bid scan), or type the project into a new lead by hand.' }, C);
+          if (/^\s*disallow\s*:\s*\/\s*$/im.test(star)) return J(200, { ok: false, error: 'That website does not allow automated reading. Type the project into a new lead by hand.' }, C); } } catch (e) {}
       try { const ac = new AbortController(); const tm = setTimeout(() => ac.abort(), 12000);
         const r = await fetch(url, { headers: { 'User-Agent': 'GrayCoLeads/1.0 (+https://crm.grayco-cs.com)', Accept: 'text/html,text/plain,*/*' }, signal: ac.signal, redirect: 'follow' }); clearTimeout(tm);
         if (!r.ok) return J(200, { ok: false, error: 'The page answered ' + r.status + ' — it may need a sign-in. Copy its text and paste it instead.' }, C);
@@ -1812,7 +1848,7 @@ exports.backgroundHandler = async function(event){
 /* shared with bid-watch.js, and the test harness */
 exports._lib = { leadSigOf, liteList, KV_SIG, routeLead, releaseHolds, holdPick, env, s, low, arr, nowIso, sha256, sb, sbUrl, svcH, kvRead, kvGet, kvCas, kvPut, upsert, afterStore, flushPortal, portalApi, alertsApi, findMatch, normTitle, normCity, normNum, itemId, isoDay, hhmm, dueOf, guessType, boardOf,
   decodeEntities, htmlToText, DEFAULT_SETTINGS, KV, KV_SET, dbReady, sbKey, estimatorOf, isCommercial };
-exports._test = { bidPath, noticeGate, cleanupPick, CLEANUP_REASON, BF, bidsKind, knownSubs, repliesApi, unsortedBidsMail, fetchPlans, leadItem, isCommercial, estimatorOf, subBidFromEmail, portalJobs, KV_SUBBIDS, svixOk, verified, forBids, forLeads, leadAddrs, forOrders, orderAddrs, otherInbox, ownOrAuto, linksOf, sourceHint, recordsFrom, extract, readMail, processEvent, applyAct, upsert, findMatch, trim, handoffSig, staffAuth, cleanSettings, LEAD_TOOL, afterStore, flushPortal, kvTable, resetKvTable: () => { KVT = null; } };
+exports._test = { radiusGate, miles, bidPath, noticeGate, cleanupPick, CLEANUP_REASON, BF, bidsKind, knownSubs, repliesApi, unsortedBidsMail, fetchPlans, leadItem, isCommercial, estimatorOf, subBidFromEmail, portalJobs, KV_SUBBIDS, svixOk, verified, forBids, forLeads, leadAddrs, forOrders, orderAddrs, otherInbox, ownOrAuto, linksOf, sourceHint, recordsFrom, extract, readMail, processEvent, applyAct, upsert, findMatch, trim, handoffSig, staffAuth, cleanSettings, LEAD_TOOL, afterStore, flushPortal, kvTable, resetKvTable: () => { KVT = null; } };
 /* patch WEB: website-intake.js keeps an applicant's résumé in crm-files the same way */
 exports._lib.storeFile = storeFile;
 exports._lib.handOffJson = function(obj){ return handOff(JSON.stringify(obj)); };   /* patch SUBINV: mail-all-sync → the office@ mailbox reader in the background */
