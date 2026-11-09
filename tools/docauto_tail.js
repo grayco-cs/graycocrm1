@@ -42,6 +42,15 @@ function papers(pid){ return setOf(pid).then(function(ids){ return rank(ids).map
 /* the job's other customer papers: sent by a person with one tap (✍️ Send) — end-of-job papers, notices */
 function others(pid){ return setOf(pid).then(function(ids){ var a = rank(ids); return ids.filter(function(id){ return a.indexOf(id) < 0; }).map(byId).filter(function(b){ return b && b.clientFacing && !NEVER.test(b.name + ' ' + b.id + ' ' + (b.category || '')); }); }); }
 function loadPdfLib(){ if (W.html2pdf) return Promise.resolve(true); return new Promise(function(res){ var x = D.createElement('script'); x.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js'; x.onload = function(){ res(!!W.html2pdf); }; x.onerror = function(){ res(false); }; D.head.appendChild(x); }); }
+/* EPAPAM: Lead 01 goes with the EPA "Renovate Right" booklet stapled on (pdf-lib); if that fails, the form alone */
+async function withPamphlet(blob){
+  try {
+    if (!W.PDFLib) await new Promise(function(res, rej){ var x = D.createElement('script'); x.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js'; x.onload = res; x.onerror = rej; D.head.appendChild(x); });
+    var P = W.PDFLib.PDFDocument, out = await P.load(await blob.arrayBuffer()), pam = await P.load(await (await W.fetch('/epa-renovate-right.pdf')).arrayBuffer());
+    (await out.copyPages(pam, pam.getPageIndices())).forEach(function(pg){ out.addPage(pg); });
+    return new Blob([await out.save()], { type: 'application/pdf' });
+  } catch (e) { return blob; }
+}
 async function fileOf(r, name){
   var safe = name.replace(/[\\/:*?"<>|]+/g, '-').slice(0, 100);
   try {
@@ -49,7 +58,7 @@ async function fileOf(r, name){
       var box = D.createElement('div'); box.id = 'gcda-hold'; box.style.cssText = 'position:fixed;left:-9999px;top:0;width:800px;background:#fff';
       box.innerHTML = W._gcPdfHolderHtml ? W._gcPdfHolderHtml(r.page, '#gcda-hold') : r.body; D.body.appendChild(box);
       try { var blob = await W.html2pdf().set({ margin: 10, image: { type: 'jpeg', quality: 0.92 }, html2canvas: { scale: 2, useCORS: true }, jsPDF: { unit: 'mm', format: 'letter' } }).from(box).outputPdf('blob');
-        if (blob && blob.size > 500) return new File([blob], safe + '.pdf', { type: 'application/pdf' }); } finally { box.remove(); }
+        if (blob && blob.size > 500) { if (r.t && r.t.id === 'gcb_lead_01') blob = await withPamphlet(blob); return new File([blob], safe + '.pdf', { type: 'application/pdf' }); } } finally { box.remove(); }
     }
   } catch (e) {}
   return new File([r.page], safe + '.html', { type: 'text/html' });

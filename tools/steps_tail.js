@@ -105,7 +105,7 @@ function html(p){
     h += '<details' + (d < n ? ' open' : '') + '><summary>' + esc(g[0]) + ' · ' + d + '/' + n + '</summary>';
     g[1].forEach(function(x){ var ok = st[x[0]];
       h += '<div class="st' + (ok ? ' done' : '') + '" data-step="' + esc(x[0]) + '"><input type="checkbox" data-js-done' + (ok ? ' checked' : '') + ' aria-label="Done"><div><div class="w">' + esc(x[1]) + '</div><div class="x">' + esc(x[2]) + '</div><div class="m">→ ' + esc(x[4]) + (ok ? ' · ✓ ' + esc(ok.by) + ' ' + esc(nice(ok.at)) : '') + '</div>'
-        + (x[3] ? '<button type="button" data-js-doc="' + esc(x[3]) + '">📄 Open the paper</button>' : '') + '</div></div>'; });
+        + (x[3] ? '<button type="button" data-js-doc="' + esc(x[3]) + '">📄 Open the paper</button>' : '') + (x[3] === 'gcb_lead_01' ? ' <a href="/epa-renovate-right.pdf" target="_blank" rel="noopener" style="display:inline-block;border:1px solid #cbd5e1;border-radius:7px;padding:3px 9px;font:600 12px Inter,Arial,sans-serif;color:#0f172a;text-decoration:none;margin-top:3px">📘 EPA pamphlet (print / give)</a>' : '')   /* EPAPAM */ + '</div></div>'; });
     h += '</details>';
   });
   return h;
