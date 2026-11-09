@@ -9,6 +9,7 @@ import { DEFAULT_CATALOG, CATEGORIES, UNITS, KINDS, findProduct, categoryName, C
 import { computeTakeoff, estimateCSV, lineItemsCSV, roomStats } from './takeoff.js';
 import { priceBookFromCSV } from './pricebook.js';
 import * as store from './store.js';
+import { installStudio } from './studio.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -44,6 +45,7 @@ const app = {
     const p = last && store.loadProject(last);
     this.plan = new Plan2D($('#plan'), this);
     this.bindUI();
+    installStudio(this);
     try { this.setCustomer(localStorage.getItem('pb.customer') === '1', true); } catch (e) { /* storage blocked */ }
     try { this.setTheme(localStorage.getItem('pb.theme') || 'dark', true); } catch (e) { this.setTheme('dark', true); }
     if (p) this.open(p); else this.open(fromTemplate('ranch', this.catalog), false);   // the sample is kept only once you change it
@@ -104,18 +106,18 @@ const app = {
 
   refresh(full = true, fast = false) {
     this.plan.draw();
-    if (fast) { if (this.view === '3d' || this.view === 'split') this.schedule3D(); return; }
+    if (fast) { if (this.view === '3d' || this.view === 'split' || this.view === 'studio') this.schedule3D(); return; }
     this.takeoff = this.takeoffNow();
     $('#totals').textContent = `${Math.round(this.takeoff.summary.floorArea).toLocaleString()} SF · ${this.takeoff.summary.roofSquares.toFixed(1)} SQ roof` + (this.customer ? '' : ` · ${money0(this.takeoff.totals.grand)}`);
     this.renderLevels();
     this.renderProps();
     this.updateUndo();
-    if (this.view === '3d' || this.view === 'split') this.schedule3D();
+    if (this.view === '3d' || this.view === 'split' || this.view === 'studio') this.schedule3D();
     if (this.view === 'estimate') this.renderEstimate();
   },
   schedule3D() {
     clearTimeout(this._t3);
-    this._t3 = setTimeout(() => this.view3d && this.view3d.rebuild(), 120);
+    this._t3 = setTimeout(() => { if (!this.view3d) return; this.view3d.rebuild(); if (this.view === 'studio') this.renderStudio(); }, 120);
   },
   updateUndo() { $('#btn-undo').disabled = !this.undo.length; $('#btn-redo').disabled = !this.redo.length; },
 
@@ -271,7 +273,7 @@ const app = {
     $$('#menu-export button').forEach(b => b.addEventListener('click', () => this.exportAs(b.dataset.exp)));
     $('#modal-x').addEventListener('click', () => this.closeModal());
     $('#modal').addEventListener('click', e => { if (e.target.id === 'modal') this.closeModal(); });
-    $('#pick-cat').innerHTML = '<option value="">All products</option>' + CATEGORIES.map(([id, n]) => `<option value="${id}">${esc(n)}</option>`).join('');
+    $('#pick-cat').innerHTML = '<option value="">All products</option>' + CATEGORIES.filter(c => c[0] !== 'structure').map(([id, n]) => `<option value="${id}">${esc(n)}</option>`).join('');
     $('#pick-cat').addEventListener('change', () => this.renderPicker());
     $('#pick-q').addEventListener('input', () => this.renderPicker());
     $('#pick-brand').addEventListener('change', () => this.renderPicker());
@@ -343,15 +345,22 @@ const app = {
     const stage = $('#stage');
     stage.classList.toggle('split', v === 'split');
     $('#plan-pane').hidden = !(v === 'plan' || v === 'split');
-    $('#view-pane').hidden = !(v === '3d' || v === 'split');
+    $('#view-pane').hidden = !(v === '3d' || v === 'split' || v === 'studio');
     $('#est-pane').hidden = v !== 'estimate';
-    $('.left').style.display = v === 'estimate' ? 'none' : '';
-    $('.right').style.display = v === 'estimate' ? 'none' : '';
+    const full = v === 'estimate' || v === 'studio';
+    $('.left').style.display = full ? 'none' : '';
+    $('.right').style.display = full ? 'none' : '';
+    stage.classList.toggle('studio', v === 'studio');
     this.plan.resize();
-    if (v === '3d' || v === 'split') {
+    if (v !== 'studio' && this.closeStudio) this.closeStudio();
+    if (v === '3d' || v === 'split' || v === 'studio') {
       const first = !this.view3d;
       const v3 = await this.load3D();
-      if (v3) { v3.visible = true; v3.resize(); v3.rebuild(); if (first || !this._fitted3d) { v3.fit(); this._fitted3d = true; } this.renderLevelSelect(); }
+      if (v3) {
+        v3.visible = true; v3.resize();
+        if (v === 'studio') { if (v3.walk) { v3.toggleWalk(false); this.onWalk(false); } this.openStudio(); }
+        else { v3.rebuild(); if (first || !this._fitted3d) { v3.fit(); this._fitted3d = true; } this.renderLevelSelect(); }
+      }
     } else if (this.view3d) this.view3d.visible = false;
     if (v === 'estimate') this.renderEstimate();
   },
@@ -462,6 +471,7 @@ const app = {
 
   // 🏗 Make 3D: open the 3D view and watch the model build itself.
   async make3D() {
+    if (this.view === 'studio') { const b = $('#st-play'); if (b) b.click(); return; }
     if (this.view !== '3d' && this.view !== 'split') await this.setView('3d');
     const v = this.view3d; if (!v) return;
     if (v.walk) { v.toggleWalk(false); $('#v-walk').classList.remove('on'); }

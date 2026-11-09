@@ -38,6 +38,17 @@ What's next is in [ROADMAP.md](ROADMAP.md).
 - 3D: soft studio lighting with reflections, sky and haze, rounded furniture and cabinets, glossy stone counters, glass that reflects, and real-looking surfaces drawn in each product's own color: wood planks, tile, hex mosaic, carpet, concrete, brick, block, stone, lap siding, board & batten, shakes, stucco, metal panels, shingles, standing seam, clay tile, slate, grass, mulch, rock, pavers, flagstone, decking (`js/surfaces.js`). A picture added in the catalog replaces the drawn surface.
 - **✦ Holo** shows the model as glowing lines and glass on a dark grid (products and openings in amber). **⟳ Turntable** turns the model slowly. Camera presets and double-clicking a piece glide the camera there.
 
+## Studio: systems, budget and build timeline
+Click **Studio** in the top bar. The model is shown the way it gets built, on a dark stage with the plan drawn as a blueprint underneath.
+- **Left:** the job total, $ / SF, area, concrete (CY), steel (tons) or slab rebar, studs, and every building system with its cost: sitework + demo, foundations, underground plumbing, rebar + vapor, slab, structural steel or wall framing, joists + deck or trusses, roofing (+ RTUs), exterior framing / sheathing, envelope, windows / storefront, interior framing, HVAC, plumbing, electrical, fire sprinkler, drywall, ceilings, interior finishes, site + landscape. The eye shows or hides a system; clicking one lights it up and ghosts the rest.
+- **Right:** the picked system's line items (quantity, rate, amount), its share of the job and $ / SF. **Fly to it** frames it; **Show only this** hides the rest.
+- **Top:** Iso / Top / Front / Side views, a **cutaway** slider, and **Finished** (real materials, framing and pipes hidden), **Explode** (each step lifted apart), **Ortho** (flat camera), **Blueprint** and **Grid**.
+- **Bottom:** the 16-step timeline (01 Site Prep … 16 Site + Landscape). ▶ plays the build step by step while the camera circles; drag the slider or click a step; 0.5× – 4× speed; **In place** shows the dollars built so far. 🏗 Make 3D plays it too while Studio is open.
+- **Hover** any piece for its name and cost (W16×31 girder, 2×6 studs @ 16″, 4″ PVC building drain …).
+- Structure is figured from the drawing for **new work only** (existing walls show grey and are not priced): footings under new exterior walls, a 4″ slab under new rooms, studs at 16″ around every opening with headers, a steel grid (HSS columns, W girders sized by span, W12 edge beams, open-web joists, metal deck, RTUs) for commercial jobs or trusses at 24″ for houses, ducts to every room, a circuit and light per room, sprinklers every 12′ (commercial), and a waste / supply / vent line to every fixture. **Structure** picks wood or steel (Auto: steel for commercial jobs).
+- **Unit rates…** sets the installed cost of each of those items for the job (they start as placeholders). Tick **Include structure, MEP & site in the estimate** to put those lines in the estimate (category "Structure, MEP & site"); the estimate total then matches Studio's.
+- The customer view hides every dollar in Studio, including the hover labels.
+
 ## 3D: build, edit, walk
 - **🏗 Make 3D** animates the build. **▶ Build** replays it.
 - **Edit in 3D:** click a piece to select it (it lights up blue), then drag it: furniture and fixtures slide across the floor, doors and windows slide along their wall, walls move square to themselves (joined corners follow). Q / E turn a piece, Delete removes it, and the panel on the right edits everything else. The 2D plan and the estimate follow.
@@ -104,9 +115,12 @@ Each project's estimate is priced from **your catalog prices** (the default) or 
 | `js/view3d.js` | The 3D scene (Three.js), walk-through, picking, picture and .glb export |
 | `js/store.js` | Saving in the browser, file download / upload |
 | `js/app.js` | Panels, picker, properties, estimate screen, projects, catalog editor, print |
+| `js/systems.js` | Construction systems: structure, MEP and site quantities from the drawing, unit rates, the 16 build steps, and the budget by system |
+| `js/studio3d.js`, `js/studio.js` | Studio: the systems drawn in 3D (x-ray, ghost, explode, cutaway, timeline, hover labels) and its panels |
 | `js/surfaces.js` | Drawn surfaces for the 3D view (wood, tile, brick, siding, shingles, grass …) in each product's color |
 | `vendor/` | Three.js r170 and its add-ons in `vendor/addons/` (orbit controls, studio light, rounded boxes, glow, .glb export; MIT, see `THREE-LICENSE.txt`), served from here so it works without the internet |
 | `tests/math.test.js` | `node planbuilder/tests/math.test.js` — geometry, roof, takeoff and CSV numbers |
 | `tests/features.smoke.cjs` | Browser test of existing + addition, styles, furnish, Make 3D, before / after, walk, entered estimate, customer view, renditions, 3D drag (same way to run as below) |
+| `tests/studio.smoke.cjs` | Browser test of Studio: budget, picking a system, timeline, explode / ortho / finished, cutaway, hover, customer view (same way to run) |
 | `tests/save.smoke.cjs` | Browser test of saving to the computer, Done – save & remove, reopening a job (with its custom products, photos, renditions), versions, the note after saving, and the weekly clean-up (same way to run) |
 | `tests/ui.smoke.cjs` | Browser test that draws with every tool: start `python3 -m http.server 8765` in the repo, then `NODE_PATH=$(npm root -g) node planbuilder/tests/ui.smoke.cjs` |

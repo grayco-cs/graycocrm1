@@ -1,12 +1,13 @@
 // Unit tests for the PlanBuilder math: node planbuilder/tests/math.test.js  (no browser, no network)
 import assert from 'assert';
 import { fmtFtIn, parseFtIn, polyArea, roofMeasure, wallPieces, pitchFactor } from '../js/geom.js';
-import { fromTemplate, newProject, addWall, addOpening, addRoom, rectPts, splitWall, markExterior, swingDoorsIntoRooms } from '../js/model.js';
+import { fromTemplate, newProject, wallsForRoom, addWall, addOpening, addRoom, rectPts, splitWall, markExterior, swingDoorsIntoRooms } from '../js/model.js';
 import { DEFAULT_CATALOG, catalogFromCSV, toCSV, CSV_COLUMNS } from '../js/catalog.js';
 import { computeTakeoff, roundQty, convert, roomStats, lineItemsCSV } from '../js/takeoff.js';
 import { priceBookFromCSV, convertUnit, parseEstimateText } from '../js/pricebook.js';
 import { STYLES, styleProductIds, applyStyle, autoFurnish, roomType } from '../js/styles.js';
 import { setDrawPhase } from '../js/model.js';
+import { buildSystems, analyzeSystems, structureType, systemOfLine, isFixture } from '../js/systems.js';
 
 let n = 0; const t = (name, fn) => { fn(); n++; };
 const near = (a, b, eps = 1e-6, msg) => assert.ok(Math.abs(a - b) < eps, `${msg || ''} ${a} ≈ ${b}`);
@@ -198,6 +199,40 @@ t('existing work is not priced; demolition is; an addition gets its own roof', (
   applyStyle(p, 'farmhouse', { kind: 'new' }, DEFAULT_CATALOG);
   assert.equal(p.roofs.length, 1); assert.equal(p.roofs[0].phase, 'new'); near(p.roofs[0].w, 12); assert.equal(p.roofs[0].layers, 0);
   assert.ok(!computeTakeoff(p, DEFAULT_CATALOG).lines.some(l => l.productId === 'rf-tearoff'), 'no tear-off on a new addition roof');
+});
+
+t('systems: a 40x30 slab, footings and wood framing from the drawing', () => {
+  const p = newProject('Box'); const L = p.levels[0];
+  addRoom(L, rectPts(0, 0, 40, 30), { name: 'Shop' }); wallsForRoom(L, rectPts(0, 0, 40, 30), p.settings, true); markExterior(L, p.settings);
+  assert.equal(structureType(p), 'wood');
+  const S = buildSystems(p, DEFAULT_CATALOG);
+  near(S.stat.slabSF, 1200);
+  const slab = S.lines.find(l => l.key === 'slab'); near(slab.qty, Math.round(1200 * (4 / 12) / 27 * 1.05 * 100) / 100, 1e-9, 'slab CY');
+  const ft = S.lines.find(l => l.key === 'footing'); near(ft.qty, Math.round(140 * 2 / 27 * 100) / 100, 1e-9, 'footing CY');
+  const fr = S.lines.find(l => l.key === 'woodExt'); near(fr.qty, 140 * L.height, 1e-6, 'framed wall SF');
+  assert.ok(S.stat.studs > 140 / (16 / 12), 'studs ' + S.stat.studs);
+  assert.ok(!S.lines.some(l => l.key === 'steel'));
+});
+t('systems: commercial is steel; budget adds up; existing work is not priced', () => {
+  const p = fromTemplate('office4056', DEFAULT_CATALOG);
+  assert.equal(structureType(p), 'steel');
+  const T = computeTakeoff(p, DEFAULT_CATALOG), A = analyzeSystems(p, DEFAULT_CATALOG, T);
+  assert.ok(A.stat.steelTons > 1); assert.ok(A.members.some(m => m.steelPart === 'col'));
+  near(A.total, A.systems.reduce((a, s) => a + s.total, 0), 1e-6);
+  p.settings.includeStructure = true;
+  near(computeTakeoff(p, DEFAULT_CATALOG).totals.grand, A.total, 0.01, 'estimate with structure = Studio total');
+  assert.ok(computeTakeoff(p, DEFAULT_CATALOG).lines.some(l => l.category === 'structure'));
+  p.levels.forEach(l => ['walls', 'rooms', 'items', 'openings'].forEach(k => l[k].forEach(o => { o.phase = 'existing'; }))); p.roofs.forEach(r => { r.phase = 'existing'; });
+  const E = buildSystems(p, DEFAULT_CATALOG);
+  assert.equal(E.lines.length, 0, 'nothing priced when it is all existing');
+  assert.ok(E.members.some(m => m.sys === 'exist'));
+});
+t('systems: estimate lines sort into systems', () => {
+  assert.equal(systemOfLine({ category: 'roofing', name: 'Shingles' }), 'roof');
+  assert.equal(systemOfLine({ category: 'paint', name: 'Paint – Ceilings' }), 'ceil');
+  assert.equal(systemOfLine({ category: 'labor', productId: 'lb-demo-wall', name: 'Demo wall' }), 'site');
+  assert.equal(systemOfLine({ category: 'structure', name: 'x' }), null);
+  assert.ok(isFixture({ id: 'cm-ada-wc', name: 'ADA toilet', category: 'commercial' }));
 });
 
 console.log(`PlanBuilder math: ${n} tests passed`);

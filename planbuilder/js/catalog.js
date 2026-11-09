@@ -16,7 +16,7 @@ export const CATEGORIES = [
   ['trim', 'Trim & molding'], ['roofing', 'Roofing'], ['door', 'Doors'], ['window', 'Windows'],
   ['cabinet', 'Cabinets'], ['countertop', 'Countertops'], ['tile', 'Wall tile & backsplash'], ['plumbing', 'Plumbing fixtures'], ['appliance', 'Appliances'],
   ['electrical', 'Electrical'], ['landscape', 'Landscape'], ['hardscape', 'Patios, walks & drives'], ['outdoor', 'Decks, fences & outdoor'],
-  ['furniture', 'Furniture'], ['commercial', 'Commercial'], ['labor', 'Labor & fees'], ['other', 'Other'],
+  ['furniture', 'Furniture'], ['commercial', 'Commercial'], ['structure', 'Structure, MEP & site'], ['labor', 'Labor & fees'], ['other', 'Other'],
 ];
 export const UNITS = ['EA', 'SF', 'SY', 'LF', 'SQ', 'GAL', 'SHEET', 'CY', 'HR', 'LS'];
 // Categories that finish the outside of a wall, and categories that make an area an outdoor one.

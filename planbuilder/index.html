@@ -24,6 +24,7 @@
       <button data-view="plan" class="on">2D Plan</button>
       <button data-view="split">Split</button>
       <button data-view="3d">3D</button>
+      <button data-view="studio" title="Construction systems, budget and build timeline">Studio</button>
       <button data-view="estimate">Estimate</button>
     </nav>
     <div class="spacer"></div>
@@ -118,6 +119,31 @@
           </div>
         </div>
         <div class="pane est-pane" id="est-pane" hidden></div>
+        <div id="studio" class="studio" hidden>
+          <aside class="st-left st-glass" id="st-left" aria-label="Budget and systems"></aside>
+          <div class="st-top st-glass">
+            <span class="st-lab">View</span>
+            <div class="st-seg" id="st-views"><button data-p="iso" class="on">Iso</button><button data-p="top">Top</button><button data-p="front">Front</button><button data-p="right">Side</button></div>
+            <span class="st-div"></span>
+            <span class="st-lab">Cutaway</span><input type="range" id="st-cut" class="st-range" min="5" max="100" value="100" aria-label="Cutaway height" style="--p:100%">
+            <span class="st-div"></span>
+            <div class="st-seg" id="st-modes"><button data-m="finished" class="st-mode">Finished</button><button data-m="explode" class="st-mode">Explode</button><button data-m="ortho" class="st-mode">Ortho</button><button data-m="blueprint" class="st-mode on">Blueprint</button><button data-m="grid" class="st-mode">Grid</button></div>
+          </div>
+          <aside class="st-drawer st-glass" id="st-drawer" hidden></aside>
+          <div class="st-time st-glass">
+            <div class="st-trow">
+              <button id="st-play" class="st-play" aria-label="Play the build"></button>
+              <div class="st-meta"><small>Step</small><b id="st-step">16</b></div>
+              <div class="st-meta wide"><small>Phase</small><b id="st-phase"></b></div>
+              <input type="range" id="st-range" class="st-range grow" min="0" max="16" value="16" aria-label="Build step">
+              <span class="st-lab">Speed</span>
+              <div class="st-seg small" id="st-speed"><button data-s="0.5">0.5×</button><button data-s="1" class="on">1×</button><button data-s="2">2×</button><button data-s="4">4×</button></div>
+              <div class="st-meta end price-only"><small>In place <em id="st-inplace-pct"></em></small><b id="st-inplace"></b></div>
+            </div>
+            <div class="st-chips" id="st-chips"></div>
+          </div>
+          <div class="st-tip" id="st-tip" hidden></div>
+        </div>
         <div id="walk-hud" class="walk-hud" hidden></div>
         <div id="walk-pad" class="walk-pad" hidden>
           <button data-k="ArrowLeft" aria-label="Turn left">⟲</button><button data-k="KeyW" aria-label="Forward">▲</button><button data-k="ArrowRight" aria-label="Turn right">⟳</button>

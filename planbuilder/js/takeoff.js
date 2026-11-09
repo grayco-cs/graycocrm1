@@ -3,6 +3,7 @@
 
 import { polyArea, polyPerimeter, centroid, pointInPoly, projectOnSeg, wallLength, wallPieces, wallHeight, openingArea, roofMeasure, ridgeAxis } from './geom.js';
 import { findProduct, categoryName } from './catalog.js';
+import { structureEstimateLines } from './systems.js';
 import { normCode, convertUnit } from './pricebook.js';
 
 const ph = o => (o && o.phase) || 'new';   // existing / new / demo
@@ -225,7 +226,9 @@ export function computeTakeoff(project, catalog, opts = {}) {
     if (own) warnings.push(`${own} line${own > 1 ? 's' : ''} use your catalog price: their product has no code, or the code is not in "${book.name}". Add codes in 📦 Catalog (Xactimate code column).`);
     if (!book.hasMaterial) warnings.push(`"${book.name}" has no Material column, so sales tax is figured only on lines priced from your catalog.`);
   }
-  const order = ['roofing', 'siding', 'masonry', 'window', 'door', 'drywall', 'paint', 'trim', 'flooring', 'tile', 'cabinet', 'countertop', 'plumbing', 'appliance', 'electrical', 'commercial', 'outdoor', 'hardscape', 'landscape', 'furniture', 'labor', 'other'];
+  // Structure, MEP and sitework figured from the drawing (Studio), when the job includes them
+  if (s.includeStructure) out.push(...structureEstimateLines(project, catalog));
+  const order = ['structure', 'roofing', 'siding', 'masonry', 'window', 'door', 'drywall', 'paint', 'trim', 'flooring', 'tile', 'cabinet', 'countertop', 'plumbing', 'appliance', 'electrical', 'commercial', 'outdoor', 'hardscape', 'landscape', 'furniture', 'labor', 'other'];
   out.sort((a, b) => (order.indexOf(a.category) - order.indexOf(b.category)) || a.name.localeCompare(b.name));
 
   const material = out.reduce((t, l) => t + l.material, 0);

@@ -31,11 +31,11 @@ The first build is the foundation: drawing, levels, 3D, catalog and estimate all
 
 ## Phase 5: building detail
 - Stairs tool, cabinet runs that fill a wall, countertop SF, tile per wall (backsplash, tub / shower walls).
-- Framing takeoff: studs, plates, headers, sheathing, house wrap, insulation; trusses / rafters; foundation and concrete.
+- Framing takeoff: studs, plates, headers, sheathing, house wrap, insulation; trusses / rafters; foundation and concrete. *(First pass done in Studio; next: hip / valley framing, point loads, rebar by weight, beam sizing by load.)*
 - Electrical, plumbing and HVAC symbols with counts.
 
 ## Done since the first build
-- Existing / new / demolish phases with before / after; tracing over a picture; architectural styles with roof framing; auto-furnish and decor; renditions; room and house photos; walk-through with walls, room cards and lights; editing in 3D; damage marking; entered estimates with GrayCo price memory; customer view with no prices.
+- Existing / new / demolish phases with before / after; tracing over a picture; architectural styles with roof framing; auto-furnish and decor; renditions; room and house photos; walk-through with walls, room cards and lights; editing in 3D; damage marking; entered estimates with GrayCo price memory; customer view with no prices. Studio: systems budget, x-ray / explode / cutaway, 16-step build timeline, structure and MEP figured from the drawing.
 
 ## Phase 6: selling with it
 - Customers saving their own renditions from the GrayCo Portal (needs the shared database of Phase 2).

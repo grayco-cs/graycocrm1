@@ -10,6 +10,7 @@ import { surfaceKind, surfaceSpec, surfaceCanvas } from './surfaces.js';
 import { wallLength, wallPieces, wallHeight, wallOpenings, pointInPoly, roofTriangles, bbox, lerp, projectOnSeg, polyArea, centroid, ridgeAxis as ridgeAxisOf } from './geom.js';
 import { findProduct } from './catalog.js';
 import { FLOOR_DEPTH, wallsAtPoint } from './model.js';
+import { StudioScene } from './studio3d.js';
 
 function shade(hex, k) {
   const n = parseInt(String(hex).replace('#', ''), 16); if (!isFinite(n)) return hex;
@@ -51,7 +52,7 @@ export class View3D {
     this.root = new THREE.Group(); this.scene.add(this.root);
     this.texCache = new Map();
     this.matCache = new Map();
-    this.opts = { showRoof: true, upTo: -1, cutaway: false, ceilings: false, phaseView: 'after', highlightNew: false, damage: false, holo: false, spin: false };
+    this.opts = { showRoof: true, upTo: -1, cutaway: false, ceilings: false, phaseView: 'after', highlightNew: false, damage: false, holo: false, spin: false, studio: false };
     this._lights();
     this._ground();
     this.ray = new THREE.Raycaster();
@@ -107,7 +108,9 @@ export class View3D {
     if (r.width < 2 || r.height < 2) return;
     this.renderer.setSize(r.width, r.height, false);
     this.renderer.domElement.style.width = r.width + 'px'; this.renderer.domElement.style.height = r.height + 'px';
-    this.camera.aspect = r.width / r.height; this.camera.updateProjectionMatrix();
+    if (this.camera.isOrthographicCamera) { const h = this.camera.userData.h || 40, a = r.width / r.height; Object.assign(this.camera, { left: -h * a, right: h * a, top: h, bottom: -h }); }
+    else this.camera.aspect = r.width / r.height;
+    this.camera.updateProjectionMatrix();
     if (this.composer) { this.composer.setSize(r.width, r.height); }
     this.render();
   }
@@ -150,6 +153,40 @@ export class View3D {
       o.add(e);
     });
   }
+  // Studio: dark stage, no sky or grass, systems drawn by StudioScene.
+  setStudio(on) {
+    this.opts.studio = !!on;
+    if (!this.studio) this.studio = new StudioScene(this);
+    if (on && this.opts.holo) { this.opts.holo = false; }
+    this.sky.visible = !on; this.ground.visible = !on && !this.opts.holo;
+    this.scene.background = on ? new THREE.Color('#0b0d11') : null;
+    this.scene.fog.color.set(on ? '#0b0d11' : this.opts.holo ? '#06101f' : '#d9e4ee');
+    this.scene.fog.near = on ? 400 : 260;
+    this.grid.material.opacity = 0;
+    this.scene.environmentIntensity = on ? 0.75 : 0.55;
+    if (!on) { this.renderer.clippingPlanes = []; if (this.ortho) this.setOrtho(false); }
+    this.rebuild();
+  }
+  // Flat (orthographic) camera, for measured-looking views.
+  setOrtho(on) {
+    const persp = this.persp || (this.persp = this.camera);
+    const t = this.controls.target, cur = this.camera;
+    if (on) {
+      const o = this.orthoCam || (this.orthoCam = new THREE.OrthographicCamera(-1, 1, 1, -1, -2000, 5000));
+      const d = cur.position.distanceTo(t), hh = d * Math.tan(THREE.MathUtils.degToRad(persp.fov / 2));
+      o.userData.h = hh; o.position.copy(cur.position); o.quaternion.copy(cur.quaternion); o.zoom = 1;
+      this.camera = o; this.ortho = true;
+    } else {
+      if (!this.ortho) return;
+      persp.position.copy(cur.position); persp.quaternion.copy(cur.quaternion);
+      const hh = cur.userData.h / (cur.zoom || 1), d = hh / Math.tan(THREE.MathUtils.degToRad(persp.fov / 2));
+      persp.position.copy(t).add(cur.position.clone().sub(t).normalize().multiplyScalar(d));
+      this.camera = persp; this.ortho = false;
+    }
+    this.controls.object = this.camera; this.controls.update();
+    this.resize();
+  }
+
   // Slowly turn the model like a showroom turntable.
   setSpin(on) { this.opts.spin = !!on; this.controls.autoRotate = !!on; this.controls.autoRotateSpeed = 0.7; this.render(); }
 
@@ -203,6 +240,11 @@ export class View3D {
     if (this._anim) this.stopBuild();
     this.root.traverse(o => { if (o.geometry) o.geometry.dispose(); });
     this.root.clear();
+    if (this.opts.studio) {   // Studio: the construction systems instead of the finished house
+      const A = this.app.studioAnalysis && this.app.studioAnalysis();
+      if (A) this.studio.build(A);
+      this.render(); return;
+    }
     const upTo = this.opts.upTo < 0 ? P.levels.length - 1 : Math.min(this.opts.upTo, P.levels.length - 1);
     P.levels.forEach((level, li) => {
       if (li > upTo) return;
@@ -262,6 +304,7 @@ export class View3D {
 
   // ---- selection highlight ----
   setSelection(sel, again) {
+    if (this.opts.studio) { this._sel = sel; return; }
     if (this._hl) this._hl.forEach(([o, m]) => { o.material = m; });
     this._hl = []; this._sel = sel;
     if (sel) {
@@ -688,8 +731,14 @@ export class View3D {
     sc.left = -r; sc.right = r; sc.top = r; sc.bottom = -r; sc.updateProjectionMatrix();
     this.sun.position.set(c.x - r * 0.8, c.y + r * 1.4, c.z + r * 0.6); this.sun.target.position.copy(c); this.sun.target.updateMatrixWorld();
   }
+  _modelBox() {
+    const box = new THREE.Box3();
+    if (this.opts.studio && this.studio && this.studio.groups.length) this.studio.groups.forEach(g => box.expandByObject(g));
+    else box.setFromObject(this.root);
+    return box;
+  }
   fit(smooth) {
-    const box = new THREE.Box3().setFromObject(this.root);
+    const box = this._modelBox();
     if (box.isEmpty()) { this.camera.position.set(40, 40, 60); this.controls.target.set(0, 0, 0); this.render(); return; }
     const c = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
     const r = Math.max(size.x, size.z, size.y * 1.5) * 0.9 + 10;
@@ -707,7 +756,7 @@ export class View3D {
     this.flyTo(c.clone().add(dir.multiplyScalar(r)), c, 800);
   }
   setPreset(name) {
-    const box = new THREE.Box3().setFromObject(this.root); if (box.isEmpty()) return;
+    const box = this._modelBox(); if (box.isEmpty()) return;
     const c = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
     const r = Math.max(size.x, size.z) * 1.1 + 10;
     const pos = { front: [0, size.y * 0.3, r], back: [0, size.y * 0.3, -r], left: [-r, size.y * 0.3, 0], right: [r, size.y * 0.3, 0], top: [0.01, r * 1.4, 0.01], iso: [r * 0.7, r * 0.7, r * 0.9] }[name] || [r, r, r];
@@ -720,7 +769,7 @@ export class View3D {
   _floorPoint(e, y) { this.ray.setFromCamera(this._ndc(e), this.camera); const p = new THREE.Vector3(); return this.ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -y), p) ? p : null; }
   _pDown(e) {
     this._down = { x: e.clientX, y: e.clientY };
-    if (this._anim || this.walk) return;
+    if (this._anim || this.walk || this.opts.studio) return;
     const sel = this.app.selection;
     if (!sel || !['item', 'opening', 'wall'].includes(sel.kind)) return;
     // the selected piece can be grabbed even when the roof or a wall is in front of it
@@ -736,7 +785,8 @@ export class View3D {
     this.renderer.domElement.setPointerCapture(e.pointerId);
   }
   _pMove(e) {
-    const d = this._drag; if (!d) return;
+    const d = this._drag;
+    if (!d) { if (this.opts.studio && this.app.studioHover) this.app.studioHover(e); return; }
     if (!d.active && Math.hypot(e.clientX - this._down.x, e.clientY - this._down.y) < 4) return;
     d.active = true;
     const p = this._floorPoint(e, d.y); if (!p) return;
@@ -769,6 +819,7 @@ export class View3D {
       if (h) this.walk.glide = { x: h.point.x, z: h.point.z };
       return;
     }
+    if (this.opts.studio) { if (this.app.studioClick) this.app.studioClick(e); return; }
     this.pick(e);
   }
 
