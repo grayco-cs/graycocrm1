@@ -96,6 +96,13 @@ function html(p){
       + (x.given ? '<span class="ok">✓ Given ' + esc(nice(x.given.on)) + ' (' + esc(x.given.how) + ')</span>' : '<span class="' + (x.over ? 'bad' : 'm') + '">' + (x.due ? (x.over ? 'OVERDUE — was due ' : 'Due ') + esc(nice(x.due)) : 'Due ' + esc(x.why) + (/before/.test(x.why) ? ' (add the start date)' : '')) + '</span>')
       + '<span style="margin-left:auto;display:flex;gap:6px"><a href="' + F + d[1] + '" download>📄 Form</a>' + (x.given ? '<button type="button" data-la="undo">Undo</button>' : '<button type="button" class="g" data-la="give">✓ Given</button>') + '</span></div>';
   });
+  /* COMPDOCS4: the forms that stay in the JOB FILE (not sent to the customer) — the owner's Nov 2026 package + the EPA's own forms */
+  var G = '/company-docs/7c2e9d41b8a05f63/', jf = [], lj = (pr === true && a.disturbsPaint) || !!a.leadFound;
+  if (lj) { jf.push(['02_RRP_Recordkeeping_Checklist.docx', 'RRP recordkeeping checklist (GrayCo) — fill in, keep 3 years']); jf.push(['EPA_RRP_Recordkeeping_Checklist.pdf', 'EPA recordkeeping checklist (official)']); }
+  if (lj && a.testKit) jf.push(['EPA_Test_Kit_Documentation_Form.pdf', 'EPA test kit documentation form — to the owner within 30 days']);
+  if (lj && a.childOccupied) jf.push(['EPA_Renovation_Notice_and_Child-Occupied_Facility_Forms.pdf', 'EPA child-occupied facility / renovation notice forms']);
+  if (lj || a.asbFound) jf.push(['03_Health_Effects_Training_Lead_Asbestos_Mold.docx', 'Crew training: health effects of lead, asbestos and mold (before work)']);
+  if (jf.length) h += '<div class="sec">Job file — keep these (not for the customer)</div>' + jf.map(function(x){ return '<div class="p"><span>' + esc(x[1]) + '</span><span style="margin-left:auto"><a href="' + G + x[0] + '" target="_blank" rel="noopener">📄 Open</a></span></div>'; }).join('');
   return h;
 }
 function findBack(){ var m = D.querySelector('main'); if (!m) return null; var bs = m.getElementsByTagName('button'); for (var i = 0; i < bs.length && i < 80; i++) if (/^\s*←\s*All Projects\s*$/.test(bs[i].textContent || '')) return bs[i]; return null; }
