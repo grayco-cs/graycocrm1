@@ -260,7 +260,8 @@ async function request(body, who){
   const r = made || existing;
   if (!r) return { status: 200, out: { ok: true, nothing: true } };
   if (!made) return { status: 200, out: { ok: true, id: r.id, already: true, status: r.status } };
-  if (made.mailed) return { status: 200, out: { ok: true, id: r.id, queued: false, mailed: true } };   /* patch ESTPDF: the e-mail already went from the estimator; no second "please sign" e-mail */
+  if (made.mailed) return { status: 200, out: { ok: true, id: r.id, queued: false, mailed: true } };
+  if (body.direct === true && kind === 'doc') return { status: 200, out: { ok: true, id: r.id, direct: true, made: true } };   /*DOCAUTO*/   /* patch ESTPDF: the e-mail already went from the estimator; no second "please sign" e-mail */
   /* the e-mail asking the customer to sign → ✅ Approvals (owner rule) */
   let pm = pmFull(data, p); const to = custEmail(p), label = KINDS[kind];
   /* patch ESTIN: a GrayCo-template proposal goes to the job's (or its lead's) PM; no PM → the estimator who owns it; else the admins */
@@ -280,6 +281,28 @@ async function request(body, who){
     subject: 'Please review and sign: ' + T(title), html: html, attachments: [{ name: label + ' (in the customer portal)', kind: 'portal' }],
     meta: { signRequestId: r.id, kind: kind, amount: r.amount, refId: refId, fromPm: true, by: who.email } });
   return { status: q ? 200 : 502, out: { ok: !!q, id: r.id, queued: !!q } };
+}
+/*DOCAUTO*/ async function requestMany(body, who){
+  const pid = s(body.projectId); if (!ID_RE.test(pid)) return { status: 400, out: { ok: false, error: 'Open a job first.' } };
+  const items = arr(body.items).slice(0, 30), made = [], had = [];
+  for (const it of items) {
+    if (!it || !refPath(it.docRef)) continue;
+    const r = await request({ projectId: pid, kind: 'doc', refId: s(it.refId), title: it.title, docRef: it.docRef, docName: it.docName, note: clip(it.note, 300) || 'Please read it and sign that you got it.', direct: true }, who);
+    if (r.out && r.out.made) made.push({ id: r.out.id, title: clip(it.title, 120) }); else if (r.out && r.out.ok) had.push(s(r.out.id)); else return { status: r.status, out: r.out };
+  }
+  if (!made.length) return { status: 200, out: { ok: true, made: 0, already: had.length } };
+  const data = await jobData(true), p = core().findProject(data, pid), T = scrubber(p), pm = pmFull(data, p), to = custEmail(p);
+  if (body.quiet === true) return { status: 200, out: { ok: true, made: made.length, mailed: false } };
+  if (!okEmail(to)) {
+    await core().officeTodo('portal_sign_many_' + pid + '_' + made[0].id, '✍️ ' + made.length + ' paper' + (made.length === 1 ? '' : 's') + ' to sign in ' + (s(p.client) || 'the customer') + '\'s portal — ' + T(p.name), 'No customer e-mail on file. They wait in their GrayCo Portal (Home → ✍️ Papers to sign): ' + made.map(function(x){ return T(x.title); }).join(', ') + '. Call or text them the portal link.');
+    return { status: 200, out: { ok: true, made: made.length, mailed: false, noEmail: true } };
+  }
+  const html = '<p>Hi ' + esc(firstName(p.client) || 'there') + ',</p><p>Your papers for <b>' + esc(T(p.name)) + '</b> are ready in your GrayCo Portal:</p><ul>' + made.map(function(x){ return '<li>' + esc(T(x.title)) + '</li>'; }).join('') + '</ul>' +
+    '<p>Please read them and sign — it takes a minute, on your phone or computer. You get a copy of everything you sign.</p>' +
+    '<p style="text-align:center;margin:22px 0"><a href="' + core().LINK_PH + '" style="background:#D4A017;color:#0F1D2F;font-weight:bold;text-decoration:none;padding:13px 22px;border-radius:10px;display:inline-block">Review and sign</a></p>' +
+    '<p style="font-size:13px;color:#55626F">Questions? Call ' + esc(pm ? pm.name : 'us') + (pm && pm.phone ? ' at ' + esc(pm.phone) : '') + ' or the office at ' + OFFICE_PHONE + '.</p>';
+  const sent = await sendFromPm({ to: to, subject: (made.length === 1 ? 'Please review and sign: ' + T(made[0].title) : made.length + ' papers to review and sign'), html: html }, p, pm);
+  return { status: 200, out: { ok: true, made: made.length, mailed: !!sent.ok, mailError: sent.ok ? '' : sent.error } };
 }
 async function listFor(pid){
   const l = await readReqs(); if (!l) return { status: 503, out: { ok: false, error: 'Could not read the list just now.' } };
@@ -603,12 +626,13 @@ exports.handler = async function(event){
   if (typeof body !== 'object' || Array.isArray(body)) return reply(400, headers, { ok: false, error: 'Bad request' });
   const action = s(body.action || 'view');
 
-  if (action === 'request' || action === 'list' || action === 'void' || action === 'followups') {
+  if (action === 'request' || action === 'request-many' || action === 'list' || action === 'void' || action === 'followups') {
     const who = await gcStaffAuth(event);
     if (!who.ok) return reply(who.statusCode, headers, { ok: false, error: who.error });
     if (!svcKey()) return reply(500, headers, { ok: false, error: 'Server setting missing: SUPABASE_SERVICE_KEY.' });
     try {
       if (action === 'request') { const r = await request(body, who); return reply(r.status, headers, r.out); }
+      if (action === 'request-many') { const r = await requestMany(body, who); return reply(r.status, headers, r.out); }   /*DOCAUTO*/
       if (action === 'list') { const pid = s(body.projectId); if (!ID_RE.test(pid)) return reply(400, headers, { ok: false, error: 'Open a job first.' }); const r = await listFor(pid); return reply(r.status, headers, r.out); }
       if (action === 'void') { const r = await voidReq(s(body.id), who); return reply(r.status, headers, r.out); }
       if (!require('./_lib/staff-role.js').isAdmin(who)) return reply(403, headers, { ok: false, error: 'Admins only.' });
@@ -633,6 +657,6 @@ exports.handler = async function(event){
     return reply(r.status, headers, r.out);
   } catch (e) { return reply(500, headers, { ok: false, error: 'Something went wrong — please call GrayCo ' + OFFICE_PHONE + '.' }); }
 };
-exports._ps = { runFollowups: runFollowups, visible: visible, signedCopyPdf: signedCopyPdf, KEY: KEY, FU_KEY: FU_KEY, FU_DAYS: FU_DAYS, KINDS: KINDS, _reset: function(){ hits.clear(); writes.clear(); } };
+exports._ps = { requestMany: requestMany, request: request, runFollowups: runFollowups, visible: visible, signedCopyPdf: signedCopyPdf, KEY: KEY, FU_KEY: FU_KEY, FU_DAYS: FU_DAYS, KINDS: KINDS, _reset: function(){ hits.clear(); writes.clear(); } };
 
 /* LEGAL2-patch */
