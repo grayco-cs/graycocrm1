@@ -546,7 +546,8 @@ async function runAll(opts){
       if (page.status === 304) { st.why = 'no change since the last look'; st.parsed = prev.parsed || 0; st.etag = prev.etag; st.lastModified = prev.lastModified; st.ok = true; }
       else if (page.status === 200) {
         items = src.kind === 'rss' ? parseRss(page.text) : src.kind === 'civic' ? parseCivicBids(page.text, src.url) : src.kind === 'rka' ? parseRka(page.text, src.url) : src.kind === 'stream' ? parseAccordion(page.text, src.url, { near: src.near }) : parseLinks(page.text, src.url, { hrefRe: src.hrefRe, anyRow: src.anyRow, docs: src.docs });
-        if (src.kind === 'civic' && !items.length) items = parseLinks(page.text, src.url, {});   /* a CivicPlus page laid out differently */
+        if (src.kind === 'civic' && !items.length) items = parseLinks(page.text, src.url, {});
+        /*RSSPAGES*/ if (src.kind === 'rss' && src.html && items.length && !items.some(i => /bid/i.test(s(i.url) + ' ' + s(i.link)))) items = [];   /* the feed now lists the county's web pages, not bids (DeSoto 11/2026): read the Bids page instead */   /* a CivicPlus page laid out differently */
         if (!items.length && src.kind === 'rss' && src.html) {   /* feed empty or switched off: the listing page */
           await new Promise(r => setTimeout(r, opts.pauseMs != null ? opts.pauseMs : PAUSE_MS));
           const p2 = await get(src.html, {}, f); if (p2.status === 200) items = parseCivicBids(p2.text, src.html);
