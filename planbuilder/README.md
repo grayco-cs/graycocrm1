@@ -75,8 +75,14 @@ Each project's estimate is priced from **your catalog prices** (the default) or 
 - **Rounding:** each / sheets / gallons up to whole; squares up to the next ⅓ (bundle).
 - **Totals:** material + labor + tax on material = subtotal; overhead and profit are each a % of the subtotal.
 
-## Saving
-Projects and the catalog are saved in **this browser on this device** (autosave on every change, undo / redo up to 150 steps). **Export → Project file** backs a project up or moves it to another computer; **📁 Projects → Import** opens it. Shared saving through the CRM is the next phase (ROADMAP.md).
+## Saving: your computer, not the browser
+- **💾 Save ▾ → Save to computer** (Ctrl+S) writes the whole job to a file on your computer: drawing, levels, roofs, renditions, house and room photos, damage notes, estimate lines, and a copy of any custom or edited product it uses. Each save is a new version, e.g. `Smith claim - v3 - 2026-11-09.planbuilder.json`. In Chrome / Edge you pick the folder; elsewhere it goes to Downloads.
+- **Save & close job** saves the file, then takes the job out of the browser and starts a blank plan.
+- **📂 Open a job from computer** brings a file back to keep working; save again for the next version. If the file's products have different prices than your catalog, it asks which to keep.
+- Keep as many jobs in the program at once as you like. **📁 Projects** lists them with whether each is saved to your computer (and if it changed since).
+- After you save, print or export a job, a note offers **Remove from this browser**. **Save ▾ → Done – save & remove** does both at once.
+- **Clean-up** (once a week when you open PlanBuilder): jobs not opened for 3 months that are already saved to your computer, unchanged since, are taken out automatically (turn this off in 📁 Projects). Anything else that looks finished (saved to your computer and untouched for 2 weeks, or not opened for 3 months) is listed so you can tick which to remove. A job that is not saved to your computer is never removed without asking.
+- While a job is open it autosaves in the browser (so a closed tab or crash loses nothing) with undo / redo up to 150 steps. **📁 Projects** shows how much the browser holds and has **🧹 Clear all jobs from this browser** (your catalog, price lists and price memory stay).
 
 ## Files
 | File | What it does |
@@ -96,4 +102,5 @@ Projects and the catalog are saved in **this browser on this device** (autosave 
 | `vendor/` | Three.js r170 (MIT, see `THREE-LICENSE.txt`), served from here so it works without the internet |
 | `tests/math.test.js` | `node planbuilder/tests/math.test.js` — geometry, roof, takeoff and CSV numbers |
 | `tests/features.smoke.cjs` | Browser test of existing + addition, styles, furnish, Make 3D, before / after, walk, entered estimate, customer view, renditions, 3D drag (same way to run as below) |
+| `tests/save.smoke.cjs` | Browser test of saving to the computer, Done – save & remove, reopening a job (with its custom products, photos, renditions), versions, the note after saving, and the weekly clean-up (same way to run) |
 | `tests/ui.smoke.cjs` | Browser test that draws with every tool: start `python3 -m http.server 8765` in the repo, then `NODE_PATH=$(npm root -g) node planbuilder/tests/ui.smoke.cjs` |

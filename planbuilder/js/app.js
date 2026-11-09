@@ -5,7 +5,7 @@ import { fmtFtIn, parseFtIn, wallLength, wallDir, roofMeasure, bbox } from './ge
 import { newLevel, restack, normalize, fromTemplate, TEMPLATES, PROJECT_TYPES, splitWall, wallsForRoom, autoRoof, markExterior, uid, swingDoorsIntoRooms, PHASES, setDrawPhase, getDrawPhase } from './model.js';
 import { STYLES, styleById, applyStyle, autoFurnish, roomType } from './styles.js';
 import { normCode, parseEstimateText } from './pricebook.js';
-import { CATEGORIES, UNITS, KINDS, findProduct, categoryName, CSV_COLUMNS, toCSV, catalogFromCSV, EXTERIOR_CATS, OUTDOOR_CATS } from './catalog.js';
+import { DEFAULT_CATALOG, CATEGORIES, UNITS, KINDS, findProduct, categoryName, CSV_COLUMNS, toCSV, catalogFromCSV, EXTERIOR_CATS, OUTDOOR_CATS } from './catalog.js';
 import { computeTakeoff, estimateCSV, lineItemsCSV, roomStats } from './takeoff.js';
 import { priceBookFromCSV } from './pricebook.js';
 import * as store from './store.js';
@@ -45,8 +45,9 @@ const app = {
     this.plan = new Plan2D($('#plan'), this);
     this.bindUI();
     try { this.setCustomer(localStorage.getItem('pb.customer') === '1', true); } catch (e) { /* storage blocked */ }
-    if (p) this.open(p); else this.open(fromTemplate('ranch', this.catalog), true);
+    if (p) this.open(p); else this.open(fromTemplate('ranch', this.catalog), false);   // the sample is kept only once you change it
     this.renderPicker();
+    setTimeout(() => this.cleanupCheck(), 1500);
     if (!p) this.toast('Started with the Ranch sample. 📁 Projects → New to start a blank or another template.');
   },
 
@@ -56,6 +57,7 @@ const app = {
     this.selection = null; this.undo = []; this.redo = [];
     this.lastSaved = JSON.stringify(this.project);
     if (isNew) store.saveProject(this.project);
+    store.markOpened(this.project.id);
     $('#prj-name').value = this.project.name;
     this.refresh(true);
     requestAnimationFrame(() => { this.plan.resize(); this.plan.fit(); if (this.view3d) { this.view3d.rebuild(); this.view3d.fit(); } });
@@ -67,6 +69,7 @@ const app = {
   commit(label) {
     const now = JSON.stringify(this.project);
     if (now === this.lastSaved) return;
+    this.project.dirty = true;
     this.undo.push(this.lastSaved); if (this.undo.length > 150) this.undo.shift();
     this.redo = [];
     this.lastSaved = now;
@@ -116,7 +119,32 @@ const app = {
   updateUndo() { $('#btn-undo').disabled = !this.undo.length; $('#btn-redo').disabled = !this.redo.length; },
 
   status(msg) { $('#status').textContent = msg || this.toolHint(); },
-  toast(msg, ms = 3500) { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(this._toast); this._toast = setTimeout(() => { t.hidden = true; }, ms); },
+  toast(msg, ms = 3500, action) {
+    const t = $('#toast'); t.innerHTML = ''; t.append(h('span', {}, msg));
+    if (action) t.append(h('button', { onclick: () => { t.hidden = true; action.run(); } }, action.label), h('button', { class: 'tx', title: 'Close', onclick: () => { t.hidden = true; } }, '×'));
+    t.hidden = false; clearTimeout(this._toast); this._toast = setTimeout(() => { t.hidden = true; }, action ? Math.max(ms, 9000) : ms);
+  },
+  // After printing or exporting: if the job is sent off, save it and take it out of the browser.
+  offerSent() {
+    setTimeout(() => this.toast('Sent this job off?', 10000, { label: '✅ Done – save & remove', run: () => this.saveAndClose() }), 800);
+  },
+  // Offered after a save / print / export: take this job out of the browser.
+  offerRemove(msg) {
+    const id = this.project.id, name = this.project.name;
+    this.toast(msg, 9000, { label: 'Remove from this browser', run: () => this.removeJob(id, name) });
+  },
+  async removeJob(id, name) {
+    const e = store.listProjects().find(x => x.id === id);
+    const safe = e && e.savedAt && !e.dirty;
+    if (!safe) {
+      if (!confirm(`"${name}" has changes that are not saved to your computer.\n\nOK = save it to your computer first, then remove it\nCancel = keep it`)) return;
+      if (this.project.id !== id) { const p = store.loadProject(id); if (p) this.open(p); }
+      if (!(await this.saveToComputer(true))) return;
+    }
+    store.deleteProject(id);
+    if (this.project.id === id) this.open(fromTemplate('blank', this.catalog), false);
+    this.toast(`"${name}" is out of this browser. 📂 Open it from your computer any time.`);
+  },
 
   // ---------- selection ----------
   select(sel) { this.selection = sel; this.renderProps(); this.plan.draw(); if (this.view3d) this.view3d.setSelection(sel); },
@@ -230,6 +258,9 @@ const app = {
     $('#btn-redo').addEventListener('click', () => this.doRedo());
     $('#prj-name').addEventListener('change', e => { this.project.name = e.target.value.trim() || 'Untitled plan'; this.commit('Renamed'); });
     $('#btn-projects').addEventListener('click', () => this.showProjects());
+    $('#btn-file').addEventListener('click', e => { e.stopPropagation(); $('#menu-file').hidden = !$('#menu-file').hidden; $('#menu-export').hidden = true; });
+    document.addEventListener('click', () => { $('#menu-file').hidden = true; });
+    $$('#menu-file button').forEach(b => b.addEventListener('click', () => { $('#menu-file').hidden = true; ({ save: () => this.saveToComputer(), close: () => this.saveAndClose(), open: () => this.openFromComputer(), projects: () => this.showProjects() })[b.dataset.file](); }));
     $('#btn-catalog').addEventListener('click', () => this.showCatalog());
     $('#btn-export').addEventListener('click', e => { e.stopPropagation(); $('#menu-export').hidden = !$('#menu-export').hidden; });
     document.addEventListener('click', () => { $('#menu-export').hidden = true; });
@@ -263,6 +294,7 @@ const app = {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !typing) { e.preventDefault(); e.shiftKey ? this.doRedo() : this.doUndo(); return; }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y' && !typing) { e.preventDefault(); this.doRedo(); return; }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd' && !typing) { e.preventDefault(); this.duplicateSel(); return; }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); this.saveToComputer(); return; }
     if (typing) return;
     if (this.view3d && this.view3d.walk) return;
     if ((this.tool === 'wall' && this.plan.chain) || (this.tool === 'roompoly' && this.plan.poly)) {
@@ -803,6 +835,91 @@ const app = {
   modal(content) { const b = $('#modal-body'); b.innerHTML = ''; b.append(content); $('#modal').hidden = false; },
   closeModal() { $('#modal').hidden = true; $('#modal-body').innerHTML = ''; },
 
+  // ---------- jobs on the computer ----------
+  // The job file holds everything: drawing, renditions, photos, damage, estimate lines, and a copy of any
+  // product it uses that is not in the starting catalog (so it opens the same on a clean browser).
+  jobFile() {
+    const P = this.project;
+    P.version = (P.version || 0) + 1; P.savedAt = new Date().toISOString();
+    const used = new Set();
+    const note = id => { if (id) used.add(id); };
+    P.levels.forEach(l => { l.rooms.forEach(r => { note(r.floorId); note(r.wallFinishId); note(r.ceilingId); note(r.underId); }); l.walls.forEach(w => { note(w.finishIn); note(w.finishOut); }); l.openings.forEach(o => note(o.productId)); l.items.forEach(i => note(i.productId)); });
+    P.roofs.forEach(r => note(r.materialId)); P.extraLines.forEach(x => note(x.productId));
+    const st = P.settings; [st.exteriorFinishId, st.drywallId, st.ceilingFinishId, st.baseboardId, ...Object.values(st.roofAccessories || {})].forEach(note);
+    const defaults = new Map(DEFAULT_CATALOG.map(p => [p.id, JSON.stringify(p)]));
+    const products = this.catalog.filter(p => used.has(p.id) && defaults.get(p.id) !== JSON.stringify(p));   // custom or edited ones
+    const base = (P.name || 'job').replace(/[\\/:*?"<>|]+/g, '').trim() || 'job';
+    const name = `${base} - v${P.version} - ${new Date().toISOString().slice(0, 10)}.planbuilder.json`;
+    return { name, text: JSON.stringify({ planbuilder: 1, ...P, products }) };
+  },
+  async saveToComputer(quiet) {
+    const f = this.jobFile();
+    const ok = await store.saveFile(f.name, f.text);
+    if (!ok) { this.project.version--; return false; }
+    this.project.dirty = false;
+    this.lastSaved = JSON.stringify(this.project);
+    this.save();
+    if (!quiet) this.offerRemove(`Saved to your computer: ${f.name}`);
+    return true;
+  },
+  async saveAndClose() {
+    if (!(await this.saveToComputer(true))) return;
+    const name = this.project.name;
+    store.deleteProject(this.project.id);
+    this.open(fromTemplate('blank', this.catalog), false);
+    this.toast(`"${name}" is saved to your computer and out of this browser. 📂 Open it any time.`, 6000);
+  },
+
+  // ---------- clean-up: once a week, offer to take finished jobs out of the browser ----------
+  cleanupCheck(force) {
+    const last = store.pref('lastCleanup', 0);
+    if (!force && Date.now() - last < 7 * 86400000) return;
+    store.setPref('lastCleanup', Date.now());
+    const jobs = store.staleJobs().filter(j => j.id !== this.project.id);
+    let auto = 0;
+    if (store.pref('autoClean', true)) jobs.filter(j => j.auto).forEach(j => { store.deleteProject(j.id); auto++; });
+    const ask = jobs.filter(j => j.ask && !(j.auto && store.pref('autoClean', true)));
+    if (auto) this.toast(`Cleaned up ${auto} job${auto > 1 ? 's' : ''} not opened in 3 months (already saved to your computer).`, 6000);
+    if (!ask.length) { if (force && !auto) this.toast('Nothing to clean up.'); return; }
+    const boxes = ask.map(j => ({ j, cb: h('input', { type: 'checkbox', checked: !!(j.savedAt && !j.dirty) }) }));
+    const ago = d => { const n = Math.round((Date.now() - Date.parse(d)) / 86400000); return n < 1 ? 'today' : n === 1 ? 'yesterday' : n + ' days ago'; };
+    this.modal(h('div', {},
+      h('h2', {}, 'Clean up finished jobs?'),
+      h('p', { class: 'hint', style: 'font-size:13px;margin:0 0 10px' }, 'These jobs look finished. Tick the ones to take out of this browser. Ones not saved to your computer are saved first (you pick where), so nothing is lost.'),
+      h('table', { class: 'cat-table' }, h('tbody', {}, ...boxes.map(({ j, cb }) => h('tr', {}, h('td', {}, cb), h('td', {}, h('b', {}, j.name), h('div', { class: 'hint', style: 'margin:0' }, [j.client, j.address].filter(Boolean).join(' · '))),
+        h('td', {}, 'Opened ' + ago(j.opened || j.updated)),
+        h('td', {}, j.savedAt ? h('span', { class: 'job-state ' + (j.dirty ? 'warn' : 'ok') }, `Saved to computer v${j.version || '?'} ${ago(j.savedAt)}` + (j.dirty ? ', changed since' : '')) : h('span', { class: 'job-state warn' }, 'Not saved to computer')))))),
+      h('div', { class: 'row', style: 'margin-top:12px' },
+        h('button', { class: 'btn primary', onclick: async () => {
+          const picked = boxes.filter(b => b.cb.checked).map(b => b.j);
+          const cur = this.project;
+          for (const j of picked) {
+            if (!(j.savedAt && !j.dirty)) { const p = store.loadProject(j.id); if (!p) continue; this.open(p); if (!(await this.saveToComputer(true))) continue; }
+            store.deleteProject(j.id);
+          }
+          const back = store.loadProject(cur.id); this.open(back || fromTemplate('blank', this.catalog), false);
+          this.closeModal(); this.toast(`${picked.length} job${picked.length === 1 ? '' : 's'} taken out of this browser.`);
+        } }, 'Remove ticked jobs'),
+        h('button', { class: 'btn', onclick: () => this.closeModal() }, 'Keep them for now'))));
+  },
+  async openFromComputer() {
+    const f = await store.pickFile('.json,application/json'); if (!f) return;
+    let data;
+    try { data = JSON.parse(await store.readText(f)); if (!data.levels) throw new Error('not a plan'); }
+    catch (e) { alert('That file is not a PlanBuilder job.'); return; }
+    // products the job brought with it that this browser does not have (or has with other prices)
+    const incoming = Array.isArray(data.products) ? data.products : [];
+    let added = 0, differ = 0;
+    incoming.forEach(p => { const i = this.catalog.findIndex(x => x.id === p.id); if (i < 0) { this.catalog.push(p); added++; } else if (JSON.stringify(this.catalog[i]) !== JSON.stringify(p)) differ++; });
+    if (differ && confirm(`${differ} product${differ > 1 ? 's' : ''} in this job ha${differ > 1 ? 've' : 's'} different prices or colors than your catalog.\n\nOK = use the job's versions (updates your catalog)\nCancel = keep your catalog as it is`)) incoming.forEach(p => { const i = this.catalog.findIndex(x => x.id === p.id); if (i >= 0) this.catalog[i] = p; });
+    if (added || differ) store.saveCatalog(this.catalog);
+    delete data.products; delete data.planbuilder;
+    const p = normalize(data);
+    p.dirty = false;   // it matches the file it came from
+    this.open(p, true); this.closeModal(); this.renderPicker();
+    this.toast(`Opened ${p.name}${p.version ? ' (v' + p.version + ')' : ''}. Save again to keep a new version.`);
+  },
+
   // ---------- projects ----------
   showProjects() {
     const list = store.listProjects();
@@ -814,18 +931,23 @@ const app = {
       const f = await store.pickFile('.json,application/json'); if (!f) return;
       try { const p = normalize(JSON.parse(await store.readText(f))); if (!p.levels) throw new Error('not a plan'); if (store.listProjects().some(x => x.id === p.id) && !confirm('A project with this id is already saved here. Replace it?')) p.id = uid('prj'); this.open(p, true); this.closeModal(); this.toast('Imported ' + p.name); }
       catch (e) { alert('That file is not a PlanBuilder project.'); }
-    } }, '⤒ Import a project file')));
-    body.append(h('h4', { style: 'margin-top:18px' }, `Saved in this browser (${list.length})`));
+    } }, '⤒ Import a project file'), h('button', { class: 'btn primary', onclick: () => this.openFromComputer() }, '📂 Open a job from computer')));
+    const use = store.storageUse(), cap = 5 * 1024 * 1024, mb = n => (n / 1048576).toFixed(n < 1048576 ? 2 : 1) + ' MB';
+    const bar = h('div', { class: 'bar' }, (() => { const i = h('i'); i.style.width = Math.min(100, (use.jobs + use.other) / cap * 100).toFixed(1) + '%'; return i; })());
+    body.append(h('div', { class: 'storage' }, h('span', {}, `This browser holds ${mb(use.jobs)} of jobs + ${mb(use.other)} of catalog / price lists (about 5 MB fits).`), bar,
+      h('button', { class: 'btn small danger', onclick: () => { if (!confirm('Take EVERY job out of this browser?\n\nOnly do this after saving the ones you want to your computer. Your catalog, price lists and price memory stay.')) return; store.clearAllJobs(); this.open(fromTemplate('blank', this.catalog), false); this.closeModal(); this.toast('All jobs taken out of this browser.'); } }, '🧹 Clear all jobs from this browser')));
+    body.append(h('label', { class: 'row', style: 'align-items:center;gap:6px;font-size:12.5px' }, h('input', { type: 'checkbox', checked: store.pref('autoClean', true), onchange: e => store.setPref('autoClean', e.target.checked) }), 'Once a week, take out jobs not opened in 3 months that are already saved to my computer', h('button', { class: 'btn small', onclick: () => { this.closeModal(); this.cleanupCheck(true); } }, 'Clean up now')));
+    body.append(h('h4', { style: 'margin-top:18px' }, `Jobs in this browser (${list.length})`));
     const tbl = h('table', { class: 'cat-table' }, h('thead', {}, h('tr', {}, h('th', {}, 'Name'), h('th', {}, 'Client / address'), h('th', {}, 'Claim'), h('th', {}, 'Updated'), h('th', {}, ''))));
     const tb = h('tbody');
     list.forEach(x => tb.append(h('tr', {},
-      h('td', {}, h('b', {}, x.name), x.id === this.project.id ? ' (open)' : ''), h('td', {}, [x.client, x.address].filter(Boolean).join(' · ')), h('td', {}, x.claimNo || ''), h('td', {}, new Date(x.updated).toLocaleString()),
+      h('td', {}, h('b', {}, x.name), x.id === this.project.id ? ' (open)' : ''), h('td', {}, [x.client, x.address].filter(Boolean).join(' · ')), h('td', {}, x.claimNo || ''), h('td', {}, new Date(x.updated).toLocaleString(), h('div', { class: 'job-state ' + (x.savedAt && !x.dirty ? 'ok' : 'warn') }, x.savedAt ? `💾 v${x.version || '?'} on computer` + (x.dirty ? ' – changed since' : '') : 'Not saved to computer')),
       h('td', { style: 'white-space:nowrap' },
         h('button', { class: 'btn small', onclick: () => { const p = store.loadProject(x.id); if (p) { this.open(p); this.closeModal(); } } }, 'Open'), ' ',
         h('button', { class: 'btn small', onclick: () => { const p = store.loadProject(x.id); if (!p) return; p.id = uid('prj'); p.name += ' (copy)'; store.saveProject(p); this.showProjects(); } }, 'Copy'), ' ',
         h('button', { class: 'btn small danger', onclick: () => { if (!confirm(`Delete "${x.name}"? This cannot be undone (export it first to keep a copy).`)) return; store.deleteProject(x.id); if (x.id === this.project.id) this.open(fromTemplate('blank', this.catalog), true); this.showProjects(); } }, 'Delete')))));
     tbl.append(tb); body.append(tbl);
-    body.append(h('p', { class: 'hint', style: 'margin:12px 0 0' }, 'Projects are saved in this browser on this device. Use Export → Project file to back one up or move it to another computer.'));
+    body.append(h('p', { class: 'hint', style: 'margin:12px 0 0' }, 'Jobs are kept in this browser only while you work on them. 💾 Save to computer keeps a file (a new version each time); Save & close job, or Clear all jobs, takes them out of the browser. 📂 Open a job from computer brings one back.'));
     this.modal(body);
   },
 
@@ -898,8 +1020,8 @@ const app = {
   async exportAs(kind) {
     $('#menu-export').hidden = true;
     const P = this.project, base = (P.name || 'plan').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-') || 'plan';
-    if (kind === 'json') store.download(base + '.planbuilder.json', JSON.stringify(P, null, 1));
-    else if (kind === 'csv') store.download(base + '-estimate.csv', estimateCSV(P, this.takeoffNow()), 'text/csv');
+    if (kind === 'json') { await this.saveToComputer(); return; }
+    else if (kind === 'csv') { store.download(base + '-estimate.csv', estimateCSV(P, this.takeoffNow()), 'text/csv'); this.offerSent(); }
     else if (kind === 'lines') store.download(base + '-line-items.csv', lineItemsCSV(P, this.takeoffNow()), 'text/csv');
     else if (kind === 'planpng') { const a = document.createElement('a'); a.href = await brandStamp(this.plan.snapshot()); a.download = base + '-' + this.level.name.replace(/\s+/g, '-') + '.png'; a.click(); }
     else if (kind === 'png' || kind === 'glb') {
@@ -912,7 +1034,7 @@ const app = {
     } else if (kind === 'print') {
       this._printing = true;
       await this.buildPrint(true);
-      setTimeout(() => { window.print(); this._printing = false; }, 300);
+      setTimeout(() => { window.print(); this._printing = false; this.offerSent(); }, 300);
     }
   },
   async buildPrint(with3D) {

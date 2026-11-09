@@ -30,6 +30,15 @@
     <button id="btn-customer" class="btn" title="Hide every price, to show the plan to a customer">👁 Customer view</button>
     <button id="btn-undo" class="icon" title="Undo (Ctrl+Z)">↶</button>
     <button id="btn-redo" class="icon" title="Redo (Ctrl+Y)">↷</button>
+    <div class="menu-wrap">
+      <button id="btn-file" class="btn save-btn" title="Save this job to your computer (Ctrl+S)">💾 Save ▾</button>
+      <div id="menu-file" class="menu" hidden>
+        <button data-file="save">💾 Save to computer <small>(Ctrl+S) – a new version, keep working</small></button>
+        <button data-file="close">✅ Done – save &amp; remove <small>– save to computer, then take it out of this browser</small></button>
+        <button data-file="open">📂 Open a job from computer</button>
+        <button data-file="projects">📁 Projects &amp; templates</button>
+      </div>
+    </div>
     <button id="btn-projects" class="btn">📁 Projects</button>
     <button id="btn-catalog" class="btn">📦 Catalog</button>
     <div class="menu-wrap">
@@ -38,7 +47,7 @@
         <button data-exp="print">🖨 Print / PDF (plans + 3D + estimate)</button>
         <button data-exp="csv" class="price-only">Estimate spreadsheet (.csv)</button>
         <button data-exp="lines" class="price-only">Line items, Xactimate-ready (.csv)</button>
-        <button data-exp="json">Project file (.json)</button>
+        <button data-exp="json">Job file to computer (.json)</button>
         <button data-exp="png">3D picture (.png)</button>
         <button data-exp="planpng">2D plan picture (.png)</button>
         <button data-exp="glb">3D model (.glb)</button>

@@ -22,7 +22,8 @@ export function saveProject(p) {
   const ok = put(K_PRJ(p.id), p);
   if (!ok) return false;
   const idx = get(K_INDEX, []).filter(x => x.id !== p.id);
-  idx.push({ id: p.id, name: p.name, type: p.type, client: p.client, address: p.address, claimNo: p.claimNo, updated: p.updated });
+  const prev = get(K_INDEX, []).find(x => x.id === p.id) || {};
+  idx.push({ id: p.id, name: p.name, type: p.type, client: p.client, address: p.address, claimNo: p.claimNo, updated: p.updated, opened: prev.opened || p.updated, savedAt: p.savedAt || '', version: p.version || 0, dirty: !!p.dirty });
   put(K_INDEX, idx);
   put(K_LAST, p.id);
   return true;
@@ -67,3 +68,48 @@ const K_BOOKS = 'pb.pricebooks.v1';
 export function listBooks() { return get(K_BOOKS, []); }
 export function saveBooks(b) { return put(K_BOOKS, b); }
 export function getBook(id) { return listBooks().find(b => b.id === id) || null; }
+
+// ---- Saving jobs to the computer instead of keeping them in the browser ----
+// Save a file with the browser's Save dialog where it has one (Chrome / Edge: pick the folder and name),
+// otherwise as a download. Resolves true when saved, false when the person cancelled.
+export async function saveFile(name, text) {
+  if (window.showSaveFilePicker) {
+    try {
+      const h = await window.showSaveFilePicker({ suggestedName: name, types: [{ description: 'PlanBuilder job', accept: { 'application/json': ['.json'] } }] });
+      const w = await h.createWritable(); await w.write(text); await w.close();
+      return true;
+    } catch (e) { if (e && e.name === 'AbortError') return false; /* not allowed here: fall back to a download */ }
+  }
+  download(name, text);
+  return true;
+}
+// How much this program keeps in the browser, in bytes (jobs vs everything else).
+export function storageUse() {
+  let jobs = 0, other = 0;
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i); if (!k || !k.startsWith('pb.')) continue;
+      const n = (k.length + (localStorage.getItem(k) || '').length) * 2;
+      if (k.startsWith('pb.project.') || k === 'pb.projects.v1') jobs += n; else other += n;
+    }
+  } catch (e) { /* storage blocked */ }
+  return { jobs, other };
+}
+// Take every job out of this browser (keeps the catalog, price lists and price memory).
+export function clearAllJobs() {
+  listProjects().forEach(p => deleteProject(p.id));
+  try { localStorage.removeItem('pb.projects.v1'); localStorage.removeItem('pb.last.v1'); } catch (e) { /* ignore */ }
+}
+
+export function markOpened(id) { const idx = get(K_INDEX, []); const e = idx.find(x => x.id === id); if (e) { e.opened = new Date().toISOString(); put(K_INDEX, idx); } }
+// Jobs that look finished. old: not opened for `days`; auto: old AND saved to the computer AND unchanged since.
+export function staleJobs(days = 90, savedDays = 14) {
+  const now = Date.now(), DAY = 86400000;
+  return listProjects().map(x => {
+    const opened = Date.parse(x.opened || x.updated) || now, saved = Date.parse(x.savedAt || '') || 0;
+    const old = now - opened > days * DAY, safe = !!saved && !x.dirty;
+    return { ...x, old, safe, auto: old && safe, ask: (old && !safe) || (safe && now - saved > savedDays * DAY && now - opened > savedDays * DAY) };
+  });
+}
+export function pref(k, d) { return get('pb.pref.' + k, d); }
+export function setPref(k, v) { put('pb.pref.' + k, v); }

@@ -233,3 +233,15 @@ body.customer .price-only { display: none !important; }
 .paste-box { width: 100%; min-height: 120px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
 .rend-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; margin-top: 10px; }
 .rend-grid img { width: 100%; aspect-ratio: 16/10; object-fit: cover; border-radius: 8px; background: var(--panel2); display: block; margin-bottom: 6px; }
+
+.topbar .save-btn { background: #ffffff; color: #130662; border-color: #ffffff; font-weight: 700; }
+.menu button small { display: block; color: var(--muted); font-size: 11.5px; }
+.storage { background: var(--panel2); border-radius: 8px; padding: 8px 12px; margin: 10px 0; font-size: 12.5px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.storage .bar { flex: 1; min-width: 140px; height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; }
+.storage .bar i { display: block; height: 100%; background: #d9822b; }
+
+.toast { display: flex; gap: 12px; align-items: center; }
+.toast button { background: #e8a33d; color: #130662; border: 0; border-radius: 7px; padding: 5px 10px; font-weight: 700; }
+.toast .tx { background: transparent; color: #fff; opacity: .7; padding: 4px 6px; font-weight: 400; }
+.job-state { font-size: 11.5px; }
+.job-state.ok { color: var(--ok); } .job-state.warn { color: #b06a00; }
