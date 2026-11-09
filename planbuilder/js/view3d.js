@@ -101,12 +101,14 @@ export class View3D {
   // ---------- build ----------
   rebuild() {
     const P = this.app.project; if (!P) return;
+    if (this._anim) this.stopBuild();
     this.root.traverse(o => { if (o.geometry) o.geometry.dispose(); });
     this.root.clear();
     const upTo = this.opts.upTo < 0 ? P.levels.length - 1 : Math.min(this.opts.upTo, P.levels.length - 1);
     P.levels.forEach((level, li) => {
       if (li > upTo) return;
       const g = new THREE.Group(); g.position.y = level.elevation; g.userData.levelId = level.id;
+      this._stage = li * 10;
       this.buildLevel(level, g, li === upTo && this.opts.cutaway);
       this.root.add(g);
     });
@@ -134,13 +136,14 @@ export class View3D {
 
   buildLevel(level, g, cut) {
     const P = this.app.project, s = P.settings;
-    // subfloor / slab under the walls
-    const pts = []; level.walls.forEach(w => pts.push(w.a, w.b)); level.rooms.forEach(r => pts.push(...r.points));
+    const tag = (o, step, kind) => { o.userData.build = { stage: (this._stage || 0) + step, kind }; return o; };
+    // subfloor / slab under the walls and inside rooms (not under yards, patios and drives)
+    const pts = []; level.walls.forEach(w => pts.push(w.a, w.b)); level.rooms.filter(r => !r.outdoor).forEach(r => pts.push(...r.points));
     if (pts.length) {
       const b = bbox(pts), pad = 0.35;
       const slab = new THREE.Mesh(new THREE.BoxGeometry(b.w + pad * 2, FLOOR_DEPTH, b.h + pad * 2), this.mat('#b9b5ab'));
       slab.position.set(b.x + b.w / 2, -FLOOR_DEPTH / 2, b.y + b.h / 2); slab.receiveShadow = true; slab.castShadow = true;
-      g.add(slab);
+      g.add(tag(slab, 0, 'grow'));
     }
     // floors
     level.rooms.forEach(r => {
@@ -148,10 +151,12 @@ export class View3D {
       const geo = new THREE.ShapeGeometry(shape); geo.rotateX(-Math.PI / 2);
       const m = this.productMat(r.floorId, '#cccccc', 2);
       if (m.map) this._uvPlanar(geo, m.userData.repeatFt || 2);
-      const mesh = new THREE.Mesh(geo, m); mesh.position.y = 0.02; mesh.receiveShadow = true;
+      const mesh = new THREE.Mesh(geo, m); mesh.receiveShadow = true;
+      // outside areas sit on the ground (first level only); rooms sit on the slab
+      mesh.position.y = r.outdoor ? (level.elevation > 0 ? 0.02 : -FLOOR_DEPTH + 0.03 + (/deck/i.test(r.name) ? 0.5 : 0)) : 0.02;
       mesh.userData.pick = { kind: 'room', id: r.id, levelId: level.id };
-      g.add(mesh);
-      if (this.opts.ceilings && !cut) {
+      g.add(tag(mesh, r.outdoor ? 0 : 1, 'rise'));
+      if (this.opts.ceilings && !cut && !r.outdoor) {
         const cg = geo.clone(); const cm = new THREE.Mesh(cg, this.productMat(r.ceilingId || s.ceilingFinishId, '#fafafa', 2, { side: THREE.BackSide }));
         cm.position.y = (r.height || level.height) - 0.01; g.add(cm);
       }
@@ -194,7 +199,7 @@ export class View3D {
         mesh.rotation.y = -ang;
         mesh.castShadow = true; mesh.receiveShadow = true;
         mesh.userData.pick = { kind: 'wall', id: w.id, levelId: level.id };
-        g.add(mesh);
+        g.add(tag(mesh, 2, 'grow'));
       });
       // door and window bodies
       wallOpenings(w, level.openings).forEach(sp => this.buildOpening(sp, w, ang, dir, t, H, g, level, cutH));
@@ -202,6 +207,7 @@ export class View3D {
     // placed products
     level.items.forEach(it => this.buildItem(it, g, level));
   }
+  _tag(o, step, kind) { o.userData.build = { stage: (this._stage || 0) + step, kind }; return o; }
 
   buildOpening(sp, w, ang, dir, t, H, g, level, cutH) {
     const o = sp.o, p = findProduct(this.app.catalog, o.productId);
@@ -242,7 +248,7 @@ export class View3D {
       void panel;
       for (let i = 1; i < 4; i++) add(new THREE.BoxGeometry(width - fr * 2, 0.05, 0.24), this.mat('#c9c7c0'), 0, -h / 2 + (h * i) / 4, 0);
     }
-    g.add(grp);
+    g.add(this._tag(grp, 3, 'pop'));
   }
 
   buildItem(it, g, level) {
@@ -270,19 +276,40 @@ export class View3D {
     } else if (type === 'tub') {
       add(new THREE.BoxGeometry(W, H, D), m, 0, H / 2, 0);
       add(new THREE.BoxGeometry(W - 0.4, 0.05, D - 0.4), this.mat('#cfe3ee', { roughness: 0.2 }), 0, H + 0.01, 0);
+    } else if (type === 'panel') {          // backsplash, tile wall, fireplace surround: width × height, thin
+      add(new THREE.BoxGeometry(W, H, Math.max(0.04, D)), m, 0, H / 2, 0);
+    } else if (type === 'tree') {
+      const trunkH = H * 0.35;
+      add(new THREE.CylinderGeometry(Math.max(0.15, W * 0.04), Math.max(0.2, W * 0.06), trunkH, 10), this.mat('#6b4a32'), 0, trunkH / 2, 0);
+      const crown = add(new THREE.IcosahedronGeometry(1, 1), this.mat(color, { roughness: 1 }), 0, trunkH + (H - trunkH) / 2, 0);
+      crown.scale.set(W / 2, (H - trunkH) / 2, D / 2);
+    } else if (type === 'shrub') {
+      const b = add(new THREE.IcosahedronGeometry(1, 1), this.mat(color, { roughness: 1 }), 0, H / 2, 0); b.scale.set(W / 2, H / 2, D / 2);
+    } else if (type === 'fence') {           // fences, railings, edging, retaining walls: a run W long
+      const posts = Math.max(2, Math.round(W / 8) + 1);
+      add(new THREE.BoxGeometry(W, H * 0.9, Math.max(0.06, D * 0.4)), m, 0, H * 0.45 + 0.05, 0);
+      if (H > 1.5) for (let i = 0; i < posts; i++) add(new THREE.BoxGeometry(0.33, H, 0.33), m, -W / 2 + (W * i) / (posts - 1), H / 2, 0);
+    } else if (type === 'pergola') {
+      [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([sx, sz]) => add(new THREE.BoxGeometry(0.5, H, 0.5), m, sx * (W / 2 - 0.5), H / 2, sz * (D / 2 - 0.5)));
+      for (let i = 0; i < 9; i++) add(new THREE.BoxGeometry(0.17, 0.6, D + 1), m, -W / 2 + (W * i) / 8, H + 0.3, 0);
+      [-1, 1].forEach(sx => add(new THREE.BoxGeometry(0.3, 0.8, D + 1.5), m, sx * (W / 2 - 0.5), H - 0.4, 0));
     } else if (type === 'shower') {
       add(new THREE.BoxGeometry(W, 0.3, D), this.mat('#ffffff'), 0, 0.15, 0);
       add(new THREE.BoxGeometry(W, H, 0.04), this.mat('#bfe0ef', { opacity: 0.3, side: THREE.DoubleSide }), 0, H / 2, D / 2);
     } else {
       add(new THREE.BoxGeometry(W, H, D), m, 0, H / 2, 0);
     }
-    g.add(grp);
+    if (p && ['landscape', 'hardscape', 'outdoor'].includes(p.category) && level.elevation === 0) grp.position.y -= FLOOR_DEPTH * (this._onSlab(it, level) ? 0 : 1);
+    g.add(this._tag(grp, 4, type === 'tree' || type === 'shrub' ? 'pop' : 'drop'));
   }
+  // Is a placed item inside a (non-outdoor) room, i.e. standing on the slab rather than the ground?
+  _onSlab(it, level) { return level.rooms.some(r => !r.outdoor && pointInPoly({ x: it.x, y: it.y }, r.points)); }
 
   buildRoof(sec, level) {
     const P = this.app.project, s = P.settings;
     const base = level.elevation + level.height;
     const grp = new THREE.Group(); grp.userData.pick = { kind: 'roof', id: sec.id, levelId: level.id };
+    grp.userData.build = { stage: 1000, kind: 'lower' };
     const roofM = this.productMat(sec.materialId, '#4a4a4a', 3, { side: THREE.DoubleSide, roughness: 0.9 });
     const sideM = this.productMat(s.exteriorFinishId, '#d9d4c5', 4, { side: THREE.DoubleSide });
     if (sec.style === 'flat') {
@@ -309,6 +336,83 @@ export class View3D {
     }
     this.root.add(grp);
   }
+
+  // ---------- build animation ----------
+  // Rebuilds the model and plays it going up: slab, floors, walls rising in a sweep, doors and windows
+  // popping in, products dropping into place, then the roof settling on, while the camera circles slowly.
+  playBuild(opts = {}) {
+    this.rebuild();
+    const items = [];
+    this.root.traverse(o => { if (o.userData.build) items.push(o); });
+    if (!items.length) return;
+    const world = new THREE.Vector3();
+    items.forEach(o => {
+      o.getWorldPosition(world);
+      o.userData.anim = { pos: o.position.clone(), scale: o.scale.clone(), key: world.x + world.z, h: (o.geometry && o.geometry.parameters && o.geometry.parameters.height) || 1 };
+    });
+    const speed = opts.speed || 1;
+    const stages = [...new Set(items.map(o => o.userData.build.stage))].sort((a, b) => a - b);
+    const plan = { kind: {}, start: new Map(), dur: new Map() };
+    let t = 0.15;
+    stages.forEach(st => {
+      const list = items.filter(o => o.userData.build.stage === st).sort((a, b) => a.userData.anim.key - b.userData.anim.key);
+      const kind = list[0].userData.build.kind;
+      const base = { grow: 0.75, rise: 0.6, pop: 0.45, drop: 0.7, lower: 1.3 }[kind] || 0.6;
+      const spread = kind === 'grow' && st % 10 === 2 ? 2.4 : kind === 'pop' ? 1.1 : kind === 'drop' ? 1.4 : kind === 'rise' ? 0.6 : 0;
+      const stagger = list.length > 1 ? Math.min(0.09, spread / (list.length - 1)) : 0;
+      list.forEach((o, i) => { plan.start.set(o, (t + i * stagger) / speed); plan.dur.set(o, base / speed); });
+      t += base + stagger * Math.max(0, list.length - 1) - (kind === 'lower' ? 0 : 0.2);
+    });
+    const total = (t + 0.2) / speed;
+    // camera: orbit about 70° around the model while it builds
+    const target = this.controls.target.clone();
+    const off = this.camera.position.clone().sub(target);
+    const r0 = Math.hypot(off.x, off.z), a0 = Math.atan2(off.z, off.x), y0 = off.y;
+    const sweep = opts.sweep ?? (70 * Math.PI / 180);
+    const ease = x => 1 - Math.pow(1 - x, 3);
+    const back = x => { const c1 = 1.4, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); };
+    const inout = x => x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+    const apply = (o, p) => {
+      const a = o.userData.anim, k = o.userData.build.kind;
+      if (p <= 0) { o.visible = false; return; }
+      o.visible = true;
+      if (k === 'grow') { const e = Math.max(0.001, ease(p)); o.scale.y = a.scale.y * e; o.position.y = a.pos.y - a.h / 2 + (a.h * e) / 2; }
+      else if (k === 'rise') { o.position.y = a.pos.y - 0.8 * (1 - ease(p)); }
+      else if (k === 'pop') { const e = Math.max(0.001, back(p)); o.scale.set(a.scale.x * e, a.scale.y * e, a.scale.z * e); }
+      else if (k === 'drop') { o.position.y = a.pos.y + 7 * (1 - back(p)); }
+      else if (k === 'lower') { o.position.y = a.pos.y + 14 * (1 - ease(p)); }
+    };
+    items.forEach(o => apply(o, 0));
+    this.controls.enabled = false;
+    const t0 = performance.now();
+    const anim = { items, done: false };
+    this._anim = anim;
+    const frame = now => {
+      if (anim.done) return;
+      const el = (now - t0) / 1000;
+      items.forEach(o => apply(o, Math.min(1, (el - plan.start.get(o)) / plan.dur.get(o))));
+      const c = inout(Math.min(1, el / total)), ang = a0 + sweep * c;
+      this.camera.position.set(target.x + Math.cos(ang) * r0, target.y + y0, target.z + Math.sin(ang) * r0);
+      this.camera.lookAt(target);
+      this.render();
+      if (el >= total) { this.stopBuild(); if (opts.onDone) opts.onDone(); return; }
+      requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
+    // a click on the 3D view skips to the finished model
+    this._skip = () => this.stopBuild();
+    this.renderer.domElement.addEventListener('pointerdown', this._skip, { once: true });
+  }
+  stopBuild() {
+    const anim = this._anim; if (!anim) return;
+    anim.done = true; this._anim = null;
+    anim.items.forEach(o => { const a = o.userData.anim; if (!a) return; o.visible = true; o.position.copy(a.pos); o.scale.copy(a.scale); });
+    if (this._skip) this.renderer.domElement.removeEventListener('pointerdown', this._skip);
+    this.controls.enabled = !this.walk;
+    this.controls.update();
+    this.render();
+  }
+  get building() { return !!this._anim; }
 
   _uvPlanar(geo, repeatFt, useXZ) {
     const pos = geo.attributes.position, uv = [];

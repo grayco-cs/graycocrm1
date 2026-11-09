@@ -112,4 +112,22 @@ t('doors swing into rooms, not halls', () => {
   assert.equal(swingDoorsIntoRooms(L), 1); assert.equal(d1.flip, true); assert.equal(d2.flip, false);
 });
 
+t('outdoor areas: surface only, minus what sits inside, cubic yards by depth', () => {
+  const p = newProject(); const L = p.levels[0]; p.settings.floorWaste = 0;
+  addRoom(L, rectPts(0, 0, 30, 20), { name: 'House', floorId: 'flr-lvp-oak' });
+  const yard = addRoom(L, rectPts(-10, -10, 50, 40), { name: 'Yard', floorId: 'ls-sod-bermuda', wallFinishId: '' }); yard.outdoor = true;
+  const bed = addRoom(L, rectPts(0, 22, 30, 3), { name: 'Bed', floorId: 'ls-mulch-black', wallFinishId: '' }); bed.outdoor = true;
+  const T = computeTakeoff(p, DEFAULT_CATALOG);
+  const line = id => T.lines.find(l => l.productId === id);
+  near(line('ls-sod-bermuda').qty, 2000 - 600 - 90);            // yard less the house and the bed
+  near(line('ls-mulch-black').qty, Math.ceil(90 * 3 / 12 / 27 * 4) / 4);   // 90 SF at 3" = 0.83 CY -> 1 CY
+  assert.ok(!T.lines.some(l => l.source.includes('Yard') && l.category === 'trim'));
+  near(T.summary.floorArea, 600);
+});
+t('library products are complete', () => {
+  const ids = new Set();
+  DEFAULT_CATALOG.forEach(p => { assert.ok(!ids.has(p.id), 'duplicate ' + p.id); ids.add(p.id); assert.ok(/^#[0-9a-f]{6}$/i.test(p.color), p.id + ' color'); assert.ok(p.unit && p.kind && p.category, p.id); });
+  ['brk-used-antique', 'rf-gaf-hdz-charcoal', 'flr-solid-white-oak', 'sid-hardie-hardieplank-lap-siding-iron-gray', 'ls-plant-live-oak-3-cal', 'hs-pavers-holland-red', 'ctr-granite-uba-tuba'].forEach(id => assert.ok(ids.has(id), id));
+});
+
 console.log(`PlanBuilder math: ${n} tests passed`);

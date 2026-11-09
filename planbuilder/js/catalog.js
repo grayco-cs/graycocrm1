@@ -1,7 +1,7 @@
 // Starting product catalog. Every price here is a placeholder to edit in 📦 Catalog
 // (or replace with a CSV import of your own price list). Nothing here is a supplier quote.
 //
-// kind:  'floor'   - priced by room floor area (SF / SY)
+// kind:  'floor'   - priced by room floor area (SF / SY / CY at its depth); also lawns, patios, decks on outdoor areas
 //        'wall'    - wall finishes: paint, drywall, siding, trim (SF / GAL / LF / SHEET)
 //        'roof'    - roof covering and roof accessories (SQ / LF)
 //        'opening' - doors and windows that sit in a wall (EA); w = width, h = height, sill
@@ -9,19 +9,25 @@
 //        'labor'   - labor or a fee added to the estimate by hand
 // price = material per unit; labor = labor per unit. Line total = qty × (price + labor).
 
+import { LIBRARY } from './library.js';
+
 export const CATEGORIES = [
-  ['flooring', 'Flooring'], ['paint', 'Paint'], ['drywall', 'Drywall'], ['siding', 'Siding / exterior'],
-  ['trim', 'Trim'], ['roofing', 'Roofing'], ['door', 'Doors'], ['window', 'Windows'],
-  ['cabinet', 'Cabinets & counters'], ['plumbing', 'Plumbing fixtures'], ['appliance', 'Appliances'],
-  ['electrical', 'Electrical'], ['furniture', 'Furniture'], ['commercial', 'Commercial'], ['labor', 'Labor & fees'], ['other', 'Other'],
+  ['flooring', 'Flooring'], ['paint', 'Paint & wall coverings'], ['drywall', 'Drywall'], ['siding', 'Siding'], ['masonry', 'Brick & stone'],
+  ['trim', 'Trim & molding'], ['roofing', 'Roofing'], ['door', 'Doors'], ['window', 'Windows'],
+  ['cabinet', 'Cabinets'], ['countertop', 'Countertops'], ['tile', 'Wall tile & backsplash'], ['plumbing', 'Plumbing fixtures'], ['appliance', 'Appliances'],
+  ['electrical', 'Electrical'], ['landscape', 'Landscape'], ['hardscape', 'Patios, walks & drives'], ['outdoor', 'Decks, fences & outdoor'],
+  ['furniture', 'Furniture'], ['commercial', 'Commercial'], ['labor', 'Labor & fees'], ['other', 'Other'],
 ];
-export const UNITS = ['EA', 'SF', 'SY', 'LF', 'SQ', 'GAL', 'SHEET', 'HR', 'LS'];
+export const UNITS = ['EA', 'SF', 'SY', 'LF', 'SQ', 'GAL', 'SHEET', 'CY', 'HR', 'LS'];
+// Categories that finish the outside of a wall, and categories that make an area an outdoor one.
+export const EXTERIOR_CATS = ['siding', 'masonry'];
+export const OUTDOOR_CATS = ['landscape', 'hardscape', 'outdoor'];
 export const KINDS = ['floor', 'wall', 'roof', 'opening', 'object', 'labor'];
 
 const P = (id, category, kind, name, unit, price, labor, color, extra = {}) =>
   ({ id, category, kind, name, unit, price, labor, color, sku: '', vendor: '', notes: '', ...extra });
 
-export const DEFAULT_CATALOG = [
+const BASE_CATALOG = [
   // Flooring
   P('flr-lvp-oak', 'flooring', 'floor', 'LVP plank – natural oak', 'SF', 3.25, 2.25, '#b98d5b'),
   P('flr-lvp-gray', 'flooring', 'floor', 'LVP plank – weathered gray', 'SF', 3.25, 2.25, '#9a958c'),
@@ -109,11 +115,13 @@ export const DEFAULT_CATALOG = [
   P('lb-super', 'labor', 'labor', 'Supervision', 'HR', 0, 65, '#999999'),
 ];
 
+export const DEFAULT_CATALOG = BASE_CATALOG.concat(LIBRARY.filter(p => !BASE_CATALOG.some(b => b.id === p.id)));
+
 export function findProduct(catalog, id) { return catalog.find(p => p.id === id) || null; }
 export function categoryName(id) { const c = CATEGORIES.find(c => c[0] === id); return c ? c[1] : id; }
 
 // CSV columns, in order. Same columns are written by export and read by import.
-export const CSV_COLUMNS = ['id', 'category', 'kind', 'name', 'unit', 'price', 'labor', 'color', 'sku', 'vendor', 'w', 'd', 'h', 'sill', 'elev', 'openingType', 'objType', 'roofPart', 'notes'];
+export const CSV_COLUMNS = ['id', 'category', 'kind', 'name', 'brand', 'colorName', 'finish', 'material', 'unit', 'price', 'labor', 'color', 'sku', 'vendor', 'w', 'd', 'h', 'sill', 'elev', 'depth', 'openingType', 'objType', 'roofPart', 'notes'];
 
 export function toCSV(rows, cols) {
   const q = v => { const s = v == null ? '' : String(v); return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
@@ -145,7 +153,7 @@ export function catalogFromCSV(text) {
   const head = rows[0].map(h => h.trim().toLowerCase());
   const at = c => head.indexOf(c.toLowerCase());
   const errors = [], products = [];
-  const num = ['price', 'labor', 'w', 'd', 'h', 'sill', 'elev'];
+  const num = ['price', 'labor', 'w', 'd', 'h', 'sill', 'elev', 'depth'];
   rows.slice(1).forEach((r, i) => {
     const p = {};
     CSV_COLUMNS.forEach(c => { const k = at(c); if (k >= 0) p[c] = (r[k] || '').trim(); });
@@ -158,7 +166,7 @@ export function catalogFromCSV(text) {
     if (!/^#[0-9a-f]{6}$/i.test(p.color || '')) p.color = '#b0b0b0';
     if (p.price == null) p.price = 0;
     if (p.labor == null) p.labor = 0;
-    ['openingType', 'objType', 'roofPart', 'sku', 'vendor', 'notes'].forEach(c => { if (p[c] === '') delete p[c]; });
+    ['openingType', 'objType', 'roofPart', 'sku', 'vendor', 'notes', 'brand', 'colorName', 'finish', 'material'].forEach(c => { if (p[c] === '') delete p[c]; });
     products.push(p);
   });
   return { products, errors };

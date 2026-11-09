@@ -1,7 +1,7 @@
 // PlanBuilder takeoff: turns a drawn plan into quantities and a priced estimate.
 // Pure functions (no page code) so tests can check the numbers.
 
-import { polyArea, polyPerimeter, projectOnSeg, wallLength, wallPieces, wallHeight, openingArea, roofMeasure, ridgeAxis } from './geom.js';
+import { polyArea, polyPerimeter, centroid, pointInPoly, projectOnSeg, wallLength, wallPieces, wallHeight, openingArea, roofMeasure, ridgeAxis } from './geom.js';
 import { findProduct, categoryName } from './catalog.js';
 
 export const GAL_COVERAGE = 350;   // SF per gallon per coat
@@ -9,8 +9,9 @@ export const COATS = 2;
 export const SHEET_SF = 32;        // 4×8 drywall sheet
 
 // Quantity in the product's unit from a base measure ('SF' area, 'LF' length or 'EA' count).
-export function convert(qty, base, unit) {
+export function convert(qty, base, unit, product) {
   if (base === 'SF') {
+    if (unit === 'CY') return qty * ((product && product.depth) || 3) / 12 / 27;   // area × depth (inches)
     if (unit === 'SY') return qty / 9;
     if (unit === 'SQ') return qty / 100;
     if (unit === 'GAL') return qty * COATS / GAL_COVERAGE;
@@ -25,6 +26,7 @@ export function roundQty(q, unit) {
   if (!(q > 0)) return 0;
   switch (unit) {
     case 'EA': case 'SHEET': case 'GAL': return Math.ceil(q - 1e-9);
+    case 'CY': return Math.ceil(q * 4 - 1e-9) / 4;     // quarter yards
     case 'SQ': return Math.ceil(q * 3 - 1e-9) / 3;      // bundles: 3 per square
     case 'LF': case 'SF': case 'SY': return Math.ceil(q * 100 - 1e-9) / 100;
     default: return Math.round(q * 100) / 100;
@@ -78,22 +80,32 @@ export function computeTakeoff(project, catalog) {
     const p = findProduct(catalog, productId);
     if (!p) { if (productId) warnings.push(`Product "${productId}" is not in the catalog (${source}).`); return; }
     const key = productId + '|' + group;
-    const q = convert(baseQty, base, p.unit);
+    const q = convert(baseQty, base, p.unit, p);
     const L = lines.get(key) || { key, productId, category: p.category, name: p.name + (group ? ` – ${group}` : ''), unit: p.unit, raw: 0, waste: wastePct, price: +p.price || 0, labor: +p.labor || 0, sources: [] };
     L.raw += q; if (!L.sources.includes(source)) L.sources.push(source);
     lines.set(key, L);
   };
 
-  const summary = { levels: [], floorArea: 0, extWallLF: 0, intWallLF: 0, roofSquares: 0, roofArea: 0, roofs: [], openings: 0 };
+  const summary = { levels: [], floorArea: 0, outdoorArea: 0, extWallLF: 0, intWallLF: 0, roofSquares: 0, roofArea: 0, roofs: [], openings: 0 };
 
   project.levels.forEach(level => {
     const lv = { id: level.id, name: level.name, floorArea: 0, rooms: [], extWallLF: 0, intWallLF: 0 };
     // Rooms: floor, wall finish, ceiling, baseboard, ceiling drywall
     level.rooms.forEach(r => {
       const st = roomStats(r, level);
-      lv.rooms.push({ id: r.id, name: r.name, ...st });
-      lv.floorArea += st.area;
+      lv.rooms.push({ id: r.id, name: r.name, outdoor: !!r.outdoor, ...st });
       const where = `${level.name}: ${r.name}`;
+      if (r.outdoor) {   // yard, bed, patio, drive, deck: only the surface, no walls / ceiling / trim
+        // a yard drawn around the house, a patio or a bed does not cover what sits inside it
+        const inside = level.rooms.filter(o => o !== r && polyArea(o.points) < st.area && pointInPoly(centroid(o.points), r.points));
+        const net = Math.max(0, st.area - inside.reduce((a, o) => a + polyArea(o.points), 0));
+        lv.rooms[lv.rooms.length - 1].area = net;
+        lv.outdoorArea = (lv.outdoorArea || 0) + net;
+        if (r.floorId) add(r.floorId, net, 'SF', where, s.floorWaste);
+        if (r.underId) add(r.underId, net, 'SF', where, 0);
+        return;
+      }
+      lv.floorArea += st.area;
       if (r.floorId) add(r.floorId, st.area, 'SF', where, s.floorWaste);
       if (r.wallFinishId) add(r.wallFinishId, st.wallArea, 'SF', where, s.wallWaste);
       const ceil = r.ceilingId || s.ceilingFinishId;
@@ -120,10 +132,10 @@ export function computeTakeoff(project, catalog) {
     level.items.forEach(it => {
       const p = findProduct(catalog, it.productId);
       if (!p) { warnings.push(`A placed item uses "${it.productId}", which is not in the catalog.`); return; }
-      const q = p.unit === 'LF' ? it.w : (p.unit === 'SF' ? it.w * it.d : 1);
+      const q = p.unit === 'LF' ? it.w : (p.unit === 'SF' ? (p.objType === 'panel' ? it.w * it.h : it.w * it.d) : 1);
       add(it.productId, q, p.unit === 'SF' ? 'SF' : (p.unit === 'LF' ? 'LF' : 'EA'), `${level.name}: placed items`);
     });
-    summary.floorArea += lv.floorArea; summary.extWallLF += lv.extWallLF; summary.intWallLF += lv.intWallLF;
+    summary.floorArea += lv.floorArea; summary.outdoorArea += lv.outdoorArea || 0; summary.extWallLF += lv.extWallLF; summary.intWallLF += lv.intWallLF;
     summary.levels.push(lv);
   });
 
@@ -165,7 +177,7 @@ export function computeTakeoff(project, catalog) {
     const qty = +x.qty || 0;
     out.push({ key: 'x|' + x.id, extraId: x.id, productId: x.productId || '', category: x.category || (p ? p.category : 'other'), name: x.name || (p ? p.name : 'Line item'), unit: x.unit || (p ? p.unit : 'EA'), raw: qty, qty, waste: 0, price, labor, material: qty * price, laborTotal: qty * labor, total: qty * (price + labor), source: x.note || 'Added by hand' });
   });
-  const order = ['roofing', 'siding', 'window', 'door', 'drywall', 'paint', 'trim', 'flooring', 'cabinet', 'plumbing', 'appliance', 'electrical', 'commercial', 'furniture', 'labor', 'other'];
+  const order = ['roofing', 'siding', 'masonry', 'window', 'door', 'drywall', 'paint', 'trim', 'flooring', 'tile', 'cabinet', 'countertop', 'plumbing', 'appliance', 'electrical', 'commercial', 'outdoor', 'hardscape', 'landscape', 'furniture', 'labor', 'other'];
   out.sort((a, b) => (order.indexOf(a.category) - order.indexOf(b.category)) || a.name.localeCompare(b.name));
 
   const material = out.reduce((t, l) => t + l.material, 0);

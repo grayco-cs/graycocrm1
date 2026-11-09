@@ -3,7 +3,7 @@
 import { Plan2D } from './plan2d.js';
 import { fmtFtIn, parseFtIn, wallLength, wallDir, roofMeasure, bbox } from './geom.js';
 import { newLevel, restack, normalize, fromTemplate, TEMPLATES, PROJECT_TYPES, splitWall, wallsForRoom, autoRoof, markExterior, uid, swingDoorsIntoRooms } from './model.js';
-import { CATEGORIES, UNITS, KINDS, findProduct, categoryName, CSV_COLUMNS, toCSV, catalogFromCSV } from './catalog.js';
+import { CATEGORIES, UNITS, KINDS, findProduct, categoryName, CSV_COLUMNS, toCSV, catalogFromCSV, EXTERIOR_CATS, OUTDOOR_CATS } from './catalog.js';
 import { computeTakeoff, estimateCSV, roomStats } from './takeoff.js';
 import * as store from './store.js';
 
@@ -170,16 +170,19 @@ const app = {
       if (obj && sel.kind === 'item' && this.tool === 'select') { obj.productId = p.id; this.commit('Changed to ' + p.name); }
       else this.setTool('item');
     } else if (p.kind === 'floor') {
-      if (obj && sel.kind === 'room') { if (p.ceiling) obj.ceilingId = p.id; else obj.floorId = p.id; this.commit(`${p.ceiling ? 'Ceiling' : 'Floor'}: ${p.name}`); }
-      else this.toast('Select a room first, then click a floor to apply it.');
+      if (obj && sel.kind === 'room') {
+        if (p.ceiling) obj.ceilingId = p.id;
+        else { obj.floorId = p.id; if (OUTDOOR_CATS.includes(p.category)) obj.outdoor = true; }
+        this.commit(`${p.ceiling ? 'Ceiling' : (obj.outdoor ? 'Surface' : 'Floor')}: ${p.name}`);
+      } else this.toast(OUTDOOR_CATS.includes(p.category) ? 'Draw the yard, bed, patio or drive with the Room or Shape tool, then click this to cover it.' : 'Select a room first, then click a floor to apply it.');
     } else if (p.kind === 'wall') {
       if (obj && sel.kind === 'room') {
         if (p.category === 'paint' && /ceiling/i.test(p.name)) obj.ceilingId = p.id; else obj.wallFinishId = p.id;
         this.commit('Walls: ' + p.name);
       } else if (obj && sel.kind === 'wall') {
-        if (obj.exterior && (p.category === 'siding')) obj.finishOut = p.id; else obj.finishIn = p.id;
+        if (obj.exterior && EXTERIOR_CATS.includes(p.category)) obj.finishOut = p.id; else obj.finishIn = p.id;
         this.commit('Wall finish: ' + p.name);
-      } else if (p.category === 'siding') { this.project.settings.exteriorFinishId = p.id; this.commit('Outside walls: ' + p.name); }
+      } else if (EXTERIOR_CATS.includes(p.category)) { this.project.settings.exteriorFinishId = p.id; this.commit('All outside walls: ' + p.name); }
       else this.toast('Select a room or a wall first, then click a finish to apply it.');
     } else if (p.kind === 'roof') {
       if (p.roofPart) { this.toast('Roof accessories are set in the Estimate tab (Roof accessories).'); }
@@ -204,6 +207,8 @@ const app = {
     $('#plan-fit').addEventListener('click', () => this.plan.fit());
     $('#plan-zin').addEventListener('click', () => this.plan.zoomAt(this.plan.w / 2, this.plan.h / 2, 1.25));
     $('#plan-zout').addEventListener('click', () => this.plan.zoomAt(this.plan.w / 2, this.plan.h / 2, 0.8));
+    $('#btn-make3d').addEventListener('click', () => this.make3D());
+    $('#v-build').addEventListener('click', () => this.make3D());
     $('#btn-undo').addEventListener('click', () => this.doUndo());
     $('#btn-redo').addEventListener('click', () => this.doRedo());
     $('#prj-name').addEventListener('change', e => { this.project.name = e.target.value.trim() || 'Untitled plan'; this.commit('Renamed'); });
@@ -217,6 +222,7 @@ const app = {
     $('#pick-cat').innerHTML = '<option value="">All products</option>' + CATEGORIES.map(([id, n]) => `<option value="${id}">${esc(n)}</option>`).join('');
     $('#pick-cat').addEventListener('change', () => this.renderPicker());
     $('#pick-q').addEventListener('input', () => this.renderPicker());
+    $('#pick-brand').addEventListener('change', () => this.renderPicker());
     const len = $('#len');
     len.addEventListener('keydown', e => {
       if (e.key === 'Enter') { const ft = parseFtIn(len.value); if (this.plan.applyLength(ft)) { len.value = ''; } else this.toast('Type a length like 12, 12.5, 12\' 6" or 12-6. Click the first corner first.'); e.preventDefault(); }
@@ -296,6 +302,15 @@ const app = {
     } else if (this.view3d) this.view3d.visible = false;
     if (v === 'estimate') this.renderEstimate();
   },
+  // 🏗 Make 3D: open the 3D view and watch the model build itself.
+  async make3D() {
+    if (this.view !== '3d' && this.view !== 'split') await this.setView('3d');
+    const v = this.view3d; if (!v) return;
+    if (v.walk) { v.toggleWalk(false); $('#v-walk').classList.remove('on'); }
+    v.rebuild(); v.fit();
+    this.status('Building… click the 3D view to skip to the finished model.');
+    v.playBuild({ onDone: () => this.status('') });
+  },
   renderLevelSelect() {
     const s = $('#v-level'); const cur = this.view3d ? this.view3d.opts.upTo : -1;
     s.innerHTML = '<option value="-1">All levels</option>' + this.project.levels.map((l, i) => `<option value="${i}">Up to ${esc(l.name)}</option>`).join('');
@@ -334,13 +349,16 @@ const app = {
 
   // ---------- product picker ----------
   renderPicker() {
-    const cat = $('#pick-cat').value, q = $('#pick-q').value.trim().toLowerCase();
+    const cat = $('#pick-cat').value, q = $('#pick-q').value.trim().toLowerCase(), brand = $('#pick-brand').value;
+    const brands = [...new Set(this.catalog.filter(p => !cat || p.category === cat).map(p => p.brand).filter(Boolean))].sort();
+    const bs = $('#pick-brand'); const keep = brands.includes(brand) ? brand : '';
+    bs.innerHTML = '<option value="">All brands</option>' + brands.map(b => `<option>${esc(b)}</option>`).join(''); bs.value = keep;
     const list = $('#pick-list'); list.innerHTML = '';
-    const items = this.catalog.filter(p => (!cat || p.category === cat) && (!q || (p.name + ' ' + (p.sku || '') + ' ' + (p.vendor || '')).toLowerCase().includes(q)));
+    const items = this.catalog.filter(p => (!cat || p.category === cat) && (!keep || p.brand === keep) && (!q || q.split(/\s+/).every(w => productText(p).includes(w))));
     if (!items.length) list.append(h('p', { class: 'hint' }, 'No products. Add some in 📦 Catalog.'));
     items.forEach(p => {
       list.append(h('div', { class: 'pcard' + (this.activeProduct && this.activeProduct.id === p.id ? ' on' : ''), title: p.notes || p.name, onclick: () => this.useProduct(p) },
-        swatch(p), h('div', {}, h('div', { class: 'nm' }, p.name), h('div', { class: 'pr' }, `${money(+p.price + +p.labor)} / ${p.unit}` + (p.w ? ` · ${fmtFtIn(p.w)}${p.d ? ' × ' + fmtFtIn(p.d) : ''}${p.h ? ' × ' + fmtFtIn(p.h) : ''}` : '')))));
+        swatch(p), h('div', {}, h('div', { class: 'nm' }, p.name), (p.brand || p.colorName || p.finish || p.material) ? h('div', { class: 'pr' }, [p.brand && !p.name.includes(p.brand) ? p.brand : '', p.colorName && !p.name.includes(p.colorName) ? p.colorName : '', p.material && !p.name.includes(p.material) ? p.material : '', p.finish].filter(Boolean).join(' · ')) : null, h('div', { class: 'pr' }, `${money(+p.price + +p.labor)} / ${p.unit}` + (p.w ? ` · ${fmtFtIn(p.w)}${p.d ? ' × ' + fmtFtIn(p.d) : ''}${p.h ? ' × ' + fmtFtIn(p.h) : ''}` : '')))));
     });
   },
 
@@ -358,7 +376,7 @@ const app = {
       el.append(field('Thickness (in)', h('input', { type: 'number', step: '0.5', min: '2', value: +(w.thickness * 12).toFixed(2), onchange: e => { w.thickness = Math.max(2, num(e.target.value, 4.5)) / 12; this.commit('Wall thickness'); } })));
       el.append(lengthField('Height', w.height || 0, v => { w.height = v > 0 ? v : 0; this.commit('Wall height'); }, '', `Blank = level height (${fmtFtIn(this.level.height)})`));
       el.append(field('Outside wall', h('input', { type: 'checkbox', checked: w.exterior, onchange: e => { w.exterior = e.target.checked; w.thickness = w.exterior ? s.extThick : s.intThick; this.commit('Wall type'); } })));
-      if (w.exterior) el.append(field('Outside finish', productSelect(this.catalog, p => p.kind === 'wall' && p.category === 'siding', w.finishOut, v => { w.finishOut = v; this.commit('Outside finish'); }, `Project default`)));
+      if (w.exterior) el.append(field('Outside finish', productSelect(this.catalog, p => p.kind === 'wall' && EXTERIOR_CATS.includes(p.category), w.finishOut, v => { w.finishOut = v; this.commit('Outside finish'); }, `Project default`)));
       el.append(field('Inside face', productSelect(this.catalog, p => p.kind === 'wall' && p.category === 'drywall', w.finishIn, v => { w.finishIn = v; this.commit('Inside finish'); }, 'Project drywall')));
       el.append(h('div', { class: 'row' },
         h('button', { class: 'btn small', onclick: () => this.splitWallAt(w, 0.5) }, 'Split in half'),
@@ -381,17 +399,24 @@ const app = {
       const r = obj, st = roomStats(r, this.level);
       el.append(h('h3', {}, r.name), h('div', { class: 'sub' }, `${Math.round(st.area)} SF floor · ${fmtFtIn(st.perim)} around`));
       el.append(field('Name', h('input', { 'data-prop': 'name', value: r.name, onchange: e => { r.name = e.target.value || 'Room'; this.commit('Room name'); } })));
-      el.append(field('Floor', productSelect(this.catalog, p => p.kind === 'floor' && !p.ceiling, r.floorId, v => { r.floorId = v; this.commit('Floor'); }, 'None')));
-      el.append(field('Walls', productSelect(this.catalog, p => p.kind === 'wall' && (p.category === 'paint' || p.category === 'siding'), r.wallFinishId, v => { r.wallFinishId = v; this.commit('Wall finish'); }, 'None')));
-      el.append(field('Ceiling', productSelect(this.catalog, p => (p.kind === 'wall' && p.category === 'paint') || p.ceiling, r.ceilingId, v => { r.ceilingId = v; this.commit('Ceiling'); }, 'Project default')));
-      el.append(lengthField('Ceiling height', r.height || 0, v => { r.height = v > 0 ? v : 0; this.commit('Ceiling height'); }, '', `Blank = level height (${fmtFtIn(this.level.height)})`));
-      el.append(field('Baseboard', h('input', { type: 'checkbox', checked: r.baseboard !== false, onchange: e => { r.baseboard = e.target.checked; this.commit('Baseboard'); } })));
+      el.append(field('Outside area', h('input', { type: 'checkbox', title: 'Yard, bed, patio, drive or deck: priced by its surface only (no walls, ceiling or trim)', checked: !!r.outdoor, onchange: e => { r.outdoor = e.target.checked; this.commit(r.outdoor ? 'Outside area' : 'Inside room'); } })));
+      if (r.outdoor) {
+        el.append(field('Surface', productSelect(this.catalog, p => p.kind === 'floor' && !p.ceiling, r.floorId, v => { r.floorId = v; this.commit('Surface'); }, 'None')));
+        el.append(field('Under it', productSelect(this.catalog, p => p.kind === 'floor' && (p.category === 'landscape' || p.category === 'hardscape'), r.underId || '', v => { r.underId = v; this.commit('Under layer'); }, 'Nothing')));
+      } else {
+        el.append(field('Floor', productSelect(this.catalog, p => p.kind === 'floor' && !p.ceiling, r.floorId, v => { r.floorId = v; this.commit('Floor'); }, 'None')));
+        el.append(field('Walls', productSelect(this.catalog, p => p.kind === 'wall' && !['drywall', 'trim', 'siding', 'masonry'].includes(p.category), r.wallFinishId, v => { r.wallFinishId = v; this.commit('Wall finish'); }, 'None')));
+        el.append(field('Ceiling', productSelect(this.catalog, p => (p.kind === 'wall' && p.category === 'paint') || p.ceiling, r.ceilingId, v => { r.ceilingId = v; this.commit('Ceiling'); }, 'Project default')));
+        el.append(lengthField('Ceiling height', r.height || 0, v => { r.height = v > 0 ? v : 0; this.commit('Ceiling height'); }, '', `Blank = level height (${fmtFtIn(this.level.height)})`));
+        el.append(field('Baseboard', h('input', { type: 'checkbox', checked: r.baseboard !== false, onchange: e => { r.baseboard = e.target.checked; this.commit('Baseboard'); } })));
+      }
       if (r.points.length === 4) {
         const b = bbox(r.points);
         el.append(lengthField('Width (E–W)', b.w, v => { if (v > 0.5) { r.points = r.points.map(p => ({ x: b.x + (p.x - b.x) * v / b.w, y: p.y })); this.commit('Room size'); } }));
         el.append(lengthField('Depth (N–S)', b.h, v => { if (v > 0.5) { r.points = r.points.map(p => ({ x: p.x, y: b.y + (p.y - b.y) * v / b.h })); this.commit('Room size'); } }));
       }
-      el.append(h('div', { class: 'kv' },
+      if (r.outdoor) el.append(h('div', { class: 'kv' }, h('span', {}, 'Area'), h('b', {}, Math.round(st.area) + ' SF'), h('span', {}, 'Edge'), h('b', {}, fmtFtIn(st.perim))));
+      else el.append(h('div', { class: 'kv' },
         h('span', {}, 'Floor area'), h('b', {}, Math.round(st.area) + ' SF'),
         h('span', {}, 'Wall area (less openings)'), h('b', {}, Math.round(st.wallArea) + ' SF'),
         h('span', {}, 'Ceiling area'), h('b', {}, Math.round(st.area) + ' SF'),
@@ -459,7 +484,7 @@ const app = {
       h('button', { class: 'btn small', onclick: () => { const r = autoRoof(P, L, this.roofDefaults()); if (r) { this.select({ kind: 'roof', id: r.id }); this.commit('Auto roof'); } else this.toast('Draw the walls first.'); } }, '⌂ Auto roof'),
       P.levels.length > 1 ? h('button', { class: 'btn small danger', onclick: () => { if (!confirm(`Delete ${L.name} and everything drawn on it?`)) return; P.roofs = P.roofs.filter(r => r.levelId !== L.id); P.levels = P.levels.filter(x => x !== L); restack(P); this.level = P.levels[0]; this.commit('Delete level'); } }, 'Delete level') : null));
     el.append(h('hr', { class: 'sep' }), h('h3', {}, 'Defaults'));
-    el.append(field('Outside walls', productSelect(this.catalog, p => p.kind === 'wall' && p.category === 'siding', s.exteriorFinishId, v => { s.exteriorFinishId = v; this.commit('Outside finish'); }, 'None')));
+    el.append(field('Outside walls', productSelect(this.catalog, p => p.kind === 'wall' && EXTERIOR_CATS.includes(p.category), s.exteriorFinishId, v => { s.exteriorFinishId = v; this.commit('Outside finish'); }, 'None')));
     el.append(field('Drywall', productSelect(this.catalog, p => p.kind === 'wall' && p.category === 'drywall', s.drywallId, v => { s.drywallId = v; this.commit('Drywall'); }, 'Not included')));
     el.append(field('Ceilings', productSelect(this.catalog, p => (p.kind === 'wall' && p.category === 'paint') || p.ceiling, s.ceilingFinishId, v => { s.ceilingFinishId = v; this.commit('Ceilings'); }, 'Not included')));
     el.append(field('Baseboard', productSelect(this.catalog, p => p.category === 'trim', s.baseboardId, v => { s.baseboardId = v; this.commit('Baseboard'); }, 'Not included')));
@@ -578,11 +603,11 @@ const app = {
     const draw = () => {
       body.innerHTML = '';
       body.append(h('h2', {}, `Catalog (${this.catalog.length} products)`));
-      body.append(h('p', { class: 'hint', style: 'margin:0 0 10px' }, 'Your products, colors and prices. Changes save right away and update every estimate. Price = material per unit, Labor = labor per unit. Sizes are in feet (w × d × h); doors and windows use w × h and a sill height. Add a picture to use it as the 3D texture (floors, siding, roofs, counters).'));
+      body.append(h('p', { class: 'hint', style: 'margin:0 0 10px' }, 'Your products, brands, colors and prices. ⧉ copies a product as a new color or option. Screen colors are approximate: check real samples. Changes save right away and update every estimate. Price = material per unit, Labor = labor per unit. Sizes are in feet (w × d × h); doors and windows use w × h and a sill height. Add a picture to use it as the 3D texture (floors, siding, roofs, counters).'));
       const filter = h('input', { type: 'search', placeholder: 'Filter', oninput: () => drawRows() });
       const catF = h('select', { onchange: () => drawRows() }, h('option', { value: '' }, 'All categories'), CATEGORIES.map(([id, n]) => h('option', { value: id }, n)));
       body.append(h('div', { class: 'row' }, filter, catF,
-        h('button', { class: 'btn primary', onclick: () => { const p = { id: uid('p'), category: catF.value || 'other', kind: 'object', name: 'New product', unit: 'EA', price: 0, labor: 0, color: '#b0b0b0', w: 2, d: 2, h: 3, sku: '', vendor: '', notes: '' }; this.catalog.unshift(p); this.saveCat(); filter.value = ''; drawRows(); } }, '+ Add product'),
+        h('button', { class: 'btn primary', onclick: () => { const p = { id: uid('p'), category: catF.value || 'other', kind: 'object', name: 'New product', brand: '', colorName: '', finish: '', material: '', unit: 'EA', price: 0, labor: 0, color: '#b0b0b0', w: 2, d: 2, h: 3, sku: '', vendor: '', notes: '' }; this.catalog.unshift(p); this.saveCat(); filter.value = ''; drawRows(); } }, '+ Add product'),
         h('button', { class: 'btn', onclick: async () => {
           const f = await store.pickFile('.csv,text/csv'); if (!f) return;
           const { products, errors } = catalogFromCSV(await store.readText(f));
@@ -594,12 +619,16 @@ const app = {
         h('button', { class: 'btn', onclick: () => store.download('planbuilder-catalog.csv', toCSV(this.catalog, CSV_COLUMNS), 'text/csv') }, '⤓ Export CSV'),
         h('button', { class: 'btn danger', onclick: () => { if (!confirm('Put the catalog back to the starting products? Your price edits and added products will be lost (export a CSV first to keep them).')) return; this.catalog = store.resetCatalog(); this.saveCat(); drawRows(); } }, 'Reset')));
       const tbl = h('table', { class: 'cat-table' });
-      tbl.append(h('thead', {}, h('tr', {}, ['', 'Name', 'Category', 'Kind', 'Unit', 'Price', 'Labor', 'W', 'D', 'H', 'Sill / elev', 'SKU / vendor', ''].map(x => h('th', {}, x)))));
+      tbl.append(h('thead', {}, h('tr', {}, ['', 'Name', 'Brand / color name', 'Finish / material', 'Category', 'Kind', 'Unit', 'Price', 'Labor', 'W', 'D', 'H', 'Sill / elev', 'SKU / vendor', ''].map(x => h('th', {}, x)))));
       const tb = h('tbody'); tbl.append(tb); body.append(tbl);
+      body.append(h('datalist', { id: 'pb-brands' }, [...new Set(this.catalog.map(p => p.brand).filter(Boolean))].sort().map(b => h('option', { value: b }))));
       const drawRows = () => {
         tb.innerHTML = '';
         const q = filter.value.trim().toLowerCase();
-        this.catalog.filter(p => (!catF.value || p.category === catF.value) && (!q || (p.name + p.sku + p.vendor).toLowerCase().includes(q))).forEach(p => {
+        const list = this.catalog.filter(p => (!catF.value || p.category === catF.value) && (!q || q.split(/\s+/).every(w => productText(p).includes(w))));
+        const MAX = 150;
+        if (list.length > MAX) tb.append(h('tr', {}, h('td', { colspan: 15, class: 'hint' }, `Showing ${MAX} of ${list.length}. Type in Filter or pick a category to narrow it.`)));
+        list.slice(0, MAX).forEach(p => {
           const upd = (k, v) => { p[k] = v; this.saveCat(); };
           const n = (k, w = 60) => h('td', { class: 'num' }, h('input', { type: 'number', step: '0.01', style: `width:${w}px`, value: p[k] ?? '', onchange: e => upd(k, e.target.value === '' ? undefined : num(e.target.value)) }));
           const imgBtn = h('button', { class: 'btn small', title: 'Picture / texture', onclick: async () => {
@@ -609,13 +638,15 @@ const app = {
           tb.append(h('tr', {},
             h('td', { style: 'white-space:nowrap' }, h('input', { type: 'color', value: /^#[0-9a-f]{6}$/i.test(p.color) ? p.color : '#b0b0b0', onchange: e => upd('color', e.target.value) }), ' ', imgBtn, p.texture ? h('button', { class: 'btn small', title: 'Remove picture', onclick: () => { delete p.texture; this.saveCat(); drawRows(); } }, '×') : ''),
             h('td', {}, h('input', { value: p.name, style: 'min-width:200px', onchange: e => upd('name', e.target.value) })),
+            h('td', {}, h('input', { value: p.brand || '', placeholder: 'Brand', list: 'pb-brands', style: 'width:110px', onchange: e => upd('brand', e.target.value.trim()) }), h('input', { value: p.colorName || '', placeholder: 'Color name / #', style: 'width:110px', onchange: e => upd('colorName', e.target.value.trim()) })),
+            h('td', {}, h('input', { value: p.finish || '', placeholder: 'Finish / sheen', style: 'width:100px', onchange: e => upd('finish', e.target.value.trim()) }), h('input', { value: p.material || '', placeholder: 'Species / material', style: 'width:100px', onchange: e => upd('material', e.target.value.trim()) })),
             h('td', {}, select(CATEGORIES, p.category, v => upd('category', v))),
             h('td', {}, select(KINDS.map(k => [k, k]), p.kind, v => upd('kind', v))),
             h('td', {}, select(UNITS.map(u => [u, u]), p.unit, v => upd('unit', v))),
             n('price', 75), n('labor', 75), n('w', 52), n('d', 52), n('h', 52),
             h('td', { class: 'num' }, h('input', { type: 'number', step: '0.01', style: 'width:52px', value: p.kind === 'opening' ? (p.sill ?? '') : (p.elev ?? ''), onchange: e => upd(p.kind === 'opening' ? 'sill' : 'elev', e.target.value === '' ? undefined : num(e.target.value)) })),
             h('td', {}, h('input', { value: p.sku || '', placeholder: 'SKU', style: 'width:80px', onchange: e => upd('sku', e.target.value) }), h('input', { value: p.vendor || '', placeholder: 'Vendor', style: 'width:90px', onchange: e => upd('vendor', e.target.value) })),
-            h('td', {}, h('button', { class: 'btn small danger', title: 'Delete product', onclick: () => { if (!confirm(`Delete "${p.name}" from the catalog?`)) return; this.catalog = this.catalog.filter(x => x !== p); store.markRemoved(p.id); this.saveCat(); drawRows(); } }, '×'))));
+            h('td', { style: 'white-space:nowrap' }, h('button', { class: 'btn small', title: 'Copy as a new color / option', onclick: () => { const c = { ...p, id: uid('p'), name: p.name + ' (new color)', colorName: '' }; delete c.texture; this.catalog.splice(this.catalog.indexOf(p) + 1, 0, c); this.saveCat(); drawRows(); } }, '⧉'), ' ', h('button', { class: 'btn small danger', title: 'Delete product', onclick: () => { if (!confirm(`Delete "${p.name}" from the catalog?`)) return; this.catalog = this.catalog.filter(x => x !== p); store.markRemoved(p.id); this.saveCat(); drawRows(); } }, '×'))));
         });
       };
       drawRows();
@@ -636,13 +667,13 @@ const app = {
     const P = this.project, base = (P.name || 'plan').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-') || 'plan';
     if (kind === 'json') store.download(base + '.planbuilder.json', JSON.stringify(P, null, 1));
     else if (kind === 'csv') store.download(base + '-estimate.csv', estimateCSV(P, computeTakeoff(P, this.catalog)), 'text/csv');
-    else if (kind === 'planpng') { const a = document.createElement('a'); a.href = this.plan.snapshot(); a.download = base + '-' + this.level.name.replace(/\s+/g, '-') + '.png'; a.click(); }
+    else if (kind === 'planpng') { const a = document.createElement('a'); a.href = await brandStamp(this.plan.snapshot()); a.download = base + '-' + this.level.name.replace(/\s+/g, '-') + '.png'; a.click(); }
     else if (kind === 'png' || kind === 'glb') {
       const v = await this.load3D(); if (!v) return;
       const wasHidden = $('#view-pane').hidden;
       if (wasHidden) await this.setView('split');
       v.rebuild(); if (!this._fitted3d) { v.fit(); this._fitted3d = true; }
-      if (kind === 'png') { const a = document.createElement('a'); a.href = v.screenshot(); a.download = base + '-3d.png'; a.click(); }
+      if (kind === 'png') { const a = document.createElement('a'); a.href = await brandStamp(v.screenshot()); a.download = base + '-3d.png'; a.click(); }
       else { const blob = await v.exportGLB(); store.download(base + '.glb', blob); }
     } else if (kind === 'print') {
       this._printing = true;
@@ -653,15 +684,17 @@ const app = {
   async buildPrint(with3D) {
     const P = this.project, t = computeTakeoff(P, this.catalog), s = P.settings;
     const out = $('#print'); out.innerHTML = '';
-    const head = h('div', {}, h('h1', {}, P.name), h('div', { class: 'meta' },
+    const phead = (title) => h('div', { class: 'print-head' }, h('div', {}, h('h1', {}, title || P.name), h('div', { style: 'color:#555' }, [P.address, P.client].filter(Boolean).join(' · '))), h('img', { class: 'print-logo', src: 'img/grayco-logo-navy.png', alt: 'GrayCo Construction Services' }));
+    const pfoot = () => h('div', { class: 'print-foot' }, `GrayCo Construction Services · Prepared ${new Date().toLocaleDateString()} with GrayCo PlanBuilder 3D · Drawings are for estimating; verify all dimensions in the field.`);
+    const head = h('div', {}, phead(), h('div', { class: 'meta' },
       ...[['Client', P.client], ['Address', P.address], ['Claim #', P.claimNo], ['Carrier', P.carrier], ['Adjuster', P.adjuster], ['Date of loss', P.dateOfLoss], ['Prepared', new Date().toLocaleDateString()], ['Floor area', Math.round(t.summary.floorArea).toLocaleString() + ' SF']].filter(x => x[1]).map(([k, v]) => h('div', {}, h('b', {}, k + ': '), String(v)))));
     // one page per level
     const curLevel = this.level;
     this.project.levels.forEach((L, i) => {
       this.level = L;
       const img = this.plan.snapshot(1600, 1150);
-      out.append(h('div', { class: 'pg' }, i === 0 ? head : h('h1', {}, P.name), h('h2', {}, `${L.name} plan`), h('img', { src: img, alt: L.name + ' plan' }),
-        roomTable(L, t)));
+      out.append(h('div', { class: 'pg' }, i === 0 ? head : phead(), h('h2', {}, `${L.name} plan`), h('img', { src: img, alt: L.name + ' plan' }),
+        roomTable(L, t), pfoot()));
     });
     this.level = curLevel; this.plan.draw();
     if (with3D) {
@@ -674,7 +707,7 @@ const app = {
         for (const pz of ['iso', 'front', 'back']) { v.setPreset(pz); shots.push(v.screenshot()); }
         v.fit();
         if (hidden) { $('#view-pane').hidden = true; v.visible = false; this.plan.resize(); }
-        out.append(h('div', { class: 'pg' }, h('h2', {}, '3D views'), ...shots.map(src => h('img', { src, style: 'margin-bottom:8px;max-height:3.1in;object-fit:contain' }))));
+        out.append(h('div', { class: 'pg' }, phead(), h('h2', {}, '3D views'), ...shots.map(src => h('img', { src, style: 'margin-bottom:8px;max-height:3in;object-fit:contain' })), pfoot()));
       }
     }
     // estimate
@@ -684,7 +717,7 @@ const app = {
     tbl.append(tb);
     const T = t.totals;
     const tot = h('table', { style: 'width:50%;margin:10px 0 0 auto' }, h('tbody', {}, ...[['Material', T.material], ['Labor', T.labor], [`Tax ${s.taxRate}%`, T.tax], ['Subtotal', T.subtotal], [`Overhead ${s.overheadPct}%`, T.overhead], [`Profit ${s.profitPct}%`, T.profit], ['Total', T.grand]].map(([k, v]) => h('tr', {}, h('td', {}, k === 'Total' ? h('b', {}, k) : k), h('td', { class: 'n' }, k === 'Total' ? h('b', {}, money(v)) : money(v))))));
-    out.append(h('div', {}, h('h2', {}, 'Estimate'), tbl, tot, P.notes ? h('p', {}, h('b', {}, 'Notes: '), P.notes) : null));
+    out.append(h('div', {}, phead(), h('h2', {}, 'Estimate'), tbl, tot, P.notes ? h('p', {}, h('b', {}, 'Notes: '), P.notes) : null, pfoot()));
   },
 };
 
@@ -712,6 +745,7 @@ function productSelect(catalog, filter, value, onChange, emptyLabel) {
   s.value = value || '';
   return s;
 }
+function productText(p) { return [p.name, p.brand, p.colorName, p.finish, p.material, p.sku, p.vendor, categoryName(p.category)].filter(Boolean).join(' ').toLowerCase(); }
 function swatch(p) {
   const d = h('div', { class: 'swatch' });
   d.style.background = p.color || '#ccc';
@@ -723,6 +757,19 @@ function roomTable(L, t) {
   return h('table', { style: 'margin-top:8px' }, h('thead', {}, h('tr', {}, h('th', {}, 'Room'), h('th', { class: 'n' }, 'Floor SF'), h('th', { class: 'n' }, 'Wall SF'), h('th', { class: 'n' }, 'Perimeter'), h('th', { class: 'n' }, 'Ceiling ht'), h('th', {}, 'Floor'))),
     h('tbody', {}, lv.rooms.map(r => { const room = L.rooms.find(x => x.id === r.id); const fp = findProduct(app.catalog, room && room.floorId); return h('tr', {}, h('td', {}, r.name), h('td', { class: 'n' }, Math.round(r.area)), h('td', { class: 'n' }, Math.round(r.wallArea)), h('td', { class: 'n' }, fmtFtIn(r.perim)), h('td', { class: 'n' }, fmtFtIn(r.height)), h('td', {}, fp ? fp.name : '')); }),
       h('tr', {}, h('td', {}, h('b', {}, 'Total')), h('td', { class: 'n' }, h('b', {}, Math.round(lv.floorArea))), h('td'), h('td'), h('td'), h('td'))));
+}
+// Puts the GrayCo logo in the bottom-right corner of an exported picture.
+function loadImg(src) { return new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src; }); }
+async function brandStamp(dataUrl) {
+  try {
+    const [img, logo] = await Promise.all([loadImg(dataUrl), loadImg('img/grayco-logo-navy.png')]);
+    const c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
+    const x = c.getContext('2d'); x.drawImage(img, 0, 0);
+    const lh = Math.round(Math.min(img.height * 0.11, 150)), lw = Math.round(logo.width * lh / logo.height), pad = Math.round(lh * 0.25);
+    x.fillStyle = 'rgba(255,255,255,0.85)'; x.fillRect(c.width - lw - pad * 2, c.height - lh - pad * 2, lw + pad * 2, lh + pad * 2);
+    x.drawImage(logo, c.width - lw - pad, c.height - lh - pad, lw, lh);
+    return c.toDataURL('image/png');
+  } catch (e) { return dataUrl; }
 }
 function shrinkImage(dataUrl, max) {
   return new Promise(res => {

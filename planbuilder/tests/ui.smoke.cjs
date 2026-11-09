@@ -128,6 +128,13 @@ const shots = process.argv[2];
     if (shots) await p.screenshot({ path: shots + `/smoke-${t}.png` });
   }
 
+  // 11b) Make 3D plays the build animation and ends with every piece in place
+  await p.click('#btn-make3d');
+  await p.waitForTimeout(400);
+  assert.ok(await ev(() => PlanBuilder.view3d.building), 'build animation is running');
+  await p.waitForFunction(() => !PlanBuilder.view3d.building, null, { timeout: 30000 });
+  assert.ok(await ev(() => { let ok = true; PlanBuilder.view3d.root.traverse(o => { if (o.userData.build && (!o.visible || Math.abs(o.scale.y - 1) > 1e-6)) ok = false; }); return ok; }), 'all pieces in place after the build');
+
   // 12) Catalog editor: change a price, estimate follows
   await p.click('#btn-catalog');
   const before = await ev(() => PlanBuilder.takeoff.totals.grand);
