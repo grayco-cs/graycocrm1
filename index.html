@@ -5490,7 +5490,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.181-2026-11-09-r19m -->
+<!-- GrayCo CRM Build: 33.182-2026-11-09-r19n -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6439,7 +6439,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.181-2026-11-09-r19m");
+  console.log("[GC] Build 33.182-2026-11-09-r19n");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6487,7 +6487,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.181-2026-11-09-r19m"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.182-2026-11-09-r19n"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -65849,7 +65849,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
       // Short scope description: category + a couple of item hints
       var hints=groups[cat].items.filter(Boolean).slice(0,2).join(', ');
       var label=cat + (hints? (' - '+hints):'');
-      return { label:label, total:groups[cat].total };
+      return { label:label, total:groups[cat].total, cat:cat, items:groups[cat].items.filter(Boolean) };   /*PROPLOOK*/
     });
   }
 
@@ -65869,21 +65869,32 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
     var contractor = est.estimator || est.by || 'Nicholas Thomas';
     var dateStr = todayLong();  // ALWAYS today
 
-    var scopeHTML = lines.map(function(l, i){
-      return '<li style="margin:4px 0"><b>'+esc(l.label)+'</b>'+(l.total? (' - <b>$'+money(l.total)+'</b>') : '')+'</li>';
+    var scopeHTML = lines.map(function(l, i){   /* PROPLOOK: "1. Framing ............ $23,270.00" + its items as bullets */
+      var seen = {}, items = (l.items || []).map(function(t){ return String(t).replace(/\s+--\s+/g, ' — ').replace(/\s+/g, ' ').trim(); }).filter(function(t){ var k = t.toLowerCase(); if (!t || seen[k]) return false; seen[k] = 1; return true; }).slice(0, 10);
+      return '<li class="trade"><div class="th"><span>'+esc(l.cat || l.label)+'</span>'+(l.total? '<span>$'+money(l.total)+'</span>' : '')+'</div>'
+        + (items.length ? '<ul class="items">'+items.map(function(t){ return '<li>'+esc(t)+'</li>'; }).join('')+'</ul>' : '') + '</li>';
     }).join('');
+    var _sc = est.scope || {}, _lst = function(t){ return String(t || '').split(/\n+/).map(function(x){ return x.replace(/^\s*[-•*\u2022]\s*/, '').trim(); }).filter(Boolean); };
+    var incList = _lst(_sc.inc || est.inclusions), excList = _lst(_sc.exc || est.exclusionsText);
+    var submittedTo = est.client || est.gc || est.customer || '';
 
-    var css = 'body{font-family:\"Times New Roman\",Georgia,serif;color:#111;font-size:12pt;line-height:1.5;margin:0 auto;padding:40px 54px;max-width:8.5in}'
+    var css = 'body{font-family:Arial,Helvetica,sans-serif;color:#111;font-size:10.5pt;line-height:1.45;margin:0 auto;padding:36px 54px 60px;max-width:8.5in}'   /* PROPLOOK: Arial like the proposals the team sends */
+      +'.ptitle{text-align:center;font-size:17pt;font-weight:700;letter-spacing:.02em;margin:18px 0 0}.pdate{text-align:center;font-size:10.5pt;margin:2px 0 14px}'
+      +'.proj div{margin:2px 0}.proj b{font-weight:700}'
+      +'ol.scope{list-style:none;counter-reset:tr;padding-left:0}ol.scope>li.trade{counter-increment:tr;margin:10px 0 8px;break-inside:avoid}'
+      +'ol.scope .th{display:flex;justify-content:space-between;gap:12px;font-weight:700}ol.scope .th>span:first-child::before{content:counter(tr) ". "}'
+      +'ul.items{margin:3px 0 0;padding-left:34px;list-style:disc}ul.items li{margin:1px 0}'
+      +'.pfoot{margin-top:24px;text-align:center;font-size:8.5pt;color:#555}@media print{.pfoot{position:fixed;bottom:6px;left:0;right:0;margin:0}}'
       +'.hdr{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;margin-bottom:8px}'
       +'.co{font-size:15pt;font-weight:700;text-align:center}'
       +'.coinfo{font-size:9pt;color:#444;text-align:center;line-height:1.4}'
       +'.logo{height:78px}'
-      +'h2{font-size:12pt;margin:18px 0 6px;text-decoration:underline}'
+      +'h2{font-size:11pt;margin:18px 0 6px;text-transform:uppercase;letter-spacing:.02em}'
       +'.center{text-align:center}'
-      +'.total{font-weight:700;font-size:12.5pt;margin:12px 0}'
+      +'.total{font-weight:700;font-size:12pt;margin:14px 0 10px;padding:8px 0;border-top:1.5px solid #111;overflow:hidden}'
       +'ul.notes{margin:4px 0 4px 0;padding-left:20px} ul.notes li{margin:5px 0}'
       +'ol.scope{margin:6px 0 6px 0;padding-left:22px}'
-      +'.small{font-size:10.5pt;color:#222}'
+      +'.small{font-size:9.5pt;color:#222}'
       +'.sig{margin-top:26px;font-size:11pt;line-height:2.4}'
       +'@media print{body{padding:24px}}';
 
@@ -65909,13 +65920,17 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
       + '<\/script>'
       + (window._gcDocHeader?window._gcDocHeader({}):'')
       + '<div class="coinfo" style="text-align:left;margin:-6px 0 6px">TIN#33-2106808</div>'
-      + '<div class="center" style="margin:22px 0 14px;font-weight:700">'+esc(dateStr)+'</div>'
-      + '<h2>OVERVIEW:</h2>'
-      + '<div class="center" style="margin:6px 0"><u><b>Project:</b></u> <b>'+esc(proj)+'</b></div>'
-      + (loc? '<div class="center" style="margin:6px 0"><u><b>Location</b></u> : <b>'+esc(loc)+'</b></div>' : '')
-      + (scopeSummary? '<div class="center" style="margin:8px 0"><u><b>Proposed scope of work:</b></u> <b>'+esc(scopeSummary)+'</b></div>' : '')
-      + '<h2 style="margin-top:18px">SCOPE OF WORK:</h2>'
+      + '<div class="ptitle">PROPOSAL</div><div class="pdate">'+esc(dateStr)+'</div>'
+      + '<h2>Project</h2><div class="proj">'
+        + '<div><b>Project:</b> '+esc(proj)+'</div>'
+        + (loc? '<div><b>Location:</b> '+esc(loc)+'</div>' : '')
+        + (submittedTo? '<div><b>Submitted To:</b> '+esc(submittedTo)+'</div>' : '')
+        + (scopeSummary? '<div><b>Scope:</b> '+esc(scopeSummary)+'</div>' : '')
+      + '</div>'
+      + '<h2 style="margin-top:18px">Scope of Work and Pricing</h2>'
       + '<ol class="scope">'+scopeHTML+'</ol>'
+      + (incList.length ? '<h2>Inclusions</h2><ul class="notes small">'+incList.map(function(t){ return '<li>'+esc(t)+'</li>'; }).join('')+'</ul>' : '')
+      + (excList.length ? '<h2>Project Exclusions</h2><ul class="notes small">'+excList.map(function(t){ return '<li>'+esc(t)+'</li>'; }).join('')+'</ul>' : '')
       + '<div class="total">The total amount of this Proposal is: $'+money(subtotal)+'</div>'
       + (ms && msTax ? ('<div class="total" style="font-size:11.5pt">Ms contractors tax (3.5%) = $'+money(msTax)+'</div>'
              +'<div class="total">Total with contractors tax = $'+money(grand)+'</div>')
@@ -65948,6 +65963,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
         + 'Contractor Print:____'+esc(contractor)+'_________ Date:____'+esc(new Date().toLocaleDateString('en-US'))+'____<br>'
         + 'Contractor Signature:__________________________ Date:____'+esc(new Date().toLocaleDateString('en-US'))+'____'
       + '</div>'
+      + '<div class="pfoot">GrayCo Construction Services, LLC | '+esc(proj)+'</div>'
       + '</body></html>';
     return html;
   };
