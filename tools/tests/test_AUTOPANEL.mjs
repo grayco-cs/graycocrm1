@@ -84,13 +84,13 @@ const L = AUTO.LIST, D = AUTO.defaults();
 ok(L.length >= 80 && new Set(L.map(a => a.key)).size === L.length, 'one list, ' + L.length + ' automations, no key twice');
 ok(L.every(a => a.key && a.name && a.desc && /^[ABCD]$/.test(a.effect) && AUTO.GROUPS.some(g => g[0] === a.group)), 'every automation has a key, a plain name, a description, an effect A/B/C/D and a group');
 const MUST_ON = ['missed_call_textback', 'call_chain', 'emergency_line', 'oncall_paging', 'staff_text_alerts', 'website_intake', 'lead_intake', 'partner_api', 'callrail', 'bids_inbox', 'claims_inbox', 'money_intake',
-  'backups', 'cloud_sync', 'companycam_read', 'companycam_photos', 'mail_index', 'cust_release', 'scheduled_posts', 'bid_alerts_staff', 'tax_alerts', 'approvals_digest', 'lead_auto_assign'];
+  'backups', 'cloud_sync', 'companycam_read', 'companycam_photos', 'mail_index', 'cust_release', 'scheduled_posts', 'bid_alerts_staff', 'tax_alerts', 'approvals_digest', 'lead_auto_assign', 'bid_watch'];
 ok(MUST_ON.every(k => D[k] === true), 'ON by default: safety, lead intake, sync / backups, CompanyCam read / photos, mail index, staff alerts, the 7 AM release, approved posts', MUST_ON.filter(k => D[k] !== true));
 const MUST_OFF = ['price_index_monthly', 'companycam_new_jobs', 'invoice_autopost', 'expense_autopost', 'progress_autodraw', 'legacy_progress_billing', 'legacy_autoflag_notes', 'job_stages', 'auto_100', 'closeout_autopilot',
   'commission_sweep', 'mailed_invoice_booking', 'dup_invoice_delete', 'x10_code_wipe', 'ms_tax_add', 'approval_escalation', 'weekly_update', 'maint_plans', 'referral_credits', 'monthly_statements',
   'final_invoice_reminders', 'estimate_followups', 'appt_confirmations', 'we_need_reminders', 'one_year_note', 'adjuster_followups', 'lien_waiver_requests', 'bid_result_emails', 'sub_schedule_texts', 'sub_firstday_text'];
 ok(MUST_OFF.every(k => D[k] === false), 'OFF by default: every automation the owner listed (price update, auto-posts, draws, stages, closeout, commission, booking, deletes, wipes, tax, assign, escalation, queueing, reminders, sub texts …)', MUST_OFF.filter(k => D[k] !== false));
-ok(L.filter(a => (a.effect === 'A' || a.effect === 'C') && !a.critical && a.defaultOn).map(a => a.key).every(k => ['cust_release', 'scheduled_posts', 'lead_auto_assign'].indexOf(k) >= 0),   /* LEADAUTO (owner 11/9) */
+ok(L.filter(a => (a.effect === 'A' || a.effect === 'C') && !a.critical && a.defaultOn).map(a => a.key).every(k => ['cust_release', 'scheduled_posts', 'lead_auto_assign', 'bid_watch'].indexOf(k) >= 0),   /* LEADAUTO (owner 11/9) */
   'no other customer send or record change is ON by default (only the 7 AM release and approved posts)', L.filter(a => (a.effect === 'A' || a.effect === 'C') && !a.critical && a.defaultOn).map(a => a.key));
 ok(L.filter(a => a.group === 'safety').every(a => a.critical && a.defaultOn), 'safety items are critical (locked ON in the panel)');
 ok(/OFF/.test(AUTO.BY.companycam_new_jobs.desc) && /how PM jobs arrive/.test(AUTO.BY.companycam_new_jobs.desc), 'CompanyCam "make new jobs" says plainly it is how PM jobs arrive');
@@ -185,7 +185,7 @@ setKv('gc_automations', {}); setClock('2026-11-03T16:00:00Z'); reset(); { const 
 setKv('gc_automations', ALL_OFF); reset();
 const held = kv('gc_auto_held') || {};
 const SERVER_SCHED_KEYS = ['price_index_monthly', 'x10_code_wipe', 'companycam_new_jobs', 'companycam_read', 'companycam_photos', 'approval_escalation', 'invoice_email_queue', 'final_invoice_reminders', 'portal_docs_notice',
-  'estimate_followups', 'customer_app_push', 'cust_release', 'weekly_update', 'bid_watch', 'bid_alerts_staff', 'bid_portal_drafts', 'data_check', 'winback', 'mkt_internal_reports', 'social_drafts', 'company_docs_expiry', 'inspection_offer',
+  'estimate_followups', 'customer_app_push', 'cust_release', 'weekly_update', 'bid_alerts_staff', 'bid_portal_drafts', 'data_check', 'winback', 'mkt_internal_reports', 'social_drafts', 'company_docs_expiry', 'inspection_offer',
   'scheduled_posts', 'mkt_autopilot', 'field_dispatch', 'adjuster_followups', 'field_staff_nudges', 'one_year_note', 'maint_plans', 'newsletter_drafts', 'event_reminders', 'oncall_paging', 'emergency_line', 'x10_vehicle',
   'monthly_statements', 'x10_mydata', 'coi_requests', 'warranty_checkup_offer', 'we_need_reminders', 'office_todos', 'mkt_report_external', 'crm_health', 'referral_credits', 'est_price_watch', 'photo_tags', 'daily_plan',
   'mail_index', 'gdocs_sync', 'mail_followup', 'ar_reminders', 'payroll_check', 'lien_waiver_requests', 'approvals_digest', 'tax_alerts', 'backups', 'portal_gate_queue', 'text_thread_copy', 'ads_insights'];
