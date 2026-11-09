@@ -52,6 +52,8 @@ const PAUSE_MS = 1500, TIMEOUT_MS = 10000, MAX_PAGE = 3 * 1024 * 1024, CONCURREN
 /* West Tennessee counties / towns within about 100 miles of Memphis (STREAM lists the whole state) */
 const TN_WEST = /\b(Shelby|Fayette|Tipton|Lauderdale|Haywood|Hardeman|Madison|Crockett|Dyer|Gibson|Chester|Henderson|McNairy|Obion|Weakley|Hardin|Memphis|Millington|Bartlett|Germantown|Collierville|Covington|Somerville|Union City|Dyersburg)\b/;
 const SOURCES = [
+  /*BARGEROOM*/ { id: 'barge-planroom', name: 'Barge Design Solutions — public plan room', label: 'Barge Design (public owner)', owner: '', city: '', state: '', type: 'government',
+    auto: true, kind: 'rka', companyIs: 'owner', radius: true, url: 'https://bidding.bargedesign.com/projects/public', noAi: true },
   /*MRPLANROOM*/ { id: 'mr-planroom', name: 'Memphis Reprographics — public plan room (mrplanroom.com)', label: 'MR plan room', owner: '', city: '', state: '', type: 'commercial',
     auto: true, kind: 'rka', companyIs: 'owner', url: 'https://www.mrplanroom.com/projects/public', noAi: true },
   /*RKAROOM*/ { id: 'rka-planroom', name: 'RKA Construction — public plan room', label: 'RKA plan room', owner: '', city: '', state: 'MS', type: 'commercial',
@@ -554,6 +556,7 @@ async function runAll(opts){
         if (!items.length) st.why = 'the page was read but no solicitations were found on it — it may have changed (check the link)';
       } else st.why = page.why || ('the site answered ' + page.status);
       const mine = seen[src.id] = seen[src.id] || {};
+      const from0 = records.length;   /* BARGEROOM */
       items.forEach(it => {
         const isNew = !mine[it.id];
         mine[it.id] = mine[it.id] || nowIso().slice(0, 10);
@@ -563,6 +566,13 @@ async function runAll(opts){
         st.matched++;
         records.push(toRecord(src, it, mw.hits));
       });
+      /* BARGEROOM: only the jobs within range (300 mi of Memphis + the Atlanta area) */
+      if (src.radius && records.length > from0) {
+        const got = records.splice(from0);
+        try { const g = { leads: [], dropped: [] }, rg = require('./bid-inbox.js')._test.radiusGate; for (let i = 0; i < got.length; i += 20) { const o = await rg(got.slice(i, i + 20).map(r => ({ city: r.city, state: r.state, project_name: r.title, _r: r })), settings); g.leads.push(...o.leads); g.dropped.push(...o.dropped); }
+          g.leads.forEach(l => records.push(l._r)); st.tooFar = g.dropped.length; st.matched -= g.dropped.length; if (g.dropped.length) st.why = (st.why ? st.why + ' · ' : '') + g.dropped.length + ' too far away (' + g.dropped.map(d => d.where + ' ' + d.miles + ' mi').slice(0, 3).join(', ') + ')'; }
+        catch (e) { got.forEach(r => records.push(r)); }
+      }
     } catch (e) { st.why = 'could not read: ' + s(e && e.message); }
     finally {
       status.sources[src.id] = st; summary.push({ id: src.id, http: st.http, parsed: st.parsed, matched: st.matched, why: st.why });
