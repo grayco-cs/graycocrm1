@@ -125,7 +125,7 @@ var ROWS = [
   ['approval_escalation', 'rec', 'C', 0, 0, 'server', 'Approval escalation', 'An admin-step approval waiting 24 h becomes approvable by the office.'],
   ['lead_auto_assign', 'rec', 'C', 0, 1, 'both', '5 PM lead auto-assign', 'A held lead is assigned to the suggested person at 5 PM. OFF: it stays "Suggested" until an admin acts.'],   /* LEADAUTO (owner 11/9): ON by default */
   ['bid_watch', 'rec', 'C', 0, 1, 'server', 'Public bid watch', 'Reads public bid listings; makes CRM leads and draft bid-portal jobs.'],   /* BIDWATCHON (owner 11/9: are we scanning all public bid websites) */
-  ['bid_portal_drafts', 'rec', 'C', 0, 0, 'server', 'Bid-portal drafts', 'Creates the draft bid-portal jobs that waited for the portal.'],
+  ['bid_portal_drafts', 'rec', 'C', 0, 1, 'server', 'Bid-portal drafts', 'Creates the draft bid-portal jobs that waited for the portal.'],   /* BPDRAFTSON (owner 11/9: yes turn on bid portal drafts) */
   ['x10_code_wipe', 'rec', 'C', 0, 0, 'server', 'Access-code wipe', 'Deletes the stored door / gate codes of closed jobs.'],
   ['invoice_autopost', 'rec', 'C', 0, 0, 'page', 'Invoice 1-day auto-post', 'A client draft waiting 24 h is approved by itself → sent (shows in the portal).'],
   ['expense_autopost', 'rec', 'C', 0, 0, 'page', 'Expense 5-day auto-post', 'Matched expenses are posted to the job P&L after 5 days; unmatched ones escalated.'],
