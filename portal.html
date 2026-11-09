@@ -1185,7 +1185,7 @@ function paint(){
       x.options.forEach(function(o){
         var on = chosen[x.id] === o.id;
         g.appendChild(h('button', { type: 'button', class: 'sel-opt' + (on ? ' on' : ''), 'aria-pressed': on ? 'true' : 'false', 'data-c': x.id, 'data-o': o.id, on: { click: function(){ chosen[x.id] = o.id; paint(); } } }, [
-          o.photo ? h('img', { src: o.photo, alt: '', loading: 'lazy' }) : h('span', { class: 'sel-ph', 'aria-hidden': 'true', text: '🎨' }),
+          o.photo ? h('img', { src: o.photo, alt: '', loading: 'lazy' }) : (o.hex && /^#[0-9a-f]{6}$/i.test(o.hex)) ? h('span', { class: 'sel-ph', 'aria-hidden': 'true', style: 'background:' + o.hex + ';border:1px solid rgba(0,0,0,.15)' }) : h('span', { class: 'sel-ph', 'aria-hidden': 'true', text: '🎨' }),   /*METALSEL*/
           h('span', { class: 'sel-l', text: o.label }), priceTxt(o) ? h('span', { class: 'sel-p', text: priceTxt(o) }) : null, on ? h('span', { class: 'sel-ck', text: '✓ Your pick' }) : null]));
       });
       ob.appendChild(g);

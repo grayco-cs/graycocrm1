@@ -166,7 +166,7 @@ function optionsOf(c, lib){
     const n = function(v){ return low(v).replace(/\s+/g, ' '); };
     lib.filter(function(r){ return !r.removed && s(r.color) && n(r.cat) === n(c.cat) && n(r.brand) === n(c.brand) && n(r.line) === n(c.line); }).forEach(function(r){
       if (out.some(function(o){ return n(o.color || o.label) === n(r.color); })) return;
-      out.push({ id: 'lib_' + s(r.id).slice(0, 60), productId: r.id, color: r.color, price: r.price, unit: r.unit, photo: r.photo });
+      out.push({ id: 'lib_' + s(r.id).slice(0, 60), productId: r.id, color: r.color, price: r.price, unit: r.unit, photo: r.photo, hex: r.hex });   /*METALSEL*/
     });
   }
   return out;
@@ -463,7 +463,7 @@ async function view(J){
   const out = { ok: true, pickOff: !canPick, job: { name: T(J.p.name) }, items: items.map(function(x){
     const c = x.c, st = x.st, pk = st.pick;
     const it = { id: s(c.id), title: T(titleOf(c)), note: T(clip(c.note, 300)), dueBy: s(c.dueBy).slice(0, 10), status: st.status,
-      options: st.status === 'open' && canPick ? x.opts.slice(0, 80).map(function(o){ return { id: s(o.id), label: T(optLabel(c, o)), price: o.price != null && o.price !== '' ? money(o.price) : null, unit: clip(o.unit, 12), priceDiff: num(o.priceDiff) ? money(o.priceDiff) : 0, photo: signed[o.photo] || '' }; }) : [] };
+      options: st.status === 'open' && canPick ? x.opts.slice(0, 80).map(function(o){ return { id: s(o.id), label: T(optLabel(c, o)), price: o.price != null && o.price !== '' ? money(o.price) : null, unit: clip(o.unit, 12), priceDiff: num(o.priceDiff) ? money(o.priceDiff) : 0, hex: /^#[0-9a-f]{6}$/i.test(s(o.hex)) ? s(o.hex) : '', photo: signed[o.photo] || '' }; }) : [] };
     if (pk) it.pick = { label: T(clip(pk.label || '', 160)), price: pk.price != null && pk.price !== '' ? money(pk.price) : null, unit: clip(pk.unit, 12), priceDiff: num(pk.priceDiff) ? money(pk.priceDiff) : 0, photo: signed[pk.photo] || '', by: pk.how === 'customer' ? 'you' : 'your Project Manager', at: s(pk.at) };
     if (st.resp) it.done = { name: clip(st.resp.name, 80), at: s(st.resp.at) };
     return it;
