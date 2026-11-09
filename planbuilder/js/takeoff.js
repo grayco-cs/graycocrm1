@@ -5,6 +5,8 @@ import { polyArea, polyPerimeter, centroid, pointInPoly, projectOnSeg, wallLengt
 import { findProduct, categoryName } from './catalog.js';
 import { normCode, convertUnit } from './pricebook.js';
 
+const ph = o => (o && o.phase) || 'new';   // existing / new / demo
+
 export const GAL_COVERAGE = 350;   // SF per gallon per coat
 export const COATS = 2;
 export const SHEET_SF = 32;        // 4×8 drywall sheet
@@ -98,8 +100,11 @@ export function computeTakeoff(project, catalog, opts = {}) {
     // Rooms: floor, wall finish, ceiling, baseboard, ceiling drywall
     level.rooms.forEach(r => {
       const st = roomStats(r, level);
-      lv.rooms.push({ id: r.id, name: r.name, outdoor: !!r.outdoor, ...st });
+      lv.rooms.push({ id: r.id, name: r.name, outdoor: !!r.outdoor, phase: ph(r), ...st });
       const where = `${level.name}: ${r.name}`;
+      if (ph(r) === 'existing') { if (!r.outdoor) { lv.floorArea += st.area; lv.existingArea = (lv.existingArea || 0) + st.area; } return; }
+      if (ph(r) === 'demo') { if (!r.outdoor) add('lb-demo', st.area, 'SF', where + ' (demolish)'); return; }
+      if (!r.outdoor) lv.newArea = (lv.newArea || 0) + st.area;
       if (r.outdoor) {   // yard, bed, patio, drive, deck: only the surface, no walls / ceiling / trim
         // a yard drawn around the house, a patio or a bed does not cover what sits inside it
         const inside = level.rooms.filter(o => o !== r && polyArea(o.points) < st.area && pointInPoly(centroid(o.points), r.points));
@@ -121,6 +126,8 @@ export function computeTakeoff(project, catalog, opts = {}) {
     // Walls: drywall faces, exterior finish
     level.walls.forEach(w => {
       const L = wallLength(w), face = wallFaceArea(w, level);
+      if (ph(w) === 'existing') { if (w.exterior) lv.extWallLF += L; else lv.intWallLF += L; return; }
+      if (ph(w) === 'demo') { add('lb-demo-wall', face, 'SF', `${level.name}: walls to demolish`); return; }
       if (w.exterior) {
         lv.extWallLF += L;
         add(w.finishOut || s.exteriorFinishId, face, 'SF', `${level.name}: exterior walls`, s.wallWaste);
@@ -131,15 +138,20 @@ export function computeTakeoff(project, catalog, opts = {}) {
       }
     });
     level.openings.forEach(o => {
+      if (ph(o) === 'existing') return;
+      if (ph(o) === 'demo') { add('lb-demo-opening', 1, 'EA', `${level.name}: doors & windows to remove`); return; }
       summary.openings++;
       if (o.productId) add(o.productId, 1, 'EA', `${level.name}: doors & windows`);
     });
     level.items.forEach(it => {
+      if (ph(it) === 'existing') return;
+      if (ph(it) === 'demo') { add('lb-demo-item', 1, 'EA', `${level.name}: items to remove`); return; }
       const p = findProduct(catalog, it.productId);
       if (!p) { warnings.push(`A placed item uses "${it.productId}", which is not in the catalog.`); return; }
       const q = p.unit === 'LF' ? it.w : (p.unit === 'SF' ? (p.objType === 'panel' ? it.w * it.h : it.w * it.d) : 1);
       add(it.productId, q, p.unit === 'SF' ? 'SF' : (p.unit === 'LF' ? 'LF' : 'EA'), `${level.name}: placed items`);
     });
+    summary.newArea = (summary.newArea || 0) + (lv.newArea || 0); summary.existingArea = (summary.existingArea || 0) + (lv.existingArea || 0);
     summary.floorArea += lv.floorArea; summary.outdoorArea += lv.outdoorArea || 0; summary.extWallLF += lv.extWallLF; summary.intWallLF += lv.intWallLF;
     summary.levels.push(lv);
   });
@@ -149,10 +161,13 @@ export function computeTakeoff(project, catalog, opts = {}) {
   project.roofs.forEach((sec, i) => {
     const m = roofMeasure(sec);
     const name = `Roof ${i + 1} (${sec.style}${sec.style !== 'flat' ? ' ' + sec.pitch + '/12' : ''})`;
-    summary.roofs.push({ id: sec.id, name, ...m });
+    summary.roofs.push({ id: sec.id, name, phase: ph(sec), ...m });
+    if (ph(sec) === 'existing') return;
+    if (ph(sec) === 'demo') { add('lb-demo-roof', m.area, 'SF', name + ' (demolish)'); return; }
     summary.roofArea += m.area; summary.roofSquares += m.squares;
     add(sec.materialId, m.area, 'SF', name, s.roofWaste);
-    if (acc.tearoff) add(acc.tearoff, m.area * Math.max(1, sec.layers || 1), 'SF', name);
+    const layers = sec.layers == null ? 1 : +sec.layers;   // 0 = nothing to tear off (a new roof over an addition)
+    if (acc.tearoff && layers > 0) add(acc.tearoff, m.area * layers, 'SF', name);
     if (sec.style !== 'flat') {
       if (acc.ridgecap) add(acc.ridgecap, m.ridge + m.hips, 'LF', name);
       if (acc.drip) add(acc.drip, m.eaves + m.rakes, 'LF', name);
@@ -196,12 +211,14 @@ export function computeTakeoff(project, catalog, opts = {}) {
     const p = x.productId ? findProduct(catalog, x.productId) : null;
     const qty = +x.qty || 0;
     const hasOwn = (x.price != null && x.price !== '') || (x.labor != null && x.labor !== '');
-    const b = !hasOwn ? fromBook(p, qty, p ? p.unit : 'EA') : null;
-    const base = { key: 'x|' + x.id, extraId: x.id, productId: x.productId || '', category: x.category || (p ? p.category : 'other'), raw: qty, waste: 0, source: x.note || 'Added by hand', sources: [x.note || 'Added by hand'] };
+    const b = !hasOwn ? fromBook(p || (x.code ? { xmCode: x.code, name: x.name, unit: x.unit } : null), qty, p ? p.unit : (x.unit || 'EA')) : null;
+    let where = x.note || 'Added by hand';
+    if (x.roomId) project.levels.forEach(l => { const r = l.rooms.find(rr => rr.id === x.roomId); if (r) where = `${l.name}: ${r.name}`; });
+    const base = { key: 'x|' + x.id, extraId: x.id, productId: x.productId || '', roomId: x.roomId || '', category: x.category || (p ? p.category : 'other'), raw: qty, waste: 0, source: where, sources: [where] };
     if (b) { out.push({ ...base, ...b, qty }); return; }
     const price = x.price != null && x.price !== '' ? +x.price : (p ? +p.price : 0);
     const labor = x.labor != null && x.labor !== '' ? +x.labor : (p ? +p.labor : 0);
-    out.push({ ...base, code: p && p.xmCode ? normCode(p.xmCode) : '', name: x.name || (p ? p.name : 'Line item'), unit: x.unit || (p ? p.unit : 'EA'), qty, price, labor, material: qty * price, laborTotal: qty * labor, total: qty * (price + labor), taxBase: qty * price, priced: book ? 'own' : 'catalog' });
+    out.push({ ...base, code: x.code ? normCode(x.code) : (p && p.xmCode ? normCode(p.xmCode) : ''), name: x.name || (p ? p.name : 'Line item'), unit: x.unit || (p ? p.unit : 'EA'), qty, price, labor, material: qty * price, laborTotal: qty * labor, total: qty * (price + labor), taxBase: qty * price, priced: !book ? 'catalog' : (x.code && hasOwn ? 'entered' : 'own') });
   });
   if (book) {
     const own = out.filter(l => l.priced === 'own').length;

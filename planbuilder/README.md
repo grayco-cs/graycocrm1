@@ -20,6 +20,29 @@ What's next is in [ROADMAP.md](ROADMAP.md).
 10. **3D / Split:** orbit (drag), pan (right-drag), zoom (wheel). *Cutaway* cuts the top level at 4 ft so you can see inside. *Walk* puts you inside at eye height (W A S D / arrows, drag to look). Click anything in 3D to select it.
 11. **Estimate:** every quantity comes from the drawing. Set tax, overhead, profit, waste and roof accessories. Add lines from the catalog or custom lines. **Print / PDF** gives the plans, 3D views, room schedule and estimate.
 
+## Existing house, additions and remodels
+- **Drawing: Existing / New / Demolish** (left, above the toggles) sets the phase of everything you draw. Existing is not priced; New / remodel is priced; Demolish is priced as demolition (walls by SF, doors and windows, fixtures, roofs) and is gone in the finished view.
+- Draw the house as it is, or click **All of this level is existing** (level settings, nothing selected). Then draw the addition as New, and mark the walls you open up as Demolish (select a wall → Work phase). Any piece's phase can be changed on the right.
+- A room that is being remodeled: set the room to New (its floor, paint, trim are priced) while its walls stay Existing.
+- 2D: existing walls are grey and hatched, new walls orange, demolition dashed red. 3D: **After (finished) / Before (today) / Everything**, and **Show new work** greys out what is already there.
+- **🖼 Trace over a picture / scan** (level settings): load a photo or scan of a floor plan, **📏 Set scale** by clicking both ends of a known dimension, **✥ Move picture** to line it up, then draw over it.
+
+## Styles, furniture and renditions
+- **Style** (nothing selected): Modern Farmhouse, Craftsman, Contemporary, Traditional, Mediterranean / Spanish, Colonial, Coastal, Industrial / Loft, Mid-century Modern, Southern Ranch. **Apply to whole house** or **Apply to new work only** (an addition): siding / brick / stone, roof style + pitch + material + overhang, windows, interior doors, trim, paint, floors by room type (wet rooms get tile, bedrooms carpet or wood…), cabinets and counters. With no roof there, it **frames one** in the style (over the addition for new work, with nothing to tear off). A room can have its own style (select it → Room style).
+- **🛋 Furnish all rooms** / **Furnish this room** lays out beds, nightstands, dressers, sofas, chairs, coffee and dining tables, rugs, TVs, lamps, pendants, chandeliers, bookshelves, plants and wall art by room type, in the style's colors. Running it again replaces only what it placed. Every piece can be moved, turned or deleted.
+- **🖼 Renditions** saves versions of the house (styles, colors, materials, furniture, the addition) with a picture; **Show** switches to one, **Update** saves over it.
+- **Photos:** a photo of the house (nothing selected) and photos on each room (select it → Photos). They show in the walk-through and on the printout.
+
+## 3D: build, edit, walk
+- **🏗 Make 3D** animates the build. **▶ Build** replays it.
+- **Edit in 3D:** click a piece to select it (it lights up blue), then drag it: furniture and fixtures slide across the floor, doors and windows slide along their wall, walls move square to themselves (joined corners follow). Q / E turn a piece, Delete removes it, and the panel on the right edits everything else. The 2D plan and the estimate follow.
+- **🚶 Walk:** W / S or ↑ / ↓ walk, A / D step sideways, ← / → turn, Shift runs, drag to look, **click a floor to glide there**. Walls stop you; doors and openings let you through. Each room you walk into lights up and shows a card with its name, style, finishes, damage and photos. On phones and tablets use the on-screen arrows.
+
+## Damage, entered estimates and the customer view
+- **Damage:** select a room → Damage & repair → *Damaged* and what happened; roofs have *Damaged* too. 3D **Show damage** paints damaged floors and roofs red; the printout lists damage with photos.
+- **✍ Enter Xactimate estimate** (Estimate screen, or a room's *Add what we will do*): paste lines from your Xactimate estimate (Excel columns or PDF text: code, activity, description, quantity, unit, price) or type them, and pick the room. They go on the job, tied to the room, and their prices are kept in **GrayCo price memory** (a price list that updates with every estimate you enter; typing a known code fills in its description, unit and last price).
+- **👁 Customer view** hides every price on screen: product prices, totals, the estimate (it becomes a room-by-room **Scope** of what will be done), price exports; Print / PDF gives the customer copy (plans, 3D views, photos and damage, scope, no prices). Leaving it asks first.
+
 ## Catalog (📦)
 About 500 starting products (`js/catalog.js` + `js/library.js`): paint by brand and color (Sherwin-Williams, Benjamin Moore, Behr, PPG, Valspar) and every sheen, wall coverings, 15 wood species of hardwood plus engineered, laminate, tile, carpet, trim and doors by species, vinyl / James Hardie / LP / cedar / stucco / metal siding in colors, brick (10 colors, modular / king / queen / thin) and stone veneer, GAF / Owens Corning / CertainTeed shingle colors, metal roofing colors, tile / slate / shake / flat roofs, gutters, windows by type and frame color, cabinets by door style and color, countertops (quartz, granite, marble, quartzite, butcher block …), backsplash tile, and landscaping: sod, mulch, rock, plants and trees, edging, pavers, concrete, asphalt, decks, fences, pergolas.
 
@@ -62,6 +85,7 @@ Projects and the catalog are saved in **this browser on this device** (autosave 
 | `js/geom.js` | Math: feet-inches, areas, wall pieces around openings, roof measurements and 3D roof shapes |
 | `js/model.js` | Project data: levels, walls, openings, rooms, items, roofs; the starter templates |
 | `js/catalog.js` | Starting product list, categories, CSV import / export |
+| `js/styles.js` | Architectural styles, applying a style (whole house / new work / room), framing a roof, auto-furnish |
 | `js/library.js` | The big library: brands, colors, finishes, wood species, brick / stone, siding, roofing, cabinets, countertops, landscaping |
 | `img/` | GrayCo logo (white for the top bar, navy for printouts and exported pictures) and the app icons |
 | `js/takeoff.js` | Quantities and the priced estimate |
@@ -71,4 +95,5 @@ Projects and the catalog are saved in **this browser on this device** (autosave 
 | `js/app.js` | Panels, picker, properties, estimate screen, projects, catalog editor, print |
 | `vendor/` | Three.js r170 (MIT, see `THREE-LICENSE.txt`), served from here so it works without the internet |
 | `tests/math.test.js` | `node planbuilder/tests/math.test.js` — geometry, roof, takeoff and CSV numbers |
+| `tests/features.smoke.cjs` | Browser test of existing + addition, styles, furnish, Make 3D, before / after, walk, entered estimate, customer view, renditions, 3D drag (same way to run as below) |
 | `tests/ui.smoke.cjs` | Browser test that draws with every tool: start `python3 -m http.server 8765` in the repo, then `NODE_PATH=$(npm root -g) node planbuilder/tests/ui.smoke.cjs` |

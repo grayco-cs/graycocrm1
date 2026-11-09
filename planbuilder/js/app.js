@@ -2,7 +2,9 @@
 
 import { Plan2D } from './plan2d.js';
 import { fmtFtIn, parseFtIn, wallLength, wallDir, roofMeasure, bbox } from './geom.js';
-import { newLevel, restack, normalize, fromTemplate, TEMPLATES, PROJECT_TYPES, splitWall, wallsForRoom, autoRoof, markExterior, uid, swingDoorsIntoRooms } from './model.js';
+import { newLevel, restack, normalize, fromTemplate, TEMPLATES, PROJECT_TYPES, splitWall, wallsForRoom, autoRoof, markExterior, uid, swingDoorsIntoRooms, PHASES, setDrawPhase, getDrawPhase } from './model.js';
+import { STYLES, styleById, applyStyle, autoFurnish, roomType } from './styles.js';
+import { normCode, parseEstimateText } from './pricebook.js';
 import { CATEGORIES, UNITS, KINDS, findProduct, categoryName, CSV_COLUMNS, toCSV, catalogFromCSV, EXTERIOR_CATS, OUTDOOR_CATS } from './catalog.js';
 import { computeTakeoff, estimateCSV, lineItemsCSV, roomStats } from './takeoff.js';
 import { priceBookFromCSV } from './pricebook.js';
@@ -42,6 +44,7 @@ const app = {
     const p = last && store.loadProject(last);
     this.plan = new Plan2D($('#plan'), this);
     this.bindUI();
+    try { this.setCustomer(localStorage.getItem('pb.customer') === '1', true); } catch (e) { /* storage blocked */ }
     if (p) this.open(p); else this.open(fromTemplate('ranch', this.catalog), true);
     this.renderPicker();
     if (!p) this.toast('Started with the Ranch sample. 📁 Projects → New to start a blank or another template.');
@@ -99,7 +102,7 @@ const app = {
     this.plan.draw();
     if (fast) { if (this.view === '3d' || this.view === 'split') this.schedule3D(); return; }
     this.takeoff = this.takeoffNow();
-    $('#totals').textContent = `${Math.round(this.takeoff.summary.floorArea).toLocaleString()} SF · ${this.takeoff.summary.roofSquares.toFixed(1)} SQ roof · ${money0(this.takeoff.totals.grand)}`;
+    $('#totals').textContent = `${Math.round(this.takeoff.summary.floorArea).toLocaleString()} SF · ${this.takeoff.summary.roofSquares.toFixed(1)} SQ roof` + (this.customer ? '' : ` · ${money0(this.takeoff.totals.grand)}`);
     this.renderLevels();
     this.renderProps();
     this.updateUndo();
@@ -116,7 +119,7 @@ const app = {
   toast(msg, ms = 3500) { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(this._toast); this._toast = setTimeout(() => { t.hidden = true; }, ms); },
 
   // ---------- selection ----------
-  select(sel) { this.selection = sel; this.renderProps(); this.plan.draw(); },
+  select(sel) { this.selection = sel; this.renderProps(); this.plan.draw(); if (this.view3d) this.view3d.setSelection(sel); },
   findSel(sel) {
     if (!sel) return null;
     if (sel.kind === 'roof') return this.project.roofs.find(r => r.id === sel.id) || null;
@@ -157,6 +160,8 @@ const app = {
       item: `Click to place: ${this.activeProduct ? this.activeProduct.name : 'pick a product on the left'} · Q / E rotate 90°.`,
       roof: 'Drag a rectangle over the walls it covers (wall line to wall line; the overhang is added). Set style and pitch on the right.',
       measure: 'Click two points to measure.',
+      ucal: 'Set scale: click both ends of something you know the length of on the picture.',
+      umove: 'Drag the picture to line it up with your drawing. Press V when done.',
     }[this.tool] || '';
   },
 
@@ -209,6 +214,17 @@ const app = {
     $('#plan-zin').addEventListener('click', () => this.plan.zoomAt(this.plan.w / 2, this.plan.h / 2, 1.25));
     $('#plan-zout').addEventListener('click', () => this.plan.zoomAt(this.plan.w / 2, this.plan.h / 2, 0.8));
     $('#btn-make3d').addEventListener('click', () => this.make3D());
+    $$('#phase-seg button').forEach(b => b.addEventListener('click', () => this.setPhase(b.dataset.phase)));
+    $('#btn-rend').addEventListener('click', () => this.showRenditions());
+    $('#btn-customer').addEventListener('click', () => this.setCustomer(!this.customer));
+    $('#v-phase').addEventListener('change', e => { const v = this.ensure3D(); v.opts.phaseView = e.target.value; v.rebuild(); });
+    $('#v-new').addEventListener('change', e => { const v = this.ensure3D(); v.opts.highlightNew = e.target.checked; v.rebuild(); });
+    $('#v-dmg').addEventListener('change', e => { const v = this.ensure3D(); v.opts.damage = e.target.checked; v.rebuild(); });
+    $$('#walk-pad button').forEach(b => {
+      const k = b.dataset.k;
+      b.addEventListener('pointerdown', e => { e.preventDefault(); if (this.view3d) this.view3d._keys.add(k); });
+      ['pointerup', 'pointerleave', 'pointercancel'].forEach(t => b.addEventListener(t, () => { if (this.view3d) this.view3d._keys.delete(k); }));
+    });
     $('#v-build').addEventListener('click', () => this.make3D());
     $('#btn-undo').addEventListener('click', () => this.doUndo());
     $('#btn-redo').addEventListener('click', () => this.doRedo());
@@ -303,6 +319,106 @@ const app = {
     } else if (this.view3d) this.view3d.visible = false;
     if (v === 'estimate') this.renderEstimate();
   },
+  // ---------- work phase being drawn ----------
+  setPhase(p) {
+    setDrawPhase(p);
+    $$('#phase-seg button').forEach(b => b.classList.toggle('on', b.dataset.phase === getDrawPhase()));
+    this.status({ existing: 'Drawing EXISTING: what is there today (not priced).', new: 'Drawing NEW work (priced).', demo: 'Drawing DEMOLITION: what gets torn out (priced as demo).' }[getDrawPhase()]);
+  },
+
+  // ---------- walk-through card ----------
+  onWalk(on) {
+    $('#walk-pad').hidden = !on; $('#walk-hud').hidden = true;
+    if (!on) { $('#v-walk').classList.remove('on'); this.status(''); }
+  },
+  onEnterRoom(r) {
+    const hud = $('#walk-hud');
+    if (!r) { hud.classList.add('fade'); return; }
+    const f = id => (findProduct(this.catalog, id) || {}).name || '';
+    const st = styleById(r.style || '');
+    hud.innerHTML = '';
+    hud.append(...[h('h4', {}, r.name), st ? h('div', { class: 'hud-row' }, st.name + ' style') : null,
+      r.floorId ? h('div', { class: 'hud-row' }, (r.outdoor ? 'Surface: ' : 'Floor: ') + f(r.floorId)) : null,
+      r.wallFinishId && !r.outdoor ? h('div', { class: 'hud-row' }, 'Walls: ' + f(r.wallFinishId)) : null,
+      r.damaged ? h('div', { class: 'hud-dmg' }, '⚠ Damage: ' + (r.damage || 'marked damaged')) : null,
+      (r.photos || []).length ? h('div', { class: 'hud-ph' }, ...r.photos.slice(0, 4).map(src => h('img', { src, alt: '', onclick: () => this.viewPhoto(src) }))) : null].filter(Boolean));
+    hud.hidden = false; hud.classList.add('fade'); requestAnimationFrame(() => hud.classList.remove('fade'));
+  },
+
+  // ---------- customer view: no prices anywhere ----------
+  setCustomer(on, quiet) {
+    if (!on && this.customer && !quiet && !confirm('Leave customer view and show prices again?')) return;
+    this.customer = !!on;
+    document.body.classList.toggle('customer', this.customer);
+    $('#btn-customer').classList.toggle('on', this.customer);
+    $('#btn-customer').textContent = this.customer ? '👁 Customer view: ON' : '👁 Customer view';
+    $('.views [data-view="estimate"]').textContent = this.customer ? 'Scope' : 'Estimate';
+    try { localStorage.setItem('pb.customer', this.customer ? '1' : '0'); } catch (e) { /* ignore */ }
+    if (this.project) this.refresh(true);
+  },
+
+  // ---------- renditions: saved versions of the house ----------
+  async showRenditions() {
+    const P = this.project;
+    const body = h('div', {});
+    const snap = () => { const c = JSON.parse(JSON.stringify(P)); delete c.renditions; return { levels: c.levels, roofs: c.roofs, settings: c.settings, style: c.style, extraLines: c.extraLines }; };
+    const thumb = async () => { try { const v = await this.load3D(); if (!v) return ''; const hidden = $('#view-pane').hidden; if (hidden) { $('#view-pane').hidden = false; v.visible = true; v.resize(); } v.rebuild(); v.fit(); const url = await shrinkImage(v.screenshot(), 480); if (hidden) { $('#view-pane').hidden = true; v.visible = false; this.plan.resize(); } return url; } catch (e) { return ''; } };
+    const draw = () => {
+      body.innerHTML = '';
+      body.append(h('h2', {}, 'Renditions'));
+      body.append(h('p', { class: 'hint', style: 'margin:0 0 10px;font-size:13px' }, 'Save versions of this house (styles, colors, materials, furniture, the addition) and switch between them to compare with the customer.'));
+      const name = h('input', { placeholder: 'Name, e.g. Option A – white farmhouse', style: 'min-width:280px' });
+      body.append(h('div', { class: 'row' }, name, h('button', { class: 'btn primary', onclick: async () => {
+        const r = { id: uid('rd'), name: name.value.trim() || `Rendition ${P.renditions.length + 1}`, created: new Date().toISOString(), thumb: await thumb(), snapshot: snap() };
+        P.renditions.push(r); this.commit('Saved rendition: ' + r.name); draw();
+      } }, '💾 Save current as a rendition')));
+      const grid = h('div', { class: 'rend-grid' });
+      if (!P.renditions.length) grid.append(h('p', { class: 'hint' }, 'No renditions yet.'));
+      P.renditions.forEach(r => grid.append(h('div', { class: 'card' }, r.thumb ? h('img', { src: r.thumb, alt: r.name }) : h('img', { alt: '' }), h('h4', {}, r.name), h('p', {}, new Date(r.created).toLocaleString()),
+        h('div', { class: 'row' },
+          h('button', { class: 'btn small primary', onclick: () => { if (!confirm(`Show "${r.name}"? The current design is replaced (save it as a rendition first to keep it).`)) return; Object.assign(P, JSON.parse(JSON.stringify(r.snapshot))); this.level = P.levels[0]; this.closeModal(); this.commit('Showing: ' + r.name); if (this.view3d && !$('#view-pane').hidden) this.view3d.rebuild(); } }, 'Show'),
+          h('button', { class: 'btn small', onclick: async () => { r.snapshot = snap(); r.thumb = await thumb(); r.created = new Date().toISOString(); this.commit('Updated: ' + r.name); draw(); } }, 'Update'),
+          h('button', { class: 'btn small danger', onclick: () => { if (!confirm(`Delete "${r.name}"?`)) return; P.renditions = P.renditions.filter(x => x !== r); this.commit('Deleted rendition'); draw(); } }, '×')))));
+      body.append(grid);
+    };
+    draw(); this.modal(body);
+  },
+
+  // ---------- enter an Xactimate (or any) estimate: lines + remembered prices ----------
+  enterEstimate(roomId) {
+    const P = this.project;
+    const rooms = []; P.levels.forEach(l => l.rooms.forEach(r => rooms.push([r.id, `${l.name}: ${r.name}`])));
+    const roomSel = select([['', 'No room (whole job)'], ...rooms], roomId || '', () => {});
+    const paste = h('textarea', { class: 'paste-box', placeholder: 'Paste lines from your Xactimate estimate (Excel or PDF text), one per line, e.g.\nRFG 300S  R&R Laminated comp. shingle roofing  25.33 SQ  285.40\nDRY 1/2  Drywall 1/2"  412 SF 2.36\nor type them in the table below.' });
+    const remember = h('input', { type: 'checkbox', checked: true });
+    const rows = [];
+    const tb = h('tbody');
+    const addRow = (r = {}) => {
+      const f = { code: h('input', { value: r.code || '', placeholder: 'CAT SEL', style: 'width:90px;text-transform:uppercase' }), name: h('input', { value: r.name || '', placeholder: 'Description', style: 'min-width:240px' }), act: select([['', '—'], ['R&R', 'R&R'], ['Replace', 'Replace'], ['Remove', 'Remove'], ['Detach & reset', 'D&R']], r.act || '', () => {}), qty: h('input', { type: 'number', step: '0.01', value: r.qty ?? '', style: 'width:80px' }), unit: h('input', { value: r.unit || 'EA', style: 'width:52px;text-transform:uppercase' }), price: h('input', { type: 'number', step: '0.01', value: r.price ?? '', style: 'width:90px', class: 'price-only' }) };
+      // a known code fills in its description, unit and last price
+      f.code.addEventListener('change', () => { const e = learnedPrice(f.code.value); if (e) { if (!f.name.value) f.name.value = e.desc; if (!f.unit.value || f.unit.value === 'EA') f.unit.value = e.unit || f.unit.value; if (!f.price.value) f.price.value = e.replace; } });
+      rows.push(f);
+      tb.append(h('tr', {}, h('td', {}, f.code), h('td', {}, f.name), h('td', {}, f.act), h('td', {}, f.qty), h('td', {}, f.unit), h('td', { class: 'price-only' }, f.price)));
+    };
+    const body = h('div', {},
+      h('h2', {}, '✍ Enter an estimate'),
+      h('p', { class: 'hint', style: 'margin:0 0 8px;font-size:13px' }, 'Type or paste the lines of your Xactimate estimate. They go on this job (tied to a room so the model shows where the damage is and what will be done), and their prices are remembered for your next estimates. Customers never see prices.'),
+      field('Room', roomSel), paste,
+      h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => { parseEstimateText(paste.value).forEach(addRow); paste.value = ''; } }, '↓ Read pasted lines'), h('button', { class: 'btn', onclick: () => addRow() }, '+ Blank line')),
+      h('table', { class: 'cat-table' }, h('thead', {}, h('tr', {}, ['Code', 'Description', 'Activity', 'Qty', 'Unit'].map(x => h('th', {}, x)), h('th', { class: 'price-only' }, 'Unit price'))), tb),
+      h('label', { class: 'row price-only', style: 'align-items:center;gap:6px' }, remember, 'Remember these prices (GrayCo price memory)'),
+      h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: () => {
+        const good = rows.map(f => ({ code: normCode(f.code.value), name: f.name.value.trim(), act: f.act.value, qty: num(f.qty.value), unit: f.unit.value.trim().toUpperCase() || 'EA', price: f.price.value === '' ? null : num(f.price.value) })).filter(x => x.name || x.code);
+        if (!good.length) { this.toast('Add at least one line.'); return; }
+        good.forEach(x => P.extraLines.push({ id: uid('xl'), code: x.code, name: (x.act ? x.act + ' ' : '') + (x.name || x.code), unit: x.unit, qty: x.qty, price: x.price ?? (learnedPrice(x.code) || {}).replace ?? 0, labor: 0, category: 'other', roomId: roomSel.value || '', note: 'Entered estimate' }));
+        if (remember.checked) rememberPrices(good.filter(x => x.code && x.price != null));
+        if (roomSel.value) P.levels.forEach(l => l.rooms.forEach(r => { if (r.id === roomSel.value) r.damaged = true; }));
+        this._book = null; this.closeModal(); this.commit(`${good.length} estimate line${good.length > 1 ? 's' : ''} added`);
+      } }, 'Add to this job')));
+    addRow();
+    this.modal(body);
+  },
+
   // 🏗 Make 3D: open the 3D view and watch the model build itself.
   async make3D() {
     if (this.view !== '3d' && this.view !== 'split') await this.setView('3d');
@@ -359,7 +475,8 @@ const app = {
     if (!items.length) list.append(h('p', { class: 'hint' }, 'No products. Add some in 📦 Catalog.'));
     items.forEach(p => {
       list.append(h('div', { class: 'pcard' + (this.activeProduct && this.activeProduct.id === p.id ? ' on' : ''), title: p.notes || p.name, onclick: () => this.useProduct(p) },
-        swatch(p), h('div', {}, h('div', { class: 'nm' }, p.name), (p.brand || p.colorName || p.finish || p.material) ? h('div', { class: 'pr' }, [p.brand && !p.name.includes(p.brand) ? p.brand : '', p.colorName && !p.name.includes(p.colorName) ? p.colorName : '', p.material && !p.name.includes(p.material) ? p.material : '', p.finish].filter(Boolean).join(' · ')) : null, h('div', { class: 'pr' }, `${money(+p.price + +p.labor)} / ${p.unit}` + (p.w ? ` · ${fmtFtIn(p.w)}${p.d ? ' × ' + fmtFtIn(p.d) : ''}${p.h ? ' × ' + fmtFtIn(p.h) : ''}` : '')))));
+        swatch(p), h('div', {}, h('div', { class: 'nm' }, p.name), (p.brand || p.colorName || p.finish || p.material) ? h('div', { class: 'pr' }, [p.brand && !p.name.includes(p.brand) ? p.brand : '', p.colorName && !p.name.includes(p.colorName) ? p.colorName : '', p.material && !p.name.includes(p.material) ? p.material : '', p.finish].filter(Boolean).join(' · ')) : null, h('div', { class: 'pr' }, h('span', { class: 'price-only' }, `${money(+p.price + +p.labor)} / ${p.unit}`), (p.w ? ` · ${fmtFtIn(p.w)}${p.d ? ' × ' + fmtFtIn(p.d) : ''}${p.h ? ' × ' + fmtFtIn(p.h) : ''}` : '')))));
+    // (in customer view the price part is hidden by CSS)
     });
   },
 
@@ -423,14 +540,14 @@ const app = {
         h('span', {}, 'Ceiling area'), h('b', {}, Math.round(st.area) + ' SF'),
         h('span', {}, 'Baseboard'), h('b', {}, fmtFtIn(st.baseLF)),
         h('span', {}, 'Doors / windows on its walls'), h('b', {}, String(st.openings))));
-      el.append(field('Notes', h('textarea', { rows: 2, value: r.notes || '', placeholder: 'Damage notes, photos taken…', onchange: e => { r.notes = e.target.value; this.commit('Notes'); } }), true));
+      el.append(field('Notes', h('textarea', { rows: 2, value: r.notes || '', placeholder: 'Notes', onchange: e => { r.notes = e.target.value; this.commit('Notes'); } }), true));
       el.append(h('div', { class: 'row' },
         h('button', { class: 'btn small', onclick: () => { const n = wallsForRoom(this.level, r.points, s, false).length; this.commit(n ? `${n} walls added` : 'Walls already there'); } }, 'Make its walls'),
         h('button', { class: 'btn small', onclick: () => this.duplicateSel() }, 'Duplicate'),
         h('button', { class: 'btn small danger', onclick: () => this.plan.deleteSelection() }, 'Delete')));
     } else if (sel.kind === 'item') {
       const it = obj, p = findProduct(this.catalog, it.productId);
-      el.append(h('h3', {}, it.label || (p ? p.name : 'Item')), h('div', { class: 'sub' }, p ? `${money(+p.price + +p.labor)} / ${p.unit}` + (p.unit === 'LF' ? ` × ${fmtFtIn(it.w)} = ${money((+p.price + +p.labor) * it.w)}` : '') : 'Not in the catalog'));
+      el.append(h('h3', {}, it.label || (p ? p.name : 'Item')), h('div', { class: 'sub price-only' }, p ? `${money(+p.price + +p.labor)} / ${p.unit}` + (p.unit === 'LF' ? ` × ${fmtFtIn(it.w)} = ${money((+p.price + +p.labor) * it.w)}` : '') : 'Not in the catalog'));
       el.append(field('Product', productSelect(this.catalog, x => x.kind === 'object', it.productId, v => { it.productId = v; this.commit('Product'); })));
       el.append(field('Label', h('input', { value: it.label || '', placeholder: 'Optional', onchange: e => { it.label = e.target.value; this.commit('Label'); } })));
       el.append(lengthField('Width', it.w, v => { if (v > 0.05) { it.w = v; this.commit('Size'); } }));
@@ -463,9 +580,35 @@ const app = {
         h('span', {}, 'Eaves'), h('b', {}, fmtFtIn(m.eaves)),
         h('span', {}, 'Rakes'), h('b', {}, fmtFtIn(m.rakes)),
         h('span', {}, 'Ridge height above walls'), h('b', {}, fmtFtIn(m.rise))));
+      el.append(field('Damaged', h('input', { type: 'checkbox', checked: !!r.damaged, onchange: e => { r.damaged = e.target.checked; this.commit(r.damaged ? 'Marked damaged' : 'Not damaged'); } })));
       el.append(h('div', { class: 'row' }, h('button', { class: 'btn small', onclick: () => this.duplicateSel() }, 'Duplicate'), h('button', { class: 'btn small danger', onclick: () => this.plan.deleteSelection() }, 'Delete')));
     }
+    // every drawn thing has a work phase
+    el.append(h('hr', { class: 'sep' }), field('Work phase', select(PHASES, obj.phase || 'new', v => { obj.phase = v; this.commit(PHASES.find(x => x[0] === v)[1]); }), false));
+    if (sel.kind === 'item' && sel.kind) el.append(h('p', { class: 'hint', style: 'margin:4px 0' }, 'In 3D: click it, then drag to move it. Q / E turn it.'));
+    if (sel.kind === 'room') this.renderRoomExtras(el, obj);
   },
+
+  // Room: style, furnish, damage & repair, photos.
+  renderRoomExtras(el, r) {
+    el.append(h('hr', { class: 'sep' }), h('h3', {}, 'Style & furniture'));
+    el.append(field('Room style', select([['', 'Choose…'], ...STYLES.map(x => [x.id, x.name])], r.style || '', v => { if (!v) return; const done = applyStyle(this.project, v, { kind: 'room', roomId: r.id }, this.catalog); this.commit(`${styleById(v).name}: ${done.join(', ') || 'no change'}`); })));
+    el.append(h('div', { class: 'row' },
+      h('button', { class: 'btn small', onclick: () => { const n = autoFurnish(this.level, [r], r.style || this.project.style || 'farmhouse', this.catalog); this.commit(n ? `Furnished: ${n} pieces` : 'Room too small to furnish'); } }, '🛋 Furnish this room'),
+      h('button', { class: 'btn small', onclick: () => { const before = this.level.items.length; this.level.items = this.level.items.filter(it => !(it.auto && it.roomId === r.id)); this.commit(`${before - this.level.items.length} pieces removed`); } }, 'Clear furniture')));
+    el.append(h('hr', { class: 'sep' }), h('h3', {}, 'Damage & repair'));
+    el.append(field('Damaged', h('input', { type: 'checkbox', checked: !!r.damaged, onchange: e => { r.damaged = e.target.checked; this.commit(r.damaged ? 'Marked damaged' : 'Not damaged'); } })));
+    if (r.damaged) el.append(field('What happened', h('textarea', { rows: 2, value: r.damage || '', placeholder: 'e.g. Water from the dishwasher: floor cupped, drywall wet to 2\'', onchange: e => { r.damage = e.target.value; this.commit('Damage notes'); } }), true));
+    const lines = this.project.extraLines.filter(x => x.roomId === r.id);
+    if (lines.length) el.append(h('div', { class: 'kv repair' }, ...lines.flatMap(x => [h('span', {}, (x.code ? x.code + ' ' : '') + (x.name || (findProduct(this.catalog, x.productId) || {}).name || 'Line')), h('b', {}, `${x.qty} ${x.unit || ''}`)])));
+    el.append(h('div', { class: 'row' }, h('button', { class: 'btn small', onclick: () => this.enterEstimate(r.id) }, lines.length ? '✍ Add repair lines' : '✍ Add what we will do (repair lines)')));
+    el.append(h('hr', { class: 'sep' }), h('h3', {}, 'Photos'));
+    const ph = h('div', { class: 'photos' });
+    (r.photos || []).forEach((src, i) => ph.append(h('div', { class: 'ph' }, h('img', { src, alt: r.name + ' photo', onclick: () => this.viewPhoto(src) }), h('button', { class: 'ph-x', title: 'Remove', onclick: () => { r.photos.splice(i, 1); this.commit('Photo removed'); } }, '×'))));
+    ph.append(h('button', { class: 'btn small', onclick: async () => { const f = await store.pickFile('image/*'); if (!f) return; (r.photos = r.photos || []).push(await shrinkImage(await store.readDataURL(f), 900)); this.commit('Photo added'); } }, '📷 Add photo'));
+    el.append(ph);
+  },
+  viewPhoto(src) { this.modal(h('div', {}, h('img', { src, style: 'width:100%;border-radius:8px' }))); },
 
   renderProjectProps(el) {
     const P = this.project, L = this.level, s = P.settings;
@@ -476,14 +619,38 @@ const app = {
     el.append(txt('Client', 'client'), txt('Address', 'address'));
     if (P.type === 'insurance') el.append(txt('Claim #', 'claimNo'), txt('Carrier', 'carrier'), txt('Adjuster', 'adjuster'), field('Date of loss', h('input', { type: 'date', value: P.dateOfLoss || '', onchange: e => { P.dateOfLoss = e.target.value; this.commit('Date of loss'); } })));
     el.append(field('Notes', h('textarea', { rows: 2, value: P.notes || '', onchange: e => { P.notes = e.target.value; this.commit('Notes'); } }), true));
+    el.append(h('div', { class: 'cover' }, P.cover ? h('img', { src: P.cover, alt: 'House photo', onclick: () => this.viewPhoto(P.cover) }) : null,
+      h('div', { class: 'row' }, h('button', { class: 'btn small', onclick: async () => { const f = await store.pickFile('image/*'); if (!f) return; P.cover = await shrinkImage(await store.readDataURL(f), 1200); this.commit('House photo'); } }, P.cover ? '📷 Change house photo' : '📷 Add a photo of the house'), P.cover ? h('button', { class: 'btn small', onclick: () => { delete P.cover; this.commit('Photo removed'); } }, 'Remove') : null)));
+    el.append(h('hr', { class: 'sep' }), h('h3', {}, 'Style'));
+    const cards = h('div', { class: 'style-cards' });
+    STYLES.forEach(st => cards.append(h('button', { class: 'style-card' + (P.style === st.id ? ' on' : ''), title: st.desc, onclick: () => { this._style = st.id; this.renderProps(); } },
+      h('span', { class: 'sw' }, ...[st.pal.sofa, st.pal.wood, st.pal.accent, st.pal.rug].map(c => { const d = h('i'); d.style.background = c; return d; })), st.name)));
+    el.append(cards);
+    const pickSt = styleById(this._style || P.style || '');
+    if (pickSt) {
+      el.append(h('p', { class: 'hint', style: 'margin:6px 0' }, h('b', {}, pickSt.name + ': '), pickSt.desc));
+      el.append(h('div', { class: 'row' },
+        h('button', { class: 'btn small primary', onclick: () => { const d = applyStyle(P, pickSt.id, { kind: 'all' }, this.catalog); this.commit(`${pickSt.name} – whole house: ${d.join(', ')}`); } }, 'Apply to whole house'),
+        h('button', { class: 'btn small', title: 'Only what is marked New / remodel (an addition)', onclick: () => { const d = applyStyle(P, pickSt.id, { kind: 'new' }, this.catalog); this.commit(d.length ? `${pickSt.name} – new work: ${d.join(', ')}` : 'Nothing is marked New / remodel'); } }, 'Apply to new work only'),
+        h('button', { class: 'btn small', onclick: () => { let n = 0; P.levels.forEach(l => { n += autoFurnish(l, l.rooms, pickSt.id, this.catalog); }); this.commit(`Furnished every room: ${n} pieces`); } }, '🛋 Furnish all rooms')));
+    } else el.append(h('p', { class: 'hint', style: 'margin:6px 0' }, 'Pick a style, then apply it to the whole house or just the addition. It sets siding / brick, the roof (style, pitch, material), windows, doors, trim, paint, floors by room, cabinets and counters, and frames a roof if there is none.'));
     el.append(h('hr', { class: 'sep' }), h('h3', {}, 'This level'));
     el.append(field('Name', h('input', { value: L.name, onchange: e => { L.name = e.target.value || 'Level'; this.commit('Level name'); } })));
     el.append(lengthField('Wall height', L.height, v => { if (v > 2) { L.height = v; restack(P); this.commit('Wall height'); } }));
     el.append(h('div', { class: 'row' },
       h('button', { class: 'btn small', title: 'Marks the walls around the outside of the plan as outside walls', onclick: () => { const n = markExterior(L, s); this.commit(n ? `${n} walls marked outside` : 'No change'); } }, 'Find outside walls'),
+      h('button', { class: 'btn small', title: 'For drawing an existing house first: marks everything on this level Existing (not priced). Then draw the addition as New.', onclick: () => { if (!confirm('Mark everything on this level as Existing (not priced)?')) return; ['walls', 'rooms', 'openings', 'items'].forEach(k => L[k].forEach(o => { o.phase = 'existing'; })); P.roofs.filter(r => r.levelId === L.id).forEach(r => { r.phase = 'existing'; }); this.setPhase('new'); this.commit('This level is Existing; now drawing New work'); } }, 'All of this level is existing'),
       h('button', { class: 'btn small', title: 'Turns every door so it swings into its room, not into a hall', onclick: () => { const n = swingDoorsIntoRooms(L); this.commit(n ? `${n} doors turned to swing into their rooms` : 'Every door already swings into its room'); } }, 'Doors swing into rooms'),
       h('button', { class: 'btn small', onclick: () => { const r = autoRoof(P, L, this.roofDefaults()); if (r) { this.select({ kind: 'roof', id: r.id }); this.commit('Auto roof'); } else this.toast('Draw the walls first.'); } }, '⌂ Auto roof'),
       P.levels.length > 1 ? h('button', { class: 'btn small danger', onclick: () => { if (!confirm(`Delete ${L.name} and everything drawn on it?`)) return; P.roofs = P.roofs.filter(r => r.levelId !== L.id); P.levels = P.levels.filter(x => x !== L); restack(P); this.level = P.levels[0]; this.commit('Delete level'); } }, 'Delete level') : null));
+    // a picture to trace over
+    const u = L.underlay;
+    el.append(h('div', { class: 'row' },
+      h('button', { class: 'btn small', onclick: async () => { const f = await store.pickFile('image/*'); if (!f) return; const src = await shrinkImage(await store.readDataURL(f), 2000); L.underlay = { src, x: 0, y: 0, scale: 0.05, opacity: 0.5 }; this.commit('Picture added: now click Set scale'); this.plan.fit(); } }, u ? '🖼 Change trace picture' : '🖼 Trace over a picture / scan'),
+      u ? h('button', { class: 'btn small', onclick: () => { this.setTool('ucal'); this.status('Set scale: click one end of a wall or dimension you know on the picture.'); } }, '📏 Set scale') : null,
+      u ? h('button', { class: 'btn small', onclick: () => { this.setTool('umove'); this.status('Drag the picture to line it up. Press V when done.'); } }, '✥ Move picture') : null));
+    if (u) el.append(field('Picture', h('input', { type: 'range', min: '0', max: '1', step: '0.05', value: u.hidden ? 0 : (u.opacity ?? 0.5), oninput: e => { u.opacity = +e.target.value; u.hidden = u.opacity === 0; this.plan.draw(); }, onchange: () => this.commit('Picture opacity') })),
+      h('div', { class: 'row' }, h('button', { class: 'btn small danger', onclick: () => { delete L.underlay; this.commit('Picture removed'); } }, 'Remove picture')));
     el.append(h('hr', { class: 'sep' }), h('h3', {}, 'Defaults'));
     el.append(field('Outside walls', productSelect(this.catalog, p => p.kind === 'wall' && EXTERIOR_CATS.includes(p.category), s.exteriorFinishId, v => { s.exteriorFinishId = v; this.commit('Outside finish'); }, 'None')));
     el.append(field('Drywall', productSelect(this.catalog, p => p.kind === 'wall' && p.category === 'drywall', s.drywallId, v => { s.drywallId = v; this.commit('Drywall'); }, 'Not included')));
@@ -547,6 +714,7 @@ const app = {
 
   // ---------- estimate ----------
   renderEstimate() {
+    if (this.customer) return this.renderScope();
     const pane = $('#est-pane'); const P = this.project, s = P.settings;
     const t = this.takeoff = this.takeoffNow();
     const pct = (label, key) => h('label', {}, label, h('input', { type: 'number', step: '0.25', value: s[key], onchange: e => { s[key] = num(e.target.value); this.commit(label); } }));
@@ -555,7 +723,7 @@ const app = {
     const wrap = h('div', { class: 'est' });
     wrap.append(h('div', { class: 'est-head' },
       h('div', {}, h('h2', {}, P.name), h('div', { class: 'sub', style: 'color:var(--muted)' }, [P.client, P.address, P.claimNo ? 'Claim ' + P.claimNo : '', P.carrier].filter(Boolean).join(' · ') || 'Add client / address / claim on the Plan screen (nothing selected).')),
-      h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => this.exportAs('csv') }, '⤓ Spreadsheet'), h('button', { class: 'btn', onclick: () => this.exportAs('lines') }, '⤓ Line items (Xactimate-ready)'), h('button', { class: 'btn primary', onclick: () => this.exportAs('print') }, '🖨 Print / PDF'))));
+      h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => this.exportAs('csv') }, '⤓ Spreadsheet'), h('button', { class: 'btn', onclick: () => this.exportAs('lines') }, '⤓ Line items (Xactimate-ready)'), h('button', { class: 'btn', onclick: () => this.enterEstimate('') }, '✍ Enter Xactimate estimate'), h('button', { class: 'btn primary', onclick: () => this.exportAs('print') }, '🖨 Print / PDF'))));
     const books = store.listBooks();
     const priceSel = select([['catalog', 'Your catalog prices'], ...books.map(b => [b.id, b.name])], s.pricing || 'catalog', v => { s.pricing = v; this.commit('Prices from ' + (v === 'catalog' ? 'your catalog' : (books.find(b => b.id === v) || {}).name)); });
     wrap.append(h('div', { class: 'est-set', style: 'margin-bottom:8px' },
@@ -607,6 +775,21 @@ const app = {
       h('div', {}, h('span', {}, `Profit ${s.profitPct}%`), h('span', {}, money(T.profit))),
       h('div', { class: 'grand' }, h('span', {}, 'Total'), h('span', {}, money(T.grand)))));
     wrap.append(h('p', { class: 'hint', style: 'margin:14px 0' }, `Quantities come from the drawing: floors from room areas, walls from wall lengths × heights less doors and windows, roofs from the roof sections with pitch and overhang. Prices come from ${t.pricedFrom === 'Your catalog prices' ? '📦 Catalog' : '“' + t.pricedFrom + '” (lines without a code there use your catalog price, marked ⚑)'}. Check every number before sending.`));
+    pane.innerHTML = ''; pane.append(wrap);
+  },
+  // Customer view of the estimate: what will be done, room by room, with no prices.
+  renderScope() {
+    const pane = $('#est-pane'), P = this.project;
+    const keep = P.settings.estimateLayout; P.settings.estimateLayout = 'room';
+    const t = this.takeoffNow(); P.settings.estimateLayout = keep;
+    const wrap = h('div', { class: 'est' }, h('div', { class: 'est-head' }, h('div', {}, h('h2', {}, P.name), h('div', { class: 'sub', style: 'color:var(--muted)' }, 'Scope of work')), h('button', { class: 'btn primary', onclick: () => this.exportAs('print') }, '🖨 Print / PDF')));
+    if (P.cover) wrap.append(h('img', { src: P.cover, alt: 'House', style: 'width:100%;max-height:320px;object-fit:cover;border-radius:10px;margin:6px 0' }));
+    const damaged = []; P.levels.forEach(l => l.rooms.forEach(r => { if (r.damaged) damaged.push([l, r]); }));
+    if (damaged.length) { wrap.append(h('h3', { class: 'scope-room' }, 'Damage found')); damaged.forEach(([l, r]) => wrap.append(h('div', { class: 'warn' }, h('b', {}, `${l.name}: ${r.name}. `), r.damage || 'Marked damaged.'))); }
+    const tbl = h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'What we will do'), h('th', { class: 'n' }, 'Quantity'), h('th', {}, 'Unit'))));
+    const tb = h('tbody');
+    t.groups.forEach(g => { tb.append(h('tr', { class: 'grp' }, h('td', { colspan: 3 }, g.name))); g.lines.forEach(l => tb.append(h('tr', {}, h('td', {}, l.name), h('td', { class: 'n' }, l.qty.toLocaleString('en-US', { maximumFractionDigits: 2 })), h('td', {}, l.unit)))); });
+    tbl.append(tb); wrap.append(tbl);
     pane.innerHTML = ''; pane.append(wrap);
   },
   customLine() {
@@ -761,6 +944,18 @@ const app = {
         out.append(h('div', { class: 'pg' }, phead(), h('h2', {}, '3D views'), ...shots.map(src => h('img', { src, style: 'margin-bottom:8px;max-height:3in;object-fit:contain' })), pfoot()));
       }
     }
+    // photos and damage
+    const photoRooms = []; P.levels.forEach(l => l.rooms.forEach(r => { if ((r.photos || []).length || r.damaged) photoRooms.push([l, r]); }));
+    if (P.cover || photoRooms.length) out.append(h('div', { class: 'pg' }, phead(), h('h2', {}, 'Photos & damage'),
+      P.cover ? h('img', { src: P.cover, style: 'max-height:3in;object-fit:contain;margin-bottom:8px' }) : null,
+      ...photoRooms.map(([l, r]) => h('div', { style: 'margin:8px 0;page-break-inside:avoid' }, h('b', {}, `${l.name}: ${r.name}`), r.damaged ? h('div', { style: 'color:#b03020' }, 'Damage: ' + (r.damage || 'marked damaged')) : null,
+        h('div', { style: 'display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:4px' }, ...(r.photos || []).map(src => h('img', { src, style: 'aspect-ratio:4/3;object-fit:cover' }))))), pfoot()));
+    if (this.customer) {   // customer copy: scope of work, no prices
+      const keep = s.estimateLayout; s.estimateLayout = 'room'; const sc = this.takeoffNow(); s.estimateLayout = keep;
+      const st = h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'What we will do'), h('th', { class: 'n' }, 'Qty'), h('th', {}, 'Unit'))), h('tbody', {}, ...sc.groups.flatMap(g => [h('tr', {}, h('td', { colspan: 3 }, h('b', {}, g.name))), ...g.lines.map(l => h('tr', {}, h('td', {}, l.name), h('td', { class: 'n' }, l.qty.toLocaleString('en-US', { maximumFractionDigits: 2 })), h('td', {}, l.unit)))])));
+      out.append(h('div', {}, phead(), h('h2', {}, 'Scope of work'), st, pfoot()));
+      return;
+    }
     // estimate
     const tbl = h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'Code'), h('th', {}, 'Item'), h('th', { class: 'n' }, 'Qty'), h('th', {}, 'Unit'), h('th', { class: 'n' }, 'Unit price'), h('th', { class: 'n' }, 'Total'))));
     const tb = h('tbody');
@@ -795,6 +990,19 @@ function productSelect(catalog, filter, value, onChange, emptyLabel) {
   if (value && !opts.some(p => p.id === value)) s.append(h('option', { value }, `(missing: ${value})`));
   s.value = value || '';
   return s;
+}
+// ---- GrayCo price memory: every priced line you enter is remembered by its code (latest price wins) ----
+const LEARNED_ID = 'pl-learned';
+function learnedBook() { return store.getBook(LEARNED_ID); }
+function learnedPrice(code) { const b = learnedBook(); return b ? b.items[normCode(code)] || null : null; }
+function rememberPrices(lines) {
+  if (!lines.length) return;
+  const all = store.listBooks();
+  let b = all.find(x => x.id === LEARNED_ID);
+  if (!b) { b = { id: LEARNED_ID, name: 'GrayCo price memory (from entered estimates)', kind: 'learned', imported: new Date().toISOString(), count: 0, hasMaterial: false, items: {} }; all.unshift(b); }
+  lines.forEach(x => { b.items[x.code] = { code: x.code, desc: x.name, unit: x.unit, replace: x.price, remove: 0, material: null, labor: null, updated: new Date().toISOString() }; });
+  b.count = Object.keys(b.items).length; b.imported = new Date().toISOString();
+  store.saveBooks(all);
 }
 function productText(p) { return [p.name, p.brand, p.colorName, p.finish, p.material, p.sku, p.vendor, categoryName(p.category)].filter(Boolean).join(' ').toLowerCase(); }
 function swatch(p) {

@@ -4,9 +4,15 @@
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { wallLength, wallPieces, wallHeight, wallOpenings, pointInPoly, roofTriangles, bbox, lerp } from './geom.js';
+import { wallLength, wallPieces, wallHeight, wallOpenings, pointInPoly, roofTriangles, bbox, lerp, projectOnSeg, polyArea, centroid } from './geom.js';
 import { findProduct } from './catalog.js';
-import { FLOOR_DEPTH } from './model.js';
+import { FLOOR_DEPTH, wallsAtPoint } from './model.js';
+
+function shade(hex, k) {
+  const n = parseInt(String(hex).replace('#', ''), 16); if (!isFinite(n)) return hex;
+  const f = v => Math.max(0, Math.min(255, Math.round(v * k)));
+  return '#' + [f(n >> 16 & 255), f(n >> 8 & 255), f(n & 255)].map(v => v.toString(16).padStart(2, '0')).join('');
+}
 
 export class View3D {
   constructor(container, app) {
@@ -28,12 +34,14 @@ export class View3D {
     this.root = new THREE.Group(); this.scene.add(this.root);
     this.texCache = new Map();
     this.matCache = new Map();
-    this.opts = { showRoof: true, upTo: -1, cutaway: false, ceilings: false };
+    this.opts = { showRoof: true, upTo: -1, cutaway: false, ceilings: false, phaseView: 'after', highlightNew: false, damage: false };
     this._lights();
     this._ground();
     this.ray = new THREE.Raycaster();
-    this.renderer.domElement.addEventListener('pointerdown', e => { this._down = { x: e.clientX, y: e.clientY }; });
-    this.renderer.domElement.addEventListener('pointerup', e => { if (this._down && Math.hypot(e.clientX - this._down.x, e.clientY - this._down.y) < 4) this.pick(e); });
+    this.renderer.domElement.addEventListener('pointerdown', e => this._pDown(e));
+    this.renderer.domElement.addEventListener('pointermove', e => this._pMove(e));
+    this.renderer.domElement.addEventListener('pointerup', e => this._pUp(e));
+    this.roomLight = new THREE.PointLight(0xffe6c2, 0, 45, 1.4); this.roomLight.castShadow = false; this.scene.add(this.roomLight);
     this.walk = null;
     this._keys = new Set();
     window.addEventListener('keydown', e => { if (this.walk && !/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) this._keys.add(e.code); });
@@ -109,16 +117,70 @@ export class View3D {
       if (li > upTo) return;
       const g = new THREE.Group(); g.position.y = level.elevation; g.userData.levelId = level.id;
       this._stage = li * 10;
-      this.buildLevel(level, g, li === upTo && this.opts.cutaway);
+      this.buildLevel(this.viewLevel(level), g, li === upTo && this.opts.cutaway);
+      this._afterLevel(level, g);
       this.root.add(g);
     });
     if (this.opts.showRoof && !this.opts.cutaway) {
       P.roofs.forEach(sec => {
         const li = P.levels.findIndex(l => l.id === sec.levelId); if (li < 0 || li > upTo) return;
+        if (!this.showPhase(sec)) return;
         this.buildRoof(sec, P.levels[li]);
       });
     }
+    if (this.opts.highlightNew || this.opts.damage) this._markRoofs();
+    if (this._sel) this.setSelection(this._sel, true);
+    if (this.walk) this._walkPrep();
     this.render();
+  }
+
+  // ---- phases: Before = existing + what gets torn out; After = existing + new work ----
+  showPhase(o) {
+    const p = (o && o.phase) || 'new', v = this.opts.phaseView;
+    return v === 'before' ? p !== 'new' : v === 'after' ? p !== 'demo' : true;
+  }
+  viewLevel(level) {
+    const f = a => a.filter(o => this.showPhase(o));
+    const walls = f(level.walls), ids = new Set(walls.map(w => w.id));
+    return { ...level, walls, rooms: f(level.rooms), items: f(level.items), openings: f(level.openings).filter(o => ids.has(o.wallId)) };
+  }
+  // grey out existing work (to show what is new) and mark damage
+  _afterLevel(level, g) {
+    const phase = new Map(), damaged = new Set();
+    ['walls', 'rooms', 'items', 'openings'].forEach(k => level[k].forEach(o => phase.set(o.id, o.phase || 'new')));
+    level.rooms.forEach(r => { if (r.damaged) damaged.add(r.id); });
+    const grey = this.mat('#c9c9c6'), red = this.mat('#e0453a', { opacity: 0.45, side: THREE.DoubleSide });
+    g.traverse(o => {
+      const pk = o.userData.pick; if (!pk || !o.isMesh) return;
+      if (this.opts.highlightNew && phase.get(pk.id) === 'existing') o.material = Array.isArray(o.material) ? o.material.map(() => grey) : grey;
+      if (this.opts.damage && pk.kind === 'room' && damaged.has(pk.id) && o.geometry.type === 'ShapeGeometry') {
+        const ov = new THREE.Mesh(o.geometry, red); ov.position.copy(o.position); ov.position.y += 0.04; ov.renderOrder = 2; o.parent.add(ov);
+      }
+    });
+  }
+  _markRoofs() {
+    const P = this.app.project, grey = this.mat('#c9c9c6', { side: THREE.DoubleSide }), red = this.mat('#d9443a', { side: THREE.DoubleSide, roughness: 0.8 });
+    this.root.children.forEach(grp => {
+      const pk = grp.userData.pick; if (!pk || pk.kind !== 'roof') return;
+      const r = P.roofs.find(x => x.id === pk.id); if (!r) return;
+      const m = this.opts.damage && r.damaged ? red : this.opts.highlightNew && r.phase === 'existing' ? grey : null;
+      if (m) grp.traverse(o => { if (o.isMesh) o.material = m; });
+    });
+  }
+
+  // ---- selection highlight ----
+  setSelection(sel, again) {
+    if (this._hl) this._hl.forEach(([o, m]) => { o.material = m; });
+    this._hl = []; this._sel = sel;
+    if (sel) {
+      this.root.traverse(o => {
+        if (!o.isMesh || !o.userData.pick || o.userData.pick.id !== sel.id) return;
+        const tint = m => { const c = m.clone(); if (c.emissive) { c.emissive.set('#3d7cff'); c.emissiveIntensity = 0.45; } return c; };
+        this._hl.push([o, o.material]);
+        o.material = Array.isArray(o.material) ? o.material.map(tint) : tint(o.material);
+      });
+    }
+    if (!again) this.render();
   }
 
   outsideSign(w, level) {
@@ -253,13 +315,13 @@ export class View3D {
 
   buildItem(it, g, level) {
     const p = findProduct(this.app.catalog, it.productId);
-    const color = p ? p.color : '#999999';
+    const color = it.color || (p ? p.color : '#999999');
     const type = p ? (p.objType || 'box') : 'box';
     const grp = new THREE.Group();
     grp.position.set(it.x, it.elev || 0, it.y);
     grp.rotation.y = -it.rot * Math.PI / 180;
     grp.userData.pick = { kind: 'item', id: it.id, levelId: level.id };
-    const m = this.productMat(it.productId, color, 2, { roughness: 0.6 });
+    const m = it.color ? this.mat(it.color, { roughness: 0.7 }) : this.productMat(it.productId, color, 2, { roughness: 0.6 });
     const add = (geo, mat, x, y, z) => { const mesh = new THREE.Mesh(geo, mat); mesh.position.set(x, y, z); mesh.castShadow = true; mesh.receiveShadow = true; mesh.userData.pick = grp.userData.pick; grp.add(mesh); return mesh; };
     const W = it.w, D = it.d, H = it.h;
     if (type === 'base') {
@@ -276,6 +338,65 @@ export class View3D {
     } else if (type === 'tub') {
       add(new THREE.BoxGeometry(W, H, D), m, 0, H / 2, 0);
       add(new THREE.BoxGeometry(W - 0.4, 0.05, D - 0.4), this.mat('#cfe3ee', { roughness: 0.2 }), 0, H + 0.01, 0);
+    } else if (type === 'sofa') {
+      add(new THREE.BoxGeometry(W, H * 0.42, D), m, 0, H * 0.21 + 0.25, 0);                     // seat base
+      add(new THREE.BoxGeometry(W, H * 0.6, D * 0.25), m, 0, H * 0.5 + 0.25, -D * 0.375);     // back
+      [-1, 1].forEach(sx => add(new THREE.BoxGeometry(0.55, H * 0.55, D), m, sx * (W / 2 - 0.275), H * 0.27 + 0.25, 0));
+      const cush = this.mat(it.color ? shade(it.color, 1.12) : '#d8d4cc', { roughness: 0.9 });
+      const n = Math.max(2, Math.round(W / 2.6));
+      for (let i = 0; i < n; i++) add(new THREE.BoxGeometry((W - 1.2) / n - 0.08, 0.35, D * 0.62), cush, -W / 2 + 0.6 + ((W - 1.2) * (i + 0.5)) / n, H * 0.42 + 0.42, D * 0.08);
+      [-1, 1].forEach(sx => [-1, 1].forEach(sz => add(new THREE.CylinderGeometry(0.07, 0.07, 0.25, 6), this.mat('#2a2522'), sx * (W / 2 - 0.3), 0.125, sz * (D / 2 - 0.3))));
+    } else if (type === 'chair') {
+      add(new THREE.BoxGeometry(W * 0.9, 0.25, D * 0.85), m, 0, H * 0.45, D * 0.05);
+      add(new THREE.BoxGeometry(W * 0.9, H * 0.5, 0.18), m, 0, H * 0.72, -D * 0.4);
+      const leg = this.mat('#2a2522');
+      [-1, 1].forEach(sx => [-1, 1].forEach(sz => add(new THREE.BoxGeometry(0.12, H * 0.45, 0.12), leg, sx * W * 0.38, H * 0.225, sz * D * 0.36)));
+    } else if (type === 'stool') {
+      add(new THREE.CylinderGeometry(W * 0.4, W * 0.4, 0.2, 18), m, 0, H - 0.1, 0);
+      add(new THREE.CylinderGeometry(0.08, 0.12, H - 0.2, 8), this.mat('#2a2a2a', { metalness: 0.6 }), 0, (H - 0.2) / 2, 0);
+    } else if (type === 'table') {
+      const round = p && p.round;
+      add(round ? new THREE.CylinderGeometry(W / 2, W / 2, 0.15, 32) : new THREE.BoxGeometry(W, 0.15, D), m, 0, H - 0.075, 0);
+      if (round) add(new THREE.CylinderGeometry(0.2, 0.5, H - 0.15, 12), m, 0, (H - 0.15) / 2, 0);
+      else [-1, 1].forEach(sx => [-1, 1].forEach(sz => add(new THREE.BoxGeometry(0.2, H - 0.15, 0.2), m, sx * (W / 2 - 0.3), (H - 0.15) / 2, sz * (D / 2 - 0.3))));
+    } else if (type === 'bed') {
+      add(new THREE.BoxGeometry(W, 1.1, D), this.mat(it.color ? shade(it.color, 0.6) : '#6e5440'), 0, 0.55, 0);             // frame
+      add(new THREE.BoxGeometry(W - 0.2, 0.75, D - 0.4), this.mat('#f4f2ee', { roughness: 0.95 }), 0, 1.45, 0.1);            // mattress
+      add(new THREE.BoxGeometry(W - 0.1, 0.3, D * 0.62), m, 0, 1.9, D * 0.18);                                              // duvet
+      add(new THREE.BoxGeometry(W + 0.2, 3.8, 0.35), this.mat(it.color ? shade(it.color, 0.55) : '#5a4636'), 0, 1.9, -D / 2);   // headboard
+      const pw = W > 4 ? 2 : 1;
+      for (let i = 0; i < pw; i++) add(new THREE.BoxGeometry((W - 0.8) / pw - 0.15, 0.45, 1.1), this.mat('#ffffff', { roughness: 1 }), -W / 2 + 0.4 + ((W - 0.8) * (i + 0.5)) / pw, 2.05, -D / 2 + 1);
+    } else if (type === 'rug') {
+      const r = add(new THREE.BoxGeometry(W, 0.03, D), this.mat(color, { roughness: 1 }), 0, 0.035, 0); r.castShadow = false;
+      add(new THREE.BoxGeometry(W - 0.8, 0.032, D - 0.8), this.mat(shade(color, 0.82), { roughness: 1 }), 0, 0.037, 0).castShadow = false;
+    } else if (type === 'lamp') {
+      const glow = new THREE.MeshStandardMaterial({ color: '#fff3dc', emissive: '#ffd9a0', emissiveIntensity: 1.2, roughness: 0.8 });
+      add(new THREE.CylinderGeometry(0.06, 0.06, H * 0.8, 8), this.mat('#2a2a2a', { metalness: 0.5 }), 0, H * 0.4, 0);
+      add(new THREE.CylinderGeometry(W * 0.3, W * 0.42, H * 0.28, 20, 1, true), glow, 0, H * 0.84, 0);
+      add(new THREE.CylinderGeometry(W * 0.3, W * 0.3, 0.06, 16), this.mat('#2a2a2a'), 0, 0.03, 0);
+    } else if (type === 'pendant') {
+      const glow = new THREE.MeshStandardMaterial({ color: '#fff3dc', emissive: '#ffd9a0', emissiveIntensity: 1.4 });
+      const ceil = (level.height || 9) - (it.elev || 6.5);
+      add(new THREE.CylinderGeometry(0.02, 0.02, Math.max(0.2, ceil), 4), this.mat('#222'), 0, H + Math.max(0.2, ceil) / 2, 0);
+      add(new THREE.ConeGeometry(W / 2, H * 0.7, 20, 1, true), this.mat(color, { metalness: 0.6, roughness: 0.4, side: THREE.DoubleSide }), 0, H * 0.65, 0);
+      add(new THREE.SphereGeometry(Math.min(W, H) * 0.18, 12, 8), glow, 0, H * 0.35, 0);
+    } else if (type === 'art' || type === 'mirror') {
+      add(new THREE.BoxGeometry(W, H, 0.08), this.mat(type === 'mirror' ? '#2a2a2a' : '#1d1d1d'), 0, H / 2, -D / 2 + 0.04);
+      const face = type === 'mirror' ? this.mat('#cfdbe2', { metalness: 0.9, roughness: 0.05 }) : new THREE.MeshStandardMaterial({ map: this.artTexture(it.id, it.color || color), roughness: 0.9 });
+      add(new THREE.PlaneGeometry(W - 0.25, H - 0.25), face, 0, H / 2, -D / 2 + 0.085);
+    } else if (type === 'tv') {
+      add(new THREE.BoxGeometry(W, H, 0.12), this.mat('#0d0d0d', { roughness: 0.3 }), 0, H / 2, -D / 2 + 0.06);
+      add(new THREE.PlaneGeometry(W - 0.12, H - 0.12), new THREE.MeshStandardMaterial({ color: '#16222e', emissive: '#1b3550', emissiveIntensity: 0.6, roughness: 0.2 }), 0, H / 2, -D / 2 + 0.125);
+    } else if (type === 'shelf') {
+      add(new THREE.BoxGeometry(W, H, 0.1), m, 0, H / 2, -D / 2 + 0.05);
+      [-1, 1].forEach(sx => add(new THREE.BoxGeometry(0.1, H, D), m, sx * (W / 2 - 0.05), H / 2, 0));
+      for (let i = 0; i <= 5; i++) add(new THREE.BoxGeometry(W, 0.08, D), m, 0, (H * i) / 5 + 0.04, 0);
+      const books = ['#8c3a2f', '#2f4a6a', '#c9a46e', '#3a5a3a', '#6b4a7a', '#d8cbb3'];
+      for (let i = 0; i < 5; i++) for (let j = 0; j < 6; j++) add(new THREE.BoxGeometry(W / 8, H / 5 * 0.7, D * 0.7), this.mat(books[(i * 3 + j) % books.length]), -W / 2 + 0.3 + (W - 0.6) * (j + 0.5) / 7, (H * i) / 5 + 0.08 + H / 5 * 0.35, 0);
+    } else if (type === 'plant') {
+      add(new THREE.CylinderGeometry(W * 0.3, W * 0.22, H * 0.25, 16), this.mat('#d8cbb3'), 0, H * 0.125, 0);
+      const leaf = this.mat(color, { roughness: 1 });
+      [[0, 0.62, 0, 0.42], [0.15, 0.78, 0.1, 0.32], [-0.15, 0.82, -0.08, 0.3]].forEach(([x, y, z, r]) => { const b = add(new THREE.IcosahedronGeometry(1, 1), leaf, x * W, y * H, z * W); b.scale.set(W * r, H * r * 0.7, W * r); });
     } else if (type === 'panel') {          // backsplash, tile wall, fireplace surround: width × height, thin
       add(new THREE.BoxGeometry(W, H, Math.max(0.04, D)), m, 0, H / 2, 0);
     } else if (type === 'tree') {
@@ -414,6 +535,25 @@ export class View3D {
   }
   get building() { return !!this._anim; }
 
+  // Abstract art for wall pieces, different for each item, in the style's accent color.
+  artTexture(seed, accent) {
+    const key = 'art|' + seed + '|' + accent;
+    if (this.texCache.has(key)) return this.texCache.get(key);
+    let h = 0; for (const ch of String(seed)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    const rnd = () => ((h = (h * 1664525 + 1013904223) >>> 0) / 4294967296);
+    const c = document.createElement('canvas'); c.width = 256; c.height = 192; const x = c.getContext('2d');
+    x.fillStyle = '#f3efe6'; x.fillRect(0, 0, 256, 192);
+    const cols = [accent, shade(accent, 1.35), shade(accent, 0.6), '#d9b56a', '#2b2b2b', '#c96f3a'];
+    for (let i = 0; i < 7; i++) {
+      x.globalAlpha = 0.55 + rnd() * 0.4; x.fillStyle = cols[Math.floor(rnd() * cols.length)];
+      if (rnd() < 0.5) { x.beginPath(); x.arc(rnd() * 256, rnd() * 192, 15 + rnd() * 60, 0, 7); x.fill(); }
+      else x.fillRect(rnd() * 200, rnd() * 150, 30 + rnd() * 120, 10 + rnd() * 70);
+    }
+    x.globalAlpha = 1; x.strokeStyle = '#2b2b2b'; x.lineWidth = 3; x.beginPath(); x.moveTo(rnd() * 256, rnd() * 192); for (let i = 0; i < 4; i++) x.quadraticCurveTo(rnd() * 256, rnd() * 192, rnd() * 256, rnd() * 192); x.stroke();
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; this.texCache.set(key, t);
+    return t;
+  }
+
   _uvPlanar(geo, repeatFt, useXZ) {
     const pos = geo.attributes.position, uv = [];
     for (let i = 0; i < pos.count; i++) { const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i); uv.push(x / repeatFt, (useXZ ? z + y : z) / repeatFt); }
@@ -445,41 +585,136 @@ export class View3D {
     this.controls.update(); this.render();
   }
 
-  // Walk-through: eye at 5'6", WASD / arrows to move, drag to look.
+  // ---------- pointer: click to select, drag the selected piece to move it, walk-mode look / glide ----------
+  _ndc(e) { const r = this.renderer.domElement.getBoundingClientRect(); return new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1); }
+  _hits(e) { this.ray.setFromCamera(this._ndc(e), this.camera); return this.ray.intersectObjects(this.root.children, true).filter(h => h.object.userData.pick && h.object.visible); }
+  _floorPoint(e, y) { this.ray.setFromCamera(this._ndc(e), this.camera); const p = new THREE.Vector3(); return this.ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -y), p) ? p : null; }
+  _pDown(e) {
+    this._down = { x: e.clientX, y: e.clientY };
+    if (this._anim || this.walk) return;
+    const sel = this.app.selection;
+    if (!sel || !['item', 'opening', 'wall'].includes(sel.kind)) return;
+    // the selected piece can be grabbed even when the roof or a wall is in front of it
+    const h = this._hits(e).find(x => x.object.userData.pick.id === sel.id);
+    if (!h) return;
+    const level = this.app.level, y = level.elevation;
+    const p0 = this._floorPoint(e, y); if (!p0) return;
+    const d = { kind: sel.kind, id: sel.id, p0, y, active: false };
+    if (sel.kind === 'item') { const it = level.items.find(x => x.id === sel.id); if (!it) return; d.obj = it; d.x0 = it.x; d.y0 = it.y; this.root.traverse(o => { if (!d.grp && o.isGroup && o.userData.pick && o.userData.pick.id === sel.id) d.grp = o; }); }
+    else if (sel.kind === 'opening') { const o = level.openings.find(x => x.id === sel.id); if (!o) return; d.obj = o; d.wall = level.walls.find(w => w.id === o.wallId); if (!d.wall) return; }
+    else { const w = level.walls.find(x => x.id === sel.id); if (!w) return; d.obj = w; d.a0 = { ...w.a }; d.b0 = { ...w.b }; d.ja = wallsAtPoint(level, w.a).filter(([x]) => x !== w); d.jb = wallsAtPoint(level, w.b).filter(([x]) => x !== w); }
+    this._drag = d; this.controls.enabled = false;
+    this.renderer.domElement.setPointerCapture(e.pointerId);
+  }
+  _pMove(e) {
+    const d = this._drag; if (!d) return;
+    if (!d.active && Math.hypot(e.clientX - this._down.x, e.clientY - this._down.y) < 4) return;
+    d.active = true;
+    const p = this._floorPoint(e, d.y); if (!p) return;
+    const snap = v => e.altKey ? v : Math.round(v * 4) / 4;
+    const dx = p.x - d.p0.x, dz = p.z - d.p0.z;
+    if (d.kind === 'item') {
+      d.obj.x = snap(d.x0 + dx); d.obj.y = snap(d.y0 + dz);
+      if (d.grp) { d.grp.position.x = d.obj.x; d.grp.position.z = d.obj.y; this.render(); }
+    } else if (d.kind === 'opening') {
+      const w = d.wall, L = wallLength(w), pr = projectOnSeg({ x: p.x, y: p.z }, w.a, w.b), half = d.obj.width / 2;
+      d.obj.t = Math.max(half + 0.05, Math.min(L - half - 0.05, snap(pr.t * L))) / L;
+      this._liveRebuild();
+    } else {
+      const w = d.obj, L = Math.hypot(d.b0.x - d.a0.x, d.b0.y - d.a0.y) || 1, n = { x: -(d.b0.y - d.a0.y) / L, y: (d.b0.x - d.a0.x) / L };
+      const k = snap(dx * n.x + dz * n.y);
+      w.a = { x: d.a0.x + n.x * k, y: d.a0.y + n.y * k }; w.b = { x: d.b0.x + n.x * k, y: d.b0.y + n.y * k };
+      d.ja.forEach(([x, end]) => { x[end] = { ...w.a }; }); d.jb.forEach(([x, end]) => { x[end] = { ...w.b }; });
+      this._liveRebuild();
+    }
+    this.app.plan.draw();
+  }
+  _liveRebuild() { if (this._lrT) return; this._lrT = setTimeout(() => { this._lrT = null; this.rebuild(); }, 70); }
+  _pUp(e) {
+    const d = this._drag; this._drag = null;
+    if (d) { this.controls.enabled = !this.walk; if (d.active) { this.app.commit('Moved in 3D'); return; } }
+    if (!this._down || Math.hypot(e.clientX - this._down.x, e.clientY - this._down.y) >= 4) return;
+    if (this._anim) return;
+    if (this.walk) {   // click a floor to glide there
+      const h = this._hits(e).find(x => x.object.userData.pick.kind === 'room');
+      if (h) this.walk.glide = { x: h.point.x, z: h.point.z };
+      return;
+    }
+    this.pick(e);
+  }
+
+  // ---------- walk-through ----------
+  // Eye at 5'5". W/S or ↑/↓ walk, A/D step sideways, ←/→ turn, drag to look, click a floor to glide there.
+  // Walls stop you; doors and openings let you through. Each room you enter lights up and shows its card.
   toggleWalk(on) {
     if (on && !this.walk) {
-      const L = this.app.level; const r = L.rooms[0];
-      const start = r ? (() => { const b = bbox(r.points); return { x: b.x + b.w / 2, y: b.y + b.h / 2 }; })() : { x: 0, y: 0 };
-      this.walk = { yaw: 0, pitch: 0, eye: L.elevation + 5.5 };
-      this.camera.position.set(start.x, this.walk.eye, start.y);
+      const L = this.app.level;
+      const rooms = L.rooms.filter(r => !r.outdoor && this.showPhase(r)).sort((a, b) => polyArea(b.points) - polyArea(a.points));
+      const c = rooms[0] ? centroid(rooms[0].points) : { x: 0, y: 0 };
+      this.walk = { yaw: 0, pitch: -0.05, eye: L.elevation + 5.4, vx: 0, vz: 0, roomId: null, glide: null };
+      this._ceilBefore = this.opts.ceilings; this.opts.ceilings = true;
+      this.camera.position.set(c.x, this.walk.eye, c.y);
       this.controls.enabled = false;
       const el = this.renderer.domElement;
-      this._look = e => { if (e.buttons !== 1) return; this.walk.yaw -= e.movementX * 0.004; this.walk.pitch = Math.max(-1.2, Math.min(1.2, this.walk.pitch - e.movementY * 0.004)); };
+      this._look = e => { if (e.buttons !== 1 || this._drag) return; this.walk.yaw -= e.movementX * 0.004; this.walk.pitch = Math.max(-1.2, Math.min(1.2, this.walk.pitch - e.movementY * 0.004)); };
       el.addEventListener('pointermove', this._look);
+      this.rebuild();
+      this.app.onWalk && this.app.onWalk(true);
       this._walkStep();
     } else if (!on && this.walk) {
       this.renderer.domElement.removeEventListener('pointermove', this._look);
-      this.walk = null; this.controls.enabled = true; this.fit();
+      this.walk = null; this.opts.ceilings = this._ceilBefore; this.roomLight.intensity = 0;
+      this.controls.enabled = true; this.rebuild(); this.fit();
+      this.app.onWalk && this.app.onWalk(false);
     }
   }
+  _walkPrep() {
+    const L = this.viewLevel(this.app.level);
+    this._solid = [];
+    L.walls.forEach(w => {
+      const H = wallHeight(w, L), len = wallLength(w); if (len < 0.05) return;
+      const d = { x: (w.b.x - w.a.x) / len, y: (w.b.y - w.a.y) / len };
+      wallPieces(w, L.openings, H).forEach(pc => { if (pc.z0 < 1 && pc.z1 > 2) this._solid.push({ a: { x: w.a.x + d.x * pc.u0, y: w.a.y + d.y * pc.u0 }, b: { x: w.a.x + d.x * pc.u1, y: w.a.y + d.y * pc.u1 }, r: (w.thickness || 0.5) / 2 + 0.85 }); });
+    });
+  }
+  _blocked(x, z) { return (this._solid || []).some(s => projectOnSeg({ x, y: z }, s.a, s.b).d < s.r); }
   _walkStep() {
-    const w = this.walk, k = this._keys, sp = k.has('ShiftLeft') ? 0.6 : 0.25;
+    const w = this.walk, k = this._keys, cam = this.camera;
+    const run = k.has('ShiftLeft') || k.has('ShiftRight') ? 2.2 : 1;
     const fwd = (k.has('KeyW') || k.has('ArrowUp') ? 1 : 0) - (k.has('KeyS') || k.has('ArrowDown') ? 1 : 0);
-    const str = (k.has('KeyD') || k.has('ArrowRight') ? 1 : 0) - (k.has('KeyA') || k.has('ArrowLeft') ? 1 : 0);
-    const cam = this.camera;
-    cam.position.x += (-Math.sin(w.yaw) * fwd + Math.cos(w.yaw) * str) * sp;
-    cam.position.z += (-Math.cos(w.yaw) * fwd - Math.sin(w.yaw) * str) * sp;
+    const str = (k.has('KeyD') ? 1 : 0) - (k.has('KeyA') ? 1 : 0);
+    const turn = (k.has('ArrowLeft') || k.has('KeyQ') ? 1 : 0) - (k.has('ArrowRight') || k.has('KeyE') ? 1 : 0);
+    w.yaw += turn * 0.035;
+    let tx = (-Math.sin(w.yaw) * fwd + Math.cos(w.yaw) * str) * 0.22 * run, tz = (-Math.cos(w.yaw) * fwd - Math.sin(w.yaw) * str) * 0.22 * run;
+    if (w.glide) {
+      const gx = w.glide.x - cam.position.x, gz = w.glide.z - cam.position.z, gd = Math.hypot(gx, gz);
+      if (gd < 0.3 || fwd || str) w.glide = null;
+      else { const sp = Math.min(0.32, gd * 0.08 + 0.05); tx = gx / gd * sp; tz = gz / gd * sp; const want = Math.atan2(-gx, -gz); let da = want - w.yaw; while (da > Math.PI) da -= 2 * Math.PI; while (da < -Math.PI) da += 2 * Math.PI; w.yaw += da * 0.08; }
+    }
+    w.vx += (tx - w.vx) * 0.25; w.vz += (tz - w.vz) * 0.25;   // ease in and out
+    const x = cam.position.x, z = cam.position.z;
+    if (!this._blocked(x + w.vx, z + w.vz)) { cam.position.x += w.vx; cam.position.z += w.vz; }
+    else if (!this._blocked(x + w.vx, z)) { cam.position.x += w.vx; w.vz = 0; }
+    else if (!this._blocked(x, z + w.vz)) { cam.position.z += w.vz; w.vx = 0; }
+    else { w.vx = w.vz = 0; if (w.glide) w.glide = null; }
     cam.position.y = w.eye;
     cam.rotation.set(w.pitch, w.yaw, 0, 'YXZ');
+    // which room am I in?
+    const L = this.app.level, here = { x: cam.position.x, y: cam.position.z };
+    const room = L.rooms.filter(r => this.showPhase(r)).sort((a, b) => (a.outdoor ? 1 : 0) - (b.outdoor ? 1 : 0) || polyArea(a.points) - polyArea(b.points)).find(r => pointInPoly(here, r.points)) || null;
+    const id = room ? room.id : null;
+    if (id !== w.roomId) {
+      w.roomId = id;
+      if (room && !room.outdoor) { const c = centroid(room.points); this.roomLight.position.set(c.x, L.elevation + (room.height || L.height) - 1.2, c.y); this._lightTo = 38; }
+      else this._lightTo = 0;
+      this.app.onEnterRoom && this.app.onEnterRoom(room);
+    }
+    if (this._lightTo != null) this.roomLight.intensity += (this._lightTo - this.roomLight.intensity) * 0.1;
     this.render();
   }
 
   pick(e) {
-    const r = this.renderer.domElement.getBoundingClientRect();
-    const v = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
-    this.ray.setFromCamera(v, this.camera);
-    const hits = this.ray.intersectObjects(this.root.children, true);
-    const h = hits.find(x => x.object.userData.pick);
+    const h = this._hits(e)[0];
     if (h) this.app.pickFrom3D(h.object.userData.pick); else this.app.select(null);
   }
 

@@ -4,7 +4,9 @@ import { fmtFtIn, parseFtIn, polyArea, roofMeasure, wallPieces, pitchFactor } fr
 import { fromTemplate, newProject, addWall, addOpening, addRoom, rectPts, splitWall, markExterior, swingDoorsIntoRooms } from '../js/model.js';
 import { DEFAULT_CATALOG, catalogFromCSV, toCSV, CSV_COLUMNS } from '../js/catalog.js';
 import { computeTakeoff, roundQty, convert, roomStats, lineItemsCSV } from '../js/takeoff.js';
-import { priceBookFromCSV, convertUnit } from '../js/pricebook.js';
+import { priceBookFromCSV, convertUnit, parseEstimateText } from '../js/pricebook.js';
+import { STYLES, styleProductIds, applyStyle, autoFurnish, roomType } from '../js/styles.js';
+import { setDrawPhase } from '../js/model.js';
 
 let n = 0; const t = (name, fn) => { fn(); n++; };
 const near = (a, b, eps = 1e-6, msg) => assert.ok(Math.abs(a - b) < eps, `${msg || ''} ${a} ≈ ${b}`);
@@ -159,6 +161,43 @@ t('estimate priced from a price list, R&R, own-price fallback, by room', () => {
   assert.ok(R.groups.some(g => g.name === 'First floor: Den')); assert.ok(R.byRoom);
   assert.ok(lineItemsCSV(p, R).includes('RFG TST1'));
   near(computeTakeoff(p, cat).lines.find(l => l.productId === 'rf-tpo').price, 380);   // without a list: catalog price
+});
+
+t('pasted estimate lines are read', () => {
+  const r = parseEstimateText('1. RFG 300S R&R Laminated comp. shingle roofing 25.33 SQ 285.40\nDRY 1/2\tDrywall 1/2"\t412\tSF\t2.36\nClean floor 120 SF\nJust a note');
+  assert.equal(r.length, 4);
+  assert.deepEqual([r[0].code, r[0].act, r[0].name, r[0].qty, r[0].unit, r[0].price], ['RFG 300S', 'R&R', 'Laminated comp. shingle roofing', 25.33, 'SQ', 285.4]);
+  assert.deepEqual([r[1].code, r[1].qty, r[1].unit, r[1].price], ['DRY 1/2', 412, 'SF', 2.36]);
+  assert.equal(r[2].qty, 120); assert.equal(r[2].price, undefined); assert.equal(r[3].name, 'Just a note');
+});
+t('styles name real products; apply and furnish', () => {
+  const ids = new Set(DEFAULT_CATALOG.map(p => p.id));
+  STYLES.forEach(s => styleProductIds(s).forEach(id => assert.ok(ids.has(id), `${s.id}: ${id}`)));
+  const p = fromTemplate('ranch', DEFAULT_CATALOG);
+  const done = applyStyle(p, 'mediterranean', { kind: 'all' }, DEFAULT_CATALOG);
+  assert.ok(done.includes('roof')); assert.equal(p.roofs[0].materialId, 'rf-clay-tile'); assert.equal(p.settings.exteriorFinishId, 'sid-stucco-3-coat-sand-finish');
+  assert.equal(p.levels[0].rooms.find(r => r.name === 'Bath 2').floorId, 'flr-tile-saltillo-terracotta');
+  const L = p.levels[0]; const n = autoFurnish(L, L.rooms, 'farmhouse', DEFAULT_CATALOG);
+  assert.ok(n > 30); assert.ok(L.items.filter(i => i.auto).every(i => i.roomId));
+  const again = autoFurnish(L, L.rooms, 'farmhouse', DEFAULT_CATALOG); assert.equal(L.items.filter(i => i.auto).length, again);   // re-run replaces
+  assert.equal(roomType('Primary bath'), 'bath'); assert.equal(roomType('Family room'), 'living'); assert.equal(roomType('Walk-in closet'), 'closet');
+});
+t('existing work is not priced; demolition is; an addition gets its own roof', () => {
+  setDrawPhase('existing');
+  const p = newProject(); const L = p.levels[0]; Object.assign(p.settings, { floorWaste: 0, wallWaste: 0, roofWaste: 0 });
+  [[0, 0, 30, 0], [30, 0, 30, 20], [30, 20, 0, 20], [0, 20, 0, 0]].forEach(([a, b, c, d]) => addWall(L, { x: a, y: b }, { x: c, y: d }, { exterior: true, thickness: 0.5 }));
+  addRoom(L, rectPts(0, 0, 30, 20), { name: 'Living', floorId: 'flr-carpet' });
+  setDrawPhase('new');
+  addRoom(L, rectPts(30, 0, 12, 20), { name: 'Family room', floorId: 'flr-lvp-oak' });
+  [[30, 0, 42, 0], [42, 0, 42, 20], [42, 20, 30, 20]].forEach(([a, b, c, d]) => addWall(L, { x: a, y: b }, { x: c, y: d }, { exterior: true, thickness: 0.5 }));
+  L.walls[1].phase = 'demo';
+  const T = computeTakeoff(p, DEFAULT_CATALOG);
+  const ids = T.lines.map(l => l.productId);
+  assert.ok(!ids.includes('flr-carpet')); assert.ok(ids.includes('flr-lvp-oak')); assert.ok(ids.includes('lb-demo-wall'));
+  near(T.summary.newArea, 240); near(T.summary.existingArea, 600);
+  applyStyle(p, 'farmhouse', { kind: 'new' }, DEFAULT_CATALOG);
+  assert.equal(p.roofs.length, 1); assert.equal(p.roofs[0].phase, 'new'); near(p.roofs[0].w, 12); assert.equal(p.roofs[0].layers, 0);
+  assert.ok(!computeTakeoff(p, DEFAULT_CATALOG).lines.some(l => l.productId === 'rf-tearoff'), 'no tear-off on a new addition roof');
 });
 
 console.log(`PlanBuilder math: ${n} tests passed`);

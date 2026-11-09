@@ -242,4 +242,32 @@ add('od-pergola', 'outdoor', 'object', 'Pergola 12×12 – cedar', 'EA', 6500, 3
 add('od-shed', 'outdoor', 'object', 'Storage shed 10×12', 'EA', 4200, 1500, '#c7b9a0', { w: 12, d: 10, h: 9, objType: 'box' });
 add('od-pool', 'outdoor', 'object', 'In-ground pool 16×32 (allowance)', 'EA', 32000, 18000, '#4fa3c9', { w: 32, d: 16, h: 0.1, objType: 'box' });
 
+// ---------------- Furniture & decor (for presentations; price 0 unless you add an allowance) ----------------
+const F = (id, name, w, d, hgt, objType, color, extra = {}) => add('fn-' + id, 'furniture', 'object', name, 'EA', 0, 0, color, { w, d, h: hgt, objType, ...extra });
+F('sofa-3', 'Sofa – 3 seat', 7.5, 3.2, 2.8, 'sofa', '#7d8792'); F('sofa-sect', 'Sectional sofa', 10, 3.3, 2.8, 'sofa', '#8a8178');
+F('loveseat', 'Loveseat', 5.5, 3.1, 2.8, 'sofa', '#7d8792'); F('armchair', 'Armchair', 3, 3, 3, 'chair', '#a39a8c');
+F('coffee', 'Coffee table', 4, 2, 1.4, 'table', '#6e5440'); F('side', 'Side table', 1.8, 1.8, 2, 'table', '#6e5440');
+F('tv-console', 'TV console', 6, 1.5, 2, 'box', '#3f3a36'); F('tv', 'TV 65" on wall', 4.8, 0.2, 2.8, 'tv', '#111111', { elev: 3.5 });
+F('rug-8x10', 'Area rug 8×10', 10, 8, 0.03, 'rug', '#b9ab95'); F('rug-5x8', 'Area rug 5×8', 8, 5, 0.03, 'rug', '#9aa5ad'); F('rug-runner', 'Runner rug 2.5×10', 10, 2.5, 0.03, 'rug', '#8c6d5a');
+F('lamp-floor', 'Floor lamp', 1.4, 1.4, 5.5, 'lamp', '#2c2c2c'); F('lamp-table', 'Table lamp', 1.2, 1.2, 2.2, 'lamp', '#d8cbb3', { elev: 2 });
+F('art-large', 'Wall art – large canvas', 4, 0.12, 3, 'art', '#333333', { elev: 4.2 }); F('art-small', 'Wall art – framed print', 2, 0.1, 2.6, 'art', '#333333', { elev: 4.5 });
+F('mirror', 'Mirror', 3, 0.1, 3.5, 'mirror', '#c9d3d9', { elev: 3.8 });
+F('bed-king', 'King bed', 6.7, 7, 2.2, 'bed', '#e7e1d6'); F('bed-queen2', 'Queen bed w/ headboard', 5.2, 7, 2.2, 'bed', '#e7e1d6'); F('bed-twin', 'Twin bed', 3.4, 6.6, 2, 'bed', '#e7e1d6');
+F('nightstand', 'Nightstand', 2, 1.5, 2.2, 'box', '#6e5440'); F('dresser', 'Dresser', 5, 1.7, 2.8, 'box', '#6e5440');
+F('dining-6', 'Dining table – seats 6', 6, 3.3, 2.5, 'table', '#6e5440'); F('dining-4', 'Dining table – round, seats 4', 4, 4, 2.5, 'table', '#6e5440', { round: true });
+F('chair-dining', 'Dining chair', 1.6, 1.8, 3.2, 'chair', '#4a4038'); F('stool', 'Counter stool', 1.4, 1.4, 2.2, 'stool', '#2f2f2f');
+F('desk-2', 'Writing desk', 4.5, 2.2, 2.5, 'table', '#6e5440'); F('chair-office', 'Office chair', 2.2, 2.2, 3.5, 'chair', '#222222');
+F('bookshelf', 'Bookshelf', 3, 1.2, 6.5, 'shelf', '#6e5440'); F('plant-floor', 'Potted plant', 1.6, 1.6, 4.5, 'plant', '#3f6b3a'); F('plant-small', 'Potted plant – small', 1, 1, 2, 'plant', '#4c7a3a');
+F('bench', 'Entry bench', 4, 1.4, 1.6, 'box', '#6e5440'); F('outdoor-set', 'Patio table & chairs', 6, 6, 2.5, 'table', '#3a3a3a', { round: true });
+F('lounge', 'Patio lounge chair', 2.5, 6, 1.5, 'box', '#e5e1d8');
+add('el-pendant', 'electrical', 'object', 'Pendant light', 'EA', 140, 110, '#222222', { w: 1.2, d: 1.2, h: 1.2, elev: 6.5, objType: 'pendant' });
+add('el-chandelier', 'electrical', 'object', 'Chandelier', 'EA', 450, 180, '#b08d57', { w: 2.6, d: 2.6, h: 2, elev: 6.4, objType: 'pendant' });
+add('el-sconce', 'electrical', 'object', 'Wall sconce', 'EA', 95, 120, '#b08d57', { w: 0.6, d: 0.4, h: 1, elev: 5.5, objType: 'lamp' });
+
+// ---------------- Demolition (used for anything marked Demolish) ----------------
+add('lb-demo-wall', 'labor', 'labor', 'Demolish wall (per SF of wall)', 'SF', 0, 2.4, '#999999');
+add('lb-demo-opening', 'labor', 'labor', 'Remove door / window', 'EA', 0, 95, '#999999');
+add('lb-demo-item', 'labor', 'labor', 'Remove fixture / cabinet / appliance', 'EA', 0, 75, '#999999');
+add('lb-demo-roof', 'labor', 'labor', 'Demolish roof framing & covering', 'SQ', 0, 140, '#999999');
+
 export const LIBRARY = out;

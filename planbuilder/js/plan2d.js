@@ -4,6 +4,7 @@
 import { dist, lerp, snapPt, snapAngle, projectOnSeg, pointInPoly, centroid, polyArea, fmtFtIn, wallLength, wallDir, wallOpenings, ridgeAxis, bbox, EPS } from './geom.js';
 import { addWall, addRoom, addOpening, addItem, addRoof, wallsAtPoint, wallsForRoom, rectPts, removeWall } from './model.js';
 import { findProduct } from './catalog.js';
+import { parseFtIn as parseLen } from './geom.js';
 
 const HANDLE_PX = 7;
 
@@ -184,6 +185,8 @@ export class Plan2D {
     if (tool === 'roompoly') return this.polyClick(P, e);
     if (tool === 'opening') return this.openingClick(P);
     if (tool === 'item') return this.itemClick(P, e);
+    if (tool === 'ucal') return this.calClick(P);
+    if (tool === 'umove') { const u = this.level.underlay; if (u) this.drag = { kind: 'umove', sx: P.w.x, sy: P.w.y, x0: u.x, y0: u.y, moved: false, label: 'Move picture' }; return; }
     if (tool === 'measure') {
       const p = this.snapWorld(P.w, e, this.measure && !this.measure.done ? this.measure.a : null);
       if (!this.measure || this.measure.done) this.measure = { a: p, b: p, done: false };
@@ -206,6 +209,7 @@ export class Plan2D {
     const d = this.drag;
     if (d) {
       if (d.kind === 'pan') { this.view.ox = d.ox + P.sx - d.sx; this.view.oy = d.oy + P.sy - d.sy; this.draw(); return; }
+      if (d.kind === 'umove') { const u = this.level.underlay; u.x = d.x0 + P.w.x - d.sx; u.y = d.y0 + P.w.y - d.sy; d.moved = true; this.draw(); return; }
       return this.selectDrag(P, e);
     }
     if (this.dragRect) { this.dragRect.b = this.snapWorld(P.w, e); this.draw(); this.app.status(this.rectInfo()); return; }
@@ -353,6 +357,21 @@ export class Plan2D {
     this.app.commit('Place ' + prod.name);
   }
 
+  // ----- picture underlay: click two points a known distance apart, type that distance -----
+  calClick(P) {
+    const u = this.level.underlay; if (!u) return;
+    if (!this.cal) { this.cal = { a: P.w }; this.app.status('Now click the other end of a wall or dimension you know.'); this.draw(); return; }
+    const a = this.cal.a, b = P.w; this.cal = null;
+    const drawn = dist(a, b); if (drawn < 0.05) return;
+    const txt = prompt('How long is that, really? (e.g. 24, 24\' 6", 24-6)', '');
+    const real = parseLen(txt);
+    if (!(real > 0)) { this.app.status('Scale not changed.'); return; }
+    const k = real / drawn;
+    // scale about point a, so a stays where it is
+    u.x = a.x + (u.x - a.x) * k; u.y = a.y + (u.y - a.y) * k; u.scale *= k;
+    this.app.setTool('select'); this.app.commit('Picture scaled'); this.fit();
+  }
+
   // ----- select tool -----
   selectDown(P, e) {
     const h = this.hit(P.w);
@@ -457,10 +476,11 @@ export class Plan2D {
     c.setTransform(dpr, 0, 0, dpr, 0, 0);
     const css = getComputedStyle(document.documentElement);
     const col = n => css.getPropertyValue(n).trim();
-    this.colors = { bg: col('--plan-bg'), grid: col('--plan-grid'), grid5: col('--plan-grid5'), wall: col('--plan-wall'), wallExt: col('--plan-wall-ext'), text: col('--plan-text'), sel: col('--accent'), ghost: col('--plan-ghost'), dim: col('--plan-dim') };
+    this.colors = { existing: col('--plan-existing') || '#9aa0a6', newWork: col('--plan-new') || '#d9822b', bg: col('--plan-bg'), grid: col('--plan-grid'), grid5: col('--plan-grid5'), wall: col('--plan-wall'), wallExt: col('--plan-wall-ext'), text: col('--plan-text'), sel: col('--accent'), ghost: col('--plan-ghost'), dim: col('--plan-dim') };
     const C = this.colors;
     c.fillStyle = C.bg; c.fillRect(0, 0, this.w, this.h);
     this.drawGrid();
+    this.drawUnderlay();
     const li = this.project.levels.indexOf(this.level);
     if (li > 0) this.drawGhost(this.project.levels[li - 1]);
     this.drawRooms();
@@ -473,6 +493,14 @@ export class Plan2D {
     this.drawTools();
   }
 
+  // A picture (scan, sketch, photo of a plan, satellite view) under the drawing, at a set scale.
+  drawUnderlay() {
+    const u = this.level.underlay; if (!u || !u.src || u.hidden) return;
+    if (!this._uimg || this._uimg.src !== u.src) { this._uimg = new Image(); this._uimg.onload = () => this.draw(); this._uimg.src = u.src; return; }
+    if (!this._uimg.complete) return;
+    const s0 = this.toScreen({ x: u.x, y: u.y }), k = u.scale * this.view.scale;
+    this.ctx.globalAlpha = u.opacity ?? 0.5; this.ctx.drawImage(this._uimg, s0.x, s0.y, this._uimg.width * k, this._uimg.height * k); this.ctx.globalAlpha = 1;
+  }
   drawGrid() {
     const c = this.ctx, s = this.view.scale, C = this.colors;
     let step = 1; while (step * s < 8) step *= 5;
@@ -503,7 +531,10 @@ export class Plan2D {
     this.level.rooms.forEach(r => {
       const prod = findProduct(this.app.catalog, r.floorId);
       c.beginPath(); r.points.forEach((p, i) => { const s = this.toScreen(p); i ? c.lineTo(s.x, s.y) : c.moveTo(s.x, s.y); }); c.closePath();
-      c.globalAlpha = 0.35; c.fillStyle = prod ? prod.color : '#cccccc'; c.fill(); c.globalAlpha = 1;
+      c.globalAlpha = (r.phase === 'existing' ? 0.16 : 0.35); c.fillStyle = prod ? prod.color : '#cccccc'; c.fill(); c.globalAlpha = 1;
+      if (r.phase === 'demo') { c.setLineDash([5, 4]); c.strokeStyle = '#d0392b'; c.lineWidth = 1.5; c.stroke(); c.setLineDash([]); }
+      if (r.damaged) { c.save(); c.clip(); c.strokeStyle = 'rgba(208,57,43,.45)'; c.lineWidth = 2; c.beginPath(); const bb0 = bbox(r.points), a0 = this.toScreen({ x: bb0.x, y: bb0.y }), a1 = this.toScreen({ x: bb0.x + bb0.w, y: bb0.y + bb0.h }); for (let k = a0.x - (a1.y - a0.y); k < a1.x; k += 12) { c.moveTo(k, a1.y); c.lineTo(k + (a1.y - a0.y), a0.y); } c.stroke(); c.restore(); }
+      if (r.outdoor) { c.setLineDash([2, 4]); c.strokeStyle = this.colors.dim; c.lineWidth = 1; c.stroke(); c.setLineDash([]); }
       if (sel && sel.kind === 'room' && sel.id === r.id) {
         c.strokeStyle = this.colors.sel; c.lineWidth = 2; c.setLineDash([6, 4]); c.stroke(); c.setLineDash([]);
         r.points.forEach(p => this.handle(p));
@@ -533,14 +564,20 @@ export class Plan2D {
     const d = wallDir(w), n = { x: -d.y, y: d.x }, t = w.thickness / 2;
     return [{ x: w.a.x + n.x * t, y: w.a.y + n.y * t }, { x: w.b.x + n.x * t, y: w.b.y + n.y * t }, { x: w.b.x - n.x * t, y: w.b.y - n.y * t }, { x: w.a.x - n.x * t, y: w.a.y - n.y * t }];
   }
+  // Are phases in use (anything marked Existing or Demolish)? Then new work is drawn in its own color.
+  phased() { return this.project.levels.some(l => ['walls', 'rooms', 'openings', 'items'].some(k => l[k].some(o => o.phase && o.phase !== 'new'))) || this.project.roofs.some(r => r.phase && r.phase !== 'new'); }
   drawWalls() {
     const c = this.ctx, sel = this.app.selection, C = this.colors;
     // joints: draw round caps by filling circles at ends, then the bodies
     this.level.walls.forEach(w => {
       const poly = this.wallPoly(w).map(p => this.toScreen(p));
       c.beginPath(); poly.forEach((p, i) => i ? c.lineTo(p.x, p.y) : c.moveTo(p.x, p.y)); c.closePath();
-      c.fillStyle = w.exterior ? C.wallExt : C.wall; c.fill();
+      const ph = w.phase || 'new', phased = this.phased();
+      if (ph === 'demo') { c.setLineDash([5, 4]); c.strokeStyle = '#d0392b'; c.lineWidth = 1.5; c.stroke(); c.setLineDash([]); c.globalAlpha = 0.12; c.fillStyle = '#d0392b'; c.fill(); c.globalAlpha = 1; return; }
+      c.fillStyle = phased && ph === 'existing' ? C.existing : phased && ph === 'new' ? C.newWork : (w.exterior ? C.wallExt : C.wall); c.fill();
+      if (phased && ph === 'existing') { c.save(); c.clip(); c.strokeStyle = 'rgba(0,0,0,.25)'; c.lineWidth = 1; c.beginPath(); for (let k = -400; k < 400; k += 6) { c.moveTo(poly[0].x + k, poly[0].y - 200); c.lineTo(poly[0].x + k + 200, poly[0].y); } c.stroke(); c.restore(); }
       const r = w.thickness / 2 * this.view.scale;
+      c.fillStyle = phased && ph === 'existing' ? C.existing : phased && ph === 'new' ? C.newWork : (w.exterior ? C.wallExt : C.wall);
       [w.a, w.b].forEach(p => { const s = this.toScreen(p); c.fillRect(s.x - r, s.y - r, r * 2, r * 2); });
     });
     this.level.walls.forEach(w => {
@@ -579,6 +616,7 @@ export class Plan2D {
       const quad = [{ x: A.x + n.x * t, y: A.y + n.y * t }, { x: B.x + n.x * t, y: B.y + n.y * t }, { x: B.x - n.x * t, y: B.y - n.y * t }, { x: A.x - n.x * t, y: A.y - n.y * t }].map(p => this.toScreen(p));
       c.beginPath(); quad.forEach((p, i) => i ? c.lineTo(p.x, p.y) : c.moveTo(p.x, p.y)); c.closePath();
       c.fillStyle = C.bg; c.fill();
+      if (o.phase === 'demo') { c.strokeStyle = '#d0392b'; c.lineWidth = 2; c.beginPath(); c.moveTo(quad[0].x, quad[0].y); c.lineTo(quad[2].x, quad[2].y); c.moveTo(quad[1].x, quad[1].y); c.lineTo(quad[3].x, quad[3].y); c.stroke(); }
       c.strokeStyle = C.text; c.lineWidth = 1;
       const sA = this.toScreen(A), sB = this.toScreen(B);
       if (o.type === 'window' || o.type === 'slider') {

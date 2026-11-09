@@ -26,6 +26,8 @@
     </nav>
     <div class="spacer"></div>
     <button id="btn-make3d" class="btn build-btn" title="Show the model in 3D and watch it build">🏗 Make 3D</button>
+    <button id="btn-rend" class="btn" title="Save and switch between versions of this house">🖼 Renditions</button>
+    <button id="btn-customer" class="btn" title="Hide every price, to show the plan to a customer">👁 Customer view</button>
     <button id="btn-undo" class="icon" title="Undo (Ctrl+Z)">↶</button>
     <button id="btn-redo" class="icon" title="Redo (Ctrl+Y)">↷</button>
     <button id="btn-projects" class="btn">📁 Projects</button>
@@ -34,8 +36,8 @@
       <button id="btn-export" class="btn">⤓ Export ▾</button>
       <div id="menu-export" class="menu" hidden>
         <button data-exp="print">🖨 Print / PDF (plans + 3D + estimate)</button>
-        <button data-exp="csv">Estimate spreadsheet (.csv)</button>
-        <button data-exp="lines">Line items, Xactimate-ready (.csv)</button>
+        <button data-exp="csv" class="price-only">Estimate spreadsheet (.csv)</button>
+        <button data-exp="lines" class="price-only">Line items, Xactimate-ready (.csv)</button>
         <button data-exp="json">Project file (.json)</button>
         <button data-exp="png">3D picture (.png)</button>
         <button data-exp="planpng">2D plan picture (.png)</button>
@@ -55,6 +57,14 @@
         <button data-tool="item" title="Place a product (I)"><span>🛋</span>Product</button>
         <button data-tool="roof" title="Roof – drag over the walls (F)"><span>⌂</span>Roof</button>
         <button data-tool="measure" title="Measure (M)"><span>📏</span>Measure</button>
+      </section>
+      <section class="phase-bar">
+        <span>Drawing</span>
+        <div class="seg" id="phase-seg" role="radiogroup" aria-label="Work phase">
+          <button data-phase="existing" title="Already there: not priced">Existing</button>
+          <button data-phase="new" class="on" title="New work or remodel: priced">New</button>
+          <button data-phase="demo" title="To be torn out: priced as demolition">Demolish</button>
+        </div>
       </section>
       <section class="toggles">
         <label><input type="checkbox" id="opt-ext"> Drawing outside walls</label>
@@ -86,11 +96,19 @@
             <label><input type="checkbox" id="v-cut"> Cutaway</label>
             <label><input type="checkbox" id="v-ceil"> Ceilings</label>
             <select id="v-preset" aria-label="Camera"><option value="">Camera…</option><option value="iso">Corner</option><option value="front">Front</option><option value="back">Back</option><option value="left">Left</option><option value="right">Right</option><option value="top">Top</option></select>
+            <select id="v-phase" aria-label="Before / after"><option value="after">After (finished)</option><option value="before">Before (today)</option><option value="all">Everything</option></select>
+            <label><input type="checkbox" id="v-new"> Show new work</label>
+            <label><input type="checkbox" id="v-dmg"> Show damage</label>
             <button id="v-build" title="Watch it build again">▶ Build</button>
             <button id="v-walk" title="Walk through: WASD / arrows, drag to look">🚶 Walk</button>
           </div>
         </div>
         <div class="pane est-pane" id="est-pane" hidden></div>
+        <div id="walk-hud" class="walk-hud" hidden></div>
+        <div id="walk-pad" class="walk-pad" hidden>
+          <button data-k="ArrowLeft" aria-label="Turn left">⟲</button><button data-k="KeyW" aria-label="Forward">▲</button><button data-k="ArrowRight" aria-label="Turn right">⟳</button>
+          <span></span><button data-k="KeyS" aria-label="Back">▼</button><span></span>
+        </div>
       </div>
       <footer class="status">
         <span id="status" class="status-msg"></span>

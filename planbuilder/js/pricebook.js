@@ -59,3 +59,33 @@ export function convertUnit(qty, from, to) {
   if ((from === 'LF' && to === 'FT') || (from === 'FT' && to === 'LF')) return { qty, ok: true };
   return { qty, ok: false };
 }
+
+// Lines pasted from an estimate (Excel columns or PDF text): [code] [activity] description qty unit [price]
+const UNIT_RE = '(SF|LF|SY|SQ|EA|HR|CY|GAL|DA|WK|MO|LS|FT|PR|BX|TN|RL|SH|CF)';
+export function parseEstimateText(text) {
+  const out = [];
+  String(text || '').split(/\r?\n/).forEach(raw => {
+    let line = raw.replace(/\u00a0/g, ' ').trim(); if (!line) return;
+    let cells = line.includes('\t') ? line.split('\t').map(c => c.trim()).filter(Boolean) : null;
+    const r = {};
+    if (cells && cells.length >= 3) {   // spreadsheet columns
+      const ui = cells.findIndex(c => new RegExp('^' + UNIT_RE + '$', 'i').test(c));
+      if (/^[A-Z]{2,4}$/i.test(cells[0]) && cells[1] && !/\s/.test(cells[1]) && cells[1].length <= 10) { r.code = cells[0] + ' ' + cells[1]; cells = cells.slice(2); }
+      else if (/^[A-Z]{2,4}\s+\S{1,10}$/i.test(cells[0]) && ui !== 0) { r.code = cells[0]; cells = cells.slice(1); }
+      const u = cells.findIndex(c => new RegExp('^' + UNIT_RE + '$', 'i').test(c));
+      if (u > 0) { r.unit = cells[u].toUpperCase(); r.qty = parseFloat(cells[u - 1].replace(/,/g, '')); r.name = cells.slice(0, u - 1).join(' '); const pr = cells.slice(u + 1).map(c => parseFloat(c.replace(/[$,]/g, ''))).find(v => isFinite(v)); if (isFinite(pr)) r.price = pr; }
+      else r.name = cells.join(' ');
+    } else {
+      line = line.replace(/^\d+\.\s*/, '');
+      const m = line.match(new RegExp('^(.*?)\\s+([\\d,]+(?:\\.\\d+)?)\\s*' + UNIT_RE + '\\b\\s*(?:@\\s*)?\\$?([\\d,]+(?:\\.\\d+)?)?', 'i'));
+      if (!m) { r.name = line; }
+      else { r.name = m[1].trim(); r.qty = parseFloat(m[2].replace(/,/g, '')); r.unit = m[3].toUpperCase(); if (m[4]) r.price = parseFloat(m[4].replace(/,/g, '')); }
+      const c = r.name.match(/^([A-Z]{3})\s+([A-Z0-9+\-\/]{1,8})\s+(.*)$/);
+      if (c && c[2] === c[2].toUpperCase()) { r.code = c[1] + ' ' + c[2]; r.name = c[3]; }
+    }
+    const a = (r.name || '').match(/^(R&R|Remove|Replace|Detach & reset|D&R)\b\s*/i);
+    if (a) { r.act = /^r&r$/i.test(a[1]) ? 'R&R' : /^remove/i.test(a[1]) ? 'Remove' : /^replace/i.test(a[1]) ? 'Replace' : 'Detach & reset'; r.name = r.name.slice(a[0].length); }
+    if (r.name || r.code) out.push(r);
+  });
+  return out;
+}

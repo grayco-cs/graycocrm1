@@ -5,6 +5,14 @@ import { dist, projectOnSeg, footprintRect, pointInPoly } from './geom.js';
 
 export const SCHEMA = 1;
 
+// Work phases. Everything drawn gets the phase picked on the left: 'existing' (already there, not priced),
+// 'new' (new work or remodel, priced) or 'demo' (to be torn out: priced as demolition, gone in the After view).
+export const PHASES = [['existing', 'Existing'], ['new', 'New / remodel'], ['demo', 'Demolish']];
+let drawPhase = 'new';
+export function setDrawPhase(p) { drawPhase = PHASES.some(x => x[0] === p) ? p : 'new'; }
+export function getDrawPhase() { return drawPhase; }
+export const phaseOf = o => (o && o.phase) || 'new';
+
 let _n = 0;
 export function uid(prefix = 'x') {
   _n = (_n + 1) % 1e6;
@@ -51,6 +59,7 @@ export function newProject(name = 'Untitled plan', type = 'custom') {
     settings: defaultSettings(),
     levels: [newLevel('First floor', 9, 0)],
     roofs: [],              // roof sections, each tied to a level
+    renditions: [],         // saved versions of the house: { id, name, created, thumb, snapshot }
     extraLines: [],         // hand-added estimate lines: { id, productId, qty, note } or { id, name, unit, qty, price, labor, category }
   };
 }
@@ -65,7 +74,7 @@ export function levelById(project, id) { return project.levels.find(l => l.id ==
 
 // ---- Walls ----
 export function addWall(level, a, b, opts = {}) {
-  const w = { id: uid('w'), a: { x: a.x, y: a.y }, b: { x: b.x, y: b.y }, thickness: opts.thickness ?? 0.375, height: opts.height || 0, exterior: !!opts.exterior, finishIn: opts.finishIn || '', finishOut: opts.finishOut || '' };
+  const w = { id: uid('w'), a: { x: a.x, y: a.y }, b: { x: b.x, y: b.y }, thickness: opts.thickness ?? 0.375, height: opts.height || 0, exterior: !!opts.exterior, finishIn: opts.finishIn || '', finishOut: opts.finishOut || '', phase: opts.phase || drawPhase };
   level.walls.push(w);
   return w;
 }
@@ -106,7 +115,7 @@ export function splitWall(level, w, t) {
 
 // ---- Openings ----
 export function addOpening(level, wall, t, product) {
-  const o = { id: uid('op'), wallId: wall.id, t, productId: product ? product.id : '', type: (product && product.openingType) || 'door', width: (product && product.w) || 3, height: (product && product.h) || 6.67, sill: (product && product.sill) || 0, flip: false, hinge: 'left' };
+  const o = { id: uid('op'), wallId: wall.id, t, productId: product ? product.id : '', type: (product && product.openingType) || 'door', width: (product && product.w) || 3, height: (product && product.h) || 6.67, sill: (product && product.sill) || 0, flip: false, hinge: 'left', phase: drawPhase };
   level.openings.push(o);
   return o;
 }
@@ -136,7 +145,7 @@ export function swingDoorsIntoRooms(level) {
 
 // ---- Rooms ----
 export function addRoom(level, points, opts = {}) {
-  const r = { id: uid('rm'), name: opts.name || 'Room', points: points.map(p => ({ x: p.x, y: p.y })), floorId: opts.floorId ?? 'flr-lvp-oak', wallFinishId: opts.wallFinishId ?? 'pnt-int-white', ceilingId: opts.ceilingId ?? '', height: opts.height || 0, baseboard: opts.baseboard ?? true, notes: '' };
+  const r = { id: uid('rm'), name: opts.name || 'Room', points: points.map(p => ({ x: p.x, y: p.y })), floorId: opts.floorId ?? 'flr-lvp-oak', wallFinishId: opts.wallFinishId ?? 'pnt-int-white', ceilingId: opts.ceilingId ?? '', height: opts.height || 0, baseboard: opts.baseboard ?? true, notes: '', phase: opts.phase || drawPhase };
   level.rooms.push(r);
   return r;
 }
@@ -155,14 +164,14 @@ export function wallsForRoom(level, points, settings, exterior = false) {
 
 // ---- Items (placed products) ----
 export function addItem(level, product, x, y) {
-  const it = { id: uid('it'), productId: product.id, x, y, rot: 0, w: product.w || 2, d: product.d || 2, h: product.h || 3, elev: product.elev || 0, label: '' };
+  const it = { id: uid('it'), productId: product.id, x, y, rot: 0, w: product.w || 2, d: product.d || 2, h: product.h || 3, elev: product.elev || 0, label: '', phase: drawPhase };
   level.items.push(it);
   return it;
 }
 
 // ---- Roofs ----
 export function addRoof(project, level, rect, opts = {}) {
-  const r = { id: uid('rf'), levelId: level.id, x: rect.x, y: rect.y, w: rect.w, d: rect.h ?? rect.d, style: opts.style || 'gable', pitch: opts.pitch ?? 6, overhang: opts.overhang ?? 1, ridge: opts.ridge || 'auto', materialId: opts.materialId || 'rf-arch-shingle', layers: opts.layers || 1, parapet: opts.parapet || 0 };
+  const r = { id: uid('rf'), levelId: level.id, x: rect.x, y: rect.y, w: rect.w, d: rect.h ?? rect.d, style: opts.style || 'gable', pitch: opts.pitch ?? 6, overhang: opts.overhang ?? 1, ridge: opts.ridge || 'auto', materialId: opts.materialId || 'rf-arch-shingle', layers: opts.layers || 1, parapet: opts.parapet || 0, phase: opts.phase || drawPhase };
   project.roofs.push(r);
   return r;
 }
@@ -197,6 +206,7 @@ export function normalize(p) {
   out.levels = (p.levels && p.levels.length ? p.levels : d.levels).map(l => ({ walls: [], openings: [], rooms: [], items: [], height: 9, elevation: 0, ...l }));
   out.roofs = p.roofs || [];
   out.extraLines = p.extraLines || [];
+  out.renditions = p.renditions || [];
   restack(out);
   return out;
 }
@@ -231,6 +241,10 @@ export const TEMPLATES = [
 ];
 
 export function fromTemplate(id, catalog) {
+  const keep = drawPhase; drawPhase = 'new';
+  try { return buildTemplate(id, catalog); } finally { drawPhase = keep; }
+}
+function buildTemplate(id, catalog) {
   const t = TEMPLATES.find(x => x.id === id) || TEMPLATES[0];
   const p = newProject(t.id === 'blank' ? 'New plan' : t.name.split(' – ')[0], (t.id === 'commercial' || t.id === 'office4056') ? 'commercial' : 'custom');
   const L1 = p.levels[0];

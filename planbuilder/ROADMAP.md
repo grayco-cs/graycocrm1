@@ -34,7 +34,12 @@ The first build is the foundation: drawing, levels, 3D, catalog and estimate all
 - Framing takeoff: studs, plates, headers, sheathing, house wrap, insulation; trusses / rafters; foundation and concrete.
 - Electrical, plumbing and HVAC symbols with counts.
 
+## Done since the first build
+- Existing / new / demolish phases with before / after; tracing over a picture; architectural styles with roof framing; auto-furnish and decor; renditions; room and house photos; walk-through with walls, room cards and lights; editing in 3D; damage marking; entered estimates with GrayCo price memory; customer view with no prices.
+
 ## Phase 6: selling with it
+- Customers saving their own renditions from the GrayCo Portal (needs the shared database of Phase 2).
+- 360° room photos placed in the walk-through.
 - Good / better / best options on the same plan with price differences.
 - Better materials and lighting in 3D, saved camera views, a walk-through video.
 - Customer view in the GrayCo Portal: 3D model and selections, approve options online.
