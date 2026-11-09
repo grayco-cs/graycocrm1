@@ -45377,7 +45377,8 @@ async function checkWonJobSetup(){
     _lastProjectStatuses[p.id] = curr;
 
     // Detect transition to won/active/approved
-    if(prev && prev !== curr && ['active','approved','won'].includes(curr)){
+    var _auto = Array.isArray(p.statusLog) && p.statusLog.length && p.statusLog[p.statusLog.length-1].by === 'auto' && p.statusLog[p.statusLog.length-1].to === curr;   /* STATUSAUTO: no pop-up for a move the CRM made by itself */
+    if(prev && prev !== curr && ['active','approved','won'].includes(curr) && !_auto){
       // Check what's missing
       var missing = [];
       if(!p.pm) missing.push('PM assignment');
@@ -45388,12 +45389,9 @@ async function checkWonJobSetup(){
       if(missing.length > 0){
         setTimeout(function(){
           var go = confirm('🎉 "'+p.name+'" marked as '+curr.toUpperCase()+'!\n\nMissing setup items:\n• '+missing.join('\n• ')+'\n\nOpen project to complete setup now?');
-          if(go && window._setView){
-            window._setView('projects');
-            setTimeout(function(){
-              var pe = document.querySelector('[data-projid="'+p.id+'"]') || null;
-              if(pe) pe.click();
-            },500);
+          if(go){   /* OPENJOBFIX (owner 11/9: "clicked it and it didn't open the job"): open the job itself */
+            try { if (typeof window._navToJob === 'function') { window._navToJob(p.id); return; } } catch(e) {}
+            if(window._setView){ window._setView('projects'); setTimeout(function(){ try { if (typeof window._navToJob === 'function') window._navToJob(p.id); } catch(e) {} },600); }
           }
         },800);
       } else {
