@@ -7,9 +7,11 @@
   <link rel="icon" type="image/png" href="img/favicon-64.png">
   <link rel="apple-touch-icon" href="img/icon-180.png">
   <meta name="theme-color" content="#130662">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap">
   <link rel="stylesheet" href="css/app.css">
   <script type="importmap">
-  { "imports": { "three": "./vendor/three.module.min.js", "three/addons/controls/OrbitControls.js": "./vendor/OrbitControls.js", "three/addons/exporters/GLTFExporter.js": "./vendor/GLTFExporter.js" } }
+  { "imports": { "three": "./vendor/three.module.min.js", "three/addons/": "./vendor/addons/" } }
   </script>
 </head>
 <body>
@@ -28,6 +30,7 @@
     <button id="btn-make3d" class="btn build-btn" title="Show the model in 3D and watch it build">🏗 Make 3D</button>
     <button id="btn-rend" class="btn" title="Save and switch between versions of this house">🖼 Renditions</button>
     <button id="btn-customer" class="btn" title="Hide every price, to show the plan to a customer">👁 Customer view</button>
+    <button id="btn-theme" class="icon" title="Light / dark"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M20 14.5A8 8 0 019.5 4 8 8 0 1020 14.5z"/></svg></button>
     <button id="btn-undo" class="icon" title="Undo (Ctrl+Z)">↶</button>
     <button id="btn-redo" class="icon" title="Redo (Ctrl+Y)">↷</button>
     <div class="menu-wrap">
@@ -58,14 +61,14 @@
   <div class="main">
     <aside class="left" id="left">
       <section class="tools" aria-label="Tools">
-        <button data-tool="select" class="on" title="Select / move (V)"><span>⬚</span>Select</button>
-        <button data-tool="wall" title="Draw walls (W)"><span>▬</span>Wall</button>
-        <button data-tool="room" title="Room – drag a rectangle (R)"><span>▭</span>Room</button>
-        <button data-tool="roompoly" title="Room – click its corners (P)"><span>⬠</span>Shape</button>
-        <button data-tool="opening" title="Doors & windows (D)"><span>🚪</span>Door/Win</button>
-        <button data-tool="item" title="Place a product (I)"><span>🛋</span>Product</button>
-        <button data-tool="roof" title="Roof – drag over the walls (F)"><span>⌂</span>Roof</button>
-        <button data-tool="measure" title="Measure (M)"><span>📏</span>Measure</button>
+        <button data-tool="select" class="on" title="Select / move (V)"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3l14 8-6 1.6L10 19z"/></svg></span>Select</button>
+        <button data-tool="wall" title="Draw walls (W)"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="9" width="18" height="6" rx="1"/><path d="M8 9v6M13 9v6M18 9v6"/></svg></span>Wall</button>
+        <button data-tool="room" title="Room – drag a rectangle (R)"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M4 12h6M14 5v5"/></svg></span>Room</button>
+        <button data-tool="roompoly" title="Room – click its corners (P)"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6l8-2 6 6-3 9H6z"/></svg></span>Shape</button>
+        <button data-tool="opening" title="Doors & windows (D)"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 21V4h9v17"/><path d="M15 4l4 2v15h-4"/><circle cx="12.5" cy="12.5" r=".8"/></svg></span>Door/Win</button>
+        <button data-tool="item" title="Place a product (I)"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12v6h16v-6"/><path d="M6 12V9a2 2 0 012-2h8a2 2 0 012 2v3"/><path d="M4 12a2 2 0 014 0v2h8v-2a2 2 0 014 0"/></svg></span>Product</button>
+        <button data-tool="roof" title="Roof – drag over the walls (F)"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12L12 4l10 8"/><path d="M5 10v9h14v-9"/></svg></span>Roof</button>
+        <button data-tool="measure" title="Measure (M)"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="8" width="19" height="8" rx="1.5" transform="rotate(-30 12 12)"/><path d="M7.6 12.6l1 1.7M10.6 10.9l1.4 2.4M13.6 9.1l1 1.7"/></svg></span>Measure</button>
       </section>
       <section class="phase-bar">
         <span>Drawing</span>
@@ -108,6 +111,8 @@
             <select id="v-phase" aria-label="Before / after"><option value="after">After (finished)</option><option value="before">Before (today)</option><option value="all">Everything</option></select>
             <label><input type="checkbox" id="v-new"> Show new work</label>
             <label><input type="checkbox" id="v-dmg"> Show damage</label>
+            <button id="v-holo" title="Futuristic glowing view">✦ Holo</button>
+            <button id="v-spin" title="Turn the model slowly">⟳ Turntable</button>
             <button id="v-build" title="Watch it build again">▶ Build</button>
             <button id="v-walk" title="Walk through: WASD / arrows, drag to look">🚶 Walk</button>
           </div>

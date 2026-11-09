@@ -45,6 +45,7 @@ const app = {
     this.plan = new Plan2D($('#plan'), this);
     this.bindUI();
     try { this.setCustomer(localStorage.getItem('pb.customer') === '1', true); } catch (e) { /* storage blocked */ }
+    try { this.setTheme(localStorage.getItem('pb.theme') || 'dark', true); } catch (e) { this.setTheme('dark', true); }
     if (p) this.open(p); else this.open(fromTemplate('ranch', this.catalog), false);   // the sample is kept only once you change it
     this.renderPicker();
     setTimeout(() => this.cleanupCheck(), 1500);
@@ -242,6 +243,9 @@ const app = {
     $('#plan-zin').addEventListener('click', () => this.plan.zoomAt(this.plan.w / 2, this.plan.h / 2, 1.25));
     $('#plan-zout').addEventListener('click', () => this.plan.zoomAt(this.plan.w / 2, this.plan.h / 2, 0.8));
     $('#btn-make3d').addEventListener('click', () => this.make3D());
+    $('#btn-theme').addEventListener('click', () => { const light = document.documentElement.dataset.theme !== 'light'; this.setTheme(light ? 'light' : 'dark'); });
+    $('#v-holo').addEventListener('click', async e => { const v = this.ensure3D(); const on = !v.opts.holo; e.currentTarget.classList.toggle('on', on); await v.setHolo(on); });
+    $('#v-spin').addEventListener('click', e => { const v = this.ensure3D(); const on = !v.opts.spin; e.currentTarget.classList.toggle('on', on); v.setSpin(on); });
     $$('#phase-seg button').forEach(b => b.addEventListener('click', () => this.setPhase(b.dataset.phase)));
     $('#btn-rend').addEventListener('click', () => this.showRenditions());
     $('#btn-customer').addEventListener('click', () => this.setCustomer(!this.customer));
@@ -377,6 +381,11 @@ const app = {
     hud.hidden = false; hud.classList.add('fade'); requestAnimationFrame(() => hud.classList.remove('fade'));
   },
 
+  setTheme(t, quiet) {
+    if (t === 'light') document.documentElement.dataset.theme = 'light'; else delete document.documentElement.dataset.theme;
+    try { localStorage.setItem('pb.theme', t); } catch (e) { /* ignore */ }
+    if (!quiet && this.plan) this.plan.draw();
+  },
   // ---------- customer view: no prices anywhere ----------
   setCustomer(on, quiet) {
     if (!on && this.customer && !quiet && !confirm('Leave customer view and show prices again?')) return;
@@ -1060,7 +1069,7 @@ const app = {
         if (hidden) { $('#view-pane').hidden = false; v.visible = true; v.resize(); }
         v.rebuild(); v.fit();
         const shots = [];
-        for (const pz of ['iso', 'front', 'back']) { v.setPreset(pz); shots.push(v.screenshot()); }
+        shots.push(...v.shots(['iso', 'front', 'back']));
         v.fit();
         if (hidden) { $('#view-pane').hidden = true; v.visible = false; this.plan.resize(); }
         out.append(h('div', { class: 'pg' }, phead(), h('h2', {}, '3D views'), ...shots.map(src => h('img', { src, style: 'margin-bottom:8px;max-height:3in;object-fit:contain' })), pfoot()));
@@ -1162,7 +1171,7 @@ function shrinkImage(dataUrl, max) {
 }
 
 // ensure3D is used by the 3D option boxes, which only show once the view exists
-app.ensure3D = function () { return this.view3d || { opts: {}, rebuild() {}, setPreset() {}, toggleWalk() {} }; };
+app.ensure3D = function () { return this.view3d || { opts: {}, rebuild() {}, setPreset() {}, toggleWalk() {}, setHolo() {}, setSpin() {} }; };
 
 window.PlanBuilder = app;   // handy for debugging and the smoke test
 app.init();

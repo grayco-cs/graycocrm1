@@ -172,6 +172,19 @@ export function frameRoofs(project, scope, st) {
 // ---------------------------------------------------------------- auto-furnish
 // Places a furniture layout in each room by type. Items it places are marked auto: true, so running it
 // again (or with another style) replaces them and never touches what you placed yourself.
+// Wall pieces (TVs, art, mirrors, shelves, dressers, consoles) must not cover a window or block a door.
+function blocksOpening(level, it, p) {
+  const wallPiece = ['tv', 'art', 'mirror', 'shelf'].includes(p.objType) || /console|dresser|bench|bookshelf/i.test(p.name);
+  if (!wallPiece) return false;
+  return level.openings.some(o => {
+    const w = level.walls.find(x => x.id === o.wallId); if (!w) return false;
+    const L = dist(w.a, w.b) || 1, c = { x: w.a.x + (w.b.x - w.a.x) * o.t, y: w.a.y + (w.b.y - w.a.y) * o.t };
+    const along = Math.abs(((it.x - c.x) * (w.b.x - w.a.x) + (it.y - c.y) * (w.b.y - w.a.y)) / L);
+    const across = Math.abs(((it.x - c.x) * (w.b.y - w.a.y) - (it.y - c.y) * (w.b.x - w.a.x)) / L);
+    return across < Math.max(1.6, it.d + 0.6) && along < it.w / 2 + o.width / 2 + 0.2;
+  });
+}
+
 export function autoFurnish(level, rooms, styleId, catalog) {
   const st = styleById(styleId) || STYLES[0], P = st.pal;
   let placed = 0;
@@ -189,7 +202,7 @@ export function autoFurnish(level, rooms, styleId, catalog) {
       const key = { sofa: 'sofa', chair: 'sofa', bed: 'fabric', table: 'wood', box: 'wood', shelf: 'wood', stool: 'metal', rug: 'rug', art: 'accent', lamp: 'metal', pendant: 'metal' }[p.objType];
       if (key && p.category === 'furniture' || (key === 'metal' && p.objType === 'pendant')) it.color = P[key];
       Object.assign(it, over);
-      if (!pointInPoly({ x: it.x, y: it.y }, r.points)) { level.items.pop(); return null; }
+      if (!pointInPoly({ x: it.x, y: it.y }, r.points) || blocksOpening(level, it, p)) { level.items.pop(); return null; }
       placed++; return it;
     };
     const t = r.outdoor ? (/patio|deck|porch/i.test(r.name) ? 'patio' : 'none') : roomType(r.name);

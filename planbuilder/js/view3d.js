@@ -4,7 +4,10 @@
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { wallLength, wallPieces, wallHeight, wallOpenings, pointInPoly, roofTriangles, bbox, lerp, projectOnSeg, polyArea, centroid } from './geom.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { surfaceKind, surfaceSpec, surfaceCanvas } from './surfaces.js';
+import { wallLength, wallPieces, wallHeight, wallOpenings, pointInPoly, roofTriangles, bbox, lerp, projectOnSeg, polyArea, centroid, ridgeAxis as ridgeAxisOf } from './geom.js';
 import { findProduct } from './catalog.js';
 import { FLOOR_DEPTH, wallsAtPoint } from './model.js';
 
@@ -12,6 +15,13 @@ function shade(hex, k) {
   const n = parseInt(String(hex).replace('#', ''), 16); if (!isFinite(n)) return hex;
   const f = v => Math.max(0, Math.min(255, Math.round(v * k)));
   return '#' + [f(n >> 16 & 255), f(n >> 8 & 255), f(n & 255)].map(v => v.toString(16).padStart(2, '0')).join('');
+}
+
+// A box with softly rounded edges (radius clamped to fit), so nothing in the model looks blocky.
+function RB(w, h, d, r = 0.07) {
+  const m = Math.min(w, h, d) / 2 - 0.002;
+  const rr = Math.max(0.001, Math.min(r, m));
+  return rr < 0.012 ? new THREE.BoxGeometry(w, h, d) : new RoundedBoxGeometry(w, h, d, 3, rr);
 }
 
 export class View3D {
@@ -22,9 +32,16 @@ export class View3D {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.05;
     container.appendChild(this.renderer.domElement);
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color('#dfe8ef');
+    // soft image-based light (reflections on glass, counters, metal) from a studio room
+    const pmrem = new THREE.PMREMGenerator(this.renderer);
+    this.envMap = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    this.scene.environment = this.envMap;
+    this.scene.environmentIntensity = 0.55;
+    this._sky();
     this.camera = new THREE.PerspectiveCamera(50, 1, 0.1, 5000);
     this.camera.position.set(60, 50, 80);
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
@@ -34,13 +51,14 @@ export class View3D {
     this.root = new THREE.Group(); this.scene.add(this.root);
     this.texCache = new Map();
     this.matCache = new Map();
-    this.opts = { showRoof: true, upTo: -1, cutaway: false, ceilings: false, phaseView: 'after', highlightNew: false, damage: false };
+    this.opts = { showRoof: true, upTo: -1, cutaway: false, ceilings: false, phaseView: 'after', highlightNew: false, damage: false, holo: false, spin: false };
     this._lights();
     this._ground();
     this.ray = new THREE.Raycaster();
     this.renderer.domElement.addEventListener('pointerdown', e => this._pDown(e));
     this.renderer.domElement.addEventListener('pointermove', e => this._pMove(e));
     this.renderer.domElement.addEventListener('pointerup', e => this._pUp(e));
+    this.renderer.domElement.addEventListener('dblclick', e => { if (this.walk || this._anim) return; const h = this._hits(e)[0]; if (h) this.focusOn(h.object.userData.pick); });
     this.roomLight = new THREE.PointLight(0xffe6c2, 0, 45, 1.4); this.roomLight.castShadow = false; this.scene.add(this.roomLight);
     this.walk = null;
     this._keys = new Set();
@@ -51,22 +69,37 @@ export class View3D {
     loop();
   }
 
+  // Gradient sky dome and distance haze.
+  _sky() {
+    const geo = new THREE.SphereGeometry(2400, 32, 16);
+    this.skyMat = new THREE.ShaderMaterial({
+      side: THREE.BackSide, depthWrite: false, fog: false,
+      uniforms: { top: { value: new THREE.Color('#5d8fd6') }, mid: { value: new THREE.Color('#cfe0f2') }, bottom: { value: new THREE.Color('#e9eef2') } },
+      vertexShader: 'varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: 'uniform vec3 top; uniform vec3 mid; uniform vec3 bottom; varying vec3 vP; void main(){ float h = vP.y; vec3 c = h > 0.0 ? mix(mid, top, pow(h, 0.55)) : mix(mid, bottom, min(1.0, -h * 4.0)); gl_FragColor = vec4(c, 1.0); }',
+    });
+    this.sky = new THREE.Mesh(geo, this.skyMat); this.sky.renderOrder = -1;
+    this.scene.add(this.sky);
+    this.scene.fog = new THREE.Fog('#d9e4ee', 260, 1400);
+  }
   _lights() {
-    this.scene.add(new THREE.HemisphereLight(0xffffff, 0x8a8f80, 1.6));
-    const sun = new THREE.DirectionalLight(0xffffff, 2.2);
+    this.hemi = new THREE.HemisphereLight(0xeaf2ff, 0x5b6450, 0.85); this.scene.add(this.hemi);
+    const sun = new THREE.DirectionalLight(0xfff3e2, 2.6);
     sun.position.set(-80, 140, 60);
     sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.mapSize.set(4096, 4096); sun.shadow.radius = 3;
     const sc = sun.shadow.camera; sc.left = -120; sc.right = 120; sc.top = 120; sc.bottom = -120; sc.near = 1; sc.far = 500;
     sun.shadow.bias = -0.0005; sun.shadow.normalBias = 0.05;
     this.sun = sun; this.scene.add(sun); this.scene.add(sun.target);
   }
   _ground() {
-    const g = new THREE.Mesh(new THREE.PlaneGeometry(2000, 2000), new THREE.MeshStandardMaterial({ color: '#9fb38a', roughness: 1 }));
+    const gt = new THREE.CanvasTexture(surfaceCanvas('grass', '#7f9b62', 'ground'));
+    gt.wrapS = gt.wrapT = THREE.RepeatWrapping; gt.repeat.set(2000 / 6, 2000 / 6); gt.colorSpace = THREE.SRGBColorSpace; gt.anisotropy = 8;
+    const g = new THREE.Mesh(new THREE.PlaneGeometry(2000, 2000), new THREE.MeshStandardMaterial({ color: '#ffffff', map: gt, roughness: 1 }));
     g.rotation.x = -Math.PI / 2; g.position.y = -FLOOR_DEPTH - 0.02; g.receiveShadow = true; g.userData.ground = true;
     this.ground = g; this.scene.add(g);
-    const grid = new THREE.GridHelper(400, 80, 0x7f9170, 0x8fa27e); grid.position.y = -FLOOR_DEPTH - 0.01; grid.material.transparent = true; grid.material.opacity = 0.35;
-    this.scene.add(grid);
+    const grid = new THREE.GridHelper(600, 120, 0x39e1ff, 0x1d5f8f); grid.position.y = -FLOOR_DEPTH - 0.01; grid.material.transparent = true; grid.material.opacity = 0.0;
+    this.grid = grid; this.scene.add(grid);
   }
 
   resize() {
@@ -75,9 +108,50 @@ export class View3D {
     this.renderer.setSize(r.width, r.height, false);
     this.renderer.domElement.style.width = r.width + 'px'; this.renderer.domElement.style.height = r.height + 'px';
     this.camera.aspect = r.width / r.height; this.camera.updateProjectionMatrix();
+    if (this.composer) { this.composer.setSize(r.width, r.height); }
     this.render();
   }
-  render() { this.renderer.render(this.scene, this.camera); }
+  render() {
+    if (this.opts.holo && this.composer) this.composer.render();
+    else this.renderer.render(this.scene, this.camera);
+  }
+  // Glow for the Holo view (loaded the first time it is used).
+  async _bloom() {
+    if (this.composer) return;
+    const [{ EffectComposer }, { RenderPass }, { UnrealBloomPass }, { OutputPass }] = await Promise.all([
+      import('three/addons/postprocessing/EffectComposer.js'), import('three/addons/postprocessing/RenderPass.js'),
+      import('three/addons/postprocessing/UnrealBloomPass.js'), import('three/addons/postprocessing/OutputPass.js')]);
+    const r = this.el.getBoundingClientRect();
+    const c = new EffectComposer(this.renderer); c.setSize(r.width, r.height);
+    c.addPass(new RenderPass(this.scene, this.camera));
+    c.addPass(new UnrealBloomPass(new THREE.Vector2(r.width, r.height), 0.9, 0.55, 0.05));
+    c.addPass(new OutputPass());
+    this.composer = c;
+  }
+  // Holo: a glowing wireframe-and-glass look on a dark blueprint background.
+  async setHolo(on) {
+    this.opts.holo = !!on;
+    if (on) await this._bloom();
+    this.skyMat.uniforms.top.value.set(on ? '#03060f' : '#5d8fd6'); this.skyMat.uniforms.mid.value.set(on ? '#081a33' : '#cfe0f2'); this.skyMat.uniforms.bottom.value.set(on ? '#050b18' : '#e9eef2');
+    this.scene.fog.color.set(on ? '#06101f' : '#d9e4ee');
+    this.ground.visible = !on; this.grid.material.opacity = on ? 0.35 : 0;
+    this.rebuild();
+  }
+  _holoize() {
+    const fill = this._holoFill || (this._holoFill = new THREE.MeshBasicMaterial({ color: '#0f3a6b', transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide }));
+    const line = this._holoLine || (this._holoLine = new THREE.LineBasicMaterial({ color: '#46e3ff', transparent: true, opacity: 0.85 }));
+    const accent = this._holoAccent || (this._holoAccent = new THREE.LineBasicMaterial({ color: '#ffb547', transparent: true, opacity: 0.95 }));
+    const meshes = []; this.root.traverse(o => { if (o.isMesh) meshes.push(o); });
+    meshes.forEach(o => {
+      const pk = o.userData.pick || {};
+      o.material = fill; o.castShadow = false;
+      const e = new THREE.LineSegments(new THREE.EdgesGeometry(o.geometry, 30), pk.kind === 'item' || pk.kind === 'opening' ? accent : line);
+      e.userData.pick = o.userData.pick; e.raycast = () => {};
+      o.add(e);
+    });
+  }
+  // Slowly turn the model like a showroom turntable.
+  setSpin(on) { this.opts.spin = !!on; this.controls.autoRotate = !!on; this.controls.autoRotateSpeed = 0.7; this.render(); }
 
   // ---------- materials ----------
   tex(product) {
@@ -100,9 +174,26 @@ export class View3D {
     const p = findProduct(this.app.catalog, productId);
     const color = p ? p.color : fallback;
     const t = this.tex(p);
-    if (!t) return this.mat(color, opts);
-    const m = new THREE.MeshStandardMaterial({ map: t, roughness: 0.8, side: opts.side ?? THREE.FrontSide });
-    m.userData.repeatFt = p.textureSize || repeatFt;
+    if (t) {
+      const m = new THREE.MeshStandardMaterial({ map: t, roughness: 0.8, side: opts.side ?? THREE.FrontSide });
+      m.userData.repeatFt = p.textureSize || repeatFt;
+      return m;
+    }
+    // a real-looking surface drawn in the product's color
+    const kind = surfaceKind(p);
+    if (!p || kind === 'plain') return this.mat(color, { ...opts, roughness: opts.roughness ?? 0.88 });
+    const key = 'surf|' + p.id + '|' + color + '|' + (opts.side || 0);
+    let m = this.matCache.get(key);
+    if (!m) {
+      const spec = surfaceSpec(kind);
+      const tx = new THREE.CanvasTexture(surfaceCanvas(kind, color, p.id));
+      tx.wrapS = tx.wrapT = THREE.RepeatWrapping; tx.colorSpace = THREE.SRGBColorSpace; tx.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+      const Ctor = kind === 'stoneSlab' ? THREE.MeshPhysicalMaterial : THREE.MeshStandardMaterial;
+      m = new Ctor({ map: tx, roughness: spec.roughness, metalness: spec.metal, side: opts.side ?? THREE.FrontSide });
+      if (kind === 'stoneSlab') { m.clearcoat = 1; m.clearcoatRoughness = 0.12; }
+      m.userData.repeatFt = spec.span;
+      this.matCache.set(key, m);
+    }
     return m;
   }
 
@@ -129,6 +220,7 @@ export class View3D {
       });
     }
     if (this.opts.highlightNew || this.opts.damage) this._markRoofs();
+    if (this.opts.holo) this._holoize();
     if (this._sel) this.setSelection(this._sel, true);
     if (this.walk) this._walkPrep();
     this.render();
@@ -289,7 +381,7 @@ export class View3D {
     if (sill > 0) add(new THREE.BoxGeometry(width + 0.2, fr, t + 0.25), frameM, 0, -h / 2 + fr / 2, 0);
     add(new THREE.BoxGeometry(fr, h, t + 0.05), frameM, -width / 2 + fr / 2, 0, 0);
     add(new THREE.BoxGeometry(fr, h, t + 0.05), frameM, width / 2 - fr / 2, 0, 0);
-    const glass = this.mat('#9ec7e8', { opacity: 0.35, roughness: 0.05, metalness: 0.1, side: THREE.DoubleSide });
+    const glass = this._glass || (this._glass = new THREE.MeshPhysicalMaterial({ color: '#bfe3ff', roughness: 0.04, metalness: 0, transparent: true, opacity: 0.28, envMapIntensity: 1.6, side: THREE.DoubleSide, depthWrite: false }));
     if (o.type === 'window') {
       add(new THREE.BoxGeometry(width - fr * 2, h - fr * 2, 0.04), glass, 0, 0, 0);
       add(new THREE.BoxGeometry(width - fr * 2, 0.08, 0.1), frameM, 0, 0, 0);   // meeting rail
@@ -325,50 +417,50 @@ export class View3D {
     const add = (geo, mat, x, y, z) => { const mesh = new THREE.Mesh(geo, mat); mesh.position.set(x, y, z); mesh.castShadow = true; mesh.receiveShadow = true; mesh.userData.pick = grp.userData.pick; grp.add(mesh); return mesh; };
     const W = it.w, D = it.d, H = it.h;
     if (type === 'base') {
-      add(new THREE.BoxGeometry(W, H - 0.15, D - 0.1), m, 0, (H - 0.15) / 2, 0.05);
-      add(new THREE.BoxGeometry(W + 0.05, 0.15, D + 0.05), this.mat('#e9e6e0', { roughness: 0.3 }), 0, H - 0.075, 0);
-      add(new THREE.BoxGeometry(W - 0.1, 0.35, 0.02), this.mat('#222'), 0, 0.2, D / 2 - 0.04);  // toe kick shadow
+      add(RB(W, H - 0.15, D - 0.1), m, 0, (H - 0.15) / 2, 0.05);
+      add(RB(W + 0.05, 0.15, D + 0.05, 0.04), this.counterMat(), 0, H - 0.075, 0);
+      add(RB(W - 0.1, 0.35, 0.02), this.mat('#222'), 0, 0.2, D / 2 - 0.04);  // toe kick shadow
     } else if (type === 'upper') {
-      add(new THREE.BoxGeometry(W, H, D), m, 0, H / 2, 0);
+      add(RB(W, H, D), m, 0, H / 2, 0);
     } else if (type === 'cyl') {
       add(new THREE.CylinderGeometry(Math.min(W, D) / 2, Math.min(W, D) / 2, H, 24), m, 0, H / 2, 0);
     } else if (type === 'toilet') {
-      add(new THREE.BoxGeometry(W * 0.95, H * 0.55, D * 0.25), m, 0, H * 0.72, -D * 0.37);
+      add(RB(W * 0.95, H * 0.55, D * 0.25), m, 0, H * 0.72, -D * 0.37);
       const bowl = add(new THREE.CylinderGeometry(W * 0.36, W * 0.26, H * 0.55, 20), m, 0, H * 0.275, D * 0.1); bowl.scale.z = 1.35;
     } else if (type === 'tub') {
-      add(new THREE.BoxGeometry(W, H, D), m, 0, H / 2, 0);
-      add(new THREE.BoxGeometry(W - 0.4, 0.05, D - 0.4), this.mat('#cfe3ee', { roughness: 0.2 }), 0, H + 0.01, 0);
+      add(RB(W, H, D, 0.3), m, 0, H / 2, 0);
+      add(RB(W - 0.4, 0.05, D - 0.4), this.mat('#cfe3ee', { roughness: 0.2 }), 0, H + 0.01, 0);
     } else if (type === 'sofa') {
-      add(new THREE.BoxGeometry(W, H * 0.42, D), m, 0, H * 0.21 + 0.25, 0);                     // seat base
-      add(new THREE.BoxGeometry(W, H * 0.6, D * 0.25), m, 0, H * 0.5 + 0.25, -D * 0.375);     // back
-      [-1, 1].forEach(sx => add(new THREE.BoxGeometry(0.55, H * 0.55, D), m, sx * (W / 2 - 0.275), H * 0.27 + 0.25, 0));
+      add(RB(W, H * 0.42, D, 0.22), m, 0, H * 0.21 + 0.25, 0);                     // seat base
+      add(RB(W, H * 0.6, D * 0.25, 0.2), m, 0, H * 0.5 + 0.25, -D * 0.375);     // back
+      [-1, 1].forEach(sx => add(RB(0.55, H * 0.55, D, 0.25), m, sx * (W / 2 - 0.275), H * 0.27 + 0.25, 0));
       const cush = this.mat(it.color ? shade(it.color, 1.12) : '#d8d4cc', { roughness: 0.9 });
       const n = Math.max(2, Math.round(W / 2.6));
-      for (let i = 0; i < n; i++) add(new THREE.BoxGeometry((W - 1.2) / n - 0.08, 0.35, D * 0.62), cush, -W / 2 + 0.6 + ((W - 1.2) * (i + 0.5)) / n, H * 0.42 + 0.42, D * 0.08);
+      for (let i = 0; i < n; i++) add(RB((W - 1.2) / n - 0.08, 0.35, D * 0.62, 0.16), cush, -W / 2 + 0.6 + ((W - 1.2) * (i + 0.5)) / n, H * 0.42 + 0.42, D * 0.08);
       [-1, 1].forEach(sx => [-1, 1].forEach(sz => add(new THREE.CylinderGeometry(0.07, 0.07, 0.25, 6), this.mat('#2a2522'), sx * (W / 2 - 0.3), 0.125, sz * (D / 2 - 0.3))));
     } else if (type === 'chair') {
-      add(new THREE.BoxGeometry(W * 0.9, 0.25, D * 0.85), m, 0, H * 0.45, D * 0.05);
-      add(new THREE.BoxGeometry(W * 0.9, H * 0.5, 0.18), m, 0, H * 0.72, -D * 0.4);
+      add(RB(W * 0.9, 0.25, D * 0.85, 0.1), m, 0, H * 0.45, D * 0.05);
+      add(RB(W * 0.9, H * 0.5, 0.18), m, 0, H * 0.72, -D * 0.4);
       const leg = this.mat('#2a2522');
-      [-1, 1].forEach(sx => [-1, 1].forEach(sz => add(new THREE.BoxGeometry(0.12, H * 0.45, 0.12), leg, sx * W * 0.38, H * 0.225, sz * D * 0.36)));
+      [-1, 1].forEach(sx => [-1, 1].forEach(sz => add(RB(0.12, H * 0.45, 0.12), leg, sx * W * 0.38, H * 0.225, sz * D * 0.36)));
     } else if (type === 'stool') {
       add(new THREE.CylinderGeometry(W * 0.4, W * 0.4, 0.2, 18), m, 0, H - 0.1, 0);
       add(new THREE.CylinderGeometry(0.08, 0.12, H - 0.2, 8), this.mat('#2a2a2a', { metalness: 0.6 }), 0, (H - 0.2) / 2, 0);
     } else if (type === 'table') {
       const round = p && p.round;
-      add(round ? new THREE.CylinderGeometry(W / 2, W / 2, 0.15, 32) : new THREE.BoxGeometry(W, 0.15, D), m, 0, H - 0.075, 0);
+      add(round ? new THREE.CylinderGeometry(W / 2, W / 2, 0.15, 32) : RB(W, 0.15, D), m, 0, H - 0.075, 0);
       if (round) add(new THREE.CylinderGeometry(0.2, 0.5, H - 0.15, 12), m, 0, (H - 0.15) / 2, 0);
-      else [-1, 1].forEach(sx => [-1, 1].forEach(sz => add(new THREE.BoxGeometry(0.2, H - 0.15, 0.2), m, sx * (W / 2 - 0.3), (H - 0.15) / 2, sz * (D / 2 - 0.3))));
+      else [-1, 1].forEach(sx => [-1, 1].forEach(sz => add(RB(0.2, H - 0.15, 0.2), m, sx * (W / 2 - 0.3), (H - 0.15) / 2, sz * (D / 2 - 0.3))));
     } else if (type === 'bed') {
-      add(new THREE.BoxGeometry(W, 1.1, D), this.mat(it.color ? shade(it.color, 0.6) : '#6e5440'), 0, 0.55, 0);             // frame
-      add(new THREE.BoxGeometry(W - 0.2, 0.75, D - 0.4), this.mat('#f4f2ee', { roughness: 0.95 }), 0, 1.45, 0.1);            // mattress
-      add(new THREE.BoxGeometry(W - 0.1, 0.3, D * 0.62), m, 0, 1.9, D * 0.18);                                              // duvet
-      add(new THREE.BoxGeometry(W + 0.2, 3.8, 0.35), this.mat(it.color ? shade(it.color, 0.55) : '#5a4636'), 0, 1.9, -D / 2);   // headboard
+      add(RB(W, 1.1, D), this.mat(it.color ? shade(it.color, 0.6) : '#6e5440'), 0, 0.55, 0);             // frame
+      add(RB(W - 0.2, 0.75, D - 0.4, 0.3), this.mat('#f4f2ee', { roughness: 0.95 }), 0, 1.45, 0.1);            // mattress
+      add(RB(W - 0.1, 0.3, D * 0.62, 0.14), m, 0, 1.9, D * 0.18);                                              // duvet
+      add(RB(W + 0.2, 3.8, 0.35), this.mat(it.color ? shade(it.color, 0.55) : '#5a4636'), 0, 1.9, -D / 2);   // headboard
       const pw = W > 4 ? 2 : 1;
-      for (let i = 0; i < pw; i++) add(new THREE.BoxGeometry((W - 0.8) / pw - 0.15, 0.45, 1.1), this.mat('#ffffff', { roughness: 1 }), -W / 2 + 0.4 + ((W - 0.8) * (i + 0.5)) / pw, 2.05, -D / 2 + 1);
+      for (let i = 0; i < pw; i++) add(RB((W - 0.8) / pw - 0.15, 0.45, 1.1, 0.2), this.mat('#ffffff', { roughness: 1 }), -W / 2 + 0.4 + ((W - 0.8) * (i + 0.5)) / pw, 2.05, -D / 2 + 1);
     } else if (type === 'rug') {
-      const r = add(new THREE.BoxGeometry(W, 0.03, D), this.mat(color, { roughness: 1 }), 0, 0.035, 0); r.castShadow = false;
-      add(new THREE.BoxGeometry(W - 0.8, 0.032, D - 0.8), this.mat(shade(color, 0.82), { roughness: 1 }), 0, 0.037, 0).castShadow = false;
+      const r = add(RB(W, 0.03, D), this.mat(color, { roughness: 1 }), 0, 0.035, 0); r.castShadow = false;
+      add(RB(W - 0.8, 0.032, D - 0.8), this.mat(shade(color, 0.82), { roughness: 1 }), 0, 0.037, 0).castShadow = false;
     } else if (type === 'lamp') {
       const glow = new THREE.MeshStandardMaterial({ color: '#fff3dc', emissive: '#ffd9a0', emissiveIntensity: 1.2, roughness: 0.8 });
       add(new THREE.CylinderGeometry(0.06, 0.06, H * 0.8, 8), this.mat('#2a2a2a', { metalness: 0.5 }), 0, H * 0.4, 0);
@@ -381,24 +473,24 @@ export class View3D {
       add(new THREE.ConeGeometry(W / 2, H * 0.7, 20, 1, true), this.mat(color, { metalness: 0.6, roughness: 0.4, side: THREE.DoubleSide }), 0, H * 0.65, 0);
       add(new THREE.SphereGeometry(Math.min(W, H) * 0.18, 12, 8), glow, 0, H * 0.35, 0);
     } else if (type === 'art' || type === 'mirror') {
-      add(new THREE.BoxGeometry(W, H, 0.08), this.mat(type === 'mirror' ? '#2a2a2a' : '#1d1d1d'), 0, H / 2, -D / 2 + 0.04);
+      add(RB(W, H, 0.08), this.mat(type === 'mirror' ? '#2a2a2a' : '#1d1d1d'), 0, H / 2, -D / 2 + 0.04);
       const face = type === 'mirror' ? this.mat('#cfdbe2', { metalness: 0.9, roughness: 0.05 }) : new THREE.MeshStandardMaterial({ map: this.artTexture(it.id, it.color || color), roughness: 0.9 });
       add(new THREE.PlaneGeometry(W - 0.25, H - 0.25), face, 0, H / 2, -D / 2 + 0.085);
     } else if (type === 'tv') {
-      add(new THREE.BoxGeometry(W, H, 0.12), this.mat('#0d0d0d', { roughness: 0.3 }), 0, H / 2, -D / 2 + 0.06);
+      add(RB(W, H, 0.12), this.mat('#0d0d0d', { roughness: 0.3 }), 0, H / 2, -D / 2 + 0.06);
       add(new THREE.PlaneGeometry(W - 0.12, H - 0.12), new THREE.MeshStandardMaterial({ color: '#16222e', emissive: '#1b3550', emissiveIntensity: 0.6, roughness: 0.2 }), 0, H / 2, -D / 2 + 0.125);
     } else if (type === 'shelf') {
-      add(new THREE.BoxGeometry(W, H, 0.1), m, 0, H / 2, -D / 2 + 0.05);
-      [-1, 1].forEach(sx => add(new THREE.BoxGeometry(0.1, H, D), m, sx * (W / 2 - 0.05), H / 2, 0));
-      for (let i = 0; i <= 5; i++) add(new THREE.BoxGeometry(W, 0.08, D), m, 0, (H * i) / 5 + 0.04, 0);
+      add(RB(W, H, 0.1), m, 0, H / 2, -D / 2 + 0.05);
+      [-1, 1].forEach(sx => add(RB(0.1, H, D), m, sx * (W / 2 - 0.05), H / 2, 0));
+      for (let i = 0; i <= 5; i++) add(RB(W, 0.08, D), m, 0, (H * i) / 5 + 0.04, 0);
       const books = ['#8c3a2f', '#2f4a6a', '#c9a46e', '#3a5a3a', '#6b4a7a', '#d8cbb3'];
-      for (let i = 0; i < 5; i++) for (let j = 0; j < 6; j++) add(new THREE.BoxGeometry(W / 8, H / 5 * 0.7, D * 0.7), this.mat(books[(i * 3 + j) % books.length]), -W / 2 + 0.3 + (W - 0.6) * (j + 0.5) / 7, (H * i) / 5 + 0.08 + H / 5 * 0.35, 0);
+      for (let i = 0; i < 5; i++) for (let j = 0; j < 6; j++) add(RB(W / 8, H / 5 * 0.7, D * 0.7), this.mat(books[(i * 3 + j) % books.length]), -W / 2 + 0.3 + (W - 0.6) * (j + 0.5) / 7, (H * i) / 5 + 0.08 + H / 5 * 0.35, 0);
     } else if (type === 'plant') {
       add(new THREE.CylinderGeometry(W * 0.3, W * 0.22, H * 0.25, 16), this.mat('#d8cbb3'), 0, H * 0.125, 0);
       const leaf = this.mat(color, { roughness: 1 });
       [[0, 0.62, 0, 0.42], [0.15, 0.78, 0.1, 0.32], [-0.15, 0.82, -0.08, 0.3]].forEach(([x, y, z, r]) => { const b = add(new THREE.IcosahedronGeometry(1, 1), leaf, x * W, y * H, z * W); b.scale.set(W * r, H * r * 0.7, W * r); });
     } else if (type === 'panel') {          // backsplash, tile wall, fireplace surround: width × height, thin
-      add(new THREE.BoxGeometry(W, H, Math.max(0.04, D)), m, 0, H / 2, 0);
+      add(RB(W, H, Math.max(0.04, D)), m, 0, H / 2, 0);
     } else if (type === 'tree') {
       const trunkH = H * 0.35;
       add(new THREE.CylinderGeometry(Math.max(0.15, W * 0.04), Math.max(0.2, W * 0.06), trunkH, 10), this.mat('#6b4a32'), 0, trunkH / 2, 0);
@@ -408,17 +500,17 @@ export class View3D {
       const b = add(new THREE.IcosahedronGeometry(1, 1), this.mat(color, { roughness: 1 }), 0, H / 2, 0); b.scale.set(W / 2, H / 2, D / 2);
     } else if (type === 'fence') {           // fences, railings, edging, retaining walls: a run W long
       const posts = Math.max(2, Math.round(W / 8) + 1);
-      add(new THREE.BoxGeometry(W, H * 0.9, Math.max(0.06, D * 0.4)), m, 0, H * 0.45 + 0.05, 0);
-      if (H > 1.5) for (let i = 0; i < posts; i++) add(new THREE.BoxGeometry(0.33, H, 0.33), m, -W / 2 + (W * i) / (posts - 1), H / 2, 0);
+      add(RB(W, H * 0.9, Math.max(0.06, D * 0.4)), m, 0, H * 0.45 + 0.05, 0);
+      if (H > 1.5) for (let i = 0; i < posts; i++) add(RB(0.33, H, 0.33), m, -W / 2 + (W * i) / (posts - 1), H / 2, 0);
     } else if (type === 'pergola') {
-      [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([sx, sz]) => add(new THREE.BoxGeometry(0.5, H, 0.5), m, sx * (W / 2 - 0.5), H / 2, sz * (D / 2 - 0.5)));
-      for (let i = 0; i < 9; i++) add(new THREE.BoxGeometry(0.17, 0.6, D + 1), m, -W / 2 + (W * i) / 8, H + 0.3, 0);
-      [-1, 1].forEach(sx => add(new THREE.BoxGeometry(0.3, 0.8, D + 1.5), m, sx * (W / 2 - 0.5), H - 0.4, 0));
+      [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([sx, sz]) => add(RB(0.5, H, 0.5), m, sx * (W / 2 - 0.5), H / 2, sz * (D / 2 - 0.5)));
+      for (let i = 0; i < 9; i++) add(RB(0.17, 0.6, D + 1), m, -W / 2 + (W * i) / 8, H + 0.3, 0);
+      [-1, 1].forEach(sx => add(RB(0.3, 0.8, D + 1.5), m, sx * (W / 2 - 0.5), H - 0.4, 0));
     } else if (type === 'shower') {
-      add(new THREE.BoxGeometry(W, 0.3, D), this.mat('#ffffff'), 0, 0.15, 0);
-      add(new THREE.BoxGeometry(W, H, 0.04), this.mat('#bfe0ef', { opacity: 0.3, side: THREE.DoubleSide }), 0, H / 2, D / 2);
+      add(RB(W, 0.3, D), this.mat('#ffffff'), 0, 0.15, 0);
+      add(RB(W, H, 0.04), this.mat('#bfe0ef', { opacity: 0.3, side: THREE.DoubleSide }), 0, H / 2, D / 2);
     } else {
-      add(new THREE.BoxGeometry(W, H, D), m, 0, H / 2, 0);
+      add(RB(W, H, D), m, 0, H / 2, 0);
     }
     if (p && ['landscape', 'hardscape', 'outdoor'].includes(p.category) && level.elevation === 0) grp.position.y -= FLOOR_DEPTH * (this._onSlab(it, level) ? 0 : 1);
     g.add(this._tag(grp, 4, type === 'tree' || type === 'shrub' ? 'pop' : 'drop'));
@@ -449,7 +541,7 @@ export class View3D {
       const mk = (tris, m) => {
         const pos = []; tris.forEach(tri => tri.forEach(p => pos.push(p.x, p.z, p.y)));
         const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.computeVertexNormals();
-        if (m.map) this._uvPlanar(geo, m.userData.repeatFt || 3, true);
+        if (m.map) this._uvRoof(geo, m.userData.repeatFt || 3, ridgeAxisOf(sec));
         const mesh = new THREE.Mesh(geo, m); mesh.castShadow = true; mesh.receiveShadow = true; mesh.userData.pick = grp.userData.pick; return mesh;
       };
       grp.add(mk(faces, roofM));
@@ -535,6 +627,9 @@ export class View3D {
   }
   get building() { return !!this._anim; }
 
+  counterMat() {
+    return this._counter || (this._counter = new THREE.MeshPhysicalMaterial({ color: '#ebe8e2', roughness: 0.22, clearcoat: 1, clearcoatRoughness: 0.1 }));
+  }
   // Abstract art for wall pieces, different for each item, in the style's accent color.
   artTexture(seed, accent) {
     const key = 'art|' + seed + '|' + accent;
@@ -554,6 +649,12 @@ export class View3D {
     return t;
   }
 
+  // Roof surfaces: courses run along the eaves (parallel to the ridge), measured up the slope.
+  _uvRoof(geo, repeatFt, axis) {
+    const pos = geo.attributes.position, uv = [];
+    for (let i = 0; i < pos.count; i++) { const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i); uv.push((axis === 'x' ? x : z) / repeatFt, ((axis === 'x' ? z : x) * 0.95 + y * 0.31) / repeatFt); }
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  }
   _uvPlanar(geo, repeatFt, useXZ) {
     const pos = geo.attributes.position, uv = [];
     for (let i = 0; i < pos.count; i++) { const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i); uv.push(x / repeatFt, (useXZ ? z + y : z) / repeatFt); }
@@ -565,24 +666,50 @@ export class View3D {
   }
 
   // ---------- camera ----------
-  fit() {
+  // Glide the camera to a new view (eased), instead of jumping.
+  flyTo(pos, target, ms = 900) {
+    if (!this.visible || ms <= 0) { this.camera.position.copy(pos); this.controls.target.copy(target); this.controls.update(); this.render(); return; }
+    const p0 = this.camera.position.clone(), t0 = this.controls.target.clone(), start = performance.now();
+    const ease = x => x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+    const id = (this._fly = {});
+    const step = now => {
+      if (this._fly !== id) return;
+      const k = ease(Math.min(1, (now - start) / ms));
+      this.camera.position.lerpVectors(p0, pos, k); this.controls.target.lerpVectors(t0, target, k);
+      this.controls.update(); this.render();
+      if (k < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }
+  _fitShadows(c, size) {
+    const r = Math.max(size.x, size.z) * 0.75 + 25, sc = this.sun.shadow.camera;
+    sc.left = -r; sc.right = r; sc.top = r; sc.bottom = -r; sc.updateProjectionMatrix();
+    this.sun.position.set(c.x - r * 0.8, c.y + r * 1.4, c.z + r * 0.6); this.sun.target.position.copy(c); this.sun.target.updateMatrixWorld();
+  }
+  fit(smooth) {
     const box = new THREE.Box3().setFromObject(this.root);
     if (box.isEmpty()) { this.camera.position.set(40, 40, 60); this.controls.target.set(0, 0, 0); this.render(); return; }
     const c = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
     const r = Math.max(size.x, size.z, size.y * 1.5) * 0.9 + 10;
-    this.controls.target.copy(c);
-    this.camera.position.set(c.x + r * 0.75, c.y + r * 0.75, c.z + r * 1.0);
-    this.sun.position.set(c.x - 80, 140, c.z + 60); this.sun.target.position.copy(c);
-    this.controls.update(); this.render();
+    this._fitShadows(c, size);
+    this.flyTo(new THREE.Vector3(c.x + r * 0.75, c.y + r * 0.6, c.z + r * 1.0), c, smooth ? 900 : 0);
+  }
+  // Double-click a piece: the camera glides in to frame it.
+  focusOn(pick) {
+    const box = new THREE.Box3(); let found = false;
+    this.root.traverse(o => { if (o.isMesh && o.userData.pick && o.userData.pick.id === pick.id) { box.expandByObject(o); found = true; } });
+    if (!found) return;
+    const c = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
+    const r = Math.max(size.x, size.y, size.z) * 1.6 + 6;
+    const dir = this.camera.position.clone().sub(this.controls.target).normalize();
+    this.flyTo(c.clone().add(dir.multiplyScalar(r)), c, 800);
   }
   setPreset(name) {
     const box = new THREE.Box3().setFromObject(this.root); if (box.isEmpty()) return;
     const c = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
     const r = Math.max(size.x, size.z) * 1.1 + 10;
-    this.controls.target.copy(c);
     const pos = { front: [0, size.y * 0.3, r], back: [0, size.y * 0.3, -r], left: [-r, size.y * 0.3, 0], right: [r, size.y * 0.3, 0], top: [0.01, r * 1.4, 0.01], iso: [r * 0.7, r * 0.7, r * 0.9] }[name] || [r, r, r];
-    this.camera.position.set(c.x + pos[0], c.y + pos[1], c.z + pos[2]);
-    this.controls.update(); this.render();
+    this.flyTo(new THREE.Vector3(c.x + pos[0], c.y + pos[1], c.z + pos[2]), c, this._shot ? 0 : 900);
   }
 
   // ---------- pointer: click to select, drag the selected piece to move it, walk-mode look / glide ----------
@@ -719,6 +846,7 @@ export class View3D {
   }
 
   screenshot() { this.render(); return this.renderer.domElement.toDataURL('image/png'); }
+  shots(names) { this._shot = true; const out = names.map(n => { this.setPreset(n); return this.screenshot(); }); this._shot = false; return out; }
 
   async exportGLB() {
     const { GLTFExporter } = await import('three/addons/exporters/GLTFExporter.js');

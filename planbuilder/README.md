@@ -33,6 +33,11 @@ What's next is in [ROADMAP.md](ROADMAP.md).
 - **🖼 Renditions** saves versions of the house (styles, colors, materials, furniture, the addition) with a picture; **Show** switches to one, **Update** saves over it.
 - **Photos:** a photo of the house (nothing selected) and photos on each room (select it → Photos). They show in the walk-through and on the printout.
 
+## Look and feel
+- Dark "midnight glass" screens with the GrayCo logo; ◑ in the top bar switches to a light theme (remembered). The 2D plan is drawn as a blueprint in the dark theme.
+- 3D: soft studio lighting with reflections, sky and haze, rounded furniture and cabinets, glossy stone counters, glass that reflects, and real-looking surfaces drawn in each product's own color: wood planks, tile, hex mosaic, carpet, concrete, brick, block, stone, lap siding, board & batten, shakes, stucco, metal panels, shingles, standing seam, clay tile, slate, grass, mulch, rock, pavers, flagstone, decking (`js/surfaces.js`). A picture added in the catalog replaces the drawn surface.
+- **✦ Holo** shows the model as glowing lines and glass on a dark grid (products and openings in amber). **⟳ Turntable** turns the model slowly. Camera presets and double-clicking a piece glide the camera there.
+
 ## 3D: build, edit, walk
 - **🏗 Make 3D** animates the build. **▶ Build** replays it.
 - **Edit in 3D:** click a piece to select it (it lights up blue), then drag it: furniture and fixtures slide across the floor, doors and windows slide along their wall, walls move square to themselves (joined corners follow). Q / E turn a piece, Delete removes it, and the panel on the right edits everything else. The 2D plan and the estimate follow.
@@ -99,7 +104,8 @@ Each project's estimate is priced from **your catalog prices** (the default) or 
 | `js/view3d.js` | The 3D scene (Three.js), walk-through, picking, picture and .glb export |
 | `js/store.js` | Saving in the browser, file download / upload |
 | `js/app.js` | Panels, picker, properties, estimate screen, projects, catalog editor, print |
-| `vendor/` | Three.js r170 (MIT, see `THREE-LICENSE.txt`), served from here so it works without the internet |
+| `js/surfaces.js` | Drawn surfaces for the 3D view (wood, tile, brick, siding, shingles, grass …) in each product's color |
+| `vendor/` | Three.js r170 and its add-ons in `vendor/addons/` (orbit controls, studio light, rounded boxes, glow, .glb export; MIT, see `THREE-LICENSE.txt`), served from here so it works without the internet |
 | `tests/math.test.js` | `node planbuilder/tests/math.test.js` — geometry, roof, takeoff and CSV numbers |
 | `tests/features.smoke.cjs` | Browser test of existing + addition, styles, furnish, Make 3D, before / after, walk, entered estimate, customer view, renditions, 3D drag (same way to run as below) |
 | `tests/save.smoke.cjs` | Browser test of saving to the computer, Done – save & remove, reopening a job (with its custom products, photos, renditions), versions, the note after saving, and the weekly clean-up (same way to run) |
