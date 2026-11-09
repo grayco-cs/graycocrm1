@@ -22,7 +22,7 @@ import logoUrl from './grayco-logo.png';
 const T = {
   en: {
     addenda: 'Addenda', addendumN: 'Addendum #', acknowledge: 'Acknowledge addendum #', acknowledged: 'Acknowledged', dueChangedTo: 'Bid due date changed to', wasDue: 'was',
-    ackBy: 'Acknowledged by', notAckYet: 'Not acknowledged yet', updatesFromGrayCo: 'Updates from GrayCo', currentSet: 'CURRENT', versionL: 'Version', planLinks: 'Plan room links', openLink: 'Open link',
+    ackBy: 'Acknowledged by', notAckYet: 'Not acknowledged yet', updatesFromGrayCo: 'Updates from GrayCo', currentSet: 'CURRENT', versionL: 'Version', docPlans: 'Plans', docSpecs: 'Specs', docRoom: 'Plan room', bidDocs: 'Bid documents', planLinks: 'Plan room links', openLink: 'Open link',
     questions: 'Questions', askQuestion: 'Ask GrayCo a question', questionsDue: 'Questions due by', yourQuestion: 'Your question', answerFromGrayCo: "GrayCo's answer", sendQuestion: 'Send question',
     noQuestions: 'No questions yet.', answerPrivately: 'Answer privately', answerAll: 'Answer to all bidders', approveNotice: 'Approve & e-mail all bidders', noticeSent: 'E-mailed to all bidders',
     noticeWaiting: 'Answer to all bidders — waiting for approval before it is e-mailed', attachPlan: 'Attach a photo or a marked-up plan page', waitingAnswer: 'Waiting for GrayCo\'s answer',
@@ -314,7 +314,7 @@ const T = {
   },
   es: {
     addenda: 'Adendas', addendumN: 'Adenda #', acknowledge: 'Acuso recibo de la adenda #', acknowledged: 'Recibo confirmado', dueChangedTo: 'La fecha límite cambió a', wasDue: 'antes',
-    ackBy: 'Recibo confirmado por', notAckYet: 'Sin confirmar todavía', updatesFromGrayCo: 'Novedades de GrayCo', currentSet: 'VIGENTE', versionL: 'Versión', planLinks: 'Enlaces a planos', openLink: 'Abrir enlace',
+    ackBy: 'Recibo confirmado por', notAckYet: 'Sin confirmar todavía', updatesFromGrayCo: 'Novedades de GrayCo', currentSet: 'VIGENTE', versionL: 'Versión', docPlans: 'Planos', docSpecs: 'Especificaciones', docRoom: 'Sala de planos', bidDocs: 'Documentos de licitación', planLinks: 'Enlaces a planos', openLink: 'Abrir enlace',
     questions: 'Preguntas', askQuestion: 'Hágale una pregunta a GrayCo', questionsDue: 'Preguntas hasta el', yourQuestion: 'Su pregunta', answerFromGrayCo: 'Respuesta de GrayCo', sendQuestion: 'Enviar pregunta',
     noQuestions: 'Todavía no hay preguntas.', answerPrivately: 'Responder en privado', answerAll: 'Responder a todos los licitantes', approveNotice: 'Aprobar y enviar a todos', noticeSent: 'Enviado a todos los licitantes',
     noticeWaiting: 'Respuesta para todos — esperando aprobación antes de enviarla', attachPlan: 'Adjuntar una foto o una página del plano marcada', waitingAnswer: 'Esperando la respuesta de GrayCo',
@@ -2020,6 +2020,45 @@ function JobList({ t, jobs, user, users, invites, onOpen, bids }) {
   );
 }
 
+/*DOCPILLS*/ /* Olympus-style document buttons: PLANS · SPECS · ADDENDUM #n · PLAN ROOM */
+function docGroups(job) {
+  const plans = [], specs = [], add = {}, out = [];
+  (job.plans || []).forEach(f => {
+    const k = ((f.category || '') + ' ' + (f.name || '')).toLowerCase();
+    const m = k.match(/addend\w*[\s_#-]*(?:no\.?\s*)?(\d+)/);
+    if (m) (add[m[1]] = add[m[1]] || { num: Number(m[1]), files: [], plan: [] }).plan.push(f);
+    else if (/\bspec|specification|project manual|\bmanual\b/.test(k)) specs.push(f);
+    else plans.push(f);
+  });
+  (job.addenda || []).filter(a => a.publishedAt).forEach(a => { const g = (add[a.num] = add[a.num] || { num: Number(a.num), files: [], plan: [] }); g.files.push(...(a.files || [])); });
+  if (plans.length) out.push({ key: 'plans', kind: 'plans', files: plans });
+  if (specs.length) out.push({ key: 'specs', kind: 'specs', files: specs });
+  Object.values(add).sort((a, b) => a.num - b.num).forEach(g => out.push({ key: 'add' + g.num, kind: 'addendum', num: g.num, files: g.plan, addFiles: g.files }));
+  (job.plansLinks || []).forEach((l, i) => l && l.url && out.push({ key: 'link' + i, kind: 'link', url: l.url, label: l.label }));
+  return out;
+}
+function DocPills({ t, job, onPick, compact }) {
+  const gs = docGroups(job);
+  if (!gs.length) return null;
+  const label = g => g.kind === 'plans' ? t.docPlans : g.kind === 'specs' ? t.docSpecs : g.kind === 'addendum' ? (t.addendumN || 'Addendum #') + g.num : (g.label || t.docRoom);
+  const pill = { display: 'inline-flex', alignItems: 'center', gap: 7, padding: compact ? '7px 13px' : '10px 18px', borderRadius: 999, border: 'none', cursor: 'pointer',
+    background: styles.navyDeep, color: styles.accent, fontFamily: styles.fontDisplay, fontWeight: 600, fontSize: compact ? 11 : 12.5, letterSpacing: '0.08em',
+    textTransform: 'uppercase', textDecoration: 'none', boxShadow: '0 4px 12px rgba(10,3,56,.18)', transition: 'transform .15s ease, box-shadow .15s ease' };
+  const hov = e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 8px 18px rgba(10,3,56,.26)'; };
+  const out = e => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = pill.boxShadow; };
+  return (
+    <div data-docpills="1" style={{ display: 'flex', flexWrap: 'wrap', gap: compact ? 6 : 10, margin: compact ? '0 0 12px' : '0 0 20px' }}>
+      {gs.map(g => g.kind === 'link'
+        ? <a key={g.key} data-pill="link" href={g.url} target="_blank" rel="noopener noreferrer" style={pill} onMouseEnter={hov} onMouseLeave={out} onClick={e => e.stopPropagation()}>🔗 {label(g)} ↗</a>
+        : <button key={g.key} type="button" data-pill={g.kind === 'addendum' ? 'add' + g.num : g.kind} style={pill} onMouseEnter={hov} onMouseLeave={out}
+            title={(g.files.length + (g.addFiles ? g.addFiles.length : 0)) + ' file(s)'}
+            onClick={e => { if (onPick) { e.stopPropagation(); onPick(g); } }}>
+            <Download size={compact ? 12 : 14} /> {label(g)}
+          </button>)}
+    </div>
+  );
+}
+
 function JobCard({ t, job, user, users, onClick, myBidExists, bidCount }) {
   const due = new Date(job.bidDueDate);
   const now = new Date();
@@ -2165,6 +2204,7 @@ function JobCard({ t, job, user, users, onClick, myBidExists, bidCount }) {
         </div>
       )}
 
+      <DocPills t={t} job={job} compact />
       <div style={{
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         paddingTop: 14, borderTop: `1px solid ${styles.border}`,
@@ -2381,6 +2421,15 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
     } catch (e) { console.warn('view logging failed', e); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [job.id]);
+
+  /*DOCPILLS*/ function pickDocs(g) {
+    const files = g.files || [], extra = (g.addFiles || []).filter(f => f && f.dataUrl);
+    if (!files.length && !extra.length) { const el = document.querySelector(`[data-addendum="${g.num}"]`) || document.getElementById('bid-addenda'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); return; }
+    if (files.length && fullPlans === null) { showToast('Plans are still loading — try again in a moment.', 'error'); return; }
+    let i = 0;
+    files.forEach(f => setTimeout(() => downloadPlan(f), 450 * i++));
+    extra.forEach(f => setTimeout(() => { openFile(f.dataUrl, f.name); logDownload(f.name); }, 450 * i++));
+  }
 
   function logDownload(planName) {
     if (user.role !== 'sub') return;
@@ -2787,6 +2836,8 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
               <Users size={16} /> {jobBids.length} {jobBids.length === 1 ? t.bid : t.bids}
             </div>
           </div>
+
+          <DocPills t={t} job={job} onPick={pickDocs} />
 
           {/* OUR ROLE — big prominent banner showing GC vs Sub + trades sought */}
           {(job.grayCoRole || job.tradesSought) && (
