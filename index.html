@@ -140761,10 +140761,18 @@ function hub(pid, back){
       h += '<label class="gcsub-chk"><input type="checkbox" data-act="custok"' + (p.subCustomerContact === true ? ' checked' : '') + '> This sub may see the customer\'s phone / e-mail</label></section>';
     });
     h += '<div class="gcsub-cta"><button type="button" class="gcsub-btn" data-act="add-sub">➕ Add a sub to this job</button><button type="button" class="gcsub-btn" data-act="site">📍 Site notes (gate, parking, hours…)</button>' + (window._gcScopeFiles ? '<button type="button" class="gcsub-btn" data-act="scope-files">📎 Add scope files' + (window._gcScopeFiles.docs(pid).length ? ' (' + window._gcScopeFiles.docs(pid).length + ' on the job)' : '') + '</button>' : '') + '</div>';
+    /*HUBBIDS*/ var bj = bidJob(); if (bj) h += '<section class="gcsub-card"><div class="gcsub-row2"><b>🏗 Sub bids — ' + esc(bj.title || '') + '</b><span class="gcsub-muted">' + esc(bj.visibility === 'public' ? 'Public' : 'Private') + ' · ' + (bj.invited || 0) + ' invited · ' + (bj.bids || 0) + ' bid' + (bj.bids === 1 ? '' : 's') + '</span></div><div class="gcsub-cta"><button type="button" class="gcsub-btn g" data-act="bid-invite" data-id="' + esc(bj.id) + '">🏗 Invite subs to bid</button><button type="button" class="gcsub-btn" data-act="bid-see" data-id="' + esc(bj.id) + '">See bids (' + (bj.bids || 0) + ') · award</button></div></section>';
     sh.body.innerHTML = h;
   }
+  function bidJob(){ try {
+    var S = window._gcSys && window._gcSys.bp; if (!S) return null; var L = S.jobs() || [];
+    var norm = function(v){ return String(v || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }, nm = norm(p.name);
+    return L.find(function(j){ return j && p.bidJobId && j.id === p.bidJobId; }) || L.find(function(j){ return j && j.leadId && (j.leadId === p.leadId || j.leadId === p.fromLead || j.leadId === p.leadInboxId); })
+      || (nm.length >= 6 ? L.find(function(j){ var t = norm(j && j.title); return t.length >= 6 && (t === nm || t.indexOf(nm) > -1 || nm.indexOf(t) > -1); }) : null) || null;
+  } catch (e) { return null; } }
   sh.el.__paint = paint;
   paint();
+  try { if (window._gcSys && window._gcSys.bp) { window._gcSys.bp.load(); setTimeout(function(){ if (document.body.contains(sh.el)) paint(); }, 2500); } } catch (e) {}
   loadPunch().then(paint);
   api({ action: 's-login', projectId: pid }).then(function(r){ if (r.ok) { loginInfo = r.data; paint(); } });
   api({ action: 's-scopes', projectId: pid }).then(function(r){ if (r.ok) { scopes = r.data.scopes || []; paint(); } });
@@ -140784,6 +140792,7 @@ function hub(pid, back){
     if (act === 'files') return filesSheet(pid, sb, reopen);
     if (act === 'add-sub') return addSubSheet(pid, reopen);
     if (act === 'site') return siteSheet(pid, reopen);
+    if (act === 'bid-invite' || act === 'bid-see') { sh.close(); return act === 'bid-invite' ? window._gcSys.bp.invite(b.getAttribute('data-id')) : window._gcSys.bp.bids(b.getAttribute('data-id')); }
     if (act === 'scope-files') { sh.close(); return window._gcScopeFiles.open(pid, reopen); }
     if (act === 'welcome') return welcomeSheet(pid, reopen);
     if (act === 'reset-pw') { if (!window.confirm('Reset this customer\'s password to their first name?')) return; return api({ action: 's-login', projectId: pid, op: 'reset' }).then(function(r){ if (r.ok) { loginInfo = r.data; paint(); toast('Reset — their first name works again'); } else toast(r.data.error, true); }); }
