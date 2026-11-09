@@ -48,3 +48,5 @@ rep("""  allBids: true,""", """  maxMiles: 300,   /* RADIUS (owner 11/9): leads 
   allBids: true,""")
 rep("exports._test = { bidPath,", "exports._test = { radiusGate, miles, bidPath,")
 open(P, 'w', encoding='utf-8').write(src); print('patched')
+
+# + RADIUS2 (owner 11/9: keep Atlanta too): the Atlanta area (50 mi around Atlanta) is kept past the limit (settings.alsoAreas overrides) — edited in bid-inbox.js

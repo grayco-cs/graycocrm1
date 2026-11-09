@@ -1049,6 +1049,8 @@ async function processEventCore(evt, opts){
 }
 /* RADIUS: leads farther than settings.maxMiles (default 300) from Memphis are not made */
 const MEM = [35.1495, -90.0490], KV_GEO = 'gc_geo_places';
+/* RADIUS2 (owner 11/9: "keep Atlanta too for hotel scanning"): areas kept even past the limit — [name, lat, lng, miles around it] */
+const ALSO = [['Atlanta area', 33.7490, -84.3880, 50]];
 function miles(a, b){ const R = 3958.8, r = x => x * Math.PI / 180, dLat = r(b[0] - a[0]), dLng = r(b[1] - a[1]); const h = Math.sin(dLat / 2) ** 2 + Math.cos(r(a[0])) * Math.cos(r(b[0])) * Math.sin(dLng / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(h)); }
 async function placeOf(L, cache){
   const zip = s(L.zip).slice(0, 5), city = s(L.city).replace(/\b(county|parish)\b/i, '').trim(), st = s(L.state).toUpperCase().slice(0, 2);
@@ -1071,6 +1073,8 @@ async function radiusGate(leads, settings){
     const p = await placeOf(L, cache);
     if (!p) { keep.push(L); continue; }   /* where it is cannot be told: kept */
     const d = Math.round(miles(MEM, p));
+    const also = (settings && Array.isArray(settings.alsoAreas) ? settings.alsoAreas : ALSO).find(a => Array.isArray(a) && miles([Number(a[1]), Number(a[2])], p) <= Number(a[3]));
+    if (also) { L.milesFromMemphis = d; L.area = s(also[0]); keep.push(L); continue; }
     if (d > max) dropped.push({ title: s(L.project_name || L.title).slice(0, 120), where: [s(L.city), s(L.state)].filter(Boolean).join(', '), miles: d }); else { L.milesFromMemphis = d; keep.push(L); }
   }
   if (cache.__new) { delete cache.__new; try { if (dbReady()) await kvPut(KV_GEO, cache); } catch (e) {} }
