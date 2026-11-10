@@ -93,5 +93,12 @@ Object.assign(SA._D, { now: () => t, kvGet: async k => kv[k], kvCas: async (k, f
   const WI = require(path.join(__dirname, '../../netlify/functions/website-intake.js'))._lib;
   assert.strictEqual(WI.lsaLinkOf('<a href="https://ads.google.com/localservices/lead/123456?hl=en&amp;x=1">View lead</a> https://support.google.com/localservices'), 'https://ads.google.com/localservices/lead/123456?hl=en&x=1');
   assert.strictEqual(WI.lsaLinkOf('no link here'), '');
+  /* LSANAME: just the PM's name = GOOD + that PM */
+  decided.length = 0; sent.length = 0; t += 60000;
+  await SA.leads([{ id: 'LSA7', key: 'LSA7', title: 'Storm', source: 'Google LSA', contact: { name: 'Cy Doe', phone: '9015550177' } }], { LSA7: { id: 'LSA7', source: 'Google LSA', leadExtra: { lsaCheck: 'pending' } } }, () => false);
+  const pn = await SA.staffInbound('9015550001', 'Pat', 'SM30');
+  assert.ok(pn && pn.good && pn.pm === 'Pat PM' && decided[0].leadId === 'LSA7', JSON.stringify(pn));
+  const nn = await SA.staffInbound('9015550001', 'Pat will call you', 'SM31');
+  assert.ok(!nn || !nn.lsa, 'a sentence is not a PM name');
   console.log('LSATEXT tests: all passed');
 })().catch(e => { console.error(e); process.exit(1); });

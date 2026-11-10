@@ -480,7 +480,13 @@ function lsaCode(id){ const h = require('crypto').createHash('sha256').update(s(
 function lsaAdmins(){ return (env('OWNER_EMAILS') || 'wjohnson@grayco-cs.com,nthomas@grayco-cs.com').split(',').map(low).filter(Boolean); }
 const LSA_REPLY = /^\s*(no[\s-]*answer|noanswer|n\/a|na|vm|voice\s*mail|good|bad|g|b|👍|👎|yes|no)\b[\s:.,!-]*([A-Z0-9]{4})?\b[\s:.,!-]*([\s\S]*)$/i;
 async function lsaReply(ph, body, who){
-  const m = LSA_REPLY.exec(s(body)); if (!m) return null;
+  let m = LSA_REPLY.exec(s(body));
+  if (!m) {   /* LSANAME (owner 11/10: "if I reply with the PM name that means good lead"): just a PM's name (≤ 3 words, one active person) = GOOD + that PM */
+    const words = s(body).replace(/[.!,]+$/, '').trim(); if (!words || words.split(/\s+/).length > 3) return null;
+    let open0 = []; await _D.kvCas(SKEY, v => { open0 = arr(loadState(v).lsa[ph]).filter(x => !x.done); return undefined; }).catch(() => {});
+    if (!open0.length || !(await pmByName(words))) return null;
+    m = ['', 'good', '', words];
+  }
   let list = []; await _D.kvCas(SKEY, v => { list = arr(loadState(v).lsa[ph]); return undefined; }).catch(() => {});
   if (!list.length) return null;
   let code = s(m[2]).toUpperCase(), rec = code ? list.find(x => x.code === code) : null, reason = s(m[3]);
