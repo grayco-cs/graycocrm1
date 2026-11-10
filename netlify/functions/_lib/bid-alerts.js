@@ -81,7 +81,7 @@ function make(d){
       coEmails: require('./lead-roles.js').coList(it).map(c => low(c && c.email)).filter(e => e && !GONE[e]),   /* patch HOT2: the second person on the lead; patch SPAMROLE: the Senior Roofing PM only on a roofing bid */
       link: s(it.link) || (arr(it.plansLinks)[0] || {}).url || '', files: arr(it.files).length,
       /* patch WEB: a lead from the website form / instant roof price (no bid due date, no "due to") */
-      website: isWebsite(it), partner: isPartner(it), form: s(it.websiteForm || (it.leadExtra && it.leadExtra.websiteForm)), contact: it.contact && typeof it.contact === 'object' ? it.contact : null,
+      website: isWebsite(it), partner: isPartner(it), lsa: /google\s*lsa|local\s*services/i.test([it.source, it.leadSource, it.leadExtra && it.leadExtra.leadSource].map(s).join(' ')) || s(it.leadExtra && it.leadExtra.lsaCheck) === 'pending', lsaCall: !!(it.lsaCall || (it.leadExtra && it.leadExtra.lsaCall)),   /* LSAOFFICE */ form: s(it.websiteForm || (it.leadExtra && it.leadExtra.websiteForm)), contact: it.contact && typeof it.contact === 'object' ? it.contact : null,
       said: LM().collect(it), call: LM().contactOf(it) };   /* patch LEADMAILMSG */
   }
   function isWebsite(l){ return !!(l && (s(l.origin) === 'website' || l.websiteLead || (l.leadExtra && l.leadExtra.websiteLead) || /^website\b/i.test(s(l.source)) || isPartner(l))); }
@@ -185,7 +185,7 @@ function make(d){
   const FOOT = 'Sent to the lead-alert address list (Leads ⚙ settings): one e-mail when a new lead arrives, and one an hour before its bid is due (8 AM Central on the day when only the date is known). The bid due date can be changed on the lead in the CRM (Leads → Bid due).';
   function soonest(list){ return list.filter(x => x.bidDue).sort((a, b) => BD.wallToEpoch(a.bidDue) - BD.wallToEpoch(b.bidDue))[0]; }
   function mailNew(list){
-    if (list.length && list.every(x => x.website)) return mailWeb(list);   /* patch WEB */
+    if (list.length && (list.every(x => x.website) || list.every(x => x.lsa))) return mailWeb(list);   /* patch WEB */
     const n = list.length, first = soonest(list);
     const subject = (n === 1 ? 'New lead: ' + list[0].title + ' — ' + dueLine(list[0])
       : n + ' new leads: ' + list.map(x => x.title).join(' · ').slice(0, 140) + ' — ' + (first ? dueLine(first) + (list.some(x => !x.bidDue) ? ' (some: NOT FOUND — add it)' : '') : dueTxt(''))).slice(0, 250);
@@ -240,6 +240,13 @@ function make(d){
         'Sent to the lead-alert address list (Leads ⚙ settings) for every missed call that is not an existing customer.', n === 1 ? LM().buttons(list[0].call) : '');
       const t = subj + '\n\n' + (n === 1 ? LM().boxText(list[0].said) + '\n' : '') + list.map(x => { const c = x.contact || {}; return '- ' + x.title + (c.phone ? ' · ' + c.phone : '') + (x.detail ? '\n  ' + x.detail : ''); }).join('\n') + '\n\nAssign it to a PM: ' + site() + '/#leads';
       return { area: 'area:Leads', leadKey: n === 1 ? list[0].key : '', replyTo: '', subject: subj, html: h, text: t, push: { title: subj.slice(0, 100), body: list.slice(0, 3).map(x => x.title.slice(0, 80)).join('\n').slice(0, 180), tag: 'lead-new-' + list[0].id } };
+    }
+    if (list.every(x => x.lsa)) {   /* LSAOFFICE: a Google Local Services lead / call is not "a website form" */
+      const call = list.every(x => x.lsaCall), subj = ((call ? '📞 Google LSA call: ' : '🔎 Google LSA lead: ') + (n === 1 ? list[0].title : n + ' leads')).slice(0, 250);
+      const h = frame('GrayCo — Google LSA ' + (call ? 'call to the office' : 'lead'), (call ? 'Someone called the office through Google Local Services' : 'A Google Local Services lead came in') + '. Wesley and Nick got it by text (they answer GOOD / BAD there). It is on the Leads tab.', list.map(rowHtml).join(''),
+        'Office copy of a Google LSA lead.', n === 1 ? LM().buttons(list[0].call) : '');
+      const tx = subj + '\n\n' + (n === 1 ? LM().boxText(list[0].said) + '\n' : '') + list.map(x => { const c = x.contact || {}; return '- ' + x.title + (c.phone ? ' · ' + c.phone : ''); }).join('\n') + '\n\n' + site() + '/#leads';
+      return { area: 'area:Leads', leadKey: n === 1 ? list[0].key : '', replyTo: '', subject: subj, html: h, text: tx, push: { title: subj.slice(0, 100), body: list.slice(0, 3).map(x => x.title.slice(0, 80)).join('\n').slice(0, 180), tag: 'lead-new-' + list[0].id } };
     }
     const api = list.every(x => x.partner), from = api ? Array.from(new Set(list.map(x => x.source).filter(Boolean))).join(', ') : '';   /* patch API */
     const subject = (api ? (n === 1 ? '🔌 New lead from ' + from + ': ' + list[0].title : '🔌 ' + n + ' new leads from ' + from + ': ' + list.map(x => x.title).join(' · '))
@@ -372,7 +379,9 @@ function make(d){
          Nick) + office@ — even while lead e-mails are off for everything else */
       const isLsaL = x => { const it = Object.assign({}, raw0[x.id] || {}, x), ex = it.leadExtra || {}; return it.lsaCheck === 'pending' || ex.lsaCheck === 'pending' || /google\s*lsa|local\s*services/i.test([it.source, it.leadSource, ex.leadSource, ex.mkSource === 'Google LSA' ? 'google lsa' : ''].join(' ')); };
       const asg = [].concat.apply([], g.map(x => [x.assigneeEmail].concat(x.coEmails || [])));
-      const lsaTo = g.some(isLsaL) ? Array.from(new Set(asg.concat((env('OWNER_EMAILS') || 'wjohnson@grayco-cs.com,nthomas@grayco-cs.com').split(','), ['office@grayco-cs.com']).map(low).filter(e => /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(e)))) : null;
+      /* LSAOFFICE (owner 11/10: "I don't want the e-mails going to Wesley — I want the leads from LSA all to go through the GrayCo number"):
+         Wesley and Nick get the LSA lead by TEXT only; the e-mail goes to the office (+ an assignee who was not texted) */
+      const lsaTo = g.some(isLsaL) ? Array.from(new Set(asg.concat(['office@grayco-cs.com']).map(low).filter(e => /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(e)))) : null;
       const r = lsaTo ? await deliver(Object.assign({}, mailNew(g), { subject: '🔎 Google LSA lead — good or bad? ' + s(mailNew(g).subject).replace(/^🔎 Google LSA lead — good or bad\? /, '') }), [], lsaTo, texted)
         : await deliver(mailNew(g), asg, null, texted);   /* patch HOT2: + coAssignees */   /* TEXTFIRST */
       out.messages++; out.to = r.to; out.pushed = (out.pushed || 0) + (r.pushed || 0); if (r.pushWhy) out.pushWhy = r.pushWhy;

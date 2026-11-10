@@ -10,6 +10,6 @@ const A=BA.make({env:k=>ENV[k]!=null?ENV[k]:'',s:v=>v==null?'':String(v).trim(),
  await A.notifyNew([{id:'l1',title:'Roof replacement quote',source:'Google LSA',leadExtra:{leadSource:'Google LSA',lsaCheck:'pending'},contact:{name:'Pat',phone:'9015550111'}}]);
  await A.notifyNew([{id:'l2',title:'Kitchen remodel',source:'Website',contact:{name:'Q'}}]);
  console.log(JSON.stringify(sent.map(b=>[b.subject,b.to])));
- const ok=sent.length===1 && ['wjohnson@grayco-cs.com','nthomas@grayco-cs.com','office@grayco-cs.com'].every(e=>sent[0].to.includes(e)) && /Google LSA lead/.test(sent[0].subject);
- console.log(ok?'PASS LSA → Wesley + Nick + office (even with lead e-mails off); a normal lead is not sent':'FAIL'); process.exit(ok?0:1);
+ const ok=sent.length===1 && sent[0].to.length===1 && sent[0].to[0]==='office@grayco-cs.com' && /Google LSA lead/.test(sent[0].subject) && /GrayCo — Google LSA lead/.test(sent[0].html) && !/filled in a form/.test(sent[0].html);   /* LSAOFFICE: Wesley + Nick get the text, the office the e-mail */
+ console.log(ok?'PASS LSA → office e-mail only, worded as a Google LSA lead (even with lead e-mails off); a normal lead is not sent':'FAIL'); process.exit(ok?0:1);
 })();

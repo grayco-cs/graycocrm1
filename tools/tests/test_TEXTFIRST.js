@@ -35,6 +35,6 @@ const A = BA.make({ env: k => ENV[k] != null ? ENV[k] : '', s: v => v == null ? 
   await A.notifyNew([{ id: 'l2', title: 'Gutter quote', source: 'Google LSA', leadExtra: { leadSource: 'Google LSA', lsaCheck: 'pending', lsaCall: true }, contact: { name: 'Q', phone: '9015550112' } }]);
   delete process.env.SMS_ALERTS_OFF;
   assert.strictEqual(texts.length, 0);
-  assert.ok(mails.length === 1 && ['wjohnson@grayco-cs.com', 'nthomas@grayco-cs.com', 'office@grayco-cs.com'].every(e => mails[0].to.includes(e)), 'no text → e-mail fallback: ' + JSON.stringify(mails.map(m => m.to)));
+  assert.ok(mails.length === 1 && mails[0].to.join() === 'office@grayco-cs.com' && /Google LSA call/.test(mails[0].subject), 'LSA e-mail is the office only (LSAOFFICE): ' + JSON.stringify(mails.map(m => m.to)));
   console.log('TEXTFIRST: all passed');
 })().catch(e => { console.error('FAIL', e && e.stack || e); process.exit(1); });
