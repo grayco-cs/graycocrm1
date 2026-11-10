@@ -131,7 +131,8 @@ exports.handler = async function(event){
       attrib: Object.keys(attrib).length ? attrib : null };
     const r = await WI().fileLead(f, { sid: leadSid, source: clip('CallRail — ' + (c.source || 'phone call'), 80), how: 'a call to a CallRail tracking number', formLabel: 'Phone call (CallRail)', customer: null, notes,
       title: (c.answered === false ? 'Missed call — ' : 'Phone call — ') + (who || tidy(c.from)) + (where ? ' — ' + where : '') + (c.source ? ' (' + c.source + ')' : ''),
-      leadExtra: Object.assign({ callrail: true, callrailId: c.id, websiteLead: false, phoneLead: true }, ch ? { mkSource: ch } : {}, c.campaign ? { utmCampaign: c.campaign } : {}) });
+      leadExtra: Object.assign({ callrail: true, callrailId: c.id, websiteLead: false, phoneLead: true, answered: c.answered }, ch ? { mkSource: ch } : {}, c.campaign ? { utmCampaign: c.campaign } : {},
+        /local services|\blsa\b/i.test(s(c.source) + ' ' + s(c.campaign)) ? { leadSource: 'Google LSA', lsaCheck: 'pending', lsaCall: true } : {}) });   /* LSACALL (owner 11/10): an LSA call to the office */
     out.lead = r.id; out.action = r.action;
     out.alerts = r.action === 'added' ? await WI().alertLead(r.rec) : { skipped: r.action };
     /* the lead id on the call */

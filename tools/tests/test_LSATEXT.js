@@ -195,5 +195,10 @@ Object.assign(SA._D, { now: () => t, kvGet: async k => kv[k], kvCas: async (k, f
   await SA.leads([{ id: 'N77', key: 'N77', title: 'Gutters', contact: { name: 'Ty', phone: '9015550277' } }], { N77: { id: 'N77' } }, () => false);
   const old = sent.find(x => x.to === '9015550002');
   assert.ok(old && /^GrayCo: new lead [A-Z0-9]{4} from \(901\) 555-0277 Ty\.$/.test(old.body), 'no how-to after a month: ' + (old && old.body));
+  /* LSACALL: an LSA phone call to the office */
+  sent.length = 0;
+  await SA.leads([{ id: 'C1', key: 'C1', title: 'Phone call — (901) 555-0288', source: 'CallRail — Google Local Services', contact: { name: 'Caller', phone: '9015550288' } }], { C1: { id: 'C1', leadExtra: { leadSource: 'Google LSA', lsaCheck: 'pending', lsaCall: true } } }, () => false);
+  const cl = sent.find(x => x.to === '9015550002');
+  assert.ok(cl && /^GrayCo: Google LSA call to the office [A-Z0-9]{4} from \(901\) 555-0288 Caller\. Missed it\? Call them back from your cell\./.test(cl.body), cl && cl.body);
   console.log('LSATEXT tests: all passed');
 })().catch(e => { console.error(e); process.exit(1); });

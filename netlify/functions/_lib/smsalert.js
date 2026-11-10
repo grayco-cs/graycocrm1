@@ -502,9 +502,10 @@ async function leads(list, raw, isEm){
       /* LSAWORD (owner 11/10: "google lsa lead from 9016927255 wesley says blah blah blah, reply with if the lead is good and who is the PM") */
       const lt = (more, g) => { const head = (em ? '🚨 ' : '') + 'GrayCo: ' + label + ' ' + code + (more ? ' (+' + more + ' more)' : '') + ' from ' + (callPh.length === 10 ? tidy(callPh) + ' ' : '') + clip(name, 40),
           tail = (!g || g.newbie !== false) ? ' Reply GOOD + PM name (e.g. GOOD Pat), SEND + PM name (the PM calls first), BAD + why, or NA if no answer.' : '',   /* HOWTO (owner 11/10): the how-to only in a person's first month */ said = s(msg).replace(/\s+/g, ' '), room = MAX - head.length - tail.length - 9;
-        return head + (said && room > 12 ? ' says "' + clip(said, room) + '".' : '.') + tail; };
+        const callNote = /call to the office/.test(label) ? ' Missed it? Call them back from your cell.' : '';   /* LSACALL (owner 11/10) */
+        return head + (said && !callNote && room > 12 ? ' says "' + clip(said, room) + '".' : '.') + callNote + tail; };
       try { out.push(await notify({ type: 'lead', lsa: { leadId: s(x.id), code, name: clip(name, 60), phone: callPh, link: s(obj(r.leadExtra).lsaLink || r.lsaLink), said: clip(s(msg).replace(/\s+/g, ' '), 140), em: !!em, isLsa: lsaL, label }, text: lt(0), body: lt, link, only: lsaAdmins(), thread: ph ? 'p:' + ph : 'lsa:' + s(x.id), emergency: em }));   /* a texter's lead and their first text collapse into one alert */ } catch (e) { out.push({ error: s(e && e.message) }); }
-      if (lsaL) try { out.push({ lsaAsk: await lsaAsk(callPh, { leadId: s(x.id), code, name, em, svc: s(obj(r.leadExtra).service || r.service || x.title) }) }); } catch (e) { out.push({ lsaAskError: s(e && e.message) }); }   /* LSAFLOW */
+      if (lsaL && !obj(r.leadExtra).lsaCall) try { out.push({ lsaAsk: await lsaAsk(callPh, { leadId: s(x.id), code, name, em, svc: s(obj(r.leadExtra).service || r.service || x.title) }) }); } catch (e) { out.push({ lsaAskError: s(e && e.message) }); }   /* LSAFLOW */
       continue;
     }
     let tail = link; if (em && callPh.length === 10) { try { tail = link + ' Not real? Block: ' + require('./salesguard.js').blockLink(site(), callPh); } catch (e) {} }   /* patch SALESBLOCK: one tap to block (signed; admins / office, asked first) */
@@ -614,7 +615,7 @@ async function lsaReply(ph, body, who){
 /* LEADTEXT: what kind of lead the text names, and what is a bid (not texted this way) */
 function leadLabel(r, x){
   const it = Object.assign({}, r || {}, x || {}), ex = obj(it.leadExtra), src = [it.source, it.leadSource, ex.leadSource, ex.websiteForm, it.websiteForm, it.origin].map(s).join(' ');
-  if (isLsaLead(r, x)) return 'Google LSA lead';
+  if (isLsaLead(r, x)) return (ex.lsaCall || it.lsaCall) ? 'Google LSA call to the office' : 'Google LSA lead';   /* LSACALL */
   if (ex.textMessage || it.textMessage || /text message/i.test(src)) return 'text lead';
   if (ex.missedCall || it.missedCall || /missed call/i.test(src)) return 'missed-call lead';
   if (/website|web ?form|instant roof|roof ?price|grayco-cs\.com/i.test(src) || it.websiteLead) return 'GrayCo website lead';
