@@ -148,6 +148,8 @@ const _D = {
       'The PM called and says it is not a real lead: "' + s(d.reason) + '". An admin decides — CRM → the lead → ✕ Bad (dispute in Google Ads) or ✓ Good — or Wesley / Nick text BAD ' + s(d.code) + ' / GOOD ' + s(d.code) + ' + PM.'); } catch (e) {}
     return out;
   },
+  jobs: () => core().kvRead(['projects', 'gc_deleted_projects']),   /* JOBNOTE */
+  textNote: async row => { const w = await core().kvListUpdate('gc_text_notes', l => ({ list: l.concat([row]).slice(-1000), check: l2 => l2.some(x => x && x.id === row.id) })); return !!(w && w.ok); },
   lsaVerified: async leadId => { let ok = false; try { await _D.kvCas('gc_lead_inbox', v => { const l = arr(v); const x = l.find(y => y && s(y.id) === s(leadId)); if (!x) return undefined; x.lsaVerified = new Date(_D.now()).toISOString(); x.leadExtra = Object.assign({}, obj(x.leadExtra), { lsaVerified: x.lsaVerified }); ok = true; return l; }); } catch (e) {} return ok; },   /* LSAFLOW */
   postReply: async m => {
     const msg = { id: m.id, pid: m.pid || '', authorId: low(m.email), authorName: s(m.name || m.email) + ' 📱 (text to ' + tidy(m.to) + ', from cell)', text: m.text, tags: [], at: m.at, source: 'sms', channel: 'sms', dir: 'out', smsTo: m.to, viaCell: true };
@@ -389,8 +391,11 @@ async function staffInbound(ph, body, sid){
   resolve(set, pp).forEach(r => { byPhone[r.phone] = byPhone[r.phone] || { email: r.email, name: r.p.name }; });
   if (!byPhone[ph]) {   /*LSASEND: a PM who was sent an LSA lead answers from his cell even when he is not on the alerts list */
     let held0 = []; await _D.kvCas(SKEY, v => { held0 = arr(loadState(v).lsa[ph]).filter(x => x && x.staffEmail); return undefined; }).catch(() => {});
-    if (!held0.length) return null;
-    byPhone[ph] = { email: held0[held0.length - 1].staffEmail, name: held0[held0.length - 1].staffName || '' };
+    if (!held0.length) {   /* JOBNOTE: any active staff cell may text "S251 note…" */
+      const sx = /^\s*#?\s*[A-Za-z]\d{3,5}\b/.test(s(body)) ? list.find(x => phone10(x.phone) === ph) : null;
+      if (!sx) return null;
+      byPhone[ph] = { email: sx.email, name: sx.name || '' };
+    } else byPhone[ph] = { email: held0[held0.length - 1].staffEmail, name: held0[held0.length - 1].staffName || '' };
   }
   const email = byPhone[ph].email, p = { name: (list.find(x => x.email === email) || {}).name || byPhone[ph].name }, t = now(), at = new Date(t).toISOString();
   const opt = await _D.optouts();
@@ -398,6 +403,7 @@ async function staffInbound(ph, body, sid){
   let rep = null, fresh = false;
   await _D.kvCas(SKEY, v => { const st = loadState(v); fresh = false; rep = st.reply[ph] || null; if (sid && st.seen[sid]) return undefined; if (sid) st.seen[sid] = at; fresh = true; return st; });
   if (!fresh) return { handled: true, staff: email, skipped: 'already handled' };
+  try { const jn = await jobNote(ph, body, { email, name: p.name }); if (jn) return jn; } catch (e) {}   /* JOBNOTE: "S251 note…" → that job's notes */
   try { const lr = await lsaReply(ph, body, { email, name: p.name }); if (lr) return lr; } catch (e) {}   /* LSATEXT: GOOD / BAD for an LSA lead */
   if (!rep || t - Date.parse(rep.at || 0) > REPLY_MS) {
     /* a short "not sent" note, at most once a day per phone */
@@ -616,6 +622,25 @@ function bidLike(r, x){
   const it = Object.assign({}, r || {}, x || {}), ty = low(it.type || it.leadKind);
   return /bid|commercial|gov/.test(ty) || !!s(it.bidDue) || !!s(it.gc || it.dueToCompany) || BID_BOARDS.test([it.source].concat(arr(it.sources).map(y => s(y && y.name || y))).join(' ')) || isSubBid(obj(r), obj(x));
 }
+/* JOBNOTE (owner 11/10: "I want the other number to be where I can update any job — if I put a PO and then notes, it goes in that job's notes"):
+   a staff text that starts with a job's PO ("S251 dumpster pulled, final walk Friday", "#S251: …") → the note on that job (gc_kv
+   "gc_text_notes"; the CRM page adds it to the job's notes, dated and signed). Admins: any job; anyone else: a job they are the PM /
+   APM / estimator / superintendent on. The sender gets "Added to S251 <job>" back. Nothing goes to a customer. */
+async function jobNote(ph, body, who){
+  const m = /^\s*#?\s*([A-Za-z]\d{3,5})\b[\s:,.;-]*([\s\S]+)$/.exec(s(body)); if (!m || s(m[2]).length < 2) return null;
+  const po = m[1].toUpperCase(), note = s(m[2]).slice(0, 1000);
+  let data = {}; try { data = await _D.jobs(); } catch (e) { return null; }
+  const del = arr(data.gc_deleted_projects).map(x => s(x && (x.id || x))).concat(Array.isArray(data.gc_deleted_projects) ? data.gc_deleted_projects.map(String) : []);
+  const jobs = (Array.isArray(data.projects) ? data.projects : []).filter(j => j && j.id && !j.deleted && del.indexOf(s(j.id)) < 0 && [j.autoPO, j.po, j.poNumber].some(x => s(x).toUpperCase() === po));
+  if (!jobs.length) return null;   /* not a job PO: the normal path goes on */
+  const j = jobs[0], email = low(who.email), nm = low(who.name);
+  const mine = [j.pm, j.apm, j.estimator, j.superintendent, j.super, j.pmName].map(low).filter(Boolean).some(x => x === nm || x === email) || [j.pmEmail, j.estimatorEmail].map(low).indexOf(email) >= 0;
+  if (lsaAdmins().indexOf(email) < 0 && !mine) { try { await _D.send(ph, 'GrayCo: ' + po + ' is not one of your jobs — note not added.', fromNum()); } catch (e) {} return { handled: true, staff: email, jobNote: 'not yours', po }; }
+  const at = new Date(now()).toISOString(), row = { id: 'TN_' + po + '_' + at.replace(/\D/g, '').slice(0, 14), pid: s(j.id), po, text: note, by: s(who.name) || email, byEmail: email, at };
+  let ok = false; try { ok = await _D.textNote(row); } catch (e) {}
+  try { await _D.send(ph, ok ? 'GrayCo: added to ' + po + ' ' + clip(j.name, 40) + ' notes.' : 'GrayCo: could not save the note on ' + po + ' — try again or add it in the CRM.', fromNum()); } catch (e) {}
+  return { handled: true, staff: email, jobNote: ok ? 'added' : 'failed', po, pid: s(j.id) };
+}
 /* LSAPM: a PM by what was texted — full name, first name, last name or e-mail name (one active staff person, else nobody) */
 async function pmByName(q){
   q = low(q).replace(/[^a-z0-9@.\s'-]/g, ' ').replace(/\s+/g, ' ').trim(); if (!q) return null;
@@ -712,5 +737,5 @@ async function system(kind, text){
   return notify({ type: 'system', text: 'CRM alert — ' + text, link: site(), thread: 'sys:' + s(kind), daily: true, hold: true });
 }
 
-module.exports = { lsaAsk, lsaCustomer, lsaPmText, _lsaCode: lsaCode, _isLsaLead: isLsaLead, _lsaReply: lsaReply, _D: _D, _isSubBid: isSubBid, ROLE_MIT, DEFAULT_PEOPLE, resolve, mitigationHolders, leadText, KEY, SKEY, TYPES, RATE_MS, REPLY_MS, settings, cleanPerson, staffList, load, save, notify, flushHeld, staffInbound, isStaffPhone, inboundText, missedCall, leads, assigned, approvals, system,
+module.exports = { jobNote, lsaAsk, lsaCustomer, lsaPmText, _lsaCode: lsaCode, _isLsaLead: isLsaLead, _lsaReply: lsaReply, _D: _D, _isSubBid: isSubBid, ROLE_MIT, DEFAULT_PEOPLE, resolve, mitigationHolders, leadText, KEY, SKEY, TYPES, RATE_MS, REPLY_MS, settings, cleanPerson, staffList, load, save, notify, flushHeld, staffInbound, isStaffPhone, inboundText, missedCall, leads, assigned, approvals, system,
   inQuiet, quietNow, centralHour, compose, wants, _D };

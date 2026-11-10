@@ -5490,7 +5490,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.195-2026-11-10-r26k -->
+<!-- GrayCo CRM Build: 33.196-2026-11-10-r26l -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6439,7 +6439,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.195-2026-11-10-r26k");
+  console.log("[GC] Build 33.196-2026-11-10-r26l");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6487,7 +6487,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.195-2026-11-10-r26k"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.196-2026-11-10-r26l"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -216372,6 +216372,21 @@ function textMarks(){
   });
 }
 ST(textMarks, 15000); SI.call(W, textMarks, 120000);
+/* JOBNOTE (owner 11/10): "S251 note…" texted to the GrayCo number → that job's notes (server: _lib/smsalert.js → gc_kv "gc_text_notes") */
+function textNotes(){
+  var u = '', k = ''; try { u = (localStorage.getItem('grayco_sb_url') || 'https://ieeonhpfahmwwecizdut.supabase.co').replace(/\/$/, ''); k = localStorage.getItem('grayco_sb_key') || ''; } catch (e) {}
+  if (!u || !k || D.hidden || typeof W._setProjects !== 'function') return;
+  W.fetch(u + '/rest/v1/gc_kv?select=value&key=eq.gc_text_notes', { headers: { apikey: k, Authorization: 'Bearer ' + k }, cache: 'no-store' }).then(function(r){ return r.ok ? r.json() : null; }, function(){ return null; }).then(function(rows){
+    if (!Array.isArray(rows) || !rows[0]) return; var v = rows[0].value; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = []; } }
+    var list = (Array.isArray(v) ? v : []).filter(function(n){ return n && n.pid && n.text && Date.now() - Date.parse(n.at || 0) < 14 * 864e5; }); if (!list.length) return;
+    var line = function(n){ var dt = new Date(n.at); return '[' + (dt.getMonth() + 1) + '/' + dt.getDate() + ' ' + s(n.by) + ', text] ' + s(n.text); };
+    var projs = (W._crm && W._crm.projects) || [], todo = list.filter(function(n){ var p = projs.find(function(x){ return x && s(x.id) === s(n.pid); }); return p && s(p.notes).indexOf(line(n)) < 0; });
+    if (!todo.length) return;
+    W._setProjects(function(prev){ return (prev || []).map(function(p){ var add = todo.filter(function(n){ return p && s(p.id) === s(n.pid) && s(p.notes).indexOf(line(n)) < 0; }); if (!add.length) return p;
+      return Object.assign({}, p, { notes: (s(p.notes) ? s(p.notes) + '\n' : '') + add.map(line).join('\n'), updatedAt: new Date().toISOString() }); }); });
+  });
+}
+ST(textNotes, 20000); SI.call(W, textNotes, 120000);
 W._gcLsaCheck = { isLsa: isLsa, pm: pm, decide: decide, textMarks: textMarks };
 })(window);
 </script>

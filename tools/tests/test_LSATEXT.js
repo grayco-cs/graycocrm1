@@ -169,5 +169,26 @@ Object.assign(SA._D, { now: () => t, kvGet: async k => kv[k], kvCas: async (k, f
   await SA.notify({ type: 'missed', text: 'missed call from Mo', link: 'https://crm.test', only: ['nthomas@grayco-cs.com'], thread: 'p:9015550266' });
   assert.ok(sentFrom.filter(x => /new lead/.test(x.body)).every(x => x.from === '+19015550999') && sentFrom.some(x => /missed call/.test(x.body) && x.from === '+19015550888'), JSON.stringify(sentFrom.map(x => [x.from, x.body.slice(0, 30)])));
   SA._D.send = send0; delete process.env.TWILIO_FROM_ALERTS;
+  /* JOBNOTE: "S251 note" → the job's notes */
+  const notes = []; SA._D.jobs = async () => ({ projects: [{ id: 'P1', name: 'Smith Roof', autoPO: 'S251', pm: 'Pat PM' }, { id: 'P2', name: 'Jones Bath', autoPO: 'B300', pm: 'Mo Mit' }], gc_deleted_projects: [] });
+  SA._D.textNote = async row => { notes.push(row); return true; };
+  sent.length = 0; t += 60000;
+  let jn = await SA.staffInbound('9015550002', 'S251 dumpster pulled, final walk Friday', 'SM70');
+  assert.ok(jn && jn.jobNote === 'added' && notes[0].pid === 'P1' && notes[0].text === 'dumpster pulled, final walk Friday' && sent.some(x => /added to S251 Smith Roof notes/.test(x.body)), JSON.stringify(jn));
+  jn = await SA.staffInbound('9015550002', '#b300: tile delivered', 'SM71');
+  assert.ok(jn && jn.jobNote === 'added' && notes[1].pid === 'P2' && notes[1].text === 'tile delivered', 'an admin: any job');
+  jn = await SA.staffInbound('9015550003', 'B300 not mine', 'SM72');
+  assert.ok(jn && jn.jobNote === 'not yours' && notes.length === 2, 'a PM: only his own jobs');
+  jn = await SA.staffInbound('9015550003', 'S251 shingles on site', 'SM73');
+  assert.ok(jn && jn.jobNote === 'added', 'Pat on his own job');
+  jn = await SA.staffInbound('9015550002', 'X999 not a job', 'SM74');
+  assert.ok(!jn || !jn.jobNote, 'no such PO: not a job note');
+  const users0 = SA._D.people; SA._D.people = async () => ({ users: USERS.concat([{ name: 'Ray Super', email: 'ray@grayco-cs.com', role: 'Superintendent', cell: '9015550222', active: true }]), staff: [] });
+  const jd = await SA._D.jobs(); SA._D.jobs = async () => ({ projects: jd.projects.concat([{ id: 'P3', name: 'Lee Deck', autoPO: 'D410', superintendent: 'Ray Super' }]), gc_deleted_projects: [] });
+  jn = await SA.staffInbound('9015550222', 'D410 railing installed', 'SM75');
+  assert.ok(jn && jn.jobNote === 'added' && notes.slice(-1)[0].pid === 'P3', 'a staff cell not on the alert list can add a job note: ' + JSON.stringify(jn));
+  jn = await SA.staffInbound('9015550222', 'hello there', 'SM76');
+  assert.strictEqual(jn, null, 'anything else from him goes the normal way');
+  SA._D.people = users0;
   console.log('LSATEXT tests: all passed');
 })().catch(e => { console.error(e); process.exit(1); });
