@@ -100,6 +100,7 @@ const _D = {
       if (s(d.notes)) { const dt = new Date(_D.now()), line = '[' + (dt.getMonth() + 1) + '/' + dt.getDate() + ' ' + s(d.by) + '] ' + s(d.notes);   /* LSANOTES — owner 11/10: just the note (no "good lead" words) */
         if (Array.isArray(x.notes)) x.notes = x.notes.concat([line]); else x.notes = (s(x.notes) ? s(x.notes) + '\n' : '') + line; }
       x.lsaCheck = d.noAnswer ? 'no_answer' : d.good ? 'good' : 'bad'; x.leadExtra = Object.assign({}, obj(x.leadExtra), { lsaCheck: x.lsaCheck }); x.lsaDecidedBy = d.by; x.lsaDecidedAt = at; x.lsaVia = 'text';
+      if (!d.noAnswer && !s(x.contactedAt)) { x.contactedAt = at; x.contactedBy = s(d.by) + ' (text)'; } else if (d.noAnswer) x.lastAttemptAt = at;   /* NODUP: they called — no "reach out" reminders */
       if (d.noAnswer) { x.noAnswerAt = at; x.noAnswerCount = (+x.noAnswerCount || 0) + 1; }
       else if (!d.good) { x.lsaReason = d.reason; x.lostReason = (d.isLsa === false ? 'Not a real lead (' : 'LSA — not a real lead (') + d.reason + ')'; }
       if (d.good && d.pm && d.pm.name && !(d.keepPm && s(x.pm) && low(x.pmEmail) === low(d.pm.email))) {   /* LSAPM: the PM texted with GOOD (LSASEND: a PM's own GOOD on his lead changes nothing here) */

@@ -678,6 +678,7 @@ function make(d){
     if (!x.assignee) return { sent: 0, why: 'not assigned' };
     if (!x.assigneeEmail) return { sent: 0, why: 'no e-mail for ' + x.assignee };
     if (o.by && low(o.by) === x.assigneeEmail) return { sent: 0, why: 'assigned to themselves' };
+    if (lead && lead.lsaVia === 'text' && low(lead.lsaDecidedBy || '').replace(/\s*\(text[^)]*\)\s*$/, '') === low(x.assignee)) return { sent: 0, why: 'assigned to themselves (by text)' };   /* NODUP */
     if (closed(lead)) return { sent: 0, why: 'closed' };
     const k = x.key + '|' + x.assigneeEmail; let claim = false;
     await kvCas(KA, v => { const st = loadState(v); st.assigned = st.assigned || {}; if (st.assigned[k]) return undefined; st.assigned[k] = nowIso(); claim = true; return st; });
@@ -701,7 +702,7 @@ function make(d){
       if (asg[o.x.key + '|' + o.x.assigneeEmail]) continue;
       const when = Date.parse(o.l.assignedAt || o.l.updatedAt || o.l.createdAt || 0);
       if (!isFinite(when) || t - when > 3 * 86400000) continue;
-      if (o.x.assignedBy && low(o.x.assignedBy) === low(o.x.assignee)) continue;
+      if (o.x.assignedBy && low(o.x.assignedBy).replace(/\s*\((text|by text)[^)]*\)\s*$/, '') === low(o.x.assignee)) continue;   /* NODUP: "Wesley Johnson (text)" assigned himself by text — no e-mail to himself */
       const r = await notifyAssigned(o.l, {}); sent += r.sent || 0;
     }
     return { sent };
