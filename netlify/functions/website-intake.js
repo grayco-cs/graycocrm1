@@ -664,6 +664,26 @@ function staffLead(mail, text){
   return /(?:\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/.test(text) || /^\s*from:\s*[^\n]*<[^>@\s]+@[^>\s]+>/im.test(text);
 }
 const NOT_CUSTOMER = /@(grayco-cs\.com|in\.grayco-cs\.com|squarespace\.(com|info)|wix\.com|googlegroups\.com|google\.com)$/i;
+/* LSAPHONE (owner 11/10: "I want the phone number in that text too"): Google's call e-mail has no number — but the call came in on the
+   office line (Twilio), which logs every call (gc_lead_inbox_kv "gc_call_log", missed-call.js). The caller is the call that came in
+   from 2 minutes before to 4 minutes after Google's "called you on 11/10/2026 at 2:31 PM" (Central); the nearest one wins. None → '' */
+function centralMs(dmy, hm){
+  const d = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(s(dmy)), h = /^(\d{1,2}):(\d{2})\s*([AP]M)$/i.exec(s(hm).replace(/\s+/g, ' '));
+  if (!d || !h) return NaN;
+  let hr = parseInt(h[1], 10) % 12; if (/p/i.test(h[3])) hr += 12;
+  const guess = Date.UTC(+d[3], +d[1] - 1, +d[2], hr, +h[2]);
+  let off = 6; try { const z = new Date(guess).toLocaleString('en-US', { timeZone: 'America/Chicago', hour12: false, hour: '2-digit' }); off = ((hr - parseInt(z, 10)) % 24 + 24) % 24; } catch (e) {}
+  return guess + off * 3600e3;
+}
+async function lsaCaller(dmy, hm){
+  try {
+    const t = centralMs(dmy, hm); if (!isFinite(t)) return null;
+    const v = await L().kvGet('gc_call_log'), calls = v && Array.isArray(v.calls) ? v.calls : [];
+    let best = null, bd = Infinity;
+    calls.forEach(c => { const ph = phone10(c && c.from), at = Date.parse(c && c.at); if (ph.length !== 10 || !isFinite(at)) return; const dd = at - t; if (dd < -120e3 || dd > 240e3) return; if (Math.abs(dd) < bd) { bd = Math.abs(dd); best = { from: ph, at: c.at, outcome: s(c.outcome) }; } });
+    return best;
+  } catch (e) { return null; }
+}
 exports.fromEmail = async function(mail){
   mail = mail || {};
   const text = s(mail.text), from = mail.from || {}, H = mail.headers || {};
@@ -675,7 +695,8 @@ exports.fromEmail = async function(mail){
   const lsaTxt = text.replace(/customer\s*id\s*:?\s*[\d-]{6,}/ig, ' ');
   const lsaWhen = /called you on\s+([\d/]+)\s+at\s+([\d:]+\s*[AP]M)/i.exec(text);
   if (lsa) { if (!b.phone) { const m = /(?:\+?1[\s.-]?)?\(?(\d{3})\)?[\s.-]?(\d{3})[\s.-]?(\d{4})/.exec(lsaTxt); if (m) b.phone = m[1] + m[2] + m[3]; } if (!b.name) { const n = /(?:^|\n)\s*(?:customer|name|lead)\s*[:\-]\s*([A-Za-z][A-Za-z .'-]{1,60})/i.exec(text); if (n) b.name = n[1].trim(); } if (!b.name && !b.phone && lsaWhen) b.name = 'Google LSA caller (' + lsaWhen[2].replace(/\s+/g, ' ').toUpperCase() + ')';
-    if (!b.message) b.message = lsaWhen ? 'A potential customer called the office through Google Local Services on ' + lsaWhen[1] + ' at ' + lsaWhen[2] + '. Google did not include the number — open the call in the Local Services app (Leads) to call them back.' : clip(lsaTxt, 1500); }
+    let lsaCallRow = null; if (!b.phone && lsaWhen) { lsaCallRow = await lsaCaller(lsaWhen[1], lsaWhen[2]); if (lsaCallRow) { b.phone = lsaCallRow.from; if (/^Google LSA caller/.test(s(b.name))) b.name = 'Google LSA caller ' + lsaCallRow.from.replace(/^(\d{3})(\d{3})(\d{4})$/, '($1) $2-$3'); } }   /* LSAPHONE */
+    if (!b.message) b.message = lsaWhen ? 'A potential customer called the office through Google Local Services on ' + lsaWhen[1] + ' at ' + lsaWhen[2] + '.' + (lsaCallRow ? ' Their number (from the office phone\'s call log): ' + lsaCallRow.from + (lsaCallRow.outcome ? ' — ' + s(lsaCallRow.outcome) : '') + '.' : ' Google did not include the number — open the call in the Local Services app (Leads) to call them back.') : clip(lsaTxt, 1500); }
   const replyTo = low(s(H['reply-to']).replace(/^.*<([^>]+)>.*$/, '$1'));
   const sender = [low(b.email || b.email_address), replyTo, low(from.email)].find(x => isEmail(x) && !NOT_CUSTOMER.test(x)) || '';
   if (!sender && !b.email && /@grayco-cs\.com$/i.test(s(from.email))) { const fw = /^\s*from:\s*([^<\n]*)<([^>@\s]+@[^>\s]+)>/im.exec(text); if (fw && !NOT_CUSTOMER.test(low(fw[2]))) { b.email = low(fw[2]); if (!b.name && s(fw[1]).replace(/"/g, '').trim()) b.name = s(fw[1]).replace(/"/g, '').trim(); } }   /* patch LEADMAIL */

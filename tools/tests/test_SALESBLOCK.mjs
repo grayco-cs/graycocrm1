@@ -195,6 +195,14 @@ const tedLead = { id: 'LI-40569a6f62ec9c86', type: 'insurance', leadKind: 'Insur
   ok(r.lead && !!lc && !byPhone('5554346278'), 'LSA call e-mail → a lead "Google LSA caller (2:31 PM)", never GrayCo\'s Customer ID as a phone', { r, ids: inbox().map(x => x.title) });
   st = staffSms(); ok(st.length >= 2 && st.every(x => /Google LSA call to the office/.test(x.Body) && /open the LSA app/.test(x.Body) && !/555-?434/.test(x.Body)), 'LSA call → a text to Nick + Wesley right away', { st: st.map(x => x.Body), all: SMS.map(x => [x.To, x.Body]), al: JSON.stringify(r.alerts).slice(0, 1500) });
   process.env.OWNER_EMAILS = OE0;
+  /* LSAPHONE (owner 11/10): the office phone logged the call (Twilio) → the caller's number is on the lead and in the text */
+  world(); T = DAY; process.env.OWNER_EMAILS = 'nthomas@grayco-cs.com,wjohnson@grayco-cs.com';
+  setKv('gc_call_log', { calls: [{ sid: 'CAx', at: '2026-11-10T20:29:00Z', from: '9015550777' }, { sid: 'CAy', at: '2026-11-10T21:31:30Z', from: '9015550778', outcome: 'missed' }, { sid: 'CAz', at: '2026-11-10T21:31:40Z', from: '9015550779' }] });
+  r = await WEB.fromEmail({ from: { email: 'wjohnson@grayco-cs.com', name: 'Wesley' }, subject: 'Fwd: New call from a potential customer',
+    text: '---------- Forwarded message ---------\nFrom: Local Services by Google <localservices-noreply@google.com>\nDate: Tue, Nov 10, 2026 at 3:33 PM\n\nYour Customer ID: 555-434-6278\nNew call from a potential customer\nA potential customer called you on 11/10/2026 at 3:31 PM.\nView Details', messageId: '<lsacall2@x>' });
+  ok(r.lead && !!byPhone('9015550778'), 'LSA call e-mail + the office call log → the lead has the caller\'s number (the nearest call: 3:31:30 PM Central)', { r, ids: inbox().map(x => [x.title, x.phone]) });
+  st = staffSms(); ok(st.length >= 2 && st.every(x => /\(901\) 555-0778/.test(x.Body) && /Missed it\? Call them back/.test(x.Body)), 'the text has the number to tap', st.map(x => x.Body));
+  process.env.OWNER_EMAILS = OE0;
 
   /* lead-intake.js (paid lead sources) — the other path that queues a first e-mail */
   const LI = require(path.join(SRC, 'lead-intake.js'));
