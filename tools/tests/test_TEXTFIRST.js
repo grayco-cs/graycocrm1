@@ -21,8 +21,8 @@ const A = BA.make({ env: k => ENV[k] != null ? ENV[k] : '', s: v => v == null ? 
   kvGet: async k => store[k], kvCas: async (k, fn) => { const nv = fn(store[k]); if (nv !== undefined) store[k] = nv; return { value: store[k] }; }, now: () => Date.now() });
 (async () => {
   /* 1. an LSA lead: Wesley + Nick are texted → the e-mail goes to office only */
-  await A.notifyNew([{ id: 'l1', title: 'Roof replacement quote', source: 'Google LSA', leadExtra: { leadSource: 'Google LSA', lsaCheck: 'pending', lsaCall: true }, contact: { name: 'Pat', phone: '9015550111' } }]);
-  assert.deepStrictEqual(texts.map(x => x.to).sort(), ['9015550001', '9015550002'], 'both admins texted: ' + JSON.stringify(texts));
+  await A.notifyNew([{ id: 'l1', title: 'Roof replacement quote', source: 'Google LSA', leadExtra: { leadSource: 'Google LSA', lsaCheck: 'pending' }, contact: { name: 'Pat', phone: '9015550111' } }]);
+  assert.deepStrictEqual(texts.map(x => x.to).filter(n => n !== '9015550111').sort(), ['9015550001', '9015550002'], 'both admins texted: ' + JSON.stringify(texts));
   assert.strictEqual(mails.length, 1, 'one e-mail');
   assert.deepStrictEqual(mails[0].to, ['office@grayco-cs.com'], 'texted admins get no e-mail: ' + JSON.stringify(mails[0].to));
   /* TEXTLOG: both alert texts are logged on lead l1; Wesley's GOOD answer + its confirmation too */

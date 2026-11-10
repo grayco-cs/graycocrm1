@@ -12,7 +12,7 @@ const kv = {}, sent = [], decided = [];
 let t = NIGHT;
 Object.assign(SA._D, { now: () => t, kvGet: async k => kv[k], kvCas: async (k, f) => { const nv = f(kv[k] == null ? null : JSON.parse(JSON.stringify(kv[k]))); if (nv !== undefined) kv[k] = nv; return { ok: true, value: kv[k] }; },
   send: async (to, body) => { sent.push({ to, body }); return { ok: true }; }, paused: async () => false, optouts: async () => ({}), consentNo: async () => false,
-  people: async () => ({ users: USERS, staff: [] }), postReply: async m => ({ id: m.id }), hours: async () => null, lsaDecide: async d => { decided.push(d); return { inbox: true, list: true, todo: !d.good }; } });
+  people: async () => ({ users: USERS, staff: [] }), vetTodo: async () => true, postReply: async m => ({ id: m.id }), hours: async () => null, lsaDecide: async d => { decided.push(d); return { inbox: true, list: true, todo: !d.good }; } });
 (async () => {
   const lead = { id: 'LSA1', key: 'LSA1', title: 'Roof replacement', source: 'Google LSA', contact: { name: 'Pat Smith', phone: '(901) 555-0111' } };
   await SA.leads([lead], { LSA1: { id: 'LSA1', source: 'Google LSA', leadExtra: { leadSource: 'Google LSA', lsaCheck: 'pending', said: { message: 'Need a new roof' } } } }, () => false);
@@ -198,7 +198,6 @@ Object.assign(SA._D, { now: () => t, kvGet: async k => kv[k], kvCas: async (k, f
   /* LSACALL: an LSA phone call to the office */
   sent.length = 0;
   await SA.leads([{ id: 'C1', key: 'C1', title: 'Phone call — (901) 555-0288', source: 'CallRail — Google Local Services', contact: { name: 'Caller', phone: '9015550288' } }], { C1: { id: 'C1', leadExtra: { leadSource: 'Google LSA', lsaCheck: 'pending', lsaCall: true } } }, () => false);
-  const cl = sent.find(x => x.to === '9015550002');
-  assert.ok(cl && /^GrayCo: Google LSA call to the office [A-Z0-9]{4} from \(901\) 555-0288 Caller\. Missed it\? Call them back from your cell\./.test(cl.body), cl && cl.body);
+  assert.ok(!sent.some(x => x.to === '9015550002' || x.to === '9015550001'), 'LSAVET: an LSA call (even with the number) waits for the office to say it is real: ' + JSON.stringify(sent));
   console.log('LSATEXT tests: all passed');
 })().catch(e => { console.error(e); process.exit(1); });

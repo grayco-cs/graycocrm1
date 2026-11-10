@@ -202,7 +202,7 @@ const tedLead = { id: 'LI-40569a6f62ec9c86', type: 'insurance', leadKind: 'Insur
   r = await WEB.fromEmail({ from: { email: 'wjohnson@grayco-cs.com', name: 'Wesley' }, subject: 'Fwd: New call from a potential customer',
     text: '---------- Forwarded message ---------\nFrom: Local Services by Google <localservices-noreply@google.com>\nDate: Tue, Nov 10, 2026 at 3:33 PM\n\nYour Customer ID: 555-434-6278\nNew call from a potential customer\nA potential customer called you on 11/10/2026 at 3:31 PM.\nView Details', messageId: '<lsacall2@x>' });
   ok(r.lead && !!byPhone('9015550778'), 'LSA call e-mail + the office call log → the lead has the caller\'s number (the nearest call: 3:31:30 PM Central)', { r, ids: inbox().map(x => [x.title, x.phone]) });
-  st = staffSms(); ok(st.length >= 2 && st.every(x => /\(901\) 555-0778/.test(x.Body) && /Missed it\? Call them back/.test(x.Body)), 'the text has the number to tap', st.map(x => x.Body));
+  st = staffSms(); ok(st.length === 0, 'even with the number: no text until the office says it is real (owner: "only if it\'s a real lead")', st.map(x => x.Body));
   process.env.OWNER_EMAILS = OE0;
 
   /* lead-intake.js (paid lead sources) — the other path that queues a first e-mail */
