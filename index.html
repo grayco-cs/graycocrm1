@@ -5490,7 +5490,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.186-2026-11-10-r26b -->
+<!-- GrayCo CRM Build: 33.187-2026-11-10-r26c -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6439,7 +6439,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.186-2026-11-10-r26b");
+  console.log("[GC] Build 33.187-2026-11-10-r26c");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6487,7 +6487,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.186-2026-11-10-r26b"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.187-2026-11-10-r26c"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -176346,7 +176346,10 @@ function dueSoon(l, until){
 /* the lead's person, if any */
 function assignee(l){ return s(l && (l.pm || l.estimator || l.apm)); }
 function isHeld(l){ return !!(l && l.hold && l.hold.state === 'held' && s(l.hold.name) && !assignee(l)); }
-function isDue(l, now){ return isHeld(l) && Date.parse(l.hold.until) <= (typeof now === 'number' ? now : Date.now()); }
+/* patch LSAFLOW (owner 11/10: "once the lead is good send it to admin for approval and who to be PM"): a Google LSA lead never
+   auto-assigns at 5 PM — Wesley / Nick mark it good (text or CRM), then an admin approves or picks the PM */
+function lsaWait(l){ if (!l) return false; var ex = l.leadExtra || {}; return /google\s*lsa|local\s*services/i.test([l.source, l.leadSource, ex.leadSource].map(s).join(' ')) || /^(pending|good|bad|pm_good|pm_bad|no_answer)$/.test(s(l.lsaCheck || ex.lsaCheck)); }
+function isDue(l, now){ return isHeld(l) && !lsaWait(l) && Date.parse(l.hold.until) <= (typeof now === 'number' ? now : Date.now()); }
 
 /* ── GrayCo lead or the PM's own? ── */
 /* company channels, RoofScout and anything the CRM / marketing made — these always win */
@@ -176465,7 +176468,7 @@ function dueItems(items, crmLeads, now){
     if (assignee(it) || /^(dismissed|merged)$/.test(s(it.status))) { drop.push({ id: it.id, why: assignee(it) ? 'assigned' : s(it.status) }); return; }
     var c = byInbox[it.id];
     if (c && (assignee(c) || (c.hold && c.hold.state && c.hold.state !== 'held'))) { drop.push({ id: it.id, why: 'changed in the CRM', crm: c }); return; }
-    if (Date.parse(it.hold.until) <= t) assign.push(it);
+    if (Date.parse(it.hold.until) <= t && !lsaWait(it)) assign.push(it);   /* patch LSAFLOW */
   });
   /* a lead the CRM held itself (no Lead Inbox item, e.g. Roof Ignite): the notice goes out from here, the CRM writes it */
   arr(crmLeads).forEach(function(l){ if (l && !l.inboxId && isDue(l, t) && !l.deleted && !l._deleted) crmOnly.push(l); });
@@ -216279,7 +216282,7 @@ function me(){ var n = ''; try { var u = JSON.parse(localStorage.getItem('grayco
 function admin(){ try { if (W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()) return true; } catch (e) {} try { var u = JSON.parse(localStorage.getItem('grayco_user') || '{}'); return /admin/i.test(s(u.role)) || /owner/i.test(s(u.payType)); } catch (e) { return false; } }
 function leads(){ return (W._crm && W._crm.leads) || []; }
 function lead(id){ return leads().find(function(l){ return l && s(l.id) === s(id); }) || null; }
-function isLsa(l){ return !!l && (l.lsaCheck === 'pending' || (!l.lsaCheck && /google\s*lsa|local\s*services/i.test(s(l.leadSource) + ' ' + s(l.source)))); }
+function isLsa(l){ return !!l && (l.lsaCheck === 'pending' || l.lsaCheck === 'no_answer' || (!l.lsaCheck && /google\s*lsa|local\s*services/i.test(s(l.leadSource) + ' ' + s(l.source)))); }
 function saveLead(id, patch){
   var now = new Date().toISOString();
   var f = function(list){ var out = (list || []).map(function(l){ return l && s(l.id) === s(id) ? Object.assign({}, l, patch, { updatedAt: now }) : l; }); try { if (W._gcApplySync) W._gcApplySync('leads', out); } catch (e) {} return out; };
@@ -216316,7 +216319,7 @@ function decorate(){
       var l = lead(r.getAttribute('data-id')); if (!l || !isLsa(l)) return;
       var b = r.querySelector('.gc-nl-b'); if (!b || b.getAttribute('data-lsa')) return;
       b.setAttribute('data-lsa', '1');
-      b.innerHTML = '<button type="button" data-lsa-b="good" class="g">👍 Good lead</button><button type="button" data-lsa-b="bad" style="background:#fee2e2;border-color:#fca5a5;color:#991b1b">👎 Bad lead</button>';
+      b.innerHTML = '<button type="button" data-lsa-b="good" class="g">👍 Good lead</button><button type="button" data-lsa-b="bad" style="background:#fee2e2;border-color:#fca5a5;color:#991b1b">👎 Bad lead</button><button type="button" data-lsa-b="na" style="background:#fef3c7;border-color:#fcd34d;color:#92400e">📵 No answer</button>';   /* LSANA */
       var h = r.querySelector('b'); if (h && !r.querySelector('.gc-lsa-tag')) { var t = D.createElement('span'); t.className = 'gc-lsa-tag'; t.textContent = ' 📞 Google LSA — call, then mark it'; t.style.cssText = 'font-size:12px;color:#b45309;font-weight:700'; h.after(t); }
     });
   } catch (e) {}
@@ -216325,6 +216328,7 @@ D.addEventListener('click', function(e){
   var b = e.target && e.target.closest ? e.target.closest('[data-lsa-b]') : null; if (!b) return;
   e.preventDefault(); e.stopPropagation();
   var r = b.closest('[data-id]'), id = r && r.getAttribute('data-id'); if (!id) return;
+  if (b.getAttribute('data-lsa-b') === 'na') { var ln = lead(id) || {}; saveLead(id, { lsaCheck: 'no_answer', noAnswerAt: new Date().toISOString(), noAnswerCount: (+ln.noAnswerCount || 0) + 1, lsaDecidedBy: me() }); addTask({ id: 'LSACALLBACK_' + id + '_' + new Date().toISOString().slice(0, 10), kind: 'lsa_callback', leadId: id, label: '📞 Call back ' + s(ln.name || ln.phone) + ' (Google LSA — no answer)', note: me() + ' marked NO ANSWER. Not a bad lead — call again, then mark it 👍 / 👎.' }); try { if (W._gcNewLead) W._gcNewLead.seen(id); } catch (x) {} return; }   /* LSANA (owner 11/10) */
   if (b.getAttribute('data-lsa-b') === 'good') { if (admin()) { saveLead(id, { lsaPmBy: me(), lsaPmAt: new Date().toISOString() }); decide(id, true); try { if (W._gcNewLead) W._gcNewLead.seen(id); } catch (x) {} return; } pm(id, true); return; }   /* patch LSAMAIL: an admin's mark is the final answer */
   var pick = W.prompt('Why is it a bad lead? Type the number:\n' + REASONS.map(function(x, i){ return (i + 1) + '. ' + x; }).join('\n'), '1'); if (pick == null) return;
   var n = parseInt(pick, 10), reason = REASONS[n - 1] || s(pick); if (n === 8 || !REASONS[n - 1]) { var o = W.prompt('Say what was wrong:', REASONS[n - 1] ? '' : s(pick)); if (o == null) return; reason = 'Other: ' + s(o); }
@@ -216342,9 +216346,11 @@ function textMarks(){
     (Array.isArray(v) ? v : []).forEach(function(d){
       if (!d || !d.id) return;
       var l = leads().find(function(x){ return x && (s(x.id) === s(d.id) || s(x.inboxId) === s(d.id) || s(x.leadInboxId) === s(d.id) || s(x.fromInbox) === s(d.id)); });
-      if (!l || l.lsaCheck === (d.good ? 'good' : 'bad') || (l.lsaDecidedAt && s(l.lsaDecidedAt) >= s(d.at))) return;
-      var patch = { lsaCheck: d.good ? 'good' : 'bad', lsaDecidedBy: s(d.by) + ' (text)', lsaDecidedAt: s(d.at), lsaVia: 'text' };
-      if (!d.good) Object.assign(patch, { lsaReason: s(d.reason), stage: 'Lost', status: 'lost', lostReason: 'LSA — not a real lead (' + s(d.reason || 'bad') + ')' });
+      if (!l || (l.lsaDecidedAt && s(l.lsaDecidedAt) >= s(d.at))) return;
+      var patch = { lsaCheck: d.noAnswer ? 'no_answer' : d.good ? 'good' : 'bad', lsaDecidedBy: s(d.by) + ' (text)', lsaDecidedAt: s(d.at), lsaVia: 'text' };
+      if (d.noAnswer) Object.assign(patch, { noAnswerAt: s(d.at), noAnswerCount: (+l.noAnswerCount || 0) + 1 });   /* LSANA: kept open */
+      else if (!d.good) Object.assign(patch, { lsaReason: s(d.reason), stage: 'Lost', status: 'lost', lostReason: 'LSA — not a real lead (' + s(d.reason || 'bad') + ')' });
+      if (d.good && d.pm && !s(l.pm)) Object.assign(patch, { pm: s(d.pm), pmEmail: s(d.pmEmail), assignedBy: s(d.by) + ' (text)', assignedAt: s(d.at), assignConfirmed: true, hold: l.hold ? Object.assign({}, l.hold, { state: 'approved', name: s(d.pm), email: s(d.pmEmail), doneAt: s(d.at), doneBy: s(d.by) + ' (text)' }) : l.hold });   /* LSAPM: the PM texted with GOOD */
       saveLead(l.id, patch); closeTask('LSACHECK_' + l.id, 'decided by text (' + s(d.by) + ')');
     });
   });

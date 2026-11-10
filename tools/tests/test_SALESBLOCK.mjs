@@ -302,7 +302,7 @@ const tedLead = { id: 'LI-40569a6f62ec9c86', type: 'insurance', leadKind: 'Insur
   T = DAY; MAIL.length = 0; SMS.length = 0;
   a = await api('tok-owner', 'POST', { act: 'notspam' }, { id: tedItem.id });
   let made = openInbox().find(x => x.id === a.leadId);
-  ok(a.ok && made && made.leadExtra.notSpam === true && MAIL.length >= 1 && !emergMail().length, '"Not spam → make lead" files the lead and alerts it normally (not as an emergency)', { a, m: MAIL.map(x => x.subject) });
+  ok(a.ok && made && made.leadExtra.notSpam === true && a.alerted && !emergMail().length /* LEADROUTE2: an unassigned lead e-mails nobody */, '"Not spam → make lead" files the lead and alerts it normally (not as an emergency)', { a, m: MAIL.map(x => x.subject) });
   ok(SG.cleanBlock(getKv(SG.BKEY)).allowPhones.indexOf(TED_PHONE) >= 0, '… and the sender is never filtered again');
   r = await sms(TED_PHONE, TED, 'SMallow1'); ok(!r.salesblock, 'an allowed sender\'s next pitch passes');
   const smsItem = held().find(x => x.phone === '9015554400');
@@ -317,15 +317,15 @@ const tedLead = { id: 'LI-40569a6f62ec9c86', type: 'insurance', leadKind: 'Insur
   r = await alertsApi.notifyNew([{ id: 'LI-partner2', title: 'Partner lead — Sam', source: 'Partner API', type: 'residential', contact: { name: 'Sam', phone: '901-555-0170' }, scope: PITCHES[9] }]);
   ok(r.salesblock && MAIL.length === 0 && SMS.length === 0 && inbox()[0].status === 'dismissed' && held().some(x => x.leadId === 'LI-partner2'), 'a pitch from any other source → no alert, off the Lead Inbox, held', { r, s: inbox()[0].status });
   r = await alertsApi.notifyNew([{ id: 'LI-bid9', title: 'ITB — Fire Station 9 reroof', source: 'bids@ (BuildingConnected)', type: 'commercial', scope: 'You are invited to bid. Unsubscribe from these e-mails. Book a call with our team.' }]);
-  ok(!r.salesblock && MAIL.length >= 1, 'a commercial bid invite is never screened as a pitch', r);
+  ok(!r.salesblock && r.messages >= 1 /* LEADROUTE2: alerted (no office@ e-mail) */, 'a commercial bid invite is never screened as a pitch', r);
   T = DAY; MAIL.length = 0;
   a = await api('tok-owner', 'POST', { act: 'notspam' }, { id: held().find(x => x.leadId === 'LI-partner2').id });
-  ok(a.ok && a.restored && inbox().find(x => x.id === 'LI-partner2').status === 'new' && MAIL.length >= 1, 'not spam → back in the Lead Inbox + alerted', { a, m: MAIL.map(x => x.subject) });
+  ok(a.ok && a.restored && inbox().find(x => x.id === 'LI-partner2').status === 'new' && a.alerted /* LEADROUTE2 */, 'not spam → back in the Lead Inbox + alerted', { a, m: MAIL.map(x => x.subject) });
   /* a night "emergency" that the night rule held back is logged with the reason */
   world(); T = NIGHT;
   setKv('gc_lead_inbox', [{ id: 'LI-drop3', status: 'new' }]);
   r = await alertsApi.notifyNew([Object.assign({ id: 'LI-drop3', title: 'Storm / insurance damage — Cy', contact: { name: 'Cy', phone: '901-555-0180' } }, dropOnly)]);
-  ok(!emergMail().length && MAIL.length >= 1 && spam().log.some(x => x.decision === 'night' && x.id === 'LI-drop3' && /night/.test(x.why)), 'night: drop-down-only → a normal lead alert, the decision logged', { m: MAIL.map(x => x.subject), log: spam().log });
+  ok(!emergMail().length && /* LEADROUTE2 (owner 11/9): an unassigned normal lead e-mails nobody (office@ is off) */ spam().log.some(x => x.decision === 'night' && x.id === 'LI-drop3' && /night/.test(x.why)), 'night: drop-down-only → a normal lead alert, the decision logged', { m: MAIL.map(x => x.subject), log: spam().log });
 
   /* ── 9. owner 11/01: no time promise in any automatic first reply (only an emergency may say "right away") ── */
   console.log('— 9. first replies: no time promise');

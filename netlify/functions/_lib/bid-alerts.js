@@ -685,6 +685,7 @@ function make(d){
     const r = await deliver(mailAssigned(x), null, [x.assigneeEmail]);
     if (!r.ok) await kvCas(KA, v => { const st = loadState(v); if (st.assigned) delete st.assigned[k]; return st; }).catch(() => {});
     let cell = null; try { cell = await require('./smsalert.js').assigned(x); } catch (e) {}   /* patch SMSALERT */
+    try { await require('./smsalert.js').lsaPmText(lead, x); } catch (e) {}   /* patch LSAFLOW: the LSA customer gets the PM's name and number */
     return { sent: r.ok ? 1 : 0, to: r.to, why: r.why || '', cell };
   }
   /* every 10 minutes: an assignment nobody's page reported (a phone offline, …). The first run only takes note. */

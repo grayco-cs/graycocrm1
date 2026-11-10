@@ -696,13 +696,19 @@ exports.fromEmail = async function(mail){
   }
   if (f.type === 'roofprice') f.type = 'estimate';
   const sid = crypto.createHash('sha256').update('leads@|' + (s(mail.messageId) || s(mail.id) || (low(f.email) + '|' + f.phone + '|' + s(mail.subject) + '|' + s(mail.date)))).digest('hex').slice(0, 24);
-  const r = await fileLead(f, { sid, source: lsa ? 'Google LSA' : MAIL_SOURCE, leadExtra: lsa ? { mkSource: 'Google Ads', leadSource: 'Google LSA', lsaCheck: 'pending' } : undefined /* LSACHECK */, how: 'from an e-mail to leads@grayco-cs.com' + (s(mail.subject) ? ' ("' + clip(mail.subject, 80) + '")' : ''), notes: mail.rawRef ? ['The e-mail is kept on the lead (Lead Inbox).'] : [] });
+  const r = await fileLead(f, { sid, source: lsa ? 'Google LSA' : MAIL_SOURCE, leadExtra: lsa ? { mkSource: 'Google Ads', leadSource: 'Google LSA', lsaCheck: 'pending', lsaLink: lsaLinkOf(s(mail.html) + ' ' + text) } : undefined /* LSACHECK */, how: 'from an e-mail to leads@grayco-cs.com' + (s(mail.subject) ? ' ("' + clip(mail.subject, 80) + '")' : ''), notes: mail.rawRef ? ['The e-mail is kept on the lead (Lead Inbox).'] : [] });
   const alerts = r.action === 'added' ? await alertLead(r.rec) : { skipped: r.action };
   return { ok: true, lead: r.id, action: r.action, alerts, type: f.type };
 };
 
+/* patch LSALINK (owner 11/10: "can our Twilio send the Google LSA reply link for saying the lead is bad"): the link to this lead in
+   Google (from Google's lead e-mail), so a BAD text answer can carry it; none found → '' (the text then gives the LSA leads page) */
+function lsaLinkOf(h){
+  const urls = (s(h).replace(/&amp;/g, '&').match(/https?:\/\/[^\s"'<>)]+/g) || []);
+  return urls.find(u => /ads\.google\.com\/localservices\/(lead|leads|message)|localservices\.google\.com/i.test(u) && !/unsubscribe|support|help|policies|privacy/i.test(u)) || '';
+}
 /* patch AUTO6: the missed-call text-back (missed-call.js) files its leads the same way */
-exports._lib = { fileLead, alertLead, findCustomer, phone10, tidyPhone, SOURCE };
+exports._lib = { fileLead, alertLead, findCustomer, phone10, tidyPhone, SOURCE, lsaLinkOf };
 
 /* patch AUTO5: "Refer a friend" in the customer portal (portal-sign.js refer) — a GrayCo lead on the Lead Inbox,
    assigned to the referring customer's PM (they know the family; the 4 h / 24 h reach-out reminders follow them),

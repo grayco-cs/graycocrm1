@@ -85,7 +85,10 @@ function dueSoon(l, until){
 /* the lead's person, if any */
 function assignee(l){ return s(l && (l.pm || l.estimator || l.apm)); }
 function isHeld(l){ return !!(l && l.hold && l.hold.state === 'held' && s(l.hold.name) && !assignee(l)); }
-function isDue(l, now){ return isHeld(l) && Date.parse(l.hold.until) <= (typeof now === 'number' ? now : Date.now()); }
+/* patch LSAFLOW (owner 11/10: "once the lead is good send it to admin for approval and who to be PM"): a Google LSA lead never
+   auto-assigns at 5 PM — Wesley / Nick mark it good (text or CRM), then an admin approves or picks the PM */
+function lsaWait(l){ if (!l) return false; var ex = l.leadExtra || {}; return /google\s*lsa|local\s*services/i.test([l.source, l.leadSource, ex.leadSource].map(s).join(' ')) || /^(pending|good|bad|pm_good|pm_bad|no_answer)$/.test(s(l.lsaCheck || ex.lsaCheck)); }
+function isDue(l, now){ return isHeld(l) && !lsaWait(l) && Date.parse(l.hold.until) <= (typeof now === 'number' ? now : Date.now()); }
 
 /* ── GrayCo lead or the PM's own? ── */
 /* company channels, RoofScout and anything the CRM / marketing made — these always win */
@@ -204,7 +207,7 @@ function dueItems(items, crmLeads, now){
     if (assignee(it) || /^(dismissed|merged)$/.test(s(it.status))) { drop.push({ id: it.id, why: assignee(it) ? 'assigned' : s(it.status) }); return; }
     var c = byInbox[it.id];
     if (c && (assignee(c) || (c.hold && c.hold.state && c.hold.state !== 'held'))) { drop.push({ id: it.id, why: 'changed in the CRM', crm: c }); return; }
-    if (Date.parse(it.hold.until) <= t) assign.push(it);
+    if (Date.parse(it.hold.until) <= t && !lsaWait(it)) assign.push(it);   /* patch LSAFLOW */
   });
   /* a lead the CRM held itself (no Lead Inbox item, e.g. Roof Ignite): the notice goes out from here, the CRM writes it */
   arr(crmLeads).forEach(function(l){ if (l && !l.inboxId && isDue(l, t) && !l.deleted && !l._deleted) crmOnly.push(l); });

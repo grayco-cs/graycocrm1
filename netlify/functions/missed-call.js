@@ -436,6 +436,7 @@ async function inboundSms(p){
   try { if (await require('./_lib/salesguard.js').def().blocked({ phone: ph }, { via: 'sms', text: body })) return { blocked: true }; } catch (e) {}   /* patch SALESBLOCK: a blocked number — no reply, lead or alert (logged, counted) */
   try { const sa = await SA().staffInbound(ph, body, s(p.MessageSid || p.SmsSid)); if (sa) return Object.assign({ cellAlerts: true }, sa); } catch (e) {}   /* patch SMSALERT: a staff cell in the alerts table — a reply to the last alert, never a lead */
   if (START.test(body)) { await stateCas(st => { delete st.optout[ph]; return true; }); return { optin: true }; }
+  try { await SA().lsaCustomer(ph, body); } catch (e) {}   /* patch LSAFLOW: a Google LSA lead's YES to the qualify text (the normal path goes on) */
   /* Twilio retries a webhook it thinks failed: the same message is handled once */
   let fresh = false;
   await stateCas(st => { st.seen = st.seen && typeof st.seen === 'object' ? st.seen : {}; if (st.seen[sid]) return undefined; st.seen[sid] = at; fresh = true; return true; });
