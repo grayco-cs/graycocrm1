@@ -6,11 +6,12 @@
 
 Writes training/<course>.pdf for every course (served at crm.grayco-cs.com/training/…, linked from each course's first
 part). The answer keys are NOT put in the site: they go to the out dir (default: the current directory) for admins.
-Look (owner 11/10: "more training looking, not proposal looking"): a cover page (navy band, white GrayCo logo, course title,
-what's inside, how to use it, trainee lines), each module on its own page under a numbered module banner with a "Key terms"
-box, a knowledge check with answer bubbles, and a completion record. Needs Node with Playwright.
+Look (owner 11/10: "more training looking, not proposal looking"; "center logo and make those training way more sleek"):
+Inter type; a full-bleed navy cover with the white GrayCo logo centered; a course overview page; each module opens with a
+large module number, title and key-term chips; the GrayCo logo centered in the header of every inside page; a knowledge
+check with answer bubbles; a certificate-style completion record. Needs Node with Playwright and the Inter font.
 """
-import html, json, os, re, subprocess, sys, tempfile
+import base64, html, json, os, re, subprocess, sys, tempfile
 here = os.path.dirname(os.path.abspath(__file__))
 root = os.path.dirname(here)
 sys.path.insert(0, here)
@@ -18,61 +19,99 @@ import restotrain_content as C
 
 OUT_KEYS = sys.argv[1] if len(sys.argv) > 1 else '.'
 LOGO_WHITE = 'file://' + os.path.join(root, 'img', 'grayco-logo-white.png')
-LOGO = 'file://' + os.path.join(root, 'grayco-logo.jpg')
+def clear_logo():
+    """the color GrayCo logo with its white background made transparent (so it sits cleanly on tinted panels)"""
+    from PIL import Image
+    im = Image.open(os.path.join(root, 'grayco-logo.jpg')).convert('RGBA')
+    im = im.crop(im.convert('L').point(lambda v: 255 if v < 235 else 0).getbbox())
+    px = [(r, g, b, 0 if min(r, g, b) > 238 else a) for r, g, b, a in (im.get_flattened_data() if hasattr(im, "get_flattened_data") else im.getdata())]
+    im.putdata(px)
+    im.thumbnail((420, 420))
+    out = os.path.join(tempfile.gettempdir(), 'grayco-logo-clear.png'); im.save(out); return out
+
+
+_CL = clear_logo()
+LOGO = 'file://' + _CL
+LOGO_B64 = 'data:image/png;base64,' + base64.b64encode(open(_CL, 'rb').read()).decode()
 CERT = {'resto-water': 'WRT (Water Restoration Technician)', 'resto-fire': 'FSRT (Fire and Smoke Restoration Technician)',
         'resto-odor': 'OCT (Odor Control Technician)'}
-NAVY, ACC = '#0f2440', '#d97706'
-CSS = """@page{size:Letter;margin:0.75in 0.75in 0.8in}
-@page :first{margin:0}
+NAVY, NAVY2, ACC, INK, MUTED, LINE, SOFT = '#0c1f3a', '#173a66', '#e08a1e', '#1f2a37', '#6b7686', '#e4e8ee', '#f5f7fa'
+CSS = """@page{size:Letter;margin:0.95in 0.85in 0.8in}
+@page cover{margin:0}
 *{box-sizing:border-box}
-body{font-family:Arial,Helvetica,sans-serif;color:#1e293b;font-size:10.5pt;line-height:1.5;margin:0}
-b,strong{color:#0f172a}
+html{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+body{font-family:Inter,Arial,sans-serif;color:INK;font-size:10pt;line-height:1.62;margin:0;font-feature-settings:"ss01","cv11"}
+b,strong{color:NAVY;font-weight:650}
 /* cover */
-.cover{height:11in;width:8.5in;position:relative;break-after:page;overflow:hidden}
-.cv-top{background:NAVY;color:#fff;padding:0.7in 0.8in 0.55in;height:6.1in;position:relative}
-.cv-top img{height:70px}
-.cv-kicker{margin-top:0.55in;font-size:11pt;letter-spacing:3px;text-transform:uppercase;color:#fcd34d;font-weight:bold}
-.cv-title{font-size:34pt;line-height:1.1;font-weight:bold;margin:10px 0 14px}
-.cv-sub{font-size:12pt;color:#cbd5e1;max-width:5.8in}
-.cv-stripe{height:10px;background:ACC}
-.cv-body{padding:0.4in 0.8in 0;display:flex;gap:0.45in}
-.cv-col{flex:1}
-.cv-h{font-size:10pt;font-weight:bold;letter-spacing:2px;text-transform:uppercase;color:NAVY;margin:0 0 8px}
-.cv-list{margin:0;padding:0;list-style:none}
-.cv-list li{display:flex;gap:8px;margin:0 0 6px;font-size:10pt}
-.cv-n{flex:0 0 22px;height:22px;border-radius:50%;background:NAVY;color:#fff;font-weight:bold;font-size:9pt;display:flex;align-items:center;justify-content:center}
-.cv-line{border-bottom:1px solid #94a3b8;height:30px;margin:0 0 4px;font-size:8.5pt;color:#64748b;display:flex;align-items:flex-end}
-.cv-foot{position:absolute;bottom:0.35in;left:0.8in;right:0.8in;font-size:8.5pt;color:#64748b;display:flex;justify-content:space-between}
-/* modules */
-.mod{break-before:page}
-.mod-tag{display:inline-block;background:ACC;color:#fff;font-weight:bold;font-size:9pt;letter-spacing:2px;padding:4px 10px;border-radius:4px;text-transform:uppercase}
-.mod-title{font-size:21pt;font-weight:bold;color:NAVY;margin:8px 0 4px;line-height:1.15}
-.mod-bar{height:4px;background:NAVY;width:100%;margin:0 0 14px;border-radius:2px}
-.terms{border:1px solid #bfdbfe;background:#eff6ff;border-radius:8px;padding:9px 12px;margin:0 0 14px;font-size:9.5pt}
-.terms b{color:NAVY;letter-spacing:1px;text-transform:uppercase;font-size:8.5pt;display:block;margin-bottom:4px}
-.terms span{display:inline-block;background:#fff;border:1px solid #bfdbfe;border-radius:12px;padding:1px 9px;margin:2px 4px 2px 0}
-h3{font-size:12pt;color:NAVY;margin:14px 0 6px;padding-left:8px;border-left:4px solid ACC;break-after:avoid}
-p{margin:0 0 8px}ul,ol{margin:0 0 10px;padding-left:20px}li{margin:0 0 4px}
-ol li::marker{font-weight:bold;color:NAVY}
-.done{margin-top:16px;border:1px dashed #94a3b8;border-radius:8px;padding:8px 12px;font-size:9.5pt;color:#334155;break-inside:avoid}
-.box{display:inline-block;width:13px;height:13px;border:1.5px solid NAVY;border-radius:3px;vertical-align:-2px;margin-right:6px}
+.cover{page:cover;height:11in;width:8.5in;position:relative;break-after:page;overflow:hidden;color:#fff;text-align:center;
+  background:radial-gradient(120% 70% at 50% 0%,NAVY2 0%,NAVY 62%,#081528 100%)}
+.cv-ring{position:absolute;left:50%;top:3.1in;width:7.6in;height:7.6in;margin-left:-3.8in;border:1px solid rgba(255,255,255,.07);border-radius:50%}
+.cv-ring.r2{top:3.75in;width:6.2in;height:6.2in;margin-left:-3.1in}
+.cv-logo{padding-top:0.95in}.cv-logo img{height:96px}
+.cv-kicker{margin-top:0.85in;font-size:9.5pt;letter-spacing:5px;text-transform:uppercase;color:ACC;font-weight:600}
+.cv-title{font-family:"Inter Display",Inter,sans-serif;font-size:44pt;line-height:1.04;font-weight:800;letter-spacing:-.5px;margin:14px auto 0;max-width:6.6in}
+.cv-rule{width:56px;height:3px;background:ACC;margin:26px auto;border-radius:2px}
+.cv-sub{font-size:12pt;font-weight:300;color:#c7d2e0;max-width:5.4in;margin:0 auto;line-height:1.55}
+.cv-stats{position:absolute;bottom:1.25in;left:0;right:0;display:flex;justify-content:center;gap:0}
+.cv-stat{padding:0 26px;border-left:1px solid rgba(255,255,255,.18)}.cv-stat:first-child{border-left:0}
+.cv-stat .n{font-family:"Inter Display",Inter;font-size:22pt;font-weight:700;color:#fff;line-height:1}
+.cv-stat .l{font-size:7.5pt;letter-spacing:2.5px;text-transform:uppercase;color:#93a3b8;margin-top:6px}
+.cv-foot{position:absolute;bottom:0.45in;left:0;right:0;font-size:7.5pt;letter-spacing:1.5px;text-transform:uppercase;color:#7b8ba3}
+/* section openers */
+.mod{break-before:page}.mod:first-child{break-before:auto}
+.eyebrow{font-size:8pt;letter-spacing:3.5px;text-transform:uppercase;color:ACC;font-weight:600}
+.mhead{display:flex;align-items:flex-end;gap:18px;padding-bottom:16px;border-bottom:1px solid LINE;margin-bottom:18px}
+.mnum{font-family:"Inter Display",Inter;font-size:58pt;line-height:.8;font-weight:200;color:ACC;letter-spacing:-2px}
+.mtitle{font-family:"Inter Display",Inter;font-size:23pt;line-height:1.1;font-weight:700;color:NAVY;letter-spacing:-.3px;margin-top:6px}
+.terms{background:SOFT;border-radius:12px;padding:12px 14px 9px;margin:0 0 20px}
+.terms .eyebrow{color:MUTED;letter-spacing:2.5px;margin-bottom:7px}
+.chip{display:inline-block;background:#fff;border:1px solid LINE;border-radius:999px;padding:2px 11px;margin:0 5px 5px 0;font-size:8.6pt;color:NAVY;font-weight:500}
+h3{font-family:"Inter Display",Inter;font-size:12.5pt;font-weight:650;color:NAVY;margin:18px 0 6px;break-after:avoid;display:flex;align-items:center;gap:9px}
+h3:before{content:"";width:7px;height:7px;border-radius:2px;background:ACC;flex:0 0 7px}
+p{margin:0 0 9px}
+ul,ol{margin:0 0 12px;padding-left:0;list-style:none}
+li{position:relative;margin:0 0 6px;padding-left:20px}
+ul>li:before{content:"";position:absolute;left:4px;top:.62em;width:5px;height:5px;border-radius:50%;background:ACC}
+ol{counter-reset:n}
+ol>li{counter-increment:n;padding-left:30px}
+ol>li:before{content:counter(n);position:absolute;left:0;top:.15em;width:20px;height:20px;border-radius:50%;background:NAVY;color:#fff;font-size:8pt;font-weight:700;text-align:center;line-height:20px}
+.done{margin-top:22px;display:flex;align-items:center;gap:10px;background:SOFT;border-radius:10px;padding:10px 14px;font-size:8.8pt;color:MUTED;break-inside:avoid}
+.box{width:15px;height:15px;border:1.5px solid NAVY;border-radius:4px;flex:0 0 15px;background:#fff}
+/* overview */
+.ov{display:flex;gap:30px}
+.ov .l{flex:1.15}.ov .r{flex:1}
+.tl{margin:0;padding:0;list-style:none}
+.tl li{padding:0 0 0 40px;margin:0;min-height:40px;position:relative}
+.tl li:before{content:attr(data-n);position:absolute;left:0;top:0;width:26px;height:26px;border-radius:50%;background:#fff;border:1.5px solid NAVY;color:NAVY;font-size:8.5pt;font-weight:700;text-align:center;line-height:23px}
+.tl li:after{content:"";position:absolute;left:13px;top:28px;bottom:2px;width:1.5px;background:LINE}
+.tl li:last-child:after{display:none}
+.tl .t{font-weight:600;color:NAVY;font-size:10pt;line-height:26px}
+.card{border:1px solid LINE;border-radius:14px;padding:16px 18px;margin:0 0 16px}
+.card h4{margin:0 0 10px;font-size:8pt;letter-spacing:3px;text-transform:uppercase;color:ACC}
+.card ol>li{font-size:9.4pt}
+.line{border-bottom:1px solid #b8c2cf;height:30px;margin:0 0 6px;font-size:7.5pt;letter-spacing:1.5px;text-transform:uppercase;color:MUTED;display:flex;align-items:flex-end;padding-bottom:3px}
 /* knowledge check */
-.kc-intro{background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:9px 12px;margin:0 0 14px;font-size:10pt}
-.q{break-inside:avoid;margin:0 0 12px}
-.q .qt{font-weight:bold;color:#0f172a;margin-bottom:4px}
-.q .qn{display:inline-block;min-width:24px;color:ACC}
-.opt{margin:2px 0 2px 24px;font-size:10pt}
-.bub{display:inline-block;width:15px;height:15px;border:1.5px solid #475569;border-radius:50%;text-align:center;font-size:7.5pt;line-height:12px;margin-right:7px;color:#475569;font-weight:bold}
+.kc-intro{border-left:3px solid ACC;padding:4px 0 4px 14px;margin:0 0 20px;color:MUTED;font-size:9.6pt}
+.qs{columns:2;column-gap:28px}
+.q{break-inside:avoid;margin:0 0 15px}
+.q .qt{font-weight:600;color:NAVY;font-size:9.5pt;line-height:1.45;margin-bottom:6px;display:flex;gap:8px}
+.q .qn{flex:0 0 auto;color:ACC;font-weight:700}
+.opt{margin:3px 0 3px 18px;font-size:9.2pt;display:flex;align-items:flex-start;gap:8px;color:INK}
+.bub{flex:0 0 15px;width:15px;height:15px;border:1.2px solid #8a96a8;border-radius:50%;text-align:center;font-size:7pt;line-height:13px;color:#8a96a8;font-weight:600;margin-top:1px}
 .bub.on{background:NAVY;border-color:NAVY;color:#fff}
-.why{margin:3px 0 0 24px;font-size:9.5pt;color:#334155}
-/* completion */
-.cert{border:3px double NAVY;border-radius:10px;padding:26px 34px;text-align:center;margin-top:10px}
-.cert img{height:60px}
-.cert .k{letter-spacing:3px;text-transform:uppercase;font-size:9pt;color:ACC;font-weight:bold;margin-top:10px}
-.cert .t{font-size:20pt;font-weight:bold;color:NAVY;margin:6px 0 2px}
-.sig{display:flex;gap:28px;margin-top:26px;text-align:left}
+.why{margin:4px 0 0 41px;font-size:8.8pt;color:MUTED}
+.qs.k{columns:1}
+/* certificate */
+.cert{position:relative;border:1px solid LINE;border-radius:18px;padding:44px 50px 34px;text-align:center;margin-top:6px;background:linear-gradient(180deg,#fff 0%,SOFT 100%)}
+.cert:before{content:"";position:absolute;inset:8px;border:1.5px solid ACC;border-radius:12px;opacity:.55}
+.cert img{height:62px;position:relative}
+.cert .eyebrow{margin-top:18px;position:relative}
+.cert .t{font-family:"Inter Display",Inter;font-size:24pt;font-weight:750;color:NAVY;margin:10px 0 4px;position:relative;letter-spacing:-.3px}
+.cert .s{color:MUTED;position:relative}
+.sig{display:flex;gap:34px;margin-top:34px;text-align:left;position:relative}
 .sig div{flex:1}
-""".replace('NAVY', NAVY).replace('ACC', ACC)
+.note{margin-top:18px;font-size:8.8pt;color:MUTED;text-align:center}
+""".replace('NAVY2', NAVY2).replace('NAVY', NAVY).replace('ACC', ACC).replace('INK', INK).replace('MUTED', MUTED).replace('LINE', LINE).replace('SOFT', SOFT)
 
 
 def inline(s):
@@ -100,6 +139,7 @@ def md(t):
         m = re.fullmatch(r'\*\*([^*]+)\*\*', txt.strip())
         out.append('<h3>' + html.escape(m.group(1)) + '</h3>' if m else '<p>' + inline(txt) + '</p>')
     return '\n'.join(out)
+
 
 
 TERMS = {   # the "Key terms" box on each module page
@@ -154,56 +194,63 @@ def page(title, body):
     return '<!doctype html><html><head><meta charset="utf-8"><title>' + html.escape(title) + '</title><style>' + CSS + '</style></head><body>' + body + '</body></html>'
 
 
-def cover(c, kicker, sub, lessons):
-    mods = ''.join('<li><span class="cv-n">%d</span><span>%s</span></li>' % (i, html.escape(title_of(p))) for i, p in enumerate(lessons, 1))
-    mods += '<li><span class="cv-n">✓</span><span>Knowledge check and completion record</span></li>'
-    how = ''.join('<li><span class="cv-n">%d</span><span>%s</span></li>' % (i, t) for i, t in enumerate([
+def cover(c, kicker, sub, stats):
+    st = ''.join('<div class="cv-stat"><div class="n">%s</div><div class="l">%s</div></div>' % (n, l) for n, l in stats)
+    return ('<section class="cover"><div class="cv-ring"></div><div class="cv-ring r2"></div>'
+            '<div class="cv-logo"><img src="' + LOGO_WHITE + '"></div><div class="cv-kicker">' + kicker + '</div>'
+            '<div class="cv-title">' + html.escape(c['title'].replace('GrayCo ', '')) + '</div><div class="cv-rule"></div>'
+            '<div class="cv-sub">' + sub + '</div><div class="cv-stats">' + st + '</div>'
+            '<div class="cv-foot">GrayCo Construction Services, LLC &nbsp;·&nbsp; Bartlett, Tennessee</div></section>')
+
+
+def overview(c, lessons):
+    tl = ''.join('<li data-n="%02d"><div class="t">%s</div></li>' % (i, html.escape(title_of(p))) for i, p in enumerate(lessons, 1))
+    tl += '<li data-n="✓"><div class="t">Knowledge check &amp; completion record</div></li>'
+    how = ''.join('<li>%s</li>' % t for t in [
         'Read one module at a time.',
-        'Tick it off in the CRM under <b>Training</b>.',
-        'Take the test in the CRM: each answer shows right away.',
+        'Tick each module off in the CRM under <b>Training</b>.',
+        'Take the test in the CRM. Each answer shows right away.',
         'Score <b>%d of %d</b> or better to pass.' % (C.PASS, len(c['quiz'])),
-        'Ask your supervisor about anything unclear.'], 1))
-    return ('<section class="cover"><div class="cv-top"><img src="' + LOGO_WHITE + '"><div class="cv-kicker">' + kicker + '</div>'
-            '<div class="cv-title">' + html.escape(c['title'].replace('GrayCo ', '')) + '</div><div class="cv-sub">' + sub + '</div></div>'
-            '<div class="cv-stripe"></div><div class="cv-body"><div class="cv-col"><div class="cv-h">In this course</div><ul class="cv-list">' + mods + '</ul></div>'
-            '<div class="cv-col"><div class="cv-h">How to use this manual</div><ul class="cv-list">' + how + '</ul>'
-            '<div class="cv-h" style="margin-top:18px">Trainee</div><div class="cv-line">Name</div><div class="cv-line">Start date</div><div class="cv-line">Trainer</div></div></div>'
-            '<div class="cv-foot"><span>GrayCo Construction Services, LLC · 4007 Broadway Rd., Bartlett, TN 38135 · (901) 585-0944</span></div></section>')
+        'Ask your supervisor about anything unclear.'])
+    return ('<section class="mod"><div class="eyebrow">Course overview</div><div class="mtitle" style="margin:6px 0 22px">What you will learn</div>'
+            '<div class="ov"><div class="l"><ul class="tl">' + tl + '</ul></div><div class="r">'
+            '<div class="card"><h4>How to use this manual</h4><ol>' + how + '</ol></div>'
+            '<div class="card"><h4>Trainee</h4><div class="line">Name</div><div class="line">Start date</div><div class="line">Trainer</div></div>'
+            '</div></div></section>')
 
 
 def manual(c):
     lessons = [p for p in c['parts'] if p['id'] not in ('print', 'quiz')]
-    sub = ('GrayCo\'s own training for our crews. Covers the subjects of the IICRC ' + html.escape(CERT.get(c['id'], '')) +
-           ' course, so it is also your study guide for that exam.')
-    b = [cover(c, 'GrayCo Employee Training', sub, lessons)]
+    sub = 'GrayCo\'s own training for our crews. It covers the subjects of the IICRC ' + html.escape(CERT.get(c['id'], '')) + ' course, so it doubles as your exam study guide.'
+    b = [cover(c, 'GrayCo Employee Training', sub, [(str(len(lessons)), 'Modules'), (str(len(c['quiz'])), 'Test questions'), ('%d/%d' % (C.PASS, len(c['quiz'])), 'To pass')]),
+         overview(c, lessons)]
     for i, p in enumerate(lessons, 1):
         terms = TERMS.get(p['id']) or key_terms(p['body'])
-        b.append('<section class="mod"><span class="mod-tag">Module %d of %d</span><div class="mod-title">%s</div><div class="mod-bar"></div>' % (i, len(lessons), html.escape(title_of(p))) +
-                 ('<div class="terms"><b>Key terms in this module</b>' + ''.join('<span>' + html.escape(t) + '</span>' for t in terms) + '</div>' if terms else '') +
+        b.append('<section class="mod"><div class="mhead"><div class="mnum">%02d</div><div><div class="eyebrow">Module %d of %d</div><div class="mtitle">%s</div></div></div>' % (i, i, len(lessons), html.escape(title_of(p))) +
+                 ('<div class="terms"><div class="eyebrow">Key terms</div>' + ''.join('<span class="chip">' + html.escape(t) + '</span>' for t in terms) + '</div>' if terms else '') +
                  md(p['body']) +
-                 '<div class="done"><span class="box"></span>I finished Module %d. Tick it off in the CRM: Forms &amp; Docs → Training → %s.</div></section>' % (i, html.escape(c['title'])))
-    b.append('<section class="mod"><span class="mod-tag">Knowledge check</span><div class="mod-title">Test yourself</div><div class="mod-bar"></div>'
-             '<div class="kc-intro">Fill in the bubble for the best answer. This is the same test as in the CRM, where each answer shows right away and your score is saved. '
-             'You need <b>%d of %d</b> to pass.</div>' % (C.PASS, len(c['quiz'])))
+                 '<div class="done"><span class="box"></span><span>Finished Module %d? Tick it off in the CRM: Forms &amp; Docs → Training → %s.</span></div></section>' % (i, html.escape(c['title'])))
+    b.append('<section class="mod"><div class="mhead"><div class="mnum">✓</div><div><div class="eyebrow">Knowledge check</div><div class="mtitle">Test yourself</div></div></div>'
+             '<div class="kc-intro">Fill in the bubble for the best answer. It is the same test as in the CRM, where each answer shows right away and your score is saved. You need <b>%d of %d</b> to pass.</div><div class="qs">' % (C.PASS, len(c['quiz'])))
     for n, (q, ch, a, why) in enumerate(c['quiz'], 1):
-        b.append('<div class="q"><div class="qt"><span class="qn">%d.</span>%s</div>%s</div>' % (n, html.escape(q), ''.join('<div class="opt"><span class="bub">%s</span>%s</div>' % ('ABCD'[j], html.escape(x)) for j, x in enumerate(ch))))
-    b.append('</section>')
-    b.append('<section class="mod"><span class="mod-tag">Completion record</span><div class="mod-title">You finished the course</div><div class="mod-bar"></div>'
-             '<div class="cert"><img src="' + LOGO + '"><div class="k">Certificate of completion</div><div class="t">' + html.escape(c['title']) + '</div>'
-             '<div style="margin-top:6px">GrayCo Construction Services, LLC employee training</div>'
-             '<div class="sig"><div><div class="cv-line">Trainee name</div><div class="cv-line">Trainee signature</div><div class="cv-line">Date completed</div></div>'
-             '<div><div class="cv-line">Test score (out of %d)</div><div class="cv-line">Trainer / supervisor</div><div class="cv-line">Date reviewed</div></div></div></div>'
-             '<p style="margin-top:18px;font-size:9.5pt;color:#475569">Keep a copy in the employee\'s file. The CRM keeps each person\'s test score under Training → Team progress.</p></section>' % len(c['quiz']))
-    return page(c['title'], '\n'.join(b))
+        b.append('<div class="q"><div class="qt"><span class="qn">%02d</span><span>%s</span></div>%s</div>' % (n, html.escape(q), ''.join('<div class="opt"><span class="bub">%s</span><span>%s</span></div>' % ('ABCD'[j], html.escape(x)) for j, x in enumerate(ch))))
+    b.append('</div></section>')
+    b.append('<section class="mod"><div class="eyebrow" style="text-align:center">Completion record</div>'
+             '<div class="cert"><img src="' + LOGO + '"><div class="eyebrow">Certificate of completion</div><div class="t">' + html.escape(c['title']) + '</div>'
+             '<div class="s">GrayCo Construction Services, LLC &nbsp;·&nbsp; Employee training</div>'
+             '<div class="sig"><div><div class="line">Trainee name</div><div class="line">Trainee signature</div><div class="line">Date completed</div></div>'
+             '<div><div class="line">Test score (out of %d)</div><div class="line">Trainer / supervisor</div><div class="line">Date reviewed</div></div></div></div>'
+             '<div class="note">Keep a copy in the employee file. The CRM keeps every test score under Training → Team progress.</div></section>' % len(c['quiz']))
+    return page(c['title'], b[0]), page(c['title'], '\n'.join(b[1:]))
 
 
 def key(c):
-    b = [cover(c, 'Trainer answer key', 'Answers and the reason for each, for trainers and admins only. Do not hand this out. Passing score: %d of %d.' % (C.PASS, len(c['quiz'])), []).replace('<div class="cv-h" style="margin-top:18px">Trainee</div><div class="cv-line">Name</div><div class="cv-line">Start date</div><div class="cv-line">Trainer</div>', ''),
-         '<section class="mod"><span class="mod-tag">Answer key</span><div class="mod-title">Knowledge check answers</div><div class="mod-bar"></div>']
+    b = [cover(c, 'Trainer answer key', 'Answers and the reason for each. For trainers and admins only. Please do not hand this out.', [(str(len(c['quiz'])), 'Questions'), ('%d/%d' % (C.PASS, len(c['quiz'])), 'To pass')]),
+         '<section class="mod"><div class="mhead"><div class="mnum">✓</div><div><div class="eyebrow">Answer key</div><div class="mtitle">Knowledge check answers</div></div></div><div class="qs k">']
     for n, (q, ch, a, why) in enumerate(c['quiz'], 1):
-        b.append('<div class="q"><div class="qt"><span class="qn">%d.</span>%s</div><div class="opt"><span class="bub on">%s</span><b>%s</b></div><div class="why">%s</div></div>' % (n, html.escape(q), 'ABCD'[a], html.escape(ch[a]), html.escape(why)))
-    b.append('</section>')
-    return page(c['title'] + ' Answer Key', '\n'.join(b))
+        b.append('<div class="q"><div class="qt"><span class="qn">%02d</span><span>%s</span></div><div class="opt"><span class="bub on">%s</span><span><b>%s</b></span></div><div class="why">%s</div></div>' % (n, html.escape(q), 'ABCD'[a], html.escape(ch[a]), html.escape(why)))
+    b.append('</div></section>')
+    return page(c['title'] + ' Answer Key', b[0]), page(c['title'] + ' Answer Key', '\n'.join(b[1:]))
 
 
 jobs = []
@@ -212,9 +259,19 @@ os.makedirs(os.path.join(root, 'training'), exist_ok=True)
 for c in C.COURSES:
     for kind, fn, out in (('m', manual, os.path.join(root, 'training', c['pdf'])),
                           ('k', key, os.path.join(OUT_KEYS, c['pdf'].replace('.pdf', '-answer-key.pdf')))):
-        h = os.path.join(tmp, kind + c['id'] + '.html'); open(h, 'w', encoding='utf-8').write(fn(c))
-        jobs.append({'html': h, 'pdf': os.path.abspath(out), 'footer': 'GrayCo Employee Training · ' + c['title'] + (' · Answer Key' if kind == 'k' else '')})
-js = """const {chromium}=require('playwright');(async()=>{const b=await chromium.launch();const p=await b.newPage();
-for(const j of %s){await p.goto('file://'+j.html,{waitUntil:'load'});await p.pdf({path:j.pdf,preferCSSPageSize:true,printBackground:true,displayHeaderFooter:true,
-headerTemplate:'<span></span>',footerTemplate:'<div style="font-size:8px;width:100%%;padding:0 0.75in;display:flex;justify-content:space-between;font-family:Arial;color:#64748b"><span>'+j.footer+'</span><span>Page <span class=pageNumber></span> of <span class=totalPages></span></span></div>'});console.log('wrote',j.pdf)}await b.close()})()""" % json.dumps(jobs)
-subprocess.run(['node', '-e', js], check=True)
+        cv, body = fn(c)
+        hc = os.path.join(tmp, kind + c['id'] + '-cover.html'); open(hc, 'w', encoding='utf-8').write(cv)
+        hb = os.path.join(tmp, kind + c['id'] + '.html'); open(hb, 'w', encoding='utf-8').write(body)
+        jobs.append({'cover': hc, 'html': hb, 'pdf': os.path.abspath(out), 'footer': html.escape(c['title'] + (' · Answer key' if kind == 'k' else ''))})
+HEADER = '<div style="width:100%%;text-align:center;padding-top:0.32in"><img src="%s" style="height:26px"></div>' % LOGO_B64
+js = """const {chromium}=require('playwright');(async()=>{const b=await chromium.launch();const p=await b.newPage();const H=%s;
+for(const j of %s){await p.goto('file://'+j.cover,{waitUntil:'load'});await p.evaluate(()=>document.fonts.ready);await p.pdf({path:j.pdf+'.cover.pdf',width:'8.5in',height:'11in',printBackground:true,margin:{top:0,right:0,bottom:0,left:0}});
+await p.goto('file://'+j.html,{waitUntil:'load'});await p.evaluate(()=>document.fonts.ready);await p.pdf({path:j.pdf+'.body.pdf',preferCSSPageSize:true,printBackground:true,displayHeaderFooter:true,
+headerTemplate:H,footerTemplate:'<div style="font-family:Inter,Arial;font-size:7px;letter-spacing:1.4px;text-transform:uppercase;width:100%%;padding:0 0.85in;display:flex;justify-content:space-between;color:#8a96a8"><span>GrayCo Employee Training &nbsp;·&nbsp; '+j.footer+'</span><span><span class=pageNumber></span> / <span class=totalPages></span></span></div>'});console.log('wrote',j.pdf)}await b.close()})()""" % (json.dumps(HEADER), json.dumps(jobs))
+jsf = os.path.join(tmp, 'print.cjs'); open(jsf, 'w').write(js)
+subprocess.run(['node', jsf], check=True, cwd=root)
+import pymupdf
+for j in jobs:
+    d = pymupdf.open(j['pdf'] + '.cover.pdf'); d.insert_pdf(pymupdf.open(j['pdf'] + '.body.pdf'))
+    d.set_metadata({'title': os.path.basename(j['pdf']).replace('-', ' ').replace('.pdf', '').title(), 'author': 'GrayCo Construction Services, LLC'})
+    d.save(j['pdf'], garbage=3, deflate=True); os.remove(j['pdf'] + '.cover.pdf'); os.remove(j['pdf'] + '.body.pdf')
