@@ -496,6 +496,7 @@ async function lsaReply(ph, body, who){
   if (code && !rec) { reason = (m[2] + ' ' + reason).trim(); code = ''; }
   if (!rec) rec = list.filter(x => !x.done).slice(-1)[0] || list.slice(-1)[0];
   const good = /^(good|g|👍|yes)$/i.test(m[1]);
+  try { await _D.ack(rec.leadId, 'answered the LSA text (' + (who.name || who.email) + ')'); } catch (e) {}   /* any GOOD / BAD / NA answer acknowledges an emergency LSA lead: no escalation calls */
   /* LSANA (owner 11/10: "also put in leads as not answered — not necessarily a bad lead but no answer once we got the lead, will revisit") */
   if (/^(no[\s-]*answer|noanswer|n\/a|na|vm|voice\s*mail)$/i.test(m[1])) {
     const r0 = await _D.lsaDecide({ leadId: rec.leadId, name: rec.name, phone: rec.phone, code: rec.code, noAnswer: true, good: false, reason: reason, notes: reason, by: who.name || who.email, byEmail: who.email });
