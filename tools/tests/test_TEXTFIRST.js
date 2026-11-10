@@ -10,7 +10,8 @@ const USERS = [{ name: 'Nick Thomas', email: 'nthomas@grayco-cs.com', role: 'adm
 const skv = {}, texts = [], mails = [];
 Object.assign(SA._D, { now: () => Date.now(), kvGet: async k => skv[k], kvCas: async (k, f) => { const nv = f(skv[k] == null ? null : JSON.parse(JSON.stringify(skv[k]))); if (nv !== undefined) skv[k] = nv; return { ok: true, value: skv[k] }; },
   send: async (to, body) => { texts.push({ to, body }); return { ok: true }; }, paused: async () => false, optouts: async () => ({}), consentNo: async () => false,
-  people: async () => ({ users: USERS, staff: [] }), hours: async () => null, postReply: async m => ({ id: m.id }), lsaDecide: async () => ({ inbox: true }), textLog: async row => { tlog.push(row); return true; } });
+  people: async () => ({ users: USERS, staff: [] }), hours: async () => null, postReply: async m => ({ id: m.id }), lsaDecide: async () => ({ inbox: true }), textLog: async row => { tlog.push(row); return true; }, vetTodo: async o => { vets.push(o); return true; } });
+const vets = [];
 const tlog = [];
 global.fetch = async (url, init) => { if (/resend/.test(url)) { mails.push(JSON.parse(init.body)); return { ok: true, status: 200, json: async () => ({ id: 'x' }) }; } return { ok: false, status: 404, json: async () => [] }; };
 const store = {}, kv = { gc_lead_inbox_settings: { alertTo: ['none'] }, users: USERS };
@@ -36,5 +37,16 @@ const A = BA.make({ env: k => ENV[k] != null ? ENV[k] : '', s: v => v == null ? 
   delete process.env.SMS_ALERTS_OFF;
   assert.strictEqual(texts.length, 0);
   assert.ok(mails.length === 1 && mails[0].to.join() === 'office@grayco-cs.com' && /Google LSA call/.test(mails[0].subject), 'LSA e-mail is the office only (LSAOFFICE): ' + JSON.stringify(mails.map(m => m.to)));
+  /* 3. LSAVET: a Google LSA CALL with no number → no text to anyone; the office checks it first */
+  texts.length = 0; mails.length = 0;
+  await A.notifyNew([{ id: 'l3', title: 'Google LSA caller (2:31 PM)', source: 'Google LSA', leadExtra: { leadSource: 'Google LSA', lsaCheck: 'pending', lsaCall: true }, contact: { name: 'Google LSA caller (2:31 PM)' } }]);
+  assert.strictEqual(texts.length, 0, 'no text before the office says it is real: ' + JSON.stringify(texts));
+  assert.ok(vets.some(v => v.leadId === 'l3'), 'office To-Do');
+  assert.ok(mails.length === 1 && mails[0].to.join() === 'office@grayco-cs.com' && /Office: is it a real lead\?/.test(mails[0].html), 'office e-mail asks: real?');
+  const v = await SA.lsaVetted({ leadId: 'l3', phone: '(901) 555-0123', name: 'Google LSA caller (2:31 PM)', note: 'roof leak in den', by: 'Office Olivia' });
+  assert.deepStrictEqual(texts.map(x => x.to).sort(), ['9015550001', '9015550002'], 'real → Wesley + Nick');
+  assert.ok(texts.every(x => x.body.startsWith('GrayCo: Google LSA call to the office ' + SA._lsaCode('l3') + ' from (901) 555-0123 Google LSA caller. ✅ Office Olivia says it\'s real: "roof leak in den". ') && /\/#leads&lead=l3 /.test(x.body)), JSON.stringify(texts));
+  const r3 = await SA.staffInbound('9015550001', 'good Pat', 'SMx3');
+  assert.ok(r3 && r3.lsa === 'l3' && r3.good === true, 'GOOD works on it: ' + JSON.stringify(r3));
   console.log('TEXTFIRST: all passed');
 })().catch(e => { console.error('FAIL', e && e.stack || e); process.exit(1); });

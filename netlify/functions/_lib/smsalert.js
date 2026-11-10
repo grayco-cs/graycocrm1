@@ -153,6 +153,9 @@ const _D = {
   /* TEXTLOG (owner 11/10: "everything we do in GrayCo text is in the CRM too"): every GrayCo text sent / answered → gc_kv "gc_text_log"
      (newest 1500); the CRM page puts each one on its lead's activity (index.html LSATEXT textLog) */
   textLog: async row => { const w = await core().kvListUpdate('gc_text_log', l => ({ list: l.concat([row]).slice(-1500), check: l2 => l2.some(x => x && x.id === row.id) })); return !!(w && w.ok); },
+  vetTodo: async o => { const id = 'LSAVET_' + o.leadId, at = new Date(_D.now()).toISOString();   /* LSAVET: the office checks a Google LSA call */
+    const w = await core().kvListUpdate('gc_office_tasks', l => l.some(x => x && x.id === id) ? null : { list: l.concat([{ id, kind: 'lsa_vet', leadId: o.leadId, label: '📞 Google LSA call — real lead? ' + o.name, note: (o.said ? o.said + '\n' : '') + 'Look up the number in the office phone\'s recent calls (585). Leads → 📞 Google LSA calls to check → type the number → ✅ Real lead (Wesley and Nick get a text to call) or 🚫 Junk (no text).', assignees: ['office'], prio: 'high', due: at.slice(0, 10), addedBy: 'Google LSA', addedAt: at, updatedAt: at, done: false }]), check: l2 => l2.some(x => x && x.id === id) });
+    return !!(w && w.ok); },
   textNote: async row => { const w = await core().kvListUpdate('gc_text_notes', l => ({ list: l.concat([row]).slice(-1000), check: l2 => l2.some(x => x && x.id === row.id) })); return !!(w && w.ok); },
   lsaVerified: async leadId => { let ok = false; try { await _D.kvCas('gc_lead_inbox', v => { const l = arr(v); const x = l.find(y => y && s(y.id) === s(leadId)); if (!x) return undefined; x.lsaVerified = new Date(_D.now()).toISOString(); x.leadExtra = Object.assign({}, obj(x.leadExtra), { lsaVerified: x.lsaVerified }); ok = true; return l; }); } catch (e) {} return ok; },   /* LSAFLOW */
   postReply: async m => {
@@ -517,6 +520,14 @@ async function leads(list, raw, isEm){
        the entire company should go through this GrayCo text"): every customer lead (not a bid invite — those stay with the estimator — and not an
        emergency that is not LSA — that still pages on call) goes to Wesley's and Nick's cells in the LSA shape with the same replies */
     const lsaL = isLsaLead(r, x), label = leadLabel(r, x);
+    /* LSAVET (owner 11/10: "I don't want a bunch of BS calls coming to me — real leads only. How can we make sure it's a real lead before
+       it alerts us in GrayCo text?"): a Google LSA CALL to the office line (585) with no number — the office took (or missed) it, so
+       the OFFICE checks it first: an office To-Do + the lead's "📞 Google LSA call — real?" card. Only ✅ Real lead (with the number)
+       texts Wesley and Nick (lsaVetted, via texts.js ?lsavet=1); 🚫 Junk closes it with no text to anyone */
+    if (lsaL && (obj(r.leadExtra).lsaCall || r.lsaCall) && callPh.length !== 10) {
+      let td = null; try { td = await _D.vetTodo({ leadId: s(x.id), name: clip(name, 60), said: clip(s(msg).replace(/\s+/g, ' '), 200) }); } catch (e) { td = { error: s(e && e.message) }; }
+      out.push({ vet: 'office', leadId: s(x.id), todo: td }); continue;
+    }
     if (lsaL || (!em && !only && !bidLike(r, x))) {   /* LSATEXT: owner 11/10 — Google LSA leads to Wesley's and Nick's cells; they text back GOOD or BAD */
       const code = lsaCode(x.id), who = clip(name, 40) + (callPh.length === 10 ? ' ' + tidy(callPh) : '');
       /* LSAWORD (owner 11/10: "google lsa lead from 9016927255 wesley says blah blah blah, reply with if the lead is good and who is the PM") */
@@ -748,6 +759,17 @@ function leadText(head, more, who, msg, link){
   if (room < 12) return clip(h, MAX - tail.length) + tail;
   return h + ' — "' + clip(msg, room) + '"' + tail;
 }
+/* LSAVET: the office says a Google LSA call is real → Wesley's and Nick's cells, in the lead shape with the number to tap
+   o = { leadId, phone, name, note, by } */
+async function lsaVetted(o){
+  o = o || {}; const id = s(o.leadId), ph = phone10(o.phone); if (!id || ph.length !== 10) return { sent: 0, why: 'need the lead and a 10-digit number' };
+  const code = lsaCode(id), name = clip(s(o.name).replace(/^Google LSA caller.*$/i, '') || 'Google LSA caller', 40), label = 'Google LSA call to the office';
+  const link = site().replace(/^https?:\/\//, '') + '/#leads&lead=' + encodeURIComponent(id);
+  const lt = (more, g) => { const head = 'GrayCo: ' + label + ' ' + code + (more ? ' (+' + more + ' more)' : '') + ' from ' + tidy(ph) + ' ' + name + '. ✅ ' + clip(s(o.by) || 'Office', 24) + ' says it\'s real' + (s(o.note) ? ': "' + clip(o.note, 90) + '"' : '') + '.',
+      tail = (!g || g.newbie !== false) ? ' Reply GOOD + PM name, SEND + PM name, BAD + why, or NA.' : '';
+    return head + ' ' + link + tail; };
+  return notify({ type: 'lead', lsa: { leadId: id, code, name, phone: ph, link: '', said: clip(s(o.note), 140), em: false, isLsa: true, label }, text: lt(0), body: lt, link: site() + '/#leads', only: lsaAdmins(), thread: 'p:' + ph });
+}
 /* a lead assigned later (bid-alerts.js notifyAssigned) */
 async function assigned(x){
   return notify({ type: 'assigned', text: 'lead assigned to you: ' + clip(x.title, 60) + (x.assignedBy ? ' (by ' + clip(x.assignedBy, 24) + ')' : ''), link: site() + '/#leads', thread: 'lead:' + s(x.key || x.id), mine: [x.assigneeEmail] });
@@ -761,5 +783,5 @@ async function system(kind, text){
   return notify({ type: 'system', text: 'CRM alert — ' + text, link: site(), thread: 'sys:' + s(kind), daily: true, hold: true });
 }
 
-module.exports = { jobNote, lsaAsk, lsaCustomer, lsaPmText, _lsaCode: lsaCode, _isLsaLead: isLsaLead, _lsaReply: lsaReply, _D: _D, _isSubBid: isSubBid, ROLE_MIT, DEFAULT_PEOPLE, resolve, mitigationHolders, leadText, KEY, SKEY, TYPES, RATE_MS, REPLY_MS, settings, cleanPerson, staffList, load, save, notify, flushHeld, staffInbound, isStaffPhone, inboundText, missedCall, leads, assigned, approvals, system,
+module.exports = { lsaVetted, jobNote, lsaAsk, lsaCustomer, lsaPmText, _lsaCode: lsaCode, _isLsaLead: isLsaLead, _lsaReply: lsaReply, _D: _D, _isSubBid: isSubBid, ROLE_MIT, DEFAULT_PEOPLE, resolve, mitigationHolders, leadText, KEY, SKEY, TYPES, RATE_MS, REPLY_MS, settings, cleanPerson, staffList, load, save, notify, flushHeld, staffInbound, isStaffPhone, inboundText, missedCall, leads, assigned, approvals, system,
   inQuiet, quietNow, centralHour, compose, wants, _D };

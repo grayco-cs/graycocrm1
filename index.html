@@ -5491,7 +5491,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.205-2026-11-10-r26u -->
+<!-- GrayCo CRM Build: 33.206-2026-11-10-r26v -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6440,7 +6440,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.205-2026-11-10-r26u");
+  console.log("[GC] Build 33.206-2026-11-10-r26v");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6488,7 +6488,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.205-2026-11-10-r26u"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.206-2026-11-10-r26v"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -216344,6 +216344,62 @@ D.addEventListener('click', function(e){
   pm(id, false, reason);
 }, true);
 SI.call(W, decorate, 700);
+/* LSAVET (owner 11/10: "I don't want a bunch of BS calls coming to me — real leads only"): Google LSA CALLS to the office (585) come
+   with no number. The office (and admins) see "📞 Google LSA calls to check" on the Leads page: type the caller's number (from the
+   office phone's recent calls) → ✅ Real lead → Wesley and Nick get a text with the number (texts.js ?lsavet=1); 🚫 Junk → closed,
+   no text to anyone (a "dispute in Google" To-Do, as for any bad LSA lead). */
+function vetter(){ try { if (admin()) return true; if (W._gcIsOfficeFull && W._gcIsOfficeFull()) return true; var u = JSON.parse(localStorage.getItem('grayco_user') || '{}'); return /office|project manager|\bpm\b|estimator/i.test(s(u.role) + ' ' + s(u.title)); } catch (e) { return false; } }   /* owner 11/10: "make office do LSA good or bad as much as possible, but admin and PM can also do it" */
+function vetList(){ return leads().filter(function(l){ if (!l || !l.id || l.archived || l.deleted || l.mergedInto || l.vetAt) return false; var ex = l.leadExtra || {};
+  if (!(l.lsaCall || ex.lsaCall || /^Google LSA caller/.test(s(l.name)))) return false; if (!/^(pending|)$/.test(s(l.lsaCheck))) return false; if (/lost|closed|won/i.test(s(l.stage || l.status))) return false;
+  return s(l.phone || (l.contact && l.contact.phone)).replace(/\D/g, '').length < 10; }); }
+function vetHtml(L){
+  var h = '<div style="font-weight:800;font-size:15px;margin-bottom:4px">📞 Google LSA calls to check (' + L.length + ')</div><div style="font-size:12.5px;color:#64748b;margin-bottom:6px">Someone called 585 from Google. Find the number in the office phone\'s recent calls. Only ✅ Real lead texts Wesley and Nick.</div>';
+  L.slice(0, 6).forEach(function(l){ var msg = s(l.message || l.notes || l.scope);
+    h += '<div data-vet="' + esc(l.id) + '" style="border-top:1px solid #bfdbfe;padding:8px 0"><b>' + esc(l.name || 'Google LSA caller') + '</b><div style="font-size:12.5px;color:#475569">' + esc(msg.length > 160 ? msg.slice(0, 160) + '…' : msg) + '</div>'
+      + '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px"><input data-vet-ph type="tel" inputmode="tel" placeholder="Their number (901) 555-1234" style="flex:1 1 170px;min-height:40px;border:1px solid #cbd5e1;border-radius:9px;padding:0 10px;font:15px Inter,Arial,sans-serif">'
+      + '<input data-vet-note placeholder="What they need (optional)" style="flex:2 1 200px;min-height:40px;border:1px solid #cbd5e1;border-radius:9px;padding:0 10px;font:15px Inter,Arial,sans-serif"></div>'
+      + '<div style="display:flex;gap:8px;margin-top:6px"><button type="button" data-vet-b="real" style="flex:1;min-height:42px;border-radius:9px;border:1px solid #166534;background:#166534;color:#fff;font:700 14px Inter,Arial,sans-serif;cursor:pointer">✅ Real lead — text Wesley &amp; Nick</button>'
+      + '<button type="button" data-vet-b="junk" style="flex:1;min-height:42px;border-radius:9px;border:1px solid #fca5a5;background:#fee2e2;color:#991b1b;font:700 14px Inter,Arial,sans-serif;cursor:pointer">🚫 Junk — no text</button></div><div data-vet-msg style="font-size:12.5px;color:#b91c1c"></div></div>'; });
+  return h;
+}
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function vetPaint(){
+  try {
+    var hub = D.getElementById('gc-leads-hub'), cur = D.getElementById('gc-lsa-vet');
+    var L = (hub && hub.getClientRects().length && vetter()) ? vetList() : [];
+    if (!L.length) { if (cur) cur.remove(); return; }
+    var sig = L.map(function(l){ return l.id; }).join('|');
+    if (cur && cur.parentElement === hub && cur.getAttribute('data-sig') === sig) return;
+    if (cur && cur.contains(D.activeElement)) return;   /* do not wipe what they are typing */
+    if (!cur) { cur = D.createElement('div'); cur.id = 'gc-lsa-vet'; cur.setAttribute('data-gc-keep', '1'); cur.style.cssText = 'background:#eff6ff;border:2px solid #3b82f6;border-radius:14px;padding:10px 12px;margin:8px 0 10px;font:14px Inter,Arial,sans-serif;color:#0f172a'; }
+    cur.setAttribute('data-sig', sig); cur.innerHTML = vetHtml(L);
+    if (cur.parentElement !== hub) hub.insertBefore(cur, hub.firstChild);
+  } catch (e) {}
+}
+D.addEventListener('click', function(e){
+  var b = e.target && e.target.closest ? e.target.closest('[data-vet-b]') : null; if (!b) return;
+  e.preventDefault(); e.stopPropagation();
+  var r = b.closest('[data-vet]'), id = r && r.getAttribute('data-vet'), l = lead(id); if (!l) return;
+  var ph = s((r.querySelector('[data-vet-ph]') || {}).value).replace(/\D/g, ''), note = s((r.querySelector('[data-vet-note]') || {}).value), msg = r.querySelector('[data-vet-msg]');
+  if (ph.length === 11 && ph[0] === '1') ph = ph.slice(1);
+  var srvId = s(l.inboxId || l.leadInboxId || l.fromInbox || l.id), at = new Date().toISOString();
+  if (b.getAttribute('data-vet-b') === 'junk') {
+    saveLead(id, { vetAt: at, vetBy: me(), vetReal: false, phone: ph.length === 10 ? ph : s(l.phone) });
+    ST(function(){ decide(id, false, 'Office: junk call' + (note ? ' — ' + note : '')); closeTask('LSAVET_' + srvId, 'junk (' + me() + ')'); vetPaint(); }, 50); return;
+  }
+  if (ph.length !== 10) { if (msg) msg.textContent = 'Type their 10-digit number first (from the office phone\'s recent calls).'; return; }
+  b.disabled = true; b.textContent = 'Texting Wesley & Nick…';
+  W.fetch('/.netlify/functions/texts?lsavet=1', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ real: true, leadId: srvId, phone: ph, name: s(l.name), note: note }) })
+    .then(function(r2){ return r2.json().catch(function(){ return {}; }).then(function(o){ o.__s = r2.status; return o; }); }, function(){ return { error: 'No signal — try again.' }; })
+    .then(function(o){
+      if (!o || !o.ok) { b.disabled = false; b.textContent = '✅ Real lead — text Wesley & Nick'; if (msg) msg.textContent = s(o && o.error) || 'Could not send — try again.'; return; }
+      var tidy = '(' + ph.slice(0, 3) + ') ' + ph.slice(3, 6) + '-' + ph.slice(6), nm = /^Google LSA caller/.test(s(l.name)) ? 'Google LSA caller ' + tidy : s(l.name);
+      var patch = { vetAt: at, vetBy: me(), vetReal: true, phone: tidy, name: nm }; if (l.contact && typeof l.contact === 'object') patch.contact = Object.assign({}, l.contact, { phone: tidy });
+      if (note) patch.notes = (s(l.notes) ? s(l.notes) + '\n' : '') + '[' + (new Date().getMonth() + 1) + '/' + new Date().getDate() + ' ' + me() + '] ' + note;
+      saveLead(id, patch); closeTask('LSAVET_' + srvId, 'real — texted Wesley & Nick (' + me() + ')'); vetPaint();
+    });
+}, true);
+SI.call(W, vetPaint, 1500);
 /* patch LSATEXT (owner 11/10): GOOD / BAD texted back from Wesley's or Nick's cell (server: _lib/smsalert.js → gc_kv "gc_lsa_decisions")
    → the same mark on the CRM lead; the office To-Do "Dispute … in Google Ads" was already added by the server */
 function textMarks(){

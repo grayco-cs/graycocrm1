@@ -193,7 +193,8 @@ const tedLead = { id: 'LI-40569a6f62ec9c86', type: 'insurance', leadKind: 'Insur
     text: 'Local Services By Google\n\nYour Customer ID: 555-434-6278\n\nNew event\n\nNew call from a potential customer\n\nA potential customer called you on 11/10/2026 at 2:31 PM.\n\nView Details', messageId: '<lsacall@x>' });
   const lc = inbox().find(x => /Google LSA caller \(2:31 PM\)/.test(JSON.stringify(x)));
   ok(r.lead && !!lc && !byPhone('5554346278'), 'LSA call e-mail → a lead "Google LSA caller (2:31 PM)", never GrayCo\'s Customer ID as a phone', { r, ids: inbox().map(x => x.title) });
-  st = staffSms(); ok(st.length >= 2 && st.every(x => /Google LSA call to the office/.test(x.Body) && /open the LSA app/.test(x.Body) && !/555-?434/.test(x.Body)), 'LSA call → a text to Nick + Wesley right away', { st: st.map(x => x.Body), all: SMS.map(x => [x.To, x.Body]), al: JSON.stringify(r.alerts).slice(0, 1500) });
+  st = staffSms(); ok(st.length === 0, 'LSAVET: an LSA call with no number → NO text yet (the office checks it is real first)', { st: st.map(x => x.Body), al: JSON.stringify(r.alerts).slice(0, 1500) });
+  ok((() => { let v = getKv('gc_office_tasks'); if (typeof v === 'string') v = JSON.parse(v); return Array.isArray(v) ? v : []; })().some(x => x && /^LSAVET_/.test(x.id)), 'LSAVET: an office To-Do "Google LSA call — real lead?"', getKv('gc_office_tasks'));
   process.env.OWNER_EMAILS = OE0;
   /* LSAPHONE (owner 11/10): the office phone logged the call (Twilio) → the caller's number is on the lead and in the text */
   world(); T = DAY; process.env.OWNER_EMAILS = 'nthomas@grayco-cs.com,wjohnson@grayco-cs.com';

@@ -138,6 +138,16 @@ exports.handler = async function(event){
         return out(v, true);
       }
     }
+    /* LSAVET (owner 11/10): the office checked a Google LSA call — ✅ real → Wesley's and Nick's cells with the number */
+    if (qs.lsavet && m === 'POST') {
+      if (!who.ok) return J(403, { ok: false, error: 'Sign in first.' }, C);   /* office first; an admin or a PM can too (owner 11/10) — any signed-in staff member */
+      let b = {}; try { b = JSON.parse(event.body || '{}') || {}; } catch (e) { return J(400, { ok: false, error: 'Not JSON.' }, C); }
+      if (b.real !== true) return J(200, { ok: true, texted: 0, junk: true }, C);
+      const ph = S.phone10 ? S.phone10(b.phone) : s(b.phone).replace(/\D/g, '').slice(-10);
+      if (ph.length !== 10) return J(400, { ok: false, error: 'Type their 10-digit number.' }, C);
+      const r = await require('./_lib/smsalert.js').lsaVetted({ leadId: s(b.leadId), phone: ph, name: s(b.name), note: s(b.note).slice(0, 300), by: s(who.name) || s(who.email) });
+      return J(200, { ok: true, texted: r.sent || 0, to: r.to || [], skipped: r.skipped || null }, C);
+    }
     /* patch SMSALERT: Admin → 📱 Text alerts to cell phones (admins) — gc_lead_inbox_kv "gc_sms_alerts" */
     if (qs.alerts) {
       if (!(who.admin || who.office)) return J(403, { ok: false, error: 'Only an admin or the office can change the text alerts.' }, C);   /* patch OFFICEFULL */
