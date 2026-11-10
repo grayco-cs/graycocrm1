@@ -278,6 +278,7 @@ function wants(p, email, o, isAdmin){
   }
 }
 function compose(more, text, link, head0, bare){
+  link = s(link).replace(/^https?:\/\//, '');   /* JOBLINK (owner 11/10: "all alerts for jobs on the other number can have the CRM link"): a small blue link, no preview card */
   const head = s(head0 || 'GrayCo') + (more ? ' (+' + more + ' more)' : '') + ': ';
   const tail = link ? (bare ? ' ' : ' Open: ') + link : '';
   return head + clip(text, Math.max(20, MAX - head.length - tail.length)) + tail;
@@ -661,7 +662,7 @@ async function jobNote(ph, body, who){
   if (lsaAdmins().indexOf(email) < 0 && !mine) { try { await sendL(ph, 'GrayCo: ' + po + ' is not one of your jobs — note not added.', fromNum()); } catch (e) {} return { handled: true, staff: email, jobNote: 'not yours', po }; }
   const at = new Date(now()).toISOString(), row = { id: 'TN_' + po + '_' + at.replace(/\D/g, '').slice(0, 14), pid: s(j.id), po, text: note, by: s(who.name) || email, byEmail: email, at };
   let ok = false; try { ok = await _D.textNote(row); } catch (e) {}
-  try { await sendL(ph, ok ? 'GrayCo: added to ' + po + ' ' + clip(j.name, 40) + ' notes.' : 'GrayCo: could not save the note on ' + po + ' — try again or add it in the CRM.', fromNum()); } catch (e) {}
+  try { await sendL(ph, ok ? 'GrayCo: added to ' + po + ' ' + clip(j.name, 40) + ' notes. ' + site().replace(/^https?:\/\//, '') + '/?jobmsg=' + encodeURIComponent(s(j.id)) : 'GrayCo: could not save the note on ' + po + ' — try again or add it in the CRM.', fromNum()); } catch (e) {}
   return { handled: true, staff: email, jobNote: ok ? 'added' : 'failed', po, pid: s(j.id) };
 }
 /* LSAPM: a PM by what was texted — full name, first name, last name or e-mail name (one active staff person, else nobody) */
