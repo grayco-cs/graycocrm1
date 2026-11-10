@@ -5490,7 +5490,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.192-2026-11-10-r26h -->
+<!-- GrayCo CRM Build: 33.193-2026-11-10-r26i -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6439,7 +6439,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.192-2026-11-10-r26h");
+  console.log("[GC] Build 33.193-2026-11-10-r26i");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6487,7 +6487,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.192-2026-11-10-r26h"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.193-2026-11-10-r26i"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -176156,7 +176156,9 @@ function readHash(){
   var h = location.hash || '';
   var m = /[#&]lead=([^&]+)/.exec(h);
   if (m) { WANT = { id: decodeURIComponent(m[1]), sec: (/[#&]sec=([^&]+)/.exec(h) || [])[1] || '', at: Date.now(), refreshed: false };
-    try { sessionStorage.setItem('gc_hot1_want', JSON.stringify(WANT)); } catch (e) {} return; }
+    try { sessionStorage.setItem('gc_hot1_want', JSON.stringify(WANT)); } catch (e) {}
+    try { if (typeof W._setView !== 'function') localStorage.setItem('grayco_view', 'leads'); } catch (e) {}   /* LEADFAST (owner 11/10: "I would rather it go right to it"): a fresh page load starts on Leads, not the home / field screen */
+    fastWant(); return; }
   if (/^#\/?leads$/.test(h)) WANT = { id: '', at: Date.now() };
 }
 try { var sv = JSON.parse(sessionStorage.getItem('gc_hot1_want') || 'null'); if (sv && Date.now() - sv.at < 10 * 60e3) WANT = sv; } catch (e) {}
@@ -176170,7 +176172,7 @@ function toAssign(){
   }, 250);
 }
 function openLead(id, sec){
-  if (view() !== 'leads') { try { W._setView('leads'); } catch (e) {} }
+  if (view() !== 'leads' || !D.getElementById('gc-leads-hub')) { try { W._setView('leads'); } catch (e) {} }   /* LEADFAST: the saved view can say leads before the screen shows it */
   var H = W._gcLeadsHub;
   if (H && !D.getElementById('gc-leads-hub')) {   /* Leads opened on another sub-tab (Lead Inbox …): the pipeline holds the hub */
     try { var b = Array.prototype.filter.call(D.querySelectorAll('button'), function(x){ return x.getAttribute('data-gc-tab') === 'leads' && !!x.closest('#gc-leads-tabs'); })[0]; if (b) b.click(); } catch (e) {}
@@ -176182,6 +176184,10 @@ function openLead(id, sec){
   if (ok && sec === 'assign') toAssign();
   return ok;
 }
+/* LEADFAST: while a link waits for its lead, look 4 times a second (the normal tick is 1.5 s) */
+var FAST;   // not reset: readHash may have started it already
+function fastWant(){ if (FAST) return; var t0 = Date.now(); FAST = setInterval(function(){ try { if (!WANT || !WANT.id || Date.now() - t0 > 150e3) { clearInterval(FAST); FAST = null; return; } if (!D.hidden && byId(WANT.id) && D.getElementById('gc-leads-hub')) tickWant(); } catch (e) { clearInterval(FAST); FAST = null; } }, 250); }   /* only once the Leads list is on screen (re-clicking the tab sooner stops it drawing) */
+if (WANT && WANT.id) { try { if (typeof W._setView !== 'function') localStorage.setItem('grayco_view', 'leads'); } catch (e) {} }
 W._gcOpenLead = function(id, sec){ WANT = { id: s(id), sec: s(sec), at: Date.now(), refreshed: true }; return tickWant(); };
 function tickWant(){
   if (!WANT || !signedIn()) return false;
@@ -176251,6 +176257,7 @@ function wrapGreen(){
   w.__hot1 = true; W._gcOpenPmApprovals = w;
 }
 every(function(){ try { wrapGreen(); if (D.hidden) return; pull(); tickWant(); } catch (e) { warn(e); } }, 1500);
+if (WANT && WANT.id) fastWant();   /* LEADFAST */
 later(pull, 500);
 try { console.log('[GC] Lead deep links + "Assign this lead" approvals (patch HOT1): _gcOpenLead(id), _gcLeadsToAssign()'); } catch (e) {}
 })();
@@ -216352,7 +216359,7 @@ function textMarks(){
         : { lsaCheck: d.noAnswer ? 'no_answer' : d.good ? 'good' : 'bad', lsaDecidedBy: s(d.by) + ' (text)', lsaDecidedAt: s(d.at), lsaVia: 'text' };
       if (d.sent || d.pmBad) {}
       else if (d.noAnswer) Object.assign(patch, { noAnswerAt: s(d.at), noAnswerCount: (+l.noAnswerCount || 0) + 1 });   /* LSANA: kept open */
-      else if (!d.good) Object.assign(patch, { lsaReason: s(d.reason), stage: 'Lost', status: 'lost', lostReason: 'LSA — not a real lead (' + s(d.reason || 'bad') + ')' });
+      else if (!d.good) Object.assign(patch, { lsaReason: s(d.reason), stage: 'Lost', status: 'lost', lostReason: (d.isLsa === false ? 'Not a real lead (' : 'LSA — not a real lead (') + s(d.reason || 'bad') + ')' });
       if (d.good && d.pm && !s(l.pm)) Object.assign(patch, { pm: s(d.pm), pmEmail: s(d.pmEmail), assignedBy: s(d.by) + ' (text)', assignedAt: s(d.at), assignConfirmed: true, hold: l.hold ? Object.assign({}, l.hold, { state: 'approved', name: s(d.pm), email: s(d.pmEmail), doneAt: s(d.at), doneBy: s(d.by) + ' (text)' }) : l.hold });   /* LSAPM: the PM texted with GOOD */
       if (s(d.notes)) {   /* LSANOTES: the texted note → the lead's notes, and the job's project notes when it is a job */
         var dt = new Date(s(d.at) || Date.now()), line = '[' + (dt.getMonth() + 1) + '/' + dt.getDate() + ' ' + s(d.by) + '] ' + s(d.notes);   /* owner 11/10: just the note */

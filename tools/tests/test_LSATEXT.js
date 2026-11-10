@@ -45,7 +45,13 @@ Object.assign(SA._D, { now: () => t, kvGet: async k => kv[k], kvCas: async (k, f
   /* a normal lead still goes the normal way */
   sent.length = 0; t = Date.parse('2026-10-28T15:00:00Z');
   await SA.leads([{ id: 'N1', key: 'N1', title: 'Kitchen', contact: { name: 'Al', phone: '9015550122' } }], { N1: { id: 'N1' } }, () => false);
-  assert.ok(sent.length && /^GrayCo NEW LEAD/.test(sent[0].body));
+  assert.ok(sent.length && /^GrayCo: new lead [A-Z0-9]{4} from \(901\) 555-0122 Al\./.test(sent[0].body), sent[0] && sent[0].body);   /* LEADTEXT */
+  sent.length = 0;
+  await SA.leads([{ id: 'W1', key: 'W1', title: 'Website', source: 'Website', websiteLead: true, contact: { name: 'Jo Web', phone: '9015550133' } }], { W1: { id: 'W1', websiteLead: true, leadExtra: { websiteForm: 'Contact' }, said: { message: 'Need gutters' } } }, () => false);
+  assert.ok(/^GrayCo: GrayCo website lead [A-Z0-9]{4} from \(901\) 555-0133 Jo Web/.test(sent[0].body) && !sent.some(x => x.to === '9015550133'), 'a website lead: the shape, and no qualify text to the customer: ' + sent[0].body);
+  sent.length = 0;
+  await SA.leads([{ id: 'B1', key: 'B1', title: 'School reroof', source: 'BuildingConnected', type: 'bid', bidDue: '2026-11-20', contact: { name: 'GC', phone: '9015550144' } }], { B1: { id: 'B1' } }, () => false);
+  assert.ok(!sent.some(x => /GOOD \+ PM name/.test(x.body)), 'a bid invite keeps the old path');
   /* ── LSAFLOW: the qualify text to the customer, their YES, the PM text ── */
   sent.length = 0; t = Date.parse('2026-10-28T15:00:00Z'); let verified = [];
   SA._D.lsaVerified = async id => { verified.push(id); return true; };

@@ -48,16 +48,16 @@ const to = r => r.sent.map(x => x.to).sort();
     { L1: { id: 'L1', leadExtra: { textMessage: true, smsFrom: '9015550100', textBody: 'Roof is leaking a little, can someone look Tuesday?' } } }, () => false);
   assert.deepStrictEqual(to(r), ['9015550001', '9015550002']);
   const b = r.sent[0].body;
-  assert.ok(/^GrayCo NEW LEAD: Jane Doe \(901\) 555-0100 — "Roof is leaking a little, can someone look Tuesday\?" https:\/\/crm\.test\/#leads$/.test(b), b);
+  assert.ok(/^GrayCo: text lead [A-Z0-9]{4} from \(901\) 555-0100 Jane Doe says "Roof is leaking a little, can someone look Tuesday\?"\. Reply GOOD \+ PM name/.test(b), b);   /* LEADTEXT (owner 11/10): every lead in the GrayCo text shape */
   assert.strictEqual(r.sent[0].from, '+19015550999');
   /* long message trimmed with … under 300 */
   r = rig();
   await SA.leads([{ id: 'L2', key: 'L2', title: 'Web', contact: { name: 'Al', phone: '9015550101' } }], { L2: { id: 'L2', leadExtra: { said: { message: 'word '.repeat(200) } } } }, () => false);
-  assert.ok(r.sent[0].body.length <= 300 && /…" https/.test(r.sent[0].body), r.sent[0].body);
+  assert.ok(r.sent[0].body.length <= 300 && /…"\. Reply GOOD/.test(r.sent[0].body), r.sent[0].body.length + ' ' + r.sent[0].body);   /* LEADTEXT */
   /* no name → Unknown */
   r = rig();
   await SA.leads([{ id: 'L3', key: 'L3', title: 'x', contact: {} }], { L3: { id: 'L3' } }, () => false);
-  assert.ok(/^GrayCo NEW LEAD: Unknown /.test(r.sent[0].body));
+  assert.ok(/^GrayCo: new lead [A-Z0-9]{4} from \(901\)|^GrayCo: new lead [A-Z0-9]{4} from Unknown/.test(r.sent[0].body), r.sent[0].body);
 
   /* ── 2. emergency: Nick + Wesley + the mitigation manager, even in quiet hours; non-emergency waits ── */
   r = rig({ now: NIGHT });
@@ -119,7 +119,7 @@ const to = r => r.sent.map(x => x.to).sort();
   /* a departed person never gets one */
   r = rig({ settings: { at: 'x', people: { 'gone@grayco-cs.com': person({ newAll: true }) } } });
   await SA.leads([{ id: 'L5', key: 'L5', title: 'x', contact: {} }], { L5: {} }, () => false);
-  assert.strictEqual(r.sent.length, 0);
+  assert.ok(!r.sent.some(x => x.to === '9015550009'), 'the departed person never gets one (LEADTEXT: the admins still do)');
 
   /* ── 4. patch AUTOPANEL: data-entry mode no longer blocks staff alerts (texts to staff cells are tagged 'staff', which
      _lib/pause.js lets through); the ⚡ Automations switch "Staff text alerts" does; 5. STOP honored ── */
@@ -149,7 +149,7 @@ const to = r => r.sent.map(x => x.to).sort();
   r = rig({ settings: { at: 'x', people: { 'nthomas@grayco-cs.com': person({ newAll: true, cust: 'all' }) } } });
   await SA.leads([{ id: 'L6', key: 'L6', title: 'Text message — Z', contact: { name: 'Z', phone: '9015550400' } }], { L6: { leadExtra: { textMessage: true, smsFrom: '9015550400' } } }, () => false);
   await SA.inboundText({ ph: '9015550400', body: 'hello', who: null, pid: '' });
-  assert.strictEqual(r.sent.length, 1, 'one text for a brand-new texter');
+  assert.strictEqual(r.sent.filter(x => x.to === '9015550001').length, 1, 'one text per person for a brand-new texter (LEADTEXT: Wesley gets his own)');
 
   /* ── 7. reply routing from the cell ── */
   r = rig({ settings: S1 });
