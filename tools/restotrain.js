@@ -1,12 +1,16 @@
-/* patch RESTOTRAIN — GrayCo's own 🔥 Fire & Smoke Restoration and 👃 Odor Control courses in 🎓 Training (owner 11/10: "make
-   these into our own grayco fire restroation training to go in our crm under training").
-   What: built-in courses (Water Damage Restoration, Fire & Smoke Restoration, Odor Control; category IICRC, required for the Insurance / Mitigation role, open to everyone) with a part per
-   lesson, each with its own "✓ I read this", and a quiz part at the end of each (20 questions, pass = 16). Passing the quiz
-   ticks the quiz part for that person (so 👥 Team progress shows who passed); the quiz part cannot be ticked by hand.
-   A failed try shows which questions were wrong but not the answers; a pass shows every answer with the reason.
+/* patch RESTOTRAIN — GrayCo's own training courses in 🎓 Training (owner 11/10: "make these into our own grayco fire restroation
+   training to go in our crm under training"; "make these have tests … once you click it shows the answer and marks their score").
+   What: built-in courses (Water Damage Restoration, Fire & Smoke Restoration, Odor Control; category IICRC, required for the
+   Insurance / Mitigation role, open to everyone) with a part per lesson, each with its own "✓ I read this", and a test at the
+   end of each (20 questions, pass = 16).
+   The test: tap an answer and it locks in and shows right away — ✓ right, or ✗ with the correct answer and the reason — with a
+   running score at the top. When every question is answered the score is saved for that person (gc_train_p_<email>, on the
+   test part: { score, of, best, tries, passed }): a pass ticks the test part (it cannot be ticked by hand), a fail keeps the
+   score and offers "Retake the test". A later lower score never un-passes anyone. 👥 Team progress lists every test score.
    The content lives in tools/restotrain_content.py (also the printable manuals in /training/); patch_RESTOTRAIN.py writes
    it in here as window.__GC_TRAIN_EXTRA__, and patch TRAIN's modules() adds them after the CRM videos.
-   API: window.__GC_TRAIN_EXTRA__ (the courses), window.__GC_TRAIN_QUIZ__(partKey, quiz, done) → the quiz's HTML. */
+   API: window.__GC_TRAIN_EXTRA__ (the courses), __GC_TRAIN_QUIZ__(partKey, quiz, done) → the test's HTML,
+        __GC_TRAIN_TESTS__(doneMap) → [{ key, course, score, of, best, tries, passed, at }], __GC_TRAIN_TESTROWS__(teamRows) → HTML. */
 (function(){
 'use strict';
 if (window.__GC_PATCH_RESTOTRAIN__) return; window.__GC_PATCH_RESTOTRAIN__ = true;
@@ -16,25 +20,71 @@ var PASS = /*__PASS__*/16;
 W.__GC_TRAIN_EXTRA__ = DATA || [];
 function esc(v){ return String(v == null ? '' : v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
 function qid(k){ return 'gcq_' + String(k).replace(/[^a-z0-9]+/gi, '_'); }
-var LAST = {};   /* partKey → { picks, wrong } of the last try on this screen */
+function rec(key){ try { var P = W._gcTrain && W._gcTrain._p && W._gcTrain._p(); var r = P && P.done && P.done[key]; return r && typeof r === 'object' ? r : null; } catch (e) { return null; } }
+function fmtDay(iso){ try { return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }); } catch (e) { return ''; } }
+var TRY = {};   /* partKey → { picks: [...] } — the test in progress on this screen */
+
+function courseOf(key){ var mid = String(key).split('|')[0]; return (W.__GC_TRAIN_EXTRA__ || []).filter(function(x){ return 'b:' + x.id === mid; })[0] || null; }
+function quizOf(key){ var c = courseOf(key), pid = String(key).split('|')[1]; var p = c && c.parts.filter(function(y){ return y.id === pid; })[0]; return p && p.quiz; }
 
 W.__GC_TRAIN_QUIZ__ = function(key, quiz, done){
-  var id = qid(key), last = LAST[key] || null, show = !!done;
+  var id = qid(key), r = rec(key), t = TRY[key];
   var h = '<div class="gcq" id="' + id + '" data-gcq="' + esc(key) + '">';
-  h += done ? '<div class="gcq-res ok">✅ Passed. The answers are below.</div>'
-            : '<div class="gcq-res">Answer all ' + quiz.length + ' questions. You need ' + PASS + ' right to pass; the part ticks itself when you do.</div>';
+  if (!t) {
+    /* not taking it right now: the saved result and a start / retake button */
+    if (r && r.of) {
+      h += '<div class="gcq-res' + (r.passed ? ' ok' : ' bad') + '">' + (r.passed ? '✅ Passed' : '✗ Not passed yet') + ' · last score <b>' + esc(r.score) + ' of ' + esc(r.of) + '</b>' +
+        (r.best != null && r.best !== r.score ? ' · best ' + esc(r.best) + ' of ' + esc(r.of) : '') + ' · ' + esc(r.tries || 1) + ' tr' + ((r.tries || 1) === 1 ? 'y' : 'ies') + (r.at ? ' · ' + esc(fmtDay(r.at)) : '') + '</div>';
+      h += '<p><button type="button" class="gctr-btn' + (r.passed ? '' : ' pri') + '" data-gcq-start="' + esc(key) + '">' + (r.passed ? '↻ Take the test again' : '↻ Retake the test') + '</button></p>';
+    } else if (done) {
+      h += '<div class="gcq-res ok">✅ Passed.</div><p><button type="button" class="gctr-btn" data-gcq-start="' + esc(key) + '">↻ Take the test again</button></p>';
+    } else {
+      h += '<div class="gcq-res">' + quiz.length + ' questions. Tap an answer and it shows right away whether you got it. You need ' + PASS + ' right to pass; your score is saved and this part ticks itself when you pass.</div>' +
+        '<p><button type="button" class="gctr-btn pri" data-gcq-start="' + esc(key) + '">▶ Start the test</button></p>';
+    }
+    return h + '</div>';
+  }
+  var answered = 0, right = 0;
+  t.picks.forEach(function(p, i){ if (p >= 0) { answered++; if (p === quiz[i].a) right++; } });
+  var finished = answered === quiz.length;
+  h += '<div class="gcq-bar"><b>Score: ' + right + ' of ' + answered + '</b> answered · ' + (quiz.length - answered) + ' left · pass = ' + PASS + ' of ' + quiz.length + '</div>';
+  if (finished) {
+    var pass = right >= PASS;
+    h += '<div class="gcq-res ' + (pass ? 'ok' : 'bad') + '">' + (pass ? '✅ Passed: ' : '✗ Not passed: ') + right + ' of ' + quiz.length + '. ' + (pass ? 'Your score is saved and this part is ticked.' : 'Your score is saved. Re-read the parts you missed and retake it.') +
+      ' <button type="button" class="gctr-btn" data-gcq-start="' + esc(key) + '" style="margin-left:8px">↻ Retake</button> <button type="button" class="gctr-btn" data-gcq-close="' + esc(key) + '">Close</button></div>';
+  }
   quiz.forEach(function(q, i){
-    var pick = last ? last.picks[i] : -1, bad = last && !done && last.wrong.indexOf(i) >= 0;
-    h += '<fieldset class="gcq-q' + (bad ? ' bad' : '') + '"><legend><b>' + (i + 1) + '.</b> ' + esc(q.q) + (bad ? ' <span class="gcq-x">✗ try again</span>' : '') + '</legend>';
+    var pick = t.picks[i], has = pick >= 0, ok = has && pick === q.a;
+    h += '<fieldset class="gcq-q' + (has ? (ok ? ' good' : ' bad') : '') + '"><legend><b>' + (i + 1) + '.</b> ' + esc(q.q) + (has ? (ok ? ' <span class="gcq-ok">✓ Correct</span>' : ' <span class="gcq-x">✗ Wrong</span>') : '') + '</legend>';
     q.c.forEach(function(c, j){
-      var right = show && j === q.a;
-      h += '<label class="gcq-c' + (right ? ' right' : '') + '"><input type="radio" name="' + id + '_' + i + '" value="' + j + '"' + (pick === j ? ' checked' : '') + (done ? ' disabled' : '') + '> ' + esc(c) + (right ? ' ✓' : '') + '</label>';
+      var cls = has ? (j === q.a ? ' right' : j === pick ? ' wrong' : ' dim') : '';
+      h += '<button type="button" class="gcq-c' + cls + '" data-gcq-pick="' + esc(key) + '" data-i="' + i + '" data-j="' + j + '"' + (has ? ' disabled' : '') + '>' + 'ABCD'.charAt(j) + '. ' + esc(c) + (has && j === q.a ? ' ✓' : has && j === pick ? ' ✗' : '') + '</button>';
     });
-    if (show && q.why) h += '<div class="gcq-why">' + esc(q.why) + '</div>';
+    if (has && q.why) h += '<div class="gcq-why">' + (ok ? '' : '<b>Answer: ' + 'ABCD'.charAt(q.a) + '.</b> ') + esc(q.why) + '</div>';
     h += '</fieldset>';
   });
-  if (!done) h += '<p><button type="button" class="gctr-btn pri" data-gcq-grade="' + esc(key) + '">Check my answers</button>' + (last ? ' <span class="gcq-score">Last try: ' + (quiz.length - last.wrong.length) + ' of ' + quiz.length + '</span>' : '') + '</p>';
   return h + '</div>';
+};
+
+/* the saved scores, for 👥 Team progress */
+W.__GC_TRAIN_TESTS__ = function(doneMap){
+  var out = [];
+  Object.keys(doneMap || {}).forEach(function(k){
+    var r = doneMap[k]; if (!r || typeof r !== 'object' || !r.of) return;
+    var c = courseOf(k); if (!c) return;
+    out.push({ key: k, course: c.title, score: r.score, of: r.of, best: r.best, tries: r.tries || 1, passed: !!r.passed, at: r.at });
+  });
+  return out;
+};
+W.__GC_TRAIN_TESTROWS__ = function(rows){
+  var list = [];
+  (rows || []).forEach(function(r){ (r.tests || []).forEach(function(t){ list.push({ who: r.name, t: t }); }); });
+  var h = '<div style="margin-top:14px"><b>📝 Test scores</b> <span class="gctr-when">(pass = ' + PASS + ' of 20)</span>';
+  if (!list.length) return h + '<div class="gctr-when">Nobody has taken a test yet.</div></div>';
+  list.sort(function(a, b){ return a.who.localeCompare(b.who) || a.t.course.localeCompare(b.t.course); });
+  return h + '<div class="gctr-grid"><table><thead><tr><th>Person</th><th>Test</th><th>Last score</th><th>Best</th><th>Tries</th><th>Result</th><th>Date</th></tr></thead><tbody>' +
+    list.map(function(x){ var t = x.t; return '<tr><td>' + esc(x.who) + '</td><td>' + esc(t.course) + '</td><td>' + esc(t.score) + ' / ' + esc(t.of) + '</td><td>' + esc(t.best != null ? t.best : t.score) + '</td><td>' + esc(t.tries) + '</td><td class="' + (t.passed ? 'gctr-ok' : 'gctr-part0') + '">' + (t.passed ? 'Passed' : 'Not yet') + '</td><td>' + esc(t.at ? fmtDay(t.at) : '') + '</td></tr>'; }).join('') +
+    '</tbody></table></div></div>';
 };
 
 (function css(){
@@ -42,48 +92,60 @@ W.__GC_TRAIN_QUIZ__ = function(key, quiz, done){
   var st = D.createElement('style'); st.id = 'gc-restotrain-css';
   st.textContent = [
     '.gcq{margin-top:10px}',
+    '.gcq-bar{position:sticky;top:0;z-index:2;background:#0f2440;color:#fff;border-radius:10px;padding:8px 12px;margin:6px 0 10px;font-size:14px}',
     '.gcq-res{background:#eef2f7;border-radius:10px;padding:8px 12px;margin:6px 0 10px;font-weight:600}',
     '.gcq-res.ok{background:#dcfce7;color:#14532d}',
+    '.gcq-res.bad{background:#fee2e2;color:#7f1d1d}',
     '.gcq-q{border:1px solid #e2e8f0;border-radius:10px;padding:8px 12px;margin:0 0 8px;background:#fff}',
+    '.gcq-q.good{border-color:#86efac;background:#f6fef8}',
     '.gcq-q.bad{border-color:#fca5a5;background:#fff7f7}',
     '.gcq-q legend{padding:0 4px;font-size:14px}',
-    '.gcq-c{display:block;padding:3px 0;cursor:pointer;font-size:14px}',
-    '.gcq-c.right{color:#14532d;font-weight:700}',
+    '.gcq-c{display:block;width:100%;text-align:left;margin:4px 0;padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#0f172a;font:14px Inter,Arial,sans-serif;cursor:pointer}',
+    '.gcq-c:hover:not([disabled]){border-color:#0f2440;background:#f1f5f9}',
+    '.gcq-c[disabled]{cursor:default}',
+    '.gcq-c.right{border-color:#16a34a;background:#dcfce7;color:#14532d;font-weight:700}',
+    '.gcq-c.wrong{border-color:#dc2626;background:#fee2e2;color:#7f1d1d;font-weight:700}',
+    '.gcq-c.dim{opacity:.6}',
+    '.gcq-ok{color:#15803d;font-size:12px;font-weight:700}',
     '.gcq-x{color:#b91c1c;font-size:12px;font-weight:700}',
-    '.gcq-why{font-size:13px;color:#475569;margin-top:4px}',
-    '.gcq-score{font-size:13px;color:#475569;margin-left:8px}'
+    '.gcq-why{font-size:13px;color:#334155;margin-top:4px}'
   ].join('\n');
   (D.head || D.documentElement).appendChild(st);
 })();
 
-function quizOf(key){
-  var parts = key.split('|'), mid = parts[0], pid = parts[1];
-  var c = (W.__GC_TRAIN_EXTRA__ || []).filter(function(x){ return 'b:' + x.id === mid; })[0];
-  var p = c && c.parts.filter(function(y){ return y.id === pid; })[0];
-  return p && p.quiz;
-}
 function toast(m, bad){ try { var t = D.createElement('div'); t.setAttribute('data-gc-keep', '1'); t.textContent = m; t.style.cssText = 'position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:1000030;background:' + (bad ? '#7f1d1d' : '#14532d') + ';color:#fff;padding:10px 16px;border-radius:10px;font:600 14px Inter,Arial,sans-serif;box-shadow:0 6px 20px rgba(0,0,0,.25)'; D.body.appendChild(t); setTimeout(function(){ t.remove(); }, 4200); } catch (e) {} }
+function repaint(key, scroll){
+  var box = D.getElementById(qid(key)), quiz = quizOf(key); if (!box || !quiz) return;
+  var done = false; try { done = W._gcTrain.isDone(key); } catch (e) {}
+  var y = scroll ? null : W.scrollY;
+  box.outerHTML = W.__GC_TRAIN_QUIZ__(key, quiz, done);
+  if (scroll) { var b = D.getElementById(qid(key)); if (b && b.scrollIntoView) b.scrollIntoView({ block: 'start' }); }
+}
+function save(key, quiz, picks){
+  var right = 0; picks.forEach(function(p, i){ if (p === quiz[i].a) right++; });
+  var prev = rec(key) || {}, pass = right >= PASS, was = !!prev.passed || (prev.on !== false && !!prev.at && !prev.of);
+  var extra = { score: right, of: quiz.length, best: Math.max(right, prev.best || 0), tries: (prev.tries || 0) + 1, passed: pass || was };
+  try { W._gcTrain.tick(key, pass || was, extra); } catch (e) {}
+  if (pass) toast('✅ Passed: ' + right + ' of ' + quiz.length + '. Your score is saved.');
+  else toast(right + ' of ' + quiz.length + '. You need ' + PASS + ' to pass. Your score is saved; retake it when you are ready.', true);
+  try { W._gcTrain.render(); } catch (e) {}
+}
 
 D.addEventListener('click', function(e){
-  var b = e.target && e.target.closest ? e.target.closest('[data-gcq-grade]') : null; if (!b) return;
+  var el = e.target && e.target.closest ? e.target.closest('[data-gcq-pick],[data-gcq-start],[data-gcq-close]') : null; if (!el) return;
   e.preventDefault(); e.stopPropagation();
-  var key = b.getAttribute('data-gcq-grade'), quiz = quizOf(key), box = D.getElementById(qid(key));
-  if (!quiz || !box) return;
-  var picks = quiz.map(function(q, i){ var r = box.querySelector('input[name="' + qid(key) + '_' + i + '"]:checked'); return r ? +r.value : -1; });
-  var blank = picks.filter(function(p){ return p < 0; }).length;
-  if (blank) { toast('Answer every question first (' + blank + ' left).', true); return; }
-  var wrong = []; quiz.forEach(function(q, i){ if (picks[i] !== q.a) wrong.push(i); });
-  var score = quiz.length - wrong.length;
-  LAST[key] = { picks: picks, wrong: wrong };
-  if (score >= PASS) {
-    try { W._gcTrain.tick(key, true); } catch (x) {}
-    toast('✅ Passed: ' + score + ' of ' + quiz.length + '. Nice work.');
-  } else {
-    toast(score + ' of ' + quiz.length + '. You need ' + PASS + '. The ones marked ✗ were wrong; re-read and try again.', true);
-  }
-  try { W._gcTrain.render(); } catch (x) {}
-  var again = D.getElementById(qid(key)); if (again && again.scrollIntoView) again.scrollIntoView({ block: 'start' });
+  var key = el.getAttribute('data-gcq-pick') || el.getAttribute('data-gcq-start') || el.getAttribute('data-gcq-close'), quiz = quizOf(key);
+  if (!quiz) return;
+  if (el.hasAttribute('data-gcq-close')) { delete TRY[key]; repaint(key, true); return; }
+  if (el.hasAttribute('data-gcq-start')) { TRY[key] = { picks: quiz.map(function(){ return -1; }) }; repaint(key, true); return; }
+  var t = TRY[key]; if (!t) return;
+  var i = +el.getAttribute('data-i'), j = +el.getAttribute('data-j');
+  if (t.picks[i] >= 0) return;
+  t.picks[i] = j;
+  var finished = t.picks.every(function(p){ return p >= 0; });
+  if (finished) save(key, quiz, t.picks);
+  repaint(key, false);
 }, true);
 
-try { console.log('[GC] 🔥 GrayCo restoration training (patch RESTOTRAIN): ' + W.__GC_TRAIN_EXTRA__.length + ' courses'); } catch (e) {}
+try { console.log('[GC] 🎓 GrayCo restoration training (patch RESTOTRAIN): ' + W.__GC_TRAIN_EXTRA__.length + ' courses, tests with saved scores'); } catch (e) {}
 })();

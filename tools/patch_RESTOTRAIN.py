@@ -27,8 +27,8 @@ def course(c):
     parts.insert(0, {'id': 'print', 'title': 'The printable manual',
                      'body': 'The whole course as a GrayCo manual you can print or read on paper, with the review questions: '
                              '[🖨 Open the ' + c['short'] + ' manual (PDF)](' + pdf + ')'})
-    parts.append({'id': 'quiz', 'title': 'Quiz: pass %d of %d to finish' % (C.PASS, len(c['quiz'])),
-                  'body': 'Take it after you have read every part. You can retake it as many times as you need.',
+    parts.append({'id': 'quiz', 'title': 'Test: pass %d of %d to finish' % (C.PASS, len(c['quiz'])),
+                  'body': 'Take it after you have read every part. Each answer shows right away; your score is saved and your manager can see it. You can retake it as many times as you need.',
                   'quiz': [{'q': q, 'c': ch, 'a': a, 'why': why} for q, ch, a, why in c['quiz']]})
     return {'id': c['id'], 'title': c['title'], 'intro': c['intro'], 'required': c['required'], 'cat': c['cat'], 'parts': parts}
 
@@ -68,6 +68,15 @@ EDITS = [
     ("data-k=\"' + esc(key) + '\"' + (dn ? ' checked' : '') + '> ✓ ' + (watch ? 'I watched this' : 'I read this') + '</label>'",
      "data-k=\"' + esc(key) + '\"' + (dn ? ' checked' : '') + (p.quiz && !dn ? ' disabled title=\"Pass the quiz to tick this\"' : '') + '> ✓ ' + (p.quiz ? 'Passed' : watch ? 'I watched this' : 'I read this') + '</label>'",
      'Pass the quiz to tick this'),
+    ("function tick(key, on){\n  P.done[key] = { at: nowISO(), on: on !== false };",
+     "function tick(key, on, extra){\n  P.done[key] = Object.assign({ at: nowISO(), on: on !== false }, extra && typeof extra === 'object' ? extra : {});   /* patch RESTOTRAIN: a test's score rides on its tick */",
+     'a test\'s score rides on its tick'),
+    ("return { name: s(r.u.name) || r.u.email, email: low(r.u.email), role: rk, required: tot, per: per, last: s(r.p.updatedAt), certs: certs };",
+     "return { name: s(r.u.name) || r.u.email, email: low(r.u.email), role: rk, required: tot, per: per, last: s(r.p.updatedAt), certs: certs, tests: W.__GC_TRAIN_TESTS__ ? W.__GC_TRAIN_TESTS__(isObj(r.p.done) ? r.p.done : {}) : [] };   /* patch RESTOTRAIN: test scores */",
+     '__GC_TRAIN_TESTS__('),
+    ("ov.querySelector('[data-body]').innerHTML = rows.length ? h + ch : 'No staff with a GrayCo e-mail found.';",
+     "ov.querySelector('[data-body]').innerHTML = rows.length ? h + ch + (W.__GC_TRAIN_TESTROWS__ ? W.__GC_TRAIN_TESTROWS__(rows) : '') : 'No staff with a GrayCo e-mail found.';   /* patch RESTOTRAIN: test scores */",
+     '__GC_TRAIN_TESTROWS__('),
 ]
 for old, new, mark in EDITS:
     if mark in train:

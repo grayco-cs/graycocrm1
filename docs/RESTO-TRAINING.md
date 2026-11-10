@@ -7,8 +7,9 @@ Where: 📄 Forms & Docs → 🎓 Training (filter **IICRC**). Two GrayCo course
 - **GrayCo Odor Control** — 9 lessons + quiz (covers the IICRC OCT subjects).
 
 Required for the **Insurance / Mitigation** role and open to everyone else. Each lesson has its own "✓ I read this". The last
-part of each course is a 20-question quiz; passing (16 of 20) ticks it automatically, and it can't be ticked by hand, so
-👥 Team progress shows who passed. Each course's first part links the printable manual (`/training/*.pdf`).
+part of each course is a 20-question test: tap an answer and it shows right away (✓, or ✗ with the right answer and why),
+with a running score. When finished the score is saved (last, best, tries); 16 of 20 ticks the part (never by hand).
+👥 Team progress lists every person's test scores. Each course's first part links the printable manual (`/training/*.pdf`).
 
 Change the words in `tools/restotrain_content.py`, then:
 
