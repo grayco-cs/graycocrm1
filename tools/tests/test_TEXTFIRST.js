@@ -10,7 +10,8 @@ const USERS = [{ name: 'Nick Thomas', email: 'nthomas@grayco-cs.com', role: 'adm
 const skv = {}, texts = [], mails = [];
 Object.assign(SA._D, { now: () => Date.parse('2026-11-10T18:00:00Z'),   /* a Tuesday noon Central: the office is open */ kvGet: async k => skv[k], kvCas: async (k, f) => { const nv = f(skv[k] == null ? null : JSON.parse(JSON.stringify(skv[k]))); if (nv !== undefined) skv[k] = nv; return { ok: true, value: skv[k] }; },
   send: async (to, body) => { texts.push({ to, body }); return { ok: true }; }, paused: async () => false, optouts: async () => ({}), consentNo: async () => false,
-  people: async () => ({ users: USERS, staff: [] }), hours: async () => null, postReply: async m => ({ id: m.id }), lsaDecide: async () => ({ inbox: true }), textLog: async row => { tlog.push(row); return true; }, vetTodo: async o => { vets.push(o); return true; } });
+  people: async () => ({ users: USERS, staff: [] }), hours: async () => null, postReply: async m => ({ id: m.id }), lsaDecide: async () => ({ inbox: true }), textLog: async row => { tlog.push(row); return true; }, vetTodo: async o => { vets.push(o); return true; }, textAppt: async row => { appts.push(row); return true; } });
+const appts = [];
 const vets = [];
 const tlog = [];
 global.fetch = async (url, init) => { if (/resend/.test(url)) { mails.push(JSON.parse(init.body)); return { ok: true, status: 200, json: async () => ({ id: 'x' }) }; } return { ok: false, status: 404, json: async () => [] }; };
@@ -48,6 +49,15 @@ const A = BA.make({ env: k => ENV[k] != null ? ENV[k] : '', s: v => v == null ? 
   assert.ok(texts.every(x => x.body.startsWith('GrayCo: Google LSA call to the office ' + SA._lsaCode('l3') + ' from (901) 555-0123 Google LSA caller. ✅ Office Olivia says it\'s real: "roof leak in den". ') && /\/#leads&lead=l3 /.test(x.body)), JSON.stringify(texts));
   const r3 = await SA.staffInbound('9015550001', 'good ' + SA._lsaCode('l3') + ' Pat', 'SMx3');
   assert.ok(r3 && r3.lsa === 'l3' && r3.good === true, 'GOOD works on it: ' + JSON.stringify(r3));
+  /* APPTTEXT: "appt …" from a staff cell → my schedule; Pat (a PM, not on the alerts list) can text it too; a lead code fills the lead */
+  texts.length = 0;
+  let ra = await SA.staffInbound('9015550003', 'estimate Jane Doe 901-555-1234 11/14 9:30am 55 Oak Ave', 'SMa1');
+  assert.ok(ra && ra.appt === 'added' && appts[0].byEmail === 'pat@grayco-cs.com' && appts[0].date === '2026-11-14' && appts[0].time === '09:30' && appts[0].phone === '9015551234' && appts[0].address === '55 Oak Ave', JSON.stringify([ra, appts[0]]));
+  assert.ok(texts.some(x => x.to === '9015550003' && /^GrayCo: on your schedule — Estimate — Jane Doe · Sat 11\/14 9:30 AM · 55 Oak Ave\. /.test(x.body)), JSON.stringify(texts));
+  ra = await SA.staffInbound('9015550002', 'appt ' + SA._lsaCode('l1') + ' thu 2pm', 'SMa2');
+  assert.ok(ra && ra.appt === 'added' && appts[1].leadId === 'l1' && appts[1].customer === 'Pat' && appts[1].phone === '9015550111' && appts[1].date === '2026-11-12', JSON.stringify(appts[1]));
+  ra = await SA.staffInbound('9015550002', 'appt John Smith', 'SMa3');
+  assert.ok(ra && ra.appt === 'no day' && appts.length === 2 && /what day and time/.test(texts.slice(-1)[0].body));
   /* LSA247: after hours the office is closed → an LSA call texts Wesley and Nick right away (no office check) */
   texts.length = 0; vets.length = 0; const hrs0 = SA._D.hours, now0 = SA._D.now;
   SA._D.hours = async () => null; SA._D.now = () => Date.parse('2026-11-15T03:00:00Z');   /* Saturday 9 PM Central */

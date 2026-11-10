@@ -5491,7 +5491,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.209-2026-11-10-r26y -->
+<!-- GrayCo CRM Build: 33.210-2026-11-10-r26z -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6440,7 +6440,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.209-2026-11-10-r26y");
+  console.log("[GC] Build 33.210-2026-11-10-r26z");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6488,7 +6488,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.209-2026-11-10-r26y"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.210-2026-11-10-r26z"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -216482,7 +216482,36 @@ function textLog(){
   });
 }
 ST(textLog, 25000); SI.call(W, textLog, 120000);
-W._gcLsaCheck = { isLsa: isLsa, pm: pm, decide: decide, textMarks: textMarks, textLog: textLog };
+/* APPTTEXT (owner 11/10): "appt / meeting / estimate / new job … <day> <time>" texted to the GrayCo number (server: gc_kv "gc_text_appts")
+   → the texter's 👤 My schedule (a personal item, like a voice note's), added by THEIR CRM (only they see it); "new job" also makes a
+   lead assigned to them (stage Appointment booked). Once the job has a schedule, it goes on the team schedule as usual. */
+var APPT_DONE = {};
+function textAppts(){
+  var u = '', k = ''; try { u = (localStorage.getItem('grayco_sb_url') || 'https://ieeonhpfahmwwecizdut.supabase.co').replace(/\/$/, ''); k = localStorage.getItem('grayco_sb_key') || ''; } catch (e) {}
+  var myEm = ''; try { myEm = low(W.__GC_AUTH__ && W.__GC_AUTH__.email && W.__GC_AUTH__.email()); } catch (e) {}
+  if (!u || !k || D.hidden || !myEm || typeof W._setSchedule !== 'function') return;
+  W.fetch(u + '/rest/v1/gc_kv?select=value&key=eq.gc_text_appts', { headers: { apikey: k, Authorization: 'Bearer ' + k }, cache: 'no-store' }).then(function(r){ return r.ok ? r.json() : null; }, function(){ return null; }).then(function(rows){
+    if (!Array.isArray(rows) || !rows[0]) return; var v = rows[0].value; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = []; } }
+    var mine = (Array.isArray(v) ? v : []).filter(function(a){ return a && a.id && low(a.byEmail) === myEm && !APPT_DONE[a.id] && Date.now() - Date.parse(a.at || 0) < 30 * 864e5; }); if (!mine.length) return;
+    var sched = (W._crm && W._crm.schedule) || [], have = {}; (Array.isArray(sched) ? sched : []).forEach(function(x){ if (x && x.textId) have[x.textId] = 1; });
+    var add = mine.filter(function(a){ return !have[a.id]; }); mine.forEach(function(a){ APPT_DONE[a.id] = 1; }); if (!add.length) return;
+    var rowsS = add.map(function(a){ var type = a.kind === 'meeting' ? 'meeting' : 'appointment';
+      return { id: 'SCH' + a.id, textId: a.id, pid: '', leadId: s(a.leadId) || ('LTXT_' + a.id), title: s(a.title), date: s(a.date), time: s(a.time), endTime: s(a.endTime), assignee: s(a.by), vendor: '', type: type,
+        address: s(a.address), phone: s(a.phone), notes: '📱 ' + s(a.text), scope: 'personal', private: true, internal: true, by: s(a.by), source: 'text', addedAt: s(a.at) }; });
+    W._setSchedule(function(prev){ var p0 = Array.isArray(prev) ? prev : [], h2 = {}; p0.forEach(function(x){ if (x && x.textId) h2[x.textId] = 1; }); var nx = p0.concat(rowsS.filter(function(x){ return !h2[x.textId]; }));
+      try { if (W._supaUpsert) W._supaUpsert('schedule', nx); } catch (er) {} try { if (W._gcRecIDBput) W._gcRecIDBput('schedule', nx); } catch (er2) {} return nx; });
+    var jobs = add.filter(function(a){ return a.kind === 'newjob' && !s(a.leadId); });
+    if (jobs.length && typeof W._setLeads === 'function') {
+      W._setLeads(function(prev){ var p0 = Array.isArray(prev) ? prev : [], ids = {}; p0.forEach(function(l){ if (l && l.id) ids[l.id] = 1; });
+        var nl = jobs.filter(function(a){ return !ids['LTXT_' + a.id]; }).map(function(a){ return { id: 'LTXT_' + a.id, name: s(a.customer) || 'New job (texted)', phone: s(a.phone), address: s(a.address),
+          source: 'GrayCo text (staff)', leadSource: 'Staff', stage: 'Appointment booked', status: 'Appointment booked', pm: s(a.by), assignedTo: s(a.by), assignedBy: s(a.by) + ' (text)', assignedAt: s(a.at),
+          apptDate: s(a.date), apptTime: s(a.time), notes: '[' + s(a.date) + ' ' + s(a.by) + '] ' + s(a.text), createdAt: s(a.at), updatedAt: new Date().toISOString() }; });
+        var out = p0.concat(nl); try { if (W._gcApplySync) W._gcApplySync('leads', out); } catch (e) {} return out; });
+    }
+  });
+}
+ST(textAppts, 18000); SI.call(W, textAppts, 90000);
+W._gcLsaCheck = { isLsa: isLsa, pm: pm, decide: decide, textMarks: textMarks, textLog: textLog, textAppts: textAppts };
 })(window);
 </script>
 <script id="gc-patch-leadasb">
@@ -217699,4 +217728,83 @@ SI(function(){ if (!D.hidden) pull(false); }, 180000);
 SI(function(){ if (!D.hidden && S.rows.length) paint(); }, 4000);
 try { console.log('[GC] 📎 PDFs e-mailed out by GrayCo staff → the job\'s Files & Docs (patch SENTPDF) — _gcSentPdfs'); } catch (e) {}
 })();
+</script>
+
+<script id="gc-patch-finishphoto">
+/* __GC_PATCH_FINISHPHOTO__ — 📸 NO 100 % WITHOUT FINISH PHOTOS (owner 11/10: "in progress jobs and finished jobs have to have finish
+   photos, so make the PM enter photos to then make the job 100 %").
+   • A job that moves to 100 % (or Completed) with no "After" photo in GrayCo Photos is put back where it was, and the PM sees
+     "📸 Add the finish photos first" with a button that opens the job's photos (tag them After). Once one After photo is on
+     the job, 100 % sticks — and the closeout runs as before.
+   • Jobs already at 100 % when the page opens, imported history and jobs marked "no automations" are left alone.
+   • An admin can still finish a job without photos: the same box has "Mark 100 % anyway (admin)" — saved on the job as
+     finishPhotoWaived (who / when).
+   API: window._gcFinishPhoto = { hasFinish(pid), check() } */
+(function(W){
+'use strict';
+if (W.__GC_PATCH_FINISHPHOTO__) return; W.__GC_PATCH_FINISHPHOTO__ = true;
+var D = W.document, SI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+function s(v){ return v == null ? '' : String(v).trim(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function me(){ try { return (typeof W._gcMeUser === 'function' ? W._gcMeUser() : JSON.parse(localStorage.getItem('grayco_user') || '{}')) || {}; } catch (e) { return {}; } }
+function admin(){ try { if (W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()) return true; } catch (e) {} var u = me(); return /admin|owner/i.test(s(u.role)) || /owner/i.test(s(u.payType)); }
+var PF = ['pct', 'ccProgressPct', 'progress'];
+function pctOf(p){ var v = PF.map(function(k){ return parseFloat(p && p[k]); }).filter(function(x){ return !isNaN(x); })[0]; return isNaN(v) || v == null ? 0 : v; }
+function done(p){ return pctOf(p) >= 100 || /^(complete|completed)$/i.test(s(p && p.status)); }
+function hasFinish(pid){
+  try { var P = W._gcPhotos; if (P && typeof P.records === 'function') { if (arr(P.records()).some(function(r){ return r && !r.deleted && s(r.jobId) === s(pid) && (/^after$/i.test(s(r.tag)) || /\b(after|finish(ed)?|final|complete[d]?)\b/i.test(s(r.caption || r.note || r.label))); })) return true; } } catch (e) {}
+  var p = arr(W._crm && W._crm.projects).filter(function(x){ return x && s(x.id) === s(pid); })[0];
+  return !!(p && arr(p.photos).some(function(r){ return r && /after|finish|final/i.test(s(r.tag || r.label || r.caption)); }));
+}
+var SEEN = null;   /* pid → { pct, status, fields } as last seen */
+/* only a change made HERE (someone tapped / typed in the last 10 s) — a job another computer finished arrives by sync and is left alone */
+var LAST_INPUT = 0; ['pointerdown', 'keydown', 'input', 'change'].forEach(function(ev){ D.addEventListener(ev, function(){ LAST_INPUT = Date.now(); }, true); });
+function snap(p){ var o = { status: p.status }; PF.forEach(function(k){ o[k] = p[k]; }); return o; }
+function revert(p, was){
+  if (typeof W._setProjects !== 'function') return;
+  var patch = Object.assign({}, was, { updatedAt: new Date().toISOString() });
+  W._setProjects(function(prev){ return arr(prev).map(function(x){ return x && s(x.id) === s(p.id) ? Object.assign({}, x, patch) : x; }); });
+}
+function waive(pid){
+  var stamp = { finishPhotoWaived: { by: s(me().name || me().email), at: new Date().toISOString() }, updatedAt: new Date().toISOString() };
+  var target = SEEN && SEEN['__want_' + pid]; if (target) Object.assign(stamp, target);
+  if (typeof W._setProjects === 'function') W._setProjects(function(prev){ return arr(prev).map(function(x){ return x && s(x.id) === s(pid) ? Object.assign({}, x, stamp) : x; }); });
+}
+function ask(p){
+  var old = D.getElementById('gc-finishphoto'); if (old) old.remove();
+  var o = D.createElement('div'); o.id = 'gc-finishphoto'; o.setAttribute('role', 'dialog'); o.setAttribute('aria-modal', 'true'); o.setAttribute('aria-label', 'Finish photos first');
+  o.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:16px';
+  o.innerHTML = '<div style="background:#fff;color:#0f172a;border-radius:14px;max-width:440px;width:100%;padding:18px;font:15px Inter,Arial,sans-serif;box-shadow:0 20px 50px rgba(0,0,0,.3)">'
+    + '<div style="font-weight:800;font-size:18px;margin-bottom:6px">📸 Add the finish photos first</div>'
+    + '<div style="margin-bottom:12px"><b>' + esc(p.name || p.client || 'This job') + '</b> can\'t go to 100 % until it has photos of the finished work. Take or upload them and tag them <b>After</b>, then set the job to 100 % again.</div>'
+    + '<div style="display:flex;flex-direction:column;gap:8px"><button type="button" data-fp="photos" style="min-height:44px;border-radius:10px;border:0;background:#241968;color:#fff;font:700 15px Inter,Arial,sans-serif;cursor:pointer">📸 Add After photos</button>'
+    + (admin() ? '<button type="button" data-fp="waive" style="min-height:40px;border-radius:10px;border:1px solid #cbd5e1;background:#fff;font:600 14px Inter,Arial,sans-serif;cursor:pointer">Mark 100 % anyway (admin)</button>' : '')
+    + '<button type="button" data-fp="close" style="min-height:40px;border-radius:10px;border:1px solid #cbd5e1;background:#fff;font:600 14px Inter,Arial,sans-serif;cursor:pointer">Not now</button></div></div>';
+  o.addEventListener('click', function(e){
+    var b = e.target.closest && e.target.closest('[data-fp]'); if (!b && e.target !== o) return;
+    var a = b ? b.getAttribute('data-fp') : 'close'; o.remove();
+    if (a === 'photos') { try { if (W._gcPhotos && W._gcPhotos.open) W._gcPhotos.open(p.id, { tag: 'After' }); } catch (x) {} }
+    if (a === 'waive') waive(p.id);
+  });
+  D.body.appendChild(o);
+  try { var f = o.querySelector('[data-fp="photos"]'); if (f) f.focus(); } catch (e) {}
+}
+function check(){
+  try {
+    var list = arr(W._crm && W._crm.projects); if (!list.length) return;
+    if (!SEEN) { SEEN = {}; list.forEach(function(p){ if (p && p.id) SEEN[p.id] = snap(p); }); return; }
+    list.forEach(function(p){
+      if (!p || !p.id) return;
+      var was = SEEN[p.id], now = snap(p);
+      if (was && !done(was) && done(p) && Date.now() - LAST_INPUT < 10000 && !p.importedHistory && !p.noAutomations && !p.finishPhotoWaived && !hasFinish(p.id)) {
+        SEEN['__want_' + p.id] = now; revert(p, was); ask(p); return;   /* keep the old snapshot */
+      }
+      SEEN[p.id] = now;
+    });
+  } catch (e) {}
+}
+SI.call(W, check, 1200);
+W._gcFinishPhoto = { hasFinish: hasFinish, check: check };
+})(window);
 </script>

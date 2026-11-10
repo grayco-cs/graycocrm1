@@ -156,6 +156,7 @@ const _D = {
   vetTodo: async o => { const id = 'LSAVET_' + o.leadId, at = new Date(_D.now()).toISOString();   /* LSAVET: the office checks a Google LSA call */
     const w = await core().kvListUpdate('gc_office_tasks', l => l.some(x => x && x.id === id) ? null : { list: l.concat([{ id, kind: 'lsa_vet', leadId: o.leadId, label: '📞 Google LSA call — real lead? ' + o.name, note: (o.said ? o.said + '\n' : '') + 'Look up the number in the office phone\'s recent calls (585). Leads → 📞 Google LSA calls to check → type the number → ✅ Real lead (Wesley and Nick get a text to call) or 🚫 Junk (no text).', assignees: ['office'], prio: 'high', due: at.slice(0, 10), addedBy: 'Google LSA', addedAt: at, updatedAt: at, done: false }]), check: l2 => l2.some(x => x && x.id === id) });
     return !!(w && w.ok); },
+  textAppt: async row => { const w = await core().kvListUpdate('gc_text_appts', l => ({ list: l.concat([row]).slice(-1000), check: l2 => l2.some(x => x && x.id === row.id) })); return !!(w && w.ok); },   /* APPTTEXT */
   textNote: async row => { const w = await core().kvListUpdate('gc_text_notes', l => ({ list: l.concat([row]).slice(-1000), check: l2 => l2.some(x => x && x.id === row.id) })); return !!(w && w.ok); },
   lsaVerified: async leadId => { let ok = false; try { await _D.kvCas('gc_lead_inbox', v => { const l = arr(v); const x = l.find(y => y && s(y.id) === s(leadId)); if (!x) return undefined; x.lsaVerified = new Date(_D.now()).toISOString(); x.leadExtra = Object.assign({}, obj(x.leadExtra), { lsaVerified: x.lsaVerified }); ok = true; return l; }); } catch (e) {} return ok; },   /* LSAFLOW */
   postReply: async m => {
@@ -414,7 +415,7 @@ async function staffInbound0(ph, body, sid){
   if (!byPhone[ph]) {   /*LSASEND: a PM who was sent an LSA lead answers from his cell even when he is not on the alerts list */
     let held0 = []; await _D.kvCas(SKEY, v => { held0 = arr(loadState(v).lsa[ph]).filter(x => x && x.staffEmail); return undefined; }).catch(() => {});
     if (!held0.length) {   /* JOBNOTE: any active staff cell may text "S251 note…" */
-      const sx = /^\s*#?\s*[A-Za-z]\d{3,5}\b/.test(s(body)) ? list.find(x => phone10(x.phone) === ph) : null;
+      const sx = (/^\s*#?\s*[A-Za-z]\d{3,5}\b/.test(s(body)) || require('./apptparse.js').KIND.test(s(body))) ? list.find(x => phone10(x.phone) === ph) : null;   /* + APPTTEXT: any staff cell */
       if (!sx) return null;
       byPhone[ph] = { email: sx.email, name: sx.name || '' };
     } else byPhone[ph] = { email: held0[held0.length - 1].staffEmail, name: held0[held0.length - 1].staffName || '' };
@@ -426,6 +427,7 @@ async function staffInbound0(ph, body, sid){
   await _D.kvCas(SKEY, v => { const st = loadState(v); fresh = false; rep = st.reply[ph] || null; if (sid && st.seen[sid]) return undefined; if (sid) st.seen[sid] = at; fresh = true; return st; });
   if (!fresh) return { handled: true, staff: email, skipped: 'already handled' };
   try { const jn = await jobNote(ph, body, { email, name: p.name }); if (jn) return jn; } catch (e) {}   /* JOBNOTE: "S251 note…" → that job's notes */
+  try { const ap = await apptText(ph, body, { email, name: p.name }); if (ap) return ap; } catch (e) {}   /* APPTTEXT: "appt John Smith thu 2pm" → my schedule */
   try { const lr = await lsaReply(ph, body, { email, name: p.name }); if (lr) return lr; } catch (e) {}   /* LSATEXT: GOOD / BAD for an LSA lead */
   if (!rep || t - Date.parse(rep.at || 0) > REPLY_MS) {
     /* a short "not sent" note, at most once a day per phone */
@@ -762,6 +764,21 @@ function leadText(head, more, who, msg, link){
   if (room < 12) return clip(h, MAX - tail.length) + tail;
   return h + ' — "' + clip(msg, room) + '"' + tail;
 }
+/* APPTTEXT (owner 11/10): a staff text "appt / meeting / estimate / new job … <day> <time> [address]" → that person's 👤 My schedule in the CRM
+   (gc_kv "gc_text_appts"; the CRM page adds it to the schedule as a personal item, and "new job" also makes a lead for them).
+   A lead code from a GrayCo lead text ("appt K7Q2 thu 2pm") uses that lead's name and number. */
+async function apptText(ph, body, who){
+  const AP = require('./apptparse.js'), r = AP.parse(body, now()); if (!r) return null;
+  if (!r.ok) { try { await sendL(ph, 'GrayCo: what day and time? e.g. "appt John Smith thu 2pm 123 Main St". Nothing saved.', leadNum()); } catch (e) {} return { handled: true, staff: who.email, appt: 'no day' }; }
+  let lead = null;
+  if (r.code) { await _D.kvCas(SKEY, v => { const st = loadState(v); lead = arr(st.lsa[phone10(ph)]).filter(x => x.code === r.code).slice(-1)[0] || null; return undefined; }).catch(() => {}); }
+  const at = new Date(now()).toISOString(), row = { id: 'TA_' + now().toString(36) + Math.random().toString(36).slice(2, 6), kind: r.kind, date: r.date, time: r.time, endTime: r.endTime,
+    title: lead ? (r.title.split(' — ')[0] + ' — ' + clip(lead.name, 60)) : r.title, customer: lead ? clip(lead.name, 60) : r.customer, phone: lead ? phone10(lead.phone) : r.phone, address: r.address,
+    leadId: lead ? s(lead.leadId) : '', code: r.code || '', by: s(who.name) || who.email, byEmail: low(who.email), text: clip(body, 400), at };
+  let ok = false; try { ok = await _D.textAppt(row); } catch (e) {}
+  try { await sendL(ph, ok ? 'GrayCo: on your schedule — ' + row.title + ' · ' + AP.nice(row) + (row.address ? ' · ' + clip(row.address, 50) : '') + (r.kind === 'newjob' && !row.leadId ? ' · a lead is made for you' : '') + '. ' + site().replace(/^https?:\/\//, '') + '/#schedule' : 'GrayCo: could not save it — try again or add it in the CRM.', leadNum()); } catch (e) {}
+  return { handled: true, staff: who.email, appt: ok ? 'added' : 'failed', date: row.date, time: row.time };
+}
 /* LSAVET: the office says a Google LSA call is real → Wesley's and Nick's cells, in the lead shape with the number to tap
    o = { leadId, phone, name, note, by } */
 async function lsaVetted(o){
@@ -786,5 +803,5 @@ async function system(kind, text){
   return notify({ type: 'system', text: 'CRM alert — ' + text, link: site(), thread: 'sys:' + s(kind), daily: true, hold: true });
 }
 
-module.exports = { lsaVetted, jobNote, lsaAsk, lsaCustomer, lsaPmText, _lsaCode: lsaCode, _isLsaLead: isLsaLead, _lsaReply: lsaReply, _D: _D, _isSubBid: isSubBid, ROLE_MIT, DEFAULT_PEOPLE, resolve, mitigationHolders, leadText, KEY, SKEY, TYPES, RATE_MS, REPLY_MS, settings, cleanPerson, staffList, load, save, notify, flushHeld, staffInbound, isStaffPhone, inboundText, missedCall, leads, assigned, approvals, system,
+module.exports = { apptText, lsaVetted, jobNote, lsaAsk, lsaCustomer, lsaPmText, _lsaCode: lsaCode, _isLsaLead: isLsaLead, _lsaReply: lsaReply, _D: _D, _isSubBid: isSubBid, ROLE_MIT, DEFAULT_PEOPLE, resolve, mitigationHolders, leadText, KEY, SKEY, TYPES, RATE_MS, REPLY_MS, settings, cleanPerson, staffList, load, save, notify, flushHeld, staffInbound, isStaffPhone, inboundText, missedCall, leads, assigned, approvals, system,
   inQuiet, quietNow, centralHour, compose, wants, _D };
