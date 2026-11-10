@@ -1,4 +1,4 @@
-import { computer, signIn, sleep, cset, cget, resetCloud, cloud } from '../wN/harness_N.mjs';
+import { computer, signIn, sleep, cset, cget, resetCloud, cloud } from '/tmp/claude-0/-home-user-graycocrm1/6a5b2b6b-8a4d-5505-9f82-62521adb6674/scratchpad/wN/harness_N.mjs';
 const R=[]; const ok=(n,c,i)=>{R.push(!!c);console.log((c?'PASS ':'FAIL ')+n+(i!==undefined?'  '+JSON.stringify(i).slice(0,400):''));};
 resetCloud();
 cset('users',[{id:'u1',name:'Wesley Johnson',email:'wjohnson@grayco-cs.com',role:'Admin',payType:'owner',active:true}]);
