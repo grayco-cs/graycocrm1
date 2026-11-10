@@ -5491,7 +5491,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.200-2026-11-10-r26p -->
+<!-- GrayCo CRM Build: 33.201-2026-11-10-r26q -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6440,7 +6440,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.200-2026-11-10-r26p");
+  console.log("[GC] Build 33.201-2026-11-10-r26q");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6488,7 +6488,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.200-2026-11-10-r26p"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.201-2026-11-10-r26q"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -216390,7 +216390,31 @@ function textNotes(){
   });
 }
 ST(textNotes, 20000); SI.call(W, textNotes, 120000);
-W._gcLsaCheck = { isLsa: isLsa, pm: pm, decide: decide, textMarks: textMarks };
+/* TEXTLOG (owner 11/10: "everything we do in GrayCo text is in the CRM too"): every GrayCo text about a lead — the alert sent to each
+   phone, the GOOD / BAD / SEND / NA answer, the confirmation — goes on that lead's activity (server: gc_kv "gc_text_log") */
+function textLog(){
+  var u = '', k = ''; try { u = (localStorage.getItem('grayco_sb_url') || 'https://ieeonhpfahmwwecizdut.supabase.co').replace(/\/$/, ''); k = localStorage.getItem('grayco_sb_key') || ''; } catch (e) {}
+  if (!u || !k || D.hidden) return;
+  W.fetch(u + '/rest/v1/gc_kv?select=value&key=eq.gc_text_log', { headers: { apikey: k, Authorization: 'Bearer ' + k }, cache: 'no-store' }).then(function(r){ return r.ok ? r.json() : null; }, function(){ return null; }).then(function(rows){
+    if (!Array.isArray(rows) || !rows[0]) return; var v = rows[0].value; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = []; } }
+    var list = (Array.isArray(v) ? v : []).filter(function(x){ return x && x.id && x.text && Date.now() - Date.parse(x.at || 0) < 30 * 864e5; }); if (!list.length) return;
+    var byCode = {}; list.forEach(function(x){ if (x.code && x.leadId) byCode[x.code] = x.leadId; });
+    var users = []; try { users = (W._crm && W._crm.users) || []; } catch (e) {}
+    var nameOf = function(x){ if (s(x.who)) return s(x.who); var d = s(x.phone); var p = users.find(function(z){ return z && String(z.cell || z.mobile || z.phone || '').replace(/\D/g, '').slice(-10) === d; }); return p ? s(p.name) : (d ? '(' + d.slice(0, 3) + ') ' + d.slice(3, 6) + '-' + d.slice(6) : ''); };
+    var add = {};
+    list.forEach(function(x){ var id = s(x.leadId) || byCode[s(x.code)]; if (!id) return; (add[id] = add[id] || []).push(x); });
+    Object.keys(add).forEach(function(id){
+      var l = leads().find(function(y){ return y && (s(y.id) === id || s(y.inboxId) === id || s(y.leadInboxId) === id || s(y.fromInbox) === id); }); if (!l) return;
+      var act = Array.isArray(l.activity) ? l.activity : [], have = {}; act.forEach(function(a){ if (a && a.id) have[a.id] = 1; });
+      var neu = add[id].filter(function(x){ return !have['TXT_' + x.id]; }).map(function(x){ var nm = nameOf(x);
+        return { id: 'TXT_' + x.id, at: s(x.at), by: x.dir === 'in' ? nm || 'GrayCo text' : 'GrayCo text', type: x.dir === 'in' ? 'text' : 'system', text: (x.dir === 'in' ? '📲 ' + (nm || 'Staff') + ' texted: "' + s(x.text) + '"' + (s(x.result) ? ' → ' + s(x.result) : '') : '📤 GrayCo text to ' + (nm || 'staff') + ': ' + s(x.text)) }; });
+      if (!neu.length) return;
+      saveLead(l.id, { activity: act.concat(neu).sort(function(a, b){ return s(a.at) < s(b.at) ? -1 : 1; }).slice(-200) });
+    });
+  });
+}
+ST(textLog, 25000); SI.call(W, textLog, 120000);
+W._gcLsaCheck = { isLsa: isLsa, pm: pm, decide: decide, textMarks: textMarks, textLog: textLog };
 })(window);
 </script>
 <script id="gc-patch-leadasb">

@@ -250,10 +250,14 @@ function make(d){
     return { area: 'area:Leads', leadKey: n === 1 ? list[0].key : '', replyTo: n === 1 ? s((list[0].contact || {}).email) : '', subject, html, text, push: { title: subject.slice(0, 100), body: list.slice(0, 3).map(x => x.title.slice(0, 80)).join('\n').slice(0, 180), tag: 'lead-new-' + list[0].id } };
   }
   /* extra: the assigned estimator / PM; only: just these people (not the admins) */
-  async function deliver(m, extra, only){
+  /* TEXTFIRST (owner 11/10: "I don't want a million notifications … one or the other, and text is the easiest for lead notifications and
+     CRM notifications, but not e-mails"): `texted` = the people who just got this same alert by text — no e-mail or push for them too */
+  async function deliver(m, extra, only, texted){
     m = linkify(m);   /* patch HOT1 */
     if (m && m.html) { try { m = Object.assign({}, m, { html: LM().telify(m.html) }); } catch (e) {} }   /* patch LEADMAILMSG: every phone number is a tel: link */
-    const to = only ? Array.from(new Set(arr(only).map(low).filter(Boolean))) : (await recipients(extra)).filter(x => x !== 'office@grayco-cs.com');   /* LEADROUTE2 (owner 11/9): lead / bid e-mails never go to office@ — the routed estimator / PM gets them */
+    const tx = (Array.isArray(texted) ? texted : []).map(low);
+    const to = (only ? Array.from(new Set(arr(only).map(low).filter(Boolean))) : (await recipients(extra)).filter(x => x !== 'office@grayco-cs.com')).filter(x => tx.indexOf(x) < 0);   /* LEADROUTE2 (owner 11/9): lead / bid e-mails never go to office@ — the routed estimator / PM gets them */   /* TEXTFIRST */
+    if (only && !to.length && tx.length) return { ok: true, why: 'sent by text', to, texted: tx, pushed: 0 };   /* TEXTFIRST: everyone got it by text */
     const r = (!only && !to.length && (MAIL_OFF || true)) ? { ok: true, why: 'lead e-mails are off' } : await sendMail(to, m);   /* PMBID */
     const p = await push(to.length ? to : (MAIL_OFF ? ['office@grayco-cs.com'] : to), m.push);   /* the push goes out even when the e-mail could not */
     return { ok: r.ok, why: r.why, to, pushed: p.sent, pushWhy: p.why };
@@ -359,6 +363,9 @@ function make(d){
     const urgentL = mine.filter(isEm), normalL = mine.filter(x => !isEm(x));
     const groups = !normalL.length ? [] : o.group ? [normalL] : normalL.map(x => [x]);
     const out = { sent: 0, messages: 0, failed: 0, to: [] }; if (sgDrop) out.salesblock = sgDrop;
+    /* TEXTFIRST: the lead texts go out FIRST; whoever got the text gets no lead e-mail / push for it (the 🚨 emergency path keeps its e-mail + calls) */
+    try { out.cell = await require('./smsalert.js').leads(mine, raw0, isEm); } catch (e) { out.cell = { error: s(e && e.message) }; }   /* patch SMSALERT: text alerts to staff cells */
+    const texted = Array.from(new Set([].concat.apply([], arr(out.cell).map(c => Array.isArray(c && c.to) ? c.to : [])).map(low)));
     for (const g of groups) {
       /* patch LSAMAIL (owner 11/10: "LSA e-mails need to go to Nick and Wesley, both admins, so they can state whether it's a good lead or
          not, also office gets those e-mails"): a Google Local Services lead → the assignee + the admins (OWNER_EMAILS, default Wesley and
@@ -366,8 +373,8 @@ function make(d){
       const isLsaL = x => { const it = Object.assign({}, raw0[x.id] || {}, x), ex = it.leadExtra || {}; return it.lsaCheck === 'pending' || ex.lsaCheck === 'pending' || /google\s*lsa|local\s*services/i.test([it.source, it.leadSource, ex.leadSource, ex.mkSource === 'Google LSA' ? 'google lsa' : ''].join(' ')); };
       const asg = [].concat.apply([], g.map(x => [x.assigneeEmail].concat(x.coEmails || [])));
       const lsaTo = g.some(isLsaL) ? Array.from(new Set(asg.concat((env('OWNER_EMAILS') || 'wjohnson@grayco-cs.com,nthomas@grayco-cs.com').split(','), ['office@grayco-cs.com']).map(low).filter(e => /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(e)))) : null;
-      const r = lsaTo ? await deliver(Object.assign({}, mailNew(g), { subject: '🔎 Google LSA lead — good or bad? ' + s(mailNew(g).subject).replace(/^🔎 Google LSA lead — good or bad\? /, '') }), [], lsaTo)
-        : await deliver(mailNew(g), asg);   /* patch HOT2: + coAssignees */
+      const r = lsaTo ? await deliver(Object.assign({}, mailNew(g), { subject: '🔎 Google LSA lead — good or bad? ' + s(mailNew(g).subject).replace(/^🔎 Google LSA lead — good or bad\? /, '') }), [], lsaTo, texted)
+        : await deliver(mailNew(g), asg, null, texted);   /* patch HOT2: + coAssignees */   /* TEXTFIRST */
       out.messages++; out.to = r.to; out.pushed = (out.pushed || 0) + (r.pushed || 0); if (r.pushWhy) out.pushWhy = r.pushWhy;
       if (r.ok) out.sent += g.length; else { out.failed += g.length; out.why = r.why; }
       const at = nowIso();
@@ -383,7 +390,6 @@ function make(d){
     }
     if (urgentL.length) { try { out.emergency = await emergency(urgentL, raw0); out.sent += out.emergency.sent || 0; } catch (e) { out.emergency = { error: s(e && e.message) }; } }   /* patch EMERG */
     /* patch X10: an after-hours emergency (water / fire) pages the person on call (_lib/oncall.js) — never blocks the alert */
-    try { out.cell = await require('./smsalert.js').leads(mine, raw0, isEm); } catch (e) { out.cell = { error: s(e && e.message) }; }   /* patch SMSALERT: text alerts to staff cells */
     if (env('ONCALL_OFF') !== '1') { try { out.oncall = await require('./oncall.js').make({ env: env, kvGet: kvGet, kvCas: kvCas, now: now, push: push }).maybePage(mine); } catch (e) { out.oncall = { error: s(e && e.message) }; } }
     return out;
   }
@@ -683,9 +689,9 @@ function make(d){
     const k = x.key + '|' + x.assigneeEmail; let claim = false;
     await kvCas(KA, v => { const st = loadState(v); st.assigned = st.assigned || {}; if (st.assigned[k]) return undefined; st.assigned[k] = nowIso(); claim = true; return st; });
     if (!claim) return { sent: 0, already: true };
-    const r = await deliver(mailAssigned(x), null, [x.assigneeEmail]);
+    let cell = null; try { cell = await require('./smsalert.js').assigned(x); } catch (e) {}   /* patch SMSALERT */   /* TEXTFIRST: the text first — texted → no e-mail too */
+    const r = await deliver(mailAssigned(x), null, [x.assigneeEmail], cell && Array.isArray(cell.to) ? cell.to : []);
     if (!r.ok) await kvCas(KA, v => { const st = loadState(v); if (st.assigned) delete st.assigned[k]; return st; }).catch(() => {});
-    let cell = null; try { cell = await require('./smsalert.js').assigned(x); } catch (e) {}   /* patch SMSALERT */
     try { await require('./smsalert.js').lsaPmText(lead, x); } catch (e) {}   /* patch LSAFLOW: the LSA customer gets the PM's name and number */
     return { sent: r.ok ? 1 : 0, to: r.to, why: r.why || '', cell };
   }

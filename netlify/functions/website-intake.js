@@ -669,7 +669,13 @@ exports.fromEmail = async function(mail){
   const text = s(mail.text), from = mail.from || {}, H = mail.headers || {};
   const got = fieldsOf(text), b = splitAddress(got.b);
   const lsa = /local services|localservices|google guaranteed|google screened/i.test(s(mail.subject) + ' ' + text.slice(0, 3000));   /* patch MKT2 LSA: a Google Local Services lead e-mail forwarded to leads@ */
-  if (lsa) { if (!b.phone) { const m = /(?:\+?1[\s.-]?)?\(?(\d{3})\)?[\s.-]?(\d{3})[\s.-]?(\d{4})/.exec(text); if (m) b.phone = m[1] + m[2] + m[3]; } if (!b.name) { const n = /(?:^|\n)\s*(?:customer|name|lead)\s*[:\-]\s*([A-Za-z][A-Za-z .'-]{1,60})/i.exec(text); if (n) b.name = n[1].trim(); } if (!b.message) b.message = clip(text, 1500); }
+  /* LSACALL2 (owner 11/10): Google's "New call from a potential customer" e-mail has NO caller number — only "Your Customer ID: 555-434-6278"
+     (GrayCo's own Google account id, never a phone) and "called you on 11/10/2026 at 2:31 PM". Drop the id; no number → the lead is
+     "Google LSA caller (2:31 PM)" so the text still goes out right away */
+  const lsaTxt = text.replace(/customer\s*id\s*:?\s*[\d-]{6,}/ig, ' ');
+  const lsaWhen = /called you on\s+([\d/]+)\s+at\s+([\d:]+\s*[AP]M)/i.exec(text);
+  if (lsa) { if (!b.phone) { const m = /(?:\+?1[\s.-]?)?\(?(\d{3})\)?[\s.-]?(\d{3})[\s.-]?(\d{4})/.exec(lsaTxt); if (m) b.phone = m[1] + m[2] + m[3]; } if (!b.name) { const n = /(?:^|\n)\s*(?:customer|name|lead)\s*[:\-]\s*([A-Za-z][A-Za-z .'-]{1,60})/i.exec(text); if (n) b.name = n[1].trim(); } if (!b.name && !b.phone && lsaWhen) b.name = 'Google LSA caller (' + lsaWhen[2].replace(/\s+/g, ' ').toUpperCase() + ')';
+    if (!b.message) b.message = lsaWhen ? 'A potential customer called the office through Google Local Services on ' + lsaWhen[1] + ' at ' + lsaWhen[2] + '. Google did not include the number — open the call in the Local Services app (Leads) to call them back.' : clip(lsaTxt, 1500); }
   const replyTo = low(s(H['reply-to']).replace(/^.*<([^>]+)>.*$/, '$1'));
   const sender = [low(b.email || b.email_address), replyTo, low(from.email)].find(x => isEmail(x) && !NOT_CUSTOMER.test(x)) || '';
   if (!sender && !b.email && /@grayco-cs\.com$/i.test(s(from.email))) { const fw = /^\s*from:\s*([^<\n]*)<([^>@\s]+@[^>\s]+)>/im.exec(text); if (fw && !NOT_CUSTOMER.test(low(fw[2]))) { b.email = low(fw[2]); if (!b.name && s(fw[1]).replace(/"/g, '').trim()) b.name = s(fw[1]).replace(/"/g, '').trim(); } }   /* patch LEADMAIL */

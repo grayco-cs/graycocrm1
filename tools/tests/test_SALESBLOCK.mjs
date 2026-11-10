@@ -187,6 +187,15 @@ const tedLead = { id: 'LI-40569a6f62ec9c86', type: 'insurance', leadKind: 'Insur
   r = await WEB.fromEmail({ from: { email: 'kim@example.com', name: 'Kim' }, subject: 'Roof leak', text: 'Name: Kim Lee\nPhone: 901-555-0161\nMessage: roof is leaking into my bedroom', messageId: '<a2@x>' });
   ok(r.lead && byPhone('9015550161') && emergMail().length >= 1, 'a real leads@ emergency still alerts', { r, m: MAIL.map(x => x.subject) });
 
+  /* LSACALL2 (owner 11/10): Google's "New call from a potential customer" e-mail — no caller number, only GrayCo's Customer ID */
+  world(); T = DAY; const OE0 = process.env.OWNER_EMAILS; process.env.OWNER_EMAILS = 'nthomas@grayco-cs.com,wjohnson@grayco-cs.com';
+  r = await WEB.fromEmail({ from: { email: 'localservices-noreply@google.com', name: 'Local Services by Google' }, subject: 'New call from a potential customer',
+    text: 'Local Services By Google\n\nYour Customer ID: 555-434-6278\n\nNew event\n\nNew call from a potential customer\n\nA potential customer called you on 11/10/2026 at 2:31 PM.\n\nView Details', messageId: '<lsacall@x>' });
+  const lc = inbox().find(x => /Google LSA caller \(2:31 PM\)/.test(JSON.stringify(x)));
+  ok(r.lead && !!lc && !byPhone('5554346278'), 'LSA call e-mail → a lead "Google LSA caller (2:31 PM)", never GrayCo\'s Customer ID as a phone', { r, ids: inbox().map(x => x.title) });
+  st = staffSms(); ok(st.length >= 2 && st.every(x => /Google LSA call to the office/.test(x.Body) && /open the LSA app/.test(x.Body) && !/555-?434/.test(x.Body)), 'LSA call → a text to Nick + Wesley right away', { st: st.map(x => x.Body), all: SMS.map(x => [x.To, x.Body]), al: JSON.stringify(r.alerts).slice(0, 1500) });
+  process.env.OWNER_EMAILS = OE0;
+
   /* lead-intake.js (paid lead sources) — the other path that queues a first e-mail */
   const LI = require(path.join(SRC, 'lead-intake.js'));
   const intake = b => LI.handler({ httpMethod: 'POST', headers: { 'x-api-key': 'ri-test', 'content-type': 'application/json' }, queryStringParameters: {}, body: JSON.stringify(b) });

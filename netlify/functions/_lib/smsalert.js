@@ -150,6 +150,9 @@ const _D = {
     return out;
   },
   jobs: () => core().kvRead(['projects', 'gc_deleted_projects']),   /* JOBNOTE */
+  /* TEXTLOG (owner 11/10: "everything we do in GrayCo text is in the CRM too"): every GrayCo text sent / answered → gc_kv "gc_text_log"
+     (newest 1500); the CRM page puts each one on its lead's activity (index.html LSATEXT textLog) */
+  textLog: async row => { const w = await core().kvListUpdate('gc_text_log', l => ({ list: l.concat([row]).slice(-1500), check: l2 => l2.some(x => x && x.id === row.id) })); return !!(w && w.ok); },
   textNote: async row => { const w = await core().kvListUpdate('gc_text_notes', l => ({ list: l.concat([row]).slice(-1000), check: l2 => l2.some(x => x && x.id === row.id) })); return !!(w && w.ok); },
   lsaVerified: async leadId => { let ok = false; try { await _D.kvCas('gc_lead_inbox', v => { const l = arr(v); const x = l.find(y => y && s(y.id) === s(leadId)); if (!x) return undefined; x.lsaVerified = new Date(_D.now()).toISOString(); x.leadExtra = Object.assign({}, obj(x.leadExtra), { lsaVerified: x.lsaVerified }); ok = true; return l; }); } catch (e) {} return ok; },   /* LSAFLOW */
   postReply: async m => {
@@ -297,6 +300,14 @@ function fromNum(){ return env('TWILIO_FROM_ALERTS') || env('TWILIO_FROM'); }
    stay on the main GrayCo number; every other staff alert (customer / sub texts, missed calls, approvals, system) uses
    TWILIO_FROM_ALERTS when it is set */
 function leadNum(){ return env('TWILIO_FROM') || fromNum(); }
+/* TEXTLOG: every send goes through here — the text is logged for the CRM (never blocks the send) */
+let TLN = 0;
+async function tlog(row){ try { row.id = row.id || ('T' + now().toString(36) + '_' + (++TLN).toString(36) + Math.random().toString(36).slice(2, 6)); row.at = row.at || new Date(now()).toISOString(); row.text = clip(row.text, 600); if (!row.leadId) { const m = /^GrayCo: ([A-HJ-NP-Z2-9]{4}) /.exec(s(row.text)); if (m) row.code = m[1]; } await _D.textLog(row); } catch (e) {} }
+async function sendL(ph, body, from, tag, ctx){
+  const r = await _D.send(ph, body, from, tag);
+  if (r && r.ok) await tlog(Object.assign({ dir: 'out', phone: phone10(ph), text: body, kind: tag || 'staff' }, ctx || {}));
+  return r;
+}
 
 /* ── one alert to everyone who wants it ──
    o = { type, text, link, thread, mine, emergency, daily, replyTo: { phone, pid, name } | null, hold } */
@@ -346,7 +357,7 @@ async function notify(o){
   Object.keys(skip).forEach(k => { if (skip[k].length) out.skipped[k] = skip[k].slice(); });
   for (const g of go) {
     const body = typeof o.body === 'function' ? o.body(g.more, g) : compose(g.more, o.text, o.link);
-    let r = { ok: false }; try { r = await _D.send(g.phone, body, (o.type === 'lead' || o.lsa) ? leadNum() : fromNum()); } catch (e) { r = { ok: false, why: s(e && e.message) }; }
+    let r = { ok: false }; try { r = await sendL(g.phone, body, (o.type === 'lead' || o.lsa) ? leadNum() : fromNum(), undefined, { who: g.name, leadId: s((o.lsa && o.lsa.leadId) || (o.replyTo && o.replyTo.leadId)), code: s(o.lsa && o.lsa.code), type: s(o.type) }); } catch (e) { r = { ok: false, why: s(e && e.message) }; }
     if (r && r.ok) { out.sent++; out.to.push(g.email); }
     else { out.failed = (out.failed || 0) + 1; }
   }
@@ -376,14 +387,19 @@ async function flushHeld(){
   for (const e of Object.keys(held)) {
     const p = R[e]; if (opt[p.phone] || !p.system) continue;
     const l = arr(held[e]), text = l.length === 1 ? l[0].text : l.length + ' overnight alerts: ' + l.map(x => x.text).join(' · ');
-    try { const r = await _D.send(p.phone, compose(0, text, l[0] && l[0].link), fromNum()); if (r && r.ok) out.sent++; } catch (e2) {}
+    try { const r = await sendL(p.phone, compose(0, text, l[0] && l[0].link), fromNum()); if (r && r.ok) out.sent++; } catch (e2) {}
   }
   return out;
 }
 
 /* ── a text from a phone in the alerts table (missed-call.js, before anything else; STOP is already handled there) ──
    null → not a staff phone in the table (the normal path goes on). Otherwise handled here — never a lead. */
-async function staffInbound(ph, body, sid){
+async function staffInbound(ph, body, sid){   /* TEXTLOG: a staff text in (that the CRM handled) is logged too */
+  const r = await staffInbound0(ph, body, sid);
+  if (r && r.handled !== false && r.skipped !== 'already handled') await tlog({ dir: 'in', phone: phone10(ph), who: s(r.staffName || ''), email: s(r.staff), text: s(body), leadId: s(r.lsa || ''), pid: s(r.pid || ''), po: s(r.po || ''), kind: 'staff', result: r.lsa ? (r.good === true ? 'GOOD' : r.good === false ? 'BAD' : '') : r.jobNote ? 'job note ' + r.jobNote : r.replied ? 'sent to customer' : '' });
+  return r;
+}
+async function staffInbound0(ph, body, sid){
   ph = phone10(ph); if (ph.length !== 10) return null;
   const set = await load();
   let pp = {}; try { pp = await _D.people(); } catch (e) {}
@@ -412,7 +428,7 @@ async function staffInbound(ph, body, sid){
     let hint = false;
     await _D.kvCas(SKEY, v => { const st = loadState(v); hint = false; if (st.hint[ph]) return undefined; st.hint[ph] = at; hint = true; return st; }).catch(() => {});
     const out = { handled: true, staff: email, ignored: 'no alert in the last 30 minutes' };
-    if (hint && !opt[ph]) {   /* patch AUTOPANEL: a staff-only hint, tagged 'staff' (goes in data-entry mode) */ try { out.hint = await _D.send(ph, 'GrayCo: your text was not sent to anyone. Reply within 30 min of an alert to answer that person, or answer in the CRM. ' + site(), fromNum()); } catch (e) {} }
+    if (hint && !opt[ph]) {   /* patch AUTOPANEL: a staff-only hint, tagged 'staff' (goes in data-entry mode) */ try { out.hint = await sendL(ph, 'GrayCo: your text was not sent to anyone. Reply within 30 min of an alert to answer that person, or answer in the CRM. ' + site(), fromNum()); } catch (e) {} }
     return out;
   }
   const to = rep.to, text = s(body).slice(0, 560);
@@ -427,7 +443,7 @@ async function staffInbound(ph, body, sid){
   signed = signed.slice(0, 600);
   /* patch CUSTQUIET: a staff reply relayed to a customer is a customer text — 7 PM–7 AM Central it waits for 7 AM, except the
      answer to an EMERGENCY the customer started (rep.emergency), which goes now */
-  const r = await _D.send(to, signed, env('TWILIO_FROM'), rep.emergency ? 'emergency' : 'customer');
+  const r = await sendL(to, signed, env('TWILIO_FROM'), rep.emergency ? 'emergency' : 'customer');
   if (!r || !r.ok) return { handled: true, staff: email, notSent: 'Twilio did not send it' };
   const id = 'SMSC_' + (sid || t.toString(36));
   const msg = await _D.postReply({ id, pid: rep.pid, email, name: p.name, to, text: signed, at });
@@ -503,7 +519,7 @@ async function leads(list, raw, isEm){
       /* LSAWORD (owner 11/10: "google lsa lead from 9016927255 wesley says blah blah blah, reply with if the lead is good and who is the PM") */
       const lt = (more, g) => { const head = (em ? '🚨 ' : '') + 'GrayCo: ' + label + ' ' + code + (more ? ' (+' + more + ' more)' : '') + ' from ' + (callPh.length === 10 ? tidy(callPh) + ' ' : '') + clip(name, 40),
           tail = (!g || g.newbie !== false) ? ' Reply GOOD + PM name (e.g. GOOD Pat), SEND + PM name (the PM calls first), BAD + why, or NA if no answer.' : '',   /* HOWTO (owner 11/10): the how-to only in a person's first month */ said = s(msg).replace(/\s+/g, ' '), room = MAX - head.length - tail.length - 9;
-        const callNote = /call to the office/.test(label) ? ' Missed it? Call them back from your cell.' : '';   /* LSACALL (owner 11/10) */
+        const callNote = /call to the office/.test(label) ? (callPh.length === 10 ? ' Missed it? Call them back from your cell.' : ' Google did not send the number: open the LSA app → Leads to call back.') : '';   /* LSACALL (owner 11/10) */   /* LSACALL2 */
         return head + (said && !callNote && room > 12 ? ' says "' + clip(said, room) + '".' : '.') + callNote + tail; };
       try { out.push(await notify({ type: 'lead', lsa: { leadId: s(x.id), code, name: clip(name, 60), phone: callPh, link: s(obj(r.leadExtra).lsaLink || r.lsaLink), said: clip(s(msg).replace(/\s+/g, ' '), 140), em: !!em, isLsa: lsaL, label }, text: lt(0), body: lt, link, only: lsaAdmins(), thread: ph ? 'p:' + ph : 'lsa:' + s(x.id), emergency: em }));   /* a texter's lead and their first text collapse into one alert */ } catch (e) { out.push({ error: s(e && e.message) }); }
       if (lsaL && !obj(r.leadExtra).lsaCall) try { out.push({ lsaAsk: await lsaAsk(callPh, { leadId: s(x.id), code, name, em, svc: s(obj(r.leadExtra).service || r.service || x.title) }) }); } catch (e) { out.push({ lsaAskError: s(e && e.message) }); }   /* LSAFLOW */
@@ -545,13 +561,13 @@ async function lsaReply(ph, body, who){
     let pm0 = null, nt0 = '';
     for (let k = Math.min(3, ws.length); k >= 1 && !pm0; k--) { const hit = await pmByName(ws.slice(0, k).join(' ').replace(/[,.;:!-]+$/, '')); if (hit) { pm0 = hit; nt0 = ws.slice(k).join(' ').replace(/^[\s,.;:-]+/, '').trim(); } }
     try { await _D.ack(rec0.leadId, 'sent to a PM by text (' + (who.name || who.email) + ')'); } catch (e) {}
-    if (!pm0) { try { await _D.send(ph, 'GrayCo: who should get ' + rec0.code + ' ' + clip(rec0.name, 40) + '? Reply SEND ' + rec0.code + ' <PM name>.', leadNum()); } catch (e) {} return { handled: true, staff: who.email, lsa: rec0.leadId, send: 'no PM found', asked: w0 }; }
+    if (!pm0) { try { await sendL(ph, 'GrayCo: who should get ' + rec0.code + ' ' + clip(rec0.name, 40) + '? Reply SEND ' + rec0.code + ' <PM name>.', leadNum()); } catch (e) {} return { handled: true, staff: who.email, lsa: rec0.leadId, send: 'no PM found', asked: w0 }; }
     const r0 = await _D.lsaSend({ leadId: rec0.leadId, name: rec0.name, phone: rec0.phone, code: rec0.code, pm: pm0, notes: nt0, by: who.name || who.email, byEmail: who.email });
     const pmBody = (more, g) => pmTxt.replace(/ Call them, then reply GOOD, BAD \+ why, or NA if no answer\.$/, (!g || g.newbie !== false) ? ' Call them, then reply GOOD, BAD + why, or NA if no answer.' : '');
     const pmTxt = 'GrayCo: ' + (rec0.label || 'Google LSA lead') + ' ' + rec0.code + ' sent to you by ' + s(who.name || 'the office').split(' ')[0] + ': ' + (rec0.phone ? tidy(rec0.phone) + ' ' : '') + clip(rec0.name, 40) + (rec0.said ? ' says "' + clip(rec0.said, 110) + '"' : '') + (nt0 ? ' Note: ' + clip(nt0, 60) + '.' : '') + ' Call them, then reply GOOD, BAD + why, or NA if no answer.';
     let toPm = null; try { toPm = await notify({ type: 'lead', lsa: Object.assign({}, rec0, { staffEmail: pm0.email, staffName: pm0.name, sentBy: who.email }), text: pmTxt, body: pmBody, link: site() + '/#leads', only: [pm0.email], thread: 'lsa:' + rec0.leadId + ':pm', emergency: !!rec0.em }); } catch (e) {}
     await _D.kvCas(SKEY, v => { const st = loadState(v); arr(st.lsa[ph]).forEach(x => { if (x.leadId === rec0.leadId) x.sentTo = pm0.name; }); return st; }).catch(() => {});
-    try { await _D.send(ph, 'GrayCo: ' + rec0.code + ' ' + clip(rec0.name, 40) + ' sent to ' + pm0.name + (toPm && toPm.sent ? ' (texted)' : ' (no cell on file — they see it in the CRM)') + '. They call and text back GOOD / BAD; a BAD comes back to you to approve.', leadNum()); } catch (e) {}
+    try { await sendL(ph, 'GrayCo: ' + rec0.code + ' ' + clip(rec0.name, 40) + ' sent to ' + pm0.name + (toPm && toPm.sent ? ' (texted)' : ' (no cell on file — they see it in the CRM)') + '. They call and text back GOOD / BAD; a BAD comes back to you to approve.', leadNum()); } catch (e) {}
     return { handled: true, staff: who.email, lsa: rec0.leadId, sent: pm0.name, saved: r0, pmTexted: !!(toPm && toPm.sent) };
   }
   let m = LSA_REPLY.exec(s(body));
@@ -575,7 +591,7 @@ async function lsaReply(ph, body, who){
   /* LSANA (owner 11/10: "also put in leads as not answered — not necessarily a bad lead but no answer once we got the lead, will revisit") */
   if (/^(no[\s-]*answer|noanswer|n\/a|na|vm|voice\s*mail)$/i.test(m[1])) {
     const r0 = await _D.lsaDecide({ leadId: rec.leadId, name: rec.name, phone: rec.phone, code: rec.code, noAnswer: true, good: false, reason: reason, notes: reason, by: who.name || who.email, byEmail: who.email });
-    let c0 = null; try { c0 = await _D.send(ph, 'GrayCo: ' + rec.code + ' ' + clip(rec.name, 40) + ' marked NO ANSWER — kept open, a call-back is on the office To-Do.' + (reason ? ' Notes saved.' : '') + ' Reply GOOD or BAD ' + rec.code + ' when you reach them.', leadNum()); } catch (e) {}
+    let c0 = null; try { c0 = await sendL(ph, 'GrayCo: ' + rec.code + ' ' + clip(rec.name, 40) + ' marked NO ANSWER — kept open, a call-back is on the office To-Do.' + (reason ? ' Notes saved.' : '') + ' Reply GOOD or BAD ' + rec.code + ' when you reach them.', leadNum()); } catch (e) {}
     return { handled: true, staff: who.email, lsa: rec.leadId, noAnswer: true, saved: r0, confirmed: !!(c0 && c0.ok) };
   }
   if (!isAdm && !/^(no[\s-]*answer|noanswer|n\/a|na|vm|voice\s*mail)$/i.test(m[1])) {   /*LSASEND: the PM's own answer */
@@ -583,7 +599,7 @@ async function lsaReply(ph, body, who){
     if (good) {
       const rg = await _D.lsaDecide({ leadId: rec.leadId, name: rec.name, phone: rec.phone, code: rec.code, good: true, reason: '', notes: reason, by: meAsPm.name, byEmail: meAsPm.email, pm: meAsPm, keepPm: true });
       await _D.kvCas(SKEY, v => { const st = loadState(v); arr(st.lsa[ph]).forEach(x => { if (x.leadId === rec.leadId) x.done = 'good'; }); return st; }).catch(() => {});
-      try { await _D.send(ph, 'GrayCo: ' + rec.code + ' ' + clip(rec.name, 40) + ' marked GOOD — it\'s yours.' + (reason ? ' Notes saved.' : ''), leadNum()); } catch (e) {}
+      try { await sendL(ph, 'GrayCo: ' + rec.code + ' ' + clip(rec.name, 40) + ' marked GOOD — it\'s yours.' + (reason ? ' Notes saved.' : ''), leadNum()); } catch (e) {}
       try { await notify({ type: 'lead', text: '✅ ' + meAsPm.name + ' says GOOD for ' + rec.code + ' ' + clip(rec.name, 40) + (reason ? ' — "' + clip(reason, 80) + '"' : '') + '.', link: site() + '/#leads', only: lsaAdmins(), thread: 'lsa:' + rec.leadId + ':pmgood' }); } catch (e) {}
       return { handled: true, staff: who.email, lsa: rec.leadId, good: true, byPm: true, notes: reason, saved: rg };
     }
@@ -591,7 +607,7 @@ async function lsaReply(ph, body, who){
     const rb = await _D.lsaPmBad({ leadId: rec.leadId, name: rec.name, phone: rec.phone, code: rec.code, reason: why, by: meAsPm.name, byEmail: meAsPm.email });
     await _D.kvCas(SKEY, v => { const st = loadState(v); arr(st.lsa[ph]).forEach(x => { if (x.leadId === rec.leadId) x.done = 'pm_bad'; });
       Object.keys(st.lsa).forEach(k => arr(st.lsa[k]).forEach(x => { if (x.leadId === rec.leadId && !x.staffEmail) { x.done = ''; x.at = new Date(now()).toISOString(); } })); return st; }).catch(() => {});   /* the admins can answer again */
-    try { await _D.send(ph, 'GrayCo: ' + rec.code + ' ' + clip(rec.name, 40) + ' — your BAD (' + clip(why, 50) + ') went to the office / admins to approve.', leadNum()); } catch (e) {}
+    try { await sendL(ph, 'GrayCo: ' + rec.code + ' ' + clip(rec.name, 40) + ' — your BAD (' + clip(why, 50) + ') went to the office / admins to approve.', leadNum()); } catch (e) {}
     try { await notify({ type: 'lead', text: '🔎 ' + meAsPm.name + ' says BAD for ' + rec.code + ' ' + clip(rec.name, 40) + ': "' + clip(why, 90) + '". Reply BAD ' + rec.code + ' to confirm (dispute in Google), or GOOD ' + rec.code + ' + PM.', link: site() + '/#leads', only: lsaAdmins(), thread: 'lsa:' + rec.leadId + ':pmbad' }); } catch (e) {}
     return { handled: true, staff: who.email, lsa: rec.leadId, good: false, byPm: true, pmBad: why, saved: rb };
   }
@@ -610,7 +626,7 @@ async function lsaReply(ph, body, who){
   const r = await _D.lsaDecide({ leadId: rec.leadId, name: rec.name, phone: rec.phone, code: rec.code, good, reason: good ? '' : (reason || 'no reason given'), by: who.name || who.email, byEmail: who.email, pm, notes, link: s(rec.link) || LSA_LEADS_URL, isLsa: rec.isLsa !== false });
   await _D.kvCas(SKEY, v => { const st = loadState(v); arr(st.lsa[ph]).forEach(x => { if (x.leadId === rec.leadId) { x.done = good ? 'good' : 'bad'; } }); return st; }).catch(() => {});
   const gTxt = (pm ? 'GOOD — PM ' + pm.name + ' assigned; ' + pm.name.split(' ')[0] + ' and the customer are told.' : 'GOOD — no PM set: pick the PM in CRM Approvals (or reply GOOD ' + rec.code + ' <PM name>).') + (notes ? ' Notes saved on the lead.' : '');
-  let conf = null; try { conf = await _D.send(ph, 'GrayCo: ' + rec.code + ' ' + clip(rec.name, 40) + ' marked ' + (good ? gTxt : 'BAD (' + clip(reason || 'no reason given', 50) + ') — closed, no PM.' + (rec.isLsa !== false ? ' Dispute it in Google: ' + (s(rec.link) || LSA_LEADS_URL) : '')), leadNum()); } catch (e) {}
+  let conf = null; try { conf = await sendL(ph, 'GrayCo: ' + rec.code + ' ' + clip(rec.name, 40) + ' marked ' + (good ? gTxt : 'BAD (' + clip(reason || 'no reason given', 50) + ') — closed, no PM.' + (rec.isLsa !== false ? ' Dispute it in Google: ' + (s(rec.link) || LSA_LEADS_URL) : '')), leadNum()); } catch (e) {}
   return { handled: true, staff: who.email, lsa: rec.leadId, good, reason: good ? '' : reason, pm: pm ? pm.name : '', pmAsked, notes, saved: r, confirmed: !!(conf && conf.ok) };
 }
 /* LEADTEXT: what kind of lead the text names, and what is a bid (not texted this way) */
@@ -640,10 +656,10 @@ async function jobNote(ph, body, who){
   if (!jobs.length) return null;   /* not a job PO: the normal path goes on */
   const j = jobs[0], email = low(who.email), nm = low(who.name);
   const mine = [j.pm, j.apm, j.estimator, j.superintendent, j.super, j.pmName].map(low).filter(Boolean).some(x => x === nm || x === email) || [j.pmEmail, j.estimatorEmail].map(low).indexOf(email) >= 0;
-  if (lsaAdmins().indexOf(email) < 0 && !mine) { try { await _D.send(ph, 'GrayCo: ' + po + ' is not one of your jobs — note not added.', fromNum()); } catch (e) {} return { handled: true, staff: email, jobNote: 'not yours', po }; }
+  if (lsaAdmins().indexOf(email) < 0 && !mine) { try { await sendL(ph, 'GrayCo: ' + po + ' is not one of your jobs — note not added.', fromNum()); } catch (e) {} return { handled: true, staff: email, jobNote: 'not yours', po }; }
   const at = new Date(now()).toISOString(), row = { id: 'TN_' + po + '_' + at.replace(/\D/g, '').slice(0, 14), pid: s(j.id), po, text: note, by: s(who.name) || email, byEmail: email, at };
   let ok = false; try { ok = await _D.textNote(row); } catch (e) {}
-  try { await _D.send(ph, ok ? 'GrayCo: added to ' + po + ' ' + clip(j.name, 40) + ' notes.' : 'GrayCo: could not save the note on ' + po + ' — try again or add it in the CRM.', fromNum()); } catch (e) {}
+  try { await sendL(ph, ok ? 'GrayCo: added to ' + po + ' ' + clip(j.name, 40) + ' notes.' : 'GrayCo: could not save the note on ' + po + ' — try again or add it in the CRM.', fromNum()); } catch (e) {}
   return { handled: true, staff: email, jobNote: ok ? 'added' : 'failed', po, pid: s(j.id) };
 }
 /* LSAPM: a PM by what was texted — full name, first name, last name or e-mail name (one active staff person, else nobody) */
@@ -680,7 +696,7 @@ async function lsaAsk(ph, o){
   if (!claim) return { skipped: 'already asked' };
   const f = firstOf(o.name), svc = clip(s(o.svc).replace(/^(google\s*lsa|local services)[:\s-]*/i, ''), 50);
   const body = 'Hi' + (f ? ' ' + f : '') + ', this is GrayCo Construction Services. We received your request through Google' + (svc ? ' about ' + svc.toLowerCase() : '') + '. Reply YES to confirm you\'d like a call and we\'ll send you your project manager\'s name and number. Reply STOP to opt out.';
-  const r = await _D.send(ph, body.slice(0, 320), env('TWILIO_FROM'), o.em ? 'emergency' : 'customer');
+  const r = await sendL(ph, body.slice(0, 320), env('TWILIO_FROM'), o.em ? 'emergency' : 'customer');
   return { sent: !!(r && r.ok), held: !!(r && r.held) };
 }
 /* a text from a customer (missed-call.js, before the normal path): their YES to the qualify text. Never stops the normal path. */
@@ -691,7 +707,7 @@ async function lsaCustomer(ph, body){
   const at = new Date(now()).toISOString();
   await _D.kvCas(SKEY, v => { const st = loadState(v); if (st.lsaCust[ph]) { st.lsaCust[ph].stage = 'yes'; st.lsaCust[ph].yesAt = at; } return st; }).catch(() => {});
   let saved = null; try { saved = await _D.lsaVerified(rec.leadId); } catch (e) {}
-  let ack = null; try { ack = await _D.send(ph, 'Thank you' + (firstOf(rec.name) ? ', ' + firstOf(rec.name) : '') + ' — you\'re confirmed. We\'re setting up your project manager now; you\'ll get their name and number by text shortly.', env('TWILIO_FROM'), 'customer'); } catch (e) {}
+  let ack = null; try { ack = await sendL(ph, 'Thank you' + (firstOf(rec.name) ? ', ' + firstOf(rec.name) : '') + ' — you\'re confirmed. We\'re setting up your project manager now; you\'ll get their name and number by text shortly.', env('TWILIO_FROM'), 'customer'); } catch (e) {}
   let told = null; try { told = await notify({ type: 'lead', lsa: { leadId: rec.leadId, code: rec.code, name: rec.name, phone: ph }, text: '✅ ' + rec.code + ' ' + clip(rec.name, 40) + ' ' + tidy(ph) + ' confirmed by text (YES). Reply GOOD ' + rec.code + ' or BAD ' + rec.code + ' + why.', link: site() + '/#leads', only: lsaAdmins(), thread: 'lsa:' + rec.leadId + ':yes' }); } catch (e) {}
   return { lsaVerified: rec.leadId, saved, acked: !!(ack && ack.ok), told: told && told.sent };
 }
@@ -717,7 +733,7 @@ async function lsaPmText(lead, x){
   if (!claim) return { skipped: 'already sent' };
   const f = firstOf(c.name || lead.name);
   const body = 'Hi' + (f ? ' ' + f : '') + ', your GrayCo project manager is ' + (again ? 'now ' : '') + pmName + (pmPh.length === 10 ? ' — ' + tidy(pmPh) : '') + '. They will be calling you shortly. — GrayCo Construction Services';
-  const r = await _D.send(ph, body.slice(0, 320), env('TWILIO_FROM'), 'customer');
+  const r = await sendL(ph, body.slice(0, 320), env('TWILIO_FROM'), 'customer');
   return { sent: !!(r && r.ok), to: ph, pm: pmName };
 }
 /* "<head>: <who> — "<message…>" <link>" in ≤ 300 characters; the message is what gets trimmed */

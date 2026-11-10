@@ -87,12 +87,12 @@ async function run(opts){
       '<p>When it is paid, open the CRM and tap <b>✓ Paid</b> on the To-Do (or the 🧾 Taxes card) — date, amount, confirmation # and the receipt. ' + (over ? 'An overdue one is sent again every morning until then.' : '') + '</p>' +
       '<p><a href="' + esc(base + '/#taxes') + '" style="color:#0F1D2F;font-weight:bold">Open the tax calendar</a></p>' +
       '<p style="font-size:12px;color:#55626F">' + esc(T.CPA_NOTE) + '</p>');
-    const m = await A.staffMail(email, subject, html); if (m && m.ok) rep.mailed++;
-    try { const p = await C.pushTo([email], { title: clip(subject.replace(' — GrayCo CRM', ''), 110), body: l.slice(0, 3).map(function(a){ return clip(a.title.replace(/^🧾\s*/, ''), 70); }).join(' · '), tag: 'gc-tax' }); rep.pushed += (p && p.sent) || 0; } catch (e) {}
     try {   /* a text only for people with "Approvals waiting for me" texts on — quiet / business hours apply (never at night); data-entry mode: none */
       const t = await require('./smsalert.js').notify({ type: 'approvals', text: l.length === 1 ? l[0].title.replace(/^🧾\s*/, '') : l.length + ' tax deadlines need you' + (over ? ' (' + over + ' overdue)' : '') + '.', link: base + '/#taxes', thread: 'tax', mine: [email], daily: true });
-      rep.texted += (t && t.sent) || 0;
+      rep.texted += (t && t.sent) || 0; if (t && t.sent) continue;   /* TEXTFIRST: texted → no e-mail / push too */
     } catch (e) {}
+    const m = await A.staffMail(email, subject, html); if (m && m.ok) rep.mailed++;
+    try { const p = await C.pushTo([email], { title: clip(subject.replace(' — GrayCo CRM', ''), 110), body: l.slice(0, 3).map(function(a){ return clip(a.title.replace(/^🧾\s*/, ''), 70); }).join(' · '), tag: 'gc-tax' }); rep.pushed += (p && p.sent) || 0; } catch (e) {}
   }
   return rep;
 }
