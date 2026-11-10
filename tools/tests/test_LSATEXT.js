@@ -20,7 +20,7 @@ Object.assign(SA._D, { now: () => t, kvGet: async k => kv[k], kvCas: async (k, f
   assert.deepStrictEqual(sent.map(x => x.to).filter(x => x !== '9015550111').sort(), ['9015550001', '9015550002'], 'Nick and Wesley get it (even at 3 AM), not the PM');
   assert.ok(sent.some(x => x.to === '9015550111' && /Reply YES/.test(x.body)), 'the customer gets the qualify text (LSAFLOW; held to 7 AM by custquiet in production)');
   sent.splice(0, sent.length, ...sent.filter(x => x.to !== '9015550111'));
-  assert.ok(new RegExp('^GrayCo: Google LSA lead ' + code + ' from \\(901\\) 555-0111 Pat Smith says "Need a new roof"\\. Reply GOOD \\+ PM name \\(e\\.g\\. GOOD Pat\\), SEND \\+ PM name \\(the PM calls first\\), BAD \\+ why, or NA if no answer\\.').test(sent.find(x => x.to === '9015550001').body) && sent[0].body.length <= 320, sent.find(x => x.to === '9015550001').body);
+  assert.ok(new RegExp('^GrayCo: Google LSA lead ' + code + ' from \\(901\\) 555-0111 Pat Smith says "Need a new roof"\\. crm\\.test/#leads&lead=LSA1 Reply GOOD \\+ PM name \\(e\\.g\\. GOOD Pat\\), SEND \\+ PM name \\(the PM calls first\\), BAD \\+ why, or NA if no answer\\.').test(sent.find(x => x.to === '9015550001').body) && sent[0].body.length <= 320, sent.find(x => x.to === '9015550001').body);
   sent.length = 0;
   /* Wesley texts "bad spam call" (no code: the newest LSA lead sent to his phone) */
   let r = await SA.staffInbound('9015550002', 'Bad spam call', 'SM1');
@@ -194,7 +194,7 @@ Object.assign(SA._D, { now: () => t, kvGet: async k => kv[k], kvCas: async (k, f
   sent.length = 0; t += 31 * 864e5;
   await SA.leads([{ id: 'N77', key: 'N77', title: 'Gutters', contact: { name: 'Ty', phone: '9015550277' } }], { N77: { id: 'N77' } }, () => false);
   const old = sent.find(x => x.to === '9015550002');
-  assert.ok(old && /^GrayCo: new lead [A-Z0-9]{4} from \(901\) 555-0277 Ty\.$/.test(old.body), 'no how-to after a month: ' + (old && old.body));
+  assert.ok(old && /^GrayCo: new lead [A-Z0-9]{4} from \(901\) 555-0277 Ty\. crm\.test\/#leads&lead=N77$/.test(old.body), 'no how-to after a month: ' + (old && old.body));
   /* LSACALL: an LSA phone call to the office */
   sent.length = 0;
   await SA.leads([{ id: 'C1', key: 'C1', title: 'Phone call — (901) 555-0288', source: 'CallRail — Google Local Services', contact: { name: 'Caller', phone: '9015550288' } }], { C1: { id: 'C1', leadExtra: { leadSource: 'Google LSA', lsaCheck: 'pending', lsaCall: true } } }, () => false);
