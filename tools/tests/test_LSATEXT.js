@@ -75,7 +75,7 @@ Object.assign(SA._D, { now: () => t, kvGet: async k => kv[k], kvCas: async (k, f
   assert.ok(g && g.good && g.pm === 'Pat PM' && decided[0].pm && decided[0].pm.email === 'pat@grayco-cs.com', JSON.stringify(g));
   assert.ok(sent.some(x => x.to === '9015550002' && /PM Pat PM assigned/.test(x.body)), 'Wesley is told the PM is set');
   g = await SA.staffInbound('9015550002', 'good zed', 'SM11');
-  assert.ok(g && g.good && !g.pm && g.pmAsked === 'zed' && sent.some(x => /no PM named "zed"/.test(x.body)), JSON.stringify(g));
+  assert.ok(g && g.good && !g.pm && g.notes === 'zed' && sent.some(x => /no PM set/.test(x.body)), JSON.stringify(g));
   let na = await SA.staffInbound('9015550001', 'no answer', 'SM12');
   assert.ok(na && na.noAnswer && decided.slice(-1)[0].noAnswer === true && sent.some(x => x.to === '9015550001' && /NO ANSWER — kept open/.test(x.body)), JSON.stringify(na));
   na = await SA.staffInbound('9015550001', 'NA', 'SM13');
@@ -100,5 +100,14 @@ Object.assign(SA._D, { now: () => t, kvGet: async k => kv[k], kvCas: async (k, f
   assert.ok(pn && pn.good && pn.pm === 'Pat PM' && decided[0].leadId === 'LSA7', JSON.stringify(pn));
   const nn = await SA.staffInbound('9015550001', 'Pat will call you', 'SM31');
   assert.ok(!nn || !nn.lsa, 'a sentence is not a PM name');
+  /* LSANOTES: the rest of the text is a note */
+  decided.length = 0; t += 60000;
+  await SA.leads([{ id: 'LSA8', key: 'LSA8', title: 'Roof', source: 'Google LSA', contact: { name: 'Di Ray', phone: '9015550188' } }], { LSA8: { id: 'LSA8', source: 'Google LSA', leadExtra: { lsaCheck: 'pending' } } }, () => false);
+  let nt = await SA.staffInbound('9015550002', 'GOOD Pat roof is 20 years old', 'SM40');
+  assert.ok(nt && nt.pm === 'Pat PM' && nt.notes === 'roof is 20 years old' && decided[0].notes === 'roof is 20 years old', JSON.stringify(nt));
+  nt = await SA.staffInbound('9015550002', 'no answer left a voicemail', 'SM41');
+  assert.ok(nt && nt.noAnswer && decided[1].notes === 'left a voicemail', JSON.stringify(decided[1]));
+  nt = await SA.staffInbound('9015550002', 'bad wanted a free inspection only', 'SM42');
+  assert.ok(nt && nt.good === false && decided[2].notes === 'wanted a free inspection only', JSON.stringify(decided[2]));
   console.log('LSATEXT tests: all passed');
 })().catch(e => { console.error(e); process.exit(1); });

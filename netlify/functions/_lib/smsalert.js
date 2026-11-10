@@ -97,6 +97,8 @@ const _D = {
   lsaDecide: async d => {
     const at = new Date(_D.now()).toISOString(), out = { inbox: false, list: false, todo: false };
     try { await _D.kvCas('gc_lead_inbox', v => { const l = arr(v); const x = l.find(y => y && s(y.id) === s(d.leadId)); if (!x) return undefined;
+      if (s(d.notes)) { const dt = new Date(_D.now()), line = '[' + (dt.getMonth() + 1) + '/' + dt.getDate() + ' ' + s(d.by) + '] ' + s(d.notes);   /* LSANOTES — owner 11/10: just the note (no "good lead" words) */
+        if (Array.isArray(x.notes)) x.notes = x.notes.concat([line]); else x.notes = (s(x.notes) ? s(x.notes) + '\n' : '') + line; }
       x.lsaCheck = d.noAnswer ? 'no_answer' : d.good ? 'good' : 'bad'; x.leadExtra = Object.assign({}, obj(x.leadExtra), { lsaCheck: x.lsaCheck }); x.lsaDecidedBy = d.by; x.lsaDecidedAt = at; x.lsaVia = 'text';
       if (d.noAnswer) { x.noAnswerAt = at; x.noAnswerCount = (+x.noAnswerCount || 0) + 1; }
       else if (!d.good) { x.lsaReason = d.reason; x.lostReason = 'LSA — not a real lead (' + d.reason + ')'; }
@@ -108,7 +110,7 @@ const _D = {
       }
       out.inbox = true; return l; }); } catch (e) {}
     if (out.assigned) { try { out.notified = await L().alertsApi().notifyAssigned(Object.assign({}, out.assigned, { id: s(out.assigned.leadId) || ('LEADIN-' + s(out.assigned.id).replace(/^LI-/, '')) }), { by: s(d.byEmail) }); } catch (e) { out.notified = { error: s(e && e.message) }; } out.assigned = true; }
-    try { const C = core(), row = { id: s(d.leadId), noAnswer: !!d.noAnswer, good: !!d.good, reason: s(d.reason), by: s(d.by), byEmail: s(d.byEmail), at, code: s(d.code), name: s(d.name), phone: s(d.phone), pm: d.pm ? s(d.pm.name) : '', pmEmail: d.pm ? low(d.pm.email) : '' };
+    try { const C = core(), row = { id: s(d.leadId), notes: s(d.notes).slice(0, 600), noAnswer: !!d.noAnswer, good: !!d.good, reason: s(d.reason), by: s(d.by), byEmail: s(d.byEmail), at, code: s(d.code), name: s(d.name), phone: s(d.phone), pm: d.pm ? s(d.pm.name) : '', pmEmail: d.pm ? low(d.pm.email) : '' };
       const has = l => l.some(x => x && s(x.id) === row.id && x.at === at);
       const w = await C.kvListUpdate('gc_lsa_decisions', l => ({ list: l.filter(x => x && s(x.id) !== row.id).concat([row]).slice(-500), check: has })); out.list = !!(w && w.ok); } catch (e) {}
     if (d.noAnswer) { try { out.todo = await core().officeTodo('LSACALLBACK_' + s(d.leadId) + '_' + at.slice(0, 10), '📞 Call back ' + clip(d.name || tidy(d.phone), 40) + (d.phone ? ' ' + tidy(d.phone) : '') + ' (Google LSA — no answer)',
@@ -496,19 +498,27 @@ async function lsaReply(ph, body, who){
   const good = /^(good|g|👍|yes)$/i.test(m[1]);
   /* LSANA (owner 11/10: "also put in leads as not answered — not necessarily a bad lead but no answer once we got the lead, will revisit") */
   if (/^(no[\s-]*answer|noanswer|n\/a|na|vm|voice\s*mail)$/i.test(m[1])) {
-    const r0 = await _D.lsaDecide({ leadId: rec.leadId, name: rec.name, phone: rec.phone, code: rec.code, noAnswer: true, good: false, reason: reason, by: who.name || who.email, byEmail: who.email });
-    let c0 = null; try { c0 = await _D.send(ph, 'GrayCo: ' + rec.code + ' ' + clip(rec.name, 40) + ' marked NO ANSWER — kept open, a call-back is on the office To-Do. Reply GOOD or BAD ' + rec.code + ' when you reach them.', fromNum()); } catch (e) {}
+    const r0 = await _D.lsaDecide({ leadId: rec.leadId, name: rec.name, phone: rec.phone, code: rec.code, noAnswer: true, good: false, reason: reason, notes: reason, by: who.name || who.email, byEmail: who.email });
+    let c0 = null; try { c0 = await _D.send(ph, 'GrayCo: ' + rec.code + ' ' + clip(rec.name, 40) + ' marked NO ANSWER — kept open, a call-back is on the office To-Do.' + (reason ? ' Notes saved.' : '') + ' Reply GOOD or BAD ' + rec.code + ' when you reach them.', fromNum()); } catch (e) {}
     return { handled: true, staff: who.email, lsa: rec.leadId, noAnswer: true, saved: r0, confirmed: !!(c0 && c0.ok) };
   }
   /*LSAPM (owner 11/10: "can we reply with good, PM is and name the PM … or we can put good, PM's name"): "GOOD Pat",
     "GOOD, PM is Pat Miller", "GOOD K7Q2 pm pat" → the lead is assigned to that PM now (no approval wait) */
-  let pm = null, pmAsked = '';
-  if (good && reason) { pmAsked = reason.replace(/^[\s,.:;-]*(the\s+)?(pm|project\s*manager)?[\s,.:;-]*(is|will\s+be|=)?[\s,.:;-]*/i, '').replace(/[.!]+$/, '').trim(); if (pmAsked) pm = await pmByName(pmAsked); }
-  const r = await _D.lsaDecide({ leadId: rec.leadId, name: rec.name, phone: rec.phone, code: rec.code, good, reason: good ? '' : (reason || 'no reason given'), by: who.name || who.email, byEmail: who.email, pm, link: s(rec.link) || LSA_LEADS_URL });
+  let pm = null, pmAsked = '', notes = '';
+  if (good && reason) {
+    pmAsked = reason.replace(/^[\s,.:;-]*(the\s+)?(pm|project\s*manager)?[\s,.:;-]*(is|will\s+be|=)?[\s,.:;-]*/i, '').trim();
+    /* LSANOTES (owner 11/10: "if I add any notes on the good lead also enter those in that job's project notes"): "GOOD Pat roof is 20 years old"
+       → PM Pat + the note "roof is 20 years old" (the first 1–3 words that are one person's name; the rest is the note) */
+    const w = pmAsked.split(/\s+/);
+    for (let k = Math.min(3, w.length); k >= 1 && !pm; k--) { const cand = w.slice(0, k).join(' ').replace(/[,.;:!-]+$/, ''); const hit = await pmByName(cand); if (hit) { pm = hit; notes = w.slice(k).join(' ').replace(/^[\s,.;:-]+/, '').trim(); } }
+    if (!pm) notes = pmAsked.replace(/[.!]+$/, '');
+  }
+  if (!good) notes = reason;
+  const r = await _D.lsaDecide({ leadId: rec.leadId, name: rec.name, phone: rec.phone, code: rec.code, good, reason: good ? '' : (reason || 'no reason given'), by: who.name || who.email, byEmail: who.email, pm, notes, link: s(rec.link) || LSA_LEADS_URL });
   await _D.kvCas(SKEY, v => { const st = loadState(v); arr(st.lsa[ph]).forEach(x => { if (x.leadId === rec.leadId) { x.done = good ? 'good' : 'bad'; } }); return st; }).catch(() => {});
-  const gTxt = pm ? 'GOOD — PM ' + pm.name + ' assigned; ' + pm.name.split(' ')[0] + ' and the customer are told.' : pmAsked ? 'GOOD — no PM named "' + clip(pmAsked, 30) + '" found; pick the PM in CRM Approvals.' : 'GOOD — pick the PM in CRM Approvals (or reply GOOD ' + rec.code + ' <PM name>).';
+  const gTxt = (pm ? 'GOOD — PM ' + pm.name + ' assigned; ' + pm.name.split(' ')[0] + ' and the customer are told.' : 'GOOD — no PM set: pick the PM in CRM Approvals (or reply GOOD ' + rec.code + ' <PM name>).') + (notes ? ' Notes saved on the lead.' : '');
   let conf = null; try { conf = await _D.send(ph, 'GrayCo: ' + rec.code + ' ' + clip(rec.name, 40) + ' marked ' + (good ? gTxt : 'BAD (' + clip(reason || 'no reason given', 50) + ') — closed, no PM. Dispute it in Google: ' + (s(rec.link) || LSA_LEADS_URL)), fromNum()); } catch (e) {}
-  return { handled: true, staff: who.email, lsa: rec.leadId, good, reason: good ? '' : reason, pm: pm ? pm.name : '', pmAsked, saved: r, confirmed: !!(conf && conf.ok) };
+  return { handled: true, staff: who.email, lsa: rec.leadId, good, reason: good ? '' : reason, pm: pm ? pm.name : '', pmAsked, notes, saved: r, confirmed: !!(conf && conf.ok) };
 }
 /* LSAPM: a PM by what was texted — full name, first name, last name or e-mail name (one active staff person, else nobody) */
 async function pmByName(q){

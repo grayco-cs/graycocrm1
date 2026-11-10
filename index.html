@@ -5490,7 +5490,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.189-2026-11-10-r26e -->
+<!-- GrayCo CRM Build: 33.190-2026-11-10-r26f -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6439,7 +6439,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.189-2026-11-10-r26e");
+  console.log("[GC] Build 33.190-2026-11-10-r26f");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6487,7 +6487,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.189-2026-11-10-r26e"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.190-2026-11-10-r26f"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -181689,7 +181689,7 @@ function keyDocs(pj){
     t += ' ';
   } catch (e) {}
   var out = [], add = function(a){ a.forEach(function(x){ if (out.indexOf(x) < 0) out.push('gcb_' + x); }); }, has = function(re){ return re.test(t); };
-  if (has(/\blead\b(?![ -]?(time|gen|source|in\b|s?\s+(to|from|for)))|lead[- ]based|lead paint|\brrp\b/) || la.leadFound || (la.disturbsPaint && parseInt(la.yearBuilt, 10) < 1978)) { add(['lead_01', 'lead_03', 'lead_05']); if (has(/school|daycare|day care|head start|child[- ]occupied|preschool|pre-k/)) add(['lead_02']); }
+  if (/*LEADWORD*/ has(/(?<!\b(good|bad|new|hot|warm|cold|lsa|google|sales|qualified|real|fake|spam|web|website|referral|partner|facebook|angi|homeadvisor|thumbtack|this|that|the|a|no|our|your|his|her|their|my|next|old|dead|open|closed|lost|won)\s)\blead\b(?![ -]?(time|gen|source|in\b|s?\s+(to|from|for|is|was|came|said|says|called|wants|asked|needs|from)))|lead[- ]based|lead paint|lead[- ](hazard|test|found|abatement|safe|dust)|\brrp\b|pre[- ]?1978/) || la.leadFound || (la.disturbsPaint && parseInt(la.yearBuilt, 10) < 1978)) { add(['lead_01', 'lead_03', 'lead_05']); if (has(/school|daycare|day care|head start|child[- ]occupied|preschool|pre-k/)) add(['lead_02']); }
   /* HAZARDTAG (owner 11/9): "for lead and asbestos have hazard as the tag … including with mold" */
   if (has(/\bhazard|hazmat|haz-?mat/)) { add(['lead_01', 'lead_03', 'asb_01', 'mold']); if (has(/school|daycare|day care|head start|child[- ]occupied|preschool|pre-k/)) add(['lead_02']); }
   if (has(/asbestos|\bacm\b|vermiculite|transite/) || la.asbFound) add(['asb_01']);
@@ -216351,6 +216351,12 @@ function textMarks(){
       if (d.noAnswer) Object.assign(patch, { noAnswerAt: s(d.at), noAnswerCount: (+l.noAnswerCount || 0) + 1 });   /* LSANA: kept open */
       else if (!d.good) Object.assign(patch, { lsaReason: s(d.reason), stage: 'Lost', status: 'lost', lostReason: 'LSA — not a real lead (' + s(d.reason || 'bad') + ')' });
       if (d.good && d.pm && !s(l.pm)) Object.assign(patch, { pm: s(d.pm), pmEmail: s(d.pmEmail), assignedBy: s(d.by) + ' (text)', assignedAt: s(d.at), assignConfirmed: true, hold: l.hold ? Object.assign({}, l.hold, { state: 'approved', name: s(d.pm), email: s(d.pmEmail), doneAt: s(d.at), doneBy: s(d.by) + ' (text)' }) : l.hold });   /* LSAPM: the PM texted with GOOD */
+      if (s(d.notes)) {   /* LSANOTES: the texted note → the lead's notes, and the job's project notes when it is a job */
+        var dt = new Date(s(d.at) || Date.now()), line = '[' + (dt.getMonth() + 1) + '/' + dt.getDate() + ' ' + s(d.by) + '] ' + s(d.notes);   /* owner 11/10: just the note */
+        if (s(l.notes).indexOf(line) < 0) patch.notes = (s(l.notes) ? s(l.notes) + '\n' : '') + line;
+        var pid = s(l.projectId || l.pid || l.jobId || l.convertedTo);
+        if (pid && typeof W._setProjects === 'function') { try { W._setProjects(function(prev){ return (prev || []).map(function(p){ if (!p || s(p.id) !== pid || s(p.notes).indexOf(line) >= 0) return p; return Object.assign({}, p, { notes: (s(p.notes) ? s(p.notes) + '\n' : '') + line, updatedAt: new Date().toISOString() }); }); }); } catch (e) {} }
+      }
       saveLead(l.id, patch); closeTask('LSACHECK_' + l.id, 'decided by text (' + s(d.by) + ')');
     });
   });
