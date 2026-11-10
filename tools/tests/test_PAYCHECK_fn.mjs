@@ -55,5 +55,12 @@ eq((await line(Object.assign({}, STEVEN_AUG, { payType: 'salary_commission', ann
 eq((await line(Object.assign({}, base, { filing: 'single', w4Form: '2019', allowances: 2, dependentsCredit: 999 }), { manual: 1000 })).fed, Math.round((1240 + 0.12 * (52000 - 8600 - 19900)) / 52 * 100) / 100, 'old W-4 2 allowances');
 eq((await line(Object.assign({}, base, { filing: 'married', multipleJobs: true }), { manual: 1000 })).fed, Math.round((1240 + 0.12 * (52000 - 28500)) / 52 * 100) / 100, 'step 2 table, no 1g');
 eq((await line(Object.assign({}, base, { filing: 'single', exemptFed: true }), { manual: 1000 })).fed, 0, 'exempt');
+/* SETHOURS (owner 11/10): Brittany is paid 13 hours a week when nobody clocked her in; a set value on the profile wins; clock-ins would win over both */
+const BH = Object.assign({}, base, { name: 'Brittany Plunket', state: 'TN', workState: 'TN', filing: 'single', payType: 'hourly', hourlyRate: 20 });
+let L1 = await P.computeLine(BH, '2026-11-05', '2026-11-11', set, ytd, null, null); eq(L1.hours, 13, 'Brittany: 13 h default'); eq(L1.gross, 260, 'Brittany: $260');
+L1 = await P.computeLine(Object.assign({}, BH, { defaultWeeklyHours: 10 }), '2026-11-05', '2026-11-11', set, ytd, null, null); eq(L1.gross, 200, 'set hours 10 → $200');
+L1 = await P.computeLine(Object.assign({}, BH, { defaultWeeklyHours: 0 }), '2026-11-05', '2026-11-11', set, ytd, null, null); eq(L1.gross, 0, 'set hours cleared → nothing');
+L1 = await P.computeLine(BH, '2026-11-05', '2026-11-18', set, ytd, null, null); eq(L1.hours, 26, 'two weeks → 26 h');
+L1 = await P.computeLine(Object.assign({}, BH, { name: 'Pat Hourly' }), '2026-11-05', '2026-11-11', set, ytd, null, null); eq(L1.gross, 0, 'others: no default');
 console.log((fail ? 'FAIL ' : 'OK ') + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

@@ -5491,7 +5491,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.207-2026-11-10-r26w -->
+<!-- GrayCo CRM Build: 33.208-2026-11-10-r26x -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6440,7 +6440,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.207-2026-11-10-r26w");
+  console.log("[GC] Build 33.208-2026-11-10-r26x");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6488,7 +6488,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.207-2026-11-10-r26w"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.208-2026-11-10-r26x"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -85053,6 +85053,8 @@ function _pcFed(amt, ppy, pf, year){
   return r2(r2(Math.max(0, ft.tax - (old ? 0 : n2(pf.dependentsCredit))) / ppy) + n2(pf.extra));
 }
 
+/* SETHOURS: the person's set weekly hours (Brittany 13 until it is changed on her profile) */
+function setHoursOf(prof){ if(prof && prof.defaultWeeklyHours!=null && String(prof.defaultWeeklyHours)!=='') return n2(prof.defaultWeeklyHours); return /^brittany\b/i.test(String(prof&&prof.name||'')) ? 13 : 0; }
 async function computeLine(prof, from, to, set, ytd, manualGross, extras){
   var ppy = (window._gcRunPPY && window._gcRunPPY(from, to)) || PERIODS[prof.period] || 26;   /* patch BUGV: a 7-day run is 1/52 of the year, 14 days 1/26 */
   var trace = [], gross = 0, hours = 0, otHours = 0, parts = [];
@@ -85077,6 +85079,15 @@ async function computeLine(prof, from, to, set, ytd, manualGross, extras){
     }
     if(pt==='hourly'){
       var h = await hoursFor(prof.name, from, to, prof.otAfter);
+      /* SETHOURS (owner 11/10: "Brittany gets paid for 13 hours every week unless we change it — that's what she averages; we'll change how
+         we log her hours in the future"): an hourly person with a "Set hours per week" and NO clock-ins in the period is paid those hours
+         for each week of the period. Clock-ins, when there are any, still win. */
+      var _dwh = setHoursOf(prof);
+      if(!(n2(h.reg)+n2(h.ot)) && _dwh>0){
+        var _wks = Math.max(1, Math.round(((Date.parse(to)-Date.parse(from))/864e5 + 1)/7));
+        h = { total:r2(_dwh*_wks), reg:r2(_dwh*_wks), ot:0, weeks:[], days:[], setHours:true };
+        T('Set hours', _dwh+' hrs a week × '+_wks+' week'+(_wks===1?'':'s')+' (no clock-ins this period — Payroll → Employees → Set hours per week)', null);
+      }
       hours=h.reg; otHours=h.ot;
       var regPay = h.reg * n2(prof.hourlyRate);
       var otPay  = h.ot  * n2(prof.hourlyRate) * (n2(prof.otMultiplier)||1.5);
@@ -85402,7 +85413,7 @@ window.__GC_PAY = {
   PERIODS:PERIODS, PERIOD_LABEL:PERIOD_LABEL, IRS:IRS,
   profiles:profiles, saveProfiles:saveProfiles, blankProfile:blankProfile, seedFromUser:seedFromUser,
   hoursFor:hoursFor, timesheetRows:timesheetRows,
-  runs:runs, saveRuns:saveRuns, ytdFor:ytdFor, computeLine:computeLine,
+  runs:runs, saveRuns:saveRuns, ytdFor:ytdFor, computeLine:computeLine, setHoursOf:setHoursOf,
   payReplace:payReplace, foldDupRuns:foldDupRuns, replaceDrafts:replaceDrafts,   /* patch PAYREPLACE */
   K_PROF:K_PROF, K_RUNS:K_RUNS, K_SET:K_SET, K_TS:K_TS
 };
@@ -86211,6 +86222,7 @@ window._gcRenderEmployeeProfile = async function(body, S, render){
                return '<option value="'+v+'"'+(p.payType===v?' selected':'')+'>'+(P.payTypeLabel?P.payTypeLabel(v):v)+'</option>'; }).join('')+'</select>')
         +fld('Annual salary','<input data-p="annualSalary" value="'+esc(p.annualSalary)+'" style="'+CSS.inp+'width:100%;">')
         +fld('Hourly rate','<input data-p="hourlyRate" value="'+esc(p.hourlyRate)+'" style="'+CSS.inp+'width:100%;">')
+        +fld('Set hours per week (paid when there are no clock-ins)','<input data-p="defaultWeeklyHours" inputmode="decimal" placeholder="e.g. 13" value="'+esc((window.__GC_PAY&&window.__GC_PAY.setHoursOf?window.__GC_PAY.setHoursOf(p):'')||'')+'" style="'+CSS.inp+'width:100%;">')   /* SETHOURS */
         +fld('Overtime after (hrs/week)','<input data-p="otAfter" value="'+esc(p.otAfter)+'" style="'+CSS.inp+'width:100%;">')
         +fld('Overtime multiplier','<input data-p="otMultiplier" value="'+esc(p.otMultiplier)+'" style="'+CSS.inp+'width:100%;">')
         +fld('How often paid','<select data-p="period" style="'+CSS.inp+'width:100%;">'
