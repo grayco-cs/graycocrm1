@@ -450,7 +450,10 @@ async function leads(list, raw, isEm){
     const only = !em && isSubBid(r, x) ? await estimatorsFor(r, x) : null;   /* patch SUBALERT */
     if (isLsaLead(r, x)) {   /* LSATEXT: owner 11/10 — Google LSA leads to Wesley's and Nick's cells; they text back GOOD or BAD */
       const code = lsaCode(x.id), who = clip(name, 40) + (callPh.length === 10 ? ' ' + tidy(callPh) : '');
-      const lt = more => leadText((em ? '🚨 ' : '') + 'GrayCo GOOGLE LSA LEAD ' + code + (more ? ' (+' + more + ' more)' : ''), 0, who, msg, 'Reply GOOD + PM name, BAD + why, or NA (no answer). ' + link);
+      /* LSAWORD (owner 11/10: "google lsa lead from 9016927255 wesley says blah blah blah, reply with if the lead is good and who is the PM") */
+      const lt = more => { const head = (em ? '🚨 ' : '') + 'GrayCo: Google LSA lead ' + code + (more ? ' (+' + more + ' more)' : '') + ' from ' + (callPh.length === 10 ? tidy(callPh) + ' ' : '') + clip(name, 40),
+          tail = ' Reply GOOD + PM name (e.g. GOOD Pat), BAD + why, or NA if no answer.', said = s(msg).replace(/\s+/g, ' '), room = MAX - head.length - tail.length - 9;
+        return head + (said && room > 12 ? ' says "' + clip(said, room) + '".' : '.') + tail; };
       try { out.push(await notify({ type: 'lead', lsa: { leadId: s(x.id), code, name: clip(name, 60), phone: callPh, link: s(obj(r.leadExtra).lsaLink || r.lsaLink) }, text: lt(0), body: lt, link, only: lsaAdmins(), thread: 'lsa:' + s(x.id), emergency: em })); } catch (e) { out.push({ error: s(e && e.message) }); }
       try { out.push({ lsaAsk: await lsaAsk(callPh, { leadId: s(x.id), code, name, em, svc: s(obj(r.leadExtra).service || r.service || x.title) }) }); } catch (e) { out.push({ lsaAskError: s(e && e.message) }); }   /* LSAFLOW */
       continue;
