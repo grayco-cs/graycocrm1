@@ -190,5 +190,10 @@ Object.assign(SA._D, { now: () => t, kvGet: async k => kv[k], kvCas: async (k, f
   jn = await SA.staffInbound('9015550222', 'hello there', 'SM76');
   assert.strictEqual(jn, null, 'anything else from him goes the normal way');
   SA._D.people = users0;
+  /* HOWTO: after 30 days the how-to tail is gone */
+  sent.length = 0; t += 31 * 864e5;
+  await SA.leads([{ id: 'N77', key: 'N77', title: 'Gutters', contact: { name: 'Ty', phone: '9015550277' } }], { N77: { id: 'N77' } }, () => false);
+  const old = sent.find(x => x.to === '9015550002');
+  assert.ok(old && /^GrayCo: new lead [A-Z0-9]{4} from \(901\) 555-0277 Ty\.$/.test(old.body), 'no how-to after a month: ' + (old && old.body));
   console.log('LSATEXT tests: all passed');
 })().catch(e => { console.error(e); process.exit(1); });
