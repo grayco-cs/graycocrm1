@@ -20,7 +20,7 @@ Object.assign(SA._D, { now: () => t, kvGet: async k => kv[k], kvCas: async (k, f
   assert.deepStrictEqual(sent.map(x => x.to).filter(x => x !== '9015550111').sort(), ['9015550001', '9015550002'], 'Nick and Wesley get it (even at 3 AM), not the PM');
   assert.ok(sent.some(x => x.to === '9015550111' && /Reply YES/.test(x.body)), 'the customer gets the qualify text (LSAFLOW; held to 7 AM by custquiet in production)');
   sent.splice(0, sent.length, ...sent.filter(x => x.to !== '9015550111'));
-  assert.ok(new RegExp('^GrayCo: Google LSA lead ' + code + ' from \\(901\\) 555-0111 Pat Smith says "Need a new roof"\\. Reply GOOD \\+ PM name \\(e\\.g\\. GOOD Pat\\), BAD \\+ why, or NA if no answer\\.').test(sent.find(x => x.to === '9015550001').body) && sent[0].body.length <= 320, sent.find(x => x.to === '9015550001').body);
+  assert.ok(new RegExp('^GrayCo: Google LSA lead ' + code + ' from \\(901\\) 555-0111 Pat Smith says "Need a new roof"\\. Reply GOOD \\+ PM name \\(e\\.g\\. GOOD Pat\\), SEND \\+ PM name \\(the PM calls first\\), BAD \\+ why, or NA if no answer\\.').test(sent.find(x => x.to === '9015550001').body) && sent[0].body.length <= 320, sent.find(x => x.to === '9015550001').body);
   sent.length = 0;
   /* Wesley texts "bad spam call" (no code: the newest LSA lead sent to his phone) */
   let r = await SA.staffInbound('9015550002', 'Bad spam call', 'SM1');
@@ -109,5 +109,36 @@ Object.assign(SA._D, { now: () => t, kvGet: async k => kv[k], kvCas: async (k, f
   assert.ok(nt && nt.noAnswer && decided[1].notes === 'left a voicemail', JSON.stringify(decided[1]));
   nt = await SA.staffInbound('9015550002', 'bad wanted a free inspection only', 'SM42');
   assert.ok(nt && nt.good === false && decided[2].notes === 'wanted a free inspection only', JSON.stringify(decided[2]));
+  /* ── LSASEND: "SEND Pat" → Pat's text; Pat's GOOD / BAD ── */
+  const sends = [], pmbads = [];
+  SA._D.lsaSend = async d => { sends.push(d); return { inbox: true }; };
+  SA._D.lsaPmBad = async d => { pmbads.push(d); return { inbox: true, todo: true }; };
+  decided.length = 0; sent.length = 0; t += 60000;
+  await SA.leads([{ id: 'LSA9', key: 'LSA9', title: 'Leak', source: 'Google LSA', contact: { name: 'Ed Fox', phone: '9015550199' } }], { LSA9: { id: 'LSA9', source: 'Google LSA', leadExtra: { lsaCheck: 'pending', said: { message: 'Ceiling stain in hallway' } } } }, () => false);
+  sent.length = 0;
+  let sd = await SA.staffInbound('9015550002', 'send lead to Pat call after 3', 'SM50');
+  assert.ok(sd && sd.sent === 'Pat PM' && sends[0].pm.email === 'pat@grayco-cs.com' && sends[0].notes === 'call after 3', JSON.stringify(sd));
+  const pmMsg = sent.find(x => x.to === '9015550003');
+  assert.ok(pmMsg && /sent to you by Wesley: \(901\) 555-0199 Ed Fox says "Ceiling stain in hallway" Note: call after 3\. Call them, then reply GOOD, BAD \+ why, or NA/.test(pmMsg.body), pmMsg && pmMsg.body);
+  assert.ok(sent.some(x => x.to === '9015550002' && /sent to Pat PM \(texted\)/.test(x.body)), 'Wesley is told');
+  /* Pat says BAD → not final, the admins are asked */
+  sent.length = 0;
+  let pb = await SA.staffInbound('9015550003', 'bad just wanted a price for insurance', 'SM51');
+  assert.ok(pb && pb.byPm && pb.pmBad === 'just wanted a price for insurance' && pmbads[0].reason === 'just wanted a price for insurance' && decided.length === 0, JSON.stringify(pb));
+  assert.ok(sent.some(x => x.to === '9015550001' && /Pat PM says BAD for .* Reply BAD .* to confirm/.test(x.body)) && sent.some(x => x.to === '9015550002'), 'Nick and Wesley are asked to approve');
+  /* Wesley confirms BAD → final */
+  let wb = await SA.staffInbound('9015550002', 'BAD', 'SM52');
+  assert.ok(wb && wb.lsa === 'LSA9' && wb.good === false && decided[0].good === false && decided[0].reason === 'just wanted a price for insurance' || (wb && wb.good === false), JSON.stringify(wb));
+  /* another lead: Pat says GOOD → his, admins told */
+  decided.length = 0; sent.length = 0; t += 60000;
+  await SA.leads([{ id: 'LSA10', key: 'LSA10', title: 'Roof', source: 'Google LSA', contact: { name: 'Fay Gee', phone: '9015550200' } }], { LSA10: { id: 'LSA10', source: 'Google LSA', leadExtra: { lsaCheck: 'pending' } } }, () => false);
+  await SA.staffInbound('9015550001', 'SEND Pat', 'SM53');
+  sent.length = 0;
+  let pg = await SA.staffInbound('9015550003', 'good 2 story house needs full roof', 'SM54');
+  assert.ok(pg && pg.byPm && pg.good && decided[0].pm.email === 'pat@grayco-cs.com' && decided[0].keepPm && decided[0].notes === '2 story house needs full roof', JSON.stringify(pg));
+  assert.ok(sent.some(x => x.to === '9015550001' && /Pat PM says GOOD/.test(x.body)), 'the admins hear it');
+  /* a PM cannot SEND */
+  const ps = await SA.staffInbound('9015550003', 'send to Mo', 'SM55');
+  assert.ok(!ps || !ps.sent, 'a PM cannot send leads');
   console.log('LSATEXT tests: all passed');
 })().catch(e => { console.error(e); process.exit(1); });

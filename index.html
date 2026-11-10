@@ -5490,7 +5490,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.191-2026-11-10-r26g -->
+<!-- GrayCo CRM Build: 33.192-2026-11-10-r26h -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6439,7 +6439,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.191-2026-11-10-r26g");
+  console.log("[GC] Build 33.192-2026-11-10-r26h");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6487,7 +6487,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.191-2026-11-10-r26g"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.192-2026-11-10-r26h"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -216347,8 +216347,11 @@ function textMarks(){
       if (!d || !d.id) return;
       var l = leads().find(function(x){ return x && (s(x.id) === s(d.id) || s(x.inboxId) === s(d.id) || s(x.leadInboxId) === s(d.id) || s(x.fromInbox) === s(d.id)); });
       if (!l || (l.lsaDecidedAt && s(l.lsaDecidedAt) >= s(d.at))) return;
-      var patch = { lsaCheck: d.noAnswer ? 'no_answer' : d.good ? 'good' : 'bad', lsaDecidedBy: s(d.by) + ' (text)', lsaDecidedAt: s(d.at), lsaVia: 'text' };
-      if (d.noAnswer) Object.assign(patch, { noAnswerAt: s(d.at), noAnswerCount: (+l.noAnswerCount || 0) + 1 });   /* LSANA: kept open */
+      var patch = d.sent ? { pm: s(d.pm), pmEmail: s(d.pmEmail), assignedBy: s(d.by) + ' (text: send to PM)', assignedAt: s(d.at), lsaSentTo: s(d.pm), lsaDecidedAt: s(d.at), hold: l.hold ? Object.assign({}, l.hold, { state: 'approved', name: s(d.pm), email: s(d.pmEmail), doneAt: s(d.at), doneBy: s(d.by) + ' (text)' }) : l.hold }   /* LSASEND */
+        : d.pmBad ? { lsaCheck: 'pm_bad', lsaPmBy: s(d.by), lsaPmAt: s(d.at), lsaReason: s(d.reason), lsaDecidedAt: s(d.at) }   /* LSASEND: the PM's BAD waits for an admin */
+        : { lsaCheck: d.noAnswer ? 'no_answer' : d.good ? 'good' : 'bad', lsaDecidedBy: s(d.by) + ' (text)', lsaDecidedAt: s(d.at), lsaVia: 'text' };
+      if (d.sent || d.pmBad) {}
+      else if (d.noAnswer) Object.assign(patch, { noAnswerAt: s(d.at), noAnswerCount: (+l.noAnswerCount || 0) + 1 });   /* LSANA: kept open */
       else if (!d.good) Object.assign(patch, { lsaReason: s(d.reason), stage: 'Lost', status: 'lost', lostReason: 'LSA — not a real lead (' + s(d.reason || 'bad') + ')' });
       if (d.good && d.pm && !s(l.pm)) Object.assign(patch, { pm: s(d.pm), pmEmail: s(d.pmEmail), assignedBy: s(d.by) + ' (text)', assignedAt: s(d.at), assignConfirmed: true, hold: l.hold ? Object.assign({}, l.hold, { state: 'approved', name: s(d.pm), email: s(d.pmEmail), doneAt: s(d.at), doneBy: s(d.by) + ' (text)' }) : l.hold });   /* LSAPM: the PM texted with GOOD */
       if (s(d.notes)) {   /* LSANOTES: the texted note → the lead's notes, and the job's project notes when it is a job */
@@ -216357,7 +216360,7 @@ function textMarks(){
         var pid = s(l.projectId || l.pid || l.jobId || l.convertedTo);
         if (pid && typeof W._setProjects === 'function') { try { W._setProjects(function(prev){ return (prev || []).map(function(p){ if (!p || s(p.id) !== pid || s(p.notes).indexOf(line) >= 0) return p; return Object.assign({}, p, { notes: (s(p.notes) ? s(p.notes) + '\n' : '') + line, updatedAt: new Date().toISOString() }); }); }); } catch (e) {} }
       }
-      saveLead(l.id, patch); closeTask('LSACHECK_' + l.id, 'decided by text (' + s(d.by) + ')');
+      saveLead(l.id, patch); if (!d.sent && !d.pmBad) closeTask('LSACHECK_' + l.id, 'decided by text (' + s(d.by) + ')');
     });
   });
 }
