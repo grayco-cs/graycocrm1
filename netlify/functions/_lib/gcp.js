@@ -534,7 +534,7 @@ async function complianceRun(data){
   const due = [];
   docs.forEach(function(d){
     const days = Math.round((Date.parse(ymd(d.expires) + 'T12:00:00Z') - Date.parse(today + 'T12:00:00Z')) / 864e5);
-    const step = days < 0 ? 'expired' : days <= 7 ? '7d' : days <= 30 ? '30d' : days <= 60 ? '60d' : days <= 90 ? '90d' : '';   /* patch CERTS: 90 and 60 days too (owner 11/10) */
+    const step = days < 0 ? 'expired' : days <= 7 ? '7d' : days <= 30 ? '30d' : '';   /* owner 11/10: COIs and licenses only need the 30-day warning */
     if (!step || rem[d.id + '|' + step]) return;
     due.push({ d: d, step: step, days: days });
   });
@@ -551,15 +551,18 @@ function x0(due){ return due.some(function(x){ return x.days <= 7; }); }
 
 /* ── patch CERTS: daily — company and employee certifications / licenses (gc_certs, kept in the CRM's 📜 Certifications)
    Each certification has an expiration date and an "apply by" date (expiration minus its lead days: EPA RRP firm 90, TN license
-   30 …). Steps, each once per certification and expiration: 90 / 60 / 30 / 7 days before the apply-by date, the apply-by date
-   reached, and expired. One e-mail to the admins + office and one Office To-Do per day with all of them, with the fee. ── */
+   30 …). Steps, each once per certification and expiration: 30 and 7 days before the apply-by date (60 / 90 first only for the
+   ones set to warn that early: warnDays), the apply-by date reached, and expired. One e-mail to the admins + office and one Office To-Do per day with all of them, with the fee. ── */
 const K_CERTS = 'gc_certs', K_CERTST = 'gc_certs_state';
 function addDays(d, n){ const t = Date.parse(ymd(d) + 'T12:00:00Z'); return isNaN(t) ? '' : new Date(t + n * 864e5).toISOString().slice(0, 10); }
+const CERT_WARN = { tn_lic: 60, iicrc_tech: 90, rrp_renovator: 60, tdec_ind: 60 };   /* the types that need lead time; the rest warn at 30 */
+function certWarn(c){ const w = parseInt(c && c.warnDays, 10); return w === 90 || w === 60 || w === 30 ? w : (CERT_WARN[s(c && c.tpl)] || 30); }
 function certApplyBy(c){ const e = ymd(c && c.expires); if (!e) return ''; const n = Math.max(0, Math.min(365, parseInt(c.leadDays, 10) || 0)); return addDays(e, -n); }
 function certStep(c, today){
   const e = ymd(c && c.expires); if (!e) return null;
   const ab = certApplyBy(c), dE = Math.round((Date.parse(e + 'T12:00:00Z') - Date.parse(today + 'T12:00:00Z')) / 864e5), dA = Math.round((Date.parse(ab + 'T12:00:00Z') - Date.parse(today + 'T12:00:00Z')) / 864e5);
-  const step = dE < 0 ? 'expired' : dA <= 0 ? 'applyby' : dA <= 7 ? '7d' : dA <= 30 ? '30d' : dA <= 60 ? '60d' : dA <= 90 ? '90d' : '';
+  const w = certWarn(c);
+  const step = dE < 0 ? 'expired' : dA <= 0 ? 'applyby' : dA <= 7 ? '7d' : dA <= 30 ? '30d' : (dA <= 60 && w >= 60) ? '60d' : (dA <= 90 && w >= 90) ? '90d' : '';
   return step ? { step: step, daysToExpire: dE, daysToApply: dA, applyBy: ab } : null;
 }
 async function certRun(data){
@@ -788,5 +791,5 @@ async function inspectAccept(code, b){
 module.exports = { T, K_LINKS, K_JOBS, K_DOCS, K_DOCST, K_CHECK, K_INSP, DOC_KINDS, TOKEN_RE,
   isGcJob, contactsOf, billingOf, gcCompany, linkFor, linkByToken, createLink, revokeLink, touchLink, gcLink, jobState, mutateJob,
   companyDocs, docOut, docAdd, docRemove, docFlags, DOC_FOLDERS, docFolder, docAccess, docShared, docVisible, docStaffOut, docsForStaff, docsForGc, docApplyAdd, docApplyFlags, docLive, K_LIBCFG, cfgClean, libCfg, libCfgSet, docSigned, docExpired, gcView, payappAdd, payappStatus, coPrice, coVoid, coImported, rfiNew, rfiAnswer,
-  gcApprovePay, gcRequestCo, gcSignCo, onApproved, complianceRun, certRun, certStep, certApplyBy, K_CERTS, activeGcContacts, custExtras, custCheckin, registryPdf, simplePdf, midJob,
+  gcApprovePay, gcRequestCo, gcSignCo, onApproved, complianceRun, certRun, certStep, certApplyBy, certWarn, K_CERTS, activeGcContacts, custExtras, custCheckin, registryPdf, simplePdf, midJob,
   seasonKey, inspectList, inspectRun, inspectSend, inspectAccept, payOut, coOut, rfiOut, scheduleOf, staffEmails };

@@ -5490,7 +5490,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.184-2026-11-10-r25 -->
+<!-- GrayCo CRM Build: 33.184-2026-11-10-r26 -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6439,7 +6439,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.184-2026-11-10-r25");
+  console.log("[GC] Build 33.184-2026-11-10-r26");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6487,7 +6487,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.184-2026-11-10-r25"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.184-2026-11-10-r26"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -194667,9 +194667,11 @@ try { console.log('[GC] 🎓 Training tab (patch TRAIN): _gcTrain'); } catch (e)
               renewUrl, notes, fileRef, fileName, payments: [{ id, date, amount, method, conf, note, by }], archived, updatedAt }
    First open by an admin with nothing saved: GrayCo's own licenses and firm certifications are added from the templates below
    with blank dates ("date needed"), so they only need the dates and numbers filled in.
-   Reminders: To-Do for admins here (anything to renew within 90 days of its apply-by date, past it, expired, or missing a
-   date), and the daily server run (gc-portal-daily → gcp.certRun) e-mails admins + office at 90 / 60 / 30 / 7 days before the
-   apply-by date, on it, and once expired. Fees and rules are from the issuing agencies' pages (11/10/26): check them on renewal. */
+   Reminders (owner 11/10: 90 days only where needed): each certification warns first at 30 days before its apply-by date, or
+   60 / 90 for the ones that need lead time (warnDays: TN license 60, IICRC technician 90 for CE hours, RRP renovator and TDEC
+   individual 60). To-Do for admins here from that first warning, past apply-by, expired, or missing a date; the daily server
+   run (gc-portal-daily → gcp.certRun) e-mails admins + office at the first warning, 30 and 7 days, on the apply-by date, and
+   once expired. Fees and rules are from the issuing agencies' pages (11/10/26): check them on renewal. */
 (function(){
 'use strict';
 if (window.__GC_PATCH_CERTS__) return; window.__GC_PATCH_CERTS__ = true;
@@ -194717,7 +194719,7 @@ function toast(m, bad){ try { var t = D.createElement('div'); t.setAttribute('da
 
 /* ── what GrayCo holds, and what employees commonly hold ── */
 var TEMPLATES = [
-  { t: 'tn_lic', holderType: 'company', name: 'Tennessee contractor license (BC)', issuer: 'TN Board for Licensing Contractors', state: 'TN', number: '85034', leadDays: 30, cycleMonths: 24, fee: 200, feeNote: '$200; $20 per month late', requirements: 'Renewal due 30 days before expiration (notice mailed ~90 days before). No grace period to work while expired; 12 months to renew before a new application is needed. Financial statement: CPA-compiled for limits over $1.5M (GrayCo is $3M).', renewUrl: 'https://www.tn.gov/commerce/regboards/contractor.html' },
+  { t: 'tn_lic', warnDays: 60, holderType: 'company', name: 'Tennessee contractor license (BC)', issuer: 'TN Board for Licensing Contractors', state: 'TN', number: '85034', leadDays: 30, cycleMonths: 24, fee: 200, feeNote: '$200; $20 per month late', requirements: 'Renewal due 30 days before expiration (notice mailed ~90 days before). No grace period to work while expired; 12 months to renew before a new application is needed. Financial statement: CPA-compiled for limits over $1.5M (GrayCo is $3M).', renewUrl: 'https://www.tn.gov/commerce/regboards/contractor.html' },
   { t: 'ar_lic', holderType: 'company', name: 'Arkansas commercial contractor license', issuer: 'AR Contractors Licensing Board', state: 'AR', number: '0486990627', leadDays: 30, cycleMonths: 12, fee: 0, feeNote: 'Check the renewal notice', requirements: 'Expires at midnight the day before the anniversary of the issue date unless the Board sets another date.', renewUrl: 'https://aclb-olr.ark.org/app/login.html' },
   { t: 'ms_lic', holderType: 'company', name: 'Mississippi commercial contractor certificate', issuer: 'MS State Board of Contractors', state: 'MS', number: '27769', leadDays: 30, cycleMonths: 12, fee: 400, feeNote: '$400; $450 once expired', requirements: 'Due yearly by the issue date. Expired more than 180 days = new application.', renewUrl: 'https://www.msboc.us/' },
   { t: 'epa_rrp_firm', holderType: 'company', name: 'EPA RRP Lead-Safe Certified Firm (TN & AR)', issuer: 'US EPA', state: 'TN/AR', leadDays: 90, cycleMonths: 60, fee: 300, feeNote: '$300', requirements: 'Apply for recertification at least 90 days before it expires.', renewUrl: 'https://www.epa.gov/lead/renovation-repair-and-painting-program-firm-certification' },
@@ -194726,10 +194728,10 @@ var TEMPLATES = [
   { t: 'adh_firm', holderType: 'company', name: 'ADH lead-based paint contractor license (AR)', issuer: 'Arkansas Dept. of Health', state: 'AR', leadDays: 30, cycleMonths: 12, fee: 1200, feeNote: '$1,200 per year (check)', requirements: 'Renewal application + exact fee by check, notarized disclosure, certificate of liability insurance, letter on certified employees, work practices and supervisor on site.', renewUrl: 'https://healthy.arkansas.gov/programs-services/licensing-military-member-licensure-permits-plan-reviews/lead-based-paint-program/' },
   { t: 'iicrc_firm', holderType: 'company', name: 'IICRC Certified Firm', issuer: 'IICRC', leadDays: 30, cycleMonths: 12, fee: 199, feeNote: '$199 per year', requirements: 'Every firm expires December 31; invoices go out from October. Technicians must be current and liability insurance up to date.', renewUrl: 'https://iicrc.org/IICRCCertifiedFirm/' },
   { t: 'haag_co', holderType: 'company', name: 'HAAG certification', issuer: 'Haag', leadDays: 30, cycleMonths: 0, fee: 0, feeNote: 'See certificate', requirements: 'Use the dates on the certificate.', renewUrl: 'https://haagglobal.com/' },
-  { t: 'iicrc_tech', holderType: 'person', name: 'IICRC technician certification (WRT / FSRT / OCT …)', issuer: 'IICRC', leadDays: 30, cycleMonths: 12, fee: 0, feeNote: 'Billed by the certifications held (about $46–$58+)', requirements: 'Renew every year; 14 continuing-education hours (CECs) every 4 years (Master/Inspector: every 2 years).', renewUrl: 'https://iicrc.org/' },
-  { t: 'rrp_renovator', holderType: 'person', name: 'EPA RRP Certified Renovator', issuer: 'EPA-accredited training provider', leadDays: 60, cycleMonths: 60, fee: 0, feeNote: 'Refresher course fee', requirements: 'Take the refresher before it expires: hands-on refresher = 5 years, online-only = 3 years. Lapsed = retake the 8-hour initial course.', renewUrl: 'https://www.epa.gov/lead' },
+  { t: 'iicrc_tech', warnDays: 90, holderType: 'person', name: 'IICRC technician certification (WRT / FSRT / OCT …)', issuer: 'IICRC', leadDays: 30, cycleMonths: 12, fee: 0, feeNote: 'Billed by the certifications held (about $46–$58+)', requirements: 'Renew every year; 14 continuing-education hours (CECs) every 4 years (Master/Inspector: every 2 years).', renewUrl: 'https://iicrc.org/' },
+  { t: 'rrp_renovator', warnDays: 60, holderType: 'person', name: 'EPA RRP Certified Renovator', issuer: 'EPA-accredited training provider', leadDays: 60, cycleMonths: 60, fee: 0, feeNote: 'Refresher course fee', requirements: 'Take the refresher before it expires: hands-on refresher = 5 years, online-only = 3 years. Lapsed = retake the 8-hour initial course.', renewUrl: 'https://www.epa.gov/lead' },
   { t: 'mdeq_ind', holderType: 'person', name: 'MDEQ lead renovator / supervisor / worker (MS)', issuer: 'Mississippi DEQ', state: 'MS', leadDays: 30, cycleMonths: 12, fee: 75, feeNote: 'Renovator $75 (first two in a firm free); supervisor $150; worker $35', requirements: 'Certification yearly; lead training refresher every 3 years.', renewUrl: 'https://www.mdeq.ms.gov/lead-based-paint-certification-and-accreditation/' },
-  { t: 'tdec_ind', holderType: 'person', name: 'TDEC lead abatement supervisor / worker (TN)', issuer: 'TN Dept. of Environment & Conservation', state: 'TN', leadDays: 60, cycleMonths: 36, fee: 675, feeNote: 'Supervisor $675; worker $200', requirements: 'Three-year certification; apply at least 60 days before it expires.', renewUrl: 'https://www.tn.gov/environment/program-areas/solid-waste/toxic-substances/lead-hazard-program/lead-certification.html' },
+  { t: 'tdec_ind', warnDays: 60, holderType: 'person', name: 'TDEC lead abatement supervisor / worker (TN)', issuer: 'TN Dept. of Environment & Conservation', state: 'TN', leadDays: 60, cycleMonths: 36, fee: 675, feeNote: 'Supervisor $675; worker $200', requirements: 'Three-year certification; apply at least 60 days before it expires.', renewUrl: 'https://www.tn.gov/environment/program-areas/solid-waste/toxic-substances/lead-hazard-program/lead-certification.html' },
   { t: 'adh_ind', holderType: 'person', name: 'ADH lead certification (AR individual)', issuer: 'Arkansas Dept. of Health', state: 'AR', leadDays: 30, cycleMonths: 12, fee: 0, feeNote: 'Check ADH', requirements: 'Annual certification.', renewUrl: 'https://healthy.arkansas.gov/programs-services/licensing-military-member-licensure-permits-plan-reviews/lead-based-paint-program/' },
   { t: 'haag_ind', holderType: 'person', name: 'HAAG Certified Inspector', issuer: 'Haag', leadDays: 30, cycleMonths: 0, fee: 0, feeNote: 'See certificate', requirements: 'Use the dates on the certificate.', renewUrl: 'https://haagglobal.com/' },
   { t: 'other', holderType: 'company', name: '', issuer: '', leadDays: 30, cycleMonths: 12, fee: 0, feeNote: '', requirements: '', renewUrl: '' }
@@ -194738,7 +194740,7 @@ var SEED = ['tn_lic', 'ar_lic', 'ms_lic', 'epa_rrp_firm', 'mdeq_firm', 'tdec_fir
 function tpl(t){ return TEMPLATES.filter(function(x){ return x.t === t; })[0] || TEMPLATES[TEMPLATES.length - 1]; }
 function fromTpl(t, holder){
   var x = tpl(t), c = { id: uid(), tpl: x.t, holderType: x.holderType, holder: x.holderType === 'company' ? 'company' : '', holderName: x.holderType === 'company' ? 'GrayCo' : '', name: x.name, issuer: x.issuer, number: x.number || '', state: x.state || '',
-    issued: '', expires: '', leadDays: x.leadDays, cycleMonths: x.cycleMonths, fee: x.fee || 0, feeNote: x.feeNote || '', requirements: x.requirements || '', renewUrl: x.renewUrl || '', notes: '', payments: [], archived: false, updatedAt: nowISO() };
+    issued: '', expires: '', leadDays: x.leadDays, warnDays: x.warnDays || 30, cycleMonths: x.cycleMonths, fee: x.fee || 0, feeNote: x.feeNote || '', requirements: x.requirements || '', renewUrl: x.renewUrl || '', notes: '', payments: [], archived: false, updatedAt: nowISO() };
   if (holder) { c.holder = low(holder.email); c.holderName = s(holder.name); }
   return c;
 }
@@ -194774,13 +194776,14 @@ function seedIfEmpty(o){
 }
 
 /* ── status ── */
+function warnOf(c){ var w = +c.warnDays; return w === 90 || w === 60 || w === 30 ? w : (tpl(c.tpl).warnDays || 30); }
 function applyBy(c){ var e = ymd(c.expires); return e ? addDays(e, -Math.max(0, +c.leadDays || 0)) : ''; }
 function status(c){
   var e = ymd(c.expires); if (!e) return { k: 'nodate', l: 'Date needed', o: 3, d: null };
   var dE = daysTo(e), dA = daysTo(applyBy(c));
   if (dE < 0) return { k: 'expired', l: 'Expired ' + (-dE) + ' d ago', o: 0, d: dE };
   if (dA <= 0) return { k: 'now', l: 'Renew now', o: 1, d: dA };
-  if (dA <= 90) return { k: 'soon', l: 'Apply in ' + dA + ' d', o: 2, d: dA };
+  if (dA <= warnOf(c)) return { k: 'soon', l: 'Apply in ' + dA + ' d', o: 2, d: dA };
   return { k: 'ok', l: 'Current', o: 4, d: dA };
 }
 function sorted(list){ return list.slice().sort(function(a, b){ var x = status(a), y = status(b); return x.o - y.o || (x.d == null ? 1e9 : x.d) - (y.d == null ? 1e9 : y.d) || s(a.name).localeCompare(s(b.name)); }); }
@@ -194794,7 +194797,7 @@ W._gcTodoExt.push(function(){
     var out = [], L = live(), u = me();
     L.forEach(function(c){
       var st = status(c); if (st.k === 'ok' || st.k === 'nodate') return;
-      out.push({ key: 'cert:' + c.id + ':' + ymd(c.expires), cat: 'jobs', thing: 'cert|' + c.id, prio: st.k === 'soon' && st.d > 30 ? 'med' : 'high', due: st.k === 'soon' ? applyBy(c) : today(),
+      out.push({ key: 'cert:' + c.id + ':' + ymd(c.expires), cat: 'jobs', thing: 'cert|' + c.id, prio: st.k === 'soon' && st.d > 7 ? 'med' : 'high', due: st.k === 'soon' ? applyBy(c) : today(),
         title: '📜 ' + (st.k === 'expired' ? 'EXPIRED: ' : st.k === 'now' ? 'Renew now: ' : 'Renew by ' + fmt(applyBy(c)) + ': ') + s(c.name) + ' (' + (s(c.holderName) || 'GrayCo') + ')',
         sub: 'Expires ' + fmt(c.expires) + (c.fee ? ' · fee ' + usd(c.fee) : (s(c.feeNote) ? ' · ' + s(c.feeNote) : '')), who: [s(u.name)], vis: 'who', act: { l: '📜 Open', f: function(){ open_(c.id); } } });
     });
@@ -194878,8 +194881,8 @@ function render(ov){
   var n = { exp: 0, now: 0, soon: 0, nd: 0 }; L.forEach(function(c){ var k = status(c).k; if (k === 'expired') n.exp++; else if (k === 'now') n.now++; else if (k === 'soon') n.soon++; else if (k === 'nodate') n.nd++; });
   var fees = L.filter(function(c){ var d = daysTo(c.expires); return ymd(c.expires) && d != null && d <= 365; }).reduce(function(a, c){ return a + num(c.fee); }, 0);
   var h = '<div class="gcc-h"><b>📜 Certifications &amp; licenses</b><span><button type="button" class="gcc-btn pri" data-gcc="add">＋ Add certification</button> <button type="button" class="gcc-btn" data-gcc="close">✕</button></span></div>' +
-    '<div class="gcc-sub" style="margin-top:4px">Every license and certification GrayCo and each employee hold. The CRM e-mails admins and the office and adds a To-Do 90, 60, 30 and 7 days before each "apply by" date, on it, and if anything expires.</div>' +
-    '<div class="gcc-stats"><div class="gcc-stat red"><div class="n">' + n.exp + '</div><div class="l">Expired</div></div><div class="gcc-stat amb"><div class="n">' + (n.now + n.soon) + '</div><div class="l">Renew within 90 days</div></div><div class="gcc-stat"><div class="n">' + n.nd + '</div><div class="l">Missing a date</div></div><div class="gcc-stat"><div class="n">' + esc(usd(fees)) + '</div><div class="l">Fees due next 12 months</div></div></div>' +
+    '<div class="gcc-sub" style="margin-top:4px">Every license and certification GrayCo and each employee hold. The CRM e-mails admins and the office and adds a To-Do 30 and 7 days before each "apply by" date (60 or 90 days first for the ones that need lead time), on it, and if anything expires.</div>' +
+    '<div class="gcc-stats"><div class="gcc-stat red"><div class="n">' + n.exp + '</div><div class="l">Expired</div></div><div class="gcc-stat amb"><div class="n">' + (n.now + n.soon) + '</div><div class="l">Renew soon</div></div><div class="gcc-stat"><div class="n">' + n.nd + '</div><div class="l">Missing a date</div></div><div class="gcc-stat"><div class="n">' + esc(usd(fees)) + '</div><div class="l">Fees due next 12 months</div></div></div>' +
     '<div class="gcc-tabs">' + [['company', '🏢 Company (' + co.length + ')'], ['people', '👷 Employees (' + pe.length + ')'], ['pay', '💵 Payments & fees']].map(function(t){ return '<button type="button" data-gcctab="' + t[0] + '" aria-pressed="' + (UI.tab === t[0]) + '">' + t[1] + '</button>'; }).join('') + '</div>';
   if (UI.tab === 'company') h += table(co, false);
   else if (UI.tab === 'people') {
@@ -194937,6 +194940,7 @@ function editDlg(c){
     '<div><label for="gcc-issued">Issued / last renewed</label><input id="gcc-issued" type="date"></div>' +
     '<div><label for="gcc-expires">Expires (exact date)</label><input id="gcc-expires" type="date"></div>' +
     '<div><label for="gcc-lead">Apply this many days before it expires</label><input id="gcc-lead" type="number" min="0" max="365"><div class="gcc-help" id="gcc-ab"></div></div>' +
+    '<div><label for="gcc-warn">First warning</label><select id="gcc-warn"><option value="30">30 days before apply-by</option><option value="60">60 days before apply-by</option><option value="90">90 days before apply-by</option></select><div class="gcc-help">60 or 90 only when renewal takes lead time (classes, CE hours, CPA statement)</div></div>' +
     '<div><label for="gcc-cycle">Renews every (months)</label><input id="gcc-cycle" type="number" min="0" max="120"><div class="gcc-help">12 = yearly, 24 = every 2 years, 0 = see certificate</div></div>' +
     '<div><label for="gcc-fee">Renewal fee ($)</label><input id="gcc-fee" type="number" min="0" step="1"></div>' +
     '<div><label for="gcc-feenote">Fee notes (late fees etc.)</label><input id="gcc-feenote"></div>' +
@@ -194951,7 +194955,7 @@ function editDlg(c){
   function fill(){
     q('#gcc-holder').value = x.holderType === 'person' ? low(x.holder) : 'company';
     q('#gcc-name').value = x.name || ''; q('#gcc-issuer').value = x.issuer || ''; q('#gcc-number').value = x.number || '';
-    q('#gcc-issued').value = ymd(x.issued); q('#gcc-expires').value = ymd(x.expires); q('#gcc-lead').value = +x.leadDays || 0; q('#gcc-cycle').value = +x.cycleMonths || 0;
+    q('#gcc-issued').value = ymd(x.issued); q('#gcc-expires').value = ymd(x.expires); q('#gcc-lead').value = +x.leadDays || 0; q('#gcc-warn').value = String(warnOf(x)); q('#gcc-cycle').value = +x.cycleMonths || 0;
     q('#gcc-fee').value = x.fee ? +x.fee : ''; q('#gcc-feenote').value = x.feeNote || ''; q('#gcc-req').value = x.requirements || ''; q('#gcc-url').value = x.renewUrl || ''; q('#gcc-notes').value = x.notes || '';
     hint();
   }
@@ -194970,7 +194974,7 @@ function editDlg(c){
     var h = q('#gcc-holder').value, who = staff().filter(function(u){ return low(u.email) === h; })[0];
     x.holderType = h === 'company' ? 'company' : 'person'; x.holder = h; x.holderName = h === 'company' ? 'GrayCo' : s(who && who.name) || h;
     x.name = s(q('#gcc-name').value); x.issuer = s(q('#gcc-issuer').value); x.number = s(q('#gcc-number').value);
-    x.issued = ymd(q('#gcc-issued').value); x.expires = ymd(q('#gcc-expires').value); x.leadDays = Math.max(0, Math.min(365, +q('#gcc-lead').value || 0)); x.cycleMonths = Math.max(0, Math.min(120, +q('#gcc-cycle').value || 0));
+    x.issued = ymd(q('#gcc-issued').value); x.expires = ymd(q('#gcc-expires').value); x.leadDays = Math.max(0, Math.min(365, +q('#gcc-lead').value || 0)); x.warnDays = +q('#gcc-warn').value || 30; x.cycleMonths = Math.max(0, Math.min(120, +q('#gcc-cycle').value || 0));
     x.fee = num(q('#gcc-fee').value); x.feeNote = s(q('#gcc-feenote').value); x.requirements = s(q('#gcc-req').value); x.renewUrl = s(q('#gcc-url').value); x.notes = s(q('#gcc-notes').value);
     if (!x.name) { toast('Give it a name.', true); return; }
     var btn = e.target; btn.disabled = true; btn.textContent = 'Saving…';

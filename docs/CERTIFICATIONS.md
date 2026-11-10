@@ -11,9 +11,11 @@ Where: Forms & Docs → 🎓 Training → **📜 Certifications** (admins). To-D
 - **✓ Renewed / paid** logs the payment (date, amount, method, confirmation #) and sets the new expiration (pre-filled from
   the renewal cycle). **💵 Payments & fees** lists every payment by year and the fees due in the next 12 months.
 
-Reminders: a To-Do for admins for anything within 90 days of its apply-by date, past it, expired, or missing a date; and the
-daily run (gc-portal-daily → `gcp.certRun`, under the "Company documents expiring" automation) e-mails admins + office and
-adds an Office To-Do at 90 / 60 / 30 / 7 days before the apply-by date, on it, and once expired. Company documents
-(COI, W-9, licenses uploaded in Company documents) now also warn at 90 and 60 days.
+Reminders: each certification warns first 30 days before its apply-by date; only the ones that need lead time warn earlier
+("First warning" on the form: TN license 60 for the CPA statement, IICRC technician 90 for CE hours, RRP renovator and TDEC
+individual 60). A To-Do for admins from the first warning, past apply-by, expired, or missing a date; and the daily run
+(gc-portal-daily → `gcp.certRun`, under the "Company documents expiring" automation) e-mails admins + office and adds an
+Office To-Do at the first warning, 30 and 7 days, on the apply-by date, and once expired. Company documents (COI, W-9,
+licenses uploaded in Company documents) keep their 30- and 7-day warnings.
 
 Data: gc_kv `gc_certs` ({ list }), `gc_certs_state` (which reminders went out). Rules and fees: agency websites, Nov 2026.

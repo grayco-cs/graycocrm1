@@ -1,9 +1,9 @@
 /* GrayCo — GC portal daily run (patch GCP; the rules are in _lib/gcp.js).
    Scheduled in netlify.toml (about 8:40 AM Central):
-     • company documents (COI, W-9, licenses …) that run out within 90 / 60 / 30 / 7 days / have run out → one e-mail to the
+     • company documents (COI, W-9, licenses …) that run out within 30 days / 7 days / have run out → one e-mail to the
        admins and one Office To-Do (each step once per document);
-     • patch CERTS: company and employee certifications (📜 Certifications) 90 / 60 / 30 / 7 days before their apply-by
-       date, on it and once expired → one e-mail to admins + office and one Office To-Do;
+     • patch CERTS: company and employee certifications (📜 Certifications) 30 / 7 days before their apply-by date (60 / 90
+       only where set), on it and once expired → one e-mail to admins + office and one Office To-Do;
      • from March 15 and from September 15: the spring / fall free roof inspection offer — ONE approval item for the
        admins with every past customer it would go to (nothing is sent until it is approved).
    GET ?ping=1 → alive. Anything that is not Netlify's scheduled call (body { next_run }) is refused. */

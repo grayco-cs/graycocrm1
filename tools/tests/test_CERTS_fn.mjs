@@ -15,14 +15,16 @@ const day = n => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
 const data = { users: [{ name: 'Owner', email: 'owner@grayco-cs.com', role: 'Admin' }, { name: 'Office', email: 'office@grayco-cs.com', role: 'Office' }] };
 ok(G.certApplyBy({ expires: '2027-04-09', leadDays: 90 }) === '2027-01-09', 'apply-by = expiration minus lead days');
 kv.gc_certs = { list: [
-  { id: 'a', name: 'EPA RRP firm', expires: day(150), leadDays: 90, fee: 300 },     /* apply by in 60 → 60d */
+  { id: 'a', name: 'EPA RRP firm', expires: day(110), leadDays: 90, fee: 300 },     /* apply by in 20 → 30d */
+  { id: 'g', name: 'Insurance-type, 60 out', expires: day(90), leadDays: 30 },      /* apply by in 60, warns at 30 → nothing yet */
+  { id: 'h', name: 'IICRC tech', tpl: 'iicrc_tech', expires: day(110), leadDays: 30 }, /* apply by in 80, CE hours → 90d */
   { id: 'b', name: 'TN license', expires: day(20), leadDays: 30, fee: 200 },        /* apply-by passed → applyby */
   { id: 'c', name: 'MS license', expires: day(-3), leadDays: 30 },                  /* expired */
   { id: 'd', name: 'IICRC firm', expires: day(400), leadDays: 30 },                 /* nothing yet */
   { id: 'e', name: 'No date', expires: '', leadDays: 30 },
   { id: 'f', name: 'Archived', expires: day(-10), archived: true } ] };
 const r = await G.certRun(data);
-ok(r.reminded === 3 && r.mailed, 'three reminders sent (60 days, apply-by passed, expired); none for later / no date / archived (' + JSON.stringify(r) + ')');
+ok(r.reminded === 4 && r.mailed, 'four reminders (30 days, IICRC tech 90 days, apply-by passed, expired); none at 60 days for a 30-day item, later, no date or archived (' + JSON.stringify(r) + ')');
 const m = mails[mails.length - 1];
 ok(!!m && m.to.includes('office@grayco-cs.com') && m.to.includes('owner@grayco-cs.com') && /EXPIRED/.test(m.html) && /renewal due NOW/.test(m.html) && /fee \$300|fee 300/.test(m.html), 'e-mail to admins + office with expired, due-now and the fee');
 const t = tasks.find(x => /^GCP_CERTS_/.test(x.id));
