@@ -1,7 +1,8 @@
-# GrayCo Fire & Smoke Restoration and Odor Control training (patch RESTOTRAIN)
+# GrayCo Water, Fire & Smoke and Odor Control training (patch RESTOTRAIN)
 
 Where: 📄 Forms & Docs → 🎓 Training (filter **IICRC**). Two GrayCo courses, written in GrayCo's own words:
 
+- **GrayCo Water Damage Restoration** — 9 lessons + quiz (covers the IICRC WRT subjects, including dehumidifier, air mover and standing-water math).
 - **GrayCo Fire & Smoke Restoration** — 8 lessons + quiz (covers the IICRC FSRT subjects).
 - **GrayCo Odor Control** — 9 lessons + quiz (covers the IICRC OCT subjects).
 

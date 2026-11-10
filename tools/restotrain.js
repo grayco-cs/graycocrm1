@@ -1,6 +1,6 @@
 /* patch RESTOTRAIN — GrayCo's own 🔥 Fire & Smoke Restoration and 👃 Odor Control courses in 🎓 Training (owner 11/10: "make
    these into our own grayco fire restroation training to go in our crm under training").
-   What: two built-in courses (category IICRC, required for the Insurance / Mitigation role, open to everyone) with a part per
+   What: built-in courses (Water Damage Restoration, Fire & Smoke Restoration, Odor Control; category IICRC, required for the Insurance / Mitigation role, open to everyone) with a part per
    lesson, each with its own "✓ I read this", and a quiz part at the end of each (20 questions, pass = 16). Passing the quiz
    ticks the quiz part for that person (so 👥 Team progress shows who passed); the quiz part cannot be ticked by hand.
    A failed try shows which questions were wrong but not the answers; a pass shows every answer with the reason.

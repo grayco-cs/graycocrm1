@@ -352,5 +352,187 @@ Death and blood cleanups bring two main bloodborne risks: **Hepatitis B (HBV)**,
     ],
 }
 
-COURSES = [FIRE, ODOR]
+WATER = {
+    'id': 'resto-water',
+    'title': 'GrayCo Water Damage Restoration',
+    'short': 'Water Damage Restoration',
+    'pdf': 'grayco-water-damage-restoration.pdf',
+    'required': ['insurance'],
+    'cat': 'IICRC',
+    'intro': ("GrayCo's water mitigation and structural drying training for everyone who works water losses. Read each part and tick it "
+              "off, then pass the quiz at the end (16 of 20) to finish. It covers what the IICRC Water Restoration Technician (WRT) "
+              "class covers, including the equipment math, so it is also your study guide for that exam."),
+    'parts': [
+        {'id': 'w1', 'title': '1. Safety on a water job', 'body': """
+Do a **hazard assessment on every job**; it is the first thing you do on the initial inspection. You can't protect yourself from a hazard you haven't noticed.
+
+- The most common injuries on water jobs are **slips, trips and falls**. Also watch for live electricity near water, sagging ceilings and overloaded circuits.
+- OSHA's order: **eliminate** the hazard, then **engineer** it out (containment, air scrubbers), and **PPE is the last resort**. One size of PPE does not fit every hazard.
+- **Sewage (Category 3)**: PPE must cover **every route of exposure** (skin, eyes, mouth, lungs). The health of workers and occupants comes first.
+- Every chemical has an **SDS** in the truck and on the job. Your best product information is the **SDS, the label and training**. Mix at the right dilution.
+- You need a **medical evaluation and a fit test** before wearing a respirator.
+- Talk to your doctor about **Hepatitis B and tetanus** shots. Hep B is three shots; after a possible exposure, get treated within **24 hours**.
+- **Chemically sensitive** customers and high-risk occupants (pregnant, infants, elderly, chemo, immunocompromised, recent surgery) stay out of the work area and come back on their doctor's advice. Before applying antimicrobials: PPE on, occupants and pets out.
+- **Confined spaces** (crawl spaces, attics, pits): never alone; always two people on site.
+- **Lead and asbestos** are regulated by federal law. Follow GrayCo's lead standard and stop for testing if you suspect either; the PM writes a change order.
+- Even clean extraction water is dumped according to **local laws and regulations**.
+"""},
+        {'id': 'w2', 'title': '2. Tools and equipment', 'body': """
+- **Moisture sensor**: beeps in wet carpet and pad and finds the edge of the water. Don't use it on anything else.
+- **Moisture meters** give a number. **Non-invasive** (radio frequency) meters don't damage anything and are good for mapping; metal behind the surface gives false positives. **Invasive (pin)** meters read conductivity at the pin depth.
+- **Thermo-hygrometer**: air temperature and relative humidity, recorded every visit.
+- **IR camera**: shows **warmer and cooler**, not wet and dry. Always confirm with a meter.
+- **Air movers**: most of our inventory. They move air across wet surfaces so the water evaporates.
+- **Dehumidifiers**: **conventional refrigerant** (condensation; bottoms out around 55 GPP), **LGR** (low grain refrigerant; condensation with a pre-cooler, gets down to about **34 GPP**), and **desiccant** (chemical attraction; not limited by dew point; makes the driest air / lowest vapor pressure; check the power it needs).
+- **AFDs / air scrubbers**: control dust, spores and contaminants, chosen by category of water.
+- **Extraction tools**: truck mount, portables, weighted/sealed tools (the most important tools for speeding up drying).
+- **Inner-air (cavity) drying**: pushes warm dry air under cabinets, into walls and under hardwood.
+- The **IICRC S500** is the standard of care for water restoration; our process follows it.
+"""},
+        {'id': 'w3', 'title': '3. The first visit (new claim)', 'body': """
+1. **Get the work authorization signed**: who pays and how. No work before it is signed.
+2. **Hazard assessment**, then make sure the **source is stopped**.
+3. **Set expectations**: tell the customer what they will see, hear and smell, and the order of the work.
+4. **Inspect** up, down and sideways to find the **edge of the water**. For each area: what is wet, how wet, is it damaged, is it salvageable? Check HVAC registers, floor outlets and crawl spaces.
+5. **Protect contents**: blocks and tabs under furniture, lift drapes and clothing off the floor, raise metal items.
+6. **Document**: what is wet, what is not, and **preexisting damage**, with photos. Tell the customer about preexisting damage before you start.
+7. **Set the dry standard**: average several meter readings on unaffected, like materials. The **drying goal** is within about **10%** of the dry standard. Equipment stays until every material meets its goal.
+8. **Extract**. Removing liquid water is the fastest way to speed drying; a quick first extraction stops the water from spreading.
+
+**Primary damage** comes from the water itself. **Secondary damage** comes from the wet environment we leave behind (high humidity over 60%, mold, swelling). Our job is to stop secondary damage.
+"""},
+        {'id': 'w4', 'title': '4. Categories of water (how dirty)', 'body': """
+- **Category 1**: from a sanitary source (supply line, faucet). No substantial risk to people. It can get worse with time and dirty materials.
+- **Category 2**: significant contamination that could make people sick: washer or dishwasher discharge, toilet overflow with urine, fish tanks, waterbeds.
+- **Category 3**: grossly unsanitary or carrying pathogens: **sewage** from beyond the trap, and **surface or ground water** such as rising rivers. Never call it just "black water"; clean-looking water can be Category 3.
+- There is **no Category 4**. Mold and regulated hazardous materials are separate special situations.
+- Whether someone would drink it is **not** how you decide the category.
+
+**Category 3 rules**
+
+- Remove highly porous materials (drywall, insulation). Carpet and pad that touched Cat 3 go out. (In Cat 2, the pad goes; the carpet can be cleaned.)
+- Clean every surface that stays, and apply an appropriate biocide during and after demo.
+- If a customer refuses the proper Cat 3 procedures, **stop work** and call your PM. A waiver does not protect us or them.
+- High-value rugs can be saved only with intensive cleaning, antimicrobial, fast drying and third-party testing.
+"""},
+        {'id': 'w5', 'title': '5. Classes of loss (how much water)', 'body': """
+Class tells you how much evaporation load there is. It is based on the **percentage of wet porous surface** in the space: ceiling + walls + floor added together.
+
+- **Class 1**: under **5%**. Least evaporation.
+- **Class 2**: **5% to 40%**. Carpet and pad wet, wicking under 24 inches up the walls.
+- **Class 3**: more than **40%**. Often from overhead; walls wet above 24 inches; wet insulation. Water from above does **not** automatically make a loss Class 3 or Category 3.
+- **Class 4**: specialty drying. Water is **deeply held** in low-porosity materials such as hardwood, plaster, brick, concrete, stone, or many layers. Needs **LGR or desiccant** and very dry air.
+
+Example: a 10 x 10 x 8 room has 520 SF of surface (100 ceiling + 100 floor + 320 walls). 26 SF wet is 5%: Class 1.
+"""},
+        {'id': 'w6', 'title': '6. The science of drying', 'body': """
+Water leaves a building three ways: **extraction** (liquid, the most effective), **evaporation**, and **dehumidification or ventilation** to get the vapor out.
+
+**H.A.T., the drying pie**: **Humidity, Airflow, Temperature**. Miss any one and drying stalls.
+
+- **Relative humidity (RH)**: water in the air as a percent of what it could hold at that temperature. 100% = saturated. Warm the air and RH drops; cool it and RH rises, even with the same water in it.
+- **GPP (grains per pound, humidity ratio)**: the actual amount of water in the air. GPP, **vapor pressure** and **dew point** all move together.
+- **Hygroscopic** materials (wood, drywall, fabric) soak up or give off moisture depending on RH.
+- **Airflow** breaks the thin layer of saturated air on a wet surface.
+- **Temperature**: warming the wet material adds energy and raises its vapor pressure.
+- **Vapor pressure**: moisture moves from high pressure to low pressure. Wet materials dry when the air around them has lower vapor pressure. The best combination is **warm, dry air**.
+- **Dew point**: the temperature where air becomes saturated. Surfaces colder than the dew point get **condensation**. 75°F at 60% RH has a dew point of about **62°F**.
+
+**Changes of state**: evaporation (liquid → vapor, energy added; the surface cools), condensation (vapor → liquid), **sublimation** (ice → vapor; freeze-drying books and documents), deposition (vapor → solid), melting, freezing.
+
+**Psychrometric chart**: plug in temperature and RH to get GPP, dew point and vapor pressure. Take readings in the affected area, an unaffected area, outside, and at the dehumidifier outlet every visit.
+
+**Permeance**: materials under **1 perm** (vinyl, polyethylene, vinyl wallpaper, some paints) are vapor barriers and trap water. They may have to come off.
+"""},
+        {'id': 'w7', 'title': '7. Equipment math', 'body': """
+**Open, closed or combination?** Compare inside and outside GPP. If outside air is wetter, use a **closed** (dehumidifiers only) system.
+
+**Dehumidifier factors**
+
+- Conventional refrigerant: Class 1 = 100, Class 2 = 40, Class 3 = 30, Class 4 = not used.
+- LGR: Class 1 = 100, Class 2 = 50, Class 3 = 40, Class 4 = 40.
+- Desiccant (air changes per hour): Class 1 = 1, Class 2 = 2, Class 3 = 3, Class 4 = 3.
+
+**Refrigerant (conventional and LGR)**: cubic feet ÷ factor = pints per day needed ÷ the unit's **AHAM rating** = number of units. **Always round up.** AHAM ratings are pints per day at 80°F and 60% RH.
+
+- Example: Class 3, 30 x 25 x 8 = 6,000 CF ÷ 30 = 200 pints ÷ 35-pint units = 5.7 → **6**.
+
+**Desiccant**: cubic feet × ACH ÷ 60 = CFM needed ÷ the unit's CFM = number of units. (The same formula sizes air scrubbers.)
+
+- Example: Class 3, 6,000 CF × 3 ÷ 60 = 300 CFM ÷ 65 CFM units = 4.6 → **5**.
+
+**Air movers** (room by room, round up):
+
+1. **1** for each wet room.
+2. **1 per 50–70 SF** of wet floor (includes the bottom 2 ft of wall).
+3. **1 per 100–150 SF** of wet wall and ceiling above 2 ft.
+4. **1** for each inset or offset over 18 inches.
+
+If water only got a little way into a room (under 2 ft), use **1 per 14 linear feet** of wet wall instead. Face all air movers the same way; never let them blow against each other. In Class 4, once the surface water is gone, slow the airflow and focus on heat and dry air.
+
+**Standing water**: length × width × depth in feet = cubic feet. × **7.48** = gallons. × **8.34** = pounds. Inches ÷ 12 = feet (3 inches = 0.25 ft). Pump basements slowly: gallons ÷ pump rate = time. If water keeps coming in, stop; outside soil pressure can collapse the walls.
+
+Don't dry what you are going to tear out. Remove non-salvageable wet materials first, then set your drying plan.
+"""},
+        {'id': 'w8', 'title': '8. Floors, walls and building materials', 'body': """
+**Carpet and pad**
+
+- Category 3: remove and discard both.
+- Category 2: discard the pad; extract, clean and dry the carpet, then reinstall after repairs.
+- Category 1: consider **in-place drying**, but only if **all** of these are yes: Category 1, under **72 hours**, deep extraction tools on hand, and LGR or desiccant available.
+- Focus on how much water you **leave behind**, not how much you took out. If you can't deep-extract, float the carpet (knee kicker and awl) and pull the pad.
+
+**Other floors**
+
+- Vinyl over wet underlayment is a vapor barrier; it usually comes up.
+- Carpet over hardwood: pull the carpet, discard the pad, and focus on the hardwood and subfloor.
+- **Hardwood** is dry when it is within **2–4 points of its EMC** (and the subfloor within 2–4 points of the hardwood). Probe in the **dark (winter) grain**. **Cupping** (edges up, bottom wet) usually dries out. **Crowning** = top wetter. **Buckling** (lifting off the floor) usually means replacement. Tell the customer to let the floor acclimate before refinishing.
+- Concrete holds up; the problem is when its moisture reaches other materials.
+
+**Wood products**: plywood holds up best, then OSB; particle board is usually replaced; **MDF** suffers the most.
+
+**Walls and ceilings**
+
+- Drywall dries well and is strong again once dry, but its paper face molds if it stays wet.
+- **Sagging, saturated ceilings are a safety hazard**: drain them and take them down.
+- Flat paint dries easily. **Vinyl wallpaper** and gloss enamel trap water; you may need to pull the baseboard and drill holes to get air into the cavity.
+- Check insulation. Wet cellulose comes out, and so does any insulation hit by Category 2 or 3 water.
+
+**Monitor at least every 24 hours**: same tech, same meters, same spots. Record everything in the CRM.
+"""},
+        {'id': 'w9', 'title': '9. Mold and microbes', 'body': """
+- Mold needs **spores, food (anything organic), moisture and still air**. Take away one and it stops. On a water job, our job is to take away the water fast.
+- **MVOCs** are the gases microbes give off. **Musty** = mold; **sharp or bitter** = bacteria. If you smell them, put on PPE and tell your supervisor calmly. Don't alarm the customer.
+- **Sanitizer**: reduces pathogens to a safe level (the lowest level). **Disinfectant**: kills microorganisms but not necessarily spores. **Sterilizer**: kills everything, spores included.
+- Use antimicrobials only when they are needed, and follow the label exactly.
+- Set up containment and engineering controls **before** removing the source or turning on air movers.
+- Wood moisture and decay: surface mold around **16%**, dry rot **20–29%**, wet rot **30%+**.
+- Bring in a third-party **IEP** (Indoor Environmental Professional) for heavy contamination, Category 3 and high-risk occupants. Any mold, lead or asbestos found is handled by change order.
+"""},
+    ],
+    'quiz': [
+        ('The first priority on the initial inspection is:', ['Setting equipment', 'A hazard assessment', 'Moving contents', 'Calling the adjuster'], 1, 'Every job starts with a hazard assessment.'),
+        ('The most common hazards on a water job are:', ['Slips, trips and falls', 'Cuts and burns', 'Chemical spills', 'Noise'], 0, 'Wet floors: slips, trips and falls.'),
+        ('Before wearing a respirator you must have:', ['A beard trim only', 'A medical evaluation and fit test', 'An OSHA card', 'Nothing'], 1, 'Medical evaluation and fit test first.'),
+        ('An IR camera shows:', ['What is wet', 'What is warmer or cooler', 'Moisture content', 'Mold'], 1, 'Confirm anything it shows with a moisture meter.'),
+        ('LGR dehumidifiers can dry air down to about:', ['100 GPP', '55 GPP', '34 GPP', '10 GPP'], 2, 'Conventional units stall around 55; LGRs reach about 34 GPP.'),
+        ('The drying goal is usually set within about ___ of the dry standard:', ['10%', '25%', '50%', '1%'], 0, 'The S500 recommends within about 10%.'),
+        ('Damage caused by the wet environment left behind (humidity, mold) is:', ['Primary damage', 'Secondary damage', 'Preexisting damage', 'Class 4 damage'], 1, 'Secondary damage is what fast drying prevents.'),
+        ('A toilet overflow with urine is normally:', ['Category 1', 'Category 2', 'Category 3', 'Category 4'], 1, 'Category 2: significant contamination. Sewage from beyond the trap is Category 3.'),
+        ('Water from an overflowing river that enters a house is:', ['Category 1', 'Category 2', 'Category 3', 'Class 4'], 2, 'Surface and ground water intrusion is Category 3.'),
+        ('Carpet pad wet with Category 2 water should be:', ['Dried in place', 'Removed and discarded', 'Cleaned and reused', 'Sprayed and left'], 1, 'Cat 2: discard the pad, clean and dry the carpet.'),
+        ('Wet porous materials make up 20% of the room\'s surfaces. The class is:', ['Class 1', 'Class 2', 'Class 3', 'Class 4'], 1, 'Class 2 is 5% to 40%.'),
+        ('Water deeply held in hardwood, plaster or concrete is:', ['Class 1', 'Class 2', 'Class 3', 'Class 4'], 3, 'Class 4: specialty drying with LGR or desiccant.'),
+        ('The three parts of the "drying pie" (H.A.T.) are:', ['Heat, air, time', 'Humidity, airflow, temperature', 'Hours, amps, temperature', 'Humidity, air movers, tools'], 1, 'Humidity, Airflow, Temperature.'),
+        ('Air at 75°F and 60% RH has a dew point of about:', ['32°F', '50°F', '62°F', '75°F'], 2, 'About 62°F; colder surfaces will condense.'),
+        ('A material with a permeance under 1 perm is:', ['A vapor barrier', 'Very porous', 'Class 1', 'Always salvageable'], 0, 'Vinyl, poly and vinyl wallpaper trap moisture.'),
+        ('Class 3, 6,000 CF, conventional refrigerant (factor 30), 35-pint units. How many dehumidifiers?', ['4', '5', '6', '7'], 2, '6,000 ÷ 30 = 200 pints ÷ 35 = 5.7, round up to 6.'),
+        ('The desiccant formula is:', ['CF ÷ factor ÷ AHAM', 'CF × ACH ÷ 60 ÷ unit CFM', 'SF ÷ 50', 'CF × 7.48'], 1, 'Cubic feet × ACH ÷ 60 = CFM needed, ÷ unit CFM.'),
+        ('Air movers for wet floor: one for every:', ['10–20 SF', '50–70 SF', '100–150 SF', '200 SF'], 1, 'Floor 50–70 SF; walls/ceiling above 2 ft 100–150 SF.'),
+        ('A cubic foot of water is about how many gallons?', ['1', '3.8', '7.48', '8.34'], 2, '7.48 gallons per cubic foot; a gallon weighs 8.34 lb.'),
+        ('In-place carpet drying is only an option when it is:', ['Category 3 and under 72 hours', 'Category 1 and under 72 hours, with deep extraction and LGR/desiccant', 'Any category if the customer signs a waiver', 'Category 2 with new pad'], 1, 'All four must be yes: Cat 1, under 72 hours, deep extraction, LGR or desiccant.'),
+    ],
+}
+
+COURSES = [WATER, FIRE, ODOR]
 PASS = 16   # of 20
