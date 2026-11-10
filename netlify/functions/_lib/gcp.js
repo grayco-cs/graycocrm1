@@ -534,7 +534,7 @@ async function complianceRun(data){
   const due = [];
   docs.forEach(function(d){
     const days = Math.round((Date.parse(ymd(d.expires) + 'T12:00:00Z') - Date.parse(today + 'T12:00:00Z')) / 864e5);
-    const step = days < 0 ? 'expired' : days <= 7 ? '7d' : days <= 30 ? '30d' : '';
+    const step = days < 0 ? 'expired' : days <= 7 ? '7d' : days <= 30 ? '30d' : days <= 60 ? '60d' : days <= 90 ? '90d' : '';   /* patch CERTS: 90 and 60 days too (owner 11/10) */
     if (!step || rem[d.id + '|' + step]) return;
     due.push({ d: d, step: step, days: days });
   });
@@ -548,6 +548,41 @@ async function complianceRun(data){
   return { reminded: due.length, mailed: !!r.ok };
 }
 function x0(due){ return due.some(function(x){ return x.days <= 7; }); }
+
+/* ── patch CERTS: daily — company and employee certifications / licenses (gc_certs, kept in the CRM's 📜 Certifications)
+   Each certification has an expiration date and an "apply by" date (expiration minus its lead days: EPA RRP firm 90, TN license
+   30 …). Steps, each once per certification and expiration: 90 / 60 / 30 / 7 days before the apply-by date, the apply-by date
+   reached, and expired. One e-mail to the admins + office and one Office To-Do per day with all of them, with the fee. ── */
+const K_CERTS = 'gc_certs', K_CERTST = 'gc_certs_state';
+function addDays(d, n){ const t = Date.parse(ymd(d) + 'T12:00:00Z'); return isNaN(t) ? '' : new Date(t + n * 864e5).toISOString().slice(0, 10); }
+function certApplyBy(c){ const e = ymd(c && c.expires); if (!e) return ''; const n = Math.max(0, Math.min(365, parseInt(c.leadDays, 10) || 0)); return addDays(e, -n); }
+function certStep(c, today){
+  const e = ymd(c && c.expires); if (!e) return null;
+  const ab = certApplyBy(c), dE = Math.round((Date.parse(e + 'T12:00:00Z') - Date.parse(today + 'T12:00:00Z')) / 864e5), dA = Math.round((Date.parse(ab + 'T12:00:00Z') - Date.parse(today + 'T12:00:00Z')) / 864e5);
+  const step = dE < 0 ? 'expired' : dA <= 0 ? 'applyby' : dA <= 7 ? '7d' : dA <= 30 ? '30d' : dA <= 60 ? '60d' : dA <= 90 ? '90d' : '';
+  return step ? { step: step, daysToExpire: dE, daysToApply: dA, applyBy: ab } : null;
+}
+async function certRun(data){
+  const today = new Date(now()).toISOString().slice(0, 10);
+  const list = arr(obj(await get(K_CERTS, {})).list).filter(function(c){ return c && c.id && !c.archived && ymd(c.expires); });
+  const st = obj(await get(K_CERTST, {})); const rem = obj(st.reminded);
+  const due = [];
+  list.forEach(function(c){ const x = certStep(c, today); if (!x) return; const k = c.id + '|' + ymd(c.expires) + '|' + x.step; if (rem[k]) return; due.push(Object.assign({ c: c, k: k }, x)); });
+  if (!due.length) return { reminded: 0 };
+  due.sort(function(a, b){ return a.daysToApply - b.daysToApply; });
+  const who = function(c){ return s(c.holderName) || (c.holderType === 'person' ? s(c.holder) : 'GrayCo'); };
+  const line = function(x){ const c = x.c; return esc(s(c.name)) + ' — ' + esc(who(c)) + (s(c.number) ? ' #' + esc(s(c.number)) : '') + ': ' +
+    (x.step === 'expired' ? '<b style="color:#b91c1c">EXPIRED ' + esc(ymd(c.expires)) + '</b>' : x.step === 'applyby' ? '<b style="color:#b45309">renewal due NOW</b> (expires ' + esc(ymd(c.expires)) + ')' : 'apply by <b>' + esc(x.applyBy) + '</b> (' + x.daysToApply + ' days) · expires ' + esc(ymd(c.expires))) +
+    (s(c.fee) ? ' · fee ' + esc(s(c.fee)) : '') + (s(c.requirements) ? '<br><span style="color:#55626F">Needs: ' + esc(s(c.requirements)) + '</span>' : ''); };
+  const to = Array.from(new Set((await staffEmails(data, 'admins')).concat(await staffEmails(data, 'office'))));
+  const r = await mailStaff(to, '📜 Certification renewal' + (due.length === 1 ? '' : 's') + ': ' + due.map(function(x){ return x.c.name; }).join(', '),
+    para('These certifications and licenses need attention. Renew them, log the payment and enter the new expiration date in the CRM: <b>Forms &amp; Docs → 🎓 Training → 📜 Certifications</b>.') + '<ul>' + due.map(function(x){ return '<li style="margin-bottom:6px">' + line(x) + '</li>'; }).join('') + '</ul>', 'certifications');
+  await todo({ id: 'GCP_CERTS_' + today, label: '📜 Renew: ' + due.map(function(x){ return x.c.name + ' (' + who(x.c) + ')'; }).join(', '),
+    note: due.map(function(x){ return x.c.name + ' — ' + who(x.c) + ' — ' + (x.step === 'expired' ? 'EXPIRED ' + ymd(x.c.expires) : x.step === 'applyby' ? 'renewal due now, expires ' + ymd(x.c.expires) : 'apply by ' + x.applyBy + ', expires ' + ymd(x.c.expires)) + (s(x.c.fee) ? ' — fee ' + s(x.c.fee) : ''); }).join('\n') + '\nForms & Docs → 🎓 Training → 📜 Certifications.',
+    prio: due.some(function(x){ return x.step === 'expired' || x.step === 'applyby' || x.step === '7d'; }) ? 'high' : 'normal', kind: 'gcp_certs' });
+  if (r.ok || !to.length) await cas(K_CERTST, function(v){ const s2 = obj(v); s2.reminded = obj(s2.reminded); due.forEach(function(x){ s2.reminded[x.k] = nowIso(); }); return s2; });
+  return { reminded: due.length, mailed: !!r.ok };
+}
 
 /* ── customer portal extras: the mid-job check-in and the warranty registry ─── */
 function midJob(p, sched, view){
@@ -753,5 +788,5 @@ async function inspectAccept(code, b){
 module.exports = { T, K_LINKS, K_JOBS, K_DOCS, K_DOCST, K_CHECK, K_INSP, DOC_KINDS, TOKEN_RE,
   isGcJob, contactsOf, billingOf, gcCompany, linkFor, linkByToken, createLink, revokeLink, touchLink, gcLink, jobState, mutateJob,
   companyDocs, docOut, docAdd, docRemove, docFlags, DOC_FOLDERS, docFolder, docAccess, docShared, docVisible, docStaffOut, docsForStaff, docsForGc, docApplyAdd, docApplyFlags, docLive, K_LIBCFG, cfgClean, libCfg, libCfgSet, docSigned, docExpired, gcView, payappAdd, payappStatus, coPrice, coVoid, coImported, rfiNew, rfiAnswer,
-  gcApprovePay, gcRequestCo, gcSignCo, onApproved, complianceRun, activeGcContacts, custExtras, custCheckin, registryPdf, simplePdf, midJob,
+  gcApprovePay, gcRequestCo, gcSignCo, onApproved, complianceRun, certRun, certStep, certApplyBy, K_CERTS, activeGcContacts, custExtras, custCheckin, registryPdf, simplePdf, midJob,
   seasonKey, inspectList, inspectRun, inspectSend, inspectAccept, payOut, coOut, rfiOut, scheduleOf, staffEmails };
