@@ -161,5 +161,13 @@ Object.assign(SA._D, { now: () => t, kvGet: async k => kv[k], kvCas: async (k, f
   assert.ok(ch && ch.sent && /project manager is now Pat PM — \(901\) 555-0003/.test(sent[1].body), sent[1] && sent[1].body);
   ch = await SA.lsaPmText({ id: 'LSA12', source: 'Google LSA', lsaCheck: 'good', contact: { name: 'Hal Ive', phone: '9015550212' } }, { assignee: 'Pat PM', assigneeEmail: 'pat@grayco-cs.com' });
   assert.ok(ch && ch.skipped, 'the same PM again: nothing');
+  /* LEADNUM: lead texts from the main number; other alerts from TWILIO_FROM_ALERTS */
+  process.env.TWILIO_FROM_ALERTS = '+19015550888';
+  const sentFrom = []; const send0 = SA._D.send; SA._D.send = async (to, body, from) => { sentFrom.push({ to, body, from }); return { ok: true }; };
+  t = Date.parse('2026-10-28T15:00:00Z') + 9e6;
+  await SA.leads([{ id: 'N55', key: 'N55', title: 'Kitchen', contact: { name: 'Lu', phone: '9015550255' } }], { N55: { id: 'N55' } }, () => false);
+  await SA.notify({ type: 'missed', text: 'missed call from Mo', link: 'https://crm.test', only: ['nthomas@grayco-cs.com'], thread: 'p:9015550266' });
+  assert.ok(sentFrom.filter(x => /new lead/.test(x.body)).every(x => x.from === '+19015550999') && sentFrom.some(x => /missed call/.test(x.body) && x.from === '+19015550888'), JSON.stringify(sentFrom.map(x => [x.from, x.body.slice(0, 30)])));
+  SA._D.send = send0; delete process.env.TWILIO_FROM_ALERTS;
   console.log('LSATEXT tests: all passed');
 })().catch(e => { console.error(e); process.exit(1); });
