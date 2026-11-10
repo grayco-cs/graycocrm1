@@ -541,7 +541,10 @@ async function lsaReply(ph, body, who){
   }
   let m = LSA_REPLY.exec(s(body));
   if (!m) {   /* LSANAME (owner 11/10: "if I reply with the PM name that means good lead"): just a PM's name (≤ 3 words, one active person) = GOOD + that PM */
-    const words = s(body).replace(/[.!,]+$/, '').trim(); if (!words || words.split(/\s+/).length > 3) return null;
+    let words = s(body).replace(/[.!,]+$/, '').trim();
+    const pmSaid = /^(.+?)\s+(?:is|as|will\s+be)\s+(?:the\s+)?(?:pm|project\s*manager)$/i.exec(words) || /^(?:the\s+)?(?:pm|project\s*manager)\s+(?:is|=|will\s+be)\s+(.+)$/i.exec(words);   /* PMSAID (owner 11/10): "Wesley is pm" */
+    if (pmSaid) words = s(pmSaid[1]);
+    if (!words || words.split(/\s+/).length > 3) return null;
     let open0 = []; await _D.kvCas(SKEY, v => { open0 = arr(loadState(v).lsa[ph]).filter(x => !x.done); return undefined; }).catch(() => {});
     if (!open0.length || !(await pmByName(words))) return null;
     m = ['', 'good', '', words];
@@ -585,7 +588,7 @@ async function lsaReply(ph, body, who){
     /* LSANOTES (owner 11/10: "if I add any notes on the good lead also enter those in that job's project notes"): "GOOD Pat roof is 20 years old"
        → PM Pat + the note "roof is 20 years old" (the first 1–3 words that are one person's name; the rest is the note) */
     const w = pmAsked.split(/\s+/);
-    for (let k = Math.min(3, w.length); k >= 1 && !pm; k--) { const cand = w.slice(0, k).join(' ').replace(/[,.;:!-]+$/, ''); const hit = await pmByName(cand); if (hit) { pm = hit; notes = w.slice(k).join(' ').replace(/^[\s,.;:-]+/, '').trim(); } }
+    for (let k = Math.min(3, w.length); k >= 1 && !pm; k--) { const cand = w.slice(0, k).join(' ').replace(/[,.;:!-]+$/, ''); const hit = await pmByName(cand); if (hit) { pm = hit; notes = w.slice(k).join(' ').replace(/^[\s,.;:-]+/, '').replace(/^(?:is|as|will\s+be)?\s*(?:the\s+)?(?:pm|project\s*manager)\b[\s,.;:!-]*/i, '').trim(); } }   /* "GOOD Wesley is pm" → no "is pm" note */
     if (!pm) notes = pmAsked.replace(/[.!]+$/, '');
   }
   if (!good) notes = reason;
@@ -672,10 +675,14 @@ async function lsaPmText(lead, x){
   const opt = await _D.optouts(); if (opt[ph]) return { skipped: 'texted STOP' };
   if (await _D.consentNo(ph)) return { skipped: 'declined texts' };
   const id = s(lead.id); let claim = false;
-  await _D.kvCas(SKEY, v => { const st = loadState(v); claim = false; if (st.lsaPm[id]) return undefined; st.lsaPm[id] = new Date(now()).toISOString(); claim = true; return st; });
+  let again = false;   /* PMCHANGE (owner 11/10): a new PM later → "your GrayCo project manager is now …" (once per PM) */
+  await _D.kvCas(SKEY, v => { const st = loadState(v); claim = false; again = false; const was = st.lsaPm[id]; const seen = was && typeof was === 'object' ? (Array.isArray(was.pms) ? was.pms.filter(Boolean) : []) : (was ? ['?'] : []);
+    if (seen.indexOf(email || low(pmName)) >= 0 || (typeof was === 'string' && !email)) return undefined;
+    if (typeof was === 'string' && seen.length) { st.lsaPm[id] = { at: was, pms: [email || low(pmName)], legacy: true }; claim = false; return st; }
+    again = seen.length > 0; st.lsaPm[id] = { at: new Date(now()).toISOString(), pms: seen.filter(x => x !== '?').concat([email || low(pmName)]) }; claim = true; return st; });
   if (!claim) return { skipped: 'already sent' };
   const f = firstOf(c.name || lead.name);
-  const body = 'Hi' + (f ? ' ' + f : '') + ', your GrayCo project manager is ' + pmName + (pmPh.length === 10 ? ' — ' + tidy(pmPh) : '') + '. They will be calling you shortly. — GrayCo Construction Services';
+  const body = 'Hi' + (f ? ' ' + f : '') + ', your GrayCo project manager is ' + (again ? 'now ' : '') + pmName + (pmPh.length === 10 ? ' — ' + tidy(pmPh) : '') + '. They will be calling you shortly. — GrayCo Construction Services';
   const r = await _D.send(ph, body.slice(0, 320), env('TWILIO_FROM'), 'customer');
   return { sent: !!(r && r.ok), to: ph, pm: pmName };
 }

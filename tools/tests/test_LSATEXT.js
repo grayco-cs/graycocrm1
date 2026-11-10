@@ -146,5 +146,20 @@ Object.assign(SA._D, { now: () => t, kvGet: async k => kv[k], kvCas: async (k, f
   /* a PM cannot SEND */
   const ps = await SA.staffInbound('9015550003', 'send to Mo', 'SM55');
   assert.ok(!ps || !ps.sent, 'a PM cannot send leads');
+  /* PMSAID / PMCHANGE */
+  decided.length = 0; sent.length = 0; t += 60000;
+  await SA.leads([{ id: 'LSA11', key: 'LSA11', title: 'Roof', source: 'Google LSA', contact: { name: 'Gil Hu', phone: '9015550211' } }], { LSA11: { id: 'LSA11', source: 'Google LSA', leadExtra: { lsaCheck: 'pending' } } }, () => false);
+  let ws = await SA.staffInbound('9015550001', 'Good Wesley is pm', 'SM60');
+  assert.ok(ws && ws.pm === 'Wesley Johnson' && !ws.notes, 'no "is pm" note: ' + JSON.stringify(ws));
+  await SA.leads([{ id: 'LSA12', key: 'LSA12', title: 'Roof', source: 'Google LSA', contact: { name: 'Hal Ive', phone: '9015550212' } }], { LSA12: { id: 'LSA12', source: 'Google LSA', leadExtra: { lsaCheck: 'pending' } } }, () => false);
+  ws = await SA.staffInbound('9015550001', 'Wesley is pm', 'SM61');
+  assert.ok(ws && ws.good && ws.pm === 'Wesley Johnson', '"Wesley is pm" = GOOD + Wesley: ' + JSON.stringify(ws));
+  sent.length = 0;
+  let ch = await SA.lsaPmText({ id: 'LSA12', source: 'Google LSA', lsaCheck: 'good', contact: { name: 'Hal Ive', phone: '9015550212' } }, { assignee: 'Wesley Johnson', assigneeEmail: 'wjohnson@grayco-cs.com' });
+  assert.ok(ch && ch.sent && /project manager is Wesley Johnson/.test(sent[0].body));
+  ch = await SA.lsaPmText({ id: 'LSA12', source: 'Google LSA', lsaCheck: 'good', contact: { name: 'Hal Ive', phone: '9015550212' } }, { assignee: 'Pat PM', assigneeEmail: 'pat@grayco-cs.com' });
+  assert.ok(ch && ch.sent && /project manager is now Pat PM — \(901\) 555-0003/.test(sent[1].body), sent[1] && sent[1].body);
+  ch = await SA.lsaPmText({ id: 'LSA12', source: 'Google LSA', lsaCheck: 'good', contact: { name: 'Hal Ive', phone: '9015550212' } }, { assignee: 'Pat PM', assigneeEmail: 'pat@grayco-cs.com' });
+  assert.ok(ch && ch.skipped, 'the same PM again: nothing');
   console.log('LSATEXT tests: all passed');
 })().catch(e => { console.error(e); process.exit(1); });
