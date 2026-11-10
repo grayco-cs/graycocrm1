@@ -5490,7 +5490,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.185-2026-11-10-r26a -->
+<!-- GrayCo CRM Build: 33.186-2026-11-10-r26b -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6439,7 +6439,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.185-2026-11-10-r26a");
+  console.log("[GC] Build 33.186-2026-11-10-r26b");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6487,7 +6487,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.185-2026-11-10-r26a"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.186-2026-11-10-r26b"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -216332,7 +216332,25 @@ D.addEventListener('click', function(e){
   pm(id, false, reason);
 }, true);
 SI.call(W, decorate, 700);
-W._gcLsaCheck = { isLsa: isLsa, pm: pm, decide: decide };
+/* patch LSATEXT (owner 11/10): GOOD / BAD texted back from Wesley's or Nick's cell (server: _lib/smsalert.js → gc_kv "gc_lsa_decisions")
+   → the same mark on the CRM lead; the office To-Do "Dispute … in Google Ads" was already added by the server */
+function textMarks(){
+  var u = '', k = ''; try { u = (localStorage.getItem('grayco_sb_url') || 'https://ieeonhpfahmwwecizdut.supabase.co').replace(/\/$/, ''); k = localStorage.getItem('grayco_sb_key') || ''; } catch (e) {}
+  if (!u || !k || D.hidden) return;
+  W.fetch(u + '/rest/v1/gc_kv?select=value&key=eq.gc_lsa_decisions', { headers: { apikey: k, Authorization: 'Bearer ' + k }, cache: 'no-store' }).then(function(r){ return r.ok ? r.json() : null; }, function(){ return null; }).then(function(rows){
+    if (!Array.isArray(rows) || !rows[0]) return; var v = rows[0].value; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = []; } }
+    (Array.isArray(v) ? v : []).forEach(function(d){
+      if (!d || !d.id) return;
+      var l = leads().find(function(x){ return x && (s(x.id) === s(d.id) || s(x.inboxId) === s(d.id) || s(x.leadInboxId) === s(d.id) || s(x.fromInbox) === s(d.id)); });
+      if (!l || l.lsaCheck === (d.good ? 'good' : 'bad') || (l.lsaDecidedAt && s(l.lsaDecidedAt) >= s(d.at))) return;
+      var patch = { lsaCheck: d.good ? 'good' : 'bad', lsaDecidedBy: s(d.by) + ' (text)', lsaDecidedAt: s(d.at), lsaVia: 'text' };
+      if (!d.good) Object.assign(patch, { lsaReason: s(d.reason), stage: 'Lost', status: 'lost', lostReason: 'LSA — not a real lead (' + s(d.reason || 'bad') + ')' });
+      saveLead(l.id, patch); closeTask('LSACHECK_' + l.id, 'decided by text (' + s(d.by) + ')');
+    });
+  });
+}
+ST(textMarks, 15000); SI.call(W, textMarks, 120000);
+W._gcLsaCheck = { isLsa: isLsa, pm: pm, decide: decide, textMarks: textMarks };
 })(window);
 </script>
 <script id="gc-patch-leadasb">

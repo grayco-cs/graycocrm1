@@ -93,6 +93,21 @@ const _D = {
   ack: async (leadId, why) => { let EC = null; try { EC = require('./emergcall.js'); } catch (e) { return { skipped: 'no emergcall' }; }
     if (!EC || typeof EC.make !== 'function') return { skipped: 'no emergcall' };
     return EC.make({ env: k => s(process.env[k]), now: () => _D.now(), kvGet: k => _D.kvGet(k), kvCas: (k, f) => _D.kvCas(k, f) }).ack(leadId, why); },
+  /* LSATEXT: GOOD / BAD texted back → the lead inbox item, gc_kv "gc_lsa_decisions" (the CRM page marks its lead), the office To-Do */
+  lsaDecide: async d => {
+    const at = new Date(_D.now()).toISOString(), out = { inbox: false, list: false, todo: false };
+    try { await _D.kvCas('gc_lead_inbox', v => { const l = arr(v); const x = l.find(y => y && s(y.id) === s(d.leadId)); if (!x) return undefined;
+      x.lsaCheck = d.good ? 'good' : 'bad'; x.leadExtra = Object.assign({}, obj(x.leadExtra), { lsaCheck: x.lsaCheck }); x.lsaDecidedBy = d.by; x.lsaDecidedAt = at; x.lsaVia = 'text';
+      if (!d.good) { x.lsaReason = d.reason; x.lostReason = 'LSA — not a real lead (' + d.reason + ')'; }
+      out.inbox = true; return l; }); } catch (e) {}
+    try { const C = core(), row = { id: s(d.leadId), good: !!d.good, reason: s(d.reason), by: s(d.by), byEmail: s(d.byEmail), at, code: s(d.code), name: s(d.name), phone: s(d.phone) };
+      const has = l => l.some(x => x && s(x.id) === row.id && x.at === at);
+      const w = await C.kvListUpdate('gc_lsa_decisions', l => ({ list: l.filter(x => x && s(x.id) !== row.id).concat([row]).slice(-500), check: has })); out.list = !!(w && w.ok); } catch (e) {}
+    if (!d.good) { try { const by = new Date(_D.now() + 30 * 864e5), byS = (by.getMonth() + 1) + '/' + by.getDate() + '/' + by.getFullYear();
+      out.todo = await core().officeTodo('LSADISPUTE_' + s(d.leadId), '⚖️ Dispute ' + clip(d.name || tidy(d.phone), 40) + ' (Google LSA) in Google Ads by ' + byS,
+        s(d.by) + ' texted BAD: ' + s(d.reason) + '. Google Ads → Local Services → Leads → find ' + (d.phone ? tidy(d.phone) : d.name) + ' → Dispute lead (pick the reason). Office or marketing can do it.'); } catch (e) {} }
+    return out;
+  },
   postReply: async m => {
     const msg = { id: m.id, pid: m.pid || '', authorId: low(m.email), authorName: s(m.name || m.email) + ' 📱 (text to ' + tidy(m.to) + ', from cell)', text: m.text, tags: [], at: m.at, source: 'sms', channel: 'sms', dir: 'out', smsTo: m.to, viaCell: true };
     const has = l => l.some(x => x && s(x.id) === msg.id);
@@ -222,12 +237,13 @@ function compose(more, text, link, head0, bare){
 }
 function loadState(v){
   const st = obj(v);
-  ['last', 'reply', 'daily', 'held', 'seen', 'hint'].forEach(k => { st[k] = obj(st[k]); });
+  ['last', 'reply', 'daily', 'held', 'seen', 'hint', 'lsa'].forEach(k => { st[k] = obj(st[k]); });   /* LSATEXT: + lsa */
   const t = now();
   Object.keys(st.last).forEach(k => { if (t - Date.parse(st.last[k].at || 0) > 86400000) delete st.last[k]; });
   Object.keys(st.reply).forEach(k => { if (t - Date.parse(st.reply[k].at || 0) > REPLY_MS) delete st.reply[k]; });
   Object.keys(st.seen).forEach(k => { if (t - Date.parse(st.seen[k] || 0) > 3 * 86400000) delete st.seen[k]; });
   Object.keys(st.hint).forEach(k => { if (t - Date.parse(st.hint[k] || 0) > 86400000) delete st.hint[k]; });
+  Object.keys(st.lsa).forEach(k => { st.lsa[k] = arr(st.lsa[k]).filter(x => x && t - Date.parse(x.at || 0) < LSA_MS); if (!st.lsa[k].length) delete st.lsa[k]; });   /* LSATEXT */
   Object.keys(st.daily).forEach(k => { if (s(st.daily[k]) < centralDay(t - 3 * 86400000)) delete st.daily[k]; });
   return st;
 }
@@ -264,7 +280,7 @@ async function notify(o){
     want.forEach(e => {
       const p = Object.assign({}, R[e].p, { phone: R[e].phone, name: R[e].p.name || e });
       if (opt[p.phone]) { skip.optout.push(e); return; }
-      if (!o.emergency && quietNow(p, t, hours)) {
+      if (!o.emergency && !o.lsa && quietNow(p, t, hours)) {   /* LSATEXT: an LSA lead texts any time */
         if (o.hold) { const l = Array.isArray(st.held[e]) ? st.held[e] : []; if (l.length < 5 && !l.some(x => x.text === o.text)) l.push({ at, text: clip(o.text, 200), link: s(o.link) }); st.held[e] = l; skip.held.push(e); }
         else skip.quiet.push(e);
         return;
@@ -283,6 +299,10 @@ async function notify(o){
     let r = { ok: false }; try { r = await _D.send(g.phone, body, fromNum()); } catch (e) { r = { ok: false, why: s(e && e.message) }; }
     if (r && r.ok) { out.sent++; out.to.push(g.email); }
     else { out.failed = (out.failed || 0) + 1; }
+  }
+  if (out.sent && o.lsa) {   /* LSATEXT: the phones that got this LSA lead can answer GOOD / BAD (72 h) */
+    const ph2 = go.filter(g => out.to.indexOf(g.email) >= 0).map(g => g.phone);
+    await _D.kvCas(SKEY, v => { const st = loadState(v); ph2.forEach(ph => { const l = arr(st.lsa[ph]).filter(x => x.leadId !== o.lsa.leadId); l.push(Object.assign({ at }, o.lsa)); st.lsa[ph] = l.slice(-12); }); return st; }).catch(() => {});
   }
   if (out.sent && o.replyTo && (phone10(o.replyTo.phone).length === 10 || s(o.replyTo.leadId))) {
     const rt = { at, to: phone10(o.replyTo.phone).length === 10 ? phone10(o.replyTo.phone) : '', pid: s(o.replyTo.pid), name: clip(o.replyTo.name, 60), kind: o.type,
@@ -328,6 +348,7 @@ async function staffInbound(ph, body, sid){
   let rep = null, fresh = false;
   await _D.kvCas(SKEY, v => { const st = loadState(v); fresh = false; rep = st.reply[ph] || null; if (sid && st.seen[sid]) return undefined; if (sid) st.seen[sid] = at; fresh = true; return st; });
   if (!fresh) return { handled: true, staff: email, skipped: 'already handled' };
+  try { const lr = await lsaReply(ph, body, { email, name: p.name }); if (lr) return lr; } catch (e) {}   /* LSATEXT: GOOD / BAD for an LSA lead */
   if (!rep || t - Date.parse(rep.at || 0) > REPLY_MS) {
     /* a short "not sent" note, at most once a day per phone */
     let hint = false;
@@ -407,6 +428,12 @@ async function leads(list, raw, isEm){
     /* owner 10/28: "GrayCo NEW LEAD: <name> (901) 555-0100 — "<their message…>" <link>"; emergency "🚨 GrayCo EMERGENCY: …" */
     const head = em ? '🚨 GrayCo EMERGENCY' : 'GrayCo NEW LEAD', link = site() + '/#leads';
     const only = !em && isSubBid(r, x) ? await estimatorsFor(r, x) : null;   /* patch SUBALERT */
+    if (isLsaLead(r, x)) {   /* LSATEXT: owner 11/10 — Google LSA leads to Wesley's and Nick's cells; they text back GOOD or BAD */
+      const code = lsaCode(x.id), who = clip(name, 40) + (callPh.length === 10 ? ' ' + tidy(callPh) : '');
+      const lt = more => leadText((em ? '🚨 ' : '') + 'GrayCo GOOGLE LSA LEAD ' + code + (more ? ' (+' + more + ' more)' : ''), 0, who, msg, 'Reply GOOD ' + code + ' or BAD ' + code + ' + why. ' + link);
+      try { out.push(await notify({ type: 'lead', lsa: { leadId: s(x.id), code, name: clip(name, 60), phone: callPh }, text: lt(0), body: lt, link, only: lsaAdmins(), thread: 'lsa:' + s(x.id), emergency: em })); } catch (e) { out.push({ error: s(e && e.message) }); }
+      continue;
+    }
     let tail = link; if (em && callPh.length === 10) { try { tail = link + ' Not real? Block: ' + require('./salesguard.js').blockLink(site(), callPh); } catch (e) {} }   /* patch SALESBLOCK: one tap to block (signed; admins / office, asked first) */
     const body = more => leadText(head, more, clip(name, 40) + (callPh.length === 10 ? ' ' + tidy(callPh) : ''), msg, tail);
     const text = body(0);
@@ -414,6 +441,31 @@ async function leads(list, raw, isEm){
       replyTo: ph || em ? { phone: ph, pid: '', name, leadId: s(x.id) } : null })); } catch (e) { out.push({ error: s(e && e.message) }); }
   }
   return out;
+}
+/* ── LSATEXT (owner 11/10): "I need Google LSA leads to go to me and Nick's phones so we can send a text good or bad lead and
+   then it works in my CRM as that type of lead, then alerts office or marketing … can I enter not good lead automatically
+   through the text". The admins (OWNER_EMAILS, default Wesley and Nick) get "GrayCo GOOGLE LSA LEAD K7Q2: …"; a reply from
+   that phone within 72 h — "GOOD", "BAD spam", "GOOD K7Q2", "BAD K7Q2 wrong service" (no code = the newest LSA lead sent
+   to that phone) — marks the lead: good → kept; bad → closed as "LSA — not a real lead (why)" + an office To-Do
+   "⚖️ Dispute … in Google Ads by <date>" (Google gives about 30 days; the CRM cannot file the dispute itself — Google's
+   API has no dispute call). The CRM page applies the same mark to the lead (gc_kv "gc_lsa_decisions"). */
+const LSA_MS = 72 * 3600 * 1000;
+function isLsaLead(r, x){ const it = Object.assign({}, r || {}, x || {}), ex = obj(it.leadExtra); return it.lsaCheck === 'pending' || ex.lsaCheck === 'pending' || /google\s*lsa|local\s*services/i.test([it.source, it.leadSource, ex.leadSource].map(s).join(' ')); }
+function lsaCode(id){ const h = require('crypto').createHash('sha256').update(s(id)).digest('hex'), A = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; let c = ''; for (let i = 0; i < 4; i++) c += A[parseInt(h.slice(i * 2, i * 2 + 2), 16) % A.length]; return c; }
+function lsaAdmins(){ return (env('OWNER_EMAILS') || 'wjohnson@grayco-cs.com,nthomas@grayco-cs.com').split(',').map(low).filter(Boolean); }
+const LSA_REPLY = /^\s*(good|bad|g|b|👍|👎|yes|no)\b[\s:.,!-]*([A-Z0-9]{4})?\b[\s:.,!-]*([\s\S]*)$/i;
+async function lsaReply(ph, body, who){
+  const m = LSA_REPLY.exec(s(body)); if (!m) return null;
+  let list = []; await _D.kvCas(SKEY, v => { list = arr(loadState(v).lsa[ph]); return undefined; }).catch(() => {});
+  if (!list.length) return null;
+  let code = s(m[2]).toUpperCase(), rec = code ? list.find(x => x.code === code) : null, reason = s(m[3]);
+  if (code && !rec) { reason = (m[2] + ' ' + reason).trim(); code = ''; }
+  if (!rec) rec = list.filter(x => !x.done).slice(-1)[0] || list.slice(-1)[0];
+  const good = /^(good|g|👍|yes)$/i.test(m[1]);
+  const r = await _D.lsaDecide({ leadId: rec.leadId, name: rec.name, phone: rec.phone, code: rec.code, good, reason: good ? '' : (reason || 'no reason given'), by: who.name || who.email, byEmail: who.email });
+  await _D.kvCas(SKEY, v => { const st = loadState(v); arr(st.lsa[ph]).forEach(x => { if (x.leadId === rec.leadId) { x.done = good ? 'good' : 'bad'; } }); return st; }).catch(() => {});
+  let conf = null; try { conf = await _D.send(ph, 'GrayCo: ' + rec.code + ' ' + clip(rec.name, 40) + ' marked ' + (good ? 'GOOD — kept in the CRM.' : 'BAD (' + clip(reason || 'no reason given', 60) + ') — closed; the office will dispute it in Google Ads.'), fromNum()); } catch (e) {}
+  return { handled: true, staff: who.email, lsa: rec.leadId, good, reason: good ? '' : reason, saved: r, confirmed: !!(conf && conf.ok) };
 }
 /* "<head>: <who> — "<message…>" <link>" in ≤ 300 characters; the message is what gets trimmed */
 function leadText(head, more, who, msg, link){
@@ -437,5 +489,5 @@ async function system(kind, text){
   return notify({ type: 'system', text: 'CRM alert — ' + text, link: site(), thread: 'sys:' + s(kind), daily: true, hold: true });
 }
 
-module.exports = { _isSubBid: isSubBid, ROLE_MIT, DEFAULT_PEOPLE, resolve, mitigationHolders, leadText, KEY, SKEY, TYPES, RATE_MS, REPLY_MS, settings, cleanPerson, staffList, load, save, notify, flushHeld, staffInbound, isStaffPhone, inboundText, missedCall, leads, assigned, approvals, system,
+module.exports = { _lsaCode: lsaCode, _isLsaLead: isLsaLead, _lsaReply: lsaReply, _D: _D, _isSubBid: isSubBid, ROLE_MIT, DEFAULT_PEOPLE, resolve, mitigationHolders, leadText, KEY, SKEY, TYPES, RATE_MS, REPLY_MS, settings, cleanPerson, staffList, load, save, notify, flushHeld, staffInbound, isStaffPhone, inboundText, missedCall, leads, assigned, approvals, system,
   inQuiet, quietNow, centralHour, compose, wants, _D };

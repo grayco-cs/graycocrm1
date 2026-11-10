@@ -242,7 +242,7 @@ const to = r => r.sent.map(x => x.to).sort();
   const LONG = 'Line one of my message.\nLine two: the <kitchen> ceiling & "drywall" is sagging.\n' + 'More detail. '.repeat(150) + 'THE END.';
   /* a text-message lead */
   let m = brig();
-  await m.A.notifyNew([{ id: 'T1', title: 'Text message — (901) 555-0178', source: 'Text message', origin: 'website', websiteLead: true, websiteForm: 'Text message', contact: { name: 'Texter (901) 555-0178', phone: '(901) 555-0178', email: '' },
+  await m.A.notifyNew([{ id: 'T1', pm: 'Pat PM', pmEmail: 'pat@grayco-cs.com', /* LEADROUTE2: office@ gets no lead e-mail — the assigned PM does */ title: 'Text message — (901) 555-0178', source: 'Text message', origin: 'website', websiteLead: true, websiteForm: 'Text message', contact: { name: 'Texter (901) 555-0178', phone: '(901) 555-0178', email: '' },
     scope: 'Text message 2026-10-28 21:21 UTC: ' + LONG.slice(0, 500), leadExtra: { textMessage: true, smsFrom: '9015550178', textBody: LONG, websiteForm: 'Text message' } }]);
   let h = m.mails[0].html;
   assert.ok(h.indexOf('💬 What the customer said') > 0);
@@ -255,7 +255,7 @@ const to = r => r.sent.map(x => x.to).sort();
   const said = LM.shared({ message: 'Hail hit the roof.\nNeed a look.', service: 'Roof repair', property: 'Home', urgency: 'This week', company: 'Acme LLC', project: '123 Oak St, Memphis', carrier: 'StateFarmCo', claimNumber: 'CLM-999',
     plansLink: 'https://files.example.com/plans.pdf', photos: ['https://img.example.com/1.jpg'], attrib: { utm_source: 'google', utm_campaign: 'fall' }, howHeard: 'Google' });
   m = brig();
-  await m.A.notifyNew([{ id: 'W1', title: 'Roof repair — Ann Lee', source: 'Website', origin: 'website', websiteLead: true, websiteForm: 'Free estimate', address: '123 Oak St', city: 'Memphis', state: 'TN',
+  await m.A.notifyNew([{ id: 'W1', pm: 'Pat PM', pmEmail: 'pat@grayco-cs.com', /* LEADROUTE2: office@ gets no lead e-mail — the assigned PM does */ title: 'Roof repair — Ann Lee', source: 'Website', origin: 'website', websiteLead: true, websiteForm: 'Free estimate', address: '123 Oak St', city: 'Memphis', state: 'TN',
     contact: { name: 'Ann Lee', phone: '901-555-0142', email: 'ann@example.com' }, leadExtra: { websiteLead: true, said, existingCustomer: true } }]);
   h = m.mails[0].html;
   ['Hail hit the roof.\nNeed a look.', 'Roof repair', 'This week', 'Acme LLC', '123 Oak St, Memphis', 'https://files.example.com/plans.pdf', 'https://img.example.com/1.jpg', 'utm_source=google', 'utm_campaign=fall', 'ann@example.com', 'Ann Lee']
@@ -264,7 +264,7 @@ const to = r => r.sent.map(x => x.to).sort();
   assert.ok(h.indexOf('href="tel:+19015550142"') > 0 && h.indexOf('href="mailto:ann@example.com"') > 0 && /✉️ E-mail/.test(h));
   /* a missed-call lead (with the screened caller's spoken reason) */
   m = brig();
-  await m.A.notifyNew([{ id: 'M1', title: 'Missed call — Bob', source: 'Missed call', origin: 'website', websiteLead: true, websiteForm: 'Missed call', contact: { name: 'Bob', phone: '(901) 555-0177' },
+  await m.A.notifyNew([{ id: 'M1', pm: 'Pat PM', pmEmail: 'pat@grayco-cs.com', /* LEADROUTE2: office@ gets no lead e-mail — the assigned PM does */ title: 'Missed call — Bob', source: 'Missed call', origin: 'website', websiteLead: true, websiteForm: 'Missed call', contact: { name: 'Bob', phone: '(901) 555-0177' },
     scope: 'Missed call 2026-10-28 21:00 UTC.', leadExtra: { missedCall: true, websiteForm: 'Missed call', spokenReason: 'My basement is flooding' } }]);
   h = m.mails[0].html;
   assert.ok(/Missed call/.test(m.mails[0].subject) && h.indexOf('My basement is flooding') > 0 && h.indexOf('href="tel:+19015550177"') > 0);
