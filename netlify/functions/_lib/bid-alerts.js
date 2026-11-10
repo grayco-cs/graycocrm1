@@ -360,7 +360,14 @@ function make(d){
     const groups = !normalL.length ? [] : o.group ? [normalL] : normalL.map(x => [x]);
     const out = { sent: 0, messages: 0, failed: 0, to: [] }; if (sgDrop) out.salesblock = sgDrop;
     for (const g of groups) {
-      const r = await deliver(mailNew(g), [].concat.apply([], g.map(x => [x.assigneeEmail].concat(x.coEmails || []))));   /* patch HOT2: + coAssignees */
+      /* patch LSAMAIL (owner 11/10: "LSA e-mails need to go to Nick and Wesley, both admins, so they can state whether it's a good lead or
+         not, also office gets those e-mails"): a Google Local Services lead → the assignee + the admins (OWNER_EMAILS, default Wesley and
+         Nick) + office@ — even while lead e-mails are off for everything else */
+      const isLsaL = x => { const it = Object.assign({}, raw0[x.id] || {}, x), ex = it.leadExtra || {}; return it.lsaCheck === 'pending' || ex.lsaCheck === 'pending' || /google\s*lsa|local\s*services/i.test([it.source, it.leadSource, ex.leadSource, ex.mkSource === 'Google LSA' ? 'google lsa' : ''].join(' ')); };
+      const asg = [].concat.apply([], g.map(x => [x.assigneeEmail].concat(x.coEmails || [])));
+      const lsaTo = g.some(isLsaL) ? Array.from(new Set(asg.concat((env('OWNER_EMAILS') || 'wjohnson@grayco-cs.com,nthomas@grayco-cs.com').split(','), ['office@grayco-cs.com']).map(low).filter(e => /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(e)))) : null;
+      const r = lsaTo ? await deliver(Object.assign({}, mailNew(g), { subject: '🔎 Google LSA lead — good or bad? ' + s(mailNew(g).subject).replace(/^🔎 Google LSA lead — good or bad\? /, '') }), [], lsaTo)
+        : await deliver(mailNew(g), asg);   /* patch HOT2: + coAssignees */
       out.messages++; out.to = r.to; out.pushed = (out.pushed || 0) + (r.pushed || 0); if (r.pushWhy) out.pushWhy = r.pushWhy;
       if (r.ok) out.sent += g.length; else { out.failed += g.length; out.why = r.why; }
       const at = nowIso();

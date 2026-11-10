@@ -5490,7 +5490,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.184-2026-11-10-r26 -->
+<!-- GrayCo CRM Build: 33.185-2026-11-10-r26a -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6439,7 +6439,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.184-2026-11-10-r26");
+  console.log("[GC] Build 33.185-2026-11-10-r26a");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6487,7 +6487,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.184-2026-11-10-r26"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.185-2026-11-10-r26a"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -216296,8 +216296,8 @@ function pm(id, good, reason){
   addTask({ id: 'LSACHECK_' + id, kind: 'lsa_check', leadId: id, label: '🔎 LSA lead ' + s(l.name || l.phone) + ' — ' + (me() || 'the PM') + ' says ' + (good ? 'GOOD 👍' : 'BAD 👎 (' + s(reason) + ')'), note: 'Google Local Services lead' + (l.phone ? ' · ' + s(l.phone) : '') + (l.message || l.notes ? ' · "' + s(l.message || l.notes).slice(0, 160) + '"' : '') + '. Decide: keep it, or dispute it in Google Ads yourself.', prio: 'high' });
   try { if (W._gcNewLead) W._gcNewLead.seen(id); } catch (e) {}
 }
-function decide(id, good){
-  var l = lead(id); if (!l) return;
+function decide(id, good, why){
+  var l = lead(id); if (!l) return; if (why) l = Object.assign({}, l, { lsaReason: why });   /* patch LSAMAIL */
   if (good) { saveLead(id, { lsaCheck: 'good', lsaDecidedBy: me(), lsaDecidedAt: new Date().toISOString() }); closeTask('LSACHECK_' + id, 'kept (good lead)'); return; }
   var by = new Date(Date.now() + 30 * 864e5), byS = (by.getMonth() + 1) + '/' + by.getDate() + '/' + by.getFullYear();
   saveLead(id, { lsaCheck: 'bad', lsaDecidedBy: me(), lsaDecidedAt: new Date().toISOString(), stage: 'Lost', status: 'lost', lostReason: 'LSA — not a real lead (' + s(l.lsaReason || 'bad') + ')' });
@@ -216325,9 +216325,10 @@ D.addEventListener('click', function(e){
   var b = e.target && e.target.closest ? e.target.closest('[data-lsa-b]') : null; if (!b) return;
   e.preventDefault(); e.stopPropagation();
   var r = b.closest('[data-id]'), id = r && r.getAttribute('data-id'); if (!id) return;
-  if (b.getAttribute('data-lsa-b') === 'good') { pm(id, true); return; }
+  if (b.getAttribute('data-lsa-b') === 'good') { if (admin()) { saveLead(id, { lsaPmBy: me(), lsaPmAt: new Date().toISOString() }); decide(id, true); try { if (W._gcNewLead) W._gcNewLead.seen(id); } catch (x) {} return; } pm(id, true); return; }   /* patch LSAMAIL: an admin's mark is the final answer */
   var pick = W.prompt('Why is it a bad lead? Type the number:\n' + REASONS.map(function(x, i){ return (i + 1) + '. ' + x; }).join('\n'), '1'); if (pick == null) return;
   var n = parseInt(pick, 10), reason = REASONS[n - 1] || s(pick); if (n === 8 || !REASONS[n - 1]) { var o = W.prompt('Say what was wrong:', REASONS[n - 1] ? '' : s(pick)); if (o == null) return; reason = 'Other: ' + s(o); }
+  if (admin()) { saveLead(id, { lsaPmBy: me(), lsaPmAt: new Date().toISOString(), lsaReason: s(reason) }); ST(function(){ decide(id, false, s(reason)); try { if (W._gcNewLead) W._gcNewLead.seen(id); } catch (x) {} }, 50); return; }   /* patch LSAMAIL: an admin's 👎 is final → closed + the Google Ads dispute To-Do */
   pm(id, false, reason);
 }, true);
 SI.call(W, decorate, 700);
