@@ -8,7 +8,7 @@ const USERS = [{ name: 'Nick Thomas', email: 'nthomas@grayco-cs.com', role: 'adm
   { name: 'Wesley Johnson', email: 'wjohnson@grayco-cs.com', role: 'admin', cell: '9015550002', active: true },
   { name: 'Pat PM', email: 'pat@grayco-cs.com', role: 'PM', cell: '9015550003', active: true }];
 const skv = {}, texts = [], mails = [];
-Object.assign(SA._D, { now: () => Date.now(), kvGet: async k => skv[k], kvCas: async (k, f) => { const nv = f(skv[k] == null ? null : JSON.parse(JSON.stringify(skv[k]))); if (nv !== undefined) skv[k] = nv; return { ok: true, value: skv[k] }; },
+Object.assign(SA._D, { now: () => Date.parse('2026-11-10T18:00:00Z'),   /* a Tuesday noon Central: the office is open */ kvGet: async k => skv[k], kvCas: async (k, f) => { const nv = f(skv[k] == null ? null : JSON.parse(JSON.stringify(skv[k]))); if (nv !== undefined) skv[k] = nv; return { ok: true, value: skv[k] }; },
   send: async (to, body) => { texts.push({ to, body }); return { ok: true }; }, paused: async () => false, optouts: async () => ({}), consentNo: async () => false,
   people: async () => ({ users: USERS, staff: [] }), hours: async () => null, postReply: async m => ({ id: m.id }), lsaDecide: async () => ({ inbox: true }), textLog: async row => { tlog.push(row); return true; }, vetTodo: async o => { vets.push(o); return true; } });
 const vets = [];
@@ -46,7 +46,13 @@ const A = BA.make({ env: k => ENV[k] != null ? ENV[k] : '', s: v => v == null ? 
   const v = await SA.lsaVetted({ leadId: 'l3', phone: '(901) 555-0123', name: 'Google LSA caller (2:31 PM)', note: 'roof leak in den', by: 'Office Olivia' });
   assert.deepStrictEqual(texts.map(x => x.to).sort(), ['9015550001', '9015550002'], 'real → Wesley + Nick');
   assert.ok(texts.every(x => x.body.startsWith('GrayCo: Google LSA call to the office ' + SA._lsaCode('l3') + ' from (901) 555-0123 Google LSA caller. ✅ Office Olivia says it\'s real: "roof leak in den". ') && /\/#leads&lead=l3 /.test(x.body)), JSON.stringify(texts));
-  const r3 = await SA.staffInbound('9015550001', 'good Pat', 'SMx3');
+  const r3 = await SA.staffInbound('9015550001', 'good ' + SA._lsaCode('l3') + ' Pat', 'SMx3');
   assert.ok(r3 && r3.lsa === 'l3' && r3.good === true, 'GOOD works on it: ' + JSON.stringify(r3));
+  /* LSA247: after hours the office is closed → an LSA call texts Wesley and Nick right away (no office check) */
+  texts.length = 0; vets.length = 0; const hrs0 = SA._D.hours, now0 = SA._D.now;
+  SA._D.hours = async () => null; SA._D.now = () => Date.parse('2026-11-15T03:00:00Z');   /* Saturday 9 PM Central */
+  await A.notifyNew([{ id: 'l4', title: 'Google LSA caller (9:02 PM)', source: 'Google LSA', leadExtra: { leadSource: 'Google LSA', lsaCheck: 'pending', lsaCall: true }, contact: { name: 'Google LSA caller (9:02 PM)' } }]);
+  SA._D.hours = hrs0; SA._D.now = now0;
+  assert.ok(!vets.some(v => v.leadId === 'l4') && ['9015550001', '9015550002'].every(n => texts.some(x => x.to === n && /Google LSA call to the office/.test(x.body))), 'after hours: texted 24/7, no office check: ' + JSON.stringify(texts));
   console.log('TEXTFIRST: all passed');
 })().catch(e => { console.error('FAIL', e && e.stack || e); process.exit(1); });

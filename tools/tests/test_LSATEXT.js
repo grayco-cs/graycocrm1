@@ -198,6 +198,6 @@ Object.assign(SA._D, { now: () => t, kvGet: async k => kv[k], kvCas: async (k, f
   /* LSACALL: an LSA phone call to the office */
   sent.length = 0;
   await SA.leads([{ id: 'C1', key: 'C1', title: 'Phone call — (901) 555-0288', source: 'CallRail — Google Local Services', contact: { name: 'Caller', phone: '9015550288' } }], { C1: { id: 'C1', leadExtra: { leadSource: 'Google LSA', lsaCheck: 'pending', lsaCall: true } } }, () => false);
-  assert.ok(!sent.some(x => x.to === '9015550002' || x.to === '9015550001'), 'LSAVET: an LSA call (even with the number) waits for the office to say it is real: ' + JSON.stringify(sent));
+  assert.ok(sent.some(x => x.to === '9015550002' && /^GrayCo: Google LSA call to the office [A-Z0-9]{4} from \(901\) 555-0288 Caller\. Missed it\? Call them back from your cell\./.test(x.body)), 'LSA247: at 3 AM the office is closed → texted right away: ' + JSON.stringify(sent));
   console.log('LSATEXT tests: all passed');
 })().catch(e => { console.error(e); process.exit(1); });

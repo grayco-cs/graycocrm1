@@ -524,7 +524,10 @@ async function leads(list, raw, isEm){
        it alerts us in GrayCo text?"): a Google LSA CALL to the office line (585) with no number — the office took (or missed) it, so
        the OFFICE checks it first: an office To-Do + the lead's "📞 Google LSA call — real?" card. Only ✅ Real lead (with the number)
        texts Wesley and Nick (lsaVetted, via texts.js ?lsavet=1); 🚫 Junk closes it with no text to anyone */
-    if (lsaL && (obj(r.leadExtra).lsaCall || r.lsaCall)) {   /* owner 11/10: "only if it's a real lead" — every LSA call, with or without the number */
+    /* LSA247 (owner 11/10: "make the LSA all 24/7 texts"): the office check is only while the office is open; after hours (and on
+       closed days / holidays — the 📞 Call order hours) an LSA call texts Wesley and Nick right away */
+    let offOpen = true; if (lsaL && (obj(r.leadExtra).lsaCall || r.lsaCall)) { try { offOpen = require('./callorder.js').isOpen(now(), { hours: await _D.hours() }); } catch (e) { offOpen = true; } }
+    if (lsaL && (obj(r.leadExtra).lsaCall || r.lsaCall) && offOpen) {   /* owner 11/10: "only if it's a real lead" — every LSA call, with or without the number */
       let td = null; try { td = await _D.vetTodo({ leadId: s(x.id), name: clip(name, 60), said: clip(s(msg).replace(/\s+/g, ' '), 200) }); } catch (e) { td = { error: s(e && e.message) }; }
       out.push({ vet: 'office', leadId: s(x.id), todo: td }); continue;
     }
