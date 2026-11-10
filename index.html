@@ -2123,7 +2123,7 @@ try {
 /* patch MKTFIX1: the Marketing Manager asks the database for marketing only — the same four keys docs/marketing-role.sql
    lets him read, his own gc_staff row and the signed picture links; nothing else leaves (or lands on) his computer,
    even while the database lock (docs/security-lockdown.sql) is not run. Everything marketing comes through soc.js. */
-var MM_KEYS = { gc_company_address: 1, gc_epoch: 1, gc_mkt_admin: 1, gc_automation_pause: 1 };   /* patch MKTFIX6: not "users" (employees' phones, pay type, plates …) */
+var MM_KEYS = { gc_company_address: 1, gc_epoch: 1, gc_mkt_admin: 1, gc_automation_pause: 1, customers: 1 };   /* patch MMCUST (owner 11/10: "make customers be able to be seen by marketing") */   /* patch MKTFIX6: not "users" (employees' phones, pay type, plates …) */
 function mmAnswer(status, body){ return Promise.resolve(new Response(body, { status: status, headers: { 'Content-Type': 'application/json', 'Content-Range': '*/0' } })); }
 function mmFence(input, init, u){
   var x; try { x = new URL(u, location.href); } catch (e) { return mmAnswer(200, '[]'); }
@@ -5490,7 +5490,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.184-2026-11-10-r22 -->
+<!-- GrayCo CRM Build: 33.185-2026-11-10-r22a -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6439,7 +6439,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.184-2026-11-10-r22");
+  console.log("[GC] Build 33.185-2026-11-10-r22a");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6487,7 +6487,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.184-2026-11-10-r22"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.185-2026-11-10-r22a"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -152697,7 +152697,7 @@ if (mm) {
   VIEWS.approvals = VIEWS.mmappr; VIEWS.dashboard = VIEWS.myleads;   /* the links that point there open his own views */
   (function prune(){ for (var i = SECS.length - 1; i >= 0; i--) if (!KEEP[SECS[i].id]) SECS.splice(i, 1); nST(prune, 1500); })();
   /* the app opens its dashboard after sign-in: his start screen is Marketing */
-  (function keepView(){ try { if (!/^(marketing|systems|mmt_[a-z]+)$/.test(localStorage.getItem('grayco_view') || '')   /* patch MMTABS: or one of his tabs */ && typeof W._setView === 'function') W._setView('marketing');   /* Marketing, or the GrayCo Systems launcher (marketing systems only) */ } catch (e) {} nST(keepView, 1000); })();
+  (function keepView(){ try { if (!/^(marketing|systems|customers|mmt_[a-z]+)$/.test(localStorage.getItem('grayco_view') || '')   /* patch MMTABS: or one of his tabs */ && typeof W._setView === 'function') W._setView('marketing');   /* Marketing, or the GrayCo Systems launcher (marketing systems only) */ } catch (e) {} nST(keepView, 1000); })();
 }
 if (mm) { api('soc', { op: 'mm_boot' }).then(function(j){ if (j && j.ok) ST.mm = Object.assign({ stage: j.stage }, j.mm || {}); }); W.addEventListener('gc-mm-data', function(){ if (UI.root && UI.root.isConnected && !UI.editing) X.redrawSoon(); }); }
 /* patch MKTFIX3: may he approve this review reply himself? (the server's rule: stage 2+, the admin setting on, 4–5★) */
@@ -160034,7 +160034,7 @@ function realAdmin(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && 
 function ux(){ return W._gcUx || {}; }
 
 var TAILORED = { Estimator: 1, Insurance: 1, Mitigation: 1, Superintendent: 1, 'Marketing Manager': 1 };
-var MM_TABS = { 'Marketing Manager': ['marketing', 'mmt_todo', 'mmt_leads', 'mmt_appr', 'mmt_email', 'mmt_social', 'mmt_cal', 'mmt_reviews', 'mmt_ads', 'mmt_media', 'mmt_ideas', 'mmt_logins', 'systems'] };   /* patch MMTABS: his own tabs (window._gcMMTabs) */   /* patch MM: Marketing only (+ the GrayCo Systems launcher when there is one) */
+var MM_TABS = { 'Marketing Manager': ['marketing', 'mmt_todo', 'mmt_leads', 'mmt_appr', 'mmt_email', 'mmt_social', 'mmt_cal', 'mmt_reviews', 'mmt_ads', 'mmt_media', 'mmt_ideas', 'mmt_logins', 'customers', 'systems'] };   /* patch MMCUST: + 👥 Customers */   /* patch MMTABS: his own tabs (window._gcMMTabs) */   /* patch MM: Marketing only (+ the GrayCo Systems launcher when there is one) */
 var PROFILE_ROLE = { estimator: 'Estimator', insurance: 'Insurance', mitigation: 'Mitigation', super: 'Superintendent', pm: 'Project Manager', apm: 'Project Manager', office: 'Office', field: 'Field Supervisor', marketing: 'Marketing Manager' };   /* patch PMG: an APM works the PM screens; which jobs — _gcSamePM (the PM(s) they assist, jobs where they are APM) */
 var PROFILES = [['', '— from Admin → Employees (role) —'], ['estimator', 'Estimator'], ['insurance', 'Insurance restoration'], ['mitigation', 'Mitigation'], ['super', 'Superintendent'], ['pm', 'Project Manager'], ['apm', 'Assistant PM (APM)'], ['office', 'Office'], ['field', 'Field'], ['marketing', 'Marketing Manager']];
 var VIEWAS = [['', 'Admin — everything'], ['Estimator', 'Estimator'], ['Insurance', 'Insurance restoration'], ['Mitigation', 'Mitigation'], ['Superintendent', 'Superintendent'], ['Project Manager', 'Project Manager'], ['Assistant PM', 'Assistant PM (APM)'], ['Office', 'Office'], ['Marketing Manager', 'Marketing Manager']];

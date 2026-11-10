@@ -72,7 +72,7 @@ begin
     if to_regclass('public.' || t) is not null then
       execute format('drop policy if exists gc_mm_read on public.%I', t);
       execute format('create policy gc_mm_read on public.%I for select to authenticated '
-                     'using (public.gc_is_marketing() and key in (''gc_company_address'', ''gc_epoch'', ''gc_mkt_admin'', ''gc_automation_pause''))', t);   -- patch PAUSE: he sees the banner too; patch MKTFIX6: not ''users'' (employees' phones, pay, plates)
+                     'using (public.gc_is_marketing() and key in (''gc_company_address'', ''gc_epoch'', ''gc_mkt_admin'', ''gc_automation_pause'', ''customers''))', t);   -- patch PAUSE: he sees the banner too; patch MKTFIX6: not ''users'' (employees' phones, pay, plates)
     end if;
   end loop;
 end $$;

@@ -45,7 +45,7 @@ function seed(){
     { id: 'G2', name: 'Demo G2', source: 'Google Ads', attrib: { gclid: 'x', utm_campaign: 'g-roof' }, city: 'Memphis', type: 'Roofing', stage: 'Contacted', createdAt: inRM(9) },
     { id: 'F1', name: 'Demo F1', source: 'Facebook', attrib: { utm_source: 'facebook', utm_medium: 'paid', utm_campaign: 'fb-water' }, city: 'Cordova', type: 'Water damage', stage: 'Lost', createdAt: inRM(5) },
     { id: 'WB1', name: 'Demo Lostlead', email: 'lost@demo.example', city: 'Bartlett', type: 'Roofing', stage: 'Lost', lostAt: iso(45), createdAt: iso(80) }]);
-  cset('customers', []);
+  cset('customers', [{ id: 'C900', name: 'Demo Custview Person', email: 'custview@demo.example', phone: '9015550199' }]);
   cset('gc_approval_queue', JSON.stringify([{ id: 'TY1', kind: 'thank_you', jobId: 'PW', status: 'sent', sentAt: iso(4), createdAt: iso(5), to: 'kline@demo.example', title: 'Thank-you' }]));
   cset('gc_office_tasks', JSON.stringify([]));
   cset('gc_company_address', { current: '4014 Broadway Rd, Bartlett, TN 38135' });
@@ -105,7 +105,7 @@ async function fnRoute(c, who){
     return r.fulfill({ status: res.statusCode || 200, headers: Object.assign({ 'content-type': 'application/json' }, res.headers || {}), body: bodyTxt });
   });
 }
-const MM_KEYS = ['users', 'gc_company_address', 'gc_epoch', 'gc_mkt_admin', 'gc_automation_pause'];   /* docs/marketing-role.sql (users: until MKTFIX6 drops it) */
+const MM_KEYS = ['users', 'gc_company_address', 'gc_epoch', 'gc_mkt_admin', 'gc_automation_pause', 'customers'];   /* MMCUST (owner 11/10): customers too */   /* docs/marketing-role.sql (users: until MKTFIX6 drops it) */
 async function dbRoutes(c, isMM){
   await c.ctx.route(u => /supabase\.co$/.test(new URL(u).host), async r => {
     const req = r.request(), u = new URL(req.url()), a = req.headers()['authorization'] || '', e = emailOfTok(a.replace(/^Bearer /, ''));
@@ -215,6 +215,10 @@ const leak = seen.filter(x => PII.some(y => x.body.indexOf(y) >= 0));
 ok(!leak.length, 'no answer he got carries a customer name, phone, e-mail, street, carrier or cost (' + seen.length + ' answers)', leak.map(x => x.where + ' ' + PII.filter(y => x.body.indexOf(y) >= 0).join(',')).slice(0, 5));
 const rep = await p.evaluate(() => fetch('/.netlify/functions/soc', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ op: 'mf_report_preview' }) }).then(r => r.status));
 ok(rep === 403 || rep === 401, 'the report preview is refused to him', rep);
+/* patch MMCUST (owner 11/10): he sees 👥 Customers */
+{ const p = c.page(); await p.evaluate(() => window._setView('customers')); await sleep(3500);
+  const cv = await p.evaluate(() => ({ view: localStorage.getItem('grayco_view'), txt: document.body.innerText.indexOf('Demo Custview Person') >= 0 }));
+  ok(cv.view === 'customers' && cv.txt, 'MMCUST: the Marketing Manager opens 👥 Customers and sees the customer list', cv); }
 ok(!c.errs.length, 'no page errors (Marketing Manager)', c.errs.slice(0, 3));
 await c.b.close();
 console.log(`MKTFEAT ${pass}/${pass + fail}`); process.exit(fail ? 1 : 0);
