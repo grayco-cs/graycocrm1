@@ -24,9 +24,12 @@ TRAIN_TAG = '<script id="gc-patch-train">'
 def course(c):
     parts = [{'id': p['id'], 'title': p['title'], 'body': p['body'].strip()} for p in c['parts']]
     pdf = 'https://crm.grayco-cs.com/training/' + c['pdf']
-    parts.insert(0, {'id': 'print', 'title': 'The printable manual',
-                     'body': 'The whole course as a GrayCo manual you can print or read on paper, with the review questions: '
-                             '[🖨 Open the ' + c['short'] + ' manual (PDF)](' + pdf + ')'})
+    guide = pdf.replace('.pdf', '-study-guide.pdf')
+    parts.insert(0, {'id': 'print', 'title': 'The printable manual and study guide',
+                     'body': '- **Manual**: the whole course to print or read on paper, with the knowledge check and a completion certificate: '
+                             '[🖨 Open the ' + c['short'] + ' manual (PDF)](' + pdf + ')\n'
+                             '- **Study guide**: every key term with a plain-English definition, for review before the test: '
+                             '[📘 Open the ' + c['short'] + ' study guide (PDF)](' + guide + ')'})
     parts.append({'id': 'quiz', 'title': 'Test: pass %d of %d to finish' % (C.PASS, len(c['quiz'])),
                   'body': 'Take it after you have read every part. Each answer shows right away; your score is saved and your manager can see it. You can retake it as many times as you need.',
                   'quiz': [{'q': q, 'c': ch, 'a': a, 'why': why} for q, ch, a, why in c['quiz']]})

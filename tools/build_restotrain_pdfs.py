@@ -253,16 +253,51 @@ def key(c):
     return page(c['title'] + ' Answer Key', b[0]), page(c['title'] + ' Answer Key', '\n'.join(b[1:]))
 
 
+STUDY = {   # course id → (term list module in tools/studysheets/, IICRC course name, file)
+    'resto-water': ('wrt_terms', 'WRT', 'grayco-water-damage-restoration-study-guide.pdf'),
+    'resto-fire': ('fsrt_terms', 'FSRT', 'grayco-fire-smoke-restoration-study-guide.pdf'),
+    'resto-odor': ('oct_terms', 'OCT', 'grayco-odor-control-study-guide.pdf'),
+}
+STUDY_CSS = """
+.sg-sec{break-inside:auto;margin:0 0 6px}
+.sg-sec+.sg-sec{margin-top:18px}
+.sg-h{display:flex;align-items:baseline;gap:12px;border-bottom:1px solid LINE;padding-bottom:6px;margin:0 0 10px;break-after:avoid}
+.sg-h .n{font-family:"Inter Display",Inter;font-size:22pt;font-weight:200;color:ACC;line-height:1}
+.sg-h .t{font-family:"Inter Display",Inter;font-size:14pt;font-weight:700;color:NAVY}
+.sg-grid{columns:2;column-gap:22px}
+.sg-t{break-inside:avoid;margin:0 0 9px;padding:8px 11px;background:SOFT;border-radius:9px;font-size:8.9pt;line-height:1.5}
+.sg-t b{display:block;font-size:9.3pt;margin-bottom:1px}
+""".replace('NAVY', NAVY).replace('ACC', ACC).replace('LINE', LINE).replace('SOFT', SOFT)
+
+
+def study(c):
+    import importlib
+    mod, iicrc, _ = STUDY[c['id']]
+    sys.path.insert(0, os.path.join(here, 'studysheets'))
+    S = importlib.import_module(mod).S
+    n = sum(len(x[1]) for x in S)
+    cv = cover(c, 'GrayCo Study Guide', 'Every key term from the course with a plain-English definition, grouped by subject. Use it to review before the GrayCo test and the IICRC ' + iicrc + ' exam.',
+               [(str(n), 'Key terms'), (str(len(S)), 'Subjects')]).replace(html.escape(c['title'].replace('GrayCo ', '')) + '</div>', html.escape(c['title'].replace('GrayCo ', '')) + '<br><span style="font-weight:300">Key Terms</span></div>', 1)
+    b = []
+    for i, (sec, items) in enumerate(S, 1):
+        name = re.sub(r'^(Section|Chapter) \d+ – ', '', sec)
+        b.append('<div class="sg-sec"><div class="sg-h"><span class="n">%02d</span><span class="t">%s</span></div><div class="sg-grid">' % (i, html.escape(name)) +
+                 ''.join('<div class="sg-t"><b>%s</b>%s</div>' % (html.escape(t), html.escape(d)) for t, _pg, d in items) + '</div></div>')
+    body = '<section class="mod"><div class="eyebrow">Study guide</div><div class="mtitle" style="margin:6px 0 20px">Key terms and definitions</div>' + ''.join(b) + '</section>'
+    return page(c['title'] + ' Study Guide', cv), page(c['title'] + ' Study Guide', body).replace('</style>', STUDY_CSS + '</style>', 1)
+
+
 jobs = []
 tmp = tempfile.mkdtemp()
 os.makedirs(os.path.join(root, 'training'), exist_ok=True)
 for c in C.COURSES:
     for kind, fn, out in (('m', manual, os.path.join(root, 'training', c['pdf'])),
-                          ('k', key, os.path.join(OUT_KEYS, c['pdf'].replace('.pdf', '-answer-key.pdf')))):
+                          ('k', key, os.path.join(OUT_KEYS, c['pdf'].replace('.pdf', '-answer-key.pdf'))),
+                          ('s', study, os.path.join(root, 'training', STUDY[c['id']][2]))):
         cv, body = fn(c)
         hc = os.path.join(tmp, kind + c['id'] + '-cover.html'); open(hc, 'w', encoding='utf-8').write(cv)
         hb = os.path.join(tmp, kind + c['id'] + '.html'); open(hb, 'w', encoding='utf-8').write(body)
-        jobs.append({'cover': hc, 'html': hb, 'pdf': os.path.abspath(out), 'footer': html.escape(c['title'] + (' · Answer key' if kind == 'k' else ''))})
+        jobs.append({'cover': hc, 'html': hb, 'pdf': os.path.abspath(out), 'footer': html.escape(c['title'] + ({'k': ' · Answer key', 's': ' · Study guide'}.get(kind, '')))})
 HEADER = '<div style="width:100%%;text-align:center;padding-top:0.32in"><img src="%s" style="height:26px"></div>' % LOGO_B64
 js = """const {chromium}=require('playwright');(async()=>{const b=await chromium.launch();const p=await b.newPage();const H=%s;
 for(const j of %s){await p.goto('file://'+j.cover,{waitUntil:'load'});await p.evaluate(()=>document.fonts.ready);await p.pdf({path:j.pdf+'.cover.pdf',width:'8.5in',height:'11in',printBackground:true,margin:{top:0,right:0,bottom:0,left:0}});
