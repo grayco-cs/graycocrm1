@@ -1,7 +1,7 @@
 // test_SDS.mjs <build-dir> — owner 11/11: 🧪 Materials & SDS in Mitigation and Environmental — the library by work type (typical SDS
 // information), materials added by hand, the materials picked for a job, the customer's "Chemical & Product Use Consent" (Approve / Do not
 // use on each product, signed in the portal) and the warnings until then. Offline harness, made-up data.
-// SDS_SHOTS=<dir> → screenshots (1440×900): sds_mitigation_tab, sds_environmental_tab, sds_material_detail, sds_job_picker, sds_consent_paper.
+// SDS_SHOTS=<dir> → screenshots (1440×900): sds_mitigation_tab, sds_environmental_tab, sds_material_detail, sds_job_picker, sds_consent_paper, sds_library_full (All).
 import { computer, signIn, sleep, cset, cget, resetCloud } from '/tmp/claude-0/-home-user-graycocrm1/6a5b2b6b-8a4d-5505-9f82-62521adb6674/scratchpad/wN/harness_N.mjs';
 const R = []; const ok = (n, c, i) => { R.push(!!c); console.log((c ? 'PASS ' : 'FAIL ') + n + (i !== undefined ? '  ' + JSON.stringify(i).slice(0, 400) : '')); };
 const SHOT = process.env.SDS_SHOTS || '';
@@ -70,6 +70,19 @@ const g = await A.ev(() => { const L = window._gcSds.list(), by = k => L.filter(
   return { n: L.length, water: by('water'), mold: by('mold'), fire: by('fire'), sewage: by('sewage'), lead: by('lead'), asbestos: by('asbestos'), general: by('general'),
     full: L.every(m => m.use && m.hazards && m.donts.length && m.dos.length && m.cust !== undefined && 'sdsUrl' in m), brands: L.map(m => m.name).filter(x => /®|™/.test(x)) }; });
 ok('built-in library: every work type has its materials (water, mold, fire, sewage, lead, asbestos, general), every one with use / hazards / do\'s / don\'ts / SDS field, no brand marks', g.n >= 18 && ['water', 'mold', 'fire', 'sewage', 'lead', 'asbestos', 'general'].every(k => g[k].length >= 2) && g.full && !g.brands.length, { n: g.n, lead: g.lead, asb: g.asbestos });
+/* 2b. the thorough first version: ≥ 60 built-ins, ≥ 6 per work type, every field filled, unique ids, generic classes (no brand / product numbers), chemicals end first aid with Poison Help */
+const LB = await A.ev(() => { const L = window._gcSds.BUILTIN, F = ['use', 'hazards', 'signal', 'ppe', 'vent', 'reentry', 'firstAid', 'storage', 'cust'], G = window._gcSds.GROUPS.map(x => x[0]);
+  const per = {}; G.forEach(k => { per[k] = L.filter(m => m.groups.includes(k)).length; });
+  return { n: L.length, per, uniq: new Set(L.map(m => m.id)).size === L.length,
+    missing: L.filter(m => !m.id || !m.name || !['chemical', 'equipment', 'supply'].includes(m.kind) || !m.groups.length || !m.groups.every(x => G.includes(x)) || F.some(k => typeof m[k] !== 'string' || !m[k].trim()) || !Array.isArray(m.dos) || !m.dos.length || !Array.isArray(m.donts) || !m.donts.length || m.dos.concat(m.donts).some(x => !String(x).trim())).map(m => m.id),
+    noPoison: L.filter(m => m.kind === 'chemical' && !/Poison Help 1-800-222-1222/.test(m.firstAid)).map(m => m.id),
+    brands: L.filter(m => /®|™|\b[A-Z]{2,}-?\d{2,}\b/.test(m.name)).map(m => m.name),
+    has: ['phenolic_disinfectant', 'chlorine_dioxide', 'ahp_disinfectant', 'enzyme_cleaner', 'masonry_acid', 'tsp_cleaner', 'borate_treatment', 'soda_blasting', 'dry_ice_blasting', 'oil_stain_blocker', 'waterbased_sealer', 'activated_carbon', 'corrosion_inhibitor', 'hospital_disinfectant', 'lime', 'stripper_caustic', 'stripper_solvent', 'heat_gun', 'lead_test_kit', 'asbestos_bags', 'glove_bag', 'decon_unit', 'papr_respirator', 'mastic_solvent', 'mastic_citrus', 'spray_foam', 'cement_mortar', 'mineral_spirits', 'acetone', 'fuel_gas_diesel', 'propane', 'co_monitor', 'generator', 'desiccant_dehumidifier', 'truckmount_extractor', 'gfci_cords', 'pumps'].filter(id => !L.some(m => m.id === id)),
+    mecl: (L.find(m => m.id === 'stripper_solvent') || { donts: [] }).donts.join(' | '), heat: (L.find(m => m.id === 'heat_gun') || { donts: [] }).donts.join(' | '),
+    gen: (L.find(m => m.id === 'generator') || { donts: [] }).donts.join(' | '), acid: (L.find(m => m.id === 'masonry_acid') || { donts: [] }).donts.join(' | '),
+    eq: Object.keys(window._gcSds.EQUIP).every(k => window._gcSds.EQUIP[k].length >= (k === 'general' ? 5 : 10)) }; });
+ok('📚 thorough library: ≥ 60 built-ins, every work type ≥ 6, unique ids, every field filled, chemicals end first aid with Poison Help, no brand marks', LB.n >= 60 && Object.values(LB.per).every(v => v >= 6) && LB.uniq && !LB.missing.length && !LB.noPoison.length && !LB.brands.length && !LB.has.length, LB);
+ok('… key cautions: no methylene chloride strippers, heat gun under 1,100 °F / no torching, generators never indoors, never mix acid with bleach; EQUIP lists per work type filled out', /DO NOT USE methylene chloride/.test(LB.mecl) && /1,100 °F/.test(LB.heat) && /NEVER open-flame/.test(LB.heat) && /NEVER run it inside/.test(LB.gen) && /NEVER mix with bleach/.test(LB.acid) && LB.eq, { mecl: LB.mecl.slice(0, 80), heat: LB.heat.slice(0, 80), gen: LB.gen.slice(0, 80), eq: LB.eq });
 t = await A.ev(() => document.getElementById('gc-sds-grid').innerText);
 ok('🧪 Lead filter: lead encapsulant + phosphate-free detergent shown, ozone not', /Lead encapsulant/.test(t) && /Phosphate-free lead cleaning detergent/.test(t) && !/Ozone generator/.test(t), t.slice(0, 300));
 await A.ev(() => document.querySelector('.gcsds [data-sds-g="fire"]').click()); await sleep(500);
@@ -86,6 +99,7 @@ let d = await A.ev(() => (document.getElementById('gc-sds-detail') || {}).innerT
 ok('material detail: typical note, hazards, PPE, do / don\'t ("NEVER mix with ammonia"), re-entry, first aid, customer cautions, SDS link field', /Typical — always follow/.test(d) && /NEVER mix with ammonia/.test(d) && /PPE/.test(d) && /Re-entry/.test(d) && /First aid/.test(d) && /Customer cautions/.test(d) && /Manufacturer SDS/.test(d), d.slice(0, 300));
 await A.ev(() => document.querySelector('[data-sds="close"]').click());
 await A.ev(() => { const q = document.getElementById('gc-sds-q'); q.value = ''; q.dispatchEvent(new Event('input', { bubbles: true })); }); await sleep(400);
+if (SHOT) { await A.ev(() => { const c = document.getElementById('gc-sds-grid'); c && c.closest('.card').scrollIntoView({ block: 'start' }); }); await sleep(500); await A.page().screenshot({ path: SHOT + '/sds_library_full.png' }); }
 await A.ev(() => document.querySelector('.gcsds [data-sds-mat="ozone_generator"]').click()); await sleep(600);
 d = await A.ev(() => (document.getElementById('gc-sds-detail') || {}).innerText || '');
 ok('ozone: never with people, pets or plants in the space', /NEVER run with people, pets or plants in the space/.test(d), d.slice(0, 200));
