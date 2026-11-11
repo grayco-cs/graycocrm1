@@ -168484,65 +168484,34 @@ function pullOncall(force){
   return fn({ action: 'oncall-get' }).then(function(r){ if (r && r.ok) { OC.data = r; OC.at = Date.now(); markAccepted(r.pages); } return OC.data; });
 }
 function openOncall(){
-  /* ONCALL2 (owner 11/11): the Mitigation Manager answers first ("we got it, on the way"), then the on-call foreman; the on-call tech is
-     texted to get ready once it is real; 15 min and nobody → the insurance lead manager → the owners (last resort, 🚩 logged) */
-  var O = overlay('📟 On call — after-hours emergencies', 'Real emergencies only: the Mitigation Manager is called first, then this week’s on-call foreman. Nobody in 15 min → the insurance lead manager → the owners (🚩 logged).');
-  var L = { rot: null, tech: null, own: null };
-  function rowsOf(list, key, canEdit){
-    return list.length ? list.map(function(p, i){ return '<div class="gcx10-row"><b>' + (i + 1) + '.</b> ' + esc(p.name || p.email) + ' <span class="gcx10-mut">' + esc(p.email) + (p.phone ? ' · ' + esc(p.phone) : '') + '</span>' +
-      (canEdit ? ' <button type="button" class="gcx10-btn sec" data-l="' + key + '" data-up="' + i + '">↑</button><button type="button" class="gcx10-btn sec" data-l="' + key + '" data-rm="' + i + '">Remove</button>' : '') + '</div>'; }).join('') : '';
-  }
-  function picker(key, label, ppl){ return '<div class="gcx10-row"><select class="gcx10-in" data-addl="' + key + '"><option value="">＋ ' + esc(label) + '…</option>' + ppl.map(function(u){ return '<option value="' + esc(u.email) + '">' + esc(u.name || u.email) + (u.role ? ' (' + esc(u.role) + ')' : '') + '</option>'; }).join('') + '</select></div>'; }
+  var O = overlay('📟 On call — after-hours emergencies', 'An after-hours water / fire lead pages this week’s person; no ✅ Accept in time → the next person → every admin.');
   function paint(){
     var r = OC.data; if (!r) { O.body.innerHTML = '<p class="gcx10-mut">Loading…</p>'; return; }
-    var c = r.cfg || {}, ppl = users().filter(function(u){ return u && u.active !== false && /@/.test(s(u.email)); });
-    if (!L.rot) { L.rot = arr(c.rotation).slice(); L.tech = arr(c.techRotation).slice(); L.own = arr(c.owners).slice(); }
-    var mm = c.mitManager, ce = r.canEdit;
-    var misses = arr(r.misses), tally = {};
-    misses.forEach(function(m){ arr(m.missed).forEach(function(p){ var k = s(p.name) || s(p.phone); if (!tally[k]) tally[k] = { n: 0, owners: 0 }; tally[k].n++; if (m.reached === 'owner') tally[k].owners++; }); });
-    var tk = Object.keys(tally).sort(function(a, b){ return tally[b].n - tally[a].n; });
+    var c = r.cfg || {}, rot = arr(c.rotation), ppl = users().filter(function(u){ return u && u.active !== false && /@/.test(s(u.email)); });
     O.body.innerHTML = '<div class="gcx10-row"><span class="gcx10-chip ' + (r.afterHours ? 'red' : 'grn') + '">' + (r.afterHours ? 'After hours now' : 'Business hours now') + '</span>' +
-      '<b>Foreman this week: ' + esc(r.now ? (r.now.name || r.now.email) : 'nobody set') + '</b> · <b>Tech this week: ' + esc(r.techNow ? (r.techNow.name || r.techNow.email) : 'nobody set') + '</b></div>' +
-      '<div class="gcx10-bar" style="display:block;line-height:1.5"><b>How an after-hours emergency is screened and called</b><br>' +
-        '1. The caller hears: <i>press 1 only for an emergency happening right now — water coming in, a fire, sewage backing up inside, or a tree / storm opening in the roof or wall</i>. Everything else presses 2 → a text and a morning call-back; nobody is woken.<br>' +
-        '2. After 1 they say what happened, then a yes / no check: <i>is water coming in right now / fire / sewage / open to the weather? 1 yes, 2 it can wait</i>. 2 → morning call-back, no emergency.<br>' +
-        '3. The customer hears / gets a text: <i>we are going through our on-call list now — please be patient, someone will answer as soon as possible</i>.<br>' +
-        '4. 🧯 The <b>Mitigation Manager</b> is called first (a text + a call every 2 min). He presses 2 = <i>we got it, on the way</i> → the on-call <b>tech</b> gets a get-ready text. Press 3 = <i>not a real emergency</i> → calls stop, the customer is told the office calls in the morning, nothing counts against anyone.<br>' +
-        '5. No answer in 10 min → the on-call <b>foreman</b>. Nobody by <b>15 min</b> → the <b>insurance lead manager</b> → the <b>owners</b> (last resort). 🚩 Every one of those is logged against the people who were called and did not answer.</div>' +
-      '<h3>🧯 Mitigation Manager — always on call, called first</h3>' +
-      (mm ? '<div class="gcx10-row"><b>' + esc(mm.name || mm.email) + '</b> <span class="gcx10-mut">' + esc(mm.email) + (mm.phone ? ' · ' + esc(mm.phone) : '') + '</span>' + (ce ? ' <button type="button" class="gcx10-btn sec" data-mmrm="1">Remove</button>' : '') + '</div>' : '<p class="gcx10-mut">Not set — the person whose role says Mitigation Manager is used.</p>') +
-      (ce ? '<div class="gcx10-row"><select class="gcx10-in" data-mm="1"><option value="">' + (mm ? 'Change…' : '＋ Set the Mitigation Manager…') + '</option>' + ppl.map(function(u){ return '<option value="' + esc(u.email) + '">' + esc(u.name || u.email) + (u.role ? ' (' + esc(u.role) + ')' : '') + '</option>'; }).join('') + '</select></div>' : '') +
-      '<h3>👷 On-call foremen (turns every Monday) — called if the Mitigation Manager does not answer</h3><div>' + (rowsOf(L.rot, 'rot', ce) || '<p class="gcx10-mut">Nobody yet.</p>') + '</div>' + (ce ? picker('rot', 'Add a foreman', ppl) : '') +
-      '<h3>🧰 On-call techs (turns every Monday) — a text only: get ready to go</h3><div>' + (rowsOf(L.tech, 'tech', ce) || '<p class="gcx10-mut">Nobody yet.</p>') + '</div>' + (ce ? picker('tech', 'Add a tech', ppl) : '') +
-      '<h3>🚨 Last resort (after 15 min): the insurance lead manager, then the owners in this order</h3><div>' + (rowsOf(L.own, 'own', ce) || '<p class="gcx10-mut">Not set — Wesley Johnson, then Nick Thomas.</p>') + '</div>' + (ce ? picker('own', 'Add an owner', ppl) : '') +
-      (ce ? '<h3>Hours</h3><div class="gcx10-row">Business day <input class="gcx10-in" type="time" data-hs="1" value="' + esc((c.hours || {}).start || '07:00') + '"> to <input class="gcx10-in" type="time" data-he="1" value="' + esc((c.hours || {}).end || '18:00') + '">' +
+      '<b>On call this week: ' + esc(r.now ? (r.now.name || r.now.email) : 'nobody — add people below') + '</b></div>' +
+      '<h3>Rotation (turns every Monday)</h3><div data-rot="1">' + (rot.length ? rot.map(function(p, i){ return '<div class="gcx10-row"><b>' + (i + 1) + '.</b> ' + esc(p.name || p.email) + ' <span class="gcx10-mut">' + esc(p.email) + (p.phone ? ' · ' + esc(p.phone) : '') + '</span>' +
+        (r.canEdit ? ' <button type="button" class="gcx10-btn sec" data-up="' + i + '">↑</button><button type="button" class="gcx10-btn sec" data-rm="' + i + '">Remove</button>' : '') + '</div>'; }).join('') : '<p class="gcx10-mut">Nobody yet.</p>') + '</div>' +
+      (r.canEdit ? '<div class="gcx10-row"><select class="gcx10-in" data-add="1"><option value="">＋ Add a person…</option>' + ppl.map(function(u){ return '<option value="' + esc(u.email) + '">' + esc(u.name || u.email) + (u.role ? ' (' + esc(u.role) + ')' : '') + '</option>'; }).join('') + '</select></div>' +
+        '<h3>Hours</h3><div class="gcx10-row">Business day <input class="gcx10-in" type="time" data-hs="1" value="' + esc((c.hours || {}).start || '07:00') + '"> to <input class="gcx10-in" type="time" data-he="1" value="' + esc((c.hours || {}).end || '18:00') + '">' +
         '<label><input type="checkbox" data-we="1"' + (c.weekends !== false ? ' checked' : '') + '> Weekends are after hours</label> · page the next person after <input class="gcx10-in" type="number" min="5" max="60" style="width:70px" data-min="1" value="' + esc(c.escalateMin || 10) + '"> min</div>' +
         '<div class="gcx10-row">Holidays (after hours all day): <input class="gcx10-in" style="flex:1" data-hol="1" placeholder="2026-11-26, 2026-12-25" value="' + esc(arr(c.holidays).join(', ')) + '"></div>' +
-        '<div class="gcx10-row"><label><input type="checkbox" data-on="1"' + (c.on !== false ? ' checked' : '') + '> Paging is on</label><button type="button" class="gcx10-btn" data-save="1">Save</button></div>' : '<p class="gcx10-mut">Only an admin or the mitigation lead changes the on-call lists.</p>') +
-      '<h3>🚩 Missed emergency calls (last 90 days)</h3>' +
-      (misses.length ? '<div class="gcx10-row">' + tk.map(function(k){ return '<span class="gcx10-chip ' + (tally[k].owners ? 'red' : 'amb') + '">' + esc(k) + ': ' + tally[k].n + ' missed' + (tally[k].owners ? ' · ' + tally[k].owners + ' reached the owners' : '') + '</span>'; }).join(' ') + '</div>' +
-        '<table class="gcx10-tbl" data-misses="1"><tr><th>When</th><th>Emergency</th><th>Reached</th><th>Did not answer</th></tr>' + misses.map(function(m){ return '<tr><td>' + esc(when(m.at)) + '</td><td><b>' + esc(m.title) + '</b><br><span class="gcx10-mut">' + esc(m.kind) + (m.city ? ' · ' + esc(m.city) : '') + '</span></td><td>' + (m.reached === 'owner' ? '<span class="gcx10-chip red">the owners</span>' : '<span class="gcx10-chip amb">insurance lead manager</span>') + ' <span class="gcx10-mut">' + esc(m.minutes) + ' min</span></td><td>' + esc(arr(m.missed).map(function(p){ return p.name || p.label; }).join(', ') || '—') + '</td></tr>'; }).join('') + '</table>'
-        : '<p class="gcx10-mut">None — every emergency was answered by the crew. 👍</p>') +
+        '<div class="gcx10-row"><label><input type="checkbox" data-on="1"' + (c.on !== false ? ' checked' : '') + '> Paging is on</label><button type="button" class="gcx10-btn" data-save="1">Save</button></div>' : '<p class="gcx10-mut">Only an admin or the mitigation lead changes the rotation.</p>') +
       '<h3>Recent pages</h3>' + (arr(r.pages).length ? '<table class="gcx10-tbl"><tr><th>When</th><th>Lead</th><th>Paged</th><th>Accepted</th></tr>' + r.pages.map(function(p){ return '<tr><td>' + esc(when(p.createdAt)) + '</td><td><b>' + esc(p.title) + '</b><br><span class="gcx10-mut">' + esc(p.source) + '</span></td><td>' + esc(arr(p.chain).slice(0, (p.step || 0) + 1).join(' → ')) + (p.adminsAt ? ' → admins' : '') + '</td><td>' + (p.acceptedAt ? '<span class="gcx10-chip grn">✅ ' + esc(p.acceptedBy) + ' ' + esc(when(p.acceptedAt)) + '</span>' : '<span class="gcx10-chip amb">waiting</span>') + '</td></tr>'; }).join('') + '</table>' : '<p class="gcx10-mut">No pages yet.</p>');
-    var mmNow = mm || null;
+    var rotNow = rot.slice();
     function save(){
-      var b = O.body, q = function(sel){ return b.querySelector(sel); };
-      var cfg = { rotation: L.rot, techRotation: L.tech, owners: L.own, mitManager: mmNow, startDate: c.startDate || today(),
-        hours: { start: q('[data-hs]') ? q('[data-hs]').value : (c.hours || {}).start, end: q('[data-he]') ? q('[data-he]').value : (c.hours || {}).end }, weekends: q('[data-we]') ? q('[data-we]').checked : c.weekends,
-        escalateMin: num(q('[data-min]') ? q('[data-min]').value : c.escalateMin), holidays: q('[data-hol]') ? s(q('[data-hol]').value).split(/[,\s]+/).filter(Boolean) : arr(c.holidays), on: q('[data-on]') ? q('[data-on]').checked : c.on };
-      fn({ action: 'oncall-set', cfg: cfg }).then(function(x){ if (!x.ok) { toast(x.error || 'Could not save.', true); return; } toast('📟 On call saved'); L.rot = null; pullOncall(true).then(paint); });
+      var b = O.body;
+      var cfg = { rotation: rotNow, startDate: c.startDate || today(), hours: { start: b.querySelector('[data-hs]').value, end: b.querySelector('[data-he]').value }, weekends: b.querySelector('[data-we]').checked,
+        escalateMin: num(b.querySelector('[data-min]').value), holidays: s(b.querySelector('[data-hol]').value).split(/[,\s]+/).filter(Boolean), on: b.querySelector('[data-on]').checked };
+      fn({ action: 'oncall-set', cfg: cfg }).then(function(x){ if (!x.ok) { toast(x.error || 'Could not save.', true); return; } toast('📟 On call saved'); pullOncall(true).then(paint); });
     }
-    var who = function(u){ return { email: low(u.email), name: s(u.name), phone: s(u.phone || u.cell || u.mobile) }; };
     O.body.onclick = function(e){
       var t = e.target; if (!t || !t.getAttribute) return;
-      var l = L[t.getAttribute('data-l')];
-      if (l && t.hasAttribute('data-rm')) { l.splice(+t.getAttribute('data-rm'), 1); save(); }
-      if (l && t.hasAttribute('data-up')) { var i = +t.getAttribute('data-up'); if (i > 0) { var x = l[i]; l[i] = l[i - 1]; l[i - 1] = x; save(); } }
-      if (t.hasAttribute('data-mmrm')) { mmNow = null; save(); }
+      if (t.hasAttribute('data-rm')) { rotNow.splice(+t.getAttribute('data-rm'), 1); OC.data.cfg.rotation = rotNow; save(); }
+      if (t.hasAttribute('data-up')) { var i = +t.getAttribute('data-up'); if (i > 0) { var x = rotNow[i]; rotNow[i] = rotNow[i - 1]; rotNow[i - 1] = x; save(); } }
       if (t.hasAttribute('data-save')) save();
     };
-    Array.prototype.forEach.call(O.body.querySelectorAll('[data-addl]'), function(sel){ sel.onchange = function(){ var l = L[sel.getAttribute('data-addl')], u = userBy(sel.value); if (!l || !u || l.some(function(p){ return low(p.email) === low(u.email); })) return; l.push(who(u)); save(); }; });
-    var mmSel = O.body.querySelector('[data-mm]'); if (mmSel) mmSel.onchange = function(){ var u = userBy(mmSel.value); if (!u) return; mmNow = who(u); save(); };
+    var add = O.body.querySelector('[data-add]'); if (add) add.onchange = function(){ var u = userBy(add.value); if (!u || rotNow.some(function(p){ return low(p.email) === low(u.email); })) return; rotNow.push({ email: low(u.email), name: s(u.name), phone: s(u.phone || u.cell || u.mobile) }); save(); };
   }
   paint(); pullOncall(true).then(paint);
 }
@@ -183071,7 +183040,7 @@ var W = window, D = document;
 var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
 var RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
 var FN = '/.netlify/functions/texts?callchain=1';
-var KINDS = [['company', 'Office line'], ['person', 'Person'], ['senior', 'Senior PM (Lead PM)'], ['mitigation', 'Mitigation manager'], ['oncall', 'On-call foreman (this week)'], ['phone', 'Phone number']];   /* ONCALLRING */
+var KINDS = [['company', 'Office line'], ['person', 'Person'], ['senior', 'Senior PM (Lead PM)'], ['mitigation', 'Mitigation manager'], ['oncall', 'On call (this week)'], ['phone', 'Phone number']];   /* ONCALLRING */
 var DAYN = [['mon', 'Mon'], ['tue', 'Tue'], ['wed', 'Wed'], ['thu', 'Thu'], ['fri', 'Fri'], ['sat', 'Sat'], ['sun', 'Sun']];
 var ST8 = { cfg: null, people: [], senior: null, office: '', saved: false, preview: null };
 function later(f, ms){ return ST.call(W, f, ms || 0); }
@@ -183198,7 +183167,7 @@ function draw(box){
     + screenHtml()
     + '<div style="margin:12px 0;border:1px solid #fecaca;border-radius:10px;padding:10px;background:#fef2f2"><div style="font-weight:800">🚨 Emergency escalation calls</div>'
     + '<label style="display:block;margin-top:4px"><input type="checkbox" data-g="emOn"' + (!c.emerg || c.emerg.on !== false ? ' checked' : '') + '> Text + phone people about an emergency lead (water, fire, a tree on the house, storm damage) — at once<input data-g="emMin" type="hidden" value="' + esc((c.emerg && c.emerg.minutes) || 15) + '"></label>'
-    + '<div style="font-size:12px;color:#475569;margin-top:4px"><b>Owner 11/11:</b> the on-call person gets a text and a call at once, then a call every 2 minutes for 10 minutes until they answer; then the next on deck gets the same. Calls the 🧯 Mitigation Manager first, then this week\'s on-call foreman, then the list below (25 s each): "GrayCo emergency … press 1 to be connected to the customer, press 2 = we have it and are on the way, press 3 = not a real emergency (morning call-back)." The first key stops it; the on-call tech is texted to get ready once someone has it. Nobody in 15 minutes → the insurance lead manager → the owners (last resort, 🚩 logged in 📟 On call). Nobody at all → the whole list once more 10 minutes later, then the admins are e-mailed. It stops as soon as someone has it: ✅ Accept on the on-call page, the lead assigned / contacted / its stage moved, a text to the customer, or a reply to the alert text. Any hour; never while data-entry mode is on.</div></div>'
+    + '<div style="font-size:12px;color:#475569;margin-top:4px"><b>Owner 11/11:</b> the on-call person gets a text and a call at once, then a call every 2 minutes for 10 minutes until they answer; then the next on deck gets the same. Calls this week\'s on-call person first, then the list below (25 s each): "GrayCo emergency … press 1 to be connected to the customer, press 2 to accept and call them yourself." The first key stops it. Nobody → the whole list once more 10 minutes later, then the admins are e-mailed. It stops as soon as someone has it: ✅ Accept on the on-call page, the lead assigned / contacted / its stage moved, a text to the customer, or a reply to the alert text. Any hour; never while data-entry mode is on.</div></div>'
     + '<div style="font-weight:800;margin-top:6px">📞 Who rings, in order</div>'
     + '<div style="display:flex;flex-wrap:wrap;gap:14px;align-items:center"><label><input type="checkbox" data-g="on"' + (c.on ? ' checked' : '') + '> Ring in this order</label>'
     + '<label>Ring each one <input data-g="secs" type="number" min="8" max="60" value="' + esc(c.ringSeconds) + '" style="width:56px"> seconds</label></div>'

@@ -91,20 +91,18 @@ console.log('EMERGCALL — register, text + call on call at once, every 2 min fo
   ok((await EC().register(lead)).skipped, 'registered once per lead');
   await tick();
   ok(CALLS.length === 1 && CALLS[0].To === '+1' + ONCALL && CALLS[0].From === '+19015550000' && CALLS[0].Timeout === '25', 'at once (first tick): the CRM phones this week\'s on-call person (from the GrayCo number, 25 s)', CALLS);
-  const STAFF = () => SMS.filter(m => m.To !== '+1' + CUST), CUSTSMS = () => SMS.filter(m => m.To === '+1' + CUST);
-  ok(STAFF().length === 1 && STAFF()[0].To === '+1' + ONCALL && /GrayCo EMERGENCY: water damage at Bartlett/.test(STAFF()[0].Body) && /every 2 min for 10 min/.test(STAFF()[0].Body), '…and texts them at the same time', SMS);
-  ok(CUSTSMS().length === 1 && /going through our on-call list now — please be patient, someone will call you as soon as possible/.test(CUSTSMS()[0].Body) && !/carrier|insurance/i.test(CUSTSMS()[0].Body), 'ONCALL2: the customer is texted once: going through our on-call list, be patient', CUSTSMS());
+  ok(SMS.length === 1 && SMS[0].To === '+1' + ONCALL && /GrayCo EMERGENCY: water damage at Bartlett/.test(SMS[0].Body) && /every 2 min for 10 min/.test(SMS[0].Body), '…and texts them at the same time', SMS);
   ok(/event=ecall&id=EC-LI-1&step=0/.test(CALLS[0].Url) && /event=ecallstatus/.test(CALLS[0].StatusCallback), 'the call\'s TwiML and status callback point at our signed webhook');
   const a = await answer(CALLS[0]);
-  ok(/GrayCo emergency\. A customer reported water damage at Bartlett, \d+ minutes? ago, and nobody has answered yet\. Press 1 to be connected to the customer now\. Press 2 to say you have it and are on the way — we text you the details\. Press 3 if it is not a real emergency and can wait until morning\./.test(a.body) && /<Gather numDigits="1"/.test(a.body), 'the call says what happened and offers 1 / 2 / 3', a.body);
+  ok(/GrayCo emergency\. A customer reported water damage at Bartlett, \d+ minutes? ago, and nobody has answered yet\. Press 1 to be connected to the customer now\. Press 2 to accept and call them yourself\./.test(a.body) && /<Gather numDigits="1"/.test(a.body), 'the call says what happened and offers 1 / 2', a.body);
   await ended(CALLS[0], 'no-answer');
   ok(CALLS.length === 1 && rec().state === 'redial', 'no answer → the same person again in 2 minutes (not the next yet)', rec());
   min(1); await tick(); ok(CALLS.length === 1, '1 minute later: not yet');
   for (let k = 1; k <= 4; k++) { min(2 * k); await tick(); ok(CALLS.length === k + 1 && CALLS[k].To === '+1' + ONCALL, 'minute ' + (2 * k) + ': on call is called again (' + (k + 1) + ')', CALLS.map(c => c.To)); await ended(CALLS[k], 'no-answer'); }
-  ok(STAFF().length === 1, 'one text per person (not one per call)');
+  ok(SMS.length === 1, 'one text per person (not one per call)');
   min(10); await tick(); await ended(CALLS[CALLS.length - 1], 'no-answer');
   const toOffice = CALLS.filter(c => c.To === '+1' + OFFICE);
-  ok(toOffice.length === 1 && STAFF().length === 2 && STAFF()[1].To === '+1' + OFFICE, '10 minutes of no answer → the next on deck (the 📞 Call order\'s first line) gets a text + a call', { calls: CALLS.map(c => c.To), sms: SMS.map(s => s.To) });
+  ok(toOffice.length === 1 && SMS.length === 2 && SMS[1].To === '+1' + OFFICE, '10 minutes of no answer → the next on deck (the 📞 Call order\'s first line) gets a text + a call', { calls: CALLS.map(c => c.To), sms: SMS.map(s => s.To) });
   const c2 = toOffice[0], a2 = await answer(c2);
   const k = await press(c2, a2.body, '1');
   ok(/Connecting you to the customer/.test(k.body) && /<Dial callerId="\+19015550000"[^>]*><Number>\+19015553333<\/Number><\/Dial>/.test(k.body), 'press 1 → <Dial> the customer, caller ID = the GrayCo number', k.body);
@@ -158,19 +156,13 @@ console.log('EMERGCALL — nobody presses: once more after 10 min, then the admi
   const walk = async (m0) => { let m = m0; for (let i = 0; i < 300; i++) { const c = CALLS[CALLS.length - 1], n = CALLS.length; await ended(c, 'no-answer'); if (CALLS.length > n) continue; if (rec().state === 'redial') { m += 2; min(m); await tick(); if (CALLS.length === n) break; continue; } break; } return m; };
   const people = () => CALLS.map(c => c.To.slice(2)).filter((x, i, a) => i === 0 || a[i - 1] !== x);
   let m = await walk(0);
-  ok(people().join() === [ONCALL, OFFICE, SENIOR, WES, NICK].join() && rec().state === 'retry', 'ONCALL2 round 1: on call (10 min) → Office until 15 min → LAST RESORT: insurance lead manager → Wesley → Nick (owners out of the crew), then "once more in 10 min"', { people: people(), calls: CALLS.length });
-  const miss = (getKv('gc_emerg_misses') || { list: [] }).list;
-  ok(miss.length === 2 && miss[0].reached === 'insurance' && miss[1].reached === 'owner' && miss[0].missed.map(x => x.phone).join() === [ONCALL, OFFICE].join(), 'ONCALL2: 🚩 logged against the crew who did not answer (at the last resort, and again when it reached the owners)', miss);
-  ok(MAIL.some(m => /Emergency reached the owners/.test(m.subject)), 'ONCALL2: the admins are e-mailed when it reaches the owners', MAIL.map(m => m.subject));
-  ok(SMS.filter(m => m.To === '+1' + CUST).length === 2 && /thank you for your patience/.test(SMS.filter(m => m.To === '+1' + CUST)[1].Body), 'ONCALL2: the customer gets one more "thank you for your patience" text at the 15-minute mark', SMS.filter(m => m.To === '+1' + CUST));
-  const r1 = CALLS.length;
+  ok(people().join() === [ONCALL, OFFICE, NICK].join() && CALLS.length === 18 && rec().state === 'retry', 'round 1: on call (6 calls over 10 min) → Office (6) → Owner 1 (6), then "once more in 10 min"', { people: people(), calls: CALLS.length });
   const n1 = CALLS.length; min(m + 5); await tick(); ok(CALLS.length === n1, 'not before 10 minutes');
   m += 11; min(m); await tick(); ok(CALLS.length === n1 + 1 && CALLS[n1].To === '+1' + ONCALL, 'round 2 starts with on call again');
   await walk(m);
-  ok(people().slice(5).join() === [ONCALL, OFFICE, SENIOR, WES, NICK].join() && rec().state === 'gaveup', 'round 2 (everyone once more, no 15-min jump) done → gave up', { people: people(), calls: CALLS.length, state: rec().state });
-  const r2 = CALLS.length;
+  ok(CALLS.length === 36 && rec().state === 'gaveup', 'round 2 done → gave up', { calls: CALLS.length, state: rec().state });
   ok(MAIL.some(m => /Nobody answered the emergency calls/.test(m.subject)), 'the admins are e-mailed "nobody answered"', MAIL.map(m => m.subject));
-  min(200); await tick(); ok(CALLS.length === r2 && r1 < r2, 'and nothing more');
+  min(200); await tick(); ok(CALLS.length === 36, 'and nothing more');
 }
 console.log('EMERGCALL — after hours: on call, then Mitigation manager → Nick → Wesley (patch AFTERHOURS)');
 {
@@ -179,35 +171,9 @@ console.log('EMERGCALL — after hours: on call, then Mitigation manager → Nic
   const walk = async (m0) => { let m = m0; for (let i = 0; i < 300; i++) { const c = CALLS[CALLS.length - 1], n = CALLS.length; await ended(c, 'no-answer'); if (CALLS.length > n) continue; if (rec().state === 'redial') { m += 2; min(m); await tick(); if (CALLS.length === n) break; continue; } break; } return m; };
   const people = () => CALLS.map(c => c.To.slice(2)).filter((x, i, a) => i === 0 || a[i - 1] !== x);
   await walk(0);
-  ok(people().join() === ['9015554444', ONCALL, SENIOR, WES, NICK].join(), 'ONCALL2 9 PM: Mitigation manager (10 min) → on-call foreman (to 15 min) → insurance lead manager → Wesley → Nick', { people: people(), calls: CALLS.length });
+  ok(people().join() === [ONCALL, '9015554444', NICK, WES].join(), '9 PM: on call → Mitigation manager → Nick → Wesley (not the daytime order), each called every 2 min for 10 min', { people: people(), calls: CALLS.length });
   world({ night: true }); await EC().register(lead); min(0); await tick(); await walk(0);
-  ok(people().join() === [ONCALL, SENIOR, WES, NICK].join(), 'no mitigation manager yet → skipped', people());
-}
-console.log('EMERGCALL — ONCALL2: Mitigation Manager first, the tech on a real one, press 3 = not a real emergency');
-{
-  const TECH = '9015557777';
-  world({ night: true, mit: true });
-  setKv('gc_x10_oncall', { on: true, weekends: true, startDate: '2026-01-05', rotation: [{ email: 'olive@grayco-cs.com', name: 'Olive OnCall', phone: ONCALL }], techRotation: [{ email: 'tom@grayco-cs.com', name: 'Tom Tech', phone: TECH }] });
-  await EC().register(lead); await tick();
-  ok(CALLS.length === 1 && CALLS[0].To === '+19015554444', 'the Mitigation Manager is called first', CALLS.map(c => c.To));
-  ok(!SMS.some(m => m.To === '+1' + TECH), 'the on-call tech is NOT texted before anyone says it is real');
-  const a = await answer(CALLS[0]); const k = await press(CALLS[0], a.body, '2');
-  ok(rec().state === 'accepted' && SMS.some(m => m.To === '+1' + TECH && /on-call TECH/.test(m.Body) && /Get ready to go/.test(m.Body)), 'he presses 2 ("we got it, on the way") → the on-call tech gets the get-ready text', SMS.map(m => m.To));
-  ok(SMS.some(m => m.To === '+19015554444' && /On-call tech Tom Tech/.test(m.Body)), '…and his details text names the on-call tech to call', SMS.filter(m => m.To === '+19015554444').map(m => m.Body));
-  /* press 3 */
-  world({ night: true, mit: true }); await EC().register(lead); await tick();
-  const a3 = await answer(CALLS[0]); const k3 = await press(CALLS[0], a3.body, '3');
-  ok(rec().state === 'notemerg' && /calls are stopped/.test(k3.body), 'press 3 → not a real emergency: the calls stop', { st: rec().state, body: k3.body });
-  ok(SMS.some(m => m.To === '+1' + CUST && /call you first thing in the morning/.test(m.Body)), '…the customer is texted: the office calls you in the morning', SMS.filter(m => m.To === '+1' + CUST).map(m => m.Body));
-  const n3 = CALLS.length; min(30); await tick(); ok(CALLS.length === n3, '…and nobody else is called');
-  ok(!((getKv('gc_emerg_misses') || { list: [] }).list.length), '…and no 🚩 miss is logged');
-  /* the Mitigation Manager set in 📟 On call (no role needed) */
-  world({ night: true }); setKv('gc_x10_oncall', { on: true, weekends: true, startDate: '2026-01-05', mitManager: { email: 'max@grayco-cs.com', name: 'Max Manager', phone: '9015556666' }, rotation: [{ email: 'olive@grayco-cs.com', name: 'Olive OnCall', phone: ONCALL }] });
-  const ch = await EC().chainNow();
-  ok(ch.map(x => x.phone).join() === ['9015556666', ONCALL, SENIOR, WES, NICK].join() && ch[0].tier === 'crew' && ch[2].tier === 'last' && ch[3].role === 'owner', 'the chain: 📟 Mitigation Manager → on-call foreman | last resort: insurance lead manager → Wesley → Nick', ch);
-  /* owners in their own order */
-  setKv('gc_x10_oncall', { on: true, rotation: [{ email: 'olive@grayco-cs.com', name: 'Olive OnCall', phone: ONCALL }], owners: [{ email: 'nick@grayco-cs.com', name: 'Nick Thomas' }] });
-  ok((await EC().chainNow()).filter(x => x.role === 'owner').map(x => x.phone).join() === NICK, 'the owners list in 📟 On call decides who is called last (and in what order)');
+  ok(people().join() === [ONCALL, NICK, WES].join(), 'no mitigation manager yet → skipped', people());
 }
 console.log('EMERGCALL — signatures');
 {

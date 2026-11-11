@@ -86,9 +86,7 @@ async function staffAction(event, headers, body, who){
     const o = oc(), c = await o.cfg(), t = typeof exports._now === 'function' ? exports._now() : Date.now();
     const pages = (await o.pages()).slice(-60).reverse().map(function(p){ return { id: p.id, leadKey: p.leadKey, title: p.title, detail: p.detail, source: p.source, createdAt: p.createdAt, step: p.step || 0,
       chain: (p.chain || []).map(function(x){ return x.name || x.email; }), acceptedAt: p.acceptedAt || '', acceptedBy: p.acceptedName || p.acceptedBy || '', adminsAt: p.adminsAt || '' }; });
-    /* ONCALL2: this week's on-call tech + the 🚩 emergencies that reached the last resort (last 90 days) */
-    let misses = []; try { const v = await L().kvGet('gc_emerg_misses'); misses = (Array.isArray(v) ? v : (v && Array.isArray(v.list) ? v.list : [])).filter(function(m){ return m && Date.parse(m.at) > t - 90 * 864e5; }).reverse().slice(0, 100); } catch (e) {}
-    return reply(200, headers, { ok: true, cfg: c, now: X.onCallNow(t, c), techNow: X.onCallTechNow(t, c), afterHours: X.afterHours(t, c), canEdit: who.admin || prof === 'mitigation', pages: pages, misses: misses });
+    return reply(200, headers, { ok: true, cfg: c, now: X.onCallNow(t, c), afterHours: X.afterHours(t, c), canEdit: who.admin || prof === 'mitigation', pages: pages });
   }
   if (action === 'oncall-set') {
     if (!(who.admin || prof === 'mitigation')) return reply(403, headers, { ok: false, error: 'Only an admin or the mitigation lead sets the on-call rotation.' });

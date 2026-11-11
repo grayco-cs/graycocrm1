@@ -84,7 +84,6 @@ async function walk(p, o = {}){
     const a = attr(r.body, 'Gather', 'action');
     r = await post(a, Object.assign({}, p, press ? { Digits: press } : {})); bodies.push(r.body);
     if (/<Gather[^>]*input="speech"/.test(r.body)) { r = await post(attr(r.body, 'Gather', 'action'), Object.assign({}, p, o.said ? { SpeechResult: o.said } : {})); bodies.push(r.body); }
-    for (let q = 0; q < 2 && /event=sure/.test(r.body); q++) { r = await post(attr(r.body, 'Gather', 'action'), Object.assign({}, p, (o.sure || '1') === 'none' ? {} : { Digits: o.sure || '1' })); bodies.push(r.body); }   /* ONCALL2: the "is it really an emergency?" check */
   }
   for (let i = 0; i < 30; i++) {
     const n = dials(r.body); if (!n.length) break; rung.push(n[0]);
@@ -270,29 +269,17 @@ console.log('AFTERHOURS — closed: 1 emergency rings the after-hours order, 2 t
   const NIGHT = Date.parse('2026-10-29T02:00:00Z');   /* Wednesday 9 PM Central */
   NOW = NIGHT; world(chain());
   const p = base(), r0 = await post(VOICE, p);
-  ok(/Our office is closed\. Press 1 only for an emergency happening right now/.test(r0.body) && /ah=1/.test(r0.body) && !dials(r0.body).length, '9 PM: the after-hours menu (office closed, 1 emergency / 2 anything else / 3 sales)', r0.body);
+  ok(/Our office is closed\. If you have an emergency/.test(r0.body) && /ah=1/.test(r0.body) && !dials(r0.body).length, '9 PM: the after-hours menu (office closed, 1 emergency / 2 anything else / 3 sales)', r0.body);
   NOW = NIGHT; world(chain());
   const p1 = base(), w = await walk(p1, { said: 'water coming through the ceiling' });
   ok(/what happened/.test(w.bodies[1]), '1 → "In a few words, what happened?"', w.bodies[1]);
-  ok(/event=sure/.test(w.bodies[2]) && /Press 1 for yes\. Press 2 if it can wait until morning/.test(w.bodies[2]), 'ONCALL2: then the check — is water coming in right now / fire / sewage / open to the weather? 1 yes, 2 can wait', w.bodies[2]);
-  ok(/going through our on-call list now\. Please stay on the line and be patient/.test(w.bodies[3] || ''), 'ONCALL2: 1 at the check → "we are going through our on-call list now, be patient" while it rings', w.bodies[3]);
-  ok(JSON.stringify(w.rung) === JSON.stringify([WES, NICK]), 'after hours 1 → the after-hours order: (Mitigation manager — none yet, skipped) → Wesley → Nick; not the daytime order', w.rung);
+  ok(JSON.stringify(w.rung) === JSON.stringify([NICK, WES]), 'after hours 1 → the after-hours order: (Mitigation manager — none yet, skipped) → Nick → Wesley; not the daytime order', w.rung);
   ok(SMS.length === 1 && leads().length === 1 && leads()[0].emergency === true && leads()[0].urgency === 'Emergency' && /EMERGENCY/.test(leads()[0].title), 'nobody accepts → one text + an EMERGENCY lead', leads().map(x => ({ t: x.title, e: x.emergency, u: x.urgency })));
   NOW = NIGHT; world(chain());
   setKv('users', getKv('users').concat([{ id: 'u5', name: 'Mia Mitigation', email: 'mia@grayco-cs.com', role: 'Mitigation Manager', phone: '9015554444', active: true }]));
   const w2 = await walk(base(), { said: 'fire in the kitchen', answerAt: 0 });
   ok(w2.rung[0] === '9015554444' && /GrayCo EMERGENCY call: fire in the kitchen\. Press 1 to accept/.test(w2.whispers[0]), 'a mitigation manager on file rings first and hears "GrayCo EMERGENCY call: fire in the kitchen"', { rung: w2.rung, w: w2.whispers[0] });
   ok(SMS.length === 0 && leads().length === 0, 'accepted → no text, no lead');
-  NOW = NIGHT; world(chain());
-  const wn = await walk(base(), { said: 'my basement had a leak last week and now there is mold', sure: '2' });
-  ok(wn.rung.length === 0 && /someone from our team will call you shortly/.test(wn.last.body), 'ONCALL2: 1, then 2 at the check ("can wait until morning") → nobody is woken, a text + a morning lead', { rung: wn.rung, b: wn.last.body });
-  ok(leads().length === 1 && leads()[0].emergency !== true && !/EMERGENCY/.test(leads()[0].title), '…and the lead is NOT an emergency (no escalation calls), even with "leak" in what they said', leads().map(x => ({ t: x.title, e: x.emergency })));
-  NOW = NIGHT; world(chain());
-  const wq = await walk(base(), { said: 'can I get a quote for a new roof', sure: 'none' });
-  ok(wq.rung.length === 0, 'ONCALL2: no answer at the check (twice) and no emergency words → no ring, morning call-back', wq.bodies.slice(-2));
-  NOW = NIGHT; world(chain());
-  const wf = await walk(base(), { said: 'pipe burst water everywhere', sure: 'none' });
-  ok(wf.rung.length > 0, 'ONCALL2: no answer at the check but real emergency words (pipe burst) → it rings', wf.rung);
   NOW = NIGHT; world(chain());
   const p2 = base(), w3 = await walk(p2, { press: '2' });
   ok(w3.rung.length === 0 && /someone from our team will call you shortly/.test(w3.last.body) && /<Hangup\/>/.test(w3.last.body), 'after hours 2 → no ring, "someone will call you shortly" (patch SALESBLOCK: no time promise)', w3.last.body);
@@ -329,7 +316,7 @@ console.log('CALLCHAIN — Admin → 📞 Call order (texts.js ?callchain=1)');
   process.env.TWILIO_RING_SECONDS = '20';
   TX._now = () => DAY;
   const g = await call('GET'); if (!g.ok) console.log(g);
-  ok(g.openNow === true && g.settings.night.slots.map(x => x.label).join() === 'Mitigation manager,On-call foreman,Wesley,Nick' && g.settings.night.slots[3].person === 'u1' && g.settings.hours.days.sat.open === false, 'the card gets "open now", the after-hours order (Mitigation manager → On-call foreman → Wesley → Nick) and the hours', { o: g.openNow, n: g.settings.night });
+  ok(g.openNow === true && g.settings.night.slots.map(x => x.label).join() === 'On call (this week),Mitigation manager,Nick,Wesley' && g.settings.night.slots[2].person === 'u1' && g.settings.hours.days.sat.open === false, 'the card gets "open now", the after-hours order (On call → Mitigation manager → Nick → Wesley) and the hours', { o: g.openNow, n: g.settings.night });
   ok(g.ok && g.saved === false && g.settings.ringSeconds === 20, 'nothing saved: ring seconds start at Netlify TWILIO_RING_SECONDS (20)', g.settings);
   ok(g.settings.slots[1].person === 'u1' && g.people.length === 4 && g.preview.list.length === 4 && g.preview.wait === 80, 'defaults pinned to people; 4 ring now (GM empty), a caller waits up to 80 s', g.preview);
   ok(Array.isArray(g.log) && g.log.length === 1 && g.log[0].choice === '3' && /pressed 3/.test(g.log[0].outcome), 'the call log comes back for the card (the sales call)', g.log);

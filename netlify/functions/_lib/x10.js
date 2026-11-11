@@ -29,18 +29,10 @@ function dayNum(ymd){ const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s(ymd)); return 
 function addDays(ymd, n){ const d = dayNum(ymd); return isFinite(d) ? new Date((d + n) * DAY).toISOString().slice(0, 10) : ''; }
 
 /* ══ 📟 ON CALL ═══════════════════════════════════════════════════════════════ */
-const ONCALL_DEFAULT = { rotation: [], techRotation: [], mitManager: null, owners: [], startDate: '', hours: { start: '07:00', end: '18:00' }, weekends: true, holidays: [], escalateMin: 10, on: true };
+const ONCALL_DEFAULT = { rotation: [], startDate: '', hours: { start: '07:00', end: '18:00' }, weekends: true, holidays: [], escalateMin: 10, on: true };
 function oncallCfg(v){
   const c = Object.assign({}, ONCALL_DEFAULT, v && typeof v === 'object' ? v : {});
-  const person = function(p){ return { email: low(p && p.email), name: s(p && p.name).slice(0, 80), phone: s(p && p.phone).replace(/[^\d]/g, '').slice(-10) }; };
   c.rotation = arr(c.rotation).map(function(p){ return { email: low(p.email), name: s(p.name).slice(0, 80), phone: s(p.phone).replace(/[^\d]/g, '').slice(-10) }; }).filter(function(p){ return okEmail(p.email); }).slice(0, 20);
-  /* ONCALL2 (owner 11/11): "tech is just on call to know they have to go work, mit manager gets the call to say we got it and on the way,
-     if the mit manager doesn't answer it goes to the foreman" → rotation = the on-call FOREMEN (rung after the Mitigation Manager);
-     techRotation = the on-call TECHS (a text only: get ready to go); mitManager = always on call, rung first */
-  c.techRotation = arr(c.techRotation).map(person).filter(function(p){ return okEmail(p.email); }).slice(0, 20);
-  const mm = c.mitManager && typeof c.mitManager === 'object' ? person(c.mitManager) : null;
-  c.mitManager = mm && okEmail(mm.email) ? mm : null;
-  c.owners = arr(c.owners).map(person).filter(function(p){ return okEmail(p.email); }).slice(0, 6);   /* ONCALL2: the last resort after the insurance lead manager, in order */
   const h = c.hours && typeof c.hours === 'object' ? c.hours : {};
   c.hours = { start: /^\d{2}:\d{2}$/.test(s(h.start)) ? s(h.start) : '07:00', end: /^\d{2}:\d{2}$/.test(s(h.end)) ? s(h.end) : '18:00' };
   c.holidays = (Array.isArray(c.holidays) ? c.holidays : []).map(s).filter(function(d){ return /^\d{4}-\d{2}-\d{2}$/.test(d); }).slice(0, 40);
@@ -57,8 +49,8 @@ function afterHours(t, cfg){
   return w.hm < cfg.hours.start || w.hm >= cfg.hours.end;
 }
 /* the week's on-call person: the rotation turns every Monday (Central), counted from startDate (or the first Monday of 2026) */
-function onCallIndex(t, cfg, list){
-  cfg = oncallCfg(cfg); const n = (list || cfg.rotation).length; if (!n) return -1;
+function onCallIndex(t, cfg){
+  cfg = oncallCfg(cfg); const n = cfg.rotation.length; if (!n) return -1;
   const w = wall(t), today = dayNum(w.day), monday = today - ((w.dow + 6) % 7);
   let start = dayNum(cfg.startDate || '2026-01-05'); if (!isFinite(start)) start = dayNum('2026-01-05');
   start = start - ((new Date(start * DAY).getUTCDay() + 6) % 7);   /* the Monday of the start week */
@@ -66,15 +58,12 @@ function onCallIndex(t, cfg, list){
   return ((weeks % n) + n) % n;
 }
 function onCallNow(t, cfg){ cfg = oncallCfg(cfg); const i = onCallIndex(t, cfg); return i < 0 ? null : cfg.rotation[i]; }
-/* ONCALL2: this week's on-call tech (their own list, the same Monday turn) */
-function onCallTechNow(t, cfg){ cfg = oncallCfg(cfg); const i = onCallIndex(t, cfg, cfg.techRotation); return i < 0 ? null : cfg.techRotation[i]; }
 /* the paging chain: this week's person first, then the others in rotation order */
 function chain(t, cfg, activeEmails){
-  cfg = oncallCfg(cfg); const i = onCallIndex(t, cfg); if (i < 0 && !cfg.mitManager) return [];
+  cfg = oncallCfg(cfg); const i = onCallIndex(t, cfg); if (i < 0) return [];
   const act = activeEmails ? activeEmails.map(low) : null;
   const out = [];
-  const mm = cfg.mitManager; if (mm && (!act || act.indexOf(mm.email) >= 0)) out.push(mm);   /* ONCALL2: the Mitigation Manager first, always */
-  for (let k = 0; k < cfg.rotation.length; k++) { const p = cfg.rotation[(i + k) % cfg.rotation.length]; if ((!act || act.indexOf(p.email) >= 0) && !out.some(function(y){ return y.email === p.email; })) out.push(p); }
+  for (let k = 0; k < cfg.rotation.length; k++) { const p = cfg.rotation[(i + k) % cfg.rotation.length]; if (!act || act.indexOf(p.email) >= 0) out.push(p); }
   return out;
 }
 const EMERG = /(emergenc|\b24\s*\/\s*7\b|water\s*damage|water\s*in\s*(my|the)|flood|burst|broken\s*pipe|pipe\s*(burst|broke|leak)|sewage|sewer\s*back|standing\s*water|active\s*leak|leaking\s*(now|into|through)|ceiling\s*(is\s*)?(leak|fall|collaps|drip)|\bfire\b|smoke\s*damage|\bmitigation\b|water\s*mitigation|tree\s*(fell|on\s*(my|the)\s*(roof|house)))/i;
@@ -225,5 +214,5 @@ function inspFor(p, tpl, city){
   return { city: c || 'Memphis / Shelby County', office: t.office, phone: t.phone, needed: needsPermit(p, tpl), steps: t.steps.map(function(x){ return { id: x.id, label: x.label, done: false, date: '', result: '', notes: '' }; }) };
 }
 
-module.exports = { TZ, wall, dayNum, addDays, oncallCfg, afterHours, onCallIndex, onCallNow, onCallTechNow, chain, isEmergency, pageNext, EMERG,
+module.exports = { TZ, wall, dayNum, addDays, oncallCfg, afterHours, onCallIndex, onCallNow, chain, isEmergency, pageNext, EMERG,
   statements, bucket, onJobTeam, jobClosed, inspTemplates, inspFor, cityOf, needsPermit, CITIES, vehicleClean, vehicleDue, gasByPerson, goalPace, personNumbers, okEmail, r2, num, s, low, arr };

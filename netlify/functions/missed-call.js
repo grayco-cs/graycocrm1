@@ -214,7 +214,7 @@ async function missed(p, how, extra){
   if (textIt) {
     /* patch CUSTQUIET: 7 PM–7 AM Central this text-back is queued for 7 AM — unless the caller has an EMERGENCY (after-hours
        "press 1", or emergency words in what they said): that reply goes now, as before */
-    let emerg0 = !!extra.emergency; if (!emerg0 && !extra.notEmergency && s(extra.what)) { try { emerg0 = require('./_lib/emergency.js').isEmergency({ title: s(extra.what), detail: s(extra.what) }); } catch (e) {} }
+    let emerg0 = !!extra.emergency; if (!emerg0 && s(extra.what)) { try { emerg0 = require('./_lib/emergency.js').isEmergency({ title: s(extra.what), detail: s(extra.what) }); } catch (e) {} }
     out.text = await require('./_lib/custquiet.js').run(emerg0 ? 'emergency' : 'customer', () => sendSms(ph, s(extra.text) || TEXT));   /* patch AFTERHOURS: the after-hours wording */
     if (out.text && out.text.held) out.heldUntil = out.text.held.releaseAt;
     if (!out.text.ok) await stateCas(st => { if (st.texted[ph] === at) delete st.texted[ph]; return true; }).catch(() => {});
@@ -235,7 +235,7 @@ async function missed(p, how, extra){
     company: '', service: '', property: '', bestTime: '', damageDate: '', carrier: '', claimFiled: '', claimNumber: '', project: '', bidDue: '', plansLink: '', buildings: '', plan: '', urgency: '' };
   const sid = crypto.createHash('sha256').update('missed|' + ph + '|' + at.slice(0, 10)).digest('hex').slice(0, 24);
   /* patch AFTERHOURS: an after-hours "1", or what they said sounds like one (water / flood / leak / fire / smoke / tree / storm) → an EMERGENCY lead */
-  let emerg = !!extra.emergency; if (!emerg && !extra.notEmergency && s(extra.what)) { try { emerg = require('./_lib/emergency.js').isEmergency({ title: s(extra.what), detail: s(extra.what) }); } catch (e) {} }
+  let emerg = !!extra.emergency; if (!emerg && s(extra.what)) { try { emerg = require('./_lib/emergency.js').isEmergency({ title: s(extra.what), detail: s(extra.what) }); } catch (e) {} }
   if (emerg) out.emergency = true;
   const r = await WI().fileLead(f, { sid, source: 'Missed call', how: 'a missed call to the GrayCo number', formLabel: 'Missed call', customer: null,
     title: (emerg ? '🚨 EMERGENCY call — ' : 'Missed call — ') + (who || tidy(ph)) + (city ? ' — ' + city : ''), patch: emerg ? { emergency: true, urgency: 'Emergency' } : undefined, leadExtra: Object.assign({ missedCall: true, callSid }, extra.emergency ? { pressed1: true } : {}, s(extra.what) ? { callerSaid: clip(extra.what, 300) } : {}) });
@@ -249,7 +249,7 @@ async function missed(p, how, extra){
 /* ── patch EMERGCALL: the CRM's own escalation calls about an emergency nobody acknowledged (_lib/emergcall.js) ── */
 function EC(){
   return require('./_lib/emergcall.js').make({ env, now, kvGet: k => L().kvGet(k), kvCas: (k, f) => L().kvCas(k, f),
-    crm: () => core().kvRead(['users', 'gc_senior_pm', 'gc_team_settings']), users: async () => { try { return (await core().kvRead(['users'])).users; } catch (e) { return []; } },
+    crm: () => core().kvRead(['users', 'gc_senior_pm']), users: async () => { try { return (await core().kvRead(['users'])).users; } catch (e) { return []; } },
     sms: (ph, body) => require('./_lib/custquiet.js').run('staff', () => sendSms(ph, body)),   /* patch CUSTQUIET: to the staff member who accepted — staff, not a customer */
     ackCtx: async () => {   /* what counts as "someone has it": the Lead Inbox item, the CRM lead, the on-call page, a staff text */
       const o = { inbox: {}, leads: {}, pages: [], lastOut: {}, msgs: [] };
@@ -267,11 +267,6 @@ function CO(){ return require('./_lib/callorder.js'); }
 const SAYV = '<Say voice="Polly.Joanna">';
 const HOLD = 'Thanks for calling GrayCo Construction Services, please hold while we connect you.';
 const HOLD2 = 'Thank you. Please hold while we connect you.';
-/* ONCALL2 (owner 11/11): "state to the customer we are going through our on-call list at the company and be patient, someone will answer asap" */
-/* ONCALL2: the after-hours "is it really an emergency?" check after press 1 — 1 rings the on-call list, 2 is a morning call-back (nobody woken) */
-const SURE_Q = "To make sure we wake the right person: is water coming into your home right now, is there a fire, is sewage backing up inside, or is your home open to the weather from a tree or storm? Press 1 for yes. Press 2 if it can wait until morning.";
-function sureTwiml(n){ const u = hookUrl('sure', { ah: 1, c: '1', try: n || 0 }); return twiml('<Gather input="dtmf speech" numDigits="1" timeout="7" speechTimeout="auto" hints="yes, no, one, two" actionOnEmptyResult="true" action="' + esc(u) + '" method="POST">' + SAYV + esc(SURE_Q) + '</Say></Gather><Redirect method="POST">' + esc(u) + '</Redirect>'); }
-const HOLD_EMERG = "Thank you. We are going through our on-call list now. Please stay on the line and be patient. Someone will answer as soon as possible. If anyone is in danger, hang up and call 9 1 1.";
 const ASK_WHAT = 'In a few words, what work do you need?';
 const SALES = "We don't take sales calls on this line. Please e-mail office at grayco-cs.com. Goodbye.";
 const BYE_NOINPUT = 'Goodbye.';
@@ -303,16 +298,12 @@ async function orderList(cfg, p, choice, ah){
   let ours = [env('TWILIO_FROM')]; try { const set = SMS().settings(await L().kvGet(SMS().SETTINGS_KEY)); ours = ours.concat(require('./_lib/smsroute.js').numbers(set, env).map(x => x.number)); } catch (e) {}
   const c = JSON.parse(JSON.stringify(cfg));
   if (!c.on) c.slots = [];
-  if (ah) {   /* patch AFTERHOURS: the after-hours emergency order (ONCALL2: Mitigation manager → On-call foreman → Wesley → Nick) */
+  if (ah) {   /* patch AFTERHOURS: the after-hours emergency order (On call → Mitigation manager → Nick → Wesley) */
     c.slots = c.night.slots;
     /* ONCALLRING (owner 11/11: "all on-call foremen / techs get emergency calls directly to their phones when on call"): the person on call
        this week rings first — also for an order saved before this slot existed */
     try { const X = require('./_lib/x10.js'); const o = X.onCallNow(now(), X.oncallCfg(await L().kvGet('gc_x10_oncall'))); if (o) data.oncallNow = { name: s(o.name), email: s(o.email), phone: s(o.phone) }; } catch (e) {}
-    if (!c.slots.some(x => x && x.kind === 'oncall')) c.slots = [{ id: 'n_oncall', label: 'On-call foreman', on: true, kind: 'oncall', phone: '', person: '' }].concat(c.slots);
-    /* ONCALL2 (owner 11/11): "mit manager gets the call … if the mit manager doesn't answer it goes to the foreman" — the Mitigation
-       Manager rings before the on-call foreman, also in an order saved the other way round */
-    { const mi = c.slots.findIndex(x => x && x.kind === 'mitigation'), oi = c.slots.findIndex(x => x && x.kind === 'oncall');
-      if (mi > oi && oi >= 0) { const m = c.slots.splice(mi, 1)[0]; c.slots.splice(oi, 0, m); } }
+    if (!c.slots.some(x => x && x.kind === 'oncall')) c.slots = [{ id: 'n_oncall', label: 'On call (this week)', on: true, kind: 'oncall', phone: '', person: '' }].concat(c.slots);
   }
   else if (choice === '2') {   /* a current customer: their job's PM first, when the caller's number is on a job */
     try { const cust = await WI().findCustomer({ phone: phone10(p.From), email: '' }); const u = cust && cust.pm ? require('./_lib/people.js').findUser(data.users, cust.pm) : null;
@@ -328,10 +319,9 @@ function menuTwiml(cfg, n, ah){
 }
 /* patch AFTERHOURS: "2" after hours — no ring: a text at once and a lead for the morning */
 const AH_TEXT = 'Thanks for calling GrayCo Construction Services — our office is closed. We got your call and someone from our team will call you shortly. Reply here with any details.';   /* patch SALESBLOCK: no time promise (was "in the morning") */
-async function nightText(p, row, o){
-  o = o || {};
-  await logPut(s(p.CallSid), { outcome: o.notEmergency ? 'after hours — not an emergency (the check): texted, lead for the morning' : 'after hours — texted, lead for the morning' });
-  await missed(p, o.notEmergency ? 'after hours (pressed 1, then "can wait until morning"): texted, lead for the morning' : 'after hours (pressed 2): texted, lead for the morning', { text: AH_TEXT, what: s(row && row.what), notEmergency: !!o.notEmergency });
+async function nightText(p, row){
+  await logPut(s(p.CallSid), { outcome: 'after hours — texted, lead for the morning' });
+  await missed(p, 'after hours (pressed 2): texted, lead for the morning', { text: AH_TEXT, what: s(row && row.what) });
   return twiml(SAYV + "Thank you. We've sent you a text and someone from our team will call you shortly. Goodbye.</Say><Hangup/>");   /* patch SALESBLOCK: no time promise */
 }
 const isAh = (row, qs) => s(row && row.ah) === '1' || s(qs && qs.ah) === '1';
@@ -385,7 +375,6 @@ async function callOrder(ev, p, qs){
       return twiml('<Gather input="speech" timeout="8" speechTimeout="auto" actionOnEmptyResult="true" action="' + esc(wu) + '" method="POST">' + SAYV + esc(ah ? 'In a few words, what happened?' : ASK_WHAT) + '</Say></Gather>'
         + '<Redirect method="POST">' + esc(wu) + '</Redirect>');
     }
-    if (ah && c === '1') return sureTwiml(0);   /* ONCALL2 */
     return startRing(cfg, p, row, HOLD2, c, ah);
   }
   if (ev === 'what') {
@@ -393,19 +382,7 @@ async function callOrder(ev, p, qs){
     if (['1', '2', 'direct'].indexOf(c0) < 0) return twiml(SAYV + BYE_NOINPUT + '</Say><Hangup/>');   /* never rings without a 1 / 2 */
     const row = await logPut(sid, { what: clip(s(p.SpeechResult), 200) });
     try { if (await require('./_lib/salesguard.js').def().screenText({ via: 'call', phone: p.From, text: s(p.SpeechResult), id: sid })) { await logPut(sid, { outcome: 'sales pitch (what they said) — 🧹 Sales & spam' }); return twiml(SAYV + esc(SALES) + '</Say><Hangup/>'); } } catch (e) {}   /* patch SALESBLOCK: a pitch never rings anyone */
-    if (ah && c0 === '1') return sureTwiml(0);   /* ONCALL2 */
     return startRing(cfg, p, row || { choice: c0, what: clip(s(p.SpeechResult), 200) }, HOLD2, c0, ah);
-  }
-  if (ev === 'sure') {   /* ONCALL2: the answer to the "is it really an emergency?" check */
-    const row = await logGet(sid); if (s(row && row.choice) !== '1') return twiml(SAYV + BYE_NOINPUT + '</Say><Hangup/>');
-    const k = s(p.Digits) || (/\b(yes|yeah|yep|one)\b/i.test(s(p.SpeechResult)) ? '1' : /\b(no|nope|two|morning|wait)\b/i.test(s(p.SpeechResult)) ? '2' : '');
-    if (k === '1') { await logPut(sid, { sure: 'yes' }); return startRing(cfg, p, row, HOLD_EMERG, '1', true); }
-    if (k === '2') { await logPut(sid, { sure: 'no', choice: '2', outcome: 'after hours — pressed 1, then "can wait until morning"' }); return nightText(p, Object.assign({}, row, { choice: '2' }), { notEmergency: true }); }
-    if ((parseInt(qs.try, 10) || 0) < 1) return sureTwiml(1);   /* once more */
-    /* no answer twice: what they said decides — real emergency words ring, anything else is a morning call-back */
-    let em = false; try { em = !!s(row && row.what) && require('./_lib/emergency.js').isEmergency({ title: s(row.what), detail: s(row.what) }); } catch (e) {}
-    if (em) { await logPut(sid, { sure: 'no answer — emergency words' }); return startRing(cfg, p, row, HOLD_EMERG, '1', true); }
-    await logPut(sid, { sure: 'no answer', choice: '2' }); return nightText(p, Object.assign({}, row, { choice: '2' }), { notEmergency: true });
   }
   if (ev === 'whisper') {   /* the person's phone answered: "GrayCo call: … press 1 to accept" (a voicemail does not press 1) */
     const parent = s(qs.p) || s(p.ParentCallSid), row = await logGet(parent), step = parseInt(qs.step, 10) || 0;
@@ -718,8 +695,8 @@ exports.handler = async function(event){
     if (ev === 'ecallkey') return twiml(await EC().key(s(qs.id), parseInt(qs.step, 10) || 0, p.Digits, p.To || p.Called));
     if (ev === 'fcall') return twiml(require('./_lib/fieldcall.js').twiml(qs.to, env('TWILIO_FROM')));   /* patch FIELDCALL: staff answered → the customer, from the GrayCo number */
     if (ev === 'ecallstatus') { if (/^(completed|no-answer|busy|failed|canceled)$/i.test(s(p.CallStatus))) await EC().advance(s(qs.id), parseInt(qs.step, 10) || 0); return twiml(''); }
-    const chainOn = !/^(voice|menu|what|sure|whisper|accept|dialdone)$/.test(ev) || await require('./_lib/automations.js').isOn('call_chain');   /* patch AUTOPANEL: safety switch (default ON) */
-    if (chainOn && /^(voice|menu|what|sure|whisper|accept|dialdone)$/.test(ev)) { const r = await callOrder(ev, p, qs); if (r) return r; }   /* patches CALLCHAIN + CALLSCREEN */
+    const chainOn = !/^(voice|menu|what|whisper|accept|dialdone)$/.test(ev) || await require('./_lib/automations.js').isOn('call_chain');   /* patch AUTOPANEL: safety switch (default ON) */
+    if (chainOn && /^(voice|menu|what|whisper|accept|dialdone)$/.test(ev)) { const r = await callOrder(ev, p, qs); if (r) return r; }   /* patches CALLCHAIN + CALLSCREEN */
     if (ev === 'voice' && chainOn && CC().on()) {   /* patch CHAIN */
       const chain = await CC().start(s(p.CallSid), p.From).catch(() => []);
       if (chain.length) return twiml('<Say voice="Polly.Joanna">Thanks for calling GrayCo Construction Services. Please hold while we connect you.</Say>' + dialStep(0, chain));
