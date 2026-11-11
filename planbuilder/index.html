@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GrayCo PlanBuilder 3D</title>
+  <link rel="icon" type="image/png" href="img/favicon-64.png">
+  <link rel="apple-touch-icon" href="img/icon-180.png">
+  <meta name="theme-color" content="#130662">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap">
+  <link rel="stylesheet" href="css/app.css">
+  <script type="importmap">
+  { "imports": { "three": "./vendor/three.module.min.js", "three/addons/": "./vendor/addons/" } }
+  </script>
+</head>
+<body class="locked">
+  <header class="topbar">
+    <div class="brand"><img class="brand-logo" src="img/grayco-logo-white.png" alt="GrayCo Construction Services"><span class="brand-name">PlanBuilder <b>3D</b></span></div>
+    <input id="prj-name" class="prj-name" aria-label="Project name" spellcheck="false">
+    <span id="save-state" class="save-state" title="Saved in this browser"></span>
+    <div class="spacer"></div>
+    <nav class="views" role="tablist" aria-label="View">
+      <button data-view="plan" class="on">2D Plan</button>
+      <button data-view="split">Split</button>
+      <button data-view="3d">3D</button>
+      <button data-view="studio" title="Construction systems, budget and build timeline">Studio</button>
+      <button data-view="estimate">Estimate</button>
+    </nav>
+    <div class="spacer"></div>
+    <button id="btn-make3d" class="btn build-btn" title="Show the model in 3D and watch it build">🏗 Make 3D</button>
+    <button id="btn-rend" class="btn" title="Save and switch between versions of this house">🖼 Renditions</button>
+    <button id="btn-customer" class="btn" title="Hide every price, to show the plan to a customer">👁 Customer view</button>
+    <button id="btn-theme" class="icon" title="Light / dark"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M20 14.5A8 8 0 019.5 4 8 8 0 1020 14.5z"/></svg></button>
+    <button id="btn-undo" class="icon" title="Undo (Ctrl+Z)">↶</button>
+    <button id="btn-redo" class="icon" title="Redo (Ctrl+Y)">↷</button>
+    <div class="menu-wrap">
+      <button id="btn-file" class="btn save-btn" title="Save this job to your computer (Ctrl+S)">💾 Save ▾</button>
+      <div id="menu-file" class="menu" hidden>
+        <button data-file="save">💾 Save to computer <small>(Ctrl+S) – a new version, keep working</small></button>
+        <button data-file="close">✅ Done – save &amp; remove <small>– save to computer, then take it out of this browser</small></button>
+        <button data-file="open">📂 Open a job from computer</button>
+        <button data-file="projects">📁 Projects &amp; templates</button>
+        <button data-file="signout" id="btn-signout" hidden>🔒 Sign out <small id="signout-who"></small></button>
+      </div>
+    </div>
+    <button id="btn-projects" class="btn">📁 Projects</button>
+    <button id="btn-catalog" class="btn price-only">📦 Catalog</button>
+    <div class="menu-wrap">
+      <button id="btn-export" class="btn">⤓ Export ▾</button>
+      <div id="menu-export" class="menu" hidden>
+        <button data-exp="print">🖨 Print / PDF (plans + 3D + estimate)</button>
+        <button data-exp="csv" class="price-only">Estimate spreadsheet (.csv)</button>
+        <button data-exp="lines" class="price-only">Line items, Xactimate-ready (.csv)</button>
+        <button data-exp="json">Job file to computer (.json)</button>
+        <button data-exp="png">3D picture (.png)</button>
+        <button data-exp="planpng">2D plan picture (.png)</button>
+        <button data-exp="glb">3D model (.glb)</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="main">
+    <aside class="left" id="left">
+      <button class="import-btn" id="btn-import" title="Picture, scan, PDF or AutoCAD DXF → walls, doors, windows, rooms and 3D"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 17v3h16v-3"/></svg></span><span><b>Import a plan</b><small>Picture · PDF · AutoCAD DXF → 3D</small></span></button>
+      <section class="tools" aria-label="Tools">
+        <button data-tool="select" class="on" title="Select / move (V)"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3l14 8-6 1.6L10 19z"/></svg></span>Select</button>
+        <button data-tool="wall" title="Draw walls (W)"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="9" width="18" height="6" rx="1"/><path d="M8 9v6M13 9v6M18 9v6"/></svg></span>Wall</button>
+        <button data-tool="room" title="Room – drag a rectangle (R)"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M4 12h6M14 5v5"/></svg></span>Room</button>
+        <button data-tool="roompoly" title="Room – click its corners (P)"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6l8-2 6 6-3 9H6z"/></svg></span>Shape</button>
+        <button data-tool="opening" title="Doors & windows (D)"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 21V4h9v17"/><path d="M15 4l4 2v15h-4"/><circle cx="12.5" cy="12.5" r=".8"/></svg></span>Door/Win</button>
+        <button data-tool="item" title="Place a product (I)"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12v6h16v-6"/><path d="M6 12V9a2 2 0 012-2h8a2 2 0 012 2v3"/><path d="M4 12a2 2 0 014 0v2h8v-2a2 2 0 014 0"/></svg></span>Product</button>
+        <button data-tool="roof" title="Roof – drag over the walls (F)"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12L12 4l10 8"/><path d="M5 10v9h14v-9"/></svg></span>Roof</button>
+        <button data-tool="measure" title="Measure (M)"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="8" width="19" height="8" rx="1.5" transform="rotate(-30 12 12)"/><path d="M7.6 12.6l1 1.7M10.6 10.9l1.4 2.4M13.6 9.1l1 1.7"/></svg></span>Measure</button>
+      </section>
+      <section class="phase-bar">
+        <span>Drawing</span>
+        <div class="seg" id="phase-seg" role="radiogroup" aria-label="Work phase">
+          <button data-phase="existing" title="Already there: not priced">Existing</button>
+          <button data-phase="new" class="on" title="New work or remodel: priced">New</button>
+          <button data-phase="demo" title="To be torn out: priced as demolition">Demolish</button>
+        </div>
+      </section>
+      <section class="toggles">
+        <label><input type="checkbox" id="opt-ext"> Drawing outside walls</label>
+        <label><input type="checkbox" id="opt-autowalls" checked> Rooms make their walls</label>
+        <label><input type="checkbox" id="opt-dims" checked> Show dimensions</label>
+        <label><input type="checkbox" id="opt-roofs" checked> Show roofs on plan</label>
+      </section>
+      <section class="picker">
+        <div class="picker-head">
+          <select id="pick-cat" aria-label="Category"></select>
+          <input id="pick-q" type="search" placeholder="Search: oak, brick, GAF…" aria-label="Search products">
+          <select id="pick-brand" aria-label="Brand" class="pick-brand"><option value="">All brands</option></select>
+        </div>
+        <p class="hint" id="pick-hint">Click a product: doors / windows and fixtures are placed on the plan; floors, paint and roofing are applied to what you have selected.</p>
+        <div id="pick-list" class="pick-list"></div>
+      </section>
+    </aside>
+
+    <section class="center">
+      <div class="levels" id="levels"></div>
+      <div class="stage" id="stage">
+        <div class="pane plan-pane" id="plan-pane"><canvas id="plan"></canvas>
+          <div class="plan-btns"><button id="plan-fit" title="Fit plan">⤢</button><button id="plan-zin" title="Zoom in">＋</button><button id="plan-zout" title="Zoom out">－</button></div>
+        </div>
+        <div class="pane view-pane" id="view-pane" hidden>
+          <div class="view-btns">
+            <select id="v-level" aria-label="Show levels"></select>
+            <label><input type="checkbox" id="v-roof" checked> Roof</label>
+            <label><input type="checkbox" id="v-cut"> Cutaway</label>
+            <label><input type="checkbox" id="v-ceil"> Ceilings</label>
+            <select id="v-preset" aria-label="Camera"><option value="">Camera…</option><option value="iso">Corner</option><option value="front">Front</option><option value="back">Back</option><option value="left">Left</option><option value="right">Right</option><option value="top">Top</option></select>
+            <select id="v-phase" aria-label="Before / after"><option value="after">After (finished)</option><option value="before">Before (today)</option><option value="all">Everything</option></select>
+            <label><input type="checkbox" id="v-new"> Show new work</label>
+            <label><input type="checkbox" id="v-dmg"> Show damage</label>
+            <button id="v-holo" title="Futuristic glowing view">✦ Holo</button>
+            <button id="v-spin" title="Turn the model slowly">⟳ Turntable</button>
+            <button id="v-build" title="Watch it build again">▶ Build</button>
+            <button id="v-walk" title="Walk through: WASD / arrows, drag to look">🚶 Walk</button>
+          </div>
+        </div>
+        <div class="pane est-pane" id="est-pane" hidden></div>
+        <div id="studio" class="studio" hidden>
+          <aside class="st-left st-glass" id="st-left" aria-label="Budget and systems"></aside>
+          <div class="st-top st-glass">
+            <span class="st-lab">View</span>
+            <div class="st-seg" id="st-views"><button data-p="iso" class="on">Iso</button><button data-p="top">Top</button><button data-p="front">Front</button><button data-p="right">Side</button></div>
+            <span class="st-div"></span>
+            <span class="st-lab">Cutaway</span><input type="range" id="st-cut" class="st-range" min="5" max="100" value="100" aria-label="Cutaway height" style="--p:100%">
+            <span class="st-div"></span>
+            <div class="st-seg" id="st-modes"><button data-m="finished" class="st-mode">Finished</button><button data-m="explode" class="st-mode">Explode</button><button data-m="ortho" class="st-mode">Ortho</button><button data-m="blueprint" class="st-mode on">Blueprint</button><button data-m="grid" class="st-mode">Grid</button></div>
+          </div>
+          <aside class="st-drawer st-glass" id="st-drawer" hidden></aside>
+          <div class="st-time st-glass">
+            <div class="st-trow">
+              <button id="st-play" class="st-play" aria-label="Play the build"></button>
+              <div class="st-meta"><small>Step</small><b id="st-step">16</b></div>
+              <div class="st-meta wide"><small>Phase</small><b id="st-phase"></b></div>
+              <input type="range" id="st-range" class="st-range grow" min="0" max="16" value="16" aria-label="Build step">
+              <span class="st-lab">Speed</span>
+              <div class="st-seg small" id="st-speed"><button data-s="0.5">0.5×</button><button data-s="1" class="on">1×</button><button data-s="2">2×</button><button data-s="4">4×</button></div>
+              <div class="st-meta end price-only"><small>In place <em id="st-inplace-pct"></em></small><b id="st-inplace"></b></div>
+            </div>
+            <div class="st-chips" id="st-chips"></div>
+          </div>
+          <div class="st-tip" id="st-tip" hidden></div>
+        </div>
+        <div id="walk-hud" class="walk-hud" hidden></div>
+        <div id="walk-pad" class="walk-pad" hidden>
+          <button data-k="ArrowLeft" aria-label="Turn left">⟲</button><button data-k="KeyW" aria-label="Forward">▲</button><button data-k="ArrowRight" aria-label="Turn right">⟳</button>
+          <span></span><button data-k="KeyS" aria-label="Back">▼</button><span></span>
+        </div>
+      </div>
+      <footer class="status">
+        <span id="status" class="status-msg"></span>
+        <label class="len" id="len-wrap" hidden>Length <input id="len" placeholder="12' 6&quot;" autocomplete="off"></label>
+        <div class="cmd" id="cmd-wrap" title="AutoCAD-style command line: L walls, REC room, D door, O ortho, HELP for all. Space or Enter runs it."><span class="cmd-p" id="cmd-prompt">Command:</span><input id="cmd" placeholder="L, REC, D, @12<90 … HELP" autocomplete="off" spellcheck="false" aria-label="Command line"></div>
+        <span class="coords" id="coords" title="Cursor position (feet)"></span>
+        <div class="cad-tg"><button id="tg-ortho" title="ORTHO (F8): square angles only">ORTHO</button><button id="tg-osnap" class="on" title="OSNAP (F3): snap to wall ends, corners and walls">OSNAP</button><button id="tg-grid" class="on" title="SNAP (F9): grid snap">SNAP</button></div>
+        <span id="totals" class="totals"></span>
+      </footer>
+    </section>
+
+    <aside class="right" id="right"><div id="props"></div></aside>
+  </div>
+
+  <div id="modal" class="modal" hidden><div class="modal-card" role="dialog" aria-modal="true"><button class="modal-x" id="modal-x" aria-label="Close">×</button><div id="modal-body"></div></div></div>
+  <div id="toast" class="toast" hidden></div>
+  <div id="print" class="print-area"></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
