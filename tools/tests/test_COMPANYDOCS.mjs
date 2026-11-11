@@ -109,7 +109,7 @@ console.log('B1. admin');
   ok(st0.level === 'admin', 'the server says this sign-in is an admin');
   ok(['coi', 'w9', 'lic_tn', 'lic_ar', 'lic_ms'].every(x => st0.missing.includes(x)), 'placeholders: COI, W-9 and all three licenses show as missing (' + st0.missing.join(', ') + ')');
   const folders = await p.$$eval('#gc-cl .fl button', b => b.map(x => x.textContent.replace(/\d+$/, '').trim()));
-  ok(folders.length === 8 && /Insurance/.test(folders[0]) && /Company info/.test(folders[7]), 'eight folders: ' + folders.join(' · '));
+  ok(folders.length === 9 && /Insurance/.test(folders[0]) && /Company info/.test(folders[7]) && /Lead & asbestos/.test(folders[8]), 'nine folders (+ ☣️ Lead & asbestos, LEADASB): ' + folders.join(' · '));
   ok(await p.locator('#gc-cl [data-entry="coi"] .bd.missing').count() === 1, 'the COI row has a red "Missing" badge');
   /* upload the COI with its expiry date */
   await p.locator('#gc-cl [data-entry="coi"] [data-cl="form"]').click(); await sleep(300);
@@ -211,7 +211,7 @@ console.log('B2. a PM');
   await waitFor(c, () => document.querySelector('#gc-cl') && window._gcCompanyLib.state().docs, null, 20000, 300);
   const st = await p.evaluate(() => window._gcCompanyLib.state());
   ok(st.level === 'staff', 'the server says this sign-in is staff');
-  ok(await p.locator('#gc-cl .fl button').count() === 8, 'the PM sees all eight folders');
+  ok(await p.locator('#gc-cl .fl button').count() === 9, 'the PM sees all nine folders');
   ok(await p.locator('#gc-cl [data-entry="coi"] [data-cl="open-up"]').count() === 1 && await p.locator('#gc-cl [data-cl="form"]').count() === 0, 'PM can open the COI, has no Upload / Replace buttons');
   await p.evaluate(() => window._gcCompanyLib.open('tax')); await sleep(1000);
   ok(await p.locator('#gc-cl [data-entry="w9"]').count() === 0 && await p.locator('#gc-cl [data-entry="w9_blank"]').count() === 1, 'Tax folder: the signed W-9 (tax ID) is hidden from the PM; the blank W-9 for subs is there');
