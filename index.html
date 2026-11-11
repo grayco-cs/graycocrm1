@@ -21980,6 +21980,7 @@ if (!localStorage.getItem("_helpShown")) {
         { icon: "\uD83D\uDCE2", label: "Send Alert to All PMs", fn: function(){ if(window._gcOpenBroadcast) window._gcOpenBroadcast(); else alert("Broadcast not loaded \u2014 hard-refresh and try again."); } },
         { icon: "\uD83D\uDCCE", label: "Sub Invoice PDFs", fn: function(){ if(window._gcOpenSubPDFManager) window._gcOpenSubPDFManager(); else alert("Not loaded \u2014 hard-refresh and try again."); } },
         { icon: "\uD83D\uDCA1", label: "Monthly Overhead", adminOnly: true, fn: function(){ if(window._gcOpenOverhead) window._gcOpenOverhead(); else alert("Overhead tracker not loaded \u2014 hard-refresh and try again."); } },
+        { icon: "\uD83C\uDF96", label: "Required certs, raises & promotion", adminOnly: true, fn: function(){ if(window._gcCertPlan) window._gcCertPlan.open(); else alert("Not loaded \u2014 hard-refresh and try again."); } },   /* patch CERTPLAN */
         { icon: "\u2699", label: "Pay Structure Templates", adminOnly: true, fn: function(){ if(window._gcPayTemplatesOpen) window._gcPayTemplatesOpen(); else alert("Not loaded \u2014 hard-refresh and try again."); } },   /* patch PMG */
         { icon: "\uD83E\uDDEE", label: "PM Commission + Calculator", fn: function(){ if(window._gcPickPMForCommission) window._gcPickPMForCommission(); else alert("Commission screen not loaded \u2014 hard-refresh and try again."); } },
         { icon: "\uD83D\uDCB0", label: "PM Pay (type & source)", adminOnly: true, fn: function(){ if(window._gcPickPMForMatrixPay) window._gcPickPMForMatrixPay(); else if(window._gcPickPMForPay) window._gcPickPMForPay(); else alert("Pay editor not loaded \u2014 hard-refresh and try again."); } },
@@ -195191,7 +195192,7 @@ function render(ov){
   var L = live(), co = L.filter(function(c){ return c.holderType !== 'person'; }), pe = L.filter(function(c){ return c.holderType === 'person'; });
   var n = { exp: 0, now: 0, soon: 0, nd: 0 }; L.forEach(function(c){ var k = status(c).k; if (k === 'expired') n.exp++; else if (k === 'now') n.now++; else if (k === 'soon') n.soon++; else if (k === 'nodate') n.nd++; });
   var fees = L.filter(function(c){ var d = daysTo(c.expires); return ymd(c.expires) && d != null && d <= 365; }).reduce(function(a, c){ return a + num(c.fee); }, 0);
-  var h = '<div class="gcc-h"><b>📜 Certifications &amp; licenses</b><span><button type="button" class="gcc-btn pri" data-gcc="add">＋ Add certification</button> <button type="button" class="gcc-btn" data-gcc="close">✕</button></span></div>' +
+  var h = '<div class="gcc-h"><b>📜 Certifications &amp; licenses</b><span><button type="button" class="gcc-btn" data-gccp-open="1">🎖 Required certs, raises &amp; promotion</button> <button type="button" class="gcc-btn pri" data-gcc="add">＋ Add certification</button> <button type="button" class="gcc-btn" data-gcc="close">✕</button></span></div>' +
     '<div class="gcc-sub" style="margin-top:4px">Every license and certification GrayCo and each employee hold. The CRM e-mails admins and the office and adds a To-Do 30 and 7 days before each "apply by" date (60 or 90 days first for the ones that need lead time), on it, and if anything expires.</div>' +
     '<div class="gcc-stats"><div class="gcc-stat red"><div class="n">' + n.exp + '</div><div class="l">Expired</div></div><div class="gcc-stat amb"><div class="n">' + (n.now + n.soon) + '</div><div class="l">Renew soon</div></div><div class="gcc-stat"><div class="n">' + n.nd + '</div><div class="l">Missing a date</div></div><div class="gcc-stat"><div class="n">' + esc(usd(fees)) + '</div><div class="l">Fees due next 12 months</div></div></div>' +
     '<div class="gcc-tabs">' + [['company', '🏢 Company (' + co.length + ')'], ['people', '👷 Employees (' + pe.length + ')'], ['pay', '💵 Payments & fees']].map(function(t){ return '<button type="button" data-gcctab="' + t[0] + '" aria-pressed="' + (UI.tab === t[0]) + '">' + t[1] + '</button>'; }).join('') + '</div>';
@@ -195333,6 +195334,282 @@ D.addEventListener('click', function(e){ var b = e.target && e.target.closest ? 
 later(function(){ if (isAdmin()) load(); }, 4000);
 W._gcCerts = { open: open_, list: function(){ return live(); }, load: load, status: status, applyBy: applyBy, templates: TEMPLATES, _addMonths: addMonths };
 try { console.log('[GC] 📜 Certifications (patch CERTS): _gcCerts'); } catch (e) {}
+})();
+</script>
+<script id="gc-patch-certplan">
+/* patch CERTPLAN — 🎖 Required certs, raises & promotion (owner 11/11):
+   "raises every certification they receive, promotions eligibility when they have master restorer and master certs" ·
+   "same for pms and foremans raises, pms we require wrt and all courses for master restorer within first year, env pm we require
+   lead supervisor lead rrp renovator and will be more, for techs require abatement worker cert, mitigation tech require wrt — anything
+   else we require that i didn't list that we need legally put in there" · "pms will get bonus end of year based on performance" ·
+   "emergency after-hours work is time and a half … overtime still is only 1.5, emergency or not".
+   Where: 📜 Certifications → 🎖 Required certs, raises & promotion (admins); window._gcCertPlan.open().
+   Data: gc_kv gc_cert_plan = { tracks: { key: { label, co, unit ('hr'|'yr'), reqs: [{ id, name, m (regex source), days, why, legal }] } },
+     raises: [{ id, name, m, hr, yr }], people: { email: { track, hired } }, done: [{ id, email, rule, cert, amount, unit, at, by, skip }],
+     bonus: { 'YYYY': { email: { amount, notes, paid } } }, updatedAt }   (read-merge-write; nothing saved → the defaults below)
+   Held certificates come from 📜 Certifications (gc_certs, person entries, matched by name). Amounts are SUGGESTED until the owner
+   sets them. Legal lines cite the rule; they apply when the work does (e.g. RRP only on pre-1978 homes). */
+(function(){
+'use strict';
+if (window.__GC_PATCH_CERTPLAN__) return; window.__GC_PATCH_CERTPLAN__ = true;
+var W = window, D = document, KEY = 'gc_cert_plan';
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+function later(f, ms){ return ST.call(W, f, ms || 0); }
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function isObj(v){ return !!v && typeof v === 'object' && !Array.isArray(v); }
+function esc(v){ return String(v == null ? '' : v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function num(v){ var n = parseFloat(String(v == null ? '' : v).replace(/[^0-9.\-]/g, '')); return isFinite(n) ? n : 0; }
+function nowISO(){ return new Date().toISOString(); }
+function today(){ var d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+function ymd(v){ var t = s(v); return /^\d{4}-\d{2}-\d{2}/.test(t) ? t.slice(0, 10) : ''; }
+function addDays(d, n){ var t = Date.parse(ymd(d) + 'T12:00:00Z'); return isNaN(t) ? '' : new Date(t + n * 864e5).toISOString().slice(0, 10); }
+function daysTo(d){ var t = Date.parse(ymd(d) + 'T12:00:00Z'), n = Date.parse(today() + 'T12:00:00Z'); return isNaN(t) ? null : Math.round((t - n) / 864e5); }
+function fmt(d){ var t = ymd(d); if (!t) return ''; try { return new Date(t + 'T12:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }); } catch (e) { return t; } }
+function money(n, unit){ var v = num(n); return '$' + (v % 1 ? v.toFixed(2) : v.toLocaleString('en-US')) + (unit === 'yr' ? '/yr' : '/hr'); }
+function uid(){ return 'CP' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+function rx(src){ try { return new RegExp(src, 'i'); } catch (e) { return /$^/; } }
+function me(){ try { if (W._gcMeNow && W._gcMeNow.email) return W._gcMeNow; } catch (e) {} var j = null; try { j = JSON.parse(localStorage.getItem('grayco_user')); } catch (e) {} return isObj(j) ? j : { name: '', email: '' }; }
+function isAdmin(){
+  try { if (W._gcIsOfficeFull && W._gcIsOfficeFull()) return true; } catch (e) {}
+  try { if (W.__GC_AUTH__ && typeof W.__GC_AUTH__.isAdmin === 'function') return !!W.__GC_AUTH__.isAdmin(); } catch (e) {}
+  var u = me(); return /^admin$/i.test(s(u.role)) || low(u.payType) === 'owner';
+}
+function staff(){ var seen = {}; return arr(((W._crm || {}).users) || []).filter(function(x){ if (!x || x.active === false || !/@/.test(s(x.email))) return false; var k = low(x.email); if (seen[k]) return false; seen[k] = 1; return true; }).sort(function(a, b){ return s(a.name).localeCompare(s(b.name)); }); }
+function sb(k){ try { return Promise.resolve(W._ehSb ? W._ehSb(k) : null).then(function(v){ if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) {} } return v; }, function(){ return null; }); } catch (e) { return Promise.resolve(null); } }
+function put(k, v){ try { var f = W._supaUpsertNow || W._supaUpsert; return Promise.resolve(f ? f(k, v) : null); } catch (e) { return Promise.resolve(null); } }
+function toast(m, bad){ try { var t = D.createElement('div'); t.setAttribute('data-gc-keep', '1'); t.textContent = m; t.style.cssText = 'position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:1000070;background:' + (bad ? '#7f1d1d' : '#14532d') + ';color:#fff;padding:10px 16px;border-radius:10px;font:600 14px Inter,Arial,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.25)'; D.body.appendChild(t); later(function(){ t.remove(); }, 3200); } catch (e) {} }
+
+/* ── what each certificate looks like by name (📜 Certifications holds the real ones) ── */
+var M = {
+  wrt: '\\bWRT\\b|water (damage )?restoration tech', asd: '\\bASD\\b|applied structural drying', amrt: '\\bAMRT\\b|applied microbial', fsrt: '\\bFSRT\\b|fire (and|&) smoke restoration',
+  oct: '\\bOCT\\b|odou?r control', cct: '\\bCCT\\b|carpet cleaning tech', uft: '\\bUFT\\b|upholstery', rrp: '\\bRRP\\b|certified renovator|lead[- ]safe renovat',
+  rrpojt: '\\bRRP\\b|certified renovator|renovator on-the-job|rrp (worker|ojt)', leadsup: 'lead[^,;]*supervisor', leadwork: 'lead[^,;]*worker', asbsup: 'asbestos[^,;]*(supervisor|contractor)',
+  asbwork: 'asbestos[^,;]*worker', hazcom: 'haz ?com|hazard communication|\\bGHS\\b', resp: 'respirator|fit[- ]test', bbp: 'bloodborne|\\bBBP\\b', firstaid: 'first aid|\\bCPR\\b',
+  osha10: 'osha[- ]?10\\b', osha30: 'osha[- ]?30\\b', fall: 'fall protection', bloodlead: 'blood lead|lead medical', hazwoper: 'hazwoper', leadaware: 'lead awareness|asbestos awareness',
+  mwr: 'master water', mfsr: 'master fire', mr: 'master restorer', mtc: 'master textile'
+};
+function R(id, name, m, days, why, legal, cond){ var o = { id: id, name: name, m: m, days: days, why: why || '', legal: !!legal }; if (cond) o.cond = true; return o; }
+var LAW = {
+  rrp: R('rrp', 'EPA RRP Certified Renovator', M.rrp, 90, 'Federal law (40 CFR 745): a certified renovator must be assigned to every job that disturbs paint in a pre-1978 home or child-occupied building. EPA (Arkansas) · TDEC (Tennessee).', true),
+  rrpojt: R('rrpojt', 'RRP: trained on the job by a certified renovator (or RRP certified)', M.rrpojt, 30, '40 CFR 745.90: workers on pre-1978 jobs who are not certified must be trained by the certified renovator, and it is documented.', true),
+  hazcom: R('hazcom', 'Hazard Communication (HazCom / GHS) training', M.hazcom, 7, 'OSHA 29 CFR 1910.1200: before working with any chemical (antimicrobials, cleaners, sealers). Keep the SDS binder current.', true),
+  resp: R('resp', 'Respirator medical evaluation + fit test (yearly)', M.resp, 14, 'OSHA 29 CFR 1910.134: required before anyone wears a respirator (mold, sewage, fire / soot, lead, asbestos); fit test every year.', true),
+  bbp: R('bbp', 'Bloodborne pathogens training (+ hepatitis B vaccine offered)', M.bbp, 14, 'OSHA 29 CFR 1910.1030: anyone who may touch blood or body fluids (trauma / biohazard, sewage clean-up). Yearly.', true),
+  firstaid: R('firstaid', 'First aid / CPR', M.firstaid, 90, 'OSHA 29 CFR 1926.50: a person trained in first aid on site when no clinic is close by — at least one per crew.', true),
+  fall: R('fall', 'Fall protection training', M.fall, 30, 'OSHA 29 CFR 1926.503: anyone working where they could fall 6 feet or more (roofs, board-ups, ladders).', true),
+  leadaware: R('leadaware', 'Lead & asbestos awareness training', M.leadaware, 30, 'OSHA 1926.62 (lead) and 1926.1101 (asbestos): awareness before demo in older buildings.', true),
+  bloodlead: R('bloodlead', 'Blood lead baseline / medical surveillance', M.bloodlead, 30, 'OSHA 29 CFR 1926.62: lead work above the action level needs medical surveillance (blood lead tests).', true),
+  leadsup: R('leadsup', 'Lead abatement supervisor (state license)', M.leadsup, 0, 'Lead abatement must be supervised by a state-certified supervisor: Arkansas Dept. of Health · TDEC (TN).', true),
+  leadwork: R('leadwork', 'Lead abatement worker (state license)', M.leadwork, 0, 'Required before doing lead abatement: Arkansas Dept. of Health · TDEC (TN).', true),
+  asbsup: R('asbsup', 'Asbestos contractor / supervisor (AHERA + state license) — when doing asbestos', M.asbsup, 0, 'EPA AHERA / NESHAP + state licensing (Arkansas DEQ · TDEC): before supervising any asbestos removal.', true, true),
+  asbwork: R('asbwork', 'Asbestos abatement worker (AHERA 4-day + state license) — when doing asbestos', M.asbwork, 0, 'EPA AHERA + state licensing: before doing any asbestos removal.', true, true)
+};
+function iicrc(id, name, days, why){ return R(id, name, M[id], days, why || 'GrayCo requirement'); }
+var MASTER_PM = function(){ return [iicrc('asd', 'IICRC ASD — Applied Structural Drying (Master Restorer course)', 365), iicrc('amrt', 'IICRC AMRT — Applied Microbial Remediation (Master Restorer course)', 365),
+  iicrc('fsrt', 'IICRC FSRT — Fire & Smoke Restoration (Master Restorer course)', 365), iicrc('oct', 'IICRC OCT — Odor Control (Master Restorer course)', 365),
+  iicrc('cct', 'IICRC CCT — Carpet Cleaning (Master Restorer course)', 365), iicrc('uft', 'IICRC UFT — Upholstery & Fabric (Master Restorer course)', 365)]; };
+function TRACKS(){ return {
+  con_pm: { label: 'Project Manager — GrayCo Construction', co: 'construction', unit: 'yr', reqs: [iicrc('wrt', 'IICRC WRT — Water Restoration Technician', 90, 'Owner: required for every PM'), LAW.rrp].concat(MASTER_PM(), [LAW.hazcom, LAW.fall, R('osha30', 'OSHA 30 (construction)', M.osha30, 365, 'GrayCo requirement (recommended)')]) },
+  con_foreman: { label: 'Foreman — GrayCo Construction', co: 'construction', unit: 'hr', reqs: [LAW.rrp, LAW.firstaid, LAW.fall, LAW.hazcom, R('osha10', 'OSHA 10 (construction)', M.osha10, 90, 'GrayCo requirement (recommended)')] },
+  mit_manager: { label: 'Mitigation Manager — GrayCo Mitigation', co: 'mitigation', unit: 'yr', reqs: [iicrc('wrt', 'IICRC WRT — Water Restoration Technician', 0, 'Required at hire'), iicrc('asd', 'IICRC ASD — Applied Structural Drying', 90),
+    iicrc('amrt', 'IICRC AMRT — Applied Microbial Remediation', 365), iicrc('fsrt', 'IICRC FSRT — Fire & Smoke Restoration', 365), iicrc('oct', 'IICRC OCT — Odor Control', 365), LAW.rrp, LAW.firstaid, LAW.hazcom, LAW.resp, LAW.bbp, LAW.fall] },
+  mit_foreman: { label: 'Foreman — GrayCo Mitigation', co: 'mitigation', unit: 'hr', reqs: [iicrc('wrt', 'IICRC WRT — Water Restoration Technician', 90), iicrc('asd', 'IICRC ASD — Applied Structural Drying', 365), LAW.rrp, LAW.firstaid, LAW.hazcom, LAW.resp, LAW.bbp, LAW.fall] },
+  mit_tech: { label: 'Mitigation Technician — GrayCo Mitigation', co: 'mitigation', unit: 'hr', reqs: [iicrc('wrt', 'IICRC WRT — Water Restoration Technician', 90, 'Owner: required for every mitigation tech'), LAW.hazcom, LAW.resp, LAW.bbp, LAW.rrpojt, LAW.leadaware, LAW.fall] },
+  env_pm: { label: 'Project Manager — GrayCo Environmental', co: 'environmental', unit: 'yr', reqs: [Object.assign({}, LAW.leadsup, { why: 'Owner: required. ' + LAW.leadsup.why }), Object.assign({}, LAW.rrp, { days: 0, why: 'Owner: required. ' + LAW.rrp.why }), LAW.asbsup,
+    iicrc('amrt', 'IICRC AMRT — Applied Microbial Remediation (mold)', 365, 'GrayCo requirement for mold jobs'), LAW.resp, LAW.bloodlead, LAW.hazcom, LAW.bbp, LAW.fall,
+    R('hazwoper', 'HAZWOPER 40-hour — only for hazardous-waste sites', M.hazwoper, 0, 'OSHA 29 CFR 1910.120: only if we take hazardous-waste site work.', true, true)] },
+  env_tech: { label: 'Technician — GrayCo Environmental', co: 'environmental', unit: 'hr', reqs: [Object.assign({}, LAW.leadwork, { why: 'Owner: required (abatement worker). ' + LAW.leadwork.why }), LAW.asbwork, LAW.resp, LAW.bloodlead, LAW.hazcom, LAW.bbp, LAW.rrpojt, LAW.fall] },
+  office: { label: 'Office / admin', co: '', unit: 'hr', reqs: [] }
+}; }
+function RAISES(){ return [   /* SUGGESTED until the owner sets them: per certificate earned (hourly / salaried) */
+  { id: 'iicrc', name: 'Each IICRC course certification (WRT, ASD, AMRT, FSRT, OCT, CCT, UFT, …)', m: M.wrt + '|' + M.asd + '|' + M.amrt + '|' + M.fsrt + '|' + M.oct + '|' + M.cct + '|' + M.uft + '|\\bIICRC\\b', hr: 0.5, yr: 1000, each: true, n: M.mwr + '|' + M.mfsr + '|' + M.mtc + '|' + M.mr },
+  { id: 'rrp', name: 'EPA RRP Certified Renovator', m: M.rrp, hr: 0.5, yr: 1000 },
+  { id: 'leadwork', name: 'Lead or asbestos abatement worker license', m: M.leadwork + '|' + M.asbwork, hr: 1, yr: 1500, each: true },
+  { id: 'leadsup', name: 'Lead or asbestos supervisor license', m: M.leadsup + '|' + M.asbsup, hr: 1.5, yr: 2500, each: true },
+  { id: 'osha', name: 'OSHA 10 / OSHA 30', m: M.osha10 + '|' + M.osha30, hr: 0.25, yr: 500, each: true },
+  { id: 'master', name: 'IICRC Master designation (Master Water Restorer, Master Fire & Smoke Restorer, Master Textile Cleaner)', m: M.mwr + '|' + M.mfsr + '|' + M.mtc, hr: 1.5, yr: 3000, each: true },
+  { id: 'mr', name: 'IICRC Master Restorer', m: M.mr, hr: 2, yr: 5000 }
+]; }
+var PLAN = null, CERTS = [], LOADED = false, OV = null, UI = { tab: 'people', year: String(new Date().getFullYear()) };
+function defaults(){ return { tracks: TRACKS(), raises: RAISES(), people: {}, done: [], bonus: {}, suggested: true }; }
+function plan(){ var p = PLAN || {}, d = defaults(); return { tracks: isObj(p.tracks) && Object.keys(p.tracks).length ? p.tracks : d.tracks, raises: Array.isArray(p.raises) && p.raises.length ? p.raises : d.raises,
+  people: isObj(p.people) ? p.people : {}, done: arr(p.done), bonus: isObj(p.bonus) ? p.bonus : {}, suggested: p.suggested !== false }; }
+function load(){ return Promise.all([sb(KEY), sb('gc_certs')]).then(function(v){ PLAN = isObj(v[0]) ? v[0] : null; CERTS = arr(isObj(v[1]) ? v[1].list : (W._gcCerts && W._gcCerts.list ? W._gcCerts.list() : [])); LOADED = true; bust(); return plan(); }); }
+function save(mut){ return sb(KEY).then(function(v){ var cur = isObj(v) ? v : {}; var p = { tracks: cur.tracks, raises: cur.raises, people: cur.people, done: cur.done, bonus: cur.bonus, suggested: cur.suggested };
+  PLAN = cur; var full = plan(); mut(full); full.updatedAt = nowISO(); PLAN = full; bust(); return put(KEY, full).then(function(){ return full; }); }); }
+function bust(){ try { if (W._gcBustTodoCache) W._gcBustTodoCache(); } catch (e) {} }
+
+/* ── who is on which track (role / title / company; the admin can set it) ── */
+function trackOf(u, p){
+  var set = (p || plan()).people[low(u.email)]; if (set && set.track && (p || plan()).tracks[set.track]) return set.track;
+  var t = [u.role, u.title, u.position, u.jobTitle, u.profile].map(s).join(' '), co = low(u.companyId || u.company);
+  var env = /environ|abatement|asbestos/i.test(t) || co === 'environmental', mit = /mitig/i.test(t) || co === 'mitigation';
+  if (mit && /manag|director|lead\b/i.test(t)) return 'mit_manager';
+  if (/foreman|super(intendent|visor)?\b/i.test(t)) return env ? 'env_tech' : mit ? 'mit_foreman' : 'con_foreman';
+  if (/\bpm\b|project manager|estimator/i.test(t)) return env ? 'env_pm' : mit ? 'mit_manager' : 'con_pm';
+  if (/tech|labor|crew|field/i.test(t)) return env ? 'env_tech' : 'mit_tech';
+  return 'office';
+}
+function hiredOf(u, p){ var set = (p || plan()).people[low(u.email)]; return ymd(set && set.hired) || ymd(u.hireDate || u.hired || u.startDate || u.start); }
+function heldBy(email){ var e = low(email); return CERTS.filter(function(c){ return c && !c.archived && c.holderType === 'person' && low(c.holder) === e; }); }
+function certStatus(c){ var e = ymd(c.expires); if (!e) return 'held'; return daysTo(e) < 0 ? 'expired' : 'held'; }
+/* one requirement for one person → { k: ok|expired|overdue|soon|due|nohire, l } */
+function reqStatus(req, held, hired){
+  var r = rx(req.m), h = held.filter(function(c){ return r.test(s(c.name) + ' ' + s(c.issuer)); });
+  if (h.some(function(c){ return certStatus(c) === 'held'; })) return { k: 'ok', l: '✅ Held' };
+  if (h.length) return { k: 'expired', l: '❌ Expired — renew' };
+  if (req.cond) return { k: 'cond', l: 'Before doing that work' };   /* only when the job needs it (asbestos, hazardous-waste sites) */
+  if (!hired) return { k: 'nohire', l: 'Set the hire date' };
+  var due = addDays(hired, +req.days || 0), d = daysTo(due);
+  if (d < 0) return { k: 'overdue', l: '❌ Overdue since ' + fmt(due), due: due };
+  if (d <= 30) return { k: 'soon', l: '⏳ Due ' + fmt(due) + ' (' + d + ' d)', due: due };
+  return { k: 'due', l: 'Due by ' + fmt(due), due: due };
+}
+/* raises earned: every held certificate that matches a raise rule and is not approved / skipped yet */
+function raisesDue(u, p){
+  p = p || plan(); var unit = (p.tracks[trackOf(u, p)] || {}).unit || 'hr', held = heldBy(u.email), out = [];
+  p.raises.forEach(function(rr){ var r = rx(rr.m), n = rr.n ? rx(rr.n) : null;
+    held.filter(function(c){ var x = s(c.name) + ' ' + s(c.issuer); return r.test(x) && !(n && n.test(x)); }).forEach(function(c){
+      var key = rr.each ? rr.id + ':' + low(s(c.name)).replace(/[^a-z0-9]+/g, '-') : rr.id;
+      if (p.done.some(function(d){ return low(d.email) === low(u.email) && d.rule === key; })) return;
+      if (out.some(function(o){ return o.rule === key; })) return;
+      out.push({ rule: key, ruleName: rr.name, cert: s(c.name), amount: num(unit === 'yr' ? rr.yr : rr.hr), unit: unit }); }); });
+  return out;
+}
+function masterOf(u){ var held = heldBy(u.email).filter(function(c){ return certStatus(c) === 'held'; }), t = held.map(function(c){ return s(c.name); }).join(' | ');
+  if (rx(M.mr).test(t)) return { k: 'mr', l: '⭐⭐ Master Restorer — promotion eligible' };
+  var m = held.filter(function(c){ return rx(M.mwr + '|' + M.mfsr + '|' + M.mtc).test(s(c.name)); });
+  return m.length ? { k: 'm', l: '⭐ ' + m.map(function(c){ return s(c.name); }).join(', ') + ' — promotion eligible' } : null; }
+
+/* ── 💵 pay rule: emergency after-hours = 1.5×; over 40 / week = 1.5×; never stacked ──
+   premium hours = the emergency after-hours hours + the hours over 40 that are not already premium; counted the way that pays
+   the employee more when we do not know which hours came last (safe under the FLSA, 29 U.S.C. 207(e)(6) / (h)) */
+function weekPay(rate, total, emerg){
+  rate = num(rate); total = Math.max(0, num(total)); emerg = Math.min(total, Math.max(0, num(emerg)));
+  var ot = Math.max(0, total - 40), prem = Math.min(total, emerg + ot), straight = total - prem;
+  return { straight: straight, premium: prem, emergency: emerg, overtime: ot, pay: Math.round((straight * rate + prem * rate * 1.5) * 100) / 100 };
+}
+
+/* ── To-Do for admins: raises due, overdue required certificates ── */
+W._gcTodoExt = arr(W._gcTodoExt);
+W._gcTodoExt.push(function(){
+  try {
+    if (!LOADED || !isAdmin()) return [];
+    var p = plan(), out = [], u0 = me();
+    staff().forEach(function(u){
+      var rd = raisesDue(u, p); if (rd.length) out.push({ key: 'cpraise:' + low(u.email) + ':' + rd.map(function(r){ return r.rule; }).join(','), cat: 'jobs', thing: 'cpraise|' + low(u.email), prio: 'med', due: today(),
+        title: '💵 Raise due: ' + s(u.name) + ' — ' + rd.map(function(r){ return r.cert; }).join(', '), sub: rd.map(function(r){ return money(r.amount, r.unit); }).join(' + ') + ' · approve in 🎖 Required certs, raises & promotion', who: [s(u0.name)], vis: 'who', act: { l: '🎖 Open', f: function(){ open_('raises'); } } });
+      var tr = p.tracks[trackOf(u, p)], hired = hiredOf(u, p), held = heldBy(u.email);
+      var bad = arr(tr && tr.reqs).filter(function(r){ var st = reqStatus(r, held, hired); return st.k === 'overdue' || st.k === 'expired'; });
+      if (bad.length) out.push({ key: 'cpreq:' + low(u.email) + ':' + bad.length, cat: 'jobs', thing: 'cpreq|' + low(u.email), prio: 'high', due: today(), title: '🎖 ' + s(u.name) + ': ' + bad.length + ' required certificate' + (bad.length === 1 ? '' : 's') + ' overdue', sub: bad.map(function(r){ return r.name; }).join(' · ').slice(0, 200), who: [s(u0.name)], vis: 'who', act: { l: '🎖 Open', f: function(){ open_('people'); } } });
+    });
+    return out;
+  } catch (e) { return []; }
+});
+
+/* ── the look ── */
+function css(){
+  if (D.getElementById('gc-certplan-css')) return;
+  var st = D.createElement('style'); st.id = 'gc-certplan-css';
+  st.textContent = '.gccp-ov{position:fixed;inset:0;z-index:1000050;background:rgba(15,23,42,.55);display:flex;align-items:flex-start;justify-content:center;padding:20px 10px;overflow:auto}' +
+    '.gccp-dlg{background:#fff;color:#0f172a;border-radius:16px;width:100%;max-width:1150px;padding:18px 20px;font:14px/1.45 Inter,Arial,sans-serif;box-shadow:0 20px 60px rgba(0,0,0,.3)}' +
+    '.gccp-h{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}.gccp-h b{font-size:18px}' +
+    '.gccp-tabs{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}.gccp-tab{border:1px solid #cbd5e1;background:#f8fafc;border-radius:999px;padding:6px 12px;font-weight:700;cursor:pointer}.gccp-tab.on{background:#1e3a5f;color:#fff;border-color:#1e3a5f}' +
+    '.gccp-btn{border:1px solid #cbd5e1;background:#fff;border-radius:8px;padding:5px 10px;font-weight:700;cursor:pointer}.gccp-btn.pri{background:#1e3a5f;color:#fff;border-color:#1e3a5f}.gccp-btn.grn{background:#15803d;color:#fff;border-color:#15803d}' +
+    '.gccp-card{border:1px solid #e2e8f0;border-radius:12px;padding:12px;margin:10px 0;background:#fff}.gccp-mut{color:#64748b;font-size:12.5px}' +
+    '.gccp-tbl{width:100%;border-collapse:collapse;font-size:13px}.gccp-fx{table-layout:fixed}.gccp-fx th:nth-child(1){width:32%}.gccp-fx th:nth-child(2){width:200px}.gccp-fx td{overflow-wrap:anywhere}.gccp-tbl td,.gccp-tbl th{white-space:normal!important}@media (max-width:700px){.gccp-fx th:nth-child(2){width:120px}}.gccp-tbl td,.gccp-tbl th{border-bottom:1px solid #eef2f7;padding:6px;text-align:left;vertical-align:top}.gccp-tbl th{font-size:12px;color:#475569}' +
+    '.gccp-chip{display:inline-block;border-radius:999px;padding:2px 9px;font-size:12px;font-weight:700;margin:1px 2px}.gccp-chip.ok{background:#dcfce7;color:#14532d}.gccp-chip.bad{background:#fee2e2;color:#7f1d1d}.gccp-chip.amb{background:#fef3c7;color:#78350f}.gccp-chip.gry{background:#f1f5f9;color:#334155}.gccp-chip.star{background:#ede9fe;color:#4c1d95}' +
+    '.gccp-in{border:1px solid #cbd5e1;border-radius:8px;padding:5px 8px;font:inherit}.gccp-law{background:#eff6ff;color:#1e3a8a;border-radius:6px;padding:1px 6px;font-size:11px;font-weight:700}' +
+    '.gccp-note{background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:8px 10px;font-size:13px;margin:8px 0}' +
+    '@media (max-width:700px){.gccp-dlg{padding:12px}.gccp-tbl{font-size:12px}}';
+  D.head.appendChild(st);
+}
+function stChip(st){ var c = st.k === 'ok' ? 'ok' : st.k === 'overdue' || st.k === 'expired' ? 'bad' : st.k === 'soon' ? 'amb' : 'gry'; return '<span class="gccp-chip ' + c + '">' + esc(st.l) + '</span>'; }
+
+function render(){
+  if (!OV) return; css();
+  var p = plan(), ppl = staff(), tabs = [['people', '👥 People'], ['raises', '💵 Raises due'], ['reqs', '📋 Requirements by role'], ['amounts', '⚙ Raise amounts'], ['bonus', '🏆 PM year-end bonus'], ['pay', '⏱ Emergency & overtime pay']];
+  var h = '<div class="gccp-h"><b>🎖 Required certs, raises &amp; promotion</b><span><button type="button" class="gccp-btn" data-cp="close">✕</button></span></div>' +
+    '<p class="gccp-mut">Required certificates by role and company with their deadlines (from the hire date), a raise for every certificate earned, and ⭐ promotion eligibility once someone holds a Master designation. The certificates themselves live in 📜 Certifications — add one there and it shows up here.</p>' +
+    (p.suggested ? '<div class="gccp-note">💡 The raise amounts are <b>suggestions</b> until you set them in ⚙ Raise amounts. Lines marked <span class="gccp-law">LAW</span> are legally required when the employee does that work (cited on each line); check the current state rules on renewal.</div>' : '') +
+    '<div class="gccp-tabs">' + tabs.map(function(t){ return '<span class="gccp-tab' + (UI.tab === t[0] ? ' on' : '') + '" data-cptab="' + t[0] + '">' + t[1] + (t[0] === 'raises' ? ' (' + ppl.reduce(function(n, u){ return n + raisesDue(u, p).length; }, 0) + ')' : '') + '</span>'; }).join('') + '</div>';
+  if (!LOADED) h += '<p>Loading…</p>';
+  else if (UI.tab === 'people') h += ppl.map(function(u){
+    var tk = trackOf(u, p), tr = p.tracks[tk] || { reqs: [] }, hired = hiredOf(u, p), held = heldBy(u.email), ms = masterOf(u), rd = raisesDue(u, p);
+    var sts = tr.reqs.map(function(r){ return { r: r, st: reqStatus(r, held, hired) }; }), okN = sts.filter(function(x){ return x.st.k === 'ok'; }).length;
+    return '<div class="gccp-card" data-cp-person="' + esc(low(u.email)) + '"><div class="gccp-h"><span><b style="font-size:15px">' + esc(u.name || u.email) + '</b> <span class="gccp-mut">' + esc(u.role || '') + '</span> ' + (ms ? '<span class="gccp-chip star">' + esc(ms.l) + '</span>' : '') + (rd.length ? '<span class="gccp-chip amb">💵 ' + rd.length + ' raise' + (rd.length === 1 ? '' : 's') + ' due</span>' : '') + '</span>' +
+      '<span><select class="gccp-in" data-cp-track="' + esc(low(u.email)) + '">' + Object.keys(p.tracks).map(function(k){ return '<option value="' + k + '"' + (k === tk ? ' selected' : '') + '>' + esc(p.tracks[k].label) + '</option>'; }).join('') + '</select> ' +
+      'Hired <input class="gccp-in" type="date" data-cp-hired="' + esc(low(u.email)) + '" value="' + esc(hired) + '"></span></div>' +
+      (tr.reqs.length ? '<div class="gccp-mut" style="margin:4px 0">' + okN + ' of ' + tr.reqs.length + ' required certificates held</div><table class="gccp-tbl gccp-fx"><tr><th>Required</th><th>Status</th><th>Why</th></tr>' + sts.map(function(x){ return '<tr><td>' + esc(x.r.name) + (x.r.legal ? ' <span class="gccp-law">LAW</span>' : '') + '<div class="gccp-mut">' + (x.r.cond ? 'only for that work' : +x.r.days ? 'within ' + x.r.days + ' days of hire' : 'at hire') + '</div></td><td>' + stChip(x.st) + '</td><td class="gccp-mut">' + esc(x.r.why) + '</td></tr>'; }).join('') + '</table>' : '<p class="gccp-mut">No certificates required for this role.</p>') + '</div>';
+  }).join('') || '<p class="gccp-mut">No active employees.</p>';
+  else if (UI.tab === 'raises') { var rows = []; ppl.forEach(function(u){ raisesDue(u, p).forEach(function(r){ rows.push({ u: u, r: r }); }); });
+    var past = p.done.slice().reverse().slice(0, 60);
+    h += '<div class="gccp-note">Every certificate an employee earns is a raise. When one is added in 📜 Certifications it lands here to approve (the amount comes from ⚙ Raise amounts; hourly people get $/hr, salaried people $/yr). Approve it, then change their pay rate in 💰 Pay Structures.</div>' +
+      (rows.length ? '<table class="gccp-tbl" data-cp-raises="1"><tr><th>Employee</th><th>Certificate</th><th>Raise</th><th></th></tr>' + rows.map(function(x, i){ return '<tr><td><b>' + esc(x.u.name) + '</b></td><td>' + esc(x.r.cert) + '<div class="gccp-mut">' + esc(x.r.ruleName) + '</div></td><td><input class="gccp-in" style="width:90px" data-cp-amt="' + i + '" value="' + esc(x.r.amount) + '"> ' + (x.r.unit === 'yr' ? '/yr' : '/hr') + '</td><td><button type="button" class="gccp-btn grn" data-cp="approve" data-i="' + i + '">✅ Approve</button> <button type="button" class="gccp-btn" data-cp="skip" data-i="' + i + '">Not a raise</button></td></tr>'; }).join('') + '</table>' : '<p class="gccp-mut">No raises waiting. 👍</p>') +
+      '<h3 style="margin:14px 0 4px">History</h3>' + (past.length ? '<table class="gccp-tbl"><tr><th>When</th><th>Employee</th><th>Certificate</th><th>Raise</th><th>By</th></tr>' + past.map(function(d){ var u = ppl.filter(function(x){ return low(x.email) === low(d.email); })[0]; return '<tr><td>' + esc(fmt(d.at)) + '</td><td>' + esc(u ? u.name : d.email) + '</td><td>' + esc(d.cert) + '</td><td>' + (d.skip ? '<span class="gccp-chip gry">not a raise</span>' : esc(money(d.amount, d.unit))) + '</td><td class="gccp-mut">' + esc(d.by) + '</td></tr>'; }).join('') + '</table>' : '<p class="gccp-mut">None yet.</p>');
+    UI.rows = rows; }
+  else if (UI.tab === 'reqs') h += Object.keys(p.tracks).map(function(k){ var tr = p.tracks[k];
+    return '<div class="gccp-card"><b>' + esc(tr.label) + '</b> <span class="gccp-mut">' + (tr.unit === 'yr' ? 'salaried — raises in $/yr' : 'hourly — raises in $/hr') + '</span>' +
+      (tr.reqs.length ? '<table class="gccp-tbl"><tr><th>Required certificate</th><th>Deadline</th><th>Why</th><th></th></tr>' + tr.reqs.map(function(r, i){ return '<tr><td>' + esc(r.name) + (r.legal ? ' <span class="gccp-law">LAW</span>' : '') + '</td><td><input class="gccp-in" type="number" min="0" style="width:70px" data-cp-days="' + k + '|' + i + '" value="' + esc(+r.days || 0) + '"> days after hire</td><td class="gccp-mut">' + esc(r.why) + '</td><td><button type="button" class="gccp-btn" data-cp="rmreq" data-k="' + k + '" data-i="' + i + '">Remove</button></td></tr>'; }).join('') + '</table>' : '<p class="gccp-mut">None.</p>') +
+      '<div style="margin-top:6px"><input class="gccp-in" style="width:320px;max-width:100%" placeholder="＋ Add a requirement (e.g. Asbestos inspector)" data-cp-newreq="' + k + '"> <input class="gccp-in" type="number" min="0" style="width:70px" placeholder="days" data-cp-newdays="' + k + '"> <button type="button" class="gccp-btn pri" data-cp="addreq" data-k="' + k + '">Add</button></div></div>'; }).join('');
+  else if (UI.tab === 'amounts') h += '<div class="gccp-note">The raise for each certificate earned. Hourly employees get the $/hr amount; salaried PMs and managers get the $/yr amount. ⭐ Anyone holding a Master designation is promotion eligible.</div><table class="gccp-tbl"><tr><th>Certificate</th><th>Hourly raise</th><th>Salaried raise</th></tr>' +
+    p.raises.map(function(r, i){ return '<tr><td>' + esc(r.name) + (r.each ? '<div class="gccp-mut">each one</div>' : '') + '</td><td>$<input class="gccp-in" style="width:70px" data-cp-hr="' + i + '" value="' + esc(r.hr) + '">/hr</td><td>$<input class="gccp-in" style="width:90px" data-cp-yr="' + i + '" value="' + esc(r.yr) + '">/yr</td></tr>'; }).join('') + '</table><p><button type="button" class="gccp-btn pri" data-cp="saveamts">Save amounts</button></p>';
+  else if (UI.tab === 'bonus') { var yr = UI.year, B = isObj(p.bonus[yr]) ? p.bonus[yr] : {}, pms = ppl.filter(function(u){ return /_pm$|mit_manager/.test(trackOf(u, p)); });
+    h += '<div class="gccp-note">🏆 PMs get a bonus at the end of the year based on performance. Suggested measures: gross profit against the estimate, collections (days to get paid), customer reviews, jobs finished on schedule, safety (no injuries / OSHA issues), certificates done on time, and 🚩 missed emergency calls. The owners set the amount.</div>' +
+      '<div>Year <select class="gccp-in" data-cp-year="1">' + [0, 1, 2].map(function(k){ var y = String(new Date().getFullYear() - k); return '<option' + (y === yr ? ' selected' : '') + '>' + y + '</option>'; }).join('') + '</select></div>' +
+      (pms.length ? '<table class="gccp-tbl" data-cp-bonus="1"><tr><th>PM</th><th>Performance notes</th><th>Bonus</th><th>Paid</th></tr>' + pms.map(function(u){ var b = B[low(u.email)] || {}; return '<tr><td><b>' + esc(u.name) + '</b><div class="gccp-mut">' + esc((p.tracks[trackOf(u, p)] || {}).label) + '</div></td><td><textarea class="gccp-in" rows="2" style="width:100%" data-cp-bn="' + esc(low(u.email)) + '">' + esc(b.notes || '') + '</textarea></td><td>$<input class="gccp-in" style="width:90px" data-cp-ba="' + esc(low(u.email)) + '" value="' + esc(b.amount || '') + '"></td><td><input type="checkbox" data-cp-bp="' + esc(low(u.email)) + '"' + (b.paid ? ' checked' : '') + '></td></tr>'; }).join('') + '</table><p><button type="button" class="gccp-btn pri" data-cp="savebonus">Save ' + esc(yr) + ' bonuses</button></p>' : '<p class="gccp-mut">No PMs yet.</p>'); }
+  else if (UI.tab === 'pay') h += '<div class="gccp-card"><b>⏱ How hourly employees are paid for emergencies and overtime</b><ul style="margin:6px 0 0 18px">' +
+      '<li><b>Emergency after-hours work</b> (an emergency call worked outside the normal work day, nights, weekends and holidays set in 📟 On call) is paid at <b>time and a half</b> (1.5×).</li>' +
+      '<li><b>Overtime</b> — hours over 40 in a work week — is paid at <b>time and a half</b> (1.5×), emergency or not.</li>' +
+      '<li>They <b>do not stack</b>: an hour is never paid more than 1.5×. Example: 40 hours = 20 regular + 20 emergency → 20 h at 1× and 20 h at 1.5×; anything over 40 is 1.5×.</li>' +
+      '<li>When we cannot tell which hours came last in the week, we count it the way that pays the employee more.</li></ul>' +
+      '<p class="gccp-mut">Federal law lets an after-hours premium of at least 1.5× count toward overtime (29 U.S.C. 207(e)(6) and (h)), so no stacking is allowed as long as the emergency rate is at least time and a half. Confirm with your CPA / payroll company before the first payroll.</p></div>' +
+      '<div class="gccp-card"><b>🧮 Check a week</b><div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-top:6px"><label>Rate $/hr<br><input class="gccp-in" style="width:90px" data-cp-rate="1" value="20"></label><label>Total hours<br><input class="gccp-in" style="width:90px" data-cp-tot="1" value="40"></label><label>Emergency after-hours hours<br><input class="gccp-in" style="width:90px" data-cp-em="1" value="20"></label></div><div data-cp-out="1" style="margin-top:8px;font-weight:700"></div></div>';
+  OV.querySelector('.gccp-dlg').innerHTML = h;
+  calc();
+}
+function calc(){ if (!OV) return; var o = OV.querySelector('[data-cp-out]'); if (!o) return; var g = function(a){ var e = OV.querySelector('[' + a + ']'); return e ? e.value : 0; };
+  var w = weekPay(g('data-cp-rate'), g('data-cp-tot'), g('data-cp-em')), r = num(g('data-cp-rate'));
+  o.textContent = w.straight + ' h × $' + r.toFixed(2) + ' + ' + w.premium + ' h × $' + (r * 1.5).toFixed(2) + ' (1.5×: ' + w.emergency + ' emergency' + (w.overtime ? ', ' + w.overtime + ' over 40' : '') + ', not stacked) = $' + w.pay.toFixed(2); }
+
+function open_(tab){
+  if (!isAdmin()) { toast('Only admins can open this.', true); return; }
+  if (OV) OV.remove();
+  if (tab) UI.tab = tab;
+  css(); OV = D.createElement('div'); OV.className = 'gccp-ov'; OV.setAttribute('data-gc-keep', '1'); OV.id = 'gc-certplan'; OV.innerHTML = '<div class="gccp-dlg"><p>Loading…</p></div>'; D.body.appendChild(OV);
+  render(); load().then(render);
+  OV.addEventListener('click', function(e){
+    if (e.target === OV) { OV.remove(); OV = null; return; }
+    var t = e.target.closest && e.target.closest('[data-cp],[data-cptab]'); if (!t) return;
+    if (t.hasAttribute('data-cptab')) { UI.tab = t.getAttribute('data-cptab'); render(); return; }
+    var a = t.getAttribute('data-cp'), u0 = me();
+    if (a === 'close') { OV.remove(); OV = null; return; }
+    if (a === 'approve' || a === 'skip') { var x = (UI.rows || [])[+t.getAttribute('data-i')]; if (!x) return; var amt = num((OV.querySelector('[data-cp-amt="' + t.getAttribute('data-i') + '"]') || {}).value);
+      save(function(p){ p.done.push({ id: uid(), email: low(x.u.email), rule: x.r.rule, cert: x.r.cert, amount: a === 'skip' ? 0 : amt, unit: x.r.unit, at: nowISO(), by: s(u0.name || u0.email), skip: a === 'skip' }); }).then(function(){ toast(a === 'skip' ? 'Marked: not a raise' : '💵 Raise approved — ' + money(amt, x.r.unit) + ' for ' + s(x.u.name) + '. Update their rate in 💰 Pay Structures.'); render(); }); }
+    if (a === 'rmreq') { var k = t.getAttribute('data-k'), i = +t.getAttribute('data-i'); save(function(p){ p.tracks[k].reqs.splice(i, 1); }).then(render); }
+    if (a === 'addreq') { var k2 = t.getAttribute('data-k'), nm = s((OV.querySelector('[data-cp-newreq="' + k2 + '"]') || {}).value), dd = num((OV.querySelector('[data-cp-newdays="' + k2 + '"]') || {}).value); if (!nm) return toast('Type the certificate name.', true);
+      var words = nm.replace(/[^A-Za-z0-9 ]+/g, ' ').trim().split(/\s+/).filter(function(w){ return w.length > 2; }).slice(0, 3).map(function(w){ return w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); });
+      save(function(p){ p.tracks[k2].reqs.push({ id: uid(), name: nm, m: words.length ? words.join('.*') : nm, days: dd, why: 'GrayCo requirement', legal: false }); }).then(function(){ toast('Added'); render(); }); }
+    if (a === 'saveamts') save(function(p){ p.raises.forEach(function(r, i){ var hr = OV.querySelector('[data-cp-hr="' + i + '"]'), yr = OV.querySelector('[data-cp-yr="' + i + '"]'); if (hr) r.hr = num(hr.value); if (yr) r.yr = num(yr.value); }); p.suggested = false; }).then(function(){ toast('💵 Raise amounts saved'); render(); });
+    if (a === 'savebonus') save(function(p){ var y = UI.year; p.bonus[y] = isObj(p.bonus[y]) ? p.bonus[y] : {}; Array.prototype.forEach.call(OV.querySelectorAll('[data-cp-ba]'), function(inp){ var em = inp.getAttribute('data-cp-ba');
+        p.bonus[y][em] = { amount: num(inp.value), notes: s((OV.querySelector('[data-cp-bn="' + em + '"]') || {}).value).slice(0, 2000), paid: !!(OV.querySelector('[data-cp-bp="' + em + '"]') || {}).checked, by: s(u0.name || u0.email), at: nowISO() }; }); }).then(function(){ toast('🏆 ' + UI.year + ' bonuses saved'); render(); });
+  });
+  OV.addEventListener('change', function(e){
+    var t = e.target; if (!t || !t.getAttribute) return;
+    var em = t.getAttribute('data-cp-track') || t.getAttribute('data-cp-hired');
+    if (em) save(function(p){ var x = isObj(p.people[em]) ? p.people[em] : {}; if (t.hasAttribute('data-cp-track')) x.track = t.value; else x.hired = ymd(t.value); p.people[em] = x; }).then(render);
+    var dk = t.getAttribute('data-cp-days'); if (dk) { var a = dk.split('|'); save(function(p){ var r = p.tracks[a[0]] && p.tracks[a[0]].reqs[+a[1]]; if (r) r.days = Math.max(0, Math.round(num(t.value))); }); }
+    if (t.hasAttribute('data-cp-year')) { UI.year = t.value; render(); }
+  });
+  OV.addEventListener('input', function(e){ if (e.target && e.target.closest && e.target.closest('[data-cp-rate],[data-cp-tot],[data-cp-em]')) calc(); });
+}
+/* the button in 📜 Certifications */
+D.addEventListener('click', function(e){ var b = e.target && e.target.closest ? e.target.closest('[data-gccp-open]') : null; if (!b) return; e.preventDefault(); e.stopPropagation(); open_(); }, true);
+later(function(){ if (isAdmin()) load(); }, 5000);
+W._gcCertPlan = { open: open_, load: load, plan: plan, trackOf: trackOf, reqStatus: reqStatus, raisesDue: raisesDue, masterOf: masterOf, weekPay: weekPay, defaults: defaults, _set: function(p, c){ PLAN = p; CERTS = arr(c); LOADED = true; } };
+try { console.log('[GC] 🎖 Required certs, raises & promotion (patch CERTPLAN): _gcCertPlan'); } catch (e) {}
 })();
 </script>
 <script id="gc-patch-auto-pay">
