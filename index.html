@@ -218980,7 +218980,7 @@ function inject(html, pid){ var p = pid ? job(pid) : null; var i = html.indexOf(
 function wireDocLib(){
   var LIB = W._gcDocLib; if (!LIB || !LIB.builtins || LIB.__sds) return !!(LIB && LIB.__sds);
   var L = LIB.builtins();
-  if (!L.some(function(x){ return x && x.id === DOC_ID; })) L.push({ id: DOC_ID, file: DOC_ID + '.html', name: 'Chemical & Product Use Consent', category: 'Restoration — General', scope: 'project', jobTypes: ['insurance', 'residential', 'commercial'], clientFacing: true, editable: true, builtin: true, kind: 'html', body: BODY });
+  if (!L.some(function(x){ return x && x.id === DOC_ID; })) L.push({ id: DOC_ID, file: DOC_ID + '.html', name: 'Chemical and Product Use Consent', category: 'Restoration — General', scope: 'project', jobTypes: ['insurance', 'residential', 'commercial'], clientFacing: true, editable: true, builtin: true, kind: 'html', body: BODY });
   var one = W._fetchOneTpl;
   W._fetchOneTpl = function(id){ var pr = one ? one.apply(this, arguments) : Promise.resolve(null); if (s(id) !== DOC_ID && s(id) !== DOC_ID + '.html') return pr; var pid = CUR.pid; return Promise.resolve(pr).then(function(t){ if (t && s(t.html)) t = Object.assign({}, t, { html: inject(t.html, pid) }); return t; }); };
   ['open', 'save', 'send', 'render'].forEach(function(k){ var f = LIB[k]; if (typeof f !== 'function') return; LIB[k] = function(id, pid){ CUR.pid = s(pid) || CUR.pid; return f.apply(this, arguments); }; });
@@ -219169,11 +219169,11 @@ function jobModal(pid){
     + '<div style="margin:6px 0">' + G.map(function(g){ return '<span class="tag">' + esc(gLabel(g)) + '</span>'; }).join('') + ' <button type="button" class="chip" data-sds="pickall" aria-pressed="' + PICK.all + '" style="margin-left:6px">' + (PICK.all ? 'Showing every material' : 'Show every material') + '</button></div>'
     + w.map(function(x){ return '<div class="gcsds-w ' + x.k + '">' + esc(x.t) + '</div>'; }).join('')
     + (c.status === 'signed' ? '<div class="gcsds-w ok">✓ Consent signed in the customer portal by ' + esc(c.signedBy) + ' on ' + esc(nice(c.signedAt)) + (c.sens ? ' — sensitivities: “' + esc(c.sens) + '”' : '') + '</div>' : '')
-    + '<div data-pid="' + esc(p.id) + '">' + needHtml(p) + '</div>'
     + '<div class="typ" style="margin-top:8px">Tick what you plan to use on this job. The customer approves each one (or says Do not use) in their portal before anything is used.</div>'
     + '<div id="gc-sds-picklist">' + L.map(function(m){ var j = have[m.id], st = j ? (j.status || 'planned') : '';
       return '<div class="pick" data-sds-pickrow="' + esc(m.id) + '"><input type="checkbox" data-sds-pick="' + esc(m.id) + '"' + (j ? ' checked' : '') + ' aria-label="Use ' + esc(m.name) + '"><div><b>' + esc(m.name) + '</b><div class="m">' + esc(s(m.use).slice(0, 160)) + '</div>'
         + (arr(m.donts)[0] ? '<div class="m" style="color:#991b1b">✕ ' + esc(m.donts[0]) + '</div>' : '') + '</div><div>' + (st ? '<span class="st st-' + esc(st) + '">' + esc(st === 'approved' ? '✓ Approved' : st === 'refused' ? '⛔ Do not use' : 'Not approved yet') + '</span>' : '') + ' <button type="button" class="gcsds-btn" style="padding:3px 8px;min-height:0;font-size:12px" data-sds-mat="' + esc(m.id) + '">SDS</button></div></div>'; }).join('') + '</div>'
+    + '<div data-pid="' + esc(p.id) + '" style="margin-top:8px">' + needHtml(p, true) + '</div>'
     + '<div class="row"><button type="button" class="gcsds-btn" data-sds="close">Close</button><button type="button" class="gcsds-btn" data-sds="preview">📄 Customer consent (preview / print)</button><button type="button" class="gcsds-btn pr" data-sds="savepick">💾 Save materials</button><button type="button" class="gcsds-btn pr" data-sds="send" style="background:#1d4ed8;border-color:#1d4ed8">✍️ Send for customer signature</button></div>'
     + '<div class="m" style="text-align:right;margin-top:6px">Sending puts the consent in the customer\'s GrayCo Portal (✍️ Papers to sign); the e-mail asking them to sign waits in ✅ Approvals.</div>', 'gc-sds-job');
 }
@@ -219227,9 +219227,9 @@ function needList(p){
   var G = forJob(p), spec = G.filter(function(g){ return g !== 'general'; }), use = spec.length ? spec : ['general'], out = [], seen = {};
   var add = function(k, t, kind){ if (seen[k]) return; seen[k] = 1; out.push({ k: k, t: t, kind: kind }); };
   var planned = mats(p);
-  if (planned.length) planned.forEach(function(m){ var x = byId(m.id); if (!x || x.kind !== 'equipment') add('m:' + m.id, m.name + (m.status === 'refused' ? ' — ⛔ customer said DO NOT USE' : ''), 'material'); });
-  else list().filter(function(m){ return m.builtin && m.kind !== 'equipment' && arr(m.groups).some(function(g){ return use.indexOf(g) >= 0; }); }).forEach(function(m){ add('m:' + m.id, m.name, 'material'); });
-  planned.forEach(function(m){ var x = byId(m.id); if (x && x.kind === 'equipment') add('m:' + m.id, m.name, 'equipment'); });
+  if (planned.length) planned.forEach(function(m){ var x = byId(m.id); if (!x || x.kind === 'chemical') add('m:' + m.id, m.name + (m.status === 'refused' ? ' — ⛔ customer said DO NOT USE' : ''), 'material'); });
+  else list().filter(function(m){ return m.builtin && m.kind === 'chemical' && arr(m.groups).some(function(g){ return use.indexOf(g) >= 0; }); }).forEach(function(m){ add('m:' + m.id, m.name, 'material'); });
+  planned.forEach(function(m){ var x = byId(m.id); if (x && x.kind !== 'chemical') add('m:' + m.id, m.name + (m.status === 'refused' ? ' — ⛔ customer said DO NOT USE' : ''), 'equipment'); });
   use.concat(['general']).forEach(function(g){ arr(EQUIP[g]).forEach(function(e){ add('e:' + slug(e), e, 'equipment'); }); });
   return out;
 }
@@ -219256,13 +219256,15 @@ function alertAdd(rec){
 function taskId(p, pm){ return 'T_sds_' + slug(p.id) + '_' + (slug(pm) || 'office'); }
 function openJob(p){ return !/complete|closed|cancel|lost|dead|archiv|void/i.test(s(p.status)) && !p.archived; }
 function signedIn(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.email && W.__GC_AUTH__.email()); } catch (e) { return false; } }
-var NEED_ST = { busy: false, last: 0 };
+var NEED_ST = { busy: false, last: 0, t0: Date.now() };
 function needTick(force){
   if (NEED_ST.busy || !signedIn()) return 0;
   var all = jobs(); if (!all.length || !users().length) return 0;   /* wait for the jobs and the people (the PM's e-mail) */
   if (!force && Date.now() - NEED_ST.last < 8000) return 0; NEED_ST.last = Date.now();
-  var due = all.filter(function(p){ var co = coOf(p); if (co !== 'mitigation' && co !== 'environmental') return false; if (!openJob(p)) return false; var a = p.materialsAlert || {}; return !a.at || low(a.pm) !== low(p.pm); });
-  if (!due.length) { syncTicks(); return 0; }
+  var settled = Date.now() - NEED_ST.t0 > 120000;   /* the people list can arrive after the jobs: a PM not found yet waits up to 2 minutes */
+  var due = all.filter(function(p){ var co = coOf(p); if (co !== 'mitigation' && co !== 'environmental') return false; if (!openJob(p)) return false; var a = p.materialsAlert || {}; if (a.at && low(a.pm) === low(p.pm)) return false;
+    if (s(p.pm) && !(userByName(p.pm) || {}).email && !settled) return false; return true; });
+  if (!due.length) { syncTicks(); refreshItems(); return 0; }
   NEED_ST.busy = true;
   var tl = lsList('gc_office_tasks'), have = {}, at = nowIso(), by = myName(), marks = {}, alerts = [];
   tl.forEach(function(x){ if (x && x.id) have[x.id] = 1; });
@@ -219300,6 +219302,18 @@ function tick(pid, key, on){
   tl.forEach(function(x){ if (x && x.kind === 'sds_needed' && s(x.pid) === s(pid)) arr(x.items).forEach(function(i){ if (i.id === key && !!i.done !== !!on) { i.done = !!on; hit = true; x.updatedAt = at; } }); });
   if (hit) tasksSave(tl);
 }
+/* the To-Do's list follows the job: materials picked (or refused) later are added / marked there, ticks kept */
+function refreshItems(){
+  var tl = lsList('gc_office_tasks'), ch = false;
+  tl.forEach(function(x){
+    if (!x || x.kind !== 'sds_needed' || x.done || !x.pid) return; var p = job(x.pid); if (!p) return;
+    var L = needList(p), ck = p.materialsChecklist || {}, old = {}; arr(x.items).forEach(function(i){ old[i.id] = i; });
+    var next = L.map(function(n){ return { id: n.k, label: (n.kind === 'equipment' ? '🧰 ' : '🧪 ') + n.t, done: !!(ck[n.k] || (old[n.k] && old[n.k].done)) }; });
+    if (JSON.stringify(next) === JSON.stringify(arr(x.items))) return;
+    x.items = next; x.updatedAt = s(p.materialsChecklistAt) > s(x.updatedAt) ? s(p.materialsChecklistAt) : s(x.updatedAt); ch = true;
+  });
+  if (ch) tasksSave(tl);
+}
 function syncTicks(){
   var tl = lsList('gc_office_tasks'); if (!tl.length) return;
   tl.forEach(function(x){
@@ -219310,10 +219324,10 @@ function syncTicks(){
     save(p.id, function(q){ var n = {}; arr(x.items).forEach(function(i){ if (i.done) n[i.id] = (q.materialsChecklist || {})[i.id] || { by: s(x.doneBy) || 'To-Do', at: s(x.updatedAt) }; }); Object.keys(q.materialsChecklist || {}).forEach(function(k){ if (!arr(x.items).some(function(i){ return i.id === k; })) n[k] = q.materialsChecklist[k]; }); q.materialsChecklist = n; q.materialsChecklistAt = s(x.updatedAt); return q; });
   });
 }
-function needHtml(p){
+function needHtml(p, closed){
   var co = coOf(p); if (co !== 'mitigation' && co !== 'environmental') return '';
   var L = needList(p), ck = p.materialsChecklist || {}, d = L.filter(function(x){ return ck[x.k]; }).length, a = p.materialsAlert || {};
-  return '<details class="gcsds-need"' + (d < L.length ? ' open' : '') + ' style="margin-top:6px"><summary style="cursor:pointer;font-weight:700">🧰 Materials &amp; equipment needed · ' + d + '/' + L.length + '</summary>'
+  return '<details class="gcsds-need"' + (d < L.length && !closed ? ' open' : '') + ' style="margin-top:6px"><summary style="cursor:pointer;font-weight:700">🧰 Materials &amp; equipment needed · ' + d + '/' + L.length + '</summary>'
     + '<div style="color:#64748b;font-size:12px;margin:2px 0 4px">' + (a.at ? 'Sent to ' + esc(a.pm || 'the office (no PM yet)') + '\'s To-Do ' + esc(nice(a.at)) : 'Goes to the PM\'s To-Do') + '</div>'
     + L.map(function(x){ return '<label style="display:flex;gap:6px;align-items:flex-start;margin:3px 0;font-size:13px"><input type="checkbox" data-sds-need="' + esc(x.k) + '"' + (ck[x.k] ? ' checked' : '') + ' style="width:18px;height:18px;margin-top:1px"><span' + (ck[x.k] ? ' style="text-decoration:line-through;color:#64748b"' : '') + '>' + (x.kind === 'equipment' ? '🧰 ' : '🧪 ') + esc(x.t) + '</span></label>'; }).join('') + '</details>';
 }
@@ -219348,7 +219362,9 @@ D.addEventListener('click', function(e){
 }, true);
 D.addEventListener('input', function(e){ var t = e.target; if (!t || t.id !== 'gc-sds-q') return; if (t.value === UI.q) return; UI.q = t.value; var tk = UI.qn = (UI.qn || 0) + 1; ST.call(W, function(){ if (tk === UI.qn) draw(); }, 150);   /* other patches re-send input events; only a real change redraws */ }, true);
 D.addEventListener('change', function(e){ var t = e.target; if (!t || t.id !== 'gc-sds-jobpick' || !t.value) return; PICK.all = false; jobModal(t.value); }, true);
-SI.call(W, function(){ try { if (!D.hidden) { wireDocLib(); apply(); needTick(); drawJob(); if (UI.el && UI.el.isConnected && !UI.el.contains(D.activeElement) && !D.getElementById('gc-sds-ov')) { var sig = coPick() + JSON.stringify(jobs().map(function(p){ return [p.id, p.materials, p.materialsConsent]; })); if (sig !== UI.sig) { UI.sig = sig; draw(); } } } } catch (e) {} }, 1500);
+/* a self-rescheduling loop (a plain interval was seen to stop after the first idle minute in the test harness) */
+function loop(){ try { if (!D.hidden) { wireDocLib(); apply(); needTick(); drawJob(); if (UI.el && UI.el.isConnected && !UI.el.contains(D.activeElement) && !D.getElementById('gc-sds-ov')) { var sig = coPick() + JSON.stringify(jobs().map(function(p){ return [p.id, p.materials, p.materialsConsent]; })); if (sig !== UI.sig) { UI.sig = sig; draw(); } } } } catch (e) {} ST.call(W, loop, 1500); }
+ST.call(W, loop, 1500);
 ST.call(W, pull, 4000);
 W._gcSds = { mount: mount, draw: draw, list: list, byId: byId, forJob: forJob, setJob: setJob, setStatus: setStatus, send: send, apply: apply, warnings: warnings, consentTable: consentTable, preview: preview, open: jobModal, detail: detail, canSee: canSee, canEdit: canEdit, GROUPS: GROUPS, BUILTIN: BUILTIN, DOC_ID: DOC_ID, reqRef: reqRef, choicesOf: choicesOf, pull: pull, saveMat: saveMat, needList: needList, needTick: needTick, tick: tick, EQUIP: EQUIP };
 })(window);

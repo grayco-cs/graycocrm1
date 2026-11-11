@@ -131,7 +131,7 @@ ok('the customer copy never names the insurance company and shows no price', !/S
 if (SHOT) await A.page().screenshot({ path: SHOT + '/sds_consent_paper.png' });
 await A.ev(() => { const c = document.querySelector('#gc-viewer [data-gv="close"]') || [...document.querySelectorAll('#gc-viewer button')].find(b => /close|✕|×/i.test(b.innerText || b.getAttribute('aria-label') || '')); if (c) c.click(); else { const v = document.getElementById('gc-viewer'); v && v.remove(); } }); await sleep(400);
 const lib = await A.ev(() => { const b = window._gcDocLib.builtins().find(x => x.id === 'gcb_materials_consent'); return b && { cf: b.clientFacing, name: b.name }; });
-ok('the paper is in 📚 the document library (client-facing) as "Chemical & Product Use Consent"', lib && lib.cf === true && lib.name === 'Chemical & Product Use Consent', lib);
+ok('the paper is in 📚 the document library (client-facing) as "Chemical and Product Use Consent"', lib && lib.cf === true && lib.name === 'Chemical and Product Use Consent', lib);
 
 /* 6. ✍️ send for signature → portal-sign (kind doc, one choice per product) */
 await A.ev(() => { const f0 = window.fetch; window.__sdsCalls = []; window.fetch = function(u, o){ if (String(u).indexOf('/.netlify/functions/portal-sign') >= 0) { window.__sdsCalls.push(JSON.parse((o && o.body) || '{}')); return Promise.resolve(new Response(JSON.stringify({ ok: true, id: 'sr_M1_doc_sds_M1', queued: true }), { status: 200, headers: { 'Content-Type': 'application/json' } })); } return f0.apply(this, arguments); }; });
@@ -156,17 +156,22 @@ const nw = await A.ev(() => window._gcSds.warnings(window._crm.projects.find(x =
 ok('a product added after the signature → "Not in the signed consent … send the consent again"', nw.some(x => /Not in the signed consent/.test(x)), nw);
 await A.ev(() => { const o = document.getElementById('gc-sds-ov'); o && o.remove(); });
 
-/* 8. the job page */
-await A.ev(() => window._setView('projects')); await sleep(1500);
-await A.ev(() => { if (window._openJobDetail) window._openJobDetail(window._crm.projects.find(p => p.id === 'M1')); }); await sleep(4000);
-const jc = await A.ev(() => (document.getElementById('gc-sds-jc') || {}).innerText || '');
-ok('job page: 🧪 Materials & safety card with the warnings and the 🧪 Materials button', /Materials & safety/.test(jc) && /Refused: Ozone generator/.test(jc) && /🧪 Materials/.test(jc), jc.slice(0, 300));
-const nd = await A.ev(() => { const c = document.getElementById('gc-sds-jc'); return c ? { t: c.innerText, n: c.querySelectorAll('[data-sds-need]').length } : null; });
-ok('job page: 🧰 Materials & equipment needed list with tick-boxes', nd && /Materials & equipment needed/.test(nd.t) && nd.n >= 6, nd && nd.t.slice(0, 200));
-await A.ev(() => { const i = document.querySelector('#gc-sds-jc [data-sds-need^="e:dehumidifiers"]'); i.checked = true; i.dispatchEvent(new Event('change', { bubbles: true })); }); await sleep(2500);
+/* 8. the job's 🧪 Materials window (the same card is drawn on the job page, under Job tools — the offline harness cannot open a
+   made-up job's page, so the window is checked here): the 🧰 needed list with tick-boxes */
+await A.ev(() => window._setView('sds')); await sleep(1500);
+await A.ev(() => window._gcSds.open('M1')); await sleep(800);
+await A.ev(() => { document.querySelector('#gc-sds-job .gcsds-need').open = true; });
+const nd = await A.ev(() => { const c = document.querySelector('#gc-sds-job .gcsds-need'); return c ? { t: c.innerText, n: c.querySelectorAll('[data-sds-need]').length } : null; });
+ok('🧪 Materials (job): 🧰 Materials & equipment needed list with tick-boxes (planned materials + the job\'s equipment), "sent to Sam Biffle\'s To-Do"', nd && /Materials & equipment needed/.test(nd.t) && /Sam Biffle/.test(nd.t) && /Ozone generator/.test(nd.t) && /DO NOT USE/.test(nd.t) && /Dehumidifiers \(LGR\)/.test(nd.t) && nd.n >= 8, nd && nd.t.slice(0, 300));
+await A.ev(() => { const i = document.querySelector('#gc-sds-job [data-sds-need^="e:dehumidifiers"]'); i.checked = true; i.dispatchEvent(new Event('change', { bubbles: true })); }); await sleep(2500);
 const tk = await A.ev(() => { const p = window._crm.projects.find(x => x.id === 'M1'); const t = JSON.parse(localStorage.getItem('gc_office_tasks') || '[]').find(x => x.kind === 'sds_needed' && x.pid === 'M1'); return { job: Object.keys(p.materialsChecklist || {}), item: (t.items.find(i => /^e:dehumid/.test(i.id)) || {}).done }; });
 ok('ticking an item: saved on the job (job.materialsChecklist) and on the PM\'s To-Do item', tk.job.some(k => /^e:dehumidifiers/.test(k)) && tk.item === true, tk);
-if (SHOT) { await A.ev(() => { const c = document.getElementById('gc-sds-jc'); c && c.scrollIntoView({ block: 'start' }); }); await sleep(500); await A.page().screenshot({ path: SHOT + '/sds_pm_alert_job.png' }); }
+await A.ev(() => { const l = JSON.parse(localStorage.getItem('gc_office_tasks') || '[]'); const t = l.find(x => x.kind === 'sds_needed' && x.pid === 'M1'); const it = t.items.find(i => /^e:air_movers/.test(i.id)); it.done = true; t.updatedAt = new Date().toISOString(); localStorage.setItem('gc_office_tasks', JSON.stringify(l)); }); await sleep(4000);
+const tk2 = await A.ev(() => Object.keys(window._crm.projects.find(x => x.id === 'M1').materialsChecklist || {}));
+ok('… and a tick on the PM\'s To-Do comes back to the job', tk2.some(k => /^e:air_movers/.test(k)) && tk2.some(k => /^e:dehumidifiers/.test(k)), tk2);
+await A.ev(() => window._gcSds.open('M1')); await sleep(800);
+if (SHOT) { await A.ev(() => { const c = document.querySelector('#gc-sds-job .gcsds-need'); if (c) c.open = true; c && c.scrollIntoView({ block: 'start' }); }); await sleep(400); await A.page().screenshot({ path: SHOT + '/sds_pm_alert_job.png' }); }
+await A.ev(() => { const o = document.getElementById('gc-sds-ov'); o && o.remove(); });
 await A.ev(() => window._setProjects(prev => prev.map(p => p.id === 'M2' ? Object.assign({}, p, { pm: 'Sam Biffle', updatedAt: new Date().toISOString() }) : p))); await sleep(11000);
 TK = await tasksOf();
 ok('a PM is put on the no-PM job → a new To-Do for that PM (once)', TK.filter(x => x.pid === 'M2' && x.assignee === 'Sam Biffle').length === 1 && TK.length === 4, TK.map(x => x.pid + ':' + x.assignee));
@@ -178,8 +183,12 @@ const B = await computer('sbiffle@grayco-cs.com', { build: process.argv[2] });
 if (SHOT) await B.page().setViewportSize({ width: 1440, height: 900 });
 await signIn(B, 'sbiffle@grayco-cs.com', 15000); await sleep(9000);
 await B.ev(() => window._setView('todo')); await sleep(4000);
-const pmv = await B.ev(() => (document.querySelector('#root main') || document.body).innerText);
-ok('the PM\'s To-Do shows "🧰 Materials & equipment needed — Demo Ross basement" with its items', /Materials & equipment needed — Demo Ross basement/.test(pmv) && /Dehumidifiers \(LGR\)/.test(pmv), pmv.slice(0, 400));
+let pmv = await B.ev(() => (document.querySelector('#root main') || document.body).innerText);
+ok('the PM\'s To-Do (📌 Yours) shows "🧰 Materials & equipment needed — Demo Ross basement" with the ticks done so far (2/N)', /Materials & equipment needed — Demo Ross basement\s*2\/\d+/.test(pmv), pmv.slice(pmv.indexOf('📌'), pmv.indexOf('📌') + 300));
+await B.ev(() => { const lab = [...document.querySelectorAll('#root main *')].filter(e => /Materials & equipment needed — Demo Ross basement/.test(e.textContent || '') && /▾/.test(e.textContent || '')).sort((a, b) => a.textContent.length - b.textContent.length)[0];
+  const car = lab && [...lab.querySelectorAll('*')].reverse().find(e => /^\s*(\d+\/\d+\s*)?▾\s*$/.test(e.textContent || '')); (car || lab).click(); }); await sleep(1200);
+pmv = await B.ev(() => (document.querySelector('#root main') || document.body).innerText);
+ok('… opened: its checklist (LGR dehumidifiers, air movers, the job\'s products)', /Dehumidifiers \(LGR\)/.test(pmv) && /Air movers/.test(pmv) && /Quaternary ammonium/.test(pmv), pmv.slice(pmv.indexOf('📌'), pmv.indexOf('📌') + 600));
 if (SHOT) { await B.ev(() => { const x = [...document.querySelectorAll('#root main *')].find(e => e.children.length === 0 && /Materials & equipment needed — Demo Ross basement/.test(e.textContent || '')); x && x.scrollIntoView({ block: 'center' }); }); await sleep(600); await B.page().screenshot({ path: SHOT + '/sds_pm_alert.png' }); }
 ok('no page errors', !errs.length, errs);
 const f = R.filter(x => !x).length; console.log(f ? 'FAILED ' + (R.length - f) + '/' + R.length : 'SDS ' + R.length + '/' + R.length); process.exit(f ? 1 : 0);
