@@ -58,11 +58,18 @@ const A = BA.make({ env: k => ENV[k] != null ? ENV[k] : '', s: v => v == null ? 
   assert.ok(ra && ra.appt === 'added' && appts[1].leadId === 'l1' && appts[1].customer === 'Pat' && appts[1].phone === '9015550111' && appts[1].date === '2026-11-12', JSON.stringify(appts[1]));
   ra = await SA.staffInbound('9015550002', 'appt John Smith', 'SMa3');
   assert.ok(ra && ra.appt === 'no day' && appts.length === 2 && /what day and time/.test(texts.slice(-1)[0].body));
-  /* LSA247: after hours the office is closed → an LSA call texts Wesley and Nick right away (no office check) */
+  /* OVERNIGHT (owner 11/10): after hours an LSA call is NOT texted — it waits; at opening time (flushHeld, every 10 minutes) it goes, with its code */
   texts.length = 0; vets.length = 0; const hrs0 = SA._D.hours, now0 = SA._D.now;
-  SA._D.hours = async () => null; SA._D.now = () => Date.parse('2026-11-15T03:00:00Z');   /* Saturday 9 PM Central */
+  SA._D.hours = async () => null; SA._D.now = () => Date.parse('2026-11-14T03:00:00Z');   /* Friday 9 PM Central */
   await A.notifyNew([{ id: 'l4', title: 'Google LSA caller (9:02 PM)', source: 'Google LSA', leadExtra: { leadSource: 'Google LSA', lsaCheck: 'pending', lsaCall: true }, contact: { name: 'Google LSA caller (9:02 PM)' } }]);
+  assert.ok(!vets.some(v => v.leadId === 'l4') && !texts.length, 'after hours: no text, no office check: ' + JSON.stringify(texts));
+  let fh = await SA.flushHeld(); assert.strictEqual(fh.sent, 0, 'still night: nothing sent');
+  SA._D.now = () => Date.parse('2026-11-16T13:05:00Z');   /* Monday 7:05 AM Central */
+  fh = await SA.flushHeld();
+  assert.ok(fh.sent === 2 && ['9015550001', '9015550002'].every(n => texts.some(x => x.to === n && /Google LSA call to the office/.test(x.body) && x.body.indexOf(SA._lsaCode('l4')) > 0)), '7 AM: the overnight lead goes to both: ' + JSON.stringify([fh, texts]));
+  const r4 = await SA.staffInbound('9015550001', 'good Pat', 'SMx4');
+  assert.ok(r4 && r4.lsa === 'l4' && r4.good === true, 'GOOD works on the morning text: ' + JSON.stringify(r4));
+  fh = await SA.flushHeld(); assert.strictEqual(fh.sent, 0, 'sent once');
   SA._D.hours = hrs0; SA._D.now = now0;
-  assert.ok(!vets.some(v => v.leadId === 'l4') && ['9015550001', '9015550002'].every(n => texts.some(x => x.to === n && /Google LSA call to the office/.test(x.body))), 'after hours: texted 24/7, no office check: ' + JSON.stringify(texts));
   console.log('TEXTFIRST: all passed');
 })().catch(e => { console.error('FAIL', e && e.stack || e); process.exit(1); });

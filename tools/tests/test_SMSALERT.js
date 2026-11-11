@@ -66,7 +66,7 @@ const to = r => r.sent.map(x => x.to).sort();
   assert.ok(r.sent.every(x => /^🚨 GrayCo EMERGENCY: Bo \(901\) 555-0102 — "water everywhere"/.test(x.body)));
   r = rig({ now: NIGHT });
   const q = await SA.leads([{ id: 'N1', key: 'N1', title: 'Roof quote', contact: { name: 'Cy', phone: '9015550103' } }], { N1: { id: 'N1' } }, () => false);
-  assert.strictEqual(r.sent.length, 0); assert.ok(q[0].skipped.quiet.length === 2);
+  assert.strictEqual(r.sent.length, 0); assert.ok(q[0].skipped.held.length === 2, JSON.stringify(q[0].skipped));   /* OVERNIGHT: held for the morning, not dropped */
   /* mitigation manager not hired → skipped */
   r = rig({ users: USERS.filter(u => u.email !== 'mo@grayco-cs.com') });
   await SA.leads([{ id: 'E2', key: 'E2', title: 'Fire', contact: { name: 'Di', phone: '9015550104' } }], { E2: { id: 'E2' } }, () => true);
@@ -210,7 +210,7 @@ const to = r => r.sent.map(x => x.to).sort();
     const WED7PM = Date.parse('2026-10-29T00:00:00Z'), SAT10AM = Date.parse('2026-10-31T15:00:00Z'), WED10AM = DAY;
     const lead = async (id, em) => SA.leads([{ id, key: id, title: 'x', contact: { name: 'Q ' + id, phone: '9015550800' } }], { [id]: { id } }, () => !!em);
     r = rig({ now: WED7PM }); let qq = await lead('QH1', false);
-    assert.strictEqual(r.sent.length, 0, 'Wed 7 PM new lead → no SMS'); assert.strictEqual(qq[0].skipped.quiet.length, 2); assert.ok(!r.kv[SA.SKEY] || !Object.keys(r.kv[SA.SKEY].held || {}).length, 'not held for later');
+    assert.strictEqual(r.sent.length, 0, 'Wed 7 PM new lead → no SMS'); assert.strictEqual(qq[0].skipped.held.length, 2); assert.ok(r.kv[SA.SKEY] && Object.keys(r.kv[SA.SKEY].held || {}).length === 2, 'OVERNIGHT (owner 11/10): held for the morning');
     r = rig({ now: WED7PM }); await lead('QH2', true);
     assert.deepStrictEqual(to(r), ['9015550001', '9015550002', '9015550004'], 'Wed 7 PM emergency → SMS');
     r = rig({ now: SAT10AM }); await lead('QH3', false); assert.strictEqual(r.sent.length, 0, 'Sat 10 AM normal lead → no SMS');

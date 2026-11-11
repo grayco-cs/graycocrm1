@@ -525,6 +525,7 @@ function make(d){
     }
     try { out.nag = await nag(src, t); } catch (e) { out.nag = { error: s(e && e.message) }; }
     try { out.assigned = await sweepAssigned(src, t); } catch (e) { out.assigned = { error: s(e && e.message) }; }
+    try { out.overnight = await require('./smsalert.js').flushHeld(); } catch (e) { out.overnight = { error: s(e && e.message) }; }   /* OVERNIGHT: overnight lead texts go out when the office opens (this run is every 10 minutes) */
     try { out.speed = await speedToLead(src, t); } catch (e) { out.speed = { error: s(e && e.message) }; }
     try { out.results = await resultsAsk(src, t); } catch (e) { out.results = { error: s(e && e.message) }; }
     return out;

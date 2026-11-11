@@ -345,8 +345,11 @@ async function notify(o){
     want.forEach(e => {
       const p = Object.assign({}, R[e].p, { phone: R[e].phone, name: R[e].p.name || e });
       if (opt[p.phone]) { skip.optout.push(e); return; }
-      if (!o.emergency && !(o.lsa && o.lsa.isLsa !== false) && quietNow(p, t, hours)) {   /* LEADTEXT: an LSA lead any time; other leads keep the business-hours rule (owner 10/28) */   /* LSATEXT: an LSA lead texts any time */
-        if (o.hold) { const l = Array.isArray(st.held[e]) ? st.held[e] : []; if (l.length < 5 && !l.some(x => x.text === o.text)) l.push({ at, text: clip(o.text, 200), link: s(o.link) }); st.held[e] = l; skip.held.push(e); }
+      /* OVERNIGHT (owner 11/10: "I don't want texts after hours unless emergency … we get the 7 AM texts the next morning for overnight leads"):
+         every lead text (LSA too) waits outside business hours / quiet hours and goes out when the office opens; emergencies go now */
+      if (!o.emergency && quietNow(p, t, hours)) {
+        if (o.hold || o.type === 'lead') { const l = Array.isArray(st.held[e]) ? st.held[e] : []; const body0 = typeof o.body === 'function' ? o.body(0, { newbie: true }) : o.text;
+          if (l.length < 25 && !l.some(x => x.text === o.text)) l.push({ at, text: clip(o.text, 200), body: clip(body0, 600), link: s(o.link), kind: s(o.type), lsa: o.lsa || null, from: (o.type === 'lead' || o.lsa) ? 'lead' : 'alert' }); st.held[e] = l; skip.held.push(e); }
         else skip.quiet.push(e);
         return;
       }
@@ -384,15 +387,23 @@ async function flushHeld(){
   let pp = {}; try { pp = await _D.people(); } catch (e) {}
   const R = {}; resolve(set, pp).forEach(r => { R[r.email] = Object.assign({}, r.p, { phone: r.phone }); });
   let held = {};
-  await _D.kvCas(SKEY, v => { const st = loadState(v); held = {}; Object.keys(st.held).forEach(e => { const p = R[e]; if (p && !inQuiet(p, t)) { held[e] = st.held[e]; delete st.held[e]; } }); return Object.keys(held).length ? st : undefined; });
+  let hours = null; try { hours = await _D.hours(); } catch (e) { hours = null; }
+  /* OVERNIGHT: held lead texts go when the office opens (business hours) and the person's own quiet window is over */
+  await _D.kvCas(SKEY, v => { const st = loadState(v); held = {}; Object.keys(st.held).forEach(e => { const p = R[e]; if (p && !quietNow(p, t, hours)) { held[e] = st.held[e]; delete st.held[e]; } }); return Object.keys(held).length ? st : undefined; });
   const out = { sent: 0 };
   if (!Object.keys(held).length) return out;
   if (!(await require('./automations.js').isOn('staff_text_alerts'))) return Object.assign(out, { held: 'staff_text_alerts' });   /* patch AUTOPANEL (staff texts go in data-entry mode) */
   const opt = await _D.optouts();
   for (const e of Object.keys(held)) {
-    const p = R[e]; if (opt[p.phone] || !p.system) continue;
-    const l = arr(held[e]), text = l.length === 1 ? l[0].text : l.length + ' overnight alerts: ' + l.map(x => x.text).join(' · ');
-    try { const r = await sendL(p.phone, compose(0, text, l[0] && l[0].link), fromNum()); if (r && r.ok) out.sent++; } catch (e2) {}
+    const p = R[e]; if (opt[p.phone]) continue;
+    const all = arr(held[e]), leadsH = all.filter(x => x.from === 'lead'), sys = all.filter(x => x.from !== 'lead');
+    /* OVERNIGHT: each overnight lead as its own text (the same text it would have been, with its reply code), oldest first */
+    for (const x of leadsH) {
+      let r = null; try { r = await sendL(p.phone, s(x.body || x.text).slice(0, 600), leadNum(), undefined, { who: p.name, leadId: s(x.lsa && x.lsa.leadId), code: s(x.lsa && x.lsa.code), type: 'lead', overnight: true }); } catch (e2) {}
+      if (r && r.ok) { out.sent++; if (x.lsa) { const ph = p.phone; await _D.kvCas(SKEY, v => { const st = loadState(v); const l = arr(st.lsa[ph]).filter(y => y.leadId !== x.lsa.leadId); l.push(Object.assign({}, x.lsa, { at: new Date(now()).toISOString() })); st.lsa[ph] = l.slice(-12); return st; }).catch(() => {}); } }
+    }
+    if (sys.length && p.system) { const text = sys.length === 1 ? sys[0].text : sys.length + ' overnight alerts: ' + sys.map(x => x.text).join(' · ');
+      try { const r = await sendL(p.phone, compose(0, text, sys[0] && sys[0].link), fromNum()); if (r && r.ok) out.sent++; } catch (e2) {} }
   }
   return out;
 }

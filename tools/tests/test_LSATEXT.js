@@ -7,7 +7,7 @@ const SA = require(path.join(__dirname, '../../netlify/functions/_lib/smsalert.j
 const USERS = [{ name: 'Nick Thomas', email: 'nthomas@grayco-cs.com', role: 'admin', phone: '901-555-0001', active: true },
   { name: 'Wesley Johnson', email: 'wjohnson@grayco-cs.com', role: 'admin', cell: '(901) 555-0002', active: true },
   { name: 'Pat PM', email: 'pat@grayco-cs.com', role: 'PM', cell: '9015550003', active: true }];
-const NIGHT = Date.parse('2026-10-29T08:00:00Z');   /* 3 AM Central: an LSA text still goes */
+const NIGHT = Date.parse('2026-10-29T15:00:00Z');   /* OVERNIGHT (owner 11/10): lead texts wait for business hours — these run at 10 AM Central (a Thursday) */
 const kv = {}, sent = [], decided = [];
 let t = NIGHT;
 Object.assign(SA._D, { now: () => t, kvGet: async k => kv[k], kvCas: async (k, f) => { const nv = f(kv[k] == null ? null : JSON.parse(JSON.stringify(kv[k]))); if (nv !== undefined) kv[k] = nv; return { ok: true, value: kv[k] }; },
@@ -17,7 +17,7 @@ Object.assign(SA._D, { now: () => t, kvGet: async k => kv[k], kvCas: async (k, f
   const lead = { id: 'LSA1', key: 'LSA1', title: 'Roof replacement', source: 'Google LSA', contact: { name: 'Pat Smith', phone: '(901) 555-0111' } };
   await SA.leads([lead], { LSA1: { id: 'LSA1', source: 'Google LSA', leadExtra: { leadSource: 'Google LSA', lsaCheck: 'pending', said: { message: 'Need a new roof' } } } }, () => false);
   const code = SA._lsaCode('LSA1');
-  assert.deepStrictEqual(sent.map(x => x.to).filter(x => x !== '9015550111').sort(), ['9015550001', '9015550002'], 'Nick and Wesley get it (even at 3 AM), not the PM');
+  assert.deepStrictEqual(sent.map(x => x.to).filter(x => x !== '9015550111').sort(), ['9015550001', '9015550002'], 'Nick and Wesley get it, not the PM');
   assert.ok(sent.some(x => x.to === '9015550111' && /Reply YES/.test(x.body)), 'the customer gets the qualify text (LSAFLOW; held to 7 AM by custquiet in production)');
   sent.splice(0, sent.length, ...sent.filter(x => x.to !== '9015550111'));
   assert.ok(new RegExp('^GrayCo: Google LSA lead ' + code + ' from \\(901\\) 555-0111 Pat Smith says "Need a new roof"\\. crm\\.test/#leads&lead=LSA1 Reply GOOD \\+ PM name \\(e\\.g\\. GOOD Pat\\), SEND \\+ PM name \\(the PM calls first\\), BAD \\+ why, or NA if no answer\\.').test(sent.find(x => x.to === '9015550001').body) && sent[0].body.length <= 320, sent.find(x => x.to === '9015550001').body);
@@ -198,6 +198,6 @@ Object.assign(SA._D, { now: () => t, kvGet: async k => kv[k], kvCas: async (k, f
   /* LSACALL: an LSA phone call to the office */
   sent.length = 0;
   await SA.leads([{ id: 'C1', key: 'C1', title: 'Phone call — (901) 555-0288', source: 'CallRail — Google Local Services', contact: { name: 'Caller', phone: '9015550288' } }], { C1: { id: 'C1', leadExtra: { leadSource: 'Google LSA', lsaCheck: 'pending', lsaCall: true } } }, () => false);
-  assert.ok(sent.some(x => x.to === '9015550002' && /^GrayCo: Google LSA call to the office [A-Z0-9]{4} from \(901\) 555-0288 Caller\. Missed it\? Call them back from your cell\./.test(x.body)), 'LSA247: at 3 AM the office is closed → texted right away: ' + JSON.stringify(sent));
+  assert.ok(sent.some(x => x.to === '9015550002' && /^GrayCo: Google LSA call to the office [A-Z0-9]{4} from \(901\) 555-0288 Caller\. Missed it\? Call them back from your cell\./.test(x.body)), 'an LSA call (office check only while open) → texted: ' + JSON.stringify(sent));
   console.log('LSATEXT tests: all passed');
 })().catch(e => { console.error(e); process.exit(1); });
