@@ -219169,6 +219169,7 @@ function jobModal(pid){
     + '<div style="margin:6px 0">' + G.map(function(g){ return '<span class="tag">' + esc(gLabel(g)) + '</span>'; }).join('') + ' <button type="button" class="chip" data-sds="pickall" aria-pressed="' + PICK.all + '" style="margin-left:6px">' + (PICK.all ? 'Showing every material' : 'Show every material') + '</button></div>'
     + w.map(function(x){ return '<div class="gcsds-w ' + x.k + '">' + esc(x.t) + '</div>'; }).join('')
     + (c.status === 'signed' ? '<div class="gcsds-w ok">✓ Consent signed in the customer portal by ' + esc(c.signedBy) + ' on ' + esc(nice(c.signedAt)) + (c.sens ? ' — sensitivities: “' + esc(c.sens) + '”' : '') + '</div>' : '')
+    + '<div data-pid="' + esc(p.id) + '">' + needHtml(p) + '</div>'
     + '<div class="typ" style="margin-top:8px">Tick what you plan to use on this job. The customer approves each one (or says Do not use) in their portal before anything is used.</div>'
     + '<div id="gc-sds-picklist">' + L.map(function(m){ var j = have[m.id], st = j ? (j.status || 'planned') : '';
       return '<div class="pick" data-sds-pickrow="' + esc(m.id) + '"><input type="checkbox" data-sds-pick="' + esc(m.id) + '"' + (j ? ' checked' : '') + ' aria-label="Use ' + esc(m.name) + '"><div><b>' + esc(m.name) + '</b><div class="m">' + esc(s(m.use).slice(0, 160)) + '</div>'
@@ -219192,17 +219193,131 @@ function drawJob(){
     var back = findBack(); if (!back || typeof W._gcJobBox !== 'function') return;
     var box = W._gcJobBox(back); if (!box) return; css();
     var l = mats(p), w = warnings(p), c = p.materialsConsent || {};
-    var sig = JSON.stringify([p.id, l, c]);
+    var sig = JSON.stringify([p.id, l, c, p.materialsChecklist || {}, p.materialsAlert || {}, p.pm || '']);
     if (cur && cur.parentElement === box && cur.getAttribute('data-sig') === sig) return;
     if (!cur) { cur = D.createElement('div'); cur.id = 'gc-sds-jc'; cur.className = 'gc-sds-jc'; cur.setAttribute('data-gc-keep', '1'); }
     cur.setAttribute('data-pid', p.id); cur.setAttribute('data-sig', sig);
     cur.innerHTML = '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap"><b>🧪 Materials &amp; safety</b><button type="button" class="gcsds-btn" data-sds-job="' + esc(p.id) + '">🧪 Materials</button></div>'
       + (l.length ? '<div class="m" style="color:#64748b;font-size:12.5px;margin-top:3px">' + l.map(function(m){ return esc(m.name) + ' — ' + (m.status === 'approved' ? '✓ approved' : m.status === 'refused' ? '⛔ do not use' : 'not approved yet'); }).join(' · ') + '</div>' : '<div style="color:#64748b;font-size:12.5px;margin-top:3px">No materials picked yet — pick what you plan to use and get the customer\'s OK in their portal before using any chemical.</div>')
       + w.map(function(x){ return '<div class="gcsds-w ' + x.k + '">' + esc(x.t) + '</div>'; }).join('')
-      + (c.status === 'signed' && !w.length ? '<div class="gcsds-w ok">✓ Customer signed the materials consent ' + esc(nice(c.signedAt)) + '</div>' : '');
+      + (c.status === 'signed' && !w.length ? '<div class="gcsds-w ok">✓ Customer signed the materials consent ' + esc(nice(c.signedAt)) + '</div>' : '')
+      + needHtml(p);
     if (cur.parentElement !== box) box.insertBefore(cur, box.firstChild);
   } catch (e) {}
 }
+
+/* ── 🧰 MATERIALS & EQUIPMENT NEEDED — owner 11/11: "make sure on mit and envi jobs we have a materials and equipment needed alert for
+   every job to the pm of the job". Every open job filed under GrayCo Mitigation or GrayCo Environmental (its companyId — never guessed
+   from the type): the job's PM gets ONE To-Do (gc_office_tasks, assignees = the PM's e-mail, a tick-box per item) and an Alert
+   (gc_pm_broadcasts, target = the PM) — "🧰 Materials & equipment needed — <job>". The list: the job's planned materials (else the
+   typical ones for its work) + the equipment for its work. No PM yet → the office's To-Do ("no PM yet"); a new PM → a new alert.
+   Ticks are kept on the job (job.materialsChecklist) and on the To-Do's items, both ways. ── */
+var EQUIP = {
+  water: ['Dehumidifiers (LGR)', 'Air movers', 'Air scrubber / HEPA', 'Moisture meter & thermal camera', 'Extraction unit', 'Containment poly & zipper doors', 'PPE — gloves, N95, boots'],
+  sewage: ['PPE — gloves, boots, Tyvek suits, face shield, respirator', 'EPA-registered disinfectant', 'Extraction unit', 'Biohazard waste bags'],
+  mold: ['Containment poly & zipper doors', 'Negative air machine (HEPA)', 'HEPA vacuum', 'PPE — N95 / P100 respirator, Tyvek suits, gloves, goggles', 'Moisture meter'],
+  fire: ['Air scrubbers (HEPA)', 'Hydroxyl generator — or ozone generator only in an EMPTY building (no people, pets or plants)', 'Dry chemical soot sponges', 'HEPA vacuum', 'PPE — N95 / P100, gloves, goggles'],
+  lead: ['HEPA vacuum', '6-mil poly sheeting & tape', 'Wet-cleaning supplies — phosphate-free detergent, two buckets, wipes, cleaning verification cards', 'PPE — P100 respirator, disposable coveralls, gloves', 'Lead warning signs'],
+  asbestos: ['Negative air machine / HEPA', 'Amended water sprayer', 'Disposal bags & asbestos labels', 'PPE — P100 respirator, Tyvek suits, gloves', 'Decon unit / area'],
+  general: ['PPE kit — gloves, eye protection, N95']
+};
+function slug(v){ return low(v).replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 40); }
+function coOf(p){ try { return W._gcCo ? W._gcCo.ofJob(p) : 'construction'; } catch (e) { return 'construction'; } }
+function needList(p){
+  var G = forJob(p), spec = G.filter(function(g){ return g !== 'general'; }), use = spec.length ? spec : ['general'], out = [], seen = {};
+  var add = function(k, t, kind){ if (seen[k]) return; seen[k] = 1; out.push({ k: k, t: t, kind: kind }); };
+  var planned = mats(p);
+  if (planned.length) planned.forEach(function(m){ var x = byId(m.id); if (!x || x.kind !== 'equipment') add('m:' + m.id, m.name + (m.status === 'refused' ? ' — ⛔ customer said DO NOT USE' : ''), 'material'); });
+  else list().filter(function(m){ return m.builtin && m.kind !== 'equipment' && arr(m.groups).some(function(g){ return use.indexOf(g) >= 0; }); }).forEach(function(m){ add('m:' + m.id, m.name, 'material'); });
+  planned.forEach(function(m){ var x = byId(m.id); if (x && x.kind === 'equipment') add('m:' + m.id, m.name, 'equipment'); });
+  use.concat(['general']).forEach(function(g){ arr(EQUIP[g]).forEach(function(e){ add('e:' + slug(e), e, 'equipment'); }); });
+  return out;
+}
+function users(){ return arr(W._crm && W._crm.users).filter(function(u){ return u && u.active !== false; }); }
+function userByName(n){ n = low(n); if (!n) return null; return users().filter(function(u){ return low(u.name) === n || low(u.email) === n; })[0] || null; }
+function lsList(k){ try { var v = JSON.parse(localStorage.getItem(k) || '[]'); if (typeof v === 'string') v = JSON.parse(v); return arr(v); } catch (e) { return []; } }
+function tasksSave(l){
+  try { localStorage.setItem('gc_office_tasks', JSON.stringify(l)); } catch (e) {}
+  try { if (W._gcApplySync) W._gcApplySync('gc_office_tasks', l); } catch (e) {}
+  try { if (W._gcOfficeTasksPush) W._gcOfficeTasksPush(); else if (W._supaUpsertNow) W._supaUpsertNow('gc_office_tasks', JSON.stringify(l)); } catch (e) {}
+}
+/* the PM's Alerts (the same shared list the voice to-dos and the office use): read the cloud copy, union by id, write it back */
+function alertAdd(rec){
+  var key = 'gc_pm_broadcasts', local = lsList(key);
+  return kvRead(key).then(function(v){ if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } } return Array.isArray(v) ? v : (v === null || v === undefined ? [] : null); }).then(function(remote){
+    var by = {}, order = [];
+    arr(remote).concat(local, [rec]).forEach(function(m){ if (!m || m.id == null) return; var k = String(m.id); if (!(k in by)) order.push(k); by[k] = m; });
+    var merged = order.map(function(k){ return by[k]; });
+    try { localStorage.setItem(key, JSON.stringify(merged)); } catch (e) {}
+    try { if (W._gcApplySync) W._gcApplySync(key, merged); } catch (e) {}
+    return kvWrite(key, JSON.stringify(merged));
+  });
+}
+function taskId(p, pm){ return 'T_sds_' + slug(p.id) + '_' + (slug(pm) || 'office'); }
+function openJob(p){ return !/complete|closed|cancel|lost|dead|archiv|void/i.test(s(p.status)) && !p.archived; }
+function signedIn(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.email && W.__GC_AUTH__.email()); } catch (e) { return false; } }
+var NEED_ST = { busy: false, last: 0 };
+function needTick(force){
+  if (NEED_ST.busy || !signedIn()) return 0;
+  var all = jobs(); if (!all.length || !users().length) return 0;   /* wait for the jobs and the people (the PM's e-mail) */
+  if (!force && Date.now() - NEED_ST.last < 8000) return 0; NEED_ST.last = Date.now();
+  var due = all.filter(function(p){ var co = coOf(p); if (co !== 'mitigation' && co !== 'environmental') return false; if (!openJob(p)) return false; var a = p.materialsAlert || {}; return !a.at || low(a.pm) !== low(p.pm); });
+  if (!due.length) { syncTicks(); return 0; }
+  NEED_ST.busy = true;
+  var tl = lsList('gc_office_tasks'), have = {}, at = nowIso(), by = myName(), marks = {}, alerts = [];
+  tl.forEach(function(x){ if (x && x.id) have[x.id] = 1; });
+  due.forEach(function(p){
+    var pm = s(p.pm), u = userByName(pm), id = taskId(p, pm), items = needList(p), ck = p.materialsChecklist || {};
+    var c = (W._gcCo && W._gcCo.get(coOf(p))) || { short: coOf(p) };
+    if (!have[id]) {
+      tl.push({ id: id, label: ('🧰 Materials & equipment needed — ' + s(p.name || p.client || 'job')).slice(0, 300),
+        note: (pm ? '' : 'No PM yet — ') + c.short + ' job' + (p.autoPO ? ' (PO ' + p.autoPO + ')' : '') + ': get these on the truck before the crew goes. Open the job → 🧪 Materials & safety to tick them off. Chemicals only after the customer approves them in their portal.',
+        addedBy: '🧪 Materials & SDS', addedAt: at, updatedAt: at, done: false, pid: s(p.id), kind: 'sds_needed', source: 'sds',
+        assignee: pm ? (s(u && u.name) || pm) : 'office', assigneeEmail: low(u && u.email), assignees: u && s(u.email) ? [low(u.email)] : [], personal: !!(u && u.email), shared: true,
+        items: items.map(function(x){ return { id: x.k, label: (x.kind === 'equipment' ? '🧰 ' : '🧪 ') + x.t, done: !!ck[x.k] }; }) });
+      have[id] = 1;
+      if (pm) alerts.push({ id: 'BC_sds_' + slug(p.id) + '_' + slug(pm), msg: '🧰 Materials & equipment needed — ' + s(p.name || 'job') + ' (' + items.length + ' items; your To-Do has the list)', pri: 'normal', by: '🧪 Materials & SDS', at: at, expires: 0, target: s(u && u.name) || pm, pid: s(p.id), source: 'sds' });
+    }
+    marks[s(p.id)] = { pm: pm, at: at, by: by, taskId: id, items: items.length };
+  });
+  tasksSave(tl);
+  save_many(marks);
+  var done = function(){ NEED_ST.busy = false; };
+  alerts.reduce(function(pr, a){ return pr.then(function(){ return alertAdd(a); }); }, Promise.resolve()).then(done, done);
+  return due.length;
+}
+function save_many(marks){
+  var ids = Object.keys(marks); if (!ids.length) return;
+  var S = W._setProjects, at = nowIso(); if (typeof S !== 'function') return;
+  try { S(function(prev){ return Array.isArray(prev) ? prev.map(function(x){ var m = x && marks[s(x.id)]; return m ? Object.assign({}, x, { materialsAlert: m, updatedAt: at }) : x; }) : prev; }); } catch (e) { return; }
+  try { ST.call(W, function(){ if (W._supaUpsertNow && W._crm && Array.isArray(W._crm.projects)) W._supaUpsertNow('projects', W._crm.projects); }, 600); } catch (e) {}
+}
+/* a tick on the job ↔ the item on the PM's To-Do */
+function tick(pid, key, on){
+  var at = nowIso(), by = myName();
+  save(pid, function(p){ var ck = Object.assign({}, p.materialsChecklist || {}); if (on) ck[key] = { by: by, at: at }; else delete ck[key]; p.materialsChecklist = ck; p.materialsChecklistAt = at; return p; });
+  var tl = lsList('gc_office_tasks'), hit = false;
+  tl.forEach(function(x){ if (x && x.kind === 'sds_needed' && s(x.pid) === s(pid)) arr(x.items).forEach(function(i){ if (i.id === key && !!i.done !== !!on) { i.done = !!on; hit = true; x.updatedAt = at; } }); });
+  if (hit) tasksSave(tl);
+}
+function syncTicks(){
+  var tl = lsList('gc_office_tasks'); if (!tl.length) return;
+  tl.forEach(function(x){
+    if (!x || x.kind !== 'sds_needed' || !x.pid) return; var p = job(x.pid); if (!p) return;
+    if (s(x.updatedAt) <= s(p.materialsChecklistAt)) return;
+    var ck = p.materialsChecklist || {}, diff = arr(x.items).some(function(i){ return !!i.done !== !!ck[i.id]; });
+    if (!diff) return;
+    save(p.id, function(q){ var n = {}; arr(x.items).forEach(function(i){ if (i.done) n[i.id] = (q.materialsChecklist || {})[i.id] || { by: s(x.doneBy) || 'To-Do', at: s(x.updatedAt) }; }); Object.keys(q.materialsChecklist || {}).forEach(function(k){ if (!arr(x.items).some(function(i){ return i.id === k; })) n[k] = q.materialsChecklist[k]; }); q.materialsChecklist = n; q.materialsChecklistAt = s(x.updatedAt); return q; });
+  });
+}
+function needHtml(p){
+  var co = coOf(p); if (co !== 'mitigation' && co !== 'environmental') return '';
+  var L = needList(p), ck = p.materialsChecklist || {}, d = L.filter(function(x){ return ck[x.k]; }).length, a = p.materialsAlert || {};
+  return '<details class="gcsds-need"' + (d < L.length ? ' open' : '') + ' style="margin-top:6px"><summary style="cursor:pointer;font-weight:700">🧰 Materials &amp; equipment needed · ' + d + '/' + L.length + '</summary>'
+    + '<div style="color:#64748b;font-size:12px;margin:2px 0 4px">' + (a.at ? 'Sent to ' + esc(a.pm || 'the office (no PM yet)') + '\'s To-Do ' + esc(nice(a.at)) : 'Goes to the PM\'s To-Do') + '</div>'
+    + L.map(function(x){ return '<label style="display:flex;gap:6px;align-items:flex-start;margin:3px 0;font-size:13px"><input type="checkbox" data-sds-need="' + esc(x.k) + '"' + (ck[x.k] ? ' checked' : '') + ' style="width:18px;height:18px;margin-top:1px"><span' + (ck[x.k] ? ' style="text-decoration:line-through;color:#64748b"' : '') + '>' + (x.kind === 'equipment' ? '🧰 ' : '🧪 ') + esc(x.t) + '</span></label>'; }).join('') + '</details>';
+}
+D.addEventListener('change', function(e){ var t = e.target; if (!t || !t.hasAttribute || !t.hasAttribute('data-sds-need')) return; var c = t.closest('[data-pid]'); if (!c) return; tick(c.getAttribute('data-pid'), t.getAttribute('data-sds-need'), t.checked); }, true);
 
 /* ── clicks ── */
 D.addEventListener('click', function(e){
@@ -219231,10 +219346,10 @@ D.addEventListener('click', function(e){
   if (a === 'preview') { savePicks(); var pid = PICK.pid; ST.call(W, function(){ closeM(); preview(pid); }, 150); return; }
   if (a === 'send') { savePicks(); var pid2 = PICK.pid; ST.call(W, function(){ send(pid2).then(function(j){ if (j && j.ok) jobModal(pid2); }); }, 150); return; }
 }, true);
-D.addEventListener('input', function(e){ var t = e.target; if (!t || t.id !== 'gc-sds-q') return; UI.q = t.value; clearTimeout(UI.qt); UI.qt = ST.call(W, draw, 180); }, true);
+D.addEventListener('input', function(e){ var t = e.target; if (!t || t.id !== 'gc-sds-q') return; if (t.value === UI.q) return; UI.q = t.value; var tk = UI.qn = (UI.qn || 0) + 1; ST.call(W, function(){ if (tk === UI.qn) draw(); }, 150);   /* other patches re-send input events; only a real change redraws */ }, true);
 D.addEventListener('change', function(e){ var t = e.target; if (!t || t.id !== 'gc-sds-jobpick' || !t.value) return; PICK.all = false; jobModal(t.value); }, true);
-SI.call(W, function(){ try { if (!D.hidden) { wireDocLib(); apply(); drawJob(); if (UI.el && UI.el.isConnected && !UI.el.contains(D.activeElement) && !D.getElementById('gc-sds-ov')) { var sig = coPick() + JSON.stringify(jobs().map(function(p){ return [p.id, p.materials, p.materialsConsent]; })); if (sig !== UI.sig) { UI.sig = sig; draw(); } } } } catch (e) {} }, 1500);
+SI.call(W, function(){ try { if (!D.hidden) { wireDocLib(); apply(); needTick(); drawJob(); if (UI.el && UI.el.isConnected && !UI.el.contains(D.activeElement) && !D.getElementById('gc-sds-ov')) { var sig = coPick() + JSON.stringify(jobs().map(function(p){ return [p.id, p.materials, p.materialsConsent]; })); if (sig !== UI.sig) { UI.sig = sig; draw(); } } } } catch (e) {} }, 1500);
 ST.call(W, pull, 4000);
-W._gcSds = { mount: mount, draw: draw, list: list, byId: byId, forJob: forJob, setJob: setJob, setStatus: setStatus, send: send, apply: apply, warnings: warnings, consentTable: consentTable, preview: preview, open: jobModal, detail: detail, canSee: canSee, canEdit: canEdit, GROUPS: GROUPS, BUILTIN: BUILTIN, DOC_ID: DOC_ID, reqRef: reqRef, choicesOf: choicesOf, pull: pull, saveMat: saveMat };
+W._gcSds = { mount: mount, draw: draw, list: list, byId: byId, forJob: forJob, setJob: setJob, setStatus: setStatus, send: send, apply: apply, warnings: warnings, consentTable: consentTable, preview: preview, open: jobModal, detail: detail, canSee: canSee, canEdit: canEdit, GROUPS: GROUPS, BUILTIN: BUILTIN, DOC_ID: DOC_ID, reqRef: reqRef, choicesOf: choicesOf, pull: pull, saveMat: saveMat, needList: needList, needTick: needTick, tick: tick, EQUIP: EQUIP };
 })(window);
 </script>

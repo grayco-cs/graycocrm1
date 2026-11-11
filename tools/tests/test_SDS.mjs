@@ -7,15 +7,38 @@ const R = []; const ok = (n, c, i) => { R.push(!!c); console.log((c ? 'PASS ' : 
 const SHOT = process.env.SDS_SHOTS || '';
 resetCloud();
 const now = new Date().toISOString();
-cset('users', [{ id: 'u1', name: 'Wesley Johnson', email: 'wjohnson@grayco-cs.com', role: 'Admin', payType: 'owner', active: true }]);
+cset('users', [{ id: 'u1', name: 'Wesley Johnson', email: 'wjohnson@grayco-cs.com', role: 'Admin', payType: 'owner', active: true },
+  { id: 'u2', name: 'Sam Biffle', email: 'sbiffle@grayco-cs.com', role: 'Project Manager', active: true }, { id: 'u3', name: 'Nick Thomas', email: 'nthomas@grayco-cs.com', role: 'Admin', active: true }]);
 cset('projects', [
-  { id: 'M1', name: 'Demo Ross basement', client: 'Demo Ross', status: 'active', type: 'Water Damage', companyId: 'mitigation', isInsurance: true, insCarrier: 'State Farm', notes: 'Sewage backup in the basement, cat 3', contract: 8000, updatedAt: now },
-  { id: 'E1', name: 'Demo Kline trim', client: 'Demo Kline', status: 'active', type: 'Environmental', companyId: 'environmental', notes: 'House built 1962 — lead paint on the window trim', updatedAt: now },
-  { id: 'C1', name: 'Demo Smith deck', client: 'Demo Smith', status: 'active', type: 'Residential Reno', contract: 12000, updatedAt: now }]);
+  { id: 'M1', name: 'Demo Ross basement', client: 'Demo Ross', status: 'active', type: 'Water Damage', companyId: 'mitigation', isInsurance: true, insCarrier: 'State Farm', notes: 'Sewage backup in the basement, cat 3', contract: 8000, pm: 'Sam Biffle', updatedAt: now },
+  { id: 'M2', name: 'Demo Cox kitchen leak', client: 'Demo Cox', status: 'active', type: 'Water Damage', companyId: 'mitigation', updatedAt: now },
+  { id: 'M3', name: 'Demo Old dry-out', client: 'Demo Old', status: 'Completed', type: 'Water Damage', companyId: 'mitigation', pm: 'Sam Biffle', updatedAt: now },
+  { id: 'E1', name: 'Demo Kline trim', client: 'Demo Kline', status: 'active', type: 'Environmental', companyId: 'environmental', notes: 'House built 1962 — lead paint on the window trim', pm: 'Nick Thomas', updatedAt: now },
+  { id: 'C1', name: 'Demo Smith deck', client: 'Demo Smith', status: 'active', type: 'Residential Reno', contract: 12000, pm: 'Sam Biffle', updatedAt: now },
+  { id: 'C2', name: 'Demo Wade water', client: 'Demo Wade', status: 'active', type: 'Water Damage', notes: 'mold and sewage', pm: 'Sam Biffle', updatedAt: now }]);
 const A = await computer('wjohnson@grayco-cs.com', { build: process.argv[2] });
 const errs = []; A.page().on('pageerror', e => errs.push(String(e.message).slice(0, 200)));
 if (SHOT) await A.page().setViewportSize({ width: 1440, height: 900 });
 await signIn(A, 'wjohnson@grayco-cs.com', 15000); await sleep(8000);
+/* 0. 🧰 materials & equipment needed → the PM of every Mitigation / Environmental job */
+const tasksOf = () => A.ev(() => { let l = []; try { l = JSON.parse(localStorage.getItem('gc_office_tasks') || '[]'); } catch (e) {} return l.filter(x => x && x.kind === 'sds_needed'); });
+await sleep(6000);
+let TK = await tasksOf();
+const tM1 = TK.filter(x => x.pid === 'M1'), tE1 = TK.filter(x => x.pid === 'E1');
+ok('🧰 Mitigation job with a PM → ONE To-Do for that PM (assignees = their e-mail) "Materials & equipment needed — Demo Ross basement"', tM1.length === 1 && tM1[0].assignees.join() === 'sbiffle@grayco-cs.com' && /^🧰 Materials & equipment needed — Demo Ross basement$/.test(tM1[0].label) && tM1[0].assignee === 'Sam Biffle', tM1.map(x => ({ a: x.assignee, as: x.assignees, l: x.label })));
+const it1 = (tM1[0] || {}).items || [];
+ok('… its checklist: the typical water + sewage materials (quat disinfectant, bleach) and the equipment (LGR dehumidifiers, air movers, moisture meter, extraction, PPE) — no lead / asbestos items', ['Quaternary ammonium', 'Sodium hypochlorite', 'Dehumidifiers (LGR)', 'Air movers', 'Moisture meter', 'Extraction unit', 'PPE'].every(w => it1.some(i => i.label.includes(w))) && !it1.some(i => /Lead|asbestos/i.test(i.label)), it1.map(i => i.label));
+ok('🧰 Environmental lead job → its PM\'s To-Do with lead materials + HEPA vacuum, poly, wet-cleaning, P100, signs', tE1.length === 1 && tE1[0].assignees.join() === 'nthomas@grayco-cs.com' && ['Lead encapsulant', 'HEPA vacuum', '6-mil poly', 'Wet-cleaning supplies', 'P100', 'warning signs'].every(w => tE1[0].items.some(i => i.label.includes(w))), tE1[0] && tE1[0].items.map(i => i.label));
+ok('no PM yet → the office\'s To-Do ("No PM yet"); a finished job and Construction jobs (even a water / mold one) → nothing', TK.filter(x => x.pid === 'M2').length === 1 && TK.find(x => x.pid === 'M2').assignee === 'office' && /No PM yet/.test(TK.find(x => x.pid === 'M2').note) && !TK.some(x => ['M3', 'C1', 'C2'].includes(x.pid)), TK.map(x => x.pid + ':' + x.assignee));
+await sleep(3000);
+const bc = (() => { let v = cget('gc_pm_broadcasts'); if (typeof v === 'string') v = JSON.parse(v); return (v || []).filter(x => x && x.source === 'sds'); })();
+ok('… and an Alert for each PM (gc_pm_broadcasts, target = the PM); none for the no-PM job', bc.some(x => x.target === 'Sam Biffle' && x.pid === 'M1' && /Materials & equipment needed — Demo Ross basement/.test(x.msg)) && bc.some(x => x.target === 'Nick Thomas' && x.pid === 'E1') && !bc.some(x => x.pid === 'M2'), bc.map(x => x.target + ':' + x.pid));
+const ct = (() => { let v = cget('gc_office_tasks'); if (typeof v === 'string') v = JSON.parse(v); return (v || []).filter(x => x && x.kind === 'sds_needed').length; })();
+ok('the To-Dos reach the cloud (gc_office_tasks)', ct === 3, ct);
+await sleep(9000);
+TK = await tasksOf();
+ok('no duplicates on the next checks (one per job)', TK.length === 3, TK.map(x => x.id));
+
 const nav = () => A.ev(() => [...document.querySelectorAll('nav button, aside button')].filter(b => b.offsetParent).map(b => b.innerText.replace(/\s+/g, ' ').trim()).join('|'));
 const setCo = async c => { await A.ev(c => window._gcCo.setFilter(c), c); await sleep(2500); };
 
@@ -121,7 +144,7 @@ ok('the job records the consent as sent (waiting in the portal)', sent.status ==
 /* 7. the customer signs in the portal: ozone → Do not use */
 cset('gc_sign_requests', [{ id: 'sr_M1_doc_sds_M1', pid: 'M1', kind: 'doc', refId: 'sds_M1', title: 'Chemical & product use consent', status: 'signed', createdAt: now, updatedAt: now, choices: call.choices,
   signed: { name: 'Demo Ross', at: new Date().toISOString(), sigId: 'ps_demo1', picks: { quat_disinfectant: 'yes', bleach_solution: 'yes', ozone_generator: 'no' }, sens: 'Daughter has asthma' } }]);
-await A.ev(() => window._gcAuto5.pull(true)); await sleep(5000);
+await A.ev(() => window._gcAuto5.pull(true)); await sleep(1500); await A.ev(() => window._gcAuto5.pull(true)); await sleep(4000);
 const af = await A.ev(() => { const p = window._crm.projects.find(x => x.id === 'M1'); return { m: (p.materials || []).map(x => x.id + ':' + x.status).sort(), c: p.materialsConsent, w: window._gcSds.warnings(p).map(x => x.t) }; });
 ok('signed in the portal → each product approved / refused as the customer marked; consent signed with their note', af.m.join() === 'bleach_solution:approved,ozone_generator:refused,quat_disinfectant:approved' && af.c.status === 'signed' && af.c.signedBy === 'Demo Ross' && /asthma/.test(af.c.sens), af);
 ok('⛔ refused material flagged: "Refused: Ozone generator (equipment) — do not use, use an alternative"', af.w.some(x => /Refused: Ozone generator \(equipment\) — do not use, use an alternative/.test(x)) && !af.w.some(x => /has not signed/.test(x)), af.w);
@@ -135,8 +158,28 @@ await A.ev(() => { const o = document.getElementById('gc-sds-ov'); o && o.remove
 
 /* 8. the job page */
 await A.ev(() => window._setView('projects')); await sleep(1500);
-await A.ev(() => { if (window._openJobDetail) window._openJobDetail('M1'); }); await sleep(4000);
+await A.ev(() => { if (window._openJobDetail) window._openJobDetail(window._crm.projects.find(p => p.id === 'M1')); }); await sleep(4000);
 const jc = await A.ev(() => (document.getElementById('gc-sds-jc') || {}).innerText || '');
 ok('job page: 🧪 Materials & safety card with the warnings and the 🧪 Materials button', /Materials & safety/.test(jc) && /Refused: Ozone generator/.test(jc) && /🧪 Materials/.test(jc), jc.slice(0, 300));
+const nd = await A.ev(() => { const c = document.getElementById('gc-sds-jc'); return c ? { t: c.innerText, n: c.querySelectorAll('[data-sds-need]').length } : null; });
+ok('job page: 🧰 Materials & equipment needed list with tick-boxes', nd && /Materials & equipment needed/.test(nd.t) && nd.n >= 6, nd && nd.t.slice(0, 200));
+await A.ev(() => { const i = document.querySelector('#gc-sds-jc [data-sds-need^="e:dehumidifiers"]'); i.checked = true; i.dispatchEvent(new Event('change', { bubbles: true })); }); await sleep(2500);
+const tk = await A.ev(() => { const p = window._crm.projects.find(x => x.id === 'M1'); const t = JSON.parse(localStorage.getItem('gc_office_tasks') || '[]').find(x => x.kind === 'sds_needed' && x.pid === 'M1'); return { job: Object.keys(p.materialsChecklist || {}), item: (t.items.find(i => /^e:dehumid/.test(i.id)) || {}).done }; });
+ok('ticking an item: saved on the job (job.materialsChecklist) and on the PM\'s To-Do item', tk.job.some(k => /^e:dehumidifiers/.test(k)) && tk.item === true, tk);
+if (SHOT) { await A.ev(() => { const c = document.getElementById('gc-sds-jc'); c && c.scrollIntoView({ block: 'start' }); }); await sleep(500); await A.page().screenshot({ path: SHOT + '/sds_pm_alert_job.png' }); }
+await A.ev(() => window._setProjects(prev => prev.map(p => p.id === 'M2' ? Object.assign({}, p, { pm: 'Sam Biffle', updatedAt: new Date().toISOString() }) : p))); await sleep(11000);
+TK = await tasksOf();
+ok('a PM is put on the no-PM job → a new To-Do for that PM (once)', TK.filter(x => x.pid === 'M2' && x.assignee === 'Sam Biffle').length === 1 && TK.length === 4, TK.map(x => x.pid + ':' + x.assignee));
+await A.page().reload(); await sleep(16000);
+TK = await tasksOf();
+ok('reload: still one To-Do per job and PM (no duplicates)', TK.length === 4 && new Set(TK.map(x => x.id)).size === 4, TK.map(x => x.id));
+/* the PM's own computer */
+const B = await computer('sbiffle@grayco-cs.com', { build: process.argv[2] });
+if (SHOT) await B.page().setViewportSize({ width: 1440, height: 900 });
+await signIn(B, 'sbiffle@grayco-cs.com', 15000); await sleep(9000);
+await B.ev(() => window._setView('todo')); await sleep(4000);
+const pmv = await B.ev(() => (document.querySelector('#root main') || document.body).innerText);
+ok('the PM\'s To-Do shows "🧰 Materials & equipment needed — Demo Ross basement" with its items', /Materials & equipment needed — Demo Ross basement/.test(pmv) && /Dehumidifiers \(LGR\)/.test(pmv), pmv.slice(0, 400));
+if (SHOT) { await B.ev(() => { const x = [...document.querySelectorAll('#root main *')].find(e => e.children.length === 0 && /Materials & equipment needed — Demo Ross basement/.test(e.textContent || '')); x && x.scrollIntoView({ block: 'center' }); }); await sleep(600); await B.page().screenshot({ path: SHOT + '/sds_pm_alert.png' }); }
 ok('no page errors', !errs.length, errs);
 const f = R.filter(x => !x).length; console.log(f ? 'FAILED ' + (R.length - f) + '/' + R.length : 'SDS ' + R.length + '/' + R.length); process.exit(f ? 1 : 0);
