@@ -220443,3 +220443,61 @@ function paint(){
 (function tick(){ paint(); setTimeout(tick, 1200); })();
 })(window);
 </script>
+<script id="gc-patch-dilution">
+/* DILUTION (owner 11/11: "have calculators for dilution rates"): a 🧮 Dilution calculator in 🧪 Materials & SDS (button in the tab
+   header, and window._gcDilution.open(preset)). Modes: ratio (1:64), ounces per gallon, percent / ppm from a stock strength
+   (e.g. household bleach 6 % → 1,000 ppm). Container presets (1 qt sprayer, 1 gal, 2.5 gal, 5 gal, custom gal/L). Shows concentrate
+   + water in fl oz, cups, mL and gallons; safety lines on every result. Math is plain C1·V1 = C2·V2. Always follow the label. */
+(function(W){
+'use strict';
+var D = W.document;
+var OZ_PER_GAL = 128, ML_PER_OZ = 29.5735, L_PER_GAL = 3.78541;
+function n(v){ var x = parseFloat(String(v == null ? '' : v).replace(/,/g, '')); return isFinite(x) ? x : NaN; }
+function r2(x){ return Math.round(x * 100) / 100; }
+function fmtOz(oz){ if (!isFinite(oz)) return '—'; var cups = oz / 8, ml = oz * ML_PER_OZ; return r2(oz) + ' fl oz' + (oz >= 8 ? ' (' + r2(cups) + ' cups)' : '') + ' · ' + Math.round(ml) + ' mL' + (oz >= 64 ? ' · ' + r2(oz / OZ_PER_GAL) + ' gal' : ''); }
+/* the math (exported for tests) */
+function byRatio(parts, totalOz){ /* the cleaning-label convention: 1:64 = 1 part concentrate per 64 parts of finished solution = 2 oz per gallon */
+  parts = n(parts); if (!(parts > 0) || !(totalOz > 0)) return null; var c = totalOz / parts; if (c > totalOz) return null; return { conc: c, water: totalOz - c }; }
+function byOzPerGal(ozPerGal, totalOz){ ozPerGal = n(ozPerGal); if (!(ozPerGal > 0) || !(totalOz > 0)) return null; var gal = totalOz / OZ_PER_GAL, c = ozPerGal * gal; if (c > totalOz) return null; return { conc: c, water: totalOz - c }; }
+function byStrength(stockPct, wantPpm, totalOz){ /* C1·V1 = C2·V2; 1 % = 10,000 ppm */
+  stockPct = n(stockPct); wantPpm = n(wantPpm); if (!(stockPct > 0) || !(wantPpm > 0) || !(totalOz > 0)) return null; var stockPpm = stockPct * 10000; if (wantPpm > stockPpm) return null; var c = totalOz * wantPpm / stockPpm; return { conc: c, water: totalOz - c }; }
+var CONTAINERS = [['32', '1 qt spray bottle (32 oz)'], ['128', '1 gallon'], ['320', '2.5 gal pump sprayer'], ['640', '5 gal bucket'], ['custom', 'Custom…']];
+var SAFE = ['Add the concentrate TO the water — never water to concentrate.', 'Never mix two chemicals (bleach + ammonia, quats or acids makes toxic gas).', 'Label every bottle you fill (product, dilution, date) — HazCom.', 'Always follow the product’s own label rate and its SDS — this calculator only does the math.'];
+function esc(v){ return String(v == null ? '' : v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function open(pre){
+  pre = pre || {};
+  var old = D.getElementById('gc-dil'); if (old) old.remove();
+  var ov = D.createElement('div'); ov.id = 'gc-dil'; ov.setAttribute('data-gc-keep', '1'); ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-label', 'Dilution calculator');
+  ov.style.cssText = 'position:fixed;inset:0;z-index:1000020;background:rgba(15,23,42,.55);display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:24px 12px';
+  var inp = 'style="width:100%;box-sizing:border-box;min-height:40px;border:1px solid #cbd5e1;border-radius:9px;padding:0 10px;font:15px Inter,Arial,sans-serif"';
+  ov.innerHTML = '<div style="background:#fff;border-radius:16px;max-width:560px;width:100%;padding:18px 20px;font:14px Inter,Arial,sans-serif;color:#0f172a">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:18px">🧮 Dilution calculator</b><button type="button" data-dil-x aria-label="Close" style="border:0;background:none;font-size:22px;cursor:pointer">✕</button></div>'
+    + (pre.name ? '<div style="color:#475569;margin:2px 0 8px">' + esc(pre.name) + '</div>' : '<div style="height:8px"></div>')
+    + '<label style="display:block;margin:6px 0">How is the label rate written?<select data-dil-mode ' + inp + '><option value="ratio">Ratio — 1 : parts (e.g. 1:64 = 2 oz per gallon)</option><option value="ozgal">Ounces per gallon (e.g. 2 oz / gal)</option><option value="ppm">Strength — make a ppm or % solution from a stock % (e.g. bleach)</option></select></label>'
+    + '<div data-dil-f="ratio"><label style="display:block;margin:6px 0">1 : … (the label’s ratio — 1:64 means 2 oz in each gallon of finished mix)<input data-dil-k="parts" inputmode="decimal" value="' + esc(pre.parts || '64') + '" ' + inp + '></label></div>'
+    + '<div data-dil-f="ozgal" hidden><label style="display:block;margin:6px 0">Ounces of concentrate per gallon<input data-dil-k="ozgal" inputmode="decimal" value="' + esc(pre.ozgal || '2') + '" ' + inp + '></label></div>'
+    + '<div data-dil-f="ppm" hidden><label style="display:block;margin:6px 0">Stock strength (%) — e.g. household bleach 6, 8.25<input data-dil-k="stock" inputmode="decimal" value="' + esc(pre.stock || '6') + '" ' + inp + '></label>'
+    + '<label style="display:block;margin:6px 0">Strength you want — ppm (1 % = 10,000 ppm)<input data-dil-k="ppm" inputmode="decimal" value="' + esc(pre.ppm || '1000') + '" ' + inp + '></label></div>'
+    + '<label style="display:block;margin:6px 0">Container<select data-dil-k="cont" ' + inp + '>' + CONTAINERS.map(function(c){ return '<option value="' + c[0] + '"' + (c[0] === '128' ? ' selected' : '') + '>' + esc(c[1]) + '</option>'; }).join('') + '</select></label>'
+    + '<div data-dil-custom hidden style="display:flex;gap:6px"><input data-dil-k="cval" inputmode="decimal" placeholder="Amount" ' + inp + '><select data-dil-k="cunit" ' + inp + '><option value="gal">gallons</option><option value="L">liters</option><option value="oz">fl oz</option></select></div>'
+    + '<div data-dil-out style="margin-top:12px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:12px;padding:12px 14px;font-size:15px"></div>'
+    + '<ul style="margin:10px 0 0 18px;padding:0;color:#7c2d12;font-size:12.5px;line-height:1.5">' + SAFE.map(function(x){ return '<li>' + esc(x) + '</li>'; }).join('') + '</ul></div>';
+  D.body.appendChild(ov);
+  var mode = ov.querySelector('[data-dil-mode]'); if (pre.mode) mode.value = pre.mode;
+  function val(k){ var e = ov.querySelector('[data-dil-k="' + k + '"]'); return e ? e.value : ''; }
+  function total(){ var c = val('cont'); if (c !== 'custom') return n(c); var v = n(val('cval')), u = val('cunit'); return u === 'gal' ? v * OZ_PER_GAL : u === 'L' ? v * 33.814 : v; }
+  function calc(){
+    var m = mode.value; ov.querySelectorAll('[data-dil-f]').forEach(function(e){ e.hidden = e.getAttribute('data-dil-f') !== m; });
+    ov.querySelector('[data-dil-custom]').hidden = val('cont') !== 'custom';
+    var T = total(), r = m === 'ratio' ? byRatio(val('parts'), T) : m === 'ozgal' ? byOzPerGal(val('ozgal'), T) : byStrength(val('stock'), val('ppm'), T), out = ov.querySelector('[data-dil-out]');
+    out.innerHTML = r ? '<div><b>Concentrate:</b> ' + esc(fmtOz(r.conc)) + '</div><div><b>Water:</b> ' + esc(fmtOz(r.water)) + '</div><div style="color:#475569;font-size:12.5px;margin-top:4px">Total: ' + esc(fmtOz(T)) + '</div>' : '<span style="color:#b91c1c">Enter numbers above (the strength you want can’t be stronger than the stock).</span>';
+  }
+  ov.addEventListener('input', calc); ov.addEventListener('change', calc); ov.addEventListener('keydown', function(e){ e.stopPropagation(); });
+  ov.addEventListener('click', function(e){ if (e.target === ov || (e.target.closest && e.target.closest('[data-dil-x]'))) ov.remove(); });
+  calc(); return ov;
+}
+W._gcDilution = { open: open, byRatio: byRatio, byOzPerGal: byOzPerGal, byStrength: byStrength };
+/* a 🧮 button in the Materials & SDS tab header */
+(function tick(){ try { var h = D.querySelector('.gcsds h1, .gcsds h2, [data-sds-root] h1, [data-sds-root] h2'); if (h && !D.getElementById('gc-dil-btn')) { var b = D.createElement('button'); b.type = 'button'; b.id = 'gc-dil-btn'; b.setAttribute('data-gc-keep', '1'); b.textContent = '🧮 Dilution calculator'; b.style.cssText = 'margin-left:10px;border:1px solid #0e7490;background:#ecfeff;color:#0e7490;border-radius:999px;padding:4px 12px;font:700 13px Inter,Arial,sans-serif;cursor:pointer;vertical-align:middle'; b.addEventListener('click', function(){ open({}); }); h.appendChild(b); } } catch (e) {} setTimeout(tick, 1000); })();
+})(window);
+</script>
