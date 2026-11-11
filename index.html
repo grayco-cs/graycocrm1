@@ -70447,7 +70447,8 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
     'Set them up in Gmail/email (their @grayco-cs.com address)',
     'Review their first estimate/bid together',
     'Confirm truck + gas allowance start date',
-    'Add their emergency contact + tax paperwork (W-9/W-4)'
+    'Add their emergency contact + tax paperwork (W-9/W-4)',
+    'Hiring packet signed (📋 Hiring packet) — techs / field: the Timekeeping, Clock-In & Location (location tracking) policy before the first clock-in'   /* HRDOCS-patch */
   ];
 
   window._gcStartOnboarding = function(name, startDate){
@@ -165140,8 +165141,9 @@ function hireRun(c){
   var nm = s(c.name) || 'New hire', pos = s(c.position), prof = hireProfile(pos), driver = /driver|super|field|roof|labor|carpent|crew|foreman|pm|manager/i.test(pos);
   var made = todo(key, '🤝 New hire: ' + nm + (pos ? ' (' + pos + ')' : '') + ' — paperwork', 'Hired ' + today() + '. Checklist below; the offer letter waits on ✅ Approvals.', { prio: 'high', due: today() });
   if (!made) return;   /* already done on this or another computer */
-  [['w4', 'W-4 (federal withholding)'], ['i9', 'I-9 — see their ID documents within 3 days of the start date'], ['dd', 'Direct deposit form'], ['policy', 'Company policies signed (Company Docs)']]
+  [['w4', 'W-4 (federal withholding)'], ['i9', 'I-9 — see their ID documents within 3 days of the start date'], ['dd', 'Direct deposit form'], ['policy', 'Company policies signed (Admin → Hiring → 📋 Hiring packet)']]
     .concat(driver ? [['drive', 'Driver\'s license + auto insurance on file (drives to jobs)']] : [])
+    .concat(prof === 'field' || prof === 'super' || /tech|mitig|environ|labor|crew|foreman|helper/i.test(pos) ? [['loc', 'Location tracking policy signed (Timekeeping, Clock-In & Location — before the first clock-in)']] : [])   /* HRDOCS-patch */
     .forEach(function(x){ todo(key + '_' + x[0], '🤝 ' + nm + ': ' + x[1], 'New-hire paperwork (hired ' + today() + ').', { due: addDays(today(), 3) }); });
   todo(key + '_train', '📘 Training for ' + nm + ': PM Playbook (Company Docs)', 'Read with them in the first week: ' + TRAINING[prof] + '.', { due: addDays(today(), 7) });
   /* the offer letter: PDF → approvals (an admin) */
@@ -180833,16 +180835,16 @@ T("jha", "Job Hazard Analysis (JHA)", "Safety", ["insurance", "residential", "co
 T("incident_report", "Incident / Injury Report", "Safety", ["insurance", "residential", "commercial"], false, l2([["title", "Incident / Injury Report", "Fill out the same day"], ["info", [["Job", "{job_name}"], ["Address", "{job_address}"], ["Date of incident", "&nbsp;"], ["Time", "&nbsp;"]]], ["info", [["Person involved", "&nbsp;"], ["Employer (GrayCo / sub)", "&nbsp;"], ["What happened", "&nbsp;"], ["Injury / damage", "&nbsp;"], ["Treatment given", "&nbsp;"], ["Witnesses", "&nbsp;"], ["What we change so it does not happen again", "&nbsp;"]]], ["checks", ["Medical treatment beyond first aid (may be OSHA recordable)", "Property damage", "Near miss (no injury)", "Owner / office told"]], ["sigs", "Person reporting", "Supervisor"]]));
 T("vehicle_accident", "Vehicle Accident Report", "Safety", ["insurance", "residential", "commercial"], false, l2([["title", "Vehicle Accident Report", "Keep in every company vehicle"], ["info", [["Driver", "&nbsp;"], ["Vehicle / plate", "&nbsp;"], ["Date / time", "&nbsp;"], ["Location", "&nbsp;"]]], ["li", ["Make sure everyone is safe; call 911 if anyone is hurt.", "Call the police for a report; get the report #.", "Take photos of all vehicles, plates, the scene.", "Do not admit fault or sign anything except the police report.", "Call the office right away."]], ["info", [["Other driver / phone", "&nbsp;"], ["Other insurance / policy #", "&nbsp;"], ["Police report #", "&nbsp;"], ["Witnesses", "&nbsp;"], ["What happened", "&nbsp;"]]], ["sigs", "Driver", "Office"]]));
 T("visitor_release", "Jobsite Visitor Safety Release", "Safety", ["insurance", "residential", "commercial"], true, l2([["title", "Jobsite Visitor Safety", "For owners and guests walking an active jobsite"], ["info", [["Customer / owner", "{customer}"], ["Property address", "{job_address}"], ["Job", "{job_name}"], ["PO / Job #", "{po}"], ["Date", "{date}"]]], ["li", ["Visit only with a GrayCo team member, or after hours when the site is safe.", "Wear closed-toe shoes; stay out of marked areas, ladders and scaffolding.", "Keep children and pets away from the work area.", "Watch for nails, open floors, cords and debris."]], ["p", "I understand that an active construction site has hazards, and I will follow these rules when I visit."], ["sigs", "Customer / owner", "GrayCo representative"]]));
-T("offer_letter", "Offer of Employment", "HR", ["hr"], false, l2([["title", "Offer of Employment", "GrayCo Construction Services, LLC"], ["info", [["Employee", "&nbsp;"], ["Position", "&nbsp;"], ["Date", "{date}"], ["Start date", "&nbsp;"], ["Reports to", "&nbsp;"]]], ["info", [["Pay", "&nbsp;"], ["Full / part time", "&nbsp;"], ["Benefits", "&nbsp;"], ["Vehicle / tools", "&nbsp;"]]], ["p", "This offer depends on a completed I-9, a background check / driving record check where the job needs one, and a drug screen if required. Employment with GrayCo is at will: you or GrayCo may end it at any time, for any lawful reason. This letter is not a contract for a set period of time."], ["sigs", "GrayCo Construction Services, LLC", "Employee (accepted)"]]));
-T("onboarding", "New Employee Onboarding Checklist", "HR", ["hr"], false, l2([["title", "New Employee Onboarding", "Done in the first week"], ["info", [["Employee", "&nbsp;"], ["Position", "&nbsp;"], ["Date", "{date}"]]], ["checks", ["I-9 with documents (within 3 days)", "W-4 and state withholding", "Direct deposit form", "Emergency contact form", "Employee handbook received and signed", "Safety orientation + PPE issued", "Lead-safe (RRP) / OSHA 10 training scheduled", "Driver's license + insurance on file (if driving)", "Tools / equipment issued (signed)", "CRM and Field app login set up", "Uniform / shirts"]], ["sigs", "Employee", "Office"]]));
-T("emergency_contact", "Employee Emergency Contact Form", "HR", ["hr"], false, l2([["title", "Emergency Contact", "Kept private in the office file"], ["info", [["Employee", "&nbsp;"], ["Position", "&nbsp;"], ["Date", "{date}"]]], ["info", [["Contact 1 — name / relationship", "&nbsp;"], ["Phone", "&nbsp;"], ["Contact 2 — name / relationship", "&nbsp;"], ["Phone", "&nbsp;"], ["Medical conditions / allergies we should know (optional)", "&nbsp;"]]], ["sigs", "Employee", "Office"]]));
-T("direct_deposit", "Direct Deposit Authorization", "HR", ["hr"], false, l2([["title", "Direct Deposit Authorization", "Kept private in the office file"], ["info", [["Employee", "&nbsp;"], ["Position", "&nbsp;"], ["Date", "{date}"]]], ["info", [["Bank name", "&nbsp;"], ["Routing #", "&nbsp;"], ["Account #", "&nbsp;"], ["Checking / savings", "&nbsp;"]]], ["p", "I authorize GrayCo to deposit my pay to the account above, and to correct any deposit made in error. Attach a voided check or bank letter."], ["sigs", "Employee", "Office"]]));
-T("tool_issue", "Tool & Equipment Issue Agreement", "HR", ["hr"], false, l2([["title", "Company Tools and Equipment", "Issued to an employee"], ["info", [["Employee", "&nbsp;"], ["Position", "&nbsp;"], ["Date", "{date}"]]], ["grid", ["Item", "Serial / tag #", "Value", "Issued on", "Returned on"], 8], ["p", "Company tools are for GrayCo work only and are returned when asked or when employment ends. Loss or damage from misuse or neglect may be the employee's responsibility as far as the law allows."], ["sigs", "Employee", "Office"]]));
-T("vehicle_policy", "Company Vehicle Use Policy — Acknowledgment", "HR", ["hr"], false, l2([["title", "Company Vehicle Use", "Rules for driving a GrayCo vehicle"], ["info", [["Employee", "&nbsp;"], ["Position", "&nbsp;"], ["Date", "{date}"], ["Vehicle", "&nbsp;"]]], ["li", ["Valid driver's license and a clean enough record for our insurance.", "No phone use while driving except hands-free; no texting.", "Seat belts always; obey all traffic laws; you pay your own tickets.", "No personal passengers or personal use unless approved.", "Report every accident or damage the same day (vehicle accident report)."]], ["sigs", "Employee", "Office"]]));
-T("drug_policy", "Drug & Alcohol Policy — Acknowledgment", "HR", ["hr"], false, l2([["title", "Drug and Alcohol Policy", "A safe jobsite for everyone"], ["info", [["Employee", "&nbsp;"], ["Position", "&nbsp;"], ["Date", "{date}"]]], ["p", "Using, having or being under the influence of alcohol, illegal drugs or misused prescription drugs at work or in a company vehicle is not allowed. GrayCo may test after an accident or with reasonable suspicion as the law allows. Breaking this policy can lead to discipline up to termination."], ["sigs", "Employee", "Office"]]));
-T("pto_request", "Time Off Request", "HR", ["hr"], false, l2([["title", "Time Off Request", "Ask at least 2 weeks ahead when you can"], ["info", [["Employee", "&nbsp;"], ["Position", "&nbsp;"], ["Date", "{date}"]]], ["info", [["From", "&nbsp;"], ["To", "&nbsp;"], ["Hours", "&nbsp;"], ["Reason (optional)", "&nbsp;"]]], ["checks", ["Approved", "Not approved"]], ["sigs", "Employee", "Supervisor"]]));
-T("write_up", "Employee Warning / Corrective Action", "HR", ["hr"], false, l2([["title", "Corrective Action", "A written record of a problem and the plan to fix it"], ["info", [["Employee", "&nbsp;"], ["Position", "&nbsp;"], ["Date", "{date}"], ["Supervisor", "&nbsp;"]]], ["checks", ["Verbal warning (documented)", "Written warning", "Final warning", "Suspension"]], ["info", [["What happened (facts, dates)", "&nbsp;"], ["Rule / expectation", "&nbsp;"], ["What must change", "&nbsp;"], ["Follow-up date", "&nbsp;"]]], ["p", "Signing shows you received this, not that you agree. You may add your own comments."], ["sigs", "Employee", "Supervisor"]]));
-T("separation", "Employee Separation Checklist", "HR", ["hr"], false, l2([["title", "Employee Separation", "When someone leaves GrayCo"], ["info", [["Employee", "&nbsp;"], ["Position", "&nbsp;"], ["Date", "{date}"], ["Last day", "&nbsp;"], ["Reason", "&nbsp;"]]], ["checks", ["Final pay on time (state law)", "Tools, keys, vehicle, fuel card, uniforms returned", "CRM / Field app / e-mail access turned off", "Phone numbers and portal links changed if needed", "Benefits / COBRA notice (if any)", "Exit conversation"]], ["sigs", "Employee", "Office"]]));
+T("offer_letter", "Offer of Employment", "HR", ["hr"], false, l2([["title", "Offer of Employment", "{company}"], ["info", [["Employee", "{employee}"], ["Position", "{position}"], ["Date", "{date}"], ["Start date", "&nbsp;"], ["Reports to", "&nbsp;"]]], ["info", [["Pay", "&nbsp;"], ["Full / part time", "&nbsp;"], ["Benefits", "&nbsp;"], ["Vehicle / tools", "&nbsp;"]]], ["p", "This offer depends on a completed I-9, a background check / driving record check where the job needs one, and a drug screen if required. Employment with GrayCo is at will: you or GrayCo may end it at any time, for any lawful reason. This letter is not a contract for a set period of time."], ["sigs", "GrayCo Construction Services, LLC", "Employee (accepted)"]]));
+T("onboarding", "New Employee Onboarding Checklist", "HR", ["hr"], false, l2([["title", "New Employee Onboarding", "Done in the first week"], ["info", [["Employee", "{employee}"], ["Position", "{position}"], ["Date", "{date}"]]], ["checks", ["I-9 with documents (within 3 days)", "W-4 and state withholding", "Direct deposit form", "Emergency contact form", "Employee handbook received and signed", "Safety orientation + PPE issued", "Lead-safe (RRP) / OSHA 10 training scheduled", "Driver's license + insurance on file (if driving)", "Tools / equipment issued (signed)", "CRM and Field app login set up", "Timekeeping, Clock-In &amp; Location policy signed — location tracking sign-off (techs / field, before the first clock-in)", "Hiring packet papers signed (Admin → Hiring → 📋 Hiring packet)", "Uniform / shirts"]], ["sigs", "Employee", "Office"]]));
+T("emergency_contact", "Employee Emergency Contact Form", "HR", ["hr"], false, l2([["title", "Emergency Contact", "Kept private in the office file"], ["info", [["Employee", "{employee}"], ["Position", "{position}"], ["Date", "{date}"]]], ["info", [["Contact 1 — name / relationship", "&nbsp;"], ["Phone", "&nbsp;"], ["Contact 2 — name / relationship", "&nbsp;"], ["Phone", "&nbsp;"], ["Medical conditions / allergies we should know (optional)", "&nbsp;"]]], ["sigs", "Employee", "Office"]]));
+T("direct_deposit", "Direct Deposit Authorization", "HR", ["hr"], false, l2([["title", "Direct Deposit Authorization", "Kept private in the office file"], ["info", [["Employee", "{employee}"], ["Position", "{position}"], ["Date", "{date}"]]], ["info", [["Bank name", "&nbsp;"], ["Routing #", "&nbsp;"], ["Account #", "&nbsp;"], ["Checking / savings", "&nbsp;"]]], ["p", "I authorize GrayCo to deposit my pay to the account above, and to correct any deposit made in error. Attach a voided check or bank letter."], ["sigs", "Employee", "Office"]]));
+T("tool_issue", "Tool & Equipment Issue Agreement", "HR", ["hr"], false, l2([["title", "Company Tools and Equipment", "Issued to an employee"], ["info", [["Employee", "{employee}"], ["Position", "{position}"], ["Date", "{date}"]]], ["grid", ["Item", "Serial / tag #", "Value", "Issued on", "Returned on"], 8], ["p", "Company tools are for GrayCo work only and are returned when asked or when employment ends. Loss or damage from misuse or neglect may be the employee's responsibility as far as the law allows."], ["sigs", "Employee", "Office"]]));
+T("vehicle_policy", "Company Vehicle Use Policy — Acknowledgment", "HR", ["hr"], false, l2([["title", "Company Vehicle Use", "Rules for driving a GrayCo vehicle"], ["info", [["Employee", "{employee}"], ["Position", "{position}"], ["Date", "{date}"], ["Vehicle", "&nbsp;"]]], ["li", ["Valid driver's license and a clean enough record for our insurance.", "No phone use while driving except hands-free; no texting.", "Seat belts always; obey all traffic laws; you pay your own tickets.", "No personal passengers or personal use unless approved.", "Report every accident or damage the same day (vehicle accident report)."]], ["sigs", "Employee", "Office"]]));
+T("drug_policy", "Drug & Alcohol Policy — Acknowledgment", "HR", ["hr"], false, l2([["title", "Drug and Alcohol Policy", "A safe jobsite for everyone"], ["info", [["Employee", "{employee}"], ["Position", "{position}"], ["Date", "{date}"]]], ["p", "Using, having or being under the influence of alcohol, illegal drugs or misused prescription drugs at work or in a company vehicle is not allowed. GrayCo may test after an accident or with reasonable suspicion as the law allows. Breaking this policy can lead to discipline up to termination."], ["sigs", "Employee", "Office"]]));
+T("pto_request", "Time Off Request", "HR", ["hr"], false, l2([["title", "Time Off Request", "Ask at least 2 weeks ahead when you can"], ["info", [["Employee", "{employee}"], ["Position", "{position}"], ["Date", "{date}"]]], ["info", [["From", "&nbsp;"], ["To", "&nbsp;"], ["Hours", "&nbsp;"], ["Reason (optional)", "&nbsp;"]]], ["checks", ["Approved", "Not approved"]], ["sigs", "Employee", "Supervisor"]]));
+T("write_up", "Employee Warning / Corrective Action", "HR", ["hr"], false, l2([["title", "Corrective Action", "A written record of a problem and the plan to fix it"], ["info", [["Employee", "{employee}"], ["Position", "{position}"], ["Date", "{date}"], ["Supervisor", "&nbsp;"]]], ["checks", ["Verbal warning (documented)", "Written warning", "Final warning", "Suspension"]], ["info", [["What happened (facts, dates)", "&nbsp;"], ["Rule / expectation", "&nbsp;"], ["What must change", "&nbsp;"], ["Follow-up date", "&nbsp;"]]], ["p", "Signing shows you received this, not that you agree. You may add your own comments."], ["sigs", "Employee", "Supervisor"]]));
+T("separation", "Employee Separation Checklist", "HR", ["hr"], false, l2([["title", "Employee Separation", "When someone leaves GrayCo"], ["info", [["Employee", "{employee}"], ["Position", "{position}"], ["Date", "{date}"], ["Last day", "&nbsp;"], ["Reason", "&nbsp;"]]], ["checks", ["Final pay on time (state law)", "Tools, keys, vehicle, fuel card, uniforms returned", "CRM / Field app / e-mail access turned off", "Phone numbers and portal links changed if needed", "Benefits / COBRA notice (if any)", "Exit conversation"]], ["sigs", "Employee", "Office"]]));
 T("training_record", "Training Sign-In Sheet", "HR", ["hr"], false, l2([["title", "Training Sign-In", "Safety, lead-safe, equipment or company training"], ["info", [["Training", "&nbsp;"], ["Trainer", "&nbsp;"], ["Date", "{date}"], ["Length", "&nbsp;"]]], ["grid", ["Name", "Signature"], 14]]));
 T("vendor_po", "Purchase Order", "Vendors & Purchasing", ["insurance", "residential", "commercial"], false, l2([["title", "Purchase Order", "GrayCo Construction Services, LLC"], ["info", [["Vendor", "&nbsp;"], ["Job", "{job_name}"], ["Deliver to", "{job_address}"], ["PO #", "{po}"], ["Date", "{date}"]]], ["grid", ["Item", "Qty", "Unit", "Unit price", "Total"], 12], ["p", "Put the PO # on every invoice and delivery ticket. Send invoices to {billing_email}."], ["sigs", "Ordered by (GrayCo)", "Vendor"]]));
 T("credit_app", "Vendor Credit / Account Setup", "Vendors & Purchasing", ["insurance", "residential", "commercial"], false, l2([["title", "Vendor Account Setup", "Information GrayCo gives a supplier to open an account"], ["info", [["Company", "GrayCo Construction Services, LLC"], ["Billing e-mail", "{billing_email}"], ["Office phone", "{office_phone}"], ["License #", "{license}"], ["Date", "{date}"]]], ["info", [["Vendor", "&nbsp;"], ["Account #", "&nbsp;"], ["Terms", "&nbsp;"], ["Tax exempt?", "&nbsp;"], ["Authorized buyers", "&nbsp;"]]], ["p", "Every purchase needs a GrayCo job PO. Purchases without a PO are not authorized."], ["sigs", "GrayCo (officer)", "Vendor"]]));
@@ -180907,10 +180909,12 @@ function fieldsFor(pj){
     pm: s(pj && (pj.pm || pj.pmName)),
     office_phone: s(B.phone) || '(901) 585-0944',   /* the company's line — never a person's */
     billing_email: s(B.billingEmail) || 'billing@grayco-cs.com',
-    license: s(B.licenses) || 'TN #85034 BCB'
+    license: s(B.licenses) || 'TN #85034 BCB',
+    employee: '', position: '', company: coLegal()   /* HRDOCS-patch: the paper's company (MULTICO); the hiring packet fills employee / position */
   };
 }
-var FIELDS = ['customer', 'gc', 'job_name', 'job_address', 'po', 'date', 'contract_amount', 'pm', 'office_phone', 'billing_email', 'license'];
+function coLegal(){ try { var C = W._gcCo, co = W._gcDocCo && W._gcDocCo.get ? W._gcDocCo.get() : ''; if (C && C.valid && C.valid(co)) return s(C.get(co).legal) || GCO; } catch (e) {} return GCO; }
+var FIELDS = ['customer', 'gc', 'job_name', 'job_address', 'po', 'date', 'contract_amount', 'pm', 'office_phone', 'billing_email', 'license', 'employee', 'position', 'company'];   /* HRDOCS-patch: employee / position / company (HR papers) */
 function fill(html, f){
   return String(html || '').replace(/\{([a-z_]+)\}/g, function(m, k){
     if (FIELDS.indexOf(k) < 0) return m;
@@ -180924,6 +180928,7 @@ function render(id, pid, opts){
   return W._fetchOneTpl(id).then(function(t){
     if (!t || !s(t.html)) return null;
     var pj = pid ? job(pid) : null, f = fieldsFor(pj);
+    if (opts.fields) Object.keys(opts.fields).forEach(function(k){ if (FIELDS.indexOf(k) >= 0 && s(opts.fields[k])) f[k] = s(opts.fields[k]); });   /* HRDOCS-patch */
     var body = fill(t.html, f);
     var page = '<!doctype html><html><head><meta charset="utf-8"><title>' + esc(t.name + (pj ? ' — ' + pj.name : '')) + '</title>' +
       '<style>body{font-family:Arial,Helvetica,sans-serif;color:#111;max-width:780px;margin:24px auto;padding:0 18px;font-size:10.5pt}@media print{body{margin:0 auto}.noprint{display:none}}</style></head><body>' +
@@ -185321,7 +185326,7 @@ function list(){
     arr(a[0]).forEach(function(d){
       if (!d || !d.id || ALIAS[d.id]) return;
       var b = /^gcb_/.test(d.id);
-      add({ uid: d.id, id: d.id, kind: b || d.kind === 'html' ? 'tpl' : 'docx', title: d.name, name: d.name, group: b ? (TPL_GROUP[d.id] || 'Internal') : (d.category === 'Lien Waivers' ? 'Lien Waivers' : /sub/i.test(d.category || '') ? 'Sub' : /closeout|warrant/i.test(d.category || '') ? 'Closeout' : /intake|change/i.test(d.category || '') ? 'Client' : 'Internal'), category: d.category, jobTypes: arr(d.jobTypes), clientFacing: !!d.clientFacing, blank: true, custom: b ? 'html' : null });
+      add({ uid: d.id, id: d.id, kind: b || d.kind === 'html' ? 'tpl' : 'docx', title: d.name, name: d.name, group: b ? (TPL_GROUP[d.id] || (d.category === 'HR' ? 'HR' : 'Internal')) : (d.category === 'Lien Waivers' ? 'Lien Waivers' : /sub/i.test(d.category || '') ? 'Sub' : /closeout|warrant/i.test(d.category || '') ? 'Closeout' : /intake|change/i.test(d.category || '') ? 'Client' : 'Internal'), category: d.category, jobTypes: arr(d.jobTypes), clientFacing: !!d.clientFacing, blank: true, custom: b ? 'html' : null });
     });
     FN.forEach(function(f){ add({ uid: 'fn:' + f.id, id: 'fn:' + f.id, kind: 'fn', fid: f.id, title: f.title, name: f.title, group: f.group, category: f.group, jobTypes: f.jobTypes, clientFacing: f.clientFacing, match: f.match, desc: f.desc, blank: !!f.html && !f.needsJob, needsJob: !!f.needsJob, openOnly: !f.html, custom: f.html ? 'blocks' : null }); });
     UPL.filter(function(u){ return u && u.id && !u.deleted; }).forEach(function(u){ add({ uid: 'up:' + u.id, id: 'up:' + u.id, kind: 'upload', up: u, title: s(u.name) || s(u.fileName), name: s(u.name) || s(u.fileName), group: GROUPS.indexOf(u.group) >= 0 ? u.group : 'My uploads', category: u.group || 'My uploads', jobTypes: arr(u.jobTypes), clientFacing: !!u.clientFacing, file: true, custom: 'meta' }); });
@@ -220502,5 +220507,531 @@ function open(pre){
 W._gcDilution = { open: open, byRatio: byRatio, byOzPerGal: byOzPerGal, byStrength: byStrength };
 /* a 🧮 button in the Materials & SDS tab header */
 (function tick(){ try { var h = D.querySelector('.gcsds h1, .gcsds h2, [data-sds-root] h1, [data-sds-root] h2'); if (h && !D.getElementById('gc-dil-btn')) { var b = D.createElement('button'); b.type = 'button'; b.id = 'gc-dil-btn'; b.setAttribute('data-gc-keep', '1'); b.textContent = '🧮 Dilution calculator'; b.style.cssText = 'margin-left:10px;border:1px solid #0e7490;background:#ecfeff;color:#0e7490;border-radius:999px;padding:4px 12px;font:700 13px Inter,Arial,sans-serif;cursor:pointer;vertical-align:middle'; b.addEventListener('click', function(){ open({}); }); h.appendChild(b); } } catch (e) {} setTimeout(tick, 1000); })();
+})(window);
+</script>
+<script id="gc-patch-hrdocs">
+/* HRDOCS (owner 11/11: "put everything we need in our basic contracts for signing PMs, techs, office etc — all company-made basic
+   documents that we will give when hiring, general statements etc"). Internal HR papers in the 📚 document library
+   (window._gcDocLib.builtins(), category "HR", never client-facing), for GrayCo Construction Services, GrayCo Mitigation and
+   GrayCo Environmental — our own plain-English wording, written for Tennessee (also MS / AR), conservative.
+     • Every paper: the employee / position / company / date block ({employee} {position} {company} {date}), the company's
+       letterhead (the usual render path; MULTICO-LETTERHEAD swaps the logo), an employee signature + date and a company
+       representative signature + date. Ends "HR form rev. 11/11/2026".
+     • Final wording (owner 11/11: "lawyer signed on everything … these documents are good") — no DRAFT flag on any of them.
+       One admin-only note (template editor, never printed): the confidentiality agreement has no non-compete by default.
+     • 📋 Hiring packet (admins): pick the role, the company and the person → the papers to sign, in order (the existing
+       offer letter, onboarding checklist, vehicle / tool / drug / direct deposit / emergency contact papers and these), each
+       opened filled with the person's name and the company, or 🖨 Print all; plus the federal / state links (I-9, W-4,
+       TN new-hire reporting). Where: Admin → Hiring (next to + Add Candidate), the New-Hire Setup list, _gcHirePacket.open().
+   API: window._gcHirePacket = { roles, list(role, co, opts), render(id, who), combined(role, co, who, opts), open(pre), ids, notes } */
+(function(W){
+'use strict';
+if (W.__GC_PATCH_HRDOCS__) return; W.__GC_PATCH_HRDOCS__ = true;
+var D = W.document, LIB = W._gcDocLib, L = LIB && LIB.builtins && LIB.builtins();
+if (!L) { try { console.warn('[GC] HRDOCS: the document library is not loaded'); } catch (e) {} return; }
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout, RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+function later(f, ms){ return ST.call(W, f, ms || 0); }
+function s(v){ return v == null ? '' : String(v).trim(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function esc(v){ return String(v == null ? '' : v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function me(){ try { return JSON.parse(localStorage.getItem('grayco_user') || '{}') || {}; } catch (e) { return {}; } }
+function isAdmin(){ try { if (W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()) return true; } catch (e) {} var u = me(); return /admin|owner/i.test(s(u.role)) || s(u.payType).toLowerCase() === 'owner'; }
+var REV = 'HR form rev. 11/11/2026';
+
+/* ── building blocks (the same look as the library's papers) ── */
+function p(t){ return '<p style="margin:0 0 10px;line-height:1.55">' + t + '</p>'; }
+function h(t){ return '<h3 style="font-size:12pt;margin:16px 0 6px;color:#0f2440">' + t + '</h3>'; }
+function title(t, sub){ return '<h2 style="text-align:center;font-size:15pt;margin:4px 0 2px;color:#0f2440;letter-spacing:.3px">' + t + '</h2>' + (sub ? '<div style="text-align:center;font-size:9.5pt;color:#555;margin-bottom:10px">' + sub + '</div>' : '<div style="height:8px"></div>'); }
+function info(rows){ return '<table style="width:100%;border-collapse:collapse;font-size:10pt;margin:6px 0 12px">' + rows.map(function(r){ return '<tr><td style="padding:4px 6px;width:34%;color:#555;border-bottom:1px solid #e5e7eb">' + r[0] + '</td><td style="padding:4px 6px;border-bottom:1px solid #e5e7eb"><b>' + r[1] + '</b></td></tr>'; }).join('') + '</table>'; }
+function li(a){ return '<ul style="margin:0 0 10px 18px;padding:0;line-height:1.55">' + a.map(function(x){ return '<li style="margin:0 0 4px">' + x + '</li>'; }).join('') + '</ul>'; }
+function box(t){ return '<div style="border:1.5px solid #333;padding:8px 10px;margin:8px 0;font-size:10pt;line-height:1.5;background:#fafafa">' + t + '</div>'; }
+function checks(items){ return '<div style="font-size:10pt;line-height:1.9">' + items.map(function(t){ return '☐ ' + t; }).join('<br>') + '</div>'; }
+function grid(cols, n){ var hd = '<tr>' + cols.map(function(c){ return '<th style="border:1px solid #cbd5e1;padding:5px;background:#f1f5f9;font-size:9pt;text-align:left">' + c + '</th>'; }).join('') + '</tr>'; var r = ''; for (var i = 0; i < (n || 6); i++) r += '<tr>' + cols.map(function(){ return '<td style="border:1px solid #cbd5e1;padding:9px 5px">&nbsp;</td>'; }).join('') + '</tr>'; return '<table style="width:100%;border-collapse:collapse;font-size:9.5pt;margin:6px 0 12px">' + hd + r + '</table>'; }
+function small(t){ return '<p style="font-size:9pt;color:#555;margin:6px 0">' + t + '</p>'; }
+function line(label){ return '<td style="padding:22px 8px 4px;vertical-align:bottom;width:50%"><div style="border-top:1px solid #333;padding-top:3px;font-size:9pt;color:#444">' + label + '</div></td>'; }
+function sigs(a, b){ a = a || 'Employee'; b = b || 'For {company} (authorized representative)'; return '<table data-gc-sig="1" style="width:100%;border-collapse:collapse;margin-top:18px;page-break-inside:avoid"><tr>' + line(a + ' — signature') + line(b + ' — signature') + '</tr><tr>' + line('Printed name') + line('Printed name / title') + '</tr><tr>' + line('Date') + line('Date') + '</tr></table>'; }
+var WHO = [['Employee', '{employee}'], ['Position', '{position}'], ['Company', '{company}'], ['Date', '{date}']];
+function ack(t){ return h('Acknowledgment') + p(t || 'I have read this paper (or had it read to me), I had the chance to ask questions, and I understand it. I agree to follow it. I understand that it does not change my at-will employment and that {company} may update it with notice.'); }
+var GRP = 'the GrayCo companies — GrayCo Construction Services, LLC (construction and restoration), GrayCo Mitigation, LLC (water, fire, emergency services and board-up) and GrayCo Environmental, LLC (lead, asbestos and mold)';
+
+/* ── the papers ── */
+var IDS = {}, NOTES = {}, DOCS = [];
+function add(id, name, body, o){
+  o = o || {}; var full = 'gcb_' + id;
+  var t = { id: full, file: full + '.html', name: name, category: 'HR', scope: 'company', jobTypes: ['hr'], clientFacing: false, editable: true, builtin: true, kind: 'html',
+    body: body + '<div data-gc-formrev="1" style="margin-top:16px;font-size:8pt;color:#777;text-align:right">' + REV + '</div>', hr: true };
+  if (!L.some(function(x){ return x && x.id === full; })) L.push(t);
+  IDS[full] = t; DOCS.push(t); if (o.note) NOTES[full] = o.note;
+}
+
+/* 1. Employee Handbook — General Statements & Acknowledgment */
+add('hr_handbook_ack', 'Employee Handbook — General Statements & Acknowledgment',
+  title('Employee Handbook — General Statements', 'The basics every GrayCo employee reads and signs') + info(WHO) +
+  box('This paper sums up how we work. It is a guide, <b>not a contract</b>, and it does not promise employment for any length of time. The full Employee Handbook and the separate policies you sign give more detail. If anything here conflicts with the law, the law controls. {company} may change these statements with notice.') +
+  h('1. Who we are and what we value') + p('{company} is one of ' + GRP + '. We work in Tennessee, Mississippi and Arkansas. Our values:') +
+  li(['<b>Safety first</b> — nobody gets hurt for a job. Anyone may stop unsafe work.', '<b>Tell the truth</b> — to customers, adjusters, inspectors and each other, even when it is bad news.', '<b>Do it right</b> — the right way the first time, by the code, the label and the standard.', '<b>Take care of the customer</b> — their home, their belongings and their time.', '<b>Own it</b> — if you make a mistake, say so right away so we can fix it.', '<b>Leave it cleaner than we found it</b> — every day.']) +
+  h('2. Customer care on emergency losses') + p('On a fire, water, storm or other emergency job the customer may be having one of the worst days of their life. Lead with empathy: arrive calm and on time, introduce yourself, say "I\'m sorry this happened — we\'re here to help." Ask first whether everyone is safe and has somewhere to stay. Listen before you talk business. Treat their belongings as irreplaceable and ask before moving or throwing anything away. Never blame, judge or joke about the cause, and never tell a customer what their insurance will or will not pay — your project manager or the office handles that. See the Code of Conduct & Customer Care Standards.') +
+  h('3. At-will employment') + p('Employment with {company} is <b>at will</b>. You or the company may end the employment at any time, with or without cause and with or without notice. Nothing in this paper, the handbook, an offer letter, a job description, a pay structure or anything a supervisor says creates a contract for any length of employment. Only an owner of the company, in a signed writing that says so, can change at-will employment.') +
+  h('4. Equal employment opportunity') + p('We hire, pay, train, promote, discipline and end employment without regard to race, color, religion, sex (including pregnancy, sexual orientation and gender identity), national origin, age (40 and over), disability, genetic information, military or veteran status, or any other status protected by federal, Tennessee or local law. We make reasonable accommodations for a disability, pregnancy or a sincerely held religious belief unless it would cause undue hardship. Ask your supervisor, an owner or the office.') +
+  h('5. No harassment — and how to report') + p('Harassment, bullying, threats and unwelcome comments, jokes, touching, pictures or messages about a protected status are not allowed — by anyone, including customers, subcontractors and vendors, on a jobsite, in the office, in a vehicle, by text or online.') +
+  li(['<b>Report it</b> to your supervisor, to an owner, or to the office manager — in person, by phone, by text or in writing. You may skip anyone who is involved.', 'We look into every report promptly and as privately as we can, and we act on what we find.', '<b>No retaliation.</b> Nobody will be punished for a good-faith report or for helping in an investigation. Retaliation is itself a violation of this policy.']) +
+  h('6. Attendance') + p('Be on time and ready to work at your scheduled start. If you will be late or absent, call or text your supervisor <b>before</b> your shift starts (at least one hour ahead when you can) — a message to a co-worker is not enough. Not calling and not showing up for three scheduled workdays in a row may be treated as quitting. Ask for planned time off at least two weeks ahead using the Time Off Request.') +
+  h('7. Timekeeping') + p('Hourly (non-exempt) employees clock in and out in the GrayCo app and record every minute worked — no work off the clock. Overtime (over 40 hours in a work week, paid at one and one-half times the regular rate) must be approved ahead of time, but it is always paid when worked. If you are scheduled for six hours or more in a row you get a 30-minute unpaid meal break, as Tennessee law requires; clock out for it, and tell the office if work interrupts it. See the Timekeeping, Clock-In & Location Policy.') +
+  h('8. Pay schedule') + p('Payroll runs <b>every week</b>. Hours, mileage and expenses for the week are reviewed and <b>approved on Thursday</b>, and pay is deposited <b>on Friday</b> (if Friday is a bank holiday, the closest business day). Check your hours before Thursday. If you think your pay is wrong, tell the office right away — mistakes are corrected promptly, and no one is punished for asking. Final pay is made as Tennessee law requires.') +
+  h('9. Safety') + p('Follow OSHA rules, GrayCo training and the written Safety Program. Wear the PPE the job calls for. You have the right and the duty to stop work you believe is unsafe. Report every injury, near-miss, vehicle accident and property damage to your supervisor the same day. Workers\' compensation covers work injuries, and nobody is punished for reporting an injury or filing a claim.') +
+  h('10. Confidentiality') + p('Customer names, addresses, phone numbers, insurance and claim information, access codes, photos, prices and company records are confidential. Use them only for your work and keep them in the CRM — not in personal texts, notes or accounts. Nothing here limits your right to talk about your own wages, hours and working conditions, or to report a concern to a government agency. See the Confidentiality, Customer Data & Non-Solicitation Agreement.') +
+  h('11. Company property') + p('Tools, equipment, vehicles, phones, tablets, uniforms, keys, fuel cards, CRM and e-mail accounts belong to the company. Use them for company work, take care of them, and return them when asked or when employment ends. Company devices, accounts and the CRM may be monitored as the law allows, so do not expect privacy in them. Use only your own login and never share a password.') +
+  h('12. Phones, photos and social media') + p('Job photos and videos belong to the company and go in the GrayCo app. Never post a customer\'s home, face, address, belongings, documents or claim on social media, and never talk about a customer, an insurance company or a claim online. No handheld phone use while driving. See the Phones, Photos & Social Media Policy.') +
+  h('13. Drugs, alcohol and weapons') + p('No alcohol, illegal drugs or misused medicines at work, on a jobsite or in a company vehicle (see the Drug & Alcohol Policy). No weapons on jobsites, in customers\' homes or in company vehicles, except a firearm a person may lawfully keep locked out of sight in their own vehicle as Tennessee law allows.') +
+  h('14. Discipline') + p('Most problems are handled step by step — coaching, a documented verbal warning, a written warning, a final warning — so you know what must change. Serious misconduct (for example theft, violence, harassment, falsifying time or location, working impaired, or a serious safety violation) may lead straight to suspension or termination. Using these steps does not change at-will employment.') +
+  h('15. Leaving the company') + p('We ask for two weeks\' notice when you can give it. On or before your last day, return all company property (see the Return of Company Property form), turn in your hours, and give the office your current mailing address. Your CRM and app access ends on your last day. Your final pay is paid no later than the next regular payday or 21 days after your last day, whichever is later, as Tennessee law provides.') +
+  ack('I received the GrayCo Employee Handbook and these General Statements. I have read them, or had them read to me, and I had the chance to ask questions. I understand that my employment is <b>at will</b>, that the handbook and these statements are <b>not a contract</b>, and that the company may change its policies with notice. I agree to follow them and to ask my supervisor or the office when I am not sure.') + sigs(),
+  {});
+
+/* 2. At-Will Employment Acknowledgment (TN) */
+add('hr_at_will', 'At-Will Employment Acknowledgment (Tennessee)',
+  title('At-Will Employment Acknowledgment', 'Tennessee') + info(WHO) +
+  p('I understand that my employment with {company} is <b>at will</b>. This means:') +
+  li(['I may quit at any time, for any reason, with or without notice (two weeks\' notice is appreciated).', 'The company may end my employment at any time, with or without cause and with or without notice, for any reason that is not against the law.', 'My job, duties, schedule, pay structure, location and benefits may change from time to time.', 'No offer letter, handbook, policy, job description, pay structure, commission plan, performance review or spoken promise creates a contract of employment for any period of time or changes at-will employment.', 'Only an owner of the company can change at-will employment, and only in a written agreement signed by that owner and me that says it changes at-will employment.']) +
+  p('Tennessee follows the employment-at-will rule. Nothing in this acknowledgment takes away any right the law gives me, including the right to be free from discrimination and retaliation, or to report a safety or legal concern.') +
+  ack('I have read this acknowledgment, I had the chance to ask questions, and I understand that my employment is at will.') + sigs(),
+  {});
+
+/* 3. Confidentiality, Customer Data & Non-Solicitation (no non-compete by default) */
+add('hr_confidentiality', 'Confidentiality, Customer Data & Non-Solicitation Agreement',
+  title('Confidentiality, Customer Data & Non-Solicitation Agreement', 'For every employee · no non-compete') + info(WHO) +
+  p('This agreement is between {company} ("the Company") and the employee named above. It is signed in exchange for employment or continued employment and access to the Company\'s customers, information and training.') +
+  h('1. What is confidential') + p('"Confidential Information" means information that is not public about the Company, ' + GRP + ', and their customers, including: customer and lead names, addresses, phone numbers and e-mail addresses; insurance, claim, policy and adjuster information; photos, videos, moisture maps, test results and reports; lockbox, gate, alarm and door codes and keys; estimates, prices, margins, bids and pay structures; subcontractor and supplier terms; the CRM, its data and logins; financial records; and trade secrets. It does not include information that is public through no fault of the employee.') +
+  h('2. Customer data — how we protect it') + li(['Use customer information only to do your job for the Company.', 'Keep it in the CRM and the GrayCo app. Do not copy it into personal texts, notes, photo rolls, cloud drives, e-mail or apps, and do not forward it to a personal account.', 'Never give a customer\'s information, codes or photos to anyone outside the Company — including friends, other contractors, salespeople or the media — unless your supervisor tells you to for the job (for example, a subcontractor working that job).', 'Tell your supervisor right away if a phone, tablet, laptop, key or paper with customer information is lost or stolen, or if you think information got out.', 'Credit card and bank numbers: never write them down or text them. The office takes payments only through the Company\'s payment system.']) +
+  h('3. When employment ends') + p('Return or delete all Confidential Information and Company property, and do not keep copies. The duty to keep information confidential continues after employment ends — for a trade secret as long as it stays a trade secret, and for other Confidential Information for two (2) years.') +
+  h('4. No soliciting customers or employees') + p('During employment, and for twelve (12) months after it ends, the employee will not, directly or through anyone else: (a) ask a customer or active lead of the Company that the employee worked with or learned about through the Company in the last 12 months of employment to move work away from the Company; or (b) ask a Company employee or subcontractor to leave the Company or reduce its work for the Company. General advertising that is not aimed at those customers or people is not a violation.') +
+  h('5. No non-compete') + p('This agreement does <b>not</b> stop the employee from working for another contractor or starting a business after employment ends. It only protects the Company\'s confidential information, customers and people as written above.') +
+  h('6. Rights this agreement does not limit') + p('Nothing here stops the employee from talking about their own wages, hours or working conditions, from taking part in activity protected by the National Labor Relations Act, or from reporting a possible violation of law to, or cooperating with, a government agency. <b>Defend Trade Secrets Act notice:</b> an individual is not liable under any federal or state trade-secret law for disclosing a trade secret (a) in confidence to a government official or an attorney solely to report or investigate a suspected violation of law, or (b) in a complaint or other document filed under seal in a lawsuit or other proceeding.') +
+  h('7. General') + p('Work product (estimates, photos, reports, templates) made for the Company belongs to the Company. This agreement does not change at-will employment. It is governed by Tennessee law. If a court finds any part too broad, that part may be narrowed and the rest stays in effect. Changes must be in writing signed by both.') +
+  ack('I have read this agreement, I had the chance to ask questions and to talk with a lawyer if I wanted, and I agree to it.') + sigs(),
+  { note: 'No non-compete by default. Tennessee enforces a non-compete only where it protects a legitimate business interest (trade secrets / confidential information, specialized training, or customer goodwill tied to the employee) and is reasonable in time, area and scope. Whether a PM or estimator also signs one is the attorney\'s call — the separate "Confidentiality & Non-Solicitation Agreement" (narrow non-compete) is in the library for that.' });
+
+/* 4. Timekeeping, Clock-In & Location Policy */
+add('hr_timekeeping', 'Timekeeping, Clock-In & Location Policy — Consent',
+  title('Timekeeping, Clock-In & Location Policy', 'How we record time and where it was worked · employee consent') + info(WHO) +
+  h('1. Clock in and out in the app — at the job') + li(['Clock in in the GrayCo app (Field app) when you arrive at your first job of the day (or the shop, if you were told to report there) and clock out when you leave the last one.', 'Use only your own login. Never clock in or out for someone else, and never let anyone clock in for you.', 'Clock out for your meal break. If you are scheduled six hours or more in a row you get a 30-minute unpaid meal break (Tennessee law). If work interrupts your break, tell the office so that time is paid.']) +
+  h('2. Location stamps') + p('When you clock in, when you clock out, and when you add an entry in the app while you are on the clock (a photo, a note, a time entry, a daily log or a form), the app records your phone\'s location at that moment and saves it with the record. We use it to confirm when and where work was done, to pay you correctly, to bill customers accurately, for safety and dispatch, and to answer questions from customers and insurance companies.') +
+  box('<b>Location is recorded only while you are on the clock.</b> The app does not track you when you are clocked out, on an unpaid meal break, or on your days off. You may turn off location for the app when you are off the clock. If your phone cannot get a location (no signal), clock in anyway and add a note.') +
+  h('3. No work off the clock') + p('Record all work time — loading the truck, required meetings and trainings, travel between jobs during the day, picking up materials, and work calls, texts and e-mails outside your shift. Normal travel from home to your first job and from your last job home is usually not work time; ask the office if you are not sure. A supervisor may never ask you to work off the clock — report it if one does.') +
+  h('4. Overtime') + p('Hourly (non-exempt) employees are paid one and one-half times their regular rate for hours over 40 in a work week. Overtime must be approved by your supervisor <b>ahead of time</b>. If you work overtime that was not approved you will still be paid for it, but you may be coached or disciplined for not getting approval.') +
+  h('5. Missed or wrong punches') + p('If you forget to clock in or out, or a time is wrong, fix it in the app with a short note the same day — and no later than the Thursday payroll approval. Your supervisor approves the change. Never change a time to show time you did not work or remove time you did work.') +
+  h('6. Weekly approval and pay') + p('Review your hours each week. Hours are approved on Thursday and paid on Friday.') +
+  h('7. Honesty') + p('Falsifying time, punching for someone else, faking or hiding your location (for example with a location-spoofing app), or clocking in away from the job without approval is serious misconduct and may lead to termination.') +
+  h('Consent to location stamps') + p('I understand and consent that the GrayCo app will record my device\'s location when I clock in, when I clock out, and on entries I make while I am on the clock, as described above, and that location is not recorded while I am off the clock. If I use my own phone, the company will use only the app\'s records — not anything else on my phone.') +
+  ack() + sigs(),
+  {});
+
+/* 5. Phones, Photos & Social Media */
+add('hr_phones_photos', 'Phones, Photos & Social Media Policy',
+  title('Phones, Photos & Social Media Policy', 'Job photos belong to the company · customers\' privacy comes first') + info(WHO) +
+  h('1. Job photos and videos belong to the company') + li(['Take job photos and videos in the GrayCo app (📸 GrayCo Photos / Field app) so they go straight into the job. If you must use your phone\'s camera, upload them to the job the same day and then delete them from your phone.', 'Photos, videos, moisture maps and reports you make for work are company property and part of the customer\'s file. Do not keep, share or sell them.', 'Never edit a photo to change what it shows. Take the photos your PM asks for — before, during and after — with dates and readings where needed.']) +
+  h('2. Never post a customer\'s home or information') + p('Do not post, share or send to anyone outside the company any photo, video or detail of a customer\'s home, address, house number, people, children, pets, vehicles, license plates, belongings, documents, damage or claim — on social media, in group chats or anywhere else. The company\'s marketing team posts only photos the customer agreed to in writing, with addresses and faces removed.') +
+  h('3. No insurance or claim talk online') + p('Never post or comment online about a customer, an adjuster, an insurance company, a claim, the cause of a loss, who is at fault or what was paid. Do not argue with reviews or comments — send them to the office.') +
+  h('4. Speaking for the company') + p('Only an owner or the marketing manager speaks for the company on social media, to the media or in reviews. If you mention that you work here on your own account, make clear the views are your own.') +
+  h('5. Phones on the job') + li(['Keep personal calls, texts and social media to breaks and emergencies. Never use earbuds or headphones where you need to hear warnings, equipment or the customer.', 'Do not record conversations with customers, adjusters or co-workers without your supervisor\'s approval and the other person\'s knowledge.', '<b>Driving:</b> no handheld phone use while driving — no texting, e-mail, the CRM or social media. Use hands-free only where the law allows, and pull over safely when you need the phone.']) +
+  h('6. Your rights') + p('This policy does not stop you from talking about your own wages, hours or working conditions with co-workers or others, or from other activity protected by law.') +
+  ack() + sigs(),
+  {});
+
+/* 6. Safety Program & PPE Acknowledgment */
+add('hr_safety_ppe', 'Safety Program & PPE Acknowledgment',
+  title('Safety Program & PPE Acknowledgment', 'OSHA basics · job hazard analysis · incident reporting · stop-work authority') + info(WHO) +
+  p('{company} follows OSHA\'s construction standards (29 CFR 1926) and general industry standards where they apply, and the written GrayCo Construction Safety Program (📁 Company Documents → Safety). I received safety orientation on the items below.') +
+  h('1. The basics') + li(['<b>Falls:</b> fall protection at 6 feet or more; inspect harnesses and lanyards every day; ladders extend 3 feet above the landing and are tied off or held.', '<b>Electrical:</b> GFCI on every cord and tool outdoors and in wet areas; never work on live circuits; lock out / tag out before servicing equipment.', '<b>Heat and cold:</b> water, rest and shade; know the signs of heat illness and call for help early.', '<b>Silica, dust and debris:</b> use water or vacuum controls and wear the respirator the task calls for.', '<b>Housekeeping:</b> clear walkways, cords taped or covered, nails and debris picked up every day.', '<b>Emergency:</b> know the job address, the nearest hospital and where the first-aid kit and fire extinguisher are. Call 911 first in a real emergency.']) +
+  h('2. Job Hazard Analysis (JHA)') + p('Before a risky task (roof work, demolition, confined spaces, containment, heavy lifting, chemicals, energized equipment) the crew lead completes a Job Hazard Analysis with the crew: the steps, the hazards and the controls. Everyone on the task reads it and signs.') +
+  h('3. Report every incident the same day') + p('Report every injury, near-miss, vehicle accident, property damage and exposure to your supervisor <b>right away and before you leave that day</b>, and help fill out the Incident / Injury Report. Get medical care when you need it. Workers\' compensation covers work injuries, and you will never be punished for reporting an injury, an unsafe condition or filing a claim.') +
+  h('4. Stop-work authority') + box('<b>Every employee has the authority and the duty to stop any work they believe is unsafe</b> — their own, a co-worker\'s or a subcontractor\'s — without fear of punishment. Stop, make it safe, and call your supervisor. Work restarts when the hazard is controlled.') +
+  h('5. PPE issued to me') + p('The company provides the PPE the job requires at no cost to me (hard hat, safety glasses, hearing protection, gloves, high-visibility vest, fall protection, Tyvek / suits, boot covers and respirators where required). I will wear it, inspect it, keep it clean and ask for a replacement when it is damaged. Safety-toe boots may be required for some work.') + grid(['PPE item', 'Size / model', 'Date issued', 'Issued by'], 6) +
+  ack('I received safety orientation and the PPE listed above. I understand the rules, my stop-work authority and how to report an incident, and I agree to follow the Safety Program.') + sigs(),
+  {});
+
+add('hr_respirator', 'Respiratory Protection Acknowledgment (Mitigation / Environmental)',
+  title('Respiratory Protection Acknowledgment', 'Medical evaluation and fit test before you wear a respirator · 29 CFR 1910.134') + info(WHO) +
+  p('Mitigation and environmental work (mold, sewage, fire and smoke, lead, asbestos, silica, chemicals) can require a respirator. {company} follows OSHA\'s Respiratory Protection standard (29 CFR 1910.134, which also applies to construction through 1926.103) and the written GrayCo Respiratory Protection Program (📁 Company Documents → ☣️ Lead & asbestos).') +
+  h('Before you wear a required respirator') + li(['<b>Medical evaluation first.</b> A licensed health care professional reviews the confidential OSHA medical questionnaire (and an exam if needed) and clears you to wear the respirator. The company pays for it. Your answers go to the medical provider, not your supervisor.', '<b>Fit test second.</b> Before first use you are fit-tested on the exact make, model and size you will wear, again at least every 12 months, and whenever you change respirators or have a change in your face (weight, dental work, scars) that affects the seal.', '<b>Training.</b> How to put it on, seal-check it, when to change cartridges / filters, its limits, and how to clean, inspect and store it.']) +
+  h('Every time you wear it') + li(['No beard or facial hair where the seal touches your face on a tight-fitting respirator.', 'Do a user seal check (positive / negative pressure) each time you put it on.', 'Use the cartridges or filters the task calls for (for example P100 for lead, asbestos and mold; organic-vapor / P100 combination where chemicals or odors are present) and change them on schedule or when breathing gets harder.', 'Leave the work area right away if you smell or taste contaminant, feel dizzy, or have trouble breathing, and tell your supervisor.', 'Never wear a respirator you have not been fit-tested and cleared for, and never share one.']) +
+  h('Voluntary use') + p('If you choose to wear a dust mask or respirator when one is not required, you receive OSHA\'s Appendix D information sheet ("Information for Employees Using Respirators When Not Required Under the Standard").') +
+  h('My respirator record') + info([['Respirator make / model / size', '&nbsp;'], ['Medical clearance date', '&nbsp;'], ['Fit test date / type (qualitative or quantitative)', '&nbsp;'], ['Next fit test due', '&nbsp;']]) +
+  ack('I understand that I may not wear a required respirator until I have been medically cleared, fit-tested and trained, and I agree to follow the Respiratory Protection Program.') + sigs(),
+  {});
+
+/* 7. Hazard Communication (HazCom) & SDS */
+add('hr_hazcom', 'Hazard Communication (HazCom) & SDS Acknowledgment',
+  title('Hazard Communication & Safety Data Sheets', 'Your right to know about the chemicals you use · 29 CFR 1910.1200 / 1926.59') + info(WHO) +
+  p('{company} has a written Hazard Communication Program (📁 Company Documents). I was trained on the chemicals I will use — cleaners, antimicrobials and disinfectants, deodorizers, encapsulants, adhesives, solvents, fuels and coatings.') +
+  h('Where the SDS are') + box('Every product\'s Safety Data Sheet is in the CRM\'s <b>🧪 Materials &amp; SDS</b> tab (on the job and on your phone), and the office keeps a printed SDS binder. Ask your supervisor if a product is not there — do not use a product until you know its hazards.') +
+  h('Labels') + li(['Read the label before you use any product. Know the signal word (Danger / Warning), the pictograms, and the PPE it calls for.', 'For an antimicrobial or disinfectant, the label is the law: use it only as the label directs (dilution, dwell time, surfaces, ventilation, re-entry).', '<b>Label every secondary container</b> (spray bottle, pump-up sprayer, bucket) with the product name and its hazard warnings before you put anything in it. Never put a chemical in a food or drink container.']) +
+  h('Never mix chemicals') + box('<b>Never mix chemicals</b> unless the label tells you to. Bleach and ammonia, bleach and acids (some toilet and tile cleaners), and bleach and quaternary disinfectants can give off toxic gases. Mix only with water at the label rate (the 🧮 Dilution calculator in 🧪 Materials &amp; SDS helps).') +
+  h('Safe use') + li(['Ventilate. Wear the gloves, eye protection and respirator the SDS calls for.', 'Know where the eyewash or clean water is. In an eye or skin splash, rinse for 15 minutes and call your supervisor; take the SDS to the doctor.', 'Clean up small spills as the SDS says; for a large spill keep people away and call your supervisor.', 'Store chemicals closed, labeled and away from heat, food and customers\' children and pets. Never leave chemicals at a customer\'s home unless your PM says so.']) +
+  ack('I received HazCom training. I know where the SDS are, how to read labels, that secondary containers must be labeled, and that I must never mix chemicals.') + sigs(),
+  {});
+
+/* 8. Lead / Asbestos worker acknowledgment (Environmental) */
+add('hr_lead_asbestos', 'Lead & Asbestos Worker Acknowledgment (Environmental)',
+  title('Lead & Asbestos Worker Acknowledgment', 'GrayCo Environmental work · certifications · medical surveillance · hygiene') + info(WHO) +
+  p('Lead and asbestos work is regulated by the EPA, OSHA (29 CFR 1926.62 lead; 29 CFR 1926.1101 asbestos) and the state where the job is (Tennessee, Mississippi or Arkansas). {company} follows the GrayCo Lead Safety Program and the Asbestos Awareness & Control Program (📁 Company Documents → ☣️ Lead & asbestos).') +
+  h('1. Certifications required — before you do the work') + li(['<b>Renovation, repair and painting (RRP)</b> in pre-1978 homes or child-occupied facilities: done under an EPA / state Certified Renovator. Workers without the certification are trained on the job by the certified renovator first (Lead 04 — Worker On-the-Job Training Record).', '<b>Lead abatement:</b> only workers holding a current state Lead Abatement <b>Worker</b> (or <b>Supervisor</b>) certification for the state the job is in.', '<b>Asbestos abatement:</b> only workers with current accredited Asbestos Abatement Worker (or Supervisor) training and annual refresher, plus any state license or accreditation the job\'s state requires.', 'Keep your certification card with you on the job. Tell the office at least 60 days before any certification expires. You may not work in a regulated area with an expired certification.']) +
+  h('2. Exposure monitoring and medical surveillance') + p('Where OSHA requires it, the company provides exposure monitoring and medical surveillance <b>at no cost to you</b> — for lead, blood lead and zinc protoporphyrin testing and medical exams; for asbestos, medical exams — on the schedule the standards set. Results are kept confidential in your medical file and you receive a copy. Tell your supervisor about any symptoms. You may talk privately with the medical provider about concerns, including reproductive health.') +
+  h('3. Hygiene and decontamination') + li(['<b>No eating, drinking, smoking, chewing gum or tobacco, or putting on cosmetics in the work area</b> or containment.', 'Wash your hands and face before you eat, drink or smoke, and before you leave the job.', 'Use the decon / change area. HEPA-vacuum or remove disposable suits before leaving containment. Shower where the job requires it.', 'Never take contaminated clothing, tools or PPE home or into your vehicle. Bag it as your supervisor directs.', 'Keep regulated-area signs, critical barriers and containment in place. Do not let anyone without the right training and PPE into the work area.']) +
+  h('4. Stop and report') + p('If you find material that may contain asbestos or lead paint that was not in the plan (pipe wrap, floor tile, mastic, popcorn ceiling, old siding), <b>stop work</b> in that area and tell your supervisor (Suspect Asbestos — Stop-Work Notice). Never sand, scrape, cut or sweep suspect material dry.') +
+  h('5. Waste and records') + p('Bag, label and handle waste as the plan and the state require. Fill out the job\'s records (sign-in, monitoring, cleaning verification, clearance) completely and truthfully.') +
+  h('My certifications') + grid(['Certification', 'Number', 'State', 'Expires'], 4) +
+  ack('I understand the certifications I need, the medical surveillance and hygiene rules, and that I must never eat, drink or smoke in a work area. I agree to follow the lead and asbestos programs.') + sigs(),
+  {});
+
+/* 9. Customer Property, Keys & Access Codes */
+add('hr_customer_property', 'Customer Property, Keys & Access Codes Policy',
+  title('Customer Property, Keys & Access Codes', 'Lockboxes, gate codes, alarm codes and the customer\'s belongings') + info(WHO) +
+  h('1. Codes and keys are confidential') + li(['Lockbox, gate, door, garage and alarm codes and customer keys are kept <b>only in the job in the CRM</b> — never in personal notes, texts, group chats, on a whiteboard or written on the lockbox.', '<b>Never share a code or key</b> with anyone who is not working that job for the company. Your PM gives a subcontractor only what they need for that job and that day.', 'Never copy a key. Sign keys out and back in with the office or your PM. Report a lost key or a code you think got out <b>right away</b> so the customer can be told and the lock or code changed.', 'Use a code only on the dates you are scheduled at that job. Never go to a customer\'s property after hours or for any personal reason.']) +
+  h('2. Arriving and leaving') + li(['Knock or call before you enter, even with a key or code.', 'When you leave: close and lock every door and window you used, put the key back in the lockbox and scramble the dial, set the alarm if the customer asked, and make sure pets are where the customer wants them.', 'Leave utilities, thermostats and equipment the way the PM said to.']) +
+  h('3. The customer\'s belongings are irreplaceable') + li(['Treat everything in the home as irreplaceable — photos, heirlooms, children\'s items, documents, medicines, firearms, jewelry, electronics.', 'Ask before you move anything. Photograph it before and after when contents are moved or packed out. Never throw anything away, even if it looks like trash, without the customer\'s written OK (Non-Salvageable Contents — Disposal Authorization).', 'Never open drawers, closets, mail or devices except as the work requires. Never use the customer\'s things (bathroom, kitchen, chargers, tools) without their permission.', 'Never take anything from a customer\'s property — not even scrap or items the customer is getting rid of — without the customer\'s and your PM\'s written OK.', 'Report any damage you cause or find to your PM the same day, with photos. We fix our mistakes.']) +
+  ack('I understand that customer codes, keys and belongings are a trust, and I agree to follow this policy. Breaking it may lead to termination.') + sigs(),
+  {});
+
+/* 10. Code of Conduct & Customer Care Standards */
+add('hr_code_conduct', 'Code of Conduct & Customer Care Standards',
+  title('Code of Conduct & Customer Care Standards', 'How we treat customers, each other and the jobsite') + info(WHO) +
+  h('1. Lead with empathy — fire, water and emergency jobs') + p('The customer is having one of the worst days of their life. How we show up in the first hour decides whether we earn their trust.') +
+  li(['Arrive calm and on time; call or text if you will be even 10 minutes late.', 'Introduce yourself by name and say: "I\'m sorry this happened. We\'re here to help, and we\'ll take it one step at a time."', 'Ask first: "Is everyone safe? Do you have somewhere to stay tonight? Any pets, medicines or anything important we should get first?"', 'Listen before you talk business. Let them tell their story; don\'t rush them or talk over them.', 'Explain what happens next in plain words — today, tomorrow, this week. No jargon.', 'Treat their things like they\'re irreplaceable. Ask before moving or throwing anything away.', 'Protect the property right away (board-up, tarp, stop the water, secure the doors) — then tell them it\'s secured.', 'If they\'re upset or angry, stay calm, acknowledge it ("I understand — this is a lot") and fix what we can. Compassion first, paperwork second — but the authorization is signed before work starts.']) +
+  h('2. Insurance, cause and blame — not our conversation') + box('<b>Do not discuss insurance coverage, the cause of the loss, or who is to blame with the customer</b> — not what the policy covers, what the insurance company will pay, whether it was a "covered" loss, or whose fault it was (a pipe, a tenant, a neighbor, a past contractor, the insurance company). Say: <i>"That\'s a great question — your project manager will go over that with you."</i> Only the PM or the office talks about the claim, and only about facts we documented. Never promise what the carrier will pay.') +
+  h('3. Professionalism') + li(['Wear the company shirt and ID; keep yourself, the truck and the jobsite neat.', 'Clean language, low music, no smoking or vaping on the customer\'s property, no alcohol or drugs — ever.', 'Be respectful to customers, neighbors, adjusters, inspectors, subcontractors and co-workers. No arguing in front of the customer; take it to your PM.', 'Protect floors and furniture, contain dust, and clean up every day.', 'Tell the truth. If something goes wrong or you make a mistake, tell your PM right away.', 'Follow every law, permit and code, and the company\'s safety rules.']) +
+  h('4. No side work for GrayCo customers') + p('Never offer, quote or do work for a GrayCo customer, lead or their neighbor on your own or for another company, and never accept cash or payment from a customer. All work goes through the company. See the Conflict of Interest & No Side Jobs acknowledgment.') +
+  h('5. Gifts and tips') + p('Thank the customer for any offer. Do not accept cash. A small token (a drink, a snack, a holiday card) is fine; tell your PM about anything more.') +
+  ack('I have read the Code of Conduct and the Customer Care Standards and I agree to follow them.') + sigs(),
+  {});
+
+/* 11. Conflict of Interest & No Side Jobs */
+add('hr_conflict', 'Conflict of Interest & No Side Jobs Acknowledgment',
+  title('Conflict of Interest & No Side Jobs', 'Our customers are the company\'s customers') + info(WHO) +
+  h('The rules') + li(['<b>No side jobs for GrayCo customers or leads.</b> While I work for the company I will not quote, sell or do any work — paid or unpaid — for a customer, lead or prospect of ' + GRP + ', or send that work to another contractor, except through the company.', '<b>No kickbacks.</b> I will not take money, gifts worth more than about $50, trips, discounts or favors from a subcontractor, supplier, adjuster, vendor or customer in exchange for work, referrals or approvals.', '<b>Tell the company about outside work</b> in construction, restoration, mitigation, roofing, environmental or a related trade before I start it, so we can make sure it does not conflict. Outside work may never use company time, tools, vehicles, materials, customers or information.', '<b>Tell the company about any interest</b> I or a family member have in a subcontractor, supplier or vendor the company uses or is thinking of using, and about any relative I would supervise or be supervised by.', 'Never use company materials, tools or vehicles for personal jobs.']) +
+  h('My disclosures (write "none" if none)') + info([['Outside work in a related trade', '&nbsp;'], ['Interest in a sub / supplier / vendor', '&nbsp;'], ['Relatives at the company or its vendors', '&nbsp;']]) +
+  p('Nothing here limits activity protected by law. Breaking these rules may lead to discipline up to termination, and the company may recover any loss the law allows.') +
+  ack('I understand these rules and my disclosures above are complete and true. I will update them if anything changes.') + sigs(),
+  {});
+
+/* 12. Background check — FCRA: a standalone disclosure and a separate authorization */
+add('hr_bg_disclosure', 'Background Check Disclosure (FCRA)',
+  title('Disclosure Regarding Background Investigation', 'Fair Credit Reporting Act · this page is the disclosure only') + info([['Applicant / employee', '{employee}'], ['Position applied for', '{position}'], ['Company', '{company}'], ['Date', '{date}']]) +
+  box('{company} (the "Company") may obtain one or more <b>consumer reports</b> about you from a consumer reporting agency <b>for employment purposes</b> — to decide whether to hire you and, if you are hired, during your employment where the law allows (for example, an annual driving-record check for a driving position). A consumer report may include your criminal history, your motor vehicle (driving) record, verification of your identity, Social Security number trace, past employment and education, and professional licenses and certifications.<br><br>The Company will not obtain a report without your written authorization, which is a separate form. Before the Company decides not to hire you, or takes other adverse action, based in whole or in part on a report, it will give you a copy of the report and "A Summary of Your Rights Under the Fair Credit Reporting Act," and give you a chance to respond.') +
+  sigs('Applicant / employee (received this disclosure)', 'For {company} (provided by)'),
+  {});
+add('hr_bg_authorization', 'Background Check Authorization (FCRA)',
+  title('Authorization for Background Check', 'Separate from the Background Check Disclosure') + info([['Applicant / employee', '{employee}'], ['Position applied for', '{position}'], ['Company', '{company}'], ['Date', '{date}']]) +
+  p('I have received and read the separate <b>Disclosure Regarding Background Investigation</b> and "A Summary of Your Rights Under the Fair Credit Reporting Act." I authorize {company} and the consumer reporting agency named below to obtain consumer reports about me for employment purposes — for my application and, if I am hired, during my employment where the law allows.') +
+  info([['Consumer reporting agency', '&nbsp;'], ['Address / phone / website', '&nbsp;']]) +
+  h('Information for the reporting agency') + small('Used only by the reporting agency to find the right records. Kept private in the office file and not used in the hiring decision.') +
+  info([['Full legal name', '&nbsp;'], ['Other names used', '&nbsp;'], ['Date of birth', '&nbsp;'], ['Driver\'s license # / state (driving positions)', '&nbsp;'], ['Current address', '&nbsp;']]) +
+  checks(['Please send me a free copy of any consumer report the Company obtains about me.']) +
+  p('A copy of this authorization is as valid as the original.') + sigs('Applicant / employee', 'For {company} (received by)'),
+  {});
+
+/* 13. Job descriptions — "I have read my job description" */
+var APPS = 'the GrayCo CRM (crm.grayco-cs.com), the Field app (GrayCo Field / 📸 GrayCo Photos — the tech app on the phone) for clock-in, photos, notes and forms, and company e-mail';
+function jd(id, name, o){
+  add(id, 'Job Description — ' + name,
+    title('Job Description: ' + name, o.sub || '') + info(WHO.concat([['Reports to', o.reports], ['Status', o.status || 'Full time · hourly (non-exempt) unless the offer letter says otherwise']])) +
+    h('Summary') + p(o.summary) + h('Main duties') + li(o.duties) +
+    h('Certifications and training required') + info(o.certs) + (o.preferred ? h('Preferred') + li(o.preferred) : '') +
+    h('Physical requirements and working conditions') + li(o.physical) +
+    h('Tools and apps') + p(o.tools || ('Uses ' + APPS + '.')) +
+    small('This description lists the main duties; it is not every task and it may change. It is not a contract and does not change at-will employment. Reasonable accommodations may be made so a qualified person with a disability can do the essential duties.') +
+    ack('I have read my job description, I had the chance to ask questions, and I understand the duties, the certifications and the physical requirements of this position.') + sigs(),
+    {});
+}
+var PHYS_FIELD = ['Lift and carry up to 50 lb regularly, and more with help or equipment; push, pull, bend, kneel, crawl and stand for long periods.', 'Climb ladders and work at heights with fall protection; work in attics, crawlspaces, basements and tight spaces.', 'Work outdoors in heat, cold and rain, at night or on weekends for emergencies, and around noise, dust and odors.', 'Wear required PPE all day, including a respirator after medical clearance and a fit test.', 'Valid driver\'s license and a driving record our insurance accepts if the job includes driving.'];
+jd('hr_jd_pm', 'Project Manager', { reports: 'Owner / Operations Manager', status: 'Full time · pay as set in the offer letter and the CRM pay structure',
+  summary: 'Runs jobs from the signed contract to the final payment: scope, schedule, crews and subcontractors, materials, customer communication, quality, safety, paperwork and collections, for the company the job belongs to.',
+  duties: ['Meet the customer (with empathy on emergency losses), confirm the scope and get the right papers signed before work starts.', 'Build and keep the schedule; order materials; book and manage crews and subcontractors.', 'Visit jobs, check quality and safety, and keep the job\'s photos, notes, daily logs and change orders in the CRM.', 'Keep the customer updated (portal, calls, texts) and answer insurance questions with facts we documented — coordinate with adjusters through the office.', 'Write change orders and supplements; review sub invoices; approve hours; track job cost against budget.', 'Close out: walkthrough, punch list, completion papers, final invoice and collection, warranty and review request.', 'Follow lead-safe, mitigation and environmental rules on jobs that need them.'],
+  certs: [['All companies', 'OSHA 10-Hour Construction (OSHA 30 within the first year); valid driver\'s license'], ['Construction', 'EPA / Tennessee RRP Certified Renovator before managing any job that disturbs paint in a pre-1978 home or child-occupied facility'], ['Mitigation', 'IICRC WRT (Water Damage Restoration Technician) and ASD (Applied Structural Drying), or obtained within 6 months'], ['Environmental', 'State Lead Abatement Supervisor (TN / MS / AR, for the job\'s state) for abatement jobs; accredited Asbestos Supervisor for asbestos jobs']],
+  preferred: ['Xactimate, construction or restoration experience; IICRC FSRT and AMRT for Mitigation / Environmental.'],
+  physical: ['Walk jobs, climb ladders and inspect roofs, attics and crawlspaces with fall protection and PPE.', 'Lift up to 50 lb occasionally; drive to jobs every day; work some evenings and weekends for emergencies.', 'Use a phone, tablet and computer for long periods.'] });
+jd('hr_jd_estimator', 'Estimator', { reports: 'Owner / Sales or Operations Manager', status: 'Full time · pay as set in the offer letter and the CRM pay structure',
+  summary: 'Inspects losses and projects and writes accurate, complete estimates and proposals that win work at a fair margin.',
+  duties: ['Inspect and measure (roofs, interiors, moisture, damage) and take complete photos and notes in the app.', 'Write estimates in Xactimate and the CRM; build proposals and scopes; price subs and materials.', 'Follow up on bids and leads; meet customers and adjusters with the PM; write supplements with documentation.', 'Hand sold jobs to the PM with a clear scope, budget and photo set.', 'Never discuss coverage or promise what insurance will pay; present facts and the estimate.'],
+  certs: [['All companies', 'OSHA 10-Hour Construction; valid driver\'s license'], ['Construction', 'EPA / Tennessee RRP Certified Renovator preferred'], ['Mitigation', 'IICRC WRT preferred'], ['Environmental', 'Asbestos / lead awareness training; never disturb suspect material while inspecting']],
+  preferred: ['Xactimate Level 1–2; roofing, restoration or commercial estimating experience; HAAG roof inspection.'],
+  physical: ['Climb ladders and walk roofs with fall protection; enter attics and crawlspaces.', 'Lift and carry a ladder (about 60–75 lb with help or a carrier); drive to inspections every day.', 'Use a computer for long periods.'] });
+jd('hr_jd_office', 'Office Manager / Administrator', { reports: 'Owner', status: 'Full time · hourly (non-exempt) unless the offer letter says otherwise',
+  summary: 'Keeps the office running for the GrayCo companies: phones, customers, scheduling, paperwork, invoicing, payables, payroll support and the CRM.',
+  duties: ['Answer the office line and e-mail; set appointments; welcome customers with care, especially on emergency calls.', 'Keep jobs, documents and contacts complete in the CRM; prepare contracts and forms for signature.', 'Send invoices and statements; record payments; follow up on past-due accounts; review sub and supplier bills.', 'Support weekly payroll (hours approved Thursday, paid Friday), new-hire paperwork and HR files (kept private).', 'Keep certificates of insurance, licenses, W-9s and certifications current and on file.', 'Protect customer data and payment information.'],
+  certs: [['All companies', 'None required; training on the CRM and data privacy in the first week']],
+  preferred: ['QuickBooks, construction office or insurance-claim experience; notary public.'],
+  physical: ['Sit and use a computer and phone for long periods; lift up to 25 lb occasionally.', 'Occasional travel to jobs, the bank and suppliers.'],
+  tools: 'Uses the GrayCo CRM (crm.grayco-cs.com) — jobs, documents, invoices, payroll, ✅ Approvals — QuickBooks, the office phone and company e-mail; the Field app to see job photos and notes.' });
+jd('hr_jd_foreman', 'Foreman / Crew Lead', { reports: 'Project Manager',
+  summary: 'Leads the crew on site: the day\'s work, quality, safety, the customer\'s home and the job\'s records.',
+  duties: ['Run the daily safety talk and Job Hazard Analysis; enforce PPE and stop-work authority.', 'Lay out and do the work to the scope, the code and the standard; keep the crew busy and the site clean.', 'Greet the customer, protect their home and belongings, and send questions about insurance or price to the PM.', 'Keep the daily log, photos, materials used and crew hours in the app; report problems the same day.', 'Train helpers and laborers; make sure only certified workers do certified work.'],
+  certs: [['All companies', 'OSHA 10-Hour Construction (OSHA 30 preferred); first aid / CPR; valid driver\'s license if driving'], ['Construction', 'EPA / Tennessee RRP Certified Renovator to lead lead-safe jobs; competent-person training for fall protection, ladders and scaffolds where assigned'], ['Mitigation', 'IICRC WRT (ASD within the first year)'], ['Environmental', 'State Lead Abatement Supervisor and / or accredited Asbestos Supervisor for abatement crews']],
+  physical: PHYS_FIELD });
+jd('hr_jd_mit_tech', 'Field Technician — Mitigation', { reports: 'Mitigation Project Manager / Crew Lead', sub: 'GrayCo Mitigation — water, fire, emergency services and board-up',
+  summary: 'Answers water, fire and storm emergencies: extraction, drying, demolition, cleaning, odor control, contents and board-up — fast, safe and with care for the customer.',
+  duties: ['Respond to emergency calls, including nights and weekends on the on-call rotation.', 'Extract water; set and monitor drying equipment; take and log moisture readings, photos and drying records in the app every visit.', 'Remove wet materials; apply antimicrobials only as the label directs; set containment.', 'Board up and tarp; pack out, clean and store contents; clean soot and odors.', 'Treat the customer and their belongings with empathy; never discuss coverage, cause or blame.', 'Keep the truck and equipment clean, stocked and inventoried.'],
+  certs: [['Mitigation', 'IICRC WRT (Water Damage Restoration Technician) within the first 6 months; ASD (Applied Structural Drying) within the first year'], ['All work', 'OSHA 10-Hour Construction; respirator medical evaluation and fit test before using a respirator; HazCom training; valid driver\'s license']],
+  preferred: ['IICRC FSRT (fire and smoke), AMRT (microbial), OCT (odor control).'],
+  physical: PHYS_FIELD.concat(['Work in Category 2 / 3 (gray / black) water and smoke with the PPE provided.']) });
+jd('hr_jd_env_tech', 'Environmental Technician', { reports: 'Certified Supervisor / Environmental Project Manager', sub: 'GrayCo Environmental — lead, asbestos and mold',
+  summary: 'Does lead, asbestos and mold work safely and by the rules: containment, removal, cleaning, waste handling and records.',
+  duties: ['Build containment and critical barriers; set up decon and negative air.', 'Remove and handle lead, asbestos or mold materials using wet methods and HEPA equipment, only within your certification.', 'Clean, HEPA-vacuum and prepare for cleaning verification or clearance testing.', 'Bag, label and track waste; keep sign-in, monitoring and job records complete.', 'Follow hygiene and decon rules: no eating, drinking or smoking in work areas.', 'Stop and report any suspect material not in the plan.'],
+  certs: [['Lead — renovation (RRP)', 'EPA / Tennessee RRP Certified Renovator, or on-the-job training by a certified renovator before RRP work'], ['Lead — abatement', 'Current state Lead Abatement Worker certification (Supervisor for lead roles) for the job\'s state (TN / MS / AR)'], ['Asbestos', 'Accredited Asbestos Abatement Worker training with annual refresher, plus any state license / accreditation the job\'s state requires'], ['Mold', 'IICRC AMRT preferred; respirator medical evaluation and fit test'], ['All work', 'OSHA 10-Hour Construction; medical surveillance where OSHA requires; HazCom training']],
+  physical: PHYS_FIELD.concat(['Wear a tight-fitting respirator and disposable suit for long periods in hot containment (clean-shaven where the seal touches).']) });
+jd('hr_jd_laborer', 'Laborer / Helper', { reports: 'Foreman / Crew Lead',
+  summary: 'Helps the crew get the work done safely and cleanly: setup, demolition, hauling, cleanup and support for the trades.',
+  duties: ['Set up and break down the jobsite; protect floors and furniture.', 'Carry materials and tools; demolition and debris removal; load and unload the truck and dumpster.', 'Daily cleanup; keep tools and equipment clean and in place.', 'Follow the crew lead\'s directions, the safety rules and PPE; speak up and stop work if something is unsafe.', 'Clock in and out at the job in the app; take photos when asked.'],
+  certs: [['All companies', 'Safety orientation and HazCom training in the first week; OSHA 10-Hour within the first 90 days (preferred)'], ['Construction', 'Lead-safe on-the-job training by the certified renovator before working on any RRP job (Lead 04 record)'], ['Mitigation / Environmental', 'Respirator medical evaluation and fit test before any respirator use; certifications above before any regulated lead or asbestos work']],
+  physical: PHYS_FIELD });
+jd('hr_jd_marketing', 'Marketing Manager', { reports: 'Owner', status: 'Full time · pay as set in the offer letter and the CRM pay structure',
+  summary: 'Grows the GrayCo companies\' leads and reputation: website, Google, social media, referrals, reviews, events and print — always protecting customers\' privacy.',
+  duties: ['Plan and run marketing for each company (Construction, Mitigation, Environmental) and track leads by source in the CRM.', 'Manage the website, Google Business Profiles, social media and reviews; respond to reviews professionally (never discuss a claim or a customer\'s details).', 'Post job photos only with the customer\'s written consent and with addresses, faces and documents removed.', 'Run referral, partner, coupon and giveaway programs under their written terms; build relationships with agents, adjusters and property managers.', 'Create flyers, door hangers, yard signs and ads; follow the laws on texting, calling and advertising (consent, do-not-call, truthful ads).'],
+  certs: [['All companies', 'None required; valid driver\'s license']],
+  preferred: ['Experience in home services, restoration or construction marketing; Google Ads and Meta ads; basic photo and video editing.'],
+  physical: ['Use a computer and phone for long periods; visit jobs (with PPE) to take photos and video; lift up to 25 lb (event materials, signs).', 'Some evenings and weekends for events.'],
+  tools: 'Uses the GrayCo CRM (Leads, Marketing, 📰 Flyers, reviews), the Field app to find approved job photos, company e-mail and the company\'s social media and ad accounts (company logins only).' });
+
+/* 14. PM Compensation & Commission Acknowledgment (generic — the numbers are in the CRM) */
+add('hr_pm_comp', 'PM Compensation & Commission Acknowledgment',
+  title('Compensation & Commission Acknowledgment', 'Project Managers and Estimators · your numbers are in your CRM pay structure') + info(WHO.concat([['Pay structure name (CRM → Pay Structures)', '&nbsp;'], ['Effective date', '&nbsp;']])) +
+  p('Your pay — base pay or salary, commission or profit split, draws, truck or gas allowance and any bonus — is set in your personal <b>pay structure in the CRM (Payroll → Pay Structures)</b>. A printout of your pay structure is attached to this page and is part of it. This paper explains how the pay structure works; it does not repeat the numbers.') +
+  h('How it works') + li(['Commission or split is figured on each job as your pay structure describes (for example on collected revenue or job profit), using the job\'s actual costs in the CRM.', 'Commission is <b>earned</b> only when the conditions in your pay structure are met (for example, the job is complete and the customer has paid). Until then, any amount paid ahead is an <b>advance</b>.', 'Job costs, change orders, warranty work, refunds, chargebacks and uncollected balances adjust the commission on that job as your pay structure says.', 'You can see your jobs and pay in the CRM (💰 My Pay). Tell the office or an owner of any question within 30 days of the pay date; we will look at it and correct mistakes.', 'If you are paid hourly (non-exempt), you are also paid for all hours worked, including overtime, and your pay will never be less than the minimum wage for the hours you worked.']) +
+  h('Changes') + p('The company may change a pay structure going forward. A change is put in the CRM and given to you in writing before it applies, and it applies only to work done (or jobs sold) after the effective date unless you agree otherwise in writing.') +
+  h('When employment ends') + p('Pay that you have already earned is paid as Tennessee law requires. What happens to commission on jobs that are not yet complete or collected is set by your pay structure; if it does not say, the owner and you will settle it in good faith in writing.') +
+  p('This acknowledgment and the pay structure are not a promise of employment for any length of time and do not change at-will employment.') +
+  ack('I received my pay structure, I had the chance to ask questions, and I understand how my pay and commission work.') + sigs(),
+  {});
+
+/* 15. Return of Company Property (separation) */
+add('hr_property_return', 'Return of Company Property (Separation)',
+  title('Return of Company Property', 'At the end of employment') + info(WHO.concat([['Last day', '&nbsp;']])) +
+  p('Please return everything that belongs to the company on or before your last day. Check each item as it is returned.') +
+  checks(['Keys — company, shop, vehicle and any customer keys', 'Vehicle, fuel card, toll tag and vehicle paperwork', 'Phone, tablet, laptop, chargers and cases', 'Tools and equipment issued to you (see the Tool & Equipment Issue Agreement)', 'Moisture meters, cameras, air movers, dehumidifiers, air scrubbers and other job equipment', 'PPE and respirators that belong to the company', 'Uniforms and ID badge', 'Credit / purchasing cards', 'Customer files, papers, photos and lockbox information — and any copies on personal devices or accounts deleted', 'CRM, Field app and e-mail passwords (access is turned off on your last day)']) +
+  grid(['Item', 'Serial / tag #', 'Returned (Y / N)', 'Condition / notes'], 8) +
+  p('The company will not take money out of your pay for anything not returned unless the law allows it and you agree in a separate signed writing. Your final pay is paid as Tennessee law requires.') +
+  ack('I have returned the company property checked above and have not kept any company or customer information.') + sigs('Employee', 'For {company} (received by)'),
+  {});
+
+/* ── the one admin-only note (template editor; never printed, never sent) ── */
+function decorateEdit(id){
+  var ov = D.getElementById('_dlEditOv'); if (!ov || !isAdmin() || !NOTES[id] || ov.querySelector('[data-gc-admin-note="hrdocs"]')) return;
+  var box0 = [].slice.call(ov.querySelectorAll('div')).filter(function(x){ return /^Admin note \(never printed\)/.test(x.textContent || ''); })[0]; if (!box0) return;
+  var f = D.createElement('div'); f.setAttribute('data-gc-admin-note', 'hrdocs'); f.style.cssText = 'margin-top:4px;font-size:10.5px;color:#92400e'; f.textContent = NOTES[id]; box0.appendChild(f);
+}
+var prevEdit = LIB.edit;
+LIB.edit = function(id){ var r = prevEdit ? prevEdit.apply(this, arguments) : null; if (NOTES[id]) { later(function(){ decorateEdit(id); }, 500); later(function(){ decorateEdit(id); }, 1500); } return r; };
+
+/* ════════ 📋 Hiring packet ════════ */
+var ROLES = [
+  { id: 'pm', label: 'Project Manager', jd: 'gcb_hr_jd_pm', comp: true, drive: true, site: true },
+  { id: 'estimator', label: 'Estimator', jd: 'gcb_hr_jd_estimator', comp: true, drive: true, site: true },
+  { id: 'office', label: 'Office Manager / Administrator', jd: 'gcb_hr_jd_office' },
+  { id: 'foreman', label: 'Foreman / Crew Lead', jd: 'gcb_hr_jd_foreman', drive: true, site: true, field: true },
+  { id: 'mit_tech', label: 'Field Technician — Mitigation', jd: 'gcb_hr_jd_mit_tech', drive: true, site: true, field: true, resp: true },
+  { id: 'env_tech', label: 'Environmental Technician', jd: 'gcb_hr_jd_env_tech', drive: true, site: true, field: true, resp: true, env: true },
+  { id: 'laborer', label: 'Laborer / Helper', jd: 'gcb_hr_jd_laborer', site: true, field: true },
+  { id: 'marketing', label: 'Marketing Manager', jd: 'gcb_hr_jd_marketing', drive: true }
+];
+function role(id){ for (var i = 0; i < ROLES.length; i++) if (ROLES[i].id === id) return ROLES[i]; return ROLES[0]; }
+function roleOf(pos){ pos = s(pos).toLowerCase(); if (/environ|abate|asbestos|lead tech|mold tech/.test(pos)) return 'env_tech'; if (/mitig|water tech|restoration tech|wrt/.test(pos)) return 'mit_tech'; if (/estimat/.test(pos)) return 'estimator'; if (/market/.test(pos)) return 'marketing'; if (/office|admin|account|book|recept/.test(pos)) return 'office'; if (/foreman|crew lead|lead tech|super/.test(pos)) return 'foreman'; if (/labor|helper|apprentice/.test(pos)) return 'laborer'; if (/\bpm\b|project manager|manager/.test(pos)) return 'pm'; if (/tech/.test(pos)) return 'mit_tech'; return 'laborer'; }
+function coDefault(r){ return r === 'mit_tech' ? 'mitigation' : r === 'env_tech' ? 'environmental' : 'construction'; }
+var LINKS = [
+  ['link_i9', 'Form I-9 — Employment Eligibility Verification (USCIS)', 'https://www.uscis.gov/i-9', 'Section 1 by the first day of work; the office sees the original documents and completes Section 2 within 3 business days.'],
+  ['link_w4', 'Form W-4 — federal withholding (IRS)', 'https://www.irs.gov/forms-pubs/about-form-w-4', 'Tennessee has no state income tax on wages (no state W-4). Employees who live or work in MS or AR also complete that state\'s withholding form.'],
+  ['link_tn_newhire', 'Tennessee New Hire Reporting', 'https://www.tnnewhire.com/', 'The office reports every new hire within 20 days of the hire date.'],
+  ['link_fcra', 'A Summary of Your Rights Under the FCRA (CFPB)', 'https://files.consumerfinance.gov/f/documents/bcfp_consumer-rights-summary_2018-09.pdf', 'Give it with the background check disclosure.']
+];
+/* the papers to sign, in order */
+function list(rid, co, o){
+  o = o || {}; var r = role(rid), out = [];
+  co = (W._gcCo && W._gcCo.valid && W._gcCo.valid(co)) ? co : coDefault(r.id);
+  var mitEnv = co === 'mitigation' || co === 'environmental';
+  var drive = o.drive != null ? !!o.drive : !!r.drive;
+  function P(id, why, extra){ var t = null; for (var i = 0; i < L.length; i++) if (L[i] && L[i].id === id) { t = L[i]; break; } if (!t) return; out.push(Object.assign({ id: id, name: t.name, kind: 'sign', why: why || '', on: true }, extra || {})); }
+  P('gcb_offer_letter', 'Before the first day');
+  P('gcb_onboarding', 'The office\'s first-week checklist');
+  P('gcb_handbook', 'Give a copy (the full handbook)', { kind: 'give' });
+  P('gcb_hr_handbook_ack');
+  P('gcb_hr_at_will');
+  P('gcb_hr_confidentiality');
+  if (r.comp) P('gcb_conf_nonsolicit', 'Only if your attorney says PMs / estimators also sign the narrow non-compete', { optional: true, on: false });
+  P('gcb_hr_timekeeping', r.field ? 'Location tracking policy — required before the first clock-in' : '');
+  P('gcb_hr_phones_photos');
+  P('gcb_hr_safety_ppe');
+  if (r.id === 'mit_tech' || r.id === 'env_tech' || (mitEnv && (r.field || r.id === 'pm'))) P('gcb_hr_respirator', 'Mitigation / Environmental: medical evaluation and fit test before use');
+  if (r.site) P('gcb_hr_hazcom');
+  if (r.id === 'env_tech' || (co === 'environmental' && (r.field || r.id === 'pm'))) P('gcb_hr_lead_asbestos', 'Environmental');
+  P('gcb_hr_customer_property');
+  P('gcb_hr_code_conduct');
+  P('gcb_hr_conflict');
+  if (drive) P('gcb_vehicle_policy', 'Drives for work');
+  P('gcb_tool_issue');
+  P('gcb_drug_policy');
+  P('gcb_direct_deposit');
+  P('gcb_emergency_contact');
+  P('gcb_hr_bg_disclosure', 'Give and sign first — on its own page');
+  P('gcb_hr_bg_authorization', 'Separate from the disclosure');
+  P(r.jd, 'Signed: "I have read my job description"');
+  if (r.comp) P('gcb_hr_pm_comp', 'Attach the printout of their CRM pay structure');
+  LINKS.forEach(function(l){ out.push({ id: l[0], name: l[1], kind: 'link', url: l[2], why: l[3], on: false }); });
+  return out;
+}
+function coLegal(co){ try { return W._gcCo ? W._gcCo.get(co).legal : 'GrayCo Construction Services, LLC'; } catch (e) { return 'GrayCo Construction Services, LLC'; } }
+/* one paper, filled with the person's name / position and the company (letterhead too) */
+function render(id, who){
+  who = who || {}; var co = who.co || 'construction';
+  try { if (W._gcDocCo && W._gcDocCo.set) W._gcDocCo.set(co); } catch (e) {}
+  var f = { employee: s(who.name), position: s(who.position), company: coLegal(co) };
+  return Promise.resolve(LIB.render(id, '', { fields: f })).then(function(r){
+    if (!r || !r.page) return null;
+    var pg = r.page, nm = esc(f.employee), ps = esc(f.position);
+    /* papers made before the merge fields (or edited by an admin): the "Employee" / "Position" rows */
+    if (nm) pg = pg.replace(/(>(?:Employee|Applicant \/ employee)<\/td><td[^>]*><b>)&nbsp;(<\/b>)/g, '$1' + nm + '$2');
+    if (ps) pg = pg.replace(/(>Position(?: applied for)?<\/td><td[^>]*><b>)&nbsp;(<\/b>)/g, '$1' + ps + '$2');
+    if (co !== 'construction') { var c = W._gcCo.get(co), lg = s(c.legal), sh = lg.replace(/,? *LLC\.?$/i, '');
+      /* the papers made here name the company through {company} (and list all three companies in their overview); only the page footer needs it.
+         The older papers name GrayCo Construction Services in their text. */
+      if (IDS[id]) pg = pg.split('GrayCo Construction Services, LLC · ').join(lg + ' · ');
+      else pg = pg.split('GrayCo Construction Services, LLC').join(lg).split('GrayCo Construction Services').join(sh); }
+    return { id: id, name: r.t && r.t.name, page: pg };
+  });
+}
+function bodyOf(pg){ var m = /<body[^>]*>([\s\S]*)<\/body>/i.exec(pg || ''); return m ? m[1] : s(pg); }
+function combined(rid, co, who, o){
+  var items = list(rid, co, o).filter(function(x){ return x.kind !== 'link' && (o && o.ids ? o.ids.indexOf(x.id) >= 0 : x.on); });
+  who = Object.assign({}, who || {}, { co: co });
+  var chain = Promise.resolve([]);
+  items.forEach(function(x){ chain = chain.then(function(acc){ return render(x.id, who).then(function(r){ if (r) acc.push(r); return acc; }); }); });
+  return chain.then(function(rs){
+    var r0 = role(rid), ttl = 'Hiring packet — ' + (s(who.name) || r0.label) + ' — ' + coLegal(co);
+    var links = list(rid, co, o).filter(function(x){ return x.kind === 'link'; });
+    var cover = '<div style="page-break-after:always"><h2 style="font-size:16pt;color:#0f2440;margin:0 0 6px">📋 ' + esc(ttl) + '</h2><div style="font-size:10pt;color:#555;margin-bottom:10px">' + esc(r0.label) + ' · ' + rs.length + ' papers, in signing order</div><ol style="font-size:10.5pt;line-height:1.7">' + rs.map(function(x){ return '<li>' + esc(x.name) + '</li>'; }).join('') + '</ol>' +
+      '<h3 style="font-size:11pt;color:#0f2440">Federal / state forms (official sites)</h3><ul style="font-size:10pt;line-height:1.6">' + links.map(function(l){ return '<li><b>' + esc(l.name) + '</b> — ' + esc(l.url) + '<br><span style="color:#555">' + esc(l.why) + '</span></li>'; }).join('') + '</ul></div>';
+    var parts = rs.map(function(x, i){ return '<div data-hp-paper="' + esc(x.id) + '" style="' + (i < rs.length - 1 ? 'page-break-after:always;' : '') + 'padding-bottom:12px">' + bodyOf(x.page) + '</div>'; });
+    return { title: ttl, count: rs.length, html: '<!doctype html><html><head><meta charset="utf-8"><title>' + esc(ttl) + '</title><style>body{font-family:Arial,Helvetica,sans-serif;color:#111;max-width:780px;margin:24px auto;padding:0 18px;font-size:10.5pt}@media print{body{margin:0 auto}}</style></head><body>' + cover + parts.join('') + '</body></html>' };
+  });
+}
+function show(html, name, print){
+  if (W._gcViewer && W._gcViewer.open) { W._gcViewer.open({ html: html, name: name }); if (print) later(function(){ var pb = D.querySelector('#gc-viewer [data-gv="print"]'); if (pb) pb.click(); }, 900); return; }
+  var w = W.open('', '_blank'); if (!w) return; w.document.open(); w.document.write(html); w.document.close(); if (print) later(function(){ try { w.focus(); w.print(); } catch (e) {} }, 600);
+}
+function toast(m, bad){ try { var t = D.createElement('div'); t.setAttribute('data-gc-keep', '1'); t.textContent = m; t.style.cssText = 'position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:1000030;background:' + (bad ? '#7f1d1d' : '#0f1d2f') + ';color:#fff;padding:10px 16px;border-radius:10px;font:600 13px Inter,Arial,sans-serif;max-width:90vw'; D.body.appendChild(t); later(function(){ try { t.remove(); } catch (e) {} }, 4000); } catch (e) {} }
+
+/* the screen */
+var CSS = '#gc-hp{position:fixed;inset:0;background:rgba(8,15,28,.75);z-index:1000009;display:flex;align-items:center;justify-content:center;padding:16px;font-family:Inter,Arial,sans-serif}' +
+  '#gc-hp .sh{background:#fff;border-radius:14px;max-width:820px;width:100%;max-height:94vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.4);color:#0f172a}' +
+  '#gc-hp .hd{background:#0f1d2f;color:#fff;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:2}' +
+  '#gc-hp .hd b{font-size:16px}#gc-hp .hd .x{background:none;border:none;color:#fff;font-size:22px;cursor:pointer}' +
+  '#gc-hp .fm{display:grid;grid-template-columns:1.3fr 1.2fr 1fr;gap:10px;padding:14px 18px 6px}#gc-hp label{font-size:11.5px;font-weight:700;color:#475569;display:block}' +
+  '#gc-hp input[type=text],#gc-hp select{width:100%;box-sizing:border-box;margin-top:3px;padding:8px 9px;border:1px solid #cbd5e1;border-radius:8px;font:14px Inter,Arial,sans-serif;color:#0f172a;background:#fff}' +
+  '#gc-hp .opt{padding:0 18px 8px;font-size:12.5px;color:#334155;display:flex;gap:16px;flex-wrap:wrap;align-items:center}' +
+  '#gc-hp .lst{padding:6px 18px 10px}#gc-hp .it{display:flex;align-items:center;gap:9px;padding:8px 10px;border:1px solid #e2e8f0;border-radius:9px;margin-bottom:6px;flex-wrap:wrap}' +
+  '#gc-hp .it .n{font:800 12px Inter,Arial,sans-serif;color:#fff;background:#1e3a5f;border-radius:999px;min-width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center}' +
+  '#gc-hp .it .t{flex:1;min-width:220px;font-size:13.5px}#gc-hp .it .w{font-size:11.5px;color:#64748b;display:block}' +
+  '#gc-hp .it button,#gc-hp .it a.b{padding:5px 10px;border-radius:7px;font:700 11.5px Inter,Arial,sans-serif;cursor:pointer;background:#fff;color:#1e3a5f;border:1px solid #cbd5e1;text-decoration:none}' +
+  '#gc-hp .it button.pri{background:#0f1d2f;color:#fff;border:none}#gc-hp .tag{font-size:10px;font-weight:800;border-radius:5px;padding:1px 6px;margin-left:5px;vertical-align:middle}' +
+  '#gc-hp .ft{position:sticky;bottom:0;background:#f8fafc;border-top:1px solid #e2e8f0;padding:12px 18px;display:flex;gap:10px;flex-wrap:wrap;align-items:center}' +
+  '#gc-hp .ft .go{padding:10px 16px;background:#16a34a;color:#fff;border:none;border-radius:9px;font:800 13.5px Inter,Arial,sans-serif;cursor:pointer}' +
+  '#gc-hp .sec{font:800 11px Inter,Arial,sans-serif;color:#1e3a5f;text-transform:uppercase;letter-spacing:.05em;margin:12px 0 6px}' +
+  '@media(max-width:640px){#gc-hp .fm{grid-template-columns:1fr}}';
+function cands(){ return arr(W._crm && W._crm.candidates).filter(function(c){ return c && s(c.name) && !c.deleted; }); }
+var ST8 = { role: 'mit_tech', co: 'mitigation', name: '', position: '', drive: null, off: {} };
+function open(pre){
+  if (!isAdmin()) { toast('Only an admin can make a hiring packet.', true); return null; }
+  pre = pre || {};
+  if (pre.role || pre.position) ST8.role = pre.role || roleOf(pre.position);
+  ST8.co = pre.co || (pre.role || pre.position ? coDefault(ST8.role) : ST8.co);
+  if (pre.name != null) ST8.name = s(pre.name); if (pre.position != null) ST8.position = s(pre.position);
+  ST8.drive = pre.drive != null ? !!pre.drive : null; ST8.off = {};
+  if (!D.getElementById('gc-hp-css')) { var st = D.createElement('style'); st.id = 'gc-hp-css'; st.textContent = CSS; D.head.appendChild(st); }
+  var ov = D.getElementById('gc-hp'); if (ov) ov.remove();
+  ov = D.createElement('div'); ov.id = 'gc-hp'; ov.setAttribute('data-gc-keep', '1'); D.body.appendChild(ov);
+  paint(); return ov;
+}
+function paint(){
+  var ov = D.getElementById('gc-hp'); if (!ov) return;
+  var r = role(ST8.role), drive = ST8.drive != null ? ST8.drive : !!r.drive, items = list(ST8.role, ST8.co, { drive: drive });
+  var cos = W._gcCo ? W._gcCo.list() : [{ id: 'construction', legal: 'GrayCo Construction Services, LLC', icon: '🏗' }];
+  var cs = cands();
+  var h0 = '<div class="sh"><div class="hd"><div><b>📋 Hiring packet</b><div style="font-size:12px;color:#9fc4e8">The papers a new ' + esc(r.label) + ' signs, in order — each opens filled with their name and the company\'s letterhead.</div></div><button type="button" class="x" data-hp="x" aria-label="Close">×</button></div>' +
+    '<div class="fm"><label>Employee name<input type="text" data-hp-f="name" list="gc-hp-cands" value="' + esc(ST8.name) + '" placeholder="Full name"><datalist id="gc-hp-cands">' + cs.map(function(c){ return '<option value="' + esc(c.name) + '">' + esc(s(c.position)) + '</option>'; }).join('') + '</datalist></label>' +
+    '<label>Role<select data-hp-f="role">' + ROLES.map(function(x){ return '<option value="' + x.id + '"' + (x.id === ST8.role ? ' selected' : '') + '>' + esc(x.label) + '</option>'; }).join('') + '</select></label>' +
+    '<label>Company<select data-hp-f="co">' + cos.map(function(c){ return '<option value="' + esc(c.id) + '"' + (c.id === ST8.co ? ' selected' : '') + '>' + esc((c.icon ? c.icon + ' ' : '') + c.legal) + '</option>'; }).join('') + '</select></label></div>' +
+    '<div class="opt"><label style="display:flex;gap:6px;align-items:center;font-size:12.5px;color:#334155;font-weight:600"><input type="checkbox" data-hp-f="drive"' + (drive ? ' checked' : '') + '> Drives for work (company or own vehicle)</label>' +
+    '<label style="font-size:12.5px;color:#334155;font-weight:600;display:flex;gap:6px;align-items:center">Position title on the papers <input type="text" data-hp-f="position" value="' + esc(ST8.position || r.label) + '" style="width:220px;margin:0"></label></div><div class="lst"><div class="sec">Papers to sign — in this order</div>';
+  var n = 0;
+  items.forEach(function(x){
+    if (x.kind === 'link') return;
+    var on = ST8.off[x.id] != null ? !ST8.off[x.id] : x.on; n++;
+    h0 += '<div class="it" data-hp-item="' + esc(x.id) + '"><input type="checkbox" data-hp-on="' + esc(x.id) + '"' + (on ? ' checked' : '') + ' title="Include in Print all"><span class="n">' + n + '</span><span class="t">' + esc(x.name) +
+      (x.kind === 'give' ? '<span class="tag" style="background:#e0f2fe;color:#075985">GIVE A COPY</span>' : '') + (x.optional ? '<span class="tag" style="background:#f1f5f9;color:#475569">OPTIONAL</span>' : '') +
+      (x.why ? '<span class="w">' + esc(x.why) + '</span>' : '') + '</span>' +
+      '<button type="button" class="pri" data-hp-open="' + esc(x.id) + '">👁 Open</button><button type="button" data-hp-print="' + esc(x.id) + '">🖨</button></div>';
+  });
+  h0 += '<div class="sec">Federal / state forms — links only (official sites)</div>';
+  items.forEach(function(x){ if (x.kind !== 'link') return; h0 += '<div class="it" data-hp-item="' + esc(x.id) + '"><span class="n" style="background:#64748b">🔗</span><span class="t">' + esc(x.name) + '<span class="w">' + esc(x.why) + '</span></span><a class="b" href="' + esc(x.url) + '" target="_blank" rel="noopener">Open ↗</a></div>'; });
+  h0 += '</div><div class="ft"><button type="button" class="go" data-hp="all">🖨 Print all ticked</button><button type="button" data-hp="view" style="padding:10px 14px;border-radius:9px;border:1px solid #cbd5e1;background:#fff;font:700 13px Inter,Arial,sans-serif;cursor:pointer">👁 Open the whole packet</button><span style="font-size:11.5px;color:#64748b">Each paper prints on its own page with the company\'s letterhead, the person\'s name and both signature lines.</span></div></div>';
+  ov.innerHTML = h0;
+}
+function who(){ return { name: ST8.name, position: ST8.position || role(ST8.role).label, co: ST8.co }; }
+function picked(){ var ov = D.getElementById('gc-hp'); return [].slice.call(ov ? ov.querySelectorAll('input[data-hp-on]') : []).filter(function(c){ return c.checked; }).map(function(c){ return c.getAttribute('data-hp-on'); }); }
+D.addEventListener('click', function(e){
+  var ov = D.getElementById('gc-hp'); if (!ov || !e.target || !ov.contains(e.target)) return;
+  if (e.target === ov) { ov.remove(); return; }
+  var b = e.target.closest('[data-hp],[data-hp-open],[data-hp-print]'); if (!b) return;
+  if (b.getAttribute('data-hp') === 'x') { ov.remove(); return; }
+  var id = b.getAttribute('data-hp-open') || b.getAttribute('data-hp-print');
+  if (id) { e.preventDefault(); render(id, who()).then(function(r){ if (!r) return toast('Could not open that paper.', true); show(r.page, r.name + (ST8.name ? ' — ' + ST8.name : ''), !!b.getAttribute('data-hp-print')); }); return; }
+  var a = b.getAttribute('data-hp');
+  if (a === 'all' || a === 'view') {
+    var ids = picked(); if (!ids.length) return toast('Tick at least one paper.', true);
+    var drive = ST8.drive != null ? ST8.drive : !!role(ST8.role).drive;
+    b.disabled = true; combined(ST8.role, ST8.co, who(), { ids: ids, drive: drive }).then(function(x){ b.disabled = false; show(x.html, x.title, a === 'all'); }, function(){ b.disabled = false; toast('Could not make the packet.', true); });
+  }
+}, true);
+D.addEventListener('change', function(e){
+  var ov = D.getElementById('gc-hp'); if (!ov || !e.target || !ov.contains(e.target)) return;
+  var f = e.target.getAttribute('data-hp-f'), on = e.target.getAttribute('data-hp-on');
+  if (on) { ST8.off[on] = !e.target.checked; return; }
+  if (f === 'role') { ST8.role = e.target.value; ST8.co = coDefault(ST8.role) === 'construction' ? ST8.co : coDefault(ST8.role); ST8.position = ''; ST8.drive = null; paint(); }
+  else if (f === 'co') { ST8.co = e.target.value; paint(); }
+  else if (f === 'drive') { ST8.drive = !!e.target.checked; paint(); }
+}, true);
+D.addEventListener('input', function(e){
+  var ov = D.getElementById('gc-hp'); if (!ov || !e.target || !ov.contains(e.target)) return;
+  var f = e.target.getAttribute('data-hp-f');
+  if (f === 'name') { ST8.name = e.target.value; var c = cands().filter(function(x){ return s(x.name) === s(e.target.value); })[0]; if (c && s(c.position)) { ST8.position = s(c.position); ST8.role = roleOf(c.position); ST8.co = W._gcCo && W._gcCo.valid(c.companyId) ? c.companyId : coDefault(ST8.role); paint(); var i = D.querySelector('#gc-hp [data-hp-f="name"]'); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } } }
+  else if (f === 'position') ST8.position = e.target.value;
+}, true);
+D.addEventListener('keydown', function(e){ var ov = D.getElementById('gc-hp'); if (ov && e.key === 'Escape' && !D.getElementById('gc-viewer')) ov.remove(); });
+
+/* where it lives: Admin → Hiring (next to + Add Candidate) and the New-Hire Setup list */
+function hiringBtn(){
+  try {
+    if (!isAdmin() || D.getElementById('gc-hp-btn')) return;
+    var b0 = [].filter.call(D.querySelectorAll('main b'), function(x){ return s(x.textContent) === 'Hiring Pipeline'; })[0]; if (!b0) return;
+    var row = b0.parentElement && b0.parentElement.parentElement; if (!row) return;
+    var add0 = [].filter.call(row.querySelectorAll('button'), function(x){ return /Add Candidate/.test(x.textContent || ''); })[0], bar = add0 ? add0.parentElement : row;
+    var b = D.createElement('button'); b.type = 'button'; b.id = 'gc-hp-btn'; b.setAttribute('data-gc-keep', '1'); b.textContent = '📋 Hiring packet';
+    b.title = 'The papers a new hire signs, by role and company';
+    b.style.cssText = 'padding:5px 12px;font:700 11px Inter,Arial,sans-serif;border-radius:6px;border:1px solid #7c3aed;background:#faf5ff;color:#6d28d9;cursor:pointer';
+    b.addEventListener('click', function(){ open({}); });
+    if (add0) bar.insertBefore(b, add0); else bar.appendChild(b);
+  } catch (e) {}
+}
+RI.call(W, hiringBtn, 1200);
+var prevOb = W._gcOpenOnboarding;
+if (typeof prevOb === 'function' && !prevOb.__hp) {
+  W._gcOpenOnboarding = function(){
+    var r = prevOb.apply(this, arguments);
+    try { if (isAdmin()) { var nb = D.getElementById('_obNew'); if (nb && !D.getElementById('_obHp')) { var b = D.createElement('button'); b.id = '_obHp'; b.type = 'button'; b.textContent = '📋 Hiring packet'; b.style.cssText = 'margin-left:6px;padding:7px 12px;border-radius:7px;border:1px solid #a78bfa;background:#0a1628;color:#c4b5fd;font-size:13px;cursor:pointer'; b.onclick = function(){ open({}); }; nb.parentElement.appendChild(b); } } } catch (e) {}
+    return r;
+  };
+  W._gcOpenOnboarding.__hp = true;
+}
+
+W._gcHirePacket = { roles: ROLES, list: list, render: render, combined: combined, open: open, paint: paint, roleOf: roleOf, ids: IDS, notes: NOTES, docs: function(){ return DOCS.slice(); } };
+try { console.log('[GC] 👥 HR papers (patch HRDOCS): ' + DOCS.length + ' documents + 📋 Hiring packet — _gcHirePacket'); } catch (e) {}
 })(window);
 </script>
