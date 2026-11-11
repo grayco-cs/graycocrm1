@@ -36,6 +36,8 @@ await A.ev(() => window._setView('dashboard')); await sleep(3000);
 const dash = await A.ev(() => (document.querySelector('#root main') || document.body).innerText);
 ok('Mitigation Dashboard: its own title and only its own jobs', /GrayCo Mitigation Dashboard/.test(dash) && /Demo Lee dry-out/.test(dash) && !/Demo Smith kitchen/.test(dash) && !/Demo Ross abatement/.test(dash), dash.slice(0, 300));
 await A.ev(() => window._setView('projects')); await sleep(1500);
+const navM = await A.ev(() => [...document.querySelectorAll('nav button, aside button')].filter(b => b.offsetParent).map(b => b.innerText.replace(/\s+/g, ' ').trim()).join('|'));
+ok('Mitigation menu: the same tabs minus Construction-only ones (no RoofScout, Bid portal, Cordova Club, 🌿 Environmental)', /Projects/.test(navM) && /Mitigation/.test(navM) && !/RoofScout/.test(navM) && !/Cordova Club/.test(navM) && !/Environmental/.test(navM), navM.slice(0, 400));
 const pnl = await A.ev(async () => { const d = await window._gcCompanyPnL(); return { n: d.jobCount, names: d.jobs.map(j => j.name), co: d.company }; });
 ok('Mitigation P&L counts only Mitigation jobs', pnl.co === 'mitigation' && pnl.names.every(n => /Lee|Fox/.test(n)), pnl);
 await A.ev(() => window._setView('leads')); await sleep(2500);

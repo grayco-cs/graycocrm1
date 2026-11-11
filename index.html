@@ -5496,7 +5496,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.225-2026-11-11-r27r -->
+<!-- GrayCo CRM Build: 33.226-2026-11-11-r28 -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6445,7 +6445,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.225-2026-11-11-r27r");
+  console.log("[GC] Build 33.226-2026-11-11-r28");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6493,7 +6493,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.225-2026-11-11-r27r"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.226-2026-11-11-r28"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -160151,6 +160151,15 @@ function menu(Uf, list){
     if (can && !r.some(function(g){ return g.id === 'enviro'; })) { var e = arr(Uf).filter(function(g){ return g && g.id === 'enviro'; })[0] || { id: 'enviro', l: 'Environmental', ic: '🌿' };
       var at = -1; ['insurance', 'mitigation', 'maint'].some(function(k){ var i = r.map(function(g){ return g.id; }).indexOf(k); if (i >= 0) { at = i + 1; return true; } return false; });
       if (at < 0) r = r.concat([e]); else r = r.slice(0, at).concat([e], r.slice(at)); }
+  } catch (x) {}
+  /* MULTICO (owner 11/11: "I want similar left tabs on each company"): one company picked → the same menu, without the tabs that
+     are only Construction's (RoofScout, Bid portal, Cordova Club, Large Job CRMs); Mitigation has no 🌿 tab, Environmental no 💧 tab */
+  try {
+    var co = W._gcCo ? W._gcCo.filter() : 'all';
+    if (co === 'mitigation' || co === 'environmental') {
+      var hide = { roofscout: 1, bidportal: 1, cordova: 1, mastercrm: 1 }; hide[co === 'mitigation' ? 'enviro' : 'mitigation'] = 1;
+      r = arr(r).filter(function(g){ return g && !hide[g.id]; });
+    }
   } catch (x) {}
   return r;
 }
