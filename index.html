@@ -216431,7 +216431,7 @@ SI.call(W, decorate, 700);
    office phone's recent calls) → ✅ Real lead → Wesley and Nick get a text with the number (texts.js ?lsavet=1); 🚫 Junk → closed,
    no text to anyone (a "dispute in Google" To-Do, as for any bad LSA lead). */
 function vetter(){ try { if (admin()) return true; if (W._gcIsOfficeFull && W._gcIsOfficeFull()) return true; var u = JSON.parse(localStorage.getItem('grayco_user') || '{}'); return /office|project manager|\bpm\b|estimator/i.test(s(u.role) + ' ' + s(u.title)); } catch (e) { return false; } }   /* owner 11/10: "make office do LSA good or bad as much as possible, but admin and PM can also do it" */
-function vetList(){ return leads().filter(function(l){ if (!l || !l.id || l.archived || l.deleted || l.mergedInto || l.vetAt) return false; var ex = l.leadExtra || {};
+function vetList(){ return leads().filter(function(l){ if (!l || !l.id || l.archived || l.deleted || l.mergedInto || l.vetAt) return false; if (W._gcCo && !W._gcCo.pass(l, 'lead')) return false; var ex = l.leadExtra || {};
   if (!(l.lsaCall || ex.lsaCall || /^Google LSA caller/.test(s(l.name)))) return false; if (!/^(pending|)$/.test(s(l.lsaCheck))) return false; if (/lost|closed|won/i.test(s(l.stage || l.status))) return false;
   return true; }); }
 function vetHtml(L){
@@ -218071,7 +218071,7 @@ var KINDS = [['lead', '🧪 Lead'], ['asbestos', '☣️ Asbestos'], ['mold', '�
 var UI = { k: 'all', all: false, el: null };
 function jobs(){
   var H = W._gcHazOf; if (typeof H !== 'function') return [];
-  return arr(W._crm && W._crm.projects).filter(function(p){ return p && p.id && !p.deleted; }).map(function(p){ var h = H(p); return { p: p, h: h, k: KINDS.filter(function(x){ return h[x[0]]; }).map(function(x){ return x[0]; }) }; }).filter(function(x){ return x.k.length; });
+  return arr(W._crm && W._crm.projects).filter(function(p){ return p && p.id && !p.deleted && (!W._gcCo || W._gcCo.passJob(p)); }).map(function(p){ var h = H(p);   /* patch MULTICO: the picked company's */ return { p: p, h: h, k: KINDS.filter(function(x){ return h[x[0]]; }).map(function(x){ return x[0]; }) }; }).filter(function(x){ return x.k.length; });
 }
 function open_(pid){ try { if (typeof W._openJobDetail === 'function') return W._openJobDetail(pid); } catch (e) {} try { W._setView('projects'); } catch (e) {} }
 var F = '/company-docs/01667c529f454cf1/';
@@ -219367,5 +219367,59 @@ function loop(){ try { if (!D.hidden) { wireDocLib(); apply(); needTick(); drawJ
 ST.call(W, loop, 1500);
 ST.call(W, pull, 4000);
 W._gcSds = { mount: mount, draw: draw, list: list, byId: byId, forJob: forJob, setJob: setJob, setStatus: setStatus, send: send, apply: apply, warnings: warnings, consentTable: consentTable, preview: preview, open: jobModal, detail: detail, canSee: canSee, canEdit: canEdit, GROUPS: GROUPS, BUILTIN: BUILTIN, DOC_ID: DOC_ID, reqRef: reqRef, choicesOf: choicesOf, pull: pull, saveMat: saveMat, needList: needList, needTick: needTick, tick: tick, EQUIP: EQUIP };
+})(window);
+</script>
+<script id="gc-patch-multico-fresh">
+/* MULTICO-FRESH (owner 11/11, screenshot of Mitigation's Accounting with Construction's $16,117 overhead, 7 approvals, 196 alerts:
+   "I shouldn't have anything on this Mit page — approvals, leads etc — it's fresh … no accounting stuff, overhead, anything … no data
+   in those companies yet … don't take stuff from Construction just in case we have to use"): with Mitigation or Environmental
+   picked, every page that is not yet split by company shows an empty "starts fresh" page instead of Construction's data, and the
+   left menu's count badges are hidden. Nothing is moved or deleted — "All companies" / Construction show everything as before.
+   Split pages (Dashboard, Jobs, Leads, Invoices, Expenses, GrayCo Photos, Materials & SDS, 🌿 Environmental) show that company's own. */
+(function(W){
+'use strict';
+var D = W.document, C = W._gcCo; if (!C) return;
+function s(v){ return v == null ? '' : String(v); }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+var FRESH = { approvals: 'Approvals', todo: 'To-Do', taxcenter: 'Accounting', pnl: 'P&L', reports: 'Reports', cctrans: 'Card transactions', payroll: 'Payroll', pmpay: 'PM Commissions', pmpay2: 'Pay Structures',
+  emppay: 'All Payments', payments: 'Payments', officemanager: 'Office', insurance: 'Insurance', schedule: 'Schedule', estbuilder: 'Estimates', estimates: 'Estimates', mitigation: 'Mitigation',
+  maint: 'Maintenance', punchlist: 'Punch List', changeorders: 'Change Orders', dailylogs: 'Daily Logs', warranties: 'Warranties', subinv: 'Sub Invoices', crewboard: 'Crew Board', sitebook: 'Site Book',
+  marketing: 'Marketing', qbimport: 'QuickBooks', hiring: 'Hiring', mastercrm: 'Large Job CRMs', activity: 'My Activity', storage: 'Storage', 'review-queue': 'Review Queue', inspections: 'Inspections' };
+W._gcCoFresh = FRESH;
+function view(){ try { return s(localStorage.getItem('grayco_view')); } catch (e) { return ''; } }
+function css(){
+  if (D.getElementById('gc-co-fresh-css')) return;
+  var st = D.createElement('style'); st.id = 'gc-co-fresh-css';
+  st.textContent = 'html[data-gc-co-fresh] #root main > *:not(#gc-co-fresh){display:none!important}'
+    + 'html[data-gc-co-nobadge] [data-gc-co-badge-off]{display:none!important}';
+  D.head.appendChild(st);
+}
+function paint(){
+  try {
+    css();
+    var f = C.filter(), co = (f === 'mitigation' || f === 'environmental') ? C.get(f) : null, v = view(), main = D.querySelector('#root main'), H = D.documentElement;
+    var box = D.getElementById('gc-co-fresh');
+    if (co && FRESH[v] && main) {
+      H.setAttribute('data-gc-co-fresh', '1');
+      if (!box) { box = D.createElement('div'); box.id = 'gc-co-fresh'; box.setAttribute('data-gc-keep', '1'); }
+      var sig = f + '|' + v;
+      if (box.getAttribute('data-sig') !== sig) {
+        box.setAttribute('data-sig', sig);
+        box.innerHTML = '<div style="max-width:640px;margin:48px auto;text-align:center;background:#fff;border:1px solid #e2e8f0;border-top:5px solid ' + esc(co.color) + ';border-radius:16px;padding:28px 24px;font:15px Inter,Arial,sans-serif;color:#0f172a">'
+          + '<img src="' + esc(co.logo) + '" alt="" style="height:70px;width:auto;margin:0 auto 10px;display:block">'
+          + '<div style="font-size:20px;font-weight:800;margin-bottom:6px">' + esc(FRESH[v]) + ' — ' + esc(co.legal.replace(/,? *LLC\.?$/i, '')) + '</div>'
+          + '<div style="color:#475569;line-height:1.5">Nothing here yet — ' + esc(co.short) + ' starts fresh. Its own ' + esc(FRESH[v].toLowerCase()) + ' will show here; nothing from GrayCo Construction is shown or moved.</div>'
+          + '<div style="margin-top:14px;font-size:13px;color:#64748b">Switch to <b>All companies</b> or <b>Construction</b> with the logo at the top left to see Construction\'s.</div></div>';
+      }
+      if (box.parentElement !== main) main.insertBefore(box, main.firstChild);
+    } else { H.removeAttribute('data-gc-co-fresh'); if (box) box.remove(); }
+    /* the left menu's count badges (To-Do 47, Approvals 7, Accounting 196 …) are Construction's: hidden in a fresh company */
+    if (co) { H.setAttribute('data-gc-co-nobadge', '1');
+      D.querySelectorAll('aside button, nav button, [role=navigation] button').forEach(function(b){ Array.prototype.forEach.call(b.querySelectorAll('span,div,b'), function(x){ if (x.children.length === 0 && /^\s*\d+\+?\s*$/.test(x.textContent || '') && x !== b) x.setAttribute('data-gc-co-badge-off', '1'); }); });
+    } else { H.removeAttribute('data-gc-co-nobadge'); }
+  } catch (e) {}
+}
+C.onPaint(paint);
+(function tick(){ paint(); setTimeout(tick, 700); })();
 })(window);
 </script>
