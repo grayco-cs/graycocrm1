@@ -165,6 +165,11 @@
 [functions."crm-health-scheduled"]
   schedule = "5 15 * * *"
 
+# patch DBWATCH (owner 11/11): every 5 minutes — is the database answering? Down → a text to DB_ALERT_PHONES (hourly while
+# down), "back up" when it answers again. No state in the database; what was sent is read back from Twilio.
+[functions."db-watch-scheduled"]
+  schedule = "*/5 * * * *"
+
 # RoofScout's own address (docs/ROOFSCOUT-SETUP.md): roofscout.grayco-cs.com shows the
 # roofscout/ folder, so https://roofscout.grayco-cs.com/ opens RoofScout and none of the CRM.
 # Only that host is matched; graycocrm1.netlify.app and crm.grayco-cs.com are unaffected.
