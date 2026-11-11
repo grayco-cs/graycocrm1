@@ -36,7 +36,7 @@ let n = 0; const ok = (c, m) => { assert.ok(c, m); n++; };
   // 4. a website lead → owners
   r = rig();
   await SA.leads([{ id: 'W1', key: 'W1', title: 'Website — roof', source: 'Website', contact: { name: 'Jane', phone: '9015550100' } }], { W1: { id: 'W1', websiteLead: true } }, () => false);
-  ok(JSON.stringify(to(r)) === JSON.stringify(['9015550001', '9015550002']), 'website → Nick + Wesley, got ' + to(r));
+  ok(JSON.stringify(to(r).filter(n => n !== '9015550100')) === JSON.stringify(['9015550001', '9015550002']), 'website → Nick + Wesley (+ the customer\'s own WEBTEXT), got ' + to(r));
   // 5. a sub bid assigned to a PM who is not an estimator → still the estimator(s), never the owners
   r = rig();
   await SA.leads([{ id: 'B3', key: 'B3', title: 'GC job', assigneeEmail: 'pat@grayco-cs.com', contact: { name: 'Y' } }], { B3: { id: 'B3', bidRole: 'sub' } }, () => false);

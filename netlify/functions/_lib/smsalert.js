@@ -553,6 +553,7 @@ async function leads(list, raw, isEm){
         return head + (said && !callNote && room > 12 ? ' says "' + clip(said, room) + '".' : '.') + callNote + ' ' + link + tail; };   /* LEADLINK */
       try { out.push(await notify({ type: 'lead', lsa: { leadId: s(x.id), code, name: clip(name, 60), phone: callPh, link: s(obj(r.leadExtra).lsaLink || r.lsaLink), said: clip(s(msg).replace(/\s+/g, ' '), 140), em: !!em, isLsa: lsaL, label }, text: lt(0), body: lt, link, only: lsaAdmins(), thread: ph ? 'p:' + ph : 'lsa:' + s(x.id), emergency: em }));   /* a texter's lead and their first text collapse into one alert */ } catch (e) { out.push({ error: s(e && e.message) }); }
       if (lsaL && !obj(r.leadExtra).lsaCall) try { out.push({ lsaAsk: await lsaAsk(callPh, { leadId: s(x.id), code, name, em, svc: s(obj(r.leadExtra).service || r.service || x.title) }) }); } catch (e) { out.push({ lsaAskError: s(e && e.message) }); }   /* LSAFLOW */
+      else if (!lsaL && /website lead/i.test(label) && callPh.length === 10) try { out.push({ webAsk: await webAsk(callPh, { leadId: s(x.id), name, em, svc: s(obj(r.leadExtra).service || r.service || '') }) }); } catch (e) { out.push({ webAskError: s(e && e.message) }); }   /* WEBTEXT */
       continue;
     }
     let tail = link; if (em && callPh.length === 10) { try { tail = link + ' Not real? Block: ' + require('./salesguard.js').blockLink(site(), callPh); } catch (e) {} }   /* patch SALESBLOCK: one tap to block (signed; admins / office, asked first) */
@@ -677,7 +678,32 @@ function bidLike(r, x){
    a staff text that starts with a job's PO ("S251 dumpster pulled, final walk Friday", "#S251: …") → the note on that job (gc_kv
    "gc_text_notes"; the CRM page adds it to the job's notes, dated and signed). Admins: any job; anyone else: a job they are the PM /
    APM / estimator / superintendent on. The sender gets "Added to S251 <job>" back. Nothing goes to a customer. */
+/* JOBFIND (owner 11/10: "for appointments by text use address, customer name, PO, job name as the indicator of which job the update goes to"):
+   the one live job the words point to — a PO (S251), a house number + street, the customer's full name, or the job name; two or more
+   candidates → none (the text says so). */
+function normA(v){ return low(v).replace(/[.,#]/g, ' ').replace(/\b(street|st)\b/g, 'st').replace(/\b(road|rd)\b/g, 'rd').replace(/\b(avenue|ave)\b/g, 'ave').replace(/\b(drive|dr)\b/g, 'dr').replace(/\b(lane|ln)\b/g, 'ln').replace(/\b(cove|cv)\b/g, 'cv').replace(/\s+/g, ' ').trim(); }
+function findJob(text, data){
+  const del = arr(data.gc_deleted_projects).map(x => s(x && (x.id || x))).concat(Array.isArray(data.gc_deleted_projects) ? data.gc_deleted_projects.map(String) : []);
+  const jobs = (Array.isArray(data.projects) ? data.projects : []).filter(j => j && j.id && !j.deleted && del.indexOf(s(j.id)) < 0 && !/^(closed|cancel)/i.test(s(j.status)));
+  const tx = ' ' + normA(text) + ' ', one = l => l.length === 1 ? l[0] : null;
+  const pos = (s(text).match(/\b[A-Za-z]\d{3,5}\b/g) || []).map(x => x.toUpperCase());
+  let m = one(jobs.filter(j => [j.autoPO, j.po, j.poNumber].some(x => s(x) && pos.indexOf(s(x).toUpperCase()) >= 0))); if (m) return { job: m, by: 'PO' };
+  const am = /\b(\d{2,6})\s+([a-z][a-z.']+)/.exec(normA(text));
+  if (am) { m = one(jobs.filter(j => { const a = normA(j.address || j.jobAddress); return a && new RegExp('^\\s*' + am[1] + '\\s+' + am[2].replace(/[.']/g, '') + '\\b').test(a.replace(/[.']/g, '')); })); if (m) return { job: m, by: 'address' }; }
+  const nameHit = v => { v = normA(v); return v.length >= 4 && tx.indexOf(' ' + v + ' ') >= 0; };
+  m = one(jobs.filter(j => nameHit(j.name))); if (m) return { job: m, by: 'job name' };
+  m = one(jobs.filter(j => nameHit(j.client || j.customer || j.clientName))); if (m) return { job: m, by: 'customer' };
+  const many = jobs.filter(j => nameHit(j.client) || nameHit(j.name)).length;
+  return many > 1 ? { many } : null;
+}
 async function jobNote(ph, body, who){
+  /* JOBFIND: "note <PO / address / customer / job name>: the note" also works */
+  const nmx = /^\s*note\s+(.{3,80}?)\s*[:\-–—]\s+([\s\S]{2,})$/i.exec(s(body));
+  if (nmx) { let data0 = {}; try { data0 = await _D.jobs(); } catch (e) { return null; } const f = findJob(nmx[1], data0);
+    if (!f || !f.job) { try { await sendL(ph, f && f.many ? 'GrayCo: "' + clip(nmx[1], 40) + '" matches ' + f.many + ' jobs — use the PO (e.g. S251) or the street address. Note not added.' : 'GrayCo: no job found for "' + clip(nmx[1], 40) + '" — use the PO, the street address, the customer or the job name. Note not added.', fromNum()); } catch (e) {} return { handled: true, staff: who.email, jobNote: 'no job' }; }
+    const po0 = s(f.job.autoPO || f.job.po || f.job.poNumber) || s(f.job.id);
+    body = po0 + ' ' + nmx[2];
+  }
   const m = /^\s*#?\s*([A-Za-z]\d{3,5})\b[\s:,.;-]*([\s\S]+)$/.exec(s(body)); if (!m || s(m[2]).length < 2) return null;
   const po = m[1].toUpperCase(), note = s(m[2]).slice(0, 1000);
   let data = {}; try { data = await _D.jobs(); } catch (e) { return null; }
@@ -715,6 +741,27 @@ async function pmByName(q){
       (once per lead; not for a lead marked BAD) and the PM gets the normal assigned alert + the 4 h / 24 h reach-out reminders. */
 const YES = /^\s*(y|yes|yeah|yep|yup|confirm(ed)?|correct|real|si|sí|👍|ok(ay)?)\b/i;
 function firstOf(n){ const f = s(n).split(/\s+/)[0]; return /^(unknown|customer|lead|google)$/i.test(f) ? '' : f; }
+/* WEBTEXT (owner 11/10: "website leads can have the auto text too"): a website lead with a cell gets one text from the GrayCo number right
+   away — daytime: we got it, someone calls shortly, reply with details / photos; 7 PM – 7 AM: the office is closed, we call in the morning
+   (Monday after Fri / Sat), what do you need + the address, EMERGENCY. Once per phone + lead; STOP / declined numbers are never texted. */
+async function webAsk(ph, o){
+  if (env('WEB_TEXT_OFF') === '1' || phone10(ph).length !== 10) return { skipped: 'no cell / off' };
+  ph = phone10(ph);
+  if (await _D.paused()) return { skipped: 'data-entry mode' };
+  const opt = await _D.optouts(); if (opt[ph]) return { skipped: 'texted STOP' };
+  if (await _D.consentNo(ph)) return { skipped: 'declined texts' };
+  let claim = false; const at = new Date(now()).toISOString();
+  await _D.kvCas(SKEY, v => { const st = loadState(v); claim = false; if (st.lsaCust[ph] && st.lsaCust[ph].leadId === o.leadId) return undefined; st.lsaCust[ph] = { leadId: o.leadId, name: clip(o.name, 60), at, stage: 'web' }; claim = true; return st; });
+  if (!claim) return { skipped: 'already texted' };
+  const f = firstOf(o.name), svc = clip(s(o.svc).replace(/[_-]+/g, ' '), 50), about = svc && !/^(general|other|contact|estimate)$/i.test(svc) ? ' about ' + svc.toLowerCase() : '';
+  let night = false; try { night = require('./custquiet.js').quiet(now()) && !o.em; } catch (e) {}
+  let body;
+  if (night) { const wd = new Date(now() + 6 * 3600e3).toLocaleDateString('en-US', { timeZone: 'America/Chicago', weekday: 'short' });
+    body = 'Hi' + (f ? ' ' + f : '') + ', this is GrayCo Construction Services. We got your request from our website' + about + '. Our office is closed now — we\'ll call you ' + (/^(Sat|Sun)/.test(wd) ? 'on Monday morning' : 'in the morning') + '. To help us get ready, reply with what you need help with (roof, water damage, remodel…) and the property address. If water is coming in or it\'s an emergency, reply EMERGENCY. Reply STOP to opt out.'; }
+  else body = 'Hi' + (f ? ' ' + f : '') + ', this is GrayCo Construction Services. We got your request from our website' + about + ' — someone from our team will call you shortly. Reply here with any details or photos that help. Reply STOP to opt out.';
+  const r = await sendL(ph, body.slice(0, 480), env('TWILIO_FROM'), o.em ? 'emergency' : night ? 'reply' : 'customer', { kind: 'customer', leadId: s(o.leadId) });
+  return { sent: !!(r && r.ok), night };
+}
 async function lsaAsk(ph, o){
   if (env('LSA_QUALIFY_OFF') === '1' || phone10(ph).length !== 10) return { skipped: 'no cell / off' };
   ph = phone10(ph);
@@ -796,11 +843,14 @@ async function apptText(ph, body, who){
   if (!r.ok) { try { await sendL(ph, 'GrayCo: what day and time? e.g. "appt John Smith thu 2pm 123 Main St". Nothing saved.', leadNum()); } catch (e) {} return { handled: true, staff: who.email, appt: 'no day' }; }
   let lead = null;
   if (r.code) { await _D.kvCas(SKEY, v => { const st = loadState(v); lead = arr(st.lsa[phone10(ph)]).filter(x => x.code === r.code).slice(-1)[0] || null; return undefined; }).catch(() => {}); }
+  let fj = null; if (!lead) { try { fj = findJob(body.replace(/^\s*\S+(\s+job)?/i, ' '), await _D.jobs()); } catch (e) { fj = null; } }   /* JOBFIND */
+  const J = fj && fj.job, jpo = J ? s(J.autoPO || J.po || J.poNumber) : '';
   const at = new Date(now()).toISOString(), row = { id: 'TA_' + now().toString(36) + Math.random().toString(36).slice(2, 6), kind: r.kind, date: r.date, time: r.time, endTime: r.endTime,
-    title: lead ? (r.title.split(' — ')[0] + ' — ' + clip(lead.name, 60)) : r.title, customer: lead ? clip(lead.name, 60) : r.customer, phone: lead ? phone10(lead.phone) : r.phone, address: r.address,
+    pid: J ? s(J.id) : '', job: J ? clip(s(J.name), 80) : '', po: jpo,
+    title: lead ? (r.title.split(' — ')[0] + ' — ' + clip(lead.name, 60)) : J ? (r.title.split(' — ')[0] + ' — ' + (jpo ? jpo + ' ' : '') + clip(s(J.name || J.client), 60)) : r.title, customer: lead ? clip(lead.name, 60) : J ? clip(s(J.client), 60) || r.customer : r.customer, phone: lead ? phone10(lead.phone) : r.phone || (J ? phone10(J.clientPhone || J.phone) : ''), address: r.address || (J ? s(J.address) : ''),
     leadId: lead ? s(lead.leadId) : '', code: r.code || '', by: s(who.name) || who.email, byEmail: low(who.email), text: clip(body, 400), at };
   let ok = false; try { ok = await _D.textAppt(row); } catch (e) {}
-  try { await sendL(ph, ok ? 'GrayCo: on your schedule — ' + row.title + ' · ' + AP.nice(row) + (row.address ? ' · ' + clip(row.address, 50) : '') + (r.kind === 'newjob' && !row.leadId ? ' · a lead is made for you' : '') + '. ' + site().replace(/^https?:\/\//, '') + '/#schedule' : 'GrayCo: could not save it — try again or add it in the CRM.', leadNum()); } catch (e) {}
+  try { await sendL(ph, ok ? 'GrayCo: on your schedule — ' + row.title + ' · ' + AP.nice(row) + (row.address ? ' · ' + clip(row.address, 50) : '') + (row.pid ? ' · on job ' + (row.po ? row.po + ' ' : '') + clip(row.job, 30) : '') + (r.kind === 'newjob' && !row.leadId && !row.pid ? ' · a lead is made for you' : '') + '. ' + site().replace(/^https?:\/\//, '') + '/#schedule' : 'GrayCo: could not save it — try again or add it in the CRM.', leadNum()); } catch (e) {}
   return { handled: true, staff: who.email, appt: ok ? 'added' : 'failed', date: row.date, time: row.time };
 }
 /* LSAVET: the office says a Google LSA call is real → Wesley's and Nick's cells, in the lead shape with the number to tap
@@ -827,5 +877,5 @@ async function system(kind, text){
   return notify({ type: 'system', text: 'CRM alert — ' + text, link: site(), thread: 'sys:' + s(kind), daily: true, hold: true });
 }
 
-module.exports = { apptText, lsaVetted, jobNote, lsaAsk, lsaCustomer, lsaPmText, _lsaCode: lsaCode, _isLsaLead: isLsaLead, _lsaReply: lsaReply, _D: _D, _isSubBid: isSubBid, ROLE_MIT, DEFAULT_PEOPLE, resolve, mitigationHolders, leadText, KEY, SKEY, TYPES, RATE_MS, REPLY_MS, settings, cleanPerson, staffList, load, save, notify, flushHeld, staffInbound, isStaffPhone, inboundText, missedCall, leads, assigned, approvals, system,
+module.exports = { webAsk, _findJob: findJob, apptText, lsaVetted, jobNote, lsaAsk, lsaCustomer, lsaPmText, _lsaCode: lsaCode, _isLsaLead: isLsaLead, _lsaReply: lsaReply, _D: _D, _isSubBid: isSubBid, ROLE_MIT, DEFAULT_PEOPLE, resolve, mitigationHolders, leadText, KEY, SKEY, TYPES, RATE_MS, REPLY_MS, settings, cleanPerson, staffList, load, save, notify, flushHeld, staffInbound, isStaffPhone, inboundText, missedCall, leads, assigned, approvals, system,
   inQuiet, quietNow, centralHour, compose, wants, _D };

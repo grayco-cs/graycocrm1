@@ -48,7 +48,8 @@ Object.assign(SA._D, { now: () => t, kvGet: async k => kv[k], kvCas: async (k, f
   assert.ok(sent.length && /^GrayCo: new lead [A-Z0-9]{4} from \(901\) 555-0122 Al\./.test(sent[0].body), sent[0] && sent[0].body);   /* LEADTEXT */
   sent.length = 0;
   await SA.leads([{ id: 'W1', key: 'W1', title: 'Website', source: 'Website', websiteLead: true, contact: { name: 'Jo Web', phone: '9015550133' } }], { W1: { id: 'W1', websiteLead: true, leadExtra: { websiteForm: 'Contact' }, said: { message: 'Need gutters' } } }, () => false);
-  assert.ok(/^GrayCo: GrayCo website lead [A-Z0-9]{4} from \(901\) 555-0133 Jo Web/.test(sent[0].body) && !sent.some(x => x.to === '9015550133'), 'a website lead: the shape, and no qualify text to the customer: ' + sent[0].body);
+  { const st0 = sent.find(x => x.to !== '9015550133');
+  assert.ok(/^GrayCo: GrayCo website lead [A-Z0-9]{4} from \(901\) 555-0133 Jo Web/.test(st0.body) && sent.filter(x => x.to === '9015550133').length === 1 && !sent.some(x => x.to === '9015550133' && /Reply YES/.test(x.body)), 'a website lead: the shape; the customer gets the website text (WEBTEXT), not the LSA "reply YES": ' + JSON.stringify(sent)); }
   sent.length = 0;
   await SA.leads([{ id: 'B1', key: 'B1', title: 'School reroof', source: 'BuildingConnected', type: 'bid', bidDue: '2026-11-20', contact: { name: 'GC', phone: '9015550144' } }], { B1: { id: 'B1' } }, () => false);
   assert.ok(!sent.some(x => /GOOD \+ PM name/.test(x.body)), 'a bid invite keeps the old path');

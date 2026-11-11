@@ -5493,7 +5493,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.214-2026-11-11-r27d -->
+<!-- GrayCo CRM Build: 33.215-2026-11-11-r27e -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6442,7 +6442,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.214-2026-11-11-r27d");
+  console.log("[GC] Build 33.215-2026-11-11-r27e");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6490,7 +6490,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.214-2026-11-11-r27d"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.215-2026-11-11-r27e"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -216498,11 +216498,11 @@ function textAppts(){
     var sched = (W._crm && W._crm.schedule) || [], have = {}; (Array.isArray(sched) ? sched : []).forEach(function(x){ if (x && x.textId) have[x.textId] = 1; });
     var add = mine.filter(function(a){ return !have[a.id]; }); mine.forEach(function(a){ APPT_DONE[a.id] = 1; }); if (!add.length) return;
     var rowsS = add.map(function(a){ var type = a.kind === 'meeting' ? 'meeting' : 'appointment';
-      return { id: 'SCH' + a.id, textId: a.id, pid: '', leadId: s(a.leadId) || ('LTXT_' + a.id), title: s(a.title), date: s(a.date), time: s(a.time), endTime: s(a.endTime), assignee: s(a.by), vendor: '', type: type,
+      return { id: 'SCH' + a.id, textId: a.id, pid: s(a.pid), leadId: s(a.leadId) || (s(a.pid) ? '' : 'LTXT_' + a.id),   /* JOBFIND: the job the text named */ title: s(a.title), date: s(a.date), time: s(a.time), endTime: s(a.endTime), assignee: s(a.by), vendor: '', type: type,
         address: s(a.address), phone: s(a.phone), notes: '📱 ' + s(a.text), scope: 'personal', private: true, internal: true, by: s(a.by), source: 'text', addedAt: s(a.at) }; });
     W._setSchedule(function(prev){ var p0 = Array.isArray(prev) ? prev : [], h2 = {}; p0.forEach(function(x){ if (x && x.textId) h2[x.textId] = 1; }); var nx = p0.concat(rowsS.filter(function(x){ return !h2[x.textId]; }));
       try { if (W._supaUpsert) W._supaUpsert('schedule', nx); } catch (er) {} try { if (W._gcRecIDBput) W._gcRecIDBput('schedule', nx); } catch (er2) {} return nx; });
-    var jobs = add.filter(function(a){ return a.kind === 'newjob' && !s(a.leadId); });
+    var jobs = add.filter(function(a){ return a.kind === 'newjob' && !s(a.leadId) && !s(a.pid); });
     if (jobs.length && typeof W._setLeads === 'function') {
       W._setLeads(function(prev){ var p0 = Array.isArray(prev) ? prev : [], ids = {}; p0.forEach(function(l){ if (l && l.id) ids[l.id] = 1; });
         var nl = jobs.filter(function(a){ return !ids['LTXT_' + a.id]; }).map(function(a){ return { id: 'LTXT_' + a.id, name: s(a.customer) || 'New job (texted)', phone: s(a.phone), address: s(a.address),

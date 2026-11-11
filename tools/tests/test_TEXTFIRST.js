@@ -10,7 +10,9 @@ const USERS = [{ name: 'Nick Thomas', email: 'nthomas@grayco-cs.com', role: 'adm
 const skv = {}, texts = [], mails = [];
 Object.assign(SA._D, { now: () => Date.parse('2026-11-10T18:00:00Z'),   /* a Tuesday noon Central: the office is open */ kvGet: async k => skv[k], kvCas: async (k, f) => { const nv = f(skv[k] == null ? null : JSON.parse(JSON.stringify(skv[k]))); if (nv !== undefined) skv[k] = nv; return { ok: true, value: skv[k] }; },
   send: async (to, body) => { texts.push({ to, body }); return { ok: true }; }, paused: async () => false, optouts: async () => ({}), consentNo: async () => false,
-  people: async () => ({ users: USERS, staff: [] }), hours: async () => null, postReply: async m => ({ id: m.id }), lsaDecide: async () => ({ inbox: true }), textLog: async row => { tlog.push(row); return true; }, vetTodo: async o => { vets.push(o); return true; }, textAppt: async row => { appts.push(row); return true; } });
+  people: async () => ({ users: USERS, staff: [] }), hours: async () => null, postReply: async m => ({ id: m.id }), lsaDecide: async () => ({ inbox: true }), textLog: async row => { tlog.push(row); return true; }, vetTodo: async o => { vets.push(o); return true; }, textAppt: async row => { appts.push(row); return true; }, textNote: async row => { notesT.push(row); return true; },
+  jobs: async () => ({ projects: [{ id: 'P1', autoPO: 'S251', name: 'Hyatt Studios', client: 'John Smith', address: '123 Main St, Bartlett TN', pm: 'Pat PM', clientPhone: '9015557777' }, { id: 'P2', autoPO: 'R100', name: 'Smith Roof', client: 'Ann Smith', address: '55 Oak Ave' }], gc_deleted_projects: [] }) });
+const notesT = [];
 const appts = [];
 const vets = [];
 const tlog = [];
@@ -51,13 +53,24 @@ const A = BA.make({ env: k => ENV[k] != null ? ENV[k] : '', s: v => v == null ? 
   assert.ok(r3 && r3.lsa === 'l3' && r3.good === true, 'GOOD works on it: ' + JSON.stringify(r3));
   /* APPTTEXT: "appt …" from a staff cell → my schedule; Pat (a PM, not on the alerts list) can text it too; a lead code fills the lead */
   texts.length = 0;
-  let ra = await SA.staffInbound('9015550003', 'estimate Jane Doe 901-555-1234 11/14 9:30am 55 Oak Ave', 'SMa1');
-  assert.ok(ra && ra.appt === 'added' && appts[0].byEmail === 'pat@grayco-cs.com' && appts[0].date === '2026-11-14' && appts[0].time === '09:30' && appts[0].phone === '9015551234' && appts[0].address === '55 Oak Ave', JSON.stringify([ra, appts[0]]));
-  assert.ok(texts.some(x => x.to === '9015550003' && /^GrayCo: on your schedule — Estimate — Jane Doe · Sat 11\/14 9:30 AM · 55 Oak Ave\. /.test(x.body)), JSON.stringify(texts));
+  let ra = await SA.staffInbound('9015550003', 'estimate Jane Doe 901-555-1234 11/14 9:30am 77 Pine Ave', 'SMa1');
+  assert.ok(ra && ra.appt === 'added' && appts[0].byEmail === 'pat@grayco-cs.com' && appts[0].date === '2026-11-14' && appts[0].time === '09:30' && appts[0].phone === '9015551234' && appts[0].address === '77 Pine Ave', JSON.stringify([ra, appts[0]]));
+  assert.ok(texts.some(x => x.to === '9015550003' && /^GrayCo: on your schedule — Estimate — Jane Doe · Sat 11\/14 9:30 AM · 77 Pine Ave\. /.test(x.body)), JSON.stringify(texts));
   ra = await SA.staffInbound('9015550002', 'appt ' + SA._lsaCode('l1') + ' thu 2pm', 'SMa2');
   assert.ok(ra && ra.appt === 'added' && appts[1].leadId === 'l1' && appts[1].customer === 'Pat' && appts[1].phone === '9015550111' && appts[1].date === '2026-11-12', JSON.stringify(appts[1]));
+  /* JOBFIND: the job named by PO / address / customer / job name */
+  ra = await SA.staffInbound('9015550002', 'meeting 123 Main Street fri 10am', 'SMj1');
+  assert.ok(ra && ra.appt === 'added' && appts.slice(-1)[0].pid === 'P1' && appts.slice(-1)[0].po === 'S251' && /S251 Hyatt Studios/.test(appts.slice(-1)[0].title) && /on job S251 Hyatt/.test(texts.slice(-1)[0].body), JSON.stringify([appts.slice(-1)[0], texts.slice(-1)[0]]));
+  ra = await SA.staffInbound('9015550002', 'estimate Ann Smith thu 9am', 'SMj2');
+  assert.ok(appts.slice(-1)[0].pid === 'P2', JSON.stringify(appts.slice(-1)[0]));
+  ra = await SA.staffInbound('9015550002', 'note 55 Oak Ave: tear off done, dumpster full', 'SMj3');
+  assert.ok(ra && ra.jobNote === 'added' && notesT.slice(-1)[0].pid === 'P2' && notesT.slice(-1)[0].text === 'tear off done, dumpster full', JSON.stringify([ra, notesT]));
+  ra = await SA.staffInbound('9015550002', 'note Nobody Here: x y', 'SMj4');
+  assert.ok(ra && ra.jobNote === 'no job' && /no job found/.test(texts.slice(-1)[0].body), JSON.stringify(ra));
+  const apN = appts.length;
   ra = await SA.staffInbound('9015550002', 'appt John Smith', 'SMa3');
-  assert.ok(ra && ra.appt === 'no day' && appts.length === 2 && /what day and time/.test(texts.slice(-1)[0].body));
+  appts.length = apN;
+  assert.ok(ra && ra.appt === 'no day' && appts.length === apN && /what day and time/.test(texts.slice(-1)[0].body));
   /* OVERNIGHT (owner 11/10): after hours an LSA call is NOT texted — it waits; at opening time (flushHeld, every 10 minutes) it goes, with its code */
   texts.length = 0; vets.length = 0; const hrs0 = SA._D.hours, now0 = SA._D.now;
   SA._D.hours = async () => null; SA._D.now = () => Date.parse('2026-11-14T03:00:00Z');   /* Friday 9 PM Central */
@@ -82,5 +95,17 @@ const A = BA.make({ env: k => ENV[k] != null ? ENV[k] : '', s: v => v == null ? 
     await A.notifyNew([{ id: 'l6', title: 'Gutters', source: 'Google LSA', leadExtra: { leadSource: 'Google LSA', lsaCheck: 'pending' }, contact: { name: 'Eli Ray', phone: '9015550156' } }]);
     assert.ok(texts.some(x => x.to === '9015550156' && /we'll call you on Monday morning/.test(x.body)), 'Friday night → Monday morning: ' + JSON.stringify(texts));
     SA._D.now = now1; SA._D.hours = hrs1; }
+  /* WEBTEXT: a website lead with a cell → one text right away (day / night wording), once */
+  { texts.length = 0; const now2 = SA._D.now; SA._D.now = () => Date.parse('2026-11-10T18:00:00Z');
+    await A.notifyNew([{ id: 'w1', title: 'Roof estimate', source: 'Website (grayco-cs.com)', websiteForm: 'estimate', leadExtra: { service: 'roof repair' }, contact: { name: 'Gail Fox', phone: '9015550170' } }]);
+    let c = texts.filter(x => x.to === '9015550170');
+    assert.ok(c.length === 1 && /^Hi Gail, this is GrayCo Construction Services\. We got your request from our website about roof repair — someone from our team will call you shortly\./.test(c[0].body), 'day web text: ' + JSON.stringify(texts));
+    await A.notifyNew([{ id: 'w1', title: 'Roof estimate', source: 'Website (grayco-cs.com)', contact: { name: 'Gail Fox', phone: '9015550170' } }]);
+    assert.strictEqual(texts.filter(x => x.to === '9015550170').length, 1, 'once');
+    SA._D.now = () => Date.parse('2026-11-11T03:30:00Z');   /* Tue 9:30 PM */
+    await A.notifyNew([{ id: 'w2', title: 'Kitchen remodel', source: 'Website (grayco-cs.com)', contact: { name: 'Hal Ng', phone: '9015550171' } }]);
+    c = texts.filter(x => x.to === '9015550171');
+    assert.ok(c.length === 1 && /Our office is closed now — we'll call you in the morning\./.test(c[0].body) && /reply EMERGENCY/.test(c[0].body), 'night web text: ' + JSON.stringify(c));
+    SA._D.now = now2; }
   console.log('TEXTFIRST: all passed');
 })().catch(e => { console.error('FAIL', e && e.stack || e); process.exit(1); });
