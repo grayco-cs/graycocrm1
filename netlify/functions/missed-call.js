@@ -528,6 +528,7 @@ async function inboundSms(p){
   }
   /* 5) the job's PM hears too */
   let pm = null; try { pm = job ? core().pmOf(data, job) : (own.pm ? await core().pmByName(own.pm) : null); } catch (e) {}
+  if (!(who && (who.kind === 'staff' || who.kind === 'sub'))) { try { const eq = await SA().emqOnCustomer(ph); if (eq) out.emq = eq; } catch (e) {} }   /* EMQ: they texted back after we answered an emergency → the insurance / access questions */
   try { out.cellAlerts = await SA().inboundText({ ph, body, who, pid, label, urgent: !!rt.urgent, mine: rt.to.map(x => x.email).concat(pm && pm.email ? [pm.email] : [], st0.lastOut && st0.lastOut[ph] ? [st0.lastOut[ph].email] : []) }); } catch (e) {}   /* patch SMSALERT */
   /* patch SMSCONSENT: texting us first is consent (via 'text') — only when nothing is recorded yet, never over STOP, never for subs / staff;
      the first reply to that number carries the subscription notice, once (prepended to the automatic answer, never a second text) */
