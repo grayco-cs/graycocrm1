@@ -732,7 +732,13 @@ exports.fromEmail = async function(mail){
    Google (from Google's lead e-mail), so a BAD text answer can carry it; none found → '' (the text then gives the LSA leads page) */
 function lsaLinkOf(h){
   const urls = (s(h).replace(/&amp;/g, '&').match(/https?:\/\/[^\s"'<>)]+/g) || []);
-  return urls.find(u => /ads\.google\.com\/localservices\/(lead|leads|message)|localservices\.google\.com/i.test(u) && !/unsubscribe|support|help|policies|privacy/i.test(u)) || '';
+  const direct = urls.find(u => /ads\.google\.com\/localservices\/(lead|leads|message)|localservices\.google\.com/i.test(u) && !/unsubscribe|support|help|policies|privacy/i.test(u));
+  if (direct) return direct;
+  /* LSADISPUTE: Google's "New call / new lead" e-mails link "View Details" through c.gle — the link right after those words (plain text) */
+  const vm = /View Details\s*<?\s*(https:\/\/c\.gle\/[^\s"'<>)]+)/i.exec(s(h).replace(/&amp;/g, '&'));
+  if (vm) return vm[1];
+  const hm = /<a[^>]+href="(https:\/\/c\.gle\/[^"]+)"[^>]*>[\s\S]{0,200}?View Details/i.exec(s(h));
+  return hm ? hm[1].replace(/&amp;/g, '&') : '';
 }
 /* patch AUTO6: the missed-call text-back (missed-call.js) files its leads the same way */
 exports._lib = { fileLead, alertLead, findCustomer, phone10, tidyPhone, SOURCE, lsaLinkOf };

@@ -5496,7 +5496,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.219-2026-11-11-r27i -->
+<!-- GrayCo CRM Build: 33.220-2026-11-11-r27j -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6445,7 +6445,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.219-2026-11-11-r27i");
+  console.log("[GC] Build 33.220-2026-11-11-r27j");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6493,7 +6493,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.219-2026-11-11-r27i"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.220-2026-11-11-r27j"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -181268,6 +181268,7 @@ function entries(){
   slot({ id: 'osha_poster', folder: 'safety', title: 'OSHA / TOSHA "It\'s the Law" posters', desc: 'Federal OSHA poster (MS, AR) and the TOSHA poster (TN) — free from osha.gov and tn.gov. Upload the PDFs you print.', kind: 'safety', expiry: false, access: 'all', shareGc: false, more: [['osha.gov poster ↗', 'https://www.osha.gov/publications/poster']] });
 
   /* patch COMPDOCS2: the lead / asbestos / OSHA papers the owner sent 11/06 (files in company-docs/) */
+  [["leadasb", "/company-docs/01667c529f454cf1/GrayCo_Lead_07_Abatement_Occupant_Protection_Plan.pdf", "Lead 07 — Abatement occupant protection plan (before any lead abatement)", "Required for every lead ABATEMENT job in a pre-1978 home or child-occupied building (40 CFR 745.227(e)(5); AR ADH; TN Rule 0400-13-01): written for that building by the certified supervisor before work starts; copy to the owner, one on site, keep 3 years with the abatement report. Tick \"lead abatement\" on the job's ☣️ Lead & asbestos card and it is listed with its due date."]].forEach(function(x){ E.push({ id: 'cd_lead07', type: 'link', folder: x[0], title: x[2], desc: x[3], url: x[1] }); });   /* LEAD07 (owner 11/10) */
   [["leadasb", "/company-docs/01667c529f454cf1/GrayCo_Lead_Asbestos_CRM_Setup_Guide.docx", "Lead & asbestos — when to send each form (start here)", "Job tags (year built, pre-1978, child-occupied, disturbs paint, asbestos, commercial / 5+ units, HUD-assisted), what to send before work and after, and the 30-day deadlines."], ["leadasb", "/company-docs/01667c529f454cf1/GrayCo_Lead_01_PreRenovation_Pamphlet_Acknowledgment.docx", "Lead 01 — Pre-renovation notice: Renovate Right pamphlet acknowledgment", "Pre-1978 + disturbs paint: give with the EPA Renovate Right pamphlet no more than 60 days before start; signature back before day 1 (or mailed 7+ days before, keep the receipt)."], ["leadasb", "/company-docs/01667c529f454cf1/GrayCo_Lead_02_Child_Occupied_Facility_Notice.docx", "Lead 02 — Child-occupied facility notice (parents / guardians)", "Schools, daycares, Head Start: post it or give a copy to each family before work starts."], ["leadasb", "/company-docs/01667c529f454cf1/GrayCo_Lead_03_Completion_Records_and_Delivery.docx", "Lead 03 — Lead-safe renovation completion record", "Signed by the certified renovator; deliver to the owner within 30 days of completion."], ["leadasb", "/company-docs/01667c529f454cf1/GrayCo_Lead_04_Non_Certified_Worker_Training_Record.docx", "Lead 04 — On-the-job training record (non-certified workers)", "EPA 40 CFR 745.90(b)(2) / 745.86(b)(6)(ii) — keep in the job file."], ["leadasb", "/company-docs/01667c529f454cf1/GrayCo_Lead_05_Test_Kit_Results_Report.docx", "Lead 05 — Test kit results report", "EPA 40 CFR 745.86(c): kit maker + model, each component tested with location, each result — to the person who contracted the work within 30 days."], ["leadasb", "/company-docs/01667c529f454cf1/GrayCo_Lead_06_Supply_and_Equipment_Checklist.docx", "Lead 06 — Lead job supply and equipment checklist", "Load before every lead job (EPA RRP list plus GrayCo standard)."], ["leadasb", "/company-docs/01667c529f454cf1/GrayCo_Asbestos_01_Customer_Disclosure_Acknowledgment.docx", "Asbestos 01 — Customer disclosure and acknowledgment", "Before work starts on any building where asbestos-containing material was found or is suspected; signature before day 1."], ["leadasb", "/company-docs/01667c529f454cf1/GrayCo_Asbestos_02_Completion_Records_Transmittal.docx", "Asbestos 02 — Asbestos records transmittal", "Send with the abatement records at the end of any job that included asbestos abatement."], ["safety", "/company-docs/01667c529f454cf1/GrayCo_Lead_Safety_Program.docx", "Lead Safety and Compliance Program", "OSHA 29 CFR 1926.62 · EPA 40 CFR 745 (RRP) · HUD guidelines · Arkansas ADH. Effective November 2026."], ["safety", "/company-docs/01667c529f454cf1/GrayCo_Asbestos_Awareness_and_Control_Program.docx", "Asbestos Awareness and Control Program", "OSHA 29 CFR 1926.1101 · EPA NESHAP 40 CFR 61 Subpart M · Arkansas DEQ. Effective November 2026."], ["safety", "/company-docs/01667c529f454cf1/GrayCo_Hazard_Communication_Program.docx", "Hazard Communication Program (HazCom)", "OSHA 29 CFR 1910.1200 / 1926.59 — labels, SDS, training."], ["safety", "/company-docs/01667c529f454cf1/GrayCo_Respiratory_Protection_Program.docx", "Respiratory Protection Program", "OSHA 29 CFR 1910.134 / 1926.103 — selection, medical evaluation, fit testing, training."], ["safety", "/company-docs/01667c529f454cf1/GrayCo_Health_Effects_Lead_Asbestos_Training.docx", "Health effects of lead and asbestos — employee training (Toolbox Talks 11 & 12)", "How lead and asbestos get in the body, early signs, long-term disease, family / take-home harm, smoking, OSHA limits, free medical testing and removal rights; quiz + sign-in. Give before the first lead / asbestos job and yearly."], ["safety", "/company-docs/01667c529f454cf1/GrayCo_Lead_Asbestos_Toolbox_Talks_and_Training_Plan.docx", "Lead & asbestos toolbox talks + crew training plan", "Kickoff training and 10 toolbox meetings."], ["safety", "/company-docs/01667c529f454cf1/GrayCo_Lead_Asbestos_Warning_Signs.pdf", "Lead & asbestos warning signs (PDF, ready to print)", "DANGER signs in English and Spanish."], ["safety", "/company-docs/01667c529f454cf1/GrayCo_Lead_Asbestos_Warning_Signs.docx", "Lead & asbestos warning signs (Word, to edit)", "Same signs, editable."], ["legal", "/company-docs/01667c529f454cf1/GrayCo_Davis_Bacon_Subcontract_Rider.docx", "Davis-Bacon Subcontract Rider (CDI Head Start projects)", "Federal labor standards rider for subcontracts on federally funded jobs."]].forEach(function(x, i){ E.push({ id: 'cd2_' + i, type: 'link', folder: x[0], title: x[2], desc: x[3], url: x[1] }); });
   /*COMPDOCS4*/ [["leadasb", "/company-docs/7c2e9d41b8a05f63/02_RRP_Recordkeeping_Checklist.docx", "RRP renovation recordkeeping checklist (GrayCo)", "EPA 40 CFR 745.86 — one per lead job; keep in the job file 3 years with certs, test results and notices."], ["leadasb", "/company-docs/7c2e9d41b8a05f63/EPA_RRP_Recordkeeping_Checklist.pdf", "EPA sample renovation recordkeeping checklist (official PDF)", "EPA form (OMB 2070-0195, exp. 4/30/2029)."], ["leadasb", "/company-docs/7c2e9d41b8a05f63/EPA_Pre-Renovation_Disclosure_Form.pdf", "EPA sample pre-renovation form (official PDF)", "The EPA's own version of Lead 01 — the customer signs; Renovate Right pamphlet given first."], ["leadasb", "/epa-renovate-right.pdf", "EPA Renovate Right pamphlet (12 pages)", "Give before work starts on pre-1978 homes / child-occupied facilities (rides with Lead 01 when sent from the CRM)."], ["leadasb", "/company-docs/7c2e9d41b8a05f63/EPA_Renovation_Notice_and_Child-Occupied_Facility_Forms.pdf", "EPA renovation notice + child-occupied facility forms (official PDF)", "Common areas of multi-family housing; schools, daycares, Head Start — parents / guardians notified."], ["leadasb", "/company-docs/7c2e9d41b8a05f63/EPA_Test_Kit_Documentation_Form.pdf", "EPA test kit documentation form (official PDF)", "When an EPA-recognized test kit was used — goes to the owner within 30 days of the work."], ["leadasb", "/company-docs/7c2e9d41b8a05f63/EPA_Paint_Chip_Sample_Collection_Guide.pdf", "EPA paint chip sample collection guide", "How the certified renovator collects a paint chip sample for a lab."], ["leadasb", "/company-docs/7c2e9d41b8a05f63/06_EPA_and_State_Forms_Index.docx", "EPA and state forms index (TN / AR / MS) — every lead, asbestos or EPA job", "Which federal and state forms each hazard job needs, with the official links."], ["safety", "/company-docs/7c2e9d41b8a05f63/03_Health_Effects_Training_Lead_Asbestos_Mold.docx", "Employee training — health effects of lead, asbestos and MOLD", "Before starting work and every year, for employees and sub workers who may disturb paint, materials or mold."], ["legal", "/company-docs/7c2e9d41b8a05f63/04_GrayCo_Standard_Contract_Clauses_Hazmat.docx", "Standard contract clauses — hazardous materials (lead, mold, asbestos)", "For every contract and proposal (clause 2 when hazardous waste is hauled). Attorney review once before it becomes standard."], ["insurance", "/company-docs/7c2e9d41b8a05f63/01_Pollution_Insurance_App_CDI_Head_Start.docx", "Pollution insurance application — CDI Head Start (5 centers)", "Contractors pollution liability application for the CDI Head Start repairs (Brinkley, Clarendon, De Valls Bluff, Des Arc, Phillips)."], ["company", "/company-docs/7c2e9d41b8a05f63/05_Customer_Portal_Questionnaire_Spec.docx", "Customer portal questionnaire — build spec (Your Home + job type questions)", "Year built drives the lead / asbestos flags. Being built into the customer portal."], ["company", "/company-docs/7c2e9d41b8a05f63/grayco_logo_black.png", "GrayCo logo — black (PNG)", "For white backgrounds and print."]].forEach(function(x, i){ E.push({ id: 'cd4_' + i, type: 'link', folder: x[0], title: x[2], desc: x[3], url: x[1], access: x[0] === 'insurance' ? 'office' : 'all' }); });
   /* EPAFIRM (owner 11/10: "https://www.epa.gov/lead/lead-based-paint-abatement-and-evaluation-program-firm-certification — make sure this info is in my CRM") */
@@ -216421,6 +216422,25 @@ D.addEventListener('click', function(e){
     });
 }, true);
 SI.call(W, vetPaint, 1500);
+/* LSADISPUTE (owner 11/10: "make sure when I click those LSA leads I have the link to dispute the lead from LSA"): an open Google LSA lead shows
+   "⚖️ Open this lead in Google LSA — rate it or dispute it" at the top (the lead's own Google link from Google's e-mail, else Google's LSA leads list) */
+function lsaAny(l){ var ex = (l && l.leadExtra) || {}; return !!l && (!!l.lsaCheck || !!ex.lsaCheck || /google\s*lsa|local\s*services/i.test([l.source, l.leadSource, ex.leadSource, ex.mkSource === 'Google LSA' ? 'google lsa' : ''].join(' '))); }
+function lsaLinkOf(l){ var ex = (l && l.leadExtra) || {}; var u = s(l && l.lsaLink) || s(ex.lsaLink); return /^https:\/\/(ads\.google\.com|localservices\.google\.com|c\.gle)\//.test(u) ? u : 'https://ads.google.com/localservices/leads'; }
+function disputeBar(){
+  try {
+    var d = D.getElementById('gcl-drawer'); if (!d || !d.getClientRects().length) return;   /* a fixed drawer has no offsetParent */
+    var H = W._gcLeadsHub, id = H && H.ui && H.ui().open, l = id && lead(id); var have = d.querySelector('#gc-lsa-dispute');
+    if (!l || !lsaAny(l)) { if (have) have.remove(); return; }
+    if (have && have.getAttribute('data-id') === s(l.id)) return; if (have) have.remove();
+    var bad = l.lsaCheck === 'bad' || /not a real lead/i.test(s(l.lostReason)), own = lsaLinkOf(l) !== 'https://ads.google.com/localservices/leads';
+    var b = D.createElement('div'); b.id = 'gc-lsa-dispute'; b.setAttribute('data-id', s(l.id));
+    b.style.cssText = 'margin:0 0 10px;padding:10px 12px;border-radius:10px;border:1px solid ' + (bad ? '#fca5a5' : '#bfdbfe') + ';background:' + (bad ? '#fef2f2' : '#eff6ff') + ';font:14px Inter,Arial,sans-serif;color:#0f172a;display:flex;flex-wrap:wrap;gap:8px;align-items:center';
+    b.innerHTML = '<b>📍 Google LSA lead</b><span style="flex:1 1 200px;color:#475569;font-size:13px">' + (bad ? 'Marked BAD — dispute it in Google within about 30 days to get the charge back.' : 'Rate it in Google, or dispute it if it was junk (about 30 days).') + (own ? '' : ' (opens your LSA leads list — find this caller by the time / number)') + '</span>'
+      + '<a href="' + esc(lsaLinkOf(l)) + '" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;min-height:38px;padding:0 12px;border-radius:9px;background:' + (bad ? '#991b1b' : '#1d4ed8') + ';color:#fff;font-weight:700;text-decoration:none">⚖️ ' + (bad ? 'Dispute in Google LSA' : 'Open in Google LSA') + ' ↗</a>';
+    d.insertBefore(b, d.firstChild);
+  } catch (e) {}
+}
+SI.call(W, disputeBar, 700);
 /* patch LSATEXT (owner 11/10): GOOD / BAD texted back from Wesley's or Nick's cell (server: _lib/smsalert.js → gc_kv "gc_lsa_decisions")
    → the same mark on the CRM lead; the office To-Do "Dispute … in Google Ads" was already added by the server */
 function textMarks(){
@@ -216544,6 +216564,7 @@ var D = W.document, ST = W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout, SI = W.__GC
 var F = '/company-docs/01667c529f454cf1/';
 var DOCS = { L01: ['Lead 01 — Renovate Right acknowledgment', 'GrayCo_Lead_01_PreRenovation_Pamphlet_Acknowledgment.docx'], L02: ['Lead 02 — Child-occupied facility notice', 'GrayCo_Lead_02_Child_Occupied_Facility_Notice.docx'],
   L03: ['Lead 03 — Completion record', 'GrayCo_Lead_03_Completion_Records_and_Delivery.docx'], L05: ['Lead 05 — Test kit results', 'GrayCo_Lead_05_Test_Kit_Results_Report.docx'],
+  L07: ['Lead 07 — Abatement occupant protection plan', 'GrayCo_Lead_07_Abatement_Occupant_Protection_Plan.pdf'],   /* LEAD07 (owner 11/10) */
   A01: ['Asbestos 01 — Disclosure & acknowledgment', 'GrayCo_Asbestos_01_Customer_Disclosure_Acknowledgment.docx'], A02: ['Asbestos 02 — Records transmittal', 'GrayCo_Asbestos_02_Completion_Records_Transmittal.docx'] };
 function s(v){ return v == null ? '' : String(v).trim(); }
 function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
@@ -216568,6 +216589,9 @@ function need(p){
     if (fin || found('leadFound')) out.push({ k: 'L03', due: d3, why: '30 days' });
     if (a.testKit && (fin || found('leadFound'))) out.push({ k: 'L05', due: d3, why: '30 days' });
   }
+  /* LEAD07: lead ABATEMENT (permanent removal / enclosure / encapsulation / soil removal under the state abatement program) needs a written,
+     building-specific occupant protection plan before work starts (40 CFR 745.227(e)(5); AR ADH; TN Rule 0400-13-01) */
+  if (a.abatement) out.push({ k: 'L07', due: start ? plus(start, -1) : '', why: 'before work starts' });
   if (a.asbFound) {
     out.push({ k: 'A01', due: earlier(start ? plus(start, -1) : '', found('asbFound') ? plus(found('asbFound'), 30) : ''), why: 'before work starts / 30 days' });
     if (fin) out.push({ k: 'A02', due: fin, why: 'at completion' });
@@ -216608,6 +216632,7 @@ function html(p){
     + '<div class="sec">2 · The work</div>'
     + cb('disturbsPaint', 'Will the work disturb painted surfaces?', 'More than 6 sq ft inside or 20 sq ft outside, any window replacement, or demolition')
     + cb('testKit', 'Did you use a lead test kit?', 'Adds the test kit results report (Lead 05)')
+    + cb('abatement', 'Is this lead ABATEMENT (removing lead hazards: paint removal / enclosure, soil removal — under a state abatement permit), not just lead-safe renovation?', 'Adds the occupant protection plan (Lead 07), due before work starts — fill it in for this building, give the owner a copy, keep one on site; state notice + clearance by a certified inspector')   /* LEAD07 */
     + '<div class="sec">3 · What was found</div>'
     + dt('leadFound', 'Date lead was found (leave empty if none)') + dt('asbFound', 'Date asbestos was found or suspected (leave empty if none)')
     + '<div class="sec">Papers this job needs</div>';
