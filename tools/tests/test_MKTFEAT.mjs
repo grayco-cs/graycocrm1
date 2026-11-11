@@ -237,6 +237,38 @@ ok(rep === 403 || rep === 401, 'the report preview is refused to him', rep);
   const tt = await p.evaluate(() => document.body.innerText);
   ok(/Team schedule/.test(tt) && /Final walk/.test(tt) && /Pat PM/.test(tt) && !/Dentist PRIVATE/.test(tt), 'MMJOBS: 📅 Team schedule shows the job schedule, never a personal item', tt.slice(0, 400));
 }
+/* MMALL (owner 11/10: "make sure all his tabs work, all links go to what he needs"): every tab in his menu draws, says no error, and its links are real */
+{ const p = c.page();
+  const tabs = await p.evaluate(() => [...document.querySelectorAll('nav button, aside button')].filter(b => b.offsetParent).map(b => b.innerText.replace(/\s+/g, ' ').trim()).filter(Boolean));
+  console.log('   his menu:', tabs.join(' | '));
+  const VIEWS = ['marketing', 'mmt_todo', 'mmt_leads', 'mmt_appr', 'mmt_email', 'mmt_social', 'mmt_cal', 'mmt_reviews', 'mmt_ads', 'mmt_media', 'mmt_jobs', 'mmt_team', 'mmt_ideas', 'mmt_logins', 'customers', 'systems'];
+  const bad = [], linksAll = {};
+  for (const v of VIEWS) {
+    await p.evaluate(v => window._setView(v), v); await sleep(3500);
+    const r = await p.evaluate(() => { const m = document.querySelector('main') || document.body; const txt = (m.innerText || '').replace(/\s+/g, ' ');
+      const links = [...m.querySelectorAll('a[href]')].map(a => a.getAttribute('href')).filter(h => h && !/^(#|javascript:|mailto:|tel:)/.test(h));
+      return { view: localStorage.getItem('grayco_view'), len: txt.length, err: (txt.match(/Not loaded[^.]*|Something went wrong[^.]*|not allowed[^.]*|Only an admin[^.]*|Only admins[^.]*|is not part of the Marketing Manager profile[^.]*|Error: [^.]*/i) || [''])[0], head: txt.slice(0, 80), links }; });
+    linksAll[v] = r.links;
+    if (r.view !== v || r.len < 80 || r.err) bad.push({ v, view: r.view, len: r.len, err: r.err, head: r.head });
+    console.log('   ' + v + ': ' + (r.err ? 'ERR ' + r.err : 'ok') + ' · ' + r.len + ' chars · ' + r.links.length + ' links · ' + r.head.slice(0, 60));
+  }
+  await p.evaluate(() => window._setView('systems')); await sleep(4000);
+  ok(!bad.length, 'MMALL: every one of his tabs opens with content and no error (' + VIEWS.length + ' tabs)', bad);
+  /* every 🧭 GrayCo Systems tile goes somewhere (a page that opens, or a CRM screen) */
+  const tl = await p.evaluate(async () => { const out = []; const o0 = window.open; window.open = (u) => { out[out.length - 1].to = 'open ' + u; return null; };
+    const keys = [...document.querySelectorAll('#gc-sys-sys-mount [data-sys="tile"]')].map(b => b.getAttribute('data-k'));
+    for (const k of keys) { window._setView('systems'); await new Promise(r => setTimeout(r, 700)); const b = document.querySelector('#gc-sys-sys-mount [data-k="' + k + '"]'); out.push({ k, to: '' }); if (!b) { out[out.length - 1].to = 'missing'; continue; }
+      const v0 = localStorage.getItem('grayco_view'); b.click(); await new Promise(r => setTimeout(r, 900)); const v1 = localStorage.getItem('grayco_view'), dlg = document.querySelector('.gcsys-modal, [role="dialog"], #gc-lob');
+      if (!out[out.length - 1].to) out[out.length - 1].to = v1 !== v0 ? 'view ' + v1 : dlg ? 'dialog' : 'nothing'; if (dlg) { try { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); dlg.remove(); } catch (e) {} } }
+    window.open = o0; return out; });
+  console.log('   systems tiles:', tl.map(x => x.k + '→' + x.to).join(' · '));
+  ok(tl.length >= 15 && tl.every(x => x.to && x.to !== 'nothing' && x.to !== 'missing'), 'MMALL: every 🧭 GrayCo Systems tile opens its page or screen (' + tl.length + ')', tl.filter(x => !x.to || x.to === 'nothing' || x.to === 'missing'));
+  const ext = [...new Set([].concat(...Object.values(linksAll)))];
+  const okLink = h => /^https:\/\/[a-z0-9.-]+\.[a-z]{2,}(\/|$|\?)/i.test(h) || /^\/[^\s]*$/.test(h) || /^\?jobmsg=|^\.\//.test(h);
+  ok(ext.every(okLink), 'MMALL: every link on his tabs is a real https:// address or a CRM page (' + ext.length + ' links)', ext.filter(h => !okLink(h)));
+  console.log('   links:', ext.join(' '));
+  ok(!c.errs.length, 'MMALL: no page errors while opening every tab', c.errs.slice(0, 5));
+}
 ok(!c.errs.length, 'no page errors (Marketing Manager)', c.errs.slice(0, 3));
 await c.b.close();
 console.log(`MKTFEAT ${pass}/${pass + fail}`); process.exit(fail ? 1 : 0);
