@@ -223,6 +223,15 @@ function cleanLines(v){
     return { l: clip(x, 140), r: '' };
   }).filter(function(x){ return x.l; });
 }
+/* patch SDS: a paper the customer answers line by line — "Chemical & product use consent": Approve / Do not use on each product.
+   choices = [{ id, n: name, u: what it is for, c: cautions }] (only on kind 'doc'); the customer's answers come back on signed.picks */
+const CHOICE_ID = /^[A-Za-z0-9_-]{1,60}$/;
+function cleanChoices(v){
+  if (!Array.isArray(v)) return [];
+  const seen = {};
+  return v.slice(0, 30).map(function(x){ return x && typeof x === 'object' ? { id: s(x.id), n: clip(x.n != null ? x.n : x.name, 100), u: clip(x.u != null ? x.u : x.use, 200), c: clip(x.c != null ? x.c : x.caution, 300) } : null; })
+    .filter(function(x){ if (!x || !CHOICE_ID.test(x.id) || !x.n || seen[x.id]) return false; seen[x.id] = 1; return true; });
+}
 async function request(body, who){
   const pid = s(body.projectId), kind = s(body.kind);
   if (!ID_RE.test(pid)) return { status: 400, out: { ok: false, error: 'Open a job first.' } };
@@ -232,6 +241,8 @@ async function request(body, who){
   const amount = num(body.amount);
   const docRef = refPath(body.docRef) ? s(body.docRef) : '';
   const url = /^https:\/\/[^\s"'<>]{4,500}$/.test(s(body.url)) ? s(body.url) : '';
+  const choices = kind === 'doc' ? cleanChoices(body.choices) : [];   /* patch SDS */
+  if (kind === 'doc' && Array.isArray(body.choices) && body.choices.length && !choices.length) return { status: 400, out: { ok: false, error: 'The products on the paper could not be read.' } };
   const data = await jobData(true), p = core().findProject(data, pid);
   if (!p) return { status: 404, out: { ok: false, retry: true, error: 'The job is not in the cloud yet — try again in a minute.' } };
   const T = scrubber(p);
@@ -243,9 +254,9 @@ async function request(body, who){
     const open = mine.find(function(x){ return x.status === 'pending'; });
     if (open) {   /* asked already: the same paper again is the same request (its amount / lines brought up to date) */
       existing = open;
-      const same = (isNaN(amount) ? open.amount == null : open.amount === money(amount)) && s(open.title) === title && (!docRef || s(open.docRef) === docRef);   /* patch ESTPDF: a re-sent PDF replaces the paper's copy */
+      const same = (isNaN(amount) ? open.amount == null : open.amount === money(amount)) && s(open.title) === title && (!docRef || s(open.docRef) === docRef) && JSON.stringify(open.choices || []) === JSON.stringify(choices);   /* patch ESTPDF: a re-sent PDF replaces the paper's copy · patch SDS: a changed product list too */
       if (same) return null;
-      const up = Object.assign({}, open, { title: title, amount: isNaN(amount) ? null : money(amount), lines: cleanLines(body.lines), docRef: docRef || open.docRef || '', url: url || open.url || '', updatedAt: now },
+      const up = Object.assign({}, open, { title: title, amount: isNaN(amount) ? null : money(amount), lines: cleanLines(body.lines), docRef: docRef || open.docRef || '', url: url || open.url || '', updatedAt: now }, choices.length || (open.choices || []).length ? { choices: choices } : {},
         docRef && s(open.docRef) && docRef !== s(open.docRef) ? { docName: clip(body.docName, 120) || open.docName, supersededRefs: [].concat(open.supersededRefs || [], [open.docRef]).slice(-10) } : {});   /* patch ESTPDF */
       existing = up;
       return { list: l.map(function(x){ return s(x.id) === s(open.id) ? up : x; }), check: function(l2){ return l2.some(function(x){ return s(x.id) === up.id && x.updatedAt === now; }); } };
@@ -253,6 +264,7 @@ async function request(body, who){
     if (mine.some(function(x){ return x.status === 'signed' && (isNaN(amount) || x.amount === money(amount)); }) && body.again !== true) { existing = mine.find(function(x){ return x.status === 'signed'; }); return null; }
     const id = mine.length ? base + '_v' + (mine.length + 1) : base;
     made = { id: id, pid: pid, kind: kind, refId: refId, title: title, amount: isNaN(amount) ? null : money(amount), lines: cleanLines(body.lines), docRef: docRef, url: url, docName: clip(body.docName, 120),
+      choices: choices.length ? choices : undefined,   /* patch SDS */
       note: clip(body.note, 500), auto: body.auto === true || body.mailed === true, mailed: body.mailed === true ? true : undefined, sentAt: body.mailed === true ? (/^\d{4}-\d{2}-\d{2}T/.test(s(body.sentAt)) ? s(body.sentAt) : now) : undefined, sentVia: body.mailed === true ? clip(body.sentVia, 30) : undefined, gateKey: body.mailed === true && kind === 'estimate' && refId ? 'e:' + refId : undefined, status: 'pending', createdBy: s(who.name) || who.email, createdByEmail: who.email, createdAt: now, updatedAt: now };
     return { list: l.concat([made]), check: function(l2){ return l2.some(function(x){ return s(x.id) === id; }); } };
   });
@@ -347,6 +359,8 @@ async function view(pid){
       lines: arr(x.lines).map(function(y){ return { l: T(y.l), r: T(y.r) }; }), doc: signed[x.docRef] || (x.url && !refPath(x.docRef) ? x.url : ''),
       status: x.status, at: s(x.createdAt), signed: x.status === 'signed' && x.signed ? { name: clip(x.signed.name, 80), at: s(x.signed.at), url: signed[x.signed.docRef] || '' } : null,
       declined: x.status === 'declined' && x.declined ? { at: s(x.declined.at) } : null,
+      choices: arr(x.choices).length ? arr(x.choices).map(function(c){ return { id: s(c.id), n: T(c.n), u: T(c.u), c: T(c.c), pick: x.status === 'signed' && x.signed && x.signed.picks ? (x.signed.picks[s(c.id)] || '') : '' }; }) : undefined,   /* patch SDS */
+      note: arr(x.choices).length ? T(x.note) : undefined,
       sms: (x.kind === 'contract' || x.kind === 'estimate') && x.status === 'pending' ? { phone: require('./_lib/sms.js').tidy(p.clientPhone || p.phone || p.customerPhone || '') } : null };   /* patch SMSCONSENT */
   });
   return { ok: true, job: { name: T(p.name), state: legalState(p), group: /commercial|tenant|government|bid/i.test(s(p.type || p.jobType)) ? 'commercial' : 'residential', address: s(p.address) }, items: items,   /* LEGAL2-patch */ pm: { name: clip(pm.name, 60), phone: clip(pm.phone, 40) }, office: OFFICE_PHONE };
@@ -357,12 +371,17 @@ function signedCopyPdf(o){
   const b = [{ t: 'title', text: 'GrayCo Construction Services' }, { t: 'p', text: o.label + ' — signed', bold: true, size: 12 }, { t: 'gap', h: 4 },
     { t: 'p', text: 'Job: ' + o.job }, o.address ? { t: 'p', text: 'Address: ' + o.address } : null, o.po ? { t: 'p', text: 'PO: ' + o.po } : null, { t: 'p', text: 'Customer: ' + o.customer }, { t: 'gap', h: 6 },
     { t: 'h', text: o.title }];
-  o.lines.forEach(function(x){ b.push({ t: 'row', left: x.l, right: x.r }); });
+  if (o.choices && o.choices.length) {   /* patch SDS: each product and the customer's own answer */
+    o.choices.forEach(function(c){ const v = (o.picks || {})[c.id]; b.push({ t: 'row', left: c.n, right: v === 'yes' ? '[X] Approve   [  ] Do not use' : v === 'no' ? '[  ] Approve   [X] Do not use' : '(no answer)' }); if (c.u) b.push({ t: 'p', text: 'For: ' + c.u, size: 9, muted: true }); });
+    b.push({ t: 'p', text: 'Sensitivities / notes: ' + (o.sens || '(none given)'), size: 10 });
+    b.push({ t: 'p', text: 'Typical information — the product\'s own label and Safety Data Sheet govern its use. Products marked "Do not use" will not be used.', size: 9, muted: true });
+  } else o.lines.forEach(function(x){ b.push({ t: 'row', left: x.l, right: x.r }); });
   if (o.amount != null) b.push({ t: 'row', left: o.kind === 'change_order' ? 'Change to the contract price' : 'Amount', right: usd(o.amount) });
   if (o.docName) b.push({ t: 'p', text: 'Document: ' + o.docName + ' (in the GrayCo Portal with this record)', size: 9, muted: true });
   b.push({ t: 'gap', h: 10 });
   b.push({ t: 'p', text: o.kind === 'change_order'
     ? 'I approve this change order. The work and the change to the contract price shown above are added to my contract with GrayCo Construction Services.'
+    : o.kind === 'doc' && o.choices && o.choices.length ? 'I reviewed the products listed above. GrayCo may use the products I marked Approve; it will not use the products I marked Do not use.'
     : o.kind === 'doc' ? 'I reviewed this document and I sign it.'
     : 'I accept this ' + o.label.toLowerCase() + ' for the work and the price shown above, and I authorize GrayCo Construction Services to schedule and do the work. I understand a change to the scope or the price needs a signed change order.' });
   b.push({ t: 'p', text: 'Warranty: 5 years on roofing and insurance work, 1 year on all other work, from substantial completion, as stated on the warranty certificate.', size: 9, muted: true });
@@ -415,6 +434,14 @@ async function sign(event, pid, body){
   const r = l.find(function(x){ return s(x.id) === id && s(x.pid) === pid && visible(x, aq); });
   if (!r) return { status: 404, out: { ok: false, error: 'That paper is not on your job.' } };
   if (r.status !== 'pending') return { status: 409, out: { ok: false, error: r.status === 'signed' ? 'You already signed this one.' : 'This paper does not need your signature any more.' } };
+  /* patch SDS: a paper with products — an answer (Approve = yes / Do not use = no) for EVERY product, and the sensitivities note */
+  const chs = arr(r.choices); let picks = null, sens = '';
+  if (chs.length) {
+    const got = body.picks && typeof body.picks === 'object' && !Array.isArray(body.picks) ? body.picks : {};
+    picks = {};
+    for (const c of chs) { const v = s(got[s(c.id)]); if (v !== 'yes' && v !== 'no') return { status: 400, out: { ok: false, error: 'Please choose Approve or Do not use for every product.' } }; picks[s(c.id)] = v; }
+    sens = cleanText(body.sens, 500);
+  }
   /* patch SMSCONSENT: the text-message box on a contract / estimate — its own tick, never part of the agreement */
   const SC = require('./_lib/smsconsent.js'); let smsC = null;
   if ((r.kind === 'contract' || r.kind === 'estimate') && body.smsConsent && typeof body.smsConsent === 'object') {
@@ -432,13 +459,15 @@ async function sign(event, pid, body){
   const T = scrubber(p), ip = ipOf(event), at = new Date().toISOString(), sigId = 'ps_' + Date.now().toString(36) + crypto.randomBytes(4).toString('hex');
   const label = KINDS[r.kind] || 'Document', customer = s(p.client || p.clientName || p.customer) || name;
   const pdf = signedCopyPdf({ kind: r.kind, label: label, job: T(p.name), address: s(p.address), po: s(p.autoPO || p.po), customer: customer, title: T(r.title), lines: arr(r.lines).map(function(y){ return { l: T(y.l), r: T(y.r) }; }),
-    amount: r.amount, docName: T(r.docName), name: name, strokes: cs.strokes, at: at, ip: ip, ref: sigId, sms: smsC, smsM: smsM, esign: esignC, cancel: cancelC });
+    amount: r.amount, docName: T(r.docName), name: name, strokes: cs.strokes, at: at, ip: ip, ref: sigId, sms: smsC, smsM: smsM, esign: esignC, cancel: cancelC,
+    choices: chs.map(function(c){ return { id: s(c.id), n: T(c.n), u: T(c.u) }; }), picks: picks, sens: sens });   /* patch SDS */
   const docRef = await uploadPdf(pdf);
   const docName = 'Signed ' + label.toLowerCase() + ' — ' + clip(T(r.title), 60).replace(/[\\/:*?"<>|]+/g, '-') + ' — ' + at.slice(0, 10) + '.pdf';
   const signedRec = { name: name, at: at, ip: clip(ip, 60), ua: clip(gcHeader(event, 'user-agent'), 160), drawn: cs.strokes.length > 0, docRef: docRef, docName: docName, sigId: sigId };
   signedRec.esign = esignC; if (cancelC) signedRec.cancelNotice = cancelC;   /* LEGAL2-patch */
   if (smsC) signedRec.smsConsent = smsC;   /* patch SMSCONSENT */
   if (smsM) signedRec.smsMarketing = smsM;   /* patch SMSC2 */
+  if (picks) { signedRec.picks = picks; signedRec.sens = sens; }   /* patch SDS */
   const res = await core().kvListUpdate(KEY, function(cur){
     const x = cur.find(function(y){ return s(y.id) === id; });
     if (!x || x.status !== 'pending') return { list: null, result: 'conflict' };
@@ -451,11 +480,13 @@ async function sign(event, pid, body){
   if (smsM) { try { await SC.record(smsM, [p.clientPhone, p.phone, p.customerPhone], 'marketing'); } catch (e) {} }   /* patch SMSC2 */
   /* tell the people: the office (a to-do), the PM (an e-mail), the customer (their copy, at once — owner rule) */
   const pm = pmFull(data, p), jobName = T(p.name) || 'the job';
+  const refused = picks ? chs.filter(function(c){ return picks[s(c.id)] === 'no'; }).map(function(c){ return T(c.n); }) : [];   /* patch SDS */
+  const pickLine = picks ? ' Products: ' + (refused.length ? 'DO NOT USE — ' + refused.join(', ') + '.' : 'all approved.') + (sens ? ' Sensitivities: “' + sens + '”.' : '') : '';
   try { await core().officeTodo('portal_signed_' + sigId, '✍️ ' + name + ' signed the ' + label.toLowerCase() + ' — ' + jobName,
-    '“' + T(r.title) + '”' + (r.amount != null ? ' (' + usd(r.amount) + ')' : '') + ' — signed in the customer portal ' + central(at) + (pm ? '. PM: ' + pm.name : '') + '. The signed copy is in the job\'s documents.' + (r.kind === 'estimate' || r.kind === 'contract' ? ' The job moves to Signed: the schedule and the deposit invoice are drafted for approval.' : '')); } catch (e) {}
+    '“' + T(r.title) + '”' + (r.amount != null ? ' (' + usd(r.amount) + ')' : '') + ' — signed in the customer portal ' + central(at) + (pm ? '. PM: ' + pm.name : '') + '. The signed copy is in the job\'s documents.' + (r.kind === 'estimate' || r.kind === 'contract' ? ' The job moves to Signed: the schedule and the deposit invoice are drafted for approval.' : '') + pickLine); } catch (e) {}
   let pmMail = { ok: false }, custMail = { ok: false };
   if (pm && okEmail(pm.email)) pmMail = await resend({ to: pm.email, from: 'GrayCo CRM <office@grayco-cs.com>', subject: 'Signed: ' + label + ' — ' + jobTag(p, T), area: 'area:Portal',
-    html: shell(jobName, '<p>' + esc(name) + ' signed the ' + esc(label.toLowerCase()) + ' <b>' + esc(T(r.title)) + '</b>' + (r.amount != null ? ' (' + esc(usd(r.amount)) + ')' : '') + ' in the customer portal (' + esc(central(at)) + ').</p><p>The signed copy is in the job\'s documents in the CRM.</p>') });
+    html: shell(jobName, '<p>' + esc(name) + ' signed the ' + esc(label.toLowerCase()) + ' <b>' + esc(T(r.title)) + '</b>' + (r.amount != null ? ' (' + esc(usd(r.amount)) + ')' : '') + ' in the customer portal (' + esc(central(at)) + ').</p>' + (pickLine ? '<p><b>' + esc(pickLine.trim()) + '</b></p>' : '') + '<p>The signed copy is in the job\'s documents in the CRM.</p>') });
   const to = custEmail(p);
   if (okEmail(to)) custMail = await resend({ to: to, replyTo: pm && /@grayco-cs\.com$/i.test(pm.email) ? pm.email : '', subject: 'Your signed ' + label.toLowerCase() + ' — ' + jobTag(p, T),
     html: shell(jobName, '<p>Hi ' + esc(firstName(customer)) + ',</p><p>Thank you! You signed <b>' + esc(T(r.title)) + '</b> in your GrayCo Portal. Your copy is attached and is always in your portal.</p><p>Questions? Call ' + esc(pm ? pm.name : 'us') + (pm && pm.phone ? ' at ' + esc(pm.phone) : '') + ' or the office at ' + OFFICE_PHONE + '.</p>'),

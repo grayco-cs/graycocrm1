@@ -231,6 +231,7 @@ ul.tips{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;fo
 .rf .es-sec{display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--rule);padding-top:10px}
 .es-op{font-size:13px;line-height:1.45;border:1px solid var(--rule);border-radius:8px;padding:8px 10px;background:#fffdf5}
 .es-item{display:flex;flex-direction:column;gap:6px;border:1px solid var(--rule);border-radius:12px;padding:10px;min-width:0}
+.es-choices{margin:8px 0}.es-ch{border-top:1px solid var(--rule);padding:8px 0}.es-pick{display:flex;gap:16px;flex-wrap:wrap}.es-pick .sel-agree{margin:4px 0}
 .es-lines{width:100%;border-collapse:collapse;font-size:14px}.es-lines td{border-top:1px solid var(--rule);padding:5px 2px;vertical-align:top;overflow-wrap:anywhere}.es-lines td+td{text-align:right;white-space:nowrap}
 .es-amt{font-size:16px;font-weight:700}.es-btns{display:flex;gap:8px;flex-wrap:wrap}.es-btns .btn{flex:1 1 140px}
 .es-dec{min-height:40px;font-size:14px;border-color:#C9C2B2;color:var(--mute)}
@@ -1411,7 +1412,27 @@ function itemBox(x){
   var box = h('div', { class: 'es-item', 'data-id': x.id, 'data-status': x.status }, [
     window.gcDocHead ? window.gcDocHead() : null,
     h('div', { class: 'row' }, [h('b', { text: x.label + ': ' + x.title }), x.status === 'pending' ? h('span', { class: 'pill now', text: 'To sign' }) : x.status === 'signed' ? h('span', { class: 'pill ok', text: '✓ Signed' }) : h('span', { class: 'pill skip', text: 'Not signed' })])]);
-  if (x.lines && x.lines.length) box.appendChild(h('table', { class: 'es-lines' }, [h('tbody', null, x.lines.map(function(l){ return h('tr', null, [h('td', { text: l.l }), h('td', { text: l.r || '' })]); }))]));
+  var chs = x.choices && x.choices.length ? x.choices : null, pickEls = {}, sensEl = null;   /* patch SDS: Approve / Do not use on each product */
+  if (x.lines && x.lines.length && !chs) box.appendChild(h('table', { class: 'es-lines' }, [h('tbody', null, x.lines.map(function(l){ return h('tr', null, [h('td', { text: l.l }), h('td', { text: l.r || '' })]); }))]));
+  if (chs) {
+    var cl = h('div', { class: 'es-choices', 'data-gc-choices': '1' });
+    if (x.status === 'pending') cl.appendChild(h('div', { class: 'muted', text: x.note || 'Please mark Approve or Do not use for each product, tell us about any sensitivities, then sign.' }));
+    chs.forEach(function(c){
+      var row = h('div', { class: 'es-ch', 'data-ch': c.id }, [h('b', { text: c.n }), c.u ? h('div', { class: 'muted', text: 'What it is for: ' + c.u }) : null, c.c ? h('div', { class: 'muted', text: 'Cautions: ' + c.c }) : null]);
+      if (x.status === 'pending') {
+        var nm0 = 'gcch_' + x.id + '_' + c.id, kk = 'k_' + x.id + '_' + c.id;
+        var yes = h('input', { type: 'radio', name: nm0, value: 'yes', 'data-gc-pick': 'yes' }), no0 = h('input', { type: 'radio', name: nm0, value: 'no', 'data-gc-pick': 'no' });
+        if (keep[kk] === 'yes') yes.checked = true; if (keep[kk] === 'no') no0.checked = true;
+        [yes, no0].forEach(function(r){ r.addEventListener('change', function(){ if (r.checked) keep[kk] = r.value; }); });
+        pickEls[c.id] = [yes, no0];
+        row.appendChild(h('div', { class: 'es-pick' }, [h('label', { class: 'sel-agree' }, [yes, h('span', { text: ' Approve' })]), h('label', { class: 'sel-agree' }, [no0, h('span', { text: ' Do not use' })])]));
+      } else if (c.pick) row.appendChild(h('div', { class: 'pill ' + (c.pick === 'yes' ? 'ok' : 'skip'), text: c.pick === 'yes' ? '✓ Approved' : '✕ Do not use' }));
+      cl.appendChild(row);
+    });
+    if (x.status === 'pending') { sensEl = kept(h('textarea', { class: 'sel-name', rows: '2', maxlength: '500', placeholder: 'Sensitivities or notes — pregnancy, asthma, allergies, young children, pets, fish tanks… (optional)', 'aria-label': 'Sensitivities or notes', 'data-gc-sens': '1' }), 'sn_' + x.id); cl.appendChild(sensEl); }
+    cl.appendChild(h('div', { class: 'muted', text: 'Typical information — the product\'s own label and Safety Data Sheet govern its use. Ask your Project Manager for any Safety Data Sheet. Products you mark Do not use will not be used.' }));
+    box.appendChild(cl);
+  }
   if (x.amount != null) box.appendChild(h('div', { class: 'es-amt', text: (x.kind === 'change_order' ? 'Change to your contract: ' : 'Amount: ') + usd(x.amount) }));
   if (x.doc) box.appendChild(h('a', { class: 'btn', href: x.doc, target: '_blank', rel: 'noopener', text: '📄 Read the ' + x.label.toLowerCase() }));
   /* OPCLAUSE-patch: the Direction to Pay carries the O&P clause as its own paragraph with its own acknowledgement; the direction itself is unchanged */
@@ -1448,7 +1469,7 @@ function itemBox(x){
   box.appendChild(h('button', { type: 'button', class: 'btn sel-clear', text: 'Clear signature', on: { click: function(){ pad.clear(); } } }));
   if (opAck) box.appendChild(h('label', { class: 'sel-agree' }, [opAck, h('span', { text: ' I have read and acknowledge the Cancellation / Overhead & Profit (Liquidated Damages) paragraph above.' })]));
   if (denAck) box.appendChild(h('label', { class: 'sel-agree' }, [denAck, h('span', { text: ' I have read and acknowledge the Emergency and mitigation services payment paragraph above: I am responsible for payment for emergency and mitigation services GrayCo performs, regardless of insurance coverage or the outcome of the claim.' })]));   /* OWNER4-patch */
-  box.appendChild(h('label', { class: 'sel-agree' }, [ag, h('span', { text: x.kind === 'change_order' ? ' I approve this change order and the change to my contract price.' : x.kind === 'doc' ? ' I reviewed this paper and I sign it.' : ' I accept this ' + x.label.toLowerCase() + ' for the work and the price shown.' })]));
+  box.appendChild(h('label', { class: 'sel-agree' }, [ag, h('span', { text: x.kind === 'change_order' ? ' I approve this change order and the change to my contract price.' : x.kind === 'doc' ? (chs ? ' I reviewed the products above. GrayCo may use the ones I marked Approve and will not use the ones I marked Do not use.' : ' I reviewed this paper and I sign it.') : ' I accept this ' + x.label.toLowerCase() + ' for the work and the price shown.' })]));
   /* patch SMSCONSENT: contract / estimate — the mobile number for texts (prefilled) and its OWN checkbox, unchecked by default */
   var smsPh = null, smsBox = null, mktBox = null;
   if (x.sms) {
@@ -1464,9 +1485,10 @@ function itemBox(x){
   box.appendChild(h('div', { class: 'es-btns' }, [go, no])); box.appendChild(msg);
   go.addEventListener('click', function(){
     if (busy) return; if (!esg) { msg.textContent = 'The consent form did not load. Please refresh this page.'; return; } if (!esg.ok()) { msg.textContent = 'Please tick the box to agree to do business electronically.'; esg.el.scrollIntoView({ block: 'center' }); return; } if (cnc && !cnc.ok()) { msg.textContent = 'Please tick the box to confirm you received the Notice of Cancellation.'; cnc.el.scrollIntoView({ block: 'center' }); return; }
+    var picks = null; if (chs) { picks = {}; for (var ci = 0; ci < chs.length; ci++) { var pe = pickEls[chs[ci].id] || []; picks[chs[ci].id] = pe[0] && pe[0].checked ? 'yes' : pe[1] && pe[1].checked ? 'no' : ''; if (!picks[chs[ci].id]) { msg.textContent = 'Please choose Approve or Do not use for every product.'; try { pe[0].scrollIntoView({ block: 'center' }); } catch (e2) {} return; } } }   /* patch SDS */
     if (!nm.value.trim()) { msg.textContent = 'Please type your full name.'; nm.focus(); return; } if (!ag.checked) { msg.textContent = 'Please tick the box to agree.'; return; } if (opAck && !opAck.checked) { msg.textContent = 'Please tick the box to acknowledge the Cancellation / Overhead & Profit paragraph.'; return; } if (denAck && !denAck.checked) { msg.textContent = 'Please tick the box to acknowledge the Emergency and mitigation services payment paragraph.'; return; }
     busy = true; go.disabled = true; msg.textContent = 'Signing…';
-    api({ action: 'sign', id: x.id, name: nm.value, agree: true, emergencyPayAck: denAck ? true : undefined, esignConsent: esg.record(), cancelNotice: cnc ? { ack: true, state: (D && D.job && D.job.state) || 'TN' } : undefined, strokes: pad.strokes(), smsConsent: smsBox ? { agree: !!smsBox.checked, phone: smsPh.value } : undefined, smsMarketing: mktBox ? { agree: !!mktBox.checked, phone: smsPh.value } : undefined }).then(function(r){
+    api({ action: 'sign', id: x.id, name: nm.value, agree: true, picks: picks || undefined, sens: sensEl ? sensEl.value : undefined, emergencyPayAck: denAck ? true : undefined, esignConsent: esg.record(), cancelNotice: cnc ? { ack: true, state: (D && D.job && D.job.state) || 'TN' } : undefined, strokes: pad.strokes(), smsConsent: smsBox ? { agree: !!smsBox.checked, phone: smsPh.value } : undefined, smsMarketing: mktBox ? { agree: !!mktBox.checked, phone: smsPh.value } : undefined }).then(function(r){
       busy = false;
       if (r.data && r.data.ok) { keep['a_' + x.id] = false; note[x.id] = ''; note._top = '✓ Thank you — signed. Your copy is below' + (r.data.emailed ? ' and in your e-mail.' : '.'); pad.clear(); return load(); }
       msg.textContent = (r.data && r.data.error) || 'That did not work — please call GrayCo ' + OFFICE + '.'; go.disabled = false;
