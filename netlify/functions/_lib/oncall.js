@@ -75,7 +75,7 @@ function make(d){
     const list = (items || []).filter(function(it){ return it && X.isEmergency(it); });
     if (!list.length) return { paged: 0 };
     const c = await cfg(); const t = now();
-    if (!c.on || !c.rotation.length) return { paged: 0, why: 'no rotation' };
+    if (!c.on || (!c.rotation.length && !c.mitManager)) return { paged: 0, why: 'no rotation' };   /* ONCALL2: the Mitigation Manager alone is enough */
     if (!X.afterHours(t, c)) return { paged: 0, why: 'business hours' };
     const ch = X.chain(t, c); if (!ch.length) return { paged: 0, why: 'no rotation' };
     let paged = 0;
