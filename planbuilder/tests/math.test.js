@@ -1,9 +1,9 @@
 // Unit tests for the PlanBuilder math: node planbuilder/tests/math.test.js  (no browser, no network)
 import assert from 'assert';
-import { fmtFtIn, parseFtIn, polyArea, roofMeasure, wallPieces, pitchFactor } from '../js/geom.js';
+import { fmtFtIn, parseFtIn, polyArea, roofMeasure, wallPieces, pitchFactor, roofTriangles } from '../js/geom.js';
 import { fromTemplate, newProject, wallsForRoom, addWall, addOpening, addRoom, rectPts, splitWall, markExterior, swingDoorsIntoRooms } from '../js/model.js';
 import { DEFAULT_CATALOG, catalogFromCSV, toCSV, CSV_COLUMNS } from '../js/catalog.js';
-import { computeTakeoff, roundQty, convert, roomStats, lineItemsCSV } from '../js/takeoff.js';
+import { computeTakeoff, roundQty, convert, roomStats, lineItemsCSV, gableArea } from '../js/takeoff.js';
 import { priceBookFromCSV, convertUnit, parseEstimateText } from '../js/pricebook.js';
 import { STYLES, styleProductIds, applyStyle, autoFurnish, roomType } from '../js/styles.js';
 import { setDrawPhase } from '../js/model.js';
@@ -344,6 +344,17 @@ t('CRM suggestions and automatic links', () => {
 const crmJson = readFileSync(new URL('../data/crm-products.json', import.meta.url), 'utf8');
 t('CRM product list matches the copy the price-index function uses', () => {
   assert.equal(crmJson, readFileSync(new URL('../../netlify/functions/_lib/products-base.json', import.meta.url), 'utf8'), 'planbuilder/data/crm-products.json is a copy of netlify/functions/_lib/products-base.json: copy it again');
+});
+
+t('shed roof: tall side is walled in 3D and sided in the estimate', () => {
+  const sec = { x: 0, y: 0, w: 40, d: 30, style: 'shed', pitch: 3, overhang: 1, ridge: 'x' };
+  near(gableArea(sec), 30 * 7.5 + 40 * 7.5);   // two side triangles (30 × 7.5 / 2 each) + the 40 ft tall side, 7.5 ft high
+  const g = roofTriangles(sec, 9).gables;
+  assert.equal(g.length, 4);
+  const tall = g.slice(2).flat();
+  assert.ok(tall.every(q => Math.abs(q.y - 30) < 1e-9), 'on the high wall line');
+  near(Math.max(...tall.map(q => q.z)), 16.5); near(Math.min(...tall.map(q => q.z)), 9);
+  near(gableArea({ ...sec, style: 'gable' }), 30 * 3.75);
 });
 
 console.log(`PlanBuilder math: ${n} tests passed`);

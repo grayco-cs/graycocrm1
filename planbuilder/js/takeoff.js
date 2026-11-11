@@ -67,12 +67,13 @@ export function wallFaceArea(w, level) {
   return wallPieces(w, level.openings, H).reduce((s, p) => s + (p.u1 - p.u0) * (p.z1 - p.z0), 0);
 }
 
-// The gable-end (or shed side) triangles above the plate, sided like the walls.
+// The gable-end (or shed side) triangles above the plate, sided like the walls; a shed roof also has
+// its tall side, a wall from the plate up to the high edge.
 export function gableArea(sec) {
   if (sec.style !== 'gable' && sec.style !== 'shed') return 0;
-  const span = ridgeAxis(sec) === 'x' ? sec.d : sec.w;
+  const x = ridgeAxis(sec) === 'x', span = x ? sec.d : sec.w, len = x ? sec.w : sec.d;
   const slope = (+sec.pitch || 0) / 12;
-  return sec.style === 'gable' ? span * (span / 2 * slope) : span * (span * slope);   // two triangles
+  return sec.style === 'gable' ? span * (span / 2 * slope) : span * (span * slope) + len * span * slope;   // two triangles (+ the tall side)
 }
 
 // opts.book: a price list ({ name, items: {CODE: {desc, unit, replace, remove, material}} }) to price from

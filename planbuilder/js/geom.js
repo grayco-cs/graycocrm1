@@ -250,6 +250,8 @@ export function roofTriangles(sec, base) {
     const zw = base + (v1w - v0w) * slope;
     gables.push([P(u0 + o, v0w, base), P(u0 + o, v1w, base), P(u0 + o, v1w, zw)]);
     gables.push([P(u1 - o, v1w, base), P(u1 - o, v0w, base), P(u1 - o, v1w, zw)]);
+    // the tall side: wall from the plate up to the high edge of the roof
+    gables.push([P(u0 + o, v1w, base), P(u1 - o, v1w, base), P(u1 - o, v1w, zw)], [P(u0 + o, v1w, base), P(u1 - o, v1w, zw), P(u0 + o, v1w, zw)]);
   } else {
     const z = base + 0.01;
     faces.push([P(u0, v0, z), P(u1, v0, z), P(u1, v1, z)], [P(u0, v0, z), P(u1, v1, z), P(u0, v1, z)]);
