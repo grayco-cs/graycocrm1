@@ -6,6 +6,12 @@ Draw floor plans, see them in 3D, and get a priced estimate from the drawing. Fo
 
 What's next is in [ROADMAP.md](ROADMAP.md).
 
+## Sign-in: the GrayCo CRM's
+- On the live site (crm.grayco-cs.com/planbuilder/, and Netlify previews) PlanBuilder opens with a **sign-in**: the same email and password as the CRM, checked by the same service. Only people on the CRM's **staff list** (active) get in; customers, inactive people and marketing-only sign-ins are refused. Nothing of the app runs before that.
+- It shares the CRM's own sign-in: signed in to the CRM means signed in here (no second sign-in), and signing in here signs in to the CRM. A **starting / temporary password** has to be changed in the CRM first.
+- **Signed out** after the CRM's idle time (8 hours without use, or the CRM's setting); work in PlanBuilder counts as use. Signing out of the CRM signs out here, and **💾 Save ▾ → 🔒 Sign out** signs out of both.
+- What it protects is using the tool. Like every page of the site, the program files can be downloaded by someone who knows the address; they hold no customer data and no CRM prices (those stay in the CRM's database and in staff browsers).
+
 ## How to use it
 1. **📁 Projects → Start** a blank plan or a template (Ranch, Two-story, Commercial suite).
 2. **Walls (W):** click corners. To get an exact length, type it (`12`, `12' 6"`, `12-6`, `12.5`) and press Enter. Tick *Drawing outside walls* for the outside of the house. Shift = any angle, Alt = no snapping. Double-click or Esc to stop.
@@ -141,6 +147,7 @@ Each project's estimate is priced from **your catalog prices** (the default) or 
 | `js/studio3d.js`, `js/studio.js` | Studio: the systems drawn in 3D (x-ray, ghost, explode, cutaway, timeline, hover labels) and its panels |
 | `js/planimport.js`, `js/importui.js` | Plan import: walls, openings and rooms from pictures, PDFs (pdf.js) and AutoCAD DXF; the import window |
 | `js/cmdline.js` | The AutoCAD-style command line, ORTHO / OSNAP / SNAP |
+| `js/auth.js` | Sign-in: the CRM's sign-in and staff list, token refresh, idle sign-out, the sign-in screen |
 | `js/crm.js`, `js/crmui.js`, `data/crm-products.json` | CRM prices: reading the GrayCo CRM's Rate Book, Products, Labor Rates and tax / margin in this browser, unit conversion, links and suggestions; the CRM prices window |
 | `js/surfaces.js` | Drawn surfaces for the 3D view (wood, tile, brick, siding, shingles, grass …) in each product's color |
 | `vendor/pdfjs/` | pdf.js 4.10 (Apache-2.0, see `PDFJS-LICENSE.txt`) for reading PDF plans, served from here |
@@ -150,5 +157,6 @@ Each project's estimate is priced from **your catalog prices** (the default) or 
 | `tests/studio.smoke.cjs` | Browser test of Studio: budget, picking a system, timeline, explode / ortho / finished, cutaway, hover, customer view (same way to run) |
 | `tests/import.smoke.cjs` | Browser test of importing a picture, a PDF with room names and a DXF (`tests/fixtures/`), and of the command line (same way to run) |
 | `tests/crm.smoke.cjs` | Browser test of CRM prices with the CRM's storage filled in: reading it, linking (typed, hourly, automatic + check), estimate prices, tax & margin, Studio rates, a CRM price change, customer view (same way to run) |
+| `tests/auth.smoke.cjs` | Browser test of the sign-in (with a stand-in sign-in service): refused people, starting password, staff in, shared CRM session, refresh, idle sign-out, CRM sign-out, Sign out (same way to run) |
 | `tests/save.smoke.cjs` | Browser test of saving to the computer, Done – save & remove, reopening a job (with its custom products, photos, renditions), versions, the note after saving, and the weekly clean-up (same way to run) |
 | `tests/ui.smoke.cjs` | Browser test that draws with every tool: start `python3 -m http.server 8765` in the repo, then `NODE_PATH=$(npm root -g) node planbuilder/tests/ui.smoke.cjs` |

@@ -14,7 +14,7 @@
   { "imports": { "three": "./vendor/three.module.min.js", "three/addons/": "./vendor/addons/" } }
   </script>
 </head>
-<body>
+<body class="locked">
   <header class="topbar">
     <div class="brand"><img class="brand-logo" src="img/grayco-logo-white.png" alt="GrayCo Construction Services"><span class="brand-name">PlanBuilder <b>3D</b></span></div>
     <input id="prj-name" class="prj-name" aria-label="Project name" spellcheck="false">
@@ -41,6 +41,7 @@
         <button data-file="close">✅ Done – save &amp; remove <small>– save to computer, then take it out of this browser</small></button>
         <button data-file="open">📂 Open a job from computer</button>
         <button data-file="projects">📁 Projects &amp; templates</button>
+        <button data-file="signout" id="btn-signout" hidden>🔒 Sign out <small id="signout-who"></small></button>
       </div>
     </div>
     <button id="btn-projects" class="btn">📁 Projects</button>

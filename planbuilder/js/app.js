@@ -13,6 +13,7 @@ import { installStudio } from './studio.js';
 import { installImport } from './importui.js';
 import { installCmd } from './cmdline.js';
 import { installCRM } from './crmui.js';
+import { requireSignIn, signOut, signedInEmail, gateNeeded } from './auth.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -56,6 +57,7 @@ const app = {
     if (p) this.open(p); else this.open(fromTemplate('ranch', this.catalog), false);   // the sample is kept only once you change it
     this.renderPicker();
     installCRM(this);   // reads the CRM's prices (on the CRM's own site) and keeps linked products in step
+    if (gateNeeded()) { $('#btn-signout').hidden = false; $('#signout-who').textContent = signedInEmail(); }
     setTimeout(() => this.cleanupCheck(), 1500);
     if (!p) this.toast('Started with the Ranch sample. 📁 Projects → New to start a blank or another template.');
   },
@@ -276,7 +278,7 @@ const app = {
     $('#btn-projects').addEventListener('click', () => this.showProjects());
     $('#btn-file').addEventListener('click', e => { e.stopPropagation(); $('#menu-file').hidden = !$('#menu-file').hidden; $('#menu-export').hidden = true; });
     document.addEventListener('click', () => { $('#menu-file').hidden = true; });
-    $$('#menu-file button').forEach(b => b.addEventListener('click', () => { $('#menu-file').hidden = true; ({ save: () => this.saveToComputer(), close: () => this.saveAndClose(), open: () => this.openFromComputer(), projects: () => this.showProjects() })[b.dataset.file](); }));
+    $$('#menu-file button').forEach(b => b.addEventListener('click', () => { $('#menu-file').hidden = true; ({ save: () => this.saveToComputer(), close: () => this.saveAndClose(), open: () => this.openFromComputer(), projects: () => this.showProjects(), signout: () => { this.save && this.save(); signOut(); } })[b.dataset.file](); }));
     $('#btn-catalog').addEventListener('click', () => this.showCatalog());
     $('#btn-export').addEventListener('click', e => { e.stopPropagation(); $('#menu-export').hidden = !$('#menu-export').hidden; });
     document.addEventListener('click', () => { $('#menu-export').hidden = true; });
@@ -1200,5 +1202,5 @@ function shrinkImage(dataUrl, max) {
 app.ensure3D = function () { return this.view3d || { opts: {}, rebuild() {}, setPreset() {}, toggleWalk() {}, setHolo() {}, setSpin() {} }; };
 
 window.PlanBuilder = app;   // handy for debugging and the smoke test
-app.init();
+requireSignIn().then(() => app.init());   // the GrayCo CRM sign-in comes first on the live site
 
