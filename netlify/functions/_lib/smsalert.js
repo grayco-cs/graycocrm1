@@ -289,7 +289,7 @@ function compose(more, text, link, head0, bare){
 }
 function loadState(v){
   const st = obj(v);
-  ['last', 'reply', 'daily', 'held', 'seen', 'hint', 'lsa', 'lsaCust', 'lsaPm', 'firstLead'].forEach(k => { st[k] = obj(st[k]); });   /* LSATEXT: + lsa; LSAFLOW: + lsaCust, lsaPm */
+  ['last', 'reply', 'daily', 'held', 'seen', 'hint', 'lsa', 'lsaCust', 'lsaPm', 'firstLead', 'emq'].forEach(k => { st[k] = obj(st[k]); });   /* EMQ: + emq */   /* LSATEXT: + lsa; LSAFLOW: + lsaCust, lsaPm */
   const t = now();
   Object.keys(st.last).forEach(k => { if (t - Date.parse(st.last[k].at || 0) > 86400000) delete st.last[k]; });
   Object.keys(st.reply).forEach(k => { if (t - Date.parse(st.reply[k].at || 0) > REPLY_MS) delete st.reply[k]; });
@@ -298,6 +298,7 @@ function loadState(v){
   Object.keys(st.lsa).forEach(k => { st.lsa[k] = arr(st.lsa[k]).filter(x => x && t - Date.parse(x.at || 0) < LSA_MS); if (!st.lsa[k].length) delete st.lsa[k]; });   /* LSATEXT */
   Object.keys(st.lsaCust).forEach(k => { if (t - Date.parse(st.lsaCust[k].at || 0) > 7 * 86400000) delete st.lsaCust[k]; });
   Object.keys(st.daily).forEach(k => { if (s(st.daily[k]) < centralDay(t - 3 * 86400000)) delete st.daily[k]; });
+  Object.keys(st.emq).forEach(k => { if (t - Date.parse(st.emq[k].at || 0) > 2 * 86400000) delete st.emq[k]; });   /* EMQ */
   return st;
 }
 function fromNum(){ return env('TWILIO_FROM_ALERTS') || env('TWILIO_FROM'); }
@@ -463,6 +464,7 @@ async function staffInbound0(ph, body, sid){
   const r = await sendL(to, signed, env('TWILIO_FROM'), rep.emergency ? 'emergency' : 'customer');
   if (!r || !r.ok) return { handled: true, staff: email, notSent: 'Twilio did not send it' };
   const id = 'SMSC_' + (sid || t.toString(36));
+  if (rep.emergency) { try { await emqArm(to, { pid: rep.pid, leadId: rep.leadId, staff: p.name || email }); } catch (e) {} }   /* EMQ: we answered — the questions come next */
   const msg = await _D.postReply({ id, pid: rep.pid, email, name: p.name, to, text: signed, at });
   /* the 30-minute window stays open for a back-and-forth */
   await _D.kvCas(SKEY, v => { const st = loadState(v); if (st.reply[ph]) st.reply[ph].at = at; return st; }).catch(() => {});
@@ -880,5 +882,48 @@ async function system(kind, text){
   return notify({ type: 'system', text: 'CRM alert — ' + text, link: site(), thread: 'sys:' + s(kind), daily: true, hold: true });
 }
 
-module.exports = { lsaCustOf, webAsk, _findJob: findJob, apptText, lsaVetted, jobNote, lsaAsk, lsaCustomer, lsaPmText, _lsaCode: lsaCode, _isLsaLead: isLsaLead, _lsaReply: lsaReply, _D: _D, _isSubBid: isSubBid, ROLE_MIT, DEFAULT_PEOPLE, resolve, mitigationHolders, leadText, KEY, SKEY, TYPES, RATE_MS, REPLY_MS, settings, cleanPerson, staffList, load, save, notify, flushHeld, staffInbound, isStaffPhone, inboundText, missedCall, leads, assigned, approvals, system,
+/* ── EMQ (owner 11/11: "for emergency response text ask questions like their carrier, adjuster info, if the building is accessible —
+   AFTER we say we are dispatching … don't ask right away, let them tell the basics and let us reply back … let the PM that gets the
+   emergency state they are on the way, then after the customer replies or 15 minutes later ask those questions"):
+   the first staff reply relayed to an EMERGENCY customer arms the questions for that number; they go once — when the customer
+   texts back, or about 15 minutes later (the 10-minute alerts run), whichever comes first. Never before we answered. ── */
+const EMQ_MS = 15 * 60 * 1000;
+function emqText(){
+  return 'GrayCo: so the crew is ready, please reply with:\n' +
+    '1) Your insurance company + claim # (if any)\n' +
+    '2) Adjuster name & phone, if assigned\n' +
+    '3) Can we get in? Who will be there, or a gate code / key / lockbox\n' +
+    '4) Is the water or power shut off?\n' +
+    'OK if you don\'t have the insurance info yet.';
+}
+async function emqArm(ph, o){
+  ph = phone10(ph); if (ph.length !== 10) return null;
+  let armed = false;
+  await _D.kvCas(SKEY, v => { const st = loadState(v); if (st.emq[ph]) return undefined; st.emq[ph] = { at: new Date(now()).toISOString(), pid: s(o.pid), leadId: s(o.leadId), staff: s(o.staff), sent: '' }; armed = true; return st; }).catch(() => {});
+  return armed;
+}
+async function emqSend(ph, why){
+  ph = phone10(ph); let rec = null;
+  await _D.kvCas(SKEY, v => { const st = loadState(v); const e = st.emq[ph]; if (!e || e.sent) { rec = null; return undefined; } e.sent = new Date(now()).toISOString(); e.why = why; rec = Object.assign({}, e); return st; }).catch(() => {});
+  if (!rec) return null;
+  if (await _D.paused()) return { ph, notSent: 'data-entry mode is on' };
+  const opt = await _D.optouts(); if (opt[ph]) return { ph, notSent: 'that number texted STOP' };
+  if (await _D.consentNo(ph)) return { ph, notSent: 'that customer declined texts' };
+  const r = await sendL(ph, emqText(), env('TWILIO_FROM'), 'emergency', { kind: 'customer', leadId: s(rec.leadId), pid: s(rec.pid) });
+  return { ph, sent: !!(r && r.ok), why };
+}
+/* the customer texted back after we answered */
+async function emqOnCustomer(ph){
+  ph = phone10(ph); let armed = false;
+  try { const v = await _D.kvGet(SKEY); const st = loadState(v); armed = !!(st.emq[ph] && !st.emq[ph].sent); } catch (e) { return null; }
+  return armed ? emqSend(ph, 'customer replied') : null;
+}
+/* the alerts run: anyone armed 15+ minutes ago who has not been asked yet */
+async function emqDue(){
+  let due = []; const t = now();
+  try { const v = await _D.kvGet(SKEY); const st = loadState(v); due = Object.keys(st.emq).filter(k => !st.emq[k].sent && t - Date.parse(st.emq[k].at || 0) >= EMQ_MS); } catch (e) { return { error: s(e && e.message) }; }
+  const out = []; for (const ph of due) out.push(await emqSend(ph, '15 minutes after we answered'));
+  return { due: due.length, out };
+}
+module.exports = { emqArm, emqSend, emqOnCustomer, emqDue, _emqText: emqText, lsaCustOf, webAsk, _findJob: findJob, apptText, lsaVetted, jobNote, lsaAsk, lsaCustomer, lsaPmText, _lsaCode: lsaCode, _isLsaLead: isLsaLead, _lsaReply: lsaReply, _D: _D, _isSubBid: isSubBid, ROLE_MIT, DEFAULT_PEOPLE, resolve, mitigationHolders, leadText, KEY, SKEY, TYPES, RATE_MS, REPLY_MS, settings, cleanPerson, staffList, load, save, notify, flushHeld, staffInbound, isStaffPhone, inboundText, missedCall, leads, assigned, approvals, system,
   inQuiet, quietNow, centralHour, compose, wants, _D };
