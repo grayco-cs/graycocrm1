@@ -58,7 +58,12 @@ export class Plan2D {
     const w = this.toWorld(sx, sy);
     this.view.scale = Math.max(1.5, Math.min(150, this.view.scale * f));
     this.view.ox = sx - w.x * this.view.scale; this.view.oy = sy - w.y * this.view.scale;
-    this.draw();
+    this.drawSoon();
+  }
+  // Zoom and pan can fire many events per screen frame; draw once per frame.
+  drawSoon() {
+    if (this._drawRaf) return;
+    this._drawRaf = requestAnimationFrame(() => { this._drawRaf = 0; this.draw(); });
   }
 
   // ---------- snapping ----------
@@ -209,7 +214,7 @@ export class Plan2D {
     this.mouse = { x: P.sx, y: P.sy, w: P.w, ev: e };
     const d = this.drag;
     if (d) {
-      if (d.kind === 'pan') { this.view.ox = d.ox + P.sx - d.sx; this.view.oy = d.oy + P.sy - d.sy; this.draw(); return; }
+      if (d.kind === 'pan') { this.view.ox = d.ox + P.sx - d.sx; this.view.oy = d.oy + P.sy - d.sy; this.drawSoon(); return; }
       if (d.kind === 'umove') { const u = this.level.underlay; u.x = d.x0 + P.w.x - d.sx; u.y = d.y0 + P.w.y - d.sy; d.moved = true; this.draw(); return; }
       return this.selectDrag(P, e);
     }
@@ -221,7 +226,7 @@ export class Plan2D {
       this.mouse.snap = this.snapWorld(P.w, e, from);
       if (from) this.app.status(`Length ${fmtFtIn(dist(from, this.mouse.snap))} — type a length and press Enter, or click. Double-click / Esc to finish.`);
     }
-    this.draw();
+    this.drawSoon();
   }
 
   onUp(e) {

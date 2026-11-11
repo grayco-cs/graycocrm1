@@ -29,8 +29,11 @@ export class View3D {
   constructor(container, app) {
     this.el = container; this.app = app;
     this.renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
-    this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+    this.fullRatio = Math.min(2, window.devicePixelRatio || 1);
+    this.renderer.setPixelRatio(this.fullRatio);
     this.renderer.shadowMap.enabled = true;
+    // Shadows are redrawn only when the model changes, not when the camera moves.
+    this.renderer.shadowMap.autoUpdate = false; this._shadowDirty = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -48,7 +51,7 @@ export class View3D {
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true; this.controls.dampingFactor = 0.12;
     this.controls.maxPolarAngle = Math.PI * 0.495;
-    this.controls.addEventListener('change', () => this.render());
+    this.controls.addEventListener('change', () => this._cameraMoved());
     this.root = new THREE.Group(); this.scene.add(this.root);
     this.texCache = new Map();
     this.matCache = new Map();
@@ -88,7 +91,7 @@ export class View3D {
     const sun = new THREE.DirectionalLight(0xfff3e2, 2.6);
     sun.position.set(-80, 140, 60);
     sun.castShadow = true;
-    sun.shadow.mapSize.set(4096, 4096); sun.shadow.radius = 3;
+    sun.shadow.mapSize.set(2048, 2048); sun.shadow.radius = 3;
     const sc = sun.shadow.camera; sc.left = -120; sc.right = 120; sc.top = 120; sc.bottom = -120; sc.near = 1; sc.far = 500;
     sun.shadow.bias = -0.0005; sun.shadow.normalBias = 0.05;
     this.sun = sun; this.scene.add(sun); this.scene.add(sun.target);
@@ -114,9 +117,23 @@ export class View3D {
     if (this.composer) { this.composer.setSize(r.width, r.height); }
     this.render();
   }
-  render() {
+  render(cameraOnly) {
+    if (!cameraOnly) this._shadowDirty = true;
+    this.renderer.shadowMap.needsUpdate = this._shadowDirty; this._shadowDirty = false;
     if (this.opts.holo && this.composer) this.composer.render();
     else this.renderer.render(this.scene, this.camera);
+  }
+  // Orbit / zoom / pan: one draw per screen frame, at a lower resolution while moving, sharp again when it stops.
+  _cameraMoved() {
+    clearTimeout(this._sharpT); this._sharpT = setTimeout(() => this._sharpen(), 220);
+    if (this.fullRatio > 1 && !this._lowRes) { this._lowRes = true; this._setRatio(1); this.render(true); return; }   // resizing clears the canvas, so draw now
+    if (this._camRaf) return;
+    this._camRaf = requestAnimationFrame(() => { this._camRaf = 0; this.render(true); });
+  }
+  _sharpen() { clearTimeout(this._sharpT); if (!this._lowRes) return; this._lowRes = false; this._setRatio(this.fullRatio); this.render(true); }
+  _setRatio(r) {
+    this.renderer.setPixelRatio(r);
+    if (this.composer) { const s = this.el.getBoundingClientRect(); this.composer.setPixelRatio(r); this.composer.setSize(s.width, s.height); }
   }
   // Glow for the Holo view (loaded the first time it is used).
   async _bloom() {
@@ -898,7 +915,7 @@ export class View3D {
     if (h) this.app.pickFrom3D(h.object.userData.pick); else this.app.select(null);
   }
 
-  screenshot() { this.render(); return this.renderer.domElement.toDataURL('image/png'); }
+  screenshot() { this._sharpen(); this.render(); return this.renderer.domElement.toDataURL('image/png'); }
   shots(names) { this._shot = true; const out = names.map(n => { this.setPreset(n); return this.screenshot(); }); this._shot = false; return out; }
 
   async exportGLB() {
