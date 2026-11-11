@@ -1,0 +1,48 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 1100 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>
+endobj
+4 0 obj
+<< /Length 566 >>
+stream
+0 0 0 rg
+67.50 715.50 184.50 9.00 re f
+324.00 715.50 472.50 9.00 re f
+67.50 175.50 364.50 9.00 re f
+486.00 175.50 310.50 9.00 re f
+67.50 175.50 9.00 549.00 re f
+787.50 175.50 9.00 549.00 re f
+252.00 723.06 72.00 1.08 re f
+252.00 719.46 72.00 1.08 re f
+252.00 715.86 72.00 1.08 re f
+356.40 504.00 7.20 216.00 re f
+356.40 180.00 7.20 270.00 re f
+360.00 392.40 432.00 7.20 re f
+BT /F1 9 Tf 144.00 468.00 Td (LIVING ROOM) Tj ET
+BT /F1 9 Tf 504.00 576.00 Td (KITCHEN) Tj ET
+BT /F1 9 Tf 504.00 288.00 Td (BEDROOM) Tj ET
+BT /F1 9 Tf 504.00 540.00 Td (12'-0" X 14'-0") Tj ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000242 00000 n 
+0000000859 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+929
+%%EOF
