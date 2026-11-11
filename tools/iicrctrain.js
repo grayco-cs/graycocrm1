@@ -1,5 +1,6 @@
 /* patch IICRCTRAIN — GrayCo's own IICRC-principles training documents (owner 11/11: "iicrc s 700 needs to have important stuff for
-   water fire etc in the crm in our own training documents as iicrc s700 training"; "talk about masking agents and pairing agents").
+   water fire etc in the crm in our own training documents as iicrc s700 training"; "talk about masking agents and pairing agents";
+   "sodium perborate, chlorine, ozone, hydroxyls, peroxide, chlorine dioxide — oxidizing agents"; "perborate for deodorizing fabrics").
    Four internal (staff-only, never client-facing) training documents, in GrayCo's own words — nothing copied from the IICRC
    standards, which are only named:
      🔥 Fire & Smoke Restoration Training (IICRC S700 principles) · 💧 Water Damage Restoration Training (IICRC S500 principles) ·

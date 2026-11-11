@@ -21,13 +21,16 @@ const docs = await ev(() => (window._gcIicrc ? window._gcIicrc.docs : []).map(d 
   return { id: d.id, title: d.title, cos: d.cos, q: div.querySelectorAll('.iic-q').length, nq: d.quiz.length, sec: div.querySelectorAll('section h2').length,
     sign: /Employee signature/.test(h) && /Trainer signature/.test(h) && /Score \(of/.test(h), key: div.querySelectorAll('details.iic-key tbody tr').length,
     internal: /INTERNAL — GRAYCO STAFF TRAINING/.test(h), basis: /Based on the principles of ANSI\/IICRC S\d+|Bloodborne Pathogens Standard/.test(h), own: /our own words/.test(h),
-    letter: /data-gc-logo/.test(h), mask: /masking agent/i.test(h) && /pairing agent/i.test(h), answers: d.quiz.map(q => q.a).join('') };
+    letter: /data-gc-logo/.test(h), ox: /Oxidizing agents/i.test(h) && /sodium perborate/i.test(h) && /hydroxyl/i.test(h) && /chlorine dioxide/i.test(h), tbl: div.querySelectorAll('table.iic-tbl tbody tr').length, mask: /masking agent/i.test(h) && /pairing agent/i.test(h), answers: d.quiz.map(q => q.a).join('') };
 }));
 ok('4 training documents: S700 fire & smoke, S500 water, S520 mold, biohazard & sewage', docs.length === 4 && /S700/.test(docs[0].title) && /S500/.test(docs[1].title) && /S520/.test(docs[2].title) && /Biohazard/.test(docs[3].title), docs.map(d => d.title));
-ok('each: every quiz question printed (8–13), the sign-off (employee / trainer / score) and an answer key row per question', docs.every(d => d.q === d.nq && d.nq >= 8 && d.nq <= 13 && d.sign && d.key === d.nq), docs.map(d => [d.id, d.q, d.key, d.sign]));
+ok('each: every quiz question printed (8–15), the sign-off (employee / trainer / score) and an answer key row per question', docs.every(d => d.q === d.nq && d.nq >= 8 && d.nq <= 15 && d.sign && d.key === d.nq), docs.map(d => [d.id, d.q, d.key, d.sign]));
 ok('each: internal, names the standard it follows ("based on the principles of"), says it is our own words, GrayCo letterhead', docs.every(d => d.internal && d.basis && d.own && d.letter), docs.map(d => [d.id, d.internal, d.basis, d.own, d.letter]));
 ok('S700 and S500 explain masking agents vs pairing agents', docs[0].mask && docs[1].mask, docs.map(d => d.mask));
 ok('the right answers are spread over A–D (not all B)', docs.every(d => new Set(d.answers.split('')).size >= 3), docs.map(d => d.answers));
+ok('S700: an "Oxidizing agents" section with perborate, chlorine, peroxide, chlorine dioxide, ozone, hydroxyl and a 6-row comparison table; S500 mentions them too', docs[0].ox && docs[0].tbl === 6 && docs[1].ox, docs.map(d => [d.id, d.ox, d.tbl]));
+const oxQ = await ev(() => window._gcIicrc.get('s700').quiz.map(q => q.q).join(' | '));
+ok('S700 quiz asks which oxidizer for fabrics (perborate) and which can run occupied (hydroxyl vs ozone)', /deodorizing washable fabrics/.test(oxQ) && /people and pets in the house/.test(oxQ), oxQ.slice(0, 200));
 const fireSec = await ev(() => window._gcIicrc.get('s700').sections.map(s => s.title).join(' | '));
 ok('S700 covers safety, job start, residue types, cleaning order, contents, structure, odor (masking vs pairing), HVAC, firefighting water, board-up, insurance docs, final walkthrough, what not to do',
   ['Safety', 'Starting the job', 'Board-up', 'smoke residue', 'cleaning order', 'Contents', 'structure', 'Odor control', 'masking agents vs pairing agents', 'HVAC', 'firefighting', 'insurance', 'Final walkthrough', 'never do'].every(w => fireSec.toLowerCase().includes(w.toLowerCase())), fireSec);
@@ -90,5 +93,8 @@ ok('🧪 Materials & SDS: a "🎓 Training" row under the title (S500 / S700 / S
 ok('🧪 library has "Masking agent (fragrance deodorizer)" and "Pairing agent / odor counteractant" for fire / water / sewage / general, every field filled', sd.mask && sd.pair && ['fire', 'water', 'sewage', 'general'].every(g => (sd.mg || []).includes(g)) && sd.ok2, sd);
 await ev(() => window._gcCo.setFilter('all')); await sleep(800);
 
+const ox = await ev(() => { const g = id => window._gcSds.byId(id) || {}; const pb = g('sodium_perborate'); return { pb: !!pb.use && /fabric/i.test(pb.name) && /colorfast/i.test(pb.dos.join(' ')) && /Poison|poison/.test(pb.firstAid) && ['fire', 'water', 'sewage', 'general'].every(x => pb.groups.includes(x)),
+  oxid: ['bleach_solution', 'h2o2_cleaner', 'chlorine_dioxide', 'ozone_generator', 'hydroxyl_generator'].map(id => [id, /oxidizer/i.test(g(id).hazards || '')]) }; });
+ok('🧪 library: "Sodium perborate (oxygen bleach) — fabric / contents deodorizing"; bleach, peroxide, chlorine dioxide, ozone and hydroxyl say "oxidizer" in their hazards', ox.pb && ox.oxid.every(x => x[1]), ox);
 ok('no page errors', !errs.length, errs);
 const n = R.filter(Boolean).length; console.log('TRAINING ' + n + '/' + R.length); process.exit(n === R.length ? 0 : 1);
