@@ -5496,7 +5496,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.222-2026-11-11-r27n -->
+<!-- GrayCo CRM Build: 33.223-2026-11-11-r27o -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6445,7 +6445,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.222-2026-11-11-r27n");
+  console.log("[GC] Build 33.223-2026-11-11-r27o");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6493,7 +6493,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.222-2026-11-11-r27n"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.223-2026-11-11-r27o"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -116410,6 +116410,17 @@ async function fileAsLeads(){
   leads.forEach(note);
   try{ var onScreen = window._crm && window._crm.leads; if(Array.isArray(onScreen)) onScreen.forEach(note); }catch(e){}
   try{ var dup = JSON.parse(localStorage.getItem('gc_dupes_removed')||'[]'); if(Array.isArray(dup)) dup.forEach(function(d){ if(d && d.from==='leads' && d.row) note(d.row); }); }catch(e){}   /* merged away by the de-dupe sweep */
+  /* patch PRIOKEEP: this computer's list can be empty or short (storage full, still loading) — then every importer row looked
+     "new" and was filed again over the real lead (priority → Medium). The cloud list is read first; no answer = try later. */
+  var cloudOk = false;
+  try{
+    var u = String(localStorage.getItem('grayco_sb_url')||'').replace(/\/$/,''), k = String(localStorage.getItem('grayco_sb_key')||'');
+    if(u && k && window.fetch){
+      var r = await Promise.race([ window.fetch(u+'/rest/v1/gc_kv?select=value&key=eq.leads', { headers:{ apikey:k, Authorization:'Bearer '+k }, cache:'no-store' }), new Promise(function(res){ ST.call(window, function(){ res(null); }, 20000); }) ]);
+      if(r && r.ok){ var rows = await r.json(); if(Array.isArray(rows)){ var cv = rows[0] ? rows[0].value : []; if(typeof cv === 'string'){ try{ cv = JSON.parse(cv); }catch(e){ cv = null; } } if(Array.isArray(cv) || !rows[0]){ (cv||[]).forEach(note); cloudOk = true; } } }
+    }
+  }catch(e){}
+  if(!cloudOk){ filingT = null; ST.call(window, scheduleFiling, 60000); return; }
   var added = [];
   rows.forEach(function(p){
     var cc = s(p.ccamId||p.ccProjectId), qb = s(p.qbId||p.qbCustomerId);
@@ -174110,8 +174121,21 @@ function needsPrio(l){ return !shut(l) && !prioOf(l); }
 /* patch PRIMESUB: 🏛 PRIME / 🔧 SUB (window._gcPrimeSub: remembered per lead id + updatedAt) */
 function roleOfL(l){ try { return W._gcPrimeSub ? W._gcPrimeSub.of(l) : ''; } catch (e) { return ''; } }
 function roleChip(l, o){ try { return W._gcPrimeSub ? W._gcPrimeSub.badge(l, o) : ''; } catch (e) { return ''; } }
+/* patch PRIOKEEP (owner 11/11: "I set these priorities once and now it says SET — find out why it's deleting that"): a page load that
+   could not see the leads re-filed CompanyCam / QuickBooks rows with priority "Medium", which was merged over the real 1–10. The real
+   number is still in each lead's history ("Priority 8 → 10"), so an admin's computer puts it back once — no new history line. */
+function lastPrio(l){ var a = arr(l && l.activity); for (var i = a.length - 1; i >= 0; i--) { var x = a[i]; if (x && x.type === 'priority') { var m = /(\d+)\s*$/.exec(s(x.text)), n = m ? +m[1] : 0; if (n >= 1 && n <= 10) return n; } } return 0; }
+function restoreLostPrio(){
+  if (!isAdmin()) return Promise.resolve(0);
+  var fix = {}, n = 0; leads().forEach(function(l){ if (l && l.id != null && !prioOf(l)) { var p = lastPrio(l); if (p) { fix[l.id] = p; n++; } } });
+  if (!n) return Promise.resolve(0);
+  var at = nowIso();
+  return setLeads(function(list){ return list.map(function(l){ return l && fix[l.id] && !prioOf(l) ? Object.assign({}, l, { priority: fix[l.id], updatedAt: at }) : l; }); })
+    .then(function(ok){ if (!ok) return 0; HUB_SIG = ''; LEADS_SIG = ''; try { redraw(); } catch (e) {} try { var pushed = LEADS_NOW; later(function(){ if (typeof W._supaUpsertNow === 'function' && Array.isArray(pushed)) W._supaUpsertNow('leads', pushed); }, 300); } catch (e) {} try { console.log('[GC] PRIOKEEP: put back ' + n + ' lead priorit' + (n === 1 ? 'y' : 'ies') + ' from their history.'); } catch (e) {} return n; });
+}
+(function prioWatch(){ var tries = 0; (function go(){ if (++tries > 40) return; if (!leads().length) return later(go, 3000); restoreLostPrio().then(function(){ later(function(){ restoreLostPrio(); }, 60000); }); })(); })();
 W._gcLeadPriority = {
-  of: prioOf, set: setPriority, importance: importance,
+  of: prioOf, set: setPriority, importance: importance, restore: restoreLostPrio, last: lastPrio,
   can: function(id){ var l = leads().filter(function(x){ return x.id === id; })[0]; return !!l && canPrio(l); },
   picker: function(id){ var l = leads().filter(function(x){ return x.id === id; })[0]; return l ? prioPicker(l) : ''; },
   chip: function(l){ return l ? prioChip(l) : ''; }
@@ -216396,19 +216420,39 @@ function vetHtml(L){
   return h;
 }
 function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+/* LSAVETTAB (owner 11/11: "put these leads down next to Outreach with notifications when I have them — click and then I can see
+   this, I don't want it up top"): a 📞 LSA calls button with a red count sits with the views (Board · List · … · Outreach); the
+   card opens under the toolbar only when it is clicked, and closes with ✕ or the button again. No calls to check → no button. */
+var VET_OPEN = false;
 function vetPaint(){
   try {
-    var hub = D.getElementById('gc-leads-hub'), cur = D.getElementById('gc-lsa-vet');
+    var hub = D.getElementById('gc-leads-hub'), cur = D.getElementById('gc-lsa-vet'), btn = D.getElementById('gc-lsa-btn');
     var L = (hub && hub.getClientRects().length && vetter()) ? vetList() : [];
-    if (!L.length) { if (cur) cur.remove(); return; }
-    var sig = L.map(function(l){ return l.id; }).join('|');
-    if (cur && cur.parentElement === hub && cur.getAttribute('data-sig') === sig) return;
+    if (!L.length) { if (cur) cur.remove(); if (btn) btn.remove(); VET_OPEN = false; return; }
+    var views = hub.querySelector('.gclu-views');
+    if (views) {
+      if (!btn || btn.parentElement !== views) { if (btn) btn.remove(); btn = D.createElement('button'); btn.type = 'button'; btn.id = 'gc-lsa-btn'; btn.setAttribute('data-gc-keep', '1'); views.appendChild(btn); }
+      var lbl = '📞 LSA calls <span style="display:inline-block;min-width:18px;padding:0 5px;margin-left:4px;border-radius:9px;background:#dc2626;color:#fff;font-size:11px;font-weight:800;line-height:18px;text-align:center">' + L.length + '</span>';
+      if (btn.getAttribute('data-n') !== String(L.length) || btn.getAttribute('aria-expanded') !== String(VET_OPEN)) { btn.innerHTML = lbl; btn.setAttribute('data-n', String(L.length)); btn.setAttribute('aria-expanded', String(VET_OPEN)); btn.className = VET_OPEN ? 'on' : ''; btn.title = L.length + ' Google LSA call' + (L.length === 1 ? '' : 's') + ' to check — real lead or junk'; }
+    }
+    if (!VET_OPEN && views) { if (cur && !cur.contains(D.activeElement)) cur.remove(); return; }
+    var sig = L.map(function(l){ return l.id; }).join('|'), top = hub.querySelector('.gclu-top');
+    var spot = top && top.parentElement === hub ? top : null;
+    if (cur && cur.getAttribute('data-sig') === sig && cur.parentElement === hub && (!spot || cur.previousElementSibling === spot)) return;
     if (cur && cur.contains(D.activeElement)) return;   /* do not wipe what they are typing */
-    if (!cur) { cur = D.createElement('div'); cur.id = 'gc-lsa-vet'; cur.setAttribute('data-gc-keep', '1'); cur.style.cssText = 'background:#eff6ff;border:2px solid #3b82f6;border-radius:14px;padding:10px 12px;margin:8px 0 10px;font:14px Inter,Arial,sans-serif;color:#0f172a'; }
-    cur.setAttribute('data-sig', sig); cur.innerHTML = vetHtml(L);
-    if (cur.parentElement !== hub) hub.insertBefore(cur, hub.firstChild);
+    if (!cur) { cur = D.createElement('div'); cur.id = 'gc-lsa-vet'; cur.setAttribute('data-gc-keep', '1'); cur.style.cssText = 'position:relative;background:#eff6ff;border:2px solid #3b82f6;border-radius:14px;padding:10px 12px;margin:8px 0 10px;font:14px Inter,Arial,sans-serif;color:#0f172a'; }
+    cur.setAttribute('data-sig', sig); cur.innerHTML = '<button type="button" data-vet-x aria-label="Close" style="position:absolute;top:6px;right:8px;border:0;background:none;font-size:20px;line-height:1;cursor:pointer;color:#475569">✕</button>' + vetHtml(L);
+    if (spot) spot.insertAdjacentElement('afterend', cur); else if (cur.parentElement !== hub) hub.insertBefore(cur, hub.firstChild);
   } catch (e) {}
 }
+D.addEventListener('click', function(e){
+  var t = e.target && e.target.closest ? e.target.closest('#gc-lsa-btn,[data-vet-x]') : null; if (!t) return;
+  e.preventDefault(); e.stopPropagation();
+  VET_OPEN = t.id === 'gc-lsa-btn' ? !VET_OPEN : false;
+  var cur = D.getElementById('gc-lsa-vet'); if (!VET_OPEN && cur) cur.remove();
+  vetPaint(); if (VET_OPEN) { cur = D.getElementById('gc-lsa-vet'); try { cur && cur.scrollIntoView({ block: 'nearest' }); } catch (x) {} }
+}, true);
+W._gcLsaVet = { open: function(){ VET_OPEN = true; vetPaint(); }, list: function(){ return vetList(); } };
 D.addEventListener('click', function(e){
   var b = e.target && e.target.closest ? e.target.closest('[data-vet-b]') : null; if (!b) return;
   e.preventDefault(); e.stopPropagation();
