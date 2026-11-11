@@ -29,7 +29,7 @@ const r1 = await A.ev(async () => {
 });
 const ids = r1.map(x => x.id);
 const WANT = ['handbook_ack', 'at_will', 'confidentiality', 'timekeeping', 'phones_photos', 'safety_ppe', 'respirator', 'hazcom', 'lead_asbestos', 'customer_property', 'code_conduct', 'conflict', 'bg_disclosure', 'bg_authorization',
-  'jd_pm', 'jd_estimator', 'jd_office', 'jd_foreman', 'jd_mit_tech', 'jd_env_tech', 'jd_laborer', 'jd_marketing', 'pm_comp', 'property_return'].map(x => 'gcb_hr_' + x);
+  'jd_pm', 'jd_estimator', 'jd_office', 'jd_foreman', 'jd_mit_tech', 'jd_mit_manager', 'jd_env_tech', 'jd_laborer', 'jd_marketing', 'pm_comp', 'property_return'].map(x => 'gcb_hr_' + x);
 ok('all ' + WANT.length + ' new HR papers are in the library', WANT.every(x => ids.includes(x)) && ids.length === WANT.length, ids.filter(x => !WANT.includes(x)));
 ok('each one renders (letterhead + body)', r1.every(x => x.ok && x.head), r1.filter(x => !x.ok || !x.head).map(x => x.id));
 ok('no leftover {placeholders}', r1.every(x => !x.left.length), r1.filter(x => x.left.length));
@@ -82,7 +82,7 @@ const pk = await A.ev(() => { const H = window._gcHirePacket, o = {}; H.roles.fo
 const has = (k, id) => (pk[k] || []).includes(id);
 const COMMON = ['gcb_offer_letter', 'gcb_onboarding', 'gcb_hr_handbook_ack', 'gcb_hr_at_will', 'gcb_hr_confidentiality', 'gcb_hr_timekeeping', 'gcb_hr_phones_photos', 'gcb_hr_safety_ppe', 'gcb_hr_customer_property', 'gcb_hr_code_conduct', 'gcb_hr_conflict', 'gcb_tool_issue', 'gcb_drug_policy', 'gcb_direct_deposit', 'gcb_emergency_contact', 'gcb_hr_bg_disclosure', 'gcb_hr_bg_authorization', 'link_i9', 'link_w4', 'link_tn_newhire'];
 ok('every role / company packet has the common papers + I-9 / W-4 / TN new-hire links', Object.keys(pk).every(k => COMMON.every(id => has(k, id))), Object.keys(pk).filter(k => !COMMON.every(id => has(k, id))));
-ok('each role gets its own job description', ['pm', 'estimator', 'office', 'foreman', 'mit_tech', 'env_tech', 'laborer', 'marketing'].every(r => has(r + '@construction', 'gcb_hr_jd_' + r)));
+ok('each role gets its own job description', ['pm', 'estimator', 'office', 'foreman', 'mit_tech', 'mit_manager', 'env_tech', 'laborer', 'marketing'].every(r => has(r + '@construction', 'gcb_hr_jd_' + r)));
 ok('PM + estimator packets include the PM comp acknowledgment; others do not', has('pm@construction', 'gcb_hr_pm_comp') && has('estimator@mitigation', 'gcb_hr_pm_comp') && !has('office@construction', 'gcb_hr_pm_comp') && !has('mit_tech@mitigation', 'gcb_hr_pm_comp'));
 ok('Environmental tech packet includes lead / asbestos + respirator + HazCom', has('env_tech@environmental', 'gcb_hr_lead_asbestos') && has('env_tech@environmental', 'gcb_hr_respirator') && has('env_tech@environmental', 'gcb_hr_hazcom'), pk['env_tech@environmental']);
 ok('Mitigation tech packet: respirator + HazCom, no lead / asbestos', has('mit_tech@mitigation', 'gcb_hr_respirator') && has('mit_tech@mitigation', 'gcb_hr_hazcom') && !has('mit_tech@mitigation', 'gcb_hr_lead_asbestos'));
@@ -91,6 +91,24 @@ ok('Office packet: no respirator / HazCom / vehicle / PM comp', !has('office@con
 ok('drivers get the vehicle policy (PM, foreman, techs)', has('pm@construction', 'gcb_vehicle_policy') && has('mit_tech@mitigation', 'gcb_vehicle_policy') && !has('laborer@construction', 'gcb_vehicle_policy'));
 const ord = pk['pm@construction'];
 ok('signing order: offer letter first, handbook ack before at-will, background disclosure before authorization, job description near the end', ord[0] === 'gcb_offer_letter' && ord.indexOf('gcb_hr_handbook_ack') < ord.indexOf('gcb_hr_at_will') && ord.indexOf('gcb_hr_bg_disclosure') < ord.indexOf('gcb_hr_bg_authorization') && ord.indexOf('gcb_hr_jd_pm') > ord.indexOf('gcb_hr_bg_authorization'), ord);
+
+/* 4b. owner 11/11 additions: the foreman's daily job data (Mitigation / Environmental) and the Mitigation Manager */
+const mm = await A.ev(async () => {
+  const g = async id => { const r = await window._gcDocLib.render(id, ''); return r ? r.body : ''; };
+  const fo = await g('gcb_hr_jd_foreman'), mg = await g('gcb_hr_jd_mit_manager'), H = window._gcHirePacket;
+  const L = H.list('mit_manager', 'mitigation').filter(x => x.on).map(x => x.id);
+  return {
+    fo: /entering <b>all<\/b> of the job\'s data in the app <b>every day<\/b>/.test(fo) && /psychrometric/.test(fo) && /Equipment in and out/.test(fo) && /consents/.test(fo) && /Containment|containment/.test(fo) && /submit the day for the PM\'s review/.test(fo) && /Technicians may add photos and notes, but the foreman/.test(fo),
+    mg: /fills it personally/.test(mg) && /Always on call for emergencies \(24 hours a day, 7 days a week\)/.test(mg) && /dispatch crews/.test(mg) && /board-ups/.test(mg) && /foremen\'s daily job entries/.test(mg) && /drying goals/.test(mg) && /On-call acknowledgment/.test(mg) && /WRT and ASD/.test(mg) && /FSRT recommended/.test(mg) && /AMRT for mold/.test(mg) && /Vehicle Use/.test(mg) && /I have read my job description/.test(mg),
+    role: H.roles.some(r => r.id === 'mit_manager'), guess: H.roleOf('Mitigation Manager'), L,
+    draft: H.docs().some(d => d.draft) };
+});
+ok('Foreman JD: on Mitigation / Environmental jobs enters ALL the day\'s job data and submits it for the PM\'s review; techs may add photos / notes', mm.fo);
+ok('Mitigation Manager JD: all mitigation workers, fills no-show shifts personally, always on call 24/7, dispatch / board-ups, oversees foremen entries, equipment, drying goals, certs, vehicle, on-call acknowledgment', mm.mg && !mm.draft);
+ok('Mitigation Manager is a packet role (company Mitigation): respirator, HazCom, safety / PPE, timekeeping & location, vehicle, its JD', mm.role && mm.guess === 'mit_manager' && ['gcb_hr_respirator', 'gcb_hr_hazcom', 'gcb_hr_safety_ppe', 'gcb_hr_timekeeping', 'gcb_vehicle_policy', 'gcb_hr_jd_mit_manager'].every(x => mm.L.includes(x)) && !mm.L.includes('gcb_hr_lead_asbestos'), mm);
+await A.ev(() => window._gcHirePacket.open({ role: 'mit_manager' })); await sleep(400);
+const mco = await A.ev(() => { const o = document.getElementById('gc-hp'); const v = o ? o.querySelector('[data-hp-f="co"]').value : ''; if (o) o.remove(); return v; });
+ok('the packet screen picks GrayCo Mitigation for a Mitigation Manager', mco === 'mitigation', mco);
 
 /* 5. filled with the person's name and the company */
 const fl = await A.ev(async () => {

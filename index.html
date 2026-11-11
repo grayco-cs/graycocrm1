@@ -220736,6 +220736,7 @@ function jd(id, name, o){
   add(id, 'Job Description — ' + name,
     title('Job Description: ' + name, o.sub || '') + info(WHO.concat([['Reports to', o.reports], ['Status', o.status || 'Full time · hourly (non-exempt) unless the offer letter says otherwise']])) +
     h('Summary') + p(o.summary) + h('Main duties') + li(o.duties) +
+    (o.extra || []).map(function(x){ return h(x[0]) + x[1]; }).join('') +
     h('Certifications and training required') + info(o.certs) + (o.preferred ? h('Preferred') + li(o.preferred) : '') +
     h('Physical requirements and working conditions') + li(o.physical) +
     h('Tools and apps') + p(o.tools || ('Uses ' + APPS + '.')) +
@@ -220765,7 +220766,10 @@ jd('hr_jd_office', 'Office Manager / Administrator', { reports: 'Owner', status:
   tools: 'Uses the GrayCo CRM (crm.grayco-cs.com) — jobs, documents, invoices, payroll, ✅ Approvals — QuickBooks, the office phone and company e-mail; the Field app to see job photos and notes.' });
 jd('hr_jd_foreman', 'Foreman / Crew Lead', { reports: 'Project Manager',
   summary: 'Leads the crew on site: the day\'s work, quality, safety, the customer\'s home and the job\'s records.',
-  duties: ['Run the daily safety talk and Job Hazard Analysis; enforce PPE and stop-work authority.', 'Lay out and do the work to the scope, the code and the standard; keep the crew busy and the site clean.', 'Greet the customer, protect their home and belongings, and send questions about insurance or price to the PM.', 'Keep the daily log, photos, materials used and crew hours in the app; report problems the same day.', 'Train helpers and laborers; make sure only certified workers do certified work.'],
+  duties: ['Run the daily safety talk and Job Hazard Analysis; enforce PPE and stop-work authority.', 'Lay out and do the work to the scope, the code and the standard; keep the crew busy and the site clean.', 'Greet the customer, protect their home and belongings, and send questions about insurance or price to the PM.', 'Keep the daily log, photos, materials used and crew hours in the app; report problems the same day.', 'Mitigation and Environmental jobs: enter ALL of the day\'s job data in the app and submit the day for the PM\'s review (see below).', 'Train helpers and laborers; make sure only certified workers do certified work.'],
+  extra: [['Mitigation and Environmental jobs — the day\'s job data (owner 11/11)', p('On every Mitigation and Environmental job, the foreman / crew lead is responsible for entering <b>all</b> of the job\'s data in the app <b>every day</b>, for the PM:') +
+    li(['Crew clock-ins and clock-outs at the job (everyone on the crew, every day).', 'Moisture and psychrometric readings (temperature, relative humidity, GPP / dew point; affected, unaffected and outside / HVAC) and the moisture map.', 'Equipment in and out — each air mover, dehumidifier, air scrubber and negative-air machine, with its tag number, placed or removed.', 'Photos — before, during and after, the readings, the equipment set and the containment.', 'The daily log — work done, areas, hours, problems and what is next.', 'Safety, containment and compliance steps — JHA, containment and critical barriers checked, negative air and pressure, PPE / respirators, regulated-area signs, waste handling, and the job\'s lead / asbestos / mold records where they apply.', 'Materials used and the customer\'s consents and signatures (work authorization, antimicrobial consent, disposal authorization and the like) before the work they cover.']) +
+    p('Then <b>submit the day for the PM\'s review</b> before leaving the job. Technicians may add photos and notes, but the foreman checks that the day is complete and submits it. Missing or late daily entries are a performance issue.')]],
   certs: [['All companies', 'OSHA 10-Hour Construction (OSHA 30 preferred); first aid / CPR; valid driver\'s license if driving'], ['Construction', 'EPA / Tennessee RRP Certified Renovator to lead lead-safe jobs; competent-person training for fall protection, ladders and scaffolds where assigned'], ['Mitigation', 'IICRC WRT (ASD within the first year)'], ['Environmental', 'State Lead Abatement Supervisor and / or accredited Asbestos Supervisor for abatement crews']],
   physical: PHYS_FIELD });
 jd('hr_jd_mit_tech', 'Field Technician — Mitigation', { reports: 'Mitigation Project Manager / Crew Lead', sub: 'GrayCo Mitigation — water, fire, emergency services and board-up',
@@ -220774,6 +220778,13 @@ jd('hr_jd_mit_tech', 'Field Technician — Mitigation', { reports: 'Mitigation P
   certs: [['Mitigation', 'IICRC WRT (Water Damage Restoration Technician) within the first 6 months; ASD (Applied Structural Drying) within the first year'], ['All work', 'OSHA 10-Hour Construction; respirator medical evaluation and fit test before using a respirator; HazCom training; valid driver\'s license']],
   preferred: ['IICRC FSRT (fire and smoke), AMRT (microbial), OCT (odor control).'],
   physical: PHYS_FIELD.concat(['Work in Category 2 / 3 (gray / black) water and smoke with the PPE provided.']) });
+jd('hr_jd_mit_manager', 'Mitigation Manager', { reports: 'Owner', sub: 'GrayCo Mitigation — water, fire, emergency services and board-up · always on call', status: 'Full time · pay as set in the offer letter and the CRM pay structure',
+  summary: 'Runs GrayCo Mitigation\'s people and emergency response: every mitigation worker and crew, coverage of every shift, and the 24/7 emergency line — so every customer with water, fire or storm damage gets a fast, careful response.',
+  duties: ['Responsible for all mitigation workers and crews: hiring support, scheduling, training, certifications, performance and safety.', '<b>Crew coverage:</b> make sure every shift and job is covered. If a worker does not show and the shift cannot be filled, the Mitigation Manager fills it personally.', '<b>Always on call for emergencies (24 hours a day, 7 days a week):</b> answer emergency calls and app alerts, dispatch crews, and run or do emergency extraction, tarping and board-ups.', 'Oversee the foremen\'s daily job entries (clock-ins, moisture / psychrometric readings, equipment in / out, photos, daily logs, safety and containment steps, consents) and make sure each day is submitted for the PM\'s review.', 'Manage drying equipment — placement, tracking, maintenance, inventory and pick-up — and set and track drying goals until the dry standard is reached and documented.', 'Lead customer care on emergency losses: empathy first, clear next steps, the authorization signed before work, and never discussing coverage, cause or blame.', 'Work with the PMs and the office on scopes, documentation for estimates and supplements, and job cost.', 'Use a company or approved vehicle to respond to jobs, following the Company Vehicle Use policy.'],
+  extra: [['On-call acknowledgment', box('I understand that the Mitigation Manager is <b>always on call</b> for emergency calls — 24 hours a day, 7 days a week, including nights, weekends and holidays — unless an owner approves a named back-up in writing for a set time. I will keep my phone on and charged, answer emergency calls and alerts promptly, dispatch a crew or go myself, and personally fill any shift that cannot be covered. If I am paid hourly, on-call time that counts as work time and all time spent answering calls and responding is recorded and paid.')]],
+  certs: [['Mitigation', 'IICRC WRT and ASD (required or obtained within 6 months); FSRT recommended; AMRT for mold work'], ['All work', 'OSHA 10-Hour Construction (OSHA 30 preferred); respirator medical evaluation and fit test; HazCom training; first aid / CPR; valid driver\'s license and a driving record our insurance accepts']],
+  preferred: ['Supervisory experience in water / fire restoration; IICRC OCT; Xactimate.'],
+  physical: PHYS_FIELD.concat(['Respond to emergencies at any hour and drive to jobs across the service area; work in Category 2 / 3 water, smoke and soot with the PPE provided.']) });
 jd('hr_jd_env_tech', 'Environmental Technician', { reports: 'Certified Supervisor / Environmental Project Manager', sub: 'GrayCo Environmental — lead, asbestos and mold',
   summary: 'Does lead, asbestos and mold work safely and by the rules: containment, removal, cleaning, waste handling and records.',
   duties: ['Build containment and critical barriers; set up decon and negative air.', 'Remove and handle lead, asbestos or mold materials using wet methods and HEPA equipment, only within your certification.', 'Clean, HEPA-vacuum and prepare for cleaning verification or clearance testing.', 'Bag, label and track waste; keep sign-in, monitoring and job records complete.', 'Follow hygiene and decon rules: no eating, drinking or smoking in work areas.', 'Stop and report any suspect material not in the plan.'],
@@ -220829,13 +220840,14 @@ var ROLES = [
   { id: 'office', label: 'Office Manager / Administrator', jd: 'gcb_hr_jd_office' },
   { id: 'foreman', label: 'Foreman / Crew Lead', jd: 'gcb_hr_jd_foreman', drive: true, site: true, field: true },
   { id: 'mit_tech', label: 'Field Technician — Mitigation', jd: 'gcb_hr_jd_mit_tech', drive: true, site: true, field: true, resp: true },
+  { id: 'mit_manager', label: 'Mitigation Manager', jd: 'gcb_hr_jd_mit_manager', drive: true, site: true, field: true, resp: true, co: 'mitigation' },
   { id: 'env_tech', label: 'Environmental Technician', jd: 'gcb_hr_jd_env_tech', drive: true, site: true, field: true, resp: true, env: true },
   { id: 'laborer', label: 'Laborer / Helper', jd: 'gcb_hr_jd_laborer', site: true, field: true },
   { id: 'marketing', label: 'Marketing Manager', jd: 'gcb_hr_jd_marketing', drive: true }
 ];
 function role(id){ for (var i = 0; i < ROLES.length; i++) if (ROLES[i].id === id) return ROLES[i]; return ROLES[0]; }
-function roleOf(pos){ pos = s(pos).toLowerCase(); if (/environ|abate|asbestos|lead tech|mold tech/.test(pos)) return 'env_tech'; if (/mitig|water tech|restoration tech|wrt/.test(pos)) return 'mit_tech'; if (/estimat/.test(pos)) return 'estimator'; if (/market/.test(pos)) return 'marketing'; if (/office|admin|account|book|recept/.test(pos)) return 'office'; if (/foreman|crew lead|lead tech|super/.test(pos)) return 'foreman'; if (/labor|helper|apprentice/.test(pos)) return 'laborer'; if (/\bpm\b|project manager|manager/.test(pos)) return 'pm'; if (/tech/.test(pos)) return 'mit_tech'; return 'laborer'; }
-function coDefault(r){ return r === 'mit_tech' ? 'mitigation' : r === 'env_tech' ? 'environmental' : 'construction'; }
+function roleOf(pos){ pos = s(pos).toLowerCase(); if (/environ|abate|asbestos|lead tech|mold tech/.test(pos)) return 'env_tech'; if (/mitig\w* manag|manag\w* .*mitig/.test(pos)) return 'mit_manager'; if (/mitig|water tech|restoration tech|wrt/.test(pos)) return 'mit_tech'; if (/estimat/.test(pos)) return 'estimator'; if (/market/.test(pos)) return 'marketing'; if (/office|admin|account|book|recept/.test(pos)) return 'office'; if (/foreman|crew lead|lead tech|super/.test(pos)) return 'foreman'; if (/labor|helper|apprentice/.test(pos)) return 'laborer'; if (/\bpm\b|project manager|manager/.test(pos)) return 'pm'; if (/tech/.test(pos)) return 'mit_tech'; return 'laborer'; }
+function coDefault(r){ return r === 'mit_tech' || r === 'mit_manager' ? 'mitigation' : r === 'env_tech' ? 'environmental' : 'construction'; }
 var LINKS = [
   ['link_i9', 'Form I-9 — Employment Eligibility Verification (USCIS)', 'https://www.uscis.gov/i-9', 'Section 1 by the first day of work; the office sees the original documents and completes Section 2 within 3 business days.'],
   ['link_w4', 'Form W-4 — federal withholding (IRS)', 'https://www.irs.gov/forms-pubs/about-form-w-4', 'Tennessee has no state income tax on wages (no state W-4). Employees who live or work in MS or AR also complete that state\'s withholding form.'],
@@ -220859,13 +220871,13 @@ function list(rid, co, o){
   P('gcb_hr_timekeeping', r.field ? 'Location tracking policy — required before the first clock-in' : '');
   P('gcb_hr_phones_photos');
   P('gcb_hr_safety_ppe');
-  if (r.id === 'mit_tech' || r.id === 'env_tech' || (mitEnv && (r.field || r.id === 'pm'))) P('gcb_hr_respirator', 'Mitigation / Environmental: medical evaluation and fit test before use');
+  if (r.resp || (mitEnv && (r.field || r.id === 'pm'))) P('gcb_hr_respirator', 'Mitigation / Environmental: medical evaluation and fit test before use');
   if (r.site) P('gcb_hr_hazcom');
   if (r.id === 'env_tech' || (co === 'environmental' && (r.field || r.id === 'pm'))) P('gcb_hr_lead_asbestos', 'Environmental');
   P('gcb_hr_customer_property');
   P('gcb_hr_code_conduct');
   P('gcb_hr_conflict');
-  if (drive) P('gcb_vehicle_policy', 'Drives for work');
+  if (drive) P('gcb_vehicle_policy', r.id === 'mit_manager' ? 'Responds to emergencies in a company / approved vehicle' : 'Drives for work');
   P('gcb_tool_issue');
   P('gcb_drug_policy');
   P('gcb_direct_deposit');
