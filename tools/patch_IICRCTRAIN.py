@@ -26,10 +26,10 @@ BEFORE = '<script id="gc-patch-doclib3">'
 def doc(d, k):
     quiz = []
     for i, (q, ch, a, why) in enumerate(d['quiz']):
-        n = len(ch); r = (i + k) % n          # spread the right answers over A–D (the content lists most of them second)
+        n = len(ch); r = 0 if ch == ['True', 'False'] else (i + k) % n   # spread the right answers over A–D (the content lists most of them second); true / false stays in order
         quiz.append({'q': q, 'c': ch[r:] + ch[:r], 'a': (a - r) % n, 'why': why})
     return {'id': d['id'], 'title': d['title'], 'short': d['short'], 'icon': d['icon'], 'std': d['std'], 'cat': d['cat'],
-            'required': d['required'], 'cos': d['cos'], 'intro': d['intro'],
+            'required': d['required'], 'cos': d['cos'], 'intro': d['intro'], 'draw': d.get('draw', 0),
             'sections': [{'id': s['id'], 'title': s['title'], 'body': s['body'].strip()} for s in d['sections']], 'quiz': quiz}
 
 

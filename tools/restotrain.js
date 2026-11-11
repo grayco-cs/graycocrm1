@@ -25,7 +25,9 @@ function fmtDay(iso){ try { return new Date(iso).toLocaleDateString(undefined, {
 var TRY = {};   /* partKey → { picks: [...] } — the test in progress on this screen */
 
 function courseOf(key){ var mid = String(key).split('|')[0]; return (W.__GC_TRAIN_EXTRA__ || []).filter(function(x){ return 'b:' + x.id === mid; })[0] || null; }
-function passOf(key){ var c = courseOf(key); return (c && c.pass) || PASS; }   /* patch IICRCTRAIN: a course can set its own pass mark */
+function passOf(key, n){ var c = courseOf(key); if (c && c.passPct && n) return Math.ceil(n * c.passPct / 100); return (c && c.pass) || PASS; }   /* patch IICRCTRAIN: a course can set its own pass mark (a number, or passPct of the questions asked) */
+function drawOf(key, quiz){ var c = courseOf(key); return c && c.draw && c.draw < quiz.length ? c.draw : 0; }   /* patch IICRCTRAIN: ask `draw` questions from a bigger bank */
+function sample(key, quiz){ var n = drawOf(key, quiz); if (!n) return quiz; var a = quiz.slice(); for (var i = a.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)), x = a[i]; a[i] = a[j]; a[j] = x; } return a.slice(0, n); }
 function quizOf(key){ var c = courseOf(key), pid = String(key).split('|')[1]; var p = c && c.parts.filter(function(y){ return y.id === pid; })[0]; return p && p.quiz; }
 
 W.__GC_TRAIN_QUIZ__ = function(key, quiz, done){
@@ -40,17 +42,19 @@ W.__GC_TRAIN_QUIZ__ = function(key, quiz, done){
     } else if (done) {
       h += '<div class="gcq-res ok">✅ Passed.</div><p><button type="button" class="gctr-btn" data-gcq-start="' + esc(key) + '">↻ Take the test again</button></p>';
     } else {
-      h += '<div class="gcq-res">' + quiz.length + ' questions. Tap an answer and it shows right away whether you got it. You need ' + passOf(key) + ' right to pass; your score is saved and this part ticks itself when you pass.</div>' +
+      var dn = drawOf(key, quiz), nq = dn || quiz.length;
+      h += '<div class="gcq-res">' + nq + ' questions' + (dn ? ', drawn at random from a bank of ' + quiz.length + ' (a new set every try)' : '') + '. Tap an answer and it shows right away whether you got it. You need ' + passOf(key, nq) + ' right to pass; your score is saved and this part ticks itself when you pass.</div>' +
         '<p><button type="button" class="gctr-btn pri" data-gcq-start="' + esc(key) + '">▶ Start the test</button></p>';
     }
     return h + '</div>';
   }
+  quiz = t.qs || quiz;   /* patch IICRCTRAIN: the questions drawn for this try */
   var answered = 0, right = 0;
   t.picks.forEach(function(p, i){ if (p >= 0) { answered++; if (p === quiz[i].a) right++; } });
   var finished = answered === quiz.length;
-  h += '<div class="gcq-bar"><b>Score: ' + right + ' of ' + answered + '</b> answered · ' + (quiz.length - answered) + ' left · pass = ' + passOf(key) + ' of ' + quiz.length + '</div>';
+  h += '<div class="gcq-bar"><b>Score: ' + right + ' of ' + answered + '</b> answered · ' + (quiz.length - answered) + ' left · pass = ' + passOf(key, quiz.length) + ' of ' + quiz.length + '</div>';
   if (finished) {
-    var pass = right >= passOf(key);
+    var pass = right >= passOf(key, quiz.length);
     h += '<div class="gcq-res ' + (pass ? 'ok' : 'bad') + '">' + (pass ? '✅ Passed: ' : '✗ Not passed: ') + right + ' of ' + quiz.length + '. ' + (pass ? 'Your score is saved and this part is ticked.' : 'Your score is saved. Re-read the parts you missed and retake it.') +
       ' <button type="button" class="gctr-btn" data-gcq-start="' + esc(key) + '" style="margin-left:8px">↻ Retake</button> <button type="button" class="gctr-btn" data-gcq-close="' + esc(key) + '">Close</button></div>';
   }
@@ -68,6 +72,7 @@ W.__GC_TRAIN_QUIZ__ = function(key, quiz, done){
 };
 
 /* the saved scores, for 👥 Team progress */
+W.__GC_TRAIN_TRY__ = function(key){ return TRY[key] || null; }   /* the test in progress (for tests) */
 W.__GC_TRAIN_TESTS__ = function(doneMap){
   var out = [];
   Object.keys(doneMap || {}).forEach(function(k){
@@ -124,11 +129,11 @@ function repaint(key, scroll){
 }
 function save(key, quiz, picks){
   var right = 0; picks.forEach(function(p, i){ if (p === quiz[i].a) right++; });
-  var prev = rec(key) || {}, pass = right >= passOf(key), was = !!prev.passed || (prev.on !== false && !!prev.at && !prev.of);
+  var prev = rec(key) || {}, pass = right >= passOf(key, quiz.length), was = !!prev.passed || (prev.on !== false && !!prev.at && !prev.of);
   var extra = { score: right, of: quiz.length, best: Math.max(right, prev.best || 0), tries: (prev.tries || 0) + 1, passed: pass || was };
   try { W._gcTrain.tick(key, pass || was, extra); } catch (e) {}
   if (pass) toast('✅ Passed: ' + right + ' of ' + quiz.length + '. Your score is saved.');
-  else toast(right + ' of ' + quiz.length + '. You need ' + passOf(key) + ' to pass. Your score is saved; retake it when you are ready.', true);
+  else toast(right + ' of ' + quiz.length + '. You need ' + passOf(key, quiz.length) + ' to pass. Your score is saved; retake it when you are ready.', true);
   try { W._gcTrain.render(); } catch (e) {}
 }
 
@@ -138,13 +143,13 @@ D.addEventListener('click', function(e){
   var key = el.getAttribute('data-gcq-pick') || el.getAttribute('data-gcq-start') || el.getAttribute('data-gcq-close'), quiz = quizOf(key);
   if (!quiz) return;
   if (el.hasAttribute('data-gcq-close')) { delete TRY[key]; repaint(key, true); return; }
-  if (el.hasAttribute('data-gcq-start')) { TRY[key] = { picks: quiz.map(function(){ return -1; }) }; repaint(key, true); return; }
+  if (el.hasAttribute('data-gcq-start')) { var qs = sample(key, quiz); TRY[key] = { qs: qs, picks: qs.map(function(){ return -1; }) }; repaint(key, true); return; }
   var t = TRY[key]; if (!t) return;
   var i = +el.getAttribute('data-i'), j = +el.getAttribute('data-j');
   if (t.picks[i] >= 0) return;
   t.picks[i] = j;
   var finished = t.picks.every(function(p){ return p >= 0; });
-  if (finished) save(key, quiz, t.picks);
+  if (finished) save(key, t.qs || quiz, t.picks);
   repaint(key, false);
 }, true);
 

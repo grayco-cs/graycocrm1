@@ -24,7 +24,7 @@ const docs = await ev(() => (window._gcIicrc ? window._gcIicrc.docs : []).map(d 
     letter: /data-gc-logo/.test(h), ox: /Oxidizing agents/i.test(h) && /sodium perborate/i.test(h) && /hydroxyl/i.test(h) && /chlorine dioxide/i.test(h), tbl: div.querySelectorAll('table.iic-tbl tbody tr').length, mask: /masking agent/i.test(h) && /pairing agent/i.test(h), answers: d.quiz.map(q => q.a).join('') };
 }));
 ok('4 training documents: S700 fire & smoke, S500 water, S520 mold, biohazard & sewage', docs.length === 4 && /S700/.test(docs[0].title) && /S500/.test(docs[1].title) && /S520/.test(docs[2].title) && /Biohazard/.test(docs[3].title), docs.map(d => d.title));
-ok('each: every quiz question printed (8–15), the sign-off (employee / trainer / score) and an answer key row per question', docs.every(d => d.q === d.nq && d.nq >= 8 && d.nq <= 15 && d.sign && d.key === d.nq), docs.map(d => [d.id, d.q, d.key, d.sign]));
+ok('each: the whole question bank printed (Fire 30, Water 30, Mold 25, Biohazard 20), the sign-off (employee / trainer / score) and an answer key row per question', docs.map(d => d.nq).join() === '30,30,25,20' && docs.every(d => d.q === d.nq && d.sign && d.key === d.nq), docs.map(d => [d.id, d.q, d.key, d.sign]));
 ok('each: internal, names the standard it follows ("based on the principles of"), says it is our own words, GrayCo letterhead', docs.every(d => d.internal && d.basis && d.own && d.letter), docs.map(d => [d.id, d.internal, d.basis, d.own, d.letter]));
 ok('S700 and S500 explain masking agents vs pairing agents', docs[0].mask && docs[1].mask, docs.map(d => d.mask));
 ok('the right answers are spread over A–D (not all B)', docs.every(d => new Set(d.answers.split('')).size >= 3), docs.map(d => d.answers));
@@ -38,8 +38,8 @@ const never = await ev(() => window._gcIicrc.get('s700').sections.find(s => s.id
 ok('S700 "what we never do": never mix chemicals, no ozone with people/pets/plants, no wet-cleaning dry soot first, nothing thrown away without consent', /Never mix chemicals/.test(never) && /ozone with people, pets or plants/.test(never) && /wet-clean dry soot first/.test(never) && /without the customer's written consent/.test(never));
 
 /* 2. 🎓 Training: a course per document, its test with an 80 % pass mark */
-const tr = await ev(() => { const M = window._gcTrain.modules(); return ['s700', 's500', 's520', 'bio'].map(id => { const m = M.find(x => x.id === 'b:iicrc-' + id); return m && { t: m.title, cat: m.cat, req: m.required, parts: m.parts.length, quiz: (m.parts.find(p => p.quiz) || {}).quiz.length, print: /#gc-iicrc=/.test(m.parts[0].body) }; }); });
-ok('🎓 Training lists all four as courses (parts, a link to the printable record, the test at the end); Fire & Water required for Insurance / Mitigation', tr.every(Boolean) && tr.every(m => m.print && m.quiz >= 8) && tr[0].req.includes('insurance') && tr[1].req.includes('insurance') && tr[0].cat === 'IICRC', tr);
+const tr = await ev(() => { const M = window._gcTrain.modules(); return ['s700', 's500', 's520', 'bio'].map(id => { const m = M.find(x => x.id === 'b:iicrc-' + id); return m && { t: m.title, cat: m.cat, req: m.required, parts: m.parts.length, quiz: (m.parts.find(p => p.quiz) || {}).quiz.length, print: /#gc-iicrc=/.test(m.parts[0].body), draw: (window.__GC_TRAIN_EXTRA__.find(x => 'b:' + x.id === m.id) || {}).draw, tf: (m.parts.find(p => p.quiz) || {}).quiz.filter(q => q.c.join() === 'True,False').length }; }); });
+ok('🎓 Training lists all four as courses (parts, a link to the printable record, a test drawing 20 / 20 / 15 / 15 from banks of 30 / 30 / 25 / 20, with true / false mixed in); Fire & Water required for Insurance / Mitigation', tr.every(Boolean) && tr.every(m => m.print && m.quiz >= 20 && m.tf >= 3) && tr.map(m => m.draw).join() === '20,20,15,15' && tr[0].req.includes('insurance') && tr[1].req.includes('insurance') && tr[0].cat === 'IICRC', tr);
 const old = await ev(() => window._gcTrain.modules().filter(m => /^b:resto-/.test(m.id)).length);
 ok('the existing Water / Fire / Odor courses are still there', old === 3, old);
 await ev(() => window._gcTrain.open()); await sleep(2500);
@@ -47,16 +47,24 @@ await ev(() => { const b = document.querySelector('[data-trtab="train"]'); b && 
 const trTxt = await ev(() => (document.getElementById('gc-doclib-box') || document.body).innerText);
 ok('Forms & Docs → 🎓 Training shows the S700 / S500 / S520 courses', /Fire & Smoke Restoration Training \(IICRC S700 principles\)/.test(trTxt) && /S500 principles/.test(trTxt) && /S520 principles/.test(trTxt), trTxt.slice(0, 300));
 if (SHOT) await main.screenshot({ path: SHOT + '/training_tab.png' });
-/* take the S500 test with every answer right → passed, score saved */
-const quiz = await ev(() => { const key = 'b:iicrc-s500|quiz', q = window._gcTrain.modules().find(m => m.id === 'b:iicrc-s500').parts.find(p => p.quiz).quiz;
-  const box = document.createElement('div'); box.id = 'gc-test-host'; box.innerHTML = window.__GC_TRAIN_QUIZ__(key, q, false); document.body.appendChild(box);
-  return { n: q.length, intro: box.innerText, a: q.map(x => x.a) }; });
-ok('the S500 test asks for 80 % (10 of 12)', /You need 10 right to pass/.test(quiz.intro), quiz.intro.slice(0, 200));
-await ev(() => document.querySelector('[data-gcq-start="b:iicrc-s500|quiz"]').click()); await sleep(300);
-for (let i = 0; i < quiz.n; i++) { await ev(([i, j]) => document.querySelector('[data-gcq-pick="b:iicrc-s500|quiz"][data-i="' + i + '"][data-j="' + j + '"]').click(), [i, quiz.a[i]]); await sleep(60); }
+/* take the S500 test with every answer right → passed, score saved; 20 random questions from the bank of 30 */
+const K = 'b:iicrc-s500|quiz';
+const quiz = await ev(K => { const q = window._gcTrain.modules().find(m => m.id === 'b:iicrc-s500').parts.find(p => p.quiz).quiz;
+  const box = document.createElement('div'); box.id = 'gc-test-host'; box.innerHTML = window.__GC_TRAIN_QUIZ__(K, q, false); document.body.appendChild(box);
+  return { n: q.length, intro: box.innerText }; }, K);
+ok('the S500 test: 20 questions drawn at random from the bank of 30, pass = 80 % (16 of 20)', /20 questions, drawn at random from a bank of 30/.test(quiz.intro) && /You need 16 right to pass/.test(quiz.intro), quiz.intro.slice(0, 200));
+const draw = async () => { await ev(K => document.querySelector('[data-gcq-start="' + K + '"]').click(), K); await sleep(300);
+  return ev(K => { const t = window.__GC_TRAIN_TRY__(K); return t && t.qs.map(q => ({ q: q.q, a: q.a })); }, K); };
+const d1 = await draw();
+const bank = await ev(K => window._gcTrain.modules().find(m => m.id === 'b:iicrc-s500').parts.find(p => p.quiz).quiz.map(q => q.q), K);
+for (let i = 0; i < d1.length; i++) { await ev(([K, i, j]) => document.querySelector('[data-gcq-pick="' + K + '"][data-i="' + i + '"][data-j="' + j + '"]').click(), [K, i, d1[i].a]); await sleep(40); }
 await sleep(800);
-const res = await ev(() => { const P = window._gcTrain._p && window._gcTrain._p(); return P && P.done && P.done['b:iicrc-s500|quiz']; });
-ok('all right → "Passed", the score (12 of 12) saved on the test part', res && res.passed && res.score === quiz.n && res.of === quiz.n, res);
+const res = await ev(K => { const P = window._gcTrain._p && window._gcTrain._p(); return P && P.done && P.done[K]; }, K);
+ok('all 20 right → "Passed", 20 of 20 saved on the test part; the 20 were all from the bank, no repeats', d1.length === 20 && new Set(d1.map(x => x.q)).size === 20 && d1.every(x => bank.includes(x.q)) && res && res.passed && res.score === 20 && res.of === 20, res);
+const d2 = await draw();
+ok('"Retake" draws a new random set / order', d2 && d2.length === 20 && d2.map(x => x.q).join('|') !== d1.map(x => x.q).join('|'));
+const shown = await ev(() => document.querySelectorAll('#gc-test-host .gcq-q').length);
+ok('only the 20 drawn questions are on screen, answers hidden until picked', shown === 20 && await ev(() => !document.querySelector('#gc-test-host .gcq-why')), shown);
 await ev(() => { const b = document.getElementById('gc-test-host'); b && b.remove(); });
 
 /* 3. 📄 Documents: pinned card + library entries (internal, not client-facing) */
@@ -69,8 +77,8 @@ if (SHOT) { await ev(() => { const c = document.querySelector('[data-docid="iicr
 const pop = A.ctx.waitForEvent('page', { timeout: 8000 }).catch(() => null);
 await ev(() => document.querySelector('[data-docid="iicrc_training"] [data-iicrc-open="s700"]').click());
 const pg = await pop; await sleep(2000);
-const pd = pg ? await pg.evaluate(() => ({ t: document.title, q: document.querySelectorAll('.iic-q').length, sign: /Trainer signature/.test(document.body.innerText), key: !!document.querySelector('details.iic-key'), keyOpen: !!(document.querySelector('details.iic-key') || {}).open, logo: !!document.querySelector('[data-gc-logo]') })) : null;
-ok('tap 🔥 Fire & Smoke (S700) → the training record opens: quiz, sign-off, letterhead, the answer key closed', pd && /S700/.test(pd.t) && pd.q >= 8 && pd.sign && pd.key && !pd.keyOpen && pd.logo, pd);
+const pd = pg ? await pg.evaluate(() => ({ t: document.title, q: document.querySelectorAll('.iic-q').length, sign: /Trainer signature/.test(document.body.innerText), key: !!document.querySelector('details.iic-key'), keyOpen: !!(document.querySelector('details.iic-key') || {}).open, logo: !!document.querySelector('[data-gc-logo]'), noKeyPrint: /body\.nokey details\.iic-key\{display:none\}/.test([...document.querySelectorAll('style')].map(x => x.textContent).join('')) })) : null;
+ok('tap 🔥 Fire & Smoke (S700) → the training record opens: quiz, sign-off, letterhead, the answer key closed on screen and left off the trainee print', pd && /S700/.test(pd.t) && pd.q >= 8 && pd.sign && pd.key && !pd.keyOpen && pd.noKeyPrint && pd.logo, pd);
 if (pg) { if (SHOT) { await pg.setViewportSize({ width: 1440, height: 900 }); await pg.screenshot({ path: SHOT + '/training_doc_s700.png' }); } await pg.close(); }
 
 /* 4. the Mitigation / Environmental Dashboard papers card */

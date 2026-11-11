@@ -23,16 +23,18 @@ var DOCS = /*__DATA__*/null || [];
 var PCT = /*__PCT__*/80;
 function esc(v){ return String(v == null ? '' : v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
 function get(id){ return DOCS.filter(function(d){ return d.id === id; })[0] || null; }
-function passOf(d){ return Math.ceil(d.quiz.length * PCT / 100); }
+function passOf(d, n){ return Math.ceil((n || d.quiz.length) * PCT / 100); }
+function askOf(d){ return d.draw && d.draw < d.quiz.length ? d.draw : d.quiz.length; }   /* questions per 🎓 Training try (drawn at random from the bank) */
 var LINK = 'https://crm.grayco-cs.com/#gc-iicrc=';
 
 /* ── 1. the 🎓 Training courses (patch RESTOTRAIN keeps these after its own) ── */
 function course(d){
   var parts = [{ id: 'print', title: 'The printable training record', body: 'This course is also a printable training document with the same sections, the knowledge check and a sign-off line for you and your trainer.\n\n- [🖨 Open the ' + d.short + ' training record](' + LINK + d.id + ')\n- Based on the principles of ' + d.std + '. Written in GrayCo\'s own words; it is not the standard itself.' }];
   d.sections.forEach(function(s, i){ parts.push({ id: s.id, title: (i + 1) + '. ' + s.title, body: s.body }); });
-  parts.push({ id: 'quiz', title: 'Test: pass ' + passOf(d) + ' of ' + d.quiz.length + ' to finish', body: 'Take it after you have read every part. Each answer shows right away; your score is saved and your manager can see it. You can retake it as many times as you need.',
+  var ask = askOf(d);
+  parts.push({ id: 'quiz', title: 'Test: pass ' + passOf(d, ask) + ' of ' + ask + ' to finish', body: 'Take it after you have read every part. ' + (ask < d.quiz.length ? 'Each try asks ' + ask + ' questions picked at random from a bank of ' + d.quiz.length + ', in a random order. ' : '') + 'Each answer shows right away; your score is saved and your manager can see it. You can retake it as many times as you need.',
     quiz: d.quiz.map(function(q){ return { q: q.q, c: q.c, a: q.a, why: q.why }; }) });
-  return { id: 'iicrc-' + d.id, title: d.icon + ' ' + d.title, intro: d.intro, required: d.required, cat: d.cat, pass: passOf(d), parts: parts };
+  return { id: 'iicrc-' + d.id, title: d.icon + ' ' + d.title, intro: d.intro, required: d.required, cat: d.cat, pass: passOf(d, ask), passPct: PCT, draw: ask < d.quiz.length ? ask : 0, parts: parts };
 }
 var X = Array.isArray(W.__GC_TRAIN_EXTRA__) ? W.__GC_TRAIN_EXTRA__ : (W.__GC_TRAIN_EXTRA__ = []);
 DOCS.forEach(function(d){ if (!X.some(function(x){ return x && x.id === 'iicrc-' + d.id; })) X.push(course(d)); });
@@ -102,11 +104,11 @@ function html(id){
   var head = ''; try { head = W._gcPrintHead ? W._gcPrintHead() : ''; } catch (e) {}   /* the letterhead (the company's, on a Mitigation / Environmental Dashboard) */
   h += '<div class="iic-page" data-iicrc-doc="' + esc(d.id) + '">' + head;
   h += '<div class="iic-title"><h1>' + esc(d.icon) + ' ' + esc(d.title) + '</h1><div class="sub">Based on the principles of ' + esc(d.std) + '</div><span class="iic-tag">INTERNAL — GRAYCO STAFF TRAINING · NOT FOR CUSTOMERS</span></div>';
-  h += '<div class="iic-meta"><div><b>Who</b>' + (d.required.length ? 'Required: Insurance / Mitigation crews, supers and PMs. Open to all staff.' : 'Everyone who may work this kind of job.') + '</div><div><b>Time</b>About ' + Math.max(30, d.sections.length * 4) + ' minutes, plus the knowledge check</div><div><b>Knowledge check</b>' + n + ' questions · pass = ' + P + ' of ' + n + '</div><div><b>Record</b>Sign below; keep in the employee\'s training file (🎓 Training → 📜 Certifications)</div></div>';
+  h += '<div class="iic-meta"><div><b>Who</b>' + (d.required.length ? 'Required: Insurance / Mitigation crews, supers and PMs. Open to all staff.' : 'Everyone who may work this kind of job.') + '</div><div><b>Time</b>About ' + Math.max(30, d.sections.length * 4) + ' minutes, plus the knowledge check</div><div><b>Knowledge check</b>' + n + ' questions on paper · pass = ' + P + ' of ' + n + (askOf(d) < n ? '<br>In the CRM: ' + askOf(d) + ' at random per try, pass ' + passOf(d, askOf(d)) : '') + '</div><div><b>Record</b>Sign below; keep in the employee\'s training file (🎓 Training → 📜 Certifications)</div></div>';
   h += '<div class="iic-note"><b>About this document.</b> ' + esc(d.intro) + ' It summarizes common restoration practice in our own words; it is not the IICRC standard and does not replace it or IICRC certification classes. Always follow the product label and SDS, OSHA rules, local codes and your supervisor; where GrayCo policy is stricter, follow GrayCo policy. Take the same test in the CRM: 📄 Forms &amp; Docs → 🎓 Training.</div>';
   h += '<b>Contents</b><ol class="iic-toc">' + d.sections.map(function(s){ return '<li>' + esc(s.title) + '</li>'; }).join('') + '<li>Knowledge check &amp; sign-off</li></ol>';
   d.sections.forEach(function(s, i){ h += '<section id="iic-' + esc(s.id) + '"><h2>' + (i + 1) + '. ' + esc(s.title) + '</h2>' + md(s.body) + '</section>'; });
-  h += '<section class="iic-quiz"><h2>' + (d.sections.length + 1) + '. Knowledge check</h2><p>Circle the best answer for each question. You need <b>' + P + ' of ' + n + '</b> to pass.</p>';
+  h += '<section class="iic-quiz"><h2>' + (d.sections.length + 1) + '. Knowledge check</h2><p>Check the best answer for each question (true / false questions: A = True, B = False). On paper you need <b>' + P + ' of ' + n + '</b> to pass.' + (askOf(d) < n ? ' The 🎓 Training test in the CRM asks ' + askOf(d) + ' of these at random each try (pass ' + passOf(d, askOf(d)) + ').' : '') + '</p>';
   d.quiz.forEach(function(q, i){ h += '<div class="iic-q"><b>' + (i + 1) + '.</b> ' + esc(q.q) + q.c.map(function(c, j){ return '<span class="c">☐ ' + 'ABCD'.charAt(j) + '. ' + esc(c) + '</span>'; }).join('') + '</div>'; });
   h += '</section>';
   h += '<div class="iic-sign"><b>Training sign-off</b><div style="font-size:9.5pt;margin-top:4px">I have read this training, my trainer went over it with me, I had the chance to ask questions, and I will follow it on the job.</div><table>' +
@@ -149,7 +151,7 @@ function chips(co){
 function coCard(co){
   var L = forCo(co); if (!L.length) return '';
   return '<div style="font:700 12px Inter,Arial,sans-serif;color:#64748b;margin:12px 0 6px;text-transform:uppercase;letter-spacing:.05em">🎓 Training (internal)</div><div data-iicrc-co-card="1" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:6px">' +
-    L.map(function(d){ return '<button type="button" data-iicrc-open="' + esc(d.id) + '" data-iicrc-co="' + esc(co) + '" style="text-align:left;border:1px solid #e2e8f0;border-left:4px solid #d4a017;background:#fff;border-radius:8px;padding:8px 10px;cursor:pointer;font:13px Inter,Arial,sans-serif;color:#0f172a">' + esc(d.icon + ' ' + d.title) + '<br><span style="font-size:11.5px;color:#64748b">Training record · ' + d.quiz.length + '-question quiz · sign-off</span></button>'; }).join('') + '</div>';
+    L.map(function(d){ return '<button type="button" data-iicrc-open="' + esc(d.id) + '" data-iicrc-co="' + esc(co) + '" style="text-align:left;border:1px solid #e2e8f0;border-left:4px solid #d4a017;background:#fff;border-radius:8px;padding:8px 10px;cursor:pointer;font:13px Inter,Arial,sans-serif;color:#0f172a">' + esc(d.icon + ' ' + d.title) + '<br><span style="font-size:11.5px;color:#64748b">Training record · ' + d.quiz.length + '-question bank · sign-off</span></button>'; }).join('') + '</div>';
 }
 
 /* the 📄 Documents header: our card under the PM Playbook's */

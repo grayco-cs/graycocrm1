@@ -573,5 +573,85 @@ Blood and some body fluids can carry diseases like **hepatitis B, hepatitis C an
     ],
 }
 
+# ── More questions (owner 11/11: "more questions for training quizzes") ──────────────────────────────────────────────────
+# The question bank per document; the 🎓 Training test asks `draw` of them at random each try (pass = PASS_PCT of those asked).
+# The printed training record lists the whole bank. True / false questions keep True first.
+T = ['True', 'False']
+
+FIRE['quiz'] += [
+    ('True or false: mixing bleach with an ammonia-based cleaner is fine if the room is well ventilated.', T, 1, 'Never mix bleach with ammonia, acids or quats — it makes toxic gas no matter how much air is moving.'),
+    ('True or false: a hydroxyl generator can run while the family is home when the manufacturer says it can.', T, 0, 'Hydroxyl units can run occupied per the maker; ozone and chlorine dioxide cannot.'),
+    ('True or false: an odor-sealing primer can replace cleaning when the smell is light.', T, 1, 'Sealing is the last step after source removal and cleaning, never a replacement.'),
+    ('How do you treat the electrical system on a fire loss?', ['Flip the breakers back on to test the lights', 'Assume every wire is live; confirm power is off or made safe by the utility, and never restore it yourself', 'Only worry about it if you see sparks', 'Ask the customer to check it'], 1, 'Live wiring in a burned, wet building can kill.'),
+    ('A furnace puffback leaves black, oily, heavy soot through the house. That residue is:', ['Protein residue', 'Dry smoke residue', 'Fuel-oil soot', 'Mold'], 2, 'Fuel-oil soot needs solvent or degreasing cleaners, and the unit must be repaired before it runs again.'),
+    ('Sticky, smeary, strong-smelling residue from a slow, smoldering fire that burned plastics is:', ['Dry smoke residue', 'Wet smoke residue', 'Protein residue', 'Efflorescence'], 1, 'Wet residue smears; pick up anything loose, then wet-clean with detergents and degreasers.'),
+    ('Why do we use a HEPA vacuum on soot instead of a regular shop vacuum?', ['It is louder', 'A regular vacuum blows fine soot back into the air; HEPA traps it', 'It adds deodorizer', 'There is no difference'], 1, 'Soot particles are tiny; only HEPA filtration holds them.'),
+    ('Charred or blistered framing should be:', ['Cleaned with a dry sponge', 'Removed (or the char taken off) — cleaning cannot fix char', 'Painted with regular paint', 'Left alone'], 1, 'Structural char is removed, not cleaned.'),
+    ('How should water left by the fire department be treated?', ['As clean Category 1 water', 'As contaminated (at least Category 2, often Category 3), with drying started the same day', 'It can wait a week', 'Only the carpet matters'], 1, 'Firefighting water picks up soot and debris and starts mold quickly.'),
+    ('When boarding up a burned house you should:', ['Nail plywood from the inside', 'Fasten plywood from the outside and leave one secure, lockable entry', 'Leave the doors open for airflow', 'Only use tarps'], 1, 'Secure the building but keep a lockable way in for the crew and the owner.'),
+    ('True or false: food, medicine and cosmetics exposed to heat or smoke are usually thrown away, but only after they are listed and the customer signs.', T, 0, 'Non-salvageable items are listed, photographed and signed off before disposal.'),
+    ('What is the first thing you do when you meet a family after a fire?', ['Hand them the contract', 'Introduce yourself, say you are sorry this happened, listen, and explain what happens next', 'Talk about their deductible', 'Start carrying things out'], 1, 'Lead with empathy; they are having one of the worst days of their life.'),
+    ('How do you do the final odor check?', ['Ask the crew who worked inside all week', 'Close the house up for a while, then have someone who has not been working inside walk in and smell', 'Spray fragrance first', 'Skip it if the walls look clean'], 1, 'Workers get used to the smell; a fresh nose in a closed-up house finds what is left.'),
+    ('Thermal fogging should be done:', ['With the family home', 'In an empty area, with a respirator, and pilot lights and ignition sources off', 'Instead of cleaning', 'Only outdoors'], 1, 'The solvent-based fog penetrates like smoke; it is for unoccupied spaces with ignition sources off.'),
+    ('For every item or material we replace instead of cleaning, the file should say:', ['Nothing, photos are enough', 'Why — the test-clean result, char, melting, or odor that will not clean out', 'Only the price', 'The crew member\'s opinion'], 1, 'Insurance and the customer need the reason for each clean-or-replace decision.'),
+]
+
+WATER['quiz'] += [
+    ('True or false: a thermal camera image alone proves a wall is wet.', T, 1, 'A thermal camera finds suspects; a moisture meter confirms them.'),
+    ('The dew point is:', ['The temperature of the room', 'The temperature at which water condenses out of the air', 'The relative humidity at noon', 'The GPP outside'], 1, 'Surfaces colder than the dew point get wet (sweating pipes and windows).'),
+    ('Why do we compare grains per pound (GPP) instead of relative humidity (RH)?', ['GPP is easier to say', 'RH changes when the air warms or cools; GPP is the actual water in the air', 'RH is only for outdoors', 'They are the same'], 1, 'GPP lets you compare air at different temperatures.'),
+    ('True or false: open the windows to help drying only when the outside air has a lower GPP than the inside air.', T, 0, 'Wetter outside air would slow the drying.'),
+    ('Where do you take the dry standard reading?', ['On the wettest spot', 'On the same kind of material in an unaffected area', 'Outside on the driveway', 'On the dehumidifier'], 1, 'The unaffected material shows what "dry" means for that house.'),
+    ('Every piece of drying equipment plugs into:', ['Any outlet', 'A GFCI-protected outlet or GFCI cord', 'An extension cord lying in the water', 'The customer\'s dryer outlet'], 1, 'GFCI protection prevents electrocution around water.'),
+    ('A toilet overflow with urine but no feces is usually:', ['Category 1', 'Category 2', 'Category 3', 'Class 4'], 1, 'It can make people sick but is not grossly contaminated — Category 2 (and it gets worse with time).'),
+    ('You find a ceiling sagging with water. What do you do?', ['Stand under it and poke it', 'Keep everyone out from under it; your supervisor decides how to drain it safely', 'Ignore it', 'Turn on the ceiling fan'], 1, 'A water-filled ceiling can fall without warning.'),
+    ('As a starting point, air movers are aimed:', ['At the ceiling', 'At the base of the wet walls at a low angle, all moving air the same way around the room', 'Out the front door', 'At the dehumidifier'], 1, 'Then adjust daily based on readings.'),
+    ('True or false: blowing air across sewage-soaked carpet before removing it is fine if a dehumidifier is running.', T, 1, 'It spreads contamination; remove Category 3 porous materials first and run HEPA air scrubbers.'),
+    ('A "flood cut" means:', ['Cutting the carpet into strips', 'Cutting drywall out above the wet line', 'Shutting off the water main', 'Cutting the power'], 1, 'Removing the wet band of drywall lets the cavity dry and removes contaminated material.'),
+    ('On a Category 2 loss, the carpet pad is generally:', ['Dried in place', 'Removed', 'Sprayed with fragrance', 'Left for the customer'], 1, 'Pad holds contaminated water and is generally removed on Category 2.'),
+    ('How often do we monitor a drying job?', ['Only at the end', 'Every day, on the same marked spots, with air readings and photos', 'Once a week', 'When the customer calls'], 1, 'Daily readings show whether drying is working and where to move equipment.'),
+    ('True or false: chlorine bleach can be mixed with ammonia, acids or quat cleaners to make it stronger.', T, 1, 'Never — it makes toxic gas.'),
+    ('The Certificate of Drying shows:', ['The invoice total', 'The final readings compared with the dry standard', 'The adjuster\'s name', 'The equipment rental price'], 1, 'It proves every material reached its drying goal.'),
+    ('The customer wants to turn the loud machines off at night. You:', ['Say "sure"', 'Explain kindly why they must stay on, and ask them to call us before changing anything', 'Ignore them', 'Take the equipment away'], 1, 'Turning off equipment stalls drying and risks mold; explain and stay in touch.'),
+    ('How does an LGR dehumidifier remove water?', ['It heats the air until water boils', 'It cools air below its dew point so water condenses and drains away', 'It uses a drying chemical', 'It sprays mist'], 1, 'Refrigerant dehumidifiers condense water on cold coils.'),
+    ('Before cutting drywall or pulling flooring in an older home, you must:', ['Nothing special', 'Make sure suspect materials are tested for asbestos and lead', 'Wet everything first', 'Ask the neighbor'], 1, 'Disturbing untested asbestos or lead paint can expose the crew and the family.'),
+]
+
+MOLD['quiz'] += [
+    ('True or false: spraying a biocide and painting over mold with a sealer counts as remediation.', T, 1, 'Mold must be physically removed; sealers go on only after removal and verification.'),
+    ('Containment walls are built with:', ['Bed sheets', '6-mil poly sheeting, taped and sealed, with a zipper door', 'Cardboard', 'Nothing — open doors are fine'], 1, 'Sealed poly keeps spores and dust in the work area.'),
+    ('Where does the negative air machine exhaust?', ['Into the hallway', 'Outside, after HEPA filtration', 'Into the attic', 'Into the HVAC return'], 1, 'Filtered air leaves the building so pressure in containment stays negative.'),
+    ('With good negative pressure, the containment poly:', ['Bulges outward', 'Pulls slightly inward', 'Falls down', 'Does nothing'], 1, 'Inward pull shows air is flowing into containment, not out.'),
+    ('True or false: lightly misting moldy materials before removal helps keep spores and dust down.', T, 0, 'A light mist reduces airborne dust; do not soak.'),
+    ('Moldy debris is bagged:', ['Outside on the lawn', 'Inside containment, in 6-mil bags that are closed and wiped before they leave', 'In open trash cans', 'In the customer\'s garbage'], 1, 'Bagging inside containment keeps spores from spreading.'),
+    ('What happens to the HVAC in the work area during remediation?', ['Run it on high', 'Turn it off and seal the registers', 'Open all the vents', 'Nothing'], 1, 'Running HVAC would spread spores through the building.'),
+    ('For a large area of heavy growth, the respirator should be:', ['A paper dust mask', 'A fit-tested half-face or full-face respirator with P100 cartridges', 'None if you work fast', 'A bandana'], 1, 'N95 is only the minimum for small, limited work.'),
+    ('Condition 2 means:', ['Normal background', 'Spores or fragments have settled from a growth area, without actual growth there', 'Visible active growth', 'The building is dry'], 1, 'Settled contamination is cleaned to bring it back to Condition 1.'),
+    ('Moldy non-porous surfaces like metal and glass are:', ['Thrown away', 'HEPA vacuumed and damp-wiped with a detergent cleaner', 'Sanded', 'Painted'], 1, 'Mold cannot grow into non-porous materials, so they are cleaned.'),
+    ('The first step of post-remediation verification is:', ['Air sampling', 'A visual check: no visible mold, dust or debris anywhere in the work area', 'Taking down containment', 'Sending the invoice'], 1, 'If it fails the visual, there is no point testing.'),
+    ('True or false: if the area fails verification, you clean again and re-check before containment comes down.', T, 0, 'Containment stays until the area passes.'),
+    ('An occupant has a weakened immune system. You should:', ['Tell them mold is harmless', 'Bring in an IEP and recommend they stay out of the work area (ideally out of the home)', 'Work faster without containment', 'Ignore it'], 1, 'Sensitive occupants are a reason for an IEP and extra protection.'),
+    ('Why should the person who tests for clearance be independent of the remediator?', ['It is cheaper', 'To avoid a conflict of interest', 'Because we do not own meters', 'It does not matter'], 1, 'Independent verification is more trustworthy for the customer and insurer.'),
+    ('When may a sealer or coating be applied in a remediation area?', ['Before removal to lock mold in', 'After removal and verification, never to hide growth', 'Never', 'Instead of HEPA vacuuming'], 1, 'Coatings come after the work is done and verified.'),
+]
+
+BIO['quiz'] += [
+    ('Which diseases are the main bloodborne concerns?', ['The common cold and flu', 'Hepatitis B, hepatitis C and HIV', 'Mold allergies', 'Food poisoning'], 1, 'These can spread through blood and some body fluids.'),
+    ('True or false: workers must be offered the hepatitis B vaccine before doing bloodborne pathogen work.', T, 0, 'The vaccine offer comes with the training, before the work.'),
+    ('Gloves on a biohazard job are:', ['One pair of cloth gloves', 'Two pairs of nitrile gloves, taped to the sleeves', 'Optional', 'Leather work gloves only'], 1, 'Double nitrile protects you if the outer pair tears.'),
+    ('A disinfectant\'s "contact time" (dwell time) means:', ['How long it lasts in the bottle', 'How long the surface must stay wet with it to work', 'How long until you can eat', 'The drive time to the job'], 1, 'Wipe it off too early and it has not disinfected.'),
+    ('The disinfectant used on blood should be:', ['Any household spray', 'EPA-registered and labeled for bloodborne pathogens, used per the label', 'Bleach mixed with ammonia', 'Fragrance'], 1, 'The label claim and directions are what make it effective.'),
+    ('A mattress soaked with blood is:', ['Cleaned and returned', 'Removed with consent and disposed of as regulated medical waste', 'Flipped over', 'Sprayed with fragrance'], 1, 'Porous items soaked with blood cannot be reliably disinfected.'),
+    ('Who releases a trauma scene before we enter?', ['The neighbors', 'Law enforcement or the medical examiner', 'The insurance company', 'Nobody'], 1, 'We enter only after the scene is released.'),
+    ('You find family photos and jewelry in the work area. You:', ['Throw them out', 'Set them aside safely for the family', 'Keep them', 'Post them online'], 1, 'Respect for the family includes saving personal items.'),
+    ('True or false: mixing bleach with ammonia makes a stronger, safer disinfectant.', T, 1, 'It makes toxic gas. Never mix chemicals.'),
+    ('True or false: cover any cut on your hands before putting on gloves.', T, 0, 'Broken skin is a way in for bloodborne germs.'),
+]
+
+FIRE['draw'] = 20
+WATER['draw'] = 20
+MOLD['draw'] = 15
+BIO['draw'] = 15
+
 DOCS = [FIRE, WATER, MOLD, BIO]
-PASS_PCT = 80   # a test is passed at 80 % (e.g. 10 of 12, 8 of 10)
+PASS_PCT = 80   # a test is passed at 80 % of the questions asked (16 of 20, 12 of 15)
