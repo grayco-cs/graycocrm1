@@ -205,6 +205,21 @@ const tedLead = { id: 'LI-40569a6f62ec9c86', type: 'insurance', leadKind: 'Insur
   st = staffSms(); ok(st.length === 0, 'even with the number: no text until the office says it is real (owner: "only if it\'s a real lead")', st.map(x => x.Body));
   process.env.OWNER_EMAILS = OE0;
 
+  /* WEBTEXT + ONELEAD (owner 11/10): a website lead with a cell gets the auto text; their answer is THAT lead — no second lead, no new-lead text */
+  { world(); T = Date.parse('2026-11-10T16:00:00Z'); const OE1 = process.env.OWNER_EMAILS, CQ1 = process.env.CUST_QUIET_OFF; process.env.OWNER_EMAILS = 'nthomas@grayco-cs.com,wjohnson@grayco-cs.com'; process.env.CUST_QUIET_OFF = '1';   /* the 7 PM hold reads the real clock */
+    const mine = () => openInbox().filter(x => String((x.contact || {}).phone || '').replace(/\D/g, '').endsWith('9015550181'));
+    r = await web({ type: 'estimate', name: 'Gina Webb', email: 'gina@example.com', phone: '(901) 555-0181', message: 'roof estimate please' });
+    const cust = SMS.filter(x => String(x.To).endsWith('9015550181'));
+    ok(cust.length === 1 && /We got your request from our website/.test(cust[0].Body) && /call you shortly/.test(cust[0].Body), 'WEBTEXT: the website customer gets one text right away', SMS.map(x => [x.To, x.Body]));
+    const leads0 = mine().length, staff0 = staffSms().length;
+    await sms('9015550181', 'It is a roof leak over the kitchen, 45 Elm St Bartlett', 'SMweb1');
+    const leads1 = mine();
+    ok(leads0 === 1 && leads1.length === 1, 'ONELEAD: her answer does not make a second lead', { leads0, n: leads1.length, t: leads1.map(x => x.title) });
+    const st1 = staffSms().slice(staff0);
+    ok(st1.length >= 1 && st1.every(x => /Website lead [A-Z0-9]{4} Gina/.test(x.Body) && /roof leak over the kitchen/.test(x.Body)) && !st1.some(x => /NEW LEAD|website lead [A-Z0-9]{4} from/.test(x.Body)), 'ONELEAD: staff get her words once (no new-lead text)', st1.map(x => x.Body));
+    ok(/roof leak over the kitchen/.test(JSON.stringify(leads1[0])), 'ONELEAD: her text is on the lead', JSON.stringify(leads1[0]).slice(0, 300));
+    process.env.OWNER_EMAILS = OE1; if (CQ1 == null) delete process.env.CUST_QUIET_OFF; else process.env.CUST_QUIET_OFF = CQ1; }
+
   /* lead-intake.js (paid lead sources) — the other path that queues a first e-mail */
   const LI = require(path.join(SRC, 'lead-intake.js'));
   const intake = b => LI.handler({ httpMethod: 'POST', headers: { 'x-api-key': 'ri-test', 'content-type': 'application/json' }, queryStringParameters: {}, body: JSON.stringify(b) });

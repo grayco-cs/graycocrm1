@@ -443,7 +443,12 @@ async function inboundSms(p){
   if (!fresh) return { skipped: 'already handled' };
   const S = SMS(); let set = S.settings(null);
   try { set = S.settings(await L().kvGet(S.SETTINGS_KEY)); } catch (e) {}
-  const st0 = await stateGet(), own = st0.owner[ph] || {}, optedOut = !!st0.optout[ph];
+  const st0 = await stateGet(), optedOut = !!st0.optout[ph];
+  let own = st0.owner[ph] || {};
+  /* ONELEAD (owner 11/10: "if I get a text directly from the customer I don't also need a new lead text — I already got it; make sure those
+     leads file in the CRM"): a customer we texted from a lead (Google LSA / website auto text, the last 14 days) answering is THAT lead —
+     no second lead, no new-lead text; their words go on the lead (job type / address filled in) and the one relay text reaches the staff */
+  if (!own.lead) { try { const lc = await SA().lsaCustOf(ph); if (lc && lc.leadId && Date.now() - Date.parse(lc.at || 0) < 14 * 864e5) own = Object.assign({}, own, { lead: lc.leadId, fromAsk: true }); } catch (e) {} }
   const out = { sid };
   /* HELP: the standard answer, nothing else */
   /* patch SMSMENU: on the Customers / default number HELP opens the 1–5 menu (with the STOP line) further down */
@@ -515,6 +520,8 @@ async function inboundSms(p){
       try { out.textLead = await TL().onInbound({ leadId: r.id, ph, body, at, id: sid }); if (out.textLead && out.textLead.item && r.rec) ['title', 'contact', 'address', 'city', 'state', 'zip', 'notes', 'leadExtra'].forEach(k => { if (out.textLead.item[k] !== undefined) r.rec[k] = out.textLead.item[k]; }); } catch (e) {}   /* patch TEXTLEAD */
       out.alerts = r.action === 'added' ? await WI().alertLead(r.rec) : { skipped: r.action };
     } catch (e) { out.leadError = s(e && e.message); }
+  } else if (own.fromAsk && !(who && (who.kind === 'staff' || who.kind === 'sub'))) {
+    try { out.textLead = await TL().onInbound({ leadId: own.lead, ph, body, at, id: sid }); out.onLead = own.lead; } catch (e) {}   /* ONELEAD */
   } else if (!own.lead && !(who && (who.kind === 'staff' || who.kind === 'sub'))) {
     /* patch TEXTLEAD: a lead this number already has (website / CRM lead) gets the text too; a lead that became this customer's job → its history is copied to the job */
     try { out.textLead = pid ? await TL().syncConverted({ ph }) : await TL().onInbound({ ph, body, at, id: sid }); } catch (e) {}

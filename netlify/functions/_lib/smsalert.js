@@ -474,6 +474,8 @@ async function isStaffPhone(ph){ ph = phone10(ph); if (ph.length !== 10) return 
 /* ── the hooks (one call each from missed-call.js, bid-alerts.js, auto-digest.js, gc-backup.js, crm-health.js) ── */
 function quote(b){ return '"' + clip(b, 120) + '"'; }
 /* a text in from a customer / sub (missed-call.js inboundSms) */
+/* ONELEAD: the lead a phone was auto-texted from (Google LSA / website), or null */
+async function lsaCustOf(ph){ let lc = null; try { await _D.kvCas(SKEY, v => { lc = loadState(v).lsaCust[phone10(ph)] || null; return undefined; }); } catch (e) {} return lc; }
 async function inboundText(o){
   const who = o.who || {}, kind = who.kind === 'sub' ? 'subs' : 'cust';
   if (who.kind === 'staff') return { skipped: 'staff' };
@@ -482,7 +484,8 @@ async function inboundText(o){
   let lc = null; try { await _D.kvCas(SKEY, v => { lc = loadState(v).lsaCust[phone10(o.ph)] || null; return undefined; }); } catch (e) {}
   if (lc) {
     const shown = clip(s(who.name) || s(lc.name) || tidy(o.ph), 40) + ' ' + tidy(o.ph);
-    return notify({ type: 'cust', lsa: { leadId: lc.leadId, code: lc.code, name: lc.name, phone: phone10(o.ph) }, text: 'LSA lead ' + lc.code + ' ' + shown + ' texted: ' + quote(o.body) + ' Reply here within 30 min to answer them (or in CRM Messages).',
+    const lcode = s(lc.code) || lsaCode(lc.leadId);   /* ONELEAD: a website lead has no code saved yet */
+    return notify({ type: 'cust', lsa: { leadId: lc.leadId, code: lcode, name: lc.name, phone: phone10(o.ph) }, text: (lc.stage === 'web' ? 'Website lead ' : 'LSA lead ') + lcode + ' ' + shown + ' texted: ' + quote(o.body) + ' Reply here within 30 min to answer them (or in CRM Messages).',
       link: site() + '/?jobmsg=' + encodeURIComponent(o.pid || 'unsorted'), thread: 'p:' + phone10(o.ph), only: lsaAdmins(), replyTo: { phone: o.ph, pid: o.pid || '', name: who.name || lc.name || '' } });
   }
   const shown = clip(s(who.name) || tidy(o.ph), 40) + (who.name ? ' ' + tidy(o.ph) : '');
@@ -877,5 +880,5 @@ async function system(kind, text){
   return notify({ type: 'system', text: 'CRM alert — ' + text, link: site(), thread: 'sys:' + s(kind), daily: true, hold: true });
 }
 
-module.exports = { webAsk, _findJob: findJob, apptText, lsaVetted, jobNote, lsaAsk, lsaCustomer, lsaPmText, _lsaCode: lsaCode, _isLsaLead: isLsaLead, _lsaReply: lsaReply, _D: _D, _isSubBid: isSubBid, ROLE_MIT, DEFAULT_PEOPLE, resolve, mitigationHolders, leadText, KEY, SKEY, TYPES, RATE_MS, REPLY_MS, settings, cleanPerson, staffList, load, save, notify, flushHeld, staffInbound, isStaffPhone, inboundText, missedCall, leads, assigned, approvals, system,
+module.exports = { lsaCustOf, webAsk, _findJob: findJob, apptText, lsaVetted, jobNote, lsaAsk, lsaCustomer, lsaPmText, _lsaCode: lsaCode, _isLsaLead: isLsaLead, _lsaReply: lsaReply, _D: _D, _isSubBid: isSubBid, ROLE_MIT, DEFAULT_PEOPLE, resolve, mitigationHolders, leadText, KEY, SKEY, TYPES, RATE_MS, REPLY_MS, settings, cleanPerson, staffList, load, save, notify, flushHeld, staffInbound, isStaffPhone, inboundText, missedCall, leads, assigned, approvals, system,
   inQuiet, quietNow, centralHour, compose, wants, _D };
