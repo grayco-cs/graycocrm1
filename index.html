@@ -5496,7 +5496,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.227-2026-11-11-r29 -->
+<!-- GrayCo CRM Build: 33.228-2026-11-11-r30 -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6445,7 +6445,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.227-2026-11-11-r29");
+  console.log("[GC] Build 33.228-2026-11-11-r30");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6493,7 +6493,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.227-2026-11-11-r29"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.228-2026-11-11-r30"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -220204,5 +220204,36 @@ function paint(){
 }
 C.onPaint(paint);
 (function tick(){ paint(); setTimeout(tick, 700); })();
+})(window);
+</script>
+<script id="gc-patch-care">
+/* CARE (owner 11/11: "talk about having empathy to customers on emergency board-up and fire and water damage jobs for the PM and for
+   the subs' scopes — we want them all to have the right attitude to secure the job and show compassion"; Mitigation does all
+   emergency calls and board-ups): 1) a "Lead with empathy" section in the 📘 PM Playbook (window._gcPlaybookHTML); 2) on a fire /
+   water / board-up / Mitigation job's page, a "🤝 Customer care" reminder card for the PM; 3) subs see "🤝 How we treat this
+   customer" on those jobs in their portal (portal-app.js, JOB.care). */
+(function(W){
+'use strict';
+var D = W.document, SEC = "<section id=\"empathy-emergency\" style=\"border:2px solid #f97316;border-radius:12px;padding:14px 18px;margin:18px 0;background:#fff7ed\"><h2>\ud83e\udd1d Emergency jobs: lead with empathy (fire, water, board-up, mitigation)</h2><p>The customer is having one of the worst days of their life. Their home or business is damaged, they may be scared, displaced, or worried about money and their family. How we show up in the first hour decides whether we earn the job \u2014 and whether they tell everyone they know about us.</p><ol><li>Arrive calm and on time; call or text if you will be even 10 minutes late.</li><li>Introduce yourself by name, shake hands if they want to, and say: &quot;I&#x27;m sorry this happened. We&#x27;re here to help, and we&#x27;ll take it one step at a time.&quot;</li><li>Ask first: &quot;Is everyone safe? Do you have somewhere to stay tonight? Any pets, medicines or anything important we should get first?&quot;</li><li>Listen before you talk business. Let them tell their story; don&#x27;t rush them or talk over them.</li><li>Explain what happens next in plain words \u2014 today, tomorrow, this week. No jargon, no Xactimate codes.</li><li>Treat their things like they&#x27;re irreplaceable \u2014 photos, heirlooms, kids&#x27; items, documents. Ask before moving or throwing anything away.</li><li>Never blame, judge or joke about the cause (a fire, a pipe, a tenant, the insurance company).</li><li>Be honest about what insurance usually covers and what we don&#x27;t know yet. Never promise what the carrier will pay.</li><li>Protect the property right away: board-up, tarp, stop the water, secure the doors \u2014 then tell them it&#x27;s secured.</li><li>Leave them with your name and cell, the next step, and when they&#x27;ll hear from us. Follow up the same day.</li><li>Keep the crew&#x27;s language, music and phones professional on site. Clean up every day.</li><li>If they&#x27;re upset or angry, stay calm, acknowledge it (&quot;I understand \u2014 this is a lot&quot;), and fix what we can.</li></ol><p><b>Securing the job comes from trust: we show we care, we&#x27;re organized, and we do what we say. Compassion first, paperwork second \u2014 but always get the authorization signed before work starts.</b></p><p><i>Subs see the same message on the job in their portal (\"\ud83e\udd1d How we treat this customer\").</i></p></section>", SHORT = ["Arrive calm and on time; call or text if you will be even 10 minutes late.", "Introduce yourself by name, shake hands if they want to, and say: \"I'm sorry this happened. We're here to help, and we'll take it one step at a time.\"", "Ask first: \"Is everyone safe? Do you have somewhere to stay tonight? Any pets, medicines or anything important we should get first?\"", "Listen before you talk business. Let them tell their story; don't rush them or talk over them.", "Explain what happens next in plain words \u2014 today, tomorrow, this week. No jargon, no Xactimate codes.", "Treat their things like they're irreplaceable \u2014 photos, heirlooms, kids' items, documents. Ask before moving or throwing anything away."];
+(function addToPlaybook(n){ try { var h = W._gcPlaybookHTML; if (typeof h === 'string' && h.indexOf('empathy-emergency') < 0) { W._gcPlaybookHTML = /<\/body>/i.test(h) ? h.replace(/<\/body>/i, SEC + '</body>') : h + SEC; return; } if (typeof h === 'string') return; } catch (e) {} if (n < 40) setTimeout(function(){ addToPlaybook(n + 1); }, 500); })(0);
+function s(v){ return v == null ? '' : String(v); }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function careJob(p){ if (!p) return false; if (p.companyId === 'mitigation') return true; return /fire|smoke|water|flood|mitigat|board|tarp|storm|sewage|emergency/i.test(s(p.type) + ' ' + s(p.jobType) + ' ' + s(p.name)); }
+W._gcCareJob = careJob;
+function paint(){
+  try {
+    var b = D.querySelector('[data-co-job]'), card = D.getElementById('gc-care-card');
+    var p = b && W._gcCo ? W._gcCo.jobById(b.getAttribute('data-co-job')) : null;
+    var h1 = b && b.closest('h1, div'); var host = b ? b.closest('h1') : null; host = host ? host.parentElement : null;
+    if (!p || !careJob(p) || !host) { if (card && (!p || !careJob(p))) card.remove(); return; }
+    if (card && card.getAttribute('data-pid') === s(p.id) && card.isConnected) return;
+    if (!card) { card = D.createElement('details'); card.id = 'gc-care-card'; card.setAttribute('data-gc-keep', '1'); }
+    card.setAttribute('data-pid', s(p.id));
+    card.style.cssText = 'margin:8px 0 10px;background:#fff7ed;border:1px solid #fed7aa;border-left:4px solid #f97316;border-radius:10px;padding:8px 12px;font:13.5px Inter,Arial,sans-serif;color:#0f172a';
+    card.innerHTML = '<summary style="cursor:pointer;font-weight:800">🤝 Customer care — this family is having a hard day</summary><ul style="margin:6px 0 4px 18px;padding:0;line-height:1.5">' + SHORT.map(function(x){ return '<li>' + esc(x) + '</li>'; }).join('') + '</ul><div style="font-size:12.5px;color:#7c2d12"><b>Compassion first, paperwork second</b> — but get the authorization signed before work starts. Full guide: 📘 PM Playbook → "Lead with empathy".</div>';
+    host.insertBefore(card, host.firstChild ? host.firstChild.nextSibling : null);
+  } catch (e) {}
+}
+(function tick(){ paint(); setTimeout(tick, 1200); })();
 })(window);
 </script>

@@ -304,8 +304,12 @@ async function fileLead(f, extra){
   if (extra.title) rec.title = clip(extra.title, 200);
   if (extra.leadExtra) Object.assign(leadExtra, extra.leadExtra);
   if (extra.patch) Object.assign(rec, extra.patch);   /* patch AUTO5: a referral is not a website lead */
+  /* MULTICO (owner 11/11: "Mitigation will do all emergency board-ups and emergency calls"): a NEW emergency lead, or board-up / tarp
+     work, is filed under GrayCo Mitigation. A lead that is already on file is never moved. */
+  const ex0 = rec.leadExtra || {}, emTxt = [rec.title, rec.name, rec.service, rec.type, ex0.workType, ex0.what].map(x => String(x || '')).join(' ');
+  const toMit = !rec.companyId && (rec.emergency === true || ex0.emergency === true || /emergency/i.test(String(rec.urgency || ex0.urgency || '')) || /board[- ]?up|\btarp/i.test(emTxt));
   let action = '';
-  await L().kvCas(L().KV, v => { const o = L().upsert(arr(v), rec); action = o.action; return o.items; });
+  await L().kvCas(L().KV, v => { const have = arr(v).some(x => x && String(x.id) === String(id)); const r2 = (toMit && !have) ? Object.assign({}, rec, { companyId: 'mitigation' }) : rec; if (r2 !== rec) rec.companyId = 'mitigation'; const o = L().upsert(arr(v), r2); action = o.action; return o.items; });
   if (action === 'added') { try { const p = await L().routeLead(id); if (p) Object.assign(rec, p); } catch (e) {} }   /* patch HOT2: routed by its type (lead roles) */
   return { id, rec, action, customer: cust };
 }

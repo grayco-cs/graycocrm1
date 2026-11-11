@@ -927,6 +927,7 @@ async function pJob(ctx, pid){
       customer: { name: s(p.client), phone: s(p.clientPhone || p.phone), email: showCust ? low(p.clientEmail || p.email) : '' } },
     photoRule: await photoState(ctx, p).then(function(g){ return { need: g.need, have: g.have, days: g.days, invoiceOk: g.ok, message: g.message || '', afterNeed: g.afterNeed, afterHave: g.afterHave }; }, function(){ return null; }),
     insurance: p.isInsurance === true || /insurance|claim|mitigation|water|fire|storm/i.test(s(p.type || p.jobType || p.projectType)),   /* SUBAFTER: only a yes/no (never the carrier or the claim) — for the "video before you start" tip */
+    care: p.companyId === 'mitigation' || /fire|smoke|water|flood|mitigat|board|tarp|storm|sewage|emergency/i.test(s(p.type || p.jobType || p.projectType) + ' ' + s(p.name)),   /* CARE (owner 11/11): an emergency loss — the "how we treat this customer" card (a yes/no only) */
     pm: pmOf(data, p), office: { phone: OFFICE_PHONE, email: OFFICE_EMAIL },
     schedule: schedFor(data, [p], sub),
     scopes: scopes.filter(function(x){ return x.kind !== 'co'; }).map(function(x){ return scopeOut(x, signed); }),
