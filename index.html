@@ -5496,7 +5496,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.222-2026-11-11-r27l -->
+<!-- GrayCo CRM Build: 33.222-2026-11-11-r27m -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6445,7 +6445,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.222-2026-11-11-r27l");
+  console.log("[GC] Build 33.222-2026-11-11-r27m");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6493,7 +6493,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.222-2026-11-11-r27l"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.222-2026-11-11-r27m"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -218024,7 +218024,7 @@ var RULES = [
   ['States (lead)', [['Tennessee — TDEC lead program', 'https://www.tn.gov/environment/program-areas/solid-waste/toxic-substances/lead-hazard-program/lead-certification.html'],
     ['Mississippi — MDEQ lead certification', 'https://www.mdeq.ms.gov/lead-based-paint-certification-and-accreditation/'], ['Arkansas — ADH lead-based paint program', 'https://healthy.arkansas.gov/programs-services/licensing-military-member-licensure-permits-plan-reviews/lead-based-paint-program/']]],
   ['Industry', [['IICRC S500 — water damage (Cat 1 / 2 / 3, Class 1–4)', 'https://iicrc.org/s500/'], ['IICRC standards (water, mold, fire & smoke, trauma)', 'https://iicrc.org/standards/'], ['IICRC Certified Firm', 'https://iicrc.org/IICRCCertifiedFirm/']]]];
-var SETUP = ['Separate company (mitigation + environmental, own EIN, run by GrayCo): licenses, firm certifications (TDEC / MDEQ / ADH, EPA, IICRC Certified Firm), insurance, workers\' comp, bank account, QuickBooks file, payroll / state tax accounts and W-9s all in THAT company\'s legal name and EIN — not GrayCo\'s', 'State lead abatement firm certification in each state we work (TDEC · MDEQ · ADH) + EPA RRP firm (renovation)', 'Asbestos contractor licenses / permits in each state before any removal (or keep using a licensed abatement sub)',
+var SETUP = ['Firm name: for now every firm certification, license and policy is under GrayCo (GrayCo\'s EIN). Later as "GrayCo Mitigation & Environmental": a DBA of GrayCo (same EIN) — just send each agency / insurer the new name; a new company with its own EIN — the firm certs and licenses do not transfer, apply again in the new name (do that before the GrayCo ones expire)', 'State lead abatement firm certification in each state we work (TDEC · MDEQ · ADH) + EPA RRP firm (renovation)', 'Asbestos contractor licenses / permits in each state before any removal (or keep using a licensed abatement sub)',
   'Certified people: lead abatement supervisor + workers, RRP renovators, asbestos supervisor / workers, IICRC (WRT, AMRT, FSRT, trauma)',
   'Pollution / contractor\'s environmental liability insurance (most general liability policies exclude lead, asbestos and mold)',
   'Written programs on file: lead, asbestos, respiratory protection (fit testing + medical clearance), HazCom, bloodborne pathogens, heat / confined space as needed',
