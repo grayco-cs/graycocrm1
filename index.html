@@ -2958,6 +2958,9 @@ W._gcMktLogins = [
   { k: 'ga', ic: '📊', l: 'Google Analytics', url: 'https://analytics.google.com/', d: 'Website visitors, where they came from, which pages turn into calls and form leads', soon: false },
   { k: 'gsc', ic: '🔎', l: 'Google Search Console', url: 'https://search.google.com/search-console?resource_id=sc-domain:grayco-cs.com', d: 'How grayco-cs.com shows in Google search: queries, clicks, pages Google cannot read', soon: false },
   { k: 'gads', ic: '🎯', l: 'Google Ads', url: 'https://ads.google.com/', d: 'Search ads and Local Services Ads: budgets, keywords, conversions (spend changes go through an admin)', soon: false },
+  { k: 'gadsmgr', ic: '🧭', l: 'Google Ads manager account', url: 'https://ads.google.com/aw/accounts', d: 'The manager (MCC) account: every GrayCo Ads account in one list, and Admin → API center (the developer token)', soon: false },   /* owner 11/10 */
+  { k: 'lsa', ic: '📍', l: 'Local Services Ads (LSA leads)', url: 'https://ads.google.com/localservices/leads', d: 'Google Guaranteed leads: listen to calls, rate a lead, dispute a junk lead', soon: false },   /* owner 11/10 */
+  { k: 'metaads', ic: '📊', l: 'Meta Ads Manager', url: 'https://adsmanager.facebook.com/', d: 'Facebook / Instagram ad campaigns, budgets and results', soon: false },   /* owner 11/10 */
   { k: 'gbp', ic: '📍', l: 'Google Business Profile', url: 'https://business.google.com/', d: 'The Google Maps listing: posts, photos, hours, review replies', soon: false },
   { k: 'gtag', ic: '🏷', l: 'Google Tag / Tag Assistant', url: 'https://tagassistant.google.com/', d: 'Check the website tags fire (Analytics, Ads conversions) before and after a change', soon: false },
   { k: 'meta', ic: '📘', l: 'Meta Business Suite', url: 'https://business.facebook.com/', d: 'Facebook and Instagram pages: posts, inbox, ads', soon: false },
@@ -5493,7 +5496,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.217-2026-11-11-r27g -->
+<!-- GrayCo CRM Build: 33.218-2026-11-11-r27h -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6442,7 +6445,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.217-2026-11-11-r27g");
+  console.log("[GC] Build 33.218-2026-11-11-r27h");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6490,7 +6493,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.217-2026-11-11-r27g"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.218-2026-11-11-r27h"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
