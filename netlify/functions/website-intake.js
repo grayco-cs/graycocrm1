@@ -307,7 +307,10 @@ async function fileLead(f, extra){
   /* MULTICO (owner 11/11: "Mitigation will do all emergency board-ups and emergency calls"): a NEW emergency lead, or board-up / tarp
      work, is filed under GrayCo Mitigation. A lead that is already on file is never moved. */
   const ex0 = rec.leadExtra || {}, emTxt = [rec.title, rec.name, rec.service, rec.type, ex0.workType, ex0.what].map(x => String(x || '')).join(' ');
-  const toMit = !rec.companyId && (rec.emergency === true || ex0.emergency === true || /emergency/i.test(String(rec.urgency || ex0.urgency || '')) || /board[- ]?up|\btarp/i.test(emTxt));
+  /* QA B9 (11/11): the form's own urgency / service / message count too (a website "emergency" form, a text the SMS rule flagged,
+     "water pouring through the ceiling") — the same emergency check the customer's first reply uses */
+  let emWords = false; try { emWords = require('./_lib/emergency.js').isEmergency({ title: String(f.message || ''), detail: [f.service, f.message].map(x => String(x || '')).join(' ') }); } catch (e) {}
+  const toMit = !rec.companyId && (rec.emergency === true || ex0.emergency === true || /emergency/i.test(String(rec.urgency || ex0.urgency || f.urgency || '')) || /emergency/i.test(String(f.service || '')) || emWords || /board[- ]?up|\btarp/i.test(emTxt));
   let action = '';
   await L().kvCas(L().KV, v => { const have = arr(v).some(x => x && String(x.id) === String(id)); const r2 = (toMit && !have) ? Object.assign({}, rec, { companyId: 'mitigation' }) : rec; if (r2 !== rec) rec.companyId = 'mitigation'; const o = L().upsert(arr(v), r2); action = o.action; return o.items; });
   if (action === 'added') { try { const p = await L().routeLead(id); if (p) Object.assign(rec, p); } catch (e) {} }   /* patch HOT2: routed by its type (lead roles) */

@@ -49,6 +49,7 @@ if (SHOT) await A.page().screenshot({ path: SHOT + '_environmental_jobs.png' });
 await A.ev(() => window._setView('enviro')); await sleep(2500);
 if (SHOT) await A.page().screenshot({ path: SHOT + '_environmental_tab.png' });
 await A.ev(() => window._setView('projects')); await sleep(1500);
+await A.page().mouse.click(5, 300);   /* QA B1: only work made here right after a tap is filed under the picked company */
 await A.ev(() => window._setProjects(prev => prev.concat([{ id: 'J9', name: 'Demo new env job', client: 'Demo New', status: 'bidding', type: 'Residential Reno', updatedAt: new Date().toISOString() }]))); await sleep(4500);
 const stamped = await A.ev(() => (window._crm.projects.find(p => p.id === 'J9') || {}).companyId);
 ok('a new job made while Environmental is picked is filed under Environmental', stamped === 'environmental', stamped);
