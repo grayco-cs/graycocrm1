@@ -150,8 +150,10 @@ async function mmOps(op, body, who, headers){
   }
   /* the jobs as a marketing projection, the photos he may use, and one picture link at a time */
   if (op === 'mm_jobs') { const data = await M.crmData(['projects', 'gc_photos']), doc = await M.readDoc(); return reply(200, headers, { ok: true, jobs: MM.jobs(data, doc), photos: MM.photos(data, doc) }); }   /* built safe: no customer, no money, no house number */
+  if (op === 'mm_jobsfull') { const data = await M.crmData(['projects', 'gc_photos', 'gc_deleted_projects']); return reply(200, headers, { ok: true, jobs: MM.jobsFull(data), photos: MM.photosAll(data) }); }   /* MMJOBS */
+  if (op === 'mm_team') { const data = await M.crmData(['projects', 'schedule', 'gc_deleted_projects']); const f = String(body.from || '').slice(0, 10), t2 = String(body.to || '').slice(0, 10); return reply(200, headers, { ok: true, items: MM.teamSchedule(data, f, t2) }); }   /* MMJOBS */
   if (op === 'mm_file') {
-    const ref = String(body.ref || ''); const data = await M.crmData(['projects', 'gc_photos']), doc = await M.readDoc();
+    const ref = String(body.ref || ''); const data = await M.crmData(['projects', 'gc_photos', 'gc_deleted_projects']), doc = await M.readDoc();
     let testi = []; try { testi = (await require('./bid-inbox.js')._lib.kvGet('gc_x10_testimonials')) || []; } catch (e) {}
     if (!MM.allowedRefs(data, doc, Array.isArray(testi) ? testi : (testi.list || []))[ref]) return reply(403, headers, { ok: false, error: 'That file is not part of marketing.' });
     const url = await M.signRef(ref, 3600); return reply(url ? 200 : 404, headers, { ok: !!url, url: url });

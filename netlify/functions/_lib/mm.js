@@ -191,10 +191,39 @@ function photos(data, doc){
   return arr(data.gc_photos).filter(function(r){ return r && r.deleted !== true && r.source !== 'ccflag' && ok[s(r.jobId)] && s(r.ref) && r.shared !== false && s(r.tag) !== 'Damage'; })
     .map(function(r){ return { id: s(r.id), jobId: s(r.jobId), ref: s(r.ref), thumbRef: s(r.thumbRef), tag: s(r.tag), at: s(r.at || r.takenAt), source: s(r.source) }; });
 }
+/* ── MMJOBS (owner 11/10: "Malcolm needs full access to the CRM like GrayCo Photos and project notes, but no money data … add scheduling to
+   the marketing page so he can see the admins' and team's schedule for jobs, where we're at"). Built from a WHITELIST of fields — nothing
+   about money ever leaves (no contract, price, budget, invoice, payment, commission, claim amounts); dollar amounts typed into notes are
+   masked. Every job (active and finished), every photo, the company schedule (never anyone's 🔒 personal items). ── */
+function maskMoney(t){ return s(t).replace(/\$\s?\d[\d,]*(?:\.\d+)?(?:\s?[kKmM]\b)?/g, '$•••').replace(/\b\d[\d,]*(?:\.\d+)?\s*(?:dollars|bucks)\b/gi, '$•••'); }
+function pctOf(p){ const v = [p.pct, p.ccProgressPct, p.progress].map(function(x){ return parseFloat(x); }).filter(function(x){ return !isNaN(x); })[0]; return v == null || isNaN(v) ? null : Math.max(0, Math.min(100, Math.round(v))); }
+function jobsFull(data){
+  const del = {}; arr(data.gc_deleted_projects).forEach(function(x){ del[s(x && (x.id || x))] = 1; });
+  return arr(data.projects).filter(function(p){ return p && p.id && p.deleted !== true && !del[s(p.id)]; }).map(function(p){
+    const notes = typeof p.notes === 'string' ? p.notes : arr(p.notes).map(function(n){ return n && typeof n === 'object' ? '[' + s(n.at || n.date).slice(0, 10) + ' ' + s(n.by) + '] ' + s(n.text || n.note) : s(n); }).join('\n');
+    return { id: s(p.id), po: s(p.autoPO || p.po || p.poNumber), name: s(p.name || p.title), client: s(p.client || p.customer || p.clientName), address: s(p.address || p.jobAddress),
+      status: s(p.status), pct: pctOf(p), pm: s(p.pm), apm: s(p.apm), superintendent: s(p.superintendent || p.super), type: s(p.type || p.jobType || p.projectType),
+      startDate: s(p.startDate || p.start), endDate: s(p.endDate || p.end), completedAt: s(p.completedAt || p.completionDate || p.closedAt), createdAt: s(p.createdAt),
+      isInsurance: p.isInsurance === true, notes: maskMoney(notes).slice(-6000) };
+  });
+}
+function photosAll(data){
+  const ok = {}; jobsFull(data).forEach(function(j){ ok[j.id] = 1; });
+  return arr(data.gc_photos).filter(function(r){ return r && r.deleted !== true && r.source !== 'ccflag' && ok[s(r.jobId)] && s(r.ref); })
+    .map(function(r){ return { id: s(r.id), jobId: s(r.jobId), ref: s(r.ref), thumbRef: s(r.thumbRef), tag: s(r.tag), note: maskMoney(r.note || r.caption).slice(0, 200), at: s(r.at || r.takenAt), by: s(r.by || r.byName) }; });
+}
+function teamSchedule(data, fromYmd, toYmd){
+  const names = {}; jobsFull(data).forEach(function(j){ names[j.id] = { name: j.name, po: j.po, address: j.address, client: j.client }; });
+  return arr(data.schedule).filter(function(r){ return r && !r.deleted && r.private !== true && s(r.scope) !== 'personal' && s(r.date) && (!fromYmd || s(r.date) >= fromYmd) && (!toYmd || s(r.date) <= toYmd); })
+    .map(function(r){ const j = names[s(r.pid)] || {}; return { id: s(r.id), pid: s(r.pid), job: s(j.name), po: s(j.po), client: s(j.client), title: s(r.title || r.name), date: s(r.date), endDate: s(r.endDate), time: s(r.time), endTime: s(r.endTime),
+      assignee: s(r.assignee), vendor: s(r.vendor), type: s(r.type), address: s(r.address || j.address), tentative: !!(r.tentative || r.tentativeOrigin) }; })
+    .sort(function(a, b){ return (a.date + a.time) < (b.date + b.time) ? -1 : 1; });
+}
 /* the files he may open: those photos, the marketing document's own pictures, approved testimonial videos */
 function allowedRefs(data, doc, testi){
   const set = {};
   photos(data, doc).forEach(function(p){ set[p.ref] = 1; if (p.thumbRef) set[p.thumbRef] = 1; });
+  photosAll(data).forEach(function(p){ set[p.ref] = 1; if (p.thumbRef) set[p.thumbRef] = 1; });   /* MMJOBS: every job photo */
   ['media', 'posts', 'events', 'reels', 'portfolio', 'flyers'].forEach(function(c){ const m = (doc && doc[c]) || {}; Object.keys(m).forEach(function(id){ const r = m[id] || {};
     ['ref', 'photoRef', 'beforeRef', 'afterRef', 'videoRef'].forEach(function(k){ if (s(r[k])) set[s(r[k])] = 1; }); arr(r.photoRefs).concat(arr(r.photos).map(function(x){ return x && x.ref; })).forEach(function(x){ if (s(x)) set[s(x)] = 1; }); }); });
   arr(testi).forEach(function(t){ if (t && t.permission === true && t.status === 'approved' && t.video && t.video.ref) set[s(t.video.ref)] = 1; });
@@ -333,5 +362,5 @@ function scorecard(rows, o){
 function mine(t, email){ return !!t && !t.deleted && (arr(t.assignees).map(low).indexOf(email) >= 0 || low(t.assignee) === email || low(t.assigneeEmail) === email || low(t.owner) === email || low(t.addedByEmail) === email && t.personal); }   /* patch MMTABS: + assigneeEmail (voice / AI to-dos) */
 function myTasks(list, email){ return arr(list).filter(function(t){ return mine(t, email); }).map(function(t){ return { id: s(t.id), label: scrubText(s(t.label)), note: scrubText(s(t.note)).slice(0, 600), due: s(t.due), done: !!t.done, by: scrubText(s(t.addedBy)).slice(0, 60), self: low(t.addedByEmail) === email || !!t.self /* patch MMTABS */, priority: s(t.priority), plan: !!(t.plan || t.kind === 'plan' || /^plan_/.test(s(t.id))), items: arr(t.items).map(function(i){ return { id: s(i.id), label: scrubText(s(i.label)), done: !!i.done }; }) }; }); }
 
-module.exports = { expMatch, expResults, scorecard, expStage, auth, orStaff, isMarketingRow, settings, setSettings, settingsOf, ADMIN_KEY, redact, redactDoc, scrubText, mergeWrite, jobs, photos, allowedRefs, sourceOf, stageOf, myLeads, funnel, myTasks, mine, STAGES, PII_KEYS,
+module.exports = { jobsFull, photosAll, teamSchedule, maskMoney, expMatch, expResults, scorecard, expStage, auth, orStaff, isMarketingRow, settings, setSettings, settingsOf, ADMIN_KEY, redact, redactDoc, scrubText, mergeWrite, jobs, photos, allowedRefs, sourceOf, stageOf, myLeads, funnel, myTasks, mine, STAGES, PII_KEYS,
   _setNow: function(f){ nowFn = f || function(){ return Date.now(); }; } };

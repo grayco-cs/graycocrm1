@@ -219,6 +219,24 @@ ok(rep === 403 || rep === 401, 'the report preview is refused to him', rep);
 { const p = c.page(); await p.evaluate(() => window._setView('customers')); await sleep(3500);
   const cv = await p.evaluate(() => ({ view: localStorage.getItem('grayco_view'), txt: document.body.innerText.indexOf('Demo Custview Person') >= 0 }));
   ok(cv.view === 'customers' && cv.txt, 'MMCUST: the Marketing Manager opens 👥 Customers and sees the customer list', cv); }
+/* MMJOBS (owner 11/10): 🏗 Jobs & photos and 📅 Team schedule — full job view, no money */
+{ const p = c.page(), td = new Date().toISOString().slice(0, 10);
+  cset('schedule', [{ id: 'SC1', pid: 'PR', title: 'Final walk', date: td, time: '09:00', endTime: '10:00', assignee: 'Pat PM' }, { id: 'SC2', title: 'Dentist PRIVATE', date: td, time: '11:00', scope: 'personal', private: true, assignee: 'Wesley Johnson' }]);
+  const raw = await p.evaluate(() => fetch('/.netlify/functions/soc', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ op: 'mm_jobsfull' }) }).then(r => r.text()));
+  ok(/Demo Stone Roof/.test(raw) && /Demo Kline/.test(raw) && !/21700|COST-SECRET|MARGIN-SECRET|"contract"|"price"|"budget"/.test(raw), 'MMJOBS: his jobs answer has the customers and jobs but no contract / cost / margin', raw.slice(0, 300));
+  await p.evaluate(() => window._setView('mmt_jobs')); await sleep(4500);
+  let tj = await p.evaluate(() => document.body.innerText);
+  ok(/Jobs & photos/.test(tj) && /Demo G Roof/.test(tj) && !/Demo Stone Roof/.test(tj), 'MMJOBS: 🏗 Jobs & photos opens on the jobs in progress', tj.slice(0, 400));
+  await p.evaluate(() => { const b = document.querySelector('[data-a="mmj-filter"][data-k="done"]'); b && b.click(); }); await sleep(800);
+  tj = await p.evaluate(() => document.body.innerText);
+  ok(/Demo Stone Roof/.test(tj) && /Demo Kline Water/.test(tj), 'MMJOBS: Finished shows the finished jobs', tj.slice(0, 400));
+  await p.evaluate(() => { const b = document.querySelector('[data-a="mmj-open"][data-id="PW"]'); b && b.click(); }); await sleep(2500);
+  const det = await p.evaluate(() => ({ t: document.body.innerText, imgs: [...document.querySelectorAll('img[data-mmj-ref]')].map(i => i.getAttribute('data-mmj-ref')) }));
+  ok(/Project notes/.test(det.t) && /Photos \(4\)/.test(det.t) && det.imgs.length === 4, 'MMJOBS: a job shows its notes and every photo (4)', [det.t.slice(0, 300), det.imgs]);
+  await p.evaluate(() => window._setView('mmt_team')); await sleep(4000);
+  const tt = await p.evaluate(() => document.body.innerText);
+  ok(/Team schedule/.test(tt) && /Final walk/.test(tt) && /Pat PM/.test(tt) && !/Dentist PRIVATE/.test(tt), 'MMJOBS: 📅 Team schedule shows the job schedule, never a personal item', tt.slice(0, 400));
+}
 ok(!c.errs.length, 'no page errors (Marketing Manager)', c.errs.slice(0, 3));
 await c.b.close();
 console.log(`MKTFEAT ${pass}/${pass + fail}`); process.exit(fail ? 1 : 0);
