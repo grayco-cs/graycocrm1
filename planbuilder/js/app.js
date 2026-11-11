@@ -12,6 +12,7 @@ import * as store from './store.js';
 import { installStudio } from './studio.js';
 import { installImport } from './importui.js';
 import { installCmd } from './cmdline.js';
+import { installCRM } from './crmui.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -54,6 +55,7 @@ const app = {
     try { this.setTheme(localStorage.getItem('pb.theme') || 'dark', true); } catch (e) { this.setTheme('dark', true); }
     if (p) this.open(p); else this.open(fromTemplate('ranch', this.catalog), false);   // the sample is kept only once you change it
     this.renderPicker();
+    installCRM(this);   // reads the CRM's prices (on the CRM's own site) and keeps linked products in step
     setTimeout(() => this.cleanupCheck(), 1500);
     if (!p) this.toast('Started with the Ranch sample. 📁 Projects → New to start a blank or another template.');
   },
@@ -1003,6 +1005,7 @@ const app = {
           alert(`Imported: ${added} new, ${updated} updated.` + (errors.length ? '\n\n' + errors.slice(0, 15).join('\n') : ''));
         } }, '⤒ Import CSV'),
         h('button', { class: 'btn', onclick: () => store.download('planbuilder-catalog.csv', toCSV(this.catalog, CSV_COLUMNS), 'text/csv') }, '⤓ Export CSV'),
+        h('button', { class: 'btn', id: 'cat-crm', title: 'Use the prices in the GrayCo CRM (Rate Book, Products, Labor Rates)', onclick: () => this.showCRM() }, '🔗 CRM prices'),
         h('button', { class: 'btn danger', onclick: () => { if (!confirm('Put the catalog back to the starting products? Your price edits and added products will be lost (export a CSV first to keep them).')) return; this.catalog = store.resetCatalog(); this.saveCat(); drawRows(); } }, 'Reset')));
       const tbl = h('table', { class: 'cat-table' });
       tbl.append(h('thead', {}, h('tr', {}, ['', 'Name', 'Brand / color name', 'Finish / material', 'Xactimate code', 'Category', 'Kind', 'Unit', 'Price', 'Labor', 'W', 'D', 'H', 'Sill / elev', 'SKU / vendor', ''].map(x => h('th', {}, x)))));
@@ -1016,7 +1019,7 @@ const app = {
         if (list.length > MAX) tb.append(h('tr', {}, h('td', { colspan: 16, class: 'hint' }, `Showing ${MAX} of ${list.length}. Type in Filter or pick a category to narrow it.`)));
         list.slice(0, MAX).forEach(p => {
           const upd = (k, v) => { p[k] = v; this.saveCat(); };
-          const n = (k, w = 60) => h('td', { class: 'num' }, h('input', { type: 'number', step: '0.01', style: `width:${w}px`, value: p[k] ?? '', onchange: e => upd(k, e.target.value === '' ? undefined : num(e.target.value)) }));
+          const n = (k, w = 60) => { const lk = p.crm && p.crm[{ price: 'mat', labor: 'lab' }[k]]; return h('td', { class: 'num' + (lk ? ' crm-linked' : '') }, h('input', { type: 'number', step: '0.01', style: `width:${w}px`, value: p[k] ?? '', title: lk ? 'Linked to the CRM: this price follows the CRM (🔗 CRM prices to change the link)' : null, onchange: e => upd(k, e.target.value === '' ? undefined : num(e.target.value)) })); };
           const imgBtn = h('button', { class: 'btn small', title: 'Picture / texture', onclick: async () => {
             const f = await store.pickFile('image/*'); if (!f) return;
             p.texture = await shrinkImage(await store.readDataURL(f), 256); this.saveCat(); drawRows();

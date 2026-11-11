@@ -11,6 +11,8 @@ The first build is the foundation: drawing, levels, 3D, catalog and estimate all
 - Projects: templates, save in the browser, export / import.
 
 ## Phase 2: shared and connected to the CRM
+- Done: **CRM prices**. PlanBuilder reads the CRM's Rate Book, Products, Labor Rates and tax / margin in the same browser and prices linked products and Studio rates from them (read only).
+- Next: read prices straight from the CRM's cloud database with the CRM sign-in, so the latest prices arrive even when the CRM has not been opened in that browser; keep the product links in the cloud so the team shares them.
 - Sign in with the GrayCo CRM login; save projects and the catalog in the CRM's database (like RoofScout) so the whole team sees them on any device.
 - Link a plan to a CRM job / lead / claim; open it from the job; push the estimate into the CRM estimate builder and proposal PDF.
 - A 📐 PlanBuilder tab inside the CRM.

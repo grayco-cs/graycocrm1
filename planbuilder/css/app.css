@@ -514,3 +514,28 @@ body.customer .st-sys li { grid-template-columns: 10px 1fr 24px; }
 .imp-side .f { align-items: stretch; text-align: left; }
 .imp-side .f input:not([type=range]), .imp-side .f select { width: 100%; }
 .imp-side .chk { text-align: left; }
+
+/* ---------- CRM prices ---------- */
+.crm-win { min-width: 0; }
+#crm-pane { overflow-x: auto; }
+.crm-status { padding: 8px 12px; padding-right: 36px; border-radius: 8px; border: 1px solid var(--line); margin: 0 0 8px; font-size: 13px; }
+.crm-status.ok { border-color: color-mix(in srgb, var(--ok) 50%, transparent); background: color-mix(in srgb, var(--ok) 10%, transparent); }
+.crm-status.warn { border-color: color-mix(in srgb, var(--gold) 55%, transparent); background: color-mix(in srgb, var(--gold) 10%, transparent); }
+.crm-actions { gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.crm-tabs { display: flex; gap: 4px; margin: 6px 0 8px; }
+.crm-tabs button { background: var(--panel); border: 1px solid var(--line); border-radius: 7px; padding: 5px 12px; }
+.crm-tabs button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.crm-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.crm-table th, .crm-table td { padding: 5px 6px; border-bottom: 1px solid var(--line); vertical-align: top; text-align: left; }
+.crm-table td.num, .crm-table th.num { text-align: right; white-space: nowrap; }
+.crm-link { min-width: 190px; }
+.crm-link input[list] { width: 100%; min-width: 0; }
+.crm-link input.bad { border-color: var(--danger); }
+.crm-per { width: 70px; margin-top: 4px; }
+.crm-note { color: var(--muted); font-size: 11.5px; margin-top: 3px; }
+.crm-note.bad { color: var(--gold); }
+.crm-tag { display: inline-block; font-size: 10px; font-weight: 700; padding: 0 4px; border-radius: 4px; background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent); }
+.crm-sug { background: var(--panel2); }
+.crm-sug div { margin: 3px 0; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+td.crm-linked input { border-color: var(--accent); }
+.crm-check { margin-top: 4px; font-size: 11.5px; color: var(--gold); display: flex; gap: 6px; align-items: center; }

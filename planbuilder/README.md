@@ -86,6 +86,15 @@ Each product has: name, **brand**, **color name**, **finish / sheen**, **species
 | `object` | each, or LF of its width, or SF (w × d; panels w × h) | cabinets, countertops, backsplash, fixtures, appliances, trees, fences |
 | `labor` | added by hand on the estimate | demo, dumpster, permit |
 
+## CRM prices (🔗): one set of prices with the GrayCo CRM
+- Works when PlanBuilder is opened from the CRM's own address, **crm.grayco-cs.com/planbuilder/**, in the browser you use for the CRM (the CRM must have been opened there at least once). PlanBuilder **only reads** the CRM; it never changes it. Hidden in customer view.
+- Read from the CRM: the **Estimate Builder Rate Book** (material, labor and sub rates, per SF / LF / square / sheet / unit / job), **Products** (the built-in supplier catalog with the CRM's price edits, plus custom and supplier-sheet products), **Labor Rates** (per hour), and the builder's **tax and margin**.
+- **📦 Catalog → 🔗 CRM prices:** for each PlanBuilder product pick a CRM line for its **material** price and one for its **labor** price (type to search). Units are converted (SF ↔ SY ↔ square, sheets by the size in their name, 4×8 if none); when they can't be, type how many CRM units make one PlanBuilder unit. An hourly labor rate asks for the hours per unit ($40/hr × 0.02 hr/SF = $0.80/SF). **✨** shows the closest CRM lines for one product; **Link best matches** links the clear matches for every product and marks each "check" until you press **✓ Right**.
+- Linked prices follow the CRM: they are refreshed when PlanBuilder opens and whenever you come back to it, and every estimate uses them. A link that can't be priced keeps the last good price and says why.
+- **Studio unit rates** can be linked the same way (material + labor); a rate typed in a job's Studio → Unit rates still wins for that job.
+- **Use CRM tax & margin on this job** sets the tax rate and turns the builder's margin into PlanBuilder's markup (30 % margin = 42.86 % profit, overhead 0 %).
+- The built-in CRM product list is copied in `data/crm-products.json` (the same file as `netlify/functions/_lib/products-base.json`; a test fails if they differ).
+
 ## Pricing: your prices or Xactimate
 Each project's estimate is priced from **your catalog prices** (the default) or from a **price list you import** (Estimate → *Prices from*, or 📥 Price lists…).
 - **Xactimate:** PlanBuilder does not include Xactimate prices (they are licensed by Verisk). In Xactimate, export your price list report for the area and month to Excel, save it as CSV, and import it. Columns are found by name: Code (or Category + Selector), Description, Unit, Remove, Replace (or Price / Unit price), optionally Material and Labor. Any supplier list in that shape works too.
@@ -132,6 +141,7 @@ Each project's estimate is priced from **your catalog prices** (the default) or 
 | `js/studio3d.js`, `js/studio.js` | Studio: the systems drawn in 3D (x-ray, ghost, explode, cutaway, timeline, hover labels) and its panels |
 | `js/planimport.js`, `js/importui.js` | Plan import: walls, openings and rooms from pictures, PDFs (pdf.js) and AutoCAD DXF; the import window |
 | `js/cmdline.js` | The AutoCAD-style command line, ORTHO / OSNAP / SNAP |
+| `js/crm.js`, `js/crmui.js`, `data/crm-products.json` | CRM prices: reading the GrayCo CRM's Rate Book, Products, Labor Rates and tax / margin in this browser, unit conversion, links and suggestions; the CRM prices window |
 | `js/surfaces.js` | Drawn surfaces for the 3D view (wood, tile, brick, siding, shingles, grass …) in each product's color |
 | `vendor/pdfjs/` | pdf.js 4.10 (Apache-2.0, see `PDFJS-LICENSE.txt`) for reading PDF plans, served from here |
 | `vendor/` | Three.js r170 and its add-ons in `vendor/addons/` (orbit controls, studio light, rounded boxes, glow, .glb export; MIT, see `THREE-LICENSE.txt`), served from here so it works without the internet |
@@ -139,5 +149,6 @@ Each project's estimate is priced from **your catalog prices** (the default) or 
 | `tests/features.smoke.cjs` | Browser test of existing + addition, styles, furnish, Make 3D, before / after, walk, entered estimate, customer view, renditions, 3D drag (same way to run as below) |
 | `tests/studio.smoke.cjs` | Browser test of Studio: budget, picking a system, timeline, explode / ortho / finished, cutaway, hover, customer view (same way to run) |
 | `tests/import.smoke.cjs` | Browser test of importing a picture, a PDF with room names and a DXF (`tests/fixtures/`), and of the command line (same way to run) |
+| `tests/crm.smoke.cjs` | Browser test of CRM prices with the CRM's storage filled in: reading it, linking (typed, hourly, automatic + check), estimate prices, tax & margin, Studio rates, a CRM price change, customer view (same way to run) |
 | `tests/save.smoke.cjs` | Browser test of saving to the computer, Done – save & remove, reopening a job (with its custom products, photos, renditions), versions, the note after saving, and the weekly clean-up (same way to run) |
 | `tests/ui.smoke.cjs` | Browser test that draws with every tool: start `python3 -m http.server 8765` in the repo, then `NODE_PATH=$(npm root -g) node planbuilder/tests/ui.smoke.cjs` |

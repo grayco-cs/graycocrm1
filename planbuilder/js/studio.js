@@ -201,17 +201,19 @@ export function installStudio(app) {
   function showRates() {
     const P = app.project, R = rates(P), body = document.createElement('div');
     body.innerHTML = `<h2>Unit rates – structure, MEP &amp; site</h2>
-      <p class="hint">Installed cost per unit (material + labor) used by Studio for everything figured from the drawing. These are starting placeholders: put in your own numbers. Saved with this job.</p>
+      <p class="hint">Installed cost per unit (material + labor) used by Studio for everything figured from the drawing. These are starting placeholders: put in your own numbers, or link them to the CRM. A rate typed here is saved with this job and wins over the CRM.</p>
       <table class="tbl st-rates"><thead><tr><th>Item</th><th>Unit</th><th>Rate</th></tr></thead><tbody>
       ${RATE_LIST.map(([k, label, unit, def]) => `<tr><td>${esc(label)}</td><td>${unit}</td><td><input type="number" step="0.01" min="0" data-k="${k}" value="${R[k]}" title="Default ${def}"></td></tr>`).join('')}
       </tbody></table>
-      <div class="row-btns"><button class="btn" id="st-rates-reset">Back to defaults</button><button class="btn primary" id="st-rates-save">Save rates</button></div>`;
+      <div class="row-btns"><button class="btn" id="st-rates-crm" title="Link these rates to the prices in the GrayCo CRM">🔗 CRM prices</button><button class="btn" id="st-rates-reset">Back to defaults</button><button class="btn primary" id="st-rates-save">Save rates</button></div>`;
     app.modal(body);
     $('#st-rates-save').onclick = () => {
-      const o = {}; body.querySelectorAll('input[data-k]').forEach(i => { const def = RATE_LIST.find(r => r[0] === i.dataset.k)[3]; if (i.value !== '' && +i.value !== def) o[i.dataset.k] = +i.value; });
+      const base = rates({ settings: {} });   // defaults, or the CRM price when that rate is linked
+      const o = {}; body.querySelectorAll('input[data-k]').forEach(i => { if (i.value !== '' && +i.value !== base[i.dataset.k]) o[i.dataset.k] = +i.value; });
       P.settings.sysRates = o; app.closeModal(); app.commit('Unit rates');
     };
-    $('#st-rates-reset').onclick = () => { body.querySelectorAll('input[data-k]').forEach(i => { i.value = RATE_LIST.find(r => r[0] === i.dataset.k)[3]; }); };
+    $('#st-rates-reset').onclick = () => { const base = rates({ settings: {} }); body.querySelectorAll('input[data-k]').forEach(i => { i.value = base[i.dataset.k]; }); };
+    $('#st-rates-crm').onclick = () => app.showCRM('studio');
   }
 
   // ---------- one-time wiring of the static controls ----------

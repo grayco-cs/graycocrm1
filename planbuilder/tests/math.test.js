@@ -10,7 +10,8 @@ import { setDrawPhase } from '../js/model.js';
 import { cleanWalls, findRooms, nameRooms, parseDXF, dxfScale, planFromDXF, normalizePlan, isRoomLabel } from '../js/planimport.js';
 import { parsePoint } from '../js/cmdline.js';
 import { readFileSync } from 'fs';
-import { buildSystems, analyzeSystems, structureType, systemOfLine, isFixture } from '../js/systems.js';
+import { buildSystems, analyzeSystems, structureType, systemOfLine, isFixture, rates, setCrmRates } from '../js/systems.js';
+import { buildCRM, normUnit, unitFactor, sheetSF, resolveLink, applyCRM, crmSystemRates, suggest, autoLink, marginToMarkup } from '../js/crm.js';
 
 let n = 0; const t = (name, fn) => { fn(); n++; };
 const near = (a, b, eps = 1e-6, msg) => assert.ok(Math.abs(a - b) < eps, `${msg || ''} ${a} ≈ ${b}`);
@@ -271,6 +272,78 @@ t('command line points', () => {
   assert.deepEqual(parsePoint(`@12'6"<0`, last).p, { x: 22.5, y: 5 });
   near(parsePoint(`12' 6"`, last).len, 12.5);
   assert.equal(parsePoint('abc', last), null);
+});
+
+// ---------- CRM prices ----------
+const crmRaw = () => ({
+  rateBook: [
+    { desc: 'Paint material 1 coat', cost: 0.18, unit: 'per SF', cat: 'Paint', type: 'material' },
+    { desc: 'Drywall 4x12 hang labor', cost: 30, unit: 'per sheet', cat: 'Drywall', type: 'labor' },
+    { desc: 'Roofing tear off + install (1 layer)', cost: 65, unit: 'per square', cat: 'Roofing', type: 'sub' },
+  ],
+  custom: [{ id: 'C1', name: 'LVP Oak 7x48', cat: 'Flooring', unit: 'sf', cost: 2.5 }],
+  edits: { P0001: 4.1 },
+  laborRates: [{ cat: 'Framing', desc: 'Carpenter', rate: 50 }],
+  settings: { tax: 8.25, marginPct: 30 },
+});
+const crmBase = [['P0001', 'Lumber/Framing', 3.28, '2x4x8 SPF Stud', '058449', 'ea'], ['P0002', 'Drywall', 14, '1/2 Drywall 4x12', '', 'sht']];
+t('CRM units and conversions', () => {
+  assert.equal(normUnit('per SF'), 'SF'); assert.equal(normUnit('per square'), 'SQ'); assert.equal(normUnit('sht'), 'SHEET'); assert.equal(normUnit('per job'), 'LS'); assert.equal(normUnit('ea'), 'EA');
+  near(unitFactor('per square', 'SF'), 0.01); near(unitFactor('per SF', 'SQ'), 100); assert.equal(unitFactor('ea', 'SF'), null);
+  assert.equal(sheetSF('1/2 Drywall 4x12'), 48); assert.equal(sheetSF('Drywall 4.5x12 hang'), 54); assert.equal(sheetSF('Drywall sheet'), 32);
+  near(unitFactor('per sheet', 'SF', 'Drywall 4x12 hang labor'), 1 / 48);
+  assert.equal(marginToMarkup(30), 42.86); assert.equal(marginToMarkup(0), 0);
+});
+t('CRM sources: rate book, products with edits, custom products, labor rates', () => {
+  const c = buildCRM(crmRaw(), crmBase);
+  assert.deepEqual(c.counts, { rateBook: 3, products: 3, laborRates: 1 });
+  assert.equal(c.byKey.get('prod:P0001').cost, 4.1, 'the CRM price edit wins over the built-in price');
+  assert.equal(c.byKey.get('prod:P0002').unit, 'SHEET');
+  assert.equal(c.byKey.get('rb:roofing tear off install 1 layer|per square').kind, 'sub');
+  assert.deepEqual(c.settings, { tax: 8.25, marginPct: 30 });
+});
+t('CRM links price products per PlanBuilder unit', () => {
+  const c = buildCRM(crmRaw(), crmBase);
+  near(resolveLink({ key: 'prod:P0002' }, c, 'SF').value, 14 / 48, 1e-4, 'a 4x12 sheet');
+  near(resolveLink({ key: 'rb:drywall 4x12 hang labor|per sheet' }, c, 'SF').value, 0.625, 1e-4);
+  near(resolveLink({ key: 'hr:framing|carpenter', hrs: 0.05 }, c, 'SF').value, 2.5);
+  assert.equal(resolveLink({ key: 'hr:framing|carpenter' }, c, 'SF').ok, false, 'an hourly rate needs hours');
+  assert.equal(resolveLink({ key: 'prod:P0001' }, c, 'SF').ok, false, 'each → SF needs a count');
+  near(resolveLink({ key: 'prod:P0001', per: 1.25 }, c, 'LF').value, 5.125);
+  assert.equal(resolveLink({ key: 'prod:GONE' }, c, 'SF').ok, false);
+  const cat = [{ id: 'a', name: 'Paint', unit: 'SF', price: 1, labor: 1, crm: { mat: { key: 'rb:paint material 1 coat|per sf' }, lab: { key: 'hr:framing|carpenter' } } }, { id: 'b', name: 'Free', unit: 'SF', price: 3, labor: 0 }];
+  const r = applyCRM(cat, c);
+  assert.equal(cat[0].price, 0.18); assert.equal(cat[0].labor, 1, 'an unpriceable link keeps the last price'); assert.equal(cat[1].price, 3);
+  assert.equal(r.changed.length, 1); assert.equal(r.problems.length, 1);
+  // a takeoff uses the CRM price
+  const P = fromTemplate('ranch', DEFAULT_CATALOG), C = JSON.parse(JSON.stringify(DEFAULT_CATALOG));
+  const before = computeTakeoff(P, C).totals.material;
+  const used = computeTakeoff(P, C).lines.find(l => l.unit === 'SF' && l.price > 0);
+  const prod = C.find(x => x.id === used.productId); prod.crm = { mat: { key: 'prod:C1' } };
+  applyCRM(C, c); assert.equal(prod.price, 2.5);
+  const after = computeTakeoff(P, C);
+  near(after.lines.find(l => l.productId === prod.id).price, 2.5, 1e-9); assert.ok(after.totals.material !== before);
+});
+t('CRM Studio rates: material + labor, a job rate still wins', () => {
+  const c = buildCRM(crmRaw(), crmBase);
+  const m = crmSystemRates({ sitePrep: { mat: { key: 'rb:paint material 1 coat|per sf' }, lab: { key: 'hr:framing|carpenter', hrs: 0.1 } } }, c, { sitePrep: 'SF' });
+  near(m.sitePrep, 5.18, 1e-9);
+  setCrmRates(m);
+  near(rates({ settings: {} }).sitePrep, 5.18); near(rates({ settings: { sysRates: { sitePrep: 2 } } }).sitePrep, 2);
+  setCrmRates({}); near(rates({ settings: {} }).sitePrep, 1.85);
+});
+t('CRM suggestions and automatic links', () => {
+  const c = buildCRM(crmRaw(), crmBase);
+  const lvp = { name: 'LVP plank – natural oak', category: 'flooring', unit: 'SF' };
+  assert.equal(suggest(lvp, c, 'mat')[0].key, 'prod:C1');
+  const roof = { name: 'Remove roofing – per layer, haul off', category: 'roofing', unit: 'SQ' };
+  assert.equal(autoLink(roof, c, 'lab').key, 'rb:roofing tear off install 1 layer|per square');
+  assert.equal(autoLink({ name: 'Kitchen island', category: 'cabinet', unit: 'EA' }, c, 'mat'), null);
+  assert.deepEqual(buildCRM({}, [], false).found, false);
+});
+const crmJson = readFileSync(new URL('../data/crm-products.json', import.meta.url), 'utf8');
+t('CRM product list matches the copy the price-index function uses', () => {
+  assert.equal(crmJson, readFileSync(new URL('../../netlify/functions/_lib/products-base.json', import.meta.url), 'utf8'), 'planbuilder/data/crm-products.json is a copy of netlify/functions/_lib/products-base.json: copy it again');
 });
 
 console.log(`PlanBuilder math: ${n} tests passed`);

@@ -73,9 +73,13 @@ export const RATE_LIST = [
   ['elecCom', 'Electrical rough & trim (commercial)', 'SF', 14],
   ['sprinkler', 'Wet-pipe fire sprinkler', 'SF', 4.4],
 ];
+// Rates linked to CRM prices (set by the CRM connection); a job's own typed rate still wins.
+let CRM_RATES = {};
+export function setCrmRates(m) { CRM_RATES = m || {}; }
+export function crmRateKeys() { return Object.keys(CRM_RATES); }
 export function rates(P) {
   const o = (P.settings && P.settings.sysRates) || {};
-  const r = {}; RATE_LIST.forEach(([k, , , v]) => { r[k] = o[k] != null && o[k] !== '' && isFinite(+o[k]) ? +o[k] : v; }); return r;
+  const r = {}; RATE_LIST.forEach(([k, , , v]) => { r[k] = o[k] != null && o[k] !== '' && isFinite(+o[k]) ? +o[k] : CRM_RATES[k] != null ? CRM_RATES[k] : v; }); return r;
 }
 const RATE_INFO = Object.fromEntries(RATE_LIST.map(([k, label, unit]) => [k, { label, unit }]));
 
