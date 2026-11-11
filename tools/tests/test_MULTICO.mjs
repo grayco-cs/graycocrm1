@@ -5,10 +5,10 @@ resetCloud();
 const now = new Date().toISOString();
 cset('users', [{ id: 'u1', name: 'Wesley Johnson', email: 'wjohnson@grayco-cs.com', role: 'Admin', payType: 'owner', active: true }]);
 cset('projects', [
-  { id: 'J1', name: 'Demo Smith kitchen', client: 'Demo Smith', status: 'In Progress', type: 'Residential Reno', contract: 40000, updatedAt: now },
-  { id: 'J2', name: 'Demo Lee dry-out', client: 'Demo Lee', status: 'In Progress', type: 'Mitigation', contract: 6000, updatedAt: now },
-  { id: 'J3', name: 'Demo Ross abatement', client: 'Demo Ross', status: 'In Progress', type: 'Environmental', contract: 9000, updatedAt: now },
-  { id: 'J4', name: 'Demo Fox water', client: 'Demo Fox', status: 'In Progress', type: 'Water Damage', companyId: 'mitigation', contract: 3000, updatedAt: now }]);
+  { id: 'J1', name: 'Demo Smith kitchen', client: 'Demo Smith', status: 'active', type: 'Residential Reno', contract: 40000, updatedAt: now },
+  { id: 'J2', name: 'Demo Lee dry-out', client: 'Demo Lee', status: 'active', type: 'Mitigation', companyId: 'mitigation', contract: 6000, updatedAt: now },
+  { id: 'J3', name: 'Demo Ross abatement', client: 'Demo Ross', status: 'active', type: 'Environmental', companyId: 'environmental', contract: 9000, updatedAt: now },
+  { id: 'J4', name: 'Demo Fox water', client: 'Demo Fox', status: 'active', type: 'Water Damage', companyId: 'mitigation', contract: 3000, updatedAt: now }]);
 cset('invs', [{ id: 'I1', pid: 'J2', num: '1001', amount: 6000, status: 'Sent', date: now.slice(0, 10), updatedAt: now }, { id: 'I2', pid: 'J1', num: '1002', amount: 10000, status: 'Sent', date: now.slice(0, 10), updatedAt: now }]);
 const A = await computer('wjohnson@grayco-cs.com', { build: process.argv[2] });
 const errs = []; A.page().on('pageerror', e => errs.push(String(e.message).slice(0, 200)));
@@ -16,7 +16,7 @@ await signIn(A, 'wjohnson@grayco-cs.com', 15000); await sleep(7000);
 const co = await A.ev(() => { const C = window._gcCo, P = window._crm.projects; const j = id => P.find(p => p.id === id);
   return { n: C.list().length, names: C.list().map(c => c.legal), j1: C.ofJob(j('J1')), j2: C.ofJob(j('J2')), j3: C.ofJob(j('J3')), j4: C.ofJob(j('J4')), i1: C.ofInv((window._crm.invs || window._crm.invoices || []).find(x => x.id === 'I1') || { pid: 'J2' }) }; });
 ok('3 companies with their legal names', co.n === 3 && co.names.join('|') === 'GrayCo Construction Services, LLC|GrayCo Mitigation, LLC|GrayCo Environmental, LLC', co);
-ok('a job\'s company: its own pick, else its type (Mitigation / Environmental), else Construction; an invoice follows its job', co.j1 === 'construction' && co.j2 === 'mitigation' && co.j3 === 'environmental' && co.j4 === 'mitigation' && co.i1 === 'mitigation', co);
+ok('a job\'s company: only what it was filed under (else Construction); an invoice follows its job', co.j1 === 'construction' && co.j2 === 'mitigation' && co.j3 === 'environmental' && co.j4 === 'mitigation' && co.i1 === 'mitigation', co);
 await A.ev(() => window._setView('projects')); await sleep(3000);
 const sb = await A.ev(() => { const a = document.querySelector('[data-gc-co-brand]'); return a ? a.innerText.replace(/\s+/g, ' ').trim() : null; });
 ok('the sidebar logo is the company switch ("GrayCo · All companies ▾")', /All companies ▾/i.test(sb || ''), sb);
@@ -32,6 +32,10 @@ await A.ev(() => document.querySelector('#gc-co-pop [data-co-f="mitigation"]').c
 const mit = await seen(), mitSb = await A.ev(() => ({ t: document.querySelector('[data-gc-co-brand]').innerText.replace(/\s+/g, ' '), img: (document.querySelector('[data-gc-co-brand] img') || {}).getAttribute?.('src'), strip: !!document.getElementById('gc-co-strip') }));
 ok('Mitigation: only Mitigation jobs (Lee dry-out, Fox water); the logo says Mitigation with its own logo; a colored strip on top', mit.join() === 'Demo Lee dry-out,Demo Fox water' && /Mitigation ▾/i.test(mitSb.t) && /mitigation-logo/.test(mitSb.img || '') && mitSb.strip, { mit, mitSb });
 if (SHOT) await A.page().screenshot({ path: SHOT + '_mitigation_jobs.png' });
+await A.ev(() => window._setView('dashboard')); await sleep(3000);
+const dash = await A.ev(() => (document.querySelector('#root main') || document.body).innerText);
+ok('Mitigation Dashboard: its own title and only its own jobs', /GrayCo Mitigation Dashboard/.test(dash) && /Demo Lee dry-out/.test(dash) && !/Demo Smith kitchen/.test(dash) && !/Demo Ross abatement/.test(dash), dash.slice(0, 300));
+await A.ev(() => window._setView('projects')); await sleep(1500);
 const pnl = await A.ev(async () => { const d = await window._gcCompanyPnL(); return { n: d.jobCount, names: d.jobs.map(j => j.name), co: d.company }; });
 ok('Mitigation P&L counts only Mitigation jobs', pnl.co === 'mitigation' && pnl.names.every(n => /Lee|Fox/.test(n)), pnl);
 await A.ev(() => window._setView('leads')); await sleep(2500);
@@ -46,7 +50,22 @@ await A.ev(() => window._setView('projects')); await sleep(1500);
 await A.ev(() => window._setProjects(prev => prev.concat([{ id: 'J9', name: 'Demo new env job', client: 'Demo New', status: 'bidding', type: 'Residential Reno', updatedAt: new Date().toISOString() }]))); await sleep(4500);
 const stamped = await A.ev(() => (window._crm.projects.find(p => p.id === 'J9') || {}).companyId);
 ok('a new job made while Environmental is picked is filed under Environmental', stamped === 'environmental', stamped);
+const dc = await A.ev(() => { window._setView('dashboard'); return new Promise(r => setTimeout(() => { const c = document.getElementById('gc-co-docs'); r(c ? c.innerText : null); }, 3500)); });
+ok('Environmental Dashboard: its own papers card (Lead 01–07, asbestos, mold, programs)', /Environmental papers/.test(dc || '') && /Lead 01/.test(dc) && /Asbestos/.test(dc) && /Lead 07/.test(dc) && /Mold/.test(dc), (dc || '').slice(0, 200));
+const lh = await A.ev(() => { window.__gcDocCo = null; return window._gcDocHeader({}); });
+ok('a paper made while Environmental is picked: GrayCo Environmental letterhead and logo', /GrayCo Environmental/.test(lh) && !/GrayCo Construction Services/.test(lh), lh.slice(0, 200));
 await pick('all');
+const lh2 = await A.ev(() => window._gcDocHeader({}));
+ok('All companies / Construction: the Construction letterhead, unchanged', /GrayCo Construction Services/.test(lh2), lh2.slice(0, 120));
+const pid = await A.ev(() => window._gcCoLink.part('J1', 'environmental', 'GrayCo Construction Services, LLC') || null); await sleep(2500);
+const lk = await A.ev(() => { const P = window._crm.projects, par = P.find(p => p.id === 'J1'), kid = P.find(p => p.parentJobId === 'J1'); return { shared: par && par.sharedWith, parts: par && par.parts, kid: kid && { co: kid.companyId, name: kid.name, billTo: kid.billTo } }; });
+ok('➕ Environmental part of a Construction job: a new Environmental job billed to the contractor, linked both ways, the parent shared', lk.kid && lk.kid.co === 'environmental' && /Environmental/.test(lk.kid.name) && /GrayCo Construction/.test(lk.kid.billTo) && (lk.shared || []).includes('environmental') && (lk.parts || []).length === 1, lk);
+await pick('environmental');
+const envJobs = await A.ev(() => { window._setView('projects'); return new Promise(r => setTimeout(() => r((document.querySelector('#root main') || document.body).innerText), 3000)); });
+const envPnl = await A.ev(async () => (await window._gcCompanyPnL()).jobs.map(j => j.name));
+ok('Environmental sees the shared Construction job and its own part; its P&L counts only its own jobs', /Demo Smith kitchen/.test(envJobs) && /Demo Smith kitchen — Environmental/.test(envJobs) && !envPnl.includes('Demo Smith kitchen'), { envPnl });
+await pick('all'); await A.ev(() => window._setView('projects')); await sleep(3000);
+await A.ev(() => { const b = [...document.querySelectorAll('#root main button, #root main div, #root main span')].find(x => /^All \(\d+\)$/.test((x.innerText || '').trim())); b && b.click(); }); await sleep(1500);
 const back = await seen();
 ok('back to All companies: everything again', back.length === 4, back);
 await A.ev(() => document.querySelector('[data-gc-co-brand]').click()); await sleep(500); await A.ev(() => document.querySelector('#gc-co-pop [data-co-set]').click()); await sleep(800);
