@@ -725,6 +725,19 @@ async function lsaAsk(ph, o){
   await _D.kvCas(SKEY, v => { const st = loadState(v); claim = false; if (st.lsaCust[ph] && st.lsaCust[ph].leadId === o.leadId) return undefined; st.lsaCust[ph] = { leadId: o.leadId, code: o.code, name: clip(o.name, 60), at, stage: 'asked' }; claim = true; return st; });
   if (!claim) return { skipped: 'already asked' };
   const f = firstOf(o.name), svc = clip(s(o.svc).replace(/^(google\s*lsa|local services)[:\s-]*/i, ''), 50);
+  /* NIGHTREPLY (owner 11/10: "the overnight texts from LSA with customers — are we doing general texts back to them, making sure we know what
+     type of job they have, what help they need, and that we will call tomorrow"): 7 PM – 7 AM the customer gets an answer right away (a reply to
+     the request they just made — tagged 'reply', so the customer quiet hours let it through): we got it, we'll call in the morning, what do you
+     need, the address; EMERGENCY gets the on-call path (their reply is read like any customer text). */
+  let night = false; try { night = require('./custquiet.js').quiet(now()) && !o.em; } catch (e) {}
+  if (night) {
+    const wd = new Date(now() + 6 * 3600e3).toLocaleDateString('en-US', { timeZone: 'America/Chicago', weekday: 'short' });   /* the day after the night's 6 AM side */
+    const when = /^(Sat|Sun)/.test(wd) ? 'on Monday morning' : 'in the morning';
+    const nb = 'Hi' + (f ? ' ' + f : '') + ', this is GrayCo Construction Services. We got your request through Google' + (svc ? ' about ' + svc.toLowerCase() : '') + '. Our office is closed now — we\'ll call you ' + when + '. To help us get ready, reply with what you need help with (roof, water damage, remodel…) and the property address. If water is coming in or it\'s an emergency, reply EMERGENCY. Reply STOP to opt out.';
+    const rn = await sendL(ph, nb.slice(0, 480), env('TWILIO_FROM'), 'reply', { kind: 'customer', leadId: s(o.leadId) });
+    await _D.kvCas(SKEY, v => { const st = loadState(v); if (st.lsaCust[ph]) st.lsaCust[ph].stage = 'night'; return st; }).catch(() => {});
+    return { sent: !!(rn && rn.ok), night: true };
+  }
   const body = 'Hi' + (f ? ' ' + f : '') + ', this is GrayCo Construction Services. We received your request through Google' + (svc ? ' about ' + svc.toLowerCase() : '') + '. Reply YES to confirm you\'d like a call and we\'ll send you your project manager\'s name and number. Reply STOP to opt out.';
   const r = await sendL(ph, body.slice(0, 320), env('TWILIO_FROM'), o.em ? 'emergency' : 'customer');
   return { sent: !!(r && r.ok), held: !!(r && r.held) };

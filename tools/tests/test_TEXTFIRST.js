@@ -71,5 +71,16 @@ const A = BA.make({ env: k => ENV[k] != null ? ENV[k] : '', s: v => v == null ? 
   assert.ok(r4 && r4.lsa === 'l4' && r4.good === true, 'GOOD works on the morning text: ' + JSON.stringify(r4));
   fh = await SA.flushHeld(); assert.strictEqual(fh.sent, 0, 'sent once');
   SA._D.hours = hrs0; SA._D.now = now0;
+  /* NIGHTREPLY: an LSA lead at 9 PM (Monday) → the customer gets the answer right away: we got it, we'll call in the morning, what do you need + address, EMERGENCY */
+  { texts.length = 0; const now1 = SA._D.now, hrs1 = SA._D.hours; SA._D.now = () => Date.parse('2026-11-10T03:00:00Z'); SA._D.hours = async () => null;
+    await A.notifyNew([{ id: 'l5', title: 'Roof repair quote', source: 'Google LSA', leadExtra: { leadSource: 'Google LSA', lsaCheck: 'pending', service: 'Roof repair' }, contact: { name: 'Dana Lee', phone: '9015550155' } }]);
+    const cust = texts.filter(x => x.to === '9015550155');
+    assert.ok(cust.length === 1 && /^Hi Dana, this is GrayCo Construction Services\. We got your request through Google about roof repair\. Our office is closed now — we'll call you in the morning\. To help us get ready, reply with what you need help with/.test(cust[0].body) && /reply EMERGENCY/.test(cust[0].body), 'night reply to the customer: ' + JSON.stringify(cust));
+    assert.ok(!texts.some(x => x.to === '9015550001' || x.to === '9015550002'), 'staff are not texted at 9 PM (held for the morning)');
+    SA._D.now = () => Date.parse('2026-11-14T03:00:00Z');   /* Friday 9 PM → Monday */
+    texts.length = 0;
+    await A.notifyNew([{ id: 'l6', title: 'Gutters', source: 'Google LSA', leadExtra: { leadSource: 'Google LSA', lsaCheck: 'pending' }, contact: { name: 'Eli Ray', phone: '9015550156' } }]);
+    assert.ok(texts.some(x => x.to === '9015550156' && /we'll call you on Monday morning/.test(x.body)), 'Friday night → Monday morning: ' + JSON.stringify(texts));
+    SA._D.now = now1; SA._D.hours = hrs1; }
   console.log('TEXTFIRST: all passed');
 })().catch(e => { console.error('FAIL', e && e.stack || e); process.exit(1); });
