@@ -298,7 +298,13 @@ async function orderList(cfg, p, choice, ah){
   let ours = [env('TWILIO_FROM')]; try { const set = SMS().settings(await L().kvGet(SMS().SETTINGS_KEY)); ours = ours.concat(require('./_lib/smsroute.js').numbers(set, env).map(x => x.number)); } catch (e) {}
   const c = JSON.parse(JSON.stringify(cfg));
   if (!c.on) c.slots = [];
-  if (ah) c.slots = c.night.slots;   /* patch AFTERHOURS: the after-hours emergency order (Mitigation manager → Nick → Wesley) */
+  if (ah) {   /* patch AFTERHOURS: the after-hours emergency order (On call → Mitigation manager → Nick → Wesley) */
+    c.slots = c.night.slots;
+    /* ONCALLRING (owner 11/11: "all on-call foremen / techs get emergency calls directly to their phones when on call"): the person on call
+       this week rings first — also for an order saved before this slot existed */
+    try { const X = require('./_lib/x10.js'); const o = X.onCallNow(now(), X.oncallCfg(await L().kvGet('gc_x10_oncall'))); if (o) data.oncallNow = { name: s(o.name), email: s(o.email), phone: s(o.phone) }; } catch (e) {}
+    if (!c.slots.some(x => x && x.kind === 'oncall')) c.slots = [{ id: 'n_oncall', label: 'On call (this week)', on: true, kind: 'oncall', phone: '', person: '' }].concat(c.slots);
+  }
   else if (choice === '2') {   /* a current customer: their job's PM first, when the caller's number is on a job */
     try { const cust = await WI().findCustomer({ phone: phone10(p.From), email: '' }); const u = cust && cust.pm ? require('./_lib/people.js').findUser(data.users, cust.pm) : null;
       if (u && CO().userPhone(u).length === 10) c.slots.unshift({ id: 'jobpm', label: 'Job PM', on: true, kind: 'phone', phone: CO().userPhone(u), person: '' }); } catch (e) {}

@@ -83,38 +83,39 @@ const answer = (c) => post(c.Url, { CallSid: 'CAout', To: c.To, From: c.From, Ca
 const press = (c, twimlBody, digits) => { const a = /action="([^"]+)"/.exec(twimlBody)[1].replace(/&amp;/g, '&'); return post(a, { CallSid: 'CAout', To: c.To, From: c.From, Digits: digits }); };
 const ended = (c, status) => post(c.StatusCallback, { CallSid: 'CAout', To: c.To, From: c.From, CallStatus: status || 'no-answer' });
 
-console.log('EMERGCALL — register, wait 15 min, call on call');
+console.log('EMERGCALL — register, text + call on call at once, every 2 min for 10 min, then the next (PERSIST)');
 {
   world();
   const r = await EC().register(lead);
   ok(r.registered && rec().kind === 'water damage' && rec().contact.phone === CUST && rec().state === 'waiting', 'an emergency lead is registered (water damage, customer phone kept)', rec());
   ok((await EC().register(lead)).skipped, 'registered once per lead');
-  min(10); await tick();
-  ok(CALLS.length === 0, '10 minutes, nobody acknowledged → no call yet');
-  min(16); await tick();
-  ok(CALLS.length === 1 && CALLS[0].To === '+1' + ONCALL && CALLS[0].From === '+19015550000' && CALLS[0].Timeout === '25', '16 minutes, no acknowledgement → the CRM phones this week\'s on-call person (from the GrayCo number, 25 s)', CALLS);
+  await tick();
+  ok(CALLS.length === 1 && CALLS[0].To === '+1' + ONCALL && CALLS[0].From === '+19015550000' && CALLS[0].Timeout === '25', 'at once (first tick): the CRM phones this week\'s on-call person (from the GrayCo number, 25 s)', CALLS);
+  ok(SMS.length === 1 && SMS[0].To === '+1' + ONCALL && /GrayCo EMERGENCY: water damage at Bartlett/.test(SMS[0].Body) && /every 2 min for 10 min/.test(SMS[0].Body), '…and texts them at the same time', SMS);
   ok(/event=ecall&id=EC-LI-1&step=0/.test(CALLS[0].Url) && /event=ecallstatus/.test(CALLS[0].StatusCallback), 'the call\'s TwiML and status callback point at our signed webhook');
   const a = await answer(CALLS[0]);
-  ok(/GrayCo emergency\. A customer reported water damage at Bartlett, 16 minutes ago, and nobody has answered yet\. Press 1 to be connected to the customer now\. Press 2 to accept and call them yourself\./.test(a.body) && /<Gather numDigits="1"/.test(a.body), 'the message: water damage at Bartlett, 16 minutes ago, press 1 / press 2', a.body);
-  ok(SMS.length === 0, 'no texts were sent by the escalation itself');
+  ok(/GrayCo emergency\. A customer reported water damage at Bartlett, \d+ minutes? ago, and nobody has answered yet\. Press 1 to be connected to the customer now\. Press 2 to accept and call them yourself\./.test(a.body) && /<Gather numDigits="1"/.test(a.body), 'the call says what happened and offers 1 / 2', a.body);
   await ended(CALLS[0], 'no-answer');
-  ok(CALLS.length === 2 && CALLS[1].To === '+1' + OFFICE, 'no key (no answer) → the next: the 📞 Call order\'s first line (Office)', CALLS.map(c => c.To));
-  const a2 = await answer(CALLS[1]);
-  await ended(CALLS[1], 'completed');   /* a voicemail took it: completed, nobody pressed */
-  ok(CALLS.length === 3 && CALLS[2].To === '+1' + NICK, 'a voicemail (completed, no key) → the next: Owner 1', CALLS.map(c => c.To));
-  const a3 = await answer(CALLS[2]);
-  const k = await press(CALLS[2], a3.body, '1');
+  ok(CALLS.length === 1 && rec().state === 'redial', 'no answer → the same person again in 2 minutes (not the next yet)', rec());
+  min(1); await tick(); ok(CALLS.length === 1, '1 minute later: not yet');
+  for (let k = 1; k <= 4; k++) { min(2 * k); await tick(); ok(CALLS.length === k + 1 && CALLS[k].To === '+1' + ONCALL, 'minute ' + (2 * k) + ': on call is called again (' + (k + 1) + ')', CALLS.map(c => c.To)); await ended(CALLS[k], 'no-answer'); }
+  ok(SMS.length === 1, 'one text per person (not one per call)');
+  min(10); await tick(); await ended(CALLS[CALLS.length - 1], 'no-answer');
+  const toOffice = CALLS.filter(c => c.To === '+1' + OFFICE);
+  ok(toOffice.length === 1 && SMS.length === 2 && SMS[1].To === '+1' + OFFICE, '10 minutes of no answer → the next on deck (the 📞 Call order\'s first line) gets a text + a call', { calls: CALLS.map(c => c.To), sms: SMS.map(s => s.To) });
+  const c2 = toOffice[0], a2 = await answer(c2);
+  const k = await press(c2, a2.body, '1');
   ok(/Connecting you to the customer/.test(k.body) && /<Dial callerId="\+19015550000"[^>]*><Number>\+19015553333<\/Number><\/Dial>/.test(k.body), 'press 1 → <Dial> the customer, caller ID = the GrayCo number', k.body);
-  ok(rec().state === 'connected' && /Owner 1/.test(rec().acceptedBy), 'state: connected, by Owner 1', rec());
-  await ended(CALLS[2], 'completed'); min(30); await tick();
-  ok(CALLS.length === 3, 'the first key stops the escalation: nobody else is called');
+  ok(rec().state === 'connected', 'state: connected', rec());
+  const n0 = CALLS.length; await ended(c2, 'completed'); min(40); await tick();
+  ok(CALLS.length === n0, 'the first key stops the escalation: nobody else is called');
 }
 console.log('EMERGCALL — press 2');
 {
   world(); await EC().register(lead); min(15); await tick();
   const a = await answer(CALLS[0]); const k = await press(CALLS[0], a.body, '2');
   ok(/details are on their way by text/.test(k.body) && /<Hangup\/>/.test(k.body) && rec().state === 'accepted', 'press 2 → accepted, hang up', k.body);
-  ok(SMS.length === 1 && SMS[0].To === '+1' + ONCALL && /Ann Customer/.test(SMS[0].Body) && /\(901\) 555-3333/.test(SMS[0].Body), 'press 2 → the details go to that person by text', SMS);
+  { const det = SMS.filter(m => /Ann Customer/.test(m.Body)); ok(det.length === 1 && det[0].To === '+1' + ONCALL && /\(901\) 555-3333/.test(det[0].Body), 'press 2 → the details go to that person by text', SMS); }
   await ended(CALLS[0], 'completed'); min(40); await tick();
   ok(CALLS.length === 1, 'accepted → nobody else is called');
   const late = await answer({ Url: SITE + '?event=ecall&id=EC-LI-1&step=1', To: '+1' + OFFICE, From: '+19015550000' });
@@ -144,32 +145,35 @@ console.log('EMERGCALL — acknowledged in the CRM, paused, off');
   ok(CALLS.length === 0 && rec().state === 'waiting', '⚡ "Emergency line" switched OFF → no calls (still waiting)');
   world({ order: { slots: [{ id: 'office', kind: 'company' }], emerg: { on: false } } }); await EC().register(lead); min(30); await tick();
   ok(CALLS.length === 0, 'escalation calls turned off in the card → no calls');
-  world({ order: { slots: [{ id: 'office', kind: 'company' }], emerg: { on: true, minutes: 30 } } }); await EC().register(lead); min(20); await tick();
-  ok(CALLS.length === 0, 'minutes set to 30 → nothing at 20 min'); min(31); await tick();
-  ok(CALLS.length === 1 && CALLS[0].To === '+1' + ONCALL, '… a call at 31 min');
+  world({ order: { slots: [{ id: 'office', kind: 'company' }], emerg: { on: true, minutes: 30 } } }); await EC().register(lead); min(1); await tick();
+  ok(CALLS.length === 1 && CALLS[0].To === '+1' + ONCALL, 'an old saved "after 30 min" is ignored — the on-call person is called at once (PERSIST)', CALLS.map(c => c.To));
 }
 console.log('EMERGCALL — nobody presses: once more after 10 min, then the admins');
 {
   world({ order: { slots: [{ id: 'office', kind: 'company' }, { id: 'owner1', kind: 'person', person: 'u1' }] } });
-  await EC().register(lead); min(15); await tick();
-  const walk = async () => { for (let i = 0; i < 10; i++) { const c = CALLS[CALLS.length - 1], n = CALLS.length; await ended(c, 'no-answer'); if (CALLS.length === n) break; } };
-  await walk();
-  ok(CALLS.map(c => c.To.slice(2)).join() === [ONCALL, OFFICE, NICK].join() && rec().state === 'retry', 'round 1: on call → Office → Owner 1, then "once more in 10 min"', CALLS.map(c => c.To));
-  min(20); await tick(); ok(CALLS.length === 3, 'not before 10 minutes');
-  min(26); await tick(); ok(CALLS.length === 4 && CALLS[3].To === '+1' + ONCALL, 'round 2 starts with on call again');
-  await walk();
-  ok(CALLS.length === 6 && rec().state === 'gaveup', 'round 2 done → gave up', rec());
+  await EC().register(lead); min(0); await tick();
+  /* PERSIST: each person is called every 2 min for 10 min (6 calls), then the next; people = the order they were called in */
+  const walk = async (m0) => { let m = m0; for (let i = 0; i < 300; i++) { const c = CALLS[CALLS.length - 1], n = CALLS.length; await ended(c, 'no-answer'); if (CALLS.length > n) continue; if (rec().state === 'redial') { m += 2; min(m); await tick(); if (CALLS.length === n) break; continue; } break; } return m; };
+  const people = () => CALLS.map(c => c.To.slice(2)).filter((x, i, a) => i === 0 || a[i - 1] !== x);
+  let m = await walk(0);
+  ok(people().join() === [ONCALL, OFFICE, NICK].join() && CALLS.length === 18 && rec().state === 'retry', 'round 1: on call (6 calls over 10 min) → Office (6) → Owner 1 (6), then "once more in 10 min"', { people: people(), calls: CALLS.length });
+  const n1 = CALLS.length; min(m + 5); await tick(); ok(CALLS.length === n1, 'not before 10 minutes');
+  m += 11; min(m); await tick(); ok(CALLS.length === n1 + 1 && CALLS[n1].To === '+1' + ONCALL, 'round 2 starts with on call again');
+  await walk(m);
+  ok(CALLS.length === 36 && rec().state === 'gaveup', 'round 2 done → gave up', { calls: CALLS.length, state: rec().state });
   ok(MAIL.some(m => /Nobody answered the emergency calls/.test(m.subject)), 'the admins are e-mailed "nobody answered"', MAIL.map(m => m.subject));
-  min(60); await tick(); ok(CALLS.length === 6, 'and nothing more');
+  min(200); await tick(); ok(CALLS.length === 36, 'and nothing more');
 }
 console.log('EMERGCALL — after hours: on call, then Mitigation manager → Nick → Wesley (patch AFTERHOURS)');
 {
-  world({ night: true, mit: true }); await EC().register(lead); min(15); await tick();
-  const walk = async () => { for (let i = 0; i < 10; i++) { const c = CALLS[CALLS.length - 1], n = CALLS.length; await ended(c, 'no-answer'); if (CALLS.length === n) break; } };
-  await walk();
-  ok(CALLS.map(c => c.To.slice(2)).join() === [ONCALL, '9015554444', NICK, WES].join(), '9 PM: on call → Mitigation manager → Nick → Wesley (not the daytime order)', CALLS.map(c => c.To));
-  world({ night: true }); await EC().register(lead); min(15); await tick(); await walk();
-  ok(CALLS.map(c => c.To.slice(2)).join() === [ONCALL, NICK, WES].join(), 'no mitigation manager yet → skipped', CALLS.map(c => c.To));
+  world({ night: true, mit: true }); await EC().register(lead); min(0); await tick();
+  /* PERSIST: each person is called every 2 min for 10 min (6 calls), then the next; people = the order they were called in */
+  const walk = async (m0) => { let m = m0; for (let i = 0; i < 300; i++) { const c = CALLS[CALLS.length - 1], n = CALLS.length; await ended(c, 'no-answer'); if (CALLS.length > n) continue; if (rec().state === 'redial') { m += 2; min(m); await tick(); if (CALLS.length === n) break; continue; } break; } return m; };
+  const people = () => CALLS.map(c => c.To.slice(2)).filter((x, i, a) => i === 0 || a[i - 1] !== x);
+  await walk(0);
+  ok(people().join() === [ONCALL, '9015554444', NICK, WES].join(), '9 PM: on call → Mitigation manager → Nick → Wesley (not the daytime order), each called every 2 min for 10 min', { people: people(), calls: CALLS.length });
+  world({ night: true }); await EC().register(lead); min(0); await tick(); await walk(0);
+  ok(people().join() === [ONCALL, NICK, WES].join(), 'no mitigation manager yet → skipped', people());
 }
 console.log('EMERGCALL — signatures');
 {

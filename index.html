@@ -5496,7 +5496,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.229-2026-11-11-r31 -->
+<!-- GrayCo CRM Build: 33.230-2026-11-11-r32 -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6445,7 +6445,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.229-2026-11-11-r31");
+  console.log("[GC] Build 33.230-2026-11-11-r32");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6493,7 +6493,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.229-2026-11-11-r31"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.230-2026-11-11-r32"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -183024,7 +183024,7 @@ var W = window, D = document;
 var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
 var RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
 var FN = '/.netlify/functions/texts?callchain=1';
-var KINDS = [['company', 'Office line'], ['person', 'Person'], ['senior', 'Senior PM (Lead PM)'], ['mitigation', 'Mitigation manager'], ['phone', 'Phone number']];
+var KINDS = [['company', 'Office line'], ['person', 'Person'], ['senior', 'Senior PM (Lead PM)'], ['mitigation', 'Mitigation manager'], ['oncall', 'On call (this week)'], ['phone', 'Phone number']];   /* ONCALLRING */
 var DAYN = [['mon', 'Mon'], ['tue', 'Tue'], ['wed', 'Wed'], ['thu', 'Thu'], ['fri', 'Fri'], ['sat', 'Sat'], ['sun', 'Sun']];
 var ST8 = { cfg: null, people: [], senior: null, office: '', saved: false, preview: null };
 function later(f, ms){ return ST.call(W, f, ms || 0); }
@@ -183057,6 +183057,7 @@ function lineNumber(x){
 function mitMgr(){ return ST8.people.filter(function(p){ return /mitig/i.test(p.role) && /manag|lead|supervis|director|chief/i.test(p.role); })[0] || null; }
 function whoText(x){
   if (x.kind === 'mitigation') { var mm = mitMgr(); return mm ? esc(mm.name) + ' · ' + esc(mm.phone) : '<span style="color:#64748b">no mitigation manager yet (a person whose role says Mitigation Manager) — skipped</span>'; }
+  if (x.kind === 'oncall') return '<span style="color:#334155">whoever is on call this week — 💧 Mitigation → 📟 On call (foremen, techs, managers); nobody on call → skipped</span>';   /* ONCALLRING */
   if (x.kind === 'company') return ST8.office ? '☎ ' + esc(ST8.office) : '';
   if (x.kind === 'senior') return ST8.senior ? esc(ST8.senior.name) + (ST8.senior.phone ? ' · ' + esc(ST8.senior.phone) : ' · <span style="color:#b45309">no phone on file</span>') : '<span style="color:#b45309">no Senior PM set (👥 Team roles &amp; Senior PM)</span>';
   if (x.kind === 'person') { var p = personOf(x.person); return p ? esc(p.phone) : (x.person ? '<span style="color:#b45309">not in the people list / no phone</span>' : '<span style="color:#64748b">nobody yet — skipped</span>'); }
@@ -183149,8 +183150,8 @@ function draw(box){
     + hoursHtml()
     + screenHtml()
     + '<div style="margin:12px 0;border:1px solid #fecaca;border-radius:10px;padding:10px;background:#fef2f2"><div style="font-weight:800">🚨 Emergency escalation calls</div>'
-    + '<label style="display:block;margin-top:4px"><input type="checkbox" data-g="emOn"' + (!c.emerg || c.emerg.on !== false ? ' checked' : '') + '> Phone people about an emergency lead (water, fire, a tree on the house, storm damage) nobody has answered after <input data-g="emMin" type="number" min="5" max="120" value="' + esc((c.emerg && c.emerg.minutes) || 15) + '" style="width:52px"> min</label>'
-    + '<div style="font-size:12px;color:#475569;margin-top:4px">Calls this week\'s on-call person first, then the list below, one at a time (25 s each): "GrayCo emergency … press 1 to be connected to the customer, press 2 to accept and call them yourself." The first key stops it. Nobody → the whole list once more 10 minutes later, then the admins are e-mailed. It stops as soon as someone has it: ✅ Accept on the on-call page, the lead assigned / contacted / its stage moved, a text to the customer, or a reply to the alert text. Any hour; never while data-entry mode is on.</div></div>'
+    + '<label style="display:block;margin-top:4px"><input type="checkbox" data-g="emOn"' + (!c.emerg || c.emerg.on !== false ? ' checked' : '') + '> Text + phone people about an emergency lead (water, fire, a tree on the house, storm damage) — at once<input data-g="emMin" type="hidden" value="' + esc((c.emerg && c.emerg.minutes) || 15) + '"></label>'
+    + '<div style="font-size:12px;color:#475569;margin-top:4px"><b>Owner 11/11:</b> the on-call person gets a text and a call at once, then a call every 2 minutes for 10 minutes until they answer; then the next on deck gets the same. Calls this week\'s on-call person first, then the list below (25 s each): "GrayCo emergency … press 1 to be connected to the customer, press 2 to accept and call them yourself." The first key stops it. Nobody → the whole list once more 10 minutes later, then the admins are e-mailed. It stops as soon as someone has it: ✅ Accept on the on-call page, the lead assigned / contacted / its stage moved, a text to the customer, or a reply to the alert text. Any hour; never while data-entry mode is on.</div></div>'
     + '<div style="font-weight:800;margin-top:6px">📞 Who rings, in order</div>'
     + '<div style="display:flex;flex-wrap:wrap;gap:14px;align-items:center"><label><input type="checkbox" data-g="on"' + (c.on ? ' checked' : '') + '> Ring in this order</label>'
     + '<label>Ring each one <input data-g="secs" type="number" min="8" max="60" value="' + esc(c.ringSeconds) + '" style="width:56px"> seconds</label></div>'

@@ -316,7 +316,7 @@ console.log('CALLCHAIN — Admin → 📞 Call order (texts.js ?callchain=1)');
   process.env.TWILIO_RING_SECONDS = '20';
   TX._now = () => DAY;
   const g = await call('GET'); if (!g.ok) console.log(g);
-  ok(g.openNow === true && g.settings.night.slots.map(x => x.label).join() === 'Mitigation manager,Nick,Wesley' && g.settings.night.slots[1].person === 'u1' && g.settings.hours.days.sat.open === false, 'the card gets "open now", the after-hours order (Mitigation manager → Nick → Wesley) and the hours', { o: g.openNow, n: g.settings.night });
+  ok(g.openNow === true && g.settings.night.slots.map(x => x.label).join() === 'On call (this week),Mitigation manager,Nick,Wesley' && g.settings.night.slots[2].person === 'u1' && g.settings.hours.days.sat.open === false, 'the card gets "open now", the after-hours order (On call → Mitigation manager → Nick → Wesley) and the hours', { o: g.openNow, n: g.settings.night });
   ok(g.ok && g.saved === false && g.settings.ringSeconds === 20, 'nothing saved: ring seconds start at Netlify TWILIO_RING_SECONDS (20)', g.settings);
   ok(g.settings.slots[1].person === 'u1' && g.people.length === 4 && g.preview.list.length === 4 && g.preview.wait === 80, 'defaults pinned to people; 4 ring now (GM empty), a caller waits up to 80 s', g.preview);
   ok(Array.isArray(g.log) && g.log.length === 1 && g.log[0].choice === '3' && /pressed 3/.test(g.log[0].outcome), 'the call log comes back for the card (the sales call)', g.log);

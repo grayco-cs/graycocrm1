@@ -25,6 +25,10 @@
 'use strict';
 const KEY = 'gc_emerg_calls';
 const RING_S = 25, RETRY_MIN = 10, KEEP_DAYS = 7;
+/* PERSIST (owner 11/11: "emergency on call gets a text and phone call, phone call every 2 minutes for 10 minutes until they answer, then go
+   to the next on deck"): each person is texted once and called right away, then again every REDIAL_MIN until PER_PERSON_MIN have passed
+   without a key pressed; then the next person in line gets the same. The first call goes out on the first tick (no waiting). */
+const REDIAL_MIN = 2, PER_PERSON_MIN = 10;
 function s(v){ return v == null ? '' : String(v).trim(); }
 function low(v){ return s(v).toLowerCase(); }
 function arr(v){ return Array.isArray(v) ? v : []; }
@@ -45,7 +49,7 @@ function cityOf(it){
   const a = s(it.address).split(',').map(s).filter(Boolean);
   return a.length >= 2 ? a[a.length - 2].replace(/\s+\d{5}.*$/, '').replace(/\s+[A-Z]{2}$/, '') : '';
 }
-function settingsOf(order){ const e = order && order.emerg && typeof order.emerg === 'object' ? order.emerg : {}; const m = parseInt(e.minutes, 10); return { on: e.on !== false, minutes: isFinite(m) ? Math.max(5, Math.min(120, m)) : 15 }; }
+function settingsOf(order){ const e = order && order.emerg && typeof order.emerg === 'object' ? order.emerg : {}; const m = parseInt(e.minutes, 10); return { on: e.on !== false, minutes: 0, savedMinutes: isFinite(m) ? m : null }; }   /* PERSIST: the on-call person is texted + called at once (the old "after N min" wait is no longer used) */
 
 /* acknowledged? (pure) — rec: our record; ctx: { inbox (Lead Inbox item), lead (CRM lead), pages (on-call pages), lastOut (gc_sms_state.lastOut), msgs (gc_job_messages) } */
 const SYS_BY = /lead inbox|system|website|server|crm|auto|twilio|emergency/i;
@@ -108,7 +112,7 @@ function make(d){
   /* someone has it (the on-call page Accept, a reply to the alert text, …) */
   async function ack(leadIdOrKey, why){
     const k = s(leadIdOrKey);
-    return cas(l => { let n = 0; l.forEach(r => { if ((r.leadId === k || r.leadKey === k || r.id === k) && !r.ackAt && !/^(connected|accepted|gaveup)$/.test(r.state)) { r.ackAt = nowIso(); r.ackWhy = s(why) || 'acknowledged'; if (r.state === 'waiting' || r.state === 'retry') r.state = 'acked'; hist(r, 'acknowledged: ' + r.ackWhy); n++; } }); return n ? { acked: n } : false; }).then(r => r || { acked: 0 });
+    return cas(l => { let n = 0; l.forEach(r => { if ((r.leadId === k || r.leadKey === k || r.id === k) && !r.ackAt && !/^(connected|accepted|gaveup)$/.test(r.state)) { r.ackAt = nowIso(); r.ackWhy = s(why) || 'acknowledged'; if (r.state === 'waiting' || r.state === 'retry' || r.state === 'redial') r.state = 'acked'; hist(r, 'acknowledged: ' + r.ackWhy); n++; } }); return n ? { acked: n } : false; }).then(r => r || { acked: 0 });
   }
 
   /* who to call: this week's on-call person, then the 📞 Call order (no repeats, no empty numbers) */
@@ -121,6 +125,16 @@ function make(d){
       if (!CO.isOpen(now(), cfg)) cfg.slots = cfg.night.slots;   /* patch AFTERHOURS: after hours → Mitigation manager → Nick → Wesley */
       const data = d.crm ? await d.crm() : {}; CO.resolve(cfg, data, { ours: [env('TWILIO_FROM')] }).list.forEach(x => add(x.label, x.name, x.number)); } catch (e) {}
     return out;
+  }
+  /* PERSIST: the emergency text to the person about to be called (once per person) */
+  async function textPerson(rec, step){
+    const sid = env('TWILIO_ACCOUNT_SID'), tok = env('TWILIO_AUTH_TOKEN'), from = env('TWILIO_FROM_ALERTS') || env('TWILIO_FROM'), who = rec.chain[step];
+    if (!sid || !tok || !from || !who || !who.phone) return { ok: false };
+    const body = 'GrayCo EMERGENCY: ' + rec.kind + (rec.city ? ' at ' + rec.city : '') + (rec.contact && rec.contact.phone ? ' — customer ' + tidy(rec.contact.phone) : '') + '. Calling you now — answer and press 1 (connect) or 2 (I have it). We call again every 2 min for 10 min, then the next person.';
+    const r = await require('./custquiet.js').run('emergency', () => fetch('https://api.twilio.com/2010-04-01/Accounts/' + encodeURIComponent(sid) + '/Messages.json', { method: 'POST',
+      headers: { Authorization: 'Basic ' + Buffer.from(sid + ':' + tok).toString('base64'), 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ To: '+1' + who.phone, From: from, Body: body.slice(0, 320) }).toString() }));
+    return { ok: !!(r && r.ok) };
   }
   async function placeCall(rec, step){
     const sid = env('TWILIO_ACCOUNT_SID'), tok = env('TWILIO_AUTH_TOKEN'), from = env('TWILIO_FROM'), who = rec.chain[step];
@@ -140,9 +154,12 @@ function make(d){
   /* call step `step` of rec (claimed first, so a tick and a status callback never both call) */
   async function callStep(id, step, round){
     let rec = null;
-    await cas(l => { const r = l.find(x => x.id === id); if (!r || /^(connected|accepted|acked|gaveup)$/.test(r.state) || (r.round === round && r.step >= step)) return false;
+    let first = false;
+    await cas(l => { const r = l.find(x => x.id === id); if (!r || /^(connected|accepted|acked|gaveup)$/.test(r.state) || (r.state !== 'redial' && r.round === round && r.step >= step)) return false;
+      first = r.state !== 'redial'; if (first) r.pStart = nowIso(); r.tries = first ? 1 : (r.tries || 0) + 1;
       r.state = 'calling'; r.round = round; r.step = step; r.lastCallAt = nowIso(); r.called = arr(r.called).concat([{ at: nowIso(), round, step, to: r.chain[step] && r.chain[step].label }]); hist(r, 'calling ' + (r.chain[step] ? r.chain[step].label + ' ' + r.chain[step].name : '?')); rec = JSON.parse(JSON.stringify(r)); return true; });
     if (!rec) return { skipped: true };
+    if (first) { try { await textPerson(rec, step); } catch (e) {} }   /* PERSIST: a text with the call, once per person */
     const c = await placeCall(rec, step);
     if (c.ok) await cas(l => { const r = l.find(x => x.id === id); if (!r) return false; r.callSid = c.sid; return true; });
     else await cas(l => { const r = l.find(x => x.id === id); if (!r) return false; hist(r, 'call failed: ' + (c.why || c.status)); return true; });
@@ -153,6 +170,10 @@ function make(d){
     const r = await get(id); if (!r || r.state !== 'calling' || r.step !== step) return { skipped: true };
     if (r.ackAt) { await cas(l => { const x = l.find(y => y.id === id); if (!x || x.state !== 'calling') return false; x.state = 'acked'; hist(x, 'stopped: ' + x.ackWhy); return true; }); return { acked: true }; }
     if (await paused()) return { paused: true };
+    if (r.pStart && now() - Date.parse(r.pStart) < PER_PERSON_MIN * 60000) {   /* PERSIST: same person again in 2 minutes */
+      await cas(l => { const x = l.find(y => y.id === id); if (!x || x.state !== 'calling') return false; x.state = 'redial'; x.redialAt = new Date(Date.parse(x.lastCallAt || nowIso()) + REDIAL_MIN * 60000).toISOString(); hist(x, 'no answer — calling ' + (x.chain[step] ? x.chain[step].label : '') + ' again at ' + x.redialAt.slice(11, 16) + ' UTC'); return true; });
+      return { redial: true };
+    }
     if (step + 1 < arr(r.chain).length) return callStep(id, step + 1, r.round);
     if (r.round < 2) { await cas(l => { const x = l.find(y => y.id === id); if (!x || x.state !== 'calling') return false; x.state = 'retry'; x.retryAt = new Date(now() + RETRY_MIN * 60000).toISOString(); hist(x, 'nobody pressed a key — once more in ' + RETRY_MIN + ' min'); return true; }); return { retry: true }; }
     let mine = false;
@@ -164,7 +185,7 @@ function make(d){
   async function tick(){
     let order = null; try { order = await d.kvGet(require('./callorder.js').KEY); } catch (e) {}
     const set = settingsOf(order);
-    const all = await list(), open = all.filter(r => /^(waiting|calling|retry)$/.test(r.state));
+    const all = await list(), open = all.filter(r => /^(waiting|calling|retry|redial)$/.test(r.state));
     if (!open.length) return { open: 0 };
     if (!set.on) return { open: open.length, off: true };
     if (await paused()) return { open: open.length, paused: true };
@@ -178,6 +199,8 @@ function make(d){
         if (!ch.length) { await cas(l => { const x = l.find(y => y.id === r.id); if (!x) return false; x.state = 'gaveup'; hist(x, 'nobody to call (no on-call phone, empty call order)'); return true; }); continue; }
         await cas(l => { const x = l.find(y => y.id === r.id); if (!x || x.state !== 'waiting') return false; x.chain = ch; return true; });
         const c = await callStep(r.id, 0, 1); if (c.called) out.calls++;
+      } else if (r.state === 'redial' && now() >= Date.parse(r.redialAt)) {   /* PERSIST */
+        const c = await callStep(r.id, r.step, r.round); if (c.called) out.calls++;
       } else if (r.state === 'retry' && now() >= Date.parse(r.retryAt)) {
         const c = await callStep(r.id, 0, 2); if (c.called) out.calls++;
       } else if (r.state === 'calling' && now() - Date.parse(r.lastCallAt) > 4 * 60000) {
@@ -217,4 +240,4 @@ function make(d){
   }
   return { register, ack, tick, advance, callStep, chainNow, twimlCall, key, list, get, message, KEY };
 }
-module.exports = { make, KEY, kindOf, cityOf, ackReason, settingsOf, RING_S, RETRY_MIN };
+module.exports = { make, KEY, kindOf, cityOf, ackReason, settingsOf, RING_S, RETRY_MIN, REDIAL_MIN, PER_PERSON_MIN };

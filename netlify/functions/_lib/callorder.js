@@ -43,7 +43,7 @@
 const KEY = 'gc_call_order', LOG_KEY = 'gc_call_log';
 const SLOT_IDS = ['office', 'owner1', 'owner2', 'gm', 'leadpm'];
 const LABELS = { office: 'Office', owner1: 'Owner 1', owner2: 'Owner 2', gm: 'General Manager', leadpm: 'Lead PM' };
-const KINDS = ['company', 'phone', 'person', 'senior', 'mitigation'];
+const KINDS = ['company', 'phone', 'person', 'senior', 'mitigation', 'oncall'];   /* ONCALLRING: + 'oncall' — whoever is on call right now (💧 Mitigation → 📟 On call) */
 const MAX_SLOTS = 20;
 /* the owner's first order (10/28). Owner 1 / Owner 2 are looked up in the people list by name — an admin picks anyone else. */
 const GREETING = "Thanks for calling GrayCo Construction Services. If you need construction, remodeling, roofing, or water, fire or storm damage repair, press 1. If you're a current GrayCo customer, press 2. For anything else, including sales calls, press 3.";
@@ -54,6 +54,7 @@ const DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 const HOURS = { tz: 'America/Chicago', days: { sun: { open: false, start: '07:00', end: '18:00' }, mon: { open: true, start: '07:00', end: '18:00' }, tue: { open: true, start: '07:00', end: '18:00' },
   wed: { open: true, start: '07:00', end: '18:00' }, thu: { open: true, start: '07:00', end: '18:00' }, fri: { open: true, start: '07:00', end: '18:00' }, sat: { open: false, start: '07:00', end: '18:00' } }, holidays: [] };
 const NIGHT = { greeting: NIGHT_GREETING, slots: [
+  { id: 'n_oncall', label: 'On call (this week)', on: true, kind: 'oncall', phone: '', person: '' },   /* ONCALLRING (owner 11/11): the on-call foreman / tech rings first */
   { id: 'n_mit', label: 'Mitigation manager', on: true, kind: 'mitigation', phone: '', person: '' },
   { id: 'n_owner1', label: 'Nick', on: true, kind: 'person', phone: '', person: 'Nick Thomas' },
   { id: 'n_owner2', label: 'Wesley', on: true, kind: 'person', phone: '', person: 'Wesley Johnson' }] };
@@ -165,6 +166,13 @@ function slotNumber(x, data){
   if (x.kind === 'mitigation') {   /* the mitigation manager: an active person whose role / title says mitigation + manager / lead */
     const u = users.find(y => y && P().isActive(y) && userPhone(y).length === 10 && /mitig/i.test([y.role, y.title, y.profile, y.position, y.jobTitle].map(s).join(' ')) && /manag|lead|supervis|director|chief/i.test([y.role, y.title, y.profile, y.position, y.jobTitle].map(s).join(' ')));
     return u ? { number: userPhone(u), name: s(u.name) } : { why: 'no mitigation manager yet' };
+  }
+  if (x.kind === 'oncall') {   /* ONCALLRING: the person on call right now (data.oncallNow, from the 📟 On call rotation) → their cell */
+    const o = data && data.oncallNow; if (!o || !(o.email || o.name || o.phone)) return { why: 'nobody on call right now' };
+    const u = o.email ? users.find(y => y && s(y.email).toLowerCase() === s(o.email).toLowerCase()) : (o.name ? P().findUser(users, o.name) : null);
+    if (u && !P().isActive(u)) return { why: 'no longer active', name: s(u.name) };
+    const ph = (u && userPhone(u)) || String(o.phone || '').replace(/\D/g, '').slice(-10);
+    return ph.length === 10 ? { number: ph, name: s((u && u.name) || o.name) } : { why: 'no phone on file', name: s((u && u.name) || o.name) };
   }
   if (x.kind === 'senior') {
     const u = P().seniorPm(users, data && data.gc_senior_pm);
