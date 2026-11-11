@@ -26,7 +26,7 @@ ok('the sheet shows the Mitigation Manager (called first), foreman and tech this
 ok('it spells out the screening: press 1 only for a real emergency, the yes / no check, press 3 = not a real emergency, 15 min → the last resort', /press 1 only for an emergency happening right now/.test(txt) && /yes \/ no check/.test(txt) && /Press 3 = not a real emergency/.test(txt) && /15 min/.test(txt), '');
 ok('🚩 missed emergency calls: per person, and which ones reached the owners', /Max Manager: 1 missed · 1 reached the owners/.test(txt) && /Fred Foreman: 1 missed/.test(txt), txt.slice(txt.indexOf('🚩 Missed'), txt.indexOf('🚩 Missed') + 200));
 ok('last resort defaults to Wesley Johnson, then Nick Thomas', /Not set — Wesley Johnson, then Nick Thomas/.test(txt));
-await A.page().screenshot({ path: process.argv[3] || '/tmp/oncall_sheet.png', fullPage: false });
+{ const fs = await import('fs'); let sp = process.argv[3] || '/tmp/oncall_sheet.png'; try { if (fs.statSync(sp).isDirectory()) sp += '/oncall_sheet.png'; } catch (e) {} await A.page().screenshot({ path: sp, fullPage: false }); }
 await A.ev(() => { const s = document.querySelector('[data-addl="own"]'); s.value = 'wjohnson@grayco-cs.com'; s.dispatchEvent(new Event('change', { bubbles: true })); }); await sleep(800);
 ok('adding an owner saves the whole config (owners + foremen + techs + manager)', SETS.length === 1 && SETS[0].owners[0].email === 'wjohnson@grayco-cs.com' && SETS[0].techRotation[0].email === 'tina@example.com' && SETS[0].mitManager.email === 'max@example.com' && SETS[0].rotation.length === 1, SETS);
 ok('no page errors', !errs.length, errs);
