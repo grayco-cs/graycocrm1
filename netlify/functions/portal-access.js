@@ -1310,8 +1310,10 @@ async function staffAction(action, body, who){
       return Object.assign({}, x, { canApprove: canApproveFor(data, who, x.project_id) }); });
     let bidsReq = [];
     try { bidsReq = (await dbGet('sp_rows', 'select=id,data&collection=eq.users&order=key.asc')).map(function(r){ return r.data || {}; })
-      .filter(function(u){ return u.role === 'sub' && u.approved !== true && u.bidsRequested === true && u.bidsRevoked !== true; })
-      .map(function(u){ return { id: s(u.id), company: s(u.company), name: s(u.name), email: low(u.email), crmSubId: s(u.crmSubId), at: s(u.bidsRequestedAt) }; }); } catch (e) {}
+      /* owner 11/11: "when accounts are created I want to approve them from admin approvals" — every sub who signed up on the bid site
+         (Request Access, or from the sub portal) and is not approved or denied yet */
+      .filter(function(u){ return u.role === 'sub' && u.approved !== true && u.bidsRevoked !== true; })
+      .map(function(u){ return { id: s(u.id), company: s(u.company), name: s(u.name), email: low(u.email), crmSubId: s(u.crmSubId), at: s(u.bidsRequestedAt || u.createdAt), phone: s(u.phone), trades: arr(u.trades).slice(0, 6), selfSignup: u.bidsRequested !== true }; }); } catch (e) {}
     return { ok: true, events: events, unread: unread, links: links, waiting: waiting, bids: bidsReq, codes: relays, text: textReady(), admin: isAdmin(who), me: me, at: new Date().toISOString() };
   }
   if (action === 's-thread') {

@@ -140843,7 +140843,7 @@ function sync(){
 function approvalsHook(){
   var A = window._gcApprovals; if (!A || typeof A.add !== 'function') return;
   ST.waiting.forEach(function(x){ var p = proj(x.project_id) || {}; A.add({ id: 'subscope_' + x.id, kind: 'sub_scope', jobId: x.project_id, jobName: p.name || '', pm: p.pm || '', step: 'pm', status: 'waiting', title: (x.kind === 'co' ? 'Change order' : 'Scope') + ' for ' + ((subsList().find(function(r){ return r.id === x.sub_id; }) || {}).name || 'sub') + ': ' + (x.title || ''), open: function(){ hub(x.project_id); } }); });
-  ST.bids.forEach(function(b){ A.add({ id: 'bidsite_' + b.id, kind: 'bid_site', step: 'admin', status: 'waiting', title: 'Bid site request — ' + b.company, open: function(){ openSubsPanel(); } }); });
+  ST.bids.forEach(function(b){ A.add({ id: 'bidsite_' + b.id, kind: 'bid_site', step: 'admin', status: 'waiting', title: (b.selfSignup ? '🆕 New sub sign-up — ' : 'Bid site request — ') + (b.company || b.name || b.email) + (b.name && b.company ? ' (' + b.name + ')' : '') + (b.email ? ' · ' + b.email : ''), open: function(){ openSubsPanel(); } }); });
 }
 /* ── badges: the same counter the customer side uses (window._gcUnread) ── */
 function unreadOf(pid){
@@ -178507,7 +178507,9 @@ function drawInvite(){
         + '<span style="flex:1"><b>' + (x.flag === 'preferred' ? '⭐ ' : '') + esc(x.company || x.name || x.email) + '</b> <span class="mut">' + esc([x.name !== x.company ? x.name : '', x.email, tradesOf(x).join(', ')].filter(Boolean).join(' · ')) + '</span></span>'
         + (x.lang === 'es' ? '<span class="pill draft" title="Gets the e-mail in Spanish">ES</span>' : '') + (x.grade ? '<span class="pill draft">' + esc(x.grade) + '</span>' : '') + (x.invited ? '<span class="pill priv">Invited</span>' : '') + '</label>';
     }).join('') : '<div class="mut" style="padding:10px">No subs in these trades.</div>') + '</div>'
-    + '<div class="bar"><button type="button" class="b pri" data-sys="send"' + (n ? '' : ' disabled') + '>✉️ Invite ' + n + ' picked</button>'
+    + '<div style="margin:10px 0 4px"><b>Subs not listed yet?</b> <span class="mut">Paste their e-mails (one per line, or separated by commas). Each gets their own invite; the link makes their bid-site sign-in (their e-mail + a password they pick) already approved for this job.</span>'
+    + '<textarea data-sys-paste rows="3" style="width:100%;box-sizing:border-box;margin-top:4px;font:inherit;padding:6px;border:1px solid #cbd5e1;border-radius:8px" placeholder="sub1@company.com, sub2@gmail.com">' + esc(INV.paste || '') + '</textarea></div>'
+    + '<div class="bar"><button type="button" class="b pri" data-sys="send">✉️ Invite ' + n + ' picked + pasted</button>'
     + (Object.keys(INV.trades).length ? '<button type="button" class="b" data-sys="sendtrades">Invite all subs in these trades (' + list.filter(function(x){ return !x.invited; }).length + ')</button>' : '')
     + '<button type="button" class="b" data-sys="sendall">Invite all subs (' + INV.subs.filter(function(x){ return !x.invited; }).length + ')</button></div>';
 }
@@ -178553,7 +178555,14 @@ function onClick(ev){
   if (a === 'lead') return openLead(t.getAttribute('data-lead'));
   if (a === 'award' || a === 'unaward') return award(t, a === 'award');
   if (a === 'trade') { var k = t.getAttribute('data-t'); if (INV.trades[k]) delete INV.trades[k]; else INV.trades[k] = 1; return drawInvite(); }
-  if (a === 'send') return sendInvite({ emails: Object.keys(INV.pick).filter(function(e){ return INV.pick[e]; }) });
+  if (a === 'send') {   /* + the pasted e-mails (subs not on file yet) */
+    var ta = D.querySelector('#gcsys-modal [data-sys-paste]'), raw = ta ? String(ta.value || '') : ''; INV.paste = raw;
+    var pasted = (raw.match(/[A-Za-z0-9._%+'-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g) || []).map(function(e){ return low(e); });
+    var em = Object.keys(INV.pick).filter(function(e){ return INV.pick[e]; }).concat(pasted).filter(function(e, i, all){ return all.indexOf(e) === i; });
+    if (!em.length) { toast('Pick subs or paste their e-mails first.', true); return; }
+    if (pasted.length && !W.confirm('Send ' + em.length + ' invite e-mail' + (em.length === 1 ? '' : 's') + ' (' + pasted.length + ' pasted)? Each sub gets their own.')) return;
+    return sendInvite({ emails: em });
+  }
   if (a === 'sendtrades') { var ts = Object.keys(INV.trades); if (!W.confirm('E-mail every sub in ' + ts.join(', ') + ' who is not invited yet? Each gets their own e-mail.')) return; return sendInvite({ all: true, trades: ts }); }
   if (a === 'sendall') { if (!W.confirm('E-mail EVERY sub who is not invited yet (⛔ Do not use subs are skipped)? Each gets their own e-mail.')) return; return sendInvite({ all: true }); }
   if (a === 'tile') return tile(t.getAttribute('data-k'));
@@ -221569,5 +221578,48 @@ W._gcBigFile = function(file, job){ return bigFile(file, job).then(function(rec)
 W._gcAddFileLink = function(job){ var rec = addLink(job); if (rec && rec.link) setTimeout(function(){ toPortal(job, rec.link, rec.label || 'Plans'); }, 300); return rec; };
 W._gcToBidPortal = toPortal;
 W._gcDrive = { status: status, fn: fn, _reset: function(){ ST = { at: 0, v: null }; } };
+})(window);
+</script>
+<script id="gc-patch-bidsubs">
+/* patch BIDSUBS (owner 11/11: "if the sub isn't in the CRM and they get into the portal … make them enter information so that info can go
+   directly into our CRM … have to have valid credentials in the portal before a bid is accepted and those transfer to the CRM"):
+   every approved bid-site sub (bids.grayco-cs.com: invited, or approved by GrayCo) who is not in the CRM's Subs list yet is added to it —
+   company, contact, e-mail, phone, trade, address, license numbers — marked "Bid portal". Runs on an admin / office computer (on load and
+   every 10 minutes), the same way the sub portal's events are filed (the CRM saves its own list). window._gcBidSubs.run() */
+(function(W){
+'use strict';
+if (W._gcBidSubs) return;
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function staff(){ try { if (W._gcIsOfficeFull && W._gcIsOfficeFull()) return true; } catch (e) {} try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()); } catch (e) { return false; } }
+var BUSY = false, LAST = { at: 0, added: [] };
+function run(){
+  if (BUSY || !staff() || typeof W._setVendors !== 'function' || !W._crm || !Array.isArray(W._crm.vendors)) return Promise.resolve({ skipped: true });
+  BUSY = true;
+  return W.fetch('/.netlify/functions/bid-hub?subs=1', { cache: 'no-store' }).then(function(r){ return r.ok ? r.json() : {}; }, function(){ return {}; }).then(function(j){
+    var have = {}; arr(W._crm.vendors).concat(arr(W._crm.subs)).forEach(function(v){ if (v && s(v.email)) have[low(v.email)] = 1; });
+    var gone = {}; try { arr(W._crm.gc_deleted_vendors).concat(arr(W._crm.gc_deleted_subs)).forEach(function(id){ gone[s(id)] = 1; }); } catch (e) {}
+    var at = new Date().toISOString(), add = [];
+    arr(j && j.subs).forEach(function(x){
+      if (!x || !x.onBidSite || !x.notInCrm || !/@/.test(s(x.email)) || have[low(x.email)]) return;
+      var id = 'SBP' + low(x.email).replace(/[^a-z0-9]+/g, '').slice(0, 24);
+      if (gone[id]) return;   /* deleted in the CRM on purpose: not added back */
+      have[low(x.email)] = 1;
+      add.push({ id: id, name: s(x.company) || s(x.name) || s(x.email), company: s(x.company), contact: s(x.name), email: low(x.email), phone: s(x.phone), trade: s(x.trade) || arr(x.trades).join(', '),
+        address: [s(x.address), s(x.city), s(x.state)].filter(Boolean).join(', '), license: s(x.licenses), isSub: true, cat: 'Subcontractor', source: 'Bid portal', bidPortalUserId: s(x.portalUserId),
+        lang: s(x.lang), addedDate: at.slice(0, 10), createdAt: at, updatedAt: at, savedAt: at, note: 'Added from the bid portal (bids.grayco-cs.com) — papers (W-9, insurance) are on the bid site.' });
+    });
+    if (!add.length) return { added: 0 };
+    W._setVendors(function(prev){ return Array.isArray(prev) ? prev.concat(add.filter(function(a){ return !prev.some(function(p){ return p && (p.id === a.id || low(p.email) === a.email); }); })) : prev; });
+    setTimeout(function(){ try { if (W._supaUpsertNow && Array.isArray(W._crm.vendors)) W._supaUpsertNow('vendors', W._crm.vendors); } catch (e) {} }, 800);
+    LAST = { at: Date.now(), added: add.map(function(a){ return a.name; }) };
+    try { if (W._gcToast) W._gcToast('🏗 ' + add.length + ' new sub' + (add.length === 1 ? '' : 's') + ' from the bid portal added to Subs: ' + LAST.added.slice(0, 4).join(', ') + (add.length > 4 ? '…' : '')); } catch (e) {}
+    return { added: add.length, names: LAST.added };
+  }).then(function(r){ BUSY = false; return r; }, function(e){ BUSY = false; return { error: s(e && e.message) }; });
+}
+setTimeout(run, 25000);
+(W.__GC_NATIVE_SETINTERVAL__ || W.setInterval).call(W, function(){ if (!document.hidden) run(); }, 600000);
+W._gcBidSubs = { run: run, last: function(){ return LAST; } };
 })(window);
 </script>

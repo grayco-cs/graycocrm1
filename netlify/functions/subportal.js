@@ -150,6 +150,18 @@ async function listRows(filters){
 }
 function eq(col, v){ return col + '=eq.' + encodeURIComponent(v); }
 function inList(col, vals){ return col + '=in.(' + vals.map(function(v){ return '"' + String(v).replace(/"/g, '') + '"'; }).join(',') + ')'; }
+/* the papers a sub must have on file to bid: W-9, general liability, workers' comp — on file and not expired → '' or the reason */
+const REQUIRED_PAPERS = [['w9', 'W-9'], ['insurance_general', 'general liability insurance certificate'], ['insurance_workers_comp', "workers' comp insurance certificate"]];
+async function papersMissing(userId){
+  let items = []; try { const r = await getRow('subdocs', userId); items = arr(r && r.data && r.data.items); } catch (e) { items = []; }
+  const today = new Date().toISOString().slice(0, 10), bad = [];
+  REQUIRED_PAPERS.forEach(function(p){
+    const have = items.filter(function(d){ return d && d.type === p[0]; });
+    if (!have.length) bad.push(p[1] + ' is missing');
+    else if (!have.some(function(d){ return !s(d.expirationDate) || s(d.expirationDate).slice(0, 10) >= today; })) bad.push(p[1] + ' has expired');
+  });
+  return bad.length ? 'Before you can bid: your ' + bad.join(', your ') + '. Upload it in My Documents, then send your bid.' : '';
+}
 async function getRow(collection, id){
   const rows = await listRows([eq('key', collection + '/' + id)]);
   return rows[0] || null;
@@ -514,6 +526,8 @@ async function saveCollection(who, key, upsert, del, ctx){
         rows.push(rowFor('users', Object.assign({}, p, pick(x, SUB_PROFILE_FIELDS), { updatedAt: new Date().toISOString() })));
       });
     } else if (key === 'bids') {
+      /* PAPERS (owner 11/11: "have to have valid credentials in the portal before a bid is accepted"): the server checks too, not only the page */
+      if (upsert.length) { const miss = await papersMissing(me); if (miss) throw Fail(403, miss); }
       for (const x of upsert) {
         const old = existing[x.id];
         if (old && old.user_id !== me) continue;
@@ -1330,7 +1344,7 @@ exports.handler = async function (event) {
   }
 };
 /* patch SYS: the CRM's 🏗 Bid portal tab (bid-hub.js) works on the same rows with the same helpers — one copy of each */
-exports._hub = { listRows, eq, inList, getRow, upsertRows, rowFor, crmSubs, crmData, crmSubList, sendMail, mailHtml, esc, okEmail, PORTAL_ORIGIN, saveCollection, isGone, subJobView, plansOf };   /* patch SYS2: + the Q&A save, the sub view, plans */
+exports._hub = { listRows, eq, inList, getRow, upsertRows, rowFor, crmSubs, crmData, crmSubList, sendMail, mailHtml, esc, okEmail, PORTAL_ORIGIN, saveCollection, isGone, subJobView, plansOf, papersMissing };   /* patch SYS2: + the Q&A save, the sub view, plans */
 /* patch LOGOALL (owner 10/23: "should have our logo on it"): every customer / sub / GC e-mail this file sends
    straight to Resend gets the GrayCo shell (centered logo, office line, licenses). Internal @grayco-cs.com mail is untouched. */
 try { require('./_lib/brand.js').installResend(); } catch (e) {}

@@ -117,7 +117,8 @@ async function subsList(jobId){
   us.filter(u => u.role === 'sub' && u.approved && SP.okEmail(low(u.email)) && !seen[low(u.email)]).forEach(u => {
     const e = low(u.email); seen[e] = 1; const c = u.crmSubId && rawById[s(u.crmSubId)];
     if (c && low(c.subFlag) === 'dnu') return;
-    out.push({ email: e, name: s(u.name), company: s(u.company), trade: arr(u.trades)[0] || '', trades: arr(u.trades), flag: '', grade: '', score: null, lang: langOf(u, c), onBidSite: true, invited: !!invited[e] });
+    out.push({ email: e, name: s(u.name), company: s(u.company), trade: arr(u.trades)[0] || '', trades: arr(u.trades), flag: '', grade: '', score: null, lang: langOf(u, c), onBidSite: true, invited: !!invited[e],
+      notInCrm: !c, phone: s(u.phone), portalUserId: s(u.id), city: s(u.businessCity), state: s(u.businessState), address: s(u.businessAddress), licenses: s(u.licenseNumbers) });   /* BIDSUBS: what the CRM needs to add them */
   });
   return out;
 }
