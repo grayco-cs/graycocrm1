@@ -6,7 +6,7 @@ const R = []; const ok = (n, c, i) => { R.push(!!c); console.log((c ? 'PASS ' : 
 resetCloud();
 cset('users', [{ id: 'u1', name: 'Wesley Johnson', email: 'wjohnson@grayco-cs.com', role: 'Admin', payType: 'owner', active: true }]);
 cset('projects', [{ id: 'PF1', name: 'Demo Finish Job', client: 'Demo Customer', status: 'In Progress', pct: 60 }, { id: 'PF2', name: 'Demo Photo Job', client: 'Demo B', status: 'In Progress', pct: 70 },
-  { id: 'PF3', name: 'Demo Synced Job', client: 'Demo C', status: 'In Progress', pct: 80 }, { id: 'PF4', name: 'Demo Waive Job', client: 'Demo D', status: 'In Progress', pct: 90 }]);
+  { id: 'PF3', name: 'Demo Synced Job', client: 'Demo C', status: 'In Progress', pct: 80 }, { id: 'PF4', name: 'Demo Waive Job', client: 'Demo D', status: 'In Progress', pct: 90 }, { id: 'PF5', name: 'Demo Sub Photo Job', client: 'Demo E', status: 'In Progress', pct: 85 }]);
 const A = await computer('wjohnson@grayco-cs.com', { build: process.argv[2] });
 const errs = []; A.page().on('pageerror', e => errs.push(String(e.message).slice(0, 200)));
 await signIn(A, 'wjohnson@grayco-cs.com', 15000); await sleep(9000);
@@ -35,5 +35,13 @@ ok('PF4 put back to 90', (await pct('PF4')) === 90);
 await A.ev(() => { const b = document.querySelector('#gc-finishphoto [data-fp="waive"]'); b && b.click(); }); await sleep(2500);
 const p4 = await A.ev(() => (window._crm.projects || []).find(p => p.id === 'PF4'));
 ok('admin "Mark 100 % anyway": 100 % + finishPhotoWaived', p4.pct === 100 && p4.finishPhotoWaived && /Wesley/.test(p4.finishPhotoWaived.by), p4);
+// 5. SUBAFTER: only the sub's After photos → 100 % sticks, and the PM gets the small "good enough for marketing?" check
+await A.ev(() => { const P = window._gcPhotos; const r0 = P.records; P.records = () => (r0() || []).concat([{ id: 'ph5', jobId: 'PF5', tag: 'After', source: 'sub', ref: 'y' }]); });
+await setPct('PF5', 100); await sleep(2500);
+const m5 = await A.ev(() => { const b = document.getElementById('gc-finishmedia'); return b ? b.innerText : ''; });
+ok('sub After photos: 100 % sticks + "Check the finish photos" (not blocking)', (await pct('PF5')) === 100 && /Check the finish photos/.test(m5) && /good enough for marketing/.test(m5), m5);
+await A.ev(() => { const b = document.querySelector('#gc-finishmedia [data-fm="ok"]'); b && b.click(); }); await sleep(1500);
+const p5 = await A.ev(() => (window._crm.projects || []).find(p => p.id === 'PF5'));
+ok('"✓ They look good" is saved on the job', p5.finishPhotosOk && /Wesley/.test(p5.finishPhotosOk.by), p5.finishPhotosOk);
 ok('no page errors', !errs.length, errs);
 const f = R.filter(x => !x).length; console.log(f ? 'FAILED ' + (R.length - f) + '/' + R.length : 'FINISHPHOTO ' + R.length + '/' + R.length); await A.close?.(); process.exit(f ? 1 : 0);

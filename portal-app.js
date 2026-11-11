@@ -149,6 +149,17 @@ Object.assign(L.en, { late: '⚠️ Can’t make it / running late', lateCant: '
 Object.assign(L.es, { late: '⚠️ No puedo ir / voy tarde', lateCant: 'No puedo ir', lateLate: 'Voy tarde', lateOther: 'Otra cosa', lateText: '¿Qué pasa? Su PM lo recibe enseguida.', lateSend: 'Enviar a mi PM', lateSent: 'Enviado — su PM ya lo tiene', lateNeed: 'Elija una opción o escriba una nota.' });
 /* patch SUBPHOTOS (owner 10/30): today's jobs on Home (address, Maps, customer, PO + Copy PO), "📍 I'm here", "📷 Add photos",
    "✅ Done for today" (all optional) — and the one rule: enough photos on the job before an invoice */
+/* SUBAFTER (owner 11/10): After photos of the finished work before an invoice; send every photo; a video before an insurance job starts */
+Object.assign(L.en, { phDuring: '🛠 During the job', phAfter: '📸 Finished work (After)', addAfter: '📸 Add finished-work photos (After)',
+  tipDuring: 'Send all your photos as you work — they go straight into the job’s photos for GrayCo.',
+  tipAfter: 'For your final invoice: take clear photos of the finished work, and send any photos from the job you haven’t sent yet. Good, well-lit photos help us show off your work.',
+  afterRule: 'Finished-work (After) photos for your invoice: {have} of {need}',
+  insTip: 'Tip for insurance jobs: before you start, take a short video of the work area — any damage or problems you see that are not part of your scope. It protects you and GrayCo if questions come up later about what was already there.' });
+Object.assign(L.es, { phDuring: '🛠 Durante el trabajo', phAfter: '📸 Trabajo terminado (Después)', addAfter: '📸 Agregar fotos del trabajo terminado',
+  tipDuring: 'Envíe todas sus fotos mientras trabaja — van directo a las fotos del trabajo para GrayCo.',
+  tipAfter: 'Para su factura final: tome fotos claras del trabajo terminado y envíe las fotos del trabajo que aún no haya enviado. Las fotos buenas y con luz nos ayudan a mostrar su trabajo.',
+  afterRule: 'Fotos del trabajo terminado (Después) para su factura: {have} de {need}',
+  insTip: 'Consejo para trabajos de seguro: antes de empezar, grabe un video corto del área — cualquier daño o problema que vea que no sea parte de su trabajo. Le protege a usted y a GrayCo si luego hay preguntas sobre lo que ya estaba ahí.' });
 Object.assign(L.en, { today: 'Today', noToday: 'Nothing on the schedule today.', here: '📍 I’m here', doneDay: '✅ Done for today', hereSent: 'Checked in — thank you', doneSent: 'Marked done for today — thank you',
   copyPo: 'Copy PO', copied: 'PO copied', todayHint: 'Add today’s photos of your work.', photoRule: 'Photos for your invoice: {have} of {need}', photoRuleOk: 'Enough photos for your invoice ({have}).',
   takePhoto: '📷 Take a photo', choosePhotos: '🖼 Choose photos', custPhone: 'Customer' });
@@ -462,6 +473,8 @@ function overview(){
       h('dt', { text: t('progress') }), h('dd', { text: (j.pct || 0) + '% ' + t('done') })]),
     JOB.lien && JOB.lien.required ? h('div', { class: 'how', text: t('lien') }) : null,
     JOB.photoRule ? h('div', { class: 'how photo-rule', text: JOB.photoRule.invoiceOk ? t('photoRuleOk', { have: JOB.photoRule.have }) : t('photoRule', { have: JOB.photoRule.have, need: JOB.photoRule.need }) }) : null,
+    JOB.photoRule && JOB.photoRule.afterNeed > 0 && (JOB.photoRule.afterHave || 0) < JOB.photoRule.afterNeed ? h('div', { class: 'how photo-rule', id: 'afterRule', text: t('afterRule', { have: JOB.photoRule.afterHave || 0, need: JOB.photoRule.afterNeed }) }) : null,   /* SUBAFTER */
+    JOB.insurance ? h('div', { class: 'how', id: 'insTip', role: 'note', style: 'background:#eff6ff;border-left:3px solid #3b82f6;padding:6px 10px;border-radius:6px', text: '🎥 ' + t('insTip') }) : null,   /* SUBAFTER */
     dayButtons(j.id)]));   /* patch SUBPHOTOS */
   out.push(contactCard(t('pm'), pm.name, pm.phone, pm.email));
   if (j.customer && (j.customer.name || j.customer.phone || j.customer.email)) out.push(card(t('customer'), [h('div', { class: 'sel' }, [h('b', { text: j.customer.name }), j.customer.phone ? h('div', null, [h('a', { href: telOf(j.customer.phone), text: j.customer.phone })]) : null, j.customer.email ? h('div', null, [h('a', { href: 'mailto:' + j.customer.email, text: j.customer.email })]) : null])]));
@@ -535,7 +548,8 @@ function signSheet(x){
   return sh;
 }
 function photosPane(){
-  var box = card(t('photos'), [h('button', { type: 'button', class: 'btn gold', id: 'addPhotos', text: t('addPhotos'), on: { click: function(){ addPhotos(JOB.job.id); } } }), h('div', { class: 'empty', id: 'phLoad', text: '…' })]);
+  var box = card(t('photos'), [h('div', { class: 'how', text: t('tipDuring') }), h('div', { class: 'btns3' }, [h('button', { type: 'button', class: 'btn gold', id: 'addPhotos', text: t('addPhotos'), on: { click: function(){ addPhotos(JOB.job.id); } } }),
+    h('button', { type: 'button', class: 'btn gold', id: 'addAfter', text: t('addAfter'), on: { click: function(){ addPhotos(JOB.job.id, 'After'); } } })]), h('div', { class: 'empty', id: 'phLoad', text: '…' })]);   /* SUBAFTER */
   loadPhotos(JOB.job.id).then(function(list){
     var e = box.querySelector('#phLoad'); if (!e) return;
     if (!list.length) { e.textContent = t('noPhotos'); return; }
@@ -583,19 +597,22 @@ function thumbOf(file){
     img.src = url;
   });
 }
-function addPhotos(pid0){
-  var files = [], list = h('div', { class: 'muted', id: 'phList' }), note = h('input', { class: 'inp', id: 'phNote' });
+function addPhotos(pid0, tag0){
+  var files = [], list = h('div', { class: 'muted', id: 'phList' }), note = h('input', { class: 'inp', id: 'phNote' }), tag = tag0 === 'After' ? 'After' : 'During';   /* SUBAFTER: During the job / Finished work (After) */
+  var tip = h('div', { class: 'how', id: 'phTip', text: t(tag === 'After' ? 'tipAfter' : 'tipDuring') });
+  var tb = function(k, l){ return h('button', { type: 'button', class: 'btn' + (tag === k ? ' gold' : ''), 'data-phtag': k, 'aria-pressed': tag === k ? 'true' : 'false', text: t(l), on: { click: function(){ tag = k; tip.textContent = t(k === 'After' ? 'tipAfter' : 'tipDuring'); Array.prototype.forEach.call(document.querySelectorAll('[data-phtag]'), function(b){ var on = b.getAttribute('data-phtag') === tag; b.className = 'btn' + (on ? ' gold' : ''); b.setAttribute('aria-pressed', on ? 'true' : 'false'); }); } } }); };
+  var tagRow = h('div', { class: 'btns3' }, [tb('During', 'phDuring'), tb('After', 'phAfter')]);
   var add = function(fs){ files = files.concat(fs); list.textContent = files.map(function(f){ return f.name; }).join(', '); };
   var cam = h('button', { type: 'button', class: 'btn', id: 'phCam', text: t('takePhoto'), on: { click: function(){ picker('image/*', false, add, 'environment'); } } });   /* patch SUBPHOTOS: the phone's camera */
   var pick = h('button', { type: 'button', class: 'btn', id: 'phPick', text: t('choosePhotos'), on: { click: function(){ picker('image/*', true, add); } } });
   var go = h('button', { type: 'button', class: 'btn gold', id: 'phSend', text: t('send') });
-  var sh = sheet(t('photos'), [h('div', { class: 'btns3' }, [cam, pick]), list, field(t('photoNote'), note), go]);
+  var sh = sheet(t('photos'), [tagRow, tip, h('div', { class: 'btns3' }, [cam, pick]), list, field(t('photoNote'), note), go]);
   go.addEventListener('click', function(){
     if (!files.length) { toast(t('pickFile'), true); return; }
     busy(go, true);
     var pid = pid0 || JOB.job.id, sentG = 0;
-    files.slice(0, 12).reduce(function(p, f){ return p.then(function(ids){ return toGPhotos(f, pid, 'During', note.value).then(function(okG){ if (okG) { sentG++; return ids; } return upload(f, 'photo', pid).then(function(u){ ids.push(u.id); return ids; }); }); }); }, Promise.resolve([]))
-      .then(function(ids){ return api('p-photos-add', { projectId: pid, uploadIds: ids, gphotos: sentG, note: note.value }); })
+    files.slice(0, 12).reduce(function(p, f){ return p.then(function(ids){ return toGPhotos(f, pid, tag, note.value).then(function(okG){ if (okG) { sentG++; return ids; } return upload(f, 'photo', pid).then(function(u){ ids.push(u.id); return ids; }); }); }); }, Promise.resolve([]))
+      .then(function(ids){ return api('p-photos-add', { projectId: pid, uploadIds: ids, gphotos: sentG, note: note.value, tag: tag }); })
       .then(function(){ sh.close(); toast(t('saved')); if (JOB || !pid0) openJob(pid, 'photos'); else reloadHome(); }, function(e){ busy(go, false); toast(e.message, true); });
   });
 }

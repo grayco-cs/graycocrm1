@@ -108,13 +108,25 @@ function gateMessage(jobName, need, have){
   return 'Add at least ' + need + ' photo' + (need === 1 ? '' : 's') + ' of your work on ' + (s(jobName) || 'this job') + ' before sending this invoice (you have ' + have + ').';
 }
 /* → { ok, need, have, days, min, message? } */
+/* SUBAFTER (owner 11/10: "make the subs take after photos of the work they need paid in their portal … those go into the job's photos in
+   GrayCo Photos"): the finished-work (After) photos this sub sent on this job — GrayCo Photos records tagged After, or a portal batch sent
+   as After. An invoice needs at least invAfterMin of them (setting; default 1). */
+function afterCount(gcPhotos, events, sub, pid){
+  const seen = {}; let n = 0;
+  arr(gcPhotos).forEach(function(r){ if (r.deleted === true || r.source !== 'sub' || s(r.jobId) !== s(pid) || s(r.subId) !== s(sub.id) || !/^after$/i.test(s(r.tag))) return; const k = refKey(r); if (!k || seen[k]) return; seen[k] = 1; n++; });
+  arr(events).forEach(function(e){ if (s(e.kind) !== 'photos' || s(e.project_id) !== s(pid) || s(e.sub_id) !== s(sub.id) || !/^after$/i.test(s((e.data || {}).tag))) return;
+    arr((e.data || {}).files).forEach(function(f){ if (!/^image\//.test(s(f.type))) return; const k = refKey(f); if (!k || seen[k]) return; seen[k] = 1; n++; }); });
+  return n;
+}
+function afterMin(settings){ const v = settings && settings.invAfterMin; if (v === undefined || v === null || v === '') return minOf(settings) === 0 ? 0 : 1;   /* the photo rule turned off (minimum 0) turns this off too */ const n = Math.round(Number(v)); return isFinite(n) ? Math.max(0, Math.min(20, n)) : 1; }
 function invoiceGate(o){
   o = o || {};
   const p = o.job || {}, sub = o.sub || {};
   const nd = photoNeed(o.schedule, sub, p.id, o.settings, o.today);
-  const have = photoCount(o.gcPhotos, o.events, sub, p.id);
-  const out = { ok: have >= nd.need, need: nd.need, have: have, days: nd.days, min: nd.min };
-  if (!out.ok) out.message = gateMessage(p.name, nd.need, have);
+  const have = photoCount(o.gcPhotos, o.events, sub, p.id), aHave = afterCount(o.gcPhotos, o.events, sub, p.id), aNeed = afterMin(o.settings);
+  const out = { ok: have >= nd.need && aHave >= aNeed, need: nd.need, have: have, days: nd.days, min: nd.min, afterNeed: aNeed, afterHave: aHave };
+  if (have < nd.need) out.message = gateMessage(p.name, nd.need, have);
+  else if (aHave < aNeed) out.message = 'Add ' + (aNeed === 1 ? 'a photo' : aNeed + ' photos') + ' of the finished work on ' + (s(p.name) || 'this job') + ' (📸 Finished work — After) before sending this invoice.';
   return out;
 }
 
@@ -196,4 +208,4 @@ function firstDayDue(data, set, state, nowMs){
 }
 
 module.exports = { DEFAULT_MIN, s, low, arr, ymd, addDays, central, poOf, mapsOf, phone10, rowIsSub, schedDays, photoCount, minOf, photoNeed,
-  gateMessage, invoiceGate, today, jobCard, firstKey, firstText, firstDayDue };
+  gateMessage, invoiceGate, afterCount, afterMin, today, jobCard, firstKey, firstText, firstDayDue };

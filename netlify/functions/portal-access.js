@@ -925,7 +925,8 @@ async function pJob(ctx, pid){
       site: { gate: clip(site.gate, 200), parking: clip(site.parking, 300), hours: clip(site.hours, 200), dumpster: clip(site.dumpster, 300), power: clip(site.power, 300), water: clip(site.water, 300), notes: clip(site.notes, 2000) },
       /* patch SUBPHOTOS (owner 10/30): the customer's name and phone on every job the sub is on (ctx.jobs = assigned only); e-mail still needs the PM's switch */
       customer: { name: s(p.client), phone: s(p.clientPhone || p.phone), email: showCust ? low(p.clientEmail || p.email) : '' } },
-    photoRule: await photoState(ctx, p).then(function(g){ return { need: g.need, have: g.have, days: g.days, invoiceOk: g.ok, message: g.message || '' }; }, function(){ return null; }),
+    photoRule: await photoState(ctx, p).then(function(g){ return { need: g.need, have: g.have, days: g.days, invoiceOk: g.ok, message: g.message || '', afterNeed: g.afterNeed, afterHave: g.afterHave }; }, function(){ return null; }),
+    insurance: p.isInsurance === true || /insurance|claim|mitigation|water|fire|storm/i.test(s(p.type || p.jobType || p.projectType)),   /* SUBAFTER: only a yes/no (never the carrier or the claim) — for the "video before you start" tip */
     pm: pmOf(data, p), office: { phone: OFFICE_PHONE, email: OFFICE_EMAIL },
     schedule: schedFor(data, [p], sub),
     scopes: scopes.filter(function(x){ return x.kind !== 'co'; }).map(function(x){ return scopeOut(x, signed); }),
@@ -1049,7 +1050,7 @@ async function partnerAction(action, body, ctx){
     const files = await uploadsOf(sub, body.uploadIds, p.id);
     const inPhotos = Math.max(0, Math.min(50, Math.round(num(body.gphotos))));     /* sent straight into GrayCo Photos (sub-photos) */
     if (!files.length && !inPhotos) throw Fail(400, 'Add a photo first.');
-    await addEvent('photos', sub, p.id, { note: clip(body.note, 500), files: files, gphotos: inPhotos });
+    await addEvent('photos', sub, p.id, { note: clip(body.note, 500), files: files, gphotos: inPhotos, tag: /^after$/i.test(s(body.tag)) ? 'After' : 'During' });   /* SUBAFTER */
     return { ok: true, count: files.length + inPhotos };
   }
   if (action === 'p-progress') {

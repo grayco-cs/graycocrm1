@@ -47,13 +47,21 @@ const DATA = {
 };
 
 console.log('subwork — the invoice photo rule');
+await t('SUBAFTER: enough photos but no finished-work (After) photo → blocked, with the After message; an After portal batch counts', () => {
+  const g = SW.invoiceGate({ job: DATA.projects[0], sub: SUB, schedule: DATA.schedule, gcPhotos: [1, 2, 3, 4, 5].map(i => photo(i)), events: [], today: TODAY });
+  assert.strictEqual(g.ok, false); assert.strictEqual(g.afterNeed, 1); assert.strictEqual(g.afterHave, 0); assert.match(g.message, /finished work on Maple Deck/);
+  const ev = [{ kind: 'photos', project_id: 'P1', sub_id: 'S1', data: { tag: 'After', files: [{ type: 'image/jpeg', ref: 'sb:crm-files/' + 'a'.repeat(64) + '.jpg' }] } }];
+  const g2 = SW.invoiceGate({ job: DATA.projects[0], sub: SUB, schedule: DATA.schedule, gcPhotos: [1, 2, 3, 4, 5].map(i => photo(i)), events: ev, today: TODAY });
+  assert.strictEqual(g2.ok, true); assert.strictEqual(g2.afterHave, 1);
+  assert.strictEqual(SW.afterMin({ invAfterMin: 0 }), 0); assert.strictEqual(SW.afterMin({}), 1);
+});
 await t('4 photos → blocked (default minimum 5), with the owner\'s message', () => {
   const g = SW.invoiceGate({ job: DATA.projects[0], sub: SUB, schedule: DATA.schedule, gcPhotos: [1, 2, 3, 4].map(i => photo(i)), events: [], today: TODAY });
   assert.strictEqual(g.ok, false); assert.strictEqual(g.need, 5); assert.strictEqual(g.have, 4);
   assert.strictEqual(g.message, 'Add at least 5 photos of your work on Maple Deck before sending this invoice (you have 4).');
 });
 await t('5 photos → allowed; another sub\'s / another job\'s / deleted photos never count; the same picture twice counts once', () => {
-  const mine = [1, 2, 3, 4, 5].map(i => photo(i));
+  const mine = [1, 2, 3, 4, 5].map(i => photo(i, i === 5 ? { tag: 'After' } : null));   /* SUBAFTER: one finished-work photo */
   assert.strictEqual(SW.invoiceGate({ job: DATA.projects[0], sub: SUB, schedule: DATA.schedule, gcPhotos: mine, today: TODAY }).ok, true);
   const noise = [photo(1, { id: 'dupe' }), photo(6, { subId: 'S2' }), photo(7, { jobId: 'P2' }), photo(8, { deleted: true }), photo(9, { source: 'grayco' })];
   const g = SW.invoiceGate({ job: DATA.projects[0], sub: SUB, schedule: DATA.schedule, gcPhotos: mine.slice(0, 4).concat(noise), today: TODAY });
@@ -69,7 +77,7 @@ await t('scheduled 7 days → need 7 (whichever is higher); future days do not c
   assert.strictEqual(g.days, 7); assert.strictEqual(g.need, 7); assert.strictEqual(g.ok, false); assert.match(g.message, /at least 7 photos .* \(you have 6\)/);
 });
 await t('the admin minimum (gc_sub_portal_settings.invPhotoMin) changes the rule; 0–50 only', () => {
-  const g = SW.invoiceGate({ job: DATA.projects[0], sub: SUB, schedule: DATA.schedule, settings: { invPhotoMin: 2 }, gcPhotos: [photo(1), photo(2)], today: TODAY });
+  const g = SW.invoiceGate({ job: DATA.projects[0], sub: SUB, schedule: DATA.schedule, settings: { invPhotoMin: 2 }, gcPhotos: [photo(1), photo(2, { tag: 'After' })], today: TODAY });
   assert.strictEqual(g.need, 2); assert.strictEqual(g.ok, true);
   assert.strictEqual(SW.minOf({ invPhotoMin: 500 }), 50); assert.strictEqual(SW.minOf({ invPhotoMin: -3 }), 0); assert.strictEqual(SW.minOf({}), 5);
 });
@@ -138,6 +146,9 @@ await t('p-invoice is refused until 5 photos, with the message; then accepted (t
     e => e.status === 409 && e.message === 'Add at least 5 photos of your work on Maple Deck before sending this invoice (you have 3).' && e.extra.photos.need === 5);
   assert.ok(!EVENTS.some(e => e.kind === 'invoice'));
   KV.gc_photos.value = [1, 2, 3, 4, 5].map(i => photo(i));
+  await assert.rejects(PA.partnerAction('p-invoice', { projectId: 'P1', amount: 1200 }, await ctxS1()),
+    e => e.status === 409 && /photo of the finished work on Maple Deck \(📸 Finished work — After\)/.test(e.message));   /* SUBAFTER: 5 photos but no After → still refused */
+  KV.gc_photos.value = [1, 2, 3, 4, 5].map(i => photo(i, i === 5 ? { tag: 'After' } : null));
   const ok = await PA.partnerAction('p-invoice', { projectId: 'P1', amount: 1200 }, await ctxS1());
   assert.ok(ok.ok); const ev = EVENTS.find(e => e.kind === 'invoice'); assert.strictEqual(ev.data.po, 'Q314');
 });

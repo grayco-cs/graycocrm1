@@ -5493,7 +5493,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.212-2026-11-11-r27b -->
+<!-- GrayCo CRM Build: 33.213-2026-11-11-r27c -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6442,7 +6442,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.212-2026-11-11-r27b");
+  console.log("[GC] Build 33.213-2026-11-11-r27c");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6490,7 +6490,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.212-2026-11-11-r27b"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.213-2026-11-11-r27c"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -217759,6 +217759,20 @@ function hasFinish(pid){
   var p = arr(W._crm && W._crm.projects).filter(function(x){ return x && s(x.id) === s(pid); })[0];
   return !!(p && arr(p.photos).some(function(r){ return r && /after|finish|final/i.test(s(r.tag || r.label || r.caption)); }));
 }
+function ownFinish(pid){ try { var P = W._gcPhotos; return !!(P && typeof P.records === 'function' && arr(P.records()).some(function(r){ return r && !r.deleted && s(r.jobId) === s(pid) && /^after$/i.test(s(r.tag)) && s(r.source) !== 'sub'; })); } catch (e) { return false; } }
+function mediaCheck(p){
+  var old = D.getElementById('gc-finishmedia'); if (old) old.remove();
+  var o = D.createElement('div'); o.id = 'gc-finishmedia'; o.setAttribute('role', 'status');
+  o.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:18px;z-index:2147482000;background:#fff;color:#0f172a;border:1px solid #cbd5e1;border-left:4px solid #F2A51A;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.18);padding:12px 14px;max-width:440px;width:calc(100% - 32px);font:14px Inter,Arial,sans-serif';
+  o.innerHTML = '<b>📸 Check the finish photos</b><div style="margin:4px 0 8px">The sub sent the After photos for <b>' + esc(p.name || p.client || 'this job') + '</b>. Are they good enough for marketing (clear, bright, the whole finished area)?</div>'
+    + '<div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" data-fm="ok" style="min-height:38px;border-radius:9px;border:0;background:#166534;color:#fff;font:700 14px Inter,Arial,sans-serif;padding:0 12px;cursor:pointer">✓ They look good</button>'
+    + '<button type="button" data-fm="photos" style="min-height:38px;border-radius:9px;border:1px solid #cbd5e1;background:#fff;font:600 14px Inter,Arial,sans-serif;padding:0 12px;cursor:pointer">📸 Add better ones</button>'
+    + '<button type="button" data-fm="later" style="min-height:38px;border-radius:9px;border:0;background:transparent;color:#475569;font:600 14px Inter,Arial,sans-serif;cursor:pointer">Later</button></div>';
+  o.addEventListener('click', function(e){ var b = e.target.closest && e.target.closest('[data-fm]'); if (!b) return; var a = b.getAttribute('data-fm'); o.remove();
+    if (a === 'ok' && typeof W._setProjects === 'function') W._setProjects(function(prev){ return arr(prev).map(function(x){ return x && s(x.id) === s(p.id) ? Object.assign({}, x, { finishPhotosOk: { by: s(me().name || me().email), at: new Date().toISOString() }, updatedAt: new Date().toISOString() }) : x; }); });
+    if (a === 'photos') { try { if (W._gcPhotos && W._gcPhotos.open) W._gcPhotos.open(p.id, { tag: 'After' }); } catch (x) {} } });
+  D.body.appendChild(o);
+}
 var SEEN = null;   /* pid → { pct, status, fields } as last seen */
 /* only a change made HERE (someone tapped / typed in the last 10 s) — a job another computer finished arrives by sync and is left alone */
 var LAST_INPUT = 0; ['pointerdown', 'keydown', 'input', 'change'].forEach(function(ev){ D.addEventListener(ev, function(){ LAST_INPUT = Date.now(); }, true); });
@@ -217802,6 +217816,9 @@ function check(){
       if (was && !done(was) && done(p) && Date.now() - LAST_INPUT < 10000 && !p.importedHistory && !p.noAutomations && !p.finishPhotoWaived && !hasFinish(p.id)) {
         SEEN['__want_' + p.id] = now; revert(p, was); ask(p); return;   /* keep the old snapshot */
       }
+      /* SUBAFTER (owner 11/10: "PMs shouldn't have to upload final pictures if our subs do, but they still have to make sure they are good
+         enough for media"): the finish photos came only from subs → a small, non-blocking check for the PM */
+      if (was && !done(was) && done(p) && Date.now() - LAST_INPUT < 10000 && !p.finishPhotosOk && hasFinish(p.id) && !ownFinish(p.id)) mediaCheck(p);
       SEEN[p.id] = now;
     });
   } catch (e) {}
