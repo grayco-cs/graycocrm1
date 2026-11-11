@@ -145,6 +145,29 @@ Customers and adjusters will ask what we are spraying. Know the difference, and 
 - **ULV / wet fogging** — a fine water-based mist of deodorant (often a pairing agent) for rooms, wall cavities and contents.
 - **Encapsulants and sealing primers** — shellac-based or oil-based stain-and-odor-blocking primers on cleaned framing, subfloors and walls. **The final step, never a replacement for cleaning.**
 """},
+        {'id': 'oxidizers', 'title': 'Oxidizing agents for odor', 'body': """
+**How oxidation works.** Most odors are molecules floating in the air or stuck in materials. An oxidizer is a chemical that grabs electrons from those molecules and **breaks them apart** into different, odorless pieces. Unlike a masking agent, the odor molecule is destroyed. The catch: anything strong enough to break odor molecules can also attack **dyes, fabrics, rubber, metals and lungs**, so every oxidizer has rules.
+
+- **Sodium perborate (oxygen bleach)** — a powder that releases oxygen (hydrogen peroxide) in water. Our go-to for **deodorizing fabrics, textiles and washable contents** (laundering, soaking, carpet and upholstery spotting). **Warm water activates it.** Always **test colorfastness** on a hidden spot first. Don't use it on wool, silk or leather without testing (and usually not at all). Gentler on colors than chlorine bleach.
+- **Sodium hypochlorite (chlorine bleach)** — strong and cheap, for **hard, non-porous surfaces** only. It removes color and weakens fabric fibers. **Never mix it with ammonia, acids or quat disinfectants** — that makes toxic gas.
+- **Hydrogen peroxide** — cleaning, stain and odor removal and disinfecting (ready-to-use and accelerated products). Breaks down to water and oxygen. Can **bleach** fabrics, carpet and some finishes: test first. Concentrates burn skin and eyes.
+- **Chlorine dioxide** — a gas (from release packets or generators) or a solution. A **very strong oxidizer** that reaches odors in cavities and contents. **Trained techs only**, the space empty of people and pets per the label, and aired out before re-entry. Heavy doses bleach fabrics and corrode metals and electronics.
+- **Ozone** — a gas from an ozone generator. Strong and fast. **Unoccupied spaces only: no people, pets or plants.** It degrades **rubber, some plastics, elastic and some fabrics**, and dyes with long exposure. Ventilate before anyone goes back in.
+- **Hydroxyl radicals** — made by hydroxyl generators (UV lamps) from the moisture in the air. **Can run with people and pets present** when the maker says so. Safer on materials, but **slower** than ozone — days, not hours.
+
+**Side by side**
+
+| Oxidizer | Strength | Occupied? | Watch out for |
+|---|---|---|---|
+| Sodium perborate | Mild to moderate | Yes (a laundry / cleaning product) | Test colorfastness; not wool, silk or leather |
+| Chlorine bleach | Strong | Ventilate; keep people away while using | Hard surfaces only; bleaches and weakens fabric; never mix with ammonia, acids or quats |
+| Hydrogen peroxide | Mild (ready-to-use) to strong (concentrate) | Yes for ready-to-use, with ventilation | Bleaching; concentrates burn |
+| Chlorine dioxide | Very strong | **No** — empty per label | Trained use; bleaches; corrodes metals / electronics |
+| Ozone | Strong, fast | **No** — no people, pets or plants | Rubber, plastics, some fabrics; air out before re-entry |
+| Hydroxyl | Moderate, slow | Yes, per the maker | Takes longer; keep the unit closed while running |
+
+Every one goes on **after** source removal and cleaning, and every one needs the SDS read and the customer's consent (🧪 Materials & SDS).
+"""},
         {'id': 'hvac', 'title': 'HVAC and ductwork', 'body': """
 The heating and cooling system can spread soot and odor to every room.
 
@@ -197,6 +220,8 @@ If it isn't written down and photographed, it didn't happen. Good paperwork gets
         ('What does a masking agent do?', ['Chemically neutralizes odor molecules', 'Covers the odor with a stronger, pleasant fragrance for a while', 'Removes soot from walls', 'Seals framing'], 1, 'Masking is temporary; the odor returns when the fragrance fades. It never replaces source removal and cleaning.'),
         ('A customer\'s smoke-damaged sofa cannot be saved. What must happen before it is thrown away?', ['Nothing, it is obviously ruined', 'It is listed, photographed and the customer signs the non-salvageable disposal list', 'The crew leader decides', 'It is put on the curb right away'], 1, 'Never throw anything away without the customer\'s written consent.'),
         ('How is a pairing agent (odor counteractant) different from a masking agent?', ['It smells stronger', 'It chemically pairs with odor molecules to neutralize them, and works only on contact after cleaning', 'It is the same thing', 'It can be used instead of cleaning'], 1, 'Pairing agents neutralize odor molecules they touch; they go on after cleaning.'),
+        ('Which oxidizer is our go-to for deodorizing washable fabrics and contents?', ['Chlorine bleach', 'Sodium perborate (oxygen bleach), in warm water after a colorfastness test', 'Ozone in a sealed bag with the customer present', 'Chlorine dioxide in the laundry'], 1, 'Sodium perborate releases oxygen in warm water and is gentler on colors; test colorfastness first.'),
+        ('Which oxidizer can run with people and pets in the house (per the maker)?', ['Ozone', 'Chlorine dioxide gas', 'A hydroxyl generator', 'None of them'], 2, 'Hydroxyl generators can run occupied per the manufacturer; ozone and chlorine dioxide need an empty space.'),
         ('In the deodorization order, when does a sealing (encapsulating) primer go on?', ['First, before cleaning', 'Instead of cleaning', 'Last, after source removal, cleaning and deodorizing', 'Never'], 2, 'Sealing is the final step and never a replacement for cleaning.'),
         ('What is the right order for odor control?', ['Deodorize → clean → seal', 'Seal → deodorize → clean', 'Remove the source → clean → seal → deodorize', 'Fog only'], 2, 'Odor has to be removed at its source and cleaned; sealing and deodorizing come after.'),
         ('When can people or pets be inside while ozone runs?', ['When the windows are open', 'Never — the space must be empty of people, pets and plants', 'If they wear N95s', 'For under an hour'], 1, 'Ozone is harmful to breathe; the area must be empty, signed and aired out before re-entry.'),
@@ -303,7 +328,8 @@ Wet buildings smell musty, and sewage smells worse. The odor goes away when the 
 - **Masking agents** (fragrances) only **cover** the smell with a stronger one. Temporary; the odor returns when the fragrance fades; never a substitute for removal, cleaning and drying; can bother sensitive people. A short-term courtesy only, after the real work, with the customer's consent.
 - **Pairing agents** (odor counteractants) **chemically pair with odor molecules** to neutralize them. They work only on contact, so they go on **after cleaning**; follow the label and ventilate.
 - For organic odors (sewage, urine), **enzyme or bacterial digesters** break down the residue; **activated carbon** in an air scrubber traps odors in the air; **hydroxyl** units can run with people present when the maker allows; **ozone** only in an empty space.
-- See the Fire & Smoke training (S700 principles) for the full deodorization order.
+- **Oxidizing agents** break odor molecules apart: **sodium perborate** (oxygen bleach) for washable fabrics and contents — warm water, colorfastness test first; **chlorine bleach** only on hard non-porous surfaces and never mixed with ammonia, acids or quats; **hydrogen peroxide** cleaners (can bleach); **chlorine dioxide** and **ozone** only with nobody inside; **hydroxyl** units can run occupied per the maker but work slower.
+- See the Fire & Smoke training (S700 principles) for the full deodorization order and the oxidizer comparison table.
 """},
         {'id': 'monitor', 'title': 'Daily monitoring and drying logs', 'body': """
 - **Visit every day.** Take readings on the same marked spots every time, plus the air readings (temperature, RH, GPP) outside, unaffected, affected and at the dehumidifier exhaust.

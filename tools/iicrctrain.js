@@ -43,12 +43,18 @@ function md(t){
   while (i < L.length) {
     var l = L[i];
     if (!l.trim()) { i++; continue; }
+    if (/^\|/.test(l)) {
+      var rows = []; while (i < L.length && /^\|/.test(L[i])) rows.push(L[i++]);
+      var cells = function(r){ return r.replace(/^\||\|$/g, '').split('|').map(function(c){ return c.trim(); }); };
+      h += '<table class="iic-tbl"><thead><tr>' + cells(rows[0]).map(function(c){ return '<th>' + inline(c) + '</th>'; }).join('') + '</tr></thead><tbody>' +
+        rows.slice(2).map(function(r){ return '<tr>' + cells(r).map(function(c){ return '<td>' + inline(c) + '</td>'; }).join('') + '</tr>'; }).join('') + '</tbody></table>'; continue;
+    }
     if (/^\s*(- |\d+\. )/.test(l)) {
       var ord = /^\s*\d+\. /.test(l), its = [];
       while (i < L.length && /^\s*(- |\d+\. )/.test(L[i])) its.push(L[i++].replace(/^\s*(- |\d+\. )/, ''));
       h += (ord ? '<ol>' : '<ul>') + its.map(function(x){ return '<li>' + inline(x) + '</li>'; }).join('') + (ord ? '</ol>' : '</ul>'); continue;
     }
-    var p = []; while (i < L.length && L[i].trim() && !/^\s*(- |\d+\. )/.test(L[i])) p.push(L[i++]);
+    var p = []; while (i < L.length && L[i].trim() && !/^\||^\s*(- |\d+\. )/.test(L[i])) p.push(L[i++]);
     h += '<p>' + inline(p.join(' ')) + '</p>';
   }
   return h;
@@ -71,6 +77,7 @@ var CSS = [
   'h2{font-size:13.5pt;color:#0f2440;border-bottom:2px solid #d4a017;padding-bottom:3px;margin:20px 0 8px;break-after:avoid;page-break-after:avoid}',
   'section{break-inside:auto}',
   'ul,ol{margin:4px 0 8px;padding-left:22px}li{margin:2px 0}p{margin:6px 0}',
+  '.iic-tbl{width:100%;border-collapse:collapse;font-size:9.5pt;margin:6px 0 10px;break-inside:avoid;page-break-inside:avoid}.iic-tbl th,.iic-tbl td{border:1px solid #cbd5e1;padding:4px 6px;text-align:left;vertical-align:top}.iic-tbl th{background:#0f2440;color:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}',
   '.iic-q{break-inside:avoid;page-break-inside:avoid;border:1px solid #e2e8f0;border-radius:8px;padding:8px 12px;margin:0 0 8px}',
   '.iic-q .c{display:block;margin:3px 0 0 8px}',
   '.iic-sign{border:2px solid #0f2440;border-radius:10px;padding:12px 16px;margin-top:16px;break-inside:avoid;page-break-inside:avoid}',
@@ -95,7 +102,7 @@ function html(id){
   h += '<div class="iic-page" data-iicrc-doc="' + esc(d.id) + '">' + head;
   h += '<div class="iic-title"><h1>' + esc(d.icon) + ' ' + esc(d.title) + '</h1><div class="sub">Based on the principles of ' + esc(d.std) + '</div><span class="iic-tag">INTERNAL — GRAYCO STAFF TRAINING · NOT FOR CUSTOMERS</span></div>';
   h += '<div class="iic-meta"><div><b>Who</b>' + (d.required.length ? 'Required: Insurance / Mitigation crews, supers and PMs. Open to all staff.' : 'Everyone who may work this kind of job.') + '</div><div><b>Time</b>About ' + Math.max(30, d.sections.length * 4) + ' minutes, plus the knowledge check</div><div><b>Knowledge check</b>' + n + ' questions · pass = ' + P + ' of ' + n + '</div><div><b>Record</b>Sign below; keep in the employee\'s training file (🎓 Training → 📜 Certifications)</div></div>';
-  h += '<div class="iic-note"><b>About this document.</b> ' + esc(d.intro) + ' This is GrayCo\'s own training, written in our own words from common restoration practice. It is not the IICRC standard and does not replace it or IICRC certification classes. Always follow the product label and SDS, OSHA rules, local codes and your supervisor; where GrayCo policy is stricter, follow GrayCo policy. Take the same test in the CRM: 📄 Forms &amp; Docs → 🎓 Training.</div>';
+  h += '<div class="iic-note"><b>About this document.</b> ' + esc(d.intro) + ' It summarizes common restoration practice in our own words; it is not the IICRC standard and does not replace it or IICRC certification classes. Always follow the product label and SDS, OSHA rules, local codes and your supervisor; where GrayCo policy is stricter, follow GrayCo policy. Take the same test in the CRM: 📄 Forms &amp; Docs → 🎓 Training.</div>';
   h += '<b>Contents</b><ol class="iic-toc">' + d.sections.map(function(s){ return '<li>' + esc(s.title) + '</li>'; }).join('') + '<li>Knowledge check &amp; sign-off</li></ol>';
   d.sections.forEach(function(s, i){ h += '<section id="iic-' + esc(s.id) + '"><h2>' + (i + 1) + '. ' + esc(s.title) + '</h2>' + md(s.body) + '</section>'; });
   h += '<section class="iic-quiz"><h2>' + (d.sections.length + 1) + '. Knowledge check</h2><p>Circle the best answer for each question. You need <b>' + P + ' of ' + n + '</b> to pass.</p>';
