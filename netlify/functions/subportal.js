@@ -1463,7 +1463,8 @@ async function myWork(profile){
   const jobs = [];
   projects.forEach(function(p){
     arr(p.subs).filter(function(x){ return isMine(x.name, x.vendorId || x.subId); }).forEach(function(x){
-      jobs.push({ id: s(p.id) + ':' + s(x.id), job: s(p.name), address: s(p.address || p.jobAddress), po: s(p.autoPO || p.po),
+      jobs.push({ id: s(p.id) + ':' + s(x.id), pid: s(p.id), job: s(p.name),   /* patch SUBSCHED: pid → 📅 My schedule for this job (the portal) */
+        address: s(p.address || p.jobAddress), po: s(p.autoPO || p.po),
         trade: s(x.trade), status: s(x.status) || 'Bidding', scope: s(x.scope).slice(0, 4000), amount: money(x.bidAmt),
         start: ymd(x.startDate), end: ymd(x.endDate), pm: pmOf(p), jobStatus: s(p.status || p.stage) });
     });

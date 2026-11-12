@@ -140912,6 +140912,9 @@ async function fileEvents(events){
           });
         } else if (ev.kind === 'checkin') {   /* patch SUBPHOTOS: "📍 I'm here" / "✅ Done for today" — optional */
           onProj(pid, function(q){ activity(q, 'SPA_' + ev.id, (d.op === 'done' ? '✅ ' + nm + ' is done for today' : '📍 ' + nm + ' is at the job') + (d.note ? ': ' + d.note : '')); });
+        } else if (ev.kind === 'sched') {   /* patch SUBSCHED: the sub entered / changed / cancelled their days — the job's activity; the schedule items: gc-patch-subsched */
+          onProj(pid, function(q){ activity(q, 'SPA_' + ev.id, '📅 ' + nm + (d.op === 'cancel' ? ' cancelled ' : d.op === 'update' ? ' moved ' : ' scheduled ') + (d.task || 'their work') + ' ' + (d.line || '')); });
+          try { if (window._gcSubSched) nST(function(){ window._gcSubSched.refresh(); }, 50); } catch (e) {}
         } else if (ev.kind === 'lang') {
           if (!alreadyOnSub(ev)) changeSub(ev.sub_id, function(x){ x.lang = d.lang === 'es' ? 'es' : 'en'; });
         }
@@ -227365,5 +227368,266 @@ W._gcApxExtra = arr(W._gcApxExtra); W._gcApxExtra.push(rows);
 (W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout).call(W, function(){ refresh(true); }, 4000);
 W._gcBpAppr = { rows: function(){ return rows({ kind: 'admin' }, Date.now()); }, refresh: function(){ refresh(true); }, sheet: sheet, jobs: function(){ return JOBS.slice(); } };
 try { console.log('[GC] patch BPAPPR: 🏗 Bid portal items in ✅ Approvals — _gcBpAppr.rows()'); } catch (e) {}
+})(window, document);
+</script>
+<script id="gc-patch-subsched">
+/* patch SUBSCHED (owner 11/12: "on the sub portal have where the subs can click the schedule they will do for the job when they get the job and
+   that schedule will update our company schedule automatically whenever a sub enters his schedule in there with address, PO and task if they want").
+   CRM side. A sub's own entries (portal job page → 📅 My schedule for this job; server: portal-access p-sched / s-sched, _lib/subsched.js) become
+   items on the company schedule BY THEMSELVES — on every signed-in CRM, every minute (and at once when the sub-portal filing sees a 'sched' event):
+     · one item per entry day: "🔨 <Sub company> — <task>", the job (pid), the job's address and PO, the sub's start time, crew / notes,
+       source "Sub portal", subId + subEntryId, groupId (one group per entry: "Delete all days" works), the job's company (companyId) — so
+       each company's schedule (_gcCo filter) shows its own subs' days;
+     · the ids are fixed per entry day (SPS_<entry>_<yyyymmdd>_<rev>), so two computers filing at once never make a duplicate; a change by
+       the sub moves / changes those same items; a cancel removes them (tombstoned, like any delete);
+     · ⚠ on the item (no blocking) when a day is outside the job's dates, or another trade is on that job that day;
+     · staff cannot silently overwrite a sub's day: an edit of one is put back within seconds with a note — 📅 Sub schedules (Schedule tab, and
+       each sub's card in the job's 👷 Subs & portal sheet) has ✅ Confirm and 📨 Ask to move (a message to the sub in their portal thread).
+   The job's PM gets the To-Do / phone push from the server (one To-Do per entry, replaced when the sub changes it).
+   Console: _gcSubSched.state() · .refresh() · .open(pid) · .expected() */
+(function(W, D){
+'use strict';
+if (W.__GC_SUBSCHED__) return; W.__GC_SUBSCHED__ = true;
+var nST = W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout.bind(W);
+var nSI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval.bind(W);
+var FN = '/.netlify/functions/portal-access', LOADED = Date.now();
+var ST = { entries: null, at: 0, err: '', today: '', busy: null, writes: 0, restored: 0, lastSig: '' };
+function s(v){ return v == null ? '' : String(v).trim(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function esc(v){ return String(v == null ? '' : v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function crm(){ return W._crm || {}; }
+function proj(pid){ return arr(crm().projects).find(function(p){ return p && String(p.id) === String(pid); }) || null; }
+function sched(){ return arr(crm().schedule); }
+function signedIn(){ try { var A = W.__GC_AUTH__; if (!A) return true; return !!A.email() && A.mode() !== 'none'; } catch (e) { return false; } }
+function epochOk(){ try { if (typeof W._gcEpochStatus !== 'function') return true; var st = W._gcEpochStatus(); return !!st && st.state === 'ok'; } catch (e) { return false; } }
+function api(body){
+  return W.fetch(FN, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(function(r){
+    return r.text().then(function(t){ var j = null; try { j = JSON.parse(t); } catch (e) {} return { status: r.status, ok: r.ok && !!(j && j.ok), data: j || {} }; });
+  }, function(){ return { status: 0, ok: false, data: { error: 'No internet — try again.' } }; });
+}
+function toast(msg, bad){
+  try { var t = D.createElement('div'); t.className = 'gcss-toast'; t.textContent = msg; t.setAttribute('data-gc-keep', '');
+    t.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:calc(140px + env(safe-area-inset-bottom,0px));z-index:2147483100;background:' + (bad ? '#B42318' : '#1D5E2C') + ';color:#fff;padding:12px 16px;border-radius:10px;font:600 14px Inter,-apple-system,sans-serif;max-width:90vw;pointer-events:none';
+    D.body.appendChild(t); nST(function(){ t.remove(); }, 5200); } catch (e) {}
+}
+function d8(d){ return s(d).replace(/-/g, ''); }
+function dShort(d){ try { return new Date(d + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }); } catch (e) { return d; } }
+function t12(v){ var m = /^(\d{2}):(\d{2})$/.exec(s(v)); if (!m) return ''; var h = +m[1], ap = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12; return h + ':' + m[2] + ' ' + ap; }
+function datesOf(e){ var n = arr(e.days).length; return dShort(e.start) + (e.end && e.end !== e.start ? ' – ' + dShort(e.end) : '') + ' · ' + n + ' day' + (n === 1 ? '' : 's') + (e.time ? ' · from ' + t12(e.time) : ''); }
+function tomb(id){ try { return !!(W._gcIsTombstoned && W._gcIsTombstoned('schedule', id)); } catch (e) { return false; } }
+function draft(x){ try { return !!(W._gcSchedDraft && W._gcSchedDraft(x)); } catch (e) { return false; } }
+function jobOff(p){ return /hold|lost|cancel|declin|dead|void/i.test(s(p && (p.status || p.stage))); }
+function coOf(p){ try { return W._gcCo ? W._gcCo.ofJob(p) : s(p.companyId); } catch (e) { return ''; } }
+/* the fixed id of an entry's day; a day someone deleted (tombstoned) comes back as …r1, r2 … (the sub's entry is the truth) */
+function idFor(e, d){ var b = 'SPS_' + e.id + '_' + d8(d) + '_' + ((e.dayV && e.dayV[d]) || e.v || 1); if (!tomb(b)) return b; for (var i = 1; i < 9; i++) if (!tomb(b + 'r' + i)) return b + 'r' + i; return b + 'r9'; }
+/* ⚠ (no blocking): outside the job's dates; another trade on that job the same day */
+function conflictOf(e, d, p, list){
+  var w = [], st = s(p.startDate).slice(0, 10), en = s(p.endDate || p.estFinish).slice(0, 10);
+  if ((st && d < st) || (en && d > en)) w.push('outside the job dates (' + (st || '…') + ' – ' + (en || '…') + ')');
+  else if (!st && !en) {
+    var own = list.filter(function(x){ return x && String(x.pid) === String(p.id) && !x.subEntryId && x.deleted !== true && x.scope !== 'personal' && !draft(x) && s(x.date); }).map(function(x){ return s(x.date).slice(0, 10); }).sort();
+    if (own.length && (d < own[0] || d > own[own.length - 1])) w.push('the job is not on the schedule that day');
+  }
+  var others = {};
+  list.forEach(function(x){
+    if (!x || x.deleted === true || x.scope === 'personal' || draft(x) || String(x.pid) !== String(p.id) || s(x.date).slice(0, 10) !== d) return;
+    if (x.subEntryId === e.id || (s(x.subId) && s(x.subId) === s(e.subId))) return;
+    var who = s(x.vendor || x.sub); if (!who && !x.subId) return; if (!who) who = 'another sub';
+    if (who.toLowerCase() === s(e.subName).toLowerCase()) return;
+    others[who] = 1;
+  });
+  var o = Object.keys(others); if (o.length) w.push('same day as ' + o.slice(0, 3).join(', ') + (o.length > 3 ? ' +' + (o.length - 3) : ''));
+  return w.join('; ');
+}
+function itemsFor(e, list){
+  var p = proj(e.pid); if (!p) return null;   /* that job is not on this computer: leave its items alone */
+  if (e.status !== 'active' || jobOff(p)) return [];
+  var days = arr(e.days), n = days.length, now = new Date().toISOString();
+  return days.map(function(d, i){
+    var warn = conflictOf(e, d, p, list);
+    var notes = ['📅 From ' + s(e.subName) + '\'s sub portal' + (e.contact && e.contact !== e.subName ? ' (' + e.contact + ')' : '') + ' — ' + datesOf(e) + '.',
+      e.crew ? 'Crew: ' + e.crew : '', e.notes ? 'Notes: ' + e.notes : '', e.po ? 'PO: ' + e.po : '',
+      e.confirmed ? '✅ Confirmed by ' + s(e.confirmed.by) : '⏳ Not confirmed yet', e.moveAsk ? '📨 Asked to move: ' + s(e.moveAsk.text) : '',
+      warn ? '⚠ ' + warn : '', 'The sub changes it in their portal — use 📅 Sub schedules → ✅ Confirm / 📨 Ask to move.'].filter(Boolean).join('\n');
+    return { id: idFor(e, d), pid: s(e.pid), title: (warn ? '⚠ ' : '') + '🔨 ' + s(e.subName) + ' — ' + s(e.task), date: d, time: s(e.time), endTime: '', vendor: s(e.subName), subId: s(e.subId), assignee: '', type: 'work',
+      address: s(e.address || p.address), po: s(e.po), notes: notes, scope: 'company', by: 'Sub portal', createdBy: 'Sub portal', source: 'Sub portal', fromSubPortal: true,
+      subEntryId: s(e.id), subEntryV: Number(e.v) || 1, subConfirmed: !!e.confirmed, conflict: warn, groupId: 'SPS_' + e.id, dayNum: i + 1, totalDays: n, crew: e.crew || '', companyId: coOf(p), updatedAt: now };
+  });
+}
+var CORE = ['pid', 'title', 'date', 'time', 'vendor', 'subId', 'address', 'po', 'notes', 'scope', 'subEntryV', 'subConfirmed', 'groupId', 'companyId', 'conflict', 'deleted'];
+var HUMAN = ['pid', 'date', 'time', 'vendor', 'address', 'po'];
+function differs(a, b, keys){ return keys.some(function(k){ return s(a[k]) !== s(b[k]); }); }
+function plainTitle(v){ return s(v).replace(/^⚠\s*/, ''); }
+/* what the schedule should hold for the entries we know, from the LIVE list (window._crm.schedule can lag it): { want: {id: item}, drop: [ids], restored: [msg] } */
+function plan(list){
+  list = arr(list || sched());
+  var want = {}, drop = [], restored = [], byId = {}, byEntry = {};
+  list.forEach(function(x){ if (!x || x.id == null) return; byId[x.id] = x; if (x.subEntryId) (byEntry[x.subEntryId] = byEntry[x.subEntryId] || []).push(x); });
+  arr(ST.entries).forEach(function(e){
+    if (!e || !e.id) return;
+    var exp = itemsFor(e, list); if (exp === null) return;
+    var ids = {}; exp.forEach(function(x){ ids[x.id] = 1; });
+    (byEntry[e.id] || []).forEach(function(x){ if (!ids[x.id]) drop.push(x.id); });
+    exp.forEach(function(x){
+      var cur = byId[x.id];
+      if (!cur) { want[x.id] = x; return; }
+      if (differs(cur, x, CORE)) {
+        want[x.id] = x;
+        if (Number(cur.subEntryV) === Number(x.subEntryV) && (differs(cur, x, HUMAN) || plainTitle(cur.title) !== plainTitle(x.title))) restored.push(s(e.subName) + ' on ' + dShort(x.date));
+      }
+    });
+  });
+  return { want: want, drop: drop, restored: restored };
+}
+/* the list to change: the disk copy (the screen saves every change there; a background change made here waits for a click before it
+   is drawn — patch ONLYYOU) with anything newer from the screen's copy */
+function baseList(){
+  return Promise.resolve(W.idbGet ? W.idbGet('schedule') : null).catch(function(){ return null; }).then(function(disk){
+    var scr = sched(); if (!Array.isArray(disk)) return scr.slice();
+    var at = {}; disk.forEach(function(x, i){ if (x && x.id != null) at[x.id] = i; });
+    var out = disk.slice();
+    scr.forEach(function(x){ if (!x || x.id == null) return; var i = at[x.id]; if (i == null) { if (!tomb(x.id)) out.push(x); } else if (s(x.updatedAt) > s(out[i] && out[i].updatedAt)) out[i] = x; });
+    return out;
+  });
+}
+function change(live, pl){
+  var ids = Object.keys(pl.want), dropSet = {}, have = {};
+  pl.drop.forEach(function(id){ dropSet[id] = 1; });
+  var out = arr(live).filter(function(x){ return !(x && dropSet[x.id]); }).map(function(x){ if (x && pl.want[x.id]) { have[x.id] = 1; return Object.assign({}, x, pl.want[x.id]); } return x; });
+  ids.forEach(function(id){ if (!have[id]) out.push(pl.want[id]); });
+  return out;
+}
+/* one write: disk + cloud at once (like every filing), the screen through its own setter (computed from the live list when it is drawn) */
+var applying = null;
+function apply(){
+  if (applying) return applying;
+  if (!W._setSchedule || !ST.entries) return Promise.resolve(0);
+  if (Date.now() - LOADED < 15000 || !arr(crm().projects).length) return Promise.resolve(0);   /* the CRM's lists load first */
+  applying = baseList().then(function(base){
+    ST.base = base;
+    var pl = plan(base), n = Object.keys(pl.want).length + pl.drop.length;
+    if (!n) return 0;
+    pl.drop.forEach(function(id){ try { if (W._gcTombstone) W._gcTombstone('schedule', id); } catch (e) {} });
+    var out = change(base, pl); ST.writes++;
+    return Promise.resolve(W.idbSet ? W.idbSet('schedule', out) : null).catch(function(){}).then(function(){
+      try { var up = W._supaUpsertNow || W._supaUpsert; if (up) up('schedule', out); } catch (e) {}   /* straight out (filing is not typing — the sub module does the same) */
+      try { W._setSchedule(function(prev){ var p2 = plan(prev); return Object.keys(p2.want).length || p2.drop.length ? change(prev, p2) : prev; }); } catch (e) {}
+      if (pl.restored.length) { ST.restored += pl.restored.length;
+        toast('📅 ' + pl.restored[0] + (pl.restored.length > 1 ? ' (+' + (pl.restored.length - 1) + ')' : '') + ' came from the sub\'s portal — put back. Use 📅 Sub schedules → ✅ Confirm or 📨 Ask to move.'); }
+      return n;
+    });
+  }).catch(function(e){ try { console.warn('[GC SUBSCHED] apply', e); } catch (x) {} return 0; }).finally(function(){ applying = null; });
+  return applying;
+}
+function refresh(){
+  if (ST.busy) { if (!ST.again) ST.again = ST.busy.then(function(){ ST.again = null; return refresh(); }); return ST.again; }   /* a change that came in while asking: ask once more after */
+  if (!signedIn() || !epochOk()) return Promise.resolve(ST);
+  ST.busy = api({ action: 's-sched', op: 'list' }).then(function(r){
+    if (!r.ok) { ST.err = r.data.error || ('error ' + r.status); return ST; }
+    ST.entries = arr(r.data.entries); ST.today = s(r.data.today); ST.at = Date.now(); ST.err = '';
+    return apply().then(function(){ paintAll(); return ST; });
+  }).finally(function(){ ST.busy = null; });
+  return ST.busy;
+}
+/* every 8 s, nothing from the server: an item somebody changed on this computer is put back (read from the disk copy the screen saves to) */
+function localCheck(){ if (ST.entries && ST.entries.length && !D.hidden) apply(); }
+nST(function(){ refresh(); }, 9000);
+nSI(function(){ if (!D.hidden) refresh(); }, 60000);
+nSI(function(){ try { localCheck(); } catch (e) {} }, 8000);
+
+/* ── 📅 Sub schedules (staff): the entries, ✅ Confirm / 📨 Ask to move ── */
+function passCo(p){ try { return !W._gcCo || W._gcCo.filter() === 'all' || (W._gcCo.passJob ? W._gcCo.passJob(p) : W._gcCo.ofJob(p) === W._gcCo.filter()); } catch (e) { return true; } }
+function visibleEntries(pid, subId){
+  return arr(ST.entries).filter(function(e){ var p = proj(e.pid); return e && e.status === 'active' && p && passCo(p) && (!pid || String(e.pid) === String(pid)) && (!subId || String(e.subId) === String(subId)); })
+    .sort(function(a, b){ return (s(a.start) + s(a.time)).localeCompare(s(b.start) + s(b.time)); });
+}
+function sheet(title){
+  var old = D.getElementById('gcss-sheet'); if (old) old.remove();
+  var ov = D.createElement('div'); ov.id = 'gcss-sheet'; ov.className = '_gcSheetOv gcsub-sheet'; ov.setAttribute('data-gc-keep', '');
+  ov.innerHTML = '<div class="gcsub-head"><button type="button" class="gcsub-back" data-x="back">‹ Back</button><b class="gcsub-title">' + esc(title) + '</b><button type="button" class="gcsub-x" data-x="close" aria-label="Close">✕</button></div><div class="gcsub-body"></div>';
+  D.body.appendChild(ov);
+  if (!D.querySelector('style[data-gcsub-css]') && !D.getElementById('gcss-css')) { var st = D.createElement('style'); st.id = 'gcss-css'; st.textContent = '#gcss-sheet{position:fixed;inset:0;z-index:2147483000;background:#fff;overflow:auto;font:14px Inter,-apple-system,sans-serif;color:#0F1D2F}#gcss-sheet .gcsub-head{display:flex;gap:10px;align-items:center;padding:12px 16px;border-bottom:1px solid #e5e7eb;position:sticky;top:0;background:#fff}#gcss-sheet .gcsub-body{padding:14px 16px 90px;max-width:860px;margin:0 auto}'; D.head.appendChild(st); }
+  ov.querySelector('[data-x=back]').onclick = function(){ ov.remove(); }; ov.querySelector('[data-x=close]').onclick = function(){ ov.remove(); };
+  function key(e){ if (e.key === 'Escape' && D.body.contains(ov)) { ov.remove(); D.removeEventListener('keydown', key); } } D.addEventListener('keydown', key);
+  return { el: ov, body: ov.querySelector('.gcsub-body'), close: function(){ ov.remove(); } };
+}
+function open(pid, subId){
+  var p0 = pid ? proj(pid) : null;
+  var sh = sheet('📅 Sub schedules' + (p0 ? ' — ' + (p0.name || '') : ''));
+  sh.el.setAttribute('data-pid', s(pid));
+  function paint(){
+    if (!D.body.contains(sh.el)) return;
+    var L = visibleEntries(pid, subId), h = '<div class="gcsub-muted" style="margin-bottom:10px">Days subs entered in their portal (📅 My schedule for this job). They are on the company schedule by themselves and move when the sub changes them. ✅ Confirm tells the sub it is good; 📨 Ask to move sends them a message in their portal.</div>';
+    if (!ST.entries) h += '<div class="gcsub-note">Loading…</div>';
+    else if (!L.length) h += '<div class="gcsub-note" id="gcss-none">No sub has entered days' + (p0 ? ' on this job' : '') + ' yet.</div>';
+    L.forEach(function(e){
+      var p = proj(e.pid) || {}, items = arr(ST.base || sched()).filter(function(x){ return x && x.subEntryId === e.id; }), warn = items.map(function(x){ return s(x.conflict); }).filter(Boolean);
+      h += '<section class="gcsub-card" data-ss="' + esc(e.id) + '" style="border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;margin-bottom:10px">'
+        + '<div class="gcsub-row2" style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><b>🔨 ' + esc(e.subName) + ' — ' + esc(e.task) + '</b><span data-ss-state="' + (e.confirmed ? 'confirmed' : e.moveAsk ? 'move' : 'waiting') + '">' + (e.confirmed ? '✅ Confirmed by ' + esc(e.confirmed.by) : e.moveAsk ? '📨 Asked to move' : '⏳ Waiting for confirm') + '</span></div>'
+        + '<div>' + esc(datesOf(e)) + (e.crew ? ' · crew ' + esc(e.crew) : '') + '</div>'
+        + '<div class="gcsub-muted">' + esc([(p.autoPO ? p.autoPO + ' · ' : '') + (e.job || p.name || ''), e.address, e.po ? 'PO ' + e.po : ''].filter(Boolean).join(' · ')) + '</div>'
+        + (e.notes ? '<div class="gcsub-muted">Notes: ' + esc(e.notes) + '</div>' : '')
+        + (warn.length ? '<div data-ss-warn="1" style="color:#92400e">⚠ ' + esc(warn.filter(function(v, i, a){ return a.indexOf(v) === i; }).join('; ')) + '</div>' : '')
+        + (e.moveAsk ? '<div class="gcsub-muted">You asked: ' + esc(e.moveAsk.text) + '</div>' : '')
+        + '<div class="gcsub-cta" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">' + (e.confirmed ? '<button type="button" class="gcsub-btn" data-ss-act="unconfirm">↩ Not confirmed</button>' : '<button type="button" class="gcsub-btn g" data-ss-act="confirm">✅ Confirm</button>')
+        + '<button type="button" class="gcsub-btn" data-ss-act="move">📨 Ask to move</button><button type="button" class="gcsub-btn" data-ss-act="msgs">💬 Messages</button></div>'
+        + '<div data-ss-form="1"></div></section>';
+    });
+    sh.body.innerHTML = h;
+  }
+  sh.body.addEventListener('click', function(ev){
+    var b = ev.target.closest('[data-ss-act]'); if (!b) return;
+    var card = b.closest('[data-ss]'), id = card && card.getAttribute('data-ss'), e = arr(ST.entries).find(function(x){ return x.id === id; }); if (!e) return;
+    var act = b.getAttribute('data-ss-act');
+    if (act === 'msgs') { try { if (W._gcSubHub && W._gcSubHub.thread) return W._gcSubHub.thread(e.pid, 's:' + e.subId); } catch (x) {} return toast('Open the job → 👷 Subs & portal → 💬 Messages', true); }
+    if (act === 'move') {
+      var f = card.querySelector('[data-ss-form]');
+      f.innerHTML = '<textarea class="gcsub-inp" data-ss-text rows="3" style="width:100%;margin-top:6px" placeholder="What day / time works for GrayCo? (it goes to ' + esc(e.subName) + ' in their portal)"></textarea><div class="gcsub-cta"><button type="button" class="gcsub-btn g" data-ss-act="send-move">📨 Send to the sub</button></div>';
+      try { f.querySelector('textarea').focus(); } catch (x) {} return;
+    }
+    var body = { action: 's-sched', op: act === 'send-move' ? 'move' : act, id: e.id };
+    if (act === 'send-move') { body.text = s((card.querySelector('[data-ss-text]') || {}).value); if (body.text.length < 3) return toast('Type what day / time works for GrayCo.', true); }
+    b.disabled = true;
+    api(body).then(function(r){
+      b.disabled = false;
+      if (!r.ok) return toast(r.data.error || 'Not saved', true);
+      var i = arr(ST.entries).findIndex(function(x){ return x.id === e.id; }); if (i > -1 && r.data.entry) ST.entries[i] = Object.assign({}, ST.entries[i], r.data.entry);
+      toast(act === 'confirm' ? '✅ Confirmed — ' + e.subName + ' sees it in their portal' : act === 'send-move' ? '📨 Sent to ' + e.subName + ' in their portal messages' : 'Marked not confirmed');
+      apply().then(paint); paint();
+    });
+  });
+  sh.el.__paint = paint; paint();
+  if (!ST.entries || Date.now() - ST.at > 20000) refresh().then(paint);
+  return sh;
+}
+/* the button on the Schedule tab (next to its "Schedule" heading) and a line in each sub's card of 👷 Subs & portal */
+function paintAll(){
+  try {
+    var sh = D.getElementById('gcss-sheet'); if (sh && sh.__paint) sh.__paint();
+    var n = visibleEntries().filter(function(e){ return !e.confirmed; }).length;
+    Array.prototype.forEach.call(D.querySelectorAll('h1'), function(h1){
+      if (!/^Schedule\b/.test(s(h1.textContent)) || h1.closest('.gcsub-sheet,#gcss-sheet')) return;
+      var b = h1.parentNode.querySelector('[data-gcss-open]');
+      if (!b) { b = D.createElement('button'); b.type = 'button'; b.setAttribute('data-gcss-open', ''); b.style.cssText = 'margin-top:6px;padding:6px 10px;border-radius:8px;border:1px solid #D4A017;background:#FFF8E1;color:#0F1D2F;font:600 12px Inter,-apple-system,sans-serif;cursor:pointer'; b.onclick = function(){ open(''); }; h1.parentNode.appendChild(b); }
+      var txt = '📅 Sub schedules' + (n ? ' (' + n + ' to confirm)' : ''); if (b.textContent !== txt) b.textContent = txt;
+    });
+    var hub = D.getElementById('gcsub-hub');
+    if (hub) {
+      var pid = hub.getAttribute('data-pid');
+      Array.prototype.forEach.call(hub.querySelectorAll('[data-sub]'), function(card){
+        var sid = card.getAttribute('data-sub'); if (!sid) return;
+        var L = visibleEntries(pid, sid), line = card.querySelector('[data-gcss-sub]');
+        if (!L.length) { if (line) line.remove(); return; }
+        var txt = '📅 Entered ' + L.length + ' schedule entr' + (L.length === 1 ? 'y' : 'ies') + ' in the portal: ' + L.slice(0, 2).map(function(e){ return e.task + ' ' + datesOf(e); }).join(' · ') + (L.length > 2 ? ' …' : '');
+        if (!line) { line = D.createElement('button'); line.type = 'button'; line.className = 'gcsub-btn'; line.setAttribute('data-gcss-sub', sid); line.style.cssText = 'display:block;margin-top:6px;text-align:left;white-space:normal';
+          line.onclick = function(){ open(pid, sid); }; card.appendChild(line); }
+        if (line.textContent !== txt) line.textContent = txt;
+      });
+    }
+  } catch (e) {}
+}
+nSI(function(){ if (!D.hidden) paintAll(); }, 1500);
+W._gcSubSched = { refresh: refresh, open: open, apply: apply, plan: plan, expected: function(){ return arr(ST.entries).map(function(e){ return itemsFor(e, sched()); }); }, live: baseList, state: function(){ return { entries: arr(ST.entries).slice(), at: ST.at, err: ST.err, writes: ST.writes, restored: ST.restored }; }, _loaded: function(t){ LOADED = t; } };
+try { console.log('[GC] patch SUBSCHED: subs\' own schedule entries → the company schedule — _gcSubSched.state()'); } catch (e) {}
 })(window, document);
 </script>

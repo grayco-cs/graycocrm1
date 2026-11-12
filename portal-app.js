@@ -711,6 +711,7 @@ function overview(){
   if (j.customer && (j.customer.name || j.customer.phone || j.customer.email)) out.push(card(t('customer'), [h('div', { class: 'sel' }, [h('b', { text: j.customer.name }), j.customer.phone ? h('div', null, [h('a', { href: telOf(j.customer.phone), text: j.customer.phone })]) : null, j.customer.email ? h('div', null, [h('a', { href: 'mailto:' + j.customer.email, text: j.customer.email })]) : null])]));
   var sch = JOB.schedule || [];
   out.push(card(t('schedule'), sch.length ? sch.map(function(x){ return lateRow(x, h('div', { class: 'line' }, [h('span', { text: dts(x.date) }), h('span', { text: [x.time && x.endTime ? x.time + '–' + x.endTime : x.time, x.title].filter(Boolean).join(' · ') })])); }) : [h('div', { class: 'empty', text: t('noWeek') })]));
+  { var msc = mySchedCard(); if (msc) out.push(msc); }   /* patch SUBSCHED: 📅 My schedule for this job */
   var rows = [['gate', s.gate], ['parking', s.parking], ['hours', s.hours], ['dumpster', s.dumpster], ['power', s.power], ['water', s.water], ['notes', s.notes]].filter(function(x){ return x[1]; });
   out.push(codesCard(j.id || (JOB.job && JOB.job.id)));   /* patch X10 */
   /* patch SUBPORTAL3: the job's plans / drawings / specs and files shared with subs (opened in the portal) */
@@ -1202,6 +1203,74 @@ function signup(opts){
   }
   window.scrollTo(0, 0);
   return { el: box };
+}
+
+/* ── patch SUBSCHED (owner 11/12: "on the sub portal have where the subs can click the schedule they will do for the job when they get the job
+   and that schedule will update our company schedule automatically … with address, PO and task"): 📅 My schedule for this job — on the job
+   page (Overview). The sub adds entries (start, end or number of days, Sat/Sun or not, start time, task prefilled with their trade, crew,
+   notes; the job's address and PO go with it, read-only) → GrayCo's company schedule by itself (portal-access p-sched; _lib/subsched.js).
+   Change / cancel until the first day starts. ── */
+Object.assign(L.en, { msT: '📅 My schedule for this job', msHow: 'Pick the days you will work this job. GrayCo\'s company schedule updates by itself, and your PM is told.', msAdd: '➕ Add my days', msNone: 'No days entered yet.',
+  msStart: 'First day', msEnd: 'Last day', msOr: 'or number of work days', msWknd: 'Include Saturday / Sunday', msTime: 'Start time (optional)', msTask: 'Task — what you will do', msCrew: 'Crew size (optional)', msNotes: 'Notes (optional)',
+  msSave: 'Save to GrayCo\'s schedule', msSaved: 'Saved — it is on GrayCo\'s schedule', msUpd: 'Updated — GrayCo\'s schedule moved with it', msCanc: 'Cancelled — those days came off GrayCo\'s schedule', msEdit: '✏️ Change', msCancel: '✕ Cancel these days',
+  msCancelQ: 'Take these days off GrayCo\'s schedule?', msLocked: '🔒 Started — message your PM to change it', msConf: '✅ Confirmed by GrayCo', msWait: '⏳ On GrayCo\'s schedule — waiting for your PM to confirm', msMove: '📨 GrayCo asks you to move this:',
+  msDays: '{n} days', msDay: '1 day', msCrewN: 'Crew of {n}', msAddrPo: 'Goes with it (from the job):', msEditT: 'Change my days', msNewT: 'Add my days', msFrom: 'from', msPick: 'Pick the first day.' });
+Object.assign(L.es, { msT: '📅 Mi horario para este trabajo', msHow: 'Escoja los días que va a trabajar en este trabajo. El calendario de GrayCo se actualiza solo y su PM recibe el aviso.', msAdd: '➕ Agregar mis días', msNone: 'Todavía no ha puesto días.',
+  msStart: 'Primer día', msEnd: 'Último día', msOr: 'o número de días de trabajo', msWknd: 'Incluir sábado / domingo', msTime: 'Hora de inicio (opcional)', msTask: 'Tarea — lo que va a hacer', msCrew: 'Tamaño del equipo (opcional)', msNotes: 'Notas (opcional)',
+  msSave: 'Guardar en el calendario de GrayCo', msSaved: 'Guardado — está en el calendario de GrayCo', msUpd: 'Cambiado — el calendario de GrayCo se movió también', msCanc: 'Cancelado — esos días salieron del calendario de GrayCo', msEdit: '✏️ Cambiar', msCancel: '✕ Cancelar estos días',
+  msCancelQ: '¿Quitar estos días del calendario de GrayCo?', msLocked: '🔒 Ya empezó — mándele un mensaje a su PM para cambiarlo', msConf: '✅ Confirmado por GrayCo', msWait: '⏳ En el calendario de GrayCo — esperando que su PM confirme', msMove: '📨 GrayCo le pide mover esto:',
+  msDays: '{n} días', msDay: '1 día', msCrewN: 'Equipo de {n}', msAddrPo: 'Va con esto (del trabajo):', msEditT: 'Cambiar mis días', msNewT: 'Agregar mis días', msFrom: 'desde', msPick: 'Escoja el primer día.' });
+function msTime(v){ var m = /^(\d{2}):(\d{2})$/.exec(String(v || '')); if (!m) return ''; var hr = +m[1], ap = hr >= 12 ? 'PM' : 'AM'; hr = hr % 12 || 12; return hr + ':' + m[2] + ' ' + ap; }
+function msLine(e){ var n = (e.days || []).length; return dts(e.start) + (e.end && e.end !== e.start ? ' – ' + dts(e.end) : '') + ' · ' + (n === 1 ? t('msDay') : t('msDays', { n: n })) + (e.time ? ' · ' + t('msFrom') + ' ' + msTime(e.time) : ''); }
+function mySchedCard(){
+  var M = JOB.mySched; if (!M) return null;
+  var j = JOB.job || {}, kids = [h('div', { class: 'muted', text: t('msHow') })];
+  var list = M.entries || [];
+  if (!list.length) kids.push(h('div', { class: 'empty', id: 'msNone', text: t('msNone') }));
+  list.forEach(function(e){
+    var st = e.moveAsk ? h('div', { class: 'how', 'data-ms-move': e.id, style: 'background:#fff7ed;color:#7c2d12;border-left:3px solid #f97316' }, [h('b', { text: t('msMove') }), h('div', { text: e.moveAsk.text })])
+      : h('div', { class: 'muted', 'data-ms-state': e.confirmed ? 'confirmed' : 'waiting', text: e.confirmed ? t('msConf') : t('msWait') });
+    var acts = e.editable ? h('div', { class: 'btns' }, [h('button', { type: 'button', class: 'btn', 'data-ms-edit': e.id, text: t('msEdit'), on: { click: function(){ msForm(e); } } }),
+      h('button', { type: 'button', class: 'btn', 'data-ms-cancel': e.id, text: t('msCancel'), on: { click: function(ev){ msCancel(e, ev.currentTarget); } } })]) : h('div', { class: 'muted', 'data-ms-locked': e.id, text: t('msLocked') });
+    kids.push(h('div', { class: 'post', 'data-ms-entry': e.id }, [h('div', { class: 'row' }, [h('b', { text: e.task }), e.crew ? h('span', { class: 'pill now', text: t('msCrewN', { n: e.crew }) }) : null]),
+      h('div', { 'data-ms-dates': e.id, text: msLine(e) }), e.notes ? h('p', { class: 'pre muted', text: e.notes }) : null, st, acts]));
+  });
+  kids.push(h('button', { type: 'button', class: 'btn gold', id: 'msAdd', text: t('msAdd'), on: { click: function(){ msForm(null); } } }));
+  return h('section', { class: 'card', id: 'mySched', 'data-pid': j.id }, [h('h2', { text: t('msT') })].concat(kids));
+}
+function msApply(r, word){ if (JOB && r) JOB.mySched = { today: r.today, job: r.job, entries: r.entries || [] }; toast(t(word)); drawJob(); var c = document.getElementById('mySched'); if (c && c.scrollIntoView) try { c.scrollIntoView({ block: 'nearest' }); } catch (x) {} }
+function msCancel(e, btn){
+  if (!window.confirm(t('msCancelQ'))) return;
+  busy(btn, true);
+  api('p-sched', { projectId: JOB.job.id, op: 'cancel', id: e.id, lang: LANG }).then(function(r){ msApply(r, 'msCanc'); }, function(x){ busy(btn, false); toast(x.message, true); });
+}
+function msForm(e){
+  var M = JOB.mySched || {}, J = M.job || {}, today = M.today || todayYmd();
+  var st = h('input', { type: 'date', class: 'inp', id: 'msStart', min: today, value: e ? e.start : '' });
+  var en = h('input', { type: 'date', class: 'inp', id: 'msEnd', min: today, value: e ? e.end : '' });
+  var nd = h('input', { type: 'number', class: 'inp', id: 'msDaysN', min: '1', max: '60', inputmode: 'numeric', placeholder: '1' });
+  var wk = h('input', { type: 'checkbox', id: 'msWknd' }); if (e && e.weekends) wk.checked = true;
+  var tm = h('input', { type: 'time', class: 'inp', id: 'msTime', value: e ? e.time : '' });
+  var tk = h('input', { type: 'text', class: 'inp', id: 'msTask', maxlength: '120', value: e ? e.task : (J.task || (HOME && HOME.me && HOME.me.trade) || '') });
+  var cr = h('input', { type: 'number', class: 'inp', id: 'msCrew', min: '1', max: '99', inputmode: 'numeric', value: e && e.crew ? String(e.crew) : '' });
+  var nt = h('textarea', { class: 'inp', id: 'msNotes', rows: '3', maxlength: '500' }); nt.value = e ? (e.notes || '') : '';
+  var err = h('div', { class: 'err', role: 'alert', id: 'msErr' });
+  st.addEventListener('change', function(){ if (!en.value || en.value < st.value) en.value = st.value; en.min = st.value || today; });
+  nd.addEventListener('input', function(){ if (nd.value) en.value = ''; });
+  en.addEventListener('change', function(){ if (en.value) nd.value = ''; });
+  var go = h('button', { type: 'button', class: 'btn gold', id: 'msSave', text: t('msSave') });
+  var sh = sheet(e ? t('msEditT') : t('msNewT'), [
+    h('div', { class: 'box', id: 'msJobInfo' }, [h('b', { text: t('msAddrPo') }), h('div', { 'data-ms-addr': '1', text: t('address') + ': ' + (J.address || t('none')) }), h('div', { 'data-ms-po': '1', text: t('po') + ' ' + (J.po || t('none')) })]),
+    field(t('msStart'), st), field(t('msEnd'), en), field(t('msOr'), nd), h('label', { class: 'fld', style: 'flex-direction:row;align-items:center;gap:8px' }, [wk, h('span', { text: t('msWknd') })]),
+    field(t('msTime'), tm), field(t('msTask'), tk), field(t('msCrew'), cr), field(t('msNotes'), nt), err, go]);
+  go.addEventListener('click', function(){
+    err.textContent = '';
+    if (!st.value) { err.textContent = t('msPick'); return; }
+    busy(go, true);
+    var body = { projectId: JOB.job.id, op: 'save', id: e ? e.id : undefined, start: st.value, end: nd.value ? '' : (en.value || st.value), days: nd.value || undefined, weekends: wk.checked, time: tm.value, task: tk.value, crew: cr.value, notes: nt.value, lang: LANG };
+    api('p-sched', body).then(function(r){ sh.close(); msApply(r, e ? 'msUpd' : 'msSaved'); }, function(x){ busy(go, false); err.textContent = x.message; });
+  });
+  return sh;
 }
 
 /* portal.html calls this: host = { hello(big, small, sub), ended(), setLang(l) } */

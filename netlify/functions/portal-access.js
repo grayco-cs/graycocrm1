@@ -341,7 +341,7 @@ exports._papers = { papersOf: spPapersOf, withPapers, papersToCrm, spSign };
 
 /* ── rate limits (per warm instance) ───────────────────────────────────────── */
 const hits = new Map();
-const LIMITS = { pub: { req: 120, bad: 10 }, signin: { req: 12, bad: 10 }, verify: { req: 25, bad: 10 }, app: { req: 600, bad: 20 }, bid: { req: 40, bad: 20 } };   /* bid: p-bid-save (patch SUBBIDS) */
+const LIMITS = { pub: { req: 120, bad: 10 }, signin: { req: 12, bad: 10 }, verify: { req: 25, bad: 10 }, app: { req: 600, bad: 20 }, bid: { req: 40, bad: 20 }, sched: { req: 60, bad: 20 } };   /* sched: p-sched save / cancel (patch SUBSCHED) */   /* bid: p-bid-save (patch SUBBIDS) */
 function ipOf(event){ return s(gcHeader(event, 'x-nf-client-connection-ip') || gcHeader(event, 'x-forwarded-for').split(',')[0] || gcHeader(event, 'client-ip') || 'unknown'); }
 function limited(ip, kind){
   const L = LIMITS[kind] || LIMITS.pub, key = kind + '|' + ip, now = Date.now();
@@ -973,7 +973,7 @@ function punchIsSub(x, sub){ return s(x.subId) ? s(x.subId) === s(sub.id) : rowI
 function schedFor(data, jobs, sub){
   const pids = new Set(jobs.map(function(p){ return s(p.id); })), nm = jobs.reduce(function(m, p){ m[s(p.id)] = s(p.name); return m; }, {});
   return arr(data.schedule).filter(function(x){ return x.deleted !== true && x.private !== true && x.scope !== 'personal' && pids.has(s(x.pid)) && (s(x.subId) === s(sub.id) || rowIsSub({ name: x.vendor || x.sub || x.assignee }, sub)); })   /* patch VOICESCHED: never a deleted or 🔒 personal row */
-    .map(function(x){ return { id: clip(x.id, 90), date: ymd(x.date), time: clip(x.time, 10), endTime: clip(x.endTime, 10), title: clip(SS().clean(x.title), 160), pid: s(x.pid), job: nm[s(x.pid)] || '' }; })   /* patch SUBPORTAL3: SS().clean */   /* patch SUBTXT: + id */
+    .map(function(x){ return { id: clip(x.id, 90), date: ymd(x.date), time: clip(x.time, 10), endTime: clip(x.endTime, 10), title: clip(SS().clean(x.title), 160), pid: s(x.pid), job: nm[s(x.pid)] || '', fromSub: !!s(x.subEntryId) }; })   /* patch SUBSCHED: fromSub = a day the sub entered themselves */   /* patch SUBPORTAL3: SS().clean */   /* patch SUBTXT: + id */
     .filter(function(x){ return x.date; }).sort(function(a, b){ return (a.date + a.time).localeCompare(b.date + b.time); });
 }
 async function pJob(ctx, pid){
@@ -1001,7 +1001,8 @@ async function pJob(ctx, pid){
     insurance: p.isInsurance === true || /insurance|claim|mitigation|water|fire|storm/i.test(s(p.type || p.jobType || p.projectType)),   /* SUBAFTER: only a yes/no (never the carrier or the claim) — for the "video before you start" tip */
     care: p.companyId === 'mitigation' || /fire|smoke|water|flood|mitigat|board|tarp|storm|sewage|emergency/i.test(s(p.type || p.jobType || p.projectType) + ' ' + s(p.name)),   /* CARE (owner 11/11): an emergency loss — the "how we treat this customer" card (a yes/no only) */
     pm: pmOf(data, p), office: { phone: OFFICE_PHONE, email: OFFICE_EMAIL },
-    schedule: schedFor(data, [p], sub),
+    schedule: schedFor(data, [p], sub).filter(function(x){ return !x.fromSub; }),   /* patch SUBSCHED: the sub's own entries show in mySched */
+    mySched: await SSCH().partner(ctx, { projectId: p.id, op: 'list' }, schedDeps(data)).catch(function(){ return null; }),
     scopes: scopes.filter(function(x){ return x.kind !== 'co'; }).map(function(x){ return scopeOut(x, signed); }),
     cos: scopes.filter(function(x){ return x.kind === 'co'; }).map(function(x){ return scopeOut(x, signed); }),
     punch: arr(data.punch).filter(function(x){ return s(x.pid) === s(p.id) && punchIsSub(x, sub); }).map(function(x){
@@ -1054,6 +1055,12 @@ async function photoState(ctx, p){
   const kv = await kvRead(['gc_photos']);
   const events = await dbGet('gc_sub_event', 'select=kind,project_id,sub_id,data&sub_id=' + eq(ctx.sub.id) + '&project_id=' + eq(p.id) + '&kind=in.(photos,progress,punch)&order=created_at.desc&limit=500');
   return SW().invoiceGate({ job: p, sub: ctx.sub, schedule: ctx.data.schedule, settings: settingsOf(ctx.data), gcPhotos: kv.gc_photos, events: events, today: todayCentral() });
+}
+/* patch SUBSCHED: the sub's own schedule entries (rules + handlers: _lib/subsched.js) */
+function SSCH(){ return require('./_lib/subsched.js'); }
+function schedDeps(data){
+  return { jobOf: jobOf, rowFor: rowFor, poOf: function(p){ return SW().poOf(p); }, pmOf: function(p){ return pmOf(data, p); }, addEvent: addEvent, msgInsert: function(){ return msgInsert.apply(null, arguments); },
+    kv: x10Lib(), core: function(){ return require('./portal.js')._core; }, today: todayCentral, Fail: Fail };
 }
 function jobOf(ctx, pid){ const p = ctx.jobs.find(function(j){ return s(j.id) === s(pid); }); if (!p) throw Fail(404, 'That job is not one of yours.'); return p; }
 async function partnerAction(action, body, ctx){
@@ -1189,6 +1196,7 @@ async function partnerAction(action, body, ctx){
   if (action === 'p-bidjobs') return pBidJobs(sub);               /* patch SUBBIDS: 📋 Jobs to bid — the bid site's open jobs this sub may bid on + their own bid */
   if (action === 'p-bid-save') return pBidSave(sub, body);
   if (action === 'p-bid-ask') return pBidAsk(sub, body);
+  if (action === 'p-sched') return SSCH().partner(ctx, body, schedDeps(ctx.data));   /* patch SUBSCHED: 📅 My schedule for this job (list / save / cancel) */
   if (action === 'p-bid-request') return pBidRequest(sub, body);   /* patch PLANREQ: 📩 Request plans / more info */           /* patch BIDPOST: ❓ Ask a question about a job */         /* patch SUBBIDS: send / update their bid (papers first) */
   throw Fail(400, 'Bad request');
 }
@@ -1633,6 +1641,7 @@ async function staffAction(action, body, who){
     await dbPatch('gc_sub_link', 'token=' + eq(l.token), { sent_at: new Date().toISOString(), sent_via: 'email' });
     return { ok: true, sent: true, url: linkFor(l.token) };
   }
+  if (action === 's-sched') return SSCH().staff(body, who, me, schedDeps(data));   /* patch SUBSCHED: the subs' own schedule entries (list) · ✅ confirm · 📨 ask to move */
   if (action === 's-ack') {
     const ids = (Array.isArray(body.ids) ? body.ids : []).map(s).filter(okId).slice(0, 300);
     if (ids.length) await dbPatch('gc_sub_event', 'applied_at=is.null&id=' + inq(ids), { applied_at: new Date().toISOString(), applied_by: clip(me, 80) });
@@ -1773,6 +1782,7 @@ exports.handler = async function (event) {
     }
     if (action === 'p-bid-request' && limited(ip, 'bid')) return reply(429, { ok: false, error: 'Too many requests sent from here. Wait a few minutes.' });   /* patch PLANREQ */
     if (action === 'p-bid-ask' && limited(ip, 'bid')) return reply(429, { ok: false, error: 'Too many questions sent from here. Wait a few minutes.' });   /* patch BIDPOST */
+    if (action === 'p-sched' && s(body.op) && s(body.op) !== 'list' && limited(ip, 'sched')) return reply(429, { ok: false, error: 'Too many schedule changes sent from here. Wait a few minutes.' });   /* patch SUBSCHED */
     if (action === 'p-bid-save' && limited(ip, 'bid')) return reply(429, { ok: false, error: 'Too many bids sent from here. Wait a few minutes.' });   /* patch SUBBIDS */
     if (/^p-/.test(action)) {
       const sess = await sessionOf(gcHeader(event, 'x-portal-session'));

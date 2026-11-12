@@ -298,7 +298,7 @@ const T = {
     loginEmail: 'Email',
     mwIntro: 'Your work with GrayCo, straight from our books: jobs you are on, invoices we have received from you and where each one stands, and what we have on file for your insurance and taxes.',
     mwNotLinked: 'Your company is not connected to GrayCo\'s records yet. Once the office links your account, your jobs, payments and 1099 information will show here. Call 901-585-0944 if you have already worked with us.',
-    mwJobs: 'Jobs with GrayCo', mwNoJobs: 'No jobs on file with you yet.',
+    mwJobs: 'Jobs with GrayCo', mwNoJobs: 'No jobs on file with you yet.', mwSched: '📅 Enter my schedule for this job (GrayCo Portal)',
     mwScopes: 'Scopes of work sent to you', mwAgreements: 'Subcontract agreements',
     mwPay: 'Invoices & payments', mwNoPay: 'No invoices from you on file yet.',
     mwWaiting: 'Waiting for approval', mwApproved: 'Approved, not yet paid', mwPaidYear: 'Paid this year', mwPaidAll: 'Paid all time',
@@ -575,7 +575,7 @@ const T = {
     loginEmail: 'Correo electrónico',
     mwIntro: 'Su trabajo con GrayCo, tomado de nuestros registros: los trabajos en los que está, las facturas que hemos recibido de usted y su estado, y lo que tenemos archivado de su seguro e impuestos.',
     mwNotLinked: 'Su compañía todavía no está conectada a los registros de GrayCo. Cuando la oficina vincule su cuenta, aquí verá sus trabajos, pagos e información del 1099. Llame al 901-585-0944 si ya ha trabajado con nosotros.',
-    mwJobs: 'Trabajos con GrayCo', mwNoJobs: 'Todavía no hay trabajos registrados con usted.',
+    mwJobs: 'Trabajos con GrayCo', mwNoJobs: 'Todavía no hay trabajos registrados con usted.', mwSched: '📅 Poner mi horario para este trabajo (Portal GrayCo)',
     mwScopes: 'Alcances de trabajo enviados', mwAgreements: 'Contratos de subcontratista',
     mwPay: 'Facturas y pagos', mwNoPay: 'Todavía no hay facturas suyas registradas.',
     mwWaiting: 'Esperando aprobación', mwApproved: 'Aprobado, sin pagar', mwPaidYear: 'Pagado este año', mwPaidAll: 'Pagado en total',
@@ -5398,6 +5398,10 @@ function MyWork({ t, user, asAdmin = false }) {
                       </div>
                     )}
                     {j.scope && <div style={{ fontSize: 12, color: styles.text, marginTop: 6, whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{j.scope}</div>}
+                    {/* patch SUBSCHED: an awarded job → "📅 Enter my schedule" in the GrayCo Portal (it goes on GrayCo's schedule by itself) */}
+                    {j.pid && /award|progress/i.test(j.status || '') && (
+                      <a data-subsched={j.pid} href={PORTAL_URL + '/#job=' + encodeURIComponent(j.pid)} style={{ display: 'inline-block', marginTop: 8, fontSize: 13, fontWeight: 700, color: styles.navy, background: styles.accentSoft, border: `1px solid ${styles.accent}`, borderRadius: 8, padding: '6px 10px', textDecoration: 'none' }}>{t.mwSched}</a>
+                    )}
                   </div>
                 ))}
               </div>
