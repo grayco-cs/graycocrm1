@@ -84,7 +84,12 @@ const A = await computer('wjohnson@grayco-cs.com', { build: BUILD });
 const errs = []; A.page().on('pageerror', e => errs.push(String(e.message).slice(0, 200)));
 await W.wireCrm(A, BUILD, F);
 await signIn(A, 'wjohnson@grayco-cs.com', 15000); await sleep(6000);
-await A.ev(() => { try { localStorage.setItem('gc_bp_mode:wjohnson@grayco-cs.com', 'crm'); } catch (e) {} window._setView('bidportal'); });
+/* the owner opens 🏗 Bid portal: it opens on 🧰 Full bid portal (the bid site's admin in a frame) with the 200 old jobs */
+await A.ev(() => window._setView('bidportal'));
+const frameText = async (re, ms) => { for (let i = 0; i < (ms || 30000) / 400; i++) { const f = A.page().frames().find(x => /\/subportal\/$/.test(x.url())); if (f) { const t = await f.evaluate(() => document.body.innerText).catch(() => ''); if (re.test(t)) return t; } await sleep(400); } return null; };
+const old0 = await frameText(/Demo bid-board lead/, 40000);
+ok('1 the tab opens on 🧰 Full bid portal: the bid site admin lists the old auto-added jobs', !!old0, null);
+await A.ev(() => { const b = document.querySelector('#gc-sys-bp-mount [data-sys="bpmode"][data-m="crm"]'); b && b.click(); });
 await wait(A, () => document.querySelector('#gc-sys-bp-mount [data-sys="cleanup"]'), null, 40000);
 const before = await A.ev(() => ({ btn: (document.querySelector('#gc-sys-bp-mount [data-sys="cleanup"]') || {}).textContent, f: [...document.querySelectorAll('#gc-sys-bp-mount [data-sys="f"]')].map(b => b.textContent) }));
 ok('1 before: "🧹 Clean up auto-added jobs (200)" — every old auto-added job counts (incl. the ones the Lead Inbox copied bid-board files into, and the auto-private ones)', before.btn === '🧹 Clean up auto-added jobs (200)', before);
@@ -104,8 +109,8 @@ const empty = await visibleJobsFor('zedd@zeddframing.test');
 ok('1 an approved sub gets NO jobs from the server', Array.isArray(empty.data && empty.data.jobs) && empty.data.jobs.length === 0, empty);
 /* the 🧰 Full bid portal frame (the bid site's own admin, signed in with the CRM sign-in) */
 await A.ev(() => { const b = document.querySelector('#gc-sys-bp-mount [data-sys="bpmode"][data-m="full"]'); b && b.click(); });
-const fr = await (async () => { for (let i = 0; i < 80; i++) { const f = A.page().frames().find(x => /\/subportal\/$/.test(x.url())); if (f) { const t = await f.evaluate(() => document.body.innerText).catch(() => ''); if (/Show archived|No jobs yet/.test(t)) return { f, t }; } await sleep(400); } return null; })();
-ok('1 🧰 Full bid portal (CRM tab): the bid site admin list is EMPTY — "No jobs yet" and "🗄 Show archived (201)"', !!fr && /No jobs yet/.test(fr.t) && /Show archived \(201\)/.test(fr.t) && !/Demo bid-board lead/.test(fr.t), fr && fr.t.slice(0, 500));
+const frT = await frameText(/No jobs yet/, 15000);
+ok('1 back on 🧰 Full bid portal right away (no waiting for its 1-minute refresh): the bid site admin list is EMPTY — "No jobs yet" and "🗄 Show archived (201)"', !!frT && /Show archived \(201\)/.test(frT) && !/Demo bid-board lead/.test(frT), frT && frT.slice(0, 500));
 await shot(A.page(), 'fs03_crm_fullportal_empty');
 /* the leads no longer say "🏗 draft / private" for the cleaned-up jobs */
 await A.ev(() => window._setView('leads')); await wait(A, () => document.querySelector('#gc-leads-hub [data-gcl-v="list"]'), null, 20000);

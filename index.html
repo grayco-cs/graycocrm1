@@ -178416,6 +178416,9 @@ function applyBpMode(){
     if (full && !fb.querySelector('iframe')) fb.innerHTML = '<iframe src="/subportal/" title="Bid portal — full admin" allow="clipboard-write" data-bp-frame style="display:block;width:100%;height:calc(100vh - 118px);min-height:480px;border:none;border-radius:8px;background:#FBFAF7"></iframe>';
   }
 }
+/* patch QAA: after 🧹 Clean up / 📢 Put on / Take off, the 🧰 Full bid portal frame shows the new list at once (it refreshed only every minute) */
+function freshFrame(){ try { var m = D.getElementById('gc-sys-bp-mount'), fb = m && m.querySelector('[data-bp-full]'), f = fb && fb.querySelector('iframe'); if (!f) return;
+  if (fb.style.display === 'none') fb.innerHTML = ''; else f.src = f.getAttribute('src'); } catch (e) { warn(e); } }
 function drawBP(){
   var m = D.getElementById('gc-sys-bp-mount'); if (!m) return;
   css();
@@ -178591,7 +178594,7 @@ function onClick(ev){
     return fn('bid-hub', { op: 'cleanup', dry: true }).then(function(r){
       if (!r.count) { toast('Nothing to clean up.'); return loadJobs(true); }
       if (!W.confirm('Archive ' + r.count + ' auto-added bid job' + (r.count === 1 ? '' : 's') + '?\n\nThey were made from leads by the old automatic sync, never posted by anyone, and have no bids, invites or questions and no plans a person added (the bid-board files the old sync copied in do not count — patch QAA). Nothing is deleted: they move to 🗄 Archived (restore any time) and subs stop seeing them.\n\n' + arr(r.sample).slice(0, 8).join('\n') + (r.count > 8 ? '\n…' : ''))) return;
-      return fn('bid-hub', { op: 'cleanup' }).then(function(x){ toast('🧹 ' + x.archived + ' auto-added job' + (x.archived === 1 ? '' : 's') + ' archived — see 🗄 Archived'); loadJobs(true); try { if (W._gcBidPost && W._gcBidPost.jobs) W._gcBidPost.jobs(true); } catch (e) {} /* patch QAA: the 📢 buttons / Leads chips read it too */ });
+      return fn('bid-hub', { op: 'cleanup' }).then(function(x){ toast('🧹 ' + x.archived + ' auto-added job' + (x.archived === 1 ? '' : 's') + ' archived — see 🗄 Archived'); loadJobs(true); freshFrame(); try { if (W._gcBidPost && W._gcBidPost.jobs) W._gcBidPost.jobs(true); } catch (e) {} /* patch QAA: the 📢 buttons / Leads chips read it too */ });
     }, function(e){ toast(e.message, true); });
   }
   if (a === 'bids') return openBids(job);
@@ -178775,7 +178778,7 @@ function tick(){
   } catch (e) { TERR = s(e && e.message); warn(e); }
 }
 RI.call(W, tick, 1200); later(tick, 500);
-W._gcSys = { drawSys: function(){ try { drawSys(); } catch (e) { warn(e); } }, bp: { at: function(){ return BP.at; } /* patch QAA */, mode: bpMode, setMode: setBpMode, load: loadJobs, draw: drawBP, invite: openInvite, bids: openBids, table: bidsTable, vis: setVis, jobs: function(){ return arr(BP.jobs); }, del: askDelete }, modal: modal, closeModal: closeModal, toast: toast, fn: fn, css: css, tiles: function(){ return TILES().map(function(t){ return t.k; }); }, tile: tile, ping: ping, drawer: drawerTick, leadKey: leadKey,
+W._gcSys = { drawSys: function(){ try { drawSys(); } catch (e) { warn(e); } }, bp: { at: function(){ return BP.at; }, freshFrame: freshFrame /* patch QAA */, mode: bpMode, setMode: setBpMode, load: loadJobs, draw: drawBP, invite: openInvite, bids: openBids, table: bidsTable, vis: setVis, jobs: function(){ return arr(BP.jobs); }, del: askDelete }, modal: modal, closeModal: closeModal, toast: toast, fn: fn, css: css, tiles: function(){ return TILES().map(function(t){ return t.k; }); }, tile: tile, ping: ping, drawer: drawerTick, leadKey: leadKey,
   state: function(){ return { jobs: arr(BP.jobs).length, me: BP.me, err: BP.err, pings: JSON.parse(JSON.stringify(PING)), lsb: LSB.key, role: role(), ticks: TICKS, err2: TERR }; } };
 try { console.log('[GC] patch SYS: 🏗 Bid portal tab, 🧭 GrayCo Systems tab, 📨 one sub-bid list (bids@ + bid portal + sub portal) — _gcSys.state()'); } catch (e) {}
 })();
@@ -223594,7 +223597,7 @@ function post(){
     toast((r.created ? '📢 On the bid portal — ' : '💾 Bid portal job saved — ') + (r.visibility === 'public' ? '🌐 public' : '🔒 private (invite subs on the 🏗 Bid portal tab)') + (r.files ? ' · ' + r.files + ' file(s) shared' : '') + (arr(r.notCopied).length ? ' · not copied: ' + r.notCopied.map(function(x){ return x.name; }).join(', ') : ''));
     remember(c, r);
     JOBS.at = 0; jobs(true).then(paint);
-    try { if (W._gcSys && W._gcSys.bp) W._gcSys.bp.load(true); } catch (e) {}
+    try { if (W._gcSys && W._gcSys.bp) { W._gcSys.bp.load(true); if (W._gcSys.bp.freshFrame) W._gcSys.bp.freshFrame(); } } catch (e) {}
     return r;
   }, function(e){ go.disabled = false; go.textContent = '📢 Put on bid portal';
     /* patch QAA: a big plan set can run past the server's time limit — the job is saved first, so say where it is and how to add big files */
@@ -223616,7 +223619,7 @@ function remember(c, r){
 function unpost(){
   var J = UI.job; if (!J || !J.id) return;
   if (!W.confirm('Take "' + (J.title || 'this job') + '" off the bid portal?\n\nSubs stop seeing it. Nothing is deleted: it moves to 🗄 Archived, and 📢 Put on bid portal puts it back.')) return;
-  return fn('bid-hub', { op: 'unpost', jobId: J.id }).then(function(){ close(); toast('Taken off the bid portal (🗄 Archived)'); JOBS.at = 0; jobs(true).then(paint); try { if (W._gcSys && W._gcSys.bp) W._gcSys.bp.load(true); } catch (e) {} }, function(e){ toast(e.message, true); });
+  return fn('bid-hub', { op: 'unpost', jobId: J.id }).then(function(){ close(); toast('Taken off the bid portal (🗄 Archived)'); JOBS.at = 0; jobs(true).then(paint); try { if (W._gcSys && W._gcSys.bp) { W._gcSys.bp.load(true); if (W._gcSys.bp.freshFrame) W._gcSys.bp.freshFrame(); } } catch (e) {} }, function(e){ toast(e.message, true); });
 }
 function onClick(ev){
   var t = ev.target && ev.target.closest ? ev.target.closest('[data-bp]') : null; if (!t) return;
