@@ -163,5 +163,26 @@ await t('a plan request is not closed by a scope file (only plans / specs / link
   await HUBX.plansImport(ADM, { jobId: 'j_s', fileRef: up('Div 26 Electrical specs.pdf', PDF(31)), name: 'Div 26 Electrical specs.pdf', size: 30 });
   eq(row('planreqs/j_s__u_el').closedHow, 'plans', 'a spec file closes it');
 });
+await t('PLANREQ-I: a trade scope saved with the plans (Hamlets_Scope_01_Sitework.docx) moves to its trade once (op resort); a scope for every sub stays with the plans as "Scope — all subs"; the plan set stays', async () => {
+  put('jobs', { id: 'j_r', title: 'Sample Dormitory', status: 'open', visibility: 'public', bidDueDate: day(9), tradesSought: 'Drywall', tradesPicked: true, tradeScopes: [] });
+  put('plans', { id: 'j_r', items: [{ name: '26089 - 100 Percent Pricing Set - 11.02.2026.pdf', category: 'Plans', fileRef: 'staff/x/set.pdf', current: true }, { name: 'Hamlets_Scope_01_Sitework.docx', category: 'Scope', fileRef: 'staff/x/sw.docx' }, { name: 'General Scope of Work.pdf', category: 'Scope', fileRef: 'staff/x/gen.pdf' }] });
+  const BHT = require(path.join(FN, 'bid-hub.js'))._test;
+  eq(BHT.resortCount(row('plans/j_r').items), 2);
+  const r = await BHT.resort({ ok: true, email: 'wjohnson@grayco-cs.com', name: 'Wes', admin: true, canInvite: true }, { jobId: 'j_r' });
+  eq(r.moved.map(x => x.name + ':' + x.trades.join()), ['Hamlets_Scope_01_Sitework.docx:Sitework']); eq(r.relabeled, ['General Scope of Work.pdf']);
+  eq(row('plans/j_r').items.map(x => x.name + '=' + x.category), ['26089 - 100 Percent Pricing Set - 11.02.2026.pdf=Plans', 'General Scope of Work.pdf=Scope — all subs']);
+  const j = row('jobs/j_r'); eq(j.tradeScopes.map(x => x.trade + ':' + x.files.map(f => f.name).join()), ['Sitework:Hamlets_Scope_01_Sitework.docx']); eq(j.tradesSought, 'Drywall, Sitework');
+  eq(BHT.resortCount(row('plans/j_r').items), 0, 'once');
+  const imp = await HUBX.plansImport(ADM, { jobId: 'j_r', fileRef: up('Scope of Work - all trades.docx', Buffer.from('x')), name: 'Scope of Work - all trades.docx', size: 1 });
+  eq(imp.added.map(x => x.category), ['Scope — all subs'], 'on upload: a scope for every sub stays with the plans');
+});
+await t('PLANREQ-H: trades the Lead Inbox copied from an invite are only SUGGESTED (manage / jobs list); picking them (op details) makes them the job\'s', async () => {
+  const BHT = require(path.join(FN, 'bid-hub.js'))._test;
+  put('jobs', { id: 'j_auto', title: 'New Female Dormitory', status: 'open', visibility: 'private', createdBy: 'lead-inbox', leadInbox: { id: 'LI-9' }, tradesSought: 'Prefabricated Wood Trusses, Standing Seam Metal Roofing' });
+  const mv = await BHT.manageView('j_auto'); eq([mv.job.trades, mv.job.tradesSuggested], ['', 'Prefabricated Wood Trusses, Standing Seam Metal Roofing']);
+  const jl = (await BHT.jobsList()).find(x => x.id === 'j_auto'); eq([jl.trades, jl.tradesSuggested], ['', 'Prefabricated Wood Trusses, Standing Seam Metal Roofing']);
+  const r = await BHT.details({ ok: true, email: 'wjohnson@grayco-cs.com', name: 'Wes', admin: true, canInvite: true }, { jobId: 'j_auto', trades: ['Roofing'] });
+  yes(r.ok); const mv2 = await BHT.manageView('j_auto'); eq([mv2.job.trades, mv2.job.tradesSuggested], ['Roofing', '']);
+});
 console.log('\nPLANREQ_sort_fn ' + pass + '/' + (pass + fail));
 process.exit(fail ? 1 : 0);

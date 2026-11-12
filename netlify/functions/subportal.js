@@ -926,7 +926,7 @@ async function plansImport(who, body){
     item.kind = srt.kind; item.trades = srt.trades;
     if (srt.kind === 'scope' && srt.trades.length) { toScope.push(item); return; }
     if (srt.kind === 'specs' && (!item.category || item.category === 'Plans')) item.category = 'Specs';
-    if (srt.kind === 'scope') item.category = 'Scope';
+    if (srt.kind === 'scope') item.category = 'Scope — all subs';   /* patch PLANREQ-I: a scope for every sub, with the plans */
     added.push(item);
   };
   if (ext === 'zip') {
