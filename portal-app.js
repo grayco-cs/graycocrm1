@@ -956,7 +956,7 @@ function suCss(){
     '.su-agree{display:flex;gap:10px;align-items:flex-start;font-size:14px;line-height:1.45}.su-agree input{width:22px;height:22px;flex:0 0 22px;margin:1px 0 0}.su-dup{border:1px solid var(--gold);background:var(--goldBg);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:8px;font-size:14px}' +
     '.su-chips{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 6px}.su-chips .chip{border:1px solid var(--line,#d6d3cc);background:#fff;border-radius:999px;padding:7px 12px;font:600 14px inherit;min-height:38px;cursor:pointer}.su-chips .chip.on{background:var(--navy,#0F1D2F);color:#fff;border-color:var(--navy,#0F1D2F)}' +
     '.su-papers{border:1px solid var(--line,#e5e7eb);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:10px;margin:0}.su-papers legend{font-weight:700;padding:0 6px}.pp-row{display:flex;flex-direction:column;gap:6px;padding:8px 0;border-top:1px dashed var(--line,#e5e7eb)}' +
-    '.pp-opts{display:flex;flex-wrap:wrap;gap:6px 14px}.pp-opt{display:flex;gap:6px;align-items:center;font-size:14px;min-height:34px}.pp-opt input{width:20px;height:20px;margin:0}.su-grid.lic{grid-template-columns:70px minmax(0,1fr) minmax(0,1fr)}' +
+    '.pp-row [hidden]{display:none!important}.pp-opts{display:flex;flex-wrap:wrap;gap:6px 14px}.pp-opt{display:flex;gap:6px;align-items:center;font-size:14px;min-height:34px}.pp-opt input{width:20px;height:20px;margin:0}.su-grid.lic{grid-template-columns:70px minmax(0,1fr) minmax(0,1fr)}' +
     '.su-dup ul{margin:0;padding-left:18px}.su-req{color:#8a1c1c}.su-done{display:flex;flex-direction:column;gap:12px;align-items:stretch;text-align:center}.su-done .big{font-size:22px}';
   document.head.appendChild(st);
 }
@@ -1012,11 +1012,12 @@ function signup(opts){
   pbox.appendChild(h('legend', { text: t('ppT') }));
   pbox.appendChild(h('p', { class: 'how', id: 'ppWhy', text: t('ppWhy') }));
   function paperRow(k, label, exp, exempt){
-    var name = 'pp_' + k, file = h('input', { type: 'file', class: 'inp', id: 'pp_' + k + 'f', accept: ACCEPT_DOCS, hidden: true }), date = exp ? h('input', { type: 'date', class: 'inp', id: 'pp_' + k + 'e', 'aria-label': t('ppExp'), hidden: true }) : null;
+    var name = 'pp_' + k, file = h('input', { type: 'file', class: 'inp', id: 'pp_' + k + 'f', accept: ACCEPT_DOCS, hidden: true }), date = exp ? h('input', { type: 'date', class: 'inp', id: 'pp_' + k + 'e', 'aria-label': t('ppExp') }) : null;
+    var dateF = date ? fld(t('ppExp'), date) : null; if (dateF) dateF.hidden = true;
     var opts2 = [['later', t('ppLater')], ['upload', '📎 ' + t('ppUpload')]].concat(exempt ? [['exempt', t('ppExemptS')]] : []);
     var radios = h('div', { class: 'pp-opts' }, opts2.map(function(o){ var r = h('input', { type: 'radio', name: name, value: o[0], id: name + '_' + o[0] });
-      r.addEventListener('change', function(){ file.hidden = !(o[0] === 'upload' || o[0] === 'exempt'); if (date) date.hidden = o[0] !== 'upload'; }); return h('label', { class: 'pp-opt' }, [r, h('span', { text: o[1] })]); }));
-    return h('div', { class: 'pp-row', 'data-pp': k }, [h('b', { text: label }), radios, file, date ? fld(t('ppExp'), date) : null]);
+      r.addEventListener('change', function(){ file.hidden = !(o[0] === 'upload' || o[0] === 'exempt'); if (dateF) dateF.hidden = o[0] !== 'upload'; }); return h('label', { class: 'pp-opt' }, [r, h('span', { text: o[1] })]); }));
+    return h('div', { class: 'pp-row', 'data-pp': k }, [h('b', { text: label }), radios, file, dateF]);
   }
   pbox.appendChild(paperRow('w9', t('ppW9'), false, false));
   pbox.appendChild(paperRow('gl', t('ppGl'), true, false));
