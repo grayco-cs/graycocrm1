@@ -198163,6 +198163,8 @@ var LAYOUT = {
   mkt:    { tiles: ['marketing', 'photos', 'msgs', 'todo'], sections: ['approvals', 'todos'] },
   admin:  { tiles: ['viewas', 'photos', 'addjob', 'receipt'], sections: ['approvals', 'scorecard', 'jobs'] }
 };
+/* owner 11/12 ("logos are in here, use those"): GrayCo Field's header shows the company's own logo — Mitigation / Environmental people (or that company picked) */
+function fieldLogo(k){ var co = k === 'mit' ? 'mitigation' : k === 'env' ? 'environmental' : ''; try { if (!co && window._gcCo) { var f = window._gcCo.filter(); if (f === 'mitigation' || f === 'environmental') co = f; } if (co && window._gcCo && window._gcCo.get) { var c = window._gcCo.get(co); if (c && c.logo) return String(c.logo); } } catch (e) {} return co === 'mitigation' ? '/img/grayco-mitigation-logo.jpg' : co === 'environmental' ? '/img/grayco-environmental-logo.jpg' : 'grayco-logo.jpg'; }
 var ROLE_NAMES = { pm: 'Residential PM', roof: 'Roofing PM', est: 'Estimator', super: 'Superintendent / crew', mit: 'Mitigation', ins: 'Insurance', office: 'Office', mkt: 'Marketing', admin: 'Admin', env: 'Environmental' };
 function roleCfg(k){ var r = (fset().roles || {})[k]; return r && typeof r === 'object' ? r : null; }
 function toolIds(k){
@@ -198587,7 +198589,7 @@ function render(force){
   var sig = sigOf(m); if (!force && sig === lastSig) { paintSync(); paintTabs(m.n); return; }
   lastSig = sig;
   var k = rk(), dt = new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
-  var h = '<div class="fh-top"><div class="fh-brand"><img class="fh-logo" src="grayco-logo.jpg" alt="GrayCo"><div style="min-width:0"><div class="fh-h">GrayCo Field</div><div class="fh-s">' + esc(myName()) + ' · ' + esc(ROLE_NAMES[k] || '') + ' · ' + esc(dt) + '</div></div></div><span id="gc-fh-sync" data-k="ok">✓ All sent</span>' + (W._gcView && W._gcView.headBtn ? W._gcView.headBtn() : '') + '</div><div class="fh-wrap">' /* patch FIELDDESK */;
+  var h = '<div class="fh-top"><div class="fh-brand"><img class="fh-logo" src="' + esc(fieldLogo(k)) + '" alt="GrayCo"><div style="min-width:0"><div class="fh-h">GrayCo Field</div><div class="fh-s">' + esc(myName()) + ' · ' + esc(ROLE_NAMES[k] || '') + ' · ' + esc(dt) + '</div></div></div><span id="gc-fh-sync" data-k="ok">✓ All sent</span>' + (W._gcView && W._gcView.headBtn ? W._gcView.headBtn() : '') + '</div><div class="fh-wrap">' /* patch FIELDDESK */;
   h += '<div class="fh-tiles">' + m.L.tiles.map(function(t){ var x = TILES[t]; return x ? '<button type="button" class="fh-tile ' + x[2] + '" data-fa="tile" data-tile="' + t + '"><span class="e">' + x[0] + '</span>' + esc(x[1]) + '</button>' : ''; }).join('') + '</div>';
   m.L.sections.forEach(function(sec){
     if (sec === 'jobs') {
@@ -224847,7 +224849,7 @@ function ws(){
   var k = myKind();
   if (k) return { co: k.indexOf('mit') === 0 ? 'mitigation' : 'environmental', tech: /tech$/.test(k), role: true, hub: false, kind: k };
   var f = coF();
-  if (f === 'mitigation' || f === 'environmental') return { co: f, tech: false, role: false, hub: adminNow() || officeFull(), kind: '' };
+  if (f === 'mitigation' || f === 'environmental') return { co: f, tech: false, role: false, hub: adminNow() || officeFull() || /office/i.test(roleNow()), kind: '' };   /* owner 11/12: "office can have mit and env tab too" */
   return null;
 }
 /* company membership (branch coleak2's users[].companies; no list = Construction; owners / admins in all) — read side only */
@@ -224917,8 +224919,11 @@ function shape(r, Uf){
   var hub = co === 'mitigation' ? 'mitigation' : 'enviro';
   if (!W0.hub) hide[hub] = 1;
   if (W0.role) { hide.mitigation = 1; hide.enviro = 1; }   /* their people: the tools, never the combined tab */
+  var MITMGR = W0.role && W0.kind === 'mitpm' && /manager/i.test(roleNow());   /* owner 11/12: "yes mit managers see env tab too" */
+  if (MITMGR) delete hide.enviro;
   var base = W0.role ? (W0.tech ? GEN_TECH.slice() : GEN_PM.concat(ids.filter(function(id){ return GEN_PM.indexOf(id) < 0; }))) : ids.slice();
   if (W0.hub && base.indexOf(hub) < 0) base.push(hub);
+  if (MITMGR && base.indexOf('enviro') < 0) base.push('enviro');
   var want = base.filter(function(id){ return !hide[id] && !TOOL[id] && id !== 'sds' && id !== 'planbuilder'; });
   tools.forEach(function(t){ want.push(t.id); });
   if (canPB && !W0.tech) want.push('planbuilder');
