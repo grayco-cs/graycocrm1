@@ -179,6 +179,9 @@ async function postjob(who, b){
     status: /^(closed|won|lost|awarded)$/i.test(s(job.status)) ? job.status : 'open', postedAt: job.postedAt || at, postedBy: job.postedBy || who.email, postedByName: job.postedByName || s(who.name) || who.email,
     lastPostedAt: at, lastPostedBy: who.email, crmProjectId: pid || s(job.crmProjectId), crmProjectName: s(b.projectName).slice(0, 200) || s(job.crmProjectName), crmLeadId: leadId || s(job.crmLeadId), crmEstId: estId || s(job.crmEstId),
     pmEmail: low(b.pmEmail).slice(0, 160) || s(job.pmEmail), pmName: s(b.pmName).slice(0, 120) || s(job.pmName), plansLinks: links0 !== undefined ? arr(links0) : cleanLinks(b.links), autoPrivate: false, updatedAt: at });
+  /* patch QAA: the bid site lists the job's PM as its contact (job.pmId = their bid-site staff profile, as the bid site's own Add Job picks it);
+     the card said "Send bids and questions to: the Project Manager listed on the job" with nobody listed */
+  if (!s(job.pmId) && SP.okEmail(low(job.pmEmail))) job.pmId = 'st_' + low(job.pmEmail).split('@')[0].replace(/[^a-z0-9]+/g, '_').slice(0, 40);
   if (vis === 'public') Object.assign(job, { publishedAt: job.publishedAt || at, publishedBy: who.email, madePublicAt: job.madePublicAt || at });
   else Object.assign(job, { openedPrivateAt: job.openedPrivateAt || at, openedBy: who.email });
   /* the job's files picked in the CRM (crm-files) → copied to the bid site's own bucket once each */

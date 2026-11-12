@@ -37,10 +37,11 @@ ok('1 the list: the lead-file job still counts its plans (1) but is archived, no
 const H64 = n => crypto.createHash('sha256').update(n).digest('hex');
 STORE.set('crm-files/' + H64('a') + '.pdf', PDF('A', 5000)); STORE.set('crm-files/' + H64('z') + '.zip', Buffer.from('PK\x05\x06' + '\0'.repeat(18), 'binary'));
 const r = await Hb.postjob(ADMIN, { pid: 'P1', title: 'Demo Apartments', visibility: 'public', due: new Date(Date.now() + 9 * 864e5).toISOString().slice(0, 10), trades: ['Framing', 'Drywall'],
-  files: [{ ref: 'sb:crm-files/' + H64('a') + '.pdf', name: 'Arch set.pdf', type: 'application/pdf', size: 5000, category: 'Plans/Drawings' }, { ref: 'sb:crm-files/' + H64('z') + '.zip', name: 'Sheets.zip', type: 'application/zip', size: 22 }], links: [{ url: 'https://drive.google.com/demo-set', label: 'Full set' }] });
+  pmEmail: 'pat.demo@grayco-cs.com', pmName: 'Pat Demo', files: [{ ref: 'sb:crm-files/' + H64('a') + '.pdf', name: 'Arch set.pdf', type: 'application/pdf', size: 5000, category: 'Plans/Drawings' }, { ref: 'sb:crm-files/' + H64('z') + '.zip', name: 'Sheets.zip', type: 'application/zip', size: 22 }], links: [{ url: 'https://drive.google.com/demo-set', label: 'Full set' }] });
 const job = rowData('jobs/' + r.jobId), pl = (rowData('plans/' + r.jobId) || { items: [] }).items;
 ok('2 📢 postjob: 2 files copied into the plans row', r.ok && r.files === 2 && pl.length === 2 && pl.every(x => STORE.has('subportal-files/' + x.fileRef)), { r, pl });
 ok('2 … and listed on the job (job.plans: names, sizes, types) — the bid site no longer says "No plans yet"', Array.isArray(job.plans) && job.plans.map(x => x.name).join('|') === 'Arch set.pdf|Sheets.zip' && job.plans[0].size === 5000 && job.plans[0].type === 'application/pdf', job.plans);
+ok('2 … the job\'s PM is its contact on the bid site (pmId = their bid-site staff profile)', job.pmId === 'st_pat_demo' && job.pmName === 'Pat Demo', { pmId: job.pmId });
 const r2 = await Hb.postjob(ADMIN, { jobId: r.jobId, pid: 'P1', title: 'Demo Apartments', visibility: 'public', trades: ['Framing'], files: [{ ref: 'sb:crm-files/' + H64('a') + '.pdf', name: 'Arch set.pdf' }] });
 ok('2 posting again: no copy twice; job.plans kept', r2.ok && r2.files === 0 && rowData('jobs/' + r.jobId).plans.length === 2 && (rowData('plans/' + r.jobId)).items.length === 2, rowData('jobs/' + r.jobId).plans);
 /* 3. the sub's view */

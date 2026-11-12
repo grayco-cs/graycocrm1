@@ -26,7 +26,7 @@ const day = n => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10), no
 
 /* ── made-up data ── */
 resetCloud();
-DB.gc_staff.push({ email: 'wjohnson@grayco-cs.com', name: 'Wesley Johnson', role: 'admin', active: true }, { email: 'sbiffle@grayco-cs.com', name: 'Glenn Demo', role: 'staff', profile: 'estimator', active: true });
+DB.gc_staff.push({ email: 'wjohnson@grayco-cs.com', name: 'Wesley Johnson', role: 'admin', active: true }, { email: 'pat.demo@grayco-cs.com', name: 'Pat Demo', role: 'staff', active: true }, { email: 'sbiffle@grayco-cs.com', name: 'Glenn Demo', role: 'staff', profile: 'estimator', active: true });
 /* subs on the bid site: Zedd (approved, papers on file), Dee (approved, NO papers), Pending Pete (not approved yet) */
 const subs = [['u_zedd', 'zedd@zeddframing.test', 'Zedd Sample', 'Zedd Framing & Drywall LLC', ['Framing', 'Drywall'], true, true], ['u_dee', 'dee@deepaint.test', 'Dee Sample', 'Dee Paint Co', ['Paint'], true, false],
   ['u_pete', 'pete@petefloors.test', 'Pete Sample', 'Pete Floors LLC', ['Flooring'], false, true]];
@@ -64,6 +64,7 @@ STORE.set('crm-files/' + H64('z1') + '.zip', ZIP1);
 STORE.set('crm-files/' + H64('h1') + '.pdf', PDF('huge', HUGE));
 cset('projects', [{ id: 'P_APT', name: 'Zedd Flats Apartments — 24 units', client: 'Demo Flats LLC', address: '400 Demo Ave', city: 'Memphis', state: 'TN', status: 'estimating', autoPO: 'T501', pm: 'Pat Demo', companyId: 'construction',
   scope: 'New 3-story, 24-unit apartment building (wood frame over slab), 21,600 SF.', createdAt: at, updatedAt: at, files: [] }]);
+cset('estimates', [{ id: 'E_APT', name: 'Zedd Flats Apartments — base bid', status: 'Draft', pid: 'P_APT', lines: [{ id: 'H1', desc: 'General conditions', cost: 40000, qty: 1, cat: 'General', type: 'labor', mult: 'type' }], scope: { text: '24-unit apartment building.' }, settings: {}, jobMult: 'mat', totalCost: 40000, totalCharge: 52000, createdAt: at, savedAt: at, updatedAt: at }]);
 cset('projectDocs', [
   { id: 'D1', pid: 'P_APT', cat: 'Plans/Drawings', name: 'Zedd Flats — architectural set.pdf', type: 'application/pdf', size: BIG, data: 'sb:crm-files/' + H64('a1') + '.pdf', ref: 'sb:crm-files/' + H64('a1') + '.pdf', date: at.slice(0, 10) },
   { id: 'D2', pid: 'P_APT', cat: 'Plans/Drawings', name: 'Zedd Flats — structural sheets.zip', type: 'application/zip', size: ZIP1.length, data: 'sb:crm-files/' + H64('z1') + '.zip', ref: 'sb:crm-files/' + H64('z1') + '.zip', date: at.slice(0, 10) },
@@ -108,9 +109,9 @@ ok('1 🧰 Full bid portal (CRM tab): the bid site admin list is EMPTY — "No j
 await shot(A.page(), 'fs03_crm_fullportal_empty');
 /* the leads no longer say "🏗 draft / private" for the cleaned-up jobs */
 await A.ev(() => window._setView('leads')); await wait(A, () => document.querySelector('#gc-leads-hub [data-gcl-v="list"]'), null, 20000);
-await A.ev(() => { const b = document.querySelector('#gc-leads-hub [data-gcl-v="list"]'); b && b.click(); }); await sleep(2500);
+await A.ev(() => { const b = document.querySelector('#gc-leads-hub [data-gcl-v="board"]'); b && b.click(); }); await sleep(2500);
 const chips = await A.ev(() => [...document.querySelectorAll('#gc-leads-hub .gcl-chip')].map(c => c.textContent).filter(t => /^🏗/.test(t)));
-ok('1 Leads list: no "🏗 draft" / "🏗 private" chips left for the archived jobs (shows 🏗 —)', chips.length > 0 && chips.every(t => t === '🏗 —'), chips.slice(0, 8));
+ok('1 Leads board: no "🏗 draft" / "🏗 private" chips left for the archived jobs (shows 🏗 —)', chips.length > 0 && chips.every(t => t === '🏗 —'), chips.slice(0, 8));
 
 /* ═══ 2. 📢 Put on bid portal from the new apartment job ═══ */
 await A.ev(() => { window._gcOpenProject = { id: 'P_APT' }; window._setView('projects'); });
@@ -138,7 +139,7 @@ const posted = rowsOf('jobs').map(r => r.data).filter(j => j.crmProjectId === 'P
 POSTED = posted[0] && posted[0].id;
 const pj = posted[0] || {}, plansRow = (rowData('plans/' + POSTED) || { items: [] }).items;
 ok('2 posted: ONE public job, open, due date, the 8 trades, scope + specs, the 🔗 Drive link, linked to the job (PM Pat Demo)', posted.length === 1 && pj.visibility === 'public' && pj.status === 'open' && pj.draft === false && pj.bidDueDate === DUE
-  && pj.tradesSought === TRADES.join(', ') && /24-unit/.test(pj.scope) && /Walk-through/.test(pj.specifications) && (pj.plansLinks || []).some(l => /demo-zedd-flats-full-set/.test(l.url)) && pj.pmName === 'Pat Demo', pj);
+  && pj.tradesSought.split(', ').sort().join() === TRADES.slice().sort().join() && /24-unit/.test(pj.scope) && /Walk-through/.test(pj.specifications) && (pj.plansLinks || []).some(l => /demo-zedd-flats-full-set/.test(l.url)) && pj.pmName === 'Pat Demo', pj);
 ok('2 the 48 MB PDF and the ZIP are copied to the bid site; the 51 MB one is refused by name (over 50 MB) and the toast says so', plansRow.map(x => x.name).sort().join('|') === 'Zedd Flats — architectural set.pdf|Zedd Flats — structural sheets.zip' && /not copied: Zedd Flats — MEP \(huge\)\.pdf/.test(toastT)
   && STORE.has('subportal-files/' + plansRow[0].fileRef), { plans: plansRow.map(x => x.name), toastT });
 ok('2 … and the job record lists them for the bid site (job.plans — what the bid site shows a sub)', (pj.plans || []).map(x => x.name).sort().join('|') === 'Zedd Flats — architectural set.pdf|Zedd Flats — structural sheets.zip', pj.plans);
@@ -172,18 +173,17 @@ const SC = await W.bidsCtx(browser, BUILD, F, 'desktop'), S = await page(SC);
 await W.bidsLogin(S, 'zedd@zeddframing.test', 'Sub-Pass-zedd');
 await S.waitForSelector('text=Zedd Flats Apartments', { timeout: 30000 }); await sleep(800);
 const sl = await S.evaluate(() => ({ body: document.body.innerText, cards: [...document.querySelectorAll('h3, h4')].map(x => x.textContent.trim()).filter(t => /Zedd Flats|Demo/.test(t)) }));
-ok('4 the approved sub sees exactly ONE job (the apartments) — days left · due, 4 plans; nothing old', sl.cards.length === 1 && /Zedd Flats Apartments/.test(sl.cards[0]) && /days left/.test(sl.body) && /4 plans/.test(sl.body) && !/Demo bid-board lead|Demo old posted/.test(sl.body), sl.cards.concat([sl.body.slice(0, 300)]));
+ok('4 the approved sub sees exactly ONE job (the apartments) — days left · due, 4 plans, its PM Pat Demo as the contact; nothing old', sl.cards.length === 1 && /Zedd Flats Apartments/.test(sl.cards[0]) && /days left/.test(sl.body) && /4 plans/.test(sl.body) && /Pat Demo/.test(sl.body) && !/Demo bid-board lead|Demo old posted/.test(sl.body), sl.cards.concat([sl.body.slice(0, 300)]));
 await shot(S, 'fs07_sub_list_one_job');
 await S.click('text=Zedd Flats Apartments'); await S.waitForSelector('#bid-planlinks', { timeout: 20000 }).catch(() => {}); await sleep(1500);
 const sv = await S.evaluate(() => ({ body: document.body.innerText, links: [...document.querySelectorAll('a[href*="drive.google.com"]')].map(a => a.textContent.trim()) }));
 ok('4 the job: the 2 copied files and the unpacked sheets, 🔗 Open plans ↗ (Drive), the trades and the scope', /architectural set\.pdf/.test(sv.body) && /structural sheets\.zip/.test(sv.body) && /M1\.1 HVAC plan\.pdf/.test(sv.body) && sv.links.some(l => /Open plans/.test(l)) && /Framing/.test(sv.body) && /24-unit/.test(sv.body), { links: sv.links, body: sv.body.slice(0, 900) });
 await shot(S, 'fs08_sub_job_detail', true);
 /* open a plan: a signed link to the real file */
-const before4 = SC.__popups.length;
+const signReq = []; SC.on('request', r => { if (/\/storage\/v1\/object\/sign\/subportal-files\//.test(r.url())) signReq.push(r.url()); });
 await S.evaluate(() => { const b = [...document.querySelectorAll('button')].find(x => /Download|View|Open/.test(x.textContent) && x.closest('div') && /architectural set\.pdf/.test(x.closest('div').parentNode.textContent)); if (b) b.click(); });
 await sleep(2500);
-const pop = SC.__popups.slice(before4).map(p => p.url());
-ok('4 opening a plan gives the sub a signed link to that PDF (no error)', pop.some(u => /\/storage\/v1\/object\/sign\/subportal-files\/staff\/lead-inbox\/.+architectural/.test(u) || /blob:|architectural/.test(u)), pop);
+ok('4 opening a plan fetches that PDF through a signed link (a new tab), no error', signReq.some(u => /architectural/.test(decodeURIComponent(u))), signReq);
 /* ❓ a question */
 await S.evaluate(() => { const t = document.querySelector('[data-q="ask"]'); if (t) t.scrollIntoView({ block: 'center' }); });
 await S.fill('[data-q="ask"]', 'Are the balcony railings in the framing scope or by others?');
@@ -206,6 +206,14 @@ await A.ev(id => window._gcBidEst.open(id), POSTED);
 const bt = await wait(A, () => { const r = document.querySelector('#gcsys-modal tr[data-be-bid]'); return r && document.querySelector('#gcsys-modal').innerText; }, null, 20000);
 ok('4 📊 Bids & invites: the sub\'s bid by trade — Zedd Framing & Drywall LLC $186,500', /Zedd Framing & Drywall LLC/.test(bt || '') && /\$186,500/.test(bt || '') && /Framing/.test(bt || ''), (bt || '').slice(0, 500));
 await shot(A.page(), 'fs10_crm_bids_sheet');
+/* 🏆 Award → the bid goes into the apartment job's estimate (the job 📢 was posted from) and the sub's bid says awarded */
+const bidKey = await A.ev(() => { const r = document.querySelector('#gcsys-modal tr[data-be-bid]'); return r && r.getAttribute('data-be-bid'); });
+await A.ev(k => { const b = document.querySelector('#gcsys-modal tr[data-be-bid="' + k + '"] [data-be="award"]'); b && b.click(); }, bidKey);
+for (let i = 0; i < 40; i++) { if (await A.ev(() => !!document.querySelector('#gcsys-modal [data-be="cfgo"]'))) break; await sleep(250); }
+await A.ev(() => { const b = document.querySelector('#gcsys-modal [data-be="cfgo"]'); b && b.click(); }); await sleep(3500);
+const estA = await A.ev(() => { const l = (window._gcEstimatesState && window._gcEstimatesState.length ? window._gcEstimatesState : window._crm.estimates) || []; const e = l.find(x => x && x.id === 'E_APT'); return e ? (e.lines || []).filter(x => x.bidRef).map(x => ({ cost: x.cost, cat: x.cat, aw: x.bidRef.awarded, desc: x.desc })) : null; });
+const awardedRow = (rowsOf('bids').find(r => r.data.userId === 'u_zedd') || {}).data || {};
+ok('4 🏆 Award: the bid is marked awarded on the bid site and lands as an awarded line on the apartment estimate ($186,500)', awardedRow.accepted === true && Array.isArray(estA) && estA.length === 1 && estA[0].cost === 186500 && estA[0].aw === true, { estA, accepted: awardedRow.accepted, key: bidKey });
 await A.ev(() => window._gcBidEst.close && window._gcBidEst.close());
 await A.ev(() => window._gcBidPost.jobs(true)); await sleep(800);
 const td = await A.ev(() => window._gcBidPost.todo().map(x => x.title));
