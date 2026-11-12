@@ -2,7 +2,7 @@
 // "Restoration & Abatement Tech" gets BOTH the Mitigation and the Environmental tool tabs (no combined hub tabs), both sets of field
 // buttons on the phone (Mitigation first), is in both companies (read side) and switches Mitigation ↔ Environmental only.
 // Offline harness, made-up people only.
-import { computer, signIn, sleep, cset, resetCloud } from '/tmp/claude-0/-home-user-graycocrm1/6a5b2b6b-8a4d-5505-9f82-62521adb6674/scratchpad/wN/harness_N.mjs';
+import { computer, signIn, sleep, cset, cget, resetCloud } from '/tmp/claude-0/-home-user-graycocrm1/6a5b2b6b-8a4d-5505-9f82-62521adb6674/scratchpad/wN/harness_N.mjs';
 const R = []; const ok = (n, c, i) => { R.push(!!c); console.log((c ? 'PASS ' : 'FAIL ') + n + (i !== undefined ? '  ' + JSON.stringify(i).slice(0, 500) : '')); };
 const BUILD = process.argv[2], SHOT = process.argv[3] || '';
 resetCloud();
@@ -89,6 +89,10 @@ await K.ev(() => { try { window._gcFieldTools.run('day', 'M1'); } catch (e) {} }
 const toastTxt = await K.ev(() => document.body.innerText);
 ok('⏱ clock-in refused: "You need IICRC WRT to work this job — talk to your manager" on the Mitigation water job (no WRT); no start-day sheet', blk && /IICRC WRT/.test(blk.missing.join()) && /You need IICRC WRT to work this job — talk to your manager/.test(toastTxt) && !/Start day — Demo Ross basement/.test(toastTxt), { blk, t: toastTxt.slice(0, 200) });
 if (SHOT) await K.page().screenshot({ path: SHOT + '/certrole_clockin_refused.png' });
+await K.ev(() => window._setProjects(prev => prev.map(x => x.id === 'M1' ? Object.assign({}, x, { mitTech: 'Dex Demo' }) : x))); await sleep(4500);
+const gd = await K.ev(() => ({ tech: window._crm.projects.find(x => x.id === 'M1').mitTech || '', body: document.body.innerText }));
+const ar = cget('gc_cert_plan');
+ok('🚫 BLOCK: put on the Mitigation water job without IICRC WRT → taken off again ("Dex Demo needs IICRC WRT … taken off the job"), and an admin is asked to allow it', gd.tech === '' && /Dex Demo needs IICRC WRT/.test(gd.body) && ar && (ar.allowReq || []).some(r => r.pid === 'M1' && r.status === 'open'), { tech: gd.tech, req: ar && ar.allowReq });
 await K.b.close();
 
 ok('no page errors', !errs.length, errs);
