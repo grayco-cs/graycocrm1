@@ -187,4 +187,17 @@ const bj = await B.ev(() => (document.getElementById('gc-mws-mount') || {}).inne
 ok('M7 … so it shows in their 💧 Drying jobs, and no Construction job / claim does', /Zedd Lane laundry leak/.test(bj) && !/Conzz/.test(bj), bj.split('\n').filter(x => /zz|Zedd/.test(x)).slice(0, 6));
 ok('M7 no page errors', !errsB.length, errsB);
 await B.b.close();
+
+/* ═══ M8 a Marketing Manager switches to Mitigation: Marketing yes, no drying / claims tool tabs that would not open for them ═══ */
+cset('users', [{ id: 'u1', name: 'Wesley Johnson', email: 'wjohnson@grayco-cs.com', role: 'Admin', payType: 'owner', active: true },
+  { id: 'u2', name: 'Kim Mktdemo', email: 'sbiffle@grayco-cs.com', role: 'Marketing Manager', active: true }]);
+const K = await computer('sbiffle@grayco-cs.com', { build: BUILD });
+await K.ctx.addInitScript(() => { try { if (!sessionStorage.getItem('q')) { localStorage.setItem('gc_co_filter', 'mitigation'); sessionStorage.setItem('q', '1'); } } catch (e) {} });
+await signIn(K, 'sbiffle@grayco-cs.com', 14000); await sleep(6000);
+await K.ev(() => { const b = document.querySelector('#gc-ra-desk [data-ra-a="full"]'); b && b.click(); }); await sleep(1000);
+const kn = await K.ev(() => [...document.querySelectorAll('aside nav button, aside button, nav button')].filter(b => b.offsetParent).map(b => b.innerText.replace(/\s+/g, ' ').trim()));
+const bad = [];
+for (const l of kn.filter(x => /Drying|Moisture|Equipment|Calculator|Work authoriz|Claims|Emergencies|SDS/.test(x))) { const v = await K.ev(l => { const b = [...document.querySelectorAll('aside nav button, aside button, nav button')].find(x => x.offsetParent && x.innerText.replace(/\s+/g, ' ').trim() === l); b && b.click(); return localStorage.getItem('grayco_view'); }, l); bad.push(l); }
+ok('M8 Marketing Manager on Mitigation: Marketing on the menu, no mitigation tool tabs (they would not open for this role)', kn.some(x => /Marketing/.test(x)) && !bad.length, { kn: kn.slice(0, 20), bad });
+await K.b.close();
 const n = R.filter(Boolean).length; console.log('QAB_FLOWS ' + n + '/' + R.length); process.exit(n === R.length ? 0 : 1);

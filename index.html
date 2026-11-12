@@ -224956,13 +224956,14 @@ function shape(r, Uf){
   if (W0.hub && base.indexOf(hub) < 0) base.push(hub);
   if (MITMGR && base.indexOf('enviro') < 0) base.push('enviro');
   var want = base.filter(function(id){ return !hide[id] && !TOOL[id] && id !== 'sds' && id !== 'planbuilder'; });
-  tools.forEach(function(t){ want.push(t.id); });
+  tools.forEach(function(t){ if (!W0.role && !W0.hub && !toolOk(t.id)) return; want.push(t.id); });   /* patch QAB: a tab is on the menu only when it opens for them (a Marketing Manager has no drying / claims tools) */
   if (canPB && !W0.tech) want.push('planbuilder');
   var ord = ORDER[co], seen = {}, out = [];
   ord.forEach(function(id){ if (want.indexOf(id) >= 0 && !seen[id]) { seen[id] = 1; out.push(id); } });
   want.forEach(function(id){ if (!seen[id]) { seen[id] = 1; out.push(id); } });
   return out.map(function(id){ return itemOf(Uf, id); }).filter(Boolean);
 }
+function toolOk(id){ try { var f = W._gcViewAllowed; return typeof f !== 'function' || !!f(id); } catch (e) { return true; } }
 function menuIds(){ try { return arr(MENU.last).map(function(g){ return g.id; }); } catch (e) { return []; } }
 var MENU = { last: null };
 function wrapMenu(){
