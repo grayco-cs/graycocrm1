@@ -12,7 +12,7 @@ import {
 import { sget as _sget, sset as _sset, sdel as _sdel, sloadMany, COLLECTIONS, openFile, uploadDataUrl,
   saveGeneration, savesPending, setSaveErrorHandler, rememberLoaded, uploadBlob } from './storage.js';
 import { authToken, signIn as authSignIn, signUp as authSignUp, signOut as authSignOut, changePassword as authChangePw,
-  checkPassword, getCurrentUser, inviteInfo as fetchInviteInfo, requestPasswordReset, takeRecoveryFromUrl, api } from './auth.js';
+  checkPassword, getCurrentUser, inviteInfo as fetchInviteInfo, requestPasswordReset, takeRecoveryFromUrl, api, keepSignedIn, onSignedOut, hasSession } from './auth.js';
 import { EMBEDDED, COMPANY as CFG_COMPANY, PORTAL_URL } from './config.js';
 import logoUrl from './grayco-logo.png';
 
@@ -33,6 +33,7 @@ const T = {
     companyTag: 'Construction Services',
     login: 'Log In', logout: 'Log Out', register: 'Request Access',
     username: 'Username', password: 'Password', email: 'Email',
+    reconnecting: 'Reconnecting to GrayCo…', reconnectNote: 'We can\'t reach GrayCo right now. You are still signed in — this page keeps trying by itself.', retryNow: 'Try again now', signInEnded: 'Your sign-in has ended. Please sign in again.',   // patch SUBSESS
     fullName: 'Full Name',
     phone: 'Phone', trades: 'Trades (comma separated)',
     submit: 'Submit', cancel: 'Cancel', save: 'Save', edit: 'Edit', delete: 'Delete',
@@ -335,6 +336,7 @@ const T = {
     companyTag: 'Servicios de Construcción',
     login: 'Iniciar Sesión', logout: 'Cerrar Sesión', register: 'Solicitar Acceso',
     username: 'Usuario', password: 'Contraseña', email: 'Correo Electrónico',
+    reconnecting: 'Reconectando con GrayCo…', reconnectNote: 'No podemos comunicarnos con GrayCo ahora. Usted sigue con su sesión iniciada — esta página lo sigue intentando sola.', retryNow: 'Intentar ahora', signInEnded: 'Su sesión terminó. Inicie sesión otra vez.',   // patch SUBSESS
     fullName: 'Nombre Completo',
     phone: 'Teléfono', trades: 'Especialidades (separadas por coma)',
     submit: 'Enviar', cancel: 'Cancelar', save: 'Guardar', edit: 'Editar', delete: 'Eliminar',
@@ -1164,6 +1166,7 @@ export default function App() {
   }
 
   async function startSession(u) {
+    keepSignedIn();   // patch SUBSESS: renew the sign-in before it runs out, and whenever the page comes back
     setLoading(true);
     try {
       setUser(u);
@@ -1178,26 +1181,54 @@ export default function App() {
     }
   }
 
+  /* patch SUBSESS: opening the page with a saved sign-in. No signal / a GrayCo hiccup → "Reconnecting…" (still signed in,
+     tried again every 15 s, when back online and when the page is shown) — never the sign-in screen. */
+  const [reconnect, setReconnect] = useState(false);
+  const restoring = useRef(false);
+  async function restore(rec) {
+    if (restoring.current) return;
+    restoring.current = true;
+    try {
+      const restored = await getCurrentUser();
+      setReconnect(false);
+      if (restored) {
+        await startSession(restored);
+        if (rec && rec.recovery) setShowChangePassword('recovery');
+        return;
+      }
+    } catch (e) {
+      if (e && e.transient && hasSession()) { keepSignedIn(); setReconnect(true); setLoading(false); return; }
+      console.warn('session restore failed', e);
+    } finally { restoring.current = false; }
+    setLoading(false);
+  }
   useEffect(() => {
     setSaveErrorHandler(msg => showToast(msg, 'error'));
     (async () => {
+      let rec = null;
       try {
         // Back from a "forgot password" e-mail?
-        const rec = await takeRecoveryFromUrl();
+        rec = await takeRecoveryFromUrl();
         if (rec && rec.error) showToast(rec.error, 'error');
-        const restored = await getCurrentUser();
-        if (restored) {
-          await startSession(restored);
-          if (rec && rec.recovery) setShowChangePassword('recovery');
-          return;
-        }
       } catch (e) {
-        console.warn('session restore failed', e);
+        console.warn('recovery link failed', e);
       }
-      setLoading(false);
+      await restore(rec);
     })();
+    // The sign-in really ended (refused, or Log Out in another tab): back to the sign-in screen.
+    const off = onSignedOut(() => { setReconnect(false); setUser(prev => { if (prev) showToast(T[savedLang()].signInEnded, 'error'); return null; }); setImpersonatedFrom(null); setView('jobs'); setActiveJob(null); });
+    return off;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  useEffect(() => {
+    if (!reconnect) return;
+    const again = () => { if (!document.hidden) restore(); };
+    const iv = setInterval(again, 15e3);
+    window.addEventListener('online', again);
+    document.addEventListener('visibilitychange', again);
+    return () => { clearInterval(iv); window.removeEventListener('online', again); document.removeEventListener('visibilitychange', again); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reconnect]);
 
   // New bids, messages and jobs from other people show up within a minute.
   useEffect(() => {
@@ -1294,8 +1325,9 @@ export default function App() {
   }, [acks, loading]);
 
   // Persist login session so page refreshes don't log people out.
-  // Session persistence is handled automatically by Supabase Auth
-  // (see config.js — persistSession: true). No idle timeout, ever.
+  // patch SUBSESS: the sign-in is kept by src/auth.js (browser key gc_auth_v1; there is no Supabase client library and no
+  // "persistSession" option here): renewed before it runs out, kept through no-signal / server hiccups, one tab renews at a
+  // time. No idle timeout, ever. Only Log Out (or Supabase refusing the refresh token twice) signs a sub out.
 
   if (loading) {
     return (
@@ -1307,6 +1339,24 @@ export default function App() {
         <style>{fontImport}</style>
         <GrayCoLogo size="lg" variant="navy" />
         <Loader2 size={28} className="spin" color={styles.accent} />
+      </div>
+    );
+  }
+
+  // patch SUBSESS: signed in, but GrayCo cannot be reached right now
+  if (!user && reconnect) {
+    return (
+      <div data-gc-reconnect="1" style={{
+        minHeight: '100vh', background: styles.cream,
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        fontFamily: styles.fontBody, gap: 18, padding: 24, textAlign: 'center',
+      }}>
+        <style>{fontImport}</style>
+        <GrayCoLogo size="lg" variant="navy" />
+        <Loader2 size={24} className="spin" color={styles.accent} />
+        <div style={{ fontWeight: 600, fontSize: 18, color: styles.navy }}>{t.reconnecting}</div>
+        <div style={{ maxWidth: 420, color: styles.text2, fontSize: 14 }}>{t.reconnectNote}</div>
+        <Btn variant="primary" onClick={() => restore()}>{t.retryNow}</Btn>
       </div>
     );
   }
