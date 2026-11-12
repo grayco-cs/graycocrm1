@@ -1,6 +1,7 @@
 // test_CERTPLAN.mjs <build-dir> [shot-dir] — owner 11/11: required certs by role, a raise for every certificate, ⭐ promotion eligible with
 // Master designations, PM year-end bonus, emergency after-hours 1.5× / overtime 1.5× not stacked. Made-up people only.
 import { computer, signIn, sleep, cset, cget, resetCloud } from '/tmp/claude-0/-home-user-graycocrm1/6a5b2b6b-8a4d-5505-9f82-62521adb6674/scratchpad/wN/harness_N.mjs';
+const cloudWait = async (f, ms = 8000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { try { if (f(cget('gc_cert_plan'))) return; } catch (e) {} await sleep(300); } };   /* the cloud write can lag the click */
 const R = []; const ok = (n, c, i) => { R.push(!!c); console.log((c ? 'PASS ' : 'FAIL ') + n + (i !== undefined ? '  ' + JSON.stringify(i).slice(0, 300) : '')); };
 const ago = d => new Date(Date.now() - d * 864e5).toISOString().slice(0, 10), ahead = d => new Date(Date.now() + d * 864e5).toISOString().slice(0, 10);
 resetCloud();
@@ -153,6 +154,7 @@ await A.ev(() => { const f = document.querySelector('[data-cp-clform="ina@exampl
 const k1 = cget('gc_cert_plan'), todoC = await A.ev(() => window._gcTodoExt.map(f => { try { return f(); } catch (e) { return []; } }).flat().filter(x => /^cpclass:/.test(x.key)).map(x => x.title + ' | ' + x.sub));
 ok('CLASS: the request is saved (course, $450, dates, travel yes, training score) and is on the admins\' To-Do', k1.classes && k1.classes.length === 1 && k1.classes[0].status === 'requested' && k1.classes[0].cost === 450 && k1.classes[0].travel === true && /18 of 20/.test(k1.classes[0].training) && todoC.some(x => /🎓 Class request: Ina Demo/.test(x) && /\$450\.00/.test(x) && /travel: yes/.test(x)), { c: k1.classes, todoC });
 await A.ev(() => document.querySelector('[data-cp-person="ina@example.com"] [data-cp="clapprove"]').click()); await sleep(1500);
+await cloudWait(c => c.classes[0].status === 'approved');
 const k2 = cget('gc_cert_plan'), cl2 = await clState();
 ok('CLASS: ✅ Approve records "Class approved — company pays the course fee; training days unpaid; travel paid if out of town" (who, when) and shows it on the card', k2.classes[0].status === 'approved' && k2.classes[0].approvedBy === 'Wesley Johnson' && /company pays the course fee; training days unpaid; travel paid if out of town/.test(k2.classes[0].note) && cl2.st === 'approved' && /Class approved/.test(cl2.txt), { c: k2.classes[0], cl2 });
 ok('CLASS: ASD (IICRC S500 course not passed) is still blocked', cl2.dis2 === true, cl2);
@@ -164,6 +166,7 @@ await A.page().screenshot({ path: (process.argv[3] || '/tmp') + '/certrole_class
 /* the track picker: Roofing / Insurance options; a change is saved for that person only */
 const opts = await A.ev(() => [...document.querySelector('[data-cp-track="sam@example.com"]').options].map(o => o.value));
 await A.ev(() => { const s = document.querySelector('[data-cp-track="sam@example.com"]'); s.value = 'con_ins_pm'; s.dispatchEvent(new Event('change', { bubbles: true })); }); await sleep(1500);
+await cloudWait(c => c.people['sam@example.com'] && c.people['sam@example.com'].track === 'con_ins_pm');
 const tsv = cget('gc_cert_plan'), sam2 = await card('sam@example.com');
 ok('CERTROLE: the track picker has Roofing PM and Insurance PM; changing Sam to Insurance PM saves on Sam only and his IICRC lines become Required', opts.includes('con_roof_pm') && opts.includes('con_ins_pm') && tsv && tsv.people && tsv.people['sam@example.com'] && tsv.people['sam@example.com'].track === 'con_ins_pm' && Object.keys(tsv.people).sort().join() === 'ina@example.com,sam@example.com,tia@example.com' && sam2.tk === 'con_ins_pm' && sam2.req.includes('wrt') && !sam2.rec.length && (await card('pat@example.com')).tk === 'con_pm', { opts, people: tsv && tsv.people, sam2: sam2.tk });
 await A.ev(() => { const s = document.querySelector('[data-cp-track="sam@example.com"]'); s.value = 'con_roof_pm'; s.dispatchEvent(new Event('change', { bubbles: true })); }); await sleep(1500);
