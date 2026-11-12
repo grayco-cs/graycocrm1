@@ -70,7 +70,7 @@ async function jobsList(){
   const mail = arr(await L.kvGet(T.KV_SUBBIDS).catch(() => []));
   const inv = {}, nb = {}, nm = {};
   invites.forEach(r => { if (r.job_id) inv[r.job_id] = (inv[r.job_id] || 0) + 1; });
-  bids.forEach(r => { if (r.job_id) nb[r.job_id] = (nb[r.job_id] || 0) + 1; });
+  bids.forEach(r => { if (r.job_id && !(r.data && r.data.fromEmailBid)) nb[r.job_id] = (nb[r.job_id] || 0) + 1; });
   mail.forEach(x => { if (x && x.jobId) nm[x.jobId] = (nm[x.jobId] || 0) + 1; });
   return jobs.map(r => r.data || {}).filter(j => j.id && (!GONE.test(s(j.status)) || restorable(j))).map(j => ({
     deleted: GONE.test(s(j.status)), deletedAt: s(j.archivedAt), deletedBy: s(j.archivedBy),   /* patch SYS2: 🗑 Deleted (n), restorable for 30 days */
@@ -91,19 +91,30 @@ async function subBids(jobId){
   const [rows, us, raw] = await Promise.all([SP.listRows([SP.eq('collection', 'bids'), SP.eq('job_id', jobId)]).catch(() => []), users(), crmSubsRaw()]);
   const byId = {}, byEmail = {}; us.forEach(u => { if (u.id) byId[u.id] = u; if (u.email) byEmail[low(u.email)] = u; });
   const crmByEmail = {}; raw.forEach(r => { if (r && r.email) crmByEmail[low(r.email)] = r; });
-  const out = rows.map(r => r.data || {}).filter(b => b.id).map(b => {
+  const out = rows.map(r => r.data || {}).filter(b => b.id && !b.fromEmailBid).map(b => {   /* patch BIDSCOPE: an e-mailed bid's portal copy is listed once (as the e-mail) */
     const u = byId[s(b.userId)] || byEmail[low(b.userEmail)] || {};
     const viaPortal = s(b.via) === 'portal' || !!(u.crmSubId || u.bidsRequested);
     return { source: viaPortal ? 'subportal' : 'portal', id: s(b.id), sub: s(b.userName || u.name), company: s(b.userCompany || u.company), email: low(b.userEmail || u.email),
       trade: s(b.trade) || tradeOf(u, crmByEmail, b.userEmail || u.email), amount: b.amount == null || b.amount === '' ? null : Number(b.amount),
-      files: arr(b.docs).map(fileOut), at: s(b.submittedAt || b.updatedAt), awarded: !!b.accepted, notSelected: !b.accepted && !!b.rejected, scope: s(b.scope).slice(0, 600) };
+      files: arr(b.docs).map(fileOut), at: s(b.submittedAt || b.updatedAt), awarded: !!b.accepted, notSelected: !b.accepted && !!b.rejected, scope: s(b.scope).slice(0, 3000),
+      notes: s(b.notes).slice(0, 3000), awardMailedAt: s(b.awardMailedAt), lang: langOf(u, crmByEmail[low(b.userEmail || u.email)]) };   /* patch BIDSCOPE: included (scope) / notes-exclusions, for the scope comparison */
   });
   arr(await L.kvGet(T.KV_SUBBIDS).catch(() => [])).filter(x => x && x.jobId === jobId).forEach(x => {
     const sub = x.sub || {};
     out.push({ source: 'email', id: s(x.id), sub: s(sub.name), company: s(sub.company), email: low(sub.email), trade: s(x.trade) || tradeOf(byEmail[low(sub.email)], crmByEmail, sub.email),
-      amount: x.amount != null ? Number(x.amount) : amountOf(s(x.subject) + '\n' + s(x.text)), files: arr(x.files).map(fileOut), at: s(x.at), awarded: !!x.awarded, scope: s(x.text).slice(0, 600) });
+      amount: x.amount != null ? Number(x.amount) : amountOf(s(x.subject) + '\n' + s(x.text)), files: arr(x.files).map(fileOut), at: s(x.at), awarded: !!x.awarded, scope: s(x.text).slice(0, 3000), awardMailedAt: s(x.awardMailedAt), lang: langOf(byEmail[low(sub.email)], crmByEmail[low(sub.email)]) });
   });
   return out.sort((a, b) => s(a.trade).localeCompare(s(b.trade)) || (a.amount == null) - (b.amount == null) || (a.amount || 0) - (b.amount || 0));
+}
+
+/* patch BIDSCOPE: the scope GrayCo SENT for this job (each trade's scope, the job scope, the specifications, the scope / spec
+   sheets — their text when the file has it, else only the name) — the CRM flags a sub's exclusion that hits it */
+async function sentScope(jobId){
+  try {
+    const job = await jobRow(jobId); if (!job) return null;
+    const docs = arr(job.scopeDocs).concat(arr(job.specDocs)).slice(0, 20).map(f => ({ name: s(f && (f.name || f.fileName)), text: s(f && (f.text || f.extractedText)).slice(0, 6000) }));
+    return { scope: s(job.scope).slice(0, 8000), specifications: s(job.specifications).slice(0, 8000), tradeScopes: arr(job.tradeScopes).slice(0, 20).map(x => ({ trade: s(x && x.trade), scope: s(x && x.scope).slice(0, 6000) })), docs };
+  } catch (e) { return null; }
 }
 
 /* ── the invite picker ── */
@@ -216,28 +227,134 @@ async function link(who, b){
   return { ok: true, jobId: job.id, projectId: pid };
 }
 
+/* ── patch BIDSCOPE (owner: "award bid by email and portal entry") ──────────────────────────────────────────────────
+   🏆 Award (the CRM's confirm sheet) → the awarded sub gets ONE e-mail (EN / ES): the job, the trade, their amount, the PM
+   (name / phone / e-mail), next steps (sub agreement / scope to sign in their GrayCo Portal) and — when there are scope
+   gaps — "Please confirm these before we finalize: …". awardMailedAt is kept on the bid: a repeat award sends nothing
+   unless "Send again" (mailAgain). Never while data-entry mode is on (pause) or PORTAL_MAIL_OFF. An e-mailed bid from a
+   sub who has a bid-site profile (same e-mail) gets a copy in the bids collection (fromEmailBid), so their portal shows
+   🏆 Awarded. "Tell the other bidders they were not selected" (notifyOthers, off by default): a short polite e-mail,
+   no prices, no names. */
+const SUB_PORTAL = (function(){ const v = s(process.env.PORTAL_BASE_URL).replace(/\/$/, ''); return /^https:\/\//.test(v) ? v : 'https://portal.grayco-cs.com'; })();
+function money2(n){ n = Number(n); return isFinite(n) ? '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''; }
+function pmOf(b, who){
+  const p = b && b.pm && typeof b.pm === 'object' ? b.pm : {};
+  const name = s(p.name).slice(0, 120) || s(who && who.name) || 'GrayCo office', email = low(p.email).slice(0, 160), phone = s(p.phone).replace(/[^\d+().\- ]/g, '').slice(0, 40);
+  return { name, email: SP.okEmail(email) ? email : (SP.okEmail(low(who && who.email)) ? low(who.email) : ''), phone };
+}
+function cleanList(v){ return arr(v).map(x => s(x).replace(/\s+/g, ' ').slice(0, 200)).filter(Boolean).slice(0, 25); }
+function awardMail(o, es){
+  const title = s(o.job.title) || 'GrayCo job', trade = s(o.trade), amt = o.amount != null && o.amount !== '' ? money2(o.amount) : '';
+  const subject = (es ? 'Adjudicada — ' : 'Awarded — ') + title + (trade ? ' — ' + trade : '');
+  const pm = o.pm || {}, pmBits = [SP.esc(pm.name), pm.phone ? SP.esc(pm.phone) : '', pm.email ? '<a href="mailto:' + SP.esc(pm.email) + '">' + SP.esc(pm.email) + '</a>' : ''].filter(Boolean).join(' · ');
+  const ex = cleanList(o.exclusions), exHtml = ex.map(x => '• ' + SP.esc(x)).join('<br>');
+  const lines = es ? [
+    '¡Felicidades! GrayCo Construction Services le adjudicó ' + (trade ? '<b>' + SP.esc(trade) + '</b> en ' : '') + '<b>' + SP.esc(title) + '</b>' + (s(o.job.address) ? ' (' + SP.esc(o.job.address) + ')' : '') + '.',
+    amt ? 'Su oferta: <b>' + amt + '</b>' : '',
+    pmBits ? 'Su gerente de proyecto en GrayCo: <b>' + pmBits + '</b>' : '',
+    'Próximos pasos: GrayCo le enviará su contrato de subcontratista / el alcance para firmar en su Portal GrayCo.',
+    ex.length ? '<b>Por favor confirme esto antes de finalizar:</b><br>' + exHtml : ''
+  ] : [
+    'Congratulations! GrayCo Construction Services has awarded you ' + (trade ? '<b>' + SP.esc(trade) + '</b> on ' : '') + '<b>' + SP.esc(title) + '</b>' + (s(o.job.address) ? ' (' + SP.esc(o.job.address) + ')' : '') + '.',
+    amt ? 'Your bid: <b>' + amt + '</b>' : '',
+    pmBits ? 'Your GrayCo project manager: <b>' + pmBits + '</b>' : '',
+    'Next steps: GrayCo will send your sub agreement / scope to sign in your GrayCo Portal.',
+    ex.length ? '<b>Please confirm these before we finalize:</b><br>' + exHtml : ''
+  ];
+  return { subject: subject.slice(0, 240), html: SP.mailHtml(es ? '¡Su oferta fue adjudicada!' : 'Your bid was awarded', lines.filter(Boolean), { href: SUB_PORTAL + '/', label: es ? 'Abrir mi Portal GrayCo' : 'Open my GrayCo Portal' }) };
+}
+function notSelectedMail(o, es){
+  const title = s(o.job.title) || 'GrayCo job', trade = s(o.trade);
+  const subject = (es ? 'Actualización de su oferta — ' : 'Bid update — ') + title;
+  const lines = es ? ['Gracias por licitar ' + (trade ? '<b>' + SP.esc(trade) + '</b> en ' : '') + '<b>' + SP.esc(title) + '</b>.', 'GrayCo seleccionó otra oferta para este oficio. Apreciamos su tiempo y esperamos trabajar con usted en el próximo proyecto.']
+    : ['Thank you for bidding ' + (trade ? '<b>' + SP.esc(trade) + '</b> on ' : '') + '<b>' + SP.esc(title) + '</b>.', 'GrayCo has selected another bid for this trade. We appreciate your time and look forward to working with you on the next one.'];
+  return { subject: subject.slice(0, 240), html: SP.mailHtml(es ? 'Gracias por su oferta' : 'Thank you for your bid', lines) };
+}
+async function mailGate(){
+  if (process.env.PORTAL_MAIL_OFF === '1' || process.env.PORTAL_MAIL_OFF === 'true') return 'e-mail is off (PORTAL_MAIL_OFF)';
+  try { if (await require('./_lib/pause').isPaused()) return 'data-entry mode is on — nothing goes out'; } catch (e) { return 'data-entry mode could not be checked — nothing goes out'; }
+  return '';
+}
+async function sendOne(to, m){ try { return !!(await SP.sendMail(to, m.subject, m.html)); } catch (e) { return false; } }
+
 async function award(who, b){
   if (!who.canPublic) return { code: 403, error: 'Only an admin or an estimator marks a sub bid awarded.' };
-  const on = b.on !== false, id = s(b.id), at = nowIso();
-  if (s(b.source) === 'email') {
-    let hit = null;
-    await L.kvCas(T.KV_SUBBIDS, v => { const l = arr(v); const x = l.find(y => y && y.id === id); if (!x) return undefined; x.awarded = on; x.awardedAt = on ? at : ''; x.awardedBy = who.email; hit = x; return l; });
-    return hit ? { ok: true, awarded: on } : { code: 404, error: 'No such sub bid.' };
+  const on = b.on !== false, id = s(b.id), at = nowIso(), src = s(b.source);
+  const found = await jobRow(b.jobId).catch(() => null), job = found || { id: s(b.jobId), title: '' };
+  const pm = pmOf(b, who), exclusions = cleanList(b.exclusions), wantMail = on && b.mail !== false;
+  const us = on ? await users() : [], uByEmail = {}; us.forEach(u => { if (u && u.email) uByEmail[low(u.email)] = u; });
+  let crmByEmail = null; const langFor = async e => { if (!crmByEmail) { crmByEmail = {}; (await crmSubsRaw()).forEach(r => { if (r && r.email) crmByEmail[low(r.email)] = r; }); } return langOf(uByEmail[low(e)], crmByEmail[low(e)]); };
+  const out = { ok: true, awarded: on, notSelected: 0, mail: { sent: false } };
+  /* the award e-mail (before the bid is saved, so its stamp goes in the same write) */
+  async function mailTo(email, trade, amount, mailedAt){
+    if (!wantMail) return { sent: false, skipped: 'not asked' };
+    if (mailedAt && !b.mailAgain) return { sent: false, skipped: 'already e-mailed ' + mailedAt.slice(0, 10) + ' (tick "Send again")', mailedAt };
+    if (!SP.okEmail(low(email))) return { sent: false, skipped: 'no e-mail address on this bid' };
+    const gate = await mailGate(); if (gate) return { sent: false, skipped: gate };
+    const es = (await langFor(email)) === 'es', m = awardMail({ job, trade, amount, pm, exclusions }, es);
+    const ok = await sendOne(low(email), m);
+    return ok ? { sent: true, to: low(email), lang: es ? 'es' : 'en', mailedAt: at } : { sent: false, skipped: 'the e-mail could not be sent' };
   }
-  const row = await SP.getRow('bids', id); if (!row || (s(b.jobId) && row.job_id !== s(b.jobId))) return { code: 404, error: 'No such sub bid.' };
-  const bid = Object.assign({}, row.data, on ? { accepted: true, rejected: false, acceptedAt: at, acceptedBy: who.email } : { accepted: false, acceptedAt: '' });
-  /*AWARDFLOW: the other portal bids on this job in the same trade → Not selected (Undo puts them back) */
-  const others = [];
-  try {
-    const tr = s(bid.trade).toLowerCase(), tag = 'award:' + id;
-    (await SP.listRows([SP.eq('collection', 'bids'), SP.eq('job_id', row.job_id)])).forEach(function(r){ const o = r.data || {};
-      if (!o.id || o.id === id || s(o.trade).toLowerCase() !== tr) return;
-      if (on && !o.accepted && !o.rejected) others.push(Object.assign({}, o, { rejected: true, rejectedAt: at, rejectedBy: tag, notSelected: true }));
-      if (!on && o.rejected && o.rejectedBy === tag) others.push(Object.assign({}, o, { rejected: false, rejectedAt: '', rejectedBy: '', notSelected: false }));
-    });
-  } catch (e) {}
-  await SP.upsertRows([SP.rowFor('bids', bid)].concat(others.map(function(o){ return SP.rowFor('bids', o); })), who.email);
-  return { ok: true, awarded: on, notSelected: on ? others.length : 0 };
+  let awardedTrade = '', awardedEmail = '';
+  if (src === 'email') {
+    const cur = arr(await L.kvGet(T.KV_SUBBIDS).catch(() => [])).find(y => y && y.id === id);
+    if (!cur) return { code: 404, error: 'No such sub bid.' };
+    const email = low(cur.sub && cur.sub.email), trade = s(cur.trade), amount = cur.amount != null ? Number(cur.amount) : amountOf(s(cur.subject) + '\n' + s(cur.text));
+    awardedTrade = trade; awardedEmail = email;
+    if (on) out.mail = await mailTo(email, trade, amount, s(cur.awardMailedAt));
+    let hit = null;
+    await L.kvCas(T.KV_SUBBIDS, v => { const l = arr(v); const x = l.find(y => y && y.id === id); if (!x) return undefined; x.awarded = on; x.awardedAt = on ? at : ''; x.awardedBy = who.email;
+      if (on) { x.awardPm = pm; x.awardExclusions = exclusions; } if (out.mail.sent) x.awardMailedAt = at; hit = x; return l; });
+    if (!hit) return { code: 404, error: 'No such sub bid.' };
+    /* the sub's own bid-site profile (same e-mail): a copy of the bid in the bids collection, so their portal shows the award */
+    try {
+      const u = uByEmail[email] || (on ? null : (await users()).find(x => low(x.email) === email));
+      if (u && u.id && s(u.role || 'sub') === 'sub') {
+        const prev = await SP.getRow('bids', 'b_em_' + id).catch(() => null), pd = prev && prev.data;
+        if (on || pd) {
+          const copy = Object.assign({}, pd || { id: 'b_em_' + id, jobId: s(cur.jobId) || s(b.jobId), userId: s(u.id), userEmail: email, userName: s(u.name || (cur.sub && cur.sub.name)), userCompany: s(u.company || (cur.sub && cur.sub.company)),
+            amount: amount, trade: trade, notes: 'Bid e-mailed to bids@grayco-cs.com', scope: '', docs: [], via: 'email', fromEmailBid: id, submittedAt: s(cur.at) || at },
+            on ? { accepted: true, rejected: false, acceptedAt: at, acceptedBy: who.email, awardPm: pm, awardExclusions: exclusions } : { accepted: false, acceptedAt: '' }, { updatedAt: at });
+          await SP.upsertRows([SP.rowFor('bids', copy)], who.email);
+          out.portal = { copied: true, userId: s(u.id) };
+        }
+      }
+    } catch (e) { out.portal = { copied: false, error: s(e && e.message) }; }
+  } else {
+    const row = await SP.getRow('bids', id); if (!row || (s(b.jobId) && row.job_id !== s(b.jobId))) return { code: 404, error: 'No such sub bid.' };
+    const d = row.data || {}, email = low(d.userEmail) || low((us.find(u => s(u.id) === s(d.userId)) || {}).email);
+    awardedTrade = s(d.trade); awardedEmail = email;
+    if (on) out.mail = await mailTo(email, s(d.trade) || s(b.trade), d.amount, s(d.awardMailedAt));
+    const bid = Object.assign({}, d, on ? { accepted: true, rejected: false, acceptedAt: at, acceptedBy: who.email, awardPm: pm, awardExclusions: exclusions } : { accepted: false, acceptedAt: '' }, out.mail.sent ? { awardMailedAt: at } : {});
+    /*AWARDFLOW: the other portal bids on this job in the same trade → Not selected (Undo puts them back) */
+    const others = [];
+    try {
+      const tr = s(bid.trade).toLowerCase(), tag = 'award:' + id;
+      (await SP.listRows([SP.eq('collection', 'bids'), SP.eq('job_id', row.job_id)])).forEach(function(r){ const o = r.data || {};
+        if (!o.id || o.id === id || s(o.trade).toLowerCase() !== tr) return;
+        if (on && !o.accepted && !o.rejected) others.push(Object.assign({}, o, { rejected: true, rejectedAt: at, rejectedBy: tag, notSelected: true }));
+        if (!on && o.rejected && o.rejectedBy === tag) others.push(Object.assign({}, o, { rejected: false, rejectedAt: '', rejectedBy: '', notSelected: false }));
+      });
+    } catch (e) {}
+    await SP.upsertRows([SP.rowFor('bids', bid)].concat(others.map(function(o){ return SP.rowFor('bids', o); })), who.email);
+    out.notSelected = on ? others.length : 0;
+  }
+  /* "Tell the other bidders in this trade they were not selected" — only when ticked; no prices, no names */
+  if (on && b.notifyOthers) {
+    out.others = { mailed: 0, skipped: '' };
+    const gate = await mailGate();
+    if (gate) out.others.skipped = gate;
+    else {
+      const trade = s(b.trade) || awardedTrade, tr = low(trade), list = (await subBids(s(b.jobId) || s(job.id)).catch(() => [])).filter(x => x && !(x.source === src && x.id === id) && low(x.trade) === tr && !x.awarded);
+      const seen = {}; if (awardedEmail) seen[awardedEmail] = 1;
+      for (const x of list) {
+        const e = low(x.email); if (!SP.okEmail(e) || seen[e]) continue; seen[e] = 1;
+        if (await sendOne(e, notSelectedMail({ job, trade }, x.lang === 'es'))) out.others.mailed++;
+      }
+    }
+  }
+  try { logTo(job, who, (on ? '🏆 Awarded ' : '↩ Award taken off ') + (src === 'email' ? 'e-mailed' : 'portal') + ' bid ' + id + (out.mail.sent ? ' — award e-mail sent to ' + out.mail.to : '') + (out.others && out.others.mailed ? ' — ' + out.others.mailed + ' not-selected e-mail(s)' : '')); if (found) await saveJob(job, who); } catch (e) {}
+  return out;
 }
 
 /* the backfill: every estimator lead's DRAFT bid job → PRIVATE (a public job is never touched) */
@@ -487,7 +604,7 @@ exports.handler = async function(event){
       if (q.jobs) return J(200, { ok: true, jobs: await jobsList(), me: { admin: who.admin, estimator: who.estimator, office: who.office, canInvite: who.canInvite, canPublic: who.canPublic } }, C);
       if (q.subbids || q.lead) {
         const jobId = s(q.subbids) || L.portalApi().jobIdFor({ id: s(q.lead) });
-        return J(200, { ok: true, jobId, bids: await subBids(jobId) }, C);
+        return J(200, { ok: true, jobId, bids: await subBids(jobId), sent: await sentScope(jobId) }, C);   /* patch BIDSCOPE: + the scope GrayCo sent */
       }
       if (q.manage) { if (!who.canInvite) return J(403, { error: 'Only an admin, an estimator or the office manages a bid job.' }, C); const r = await manageView(s(q.manage)); return r.code ? J(r.code, { error: r.error }, C) : J(200, r, C); }   /* patch SYS2 */
       if (q.subs) { if (!who.canInvite) return J(403, { error: 'Only an admin, an estimator or the office invites subs.' }, C); return J(200, { ok: true, subs: await subsList(s(q.job)) }, C); }
@@ -516,7 +633,7 @@ exports.handler = async function(event){
     return J(e.status || 502, { error: e.status ? e.message : 'The bid portal could not be reached: ' + s(e && e.message) }, C);
   }
 };
-exports._test = { link, fileOut, amountOf, subBids, subsList, jobsList, invite, visibility, award, sweep, inviteMail, whoIs, archive, restore, manageView, audience, noticeMail };
+exports._test = { sentScope, awardMail, notSelectedMail, mailGate, pmOf, link, fileOut, amountOf, subBids, subsList, jobsList, invite, visibility, award, sweep, inviteMail, whoIs, archive, restore, manageView, audience, noticeMail };
 /* patch LOGOALL (owner 10/23: "should have our logo on it"): every customer / sub / GC e-mail this file sends
    straight to Resend gets the GrayCo shell (centered logo, office line, licenses). Internal @grayco-cs.com mail is untouched. */
 try { require('./_lib/brand.js').installResend(); } catch (e) {}

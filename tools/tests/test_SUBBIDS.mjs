@@ -65,7 +65,8 @@ JOBS.forEach(j => T.sp_rows.push(spRow('jobs', j.id, j, { job_id: j.id })));
 T.sp_rows.push(spRow('invites', 'inv1', { id: 'inv1', jobId: 'j_inv', email: SUBS.A.email }, { job_id: 'j_inv', email: SUBS.A.email }));
 const bidRow = b => spRow('bids', b.id, b, { job_id: b.jobId, user_id: b.userId });
 T.sp_rows.push(bidRow({ id: 'b_other', jobId: 'j_open', userId: 'u_b1', userName: 'Otto Other', userCompany: 'Other Paint Co', userEmail: SUBS.B.email, amount: 7777, scope: 'OTHER-SCOPE', notes: 'OTHER-NOTES', submittedAt: now }));
-T.sp_rows.push(bidRow({ id: 'b_dec', jobId: 'j_dec', userId: 'u_a1', userName: 'Sam Sample', userCompany: 'Sample Drywall LLC', userEmail: SUBS.A.email, amount: 12000, notes: 'decided one', accepted: true, submittedAt: now }));
+T.sp_rows.push(bidRow({ id: 'b_dec', jobId: 'j_dec', userId: 'u_a1', userName: 'Sam Sample', userCompany: 'Sample Drywall LLC', userEmail: SUBS.A.email, amount: 12000, notes: 'decided one', accepted: true, submittedAt: now, acceptedAt: now,
+  awardPm: { name: 'Pat Sample PM', phone: '(901) 555-0142', email: 'pm.sample@grayco-cs.com' }, awardExclusions: ['Patching', 'Cleanup — not in your bid'] }));   /* patch BIDSCOPE: the award's PM + what to confirm */
 T.sp_rows.push(bidRow({ id: 'b_won', jobId: 'j_won', userId: 'u_a1', userName: 'Sam Sample', userCompany: 'Sample Drywall LLC', userEmail: SUBS.A.email, amount: 4321, submittedAt: now }));
 T.sp_rows.push(spRow('plans', 'j_open', { items: [{ name: 'A1 Floor plan.pdf', category: 'Architectural', type: 'application/pdf', size: 1000, fileRef: 'staff/2026-11/abc-A1.pdf' }] }, { job_id: 'j_open' }));
 T.sp_rows.push(spRow('plans', 'j_priv', { items: [{ name: 'PRIVATE-PLAN.pdf', type: 'application/pdf', fileRef: 'staff/2026-11/priv.pdf' }] }, { job_id: 'j_priv' }));
@@ -128,6 +129,7 @@ await t('p-bidjobs: only the jobs the bid site lets this sub bid on (public open
   const inv = r.j.jobs.find(j => j.id === 'j_inv'); eq([inv.invited, inv.canBid, inv.myBid], [true, true, null]);
   const won = r.j.jobs.find(j => j.id === 'j_won'); eq([won.canBid, won.myBid.amount, won.myBid.status], [false, 4321, 'pending'], 'their bid on a job that closed: listed, no form');
   const dec = r.j.jobs.find(j => j.id === 'j_dec'); eq([dec.canBid, dec.myBid.status], [true, 'accepted']);
+  eq(dec.myBid.award && [dec.myBid.award.pm.name, dec.myBid.award.pm.phone, dec.myBid.award.pm.email, dec.myBid.award.confirm.join('|')], ['Pat Sample PM', '(901) 555-0142', 'pm.sample@grayco-cs.com', 'Patching|Cleanup — not in your bid']);   /* patch BIDSCOPE */
   eq(r.j.jobs.filter(j => j.canBid).map(j => j.id).slice(0, 1), ['j_inv'], 'invited first');
 });
 await t('p-bidjobs: the job as a sub sees it — title, address, due date, trades, scope / specs / notes, their trade\'s scope, plan links (https only), signed plan files', async () => {
@@ -228,7 +230,7 @@ await t('portal-app.js: the card, the sheet and the form are there in English an
   new Function(app);
   yes(/api\('p-bidjobs'\)/.test(app) && /api\('p-bid-save'/.test(app) && /data-bidjob/.test(app) && /bidSheet\(/.test(app));
   for (const k of ['jobsToBid', 'bidsJoin', 'papersNeed', 'bidSubmit', 'bidUpdate', 'bidDecided']) yes((app.match(new RegExp('\\b' + k + ':', 'g')) || []).length >= 2, k + ' in EN and ES');
-  yes(/\/portal-app\.js\?v=33\.229-subbids/.test(html), 'cache-bust');
+  yes(/\/portal-app\.js\?v=33\.230-bidscope/.test(html), 'cache-bust');
 });
 
 /* ── the browser: portal.html + portal-app.js, phone and desktop ── */
@@ -418,7 +420,7 @@ if (chromium) {
       await p.waitForSelector('[data-bidjob="j_new2"]', { timeout: 30000 });
       const card = await p.$eval('section.bids', x => x.innerText);
       yes(/📋 Jobs to bid/.test(card) && /Sample Dental Office Build-Out/.test(card) && /2200 Sample Ave/.test(card) && /4 days left/.test(card) && /Drywall, acoustic ceilings/.test(card) && /3,200 sq ft dental office/.test(card), card.slice(0, 500));
-      yes(/✓ Bid sent · \$17,900\.00/.test(card) && /✅ Accepted/.test(card) && /📨 Invited|✓ Bid sent · \$2,500\.00/.test(card), card);
+      yes(/✓ Bid sent · \$17,900\.00/.test(card) && /🏆 Awarded/.test(card) && /📨 Invited|✓ Bid sent · \$2,500\.00/.test(card), card);
       yes(/Papers on file: W-9, GL, WC/.test(card));
       yes(!/7777|Other Paint|DRAFT-JOB|PRIVATE-NOT-INVITED|CLOSED-JOB|DELETED-JOB/.test(await text(p)));
       const links = await p.$$eval('[data-bidjob="j_new2"] a[data-planlink]', a => a.map(x => [x.href, x.target, x.rel]));
@@ -427,6 +429,15 @@ if (chromium) {
       await shot(p, '10_home_jobs_to_bid', 'Home: 📋 Jobs to bid card');
       await shot(p, '11_home_full', 'Home (whole page) with 📋 Jobs to bid', true);
       const w = await p.evaluate(() => document.documentElement.scrollWidth); yes(w <= (kind === 'phone' ? 390 : 1366), 'no sideways scroll: ' + w);
+      await p.close();
+    });
+    await t(tag + 'an awarded bid: 🏆 Awarded with the GrayCo PM (name / phone / e-mail), the next step and what to confirm (patch BIDSCOPE)', async () => {
+      const p = await S.page(SESS.A); await p.goto('https://portal.test/');
+      await p.waitForSelector('[data-bidopen="j_dec"]', { timeout: 30000 }); await p.click('[data-bidopen="j_dec"]');
+      await p.waitForSelector('[data-bidaward]');
+      const tx = await p.$eval('[data-bidaward]', x => x.innerText);
+      yes(/🏆 Awarded/.test(tx) && /Pat Sample PM · \(901\) 555-0142 · pm\.sample@grayco-cs\.com/.test(tx) && /sub agreement \/ scope to sign/.test(tx) && /Please confirm these before we finalize/.test(tx) && /Patching/.test(tx) && /Cleanup — not in your bid/.test(tx), tx);
+      await shot(p, '12_awarded_bid_sheet', 'An awarded bid: PM, next step, what to confirm');
       await p.close();
     });
     await t(tag + 'the job sheet: full scope / specs / notes, their trade\'s scope, plan links + plan files, the bid form → Submit sends the bid, then Update', async () => {
