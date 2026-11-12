@@ -44291,9 +44291,11 @@ var _fnt = setInterval(function(){
       try{
         var _bb=document.createElement('div');
         _bb.id='_gcFormsBackBar';
-        _bb.style.cssText='position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:10px;background:#0f2440;padding:10px 14px;margin:0 0 10px;border-radius:0 0 10px 10px';
+        _bb.style.cssText='position:static;display:flex;align-items:center;gap:10px;background:#0f2440;padding:10px 14px;margin:0 0 10px;border-radius:0 0 10px 10px';
         _bb.innerHTML='<button id="_gcFormsBackBtn" style="background:#2563eb;border:none;color:#fff;font-weight:700;border-radius:8px;padding:8px 16px;cursor:pointer;font-size:14px">\u2190 Back to Dashboard</button><span style="color:#cfe0f5;font-weight:700">\uD83D\uDCC4 Forms &amp; Docs</span>';
         navMount.parentNode.insertBefore(_bb, navMount);
+        /* patch FORMSBAR (owner 11/12: "this glitches on there sometimes, I like when it's not up there better"): no floating bar on a computer — the left menu is the way out; phones keep a plain (not sticky) back bar */
+        if(!document.getElementById('_gcFormsBackCss')){ var _st=document.createElement('style'); _st.id='_gcFormsBackCss'; _st.textContent='@media (min-width:821px){#_gcFormsBackBar{display:none!important}}'; (document.head||document.documentElement).appendChild(_st); }
         _bb.querySelector('#_gcFormsBackBtn').onclick=function(){ try{ var _x=document.getElementById('_gcFormsBackBar'); if(_x) _x.remove(); }catch(e){} try{ if(window._setView) window._setView('dashboard'); }catch(e){} };
       }catch(e){}
     }
@@ -130899,7 +130901,9 @@ function importItems(healing){
 function normName(t){ return low(t).replace(/\b(re-?roof(ing)?|roof(ing)? replacement)\b/g, 'reroof').replace(/&/g, ' and ').replace(/[^a-z0-9 ]+/g, ' ').replace(/\b(the|project|bid|invite|invitation|itb|rfp|rfq)\b/g, ' ').replace(/\s+/g, ' ').trim(); }
 /* the inbox: its own leads, plus the RoofScout leads patch RSL brought in (shown, never collected here) */
 function rsShown(l){ return isRs(l) && !l.converted && !l.rsRemoved && !l.doNotContact && l.status !== 'converted'; }
-function inboxLeads(){ return leads().filter(function(l){ return l && (l.inboxId || rsShown(l)) && l.stage !== 'Won' && l.stage !== 'Lost'; }); }
+function inboxLeads(){ return leads().filter(function(l){ return l && (l.inboxId || rsShown(l)) && l.stage !== 'Won' && l.stage !== 'Lost' && coLead(l); }); }
+/* patch LEADCO2 (owner 11/12, Mitigation picked: "these shouldn't be showing on mitigation, should be empty"): the inbox count / chips follow the Leads page's company */
+function coLead(l){ try { var C = window._gcCo; if (!C || !C.leadView || !C.ofLead) return true; var v = C.leadView(); return v === 'all' || C.ofLead(l) === v; } catch (e) { return true; } }
 function isNew(l){
   if (isRs(l)) return !l.pm && !l.pid && !l.jobId && (!l.stage || l.stage === 'New Lead') && Date.now() - Date.parse(l.createdAt || 0) < 14 * 86400000;
   return (l.inboxState === 'new' || !l.inboxState) && !l.pm && !l.pid;
@@ -160465,6 +160469,7 @@ function drawMessages(){
   var q = low(MSGQ), un = function(p){ try { return typeof W._gcJobMsgUnread === 'function' ? W._gcJobMsgUnread(p.id) || 0 : 0; } catch (e) { return 0; } };
   var role = effRole(), list = projects().filter(function(p){ return !q || low([p.name, p.client, p.address, p.autoPO].join(' ')).indexOf(q) >= 0; });
   if (role === 'Project Manager') list = list.filter(samePM);
+  try { if (W._gcCo && W._gcCo.passJob) list = list.filter(function(p){ return W._gcCo.passJob(p); }); } catch (e) {}   /* patch LEADCO2 (owner 11/12, Mitigation picked: "shouldn't have messages"): only the picked company's jobs */
   list.sort(function(a, b){ return un(b) - un(a) || ((W._gcJobMsgLast ? W._gcJobMsgLast(b.id) : 0) - (W._gcJobMsgLast ? W._gcJobMsgLast(a.id) : 0)) || s(a.name).localeCompare(s(b.name)); });
   var html = list.slice(0, 80).map(function(p){ var n = un(p); return '<button type="button" class="row" data-pid="' + esc(p.id) + '"><span>' + (W._gcJobLabel ? W._gcJobLabel(p, { html: true }) : '<b>' + esc(p.name || p.address) + '</b>') + '<div class="m">' + esc([p.client ? 'Customer: ' + p.client : '', p.pm ? 'PM ' + p.pm : ''].filter(Boolean).join(' · ')) + '</div></span>' + (n ? '<span class="un">' + n + '</span>' : '') + '</button>'; }).join('') || '<div class="gc-rp-empty">No jobs match.</div>';
   if (W._gcMsgUnsortedHtml && !q) html = W._gcMsgUnsortedHtml() + html;
@@ -182571,6 +182576,7 @@ function paint(){
   var el = D.getElementById('gcsb-strip') || CH.els['gcsb-strip'];   /* patch BARSTILL2: a small chip in the Leads header row */
   if (!el) { el = D.createElement('span'); el.id = 'gcsb-strip'; el.setAttribute('data-gc-keep', '1'); el.addEventListener('click', function(e){ if (e.target && e.target.getAttribute('data-gcsb') === 'open') { e.preventDefault(); openList(); } }); }
   if (!COUNT) { CH.off(el); return; }   /* nothing waiting: nothing shown */
+  try { var CV = W._gcCo && W._gcCo.leadView ? W._gcCo.leadView() : 'all'; if (CV === 'mitigation' || CV === 'environmental') { CH.off(el); return; } } catch (e) {}   /* patch LEADCO2: Sales & spam review sits on the Construction / All companies Leads page */
   var h = '<button type="button" data-gcsb="open" title="Sales &amp; spam: ' + COUNT + ' held for review (no one was alerted). Review">🧹 ' + COUNT + ' to review</button>';
   if (el.__gcH !== h || !el.firstChild) { el.__gcH = h; el.innerHTML = h; }   /* patch BARSTILL: only a real change is written */
   CH.on(el, hub);
@@ -217878,7 +217884,8 @@ function core(){ return W._gcBidMergeCore || (W._gcBidMerge && W._gcBidMerge.cor
 function arr(v){ return Array.isArray(v) ? v : []; }
 function pairs(){
   var C = core(); if (!C) return [];
-  var L = leads().filter(function(l){ return l && l.id && C.liveLead(l) && C.isBidLead(l); });
+  var CO = W._gcCo, V = 'all'; try { V = CO && CO.leadView ? CO.leadView() : 'all'; } catch (e) {}   /* patch LEADCO2: only the picked company's leads (Mitigation shows none of Construction's bid pairs) */
+  var L = leads().filter(function(l){ return l && l.id && C.liveLead(l) && C.isBidLead(l) && (V === 'all' || !CO.ofLead || CO.ofLead(l) === V); });
   var sure = {}; try { arr(W._gcBidMerge && W._gcBidMerge.groups()).forEach(function(g){ arr(g.ids).forEach(function(a){ arr(g.ids).forEach(function(b){ sure[a + '|' + b] = 1; }); }); }); } catch (e) {}
   var I = L.map(function(l){ return C.info(l); }), out = [];
   for (var i = 0; i < L.length; i++) for (var j = i + 1; j < L.length; j++) {
