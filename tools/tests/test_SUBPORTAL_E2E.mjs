@@ -246,7 +246,9 @@ async function run(kind, job){
   await p0.waitForSelector('input', { timeout: 15000 }).catch(() => {});
   await shot(p0, N() + '_signin', 'Sign-in page (portal.grayco-cs.com): e-mail / mobile + password, or e-mail me a code');
   ok(tag + 'the sign-in page opens', /sign in|e-?mail/i.test(await text(p0)));
-  ok(tag + 'the sign-in page (customers use it too) never names the sub portal', !/sub portal|subcontractor/i.test(await text(p0)), (await text(p0)).slice(-300));
+  /* patch SUBSIGNUP (owner 11/11): the one sub word on the shared sign-in page is the "New subcontractor? Create your account" button */
+  const siText = (await text(p0)).replace(await p0.$eval('#siSignup', b => b.innerText).catch(() => '\u0000'), '');
+  ok(tag + 'the sign-in page (customers use it too) never names the sub portal — only the "New subcontractor? Create your account" button', !!(await p0.$('#siSignup')) && !/sub portal|subcontractor/i.test(siText), siText.slice(-300));
   await p0.close();
 
   const p = await S.page(DB.SESSION);
