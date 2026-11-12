@@ -308,7 +308,7 @@ function jobRow(j){
    Not joined yet → "Join GrayCo bids" (p-bids: a password, then GrayCo approves the company). Papers first: W-9, GL, WC. */
 Object.assign(L.en, { jobsToBid: '📋 Jobs to bid', bidsJoin: 'Join GrayCo bids', bidsJoinWhy: 'See GrayCo’s open jobs to bid and send your bids right here in your portal. Join once — GrayCo approves your company, then the jobs show up here.',
   bidsPwShort: 'Choose a password with at least 8 characters.', bidsLoading: 'Loading jobs to bid…', bidsNoneOpen: 'No jobs to bid right now — GrayCo invites you when one fits your trade.',
-  daysLeft: '{n} days left', dayLeft: '1 day left', dueToday: 'Due today', pastDue: 'Past due', bidInvited: '📨 Invited', bidOpen: 'Open to bid', bidPending: '✓ Bid sent', bidAccepted: '🏆 Awarded', bidAwardPm: 'Your GrayCo project manager', bidAwardNext: 'Next: GrayCo will send your sub agreement / scope to sign here in your GrayCo Portal.', bidAwardConfirm: 'Please confirm these before we finalize', bidRejected: 'Not selected', bidClosed: 'Closed',
+  daysLeft: '{n} days left', dayLeft: '1 day left', dueToday: 'Due today', pastDue: 'Past due', bidInvited: '📨 Invited', bidOpen: 'Open to bid', bidPending: '✓ Bid sent', bidAccepted: '🏆 Awarded', qaTitle: 'Questions about this job', qaYou: 'You asked', qaOther: 'A bidder asked', qaShared: 'answer to all bidders', qaWaiting: 'Waiting for GrayCo’s answer.', qaNone: 'No questions yet. Ask GrayCo anything about the job before you bid.', qaPh: 'e.g. Is the 2nd floor in this bid? Who supplies the paint?', qaAsk: 'Ask a question', qaNeed: 'Type your question.', qaSent: 'Question sent — GrayCo answers here.', qaLbl: 'Your question', bidAwardPm: 'Your GrayCo project manager', bidAwardNext: 'Next: GrayCo will send your sub agreement / scope to sign here in your GrayCo Portal.', bidAwardConfirm: 'Please confirm these before we finalize', bidRejected: 'Not selected', bidClosed: 'Closed',
   bidOpenBtn: 'Open & bid ›', bidSeeBtn: 'See my bid ›', plansLbl: 'Plans', planFiles: 'Plan files', scopeLbl: 'Scope of work', specsLbl: 'Specifications', notesLbl: 'Notes', tradesLbl: 'Trades', yourTradeScope: 'Scope for your trade',
   yourBid: 'Your bid', bidAmount: 'Bid amount ($)', bidNotes: 'Notes for GrayCo (what is included / not included, timing)', bidSubmit: 'Submit bid', bidUpdate: 'Update bid', bidSent: 'Bid sent to GrayCo', bidUpdated: 'Bid updated',
   bidDecided: 'GrayCo has decided on this bid — it can no longer be changed.', bidClosedNote: 'Bids are closed on this job.', bidSentOn: 'Sent {d}', bidUpdOn: 'updated {d}', amountNeed: 'Enter your bid amount.',
@@ -316,7 +316,7 @@ Object.assign(L.en, { jobsToBid: '📋 Jobs to bid', bidsJoin: 'Join GrayCo bids
   papersOpen: 'Open My Documents', papersBlocked: 'The bid form opens once your papers are on file.', pW9: 'W-9', pGL: 'General liability (GL)', pWC: 'Workers’ comp (WC)', bidsSite: 'Open bids.grayco-cs.com' });
 Object.assign(L.es, { jobsToBid: '📋 Trabajos para licitar', bidsJoin: 'Unirse a licitaciones GrayCo', bidsJoinWhy: 'Vea los trabajos abiertos de GrayCo y envíe sus ofertas aquí mismo en su portal. Únase una vez — GrayCo aprueba su compañía y los trabajos aparecen aquí.',
   bidsPwShort: 'Escoja una contraseña de al menos 8 caracteres.', bidsLoading: 'Cargando trabajos para licitar…', bidsNoneOpen: 'No hay trabajos para licitar ahora — GrayCo le invita cuando uno sea de su oficio.',
-  daysLeft: 'Quedan {n} días', dayLeft: 'Queda 1 día', dueToday: 'Vence hoy', pastDue: 'Ya venció', bidInvited: '📨 Invitado', bidOpen: 'Abierto para licitar', bidPending: '✓ Oferta enviada', bidAccepted: '🏆 Adjudicada', bidAwardPm: 'Su gerente de proyecto en GrayCo', bidAwardNext: 'Siguiente: GrayCo le enviará su contrato de subcontratista / el alcance para firmar aquí en su Portal GrayCo.', bidAwardConfirm: 'Por favor confirme esto antes de finalizar', bidRejected: 'No seleccionada', bidClosed: 'Cerrado',
+  daysLeft: 'Quedan {n} días', dayLeft: 'Queda 1 día', dueToday: 'Vence hoy', pastDue: 'Ya venció', bidInvited: '📨 Invitado', bidOpen: 'Abierto para licitar', bidPending: '✓ Oferta enviada', bidAccepted: '🏆 Adjudicada', qaTitle: 'Preguntas sobre este trabajo', qaYou: 'Usted preguntó', qaOther: 'Un licitante preguntó', qaShared: 'respuesta para todos', qaWaiting: 'Esperando la respuesta de GrayCo.', qaNone: 'Aún no hay preguntas. Pregunte a GrayCo lo que necesite antes de licitar.', qaPh: 'p. ej. ¿El 2.º piso está en esta oferta? ¿Quién pone la pintura?', qaAsk: 'Hacer una pregunta', qaNeed: 'Escriba su pregunta.', qaSent: 'Pregunta enviada — GrayCo contesta aquí.', qaLbl: 'Su pregunta', bidAwardPm: 'Su gerente de proyecto en GrayCo', bidAwardNext: 'Siguiente: GrayCo le enviará su contrato de subcontratista / el alcance para firmar aquí en su Portal GrayCo.', bidAwardConfirm: 'Por favor confirme esto antes de finalizar', bidRejected: 'No seleccionada', bidClosed: 'Cerrado',
   bidOpenBtn: 'Abrir y licitar ›', bidSeeBtn: 'Ver mi oferta ›', plansLbl: 'Planos', planFiles: 'Archivos de planos', scopeLbl: 'Alcance del trabajo', specsLbl: 'Especificaciones', notesLbl: 'Notas', tradesLbl: 'Oficios', yourTradeScope: 'Alcance para su oficio',
   yourBid: 'Su oferta', bidAmount: 'Monto de la oferta ($)', bidNotes: 'Notas para GrayCo (qué incluye / qué no, tiempos)', bidSubmit: 'Enviar oferta', bidUpdate: 'Actualizar oferta', bidSent: 'Oferta enviada a GrayCo', bidUpdated: 'Oferta actualizada',
   bidDecided: 'GrayCo ya decidió sobre esta oferta — ya no se puede cambiar.', bidClosedNote: 'Las ofertas están cerradas en este trabajo.', bidSentOn: 'Enviada {d}', bidUpdOn: 'actualizada {d}', amountNeed: 'Escriba el monto de su oferta.',
@@ -425,6 +425,20 @@ function bidSheet(j){
     });
   }
   kids.push(h('section', { class: 'card', 'data-mybid': '1' }, sec));
+  /* patch BIDPOST: ❓ Ask a question — GrayCo (the person who posted the job / its PM) answers; the answer shows here */
+  var qa = [h('h2', { text: '❓ ' + t('qaTitle') })];
+  (j.questions || []).forEach(function(q){ qa.push(h('div', { class: 'box', 'data-bidq': q.id }, [h('b', { text: (q.mine ? t('qaYou') : t('qaOther')) + ' · ' + dt(q.at) }), h('p', { class: 'pre', text: q.body }),
+    q.answer ? h('div', null, [h('b', { text: 'GrayCo' + (q.shared ? ' · ' + t('qaShared') : '') + ':' }), h('p', { class: 'pre', text: q.answer })]) : h('div', { class: 'muted', text: t('qaWaiting') })])); });
+  if (!(j.questions || []).length) qa.push(h('div', { class: 'muted', text: t('qaNone') }));
+  var qt = h('textarea', { class: 'inp', id: 'bidQ', rows: '3', maxlength: '4000', placeholder: t('qaPh') }), qerr = h('div', { class: 'err', role: 'alert' });
+  var qgo = h('button', { type: 'button', class: 'btn', id: 'bidQSend', text: '❓ ' + t('qaAsk') });
+  qgo.addEventListener('click', function(){
+    qerr.textContent = ''; if (!String(qt.value || '').trim()) { qerr.textContent = t('qaNeed'); qt.focus(); return; }
+    busy(qgo, true);
+    api('p-bid-ask', { jobId: j.id, text: qt.value }).then(function(){ sh.close(); toast(t('qaSent')); return loadBids(true).then(paintBids); }, function(e){ busy(qgo, false); qerr.textContent = e.message; toast(e.message, true); });
+  });
+  qa.push(field(t('qaLbl'), qt), qerr, qgo);
+  kids.push(h('section', { class: 'card', 'data-bidqa': j.id }, qa));
   var sh = sheet(j.title, [h('div', { class: 'bidsheet', 'data-bidsheet': j.id, style: 'display:flex;flex-direction:column;gap:12px' }, kids)]);
   return sh;
 }
@@ -903,7 +917,7 @@ function buildTabs(){
    in the CRM) — unless the sub came from a job invite (?invite=…&job=…), which is approved at once. Then they sign in here. */
 var SP = '/.netlify/functions/subportal';
 Object.assign(L.en, { suTitle: 'Create your subcontractor account', suWhy: 'For subcontractors who want to work with GrayCo. GrayCo reviews every new account before you can see jobs or bid.',
-  suFirst: 'First name', suLast: 'Last name', suCompany: 'Company name', suDba: 'DBA (optional)', suEmail: 'E-mail (this is your login)', suPhone: 'Mobile phone', suTrades: 'Your trade(s) — separate with commas',
+  suFirst: 'First name', suLast: 'Last name', suCompany: 'Company name', suDba: 'DBA (optional)', suEmail: 'E-mail (this is your login)', suPhone: 'Mobile phone', suTrades: 'Your trade(s) — tap all that fit',
   suTradesPh: 'Drywall, paint, framing', suAddr: 'Business address', suCity: 'City', suState: 'State', suZip: 'ZIP', suLic: 'License numbers (optional)', suEin: 'EIN — last 4 digits (optional)',
   suPw: 'Password (8 or more characters)', suPw2: 'Password again', suAgree: 'I agree to the ', suAnd: ' and the ', suTerms: 'Sub Portal Terms of Use', suPriv: 'Sub Portal Privacy Notice', suGo: 'Create my account',
   suBack: '‹ Back to sign in', suNeed: 'Please fill in: {f}.', suEmailBad: 'Enter a valid e-mail address.', suPwShort: 'The password must be at least 8 characters.', suPwDiff: 'The two passwords do not match.',
@@ -911,9 +925,15 @@ Object.assign(L.en, { suTitle: 'Create your subcontractor account', suWhy: 'For 
   suDupT: 'Is your company already with GrayCo?', suDupX: 'We found a company that looks like yours. If one of these is you, sign in instead (or call GrayCo ' + OFFICE + ').', suDupWhy: 'matched on',
   suForce: 'That’s not us — create anyway', suTaken: 'That e-mail already has an account. Sign in with it — or tap “Forgot password? E-mail me a code”.', suSignin: 'Sign in',
   suDoneT: 'Account created', suDone: 'Thanks — GrayCo reviews new accounts (usually the same day). We’ll e-mail you when you’re approved. Then sign in here with your e-mail.',
-  suDoneInv: 'Thanks — you came with a GrayCo invite, so your account is approved. Sign in here with your e-mail.', suInvited: 'You’re invited to bid on {j}.', suInvitedAny: 'You’re invited to bid on a GrayCo job.' });
+  suDoneInv: 'Thanks — you came with a GrayCo invite, so your account is approved. Sign in here with your e-mail.', suInvited: 'You’re invited to bid on {j}.', suInvitedAny: 'You’re invited to bid on a GrayCo job.',
+  suName: 'Your name', suCrew: 'Crew size (optional)', suTradeOther: 'Other trade(s) — type them here', suArea: 'Where you work (optional)', suAreaPh: 'Shelby, DeSoto, Fayette counties…',
+  ppLater: 'I have it — will send later', ppUpload: 'Upload', ppExemptS: 'Exempt (sole proprietor)',
+  ppT: '📎 Your papers — optional', ppWhy: 'Upload these now for faster approval — a PDF or a phone photo is fine. With your W-9, general liability and workers’ comp on file, GrayCo can approve you and you can bid right away. No files handy? Tick “I have it — will send later”.',
+  ppW9: 'W-9', ppGl: 'General liability certificate (COI)', ppWc: 'Workers’ comp certificate (COI)', ppExp: 'Expiration date', ppExempt: 'Exempt / sole proprietor — upload the TN workers’ comp exemption form instead',
+  ppLic: 'License', ppLicState: 'State', ppLicType: 'Type (e.g. Electrical, General)', ppLicNum: 'Number', ppLicAdd: '＋ Add another license', ppFile: 'File (PDF or photo, 50 MB at most)',
+  ppExpNeed: 'Add the expiration date for: {f}.', ppBig: '{f} is over 50 MB.', ppUp: 'Uploading your papers…', ppDone: '📎 {n} paper(s) uploaded — GrayCo sees them with your request.', ppFail: 'Some papers did not upload ({f}). Sign in and add them in My Documents.' });
 Object.assign(L.es, { suTitle: 'Cree su cuenta de subcontratista', suWhy: 'Para subcontratistas que quieren trabajar con GrayCo. GrayCo revisa cada cuenta nueva antes de que usted pueda ver trabajos o licitar.',
-  suFirst: 'Nombre', suLast: 'Apellido', suCompany: 'Nombre de la compañía', suDba: 'DBA (opcional)', suEmail: 'Correo (es su usuario)', suPhone: 'Celular', suTrades: 'Su(s) oficio(s) — separe con comas',
+  suFirst: 'Nombre', suLast: 'Apellido', suCompany: 'Nombre de la compañía', suDba: 'DBA (opcional)', suEmail: 'Correo (es su usuario)', suPhone: 'Celular', suTrades: 'Su(s) oficio(s) — toque todos los que hace',
   suTradesPh: 'Tabla roca, pintura, estructura', suAddr: 'Dirección del negocio', suCity: 'Ciudad', suState: 'Estado', suZip: 'Código postal', suLic: 'Números de licencia (opcional)', suEin: 'EIN — últimos 4 dígitos (opcional)',
   suPw: 'Contraseña (8 caracteres o más)', suPw2: 'Repita la contraseña', suAgree: 'Acepto los ', suAnd: ' y el ', suTerms: 'Términos de uso del Portal de Subcontratistas', suPriv: 'Aviso de privacidad del Portal de Subcontratistas', suGo: 'Crear mi cuenta',
   suBack: '‹ Volver a entrar', suNeed: 'Por favor llene: {f}.', suEmailBad: 'Escriba un correo válido.', suPwShort: 'La contraseña debe tener al menos 8 caracteres.', suPwDiff: 'Las dos contraseñas no son iguales.',
@@ -921,13 +941,22 @@ Object.assign(L.es, { suTitle: 'Cree su cuenta de subcontratista', suWhy: 'Para 
   suDupT: '¿Su compañía ya está con GrayCo?', suDupX: 'Encontramos una compañía que se parece a la suya. Si es usted, entre en su cuenta (o llame a GrayCo ' + OFFICE + ').', suDupWhy: 'coincide en',
   suForce: 'No somos nosotros — crear de todos modos', suTaken: 'Ese correo ya tiene una cuenta. Entre con él — o toque “¿Olvidó la contraseña? Envíenme un código”.', suSignin: 'Entrar',
   suDoneT: 'Cuenta creada', suDone: 'Gracias — GrayCo revisa las cuentas nuevas (normalmente el mismo día). Le enviaremos un correo cuando esté aprobada. Después entre aquí con su correo.',
-  suDoneInv: 'Gracias — usted vino con una invitación de GrayCo, así que su cuenta está aprobada. Entre aquí con su correo.', suInvited: 'Está invitado a licitar en {j}.', suInvitedAny: 'Está invitado a licitar en un trabajo de GrayCo.' });
+  suDoneInv: 'Gracias — usted vino con una invitación de GrayCo, así que su cuenta está aprobada. Entre aquí con su correo.', suInvited: 'Está invitado a licitar en {j}.', suInvitedAny: 'Está invitado a licitar en un trabajo de GrayCo.',
+  suName: 'Su nombre', suCrew: 'Tamaño de la cuadrilla (opcional)', suTradeOther: 'Otro(s) oficio(s) — escríbalos aquí', suArea: 'Dónde trabaja (opcional)', suAreaPh: 'Condados de Shelby, DeSoto, Fayette…',
+  ppLater: 'Lo tengo — lo envío después', ppUpload: 'Subir', ppExemptS: 'Exento (propietario único)',
+  ppT: '📎 Sus documentos — opcional', ppWhy: 'Súbalos ahora para una aprobación más rápida — un PDF o una foto del celular sirve. Con su W-9, el seguro de responsabilidad general y el de compensación de trabajadores, GrayCo puede aprobarlo y usted puede licitar de inmediato. ¿No los tiene a mano? Marque “Lo tengo — lo envío después”.',
+  ppW9: 'W-9', ppGl: 'Certificado de responsabilidad general (COI)', ppWc: 'Certificado de compensación de trabajadores (COI)', ppExp: 'Fecha de vencimiento', ppExempt: 'Exento / propietario único — suba el formulario de exención de TN',
+  ppLic: 'Licencia', ppLicState: 'Estado', ppLicType: 'Tipo (p. ej. Eléctrica, General)', ppLicNum: 'Número', ppLicAdd: '＋ Agregar otra licencia', ppFile: 'Archivo (PDF o foto, 50 MB máximo)',
+  ppExpNeed: 'Agregue la fecha de vencimiento de: {f}.', ppBig: '{f} pasa de 50 MB.', ppUp: 'Subiendo sus documentos…', ppDone: '📎 {n} documento(s) subidos — GrayCo los ve con su solicitud.', ppFail: 'Algunos documentos no se subieron ({f}). Entre y agréguelos en Mis documentos.' });
 var DUPWHY = { es: { 'company name': 'nombre de la compañía', address: 'dirección', phone: 'teléfono', EIN: 'EIN' } };
 function suCss(){
   if (document.getElementById('gc-signup-css')) return;
   var st = document.createElement('style'); st.id = 'gc-signup-css';
   st.textContent = '.card.signup{max-width:680px;margin:0 auto;width:100%}.su-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:12px}@media(min-width:620px){.su-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.su-grid .wide2{grid-column:1/-1}.su-grid.addr{grid-template-columns:minmax(0,1fr) 90px 120px}}' +
     '.su-agree{display:flex;gap:10px;align-items:flex-start;font-size:14px;line-height:1.45}.su-agree input{width:22px;height:22px;flex:0 0 22px;margin:1px 0 0}.su-dup{border:1px solid var(--gold);background:var(--goldBg);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:8px;font-size:14px}' +
+    '.su-chips{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 6px}.su-chips .chip{border:1px solid var(--line,#d6d3cc);background:#fff;border-radius:999px;padding:7px 12px;font:600 14px inherit;min-height:38px;cursor:pointer}.su-chips .chip.on{background:var(--navy,#0F1D2F);color:#fff;border-color:var(--navy,#0F1D2F)}' +
+    '.su-papers{border:1px solid var(--line,#e5e7eb);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:10px;margin:0}.su-papers legend{font-weight:700;padding:0 6px}.pp-row{display:flex;flex-direction:column;gap:6px;padding:8px 0;border-top:1px dashed var(--line,#e5e7eb)}' +
+    '.pp-opts{display:flex;flex-wrap:wrap;gap:6px 14px}.pp-opt{display:flex;gap:6px;align-items:center;font-size:14px;min-height:34px}.pp-opt input{width:20px;height:20px;margin:0}.su-grid.lic{grid-template-columns:70px minmax(0,1fr) minmax(0,1fr)}' +
     '.su-dup ul{margin:0;padding-left:18px}.su-req{color:#8a1c1c}.su-done{display:flex;flex-direction:column;gap:12px;align-items:stretch;text-align:center}.su-done .big{font-size:22px}';
   document.head.appendChild(st);
 }
@@ -935,6 +964,14 @@ function sp(body){
   return fetch(SP, { method: 'POST', headers: { 'Content-Type': 'application/json' }, cache: 'no-store', credentials: 'omit', body: JSON.stringify(body) })
     .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ return { status: r.status, data: j || {} }; }); });
 }
+/* patch SIGNUPPAPERS (owner 11/12: "either check they have insurance, W-9 and workman's comp, or they can enter it — PDF or any document …
+   get good info from them, not too much though, just what I need: their trades and some basic stuff"): ONE short screen — company,
+   contact, e-mail (login), cell, city / state, trades (GrayCo's list + Other), service area and crew size (optional), the language
+   (the page's EN / ES switch) — and the papers: W-9, general liability, workers' comp each "I have it — will send later" / 📎 Upload
+   (PDF, a photo, Word …; the expiry date for insurance) / for workers' comp "Exempt (sole proprietor)"; one optional license row.
+   "Will send later" is recorded as what they say (not a paper on file); bids still need the real papers (the bid-papers check). */
+var ACCEPT_DOCS = 'application/pdf,image/*,.heic,.heif,.doc,.docx,.rtf,.odt,.txt,.pages';
+var SU_TRADES = ['Drywall', 'Paint', 'Framing', 'Flooring', 'Tile', 'Roofing', 'Siding', 'Electrical', 'Plumbing', 'HVAC', 'Concrete', 'Masonry', 'Insulation', 'Cabinets', 'Windows & Doors', 'Demolition', 'Landscaping', 'Cleaning'];
 function signup(opts){
   opts = opts || {};
   if (opts.lang) LANG = opts.lang === 'es' ? 'es' : 'en';
@@ -943,7 +980,7 @@ function signup(opts){
   main.innerHTML = '';
   var box = h('section', { class: 'card signin signup', id: 'signupBox' });
   main.appendChild(box);
-  var F = {};
+  var F = {}, TR = keep.tradesPicked || {};
   function inp(k, attrs){ var el = h('input', Object.assign({ class: 'inp', id: 'su_' + k, 'data-su': k }, attrs || {})); if (keep[k] != null) el.value = keep[k]; el.addEventListener('input', function(){ keep[k] = el.value; }); F[k] = el; return el; }
   function req(label){ return h('span', null, [label, h('span', { class: 'su-req', 'aria-hidden': 'true', text: ' *' })]); }
   function fld(label, el, cls, required){ return h('label', { class: 'fld' + (cls ? ' ' + cls : '') }, [required ? req(label) : h('span', { text: label }), el]); }
@@ -955,13 +992,38 @@ function signup(opts){
   box.appendChild(h('h2', { text: t('suTitle') }));
   box.appendChild(h('p', { class: 'muted', text: t('suWhy') }));
   box.appendChild(inviteNote);
-  box.appendChild(h('div', { class: 'su-grid' }, [fld(t('suFirst'), inp('first', { autocomplete: 'given-name', maxlength: '40' }), '', true), fld(t('suLast'), inp('last', { autocomplete: 'family-name', maxlength: '40' }), '', true),
-    fld(t('suCompany'), inp('company', { autocomplete: 'organization', maxlength: '120' }), '', true), fld(t('suDba'), inp('dba', { maxlength: '120' })),
-    fld(t('suEmail'), inp('email', { type: 'email', inputmode: 'email', autocomplete: 'email', maxlength: '200' }), '', true), fld(t('suPhone'), inp('phone', { type: 'tel', inputmode: 'tel', autocomplete: 'tel', maxlength: '40' }), '', true),
-    fld(t('suTrades'), inp('trades', { placeholder: t('suTradesPh'), maxlength: '400' }), 'wide2', true)]));
-  box.appendChild(fld(t('suAddr'), inp('addr', { autocomplete: 'street-address', maxlength: '200' }), '', true));
-  box.appendChild(h('div', { class: 'su-grid addr' }, [fld(t('suCity'), inp('city', { autocomplete: 'address-level2', maxlength: '80' }), '', true), fld(t('suState'), inp('state', { autocomplete: 'address-level1', maxlength: '2', style: 'text-transform:uppercase' }), '', true), fld(t('suZip'), inp('zip', { autocomplete: 'postal-code', inputmode: 'numeric', maxlength: '10' }), '', true)]));
-  box.appendChild(h('div', { class: 'su-grid' }, [fld(t('suLic'), inp('lic', { maxlength: '400' })), fld(t('suEin'), inp('ein', { inputmode: 'numeric', maxlength: '4' }))]));
+  box.appendChild(h('div', { class: 'su-grid' }, [fld(t('suCompany'), inp('company', { autocomplete: 'organization', maxlength: '120' }), '', true), fld(t('suName'), inp('name', { autocomplete: 'name', maxlength: '80' }), '', true),
+    fld(t('suEmail'), inp('email', { type: 'email', inputmode: 'email', autocomplete: 'email', maxlength: '200' }), '', true), fld(t('suPhone'), inp('phone', { type: 'tel', inputmode: 'tel', autocomplete: 'tel', maxlength: '40' }), '', true)]));
+  box.appendChild(h('div', { class: 'su-grid addr' }, [fld(t('suCity'), inp('city', { autocomplete: 'address-level2', maxlength: '80' }), '', true), fld(t('suState'), inp('state', { autocomplete: 'address-level1', maxlength: '2', style: 'text-transform:uppercase' }), '', true),
+    fld(t('suCrew'), inp('crew', { type: 'number', inputmode: 'numeric', min: '1', max: '999' }))]));
+  /* trades: GrayCo's list (the CRM's trades when the server has them) + Other */
+  var chips = h('div', { class: 'su-chips', id: 'suTrades', role: 'group' });
+  function drawChips(list){
+    chips.innerHTML = '';
+    list.forEach(function(tr){ var b = h('button', { type: 'button', class: 'chip' + (TR[tr] ? ' on' : ''), 'data-su-trade': tr, 'aria-pressed': TR[tr] ? 'true' : 'false', text: tr });
+      b.addEventListener('click', function(){ TR[tr] = !TR[tr]; keep.tradesPicked = TR; b.classList.toggle('on', !!TR[tr]); b.setAttribute('aria-pressed', TR[tr] ? 'true' : 'false'); }); chips.appendChild(b); });
+  }
+  drawChips(SU_TRADES);
+  sp({ action: 'trade-list' }).then(function(r){ var l = r && r.data && r.data.trades; if (Array.isArray(l) && l.length) drawChips(l); }, function(){});
+  box.appendChild(h('div', { class: 'fld' }, [req(t('suTrades')), chips, inp('tradeOther', { placeholder: t('suTradeOther'), maxlength: '120' })]));
+  box.appendChild(fld(t('suArea'), inp('area', { placeholder: t('suAreaPh'), maxlength: '200' })));
+  /* the papers */
+  var pbox = h('fieldset', { class: 'su-papers', id: 'suPapers' });
+  pbox.appendChild(h('legend', { text: t('ppT') }));
+  pbox.appendChild(h('p', { class: 'how', id: 'ppWhy', text: t('ppWhy') }));
+  function paperRow(k, label, exp, exempt){
+    var name = 'pp_' + k, file = h('input', { type: 'file', class: 'inp', id: 'pp_' + k + 'f', accept: ACCEPT_DOCS, hidden: true }), date = exp ? h('input', { type: 'date', class: 'inp', id: 'pp_' + k + 'e', 'aria-label': t('ppExp'), hidden: true }) : null;
+    var opts2 = [['later', t('ppLater')], ['upload', '📎 ' + t('ppUpload')]].concat(exempt ? [['exempt', t('ppExemptS')]] : []);
+    var radios = h('div', { class: 'pp-opts' }, opts2.map(function(o){ var r = h('input', { type: 'radio', name: name, value: o[0], id: name + '_' + o[0] });
+      r.addEventListener('change', function(){ file.hidden = !(o[0] === 'upload' || o[0] === 'exempt'); if (date) date.hidden = o[0] !== 'upload'; }); return h('label', { class: 'pp-opt' }, [r, h('span', { text: o[1] })]); }));
+    return h('div', { class: 'pp-row', 'data-pp': k }, [h('b', { text: label }), radios, file, date ? fld(t('ppExp'), date) : null]);
+  }
+  pbox.appendChild(paperRow('w9', t('ppW9'), false, false));
+  pbox.appendChild(paperRow('gl', t('ppGl'), true, false));
+  pbox.appendChild(paperRow('wc', t('ppWc'), true, true));
+  pbox.appendChild(h('div', { class: 'pp-row', 'data-pp': 'lic' }, [h('b', { text: t('ppLic') }), h('div', { class: 'su-grid lic' }, [fld(t('ppLicState'), h('input', { class: 'inp', id: 'pp_ls', maxlength: '2', style: 'text-transform:uppercase' })),
+    fld(t('ppLicType'), h('input', { class: 'inp', id: 'pp_lt', maxlength: '80' })), fld(t('ppLicNum'), h('input', { class: 'inp', id: 'pp_ln', maxlength: '60' }))]), h('input', { type: 'file', class: 'inp', id: 'pp_lf', accept: ACCEPT_DOCS })]));
+  box.appendChild(pbox);
   box.appendChild(h('div', { class: 'su-grid' }, [fld(t('suPw'), inp('pw', { type: 'password', autocomplete: 'new-password', minlength: '8' }), '', true), fld(t('suPw2'), inp('pw2', { type: 'password', autocomplete: 'new-password', minlength: '8' }), '', true)]));
   box.appendChild(h('label', { class: 'su-agree' }, [agree, h('span', null, [t('suAgree'), h('a', { href: '#', 'data-href': '/sub-terms.html', text: t('suTerms') }), t('suAnd'), h('a', { href: '#', 'data-href': '/sub-privacy.html', text: t('suPriv') }), '.'])]));
   Array.prototype.forEach.call(box.querySelectorAll('a[data-href]'), function(a){ a.setAttribute('href', a.getAttribute('data-href')); a.setAttribute('target', '_blank'); a.setAttribute('rel', 'noopener'); });
@@ -972,20 +1034,50 @@ function signup(opts){
     if (r.data.email && !F.email.value) { F.email.value = r.data.email; keep.email = r.data.email; }
   }, function(){});
   function v(k){ return String(F[k].value || '').trim(); }
+  function choice(k){ var r = box.querySelector('input[name="pp_' + k + '"]:checked'); return r ? r.value : ''; }
+  function papersPicked(){
+    var out = [], bad = [], big = [], claimed = { w9: false, gl: false, wc: false, wcExempt: false };
+    var g = function(id){ return document.getElementById(id) || { value: '', files: [] }; };
+    var add = function(id, o, needExp, nm){ var f = g(id).files && g(id).files[0]; if (!f) return false; if (f.size > 50 * 1024 * 1024) { big.push(f.name); return true; } if (needExp && !o.expirationDate) { bad.push(nm); return true; } o.file = f; out.push(o); return true; };
+    var c = choice('w9'); if (c === 'later') claimed.w9 = true; if (c === 'upload' && !add('pp_w9f', { type: 'w9', label: 'W-9' }, false, 'W-9')) claimed.w9 = true;
+    c = choice('gl'); if (c === 'later') claimed.gl = true; if (c === 'upload' && !add('pp_glf', { type: 'insurance_general', label: 'General liability COI', expirationDate: g('pp_gle').value }, true, t('ppGl'))) claimed.gl = true;
+    c = choice('wc'); if (c === 'later') claimed.wc = true;
+    if (c === 'upload' && !add('pp_wcf', { type: 'insurance_workers_comp', label: 'Workers\' comp COI', expirationDate: g('pp_wce').value }, true, t('ppWc'))) claimed.wc = true;
+    if (c === 'exempt') { claimed.wcExempt = true; add('pp_wcf', { type: 'insurance_workers_comp', label: 'Workers\' comp exemption (sole proprietor)', wcExempt: true }, false, t('ppWc')); }
+    add('pp_lf', { type: 'license', licState: g('pp_ls').value.trim().toUpperCase(), licType: g('pp_lt').value.trim(), licNumber: g('pp_ln').value.trim() }, false, t('ppLic'));
+    return { items: out, bad: bad, big: big, claimed: claimed };
+  }
+  function uploadPapers(token, picked){
+    var done = [], failed = [];
+    var one = function(o){
+      return sp({ action: 'signup-upload', paperToken: token, name: o.file.name, size: o.file.size, type: o.file.type }).then(function(r){
+        if (r.status !== 200 || !r.data.url) throw new Error((r.data && r.data.error) || 'upload');
+        return fetch(r.data.url, { method: 'PUT', headers: { apikey: r.data.apikey || '', 'Content-Type': o.file.type || 'application/octet-stream', 'x-upsert': 'false' }, body: o.file }).then(function(x){ if (!x.ok) throw new Error('upload ' + x.status);
+          var it = Object.assign({}, o, { fileRef: r.data.path, fileName: o.file.name, fileSize: o.file.size, fileType: o.file.type }); delete it.file; done.push(it); });
+      }).catch(function(){ failed.push(o.file.name); });
+    };
+    return picked.items.reduce(function(p, o){ return p.then(function(){ return one(o); }); }, Promise.resolve()).then(function(){
+      if (!done.length) return { n: 0, failed: failed };
+      return sp({ action: 'signup-papers', paperToken: token, items: done }).then(function(r){ return { n: r.status === 200 ? (r.data.saved || 0) : 0, failed: r.status === 200 ? failed : failed.concat(done.map(function(x){ return x.fileName; })) }; });
+    });
+  }
   function submit(force){
     err.textContent = ''; dup.innerHTML = '';
-    var need = [['first', 'suFirst'], ['last', 'suLast'], ['company', 'suCompany'], ['email', 'suEmail'], ['phone', 'suPhone'], ['trades', 'suTrades'], ['addr', 'suAddr'], ['city', 'suCity'], ['state', 'suState'], ['zip', 'suZip']].filter(function(x){ return !v(x[0]); });
+    var trades = Object.keys(TR).filter(function(k){ return TR[k]; }).concat(v('tradeOther').split(/[,;\n]+/).map(function(x){ return x.trim(); }).filter(Boolean)).slice(0, 30);
+    var need = [['company', 'suCompany'], ['name', 'suName'], ['email', 'suEmail'], ['phone', 'suPhone'], ['city', 'suCity'], ['state', 'suState']].filter(function(x){ return !v(x[0]); });
+    if (!trades.length) need.push(['tradeOther', 'suTrades']);
     if (need.length) { err.textContent = t('suNeed', { f: need.map(function(x){ return t(x[1]).replace(/ —.*$/, '').replace(/ \(.*\)$/, ''); }).join(', ') }); F[need[0][0]].focus(); return; }
     if (!/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(v('email'))) { err.textContent = t('suEmailBad'); F.email.focus(); return; }
     if (!/^[A-Za-z]{2}$/.test(v('state'))) { err.textContent = t('suStateBad'); F.state.focus(); return; }
-    if (v('ein') && !/^\d{4}$/.test(v('ein'))) { err.textContent = t('suEinBad'); F.ein.focus(); return; }
     if (String(F.pw.value).length < 8) { err.textContent = t('suPwShort'); F.pw.focus(); return; }
     if (F.pw.value !== F.pw2.value) { err.textContent = t('suPwDiff'); F.pw2.focus(); return; }
     if (!agree.checked) { err.textContent = t('suAgreeNeed'); agree.focus(); return; }
+    var picked = papersPicked();
+    if (picked.big.length) { err.textContent = t('ppBig', { f: picked.big.join(', ') }); return; }
+    if (picked.bad.length) { err.textContent = t('ppExpNeed', { f: picked.bad.join(', ') }); return; }
     var body = { action: 'register', email: v('email').toLowerCase(), password: F.pw.value, force: force ? true : undefined,
-      profile: { name: v('first') + ' ' + v('last'), company: v('company'), dbaName: v('dba'), phone: v('phone'),
-        trades: v('trades').split(/[,;\n]+/).map(function(x){ return x.trim(); }).filter(Boolean).slice(0, 30),
-        businessAddress: v('addr'), businessCity: v('city'), businessState: v('state').toUpperCase(), businessZip: v('zip'), licenseNumbers: v('lic'), einLast4: v('ein'), lang: LANG } };
+      profile: { name: v('name'), company: v('company'), phone: v('phone'), trades: trades, businessCity: v('city'), businessState: v('state').toUpperCase(), serviceArea: v('area'),
+        numEmployees: v('crew'), lang: LANG, papersClaimed: picked.claimed } };
     if (opts.invite) { body.invite = opts.invite; body.job = opts.job || ''; }
     busy(go, true);
     sp(body).then(function(r){
@@ -1004,15 +1096,20 @@ function signup(opts){
         return;
       }
       if (r.status !== 200 || !d.ok) { err.textContent = d.error || t('failed'); return; }
+      if (picked.items.length && d.paperToken) {
+        busy(go, true); err.textContent = t('ppUp');
+        return uploadPapers(d.paperToken, picked).then(function(u){ busy(go, false); done(!!d.approved, body.email, u); });
+      }
       done(!!d.approved, body.email);
     }, function(){ busy(go, false); err.textContent = t('loadFail'); });
   }
   go.addEventListener('click', function(){ submit(false); });
-  function done(approved, email){
+  function done(approved, email, pap){
     main.innerHTML = '';
     Object.keys(keep).forEach(function(k){ delete keep[k]; });
     main.appendChild(h('section', { class: 'card signin signup su-done', id: 'signupDone', 'data-approved': approved ? '1' : '0' }, [h('div', { class: 'big', text: '✅ ' + t('suDoneT') }),
       h('p', { text: approved ? t('suDoneInv') : t('suDone') }), email ? h('div', { class: 'muted', text: email }) : null,
+      pap && pap.n ? h('p', { id: 'suPapersDone', text: t('ppDone', { n: pap.n }) }) : null, pap && pap.failed && pap.failed.length ? h('p', { class: 'err', id: 'suPapersFail', text: t('ppFail', { f: pap.failed.join(', ') }) }) : null,
       h('button', { type: 'button', class: 'btn gold', id: 'suDoneSignin', text: t('suSignin'), on: { click: function(){ if (opts.back) opts.back(email); } } })]));
     window.scrollTo(0, 0);
   }

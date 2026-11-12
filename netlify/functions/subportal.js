@@ -704,13 +704,73 @@ async function register(body){
     einLast4: s(p.einLast4).replace(/\D/g, '').slice(0, 4),
     trades: (Array.isArray(p.trades) ? p.trades : []).map(function(x){ return clip(x, 60); }).filter(Boolean).slice(0, 30),
     invitedJobId: invited ? inv.job_id : undefined,
+    lang: s(p.lang) === 'es' ? 'es' : 'en',   /* patch SIGNUPPAPERS: their language, and the papers they SAY they have (not papers on file) */
+    papersClaimed: (function(c){ c = c && typeof c === 'object' ? c : {}; return { w9: c.w9 === true, gl: c.gl === true, wc: c.wc === true, wcExempt: c.wcExempt === true, at: new Date().toISOString() }; })(p.papersClaimed),
     createdAt: new Date().toISOString()
   };
   try { await upsertRows([rowFor('users', profile)], email); }
   catch (e) { if (profile.authUserId) await deleteAuthUser(profile.authUserId); throw e; }
   if (invited) await upsertRows([rowFor('invites', Object.assign({}, inv.data, { usedAt: new Date().toISOString(), usedBy: profile.id }))], email);
   try { await notify({ kind: 'registered', user: profile }); } catch (e) { console.warn('[subportal] mail', e.message); }
-  return { ok: true, approved: invited };
+  return { ok: true, approved: invited, paperToken: paperToken(profile.id) };   /* patch SIGNUPPAPERS: upload the papers right after signing up */
+}
+/* ── patch SIGNUPPAPERS (owner 11/12: "for expedited approval to our bid portal see if they can enter COI and workman's comp and
+   licenses when they sign up") ─ the sub portal's sign-up (portal-app.js) has no bid-site sign-in yet, so register hands back a
+   2-hour token for THIS new profile only: signup-upload (a signed upload into u/<id>/, the same 50 MB limit as every portal
+   upload) and signup-papers (saved as the profile's subdocs — w9, insurance_general, insurance_workers_comp, license — the same
+   record My Documents and the bid-papers check use). The bid site's own sign-up signs in and saves them the normal way. */
+const BASE_TRADES = ['Drywall', 'Paint', 'Framing', 'Flooring', 'Tile', 'Roofing', 'Siding', 'Gutters', 'Electrical', 'Plumbing', 'HVAC', 'Concrete', 'Masonry', 'Insulation', 'Ceilings', 'Cabinets', 'Windows & Doors', 'Demolition', 'Landscaping', 'Cleaning', 'Mitigation', 'Abatement'];
+let tradeCache = null;
+async function tradeList(){
+  if (tradeCache && Date.now() - tradeCache.at < 600e3) return tradeCache.v;
+  const seen = {}, out = [];
+  let extra = []; try { extra = crmSubList(await crmData()).map(function(x){ return s(x && (x.trade || x.cat2)); }); } catch (e) { extra = []; }
+  BASE_TRADES.concat(extra.join(',').split(/[,;\/]/)).forEach(function(x){ x = s(x); const k = low(x); if (!x || seen[k] || x.length > 40 || /^(subcontractor|sub|other|vendor)$/i.test(x)) return; seen[k] = 1; out.push(x.charAt(0).toUpperCase() + x.slice(1)); });
+  tradeCache = { at: Date.now(), v: out.slice(0, 40) };
+  return tradeCache.v;
+}
+const PAPER_TYPES = ['w9', 'insurance_general', 'insurance_workers_comp', 'license', 'other'];
+function paperSig(id, exp){ return crypto.createHmac('sha256', 'signup-papers|' + (svcKey() || 'dev')).update(id + '.' + exp).digest('hex').slice(0, 32); }
+function paperToken(id){ const exp = Date.now() + 2 * 3600e3; return id + '.' + exp + '.' + paperSig(id, exp); }
+function paperUser(tok){
+  const m = /^(u_[A-Za-z0-9]{4,40})\.(\d{10,16})\.([0-9a-f]{32})$/.exec(s(tok)); if (!m) throw Fail(401, 'The sign-up link has expired. Sign in and add your papers in My Documents.');
+  if (Number(m[2]) < Date.now()) throw Fail(401, 'The sign-up link has expired. Sign in and add your papers in My Documents.');
+  const a = Buffer.from(paperSig(m[1], m[2])), b = Buffer.from(m[3]);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) throw Fail(401, 'The sign-up link is not valid.');
+  return m[1];
+}
+function day10(v){ const d = s(v).slice(0, 10); return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : ''; }
+function cleanPaper(x, id){
+  const type = PAPER_TYPES.indexOf(s(x && x.type)) > -1 ? s(x.type) : '';
+  const ref = s(x && x.fileRef); if (!type || ref.indexOf('u/' + id + '/') !== 0 || /\.\./.test(ref)) return null;
+  const exempt = type === 'insurance_workers_comp' && x.wcExempt === true;
+  const exp = day10(x.expirationDate);
+  if ((type === 'insurance_general' || (type === 'insurance_workers_comp' && !exempt)) && !exp) return null;   /* insurance needs its expiration date */
+  const o = { id: 'd' + crypto.randomBytes(5).toString('hex'), type: type, label: s(x.label).slice(0, 120), fileName: s(x.fileName).slice(0, 160) || 'file', fileSize: Number(x.fileSize) || 0, fileType: s(x.fileType).slice(0, 80),
+    fileRef: ref, expirationDate: exp || null, uploadedAt: new Date().toISOString(), atSignup: true };
+  if (exempt) { o.wcExempt = true; o.label = o.label || 'Workers\' comp exemption (sole proprietor)'; }
+  if (type === 'license') { o.licState = s(x.licState).toUpperCase().slice(0, 2); o.licType = s(x.licType).slice(0, 80); o.licNumber = s(x.licNumber).slice(0, 60); o.label = o.label || ['License', o.licState, o.licType, o.licNumber].filter(Boolean).join(' '); }
+  return o;
+}
+async function signupUpload(body){
+  const id = paperUser(body.paperToken), size = Number(body.size) || 0;
+  if (size <= 0 || size > MAX_FILE) throw Fail(413, 'Files can be up to 50 MB.');
+  const path = 'u/' + id + '/' + crypto.randomBytes(8).toString('hex') + '-' + safeName(body.name);
+  const r = await fetch(sbUrl() + '/storage/v1/object/upload/sign/' + BUCKET + '/' + path.split('/').map(encodeURIComponent).join('/'), { method: 'POST', headers: H(), body: '{}' });
+  if (!r.ok) throw Fail(502, 'Could not prepare the upload (' + r.status + ').');
+  const j = await r.json();
+  return { path: path, url: sbUrl() + '/storage/v1' + j.url, apikey: anonKey() };
+}
+async function signupPapers(body){
+  const id = paperUser(body.paperToken);
+  const u = await getRow('users', id); if (!u || u.data.role !== 'sub') throw Fail(404, 'That account is gone.');
+  const add = arr(body.items).slice(0, 20).map(function(x){ return cleanPaper(x, id); }).filter(Boolean);
+  if (!add.length) return { ok: true, saved: 0 };
+  const old = await getRow('subdocs', id), have = arr(old && old.data && old.data.items);
+  const one = { w9: 1, insurance_general: 1, insurance_workers_comp: 1 };
+  const keep = have.filter(function(d){ return !(d && one[d.type] && add.some(function(a){ return a.type === d.type; })); });
+  await upsertRows([{ collection: 'subdocs', id: id, user_id: id, data: { items: keep.concat(add) } }], s(u.data.email) || 'signup');
+  return { ok: true, saved: add.length };
 }
 async function deleteAuthUser(id){
   try { await fetch(sbUrl() + '/auth/v1/admin/users/' + encodeURIComponent(id), { method: 'DELETE', headers: H() }); } catch (e) {}
@@ -738,6 +798,7 @@ async function sendMail(to, subject, html){
 }
 async function staffEmailsFor(job){
   const out = [process.env.SUBPORTAL_NOTIFY || OFFICE];
+  if (job) [job.postedBy, job.pmEmail].forEach(function(e){ if (okEmail(low(e))) out.push(low(e)); });   /* patch BIDPOST: the person who posted it and its PM hear too */
   if (job) {
     const ids = [job.pmId, job.estimatorId].filter(Boolean);
     if (ids.length) {
@@ -1271,6 +1332,14 @@ exports.handler = async function (event) {
       if (limited(ipOf(event), 12)) return J(429, { error: 'Too many tries. Wait a few minutes and try again.' });
       return J(200, await register(body));
     }
+    if (action === 'trade-list') {   /* patch SIGNUPPAPERS: the sign-up's trade buttons — GrayCo's list + the trades of the CRM's subs */
+      if (limited(ipOf(event), 60)) return J(429, { error: 'Too many tries.' });
+      return J(200, { trades: await tradeList() });
+    }
+    if (action === 'signup-upload' || action === 'signup-papers') {   /* patch SIGNUPPAPERS */
+      if (limited(ipOf(event), 60)) return J(429, { error: 'Too many tries. Wait a few minutes and try again.' });
+      return J(200, action === 'signup-upload' ? await signupUpload(body) : await signupPapers(body));
+    }
     if (action === 'invite-info') {
       if (limited(ipOf(event), 40)) return J(429, { error: 'Too many tries. Wait a few minutes.' });
       const inv = await findInvite(body.invite, body.job);
@@ -1344,7 +1413,8 @@ exports.handler = async function (event) {
   }
 };
 /* patch SYS: the CRM's 🏗 Bid portal tab (bid-hub.js) works on the same rows with the same helpers — one copy of each */
-exports._hub = { listRows, eq, inList, getRow, upsertRows, rowFor, crmSubs, crmData, crmSubList, sendMail, mailHtml, esc, okEmail, PORTAL_ORIGIN, saveCollection, isGone, subJobView, plansOf, subScope, signAll, isDraft, papersMissing };   /* patch SYS2: + the Q&A save, the sub view, plans · patch SUBBIDS: + subScope / signAll / isDraft (the sub portal's 📋 Jobs to bid) */
+exports._papers = { paperToken, paperUser, cleanPaper, signupPapers, signupUpload, PAPER_TYPES };   /* patch SIGNUPPAPERS: tests */
+exports._hub = { kvRead, listRows, eq, inList, getRow, upsertRows, rowFor, crmSubs, crmData, crmSubList, sendMail, mailHtml, esc, okEmail, PORTAL_ORIGIN, saveCollection, isGone, subJobView, plansOf, subScope, signAll, isDraft, papersMissing };   /* patch SYS2: + the Q&A save, the sub view, plans · patch SUBBIDS: + subScope / signAll / isDraft (the sub portal's 📋 Jobs to bid) */
 /* patch LOGOALL (owner 10/23: "should have our logo on it"): every customer / sub / GC e-mail this file sends
    straight to Resend gets the GrayCo shell (centered logo, office line, licenses). Internal @grayco-cs.com mail is untouched. */
 try { require('./_lib/brand.js').installResend(); } catch (e) {}

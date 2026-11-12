@@ -71,6 +71,9 @@ T.sp_rows.push(bidRow({ id: 'b_won', jobId: 'j_won', userId: 'u_a1', userName: '
 T.sp_rows.push(spRow('plans', 'j_open', { items: [{ name: 'A1 Floor plan.pdf', category: 'Architectural', type: 'application/pdf', size: 1000, fileRef: 'staff/2026-11/abc-A1.pdf' }] }, { job_id: 'j_open' }));
 T.sp_rows.push(spRow('plans', 'j_priv', { items: [{ name: 'PRIVATE-PLAN.pdf', type: 'application/pdf', fileRef: 'staff/2026-11/priv.pdf' }] }, { job_id: 'j_priv' }));
 const docsOf = list => ({ items: list });
+/* patch BIDPOST: the job's Q&A — another bidder's question GrayCo answered to all bidders, and one that is private to that bidder */
+T.sp_rows.push(spRow('questions', 'q_pub', { id: 'q_pub', jobId: 'j_open', userId: 'u_b1', userName: 'Otto Other', userCompany: 'Other Paint Co', body: 'Is the lobby ceiling in this bid?', answer: 'Yes — ACT in the lobby only.', visibility: 'public', at: now, num: 1 }, { job_id: 'j_open', user_id: 'u_b1' }));
+T.sp_rows.push(spRow('questions', 'q_priv', { id: 'q_priv', jobId: 'j_open', userId: 'u_b1', userName: 'Otto Other', userCompany: 'Other Paint Co', body: 'PRIVATE-QUESTION-OF-OTTO', answer: '', visibility: 'private', at: now }, { job_id: 'j_open', user_id: 'u_b1' }));
 T.sp_rows.push(spRow('subdocs', 'u_a1', docsOf([{ id: 'd1', type: 'w9' }, { id: 'd2', type: 'insurance_general', expirationDate: day(200) }, { id: 'd3', type: 'insurance_workers_comp', expirationDate: day(150) }]), { user_id: 'u_a1' }));
 T.sp_rows.push(spRow('subdocs', 'u_b1', docsOf([{ id: 'd4', type: 'w9' }, { id: 'd5', type: 'insurance_general', expirationDate: day(-3) }]), { user_id: 'u_b1' }));
 const SESS = {};
@@ -230,7 +233,7 @@ await t('portal-app.js: the card, the sheet and the form are there in English an
   new Function(app);
   yes(/api\('p-bidjobs'\)/.test(app) && /api\('p-bid-save'/.test(app) && /data-bidjob/.test(app) && /bidSheet\(/.test(app));
   for (const k of ['jobsToBid', 'bidsJoin', 'papersNeed', 'bidSubmit', 'bidUpdate', 'bidDecided']) yes((app.match(new RegExp('\\b' + k + ':', 'g')) || []).length >= 2, k + ' in EN and ES');
-  yes(/\/portal-app\.js\?v=33\.230-bidscope/.test(html), 'cache-bust');
+  yes(/\/portal-app\.js\?v=33\.231-bidpost/.test(html), 'cache-bust');
 });
 
 /* ── the browser: portal.html + portal-app.js, phone and desktop ── */
@@ -286,11 +289,16 @@ if (chromium) {
     let b = {}; try { b = JSON.parse(body || '{}'); } catch (e) {}
     SPREQ.push(b);
     if (b.action === 'invite-info') return b.invite === INVITE ? [200, { ok: true, email: 'invited@samplestucco.test', jobTitle: 'Sample Clinic Remodel' }] : [200, { ok: false }];
+    /* patch SIGNUPPAPERS: the trade buttons, and the papers uploaded right after sign-up (a token for the new profile only) */
+    if (b.action === 'trade-list') return [200, { trades: ['Drywall', 'Paint', 'Stucco', 'Framing', 'Roofing', 'Tile', 'Electrical', 'Plumbing'] }];
+    if (b.action === 'signup-upload') return b.paperToken === 'tok-new' ? [200, { path: 'u/u_new/' + (UPN++) + '-' + b.name, url: 'https://portal.test/__upload/' + encodeURIComponent(b.name), apikey: 'anon' }] : [401, { error: 'The sign-up link is not valid.' }];
+    if (b.action === 'signup-papers') return b.paperToken === 'tok-new' ? [200, { ok: true, saved: (b.items || []).length }] : [401, { error: 'no' }];
     if (b.action !== 'register') return [400, { error: 'Unknown action.' }];
     if (/^taken@/.test(b.email)) return [409, { error: 'That e-mail already has a portal account. Sign in, or use "Forgot password".' }];
     if (/Sample Dup/i.test((b.profile || {}).company) && !b.force) return [200, { duplicates: [{ company: 'Sample Dup Roofing LLC', dbaName: '', reasons: ['company name', 'phone'] }] }];
-    return [200, { ok: true, approved: b.invite === INVITE }];
+    return [200, { ok: true, approved: b.invite === INVITE, paperToken: 'tok-new' }];
   }
+  let UPN = 1; const UPLOADS = [];
   async function browserFor(kind){
     const b = await chromium.launch({ args: ['--proxy-server=http://127.0.0.1:9'] });
     const ctx = await b.newContext(Object.assign({ serviceWorkers: 'block' }, kind === 'phone' ? { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 } : { viewport: { width: 1366, height: 820 } }));
@@ -298,6 +306,7 @@ if (chromium) {
     await ctx.route('**/*', async r => {
       const u = new URL(r.request().url());
       if (u.host !== 'portal.test') return r.abort('blockedbyclient');
+      if (u.pathname.startsWith('/__upload/')) { UPLOADS.push({ name: decodeURIComponent(u.pathname.slice(10)), type: r.request().headers()['content-type'], size: (r.request().postDataBuffer() || Buffer.alloc(0)).length }); return r.fulfill({ status: 200, contentType: 'application/json', body: '{"Key":"ok"}' }); }
       const fm = /^\/\.netlify\/functions\/([a-z-]+)$/.exec(u.pathname);
       if (fm) {
         const body = r.request().postData() || '';
@@ -332,9 +341,10 @@ if (chromium) {
   }
   const text = p => p.evaluate(() => document.body.innerText);
   async function fillForm(p, o){
-    const v = Object.assign({ first: 'Sam', last: 'Newman', company: 'Sample Stucco & Drywall LLC', dba: 'Sample Walls', email: 'Sam@SampleStucco.test', phone: '901-555-0170', trades: 'Drywall, Stucco',
-      addr: '400 Sample Industrial Dr', city: 'Memphis', state: 'tn', zip: '38118', lic: 'TN CMC-12345', ein: '4321', pw: 'sample-pass-1', pw2: 'sample-pass-1' }, o || {});
+    const v = Object.assign({ company: 'Sample Stucco & Drywall LLC', name: 'Sam Newman', email: 'Sam@SampleStucco.test', phone: '901-555-0170', city: 'Memphis', state: 'tn', crew: '6',
+      tradeOther: 'Stucco', area: 'Shelby, DeSoto', pw: 'sample-pass-1', pw2: 'sample-pass-1' }, o || {});
     for (const k of Object.keys(v)) await p.fill('#su_' + k, v[k]);
+    if (!(o && 'tradeOther' in o) && !(await p.$('[data-su-trade="Drywall"].on'))) await p.click('[data-su-trade="Drywall"]');
   }
   async function toSignup(p){ await p.goto('https://portal.test/'); await p.waitForSelector('#siSignup', { timeout: 15000 }); await p.click('#siSignup'); await p.waitForSelector('#signupBox', { timeout: 15000 }); await sleep(200); }
   for (const kind of ['phone', 'desktop']) {
@@ -346,7 +356,12 @@ if (chromium) {
       eq(await p.$eval('#siSignup', b => b.textContent), 'New subcontractor? Create your account');
       await shot(p, '01_signin_with_signup', 'Sign-in screen with "New subcontractor? Create your account"');
       await p.click('#siSignup'); await p.waitForSelector('#signupBox', { timeout: 15000 });
-      for (const k of ['first', 'last', 'company', 'dba', 'email', 'phone', 'trades', 'addr', 'city', 'state', 'zip', 'lic', 'ein', 'pw', 'pw2', 'agree']) yes(await p.$('#su_' + k), 'field ' + k);
+      for (const k of ['company', 'name', 'email', 'phone', 'city', 'state', 'crew', 'tradeOther', 'area', 'pw', 'pw2', 'agree']) yes(await p.$('#su_' + k), 'field ' + k);
+      for (const k of ['first', 'last', 'dba', 'addr', 'zip', 'lic', 'ein']) yes(!(await p.$('#su_' + k)), 'no extra field ' + k);   /* patch SIGNUPPAPERS: short */
+      yes((await p.$$('[data-su-trade]')).length >= 6, 'trade buttons');
+      eq(await p.$$eval('#suPapers [data-pp]', x => x.map(e => e.getAttribute('data-pp'))), ['w9', 'gl', 'wc', 'lic']);
+      eq(await p.$$eval('#suPapers [data-pp="wc"] input[type=radio]', x => x.map(e => e.value)), ['later', 'upload', 'exempt']);
+      yes(/Upload these now for faster approval/.test(await p.textContent('#suPapers')));
       const terms = await p.$$eval('#signupBox a[target="_blank"]', a => a.map(x => x.getAttribute('href')));
       eq(terms, ['/sub-terms.html', '/sub-privacy.html']);
       await shot(p, '02_signup_form', 'Create your subcontractor account (the form)', true);
@@ -355,7 +370,7 @@ if (chromium) {
     });
     await t(tag + 'sign-up checks: required fields, password ≥ 8 and the same twice, 2-letter state, the terms box', async () => {
       const p = await S.page(''); await toSignup(p); const regs = () => SPREQ.filter(x => x.action === 'register').length, n0 = regs();
-      await p.click('#suGo'); yes(/Please fill in: First name, Last name, Company name/.test(await p.textContent('#suErr')), await p.textContent('#suErr'));
+      await p.click('#suGo'); yes(/Please fill in: Company name, Your name, E-mail, Mobile phone, City, State, Your trade\(s\)/.test(await p.textContent('#suErr')), await p.textContent('#suErr'));
       await fillForm(p, { pw: 'short', pw2: 'short' }); await p.click('#suGo'); yes(/at least 8/.test(await p.textContent('#suErr')));
       await fillForm(p, { pw2: 'different-1' }); await p.click('#suGo'); yes(/do not match/.test(await p.textContent('#suErr')));
       await fillForm(p, { state: 'T1' }); await p.click('#suGo'); yes(/2-letter state/.test(await p.textContent('#suErr')), await p.textContent('#suErr'));
@@ -364,12 +379,31 @@ if (chromium) {
       await shot(p, '03_signup_check', 'The form says what is missing');
       await p.close();
     });
+    await t(tag + 'sign-up papers (patch SIGNUPPAPERS): W-9 "I have it — will send later", GL uploaded with its expiry, WC exempt, a license file → uploaded right after sign-up; the ticks go with the profile', async () => {
+      const p = await S.page(''); await toSignup(p); await fillForm(p, { email: 'papers@samplestucco.test' }); await p.check('#su_agree');
+      await p.check('#pp_w9_later'); await p.check('#pp_gl_upload'); await p.check('#pp_wc_exempt');
+      const pdf = { name: 'gl-coi.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4 sample GL certificate') };
+      await p.setInputFiles('#pp_glf', pdf);
+      await p.click('#suGo'); yes(/expiration date/i.test(await p.textContent('#suErr')), 'GL needs its expiry: ' + await p.textContent('#suErr'));
+      await p.fill('#pp_gle', day(300)); await p.fill('#pp_ls', 'tn'); await p.fill('#pp_lt', 'Painting'); await p.fill('#pp_ln', '55555');
+      await p.setInputFiles('#pp_lf', { name: 'license.jpg', mimeType: 'image/jpeg', buffer: Buffer.from([255, 216, 255, 0, 1, 2]) });
+      await shot(p, '02b_signup_papers', 'Sign-up papers: W-9 later, GL uploaded + expiry, WC exempt, a license photo', true);
+      const u0 = UPLOADS.length;
+      await p.click('#suGo'); await p.waitForSelector('#signupDone', { timeout: 15000 });
+      const reg = SPREQ.filter(x => x.action === 'register').pop(), pap = SPREQ.filter(x => x.action === 'signup-papers').pop();
+      eq(reg.profile.papersClaimed, { w9: true, gl: false, wc: false, wcExempt: true });
+      eq(UPLOADS.slice(u0).map(x => x.name), ['gl-coi.pdf', 'license.jpg']);
+      eq(pap.items.map(x => [x.type, x.expirationDate || '', x.licState || '']), [['insurance_general', day(300), ''], ['license', '', 'TN']]);
+      yes(/2 paper\(s\) uploaded/.test(await p.textContent('#signupDone')), await p.textContent('#signupDone'));
+      await p.close();
+    });
     await t(tag + 'sign-up success → "GrayCo reviews new accounts … we\'ll e-mail you" (the bid site\'s register with the profile)', async () => {
       const p = await S.page(''); await toSignup(p); await fillForm(p); await p.check('#su_agree');
       await p.click('#suGo'); await p.waitForSelector('#signupDone', { timeout: 15000 });
       const b = SPREQ.filter(x => x.action === 'register').pop();
       eq([b.email, b.password, b.force, b.invite], ['sam@samplestucco.test', 'sample-pass-1', undefined, undefined]);
-      eq(b.profile, { name: 'Sam Newman', company: 'Sample Stucco & Drywall LLC', dbaName: 'Sample Walls', phone: '901-555-0170', trades: ['Drywall', 'Stucco'], businessAddress: '400 Sample Industrial Dr', businessCity: 'Memphis', businessState: 'TN', businessZip: '38118', licenseNumbers: 'TN CMC-12345', einLast4: '4321', lang: 'en' });
+      eq(b.profile, { name: 'Sam Newman', company: 'Sample Stucco & Drywall LLC', phone: '901-555-0170', trades: ['Drywall', 'Stucco'], businessCity: 'Memphis', businessState: 'TN', serviceArea: 'Shelby, DeSoto', numEmployees: '6', lang: 'en',
+        papersClaimed: { w9: false, gl: false, wc: false, wcExempt: false } });
       const tx = await text(p); yes(/GrayCo reviews new accounts \(usually the same day\)\. We’ll e-mail you when you’re approved\. Then sign in here with your e-mail\./.test(tx), tx.slice(0, 400));
       eq(await p.$eval('#signupDone', x => x.getAttribute('data-approved')), '0');
       await shot(p, '04_signup_thanks', 'Thanks — waiting for GrayCo\'s approval');
@@ -429,6 +463,24 @@ if (chromium) {
       await shot(p, '10_home_jobs_to_bid', 'Home: 📋 Jobs to bid card');
       await shot(p, '11_home_full', 'Home (whole page) with 📋 Jobs to bid', true);
       const w = await p.evaluate(() => document.documentElement.scrollWidth); yes(w <= (kind === 'phone' ? 390 : 1366), 'no sideways scroll: ' + w);
+      await p.close();
+    });
+    await t(tag + '❓ Ask a question (patch BIDPOST): the shared answer shows (no names), another bidder\'s private question never; asking saves it to the bid site\'s Q&A', async () => {
+      const p = await S.page(SESS.A); await p.goto('https://portal.test/');
+      await p.waitForSelector('[data-bidopen="j_open"]', { timeout: 30000 }); await p.click('[data-bidopen="j_open"]');
+      await p.waitForSelector('[data-bidqa="j_open"]');
+      const tx = await p.$eval('[data-bidqa="j_open"]', x => x.innerText);
+      yes(/Is the lobby ceiling in this bid\?/.test(tx) && /Yes — ACT in the lobby only\./.test(tx) && /answer to all bidders/.test(tx) && !/PRIVATE-QUESTION|Otto|Other Paint/.test(tx), tx);
+      const n0 = T.sp_rows.filter(r => r.collection === 'questions').length;
+      await p.fill('#bidQ', 'Do you need fire caulk at the rated walls?'); await p.click('#bidQSend');
+      await sleep(1500);
+      const q = T.sp_rows.filter(r => r.collection === 'questions').slice(n0)[0];
+      yes(q && q.data.jobId === 'j_open' && q.data.userId === 'u_a1' && /fire caulk/.test(q.data.body) && q.data.visibility === 'private' && !q.data.answer, JSON.stringify(q));
+      await p.waitForSelector('[data-bidopen="j_open"]'); await p.click('[data-bidopen="j_open"]'); await p.waitForSelector('[data-bidqa="j_open"]');
+      yes(/You asked/.test(await p.$eval('[data-bidqa="j_open"]', x => x.innerText)) && /Waiting for GrayCo/.test(await p.$eval('[data-bidqa="j_open"]', x => x.innerText)));
+      await (await p.$('[data-bidqa="j_open"]')).scrollIntoViewIfNeeded();
+      await shot(p, '13_bid_question', 'A job: ❓ questions (a shared answer, their own question waiting)');
+      T.sp_rows = T.sp_rows.filter(r => r !== q);
       await p.close();
     });
     await t(tag + 'an awarded bid: 🏆 Awarded with the GrayCo PM (name / phone / e-mail), the next step and what to confirm (patch BIDSCOPE)', async () => {

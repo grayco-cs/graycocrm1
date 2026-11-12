@@ -231,3 +231,6 @@ export async function getCurrentUser() {
 }
 
 export function hasSession() { return !!load(); }
+
+/** patch BIDPOST: the signed-in person's access token (GrayCo staff calling another CRM function, e.g. Google Drive for big plan files) */
+export async function authToken() { const s = await token(); return s.access_token; }
