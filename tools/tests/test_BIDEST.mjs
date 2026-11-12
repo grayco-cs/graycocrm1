@@ -117,6 +117,7 @@ await shot(A, '03_bid_comparison');
 const recOf = id => A.ev(id => { const l = (window._gcEstimatesState && window._gcEstimatesState.length ? window._gcEstimatesState : window._crm.estimates) || []; const e = l.find(x => x && x.id === id); return e ? JSON.parse(JSON.stringify(e)) : null; }, id);
 const before = await recOf('E1');
 await A.ev(() => document.querySelector('#gcsys-modal tr[data-be-bid="email:b-e2"] [data-be="award"]').click());
+await (async () => { for (let i = 0; i < 40; i++) { if (await A.ev(() => !!document.querySelector('#gcsys-modal [data-be="cfgo"]'))) break; await sleep(250); } await A.ev(() => document.querySelector('#gcsys-modal [data-be="cfgo"]').click()); })();   /* patch BIDSCOPE: the award confirm sheet */
 await wait(() => { const r = document.querySelector('#gcsys-modal tr[data-be-bid="email:b-e2"] [data-be-status]'); return r && r.getAttribute('data-be-status') === 'awarded'; });
 await sleep(800);
 let e1 = await recOf('E1');
@@ -190,6 +191,7 @@ const pl = await A.ev(() => [...document.querySelectorAll('#gcsys-modal [data-be
 ok('4 award with no project → the searchable project picker ("retail" → Sample Retail Fit-out)', pl.join() === 'P9', pl);
 await shot(A, '06_project_picker');
 await A.ev(() => document.querySelector('#gcsys-modal [data-be="pickp"][data-pid="P9"]').click());
+await (async () => { for (let i = 0; i < 40; i++) { if (await A.ev(() => !!document.querySelector('#gcsys-modal [data-be="cfgo"]'))) break; await sleep(250); } await A.ev(() => document.querySelector('#gcsys-modal [data-be="cfgo"]').click()); })();   /* patch BIDSCOPE: the award confirm sheet */
 await wait(() => { const r = document.querySelector('#gcsys-modal tr[data-be-bid="portal:b-r1"] [data-be-status]'); return r && r.getAttribute('data-be-status') === 'awarded'; });
 await sleep(1500);
 const p9 = await A.ev(() => { const p = window._crm.projects.find(x => x.id === 'P9'); const es = (window._gcEstimatesState || window._crm.estimates || []).filter(e => e && e.pid === 'P9'); return { link: p.bidJobId, es: es.map(e => ({ id: e.id, st: e.status, n: e.lines.length, l: e.lines[0], co: e.companyId })), head: (document.querySelector('#gcsys-modal [data-be-proj]') || {}).textContent }; });
@@ -201,9 +203,10 @@ ok('4 the header now names the picked project', /T909 · Sample Retail Fit-out/.
 await A.ev(() => window._gcBidEst.open('J2'));
 await wait(() => document.querySelector('#gcsys-modal tr[data-be-bid="portal:b-m1"]'));
 const h2 = await A.ev(() => ({ t: document.querySelector('#gcsys-modal [data-be-proj]').textContent, pid: document.querySelector('#gcsys-modal [data-be-proj]').getAttribute('data-be-proj') }));
-ok('5 a lead with a Mitigation and a Construction project → the Mitigation one (the lead\'s company)', h2.pid === 'PM1' && /M-T201/.test(h2.t), h2);
+ok('5 a lead with a Mitigation and a Construction project → the Mitigation one (the lead\'s company)', h2.pid === 'PM1' && /Riverbend Flood — dry-out/.test(h2.t) && /Mitigation/.test(h2.t)   /* (the CRM may renumber the PO of a test job) */, h2);
 const ecBefore = await recOf('EC');
 await A.ev(() => document.querySelector('#gcsys-modal tr[data-be-bid="portal:b-m1"] [data-be="award"]').click());
+await (async () => { for (let i = 0; i < 40; i++) { if (await A.ev(() => !!document.querySelector('#gcsys-modal [data-be="cfgo"]'))) break; await sleep(250); } await A.ev(() => document.querySelector('#gcsys-modal [data-be="cfgo"]').click()); })();   /* patch BIDSCOPE: the award confirm sheet */
 await wait(() => { const r = document.querySelector('#gcsys-modal tr[data-be-bid="portal:b-m1"] [data-be-status]'); return r && r.getAttribute('data-be-status') === 'awarded'; });
 await sleep(800);
 const em = await recOf('EM'), ec = await recOf('EC');

@@ -308,7 +308,7 @@ function jobRow(j){
    Not joined yet → "Join GrayCo bids" (p-bids: a password, then GrayCo approves the company). Papers first: W-9, GL, WC. */
 Object.assign(L.en, { jobsToBid: '📋 Jobs to bid', bidsJoin: 'Join GrayCo bids', bidsJoinWhy: 'See GrayCo’s open jobs to bid and send your bids right here in your portal. Join once — GrayCo approves your company, then the jobs show up here.',
   bidsPwShort: 'Choose a password with at least 8 characters.', bidsLoading: 'Loading jobs to bid…', bidsNoneOpen: 'No jobs to bid right now — GrayCo invites you when one fits your trade.',
-  daysLeft: '{n} days left', dayLeft: '1 day left', dueToday: 'Due today', pastDue: 'Past due', bidInvited: '📨 Invited', bidOpen: 'Open to bid', bidPending: '✓ Bid sent', bidAccepted: '✅ Accepted', bidRejected: 'Not selected', bidClosed: 'Closed',
+  daysLeft: '{n} days left', dayLeft: '1 day left', dueToday: 'Due today', pastDue: 'Past due', bidInvited: '📨 Invited', bidOpen: 'Open to bid', bidPending: '✓ Bid sent', bidAccepted: '🏆 Awarded', bidAwardPm: 'Your GrayCo project manager', bidAwardNext: 'Next: GrayCo will send your sub agreement / scope to sign here in your GrayCo Portal.', bidAwardConfirm: 'Please confirm these before we finalize', bidRejected: 'Not selected', bidClosed: 'Closed',
   bidOpenBtn: 'Open & bid ›', bidSeeBtn: 'See my bid ›', plansLbl: 'Plans', planFiles: 'Plan files', scopeLbl: 'Scope of work', specsLbl: 'Specifications', notesLbl: 'Notes', tradesLbl: 'Trades', yourTradeScope: 'Scope for your trade',
   yourBid: 'Your bid', bidAmount: 'Bid amount ($)', bidNotes: 'Notes for GrayCo (what is included / not included, timing)', bidSubmit: 'Submit bid', bidUpdate: 'Update bid', bidSent: 'Bid sent to GrayCo', bidUpdated: 'Bid updated',
   bidDecided: 'GrayCo has decided on this bid — it can no longer be changed.', bidClosedNote: 'Bids are closed on this job.', bidSentOn: 'Sent {d}', bidUpdOn: 'updated {d}', amountNeed: 'Enter your bid amount.',
@@ -316,7 +316,7 @@ Object.assign(L.en, { jobsToBid: '📋 Jobs to bid', bidsJoin: 'Join GrayCo bids
   papersOpen: 'Open My Documents', papersBlocked: 'The bid form opens once your papers are on file.', pW9: 'W-9', pGL: 'General liability (GL)', pWC: 'Workers’ comp (WC)', bidsSite: 'Open bids.grayco-cs.com' });
 Object.assign(L.es, { jobsToBid: '📋 Trabajos para licitar', bidsJoin: 'Unirse a licitaciones GrayCo', bidsJoinWhy: 'Vea los trabajos abiertos de GrayCo y envíe sus ofertas aquí mismo en su portal. Únase una vez — GrayCo aprueba su compañía y los trabajos aparecen aquí.',
   bidsPwShort: 'Escoja una contraseña de al menos 8 caracteres.', bidsLoading: 'Cargando trabajos para licitar…', bidsNoneOpen: 'No hay trabajos para licitar ahora — GrayCo le invita cuando uno sea de su oficio.',
-  daysLeft: 'Quedan {n} días', dayLeft: 'Queda 1 día', dueToday: 'Vence hoy', pastDue: 'Ya venció', bidInvited: '📨 Invitado', bidOpen: 'Abierto para licitar', bidPending: '✓ Oferta enviada', bidAccepted: '✅ Aceptada', bidRejected: 'No seleccionada', bidClosed: 'Cerrado',
+  daysLeft: 'Quedan {n} días', dayLeft: 'Queda 1 día', dueToday: 'Vence hoy', pastDue: 'Ya venció', bidInvited: '📨 Invitado', bidOpen: 'Abierto para licitar', bidPending: '✓ Oferta enviada', bidAccepted: '🏆 Adjudicada', bidAwardPm: 'Su gerente de proyecto en GrayCo', bidAwardNext: 'Siguiente: GrayCo le enviará su contrato de subcontratista / el alcance para firmar aquí en su Portal GrayCo.', bidAwardConfirm: 'Por favor confirme esto antes de finalizar', bidRejected: 'No seleccionada', bidClosed: 'Cerrado',
   bidOpenBtn: 'Abrir y licitar ›', bidSeeBtn: 'Ver mi oferta ›', plansLbl: 'Planos', planFiles: 'Archivos de planos', scopeLbl: 'Alcance del trabajo', specsLbl: 'Especificaciones', notesLbl: 'Notas', tradesLbl: 'Oficios', yourTradeScope: 'Alcance para su oficio',
   yourBid: 'Su oferta', bidAmount: 'Monto de la oferta ($)', bidNotes: 'Notas para GrayCo (qué incluye / qué no, tiempos)', bidSubmit: 'Enviar oferta', bidUpdate: 'Actualizar oferta', bidSent: 'Oferta enviada a GrayCo', bidUpdated: 'Oferta actualizada',
   bidDecided: 'GrayCo ya decidió sobre esta oferta — ya no se puede cambiar.', bidClosedNote: 'Las ofertas están cerradas en este trabajo.', bidSentOn: 'Enviada {d}', bidUpdOn: 'actualizada {d}', amountNeed: 'Escriba el monto de su oferta.',
@@ -395,6 +395,14 @@ function bidSheet(j){
   if (b) sec.push(h('div', { class: 'mybid' }, [h('b', { text: usd(b.amount) }), h('span', { class: 'muted', text: t('bidSentOn', { d: dt(b.submittedAt) }) + (b.updatedAt && b.updatedAt.slice(0, 16) !== String(b.submittedAt || '').slice(0, 16) ? ' · ' + t('bidUpdOn', { d: dt(b.updatedAt) }) : '') })]));
   if (b && b.notes) sec.push(h('p', { class: 'pre muted', text: b.notes }));
   var decided = b && (b.status === 'accepted' || b.status === 'rejected');
+  if (b && b.award) {   /* patch BIDSCOPE: 🏆 Awarded — the PM to call, the next step, what to confirm */
+    var aw = b.award, pmL = [aw.pm && aw.pm.name, aw.pm && aw.pm.phone, aw.pm && aw.pm.email].filter(Boolean).join(' · ');
+    sec.push(h('div', { class: 'box', 'data-bidaward': '1' }, [h('b', { text: t('bidAccepted') }),
+      pmL ? h('p', { class: 'muted', text: t('bidAwardPm') + ': ' + pmL }) : null,
+      aw.pm && aw.pm.phone ? h('a', { class: 'btn', href: 'tel:' + String(aw.pm.phone).replace(/[^\d+]/g, ''), text: '📞 ' + aw.pm.phone }) : null,
+      h('p', { text: t('bidAwardNext') }),
+      (aw.confirm || []).length ? h('div', null, [h('b', { text: t('bidAwardConfirm') + ':' }), h('ul', null, aw.confirm.map(function(x){ return h('li', { text: x }); }))]) : null]));
+  }
   if (decided) sec.push(h('div', { class: 'how', text: t('bidDecided') }));
   else if (!j.canBid) sec.push(h('div', { class: 'how', text: t('bidClosedNote') }));
   else {

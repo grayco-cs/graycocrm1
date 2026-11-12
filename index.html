@@ -221660,7 +221660,12 @@ W._gcBidSubs = { run: run, last: function(){ return LAST; } };
      lead (the lead's company decides when the lead has projects in two companies); none / ambiguous → a searchable picker
      (the pick is remembered on the project and on the bid job).
    - In the builder a bid line shows "🏆 Awarded bid" + where it came from; the totals are the builder's own.
-   Console: _gcBidEst.state()   _gcBidEst.open(jobId)   _gcBidEst.group(bids)   _gcBidEst.resolve(jobId) */
+   - patch BIDSCOPE: each trade shows 📋 what every bid includes (✅) / excludes (⛔) side by side, differences flagged; 🏆 Award
+     opens a confirm sheet (the sub's exclusions + the gaps other bidders cover, a note, ✉️ the award e-mail, "tell the others");
+     the line carries the exclusions; the builder shows "⚠ Scope gaps to check" (cover it / exclude it in our proposal → the
+     estimate's own Exclusions / asked the sub) and the PM gets a To-Do until every gap is checked. Staff only: never on a
+     customer document (proposals print the line text and the estimate's own Inclusions / Exclusions only).
+   Console: _gcBidEst.state()   _gcBidEst.open(jobId)   _gcBidEst.group(bids)   _gcBidEst.resolve(jobId)   _gcBidEst.parse(bid) */
 (function(W){
 'use strict';
 if (W.__GC_PATCH_BIDEST__) return; W.__GC_PATCH_BIDEST__ = true;
@@ -221842,8 +221847,152 @@ function catFor(trade){ var t = low(trade); for (var i = 0; i < CATS.length; i++
 function keyOf(b){ return s(b && b.source || 'portal') + ':' + s(b && b.id); }
 function lineId(key){ return 'bid_' + key.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 80); }
 function short(t, n){ t = s(t).replace(/\s+/g, ' '); return t.length > n ? t.slice(0, n - 1) + '…' : t; }
-function makeLine(b, job, awarded){
+/* ══ patch BIDSCOPE (owner 11/12: "give us a summary of the bids we have — anything they excluded, anything they included — so I can
+   compare bids; and when we accept a bid, point out what they exclude so the PM can ask questions on discrepancies, so we are sure to
+   get the entire scope in our bid"). No AI: plain text → lines / bullets / semicolons / sentences, keywords, a short list of common
+   items (permits, dumpster / haul-off, cleanup, …) so the same thing said two ways lines up.
+     ✅ Included: the bid portal's "Scope Included in Bid", a sub-portal bid's notes, an e-mailed bid's text (+ include / F&I lines)
+     ⛔ Excluded: the bid portal's "Bid Notes / Exclusions", + exclude / not included / by others / N.I.C. / owner to provide /
+        by GC / allowance / clarification lines anywhere; an "Exclusions:" heading starts a list.  📝 a note (price good 30 days …). ══ */
+var SK = [['permits', 'Permits', /permit/i], ['dumpster', 'Dumpster / haul-off', /dumpster|haul[\s-]*(off|away)|hauling|debris|disposal|\btrash\b/i],
+  ['cleanup', 'Cleanup', /clean[\s-]*up|final\s+clean|broom[\s-]*clean/i], ['materials', 'Materials', /\bmaterials?\b/i], ['labor', 'Labor', /\blabou?r\b/i],
+  ['equipment', 'Equipment / lifts', /equipment|\blifts?\b|scaffold/i], ['warranty', 'Warranty', /warrant/i], ['taxes', 'Taxes', /\btax(es)?\b/i],
+  ['bonds', 'Bonds', /\bbond(s|ing)?\b/i], ['overtime', 'Overtime / after-hours', /overtime|after[\s-]*hours|weekend|night\s+work/i], ['patching', 'Patching', /patch/i],
+  ['painttouch', 'Paint touch-up', /touch[\s-]*up|\bpaint(ing)?\b/i], ['firecaulk', 'Fire caulk / firestopping', /fire[\s-]*(caulk|stop)/i], ['insulation', 'Insulation', /insulat/i],
+  ['demo', 'Demo', /\bdemo(lition)?\b/i], ['lowvoltage', 'Low voltage / data', /low[\s-]*voltage|\bdata\b|telecom/i], ['fixtures', 'Fixtures', /fixtures?/i],
+  ['engineering', 'Engineering / drawings', /engineer|stamped|shop\s+drawings?/i], ['testing', 'Testing / inspections', /\btesting\b|inspections?/i], ['gas', 'Gas line', /\bgas\b/i],
+  ['excavation', 'Excavation / trenching', /excavat|trench/i], ['fees', 'Fees (impact / tap)', /\b(impact|tap|utility)\s+fees?\b/i], ['protection', 'Protection / temporary', /floor\s+protection|temporary|temp\s+(power|walls?)/i]];
+var SKL = {}; SK.forEach(function(x){ SKL[x[0]] = x[1]; });
+var EXC_RE = /\b(exclud\w*|not\s+includ\w*|not\s+incl\b|n\.\s?i\.\s?c\b|nic\b|by\s+others|others\s+to\s+(provide|furnish)|owner\s+to\s+(provide|furnish|supply|pay)|by\s+(the\s+)?(gc|g\.\s?c\.?|general\s+contractor|owner)\b|allowances?|clarifications?|does\s+not\s+include|do\s+not\s+include|no\s+[a-z][a-z\-\s]{1,30}\s+(is\s+)?included)/i;
+var INC_RE = /\b(includ(e|es|ed|ing)\b|furnish\s*(and|&)\s*install|f\s*&\s*i\b|f\/i\b|provide\s*(and|&)\s*install)/i;
+var HEAD_RE = /^(exclusions?|excluded|excludes|not\s+included|clarifications?|qualifications?|inclusions?|included|includes|scope(\s+of\s+work)?|scope\s+included(\s+in\s+bid)?|our\s+price\s+includes)\s*(:|$)\s*(.*)$/i;
+var JUNK_RE = /^(hi|hello|hey|dear|good\s+(morning|afternoon|evening)|thanks?\b|thank\s+you|regards|best\b|sincerely|cheers|sent\s+from|please\s+(find|see|let|call)|attached|let\s+me\s+know|call\s+(me|us)|from:|to:|subject:|date:|cc:|-{2,})/i;
+var MONEY_RE = /^\W*(total|bid|price|amount|lump\s*sum|our\s+price)?\W*\$?\s*[\d,]+(\.\d\d)?\W*$/i;
+var NOTE_RE = /\b(price|pricing|quote|valid|good\s+for|days?\b|walk|schedule|lead\s*time|payment|terms|net\s*\d+|deposit|call|questions?)\b/i;
+var STOP = { the: 1, a: 1, an: 1, and: 1, of: 1, per: 1, 'for': 1, to: 1, all: 1, any: 1, our: 1, by: 1, with: 1, 'in': 1, on: 1, is: 1, are: 1, be: 1, will: 1 };
+function pieces(text){
+  var out = [];
+  s(text).replace(/\r/g, '').split(/\n|;|•|·\s/).forEach(function(line){
+    line = line.replace(/([a-z0-9)%])\.\s+(?=[A-Z])/g, '$1.\n');
+    line.split('\n').forEach(function(p){ p = p.replace(/^\s*([-*–•>]+|\(?\d{1,2}[.)])\s+/, '').trim(); if (p) out.push(p); });
+  });
+  return out;
+}
+function canonKeys(t){ var k = []; SK.forEach(function(x){ if (x[2].test(t)) k.push(x[0]); }); return k; }
+function bare(t){ return s(t).replace(/^(we\s+|this\s+bid\s+|our\s+(bid|price)\s+)?(exclud\w*|not\s+included|includ\w*|n\.\s?i\.\s?c\.?|f\s*&\s*i|f\/i|furnish\s*(and|&)\s*install|provide\s*(and|&)\s*install)\s*[:\-–]?\s*/i, '').replace(/[.;,]+$/, '').trim() || s(t); }
+function normKey(t){ var w = low(bare(t)).replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/).filter(function(x){ return x && !STOP[x]; }); return 't:' + w.slice(0, 6).join(' '); }
+/* field: 'scope' (✅ by default) · 'exc' (the bid portal's "Bid Notes / Exclusions": ⛔ by default) · 'free' (e-mail / sub-portal text: ✅ by default) */
+function parseText(text, field){
+  var sec = '', out = [];
+  pieces(text).forEach(function(p){
+    var h = HEAD_RE.exec(p);
+    if (h && (h[2] === ':' || !s(h[3]))) { sec = /^(excl|not|clar|qual)/i.test(h[1]) ? 'exc' : 'inc'; p = s(h[3]); if (!p) return; }
+    if (p.length < 3 || JUNK_RE.test(p) || MONEY_RE.test(p)) return;
+    var ck = canonKeys(p), kind = EXC_RE.test(p) ? 'exc' : INC_RE.test(p) ? 'inc' : sec || (field === 'exc' ? 'exc' : 'inc');
+    if (!EXC_RE.test(p) && !INC_RE.test(p) && !sec && !ck.length && (NOTE_RE.test(p) || field === 'exc')) kind = 'note';
+    out.push({ kind: kind, text: short(bare(p), 200), keys: ck.length ? ck : [normKey(p)] });
+  });
+  return out;
+}
+var PCACHE = {};
+function scopeOf(b){
+  var src = s(b && b.source), sig = keyOf(b) + '|' + s(b.scope).length + '|' + s(b.notes).length + '|' + s(b.scope).slice(0, 40);
+  if (PCACHE[sig]) return PCACHE[sig];
+  var items = src === 'email' ? parseText(b.scope, 'free') : src === 'subportal' ? parseText(b.scope, 'scope').concat(parseText(b.notes, 'free')) : parseText(b.scope, 'scope').concat(parseText(b.notes, 'exc'));
+  var r = { items: items, inc: items.filter(function(x){ return x.kind === 'inc'; }), exc: items.filter(function(x){ return x.kind === 'exc'; }), notes: items.filter(function(x){ return x.kind === 'note'; }) };
+  PCACHE[sig] = r; return r;
+}
+/* owner: "if they exclude anything we sent a scope for, flag it" — OUR scope for a trade: that trade's scope sent with the bid job,
+   the job scope, the specifications, a scope / spec sheet's text (lines / bullets / keywords as above + distinctive words) */
+var GEN = { work: 1, works: 1, provide: 1, install: 1, installation: 1, complete: 1, new: 1, existing: 1, others: 1, owner: 1, include: 1, includes: 1, included: 1, exclude: 1, excludes: 1, excluded: 1, items: 1, item: 1,
+  area: 1, areas: 1, required: 1, needed: 1, scope: 1, specs: 1, plans: 1, plan: 1, sheet: 1, sheets: 1, section: 1, per: 1, that: 1, this: 1, from: 1, into: 1, each: 1, other: 1, building: 1, project: 1, job: 1, site: 1, also: 1, must: 1, shall: 1, contractor: 1, sub: 1, subcontractor: 1, gc: 1, price: 1, bid: 1 };
+function nouns(t){ var o = {}; low(bare(t)).replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/).forEach(function(w){ if (w.length >= 4 && !STOP[w] && !GEN[w] && !/^\d+$/.test(w)) o[w.replace(/(ies)$/, 'y').replace(/([^s])s$/, '$1')] = 1; }); return o; }
+var OURC = {};
+function ourScope(trade){
+  var S0 = UI.sent; if (!S0) return null;
+  var tr = low(trade), sig = tr + '|' + JSON.stringify(S0).length; if (OURC[sig]) return OURC[sig];
+  var texts = arr(S0.tradeScopes).filter(function(x){ var a = low(x && x.trade); return a && tr && (a === tr || a.indexOf(tr) > -1 || tr.indexOf(a) > -1); }).map(function(x){ return s(x.scope); });
+  texts = texts.concat([s(S0.scope), s(S0.specifications)]).concat(arr(S0.docs).map(function(d){ return s(d && d.text); }));
+  var items = []; texts.forEach(function(x){ parseText(x, 'scope').forEach(function(it){ if (it.kind !== 'exc') items.push({ text: it.text, keys: it.keys.filter(function(k){ return SKL[k]; }), nouns: nouns(it.text) }); }); });
+  var keys = {}; items.forEach(function(it){ it.keys.forEach(function(k){ keys[k] = it.text; }); });
+  return (OURC[sig] = { items: items, keys: keys });
+}
+/* a bid's exclusion that hits OUR scope: a common item both name, or a distinctive word both use */
+function hitsOurs(it, ours){
+  if (!ours || !it) return [];
+  var out = [], ck = it.keys.filter(function(k){ return SKL[k]; });
+  ck.forEach(function(k){ if (ours.keys[k]) out.push({ key: k, label: SKL[k], ours: ours.keys[k] }); });
+  if (!out.length) { var n = nouns(it.text); ours.items.some(function(o){ var w = Object.keys(n).filter(function(x){ return o.nouns[x]; }); if (w.length) { out.push({ key: it.keys[0], label: it.text, ours: o.text }); return true; } return false; }); }
+  return out;
+}
+function scopeHits(b, trade){ var ours = ourScope(trade), hits = []; if (!ours) return hits; scopeOf(b).exc.forEach(function(it){ hitsOurs(it, ours).forEach(function(h){ if (!hits.some(function(x){ return x.label === h.label; })) hits.push(h); }); }); return hits; }
+function coName(b){ return s(b && (b.company || b.sub || b.email)) || 'Sub'; }
+function names(l){ var n = l.map(coName); return n.length <= 2 ? n.join(' & ') : n.slice(0, -1).join(', ') + ' & ' + n[n.length - 1]; }
+/* one trade: every item any bid mentions × every bid (✅ / ⛔ / —); a difference is flagged */
+function matrix(bids, ours){
+  var rows = {}, order = [];
+  bids.forEach(function(b){ var k = keyOf(b); scopeOf(b).items.forEach(function(it){ if (it.kind === 'note') return; it.keys.forEach(function(key){
+    var r = rows[key]; if (!r) { r = rows[key] = { key: key, label: SKL[key] || it.text, canon: !!SKL[key], cells: {} }; order.push(r); }
+    var c = r.cells[k]; if (!c) r.cells[k] = { kind: it.kind, text: it.text }; else if (c.kind !== it.kind && it.kind === 'exc') r.cells[k] = { kind: 'exc', text: it.text };
+  }); }); });
+  if (ours) Object.keys(ours.keys).forEach(function(k){ if (!rows[k]) { rows[k] = { key: k, label: SKL[k], canon: true, cells: {} }; order.push(rows[k]); } });   /* in our scope, no bid mentions it */
+  order.forEach(function(r){
+    r.ours = ours ? (ours.keys[r.key] || (function(){ if (r.canon) return ''; var n = nouns(r.label), o = ours.items.filter(function(x){ return Object.keys(n).some(function(w){ return x.nouns[w]; }); })[0]; return o ? o.text : ''; })()) : '';
+    var at = function(kind){ return bids.filter(function(b){ var c = r.cells[keyOf(b)]; return kind ? c && c.kind === kind : !c; }); };
+    r.inc = at('inc'); r.exc = at('exc'); r.silent = at('');
+    r.flag = bids.length < 2 ? '' : r.inc.length && r.exc.length ? '⚠ ' + names(r.exc) + (r.exc.length === 1 ? ' excludes' : ' exclude') + ' it'
+      : r.inc.length && r.silent.length ? '⚠ Only in ' + names(r.inc) + (/s$/i.test(names(r.inc)) ? '’' : '’s') + ' bid' : r.exc.length && r.silent.length ? '⛔ ' + names(r.exc) + (r.exc.length === 1 ? ' excludes' : ' exclude') + ' it' : '';
+    r.hot = bids.length > 1 && r.inc.length > 0 && (r.exc.length > 0 || r.silent.length > 0);
+    if (r.ours && r.exc.length) { r.flag = '🚩 ' + names(r.exc) + (r.exc.length === 1 ? ' excludes' : ' exclude') + ' part of our scope'; r.hot = true; r.red = true; }
+    else if (r.ours && !r.inc.length && !r.exc.length) { r.flag = '⚠ In our scope — no bid mentions it'; r.hot = true; }
+  });
+  return order.map(function(r, i){ return [r, i]; }).sort(function(a, b){ return (!!b[0].red - !!a[0].red) || (b[0].hot - a[0].hot) || (b[0].canon - a[0].canon) || a[1] - b[1]; }).map(function(x){ return x[0]; });
+}
+function gid(kind, t){ var h = 0, x = kind + '|' + low(t); for (var i = 0; i < x.length; i++) h = (h * 31 + x.charCodeAt(i)) | 0; return 'g' + (h >>> 0).toString(36); }
+/* 🏆 the awarded bid: what it excludes + the gaps (common items other bidders include that it excludes or does not mention) */
+function gapsFor(b, bids){
+  var ours = ourScope(b.trade), k = keyOf(b), m = matrix(bids, ours), P = scopeOf(b), out = [], have = {};
+  P.exc.forEach(function(it){
+    var others = []; it.keys.forEach(function(key){ var r = m.filter(function(x){ return x.key === key; })[0]; if (r) r.inc.forEach(function(o){ if (others.indexOf(coName(o)) < 0) others.push(coName(o)); }); });
+    it.keys.forEach(function(key){ have[key] = 1; });
+    var ck = it.keys.filter(function(key){ return SKL[key]; });
+    if (ck.length > 1) ck.forEach(function(key){   /* "excludes low voltage, patching and paint touch-up" → one item each to check */
+      var r = m.filter(function(x){ return x.key === key; })[0], o = r ? r.inc.map(coName) : [];
+      out.push({ id: gid('exc', SKL[key]), kind: 'exc', label: SKL[key], keys: [key], others: o, text: it.text });
+    });
+    else out.push({ id: gid('exc', it.text), kind: 'exc', label: it.text, keys: it.keys, others: others });
+  });
+  m.forEach(function(r){
+    if (!r.canon || have[r.key] || !r.inc.length) return; var c = r.cells[k]; if (c && c.kind === 'inc') return;
+    if (r.inc.some(function(o){ return keyOf(o) === k; })) return;
+    out.push({ id: gid('missing', r.label), kind: 'missing', label: r.label, keys: [r.key], others: r.inc.map(coName) });
+  });
+  if (ours) {   /* 🚩 an exclusion that hits OUR scope; an item of our scope the bid does not mention */
+    out.forEach(function(g){ if (g.kind === 'exc') { var ck = g.keys.filter(function(x){ return SKL[x]; }), h = ck.length ? ck.map(function(x){ return ours.keys[x]; }).filter(Boolean)[0] : (hitsOurs({ text: g.label, keys: g.keys }, ours)[0] || {}).ours; if (h) g.ours = h; }
+      else if (g.kind === 'missing' && ours.keys[g.keys[0]]) g.ours = ours.keys[g.keys[0]]; });
+    Object.keys(ours.keys).forEach(function(key){ if (have[key] || out.some(function(g){ return g.keys.indexOf(key) > -1; })) return; var c = (m.filter(function(r){ return r.key === key; })[0] || { cells: {} }).cells[k]; if (c && c.kind === 'inc') return;
+      out.push({ id: gid('missing', SKL[key]), kind: 'missing', label: SKL[key], keys: [key], others: [], ours: ours.keys[key] }); });
+    out = out.map(function(g, i){ return [g, i]; }).sort(function(a, b){ return ((b[0].kind === 'exc' && !!b[0].ours) - (a[0].kind === 'exc' && !!a[0].ours)) || a[1] - b[1]; }).map(function(x){ return x[0]; });
+  }
+  return out;
+}
+function pmFor(p){
+  var name = s(p && (p.pm || p.pmName)), U = arr(crm().users), u = name ? U.filter(function(x){ return x && low(x.name) === low(name); })[0] : null;
+  if (!name) { var me = low(W.__GC_AUTH__ && W.__GC_AUTH__.email && W.__GC_AUTH__.email()); u = U.filter(function(x){ return x && low(x.email) === me; })[0] || null; name = s(u && u.name) || myName(); }
+  return { name: name, phone: s((u && (u.phone || u.cell || u.mobile)) || (p && p.pmPhone)), email: low((u && u.email) || (p && p.pmEmail)) };
+}
+
+function makeLine(b, job, awarded, extra){
   var key = keyOf(b), at = nowIso(), company = s(b.company || b.sub || b.email) || 'Sub';
+  var L = mkLine(b, job, awarded, key, at, company);
+  if (extra) {   /* patch BIDSCOPE: what the awarded sub excludes, the gaps to check, the note, the PM */
+    L.bidRef.exclusions = arr(extra.exclusions).slice(0, 30);
+    L.bidRef.gaps = arr(extra.gaps).slice(0, 40).map(function(g){ return { id: g.id, kind: g.kind, label: short(g.label, 200), others: arr(g.others).slice(0, 6), ours: short(g.ours, 200), done: false, choice: '', doneAt: '', doneBy: '' }; });
+    L.bidRef.awardNote = short(extra.note, 600); L.bidRef.pm = extra.pm || null; L.bidRef.mail = extra.mail || null;
+  }
+  return L;
+}
+function mkLine(b, job, awarded, key, at, company){
   return { id: lineId(key), desc: (s(b.trade) || 'Subcontract') + ' — subcontractor bid', cost: b.amount == null ? 0 : num(b.amount), qty: 1, cat: catFor(b.trade), type: 'sub', mult: 'type', unit: 'lump sum',
     supplier: company, fromBidPortal: true,
     bidRef: { from: 'bid portal', key: key, source: s(b.source), id: s(b.id), jobId: s(job && job.id), jobTitle: s(job && job.title), company: company, sub: s(b.sub), email: s(b.email), trade: s(b.trade),
@@ -221862,20 +222011,24 @@ function newEstimate(p, line){
 }
 
 /* ➕ / 🏆: the bid into the project's estimate — never twice */
-function putLine(pid, b, job, awarded){
+function putLine(pid, b, job, awarded, extra){
   var p = proj(pid); if (!p) return { error: 'That project is not in the CRM on this computer.' };
-  var key = keyOf(b), line = makeLine(b, job, awarded), e = target(pid, key);
+  var key = keyOf(b), line = makeLine(b, job, awarded, extra), e = target(pid, key);
+  TD.at = 0;
   if (!e) { var rec = write(newEstimate(p, line)); note({ op: 'add', key: key, est: rec.id, created: true }); return { estId: rec.id, estName: rec.name, created: true, p: p }; }
   var cur = linesOf(e), old = cur.filter(function(l){ return isBidLine(l, key); })[0] || null;
   var upd = function(o){
     var r = Object.assign({}, o, { bidRef: Object.assign({}, o.bidRef, line.bidRef, { addedAt: o.bidRef.addedAt || line.bidRef.addedAt, addedBy: o.bidRef.addedBy || line.bidRef.addedBy, unawardedAt: '' }) });
     if (!awarded && o.bidRef.awarded) { r.bidRef.awarded = true; r.bidRef.awardedAt = o.bidRef.awardedAt; }   /* ➕ after 🏆: still the awarded bid */
     if (num(o.cost) === num(o.bidRef.amount) && line.bidRef.amount != null) r.cost = line.cost;   /* a price typed over the bid stays */
+    if (!extra) { ['exclusions', 'gaps', 'awardNote', 'pm', 'mail'].forEach(function(f){ if (o.bidRef[f] !== undefined) r.bidRef[f] = o.bidRef[f]; }); }
+    else { var was = {}; arr(o.bidRef.gaps).forEach(function(g){ if (g && g.id) was[g.id] = g; }); r.bidRef.gaps = arr(line.bidRef.gaps).map(function(g){ var w = was[g.id]; return w && w.done ? Object.assign({}, g, { done: true, choice: w.choice, doneAt: w.doneAt, doneBy: w.doneBy }) : g; }); }   /* patch BIDSCOPE */
     return r;
   };
   if (old) {
     var nu = upd(old);
-    if (JSON.stringify([nu.cost, nu.bidRef.awarded, nu.bidRef.unawardedAt]) === JSON.stringify([old.cost, old.bidRef.awarded, old.bidRef.unawardedAt || ''])) { note({ op: 'same', key: key, est: e.id }); return { estId: e.id, estName: e.name, same: true, p: p }; }
+    var sig = function(x){ return JSON.stringify([x.cost, x.bidRef.awarded, x.bidRef.unawardedAt || '', arr(x.bidRef.gaps).map(function(g){ return g.id + (g.done ? '1' : '0'); }), arr(x.bidRef.exclusions), x.bidRef.awardNote || '']); };
+    if (sig(nu) === sig(old)) { note({ op: 'same', key: key, est: e.id }); return { estId: e.id, estName: e.name, same: true, p: p }; }
   }
   var doIt = function(L){ var i = L.findIndex(function(l){ return isBidLine(l, key); }); if (i >= 0) L[i] = upd(L[i]); else L.push(clone(line)); };
   if (liveApply(e.id, doIt)) { note({ op: old ? 'update' : 'add', key: key, est: e.id, live: true }); return { estId: e.id, estName: e.name, updated: !!old, p: p, live: true }; }
@@ -221887,7 +222040,7 @@ function putLine(pid, b, job, awarded){
 }
 /* un-award / ➖: the bid's own line off (an open estimate) or marked (a signed / closed one) — typed lines are never touched */
 function takeLine(key){
-  var done = [];
+  var done = []; TD.at = 0;
   allWithKey(key).forEach(function(e){
     var open = isOpen(e), at = nowIso();
     var doIt = function(L){ for (var i = L.length - 1; i >= 0; i--) { if (!isBidLine(L[i], key)) continue; if (open) L.splice(i, 1); else L[i] = Object.assign({}, L[i], { bidRef: Object.assign({}, L[i].bidRef, { awarded: false, unawardedAt: at }) }); } };
@@ -221916,7 +222069,8 @@ function group(list){
   });
 }
 var SRC = { email: ['✉️', 'bids@'], portal: ['🏗', 'Bid portal'], subportal: ['🔨', 'Sub portal'] };
-var UI = { jobId: '', lead: '', bids: null, err: '', busy: false, pick: null };
+var UI = { jobId: '', lead: '', bids: null, err: '', busy: false, pick: null, confirm: null, sent: null };
+var TD = { at: 0, v: [] };
 function css(){
   if (D.getElementById('gc-bidest-css')) return;
   var st = D.createElement('style'); st.id = 'gc-bidest-css'; st.setAttribute('data-gc-keep', '1');
@@ -221928,7 +222082,19 @@ function css(){
     + '.gcbe .pl{max-height:52vh;overflow:auto;border:1px solid #eeeaf6;border-radius:10px;margin:10px 0}.gcbe .pl button{display:flex;gap:10px;align-items:center;width:100%;text-align:left;border:0;border-bottom:1px solid #f1eef8;background:#fff;padding:9px 12px;cursor:pointer;font:inherit;color:#1b1640}'
     + '.gcbe .pl button:hover{background:#f7f5fc}.gcbe .pl button.cand{background:#fffbeb}'
     + '.gc-bidest-tag{display:inline-block;border-radius:999px;padding:0 7px;font-size:10px;font-weight:800;background:#d4a017;color:#1b1640;margin-left:2px;white-space:nowrap}.gc-bidest-tag.off{background:#fee2e2;color:#991b1b}.gc-bidest-tag.sub{background:#e0e7ff;color:#3730a3}'
-    + '.gc-bidest-note{font-size:11px;color:var(--text2,#64748b);margin:3px 0 0;line-height:1.35}';
+    + '.gc-bidest-note{font-size:11px;color:var(--text2,#64748b);margin:3px 0 0;line-height:1.35}'
+    /* patch BIDSCOPE */
+    + '.gcbe .besc{margin:6px 0 4px;border:1px solid #e7e3f2;border-radius:10px;background:#fff}.gcbe .besc>summary{cursor:pointer;padding:8px 12px;font-weight:700;color:#3f3b5c}.gcbe .besc table{min-width:0;table-layout:auto}'
+    + '.gcbe .besc td,.gcbe .besc th{padding:6px 8px;font-size:12.5px}.gcbe .besc tr.hot td{background:#fff7e6}.gcbe .besc .fl2{font-weight:700;color:#9a3412;white-space:nowrap}.gcbe .besc td.c{text-align:center;font-size:15px}'
+    + '.gcbe .scn{font-size:12px;font-weight:700;margin:0 0 3px}.gcbe .scn .i{color:#166534}.gcbe .scn .x{color:#b91c1c}.gcbe .bnotes{font-size:12px;color:#5b5676;padding:4px 12px 10px}'
+    + '.gcbe .cf ul{margin:4px 0 10px 18px;padding:0}.gcbe .cf li{margin:2px 0}.gcbe .cf .sec{border:1px solid #e7e3f2;border-radius:10px;padding:8px 12px;margin:8px 0}.gcbe .cf .sec.ex{background:#fef2f2;border-color:#fecaca}.gcbe .cf .sec.g{background:#fffbeb;border-color:#fde68a}'
+    + '.gcbe .cf label.ck{display:flex;gap:8px;align-items:flex-start;margin:6px 0}.gcbe .cf textarea{width:100%;box-sizing:border-box;font:inherit;padding:6px;border:1px solid #cbd5e1;border-radius:8px}'
+    + '.gcbe .red{color:#b91c1c;font-weight:800;font-size:12px;margin:0 0 3px}.gcbe .besc tr.red td{background:#fee2e2}.gcbe .cf .sec.r{background:#fee2e2;border-color:#fca5a5}.gcbe .cf li.ours{color:#991b1b;font-weight:700}'
+    + '#gc-bidest-panel .ours{color:#b91c1c;font-weight:800}'
+    + '#gc-bidest-panel{border:1px solid #f59e0b;background:#fffbeb;color:#1f2937;border-radius:10px;padding:10px 12px;margin:0 0 10px;font:13px/1.4 Inter,Arial,sans-serif}#gc-bidest-panel h4{margin:0 0 6px;font-size:14px}'
+    + '#gc-bidest-panel .gp{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:5px 0;border-top:1px dashed #fcd34d}#gc-bidest-panel .gp.done{opacity:.6}#gc-bidest-panel .gp .lb{flex:1;min-width:200px}'
+    + '#gc-bidest-panel button{border:1px solid #d6d1e6;background:#fff;border-radius:7px;padding:4px 8px;font:600 12px Inter,Arial,sans-serif;cursor:pointer;color:#1b1640}#gc-bidest-panel .top{display:flex;gap:8px;align-items:center;flex-wrap:wrap}'
+    + '.gc-bidest-exc{font-size:11px;color:#b91c1c;margin:2px 0 0;line-height:1.35}';
   D.head.appendChild(st);
 }
 function shell(){
@@ -221944,7 +222110,7 @@ function shell(){
   }
   return m.querySelector('.box');
 }
-function close(){ var m = D.getElementById('gcsys-modal'); if (m) m.remove(); UI.pick = null; }
+function close(){ var m = D.getElementById('gcsys-modal'); if (m) m.remove(); UI.pick = null; UI.confirm = null; }
 function canAward(){ try { var A = W.__GC_AUTH__; if (A && A.isAdmin && A.isAdmin()) return true; } catch (e) {} try { var S = sys(), st = S && S.state ? S.state() : null; if (st && st.me && st.me.canPublic) return true; if (st && /estimat|^admin$/i.test(s(st.role))) return true; } catch (e) {} return false; }
 function open(jobId, lead){
   UI.jobId = s(jobId); UI.lead = s(lead); UI.bids = null; UI.err = ''; UI.pick = null;
@@ -221954,7 +222120,7 @@ function open(jobId, lead){
 function load(){
   var q = UI.lead && !UI.jobId ? 'lead=' + encodeURIComponent(UI.lead) : 'subbids=' + encodeURIComponent(UI.jobId);
   if (UI.lead && UI.jobId) q = 'lead=' + encodeURIComponent(UI.lead);
-  return fn('bid-hub?' + q).then(function(r){ if (r && r.jobId) { UI.jobId = s(r.jobId); if (UI.lead && !STUB[UI.jobId]) STUB[UI.jobId] = { id: UI.jobId, title: 'Bid job', leadId: UI.lead }; } UI.bids = arr(r && r.bids); UI.err = ''; if (!UI.pick) draw(); return UI.bids; },
+  return fn('bid-hub?' + q).then(function(r){ UI.sent = (r && r.sent) || null; OURC = {}; if (r && r.jobId) { UI.jobId = s(r.jobId); if (UI.lead && !STUB[UI.jobId]) STUB[UI.jobId] = { id: UI.jobId, title: 'Bid job', leadId: UI.lead }; } UI.bids = arr(r && r.bids); UI.err = ''; if (!UI.pick) draw(); return UI.bids; },
     function(e){ UI.err = s(e && e.message) || 'Could not load the bids.'; if (!UI.pick) draw(); return null; });
 }
 function bidByKey(key){ return arr(UI.bids).filter(function(b){ return keyOf(b) === key; })[0] || null; }
@@ -221969,6 +222135,7 @@ function head(job){
 }
 function draw(){
   if (UI.pick) return drawPicker();
+  if (UI.confirm) return;   /* patch BIDSCOPE: the confirm sheet is up */
   var box = shell(), job = jobOf(UI.jobId), aw = canAward();
   var h = '<button type="button" class="b x" data-be="close">✕</button><h3>📊 All bids — ' + esc(job.title || 'Bid job') + '</h3>'
     + '<p class="mut">Every bid for this job from all three doors — ✉️ e-mailed to bids@, 🏗 the bid portal, 🔨 the sub portal — by trade, lowest first (the low bid in green). 🏆 Award puts the bid into the project\'s estimate as a subcontractor line; Undo takes it off.</p>'
@@ -221985,15 +222152,65 @@ function draw(){
         return '<tr data-be-bid="' + esc(k) + '" data-amount="' + (b.amount == null ? '' : esc(b.amount)) + '"' + (b.isLow ? ' class="low"' : '') + '>'
           + '<td><b>' + esc(b.company || b.sub || b.email || 'Sub') + '</b>' + (b.sub && b.company ? '<div class="mut">' + esc(b.sub) + '</div>' : '') + (b.email ? '<div class="mut">' + esc(b.email) + '</div>' : '') + '</td>'
           + '<td class="num">' + money(b.amount) + (b.isLow ? '<span class="lowtag" data-be-low>⬇ Lowest</span>' : '') + '</td>'
-          + '<td class="sc" title="' + esc(b.scope) + '">' + (s(b.scope) ? esc(short(b.scope, 180)) : '<span class="mut">—</span>') + '</td>'
+          + (function(){ var P = scopeOf(b), raw = [s(b.scope), s(b.notes)].filter(Boolean).join(' · '); return '<td class="sc" title="' + esc(raw) + '"><div class="scn" data-be-scn="' + P.inc.length + '/' + P.exc.length + '"><span class="i">✅ ' + P.inc.length + ' included</span> · <span class="x">⛔ ' + P.exc.length + ' excluded</span></div>' + (function(){ var hs = scopeHits(b, b.trade); return hs.length ? '<div class="red" data-be-red="' + esc(hs.map(function(h){ return h.label; }).join('|')) + '">🚩 Excludes part of our scope: ' + esc(hs.map(function(h){ return h.label; }).join(', ')) + '</div>' : ''; })() + (raw ? esc(short(raw, 140)) : '<span class="mut">—</span>') + '</td>'; })()
           + '<td>' + (arr(b.files).length ? arr(b.files).map(function(f){ return (f.ref || f.url) ? '<button type="button" class="fl" data-be="file" data-ref="' + esc(f.ref || '') + '" data-url="' + esc(f.url || '') + '" data-name="' + esc(f.name) + '">📄 ' + esc(f.name) + '</button>' : '<span>📄 ' + esc(f.name) + '</span>'; }).join('') : '<span class="mut">—</span>') + '</td>'
           + '<td class="mut">' + src[0] + ' ' + esc(src[1]) + (b.at ? '<br>' + esc(when(b.at)) : '') + '</td>'
           + '<td><span class="st ' + b.status + '" data-be-status="' + b.status + '">' + { awarded: '🏆 Awarded', notselected: 'Not selected', pending: 'Pending' }[b.status] + '</span></td>'
           + '<td>' + (ie ? '<span class="ine" title="' + esc(ie.est.name) + '">✓ In estimate</span><div class="mut">' + esc(short(ie.est.name, 40)) + '</div>' : '<span class="mut">—</span>') + '</td>'
           + '<td><div class="acts">' + acts + '</div></td></tr>';
-      }).join('') + '</tbody></table></div>';
+      }).join('') + '</tbody></table></div>' + scopeTable(g);
   });
   box.innerHTML = h;
+}
+/* 📋 the scope side by side: every item × every bid, differences on top */
+function scopeTable(g){
+  var ours = ourScope(g.trade), m = matrix(g.bids, ours), hot = m.filter(function(r){ return r.hot; }).length, notes = [];
+  g.bids.forEach(function(b){ scopeOf(b).notes.forEach(function(n){ notes.push('<div>📝 <b>' + esc(coName(b)) + ':</b> ' + esc(n.text) + '</div>'); }); });
+  if (!m.length && !notes.length) return '';
+  return '<details class="besc" data-be-scope="' + esc(g.trade) + '" open><summary>📋 Scope — what each bid includes / excludes' + (hot ? ' · <span style="color:#9a3412">⚠ ' + hot + ' difference' + (hot === 1 ? '' : 's') + '</span>' : '') + '</summary>'
+    + (m.length ? '<div class="bewrap"><table><thead><tr><th>Item</th>' + (ours ? '<th>Our scope</th>' : '') + g.bids.map(function(b){ return '<th>' + esc(coName(b)) + '<div class="mut">' + money(b.amount) + '</div></th>'; }).join('') + '<th>Difference</th></tr></thead><tbody>'
+      + m.map(function(r){ return '<tr data-be-item="' + esc(r.key) + '"' + (r.red ? ' class="hot red"' : r.hot ? ' class="hot"' : '') + '><td>' + esc(r.label) + '</td>' + (ours ? '<td class="c" data-be-ours="' + (r.ours ? 1 : 0) + '" title="' + esc(r.ours ? 'Our scope: ' + r.ours : 'not in the scope we sent') + '">' + (r.ours ? '📄' : '<span class="mut">—</span>') + '</td>' : '') + g.bids.map(function(b){ var c = r.cells[keyOf(b)];
+          return '<td class="c" data-be-cell="' + (c ? c.kind : '') + '" title="' + esc(c ? c.text : 'not mentioned') + '">' + (c ? (c.kind === 'exc' ? '⛔' : '✅') : '<span class="mut">—</span>') + '</td>'; }).join('')
+        + '<td class="fl2" data-be-flag>' + esc(r.flag) + '</td></tr>'; }).join('') + '</tbody></table></div>' : '')
+    + (notes.length ? '<div class="bnotes">' + notes.join('') + '</div>' : '') + '</details>';
+}
+/* 🏆 the confirm sheet: what this sub excludes, the gaps, a note, the e-mails */
+function confirmSheet(key, pid){
+  var b = bidByKey(key); if (!b) return;
+  var g = group(UI.bids).filter(function(x){ return x.bids.some(function(y){ return keyOf(y) === key; }); })[0] || { bids: [b] };
+  var gaps = gapsFor(b, g.bids), p = pid ? proj(pid) : null, pm = pmFor(p);
+  UI.confirm = { key: key, pid: pid || '', gaps: gaps, pm: pm };
+  var box = shell(), exc = gaps.filter(function(x){ return x.kind === 'exc'; }), miss = gaps.filter(function(x){ return x.kind === 'missing'; }), others = g.bids.filter(function(x){ return keyOf(x) !== key; }).length;
+  var red = gaps.filter(function(x){ return x.kind === 'exc' && x.ours; }), ourMiss = gaps.filter(function(x){ return x.kind === 'missing' && x.ours; });
+  var li = function(x){ return '<li data-be-gap="' + esc(x.id) + '"' + (x.ours ? ' class="ours" title="' + esc('Our scope: ' + x.ours) + '"' : '') + '>' + (x.ours ? (x.kind === 'exc' ? '🚩 ' : '📄 ') : '') + esc(x.label) + (x.others.length ? ' <span class="mut">— ' + esc(x.others.join(' & ')) + (x.others.length === 1 ? ' includes' : ' include') + ' it</span>' : '') + '</li>'; };
+  box.innerHTML = '<button type="button" class="b x" data-be="cfcancel">✕</button><div class="cf" data-be-confirm="' + esc(key) + '"><h3>🏆 Award ' + esc(coName(b)) + ' — ' + esc(s(b.trade) || 'Trade not given') + ' · ' + money(b.amount) + '?</h3>'
+    + '<p class="mut">' + (p ? 'Goes into the estimate of <b>' + esc(projLabel(p)) + '</b> as a subcontractor line. PM: <b>' + esc(pm.name) + '</b>' + (pm.phone ? ' · ' + esc(pm.phone) : '') : 'No CRM project picked — the bid is awarded, but goes into no estimate yet.') + '</p>'
+    + (red.length ? '<div class="sec r" data-be-cf="ours"><b>🚩 Excludes part of our scope (' + red.length + ')</b><ul>' + red.map(function(x){ return '<li data-be-gap="' + esc(x.id) + '"><b>' + esc(x.label) + '</b> <span class="mut">— our scope: “' + esc(short(x.ours, 120)) + '”</span></li>'; }).join('') + '</ul></div>' : '')
+    + '<div class="sec ex" data-be-cf="exc"><b>⛔ ' + esc(coName(b)) + ' excludes (' + exc.length + ')</b>' + (exc.length ? '<ul>' + exc.map(li).join('') + '</ul>' : '<div class="mut">Nothing excluded in the bid.</div>') + '</div>'
+    + '<div class="sec g" data-be-cf="gaps"><b>⚠ Gaps — in our scope or other bids, ' + esc(coName(b)) + (/s$/i.test(coName(b)) ? '’' : '’s') + ' bid does not mention (' + miss.length + ')</b>' + (miss.length ? '<ul>' + miss.map(li).join('') + '</ul>' : '<div class="mut">' + (others ? 'No common item another bidder covers is missing.' : 'The only bid in this trade.') + '</div>') + '</div>'
+    + (gaps.length ? '<p class="mut">These become “⚠ Scope gaps to check” on the estimate and a To-Do for the PM (“Ask ' + esc(coName(b)) + ' about …”) until each one is checked.</p>' : '')
+    + '<label for="gcbe-note"><b>Note for the PM</b> <span class="mut">(stays in the CRM)</span></label><textarea id="gcbe-note" data-be-note rows="2" placeholder="e.g. confirm the 200A panel is in their number"></textarea>'
+    + (b.awardMailedAt ? '<label class="ck"><input type="checkbox" data-be-again> <span>✉️ Already e-mailed the award ' + esc(s(b.awardMailedAt).slice(0, 10)) + ' — <b>send again</b></span></label>'
+      : '<label class="ck"><input type="checkbox" data-be-mail checked> <span>✉️ E-mail ' + esc(coName(b)) + ' the award' + (b.email ? ' (' + esc(b.email) + ')' : ' — <b>no e-mail on this bid</b>') + (gaps.length ? ', asking them to confirm the ' + gaps.length + ' item' + (gaps.length === 1 ? '' : 's') + ' above' : '') + '</span></label>')
+    + (others ? '<label class="ck"><input type="checkbox" data-be-others> <span>Tell the other ' + others + ' bidder' + (others === 1 ? '' : 's') + ' in this trade they were not selected <span class="mut">(a short polite e-mail — no prices, no names)</span></span></label>' : '')
+    + '<div class="bar"><button type="button" class="b gold" data-be="cfgo">🏆 Award</button><button type="button" class="b" data-be="cfcancel">Cancel</button></div></div>';
+}
+function confirmGo(){
+  var C = UI.confirm; if (!C) return; var b = bidByKey(C.key); if (!b) return;
+  var box = shell(), q = function(sel){ return box.querySelector(sel); };
+  var mail = q('[data-be-again]') ? !!q('[data-be-again]').checked : !!(q('[data-be-mail]') && q('[data-be-mail]').checked), again = !!(q('[data-be-again]') && q('[data-be-again]').checked);
+  var notify = !!(q('[data-be-others]') && q('[data-be-others]').checked), noteTxt = s(q('[data-be-note]') && q('[data-be-note]').value);
+  var es = /^es/.test(s(b.lang));
+  var ask = C.gaps.map(function(x){ return x.label + (x.kind === 'exc' ? (x.ours ? (es ? ' — está en el alcance que le enviamos' : ' — part of the scope we sent you') : '') : (x.ours ? (es ? ' — está en el alcance que le enviamos y no aparece en su oferta' : ' — in the scope we sent you, not in your bid') : (es ? ' — no aparece en su oferta' : ' — not in your bid'))); });
+  UI.confirm = null; UI.busy = C.key; draw();
+  return fn('bid-hub', { op: 'award', jobId: UI.jobId, source: b.source, id: b.id, on: true, trade: s(b.trade), mail: mail, mailAgain: again, notifyOthers: notify, pm: C.pm, exclusions: ask, note: noteTxt }).then(function(r){
+    var m = r && r.mail || {}, mailTxt = m.sent ? ' · ✉️ award e-mailed to ' + m.to : m.skipped && mail ? ' · ✉️ not e-mailed: ' + m.skipped : '';
+    var oth = r && r.others ? (r.others.mailed ? ' · ' + r.others.mailed + ' not-selected e-mail' + (r.others.mailed === 1 ? '' : 's') : r.others.skipped ? ' · others not e-mailed: ' + r.others.skipped : '') : '';
+    if (C.pid) said(putLine(C.pid, Object.assign({}, b, { awarded: true }), jobOf(UI.jobId), true, { exclusions: C.gaps.filter(function(x){ return x.kind === 'exc'; }).map(function(x){ return x.label; }), gaps: C.gaps, note: noteTxt, pm: C.pm, mail: m.sent ? { at: m.mailedAt, to: m.to } : null }),
+      '🏆 Awarded' + (r && r.notSelected ? ' (' + r.notSelected + ' other bid' + (r.notSelected === 1 ? '' : 's') + ' → Not selected)' : '') + mailTxt + oth);
+    else toast('🏆 Awarded — not in an estimate yet (no project picked)' + mailTxt + oth);
+    note({ op: 'award', key: C.key, mail: m, others: r && r.others });
+  }, function(e){ toast(e.message, true); }).then(function(){ UI.busy = false; return load(); });
 }
 function when(t){ try { return t ? new Date(t).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''; } catch (e) { return ''; } }
 
@@ -222031,6 +222248,9 @@ function said(res, verb){
 }
 function doAward(key, on){
   var b = bidByKey(key); if (!b) return;
+  if (on) {   /* patch BIDSCOPE: the confirm sheet first (exclusions, gaps, note, e-mails) */
+    return withProject(function(pid){ UI.pick = null; confirmSheet(key, pid); }, function(){ UI.pick = null; confirmSheet(key, ''); });
+  }
   UI.busy = key; draw();
   return fn('bid-hub', { op: 'award', jobId: UI.jobId, source: b.source, id: b.id, on: on }).then(function(r){
     if (on) {
@@ -222052,6 +222272,8 @@ function onClick(ev){
   ev.preventDefault(); ev.stopPropagation();
   var a = t.getAttribute('data-be'), k = t.getAttribute('data-k');
   if (a === 'close') return close();
+  if (a === 'cfgo') return confirmGo();   /* patch BIDSCOPE */
+  if (a === 'cfcancel') { UI.confirm = null; return draw(); }
   if (a === 'award') return doAward(k, true);
   if (a === 'unaward') return doAward(k, false);
   if (a === 'add') return doAdd(k);
@@ -222068,8 +222290,10 @@ function sync(jobId, source, id, on){
   return fn('bid-hub?subbids=' + encodeURIComponent(jobId)).then(function(r){
     var b = arr(r && r.bids).filter(function(x){ return keyOf(x) === key; })[0]; if (!b) return false;
     UI.jobId = s(jobId);
-    var res = resolve(jobOf(jobId));
-    if (res.pid) { said(putLine(res.pid, Object.assign({}, b, { awarded: true }), jobOf(jobId), true), '🏆 Awarded'); return true; }
+    UI.sent = (r && r.sent) || null; OURC = {};
+    var res = resolve(jobOf(jobId)), same = arr(r.bids).filter(function(x){ return low(x.trade) === low(b.trade); }), gp = gapsFor(b, same);   /* patch BIDSCOPE */
+    var ex = { exclusions: gp.filter(function(x){ return x.kind === 'exc'; }).map(function(x){ return x.label; }), gaps: gp, note: '', pm: pmFor(res.p) };
+    if (res.pid) { said(putLine(res.pid, Object.assign({}, b, { awarded: true }), jobOf(jobId), true, ex), '🏆 Awarded'); return true; }
     UI.bids = arr(r.bids); picker(function(pid){ link(jobId, pid); UI.pick = null; said(putLine(pid, Object.assign({}, b, { awarded: true }), jobOf(jobId), true), '🏆 Awarded'); draw(); }, function(){ UI.pick = null; draw(); });
     return true;
   }, function(e){ warn(e); return false; });
@@ -222085,9 +222309,9 @@ function decorate(){
     if (!isBidLine(l)) return;
     var el = null; try { el = wrap.querySelector('.el[data-lineid="' + (W.CSS && CSS.escape ? CSS.escape(String(l.id)) : String(l.id)) + '"]'); } catch (e) {}
     if (!el) return;
-    var r = l.bidRef, off = !!r.unawardedAt, sig = [r.awarded, off, r.company, r.amount, l.cost].join('|');
+    var r = l.bidRef, off = !!r.unawardedAt, sig = [r.awarded, off, r.company, r.amount, l.cost, arr(r.exclusions).join('¦')].join('|');
     var tag = el.querySelector('.gc-bidest-tag'); if (tag && tag.__sig === sig) return;
-    if (tag) tag.remove(); var old = el.querySelector('.gc-bidest-note'); if (old) old.remove();
+    if (tag) tag.remove(); var old = el.querySelector('.gc-bidest-note'); if (old) old.remove(); var oldx = el.querySelector('.gc-bidest-exc'); if (oldx) oldx.remove();
     var row = el.querySelector('.elm > div:first-child > div:nth-child(2)') || el.querySelector('.elm > div:first-child') || el;
     tag = D.createElement('span'); tag.className = 'gc-bidest-tag' + (off ? ' off' : r.awarded ? '' : ' sub'); tag.__sig = sig; tag.setAttribute('data-bidest-tag', r.key);
     tag.textContent = off ? '⚠ Award taken off' : r.awarded ? '🏆 Awarded bid' : '🏗 Sub bid';
@@ -222097,14 +222321,99 @@ function decorate(){
     n.innerHTML = '🏗 From the bid portal · <b>' + esc(r.company) + '</b> · ' + (SRC[r.source] || SRC.portal)[0] + ' ' + esc((SRC[r.source] || SRC.portal)[1]) + ' · bid ' + money(r.amount)
       + (r.scope ? ' · “' + esc(short(r.scope, 120)) + '”' : '') + (arr(r.files).length ? ' · 📄 ' + esc(arr(r.files).map(function(f){ return f.name; }).join(', ')) : '');
     var first = el.querySelector('.elm > div:first-child'); (first || el).appendChild(n);
+    if (arr(r.exclusions).length) { var x = D.createElement('div'); x.className = 'gc-bidest-exc'; x.setAttribute('data-bidest-exc', r.key); x.textContent = '⛔ Sub excludes: ' + r.exclusions.join('; '); (first || el).appendChild(x); }   /* patch BIDSCOPE (staff only) */
   });
 }
+/* ── patch BIDSCOPE: "⚠ Scope gaps to check" above the lines (staff only — the customer documents print the lines and the estimate's
+   own Inclusions / Exclusions; this lives in each bid line's bidRef.gaps, so it is saved with the estimate and never printed) ── */
+function curEst(){ var sl = bSlots()[bActive()]; return sl && sl._savedEstId ? storedEst(sl._savedEstId) || { id: sl._savedEstId } : null; }
+function jobForPid(pid){ var S = sys(), J = []; try { J = S && S.bp ? arr(S.bp.jobs()) : []; } catch (e) {} var p = proj(pid); if (p && p.bidJobId) return s(p.bidJobId); var j = J.filter(function(x){ return x && (s(x.crmProjectId) === s(pid) || resolve(x).pid === s(pid)); })[0]; return j ? j.id : ''; }
+function panel(){
+  var wrap = D.getElementById('est-lines'), L = bLines(), old = D.getElementById('gc-bidest-panel');
+  if (!wrap || !L) { if (old) old.remove(); return; }
+  var bl = L.filter(function(l){ return isBidLine(l); }), e = curEst(), pid = s(e && e.pid), jobId = (bl[0] && bl[0].bidRef.jobId) || (pid ? jobForPid(pid) : '');
+  var withGaps = bl.filter(function(l){ return arr(l.bidRef.gaps).length && !l.bidRef.unawardedAt; });
+  if (!withGaps.length && !jobId) { if (old) old.remove(); return; }
+  var open = 0, all = 0; withGaps.forEach(function(l){ l.bidRef.gaps.forEach(function(g){ all++; if (!g.done) open++; }); });
+  var CH = { cover: '➕ covered by another line', exclude: '🚫 excluded in our proposal', asked: '✅ asked the sub — included now', '': '✔ checked' };
+  var h = '<div class="top"><h4 style="flex:1">' + (all ? '⚠ Scope gaps to check — ' + open + ' open of ' + all : '🏗 Sub bids for this job') + '</h4>'
+    + (jobId ? '<button type="button" data-bp-act="bids" data-job="' + esc(jobId) + '">📊 Sub bids</button>' : '') + '</div>'
+    + (all ? '<div style="font-size:12px;color:#6b7280">From the awarded bids: what the sub excludes and what other bidders included. Staff only — not on the customer\'s proposal.</div>' : '')
+    + withGaps.map(function(l){ var r = l.bidRef; return '<div data-bp-line="' + esc(r.key) + '" style="margin-top:6px"><b>' + esc(r.trade || 'Sub') + ' — ' + esc(r.company) + '</b>' + (r.awardNote ? ' <span style="color:#6b7280">· “' + esc(r.awardNote) + '”</span>' : '')
+      + r.gaps.map(function(g){ return '<div class="gp' + (g.done ? ' done' : '') + '" data-bp-gap="' + esc(g.id) + '" data-done="' + (g.done ? 1 : 0) + '"><label class="lb"><input type="checkbox" data-bp-act="toggle" data-k="' + esc(r.key) + '" data-g="' + esc(g.id) + '"' + (g.done ? ' checked' : '') + '> '
+        + (g.kind === 'exc' && g.ours ? '<span class="ours">🚩 Excludes part of our scope:</span> ' : g.kind === 'exc' ? '⛔ ' + esc(r.company) + ' excludes: ' : g.ours ? '⚠ In our scope, not in ' + esc(r.company) + (/s$/i.test(r.company) ? '’' : '’s') + ' bid: ' : '⚠ Not in ' + esc(r.company) + (/s$/i.test(r.company) ? '’' : '’s') + ' bid: ') + '<b>' + esc(g.label) + '</b>' + (g.ours ? ' <span style="color:#6b7280">(our scope: “' + esc(short(g.ours, 90)) + '”)</span>' : '') + (arr(g.others).length ? ' <span style="color:#6b7280">(' + esc(g.others.join(' & ')) + (g.others.length === 1 ? ' includes' : ' include') + ' it)</span>' : '')
+        + (g.done ? ' <span style="color:#166534">— ' + esc(CH[g.choice || ''] || CH['']) + (g.doneBy ? ' · ' + esc(g.doneBy) : '') + '</span>' : '') + '</label>'
+        + (g.done ? '' : '<button type="button" data-bp-act="cover" data-k="' + esc(r.key) + '" data-g="' + esc(g.id) + '">➕ Cover it elsewhere (add a line)</button><button type="button" data-bp-act="exclude" data-k="' + esc(r.key) + '" data-g="' + esc(g.id) + '">🚫 Exclude it in our proposal</button><button type="button" data-bp-act="asked" data-k="' + esc(r.key) + '" data-g="' + esc(g.id) + '">✅ Asked the sub — included now</button>')
+        + '</div>'; }).join('') + '</div>'; }).join('');
+  if (old && old.__h === h && old.nextElementSibling === wrap) return;
+  css();
+  if (!old) { old = D.createElement('div'); old.id = 'gc-bidest-panel'; old.setAttribute('data-gc-keep', '1'); old.addEventListener('click', panelClick); }
+  if (old.nextElementSibling !== wrap) wrap.parentNode.insertBefore(old, wrap);
+  old.__h = h; old.innerHTML = h;
+}
+/* "Exclude it in our proposal": one line in this estimate's own Exclusions (the builder's Scope → Exclusions, scope.exc — what the
+   GrayCo proposal prints under Exclusions) */
+function appendExc(label){
+  var ta = D.getElementById('scope-exc'); label = s(label); if (!label) return false;
+  var cur = ta ? s(ta.value) : ''; try { if (!ta && typeof scope !== 'undefined') cur = s(scope.exc); } catch (e) {}
+  if (cur.split(/\n+/).some(function(x){ return low(x.replace(/^\s*[-•*•]\s*/, '')) === low(label); })) return true;
+  var nv = cur ? cur.replace(/\s+$/, '') + '\n' + label : label;
+  if (ta) ta.value = nv;
+  try { if (ta && typeof saveScope === 'function') saveScope(); else if (typeof scope !== 'undefined') scope.exc = nv; } catch (e) { try { scope.exc = nv; } catch (x) {} }
+  return true;
+}
+function gapAct(bkey, gidv, act){
+  var e = curEst(), L = bLines(); if (!e || !L) return;
+  var line = L.filter(function(l){ return isBidLine(l, bkey); })[0], g = line && arr(line.bidRef.gaps).filter(function(x){ return x.id === gidv; })[0]; if (!g) return;
+  if (act === 'exclude') appendExc(g.label);
+  if (act === 'cover') { try { var d = D.getElementById('nl-desc'); if (d) { d.value = g.label; d.focus(); try { d.scrollIntoView({ block: 'center' }); } catch (x) {} } } catch (x) {} }
+  var at = nowIso(), me = myName();
+  liveApply(e.id, function(LL){ var i = LL.findIndex(function(l){ return isBidLine(l, bkey); }); if (i < 0) return; var l = LL[i];
+    LL[i] = Object.assign({}, l, { bidRef: Object.assign({}, l.bidRef, { gaps: arr(l.bidRef.gaps).map(function(x){
+      if (x.id !== gidv) return x;
+      var done = act === 'toggle' ? !x.done : true;
+      return Object.assign({}, x, { done: done, choice: done ? (act === 'toggle' ? x.choice || '' : act) : '', doneAt: done ? at : '', doneBy: done ? me : '' }); }) }) }); });
+  TD.at = 0; panel();
+  if (act === 'exclude') toast('🚫 Added to this estimate’s Exclusions: ' + g.label);
+  else if (act === 'cover') toast('➕ Type the price for “' + g.label + '” in the add-line row');
+}
+function panelClick(ev){
+  var t = ev.target && ev.target.closest ? ev.target.closest('[data-bp-act]') : null; if (!t) return;
+  var a = t.getAttribute('data-bp-act');
+  if (a === 'bids') { ev.preventDefault(); return open(t.getAttribute('data-job')); }
+  if (a !== 'toggle') ev.preventDefault();
+  gapAct(t.getAttribute('data-k'), t.getAttribute('data-g'), a);
+}
+/* ── the PM's To-Do (patch TD2 reads window._gcTodoExt): "Ask <sub> about: …" until every gap of that bid is checked ── */
+function todoItems(){
+  if (Date.now() - TD.at < 15000) return TD.v;
+  var seen = {}, out = [], t0 = nowIso().slice(0, 10);
+  crmEsts().concat(arr(bEsts())).forEach(function(e0){
+    if (!e0 || !e0.id || seen[e0.id] || e0._isDraft) return; seen[e0.id] = 1;
+    var rec = storedEst(e0.id) || e0;
+    arr(rec.lines).forEach(function(l){
+      if (!isBidLine(l) || !l.bidRef.awarded || l.bidRef.unawardedAt) return;
+      var r = l.bidRef, open = arr(r.gaps).filter(function(g){ return g && !g.done; }); if (!open.length) return;
+      open = open.map(function(g, i){ return [g, i]; }).sort(function(a, b){ return ((b[0].kind === 'exc' && !!b[0].ours) - (a[0].kind === 'exc' && !!a[0].ours)) || a[1] - b[1]; }).map(function(x){ return x[0]; });
+      var p = proj(rec.pid), pm = s(p && p.pm) || s(r.pm && r.pm.name);
+      out.push({ key: 'bidscope:' + rec.id + ':' + r.key, cat: 'jobs', prio: 'high', due: t0, pid: s(rec.pid),
+        title: '❓ Ask ' + r.company + ' about: ' + open.slice(0, 4).map(function(g){ return (g.kind === 'exc' && g.ours ? '🚩 ' : '') + g.label; }).join('; ') + (open.length > 4 ? ' (+' + (open.length - 4) + ' more)' : ''),
+        sub: [r.trade, p ? projLabel(p) : '', 'estimate “' + s(rec.name) + '”', r.awardNote ? '“' + r.awardNote + '”' : ''].filter(Boolean).join(' · '),
+        who: pm ? [pm] : [], vis: pm ? 'both' : 'company', act: { l: 'Open the estimate', f: function(){ try { W._gcEST3.open(rec.id); } catch (x) { warn(x); } } } });
+    });
+  });
+  TD = { at: Date.now(), v: out };
+  return out;
+}
+W._gcTodoExt = Array.isArray(W._gcTodoExt) ? W._gcTodoExt : []; W._gcTodoExt.push(function(){ try { return todoItems(); } catch (e) { warn(e); return []; } });
+
 function tick(){
   try {
     if (D.hidden) return;
     var wrap = D.getElementById('est-lines');
-    if (wrap && wrap !== OBS.el && W.MutationObserver) { try { if (OBS.o) OBS.o.disconnect(); } catch (e) {} OBS.el = wrap; OBS.o = new MutationObserver(function(){ try { decorate(); } catch (e) { warn(e); } }); OBS.o.observe(wrap, { childList: true }); }
+    if (wrap && wrap !== OBS.el && W.MutationObserver) { try { if (OBS.o) OBS.o.disconnect(); } catch (e) {} OBS.el = wrap; OBS.o = new MutationObserver(function(){ try { decorate(); panel(); } catch (e) { warn(e); } }); OBS.o.observe(wrap, { childList: true }); }
     if (wrap) decorate();
+    if (wrap) panel(); else { var pn = D.getElementById('gc-bidest-panel'); if (pn) pn.remove(); }   /* patch BIDSCOPE */
   } catch (e) { warn(e); }
 }
 RI.call(W, tick, 1500); later(tick, 800);
@@ -222112,7 +222421,9 @@ RI.call(W, tick, 1500); later(tick, 800);
 W._gcBidEst = { open: open, load: load, close: close, group: group, resolve: function(j){ return resolve(typeof j === 'string' ? jobOf(j) : j); }, link: link, sync: sync,
   put: function(jobId, bid, awarded){ var r = resolve(jobOf(jobId)); return r.pid ? putLine(r.pid, bid, jobOf(jobId), awarded !== false) : { error: 'no linked project', why: r.why }; },
   take: takeLine, inEst: inEst, keyOf: keyOf, decorate: decorate, lineMath: lineMath,
+  parse: scopeOf, parseText: parseText, matrix: matrix, gaps: gapsFor, panel: panel, gap: gapAct,
+  ourHit: function(sent, trade, text){ var keep = UI.sent; UI.sent = sent; OURC = {}; try { var o = ourScope(trade), out = []; parseText(text, 'exc').forEach(function(it){ if (it.kind === 'exc') hitsOurs(it, o).forEach(function(h){ out.push(h); }); }); return out; } finally { UI.sent = keep; OURC = {}; } }, todo: function(){ TD.at = 0; return todoItems(); },   /* patch BIDSCOPE */
   state: function(){ return { jobId: UI.jobId, bids: UI.bids ? UI.bids.length : null, err: UI.err, picking: !!UI.pick, log: LOG.slice(-20) }; } };
-try { console.log('[GC] patch BIDEST: 📊 all bids for a job by trade (lowest first) → 🏆 award / ➕ into the project\'s estimate — _gcBidEst.state()'); } catch (e) {}
+try { console.log('[GC] patch BIDEST + BIDSCOPE: 📊 all bids for a job by trade (lowest first), 📋 included / excluded side by side → 🏆 award (confirm, e-mail) / ➕ into the project\'s estimate, ⚠ scope gaps + PM To-Do — _gcBidEst.state()'); } catch (e) {}
 })(window);
 </script>

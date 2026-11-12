@@ -1289,7 +1289,14 @@ async function bidPapers(profileId){
   return out;
 }
 function bidStatus(b){ return b.accepted ? 'accepted' : b.rejected ? 'rejected' : 'pending'; }
-function myBidOut(b){ return b ? { id: s(b.id), amount: money(b.amount), notes: clip(b.notes, 4000), submittedAt: s(b.submittedAt), updatedAt: s(b.updatedAt), status: bidStatus(b) } : null; }
+function myBidOut(b){ return b ? { id: s(b.id), amount: money(b.amount), notes: clip(b.notes, 4000), submittedAt: s(b.submittedAt), updatedAt: s(b.updatedAt), status: bidStatus(b), award: awardOut(b) } : null; }
+/* patch BIDSCOPE: an awarded bid — when, the GrayCo PM to call, what GrayCo asks them to confirm (the CRM's award confirm sheet) */
+function awardOut(b){
+  if (!b || !b.accepted) return null;
+  const pm = b.awardPm && typeof b.awardPm === 'object' ? b.awardPm : {};
+  return { at: s(b.acceptedAt).slice(0, 25), pm: { name: clip(pm.name, 120), phone: clip(pm.phone, 40), email: okEmail(low(pm.email)) ? low(pm.email) : '' },
+    confirm: (Array.isArray(b.awardExclusions) ? b.awardExclusions : []).map(function(x){ return clip(x, 200); }).filter(Boolean).slice(0, 25), byEmail: !!b.fromEmailBid };
+}
 function linkList(v){ return arr(v).map(function(l){ const u = s(l.url); return /^https:\/\/[^\s"<>]{4,1500}$/i.test(u) ? { url: u, label: clip(l.label, 120) || u.replace(/^https:\/\//, '').split('/')[0] } : null; }).filter(Boolean).slice(0, 20); }
 function tradesOf(v){ return Array.isArray(v) ? v.map(function(x){ return s(x && typeof x === 'object' ? x.trade : x); }).filter(Boolean).join(', ') : s(v); }
 async function bidCtx(sub){
@@ -1678,3 +1685,4 @@ exports._core = { msgInsert: function(){ return msgInsert.apply(null, arguments)
 
 /* LEGAL2-patch */
 exports._sched = { schedFor: schedFor, bidJobsFor: bidJobsFor };   /* patch VOICESCHED: tests · BIDLIST */
+exports._bids = { myBidOut: myBidOut, awardOut: awardOut };   /* patch BIDSCOPE: tests */
