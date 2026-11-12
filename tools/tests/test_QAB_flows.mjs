@@ -212,6 +212,8 @@ ok('M7 the Mitigation PM\'s Leads page: Mitigation\'s leads (Zedd flood), not Co
 await B.ev(() => window._setView('projects')); await sleep(2500);
 const bp = await B.ev(() => (document.querySelector('#root main') || document.body).innerText);
 ok('M7 the Mitigation PM\'s Projects: no Construction / Environmental job', /Zedd/.test(bp) && !/Conzz Smith deck|Conzz Fire rebuild|Envzz Tile asbestos/.test(bp), bp.split('\n').filter(x => /zz|Zedd/.test(x)).slice(0, 6));
+const ch = await B.ev(() => { try { return window._gcEnviro.parts.certsHtml(); } catch (e) { return 'ERR ' + e.message; } });
+ok('M7 a non-admin does not get the "Open Certifications" button that only admins can use', !/data-env="certs"/.test(ch) && !/^ERR/.test(ch), ch.slice(0, 120));
 ok('M7 no page errors', !errsB.length, errsB);
 await B.b.close();
 
