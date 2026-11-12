@@ -15,7 +15,7 @@
 const zlib = require('zlib');
 function s(v){ return v == null ? '' : String(v); }
 const TRADES = [
-  ['site ?work|sitework|site prep|grading|earthwork|excavat', 'Concrete'], ['concrete|flatwork|foundation|footing|slab', 'Concrete'], ['framing|carpentry|rough carp', 'Framing'],
+  ['site ?work|sitework|site prep|grading|earthwork|excavat|erosion', 'Sitework'], ['concrete|flatwork|foundation|footing|slab', 'Concrete'], ['framing|carpentry|rough carp', 'Framing'],
   ['roof', 'Roofing'], ['drywall|sheetrock|gypsum', 'Drywall'], ['electric', 'Electrical'], ['plumb', 'Plumbing'], ['hvac|mechanical|heating|air condition|ductwork', 'HVAC'],
   ['paint|coating', 'Paint'], ['tile', 'Tile'], ['flooring|floor finish|floor cover|carpet|\\blvp\\b|vinyl plank|\\bvct\\b', 'Flooring'], ['ceiling|\\bact\\b|acoustical', 'Ceilings'], ['demo(lition)?\\b|tear ?out', 'Demolition'],
   ['insulat', 'Insulation'], ['masonry|brick|\\bcmu\\b|stone', 'Masonry'], ['door|hardware|window|glaz|storefront', 'Windows & Doors'], ['cabinet|millwork|countertop|casework', 'Cabinets'],
@@ -57,7 +57,9 @@ function guess(name, text){
   let trades = tradesIn(t); if (!trades.length && head) trades = tradesIn(head);
   sheet.forEach(x => { if (trades.indexOf(x) < 0) trades.unshift(x); });
   let kind = '', why = '';
-  if (/\b(scope|sow|bid form|exhibit|inclusions|exclusions)\b/i.test(t)) { kind = 'scope'; why = 'the name says scope'; }
+  /* patch PLANREQ-I (owner 11/12): a scope for EVERY sub (general scope, all trades, Div 01 general requirements) stays with the plans */
+  if (/\b(general (scope|requirements|conditions)|all (trades|subs|bidders)|div(ision)?\.?\s*0?1\b)/i.test(t)) { kind = 'scope'; trades = []; why = 'a scope for every sub'; }
+  else if (/\b(scope|sow|bid form|exhibit|inclusions|exclusions)\b/i.test(t)) { kind = 'scope'; why = 'the name says scope'; }
   else if (/\b(spec|specs|specifications?|project manual|div(ision)?\.?\s*\d{1,2}|section\s*\d{2}\s?\d{2})\b/i.test(t)) { kind = 'specs'; why = 'the name says specs'; }
   else if (sheet.length || /\b(plans?|drawings?|sheets?|blueprints?|elevations?|floor ?plan|details?|cd set|permit set)\b/i.test(t) || /^(dwg|dxf|dwf|png|jpg|jpeg|gif|webp|tif|tiff|heic|heif|bmp)$/.test(ext)) { kind = 'plans'; why = sheet.length ? 'a drawing sheet number' : 'the name says plans'; }
   else if (/\b(scope of work|statement of work|bid form|inclusions)\b/i.test(head)) { kind = 'scope'; why = 'the document says scope'; }

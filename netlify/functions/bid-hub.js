@@ -77,9 +77,9 @@ async function jobsList(){
     deleted: GONE.test(s(j.status)), deletedAt: s(j.archivedAt), deletedBy: s(j.archivedBy),   /* patch SYS2: 🗑 Deleted (n), restorable for 30 days */
     archived: GONE.test(s(j.status)) && /^(auto|taken off)$/.test(s(j.archivedReason)), archivedReason: s(j.archivedReason),   /* patch BIDPOST: 🗄 Archived (auto-added, taken off) */
     id: s(j.id), title: s(j.title), address: s(j.address), po: s(j.poNumber), status: s(j.status), draft: j.draft === true || low(j.status) === 'draft',
-    visibility: j.draft === true || low(j.status) === 'draft' ? 'draft' : (s(j.visibility) || 'public'), due: validDay(j.bidDueDate), dueTime: s(j.bidDueTime), trades: s(j.tradesSought),
+    visibility: j.draft === true || low(j.status) === 'draft' ? 'draft' : (s(j.visibility) || 'public'), due: validDay(j.bidDueDate), dueTime: s(j.bidDueTime), trades: tradesPicked(j) ? s(j.tradesSought) : '', tradesSuggested: tradesPicked(j) ? '' : s(j.tradesSought),   /* patch PLANREQ-H */
     invited: k.invites, bids: k.bids, plans: k.plans, openQ: k.openQ, openReq: reqN[s(j.id)] || 0, leadId: s(j.leadInbox && j.leadInbox.id), source: s(j.leadInbox && j.leadInbox.source), autoPrivate: !!j.autoPrivate, updatedAt: s(j.updatedAt),
-    biddingClosed: !!j.biddingClosed, projectType: s(j.projectType), crmProjectId: s(j.crmProjectId), crmProjectName: s(j.crmProjectName),   /* patch BIDEST: the CRM project this job's awarded bids go into */
+    biddingClosed: !!j.biddingClosed, projectType: s(j.projectType), ourDue: validDay(j.ourDue), ourDueTime: s(j.ourDueTime), crmProjectId: s(j.crmProjectId), crmProjectName: s(j.crmProjectName),   /* patch BIDEST: the CRM project this job's awarded bids go into */
     crmLeadId: s(j.crmLeadId), crmEstId: s(j.crmEstId), postedBy: s(j.postedBy), postedByName: s(j.postedByName), postedAt: s(j.postedAt), pmEmail: s(j.pmEmail), pmName: s(j.pmName),   /* patch BIDPOST */
     auto: !GONE.test(s(j.status)) && autoAdded(j, k)
   }; }).sort((a, b) => (a.draft - b.draft) || (s(a.due) || '9999').localeCompare(s(b.due) || '9999') || a.title.localeCompare(b.title));
@@ -90,6 +90,10 @@ async function jobsList(){
    openedBy that is a person), or one made on the bid site itself. AUTO-ADDED: made by the Lead Inbox / the CRM's old "every lead →
    a draft" sweep, never posted by a person, with no plans, bids, invites or questions. "🧹 Clean up auto-added jobs" (an admin's
    click) archives those (status archived, archivedReason auto — restorable any time from 🗄 Archived); nothing is deleted. */
+/* patch PLANREQ-H (owner 11/12: "it auto selected a lot of these"): a bid job's trades are only what a PERSON picked (📢 Put on bid portal,
+   ✏️ Trades). Trades copied from a bid-board / GC invite by the Lead Inbox are only SUGGESTED (shown as chips to tap), never selected. */
+function tradesPicked(j){ if (!j) return false; if (j.tradesPicked === true) return true; return !(s(j.createdBy) === 'lead-inbox' || !!(j.leadInbox && s(j.leadInbox.id))); }
+function tradeSplit(v){ const seen = {}; return s(v).split(/\s*[,;]\s*/).map(x => s(x)).filter(x => { const k = low(x); if (!x || seen[k]) return false; seen[k] = 1; return true; }); }
 function validDay(v){ const d = s(v).slice(0, 10); if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || s(v).length > 10 && !/^[T ]/.test(s(v).slice(10, 11))) return ''; const x = new Date(d + 'T12:00:00Z'); return !isNaN(x) && x.toISOString().slice(0, 10) === d ? d : ''; }
 function counts(invites, bids, mail, plans, qs){
   const n = {}; const add = (id, k, v) => { if (!id) return; const o = n[id] || (n[id] = { invites: 0, bids: 0, plans: 0, leadPlans: 0, questions: 0, openQ: 0 }); o[k] += v == null ? 1 : v; };
@@ -146,8 +150,8 @@ async function postedView(who, jobId){
   const job = await jobRow(jobId); if (!job) return { code: 404, error: 'No such bid job.' };
   if (!(await posterRole(who, {}, job))) return { code: 403, error: 'Only an admin, an estimator or the job\'s PM sees this.' };
   const pl = await SP.plansOf(job.id).catch(() => []);
-  return { ok: true, job: { id: job.id, title: s(job.title), address: s(job.address), due: validDay(job.bidDueDate), dueTime: s(job.bidDueTime), visibility: job.draft === true ? 'draft' : s(job.visibility) || 'public',
-    trades: s(job.tradesSought).split(/\s*,\s*/).filter(Boolean), scope: s(job.scope), specs: s(job.specifications), links: arr(job.plansLinks), files: pl.map(f => ({ name: s(f.name) })), crmFileRefs: arr(job.crmFileRefs),
+  return { ok: true, job: { id: job.id, title: s(job.title), address: s(job.address), due: validDay(job.bidDueDate), dueTime: s(job.bidDueTime), ourDue: validDay(job.ourDue), ourDueTime: s(job.ourDueTime), visibility: job.draft === true ? 'draft' : s(job.visibility) || 'public',
+    trades: tradesPicked(job) ? tradeSplit(job.tradesSought) : [], tradesSuggested: tradesPicked(job) ? [] : tradeSplit(job.tradesSought), scope: s(job.scope), specs: s(job.specifications),   /* patch PLANREQ-H */ links: arr(job.plansLinks), files: pl.map(f => ({ name: s(f.name) })), crmFileRefs: arr(job.crmFileRefs),
     archived: GONE.test(s(job.status)), postedBy: s(job.postedBy), postedAt: s(job.postedAt), crmProjectId: s(job.crmProjectId), crmLeadId: s(job.crmLeadId) } };
 }
 async function postjob(who, b){
@@ -180,6 +184,9 @@ async function postjob(who, b){
     status: /^(closed|won|lost|awarded)$/i.test(s(job.status)) ? job.status : 'open', postedAt: job.postedAt || at, postedBy: job.postedBy || who.email, postedByName: job.postedByName || s(who.name) || who.email,
     lastPostedAt: at, lastPostedBy: who.email, crmProjectId: pid || s(job.crmProjectId), crmProjectName: s(b.projectName).slice(0, 200) || s(job.crmProjectName), crmLeadId: leadId || s(job.crmLeadId), crmEstId: estId || s(job.crmEstId),
     pmEmail: low(b.pmEmail).slice(0, 160) || s(job.pmEmail), pmName: s(b.pmName).slice(0, 120) || s(job.pmName), plansLinks: links0 !== undefined ? arr(links0) : cleanLinks(b.links), autoPrivate: false, updatedAt: at });
+  /* patch PLANREQ-F (owner 11/12): OUR bid due (to the GC / owner — the lead's date, staff only) is kept apart from the SUB due date subs see */
+  job.tradesPicked = true;   /* patch PLANREQ-H: a person picked them on the sheet */
+  if (b.ourDue !== undefined) { job.ourDue = validDay(b.ourDue); job.ourDueTime = job.ourDue && /^\d{2}:\d{2}$/.test(s(b.ourDueTime)) ? s(b.ourDueTime) : ''; }
   /* patch QAA: the bid site lists the job's PM as its contact (job.pmId = their bid-site staff profile, as the bid site's own Add Job picks it);
      the card said "Send bids and questions to: the Project Manager listed on the job" with nobody listed */
   if (!s(job.pmId) && SP.okEmail(low(job.pmEmail))) job.pmId = 'st_' + low(job.pmEmail).split('@')[0].replace(/[^a-z0-9]+/g, '_').slice(0, 40);
@@ -591,14 +598,14 @@ async function manageView(jobId){
     SP.listRows([SP.eq('collection', 'activity'), SP.eq('job_id', job.id)]).catch(() => []), audience(job)]);
   let paused = false; try { paused = await require('./_lib/pause').isPaused(); } catch (e) { paused = true; }
   let reqs = []; try { reqs = await SP.planReqsFor(job.id); } catch (e) { reqs = []; }   /* patch PLANREQ: 📩 the subs' plan / info requests (staff only) */
-  return { ok: true, paused, planreqs: reqs.map(q => ({ id: s(q.id), company: s(q.company), name: s(q.name), phone: s(q.phone), email: s(q.email), trade: s(q.trade), needs: arr(q.needs).length ? q.needs : ['plans'], note: s(q.note), at: s(q.at),
+  return { ok: true, paused, resort: resortCount(plans), planreqs: reqs.map(q => ({ id: s(q.id), company: s(q.company), name: s(q.name), phone: s(q.phone), email: s(q.email), trade: s(q.trade), needs: arr(q.needs).length ? q.needs : ['plans'], note: s(q.note), at: s(q.at),
       open: SP.prOpen(q), closedHow: s(q.closedHow) || (s(q.notifiedAt) ? 'plans' : ''), closedAt: s(q.closedAt), closedBy: s(q.closedBy), reply: s(q.reply), repliedByName: s(q.repliedByName), sentNote: s(q.sentNote), notifiedAt: s(q.notifiedAt), mailHeld: !!q.mailHeld, replyMail: s(q.replyMail), to: arr(q.to).map(x => ({ name: s(x.name), roles: arr(x.roles) })) })),
     job: { id: job.id, title: s(job.title), address: s(job.address), po: s(job.poNumber), due: s(job.bidDueDate), dueTime: s(job.bidDueTime),
-      visibility: job.draft === true ? 'draft' : s(job.visibility) || 'public', deleted: GONE.test(s(job.status)), trades: s(job.tradesSought), scope: s(job.scope),
+      visibility: job.draft === true ? 'draft' : s(job.visibility) || 'public', deleted: GONE.test(s(job.status)), trades: tradesPicked(job) ? s(job.tradesSought) : '', tradesSuggested: tradesPicked(job) ? '' : s(job.tradesSought),   /* patch PLANREQ-H */ scope: s(job.scope),
       tradeScopes: arr(job.tradeScopes), plansLinks: arr(job.plansLinks), addenda: arr(job.addenda), posts: arr(job.posts), log: arr(job.log).slice(-200), leadId: s(job.leadInbox && job.leadInbox.id),
       /* patch PLANREQ-E: 📝 Details */ ownerGc: s(job.ownerGc), showOwnerGc: !!job.showOwnerGc, projectType: s(job.projectType), siteWalk: job.siteWalk || null, questionsDue: s(job.questionsDue), startDate: s(job.startDate), duration: s(job.duration),
       bidInstructions: s(job.bidInstructions), requirements: job.requirements || {}, alternates: arr([]).concat(job.alternates || []), unitPrices: arr([]).concat(job.unitPrices || []), bidForm: arr(job.bidForm), contacts: job.contacts || {},
-      internalNotes: s(job.internalNotes), crmLeadId: s(job.crmLeadId), crmProjectId: s(job.crmProjectId), crmProjectName: s(job.crmProjectName), biddingClosed: !!job.biddingClosed, pmName: s(job.pmName), pmEmail: s(job.pmEmail), status: s(job.status) },
+      internalNotes: s(job.internalNotes), ourDue: validDay(job.ourDue), ourDueTime: s(job.ourDueTime), crmLeadId: s(job.crmLeadId), crmProjectId: s(job.crmProjectId), crmProjectName: s(job.crmProjectName), biddingClosed: !!job.biddingClosed, pmName: s(job.pmName), pmEmail: s(job.pmEmail), status: s(job.status) },
     plans: plans.map(p => ({ name: s(p.name), size: p.size || 0, type: s(p.type), fileRef: s(p.fileRef), category: s(p.category), version: s(p.version), date: s(p.date), current: !!p.current, at: s(p.at), by: s(p.by), trades: arr(p.trades) })),
     questions: qs.map(r => r.data || {}).sort((a, b) => s(b.at).localeCompare(s(a.at))),
     acks: acks.map(r => r.data || {}), activity: act.map(r => r.data || {}).sort((a, b) => s(b.at).localeCompare(s(a.at))).slice(0, 200),
@@ -798,12 +805,14 @@ async function details(who, b){
   if (b.contacts !== undefined) { const c = b.contacts || {}, v = {}; ['pmName', 'pmPhone', 'pmEmail', 'estName', 'estPhone', 'estEmail'].forEach(k => { v[k] = s(c[k]).slice(0, 120); }); set('contacts', v, 'contacts shown to subs'); }
   if (b.internalNotes !== undefined) set('internalNotes', s(b.internalNotes).slice(0, 8000), 'internal notes');
   if (b.crmLeadId !== undefined) set('crmLeadId', s(b.crmLeadId).slice(0, 120), 'CRM lead');
+  if (b.ourDue !== undefined) { const od = validDay(b.ourDue); if (s(b.ourDue) && !od) return { code: 400, error: 'Our bid due date is not a date.' };   /* patch PLANREQ-F: staff only — never posted to subs */
+    set('ourDue', od, 'our bid due ' + (od || 'none')); set('ourDueTime', od && /^\d{2}:\d{2}$/.test(s(b.ourDueTime)) ? s(b.ourDueTime) : '', 'our bid due time'); out.ourDue = job.ourDue; out.ourDueTime = job.ourDueTime; }
   if (Array.isArray(b.trades)) {
     const trades = Array.from(new Set(b.trades.map(x => s(x).slice(0, 60)).filter(Boolean))).slice(0, 30);
     const keep = arr(job.tradeScopes), byT = {}; keep.forEach(x => { if (x && s(x.trade)) byT[low(x.trade)] = x; });
     job.tradeScopes = trades.map(tr => byT[low(tr)] || { id: 'ts_' + crypto.randomBytes(4).toString('hex'), trade: tr, scope: '', files: [] })
       .concat(keep.filter(x => x && !trades.some(tr => low(tr) === low(x.trade)) && (s(x.scope) || arr(x.files).length)));
-    if (s(job.tradesSought) !== trades.join(', ')) { job.tradesSought = trades.join(', '); log.push('trades: ' + (job.tradesSought || 'none')); }
+    if (s(job.tradesSought) !== trades.join(', ') || job.tradesPicked !== true) { job.tradesSought = trades.join(', '); job.tradesPicked = true; log.push('trades: ' + (job.tradesSought || 'none')); }   /* patch PLANREQ-H: picked by a person */
     out.trades = trades;
   }
   if (b.due !== undefined) {
@@ -820,6 +829,40 @@ async function details(who, b){
   await saveJob(job, who);
   out.changed = log;
   return out;
+}
+/* patch PLANREQ-I (owner 11/12: "the all-subs scope should be here with the plans, and the separate by-trade scopes go to Scopes"): a scope
+   file already saved with the plans that is for ONE trade (its name / kind says so: Hamlets_Scope_01_Sitework.docx → Sitework) moves to that
+   trade's scope (the trade is added to the job when a person picked its trades; the box shows either way) and leaves the plans list; a scope
+   for every sub stays with the plans as "Scope — all subs". Run once when 📂 Manage opens (op resort). */
+function resortable(items){
+  const G = require('./_lib/tradeguess.js');
+  return arr(items).map(f => { const g = G.guess(s(f.name), ''), isScope = /^scope/i.test(s(f.category)) || f.kind === 'scope' || g.kind === 'scope';
+    return { f, isScope, trades: isScope ? (arr(f.trades).length && f.kind === 'scope' ? f.trades : g.trades) : [] }; });
+}
+function resortCount(items){ return resortable(items).filter(x => x.isScope && (x.trades.length || s(x.f.category) !== 'Scope — all subs')).length; }
+async function resort(who, b){
+  const job = await jobRow(b.jobId); if (!job || GONE.test(s(job.status))) return { code: 404, error: 'No such bid job.' };
+  if (!who.canInvite && !(await posterRole(who, {}, job))) return { code: 403, error: 'Only an admin, an estimator, the office or the job\'s PM changes a bid job.' };
+  const items = await SP.plansOf(job.id), keep = [], moved = [], relabeled = [];
+  resortable(items).forEach(x => {
+    if (x.isScope && x.trades.length) { moved.push(x); return; }
+    if (x.isScope && s(x.f.category) !== 'Scope — all subs') { x.f.category = 'Scope — all subs'; x.f.kind = 'scope'; relabeled.push(x.f.name); }
+    keep.push(x.f);
+  });
+  if (!moved.length && !relabeled.length) return { ok: true, moved: [], relabeled: [] };
+  const picked = tradesPicked(job), sought = tradeSplit(job.tradesSought);
+  job.tradeScopes = arr(job.tradeScopes);
+  moved.forEach(x => x.trades.forEach(tr => {
+    let ts = job.tradeScopes.find(y => low(y.trade) === low(tr)); if (!ts) { ts = { id: 'ts_' + crypto.randomBytes(4).toString('hex'), trade: tr, scope: '', files: [] }; job.tradeScopes.push(ts); }
+    ts.files = arr(ts.files); if (!ts.files.some(f => f.fileRef === x.f.fileRef)) ts.files.push({ name: s(x.f.name), size: x.f.size || 0, type: s(x.f.type), fileRef: s(x.f.fileRef), at: s(x.f.at) || nowIso(), by: s(x.f.by) || who.email });
+    if (picked && !sought.some(t => low(t) === low(tr))) sought.push(tr);
+  }));
+  if (picked) job.tradesSought = sought.join(', ');
+  job.plans = keep.map(x => ({ name: x.name, size: x.size, type: x.type, category: x.category, version: x.version || '', date: x.date || '', current: !!x.current, trades: arr(x.trades).length ? x.trades : undefined }));
+  await SP.upsertRows([{ collection: 'plans', id: job.id, job_id: job.id, data: { items: keep } }], who.email);
+  logTo(job, who, '📝 Sorted: ' + moved.map(x => s(x.f.name) + ' → ' + x.trades.join(', ') + ' scope').concat(relabeled.map(n => n + ' → Scope — all subs')).join(' · '));
+  await saveJob(job, who);
+  return { ok: true, moved: moved.map(x => ({ name: s(x.f.name), trades: x.trades })), relabeled };
 }
 async function bidding(who, b){   /* ⏸ Close bidding / ▶ Reopen: no new bids or changes; the job stays visible */
   const job = await jobRow(b.jobId); if (!job || GONE.test(s(job.status))) return { code: 404, error: 'No such bid job.' };
@@ -922,7 +965,8 @@ exports.handler = async function(event){
     else if (b.op === 'notice') r = await noticeAgain(who, b);
     else if (b.op === 'planreq') r = await planreq(who, b);   /* patch PLANREQ */
     else if (b.op === 'details') r = await details(who, b);   /* patch PLANREQ-T/D: ✏️ trades, ✏️ bid due */
-    else if (b.op === 'bidding') r = await bidding(who, b);   /* patch PLANREQ-E: ⏸ Close bidding / ▶ Reopen */
+    else if (b.op === 'bidding') r = await bidding(who, b);
+    else if (b.op === 'resort') r = await resort(who, b);   /* patch PLANREQ-I */   /* patch PLANREQ-E: ⏸ Close bidding / ▶ Reopen */
     else if (b.op === 'duplicate') r = await duplicate(who, b);   /* patch PLANREQ-E: 📋 Duplicate */
     else return J(400, { error: 'Unknown action.' }, C);
     return r.code ? J(r.code, { error: r.error }, C) : J(200, r, C);
@@ -930,7 +974,7 @@ exports.handler = async function(event){
     return J(e.status || 502, { error: e.status ? e.message : 'The bid portal could not be reached: ' + s(e && e.message) }, C);
   }
 };
-exports._test = { postjob, unpost, cleanup, postedView, posterRole, autoAdded, postedOnPurpose, validDay, jobsList, sentScope, awardMail, notSelectedMail, mailGate, pmOf, link, fileOut, amountOf, subBids, subsList, jobsList, invite, visibility, award, sweep, inviteMail, whoIs, archive, restore, manageView, audience, noticeMail, planreq, details, dueChanged, bidding, duplicate, subNotice };
+exports._test = { postjob, unpost, cleanup, postedView, posterRole, autoAdded, postedOnPurpose, validDay, jobsList, sentScope, awardMail, notSelectedMail, mailGate, pmOf, link, fileOut, amountOf, subBids, subsList, jobsList, invite, visibility, award, sweep, inviteMail, whoIs, archive, restore, manageView, audience, noticeMail, planreq, details, dueChanged, bidding, duplicate, subNotice, tradesPicked, resort, resortCount };
 /* patch LOGOALL (owner 10/23: "should have our logo on it"): every customer / sub / GC e-mail this file sends
    straight to Resend gets the GrayCo shell (centered logo, office line, licenses). Internal @grayco-cs.com mail is untouched. */
 try { require('./_lib/brand.js').installResend(); } catch (e) {}

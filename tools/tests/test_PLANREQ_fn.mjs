@@ -246,5 +246,13 @@ await t('the bid site\'s own due-date save (subportal.js admin save) → 🗂 Ac
   const after = row('jobs/j_noplans'); yes(after.log.some(x => /Bid due changed: .* → .*10:00/.test(x.what)), JSON.stringify(after.log.slice(-2)));
   yes([...SP.values()].filter(r => r.collection === 'messages').slice(m0).some(r => /Bid due date changed to/.test(r.data.body)), 'update posted');
 });
+await t('PLANREQ-F: our bid due (staff only) apart from the sub due — details saves it without an update to subs; the sub view never has it', async () => {
+  const m0 = [...SP.values()].filter(r => r.collection === 'messages').length;
+  const r = await callHub(ADMIN, { op: 'details', jobId: 'j_noplans', ourDue: day(21), ourDueTime: '14:00' }); eq(r.code, 200, JSON.stringify(r.j));
+  const j = row('jobs/j_noplans'); eq([j.ourDue, j.ourDueTime], [day(21), '14:00']);
+  eq([...SP.values()].filter(r => r.collection === 'messages').length, m0, 'no update for our own date');
+  const v = HUBX.subJobView(j, []); yes(!('ourDue' in v) && !('ourDueTime' in v), 'hidden from subs');
+  const jl = (await BH.jobsList()).find(x => x.id === 'j_noplans'); eq([jl.ourDue, jl.ourDueTime], [day(21), '14:00']);
+});
 console.log('\nPLANREQ_fn ' + pass + '/' + (pass + fail));
 process.exit(fail ? 1 : 0);

@@ -82,7 +82,7 @@ function isGone(j){ return !!j && (low(j.status) === 'archived' || !!j.archivedA
 function subJobView(j, trades){
   const v = Object.assign({}, j);
   delete v.log; delete v.archivedFrom;
-  delete v.internalNotes; delete v.crmFileRefs; if (!v.showOwnerGc) delete v.ownerGc;   /* patch PLANREQ-E: internal notes never; the owner / GC only when GrayCo ticks "show it" */
+  delete v.internalNotes; delete v.crmFileRefs; delete v.ourDue; delete v.ourDueTime;   /* patch PLANREQ-F: subs see only the sub due date */ if (!v.showOwnerGc) delete v.ownerGc;   /* patch PLANREQ-E: internal notes never; the owner / GC only when GrayCo ticks "show it" */
   if (v.siteWalk && typeof v.siteWalk === 'object') v.siteWalk = pick(v.siteWalk, ['date', 'time', 'location', 'mandatory']);   /* never the RSVP list */
   const mine = (Array.isArray(trades) ? trades : []).map(function(x){ return low(x); }).filter(Boolean);   /* arr() keeps objects only */
   if (Array.isArray(v.tradeScopes) && mine.length) v.tradeScopes = v.tradeScopes.filter(function(ts){ const t = low(ts && ts.trade); return !t || mine.some(function(m){ return t.indexOf(m) > -1 || m.indexOf(t) > -1; }); });
@@ -926,7 +926,7 @@ async function plansImport(who, body){
     item.kind = srt.kind; item.trades = srt.trades;
     if (srt.kind === 'scope' && srt.trades.length) { toScope.push(item); return; }
     if (srt.kind === 'specs' && (!item.category || item.category === 'Plans')) item.category = 'Specs';
-    if (srt.kind === 'scope') item.category = 'Scope';
+    if (srt.kind === 'scope') item.category = 'Scope — all subs';   /* patch PLANREQ-I: a scope for every sub, with the plans */
     added.push(item);
   };
   if (ext === 'zip') {
