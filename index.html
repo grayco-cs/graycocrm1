@@ -167616,6 +167616,7 @@ function denyTo(r){
 function doDeny(r){
   var inp = D.querySelector('[data-apx-deny-in="' + cssq(r.key) + '"]'), why = s((inp && inp.value) || DREASON[r.key]);
   /* patch APPRCOUNT: a reason is optional */
+  var _to = /^(?:td:)?to:(.+?)(?:#\d+)?$/.exec(s(r.key)); if (_to && W._gcTimeOff && W._gcTimeOff.decide) { delete DENYBOX[r.key]; delete DREASON[r.key]; Promise.resolve(W._gcTimeOff.decide(_to[1], false, why)).then(function(){ DENYC.at = 0; fresh(); paintSoon(); }); return; }   /* patch TIMEOFF: ✕ Deny on a time-off request denies it (the person sees the note) */
   var to = denyTo(r) || 'the office', me = myName() || myEmail(), at = new Date().toISOString(), title = s(r.title).slice(0, 120);
   var d = { key: r.key.replace(/#\d+$/, ''), src: r.src, id: s(r.id), title: title, pid: s(r.pid), by: me, at: at, reason: why.slice(0, 500), to: to };
   try {

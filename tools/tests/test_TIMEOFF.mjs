@@ -151,6 +151,23 @@ try {
   ok(/Zedd Demo/.test(ts || '') && /Sick/.test(ts || '') && /Unpaid/.test(ts || '') && /Off/.test(ts || ''), 'admin 🕐 Timesheets: the sick day and the day off are their own rows (Unpaid — no paid leave on the record)', ts && ts.slice(0, 400));
   ok(!JSON.stringify(H.cget('timesheets') || []).includes('Sick'), 'the timesheets list itself is not changed (pay math untouched)');
   await shot(A, '11_admin_timesheets');
+  await A.ev(() => document.querySelectorAll('[id^="_ts"], .gc-to-ov').forEach(e => { let o = e; while (o.parentElement && o.parentElement !== document.body) o = o.parentElement; if (o !== document.getElementById('root')) o.remove(); }));
+
+  // ── 6. ✕ Deny on the Approvals row denies the request (not a "fix and resend" To-Do) ──
+  const D2 = [6, 7, 8].map(add).find(d => new Date(d + 'T12:00:00').getDay() !== 0);
+  const r2 = await P.ev(d => window._gcTimeOff.request({ kind: 'off', from: d, to: d, part: 'full', reason: 'Demo game' }).then(x => x.rec && x.rec.id), D2);
+  await sleep(1500); await A.ev(() => window._gcTimeOff.pull()); await sleep(1200);
+  await A.ev(() => { window._gcApprovalSetFresh && window._gcApprovalSetFresh(); window._setView('dashboard'); }); await sleep(800);
+  await A.ev(() => window._setView('approvals')); await sleep(2500);
+  const clicked = await A.ev(() => { const cards = [...document.querySelectorAll('#gc-apx-mount *')].filter(e => /Time off: Zedd Demo/.test(e.textContent || '') && [...e.querySelectorAll('button')].some(b => /Deny/.test(b.textContent))); const c = cards[cards.length - 1]; if (!c) return false; [...c.querySelectorAll('button')].find(b => /Deny/.test(b.textContent)).click(); return true; });
+  await sleep(700);
+  const went = await A.ev(() => { const i = document.querySelector('[data-apx-deny-in]'); if (!i) return false; i.value = 'Busy week'; i.dispatchEvent(new Event('input', { bubbles: true })); const g = document.querySelector('[data-apx-act$="|denygo"]'); if (!g) return false; g.click(); return true; });
+  await sleep(2500);
+  const r2c = (H.cget('gc_timeoff') || { list: [] }).list.find(r => r.id === r2);
+  ok(clicked && went && r2c && r2c.status === 'denied' && r2c.decisionNote === 'Busy week', 'Approvals row ✕ Deny (with a reason) denies the time-off request', { clicked, went, st: r2c && r2c.status, n: r2c && r2c.decisionNote });
+  const fixTodo = JSON.stringify(H.cget('gc_office_tasks') || []).includes('Fix and resend: 🏖');
+  ok(!fixTodo, '…and makes no "↩ Fix and resend" To-Do');
+  await shot(A, '12_admin_deny_from_row');
 } catch (e) { fail++; console.log('  ✗ FAIL threw: ' + (e && e.stack || e)); }
 await closeAll();
 console.log(`\nTIMEOFF browser: ${pass} passed, ${fail} failed`);
