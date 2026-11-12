@@ -99,7 +99,7 @@ ok('M3 🌀 Equipment: 6 air movers and 1 dehumidifier out (Mitigation only)', /
 await A.ev(() => window._setView('mws_calc')); await sleep(1200);
 const calc = await A.ev(() => { const r = document.getElementById('gc-mws-mount'), set = (k, v) => { const i = r.querySelector('[data-mws-k="' + k + '"]'); if (!i) return; i.value = v; i.dispatchEvent(new Event('input', { bubbles: true })); };
   set('tempF', 75); set('rh', 60); set('tempF2', 90); set('rh2', 25); set('l', 20); set('w', 15); set('wetFloorSF', 300); set('wetWallSF', 140); set('wickH', 3);
-  const g = s => (r.querySelector(s) || {}).textContent; return { gpp: g('[data-mws-gpp]'), drop: g('[data-mws-drop]'), am: g('[data-mws-am]'), dh: g('[data-mws-dh]'), dew: (r.innerText.match(/[Dd]ew point[^\d-]*(-?[\d.]+)/) || [])[1] }; });
+  const g = s => (r.querySelector(s) || {}).textContent; return { gpp: g('[data-mws-gpp]'), drop: g('[data-mws-drop]'), am: g('[data-mws-am]'), dh: g('[data-mws-dh]'), dew: (r.innerText.match(/[Dd]ew point\s*:?\s*(-?\d+\.\d)\s*°?F/) || [])[1] }; });
 ok('M3 🧮 calculator agrees with the hand math (77.6 GPP, drop 25.3, 7 air movers, 1 dehu, dew point 60.2)', /77\.6/.test(calc.gpp) && calc.drop === '25.3' && calc.am === '7' && calc.dh === '1' && (!calc.dew || calc.dew === '60.2'), calc);
 await shot('m3_calculator');
 

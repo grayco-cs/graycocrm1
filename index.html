@@ -224984,6 +224984,13 @@ function wrapSetView(){
   w.__mws = true; W._setView = w;
 }
 /* screens their menu has are theirs to open (a "Mitigation PM" is not in the role table: Customers / Insurance are on its menu) */
+/* patch QAB (overnight QA 11/12): the claims app's own boards inside the tool tabs (💧 Drying jobs, 💧 Mitigation, 🛡 Insurance) for a
+   Mitigation / Environmental person — or with that company picked — list only that company's claims (inWs), never a Construction job's claim */
+function wrapInsVisible(){
+  var f = W._gcInsVisible; if (typeof f !== 'function' || f.__qab) return;
+  var w = function(c, p){ try { var W0 = ws(); if (W0 && !inWs(p || (c && proj(c.projectId)), c, W0.co)) return false; } catch (e) {} return f.apply(this, arguments); };
+  w.__qab = true; W._gcInsVisible = w;
+}
 function wrapAllowed(){
   var f = W._gcViewAllowed; if (typeof f !== 'function' || f.__mws) return;
   var w = function(v){ try { if (myKind() && menuIds().indexOf(v) >= 0) return true; } catch (e) {} return f.apply(this, arguments); };
@@ -225567,7 +225574,7 @@ function css(){
 
 /* ═════ keep it current ═════ */
 function tick(){
-  try { wrapMenu(); wrapSetView(); wrapAllowed(); regField(); } catch (e) { warn(e); }
+  try { wrapMenu(); wrapSetView(); wrapAllowed(); regField(); wrapInsVisible(); } catch (e) { warn(e); }
   try { if (UI.el && UI.el.isConnected && !D.hidden) draw(false); } catch (e) {}
   try { if (view() === 'dashboard' || D.getElementById('gc-mws-dash')) dash(); } catch (e) {}
 }
