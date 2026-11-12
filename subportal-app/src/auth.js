@@ -44,41 +44,115 @@ function fromAuth(j, prev) {
   };
 }
 
+/* patch SUBSESS (owner 11/12: "keep subs signed in on portal") — a sub stays signed in until they press Log Out:
+ *  • the hour-long access token is renewed with the refresh token BEFORE it runs out (a minute timer, and whenever the
+ *    page comes back: tab shown, window focused, phone back online / awake) — never only after a call failed;
+ *  • no signal, a slow or failing sign-in service (time-out, 5xx, 429, a captive-portal page) never signs anyone out:
+ *    the sign-in is kept and tried again later;
+ *  • only one tab renews at a time (navigator.locks); a tab that waited re-reads the browser copy first and uses the
+ *    sign-in the other tab just saved, so the same refresh token is never spent twice (Supabase rotates it);
+ *  • a refused refresh token signs out only after looking at the browser copy again and one more try — and only if
+ *    the browser still holds that same refused token (another tab or the CRM may have saved a newer one meanwhile).
+ */
+const LOCK = 'gc_auth_v1_refresh';
+const EARLY = 5 * 60e3;          // renew this long before the access token runs out
+const NET_MS = 20e3;             // a hung request (phone asleep, bad signal) counts as "offline" after this
+const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+function fresh(s, ms) { return !!s && Number(s.expires_at) * 1000 - Date.now() > (ms == null ? 60e3 : ms); }
+
+const outListeners = new Set();
+/** App: called when the sign-in really ended (refused by Supabase, or Log Out in another tab). */
+export function onSignedOut(fn) { outListeners.add(fn); return () => outListeners.delete(fn); }
+function signedOutNow() { outListeners.forEach((fn) => { try { fn(); } catch (e) { /* ignore */ } }); }
+
 async function authPost(path, body, token) {
   const h = { apikey: SB_ANON, 'Content-Type': 'application/json' };
   if (token) h.Authorization = 'Bearer ' + token;
+  let ctl = null, timer = null;
+  try { ctl = new AbortController(); timer = setTimeout(() => { try { ctl.abort(); } catch (e) { /* ignore */ } }, NET_MS); } catch (e) { ctl = null; }
   try {
-    const r = await fetch(SB_URL + '/auth/v1/' + path, { method: 'POST', headers: h, body: JSON.stringify(body || {}) });
+    const r = await fetch(SB_URL + '/auth/v1/' + path, { method: 'POST', headers: h, body: JSON.stringify(body || {}), signal: ctl ? ctl.signal : undefined });
     let j = {}; try { j = await r.json(); } catch (e) { /* not JSON */ }
-    return { ok: r.ok, status: r.status, json: j };
+    return { ok: r.ok, status: r.status, json: j || {} };
   } catch (e) {
     return { ok: false, status: 0, net: true, json: {} };
-  }
+  } finally { if (timer) clearTimeout(timer); }
+}
+// Supabase's own answer that this refresh token is no good (not a proxy / captive-portal page, not a server hiccup).
+function refused(r) {
+  const j = r.json || {};
+  return !r.net && (r.status === 400 || r.status === 401 || r.status === 403) && !!(j.error || j.error_code || j.error_description || j.msg || j.code);
+}
+function withLock(fn) {
+  try { if (typeof navigator !== 'undefined' && navigator.locks && navigator.locks.request) return navigator.locks.request(LOCK, fn); } catch (e) { /* no Web Locks */ }
+  return fn();
 }
 
 let refreshing = null;
-function refresh() {
+/** Renew the sign-in. `stale` = the access token the caller has (or had refused); a newer one in storage is used as is. */
+function refresh(stale) {
   if (refreshing) return refreshing;
-  refreshing = (async () => {
-    const s = load();
-    if (!s) throw new Error('signed-out');
-    const r = await authPost('token?grant_type=refresh_token', { refresh_token: s.refresh_token });
-    if (r.ok && r.json.access_token) { const n = fromAuth(r.json, s); store(n); return n; }
-    // The CRM (or another tab) may have refreshed first, which uses up the old token.
-    const disk = load();
-    if (disk && disk.refresh_token !== s.refresh_token && disk.expires_at * 1000 > Date.now() + 60e3) return disk;
-    if (r.net || r.status >= 500 || r.status === 429) throw new Error('offline');
-    store(null);
-    throw new Error('signed-out');
-  })().finally(() => { refreshing = null; });
+  refreshing = Promise.resolve().then(() => withLock(() => doRefresh(stale))).finally(() => { refreshing = null; });
   return refreshing;
+}
+async function doRefresh(stale) {
+  let s = load();
+  if (!s) throw new Error('signed-out');
+  // Another tab (or the CRM) renewed it while this one waited: use that, never spend the old refresh token again.
+  if (s.access_token !== stale && fresh(s, 90e3)) return s;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const r = await authPost('token?grant_type=refresh_token', { refresh_token: s.refresh_token });
+    if (r.ok && r.json.access_token) { const n = fromAuth(r.json, load() || s); store(n); return n; }
+    if (!refused(r)) throw new Error('offline');            // no signal / service trouble: keep the sign-in, try later
+    await pause(attempt ? 300 : 1500);                       // the tab that spent it first may still be saving the new one
+    const disk = load();
+    if (!disk) { signedOutNow(); throw new Error('signed-out'); }   // Log Out in another tab
+    if (disk.refresh_token !== s.refresh_token) { if (fresh(disk)) return disk; s = disk; }   // a newer sign-in: use / renew that one
+  }
+  // Refused twice and nothing newer in the browser: the sign-in really ended (revoked, password changed, account removed).
+  const now = load();
+  if (now && now.refresh_token !== s.refresh_token && fresh(now)) return now;
+  if (!now || now.refresh_token === s.refresh_token) store(null);
+  signedOutNow();
+  throw new Error('signed-out');
 }
 
 async function token() {
   const s = load();
   if (!s) throw new Error('signed-out');
   if (s.expires_at * 1000 - Date.now() > 90e3) return s;
-  return refresh();
+  try { return await refresh(s.access_token); }
+  catch (e) {
+    // Could not renew just now, but the old one still works for a moment: use it.
+    if (e.message === 'offline' && s.expires_at * 1000 > Date.now() + 5e3) return s;
+    throw e;
+  }
+}
+function authError(e) {
+  const off = e && e.message === 'offline';
+  const err = new Error(off ? 'Could not reach GrayCo. Check the internet connection.' : 'Your sign-in has ended. Please sign in again.');
+  if (off) err.offline = true; else err.signedOut = true;
+  return err;
+}
+
+/** Keep the sign-in fresh while the page is open (call once after a sign-in is restored or made). */
+let keeping = false;
+export function keepSignedIn() {
+  if (keeping || typeof window === 'undefined') return;
+  keeping = true;
+  const check = () => {
+    const s = load();
+    if (!s || fresh(s, EARLY)) return;
+    refresh(s.access_token).catch(() => { /* offline: next check; signed out: onSignedOut already told the app */ });
+  };
+  setInterval(check, 60e3);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) check(); });
+  window.addEventListener('focus', check);
+  window.addEventListener('online', check);
+  window.addEventListener('pageshow', check);
+  // Log Out in another tab of this site → this tab too (nothing else ever removes the key).
+  window.addEventListener('storage', (e) => { if (e.key === KEY && !e.newValue) signedOutNow(); });
+  check();
 }
 
 /**
@@ -86,26 +160,31 @@ async function token() {
  */
 export async function api(action, payload = {}, { anonymous = false, retried = false } = {}) {
   const headers = { 'Content-Type': 'application/json' };
+  let used = '';
   if (!anonymous) {
     let s;
     try { s = await token(); }
-    catch (e) { throw new Error(e.message === 'offline' ? 'Could not reach GrayCo. Check the internet connection.' : 'Your sign-in has ended. Please sign in again.'); }
-    headers.Authorization = 'Bearer ' + s.access_token;
+    catch (e) { throw authError(e); }
+    used = s.access_token;
+    headers.Authorization = 'Bearer ' + used;
   }
   let r;
   try {
     r = await fetch(API_URL, { method: 'POST', headers, body: JSON.stringify({ ...payload, action }) });
   } catch (e) {
-    throw new Error('Could not reach GrayCo. Check the internet connection.');
+    const err = new Error('Could not reach GrayCo. Check the internet connection.');
+    err.offline = true;
+    throw err;
   }
   if (r.status === 401 && !anonymous && !retried) {
-    try { await refresh(); } catch (e) { /* falls through to the error below */ }
+    try { await refresh(used); } catch (e) { throw authError(e); }
     return api(action, payload, { anonymous, retried: true });
   }
   let j = {}; try { j = await r.json(); } catch (e) { /* not JSON */ }
   if (!r.ok) {
     const err = new Error(j.error || ('Request failed (' + r.status + ')'));
     err.status = r.status;
+    if (r.status >= 500 || r.status === 429) err.offline = true;
     throw err;
   }
   return j;
@@ -225,8 +304,12 @@ export async function getCurrentUser() {
     const me = await api('me');
     return me.user || null;
   } catch (e) {
-    if (e.status === 401 || /sign in/i.test(e.message)) store(null);
-    return null;
+    // patch SUBSESS: signed out only when the sign-in itself was refused (the refresh token, or a just-renewed token);
+    // no signal / a server hiccup keeps the sign-in — the app says "reconnecting" and tries again.
+    if (e.signedOut) return null;
+    if (e.status === 401) { store(null); return null; }
+    e.transient = true;
+    throw e;
   }
 }
 

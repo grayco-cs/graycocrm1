@@ -276,7 +276,10 @@ async function tokenUser(event){
   try {
     const r = await fetch(sbUrl() + '/auth/v1/user', { headers: { apikey: anonKey(), Authorization: 'Bearer ' + m[1] } });
     if (r.ok) user = await r.json();
-  } catch (e) { throw Fail(503, 'Could not reach the sign-in service. Try again.'); }
+    /* patch SUBSESS: only Supabase saying the token is bad (401/403) means "signed out" — a 5xx / 429 / odd answer from the
+       sign-in service is a hiccup (503: the bid site keeps the sign-in and tries again), not an expired sign-in */
+    else if (r.status !== 401 && r.status !== 403) throw Fail(503, 'Could not reach the sign-in service. Try again.');
+  } catch (e) { if (e && e.status === 503) throw e; throw Fail(503, 'Could not reach the sign-in service. Try again.'); }
   const email = low(user && user.email);
   if (!email) throw Fail(401, 'Your sign-in has expired. Please sign in again.');
   return { email: email, uid: s(user.id) };
