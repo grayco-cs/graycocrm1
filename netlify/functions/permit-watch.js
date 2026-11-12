@@ -78,17 +78,21 @@ async function getJson(url, opts, ms){
 }
 async function settings(){ return P.clean(await D.kvGet(K.SETTINGS)); }
 function shovelsKey(){ return D.env('SHOVELS_API_KEY'); }
-function tag(p, c){ return Object.assign(p, { reasons: c.reasons, hint: c.hint, bucket: c.bucket }); }
+function tag(p, c){ return Object.assign(p, { reasons: c.reasons, hint: c.hint, bucket: c.bucket, cos: c.cos || [c.hint], category: c.category || '', envWords: c.envWords || [] }); }   /* patch LEADBOTH: + cos / ☢️ category */
 
 /* ── Nashville (free) ── */
 /* the ArcGIS where clause: the date, and — when nothing small is ticked — the minimum value and "commercial or multifamily" right at
    the source (owner 11/12: "$1 million+ GC jobs … no residential"); _lib/permits.js classify() still checks every permit */
+const ENV_Q = '(' + ['ASBESTOS', 'ABATEMENT', 'MOLD', 'MOULD', 'LEAD BASED', 'LEAD-BASED', 'LEAD PAINT', 'HAZMAT', 'HAZARDOUS', 'MICROBIAL', 'REMEDIATION'].map(w => "UPPER(Purpose) LIKE '%" + w + "%'").join(' OR ') + " OR UPPER(Permit_Subtype_Description) LIKE '%ABATEMENT%')";   /* patch LEADBOTH */
 function nashWhere(S, since){
   const inc = S.include, parts = ["Date_Issued >= TIMESTAMP '" + since + " 00:00:00'"];
   const small = inc.repair || inc.roofing || inc.demolition;
-  if (!small && S.minValue > 0) parts.push('Const_Cost >= ' + Math.round(S.minValue));
+  const big = [];
+  if (!small && S.minValue > 0) big.push('Const_Cost >= ' + Math.round(S.minValue));
   if (!small && !inc.residentialRehab && !inc.residentialNew)
-    parts.push("(Permit_Type_Description LIKE '%Commercial%'" + (inc.multifamily ? " OR Permit_Subtype_Description LIKE '%Multifamily%' OR Permit_Subtype_Description LIKE '%Apartment%' OR Permit_Subtype_Description LIKE '%Condominium%'" : '') + ')');
+    big.push("(Permit_Type_Description LIKE '%Commercial%'" + (inc.multifamily ? " OR Permit_Subtype_Description LIKE '%Multifamily%' OR Permit_Subtype_Description LIKE '%Apartment%' OR Permit_Subtype_Description LIKE '%Condominium%'" : '') + ')');
+  /* patch LEADBOTH: ☢️ asbestos / lead / mold permits at any value and any kind (the big-job rule OR the words) */
+  if (big.length && inc.environmental) parts.push('((' + big.join(' AND ') + ') OR ' + ENV_Q + ')'); else Array.prototype.push.apply(parts, big);
   return parts.join(' AND ');
 }
 async function runNashville(S, found, t0){
@@ -400,7 +404,7 @@ async function staffAction(body, who, headers){
        a list imported with "import everything" and a permit a person made a lead stay as they are */
     const Sx = Object.assign({}, S, { maxAgeDays: 3650 }), nowMs = D.now();
     all.forEach(function(x){
-      if (!x.keepAll && x.state !== 'lead') { const c = P.classify(x, Sx, nowMs); if (c.match) { x.reasons = c.reasons; x.hint = c.hint; x.bucket = c.bucket; delete x.nomatch; delete x.filtered; } else { x.filtered = c.why; } }
+      if (!x.keepAll && x.state !== 'lead') { const c = P.classify(x, Sx, nowMs); if (c.match) { x.reasons = c.reasons; x.hint = c.hint; x.bucket = c.bucket; x.cos = c.cos || [c.hint]; x.category = c.category || ''; x.envWords = c.envWords || []; delete x.nomatch; delete x.filtered; } else { x.filtered = c.why; } }
       if (x.filtered || x.nomatch) n.filtered++; else n[x.state] = (n[x.state] || 0) + 1;
     });
     const stO = obj(st); if (stO.shovels) { stO.shovels = Object.assign({}, stO.shovels, { spent30: spent30(stO.shovels.spent), left: budgetLeft(S, stO.shovels) }); delete stO.shovels.zips; }

@@ -159,6 +159,29 @@ exports.handler = async function (event) {
         return { statusCode: 200, headers, body: JSON.stringify({ ok: true, last: last }) };
       } catch (e) { return { statusCode: 500, headers, body: JSON.stringify({ error: e.message }) }; }
     }
+    /* patch LEADKEEP (owner 11/12: priorities lost when the Lead Inbox import re-wrote the LEADIN leads ~17:00 UTC): POST
+       {"action":"leadkeep","before":"2026-11-12T17:00:00Z"} from a signed-in ADMIN (checked above) → the 'leads' list of the newest
+       nightly gc_kv snapshot taken BEFORE that time, only the fields a person sets and the ones that identify the lead (no phone,
+       e-mail, address or other contact data). Read-only; the CRM fills only fields that are empty now. */
+    if (req && req.action === 'leadkeep') {
+      const before = Date.parse(String(req.before || '2026-11-12T17:00:00Z'));
+      if (!isFinite(before)) return { statusCode: 400, headers, body: JSON.stringify({ error: 'before: an ISO time' }) };
+      const LF = ['id', 'inboxId', 'inboxLinked', 'mergedFrom', 'bidNumber', 'name', 'title', 'city', 'gc', 'dueToCompany', 'priority', 'prioritySetAt', 'prioritySetBy', 'stage', 'stageChangedAt', 'stageHistory',
+        'pm', 'pmEmail', 'estimator', 'estimatorEmail', 'assignedAt', 'assignedBy', 'notSameAs', 'tags', 'companyId', 'companyIdBy', 'alsoCos', 'alsoCosAt', 'activity', 'updatedAt'];
+      try {
+        const lr = await fetch(sbUrl() + '/rest/v1/gc_backups?select=id,taken_at&source=eq.gc_kv&taken_at=lt.' + encodeURIComponent(new Date(before).toISOString()) + '&order=taken_at.desc&limit=1', { headers: H() });
+        if (!lr.ok) return { statusCode: 200, headers, body: JSON.stringify({ ok: false, error: lr.status === 404 ? 'gc_backups is missing — run docs/security-prepare.sql' : 'gc_backups read ' + lr.status }) };
+        const list = await lr.json(), b = Array.isArray(list) && list[0];
+        if (!b) return { statusCode: 200, headers, body: JSON.stringify({ ok: false, error: 'No nightly backup before ' + new Date(before).toISOString() }) };
+        const r = await fetch(sbUrl() + '/rest/v1/gc_backups?select=snapshot&id=eq.' + Number(b.id), { headers: H() });
+        const rows = r.ok ? await r.json() : null, snap = rows && rows[0] && rows[0].snapshot;
+        const row = Array.isArray(snap) ? snap.find(function(x){ return x && x.key === 'leads'; }) : null;
+        let v = row && row.value; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } }
+        if (!Array.isArray(v)) return { statusCode: 200, headers, body: JSON.stringify({ ok: false, error: 'That backup has no leads list', at: b.taken_at }) };
+        const leads = v.filter(function(l){ return l && l.id; }).map(function(l){ const o = {}; LF.forEach(function(f){ if (l[f] === undefined) return; if (f === 'activity') { const a = (Array.isArray(l.activity) ? l.activity : []).filter(function(x){ return x && x.type === 'priority'; }).slice(-5).map(function(x){ return { type: 'priority', text: String(x.text || '').slice(0, 60), at: x.at, by: x.by }; }); if (a.length) o.activity = a; return; } if (f === 'stageHistory') { const h = (Array.isArray(l.stageHistory) ? l.stageHistory : []).slice(-3).map(function(x){ return x && { from: x.from, to: x.to, at: x.at, by: x.by }; }).filter(Boolean); if (h.length) o.stageHistory = h; return; } o[f] = l[f]; }); return o; });
+        return { statusCode: 200, headers, body: JSON.stringify({ ok: true, at: b.taken_at, leads: leads }) };
+      } catch (e) { return { statusCode: 500, headers, body: JSON.stringify({ error: e.message }) }; }
+    }
     if (req && req.action === 'history') {
       const nights = Math.max(1, Math.min(30, parseInt(req.nights, 10) || 10));
       const F = ['id', 'name', 'autoPO', 'status', 'pct', 'pm', 'contract', 'client', 'address', 'type', 'startDate', 'endDate', 'completionDate', 'updatedAt', '_fe'];

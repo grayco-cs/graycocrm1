@@ -92,6 +92,7 @@ const per = await A.ev(t => { const c = window._gcPayPeriodContaining(t); return
 const nxt = await A.ev(() => window._gcCertPlan.nextPayStart());
 ok(!!eff && eff === nxt, 'raise row: "Starts" = the next pay period', { eff, nxt });
 await A.ev(t => { const i = document.querySelector('[data-cp-eff="0"]'); i.value = t; }, per.start);   // start it with the week being run (so this run shows it)
+await A.ev(() => { const i = document.querySelector('[data-cp-amt="0"]'); if (i) i.value = '0.5'; });   // patch CERTROLE: the owner's WRT raise is $1/hr now; this test keeps its $0.50 numbers by editing the amount (an admin may)
 await A.page().screenshot({ path: SHOTS + 'payem_4_raise.png' });
 await A.ev(() => document.querySelector('[data-cp="approve"]').click()); await sleep(3500);
 const pr = await A.ev(async () => (await window.__GC_PAY.profiles()).find(p => p.name === 'Zedd Demo'));

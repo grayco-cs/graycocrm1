@@ -5,6 +5,7 @@
    permit is a lead for GrayCo, why (reason chips) and for which company (Construction / Mitigation / Environmental).
    netlify/functions/permit-watch.js does the fetching and the storing; tools/tests/test_PERMITS.js tests this file. */
 'use strict';
+const EW = require('./envwords.js');   /* patch LEADBOTH: the ☢️ asbestos / lead / mold words */
 function s(v){ return v == null ? '' : String(v).trim(); }
 function low(v){ return s(v).toLowerCase(); }
 function arr(v){ return Array.isArray(v) ? v : []; }
@@ -48,7 +49,8 @@ const INCLUDE = [
   ['residentialNew', 'Residential — new houses', false],
   ['demolition', 'Demolition (asbestos survey → Environmental; any value)', false],
   ['roofing', 'Roofing (any value)', false],
-  ['repair', 'Fire / water / storm / mold / asbestos / repair words (any value)', false]
+  ['repair', 'Fire / water / storm / mold / asbestos / repair words (any value)', false],
+  ['environmental', 'Environmental: asbestos / lead / mold (any value)', true]   /* patch LEADBOTH (owner 11/12: "scan for those words" — abatement permits are often small) */
 ];
 /* the kinds of building (a chip on the permit; each can be left out in ⚙ Filters) — the first that fits */
 const USES = [
@@ -150,6 +152,10 @@ function classify(p, settings, nowMs){
   if (when && nowMs - when > S.maxAgeDays * 864e5) { out.why = 'older than ' + S.maxAgeDays + ' days'; return out; }
   /* the damage words */
   const F = { fire: RX.fire.test(dmgTxt), water: RX.water.test(dmgTxt), storm: RX.storm.test(dmgTxt) && !/tree removal/.test(typ + ' ' + sub), collapse: RX.collapse.test(dmgTxt), env: RX.env.test(dmgTxt) };
+  /* patch LEADBOTH: the ☢️ category — asbestos / lead / mold / abatement words (not a Metro codes "abatement case") */
+  const envW = EW.hits(dmgTxt.replace(/\babatement\s*(?:case|order|notice|district)\b/g, ' ')), envOn = S.include.environmental === true && (envW.length > 0 || F.env);
+  if (envW.length) F.env = true;
+  F.envWords = envW;
   const damage = F.fire || F.water || F.storm || F.collapse || F.env;
   const isNew = RX.isNew.test(typ + ' ' + sub) || tags.indexOf('new_construction') > -1 || (/\bnew (?:construction|building|sfr|single[- ]family|home|house|residence|commercial|dwelling|townho\w*|duplex)\b|construct (?:a )?new/.test(desc) && !RX.rehab.test(typ));
   const demo = RX.demoType.test(typ + ' ' + sub) || tags.indexOf('demolition') > -1 || RX.demoText.test(desc);
@@ -180,10 +186,11 @@ function classify(p, settings, nowMs){
   else bucket = 'other';
   out.bucket = bucket;
   const inc = S.include;
-  let wanted = (inc[bucket] === true) || (damage && inc.repair) || (repairWord && inc.repair && bucket !== 'admin');
-  if (bucket === 'roofing' && !inc.roofing && comm && !damage) { bucket = 'commercialRehab'; out.bucket = bucket; wanted = inc.commercialRehab === true; }   /* a big commercial re-roof is a commercial job */
+  let wanted = (inc[bucket] === true) || (damage && inc.repair) || (repairWord && inc.repair && bucket !== 'admin') || envOn;   /* patch LEADBOTH */
+  if (envOn) { /* patch LEADBOTH: kept whatever the bucket */ }
+  else if (bucket === 'roofing' && !inc.roofing && comm && !damage) { bucket = 'commercialRehab'; out.bucket = bucket; wanted = inc.commercialRehab === true; }   /* a big commercial re-roof is a commercial job */
   else if (bucket === 'roofing' && !inc.roofing && !damage) wanted = false;
-  if (bucket === 'demolition' && !inc.demolition && !damage) wanted = false;
+  if (bucket === 'demolition' && !inc.demolition && !damage && !envOn) wanted = false;
   if (!wanted) { out.why = 'not a kind of permit you picked (' + bucket + ')'; return out; }
   /* the kind of building (⚙ Filters can leave a kind out) */
   const useTxt = [typ, sub, desc, low(p.propertyDetail)].join(' | ');
@@ -192,7 +199,7 @@ function classify(p, settings, nowMs){
   if (use && S.uses && S.uses[use[0]] === false && !damage) { out.why = 'a kind of building you left out (' + use[1] + ')'; return out; }
   out.use = use ? use[0] : '';
   /* the value (repair / damage words, roofs and demolitions are wanted at any value — when those kinds are ticked) */
-  const v = num(p.value), bypass = (inc.repair && (damage || repairWord)) || (inc.roofing && roof) || (inc.demolition && demo);
+  const v = num(p.value), bypass = (inc.repair && (damage || repairWord)) || (inc.roofing && roof) || (inc.demolition && demo) || envOn;   /* patch LEADBOTH: ☢️ at any value */
   const bigBucket = bucket === 'commercialNew' || bucket === 'commercialRehab' || bucket === 'multifamily';
   if (!bypass) {
     if (v == null || v <= 0) { if (!bigBucket || S.minValue > 25000) { out.why = 'no job value listed'; return out; } }
@@ -205,6 +212,7 @@ function classify(p, settings, nowMs){
   if (F.water) R.push('💧 water/flood words');
   if (F.storm) R.push('🌪 storm/hail/wind words');
   if (F.collapse) R.push('🏚 collapse');
+  if (envOn) R.unshift('☢️ Abatement / mold');   /* patch LEADBOTH: the category chip */
   if (F.env) R.push('☣ mold/asbestos/lead words');
   const lab = { commercialNew: 'Commercial new', commercialRehab: 'Commercial rehab', multifamily: 'Multifamily', residentialRehab: 'Residential remodel', residentialNew: 'Residential new', other: 'Building permit' }[bucket];
   if (bucket === 'demolition') R.push(yb ? (yb < 1978 ? 'Demolition — built ' + yb + ' (Environmental)' : 'Demolition') : 'Demolition — pre-1978? (Environmental)');
@@ -216,7 +224,10 @@ function classify(p, settings, nowMs){
   /* which company */
   const mitig = F.fire || F.water || F.storm || F.collapse;
   const env = demo || F.env || (yb != null && yb > 1700 && yb < 1978);
-  out.hint = mitig ? 'mitigation' : env ? 'environmental' : 'construction';
+  out.hint = mitig && !envW.length ? 'mitigation' : env ? 'environmental' : 'construction';
+  /* patch LEADBOTH: a ☢️ permit is Environmental's; a commercial / multifamily (GC) one is Construction's and also Environmental's */
+  if (envOn) { out.category = 'environmental'; out.envWords = envW; out.cos = (comm || multi || bigBucket) && !mitig ? ['construction', 'environmental'] : [out.hint === 'mitigation' ? 'mitigation' : 'environmental']; if (out.cos.length > 1) out.hint = 'construction'; }
+  else out.cos = [out.hint];
   out.match = true; out.why = 'match';
   return out;
 }
