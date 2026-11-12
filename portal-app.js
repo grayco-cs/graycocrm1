@@ -32,7 +32,7 @@ var L = {
     w9: 'W-9', coi: 'Insurance certificate (COI)', agreement: 'Agreement with GrayCo', lienW: 'Lien waivers', onFile: 'On file', missing: 'Not on file', sentFile: 'Sent — GrayCo is filing it', expires: 'Expires', expired: 'Expired', upload: 'Upload', uploadNew: 'Upload new', expDate: 'Date it runs out', language: 'Language', score: 'Your GrayCo scorecard', scoreShow: 'Show my scorecard', scoreHide: 'Hide', scoreTips: 'How to raise it', scoreNote: 'From your on-time work, punch items, callbacks, paperwork and your PM\u2019s rating. Only you and GrayCo see it.',
     bidsTitle: 'GrayCo bids', bidsInvite: "You're invited to bid on GrayCo jobs at bids.grayco-cs.com.", bidsAccept: 'Accept invite', bidsPw: 'Choose a password for the bid site (8 or more characters)', bidsWaiting: 'Waiting for GrayCo approval. You get an e-mail when you can sign in.', bidsApproved: 'Approved — sign in with your e-mail and password.', bidsOpen: 'Open bids.grayco-cs.com', bidsOff: 'Bid site access is turned off. Call the office.', bidsNoEmail: 'GrayCo needs your e-mail on file first. Call the office.',
     signout: 'Sign out', saved: 'Sent to GrayCo', failed: 'That did not go through. Try again.', sending: 'Sending…', tooBig: 'That file is too big (4 MB at most).', pickFile: 'Pick a file first.',
-    dlicense: 'GrayCo Construction Services · TN #85034 BCB · AR #0486990627 · MS #27769', jobsTo: 'Jobs to bid', loadFail: 'Could not load. Check your signal and try again.',
+    dlicense: 'GrayCo Construction Services · TN #85034 BCB · AR #0486990627 · MS #27769', jobsTo: 'Jobs to bid', loadFail: 'Could not load. Check your signal and try again.', retry: 'Try again',
     awarded: 'Awarded', inprogress: 'In Progress', complete: 'Complete', bidding: 'Bidding'
   },
   es: {
@@ -60,7 +60,7 @@ var L = {
     w9: 'W-9', coi: 'Certificado de seguro (COI)', agreement: 'Acuerdo con GrayCo', lienW: 'Renuncias de gravamen', onFile: 'En archivo', missing: 'No está en archivo', sentFile: 'Enviado — GrayCo lo está archivando', expires: 'Vence', expired: 'Vencido', upload: 'Subir', uploadNew: 'Subir nuevo', expDate: 'Fecha en que vence', language: 'Idioma', score: 'Su calificación con GrayCo', scoreShow: 'Ver mi calificación', scoreHide: 'Ocultar', scoreTips: 'Cómo subirla', scoreNote: 'Según trabajos a tiempo, pendientes, llamadas de garantía, papeles y la calificación de su gerente. Solo usted y GrayCo la ven.',
     bidsTitle: 'Licitaciones GrayCo', bidsInvite: 'Está invitado a licitar trabajos de GrayCo en bids.grayco-cs.com.', bidsAccept: 'Aceptar invitación', bidsPw: 'Escoja una contraseña para el sitio de licitaciones (8 caracteres o más)', bidsWaiting: 'Esperando la aprobación de GrayCo. Recibirá un correo cuando pueda entrar.', bidsApproved: 'Aprobado — entre con su correo y su contraseña.', bidsOpen: 'Abrir bids.grayco-cs.com', bidsOff: 'El acceso al sitio de licitaciones está apagado. Llame a la oficina.', bidsNoEmail: 'GrayCo necesita su correo en archivo primero. Llame a la oficina.',
     signout: 'Salir', saved: 'Enviado a GrayCo', failed: 'No se pudo enviar. Intente otra vez.', sending: 'Enviando…', tooBig: 'El archivo es muy grande (4 MB como máximo).', pickFile: 'Escoja un archivo primero.',
-    dlicense: 'GrayCo Construction Services · TN #85034 BCB · AR #0486990627 · MS #27769', jobsTo: 'Trabajos para licitar', loadFail: 'No se pudo cargar. Revise su señal e intente otra vez.',
+    dlicense: 'GrayCo Construction Services · TN #85034 BCB · AR #0486990627 · MS #27769', jobsTo: 'Trabajos para licitar', loadFail: 'No se pudo cargar. Revise su señal e intente otra vez.', retry: 'Intentar otra vez',
     awarded: 'Adjudicado', inprogress: 'En progreso', complete: 'Terminado', bidding: 'Licitando'
   }
 };
@@ -215,9 +215,29 @@ function lateRow(x, line){
 }
 
 /* ── the server ── */
-function api(action, body){
+/* patch SUBSESS (owner 11/12: "keep subs signed in on portal"): "not active" signs the sub out only when it is real — this
+   browser's copy is read again (another tab may have signed in anew), the session is checked (whoami) and the call is tried
+   once more. No signal / a 5xx / a 429 never signs anyone out. */
+var ENDED = false;
+function notActiveRes(r, j){ return r.status === 404 && /not active/i.test((j && j.error) || ''); }
+function stillIn(){
+  var disk = ''; try { disk = localStorage.getItem('gc_portal_s') || ''; } catch (e) {}
+  if (disk && disk !== session) { session = disk; return Promise.resolve(true); }
+  return fetch(FN, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-portal-session': session }, cache: 'no-store', credentials: 'omit', body: JSON.stringify({ action: 'whoami' }) })
+    .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ return j && j.ok ? true : notActiveRes(r, j) ? false : null; }); }, function(){ return null; });
+}
+function api(action, body, again){
   return fetch(FN, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-portal-session': session }, cache: 'no-store', credentials: 'omit', body: JSON.stringify(Object.assign({ action: action }, body || {})) })
-    .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ if (r.status === 404 && /not active/i.test(j.error || '')) { H.ended(); throw new Error(j.error); } if (!r.ok || !j.ok) throw new Error(j.error || t('failed')); return j; }); });
+    .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){
+      if (notActiveRes(r, j)) {
+        if (again) { ENDED = true; H.ended(); throw new Error(j.error); }
+        return stillIn().then(function(yes){
+          if (yes === true) return api(action, body, true);
+          if (yes === null) throw new Error(t('failed'));   /* could not check: keep the sign-in */
+          ENDED = true; H.ended(); throw new Error(j.error);
+        });
+      }
+      if (!r.ok || !j.ok) throw new Error(j.error || t('failed')); return j; }); });
 }
 /* a picked file → base64 (photos are made small first: longest side 1600 px, JPEG) */
 function readFile(file){
@@ -1217,7 +1237,18 @@ window.GCPartner = {
       paintHello(); draw();
       var m = /[#&]job=([A-Za-z0-9_.:-]{1,80})/.exec(location.hash || ''); if (m) openJob(m[1], 'overview');
       setInterval(function(){ if (!document.hidden && !document.querySelector('.sheet')) reloadHome(); }, 60000);
-    }, function(e){ document.getElementById('main').innerHTML = ''; document.getElementById('main').appendChild(h('div', { class: 'off' }, [h('p', { text: e.message || t('loadFail') })])); });
+      document.addEventListener('visibilitychange', function(){ if (!document.hidden && !document.querySelector('.sheet')) reloadHome(); });   /* patch SUBSESS: phone awake again → fresh */
+    }, function(e){
+      if (ENDED) return;   /* signed out for real (H.ended showed that) */
+      /* patch SUBSESS: could not load (no signal / a hiccup): still signed in — try again by itself */
+      var main = document.getElementById('main'); main.innerHTML = '';
+      var again = function(){ cleanup(); main.innerHTML = '<div class="skel"></div>'; window.GCPartner.start(opts); };
+      var onShow = function(){ if (!document.hidden) again(); };
+      var iv = setInterval(function(){ if (!document.hidden) again(); }, 15e3);
+      var cleanup = function(){ clearInterval(iv); window.removeEventListener('online', again); document.removeEventListener('visibilitychange', onShow); };
+      window.addEventListener('online', again); document.addEventListener('visibilitychange', onShow);
+      main.appendChild(h('div', { class: 'off', id: 'pReconnect' }, [h('p', { text: e.message || t('loadFail') }), h('button', { type: 'button', class: 'btn gold', text: t('retry'), on: { click: again } })]));
+    });
   },
   setLang: setLang,
   signup: signup,   /* patch SUBSIGNUP: portal.html's sign-in screen → "New subcontractor? Create your account" */
