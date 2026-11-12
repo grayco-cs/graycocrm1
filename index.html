@@ -5496,7 +5496,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.237-2026-11-12-r34d -->
+<!-- GrayCo CRM Build: 33.238-2026-11-12-r34e -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6445,7 +6445,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.237-2026-11-12-r34d");
+  console.log("[GC] Build 33.238-2026-11-12-r34e");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6493,7 +6493,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.237-2026-11-12-r34d"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.238-2026-11-12-r34e"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -8162,7 +8162,7 @@ body{background:#ffffff !important;color:#000000 !important;}
     </body></html>`},xu=g=>{const te=hl(g),H=window.open("","_blank");H?(H.document.write(te),H.document.close()):se("Pop-up blocked — allow pop-ups for this site")},_gcP5x=(window._gcProposal5={data:function(g,te){window.__gcP5Only=true;try{return ls(g,te);}finally{window.__gcP5Only=false;}},html:hl,open:function(g,te){return ls(g,te);}})/* patch ESTPDF */,zf=({pd:_initPd,onGenerate:H,onClose:_})=>{const[g,te]=ce.useState(_initPd),[Q,y]=ce.useState("info"),[_gen,_setGen]=ce.useState(!1),T=[{id:"info",l:"Project Info"},{id:"scope",l:"Scope"},{id:"estimate",l:"Estimate"},{id:"payment",l:"Payment"},{id:"schedule",l:"Schedule"},{id:"warranty",l:"Warranty"},{id:"contract",l:"Contract"},{id:"links",l:"Links & Contact"}],L=(w,E)=>te(q=>({...q,[w]:E})),Y={width:"100%",padding:"6px 8px",border:`1px solid ${u.bdr}`,borderRadius:4,fontSize:11,fontFamily:"inherit",background:"#fff"},We={...Y,minHeight:80,resize:"vertical"},B={fontSize:10,fontWeight:600,color:u.tx2,marginBottom:2,display:"block"},U=(w,E,q)=>e.jsx("button",{style:{...ot,fontSize:10,marginTop:4},onClick:()=>L(E,[...w,q]),children:"+ Add"}),Z=(w,E,q)=>e.jsx("button",{style:{color:u.red,background:"none",border:"none",fontSize:11,cursor:"pointer",padding:"0 4px"},onClick:()=>L(E,w.filter((ke,z)=>z!==q)),children:"✕"});return e.jsx("div",{style:{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.6)",zIndex:2e3,display:"flex",alignItems:"center",justifyContent:"center"},children:e.jsxs("div",{style:{background:"#fff",borderRadius:10,width:"90vw",maxWidth:900,maxHeight:"90vh",display:"flex",flexDirection:"column",boxShadow:"0 20px 60px rgba(0,0,0,0.3)"},children:[e.jsxs("div",{style:{padding:"14px 20px",borderBottom:`1px solid ${u.bdr}`,display:"flex",justifyContent:"space-between",alignItems:"center",background:"linear-gradient(135deg,#0f1d2f,#162d4a)",borderRadius:"10px 10px 0 0",color:"#fff"},children:[e.jsxs("div",{children:[e.jsxs("div",{style:{fontSize:16,fontWeight:800},children:["📄 Proposal Editor — ",g.projectName||"New Proposal"]}),e.jsx("button",{onClick:()=>{window._openGDocImport&&window._openGDocImport(function(_p){te(function(_g){var m=Object.assign({},_g);Object.keys(_p).forEach(function(k){var v=_p[k];if(v!==void 0&&v!==""&&!(Array.isArray(v)&&v.length===0))m[k]=v});return m})})},style:{marginTop:6,padding:"5px 12px",borderRadius:7,border:"1px solid #2f6fb3",background:"#143458",color:"#cfe3ff",fontWeight:700,fontSize:12,cursor:"pointer"},children:"\u2B07 Import Google Doc Estimate"}),e.jsxs("div",{style:{fontSize:11,color:"#94a3b8"},children:_gen?["✓ Opened in new tab — edit below and click Regenerate • ",g.jobTypeLabel]:["Edit everything before generating • ",g.jobTypeLabel]})]}),e.jsxs("div",{style:{display:"flex",gap:8},children:[e.jsx("button",{style:{padding:"8px 20px",background:"linear-gradient(135deg,#2563eb,#7c3aed)",color:"#fff",border:"none",borderRadius:6,fontWeight:700,fontSize:12,cursor:"pointer"},onClick:()=>{try{if(g&&g.pid){var _ctx={startDate:g.startDate,pm:g.pm,address:g.address,by:(n&&n.name)||"",jobName:g.projectName||g.name||""};if(Array.isArray(g.tentativeSchedule)&&g.tentativeSchedule.length&&window._gcAddTentativeSchedule){window._gcAddTentativeSchedule(g.pid,g.tentativeSchedule,_ctx);}else if(g.startDate&&window._gcAddTentativeRange){window._gcAddTentativeRange(g.pid,g.startDate,g.endDate,_ctx);}}}catch(_e){}_setGen(!0);te(g);H(g)},children:_gen?"\uD83D\uDD01 Regenerate Proposal":"📄 Generate Proposal"}),e.jsx("button",{style:{padding:"8px 14px",background:"rgba(255,255,255,0.1)",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:6,fontWeight:600,fontSize:12,cursor:"pointer"},onClick:_,children:"Close"})]})]}),e.jsx("div",{style:{display:"flex",borderBottom:`1px solid ${u.bdr}`,overflowX:"auto",background:"#f8fafc"},children:T.map(w=>e.jsx("button",{onClick:()=>y(w.id),style:{padding:"8px 14px",border:"none",background:"none",borderBottom:Q===w.id?"2px solid #2563eb":"2px solid transparent",color:Q===w.id?"#2563eb":u.tx2,fontWeight:Q===w.id?700:400,fontSize:11,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"},children:w.l},w.id))}),e.jsxs("div",{style:{flex:1,overflow:"auto",padding:20},children:[Q==="info"&&e.jsxs("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12},children:[e.jsxs("div",{children:[e.jsx("label",{style:B,children:"Project Name"}),e.jsx("input",{style:Y,value:g.projectName,onChange:w=>L("projectName",w.target.value)})]}),e.jsxs("div",{children:[e.jsx("label",{style:B,children:"Job Type Template"}),e.jsx("select",{style:Y,value:g.jobType,onChange:w=>{const E=w.target.value,q=Ks[E]||Ks["Residential Reno"];L("jobType",E),L("jobTypeLabel",q.label),L("inclusions",[...q.inclusions]),L("exclusions",[...q.exclusions]),L("commPromise",[...q.commPromise]),L("schedNotes",[...q.schedNotes]),L("payNotes",[...q.payNotes]),L("contractText",q.contract)},children:Object.entries(Ks).map(([w,E])=>e.jsx("option",{value:w,children:E.label},w))}),(window.__GC_AUTH__&&window.__GC_AUTH__.isAdmin&&window.__GC_AUTH__.isAdmin()&&["Insurance Restoration","Insurance Roof","Water Damage","Fire Damage"].indexOf(g.jobType)>=0)?e.jsx("div",{"data-gc-admin-note":"opclause",style:{display:"none"},children:"Admin note: DRAFT — for lawyer review — O&P clause and the insurance-claim wording (sent 10/26; 11/01 “documenting, not negotiating”)"}):null,(window.__GC_AUTH__&&window.__GC_AUTH__.isAdmin&&window.__GC_AUTH__.isAdmin())?e.jsx("div",{"data-gc-admin-note":"legal2",style:{display:"none"},children:"Admin note: DRAFT — pending attorney review (sent 10/26) (right-to-cancel clause, state contract wording, retainage)"}):null,(window.__GC_AUTH__&&window.__GC_AUTH__.isAdmin&&window.__GC_AUTH__.isAdmin())?e.jsx("div",{"data-gc-admin-note":"fees",style:{fontSize:11,color:"#92400e",background:"#fffbeb",border:"1px solid #fde68a",borderRadius:6,padding:"4px 8px",marginTop:4},children:"Prevailing-party attorney-fee clause (owner 10/26): confirm wording for TN/MS/AR."}):null]}),e.jsxs("div",{children:[e.jsx("label",{style:B,children:"Client Name"}),e.jsx("input",{style:Y,value:g.client,onChange:w=>L("client",w.target.value)})]}),e.jsxs("div",{children:[e.jsx("label",{style:B,children:"Client Phone"}),e.jsx("input",{style:Y,value:g.clientPhone,onChange:w=>L("clientPhone",w.target.value)})]}),e.jsxs("div",{children:[e.jsx("label",{style:B,children:"Client Email"}),e.jsx("input",{style:Y,value:g.clientEmail,onChange:w=>L("clientEmail",w.target.value)})]}),e.jsxs("div",{children:[e.jsx("label",{style:B,children:"Address"}),e.jsx("input",{style:Y,value:g.address,onChange:w=>L("address",w.target.value)})]}),e.jsxs("div",{children:[e.jsx("label",{style:B,children:"PO #"}),e.jsx("input",{style:Y,value:g.po,onChange:w=>L("po",w.target.value)})]}),e.jsxs("div",{children:[e.jsx("label",{style:B,children:"Project Manager"}),e.jsx("input",{style:Y,value:g.pm,onChange:w=>L("pm",w.target.value)})]}),e.jsxs("div",{children:[e.jsx("label",{style:B,children:"PM Phone"}),e.jsx("input",{style:Y,value:g.pmPhone,onChange:w=>L("pmPhone",w.target.value)})]}),e.jsxs("div",{children:[e.jsx("label",{style:B,children:"PM Email"}),e.jsx("input",{style:Y,value:g.pmEmail,onChange:w=>L("pmEmail",w.target.value)})]}),e.jsxs("div",{children:[e.jsx("label",{style:B,children:"Contract Amount ($ — from the SIGNED CONTRACT. This is the job revenue.)"}),e.jsx("input",{style:Y,type:"number",value:g.contractAmt,onChange:w=>L("contractAmt",parseFloat(w.target.value)||0)})]}),e.jsxs("div",{children:[e.jsx("label",{style:B,children:"Contract Status"}),e.jsxs("select",{style:Y,value:g.contractStatus||"not sent",onChange:w=>L("contractStatus",w.target.value),children:[e.jsx("option",{value:"not sent",children:"Not sent"}),e.jsx("option",{value:"sent",children:"Sent — awaiting signature"}),e.jsx("option",{value:"signed",children:"Signed"})]})]}),e.jsxs("div",{children:[e.jsx("label",{style:B,children:"Signed Contract (link to PDF / Google Doc / Drive)"}),e.jsx("input",{style:Y,type:"text",placeholder:"Paste link to the signed contract",value:g.contractUrl||"",onChange:w=>{var _v=w.target.value;te(function(q){var _n={...q,contractUrl:_v};if(_v&&_v.trim()){_n.contractStatus="signed";}return _n;});}}),(g.contractUrl?e.jsx("a",{href:g.contractUrl,target:"_blank",rel:"noopener",style:{fontSize:11,color:"#0ea5e9",textDecoration:"underline"},children:"Open signed contract"}):null)]}),e.jsxs("div",{children:[e.jsx("label",{style:B,children:"Estimated Weeks"}),e.jsx("input",{style:Y,type:"number",value:g.weeks,onChange:w=>L("weeks",parseInt(w.target.value)||4)})]}),e.jsxs("div",{children:[e.jsx("label",{style:B,children:"Start Date"}),e.jsx("input",{style:Y,type:"date",value:g.startDate,onChange:w=>L("startDate",w.target.value)})]}),e.jsxs("div",{children:[e.jsx("label",{style:B,children:"End Date"}),e.jsx("input",{style:Y,type:"date",value:g.endDate,onChange:w=>L("endDate",w.target.value)})]})]}),Q==="scope"&&e.jsxs("div",{children:[e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4},children:[e.jsx("label",{style:B,children:"Scope of Work Description"}),e.jsx("label",{style:{background:"#2563eb",color:"#fff",padding:"4px 10px",borderRadius:5,fontSize:11,cursor:"pointer",fontWeight:600,display:"flex",alignItems:"center",gap:4},title:"Upload Word, Excel, CSV or TXT — text will be added to scope below",children:[e.jsx("input",{type:"file",accept:".docx,.doc,.xlsx,.xls,.csv,.txt,.pdf",style:{display:"none"},onChange:async _ev=>{const _f=(_ev.target.files||[])[0];if(!_f)return;se("Reading document...");try{const _ext=_f.name.split(".").pop().toLowerCase();let _txt="";if(_ext==="csv"||_ext==="txt"){_txt=await _f.text();}else if(_ext==="xlsx"||_ext==="xls"){const _ab=await _f.arrayBuffer();const _xl=await Zc();const _wb=_xl.read(new Uint8Array(_ab),{type:"array"});_wb.SheetNames.forEach((_sn,_si)=>{const _ws=_wb.Sheets[_sn];const _rows=_xl.utils.sheet_to_json(_ws,{header:1,defval:"",raw:false});if(_si>0)_txt+="\n\n--- "+_sn+" ---\n";_txt+=_rows.filter(_r=>_r.some(_c=>String(_c||"").trim())).map(_r=>_r.map(_c=>String(_c||"").trim()).filter(Boolean).join("\t")).join("\n");});}else if(_ext==="docx"||_ext==="doc"){const _ab=await _f.arrayBuffer();try{const _mam=await import("https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js").catch(()=>null);if(_mam){const _res=await mammoth.extractRawText({arrayBuffer:_ab});_txt=_res.value||"";}}catch(_de){_txt="[Could not parse Word doc — copy/paste content below]";}}else{_txt=await _f.text().catch(()=>"[Binary file — cannot extract text]");}_txt=_txt.trim().slice(0,8000);if(!_txt){se("No text found in file");return;}L("scopeDescription",(g.scopeDescription?g.scopeDescription+"\n\n--- From: "+_f.name+" ---\n":"")+_txt);se("✅ Document added to scope — review and edit");}catch(_err){se("Failed: "+_err.message);}finally{_ev.target.value="";}}}),"📄 Upload to Scope"]})]}),e.jsx("textarea",{style:{...We,minHeight:150},value:g.scopeDescription,onChange:w=>L("scopeDescription",w.target.value)}),e.jsxs("div",{style:{marginTop:14},children:[e.jsx("label",{style:{...B,fontSize:12,fontWeight:700},children:"What's Included"}),g.inclusions.map((w,E)=>e.jsxs("div",{style:{display:"flex",gap:6,marginBottom:3,alignItems:"center"},children:[e.jsx("span",{style:{color:"#16a34a",fontWeight:700},children:"✓"}),e.jsx("input",{style:{...Y,flex:1},value:w,onChange:q=>{const ke=[...g.inclusions];ke[E]=q.target.value,L("inclusions",ke)}}),Z(g.inclusions,"inclusions",E)]},E)),U(g.inclusions,"inclusions","")]}),e.jsxs("div",{style:{marginTop:14},children:[e.jsx("label",{style:{...B,fontSize:12,fontWeight:700},children:"Exclusions"}),g.exclusions.map((w,E)=>e.jsxs("div",{style:{display:"flex",gap:6,marginBottom:3,alignItems:"center"},children:[e.jsx("span",{style:{color:"#dc2626",fontWeight:700},children:"✕"}),e.jsx("input",{style:{...Y,flex:1},value:w,onChange:q=>{const ke=[...g.exclusions];ke[E]=q.target.value,L("exclusions",ke)}}),Z(g.exclusions,"exclusions",E)]},E)),U(g.exclusions,"exclusions","")]})]}),Q==="estimate"&&e.jsxs("div",{children:[e.jsxs("div",{style:{marginBottom:10,padding:"8px 12px",background:"#f0fdf4",border:"1px solid #86efac",borderRadius:6},children:[e.jsx("div",{style:{fontSize:11,fontWeight:700,color:"#15803d",marginBottom:6},children:"📊 Load Estimate Into Template:"}),e.jsxs("div",{style:{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"},children:[e.jsxs("select",{style:{...Y,fontSize:11,flex:1,minWidth:160},onChange:_ev=>{const _eid=_ev.target.value;if(!_eid)return;const _est=fa.find(_e=>_e.id===_eid);if(!_est)return;const _mats=((_est.mats)||[]).map(_m=>({desc:_m.name,amount:Math.round(_m.qty*_m.uc*(1+(qa[_m.cat]||0)/100)*100)/100}));const _lab=((_est.labor)||[]).map(_l=>({desc:(_l.cat||"Lab")+": "+(_l.desc||""),amount:Math.round(_l.hrs*_l.rate*100)/100}));const _li=[..._mats,..._lab].filter(_x=>_x.desc);const _tot=_li.reduce((_a,_x)=>_a+(_x.amount||0),0);te(_s=>({..._s,lineItems:_li,contractAmt:cl(_tot,_est)}));se("Estimate loaded");_ev.target.value=""},children:[e.jsx("option",{value:"",children:"Load from CRM estimate..."}),...fa.filter(_e=>g.pid&&_e.pid&&_e.pid===g.pid&&_e.status!=="template").map(_e=>e.jsx("option",{value:_e.id,children:_e.name},_e.id))]}),e.jsx("label",{style:{...ht,cursor:"pointer",fontSize:11},children:[e.jsx("input",{type:"file",accept:".xlsx,.xls,.csv,.docx,.doc,.pdf,.txt,.rtf",style:{display:"none"},onChange:async _ev=>{const _f=(_ev.target.files||[])[0];if(!_f)return;se("Reading "+_f.name+"...");try{const _ab=await _f.arrayBuffer();const _u8=new Uint8Array(_ab);const _xl=await Zc();const _wb=_xl.read(_u8,{type:"array",raw:false,cellDates:true});const _ws=_wb.Sheets[_wb.SheetNames[0]];const _rows=_xl.utils.sheet_to_json(_ws,{header:1,defval:"",raw:false});if(!_rows||_rows.length<2){se("No data");return}const _hdrs=_rows[0].map(_x=>String(_x||"").toLowerCase().trim());const _fi=_kws=>{let _r=-1;_kws.forEach(_w=>{if(_r<0){const _i=_hdrs.findIndex(_h=>_h.includes(_w));if(_i>=0)_r=_i}});return _r};const _dC=_fi(["desc","name","item","material"]);const _aC=_fi(["amount","total","price","cost"]);const _li=_rows.slice(1).map(_r=>{const _d=String(_r[_dC>=0?_dC:0]||"").trim();const _a=_aC>=0?parseFloat(String(_r[_aC]).replace(/[$,]/g,""))||0:0;return _d||_a?{desc:_d.slice(0,100),amount:Math.round(_a*100)/100}:null}).filter(Boolean);if(!_li.length){se("No items found");return}const _tot=_li.reduce((_a,_x)=>_a+(_x.amount||0),0);te(_s=>({..._s,lineItems:_li,contractAmt:_tot}));se(_li.length+" items loaded")}catch(_err){se("Failed: "+_err.message)}finally{_ev.target.value=""}}}),e.jsx("span",{children:"📁 Excel/CSV"})]})]})]}),e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8},children:[e.jsx("label",{style:{...B,fontSize:12,fontWeight:700,margin:0},children:"Line Items"}),e.jsxs("div",{style:{fontSize:12,fontWeight:700,color:"#2563eb"},children:["Total: $",g.lineItems.reduce((w,E)=>w+(E.amount||0),0).toLocaleString("en-US",{minimumFractionDigits:2})," to Contract & Draws Auto-Updated"]})]}),e.jsxs("div",{style:{border:`1px solid ${u.bdr}`,borderRadius:6,overflow:"hidden"},children:[e.jsxs("div",{style:{display:"grid",gridTemplateColumns:"1fr 100px 30px",gap:0,background:"#f1f5f9",padding:"4px 8px",fontSize:9,fontWeight:700,color:u.tx2},children:[e.jsx("div",{children:"DESCRIPTION"}),e.jsx("div",{style:{textAlign:"right"},children:"AMOUNT"}),e.jsx("div",{})]}),g.lineItems.map((w,E)=>e.jsxs("div",{style:{display:"grid",gridTemplateColumns:"1fr 100px 30px",gap:4,padding:"3px 8px",borderBottom:`1px solid ${u.bdr}`,alignItems:"center"},children:[e.jsx("input",{style:{...Y,fontSize:10},value:w.desc,onChange:q=>{const ke=[...g.lineItems];ke[E]={...ke[E],desc:q.target.value},L("lineItems",ke)}}),e.jsx("input",{style:{...Y,fontSize:10,textAlign:"right"},type:"number",value:w.amount,onChange:q=>{const ke=[...g.lineItems];ke[E]={...ke[E],amount:parseFloat(q.target.value)||0};const _tot=ke.reduce((_a,_i)=>_a+(_i.amount||0),0);te(q=>{var _o=(q.lineItems||[]).reduce((_a,_i)=>_a+(_i.amount||0),0),_r=q._mkr&&Math.abs(Math.round(_o*q._mkr*100)/100-q.contractAmt)<0.011?q._mkr:(_o>0&&q.contractAmt>0?q.contractAmt/_o:(q._mkr||1));return{...q,lineItems:ke,_mkr:_r,contractAmt:Math.round(_tot*_r*100)/100}})}}),Z(g.lineItems,"lineItems",E)]},E))]}),e.jsx("button",{style:{...ot,fontSize:10,marginTop:6},onClick:()=>L("lineItems",[...g.lineItems,{desc:"",amount:0}]),children:"+ Add Line Item"}),e.jsxs("div",{style:{marginTop:10,padding:8,background:"#fefce8",border:"1px solid #fde047",borderRadius:6,fontSize:11},children:[e.jsx("b",{children:"💡 These numbers are FINAL:"})," When you click Generate Proposal, the contract amount and draws update your project in the CRM automatically. These are the numbers on the quote you send to the homeowner."]})]}),Q==="payment"&&e.jsxs("div",{children:[e.jsx("label",{style:{...B,fontSize:12,fontWeight:700},children:"Payment Draws"}),e.jsxs("div",{style:{fontSize:11,color:u.tx2,marginBottom:8},children:["Contract Amount: ",e.jsxs("b",{children:["$",g.contractAmt.toLocaleString("en-US",{minimumFractionDigits:2})]})," — draws should total 100%"]}),g.draws.map((w,E)=>{const _drawAmt=g.contractAmt*w.pct/100;const _paid=parseFloat(w.paid)||0;const _pctLeft=_drawAmt>0?Math.max(0,Math.round((_drawAmt-_paid)/_drawAmt*100)):(_paid>0?0:100);const _isPaid=_paid>=_drawAmt&&_drawAmt>0;return e.jsxs("div",{style:{border:"1px solid "+(_isPaid?"#86efac":w.paidDate?u.acc+"44":u.bdr),borderRadius:6,padding:"8px 10px",marginBottom:6,background:_isPaid?"#f0fdf4":"transparent"},children:[e.jsxs("div",{style:{display:"grid",gridTemplateColumns:"36px 1fr 70px 90px 28px",gap:5,alignItems:"center",marginBottom:_paid>0||_isPaid?6:0},children:[e.jsxs("div",{style:{textAlign:"center",fontWeight:700,color:"#2563eb",fontSize:12},children:["#",w.n]}),e.jsx("input",{style:{...Y,fontSize:12},value:w.desc,placeholder:"Draw description",onChange:q=>{const ke=[...g.draws];ke[E]={...ke[E],desc:q.target.value},L("draws",ke)}}),e.jsxs("div",{style:{display:"flex",alignItems:"center",gap:2},children:[e.jsx("input",{style:{...Y,width:44,textAlign:"center",fontSize:11},type:"number",value:w.pct,onChange:q=>{const ke=[...g.draws];ke[E]={...ke[E],pct:parseFloat(q.target.value)||0},L("draws",ke)}}),e.jsx("span",{style:{fontSize:10},children:"%"})]}),e.jsxs("div",{style:{fontWeight:700,fontSize:11,textAlign:"right",color:_isPaid?"#16a34a":u.tx},children:["$",_drawAmt.toLocaleString("en-US",{minimumFractionDigits:2})]}),Z(g.draws,"draws",E)]}),e.jsxs("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr auto",gap:5,alignItems:"center"},children:[e.jsxs("div",{style:{display:"flex",alignItems:"center",gap:3},children:[e.jsx("span",{style:{fontSize:10,color:u.tx2,whiteSpace:"nowrap"},children:"Received $:"}),e.jsx("input",{style:{...Y,flex:1,fontSize:11,background:_paid>0?"#f0fdf4":""},type:"number",value:w.paid||"",placeholder:"0.00",onChange:q=>{const ke=[...g.draws];ke[E]={...ke[E],paid:parseFloat(q.target.value)||0,paidDate:q.target.value&&!ke[E].paidDate?new Date().toISOString().slice(0,10):ke[E].paidDate},L("draws",ke)}})]}),e.jsxs("div",{style:{display:"flex",alignItems:"center",gap:3},children:[e.jsx("span",{style:{fontSize:10,color:u.tx2},children:"Date:"}),e.jsx("input",{style:{...Y,fontSize:11,width:100},type:"date",value:w.paidDate||"",onChange:q=>{const ke=[...g.draws];ke[E]={...ke[E],paidDate:q.target.value},L("draws",ke)}})]}),e.jsxs("div",{style:{background:_isPaid?"#16a34a":_pctLeft<50?"#f59e0b":"#dc2626",color:"#fff",borderRadius:12,padding:"2px 8px",fontSize:10,fontWeight:700,whiteSpace:"nowrap"},children:[_isPaid?"✓ PAID":_pctLeft+"%  left"]})]})]},E)}),e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:4},children:[e.jsx("button",{style:{...ot,fontSize:10},onClick:()=>L("draws",[...g.draws,{n:g.draws.length+1,desc:"",pct:0,paid:0,paidDate:""}]),children:"+ Add Draw"}),e.jsxs("div",{style:{fontSize:11,fontWeight:700,color:g.draws.reduce((w,E)=>w+E.pct,0)===100?"#16a34a":"#dc2626"},children:["Total: ",g.draws.reduce((w,E)=>w+E.pct,0),"%"]})]}),e.jsxs("div",{style:{marginTop:10,padding:"10px 12px",background:u.card,border:"1px solid "+u.bdr,borderRadius:6},children:[e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6},children:[e.jsx("span",{style:{fontSize:11,fontWeight:700},children:"Payment Summary"}),e.jsxs("span",{style:{fontSize:11,color:u.tx2},children:["Contract: ",e.jsx("b",{children:"$"+g.contractAmt.toLocaleString("en-US",{minimumFractionDigits:2})})]})]}),e.jsxs("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6},children:[e.jsxs("div",{style:{textAlign:"center",padding:"6px 4px",background:"#f0fdf4",borderRadius:4},children:[e.jsx("div",{style:{fontSize:9,color:u.tx2,textTransform:"uppercase",fontWeight:600},children:"Total Received"}),e.jsxs("div",{style:{fontSize:13,fontWeight:700,color:"#16a34a"},children:["$",g.draws.reduce((_a,_d)=>_a+(parseFloat(_d.paid)||0),0).toLocaleString("en-US",{minimumFractionDigits:2})]})]}),e.jsxs("div",{style:{textAlign:"center",padding:"6px 4px",background:"#fef3c7",borderRadius:4},children:[e.jsx("div",{style:{fontSize:9,color:u.tx2,textTransform:"uppercase",fontWeight:600},children:"Remaining"}),e.jsxs("div",{style:{fontSize:13,fontWeight:700,color:"#d97706"},children:["$",Math.max(0,g.contractAmt-g.draws.reduce((_a,_d)=>_a+(parseFloat(_d.paid)||0),0)).toLocaleString("en-US",{minimumFractionDigits:2})]})]}),e.jsxs("div",{style:{textAlign:"center",padding:"6px 4px",background:g.contractAmt>0&&g.draws.reduce((_a,_d)=>_a+(parseFloat(_d.paid)||0),0)>=g.contractAmt?"#f0fdf4":"#fef2f2",borderRadius:4},children:[e.jsx("div",{style:{fontSize:9,color:u.tx2,textTransform:"uppercase",fontWeight:600},children:"% Collected"}),e.jsxs("div",{style:{fontSize:13,fontWeight:700,color:g.contractAmt>0&&g.draws.reduce((_a,_d)=>_a+(parseFloat(_d.paid)||0),0)>=g.contractAmt?"#16a34a":"#dc2626"},children:[g.contractAmt>0?Math.round(g.draws.reduce((_a,_d)=>_a+(parseFloat(_d.paid)||0),0)/g.contractAmt*100):0,"%"]})]})]})]}),e.jsxs("div",{style:{marginTop:14},children:[e.jsx("label",{style:{...B,fontSize:12,fontWeight:700},children:"Payment Notes"}),g.payNotes.map((w,E)=>e.jsxs("div",{style:{display:"flex",gap:6,marginBottom:3,alignItems:"center"},children:[e.jsx("input",{style:{...Y,flex:1},value:w,onChange:q=>{const ke=[...g.payNotes];ke[E]=q.target.value,L("payNotes",ke)}}),Z(g.payNotes,"payNotes",E)]},E)),U(g.payNotes,"payNotes","")]})]}),Q==="schedule"&&e.jsxs("div",{children:[e.jsx("label",{style:{...B,fontSize:12,fontWeight:700},children:"Tentative Schedule"}),e.jsx("div",{style:{fontSize:11,color:u.tx2,marginBottom:8},children:"This shows the customer HOW you'd schedule the job — builds from your notes & checklist"}),e.jsxs("div",{style:{marginBottom:10,padding:"8px 10px",background:"#f0f9ff",border:"1px solid #bae6fd",borderRadius:6,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"},children:[e.jsx("span",{style:{fontSize:11,color:"#0369a1",fontWeight:600},children:"📂 Import Schedule:"}),e.jsx("label",{style:{padding:"5px 12px",background:"#0369a1",color:"#fff",borderRadius:5,fontSize:11,fontWeight:600,cursor:"pointer",border:"none"},children:[e.jsx("input",{type:"file",accept:".xlsx,.xls,.csv,.docx,.doc,.txt",style:{display:"none"},onChange:async(_ev)=>{const _f=_ev.target.files[0];if(!_f)return;se("Reading file...");const _ext=_f.name.split(".").pop().toLowerCase();const _pushItems=(_items)=>{if(!_items.length){se("No rows found in file — check the file has data");return}const _clean=_items.filter(_i=>_i.title&&String(_i.title).trim().length>0).map((_i,_idx)=>({week:_i.week||(_idx+1),title:String(_i.title).trim().slice(0,100),desc:String(_i.desc||"").trim().slice(0,200)}));if(!_clean.length){se("No usable rows found — every row was empty");return}te(_s=>({..._s,tentativeSchedule:_clean}));const _pid=g.pid;if(_pid){const _base=g.startDate?new Date(g.startDate+"T12:00:00"):new Date();const _crm=_clean.map((_it,_i)=>{const _d2=new Date(_base);_d2.setDate(_base.getDate()+(_it.week-1)*7);const _ds=_d2.getFullYear()+"-"+String(_d2.getMonth()+1).padStart(2,"0")+"-"+String(_d2.getDate()).padStart(2,"0");return{id:$t("SCH"),pid:_pid,title:_it.title,date:_ds,time:"08:00",endTime:"17:00",assignee:g.pm||n.name,vendor:"",type:"work",address:g.address||"",notes:_it.desc,scope:"company",by:n.name}});rn(_ex=>{const _keep=_ex.filter(_e=>_e.pid!==_pid);const _existing=_ex.filter(_e=>_e.pid===_pid);const _nodupes=_crm.filter(_c=>!_existing.some(_e=>_e.title.toLowerCase().trim()===_c.title.toLowerCase().trim()));return[..._keep,..._existing,..._nodupes]});se("✅ "+_clean.length+" phases imported → template + schedule")}else{se("✅ "+_clean.length+" phases imported into template")}};try{if(_ext==="xlsx"||_ext==="xls"||_ext==="csv"){const _XLSX=await Zc();const _ab=await _f.arrayBuffer();const _u8=new Uint8Array(_ab);const _wb=_XLSX.read(_u8,{type:"array",raw:false,cellDates:false});const _ws=_wb.Sheets[_wb.SheetNames[0]];const _raw=_XLSX.utils.sheet_to_json(_ws,{header:1,defval:"",raw:false});if(!_raw||!_raw.length){se("File appears empty");return}const _nonEmpty=_raw.filter(_r=>_r.some(_c=>String(_c||"").trim().length>0));if(_nonEmpty.length<2){se("File needs at least a header row + one data row");return}var _hdrIdx=0;for(var _ri=0;_ri<Math.min(10,_nonEmpty.length);_ri++){var _rr=_nonEmpty[_ri].map(function(h){return String(h||"").toLowerCase().trim()});if(_rr.some(function(h){return h.includes("task")||h.includes("phase")||h.includes("activity")||h.includes("item")||h.includes("week")||h.includes("wk")||h.includes("scope")||h.includes("trade")||h.includes("milestone")||h.includes("name")||h.includes("title")})){_hdrIdx=_ri;break}}const _hdrs=_nonEmpty[_hdrIdx].map(_h=>String(_h||"").toLowerCase().trim());const _data=_nonEmpty.slice(_hdrIdx+1);const _fi=_kws=>{let _best=-1;_kws.forEach(_w=>{if(_best<0){const _i=_hdrs.findIndex(_h=>_h.includes(_w));if(_i>=0)_best=_i}});return _best};const _wCol=_fi(["week","wk","wbs","#","no"]);const _tCol=(()=>{let _c=_fi(["task name","activity name","phase","title","task","activity","scope","trade","milestone"]);if(_c<0)_c=_fi(["name","item","work","line item","deliverable"]);if(_c<0)_c=_fi(["description","desc"]);if(_c<0){for(var i=0;i<_hdrs.length;i++){var h=_hdrs[i];if(h.length>0&&!h.includes("date")&&!h.includes("start")&&!h.includes("end")&&!h.includes("dur")&&!h.includes("cost")&&!h.includes("budget")&&!h.includes("#")&&!h.includes("id")&&!h.includes("wbs")&&!h.includes("week")){_c=i;break}}_c=_c<0?0:_c};return _c})();const _dCol=(()=>{let _c=_fi(["desc","detail","notes","note","comment","sub","remark"]);if(_c<0)_c=_fi(["description"]);if(_c>=0&&_c===_tCol)_c=-1;if(_c<0&&_hdrs.length>_tCol+1)_c=_tCol===0?1:(_tCol===1?2:-1);return _c})();const _sCol=_fi(["start date","start","date","begin","planned start"]);const _eCol=_fi(["end date","finish","end","complete","planned finish"]);const _duCol=_fi(["duration","dur","days","length","span"]);const _items=_data.map((_r,_i)=>({week:_wCol>=0&&_r[_wCol]?parseInt(String(_r[_wCol]))||(_i+1):_i+1,title:String(_r[_tCol]||""),desc:String(_dCol>=0&&_dCol!==_tCol?_r[_dCol]||"":"")}));_pushItems(_items)}else if(_ext==="docx"||_ext==="doc"){const _mn=await import("https://esm.sh/mammoth@1.6.0/+esm");const _ab=await _f.arrayBuffer();const _res=await _mn.extractRawText({arrayBuffer:_ab});const _lines=_res.value.split("\n").map(_l=>_l.trim()).filter(_l=>_l.length>2);const _items=_lines.map((_l,_i)=>{const _m=_l.match(/^(?:week\s*)?([0-9]+)[.:)\-]\s*(.+)/i);if(_m)return{week:parseInt(_m[1])||(_i+1),title:_m[2].split(/[-–:|]/)[0].trim(),desc:_m[2].split(/[-–:|]/).slice(1).join(" ").trim()};return{week:_i+1,title:_l.split(/[-–:|]/)[0].trim().slice(0,80),desc:_l.split(/[-–:|]/).slice(1).join(" ").trim()}});_pushItems(_items)}else if(_ext==="txt"){const _text=await _f.text();const _lines=_text.split("\n").map(_l=>_l.trim()).filter(_l=>_l.length>2);const _items=_lines.map((_l,_i)=>{const _m=_l.match(/^(?:week\s*)?([0-9]+)[.:)\-]\s*(.+)/i);if(_m)return{week:parseInt(_m[1])||(_i+1),title:_m[2].split(/[-–:|]/)[0].trim(),desc:_m[2].split(/[-–:|]/).slice(1).join(" ").trim()};return{week:_i+1,title:_l.split(/[-–:|]/)[0].trim().slice(0,80),desc:_l.split(/[-–:|]/).slice(1).join(" ").trim()}});_pushItems(_items)}else{se("Unsupported file type: ."+_ext+". Use .xlsx, .xls, .csv, .docx, or .txt")}}catch(_err){se("Import error: "+_err.message);console.error("Schedule import error:",_err)}_ev.target.value=""}}),e.jsx("span",{children:"📥 Excel / Word / CSV"})]}),g.tentativeSchedule.length>0&&e.jsx("button",{style:{padding:"5px 10px",background:"none",border:"1px solid #fca5a5",color:"#ef4444",borderRadius:5,fontSize:11,cursor:"pointer"},onClick:()=>L("tentativeSchedule",[]),children:"🗑 Clear"}),e.jsx("span",{style:{fontSize:10,color:"#64748b"},children:"Columns auto-detected: Week, Phase/Title, Description"})]}),g.tentativeSchedule.map((w,E)=>e.jsxs("div",{style:{display:"grid",gridTemplateColumns:"60px 1fr 1fr 30px",gap:6,marginBottom:4,alignItems:"center"},children:[e.jsxs("div",{style:{display:"flex",alignItems:"center",gap:4},children:[e.jsx("span",{style:{fontSize:9,color:u.tx2},children:"Wk"}),e.jsx("input",{style:{...Y,width:36,textAlign:"center"},type:"number",value:w.week,onChange:q=>{const ke=[...g.tentativeSchedule];ke[E]={...ke[E],week:parseInt(q.target.value)||1},L("tentativeSchedule",ke)}})]}),e.jsx("input",{style:Y,placeholder:"Phase title",value:w.title,onChange:q=>{const ke=[...g.tentativeSchedule];ke[E]={...ke[E],title:q.target.value},L("tentativeSchedule",ke)}}),e.jsx("input",{style:Y,placeholder:"Description",value:w.desc,onChange:q=>{const ke=[...g.tentativeSchedule];ke[E]={...ke[E],desc:q.target.value},L("tentativeSchedule",ke)}}),Z(g.tentativeSchedule,"tentativeSchedule",E)]},E)),e.jsx("button",{style:{...ot,fontSize:10,marginTop:4},onClick:()=>L("tentativeSchedule",[...g.tentativeSchedule,{week:g.tentativeSchedule.length+1,title:"",desc:""}]),children:"+ Add Phase"}),e.jsxs("div",{style:{marginTop:14},children:[e.jsx("label",{style:{...B,fontSize:12,fontWeight:700},children:"Schedule Notes"}),g.schedNotes.map((w,E)=>e.jsxs("div",{style:{display:"flex",gap:6,marginBottom:3,alignItems:"center"},children:[e.jsx("input",{style:{...Y,flex:1},value:w,onChange:q=>{const ke=[...g.schedNotes];ke[E]=q.target.value,L("schedNotes",ke)}}),Z(g.schedNotes,"schedNotes",E)]},E)),U(g.schedNotes,"schedNotes","")]}),e.jsxs("div",{style:{marginTop:14},children:[e.jsx("label",{style:{...B,fontSize:12,fontWeight:700},children:"Checklist Items (shown on proposal)"}),g.checklist.map((w,E)=>e.jsxs("div",{style:{display:"flex",gap:6,marginBottom:3,alignItems:"center"},children:[e.jsx("input",{type:"checkbox",checked:w.done,onChange:()=>{const q=[...g.checklist];q[E]={...q[E],done:!q[E].done},L("checklist",q)}}),e.jsx("input",{style:{...Y,flex:1},value:w.text,onChange:q=>{const ke=[...g.checklist];ke[E]={...ke[E],text:q.target.value},L("checklist",ke)}}),Z(g.checklist,"checklist",E)]},E)),e.jsx("button",{style:{...ot,fontSize:10,marginTop:4},onClick:()=>L("checklist",[...g.checklist,{text:"",done:!1}]),children:"+ Add Checklist Item"})]})]}),Q==="warranty"&&e.jsxs("div",{children:[e.jsx("label",{style:{...B,fontSize:12,fontWeight:700},children:"Warranty Table"}),g.warranties.map((w,E)=>e.jsxs("div",{style:{display:"grid",gridTemplateColumns:"120px 120px 1fr 30px",gap:6,marginBottom:3,alignItems:"center"},children:[e.jsx("input",{style:Y,value:w[0],onChange:q=>{const ke=g.warranties.map(z=>[...z]);ke[E][0]=q.target.value,L("warranties",ke)}}),e.jsx("input",{style:Y,value:w[1],onChange:q=>{const ke=g.warranties.map(z=>[...z]);ke[E][1]=q.target.value,L("warranties",ke)}}),e.jsx("input",{style:Y,value:w[2],onChange:q=>{const ke=g.warranties.map(z=>[...z]);ke[E][2]=q.target.value,L("warranties",ke)}}),e.jsx("button",{style:{color:u.red,background:"none",border:"none",fontSize:11,cursor:"pointer"},onClick:()=>L("warranties",g.warranties.filter((q,ke)=>ke!==E)),children:"✕"})]},E)),e.jsx("button",{style:{...ot,fontSize:10,marginTop:4},onClick:()=>L("warranties",[...g.warranties,["","",""]]),children:"+ Add Warranty"}),e.jsxs("div",{style:{marginTop:14},children:[e.jsx("label",{style:{...B,fontSize:12,fontWeight:700},children:"Communication Promise"}),g.commPromise.map((w,E)=>e.jsxs("div",{style:{display:"flex",gap:6,marginBottom:3,alignItems:"center"},children:[e.jsx("input",{style:{...Y,flex:1},value:w,onChange:q=>{const ke=[...g.commPromise];ke[E]=q.target.value,L("commPromise",ke)}}),Z(g.commPromise,"commPromise",E)]},E)),U(g.commPromise,"commPromise","")]})]}),Q==="contract"&&e.jsxs("div",{children:[e.jsx("label",{style:{...B,fontSize:12,fontWeight:700},children:"Contract / Agreement Text"}),e.jsx("div",{style:{fontSize:11,color:u.tx2,marginBottom:6},children:"This appears on the signature page. Edit the full contract language below. Line breaks preserved."}),e.jsx("textarea",{style:{...We,minHeight:400,fontSize:10,lineHeight:1.6},value:g.contractText,onChange:w=>L("contractText",w.target.value)}),e.jsxs("div",{style:{marginTop:8,padding:8,background:"#fef3c7",borderRadius:6,fontSize:10,color:"#92400e"},children:[e.jsx("b",{children:"Note:"}),' Lines starting with a number + period (like "1.") become bold section headers. ALL-CAPS lines become section titles. Everything else is body text.']})]}),Q==="links"&&e.jsxs("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12},children:[e.jsxs("div",{children:[e.jsx("label",{style:B,children:"Company Phone"}),e.jsx("input",{style:Y,value:g.companyPhone,onChange:w=>L("companyPhone",w.target.value)})]}),e.jsxs("div",{children:[e.jsx("label",{style:B,children:"Company Email"}),e.jsx("input",{style:Y,value:g.companyEmail,onChange:w=>L("companyEmail",w.target.value)})]}),e.jsxs("div",{children:[e.jsx("label",{style:B,children:"Website"}),e.jsx("input",{style:Y,value:g.companyWebsite,onChange:w=>L("companyWebsite",w.target.value)})]}),e.jsxs("div",{children:[e.jsx("label",{style:B,children:"Facebook Page URL"}),e.jsx("input",{style:Y,value:g.companyFacebook,onChange:w=>L("companyFacebook",w.target.value)})]}),e.jsxs("div",{children:[e.jsx("label",{style:B,children:"Company Address"}),e.jsx("input",{style:Y,value:g.companyAddress,onChange:w=>L("companyAddress",w.target.value)})]}),e.jsxs("div",{style:{gridColumn:"span 2"},children:[e.jsx("label",{style:B,children:"📷 CompanyCam Project URL"}),e.jsx("input",{style:Y,placeholder:"https://app.companycam.com/projects/...",value:g.ccamUrl||"",onChange:w=>L("ccamUrl",w.target.value)}),g.ccamUrl&&e.jsxs("div",{style:{marginTop:4,fontSize:11,color:"#0369a1"},children:["🔗 ",e.jsx("a",{href:g.ccamUrl,target:"_blank",rel:"noreferrer",style:{color:"#0369a1"},children:"Preview link"})]})]})]})]}),e.jsxs("div",{style:{padding:"10px 20px",borderTop:`1px solid ${u.bdr}`,display:"flex",justifyContent:"space-between",alignItems:"center",background:"#f8fafc",borderRadius:"0 0 10px 10px"},children:[e.jsxs("div",{style:{fontSize:11,color:u.tx2},children:["Template: ",e.jsx("b",{children:g.jobTypeLabel})," · ",g.lineItems.length," line items · ",g.draws.reduce((w,E)=>w+E.pct,0),"% draws"]}),e.jsxs("div",{style:{display:"flex",gap:8},children:[e.jsx("button",{style:{...ot,fontSize:11},onClick:_,children:"Cancel"}),e.jsx("button",{style:{padding:"8px 24px",background:"linear-gradient(135deg,#2563eb,#7c3aed)",color:"#fff",border:"none",borderRadius:6,fontWeight:700,fontSize:12,cursor:"pointer"},onClick:()=>H(g),children:"📄 Generate Proposal →"})]})]})]})})},Yi=(g,te,H,_,Q,y)=>{!g||!te||Ia(T=>{const L=T.findIndex(Y=>Y.name.toLowerCase()===g.toLowerCase());if(L>=0){const Y=[...T];return Y[L]={...Y[L],cost:parseFloat(te)},Y}return[...T,{id:$t("P"),name:g,sku:y||"",v:Q||"V1",cat:_||"Misc",unit:H||"ea",cost:parseFloat(te)}]})},ji=g=>{var Q;if(!window.__gcSpentMap||window.__gcSpentMapSrc!==Ea||window.__gcSpentMapVer!==window.__gcCostGateVer){window.__gcSpentMapVer=window.__gcCostGateVer;/* patch ACCTFIX2-B4 */var _m=Object.create(null);for(var _k=0;_k<Ea.length;_k++){var _y=Ea[_k];if(!_y||_y.type==="mpo"||_y.status==="denied"||(window._gcCostCounts&&!window._gcCostCounts(_y))||_y.type==="bill"||_y.type==="purchase"||_y.type==="payment"||((parseFloat(_y.amt)||0)<0&&window._gcIsMoneyIn&&window._gcIsMoneyIn(_y)))continue;var _p=_y.pid;if(_p==null)continue;_m[_p]=(_m[_p]||0)+(parseFloat(_y.amt)||0);}window.__gcSpentMap=_m;window.__gcSpentMapSrc=Ea;}if(!window.__gcContractMap||window.__gcContractMapSrc!==Wt||window.__gcContractMapCos!==hr){var _cm=Object.create(null),_co=Object.create(null);for(var _j=0;_j<Wt.length;_j++){if(Wt[_j]&&Wt[_j].id!=null)_cm[Wt[_j].id]=parseFloat(Wt[_j].contract)||0;}(hr||[]).forEach(function(c){if(c&&c.pid!=null&&!c._filed&&String(c.status||"").toLowerCase()==="approved"&&(c.pid in _cm)){_co[c.pid]=(_co[c.pid]||0)+(parseFloat(c.amt)||0);}});window.__gcContractMap=_cm;window.__gcCosMap=_co;window.__gcContractMapSrc=Wt;window.__gcContractMapCos=hr;}const H=window.__gcSpentMap[g]||0,_=window.__gcContractMap[g]||0;var _cv=(window.__gcCosMap&&window.__gcCosMap[g])||0,_b=_,_t=Math.round((_b+_cv)*100)/100;return{spent:H,base:_b,cos:_cv,contract:_t,profit:_t-H,margin:_t?((_t-H)/_t*100).toFixed(1):"0"}},qs=g=>{const{spent:te,contract:H}=ji(g);if(!H)return null;const _=te/H*100;return _>=100?{pct:_.toFixed(0),c:u.red,lbl:"OVER"}:_>=90?{pct:_.toFixed(0),c:u.red,lbl:"critical"}:_>=75?{pct:_.toFixed(0),c:u.yel,lbl:"warning"}:null},[nc,Vs]=ce.useState(!1),[ac,ic]=ce.useState(!1),[Ji,cs]=ce.useState([]),[Vr,Xs]=ce.useState(""),[Va,Ys]=ce.useState(""),[jo,As]=ce.useState("togal");var _h1=ce.useState(!1),g=_h1[0],te=_h1[1],_h2=ce.useState(""),H=_h2[0],_=_h2[1],_h3=ce.useState(""),Q=_h3[0],y=_h3[1];if(ce.useRef(null),t)return e.jsx("div",{style:{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#0a1628",fontFamily:"'Inter',sans-serif"},children:e.jsxs("div",{style:{textAlign:"center",color:"#fff"},children:[e.jsx("div",{style:{fontSize:28,fontWeight:800,marginBottom:12},children:"GrayCo"}),e.jsx("div",{style:{fontSize:13,color:"rgba(255,255,255,0.5)",marginBottom:20},children:"Loading system data..."}),e.jsx("div",{style:{width:200,height:4,background:"rgba(255,255,255,0.1)",borderRadius:2,overflow:"hidden",margin:"0 auto"},children:e.jsx("div",{style:{width:"60%",height:"100%",background:"#2563eb",borderRadius:2,animation:"pulse 1.5s ease-in-out infinite"}})}),e.jsx("style",{children:"@keyframes pulse{0%,100%{opacity:0.4}50%{opacity:1}}"})]})});if(!n){var T=()=>{!H||!Q||(localStorage.setItem("grayco_sb_url",H.trim()),localStorage.setItem("grayco_sb_key",Q.trim()),window.location.reload())},L=async()=>{if(!(window.crypto&&window.crypto.subtle)&&!window._gcSha256Hex){A("This page is not running in a secure context (needs https://crm.grayco-cs.com). Passwords cannot be checked here.");return;}var Y;try{Y=await ed(S.password);}catch(_he){A("Could not verify password (secure-context error). Open https://crm.grayco-cs.com");return;}const _em=(S.email||"").toLowerCase().trim();let We=(window.__GC_AUTH__&&typeof window.__GC_AUTH__.email==="function"&&window.__GC_AUTH__.email()&&window.__GC_AUTH__.email()===_em)?An.find(B=>B.email&&B.email.toLowerCase().trim()===_em&&B.active!==!1):null;if(!We){const _GCH=null;/* S: no shared password */const _byEmail=An.find(B=>B.email&&B.email.toLowerCase().trim()===_em);if(_byEmail&&Y===_GCH){Ya(j=>j.map(W=>W.id===_byEmail.id?{...W,active:!0,pwHash:_GCH}:W));We={..._byEmail,active:!0,pwHash:_GCH};}else{const _def=(window._uDef||[]).find(B=>B.email&&B.email.toLowerCase().trim()===_em);if(_def&&Y===_GCH){const _nu={..._def,active:!0,pwHash:_GCH};Ya(j=>[...j.filter(W=>W.id!==_nu.id),_nu]);We=_nu;}}}We?(r(We),A("")):A("This screen only opens the CRM for the email you signed in with at the company sign-in. To use another account: \uD83D\uDC8E \u2192 Sign out of GrayCo, then sign in as that person.")};return e.jsxs("div",{style:{minHeight:"100vh",display:"flex",fontFamily:"'Inter',-apple-system,BlinkMacSystemFont,sans-serif",background:"#0a1628"},children:[e.jsxs("div",{style:{flex:"0 0 480px",background:"linear-gradient(160deg,#0f2440 0%,#1a3a65 40%,#2563eb 100%)",display:"flex",flexDirection:"column",justifyContent:"space-between",padding:"48px 48px 32px",position:"relative",overflow:"hidden"},children:[e.jsx("div",{style:{position:"absolute",inset:0,opacity:.06,backgroundImage:"repeating-linear-gradient(45deg,transparent,transparent 35px,rgba(255,255,255,0.1) 35px,rgba(255,255,255,0.1) 36px)",pointerEvents:"none"}}),e.jsx("div",{style:{position:"absolute",right:-80,top:-80,width:300,height:300,borderRadius:"50%",background:"rgba(37,99,235,0.15)",filter:"blur(60px)"}}),e.jsx("div",{style:{position:"absolute",left:-40,bottom:-40,width:200,height:200,borderRadius:"50%",background:"rgba(59,130,246,0.1)",filter:"blur(40px)"}}),e.jsxs("div",{style:{position:"relative",zIndex:1},children:[e.jsx("div",{style:{display:"flex",alignItems:"center",gap:14,marginBottom:48},children:e.jsx("img",{src:Bf,alt:"GrayCo",style:{width:180,height:"auto",borderRadius:8,filter:"drop-shadow(0 8px 32px rgba(0,0,0,0.3))",background:"#fff",padding:8}})}),e.jsxs("h1",{style:{fontSize:36,fontWeight:800,color:"#fff",lineHeight:1.2,margin:"0 0 16px",letterSpacing:"-0.02em"},children:["Project Management",e.jsx("br",{}),"Built for GrayCo —",e.jsx("br",{}),e.jsx("span",{style:{color:"rgba(255,255,255,0.5)",fontSize:24},children:"by GrayCo"})]}),e.jsx("p",{style:{fontSize:15,color:"rgba(255,255,255,0.6)",lineHeight:1.6,margin:"0 0 40px",maxWidth:360},children:"Estimates, scheduling, subs, financials, and field ops — all in one place. No fluff, just tools that work the way you do."}),e.jsx("div",{style:{display:"flex",flexWrap:"wrap",gap:8},children:["Estimating","Project Tracking","Sub Compliance","CompanyCam Sync","Invoicing","Scope Generator","Products Database","Price Sheets","Daily Logs","Crew Board","Plans & Docs","CC Transactions","Change Orders","Punch Lists"].map(Y=>e.jsx("span",{style:{padding:"6px 14px",borderRadius:20,background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.12)",color:"rgba(255,255,255,0.7)",fontSize:12,fontWeight:500,backdropFilter:"blur(8px)"},children:Y},Y))})]}),e.jsxs("div",{style:{position:"relative",zIndex:1,display:"flex",justifyContent:"space-between",alignItems:"end"},children:[e.jsxs("div",{children:[e.jsx("div",{style:{color:"rgba(255,255,255,0.35)",fontSize:11},children:"Bartlett, Tennessee"}),e.jsx("div",{style:{color:"rgba(255,255,255,0.35)",fontSize:11},children:"Commercial · Residential · Restoration"})]}),e.jsxs("div",{style:{textAlign:"right"},children:[e.jsx("a",{href:"https://grayco-cs.com",target:"_blank",rel:"noreferrer",style:{color:"rgba(255,255,255,0.5)",fontSize:11,textDecoration:"none"},children:"grayco-cs.com"}),e.jsxs("div",{style:{color:"rgba(255,255,255,0.3)",fontSize:10,marginTop:2},children:["© ",new Date().getFullYear()," GrayCo Construction Services"]})]})]})]}),e.jsxs("div",{style:{flex:1,display:"flex",alignItems:"center",justifyContent:"center",background:"#0f1d32",position:"relative"},children:[e.jsx("div",{style:{position:"absolute",inset:0,background:"radial-gradient(ellipse at 30% 50%,rgba(37,99,235,0.05) 0%,transparent 60%)"}}),e.jsxs("div",{style:{width:400,position:"relative",zIndex:1},children:[e.jsxs("div",{style:{textAlign:"center",marginBottom:32},children:[e.jsx("h2",{style:{fontSize:22,fontWeight:700,color:"#fff",margin:"0 0 6px"},children:"Sign in to your account"}),e.jsx("p",{style:{fontSize:13,color:"rgba(255,255,255,0.4)",margin:0},children:"Enter your credentials to access the project hub"})]}),e.jsxs("div",{style:{background:"#172a45",borderRadius:16,padding:"32px 28px",border:"1px solid rgba(255,255,255,0.06)",boxShadow:"0 24px 64px rgba(0,0,0,0.4)"},children:[e.jsxs("div",{style:{marginBottom:18},children:[e.jsx("label",{style:{display:"block",fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.6)",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.05em"},children:"Email Address"}),e.jsxs("div",{style:{position:"relative"},children:[e.jsx("div",{style:{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:"rgba(255,255,255,0.3)",fontSize:16},children:"✉"}),e.jsx("input",{style:{width:"100%",padding:"12px 12px 12px 38px",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.04)",color:"#fff",fontSize:14,fontFamily:"inherit",outline:"none",boxSizing:"border-box",transition:"border-color 0.2s"},value:S.email,onChange:Y=>b({...S,email:Y.target.value}),placeholder:"you\x40grayco-cs.com",type:"email",autoComplete:"email",onFocus:Y=>{Y.target.style.borderColor="rgba(37,99,235,0.5)"},onBlur:Y=>{Y.target.style.borderColor="rgba(255,255,255,0.1)"}})]})]}),e.jsxs("div",{style:{marginBottom:18},children:[e.jsx("label",{style:{display:"block",fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.6)",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.05em"},children:"Password"}),e.jsxs("div",{style:{position:"relative"},children:[e.jsx("div",{style:{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:"rgba(255,255,255,0.3)",fontSize:16},children:"🔒"}),e.jsx("input",{style:{width:"100%",padding:"12px 42px 12px 38px",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.04)",color:"#fff",fontSize:14,fontFamily:"inherit",outline:"none",boxSizing:"border-box",transition:"border-color 0.2s"},value:S.password,onChange:Y=>b({...S,password:Y.target.value}),onKeyDown:Y=>Y.key==="Enter"&&L(),type:nc?"text":"password",placeholder:"••••••••",autoComplete:"current-password",onFocus:Y=>{Y.target.style.borderColor="rgba(37,99,235,0.5)"},onBlur:Y=>{Y.target.style.borderColor="rgba(255,255,255,0.1)"}}),e.jsx("button",{onClick:()=>Vs(!nc),style:{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",color:"rgba(255,255,255,0.35)",fontSize:14,padding:4},children:nc?"🙈":"👁"})]})]}),e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22},children:[e.jsxs("label",{style:{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontSize:13,color:"rgba(255,255,255,0.5)"},children:[e.jsx("input",{type:"checkbox",checked:ac,onChange:()=>ic(!ac),style:{accentColor:"#2563eb"}}),"Remember me"]}),e.jsx("span",{role:"button",tabIndex:0,onClick:()=>{try{window.__GC_AUTH__&&window.__GC_AUTH__.forgot&&window.__GC_AUTH__.forgot(S&&S.email||"")}catch(_pw){}},onKeyDown:_k=>{if(_k.key==="Enter"){try{window.__GC_AUTH__.forgot(S&&S.email||"")}catch(_pw){}}},style:{fontSize:12,color:"#3b82f6",cursor:"pointer"},children:"Forgot password?"})]}),C&&e.jsxs("div",{style:{background:"rgba(239,68,68,0.1)",border:"1px solid rgba(239,68,68,0.2)",borderRadius:8,padding:"10px 14px",marginBottom:16,display:"flex",alignItems:"center",gap:8},children:[e.jsx("span",{style:{color:"#ef4444",fontSize:16},children:"⚠"}),e.jsx("span",{style:{color:"#fca5a5",fontSize:13},children:C})]}),e.jsx("button",{onClick:L,style:{width:"100%",padding:"13px 0",borderRadius:10,border:"none",background:"linear-gradient(135deg,#2563eb 0%,#3b82f6 100%)",color:"#fff",fontSize:15,fontWeight:700,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 16px rgba(37,99,235,0.4)",transition:"transform 0.1s,box-shadow 0.1s",letterSpacing:"0.02em"},onMouseDown:Y=>{Y.target.style.transform="scale(0.98)"},onMouseUp:Y=>{Y.target.style.transform="scale(1)"},children:"Sign In"})]}),e.jsxs("div",{style:{textAlign:"center",marginTop:24},children:[e.jsx("p",{style:{fontSize:12,color:"rgba(255,255,255,0.25)",margin:0},children:"Need access? Contact your administrator"}),e.jsxs("p",{style:{fontSize:11,color:"rgba(255,255,255,0.15)",marginTop:8},children:[e.jsx("a",{href:"tel:9015850944",style:{color:"rgba(255,255,255,0.3)",textDecoration:"none"},children:"901-585-0944"}),e.jsx("span",{style:{margin:"0 8px"},children:"·"}),e.jsx("a",{href:"mailto:info\x40grayco-cs.com",style:{color:"rgba(255,255,255,0.3)",textDecoration:"none"},children:"info\x40grayco-cs.com"})]})]}),e.jsxs("div",{style:{marginTop:20,borderTop:"1px solid rgba(255,255,255,0.08)",paddingTop:16,textAlign:"center"},children:[e.jsxs("div",{style:{display:"flex",alignItems:"center",justifyContent:"center",gap:6,marginBottom:8},children:[e.jsx("div",{style:{width:8,height:8,borderRadius:4,background:p==="connected"?"#22c55e":p==="connecting"?"#f59e0b":p==="error"?"#ef4444":"#64748b"}}),e.jsx("span",{style:{fontSize:11,color:"rgba(255,255,255,0.4)"},children:p==="connected"?"☁️ Cloud Sync Active":p==="connecting"?"Connecting...":p==="error"?"Connection Error":"Local Only — No Cloud Sync"})]}),p!=="connected"&&!g&&e.jsx("button",{onClick:()=>te(!0),style:{background:"none",border:"1px solid rgba(255,255,255,0.15)",color:"rgba(255,255,255,0.4)",padding:"6px 14px",borderRadius:6,fontSize:11,cursor:"pointer",fontFamily:"inherit"},children:"⚙ Connect Cloud (Multi-User)"}),g&&e.jsxs("div",{style:{background:"rgba(255,255,255,0.05)",borderRadius:10,padding:16,marginTop:8,textAlign:"left"},children:[e.jsx("div",{style:{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.7)",marginBottom:8},children:"☁️ Supabase Cloud Setup"}),e.jsxs("div",{style:{fontSize:10,color:"rgba(255,255,255,0.35)",marginBottom:10,lineHeight:1.5},children:["1. Go to ",e.jsx("a",{href:"https://supabase.com",target:"_blank",rel:"noreferrer",style:{color:"#60a5fa"},children:"supabase.com"})," → Create free project",e.jsx("br",{}),"2. Go to SQL Editor → Run this SQL:",e.jsx("br",{}),e.jsx("code",{style:{background:"rgba(0,0,0,0.3)",padding:"4px 6px",borderRadius:4,fontSize:9,display:"block",margin:"4px 0",color:"#93c5fd",whiteSpace:"pre-wrap"},children:`create table app_data (key text primary key, value jsonb default '[]'::jsonb, updated_at timestamptz default now());
 alter table app_data enable row level security;
 create policy "allow_all" on app_data for all using (true) with check (true);
-alter publication supabase_realtime add table app_data;`}),"3. Settings → API → copy Project URL + anon key below"]}),e.jsx("input",{style:{width:"100%",padding:"9px 12px",borderRadius:6,border:"1px solid rgba(255,255,255,0.15)",background:"rgba(255,255,255,0.08)",color:"#fff",fontSize:12,marginBottom:6,fontFamily:"inherit",outline:"none"},placeholder:"Project URL (https://xxxxx.supabase.co)",value:H,onChange:Y=>_(Y.target.value)}),e.jsx("input",{style:{width:"100%",padding:"9px 12px",borderRadius:6,border:"1px solid rgba(255,255,255,0.15)",background:"rgba(255,255,255,0.08)",color:"#fff",fontSize:12,marginBottom:8,fontFamily:"inherit",outline:"none"},placeholder:"anon / public key",value:Q,onChange:Y=>y(Y.target.value)}),e.jsxs("div",{style:{display:"flex",gap:6},children:[e.jsx("button",{onClick:T,style:{flex:1,padding:"9px 0",borderRadius:6,border:"none",background:"#22c55e",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"},children:"Connect & Sync"}),e.jsx("button",{onClick:()=>te(!1),style:{padding:"9px 14px",borderRadius:6,border:"1px solid rgba(255,255,255,0.15)",background:"none",color:"rgba(255,255,255,0.4)",fontSize:11,cursor:"pointer",fontFamily:"inherit"},children:"Cancel"})]})]})]})]})]})]})}const Uf=[{id:"dashboard",l:"Dashboard",ic:"▣"},{id:"todo",l:"To-Do",ic:"✅"},{id:"approvals",l:"Approvals",ic:"📋"},{id:"messages",l:"Messages",ic:"💬"},{id:"launchjob",l:"Launch Job",ic:"🚀"},{id:"leads",l:"Leads",ic:"◈"},{id:"marketing",l:"Marketing",ic:"📣"},{id:"roofscout",l:"RoofScout",ic:"🏠"},{id:"subportal",l:"Sub Portal",ic:"🔨"},{id:"bidportal",l:"Bid portal",ic:"🏗"},{id:"systems",l:"GrayCo Systems",ic:"🧭"},{id:"projects",l:"Projects",ic:"◫"},{id:"insurance",l:"Insurance",ic:"🛡️"},{id:"mitigation",l:"Mitigation",ic:"💧"},{id:"sitebook",l:"Site Book",ic:"📒"},{id:"cordova",l:"Cordova Club",ic:"🏢"},{id:"scopes",l:"Scopes",ic:"📋"},{id:"estimates",l:"Estimates",ic:"≡"},{id:"estbuilder",l:"Estimates",ic:"📐"},{id:"templates",l:"Templates",ic:"◩"},{id:"expenses",l:"Expenses",ic:"⊞"},{id:"payments",l:"Payments",ic:"💵"},{id:"gmail",l:"Gmail",ic:"📧"},{id:"claude",l:"Business Brain",ic:"🧠"},{id:"brain-manager",l:"Brain Manager",ic:"⚙️"},{id:"review-queue",l:"Review Queue",ic:"✅"},{id:"allphotos",l:"GrayCo Photos",ic:"📸"},{id:"qbimport",l:"QuickBooks",ic:"📊"},{id:"invoices",l:"Invoices",ic:"▥"},{id:"taxcenter",l:"Accounting",ic:"📊"},{id:"changeorders",l:"Change Orders",ic:"△"},{id:"schedule",l:"Schedule",ic:"◧"},{id:"crewboard",l:"Crew Board",ic:"⊟"},{id:"dailylogs",l:"Daily Logs",ic:"✎"},{id:"punchlist",l:"Punch List",ic:"☐"},{id:"subs",l:"Subs",ic:"⚑"},{id:"vendors",l:"Vendors",ic:"⊡"},{id:"customers",l:"Customers",ic:"👥"},{id:"products",l:`Products (${Da.length})`,ic:"▦"},{id:"quickadd",l:"Quick Add",ic:"⚡"},{id:"warranties",l:"Warranties",ic:"⛨"},{id:"docs",l:"Docs",ic:"▤"},{id:"forms",l:"Forms & Docs",ic:"📄"},{id:"mastercrm",l:"Large Job CRMs",ic:"🏗"},{id:"myprofile",l:"My Profile",ic:"👤"},{id:"integrations",l:"Integrations",ic:"⊕"},{id:"payroll",l:"Payroll",ic:"💵"},{id:"admin",l:"Admin",ic:"⚙"},{id:"officemanager",l:"Office",ic:"🏢"},{id:"maint",l:"Maintenance",ic:"🛠"},{id:"enviro",l:"Environmental",ic:"☢️"},{id:"sds",l:"Materials & SDS",ic:"🧪"}],pl=yi?(Ux[yi.role]||Ux[(yi.role||"").trim()]||Ux["Project Manager"]||[]):null,ml=(window._gcRP&&window._gcRP.menu?window._gcRP.menu.bind(null,Uf):function(_l){return _l})(Uf.filter(g=>g.id==="insurance"?(typeof window._gcInsAllowed!=="function"||window._gcInsAllowed(yi,n)):g.id==="marketing"?!!(window._gcMktCanSee&&window._gcMktCanSee()):g.id==="maint"?!!(window._gcMaintCanSee&&window._gcMaintCanSee()):((yi||n)&&((yi||n).email||"").toLowerCase().trim()==="office@grayco-cs.com")?["dashboard","roofscout","todo","approvals","launchjob","projects","cordova","leads","bidportal","systems","scopes","estimates","templates","expenses","cctrans","invoices","payments","taxcenter","pnl","reports","subs","vendors","customers","products","schedule","changeorders","dailylogs","punchlist","crewboard","warranties","docs","forms","gmail","claude","allphotos","qbimport","quickadd","estbuilder","insurance","mitigation","messages","sitebook","myprofile","integrations","officemanager","payroll"].indexOf(g.id)>=0:(yi?(pl==null?void 0:pl.includes(g.id))||g.id==="quickadd"||g.id==="forms"||g.id==="allphotos":mu(g.id)||g.id==="quickadd"||g.id==="forms"||g.id==="allphotos"))),Js=wt[n==null?void 0:n.id],xl=(function(){
+alter publication supabase_realtime add table app_data;`}),"3. Settings → API → copy Project URL + anon key below"]}),e.jsx("input",{style:{width:"100%",padding:"9px 12px",borderRadius:6,border:"1px solid rgba(255,255,255,0.15)",background:"rgba(255,255,255,0.08)",color:"#fff",fontSize:12,marginBottom:6,fontFamily:"inherit",outline:"none"},placeholder:"Project URL (https://xxxxx.supabase.co)",value:H,onChange:Y=>_(Y.target.value)}),e.jsx("input",{style:{width:"100%",padding:"9px 12px",borderRadius:6,border:"1px solid rgba(255,255,255,0.15)",background:"rgba(255,255,255,0.08)",color:"#fff",fontSize:12,marginBottom:8,fontFamily:"inherit",outline:"none"},placeholder:"anon / public key",value:Q,onChange:Y=>y(Y.target.value)}),e.jsxs("div",{style:{display:"flex",gap:6},children:[e.jsx("button",{onClick:T,style:{flex:1,padding:"9px 0",borderRadius:6,border:"none",background:"#22c55e",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"},children:"Connect & Sync"}),e.jsx("button",{onClick:()=>te(!1),style:{padding:"9px 14px",borderRadius:6,border:"1px solid rgba(255,255,255,0.15)",background:"none",color:"rgba(255,255,255,0.4)",fontSize:11,cursor:"pointer",fontFamily:"inherit"},children:"Cancel"})]})]})]})]})]})]})}const Uf=[{id:"dashboard",l:"Dashboard",ic:"▣"},{id:"todo",l:"To-Do",ic:"✅"},{id:"approvals",l:"Approvals",ic:"📋"},{id:"messages",l:"Messages",ic:"💬"},{id:"launchjob",l:"Launch Job",ic:"🚀"},{id:"leads",l:"Leads",ic:"◈"},{id:"marketing",l:"Marketing",ic:"📣"},{id:"roofscout",l:"RoofScout",ic:"🏠"},{id:"subportal",l:"Sub Portal",ic:"🔨"},{id:"bidportal",l:"Bid portal",ic:"🏗"},{id:"systems",l:"GrayCo Systems",ic:"🧭"},{id:"projects",l:"Projects",ic:"◫"},{id:"insurance",l:"Insurance",ic:"🛡️"},{id:"mitigation",l:"Mitigation",ic:"💧"},{id:"sitebook",l:"Site Book",ic:"📒"},{id:"cordova",l:"Cordova Club",ic:"🏢"},{id:"scopes",l:"Scopes",ic:"📋"},{id:"estimates",l:"Estimates",ic:"≡"},{id:"estbuilder",l:"Estimates",ic:"📐"},{id:"templates",l:"Templates",ic:"◩"},{id:"expenses",l:"Expenses",ic:"⊞"},{id:"payments",l:"Payments",ic:"💵"},{id:"gmail",l:"Gmail",ic:"📧"},{id:"claude",l:"Business Brain",ic:"🧠"},{id:"brain-manager",l:"Brain Manager",ic:"⚙️"},{id:"review-queue",l:"Review Queue",ic:"✅"},{id:"allphotos",l:"GrayCo Photos",ic:"📸"},{id:"qbimport",l:"QuickBooks",ic:"📊"},{id:"invoices",l:"Invoices",ic:"▥"},{id:"taxcenter",l:"Accounting",ic:"📊"},{id:"changeorders",l:"Change Orders",ic:"△"},{id:"schedule",l:"Schedule",ic:"◧"},{id:"crewboard",l:"Crew Board",ic:"⊟"},{id:"dailylogs",l:"Daily Logs",ic:"✎"},{id:"punchlist",l:"Punch List",ic:"☐"},{id:"subs",l:"Subs",ic:"⚑"},{id:"vendors",l:"Vendors",ic:"⊡"},{id:"customers",l:"Customers",ic:"👥"},{id:"products",l:`Products (${Da.length})`,ic:"▦"},{id:"quickadd",l:"Quick Add",ic:"⚡"},{id:"warranties",l:"Warranties",ic:"⛨"},{id:"docs",l:"Docs",ic:"▤"},{id:"forms",l:"Forms & Docs",ic:"📄"},{id:"mastercrm",l:"Large Job CRMs",ic:"🏗"},{id:"myprofile",l:"My Profile",ic:"👤"},{id:"integrations",l:"Integrations",ic:"⊕"},{id:"payroll",l:"Payroll",ic:"💵"},{id:"admin",l:"Admin",ic:"⚙"},{id:"officemanager",l:"Office",ic:"🏢"},{id:"maint",l:"Maintenance",ic:"🛠"},{id:"enviro",l:"Environmental",ic:"☢️"},{id:"sds",l:"Materials & SDS",ic:"🧪"},{id:"permitjobs",l:"Permitted jobs",ic:"🏗️"}],pl=yi?(Ux[yi.role]||Ux[(yi.role||"").trim()]||Ux["Project Manager"]||[]):null,ml=(window._gcRP&&window._gcRP.menu?window._gcRP.menu.bind(null,Uf):function(_l){return _l})(Uf.filter(g=>g.id==="insurance"?(typeof window._gcInsAllowed!=="function"||window._gcInsAllowed(yi,n)):g.id==="marketing"?!!(window._gcMktCanSee&&window._gcMktCanSee()):g.id==="maint"?!!(window._gcMaintCanSee&&window._gcMaintCanSee()):((yi||n)&&((yi||n).email||"").toLowerCase().trim()==="office@grayco-cs.com")?["dashboard","roofscout","todo","approvals","launchjob","projects","cordova","leads","bidportal","systems","scopes","estimates","templates","expenses","cctrans","invoices","payments","taxcenter","pnl","reports","subs","vendors","customers","products","schedule","changeorders","dailylogs","punchlist","crewboard","warranties","docs","forms","gmail","claude","allphotos","qbimport","quickadd","estbuilder","insurance","mitigation","messages","sitebook","myprofile","integrations","officemanager","payroll"].indexOf(g.id)>=0:(yi?(pl==null?void 0:pl.includes(g.id))||g.id==="quickadd"||g.id==="forms"||g.id==="allphotos":mu(g.id)||g.id==="quickadd"||g.id==="forms"||g.id==="allphotos"))),Js=wt[n==null?void 0:n.id],xl=(function(){
   var _ordered=(function(){if(!Js)return ml;var _seen=new Set,_r=[];Js.forEach(function(g){var _f=ml.find(function(te){return te.id===g});if(_f&&!_seen.has(_f.id)){_seen.add(_f.id);_r.push(_f)}});ml.forEach(function(g){if(!_seen.has(g.id)){_seen.add(g.id);_r.push(g)}});return _r})();
   // Per-user tab visibility — read live from window so the external Nav
   // Settings panel can toggle without needing a React re-render trigger.
@@ -10838,7 +10838,7 @@ se("For full backup import, export all lists from QuickBooks as CSV and upload e
 ]})
 
 ]});
-case"allphotos":return e.jsx("div",{id:"gcu-tabhost","data-gcu-tab":"1",ref:function(el){try{if(el&&window._gcPhotos&&window._gcPhotos.mountTab)window._gcPhotos.mountTab(el)}catch(_x){}},style:{position:"relative",width:"100%",height:"calc(100vh - 60px)",minHeight:480}});case"invoices":return e.jsx(__gcStable("sh",sh),{});case"pnl":return e.jsx(__gcStable("bu",bu),{});case"payments":return e.jsxs("div",{children:[e.jsx("h1",{style:{fontSize:18,fontWeight:700,margin:"0 0 4px"},children:"Payments"}),e.jsx("p",{style:{color:u.tx2,fontSize:12,margin:"0 0 14px"},children:"Active jobs and bidding jobs — payment tracking"}),e.jsxs("div",{style:{marginBottom:20},children:[e.jsx("div",{style:{fontSize:14,fontWeight:700,marginBottom:8,color:"#22c55e",borderBottom:"2px solid #22c55e",paddingBottom:4},children:"Active Jobs"}),Wt.filter(function(p){return p.status==="active"||p.status==="approved"}).length===0?e.jsx("div",{style:{color:u.tx3,fontSize:12,fontStyle:"italic",padding:10},children:"No active jobs"}):Wt.filter(function(p){return p.status==="active"||p.status==="approved"}).map(function(p){var _inv=Ba.filter(function(i){return i.pid===p.id&&i.type==="client"});var _billed=_inv.reduce(function(a,i){return a+(parseFloat(i.amt)||0)},0);var _paid=_inv.filter(function(i){return i.status==="paid"}).reduce(function(a,i){return a+(parseFloat(i.amt)||0)},0);var _owed=(p.contract||0)-_paid;return e.jsxs("div",{key:p.id,style:{background:u.card||"#1a2e45",borderRadius:6,padding:"12px 14px",marginBottom:6,borderLeft:"3px solid #22c55e",cursor:"pointer"},onClick:function(){Pe(p);D("projects")},children:[e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center"},children:[e.jsxs("div",{children:[e.jsx("b",{style:{fontSize:13},children:p.name}),e.jsxs("div",{style:{fontSize:11,color:u.tx2},children:[p.autoPO?"PO: "+p.autoPO+" · ":"",p.pm||"",p.client?" · "+p.client:""]})]}),e.jsxs("div",{style:{textAlign:"right"},children:[e.jsx("div",{style:{fontSize:16,fontWeight:800,color:_owed>0?"#f59e0b":"#22c55e"},children:ue(_owed>0?_owed:p.contract||0)}),e.jsx("div",{style:{fontSize:10,color:u.tx2},children:_owed>0?"owed":"contract"}),e.jsxs("div",{style:{fontSize:10,color:u.tx2},children:["Billed: "+ue(_billed)+" · Paid: "+ue(_paid)]})]})]})]})})]}),e.jsxs("div",{children:[e.jsx("div",{style:{fontSize:14,fontWeight:700,marginBottom:8,color:"#f59e0b",borderBottom:"2px solid #f59e0b",paddingBottom:4},children:"Bidding / Pipeline"}),Wt.filter(function(p){return p.status==="bidding"||p.status==="estimating"}).length===0?e.jsx("div",{style:{color:u.tx3,fontSize:12,fontStyle:"italic",padding:10},children:"No jobs in bidding"}):Wt.filter(function(p){return p.status==="bidding"||p.status==="estimating"}).map(function(p){return e.jsxs("div",{key:p.id,style:{background:u.card||"#1a2e45",borderRadius:6,padding:"12px 14px",marginBottom:6,borderLeft:"3px solid #f59e0b",cursor:"pointer"},onClick:function(){Pe(p);D("projects")},children:[e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center"},children:[e.jsxs("div",{children:[e.jsx("b",{style:{fontSize:13},children:p.name}),e.jsxs("div",{style:{fontSize:11,color:u.tx2},children:[p.autoPO?"PO: "+p.autoPO+" · ":"",p.client||"",p.type?" · "+p.type:""]})]}),e.jsxs("div",{style:{textAlign:"right"},children:[e.jsx("div",{style:{fontSize:16,fontWeight:800,color:"#f59e0b"},children:p.contract?ue(p.contract):"TBD"}),e.jsx("div",{style:{fontSize:10,color:u.tx2},children:p.status})]})]})]})})]})]});case"subpricing":return e.jsx("div",{id:"_subPriceMount",ref:function(_el){if(_el&&window._renderSubPricing)setTimeout(function(){window._renderSubPricing(_el)},0)}});case"todo":return e.jsx("div",{key:"gc-view-todo",id:"_todoMount",ref:function(_el){if(_el&&window._renderTodo&&!_el._gcTodoMounted){_el._gcTodoMounted=true;setTimeout(function(){window._renderTodo(_el)},0)}}});case"taxcenter":return e.jsx(__gcStable("Tc",Tc),{});case"reports":return e.jsx(__gcStable("wu",wu),{});case"changeorders":return e.jsx(__gcStable("nh",nh),{});case"schedule":return e.jsx(__gcStable("Su",Su),{});case"crewboard":return e.jsx(__gcStable("Pu",Pu),{});case"dailylogs":return e.jsx(__gcStable("ah",ah),{});case"punchlist":return e.jsx(__gcStable("ih",ih),{});case"subs":return e.jsx(__gcStable("Jf",Jf),{});case"vendors":return e.jsx(__gcStable("Cu",Cu),{});case"customers":return e.jsx(__gcStable("yu",yu),{});case"products":return e.jsx(__gcStable("Qf",Qf),{});case"quickadd":return e.jsx(__gcStable("Zf",Zf),{});case"launchjob":return rc();case"warranties":return e.jsx(__gcStable("od",od),{});case"mastercrm":return e.jsx("div",{id:"gc-mastercrm-mount",ref:function(el){if(el&&!el._mcInit){el._mcInit=true;window._busy=false;var _tryMC=function(n){try{if(window.gcMasterCRM&&window.gcMasterCRM.render){window.gcMasterCRM.render();}else if(n<40){setTimeout(function(){_tryMC(n+1);},100);}else{el.innerHTML='<div style="padding:40px;text-align:center;color:#6b8ab5;font-family:inherit"><div style="font-size:40px">🏗</div><div style="margin-top:8px;font-size:13px">Large Job CRMs is still loading. If this persists, hard-refresh the page (Ctrl+Shift+R).</div></div>';}}catch(err){el.innerHTML='<div style="padding:20px;color:#dc2626;font-size:12px;font-family:inherit">Large Job CRMs error: '+(err&&err.message?err.message:String(err))+'<br><button onclick="window.gcMasterCRM&&window.gcMasterCRM.render&&window.gcMasterCRM.render()" style="margin-top:8px;background:#1a3a5f;color:#d4a017;border:none;border-radius:5px;padding:6px 12px;cursor:pointer;font-family:inherit">Retry</button></div>';}};_tryMC(0);}},style:{width:"100%",minHeight:"100vh",overflow:"auto"}});case"bidportal":return e.jsx("div",{key:"gc-view-bidportal",id:"gc-sys-bp-mount","data-gc-sys":"bidportal"});case"systems":return e.jsx("div",{key:"gc-view-systems",id:"gc-sys-sys-mount","data-gc-sys":"systems",ref:function(el){try{if(el&&window._gcSys&&window._gcSys.drawSys)setTimeout(function(){window._gcSys.drawSys()},0)}catch(_x){}}});case"maint":return e.jsx("div",{key:"gc-view-maint",id:"gc-mt-mount",ref:function(el){try{if(el&&window._gcMaintTab)window._gcMaintTab.mount(el)}catch(_x){}}});case"enviro":return e.jsx("div",{key:"gc-view-enviro",id:"gc-env-mount",ref:function(el){try{if(el&&window._gcEnviro)window._gcEnviro.mount(el)}catch(_x){}}});case"sds":return e.jsx("div",{key:"gc-view-sds",id:"gc-sds-mount",ref:function(el){try{if(el&&window._gcSds)window._gcSds.mount(el)}catch(_x){}}});case"approvals":return e.jsx("div",{key:"gc-view-approvals",id:"gc-apx-mount","data-gc-apx":"approvals"});case"estbuilder":return e.jsx("div",{key:"gc-view-estbuilder",id:"gc-rp-estb-mount","data-gc-rp":"estbuilder"});case"messages":return e.jsx("div",{key:"gc-view-messages",id:"gc-rp-msg-mount","data-gc-rp":"messages"});case"sitebook":return e.jsx("div",{key:"gc-view-sitebook",id:"gc-rp-site-mount","data-gc-rp":"sitebook"});case"forms":return e.jsx("div",{id:"gc-forms-nav-mount",style:{width:"100%",minHeight:"100vh"}});case"docs":return e.jsx(__gcStable("oh",oh),{});case"myprofile":return e.jsx(__gcStable("lh",lh),{});case"cctrans":return e.jsx(__gcStable("yl",yl),{});case"integrations":return e.jsx(__gcStable("Eu",Eu),{});case"admin":return e.jsx(__gcStable("kl",kl),{});case"officemanager":return e.jsx("div",{key:"gc-view-office",id:"gc-om-mount",style:{width:"100%",height:"calc(100vh - 60px)",overflow:"auto"}});case"mmt_todo":case"mmt_leads":case"mmt_appr":case"mmt_email":case"mmt_social":case"mmt_cal":case"mmt_reviews":case"mmt_ads":case"mmt_media":case"mmt_jobs":case"mmt_team":case"mmt_ideas":case"mmt_logins":case"marketing":return e.jsx("div",{key:"gc-view-marketing",id:"gc-mk-mount",ref:function(el){if(el&&window._gcMktMount)window._gcMktMount(el);if(el&&window._gcMMTabView)window._gcMMTabView(P,el)/* patch MMTABS */},style:{width:"100%",minHeight:"calc(100vh - 60px)"}});case"insurance":return e.jsx("div",{key:"gc-view-insurance",id:"gc-ins-mount",style:{width:"100%",minHeight:"calc(100vh - 60px)"}});case"mitigation":return e.jsx("div",{key:"gc-view-mitigation",id:"gc-mit-mount",style:{width:"100%",minHeight:"calc(100vh - 60px)"}});case"payroll":return e.jsx("div",{key:"gc-view-payroll",id:"gc-payroll-mount",style:{width:"100%",height:"calc(100vh - 60px)",overflow:"auto"}});default:return e.jsx(__gcStable("vu",vu),{})}},Du=()=>{if(!("webkitSpeechRecognition"in window)&&!("SpeechRecognition"in window)){se("Voice not supported — use Chrome on your phone");return}const g=window.SpeechRecognition||window.webkitSpeechRecognition,te=new g;te.continuous=!1,te.interimResults=!0,te.lang="en-US",te.onresult=H=>{let _="";for(let Q=0;Q<H.results.length;Q++)_+=H.results[Q][0].transcript;mt(_)},te.onend=()=>{Ye(!1)},te.onerror=H=>{Ye(!1),H.error!=="no-speech"&&se("Mic error: "+H.error)},Ht.current=te,te.start(),Ye(!0),mt(""),Kt(null)},Sl=()=>{Ht.current&&(Ht.current.stop(),Ye(!1))},sc=async()=>{var g;if(!Be.trim()){se("Say something first");return}tn(!0),Kt(null);try{const te=Wt.map(L=>`${L.id}|${L.name}|${L.autoPO}|${L.address||""}`).join(`
+case"allphotos":return e.jsx("div",{id:"gcu-tabhost","data-gcu-tab":"1",ref:function(el){try{if(el&&window._gcPhotos&&window._gcPhotos.mountTab)window._gcPhotos.mountTab(el)}catch(_x){}},style:{position:"relative",width:"100%",height:"calc(100vh - 60px)",minHeight:480}});case"invoices":return e.jsx(__gcStable("sh",sh),{});case"pnl":return e.jsx(__gcStable("bu",bu),{});case"payments":return e.jsxs("div",{children:[e.jsx("h1",{style:{fontSize:18,fontWeight:700,margin:"0 0 4px"},children:"Payments"}),e.jsx("p",{style:{color:u.tx2,fontSize:12,margin:"0 0 14px"},children:"Active jobs and bidding jobs — payment tracking"}),e.jsxs("div",{style:{marginBottom:20},children:[e.jsx("div",{style:{fontSize:14,fontWeight:700,marginBottom:8,color:"#22c55e",borderBottom:"2px solid #22c55e",paddingBottom:4},children:"Active Jobs"}),Wt.filter(function(p){return p.status==="active"||p.status==="approved"}).length===0?e.jsx("div",{style:{color:u.tx3,fontSize:12,fontStyle:"italic",padding:10},children:"No active jobs"}):Wt.filter(function(p){return p.status==="active"||p.status==="approved"}).map(function(p){var _inv=Ba.filter(function(i){return i.pid===p.id&&i.type==="client"});var _billed=_inv.reduce(function(a,i){return a+(parseFloat(i.amt)||0)},0);var _paid=_inv.filter(function(i){return i.status==="paid"}).reduce(function(a,i){return a+(parseFloat(i.amt)||0)},0);var _owed=(p.contract||0)-_paid;return e.jsxs("div",{key:p.id,style:{background:u.card||"#1a2e45",borderRadius:6,padding:"12px 14px",marginBottom:6,borderLeft:"3px solid #22c55e",cursor:"pointer"},onClick:function(){Pe(p);D("projects")},children:[e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center"},children:[e.jsxs("div",{children:[e.jsx("b",{style:{fontSize:13},children:p.name}),e.jsxs("div",{style:{fontSize:11,color:u.tx2},children:[p.autoPO?"PO: "+p.autoPO+" · ":"",p.pm||"",p.client?" · "+p.client:""]})]}),e.jsxs("div",{style:{textAlign:"right"},children:[e.jsx("div",{style:{fontSize:16,fontWeight:800,color:_owed>0?"#f59e0b":"#22c55e"},children:ue(_owed>0?_owed:p.contract||0)}),e.jsx("div",{style:{fontSize:10,color:u.tx2},children:_owed>0?"owed":"contract"}),e.jsxs("div",{style:{fontSize:10,color:u.tx2},children:["Billed: "+ue(_billed)+" · Paid: "+ue(_paid)]})]})]})]})})]}),e.jsxs("div",{children:[e.jsx("div",{style:{fontSize:14,fontWeight:700,marginBottom:8,color:"#f59e0b",borderBottom:"2px solid #f59e0b",paddingBottom:4},children:"Bidding / Pipeline"}),Wt.filter(function(p){return p.status==="bidding"||p.status==="estimating"}).length===0?e.jsx("div",{style:{color:u.tx3,fontSize:12,fontStyle:"italic",padding:10},children:"No jobs in bidding"}):Wt.filter(function(p){return p.status==="bidding"||p.status==="estimating"}).map(function(p){return e.jsxs("div",{key:p.id,style:{background:u.card||"#1a2e45",borderRadius:6,padding:"12px 14px",marginBottom:6,borderLeft:"3px solid #f59e0b",cursor:"pointer"},onClick:function(){Pe(p);D("projects")},children:[e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center"},children:[e.jsxs("div",{children:[e.jsx("b",{style:{fontSize:13},children:p.name}),e.jsxs("div",{style:{fontSize:11,color:u.tx2},children:[p.autoPO?"PO: "+p.autoPO+" · ":"",p.client||"",p.type?" · "+p.type:""]})]}),e.jsxs("div",{style:{textAlign:"right"},children:[e.jsx("div",{style:{fontSize:16,fontWeight:800,color:"#f59e0b"},children:p.contract?ue(p.contract):"TBD"}),e.jsx("div",{style:{fontSize:10,color:u.tx2},children:p.status})]})]})]})})]})]});case"subpricing":return e.jsx("div",{id:"_subPriceMount",ref:function(_el){if(_el&&window._renderSubPricing)setTimeout(function(){window._renderSubPricing(_el)},0)}});case"todo":return e.jsx("div",{key:"gc-view-todo",id:"_todoMount",ref:function(_el){if(_el&&window._renderTodo&&!_el._gcTodoMounted){_el._gcTodoMounted=true;setTimeout(function(){window._renderTodo(_el)},0)}}});case"taxcenter":return e.jsx(__gcStable("Tc",Tc),{});case"reports":return e.jsx(__gcStable("wu",wu),{});case"changeorders":return e.jsx(__gcStable("nh",nh),{});case"schedule":return e.jsx(__gcStable("Su",Su),{});case"crewboard":return e.jsx(__gcStable("Pu",Pu),{});case"dailylogs":return e.jsx(__gcStable("ah",ah),{});case"punchlist":return e.jsx(__gcStable("ih",ih),{});case"subs":return e.jsx(__gcStable("Jf",Jf),{});case"vendors":return e.jsx(__gcStable("Cu",Cu),{});case"customers":return e.jsx(__gcStable("yu",yu),{});case"products":return e.jsx(__gcStable("Qf",Qf),{});case"quickadd":return e.jsx(__gcStable("Zf",Zf),{});case"launchjob":return rc();case"warranties":return e.jsx(__gcStable("od",od),{});case"mastercrm":return e.jsx("div",{id:"gc-mastercrm-mount",ref:function(el){if(el&&!el._mcInit){el._mcInit=true;window._busy=false;var _tryMC=function(n){try{if(window.gcMasterCRM&&window.gcMasterCRM.render){window.gcMasterCRM.render();}else if(n<40){setTimeout(function(){_tryMC(n+1);},100);}else{el.innerHTML='<div style="padding:40px;text-align:center;color:#6b8ab5;font-family:inherit"><div style="font-size:40px">🏗</div><div style="margin-top:8px;font-size:13px">Large Job CRMs is still loading. If this persists, hard-refresh the page (Ctrl+Shift+R).</div></div>';}}catch(err){el.innerHTML='<div style="padding:20px;color:#dc2626;font-size:12px;font-family:inherit">Large Job CRMs error: '+(err&&err.message?err.message:String(err))+'<br><button onclick="window.gcMasterCRM&&window.gcMasterCRM.render&&window.gcMasterCRM.render()" style="margin-top:8px;background:#1a3a5f;color:#d4a017;border:none;border-radius:5px;padding:6px 12px;cursor:pointer;font-family:inherit">Retry</button></div>';}};_tryMC(0);}},style:{width:"100%",minHeight:"100vh",overflow:"auto"}});case"bidportal":return e.jsx("div",{key:"gc-view-bidportal",id:"gc-sys-bp-mount","data-gc-sys":"bidportal"});case"systems":return e.jsx("div",{key:"gc-view-systems",id:"gc-sys-sys-mount","data-gc-sys":"systems",ref:function(el){try{if(el&&window._gcSys&&window._gcSys.drawSys)setTimeout(function(){window._gcSys.drawSys()},0)}catch(_x){}}});case"maint":return e.jsx("div",{key:"gc-view-maint",id:"gc-mt-mount",ref:function(el){try{if(el&&window._gcMaintTab)window._gcMaintTab.mount(el)}catch(_x){}}});case"enviro":return e.jsx("div",{key:"gc-view-enviro",id:"gc-env-mount",ref:function(el){try{if(el&&window._gcEnviro)window._gcEnviro.mount(el)}catch(_x){}}});case"permitjobs":return e.jsx("div",{key:"gc-view-permitjobs",id:"gc-pj-mount",ref:function(el){try{if(el&&window._gcPermitJobs)window._gcPermitJobs.mount(el)}catch(_x){}}});case"sds":return e.jsx("div",{key:"gc-view-sds",id:"gc-sds-mount",ref:function(el){try{if(el&&window._gcSds)window._gcSds.mount(el)}catch(_x){}}});case"approvals":return e.jsx("div",{key:"gc-view-approvals",id:"gc-apx-mount","data-gc-apx":"approvals"});case"estbuilder":return e.jsx("div",{key:"gc-view-estbuilder",id:"gc-rp-estb-mount","data-gc-rp":"estbuilder"});case"messages":return e.jsx("div",{key:"gc-view-messages",id:"gc-rp-msg-mount","data-gc-rp":"messages"});case"sitebook":return e.jsx("div",{key:"gc-view-sitebook",id:"gc-rp-site-mount","data-gc-rp":"sitebook"});case"forms":return e.jsx("div",{id:"gc-forms-nav-mount",style:{width:"100%",minHeight:"100vh"}});case"docs":return e.jsx(__gcStable("oh",oh),{});case"myprofile":return e.jsx(__gcStable("lh",lh),{});case"cctrans":return e.jsx(__gcStable("yl",yl),{});case"integrations":return e.jsx(__gcStable("Eu",Eu),{});case"admin":return e.jsx(__gcStable("kl",kl),{});case"officemanager":return e.jsx("div",{key:"gc-view-office",id:"gc-om-mount",style:{width:"100%",height:"calc(100vh - 60px)",overflow:"auto"}});case"mmt_todo":case"mmt_leads":case"mmt_appr":case"mmt_email":case"mmt_social":case"mmt_cal":case"mmt_reviews":case"mmt_ads":case"mmt_media":case"mmt_jobs":case"mmt_team":case"mmt_ideas":case"mmt_logins":case"marketing":return e.jsx("div",{key:"gc-view-marketing",id:"gc-mk-mount",ref:function(el){if(el&&window._gcMktMount)window._gcMktMount(el);if(el&&window._gcMMTabView)window._gcMMTabView(P,el)/* patch MMTABS */},style:{width:"100%",minHeight:"calc(100vh - 60px)"}});case"insurance":return e.jsx("div",{key:"gc-view-insurance",id:"gc-ins-mount",style:{width:"100%",minHeight:"calc(100vh - 60px)"}});case"mitigation":return e.jsx("div",{key:"gc-view-mitigation",id:"gc-mit-mount",style:{width:"100%",minHeight:"calc(100vh - 60px)"}});case"payroll":return e.jsx("div",{key:"gc-view-payroll",id:"gc-payroll-mount",style:{width:"100%",height:"calc(100vh - 60px)",overflow:"auto"}});default:return e.jsx(__gcStable("vu",vu),{})}},Du=()=>{if(!("webkitSpeechRecognition"in window)&&!("SpeechRecognition"in window)){se("Voice not supported — use Chrome on your phone");return}const g=window.SpeechRecognition||window.webkitSpeechRecognition,te=new g;te.continuous=!1,te.interimResults=!0,te.lang="en-US",te.onresult=H=>{let _="";for(let Q=0;Q<H.results.length;Q++)_+=H.results[Q][0].transcript;mt(_)},te.onend=()=>{Ye(!1)},te.onerror=H=>{Ye(!1),H.error!=="no-speech"&&se("Mic error: "+H.error)},Ht.current=te,te.start(),Ye(!0),mt(""),Kt(null)},Sl=()=>{Ht.current&&(Ht.current.stop(),Ye(!1))},sc=async()=>{var g;if(!Be.trim()){se("Say something first");return}tn(!0),Kt(null);try{const te=Wt.map(L=>`${L.id}|${L.name}|${L.autoPO}|${L.address||""}`).join(`
 `),y=(((g=(await(await fetch("/.netlify/functions/claude-proxy",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1500,messages:[{role:"user",content:`You are a construction CRM voice assistant for GrayCo Construction. Parse this voice command and return ONLY valid JSON (no markdown).
 
 PROJECTS:
@@ -142494,6 +142494,8 @@ function SECTIONS0(){ return withCustom([
     info('AI (Claude)', 'Reads bid e-mails, Business Brain.', 'Netlify: ANTHROPIC_API_KEY', F('gcSettings.testProxy'), 'act', 'ai'),
     row('RoofScout and the satellite map (Map Tiles)', 'RoofScout’s own ⚙ Settings: map key, monthly limit, owner lookup.', 'RoofScout → ⚙ Settings', V('roofscout'), 'view', { st: 'tiles' }),
     info('BuildingConnected', 'Optional live connection for invitations (e-mail works without it).', 'docs/LEAD-INBOX.md', null, null, 'buildingConnected'),
+    row('🏗️ Dodge Construction Network — Off · for later (paid)', 'Project leads before permits, bid dates and plan rooms (paid). Needs DODGE_API_KEY in Netlify; nothing is asked from Dodge yet.', '🏗️ Permitted jobs (patch PERMITS2)', F('_gcDodgeOpen'), 'modal'),   /* patch PERMITS2 */
+    row('🏗️ Shovels (building permits API) — Off · for later', 'Paid permit data for Memphis / DeSoto / Little Rock / Jonesboro: the on / off switch, the credit budget, the ZIP codes and what to pull, a free estimate and Pull now. Nashville permits are free and need none of this.', '🏗️ Permitted jobs (patch PERMITS)', F('_gcShovelsOpen'), 'modal'),   /* patch PERMITS (owner 11/12: "keep it in integrations for the future") */
     row('Integrations tab', 'Everything else connected to the CRM.', 'Integrations', V('integrations'), 'view')
   ] },
   { id: 'notify', ic: '🔔', t: 'Notifications & alerts', d: 'Bell, PM alerts, daily digest, calendar feed', rows: [
@@ -191580,6 +191582,11 @@ var ITEMS = [
   { id: 'oncall', g: 'soon', t: 'Enter the on-call rotation', how: '💧 Mitigation → 📟 On call → who is on call each week. Nobody is paged for after-hours emergencies until it is filled in.' },
   { id: 'goal', g: 'soon', t: 'Set the yearly revenue goal', how: '⚙ Admin → 🎯 Company goal → Set. It shows on the TV scoreboard.' },
   { id: 'twostep', g: 'soon', t: 'Two-step login for Wesley and Nick', how: 'Each of you: myaccount.google.com → Security → 2-Step Verification → Get started.' },
+  { id: 'permits_shovels', g: 'later', t: 'Optional, later: Shovels permit data for Memphis / DeSoto / Little Rock', how: 'Only if you want permits from places with no free feed (Nashville already comes in free). ⚙ Admin settings → Integrations → 🏗️ Shovels: it is Off · for later. To use it: sign up at shovels.ai (the free API key has 500 credits per 30 days; one credit = one record), copy the API key, Netlify → Site configuration → Environment variables → SHOVELS_API_KEY → Trigger deploy; then in that Shovels card switch it on, set the credit budget and the ZIP codes, press Estimate, then Pull from Shovels now. Pulls stay manual from the CRM until you turn on the daily pull there.', auto: 'shovels_key' },   /* patch PERMITS */
+  { id: 'permits_filters', g: 'soon', t: 'Pick which permits you want in 🏗️ Permitted jobs', how: '🏗️ Permitted jobs → ⚙ Filters: permit types, minimum value, ZIP codes.' },   /* patch PERMITS */
+  { id: 'mscce_request', g: 'soon', t: 'Shelby County permits: the monthly MSCCE records request (e-mail)', how: 'Shelby County has no free permit feed. The CRM can e-mail Memphis & Shelby County Code Enforcement once a month asking for last month\'s permit list (Excel / CSV with the contractor\'s name and phone). It is OFF. Call MSCCE at 901-222-8300 and ask which e-mail takes public-records requests, then Open → enter it, check the From address and the preview → Send now once → turn on Monthly. Replies come to office@ and an Office To-Do says "import it". Every Monday the office also gets a To-Do to download Develop 901\'s permits.', open: '_gcMsccOpen', openLabel: 'Open settings' },   /* patch PERMITS2 */
+  { id: 'dodge', g: 'later', t: 'Look into Dodge (paid) — get pricing / API access', how: 'Dodge Construction Network (construction.com) has project leads before permits, bid dates and plan rooms (paid). Ask Dodge for pricing and API access for Shelby / DeSoto / Pulaski / Davidson; if you sign up, put the key in Netlify as DODGE_API_KEY → Trigger deploy. ⚙ Admin settings → Integrations → Dodge shows it (off · for later).', auto: 'dodge_key', open: '_gcDodgeOpen', openLabel: 'Open' },   /* patch PERMITS2 */
+  { id: 'gdrive', g: 'soon', t: 'Google Drive for big plan sets (files over 50 MB)', how: '1) Google Cloud console → a project → enable the Google Drive API → IAM → Service accounts → Create → Keys → Add key → JSON (a file downloads). 2) Google Drive → New → Shared drive "GrayCo Jobs" → Manage members → add the service account\'s e-mail as Content manager. 3) Netlify → Site configuration → Environment variables: GDRIVE_SA_JSON = the whole text of the JSON key file; GDRIVE_ROOT_ID = the Shared drive\'s id (the last part of its address) → Deploys → Trigger deploy.', auto: 'gdrive' },   /* patch GDRIVE */
   { id: 'estimates_inbox', g: 'later', t: 'Optional: estimates@ inbox', how: 'If customers or GCs should e-mail plans and estimates in: admin.google.com → Groups → create estimates@grayco-cs.com with the estimators, turn ON "Allow members outside your organization", add member estimates@in.grayco-cs.com. Anyone at GrayCo can already e-mail estimates@in.grayco-cs.com directly.' },
   { id: 'resend_events', g: 'later', t: 'Optional: delivered / bounced status on sent e-mail', how: 'Resend → Webhooks → Add endpoint https://crm.grayco-cs.com/.netlify/functions/mail-events, events email.delivered, email.bounced, email.complained, email.delivery_delayed. Copy its signing secret → Netlify → Environment variables → RESEND_EVENTS_SECRET → Trigger deploy. (docs/SENT-MAIL.md)', auto: 'resend_events' },
   { id: 'vapid', g: 'later', t: 'Phone notifications for PMs', how: 'Ask Claude for the one-line command that makes the VAPID keys, then add VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY and VAPID_SUBJECT in Netlify → Trigger deploy. Each PM then taps 🔔 Turn on phone alerts.', auto: 'vapid' },
@@ -191637,7 +191644,8 @@ function rowHtml(it){
   if (st.done) right = '<span class="ot-ok">✓ ' + (st.how === 'auto' ? 'Done (the CRM sees it)' : 'Done' + (st.by ? ' · ' + esc(st.by) : '')) + '</span>' + (st.how === 'manual' ? ' <button type="button" class="ot-b" data-ot-undo="' + esc(it.id) + '">Undo</button>' : '');
   else right = '<button type="button" class="ot-b p" data-ot-done="' + esc(it.id) + '">Done</button>';
   var hint = !st.done && it.auto && st.auto === false ? '<div class="ot-h" style="color:#b45309">The CRM checked: not done yet.</div>' : '';
-  return '<div class="ot-r' + (st.done ? ' done' : '') + '"><div class="ot-main"><div class="ot-t">' + esc(it.t) + '</div><div class="ot-h">' + esc(it.how) + '</div>' + hint + '</div>' + right + '</div>';
+  var opn = it.open && typeof W[it.open] === 'function' ? '<button type="button" class="ot-b" data-ot-open="' + esc(it.id) + '" style="color:#241968;background:#fff">' + esc(it.openLabel || 'Open') + '</button> ' : '';   /* patch PERMITS2: a step with its own settings opens them here */
+  return '<div class="ot-r' + (st.done ? ' done' : '') + '"><div class="ot-main"><div class="ot-t">' + esc(it.t) + '</div><div class="ot-h">' + esc(it.how) + '</div>' + hint + '</div>' + opn + right + '</div>';
 }
 function cardHtml(){
   var n = left();
@@ -191663,6 +191671,7 @@ function paint(){
       if (t.hasAttribute('data-ot-done')) { ev.preventDefault(); tick(t.getAttribute('data-ot-done'), true); }
       else if (t.hasAttribute('data-ot-undo')) { ev.preventDefault(); tick(t.getAttribute('data-ot-undo'), false); }
       else if (t.hasAttribute('data-ot-check')) { ev.preventDefault(); t.textContent = 'Checking…'; refresh(true); }
+      else if (t.hasAttribute('data-ot-open')) { ev.preventDefault(); var oi = ITEMS.filter(function(x){ return x.id === t.getAttribute('data-ot-open'); })[0]; try { if (oi && typeof W[oi.open] === 'function') W[oi.open](); } catch (e) {} }   /* patch PERMITS2 */
     });
   }
   var anchor = D.getElementById('gc-exp2-todo');
@@ -222432,5 +222441,831 @@ W._gcBidEst = { open: open, load: load, close: close, group: group, resolve: fun
   ourHit: function(sent, trade, text){ var keep = UI.sent; UI.sent = sent; OURC = {}; try { var o = ourScope(trade), out = []; parseText(text, 'exc').forEach(function(it){ if (it.kind === 'exc') hitsOurs(it, o).forEach(function(h){ out.push(h); }); }); return out; } finally { UI.sent = keep; OURC = {}; } }, todo: function(){ TD.at = 0; return todoItems(); },   /* patch BIDSCOPE */
   state: function(){ return { jobId: UI.jobId, bids: UI.bids ? UI.bids.length : null, err: UI.err, picking: !!UI.pick, log: LOG.slice(-20) }; } };
 try { console.log('[GC] patch BIDEST + BIDSCOPE: 📊 all bids for a job by trade (lowest first), 📋 included / excluded side by side → 🏆 award (confirm, e-mail) / ➕ into the project\'s estimate, ⚠ scope gaps + PM To-Do — _gcBidEst.state()'); } catch (e) {}
+})(window);
+</script>
+
+<script id="gc-patch-permits">
+/* patch PERMITS — 🏗️ PERMITTED JOBS (owner 11/12: "Can we go through building permits filed in Arkansas, TN, Mississippi …"; then
+   "permitted jobs don't alert a lead to anyone in the CRM — just have another tab 'Permitted jobs' and we can go through the jobs,
+   companies that pulled them, phone numbers etc.").
+   Its own left-menu tab (view "permitjobs"; admins, the office, estimators, the Marketing Manager; every company — the data is shared).
+   The server (netlify/functions/permit-watch.js) reads Nashville's free permit feed every morning and keeps the permits that look like
+   GrayCo work. Shovels (paid permit data for Memphis / DeSoto / Little Rock / Jonesboro; owner: "keep it in integrations for the future")
+   is OFF and lives in ⚙ Admin settings → Integrations → 🏗️ Shovels (window._gcShovelsOpen): the switch, the credit budget, what to pull
+   (ZIP codes from a built-in county list — no credits —, tags, keyword, minimum value), a free estimate and "Pull from Shovels now".
+   Only when it is switched on (and SHOVELS_API_KEY is set) does it show here: its status line, its permits, "Get phone / e-mail".
+     · Jobs: the permits — filters (new / made leads / dismissed, area, reason, company fit, minimum value, the company that pulled it,
+       search) and sort; a row opens the detail sheet: everything on the permit, who pulled it (📞 tap to call, ✉ e-mail, website,
+       license), the owner of record, 🗺 map, ➕ Make it a lead (a CRM lead: source "Building permit — <area>", type + company from the
+       hint, the contractor and the permit in the notes), Dismiss.
+     · Companies: the contractors pulling permits — name, phone, e-mail, website / license, # of permits, total value, latest, types,
+       areas; a row shows their permits.
+     · the status, ↻ Run now, ⚙ Filters (admins and the office: kinds of permit, excluded work, minimum value, how far back).
+   NO ALERTS: no badge, no count in the menu, no e-mail, no push, no To-Do, nothing into the Lead Inbox. Nothing becomes a lead by itself.
+   window._gcPermitJobs = { mount, draw, load, canSee, makeLead, dismiss, leadOf, companies, lookup, state } · window._gcShovelsOpen() */
+(function(W){
+'use strict';
+var D = W.document;
+if (W._gcPermitJobs) return;
+var FN = '/.netlify/functions/permit-watch', VIEW = 'permitjobs';
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function lsGet(k){ try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }
+function lsSet(k, v){ try { localStorage.setItem(k, v); } catch (e) {} }
+function admin(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()); } catch (e) { return false; } }
+function meU(){ try { return (typeof W._gcMeUser === 'function' ? W._gcMeUser() : null) || {}; } catch (e) { return {}; } }
+function me(){ var u = meU(); try { return s(u.name) || s(W.__GC_AUTH__ && W.__GC_AUTH__.email()) || lsGet('grayco_user'); } catch (e) { return s(u.name); } }
+function role(){ try { return s(W._gcRP && W._gcRP.role && W._gcRP.role()); } catch (e) { return ''; } }
+/* who sees the tab: admins, the office, estimators, the Marketing Manager */
+function canSee(){
+  if (admin()) return true;
+  try { if (W._gcIsOfficeFull && W._gcIsOfficeFull()) return true; } catch (e) {}
+  var u = meU(), txt = [role(), u.role, u.profile, u.title, u.position].map(s).join(' ');
+  return /\boffice\b|estimat|marketing/i.test(txt);
+}
+function shOn(){ var sh = S.settings && S.settings.shovels; return !!(sh && sh.on === true); }
+function canEdit(){ if (admin()) return true; try { if (W._gcIsOfficeFull && W._gcIsOfficeFull()) return true; } catch (e) {} return /\boffice\b/i.test(role() + ' ' + s(meU().role)) || S.admin; }
+function money(n){ n = +n; if (!isFinite(n) || n <= 0) return ''; return '$' + Math.round(n).toLocaleString('en-US'); }
+function short(n){ n = +n; if (!isFinite(n) || n <= 0) return ''; if (n >= 1e6) return '$' + (Math.round(n / 1e5) / 10) + 'M'; if (n >= 1e3) return '$' + Math.round(n / 1e3) + 'k'; return '$' + Math.round(n); }
+function when(iso){ var t = Date.parse(iso); if (!isFinite(t)) return ''; try { return new Date(t).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); } catch (e) { return s(iso).slice(0, 16); } }
+function day(d){ d = s(d).slice(0, 10); if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return ''; var p = d.split('-'); return +p[1] + '/' + +p[2] + '/' + p[0].slice(2); }
+function hash(t){ var h = 5381; t = s(t); for (var i = 0; i < t.length; i++) h = ((h << 5) + h + t.charCodeAt(i)) >>> 0; return h.toString(36); }
+function tel(p){ return s(p).replace(/[^\d+]/g, ''); }
+function fmtPhone(p){ var d = tel(p).replace(/^\+?1(?=\d{10}$)/, ''); return /^\d{10}$/.test(d) ? '(' + d.slice(0, 3) + ') ' + d.slice(3, 6) + '-' + d.slice(6) : s(p); }
+function webUrl(w){ w = s(w); if (!w) return ''; return /^https?:\/\//i.test(w) ? w : 'https://' + w.replace(/^\/+/, ''); }
+var toastEl = null, toastN = 0;
+function toast(msg, bad){
+  if (!toastEl) { toastEl = D.createElement('div'); toastEl.id = 'gc-pj-toast'; toastEl.setAttribute('data-gc-keep', '1'); D.body.appendChild(toastEl); }
+  toastEl.textContent = msg; toastEl.className = bad ? 'bad' : ''; toastEl.style.display = 'block';
+  var my = ++toastN; ST.call(W, function(){ if (my === toastN && toastEl) toastEl.style.display = 'none'; }, 4200);
+}
+function call(body){
+  return W.fetch(FN, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), cache: 'no-store' })
+    .then(function(r){ return r.json().catch(function(){ return { ok: false, error: 'The permit service answered ' + r.status + '.' }; }); }, function(){ return { ok: false, error: 'Could not reach the permit service.' }; });
+}
+
+/* ── the state ── */
+var S = { items: [], status: {}, settings: null, configured: false, admin: false, at: 0, loading: false, err: '', el: null,
+  v: 'jobs', f: { src: '', reason: '', co: '', min: '', q: '', state: 'new', who: '', sort: 'new' }, lim: 150, busy: {}, setOpen: false, sheet: '' };
+try { var fv = JSON.parse(lsGet('gc_pj_f') || 'null'); if (fv && typeof fv === 'object') Object.keys(S.f).forEach(function(k){ if (typeof fv[k] === 'string' && k !== 'who') S.f[k] = fv[k]; }); if (fv && (fv._v === 'jobs' || fv._v === 'companies')) S.v = fv._v; } catch (e) {}
+function saveF(){ lsSet('gc_pj_f', JSON.stringify(Object.assign({ _v: S.v }, S.f))); }
+function load(){
+  if (S.loading) return Promise.resolve(S);
+  S.loading = true;
+  return call({ action: 'list' }).then(function(r){
+    S.loading = false; S.at = Date.now();
+    if (!r || !r.ok) { S.err = s(r && r.error) || 'Could not load the permitted jobs.'; draw(); return S; }
+    S.err = ''; S.items = arr(r.items); S.status = r.status || {}; S.settings = r.settings || S.settings; S.configured = !!r.shovelsConfigured; S.admin = !!r.admin;
+    draw(); return S;
+  });
+}
+
+/* ── the menu: its own tab, right after 📈 Leads (patch RP builds the menu; this adds the tab for the people who see it) ── */
+(function wrapMenu(){
+  var RP = W._gcRP;
+  if (!RP || typeof RP.menu !== 'function') { ST.call(W, wrapMenu, 400); return; }
+  if (RP.menu.__pj) return;
+  var orig = RP.menu;
+  var m = function(Uf, list){
+    var r = orig.apply(this, arguments);
+    try {
+      r = arr(r).filter(function(g){ return g && g.id !== VIEW; });
+      if (canSee()) {
+        var it = arr(Uf).filter(function(g){ return g && g.id === VIEW; })[0] || { id: VIEW, l: 'Permitted jobs', ic: '🏗️' };
+        var ids = r.map(function(g){ return g.id; }), at = -1;
+        ['leads', 'bidportal', 'estimates', 'mmt_leads', 'customers'].some(function(k){ var i = ids.indexOf(k); if (i >= 0) { at = i + 1; return true; } return false; });
+        r = at < 0 ? r.concat([it]) : r.slice(0, at).concat([it], r.slice(at));
+      }
+    } catch (x) {}
+    return r;
+  };
+  m.__pj = true; RP.menu = m;
+})();
+
+/* ── the CSS ── */
+function css(){
+  if (D.getElementById('gc-pj-css')) return;
+  var st = D.createElement('style'); st.id = 'gc-pj-css';
+  st.textContent = '#gc-pj{color:#0f172a;font:13px/1.45 Inter,Arial,sans-serif;padding:4px 2px 30px}#gc-pj .hd{display:flex;align-items:center;gap:8px;flex-wrap:wrap}#gc-pj .hd h2{margin:0;font-size:20px}#gc-pj .sp{flex:1}'
+    + '#gc-pj button.pm,#gc-pj-sheet button.pm{border:1px solid #cbd5e1;background:#fff;color:#0f172a;border-radius:8px;padding:6px 11px;font:600 12.5px Inter,Arial,sans-serif;cursor:pointer;white-space:nowrap}#gc-pj button.pm.p,#gc-pj-sheet button.pm.p{background:#241968;border-color:#241968;color:#fff}#gc-pj button.pm:disabled,#gc-pj-sheet button.pm:disabled{opacity:.55;cursor:default}'
+    + '#gc-pj .stat{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}#gc-pj .src{border:1px solid #e2e8f0;border-radius:10px;padding:6px 10px;background:#f8fafc;font-size:12.5px;flex:1 1 300px}#gc-pj .src.bad{background:#fef2f2;border-color:#fecaca;color:#7f1d1d}#gc-pj .src.off{background:#fffbeb;border-color:#fde68a;color:#78350f}'
+    + '#gc-pj .tabs{display:flex;gap:4px;margin:4px 0 8px;border-bottom:1px solid #e2e8f0}#gc-pj .tabs button{border:0;background:none;padding:8px 14px;font:700 13.5px Inter,Arial,sans-serif;color:#64748b;cursor:pointer;border-bottom:3px solid transparent}#gc-pj .tabs button.on{color:#241968;border-bottom-color:#d4a017}'
+    + '#gc-pj .flt{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 8px}#gc-pj .flt select,#gc-pj .flt input{border:1px solid #cbd5e1;border-radius:8px;padding:6px 8px;font:12.5px Inter,Arial,sans-serif;max-width:220px;background:#fff}'
+    + '#gc-pj .who{display:inline-flex;align-items:center;gap:6px;background:#eef2ff;border:1px solid #c7d2fe;border-radius:999px;padding:3px 4px 3px 10px;font-weight:700}#gc-pj .who button{border:0;background:#241968;color:#fff;border-radius:999px;width:22px;height:22px;cursor:pointer}'
+    + '#gc-pj .tw{overflow:auto;border:1px solid #e2e8f0;border-radius:10px;background:#fff}#gc-pj table{border-collapse:collapse;width:100%;min-width:1000px}#gc-pj th{position:sticky;top:0;background:#f1f5f9;text-align:left;font-size:11.5px;color:#475569;padding:7px 6px;border-bottom:1px solid #e2e8f0;white-space:nowrap}'
+    + '#gc-pj td{padding:7px 6px;border-bottom:1px solid #f1f5f9;vertical-align:top;font-size:12.5px}#gc-pj tbody tr{cursor:pointer}#gc-pj tbody tr:hover td{background:#f8fafc}#gc-pj td.d{max-width:280px;color:#334155}#gc-pj td.d .t{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}#gc-pj tr.lead td{background:#f0fdf4}#gc-pj tr.dis td{opacity:.55}'
+    + '.gc-pj-ch{display:inline-block;background:#fef3c7;color:#92400e;border-radius:999px;padding:1px 7px;margin:0 3px 3px 0;font:600 11px Inter,Arial,sans-serif;white-space:nowrap}.gc-pj-co{display:inline-block;border-radius:999px;padding:1px 8px;color:#fff;font:700 11px Inter,Arial,sans-serif;white-space:nowrap}'
+    + '#gc-pj a,#gc-pj-sheet a{color:#1d4ed8;text-decoration:none}#gc-pj .mut,#gc-pj-sheet .mut{color:#64748b;font-size:12px}#gc-pj .err{background:#fef2f2;color:#7f1d1d;border-radius:8px;padding:8px;margin:8px 0}'
+    + '#gc-pj-set{border:1px solid #c7d2fe;background:#eef2ff;border-radius:10px;padding:10px 12px;margin:8px 0}#gc-pj-set h4{margin:0 0 6px;font-size:14px}#gc-pj-set label{display:block;margin:3px 0;font-size:12.5px}#gc-pj-set .g{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:4px 16px}'
+    + '#gc-pj-set input[type=number],#gc-pj-set textarea{border:1px solid #cbd5e1;border-radius:8px;padding:5px 7px;font:12.5px Inter,Arial,sans-serif;box-sizing:border-box}#gc-pj-set textarea{width:100%;min-height:54px}'
+    + '#gc-pj-sheet{position:fixed;inset:0;z-index:100240;background:rgba(15,23,42,.5);display:flex;justify-content:flex-end}#gc-pj-sheet .bx{background:#fff;color:#0f172a;width:min(560px,100%);height:100%;overflow:auto;padding:16px 18px;font:13.5px/1.5 Inter,Arial,sans-serif;box-shadow:-10px 0 40px rgba(0,0,0,.25);box-sizing:border-box}'
+    + '#gc-pj-sheet h3{margin:0 0 4px;font-size:17px}#gc-pj-sheet .sec{border-top:1px solid #e2e8f0;padding:10px 0;margin-top:8px}#gc-pj-sheet .sec h4{margin:0 0 6px;font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:#64748b}#gc-pj-sheet dl{display:grid;grid-template-columns:130px 1fr;gap:3px 10px;margin:0}#gc-pj-sheet dt{color:#64748b}#gc-pj-sheet dd{margin:0;overflow-wrap:anywhere}'
+    + '#gc-pj-sheet .call{display:inline-flex;align-items:center;gap:6px;background:#15803d;color:#fff!important;border-radius:999px;padding:6px 12px;font-weight:700;margin:2px 6px 2px 0}#gc-pj-sheet .mail{display:inline-flex;align-items:center;gap:6px;background:#eef2ff;border-radius:999px;padding:6px 12px;font-weight:700;margin:2px 6px 2px 0}#gc-pj-sheet .acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}'
+    + '#gc-pj-toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:100300;background:#14532d;color:#fff;padding:9px 14px;border-radius:10px;font:600 13px Inter,Arial,sans-serif;display:none;max-width:90vw}#gc-pj-toast.bad{background:#7f1d1d}'
+    + '@media (max-width:640px){#gc-pj .flt select,#gc-pj .flt input{max-width:none;flex:1 1 40%}#gc-pj-sheet dl{grid-template-columns:100px 1fr}}';
+  (D.head || D.documentElement).appendChild(st);
+}
+
+/* ── helpers on a permit ── */
+var CO = { construction: ['Construction', '#1d4ed8', '🏗'], mitigation: ['Mitigation', '#0e7490', '💧'], environmental: ['Environmental', '#15803d', '☢️'] };
+function coOf(id){ try { if (W._gcCo && W._gcCo.get) { var c = W._gcCo.get(id); if (c && c.id === id) return [c.short, c.color, c.icon]; } } catch (e) {} return CO[id] || CO.construction; }
+function coBadge(id){ var c = coOf(id); return '<span class="gc-pj-co" style="background:' + esc(c[1]) + '">' + esc(c[2] + ' ' + c[0]) + '</span>'; }
+var REASONS = [['fire', '🔥 Fire / smoke', /fire\/smoke/], ['water', '💧 Water / flood', /water\/flood/], ['storm', '🌪 Storm / hail / wind', /storm/], ['collapse', '🏚 Collapse', /collapse/], ['env', '☣ Mold / asbestos / lead', /mold\/asbestos/],
+  ['demo', 'Demolition', /^Demolition/], ['roof', 'Roof', /^Roof/], ['comm', 'Commercial', /^Commercial/], ['multi', 'Multifamily', /^Multifamily/], ['res', 'Residential', /^Residential/], ['repair', 'Repair', /^Repair$/], ['pre78', 'Built before 1978', /pre-1978|[Bb]uilt 1[0-9]{3}/]];
+function srcKey(x){ return x.src === 'nashville' ? 'nashville' : 'shovels:' + s(x.areaLong || x.area); }
+function srcName(x){ return x.src === 'nashville' ? 'Nashville' : s(x.area || x.areaLong) || 'Shovels'; }
+function addr(x){ return [s(x.address), s(x.city), [s(x.usState), s(x.zip)].filter(Boolean).join(' ')].filter(Boolean).join(', '); }   /* usState: x.state is new / lead / dismissed */
+function mapUrl(x){ return 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(addr(x)); }
+function whoKey(x){ return low(x.contractor).replace(/[.,]/g, '').replace(/\b(llc|inc|co|corp|company|ltd|lp)\b/g, '').replace(/\s+/g, ' ').trim(); }
+function lookUp(name, city){ return 'https://www.google.com/search?q=' + encodeURIComponent(s(name) + ' ' + s(city) + ' contractor phone'); }
+function find(k){ for (var i = 0; i < S.items.length; i++) if (S.items[i].key === k) return S.items[i]; return null; }
+function shown(){
+  var f = S.f, q = low(f.q), min = +s(f.min).replace(/[$,]/g, '') || 0, rx = null;
+  REASONS.forEach(function(r){ if (r[0] === f.reason) rx = r[2]; });
+  var l = S.items.filter(function(x){
+    var off = !!(x.filtered || x.nomatch);   /* below today's filters (kept): only under "Not matching the filters" */
+    if (f.state === 'hidden') { if (!off) return false; }
+    else { if (off) return false; if (f.state && f.state !== 'all' && x.state !== f.state) return false; }
+    if (f.src && srcKey(x) !== f.src) return false;
+    if (f.co && x.hint !== f.co) return false;
+    if (f.who && whoKey(x) !== f.who) return false;
+    if (min && !(+x.value >= min)) return false;
+    if (rx && !arr(x.reasons).some(function(r){ return rx.test(r); })) return false;
+    if (q && [x.number, x.type, x.subtype, x.desc, addr(x), x.contractor, x.contractorPhone, x.contractorEmail, x.owner, x.area].join(' ').toLowerCase().indexOf(q) < 0) return false;
+    return true;
+  });
+  var by = f.sort;
+  if (by === 'value') l.sort(function(a, b){ return (+b.value || 0) - (+a.value || 0); });
+  else if (by === 'area') l.sort(function(a, b){ return srcName(a) < srcName(b) ? -1 : srcName(a) > srcName(b) ? 1 : 0; });
+  else if (by === 'who') l.sort(function(a, b){ return whoKey(a) < whoKey(b) ? -1 : whoKey(a) > whoKey(b) ? 1 : 0; });
+  return l;
+}
+/* the companies pulling permits (from the permits the filters show, without the company filter) */
+function companies(){
+  var keep = S.f.who; S.f.who = ''; var list = shown(); S.f.who = keep;
+  var m = {};
+  list.forEach(function(x){
+    var k = whoKey(x); if (!k) return;
+    var c = m[k] || (m[k] = { key: k, name: s(x.contractor), phone: '', email: '', website: '', license: '', address: '', n: 0, value: 0, latest: '', types: {}, areas: {}, city: s(x.city), cid: '' });
+    if (x.src === 'shovels' && x.contractorId && !x.contractorLooked && !c.cid) c.cid = s(x.contractorId);
+    c.n++; c.value += +x.value || 0; var d = s(x.issued || x.filed); if (d > c.latest) c.latest = d;
+    ['phone', 'email', 'website', 'license', 'address'].forEach(function(f){ var v = s(x['contractor' + f[0].toUpperCase() + f.slice(1)]); if (v && !c[f]) c[f] = v; });
+    var t = s(arr(x.reasons)[0] || x.type).replace(/\s*\$[\d.,]+[kM]?$/, ''); if (t) c.types[t] = (c.types[t] || 0) + 1;
+    c.areas[srcName(x)] = 1;
+  });
+  return Object.keys(m).map(function(k){ return m[k]; }).sort(function(a, b){ return (b.n - a.n) || (b.value - a.value); });
+}
+
+/* ── drawing ── */
+function srcLine(name, st, kind){
+  st = st || {};
+  if (kind === 'shovels') {
+    if (!S.configured || st.configured === false) return '<div class="src off" data-pj-src="shovels"><b>Shovels</b> (Memphis, DeSoto, Little Rock, Jonesboro) — Not connected. Add SHOVELS_API_KEY in Netlify (🔧 Owner setup → Building permits), then Trigger deploy.</div>';
+    if (st.active === false) return '<div class="src off" data-pj-src="shovels"><b>Shovels</b> — ' + esc(st.note || 'off') + '</div>';
+    if (!st.lastRun) return '<div class="src" data-pj-src="shovels"><b>Shovels</b> — connected; first run tomorrow morning (or ↻ Run now).</div>';
+  }
+  if (kind === 'nashville' && st.on === false) return '<div class="src off" data-pj-src="nashville"><b>' + esc(name) + '</b> — turned off in ⚙ Filters.</div>';
+  if (!st.lastRun) return '<div class="src" data-pj-src="' + kind + '"><b>' + esc(name) + '</b> — not run yet. ↻ Run now.</div>';
+  var extra = kind === 'shovels' ? (st.zipsTotal ? ' · ZIPs today ' + (st.zipsToday || 0) + '/' + st.zipsTotal : '') + (st.credits && st.credits.used != null ? ' · credits ' + st.credits.used + (st.credits.limit ? ' of ' + st.credits.limit : '') + ' (30 days)' : '') + (st.skipped ? ' · ' + esc(st.note) : '') : '';
+  return '<div class="src' + (st.error ? ' bad' : '') + '" data-pj-src="' + kind + '"><b>' + esc(name) + '</b> — ' + (st.error ? '⚠ ' + esc(st.error) + ' · ' : '✅ ') + 'last run ' + esc(when(st.lastRun)) + ' · ' + (+st.read || 0) + ' read · ' + (+st.matched || 0) + ' matched' + (st.added != null ? ' · ' + st.added + ' new' : '') + extra + '</div>';
+}
+function whoCell(x){
+  if (!x.contractor) return '<span class="mut">—</span>';
+  return esc(x.contractor) + (x.contractorPhone ? '<div><a href="tel:' + esc(tel(x.contractorPhone)) + '" data-pj-stop="1">📞 ' + esc(fmtPhone(x.contractorPhone)) + '</a></div>' : '') + (x.contractorEmail ? '<div class="mut">' + esc(x.contractorEmail) + '</div>' : '');
+}
+function jobRow(x){
+  var k = esc(x.key), v = money(x.value);
+  var act = x.state === 'lead' ? '<span class="mut">✓ Lead</span>' : '<button type="button" class="pm p" data-pj-a="lead" data-k="' + k + '"' + (S.busy[x.key] ? ' disabled' : '') + '>➕ Lead</button>';
+  return '<tr data-k="' + k + '" class="' + (x.state === 'lead' ? 'lead' : x.state === 'dismissed' ? 'dis' : '') + '">'
+    + '<td style="white-space:nowrap">' + esc(day(x.issued || x.filed)) + '</td><td>' + esc(srcName(x)) + '</td>'
+    + '<td>' + esc(x.type) + (x.subtype ? '<div class="mut">' + esc(x.subtype) + '</div>' : '') + '</td>'
+    + '<td>' + esc(addr(x)) + (x.owner ? '<div class="mut">Owner: ' + esc(x.owner) + '</div>' : '') + '</td>'
+    + '<td style="white-space:nowrap">' + (v ? esc(v) : '<span class="mut">—</span>') + '</td>'
+    + '<td>' + whoCell(x) + '</td>'
+    + '<td class="d"><div class="t">' + esc(x.desc) + '</div></td>'
+    + '<td>' + arr(x.reasons).map(function(r){ return '<span class="gc-pj-ch">' + esc(r) + '</span>'; }).join('') + '</td>'
+    + '<td>' + coBadge(x.hint) + '</td><td>' + act + '</td></tr>';
+}
+function coRow(c){
+  var types = Object.keys(c.types).sort(function(a, b){ return c.types[b] - c.types[a]; }).slice(0, 3).join(', ');
+  return '<tr data-who="' + esc(c.key) + '"><td><b>' + esc(c.name) + '</b>' + (c.address ? '<div class="mut">' + esc(c.address) + '</div>' : '') + '</td>'
+    + '<td style="white-space:nowrap">' + (c.phone ? '<a href="tel:' + esc(tel(c.phone)) + '" data-pj-stop="1">📞 ' + esc(fmtPhone(c.phone)) + '</a>' : (c.cid && shOn() ? '<button type="button" class="pm" data-pj-a="lookup" data-cid="' + esc(c.cid) + '">📇 Get phone (1 credit)</button> ' : '') + '<a href="' + esc(lookUp(c.name, c.city)) + '" target="_blank" rel="noopener" data-pj-stop="1" class="mut">🔎 Look up</a>') + '</td>'
+    + '<td>' + (c.email ? '<a href="mailto:' + esc(c.email) + '" data-pj-stop="1">' + esc(c.email) + '</a>' : '<span class="mut">—</span>') + '</td>'
+    + '<td>' + (c.website ? '<a href="' + esc(webUrl(c.website)) + '" target="_blank" rel="noopener" data-pj-stop="1">' + esc(c.website.replace(/^https?:\/\//, '')) + '</a>' : '') + (c.license ? '<div class="mut">License ' + esc(c.license) + '</div>' : '') + (!c.website && !c.license ? '<span class="mut">—</span>' : '') + '</td>'
+    + '<td style="text-align:right">' + c.n + '</td><td style="white-space:nowrap">' + esc(money(c.value) || '—') + '</td><td style="white-space:nowrap">' + esc(day(c.latest)) + '</td>'
+    + '<td>' + esc(types) + '</td><td>' + esc(Object.keys(c.areas).join(', ')) + '</td></tr>';
+}
+function opt(v, label, cur){ return '<option value="' + esc(v) + '"' + (v === cur ? ' selected' : '') + '>' + esc(label) + '</option>'; }
+function filtersHtml(){
+  var f = S.f, srcs = {}, i;
+  S.items.forEach(function(x){ srcs[srcKey(x)] = x.src === 'nashville' ? 'Nashville' : s(x.areaLong || x.area); });
+  var h = '<div class="flt"><select data-pj-f="state" title="Which permits">' + opt('new', 'New', f.state) + opt('lead', 'Made leads', f.state) + opt('dismissed', 'Dismissed', f.state) + opt('all', 'All', f.state) + opt('hidden', 'Not matching the filters (kept)', f.state) + '</select>'
+    + '<select data-pj-f="src" title="Area">' + opt('', 'All areas', f.src) + Object.keys(srcs).sort().map(function(k){ return opt(k, srcs[k], f.src); }).join('') + '</select>'
+    + '<select data-pj-f="reason" title="Why it showed">' + opt('', 'Any reason', f.reason);
+  for (i = 0; i < REASONS.length; i++) h += opt(REASONS[i][0], REASONS[i][1], f.reason);
+  h += '</select><select data-pj-f="co" title="Which GrayCo company it fits">' + opt('', 'Any GrayCo company', f.co) + opt('construction', '🏗 Construction', f.co) + opt('mitigation', '💧 Mitigation', f.co) + opt('environmental', '☢️ Environmental', f.co) + '</select>'
+    + '<input data-pj-f="min" type="text" inputmode="numeric" placeholder="Min value $" value="' + esc(f.min) + '" style="width:110px">'
+    + '<input data-pj-f="q" type="search" placeholder="Search address, company, phone, words…" value="' + esc(f.q) + '" style="width:240px">'
+    + (S.v === 'jobs' ? '<select data-pj-f="sort" title="Sort">' + opt('new', 'Newest first', f.sort) + opt('value', 'Biggest value', f.sort) + opt('area', 'By area', f.sort) + opt('who', 'By company', f.sort) + '</select>' : '')
+    + '</div>';
+  if (f.who && S.v === 'jobs') { var nm = ''; S.items.some(function(x){ if (whoKey(x) === f.who) { nm = x.contractor; return true; } return false; }); h += '<div style="margin:0 0 8px"><span class="who">Pulled by: ' + esc(nm || f.who) + ' <button type="button" data-pj-a="nowho" title="All companies">✕</button></span></div>'; }
+  return h;
+}
+function settingsHtml(){
+  var c = S.settings || {}, inc = c.include || {}, labels = S.incLabels || [];
+  if (!labels.length) labels = Object.keys(inc).map(function(k){ return [k, k]; });
+  var uses = c.uses || {}, ul = S.useLabels || [];
+  return '<div id="gc-pj-set"><h4>⚙ Which permits show here</h4><div class="mut" style="margin:0 0 6px">Default (owner 11/12): large commercial jobs only — $1,000,000 and up, no residential.</div><div class="g">' + labels.map(function(l){ return '<label><input type="checkbox" data-pj-inc="' + esc(l[0]) + '"' + (inc[l[0]] ? ' checked' : '') + '> ' + esc(l[1]) + '</label>'; }).join('') + '</div>'
+    + (ul.length ? '<div style="margin-top:6px"><b>Kinds of building</b> <span class="mut">(untick to leave one out)</span><div class="g">' + ul.map(function(u){ return '<label><input type="checkbox" data-pj-use="' + esc(u[0]) + '"' + (uses[u[0]] !== false ? ' checked' : '') + '> ' + esc(u[1]) + '</label>'; }).join('') + '</div></div>' : '')
+    + '<div class="g" style="margin-top:6px"><label>Minimum job value ($; repair words, roofs and demolitions — when ticked — show at any value)<br><input type="number" min="0" step="1000" data-pj-set="minValue" value="' + esc(c.minValue) + '"></label>'
+    + '<label>Only permits from the last … days<br><input type="number" min="1" max="90" data-pj-set="maxAgeDays" value="' + esc(c.maxAgeDays) + '"></label></div>'
+    + '<label>Leave out (words, comma-separated)<textarea data-pj-set="exclude">' + esc(arr(c.exclude).join(', ')) + '</textarea></label>'
+    + '<div class="g"><label><input type="checkbox" data-pj-set="nashOn"' + (!c.nashville || c.nashville.on !== false ? ' checked' : '') + '> Nashville / Davidson Co. (free, every morning)</label></div>'
+    + '<div style="display:flex;gap:6px;margin-top:6px"><button type="button" class="pm p" data-pj-a="save">Save filters</button><button type="button" class="pm" data-pj-a="defaults">Show the defaults</button><button type="button" class="pm" data-pj-a="setclose">Cancel</button></div></div>';
+}
+function bodyHtml(){
+  var st = S.status || {};
+  var h = '<div class="hd"><h2>🏗️ Permitted jobs</h2><span class="mut">Building permits that look like GrayCo work · Nashville / Davidson Co. (free, every morning) · nobody is alerted</span><span class="sp"></span>'
+    + '<button type="button" class="pm" data-pj-a="run">↻ Run now</button>' + (shOn() && canEdit() ? '<button type="button" class="pm" data-pj-a="shovels">🔌 Shovels…</button>' : '') + (canEdit() ? '<button type="button" class="pm" data-pj-a="import">📥 Import a permit list (Excel/CSV)</button><button type="button" class="pm" data-pj-a="filters">⚙ Filters</button>' : '') + '</div>';
+  h += '<div class="stat">' + srcLine('Nashville / Davidson Co. (free)', st.nashville, 'nashville') + (shOn() ? srcLine('Shovels', st.shovels, 'shovels') : '') + '</div>';
+  if (!shOn()) h += '<div class="mut" data-pj-more="1" style="margin:-4px 0 8px">More areas: Memphis / Shelby, DeSoto and Little Rock have no free permit feed — available later through ⚙ Admin settings → Integrations.</div>';
+  if (S.err) h += '<div class="err">' + esc(S.err) + '</div>';
+  if (S.setOpen) h += settingsHtml();
+  var jobs = shown(), cos = companies();
+  h += '<div class="tabs"><button type="button" data-pj-v="jobs" class="' + (S.v === 'jobs' ? 'on' : '') + '">Jobs (' + jobs.length + ')</button><button type="button" data-pj-v="companies" class="' + (S.v === 'companies' ? 'on' : '') + '">Companies (' + cos.length + ')</button></div>';
+  h += filtersHtml();
+  if (S.v === 'companies') {
+    h += '<div class="mut" style="margin:0 0 6px">Who is pulling these permits — tap a company to see its permits. Nashville gives the company name only: 🔎 Look up finds the phone.</div>';
+    h += !cos.length ? '<div class="mut" style="padding:20px;text-align:center">No companies for these filters.</div>'
+      : '<div class="tw"><table><thead><tr><th>Company</th><th>Phone</th><th>E-mail</th><th>Website / license</th><th>Permits</th><th>Total value</th><th>Latest</th><th>Types</th><th>Areas</th></tr></thead><tbody>' + cos.slice(0, 300).map(coRow).join('') + '</tbody></table></div>';
+    return h;
+  }
+  h += '<div class="mut" style="margin:0 0 6px">' + jobs.length + ' permit' + (jobs.length === 1 ? '' : 's') + ' shown · ' + S.items.length + ' kept · tap a row for everything on the permit</div>';
+  if (!jobs.length) h += '<div class="mut" style="padding:20px;text-align:center">' + (S.loading && !S.at ? 'Loading…' : 'No permits match these filters.') + '</div>';
+  else h += '<div class="tw"><table><thead><tr><th>Issued</th><th>Area</th><th>Type</th><th>Address</th><th>Value</th><th>Pulled by</th><th>Description</th><th>Why</th><th>Fits</th><th></th></tr></thead><tbody>'
+    + jobs.slice(0, S.lim).map(jobRow).join('') + '</tbody></table></div>' + (jobs.length > S.lim ? '<div style="text-align:center;margin:8px"><button type="button" class="pm" data-pj-a="more">Show more (' + (jobs.length - S.lim) + ')</button></div>' : '');
+  return h;
+}
+function draw(){
+  var el = S.el; if (!el || !el.isConnected) { paintSheet(); return; }
+  var ae = D.activeElement;
+  if (ae && /^(?:INPUT|TEXTAREA|SELECT)$/.test(ae.tagName) && ae.closest && ae.closest('#gc-pj-set') && el.contains(ae)) return;   /* never redraw under a hand typing in ⚙ Filters */
+  var fk = ae && el.contains(ae) && ae.getAttribute && ae.getAttribute('data-pj-f'), caret = fk && ae.selectionStart;
+  if (!canSee()) { el.innerHTML = '<div id="gc-pj"><div class="mut" style="padding:30px;text-align:center">🏗️ Permitted jobs is for the admins, the office, the estimators and marketing.</div></div>'; return; }
+  var box = el.querySelector('#gc-pj'); if (!box) { el.innerHTML = '<div id="gc-pj" data-gc-linked="1"></div>'; box = el.querySelector('#gc-pj'); }
+  S.paints = (S.paints || 0) + 1;
+  box.innerHTML = bodyHtml();
+  if (fk) { var f = box.querySelector('[data-pj-f="' + fk + '"]'); if (f) { try { f.focus(); if (caret != null && f.setSelectionRange) f.setSelectionRange(caret, caret); } catch (e) {} } }
+  paintSheet();
+}
+function mount(el){
+  if (!el) return;
+  css();
+  if (S.el !== el) {
+    S.el = el;
+    el.addEventListener('click', onClick);
+    el.addEventListener('input', onInput);
+    el.addEventListener('change', onInput);
+  }
+  if (!el.querySelector('#gc-pj')) draw();
+  if (!S.at || (Date.now() - S.at > 300000 && !S.loading)) load();
+}
+
+/* ── the detail sheet ── */
+function dl(rows){ return '<dl>' + rows.filter(function(r){ return r && s(r[1]); }).map(function(r){ return '<dt>' + esc(r[0]) + '</dt><dd>' + (r[2] ? r[1] : esc(r[1])) + '</dd>'; }).join('') + '</dl>'; }
+function sheetHtml(x){
+  var who = x.contractor ? '<b>' + esc(x.contractor) + '</b>' : '<span class="mut">Not on the permit</span>';
+  var reach = (x.contractorPhone ? '<a class="call" href="tel:' + esc(tel(x.contractorPhone)) + '">📞 ' + esc(fmtPhone(x.contractorPhone)) + '</a>' : '')
+    + (x.contractorEmail ? '<a class="mail" href="mailto:' + esc(x.contractorEmail) + '">✉ ' + esc(x.contractorEmail) + '</a>' : '')
+    + (x.src === 'shovels' && x.contractorId && !x.contractorLooked && shOn() ? '<button type="button" class="pm" data-pj-a="lookup" data-cid="' + esc(x.contractorId) + '" title="Asks Shovels once (1 credit); kept after that">📇 Get phone / e-mail (1 credit)</button> ' : '')
+    + (x.contractor && !x.contractorPhone ? '<a class="mail" href="' + esc(lookUp(x.contractor, x.city)) + '" target="_blank" rel="noopener">🔎 Look up their phone</a>' : '');
+  var act = x.state === 'lead' ? '<span class="mut">✓ Made a lead' + (x.stateBy ? ' by ' + esc(x.stateBy) : '') + '</span>' + (x.leadId ? ' <button type="button" class="pm" data-pj-a="openlead" data-k="' + esc(x.key) + '">Open the lead</button>' : '')
+    : '<button type="button" class="pm p" data-pj-a="lead" data-k="' + esc(x.key) + '"' + (S.busy[x.key] ? ' disabled' : '') + '>➕ Make it a lead</button>'
+      + (x.state === 'dismissed' ? '<button type="button" class="pm" data-pj-a="undo" data-k="' + esc(x.key) + '">Undo dismiss</button>' : '<button type="button" class="pm" data-pj-a="dismiss" data-k="' + esc(x.key) + '">Dismiss</button>');
+  return '<div class="bx" role="dialog" aria-label="Permit"><div style="display:flex;gap:8px;align-items:flex-start"><div style="flex:1"><h3>' + esc(x.type || 'Building permit') + '</h3><div class="mut">' + esc(addr(x)) + '</div></div><button type="button" class="pm" data-pj-a="sheetclose">Close</button></div>'
+    + '<div style="margin-top:6px">' + arr(x.reasons).map(function(r){ return '<span class="gc-pj-ch">' + esc(r) + '</span>'; }).join('') + ' ' + coBadge(x.hint) + '</div>'
+    + '<div class="acts">' + act + '<a class="pm" href="' + esc(mapUrl(x)) + '" target="_blank" rel="noopener" style="border:1px solid #cbd5e1;border-radius:8px;padding:6px 11px;font-weight:600">🗺 Open on map</a></div>'
+    + '<div class="sec"><h4>Who pulled it</h4><div>' + who + (x.contractorAddress ? '<div class="mut">' + esc(x.contractorAddress) + '</div>' : '') + '</div><div style="margin-top:6px">' + reach + '</div>'
+    + dl([['Website', x.contractorWebsite ? '<a href="' + esc(webUrl(x.contractorWebsite)) + '" target="_blank" rel="noopener">' + esc(x.contractorWebsite) + '</a>' : '', true], ['License #', x.contractorLicense]])
+    + (x.contractor ? '<div style="margin-top:6px"><a href="#" data-pj-a="who" data-k="' + esc(x.key) + '">All permits by this company →</a></div>' : '') + '</div>'
+    + '<div class="sec"><h4>The permit</h4>' + dl([['Permit #', x.link ? '<a href="' + esc(x.link) + '" target="_blank" rel="noopener">' + esc(x.number || x.id) + '</a>' : esc(x.number || x.id), true], ['Area', x.src === 'nashville' ? 'Nashville / Davidson Co., TN' : s(x.areaLong || x.area)],
+      ['Type', x.type], ['Subtype', x.subtype], ['Status', x.status], ['Issued', day(x.issued)], ['Filed', day(x.filed)], ['Job value', money(x.value)], ['Jurisdiction', x.jurisdiction], ['Parcel', x.parcel], ['Tags', arr(x.tags).join(', ')], ['Source', x.src === 'nashville' ? 'Metro Nashville public permits (free)' : 'Shovels (paid)']])
+    + (x.desc ? '<div style="margin-top:8px;white-space:pre-wrap">' + esc(x.desc) + '</div>' : '') + '</div>'
+    + '<div class="sec"><h4>The property</h4>' + dl([['Address', addr(x)], ['Owner of record', x.owner], ['Year built', x.yearBuilt], ['Property type', [x.propertyType, x.propertyDetail].filter(Boolean).join(' — ')], ['Units', x.units]]) + '</div>'
+    + '<div class="sec mut">First seen ' + esc(when(x.firstSeen)) + (x.stateAt ? ' · ' + esc(x.state) + ' ' + esc(when(x.stateAt)) + (x.stateBy ? ' by ' + esc(x.stateBy) : '') : '') + '</div></div>';
+}
+function paintSheet(){
+  var ov = D.getElementById('gc-pj-sheet'), x = S.sheet ? find(S.sheet) : null;
+  if (!x || !S.el || !S.el.isConnected) { if (ov) ov.remove(); if (!x) S.sheet = ''; return; }
+  if (!ov) { ov = D.createElement('div'); ov.id = 'gc-pj-sheet'; ov.setAttribute('data-gc-keep', '1'); ov.setAttribute('data-gc-linked', '1');   /* the page's phone / e-mail linker leaves our own call / mail links alone */ D.body.appendChild(ov); ov.addEventListener('click', function(e){ if (e.target === ov) { S.sheet = ''; paintSheet(); return; } onClick(e); }); }
+  var h = sheetHtml(x); if (ov.__h !== h) { ov.__h = h; ov.innerHTML = h; }
+}
+function openSheet(k){ S.sheet = k; css(); paintSheet(); }
+
+/* the page keeps what is typed in a box for 15 minutes and refills a box that goes empty (the draft guardian, gc_field_drafts):
+   a filter box emptied on purpose is forgotten there, so it stays empty */
+function forgetDraft(el){
+  try { var ph = s(el.getAttribute('placeholder')); if (!ph) return; var d = JSON.parse(localStorage.getItem('gc_field_drafts') || '{}'), ch = false;
+    Object.keys(d).forEach(function(key){ if (key.indexOf('|' + ph + '|') > -1) { delete d[key]; ch = true; } }); if (ch) localStorage.setItem('gc_field_drafts', JSON.stringify(d)); } catch (e) {}
+}
+/* ── what a person does ── */
+function onInput(e){
+  var t = e.target, k = t && t.getAttribute && t.getAttribute('data-pj-f'); if (!k) return;
+  if (e.type === 'change' && t.tagName !== 'SELECT') return;   /* a text box is read as it is typed; its "change" on leaving can carry an older value */
+  if (!t.isConnected) return;
+  if (t.tagName === 'INPUT' && e.isTrusted === false) { t.value = S.f[k] || ''; return; }   /* the page's draft guardian puts back a box that was emptied on purpose: not a person */
+  if (t.tagName === 'INPUT' && !s(t.value)) forgetDraft(t);
+  if (S.f[k] === s(t.value)) return;
+  S.f[k] = s(t.value); S.lim = 150; saveF(); draw();   /* no timer: cheap (150 rows at a time) */
+}
+function onClick(e){
+  var t = e.target;
+  if (t && t.closest && t.closest('[data-pj-stop]')) return;   /* a phone / e-mail / web link inside a row */
+  var b = t && t.closest && t.closest('[data-pj-a],[data-pj-v]');
+  if (!b) {
+    var tr = t && t.closest && t.closest('tr[data-k],tr[data-who]');
+    if (tr && tr.getAttribute('data-k')) return openSheet(tr.getAttribute('data-k'));
+    if (tr && tr.getAttribute('data-who')) { S.f.who = tr.getAttribute('data-who'); S.v = 'jobs'; S.f.state = 'all'; saveF(); return draw(); }
+    return;
+  }
+  if (b.tagName === 'A' && b.getAttribute('href') === '#') e.preventDefault();
+  if (b.hasAttribute('data-pj-v')) { S.v = b.getAttribute('data-pj-v'); saveF(); return draw(); }
+  var a = b.getAttribute('data-pj-a'), x = find(b.getAttribute('data-k'));
+  e.stopPropagation();
+  if (a === 'more') { S.lim += 150; return draw(); }
+  if (a === 'run') return runNow(b);
+  if (a === 'filters') return openSettings();
+  if (a === 'shovels') return shovelsOpen();
+  if (a === 'import') return importOpen();
+  if (a === 'lookup') return lookup(b.getAttribute('data-cid'), b);
+  if (a === 'setclose') { S.setOpen = false; return draw(); }
+  if (a === 'save') return saveSettings(b);
+  if (a === 'defaults') { S.settings = S.defaults || S.settings; S.setOpen = true; return draw(); }
+  if (a === 'nowho') { S.f.who = ''; saveF(); return draw(); }
+  if (a === 'sheetclose') { S.sheet = ''; return paintSheet(); }
+  if (!x) return;
+  if (a === 'lead') return makeLead(x.key);
+  if (a === 'dismiss') return setState(x.key, 'dismissed');
+  if (a === 'undo') return setState(x.key, 'new');
+  if (a === 'who') { S.f.who = whoKey(x); S.v = 'jobs'; S.f.state = 'all'; S.sheet = ''; saveF(); return draw(); }
+  if (a === 'openlead') { S.sheet = ''; paintSheet(); try { if (W._setView) W._setView('leads'); } catch (er) {} ST.call(W, function(){ try { if (W._gcLeadsHub && W._gcLeadsHub.open) W._gcLeadsHub.open(x.leadId); } catch (er) {} }, 700); }
+}
+function runNow(b){
+  b.disabled = true; b.textContent = 'Running…';
+  return call({ action: 'run' }).then(function(r){
+    if (!r || !r.ok) { toast(s(r && r.error) || 'The run did not finish.', true); if (r && r.status) S.status = r.status; }
+    else { var ad = r.added || {}, n = (+ad.nashville || 0) + (+ad.shovels || 0); toast(n ? '🏗️ ' + n + ' new permit' + (n === 1 ? '' : 's') + ' found.' : 'Run finished — no new permits.'); }
+    S.at = 0; return load();
+  });
+}
+function openSettings(){
+  if (!canEdit()) { toast('Only an owner, an admin or the office can change the permit filters.', true); return; }
+  call({ action: 'settings-get' }).then(function(r){
+    if (!r || !r.ok) { toast(s(r && r.error) || 'Could not read the filters.', true); return; }
+    S.settings = r.settings; S.defaults = r.defaults; S.incLabels = arr(r.include); S.useLabels = arr(r.uses); S.configured = !!r.shovelsConfigured; S.setOpen = true; draw();
+  });
+}
+function readSettings(){
+  var box = D.getElementById('gc-pj-set'); if (!box) return null;
+  var v = function(k){ var el = box.querySelector('[data-pj-set="' + k + '"]'); return el ? (el.type === 'checkbox' ? el.checked : el.value) : null; };
+  var inc = {}; Array.prototype.forEach.call(box.querySelectorAll('[data-pj-inc]'), function(el){ inc[el.getAttribute('data-pj-inc')] = el.checked; });
+  var uses = {}; Array.prototype.forEach.call(box.querySelectorAll('[data-pj-use]'), function(el){ uses[el.getAttribute('data-pj-use')] = el.checked; });
+  return { include: inc, uses: uses, exclude: s(v('exclude')).split(/[,\n;]+/).map(s).filter(Boolean), minValue: +v('minValue'), maxAgeDays: +v('maxAgeDays'), nashville: { on: !!v('nashOn') } };   /* Shovels' part is saved from Integrations */
+}
+function saveSettings(b){
+  var nv = readSettings(); if (!nv) return;
+  b.disabled = true;
+  return call({ action: 'settings-set', settings: nv }).then(function(r){
+    b.disabled = false;
+    if (!r || !r.ok) { toast(s(r && r.error) || 'The filters were not saved.', true); return; }
+    S.settings = r.settings; S.setOpen = false; toast('⚙ Filters saved — the next run uses them (↻ Run now to use them today).'); draw();
+  });
+}
+function setState(k, state, leadId){
+  var x = find(k); if (!x) return Promise.resolve(null);
+  var was = x.state; x.state = state; if (leadId) x.leadId = leadId; S.busy[k] = true; draw();
+  return call({ action: 'set-state', id: k, state: state, leadId: leadId || '' }).then(function(r){
+    delete S.busy[k];
+    if (r && r.ok && r.item) Object.assign(x, r.item);
+    else if (state !== 'lead') { x.state = was; toast(s(r && r.error) || 'Not saved.', true); }
+    draw(); return r;
+  });
+}
+
+/* ── ➕ Make it a lead (only when a person presses it) ── */
+function leadType(x){
+  var R = arr(x.reasons).join(' ');
+  if (x.hint === 'mitigation') return /fire\/smoke/.test(R) ? 'Restoration – Fire' : /water\/flood/.test(R) ? 'Restoration – Water' : /storm/.test(R) ? 'Restoration – Storm' : 'Mitigation';
+  if (x.hint === 'environmental') return 'Environmental';
+  if (x.bucket === 'roofing') return 'Roofing';
+  if (x.bucket === 'commercialNew' || x.bucket === 'commercialRehab' || x.bucket === 'multifamily') return 'Commercial';
+  return 'Remodel';
+}
+function sector(x){ return /^industrial$/i.test(s(x.propertyType)) ? 'Industrial' : (x.bucket === 'commercialNew' || x.bucket === 'commercialRehab' || x.bucket === 'multifamily' || /commerc/i.test(s(x.type) + ' ' + s(x.propertyType))) ? 'Commercial' : 'Residential'; }
+function leadOf(x){
+  var at = new Date().toISOString(), area = srcName(x), co = x.hint === 'mitigation' || x.hint === 'environmental' ? x.hint : '';
+  var what = (arr(x.reasons)[0] || x.type || 'Building permit').replace(/\s*\$[\d.,]+[kM]?$/, '');
+  var who = x.contractor ? 'Contractor on the permit: ' + x.contractor + [x.contractorPhone ? fmtPhone(x.contractorPhone) : '', x.contractorEmail, x.contractorWebsite, x.contractorLicense ? 'license ' + x.contractorLicense : ''].filter(Boolean).map(function(v){ return ' · ' + v; }).join('') : '';
+  var note = ['🏗️ From a building permit (' + (x.src === 'nashville' ? 'Nashville / Davidson Co. public permits' : 'Shovels — ' + s(x.areaLong || x.area)) + ').',
+    'Permit #' + s(x.number || x.id) + (x.issued ? ' · issued ' + x.issued : '') + (x.filed && x.filed !== x.issued ? ' · filed ' + x.filed : ''),
+    'Type: ' + [x.type, x.subtype].filter(Boolean).join(' — '), x.value ? 'Job value on the permit: ' + money(x.value) : '', who,
+    x.owner ? 'Property owner of record: ' + x.owner : '', x.yearBuilt ? 'Built: ' + x.yearBuilt : '',
+    x.desc ? 'Description: ' + x.desc : '', 'Why it showed: ' + arr(x.reasons).join(' · '), x.link ? 'Permit: ' + x.link : ''].filter(Boolean).join('\n');
+  var l = { id: 'LPMT_' + hash(x.key), name: what + ' — ' + (s(x.address) || area), company: s(x.owner) || s(x.address) || area, contact: '', phone: '', email: '',
+    address: s(x.address), city: s(x.city), state: s(x.usState), zip: s(x.zip), projectType: leadType(x), type: leadType(x), sector: sector(x),
+    estValue: +x.value || 0, priority: x.hint === 'mitigation' ? 'High' : 'Medium', source: 'Building permit — ' + area, status: 'new',
+    created: at.slice(0, 10), createdAt: at, updatedAt: at, addedBy: me(), note: note,
+    permitKey: x.key, permitNumber: s(x.number), permitSource: x.src, permitLink: s(x.link), permitContractor: s(x.contractor), permitContractorPhone: s(x.contractorPhone), permitContractorEmail: s(x.contractorEmail) };
+  if (co) { l.companyId = co; l.companyIdBy = me() || 'permits'; }
+  if (x.lat && x.lon) { l.lat = +x.lat; l.lng = +x.lon; }
+  return l;
+}
+function leadsNow(){ var l = null; try { if (typeof W._setLeads === 'function') W._setLeads(function(prev){ if (Array.isArray(prev)) l = prev; return prev; }); } catch (e) {} return l || arr(W._crm && W._crm.leads); }
+function makeLead(k){
+  var x = find(k); if (!x || S.busy[k]) return Promise.resolve(null);
+  var l = leadOf(x), have = leadsNow().concat(arr(W._crm && W._crm.leads)).filter(function(y){ return y && (y.id === l.id || (y.permitKey && y.permitKey === x.key)); })[0];
+  if (have) { toast('Already a lead: ' + s(have.name || have.company) + '.'); return setState(k, 'lead', have.id); }
+  if (typeof W._setLeads !== 'function') { toast('The Leads list is not ready yet — try again in a moment.', true); return Promise.resolve(null); }
+  try { W.__GC_MANUAL_SAVE__ = true; if (W._gcManualNow) W._gcManualNow('permit lead'); } catch (e) {}
+  S.busy[k] = true; draw();
+  var kit = W._gcLeadsHubKit, pushed = null;
+  var mut = function(prev){ prev = arr(prev); if (prev.some(function(y){ return y && y.id === l.id; })) return null; pushed = prev.concat([l]); return pushed; };
+  /* the Leads hub's own save (local copy + the cloud), else the app's list + the same two saves */
+  var p = kit && kit.setLeads ? kit.setLeads(mut) : new Promise(function(res){ try { W._setLeads(function(prev){ var n = mut((prev || []).slice()); if (!n) { res(false); return prev; } res(true); try { if (W.idbSet) W.idbSet('leads', n); if (W._supaUpsert) W._supaUpsert('leads', n); } catch (e) {} return n; }); } catch (e) { res(false); } });
+  return Promise.resolve(p).then(function(){
+    delete S.busy[k];
+    try { if (Array.isArray(pushed) && typeof W._supaUpsertNow === 'function') ST.call(W, function(){ try { W._supaUpsertNow('leads', pushed); } catch (e) {} }, 300); } catch (e) {}   /* one tap: to the cloud now */
+    try { if (W._crm && Array.isArray(W._crm.leads) && !W._crm.leads.some(function(y){ return y && y.id === l.id; })) W._crm.leads = W._crm.leads.concat([l]); } catch (e) {}
+    ST.call(W, function(){ try { W.__GC_MANUAL_SAVE__ = false; } catch (e) {} }, 1500);
+    toast('➕ Lead made: ' + l.name + ' (' + coOf(x.hint)[0] + ').');
+    return setState(k, 'lead', l.id).then(function(){ return l; });
+  }, function(e){ delete S.busy[k]; toast('Could not add the lead: ' + s(e && e.message), true); return null; });
+}
+
+
+/* ── 📇 Get phone / e-mail (Shovels: 1 credit the first time, kept after that) ── */
+function lookup(cid, b){
+  cid = s(cid); if (!cid) return Promise.resolve(null);
+  if (b) { b.disabled = true; b.textContent = 'Asking…'; }
+  return call({ action: 'contractor-lookup', contractorId: cid }).then(function(r){
+    if (!r || !r.ok) { toast(s(r && r.error) || 'Could not get the contractor.', true); if (b) { b.disabled = false; b.textContent = '📇 Get phone / e-mail (1 credit)'; } return r; }
+    var c = r.contractor || {};
+    S.items.forEach(function(x){ if (x.src === 'shovels' && x.contractorId === cid) { if (c.name) x.contractor = c.name; ['phone', 'email', 'website', 'license', 'address'].forEach(function(f){ if (c[f]) x['contractor' + f[0].toUpperCase() + f.slice(1)] = c[f]; }); x.contractorLooked = true; } });
+    toast(c.phone || c.email ? '📇 ' + (c.name || 'Contractor') + ': ' + [c.phone ? fmtPhone(c.phone) : '', c.email].filter(Boolean).join(' · ') + (r.spent ? ' (1 credit)' : ' (saved before — no credit)') : 'Shovels has no phone or e-mail for this contractor.');
+    draw(); return r;
+  });
+}
+
+
+/* ── 📥 Import a permit list (Excel / CSV): Develop 901 (Accela) export, an MSCCE records reply, any list ── */
+var IMP_FIELDS = [['number', 'Permit #', /\b(?:permit|record|application|case)\s*(?:#|no\.?(?![a-z])|num(?:ber)?\b|id\b)|^(?:permit|record|case)$/i],
+  ['type', 'Type', /\b(?:record|permit|work)?\s*type\b|work class|category|^type$/i], ['desc', 'Description', /desc|purpose|scope|work description|project name|detail|comments?/i],
+  ['address', 'Address', /^(?!.*e-?mail).*(?:address|location|site|street|parcel address)/i], ['city', 'City', /\bcity\b|town|municipality|jurisdiction/i], ['zip', 'ZIP', /zip|postal/i],
+  ['contractor', 'Contractor / company', /contractor|company|licensed prof|business name|builder|applicant/i], ['phone', 'Phone', /phone|tel\b|telephone|mobile|cell/i], ['email', 'E-mail', /e-?mail/i],
+  ['value', 'Value $', /valuation|value|cost|amount|job value|price/i], ['date', 'Date (issued)', /issue|date|opened|applied|filed|created/i], ['owner', 'Owner', /owner/i], ['status', 'Status', /status/i]];
+var IMP = { rows: [], heads: [], map: {}, name: '', err: '' };
+function csvParse(text){
+  var out = [], row = [], cur = '', q = false, i, ch; text = String(text || '').replace(/^﻿/, '');
+  var delim = (text.split('\n')[0].match(/\t/g) || []).length > (text.split('\n')[0].match(/,/g) || []).length ? '\t' : ',';
+  for (i = 0; i < text.length; i++) { ch = text[i];
+    if (q) { if (ch === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += ch; continue; }
+    if (ch === '"') { q = true; continue; } if (ch === delim) { row.push(cur); cur = ''; continue; }
+    if (ch === '\n' || ch === '\r') { if (ch === '\r' && text[i + 1] === '\n') i++; row.push(cur); cur = ''; if (row.some(function(c){ return s(c); })) out.push(row); row = []; continue; }
+    cur += ch; }
+  row.push(cur); if (row.some(function(c){ return s(c); })) out.push(row);
+  return out;
+}
+function guessMap(heads){
+  var map = {}, used = {};
+  IMP_FIELDS.forEach(function(f){ for (var i = 0; i < heads.length; i++) { if (used[i]) continue; var h = s(heads[i]); if (h && f[2].test(h)) { map[f[0]] = i; used[i] = 1; return; } } });
+  return map;
+}
+function headerRow(rows){ for (var i = 0; i < Math.min(rows.length, 8); i++) { var r = rows[i], hits = 0; IMP_FIELDS.forEach(function(f){ if (r.some(function(c){ return f[2].test(s(c)); })) hits++; }); if (hits >= 2) return i; } return 0; }
+function ensureXlsx(){ if (W.XLSX) return Promise.resolve(); return new Promise(function(res, rej){ var sc = D.createElement('script'); sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; sc.onload = res; sc.onerror = function(){ rej(new Error('the Excel reader did not load')); }; D.head.appendChild(sc); }); }
+function readFile(file){
+  var name = s(file && file.name);
+  if (/\.(xlsx|xls)$/i.test(name)) return ensureXlsx().then(function(){ return file.arrayBuffer(); }).then(function(buf){ var wb = W.XLSX.read(buf, { type: 'array' }); var sh = wb.Sheets[wb.SheetNames[0]]; return W.XLSX.utils.sheet_to_json(sh, { header: 1, raw: false, defval: '' }); });
+  return file.text().then(csvParse);
+}
+function impHtml(){
+  var h = '<div class="bx" role="dialog" aria-label="Import a permit list"><div style="display:flex;gap:8px;align-items:center"><h3 style="margin:0">📥 Import a permit list</h3><span style="flex:1"></span><button type="button" class="pm" data-imp="close">Close</button></div>'
+    + '<div class="mut" style="margin:4px 0 8px">An Excel (.xlsx) or CSV file: the Develop 901 (Accela) "Download results" export for Shelby County, an MSCCE public-records reply, or any permit list. Nobody is alerted; permits already imported are skipped (same source + permit #).</div>'
+    + '<div class="g"><label>Source<br><select data-imp-set="source"><option value="shelby">Shelby County (Develop 901)</option><option value="mscce">MSCCE records</option><option value="other">Other list…</option></select></label>'
+    + '<label>Name (for "Other")<br><input type="text" data-imp-set="sourceName" placeholder="e.g. Germantown permits"></label>'
+    + '<label>File<br><input type="file" data-imp-set="file" accept=".csv,.txt,.xlsx,.xls,text/csv"></label></div>';
+  if (IMP.err) h += '<div class="err">' + esc(IMP.err) + '</div>';
+  if (IMP.heads.length) {
+    h += '<div class="sec"><h4>Columns (guessed from the headings — fix any that are wrong)</h4><div class="g">' + IMP_FIELDS.map(function(f){ var cur = IMP.map[f[0]];
+      return '<label>' + esc(f[1]) + '<br><select data-imp-col="' + f[0] + '"><option value="">— not in the file —</option>' + IMP.heads.map(function(hd, i){ return '<option value="' + i + '"' + (cur === i ? ' selected' : '') + '>' + esc(hd || ('Column ' + (i + 1))) + '</option>'; }).join('') + '</select></label>'; }).join('') + '</div></div>';
+    var prev = impRows().slice(0, 5);
+    h += '<div class="sec"><h4>' + IMP.rows.length + ' rows · the first 5</h4><div style="overflow:auto"><table class="imp"><thead><tr><th>Permit #</th><th>Type</th><th>Address</th><th>City</th><th>Contractor</th><th>Phone</th><th>Value</th><th>Date</th></tr></thead><tbody>'
+      + prev.map(function(r){ return '<tr><td>' + esc(r.number) + '</td><td>' + esc(r.type) + '</td><td>' + esc(r.address) + '</td><td>' + esc(r.city) + '</td><td>' + esc(r.contractor) + '</td><td>' + esc(r.phone) + '</td><td>' + esc(r.value) + '</td><td>' + esc(r.date) + '</td></tr>'; }).join('') + '</tbody></table></div>'
+      + '<label style="margin-top:6px"><input type="checkbox" data-imp-set="all"> Import everything (ignore ⚙ Filters — show every row of this list)</label>'
+      + '<div class="mut">Without it, every row is kept but only the ones that fit ⚙ Filters (now: ' + esc(S.settings && S.settings.minValue ? '$' + Math.round(S.settings.minValue).toLocaleString('en-US') + '+' : 'any value') + ' commercial) show in Jobs; the rest are under "Not matching the filters".</div>'
+      + '<div style="margin-top:8px"><button type="button" class="pm p" data-imp="go">Import ' + IMP.rows.length + ' permits</button></div></div>';
+  }
+  return h + '</div>';
+}
+function impRows(){
+  return IMP.rows.map(function(r){ var o = {}; IMP_FIELDS.forEach(function(f){ var i = IMP.map[f[0]]; o[f[0]] = i == null || i === '' ? '' : s(r[i]); }); return o; });
+}
+function impPaint(){ var ov = D.getElementById('gc-pj-imp'); if (ov) ov.innerHTML = impHtml(); }
+function importOpen(){
+  if (!canEdit()) { toast('Only an owner, an admin or the office can import permits.', true); return; }
+  css(); shCss();
+  var ov = D.getElementById('gc-pj-imp'); if (ov) ov.remove();
+  IMP = { rows: [], heads: [], map: {}, name: '', err: '' };
+  ov = D.createElement('div'); ov.id = 'gc-pj-imp'; ov.className = 'gc-pj-modal'; ov.setAttribute('data-gc-keep', '1'); ov.setAttribute('data-gc-linked', '1'); D.body.appendChild(ov); impPaint();
+  ov.addEventListener('change', function(e){
+    var t = e.target; if (!t || !t.getAttribute) return;
+    if (t.getAttribute('data-imp-set') === 'file' && t.files && t.files[0]) {
+      var f = t.files[0], keep = { source: (ov.querySelector('[data-imp-set="source"]') || {}).value, name: (ov.querySelector('[data-imp-set="sourceName"]') || {}).value };
+      readFile(f).then(function(rows){ rows = arr(rows).filter(function(r){ return Array.isArray(r); }); var hi = headerRow(rows); IMP.heads = (rows[hi] || []).map(s); IMP.rows = rows.slice(hi + 1); IMP.map = guessMap(IMP.heads); IMP.name = f.name; IMP.err = IMP.rows.length ? '' : 'No rows found in that file.'; impPaint();
+        var se = ov.querySelector('[data-imp-set="source"]'); if (se && keep.source) se.value = keep.source; var nm = ov.querySelector('[data-imp-set="sourceName"]'); if (nm) nm.value = keep.name || ''; },
+        function(er){ IMP.err = 'Could not read the file: ' + s(er && er.message); impPaint(); });
+      return;
+    }
+    var col = t.getAttribute('data-imp-col'); if (col) { IMP.map[col] = t.value === '' ? '' : +t.value; var keep2 = { source: (ov.querySelector('[data-imp-set="source"]') || {}).value, name: (ov.querySelector('[data-imp-set="sourceName"]') || {}).value }; impPaint(); var se2 = ov.querySelector('[data-imp-set="source"]'); if (se2) se2.value = keep2.source; var nm2 = ov.querySelector('[data-imp-set="sourceName"]'); if (nm2) nm2.value = keep2.name || ''; }
+  });
+  ov.addEventListener('click', function(e){
+    if (e.target === ov) { ov.remove(); return; }
+    var b = e.target && e.target.closest && e.target.closest('[data-imp]'); if (!b) return;
+    var a = b.getAttribute('data-imp'); if (a === 'close') { ov.remove(); return; }
+    if (a === 'go') {
+      var rows = impRows().filter(function(r){ return r.number || r.address; }), src = (ov.querySelector('[data-imp-set="source"]') || {}).value || 'shelby', nm = s((ov.querySelector('[data-imp-set="sourceName"]') || {}).value), all = !!(ov.querySelector('[data-imp-set="all"]') || {}).checked;
+      if (!rows.length) { toast('No row has a permit # or an address — check the columns.', true); return; }
+      b.disabled = true; b.textContent = 'Importing…';
+      var parts = []; for (var i = 0; i < rows.length; i += 400) parts.push(rows.slice(i, i + 400));
+      var tot = { read: 0, matched: 0, added: 0 }, label = '';
+      parts.reduce(function(p, part){ return p.then(function(ok){ if (!ok) return false; return call({ action: 'import', source: src, sourceName: nm, all: all, rows: part }).then(function(r){ if (!r || !r.ok) { toast(s(r && r.error) || 'The import stopped.', true); return false; } tot.read += r.read; tot.matched += r.matched; tot.added += r.added; label = r.source; return true; }); }); }, Promise.resolve(true))
+        .then(function(ok){ if (!ok) { b.disabled = false; b.textContent = 'Import again'; return; } ov.remove(); toast('📥 ' + label + ': ' + tot.read + ' read, ' + tot.added + ' new, ' + tot.matched + ' fit the filters' + (all ? ' (all shown)' : '') + '.'); S.at = 0; load(); });
+    }
+  });
+}
+
+/* ── ⚙ Admin settings → Integrations → 🏗️ Shovels (off · for later) ── */
+var SH = { cfg: null, groups: [], tags: [], configured: false, est: null, status: null };
+function shCss(){
+  if (D.getElementById('gc-shv-css')) return;
+  var st = D.createElement('style'); st.id = 'gc-shv-css';
+  st.textContent = '#gc-pj-imp{position:fixed;inset:0;z-index:100250;background:rgba(15,23,42,.55);display:flex;align-items:flex-start;justify-content:center;padding:3vh 10px;overflow:auto}#gc-pj-imp .bx{background:#fff;color:#0f172a;border-radius:14px;max-width:860px;width:100%;padding:16px 18px;font:13px/1.45 Inter,Arial,sans-serif;box-shadow:0 20px 60px rgba(0,0,0,.35)}#gc-pj-imp .g{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:4px 14px}#gc-pj-imp label{display:block;margin:3px 0}#gc-pj-imp select,#gc-pj-imp input[type=text]{border:1px solid #cbd5e1;border-radius:8px;padding:5px 7px;font:12.5px Inter,Arial,sans-serif;max-width:100%;box-sizing:border-box}#gc-pj-imp .sec{border-top:1px solid #e2e8f0;padding:10px 0;margin-top:8px}#gc-pj-imp .sec h4{margin:0 0 6px;font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:#64748b}#gc-pj-imp table.imp{border-collapse:collapse;font-size:12px}#gc-pj-imp table.imp th,#gc-pj-imp table.imp td{border-bottom:1px solid #f1f5f9;padding:4px 6px;text-align:left}#gc-pj-imp .mut{color:#64748b;font-size:12px}#gc-pj-imp .err{background:#fef2f2;color:#7f1d1d;border-radius:8px;padding:8px;margin:8px 0}#gc-pj-imp button.pm{border:1px solid #cbd5e1;background:#fff;color:#0f172a;border-radius:8px;padding:6px 11px;font:600 12.5px Inter,Arial,sans-serif;cursor:pointer}#gc-pj-imp button.pm.p{background:#241968;border-color:#241968;color:#fff}'
+    + '#gc-shv{position:fixed;inset:0;z-index:100250;background:rgba(15,23,42,.55);display:flex;align-items:flex-start;justify-content:center;padding:3vh 10px;overflow:auto}'
+    + '#gc-shv .bx{background:#fff;color:#0f172a;border-radius:14px;max-width:760px;width:100%;padding:16px 18px;font:13px/1.45 Inter,Arial,sans-serif;box-shadow:0 20px 60px rgba(0,0,0,.35)}#gc-shv h3{margin:0;font-size:17px}#gc-shv .mut{color:#64748b;font-size:12px}'
+    + '#gc-shv .pill{display:inline-block;border-radius:999px;padding:2px 10px;font-weight:700;font-size:12px}#gc-shv .pill.off{background:#f1f5f9;color:#475569}#gc-shv .pill.on{background:#dcfce7;color:#14532d}'
+    + '#gc-shv .sec{border-top:1px solid #e2e8f0;padding:10px 0;margin-top:8px}#gc-shv .sec h4{margin:0 0 6px;font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:#64748b}#gc-shv label{display:block;margin:3px 0}#gc-shv .g{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:4px 14px}'
+    + '#gc-shv input[type=number],#gc-shv input[type=text],#gc-shv select{border:1px solid #cbd5e1;border-radius:8px;padding:5px 7px;font:12.5px Inter,Arial,sans-serif;box-sizing:border-box;max-width:100%}#gc-shv details{border:1px solid #e2e8f0;border-radius:8px;padding:4px 8px;margin:4px 0}#gc-shv details .z{display:inline-block;margin:2px 10px 2px 0;font-size:12px}'
+    + '#gc-shv button.pm{border:1px solid #cbd5e1;background:#fff;color:#0f172a;border-radius:8px;padding:6px 11px;font:600 12.5px Inter,Arial,sans-serif;cursor:pointer}#gc-shv button.pm.p{background:#241968;border-color:#241968;color:#fff}#gc-shv button.pm:disabled{opacity:.5;cursor:default}#gc-shv .est{background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 10px;margin-top:8px}';
+  (D.head || D.documentElement).appendChild(st);
+}
+function shHtml(){
+  var c = SH.cfg || {}, sh = c.shovels || {}, on = sh.on === true, z = {}, st = SH.status || {};
+  arr(sh.zips).forEach(function(x){ z[x] = 1; });
+  var tags = {}; arr(sh.tags).forEach(function(x){ if (x.charAt(0) === '-') tags[x.slice(1)] = 'out'; else tags[x] = 'in'; });
+  var known = {}; SH.tags.forEach(function(t){ known[t[0]] = 1; });
+  var extra = arr(sh.tags).filter(function(x){ return !known[x.replace(/^-/, '')]; }).join(', ');
+  var h = '<div class="bx" role="dialog" aria-label="Shovels"><div style="display:flex;gap:8px;align-items:center"><h3>🏗️ Shovels (building permits API)</h3><span class="pill ' + (on ? 'on' : 'off') + '" data-shv-pill="1">' + (on ? 'On' : 'Off · for later') + '</span><span style="flex:1"></span><button type="button" class="pm" data-shv="close">Close</button></div>'
+    + '<div class="mut" style="margin-top:4px">Paid permit data for Memphis / Shelby Co., DeSoto Co. MS, Little Rock / North Little Rock and Jonesboro (no free feed there). One credit = one record Shovels returns; the free key has 500 credits per 30 days. Nashville is free and does not use this.</div>'
+    + '<div class="sec"><h4>Connection</h4>' + (SH.configured ? '✅ SHOVELS_API_KEY is set in Netlify.' : '❌ No SHOVELS_API_KEY in Netlify yet (Site configuration → Environment variables → SHOVELS_API_KEY → Trigger deploy).')
+    + (st.spent30 != null ? '<div class="mut">Credits used in the last 30 days (our count): ' + (+st.spent30 || 0) + ' of ' + (+sh.budget || 0) + (st.usage && st.usage.used != null ? ' · Shovels says ' + st.usage.used + (st.usage.limit ? ' of ' + st.usage.limit : '') + ' (' + esc(when(st.usage.at)) + ')' : '') + (st.lastPull ? ' · last pull ' + esc(when(st.lastPull)) + ': ' + (+st.read || 0) + ' read' : '') + (st.error ? ' · ⚠ ' + esc(st.error) : '') + '</div>' : '')
+    + '<label style="margin-top:6px"><input type="checkbox" data-shv-set="on"' + (on ? ' checked' : '') + '> <b>Switched on</b> (off: nothing is ever asked from Shovels)</label>'
+    + '<label><input type="checkbox" data-shv-set="auto"' + (sh.auto ? ' checked' : '') + '> Pull by itself every morning (off: only when you press Pull now)</label></div>'
+    + '<div class="sec"><h4>Credit budget</h4><div class="g"><label>Credits per 30 days (stop there)<br><input type="number" min="0" data-shv-set="budget" value="' + esc(sh.budget) + '"></label>'
+    + '<label>At most … records per pull<br><input type="number" min="1" max="1000" data-shv-set="perRun" value="' + esc(sh.perRun) + '"></label>'
+    + '<label>First pull of a ZIP: the last … days<br><input type="number" min="1" max="90" data-shv-set="windowDays" value="' + esc(sh.windowDays) + '"></label></div>'
+    + '<div class="mut">After the first pull each ZIP is asked only from the day after the last day pulled, and everything returned is kept — browsing never uses credits.</div></div>'
+    + '<div class="sec"><h4>What to pull</h4><div class="g"><label>Keyword in the description (optional)<br><input type="text" maxlength="50" data-shv-set="q" value="' + esc(sh.q) + '" placeholder="e.g. fire damage"></label>'
+    + '<label>Minimum job value $ (0 = any; many permits list none)<br><input type="number" min="0" step="1000" data-shv-set="minJobValue" value="' + esc(sh.minJobValue) + '"></label></div>'
+    + '<div style="margin-top:6px"><b>Permit tags</b><div class="g">' + SH.tags.map(function(t){ var v = tags[t[0]] || ''; return '<label>' + esc(t[1]) + ' <select data-shv-tag="' + esc(t[0]) + '"><option value=""' + (!v ? ' selected' : '') + '>any</option><option value="in"' + (v === 'in' ? ' selected' : '') + '>only these</option><option value="out"' + (v === 'out' ? ' selected' : '') + '>leave out</option></select></label>'; }).join('') + '</div>'
+    + '<label>Other Shovels tags (comma-separated, "-" in front = leave out)<br><input type="text" data-shv-set="moreTags" value="' + esc(extra) + '" style="width:100%"></label></div>'
+    + '<div style="margin-top:6px"><b>ZIP codes</b> <span class="mut">(' + arr(sh.zips).length + ' picked — from our own list, no credits)</span>' + SH.groups.map(function(g, gi){
+        var n = g[1].filter(function(x){ return z[x]; }).length;
+        return '<details><summary><label style="display:inline"><input type="checkbox" data-shv-grp="' + gi + '"' + (n === g[1].length ? ' checked' : '') + '> ' + esc(g[0]) + '</label> <span class="mut">' + n + ' of ' + g[1].length + '</span></summary>'
+          + g[1].map(function(x){ return '<label class="z"><input type="checkbox" data-shv-zip="' + esc(x) + '"' + (z[x] ? ' checked' : '') + '> ' + esc(x) + '</label>'; }).join('') + '</details>';
+      }).join('')
+    + '<label>Other ZIP codes (comma-separated)<br><input type="text" data-shv-set="moreZips" value="' + esc(arr(sh.zips).filter(function(x){ return !SH.groups.some(function(g){ return g[1].indexOf(x) > -1; }); }).join(', ')) + '" style="width:100%"></label>'
+    + '<button type="button" class="pm" data-shv="zipsearch" title="Uses Shovels credits (one per ZIP found)">🔎 Search Shovels for a ZIP (uses credits)</button></div></div>'
+    + '<div class="sec" style="display:flex;gap:6px;flex-wrap:wrap"><button type="button" class="pm p" data-shv="save">Save</button><button type="button" class="pm" data-shv="estimate"' + (on ? '' : ' disabled title="Switch it on first"') + '>Estimate the next pull (free)</button>'
+    + '<button type="button" class="pm" data-shv="pull"' + (on && SH.configured && SH.est ? '' : ' disabled') + '>🔌 Pull from Shovels now</button></div>'
+    + (SH.est ? '<div class="est" data-shv-est="1">' + SH.est + '</div>' : '') + '</div>';
+  return h;
+}
+function shRead(){
+  var box = D.getElementById('gc-shv'); if (!box) return null;
+  var v = function(k){ var el = box.querySelector('[data-shv-set="' + k + '"]'); return el ? (el.type === 'checkbox' ? el.checked : el.value) : null; };
+  var zips = Array.prototype.filter.call(box.querySelectorAll('[data-shv-zip]'), function(el){ return el.checked; }).map(function(el){ return el.getAttribute('data-shv-zip'); }).concat(s(v('moreZips')).split(/[\s,;]+/).filter(Boolean));
+  var tags = []; Array.prototype.forEach.call(box.querySelectorAll('[data-shv-tag]'), function(el){ if (el.value === 'in') tags.push(el.getAttribute('data-shv-tag')); else if (el.value === 'out') tags.push('-' + el.getAttribute('data-shv-tag')); });
+  tags = tags.concat(s(v('moreTags')).split(/[\s,;]+/).filter(Boolean));
+  return { shovels: { on: !!v('on'), auto: !!v('auto'), budget: +v('budget'), perRun: +v('perRun'), windowDays: +v('windowDays'), q: s(v('q')), minJobValue: +v('minJobValue') || 0, zips: zips, tags: tags } };
+}
+function shPaint(){ var ov = D.getElementById('gc-shv'); if (ov) ov.innerHTML = shHtml(); }
+function shovelsOpen(){
+  shCss();
+  var ov = D.getElementById('gc-shv'); if (ov) ov.remove();
+  ov = D.createElement('div'); ov.id = 'gc-shv'; ov.setAttribute('data-gc-keep', '1'); ov.innerHTML = '<div class="bx">Loading…</div>'; D.body.appendChild(ov);
+  ov.addEventListener('change', function(e){ var g = e.target && e.target.getAttribute && e.target.getAttribute('data-shv-grp'); if (g != null) { var grp = SH.groups[+g] || [0, []]; grp[1].forEach(function(x){ var el = ov.querySelector('[data-shv-zip="' + x + '"]'); if (el) el.checked = e.target.checked; }); } SH.est = null; var pb = ov.querySelector('[data-shv="pull"]'); if (pb) pb.disabled = true; });
+  ov.addEventListener('click', function(e){
+    if (e.target === ov) { ov.remove(); return; }
+    var b = e.target && e.target.closest && e.target.closest('[data-shv]'); if (!b) return;
+    var a = b.getAttribute('data-shv');
+    if (a === 'close') { ov.remove(); return; }
+    if (a === 'save') { var nv = shRead(); b.disabled = true; return call({ action: 'settings-set', settings: nv }).then(function(r){ b.disabled = false; if (!r || !r.ok) { toast(s(r && r.error) || 'Not saved.', true); return; } SH.cfg = r.settings; S.settings = r.settings; SH.est = null; toast('🏗️ Shovels settings saved' + (r.settings.shovels.on ? ' — switched on (pulls ' + (r.settings.shovels.auto ? 'every morning' : 'only when you press Pull now') + ').' : ' — off.')); shPaint(); draw(); }); }
+    if (a === 'estimate') { b.disabled = true; return call({ action: 'shovels-preview' }).then(function(r){
+      if (!r || !r.ok) { toast(s(r && r.error) || 'No estimate.', true); b.disabled = false; return; }
+      var zl = arr(r.zips);
+      SH.est = '<b>The next pull uses at most ' + r.maxCredits + ' credit' + (r.maxCredits === 1 ? '' : 's') + '</b> (cap ' + r.perRun + ' per pull · ' + r.left + ' of ' + r.budget + ' left in 30 days' + (r.usage && r.usage.used != null ? ' · Shovels: ' + r.usage.used + (r.usage.limit ? ' of ' + r.usage.limit : '') + ' used' : '') + ').'
+        + '<div class="mut">' + (zl.length ? zl.length + ' ZIP' + (zl.length === 1 ? '' : 's') + ' to ask, in this order: ' + zl.slice(0, 12).map(function(z){ return esc(z.zip) + ' (' + esc(day(z.from)) + '–' + esc(day(z.to)) + (z.resume ? ', resumes' : '') + ')'; }).join(', ') + (zl.length > 12 ? ' …' : '') : 'Every ZIP is pulled through today — a pull now asks nothing.') + (r.upToDate ? ' · ' + r.upToDate + ' up to date (not asked)' : '') + '</div>'
+        + '<div class="mut">Search: ' + esc([arr(r.search.tags).join(' '), r.search.q ? '“' + r.search.q + '”' : '', r.search.minJobValue ? 'from ' + money(r.search.minJobValue) : ''].filter(Boolean).join(' · ') || 'all permits') + '. A ZIP with nothing new costs nothing.</div>';
+      shPaint(); }); }
+    if (a === 'pull') {
+      if (!W.confirm('Pull from Shovels now? It uses up to the estimated credits.')) return;
+      b.disabled = true; b.textContent = 'Pulling…';
+      return call({ action: 'shovels-pull', confirm: true }).then(function(r){
+        var st = r && r.status && r.status.shovels; SH.status = st || SH.status; SH.est = null;
+        if (!r || !r.ok || (st && st.error)) toast(s((st && st.error) || (r && r.error)) || 'The pull did not finish.', true);
+        else toast('🔌 Shovels: ' + (+st.read || 0) + ' read (' + (+st.spentRun || 0) + ' credits), ' + (+st.matched || 0) + ' match your filters' + (st.note ? ' · ' + st.note : '') + '.');
+        shPaint(); S.at = 0; load();
+      });
+    }
+    if (a === 'zipsearch') {
+      var q = W.prompt('Search Shovels for a ZIP code (city or ZIP). This uses credits — one per ZIP found (at most 5).'); if (!s(q)) return;
+      return call({ action: 'zip-search', q: q, confirm: true }).then(function(r){ if (!r || !r.ok) { toast(s(r && r.error) || 'Not found.', true); return; } var m = ov.querySelector('[data-shv-set="moreZips"]'); var found = arr(r.items).map(function(z){ return s(z.zip); }).filter(function(z){ return /^\d{5}$/.test(z); });
+        if (m && found.length) m.value = [s(m.value)].concat(found).filter(Boolean).join(', ');
+        toast(found.length ? 'Found ' + found.join(', ') + ' (' + r.spent + ' credits) — added to Other ZIP codes; press Save.' : 'Shovels found no ZIP for that.'); });
+    }
+  });
+  return Promise.all([call({ action: 'settings-get' }), call({ action: 'list', limit: 1 })]).then(function(r){
+    var g = r[0] || {};
+    if (!g.ok) { ov.querySelector('.bx').textContent = s(g.error) || 'Could not read the settings.'; return; }
+    SH.cfg = g.settings; SH.groups = arr(g.zipGroups); SH.tags = arr(g.tags); SH.configured = !!g.shovelsConfigured; SH.status = ((r[1] || {}).status || {}).shovels || null; SH.est = null;
+    shPaint();
+  });
+}
+W._gcShovelsOpen = function(){ if (!canEdit()) { toast('Only an owner, an admin or the office can change Shovels.', true); return; } return shovelsOpen(); };
+
+W._gcPermitJobs = { mount: mount, lookup: lookup, importOpen: importOpen, csvParse: csvParse, guessMap: guessMap, canEdit: function(){ return canEdit(); }, call: call, toast: toast, draw: draw, load: load, canSee: canSee, makeLead: makeLead, dismiss: function(k){ return setState(k, 'dismissed'); }, leadOf: leadOf, companies: companies, open: openSheet,
+  state: function(){ return { paints: S.paints || 0, items: S.items.length, shown: shown().length, v: S.v, status: S.status, err: S.err, at: S.at, f: Object.assign({}, S.f), sheet: S.sheet, mounted: !!(S.el && S.el.isConnected) }; } };
+try { console.log('[GC] patch PERMITS: 🏗️ Permitted jobs tab (Nashville free feed + Shovels; no alerts) — _gcPermitJobs.state()'); } catch (e) {}
+})(window);
+</script>
+
+<script id="gc-patch-permits2">
+/* patch PERMITS2 (owner 11/12) — the rest of the permit work:
+   · 📧 MSCCE monthly records request (Owner setup → "Shelby County permits: the monthly MSCCE records request" → Open):
+     the records address (blank by default — call 901-222-8300 to confirm it), the From / Reply-to addresses, on / off (OFF by
+     default), the e-mail as it will go, Send now. The server side is netlify/functions/_lib/permit-records.js. window._gcMsccOpen()
+   · 🏗️ Dodge Construction Network in ⚙ Admin settings → Integrations (off · for later, paid; DODGE_API_KEY). window._gcDodgeOpen()
+   · 📌 Pin an integration to MY left menu: on an integration that has its own page in the CRM (QuickBooks, RoofScout, GrayCo
+     Photos, Gmail, Integrations, Permitted jobs) a small "📌 Add to my tabs" chip; pinned ones show as tabs in that person's menu
+     only (gc_kv "gc_navpins__<e-mail>", synced like "gc_lead_seen__"), for the roles that may use them; "Unpin" takes it away.
+     window._gcNavPins = { list, pin, unpin, pinnable, allowed, refresh } */
+(function(W){
+'use strict';
+var D = W.document;
+if (W._gcNavPins) return;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+var SI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function PJ(){ return W._gcPermitJobs || null; }
+function call(b){ var p = PJ(); return p && p.call ? p.call(b) : Promise.resolve({ ok: false, error: 'not ready' }); }
+function toast(m, bad){ var p = PJ(); if (p && p.toast) p.toast(m, bad); }
+function admin(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()); } catch (e) { return false; } }
+function email(){ try { return low(W.__GC_AUTH__ && W.__GC_AUTH__.email && W.__GC_AUTH__.email()); } catch (e) { return ''; } }
+function role(){ try { return s(W._gcRP && W._gcRP.role && W._gcRP.role()); } catch (e) { return ''; } }
+function viewAs(){ try { return s(W._gcRP && W._gcRP.viewAs && W._gcRP.viewAs()); } catch (e) { return ''; } }
+function office(){ try { if (W._gcIsOfficeFull && W._gcIsOfficeFull()) return true; } catch (e) {} return /\boffice\b/i.test(role()); }
+function canEdit(){ var p = PJ(); return p && p.canEdit ? p.canEdit() : admin(); }
+function css(){
+  if (D.getElementById('gc-pm2-css')) return;
+  var st = D.createElement('style'); st.id = 'gc-pm2-css';
+  st.textContent = '.gc-pm2-ov{position:fixed;inset:0;z-index:100250;background:rgba(15,23,42,.55);display:flex;align-items:flex-start;justify-content:center;padding:3vh 10px;overflow:auto}'
+    + '.gc-pm2-ov .bx{background:#fff;color:#0f172a;border-radius:14px;max-width:720px;width:100%;padding:16px 18px;font:13px/1.45 Inter,Arial,sans-serif;box-shadow:0 20px 60px rgba(0,0,0,.35)}.gc-pm2-ov h3{margin:0;font-size:17px}.gc-pm2-ov .mut{color:#64748b;font-size:12px}'
+    + '.gc-pm2-ov .sec{border-top:1px solid #e2e8f0;padding:10px 0;margin-top:8px}.gc-pm2-ov .sec h4{margin:0 0 6px;font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:#64748b}.gc-pm2-ov label{display:block;margin:4px 0}'
+    + '.gc-pm2-ov input[type=text],.gc-pm2-ov input[type=email]{border:1px solid #cbd5e1;border-radius:8px;padding:6px 8px;font:13px Inter,Arial,sans-serif;width:100%;box-sizing:border-box}.gc-pm2-ov pre{white-space:pre-wrap;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px;font:12.5px/1.5 Inter,Arial,sans-serif;max-height:300px;overflow:auto}'
+    + '.gc-pm2-ov button.pm{border:1px solid #cbd5e1;background:#fff;color:#0f172a;border-radius:8px;padding:6px 11px;font:600 12.5px Inter,Arial,sans-serif;cursor:pointer}.gc-pm2-ov button.pm.p{background:#241968;border-color:#241968;color:#fff}.gc-pm2-ov button.pm:disabled{opacity:.5}'
+    + '.gc-pm2-ov .pill{display:inline-block;border-radius:999px;padding:2px 10px;font-weight:700;font-size:12px;background:#f1f5f9;color:#475569}.gc-pm2-ov .pill.on{background:#dcfce7;color:#14532d}'
+    + '#gc-pin-chip{position:fixed;top:62px;right:14px;z-index:9000;display:none}#gc-pin-chip button{border:1px solid #c7d2fe;background:#eef2ff;color:#1e1b4b;border-radius:999px;padding:5px 12px;font:700 12px Inter,Arial,sans-serif;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.08)}#gc-pin-chip button.on{background:#ecfdf5;border-color:#a7f3d0;color:#065f46}';
+  (D.head || D.documentElement).appendChild(st);
+}
+function modal(id){ css(); var ov = D.getElementById(id); if (ov) ov.remove(); ov = D.createElement('div'); ov.id = id; ov.className = 'gc-pm2-ov'; ov.setAttribute('data-gc-keep', '1'); ov.setAttribute('data-gc-linked', '1'); ov.innerHTML = '<div class="bx">Loading…</div>'; D.body.appendChild(ov); ov.addEventListener('click', function(e){ if (e.target === ov) ov.remove(); }); return ov; }
+
+/* ── 📧 MSCCE monthly records request ── */
+var MS = { cfg: null, preview: null, phone: '901-222-8300', inbox: 'permits@in.grayco-cs.com', mail: true };
+function msHtml(){
+  var c = MS.cfg || {}, p = MS.preview || {}, sent = c.sent || {}, months = Object.keys(sent).sort().reverse().slice(0, 4), reps = arr(c.replies).slice(-3).reverse();
+  return '<div class="bx" role="dialog" aria-label="MSCCE records request"><div style="display:flex;gap:8px;align-items:center"><h3>📧 MSCCE permit list — monthly records request</h3><span class="pill' + (c.on ? ' on' : '') + '" data-ms-pill="1">' + (c.on ? 'Monthly: on' : 'Off') + '</span><span style="flex:1"></span><button type="button" class="pm" data-ms="close">Close</button></div>'
+    + '<div class="mut" style="margin-top:4px">Shelby County has no free permit feed. Once a month (the 1st–10th, office hours) the CRM can e-mail Memphis &amp; Shelby County Code Enforcement for last month\'s building permits. Replies go to the Reply-to address and to ' + esc(MS.inbox) + ' (the CRM puts "MSCCE permit list arrived — import it" on the Office To-Do).</div>'
+    + '<div class="sec"><h4>Addresses</h4><label>MSCCE records e-mail <span class="mut">(not known yet — call ' + esc(MS.phone) + ' and ask which address takes public-records requests)</span><input type="email" data-ms-set="to" value="' + esc(c.to) + '" placeholder="records address at MSCCE"></label>'
+    + '<label>From (must be @grayco-cs.com)<input type="text" data-ms-set="from" value="' + esc(c.from) + '"></label><label>Reply-to<input type="email" data-ms-set="replyTo" value="' + esc(c.replyTo) + '"></label>'
+    + '<label><input type="checkbox" data-ms-set="on"' + (c.on ? ' checked' : '') + '> Send it every month by itself</label>' + (MS.mail ? '' : '<div class="mut" style="color:#b45309">E-mail is not set up on the server (RESEND_API_KEY).</div>') + '</div>'
+    + '<div class="sec"><h4>The e-mail (for ' + esc(p.month || '') + ')</h4><div><b>' + esc(p.subject) + '</b></div><pre data-ms-preview="1">' + esc(p.text) + '</pre></div>'
+    + '<div class="sec"><h4>Sent</h4>' + (months.length ? months.map(function(m){ var x = sent[m] || {}; return '<div>' + esc(m) + ': ' + (x.ok ? '✅ sent' : x.held ? '⏸ held (data-entry mode)' : '⚠ not sent (' + esc(x.status) + ')') + ' to ' + esc(x.to) + ' · ' + esc(s(x.at).slice(0, 16).replace('T', ' ')) + (x.manual ? ' · by ' + esc(x.by) : ' · monthly') + '</div>'; }).join('') : '<span class="mut">Nothing sent yet.</span>')
+    + (reps.length ? '<div style="margin-top:6px"><b>Replies</b>' + reps.map(function(r){ return '<div class="mut">' + esc(s(r.at).slice(0, 10)) + ' · ' + esc(r.from) + ' · ' + esc(r.subject) + (arr(r.files).length ? ' · 📎 ' + esc(arr(r.files).join(', ')) : '') + '</div>'; }).join('') + '</div>' : '') + '</div>'
+    + '<div class="sec" style="display:flex;gap:6px;flex-wrap:wrap"><button type="button" class="pm p" data-ms="save">Save</button><button type="button" class="pm" data-ms="send"' + (c.to ? '' : ' disabled title="Enter the MSCCE records e-mail first"') + '>📤 Send now</button></div></div>';
+}
+function msLoad(ov){ return call({ action: 'mscce-get' }).then(function(r){ if (!r || !r.ok) { ov.querySelector('.bx').textContent = s(r && r.error) || 'Could not read it.'; return; } MS.cfg = r.cfg; MS.preview = r.preview; MS.phone = r.phone || MS.phone; MS.inbox = r.replyInbox || MS.inbox; MS.mail = r.mailReady !== false; ov.innerHTML = msHtml(); }); }
+W._gcMsccOpen = function(){
+  if (!canEdit()) { toast('Only an owner, an admin or the office can change the MSCCE request.', true); return; }
+  var ov = modal('gc-mscce');
+  ov.addEventListener('click', function(e){
+    var b = e.target && e.target.closest && e.target.closest('[data-ms]'); if (!b) return;
+    var a = b.getAttribute('data-ms'); if (a === 'close') { ov.remove(); return; }
+    var v = function(k){ var el = ov.querySelector('[data-ms-set="' + k + '"]'); return el ? (el.type === 'checkbox' ? el.checked : el.value) : null; };
+    if (a === 'save') { b.disabled = true; return call({ action: 'mscce-set', cfg: { on: !!v('on'), to: s(v('to')), from: s(v('from')), replyTo: s(v('replyTo')) } }).then(function(r){ b.disabled = false; if (!r || !r.ok) { toast(s(r && r.error) || 'Not saved.', true); return; } MS.cfg = r.cfg; ov.innerHTML = msHtml(); toast(r.cfg.on ? '📧 Saved — it goes once a month (the 1st–10th).' : (v('on') && !r.cfg.to ? 'Saved — it stays off until there is an MSCCE address.' : '📧 Saved — off.')); }); }
+    if (a === 'send') { if (!W.confirm('Send the records request to ' + s((MS.cfg || {}).to) + ' now?')) return; b.disabled = true; return call({ action: 'mscce-send', confirm: true }).then(function(r){ if (!r || !r.ok) toast(s(r && r.error) || 'Not sent.', true); else toast('📤 Sent to ' + s(r.sent && r.sent.to) + '.'); msLoad(ov); }); }
+  });
+  return msLoad(ov);
+};
+
+/* ── 🏗️ Dodge (paid, later) ── */
+W._gcDodgeOpen = function(){
+  var ov = modal('gc-dodge');
+  ov.addEventListener('click', function(e){ var b = e.target && e.target.closest && e.target.closest('[data-dg]'); if (b && b.getAttribute('data-dg') === 'close') ov.remove(); });
+  return call({ action: 'settings-get' }).then(function(r){
+    var on = !!(r && r.dodgeConfigured);
+    ov.innerHTML = '<div class="bx" role="dialog" aria-label="Dodge"><div style="display:flex;gap:8px;align-items:center"><h3>🏗️ Dodge Construction Network</h3><span class="pill">Off · for later (paid)</span><span style="flex:1"></span><button type="button" class="pm" data-dg="close">Close</button></div>'
+      + '<div class="sec"><h4>What it is</h4><div>Paid project data: <b>project leads before the permit</b> (planning, design, bidding), <b>bid dates</b>, the owner / architect / GC, and <b>plan rooms</b> with the drawings — for Memphis / Shelby, DeSoto, Little Rock and Nashville.</div></div>'
+      + '<div class="sec"><h4>Connection</h4>' + (on ? '✅ DODGE_API_KEY is set in Netlify. The CRM does not ask Dodge for anything yet — tell Claude to build the pull when you want it (same filters as 🏗️ Permitted jobs: $1M+ commercial).' : '❌ No DODGE_API_KEY in Netlify. First ask Dodge (construction.com) for pricing and API access; if you sign up, Netlify → Site configuration → Environment variables → DODGE_API_KEY → Trigger deploy.') + '</div>'
+      + '<div class="sec mut">Owner setup has the step "Look into Dodge (paid) — get pricing / API access".</div></div>';
+  });
+};
+
+/* ── 📌 my pinned integration tabs ── */
+var PINNABLE = [
+  ['qbimport', 'QuickBooks', '📊', function(){ return admin() || office(); }],
+  ['roofscout', 'RoofScout', '🏠', function(){ return admin() || office() || /estimat|project manager|sales/i.test(role()); }],
+  ['allphotos', 'GrayCo Photos (CompanyCam)', '📸', function(){ return !/marketing/i.test(role()) || admin(); }],
+  ['gmail', 'Gmail', '📧', function(){ return true; }],
+  ['integrations', 'Integrations', '⊕', function(){ return admin() || office(); }],
+  ['permitjobs', 'Permitted jobs', '🏗️', function(){ var p = PJ(); return !!(p && p.canSee && p.canSee()); }]
+];
+function pinDef(id){ for (var i = 0; i < PINNABLE.length; i++) if (PINNABLE[i][0] === id) return PINNABLE[i]; return null; }
+function allowed(id){ var d = pinDef(id); if (!d) return false; if (viewAs() && !/^admin$/i.test(viewAs())) { /* a preview of another role: that role's rules */ } try { return !!d[3](); } catch (e) { return false; } }
+var KEY = function(){ return 'gc_navpins__' + email(); };
+var PINS = null, BASE = [], pulled = '';
+function pins(){ if (PINS && PINS.who === email()) return PINS.list; var v = null; try { v = JSON.parse(localStorage.getItem(KEY()) || 'null'); } catch (e) {} PINS = { who: email(), list: arr(v && v.pins).filter(function(x){ return !!pinDef(x); }) }; return PINS.list; }
+function save(list){
+  var v = { pins: list.slice(0, 12), at: new Date().toISOString() }; PINS = { who: email(), list: v.pins };
+  try { localStorage.setItem(KEY(), JSON.stringify(v)); } catch (e) {}
+  try { var was = W.__GC_MANUAL_SAVE__; W.__GC_MANUAL_SAVE__ = true; var u = W._supaUpsertNow || W._supaUpsert; if (u) u(KEY(), v); ST.call(W, function(){ W.__GC_MANUAL_SAVE__ = was; }, 1200); } catch (e) {}
+  bump();
+}
+function pull(){
+  var em = email(); if (!em || pulled === em) return; pulled = em;
+  try { var u = (localStorage.getItem('grayco_sb_url') || '').replace(/\/$/, ''), k = localStorage.getItem('grayco_sb_key') || ''; if (!u || !k) return;
+    W.fetch(u + '/rest/v1/gc_kv?key=eq.' + encodeURIComponent(KEY()) + '&select=value', { headers: { apikey: k, Authorization: 'Bearer ' + k }, cache: 'no-store' }).then(function(r){ return r.ok ? r.json() : []; }).then(function(rows){
+      var v = rows && rows[0] && rows[0].value; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } }
+      if (v && Array.isArray(v.pins)) { var loc = null; try { loc = JSON.parse(localStorage.getItem(KEY()) || 'null'); } catch (e) {} if (!loc || s(v.at) > s(loc.at)) { try { localStorage.setItem(KEY(), JSON.stringify(v)); } catch (e) {} PINS = null; bump(); } }
+    }).catch(function(){}); } catch (e) {}
+}
+/* the menu: patch RP builds it; my pins are added for me (only the ones my role may use) */
+(function wrapMenu(){
+  var RP = W._gcRP;
+  if (!RP || typeof RP.menu !== 'function') { ST.call(W, wrapMenu, 400); return; }
+  if (RP.menu.__pins) return;
+  var orig = RP.menu;
+  var m = function(Uf, list){
+    var r = orig.apply(this, arguments);
+    try {
+      BASE = arr(r).map(function(g){ return g && g.id; });
+      var add = pins().filter(function(id){ return BASE.indexOf(id) < 0 && allowed(id); }).map(function(id){ var g = arr(Uf).filter(function(x){ return x && x.id === id; })[0]; var d = pinDef(id); return g ? Object.assign({}, g, { pinned: true }) : { id: id, l: d[1], ic: d[2], pinned: true }; });
+      if (add.length) r = arr(r).concat(add);
+    } catch (x) {}
+    return r;
+  };
+  m.__pins = true; m.__pj = orig.__pj; RP.menu = m;
+})();
+/* the menu is drawn by the app: after a change, the app draws it again (a quick hop of the view and back) */
+function bump(){
+  try {
+    var v = s(localStorage.getItem('grayco_view')) || 'dashboard';
+    if (typeof W._setView !== 'function') return;
+    W._setView(v === 'todo' ? 'dashboard' : 'todo');
+    ST.call(W, function(){ try { W._setView(v); } catch (e) {} }, 40);
+  } catch (e) {}
+}
+var chip = null;
+function paintChip(){
+  var v = ''; try { v = s(localStorage.getItem('grayco_view')); } catch (e) {}
+  var d = pinDef(v), em = email();
+  if (!chip) { chip = D.createElement('div'); chip.id = 'gc-pin-chip'; chip.setAttribute('data-gc-keep', '1'); chip.addEventListener('click', function(e){ var b = e.target.closest && e.target.closest('button'); if (!b) return; var id = b.getAttribute('data-pin'); if (b.hasAttribute('data-unpin')) unpin(id); else pin(id); }); }
+  if (!chip.parentNode && D.body) { css(); D.body.appendChild(chip); }
+  var mine = d && pins().indexOf(v) > -1, inBase = d && BASE.indexOf(v) > -1;
+  if (!em || !d || !allowed(v) || (inBase && !mine)) { chip.style.display = 'none'; chip.__h = ''; return; }
+  var h = mine ? '<button type="button" class="on" data-pin="' + esc(v) + '" data-unpin="1" title="Take it out of my left menu">📌 In my tabs · Unpin</button>' : '<button type="button" data-pin="' + esc(v) + '" title="Show ' + esc(d[1]) + ' as a tab in MY left menu (only mine)">📌 Add to my tabs</button>';
+  if (chip.__h !== h) { chip.__h = h; chip.innerHTML = h; }
+  chip.style.display = 'block';
+}
+function pin(id){ if (!pinDef(id) || !allowed(id)) return false; var l = pins().slice(); if (l.indexOf(id) < 0) l.push(id); save(l); toast('📌 ' + pinDef(id)[1] + ' is now a tab in your menu.'); paintChip(); return true; }
+function unpin(id){ var l = pins().filter(function(x){ return x !== id; }); save(l); toast('📌 ' + (pinDef(id) || [0, id])[1] + ' taken out of your menu.'); paintChip(); return true; }
+SI.call(W, function(){ try { if (email()) { pull(); paintChip(); } } catch (e) {} }, 1500);
+
+W._gcNavPins = { list: function(){ return pins().slice(); }, pin: pin, unpin: unpin, allowed: allowed, base: function(){ return BASE.slice(); }, pinnable: function(){ return PINNABLE.map(function(p){ return { id: p[0], label: p[1], allowed: allowed(p[0]) }; }); }, refresh: function(){ PINS = null; pulled = ''; pull(); bump(); }, key: function(){ return KEY(); } };
+try { console.log('[GC] patch PERMITS2: 📧 MSCCE request, Dodge (later), 📌 my pinned integration tabs — _gcNavPins.list()'); } catch (e) {}
 })(window);
 </script>

@@ -545,6 +545,18 @@
 [functions."referral-scheduled"]
   schedule = "37 * * * *"
 
+# patch PERMITS: 🏗️ Permitted jobs (netlify/functions/permit-watch.js) — 11:23 UTC = 5:23 AM Central in winter (6:23 AM in summer).
+# Reads new building permits from Nashville's free ArcGIS feed and keeps the ones that look like GrayCo work for the 🏗️ Permitted jobs
+# tab. No alerts; never a lead by itself. (Shovels — paid, Integrations — is off; even when on it pulls here only if its daily pull is on.)
+[functions."permit-watch-scheduled"]
+  schedule = "23 11 * * *"
+
+# patch PERMITS2: Shelby County permits (no free feed) — Mondays one Office To-Do "download Develop 901's permits and import them";
+# the 1st–10th the MSCCE public-records e-mail for last month's permit list (only when switched on in Owner setup and it has an
+# address; OFF by default). 14:41 UTC = 8:41 AM Central in winter (9:41 AM in summer).
+[functions."permit-records-scheduled"]
+  schedule = "41 14 * * *"
+
 # patch EST3: the daily "material prices up on your open estimates" e-mail (about 7:20 AM Central)
 [functions."est-price-watch"]
   schedule = "20 12 * * *"

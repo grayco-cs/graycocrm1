@@ -970,6 +970,12 @@ async function processEventCore(evt, opts){
       from: mail.from.email, fromName: mail.from.name, subject: s(mail.subject).slice(0, 200), text: s(mail.text).replace(/\n>.*$/s, '').slice(0, 1500) }).catch(() => false);
     return ok ? { status: 200, body: { ok: true, results: true } } : { status: 503, body: { ok: false, error: 'GrayCo could not store the bid results yet — retry.' } };
   }
+  /* patch PERMITS2: a reply to the MSCCE permit-list request (reply-to permits@in.grayco-cs.com) → an Office To-Do "import it" */
+  if (require('./_lib/permit-records.js').isReplyMail(recipients(mail, data))) {
+    if (ownOrAuto(mail)) return { status: 200, body: { ok: true, ignored: ownOrAuto(mail) } };
+    if (!dbReady()) return { status: 503, body: { ok: false, error: 'database not configured' } };
+    return { status: 200, body: Object.assign({ inbox: 'permits' }, await require('./_lib/permit-records.js').onReply(mail)) };
+  }
   /* patch ESTIN: an estimate e-mailed to estimates@ (Word / PDF / Excel / CSV, from a GrayCo address) → the CRM reads it */
   if (forEstimates(mail, data)) {
     if (ownOrAuto(mail)) return { status: 200, body: { ok: true, ignored: ownOrAuto(mail) } };
