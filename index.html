@@ -85941,7 +85941,7 @@ function runCard(r){
           +'<td style="'+CSS.td+'">'+statusChip(L.status==='denied'?'denied':(r.status==='approved'||r.status==='paid'?'approved':(L.status||'pending')))+'</td>'
           +'<td style="'+CSS.td+'white-space:nowrap;">'
             +'<button data-stub="'+r.id+'" data-idx="'+i+'" style="'+CSS.btn2+'padding:4px 9px;font-size:11px;">Pay stub</button> '
-            +((P.isAdmin()&&(r.status==='pending'||r.status==='draft')&&(window._gcDraftEditLine||window._gcEditPayLine))?(   /* patch DRAFTEDIT */
+            +(((P.isAdmin()||window._gcPayOfficeEdit&&window._gcPayOfficeEdit())&&(r.status==='pending'||r.status==='draft')&&(window._gcDraftEditLine||window._gcEditPayLine))?(   /* patch DRAFTEDIT */
             '<button data-ledit="'+esc(r.id)+'" data-idx="'+i+'" style="'+CSS.btn2+'padding:4px 9px;font-size:11px;color:#1d4ed8;">✏️ Edit</button> '):'')   /* patch PAYEDIT2 */
             +(P.isAdmin()&&r.status==='pending'?(L.status==='denied'?('<button data-line="'+r.id+'" data-idx="'+i+'" data-act="pending" style="'+CSS.btn2+'padding:4px 9px;font-size:11px;color:#dc2626;">Undo</button>'):   /* patch LINEAPPR */
               ('<button data-lappr="'+esc(r.id)+'" data-idx="'+i+'" style="'+CSS.btn2+'padding:4px 9px;font-size:11px;color:#166534;font-weight:800;">✓ Approve this check</button> '
@@ -216091,9 +216091,11 @@ function touched(run, note){
   run.history = (Array.isArray(run.history) ? run.history : []).concat([{ at: now, by: who(), action: 'line edited', note: note }]);
 }
 
+/* owner 11/12: "office can edit payroll lines" — admins + the office (master office login or an Office role); not in View as */
+W._gcPayOfficeEdit = function(){ try { if (W._gcVAS && W._gcVAS.active && W._gcVAS.active()) return false; if (W._gcIsOfficeFull && W._gcIsOfficeFull()) return true; var m = W._gcMeNow || {}; return /office/i.test(String(m.role || '') + ' ' + String(m.profile || '')); } catch (e) { return false; } };
 W._gcDraftEditLine = async function(runId, idx){
   var p = P(); if (!p) return;
-  if (!p.isAdmin()) { alert('Only an admin can edit payroll.'); return; }
+  if (!p.isAdmin() && !(W._gcPayOfficeEdit && W._gcPayOfficeEdit())) { alert('Only an admin or the office can edit payroll.'); return; }
   var all = await p.runs(), run = all.filter(function(r){ return r && String(r.id) === String(runId); })[0], L = run && (run.lines || [])[idx];
   if (!L) { alert('Could not find that pay line.'); return; }
   var profs = []; try { profs = await p.profiles(); } catch (e) {}
@@ -225977,7 +225979,7 @@ W._gcCoLeak2 = { userCos: userCos, passUser: passUser, paintSelects: paintSelect
 /* patch PAYEM — 🚨 Emergency call-out (after hours) 1.5× on paychecks, 🎖 certification raises and the 🏆 PM year-end bonus on paychecks
    (owner 11/12: "yes emergency 1.5 on paychecks" · "cert raises on paycheck" · payroll stays ONE company for now: "payroll goes all to
    construction right now, I'll change later to by company" · Brittany's 13 h/week set hours stay as they are).
-   • Field app ⏱ Clock in, after hours (before 7 AM, from 5 PM, weekends) or on an emergency job: "🚨 Emergency call-out (after hours)" or
+   • Field app ⏱ Clock in, after hours (before 7 AM, from 6 PM, weekends) or on an emergency job: "🚨 Emergency call-out (after hours)" or
      "🕐 Regular time". The call-out is its own timesheet row { emergency: true } (an open regular punch made moments ago becomes the
      call-out; an older open one ends at that minute, so no hour is counted twice). The button reads "🚨 Clock out (emergency)" until it
      is closed. Timesheets: 🚨 on "+ Add time" and a 🚨 toggle on each row (office / admin). Payroll → ✏️ hours: "🚨 of those, emergency".
@@ -226010,7 +226012,7 @@ function lsSet(k, v){ try { if (v == null) localStorage.removeItem(k); else loca
 function toast(m, bad){ try { var t = D.createElement('div'); t.setAttribute('data-gc-keep', '1'); t.id = 'gc-payem-toast'; t.textContent = m; t.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:2147483600;background:' + (bad ? '#7f1d1d' : '#14532d') + ';color:#fff;padding:11px 16px;border-radius:10px;font:600 14px Inter,Arial,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.25);max-width:92vw;text-align:center'; var o = D.getElementById('gc-payem-toast'); if (o) o.remove(); D.body.appendChild(t); later(function(){ t.remove(); }, 3600); } catch (e) {} }
 
 /* ── after hours / emergency job ─────────────────────────────────────────── */
-var DAY = { start: 7 * 60, end: 17 * 60 };   /* the normal work day, Monday–Friday 7 AM – 5 PM */
+var DAY = { start: 7 * 60, end: 18 * 60 };   /* the normal work day, Monday–Friday 7 AM – 6 PM (owner 11/12) */
 function afterHours(d){ d = d || new Date(); var dow = d.getDay(), m = d.getHours() * 60 + d.getMinutes(); return dow === 0 || dow === 6 || m < DAY.start || m >= DAY.end; }
 function isEmergencyJob(p){ if (!p) return false; if (p.emergency === true || p.isEmergency === true) return true;
   return /emergenc/i.test([p.urgency, p.priority, p.jobType, p.type, p.lossType, p.tag, p.tags && p.tags.join && p.tags.join(' ')].map(s).join(' ')); }
@@ -226069,9 +226071,9 @@ function clockTap(p, go){
     return true;
   }
   var ah = afterHours(), ej = isEmergencyJob(p);
-  if (!ah && !ej) return false;
+  if (!ah) return false;   /* owner 11/12: "emergency jobs during work hours are standard pay, real emergencies are after hours" */
   var o2 = sheet('<div style="font-size:18px;font-weight:800">⏱ Clock in' + (p && p.name ? ' — ' + esc(p.name) : '') + '</div>' +
-    '<div style="font-size:13.5px;color:#475569;margin:4px 0 4px">' + (ej ? 'This is an emergency job.' : 'It is after hours.') + ' Is this an emergency call-out?</div>' +
+    '<div style="font-size:13.5px;color:#475569;margin:4px 0 4px">' + (ej ? 'This is an emergency job, after hours.' : 'It is after hours.') + ' Is this an emergency call-out?</div>' +
     '<button type="button" data-pe="em" style="' + BTN + ';background:#b91c1c;color:#fff">🚨 Emergency call-out (after hours)<div style="font-size:12.5px;font-weight:600;opacity:.9">Paid time and a half (1.5×)</div></button>' +
     '<button type="button" data-pe="reg" style="' + BTN + ';background:#0f2440;color:#fff">🕐 Regular time</button>' +
     '<button type="button" data-pe="x" style="' + BTN + ';background:#e2e8f0;color:#0f172a;text-align:center">Cancel</button>');
