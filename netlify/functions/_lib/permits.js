@@ -39,21 +39,38 @@ function areaOfZip(zip){
 
 /* ── the settings (gc_permit_settings) ── */
 const INCLUDE = [
+  /* owner 11/12: "only Nashville permits for large commercial projects — no residential — $1 million+ GC jobs: hotels, hospitals,
+     multi-family, senior living etc., large jobs only" → commercial + multifamily on, everything residential / small off */
   ['commercialNew', 'Commercial — new buildings', true],
-  ['commercialRehab', 'Commercial — rehab / remodel / tenant finish', true],
-  ['multifamily', 'Multifamily (apartments, condos, townhomes)', true],
-  ['residentialRehab', 'Residential — rehab / remodel / addition', true],
-  ['demolition', 'Demolition (asbestos survey → Environmental)', true],
-  ['roofing', 'Roofing', true],
-  ['repair', 'Fire / water / storm / mold / asbestos / repair words (any value)', true],
-  ['residentialNew', 'Residential — new houses', false]
+  ['commercialRehab', 'Commercial — rehab / remodel / tenant finish / addition', true],
+  ['multifamily', 'Multifamily — 3+ units (apartments, condos)', true],
+  ['residentialRehab', 'Residential — rehab / remodel / addition', false],
+  ['residentialNew', 'Residential — new houses', false],
+  ['demolition', 'Demolition (asbestos survey → Environmental; any value)', false],
+  ['roofing', 'Roofing (any value)', false],
+  ['repair', 'Fire / water / storm / mold / asbestos / repair words (any value)', false]
+];
+/* the kinds of building (a chip on the permit; each can be left out in ⚙ Filters) — the first that fits */
+const USES = [
+  ['senior', '🧓 Senior living', /\b(?:senior|assisted[- ]living|nursing|memory care|retirement|elderly|independent living|continuing care)\b/],
+  ['hospital', '🏥 Hospital / medical', /hospital|medical|clinic|surg(?:ery|ical)|health ?care|dental|outpatient|urgent care|institutional i-2|animal hospital/],
+  ['hotel', '🏨 Hotel', /\b(?:hotel|motel|lodging|hospitality)\b/],
+  ['school', '🏫 School / college', /school|college|university|educational|academy|day ?care|classroom|lecture|dormitor/],
+  ['mixed', '🏙 Mixed-use', /mixed[- ]use/],
+  ['multifamily', '🏘 Multifamily', /multi-?family|apartment|\bapts?\b|condo\w*|tri-?plex|four-?plex|fourplex|\bquad\b|\b(?:[3-9]|\d{2,})\s*units?\b|> ?5 unit/],
+  ['office', '🏢 Office', /\boffices?\b|professional services|bank|financial institution/],
+  ['retail', '🛍 Retail / restaurant', /retail|\bstores?\b|shopping|restaurant|mercantile|grocery|\bbar\b|nightclub|tavern|market/],
+  ['industrial', '🏭 Industrial / warehouse', /industrial|warehouse|manufactur|factory|distribution|storage s-1|motor freight|wholesale|hazardous \(h/],
+  ['church', '⛪ Church', /church|worship|religious|fellowship hall/],
+  ['civic', '🏛 Civic / government', /civic|government|fire (?:&|and) police|police station|fire station|library|museum|cultural|recreation center|arena|airport/]
 ];
 const DEFAULT_EXCLUDE = ['sign', 'fence', 'pool', 'solar', 'deck', 'shed', 'tent', 'carport', 'food truck', 'electrical only', 'hvac only'];
 function defaults(){
   const inc = {}; INCLUDE.forEach(function(x){ inc[x[0]] = x[2]; });
-  return { v: 1, include: inc, exclude: DEFAULT_EXCLUDE.slice(), minValue: 25000, maxAgeDays: 14,
+  const uses = {}; USES.forEach(function(u){ uses[u[0]] = true; });
+  return { v: 1, include: inc, uses: uses, exclude: DEFAULT_EXCLUDE.slice(), minValue: 1000000, maxAgeDays: 14,
     nashville: { on: true },
-    shovels: { on: false, auto: false, zips: DEFAULT_ZIPS.slice(), tags: ['-solar', '-pool_and_hot_tub', '-hvac', '-water_heater'], q: '', minJobValue: 0, windowDays: 14, perRun: 25, budget: 500 } };
+    shovels: { on: false, auto: false, zips: DEFAULT_ZIPS.slice(), tags: ['-solar', '-pool_and_hot_tub', '-hvac', '-water_heater'], q: '', minJobValue: 1000000, windowDays: 14, perRun: 25, budget: 500 } };
 }
 function clean(v){
   const d = defaults(); v = v && typeof v === 'object' && !Array.isArray(v) ? v : {};
@@ -66,12 +83,13 @@ function clean(v){
   const per = num(sh.perRun != null ? sh.perRun : sh.maxPerRun), bud = num(sh.budget), win = num(sh.windowDays), mjv = num(sh.minJobValue);
   let tags = Array.isArray(sh.tags) ? sh.tags : (typeof sh.tags === 'string' ? sh.tags.split(/[\s,;]+/) : null);
   tags = tags ? tags.map(low).filter(function(x, i, a){ return /^-?[a-z0-9_]{2,40}$/.test(x) && a.indexOf(x) === i; }).slice(0, 20) : d.shovels.tags;
-  const out = { v: 1, include: inc, exclude: ex,
+  const uses = {}; USES.forEach(function(u){ uses[u[0]] = v.uses && typeof v.uses[u[0]] === 'boolean' ? v.uses[u[0]] : true; });
+  const out = { v: 1, include: inc, uses: uses, exclude: ex,
     minValue: mv == null ? d.minValue : Math.max(0, Math.min(1e9, Math.round(mv))),
     maxAgeDays: age == null ? d.maxAgeDays : Math.max(1, Math.min(90, Math.round(age))),
     nashville: { on: !(v.nashville && v.nashville.on === false) },
     shovels: { on: sh.on === true, auto: sh.auto === true, zips: zips, tags: tags, q: clip(sh.q, 50).replace(/[\u0000-\u001f]/g, ''),
-      minJobValue: mjv == null ? 0 : Math.max(0, Math.min(1e9, Math.round(mjv))),
+      minJobValue: mjv == null ? d.shovels.minJobValue : Math.max(0, Math.min(1e9, Math.round(mjv))),
       windowDays: win == null ? d.shovels.windowDays : Math.max(1, Math.min(90, Math.round(win))),
       perRun: per == null ? d.shovels.perRun : Math.max(1, Math.min(1000, Math.round(per))),
       budget: bud == null ? d.shovels.budget : Math.max(0, Math.min(1e7, Math.round(bud))) } };
@@ -93,7 +111,7 @@ const RX = {
   roofType: /\broof\w*|\bre-?roof\w*/,
   roofText: /\b(?:re-?roof\w*|roof\w* (?:replace\w*|repair\w*|over|tear[- ]?off|covering)|(?:replace\w*|new|install\w*) (?:the )?(?:existing )?(?:metal |shingle |tpo |flat |membrane )?roof\w*|roofing|shingles?)\b/,
   rtu: /\broof\s*-?\s*top\s+(?:units?|hvac|equipment|a\/?c|mechanical|condens\w*|curbs?)|\brtus?\b/g,
-  multi: /multi-?family|apartment|\bapts?\b|condo\w*|townho(?:me|use)s?|duplex|tri-?plex|four-?plex|fourplex|\bquad\b|\b\d+\s*units?\b/,
+  multi: /multi-?family|apartment|\bapts?\b|condo\w*|townho(?:me|use)s?|tri-?plex|four-?plex|fourplex|\bquad\b|\b(?:[3-9]|\d{2,})\s*units?\b/,   /* a duplex is a two-family house (residential) */
   comm: /\b(?:commercial|industrial|tenant|retail|office|warehouse|restaurant|hotel|motel|church|religious|school|hospital|clinic|medical|bank|stores?|shopping|assembly|mercantile|business|factory|manufactur\w*|institutional|educational)/,
   isNew: /\bnew\b|\bshell\b|\bfoundation\b|ground[- ]up|new construction|construct (?:a )?new/,
   rehab: /rehab\w*|remodel\w*|renovat\w*|alter\w*|tenant finish|finish[- ]?out|build[- ]?out|addition|interior|repair\w*|restor\w*|fire damage|storm damage|change of use|up-?fit|tenant improvement|\bti\b|convert\w*|conversion|replace\w*/,
@@ -163,18 +181,26 @@ function classify(p, settings, nowMs){
   out.bucket = bucket;
   const inc = S.include;
   let wanted = (inc[bucket] === true) || (damage && inc.repair) || (repairWord && inc.repair && bucket !== 'admin');
-  if (bucket === 'roofing' && !inc.roofing && !damage) wanted = false;
+  if (bucket === 'roofing' && !inc.roofing && comm && !damage) { bucket = 'commercialRehab'; out.bucket = bucket; wanted = inc.commercialRehab === true; }   /* a big commercial re-roof is a commercial job */
+  else if (bucket === 'roofing' && !inc.roofing && !damage) wanted = false;
   if (bucket === 'demolition' && !inc.demolition && !damage) wanted = false;
   if (!wanted) { out.why = 'not a kind of permit you picked (' + bucket + ')'; return out; }
-  /* the value (repair / damage words, roofs and demolitions are wanted at any value) */
-  const v = num(p.value), bypass = damage || roof || repairWord || demo;
+  /* the kind of building (⚙ Filters can leave a kind out) */
+  const useTxt = [typ, sub, desc, low(p.propertyDetail)].join(' | ');
+  let use = null; for (let i = 0; i < USES.length; i++) if (USES[i][2].test(useTxt)) { use = USES[i]; break; }
+  if (bucket === 'multifamily') use = USES.filter(function(u){ return u[0] === 'multifamily'; })[0];
+  if (use && S.uses && S.uses[use[0]] === false && !damage) { out.why = 'a kind of building you left out (' + use[1] + ')'; return out; }
+  out.use = use ? use[0] : '';
+  /* the value (repair / damage words, roofs and demolitions are wanted at any value — when those kinds are ticked) */
+  const v = num(p.value), bypass = (inc.repair && (damage || repairWord)) || (inc.roofing && roof) || (inc.demolition && demo);
   const bigBucket = bucket === 'commercialNew' || bucket === 'commercialRehab' || bucket === 'multifamily';
   if (!bypass) {
-    if (v == null || v <= 0) { if (!bigBucket) { out.why = 'no job value listed'; return out; } }
+    if (v == null || v <= 0) { if (!bigBucket || S.minValue > 25000) { out.why = 'no job value listed'; return out; } }
     else if (v < S.minValue) { out.why = 'under ' + money(S.minValue); return out; }
   }
   /* the reasons */
   const R = [], yb = num(p.yearBuilt), m = money(v);
+  if (use && use[0] !== 'multifamily') R.push(use[1]);
   if (F.fire) R.push('🔥 fire/smoke words');
   if (F.water) R.push('💧 water/flood words');
   if (F.storm) R.push('🌪 storm/hail/wind words');
@@ -223,4 +249,4 @@ function fromShovels(p, zip){
 }
 function keyOf(p){ return s(p.src) + ':' + s(p.id); }
 
-module.exports = { defaults, clean, classify, fromNashville, fromShovels, keyOf, money, areaOfZip, INCLUDE, DEFAULT_ZIPS, ZIP_GROUPS, SHOVELS_TAGS, DEFAULT_EXCLUDE, HINT_LABEL, NASH_URL, NASH_FIELDS, RX };
+module.exports = { USES, defaults, clean, classify, fromNashville, fromShovels, keyOf, money, areaOfZip, INCLUDE, DEFAULT_ZIPS, ZIP_GROUPS, SHOVELS_TAGS, DEFAULT_EXCLUDE, HINT_LABEL, NASH_URL, NASH_FIELDS, RX };

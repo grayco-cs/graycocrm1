@@ -27,6 +27,12 @@
 //   shovels-pull {confirm:true}          → pulls from Shovels now (admins / office), within the cap and the budget
 //   contractor-lookup {contractorId}     → the contractor's phone / e-mail … (1 credit the first time, cached after)
 //   zip-search {q, confirm:true}         → Shovels' ZIP search (uses credits; only when asked)
+//   import {source:'shelby'|'mscce'|'other', sourceName?, all?, rows:[{number,type,desc,address,city,zip,contractor,phone,email,value,date}]}
+//                                        → a permit list a person downloaded (Develop 901 / Accela, an MSCCE reply); one per source +
+//                                          permit #; kept even when it does not fit the filters ("Not matching"); all:true shows every row
+//   mscce-get / mscce-preview / mscce-set {cfg} / mscce-send {confirm:true}   → the MSCCE monthly records request (_lib/permit-records.js)
+// list re-checks everything stored with today's filters (owner 11/12: "$1 million+ GC jobs … no residential"): what no longer fits
+// is marked "filtered" and shows only under "Not matching the filters"; a permit made a lead and an "import everything" list stay.
 //   settings-get / settings-set {settings}  (set: admins and the office)
 //   set-state {id, state:'lead'|'dismissed'|'new', leadId?}
 // PERMITS_OFF=1 stops the daily run.
@@ -75,13 +81,23 @@ function shovelsKey(){ return D.env('SHOVELS_API_KEY'); }
 function tag(p, c){ return Object.assign(p, { reasons: c.reasons, hint: c.hint, bucket: c.bucket }); }
 
 /* ── Nashville (free) ── */
+/* the ArcGIS where clause: the date, and — when nothing small is ticked — the minimum value and "commercial or multifamily" right at
+   the source (owner 11/12: "$1 million+ GC jobs … no residential"); _lib/permits.js classify() still checks every permit */
+function nashWhere(S, since){
+  const inc = S.include, parts = ["Date_Issued >= TIMESTAMP '" + since + " 00:00:00'"];
+  const small = inc.repair || inc.roofing || inc.demolition;
+  if (!small && S.minValue > 0) parts.push('Const_Cost >= ' + Math.round(S.minValue));
+  if (!small && !inc.residentialRehab && !inc.residentialNew)
+    parts.push("(Permit_Type_Description LIKE '%Commercial%'" + (inc.multifamily ? " OR Permit_Subtype_Description LIKE '%Multifamily%' OR Permit_Subtype_Description LIKE '%Apartment%' OR Permit_Subtype_Description LIKE '%Condominium%'" : '') + ')');
+  return parts.join(' AND ');
+}
 async function runNashville(S, found, t0){
   const st = { on: true, ok: false, lastRun: nowIso(), read: 0, matched: 0, error: '' };
   const since = centralDay(D.now() - S.maxAgeDays * 864e5);
   const now = D.now();
   try {
     for (let off = 0, page = 0; page < 6; page++) {
-      const q = { where: "Date_Issued >= TIMESTAMP '" + since + " 00:00:00'", outFields: P.NASH_FIELDS.join(','), orderByFields: 'Date_Issued DESC', resultOffset: String(off), resultRecordCount: '1000', returnGeometry: 'false', f: 'json' };
+      const q = { where: nashWhere(S, since), outFields: P.NASH_FIELDS.join(','), orderByFields: 'Date_Issued DESC', resultOffset: String(off), resultRecordCount: '1000', returnGeometry: 'false', f: 'json' };
       const r = await getJson(P.NASH_URL + '?' + new URLSearchParams(q).toString(), {}, 15000);
       if (!r.ok || !r.json) throw new Error('Nashville answered ' + r.status);
       if (r.json.error) throw new Error('Nashville: ' + clip(r.json.error.message || JSON.stringify(r.json.error), 120));
@@ -278,7 +294,7 @@ async function store(found){
   const at = nowIso();
   await D.kvCas(K.LEADS, function(cur){
     const list = arr(cur); const by = {}; list.forEach(function(x){ if (x.key) by[x.key] = x; });
-    let changed = false; added.nashville = 0; added.shovels = 0;
+    let changed = false; Object.keys(added).forEach(function(k){ added[k] = 0; });
     found.forEach(function(p){
       const k = P.keyOf(p), ex = by[k];
       if (ex) {
@@ -296,6 +312,47 @@ async function store(found){
     return list.slice(0, KEEP);
   });
   return added;
+}
+
+/* ── 📥 importing a permit list (the browser reads the file and maps the columns; this stores it) ── */
+const IMPORT_SOURCES = { shelby: 'Shelby County (Develop 901)', mscce: 'MSCCE records' };
+function isoDate(v){
+  const t = s(v); if (!t) return '';
+  if (/^\d{4}-\d{2}-\d{2}/.test(t)) return t.slice(0, 10);
+  let m = /^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})/.exec(t);
+  if (m) { const y = m[3].length === 2 ? '20' + m[3] : m[3]; return y + '-' + String(m[1]).padStart(2, '0') + '-' + String(m[2]).padStart(2, '0'); }
+  if (/^\d{5}(\.\d+)?$/.test(t) && +t > 30000 && +t < 70000) return new Date(Date.UTC(1899, 11, 30) + Math.round(+t) * 864e5).toISOString().slice(0, 10);   /* an Excel day number */
+  const d = Date.parse(t); return isFinite(d) ? new Date(d).toISOString().slice(0, 10) : '';
+}
+function slug(v){ return s(v).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30) || 'list'; }
+function hashKey(t){ return require('crypto').createHash('sha1').update(String(t)).digest('hex').slice(0, 16); }
+async function importRows(body, who){
+  const kind = IMPORT_SOURCES[s(body.source)] ? s(body.source) : 'other';
+  const label = kind === 'other' ? clip(body.sourceName, 60) || 'Imported list' : IMPORT_SOURCES[kind];
+  const src = 'import:' + (kind === 'other' ? slug(label) : kind);
+  const rows = Array.isArray(body.rows) ? body.rows.slice(0, 2000) : [];
+  if (!rows.length) return { ok: false, error: 'No rows to import.' };
+  const S = await settings(), S2 = Object.assign({}, S, { maxAgeDays: 3650 });   /* a list can be weeks old: no age limit on imports */
+  const now = D.now(), found = [], out = { ok: true, read: 0, matched: 0, skipped: 0, source: label };
+  rows.forEach(function(r){
+    r = r && typeof r === 'object' ? r : {};
+    const number = clip(r.number, 60), address = clip(r.address, 160);
+    if (!number && !address) { out.skipped++; return; }
+    const issued = isoDate(r.date), value = (function(){ const n = parseFloat(String(r.value == null ? '' : r.value).replace(/[$,\s]/g, '')); return isFinite(n) && n > 0 ? Math.round(n) : null; })();
+    const p = { src: src, area: clip(r.city, 40) || (kind === 'other' ? label : 'Shelby County'), areaLong: label, id: number || 'h' + hashKey([address, issued, r.type].join('|')), number: number,
+      type: clip(r.type, 120), subtype: '', desc: clip(r.desc, 900), value: value, issued: issued, filed: '', address: address, city: clip(r.city, 60), usState: clip(r.state, 2).toUpperCase() || 'TN',
+      zip: s(r.zip).slice(0, 5), contractor: clip(r.contractor, 160), contractorPhone: clip(r.phone, 40), contractorEmail: /@/.test(s(r.email)) ? clip(r.email, 120) : '', owner: clip(r.owner, 160),
+      status: clip(r.status, 40), imported: { at: nowIso(), by: clip(who.name || who.email, 80) }, link: '' };
+    if (body.all === true) p.keepAll = true;   /* "Import everything": the filters never hide these */
+    out.read++;
+    const c = P.classify(p, S2, now);
+    if (c.match) { out.matched++; found.push(tag(p, c)); }
+    else found.push(Object.assign(p, { reasons: [], hint: 'construction', bucket: c.bucket, nomatch: true, why: c.why }));   /* the office chose this list: kept, under "Not matching the filters" */
+  });
+  const added = await store(found);
+  out.added = (added[src] || 0); out.updated = out.read - out.added;
+  try { await D.kvCas(K.STATUS, function(v){ v = obj(v); const im = obj(v.imports); im[src] = { label: label, at: nowIso(), by: clip(who.name || who.email, 80), read: out.read, matched: out.matched, added: out.added }; v.imports = im; return v; }); } catch (e) {}
+  return out;
 }
 
 /* ── one run ── */
@@ -338,8 +395,14 @@ async function staffAction(body, who, headers){
   const admin = who.admin === true || who.office === true;
   if (action === 'list') {
     const [items, st, S] = await Promise.all([D.kvGet(K.LEADS), D.kvGet(K.STATUS), settings()]);
-    const all = arr(items), n = { new: 0, lead: 0, dismissed: 0 };
-    all.forEach(function(x){ n[x.state] = (n[x.state] || 0) + 1; });
+    const all = arr(items), n = { new: 0, lead: 0, dismissed: 0, filtered: 0 };
+    /* the filters of today on everything stored: what no longer fits is marked "filtered" (shown only under "Not matching");
+       a list imported with "import everything" and a permit a person made a lead stay as they are */
+    const Sx = Object.assign({}, S, { maxAgeDays: 3650 }), nowMs = D.now();
+    all.forEach(function(x){
+      if (!x.keepAll && x.state !== 'lead') { const c = P.classify(x, Sx, nowMs); if (c.match) { x.reasons = c.reasons; x.hint = c.hint; x.bucket = c.bucket; delete x.nomatch; delete x.filtered; } else { x.filtered = c.why; } }
+      if (x.filtered || x.nomatch) n.filtered++; else n[x.state] = (n[x.state] || 0) + 1;
+    });
     const stO = obj(st); if (stO.shovels) { stO.shovels = Object.assign({}, stO.shovels, { spent30: spent30(stO.shovels.spent), left: budgetLeft(S, stO.shovels) }); delete stO.shovels.zips; }
     return reply(200, headers, { ok: true, items: all.slice(0, Math.min(LIST_MAX, +body.limit || LIST_MAX)), total: all.length, counts: n, status: stO, settings: S,
       active: { nashville: S.nashville.on, shovels: !!shovelsKey() && S.shovels.on }, shovelsConfigured: !!shovelsKey(), admin: admin });
@@ -370,7 +433,30 @@ async function staffAction(body, who, headers){
     const r = await zipSearch(body.q);
     return reply(r.ok ? 200 : (r.code || 400), headers, r);
   }
-  if (action === 'settings-get') return reply(200, headers, { ok: true, settings: await settings(), defaults: P.defaults(), include: P.INCLUDE, zipGroups: P.ZIP_GROUPS, tags: P.SHOVELS_TAGS, admin: admin, shovelsConfigured: !!shovelsKey() });
+  if (action === 'settings-get') return reply(200, headers, { ok: true, settings: await settings(), defaults: P.defaults(), include: P.INCLUDE, uses: P.USES.map(function(u){ return [u[0], u[1]]; }), zipGroups: P.ZIP_GROUPS, tags: P.SHOVELS_TAGS, admin: admin, shovelsConfigured: !!shovelsKey(), dodgeConfigured: !!D.env('DODGE_API_KEY') });
+  if (action === 'import') {   /* 📥 a permit list a person downloaded (Develop 901 / Accela, an MSCCE records reply …) */
+    if (!admin) return reply(403, headers, { ok: false, error: 'Only an owner, an admin or the office can import permits.' });
+    const r = await importRows(body, who);
+    return reply(r.ok ? 200 : 400, headers, r);
+  }
+  if (/^mscce-/.test(action)) {   /* the MSCCE monthly public-records request (Owner setup) */
+    const R = require('./_lib/permit-records.js');
+    if (action === 'mscce-get' || action === 'mscce-preview') { const c = await R.cfg(), m = R.letter(c); return reply(200, headers, { ok: true, cfg: c, preview: { subject: m.subject, text: m.text, month: m.month }, phone: R.MSCCE_PHONE, replyInbox: R.REPLY_INBOX, mailReady: !!D.env('RESEND_API_KEY') }); }
+    if (!admin) return reply(403, headers, { ok: false, error: 'Only an owner, an admin or the office can change the MSCCE request.' });
+    if (action === 'mscce-set') {
+      let out = null;
+      await D.kvCas(R.KEY, function(v){ const cur = R.clean(v), nv = body.cfg && typeof body.cfg === 'object' ? body.cfg : {};
+        out = R.clean(Object.assign({}, cur, { on: nv.on === true, to: nv.to == null ? cur.to : nv.to, from: nv.from == null ? cur.from : nv.from, replyTo: nv.replyTo == null ? cur.replyTo : nv.replyTo, sent: cur.sent, replies: cur.replies, updatedAt: nowIso(), updatedBy: clip(who.name || who.email, 80) }));
+        if (out.on && !out.to) out.on = false;   /* never on without an address */
+        return out; });
+      return reply(200, headers, { ok: true, cfg: out });
+    }
+    if (action === 'mscce-send') {
+      if (body.confirm !== true) return reply(400, headers, { ok: false, error: 'Look at the preview first.' });
+      const r = await R.send({ manual: true, by: who.name || who.email });
+      return reply(r.ok ? 200 : 400, headers, r);
+    }
+  }
   if (action === 'settings-set') {
     if (!admin) return reply(403, headers, { ok: false, error: 'Only an owner, an admin or the office can change the permit filters.' });
     const cur = await settings(), nv = body.settings && typeof body.settings === 'object' ? body.settings : {};
@@ -404,11 +490,11 @@ exports.handler = async function(event){
   try {
     if (event.httpMethod === 'GET' && q.ping === '1') return reply(200, headers, { ok: true, service: 'GrayCo permit watch' });
     if (event.httpMethod !== 'POST') return reply(405, headers, { ok: false, error: 'Method not allowed' });
-    if (String(event.body || '').length > 100000) return reply(413, headers, { ok: false, error: 'Too big' });
+    if (String(event.body || '').length > 4000000) return reply(413, headers, { ok: false, error: 'Too big — import the list in smaller parts.' });
     let body = {}; try { body = JSON.parse(event.body || '{}') || {}; } catch (e) { return reply(400, headers, { ok: false, error: 'Bad request' }); }
     const who = await D.staffAuth(event); if (!who || !who.ok) return reply((who && who.code) || 401, headers, { ok: false, error: (who && who.error) || 'Sign in first.' });
     return await staffAction(body, who, headers);
   } catch (e) { return reply(500, headers, { ok: false, error: 'Something went wrong: ' + clip(e && e.message || e, 120) }); }
 };
 exports.run = run;
-exports._test = { D: D, K: K, run: run, store: store, runNashville: runNashville, runShovels: runShovels, plan: plan, budgetLeft: budgetLeft, spent30: spent30, contractorLookup: contractorLookup, centralDay: centralDay, STOP: STOP, KEEP: KEEP };
+exports._test = { nashWhere: nashWhere, importRows: importRows, D: D, K: K, run: run, store: store, runNashville: runNashville, runShovels: runShovels, plan: plan, budgetLeft: budgetLeft, spent30: spent30, contractorLookup: contractorLookup, centralDay: centralDay, STOP: STOP, KEEP: KEEP };

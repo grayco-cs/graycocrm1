@@ -8,6 +8,7 @@ const OS = require(path.join(__dirname, '../../netlify/functions/owner-setup.js'
 const R = []; const ok = (n, c, i) => { R.push(!!c); console.log((c ? 'PASS ' : 'FAIL ') + n + (c || i === undefined ? '' : '  ' + JSON.stringify(i).slice(0, 400))); };
 
 const NOW = Date.parse('2026-11-12T14:00:00Z');
+const BROAD = { minValue: 25000, include: { commercialNew: true, commercialRehab: true, multifamily: true, residentialRehab: true, demolition: true, roofing: true, repair: true, residentialNew: false } };
 const daysAgo = n => NOW - n * 864e5;
 const isoAgo = n => new Date(daysAgo(n)).toISOString().slice(0, 10);
 /* ── made-up Nashville rows (ArcGIS "attributes") ── */
@@ -46,7 +47,7 @@ const SHOV = {
 /* ── the rig: an in-memory database + mocked fetch ── */
 function rig(o){
   o = o || {};
-  const kv = {}; const calls = []; let clock = NOW;
+  const kv = o.noSettings ? {} : { gc_permit_settings: P.clean(BROAD) }; const calls = []; let clock = NOW;
   const D = W._test.D;
   D.now = () => clock;
   D.env = k => (o.env && o.env[k] != null ? String(o.env[k]) : '');
@@ -82,7 +83,7 @@ async function act(token, body){ const r = await W.handler(ev(token, body)); ret
 
 (async () => {
   /* ── 1. the filter, one permit at a time ── */
-  const S = P.defaults();
+  const S = P.clean(BROAD);   /* the broad filter (restoration words, roofs, demolitions, homes from $25k) — the defaults are large commercial only, tested below */
   const c = i => P.classify(P.fromNashville(NASH_ROWS[i]), S, NOW);
   ok('the adapter reads a Nashville row (permit #, type, value, issued day, address, contractor, link)', (() => { const p = P.fromNashville(NASH_ROWS[0]); return p.src === 'nashville' && p.number === NASH_ROWS[0].attributes.Permit__ && p.value === 480000 && p.issued === isoAgo(2) && p.address === '1 Sample Plaza' && p.contractor === 'Example Builders LLC' && /Permit__/.test(decodeURIComponent(p.link)); })());
   ok('commercial rehab $480k matches → "Commercial rehab $480k", Construction', c(0).match && c(0).reasons.includes('Commercial rehab $480k') && c(0).hint === 'construction', c(0));
@@ -99,7 +100,7 @@ async function act(token, body){ const r = await W.handler(ev(token, body)); ret
   ok('"fire alarm / sprinkler" at a fire station is NOT fire damage (Construction)', c(11).match && !c(11).reasons.some(r => /fire\/smoke/.test(r)) && c(11).hint === 'construction', c(11));
   ok('"tree fell on house during storm" $3k → 🌪, Mitigation', c(12).match && c(12).reasons.includes('🌪 storm/hail/wind words') && c(12).hint === 'mitigation', c(12));
   ok('asbestos abatement → ☣, Environmental', c(13).match && c(13).reasons.includes('☣ mold/asbestos/lead words') && c(13).hint === 'environmental', c(13));
-  ok('"in the event of a flood" on a new warehouse is not a flood → Commercial new $5.2M', c(14).match && c(14).reasons[0] === 'Commercial new $5.2M' && !c(14).reasons.some(r => /water/.test(r)), c(14));
+  ok('"in the event of a flood" on a new warehouse is not a flood → Commercial new $5.2M', c(14).match && c(14).reasons.includes('Commercial new $5.2M') && c(14).reasons.includes('🏭 Industrial / warehouse') && !c(14).reasons.some(r => /water/.test(r)), c(14));
   ok('"replace rooftop units" is HVAC work in a commercial rehab, not a roof', c(15).match && c(15).bucket === 'commercialRehab' && !c(15).reasons.some(r => /^Roof/.test(r)), c(15));
   const sp = P.fromShovels(SHOV['38671'][0], '38671'), sc = P.classify(sp, S, NOW);
   ok('Shovels adapter: cents → dollars, address object, owner, year built, area', sp.value === 20000 && sp.address === '20 Pretend Blvd' && sp.city === 'Southaven' && sp.usState === 'MS' && sp.zip === '38671' && sp.owner === 'SAMPLE OWNER TRUST' && sp.yearBuilt === 1965 && /DeSoto/.test(sp.areaLong), sp);
@@ -108,10 +109,10 @@ async function act(token, body){ const r = await W.handler(ev(token, body)); ret
   ok('a remodel in a 1950 house → "Built 1950 (pre-1978 …)" chip, Environmental hint', lr.match && lr.reasons.some(r => /^Built 1950/.test(r)) && lr.hint === 'environmental', lr);
   ok('Shovels electrical-only (tags) → out', !P.classify(P.fromShovels(SHOV['38671'][1], '38671'), S, NOW).match);
   ok('Shovels pool → out', !P.classify(P.fromShovels(SHOV['38117'][2], '38117'), S, NOW).match);
-  const S2 = P.clean({ include: { residentialNew: true }, minValue: 100000, exclude: ['remodel'] });
+  const S2 = P.clean(Object.assign({}, BROAD, { include: Object.assign({}, BROAD.include, { residentialNew: true }), minValue: 100000, exclude: ['remodel'] }));
   ok('settings: a new house is in when Residential new is ticked', P.classify(P.fromNashville(NASH_ROWS[6]), S2, NOW).match);
   ok('settings: an excluded word in the type / subtype takes the permit out', !P.classify({ src: 'x', id: '1', type: 'Remodel', desc: '', value: 900000, issued: isoAgo(1) }, S2, NOW).match);
-  ok('settings: a higher minimum value takes the $50k-style remodel out', !P.classify(P.fromNashville(NASH_ROWS[5]), P.clean({ minValue: 100000 }), NOW).match);
+  ok('settings: a higher minimum value takes the $50k-style remodel out', !P.classify(P.fromNashville(NASH_ROWS[5]), P.clean(Object.assign({}, BROAD, { minValue: 100000 })), NOW).match);
   ok('settings clean: ZIP list from text, bad ZIPs dropped, numbers clamped', (() => { const x = P.clean({ shovels: { zips: '38117, 3811, abcde 72201 38117', perRun: 999999, tags: 'roofing, -solar, BAD!TAG', q: 'x'.repeat(80) }, maxAgeDays: 0 }); return x.shovels.zips.join() === '38117,72201' && x.shovels.perRun === 1000 && x.maxAgeDays === 1 && x.shovels.tags.join() === 'roofing,-solar' && x.shovels.q.length <= 50 && P.clean({}).shovels.on === false && P.clean({}).shovels.auto === false && P.clean({}).shovels.budget === 500 && P.clean({}).shovels.perRun === 25; })());
   ok('the default ZIP list covers Shelby Co. TN, DeSoto Co. MS, Little Rock / NLR and Jonesboro', ['38103', '38138', '38017', '38016', '38002', '38053', '38671', '38654', '38637', '38632', '72201', '72116', '72401'].every(z => P.DEFAULT_ZIPS.includes(z)) && !P.DEFAULT_ZIPS.some(z => /^37/.test(z)));
 
@@ -161,7 +162,7 @@ async function act(token, body){ const r = await W.handler(ev(token, body)); ret
   ss = g.kv.gc_permit_status.shovels;
   const sCalls = g.calls.filter(x => x.host === 'api.shovels.ai');
   ok('Pull from Shovels now: /usage, then /permits/search per ZIP with the X-API-Key header', a3.code === 200 && sCalls.every(x => x.key === 'test-key-123') && sCalls[0].path === '/v2/usage' && ['38117', '38671', '72201'].every(z => recs().some(x => new URLSearchParams(x.q).get('geo_id') === z)), sCalls.map(x => x.path));
-  ok('the search carries what was set in the CRM: tags (minus solar / pool / HVAC / water heater), dates, small pages', (() => { const q = new URLSearchParams(recs()[0].q); return q.getAll('permit_tags').join() === '-solar,-pool_and_hot_tub,-hvac,-water_heater' && q.get('permit_from') === W._test.centralDay(NOW - 14 * 864e5) && q.get('permit_to') === W._test.centralDay(NOW) && +q.get('size') <= 50 && !q.get('permit_q') && !q.get('permit_min_job_value'); })(), recs()[0].q);
+  ok('the search carries what was set in the CRM: tags (minus solar / pool / HVAC / water heater), $1M+ (in cents), dates, small pages', (() => { const q = new URLSearchParams(recs()[0].q); return q.getAll('permit_tags').join() === '-solar,-pool_and_hot_tub,-hvac,-water_heater' && q.get('permit_from') === W._test.centralDay(NOW - 14 * 864e5) && q.get('permit_to') === W._test.centralDay(NOW) && +q.get('size') <= 50 && !q.get('permit_q') && q.get('permit_min_job_value') === '100000000'; })(), recs()[0].q);
   ok('credits counted: 6 records = 6 credits (our own ledger), 494 left; Shovels /usage shown', ss.spentRun === 6 && ss.spent30 === 6 && ss.left === 494 && ss.usage.used === 120 && ss.read === 6 && ss.matched === 4, ss);
   const shItems = g.kv.gc_permit_leads.filter(x => x.src === 'shovels');
   ok('everything paid for is kept: 4 matching + 2 "pulled, not matching" (pool, electrical)', shItems.length === 6 && shItems.filter(x => x.nomatch).length === 2 && shItems.filter(x => !x.nomatch).length === 4, shItems.map(x => [x.desc, !!x.nomatch]));
@@ -255,7 +256,7 @@ async function act(token, body){ const r = await W.handler(ev(token, body)); ret
   ok('staff: Run now runs Nashville; Shovels stays manual (no credits spent)', a.code === 200 && a.body.ok && a.body.status.nashville.ok && a.body.status.shovels.active && a.body.status.shovels.manualOnly && !g.calls.some(x => x.path === '/v2/permits/search'), a.body.status);
   await act('admin', { action: 'shovels-pull', confirm: true });
   a = await act('staff', { action: 'list' });
-  ok('staff: list → items, status per source, settings, Shovels active', a.code === 200 && a.body.items.length === want1 + 3 && a.body.status.nashville && a.body.active.shovels === true && a.body.shovelsConfigured === true && a.body.counts.new === want1 + 3 && a.body.items.filter(x => x.nomatch).length === 1, { n: a.body.items && a.body.items.length, active: a.body.active });
+  ok('staff: list → items, status per source, settings, Shovels active', a.code === 200 && a.body.items.length === want1 + 3 && a.body.status.nashville && a.body.active.shovels === true && a.body.shovelsConfigured === true && a.body.counts.new === want1 + 2 && a.body.counts.filtered === 1 && a.body.items.filter(x => x.nomatch).length === 1, { n: a.body.items && a.body.items.length, active: a.body.active });
   a = await act('staff', { action: 'settings-set', settings: { minValue: 1 } });
   ok('staff cannot change the filters (403)', a.code === 403);
   a = await act('admin', { action: 'settings-set', settings: { minValue: 75000, maxAgeDays: 30, include: { residentialNew: true, multifamily: false }, exclude: ['sign', 'pool'], shovels: { zips: '38117 38138', perRun: 40, budget: 300, auto: true } } });
@@ -263,7 +264,7 @@ async function act(token, body){ const r = await W.handler(ev(token, body)); ret
   a = await act('admin', { action: 'settings-set', settings: { minValue: 75000 } });
   ok('⚙ Filters saving only its part keeps the Shovels settings (merge)', g.kv.gc_permit_settings.shovels.perRun === 40 && g.kv.gc_permit_settings.shovels.on === true && g.kv.gc_permit_settings.maxAgeDays === 30, g.kv.gc_permit_settings.shovels);
   a = await act('staff', { action: 'settings-get' });
-  ok('settings round trip: settings-get gives back what was saved + the defaults and the labels', a.body.ok && a.body.settings.minValue === 75000 && a.body.settings.maxAgeDays === 30 && a.body.settings.include.residentialNew === true && a.body.settings.shovels.perRun === 40 && a.body.settings.shovels.budget === 300 && a.body.settings.shovels.auto === true && a.body.defaults.minValue === 25000 && a.body.include.length === P.INCLUDE.length && a.body.zipGroups.length === 7 && a.body.tags.length > 5, a.body.settings);
+  ok('settings round trip: settings-get gives back what was saved + the defaults and the labels', a.body.ok && a.body.settings.minValue === 75000 && a.body.settings.maxAgeDays === 30 && a.body.settings.include.residentialNew === true && a.body.settings.shovels.perRun === 40 && a.body.settings.shovels.budget === 300 && a.body.settings.shovels.auto === true && a.body.defaults.minValue === 1000000 && a.body.include.length === P.INCLUDE.length && a.body.zipGroups.length === 7 && a.body.tags.length > 5, a.body.settings);
   const k0 = g.kv.gc_permit_leads[1].key;
   a = await act('staff', { action: 'set-state', id: k0, state: 'lead', leadId: 'LPMT_abc' });
   ok('set-state lead → state, who, the lead id', a.code === 200 && g.kv.gc_permit_leads[1].state === 'lead' && g.kv.gc_permit_leads[1].leadId === 'LPMT_abc' && g.kv.gc_permit_leads[1].stateBy === 'Pat PM', g.kv.gc_permit_leads[1]);
@@ -277,8 +278,63 @@ async function act(token, body){ const r = await W.handler(ev(token, body)); ret
   ok('a later run keeps the person\'s state and does not double the list', g.kv.gc_permit_leads.filter(x => x.key === k0).length === 1 && g.kv.gc_permit_leads.find(x => x.key === k0).state === 'new');
   ok('GET ?ping=1 answers without a sign-in', JSON.parse((await W.handler({ httpMethod: 'GET', queryStringParameters: { ping: '1' }, headers: {} })).body).ok === true);
 
+  /* ── 4b. owner 11/12: "$1 million+ GC jobs … no residential" — the defaults, both sides of the line ── */
+  { const D0 = P.defaults(), cl = o => P.classify(Object.assign({ src: 'nashville', id: 'X', issued: isoAgo(1) }, o), D0, NOW);
+    ok('defaults: $1,000,000 minimum; commercial new / rehab and multifamily on; residential, demolition, roofing, repair words off', D0.minValue === 1000000 && D0.include.commercialNew && D0.include.commercialRehab && D0.include.multifamily && !D0.include.residentialRehab && !D0.include.residentialNew && !D0.include.demolition && !D0.include.roofing && !D0.include.repair);
+    const hotel = cl({ type: 'Building Commercial - New', subtype: 'Hotel / Motel', value: 12000000, desc: 'new 140 room hotel' });
+    ok('a $12M new hotel → in, "🏨 Hotel" + "Commercial new $12M"', hotel.match && hotel.reasons.includes('🏨 Hotel') && hotel.reasons.includes('Commercial new $12M'), hotel);
+    ok('the same hotel at $999,999 → out (under $1M)', !cl({ type: 'Building Commercial - New', subtype: 'Hotel / Motel', value: 999999 }).match);
+    ok('exactly $1,000,000 → in', cl({ type: 'Building Commercial - Rehab', subtype: 'General Office, Professional Services', value: 1000000 }).match);
+    const sen = cl({ type: 'Building Commercial - Rehab', subtype: 'Nursing Home', desc: 'assisted living memory care wing renovation', value: 2400000 });
+    ok('senior living $2.4M → in, "🧓 Senior living"', sen.match && sen.reasons.includes('🧓 Senior living'), sen);
+    const hos = cl({ type: 'Building Commercial - Addition', subtype: 'Hospital, Institutional I-2', value: 8000000 });
+    ok('hospital addition $8M → in, "🏥 Hospital / medical"', hos.match && hos.reasons.includes('🏥 Hospital / medical'), hos);
+    const mf = cl({ type: 'Building Residential - New', subtype: 'Multifamily, Apt / Twnhome > 5 Unit Bldg', value: 6500000 });
+    ok('a $6.5M apartment building filed as "Residential - New" → in (multifamily)', mf.match && mf.bucket === 'multifamily', mf);
+    ok('a $1.5M single-family house → out (no residential)', !cl({ type: 'Building Residential - New', subtype: 'Single Family Residence', value: 1500000 }).match);
+    ok('a $1.1M duplex → out (two-family is residential)', !cl({ type: 'Building Residential - New', subtype: 'Duplex', value: 1100000 }).match);
+    ok('a $2M residential pool / a sign / a tent → out', !cl({ type: 'Building Residential - Rehab', subtype: 'Accessory Structure, Pools - Residential', value: 2000000 }).match && !cl({ type: 'Building Sign Permit', value: 2000000 }).match && !cl({ type: 'Building Commercial - New', subtype: 'Tent', desc: 'tent for event', value: 2000000 }).match);
+    ok('a $9k fire repair → out by default (repair words are off), in when they are ticked', !cl({ type: 'Building Commercial - Fire Damage', value: 9000 }).match && P.classify({ src: 'n', id: 'f', type: 'Building Commercial - Fire Damage', value: 9000, issued: isoAgo(1) }, P.clean({ include: { repair: true } }), NOW).match);
+    ok('a $3M demolition → out by default (demolition is off)', !cl({ type: 'Building Demolition Permit', subtype: 'Demolition Permit - Commercial', value: 3000000 }).match);
+    ok('a $1.2M commercial re-roof → in as a commercial job', cl({ type: 'Building Commercial - Roofing / Siding', subtype: 'Warehouse, Storage S-1', value: 1200000 }).match);
+    ok('no value listed → out at $1M', !cl({ type: 'Building Commercial - New', value: null }).match);
+    const noHotel = P.clean({ uses: { hotel: false } });
+    ok('kinds of building are editable: hotels left out → the hotel is out, an office is still in', !P.classify(Object.assign({ src: 'n', id: 'h', issued: isoAgo(1) }, { type: 'Building Commercial - New', subtype: 'Hotel / Motel', value: 12000000 }), noHotel, NOW).match && P.classify({ src: 'n', id: 'o', issued: isoAgo(1), type: 'Building Commercial - New', subtype: 'General Office, Professional Services', value: 3000000 }, noHotel, NOW).match);
+    ok('the Nashville query asks ArcGIS for $1M+ commercial / multifamily only', W._test.nashWhere(D0, '2026-11-01') === "Date_Issued >= TIMESTAMP '2026-11-01 00:00:00' AND Const_Cost >= 1000000 AND (Permit_Type_Description LIKE '%Commercial%' OR Permit_Subtype_Description LIKE '%Multifamily%' OR Permit_Subtype_Description LIKE '%Apartment%' OR Permit_Subtype_Description LIKE '%Condominium%')", W._test.nashWhere(D0, '2026-11-01'));
+    ok('…with the small kinds ticked (repairs, roofs, demolitions) it asks by date only (classify filters)', W._test.nashWhere(P.clean(BROAD), '2026-11-01') === "Date_Issued >= TIMESTAMP '2026-11-01 00:00:00'");
+    /* already stored rows follow today's filters */
+    const gq = rig({ noSettings: true });
+    gq.kv.gc_permit_leads = [
+      { key: 'nashville:BIG', src: 'nashville', id: 'BIG', type: 'Building Commercial - New', subtype: 'Hotel / Motel', value: 20000000, issued: isoAgo(2), state: 'new', reasons: ['old'] },
+      { key: 'nashville:SMALL', src: 'nashville', id: 'SMALL', type: 'Building Commercial - Rehab', subtype: 'General Office', value: 60000, issued: isoAgo(2), state: 'new', reasons: ['Commercial rehab $60k'] },
+      { key: 'nashville:HOUSE', src: 'nashville', id: 'HOUSE', type: 'Building Residential - Rehab', value: 80000, desc: 'kitchen remodel', issued: isoAgo(3), state: 'new', reasons: ['Residential remodel $80k'] },
+      { key: 'nashville:LEAD', src: 'nashville', id: 'LEAD', type: 'Building Residential - Rehab', value: 50000, issued: isoAgo(3), state: 'lead', reasons: ['x'] },
+      { key: 'import:shelby:ALL', src: 'import:shelby', id: 'ALL', type: 'Residential Alteration', value: 12000, issued: isoAgo(30), state: 'new', keepAll: true, reasons: [] }];
+    const lq = await act('staff', { action: 'list' }); const by = k => lq.body.items.find(x => x.key === k);
+    ok('stored rows below $1M or residential are hidden ("filtered"); the $20M hotel shows with fresh chips', !by('nashville:BIG').filtered && by('nashville:BIG').reasons.includes('🏨 Hotel') && /under \$1M/.test(by('nashville:SMALL').filtered) && by('nashville:HOUSE').filtered && lq.body.counts.filtered === 2 && lq.body.counts.new === 2, lq.body.items.map(x => [x.key, x.filtered || '', x.reasons]));
+    ok('…a permit someone made a lead, and a list imported with "everything", stay', !by('nashville:LEAD').filtered && !by('import:shelby:ALL').filtered); }
+
+  /* ── 4c. 📥 importing a permit list (Develop 901 / MSCCE records) ── */
+  { const gi = rig({ noSettings: true });
+    const rows = [{ number: 'BLDC-0001', type: 'Commercial New Construction', desc: 'new 4 story hotel', address: '100 Example Pkwy', city: 'Memphis', zip: '38103', contractor: 'Sample General Contractors', phone: '555-010-0300', email: 'bids@samplegc.example', value: '$14,500,000', date: '10/02/2026' },
+      { number: 'BLDR-0002', type: 'Residential Alteration', desc: 'bath remodel', address: '5 Mock St', city: 'Bartlett', zip: '38134', contractor: 'Example Remodel', value: '35000', date: '2026-10-05' },
+      { number: 'BLDC-0003', type: 'Commercial Alteration', desc: 'medical office build-out', address: '7 Pretend Ave', city: 'Germantown', zip: '38138', contractor: 'Mock Builders', value: '1250000', date: 46300 },
+      { number: '', address: '' }];
+    ok('import needs an admin / the office', (await act('staff', { action: 'import', source: 'shelby', rows })).code === 403);
+    let im = await act('admin', { action: 'import', source: 'shelby', rows });
+    const L = gi.kv.gc_permit_leads || [], f = k => L.find(x => x.key === k);
+    ok('import (Shelby County, Develop 901): 3 read, 1 empty skipped, 2 match ($1M+ commercial), all 3 kept', im.code === 200 && im.body.read === 3 && im.body.skipped === 1 && im.body.matched === 2 && im.body.added === 3 && L.length === 3 && im.body.source === 'Shelby County (Develop 901)', im.body);
+    const h = f('import:shelby:BLDC-0001') || {};
+    ok('…the row: value $14.5M, issued 2026-10-02, contractor + phone + e-mail, area, source tag, chips', h.value === 14500000 && h.issued === '2026-10-02' && h.contractor === 'Sample General Contractors' && h.contractorPhone === '555-010-0300' && h.contractorEmail === 'bids@samplegc.example' && h.areaLong === 'Shelby County (Develop 901)' && h.area === 'Memphis' && h.reasons.includes('🏨 Hotel'), h);
+    ok('…an Excel day number becomes a date (46300 → 2026-10-05); the bath remodel is kept but not matching', (f('import:shelby:BLDC-0003') || {}).issued === '2026-10-05' && (f('import:shelby:BLDR-0002') || {}).nomatch === true);
+    im = await act('admin', { action: 'import', source: 'shelby', rows });
+    ok('importing the same list again adds nothing (source + permit #)', im.body.added === 0 && (gi.kv.gc_permit_leads || []).length === 3, im.body);
+    im = await act('admin', { action: 'import', source: 'mscce', all: true, rows: [{ number: 'BLDC-0001', type: 'Commercial', address: '100 Example Pkwy', value: '14500000', date: '2026-10-02' }, { number: 'R-9', type: 'Residential Alteration', address: '9 Mock St', value: '9000', date: '2026-10-03' }] });
+    ok('MSCCE records is its own source (same permit # from another source is another row); "import everything" keeps even small rows visible', im.body.added === 2 && (gi.kv.gc_permit_leads || []).find(x => x.key === 'import:mscce:R-9').keepAll === true && im.body.source === 'MSCCE records', im.body);
+    ok('no alerts from an import: only gc_permit_* keys', Object.keys(gi.kv).every(k => /^gc_permit_/.test(k)), Object.keys(gi.kv)); }
+
   /* ── 5. 🔧 Owner setup sees the keys ── */
-  const keep = {}; ['SHOVELS_API_KEY', 'GDRIVE_SA_JSON', 'GDRIVE_ROOT_ID', 'SUPABASE_URL', 'SUPABASE_SERVICE_KEY'].forEach(k => { keep[k] = process.env[k]; delete process.env[k]; });
+  const keep = {}; ['DODGE_API_KEY', 'SHOVELS_API_KEY', 'GDRIVE_SA_JSON', 'GDRIVE_ROOT_ID', 'SUPABASE_URL', 'SUPABASE_SERVICE_KEY'].forEach(k => { keep[k] = process.env[k]; delete process.env[k]; });
   OS._test.D.sb = async () => ({ ok: false, status: 503, json: async () => null }); OS._test.D.kvGet = async () => null; OS._test.D.fetch = async () => ({ status: 503 });
   let ch = await OS._test.checks();
   ok('owner-setup: shovels_key / gdrive are false without the keys', ch.shovels_key === false && ch.gdrive === false, ch);
@@ -288,11 +344,73 @@ async function act(token, body){ const r = await W.handler(ev(token, body)); ret
   process.env.GDRIVE_ROOT_ID = 'abc';
   ch = await OS._test.checks();
   ok('owner-setup: gdrive true with both', ch.gdrive === true);
+  process.env.DODGE_API_KEY = 'd'; ch = await OS._test.checks(); delete process.env.DODGE_API_KEY;
+  ok('owner-setup: dodge_key true with DODGE_API_KEY', ch.dodge_key === true && (await OS._test.checks()).dodge_key === false);
   Object.keys(keep).forEach(k => { if (keep[k] == null) delete process.env[k]; else process.env[k] = keep[k]; });
   /* netlify.toml has the daily schedule */
   const toml = require('fs').readFileSync(path.join(__dirname, '../../netlify.toml'), 'utf8');
   ok('netlify.toml schedules permit-watch-scheduled once a day, early morning Central', /\[functions\."permit-watch-scheduled"\]\s*\n\s*schedule = "23 11 \* \* \*"/.test(toml));
 
+  /* ── 6. Shelby County without a feed: the weekly Develop 901 office task, the MSCCE monthly records e-mail ── */
+  { const PR = require(path.join(__dirname, '../../netlify/functions/_lib/permit-records.js'));
+    const kv = {}, todos = [], mails = []; let clock = Date.parse('2026-11-16T15:00:00Z');   /* a Monday, 9 AM Central */
+    let envR = { RESEND_API_KEY: 're_test' }, resendBody = { id: 'em_1' };
+    PR.D.now = () => clock; PR.D.env = k => envR[k] || '';
+    PR.D.kvGet = async k => (k in kv ? JSON.parse(JSON.stringify(kv[k])) : null);
+    PR.D.kvCas = async (k, f) => { const n = f(k in kv ? JSON.parse(JSON.stringify(kv[k])) : null); if (n !== undefined) kv[k] = JSON.parse(JSON.stringify(n)); return { ok: true }; };
+    PR.D.todo = async (id, label, o) => { if (todos.some(x => x.id === id)) return false; todos.push({ id, label, note: o && o.note, by: o && o.by }); return true; };
+    PR.D.fetch = async (u, init) => { mails.push({ u, body: JSON.parse(init.body) }); return { ok: true, status: 200, json: async () => resendBody }; };
+    let w = await PR.weeklyTask();
+    ok('Monday: one Office To-Do "Download new Shelby County permits from Develop 901 … import them" with the link and steps', w.made && todos.length === 1 && /Develop 901/.test(todos[0].label) && todos[0].note.includes('https://aca-prod.accela.com/SHELBYCO') && /Import a permit list/.test(todos[0].note) && /office manager/.test(todos[0].by), todos);
+    clock += 3600e3; w = await PR.weeklyTask();
+    ok('…once a week (a second run the same week adds nothing)', !w.made && todos.length === 1);
+    clock = Date.parse('2026-11-17T15:00:00Z'); w = await PR.weeklyTask();
+    ok('…not on other days', w.skipped === 'not Monday' && todos.length === 1);
+    clock = Date.parse('2026-11-23T15:00:00Z'); await PR.weeklyTask();
+    ok('…next Monday: the next one', todos.length === 2 && todos[1].id !== todos[0].id, todos.map(x => x.id));
+    ok('MSCCE request: OFF and no address by default', PR.clean({}).on === false && PR.clean({}).to === '' && /@grayco-cs\.com/.test(PR.clean({}).from));
+    clock = Date.parse('2026-12-02T15:00:00Z');
+    const L = PR.letter(PR.clean({}));
+    ok('the letter asks for last month\'s permits (Nov 1 – Nov 30), Excel / CSV, contractor name and phone, under the TN Public Records Act', /November 2026/.test(L.subject) && /11\/1\/2026 through 11\/30\/2026/.test(L.text) && /Excel or CSV/.test(L.text) && /contractor's name and phone/.test(L.text) && /10-7-503/.test(L.text) && L.month === '2026-11', L);
+    let m = await PR.monthly();
+    ok('monthly run with the request off → nothing sent', m.skipped === 'off' && !mails.length);
+    kv[PR.KEY] = { on: true, to: '' };
+    ok('cannot send without an address ("call 901-222-8300")', /901-222-8300/.test((await PR.send({ manual: true })).error) && !mails.length);
+    kv[PR.KEY] = { on: true, to: 'records@example.gov' };
+    clock = Date.parse('2026-12-02T11:00:00Z');   /* 5 AM Central */
+    ok('…outside office hours it waits', (await PR.monthly()).skipped === 'outside office hours' && !mails.length);
+    clock = Date.parse('2026-12-02T15:00:00Z');
+    m = await PR.monthly();
+    ok('on + address, the 2nd, 9 AM: ONE e-mail via Resend to the records address, replies to the office and permits@in', m.ok && mails.length === 1 && mails[0].body.to[0] === 'records@example.gov' && mails[0].body.reply_to.includes('permits@in.grayco-cs.com') && mails[0].body.reply_to.includes('office@grayco-cs.com') && /Public records request/.test(mails[0].body.subject), mails[0] && mails[0].body);
+    m = await PR.monthly();
+    ok('…once a month', m.skipped === 'sent this month' && mails.length === 1);
+    clock = Date.parse('2026-12-12T15:00:00Z'); kv[PR.KEY].sent = {};
+    ok('…after the 10th it waits for next month', (await PR.monthly()).skipped === 'after the 10th');
+    clock = Date.parse('2027-01-04T15:00:00Z'); resendBody = { paused: true, skipped: 'data-entry mode' };
+    m = await PR.monthly();
+    ok('⏸ data-entry mode: the e-mail is held, recorded as held, tried again the next day', m.held === true && !(kv[PR.KEY].sent['2026-12'] || {}).ok);
+    resendBody = { id: 'em_2' }; clock += 864e5; m = await PR.monthly();
+    ok('…next day it goes', m.ok && kv[PR.KEY].sent['2026-12'].ok === true);
+    const rep = await PR.onReply({ id: 'in_77', from: { email: 'clerk@example.gov' }, subject: 'RE: Public records request', files: [{ name: 'permits_dec.xlsx' }] });
+    ok('a reply to permits@in → Office To-Do "MSCCE permit list arrived — import it" (file name in the note)', rep.made && /MSCCE permit list arrived — import it/.test(todos[todos.length - 1].label) && /permits_dec\.xlsx/.test(todos[todos.length - 1].note) && kv[PR.KEY].replies.length === 1);
+    ok('bid-inbox hands permits@in.grayco-cs.com mail to it (before every other inbox)', PR.isReplyMail(['PERMITS@in.grayco-cs.com']) && !PR.isReplyMail(['bids@in.grayco-cs.com']) && /permit-records\.js'\)\.isReplyMail\(recipients\(mail, data\)\)/.test(require('fs').readFileSync(path.join(__dirname, '../../netlify/functions/bid-inbox.js'), 'utf8')));
+    /* the CRM's calls (permit-watch → permit-records) */
+    rig({ noSettings: true });
+    PR.D.kvGet = k => W._test.D.kvGet(k); PR.D.kvCas = (k, f) => W._test.D.kvCas(k, f);   /* one store, as in production (both are the lead-inbox table) */
+    mails.length = 0;
+    let a6 = await act('staff', { action: 'mscce-get' });
+    ok('mscce-get: the settings, the preview text, the MSCCE phone', a6.body.ok && a6.body.cfg.on === false && /Public records request/.test(a6.body.preview.subject) && a6.body.phone === '901-222-8300');
+    ok('mscce-set: admins / office only', (await act('staff', { action: 'mscce-set', cfg: { on: true, to: 'x@example.gov' } })).code === 403);
+    a6 = await act('admin', { action: 'mscce-set', cfg: { on: true, to: '' } });
+    ok('…never on without an address', a6.body.cfg.on === false);
+    a6 = await act('admin', { action: 'mscce-set', cfg: { on: true, to: 'records@example.gov', from: 'Someone <x@gmail.com>' } });
+    ok('…with an address it is on; the from address must be @grayco-cs.com', a6.body.cfg.on === true && a6.body.cfg.to === 'records@example.gov' && /@grayco-cs\.com/.test(a6.body.cfg.from), a6.body.cfg);
+    ok('Send now needs the confirm', (await act('admin', { action: 'mscce-send' })).code === 400 && !mails.length);
+    a6 = await act('admin', { action: 'mscce-send', confirm: true });
+    ok('Send now (confirmed) → one e-mail', a6.code === 200 && a6.body.ok && mails.length === 1, a6.body); }
+  { const toml = require('fs').readFileSync(path.join(__dirname, '../../netlify.toml'), 'utf8');
+    ok('netlify.toml schedules permit-records-scheduled daily (~8:41 AM Central)', /\[functions\."permit-records-scheduled"\]\s*\n\s*schedule = "41 14 \* \* \*"/.test(toml)); }
+
   const n = R.filter(Boolean).length; console.log('PERMITS ' + n + '/' + R.length); process.exit(n === R.length ? 0 : 1);
 })().catch(e => { console.error(e); process.exit(1); });
-async function D_settings(g, v){ v = Object.assign({}, v); v.shovels = Object.assign({ on: true }, v.shovels || {}); g.kv.gc_permit_settings = P.clean(v); }   /* Shovels is off by default: these tests switch it on */
+async function D_settings(g, v){ v = Object.assign({}, BROAD, v); v.include = Object.assign({}, BROAD.include, (v && v.include) || {}); v.shovels = Object.assign({ on: true }, v.shovels || {}); g.kv.gc_permit_settings = P.clean(v); }   /* Shovels is off by default: these tests switch it on */

@@ -158,7 +158,7 @@ ok('switched on: the tab shows the Shovels status line and a 🔌 Shovels… but
 await A.page().click('#gc-pj tr[data-k="shovels:SHV1"] td:nth-child(3)'); await sleep(800);
 ok('the Shovels permit\'s sheet offers "📇 Get phone / e-mail (1 credit)" (asked only when pressed)', await A.ev(() => !!document.querySelector('#gc-pj-sheet [data-pj-a="lookup"][data-cid="C9"]')) && !SRV.calls.some(b => b.action === 'contractor-lookup'));
 await A.page().click('#gc-pj-sheet [data-pj-a="lookup"]'); await sleep(1200);
-const sh2 = await A.ev(() => { const s = document.getElementById('gc-pj-sheet'); return { tel: [...s.querySelectorAll('a[href^="tel:"]')].map(a => a.getAttribute('href')), mail: [...s.querySelectorAll('a[href^="mailto:"]')].map(a => a.getAttribute('href')), text: s.innerText, btn: !!s.querySelector('[data-pj-a="lookup"]') }; });
+const sh2 = await A.ev(() => { const s = document.getElementById('gc-pj-sheet'); return { tel: [...s.querySelectorAll('a[href^="tel:"]')].map(a => a.getAttribute('href')), mail: [...s.querySelectorAll('a[href^="mailto:"],a[data-gc-mailto]')].map(a => a.getAttribute('data-gc-mailto') || a.getAttribute('href')),   /* the CRM turns mailto: into its Gmail link (data-gc-mailto keeps the address) */ text: s.innerText, btn: !!s.querySelector('[data-pj-a="lookup"]') }; });
 ok('…pressed: one contractor-lookup; the sheet shows 📞 call, ✉ e-mail, license, the owner of record', SRV.calls.filter(b => b.action === 'contractor-lookup' && b.contractorId === 'C9').length === 1 && sh2.tel.includes('tel:5550100199') && sh2.mail.includes('mailto:office@mockwrecking.example') && /MS-00000/.test(sh2.text) && /Sample Owner Trust/.test(sh2.text) && !sh2.btn, sh2);
 await shot(A, '9_shovels_permit_sheet', '#gc-pj-sheet .bx');
 await A.page().click('#gc-pj-sheet [data-pj-a="sheetclose"]'); await sleep(300);
@@ -179,11 +179,13 @@ ok('…"Pick which permits you want in 🏗️ Permitted jobs" and "Google Drive
 ok('…Google Drive ticks itself (owner-setup: gdrive true)', await A.ev(() => { const O = window._gcOwnerSetup; const st = O.stateOf(O.items.find(i => i.id === 'gdrive')); return st.done && st.how === 'auto'; }));
 if (SHOTS) {
   await A.ev(() => { const d = document.getElementById('gc-ot'); const r = [...d.querySelectorAll('.ot-r')].find(x => /Pick which permits/.test(x.innerText)); if (r) r.scrollIntoView({ block: 'center' }); }); await sleep(500);
-  for (const [name, re] of [['6_owner_setup_items', /Pick which permits|Google Drive for big plan/], ['6b_owner_setup_later', /Optional, later: Shovels/]]) {
-    await A.ev(src => { const re = new RegExp(src); const d = document.getElementById('gc-ot'); const r = [...d.querySelectorAll('.ot-r')].find(x => re.test(x.innerText)); if (r) r.scrollIntoView({ block: 'center' }); }, re.source); await sleep(400);
-    const el = await A.page().$('#gc-ot'); if (!el) continue; const bb = await el.boundingBox();
-    const box = await A.ev(src => { const re = new RegExp(src); const d = document.getElementById('gc-ot'); const r = [...d.querySelectorAll('.ot-r')].filter(x => re.test(x.innerText)); const a = r[0].getBoundingClientRect(), b = r[r.length - 1].getBoundingClientRect(); return { y: a.top - 30, h: b.bottom - a.top + 40 }; }, re.source);
-    await A.page().screenshot({ path: SHOTS + '/' + name + '.png', clip: { x: bb.x, y: Math.max(0, box.y), width: bb.width, height: Math.min(box.h, 880) } });
+  for (const [name, re] of [['6_owner_setup_items', /Pick which permits|Google Drive for big plan|monthly MSCCE/], ['6b_owner_setup_later', /Optional, later: Shovels|Look into Dodge/]]) {
+    try {
+      const box = await A.ev(src => { const re = new RegExp(src); const d = document.getElementById('gc-ot'); const r = [...d.querySelectorAll('.ot-r')].filter(x => re.test(x.innerText)); if (!r.length) return null; r[0].scrollIntoView({ block: 'center' });
+        const a = r[0].getBoundingClientRect(), b = r[r.length - 1].getBoundingClientRect(), dr = d.getBoundingClientRect(); return { x: dr.left + window.scrollX, y: a.top + window.scrollY - 6, w: dr.width, h: b.bottom - a.top + 12 }; }, re.source);
+      await sleep(300);
+      if (box && box.h > 10) await A.page().screenshot({ path: SHOTS + '/' + name + '.png', fullPage: true, clip: { x: Math.max(0, box.x), y: Math.max(0, box.y), width: box.w, height: Math.min(box.h, 1600) } });
+    } catch (e) { console.log('(screenshot ' + name + ' skipped: ' + String(e.message).slice(0, 80) + ')'); }
   }
 }
 ok('no page errors (admin)', !errs.length, errs);
