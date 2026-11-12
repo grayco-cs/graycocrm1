@@ -227336,8 +227336,11 @@ function sheet(b){
   D.body.appendChild(m);
 }
 function toast(t, bad){ try { if (W._gcSys && W._gcSys.toast) return W._gcSys.toast(t, bad); } catch (e) {} }
+var BUSY = {};   /* patch BPFAST: the click shows at once (the server copies the papers and sends the e-mail before it answers), and a second click waits */
 function decide(b, ok){
-  return W._gcSubsBids.decide(b.id, ok).then(function(r){ toast(r && r.ok ? (ok ? '✅ ' + (b.company || b.email) + ' approved — they got the e-mail' : '✕ Denied') : ((r && r.data && r.data.error) || 'Not saved'), !(r && r.ok)); return r; });
+  if (BUSY[b.id]) { toast('⏳ Still working on ' + (b.company || b.email) + '…'); return BUSY[b.id]; }
+  toast(ok ? '⏳ Approving ' + (b.company || b.email) + '…' : '⏳ Denying…');
+  return (BUSY[b.id] = W._gcSubsBids.decide(b.id, ok).then(function(r){ delete BUSY[b.id]; toast(r && r.ok ? (ok ? '✅ ' + (b.company || b.email) + ' approved — they got the e-mail' : '✕ Denied') : ((r && r.data && r.data.error) || 'Not saved'), !(r && r.ok)); return r; }, function(e){ delete BUSY[b.id]; toast('Not saved — check the connection and try again', true); return { ok: false }; }));
 }
 function rows(sc, now){
   if (!admin() || (sc && sc.kind && sc.kind !== 'admin')) return [];

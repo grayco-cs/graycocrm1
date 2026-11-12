@@ -1645,8 +1645,11 @@ async function staffAction(action, body, who){
     const ok = body.approve !== false, now = new Date().toISOString();
     const prof = Object.assign({}, r.data, ok ? { approved: true, bidsRevoked: false, bidsApprovedAt: now, bidsApprovedBy: me } : { approved: false, bidsRevoked: true, bidsRevokedAt: now });
     await dbPost('sp_rows?on_conflict=key', [{ key: r.key, collection: 'users', id: r.id, user_id: r.id, email: low(prof.email), data: prof, updated_at: now, updated_by: who.email }], 'resolution=merge-duplicates,return=minimal');
-    if (ok) { try { prof.papersCrm = await papersToCrm(r.id); if (prof.papersCrm.length) await dbPost('sp_rows?on_conflict=key', [{ key: r.key, collection: 'users', id: r.id, user_id: r.id, email: low(prof.email), data: prof, updated_at: new Date().toISOString(), updated_by: who.email }], 'resolution=merge-duplicates,return=minimal'); } catch (e) {} }   /* patch SIGNUPPAPERS: the papers go with them into the CRM's Subs */
-    if (ok) { const L = MAIL[lang(prof.lang)]; await sendMail(prof.email, L.approvedSubj, mailHtml(L.approvedSubj, L.approvedBody, '', { href: portalBase(), label: L.approvedBtn })); }
+    if (ok) {   /* patch BPFAST: the papers copy and the approval e-mail run side by side (the Approve click waited for both, one after the other) */
+      const L = MAIL[lang(prof.lang)];
+      await Promise.all([ (async function(){ try { prof.papersCrm = await papersToCrm(r.id); if (prof.papersCrm.length) await dbPost('sp_rows?on_conflict=key', [{ key: r.key, collection: 'users', id: r.id, user_id: r.id, email: low(prof.email), data: prof, updated_at: new Date().toISOString(), updated_by: who.email }], 'resolution=merge-duplicates,return=minimal'); } catch (e) {} })(),   /* patch SIGNUPPAPERS: the papers go with them into the CRM's Subs */
+        sendMail(prof.email, L.approvedSubj, mailHtml(L.approvedSubj, L.approvedBody, '', { href: portalBase(), label: L.approvedBtn })) ]);
+    }
     return { ok: true, approved: ok };
   }
   if (action === 's-login') {
