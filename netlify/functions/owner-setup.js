@@ -49,6 +49,8 @@ async function checks(){
   c.vapid = has('VAPID_PUBLIC_KEY') && has('VAPID_PRIVATE_KEY');
   c.anthropic = has('ANTHROPIC_API_KEY');
   c.resend_events = has('RESEND_EVENTS_SECRET');   /* patch SENTLOG: delivered / bounced webhook */
+  c.shovels_key = has('SHOVELS_API_KEY');   /* patch PERMITS: 🏗️ Permits for Memphis / DeSoto / Little Rock (the paid Shovels API) */
+  c.gdrive = has('GDRIVE_SA_JSON') && has('GDRIVE_ROOT_ID');   /* patch GDRIVE: big plan sets into Google Drive */
   return c;
 }
 exports.handler = async function(event){

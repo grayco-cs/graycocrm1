@@ -545,6 +545,12 @@
 [functions."referral-scheduled"]
   schedule = "37 * * * *"
 
+# patch PERMITS: 🏗️ Permits (netlify/functions/permit-watch.js) — 11:23 UTC = 5:23 AM Central in winter (6:23 AM in summer). Reads new
+# building permits (Nashville's free ArcGIS feed; Memphis / DeSoto / Little Rock / Jonesboro through Shovels once SHOVELS_API_KEY is
+# set — one pass a day, capped) and keeps the ones that look like GrayCo work for Leads → 🏗️ Permits. Never makes a lead by itself.
+[functions."permit-watch-scheduled"]
+  schedule = "23 11 * * *"
+
 # patch EST3: the daily "material prices up on your open estimates" e-mail (about 7:20 AM Central)
 [functions."est-price-watch"]
   schedule = "20 12 * * *"

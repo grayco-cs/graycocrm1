@@ -191571,6 +191571,9 @@ var ITEMS = [
   { id: 'oncall', g: 'soon', t: 'Enter the on-call rotation', how: '💧 Mitigation → 📟 On call → who is on call each week. Nobody is paged for after-hours emergencies until it is filled in.' },
   { id: 'goal', g: 'soon', t: 'Set the yearly revenue goal', how: '⚙ Admin → 🎯 Company goal → Set. It shows on the TV scoreboard.' },
   { id: 'twostep', g: 'soon', t: 'Two-step login for Wesley and Nick', how: 'Each of you: myaccount.google.com → Security → 2-Step Verification → Get started.' },
+  { id: 'permits_shovels', g: 'soon', t: 'Building permits for Memphis, DeSoto, Little Rock (paid data: Shovels)', how: 'Nashville permits already come in free every morning (Leads → 🏗️ Permits). For Memphis / Shelby Co., DeSoto Co. MS, Little Rock / North Little Rock and Jonesboro: 1) sign up at shovels.ai and pick a plan that includes API access — before paying, ask them (support / sales chat) to confirm coverage for Shelby Co. TN, DeSoto Co. MS, Pulaski Co. AR and Craighead Co. AR; 2) in Shovels open the API keys page and copy your API key; 3) Netlify → Site configuration → Environment variables → Add a variable: key SHOVELS_API_KEY, value = the key → Save; 4) Deploys → Trigger deploy → Deploy site; 5) Leads → 🏗️ Permits → ↻ Run now (after that it runs by itself once a day; the ZIP codes and the daily cap are in ⚙ Filters).', auto: 'shovels_key' },   /* patch PERMITS */
+  { id: 'permits_filters', g: 'soon', t: 'Pick which permits you want in 🏗️ Permits', how: 'Leads → 🏗️ Permits → ⚙ Filters: permit types, minimum value, ZIP codes.' },   /* patch PERMITS */
+  { id: 'gdrive', g: 'soon', t: 'Google Drive for big plan sets (files over 50 MB)', how: '1) Google Cloud console → a project → enable the Google Drive API → IAM → Service accounts → Create → Keys → Add key → JSON (a file downloads). 2) Google Drive → New → Shared drive "GrayCo Jobs" → Manage members → add the service account\'s e-mail as Content manager. 3) Netlify → Site configuration → Environment variables: GDRIVE_SA_JSON = the whole text of the JSON key file; GDRIVE_ROOT_ID = the Shared drive\'s id (the last part of its address) → Deploys → Trigger deploy.', auto: 'gdrive' },   /* patch GDRIVE */
   { id: 'estimates_inbox', g: 'later', t: 'Optional: estimates@ inbox', how: 'If customers or GCs should e-mail plans and estimates in: admin.google.com → Groups → create estimates@grayco-cs.com with the estimators, turn ON "Allow members outside your organization", add member estimates@in.grayco-cs.com. Anyone at GrayCo can already e-mail estimates@in.grayco-cs.com directly.' },
   { id: 'resend_events', g: 'later', t: 'Optional: delivered / bounced status on sent e-mail', how: 'Resend → Webhooks → Add endpoint https://crm.grayco-cs.com/.netlify/functions/mail-events, events email.delivered, email.bounced, email.complained, email.delivery_delayed. Copy its signing secret → Netlify → Environment variables → RESEND_EVENTS_SECRET → Trigger deploy. (docs/SENT-MAIL.md)', auto: 'resend_events' },
   { id: 'vapid', g: 'later', t: 'Phone notifications for PMs', how: 'Ask Claude for the one-line command that makes the VAPID keys, then add VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY and VAPID_SUBJECT in Netlify → Trigger deploy. Each PM then taps 🔔 Turn on phone alerts.', auto: 'vapid' },
@@ -222092,5 +222095,362 @@ W._gcBidEst = { open: open, load: load, close: close, group: group, resolve: fun
   take: takeLine, inEst: inEst, keyOf: keyOf, decorate: decorate, lineMath: lineMath,
   state: function(){ return { jobId: UI.jobId, bids: UI.bids ? UI.bids.length : null, err: UI.err, picking: !!UI.pick, log: LOG.slice(-20) }; } };
 try { console.log('[GC] patch BIDEST: 📊 all bids for a job by trade (lowest first) → 🏆 award / ➕ into the project\'s estimate — _gcBidEst.state()'); } catch (e) {}
+})(window);
+</script>
+
+<script id="gc-patch-permits">
+/* patch PERMITS (owner 11/12: "Can we go through building permits filed in Arkansas, TN, Mississippi in the leads scan … do whatever you
+   can to make these active and scan in leads"). Leads → "🏗️ Permits" (a chip in the Leads header, with the number of new permits since
+   you last looked) opens the matched building permits the server found (netlify/functions/permit-watch.js: Nashville's free feed every
+   morning; Memphis / DeSoto / Little Rock / Jonesboro through Shovels once SHOVELS_API_KEY is set):
+     · the status per source (last run, read, matched; "Not connected" / Shovels' error), ↻ Run now;
+     · filters: source, reason, company, minimum value, search, new / made leads / dismissed;
+     · per permit: ➕ Make it a lead (a CRM lead: source "Building permit — <area>", the type and company from the hint, the contractor
+       and the permit in the notes), Dismiss, 🗺 Open on map;
+     · ⚙ Filters (admins and the office): the kinds of permit, excluded work, minimum value, how far back, the Shovels ZIP codes and cap.
+   Nothing becomes a lead by itself. window._gcPermitLeads = { open, close, load, makeLead, dismiss, state } */
+(function(W){
+'use strict';
+var D = W.document;
+if (W._gcPermitLeads) return;
+var FN = '/.netlify/functions/permit-watch', SEEN = 'gc_permits_seen';
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+var SI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function lsGet(k){ try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }
+function lsSet(k, v){ try { localStorage.setItem(k, v); } catch (e) {} }
+function admin(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()); } catch (e) { return false; } }
+function signedIn(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.email && W.__GC_AUTH__.email()); } catch (e) { return false; } }
+function me(){ try { return s((W._gcMeNow && W._gcMeNow.name) || (W.__GC_AUTH__ && W.__GC_AUTH__.email()) || lsGet('grayco_user')); } catch (e) { return ''; } }
+function money(n){ n = +n; if (!isFinite(n) || n <= 0) return ''; return '$' + Math.round(n).toLocaleString('en-US'); }
+function short(n){ n = +n; if (!isFinite(n) || n <= 0) return ''; if (n >= 1e6) return '$' + (Math.round(n / 1e5) / 10) + 'M'; if (n >= 1e3) return '$' + Math.round(n / 1e3) + 'k'; return '$' + Math.round(n); }
+function when(iso){ var t = Date.parse(iso); if (!isFinite(t)) return ''; try { return new Date(t).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); } catch (e) { return s(iso).slice(0, 16); } }
+function day(d){ d = s(d).slice(0, 10); if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return ''; var p = d.split('-'); return +p[1] + '/' + +p[2]; }
+function hash(t){ var h = 5381; t = s(t); for (var i = 0; i < t.length; i++) h = ((h << 5) + h + t.charCodeAt(i)) >>> 0; return h.toString(36); }
+var toastEl = null, toastT = 0;
+function toast(msg, bad){
+  if (!toastEl) { toastEl = D.createElement('div'); toastEl.id = 'gc-pm-toast'; toastEl.setAttribute('data-gc-keep', '1'); D.body.appendChild(toastEl); }
+  toastEl.textContent = msg; toastEl.className = bad ? 'bad' : ''; toastEl.style.display = 'block';
+  var my = ++toastT; ST.call(W, function(){ if (my === toastT) toastEl.style.display = 'none'; }, 4200);
+}
+function call(body){
+  return W.fetch(FN, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), cache: 'no-store' })
+    .then(function(r){ return r.json().catch(function(){ return { ok: false, error: 'The permit service answered ' + r.status + '.' }; }); }, function(){ return { ok: false, error: 'Could not reach the permit service.' }; });
+}
+
+/* ── the state ── */
+var S = { items: [], status: {}, settings: null, active: {}, configured: false, admin: false, at: 0, loading: false, err: '', open: false,
+  f: { src: '', reason: '', co: '', min: '', q: '', state: 'new' }, lim: 150, busy: {} };
+try { var fv = JSON.parse(lsGet('gc_permits_f') || 'null'); if (fv && typeof fv === 'object') Object.keys(S.f).forEach(function(k){ if (typeof fv[k] === 'string') S.f[k] = fv[k]; }); } catch (e) {}
+function saveF(){ lsSet('gc_permits_f', JSON.stringify(S.f)); }
+function load(){
+  if (S.loading) return Promise.resolve(S);
+  S.loading = true;
+  return call({ action: 'list' }).then(function(r){
+    S.loading = false; S.at = Date.now();
+    if (!r || !r.ok) { S.err = s(r && r.error) || 'Could not load the permits.'; paintAll(); return S; }
+    S.err = ''; S.items = arr(r.items); S.status = r.status || {}; S.settings = r.settings || null; S.active = r.active || {}; S.configured = !!r.shovelsConfigured; S.admin = !!r.admin || admin();
+    paintAll(); return S;
+  });
+}
+function newCount(){ var seen = lsGet(SEEN); return S.items.filter(function(x){ return x.state === 'new' && (!seen || s(x.firstSeen) > seen); }).length; }
+function markSeen(){ var m = ''; S.items.forEach(function(x){ if (s(x.firstSeen) > m) m = s(x.firstSeen); }); if (m) lsSet(SEEN, m); }
+
+/* ── the chip in the Leads header ── */
+var chip = null;
+function chipEl(){
+  if (chip) return chip;
+  chip = D.createElement('span'); chip.id = 'gc-permits-chip'; chip.setAttribute('data-gc-keep', '1');
+  chip.addEventListener('click', function(e){ var b = e.target && e.target.closest && e.target.closest('button'); if (b) { e.preventDefault(); e.stopPropagation(); open(); } });
+  return chip;
+}
+function chipHtml(){
+  var n = newCount();
+  return '<button type="button" data-gc-permits="open" title="Building permits that look like GrayCo work (Nashville, and Memphis / DeSoto / Little Rock once Shovels is connected)">🏗️ Permits' + (n ? ' <b class="n">' + n + ' new</b>' : '') + '</button>';
+}
+function placeChip(){
+  var hub = D.getElementById('gc-leads-hub'), CH = W._gcLeadsChips;
+  if (!hub || !hub.parentNode || !signedIn()) { if (chip && chip.parentNode) chip.remove(); return; }
+  css();
+  var el = chipEl(), h = chipHtml(); if (el.__h !== h) { el.__h = h; el.innerHTML = h; }
+  var slot = CH && CH.slot ? CH.slot(hub) : null;
+  if (slot) { if (el.parentNode !== slot) CH.on(el, hub); }
+  else if (el.parentNode !== hub.parentNode) hub.parentNode.insertBefore(el, hub);   /* no header slot (old hub): just above the list */
+  if (!S.at || (Date.now() - S.at > 600000 && !S.loading && !D.hidden)) load();
+}
+/* the hub redraws its header with the chips it knows; ours goes back in the same step */
+(function wrapMount(){
+  var CH = W._gcLeadsChips; if (!CH || CH.__pm) { if (!CH) ST.call(W, wrapMount, 1500); return; }
+  var orig = CH.mount; CH.mount = function(hub){ var r = orig.apply(this, arguments); try { if (chip) { var sl = CH.slot(hub); if (sl && chip.parentNode !== sl) sl.appendChild(chip); } } catch (e) {} return r; }; CH.__pm = true;
+})();
+SI.call(W, function(){ try { placeChip(); } catch (e) {} }, 1500);
+
+/* ── the panel ── */
+function css(){
+  if (D.getElementById('gc-pm-css')) return;
+  var st = D.createElement('style'); st.id = 'gc-pm-css';
+  st.textContent = '#gc-permits-chip{display:inline-flex;align-items:center}#gc-permits-chip button{margin:0;border:1px solid #cbd5e1;background:#f8fafc;color:#1e293b;border-radius:999px;padding:4px 10px;font:700 12px Inter,Arial,sans-serif;cursor:pointer;white-space:nowrap}'
+    + '#gc-permits-chip button .n{background:#d4a017;color:#1b1640;border-radius:999px;padding:0 6px;margin-left:3px;font-size:11px}'
+    + '#gc-pm-ov{position:fixed;inset:0;z-index:100240;background:rgba(15,23,42,.55);display:flex;align-items:flex-start;justify-content:center;padding:3vh 10px;overflow:auto}'
+    + '#gc-pm-ov .bx{background:#fff;color:#0f172a;border-radius:14px;max-width:1280px;width:100%;padding:14px 16px;font:13px/1.45 Inter,Arial,sans-serif;box-shadow:0 20px 60px rgba(0,0,0,.35)}'
+    + '#gc-pm-ov .hd{display:flex;align-items:center;gap:8px;flex-wrap:wrap}#gc-pm-ov .hd b{font-size:17px}#gc-pm-ov .sp{flex:1}'
+    + '#gc-pm-ov button.pm{border:1px solid #cbd5e1;background:#fff;color:#0f172a;border-radius:8px;padding:5px 10px;font:600 12.5px Inter,Arial,sans-serif;cursor:pointer;white-space:nowrap}#gc-pm-ov button.pm.p{background:#241968;border-color:#241968;color:#fff}#gc-pm-ov button.pm:disabled{opacity:.55;cursor:default}'
+    + '#gc-pm-ov .stat{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}#gc-pm-ov .src{border:1px solid #e2e8f0;border-radius:10px;padding:6px 10px;background:#f8fafc;font-size:12.5px;flex:1 1 300px}#gc-pm-ov .src.bad{background:#fef2f2;border-color:#fecaca;color:#7f1d1d}#gc-pm-ov .src.off{background:#fffbeb;border-color:#fde68a;color:#78350f}'
+    + '#gc-pm-ov .flt{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 8px}#gc-pm-ov .flt select,#gc-pm-ov .flt input{border:1px solid #cbd5e1;border-radius:8px;padding:5px 7px;font:12.5px Inter,Arial,sans-serif;max-width:220px}'
+    + '#gc-pm-ov .tw{overflow:auto;max-height:68vh;border:1px solid #e2e8f0;border-radius:10px}#gc-pm-ov table{border-collapse:collapse;width:100%;min-width:1050px}#gc-pm-ov th{position:sticky;top:0;background:#f1f5f9;text-align:left;font-size:11.5px;color:#475569;padding:6px;border-bottom:1px solid #e2e8f0;white-space:nowrap}'
+    + '#gc-pm-ov td{padding:6px;border-bottom:1px solid #f1f5f9;vertical-align:top;font-size:12.5px}#gc-pm-ov td.d{max-width:300px;color:#334155}#gc-pm-ov td.d .t{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}#gc-pm-ov tr.lead td{background:#f0fdf4}#gc-pm-ov tr.dis td{opacity:.55}'
+    + '#gc-pm-ov .ch{display:inline-block;background:#fef3c7;color:#92400e;border-radius:999px;padding:1px 7px;margin:0 3px 3px 0;font:600 11px Inter,Arial,sans-serif;white-space:nowrap}#gc-pm-ov .co{display:inline-block;border-radius:999px;padding:1px 8px;color:#fff;font:700 11px Inter,Arial,sans-serif;white-space:nowrap}'
+    + '#gc-pm-ov .acts{display:flex;flex-direction:column;gap:4px}#gc-pm-ov .acts a{font-size:12px;color:#1d4ed8;text-decoration:none;white-space:nowrap}#gc-pm-ov .mut{color:#64748b;font-size:12px}#gc-pm-ov .err{background:#fef2f2;color:#7f1d1d;border-radius:8px;padding:8px;margin:8px 0}'
+    + '#gc-pm-set{border:1px solid #c7d2fe;background:#eef2ff;border-radius:10px;padding:10px 12px;margin:8px 0}#gc-pm-set h4{margin:0 0 6px;font-size:14px}#gc-pm-set label{display:block;margin:3px 0;font-size:12.5px}#gc-pm-set .g{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:4px 16px}'
+    + '#gc-pm-set input[type=number],#gc-pm-set textarea{border:1px solid #cbd5e1;border-radius:8px;padding:5px 7px;font:12.5px Inter,Arial,sans-serif;box-sizing:border-box}#gc-pm-set textarea{width:100%;min-height:54px}'
+    + '#gc-pm-toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:100300;background:#14532d;color:#fff;padding:9px 14px;border-radius:10px;font:600 13px Inter,Arial,sans-serif;display:none;max-width:90vw}#gc-pm-toast.bad{background:#7f1d1d}'
+    + '@media (max-width:640px){#gc-pm-ov{padding:0}#gc-pm-ov .bx{border-radius:0;padding:12px}#gc-pm-ov .flt select,#gc-pm-ov .flt input{max-width:none;flex:1 1 40%}}';
+  (D.head || D.documentElement).appendChild(st);
+}
+var CO = { construction: ['Construction', '#1d4ed8', '🏗'], mitigation: ['Mitigation', '#0e7490', '💧'], environmental: ['Environmental', '#15803d', '🌿'] };
+function coOf(id){ try { if (W._gcCo && W._gcCo.get) { var c = W._gcCo.get(id); if (c && c.id === id) return [c.short, c.color, c.icon]; } } catch (e) {} return CO[id] || CO.construction; }
+function coBadge(id){ var c = coOf(id); return '<span class="co" style="background:' + esc(c[1]) + '">' + esc(c[2] + ' ' + c[0]) + '</span>'; }
+var REASONS = [['fire', '🔥 Fire / smoke', /fire\/smoke/], ['water', '💧 Water / flood', /water\/flood/], ['storm', '🌪 Storm / hail / wind', /storm/], ['collapse', '🏚 Collapse', /collapse/], ['env', '☣ Mold / asbestos / lead', /mold\/asbestos/],
+  ['demo', 'Demolition', /^Demolition/], ['roof', 'Roof', /^Roof/], ['comm', 'Commercial', /^Commercial/], ['multi', 'Multifamily', /^Multifamily/], ['res', 'Residential', /^Residential/], ['repair', 'Repair', /^Repair$/], ['pre78', 'Built before 1978', /pre-1978|Built 1[0-9]{3}|built 1[0-9]{3}/]];
+function srcKey(x){ return x.src === 'nashville' ? 'nashville' : 'shovels:' + s(x.areaLong || x.area); }
+function srcName(x){ return x.src === 'nashville' ? 'Nashville' : s(x.area || x.areaLong) || 'Shovels'; }
+function addr(x){ return [s(x.address), s(x.city), [s(x.state), s(x.zip)].filter(Boolean).join(' ')].filter(Boolean).join(', '); }
+function mapUrl(x){ return 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(addr(x)); }
+function shown(){
+  var f = S.f, q = low(f.q), min = +s(f.min).replace(/[$,]/g, '') || 0, rx = null;
+  REASONS.forEach(function(r){ if (r[0] === f.reason) rx = r[2]; });
+  return S.items.filter(function(x){
+    if (f.state && f.state !== 'all' && x.state !== f.state) return false;
+    if (f.src && srcKey(x) !== f.src && !(f.src === 'shovels' && x.src === 'shovels')) return false;
+    if (f.co && x.hint !== f.co) return false;
+    if (min && !(+x.value >= min)) return false;
+    if (rx && !arr(x.reasons).some(function(r){ return rx.test(r); })) return false;
+    if (q && [x.number, x.type, x.subtype, x.desc, addr(x), x.contractor, x.owner, x.area].join(' ').toLowerCase().indexOf(q) < 0) return false;
+    return true;
+  });
+}
+function srcLine(name, st, kind){
+  st = st || {};
+  if (kind === 'shovels') {
+    if (!S.configured || st.configured === false) return '<div class="src off" data-pm-src="shovels"><b>Shovels</b> (Memphis, DeSoto, Little Rock, Jonesboro) — Not connected. Add SHOVELS_API_KEY in Netlify (🔧 Owner setup → Building permits), then Trigger deploy.</div>';
+    if (st.active === false) return '<div class="src off" data-pm-src="shovels"><b>Shovels</b> — ' + esc(st.note || 'off') + '</div>';
+    if (!st.lastRun) return '<div class="src" data-pm-src="shovels"><b>Shovels</b> — connected; first run tomorrow morning (or ↻ Run now).</div>';
+  }
+  if (kind === 'nashville' && st.on === false) return '<div class="src off" data-pm-src="nashville"><b>' + esc(name) + '</b> — turned off in ⚙ Filters.</div>';
+  if (!st.lastRun) return '<div class="src" data-pm-src="' + kind + '"><b>' + esc(name) + '</b> — not run yet. ↻ Run now.</div>';
+  var bad = !!st.error, extra = '';
+  if (kind === 'shovels') {
+    extra = (st.zipsTotal ? ' · ZIPs today ' + (st.zipsToday || 0) + '/' + st.zipsTotal : '') + (st.credits && st.credits.used != null ? ' · credits ' + st.credits.used + (st.credits.limit ? ' of ' + st.credits.limit : '') + ' (30 days)' : '') + (st.skipped ? ' · ' + esc(st.note) : '');
+  }
+  return '<div class="src' + (bad ? ' bad' : '') + '" data-pm-src="' + kind + '"><b>' + esc(name) + '</b> — ' + (bad ? '⚠ ' + esc(st.error) + ' · ' : '✅ ') + 'last run ' + esc(when(st.lastRun)) + ' · ' + (+st.read || 0) + ' read · ' + (+st.matched || 0) + ' matched' + (st.added != null ? ' · ' + st.added + ' new' : '') + extra + '</div>';
+}
+function rowHtml(x){
+  var k = esc(x.key), v = short(x.value);
+  var acts = x.state === 'lead' ? '<span class="mut">✓ Lead' + (x.stateBy ? ' · ' + esc(x.stateBy) : '') + '</span>' + (x.leadId ? '<a href="#" data-pm-a="openlead" data-k="' + k + '">Open the lead</a>' : '')
+    : '<button type="button" class="pm p" data-pm-a="lead" data-k="' + k + '"' + (S.busy[x.key] ? ' disabled' : '') + '>➕ Make it a lead</button>'
+      + (x.state === 'dismissed' ? '<button type="button" class="pm" data-pm-a="undo" data-k="' + k + '">Undo dismiss</button>' : '<button type="button" class="pm" data-pm-a="dismiss" data-k="' + k + '">Dismiss</button>');
+  return '<tr data-k="' + k + '" class="' + (x.state === 'lead' ? 'lead' : x.state === 'dismissed' ? 'dis' : '') + '">'
+    + '<td>' + esc(day(x.issued || x.filed)) + '</td><td>' + esc(srcName(x)) + '</td>'
+    + '<td>' + esc(x.type) + (x.subtype ? '<div class="mut">' + esc(x.subtype) + '</div>' : '') + (x.number ? '<div class="mut">#' + (x.link ? '<a href="' + esc(x.link) + '" target="_blank" rel="noopener">' + esc(x.number) + '</a>' : esc(x.number)) + '</div>' : '') + '</td>'
+    + '<td>' + esc(addr(x)) + (x.owner ? '<div class="mut">Owner: ' + esc(x.owner) + '</div>' : '') + (x.yearBuilt ? '<div class="mut">Built ' + esc(x.yearBuilt) + '</div>' : '') + '</td>'
+    + '<td style="white-space:nowrap">' + (v ? esc(money(x.value)) : '<span class="mut">—</span>') + '</td>'
+    + '<td>' + (x.contractor ? esc(x.contractor) : '<span class="mut">—</span>') + '</td>'
+    + '<td class="d"><div class="t" title="' + esc(x.desc) + '">' + esc(x.desc) + '</div></td>'
+    + '<td>' + arr(x.reasons).map(function(r){ return '<span class="ch">' + esc(r) + '</span>'; }).join('') + '</td>'
+    + '<td>' + coBadge(x.hint) + '</td>'
+    + '<td><div class="acts">' + acts + '<a href="' + esc(mapUrl(x)) + '" target="_blank" rel="noopener">🗺 Open on map</a></div></td></tr>';
+}
+function opt(v, label, cur){ return '<option value="' + esc(v) + '"' + (v === cur ? ' selected' : '') + '>' + esc(label) + '</option>'; }
+function filtersHtml(){
+  var f = S.f, srcs = {}, i;
+  S.items.forEach(function(x){ srcs[srcKey(x)] = x.src === 'nashville' ? 'Nashville' : s(x.areaLong || x.area); });
+  var h = '<div class="flt"><select data-pm-f="state">' + opt('new', 'New', f.state) + opt('lead', 'Made leads', f.state) + opt('dismissed', 'Dismissed', f.state) + opt('all', 'All', f.state) + '</select>'
+    + '<select data-pm-f="src">' + opt('', 'All areas', f.src) + Object.keys(srcs).sort().map(function(k){ return opt(k, srcs[k], f.src); }).join('') + '</select>'
+    + '<select data-pm-f="reason">' + opt('', 'Any reason', f.reason);
+  for (i = 0; i < REASONS.length; i++) h += opt(REASONS[i][0], REASONS[i][1], f.reason);
+  h += '</select><select data-pm-f="co">' + opt('', 'Any company', f.co) + opt('construction', '🏗 Construction', f.co) + opt('mitigation', '💧 Mitigation', f.co) + opt('environmental', '🌿 Environmental', f.co) + '</select>'
+    + '<input data-pm-f="min" type="text" inputmode="numeric" placeholder="Min value $" value="' + esc(f.min) + '" style="width:110px">'
+    + '<input data-pm-f="q" type="search" placeholder="Search address, contractor, words…" value="' + esc(f.q) + '" style="width:230px"></div>';
+  return h;
+}
+function settingsHtml(){
+  var c = S.settings || {}, inc = c.include || {}, sh = c.shovels || {}, labels = S.incLabels || [];
+  if (!labels.length) labels = Object.keys(inc).map(function(k){ return [k, k]; });
+  return '<div id="gc-pm-set"><h4>⚙ Which permits show here</h4><div class="g">' + labels.map(function(l){ return '<label><input type="checkbox" data-pm-inc="' + esc(l[0]) + '"' + (inc[l[0]] ? ' checked' : '') + '> ' + esc(l[1]) + '</label>'; }).join('') + '</div>'
+    + '<div class="g" style="margin-top:6px"><label>Minimum job value ($; repair / damage words, roofs and demolitions show at any value)<br><input type="number" min="0" step="1000" data-pm-set="minValue" value="' + esc(c.minValue) + '"></label>'
+    + '<label>Only permits from the last … days<br><input type="number" min="1" max="90" data-pm-set="maxAgeDays" value="' + esc(c.maxAgeDays) + '"></label></div>'
+    + '<label>Leave out (words, comma-separated)<textarea data-pm-set="exclude">' + esc(arr(c.exclude).join(', ')) + '</textarea></label>'
+    + '<div class="g"><label><input type="checkbox" data-pm-set="nashOn"' + (!c.nashville || c.nashville.on !== false ? ' checked' : '') + '> Nashville / Davidson Co. (free)</label>'
+    + '<label><input type="checkbox" data-pm-set="shOn"' + (sh.on !== false ? ' checked' : '') + '> Shovels (paid — ' + (S.configured ? 'connected' : 'not connected yet') + ')</label>'
+    + '<label>Shovels: at most … permits read per day<br><input type="number" min="10" max="2000" data-pm-set="maxPerRun" value="' + esc(sh.maxPerRun) + '"></label>'
+    + '<label>Shovels: look back … days each day<br><input type="number" min="1" max="90" data-pm-set="lookbackDays" value="' + esc(sh.lookbackDays) + '"></label>'
+    + '<label><input type="checkbox" data-pm-set="cNames"' + (sh.contractorNames !== false ? ' checked' : '') + '> Shovels: look up the contractor names</label></div>'
+    + '<label>Shovels ZIP codes (' + arr(sh.zips).length + ')<textarea data-pm-set="zips" style="min-height:70px">' + esc(arr(sh.zips).join(', ')) + '</textarea></label>'
+    + '<div style="display:flex;gap:6px;margin-top:6px"><button type="button" class="pm p" data-pm-a="save">Save filters</button><button type="button" class="pm" data-pm-a="defaults">Back to the defaults</button><button type="button" class="pm" data-pm-a="setclose">Cancel</button></div></div>';
+}
+function bodyHtml(){
+  var st = S.status || {}, list = shown(), more = list.length > S.lim;
+  var h = '<div class="stat">' + srcLine('Nashville / Davidson Co. (free)', st.nashville, 'nashville') + srcLine('Shovels', st.shovels, 'shovels') + '</div>';
+  if (S.err) h += '<div class="err">' + esc(S.err) + '</div>';
+  if (S.setOpen) h += settingsHtml();
+  h += filtersHtml();
+  h += '<div class="mut" style="margin:0 0 6px">' + list.length + ' permit' + (list.length === 1 ? '' : 's') + ' shown · ' + S.items.length + ' kept · nothing becomes a lead until you press ➕</div>';
+  if (!list.length) h += '<div class="mut" style="padding:20px;text-align:center">' + (S.loading && !S.at ? 'Loading…' : 'No permits match these filters.') + '</div>';
+  else h += '<div class="tw"><table><thead><tr><th>Date</th><th>Area</th><th>Type</th><th>Address</th><th>Value</th><th>Contractor</th><th>Description</th><th>Why</th><th>Company</th><th></th></tr></thead><tbody>'
+    + list.slice(0, S.lim).map(rowHtml).join('') + '</tbody></table></div>' + (more ? '<div style="text-align:center;margin:8px"><button type="button" class="pm" data-pm-a="more">Show more (' + (list.length - S.lim) + ')</button></div>' : '');
+  return h;
+}
+function paint(){
+  var ov = D.getElementById('gc-pm-ov'); if (!ov) return;
+  var b = ov.querySelector('.body'), ae = D.activeElement, fk = ae && ae.getAttribute && ae.getAttribute('data-pm-f'), caret = fk && ae.selectionStart;
+  if (ae && /^(?:INPUT|TEXTAREA|SELECT)$/.test(ae.tagName) && ae.closest && ae.closest('#gc-pm-set') && D.body.contains(ae)) return;   /* never redraw under a hand typing in ⚙ Filters */
+  S.paints = (S.paints || 0) + 1;
+  b.innerHTML = bodyHtml();
+  var fb = ov.querySelector('[data-pm-a="filters"]'); if (fb) fb.style.display = S.admin || admin() ? '' : 'none';
+  if (fk) { var el = b.querySelector('[data-pm-f="' + fk + '"]'); if (el) { try { el.focus(); if (caret != null && el.setSelectionRange) el.setSelectionRange(caret, caret); } catch (e) {} } }
+}
+function paintAll(){ try { placeChip(); } catch (e) {} paint(); }
+function open(){
+  css();
+  var ov = D.getElementById('gc-pm-ov'); if (ov) ov.remove();
+  ov = D.createElement('div'); ov.id = 'gc-pm-ov'; ov.setAttribute('data-gc-keep', '1'); ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-label', 'Building permits');
+  ov.innerHTML = '<div class="bx"><div class="hd"><b>🏗️ Building permits</b><span class="mut">Nashville every morning · Memphis, DeSoto, Little Rock, Jonesboro with Shovels</span><span class="sp"></span>'
+    + '<button type="button" class="pm" data-pm-a="run">↻ Run now</button><button type="button" class="pm" data-pm-a="filters">⚙ Filters</button><button type="button" class="pm" data-pm-a="close">Close</button></div><div class="body"></div></div>';
+  D.body.appendChild(ov); S.open = true;
+  ov.addEventListener('click', onClick);
+  ov.addEventListener('input', onInput);
+  ov.addEventListener('change', onInput);
+  paint(); markSeen(); placeChip();
+  load().then(function(){ markSeen(); placeChip(); });
+}
+function close(){ var ov = D.getElementById('gc-pm-ov'); if (ov) ov.remove(); S.open = false; S.setOpen = false; markSeen(); placeChip(); }
+var inT = 0;
+function onInput(e){
+  var t = e.target, k = t && t.getAttribute && t.getAttribute('data-pm-f'); if (!k) return;
+  S.f[k] = s(t.value); S.lim = 150; saveF();
+  inT++; paint();   /* no timer: cheap (150 rows at a time) */
+}
+function find(k){ for (var i = 0; i < S.items.length; i++) if (S.items[i].key === k) return S.items[i]; return null; }
+function onClick(e){
+  var ov = D.getElementById('gc-pm-ov');
+  if (e.target === ov) { close(); return; }
+  var b = e.target && e.target.closest && e.target.closest('[data-pm-a]'); if (!b) return;
+  var a = b.getAttribute('data-pm-a'), x = find(b.getAttribute('data-k'));
+  if (b.tagName === 'A') e.preventDefault();
+  if (a === 'close') return close();
+  if (a === 'more') { S.lim += 150; return paint(); }
+  if (a === 'run') return runNow(b);
+  if (a === 'filters') return openSettings();
+  if (a === 'setclose') { S.setOpen = false; return paint(); }
+  if (a === 'save') return saveSettings(b);
+  if (a === 'defaults') { if (!W.confirm('Show the default permit filters? (Press Save filters to keep them.)')) return; S.settings = S.defaults || S.settings; S.setOpen = true; paint(); return; }
+  if (!x) return;
+  if (a === 'lead') return makeLead(x.key);
+  if (a === 'dismiss') return setState(x.key, 'dismissed');
+  if (a === 'undo') return setState(x.key, 'new');
+  if (a === 'openlead') { close(); try { if (W._setView) W._setView('leads'); } catch (er) {} ST.call(W, function(){ try { if (W._gcLeadsHub && W._gcLeadsHub.open) W._gcLeadsHub.open(x.leadId); } catch (er) {} }, 600); }
+}
+function runNow(b){
+  b.disabled = true; b.textContent = 'Running…';
+  return call({ action: 'run' }).then(function(r){
+    b.disabled = false; b.textContent = '↻ Run now';
+    if (!r || !r.ok) { toast(s(r && r.error) || 'The run did not finish.', true); if (r && r.status) S.status = r.status; paint(); return load(); }
+    var ad = r.added || {}, n = (+ad.nashville || 0) + (+ad.shovels || 0);
+    toast(n ? '🏗️ ' + n + ' new permit' + (n === 1 ? '' : 's') + ' found.' : 'Run finished — no new permits.');
+    return load();
+  });
+}
+function openSettings(){
+  if (!(S.admin || admin())) { toast('Only an owner, an admin or the office can change the permit filters.', true); return; }
+  call({ action: 'settings-get' }).then(function(r){
+    if (!r || !r.ok) { toast(s(r && r.error) || 'Could not read the filters.', true); return; }
+    S.settings = r.settings; S.defaults = r.defaults; S.incLabels = arr(r.include); S.configured = !!r.shovelsConfigured; S.setOpen = true; paint();
+  });
+}
+function readSettings(){
+  var box = D.getElementById('gc-pm-set'); if (!box) return null;
+  var v = function(k){ var el = box.querySelector('[data-pm-set="' + k + '"]'); return el ? (el.type === 'checkbox' ? el.checked : el.value) : null; };
+  var inc = {}; Array.prototype.forEach.call(box.querySelectorAll('[data-pm-inc]'), function(el){ inc[el.getAttribute('data-pm-inc')] = el.checked; });
+  return { include: inc, exclude: s(v('exclude')).split(/[,\n;]+/).map(s).filter(Boolean), minValue: +v('minValue'), maxAgeDays: +v('maxAgeDays'), nashville: { on: !!v('nashOn') },
+    shovels: { on: !!v('shOn'), zips: s(v('zips')).split(/[\s,;]+/).filter(Boolean), maxPerRun: +v('maxPerRun'), lookbackDays: +v('lookbackDays'), contractorNames: !!v('cNames') } };
+}
+function saveSettings(b){
+  var nv = readSettings(); if (!nv) return;
+  b.disabled = true;
+  return call({ action: 'settings-set', settings: nv }).then(function(r){
+    b.disabled = false;
+    if (!r || !r.ok) { toast(s(r && r.error) || 'The filters were not saved.', true); return; }
+    S.settings = r.settings; S.setOpen = false; toast('⚙ Filters saved — the next run uses them (↻ Run now to use them today).'); paint();
+  });
+}
+function setState(k, state, leadId){
+  var x = find(k); if (!x) return Promise.resolve(null);
+  var was = x.state; x.state = state; if (leadId) x.leadId = leadId; S.busy[k] = true; paint();
+  return call({ action: 'set-state', id: k, state: state, leadId: leadId || '' }).then(function(r){
+    delete S.busy[k];
+    if (r && r.ok && r.item) { Object.assign(x, r.item); }
+    else if (state !== 'lead') { x.state = was; toast(s(r && r.error) || 'Not saved.', true); }
+    paintAll(); return r;
+  });
+}
+
+/* ── ➕ Make it a lead ── */
+function leadType(x){
+  var R = arr(x.reasons).join(' ');
+  if (x.hint === 'mitigation') return /fire\/smoke/.test(R) ? 'Restoration – Fire' : /water\/flood/.test(R) ? 'Restoration – Water' : /storm/.test(R) ? 'Restoration – Storm' : 'Mitigation';
+  if (x.hint === 'environmental') return 'Environmental';
+  if (x.bucket === 'roofing') return 'Roofing';
+  if (x.bucket === 'commercialNew' || x.bucket === 'commercialRehab' || x.bucket === 'multifamily') return 'Commercial';
+  return 'Remodel';
+}
+function sector(x){ return /^(?:industrial)$/i.test(s(x.propertyType)) ? 'Industrial' : (x.bucket === 'commercialNew' || x.bucket === 'commercialRehab' || x.bucket === 'multifamily' || /commerc/i.test(x.type + ' ' + x.propertyType)) ? 'Commercial' : 'Residential'; }
+function leadOf(x){
+  var at = new Date().toISOString(), area = srcName(x), co = x.hint === 'mitigation' || x.hint === 'environmental' ? x.hint : '';
+  var what = (arr(x.reasons)[0] || x.type || 'Building permit').replace(/\s*\$[\d.,]+[kM]?$/, '');
+  var note = ['🏗️ From a building permit (' + (x.src === 'nashville' ? 'Nashville / Davidson Co. public permits' : 'Shovels — ' + s(x.areaLong || x.area)) + ').',
+    'Permit #' + s(x.number || x.id) + (x.issued ? ' · issued ' + x.issued : '') + (x.filed && x.filed !== x.issued ? ' · filed ' + x.filed : ''),
+    'Type: ' + [x.type, x.subtype].filter(Boolean).join(' — '),
+    x.value ? 'Job value on the permit: ' + money(x.value) : '',
+    x.contractor ? 'Contractor on the permit: ' + x.contractor + ' (call them — they may need a sub, or the owner may want a second price)' : '',
+    x.owner ? 'Property owner: ' + x.owner : '', x.yearBuilt ? 'Built: ' + x.yearBuilt : '',
+    x.desc ? 'Description: ' + x.desc : '', 'Why it showed: ' + arr(x.reasons).join(' · '), x.link ? 'Permit: ' + x.link : ''].filter(Boolean).join('\n');
+  var l = { id: 'LPMT_' + hash(x.key), name: what + ' — ' + (s(x.address) || area), company: s(x.owner) || s(x.address) || area, contact: '', phone: '', email: '',
+    address: s(x.address), city: s(x.city), state: s(x.state), zip: s(x.zip), projectType: leadType(x), type: leadType(x), sector: sector(x),
+    estValue: +x.value || 0, priority: x.hint === 'mitigation' ? 'High' : 'Medium', source: 'Building permit — ' + area, status: 'new',
+    created: at.slice(0, 10), createdAt: at, updatedAt: at, addedBy: me(), note: note,
+    permitKey: x.key, permitNumber: s(x.number), permitSource: x.src, permitLink: s(x.link), permitContractor: s(x.contractor) };
+  if (co) { l.companyId = co; l.companyIdBy = me() || 'permits'; }
+  if (x.lat && x.lon) { l.lat = +x.lat; l.lng = +x.lon; }
+  return l;
+}
+function leadsNow(){ var l = null; try { if (typeof W._setLeads === 'function') W._setLeads(function(prev){ if (Array.isArray(prev)) l = prev; return prev; }); } catch (e) {} return l || arr(W._crm && W._crm.leads); }
+function makeLead(k){
+  var x = find(k); if (!x) return Promise.resolve(null);
+  if (S.busy[k]) return Promise.resolve(null);
+  var l = leadOf(x), have = leadsNow().filter(function(y){ return y && (y.id === l.id || (y.permitKey && y.permitKey === x.key)); })[0];
+  if (have) { toast('Already a lead: ' + s(have.name || have.company) + '.'); return setState(k, 'lead', have.id); }
+  if (typeof W._setLeads !== 'function') { toast('The Leads list is not ready yet — try again in a moment.', true); return Promise.resolve(null); }
+  try { W.__GC_MANUAL_SAVE__ = true; if (W._gcManualNow) W._gcManualNow('permit lead'); } catch (e) {}
+  S.busy[k] = true;
+  var kit = W._gcLeadsHubKit, pushed = null;
+  var mut = function(prev){ prev = arr(prev); if (prev.some(function(y){ return y && y.id === l.id; })) return null; pushed = prev.concat([l]); return pushed; };
+  /* the Leads hub's own save (local copy + the cloud), else the app's list + the same two saves */
+  var p = kit && kit.setLeads ? kit.setLeads(mut) : new Promise(function(res){ try { W._setLeads(function(prev){ var n = mut((prev || []).slice()); if (!n) { res(false); return prev; } res(true); try { if (W.idbSet) W.idbSet('leads', n); if (W._supaUpsert) W._supaUpsert('leads', n); } catch (e) {} return n; }); } catch (e) { res(false); } });
+  return Promise.resolve(p).then(function(){
+    delete S.busy[k];
+    try { if (Array.isArray(pushed) && typeof W._supaUpsertNow === 'function') ST.call(W, function(){ try { W._supaUpsertNow('leads', pushed); } catch (e) {} }, 300); } catch (e) {}   /* one tap: to the cloud now */
+    try { if (W._crm && Array.isArray(W._crm.leads) && !W._crm.leads.some(function(y){ return y && y.id === l.id; })) W._crm.leads = W._crm.leads.concat([l]); } catch (e) {}
+    ST.call(W, function(){ try { W.__GC_MANUAL_SAVE__ = false; } catch (e) {} }, 1500);
+    toast('➕ Lead made: ' + l.name + ' (' + coOf(x.hint)[0] + ').');
+    return setState(k, 'lead', l.id).then(function(){ return l; });
+  }, function(e){ delete S.busy[k]; toast('Could not add the lead: ' + s(e && e.message), true); return null; });
+}
+
+W._gcPermitLeads = { open: open, close: close, load: load, repaint: paint, makeLead: makeLead, dismiss: function(k){ return setState(k, 'dismissed'); }, leadOf: leadOf, newCount: newCount,
+  state: function(){ return { paints: S.paints || 0, items: S.items.length, shown: shown().length, status: S.status, err: S.err, at: S.at, open: S.open, f: Object.assign({}, S.f), chip: !!(chip && chip.parentNode), newCount: newCount() }; } };
+try { console.log('[GC] patch PERMITS: 🏗️ Permits in Leads (Nashville free feed + Shovels) — _gcPermitLeads.state()'); } catch (e) {}
 })(window);
 </script>
