@@ -75,7 +75,22 @@ function effective(p, admin){
   if (p && (p.importedHistory === true || p.noSend === true || p.historyOnly === true)) OPTS.forEach(function(o){ if (!LOCKED[o[0]] && /^(email|docs|portal)$/.test(o[1])) out[o[0]] = false; });   /* patch LCLEAN-H: a job imported / back-entered as history sends nothing */
   return out;
 }
+/* patch COTRAIN (owner 11/12: "marketing we have nothing yet … don't make anything active until I activate marketing"; "I will have
+   different ad accounts"): a GrayCo Mitigation / Environmental job never gets a marketing message (review request, newsletter list,
+   yearly check-up) until an admin turns that company's marketing on (🏢 company settings → marketing.active, read through
+   parseAdmin(v, gc_companies)). GrayCo Construction is unchanged. The 5 jobs MULTICO reads as Construction stay Construction. */
+const MKT_KEYS = { reviewRequest: 1, newsletter: 1, yearlyCheckup: 1 };
+const MISFILED = { QB_1787683804675_rorl3: 1, QB_1787683804675_n8toc: 1, QB_1787770954125_mynon: 1, PRJMVPFN7MBC7: 1, PRJMVPH916YOG: 1 };
+function companyOf(p){
+  const c = s(p && p.companyId);
+  if (c !== 'mitigation' && c !== 'environmental') return 'construction';
+  if (MISFILED[s(p.id)] && c === 'mitigation' && !p.companyIdBy && !p.parentJobId) return 'construction';
+  return c;
+}
+function otherCo(p){ return companyOf(p) !== 'construction'; }
+function coMarketingOn(p, admin){ const c = companyOf(p); if (c === 'construction') return true; const m = admin && admin._coMkt && admin._coMkt[c]; return !!(m && m.active === true); }
 function allows(p, key, admin){
+  if (MKT_KEYS[key] && !coMarketingOn(p, admin)) return false;   /* patch COTRAIN */
   if (LOCKED[key]) return true;
   if (KEYS.indexOf(key) < 0) return true;     /* not an automation: nothing to block */
   return effective(p, admin)[key] !== false;
@@ -87,10 +102,20 @@ function blockedKind(p, kind, admin){
   return allows(p, k, admin) ? '' : k;
 }
 /* the admin defaults as stored in gc_kv (JSON text or object) */
-function parseAdmin(v){
-  if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { return null; } }
-  return v && typeof v === 'object' && !Array.isArray(v) ? v : null;
+function parseAdmin(v, companies){
+  if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } }
+  v = v && typeof v === 'object' && !Array.isArray(v) ? v : null;
+  /* patch COTRAIN: each company's marketing switch + its own review link (gc_kv gc_companies) */
+  if (typeof companies === 'string') { try { companies = JSON.parse(companies); } catch (e) { companies = null; } }
+  const list = companies && Array.isArray(companies.list) ? companies.list : [];
+  const mk = {};
+  list.forEach(function(c){ if (c && (c.id === 'mitigation' || c.id === 'environmental') && c.marketing && typeof c.marketing === 'object') mk[c.id] = { active: c.marketing.active === true, reviewLink: s(c.marketing.accounts && c.marketing.accounts.reviewLink) }; });
+  if (!Object.keys(mk).length) return v;
+  return Object.assign({}, v || {}, { _coMkt: mk });
 }
+/* patch COTRAIN: the review link a job's customer may be shown — Construction's own, a Mitigation / Environmental job only its company's (when on) */
+function reviewLinkFor(p, admin, constructionUrl){ const c = companyOf(p); if (c === 'construction') return constructionUrl; if (!coMarketingOn(p, admin)) return ''; const m = admin._coMkt[c]; return /^https:\/\//.test(m.reviewLink) ? m.reviewLink : ''; }
 
 module.exports = { OPTS: OPTS, KEYS: KEYS, LOCKED: LOCKED, GROUPS: GROUPS, KIND_KEY: KIND_KEY, groupOf: groupOf, builtin: builtin,
-  defaultsFor: defaultsFor, effective: effective, allows: allows, blockedKind: blockedKind, parseAdmin: parseAdmin, KV_KEY: 'jobAutoDefaults' };
+  defaultsFor: defaultsFor, effective: effective, allows: allows, blockedKind: blockedKind, parseAdmin: parseAdmin, KV_KEY: 'jobAutoDefaults',
+  companyOf: companyOf, otherCo: otherCo, coMarketingOn: coMarketingOn, reviewLinkFor: reviewLinkFor, MKT_KEYS: MKT_KEYS };

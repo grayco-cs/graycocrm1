@@ -140,7 +140,7 @@ async function audienceFor(rec, data){
     let adm = data && data.jobAutoDefaults;
     if (adm === undefined) { try { adm = (await crmData(['jobAutoDefaults'])).jobAutoDefaults; } catch (e) { adm = null; } }
     adm = JA.parseAdmin(adm); const on = {};
-    arr(data && data.projects).forEach(function(p){ if (!p || p.deleted === true) return; const e = String(p.clientEmail || p.customerEmail || p.email || '').trim().toLowerCase(); if (!e) return; if (JA.allows(p, 'newsletter', adm)) on[e] = 1; else jaOff[e] = 1; });
+    arr(data && data.projects).forEach(function(p){ if (!p || p.deleted === true) return; const e = String(p.clientEmail || p.customerEmail || p.email || '').trim().toLowerCase(); if (!e) return; if (JA.allows(p, 'newsletter', adm) && !(JA.otherCo && JA.otherCo(p))) on[e] = 1; else jaOff[e] = 1; });   /* patch COTRAIN: Construction's campaigns never go to a Mitigation / Environmental job's customer */
     Object.keys(on).forEach(function(e){ delete jaOff[e]; });
   } catch (e) { jaOff = {}; }
   if (data && data.newsSignups === undefined) { try { data = Object.assign({}, data, { newsSignups: await mkt2().signups() }); } catch (e) {} }   /* patch MKT2: lead-magnet sign-ups */
@@ -391,7 +391,8 @@ async function autopilot(o){
   const state = get(doc, 'auto', 'state') || { id: 'state', weeks: {}, months: {}, jobs: {}, reviews: {} };
   const made = { posts: [], campaigns: [], neighbors: [], reviews: [] };
   let data = {}; try { data = await crmData(['customers', 'projects', 'users', 'gc_photos']); } catch (e) {}
-  const projects = arr(data.projects).filter(function(p){ return p && p.deleted !== true; });
+  const JAc = require('./job-auto.js');
+  const projects = arr(data.projects).filter(function(p){ return p && p.deleted !== true && !JAc.otherCo(p); });   /* patch COTRAIN: Autopilot is Construction's — never a Mitigation / Environmental job's photos, address or customer */
   const newRecs = [];
   const socOn = !!(cfg(doc).socPlan && cfg(doc).socPlan.on === true);   /* patch SOC: the Mon / Wed / Fri plan (soc.scheduled) has the week */
   const weekly = (!state.weeks[wk] || o.forceWeek) && !socOn;
