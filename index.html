@@ -196198,7 +196198,7 @@ function plan(){ var p = PLAN || {}, d = defaults(), has = isObj(p.tracks) && Ob
   if (has) Object.keys(d.tracks).forEach(function(k){ if (!tks[k] && d.tracks[k].future) { tks = Object.assign({}, tks); tks[k] = d.tracks[k]; } });   /* a future role added later */
   return { tracks: tks, raises: rs,
   people: isObj(p.people) ? p.people : {}, done: arr(p.done), bonus: isObj(p.bonus) ? p.bonus : {}, suggested: newR ? false : p.suggested === true, tracksV: 2, raisesV: 2,
-  caps: isObj(p.caps) ? p.caps : {}, travel: arr(p.travel), mileRate: num(p.mileRate) > 0 ? num(p.mileRate) : 0.70, masterOnce: p.masterOnce !== false, excLog: arr(p.excLog), classes: arr(p.classes), jobExc: isObj(p.jobExc) ? p.jobExc : {}, allowReq: arr(p.allowReq) }; }
+  caps: isObj(p.caps) ? p.caps : {}, travel: arr(p.travel), mileRate: num(p.mileRate) > 0 ? num(p.mileRate) : 0.70, masterOnce: p.masterOnce !== false, excLog: arr(p.excLog), classes: arr(p.classes), jobExc: isObj(p.jobExc) ? p.jobExc : {}, allowReq: arr(p.allowReq), blockMode: p.blockMode === 'block' ? 'block' : 'warn' }; }
 var CERTS_OK = false;   /* patch CERTROLE: the certificates list could be read on this computer (the job block only acts then) */
 function load(){ return Promise.all([sb(KEY), sb('gc_certs'), isAdmin() ? loadTP() : null]).then(function(v){ CERTS_OK = isObj(v[1]); PLAN = isObj(v[0]) ? v[0] : null; CERTS = arr(isObj(v[1]) ? v[1].list : (W._gcCerts && W._gcCerts.list ? W._gcCerts.list() : [])); LOADED = true; bust(); return plan(); }); }
 function save(mut){ return sb(KEY).then(function(v){ var cur = isObj(v) ? v : {}; var p = { tracks: cur.tracks, raises: cur.raises, people: cur.people, done: cur.done, bonus: cur.bonus, suggested: cur.suggested };
@@ -196442,6 +196442,11 @@ function blockOf(u, pj){ if (!u || !pj || !LOADED || !CERTS_OK) return null; var
   var ek = enforcedKinds(pj); if (ek) { var ks = jobKinds(pj), q = qualOf(u), canK = q.can.map(function(x){ return x.k; }), bad = ks.filter(function(k){ return ek.indexOf(k.k) >= 0 && canK.indexOf(k.k) < 0; }); if (!bad.length) return null;
     return { ok: false, kinds: bad.map(function(k){ return k.l; }), missing: bad.map(function(k){ return (q.next.filter(function(n){ return n.k === k.k; })[0] || { missing: [] }).missing.join(' + '); }), law: true, label: c.label }; }
   return c; }
+/* patch CERTROLE (owner 11/12): WARN ONLY until the owner switches it on (real staff certificates are not entered yet) — gc_cert_plan.blockMode
+   'warn' (default) | 'block'. Warn: no taking anyone off, no clock-in refusal, no admin requests — a heads-up instead. Block: the hard rule. */
+function blockMode(){ return plan().blockMode === 'block' ? 'block' : 'warn'; }
+function headsUp(list){ toast('⚠ Heads-up: ' + list.map(function(h){ return h.missing.join(', ') + ' is required for ' + s(h.pj.name || 'this job') + ' (' + s(h.u.name) + ')'; }).join(' · ') + '.'); }
+function noCertsCount(){ var p = plan(); return staff().filter(function(u){ var tk = trackOf(u, p); return /^(mit_|env_|dual_|cont_|gen_lab)/.test(tk) && !heldBy(u.email).length; }).length; }
 function allowOnJob(u, pj, reason){
   if (!isAdmin()) { toast('Only an admin can let someone on a job without the certificates.', true); return Promise.resolve(false); }
   var why = s(reason); if (!why) { toast('Type the reason.', true); return Promise.resolve(false); }
@@ -196457,6 +196462,7 @@ function askAllow(u, pj, from){
 }
 function confirmAssign(u, pj, reason){
   var c = qualCheck(u, pj); if (c.ok || jobExcOf(u, pj)) return Promise.resolve(true);
+  if (blockMode() !== 'block') { if (blockOf(u, pj)) headsUp([{ u: u, pj: pj, missing: c.missing }]); return Promise.resolve(true); }
   if (!isAdmin()) return askAllow(u, pj, 'picker').then(function(){ toast('🚫 ' + s(u.name) + ' needs ' + c.missing.join(', ') + ' for this job — an admin was asked to allow it.', true); return false; });
   if (s(reason)) return allowOnJob(u, pj, reason);
   if (!isAdmin()) { toast('Only an admin can put someone without the ' + c.missing.join(', ') + ' on this job (the law requires it).', true); return Promise.resolve(false); }
@@ -196466,7 +196472,7 @@ function confirmAssign(u, pj, reason){
   return save(function(p){ p.excLog = arr(p.excLog); p.excLog.push({ id: uid(), email: low(u.email), kind: 'assign', text: 'assigned to ' + s(pj && (pj.name || pj.id)) + ' without ' + c.missing.join(', '), reason: why.slice(0, 300), by: by, at: nowISO(), job: s(pj && pj.id) }); }).then(function(){ return true; });
 }
 W._gcCertQual = { of: qualOf, jobKinds: function(pj){ return jobKinds(pj).map(function(k){ return k.k; }); }, check: qualCheck, forJob: qualForJob, confirmAssign: confirmAssign, QUAL: QUAL,
-  block: blockOf, allow: allowOnJob, ask: askAllow, exception: jobExcOf, crewIssues: crewIssues, userByName: userByName, avail: availOf, _tick: function(){ guardTick(); schedTick(); } };
+  block: blockOf, allow: allowOnJob, ask: askAllow, exception: jobExcOf, crewIssues: crewIssues, userByName: userByName, avail: availOf, mode: blockMode, noCerts: noCertsCount, _tick: function(){ guardTick(); schedTick(); } };
 /* patch CERTROLE (owner: "when making the schedule make sure to show when they can't be on a job") — one person × one job × one day:
    { mark: '✓' | '🚫' | '⚠', block, reasons: [...] }: 🚫 = a missing required certificate (blocked; admins only can allow); ⚠ = double-booked,
    time off (window._gcTimeOff.isOff when present), not in that company, a laborer not yet tech — warnings the scheduler decides on. */
@@ -196502,6 +196508,7 @@ function guardTick(){
     var hit = [];
     changed.forEach(function(x){ now[x.id].filter(function(n){ return SNAP[x.id].indexOf(n) < 0; }).forEach(function(n){ var u = userByName(n), b = u ? blockOf(u, x) : null; if (b) hit.push({ u: u, pj: x, n: n, missing: b.missing }); }); });
     SNAP = now;
+    if (hit.length && blockMode() !== 'block') { headsUp(hit); return; }   /* warn only: they stay on the job */
     if (!hit.length || typeof W._setProjects !== 'function') return;
     var at = new Date().toISOString();
     W._setProjects(function(prev){ return arr(prev).map(function(x){ var hs = hit.filter(function(h){ return h.pj.id === (x && x.id); }); if (!hs.length) return x; var y = Object.assign({}, x);
@@ -196528,6 +196535,7 @@ function schedTick(){
     ch.forEach(function(x){ var pj = P.filter(function(q){ return q && s(q.id) === s(x.pid || x.projectId || x.jobId); })[0]; if (!pj) return;
       now[x.id].filter(function(n){ return (SSNAP[x.id] || []).indexOf(n) < 0; }).forEach(function(n){ var u = userByName(n), b = u ? blockOf(u, pj) : null; if (b) hit.push({ e: x, u: u, pj: pj, n: n, missing: b.missing }); }); });
     SSNAP = now;
+    if (hit.length && blockMode() !== 'block') { headsUp(hit); return; }   /* warn only: they stay on the schedule */
     if (!hit.length || typeof W._setSchedule !== 'function') return;
     W._setSchedule(function(prev){ return arr(prev).map(function(x){ var hs = hit.filter(function(h){ return h.e.id === (x && x.id); }); if (!hs.length) return x; var y = Object.assign({}, x);
       hs.forEach(function(h){ SF.forEach(function(f){ var v = y[f]; if (Array.isArray(v)) y[f] = v.filter(function(c){ return low(typeof c === 'object' && c ? (c.name || c.email) : c) !== low(h.n); });
@@ -196706,6 +196714,10 @@ function render(){
   var h = '<div class="gccp-h"><b>🎖 Required certs, raises &amp; promotion</b><span><button type="button" class="gccp-btn" data-cp="close">✕</button></span></div>' +
     '<p class="gccp-mut">Required and recommended certificates by role and company (no hire-date deadlines — keep on), a raise for every certificate earned, and ⭐ promotion eligibility once someone holds a Master designation. The certificates themselves live in 📜 Certifications — add one there and it shows up here.</p>' +
     '<div class="gccp-note" data-cp-rulenote="1">💵 <b>The owner\'s raise rule</b> (each one editable in ⚙ Raise amounts): <b>$5/hr</b> for Master Restorer, the Master designations, lead / asbestos <b>supervisor</b>, HAZWOPER 40-hour and any other 32–40-hour supervisor / master-level class · <b>$2/hr</b> for OSHA 30 · <b>$1/hr</b> for everything else (IICRC courses, RRP, lead / asbestos worker, OSHA 10 …). Salaried: × 2,080 hours a year. 💼 PMs are commission-paid: their certificates are required, with no certificate raises; a master level pays through the PM commission plan. 🎓 ' + esc(POLICY) + '. Lines marked <span class="gccp-law">LAW</span> are legally required when the employee does that work (cited on each line); check the current state rules on renewal.</div>' +
+    (function(){ var bm = p.blockMode === 'block' ? 'block' : 'warn', nc = LOADED ? noCertsCount() : 0;   /* patch CERTROLE: the owner's switch */
+      return '<div class="gccp-note" data-cp-blockbar="1" style="background:' + (bm === 'block' ? '#fef2f2;border-color:#fecaca' : '#f8fafc;border-color:#cbd5e1') + '">🚫 <b>Cert job block:</b> <select class="gccp-in" data-cp-blockmode="1"><option value="warn"' + (bm === 'warn' ? ' selected' : '') + '>⚠ Warn only</option><option value="block"' + (bm === 'block' ? ' selected' : '') + '>🚫 Block</option></select> ' +
+        (bm === 'warn' ? '<span class="gccp-mut">Warn only: people without a job\'s certificates get a heads-up and stay on it (clock-in allowed). Turn on after everyone\'s certs are entered — <b data-cp-nocerts="1">' + nc + ' staff</b> on Mitigation / Environmental / Cleaning tracks have no certs on file.</span>' :
+          '<span class="gccp-mut">Block: not qualified = not on the job (taken off, clock-in refused); admins only can allow one person on one job. <b data-cp-nocerts="1">' + nc + ' staff</b> on Mitigation / Environmental / Cleaning tracks have no certs on file.</span>') + '</div>'; })() +
     '<div class="gccp-tabs">' + tabs.map(function(t){ return '<span class="gccp-tab' + (UI.tab === t[0] ? ' on' : '') + '" data-cptab="' + t[0] + '">' + t[1] + (t[0] === 'raises' ? ' (' + ppl.reduce(function(n, u){ return n + raisesDue(u, p).length; }, 0) + ')' : '') + '</span>'; }).join('') + '</div>';
   if (!LOADED) h += '<p>Loading…</p>';
   else if (UI.tab === 'people') h += ppl.map(function(u){
@@ -196874,6 +196886,9 @@ function open_(tab){
     var dk = t.getAttribute('data-cp-rec'); if (dk) { var a = dk.split('|'); save(function(p){ var r = p.tracks[a[0]] && p.tracks[a[0]].reqs[+a[1]]; if (r && !r.legal) { r.rec = t.value === 'rec'; if (!r.rec && r.why === REC_WHY) r.why = 'GrayCo requirement'; } }).then(render); }   /* patch CERTROLE */
     var tg = t.getAttribute('data-cp-target'); if (tg) { var b = tg.split('|'); save(function(p){ var x = isObj(p.people[b[0]]) ? p.people[b[0]] : {}; x.targets = isObj(x.targets) ? x.targets : {}; if (ymd(t.value)) x.targets[b[1]] = ymd(t.value); else delete x.targets[b[1]]; p.people[b[0]] = x; }).then(render); }
     if (t.hasAttribute('data-cp-year')) { UI.year = t.value; render(); }
+    if (t.hasAttribute('data-cp-blockmode')) { if (!isAdmin()) return; var nv = t.value === 'block' ? 'block' : 'warn';
+      if (nv === 'block' && !W.confirm('Turn the cert job block ON? People without a job\'s required certificates will be taken off those jobs and cannot clock in to them.')) { render(); return; }
+      var who9 = s(me().name || me().email); save(function(p){ p.blockMode = nv; p.excLog = arr(p.excLog); p.excLog.push({ id: uid(), email: '', kind: 'blockmode', text: 'cert job block: ' + nv, reason: 'owner setting', by: who9, at: nowISO() }); }).then(function(){ toast(nv === 'block' ? '🚫 Cert job block is ON' : '⚠ Cert job block: warn only'); render(); }); }
     if (t.hasAttribute('data-cp-wday')) { UI.wday = ymd(t.value) || today(); render(); }   /* patch CERTROLE: 👷 Who can work — that day */
     if (t.hasAttribute('data-cp-masteronce')) save(function(p){ p.masterOnce = !!t.checked; }).then(render);   /* patch CERTROLE */
   });
@@ -199401,7 +199416,7 @@ function builtIns(){
   R({ id: 'call', icon: '👤', label: 'Customer profile', group: 'arrive', needsSigned: false, run: function(p){ custProfile(p); } });
   R({ id: 'sendsign', icon: '✍️', label: 'Send for signature', cls: 'pri', needsSigned: false, run: function(p){ if (W._gcJobDashboard) W._gcJobDashboard(p.id); later(function(){ var b = Array.prototype.filter.call(D.querySelectorAll('#_gcJobDash button'), function(x){ return /Signatures/.test(x.textContent); })[0]; if (b) b.click(); }, 700); } });
   R({ id: 'day', icon: function(p, c){ return c.day.ended ? '✅' : c.day.started ? '🏁' : '🟢'; }, label: function(p, c){ return c.day.ended ? 'Day ended ✓' : c.day.started ? 'End day' : 'Start day'; }, cls: function(p, c){ return c.day.ended ? '' : c.day.started ? 'end' : 'go'; },
-    run: function(p, c){ if (c.day.ended) { closeHome(); try { W._gcRP.site().open(p.id, 'log'); } catch (e) {} return; } if (c.day.started) endDay(p); else { var cb = certBlock(p); if (cb) { toast('🚫 You need ' + cb.missing.join(', ') + ' to work this job — talk to your manager.'); return; } startDay(p); } } });   /* patch CERTROLE: no clock-in on a job they are not qualified for */
+    run: function(p, c){ if (c.day.ended) { closeHome(); try { W._gcRP.site().open(p.id, 'log'); } catch (e) {} return; } if (c.day.started) endDay(p); else { var cb = certBlock(p); if (cb) { var hard = false; try { hard = W._gcCertQual.mode() === 'block'; } catch (e) {} if (hard) { toast('🚫 You need ' + cb.missing.join(', ') + ' to work this job — talk to your manager.'); return; } toast('⚠ Heads-up: ' + cb.missing.join(', ') + ' is required for this job.'); } startDay(p); } } });   /* patch CERTROLE: no clock-in on a job they are not qualified for (Block); a heads-up (Warn only) */
   R({ id: 'photos', icon: '📸', label: 'Photos', needsSigned: false, run: function(p){ openPhotos(p.id); } });
   R({ id: 'msgs', icon: '💬', label: 'Messages', needsSigned: false, run: function(p){ if (W._gcOpenJobMessages) W._gcOpenJobMessages(p.id); } });
   R({ id: 'progress', icon: '📈', label: 'Progress', cls: 'pri', run: function(p){ if (W._gcOpenFieldProgress) W._gcOpenFieldProgress(p.id); } });

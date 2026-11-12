@@ -19,9 +19,10 @@ W._gcTrain = { required: rk => [{ id: 'b:start', title: 'Start here', parts: [{ 
 vm.createContext(W); vm.runInContext(src, W);
 const C = W._gcCertPlan, Q = W._gcCertQual, by = n => U.find(u => u.name === n + ' Demo');
 const cert = (who, name, issuer) => ({ holderType: 'person', holder: who.toLowerCase() + '@example.com', name, issuer: issuer || '' });
-C._set(null, [cert('Tia', 'IICRC WRT', 'IICRC'), cert('Tia', 'IICRC ASD', 'IICRC'), cert('Tia', 'IICRC AMRT', 'IICRC'), cert('Tia', 'IICRC FSRT', 'IICRC'), cert('Tia', 'IICRC OCT', 'IICRC'), cert('Tia', 'IICRC CCT', 'IICRC'), cert('Tia', 'IICRC UFT', 'IICRC'), cert('Tia', 'OSHA 30 (construction)'), cert('Tia', 'IICRC Master Restorer', 'IICRC'),
+const CERTLIST = [cert('Tia', 'IICRC WRT', 'IICRC'), cert('Tia', 'IICRC ASD', 'IICRC'), cert('Tia', 'IICRC AMRT', 'IICRC'), cert('Tia', 'IICRC FSRT', 'IICRC'), cert('Tia', 'IICRC OCT', 'IICRC'), cert('Tia', 'IICRC CCT', 'IICRC'), cert('Tia', 'IICRC UFT', 'IICRC'), cert('Tia', 'OSHA 30 (construction)'), cert('Tia', 'IICRC Master Restorer', 'IICRC'),
   cert('Dex', 'IICRC WRT', 'IICRC'), cert('Dex', 'IICRC AMRT', 'IICRC'), cert('Dex', 'Lead abatement worker'), cert('Dex', 'Asbestos abatement worker'), cert('Dex', 'HAZWOPER 40-hour'),
-  cert('Ina', 'IICRC WRT', 'IICRC'), cert('Ross', 'IICRC UFT', 'IICRC'), cert('Gary', 'OSHA 30 (construction)'), cert('Lou', 'EPA RRP Certified Renovator'), cert('Cora', 'IICRC CCT', 'IICRC'), cert('Cora', 'IICRC Master Textile Cleaner', 'IICRC'), cert('Eli', 'Asbestos abatement worker')]);
+  cert('Ina', 'IICRC WRT', 'IICRC'), cert('Ross', 'IICRC UFT', 'IICRC'), cert('Gary', 'OSHA 30 (construction)'), cert('Lou', 'EPA RRP Certified Renovator'), cert('Cora', 'IICRC CCT', 'IICRC'), cert('Cora', 'IICRC Master Textile Cleaner', 'IICRC'), cert('Eli', 'Asbestos abatement worker')];
+C._set(null, CERTLIST);
 const p = C.plan(), rc = n => C.raiseCalc(by(n), p), tk = n => C.trackOf(by(n), p);
 
 ok(['Tia', 'Dex', 'Ina', 'Ross', 'Gary', 'Lou', 'Cora', 'Ecl', 'Eli', 'Max'].map(tk).join() === 'mit_tech,dual_tech,con_ins_pm,con_roof_pm,est_com,gen_lab,cont_tech,env_clean,env_tech,mit_manager', 'tracks from the role / profile (Roofing PM, Insurance PM, Estimator, dual, laborer, contents & cleaning, environmental cleaning)', ['Tia', 'Dex', 'Ina', 'Ross', 'Gary', 'Lou', 'Cora', 'Ecl', 'Eli', 'Max'].map(tk));
@@ -54,13 +55,23 @@ const okYes = await Q.allow(tiaU, J1, 'Demo: supervised removal, licensed worker
 ok(!okNo && okYes && !Q.block(tiaU, J1) && !Q.crewIssues(J1).length && C.plan().excLog.some(x => x.kind === 'job' && x.reason.startsWith('Demo')), 'EXCEPTION: an admin\'s exception needs a reason, is logged and lifts the block for that job');
 J1.status = 'Completed';
 ok(!Q.exception(tiaU, J1), 'EXCEPTION: it ends when the job closes'); J1.status = 'active';
+/* WARN ONLY is the default (owner: until everyone's certificates are entered) */
+const warnOk = Q.mode() === 'warn' && C.plan().blockMode === 'warn';
 W.__GC_AUTH__.isAdmin = () => false;
+const warnAssign = await Q.confirmAssign(by('Cora'), J1);
+ok(warnOk && warnAssign === true && !C.plan().allowReq.length && Q.noCerts() >= 1, 'WARN ONLY (default): assigning Cora (no asbestos worker) is allowed with a heads-up, no admin request; the switch counts staff with no certs on file', { mode: Q.mode(), warnAssign, n: Q.noCerts() });
+C._set(Object.assign({}, C.plan(), { blockMode: 'block' }), CERTLIST);
 const asked = await Q.confirmAssign(by('Cora'), J1);
 ok(asked === false && C.plan().allowReq.some(r => r.email === 'cora@example.com' && r.status === 'open'), 'non-admin: blocked, "Ask an admin to allow" request created');
 W.__GC_AUTH__.isAdmin = () => true;
 /* the job-save guard (every path that saves a job through _setProjects: job page, Quick Add edits, field assignment) */
 let STATE = W._crm.projects.map(x => Object.assign({}, x)); W._crm.projects = STATE; W._setProjects = v => { STATE = typeof v === 'function' ? v(STATE) : v; W._crm.projects = STATE; };
 Q._tick();   /* the baseline */
+C._set(Object.assign({}, C.plan(), { blockMode: 'warn' }), CERTLIST);
+const putW = (id, f, v) => { W._crm.projects = STATE = STATE.map(x => x.id === id ? Object.assign({}, x, { [f]: v }) : x); Q._tick(); };
+putW('J2', 'mitTech', 'Lou Demo'); const j2w = STATE.find(x => x.id === 'J2').mitTech; putW('J2', 'mitTech', '');
+ok(j2w === 'Lou Demo', 'WARN ONLY: Lou (no WRT) put on the Mitigation water job stays on it (heads-up only)', j2w);
+C._set(Object.assign({}, C.plan(), { blockMode: 'block' }), CERTLIST);
 const put = (id, f, v) => { W._crm.projects = STATE = STATE.map(x => x.id === id ? Object.assign({}, x, { [f]: v }) : x); Q._tick(); };
 put('J2', 'mitTech', 'Lou Demo'); const j2a = STATE.find(x => x.id === 'J2').mitTech;
 put('J2', 'mitTech', 'Tia Demo'); const j2b = STATE.find(x => x.id === 'J2').mitTech;

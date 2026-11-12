@@ -212,6 +212,16 @@ const c2 = cget('gc_cert_plan');
 ok('📋 an admin can switch a line between Required and 💡 Recommended per role (Roofing PM WRT → Required)', c2.tracks.con_roof_pm.reqs[0].id === 'wrt' && c2.tracks.con_roof_pm.reqs[0].rec === false && c2.tracks.con_ins_pm.reqs[0].rec !== true && c2.tracks.con_pm.reqs[0].rec === true, c2.tracks.con_roof_pm.reqs[0]);
 const todo = await A.ev(() => window._gcTodoExt.map(f => { try { return f(); } catch (e) { return []; } }).flat().filter(x => /^cp/.test(x.key)).map(x => x.title));
 ok('To-Do: raises due, and only EXPIRED required certificates (never "overdue") for admins', todo.some(t => /💵 Raise due: Dex Demo/.test(t)) && !todo.some(t => /💵 Raise due: (Pat Planner|Sam Demo|Ina Demo|Max Master)/.test(t)) && todo.some(t => /Pat Planner: 1 required certificate expired — renew/.test(t)) && !todo.some(t => /overdue/i.test(t)) && !todo.some(t => /(Mo Tech|Eve Abate|Sam Demo|Ina Demo): \d+ required/.test(t)), todo);
+/* ── the owner's switch: 🚫 Cert job block — Warn only (default) / Block ── */
+await A.ev(() => window._gcCertPlan.open('people')); await sleep(1200);
+const bb0 = await A.ev(() => ({ v: document.querySelector('[data-cp-blockmode]').value, txt: document.querySelector('[data-cp-blockbar]').innerText, mode: window._gcCertQual.mode() }));
+await A.ev(() => { window.__cf1 = window.confirm; window.confirm = () => true; const s = document.querySelector('[data-cp-blockmode]'); s.value = 'block'; s.dispatchEvent(new Event('change', { bubbles: true })); }); await sleep(1200);
+await cloudWait(c => c.blockMode === 'block');
+const bb1 = { cloud: (cget('gc_cert_plan') || {}).blockMode, mode: await A.ev(() => window._gcCertQual.mode()) };
+await A.page().screenshot({ path: (process.argv[3] || '/tmp') + '/certrole_block_switch.png' });
+await A.ev(() => { const s = document.querySelector('[data-cp-blockmode]'); s.value = 'warn'; s.dispatchEvent(new Event('change', { bubbles: true })); window.confirm = window.__cf1; }); await sleep(1200);
+await cloudWait(c => c.blockMode === 'warn');
+ok('SWITCH: "🚫 Cert job block" is ⚠ Warn only by default with "Turn on after everyone\'s certs are entered — N staff … have no certs on file"; an admin turns it to Block (saved in the cloud, confirm) and back', bb0.v === 'warn' && bb0.mode === 'warn' && /Turn on after everyone's certs are entered — \d+ staff on Mitigation \/ Environmental \/ Cleaning tracks have no certs on file/.test(bb0.txt) && bb1.cloud === 'block' && bb1.mode === 'block' && (cget('gc_cert_plan') || {}).blockMode === 'warn', { bb0, bb1 });
 /* ── General Laborer → tech status ── */
 const lab0 = await A.ev(() => { const C = window._gcCertPlan, U = window._crm.users, f = e => U.find(u => u.email === e), lou = C.raiseCalc(f('lou@example.com')), lea = C.raiseCalc(f('lea@example.com'));
   return { louT: lou.track, louDue: lou.due.length, leaDue: lea.due.length, leaBlocked: lea.blocked.map(x => x.why), p1: C.techCourses(f('lou@example.com')), p2: C.envPath(f('lea@example.com')), ol: C.outlookOf('gen_lab').start }; });
