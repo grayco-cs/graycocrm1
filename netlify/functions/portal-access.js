@@ -90,6 +90,10 @@ const crypto = require('crypto');
 const OFFICE_PHONE = '901-585-0944';
 const OFFICE_EMAIL = 'office@grayco-cs.com';
 const NOT_ACTIVE = 'This link is not active — call GrayCo ' + OFFICE_PHONE;
+/* patch SUBSESS (owner 11/12: "keep subs signed in on portal"): a sub's signed-in device (kind 'partner') lasts SUB_DAYS and slides
+   from each use (touchSession), so a sub who opens the portal now and then is never signed out by a date — only by Sign out, by
+   the office turning their link off (subLinkRevoke: every device ends) or by not opening it for a whole SUB_DAYS. */
+const SUB_DAYS = 365;
 const SESSION_DAYS = 30, CODE_MIN = 10, CODE_TRIES = 5, MIN_FAIL_MS = 250, SIGN_SECS = 3600;
 const MAX_UPLOAD = 4.5 * 1024 * 1024;
 const KV_KEYS = ['gc_senior_pm', 'projects', 'subs', 'vendors', 'users', 'invs', 'invoices', 'punch', 'schedule', 'projectDocs', 'customers',
@@ -162,7 +166,7 @@ async function kvRead(keys){
   if (!r.ok) throw Fail(502, 'The CRM records could not be read (' + r.status + ').');
   const rows = await r.json(); const byKey = {};
   (Array.isArray(rows) ? rows : []).forEach(function(x){ if (x && x.key) byKey[x.key] = x; });
-  const out = {};
+  const out = {}; let partial = false;
   for (const k of keys) {
     let val = byKey[k] ? byKey[k].value : null;
     const man = byKey[k + '__manifest'];
@@ -172,12 +176,14 @@ async function kvRead(keys){
         const names = []; for (let i = 0; i < Math.min(mv.count, 60); i++) names.push('"' + k + '__chunk' + i + '"');
         const rr = await fetch(sbUrl() + '/rest/v1/gc_kv?select=key,value&key=in.(' + names.join(',') + ')', { headers: H() });
         if (rr.ok) { const parts = await rr.json(); const by = {}; (Array.isArray(parts) ? parts : []).forEach(function(x){ by[x.key] = x.value; });
-          let all = []; for (let i = 0; i < mv.count; i++) all = all.concat(arr(by[k + '__chunk' + i])); if (all.length) val = all; }
-      } catch (e) {}
+          let all = []; for (let i = 0; i < mv.count; i++) { if (by[k + '__chunk' + i] === undefined) partial = true; all = all.concat(arr(by[k + '__chunk' + i])); } if (all.length) val = all; }
+        else partial = true;
+      } catch (e) { partial = true; }
     }
     out[k] = (typeof val === 'string') ? (function(){ try { return JSON.parse(val); } catch (e) { return val; } })() : val;
     if (k === 'schedule') out[k] = require('./_lib/schedvis.js').visible(out[k]);   /* patch SCHEDPICK: template suggestions are not the schedule (no sub sees them) */
   }
+  if (partial) Object.defineProperty(out, '_partial', { value: true });   /* patch SUBSESS: a piece could not be read (subSure) */
   return out;
 }
 async function crmData(force){
@@ -220,7 +226,18 @@ function bidOnlySub(prof){
 /* subById, or (for an 'SBP…' id) the approved bid-site profile behind it */
 async function subResolve(data, id){
   const sub = subById(data, id); if (sub || !/^SBP/.test(s(id))) return sub;
-  try { const rows = await dbGet('sp_rows', 'select=data&collection=eq.users&limit=5000'); const prof = rows.map(function(r){ return r.data || {}; }).find(function(u){ return u.role === 'sub' && bidSubId(u.email) === s(id); }); return bidOnlySub(prof); } catch (e) { return null; }
+  try { const rows = await dbGet('sp_rows', 'select=data&collection=eq.users&limit=5000'); const prof = rows.map(function(r){ return r.data || {}; }).find(function(u){ return u.role === 'sub' && bidSubId(u.email) === s(id); }); return bidOnlySub(prof); }
+  catch (e) { throw (e && e.status) ? e : Fail(503, 'The portal cannot reach the database just now. Try again in a minute.'); }   /* patch SUBSESS: a hiccup is not "no such sub" (that signed subs out) */
+}
+/* patch SUBSESS: the sub behind a session / link, sure: not found in a cached or half-read copy of the CRM records → read them
+   again; still not found while a piece of them could not be read → 503 (try again), never "not active" (that signs the sub out). */
+async function subSure(data, id){
+  let sub = await subResolve(data, id);
+  if (sub) return { data: data, sub: sub };
+  const again = await crmData(true);
+  sub = await subResolve(again, id);
+  if (!sub && again._partial) throw Fail(503, 'The portal cannot read GrayCo\'s records just now. Try again in a minute.');
+  return { data: again, sub: sub };
 }
 function rowIsSub(row, sub){
   if (!row || !sub) return false;
@@ -471,7 +488,7 @@ async function photosCode(sub, jobIds){
 async function sessionCreate(kind, ident, subId, links, days){
   const token = newToken(), now = Date.now();
   await dbPost('gc_portal_session', { id: sha(token), kind: kind, ident: ident || null, sub_id: subId || null, links: links || [],
-    created_at: new Date(now).toISOString(), expires_at: new Date(now + (days || SESSION_DAYS) * 86400e3).toISOString(), revoked: false });
+    created_at: new Date(now).toISOString(), expires_at: new Date(now + (days || (kind === 'partner' ? SUB_DAYS : SESSION_DAYS)) * 86400e3).toISOString(), revoked: false });   /* patch SUBSESS */
   return token;
 }
 /* patch PORTALAPP (owner 10/30: "When they open directly from there the portal keeps password and sign in so they don't
@@ -532,6 +549,7 @@ function touchSession(row){
   if (row.last_seen_at && Date.now() - Date.parse(row.last_seen_at) < 15 * 60e3) return;
   const now = Date.now(), patch = { last_seen_at: new Date(now).toISOString() };
   if (row.kind === 'customer' && appSession(row)) { patch.expires_at = new Date(now + APP_DAYS * 86400e3).toISOString(); }   /* patch PORTALAPP: the app's session slides a year from each open */
+  if (row.kind === 'partner') { patch.expires_at = new Date(now + SUB_DAYS * 86400e3).toISOString(); }   /* patch SUBSESS: a sub's device slides too */
   dbPatch('gc_portal_session', 'id=' + eq(row.id), patch).catch(function(){});
 }
 
@@ -755,8 +773,8 @@ async function openLink(event){
   if (c) return { ok: true, kind: 'customer' };
   const l = await subLinkRow(token);
   if (!l) return null;
-  const data = await crmData(false);
-  const sub = await subResolve(data, l.sub_id);
+  const sure = await subSure(await crmData(false), l.sub_id);   /* patch SUBSESS */
+  const data = sure.data, sub = sure.sub;
   if (!sub) return null;
   if (deviceCheckNeeded(data, sub) && !(await deviceOk(l, gcHeader(event, 'x-portal-device')))) {
     return { ok: true, kind: 'partner', need: 'device', to: maskEmail(sub.email), lang: lang(sub.lang) };
@@ -796,8 +814,8 @@ async function deviceVerify(event, body){
    Whitelist only. A sub never gets GrayCo's prices, margins, the job's contract, other subs, or the
    customer's phone / e-mail (unless the PM turned on "sub may see the customer" for that job). */
 async function partnerCtx(sess){
-  const data = await crmData(false);
-  const sub = await subResolve(data, sess.sub_id);
+  const sure = await subSure(await crmData(false), sess.sub_id);   /* patch SUBSESS */
+  const data = sure.data, sub = sure.sub;
   if (!sub) throw Fail(404, NOT_ACTIVE);
   const scopes = await dbGet('gc_sub_scope', 'select=*&sub_id=' + eq(sub.id) + '&status=in.(published,accepted,question)');
   const scopePids = new Set(scopes.map(function(x){ return s(x.project_id); }));
