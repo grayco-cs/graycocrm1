@@ -347,7 +347,8 @@ function detailsBox(j){
   if (req.length) rows.push(['dReq', req.join(' · ')]);
   if ((d.alternates || []).length) rows.push(['dAlt', d.alternates.join(' · ')]);
   if ((d.unitPrices || []).length) rows.push(['dUnit', d.unitPrices.join(' · ')]);
-  if (c.pmName || c.estName) rows.push(['dContacts', [c.pmName && ('PM ' + [c.pmName, c.pmPhone, c.pmEmail].filter(Boolean).join(' · ')), c.estName && [c.estName, c.estPhone, c.estEmail].filter(Boolean).join(' · ')].filter(Boolean).join(' | ')]);
+  if (c.pmName || c.estName) rows.push(['dContacts', c.pmName && c.estName && String(c.pmName).toLowerCase() === String(c.estName).toLowerCase() ? 'PM & estimator ' + [c.pmName, c.pmPhone || c.estPhone, c.pmEmail || c.estEmail].filter(Boolean).join(' · ')   /* patch PLANREQ-J: once */
+    : [c.pmName && ('PM ' + [c.pmName, c.pmPhone, c.pmEmail].filter(Boolean).join(' · ')), c.estName && [c.estName, c.estPhone, c.estEmail].filter(Boolean).join(' · ')].filter(Boolean).join(' | ')]);
   if (!rows.length && !d.instructions) return null;
   return h('div', { class: 'box', 'data-biddetails': j.id }, [h('b', { text: t('dTitle') }), h('dl', { class: 'info' }, [].concat.apply([], rows.map(function(x){ return [h('dt', { text: t(x[0]) }), h('dd', { text: x[1] })]; })))]
     .concat(d.instructions ? [h('b', { text: t('dHow') }), h('p', { class: 'pre', text: d.instructions })] : []));

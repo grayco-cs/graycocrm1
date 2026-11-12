@@ -17,8 +17,10 @@ const shot = async (A, name) => { if (SHOTS) await A.page().screenshot({ path: S
 const at = new Date(Date.now() - 864e5).toISOString(), due = new Date(Date.now() + 10 * 864e5).toISOString().slice(0, 10), now = new Date().toISOString();
 resetCloud();
 cset('users', [{ id: 'u1', name: 'Wesley Johnson', email: 'wjohnson@grayco-cs.com', role: 'Admin', payType: 'owner', active: true },
-  { id: 'u3', name: 'Sam Biffle', email: 'sbiffle@grayco-cs.com', role: 'Project Manager', active: true }, { id: 'u4', name: 'Gus Estimator', email: 'gestimator@grayco-cs.com', role: 'Estimator', active: true }]);
+  { id: 'u3', name: 'Sam Biffle', email: 'sbiffle@grayco-cs.com', role: 'Project Manager', active: true }, { id: 'u4', name: 'Gus Estimator', email: 'gestimator@grayco-cs.com', role: 'Estimator', phone: '901-555-0144', active: true }]);
+cset('estimates', [{ id: 'E9', name: 'Dorm — base bid', leadId: 'L3', estimator: 'Gus Estimator', status: 'Draft', lines: [{ id: 'x1', desc: 'Framing', cost: 1, qty: 1 }], updatedAt: at, savedAt: at, date: at.slice(0, 10) }]);   /* patch PLANREQ-J */
 cset('leads', [{ id: 'L1', name: 'Sample Clinic Remodel', type: 'Commercial', stage: 'Bidding', bidDue: '2026-11-23T14:00', createdAt: at, updatedAt: at },
+  { id: 'L3', name: 'New Female Dormitory', type: 'Commercial', stage: 'Bidding', address: '1 Sample Way', createdAt: at, updatedAt: at },
   { id: 'L2', name: 'Sample Gym Refresh', type: 'Commercial', stage: 'Bidding', bidDue: '2026-11-30T15:30', address: '9 Sample Rd', createdAt: at, updatedAt: at }]);   /* patch PLANREQ-F: our due dates (a Monday each) */
 cset('projects', [{ id: 'P1', name: 'Sample Clinic Remodel', client: 'Sample Health LLC', address: '100 Sample St', status: 'estimating', autoPO: 'T101', pm: 'Sam Biffle', createdAt: at, updatedAt: at }]);
 /* what subportal.js requestPlans writes (the same shape — test_PLANREQ_fn checks the server side) */
@@ -47,6 +49,7 @@ async function routes(c, who){
     if (rt.request().method() === 'POST') { const b = JSON.parse(rt.request().postData() || '{}'); POSTS.push(Object.assign({ who }, b));
       if (b.op === 'visibility') { const j = JOBS.find(x => x.id === b.jobId); if (j) { j.visibility = b.mode; j.status = 'open'; } return J({ ok: true, jobId: b.jobId, visibility: b.mode }); }
       if (b.op === 'planreq') { REQ.open = false; if (b.act === 'reply') { REQ.closedHow = 'answered'; REQ.reply = b.text; REQ.repliedByName = 'Wesley Johnson'; } else { REQ.closedHow = 'sent'; REQ.sentNote = b.text; } JOBS[0].openReq = 0; return J({ ok: true, mail: 'sent' }); }
+      if (b.op === 'details' && !JOBS.find(x => x.id === b.jobId)) return J({ ok: true, jobId: b.jobId, changed: ['contacts'], notice: { status: 'nobody' } });
       if (b.op === 'details') { const j = JOBS.find(x => x.id === b.jobId); if (Array.isArray(b.trades)) { j.trades = b.trades.join(', '); b.trades.forEach(tr => { if (!TS.some(x => x.trade === tr)) TS.push({ id: 'ts_' + tr, trade: tr, scope: '', files: [] }); }); }
         if (b.due !== undefined) { j.due = b.due; j.dueTime = b.dueTime; } if (b.ourDue !== undefined) { j.ourDue = b.ourDue; j.ourDueTime = b.ourDueTime; } Object.assign(DET, { siteWalk: b.siteWalk, bidForm: (b.bidForm || []).map((x, i) => Object.assign({ id: 'bf' + i }, x)), requirements: b.requirements, internalNotes: b.internalNotes });
         return J({ ok: true, jobId: b.jobId, changed: ['trades', 'bid due', 'site walk', 'bid form'], notice: { status: 'waiting', n: 1 } }); }
@@ -216,6 +219,26 @@ await A.ev(() => { const q = document.querySelector('#gcsys2 [data-k=dtradeq]');
 const tp3 = await A.ev(() => [...document.querySelectorAll('#gcsys2 [data-tp-rest] [data-a="dtrade"]')].map(b => b.getAttribute('data-t')));
 ok('7 🔍 find a trade filters the list', tp3.join() === 'Plumbing', tp3);
 await A.ev(() => window._gcSys2.close());
+/* 8. patch PLANREQ-J: the CRM lead is found and preselected; contacts fill themselves (estimator doing the estimate; no PM → the estimator is the main contact);
+   a staff pick fills phone + e-mail; one person as PM and estimator shows once; "📐 Estimating" in the header; a new estimate's estimator = the person working it */
+await A.ev(() => window._gcSys2.open('J5', 'details'));
+await wait(A, () => document.querySelector('#gcsys2 [data-d="estName"]'));
+const af = await A.ev(() => { const v = k => (document.querySelector('#gcsys2 [data-d="' + k + '"]') || {}).value; return { lead: v('crmLeadId'), guessed: !!document.querySelector('#gcsys2 [data-crm-guessed]'), pm: v('pmName'), est: v('estName'), estPhone: v('estPhone'), estEmail: v('estEmail'),
+  main: !!document.querySelector('#gcsys2 [data-contacts-main]'), auto: !!document.querySelector('#gcsys2 [data-contacts-auto]'), hdr: (document.querySelector('#gcsys2 [data-hdr-estimating]') || {}).textContent || '', pmIsSelect: document.querySelector('#gcsys2 [data-d="pmName"]').tagName }; });
+ok('8 the lead is found by its title and preselected ("Found in the CRM…"); the estimator doing its estimate fills in with phone + e-mail; no PM → "the estimator is the main contact"; header "📐 Estimating: Gus Estimator"',
+  af.lead === 'L3' && af.guessed && af.pm === '' && af.est === 'Gus Estimator' && af.estPhone === '901-555-0144' && af.estEmail === 'gestimator@grayco-cs.com' && af.main && af.auto && /Estimating: Gus Estimator/.test(af.hdr) && af.pmIsSelect === 'SELECT', af);
+await A.ev(() => { const x = document.querySelector('#gcsys2 [data-d="pmName"]'); x.value = 'Gus Estimator'; x.dispatchEvent(new Event('change', { bubbles: true })); }); await sleep(300);
+const af2 = await A.ev(() => ({ pmEmail: document.querySelector('#gcsys2 [data-d="pmEmail"]').value, pmPhone: document.querySelector('#gcsys2 [data-d="pmPhone"]').value, same: (document.querySelector('#gcsys2 [data-contacts-same]') || {}).textContent || '' }));
+ok('8 picking the PM from the staff list fills phone + e-mail; the same person as estimator → "PM & estimator: Gus Estimator"', af2.pmEmail === 'gestimator@grayco-cs.com' && af2.pmPhone === '901-555-0144' && /PM & estimator: Gus Estimator/.test(af2.same), af2);
+await A.ev(() => { const d = document.querySelector('#gcsys2 [data-contacts-same]'); if (d) d.scrollIntoView({ block: 'center' }); }); await shot(A, 'crm12_details_contacts_autofill');
+await A.ev(() => document.querySelector('#gcsys2 [data-a="dsave"]').click());
+await wait(A, () => POSTS.some(p => p.op === 'details' && p.jobId === 'J5'));
+const sv = POSTS.find(p => p.op === 'details' && p.jobId === 'J5') || {};
+ok('8 💾 Save sends the contacts and the CRM lead', sv.contacts && sv.contacts.pmName === 'Gus Estimator' && sv.contacts.estEmail === 'gestimator@grayco-cs.com' && sv.crmLeadId === 'L3' && sv.trades === undefined, sv);
+await A.ev(() => window._gcSys2.close());
+const ep = await A.ev(() => { const sel = document.createElement('select'); sel.innerHTML = '<option>Gus Estimator</option>'; window._gcSetEstPick(sel, ''); return sel.value; });
+ok('8 a new estimate with no estimator gets the person working it (Wesley Johnson)', ep === 'Wesley Johnson', ep);
+ok('8 window._gcEstimatorFor({ leadId: L3 }) → Gus Estimator (who is doing that estimate)', (await A.ev(() => window._gcEstimatorFor({ leadId: 'L3' }))) === 'Gus Estimator');
 ok('no page errors (admin)', !errs.length, errs);
 /* 4. the PM: 🔔 For you + the To-Do */
 const P = await computer('sbiffle@grayco-cs.com', { build: BUILD });
@@ -232,5 +255,5 @@ ok('no page errors (PM)', !errs2.length, errs2);
 if (SHOTS) fs.writeFileSync(SHOTS + '/index-planreq-crm.txt', ['CRM screenshots (test_PLANREQ_CRM.mjs) — made-up data',
   'crm01  🏗 Bid portal list: 🔒 Private ⇄ / 📝 Draft · Post it ▸ one-click pills, 📩 1 request', 'crm02  📂 Manage → 💬 Q&A: the plan request with ↩ Reply / ✅ Mark sent',
   'crm03  📐 Plans & specs: 4 files of different types, each with its guessed kind + trade ▾ before 💾 Save', 'crm04  📝 Scope: each trade with its files + 📎 Add scope files',
-  'crm05  ⋯ Actions: the full menu', 'crm07  the list row: click the sub due date → date + time → Save (past dates red)', 'crm08  the lead\'s due date changed → "Also move the sub due date to …?"', 'crm09  📢 Put on bid portal from a lead: sub due prefilled 1 day before our due (Friday for a weekend)', 'crm11  📝 Details on an invite job: nothing pre-selected, 💡 suggested trades, clean list, Save footer', 'crm06  📂 Manage → 📝 Details: trades picker, dates, site walk, requirements, bid form, contacts, CRM link, internal notes; header trades + due', ''].join('\n'));
+  'crm05  ⋯ Actions: the full menu', 'crm07  the list row: click the sub due date → date + time → Save (past dates red)', 'crm08  the lead\'s due date changed → "Also move the sub due date to …?"', 'crm09  📢 Put on bid portal from a lead: sub due prefilled 1 day before our due (Friday for a weekend)', 'crm11  📝 Details on an invite job: nothing pre-selected, 💡 suggested trades, clean list, Save footer', 'crm12  📝 Details contacts filled from the CRM (lead found, estimator doing the estimate, PM & estimator once)', 'crm06  📂 Manage → 📝 Details: trades picker, dates, site walk, requirements, bid form, contacts, CRM link, internal notes; header trades + due', ''].join('\n'));
 const n = R.filter(Boolean).length; console.log('PLANREQ_CRM ' + n + '/' + R.length); process.exit(n === R.length ? 0 : 1);
