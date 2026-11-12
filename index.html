@@ -218706,7 +218706,9 @@ function arr(v){ return Array.isArray(v) ? v : []; }
 function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
 function me(){ try { return (typeof W._gcMeUser === 'function' ? W._gcMeUser() : JSON.parse(localStorage.getItem('grayco_user') || '{}')) || {}; } catch (e) { return {}; } }
 function admin(){ try { if (W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()) return true; } catch (e) {} var u = me(); return /^admin$/i.test(s(u.role)) || /owner/i.test(s(u.payType)); }
-W._gcEnviroCanSee = function(){ if (admin()) return true; var u = me(); return /insurance|mitigat|restoration|environment/i.test(s(u.role) + ' ' + s(u.title) + ' ' + s(u.position)); };
+W._gcEnviroCanSee = function(){ if (admin()) return true; var u = me();
+  try { if (typeof W._gcIsOfficeFull === 'function' && W._gcIsOfficeFull()) return true; } catch (e) {} if (/^office/i.test(s(u.role))) return true;   /* patch QAA (owner 11/12: "office can have mit and env tab too"): with Construction / All picked the office had 💧 Mitigation but no ☢️ Environmental */
+  return /insurance|mitigat|restoration|environment/i.test(s(u.role) + ' ' + s(u.title) + ' ' + s(u.position)); };
 var KINDS = [['lead', '🧪 Lead'], ['asbestos', '☣️ Asbestos'], ['mold', '🍄 Mold'], ['fire', '🔥 Fire & smoke'], ['trauma', '🩸 Trauma / biohazard'], ['sewage', '🚽 Cat 3 water (sewage / flood)'], ['cat2', '💧 Cat 2 water (gray water)']];
 var UI = { k: 'all', all: false, el: null };
 function jobs(){
