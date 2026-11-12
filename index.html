@@ -168359,6 +168359,8 @@ function apSig(){ var cs = typeof W._gcApprovalCurrent === 'function' ? W._gcApp
 try { new MutationObserver(function(ms){ for (var i = 0; i < ms.length; i++) { var t = ms[i].target; if (t && t.nodeType === 1 && (t.classList.contains('td2-body') || t.classList.contains('td2') || t.classList.contains('_gcAp2Sec'))) { paintSoon(); return; } } }).observe(D.documentElement, { childList: true, subtree: true }); } catch (e) {}
 every(function(){ tick(false); }, 1000);
 later(function(){ tick(true); }, 800);
+/* patch QAC: the company switch (sidebar logo) while ✅ Approvals is open re-mounts the page — draw it again at once (it stayed blank) */
+W.addEventListener('gc-co-filter', function(){ [350, 1200, 2500].forEach(function(ms){ later(function(){ try { tabSig = ''; tick(true); } catch (e) { warn(e); } }, ms); }); });
 
 var css = D.createElement('style'); css.id = 'gc-apx-css';
 css.textContent = ''

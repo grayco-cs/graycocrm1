@@ -32,8 +32,12 @@ await go('dashboard'); await co('mitigation'); await check('mitigation (fresh pa
 await go('dashboard'); await co('environmental'); await check('environmental (fresh page)');
 await go('dashboard'); await co('all'); await check('all companies');
 await go('dashboard'); await co('construction'); await check('construction after the others');
-await co('mitigation'); await go('approvals'); await sleep(2000); await co('construction'); await sleep(3000);   /* switch the company while ON Approvals */
-const s2 = await st(); ok('switching Mitigation → Construction while on Approvals redraws it', s2.chars >= 30, s2);
+for (const [from, to] of [['mitigation', 'construction'], ['construction', 'all'], ['all', 'environmental'], ['environmental', 'all']]) {   /* switch the company while ON Approvals */
+  await co(from); await go('approvals'); await sleep(2500); await A.ev(c => window._gcCo.setFilter(c), to);
+  const tl = []; for (const ms of [1000, 2000, 5000]) { await sleep(ms); tl.push(await st()); }
+  const s2 = tl[tl.length - 1]; if (s2.chars < 30) await A.page().screenshot({ path: SHOTS + '/pmappr_' + TAG + '_switch_' + from + '_' + to + '.png' });
+  ok('switching ' + from + ' → ' + to + ' while on Approvals redraws it (within 3 s)', tl[1].chars >= 30, tl.map(x => x.chars + (x.freshAttr ? 'F' : '') + '/' + x.apxKids));
+}
 ok('no page errors', !errs.length, errs.slice(0, 5));
 console.log((R.every(Boolean) ? 'ALL PASS ' : 'FAILED ') + R.filter(Boolean).length + '/' + R.length);
 await A.b.close(); process.exit(R.every(Boolean) ? 0 : 1);
