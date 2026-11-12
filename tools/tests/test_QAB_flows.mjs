@@ -162,4 +162,23 @@ const ep = await A.ev(async () => { const out = {}; for (const id of ['gcb_asb_t
 ok('E2 the Environmental papers for the job say GrayCo Environmental, never GrayCo Construction Services', Object.values(ep).every(x => x && x.env && !x.cons), ep);
 ok('no page errors', !errs.length, errs);
 await A.b.close();
+
+/* ═══ M7 a Mitigation PM (role-locked to Mitigation, "All" in the company pick) makes a job and a lead → filed under Mitigation ═══ */
+const B = await computer('sbiffle@grayco-cs.com', { build: BUILD });
+const errsB = []; B.page().on('pageerror', e => errsB.push(String(e.message).slice(0, 200)));
+await signIn(B, 'sbiffle@grayco-cs.com', 14000); await sleep(6000);
+await B.ev(() => { const b = document.querySelector('#gc-ra-desk [data-ra-a="full"]'); b && b.click(); }); await sleep(800);
+await B.ev(() => window._setView('projects')); await sleep(1200);
+await B.page().mouse.click(700, 600);
+await B.ev(() => { const at = new Date().toISOString();
+  window._setProjects(p => p.concat([{ id: 'MZ9', name: 'Zedd Lane laundry leak', client: 'Zedd Lane', status: 'active', type: 'Residential', pm: 'Max Mitzzpm', createdAt: at, updatedAt: at }]));
+  window._setLeads(p => p.concat([{ id: 'LZ9', name: 'Zedd referral', client: 'Zedd Ref', type: 'Residential', stage: 'New Lead', createdAt: at, updatedAt: at }])); });
+await sleep(4500);
+const sb = await B.ev(() => ({ f: window._gcCo.filter(), p: (window._crm.projects.find(x => x.id === 'MZ9') || {}).companyId, l: (window._crm.leads.find(x => x.id === 'LZ9') || {}).companyId }));
+ok('M7 a Mitigation PM\'s new job and lead are filed under Mitigation (not Construction)', sb.p === 'mitigation' && sb.l === 'mitigation', sb);
+await B.ev(() => window._setView('mws_jobs')); await sleep(1500);
+const bj = await B.ev(() => (document.getElementById('gc-mws-mount') || {}).innerText || '');
+ok('M7 … so it shows in their 💧 Drying jobs, and no Construction job / claim does', /Zedd Lane laundry leak/.test(bj) && !/Conzz/.test(bj), bj.split('\n').filter(x => /zz|Zedd/.test(x)).slice(0, 6));
+ok('M7 no page errors', !errsB.length, errsB);
+await B.b.close();
 const n = R.filter(Boolean).length; console.log('QAB_FLOWS ' + n + '/' + R.length); process.exit(n === R.length ? 0 : 1);

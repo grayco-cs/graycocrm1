@@ -219058,7 +219058,8 @@ var tries = 0;
    press in this tab — never a lead or job that arrived by sync (another user, the website, the Lead Inbox, a missed call, LSA …);
    and filed under the company that was picked when they clicked (not whatever is picked at the next tick). */
 var SEEN = { p: null, l: null, e: null }, GEST = { at: 0, co: 'all' }, GEST_MS = 6000;
-function gest(e){ if (e && e.isTrusted === false) return; GEST.at = Date.now(); try { GEST.co = C.filter(); } catch (x) {} }
+function gest(e){ if (e && e.isTrusted === false) return; GEST.at = Date.now(); try { GEST.co = C.filter(); } catch (x) {}
+  try { if (GEST.co === 'all') { var W0 = W._gcMitWS && W._gcMitWS.ws ? W._gcMitWS.ws() : null; if (W0 && W0.role && C.valid(W0.co)) GEST.co = W0.co; } } catch (x) {} }   /* patch QAB: a Mitigation / Environmental person's new job or lead is filed under their company (they work in it whatever is picked) */
 W.document.addEventListener('pointerdown', gest, true); W.document.addEventListener('keydown', gest, true);
 var INBOUND = ['inboxId', 'leadInboxId', 'websiteForm', 'callSid', 'smsFrom', 'missedCall', 'textMessage', 'externalId', 'lsaId', 'callrailId', 'ccProjectId', 'companyCamId', 'emailId', 'gmailId', 'partnerId', 'importedAt'];
 function madeHere(x){
