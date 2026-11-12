@@ -141352,7 +141352,7 @@ function bidQSheet(back){
   });
   return sh;
 }
-function plansReqByJob(){ var out = {}; (BQ.reqs || []).forEach(function(q){ if (!q || !q.jobId) return; var o = out[q.jobId] || (out[q.jobId] = { n: 0, waiting: 0 }); o.n++; if (!q.notifiedAt) o.waiting++; }); return out; }
+function plansReqByJob(){ var out = {}; (BQ.reqs || []).forEach(function(q){ if (!q || !q.jobId) return; var o = out[q.jobId] || (out[q.jobId] = { n: 0, waiting: 0 }); o.n++; if (!q.notifiedAt && q.status !== 'closed' && !q.closedAt) o.waiting++; }); return out; }   /* patch PLANREQ: answered / marked sent counts as told */
 /* upload plans for a bid job from the CRM: each file goes straight to the bid site's bucket (a signed upload),
    then the server lists it on the job (a ZIP is unpacked there) and e-mails whoever asked */
 function pickPlans(jobId){
@@ -178422,6 +178422,16 @@ function css(){
 var SRC = { email: { ic: '✉️', l: 'bids@' }, portal: { ic: '🏗', l: 'Bid portal' }, subportal: { ic: '🔨', l: 'Sub portal' } };
 function srcTag(x){ var o = SRC[x] || SRC.portal; return '<span title="Came in by ' + esc(o.l) + '">' + o.ic + ' ' + esc(o.l) + '</span>'; }
 function visPill(v){ return v === 'public' ? '<span class="pill pub">🌐 Public</span>' : v === 'draft' ? '<span class="pill draft">📝 Draft</span>' : '<span class="pill priv">🔒 Private</span>'; }
+/* patch PLANREQ-A (owner 11/12: "need to click private/public"): the pill is a one-click switch — 🔒 Private → 🌐 Public (a confirm: every
+   approved sub will see it), 🌐 Public → 🔒 Private, 📝 Draft → "Post it" (private, invited subs only). The same bid-hub op visibility and
+   the same role rule as ⋯ Actions (public: an admin / estimator; private: + the office); no right → the plain pill. */
+function visNext(j){ var v = j && j.visibility; if (v === 'public') return canInvite() ? 'private' : ''; if (v === 'draft') return canInvite() ? 'private' : ''; return canPublic() ? 'public' : ''; }
+function visToggle(j){
+  var nx = visNext(j); if (!nx) return visPill(j.visibility);
+  var tip = j.visibility === 'draft' ? 'Post it on the bid portal — 🔒 private (invited subs only); make it public after' : nx === 'public' ? 'Click to make it 🌐 Public — every approved sub will see it' : 'Click to make it 🔒 Private — invited subs only';
+  return '<button type="button" class="pill ' + (j.visibility === 'public' ? 'pub' : j.visibility === 'draft' ? 'draft' : 'priv') + '" data-sys="togvis" data-job="' + esc(j.id) + '" data-to="' + nx + '" title="' + esc(tip) + '" style="cursor:pointer;border:1px solid currentColor">'
+    + (j.visibility === 'public' ? '🌐 Public ⇄' : j.visibility === 'draft' ? '📝 Draft · Post it ▸' : '🔒 Private ⇄') + '</button>';
+}
 
 /* ── the sub bids table (Bid portal tab and the lead drawer): grouped by trade, the low bid marked ── */
 function bidsTable(list, jobId, opts){
@@ -178539,7 +178549,7 @@ function drawRows(){
       var left = del && j.deletedAt ? Math.max(0, 30 - Math.floor((Date.now() - Date.parse(j.deletedAt)) / 864e5)) : 0;
       return '<tr data-sys-job="' + esc(j.id) + '"' + (del ? ' class="del"' : '') + '>' + (bulk ? '<td><input type="checkbox" data-sys="sel" data-job="' + esc(j.id) + '"' + (SEL[j.id] ? ' checked' : '') + ' aria-label="Select"></td>' : '')
         + '<td class="t" title="' + esc(j.title) + '"><b>' + esc(j.title || 'Bid job') + '</b><div class="mut">' + (j.auto ? '🤖 auto-added · ' : j.postedBy ? '📢 posted by ' + esc(j.postedByName || j.postedBy) + ' · ' : '') + (j.archived ? '🗄 ' + esc(j.archivedReason === 'auto' ? 'archived (auto-added)' : 'taken off the bid portal') + ' · ' : '') + esc([j.address, j.po, j.trades].filter(Boolean).join(' · ')) + '</div></td>'
-        + '<td data-l="Who sees it">' + (del ? '<span class="pill draft">🗑 Deleted</span>' : visPill(j.visibility)) + '</td><td class="num" data-l="Invited">' + j.invited + '</td><td class="num" data-l="Bids">' + j.bids + '</td>'
+        + '<td data-l="Who sees it">' + (del ? '<span class="pill draft">🗑 Deleted</span>' : visToggle(j)) + (j.openReq > 0 ? '<div><span class="pill draft" data-sys-req="' + esc(j.id) + '" title="Subs asked for plans / more info — answer in 📂 Manage → 💬 Q&amp;A" style="background:#fef3c7;color:#92400e">📩 ' + j.openReq + ' request' + (j.openReq === 1 ? '' : 's') + '</span></div>' : '') + '</td><td class="num" data-l="Invited">' + j.invited + '</td><td class="num" data-l="Bids">' + j.bids + '</td>'
         + '<td data-l="' + (del ? 'Deleted' : 'Bid due') + '">' + (del ? '<span class="mut">' + esc(when(j.deletedAt)) + '<br>' + (j.archived ? 'keep — restore any time' : left + ' day' + (left === 1 ? '' : 's') + ' left') + '</span>' : j.due ? esc(j.due + (j.dueTime ? ' ' + j.dueTime : '')) : '<span class="mut">—</span>') + '</td>'
         + '<td><div class="acts">' + (del ? (canDelete() ? '<button type="button" class="b" data-sys="restore" data-job="' + esc(j.id) + '">↩ Restore</button>' : '')
           : (canInvite() ? '<button type="button" class="b pri" data-sys="manage" data-job="' + esc(j.id) + '">📂 Manage</button>' : '')
@@ -178643,11 +178653,11 @@ function sendInvite(body){
     loadJobs(true);
   }, function(e){ toast(e.message, true); Array.prototype.forEach.call(bt, function(x){ x.disabled = false; }); });
 }
-function setVis(jobId, mode){
+function setVis(jobId, mode, quiet){   /* quiet: the one-click pill — going private / posting a draft needs no confirm (patch PLANREQ-A) */
   var j = jobOf(jobId);
   if (mode === 'public' && !W.confirm('Make "' + j.title + '" PUBLIC?\n\nEvery approved sub on bids.grayco-cs.com will see it and can bid. (Prices and your notes stay private.)')) return;
-  if (mode === 'private' && !W.confirm('Make "' + j.title + '" PRIVATE?\n\nOnly the subs you invited will see it.')) return;
-  fn('bid-hub', { op: 'visibility', jobId: jobId, mode: mode }).then(function(){ toast(mode === 'public' ? '🌐 Public — every approved sub can see it' : '🔒 Private — invited subs only'); loadJobs(true); }, function(e){ toast(e.message, true); });
+  if (mode === 'private' && !quiet && !W.confirm('Make "' + j.title + '" PRIVATE?\n\nOnly the subs you invited will see it.')) return;
+  return fn('bid-hub', { op: 'visibility', jobId: jobId, mode: mode }).then(function(){ toast(mode === 'public' ? '🌐 Public — every approved sub can see it' : '🔒 Private — invited subs only'); loadJobs(true); try { if (W._gcSys2 && W._gcSys2.state().jobId === jobId) W._gcSys2.reload(); } catch (e) {} }, function(e){ toast(e.message, true); });
 }
 function award(t, on){
   fn('bid-hub', { op: 'award', jobId: t.getAttribute('data-job'), source: t.getAttribute('data-src'), id: t.getAttribute('data-id'), on: on }).then(function(){
@@ -178684,6 +178694,7 @@ function onClick(ev){
   if (a === 'lbids') return openBids(job, t.getAttribute('data-lead'));
   if (a === 'invite') { if (!BP.jobs) BP.jobs = []; if (!arr(BP.jobs).some(function(j){ return j.id === job; }) && t.getAttribute('data-title')) BP.jobs.push({ id: job, title: t.getAttribute('data-title'), visibility: '' }); return openInvite(job); }
   if (a === 'public' || a === 'private') return setVis(job, a);
+  if (a === 'togvis') return setVis(job, t.getAttribute('data-to'), true);   /* patch PLANREQ-A */
   if (a === 'lead') return openLead(t.getAttribute('data-lead'));
   if (a === 'award' || a === 'unaward') return award(t, a === 'award');
   if (a === 'trade') { var k = t.getAttribute('data-t'); if (INV.trades[k]) delete INV.trades[k]; else INV.trades[k] = 1; return drawInvite(); }
@@ -178965,8 +178976,10 @@ function draw(){
     var j = job(), r = M.data;
     var vis = j.visibility === 'public' ? '🌐 Public — every approved sub' : j.visibility === 'draft' ? '📝 Draft — staff only' : '🔒 Private — invited subs only';
     d.innerHTML = '<div class="hd"><div style="flex:1;min-width:0"><h3>📂 ' + esc(j.title || 'Bid job') + '</h3><div class="mut">' + esc([j.address, j.po, j.due ? 'Bid due ' + j.due + (j.dueTime ? ' ' + j.dueTime : '') : ''].filter(Boolean).join(' · ')) + '</div>'
-      + (r ? '<div class="mut">' + vis + ' · ' + arr(r.audience).length + ' sub' + (arr(r.audience).length === 1 ? '' : 's') + ' can see what you post</div>' : '') + '</div><button type="button" data-a="close" aria-label="Close">✕</button></div>'
-      + '<div class="tabs" role="tablist">' + TABS.map(function(t){ return '<button type="button" role="tab" data-a="tab" data-t="' + t[0] + '"' + (M.tab === t[0] ? ' class="on"' : '') + '>' + t[1] + (t[0] === 'qa' && r ? ' (' + arr(r.questions).length + ')' : t[0] === 'addenda' && r ? ' (' + arr(j.addenda).length + ')' : '') + '</button>'; }).join('') + '</div>'
+      + (r ? '<div class="mut">' + vis + ' · ' + arr(r.audience).length + ' sub' + (arr(r.audience).length === 1 ? '' : 's') + ' can see what you post'
+        + (j.deleted ? '' : ' <button type="button" class="b" data-a="vis" data-to="' + (j.visibility === 'public' ? 'private' : j.visibility === 'draft' ? 'private' : 'public') + '" style="margin-left:6px;padding:3px 9px">' + (j.visibility === 'public' ? '🔒 Make private' : j.visibility === 'draft' ? '📢 Post it (private)' : '🌐 Make public') + '</button>') + '</div>' : '')   /* patch PLANREQ-A */
+      + '</div><button type="button" data-a="close" aria-label="Close">✕</button></div>'
+      + '<div class="tabs" role="tablist">' + TABS.map(function(t){ return '<button type="button" role="tab" data-a="tab" data-t="' + t[0] + '"' + (M.tab === t[0] ? ' class="on"' : '') + '>' + t[1] + (t[0] === 'qa' && r ? ' (' + arr(r.questions).length + ')' + (openReqs().length ? ' · 📩 ' + openReqs().length : '') : t[0] === 'addenda' && r ? ' (' + arr(j.addenda).length + ')' : '') + '</button>'; }).join('') + '</div>'
       + '<div class="bd" data-tab="' + M.tab + '">' + (r && r.paused ? '<div class="paused">⏸ Data-entry mode is on: what you post shows on the bid site, but no e-mail goes to a sub (it is held; send it after the pause).</div>' : '')
       + (M.err && !r ? '<div style="color:#b91c1c">' + esc(M.err) + '</div>' : !r ? '<div class="mut">Loading…</div>' : body()) + '</div>';
   });
@@ -179105,10 +179118,29 @@ function updatesHtml(){
 }
 
 /* ── 💬 Q&A ── */
+/* patch PLANREQ: 📩 the subs' "Request plans / more info" — who, what, their contact; ↩ Reply (to that sub: the bid site + an e-mail, held in
+   ⏸ data-entry mode) or ✅ Mark sent (you sent it another way). Either one, or plans / a plan link added on 📐 Plans & specs, clears its To-Do. */
+var NEED = { plans: 'Plans', specs: 'Specs', sitewalk: 'Site walk / access', other: 'Other' };
+function openReqs(){ return arr(M.data && M.data.planreqs).filter(function(q){ return q.open; }); }
+function reqHtml(){
+  var l = arr(M.data.planreqs); if (!l.length) return '';
+  return '<h4>📩 Plan / info requests (' + openReqs().length + ' open)</h4><div class="mut" style="margin-bottom:4px">Add the plans or a plan link on 📐 Plans &amp; specs and everyone who asked is told (e-mail held while ⏸ is on). Or answer one sub here.</div>'
+    + l.map(function(q){
+      var how = q.open ? '<span class="pill warn">📩 waiting</span>' : q.closedHow === 'plans' ? '<span class="pill ok">✅ plans posted' + (q.notifiedAt ? ' · e-mailed' : q.mailHeld ? ' · e-mail held (⏸)' : '') + '</span>'
+        : q.closedHow === 'answered' ? '<span class="pill ok">↩ replied' + (q.repliedByName ? ' by ' + esc(q.repliedByName) : '') + (q.replyMail === 'held' ? ' · e-mail held (⏸)' : '') + '</span>' : '<span class="pill ok">✅ marked sent</span>';
+      return '<div class="card" data-planreq="' + esc(q.id) + '"><div class="row"><b>' + esc(q.company || q.name) + '</b><span class="mut">' + esc(when(q.at)) + '</span>' + how + '</div>'
+        + '<div><b>Needs:</b> ' + esc(arr(q.needs).map(function(k){ return NEED[k] || k; }).join(', ')) + (q.trade ? ' <span class="mut">· ' + esc(q.trade) + '</span>' : '') + '</div>'
+        + (q.note ? '<div style="white-space:pre-wrap">“' + esc(q.note) + '”</div>' : '')
+        + '<div class="mut">' + esc([q.name, q.phone, q.email].filter(Boolean).join(' · ')) + (arr(q.to).length ? ' · told: ' + esc(arr(q.to).map(function(x){ return x.name + ' (' + arr(x.roles).join(', ') + ')'; }).join(', ')) : '') + '</div>'
+        + (q.reply ? '<div style="white-space:pre-wrap"><b>Reply:</b> ' + esc(q.reply) + '</div>' : '') + (q.sentNote ? '<div><b>Sent:</b> ' + esc(q.sentNote) + '</div>' : '')
+        + (q.open ? '<textarea data-k="pr_' + esc(q.id) + '" placeholder="Reply to ' + esc(q.company || 'the sub') + ' (or a note for Mark sent)" style="min-height:60px"></textarea>'
+          + '<div class="row"><button type="button" class="b pri" data-a="prreply" data-id="' + esc(q.id) + '">↩ Reply</button><button type="button" class="b" data-a="prsent" data-id="' + esc(q.id) + '">✅ Mark sent</button></div>' : '')
+        + '</div>'; }).join('') + '<h4>💬 Questions</h4>';
+}
 function qaHtml(){
   var qs = arr(M.data.questions);
-  if (!qs.length) return '<div class="mut">No questions from the subs yet. They ask on the bid site (Questions); you answer here.</div>';
-  return qs.map(function(q){ return '<div class="card" data-q="' + esc(q.id) + '"><div class="row"><b>' + esc(q.userCompany || q.userName) + '</b><span class="mut">' + esc(when(q.at)) + '</span>' + (q.visibility === 'public' ? '<span class="pill ok">Q' + esc(q.num || '') + ' · answered to all bidders</span>' : s(q.answer) ? '<span class="pill grey">answered privately</span>' : '<span class="pill warn">waiting for an answer</span>')
+  if (!qs.length) return reqHtml() + '<div class="mut">No questions from the subs yet. They ask on the bid site (Questions); you answer here.</div>';
+  return reqHtml() + qs.map(function(q){ return '<div class="card" data-q="' + esc(q.id) + '"><div class="row"><b>' + esc(q.userCompany || q.userName) + '</b><span class="mut">' + esc(when(q.at)) + '</span>' + (q.visibility === 'public' ? '<span class="pill ok">Q' + esc(q.num || '') + ' · answered to all bidders</span>' : s(q.answer) ? '<span class="pill grey">answered privately</span>' : '<span class="pill warn">waiting for an answer</span>')
     + (q.noticeStatus === 'waiting' ? '<span class="pill warn">e-mail to bidders waits on approval</span>' : q.noticeStatus === 'sent' ? '<span class="pill ok">e-mailed to bidders</span>' : '') + '</div>'
     + '<div style="white-space:pre-wrap">' + esc(q.body) + '</div>'
     + '<textarea data-k="qa_' + esc(q.id) + '" placeholder="Your answer">' + esc(q.answer) + '</textarea>'
@@ -179160,6 +179192,10 @@ function onClick(ev){
     return post({ op: 'post', body: val('ubody'), email: !!val('uemail'), target: { kind: k, trade: k === 'trade' ? v : '', email: k === 'sub' ? v : '' } }, t, function(r){ var x = D.querySelector('#gcsys2 [data-k=ubody]'); if (x) x.value = ''; toast('📣 Posted to ' + r.n + ' sub' + (r.n === 1 ? '' : 's')); });
   }
   if (a === 'answer' || a === 'answerall') { var id = t.getAttribute('data-id'); return post({ op: 'answer', id: id, answer: val('qa_' + id), publish: a === 'answerall' }, t, function(){ toast(a === 'answerall' ? '📣 Answer published to all bidders (its e-mail waits on approval)' : '↩ Answered privately'); }); }
+  if (a === 'prreply' || a === 'prsent') { var pid = t.getAttribute('data-id'), txt = val('pr_' + pid);   /* patch PLANREQ */
+    if (a === 'prreply' && !txt) return toast('Write the reply first.', true);
+    return post({ op: 'planreq', id: pid, act: a === 'prreply' ? 'reply' : 'sent', text: txt }, t, function(r){ toast(a === 'prreply' ? '↩ Reply sent to the sub' + (r.mail === 'held' ? ' (e-mail held — data-entry mode; they see it on the bid site)' : '') : '✅ Marked sent — the To-Do is cleared'); }); }
+  if (a === 'vis') { var to = t.getAttribute('data-to'); if (W._gcSys && W._gcSys.bp && W._gcSys.bp.vis) { var pr = W._gcSys.bp.vis(M.jobId, to, to !== 'public'); if (pr && pr.then) pr.then(function(){ load(); }); } return; }   /* patch PLANREQ-A */
   if (a === 'resend') return post({ op: 'notice', what: t.getAttribute('data-w'), ref: t.getAttribute('data-ref') }, t, function(r){ toast(r.notice && r.notice.status === 'waiting' ? '✉️ The e-mail waits on ✅ Approvals' : 'Still held'); });
 }
 

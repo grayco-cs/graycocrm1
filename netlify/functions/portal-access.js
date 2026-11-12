@@ -1394,7 +1394,7 @@ async function pBidJobs(sub){
       questions: (qs[id] || []).sort(function(a, b){ return s(a.at).localeCompare(s(b.at)); }).slice(-40), request: reqs[id] || null };
   });
   jobs.sort(function(a, b){ return (b.canBid ? 1 : 0) - (a.canBid ? 1 : 0) || (b.invited ? 1 : 0) - (a.invited ? 1 : 0) || (a.bidDueDate || '9').localeCompare(b.bidDueDate || '9'); });
-  return { ok: true, linked: true, approved: true, url: bidsBase(), docs: docs, jobs: jobs.slice(0, 60) };
+  return { ok: true, linked: true, approved: true, url: bidsBase(), docs: docs, jobs: jobs.slice(0, 60), me: { company: clip(c.profile.company, 160), name: clip(c.profile.name, 120), phone: clip(c.profile.phone, 40), email: low(c.profile.email) } };   /* patch PLANREQ: the request form shows who it is from */
 }
 function papersFail(docs){
   const name = function(k){ return (BID_PAPERS.find(function(x){ return x[0] === k; }) || [k, k])[1]; };

@@ -135,6 +135,10 @@ const T = {
     lastActivity: 'Last Activity', noActivity: 'No activity yet.',
     markWon: 'Mark Won', markLost: 'Mark Lost', wonJob: 'WON', lostJob: 'LOST',
     noPlansYet: 'No plans yet.', requestPlans: "Request plans — I'm interested in bidding", plansNoneYet: 'The plans are not here yet. Ask for them and we will e-mail you as soon as they are.', plansNotePh: 'Note for GrayCo (optional) — e.g. your trade or what you need',
+    prBtn: '📩 Request plans / more info', prSmall: '📩 Request more info', prTitle: 'Request plans / more info', prWhat: 'What do you need?', prPlans: 'Plans', prSpecs: 'Specs', prSitewalk: 'Site walk / access', prOther: 'Other',
+    prNotePh: 'Note for GrayCo (optional) — e.g. which sheets, your trade, best time for a walk', prFrom: 'From (your profile)', prSend: 'Send request', prCancel: 'Cancel', prPickOne: 'Tick what you need.', prOtherNote: 'Write what you need.',
+    prSent: 'Request sent — the job\'s PM / estimator will get back to you.', prOpen: 'Request sent {d}', prWaiting: 'GrayCo\'s PM / estimator has it — you will hear back here and by e-mail.', prPosted: 'Plans are now posted — see them below.',
+    prAnswered: 'GrayCo answered', prSentNote: 'GrayCo sent what you asked for', prAgain: '📩 Ask for something else', prAdminTitle: '📩 Plan / info requests', prAdminNone: 'No requests yet.', prAdminOpen: 'open', prAdminClosed: 'closed', prAdminHow: 'Answer them in the CRM: 🏗 Bid portal → 📂 Manage → 💬 Q&A. Adding plans or a plan link here closes them and tells each sub.',
     plansAsked: 'Request sent — we will e-mail you when the plans are ready.', plansAskedNote: 'Plans requested — we will e-mail you as soon as they are here.', plansReadyNote: 'The plans are ready (we e-mailed you).',
     plansRequestedBy: 'Plans requested by {n} sub(s)', plansAllTold: 'all told', uploadPlansZip: 'Upload plans (ZIP/PDF)', plansUploading: 'Uploading…', plansZipHint: 'A ZIP is unpacked into its drawings (folders become categories). PDF, pictures and DWG only, up to 50 MB a file.',
     plansUploaded: '{n} plan file(s) added.', plansTold: '{n} sub(s) e-mailed that the plans are ready.', plansSkipped: 'left out',
@@ -425,6 +429,10 @@ const T = {
     lastActivity: 'Última Actividad', noActivity: 'Sin actividad aún.',
     markWon: 'Marcar Ganado', markLost: 'Marcar Perdido', wonJob: 'GANADO', lostJob: 'PERDIDO',
     noPlansYet: 'Todavía no hay planos.', requestPlans: 'Pedir planos — quiero cotizar', plansNoneYet: 'Los planos todavía no están aquí. Pídalos y le enviaremos un correo en cuanto estén.', plansNotePh: 'Nota para GrayCo (opcional) — por ejemplo su oficio o lo que necesita',
+    prBtn: '📩 Pedir planos / más información', prSmall: '📩 Pedir más información', prTitle: 'Pedir planos / más información', prWhat: '¿Qué necesita?', prPlans: 'Planos', prSpecs: 'Especificaciones', prSitewalk: 'Visita al sitio / acceso', prOther: 'Otro',
+    prNotePh: 'Nota para GrayCo (opcional) — p. ej. qué hojas, su oficio, mejor hora para la visita', prFrom: 'De (su perfil)', prSend: 'Enviar pedido', prCancel: 'Cancelar', prPickOne: 'Marque lo que necesita.', prOtherNote: 'Escriba lo que necesita.',
+    prSent: 'Pedido enviado — el gerente / estimador del trabajo le responderá.', prOpen: 'Pedido enviado {d}', prWaiting: 'El gerente / estimador de GrayCo lo tiene — le responderán aquí y por correo.', prPosted: 'Los planos ya están publicados — véalos abajo.',
+    prAnswered: 'GrayCo contestó', prSentNote: 'GrayCo le envió lo que pidió', prAgain: '📩 Pedir otra cosa', prAdminTitle: '📩 Pedidos de planos / información', prAdminNone: 'Aún no hay pedidos.', prAdminOpen: 'abierto', prAdminClosed: 'cerrado', prAdminHow: 'Contéstelos en el CRM: 🏗 Bid portal → 📂 Manage → 💬 Q&A. Subir planos o un enlace aquí los cierra y avisa a cada subcontratista.',
     plansAsked: 'Pedido enviado — le avisaremos por correo cuando estén los planos.', plansAskedNote: 'Planos pedidos — le avisaremos por correo en cuanto estén.', plansReadyNote: 'Los planos ya están (le enviamos un correo).',
     plansRequestedBy: 'Planos pedidos por {n} subcontratista(s)', plansAllTold: 'todos avisados', uploadPlansZip: 'Subir planos (ZIP/PDF)', plansUploading: 'Subiendo…', plansZipHint: 'Un ZIP se separa en sus planos (las carpetas son categorías). Solo PDF, imágenes y DWG, hasta 50 MB por archivo.',
     plansUploaded: '{n} plano(s) agregados.', plansTold: '{n} subcontratista(s) avisados.', plansSkipped: 'no incluidos',
@@ -2299,21 +2307,33 @@ function PlanLinkBox({ t, job, showToast, onLink }) {
     </div>
   );
 }
+/* patch PLANREQ (owner 11/12): "📩 Request plans / more info" — what they need (Plans · Specs · Site walk / access · Other) + a note; their
+   company / name / phone / e-mail come from their profile. The job's PM + estimator get an e-mail, a CRM message and a To-Do (subportal.js
+   request-plans). One open request per sub per job. A big button on a job with no plans (no files, no 🔗 link); a small link otherwise. */
+const PR_KEYS = ['plans', 'specs', 'sitewalk', 'other'];
+function prLabel(t, k){ return { plans: t.prPlans, specs: t.prSpecs, sitewalk: t.prSitewalk, other: t.prOther }[k] || k; }
 function PlansRequests({ t, job, user, isAdmin, showToast, onAdded, onLink }) {
   const [reqs, setReqs] = useState(null);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
+  const [form, setForm] = useState(false);
+  const [err, setErr] = useState('');
+  const hasPlans = (job.plans || []).length > 0 || (job.plansLinks || []).length > 0;
+  const [needs, setNeeds] = useState(() => ({ plans: !hasPlans, specs: false, sitewalk: false, other: false }));
   const fileRef = useRef(null);
-  const hasPlans = (job.plans || []).length > 0;
   useEffect(() => {
     let off = false;
     api('load', { keys: ['planreqs'] }).then(r => { if (!off) setReqs(((r && r.data && r.data.planreqs) || []).filter(q => q.jobId === job.id)); }).catch(() => { if (!off) setReqs([]); });
     return () => { off = true; };
   }, [job.id]);
   async function ask() {
+    const picked = PR_KEYS.filter(k => needs[k]);
+    setErr('');
+    if (!picked.length) { setErr(t.prPickOne); return; }
+    if (picked.length === 1 && picked[0] === 'other' && !note.trim()) { setErr(t.prOtherNote); return; }
     setBusy(true);
-    try { const r = await api('request-plans', { jobId: job.id, note }); setReqs([...(reqs || []), r.request || { jobId: job.id }]); showToast(t.plansAsked); }
-    catch (e) { showToast(e.message, 'error'); }
+    try { const r = await api('request-plans', { jobId: job.id, needs: picked, note }); setReqs([...(reqs || []).filter(q => q.jobId !== job.id), r.request || { jobId: job.id, status: 'open', needs: picked }]); setForm(false); setNote(''); showToast(t.prSent); }
+    catch (e) { setErr(e.message); showToast(e.message, 'error'); }
     setBusy(false);
   }
   async function upload(files) {
@@ -2330,17 +2350,20 @@ function PlansRequests({ t, job, user, isAdmin, showToast, onAdded, onLink }) {
       }
       if (added.length) onAdded(added);
       showToast(t.plansUploaded.replace('{n}', added.length) + (told ? ' ' + t.plansTold.replace('{n}', told) : '') + (skipped.length ? ' — ' + t.plansSkipped + ': ' + skipped.slice(0, 4).join(', ') : ''), skipped.length && !added.length ? 'error' : undefined);
-      if (told) setReqs((reqs || []).map(q => ({ ...q, notifiedAt: q.notifiedAt || new Date().toISOString() })));
+      if (added.length) api('load', { keys: ['planreqs'] }).then(r => setReqs(((r && r.data && r.data.planreqs) || []).filter(q => q.jobId === job.id))).catch(() => {});
     } catch (e) { showToast(e.message, 'error'); }
     setBusy(false);
     if (fileRef.current) fileRef.current.value = '';
   }
   if (isAdmin) {
-    const n = (reqs || []).length, waiting = (reqs || []).filter(q => !q.notifiedAt).length;
+    const list = reqs || [], open = list.filter(q => q.status !== 'closed' && !q.closedAt && !q.notifiedAt);
     return (
-      <div id="plans-admin" style={{ marginBottom: 12, padding: 12, borderRadius: 8, background: n ? '#FFFBEB' : styles.cream, border: `1px solid ${n ? styles.accent : styles.border}` }}>
-        {n > 0 && <div data-plans="count" style={{ fontWeight: 700, marginBottom: 6 }}>📄 {t.plansRequestedBy.replace('{n}', n)}{waiting ? '' : ' — ' + t.plansAllTold}</div>}
-        {n > 0 && <div style={{ fontSize: 12, color: styles.text2, marginBottom: 8 }}>{(reqs || []).map(q => (q.company || q.name || q.email) + (q.trade ? ' (' + q.trade + ')' : '') + (q.note ? ': “' + q.note + '”' : '')).join(' · ')}</div>}
+      <div id="plans-admin" style={{ marginBottom: 12, padding: 12, borderRadius: 8, background: open.length ? '#FFFBEB' : styles.cream, border: `1px solid ${open.length ? styles.accent : styles.border}` }}>
+        {list.length > 0 && <div data-plans="count" style={{ fontWeight: 700, marginBottom: 6 }}>{t.prAdminTitle} — {open.length} {t.prAdminOpen}{list.length > open.length ? ' · ' + (list.length - open.length) + ' ' + t.prAdminClosed : ''}</div>}
+        {list.length > 0 && <div data-planreq-admin="1" style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 8 }}>{list.map(q => {
+          const isOpen = q.status !== 'closed' && !q.closedAt && !q.notifiedAt;
+          return <div key={q.id || q.userId} data-planreq={q.id} style={{ fontSize: 12, color: styles.text2 }}><b style={{ color: styles.text }}>{q.company || q.name || q.email}</b>{' · '}{(q.needs && q.needs.length ? q.needs : ['plans']).map(k => prLabel(t, k)).join(', ')}{q.note ? ' — “' + q.note + '”' : ''}{' · '}{[q.name, q.phone, q.email].filter(Boolean).join(' · ')} <span style={{ fontWeight: 700, color: isOpen ? '#92400e' : styles.green }}>{isOpen ? t.prAdminOpen : t.prAdminClosed}</span></div>; })}
+          <div style={{ fontSize: 11, color: styles.text2 }}>{t.prAdminHow}</div></div>}
         <input ref={fileRef} type="file" multiple accept=".zip,.pdf,.png,.jpg,.jpeg,.webp,.gif,.tif,.tiff,.heic,.dwg,.dxf" style={{ display: 'none' }} data-plans="file"
           onChange={e => upload(Array.from(e.target.files || []))} />
         <Btn data-plans="upload" disabled={busy} onClick={() => fileRef.current && fileRef.current.click()}>{busy ? t.plansUploading : '⬆ ' + t.uploadPlansZip}</Btn>
@@ -2349,19 +2372,48 @@ function PlansRequests({ t, job, user, isAdmin, showToast, onAdded, onLink }) {
       </div>
     );
   }
-  if (hasPlans) return null;
-  const mine = (reqs || []).find(q => q.jobId === job.id);
   if (reqs === null) return null;
+  const mine = reqs.find(q => q.jobId === job.id);
+  const mineOpen = !!mine && mine.status !== 'closed' && !mine.closedAt && !mine.notifiedAt;
+  const when = v => { try { return v ? new Date(v).toLocaleDateString() : ''; } catch (e) { return ''; } };
+  const formBox = form && (
+    <div data-planreq-form="1" style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ fontWeight: 700 }}>{t.prWhat}</div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>{PR_KEYS.map(k => (
+        <label key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 36, padding: '4px 10px', border: `1px solid ${needs[k] ? styles.accent : styles.border}`, borderRadius: 999, background: needs[k] ? '#FFF7D6' : '#fff', cursor: 'pointer', fontSize: 14 }}>
+          <input type="checkbox" data-planreq-need={k} checked={!!needs[k]} onChange={e => setNeeds({ ...needs, [k]: e.target.checked })} /> {prLabel(t, k)}</label>))}</div>
+      <textarea data-plans="note" value={note} onChange={e => setNote(e.target.value)} rows={3} maxLength={1000} placeholder={t.prNotePh}
+        style={{ width: '100%', boxSizing: 'border-box', padding: 8, borderRadius: 6, border: `1px solid ${styles.border}`, fontFamily: 'inherit', fontSize: 14 }} />
+      <div data-planreq-from="1" style={{ fontSize: 12, color: styles.text2 }}>{t.prFrom}: <b>{user.company || user.name}</b>{[user.name, user.phone, user.email].filter(Boolean).map(x => ' · ' + x).join('')}</div>
+      {err && <div role="alert" data-planreq-err="1" style={{ color: '#B91C1C', fontSize: 13 }}>{err}</div>}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <Btn data-plans="ask" disabled={busy} onClick={ask}>📩 {t.prSend}</Btn>
+        <Btn variant="ghost" disabled={busy} onClick={() => { setForm(false); setErr(''); }}>{t.prCancel}</Btn>
+      </div>
+    </div>);
+  const status = mine && (mineOpen ? (
+    <div data-plans="asked" style={{ fontWeight: 600 }}>✓ {t.prOpen.replace('{d}', when(mine.at))}: {(mine.needs || ['plans']).map(k => prLabel(t, k)).join(', ')}<div style={{ fontWeight: 400, fontSize: 13, color: styles.text2 }}>{t.prWaiting}</div></div>
+  ) : mine.closedHow === 'answered' ? (
+    <div data-plans="answered" style={{ fontSize: 14 }}><b>💬 {t.prAnswered}:</b> <span style={{ whiteSpace: 'pre-wrap' }}>{mine.reply}</span></div>
+  ) : mine.closedHow === 'sent' ? (
+    <div data-plans="sent" style={{ fontSize: 14 }}><b>✅ {t.prSentNote}</b>{mine.sentNote ? ': ' + mine.sentNote : '.'}</div>
+  ) : hasPlans ? <div data-plans="ready" style={{ fontWeight: 600, color: styles.green }}>✅ {t.prPosted}</div> : null);
+  if (hasPlans) {   /* the job has plans: a small link (or their request's status) */
+    return (
+      <div id="plans-request" data-planreq-small="1" style={{ marginBottom: 10 }}>
+        {status && <div style={{ marginBottom: 6, padding: 10, borderRadius: 8, background: styles.cream, border: `1px solid ${styles.border}` }}>{status}</div>}
+        {!mineOpen && !form && <button type="button" data-planreq-open="small" onClick={() => setForm(true)} style={{ background: 'none', border: 0, padding: '6px 0', color: styles.accentDk || styles.primary, fontWeight: 700, cursor: 'pointer', fontSize: 14, textDecoration: 'underline' }}>{mine ? t.prAgain : t.prSmall}</button>}
+        {formBox}
+      </div>);
+  }
   return (
-    <div id="plans-request" style={{ marginBottom: 12, padding: 12, borderRadius: 8, background: '#FFFBEB', border: `1px solid ${styles.accent}` }}>
-      {mine ? (
-        <div data-plans="asked" style={{ fontWeight: 600 }}>✓ {mine.notifiedAt ? t.plansReadyNote : t.plansAskedNote}</div>
-      ) : (<>
-        <div style={{ fontSize: 13, marginBottom: 8 }}>{t.plansNoneYet}</div>
-        <textarea data-plans="note" value={note} onChange={e => setNote(e.target.value)} rows={2} maxLength={600} placeholder={t.plansNotePh}
-          style={{ width: '100%', boxSizing: 'border-box', marginBottom: 8, padding: 8, borderRadius: 6, border: `1px solid ${styles.border}`, fontFamily: 'inherit', fontSize: 14 }} />
-        <Btn data-plans="ask" disabled={busy} onClick={ask} style={{ width: '100%', justifyContent: 'center' }}>📄 {t.requestPlans}</Btn>
-      </>)}
+    <div id="plans-request" data-planreq-big="1" style={{ marginBottom: 12, padding: 12, borderRadius: 8, background: '#FFFBEB', border: `1px solid ${styles.accent}` }}>
+      {status}
+      {!mineOpen && !form && <>
+        <div style={{ fontSize: 13, margin: status ? '8px 0' : '0 0 8px' }}>{t.plansNoneYet}</div>
+        <Btn data-planreq-open="big" onClick={() => setForm(true)} style={{ width: '100%', justifyContent: 'center' }}>{mine ? t.prAgain : t.prBtn}</Btn>
+      </>}
+      {formBox}
     </div>
   );
 }
