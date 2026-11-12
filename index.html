@@ -140948,6 +140948,9 @@ function sync(){
   return syncing;
 }
 /* the approvals queue (patch APPR), when it is loaded: scopes waiting for the job's PM, bid-site requests */
+/* patch BPAPPR: ✅ Approvals reads the bid-site sign-ups from here and approves / denies them the same way as Subs → Bid site requests */
+window._gcSubsBids = { list: function(){ return ST.bids.slice(); }, at: function(){ return ST.at || 0; }, admin: function(){ return !!ST.admin; }, sync: function(){ return sync(); }, papers: function(P){ return papersLine(P); },
+  decide: function(id, ok){ return api({ action: 's-bids-approve', id: id, approve: !!ok }).then(function(r){ try { sync(); } catch (e) {} return r; }); } };
 function approvalsHook(){
   var A = window._gcApprovals; if (!A || typeof A.add !== 'function') return;
   ST.waiting.forEach(function(x){ var p = proj(x.project_id) || {}; A.add({ id: 'subscope_' + x.id, kind: 'sub_scope', jobId: x.project_id, jobName: p.name || '', pm: p.pm || '', step: 'pm', status: 'waiting', title: (x.kind === 'co' ? 'Change order' : 'Scope') + ' for ' + ((subsList().find(function(r){ return r.id === x.sub_id; }) || {}).name || 'sub') + ': ' + (x.title || ''), open: function(){ hub(x.project_id); } }); });
@@ -167221,7 +167224,7 @@ var KIND = { portal_publish: 'Put in customer portal', portal_link: 'Portal link
   weekly_update: 'Weekly update', receipt: 'Payment receipt', review_request: 'Review request', maintenance: 'Maintenance tips' };
 var ICON = { portal_publish: '📄', invoice: '🧾', final_invoice: '🧾', final_reminder: '⏰', thank_you: '🎉', portal_link: '🔗', portal_docs: '📄', lien_waiver: '📜', contract: '✍️',
   selection_sign: '🎨', co: '📝', change_order: '📝', portal_post: '📸', announcement: '📣' };
-function kindLabel(k){ k = s(k); return KIND[k] || (/^mkt|social|post/i.test(k) ? 'Marketing post' : k.replace(/_/g, ' ').replace(/^\w/, function(c){ return c.toUpperCase(); })) || 'Approval'; }
+function kindLabel(k){ k = s(k); if (k === 'bp_notice') return '🏗 Bid portal e-mail';   /* patch BPAPPR */ return KIND[k] || (/^mkt|social|post/i.test(k) ? 'Marketing post' : k.replace(/_/g, ' ').replace(/^\w/, function(c){ return c.toUpperCase(); })) || 'Approval'; }
 
 /* ── one row per approval ─────────────────────────────────────────────────── */
 function rowQueue(x, mine, now){
@@ -167348,6 +167351,8 @@ function build0(){
   });
   if (!sc.preview) X.forEach(function(a){ add(rowExp(a, false, now)); });
   if (!sc.preview && realAdmin()) PAYRUNS.forEach(function(r){ if (r && r.status === 'pending') add(rowPay(r, now)); });   /* patch INLINEAPPR */
+  /* patch BPAPPR: rows other modules add (🏗 Bid portal: sub sign-ups, old plan requests) — window._gcApxExtra = [function(scope, now){ return rows; }] */
+  if (!sc.preview) arr(W._gcApxExtra).forEach(function(f){ try { var xs = arr(f(sc, now)); if (xs.some(function(r){ return /^bp:su:/.test(r.key); })) out = out.filter(function(r){ return !/bidsite_/.test(s(r.key)); }); xs.forEach(add); } catch (e) { warn(e); } });
   if (sc.kind === 'office') pmOptRows(out, add, Q, now);   /* patch APOFFICE2 */
   return { scope: sc, rows: coKeep(denyFilter(out)), now: now };   /* patch COLEAK2 */
 }
@@ -168004,7 +168009,7 @@ function btns(r, where){
   if (r.approve && adBlock(r)) h += '<button type="button" class="apx-b go" disabled title="Admin setting: approvals need a document">✅ Approve — attach the document first</button>';   /* patch APPRDOC: the require setting */
   else h += b('approve', r.approve ? { l: busy[r.id] ? 'Working…' : r.approve.l, f: r.approve.mode ? function(){ inlineApprove(r); } : r.approve.f } : null, 'go');
   h += b('note', { l: '📝 Note', f: function(){ NOTEBOX[r.key] = 1; paintBox(); var i = D.querySelector('[data-apx-note-in="' + cssq(r.key) + '"]'); if (i) try { i.focus(); } catch (e) {} else { paintSoon(); later(function(){ var j = D.querySelector('[data-apx-note-in="' + cssq(r.key) + '"]'); if (j) try { j.focus(); } catch (e) {} }, 300); } } }, 'op');   /* patch APXNOTE */
-  if (r.approve && r.src !== 'pay' && r.src !== 'mat' && denyTo(r) !== null) h += b('deny', { l: '✕ Deny', f: function(){ quickDeny(r); } }, 'dn');   /* patch APPRCOUNT: denies on the click (reason optional, 10-s undo) */
+  if (r.approve && r.src !== 'pay' && r.src !== 'mat' && r.src !== 'bp' && denyTo(r) !== null) h += b('deny', { l: '✕ Deny', f: function(){ quickDeny(r); } }, 'dn');   /* patch APPRCOUNT: denies on the click (reason optional, 10-s undo) */
   /* patch APXNOTE: a customer message waiting here can be edited before it goes (the existing message editor) */
   var sendEdit = r.src === 'queue' && typeof W._gcAp2Preview === 'function' && r.approve && !PEND[r.key];
   if (sendEdit && r.edit && !r.edit.form && /^✏️ Open (e-mail|text|post)$/.test(s(r.edit.l))) h += b('edit', { l: '✏️ Edit before sending', f: r.edit.f }, 'ed');
@@ -168284,12 +168289,15 @@ function chipsFor(sc, rows){
   if (sc.kind === 'admin' || sc.kind === 'office') c.push(['office', 'Escalated to office', rows.filter(function(r){ return r.escalated; }).length]);
   var po = pmOptN(rows);   /* patch APOFFICE2 */
   c.push(['all', 'All', rows.length - po]);
+  var bpN = rows.filter(isBpRow).length; if (bpN) c.push(['bp', '🏗 Bid portal', bpN]);   /* patch BPAPPR */
   if (sc.kind === 'office') c.push(['pmopt', '👷 PM approvals — optional', po]);
   return c;
 }
+function isBpRow(r){ return !!r && (r.group === 'bp' || /^bp:/.test(s(r.key)) || /bp_notice|bid_site/.test(s(r.kind) + ' ' + s(r.id))); }   /* patch BPAPPR */
 function filtered(sc, rows){
   var f = UI.f;
   var l = rows.filter(function(r){
+    if (f === 'bp') return isBpRow(r);   /* patch BPAPPR: 🏗 Bid portal — everything of the bid portal that waits */
     if (!f && !r.mine) return false;
     if (f === 'pm' && r.step !== 'pm') return false;
     if (f === 'admin' && !(r.step === 'admin' || r.step === 'sending')) return false;
@@ -226470,4 +226478,78 @@ W._gcPayEm = { afterHours: afterHours, isEmergencyJob: isEmergencyJob, clockTap:
   applyRaise: applyRaise, pmBonusFor: pmBonusFor, historyHtml: historyHtml, bust: bust, DAY: DAY };
 try { console.log('[GC] 🚨 Emergency call-out 1.5× + 🎖 cert raises / 🏆 PM bonus on paychecks (patch PAYEM): _gcPayEm'); } catch (e) {}
 })(window);
+</script>
+
+<script id="gc-patch-bpappr">
+/* __GC_PATCH_BPAPPR__ — 🏗 BID PORTAL items in ✅ Approvals (owner 11/12, Approvals showed only payroll runs: "shouldn't I have bid portal
+   approvals in here as admin?"). For an admin (company scoping as the rest of Approvals: a row without a job is Construction's):
+     🔨 a new sub sign-up waiting (bids site + sub portal) — the 📎 papers line (✓ / ☑ / —, ⚡ ready); ✅ Approve / 📋 Review (✕ Deny inside):
+        the same s-bids-approve as Subs → 🔨 Bid site requests (they get the approval e-mail);
+     📣 bid portal e-mails waiting on Approvals (addenda, updates, due-date changes — kind bp_notice) are already rows of the queue; they now
+        sit under the "🏗 Bid portal" chip too (approve = send; ⏸ data-entry mode still holds them);
+     📩 plan / info requests open more than 1 business day — "Answer" opens 📂 Manage → 💬 Q&A.
+   Public posts: only admins and estimators can make a job public (server rule), so there is nothing to approve there.
+   Console: _gcBpAppr.rows(), _gcBpAppr.refresh() */
+(function(W, D){
+'use strict';
+if (W.__GC_PATCH_BPAPPR__) return; W.__GC_PATCH_BPAPPR__ = true;
+function s(v){ return v == null ? '' : String(v).trim(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function warn(e){ try { console.warn('[GC BPAPPR]', e && e.message || e); } catch (x) {} }
+function admin(){ try { if (W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin) return !!W.__GC_AUTH__.isAdmin(); } catch (e) {} return false; }
+var JOBS = [], JAT = 0, SAT = 0;
+function bizDaysSince(t){ var d = new Date(t), n = 0, now = new Date(); if (isNaN(d)) return 0; d.setHours(0, 0, 0, 0); while (d < now) { d.setDate(d.getDate() + 1); if (d.getDay() !== 0 && d.getDay() !== 6 && d <= now) n++; } return n; }
+function refresh(force){
+  if (!admin()) return;
+  var SB = W._gcSubsBids;
+  if (SB && (force || Date.now() - SB.at() > 120000) && Date.now() - SAT > 60000) { SAT = Date.now(); try { SB.sync(); } catch (e) { warn(e); } }
+  if (force || Date.now() - JAT > 120000) { JAT = Date.now(); W.fetch('/.netlify/functions/bid-hub?jobs=1', { cache: 'no-store' }).then(function(r){ return r.ok ? r.json() : null; }).then(function(j){ if (j && Array.isArray(j.jobs)) JOBS = j.jobs; }, function(){}); }
+}
+function sheet(b){
+  var old = D.getElementById('gcbpa-sheet'); if (old) old.remove();
+  var m = D.createElement('div'); m.id = 'gcbpa-sheet'; m.setAttribute('data-gc-keep', '1'); m.setAttribute('data-gc-noac', '1');
+  m.style.cssText = 'position:fixed;inset:0;z-index:100300;background:rgba(15,10,40,.45);display:flex;align-items:center;justify-content:center;padding:14px';
+  var P = W._gcSubsBids && W._gcSubsBids.papers ? W._gcSubsBids.papers(b.papers) : '';
+  m.innerHTML = '<div role="dialog" aria-label="New sub sign-up" style="background:#fff;border-radius:14px;max-width:560px;width:100%;padding:18px;font:14px/1.5 system-ui;color:#1b1640;max-height:90vh;overflow:auto">'
+    + '<div style="display:flex;justify-content:space-between;gap:8px"><b style="font-size:17px">🔨 ' + esc(b.company || b.name || b.email) + '</b><button type="button" data-bpa="x" aria-label="Close" style="border:0;background:none;font-size:20px;cursor:pointer">✕</button></div>'
+    + '<div>' + esc([b.name, b.email, b.phone].filter(Boolean).join(' · ')) + '</div>'
+    + '<div class="mut" style="color:#64748b">' + esc([arr(b.trades).join(', '), [b.city, b.state].filter(Boolean).join(', '), b.crew ? 'crew ' + b.crew : '', b.area].filter(Boolean).join(' · ')) + '</div>'
+    + (b.selfSignup ? '<div style="margin-top:4px">🆕 Signed up on their own</div>' : '') + P
+    + '<p style="color:#64748b;font-size:13px">Approve = they can see public bid jobs and bid (they get the approval e-mail). The same as Subs → 🔨 Bid site requests.</p>'
+    + '<div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" data-bpa="ok" style="background:#15803d;color:#fff;border:0;border-radius:8px;padding:9px 14px;font-weight:700;cursor:pointer">✅ Approve for the bid site</button>'
+    + '<button type="button" data-bpa="no" style="background:#fff;color:#b91c1c;border:1px solid #fca5a5;border-radius:8px;padding:9px 14px;font-weight:700;cursor:pointer">✕ Deny</button></div></div>';
+  m.addEventListener('click', function(ev){ var t = ev.target.closest && ev.target.closest('[data-bpa]'); if (ev.target === m || (t && t.getAttribute('data-bpa') === 'x')) return m.remove(); if (!t) return;
+    var ok = t.getAttribute('data-bpa') === 'ok'; if (!ok && !W.confirm('Deny ' + (b.company || b.email) + '? They will not see GrayCo\'s bid jobs.')) return;
+    decide(b, ok).then(function(){ m.remove(); }); });
+  D.body.appendChild(m);
+}
+function toast(t, bad){ try { if (W._gcSys && W._gcSys.toast) return W._gcSys.toast(t, bad); } catch (e) {} }
+function decide(b, ok){
+  return W._gcSubsBids.decide(b.id, ok).then(function(r){ toast(r && r.ok ? (ok ? '✅ ' + (b.company || b.email) + ' approved — they got the e-mail' : '✕ Denied') : ((r && r.data && r.data.error) || 'Not saved'), !(r && r.ok)); return r; });
+}
+function rows(sc, now){
+  if (!admin() || (sc && sc.kind && sc.kind !== 'admin')) return [];
+  refresh(false);
+  var out = [];
+  arr(W._gcSubsBids && W._gcSubsBids.list()).forEach(function(b){
+    var ready = !!(b.papers && b.papers.ready);
+    out.push({ key: 'bp:su:' + s(b.id), id: s(b.id), src: 'bp', group: 'bp', kind: 'bid_signup', kindL: 'Bid site sign-up', icon: '🔨', title: (b.selfSignup ? '🆕 New sub sign-up — ' : 'Bid site request — ') + s(b.company || b.name || b.email) + (ready ? ' · ⚡ ready for quick approval' : ''),
+      pid: '', job: [arr(b.trades).join(', '), [b.city, b.state].filter(Boolean).join(', ')].filter(Boolean).join(' · '), pm: '', step: 'admin', waits: 'Wesley or Nick', since: Date.parse(b.at || b.createdAt || 0) || 0, clock: '', amount: 0, mine: true, escalated: false, chain: '',
+      approve: { l: '✅ Approve', f: function(){ return decide(b, true); } }, open: null, doc: null, edit: { l: '📋 Review', f: function(){ sheet(b); } } });
+  });
+  arr(JOBS).forEach(function(j){
+    if (!j || j.deleted || !(j.openReq > 0) || !j.reqSince || bizDaysSince(j.reqSince) < 1) return;
+    out.push({ key: 'bp:pr:' + s(j.id), id: s(j.id), src: 'bp', group: 'bp', kind: 'bid_planreq', kindL: 'Plan / info request', icon: '📩', title: '📩 ' + j.openReq + ' plan / info request' + (j.openReq === 1 ? '' : 's') + ' waiting — ' + s(j.title),
+      pid: s(j.crmProjectId), job: s(j.title), pm: s(j.pmName), step: 'admin', waits: s(j.pmName) || 'the PM / estimator', since: Date.parse(j.reqSince) || 0, clock: '', amount: 0, mine: true, escalated: false, chain: 'open more than 1 business day',
+      approve: { l: '📩 Answer', f: function(){ try { if (W._gcSys2 && W._gcSys2.open) W._gcSys2.open(j.id, 'qa'); } catch (e) { warn(e); } } }, open: null, doc: null, edit: null });
+  });
+  return out;
+}
+W._gcApxExtra = arr(W._gcApxExtra); W._gcApxExtra.push(rows);
+(W.__GC_NATIVE_SETINTERVAL__ || W.setInterval).call(W, function(){ if (!D.hidden) refresh(false); }, 60000);
+(W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout).call(W, function(){ refresh(true); }, 4000);
+W._gcBpAppr = { rows: function(){ return rows({ kind: 'admin' }, Date.now()); }, refresh: function(){ refresh(true); }, sheet: sheet, jobs: function(){ return JOBS.slice(); } };
+try { console.log('[GC] patch BPAPPR: 🏗 Bid portal items in ✅ Approvals — _gcBpAppr.rows()'); } catch (e) {}
+})(window, document);
 </script>
