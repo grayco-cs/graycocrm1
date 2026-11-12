@@ -130741,6 +130741,7 @@ function fromItem(it, prev){
   if (it.portal && it.portal.jobId) l.bidPortalJob = it.portal.jobId;
   if (it.hold && window._gcLeadHold) { try { window._gcLeadHold.fromItem(l, it, fresh); } catch (e) {} }   /* patch LEADHOLD: the server's hold / its 5 PM release */
   if (fresh && it.leadExtra && typeof it.leadExtra === 'object') Object.keys(it.leadExtra).forEach(function(k){ if (/^[a-zA-Z][a-zA-Z0-9]{0,40}$/.test(k)) l[k] = it.leadExtra[k]; });   /* patch WEB: a new website / Brain lead's own fields (owner GrayCo, commission source…), set once */
+  try { if (window._gcLeadKeep) window._gcLeadKeep.apply(l); } catch (e) {}   /* patch LEADKEEP: an import never drops what a person set (priority, stage, PM / estimator …) */
   return stamp(l);
 }
 /* ── collect: the server's list → leads on the Lead Pipeline ─────────────────── */
@@ -184726,10 +184727,37 @@ function info(x){
   return v;
 }
 
+/* patch LEADBOTH-SAMEJOB (owner 11/12: "63800 - Desoto County Schools Press Box Improvements Phase 2" ⟷ "63789 - … Phase 1": "I cleared
+   these once before"): the numbers in a project's NAME tell jobs apart. numsOf(title) → { ids: the project / bid numbers (a leading
+   "63800 -", "Bid #…", "Project No. …"), nums: other 4+ digit numbers (not years), parts: { phase, package, area, building } }.
+   diffJob(a, b, ask) → why they are different jobs ('' = nothing says so): different ids, or a different Phase / Area / Building value;
+   for the "Same job?" question (ask) also: both with other 4+ digit numbers and none in common, or a different Package number. */
+var ROMAN = { i: 1, ii: 2, iii: 3, iv: 4, v: 5, vi: 6, vii: 7, viii: 8, ix: 9, x: 10 };
+function partVal(v){ v = low(v); return ROMAN[v] ? String(ROMAN[v]) : String(/^\d+$/.test(v) ? parseInt(v, 10) : v); }
+function numsOf(title){
+  var t = s(title), ids = [], nums = [], parts = {}, m;
+  if ((m = /^\s*#?\s*(\d{4,}[a-z]?)\b/i.exec(t))) ids.push(low(m[1]));
+  var IDRX = /\b(?:bid|project|proj|job|solicitation|contract|rfp|rfq|itb|ifb)\s*(?:#|no\.?|num(?:ber)?)\s*:?\s*([a-z0-9][a-z0-9-]*\d[a-z0-9-]*)/gi;
+  while ((m = IDRX.exec(t))) ids.push(low(m[1]).replace(/-/g, ''));
+  var NRX = /\b(\d{4,})\b/g; while ((m = NRX.exec(t))) { var n = m[1]; if (/^(19|20)\d\d$/.test(n)) continue; if (ids.indexOf(n) < 0) nums.push(n); }
+  var PRX = /\b(phase|ph|bid\s*package|package|pkg|bp|area|building|bldg)\.?\s*(?:#|no\.?)?\s*([0-9]{1,3}|[ivx]{1,4}|[a-h])\b/gi;
+  while ((m = PRX.exec(t))) { var k = low(m[1]).replace(/\s+/g, ' '); k = /^ph/.test(k) ? 'phase' : /package|pkg|^bp$/.test(k) ? 'package' : /^b(ui)?ld/.test(k) ? 'building' : 'area'; (parts[k] = parts[k] || []).push(partVal(m[2])); }
+  return { ids: uniq(ids), nums: uniq(nums), parts: parts };
+}
+function diffJob(a, b, ask){
+  var x = numsOf(titleOf(a)), y = numsOf(titleOf(b)), i;
+  var bx = bidNo(a && a.bidNumber), by = bidNo(b && b.bidNumber); if (bx) x.ids.push(bx); if (by) y.ids.push(by);
+  if (x.ids.length && y.ids.length && !x.ids.some(function(v){ return y.ids.indexOf(v) >= 0; })) return 'different project / bid numbers (' + x.ids[0] + ' · ' + y.ids[0] + ')';
+  if (ask && x.nums.length && y.nums.length && !x.nums.some(function(v){ return y.nums.indexOf(v) >= 0; })) return 'different numbers in the names (' + x.nums[0] + ' · ' + y.nums[0] + ')';
+  var K = ['phase', 'area', 'building'].concat(ask ? ['package'] : []);
+  for (i = 0; i < K.length; i++) { var p = x.parts[K[i]], q = y.parts[K[i]]; if (p && q && !p.some(function(v){ return q.indexOf(v) >= 0; })) return 'different ' + K[i] + ' (' + p[0] + ' · ' + q[0] + ')'; }
+  return '';
+}
 /* ── are a and b the same project? { ok, why } or { no, why } (a hard "never") ── */
 function same(a, b, A, B){
   A = A || info(a); B = B || info(b); var i;
   if (!titleOf(a) || !titleOf(b)) return { ok: false, why: 'no name' };
+  var dj = diffJob(a, b, false); if (dj) return { no: true, why: dj };   /* patch LEADBOTH-SAMEJOB */
   var gap = gapDays(A.due, B.due), addOk = A.add || B.add;
   for (i = 0; i < A.ids.length; i++) if (B.ids.indexOf(A.ids[i]) >= 0) {
     if (gap != null && gap > ID_DAYS) return { no: true, why: 'same board id, bid due ' + gap + ' days apart' };
@@ -184866,6 +184894,12 @@ function mergeLeads(keeper, others, o){
   k.alsoOn = k.sources.filter(function(n){ return low(n) !== low(k.source); });
   ['address', 'city', 'state', 'zip', 'gc', 'owner', 'bidNumber', 'dueToCompany', 'dueToContact', 'dueToEmail', 'dueToPhone', 'submitMethod', 'submitWhere', 'contactName', 'phone', 'email', 'scope', 'preBid',
     'estimator', 'estimatorEmail', 'pm', 'pmEmail', 'rawEmailRef', 'estVal', 'estValue'].forEach(function(f){ if (!s(k[f])) { var d = others.filter(function(l){ return s(l[f]); })[0]; if (d) k[f] = d[f]; } });
+  /* patch LEADKEEP: what a person set on a copy is not lost in the merge — the newest priority / stage / "also on" by its own time; Different-jobs and tags added up */
+  [['priority', 'prioritySetAt', ['prioritySetBy']], ['stage', 'stageChangedAt', []], ['alsoCos', 'alsoCosAt', []]].forEach(function(g){
+    var best = null; all.forEach(function(l){ if (l[g[0]] != null && s(l[g[1]]) && (!best || tms(l[g[1]]) > tms(best[g[1]]))) best = l; });
+    if (best && best !== keeper && tms(best[g[1]]) > tms(keeper[g[1]])) { k[g[0]] = JSON.parse(JSON.stringify(best[g[0]])); k[g[1]] = best[g[1]]; g[2].forEach(function(f){ if (best[f] != null) k[f] = best[f]; }); }
+  });
+  ['notSameAs', 'tags'].forEach(function(f){ var u = uniq([].concat.apply([], all.map(function(l){ return arr(l[f]); }))); if (u.length) k[f] = u; });
   var notes = [s(keeper.notes || keeper.note)].filter(Boolean);
   others.forEach(function(l){ var n = s(l.notes || l.note); if (n && notes.join('\n').indexOf(n) < 0) notes.push('— from "' + s(l.name || l.title) + '" (' + (s(l.dueToCompany || l.gc) || s(l.source) || 'lead') + '):\n' + n); });
   if (notes.length) { if ('note' in keeper && !('notes' in keeper)) k.note = notes.join('\n'); else k.notes = notes.join('\n'); }
@@ -184884,7 +184918,7 @@ function mergeLeads(keeper, others, o){
 
 var API = { DUE_DAYS: DUE_DAYS, same: same, info: info, titleInfo: titleInfo, cleanTitle: cleanTitle, titleSim: titleSim, streetOf: streetOf, cityOf: cityOf, portalIds: portalIds, bidNo: bidNo, coKey: coKey,
   gcOf: gcOf, seedGcs: seedGcs, addGc: addGc, gcLine: gcLine, tradesOf: tradesOf, summary: summary, earliest: earliest, sooner: sooner, gapDays: gapDays,
-  isBidLead: isBidLead, liveLead: liveLead, groups: groups, mergeLeads: mergeLeads, received: received };
+  isBidLead: isBidLead, liveLead: liveLead, groups: groups, mergeLeads: mergeLeads, received: received, numsOf: numsOf, diffJob: diffJob };
 if (typeof module === 'object' && module && module.exports) module.exports = API;
 if (typeof window !== 'undefined' && root === window) root._gcBidMergeCore = API;
 })(typeof window !== 'undefined' ? window : this);
@@ -218444,7 +218478,9 @@ function pairs(){
     var a = L[i], b = L[j], A = I[i], B = I[j];
     if (sure[a.id + '|' + b.id]) continue;
     if (arr(a.notSameAs).indexOf(b.id) > -1 || arr(b.notSameAs).indexOf(a.id) > -1) continue;
+    if (isNo(a, b)) continue;   /* patch LEADBOTH-SAMEJOB: "✗ Different jobs" is kept for good (gc_kv gc_samejob_no) */
     if (A.no && B.no && A.no !== B.no) continue;
+    if (C.diffJob && C.diffJob(a, b, true)) continue;   /* patch LEADBOTH-SAMEJOB: different project / bid numbers, Phase, Package, Area, Building */
     var gap = C.gapDays(A.due, B.due); if (gap != null && gap > 5) continue;
     var ta = C.titleInfo(a.name || a.title || '', '').tokens, tb = C.titleInfo(b.name || b.title || '', '').tokens;   /* place words kept: "Coahoma" */
     var t = C.titleSim(ta, tb); t = { shared: t.shared + acro(ta, tb) + acro(tb, ta), j: t.j };
@@ -218457,8 +218493,53 @@ function pairs(){
 /* "cc" in one name ~ "community college" in the other */
 function acro(x, y){ var n = 0; x.forEach(function(w){ if (!/^[a-z]{2,4}$/.test(w) || y.indexOf(w) > -1) return; for (var i = 0; i + w.length <= y.length; i++) { if (y.slice(i, i + w.length).map(function(z){ return z[0]; }).join('') === w) { n++; return; } } }); return n; }
 function can(){ try { return W._gcBidMerge && W._gcBidMerge.can ? !!W._gcBidMerge.can() : false; } catch (e) { return false; } }
+/* patch LEADBOTH-SAMEJOB: the "✗ Different jobs" answers, shared and durable — gc_kv 'gc_samejob_no' { pairs: [{ a, b, ka, kb, at, by }] }:
+   both lead ids AND a stable identity for each side (its bid number, else its name words + city + GC), so a pair stays answered after
+   a sync, a re-import (the Lead Inbox re-makes a lead with a new id) or a merge. Old answers (lead.notSameAs) are copied in on load. */
+var NOKEY = 'gc_samejob_no', SBU = 'https://ieeonhpfahmwwecizdut.supabase.co', NO = { pairs: [] }, NO_AT = 0, NO_IDX = null;
+try { NO = JSON.parse(localStorage.getItem(NOKEY) || 'null') || NO; } catch (e) {}
+function low(v){ return s(v).toLowerCase(); }
+function idOf(l){
+  var C = core(); if (!C || !l) return '';
+  var no = C.bidNo ? C.bidNo(l.bidNumber) : ''; if (no) return 'no:' + no;
+  var nn = C.numsOf ? C.numsOf(l.name || l.title || '') : null; if (nn && nn.ids.length) return 'no:' + nn.ids[0];
+  var tk = C.titleInfo(l.name || l.title || '', C.cityOf ? C.cityOf(l) : '').tokens.slice().sort().join(' ');
+  return 'n:' + tk + '|' + low(C.cityOf ? C.cityOf(l) : l.city) + '|' + (C.coKey ? C.coKey(l.gc || l.dueToCompany || '') : low(l.gc));
+}
+function index(){
+  if (NO_IDX && NO_IDX.n === arr(NO.pairs).length) return NO_IDX;
+  var x = { n: arr(NO.pairs).length, ids: {}, keys: {} };
+  arr(NO.pairs).forEach(function(p){ if (!p) return; if (p.a && p.b) { x.ids[p.a + '|' + p.b] = 1; x.ids[p.b + '|' + p.a] = 1; } if (p.ka && p.kb && p.ka !== p.kb) { x.keys[p.ka + '|' + p.kb] = 1; x.keys[p.kb + '|' + p.ka] = 1; } });
+  return (NO_IDX = x);
+}
+function isNo(a, b){ var x = index(); if (x.ids[a.id + '|' + b.id]) return true; var ka = idOf(a), kb = idOf(b); return !!(ka && kb && ka !== kb && x.keys[ka + '|' + kb]); }
+function kvGet(){ return W.fetch(SBU + '/rest/v1/gc_kv?key=eq.' + NOKEY + '&select=value', { cache: 'no-store' }).then(function(r){ return r.ok ? r.json() : null; }).then(function(rows){ var v = rows && rows[0] ? rows[0].value : null; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } } return v && typeof v === 'object' ? v : { pairs: [] }; }, function(){ return null; }); }
+function kvPut(v){ return W.fetch(SBU + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ key: NOKEY, value: v, updated_at: new Date().toISOString() }) }).then(function(r){ return r.ok; }, function(){ return false; }); }
+function keep(v){ NO = v && Array.isArray(v.pairs) ? v : { pairs: [] }; NO_IDX = null; try { localStorage.setItem(NOKEY, JSON.stringify(NO)); } catch (e) {} }
+function merged(base, add){ var out = arr(base && base.pairs).slice(), seen = {}; out.forEach(function(p){ if (p) seen[[p.a, p.b].sort().join('|') + '#' + [p.ka, p.kb].sort().join('|')] = 1; });
+  arr(add).forEach(function(p){ var k = [p.a, p.b].sort().join('|') + '#' + [p.ka, p.kb].sort().join('|'); if (!seen[k]) { seen[k] = 1; out.push(p); } }); return { pairs: out.slice(-3000), updatedAt: new Date().toISOString() }; }
+/* add answers: read the shared list first (another person's answers are kept), then write it back */
+function remember(add){
+  if (!add.length) return Promise.resolve(true);
+  keep(merged(NO, add));
+  return kvGet().then(function(v){ var m = merged(v || NO, add); m = merged(m, NO.pairs); keep(m); return kvPut(m); });
+}
+function who(){ try { return s(W.__GC_AUTH__ && W.__GC_AUTH__.email ? W.__GC_AUTH__.email() : '') || s(localStorage.getItem('grayco_user')); } catch (e) { return ''; } }
+function pairRec(a, b, at){ return { a: s(a.id), b: s(b.id), ka: idOf(a), kb: idOf(b), at: at || new Date().toISOString(), by: who() }; }
+function load(){
+  NO_AT = Date.now();
+  return kvGet().then(function(v){ if (v) keep(merged(v, NO.pairs)); backfill(); });
+}
+/* old "✗ Different jobs" answers on the leads themselves (notSameAs) → the shared list (once each) */
+function backfill(){
+  if (!can()) return; var L = leads(), by = {}, add = [], x = index();
+  L.forEach(function(l){ if (l && l.id) by[l.id] = l; });
+  L.forEach(function(l){ if (!l || !l.id) return; arr(l.notSameAs).forEach(function(o){ var m = by[o]; if (!m || x.ids[l.id + '|' + m.id]) return; x.ids[l.id + '|' + m.id] = x.ids[m.id + '|' + l.id] = 1; add.push(pairRec(l, m, s(l.updatedAt) || undefined)); }); });
+  if (add.length) remember(add);
+}
 function notSame(a, b){
   var now = new Date().toISOString();
+  try { var la = leads().filter(function(l){ return l && l.id === a; })[0], lb = leads().filter(function(l){ return l && l.id === b; })[0]; if (la && lb) remember([pairRec(la, lb, now)]); } catch (e) {}   /* patch LEADBOTH-SAMEJOB */
   var f = function(list){ return (list || []).map(function(l){ if (!l || (l.id !== a && l.id !== b)) return l; var n = Object.assign({}, l), o = arr(n.notSameAs).slice(), other = l.id === a ? b : a; if (o.indexOf(other) < 0) o.push(other); n.notSameAs = o; n.updatedAt = now; return n; }); };
   if (W._setLeads) W._setLeads(f); else if (W._crm) W._crm.leads = f(W._crm.leads);
   try { if (W._gcApplySync && W._crm) W._gcApplySync('leads', W._crm.leads); } catch (e) {}
@@ -218492,7 +218573,8 @@ D.addEventListener('click', function(e){
   Promise.resolve(W._gcBidMerge.apply([{ keeper: keep.id, ids: [p.a.id, p.b.id] }])).then(function(){ SIG = ''; setTimeout(paint, 400); }, function(){ t.disabled = false; });
 });
 setInterval(paint, 2500);
-W._gcSameJob = { pairs: pairs, notSame: notSame, paint: paint };
+setTimeout(load, 4000); setInterval(function(){ if (Date.now() - NO_AT > 90000) load(); }, 30000);   /* patch LEADBOTH-SAMEJOB: the shared answers */
+W._gcSameJob = { pairs: pairs, notSame: notSame, paint: paint, isNo: isNo, idOf: idOf, load: load, answers: function(){ return NO; } };
 })(window);
 </script>
 <script>/*__GC_PATCH_SUPPLIERINV__ (owner 11/9, screenshot of Sub Invoices: "a lot of these are suppliers — let's make supplier invoices so
@@ -226448,5 +226530,135 @@ function check(){
 }
 (W.__GC_NATIVE_SETINTERVAL__ || W.setInterval).call(W, function(){ try { check(); } catch (e) {} }, 2500);
 W._gcLeadBoth = { leadOfJob: leadOfJob, both: both, offer: offer, check: check, wants: wants };
+})(window);
+</script>
+<script id="gc-patch-leadkeep">
+/* patch LEADKEEP (owner 11/12, Leads list: Priority shows "SET" on bid leads — "I've set these before"). THE CAUSE: the Lead Inbox
+   import (patch LD2 importItems → fromItem) rebuilds a LEADIN lead from THIS computer's copy and stamps it updatedAt = now; the cloud
+   keeps the newest updatedAt for the WHOLE record. A computer whose copy of the lead was older (opened after a release, its saved copy
+   from before the priority was set) re-wrote every Lead Inbox lead it touched with a fresh time — and the copy without the priority
+   won everywhere (the 54 LEADIN leads all re-written ~17:00 UTC 11/12). PRIOKEEP could not help: the old copy had no history line either.
+   THE FIX: what a PERSON set on a lead is kept apart from the record, in gc_kv 'gc_lead_keep', by a stable identity (every id the lead
+   has had, its inbox item, its bid number, its name + city + GC), field by field with the person's own time:
+     priority (prioritySetAt) · stage (stageChangedAt) · the PM / estimator (assignedAt, by a person) · "Also show on Environmental"
+     (alsoCosAt) · its company (companyIdBy) · "Different jobs" (notSameAs, added to) · tags (added to) · notes (only when they come back empty).
+   Any copy that comes back with an OLDER (or no) time for a field gets the person's value back — in fromItem itself (an import never
+   drops them) and on every computer that sees such a copy. Nothing is invented: values come only from a lead's own stamped fields,
+   its history (activity "Priority 8", stageHistory by a person), or W._gcLeadKeep.seed(oldLeads) with an older copy (a backup).
+   W._gcLeadKeep = { apply(lead) → changed?, capture(), heal(), seed(list), find(lead), keys(lead), load(), data() } */
+(function(W){
+'use strict';
+var D = W.document, KEY = 'gc_lead_keep', SBU = 'https://ieeonhpfahmwwecizdut.supabase.co';
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function tms(v){ var t = Date.parse(s(v)); return isFinite(t) ? t : 0; }
+function iso(t){ try { return new Date(t).toISOString(); } catch (e) { return ''; } }
+function core(){ return W._gcBidMergeCore || null; }
+function leads(){ return arr(W._crm && W._crm.leads); }
+function isAdmin(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()) || (typeof W._gcIsOfficeFull === 'function' && !!W._gcIsOfficeFull()); } catch (e) { return false; } }
+var DB = { recs: [] }, IDX = null, DIRTY = false, LOADED = false;
+try { DB = JSON.parse(localStorage.getItem(KEY) || 'null') || DB; } catch (e) {}
+/* ── identity ── */
+function keys(l){
+  if (!l) return []; var C = core(), out = [];
+  if (s(l.id)) out.push('id:' + s(l.id));
+  arr(l.mergedFrom).forEach(function(x){ if (s(x)) out.push('id:' + s(x)); });
+  if (s(l.inboxId)) { out.push('ib:' + s(l.inboxId)); out.push('id:LEADIN-' + s(l.inboxId).replace(/^LI-/, '')); }
+  if (s(l.inboxLinked)) out.push('ib:' + s(l.inboxLinked));
+  try { var no = C && C.bidNo ? C.bidNo(l.bidNumber) : ''; if (!no && C && C.numsOf) { var nn = C.numsOf(l.name || l.title || ''); if (nn.ids.length) no = nn.ids[0]; } if (no) out.push('no:' + no); } catch (e) {}
+  try { if (C && C.titleInfo && s(l.name || l.title)) { var city = C.cityOf ? C.cityOf(l) : low(l.city), tk = C.titleInfo(l.name || l.title, city).tokens.slice().sort().join(' '); if (tk.length >= 6) out.push('n:' + tk + '|' + low(city) + '|' + (C.coKey ? C.coKey(l.gc || l.dueToCompany || '') : low(l.gc))); } } catch (e) {}
+  var seen = {}; return out.filter(function(k){ if (seen[k]) return false; seen[k] = 1; return true; });
+}
+function index(){
+  if (IDX && IDX.n === DB.recs.length && IDX.v === DB.v) return IDX;
+  var m = {}; DB.recs.forEach(function(r, i){ arr(r && r.k).forEach(function(k){ if (m[k] == null) m[k] = i; }); });
+  return (IDX = { n: DB.recs.length, v: DB.v, m: m });
+}
+/* the record for a lead: by an id first, then its inbox item, bid number, name (a weaker key never joins two leads that are both here) */
+function find(l){ var I = index(), ks = keys(l); for (var p = 0; p < 4; p++) { var pre = ['id:', 'ib:', 'no:', 'n:'][p]; for (var i = 0; i < ks.length; i++) if (ks[i].indexOf(pre) === 0 && I.m[ks[i]] != null) return DB.recs[I.m[ks[i]]]; } return null; }
+function recFor(l){ var r = find(l); if (!r) { r = { k: [], f: {} }; DB.recs.push(r); IDX = null; } var ks = keys(l); ks.forEach(function(k){ if (r.k.indexOf(k) < 0) { r.k.push(k); IDX = null; } }); if (r.k.length > 40) r.k = r.k.slice(-40); return r; }
+/* ── what a person set, from the lead itself ── */
+function prioN(v){ var n = +v; return n >= 1 && n <= 10 && Math.round(n) === n ? n : 0; }
+function lastPrioAct(l){ var a = arr(l.activity); for (var i = a.length - 1; i >= 0; i--) { var x = a[i]; if (x && x.type === 'priority') { var m = /(\d+)\s*$/.exec(s(x.text)), n = m ? +m[1] : 0; if (n >= 1 && n <= 10) return { v: n, at: s(x.at), by: s(x.by) }; } } return null; }
+function lastStageAct(l){ var h = arr(l.stageHistory); for (var i = h.length - 1; i >= 0; i--) { var x = h[i]; if (x && s(x.to) && s(x.at) && s(x.by) && !/^auto|lead inbox|grayco$/i.test(s(x.by))) return { v: s(x.to), at: s(x.at), by: s(x.by) }; } return null; }
+function facts(l){
+  var F = {};
+  var pn = prioN(l.priority);
+  if (pn && s(l.prioritySetAt)) F.prio = { v: pn, at: s(l.prioritySetAt), by: s(l.prioritySetBy) };
+  else { var pa = lastPrioAct(l); if (pa && (pn === pa.v || !pn)) F.prio = pa; }
+  var st = s(l.stage);
+  if (st && s(l.stageChangedAt)) F.stage = { v: st, at: s(l.stageChangedAt) }; else { var sa = lastStageAct(l); if (sa && (!st || st === sa.v)) F.stage = sa; }
+  if (s(l.assignedAt) && s(l.assignedBy) && !/^(auto|lead inbox|grayco)/i.test(s(l.assignedBy)) && (s(l.pm) || s(l.estimator))) F.asg = { v: { pm: s(l.pm), pmEmail: s(l.pmEmail), estimator: s(l.estimator), estimatorEmail: s(l.estimatorEmail), assignedBy: s(l.assignedBy) }, at: s(l.assignedAt) };
+  if (Array.isArray(l.alsoCos) && s(l.alsoCosAt)) F.also = { v: l.alsoCos.slice(0, 3), at: s(l.alsoCosAt) };
+  if (s(l.companyId) && s(l.companyIdBy)) F.co = { v: { companyId: s(l.companyId), companyIdBy: s(l.companyIdBy) }, at: s(l.companyIdAt) || s(l.createdAt) || '1970-01-01T00:00:00.000Z' };
+  if (arr(l.notSameAs).length) F.nsa = { v: arr(l.notSameAs).slice(0, 60) };
+  if (arr(l.tags).length) F.tags = { v: arr(l.tags).slice(0, 30) };
+  if (s(l.notes) && s(l.notes).length > 3) F.notes = { v: s(l.notes).slice(0, 6000), at: s(l.updatedAt) };
+  return F;
+}
+function union(a, b){ var o = arr(a).slice(); arr(b).forEach(function(x){ if (o.indexOf(x) < 0) o.push(x); }); return o; }
+function takeFacts(r, F){
+  var ch = false;
+  Object.keys(F).forEach(function(g){
+    var n = F[g], o = r.f[g];
+    if (g === 'nsa' || g === 'tags') { var u = union(o && o.v, n.v); if (!o || u.length !== arr(o.v).length) { r.f[g] = { v: u.slice(-80) }; ch = true; } return; }
+    if (g === 'notes') { if (!o || (tms(n.at) > tms(o.at) && n.v !== o.v)) { r.f[g] = n; ch = true; } return; }
+    if (!o || tms(n.at) > tms(o.at)) { if (!o || JSON.stringify(o.v) !== JSON.stringify(n.v) || o.at !== n.at) { r.f[g] = n; ch = true; } }
+  });
+  return ch;
+}
+function capture(list){
+  var ch = false; arr(list || leads()).forEach(function(l){ if (!l || !l.id || l.deleted || l._deleted) return; var F = facts(l); if (!Object.keys(F).length && !find(l)) return; var r = recFor(l); if (takeFacts(r, F)) ch = true; });
+  if (ch) { DB.v = (DB.v || 0) + 1; DIRTY = true; save(); }
+  return ch;
+}
+/* ── put a person's values back on a copy that came back without them (mutates l; true when it changed) ── */
+function apply(l){
+  if (!l || !l.id) return false; var r = find(l); if (!r) return false; var f = r.f || {}, ch = false, x;
+  if ((x = f.prio) && prioN(x.v) && tms(x.at) > tms(l.prioritySetAt) && prioN(l.priority) !== x.v) { l.priority = x.v; l.prioritySetAt = x.at; if (x.by) l.prioritySetBy = x.by; ch = true; }
+  if ((x = f.stage) && s(x.v) && tms(x.at) > tms(l.stageChangedAt) && s(l.stage) !== x.v) { l.stage = x.v; l.stageChangedAt = x.at; ch = true; }
+  if ((x = f.asg) && x.v && tms(x.at) > tms(l.assignedAt)) { var v = x.v; if (s(l.pm) !== v.pm || s(l.estimator) !== v.estimator) { ['pm', 'pmEmail', 'estimator', 'estimatorEmail', 'assignedBy'].forEach(function(k){ if (v[k]) l[k] = v[k]; else delete l[k]; }); l.assignedAt = x.at; if (l.inboxState === 'new') l.inboxState = 'assigned'; ch = true; } }
+  if ((x = f.also) && tms(x.at) > tms(l.alsoCosAt) && JSON.stringify(arr(l.alsoCos)) !== JSON.stringify(arr(x.v))) { l.alsoCos = arr(x.v).slice(); l.alsoCosAt = x.at; ch = true; }
+  if ((x = f.co) && x.v && !s(l.companyIdBy) && s(l.companyId) !== x.v.companyId) { l.companyId = x.v.companyId; l.companyIdBy = x.v.companyIdBy; ch = true; }
+  if ((x = f.nsa)) { var u = union(l.notSameAs, x.v); if (u.length !== arr(l.notSameAs).length) { l.notSameAs = u; ch = true; } }
+  if ((x = f.tags)) { var t = union(l.tags, x.v); if (t.length !== arr(l.tags).length) { l.tags = t; ch = true; } }
+  if ((x = f.notes) && !s(l.notes) && s(x.v)) { l.notes = x.v; ch = true; }
+  return ch;
+}
+/* every computer: a lead on the list that lost a person's value gets it back (saved like any edit; the newest time wins) */
+function heal(){
+  if (!LOADED || typeof W._setLeads !== 'function') return Promise.resolve(0);
+  var L = leads(), need = {}; L.forEach(function(l){ if (!l || !l.id || l.deleted) return; var c = JSON.parse(JSON.stringify(l)); if (apply(c)) need[l.id] = 1; });
+  var n = Object.keys(need).length; if (!n) return Promise.resolve(0);
+  var at = new Date().toISOString(), out = null;
+  try { W._setLeads(function(prev){ if (!Array.isArray(prev)) return prev; out = prev.map(function(l){ if (!l || !need[l.id]) return l; var c = Object.assign({}, l); return apply(c) ? Object.assign(c, { updatedAt: at, savedAt: at, keptBy: 'LEADKEEP' }) : l; }); return out; }); } catch (e) { return Promise.resolve(0); }
+  try { setTimeout(function(){ if (typeof W._supaUpsertNow === 'function' && Array.isArray(out)) W._supaUpsertNow('leads', out); }, 400); } catch (e) {}
+  try { console.log('[GC] LEADKEEP: put back what a person set on ' + n + ' lead' + (n === 1 ? '' : 's') + '.'); } catch (e) {}
+  return Promise.resolve(n);
+}
+/* an older copy of the leads (a backup): its stamped / logged values join the record (newest time still wins) */
+function seed(list){ var n = 0; arr(list).forEach(function(l){ if (!l || !l.id) return; var F = facts(l); if (!Object.keys(F).length) return; if (takeFacts(recFor(l), F)) n++; }); if (n) { DB.v = (DB.v || 0) + 1; DIRTY = true; save(); } return n; }
+/* ── the shared copy (gc_kv): read, merge (field by field, newest time), write ── */
+function kvGet(){ return W.fetch(SBU + '/rest/v1/gc_kv?key=eq.' + KEY + '&select=value', { cache: 'no-store' }).then(function(r){ return r.ok ? r.json() : null; }).then(function(rows){ if (!rows) return null; var v = rows[0] ? rows[0].value : null; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } } return v && Array.isArray(v.recs) ? v : { recs: [] }; }, function(){ return null; }); }
+function kvPut(v){ return W.fetch(SBU + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ key: KEY, value: v, updated_at: new Date().toISOString() }) }).then(function(r){ return r.ok; }, function(){ return false; }); }
+function mergeIn(other){
+  arr(other && other.recs).forEach(function(o){ if (!o || !arr(o.k).length) return;
+    var I = index(), hit = null; for (var i = 0; i < o.k.length && !hit; i++) if (/^(id|ib):/.test(o.k[i]) && I.m[o.k[i]] != null) hit = DB.recs[I.m[o.k[i]]];
+    if (!hit) { DB.recs.push({ k: o.k.slice(), f: JSON.parse(JSON.stringify(o.f || {})) }); IDX = null; return; }
+    o.k.forEach(function(k){ if (hit.k.indexOf(k) < 0) hit.k.push(k); }); IDX = null; takeFacts(hit, o.f || {}); });
+  if (DB.recs.length > 4000) DB.recs = DB.recs.slice(-4000);
+  DB.v = (DB.v || 0) + 1; IDX = null;
+}
+function local(){ try { localStorage.setItem(KEY, JSON.stringify(DB)); } catch (e) {} }
+var PUT_T = 0;
+function save(){ local(); if (PUT_T) return; PUT_T = setTimeout(function(){ PUT_T = 0; if (!DIRTY) return; DIRTY = false; kvGet().then(function(v){ if (v) mergeIn(v); local(); return kvPut({ recs: DB.recs, updatedAt: new Date().toISOString() }); }); }, 1500); }
+function load(){ return kvGet().then(function(v){ if (v) { mergeIn(v); local(); } LOADED = true; capture(); return heal(); }); }
+/* the import path itself: fromItem's copy keeps a person's values (patch LD2 calls W._gcLeadKeep.apply before it stamps) */
+var LAST = null;
+function tick(){ var L = W._crm && W._crm.leads; if (!Array.isArray(L) || !L.length) return; if (L !== LAST) { LAST = L; capture(L); if (LOADED) heal(); } }
+(W.__GC_NATIVE_SETINTERVAL__ || W.setInterval).call(W, function(){ try { tick(); } catch (e) {} }, 3000);
+setTimeout(function(){ load(); }, 3500); (W.__GC_NATIVE_SETINTERVAL__ || W.setInterval).call(W, function(){ try { load(); } catch (e) {} }, 120000);
+W._gcLeadKeep = { apply: apply, capture: capture, heal: heal, seed: seed, find: find, keys: keys, load: load, facts: facts, data: function(){ return DB; } };
 })(window);
 </script>
