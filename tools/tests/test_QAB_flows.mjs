@@ -141,6 +141,15 @@ const cl = await A.ev(() => document.getElementById('gc-mws-mount').innerText);
 ok('M6 🛡 Claims & adjusters: the Mitigation claim (Demo Mutual · #Z-1, meeting tomorrow), not the Construction job\'s claim (Conzz Mutual)', /Demo Mutual · #Z-1/.test(cl) && !/Conzz Mutual|C-200/.test(cl), cl.split('\n').filter(x => /Mutual|zz|Zedd/.test(x)).slice(0, 6));
 await shot('m6_claims');
 
+/* job dropdowns (the global job-select relabeler): Mitigation's jobs only */
+await A.ev(() => window._setView('mws_jobs')); await sleep(1500);
+await A.ev(() => { const b = document.querySelector('#gc-mws-mount [data-a="mitnew"]'); b && b.click(); }); await sleep(1500);
+const pick = await A.ev(() => { const sel = document.querySelector('#gc-mws-mount select[name="projectId"]'); if (!sel) return null; sel.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); return [...sel.options].filter(o => !o.hidden).map(o => o.value); });
+ok('M6 + New mitigation job → its Project dropdown offers Mitigation\'s jobs only (no Construction / Environmental job)', Array.isArray(pick) && !pick.some(v => /^(C1|C2|E1)$/.test(v)) && pick.includes('__new'), pick);
+await shot('m6_new_claim_picker');
+const gen = await A.ev(() => { const sel = document.createElement('select'); sel.innerHTML = ['C1', 'MZ1', 'E1', 'C2'].map(v => '<option value="' + v + '">' + v + '</option>').join(''); document.body.appendChild(sel); window._gcJobSelectSweep(); const vis = [...sel.options].filter(o => !o.hidden).map(o => o.value); window._gcCo.setFilter('all'); window._gcJobSelectSweep(); const all = [...sel.options].filter(o => !o.hidden).map(o => o.value); window._gcCo.setFilter('mitigation'); sel.remove(); return { vis, all }; });
+ok('M6 any job dropdown: Mitigation picked → its jobs only; All companies → every job again', gen.vis.join() === 'MZ1' && gen.all.length === 4, gen);
+
 /* ═══ E1 the asbestos job ═══ */
 await setCo('environmental');
 const envSave = async (tab, kind, vals, chk) => { await A.ev(t => window._setView(t), tab); await sleep(1400);

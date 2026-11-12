@@ -179166,8 +179166,13 @@ W._gcJobTag = function(p){ return W._gcJobLabel(p); };
 function jobById(){ var m = {}; projects().forEach(function(p){ m[s(p.id)] = p; }); return m; }
 function relabel(sel, by){
   var opts = sel.options; if (!opts || !opts.length) return;
+  var CO = W._gcCo, cf = 'all'; try { cf = CO ? CO.filter() : 'all'; } catch (e) {}
   for (var i = 0; i < opts.length; i++) {
     var op = opts[i], p = op.value && by[op.value]; if (!p || op.hasAttribute('data-gc-keep')) continue;
+    /* patch QAB (overnight QA 11/12, "zero leaks"): with one company picked, a job dropdown offers that company's jobs (and jobs shared
+       with it) only — another company's job is hidden unless it is the one already chosen; "All companies" shows every job again */
+    try { if (cf !== 'all' && !CO.passJob(p) && !op.selected) { if (!op.hasAttribute('data-gc-cohide')) { op.hidden = true; op.disabled = true; op.setAttribute('data-gc-cohide', '1'); } }
+      else if (op.hasAttribute('data-gc-cohide')) { op.hidden = false; op.disabled = false; op.removeAttribute('data-gc-cohide'); } } catch (e) {}
     var cur = op.textContent;
     if (cur === op.getAttribute('data-gc-lab')) continue;
     var pre = (/^\s*(🛡\s*)/.exec(cur) || [])[1] || '', tail = (/\s(\((?!PO)[^()]*\))\s*$/.exec(cur) || [])[1] || '';
