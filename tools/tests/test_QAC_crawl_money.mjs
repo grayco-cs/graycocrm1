@@ -14,6 +14,7 @@ const BUILD = process.argv[2]; if (!BUILD) { console.error('usage: node test_QAC
 const ROLE = process.env.ROLE || 'admin', DEVICE = process.env.DEVICE || 'desk';
 const COS = (process.env.COS || 'construction,mitigation,environmental,all').split(',').filter(Boolean);
 const DEEP = process.env.DEEP === undefined ? 'construction' : process.env.DEEP;
+COS.sort((x, y) => (x === DEEP) - (y === DEEP));   /* the deep (clicking) company last, so the others are read on fresh screens */
 const MAXCLICK = +(process.env.MAXCLICK || 30), MAXSUB = +(process.env.MAXSUB || 8);
 const SHOTS = process.env.SHOTS || '/tmp/claude-0/-home-user/6a5b2b6b-8a4d-5505-9f82-62521adb6674/scratchpad/qac_shots';
 const OUT = process.env.OUT || (SHOTS + '/crawl_' + ROLE + '_' + DEVICE + '.json');
@@ -78,7 +79,7 @@ const TABS = [['payroll', 'Payroll'], ['taxcenter', 'Accounting'], ['approvals',
   ['payments', 'Payments'], ['emppay', 'All Payments'], ['pmpay', 'PM Commissions'], ['qbimport', 'QuickBooks'], ['pay', 'My Pay'], ['users', 'Employees'], ['vendors', 'Vendors'],
   ['admin', 'Admin'], ['officemanager', 'Office']];
 const SKIP = /delete|remove|trash|archive|sign ?out|log ?out|\bsend|e-?mail|\btext\b|texts?\b|\bpay\b|pay now|mark paid|\bpaid\b|submit|approve|reject|deny|don.t approve|\bvoid|merge|reset|cancel subscription|wipe|erase|disconnect|restore|undo|import|upload|choose file|run payroll now|write checks|print|clear|refund|deactivate|let go|terminate|fire\b|turn off|data-entry|pause/i;
-const CLOSE = /^(✕|×|x|close|cancel|done|back|← back|‹ back|ok|got it|not now|later|dismiss)$/i;
+const CLOSE = /^(?=.)(?:[✕×x]\s*)?(?:close|cancel|done|back|← back|‹ back|ok|got it|not now|later|dismiss)?$/i;
 
 seed();
 const A = await computer(ME.email, { build: BUILD, mobile: DEVICE === 'phone' });
@@ -116,6 +117,8 @@ const overlays = async () => ev(() => {
   return out;
 });
 const mainText = async () => ev(() => { const m = document.querySelector('#root main') || document.querySelector('main') || document.body; return (m.innerText || '').replace(/\s+/g, ' ').trim(); });
+/* the rows a person reads (not the options of a job picker): selects / datalists left out */
+const rowText = async () => ev(() => { const m = document.querySelector('#root main') || document.querySelector('main') || document.body; const st = document.createElement('style'); st.textContent = 'select,datalist{display:none!important}'; document.head.appendChild(st); const t = (m.innerText || '').replace(/\s+/g, ' ').trim(); st.remove(); return t; });   /* what is on screen (a company's fresh page hides the rest) */
 const sig = async () => ev(() => { const m = document.querySelector('#root main') || document.querySelector('main') || document.body; return (m.innerText || '').length + ':' + m.querySelectorAll('*').length + ':' + document.querySelectorAll('body *').length + ':' + location.hash; });
 /* the visible buttons of the main area (and of an open overlay, if any) */
 const buttons = async (scope) => ev(sc => {
@@ -192,11 +195,14 @@ for (const co of COS) {
     const e0 = errs.length;
     await openTab(id);
     const v = await view(); const txt = await mainText();
-    const rec = { inMenu, view: v, chars: txt.length, head: txt.slice(0, 160) };
+    const rtx = await rowText();
+    const MK = { C: /Demo Smith|PO-3001|\b3001\b|Demo Lumber/, M: /Demo Ross|PO-3002|\b3002\b|Demo Rentals/, E: /Demo Kline|PO-3003|\b3003\b|Demo Office Supply/, crewC: /Zedd Crew/, crewM: /Molly Demo/, crewE: /Eve Demo/ };
+    const rec = { inMenu, view: v, chars: txt.length, head: txt.slice(0, 160), marks: Object.keys(MK).filter(k => MK[k].test(rtx)).join(',') };   /* which company's made-up rows show */
     findings.cos[co].tabs[id] = rec;
-    if (!inMenu) {   /* gating: what a role sees when it reaches a tab that is not in its menu (a saved link / old view) */
+    if (!inMenu) {   /* gating: what a role sees when it reaches a tab that is not in its menu (a saved link / old view, a button elsewhere) */
       findings.gating[id] = findings.gating[id] || {}; findings.gating[id][co] = { view: v, head: txt.slice(0, 120), chars: txt.length };
-      continue;
+      if (/Dashboard\s*Welcome|^\S*\s*Dashboard/.test(txt.slice(0, 80)) || txt.length < 30) continue;   /* falls back to the Dashboard: nothing to crawl */
+      rec.reachable = true;   /* it draws its own screen: crawl it too */
     }
     if (txt.length < 30) { findings.blank.push({ co, tab: id, txt }); await P().screenshot({ path: SHOTS + '/blank_' + ROLE + '_' + DEVICE + '_' + co + '_' + id + '.png' }).catch(() => {}); }
     const ctx = { co, deep: co === DEEP };
@@ -222,8 +228,8 @@ for (const co of COS) {
 findings.pageErrors = errs; findings.consoleErrors = cons.slice(0, 40);
 fs.writeFileSync(OUT, JSON.stringify(findings, null, 1));
 /* summary */
-const seenTabs = co => Object.entries(findings.cos[co] ? findings.cos[co].tabs : {}).filter(([, r]) => r.inMenu).map(([k, r]) => k + (r.clicked != null ? '(' + r.clicked + ')' : ''));
-for (const co of COS) console.log('  ' + co + ': ' + seenTabs(co).join(' '));
+const seenTabs = co => Object.entries(findings.cos[co] ? findings.cos[co].tabs : {}).filter(([, r]) => r.inMenu || r.reachable).map(([k, r]) => k + (r.reachable ? '*' : '') + (r.clicked != null ? '(' + r.clicked + ')' : ''));
+for (const co of COS) { console.log('  ' + co + ': ' + seenTabs(co).join(' ')); console.log('     rows seen: ' + Object.entries(findings.cos[co] ? findings.cos[co].tabs : {}).filter(([, r]) => (r.inMenu || r.reachable) && r.marks).map(([k, r]) => k + '[' + r.marks + ']').join(' ')); }
 console.log('  gating (opened though not in the menu): ' + Object.entries(findings.gating).map(([k, v]) => k + '→' + Object.values(v).map(x => x.chars + 'ch').slice(0, 1)).join(' '));
 ok('no page errors (' + ROLE + ', ' + DEVICE + ')', !errs.length, errs.slice(0, 6));
 ok('no blank views', !findings.blank.length, findings.blank);
