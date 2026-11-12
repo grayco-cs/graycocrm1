@@ -76,6 +76,14 @@ ok(avLou.mark === '🚫' && /needs IICRC WRT/.test(avLou.reasons.join()) && avTi
 Q._tick();
 W._crm.schedule = SCH = SCH.map(x => x.id === 'S2' ? Object.assign({}, x, { crew: 'Lou Demo, Tia Demo' }) : x); Q._tick();
 ok(SCH.find(x => x.id === 'S2').crew === 'Tia Demo', 'SCHEDULE: dropping Lou (🚫) on the dry-out entry is refused — he is taken off, Tia stays', SCH.find(x => x.id === 'S2'));
+/* abrasive / blast cleaning: a job type of its own — respirator fit test + blasting equipment training + silica awareness */
+const BJ = { id: 'J9', name: 'Demo attic soda blasting', scope: 'soda blast the attic framing', status: 'active', companyId: 'mitigation' };
+const coraB = Q.check(by('Cora'), BJ), eclB = Q.check(by('Ecl'), BJ);
+C._set(C.plan(), [cert('Ecl', 'Respirator fit test + medical evaluation'), cert('Ecl', 'Soda blasting equipment training'), cert('Ecl', 'Silica awareness (OSHA 1926.1153)')]);
+const eclB2 = Q.check(by('Ecl'), BJ);
+ok(!coraB.ok && coraB.law && /blast-cleaning equipment training/.test(coraB.missing.join()) && !eclB.ok && eclB2.ok && Q.of(by('Ecl')).can.some(x => x.k === 'blast'), 'BLAST: soda-blasting job needs respirator + blasting training + silica; Ecl with all three is ✓, Cora is not', { coraB, eclB2 });
+C.open('people'); await new Promise(r => setTimeout(r, 30));
+ok(/Cleaning materials:.*Dry-chem \(soot\) sponges/.test(dlg.innerHTML) && /Tools &amp; equipment:.*Soda and dry-ice blasters/.test(dlg.innerHTML) && W._gcTrain && C.CLASS.blasttrain[0] === 'b:prep-clean', 'cleaning roles: the materials and tools lists on the card; the blasting class needs the 🧽 cleaning CRM course first');
 const tabs = ['people', 'raises', 'reqs', 'amounts', 'outlook', 'jobs', 'bonus', 'pay'], bad = [];
 for (const tb of tabs) { C.open(tb); await new Promise(r => setTimeout(r, 30)); const h = dlg.innerHTML.replace(/data-[a-z-]+="[^"]*"/g, ''); if (!h || /undefined|NaN/.test(h)) bad.push(tb + ':' + ((h.match(/.{40}(undefined|NaN).{20}/) || [''])[0])); }
 ok(!bad.length, 'every tab draws (no "undefined" / "NaN")', bad);

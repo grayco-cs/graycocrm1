@@ -195913,6 +195913,7 @@ var M = {
   osha10: 'osha[- ]?10\\b', osha30: 'osha[- ]?30\\b', fall: 'fall protection', bloodlead: 'blood lead|lead medical', hazwoper: 'hazwoper', leadaware: 'lead awareness|asbestos awareness',
   mwr: 'master water', mfsr: 'master fire', mr: 'master restorer', mtc: 'master textile',
   /* patch CERTROLE: Environmental's own set */
+  blasttrain: 'blast(ing)?[^,;]*(equipment|training|operator)|soda blast|dry[- ]ice blast|media blast', silica: '\\bsilica\\b',   /* patch CERTROLE: abrasive / blast cleaning */
   rct: '\\bRCT\\b|rug cleaning', contents: 'contents (processing|restoration|pack-?out|manag)',   /* patch CERTROLE: cleaning / contents */
   asbinsp: 'asbestos[^,;]*inspector', confined: 'confined[- ]space', trauma: '\\bBRT\\b|\\bABRA\\b|biohazard|trauma|crime[- ]scene', hazref: 'hazwoper[^,;]*(8|refresher)|8[- ]?h(ou)?r[^,;]*refresher', mold: '\\bAMRT\\b|applied microbial|mold remediat'
 };
@@ -195931,6 +195932,7 @@ var LAW = {
   leadwork: R('leadwork', 'Lead abatement worker (state license)', M.leadwork, 0, 'Required before doing lead abatement: Arkansas Dept. of Health · TDEC (TN).', true),
   asbsup: R('asbsup', 'Asbestos contractor / supervisor (AHERA + state license) — when doing asbestos', M.asbsup, 0, 'EPA AHERA / NESHAP + state licensing (Arkansas DEQ · TDEC): before supervising any asbestos removal.', true, true),
   asbwork: R('asbwork', 'Asbestos abatement worker (AHERA 4-day + state license) — when doing asbestos', M.asbwork, 0, 'EPA AHERA + state licensing: before doing any asbestos removal.', true, true),
+  silica: R('silica', 'Silica awareness (OSHA 1926.1153) — for media / sand blasting', M.silica, 0, 'OSHA 29 CFR 1926.1153: crystalline silica — media / sand blasting and grinding need the exposure controls, a written plan and training.', true, true),
   asbinsp: R('asbinsp', 'Asbestos inspector (AHERA + state license) — where we survey', M.asbinsp, 0, 'EPA AHERA (40 CFR 763) + state licensing (TDEC · Arkansas DEQ): before doing an asbestos survey / inspection.', true, true),   /* patch CERTROLE */
   hazwoper: R('hazwoper', 'HAZWOPER 40-hour — only for hazardous-waste sites', M.hazwoper, 0, 'OSHA 29 CFR 1910.120: only if we take hazardous-waste site work.', true, true),
   hazref: R('hazref', 'HAZWOPER 8-hour annual refresher — only for hazardous-waste sites', M.hazref, 0, 'OSHA 29 CFR 1910.120(e)(8): 8 hours of refresher training every year after the 40-hour course.', true, true),
@@ -195946,7 +195948,7 @@ var MASTER_PM = function(){ return [iicrc('asd', 'IICRC ASD — Applied Structur
    ticked). Certificates with no CRM course yet get a short prep course here (PREP → window.__GC_TRAIN_EXTRA__: overview, key terms,
    what the class covers, a 10-question test, 80 % to pass). */
 var CLASS = { wrt: ['b:resto-water'], asd: ['b:iicrc-s500'], amrt: ['b:iicrc-s520'], fsrt: ['b:resto-fire'], oct: ['b:resto-odor'], cct: ['b:prep-cct'], uft: ['b:prep-uft'],
-  mr: ['b:prep-mr'], rrp: ['b:co-env-lead'], leadwork: ['b:co-env-lead'], leadsup: ['b:co-env-lead'], asbwork: ['b:co-env-asbestos'], asbsup: ['b:co-env-asbestos'],
+  mr: ['b:prep-mr'], blasttrain: ['b:prep-clean'], silica: ['b:prep-clean'], rrp: ['b:co-env-lead'], leadwork: ['b:co-env-lead'], leadsup: ['b:co-env-lead'], asbwork: ['b:co-env-asbestos'], asbsup: ['b:co-env-asbestos'],
   asbinsp: ['b:co-env-asbestos'], hazwoper: ['b:co-env-hazwoper'], hazref: ['b:co-env-hazwoper'], resp: ['b:co-env-resp'], trauma: ['b:iicrc-bio'], osha10: ['b:prep-osha'], osha30: ['b:prep-osha'] };
 function PQ(q, c, a, why){ return { q: q, c: c, a: a, why: why }; }
 function prepCourse(id, title, cos, overview, terms, covers, quiz){
@@ -195998,6 +196000,20 @@ var PREP = [
      PQ('Keeping IICRC certificates current needs…', ['Continuing education (CECs) and renewal', 'Nothing', 'A new exam every month', 'A letter from a customer'], 0, 'CECs.'),
      PQ('Travel for an out-of-town class is…', ['Paid by GrayCo', 'Paid by the employee', 'Not allowed', 'Paid by the customer'], 0, 'Travel paid for courses out of town.'),
      PQ('A tech who holds Master Restorer is…', ['⭐ Eligible for promotion to PM', 'Given a $5 raise as a tech', 'Moved to the office', 'Nothing changes'], 0, 'The pay comes with the PM commission plan.')]),
+  prepCourse('prep-clean', '🧽 Cleaning & blast cleaning: materials, tools and safety', ['mitigation', 'construction', 'environmental'],
+    '- The Contents & Cleaning Tech and the Environmental Cleaning Tech do final cleans, contents cleaning, soot and odor work and 🧱 abrasive / blast cleaning (soda, dry-ice, media / sand blasting, wire-brushing or sanding framing after fire, smoke or mold).\n- Blast cleaning needs: a respirator fit test + medical clearance, the blasting equipment training and silica awareness (media / sand).',
+    '- **Materials:** all-purpose cleaners, degreasers, dry-chem (soot) sponges, HEPA filters and bags, EPA-registered antimicrobials / disinfectants, deodorizers and odor counteractants, pads, microfiber, poly and tape, PPE.\n- **Tools:** HEPA vacuums, air scrubbers, hydroxyl / ozone units, ULV and thermal foggers, pressure washer, extractor, ultrasonic contents cleaning, soda / dry-ice blasters + compressor, ladders and scaffold.\n- **SDS / HazCom:** every chemical has its Safety Data Sheet on the truck.',
+    '- Least aggressive first: dry-chem sponge → HEPA vacuum → wet wipe → abrasive / blast.\n- Ozone: nobody (people, pets, plants) in the space. Hydroxyl can run occupied.\n- Soda blasting leaves residue to HEPA-vacuum; dry ice leaves none but needs ventilation (CO₂); media / sand blasting makes silica dust — controls and respirators.',
+    [PQ('What do you try first on soot on a painted wall?', ['A dry-chem (soot) sponge', 'Sand blasting', 'Bleach', 'A pressure washer'], 0, 'Least aggressive first.'),
+     PQ('Before using any cleaning chemical you…', ['Know its SDS (HazCom)', 'Mix it with bleach', 'Skip the label', 'Use more than the label says'], 0, 'HazCom: the SDS first.'),
+     PQ('Ozone machines run…', ['Only with nobody in the space', 'With the family at home', 'In occupied offices', 'Any time'], 0, 'Ozone is unsafe to breathe.'),
+     PQ('Which blasting leaves no media residue?', ['Dry-ice blasting', 'Soda blasting', 'Sand blasting', 'Glass-bead blasting'], 0, 'Dry ice sublimates — ventilate for CO₂.'),
+     PQ('Media / sand blasting needs…', ['Silica controls, a respirator and training', 'Nothing special', 'Only gloves', 'Only a fan'], 0, 'OSHA 1926.1153.'),
+     PQ('To blast-clean framing at GrayCo you need…', ['Respirator fit test, blasting training and silica awareness', 'A driver\'s license', 'OSHA 30 only', 'Nothing'], 0, 'Without them you are blocked from the job.'),
+     PQ('Antimicrobials must be…', ['EPA-registered and used by the label', 'Homemade', 'Any cleaner', 'Mixed with ammonia'], 0, 'EPA-registered, by the label.'),
+     PQ('HEPA vacuums are used to…', ['Capture fine particles (soot, mold, soda residue)', 'Dry carpet', 'Blow dust outside', 'Polish floors'], 0, 'HEPA captures fine particles.'),
+     PQ('An air scrubber…', ['Filters the room air (HEPA)', 'Heats the room', 'Adds moisture', 'Removes water from carpet'], 0, 'Negative air / filtration.'),
+     PQ('Which tool cleans small contents fast and gently?', ['Ultrasonic cleaning', 'Pressure washer', 'Sand blaster', 'Wire brush'], 0, 'Ultrasonic for contents.')]),
   prepCourse('prep-osha', '🦺 Before the OSHA 10 / OSHA 30 class (construction)', ['construction', 'mitigation', 'environmental'],
     '- **OSHA 10** (10 hours) for workers, **OSHA 30** (30 hours) for supervisors and PMs — the OSHA Outreach construction courses, with a DOL card.\n- GrayCo pays: OSHA 10 +$1/hr, OSHA 30 +$2/hr (not on commission-paid PM tracks).',
     '- **Focus Four**: falls, struck-by, caught-in/between, electrocution.\n- **Competent person**: can spot hazards and has the authority to fix them.\n- **PPE**, **HazCom / SDS**, **scaffolds and ladders**, **excavations**.',
@@ -196032,8 +196048,9 @@ function contReqs(mgr){
   var why = mgr ? 'Required for the Contents & Cleaning Manager' : 'Offered — earns its raise (cleaning / contents)';
   var c = [iicrc('cct', 'IICRC CCT — Carpet Cleaning', 0, why), iicrc('uft', 'IICRC UFT — Upholstery & Fabric', 0, why), iicrc('rct', 'IICRC RCT — Rug Cleaning', 0, why), iicrc('oct', 'IICRC OCT — Odor Control', 0, why), iicrc('fsrt', 'IICRC FSRT — Fire & Smoke Restoration', 0, why),
     R('contents', 'Contents processing course (provider TBD) — pack-out, inventory, cleaning, storage', M.contents, 0, why), R('mtc', 'IICRC Master Textile Cleaner (master level)', M.mtc, 0, mgr ? 'Required for the Contents & Cleaning Manager' : 'Master level — ⭐ eligible for Contents & Cleaning Manager')];
+  c.push(R('blasttrain', 'Abrasive / blast cleaning equipment training — soda, dry-ice and media blasting', M.blasttrain, 0, mgr ? 'Required for the Contents & Cleaning Manager' : 'Unlocks 🧱 blast-cleaning jobs (fire / smoke, mold framing)'));   /* patch CERTROLE: "abrasion cleaning" */
   if (!mgr) c = c.map(function(r){ return Object.assign({}, r, { rec: true }); });
-  return c.concat([LAW.hazcom, LAW.resp, LAW.bbp, LAW.fall]);
+  return c.concat([LAW.hazcom, LAW.resp, LAW.bbp, LAW.silica, LAW.fall]);
 }
 function dualReqs(fore){
   var rc = function(r){ return Object.assign({}, r, { rec: true, why: 'Recommended — earns its raise (cross-trained)' }); };
@@ -196069,7 +196086,8 @@ function TRACKS(){ return {
     Object.assign({}, LAW.rrp, { why: 'Lead-safe cleaning and cleaning verification on pre-1978 work. ' + LAW.rrp.why }), envMold(), LAW.hazwoper, LAW.hazref,
     R('trauma', 'Trauma / biohazard clean-up certificate (IICRC BRT or ABRA / equivalent — provider TBD)', M.trauma, 0, 'Owner: required for the Environmental Cleaning Tech (GrayCo requirement — keep on). Bloodborne pathogens (LAW) applies as well.'),
     Object.assign({}, LAW.asbwork, { name: 'Asbestos abatement worker — when cleaning in asbestos areas' }), LAW.fall,
-    Object.assign(R('osha10', 'OSHA 10 (construction)', M.osha10, 0, 'Recommended — earns its raise'), { rec: true }), Object.assign(iicrc('oct', 'IICRC OCT — Odor Control', 0, 'Recommended — earns its raise'), { rec: true })] },
+    Object.assign(R('osha10', 'OSHA 10 (construction)', M.osha10, 0, 'Recommended — earns its raise'), { rec: true }), Object.assign(iicrc('oct', 'IICRC OCT — Odor Control', 0, 'Recommended — earns its raise'), { rec: true }),
+    Object.assign(R('blasttrain', 'Abrasive / blast cleaning equipment training — soda, dry-ice and media blasting', M.blasttrain, 0, 'Unlocks 🧱 blast-cleaning jobs'), { rec: true }), LAW.silica] },
   cont_mgr: { label: 'Contents & Cleaning Manager — GrayCo Mitigation (future role — no one assigned yet)', co: 'mitigation', unit: 'yr', pm: true, future: true, reqs: contReqs(true) },
   /* patch CERTROLE: construction crew (laborers / carpenters / helpers) — starting rate $18, the field-safety law lines */
   con_crew: { label: 'Crew — GrayCo Construction', co: 'construction', unit: 'hr', reqs: [LAW.rrpojt, LAW.hazcom, LAW.fall, LAW.leadaware, Object.assign(R('osha10', 'OSHA 10 (construction)', M.osha10, 0, 'Recommended — keep on'), { rec: true })] },
@@ -196100,7 +196118,7 @@ function RAISES(){ return [
   RR('amrt', 'IICRC AMRT — Applied Microbial Remediation', M.amrt, 21, '', 1, 'iicrc', true, NOT_MASTER), RR('fsrt', 'IICRC FSRT — Fire & Smoke Restoration', M.fsrt, 14, '', 1, 'iicrc', true, NOT_MASTER),
   RR('oct', 'IICRC OCT — Odor Control', M.oct, 14, '', 1, 'iicrc', true, NOT_MASTER), RR('cct', 'IICRC CCT — Carpet Cleaning', M.cct, 14, '', 1, 'iicrc', true, NOT_MASTER),
   RR('uft', 'IICRC UFT — Upholstery & Fabric', M.uft, 14, '', 1, 'iicrc', true, NOT_MASTER), RR('rct', 'IICRC RCT — Rug Cleaning', M.rct, 14, '', 1, 'iicrc', true, NOT_MASTER),
-  RR('contents', 'Contents processing course (provider TBD)', M.contents, 16, '', 1, 'contents'), RR('iicrc', 'Any other IICRC course (e.g. BRT)', '\\bIICRC\\b', 14, '', 1, 'iicrc', true, NOT_MASTER),
+  RR('contents', 'Contents processing course (provider TBD)', M.contents, 16, '', 1, 'contents'), RR('blasttrain', 'Abrasive / blast cleaning equipment training', M.blasttrain, 8, '', 1, 'clean'), RR('iicrc', 'Any other IICRC course (e.g. BRT)', '\\bIICRC\\b', 14, '', 1, 'iicrc', true, NOT_MASTER),
   RR('rrp', 'EPA RRP Certified Renovator', M.rrp, 8, '', 1, '', false),
   RR('leadwork', 'Lead abatement worker (state license)', M.leadwork, 32, '', 1, 'leadwork'), RR('asbwork', 'Asbestos abatement worker (AHERA 4-day + state license)', M.asbwork, 32, '', 1, 'leadwork'),
   RR('leadsup', 'Lead abatement supervisor (state license)', M.leadsup, 40, 'supervisor', 5, 'leadsup'), RR('asbsup', 'Asbestos contractor / supervisor (AHERA + state license)', M.asbsup, 40, 'supervisor', 5, 'leadsup'),
@@ -196383,7 +196401,9 @@ var QUAL = [
   { k: 'asbestos', l: 'Asbestos', law: true, need: [['asbwork|asbsup', 'asbestos worker']], rx: /asbestos|\bacm\b|vermiculite/i },
   { k: 'bio', l: 'Biohazard / trauma', law: true, need: [['bbp', 'bloodborne pathogens training'], ['trauma', 'a trauma / biohazard certificate']], rx: /trauma|biohazard|crime[- ]scene|sewage|unattended death|blood/i },
   { k: 'clean', l: 'Cleaning / contents', need: [['cct|uft|rct|oct', 'IICRC CCT, UFT, RCT or OCT']], rx: /final clean|contents|pack-?out|carpet|upholster|cleaning/i },
-  { k: 'hazmat', l: 'Hazmat', law: true, need: [['hazwoper', 'HAZWOPER 40']], rx: /hazmat|hazardous waste|hazwoper/i }
+  { k: 'hazmat', l: 'Hazmat', law: true, need: [['hazwoper', 'HAZWOPER 40']], rx: /hazmat|hazardous waste|hazwoper/i },
+  /* patch CERTROLE: abrasive / blast cleaning (soda, dry-ice, media / sand blasting, wire-brushing / sanding framing) — respirator + equipment training + silica */
+  { k: 'blast', l: 'Blast / abrasive cleaning', law: true, need: [['resp', 'respirator fit test + medical clearance'], ['blasttrain', 'blast-cleaning equipment training'], ['silica', 'silica awareness']], rx: /soda[- ]?blast|dry[- ]?ice|media[- ]?blast|sand[- ]?blast|abrasive|wire[- ]?brush|blast(ing)? clean/i }
 ];
 function needRx(ids){ return rx(ids.split('|').map(function(id){ return M[id]; }).join('|')); }
 function qualOf(u){
@@ -196405,7 +196425,7 @@ function jobOpen(pj){ return !!pj && !/(complete|closed|lost|cancel|archiv|dead|
 function jobExcOf(u, pj){ var x = isObj(plan().jobExc) ? plan().jobExc[low(u && u.email) + '|' + s(pj && pj.id)] : null; return x && jobOpen(pj) ? x : null; }
 /* what blocks: on Mitigation / Environmental jobs every job type above; on a Construction job only asbestos, hazmat and biohazard (a roof
    "leak" or a pre-1978 remodel stays a warning there — RRP crews work under the certified renovator) */
-function enforcedKinds(pj){ var co = 'construction'; try { co = W._gcCo && W._gcCo.ofJob ? W._gcCo.ofJob(pj) : co; } catch (e) {} return co === 'construction' ? ['asbestos', 'hazmat', 'bio'] : null; }
+function enforcedKinds(pj){ var co = 'construction'; try { co = W._gcCo && W._gcCo.ofJob ? W._gcCo.ofJob(pj) : co; } catch (e) {} return co === 'construction' ? ['asbestos', 'hazmat', 'bio', 'blast'] : null; }
 function blockOf(u, pj){ if (!u || !pj || !LOADED || !CERTS_OK) return null; var c = qualCheck(u, pj); if (c.ok) return null; var ex = jobExcOf(u, pj); if (ex) return null;
   var ek = enforcedKinds(pj); if (ek) { var ks = jobKinds(pj), q = qualOf(u), canK = q.can.map(function(x){ return x.k; }), bad = ks.filter(function(k){ return ek.indexOf(k.k) >= 0 && canK.indexOf(k.k) < 0; }); if (!bad.length) return null;
     return { ok: false, kinds: bad.map(function(k){ return k.l; }), missing: bad.map(function(k){ return (q.next.filter(function(n){ return n.k === k.k; })[0] || { missing: [] }).missing.join(' + '); }), law: true, label: c.label }; }
@@ -196521,6 +196541,14 @@ function jobWarn(){
   } catch (e) {}
 }
 try { (W.__gcJobPaint = W.__gcJobPaint || []).push(jobWarn); } catch (e) {}
+/* patch CERTROLE (owner 11/12): "make sure to have abrasion cleaning, cleaning materials, tools etc on cleaning" */
+var CLEAN_KIT = {
+  materials: ['All-purpose cleaners', 'Degreasers', 'Dry-chem (soot) sponges', 'HEPA filters and vacuum bags', 'EPA-registered antimicrobials / disinfectants', 'Deodorizers and odor counteractants', 'Scrub pads and microfiber', 'Plastic / 6-mil poly and tape', 'PPE: gloves, respirator cartridges, suits, eye protection'],
+  tools: ['HEPA vacuums', 'Air scrubbers', 'Hydroxyl and ozone units', 'Foggers (ULV and thermal)', 'Pressure washer', 'Extractor / carpet-cleaning machine', 'Ultrasonic contents cleaning', 'Soda and dry-ice blasters + compressor', 'Wire brushes / sanders (framing)', 'Ladders and scaffold'],
+  note: 'Every chemical has its SDS in the binder and on the truck — HazCom training first (LAW). Antimicrobials only EPA-registered, used by the label, with the customer\'s consent.'
+};
+function kitHtml(tk){ if (!/^(cont_tech|cont_mgr|env_clean)$/.test(s(tk))) return '';
+  return '<div class="gccp-mut" style="margin-top:4px" data-cp-kit="1">🧴 <b>Cleaning materials:</b> ' + CLEAN_KIT.materials.map(esc).join(' · ') + '<br>🧰 <b>Tools &amp; equipment:</b> ' + CLEAN_KIT.tools.map(esc).join(' · ') + '<br>⚠ ' + esc(CLEAN_KIT.note) + ' · 🧱 Blast / abrasive cleaning (soda, dry-ice, media) needs the respirator fit test, the equipment training and silica awareness.</div>'; }
 function qualHtml(u){ var q = qualOf(u);
   return '<div class="gccp-mut" style="margin-top:4px" data-cp-qual="' + esc(low(u.email)) + '">🔓 <b>Can work:</b> ' + (q.can.length ? q.can.map(function(x){ return '<span class="gccp-chip ok">' + esc(x.l) + '</span>'; }).join('') : '<span class="gccp-mut">no certified job types yet</span>') +
     (q.next.length ? ' · <b>Next unlock:</b> ' + q.next.slice(0, 3).map(function(x){ return esc(x.l) + ' — take ' + esc(x.missing.join(' + ')); }).join(' · ') : '') + ' <span class="gccp-mut">(more certificates → more jobs → more hours and raises)</span></div>'; }
@@ -196582,7 +196610,7 @@ function raiseBox(u, p, held){
     (c.track === 'gen_lab' ? (function(){ var tc = techCourses(u, p), ep = envPath(u, p); return '<div class="gccp-mut" data-cp-labstep="1">🪜 Path 1 — ' + esc((p.tracks[tc.target] || {}).label || tc.target) + ' (+$' + TECH_STEP + '/hr → $' + (startOf('gen_lab', p) + TECH_STEP) + '): <b>' + tc.passed + ' of ' + tc.of + ' CRM courses passed</b>' + (tc.ready ? ' — ⭐ Ready for tech status (in 💵 Raises due)' : tc.left.length ? ' · still to pass: ' + tc.left.map(function(m){ return esc(m.title); }).join(' · ') : '') + '</div>' +
       '<div class="gccp-mut" data-cp-labenv="1">🪜 Path 2 — Environmental tech ($' + startOf('env_tech', p) + '/hr): certificates <b>' + ep.certs + ' of ' + ep.certsOf + '</b> (EPA RRP, lead worker, asbestos worker)' + (ep.missing.length ? ' — missing ' + esc(ep.missing.join(', ')) : '') + ' · Environmental CRM training <b>' + ep.passed + ' of ' + ep.of + ' passed</b>' + (ep.ready ? ' — ⭐ Ready for Environmental tech status (in 💵 Raises due)' : '') + '. No certificate raises before tech status (certificates are still recorded).</div>'; })() : '') +
     (isDual(c.track) ? '<div class="gccp-mut" data-cp-ladder="1">🪜 Dual tech → Dual foreman (a supervisor license, or OSHA 30 + 1 year) → PM (Master Restorer) or Environmental supervisor / PM (lead + asbestos supervisor). Cross-training bonus +' + hrTxt(num(p.xtrainHr) > 0 ? p.xtrainHr : 2) + ' once with WRT + AMRT + lead worker + asbestos worker + HAZWOPER 40 (' + xtrainHas(got).length + ' of ' + XTRAIN.length + ').</div>' : '') +
-    rateLine(u, p, c) + qualHtml(u) +
+    rateLine(u, p, c) + qualHtml(u) + kitHtml(c.track) +
     '<div class="gccp-mut" style="margin-top:4px" data-cp-policy="1">🎓 ' + esc(POLICY) + ' <i>(' + esc(ATTY) + ')</i>.</div>' + planBox(u, p) +
     '<div class="gccp-mut" style="margin-top:4px">🚗 Course travel paid by GrayCo: ' + (tv.length ? '<b data-cp-tvsum="1">$' + tvSum.toFixed(2) + '</b> (' + tv.map(function(x){ return esc(x.cert) + ' ' + esc(fmt(x.date)); }).join(' · ') + ')' : 'none yet') +
     ' <button type="button" class="gccp-btn" style="font-size:12px;padding:2px 8px" data-cp="tvform" data-em="' + esc(em) + '">＋ Course travel</button>' + (typeof W._gcFieldLogExpense === 'function' ? ' <button type="button" class="gccp-btn" style="font-size:12px;padding:2px 8px" data-cp="receipt">🧾 Snap the receipt</button>' : '') + '</div>' +
