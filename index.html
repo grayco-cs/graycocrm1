@@ -5496,7 +5496,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.234-2026-11-12-r34a -->
+<!-- GrayCo CRM Build: 33.235-2026-11-12-r34b -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6445,7 +6445,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.234-2026-11-12-r34a");
+  console.log("[GC] Build 33.235-2026-11-12-r34b");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6493,7 +6493,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.234-2026-11-12-r34a"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.235-2026-11-12-r34b"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -174258,7 +174258,7 @@ function inScopeFor(l, sc){
   return false;
 }
 function inScope(l){ return inScopeFor(l, myScope()); }
-function scoped(){ var sc = myScope(), all = leads(); if (W._gcCo && W._gcCo.filter() !== 'all') all = all.filter(function(l){ return W._gcCo.pass(l, 'lead'); });   /* patch MULTICO: the picked company */
+function scoped(){ var sc = myScope(), all = leads(), lv = W._gcCo ? (W._gcCo.leadView ? W._gcCo.leadView() : W._gcCo.filter()) : 'all'; if (W._gcCo && lv !== 'all') all = all.filter(function(l){ return W._gcCo.ofLead(l) === lv; });   /* LEADCO: All companies → Construction's leads */   /* patch MULTICO: the picked company */
   return sc.kind === 'all' ? all : all.filter(function(l){ return inScopeFor(l, sc); }); }   /* the scope once per call (LEADPERF) */
 function officeAsg(){ try { return typeof W._gcIsOfficeFull === 'function' && !!W._gcIsOfficeFull() && !(W._gcVAS && W._gcVAS.active && W._gcVAS.active()); } catch (e) { return false; } }   /* patch OFFFIX1: the office assigns leads (her Approvals' "Assign this lead") */
 function canAssignAll(){ return (isAdmin() && myScope().kind === 'all' && myScope().why === 'admin') || officeAsg(); }
@@ -174638,7 +174638,7 @@ function clearFilters(){ ['k', 'q', 'who', 'src', 'type', 'stage', 'due', 'prio'
 var MD = { key: '', v: null };
 function model(){
   var r = rawLeads(), sc = myScope();
-  var key = [refId(r), OVL_V, sc.kind, sc.why, myName(), (function(){ try { return W._gcCo ? W._gcCo.filter() : ''; } catch (e) { return ''; } })(), JSON.stringify([UI.k, UI.un, UI.wk, UI.d7, UI.nc, UI.mi, UI.q, UI.who, UI.src, UI.type, UI.stage, UI.due, UI.prio, UI.role, UI.exp, UI.closed, UI.imp, UI.arch, UI.preset, UI.lsort, UI.ldir]), GEO.ver, GEO.from, Object.keys(LC_GONE).length, s(inboxRaw()).length, Math.floor(Date.now() / 6e5)].join('|');
+  var key = [refId(r), OVL_V, sc.kind, sc.why, myName(), (function(){ try { return W._gcCo ? (W._gcCo.leadView ? W._gcCo.leadView() : W._gcCo.filter()) : ''; } catch (e) { return ''; } })(), JSON.stringify([UI.k, UI.un, UI.wk, UI.d7, UI.nc, UI.mi, UI.q, UI.who, UI.src, UI.type, UI.stage, UI.due, UI.prio, UI.role, UI.exp, UI.closed, UI.imp, UI.arch, UI.preset, UI.lsort, UI.ldir]), GEO.ver, GEO.from, Object.keys(LC_GONE).length, s(inboxRaw()).length, Math.floor(Date.now() / 6e5)].join('|');
   if (MD.key === key && MD.v) return MD.v;
   var list = filtered().filter(function(l){ return !LC_GONE[s(l.id)]; }), now = Date.now();
   var base = scoped().filter(function(l){ return !importedL(l) && !shut(l) && !LC_GONE[s(l.id)]; });
@@ -174895,11 +174895,14 @@ function advRow(){
     + '<select data-gcl-f="prio" aria-label="Priority">' + optionsFor([{ v: 'hi', t: '8–10 (high)' }, { v: 'md', t: '5–7' }, { v: 'lo', t: '1–4' }, { v: 'none', t: 'No priority yet' }], UI.prio, 'Any priority') + '</select>'
     + '</div>';
 }
+D.addEventListener('click', function(e){ var a = e.target && e.target.closest ? e.target.closest('[data-gcl-coall]') : null; if (!a) return; e.preventDefault(); try { W._gcCo.setLeadsAll(a.getAttribute('data-gcl-coall') === '1'); } catch (x) {} }, true);   /* LEADCO */
 function hubHtml(){
   var m = model(), c = m.cnt, out = UI.v === 'outreach';
   var views = VIEWS.filter(function(v){ return v[0] !== 'outreach' || rsoOk(); });
   var mi = [0, 25, 50, 100, 200];
-  return '<div class="gclu-top"><h2>Leads</h2>'
+  var coBar = (function(){ try { var G = W._gcCo; if (!G || !G.leadView || G.filter() !== 'all') return ''; var all = G.leadsAll();
+    return '<span class="gclu-co" style="font-size:12px;margin-left:6px">' + (all ? '🌐 Every company\'s leads' : '🏗 Construction leads') + ' · <a href="#" data-gcl-coall="' + (all ? '0' : '1') + '" style="color:#1d4ed8">' + (all ? 'show Construction only' : 'show every company') + '</a></span>'; } catch (e) { return ''; } })();
+  return '<div class="gclu-top"><h2>Leads</h2>' + coBar
     + '<input type="search" class="gclu-q" placeholder="Search leads, people, addresses, bid #…" data-gcl-f="q" value="' + esc(UI.q) + '" aria-label="Search leads">'
     + '<span class="gclu-views" role="tablist" aria-label="Views">' + views.map(function(v){ var on = UI.v === v[0]; return '<button type="button" role="tab" data-gcl-v="' + v[0] + '" class="' + (on ? 'on' : '') + '" aria-selected="' + on + '">' + v[1] + '</button>'; }).join('') + '</span>'
     + '<span class="gclu-sp"></span><span id="gc-leads-chips" data-gc-keep="1"></span>' + bkBtn()   /* patch LEADBULK */   /* patch BARSTILL2: the chips' fixed slot */
@@ -175229,7 +175232,7 @@ function mount(){
   if (typing && !FORCE) return;   /* never redraw under a typing hand (only a control of the hub itself asks for it) */
   var refocus = typing ? ae.getAttribute('data-gcl-f') : '', caret = typing && ae.type === 'search' ? ae.selectionStart : null; FORCE = false;
   if (UI.v === 'outreach' && !rsoOn()) UI.v = 'list';   /* patch LEADSUI: Outreach's own "Back to Leads" */
-  var sig = [refId(rawLeads()), OVL_V, (function(){ try { return W._gcCo ? W._gcCo.filter() : ''; } catch (e) { return ''; } })(), JSON.stringify(UI), JSON.stringify(MORE), Object.keys(PICK).filter(function(k){ return PICK[k]; }).length, myScope().kind, myScope().why, GEO.ver, GEO.from, Object.keys(LC_GONE).length, LU.more, LU.adv, rsoOk(), (typeof BULK === 'object' && BULK ? BULK.on + ':' + BULK.v : ''), Math.floor(Date.now() / 6e5)].join('|');   /* patch LEADBULK */   /* patch LEADSUI: the model's version — nothing changed, nothing drawn */
+  var sig = [refId(rawLeads()), OVL_V, (function(){ try { return W._gcCo ? (W._gcCo.leadView ? W._gcCo.leadView() : W._gcCo.filter()) : ''; } catch (e) { return ''; } })(), JSON.stringify(UI), JSON.stringify(MORE), Object.keys(PICK).filter(function(k){ return PICK[k]; }).length, myScope().kind, myScope().why, GEO.ver, GEO.from, Object.keys(LC_GONE).length, LU.more, LU.adv, rsoOk(), (typeof BULK === 'object' && BULK ? BULK.on + ':' + BULK.v : ''), Math.floor(Date.now() / 6e5)].join('|');   /* patch LEADBULK */   /* patch LEADSUI: the model's version — nothing changed, nothing drawn */
   if (sig === HUB_SIG) return;
   HUB_SIG = sig;
   var hh = hubHtml(); if (hh !== hub.__gcHtml) { hub.__gcHtml = hh; held(function(){ hub.innerHTML = hh; try { if (W._gcLeadsChips) W._gcLeadsChips.mount(hub); } catch (e) {} });   /* patch BARSTILL2: the same chips, same step */ watchMore(hub); if (bkOn()) bkSync(); }   /* patch LEADBULK */   /* patch LEADPERF-2: watchMore */   /* patch HOT2c: a new minute or a sync with nothing new on screen draws nothing (and another patch then has nothing to re-label) */
@@ -175780,7 +175783,7 @@ function inboxNotYet(r){
 }
 function needAction(){
   var r = rawLeads(), sc = myScope(), nIt = 0; try { var st0 = W._gcLeadInbox && W._gcLeadInbox._test && W._gcLeadInbox._test.state(); nIt = arr(st0 && st0.items).length; } catch (e) {}
-  var key = [refId(r), OVL_V, sc.kind, sc.why, myName(), (function(){ try { return W._gcCo ? W._gcCo.filter() : ''; } catch (e) { return ''; } })(), Object.keys(LC_GONE).length, nIt, s(inboxRaw()).length].join('|');
+  var key = [refId(r), OVL_V, sc.kind, sc.why, myName(), (function(){ try { return W._gcCo ? (W._gcCo.leadView ? W._gcCo.leadView() : W._gcCo.filter()) : ''; } catch (e) { return ''; } })(), Object.keys(LC_GONE).length, nIt, s(inboxRaw()).length].join('|');
   if (NA.key === key && NA.v) return NA.v;
   var base = scoped().filter(function(l){ return !importedL(l) && !shut(l) && !LC_GONE[s(l.id)]; });   /* = model()'s base: the boxes */
   var un = 0, nc = 0, both = 0, ids = [];
@@ -218722,7 +218725,26 @@ function jobById(id){ id = s(id); if (!id) return null; var l = jobs(); for (var
    those dashboards yet") — read as Construction. A job moved on purpose later carries companyIdBy and is left alone. */
 var MISFILED = { QB_1787683804675_rorl3: 1, QB_1787683804675_n8toc: 1, QB_1787770954125_mynon: 1, PRJMVPFN7MBC7: 1, PRJMVPH916YOG: 1 };
 function ofJob(p){ if (!p) return 'construction'; if (MISFILED[String(p.id)] && p.companyId === 'mitigation' && !p.companyIdBy && !p.parentJobId) return 'construction'; if (valid(p.companyId)) return p.companyId; return 'construction'; }
-function ofLead(l){ if (!l) return 'construction'; if (valid(l.companyId)) return l.companyId; return 'construction'; }
+/* LEADCO (owner 11/12: "leads for Environmental and Mitigation go to their page for leads, only construction leads go to the construction page"):
+   a lead's company = its own companyId when it is Mitigation / Environmental; otherwise what the lead is about — environmental work
+   (asbestos, lead paint, mold, abatement …) → Environmental; an emergency / board-up / tarp / water extraction & dry-out / sewage /
+   flood / smoke clean-up → Mitigation; anything else → Construction. (A rebuild after a fire stays Construction.) */
+var ENV_RE = /\benvironmental\b|asbestos|\blead[- ]?(paint|based|abatement|safe|rrp|hazard|test(ing)?|inspection|risk)\b|\bmou?ld\b|abatement|hazmat|\bradon\b|biohazard|meth[- ]?lab|trauma clean/i;
+var MIT_RE = /\bemergenc|board[- ]?up|\btarp(ing)?\b|water (damage|extraction|removal|mitigation|in (my|the))|\bflood|sewage|sewer back|dry[- ]?out|drying|dehumidif|burst|pipe (burst|broke|leak)|smoke (damage|clean)|soot|\bmitigation\b/i;
+function leadText(l){ var c = l.contact && typeof l.contact === 'object' ? l.contact : {}; return [l.type, l.leadKind, l.service, l.workType, l.title, l.name && l.title ? '' : '', l.scope, l.detail, l.notes && typeof l.notes === 'string' ? l.notes.slice(0, 400) : '', l.message, l.description, c.message].map(function(v){ return v == null ? '' : String(v); }).join(' '); }
+function ofLead(l){
+  if (!l) return 'construction';
+  if (l.companyId === 'mitigation' || l.companyId === 'environmental') return l.companyId;
+  var t = leadText(l);
+  if (/^environmental$/i.test(String(l.type || l.leadKind || '')) || ENV_RE.test(t)) return 'environmental';
+  if (l.emergency === true || /^emergency$/i.test(String(l.urgency || '')) || MIT_RE.test(t)) return 'mitigation';
+  return 'construction';
+}
+/* the Leads page: one company picked → its leads; "All companies" → Construction's leads only, unless "Show every company's leads" is on */
+var LK_ALL = 'gc_co_leads_all';
+function leadsAll(){ try { return localStorage.getItem(LK_ALL) === '1'; } catch (e) { return false; } }
+function leadView(){ var f = filter(); return f !== 'all' ? f : (leadsAll() ? 'all' : 'construction'); }
+function setLeadsAll(on){ try { localStorage.setItem(LK_ALL, on ? '1' : '0'); } catch (e) {} try { W.dispatchEvent(new CustomEvent('gc-co-filter', { detail: filter() })); } catch (e) {} }
 function jobIdOf(x){ return s(x && (x.pid || x.projectId || x.jobId || x.project_id || x.job)); }
 function ofInv(x){ if (!x) return 'construction'; if (valid(x.companyId)) return x.companyId; var j = jobById(jobIdOf(x)); return j ? ofJob(j) : 'construction'; }
 function of(x){ if (!x) return 'construction'; if (valid(x.companyId)) return x.companyId; if (jobIdOf(x)) return ofInv(x); if ('bidDue' in x || 'leadKind' in x || 'stage' in x && !('contract' in x)) return ofLead(x); return ofJob(x); }
@@ -218738,7 +218760,7 @@ function badge(id, small){ var c = get(id); return '<span class="gc-co-b" data-c
 function letterhead(id){ var c = get(id), a = c.address; if (!a && c.id === 'construction') { try { a = W._gcCompanyAddress ? W._gcCompanyAddress() : ''; } catch (e) {} } return { legal: c.legal, short: c.short, address: a, phone: c.phone, email: c.email, license: c.license, ein: c.ein, logo: c.logo || '/portal-logo.png', prefix: c.prefix }; }
 var paints = [];
 function paintAll(){ paints.forEach(function(f){ try { f(); } catch (e) {} }); }
-W._gcCo = { list: list, get: get, valid: valid, of: of, ofJob: ofJob, ofLead: ofLead, ofInv: ofInv, jobById: jobById, byType: byType,
+W._gcCo = { leadView: leadView, leadsAll: leadsAll, setLeadsAll: setLeadsAll, list: list, get: get, valid: valid, of: of, ofJob: ofJob, ofLead: ofLead, ofInv: ofInv, jobById: jobById, byType: byType,
   filter: filter, setFilter: setFilter, pass: pass, passJob: passJob, badge: badge, letterhead: letterhead, save: save, pull: pull, onPaint: function(f){ paints.push(f); }, DEF: DEF };
 if (D.readyState === 'loading') D.addEventListener('DOMContentLoaded', function(){ setTimeout(pull, 1500); }); else setTimeout(pull, 1500);
 })(window);
