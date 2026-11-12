@@ -83737,8 +83737,9 @@ window._gcForceFixSchedule = async function(silent){
       var u=user(); if(!u) return;
       var list=await idbGet(KEY); if(!Array.isArray(list)) list=[];
       var d=today();
-      var existing=list.find(function(r){ return r.user===u && r.date===d && !r.manual; });
+      var existing=list.find(function(r){ return r.user===u && r.date===d && !r.manual && !r.emergency; });   /* patch PAYEM: a 🚨 call-out is its own punch */
       if(existing) return;                       // already clocked in today
+      try{ if(window._gcPayEm && window._gcPayEm.openPunch && window._gcPayEm.openPunch()) return; }catch(_pe){}   /* patch PAYEM: on a 🚨 call-out now */
       var actual=nowHM();
       var start=graceStart(actual);
       list.push({ id:'TS'+Date.now()+Math.floor(Math.random()*999), user:u, date:d,
@@ -83754,7 +83755,7 @@ window._gcForceFixSchedule = async function(silent){
       var u=user(); if(!u) return;
       var list=await idbGet(KEY); if(!Array.isArray(list)) return;
       var d=today();
-      var rec=list.find(function(r){ return r.user===u && r.date===d && !r.clockOut && !r.manual; });
+      var rec=list.find(function(r){ return r.user===u && r.date===d && !r.clockOut && !r.manual && !r.emergency; });   /* patch PAYEM: a 🚨 call-out is clocked out with its own button */
       if(rec){ rec.clockOut=nowHM(); rec.updatedAt=new Date().toISOString(); await idbSet(KEY, list); }
     }catch(e){}
   }
@@ -83762,9 +83763,12 @@ window._gcForceFixSchedule = async function(silent){
   function hoursOf(r){
     if(!r.clockIn||!r.clockOut) return 0;
     var mins=toMin(r.clockOut)-toMin(r.clockIn);
+    if(mins<=0 && r.emergency) mins+=1440;   /* patch PAYEM: a 🚨 call-out past midnight */
     if(mins<0) mins=0;
     return mins/60;
   }
+  /* patch PAYEM: the time clock's own storage for the 🚨 emergency punch (a crew member without the payroll key keeps their own list) */
+  window._gcTimeClock = { list: function(){ return idbGet(KEY); }, save: function(l){ return idbSet(KEY, l); }, user: user, today: today, nowHM: nowHM, hoursOf: hoursOf };
 
   // ── Timesheet panel (employee: own; admin: everyone + edit/add/delete) ──
   window._gcOpenTimesheets = async function(){
@@ -83787,6 +83791,7 @@ window._gcForceFixSchedule = async function(silent){
       +'<div><div style="font-size:10px;color:#9db4cf;">DATE</div><input id="_tsD" type="date" value="'+today()+'" style="padding:5px;border-radius:6px;border:1px solid #2f4d6f;background:#0b1626;color:#fff;"></div>'
       +'<div><div style="font-size:10px;color:#9db4cf;">IN</div><input id="_tsI" type="time" value="08:00" style="padding:5px;border-radius:6px;border:1px solid #2f4d6f;background:#0b1626;color:#fff;"></div>'
       +'<div><div style="font-size:10px;color:#9db4cf;">OUT</div><input id="_tsO" type="time" value="17:00" style="padding:5px;border-radius:6px;border:1px solid #2f4d6f;background:#0b1626;color:#fff;"></div>'
+      +'<label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#fecaca;font-weight:700;padding-bottom:6px;"><input id="_tsE" type="checkbox"> 🚨 Emergency call-out (after hours) — 1.5×</label>'   /* patch PAYEM */
       +'<button id="_tsAdd" style="background:#1f7a3d;color:#fff;border:none;border-radius:6px;padding:7px 12px;font-weight:700;cursor:pointer;">+ Add time</button></div>') : '';
 
     function tableHtml(){
@@ -83796,11 +83801,12 @@ window._gcForceFixSchedule = async function(silent){
         var editable = admin;
         return '<tr data-id="'+r.id+'" style="border-bottom:1px solid #1d334d;">'
           +'<td style="padding:6px 8px;">'+(r.user||'')+'</td>'
-          +'<td style="padding:6px 8px;">'+r.date+'</td>'
+          +'<td style="padding:6px 8px;">'+r.date+(r.emergency?' <span data-ts-em="1" title="Emergency call-out (after hours) — paid 1.5×" style="background:#7f1d1d;color:#fff;border-radius:5px;padding:1px 5px;font-size:10px;font-weight:700;">🚨 Emergency 1.5×</span>':'')+'</td>'   /* patch PAYEM */
           +'<td style="padding:6px 8px;">'+(r.clockIn||'—')+(r.actualIn&&r.actualIn!==r.clockIn?' <span style="color:#7f93ad;font-size:10px;">(in '+r.actualIn+')</span>':'')+'</td>'
           +'<td style="padding:6px 8px;">'+(r.clockOut||'—')+'</td>'
           +'<td style="padding:6px 8px;text-align:right;">'+h.toFixed(2)+'</td>'
           +(editable?('<td style="padding:6px 8px;text-align:right;white-space:nowrap;">'
+             +'<button class="_tsEm" data-id="'+r.id+'" title="Mark / unmark as an emergency call-out (after hours) — paid 1.5×" style="background:'+(r.emergency?'#7f1d1d':'#26466b')+';color:#fff;border:none;border-radius:5px;padding:4px 8px;cursor:pointer;font-size:11px;margin-right:4px;">🚨</button>'   /* patch PAYEM */
              +'<button class="_tsEdit" data-id="'+r.id+'" style="background:#26466b;color:#cfe3ff;border:none;border-radius:5px;padding:4px 8px;cursor:pointer;font-size:11px;margin-right:4px;">Edit</button>'
              +'<button class="_tsDel" data-id="'+r.id+'" style="background:#7a2626;color:#ffd7d7;border:none;border-radius:5px;padding:4px 8px;cursor:pointer;font-size:11px;">Delete</button></td>'):'<td></td>')
           +'</tr>';
@@ -83822,6 +83828,7 @@ window._gcForceFixSchedule = async function(silent){
 
     function wire(){
       Array.prototype.forEach.call(box.querySelectorAll('._tsDel'), function(b){ b.onclick=async function(){ var id=b.getAttribute('data-id'); if(!confirm('Delete this time entry?'))return; var idx=list.findIndex(function(r){return r.id===id;}); if(idx>=0){ if(window._gcTombstone)try{window._gcTombstone('timesheets',id);}catch(e){} list.splice(idx,1); await persist(); refresh(); } }; });
+      Array.prototype.forEach.call(box.querySelectorAll('._tsEm'), function(b){ b.onclick=async function(){ var r=list.find(function(x){return x.id===b.getAttribute('data-id');}); if(!r)return; r.emergency=!r.emergency; if(r.emergency){ r.emBy=user(); } r.updatedAt=new Date().toISOString(); r.savedAt=r.updatedAt; await persist(); refresh(); }; });   /* patch PAYEM */
       Array.prototype.forEach.call(box.querySelectorAll('._tsEdit'), function(b){ b.onclick=async function(){ var id=b.getAttribute('data-id'); var r=list.find(function(x){return x.id===id;}); if(!r)return; var ni=prompt('Clock IN (HH:MM)', r.clockIn||'08:00'); if(ni===null)return; var no=prompt('Clock OUT (HH:MM)', r.clockOut||'17:00'); if(no===null)return; r.clockIn=ni; r.clockOut=no; r.manual=true; r.updatedAt=new Date().toISOString(); r.savedAt=r.updatedAt; await persist(); refresh(); }; });
     }
     wire();
@@ -83829,7 +83836,8 @@ window._gcForceFixSchedule = async function(silent){
       box.querySelector('#_tsAdd').onclick=async function(){
         var u=box.querySelector('#_tsU').value.trim(); var d=box.querySelector('#_tsD').value; var i=box.querySelector('#_tsI').value; var o=box.querySelector('#_tsO').value;
         if(!u||!d){ alert('Enter at least an employee name and date.'); return; }
-        list.push({ id:'TS'+Date.now()+Math.floor(Math.random()*999), user:u, date:d, clockIn:i, clockOut:o, manual:true, updatedAt:new Date().toISOString(), savedAt:new Date().toISOString() });
+        var _em=!!(box.querySelector('#_tsE')||{}).checked;   /* patch PAYEM */
+        list.push(Object.assign({ id:'TS'+Date.now()+Math.floor(Math.random()*999), user:u, date:d, clockIn:i, clockOut:o, manual:true, updatedAt:new Date().toISOString(), savedAt:new Date().toISOString() }, _em?{ emergency:true, emBy:user() }:{}));
         await persist(); refresh();
       };
     }
@@ -84989,31 +84997,71 @@ async function timesheetRows(name, from, to){
     return true;
   }).sort(function(a,b){ return (a.date+(a.clockIn||'')).localeCompare(b.date+(b.clockIn||'')); });
 }
-// Regular vs overtime hours, computed per calendar week.
+/* patch PAYEM — ONE pay rule for 🚨 emergency after-hours call-outs and overtime, the same as 🎖 CERTPLAN's ⏱ "Check a week"
+   calculator (window._gcCertPlan.weekPay calls this): emergency after-hours hours are paid 1.5×; hours over 40 in the work week are
+   paid 1.5× (the profile's overtime multiplier); the two are NEVER stacked (an hour is never paid 2.25×). Premium hours = the
+   emergency hours + the hours over 40, at most the hours worked — the over-40 hours fall on the non-emergency hours first, the
+   way that pays the employee more (owner 11/11 + 11/12: "yes emergency 1.5 on paychecks"). Emergency hours count toward the 40.
+   → { total, straight (1×), em (emergency 1.5×), ot (overtime 1.5×, not emergency), premium (em + ot), over (hours past 40) } */
+function weekSplit(total, emerg, otAfter){
+  total = Math.max(0, n2(total)); otAfter = n2(otAfter) || 40;
+  var em = Math.min(total, Math.max(0, n2(emerg))), over = Math.max(0, total - otAfter), prem = Math.min(total, em + over);
+  return { total: r2(total), straight: r2(total - prem), em: r2(em), ot: r2(prem - em), premium: r2(prem), over: r2(over) };
+}
+window._gcPayWeekSplit = weekSplit;
+/* patch PAYEM: a clock-in marked 🚨 emergency may run past midnight (in 22:00, out 02:00) */
+function rowHours(r){
+  if(!r || !r.clockIn || !r.clockOut) return 0;
+  var mins=minutes(r.clockOut)-minutes(r.clockIn);
+  if(mins<=0 && r.emergency) mins+=1440;
+  if(mins<=0) return 0;
+  var h=mins/60;
+  if(n2(r.breakMins)>0) h-=n2(r.breakMins)/60;
+  return h>0 ? h : 0;
+}
+/* Regular vs overtime hours, computed per work week. patch PAYEM: ot = ALL premium hours (overtime + 🚨 emergency, so reg + ot is
+   still every hour worked for the screens that add them), em = the emergency part of ot, otOnly = the overtime part. */
 async function hoursFor(name, from, to, otAfter){
   otAfter = n2(otAfter)||40;
   var rows=await timesheetRows(name, from, to);
-  var byWeek={}, days=[];
+  var byWeek={}, emWeek={}, days=[];
   rows.forEach(function(r){
-    if(!r.clockIn || !r.clockOut) return;
-    var mins=minutes(r.clockOut)-minutes(r.clockIn);
-    if(mins<=0) return;
-    var h=mins/60;
-    if(n2(r.breakMins)>0) h-=n2(r.breakMins)/60;
+    var h=rowHours(r);
     if(h<=0) return;
     var wk=weekKey(r.date);
     byWeek[wk]=(byWeek[wk]||0)+h;
-    days.push({date:r.date, inT:r.clockIn, outT:r.clockOut, hours:r2(h)});
+    if(r.emergency) emWeek[wk]=(emWeek[wk]||0)+h;
+    days.push({date:r.date, inT:r.clockIn, outT:r.clockOut, hours:r2(h), emergency:!!r.emergency});
   });
-  var reg=0, ot=0, weeks=[];
+  var reg=0, ot=0, em=0, weeks=[];
   Object.keys(byWeek).sort().forEach(function(wk){
-    var h=byWeek[wk], o=Math.max(0,h-otAfter), r=h-o;
-    reg+=r; ot+=o;
-    weeks.push({week:wk, total:r2(h), reg:r2(r), ot:r2(o)});
+    var x=weekSplit(byWeek[wk], emWeek[wk]||0, otAfter);
+    reg+=x.straight; ot+=x.premium; em+=x.em;
+    weeks.push({week:wk, total:x.total, reg:x.straight, ot:x.premium, em:x.em, otOnly:x.ot});
   });
-  return { total:r2(reg+ot), reg:r2(reg), ot:r2(ot), weeks:weeks, days:days };
+  return { total:r2(reg+ot), reg:r2(reg), ot:r2(ot), em:r2(em), otOnly:r2(ot-em), weeks:weeks, days:days };
 }
 window._gcPayrollHours = hoursFor;
+/* patch PAYEM: "40.00 + 5.00 OT + 3.00 🚨" — hours on a line, the emergency ones apart from the overtime */
+function hoursText(L){ var em=n2(L&&L.emHours), ot=r2(n2(L&&L.otHours)-em); return n2(L&&L.hours).toFixed(2)+(ot>0?(' + '+ot.toFixed(2)+' OT'):'')+(em>0?(' + '+em.toFixed(2)+' 🚨'):''); }
+window._gcPayHoursText = hoursText;
+/* patch PAYEM: the office's own figure for the emergency hours in a period (Payroll → ✏️ hours): spread over the weeks in order,
+   never more than a week's hours, then the same week rule */
+function withEmHours(h, emTotal, otAfter){
+  var left=Math.max(0, n2(emTotal)), ws=(h.weeks&&h.weeks.length)?h.weeks:[{ week:'', total:n2(h.total)||r2(n2(h.reg)+n2(h.ot)) }];
+  var reg=0, ot=0, em=0, weeks=ws.map(function(w){ var e=Math.min(left, n2(w.total)); left-=e; var x=weekSplit(w.total, e, otAfter);
+    reg+=x.straight; ot+=x.premium; em+=x.em; return { week:w.week, total:x.total, reg:x.straight, ot:x.premium, em:x.em, otOnly:x.ot }; });
+  return Object.assign({}, h, { total:r2(reg+ot), reg:r2(reg), ot:r2(ot), em:r2(em), otOnly:r2(ot-em), weeks:weeks, emOverride:true });
+}
+/* patch PAYEM: the pay rate in effect — a 🎖 certification raise (or any dated change in prof.rateHistory) takes effect on its
+   effective date; prof.hourlyRate / annualSalary always hold the NEWEST rate. A pay period is paid at the rate in effect on its
+   LAST day, so a raise that starts inside a period is paid for that whole period (never less than the raise promised). */
+function rateAsOf(prof, field, date){
+  var cur=n2(prof && prof[field]), d=String(date||'').slice(0,10), hist=(prof && Array.isArray(prof.rateHistory)) ? prof.rateHistory : [];
+  var later=hist.filter(function(e){ return e && e.field===field && String(e.effective||'').slice(0,10) > d; })
+    .sort(function(a,b){ return String(a.effective).localeCompare(String(b.effective)) || String(a.at||'').localeCompare(String(b.at||'')); });
+  return later.length ? n2(later[0].from) : cur;
+}
 
 /* ── year-to-date, from approved/paid runs ───────────────────────────────── */
 async function runs(){ var l=await get(K_RUNS); l=Array.isArray(l)?l:[];   /* patch PAYMANUAL: a deleted run (gc_tombstones) is never read back */
@@ -85072,8 +85120,11 @@ function _pcFed(amt, ppy, pf, year){
 function setHoursOf(prof){ if(prof && prof.defaultWeeklyHours!=null && String(prof.defaultWeeklyHours)!=='') return n2(prof.defaultWeeklyHours); return /^brittany\b/i.test(String(prof&&prof.name||'')) ? 13 : 0; }
 async function computeLine(prof, from, to, set, ytd, manualGross, extras){
   var ppy = (window._gcRunPPY && window._gcRunPPY(from, to)) || PERIODS[prof.period] || 26;   /* patch BUGV: a 7-day run is 1/52 of the year, 14 days 1/26 */
-  var trace = [], gross = 0, hours = 0, otHours = 0, parts = [];
+  var trace = [], gross = 0, hours = 0, otHours = 0, emHours = 0, parts = [], _rate = n2(prof.hourlyRate);   /* patch PAYEM */
   extras = extras || {}; var bonus = r2(Math.max(0, n2(extras.bonus))), reimb = r2(Math.max(0, n2(extras.reimbursement)));   /* patch PAY */
+  /* patch PAYEM: an approved 🏆 PM year-end bonus rides on the next paycheck (window._gcPayEm.pmBonusFor reads 🎖 CERTPLAN) */
+  var pmB = null; try{ if(extras.pmBonus!=null) pmB = { amount:n2(extras.pmBonus), key:String(extras.pmBonusKey||'') }; else if(window._gcPayEm && window._gcPayEm.pmBonusFor) pmB = await window._gcPayEm.pmBonusFor(prof, from, to); }catch(_pbE){ pmB = null; }
+  var pmBonus = r2(Math.max(0, n2(pmB && pmB.amount))), pmBonusKey = pmBonus>0 ? String(pmB.key||'') : '';
 
   function T(label, detail, amt){ trace.push({label:label, detail:detail, amt:(amt==null?null:r2(amt))}); }
 
@@ -85086,10 +85137,11 @@ async function computeLine(prof, from, to, set, ytd, manualGross, extras){
     T('Gross pay', 'Entered by hand for this run', gross);
   } else {
     if(pt==='salary' || pt==='salary_commission' || pt==='owner_draw' || pt==='contractor_1099'){
-      var per = n2(prof.annualSalary)/ppy;
+      var _sal = rateAsOf(prof, 'annualSalary', to);   /* patch PAYEM: the salary in effect for this period */
+      var per = _sal/ppy;
       if(per>0){
         gross += per; parts.push({label:(pt==='contractor_1099'?'1099 pay':'Salary'), amount:r2(per)});
-        T(pt==='contractor_1099'?'1099 contract pay':'Salary', money(prof.annualSalary)+' a year ÷ '+ppy+' pay periods', per);
+        T(pt==='contractor_1099'?'1099 contract pay':'Salary', money(_sal)+' a year ÷ '+ppy+' pay periods'+(_sal!==n2(prof.annualSalary)?' (the raise to '+money(prof.annualSalary)+' starts after this period)':''), per);
       }
     }
     if(pt==='hourly'){
@@ -85103,17 +85155,28 @@ async function computeLine(prof, from, to, set, ytd, manualGross, extras){
         h = { total:r2(_dwh*_wks), reg:r2(_dwh*_wks), ot:0, weeks:[], days:[], setHours:true };
         T('Set hours', _dwh+' hrs a week × '+_wks+' week'+(_wks===1?'':'s')+' (no clock-ins this period — Payroll → Employees → Set hours per week)', null);
       }
-      hours=h.reg; otHours=h.ot;
-      var regPay = h.reg * n2(prof.hourlyRate);
-      var otPay  = h.ot  * n2(prof.hourlyRate) * (n2(prof.otMultiplier)||1.5);
-      gross += regPay + otPay;
-      parts.push({label:'Regular hours', amount:r2(regPay)});
-      T('Regular hours', h.reg.toFixed(2)+' hrs × '+money(prof.hourlyRate)+'/hr', regPay);
-      if(h.ot>0){
-        parts.push({label:'Overtime', amount:r2(otPay)});
-        T('Overtime', h.ot.toFixed(2)+' hrs × '+money(prof.hourlyRate)+' × '+(n2(prof.otMultiplier)||1.5)+
-          ' (over '+(n2(prof.otAfter)||40)+' hrs in a week)', otPay);
+      /* patch PAYEM: 🚨 emergency after-hours hours (clock-ins marked emergency, or the office's figure in the run) at 1.5×,
+         overtime at the multiplier, never stacked (weekSplit); the rate in effect for the period (a 🎖 cert raise) */
+      if(extras.emHours!=null && extras.emHours!=='') h = withEmHours(h, extras.emHours, prof.otAfter);
+      var _rt = rateAsOf(prof, 'hourlyRate', to), _mult = n2(prof.otMultiplier)||1.5;
+      var _em = n2(h.em), _otOnly = r2(Math.max(0, n2(h.ot) - _em));
+      hours=h.reg; otHours=h.ot; emHours=_em;
+      var regPay = h.reg * _rt;
+      var emPay  = _em * _rt * 1.5;
+      var otPay  = _otOnly * _rt * _mult;
+      gross += regPay + emPay + otPay;
+      parts.push({label:'Regular hours', amount:r2(regPay), hours:r2(h.reg), rate:r2(_rt)});
+      T('Regular hours', h.reg.toFixed(2)+' hrs × '+money(_rt)+'/hr'+(_rt!==n2(prof.hourlyRate)?' (the raise to '+money(prof.hourlyRate)+' starts after this period)':''), regPay);
+      if(_em>0){
+        parts.push({label:'Emergency call-out 1.5×', amount:r2(emPay), hours:r2(_em), rate:r2(_rt*1.5)});
+        T('🚨 Emergency call-out 1.5×', _em.toFixed(2)+' hrs × '+money(_rt)+' × 1.5 (after-hours emergency; counts toward the '+(n2(prof.otAfter)||40)+' — never stacked with overtime)'+(h.emOverride?' — hours set in the payroll run':''), emPay);
       }
+      if(_otOnly>0){
+        parts.push({label:'Overtime', amount:r2(otPay), hours:r2(_otOnly), rate:r2(_rt*_mult)});
+        T('Overtime', _otOnly.toFixed(2)+' hrs × '+money(_rt)+' × '+_mult+
+          ' (over '+(n2(prof.otAfter)||40)+' hrs in a week'+(_em>0?'; emergency hours already at 1.5× are not paid again':'')+')', otPay);
+      }
+      _rate = _rt;
       if(h.weeks.length>1) T('Hours by week', h.weeks.map(function(w){ return w.week+': '+w.total+'h'; }).join(' · '), null);
     }
     if(pt==='commission' || pt==='salary_commission'){
@@ -85135,6 +85198,7 @@ async function computeLine(prof, from, to, set, ytd, manualGross, extras){
     }
   }
   if(bonus>0){ gross += bonus; parts.push({label:'Bonus', amount:bonus}); T('Bonus', 'Taxed like wages (added to this check)', bonus); }   /* patch PAY */
+  if(pmBonus>0){ gross += pmBonus; parts.push({label:'Bonus — PM year-end', amount:pmBonus, supplemental:true}); T('🏆 Bonus — PM year-end', 'Approved in 🎖 Required certs, raises & promotion · taxable supplemental wages (Social Security, Medicare and state as wages; federal at the 22% supplemental rate)', pmBonus); }   /* patch PAYEM */
   gross = r2(gross);
   T('GROSS PAY', parts.map(function(p){ return p.label+' '+money(p.amount); }).join(' + ') || '—', gross);
 
@@ -85180,13 +85244,15 @@ async function computeLine(prof, from, to, set, ytd, manualGross, extras){
 
   // ---- FEDERAL INCOME TAX (Pub 15-T percentage method) ----
   var fed = 0, zeroFedReason = '';
+  /* patch PAYEM: IRS optional flat rate for supplemental wages (Pub. 15 §7) — the PM year-end bonus is identified separately on this check */
+  var _supp = (pmBonus>0 && pt!=='contractor_1099') ? r2(Math.min(pmBonus, taxable)) : 0, _f22 = (_supp>0 && !prof.exemptFed) ? r2(_supp*0.22) : 0;
   if(pt==='contractor_1099'){
     T('Federal income tax', '1099 contractor — GrayCo withholds no federal income tax', 0);
   } else if(prof.exemptFed){
     T('Federal income tax', 'W-4 claims EXEMPT — nothing withheld', 0);
   } else {
-    var annual = r2(taxable * ppy);
-    T('Annualize the pay', money(taxable)+' × '+ppy+' pay periods', annual);
+    var annual = r2((taxable - _supp) * ppy);   /* patch PAYEM: the PM bonus is withheld on its own (22%) below */
+    T('Annualize the pay', money(r2(taxable - _supp))+' × '+ppy+' pay periods'+(_supp>0?' (the PM bonus is withheld on its own)':''), annual);
     var adj = annual + n2(prof.otherIncome) - n2(prof.deductions);
     if(n2(prof.otherIncome)) T('W-4 step 4(a) other income', '+ '+money(prof.otherIncome), null);
     if(n2(prof.deductions))  T('W-4 step 4(b) deductions', '− '+money(prof.deductions), null);
@@ -85212,6 +85278,7 @@ async function computeLine(prof, from, to, set, ytd, manualGross, extras){
     fed = r2(afterCredit / ppy);
     T('Federal per paycheck', money(afterCredit)+' ÷ '+ppy, fed);
     if(n2(prof.extra)){ fed = r2(fed + n2(prof.extra)); T('W-4 step 4(c) extra withholding', '+ '+money(prof.extra)+' each check', fed); }
+    if(_f22>0){ fed = r2(fed + _f22); T('Federal on the PM year-end bonus', money(_supp)+' × 22% (supplemental wage flat rate)', _f22); }   /* patch PAYEM */
   }
 
   // ---- STATE ----
@@ -85268,7 +85335,7 @@ async function computeLine(prof, from, to, set, ytd, manualGross, extras){
       try{ var c = window._gcStateWithholding({ state: whSt, table: stTbl, exemptionClaimed: prof.msExemption, grossPerCheck: amt, taxable: amt, periodsPerYear: ppy,
         filing: prof.msFiling||prof.filing||'single', dependents: n2(prof.stateDependents||prof.dependents), age65: !!prof.age65, blind: !!prof.blind,
         year: parseInt(String(set.taxYear||new Date().getFullYear()),10) }); return r2(n2(c && c.amount)); }catch(e){ return 0; } };
-    var _fS = _pcFed(_salT, ppy, prof, set.taxYear), _fC = prof.exemptFed ? 0 : (_cm === 'flat22' ? r2(_comm * 0.22) : _pcFed(_comm, ppy, { filing: 'single' }, set.taxYear));
+    var _fS = r2(_pcFed(r2(_salT - _supp), ppy, prof, set.taxYear) + _f22), _fC = prof.exemptFed ? 0 : (_cm === 'flat22' ? r2(_comm * 0.22) : _pcFed(_comm, ppy, { filing: 'single' }, set.taxYear));
     var _sS = _stOf(_salT), _sC = _stOf(_comm);
     var _capped = r2(ssWages) < taxable, _ssS = _capped ? r2(ss * _salT / Math.max(0.01, taxable)) : r2(_salT * n2(set.ssRate)), _ssC = _capped ? r2(ss - _ssS) : r2(_comm * n2(set.ssRate));
     var _mS = r2(_salT * n2(set.medRate)), _mC = r2(_comm * n2(set.medRate));
@@ -85329,7 +85396,8 @@ async function computeLine(prof, from, to, set, ytd, manualGross, extras){
 
   return {
     empId: prof.userId || prof.name, name: prof.name, payType: pt, period: prof.period,
-    hours: r2(hours), otHours: r2(otHours), rate: n2(prof.hourlyRate),
+    hours: r2(hours), otHours: r2(otHours), rate: n2(_rate),
+    emHours: r2(emHours), emPay: r2(emHours * _rate * 1.5), pmBonus: pmBonus, pmBonusKey: pmBonusKey,   /* patch PAYEM: 🚨 emergency hours are part of otHours (premium hours); emPay is their whole 1.5× pay */
     grossParts: parts, gross: gross, preTax: r2(preTax), postTax: r2(postTax),
     /* otherDed used to be preTax+postTax — the pre-tax amount counted twice
        whenever anything added preTax to it separately. It is now the AFTER-tax
@@ -85429,6 +85497,7 @@ window.__GC_PAY = {
   profiles:profiles, saveProfiles:saveProfiles, blankProfile:blankProfile, seedFromUser:seedFromUser,
   hoursFor:hoursFor, timesheetRows:timesheetRows,
   runs:runs, saveRuns:saveRuns, ytdFor:ytdFor, computeLine:computeLine, setHoursOf:setHoursOf,
+  weekSplit:weekSplit, rowHours:rowHours, hoursText:hoursText, rateAsOf:rateAsOf, withEmHours:withEmHours,   /* patch PAYEM */
   payReplace:payReplace, foldDupRuns:foldDupRuns, replaceDrafts:replaceDrafts,   /* patch PAYREPLACE */
   K_PROF:K_PROF, K_RUNS:K_RUNS, K_SET:K_SET, K_TS:K_TS
 };
@@ -85636,6 +85705,7 @@ function totalsOf(lines){
     if(L.status==='denied') return;
     ['gross','fed','ss','med','addlMed','state','otherDed','net','employerSS','employerMed','futa','suta'].forEach(function(k){ t[k]+=n2(L[k]); });
     t.hours+=n2(L.hours)+n2(L.otHours);
+    t.emHours=n2(t.emHours)+n2(L.emHours); t.emPay=n2(t.emPay)+n2(L.emPay); t.pmBonus=n2(t.pmBonus)+n2(L.pmBonus);   /* patch PAYEM */
   });
   Object.keys(t).forEach(function(k){ t[k]=r2(t[k]); });
   t.irs941 = r2(t.fed + t.ss*2 + t.med*2 + t.addlMed);
@@ -85652,7 +85722,7 @@ function drawLines(out){
     var open=!!S.openMath[i];
     var h='<tr>'
       +'<td style="'+CSS.td+'"><b>'+esc(L.name)+'</b><div style="font-size:10px;color:#94a3b8;">'+esc(payTypeLabel(L.payType))+'</div></td>'
-      +'<td style="'+CSS.num+'">'+((L.hours||L.otHours)?((L.hours).toFixed(2)+(L.otHours?(' +'+L.otHours.toFixed(2)+' OT'):'')):'—')+'</td>'
+      +'<td style="'+CSS.num+'">'+((L.hours||L.otHours)?P.hoursText(L):'—')+'</td>'   /* patch PAYEM */
       +'<td style="'+CSS.num+'"><b>'+money(L.gross)+'</b></td>'
       +'<td style="'+CSS.num+'color:#b45309;">'+money(L.fed)
         +(( n2(L.fed)===0 && L.zeroFedReason) ? ('<div style="font-size:9px;color:#94a3b8;font-weight:600;text-align:right;max-width:150px;white-space:normal;">no federal — see why</div>') : '')+'</td>'
@@ -85686,7 +85756,10 @@ function drawLines(out){
         +'<td style="'+CSS.td+'">TOTALS</td><td style="'+CSS.num+'">'+t.hours.toFixed(2)+'</td>'
         +'<td style="'+CSS.num+'">'+money(t.gross)+'</td><td style="'+CSS.num+'">'+money(t.fed)+'</td>'
         +'<td style="'+CSS.num+'">'+money(r2(t.ss+t.med+t.addlMed))+'</td><td style="'+CSS.num+'">'+money(t.state)+'</td>'
-        +'<td style="'+CSS.num+'">'+money(t.otherDed)+'</td><td style="'+CSS.num+'color:#16a34a;">'+money(t.net)+'</td><td></td></tr></tfoot>'
+        +'<td style="'+CSS.num+'">'+money(t.otherDed)+'</td><td style="'+CSS.num+'color:#16a34a;">'+money(t.net)+'</td><td></td></tr>'
+        +((t.emHours>0||t.pmBonus>0)?('<tr data-payem-tot="1" style="background:#fef2f2;font-weight:700;font-size:12px;"><td colspan="9" style="'+CSS.td+'color:#7f1d1d;">'
+          +(t.emHours>0?('🚨 Emergency call-out 1.5×: '+t.emHours.toFixed(2)+' h · '+money(t.emPay)+' (in gross)'):'')+(t.emHours>0&&t.pmBonus>0?' · ':'')+(t.pmBonus>0?('🏆 Bonus — PM year-end: '+money(t.pmBonus)+' (in gross, federal at 22%)'):'')+'</td></tr>'):'')   /* patch PAYEM */
+        +'</tfoot>'
       +'</table></div>'
     +'</div>'
     + employerCard(t);
@@ -85857,7 +85930,8 @@ function runCard(r){
       +'<th style="'+CSS.th+'">Check #</th><th style="'+CSS.th+'">Status</th><th style="'+CSS.th+'"></th></tr></thead><tbody>'
       +(r.lines||[]).map(function(L,i){
         return '<tr>'
-          +'<td style="'+CSS.td+'">'+esc(L.name)+((L.status==='denied'&&L.denyReason)?('<div style="font-size:11px;color:#991b1b;">denied: '+esc(L.denyReason)+'</div>'):'')+'</td>'   /* patch LINEAPPR */
+          +'<td style="'+CSS.td+'">'+esc(L.name)+((L.status==='denied'&&L.denyReason)?('<div style="font-size:11px;color:#991b1b;">denied: '+esc(L.denyReason)+'</div>'):'')
+            +((n2(L.emHours)>0||n2(L.pmBonus)>0)?('<div data-payem-line="1" style="font-size:11px;color:#7f1d1d;font-weight:700;">'+(n2(L.emHours)>0?('🚨 Emergency call-out 1.5× '+n2(L.emHours).toFixed(2)+' h · '+money(L.emPay)):'')+(n2(L.emHours)>0&&n2(L.pmBonus)>0?' · ':'')+(n2(L.pmBonus)>0?('🏆 Bonus — PM year-end '+money(L.pmBonus)):'')+'</div>'):'')+'</td>'   /* patch LINEAPPR · patch PAYEM */
           +'<td style="'+CSS.num+'">'+money(L.gross)+'</td>'
           +'<td style="'+CSS.num+'">'+money(L.fed)+'</td>'
           +'<td style="'+CSS.num+'">'+money(r2(n2(L.ss)+n2(L.med)+n2(L.addlMed)))+'</td>'
@@ -86245,6 +86319,7 @@ window._gcRenderEmployeeProfile = async function(body, S, render){
         +fld('Active','<select data-p="active" style="'+CSS.inp+'width:100%;"><option value="yes"'+(p.active!==false?' selected':'')+'>Yes — include in payroll</option><option value="no"'+(p.active===false?' selected':'')+'>No — do not pay</option></select>')
         +fld('Hire date','<input data-p="hireDate" type="date" value="'+esc(p.hireDate||'')+'" style="'+CSS.inp+'width:100%;">')
       +'</div>'
+      +((window._gcPayEm&&window._gcPayEm.historyHtml)?window._gcPayEm.historyHtml(p):'')   /* patch PAYEM: 📈 pay rate history (🎖 cert raises) */
       +((p.payType==='commission'||p.payType==='salary_commission')
         ? '<div style="margin-top:8px;font-size:11px;color:#475569;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:8px 10px;">'
           +'Commission comes from the pay structure already set on this person (💎 → Pay Structures / PM Pay), calculated on payments <b>collected</b> during the pay period. Payroll does not change that setup — it just pays it and withholds taxes on it.</div>' : '')
@@ -86424,7 +86499,7 @@ window._gcPayStub = async function(runId, idx){
   function line(a,b,c){ return '<tr><td style="padding:5px 8px;border-bottom:1px solid #eee;">'+a+'</td>'
     +'<td style="padding:5px 8px;border-bottom:1px solid #eee;text-align:right;">'+b+'</td>'
     +'<td style="padding:5px 8px;border-bottom:1px solid #eee;text-align:right;color:#666;">'+(c||'')+'</td></tr>'; }
-  var earn=(L.grossParts||[]).map(function(g){ return line(esc(g.label), money(g.amount), ''); }).join('') || line('Gross pay', money(L.gross), '');
+  var earn=(L.grossParts||[]).map(function(g){ return line(esc(g.label)+((n2(g.hours)>0)?(' <span style="color:#666;font-size:11px;">'+n2(g.hours).toFixed(2)+' h × '+money(g.rate)+'</span>'):''), money(g.amount), ''); }).join('') || line('Gross pay', money(L.gross), '');   /* patch PAYEM: hours × rate on each earning */
   var ded=''
     + line('Federal income tax', '-'+money(L.fed), money(ytd.fed))
     + line('Social Security', '-'+money(L.ss), money(ytd.ss))
@@ -86446,7 +86521,7 @@ window._gcPayStub = async function(runId, idx){
       +'<div><div style="font-size:10px;color:#666;text-transform:uppercase;">Employee</div><div style="font-size:16px;font-weight:700;">'+esc(L.name)+'</div></div>'
       +'<div><div style="font-size:10px;color:#666;text-transform:uppercase;">Pay period</div><div style="font-size:14px;">'+esc(r.from)+' → '+esc(r.to)+'</div></div>'
       +'<div><div style="font-size:10px;color:#666;text-transform:uppercase;">Pay type</div><div style="font-size:14px;">'+esc(P.payTypeLabel(L.payType))+'</div></div>'
-      +((n2(L.hours)+n2(L.otHours))>0?('<div><div style="font-size:10px;color:#666;text-transform:uppercase;">Hours</div><div style="font-size:14px;">'+n2(L.hours).toFixed(2)+(n2(L.otHours)?(' + '+n2(L.otHours).toFixed(2)+' OT'):'')+'</div></div>'):'')
+      +((n2(L.hours)+n2(L.otHours))>0?('<div><div style="font-size:10px;color:#666;text-transform:uppercase;">Hours</div><div style="font-size:14px;">'+P.hoursText(L)+'</div></div>'):'')   /* patch PAYEM */
     +'</div></div>'
     +'<div class="box"><table><thead><tr><th>Earnings</th><th style="text-align:right">This check</th><th style="text-align:right">YTD</th></tr></thead>'
       +'<tbody>'+earn+line('<b>Gross pay</b>','<b>'+money(L.gross)+'</b>','<b>'+money(ytd.gross)+'</b>')+'</tbody></table></div>'
@@ -185014,6 +185089,7 @@ function stubFromLine(run, L, set, profs){
     var o = { label: g.label, amount: r2(g.amount) };
     if (g.label === 'Regular hours') { o.hours = r2(L.hours); o.rate = r2(L.rate); }
     if (g.label === 'Overtime') { o.hours = r2(L.otHours); }
+    if (g.hours != null) o.hours = r2(g.hours); if (g.rate != null) o.rate = r2(g.rate);   /* patch PAYEM: the part's own hours (🚨 emergency apart from overtime) */
     return o;
   });
   if (!earn.length) earn = [{ label: 'Gross pay', amount: r2(L.gross) }];
@@ -185026,7 +185102,7 @@ function stubFromLine(run, L, set, profs){
   return {
     empKey: s(L.empId || L.name), name: s(L.name), email: emailFor(L, profs), ssn4: ssn4For(L, profs),
     payType: s(L.payType), periodFrom: s(run.from), periodTo: s(run.to), payDate: s(run.payDate), checkNo: s(L.checkNo), runId: s(run.id),
-    hours: r2(L.hours), otHours: r2(L.otHours), rate: r2(L.rate), filing: s(L.filing),
+    hours: r2(L.hours), otHours: r2(L.otHours), emHours: r2(L.emHours), rate: r2(L.rate), filing: s(L.filing),   /* patch PAYEM */
     earnings: earn, taxes: taxes, deductions: ded, gross: r2(L.gross), net: r2(L.net), reimbursement: r2(L.reimbursement), dedShort: r2(L.dedShort),
     withholdState: wst, stateTaxVerified: !!L.stateTaxVerified,
     company: companyBlock(set)
@@ -185086,7 +185162,7 @@ function stubHtml(st){
     + '<div><div class="y" style="font-size:10px">EMPLOYEE</div><b>' + esc(st.name) + '</b>' + '<div class="y" style="font-size:12px">SSN ' + (st.ssn4 ? '***-**-' + esc(st.ssn4) : '—') + '</div>' + '</div>'
     + '<div><div class="y" style="font-size:10px">PAY PERIOD</div>' + esc(st.periodFrom) + ' → ' + esc(st.periodTo) + '</div>'
     + '<div><div class="y" style="font-size:10px">PAY DATE</div>' + esc(st.payDate) + (st.checkNo ? ' · Check #' + esc(st.checkNo) : '') + '</div>'
-    + ((n2(st.hours) + n2(st.otHours)) > 0 ? '<div><div class="y" style="font-size:10px">HOURS</div>' + n2(st.hours).toFixed(2) + (n2(st.otHours) ? ' + ' + n2(st.otHours).toFixed(2) + ' OT' : '') + '</div>' : '')
+    + ((n2(st.hours) + n2(st.otHours)) > 0 ? '<div><div class="y" style="font-size:10px">HOURS</div>' + (W._gcPayHoursText ? W._gcPayHoursText(st) : n2(st.hours).toFixed(2) + (n2(st.otHours) ? ' + ' + n2(st.otHours).toFixed(2) + ' OT' : '')) + '</div>' : '')
     + '</div>'
     + (st.withholdState === 'MS' && !st.stateTaxVerified ? '<div class="box" style="background:#fef3c7;color:#92400e"><b>⚠ Mississippi withholding rates not yet verified by our CPA.</b> The MS amount may change once they are confirmed.</div>' : '')
     + (st.adjusts ? '<div class="box" style="background:#fff7ed">This stub corrects stub ' + esc(st.adjusts) + (st.note ? ': ' + esc(st.note) : '') + '</div>' : '')
@@ -195667,9 +195743,12 @@ function masterOf(u){ var held = heldBy(u.email).filter(function(c){ return cert
 /* ── 💵 pay rule: emergency after-hours = 1.5×; over 40 / week = 1.5×; never stacked ──
    premium hours = the emergency after-hours hours + the hours over 40 that are not already premium; counted the way that pays
    the employee more when we do not know which hours came last (safe under the FLSA, 29 U.S.C. 207(e)(6) / (h)) */
+/* patch PAYEM: a raise starts on the next pay period (the day after the period being paid now ends) */
+function nextPayStart(){ try { var c = W._gcCurrentPayPeriod && W._gcCurrentPayPeriod(); if (c && c.end) return addDays(c.end, 1); } catch (e) {} return today(); }
 function weekPay(rate, total, emerg){
   rate = num(rate); total = Math.max(0, num(total)); emerg = Math.min(total, Math.max(0, num(emerg)));
   var ot = Math.max(0, total - 40), prem = Math.min(total, emerg + ot), straight = total - prem;
+  if (typeof W._gcPayWeekSplit === 'function') { var x = W._gcPayWeekSplit(total, emerg, 40); prem = x.premium; straight = x.straight; ot = x.over; emerg = x.em; }   /* patch PAYEM: the paycheck's own rule (one place) */
   return { straight: straight, premium: prem, emergency: emerg, overtime: ot, pay: Math.round((straight * rate + prem * rate * 1.5) * 100) / 100 };
 }
 
@@ -195727,9 +195806,9 @@ function render(){
   }).join('') || '<p class="gccp-mut">No active employees.</p>';
   else if (UI.tab === 'raises') { var rows = []; ppl.forEach(function(u){ raisesDue(u, p).forEach(function(r){ rows.push({ u: u, r: r }); }); });
     var past = p.done.slice().reverse().slice(0, 60);
-    h += '<div class="gccp-note">Every certificate an employee earns is a raise. When one is added in 📜 Certifications it lands here to approve (the amount comes from ⚙ Raise amounts; hourly people get $/hr, salaried people $/yr). Approve it, then change their pay rate in 💰 Pay Structures.</div>' +
-      (rows.length ? '<table class="gccp-tbl" data-cp-raises="1"><tr><th>Employee</th><th>Certificate</th><th>Raise</th><th></th></tr>' + rows.map(function(x, i){ return '<tr><td><b>' + esc(x.u.name) + '</b></td><td>' + esc(x.r.cert) + '<div class="gccp-mut">' + esc(x.r.ruleName) + '</div></td><td><input class="gccp-in" style="width:90px" data-cp-amt="' + i + '" value="' + esc(x.r.amount) + '"> ' + (x.r.unit === 'yr' ? '/yr' : '/hr') + '</td><td><button type="button" class="gccp-btn grn" data-cp="approve" data-i="' + i + '">✅ Approve</button> <button type="button" class="gccp-btn" data-cp="skip" data-i="' + i + '">Not a raise</button></td></tr>'; }).join('') + '</table>' : '<p class="gccp-mut">No raises waiting. 👍</p>') +
-      '<h3 style="margin:14px 0 4px">History</h3>' + (past.length ? '<table class="gccp-tbl"><tr><th>When</th><th>Employee</th><th>Certificate</th><th>Raise</th><th>By</th></tr>' + past.map(function(d){ var u = ppl.filter(function(x){ return low(x.email) === low(d.email); })[0]; return '<tr><td>' + esc(fmt(d.at)) + '</td><td>' + esc(u ? u.name : d.email) + '</td><td>' + esc(d.cert) + '</td><td>' + (d.skip ? '<span class="gccp-chip gry">not a raise</span>' : esc(money(d.amount, d.unit))) + '</td><td class="gccp-mut">' + esc(d.by) + '</td></tr>'; }).join('') + '</table>' : '<p class="gccp-mut">None yet.</p>');
+    h += '<div class="gccp-note">Every certificate an employee earns is a raise. When one is added in 📜 Certifications it lands here to approve (the amount comes from ⚙ Raise amounts; hourly people get $/hr, salaried people $/yr). ✅ Approve it and their pay rate in Payroll changes by itself from the date it starts (the next pay period unless you pick another day) — written in their pay rate history with who approved it and why.</div>' +   /* patch PAYEM */
+      (rows.length ? '<table class="gccp-tbl" data-cp-raises="1"><tr><th>Employee</th><th>Certificate</th><th>Raise</th><th>Starts</th><th></th></tr>' + rows.map(function(x, i){ return '<tr><td><b>' + esc(x.u.name) + '</b></td><td>' + esc(x.r.cert) + '<div class="gccp-mut">' + esc(x.r.ruleName) + '</div></td><td><input class="gccp-in" style="width:90px" data-cp-amt="' + i + '" value="' + esc(x.r.amount) + '"> ' + (x.r.unit === 'yr' ? '/yr' : '/hr') + '</td><td><input class="gccp-in" type="date" data-cp-eff="' + i + '" value="' + esc(nextPayStart()) + '"><div class="gccp-mut">next pay period</div></td><td><button type="button" class="gccp-btn grn" data-cp="approve" data-i="' + i + '">✅ Approve</button> <button type="button" class="gccp-btn" data-cp="skip" data-i="' + i + '">Not a raise</button></td></tr>'; }).join('') + '</table>' : '<p class="gccp-mut">No raises waiting. 👍</p>') +
+      '<h3 style="margin:14px 0 4px">History</h3>' + (past.length ? '<table class="gccp-tbl"><tr><th>When</th><th>Employee</th><th>Certificate</th><th>Raise</th><th>By</th></tr>' + past.map(function(d){ var u = ppl.filter(function(x){ return low(x.email) === low(d.email); })[0]; return '<tr><td>' + esc(fmt(d.at)) + '</td><td>' + esc(u ? u.name : d.email) + '</td><td>' + esc(d.cert) + '</td><td>' + (d.skip ? '<span class="gccp-chip gry">not a raise</span>' : esc(money(d.amount, d.unit)) + (d.effective ? '<div class="gccp-mut">from ' + esc(fmt(d.effective)) + (d.payroll === 'applied' ? ' · in Payroll ✓' : d.payroll ? ' · ' + esc(d.payroll) : '') + '</div>' : '')) + '</td><td class="gccp-mut">' + esc(d.by) + '</td></tr>'; }).join('') + '</table>' : '<p class="gccp-mut">None yet.</p>');
     UI.rows = rows; }
   else if (UI.tab === 'reqs') h += Object.keys(p.tracks).map(function(k){ var tr = p.tracks[k];
     return '<div class="gccp-card"><b>' + esc(tr.label) + '</b> <span class="gccp-mut">' + (tr.unit === 'yr' ? 'salaried — raises in $/yr' : 'hourly — raises in $/hr') + '</span>' +
@@ -195740,7 +195819,9 @@ function render(){
   else if (UI.tab === 'bonus') { var yr = UI.year, B = isObj(p.bonus[yr]) ? p.bonus[yr] : {}, pms = ppl.filter(function(u){ return /_pm$|mit_manager/.test(trackOf(u, p)); });
     h += '<div class="gccp-note">🏆 PMs get a bonus at the end of the year based on performance. Suggested measures: gross profit against the estimate, collections (days to get paid), customer reviews, jobs finished on schedule, safety (no injuries / OSHA issues), certificates done on time, and 🚩 missed emergency calls. The owners set the amount.</div>' +
       '<div>Year <select class="gccp-in" data-cp-year="1">' + [0, 1, 2].map(function(k){ var y = String(new Date().getFullYear() - k); return '<option' + (y === yr ? ' selected' : '') + '>' + y + '</option>'; }).join('') + '</select></div>' +
-      (pms.length ? '<table class="gccp-tbl" data-cp-bonus="1"><tr><th>PM</th><th>Performance notes</th><th>Bonus</th><th>Paid</th></tr>' + pms.map(function(u){ var b = B[low(u.email)] || {}; return '<tr><td><b>' + esc(u.name) + '</b><div class="gccp-mut">' + esc((p.tracks[trackOf(u, p)] || {}).label) + '</div></td><td><textarea class="gccp-in" rows="2" style="width:100%" data-cp-bn="' + esc(low(u.email)) + '">' + esc(b.notes || '') + '</textarea></td><td>$<input class="gccp-in" style="width:90px" data-cp-ba="' + esc(low(u.email)) + '" value="' + esc(b.amount || '') + '"></td><td><input type="checkbox" data-cp-bp="' + esc(low(u.email)) + '"' + (b.paid ? ' checked' : '') + '></td></tr>'; }).join('') + '</table><p><button type="button" class="gccp-btn pri" data-cp="savebonus">Save ' + esc(yr) + ' bonuses</button></p>' : '<p class="gccp-mut">No PMs yet.</p>'); }
+      (pms.length ? '<table class="gccp-tbl" data-cp-bonus="1"><tr><th>PM</th><th>Performance notes</th><th>Bonus</th><th>Paycheck</th><th>Paid outside payroll</th></tr>' + pms.map(function(u){ var b = B[low(u.email)] || {}, em = esc(low(u.email)); return '<tr><td><b>' + esc(u.name) + '</b><div class="gccp-mut">' + esc((p.tracks[trackOf(u, p)] || {}).label) + '</div></td><td><textarea class="gccp-in" rows="2" style="width:100%" data-cp-bn="' + em + '">' + esc(b.notes || '') + '</textarea></td><td>$<input class="gccp-in" style="width:90px" data-cp-ba="' + em + '" value="' + esc(b.amount || '') + '"></td>' +
+        '<td data-cp-bstat="' + em + '">' + (b.approvedAt ? '<span class="gccp-chip ok">✅ Approved ' + esc(fmt(b.approvedAt)) + '</span><div class="gccp-mut">' + esc(money(b.amount, 'x').replace('/hr', '')) + ' as "Bonus — PM year-end" on the next paycheck' + (b.periodEnd ? ' (week ending ' + esc(fmt(b.periodEnd)) + ')' : '') + ' · by ' + esc(b.approvedBy || '') + '</div><button type="button" class="gccp-btn" data-cp="bonusundo" data-em="' + em + '">Undo</button>' : '<button type="button" class="gccp-btn grn" data-cp="bonusok" data-em="' + em + '">✅ Approve → next paycheck</button>') + '</td>' +   /* patch PAYEM */
+        '<td><input type="checkbox" data-cp-bp="' + em + '"' + (b.paid ? ' checked' : '') + '></td></tr>'; }).join('') + '</table><p><button type="button" class="gccp-btn pri" data-cp="savebonus">Save ' + esc(yr) + ' bonuses</button></p>' : '<p class="gccp-mut">No PMs yet.</p>'); }
   else if (UI.tab === 'pay') h += '<div class="gccp-card"><b>⏱ How hourly employees are paid for emergencies and overtime</b><ul style="margin:6px 0 0 18px">' +
       '<li><b>Emergency after-hours work</b> (an emergency call worked outside the normal work day, nights, weekends and holidays set in 📟 On call) is paid at <b>time and a half</b> (1.5×).</li>' +
       '<li><b>Overtime</b> — hours over 40 in a work week — is paid at <b>time and a half</b> (1.5×), emergency or not.</li>' +
@@ -195768,14 +195849,31 @@ function open_(tab){
     var a = t.getAttribute('data-cp'), u0 = me();
     if (a === 'close') { OV.remove(); OV = null; return; }
     if (a === 'approve' || a === 'skip') { var x = (UI.rows || [])[+t.getAttribute('data-i')]; if (!x) return; var amt = num((OV.querySelector('[data-cp-amt="' + t.getAttribute('data-i') + '"]') || {}).value);
-      save(function(p){ p.done.push({ id: uid(), email: low(x.u.email), rule: x.r.rule, cert: x.r.cert, amount: a === 'skip' ? 0 : amt, unit: x.r.unit, at: nowISO(), by: s(u0.name || u0.email), skip: a === 'skip' }); }).then(function(){ toast(a === 'skip' ? 'Marked: not a raise' : '💵 Raise approved — ' + money(amt, x.r.unit) + ' for ' + s(x.u.name) + '. Update their rate in 💰 Pay Structures.'); render(); }); }
+      /* patch PAYEM: the raise reaches the paycheck by itself — the payroll profile's rate changes from the start date (pay rate history: who / when / why) */
+      var eff = ymd((OV.querySelector('[data-cp-eff="' + t.getAttribute('data-i') + '"]') || {}).value) || nextPayStart(), did = uid();
+      var rec = { id: did, email: low(x.u.email), rule: x.r.rule, cert: x.r.cert, amount: a === 'skip' ? 0 : amt, unit: x.r.unit, at: nowISO(), by: s(u0.name || u0.email), skip: a === 'skip' };
+      if (a === 'approve') rec.effective = eff;
+      save(function(p){ p.done.push(rec); }).then(function(){
+        if (a === 'skip' || !(amt > 0) || !(W._gcPayEm && W._gcPayEm.applyRaise)) return a === 'skip' ? 'skip' : (amt > 0 ? 'Payroll is not loaded — set the rate in Payroll → Employees.' : 'no amount');
+        return W._gcPayEm.applyRaise({ doneId: did, email: x.u.email, name: x.u.name, userId: x.u.id, amount: amt, unit: x.r.unit, effective: eff, cert: x.r.cert, by: rec.by }).then(function(r){ return r && r.ok ? 'applied' : (r && r.why) || 'not applied'; }, function(e){ return 'not applied: ' + (e && e.message || e); });
+      }).then(function(res){ if (a !== 'skip') save(function(p){ p.done.forEach(function(d){ if (d.id === did) d.payroll = res; }); });
+        toast(a === 'skip' ? 'Marked: not a raise' : res === 'applied' ? '💵 Raise approved — ' + money(amt, x.r.unit) + ' for ' + s(x.u.name) + ', on their paychecks from ' + fmt(eff) + '.' : '💵 Raise approved — ' + money(amt, x.r.unit) + ' for ' + s(x.u.name) + '. ⚠ ' + res, a !== 'skip' && res !== 'applied'); render(); }); }
     if (a === 'rmreq') { var k = t.getAttribute('data-k'), i = +t.getAttribute('data-i'); save(function(p){ p.tracks[k].reqs.splice(i, 1); }).then(render); }
     if (a === 'addreq') { var k2 = t.getAttribute('data-k'), nm = s((OV.querySelector('[data-cp-newreq="' + k2 + '"]') || {}).value), dd = num((OV.querySelector('[data-cp-newdays="' + k2 + '"]') || {}).value); if (!nm) return toast('Type the certificate name.', true);
       var words = nm.replace(/[^A-Za-z0-9 ]+/g, ' ').trim().split(/\s+/).filter(function(w){ return w.length > 2; }).slice(0, 3).map(function(w){ return w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); });
       save(function(p){ p.tracks[k2].reqs.push({ id: uid(), name: nm, m: words.length ? words.join('.*') : nm, days: dd, why: 'GrayCo requirement', legal: false }); }).then(function(){ toast('Added'); render(); }); }
     if (a === 'saveamts') save(function(p){ p.raises.forEach(function(r, i){ var hr = OV.querySelector('[data-cp-hr="' + i + '"]'), yr = OV.querySelector('[data-cp-yr="' + i + '"]'); if (hr) r.hr = num(hr.value); if (yr) r.yr = num(yr.value); }); p.suggested = false; }).then(function(){ toast('💵 Raise amounts saved'); render(); });
     if (a === 'savebonus') save(function(p){ var y = UI.year; p.bonus[y] = isObj(p.bonus[y]) ? p.bonus[y] : {}; Array.prototype.forEach.call(OV.querySelectorAll('[data-cp-ba]'), function(inp){ var em = inp.getAttribute('data-cp-ba');
-        p.bonus[y][em] = { amount: num(inp.value), notes: s((OV.querySelector('[data-cp-bn="' + em + '"]') || {}).value).slice(0, 2000), paid: !!(OV.querySelector('[data-cp-bp="' + em + '"]') || {}).checked, by: s(u0.name || u0.email), at: nowISO() }; }); }).then(function(){ toast('🏆 ' + UI.year + ' bonuses saved'); render(); });
+        p.bonus[y][em] = Object.assign({}, isObj(p.bonus[y][em]) ? p.bonus[y][em] : {}, { amount: num(inp.value), notes: s((OV.querySelector('[data-cp-bn="' + em + '"]') || {}).value).slice(0, 2000), paid: !!(OV.querySelector('[data-cp-bp="' + em + '"]') || {}).checked, by: s(u0.name || u0.email), at: nowISO() }); }); }).then(function(){ toast('🏆 ' + UI.year + ' bonuses saved'); render(); });   /* patch PAYEM: keeps the paycheck approval */
+    /* patch PAYEM: ✅ Approve → the PM year-end bonus goes on the next paycheck as "Bonus — PM year-end" (taxable supplemental wages) */
+    if (a === 'bonusok' || a === 'bonusundo') { var bem = t.getAttribute('data-em'), by0 = UI.year, bamt = num((OV.querySelector('[data-cp-ba="' + bem + '"]') || {}).value), bnote = s((OV.querySelector('[data-cp-bn="' + bem + '"]') || {}).value).slice(0, 2000);
+      if (a === 'bonusok' && !(bamt > 0)) return toast('Type the bonus amount first.', true);
+      if (a === 'bonusok' && !W.confirm('Approve a ' + money(bamt, 'x').replace('/hr', '') + ' PM year-end bonus? It goes on the next paycheck as "Bonus — PM year-end" (taxed as supplemental wages).')) return;
+      var pe = ''; try { var cp = W._gcCurrentPayPeriod && W._gcCurrentPayPeriod(); pe = cp && cp.end ? cp.end : ''; } catch (e) {}
+      save(function(p){ p.bonus[by0] = isObj(p.bonus[by0]) ? p.bonus[by0] : {}; var b = Object.assign({}, isObj(p.bonus[by0][bem]) ? p.bonus[by0][bem] : {});
+        if (a === 'bonusok') Object.assign(b, { amount: bamt, notes: bnote, approvedAt: nowISO(), approvedBy: s(u0.name || u0.email), periodEnd: pe });
+        else { delete b.approvedAt; delete b.approvedBy; delete b.periodEnd; }
+        p.bonus[by0][bem] = b; }).then(function(){ try { if (W._gcPayEm && W._gcPayEm.bust) W._gcPayEm.bust(); } catch (e) {} toast(a === 'bonusok' ? '🏆 Approved — on the next paycheck' : 'Bonus approval undone'); render(); }); }
   });
   OV.addEventListener('change', function(e){
     var t = e.target; if (!t || !t.getAttribute) return;
@@ -195789,7 +195887,7 @@ function open_(tab){
 /* the button in 📜 Certifications */
 D.addEventListener('click', function(e){ var b = e.target && e.target.closest ? e.target.closest('[data-gccp-open]') : null; if (!b) return; e.preventDefault(); e.stopPropagation(); open_(); }, true);
 later(function(){ if (isAdmin()) load(); }, 5000);
-W._gcCertPlan = { open: open_, load: load, plan: plan, trackOf: trackOf, reqStatus: reqStatus, raisesDue: raisesDue, masterOf: masterOf, weekPay: weekPay, defaults: defaults, _set: function(p, c){ PLAN = p; CERTS = arr(c); LOADED = true; } };
+W._gcCertPlan = { nextPayStart: nextPayStart, open: open_, load: load, plan: plan, trackOf: trackOf, reqStatus: reqStatus, raisesDue: raisesDue, masterOf: masterOf, weekPay: weekPay, defaults: defaults, _set: function(p, c){ PLAN = p; CERTS = arr(c); LOADED = true; } };
 try { console.log('[GC] 🎖 Required certs, raises & promotion (patch CERTPLAN): _gcCertPlan'); } catch (e) {}
 })();
 </script>
@@ -207032,7 +207130,7 @@ function openDrying(screen){ var A = claimsApi(); if (!A) { toast('Mitigation is
 function tool(id, p){ try { if (W._gcFieldTools && W._gcFieldTools.run(id, p.id)) return true; } catch (e) { warn(e); } toast('That is not on this device yet.'); return false; }
 function fpRun(a, p){ try { if (FP() && FP().run && FP().run(a, p)) return true; } catch (e) { warn(e); } toast('Not on this job for you.'); return false; }
 function openJob(p){ if (!p) return; W._gcCurrentJob = p; try { if (typeof W._gcJobDashboard === 'function') { W._gcJobDashboard(p.id); return; } } catch (e) {} try { W._gcOpenJobProfile(p.id); } catch (e) {} }
-function clockLabel(){ var p = jobsOf('crew').list[0]; if (!p) return 'Clock in'; var d = dayOf(p.id); return d.ended ? 'Clocked out ✓' : d.started ? 'Clock out' : 'Clock in'; }
+function clockLabel(){ try { if (W._gcPayEm && W._gcPayEm.openPunch && W._gcPayEm.openPunch()) return '🚨 Clock out (emergency)'; } catch (e) {} var p = jobsOf('crew').list[0]; if (!p) return 'Clock in';   /* patch PAYEM */ var d = dayOf(p.id); return d.ended ? 'Clocked out ✓' : d.started ? 'Clock out' : 'Clock in'; }
 
 /* ── the buttons: one list for the Field and the Desk apps ──
    job: true → the button needs a job (the only one, or a pick from the role's jobs) */
@@ -207064,7 +207162,8 @@ var A = {
   equip:     { ic: '🌀', l: 'Equipment', show: claimsApi, n: function(){ var k = mitK(); return k ? k.equipmentOut : 0; }, run: function(){ openDrying('equipment'); } },
   claims:    { ic: '🛡', l: 'Claim info', show: claimsApi, n: function(){ return claimsVis().length; }, run: function(){ openClaims({}); } },
   tpa:       { ic: '📆', l: 'TPA dates', show: claimsApi, n: function(){ return tpaDates().filter(function(x){ return x.late; }).length; }, run: function(){ tpaSheet(); } },
-  clock:     { ic: '⏱', l: clockLabel, job: true, run: function(p){ var d = dayOf(p.id); if (!d.started) { try { if (W._gcClockInNow) W._gcClockInNow(); } catch (e) {} } tool('day', p); } },
+  clock:     { ic: '⏱', l: clockLabel, job: true, run: function(p){ var go = function(q){ var d = dayOf(q.id); if (!d.started) { try { if (W._gcClockInNow) W._gcClockInNow(); } catch (e) {} } tool('day', q); };
+    try { if (W._gcPayEm && W._gcPayEm.clockTap && W._gcPayEm.clockTap(p, go)) return; } catch (e) { warn(e); } go(p); } },   /* patch PAYEM: 🚨 emergency call-out (after hours) choice */
   match:     { ic: '🧾', l: 'Invoices to match', show: function(){ return !!(W._gcMoney && W._gcMoney.openNeeds); }, n: function(){ return needs().length; }, run: function(){ W._gcMoney.openNeeds(); } },
   todo:      { ic: '☑', l: "Today's to-dos", view: 'todo', n: todoN, run: function(){ go('todo'); } },
   receipt:   { ic: '🧾', l: 'Snap a receipt', show: function(){ return typeof W._gcFieldLogExpense === 'function'; }, run: function(){ W._gcFieldLogExpense(); } },
@@ -213793,7 +213892,7 @@ function compute(opt){
       T.eeSS+=n2(L.ss); T.eeMed+=n2(L.med); T.eeAddl+=n2(L.addlMed); T.eeL7+=eeL; T.storedSSW+=n2(L.ssWages!=null?L.ssWages:fw);
       T.futaStored+=n2(L.futa); T.sutaStored+=n2(L.suta); T.checks++;
       var mo=month[pd.slice(0,7)]; mo.fed+=n2(L.fed); mo.ssW+=ssW; mo.medW+=fw; mo.addlW+=addlW; mo.ee+=eeL; mo.checks++;
-      reg.push({ payDate:pd, run:s(r.id), key:key, name:nm, hours:r2(n2(L.hours)+n2(L.otHours)), gross:r2(L.gross), preTax:r2(L.preTax), wages:r2(w),
+      reg.push({ payDate:pd, run:s(r.id), key:key, name:nm, hours:r2(n2(L.hours)+n2(L.otHours)), gross:r2(L.gross), emer:r2(L.emPay), pmBonus:r2(L.pmBonus),   /* patch PAYEM */ preTax:r2(L.preTax), wages:r2(w),
         fed:r2(L.fed), ss:r2(L.ss), med:r2(n2(L.med)+n2(L.addlMed)), net:r2(L.net), paid:paidHow(L) });
       ru.checks++; ru.wages+=w; ru.fed+=n2(L.fed); ru.ee+=eeL;
       if(n2(L.gross)>0 && (L.fed==null || L.ss==null || L.med==null)) warn.push('Withholding is MISSING on '+nm+'’s check in the run paid '+pd+' (no '+[L.fed==null?'federal':'',L.ss==null?'Social Security':'',L.med==null?'Medicare':''].filter(Boolean).join(' / ')+' figure). Lines 3, 5 and 7 are wrong until it is fixed.');
@@ -213896,7 +213995,7 @@ function compute(opt){
 
   var emps=Object.keys(emp).map(function(k){ var e=emp[k]; ['wages','fed','ssW','medW','addlW','ee','storedSSW'].forEach(function(f){ e[f]=r2(e[f]); }); return e; });
   reg.sort(function(a,b){ return a.payDate<b.payDate?-1:a.payDate>b.payDate?1:(a.name<b.name?-1:1); });
-  var RF=['hours','gross','preTax','wages','fed','ss','med','net'], regEmp={}, regTot={ name:'TOTAL', checks:0 };
+  var RF=['hours','gross','emer','pmBonus','preTax','wages','fed','ss','med','net'], regEmp={}, regTot={ name:'TOTAL', checks:0 };
   RF.forEach(function(f){ regTot[f]=0; });
   reg.forEach(function(x){ var e=regEmp[x.key]||(regEmp[x.key]={ name:x.name, checks:0 }); e.checks++; regTot.checks++;
     RF.forEach(function(f){ e[f]=(e[f]||0)+x[f]; regTot[f]+=x[f]; }); });
@@ -213938,11 +214037,11 @@ function copyText(R){
     + (R.warnings.length?('\n\nWARNINGS:\n- '+R.warnings.join('\n- ')):'');
 }
 function regRows(R){
-  var G=R.register, f=function(v){ return n2(v).toFixed(2); }, out=[['Pay date','Employee','Hours','Gross','Pre-tax deductions','Taxable wages (line 2)','Federal income tax','Social Security (6.2%)','Medicare (1.45% + additional)','Net pay','Paid how']];
-  G.rows.forEach(function(x){ out.push([x.payDate,x.name,x.hours.toFixed(2),f(x.gross),f(x.preTax),f(x.wages),f(x.fed),f(x.ss),f(x.med),f(x.net),x.paid]); });
-  G.emps.forEach(function(e){ out.push(['QUARTER TOTAL',e.name+' ('+e.checks+' checks)',e.hours.toFixed(2),f(e.gross),f(e.preTax),f(e.wages),f(e.fed),f(e.ss),f(e.med),f(e.net),'']); });
-  var T=G.total; out.push(['GRAND TOTAL',T.checks+' checks',T.hours.toFixed(2),f(T.gross),f(T.preTax),f(T.wages),f(T.fed),f(T.ss),f(T.med),f(T.net),'']);
-  out.push(['FORM','line 2 / line 3 / 6.2% of 5a / 1.45% of 5c + 5d','','','',f(R.lines.L2),f(R.lines.L3),f(G.check.ssForm),f(G.check.medForm),'','difference = line 7']);
+  var G=R.register, f=function(v){ return n2(v).toFixed(2); }, out=[['Pay date','Employee','Hours','Gross','Emergency call-out 1.5x (in gross)','PM year-end bonus (in gross)','Pre-tax deductions','Taxable wages (line 2)','Federal income tax','Social Security (6.2%)','Medicare (1.45% + additional)','Net pay','Paid how']];   /* patch PAYEM */
+  G.rows.forEach(function(x){ out.push([x.payDate,x.name,x.hours.toFixed(2),f(x.gross),f(x.emer),f(x.pmBonus),f(x.preTax),f(x.wages),f(x.fed),f(x.ss),f(x.med),f(x.net),x.paid]); });
+  G.emps.forEach(function(e){ out.push(['QUARTER TOTAL',e.name+' ('+e.checks+' checks)',e.hours.toFixed(2),f(e.gross),f(e.emer),f(e.pmBonus),f(e.preTax),f(e.wages),f(e.fed),f(e.ss),f(e.med),f(e.net),'']); });
+  var T=G.total; out.push(['GRAND TOTAL',T.checks+' checks',T.hours.toFixed(2),f(T.gross),f(T.emer),f(T.pmBonus),f(T.preTax),f(T.wages),f(T.fed),f(T.ss),f(T.med),f(T.net),'']);
+  out.push(['FORM','line 2 / line 3 / 6.2% of 5a / 1.45% of 5c + 5d','','','','','',f(R.lines.L2),f(R.lines.L3),f(G.check.ssForm),f(G.check.medForm),'','difference = line 7']);
   return out;
 }
 function csvLine(r){ return r.map(function(c){ return '"'+String(c==null?'':c).replace(/"/g,'""')+'"'; }).join(','); }
@@ -214121,6 +214220,7 @@ function regHtml(R){
        : '<tr><td colspan="11" style="'+td+';text-align:left;color:#991b1b;font-weight:700">No W-2 paychecks in this quarter.</td></tr>')
     + G.emps.map(function(e){ return '<tr style="background:#f8fafc;font-weight:700"><td style="'+td+';text-align:left">Quarter total</td><td style="'+td+';text-align:left">'+esc(e.name)+' ('+e.checks+')</td>'+cols(e)+'<td style="'+td+'"></td></tr>'; }).join('')
     + '<tr data-f941-reg-total="1" style="background:#eef2ff;font-weight:800"><td style="'+td+';text-align:left">GRAND TOTAL</td><td style="'+td+';text-align:left">'+G.total.checks+' checks</td>'+cols(G.total)+'<td style="'+td+'"></td></tr>'
+    + ((n2(G.total.emer)>0 || n2(G.total.pmBonus)>0) ? '<tr data-f941-em="1" style="font-size:11.5px;color:#7c2d12"><td colspan="11" style="'+td+';text-align:left">Gross wages above include '+(n2(G.total.emer)>0?'🚨 '+m(G.total.emer)+' emergency call-out pay (1.5×)':'')+(n2(G.total.emer)>0&&n2(G.total.pmBonus)>0?' and ':'')+(n2(G.total.pmBonus)>0?'🏆 '+m(G.total.pmBonus)+' PM year-end bonus':'')+' — all of it is wages on line 2.</td></tr>' : '')   /* patch PAYEM */
     + '<tr style="font-size:11px;color:#475569"><td colspan="5" style="'+td+';text-align:left">On the form</td><td style="'+td+'">L2 '+m(R.lines.L2)+' '+ok(G.check.wagesEqL2)+'</td><td style="'+td+'">L3 '+m(R.lines.L3)+' '+ok(G.check.fedEqL3)+'</td><td style="'+td+'">6.2% × 5a '+m(G.check.ssForm)+'</td><td style="'+td+'">1.45% × 5c + 5d '+m(G.check.medForm)+'</td><td colspan="2" style="'+td+';text-align:left">difference '+m(r2(G.check.ssDiff+G.check.medDiff))+' = line 7</td></tr>'
     + '</table></div></div>';
 }
@@ -215677,7 +215777,7 @@ function compute(o){
       var expC = r2(due.reduce(function(a, e){ return a + e.amount; }, 0));
       if(!lines.length && !(setup && expC)) return;
       var paidC = r2(lines.reduce(function(a, L){ return a + lineComm(L); }, 0));
-      var paidS = r2(lines.reduce(function(a, L){ return a + n2(L.gross) - lineComm(L) - n2(L.bonus); }, 0));
+      var paidS = r2(lines.reduce(function(a, L){ return a + n2(L.gross) - lineComm(L) - n2(L.bonus) - n2(L.pmBonus); }, 0));   /* patch PAYEM: a 🏆 PM year-end bonus is not salary */
       var per = PERIODS[low((lines[0] && lines[0].period) || p.period) || 'weekly'] || 52;
       var expS = salaried && lines.length ? r2(n2(p.annualSalary) / per) : null;
       var row = { empId:pm.key, name:pm.name, payDate:d, quarter:quarterOf(d), known:isKnown(d), expComm:setup ? expC : null, paidComm:paidC, expSal:expS, paidSal:paidS, runs:runIds, jobs:due };
@@ -215999,7 +216099,7 @@ W._gcDraftEditLine = async function(runId, idx){
   var profs = []; try { profs = await p.profiles(); } catch (e) {}
   var key = low(L.empId || L.userId), prof = (profs || []).filter(function(x){ return x && ((key && (low(x.userId) === key || low(x.id) === key)) || low(x.name) === low(L.name)); })[0];
   if (!prof || s(prof.payType) !== 'hourly') return otherEdit(runId, idx);
-  var rate = n2(prof.hourlyRate) || n2(L.rate), after = n2(prof.otAfter) || 40, mult = n2(prof.otMultiplier) || 1.5;
+  var rate = (p.rateAsOf ? p.rateAsOf(prof, 'hourlyRate', run.to) : n2(prof.hourlyRate)) || n2(L.rate), after = n2(prof.otAfter) || 40, mult = n2(prof.otMultiplier) || 1.5;   /* patch PAYEM: the rate in effect (🎖 cert raise) */
   var was = r2(n2(L.hours) + n2(L.otHours));
   var old = D.getElementById('gc-draftedit-ov'); if (old) old.remove();
   var ov = D.createElement('div'); ov.id = 'gc-draftedit-ov'; ov.setAttribute('data-gc-keep', '1');
@@ -216009,22 +216109,28 @@ W._gcDraftEditLine = async function(runId, idx){
     + '<div style="font-size:12px;color:#556;margin:2px 0 12px">Week ' + esc(run.from) + ' → ' + esc(run.to) + ' · ' + money(rate) + '/hr (from the profile)</div>'
     + '<label style="font-size:11px;font-weight:700">Hours worked this week</label>'
     + '<input data-de="hrs" type="number" step="0.01" min="0" inputmode="decimal" value="' + was + '" style="width:100%;padding:10px;border:1px solid #ccd;border-radius:7px;font-size:16px;text-align:right;margin:3px 0 10px">'
+    + '<label style="font-size:11px;font-weight:700">🚨 of those, emergency call-out (after hours) — paid 1.5×</label>'   /* patch PAYEM */
+    + '<input data-de="em" type="number" step="0.01" min="0" inputmode="decimal" value="' + r2(n2(L.emHours)) + '" style="width:100%;padding:10px;border:1px solid #ccd;border-radius:7px;font-size:16px;text-align:right;margin:3px 0 10px">'
     + '<div data-de="calc" style="background:#f1f5f9;border-radius:8px;padding:10px;font-size:13px;margin-bottom:12px"></div>'
     + '<div style="display:flex;gap:8px"><button data-de="save" style="flex:1;background:#166534;color:#fff;border:none;border-radius:8px;padding:11px;font-weight:800;cursor:pointer;font-size:14px">Save &amp; recalculate taxes</button>'
     + '<button data-de="cancel" style="background:#e5e7eb;border:none;border-radius:8px;padding:11px 16px;font-weight:700;cursor:pointer">Cancel</button></div>'
     + '<div data-de="msg" style="color:#b91c1c;font-size:12.5px;font-weight:700;margin-top:8px"></div></div>';
   D.body.appendChild(ov);
   var q = function(k){ return ov.querySelector('[data-de="' + k + '"]'); };
-  function split(){ var h = Math.max(0, n2(q('hrs').value)), ot = r2(Math.max(0, h - after)); return { reg: r2(h - ot), ot: ot, total: r2(h) }; }
-  function paint(){ var h = split(), g = r2(h.reg * rate + h.ot * rate * mult);
-    q('calc').innerHTML = 'Regular ' + h.reg.toFixed(2) + ' h × ' + money(rate) + (h.ot > 0 ? '<br>Overtime ' + h.ot.toFixed(2) + ' h × ' + money(rate) + ' × ' + mult : '') + '<br><b>Gross ' + money(g) + '</b> (was ' + money(L.gross) + ') — taxes are worked out again when you save.'; }
+  /* patch PAYEM: the same week rule as the engine and 🎖 CERTPLAN's calculator — 🚨 emergency 1.5×, over 40 1.5×, never stacked */
+  function split(){ var h = Math.max(0, n2(q('hrs').value)), e = Math.min(h, Math.max(0, n2(q('em').value)));
+    var x = W._gcPayWeekSplit ? W._gcPayWeekSplit(h, e, after) : { straight: r2(Math.max(0, h - Math.max(0, h - after))), em: 0, ot: r2(Math.max(0, h - after)), premium: r2(Math.max(0, h - after)) };
+    return { reg: x.straight, ot: x.premium, em: x.em, otOnly: x.ot, total: r2(h) }; }
+  function grossOf(h){ return r2(h.reg * rate + h.em * rate * 1.5 + h.otOnly * rate * mult); }
+  function paint(){ var h = split(), g = grossOf(h);
+    q('calc').innerHTML = 'Regular ' + h.reg.toFixed(2) + ' h × ' + money(rate) + (h.em > 0 ? '<br>🚨 Emergency call-out ' + h.em.toFixed(2) + ' h × ' + money(rate) + ' × 1.5' : '') + (h.otOnly > 0 ? '<br>Overtime ' + h.otOnly.toFixed(2) + ' h × ' + money(rate) + ' × ' + mult : '') + (h.em > 0 && n2(q('hrs').value) > after ? '<br><span style="color:#64748b">Not stacked: an hour is never paid more than 1.5×.</span>' : '') + '<br><b>Gross ' + money(g) + '</b> (was ' + money(L.gross) + ') — taxes are worked out again when you save.'; }
   ov.addEventListener('input', paint); paint();
   ov.addEventListener('click', function(e){ if (e.target === ov) ov.remove(); });
   q('cancel').onclick = function(){ ov.remove(); };
   q('save').onclick = async function(){
     var b = q('save'); if (b.disabled) return; b.disabled = true; b.textContent = 'Working it out…';
     try {
-      var h = split(), gross = r2(h.reg * rate + h.ot * rate * mult);
+      var h = split(), gross = grossOf(h);   /* patch PAYEM */
       var fresh = await p.runs(), R = fresh.filter(function(r){ return r && String(r.id) === String(runId); })[0], X = R && (R.lines || [])[idx];
       if (!X) throw new Error('that run is not here any more');
       if (['draft', 'pending'].indexOf(s(R.status)) < 0) throw new Error('this run is ' + s(R.status) + ' now');
@@ -216033,12 +216139,15 @@ W._gcDraftEditLine = async function(runId, idx){
       var extras = {}; if (n2(X.bonus) > 0) extras.bonus = X.bonus; if (n2(X.reimbursement) > 0) extras.reimbursement = X.reimbursement;
       var N = await p.computeLine(prof, R.from, R.to, set, ytd, gross, extras);
       if (!N) throw new Error('the payroll engine gave nothing back');
-      var parts = [{ label: 'Regular hours', amount: r2(h.reg * rate) }]; if (h.ot > 0) parts.push({ label: 'Overtime', amount: r2(h.ot * rate * mult) });
+      var parts = [{ label: 'Regular hours', amount: r2(h.reg * rate), hours: h.reg, rate: rate }];   /* patch PAYEM */
+      if (h.em > 0) parts.push({ label: 'Emergency call-out 1.5×', amount: r2(h.em * rate * 1.5), hours: h.em, rate: r2(rate * 1.5) });
+      if (h.otOnly > 0) parts.push({ label: 'Overtime', amount: r2(h.otOnly * rate * mult), hours: h.otOnly, rate: r2(rate * mult) });
       (N.grossParts || []).forEach(function(g){ if (g && g.label !== 'Manual amount') parts.push(g); });
       var before = { hours: X.hours, otHours: X.otHours, gross: X.gross, fed: X.fed, ss: X.ss, med: X.med, state: X.state, net: X.net };
       var keep = { status: X.status, checkNo: X.checkNo, edits: X.edits };
-      Object.assign(X, N, keep, { hours: h.reg, otHours: h.ot, rate: rate, grossParts: parts, ytdBefore: ytd });
-      X.edits = (Array.isArray(X.edits) ? X.edits : []).concat([{ at: new Date().toISOString(), by: who(), note: 'hours ' + was + ' → ' + h.total, before: before }]);
+      var wasEm = r2(n2(X.emHours));
+      Object.assign(X, N, keep, { hours: h.reg, otHours: h.ot, emHours: h.em, emPay: r2(h.em * rate * 1.5), rate: rate, grossParts: parts, ytdBefore: ytd });   /* patch PAYEM */
+      X.edits = (Array.isArray(X.edits) ? X.edits : []).concat([{ at: new Date().toISOString(), by: who(), note: 'hours ' + was + ' → ' + h.total + (h.em !== wasEm ? ' · 🚨 emergency ' + wasEm + ' → ' + h.em : ''), before: before }]);
       touched(R, 'hours changed by ' + who() + ' for ' + s(X.name) + ' from ' + was + ' to ' + h.total + ' (gross ' + money(before.gross) + ' → ' + money(X.gross) + ', net ' + money(before.net) + ' → ' + money(X.net) + ')');
       await p.saveRuns(fresh);
       ov.remove(); rerender();
@@ -225862,5 +225971,176 @@ W.addEventListener('gc-co-filter', function(){
   setTimeout(tick, 60);
 });
 W._gcCoLeak2 = { userCos: userCos, passUser: passUser, paintSelects: paintSelects, paintUserBoxes: paintUserBoxes };
+})(window);
+</script>
+<script id="gc-patch-payem">
+/* patch PAYEM — 🚨 Emergency call-out (after hours) 1.5× on paychecks, 🎖 certification raises and the 🏆 PM year-end bonus on paychecks
+   (owner 11/12: "yes emergency 1.5 on paychecks" · "cert raises on paycheck" · payroll stays ONE company for now: "payroll goes all to
+   construction right now, I'll change later to by company" · Brittany's 13 h/week set hours stay as they are).
+   • Field app ⏱ Clock in, after hours (before 7 AM, from 5 PM, weekends) or on an emergency job: "🚨 Emergency call-out (after hours)" or
+     "🕐 Regular time". The call-out is its own timesheet row { emergency: true } (an open regular punch made moments ago becomes the
+     call-out; an older open one ends at that minute, so no hour is counted twice). The button reads "🚨 Clock out (emergency)" until it
+     is closed. Timesheets: 🚨 on "+ Add time" and a 🚨 toggle on each row (office / admin). Payroll → ✏️ hours: "🚨 of those, emergency".
+   • Pay: the payroll engine's weekSplit (window._gcPayWeekSplit — 🎖 CERTPLAN's ⏱ calculator uses the same function): emergency hours
+     1.5×, over 40 1.5×, never stacked; emergency hours count toward the 40. "Emergency call-out 1.5×" is its own earning on the run, the
+     stub, the e-mailed stub, the 941 register and its CSV.
+   • 🎖 Raise approved → applyRaise: the payroll profile's rate goes up, a dated entry in prof.rateHistory (who / when / why / from → to);
+     the engine pays a period at the rate in effect on its last day (__GC_PAY.rateAsOf).
+   • 🏆 PM year-end bonus approved → pmBonusFor: on the next paycheck as "Bonus — PM year-end" (supplemental, federal 22%), once.
+   API: window._gcPayEm = { afterHours, isEmergencyJob, clockTap, punchIn, punchOut, openPunch, applyRaise, pmBonusFor, historyHtml, bust } */
+(function(W){
+'use strict';
+if (W.__GC_PATCH_PAYEM__) return; W.__GC_PATCH_PAYEM__ = true;
+var D = W.document, OPEN_K = 'gc_payem_open_v1';
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+function later(f, ms){ return ST.call(W, f, ms || 0); }
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function num(v){ var n = parseFloat(String(v == null ? '' : v).replace(/[^0-9.\-]/g, '')); return isFinite(n) ? n : 0; }
+function r2(v){ return Math.round(num(v) * 100) / 100; }
+function esc(v){ return String(v == null ? '' : v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function money(v){ return '$' + num(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function nowISO(){ return new Date().toISOString(); }
+function TC(){ return W._gcTimeClock || null; }
+function users(){ return arr((W._crm || {}).users); }
+function meName(){ try { var t = TC(); if (t) return t.user(); } catch (e) {} try { return s(localStorage.getItem('grayco_user')); } catch (e) { return ''; } }
+function lsGet(k){ try { return localStorage.getItem(k); } catch (e) { return null; } }
+function lsSet(k, v){ try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) {} }
+function toast(m, bad){ try { var t = D.createElement('div'); t.setAttribute('data-gc-keep', '1'); t.id = 'gc-payem-toast'; t.textContent = m; t.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:2147483600;background:' + (bad ? '#7f1d1d' : '#14532d') + ';color:#fff;padding:11px 16px;border-radius:10px;font:600 14px Inter,Arial,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.25);max-width:92vw;text-align:center'; var o = D.getElementById('gc-payem-toast'); if (o) o.remove(); D.body.appendChild(t); later(function(){ t.remove(); }, 3600); } catch (e) {} }
+
+/* ── after hours / emergency job ─────────────────────────────────────────── */
+var DAY = { start: 7 * 60, end: 17 * 60 };   /* the normal work day, Monday–Friday 7 AM – 5 PM */
+function afterHours(d){ d = d || new Date(); var dow = d.getDay(), m = d.getHours() * 60 + d.getMinutes(); return dow === 0 || dow === 6 || m < DAY.start || m >= DAY.end; }
+function isEmergencyJob(p){ if (!p) return false; if (p.emergency === true || p.isEmergency === true) return true;
+  return /emergenc/i.test([p.urgency, p.priority, p.jobType, p.type, p.lossType, p.tag, p.tags && p.tags.join && p.tags.join(' ')].map(s).join(' ')); }
+
+/* ── the open 🚨 punch (this person, this device) ─────────────────────── */
+function openPunch(){ var o = null; try { o = JSON.parse(lsGet(OPEN_K) || 'null'); } catch (e) {} if (!o || !o.id) return null; return low(o.user) === low(meName()) ? o : null; }
+async function punchIn(p){
+  var tc = TC(); if (!tc) throw new Error('the time clock is not loaded yet');
+  var u = tc.user(), d = tc.today(), now = tc.nowHM(), at = nowISO(), t0 = Date.now();
+  if (!u) throw new Error('not signed in');
+  var list = await tc.list(); list = Array.isArray(list) ? list : [];
+  var conv = null;
+  list.forEach(function(r){
+    if (!r || r.user !== u || r.manual || r.emergency || r.clockOut) return;
+    var made = Date.parse(r.savedAt || r.updatedAt || '') || 0;
+    if (!conv && r.date === d && t0 - made < 30 * 60e3) { conv = r; return; }   /* the punch the app made a moment ago (this tap / signing in) IS the call-out */
+    r.clockOut = r.date === d ? now : (r.clockOut || ''); if (r.clockOut) { r.endedBy = '🚨 emergency call-out started'; r.updatedAt = at; r.savedAt = at; }   /* one open punch at a time */
+  });
+  var rec = conv || { id: 'TS' + Date.now() + Math.floor(Math.random() * 999), user: u, date: d, clockOut: '', manual: false };
+  Object.assign(rec, { clockIn: conv ? (s(conv.actualIn) || now) : now, actualIn: conv ? (s(conv.actualIn) || now) : now, emergency: true, emBy: 'clock', pid: s(p && p.id), job: s(p && (p.name || p.client)), updatedAt: at, savedAt: at });
+  if (!conv) list.push(rec);
+  await tc.save(list);
+  lsSet(OPEN_K, JSON.stringify({ id: rec.id, user: u, date: rec.date, at: at, inT: rec.clockIn, pid: rec.pid, job: rec.job }));
+  return rec;
+}
+async function punchOut(){
+  var tc = TC(), op = openPunch(); if (!tc || !op) return null;
+  var list = await tc.list(); list = Array.isArray(list) ? list : [];
+  var r = list.filter(function(x){ return x && x.id === op.id; })[0];
+  lsSet(OPEN_K, null);
+  if (!r) return null;
+  r.clockOut = tc.nowHM(); r.updatedAt = nowISO(); r.savedAt = r.updatedAt;
+  await tc.save(list);
+  return { rec: r, hours: r2(tc.hoursOf(r)) };
+}
+function refreshHome(){ try { if (W._gcRA && W._gcRA.sync) W._gcRA.sync(); } catch (e) {} try { if (W._gcField && W._gcField.render) W._gcField.render(true); } catch (e) {} }
+
+/* ── the field sheet ─────────────────────────────────────────────────────── */
+function sheet(html){
+  var o = D.getElementById('gc-payem-sheet'); if (o) o.remove();
+  o = D.createElement('div'); o.id = 'gc-payem-sheet'; o.setAttribute('data-gc-keep', '1');
+  o.style.cssText = 'position:fixed;inset:0;z-index:2147483500;background:rgba(15,23,42,.55);display:flex;align-items:flex-end;justify-content:center;font-family:Inter,Arial,sans-serif';
+  o.innerHTML = '<div style="background:#fff;color:#0f172a;width:min(520px,100vw);border-radius:16px 16px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom));box-shadow:0 -10px 30px rgba(0,0,0,.25)">' + html + '</div>';
+  o.addEventListener('click', function(e){ if (e.target === o || (e.target.closest && e.target.closest('[data-pe="x"]'))) o.remove(); });
+  D.body.appendChild(o); return o;
+}
+var BTN = 'display:block;width:100%;border:none;border-radius:12px;padding:15px 14px;font-size:16px;font-weight:800;margin-top:10px;cursor:pointer;text-align:left';
+function clockTap(p, go){
+  var op = openPunch();
+  if (op) {
+    var o = sheet('<div style="font-size:18px;font-weight:800">🚨 On an emergency call-out</div><div style="font-size:13.5px;color:#475569;margin:4px 0 6px">Since ' + esc(op.inT) + (op.job ? ' · ' + esc(op.job) : '') + ' — paid 1.5×.</div>' +
+      '<button type="button" data-pe="out" style="' + BTN + ';background:#7f1d1d;color:#fff">🏁 Clock out of the call-out</button>' +
+      '<button type="button" data-pe="x" style="' + BTN + ';background:#e2e8f0;color:#0f172a;text-align:center">Keep working</button>');
+    o.querySelector('[data-pe="out"]').onclick = function(){ var b = this; b.disabled = true; b.textContent = 'Clocking out…';
+      punchOut().then(function(r){ o.remove(); toast(r ? '🏁 Clocked out — ' + r.hours.toFixed(2) + ' h emergency call-out (1.5×)' : 'Clocked out.'); refreshHome(); }, function(e){ o.remove(); toast('Not saved: ' + (e && e.message || e), true); }); };
+    return true;
+  }
+  var ah = afterHours(), ej = isEmergencyJob(p);
+  if (!ah && !ej) return false;
+  var o2 = sheet('<div style="font-size:18px;font-weight:800">⏱ Clock in' + (p && p.name ? ' — ' + esc(p.name) : '') + '</div>' +
+    '<div style="font-size:13.5px;color:#475569;margin:4px 0 4px">' + (ej ? 'This is an emergency job.' : 'It is after hours.') + ' Is this an emergency call-out?</div>' +
+    '<button type="button" data-pe="em" style="' + BTN + ';background:#b91c1c;color:#fff">🚨 Emergency call-out (after hours)<div style="font-size:12.5px;font-weight:600;opacity:.9">Paid time and a half (1.5×)</div></button>' +
+    '<button type="button" data-pe="reg" style="' + BTN + ';background:#0f2440;color:#fff">🕐 Regular time</button>' +
+    '<button type="button" data-pe="x" style="' + BTN + ';background:#e2e8f0;color:#0f172a;text-align:center">Cancel</button>');
+  o2.querySelector('[data-pe="reg"]').onclick = function(){ o2.remove(); go(p); };
+  o2.querySelector('[data-pe="em"]').onclick = function(){ var b = this; b.disabled = true;
+    punchIn(p).then(function(r){ o2.remove(); toast('🚨 Clocked in at ' + r.clockIn + ' — emergency call-out, paid 1.5×. Tap ⏱ again to clock out.'); refreshHome(); },
+      function(e){ o2.remove(); toast('Not clocked in: ' + (e && e.message || e), true); }); };
+  return true;
+}
+
+/* ── 🎖 certification raise → the payroll profile ────────────────────── */
+async function applyRaise(o){
+  var P = W.__GC_PAY; if (!P || !P.profiles || !P.saveProfiles) return { ok: false, why: 'Payroll is not loaded on this computer — set the new rate in Payroll → Employees.' };
+  var profs = await P.profiles(); profs = Array.isArray(profs) ? profs : [];
+  var em = low(o.email), id = s(o.userId), nm = low(o.name);
+  var pr = profs.filter(function(x){ return x && ((em && low(x.email) === em) || (id && s(x.userId) === id)); })[0] || profs.filter(function(x){ return x && nm && low(x.name) === nm; })[0];
+  if (!pr) return { ok: false, why: 'No payroll profile for ' + s(o.name) + ' yet — add them in Payroll → Employees, then set the rate.' };
+  pr.rateHistory = arr(pr.rateHistory);
+  if (o.doneId && pr.rateHistory.some(function(h){ return h && h.doneId === o.doneId; })) return { ok: true, dup: true };
+  var pt = s(pr.payType), hourly = pt === 'hourly';
+  if (!hourly && !/^(salary|salary_commission)$/.test(pt)) return { ok: false, why: s(o.name) + ' is paid ' + (pt || 'with no pay type') + ' — no hourly rate or salary to raise. Change their pay in Payroll → Employees.' };
+  var field = hourly ? 'hourlyRate' : 'annualSalary', amt = num(o.amount);
+  if (o.unit === 'yr' && hourly) amt = r2(amt / 2080); else if (o.unit !== 'yr' && !hourly) amt = r2(amt * 2080);
+  var from = r2(pr[field]), to = r2(from + amt), at = nowISO();
+  pr[field] = to;
+  pr.rateHistory.push({ id: 'RH' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), field: field, from: from, to: to, change: amt, effective: s(o.effective).slice(0, 10), at: at, by: s(o.by), why: 'Certification raise — ' + s(o.cert), source: 'certplan', doneId: s(o.doneId) });
+  pr.updatedAt = at;
+  await P.saveProfiles(profs);
+  return { ok: true, field: field, from: from, to: to };
+}
+function historyHtml(p){
+  var h = arr(p && p.rateHistory).slice().sort(function(a, b){ return s(b.effective || b.at).localeCompare(s(a.effective || a.at)); });
+  if (!h.length) return '';
+  var P = W.__GC_PAY, today = P && P.today ? P.today() : new Date().toISOString().slice(0, 10);
+  return '<div data-payem-hist="1" style="margin-top:10px;border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px;background:#f8fafc;font-size:12px;color:#334155">' +
+    '<div style="font-weight:800;margin-bottom:4px">📈 Pay rate history</div>' + h.map(function(x){ var yr = x.field === 'annualSalary', f = function(v){ return money(v) + (yr ? '/yr' : '/hr'); };
+      return '<div style="padding:3px 0;border-top:1px solid #e2e8f0">' + (s(x.effective) > today ? '<b style="color:#92400e">starts ' : '<b>from ') + esc(x.effective || s(x.at).slice(0, 10)) + '</b> · ' + esc(f(x.from)) + ' → <b>' + esc(f(x.to)) + '</b> (+' + esc(f(x.change)) + ') · ' + esc(x.why) + ' · approved by ' + esc(x.by || '—') + ' ' + esc(s(x.at).slice(0, 10)) + '</div>'; }).join('') + '</div>';
+}
+
+/* ── 🏆 PM year-end bonus → the next paycheck ───────────────────────────── */
+var CACHE = { at: 0, plan: null };
+function bust(){ CACHE.at = 0; CACHE.plan = null; }
+async function planNow(){
+  if (CACHE.plan && Date.now() - CACHE.at < 20000) return CACHE.plan;
+  var C = W._gcCertPlan; if (!C) return null;
+  try { await C.load(); } catch (e) {}
+  try { CACHE.plan = C.plan(); CACHE.at = Date.now(); } catch (e) { CACHE.plan = null; }
+  return CACHE.plan;
+}
+async function pmBonusFor(prof, from, to){
+  if (!prof) return null;
+  var em = low(prof.email);
+  if (!em) { var u = users().filter(function(x){ return x && ((prof.userId && s(x.id) === s(prof.userId)) || low(x.name) === low(prof.name)); })[0]; em = low(u && u.email); }
+  if (!em) return null;
+  var p = await planNow(); if (!p || !p.bonus) return null;
+  var yrs = Object.keys(p.bonus).sort().filter(function(y){ var b = p.bonus[y] && p.bonus[y][em]; return b && b.approvedAt && !b.paid && num(b.amount) > 0 && !(b.periodEnd && s(b.periodEnd) > s(to)); });
+  if (!yrs.length) return null;
+  var runs = []; try { runs = await W.__GC_PAY.runs(); } catch (e) {}
+  for (var i = 0; i < yrs.length; i++) {
+    var key = 'pmbonus:' + yrs[i] + ':' + em;
+    var carried = arr(runs).some(function(r){ return r && !(s(r.from) === s(from) && s(r.to) === s(to)) && ['denied', 'voided', 'void', 'deleted'].indexOf(low(r.status)) < 0
+      && arr(r.lines).some(function(L){ return L && L.pmBonusKey === key && low(L.status) !== 'denied'; }); });
+    if (!carried) return { amount: r2(p.bonus[yrs[i]][em].amount), key: key, year: yrs[i] };
+  }
+  return null;
+}
+
+W._gcPayEm = { afterHours: afterHours, isEmergencyJob: isEmergencyJob, clockTap: clockTap, punchIn: punchIn, punchOut: punchOut, openPunch: openPunch,
+  applyRaise: applyRaise, pmBonusFor: pmBonusFor, historyHtml: historyHtml, bust: bust, DAY: DAY };
+try { console.log('[GC] 🚨 Emergency call-out 1.5× + 🎖 cert raises / 🏆 PM bonus on paychecks (patch PAYEM): _gcPayEm'); } catch (e) {}
 })(window);
 </script>
