@@ -97,6 +97,7 @@ ok('M3 equipment on site: 6 air movers + 1 dehu (the removed one is off)', math.
 await A.ev(() => window._setView('dashboard')); await waitFor(A, () => !!document.getElementById('gc-mws-dash'), null, 30000); await sleep(1500);
 const dc = await A.ev(() => { const d = document.getElementById('gc-mws-dash'); const c = k => { const x = [...d.querySelectorAll('[data-mws-card]')].filter(y => y.querySelector('.l').textContent.includes(k))[0]; return x ? x.querySelector('b').textContent : null; };
   return { losses: c('Active water losses'), eq: c('Equipment on jobs'), days: c('Drying days'), due: c('Readings due today'), claims: c('Claims waiting'), txt: d.innerText.slice(0, 400) }; });
+ok('M3 Mitigation Dashboard: the Emergencies card does not say "No open emergency calls" under a count of calls', !/EMERGENCIES\s*[1-9]\d*\s*No open emergency calls/i.test(dc.txt + (await A.ev(() => (document.getElementById('gc-mws-dash') || {}).innerText || ''))), dc.txt.slice(-120));
 ok('M3 Mitigation Dashboard: 1 active water loss (the Construction fire claim not counted), 7 pieces of equipment on the job', dc.losses === '1' && dc.eq === '7', dc);
 await shot('m3_mit_dashboard');
 await A.ev(() => window._setView('mws_read')); await sleep(1500);
