@@ -83787,6 +83787,7 @@ window._gcForceFixSchedule = async function(silent){
       +'<div><div style="font-size:10px;color:#9db4cf;">DATE</div><input id="_tsD" type="date" value="'+today()+'" style="padding:5px;border-radius:6px;border:1px solid #2f4d6f;background:#0b1626;color:#fff;"></div>'
       +'<div><div style="font-size:10px;color:#9db4cf;">IN</div><input id="_tsI" type="time" value="08:00" style="padding:5px;border-radius:6px;border:1px solid #2f4d6f;background:#0b1626;color:#fff;"></div>'
       +'<div><div style="font-size:10px;color:#9db4cf;">OUT</div><input id="_tsO" type="time" value="17:00" style="padding:5px;border-radius:6px;border:1px solid #2f4d6f;background:#0b1626;color:#fff;"></div>'
+      +'<div><div style="font-size:10px;color:#9db4cf;">CODE</div><select id="_tsC" style="padding:5px;border-radius:6px;border:1px solid #2f4d6f;background:#0b1626;color:#fff;"><option value="">Regular work</option><option value="training">🎓 Training (unpaid)</option></select></div>'   /* patch CERTROLE */
       +'<button id="_tsAdd" style="background:#1f7a3d;color:#fff;border:none;border-radius:6px;padding:7px 12px;font-weight:700;cursor:pointer;">+ Add time</button></div>') : '';
 
     function tableHtml(){
@@ -83799,7 +83800,7 @@ window._gcForceFixSchedule = async function(silent){
           +'<td style="padding:6px 8px;">'+r.date+'</td>'
           +'<td style="padding:6px 8px;">'+(r.clockIn||'—')+(r.actualIn&&r.actualIn!==r.clockIn?' <span style="color:#7f93ad;font-size:10px;">(in '+r.actualIn+')</span>':'')+'</td>'
           +'<td style="padding:6px 8px;">'+(r.clockOut||'—')+'</td>'
-          +'<td style="padding:6px 8px;text-align:right;">'+h.toFixed(2)+'</td>'
+          +'<td style="padding:6px 8px;text-align:right;">'+h.toFixed(2)+(r.code==='training'?' <span title="Training (unpaid): recorded, pays $0, not counted toward overtime" style="background:#3b2f0b;color:#fde68a;border-radius:6px;padding:1px 5px;font-size:10px;">🎓 unpaid</span>':'')+'</td>'
           +(editable?('<td style="padding:6px 8px;text-align:right;white-space:nowrap;">'
              +'<button class="_tsEdit" data-id="'+r.id+'" style="background:#26466b;color:#cfe3ff;border:none;border-radius:5px;padding:4px 8px;cursor:pointer;font-size:11px;margin-right:4px;">Edit</button>'
              +'<button class="_tsDel" data-id="'+r.id+'" style="background:#7a2626;color:#ffd7d7;border:none;border-radius:5px;padding:4px 8px;cursor:pointer;font-size:11px;">Delete</button></td>'):'<td></td>')
@@ -83829,7 +83830,8 @@ window._gcForceFixSchedule = async function(silent){
       box.querySelector('#_tsAdd').onclick=async function(){
         var u=box.querySelector('#_tsU').value.trim(); var d=box.querySelector('#_tsD').value; var i=box.querySelector('#_tsI').value; var o=box.querySelector('#_tsO').value;
         if(!u||!d){ alert('Enter at least an employee name and date.'); return; }
-        list.push({ id:'TS'+Date.now()+Math.floor(Math.random()*999), user:u, date:d, clockIn:i, clockOut:o, manual:true, updatedAt:new Date().toISOString(), savedAt:new Date().toISOString() });
+        var tc=(box.querySelector('#_tsC')||{}).value||'';   /* patch CERTROLE: 🎓 Training (unpaid) */
+        list.push(Object.assign({ id:'TS'+Date.now()+Math.floor(Math.random()*999), user:u, date:d, clockIn:i, clockOut:o, manual:true, updatedAt:new Date().toISOString(), savedAt:new Date().toISOString() }, tc==='training'?{code:'training'}:{}));
         await persist(); refresh();
       };
     }
@@ -83894,6 +83896,7 @@ window._gcForceFixSchedule = async function(silent){
     var total=0;
     ts.forEach(function(r){
       if(r.user!==name) return;
+      if(r.code==='training') return;   /* patch CERTROLE: 🎓 Training (unpaid) — recorded, pays $0 */
       if(fromDate && r.date<fromDate) return;
       if(toDate && r.date>toDate) return;
       if(r.clockIn&&r.clockOut){
@@ -84996,6 +84999,7 @@ async function hoursFor(name, from, to, otAfter){
   var byWeek={}, days=[];
   rows.forEach(function(r){
     if(!r.clockIn || !r.clockOut) return;
+    if(r.code==='training') return;   /* patch CERTROLE: 🎓 Training (unpaid) — recorded, pays $0 and does not count toward overtime */
     var mins=minutes(r.clockOut)-minutes(r.clockIn);
     if(mins<=0) return;
     var h=mins/60;
@@ -195609,6 +195613,7 @@ function recd(r){ return Object.assign({}, r, { rec: true, why: REC_WHY }); }
 function conPm(required){
   var ii = [iicrc('wrt', 'IICRC WRT — Water Restoration Technician', 0, 'Required for Insurance PMs')].concat(MASTER_PM());
   ii = required ? ii.map(function(r){ return Object.assign({}, r, { why: 'Required for Insurance PMs' }); }) : ii.map(recd);
+  if (required) ii.push(R('mr', 'IICRC Master Restorer — required for this role (includes the Master designations)', M.mr, 0, 'Owner: "PMs have to be masters" (WRT and all the Master Restorer courses)'));   /* patch CERTROLE */
   return [ii[0], LAW.rrp].concat(ii.slice(1), [LAW.hazcom, LAW.fall, R('osha30', 'OSHA 30 (construction)', M.osha30, 0, 'GrayCo requirement — keep on')]);
 }
 var IICRC_SET = /^(wrt|asd|amrt|fsrt|oct|cct|uft)$/;
@@ -195616,6 +195621,13 @@ var IICRC_SET = /^(wrt|asd|amrt|fsrt|oct|cct|uft)$/;
 function envAsb(r){ var o = Object.assign({}, r, { name: s(r.name).replace(/ — when doing asbestos$/, ''), why: 'Owner: required. ' + r.why }); delete o.cond; return o; }
 function envMold(){ return R('amrt', 'Mold remediation — IICRC AMRT or equivalent', M.mold, 0, 'Owner: required for mold remediation (GrayCo requirement — keep on).'); }
 function envTrauma(){ return R('trauma', 'Trauma / biohazard scene clean-up (ABRA or IICRC BRT, where offered)', M.trauma, 0, 'Owner: required for trauma, crime-scene and biohazard work (GrayCo requirement — keep on). Bloodborne pathogens training (LAW) applies as well.'); }
+function dualReqs(fore){
+  var rc = function(r){ return Object.assign({}, r, { rec: true, why: 'Recommended — earns its raise (cross-trained)' }); };
+  return [iicrc('wrt', 'IICRC WRT — Water Restoration Technician', 0, 'Required for mitigation work (Owner)'), fore ? iicrc('asd', 'IICRC ASD — Applied Structural Drying', 0) : rc(iicrc('asd', 'IICRC ASD — Applied Structural Drying', 0)),
+    Object.assign({}, LAW.leadwork, { why: 'Owner: required (abatement worker). ' + LAW.leadwork.why }), envAsb(LAW.asbwork), LAW.rrpojt, LAW.hazcom, LAW.resp, LAW.bbp, LAW.bloodlead, LAW.leadaware, LAW.hazwoper, LAW.hazref, LAW.confined, LAW.fall]
+    .concat(fore ? [LAW.firstaid] : [], [rc(envMold()), rc(iicrc('fsrt', 'IICRC FSRT — Fire & Smoke Restoration', 0)), rc(iicrc('oct', 'IICRC OCT — Odor Control', 0)), rc(envTrauma()),
+      Object.assign(R('osha10', 'OSHA 10 (construction)', M.osha10, 0, ''), { rec: true, why: 'Recommended — earns its raise' }), Object.assign(R('osha30', 'OSHA 30 (construction)', M.osha30, 0, ''), { rec: true, why: 'Recommended — with 1 year, the step to Dual Foreman' })]);
+}
 /* an estimator who does commercial: nothing required; the field-safety law lines only matter if he does that field work */
 var EST_LAW = 'LAW only if he does that field work himself — ';
 function estRec(r){ return Object.assign({}, r, { rec: true, why: EST_LAW + r.why }); }
@@ -195629,9 +195641,16 @@ function TRACKS(){ return {
   /* patch CERTROLE: "mitigation get those requirements too" — the whole IICRC / Master Restorer set is required (no countdown) */
   mit_manager: { label: 'Mitigation Manager / PM — GrayCo Mitigation', co: 'mitigation', unit: 'yr', reqs: [iicrc('wrt', 'IICRC WRT — Water Restoration Technician', 0, 'Required for mitigation (Owner)'), iicrc('asd', 'IICRC ASD — Applied Structural Drying', 0),
     iicrc('amrt', 'IICRC AMRT — Applied Microbial Remediation', 0), iicrc('fsrt', 'IICRC FSRT — Fire & Smoke Restoration', 0), iicrc('oct', 'IICRC OCT — Odor Control', 0),
-    iicrc('cct', 'IICRC CCT — Carpet Cleaning (Master Restorer course)', 0), iicrc('uft', 'IICRC UFT — Upholstery & Fabric (Master Restorer course)', 0), LAW.rrp, LAW.firstaid, LAW.hazcom, LAW.resp, LAW.bbp, LAW.fall] },
+    iicrc('cct', 'IICRC CCT — Carpet Cleaning (Master Restorer course)', 0), iicrc('uft', 'IICRC UFT — Upholstery & Fabric (Master Restorer course)', 0),
+    R('mr', 'IICRC Master Restorer — required for this role (includes the Master designations)', M.mr, 0, 'Owner: "PMs have to be masters"'), LAW.rrp, LAW.firstaid, LAW.hazcom, LAW.resp, LAW.bbp, LAW.fall] },
+  /* patch CERTROLE: construction crew (laborers / carpenters / helpers) — starting rate $18, the field-safety law lines */
+  con_crew: { label: 'Crew — GrayCo Construction', co: 'construction', unit: 'hr', reqs: [LAW.rrpojt, LAW.hazcom, LAW.fall, LAW.leadaware, Object.assign(R('osha10', 'OSHA 10 (construction)', M.osha10, 0, 'Recommended — keep on'), { rec: true })] },
   mit_foreman: { label: 'Foreman — GrayCo Mitigation', co: 'mitigation', unit: 'hr', reqs: [iicrc('wrt', 'IICRC WRT — Water Restoration Technician', 90), iicrc('asd', 'IICRC ASD — Applied Structural Drying', 365), LAW.rrp, LAW.firstaid, LAW.hazcom, LAW.resp, LAW.bbp, LAW.fall] },
   mit_tech: { label: 'Mitigation Technician — GrayCo Mitigation', co: 'mitigation', unit: 'hr', reqs: [iicrc('wrt', 'IICRC WRT — Water Restoration Technician', 90, 'Owner: required for every mitigation tech'), LAW.hazcom, LAW.resp, LAW.bbp, LAW.rrpojt, LAW.leadaware, LAW.fall] },
+  /* patch CERTROLE: cross-trained ("like they do both") — certificates from BOTH the mitigation and the environmental sets count; required =
+     the core law lines of both kinds of work; + the cross-training bonus (dualReqs) */
+  dual_tech: { label: 'Restoration & Abatement Tech (dual) — Mitigation + Environmental', co: 'mitigation', unit: 'hr', reqs: dualReqs(false) },
+  dual_fore: { label: 'Dual Foreman — Mitigation + Environmental', co: 'mitigation', unit: 'hr', reqs: dualReqs(true) },
   /* patch CERTROLE: "env gets their own certs — abatement, lead, asbestos, hazard, trauma etc." (no IICRC set; AMRT or equivalent for mold) */
   env_pm: { label: 'Project Manager / Supervisor — GrayCo Environmental', co: 'environmental', unit: 'yr', reqs: [Object.assign({}, LAW.leadsup, { why: 'Owner: required. ' + LAW.leadsup.why }), Object.assign({}, LAW.rrp, { why: 'Owner: required. ' + LAW.rrp.why }),
     envAsb(LAW.asbsup), LAW.asbinsp, envMold(), LAW.hazcom, LAW.resp, LAW.bloodlead, LAW.bbp, envTrauma(), LAW.hazwoper, LAW.hazref, LAW.confined, LAW.fall] },
@@ -195639,17 +195658,34 @@ function TRACKS(){ return {
     envMold(), LAW.hazcom, LAW.resp, LAW.bloodlead, LAW.bbp, envTrauma(), LAW.hazwoper, LAW.hazref, LAW.confined, LAW.fall] },
   office: { label: 'Office / admin', co: '', unit: 'hr', reqs: [] }
 }; }
-function RAISES(){ return [   /* SUGGESTED until the owner sets them: per certificate earned (hourly / salaried) */
-  { id: 'iicrc', name: 'Each IICRC course certification (WRT, ASD, AMRT, FSRT, OCT, CCT, UFT, …)', m: M.wrt + '|' + M.asd + '|' + M.amrt + '|' + M.fsrt + '|' + M.oct + '|' + M.cct + '|' + M.uft + '|\\bIICRC\\b', hr: 0.5, yr: 1000, each: true, n: M.mwr + '|' + M.mfsr + '|' + M.mtc + '|' + M.mr },
-  { id: 'rrp', name: 'EPA RRP Certified Renovator', m: M.rrp, hr: 0.5, yr: 1000 },
-  { id: 'leadwork', name: 'Lead or asbestos abatement worker license', m: M.leadwork + '|' + M.asbwork, hr: 1, yr: 1500, each: true },
-  { id: 'leadsup', name: 'Lead or asbestos supervisor license', m: M.leadsup + '|' + M.asbsup, hr: 1.5, yr: 2500, each: true },
-  { id: 'osha', name: 'OSHA 10 / OSHA 30', m: M.osha10 + '|' + M.osha30, hr: 0.25, yr: 500, each: true },
-  { id: 'master', name: 'IICRC Master designation (Master Water Restorer, Master Fire & Smoke Restorer, Master Textile Cleaner)', m: M.mwr + '|' + M.mfsr + '|' + M.mtc, hr: 1.5, yr: 3000, each: true },
-  { id: 'mr', name: 'IICRC Master Restorer', m: M.mr, hr: 2, yr: 5000 }
+/* patch CERTROLE — the owner's raise amounts (11/12): "Master Restorer $5, all others $1 an hour raise" · "32–40 hour classes, such as
+   supervisors, masters etc., count as a $5 raise; all others $1" · "OSHA 30 counts as a $2 raise; worker lead and asbestos $1".
+   One rule per certificate: hours (course length, for reference) + level (master / supervisor) + hr (the owner's $/hr; blank → the rule:
+   ≥32 h or supervisor / master level → $5, else $1) + yr (salaried; blank → hr × 2,080). `grp` keeps the approved-raise keys of the old
+   grouped rules (iicrc:…, leadwork:…, leadsup:…, osha:…, master:…, rrp, mr) so nothing already approved comes back. */
+var NOT_MASTER = M.mwr + '|' + M.mfsr + '|' + M.mtc + '|' + M.mr;
+function RR(id, name, m, hours, level, hr, grp, each, n){ return { id: id, name: name, m: m, hours: hours, level: level || '', hr: hr, yr: null, grp: grp || '', each: each !== false, n: n || '' }; }
+function RAISES(){ return [
+  RR('mr', 'IICRC Master Restorer', M.mr, 0, 'master', 5, '', false),
+  RR('mwr', 'IICRC Master Water Restorer', M.mwr, 0, 'master', 5, 'master'), RR('mfsr', 'IICRC Master Fire & Smoke Restorer', M.mfsr, 0, 'master', 5, 'master'), RR('mtc', 'IICRC Master Textile Cleaner', M.mtc, 0, 'master', 5, 'master'),
+  RR('wrt', 'IICRC WRT — Water Restoration Technician', M.wrt, 20, '', 1, 'iicrc', true, NOT_MASTER), RR('asd', 'IICRC ASD — Applied Structural Drying', M.asd, 22, '', 1, 'iicrc', true, NOT_MASTER),
+  RR('amrt', 'IICRC AMRT — Applied Microbial Remediation', M.amrt, 21, '', 1, 'iicrc', true, NOT_MASTER), RR('fsrt', 'IICRC FSRT — Fire & Smoke Restoration', M.fsrt, 14, '', 1, 'iicrc', true, NOT_MASTER),
+  RR('oct', 'IICRC OCT — Odor Control', M.oct, 14, '', 1, 'iicrc', true, NOT_MASTER), RR('cct', 'IICRC CCT — Carpet Cleaning', M.cct, 14, '', 1, 'iicrc', true, NOT_MASTER),
+  RR('uft', 'IICRC UFT — Upholstery & Fabric', M.uft, 14, '', 1, 'iicrc', true, NOT_MASTER), RR('iicrc', 'Any other IICRC course (e.g. BRT)', '\\bIICRC\\b', 14, '', 1, 'iicrc', true, NOT_MASTER),
+  RR('rrp', 'EPA RRP Certified Renovator', M.rrp, 8, '', 1, '', false),
+  RR('leadwork', 'Lead abatement worker (state license)', M.leadwork, 32, '', 1, 'leadwork'), RR('asbwork', 'Asbestos abatement worker (AHERA 4-day + state license)', M.asbwork, 32, '', 1, 'leadwork'),
+  RR('leadsup', 'Lead abatement supervisor (state license)', M.leadsup, 40, 'supervisor', 5, 'leadsup'), RR('asbsup', 'Asbestos contractor / supervisor (AHERA + state license)', M.asbsup, 40, 'supervisor', 5, 'leadsup'),
+  RR('asbinsp', 'Asbestos inspector (AHERA)', M.asbinsp, 24, '', 1, 'env'), RR('hazwoper', 'HAZWOPER 40-hour', M.hazwoper, 40, '', 5, 'env', true, M.hazref),
+  RR('hazref', 'HAZWOPER 8-hour refresher', M.hazref, 8, '', 1, 'env'), RR('trauma', 'Trauma / biohazard clean-up (ABRA)', M.trauma, 16, '', 1, 'env', true, '\\bIICRC\\b'),
+  RR('osha10', 'OSHA 10 (construction)', M.osha10, 10, '', 1, 'osha'), RR('osha30', 'OSHA 30 (construction)', M.osha30, 30, '', 2, 'osha')
 ]; }
+var HRS_YR = 2080;
+function autoHr(rr){ return num(rr.hours) >= 32 || /master|supervisor/.test(s(rr.level)) ? 5 : 1; }
+function rateOf(rr){ return rr.hr == null || s(rr.hr) === '' ? autoHr(rr) : num(rr.hr); }
+function yrOf(rr){ return rr.yr == null || s(rr.yr) === '' ? Math.round(rateOf(rr) * HRS_YR) : num(rr.yr); }
+var POLICY = 'Course fee paid by GrayCo · training days are unpaid · travel paid for courses out of town';
 var PLAN = null, CERTS = [], LOADED = false, OV = null, UI = { tab: 'people', year: String(new Date().getFullYear()) };
-function defaults(){ return { tracks: TRACKS(), raises: RAISES(), people: {}, done: [], bonus: {}, suggested: true, tracksV: 2 }; }
+function defaults(){ return { tracks: TRACKS(), raises: RAISES(), people: {}, done: [], bonus: {}, suggested: false, tracksV: 2, raisesV: 2, caps: {}, travel: [], masterOnce: true, excLog: [] }; }
 /* patch CERTROLE: a plan saved before the PM split → add the Roofing / Insurance PM tracks (in order) and make the IICRC set recommended
    for the plain Construction PM; the admin's own lines and edits stay */
 function upgradeTracks(st){
@@ -195665,8 +195701,10 @@ function upgradeTracks(st){
   return out;
 }
 function plan(){ var p = PLAN || {}, d = defaults(), has = isObj(p.tracks) && Object.keys(p.tracks).length;
-  return { tracks: !has ? d.tracks : (+p.tracksV || 1) < 2 ? upgradeTracks(p.tracks) : p.tracks, raises: Array.isArray(p.raises) && p.raises.length ? p.raises : d.raises,
-  people: isObj(p.people) ? p.people : {}, done: arr(p.done), bonus: isObj(p.bonus) ? p.bonus : {}, suggested: p.suggested !== false, tracksV: 2 }; }
+  var newR = (+p.raisesV || 1) < 2;   /* patch CERTROLE: the owner set the amounts (11/12) — a plan saved with the old suggested amounts takes the owner's */
+  return { tracks: !has ? d.tracks : (+p.tracksV || 1) < 2 ? upgradeTracks(p.tracks) : p.tracks, raises: !newR && Array.isArray(p.raises) && p.raises.length ? p.raises : d.raises,
+  people: isObj(p.people) ? p.people : {}, done: arr(p.done), bonus: isObj(p.bonus) ? p.bonus : {}, suggested: newR ? false : p.suggested === true, tracksV: 2, raisesV: 2,
+  caps: isObj(p.caps) ? p.caps : {}, travel: arr(p.travel), mileRate: num(p.mileRate) > 0 ? num(p.mileRate) : 0.70, masterOnce: p.masterOnce !== false, excLog: arr(p.excLog) }; }
 function load(){ return Promise.all([sb(KEY), sb('gc_certs')]).then(function(v){ PLAN = isObj(v[0]) ? v[0] : null; CERTS = arr(isObj(v[1]) ? v[1].list : (W._gcCerts && W._gcCerts.list ? W._gcCerts.list() : [])); LOADED = true; bust(); return plan(); }); }
 function save(mut){ return sb(KEY).then(function(v){ var cur = isObj(v) ? v : {}; var p = { tracks: cur.tracks, raises: cur.raises, people: cur.people, done: cur.done, bonus: cur.bonus, suggested: cur.suggested };
   PLAN = cur; var full = plan(); mut(full); full.updatedAt = nowISO(); PLAN = full; bust(); return put(KEY, full).then(function(){ return full; }); }); }
@@ -195677,10 +195715,12 @@ function trackOf(u, p){
   var set = (p || plan()).people[low(u.email)]; if (set && set.track && (p || plan()).tracks[set.track]) return set.track;
   var t = [u.role, u.title, u.position, u.jobTitle, u.profile, u.department, u.specialty].map(s).join(' '), co = low(u.companyId || u.company);
   var env = /environ|abatement|asbestos/i.test(t) || co === 'environmental', mit = /mitig/i.test(t) || co === 'mitigation';
+  if (/restoration\s*&?\s*(and\s*)?abatement|\bdual\b/i.test(t) && (p || plan()).tracks.dual_tech) return /foreman|crew lead|supervis|lead\b/i.test(t) ? 'dual_fore' : 'dual_tech';   /* patch CERTROLE */
   if (mit && /manag|director|lead\b/i.test(t)) return 'mit_manager';
   if (env && /manag|director|supervis|\bpm\b|project manager/i.test(t)) return 'env_pm';   /* patch CERTROLE: Environmental PM / supervisor / manager */
   if (!mit && /estimat/i.test(t) && !/\bpm\b|project manager/i.test(t) && (p || plan()).tracks.est_com) return 'est_com';   /* patch CERTROLE: an estimator is never on a PM track */
-  if (/foreman|super(intendent|visor)?\b/i.test(t)) return env ? 'env_tech' : mit ? 'mit_foreman' : 'con_foreman';
+  if (/foreman|crew lead|super(intendent|visor)?\b/i.test(t)) return env ? 'env_tech' : mit ? 'mit_foreman' : 'con_foreman';
+  if (!env && !mit && /labor|crew|carpenter|helper/i.test(t) && (p || plan()).tracks.con_crew) return 'con_crew';   /* patch CERTROLE */
   if (/\bpm\b|project manager|estimator/i.test(t)) return env ? 'env_pm' : mit ? 'mit_manager' : pmKind(u, t, p || plan());
   if (/tech|labor|crew|field/i.test(t)) return env ? 'env_tech' : 'mit_tech';
   return 'office';
@@ -195710,18 +195750,92 @@ function reqStatus(req, held, hired, target){
   return { k: 'keepon', l: '📈 Keep on — no deadline' };
 }
 /* raises earned: every held certificate that matches a raise rule and is not approved / skipped yet */
-function raisesDue(u, p){
-  p = p || plan(); var unit = (p.tracks[trackOf(u, p)] || {}).unit || 'hr', held = heldBy(u.email), out = [];
+/* patch CERTROLE: the raise math with the per-track cap — { due, blocked, earnedHr, earnedN, cap, unit, reached }
+   cap = p.caps[track] = { hr: max $/hr from certificates, n: max number of certificate raises } (blank = no cap). A raise that would pass the
+   $/hr cap is cut to what is left; past the cap it is held back ("cap reached"). Salaried raises count as $/yr ÷ 2,080 toward the cap. */
+function ruleFor(text, p){ var out = null; (p || plan()).raises.some(function(rr){ var n = rr.n ? rx(rr.n) : null; if (rx(rr.m).test(text) && !(n && n.test(text))) { out = rr; return true; } return false; }); return out; }
+/* patch CERTROLE — owner 11/12: "I don't want mit tech and foreman making that much unless they are PM" · "PMs have to be masters" ·
+   "can make exceptions". Starting rate per track (no certificates), a default cap per track (tech +$8, foreman / crew lead +$12,
+   environmental tech +$10, PMs none), master-level raises ($5) only on PM tracks (elsewhere $0 + ⭐ "Promotion eligible — PM" once they
+   hold Master Restorer), "highest master level pays once" (setting, on by default), and per-person admin exceptions:
+   people[email].exc = { pmNoMaster: {reason,by,at}, cap: {hr|null, none, reason,by,at}, waive: { reqId: {reason,by,at} } } + one-off manual
+   raises (done[] with manual: true) — every one logged in excLog[] and shown on the card "Exception by <admin> on <date>: <reason>". */
+var DEF_START = { con_crew: 18, con_foreman: 18, mit_tech: 18, mit_foreman: 18, env_tech: 23, dual_tech: 23, dual_fore: 23 };
+var DEF_CAP = { con_crew: 8, mit_tech: 8, con_foreman: 12, mit_foreman: 12, env_tech: 10, dual_tech: 12, dual_fore: 15 };
+/* the cross-training bonus (dual tracks): once, when they hold WRT + AMRT + lead worker + asbestos worker + HAZWOPER 40 — inside the cap */
+var XTRAIN = [['wrt', 'WRT'], ['amrt', 'AMRT'], ['leadwork', 'lead worker'], ['asbwork', 'asbestos worker'], ['hazwoper', 'HAZWOPER 40']];
+function isDual(tk){ return /^dual_/.test(s(tk)); }
+function xtrainHas(t){ return XTRAIN.filter(function(x){ var r = rx(M[x[0]]); return x[0] === 'hazwoper' ? t.split(' | ').some(function(c){ return r.test(c) && !rx(M.hazref).test(c); }) : r.test(t); }); }
+var MASTER_RX = M.mr + '|' + M.mwr + '|' + M.mfsr + '|' + M.mtc;
+function isPmTrack(tk, p){ var tr = (p || plan()).tracks[tk] || {}; return tr.pm != null ? !!tr.pm : /_pm$|^mit_manager$/.test(s(tk)); }
+function startOf(tk, p){ var tr = (p || plan()).tracks[tk] || {}; return tr.start !== undefined ? num(tr.start) : num(DEF_START[tk]); }
+function excOf(u, p){ var x = (p || plan()).people[low(u && u.email)]; return x && isObj(x.exc) ? x.exc : {}; }
+function capOf(tk, p, u){
+  p = p || plan(); var e = u ? excOf(u, p).cap : null;
+  if (isObj(e)) return e.none ? { hr: 0, n: 0, exc: true } : { hr: num(e.hr) > 0 ? num(e.hr) : 0, n: 0, exc: true };
+  var c = Object.prototype.hasOwnProperty.call(p.caps, tk) && isObj(p.caps[tk]) ? p.caps[tk] : DEF_CAP[tk] ? { hr: DEF_CAP[tk] } : {};
+  return { hr: num(c.hr) > 0 ? num(c.hr) : 0, n: num(c.n) > 0 ? Math.round(num(c.n)) : 0 };
+}
+function hrEq(d){ return d.hr != null && s(d.hr) !== '' ? num(d.hr) : d.unit === 'yr' ? num(d.amount) / HRS_YR : num(d.amount); }
+function isMasterRule(rr){ return s(rr && rr.level) === 'master'; }
+function raiseCalc(u, p){
+  p = p || plan(); var tk = trackOf(u, p), unit = (p.tracks[tk] || {}).unit || 'hr', held = heldBy(u.email), cap = capOf(tk, p, u), em = low(u.email), pm = isPmTrack(tk, p);
+  var mine = p.done.filter(function(d){ return low(d.email) === em && !d.skip; }), earnedHr = mine.reduce(function(a, d){ return a + hrEq(d); }, 0), usedHr = earnedHr, usedN = mine.length, due = [], blocked = [], seen = {};
+  var masterPaid = mine.some(function(d){ return d.master || /^(mr|master:)/.test(s(d.rule)); });
   p.raises.forEach(function(rr){ var r = rx(rr.m), n = rr.n ? rx(rr.n) : null;
     held.filter(function(c){ var x = s(c.name) + ' ' + s(c.issuer); return r.test(x) && !(n && n.test(x)); }).forEach(function(c){
-      var key = rr.each ? rr.id + ':' + low(s(c.name)).replace(/[^a-z0-9]+/g, '-') : rr.id;
-      if (p.done.some(function(d){ return low(d.email) === low(u.email) && d.rule === key; })) return;
-      if (out.some(function(o){ return o.rule === key; })) return;
-      out.push({ rule: key, ruleName: rr.name, cert: s(c.name), amount: num(unit === 'yr' ? rr.yr : rr.hr), unit: unit }); }); });
+      var key = rr.each ? (rr.grp || rr.id) + ':' + low(s(c.name)).replace(/[^a-z0-9]+/g, '-') : (rr.grp || rr.id);
+      if (seen[key] || p.done.some(function(d){ return low(d.email) === em && d.rule === key; })) return; seen[key] = 1;
+      var hr = rateOf(rr), x = { rule: key, ruleName: rr.name, cert: s(c.name), hr: hr, amount: unit === 'yr' ? yrOf(rr) : hr, unit: unit, master: isMasterRule(rr) };
+      if (x.master && !pm) { x.why = 'notpm'; x.hr = 0; x.amount = 0; blocked.push(x); return; }   /* the raise comes with the PM promotion */
+      if (x.master && p.masterOnce && masterPaid) { x.why = 'master'; blocked.push(x); return; }
+      if (cap.n && usedN >= cap.n) { x.why = 'cap'; blocked.push(x); return; }
+      if (cap.hr) { var left = Math.round((cap.hr - usedHr) * 100) / 100; if (left <= 0) { x.why = 'cap'; blocked.push(x); return; }
+        if (hr > left) { x.amount = unit === 'yr' ? Math.round(x.amount * left / hr) : left; x.hr = left; x.trimmed = true; } }
+      if (x.master) masterPaid = true;
+      usedN++; usedHr += x.hr; due.push(x); }); });
+  if (isDual(tk) && !p.done.some(function(d){ return low(d.email) === em && d.rule === 'xtrain'; })) {
+    var ht = held.filter(function(c){ return certStatus(c) === 'held'; }).map(function(c){ return s(c.name) + ' ' + s(c.issuer); }).join(' | ');
+    if (xtrainHas(ht).length === XTRAIN.length) { var xb = num(p.xtrainHr) > 0 ? num(p.xtrainHr) : 2, xx = { rule: 'xtrain', ruleName: 'Cross-training bonus (once)', cert: 'Cross-training bonus — WRT + AMRT + lead worker + asbestos worker + HAZWOPER 40', hr: xb, amount: xb, unit: unit };
+      if (cap.hr && Math.round((cap.hr - usedHr) * 100) / 100 <= 0) { xx.why = 'cap'; blocked.push(xx); }
+      else { if (cap.hr && xb > cap.hr - usedHr) { xx.hr = xx.amount = Math.round((cap.hr - usedHr) * 100) / 100; xx.trimmed = true; } usedN++; usedHr += xx.hr; due.push(xx); } } }
+  return { due: due, blocked: blocked, earnedHr: Math.round(earnedHr * 100) / 100, earnedN: mine.length, cap: cap, unit: unit, track: tk, pm: pm,
+    reached: !!((cap.n && usedN >= cap.n) || (cap.hr && usedHr >= cap.hr - 0.001)) };
+}
+function raisesDue(u, p){ return raiseCalc(u, p).due; }
+/* every certificate on a track that pays a raise (+ IICRC Master Restorer on a track with the IICRC set; with "pays once" off, each Master
+   designation too) — for the 📈 Raise outlook and "still available" on a card. Master level pays $0 off a PM track (promo: true). */
+function payList(tk, p, mo){
+  p = p || plan(); mo = mo == null ? p.masterOnce : mo; var tr = p.tracks[tk] || { reqs: [] }, out = [], seen = {}, pm = isPmTrack(tk, p);
+  var add = function(r, rr, name, rec){ if (!rr || seen[rr.id]) return; seen[rr.id] = 1; var m = isMasterRule(rr); if (m && mo && out.some(function(x){ return x.master; })) return; out.push({ req: r, rule: rr, name: name, hr: m && !pm ? 0 : rateOf(rr), rec: rec, master: m, promo: m && !pm }); };
+  arr(tr.reqs).forEach(function(r){ if (!r || /^(rrpojt)$/.test(s(r.id))) return; add(r, ruleFor(s(r.name).replace(/\([^)]*\)/g, ''), p), s(r.name), !!r.rec); });   /* "(Master Restorer course)" is not the Master Restorer */
+  var iic = arr(tr.reqs).some(function(r){ return r && s(r.id) === 'wrt' && /IICRC/.test(s(r.name)); });   /* a track with the IICRC water course (not Environmental's mold line) */
+  if (iic) p.raises.filter(function(x){ return MR_COURSES.indexOf(x.id) >= 0; }).forEach(function(x){ add(null, x, s(x.name), true); });   /* every IICRC course earns its raise */
+  if (iic) p.raises.filter(function(x){ return isMasterRule(x) && (x.id === 'mr' || !mo); }).forEach(function(x){ add(null, x, s(x.name) + (x.id === 'mr' ? ' (all the courses)' : ''), true); });
+  if (isDual(tk)) out.push({ req: null, rule: { id: 'xtrain', m: '$^' }, name: 'Cross-training bonus (once)', hr: num(p.xtrainHr) > 0 ? num(p.xtrainHr) : 2, rec: false, xtrain: true });
   return out;
 }
-function masterOf(u){ var held = heldBy(u.email).filter(function(c){ return certStatus(c) === 'held'; }), t = held.map(function(c){ return s(c.name); }).join(' | ');
-  if (rx(M.mr).test(t)) return { k: 'mr', l: '⭐⭐ Master Restorer — promotion eligible' };
+/* the outlook for one track: total possible, with the cap, how many master raises are in it */
+function outlookOf(tk, p, mo){
+  p = p || plan(); var pl = payList(tk, p, mo), cp = capOf(tk, p), tot = pl.reduce(function(a, x){ return a + x.hr; }, 0), w = tot;
+  if (cp.n) w = pl.map(function(x){ return x.hr; }).sort(function(a, b){ return b - a; }).slice(0, cp.n).reduce(function(a, x){ return a + x; }, 0);
+  if (cp.hr) w = Math.min(w, cp.hr);
+  return { pl: pl, tot: Math.round(tot * 100) / 100, withCap: Math.round(w * 100) / 100, cap: cp, masters: pl.filter(function(x){ return x.master; }).length, start: startOf(tk, p) };
+}
+/* ⭐ promotion: on a PM track a Master designation → eligible (as before); on a mitigation tech / foreman track only Master Restorer
+   (or the admin's exception) → "Promotion eligible — PM", else "Needs Master Restorer for PM: X of Y courses done" */
+var MR_COURSES = ['wrt', 'asd', 'amrt', 'fsrt', 'oct', 'cct', 'uft'];
+function masterOf(u, p){ p = p || plan(); var held = heldBy(u.email).filter(function(c){ return certStatus(c) === 'held'; }), t = held.map(function(c){ return s(c.name) + ' ' + s(c.issuer); }).join(' | ');
+  var tk = trackOf(u, p), ex = excOf(u, p).pmNoMaster, mr = rx(M.mr).test(t);
+  if (!isPmTrack(tk, p) && /^(mit_tech|mit_foreman|con_foreman|con_crew|dual_tech|dual_fore)$/.test(tk)) {
+    var envSup = isDual(tk) && rx(M.leadsup).test(t) && rx(M.asbsup).test(t);
+    if (mr) return { k: 'pm', l: '⭐ Promotion eligible — PM (Master Restorer)' + (envSup ? ' · ⭐ Environmental supervisor / PM' : '') };
+    if (envSup) return { k: 'pm', l: '⭐ Promotion eligible — Environmental supervisor / PM (lead + asbestos supervisor)' };
+    if (isObj(ex)) return { k: 'pm', l: '⭐ Promotion eligible — PM (exception: no Master Restorer)' };
+    var done = MR_COURSES.filter(function(id){ return rx(M[id]).test(t); }).length;
+    return { k: 'need', l: 'Needs Master Restorer for PM: ' + done + ' of ' + MR_COURSES.length + ' courses done' };
+  }
+  if (mr) return { k: 'mr', l: '⭐⭐ Master Restorer — promotion eligible' };
   var m = held.filter(function(c){ return rx(M.mwr + '|' + M.mfsr + '|' + M.mtc).test(s(c.name)); });
   return m.length ? { k: 'm', l: '⭐ ' + m.map(function(c){ return s(c.name); }).join(', ') + ' — promotion eligible' } : null; }
 
@@ -195770,14 +195884,63 @@ function css(){
     '@media (max-width:700px){.gccp-dlg{padding:12px}.gccp-tbl{font-size:12px}}';
   D.head.appendChild(st);
 }
-function stChip(st){ var c = st.k === 'ok' ? 'ok' : st.k === 'expired' ? 'bad' : st.k === 'law' ? 'amb' : 'gry'; return '<span class="gccp-chip ' + c + '" data-cp-st="' + esc(st.k) + '">' + esc(st.l) + '</span>'; }
+function stChip(st){ var c = st.k === 'ok' ? 'ok' : st.k === 'waived' ? 'gry' : st.k === 'expired' ? 'bad' : st.k === 'law' ? 'amb' : 'gry'; return '<span class="gccp-chip ' + c + '" data-cp-st="' + esc(st.k) + '">' + esc(st.l) + '</span>'; }
+/* patch CERTROLE: a person's pay from certificates (starting rate + approved raises = current rate; held, earned, waiting, still available,
+   the cap), the training policy and company-paid course travel */
+function hrTxt(v){ v = Math.round(num(v) * 100) / 100; return '$' + (v % 1 ? v.toFixed(2) : String(v)) + '/hr'; }
+function amtTxt(v, unit){ return unit === 'yr' ? '$' + Math.round(num(v)).toLocaleString('en-US') + '/yr' : '$' + num(v).toFixed(2) + '/hr'; }
+function rateLine(u, p, c){
+  var st = startOf(c.track, p); if (!(st > 0)) return '';
+  var em = low(u.email), add = p.done.filter(function(d){ return low(d.email) === em && !d.skip; }).reduce(function(a, d){ return a + (c.unit === 'yr' ? (d.unit === 'yr' ? num(d.amount) : num(d.amount) * HRS_YR) : hrEq(d)); }, 0);
+  return '<div data-cp-rate="' + esc(em) + '" style="margin-top:3px">💲 Starting rate <b>' + amtTxt(st, c.unit) + '</b> + approved certificate raises <b>' + amtTxt(add, c.unit) + '</b> = current <b>' + amtTxt(st + add, c.unit) + '</b></div>';
+}
+function pmAdd(list, p){ var r = list.map(function(x){ var rr = p.raises.filter(function(z){ return isMasterRule(z) && rx(z.m).test(x.cert); })[0]; return rr ? rateOf(rr) : 5; });
+  return p.masterOnce ? Math.max.apply(null, r.concat([0])) : r.reduce(function(a, v){ return a + v; }, 0); }
+function raiseBox(u, p, held){
+  var c = raiseCalc(u, p), em = low(u.email), pl = payList(c.track, p), got = held.filter(function(x){ return certStatus(x) === 'held'; }).map(function(x){ return s(x.name) + ' ' + s(x.issuer); }).join(' | ');
+  var avail = pl.filter(function(x){ return !(x.req ? rx(x.req.m).test(got) : rx(x.rule.m).test(got)); }), availHr = avail.reduce(function(a, x){ return a + x.hr; }, 0);
+  var left = c.cap.hr ? Math.max(0, c.cap.hr - c.earnedHr - c.due.reduce(function(a, x){ return a + x.hr; }, 0)) : null;
+  var tv = p.travel.filter(function(x){ return low(x.email) === em; }), tvSum = tv.reduce(function(a, x){ return a + num(x.miles) * num(x.rate || p.mileRate) + num(x.hotel) + num(x.other); }, 0);
+  var certs = arr(p.tracks[c.track] && p.tracks[c.track].reqs).map(function(r){ return s(r.name); }).filter(function(n){ return !!ruleFor(n.replace(/\([^)]*\)/g, ''), p); });
+  var capB = c.blocked.filter(function(x){ return x.why === 'cap'; }).length, mB = c.blocked.filter(function(x){ return x.why === 'master'; }).length, nB = c.blocked.filter(function(x){ return x.why === 'notpm'; });
+  return '<div class="gccp-rec" data-cp-raisebox="' + esc(em) + '"><b>💵 Raises from certificates</b> <span class="gccp-mut" data-cp-raiseline="1">' + held.length + ' certificate' + (held.length === 1 ? '' : 's') + ' held · ' + c.earnedN + ' raise' + (c.earnedN === 1 ? '' : 's') + ' earned so far (+' + hrTxt(c.earnedHr) + ')' +
+    (c.due.length ? ' · ' + c.due.length + ' waiting to approve' : '') + (mB ? ' · ' + mB + ' master level already paid once' : '') + ' · ' + (c.cap.exc ? '<b>cap by exception</b> · ' : '') +
+    (c.reached ? '<span class="gccp-chip amb" data-cp-capreached="1">🧢 cap reached (' + (c.cap.hr ? hrTxt(c.cap.hr) : c.cap.n + ' raises') + ')</span>' + (capB ? ' — ' + capB + ' held back' : '') :
+      'still available: ' + (avail.length ? avail.length + ' (up to +' + hrTxt(left == null ? availHr : Math.min(availHr, left)) + (c.cap.hr ? ', cap ' + hrTxt(c.cap.hr) : '') + (c.cap.n ? ', max ' + c.cap.n + ' raises' : '') + ')' : 'none on this track')) + '</span>' +
+    (avail.length && !c.reached ? '<div class="gccp-mut" data-cp-avail="1">' + avail.map(function(x){ return esc(x.name.replace(/ \(.*$/, '')) + ' +' + hrTxt(x.hr); }).join(' · ') + '</div>' : '') +
+    (nB.length ? '<div class="gccp-mut" data-cp-notpm="1">⭐ ' + nB.map(function(x){ return esc(x.cert); }).join(', ') + ': $0 on this track — the master-level raise comes with the PM promotion (on a PM track it would add +' + hrTxt(pmAdd(nB, p)) + ').</div>' : '') +
+    (isDual(c.track) ? '<div class="gccp-mut" data-cp-ladder="1">🪜 Dual tech → Dual foreman (a supervisor license, or OSHA 30 + 1 year) → PM (Master Restorer) or Environmental supervisor / PM (lead + asbestos supervisor). Cross-training bonus +' + hrTxt(num(p.xtrainHr) > 0 ? p.xtrainHr : 2) + ' once with WRT + AMRT + lead worker + asbestos worker + HAZWOPER 40 (' + xtrainHas(got).length + ' of ' + XTRAIN.length + ').</div>' : '') +
+    rateLine(u, p, c) +
+    '<div class="gccp-mut" style="margin-top:4px" data-cp-policy="1">🎓 ' + esc(POLICY) + '.</div>' +
+    '<div class="gccp-mut" style="margin-top:4px">🚗 Course travel paid by GrayCo: ' + (tv.length ? '<b data-cp-tvsum="1">$' + tvSum.toFixed(2) + '</b> (' + tv.map(function(x){ return esc(x.cert) + ' ' + esc(fmt(x.date)); }).join(' · ') + ')' : 'none yet') +
+    ' <button type="button" class="gccp-btn" style="font-size:12px;padding:2px 8px" data-cp="tvform" data-em="' + esc(em) + '">＋ Course travel</button>' + (typeof W._gcFieldLogExpense === 'function' ? ' <button type="button" class="gccp-btn" style="font-size:12px;padding:2px 8px" data-cp="receipt">🧾 Snap the receipt</button>' : '') + '</div>' +
+    (UI.tv === em ? '<div class="gccp-card" data-cp-tvbox="' + esc(em) + '" style="margin:6px 0;padding:8px"><b>🚗 Course travel (company-paid, linked to the certificate)</b><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;margin-top:6px">' +
+      '<label>Certificate<br><input class="gccp-in" list="gccp-tvc-' + esc(em) + '" data-tv="cert" style="width:220px"><datalist id="gccp-tvc-' + esc(em) + '">' + certs.map(function(n){ return '<option value="' + esc(n) + '">'; }).join('') + '</datalist></label>' +
+      '<label>Date<br><input class="gccp-in" type="date" data-tv="date" value="' + esc(today()) + '"></label><label>Miles<br><input class="gccp-in" data-tv="miles" style="width:70px"></label>' +
+      '<label>$/mile<br><input class="gccp-in" data-tv="rate" style="width:60px" value="' + esc(p.mileRate) + '"></label><label>Hotel $<br><input class="gccp-in" data-tv="hotel" style="width:80px"></label><label>Other $ (meals, flight)<br><input class="gccp-in" data-tv="other" style="width:80px"></label>' +
+      '<button type="button" class="gccp-btn pri" data-cp="tvsave" data-em="' + esc(em) + '">Save travel</button></div></div>' : '') + '</div>';
+}
+/* patch CERTROLE: per-person exceptions (admins only — the whole panel is admins only) */
+function excBox(u, p, tr){
+  var em = low(u.email), ex = excOf(u, p), log = p.excLog.filter(function(x){ return low(x.email) === em; }), open = UI.exc === em;
+  var reqs = arr(tr && tr.reqs), cp = ex.cap;
+  return '<div class="gccp-rec" data-cp-excbox="' + esc(em) + '"><b>✋ Exceptions</b> <button type="button" class="gccp-btn" style="font-size:12px;padding:2px 8px" data-cp="excform" data-em="' + esc(em) + '">' + (open ? 'Close' : '⚙ Set an exception') + '</button>' +
+    (log.length ? '<ul style="margin:4px 0 0 18px" data-cp-exclog="1">' + log.slice(-8).map(function(x){ return '<li class="gccp-mut">Exception by ' + esc(x.by) + ' on ' + esc(fmt(x.at)) + ': ' + esc(x.text) + ' — ' + esc(x.reason) + '</li>'; }).join('') + '</ul>' : ' <span class="gccp-mut">none</span>') +
+    (open ? '<div class="gccp-card" style="margin:6px 0;padding:8px;display:grid;gap:8px" data-cp-excform="' + esc(em) + '">' +
+      '<div><label><input type="checkbox" data-x="pmnm"' + (isObj(ex.pmNoMaster) ? ' checked' : '') + '> <b>PM without Master Restorer</b> (requirement waived; promotion eligible)</label> <input class="gccp-in" data-x="pmnmwhy" placeholder="Reason (required)" style="width:240px"> <button type="button" class="gccp-btn" data-cp="xpm" data-em="' + esc(em) + '">Save</button></div>' +
+      '<div><b>Raise cap for this person</b> <select class="gccp-in" data-x="capmode"><option value="def"' + (!isObj(cp) ? ' selected' : '') + '>Role default</option><option value="none"' + (isObj(cp) && cp.none ? ' selected' : '') + '>No cap</option><option value="hr"' + (isObj(cp) && !cp.none ? ' selected' : '') + '>Custom +$/hr</option></select> $<input class="gccp-in" data-x="caphr" style="width:60px" value="' + esc(isObj(cp) && !cp.none ? cp.hr : '') + '"> <input class="gccp-in" data-x="capwhy" placeholder="Reason (required)" style="width:220px"> <button type="button" class="gccp-btn" data-cp="xcap" data-em="' + esc(em) + '">Save</button></div>' +
+      '<div><b>Waive a requirement</b> <select class="gccp-in" data-x="wvid" style="max-width:260px">' + reqs.filter(function(r){ return !r.rec; }).map(function(r){ return '<option value="' + esc(r.id) + '">' + esc(r.name) + '</option>'; }).join('') + '</select> <input class="gccp-in" data-x="wvwhy" placeholder="Reason (required)" style="width:220px"> <button type="button" class="gccp-btn" data-cp="xwaive" data-em="' + esc(em) + '">Waive</button>' +
+        Object.keys(isObj(ex.waive) ? ex.waive : {}).map(function(id){ return ' <button type="button" class="gccp-btn" style="font-size:12px" data-cp="xunwaive" data-em="' + esc(em) + '" data-id="' + esc(id) + '">Undo waiver: ' + esc(id) + '</button>'; }).join('') + '</div>' +
+      '<div><b>One-off raise</b> $<input class="gccp-in" data-x="mamt" style="width:70px"> ' + ((tr && tr.unit) === 'yr' ? '/yr' : '/hr') + ' <input class="gccp-in" data-x="mwhy" placeholder="Reason (required)" style="width:220px"> <button type="button" class="gccp-btn grn" data-cp="xraise" data-em="' + esc(em) + '">Add the raise</button></div>' +
+    '</div>' : '') + '</div>';
+}
 /* patch CERTROLE: what the "when" line under a requirement says (no hire-date deadlines) */
 function whenOf(r){ return r.rec ? (r.legal ? 'recommended — law only if doing that field work' : 'recommended — no deadline') : r.cond ? 'law — only for that work' : r.legal ? 'law — before that kind of work' : 'keep on — no deadline'; }
 /* one person's table: required rows (optional target date on the keep-on ones) or recommended rows */
 function reqRows(u, sts, rec){
   var em = low(u.email);
   return '<table class="gccp-tbl gccp-fx" data-cp-sec="' + (rec ? 'rec' : 'req') + '"><tr><th>' + (rec ? 'Recommended' : 'Required') + '</th><th>Status</th><th>Why</th></tr>' + sts.map(function(x){
-    var goal = !rec && !x.r.legal && x.st.k !== 'ok';
+    var goal = !rec && !x.r.legal && x.st.k !== 'ok' && x.st.k !== 'waived';
     return '<tr data-cp-req="' + esc(x.r.id) + '"><td>' + esc(x.r.name) + (x.r.legal ? ' <span class="gccp-law">LAW</span>' : '') + '<div class="gccp-mut">' + whenOf(x.r) + '</div></td><td>' + stChip(x.st) +
       (goal ? '<div class="gccp-mut" style="margin-top:3px">Target (optional) <input class="gccp-in" type="date" style="padding:2px 4px;font-size:12px" data-cp-target="' + esc(em + '|' + x.r.id) + '" value="' + esc(x.target || '') + '"></div>' : '') +
       '</td><td class="gccp-mut">' + esc(x.r.why) + '</td></tr>'; }).join('') + '</table>';
@@ -195785,36 +195948,52 @@ function reqRows(u, sts, rec){
 
 function render(){
   if (!OV) return; css();
-  var p = plan(), ppl = staff(), tabs = [['people', '👥 People'], ['raises', '💵 Raises due'], ['reqs', '📋 Requirements by role'], ['amounts', '⚙ Raise amounts'], ['bonus', '🏆 PM year-end bonus'], ['pay', '⏱ Emergency & overtime pay']];
+  var p = plan(), ppl = staff(), tabs = [['people', '👥 People'], ['raises', '💵 Raises due'], ['reqs', '📋 Requirements by role'], ['amounts', '⚙ Raise amounts'], ['outlook', '📈 Raise outlook & caps'], ['bonus', '🏆 PM year-end bonus'], ['pay', '⏱ Emergency & overtime pay']];
   var h = '<div class="gccp-h"><b>🎖 Required certs, raises &amp; promotion</b><span><button type="button" class="gccp-btn" data-cp="close">✕</button></span></div>' +
     '<p class="gccp-mut">Required and recommended certificates by role and company (no hire-date deadlines — keep on), a raise for every certificate earned, and ⭐ promotion eligibility once someone holds a Master designation. The certificates themselves live in 📜 Certifications — add one there and it shows up here.</p>' +
-    (p.suggested ? '<div class="gccp-note">💡 The raise amounts are <b>suggestions</b> until you set them in ⚙ Raise amounts. Lines marked <span class="gccp-law">LAW</span> are legally required when the employee does that work (cited on each line); check the current state rules on renewal.</div>' : '') +
+    '<div class="gccp-note" data-cp-rulenote="1">💵 <b>The owner\'s raise rule</b> (each one editable in ⚙ Raise amounts): <b>$5/hr</b> for Master Restorer, the Master designations, lead / asbestos <b>supervisor</b>, HAZWOPER 40-hour and any other 32–40-hour supervisor / master-level class · <b>$2/hr</b> for OSHA 30 · <b>$1/hr</b> for everything else (IICRC courses, RRP, lead / asbestos worker, OSHA 10 …). Salaried: × 2,080 hours a year. 🎓 ' + esc(POLICY) + '. Lines marked <span class="gccp-law">LAW</span> are legally required when the employee does that work (cited on each line); check the current state rules on renewal.</div>' +
     '<div class="gccp-tabs">' + tabs.map(function(t){ return '<span class="gccp-tab' + (UI.tab === t[0] ? ' on' : '') + '" data-cptab="' + t[0] + '">' + t[1] + (t[0] === 'raises' ? ' (' + ppl.reduce(function(n, u){ return n + raisesDue(u, p).length; }, 0) + ')' : '') + '</span>'; }).join('') + '</div>';
   if (!LOADED) h += '<p>Loading…</p>';
   else if (UI.tab === 'people') h += ppl.map(function(u){
-    var tk = trackOf(u, p), tr = p.tracks[tk] || { reqs: [] }, hired = hiredOf(u, p), held = heldBy(u.email), ms = masterOf(u), rd = raisesDue(u, p);
+    var tk = trackOf(u, p), tr = p.tracks[tk] || { reqs: [] }, hired = hiredOf(u, p), held = heldBy(u.email), ms = masterOf(u, p), rd = raisesDue(u, p);
     /* patch CERTROLE: required vs 💡 recommended; the count and the bar are the required ones only */
-    var sts = arr(tr.reqs).map(function(r){ var tg = targetOf(u, r.id, p); return { r: r, st: reqStatus(r, held, hired, tg), target: tg }; }),
+    var ex = excOf(u, p), wv = isObj(ex.waive) ? ex.waive : {};
+    var sts = arr(tr.reqs).map(function(r){ var tg = targetOf(u, r.id, p), st = reqStatus(r, held, hired, tg), w = wv[r.id] || (r.id === 'mr' && ex.pmNoMaster);   /* patch CERTROLE: an admin's waiver */
+      if (w && st.k !== 'ok') st = { k: 'waived', l: '✋ Waived (exception)' }; return { r: r, st: st, target: tg }; }),
       req = sts.filter(function(x){ return !x.r.rec; }), rec = sts.filter(function(x){ return x.r.rec; }),
-      okN = req.filter(function(x){ return x.st.k === 'ok'; }).length, okR = rec.filter(function(x){ return x.st.k === 'ok'; }).length;
-    return '<div class="gccp-card" data-cp-person="' + esc(low(u.email)) + '" data-cp-tk="' + esc(tk) + '"><div class="gccp-h"><span><b style="font-size:15px">' + esc(u.name || u.email) + '</b> <span class="gccp-mut">' + esc(u.role || '') + '</span> ' + (ms ? '<span class="gccp-chip star">' + esc(ms.l) + '</span>' : '') + (rd.length ? '<span class="gccp-chip amb">💵 ' + rd.length + ' raise' + (rd.length === 1 ? '' : 's') + ' due</span>' : '') + '</span>' +
+      okN = req.filter(function(x){ return x.st.k === 'ok' || x.st.k === 'waived'; }).length, okR = rec.filter(function(x){ return x.st.k === 'ok'; }).length;
+    return '<div class="gccp-card" data-cp-person="' + esc(low(u.email)) + '" data-cp-tk="' + esc(tk) + '"><div class="gccp-h"><span><b style="font-size:15px">' + esc(u.name || u.email) + '</b> <span class="gccp-mut">' + esc(u.role || '') + '</span> ' + (ms ? '<span class="gccp-chip ' + (ms.k === 'need' ? 'gry' : 'star') + '" data-cp-ms="' + esc(ms.k) + '">' + esc(ms.l) + '</span>' : '') + (rd.length ? '<span class="gccp-chip amb">💵 ' + rd.length + ' raise' + (rd.length === 1 ? '' : 's') + ' due</span>' : '') + '</span>' +
       '<span><select class="gccp-in" title="Track — saved for this person only" data-cp-track="' + esc(low(u.email)) + '">' + Object.keys(p.tracks).map(function(k){ return '<option value="' + k + '"' + (k === tk ? ' selected' : '') + '>' + esc(p.tracks[k].label) + '</option>'; }).join('') + '</select> ' +
       'Hired <input class="gccp-in" type="date" data-cp-hired="' + esc(low(u.email)) + '" value="' + esc(hired) + '"></span></div>' +
       (req.length ? '<div class="gccp-mut" style="margin:4px 0 0" data-cp-count="1">' + okN + ' of ' + req.length + ' required certificates held</div><div class="gccp-bar"><i style="width:' + Math.round(100 * okN / req.length) + '%"></i></div>' + reqRows(u, req, false) : '<p class="gccp-mut">No certificates required for this role.</p>') +
-      (rec.length ? '<div class="gccp-rec" data-cp-recsec="1"><b>💡 Recommended</b> <span class="gccp-mut">— not required for this role, no due date; each one still earns its raise · ' + okR + ' of ' + rec.length + ' held</span>' + reqRows(u, rec, true) + '</div>' : '') + '</div>';
+      (rec.length ? '<div class="gccp-rec" data-cp-recsec="1"><b>💡 Recommended</b> <span class="gccp-mut">— not required for this role, no due date; each one still earns its raise · ' + okR + ' of ' + rec.length + ' held</span>' + reqRows(u, rec, true) + '</div>' : '') +
+      raiseBox(u, p, held) + excBox(u, p, tr) + '</div>';
   }).join('') || '<p class="gccp-mut">No active employees.</p>';
   else if (UI.tab === 'raises') { var rows = []; ppl.forEach(function(u){ raisesDue(u, p).forEach(function(r){ rows.push({ u: u, r: r }); }); });
-    var past = p.done.slice().reverse().slice(0, 60);
-    h += '<div class="gccp-note">Every certificate an employee earns is a raise. When one is added in 📜 Certifications it lands here to approve (the amount comes from ⚙ Raise amounts; hourly people get $/hr, salaried people $/yr). Approve it, then change their pay rate in 💰 Pay Structures.</div>' +
-      (rows.length ? '<table class="gccp-tbl" data-cp-raises="1"><tr><th>Employee</th><th>Certificate</th><th>Raise</th><th></th></tr>' + rows.map(function(x, i){ return '<tr><td><b>' + esc(x.u.name) + '</b></td><td>' + esc(x.r.cert) + '<div class="gccp-mut">' + esc(x.r.ruleName) + '</div></td><td><input class="gccp-in" style="width:90px" data-cp-amt="' + i + '" value="' + esc(x.r.amount) + '"> ' + (x.r.unit === 'yr' ? '/yr' : '/hr') + '</td><td><button type="button" class="gccp-btn grn" data-cp="approve" data-i="' + i + '">✅ Approve</button> <button type="button" class="gccp-btn" data-cp="skip" data-i="' + i + '">Not a raise</button></td></tr>'; }).join('') + '</table>' : '<p class="gccp-mut">No raises waiting. 👍</p>') +
+    var past = p.done.slice().reverse().slice(0, 60), capped = []; ppl.forEach(function(u){ var c = raiseCalc(u, p); c.blocked.forEach(function(r){ capped.push({ u: u, r: r, c: c }); }); });
+    h += '<div class="gccp-note">Every certificate an employee earns is a raise. When one is added in 📜 Certifications it lands here to approve (the amount comes from ⚙ Raise amounts; hourly people get $/hr, salaried people $/yr; a raise is cut or held back at the role\'s cap in 📈 Raise outlook &amp; caps). Approve it, then change their pay rate in 💰 Pay Structures.</div>' +
+      (rows.length ? '<table class="gccp-tbl" data-cp-raises="1"><tr><th>Employee</th><th>Certificate</th><th>Raise</th><th></th></tr>' + rows.map(function(x, i){ return '<tr><td><b>' + esc(x.u.name) + '</b></td><td>' + esc(x.r.cert) + '<div class="gccp-mut">' + esc(x.r.ruleName) + '</div></td><td><input class="gccp-in" style="width:90px" data-cp-amt="' + i + '" value="' + esc(x.r.amount) + '"> ' + (x.r.unit === 'yr' ? '/yr' : '/hr') + (x.r.trimmed ? '<div class="gccp-mut">cut to the cap</div>' : '') + '</td><td><button type="button" class="gccp-btn grn" data-cp="approve" data-i="' + i + '">✅ Approve</button> <button type="button" class="gccp-btn" data-cp="skip" data-i="' + i + '">Not a raise</button></td></tr>'; }).join('') + '</table>' : '<p class="gccp-mut">No raises waiting. 👍</p>') +
+      (capped.length ? '<h3 style="margin:14px 0 4px">🧢 Held back</h3><table class="gccp-tbl" data-cp-capped="1"><tr><th>Employee</th><th>Certificate</th><th>Why</th></tr>' + capped.map(function(x){ return '<tr><td><b>' + esc(x.u.name) + '</b></td><td>' + esc(x.r.cert) + '</td><td><span class="gccp-chip amb">' + (x.r.why === 'master' ? '⭐ a master level is paid once' : 'cap reached (' + (x.c.cap.hr ? hrTxt(x.c.cap.hr) : x.c.cap.n + ' raises') + ')') + '</span></td></tr>'; }).join('') + '</table>' : '') +
       '<h3 style="margin:14px 0 4px">History</h3>' + (past.length ? '<table class="gccp-tbl"><tr><th>When</th><th>Employee</th><th>Certificate</th><th>Raise</th><th>By</th></tr>' + past.map(function(d){ var u = ppl.filter(function(x){ return low(x.email) === low(d.email); })[0]; return '<tr><td>' + esc(fmt(d.at)) + '</td><td>' + esc(u ? u.name : d.email) + '</td><td>' + esc(d.cert) + '</td><td>' + (d.skip ? '<span class="gccp-chip gry">not a raise</span>' : esc(money(d.amount, d.unit))) + '</td><td class="gccp-mut">' + esc(d.by) + '</td></tr>'; }).join('') + '</table>' : '<p class="gccp-mut">None yet.</p>');
     UI.rows = rows; }
-  else if (UI.tab === 'reqs') h += Object.keys(p.tracks).map(function(k){ var tr = p.tracks[k];
+  else if (UI.tab === 'reqs') h += '<div class="gccp-note" data-cp-policy="1">🎓 Training policy: ' + esc(POLICY) + '. Training days go on the timesheet as 🎓 Training (unpaid): the hours are recorded, they pay $0 and do not count toward overtime.</div>' + Object.keys(p.tracks).map(function(k){ var tr = p.tracks[k];
     return '<div class="gccp-card"><b>' + esc(tr.label) + '</b> <span class="gccp-mut">' + (tr.unit === 'yr' ? 'salaried — raises in $/yr' : 'hourly — raises in $/hr') + '</span>' +
       (tr.reqs.length ? '<table class="gccp-tbl"><tr><th>Certificate</th><th>Kind</th><th>Why</th><th></th></tr>' + tr.reqs.map(function(r, i){ return '<tr><td>' + esc(r.name) + (r.legal ? ' <span class="gccp-law">LAW</span>' : '') + '</td><td>' + (r.legal ? (r.rec ? '<span class="gccp-chip gry">💡 Law only if doing that field work</span>' : '<span class="gccp-chip amb">📌 Law — before that work</span>') : '<select class="gccp-in" data-cp-rec="' + k + '|' + i + '"><option value="req"' + (r.rec ? '' : ' selected') + '>Required — keep on</option><option value="rec"' + (r.rec ? ' selected' : '') + '>💡 Recommended</option></select>') + '</td><td class="gccp-mut">' + esc(r.why) + '</td><td><button type="button" class="gccp-btn" data-cp="rmreq" data-k="' + k + '" data-i="' + i + '">Remove</button></td></tr>'; }).join('') + '</table>' : '<p class="gccp-mut">None.</p>') +
       '<div style="margin-top:6px"><input class="gccp-in" style="width:320px;max-width:100%" placeholder="＋ Add a requirement (e.g. Asbestos inspector)" data-cp-newreq="' + k + '"> <select class="gccp-in" data-cp-newrec="' + k + '"><option value="req">Required — keep on</option><option value="rec">💡 Recommended</option></select> <button type="button" class="gccp-btn pri" data-cp="addreq" data-k="' + k + '">Add</button></div></div>'; }).join('');
-  else if (UI.tab === 'amounts') h += '<div class="gccp-note">The raise for each certificate earned. Hourly employees get the $/hr amount; salaried PMs and managers get the $/yr amount. ⭐ Anyone holding a Master designation is promotion eligible.</div><table class="gccp-tbl"><tr><th>Certificate</th><th>Hourly raise</th><th>Salaried raise</th></tr>' +
-    p.raises.map(function(r, i){ return '<tr><td>' + esc(r.name) + (r.each ? '<div class="gccp-mut">each one</div>' : '') + '</td><td>$<input class="gccp-in" style="width:70px" data-cp-hr="' + i + '" value="' + esc(r.hr) + '">/hr</td><td>$<input class="gccp-in" style="width:90px" data-cp-yr="' + i + '" value="' + esc(r.yr) + '">/yr</td></tr>'; }).join('') + '</table><p><button type="button" class="gccp-btn pri" data-cp="saveamts">Save amounts</button></p>';
+  else if (UI.tab === 'amounts') h += '<div class="gccp-note">The raise for each certificate earned — <b>the owner\'s amounts</b>. Hourly employees get the $/hr amount; salaried PMs and managers get the $/yr amount (blank = $/hr × 2,080). Course hours and level are for reference: a blank $/hr follows the rule <b>32+ hours or supervisor / master level → $5, else $1</b>. OSHA 30 is a 30-hour class: the owner set it at $2. ⭐ Anyone holding a Master designation is promotion eligible.</div><table class="gccp-tbl" data-cp-amts="1"><tr><th>Certificate</th><th>Course hours</th><th>Level</th><th>Hourly raise</th><th>Salaried raise</th></tr>' +
+    p.raises.map(function(r, i){ return '<tr data-cp-rule="' + esc(r.id) + '"><td>' + esc(r.name) + (r.each ? '<div class="gccp-mut">each one</div>' : '') + '</td><td><input class="gccp-in" style="width:60px" data-cp-hrs="' + i + '" value="' + esc(r.hours == null ? '' : r.hours) + '"> h</td><td><select class="gccp-in" data-cp-lvl="' + i + '">' + [['', '—'], ['supervisor', 'Supervisor'], ['master', 'Master']].map(function(o){ return '<option value="' + o[0] + '"' + (s(r.level) === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></td>' +
+      '<td>$<input class="gccp-in" style="width:70px" data-cp-hr="' + i + '" placeholder="' + esc(autoHr(r)) + '" value="' + esc(r.hr == null ? '' : r.hr) + '">/hr</td><td>$<input class="gccp-in" style="width:90px" data-cp-yr="' + i + '" placeholder="' + esc(Math.round(rateOf(r) * HRS_YR)) + '" value="' + esc(r.yr == null ? '' : r.yr) + '">/yr</td></tr>'; }).join('') + '</table><p><button type="button" class="gccp-btn pri" data-cp="saveamts">Save amounts</button></p>';
+  else if (UI.tab === 'outlook') { var mo = p.masterOnce;
+    h += '<div class="gccp-note">📈 What each role can earn from certificates: the <b>starting rate</b> (no certificates), every certificate on the role that pays a raise (required and 💡 recommended), and the <b>top rate</b>. An optional <b>cap</b> per role — "max $/hr from certificates" and / or "max number of certificate raises" (blank = no cap) — holds back raises past it ("cap reached").</div>' +
+      '<label style="display:block;margin:6px 0"><input type="checkbox" data-cp-masteronce="1"' + (mo ? ' checked' : '') + '> ⭐ <b>Highest master level pays once</b> — Master Restorer already includes Master Water and Master Fire &amp; Smoke Restorer, so one $5 raise for the master path instead of one per designation. <span class="gccp-mut">(The owner has not decided — on by default.)</span></label>' +
+      '<table class="gccp-tbl" data-cp-outlook="1"><tr><th>Role</th><th>Certificates that pay</th><th>Starting rate</th><th>Max certificate raises</th><th>Max $/hr cap</th><th>Max # raises</th><th>Top rate</th></tr>' +
+      Object.keys(p.tracks).map(function(k){ var tr = p.tracks[k], pl = payList(k, p), o = outlookOf(k, p), alt = outlookOf(k, p, !mo), st = startOf(k, p), cp = o.cap, yr = tr.unit === 'yr';
+        return '<tr data-cp-ol="' + k + '"><td><b>' + esc(tr.label) + '</b><div class="gccp-mut">' + (yr ? 'salaried' : 'hourly') + '</div></td><td class="gccp-mut">' + (pl.length ? pl.map(function(x){ return esc(x.name.replace(/ \(.*$/, '').replace(/ — .*$/, '')) + ' <b>+' + hrTxt(x.hr) + '</b>' + (x.rec ? ' 💡' : ''); }).join(' · ') : 'none') + '</td>' +
+          '<td>$<input class="gccp-in" style="width:70px" data-cp-start="' + k + '" value="' + esc(st > 0 ? st : '') + '" placeholder="' + (yr ? '/yr' : '/hr') + '"></td>' +
+          '<td data-cp-tot="' + k + '"><b>+' + hrTxt(o.tot) + '</b><div class="gccp-mut">' + pl.length + ' raise' + (pl.length === 1 ? '' : 's') + (yr ? ' · $' + Math.round(o.tot * HRS_YR).toLocaleString('en-US') + '/yr' : '') + (o.masters ? ' · master path ' + (mo ? 'once' : 'each') + ' (' + (mo ? 'off' : 'on') + ': +' + hrTxt(alt.tot) + ')' : '') + '</div></td>' +
+          '<td>$<input class="gccp-in" style="width:60px" data-cp-caphr="' + k + '" value="' + esc(cp.hr || '') + '"></td><td><input class="gccp-in" style="width:50px" data-cp-capn="' + k + '" value="' + esc(cp.n || '') + '"></td>' +
+          '<td data-cp-top="' + k + '">' + (st > 0 ? '<b>' + amtTxt(st + (yr ? o.withCap * HRS_YR : o.withCap), tr.unit) + '</b>' : '<b>+' + hrTxt(o.withCap) + '</b>') + (cp.hr || cp.n ? '<div class="gccp-mut">with the cap</div>' : '') + '</td></tr>'; }).join('') +
+      '</table><p><button type="button" class="gccp-btn pri" data-cp="savecaps">Save starting rates &amp; caps</button></p>'; }
   else if (UI.tab === 'bonus') { var yr = UI.year, B = isObj(p.bonus[yr]) ? p.bonus[yr] : {}, pms = ppl.filter(function(u){ return /_pm$|mit_manager/.test(trackOf(u, p)); });
     h += '<div class="gccp-note">🏆 PMs get a bonus at the end of the year based on performance. Suggested measures: gross profit against the estimate, collections (days to get paid), customer reviews, jobs finished on schedule, safety (no injuries / OSHA issues), certificates done on time, and 🚩 missed emergency calls. The owners set the amount.</div>' +
       '<div>Year <select class="gccp-in" data-cp-year="1">' + [0, 1, 2].map(function(k){ var y = String(new Date().getFullYear() - k); return '<option' + (y === yr ? ' selected' : '') + '>' + y + '</option>'; }).join('') + '</select></div>' +
@@ -195848,12 +196027,38 @@ function open_(tab){
     var a = t.getAttribute('data-cp'), u0 = me();
     if (a === 'close') { OV.remove(); OV = null; return; }
     if (a === 'approve' || a === 'skip') { var x = (UI.rows || [])[+t.getAttribute('data-i')]; if (!x) return; var amt = num((OV.querySelector('[data-cp-amt="' + t.getAttribute('data-i') + '"]') || {}).value);
-      save(function(p){ p.done.push({ id: uid(), email: low(x.u.email), rule: x.r.rule, cert: x.r.cert, amount: a === 'skip' ? 0 : amt, unit: x.r.unit, at: nowISO(), by: s(u0.name || u0.email), skip: a === 'skip' }); }).then(function(){ toast(a === 'skip' ? 'Marked: not a raise' : '💵 Raise approved — ' + money(amt, x.r.unit) + ' for ' + s(x.u.name) + '. Update their rate in 💰 Pay Structures.'); render(); }); }
+      save(function(p){ p.done.push({ id: uid(), email: low(x.u.email), rule: x.r.rule, cert: x.r.cert, amount: a === 'skip' ? 0 : amt, hr: a === 'skip' ? 0 : x.r.unit === 'yr' ? Math.round(amt / HRS_YR * 100) / 100 : amt, master: !!x.r.master, unit: x.r.unit, at: nowISO(), by: s(u0.name || u0.email), skip: a === 'skip' }); }).then(function(){ toast(a === 'skip' ? 'Marked: not a raise' : '💵 Raise approved — ' + money(amt, x.r.unit) + ' for ' + s(x.u.name) + '. Update their rate in 💰 Pay Structures.'); render(); }); }
     if (a === 'rmreq') { var k = t.getAttribute('data-k'), i = +t.getAttribute('data-i'); save(function(p){ p.tracks[k].reqs.splice(i, 1); }).then(render); }
     if (a === 'addreq') { var k2 = t.getAttribute('data-k'), nm = s((OV.querySelector('[data-cp-newreq="' + k2 + '"]') || {}).value), dd = s((OV.querySelector('[data-cp-newrec="' + k2 + '"]') || {}).value) === 'rec'; if (!nm) return toast('Type the certificate name.', true);
       var words = nm.replace(/[^A-Za-z0-9 ]+/g, ' ').trim().split(/\s+/).filter(function(w){ return w.length > 2; }).slice(0, 3).map(function(w){ return w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); });
       save(function(p){ p.tracks[k2].reqs.push({ id: uid(), name: nm, m: words.length ? words.join('.*') : nm, days: 0, why: dd ? 'Recommended' : 'GrayCo requirement', legal: false, rec: dd }); }).then(function(){ toast('Added'); render(); }); }
-    if (a === 'saveamts') save(function(p){ p.raises.forEach(function(r, i){ var hr = OV.querySelector('[data-cp-hr="' + i + '"]'), yr = OV.querySelector('[data-cp-yr="' + i + '"]'); if (hr) r.hr = num(hr.value); if (yr) r.yr = num(yr.value); }); p.suggested = false; }).then(function(){ toast('💵 Raise amounts saved'); render(); });
+    if (a === 'saveamts') save(function(p){ var v = function(sel, i){ var e = OV.querySelector('[' + sel + '="' + i + '"]'); return e ? s(e.value) : null; };   /* patch CERTROLE: hours, level, blank = the rule */
+      p.raises.forEach(function(r, i){ var hr = v('data-cp-hr', i), yr = v('data-cp-yr', i), hs = v('data-cp-hrs', i), lv = v('data-cp-lvl', i);
+        if (hr != null) r.hr = hr === '' ? null : num(hr); if (yr != null) r.yr = yr === '' ? null : num(yr); if (hs != null) r.hours = hs === '' ? null : num(hs); if (lv != null) r.level = lv; }); p.suggested = false; }).then(function(){ toast('💵 Raise amounts saved'); render(); });
+    if (a === 'savecaps') save(function(p){ p.caps = isObj(p.caps) ? p.caps : {}; Object.keys(p.tracks).forEach(function(k){ var h1 = OV.querySelector('[data-cp-caphr="' + k + '"]'), n1 = OV.querySelector('[data-cp-capn="' + k + '"]'), s1 = OV.querySelector('[data-cp-start="' + k + '"]');
+        if (s1) { p.tracks[k].start = s(s1.value) === '' ? null : num(s1.value); }
+        if (!h1 && !n1) return; var c = { hr: h1 && s(h1.value) !== '' ? num(h1.value) : null, n: n1 && s(n1.value) !== '' ? Math.round(num(n1.value)) : null }; if (c.hr == null && c.n == null) delete p.caps[k]; else p.caps[k] = c; }); }).then(function(){ toast('🧢 Starting rates & caps saved'); render(); });
+    if (a === 'excform') { var ee = t.getAttribute('data-em'); UI.exc = UI.exc === ee ? '' : ee; render(); }
+    if (/^x(pm|cap|waive|unwaive|raise)$/.test(a || '')) { var xe = t.getAttribute('data-em'), fb = OV.querySelector('[data-cp-excform="' + xe + '"]'), xv = function(f){ var el = fb && fb.querySelector('[data-x="' + f + '"]'); return el ? (el.type === 'checkbox' ? el.checked : s(el.value)) : ''; };
+      var why = a === 'xpm' ? xv('pmnmwhy') : a === 'xcap' ? xv('capwhy') : a === 'xwaive' ? xv('wvwhy') : a === 'xraise' ? xv('mwhy') : 'undone';
+      if (!isAdmin()) return toast('Only admins can set exceptions.', true);
+      if (!why) return toast('Type the reason for the exception.', true);
+      var person = staff().filter(function(x){ return low(x.email) === xe; })[0] || { email: xe, name: xe }, by = s(u0.name || u0.email), at = nowISO(), txt = '';
+      if (a === 'xraise' && !(num(xv('mamt')) > 0)) return toast('Type the raise amount.', true);
+      save(function(p){ var x = isObj(p.people[xe]) ? p.people[xe] : {}; x.exc = isObj(x.exc) ? x.exc : {}; var stamp = { reason: why.slice(0, 300), by: by, at: at };
+        if (a === 'xpm') { if (xv('pmnm')) { x.exc.pmNoMaster = stamp; txt = 'PM without Master Restorer'; } else { delete x.exc.pmNoMaster; txt = 'PM without Master Restorer — removed'; } }
+        if (a === 'xcap') { var md = xv('capmode'); if (md === 'def') { delete x.exc.cap; txt = 'raise cap back to the role default'; } else if (md === 'none') { x.exc.cap = Object.assign({ none: true }, stamp); txt = 'no raise cap'; } else { x.exc.cap = Object.assign({ hr: num(xv('caphr')) }, stamp); txt = 'raise cap +' + hrTxt(xv('caphr')); } }
+        if (a === 'xwaive') { x.exc.waive = isObj(x.exc.waive) ? x.exc.waive : {}; x.exc.waive[xv('wvid')] = stamp; txt = 'requirement waived: ' + xv('wvid'); }
+        if (a === 'xunwaive') { var wid = t.getAttribute('data-id'); if (isObj(x.exc.waive)) delete x.exc.waive[wid]; txt = 'waiver undone: ' + wid; }
+        if (a === 'xraise') { var un = ((p.tracks[trackOf(person, p)] || {}).unit) || 'hr', am = num(xv('mamt')); p.done.push({ id: uid(), email: xe, rule: 'manual:' + uid(), cert: 'One-off raise — ' + why.slice(0, 120), amount: am, hr: un === 'yr' ? Math.round(am / HRS_YR * 100) / 100 : am, unit: un, at: at, by: by, manual: true, reason: why.slice(0, 300) }); txt = 'one-off raise ' + amtTxt(am, un); }
+        p.people[xe] = x; p.excLog = arr(p.excLog); p.excLog.push({ id: uid(), email: xe, kind: a, text: txt, reason: why.slice(0, 300), by: by, at: at }); })
+        .then(function(){ toast('✋ Exception saved for ' + s(person.name)); render(); }); }
+    if (a === 'tvform') { var e1 = t.getAttribute('data-em'); UI.tv = UI.tv === e1 ? '' : e1; render(); }
+    if (a === 'receipt') { try { W._gcFieldLogExpense(); } catch (e2) {} }
+    if (a === 'tvsave') { var e3 = t.getAttribute('data-em'), bx = OV.querySelector('[data-cp-tvbox="' + e3 + '"]'), g = function(f){ var el = bx && bx.querySelector('[data-tv="' + f + '"]'); return el ? s(el.value) : ''; };
+      if (!g('cert')) return toast('Pick the certificate the trip was for.', true);
+      save(function(p){ p.travel = arr(p.travel); p.travel.push({ id: uid(), email: e3, cert: g('cert').slice(0, 160), date: ymd(g('date')) || today(), miles: num(g('miles')), rate: num(g('rate')) || p.mileRate, hotel: num(g('hotel')), other: num(g('other')), by: s(u0.name || u0.email), at: nowISO() }); })
+        .then(function(){ UI.tv = ''; toast('🚗 Course travel saved (company-paid)'); render(); }); }
     if (a === 'savebonus') save(function(p){ var y = UI.year; p.bonus[y] = isObj(p.bonus[y]) ? p.bonus[y] : {}; Array.prototype.forEach.call(OV.querySelectorAll('[data-cp-ba]'), function(inp){ var em = inp.getAttribute('data-cp-ba');
         p.bonus[y][em] = { amount: num(inp.value), notes: s((OV.querySelector('[data-cp-bn="' + em + '"]') || {}).value).slice(0, 2000), paid: !!(OV.querySelector('[data-cp-bp="' + em + '"]') || {}).checked, by: s(u0.name || u0.email), at: nowISO() }; }); }).then(function(){ toast('🏆 ' + UI.year + ' bonuses saved'); render(); });
   });
@@ -195864,13 +196069,14 @@ function open_(tab){
     var dk = t.getAttribute('data-cp-rec'); if (dk) { var a = dk.split('|'); save(function(p){ var r = p.tracks[a[0]] && p.tracks[a[0]].reqs[+a[1]]; if (r && !r.legal) { r.rec = t.value === 'rec'; if (!r.rec && r.why === REC_WHY) r.why = 'GrayCo requirement'; } }).then(render); }   /* patch CERTROLE */
     var tg = t.getAttribute('data-cp-target'); if (tg) { var b = tg.split('|'); save(function(p){ var x = isObj(p.people[b[0]]) ? p.people[b[0]] : {}; x.targets = isObj(x.targets) ? x.targets : {}; if (ymd(t.value)) x.targets[b[1]] = ymd(t.value); else delete x.targets[b[1]]; p.people[b[0]] = x; }).then(render); }
     if (t.hasAttribute('data-cp-year')) { UI.year = t.value; render(); }
+    if (t.hasAttribute('data-cp-masteronce')) save(function(p){ p.masterOnce = !!t.checked; }).then(render);   /* patch CERTROLE */
   });
   OV.addEventListener('input', function(e){ if (e.target && e.target.closest && e.target.closest('[data-cp-rate],[data-cp-tot],[data-cp-em]')) calc(); });
 }
 /* the button in 📜 Certifications */
 D.addEventListener('click', function(e){ var b = e.target && e.target.closest ? e.target.closest('[data-gccp-open]') : null; if (!b) return; e.preventDefault(); e.stopPropagation(); open_(); }, true);
 later(function(){ if (isAdmin()) load(); }, 5000);
-W._gcCertPlan = { open: open_, load: load, plan: plan, trackOf: trackOf, targetOf: targetOf, reqStatus: reqStatus, raisesDue: raisesDue, masterOf: masterOf, weekPay: weekPay, defaults: defaults, _set: function(p, c){ PLAN = p; CERTS = arr(c); LOADED = true; } };
+W._gcCertPlan = { open: open_, load: load, plan: plan, trackOf: trackOf, targetOf: targetOf, raiseCalc: raiseCalc, payList: payList, outlookOf: outlookOf, rateOf: rateOf, POLICY: POLICY, reqStatus: reqStatus, raisesDue: raisesDue, masterOf: masterOf, weekPay: weekPay, defaults: defaults, _set: function(p, c){ PLAN = p; CERTS = arr(c); LOADED = true; } };
 try { console.log('[GC] 🎖 Required certs, raises & promotion (patch CERTPLAN): _gcCertPlan'); } catch (e) {}
 })();
 </script>
@@ -198046,6 +198252,7 @@ function holderIs(k){ try { var h = W._gcLeadRoles && W._gcLeadRoles.holder ? W.
    (an unknown role gets the residential PM's app) */
 function rk(){
   var r = role();
+  if (/restoration\s*&?\s*(and\s*)?abatement|\bdual\b/i.test(r)) return 'dual';   /* patch CERTROLE: cross-trained — the Mitigation and the Environmental field tools */
   if (/environment|abatement|hazmat|asbestos/i.test(r)) return 'env';   /* patch MITWS: environmental / abatement roles */
   if (/mitigation/i.test(r)) return 'mit';   /* patch MITWS: a mitigation tech / crew is a mitigation person first */
   if (/superintendent|crew|foreman|laborer/i.test(r)) return 'super';
@@ -198095,6 +198302,7 @@ function mine(p){
   if (k === 'est') return [p.estimator, p.soldBy].some(function(x){ return low(x) === n; });
   if (k === 'mit') return [p.mitTech, p.tech, p.superintendent, p.pm].some(function(x){ return low(x) === n; });
   if (k === 'env') return [p.envTech, p.abatementSupervisor, p.tech, p.superintendent, p.pm].some(function(x){ return low(x) === n; });   /* patch MITWS */
+  if (k === 'dual') return [p.mitTech, p.envTech, p.abatementSupervisor, p.tech, p.superintendent, p.pm].some(function(x){ return low(x) === n; });   /* patch CERTROLE */
   return [p.pm, p.apm, p.assistantPm].some(function(x){ return low(x) === n; });
 }
 function schedToday(p){
@@ -198107,7 +198315,7 @@ function schedToday(p){
 }
 function myJobs(){
   var k = rk(), all = arr(C().projects).filter(active);
-  if (k === 'pm' || k === 'roof' || k === 'super' || k === 'est' || k === 'mit' || k === 'ins' || k === 'env') {
+  if (k === 'pm' || k === 'roof' || k === 'super' || k === 'est' || k === 'mit' || k === 'ins' || k === 'env' || k === 'dual') {
     var m = all.filter(mine), t = m.filter(function(p){ return schedToday(p).length > 0; });
     return { today: t.length > 0, company: false, list: t.length ? t : m };
   }
@@ -198302,7 +198510,7 @@ var Tools = {
   run: function(id, pid){ var t = TOOLS.filter(function(x){ return x.id === id; })[0], p = proj(pid); if (!t || !p || typeof t.run !== 'function') return false; t.run(p, { day: dayState(p.id), signed: signed(p), role: rk() }); return true; },
   list: function(){ return TOOLS.map(function(t){ return { id: t.id, label: typeof t.label === 'function' ? '(dynamic)' : t.label, group: t.group, roles: t.roles, needsSigned: t.needsSigned }; }); }
 };
-function forRole(t){ return !arr(t.roles).length || arr(t.roles).indexOf(rk()) >= 0; }
+function forRole(t){ return !arr(t.roles).length || arr(t.roles).indexOf(rk()) >= 0 || (rk() === 'dual' && (arr(t.roles).indexOf('mit') >= 0 || arr(t.roles).indexOf('env') >= 0)); }   /* patch CERTROLE: dual = both */
 function val(v, p, ctx){ return typeof v === 'function' ? v(p, ctx) : v; }
 function toolBtn(t, p, ctx, off){
   var lab = s(val(t.label, p, ctx)), ic = s(val(t.icon, p, ctx)), cls = off ? '' : s(val(t.cls, p, ctx));
@@ -198323,6 +198531,7 @@ var ROLE_TOOLS = {
   super:  ['nav', 'info', 'call', 'photos', 'onsite', 'safety', 'problem', 'mat', 'punch', 'dump', 'insp', 'receipt', 'plans', 'voice'],
   mit:    ['nav', 'info', 'call', 'photos', 'readings', 'sign', 'safety', 'problem', 'mat', 'measure', 'receipt', 'voice'],
   env:    ['nav', 'info', 'call', 'photos', 'safety', 'problem', 'mat', 'measure', 'receipt', 'voice'],   /* patch MITWS: + its own tools (registered by patch MITWS) */
+  dual:   ['nav', 'info', 'call', 'photos', 'readings', 'sign', 'safety', 'problem', 'mat', 'measure', 'receipt', 'voice'],   /* patch CERTROLE: mitigation's + environmental's (registered) */
   ins:    ['nav', 'info', 'call', 'photos', 'xact', 'sign', 'measure', 'est', 'problem', 'receipt', 'voice'],
   office: ['nav', 'info', 'call', 'photos', 'msgs', 'receipt', 'problem', 'voice'],
   mkt:    ['nav', 'info', 'photos', 'msgs'],
@@ -198335,19 +198544,20 @@ var LAYOUT = {
   super:  { tiles: ['photos', 'safety'], sections: ['jobs', 'approvals'] },
   mit:    { tiles: ['readings', 'oncall', 'photos', 'addjob'], sections: ['dry', 'jobs', 'approvals'] },
   env:    { tiles: ['photos', 'safety', 'addjob'], sections: ['jobs', 'approvals'] },   /* patch MITWS */
+  dual:   { tiles: ['readings', 'oncall', 'photos', 'safety', 'addjob'], sections: ['dry', 'jobs', 'approvals'] },   /* patch CERTROLE */
   ins:    { tiles: ['xact', 'photos', 'addjob'], sections: ['claims', 'approvals', 'jobs'] },
   office: { tiles: ['receipt', 'msgs', 'todo', 'photos'], sections: ['approvals', 'todos', 'jobs'] },
   mkt:    { tiles: ['marketing', 'photos', 'msgs', 'todo'], sections: ['approvals', 'todos'] },
   admin:  { tiles: ['viewas', 'photos', 'addjob', 'receipt'], sections: ['approvals', 'scorecard', 'jobs'] }
 };
 /* owner 11/12 ("logos are in here, use those"): GrayCo Field's header shows the company's own logo — Mitigation / Environmental people (or that company picked) */
-function fieldLogo(k){ var co = k === 'mit' ? 'mitigation' : k === 'env' ? 'environmental' : ''; try { if (!co && window._gcCo) { var f = window._gcCo.filter(); if (f === 'mitigation' || f === 'environmental') co = f; } if (co && window._gcCo && window._gcCo.get) { var c = window._gcCo.get(co); if (c && c.logo) return String(c.logo); } } catch (e) {} return co === 'mitigation' ? '/img/grayco-mitigation-logo.jpg' : co === 'environmental' ? '/img/grayco-environmental-logo.jpg' : 'grayco-logo.jpg'; }
+function fieldLogo(k){ var co = k === 'mit' ? 'mitigation' : k === 'env' ? 'environmental' : '';   /* dual: the picked company (below) */ try { if (!co && window._gcCo) { var f = window._gcCo.filter(); if (f === 'mitigation' || f === 'environmental') co = f; } if (co && window._gcCo && window._gcCo.get) { var c = window._gcCo.get(co); if (c && c.logo) return String(c.logo); } } catch (e) {} return co === 'mitigation' ? '/img/grayco-mitigation-logo.jpg' : co === 'environmental' ? '/img/grayco-environmental-logo.jpg' : 'grayco-logo.jpg'; }
 var ROLE_NAMES = { pm: 'Residential PM', roof: 'Roofing PM', est: 'Estimator', super: 'Superintendent / crew', mit: 'Mitigation', ins: 'Insurance', office: 'Office', mkt: 'Marketing', admin: 'Admin', env: 'Environmental' };
 function roleCfg(k){ var r = (fset().roles || {})[k]; return r && typeof r === 'object' ? r : null; }
 function toolIds(k){
   k = ROLE_TOOLS[k] ? k : 'pm';
   var cfg = roleCfg(k), base = cfg && Array.isArray(cfg.tools) ? cfg.tools.slice() : ROLE_TOOLS[k].slice(), off = cfg && Array.isArray(cfg.off) ? cfg.off : [];
-  TOOLS.forEach(function(t){ if (base.indexOf(t.id) < 0 && !t.builtIn && (!arr(t.roles).length || arr(t.roles).indexOf(k) >= 0)) base.push(t.id); });   /* a tool registered later: its roles, or everyone */
+  TOOLS.forEach(function(t){ if (base.indexOf(t.id) < 0 && !t.builtIn && (!arr(t.roles).length || arr(t.roles).indexOf(k) >= 0 || (k === 'dual' && (arr(t.roles).indexOf('mit') >= 0 || arr(t.roles).indexOf('env') >= 0)))) base.push(t.id); });   /* a tool registered later: its roles, or everyone */
   return base.filter(function(id){ return id !== 'day' && off.indexOf(id) < 0 && TOOLS.some(function(t){ return t.id === id; }); });   /* patch CUSTPROFILE */
 }
 function roleTools(k){ return toolIds(k).map(function(id){ return TOOLS.filter(function(t){ return t.id === id; })[0]; }).filter(Boolean); }
@@ -198644,7 +198854,7 @@ function markup(p, f){
 }
 function jobCard(p){
   var ok = signed(p), ds = dayState(p.id), sc = schedToday(p)[0], ctx = { day: ds, signed: ok, role: rk() };
-  var mine = roleTools(rk()).filter(function(t){ return (!arr(t.roles).length || arr(t.roles).indexOf(rk()) >= 0) && (typeof t.show !== 'function' || t.show(p, ctx)); });
+  var mine = roleTools(rk()).filter(function(t){ return forRole(t) && (typeof t.show !== 'function' || t.show(p, ctx)); });
   var arrive = mine.filter(function(t){ return t.group === 'arrive'; }), rest = mine.filter(function(t){ return t.group !== 'arrive'; }), big, small;
   if (ok) { big = rest.slice(0, 3); small = rest.slice(3); }
   else {   /* unsigned: send for signature, photos, messages up front; the rest locked where they need the contract */
@@ -207042,8 +207252,8 @@ function gateUp(){ var g = D.getElementById('gc-auth-email'); return !!(g && g.g
 /* ready: signed in, the person known (the app's own user and the team list), the sign-in screen gone */
 function ready(){ return signedIn() && !gateUp() && !!F() && (realAdmin() || (!!W._gcMeNow && arr(C().users).length > 0)); }
 function rk(){ try { return s(F().state().rk); } catch (e) { return ''; } }
-var APPOF = { admin: 'admin', pm: 'pm', roof: 'pm', est: 'est', ins: 'ins', mit: 'mit', super: 'crew', office: 'office', env: 'env' };   /* patch MITWS: mitigation / environmental have their own app */
-var APPNAME = { admin: 'Admin', pm: 'Project Manager', est: 'Estimator', ins: 'Insurance & Mitigation', crew: 'Crew', office: 'Office', mit: 'Mitigation', env: 'Environmental' };
+var APPOF = { admin: 'admin', pm: 'pm', roof: 'pm', est: 'est', ins: 'ins', mit: 'mit', super: 'crew', office: 'office', env: 'env', dual: 'dual' };   /* patch CERTROLE: dual */   /* patch MITWS: mitigation / environmental have their own app */
+var APPNAME = { admin: 'Admin', pm: 'Project Manager', est: 'Estimator', ins: 'Insurance & Mitigation', crew: 'Crew', office: 'Office', mit: 'Mitigation', env: 'Environmental', dual: 'Mitigation + Environmental' };
 function app(){ if (off() || !ready()) return ''; return APPOF[rk()] || ''; }
 function mode(a){ a = a === undefined ? app() : a; if (!a) return ''; if (a === 'crew') return 'field'; try { var vp = W._gcView ? W._gcView.pref() : ''; if (vp) return vp; } catch (e) {} /* patch FIELDDESK */ return phone() ? 'field' : 'desk'; }
 function myName(){ try { return s(F().state().me); } catch (e) { return ''; } }
@@ -207058,7 +207268,7 @@ function proj(pid){ var x = arr(C().projects).filter(function(p){ return p && s(
 /* the role's jobs: PM / crew — GrayCo Field's own list (today's, else their active ones); everyone else — every job they may open */
 function jobsOf(a){
   var J = null; try { J = F() && F().jobs ? F().jobs() : null; } catch (e) {}
-  if ((a === 'mit' || a === 'env') && W._gcMitWS && W._gcMitWS.fieldJobs) { try { return { today: false, list: fpSort(arr(W._gcMitWS.fieldJobs(a))) }; } catch (e) { warn(e); } }   /* patch MITWS: that company's jobs */
+  if ((a === 'mit' || a === 'env' || a === 'dual') && W._gcMitWS && W._gcMitWS.fieldJobs) { try { return { today: false, list: fpSort(arr(W._gcMitWS.fieldJobs(a))) }; } catch (e) { warn(e); } }   /* patch MITWS: that company's jobs */
   if ((a === 'pm' || a === 'crew') && J) return { today: !!J.today, list: fpSort(coJobs(arr(J.list))) };
   return { today: false, list: fpSort(coJobs(allMine().filter(activeJob))) };
 }
@@ -207162,7 +207372,9 @@ var HOME = {
   office: ['appr', 'msgs', 'match', 'todo'],
   /* patch MITWS (owner 11/12: the field view set for mitigation PMs and techs — what they do on site, in that order; the same for environmental) */
   mit:    ['mws_read', 'mws_photos', 'mws_equip', 'mws_log', 'mws_auth', 'mws_note', 'clock', 'mws_emerg'],
-  env:    ['ews_air', 'ews_contain', 'ews_ppe', 'ews_waste', 'ews_photos', 'clock', 'ews_note']
+  env:    ['ews_air', 'ews_contain', 'ews_ppe', 'ews_waste', 'ews_photos', 'clock', 'ews_note'],
+  /* patch CERTROLE: a cross-trained tech — Mitigation's buttons first, then Environmental's */
+  dual:   ['mws_read', 'mws_photos', 'mws_equip', 'mws_log', 'mws_auth', 'mws_note', 'clock', 'mws_emerg', 'ews_air', 'ews_contain', 'ews_ppe', 'ews_waste']
 };
 var MORE = {
   admin:  ['maint', 'search', 'photos', 'msgs', 'receipt', 'oncall', 'claims', 'match', 'todo'],
@@ -207172,7 +207384,8 @@ var MORE = {
   crew:   ['punch', 'log'],
   office: ['maint', 'photos', 'receipt', 'leads', 'search'],
   mit:    ['mws_calc', 'mws_sds', 'oncall', 'emerg', 'msgs', 'appr', 'addjob', 'receipt', 'todo', 'search'],   /* patch MITWS */
-  env:    ['ews_survey', 'ews_notice', 'ews_sds', 'msgs', 'appr', 'addjob', 'receipt', 'todo', 'search']
+  env:    ['ews_survey', 'ews_notice', 'ews_sds', 'msgs', 'appr', 'addjob', 'receipt', 'todo', 'search'],
+  dual:   ['mws_calc', 'mws_sds', 'ews_survey', 'ews_notice', 'oncall', 'emerg', 'msgs', 'appr', 'addjob', 'receipt', 'todo', 'search']
 };
 /* the bottom bar: [key, icon, label]; Field keys home / jobs / appr / photos / msgs / more are GrayCo Field's own */
 var BAR = {
@@ -207183,13 +207396,14 @@ var BAR = {
   crew:   [['home', '▣', 'Home'], ['ra-today', '📍', 'Today'], ['photos', '📸', 'Photos'], ['msgs', '💬', 'Messages']],
   office: [['home', '▣', 'Home'], ['appr', '✅', 'Approvals'], ['msgs', '💬', 'Messages'], ['more', '☰', 'More']],
   mit:    [['home', '▣', 'Home'], ['ra-claims', '💧', 'Drying'], ['jobs', '◫', 'Jobs'], ['photos', '📸', 'Photos'], ['more', '☰', 'More']],   /* patch MITWS */
-  env:    [['home', '▣', 'Home'], ['jobs', '◫', 'Jobs'], ['appr', '✅', 'Approvals'], ['photos', '📸', 'Photos'], ['more', '☰', 'More']]
+  env:    [['home', '▣', 'Home'], ['jobs', '◫', 'Jobs'], ['appr', '✅', 'Approvals'], ['photos', '📸', 'Photos'], ['more', '☰', 'More']],
+  dual:   [['home', '▣', 'Home'], ['ra-claims', '💧', 'Drying'], ['jobs', '◫', 'Jobs'], ['photos', '📸', 'Photos'], ['more', '☰', 'More']]
 };
 /* GrayCo Field's home sections, in the role's order (the Field's own sections; the quick buttons replace its tiles) */
 var FIELD_SECTIONS = {
   admin: ['approvals', 'scorecard'], pm: ['jobs', 'approvals', 'estimates', 'commission'], roof: ['jobs', 'bids', 'approvals', 'estimates', 'commission'],
   est: ['bids', 'jobs', 'approvals'], ins: ['claims', 'dry', 'jobs', 'approvals'], mit: ['dry', 'claims', 'jobs', 'approvals'],
-  super: ['jobs', 'approvals'], office: ['approvals', 'todos', 'jobs'], env: ['jobs', 'approvals']   /* patch MITWS */
+  super: ['jobs', 'approvals'], office: ['approvals', 'todos', 'jobs'], env: ['jobs', 'approvals'], dual: ['dry', 'jobs', 'approvals']   /* patch MITWS · CERTROLE */
 };
 function shown(id){ var x = A[id]; if (!x) return false; if (x.view && !viewOk(x.view)) return false; try { return typeof x.show !== 'function' || !!x.show(); } catch (e) { return false; } }
 function label(id){ var x = A[id]; return typeof x.l === 'function' ? x.l() : x.l; }
@@ -207303,7 +207517,7 @@ function tileHtml(id, cls){ var n = count(id); return '<button type="button" cla
 function fieldTop(a){
   var ids = actions(a, 'home');
   var h = '<div class="gc-ra-q" data-app="' + a + '" data-n="' + ids.length + '">' + ids.map(function(id){ return tileHtml(id, 'gc-ra-qb'); }).join('') + '</div>';
-  if (a === 'ins' || a === 'mit') {   /* patch MITWS: mitigation too */
+  if (a === 'ins' || a === 'mit' || a === 'dual') {   /* patch MITWS: mitigation too (CERTROLE: and dual) */
     var E = emergLeads(); if (E.length) h += '<div class="fh-sec"><span>🚨 Emergency leads (' + E.length + ')</span></div>' + emergHtml(E.slice(0, 3));
     var T = a === 'ins' ? tpaDates() : [];   /* patch MITWS: the TPA dates stay the insurance PM's */ if (T.length) h += '<div class="fh-sec"><span>📆 TPA dates (' + T.length + ')</span><button type="button" data-ra-a="tpa">All ›</button></div>' + tpaHtml(T.slice(0, 3));
   }
@@ -207494,7 +207708,7 @@ function barKey(k, where){
     if (k === 'more') { moreSheet(); return true; }
     if (k === 'ra-leads') { go('leads'); return true; }
     if (k === 'ra-estimates') { go('estimates'); return true; }
-    if (k === 'ra-claims') { if (rk() === 'mit') openDrying(); else openClaims({}); return true; }
+    if (k === 'ra-claims') { if (rk() === 'mit' || rk() === 'dual') openDrying(); else openClaims({}); return true; }
     if (k === 'ra-today') { var p = jobsOf('crew').list[0]; if (p) openJob(p); else { W.__gcFhAll = true; if (W._gcJobPicker) W._gcJobPicker(); } return true; }
     return false;   /* home / jobs / appr / photos / msgs: GrayCo Field's own */
   }
@@ -207506,7 +207720,7 @@ function barKey(k, where){
   if (k === 'more') { moreSheet(); return true; }
   if (k === 'ra-leads') { go('leads'); return true; }
   if (k === 'ra-estimates') { go('estimates'); return true; }
-  if (k === 'ra-claims') { if (rk() === 'mit') { go('mws_jobs'); return true; } if (viewOk('insurance')) go('insurance'); else openClaims({}); return true; }   /* patch MITWS: 💧 Drying jobs, not the combined Mitigation tab */
+  if (k === 'ra-claims') { if (rk() === 'mit' || rk() === 'dual') { go('mws_jobs'); return true; } if (viewOk('insurance')) go('insurance'); else openClaims({}); return true; }   /* patch MITWS: 💧 Drying jobs, not the combined Mitigation tab */
   return false;
 }
 function tap(b, ev){
@@ -219077,7 +219291,8 @@ var FK = 'gc_co_filter';
    unless their record names ONE company — and anyone whose companies list 2+. Everyone else is locked to their own company. */
 var ALLCO = ['construction', 'mitigation', 'environmental'];
 function allCos(u){ return !!u && (low(u.payType) === 'owner' || /^(wesley johnson|nick thomas)$/i.test(s(u.name).trim()) || /^(wjohnson|nthomas)@grayco-cs\.com$/i.test(s(u.email).trim())); }
-function ownList(u){ return u ? arr(u.companies).filter(valid) : []; }
+function ownList(u){ var l = u ? arr(u.companies).filter(valid) : []; if (!l.length && u && dualRole(u)) l = ['mitigation', 'environmental']; return l; }   /* patch CERTROLE: a cross-trained role is in both */
+function dualRole(u){ return !!u && /restoration\s*&?\s*(and\s*)?abatement|\bdual\b/i.test(s(u.role) + ' ' + s(u.title)) && !/^admin$/i.test(s(u.role)); }
 function userCos(u){ var l = ownList(u); if (l.length) return ALLCO.filter(function(c){ return l.indexOf(c) > -1; }); return allCos(u) ? ALLCO.slice() : ['construction']; }
 function userIn(u, co){ return userCos(u).indexOf(co) > -1; }
 var ME = { at: 0, v: null };
@@ -219095,7 +219310,7 @@ function meInfo(){
    the owner / the master office login / Marketing. No companies on the record (everyone today) = as before: may switch. 2+ companies
    = may switch among those (and All). */
 /* … and a Mitigation / Environmental person by their ROLE (no companies on the record: patch QAB reads their pick the same way) */
-function roleCo(){ try { var k = W._gcMitWS && typeof W._gcMitWS.kind === 'function' ? s(W._gcMitWS.kind()) : ''; return k ? (k.indexOf('mit') === 0 ? 'mitigation' : 'environmental') : ''; } catch (e) { return ''; } }
+function roleCo(){ try { var k = W._gcMitWS && typeof W._gcMitWS.kind === 'function' ? s(W._gcMitWS.kind()) : ''; return k && !/^dual/.test(k) ? (k.indexOf('mit') === 0 ? 'mitigation' : 'environmental') : ''; } catch (e) { return ''; } }   /* patch CERTROLE: dual = 2 companies (ownList) */
 function privileged(m){ return !!(m.admin || (m.u && low(m.u.payType) === 'owner') || m.mkt || (m.office && /^office@/.test(m.email))); }
 function canSwitch(){
   var m = meInfo(); if (!m) return true;   /* not signed in yet: nothing to lock */
@@ -219107,7 +219322,9 @@ function canSwitch(){
 function lockedCo(){ var m = meInfo(), own = ownList(m && m.u); if (!own.length && m && m.rc) return m.rc; return userCos(m && m.u)[0]; }
 /* the companies this person may pick (2+ on their record: those; otherwise every company) */
 function myCos(){ var m = meInfo(), own = ownList(m && m.u); return own.length >= 2 && !(m.admin || low(m.u.payType) === 'owner' || m.mkt || (m.office && /^office@/.test(m.email))) ? ALLCO.filter(function(c){ return own.indexOf(c) > -1; }) : ALLCO.slice(); }
-function filter(){ if (!canSwitch()) return lockedCo(); try { var f = localStorage.getItem(FK) || 'all'; if (f !== 'all' && valid(f) && myCos().indexOf(f) < 0) return 'all'; return f === 'all' || valid(f) ? f : 'all'; } catch (e) { return 'all'; } }
+function filter(){ if (!canSwitch()) return lockedCo(); try { var f = localStorage.getItem(FK) || 'all'; var m = meInfo(); if (m && dualRole(m.u) && !ownList0(m.u).length && !privileged(m)) return f === 'environmental' ? 'environmental' : 'mitigation';   /* patch CERTROLE: dual — one of the two */
+  if (f !== 'all' && valid(f) && myCos().indexOf(f) < 0) return 'all'; return f === 'all' || valid(f) ? f : 'all'; } catch (e) { return 'all'; } }
+function ownList0(u){ return u ? arr(u.companies).filter(valid) : []; }
 function setFilter(f){ if (!canSwitch()) f = lockedCo(); else if (f !== 'all' && valid(f) && myCos().indexOf(f) < 0) f = 'all'; try { localStorage.setItem(FK, f === 'all' || valid(f) ? f : 'all'); } catch (e) {} paintAll(); try { W.dispatchEvent(new CustomEvent('gc-co-filter', { detail: filter() })); } catch (e) {} }
 /* a job shared with a company (job.sharedWith: ['environmental']) shows in that company's lists and photos — its money stays with its own company */
 function passJob(p){ var f = filter(); if (f === 'all') return true; return ofJob(p) === f || arr(p && p.sharedWith).indexOf(f) > -1; }
@@ -225088,14 +225305,19 @@ function roleNow(){ try { if (W._gcRP && typeof W._gcRP.role === 'function') ret
 function kindOf(r){
   r = s(r); if (!r || /^admin$/i.test(r)) return '';
   var tech = /tech|technician|crew|helper|laborer|labor\b|worker/i.test(r);
+  /* patch CERTROLE (owner 11/12, "like they do both"): a cross-trained Restoration & Abatement tech / Dual foreman works in BOTH companies */
+  if (/restoration\s*&?\s*(and\s*)?abatement|\bdual\b/i.test(r)) return /foreman|crew lead|supervis|lead\b/i.test(r) ? 'dualfore' : 'dualtech';
   if (/environment|abatement|hazmat|asbestos/i.test(r)) return tech ? 'envtech' : 'envpm';
   if (/mitigation|water\s*(tech|restoration)|drying\s*tech|restoration\s*tech/i.test(r)) return tech ? 'mittech' : 'mitpm';
   return '';
 }
 function myKind(){ if (adminNow() || officeFull()) return ''; return kindOf(roleNow()); }
 function coF(){ try { return W._gcCo ? W._gcCo.filter() : 'all'; } catch (e) { return 'all'; } }
+function isDualK(k){ return /^dual/.test(s(k)); }
+function dualCo(){ var f = 'all'; try { f = W._gcCo && W._gcCo.filter.__raw ? W._gcCo.filter.__raw() : coF(); } catch (e) {} return f === 'environmental' ? 'environmental' : 'mitigation'; }   /* their pick between the two; Mitigation first */
 function ws(){
   var k = myKind();
+  if (k && isDualK(k)) return { co: dualCo(), tech: k === 'dualtech', role: true, hub: false, kind: k, dual: true };   /* patch CERTROLE */
   if (k) return { co: k.indexOf('mit') === 0 ? 'mitigation' : 'environmental', tech: /tech$/.test(k), role: true, hub: false, kind: k };
   var f = coF();
   if (f === 'mitigation' || f === 'environmental') return { co: f, tech: false, role: false, hub: adminNow() || officeFull() || /office/i.test(roleNow()), kind: '' };   /* owner 11/12: "office can have mit and env tab too" */
@@ -225112,7 +225334,7 @@ function inCo(u, co){
 }
 function myCo(){
   var f = coF(); if (f === 'mitigation' || f === 'environmental' || f === 'construction') return f;
-  var k = myKind(); if (k) return k.indexOf('mit') === 0 ? 'mitigation' : 'environmental';
+  var k = myKind(); if (k) return isDualK(k) ? dualCo() : k.indexOf('mit') === 0 ? 'mitigation' : 'environmental';
   var m = W._gcMeNow; if (m && !inCo(m, 'construction')) { if (inCo(m, 'mitigation')) return 'mitigation'; if (inCo(m, 'environmental')) return 'environmental'; }
   return 'construction';
 }
@@ -225164,6 +225386,7 @@ function shape(r, Uf){
     return at < 0 ? r.concat([PB]) : r.slice(0, at + 1).concat([PB], r.slice(at + 1));
   }
   var co = W0.co, tools = (co === 'mitigation' ? MIT_TOOLS : ENV_TOOLS).filter(function(t){ return !W0.tech || (co === 'mitigation' ? TECH_MIT : TECH_ENV)[t.id]; });
+  if (W0.dual) tools = MIT_TOOLS.filter(function(t){ return !W0.tech || TECH_MIT[t.id]; }).concat(ENV_TOOLS.filter(function(t){ return t.id !== 'sds' && (!W0.tech || TECH_ENV[t.id]); }));   /* patch CERTROLE: both sets of tool tabs, Mitigation first */
   var hide = {}; HIDE_CO.forEach(function(k){ hide[k] = 1; }); hide[co === 'mitigation' ? 'enviro' : 'mitigation'] = 1;
   var hub = co === 'mitigation' ? 'mitigation' : 'enviro';
   if (!W0.hub) hide[hub] = 1;
@@ -225177,6 +225400,7 @@ function shape(r, Uf){
   tools.forEach(function(t){ if (!W0.role && !W0.hub && !toolOk(t.id)) return; want.push(t.id); });   /* patch QAB: a tab is on the menu only when it opens for them (a Marketing Manager has no drying / claims tools) */
   if (canPB && !W0.tech) want.push('planbuilder');
   var ord = ORDER[co], seen = {}, out = [];
+  if (W0.dual) { var at2 = ORDER.mitigation.indexOf('sds'); ord = ORDER.mitigation.slice(0, at2).concat(ENV_TOOLS.map(function(t){ return t.id; }), ORDER.mitigation.slice(at2)); }
   ord.forEach(function(id){ if (want.indexOf(id) >= 0 && !seen[id]) { seen[id] = 1; out.push(id); } });
   want.forEach(function(id){ if (!seen[id]) { seen[id] = 1; out.push(id); } });
   return out.map(function(id){ return itemOf(Uf, id); }).filter(Boolean);
@@ -225196,8 +225420,8 @@ function wrapSetView(){
   var w = function(v){
     try {
       var k = myKind();
-      if (v === 'mitigation' && /^mit/.test(k)) arguments[0] = 'mws_jobs';
-      else if (v === 'enviro' && /^env/.test(k)) arguments[0] = 'ews_jobs';
+      if (v === 'mitigation' && /^(mit|dual)/.test(k)) arguments[0] = 'mws_jobs';
+      else if (v === 'enviro' && /^(env|dual)/.test(k)) arguments[0] = 'ews_jobs';
     } catch (e) {}
     return f.apply(this, arguments);
   };
@@ -225213,9 +225437,9 @@ function wrapSetView(){
 function wrapCoFilter(){
   var C0 = W._gcCo; if (!C0 || typeof C0.filter !== 'function' || C0.filter.__qab) return;
   var f0 = C0.filter;
-  var w = function(){ var f = f0.apply(this, arguments); try { var k = myKind(); if (k) return k.indexOf('mit') === 0 ? 'mitigation' : 'environmental'; } catch (e) {} return f; };
-  w.__qab = true; C0.filter = w;
-  try { var l0 = C0.leadView; if (typeof l0 === 'function' && !l0.__qab) { C0.leadView = function(){ try { var k = myKind(); if (k) return k.indexOf('mit') === 0 ? 'mitigation' : 'environmental'; } catch (e) {} return l0.apply(this, arguments); }; C0.leadView.__qab = true; } } catch (e) {}
+  var w = function(){ var f = f0.apply(this, arguments); try { var k = myKind(); if (k) return isDualK(k) ? (f === 'environmental' ? 'environmental' : 'mitigation') : k.indexOf('mit') === 0 ? 'mitigation' : 'environmental'; } catch (e) {} return f; };
+  w.__qab = true; w.__raw = function(){ return f0.apply(C0, arguments); }; C0.filter = w;
+  try { var l0 = C0.leadView; if (typeof l0 === 'function' && !l0.__qab) { C0.leadView = function(){ try { var k = myKind(); if (k) return isDualK(k) ? dualCo() : k.indexOf('mit') === 0 ? 'mitigation' : 'environmental'; } catch (e) {} return l0.apply(this, arguments); }; C0.leadView.__qab = true; } } catch (e) {}
 }
 function wrapInsVisible(){
   var f = W._gcInsVisible; if (typeof f !== 'function' || f.__qab) return;
@@ -225267,6 +225491,7 @@ function envJobs(all){
   return out;
 }
 function fieldJobs(a){
+  if (a === 'dual') { var seen0 = {}; return fieldJobs('mit').concat(fieldJobs('env')).filter(function(p){ if (!p || seen0[p.id]) return false; seen0[p.id] = 1; return true; }); }   /* patch CERTROLE */
   var n = low(myName()), mine = function(p){ return [p.pm, p.mitTech, p.envTech, p.tech, p.superintendent, p.abatementSupervisor].some(function(x){ return low(x) === n && !!n; }); };
   var l = (a === 'env' ? envJobs().map(function(x){ return x.p; }) : mitJobs().map(function(x){ return x.p; })).filter(Boolean), ids = {};
   l.forEach(function(p){ ids[p.id] = 1; });
@@ -225661,23 +225886,27 @@ var REG = false;
 function regField(){
   var T = W._gcFieldTools; if (!T || REG) return; REG = true;
   try {
-    T.register({ id: 'mws_emerg', icon: '🚨', label: 'Emergency checklist', roles: ['mit'], needsSigned: false, order: 40, run: function(p){ emergSheet(p); } });
-    T.register({ id: 'mws_log', icon: '📋', label: 'Daily drying log', roles: ['mit'], needsSigned: false, order: 41, run: function(p){ openPanel(p, 'drying', '.gcbb-atmosform'); } });
-    T.register({ id: 'ews_air', icon: '🌫', label: 'Air monitoring', roles: ['env'], needsSigned: false, order: 40, run: function(p){ envSheet(p, 'air'); } });
-    T.register({ id: 'ews_contain', icon: '🚧', label: 'Containment', roles: ['env'], needsSigned: false, order: 41, run: function(p){ envSheet(p, 'contain'); } });
-    T.register({ id: 'ews_ppe', icon: '😷', label: 'PPE / respirator', roles: ['env'], needsSigned: false, order: 42, run: function(p){ envSheet(p, 'ppe'); } });
-    T.register({ id: 'ews_waste', icon: '🛢', label: 'Waste log', roles: ['env'], needsSigned: false, order: 43, run: function(p){ envSheet(p, 'waste'); } });
+    T.register({ id: 'mws_emerg', icon: '🚨', label: 'Emergency checklist', roles: ['mit', 'dual'], needsSigned: false, order: 40, run: function(p){ emergSheet(p); } });
+    T.register({ id: 'mws_log', icon: '📋', label: 'Daily drying log', roles: ['mit', 'dual'], needsSigned: false, order: 41, run: function(p){ openPanel(p, 'drying', '.gcbb-atmosform'); } });
+    T.register({ id: 'ews_air', icon: '🌫', label: 'Air monitoring', roles: ['env', 'dual'], needsSigned: false, order: 50, run: function(p){ envSheet(p, 'air'); } });
+    T.register({ id: 'ews_contain', icon: '🚧', label: 'Containment', roles: ['env', 'dual'], needsSigned: false, order: 51, run: function(p){ envSheet(p, 'contain'); } });
+    T.register({ id: 'ews_ppe', icon: '😷', label: 'PPE / respirator', roles: ['env', 'dual'], needsSigned: false, order: 52, run: function(p){ envSheet(p, 'ppe'); } });
+    T.register({ id: 'ews_waste', icon: '🛢', label: 'Waste log', roles: ['env', 'dual'], needsSigned: false, order: 53, run: function(p){ envSheet(p, 'waste'); } });
   } catch (e) { warn(e); }
 }
 /* the role app's desk cards (patch ROLEAPPS' _gcRaCards hook) */
 (W._gcRaCards = Array.isArray(W._gcRaCards) ? W._gcRaCards : []).push(function(a, card0){
+  if (a === 'dual') return mwsCards('mit', card0) + mwsCards('env', function(k, ti, b){ return card0(k + 'env', ti, b); }).replace('id="gc-mws-dash-ra"', 'id="gc-mws-dash-ra-env"');   /* patch CERTROLE: both, Mitigation first */
+  return mwsCards(a, card0);
+});
+var mwsCards = function(a, card0){
   if (a !== 'mit' && a !== 'env') return '';
   css();
-  var L = fieldJobs(a), tools = a === 'mit' ? MIT_TOOLS : ENV_TOOLS, tech = /tech$/.test(myKind());
+  var L = fieldJobs(a), tools = a === 'mit' ? MIT_TOOLS : ENV_TOOLS, tech = /tech$/.test(myKind());   /* dualtech too */
   return card0('mws', a === 'mit' ? '💧 Mitigation today' : '☢️ Environmental today', '<div class="gc-mws-ra" id="gc-mws-dash-ra">' + dashHtml(a === 'mit' ? 'mitigation' : 'environmental').replace(/^<div class="mws-dh">[\s\S]*?<\/div>/, '') + '</div>') +
     card0('mwsjobs', (a === 'mit' ? '💧 Drying jobs' : '☣️ Hazard jobs') + ' (' + L.length + ')', '<div class="gc-mws-ra">' + (L.length ? L.slice(0, 20).map(function(p){ return '<div class="gc-ra-item job"><div class="t"><b>' + esc(p.name || 'Job') + '</b><small>' + esc([p.client, p.address, p.status].filter(Boolean).join(' · ')) + '</small></div></div>'; }).join('') : '<div class="gc-ra-empty">No open jobs yet.</div>') +
       '<div class="mws-docs" style="margin-top:8px">' + tools.filter(function(t){ return t.id !== 'sds' && (!tech || (a === 'mit' ? TECH_MIT : TECH_ENV)[t.id]); }).map(function(t){ return '<button type="button" data-mws-v="' + t.id + '">' + t.ic + ' ' + esc(t.l) + '</button>'; }).join('') + '</div></div>');
-});
+};
 
 /* ═════ 📺 TVs: each company's numbers; the picker on 🧭 GrayCo Systems ═════ */
 function tvStats(co, X){

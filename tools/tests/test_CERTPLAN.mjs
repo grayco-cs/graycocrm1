@@ -15,13 +15,18 @@ cset('users', [{ id: 'u1', name: 'Wesley Johnson', email: 'wjohnson@grayco-cs.co
   /* a Glenn-like commercial estimator, an Environmental supervisor and an abatement tech */
   { id: 'u8', name: 'Gary Demo', email: 'gary@example.com', role: 'Estimator', hireDate: ago(400), active: true },
   { id: 'u9', name: 'Sue Demo', email: 'sue@example.com', role: 'Environmental Supervisor', hireDate: ago(400), active: true },
-  { id: 'u10', name: 'Eli Demo', email: 'eli@example.com', role: 'Abatement Technician', companyId: 'environmental', hireDate: ago(400), active: true }]);
+  { id: 'u10', name: 'Eli Demo', email: 'eli@example.com', role: 'Abatement Technician', companyId: 'environmental', hireDate: ago(400), active: true },
+  /* raises: a mitigation tech with Master Restorer and every course (cap +$8), a cross-trained tech */
+  { id: 'u11', name: 'Tia Demo', email: 'tia@example.com', role: 'Mitigation Tech', hireDate: ago(700), active: true },
+  { id: 'u12', name: 'Dex Demo', email: 'dex@example.com', role: 'Restoration & Abatement Tech', hireDate: ago(300), active: true }]);
 cset('gc_certs', { list: [
   { id: 'c1', holderType: 'person', holder: 'pat@example.com', holderName: 'Pat Planner', name: 'IICRC WRT (Water Restoration Technician)', issuer: 'IICRC', expires: ahead(200) },
   { id: 'c2', holderType: 'person', holder: 'pat@example.com', holderName: 'Pat Planner', name: 'EPA RRP Certified Renovator', issuer: 'EPA', expires: ago(5) },
   { id: 'c3', holderType: 'person', holder: 'mo@example.com', holderName: 'Mo Tech', name: 'IICRC WRT', issuer: 'IICRC', expires: ahead(300) },
   { id: 'c4', holderType: 'person', holder: 'max@example.com', holderName: 'Max Master', name: 'IICRC Master Water Restorer', issuer: 'IICRC', expires: ahead(300) },
-  { id: 'c5', holderType: 'person', holder: 'sam@example.com', holderName: 'Sam Demo', name: 'IICRC UFT (Upholstery & Fabric)', issuer: 'IICRC', expires: ahead(300) }] });
+  { id: 'c5', holderType: 'person', holder: 'sam@example.com', holderName: 'Sam Demo', name: 'IICRC UFT (Upholstery & Fabric)', issuer: 'IICRC', expires: ahead(300) }]
+  .concat(['IICRC WRT', 'IICRC ASD', 'IICRC AMRT', 'IICRC FSRT', 'IICRC OCT', 'IICRC CCT', 'IICRC UFT', 'IICRC Master Restorer', 'OSHA 30 (construction)'].map((n, i) => ({ id: 't' + i, holderType: 'person', holder: 'tia@example.com', holderName: 'Tia Demo', name: n, issuer: /IICRC/.test(n) ? 'IICRC' : 'OSHA', expires: ahead(300) })))
+  .concat(['IICRC WRT', 'IICRC AMRT', 'Lead abatement worker (TN)', 'Asbestos abatement worker (AHERA)', 'HAZWOPER 40-hour'].map((n, i) => ({ id: 'd' + i, holderType: 'person', holder: 'dex@example.com', holderName: 'Dex Demo', name: n, issuer: '', expires: ahead(300) }))) });
 const A = await computer('wjohnson@grayco-cs.com', { build: process.argv[2] });
 const errs = []; A.page().on('pageerror', e => errs.push(String(e.message).slice(0, 200)));
 await signIn(A, 'wjohnson@grayco-cs.com', 15000); await sleep(6000);
@@ -42,10 +47,16 @@ const m = await A.ev(() => { const C = window._gcCertPlan, U = window._crm.users
     whys: Object.keys(p.tracks).flatMap(k => p.tracks[k].reqs.map(r => r.why)).filter(w => /required for every PM/.test(w)), wrtIns: p.tracks.con_ins_pm.reqs[0].why,
     stKinds: [...new Set(allSt.map(x => x.k))], stLabels: allSt.map(x => x.l).join(' | '),
     raisesSam: C.raisesDue(by('sam@example.com'), p).map(r => r.cert + '=' + r.amount + r.unit),
+    rates: Object.fromEntries(p.raises.map(r => [r.id, C.rateOf(r)])), suggested: p.suggested,
+    tia: (() => { const c = C.raiseCalc(by('tia@example.com'), p); return { sum: c.due.reduce((a, x) => a + x.hr, 0), reached: c.reached, trimmed: c.due.filter(x => x.trimmed).length, notpm: c.blocked.filter(x => x.why === 'notpm').map(x => x.cert), cap: c.cap.hr, ms: (C.masterOf ? C.masterOf(by('tia@example.com'), p) : {}).l }; })(),
+    tiaPm: (() => { const p2 = JSON.parse(JSON.stringify(p)); p2.people['tia@example.com'] = { track: 'mit_manager' }; const c = C.raiseCalc(by('tia@example.com'), p2); return { master: c.due.find(x => x.master), reached: c.reached, cap: c.cap.hr }; })(),
+    dex: (() => { const c = C.raiseCalc(by('dex@example.com'), p), o = C.outlookOf('dual_tech', p); return { track: c.track, start: o.start, cap: c.cap.hr, sum: c.due.reduce((a, x) => a + x.hr, 0), rules: c.due.map(x => x.rule) }; })(),
+    ol: (() => { const f = k => { const o = C.outlookOf(k, p); return { start: o.start, cap: o.cap.hr, withCap: o.withCap, tot: o.tot }; };
+      return { mit: f('mit_tech'), env: f('env_tech'), dualf: f('dual_fore'), ins: f('con_ins_pm'), insOn: C.outlookOf('con_ins_pm', p, true).tot, insOff: C.outlookOf('con_ins_pm', p, false).tot }; })(),
     pmReqs: p.tracks.con_pm.reqs.map(r => r.id), mitTech: p.tracks.mit_tech.reqs.map(r => r.id), envPm: p.tracks.env_pm.reqs.map(r => r.id), envTech: p.tracks.env_tech.reqs.map(r => r.id),
     pmMasterDays: p.tracks.con_pm.reqs.filter(r => /Master Restorer course/.test(r.name)).map(r => r.days),
     raisesPat: C.raisesDue(by('pat@example.com'), p).map(r => r.cert + '=' + r.amount + r.unit), raisesMo: C.raisesDue(by('mo@example.com'), p).map(r => r.cert + '=' + r.amount + r.unit),
-    masterMax: C.masterOf(by('max@example.com')), masterMo: C.masterOf(by('mo@example.com')),
+    masterMax: C.masterOf(by('max@example.com'), p), masterMo: C.masterOf(by('mo@example.com'), p),
     w1: C.weekPay(20, 40, 20), w2: C.weekPay(20, 50, 20), w3: C.weekPay(20, 45, 0), w4: C.weekPay(20, 30, 40) }; });
 ok('tracks from the role / profile: PM → Construction PM, Mitigation Tech, Environmental Tech, Mitigation Manager, roofing PM → 🏠 Roofing PM, Insurance PM → 🛡 Insurance PM, Estimator → Estimator, Environmental Supervisor → Env PM / Supervisor, Abatement Technician → Env tech', m.tracks.join() === 'con_pm,mit_tech,env_tech,mit_manager,con_roof_pm,con_ins_pm,est_com,env_pm,env_tech', m.tracks);
 ok('CERTROLE: Insurance PM REQUIRES WRT + every Master Restorer course; Roofing and Construction PMs have them RECOMMENDED', m.II.every(x => m.insK.includes(x + ':req') && m.roofK.includes(x + ':rec') && m.conK.includes(x + ':rec')), m);
@@ -56,12 +67,17 @@ ok('CERTROLE: Gary Demo (Estimator) → 📐 Estimator — Commercial: nothing r
 ok('CERTROLE: "mitigation get those requirements too" — Mitigation Manager / PM REQUIRES the whole IICRC / Master Restorer set; the mitigation tech keeps WRT required', m.II.every(x => m.mitK.includes(x + ':req')) && m.mitTech.includes('wrt'), m.mitK);
 ok('CERTROLE: Environmental has its own set (no IICRC set): lead, asbestos (+ inspector), mold AMRT-or-equivalent, HAZWOPER 40 + 8-h refresher, HazCom, respirator, BBP, trauma / biohazard, confined space', m.tracks[7] === 'env_pm' && m.tracks[8] === 'env_tech' && ['leadsup:law', 'rrp:law', 'asbsup:law', 'asbinsp:law', 'amrt:req', 'hazwoper:law', 'hazref:law', 'hazcom:law', 'resp:law', 'bbp:law', 'trauma:req', 'confined:law'].every(x => m.envPmK.includes(x)) && ['leadwork:law', 'asbwork:law', 'amrt:req', 'hazwoper:law', 'hazref:law', 'resp:law', 'bbp:law', 'trauma:req', 'confined:law'].every(x => m.envTechK.includes(x)) && !['wrt', 'asd', 'fsrt', 'oct', 'cct', 'uft'].some(x => m.envPmK.concat(m.envTechK).some(y => y.startsWith(x + ':'))), { pm: m.envPmK, tech: m.envTechK });
 ok('CERTROLE: no "Owner: required for every PM" left; the Insurance PM WRT reads "Required for Insurance PMs"', !m.whys.length && m.wrtIns === 'Required for Insurance PMs', m);
-ok('CERTROLE: a recommended certificate still earns its raise (Sam, Roofing PM: UFT $1,000/yr)', m.raisesSam.join() === 'IICRC UFT (Upholstery & Fabric)=1000yr', m.raisesSam);
+ok('CERTROLE: a recommended certificate still earns its raise (Sam, Roofing PM: UFT $1 × 2,080 = $2,080/yr)', m.raisesSam.join() === 'IICRC UFT (Upholstery & Fabric)=2080yr', m.raisesSam);
 ok('mitigation tech requires WRT + the legal ones (HazCom, respirator, bloodborne, RRP on-the-job)', ['wrt', 'hazcom', 'resp', 'bbp', 'rrpojt'].every(x => m.mitTech.includes(x)), m.mitTech);
 ok('environmental PM requires lead supervisor + RRP renovator (+ asbestos supervisor, respirator, blood lead)', ['leadsup', 'rrp', 'asbsup', 'resp', 'bloodlead'].every(x => m.envPm.includes(x)), m.envPm);
 ok('environmental tech requires the abatement worker license (+ asbestos worker, respirator, blood lead)', ['leadwork', 'asbwork', 'resp', 'bloodlead'].every(x => m.envTech.includes(x)), m.envTech);
-ok('raises due: Pat (salaried PM) WRT $1,000/yr + RRP $1,000/yr; Mo (hourly) WRT $0.50/hr', m.raisesPat.join() === 'IICRC WRT (Water Restoration Technician)=1000yr,EPA RRP Certified Renovator=1000yr' && m.raisesMo.join() === 'IICRC WRT=0.5hr', m);
-ok('⭐ Master Water Restorer → promotion eligible; no master → not', m.masterMax && /promotion eligible/.test(m.masterMax.l) && !m.masterMo, m.masterMax);
+ok('raises due (the owner\'s amounts): Pat (salaried PM) WRT $1 × 2,080 = $2,080/yr + RRP $2,080/yr; Mo (hourly) WRT $1/hr', m.raisesPat.join() === 'IICRC WRT (Water Restoration Technician)=2080yr,EPA RRP Certified Renovator=2080yr' && m.raisesMo.join() === 'IICRC WRT=1hr', m);
+ok('RAISES: $5 Master Restorer / Master designations / lead + asbestos supervisor / HAZWOPER 40; $2 OSHA 30; $1 IICRC courses, RRP, lead + asbestos worker, OSHA 10', m.rates.mr === 5 && m.rates.mwr === 5 && m.rates.mfsr === 5 && m.rates.mtc === 5 && m.rates.leadsup === 5 && m.rates.asbsup === 5 && m.rates.hazwoper === 5 && m.rates.osha30 === 2 && ['wrt', 'asd', 'amrt', 'fsrt', 'oct', 'cct', 'uft', 'rrp', 'leadwork', 'asbwork', 'osha10', 'hazref'].every(k => m.rates[k] === 1) && m.suggested === false, m.rates);
+ok('CAP: Tia (mitigation tech, 7 IICRC courses + OSHA 30 + Master Restorer) — courses $7 + OSHA 30 cut to $1 = +$8 cap reached; Master Restorer $0 on a tech track and ⭐ "Promotion eligible — PM"', m.tia.sum === 8 && m.tia.reached && m.tia.trimmed === 1 && m.tia.notpm.length === 1 && /Master Restorer/.test(m.tia.notpm[0]) && /Promotion eligible — PM/.test(m.tia.ms) && m.tia.cap === 8, m.tia);
+ok('PROMOTED: Tia moved to Mitigation Manager / PM — the Master Restorer $5 raise becomes due (×2,080 = $10,400/yr), no cap', m.tiaPm.master && m.tiaPm.master.amount === 10400 && !m.tiaPm.reached && m.tiaPm.cap === 0, m.tiaPm);
+ok('DUAL: "Restoration & Abatement Tech" → dual track ($23 start, cap +$12); WRT + AMRT + lead worker + asbestos worker ($1 each) + HAZWOPER 40 ($5) + cross-training bonus $2 once = +$11', m.dex.track === 'dual_tech' && m.dex.start === 23 && m.dex.cap === 12 && m.dex.sum === 11 && m.dex.rules.includes('xtrain') && m.dex.rules.filter(r => r === 'xtrain').length === 1, m.dex);
+ok('OUTLOOK: mitigation tech $18 start, +$8 cap (top ≤ $26); environmental tech $23 + $10 cap; dual foreman +$15; PM tracks no cap; master path once ($5) vs each ($20) on Insurance PM', m.ol.mit.start === 18 && m.ol.mit.cap === 8 && m.ol.mit.withCap <= 8 && m.ol.env.start === 23 && m.ol.env.cap === 10 && m.ol.dualf.cap === 15 && m.ol.ins.cap === 0 && m.ol.insOff - m.ol.insOn === 15, m.ol);
+ok('⭐ Master Water Restorer (PM track) → promotion eligible; a tech without Master Restorer → "Needs Master Restorer for PM: 1 of 7 courses done"', m.masterMax && /promotion eligible/.test(m.masterMax.l) && m.masterMo && m.masterMo.k === 'need' && /Needs Master Restorer for PM: 1 of 7 courses done/.test(m.masterMo.l), { max: m.masterMax, mo: m.masterMo });
 ok('pay: 40 h = 20 regular + 20 emergency → 20 × 1 + 20 × 1.5 = $1,000', m.w1.straight === 20 && m.w1.premium === 20 && m.w1.pay === 1000, m.w1);
 ok('pay: 50 h with 20 emergency → 30 h at 1.5× (20 emergency + 10 over 40), never 2.25×', m.w2.premium === 30 && m.w2.pay === 20 * 20 + 30 * 30, m.w2);
 ok('pay: 45 h, no emergency → 5 h overtime at 1.5×; emergency never more than the hours worked', m.w3.premium === 5 && m.w3.pay === 40 * 20 + 5 * 30 && m.w4.premium === 30, { w3: m.w3, w4: m.w4 });
@@ -74,7 +90,7 @@ const card = em => A.ev(e => { const c = document.querySelector('[data-cp-person
     recTxt: (c.querySelector('[data-cp-recsec]') || {}).innerText || '' }; }, em);
 const sam = await card('sam@example.com'), ina = await card('ina@example.com');
 ok('CERTROLE: Sam Demo (Roofing PM) — IICRC WRT / ASD / UFT under 💡 Recommended with no date; "0 of 4 required" counts only RRP, HazCom, fall protection, OSHA 30', sam.tk === 'con_roof_pm' && ['wrt', 'asd', 'uft'].every(x => sam.rec.includes(x) && !sam.req.includes(x)) && sam.req.join() === 'rrp,hazcom,fall,osha30' && sam.count === '0 of 4 required certificates held' && /💡 Recommended — no deadline/.test(sam.recTxt) && /✅ Held/.test(sam.recTxt) && !/Due|days of hire|Overdue|Target/.test(sam.recTxt), sam);
-ok('CERTROLE: Ina Demo (Insurance PM) — the IICRC set is Required, shown as "📈 Keep on — no deadline" (no countdown) with an optional target date', ina.tk === 'con_ins_pm' && ['wrt', 'asd', 'amrt', 'fsrt', 'oct', 'cct', 'uft'].every(x => ina.req.includes(x)) && !ina.rec.length && ina.count === '0 of 11 required certificates held' && /📈 Keep on — no deadline/.test(ina.txt) && !/Due |\(\d+ d\)|Overdue|days of hire/.test(ina.txt) && ina.targets === 8, ina);
+ok('CERTROLE: Ina Demo (Insurance PM) — the IICRC set + Master Restorer ("PMs have to be masters") are Required, shown as "📈 Keep on — no deadline" (no countdown) with an optional target date', ina.tk === 'con_ins_pm' && ['wrt', 'asd', 'amrt', 'fsrt', 'oct', 'cct', 'uft'].every(x => ina.req.includes(x)) && !ina.rec.length && ina.count === '0 of 12 required certificates held' && ina.req.includes('mr') && /📈 Keep on — no deadline/.test(ina.txt) && !/Due |\(\d+ d\)|Overdue|days of hire/.test(ina.txt) && ina.targets === 9, ina);
 ok('CERTROLE: LAW lines are amber "📌 Required by law before that kind of work"; nothing in the panel says Overdue / days of hire', sam.law.length === 3 && sam.law.every(c => /amb/.test(c)) && /📌 Required by law before that kind of work/.test(sam.txt) && !/Overdue|days of hire|Set the hire date/.test(txt), sam.law);
 ok('CERTROLE: the footnote says the law lines are owner-acknowledged with no countdown', /owner-acknowledged — no countdown/.test(await A.ev(() => (document.querySelector('[data-cp-foot]') || {}).innerText || '')), '');
 await A.page().screenshot({ path: (process.argv[3] || '/tmp') + '/certrole_people_top.png' });
@@ -88,25 +104,51 @@ ok('CERTROLE: Sue (Env supervisor) and Eli (abatement tech) — law lines amber,
 for (const [em, f] of [['gary@example.com', 'certrole_gary_estimator'], ['sue@example.com', 'certrole_sue_env_supervisor'], ['eli@example.com', 'certrole_eli_env_tech'], ['max@example.com', 'certrole_max_mitigation_manager']]) {
   await A.ev(e => document.querySelector('[data-cp-person="' + e + '"]').scrollIntoView(), em); await sleep(300);
   await A.page().screenshot({ path: (process.argv[3] || '/tmp') + '/' + f + '.png' }); }
+const cardTxt = em => A.ev(e => (document.querySelector('[data-cp-person="' + e + '"]') || {}).innerText || '', em);
+const moT = await cardTxt('mo@example.com'), tiaT = await cardTxt('tia@example.com'), dexT = await cardTxt('dex@example.com');
+const cardChk = { start: /Starting rate \$18\.00\/hr \+ approved certificate raises \$0\.00\/hr = current \$18\.00\/hr/.test(moT), policy: /Course fee paid by GrayCo · training days are unpaid · travel paid for courses out of town/.test(moT), cap: /cap reached \(\$8\/hr\)/.test(tiaT), promo: /Promotion eligible — PM/.test(tiaT), notpm: /comes with the PM promotion/.test(tiaT), ladder: /Dual tech → Dual foreman/.test(dexT), dstart: /Starting rate \$23\.00\/hr/.test(dexT) };
+ok('CARD: starting rate + approved raises = current rate; training policy; course travel; Tia shows 🧢 cap reached and ⭐ Promotion eligible — PM; Dex shows the ladder', Object.values(cardChk).every(Boolean) && /Starting rate \$18\.00\/hr \+ approved certificate raises \$0\.00\/hr = current \$18\.00\/hr/.test(moT) && /Course fee paid by GrayCo · training days are unpaid · travel paid for courses out of town/.test(moT) && /cap reached \(\$8\/hr\)/.test(tiaT) && /Promotion eligible — PM/.test(tiaT) && /comes with the PM promotion/.test(tiaT) && /Dual tech → Dual foreman/.test(dexT) && /Starting rate \$23\.00\/hr/.test(dexT), cardChk);
+await A.ev(() => document.querySelector('[data-cp-person="tia@example.com"]').scrollIntoView()); await sleep(300);
+await A.page().screenshot({ path: (process.argv[3] || '/tmp') + '/certrole_tia_tech_cap_master.png' });
+/* exceptions: admin sets "no cap" for Tia with a reason, and a one-off raise */
+await A.ev(() => document.querySelector('[data-cp="excform"][data-em="tia@example.com"]').click()); await sleep(300);
+const noWhy = await A.ev(() => { const f = document.querySelector('[data-cp-excform="tia@example.com"]'); f.querySelector('[data-x="capmode"]').value = 'none'; document.querySelector('[data-cp="xcap"][data-em="tia@example.com"]').click(); return 1; }); await sleep(800);
+const exc0 = cget('gc_cert_plan');
+await A.ev(() => { const f = document.querySelector('[data-cp-excform="tia@example.com"]'); f.querySelector('[data-x="capmode"]').value = 'none'; f.querySelector('[data-x="capwhy"]').value = 'Lead tech for storm season'; document.querySelector('[data-cp="xcap"][data-em="tia@example.com"]').click(); }); await sleep(1500);
+await A.ev(() => { const f = document.querySelector('[data-cp-excform="tia@example.com"]'); f.querySelector('[data-x="mamt"]').value = '0.75'; f.querySelector('[data-x="mwhy"]').value = 'Demo one-off'; document.querySelector('[data-cp="xraise"][data-em="tia@example.com"]').click(); }); await sleep(1500);
+const exc = cget('gc_cert_plan'), tiaT2 = await cardTxt('tia@example.com');
+const tiaC2 = await A.ev(() => { const C = window._gcCertPlan, u = window._crm.users.find(x => x.email === 'tia@example.com'), c = C.raiseCalc(u); return { cap: c.cap, sum: c.due.reduce((a, x) => a + x.hr, 0), reached: c.reached }; });
+ok('EXCEPTIONS: a reason is required; "no cap" for Tia lifts the cap (OSHA 30 $2 in full), a one-off raise is logged; the card shows "Exception by Wesley Johnson on …: … — reason"', !(exc0 && exc0.people && exc0.people['tia@example.com'] && exc0.people['tia@example.com'].exc) && exc.people['tia@example.com'].exc.cap.none === true && tiaC2.sum === 9 && !tiaC2.reached && exc.done.some(d => d.manual && d.email === 'tia@example.com' && d.amount === 0.75) && exc.excLog.length === 2 && /Exception by Wesley Johnson on .*no raise cap — Lead tech for storm season/.test(tiaT2) && /one-off raise \$0\.75\/hr — Demo one-off/.test(tiaT2), { log: exc.excLog, tiaC2, t: tiaT2.slice(-400) });
+await A.page().screenshot({ path: (process.argv[3] || '/tmp') + '/certrole_tia_exceptions.png' });
+await A.ev(() => document.querySelector('[data-cp="excform"][data-em="tia@example.com"]').click()); await sleep(300);
+await A.ev(() => document.querySelector('[data-cp-person="dex@example.com"]').scrollIntoView()); await sleep(300);
+await A.page().screenshot({ path: (process.argv[3] || '/tmp') + '/certrole_dex_dual_tech.png' });
 /* the track picker: Roofing / Insurance options; a change is saved for that person only */
 const opts = await A.ev(() => [...document.querySelector('[data-cp-track="sam@example.com"]').options].map(o => o.value));
 await A.ev(() => { const s = document.querySelector('[data-cp-track="sam@example.com"]'); s.value = 'con_ins_pm'; s.dispatchEvent(new Event('change', { bubbles: true })); }); await sleep(1500);
 const tsv = cget('gc_cert_plan'), sam2 = await card('sam@example.com');
-ok('CERTROLE: the track picker has Roofing PM and Insurance PM; changing Sam to Insurance PM saves on Sam only and his IICRC lines become Required', opts.includes('con_roof_pm') && opts.includes('con_ins_pm') && tsv && tsv.people && tsv.people['sam@example.com'] && tsv.people['sam@example.com'].track === 'con_ins_pm' && Object.keys(tsv.people).join() === 'sam@example.com' && sam2.tk === 'con_ins_pm' && sam2.req.includes('wrt') && !sam2.rec.length && (await card('pat@example.com')).tk === 'con_pm', { opts, people: tsv && tsv.people, sam2: sam2.tk });
+ok('CERTROLE: the track picker has Roofing PM and Insurance PM; changing Sam to Insurance PM saves on Sam only and his IICRC lines become Required', opts.includes('con_roof_pm') && opts.includes('con_ins_pm') && tsv && tsv.people && tsv.people['sam@example.com'] && tsv.people['sam@example.com'].track === 'con_ins_pm' && Object.keys(tsv.people).sort().join() === 'sam@example.com,tia@example.com' && sam2.tk === 'con_ins_pm' && sam2.req.includes('wrt') && !sam2.rec.length && (await card('pat@example.com')).tk === 'con_pm', { opts, people: tsv && tsv.people, sam2: sam2.tk });
 await A.ev(() => { const s = document.querySelector('[data-cp-track="sam@example.com"]'); s.value = 'con_roof_pm'; s.dispatchEvent(new Event('change', { bubbles: true })); }); await sleep(1500);
 await A.ev(() => { const i = document.querySelector('[data-cp-target="ina@example.com|osha30"]'); i.value = '2027-06-30'; i.dispatchEvent(new Event('change', { bubbles: true })); }); await sleep(1500);
 const tg = cget('gc_cert_plan'), ina2 = await card('ina@example.com');
 ok('CERTROLE: an admin\'s optional target date is saved on that person (a goal, not a deadline) and shows as 🎯 Target', tg.people['sam@example.com'].track === 'con_roof_pm' && tg.people['ina@example.com'] && tg.people['ina@example.com'].targets && tg.people['ina@example.com'].targets.osha30 === '2027-06-30' && /🎯 Target Jun 30, 2027/.test(ina2.txt) && !/Overdue/.test(ina2.txt), { p: tg.people, t: ina2.txt.slice(0, 50) });
-ok('the "amounts are suggestions" note shows until they are set', /are <b>suggestions<\/b>|are suggestions/.test(await A.ev(() => document.getElementById('gc-certplan').innerHTML)) || /suggestions/.test(txt), txt.slice(0, 400));
+ok('the owner\'s raise rule note ($5 / $2 / $1, training policy) shows — no "suggestions" note', /The owner's raise rule/.test(txt) && /\$5\/hr/.test(txt) && /\$2\/hr for OSHA 30/.test(txt) && /Course fee paid by GrayCo/.test(txt) && !/suggestions/.test(txt), txt.slice(0, 600));
 ok('👥 People: Pat — WRT held, RRP expired, Master Restorer courses due', /Pat Planner/.test(txt) && /✅ Held/.test(txt) && /❌ Expired — renew/.test(txt) && /IICRC ASD — Applied Structural Drying \(Master Restorer course\)/.test(txt), '');
 ok('⭐ Max Master shows promotion eligible; LAW lines are marked', /⭐ IICRC Master Water Restorer — promotion eligible/.test(txt) && /LAW/.test(txt), '');
 await A.page().screenshot({ path: (process.argv[3] || '/tmp') + '/certplan_people.png' });
 await A.ev(() => document.querySelector('[data-cptab="raises"]').click()); await sleep(500);
 await A.page().screenshot({ path: (process.argv[3] || '/tmp') + '/certplan_raises.png' });
-await A.ev(() => document.querySelector('[data-cp="approve"]').click()); await sleep(1500);
+await A.ev(() => [...document.querySelectorAll('[data-cp-raises] tr')].find(r => /Max Master/.test(r.innerText)).querySelector('[data-cp="approve"]').click()); await sleep(1500);
 const saved = cget('gc_cert_plan');
 const left = await A.ev(() => document.querySelectorAll('[data-cp="approve"]').length);
-ok('✅ Approve saves the raise (who, certificate, amount, by) to the cloud and it leaves the list; a Master designation is one raise (not also an IICRC course raise)', saved && saved.done && saved.done.length === 1 && saved.done[0].email === 'max@example.com' && saved.done[0].rule === 'master:iicrc-master-water-restorer' && saved.done[0].amount === 3000 && saved.done[0].unit === 'yr' && left === 4, { d: saved && saved.done, left });
+const sd = saved && saved.done ? saved.done.filter(d => !d.manual) : [];
+ok('✅ Approve saves the raise (who, certificate, amount, by) to the cloud and it leaves the list; a Master designation is one raise (not also an IICRC course raise); $5 × 2,080 on a PM track', sd.length === 1 && sd[0].email === 'max@example.com' && sd[0].rule === 'master:iicrc-master-water-restorer' && sd[0].amount === 10400 && sd[0].master === true && sd[0].unit === 'yr' && left === 4 + 8 + 6, { d: saved && saved.done, left });
+await A.ev(() => document.querySelector('[data-cptab="outlook"]').click()); await sleep(500);
+const olT = await A.ev(() => document.querySelector('[data-cp-outlook]').innerText);
+ok('📈 Raise outlook & caps tab: every role with starting rate, certificates that pay, cap and top rate; mitigation tech top $25.00/hr ($18 + 7 courses, cap 8)', /Mitigation Technician/.test(olT) && /\$25\.00\/hr/.test(olT) && /Cross-training bonus/.test(olT) && await A.ev(() => document.querySelector('[data-cp-caphr="mit_tech"]').value === '8' && document.querySelector('[data-cp-start="env_tech"]').value === '23' && document.querySelector('[data-cp-masteronce]').checked), olT.slice(0, 300));
+await A.page().screenshot({ path: (process.argv[3] || '/tmp') + '/certrole_raise_outlook.png' });
+await A.ev(() => document.querySelector('[data-cptab="amounts"]').click()); await sleep(400);
+await A.page().screenshot({ path: (process.argv[3] || '/tmp') + '/certrole_raise_amounts.png' });
 await A.ev(() => document.querySelector('[data-cptab="pay"]').click()); await sleep(400);
 const pay = await A.ev(() => { const s = (a, v) => { const e = document.querySelector('[' + a + ']'); e.value = v; e.dispatchEvent(new Event('input', { bubbles: true })); }; s('data-cp-tot', '50'); s('data-cp-em', '20'); return document.querySelector('[data-cp-out]').textContent; });
 ok('⏱ the week checker: 50 h with 20 emergency → 20 h × $20 + 30 h × $30 = $1,300', /= \$1300\.00/.test(pay) && /not stacked/.test(pay), pay);
@@ -125,5 +167,14 @@ const c2 = cget('gc_cert_plan');
 ok('📋 an admin can switch a line between Required and 💡 Recommended per role (Roofing PM WRT → Required)', c2.tracks.con_roof_pm.reqs[0].id === 'wrt' && c2.tracks.con_roof_pm.reqs[0].rec === false && c2.tracks.con_ins_pm.reqs[0].rec !== true && c2.tracks.con_pm.reqs[0].rec === true, c2.tracks.con_roof_pm.reqs[0]);
 const todo = await A.ev(() => window._gcTodoExt.map(f => { try { return f(); } catch (e) { return []; } }).flat().filter(x => /^cp/.test(x.key)).map(x => x.title));
 ok('To-Do: raises due, and only EXPIRED required certificates (never "overdue") for admins', todo.some(t => /💵 Raise due: Mo Tech/.test(t)) && todo.some(t => /Pat Planner: 1 required certificate expired — renew/.test(t)) && !todo.some(t => /overdue/i.test(t)) && !todo.some(t => /(Mo Tech|Eve Abate|Sam Demo|Ina Demo): \d+ required/.test(t)), todo);
+await A.ev(() => { const o = document.getElementById('gc-certplan'); if (o) o.remove(); });
+if (await A.ev(() => typeof window._gcOpenTimesheets === 'function')) {
+  await A.ev(() => window._gcOpenTimesheets()); await sleep(1200);
+  const tc = await A.ev(() => { const s = document.querySelector('#_tsC'); return s ? [...s.options].map(o => o.text) : null; });
+  ok('⏱ Timesheets: an admin can add time with the 🎓 Training (unpaid) code', tc && tc.includes('🎓 Training (unpaid)'), tc);
+  await A.ev(() => { document.querySelector('#_tsU').value = 'Tia Demo'; document.querySelector('#_tsC').value = 'training'; document.querySelector('#_tsAdd').click(); }); await sleep(1200);
+  const ts = await A.ev(async () => { const l = (window.idbGet ? await window.idbGet('timesheets') : null) || []; return l.filter(r => r.user === 'Tia Demo').map(r => r.code || ''); });
+  ok('⏱ the training entry is saved with code "training" (payroll counts it as $0, not toward overtime)', ts.includes('training'), ts);
+}
 ok('no page errors', !errs.length, errs);
 const n = R.filter(Boolean).length; console.log('CERTPLAN ' + n + '/' + R.length); process.exit(n === R.length ? 0 : 1);

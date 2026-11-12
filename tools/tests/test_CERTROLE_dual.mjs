@@ -1,0 +1,68 @@
+// test_CERTROLE_dual.mjs <build-dir> [shot-dir] — patch CERTROLE (owner 11/12, "like they do both"): a cross-trained
+// "Restoration & Abatement Tech" gets BOTH the Mitigation and the Environmental tool tabs (no combined hub tabs), both sets of field
+// buttons on the phone (Mitigation first), is in both companies (read side) and switches Mitigation ↔ Environmental only.
+// Offline harness, made-up people only.
+import { computer, signIn, sleep, cset, resetCloud } from '/tmp/claude-0/-home-user-graycocrm1/6a5b2b6b-8a4d-5505-9f82-62521adb6674/scratchpad/wN/harness_N.mjs';
+const R = []; const ok = (n, c, i) => { R.push(!!c); console.log((c ? 'PASS ' : 'FAIL ') + n + (i !== undefined ? '  ' + JSON.stringify(i).slice(0, 500) : '')); };
+const BUILD = process.argv[2], SHOT = process.argv[3] || '';
+resetCloud();
+const now = new Date().toISOString();
+const USERS = role => [{ id: 'u1', name: 'Wesley Johnson', email: 'wjohnson@grayco-cs.com', role: 'Admin', payType: 'owner', active: true },
+  { id: 'u2', name: 'Dex Demo', email: 'sbiffle@grayco-cs.com', role, active: true }];
+cset('users', USERS('Restoration & Abatement Tech'));
+cset('projects', [
+  { id: 'M1', name: 'Demo Ross basement', client: 'Demo Ross', status: 'active', type: 'Water Damage', companyId: 'mitigation', mitTech: 'Dex Demo', updatedAt: now },
+  { id: 'E1', name: 'Demo Kline trim', client: 'Demo Kline', status: 'active', type: 'Environmental', companyId: 'environmental', envTech: 'Dex Demo', updatedAt: now },
+  { id: 'C1', name: 'Demo Smith deck', client: 'Demo Smith', status: 'active', type: 'Residential Reno', contract: 12000, pm: 'Pat Demo', updatedAt: now }]);
+const navOf = A => A.ev(() => [...document.querySelectorAll('aside nav button, aside button, nav button')].filter(b => b.offsetParent && !b.closest('#gc-ra-dock,#gc-fh-tabs')).map(b => b.innerText.replace(/\s+/g, ' ').replace(/\s\d+$/, '').trim()).filter(x => x && x !== '☰' && x !== 'Sign Out'));
+const fullCrm = A => A.ev(() => { const b = document.querySelector('#gc-ra-desk [data-ra-a="full"]'); if (b) b.click(); });
+const errs = [];
+
+/* ═══ computer: the menu, the company switch ═══ */
+const B = await computer('sbiffle@grayco-cs.com', { build: BUILD });
+B.page().on('pageerror', e => errs.push('B ' + String(e.message).slice(0, 200)));
+await signIn(B, 'sbiffle@grayco-cs.com', 15000); await sleep(9000);
+const st = await B.ev(() => ({ ws: window._gcMitWS.state(), cos: window._gcCo.userCos(window._crm.users.find(u => u.email === 'sbiffle@grayco-cs.com')), can: window._gcCo.canSwitch(), my: window._gcCo.myCos(), f: window._gcCo.filter() }));
+ok('kind "dualtech"; in both companies (Mitigation + Environmental, read side); may switch, only between those two; starts on Mitigation', st.ws.kind === 'dualtech' && st.cos.join() === 'mitigation,environmental' && st.can === true && st.my.join() === 'mitigation,environmental' && st.f === 'mitigation', st);
+await fullCrm(B); await sleep(1000);
+let n = await navOf(B);
+const MIT = ['💧 Drying jobs', '📈 Moisture readings', '📋 Daily drying logs', '🌀 Equipment', '🧮 Drying calculator', '✍️ Work authorizations', '🚨 Emergencies & on call'];
+const ENV = ['☣️ Hazard jobs', '🌫 Air monitoring & clearance', '🚧 Containment & PPE', '🛢 Waste manifests', '📜 Certs, papers & rules'];
+ok('menu: BOTH the Mitigation tool tabs and the Environmental tool tabs (tech set), Mitigation first; no combined 💧 Mitigation / ☢️ Environmental hub; no claims / RoofScout', MIT.every(x => n.includes(x)) && ENV.every(x => n.includes(x)) && n.indexOf('💧 Drying jobs') < n.indexOf('☣️ Hazard jobs') && !n.includes('💧 Mitigation') && !n.some(x => /☢️ Environmental$|RoofScout|Claims & adjusters/.test(x)), n);
+if (SHOT) await B.page().screenshot({ path: SHOT + '/certrole_dual_menu.png' });
+await B.ev(() => window._gcCo.setFilter('environmental')); await sleep(2000);
+const f2 = await B.ev(() => ({ f: window._gcCo.filter(), co: window._gcMitWS.ws().co }));
+await B.ev(() => window._gcCo.setFilter('construction')); await sleep(1500);
+const f3 = await B.ev(() => window._gcCo.filter());
+await B.ev(() => window._gcCo.setFilter('all')); await sleep(1500);
+const f4 = await B.ev(() => window._gcCo.filter());
+ok('switch Mitigation → Environmental works; Construction or "All" is not theirs (stays on one of the two)', f2.f === 'environmental' && f2.co === 'environmental' && /^(mitigation|environmental)$/.test(f3) && /^(mitigation|environmental)$/.test(f4), { f2, f3, f4 });
+n = await navOf(B);
+ok('with Environmental picked the menu still has both sets of tool tabs', MIT.every(x => n.includes(x)) && ENV.every(x => n.includes(x)), n);
+await B.ev(() => window._setView('enviro')); await sleep(1200);
+ok('asking for the combined ☢️ tab opens ☣️ Hazard jobs', await B.ev(() => localStorage.getItem('grayco_view') === 'ews_jobs'));
+await B.b.close();
+
+/* ═══ phone: GrayCo Field — both sets of field buttons ═══ */
+const M = await computer('sbiffle@grayco-cs.com', { build: BUILD, mobile: true });
+M.page().on('pageerror', e => errs.push('M ' + String(e.message).slice(0, 200)));
+await signIn(M, 'sbiffle@grayco-cs.com', 15000); await sleep(11000);
+const fh = await M.ev(() => ({ app: (window._gcRA && window._gcRA.state ? window._gcRA.state().app : ''), q: [...document.querySelectorAll('#_gcJobPick .gc-ra-q [data-ra-a]')].map(b => b.getAttribute('data-ra-a')) }));
+ok('📱 field view: the app is "dual"; Mitigation buttons first (reading, photos, equipment, daily log, work auth, notes, clock, emergency), then Environmental (air, containment, PPE, waste)', fh.app === 'dual' && fh.q.join() === 'mws_read,mws_photos,mws_equip,mws_log,mws_auth,mws_note,clock,mws_emerg,ews_air,ews_contain,ews_ppe,ews_waste', fh);
+if (SHOT) await M.page().screenshot({ path: SHOT + '/certrole_dual_field_phone.png' });
+const jobs = await M.ev(() => window._gcMitWS.fieldJobs('dual').map(p => p.id));
+ok('📱 their jobs: the Mitigation job and the Environmental job (never the Construction one)', jobs.includes('M1') && jobs.includes('E1') && !jobs.includes('C1'), jobs);
+await M.b.close();
+
+/* ═══ a Dual Foreman: not the tech set (claims tools too), still both companies ═══ */
+cset('users', USERS('Dual Foreman'));
+const F = await computer('sbiffle@grayco-cs.com', { build: BUILD });
+F.page().on('pageerror', e => errs.push('F ' + String(e.message).slice(0, 200)));
+await signIn(F, 'sbiffle@grayco-cs.com', 15000); await sleep(9000);
+await fullCrm(F); await sleep(1000);
+const fk = await F.ev(() => window._gcMitWS.state().kind); n = await navOf(F);
+ok('Dual Foreman: kind "dualfore", both sets of tool tabs incl. 🛡 Claims & adjusters and 📨 Notifications', fk === 'dualfore' && n.includes('🛡 Claims & adjusters') && n.includes('📨 Notifications') && n.includes('💧 Drying jobs') && n.includes('☣️ Hazard jobs'), { fk, n });
+await F.b.close();
+
+ok('no page errors', !errs.length, errs);
+const k = R.filter(Boolean).length; console.log('CERTROLE_dual ' + k + '/' + R.length); process.exit(k === R.length ? 0 : 1);
