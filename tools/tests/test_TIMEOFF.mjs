@@ -89,7 +89,7 @@ try {
   await shot(A, '5_admin_decide');
   await A.page().locator('.gc-to-ov[data-to-sheet="decide"] [data-go="1"]').click(); await sleep(2500);
   const rec2 = (H.cget('gc_timeoff') || { list: [] }).list.find(r => r.id === rec.id);
-  ok(rec2 && rec2.status === 'approved' && rec2.decidedBy === 'Demo Owner' && rec2.decisionNote === 'OK — get well', 'approved in the cloud with the note', rec2);
+  ok(rec2 && rec2.status === 'approved' && rec2.decidedByEmail === 'wjohnson@grayco-cs.com' && rec2.decisionNote === 'OK — get well', 'approved in the cloud with the note (by the signed-in admin)', { status: rec2 && rec2.status, by: rec2 && rec2.decidedBy, email: rec2 && rec2.decidedByEmail, note: rec2 && rec2.decisionNote });
   const set2 = await A.ev(() => { window._gcApprovalSetFresh && window._gcApprovalSetFresh(); return window._gcApprovalCurrent().groups.other.filter(x => /^to:/.test(x.id)).length; });
   ok(set2 === 0, 'admin: off the approval list once decided');
   // the schedule board
