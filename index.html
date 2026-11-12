@@ -144629,6 +144629,7 @@ function srcStored(out){
       else if (t.leadId) o.act = { l: 'Open lead', f: function(){ go('leads'); later(function(){ try { if (W._gcLA && W._gcLA.edit) W._gcLA.edit(t.leadId); } catch (e) {} }, 450); } };   /* patch OFFICETAB */
       if (t.kind === 'gcp_checkin') { o.cat = 'cust'; o.prio = 'high'; o.vis = 'company'; o.thing = 'gcpchk|' + id; o.sub = s(t.note); o.act = { l: '✅ Checked in…', f: function(){ call('_gcCheckinDone', t); } }; }   /* patch GCP: the customer's mid-job check-in */
       if (t.kind === 'partner_job') { o.cat = 'appr'; o.prio = 'high'; o.thing = 'pjob|' + id; o.sub = s(t.note); o.vis = 'company'; if (isAdmin()) o.act = actApprove(function(){ if (!call('_gcPartnerJobOpen', t)) go('launchjob'); }); else { o.waiting = true; o.waitWho = ['Wesley or Nick']; } }   /* patch API: a partner's job waits on the admins */
+      if (typeof W._gcTodoStoredHook === 'function') { try { W._gcTodoStoredHook(o, t); } catch (e) { warn(e); } }   /* patch NUDGE: a nudge / a To-Do given to someone — who it is from, its one button */
       out.push(item(o));
     });
   });
@@ -224144,5 +224145,575 @@ W._gcCoTag = { of: of, pass: pass, filter: filter, home: home, forHome: forHome,
   trainHead: trainHead, trainSections: trainSections, docSections: docSections, set: setTag, pull: pullTags, repaint: repaint, TRAIN: TRAIN, DOCS: DOCS, COURSES: COURSES, TPLS: TPLS, TPL_COS: TPL_COS };
 later(pullTags, 4000);
 try { console.log('[GC] 🏢 Company training, papers & marketing (patch COTRAIN): ' + COURSES.length + ' courses, ' + TPLS.length + ' papers'); } catch (e) {}
+})(window);
+</script>
+<script id="gc-patch-nudge">
+/* __GC_PATCH_NUDGE__ — 👉 NUDGE + ➕ TO-DO FOR SOMEONE (owner 11/12: "be able to click here as admin to nudge that job knocked
+   off the list etc and be able to put todos in anyone's todo list as admin and office").
+   • 👉 Nudge (admins and the office only): on the Leads list the Assigned chip ("GM Glenn Miller") opens the assign picker as
+     before, now with "👉 Nudge Glenn" on top — quick reasons (Bid it or pass on it · Call the customer · Update the stage ·
+     Get this off your list — mark Lost / not bidding), an optional note and a due day (today / tomorrow / a date); the
+     picker's people list under it is the "Reassign to…" (the existing assign code). The same menu is on the lead drawer
+     (👉 Nudge next to "Assigned to"), the Projects list's PM cell and the job page's "PM:" line (Reassign = the CRM's
+     own PM picker, saved as a person's edit).
+     A nudge is ONE To-Do on that person's To-Do (gc_kv gc_office_tasks — the stored To-Do list patch TD2 reads; synced
+     by the existing merge-by-id push), kind "nudge", id NUDGE_<L|J>_<lead/job id>_<person>: nudging again while it is
+     open stacks a count ("2 reminders"), never a second To-Do. "👉 nudged 2h ago by Wesley" shows on the row, the
+     drawer and the job page. When the lead's stage or assignee changes, or it is marked lost / not bidding (a job: its
+     status or PM), with a lead / job saved after the nudge, the nudge To-Do completes itself ("auto — stage changed …").
+   • ➕ To-Do for someone (To-Do page, admins and the office only): person (the active staff list; a person whose
+     `companies` list does not include the picked company is left out), title, note, due, priority and an optional
+     lead / job link (search). It is a gc_office_tasks record, kind "given", for that person only ("from Wesley"); they
+     check it off; the giver sees it under "📤 Given by me" (open / overdue / done) on their To-Do.
+   • The in-app notice: the To-Do itself, plus a card on the person's screen ("👉 Wesley nudged you …", Open / ✓ Got it;
+     a browser notice only if this computer already allows them and the CRM's overnight quiet hours are not on). No text
+     message and no e-mail (data-entry mode only stops customer-facing sends; this is staff-only).
+   Data: gc_office_tasks only (the same authenticated cloud path every stored To-Do uses); no new table, no new permission.
+   API: window._gcNudge = { send(kind, id, {reason, note, due}), give(rec), state(), openFor(kind, id, anchor), sheet(), sweep() } */
+(function(W){
+'use strict';
+if (W.__GC_PATCH_NUDGE__) return; W.__GC_PATCH_NUDGE__ = true;
+var D = W.document, ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout, RI = W.__GC_REAL_SETINTERVAL__ || W.__GC_NATIVE_SETINTERVAL__ || W.setInterval;
+function later(f, ms){ return ST.call(W, f, ms || 0); }
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v.filter(function(x){ return x != null; }) : []; }
+function esc(v){ return String(v == null ? '' : v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function warn(e){ try { console.warn('[GC NUDGE]', e && e.message || e); } catch (x) {} }
+function nowIso(){ return new Date().toISOString(); }
+function pad(n){ return (n < 10 ? '0' : '') + n; }
+function ymd(d){ return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+function today(){ return ymd(new Date()); }
+function addDays(y, n){ var d = new Date((y || today()) + 'T12:00:00'); d.setDate(d.getDate() + n); return ymd(d); }
+function hash(t){ t = String(t || ''); var h = 5381; for (var i = 0; i < t.length; i++) h = ((h << 5) + h + t.charCodeAt(i)) | 0; return (h >>> 0).toString(36); }
+function ago(ts){ var t = Date.parse(ts || ''); if (!isFinite(t)) return ''; var m = Math.max(0, (Date.now() - t) / 6e4); return m < 1 ? 'just now' : m < 60 ? Math.floor(m) + 'm ago' : m < 1440 ? Math.floor(m / 60) + 'h ago' : Math.floor(m / 1440) + 'd ago'; }
+function dueTxt(d){ if (!d) return ''; var t0 = today(); if (d === t0) return 'today'; if (d === addDays(t0, 1)) return 'tomorrow'; try { return new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); } catch (e) { return d; } }
+function first(n){ return s(n).split(/\s+/)[0] || s(n); }
+function initials(n){ var w = s(n).split(/\s+/).filter(Boolean); return ((w[0] || '?')[0] + (w.length > 1 ? w[w.length - 1][0] : '')).toUpperCase(); }
+
+/* ── who is looking ── */
+function authEmail(){ try { var A = W.__GC_AUTH__, e = A && A.email && A.email(); if (e) return low(e); } catch (e) {} return ''; }
+function vas(){ try { return !!(W._gcVAS && W._gcVAS.active && W._gcVAS.active()); } catch (e) { return false; } }
+function users(){ return arr(W._crm && W._crm.users); }
+function meUser(){
+  try { if (typeof W._gcMeUser === 'function') { var u = W._gcMeUser(); if (u && (u.name || u.email)) return u; } } catch (e) {}
+  var e = authEmail(); return e ? users().filter(function(u){ return u && low(u.email) === e; })[0] || null : null;
+}
+function myName(){ var u = meUser() || {}; return s(u.name) || (authEmail() ? authEmail().split('@')[0] : ''); }
+/* admins and the office (the same test the rest of the CRM uses: gc_staff admin, or OFFICEFULL); never in "View as" */
+function canGive(){ if (vas() || !authEmail()) return false; try { return typeof W._gcFullAccess === 'function' && !!W._gcFullAccess(); } catch (e) { return false; } }
+function gone(n){ try { return !!(W._gcIsGonePerson && W._gcIsGonePerson(n)); } catch (e) { return false; } }
+function coPicked(){ try { return W._gcCo && W._gcCo.filter ? s(W._gcCo.filter()) || 'all' : 'all'; } catch (e) { return 'all'; } }
+/* the staff a To-Do can go to: active people on the company's people list (as patch TD2's team); a `companies` list on a
+   person, when there is one, must include the picked company */
+function staff(co){
+  var seen = {}, out = [];
+  users().forEach(function(u){
+    if (!u || (!s(u.email) && !s(u.name)) || u.active === false || u.departed || /disabled|inactive|terminated/i.test(s(u.status)) || gone(u.name)) return;
+    if (co && co !== 'all' && Array.isArray(u.companies) && u.companies.length && u.companies.map(low).indexOf(low(co)) < 0) return;
+    var k = low(u.email) || low(u.name); if (seen[k]) return; seen[k] = 1;
+    out.push({ key: k, name: s(u.name) || s(u.email), email: low(u.email), role: s(u.role) });
+  });
+  return out.sort(function(a, b){ return a.name < b.name ? -1 : a.name > b.name ? 1 : 0; });
+}
+function personOf(name){
+  var n = low(name); if (!n) return null;
+  var u = users().filter(function(x){ return x && (low(x.name) === n || low(x.email) === n); })[0];
+  return u ? { key: low(u.email) || low(u.name), name: s(u.name) || s(u.email), email: low(u.email) } : { key: n, name: s(name), email: n.indexOf('@') > 0 ? n : '' };
+}
+function isMine(r){ var e = authEmail(), n = low(myName()); return arr(r.assignees).some(function(a){ a = low(a); return a && (a === e || a === n); }) || (!arr(r.assignees).length && n && low(r.assignee) === n); }
+function iGave(r){ var e = authEmail(), n = low(myName()); return (e && low(r.addedByEmail) === e) || (n && low(r.addedBy) === n); }
+
+/* ── leads & jobs ── */
+function leadsAll(){
+  var a = arr(W._crm && W._crm.leads); if (a.length) return a;
+  a = arr(W.__gcLeadsLive); if (a.length) return a;
+  try { return arr(W._gcLeadsHubKit && W._gcLeadsHubKit.all()); } catch (e) { return []; }
+}
+function leadById(id){ id = s(id); if (!id) return null; return leadsAll().filter(function(l){ return l && s(l.id) === id; })[0] || null; }
+function projById(id){ id = s(id); if (!id) return null; return arr(W._crm && W._crm.projects).filter(function(p){ return p && s(p.id) === id; })[0] || null; }
+function leadWho(l){ return s(l && (l.pm || l.estimator || l.apm)); }
+function leadStage(l){ try { if (W._gcLeadNC && W._gcLeadNC.stage) return s(W._gcLeadNC.stage(l)); } catch (e) {} return s(l.stage) || 'New Lead'; }
+function leadShut(l){ try { if (W._gcLeadNC && W._gcLeadNC.shut) return !!W._gcLeadNC.shut(l); } catch (e) {} return !!(l.notBidding || l.noBid || l.dismissed || l.converted || /lost|won|dead/i.test(s(l.stage))); }
+function leadName(l){ return s(l && (l.name || l.client || l.title || l.company || l.address)) || 'Lead'; }
+function jobName(p){ return s(p && (p.name || p.address || p.client)) || 'Job'; }
+function stampOf(x){ return [x && x.updatedAt, x && x.savedAt, x && x.stageChangedAt, x && x.assignedAt].map(s).sort().pop() || ''; }
+function tombstoned(l){ try { return typeof W._gcIsTombstoned === 'function' && !!W._gcIsTombstoned('leads', l.id); } catch (e) { return false; } }
+function target(kind, id){
+  if (kind === 'job') { var p = projById(id); if (!p) return null; return { kind: 'job', id: s(p.id), name: jobName(p), who: s(p.pm), snap: { st: low(p.status), who: low(p.pm) }, co: coOf('job', p) }; }
+  var l = leadById(id); if (!l) return null;
+  return { kind: 'lead', id: s(l.id), name: leadName(l), who: leadWho(l), snap: { st: leadStage(l), who: low(leadWho(l)), shut: leadShut(l) }, co: coOf('lead', l) };
+}
+function coOf(kind, x){ try { if (!W._gcCo) return ''; return s(kind === 'job' ? W._gcCo.ofJob(x) : W._gcCo.ofLead(x)); } catch (e) { return ''; } }
+
+/* ── the stored To-Do list (gc_office_tasks), written the way patch TD2 writes it ── */
+var OT = 'gc_office_tasks';
+function raw(){ try { return localStorage.getItem(OT) || '[]'; } catch (e) { return '[]'; } }
+function list(){ try { var l = JSON.parse(raw()); return Array.isArray(l) ? l.filter(function(x){ return x && typeof x === 'object'; }) : []; } catch (e) { return []; } }
+function save(l){
+  if (vas()) return false;   /* "View as" is a preview: nothing is written */
+  try { localStorage.setItem(OT, JSON.stringify(l)); } catch (e) { warn(e); return false; }
+  try { if (W._gcApplySync) W._gcApplySync(OT, l); } catch (e) {}
+  try { if (typeof W._gcOfficeTasksPush === 'function') W._gcOfficeTasksPush(); else if (typeof W._supaUpsertNow === 'function') W._supaUpsertNow(OT, JSON.stringify(l)); else if (typeof W._supaUpsert === 'function') W._supaUpsert(OT, l); } catch (e) { warn(e); }
+  IDX.sig = ''; try { if (W._gcTD2 && W._gcTD2.paint) W._gcTD2.paint(); } catch (e) {}
+  return true;
+}
+function mut(id, fn){ var l = list(), hit = null, at = nowIso(); l.forEach(function(t){ if (t && String(t.id) === String(id) && fn(t) !== false) { t.updatedAt = at; hit = t; } }); if (hit) save(l); return hit; }
+var MINE = /^(nudge|given)$/;
+/* an index of the open nudges by lead / job, rebuilt only when the list changes */
+var IDX = { sig: '', lead: {}, job: {}, all: [] };
+function index(){
+  var r = raw(), sig = r.length + ':' + r.slice(0, 40) + r.slice(-120) + ':' + hash(r.length > 4000 ? r.slice(-4000) : r);
+  if (sig === IDX.sig) return IDX;
+  var x = { sig: sig, lead: {}, job: {}, all: [] };
+  list().forEach(function(t){
+    if (!MINE.test(s(t.kind))) return; x.all.push(t);
+    if (t.kind !== 'nudge' || t.done || t.deleted) return;
+    var m = t.nudgeKind === 'job' ? x.job : x.lead, k = s(t.nudgeId); if (!k) return;
+    if (!m[k] || s(t.lastNudgeAt) > s(m[k].lastNudgeAt)) m[k] = t;
+  });
+  IDX = x; return x;
+}
+function lastOf(r){ var n = arr(r.nudges); return n[n.length - 1] || { at: r.lastNudgeAt || r.addedAt, by: r.addedBy, reason: '' }; }
+function tagText(r){ if (!r) return ''; var L = lastOf(r), n = Math.max(1, parseInt(r.repeats, 10) || 1); return '👉 nudged ' + ago(L.at) + ' by ' + first(L.by || r.addedBy) + (n > 1 ? ' · ×' + n : ''); }
+function tagTip(r){ return arr(r.nudges).map(function(n){ return first(n.by) + ', ' + ago(n.at) + ': ' + s(n.reason) + (n.note ? ' — ' + s(n.note) : '') + (n.due ? ' (due ' + dueTxt(n.due) + ')' : ''); }).join('\n') + (r.seenAt ? '\nSeen by ' + first(r.assignee) + ' ' + ago(r.seenAt) : ''); }
+
+/* ── 👉 send a nudge ── */
+var REASONS = ['Bid it or pass on it', 'Call the customer', 'Update the stage', 'Get this off your list — mark Lost / not bidding'];
+function send(kind, id, o){
+  o = o || {};
+  if (!canGive()) { toast('Only admins and the office can nudge.', true); return null; }
+  var t = target(kind === 'job' ? 'job' : 'lead', id); if (!t) { toast('Could not find that ' + (kind === 'job' ? 'job' : 'lead') + '.', true); return null; }
+  if (!t.who) { toast('Nobody is assigned yet — assign it first.', true); return null; }
+  var p = personOf(t.who), me = myName(), at = nowIso(), why = s(o.reason) || (s(o.note) ? 'Note' : 'Take a look');
+  var rid = 'NUDGE_' + (t.kind === 'job' ? 'J' : 'L') + '_' + t.id + '_' + hash(p.key);
+  var entry = { at: at, by: me, byEmail: authEmail(), reason: why, note: s(o.note).slice(0, 500), due: s(o.due) };
+  var l = list(), rec = l.filter(function(x){ return x && x.id === rid; })[0], again = !!(rec && !rec.done && !rec.deleted);
+  if (again) { rec.repeats = (parseInt(rec.repeats, 10) || 1) + 1; rec.nudges = arr(rec.nudges).concat([entry]).slice(-20); }
+  else {
+    if (!rec) { rec = { id: rid }; l.push(rec); }
+    rec.done = false; rec.deleted = false; rec.doneAt = ''; rec.doneBy = ''; rec.decidedBy = ''; delete rec.autoDone; delete rec.deletedBy; delete rec.deletedAt;
+    rec.repeats = 1; rec.nudges = [entry]; rec.addedAt = at;
+  }
+  var lbl = why === 'Note' ? s(o.note).slice(0, 120) : why;
+  Object.assign(rec, { kind: 'nudge', label: '👉 ' + lbl + ' — ' + t.name, note: 'from ' + first(me) + (entry.note && why !== 'Note' ? ' — ' + entry.note : ''), addedBy: me, addedByEmail: authEmail(),
+    updatedAt: at, assignees: [p.email || p.key], assignee: p.name, personal: true, shared: false, self: false, prio: 'high', due: entry.due || '',
+    nudgeKind: t.kind, nudgeId: t.id, nudgeName: t.name, snap: t.snap, lastNudgeAt: at, seenAt: '', seenBy: '' });
+  if (t.co) rec.companyId = t.co;
+  if (t.kind === 'job') rec.pid = t.id; else delete rec.pid;
+  save(l);
+  toast('👉 ' + first(p.name) + ' is nudged' + (again ? ' again (×' + rec.repeats + ')' : '') + ' — it is on ' + first(p.name) + '’s To-Do');
+  return rec;
+}
+/* the nudge clears itself once the person acts: the lead's stage / assignee changed or it was taken off the list (a job:
+   its status or PM), on a copy saved after the nudge (an older copy on a slow computer never clears it) */
+var LOG = [];
+function sweep(){
+  if (vas()) return 0;
+  var l = list(), at = nowIso(), n = 0;
+  l.forEach(function(r){
+    if (!r || r.kind !== 'nudge' || r.done || r.deleted || !r.snap) return;
+    var why = '', x = r.nudgeKind === 'job' ? projById(r.nudgeId) : leadById(r.nudgeId);
+    if (!x) return;
+    var fresh = stampOf(x) > s(r.lastNudgeAt);
+    if (r.nudgeKind === 'job') {
+      if (x.deleted === true) why = 'the job was deleted';
+      else if (fresh && low(x.pm) !== s(r.snap.who)) why = s(x.pm) ? 'reassigned to ' + s(x.pm) : 'the PM was taken off';
+      else if (fresh && low(x.status) !== s(r.snap.st)) why = 'status changed to ' + s(x.status);
+    } else {
+      if (x.deleted === true || tombstoned(x)) why = 'the lead was deleted';
+      else if (fresh) {
+        var st = leadStage(x), who = low(leadWho(x));
+        if (who !== s(r.snap.who)) why = who ? 'reassigned to ' + leadWho(x) : 'unassigned';
+        else if (st !== s(r.snap.st)) why = 'stage changed to ' + st;
+        else if (leadShut(x) && !r.snap.shut) why = 'taken off the list';
+      }
+    }
+    if (!why) return;
+    r.done = true; r.doneAt = at; r.updatedAt = at; r.doneBy = 'Auto'; r.autoDone = why; n++;
+    LOG.unshift({ at: at, id: r.id, why: why }); LOG = LOG.slice(0, 40);
+  });
+  if (n) save(l);
+  return n;
+}
+
+/* ── ➕ a To-Do for someone ── */
+function give(o){
+  o = o || {};
+  if (!canGive()) { toast('Only admins and the office can give To-Dos.', true); return null; }
+  var p = o.to && (typeof o.to === 'object' ? o.to : personOf(o.to)); if (!p || !s(o.title)) return null;
+  var me = myName(), at = nowIso(), note = s(o.note).slice(0, 1000);
+  var rec = { id: 'GIVEN_' + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36), kind: 'given', label: s(o.title).slice(0, 200),
+    note: 'from ' + first(me) + (note ? ' — ' + note : ''), givenNote: note, addedBy: me, addedByEmail: authEmail(), addedAt: at, updatedAt: at, done: false,
+    assignees: [p.email || p.key], assignee: p.name, personal: true, shared: false, self: low(p.email) === authEmail(), prio: /^(high|low)$/.test(s(o.prio)) ? o.prio : 'med' };
+  if (s(o.due)) rec.due = s(o.due);
+  if (o.link && o.link.kind === 'job') { rec.pid = s(o.link.id); rec.linkName = s(o.link.name); }
+  if (o.link && o.link.kind === 'lead') { rec.linkLead = s(o.link.id); rec.linkName = s(o.link.name); }
+  var co = o.link ? coOf(o.link.kind, o.link.kind === 'job' ? projById(o.link.id) : leadById(o.link.id)) : (coPicked() !== 'all' ? coPicked() : '');
+  if (co) rec.companyId = co;
+  var l = list(); l.push(rec); if (!save(l)) return null;
+  toast('➕ On ' + first(p.name) + '’s To-Do: ' + rec.label.slice(0, 60));
+  return rec;
+}
+
+/* ── opening what a To-Do is about ── */
+function openLead(id){
+  try { if (D.documentElement.classList.contains('_fieldmode') && W._gcLA && W._gcLA.edit) { W._gcLA.edit(id); return; } } catch (e) {}
+  try { if (W._setView) W._setView('leads'); } catch (e) {}
+  var n = 0; (function go(){ n++; if (W._gcLeadsHub && W._gcLeadsHub.open && D.getElementById('gc-leads-hub')) { try { W._gcLeadsHub.open(id); } catch (e) { warn(e); } return; } if (n < 20) later(go, 250); })();
+}
+function openJob(pid){ try { if (typeof W._navToJob === 'function') return W._navToJob(pid); if (typeof W._gcOpenJobProfile === 'function') return W._gcOpenJobProfile(pid); } catch (e) { warn(e); } }
+function seen(id){ mut(id, function(t){ if (t.seenAt) return false; t.seenAt = nowIso(); t.seenBy = myName(); }); }
+function openRec(r){ if (!r) return; if (isMine(r)) seen(r.id); if (r.kind === 'nudge') { if (r.nudgeKind === 'job') openJob(r.nudgeId); else openLead(r.nudgeId); return; } if (r.linkLead) return openLead(r.linkLead); if (r.pid) return openJob(r.pid); try { if (W._gcTD2 && W._gcTD2.openToday) W._gcTD2.openToday(); } catch (e) {} }
+/* patch TD2 calls this for each stored To-Do (srcStored): who it is from, and the one button */
+W._gcTodoStoredHook = function(o, t){
+  if (!t || !MINE.test(s(t.kind))) return;
+  var L = t.kind === 'nudge' ? lastOf(t) : { at: t.addedAt, by: t.addedBy }, extra = t.kind === 'nudge' ? s(L.note) : s(t.givenNote);
+  o.thing = 'gcn|' + s(t.id);
+  o.sub = 'from ' + first(L.by || t.addedBy) + ' · ' + ago(L.at) + (extra ? ' — ' + extra : '') + (t.linkName ? ' · 🔗 ' + s(t.linkName) : '');
+  if (t.kind === 'nudge' && t.nudgeKind === 'lead') o.act = { l: 'Open lead', f: function(){ openRec(t); } };
+  else if (t.kind === 'nudge' && t.nudgeKind === 'job') o.act = { l: 'Open job', f: function(){ openRec(t); } };
+  else if (t.linkLead) o.act = { l: 'Open lead', f: function(){ openRec(t); } };
+  else if (t.pid) o.act = { l: 'Open job', f: function(){ openRec(t); } };
+  if (/^(high|med|low)$/.test(s(t.prio))) o.prio = t.prio;
+};
+
+/* ── styles ── */
+function css(){
+  if (D.getElementById('gcn-css')) return;
+  var c = D.createElement('style'); c.id = 'gcn-css';
+  c.textContent = [
+    '.gcn-tag{display:inline-block;margin-top:3px;font:700 11px Arial,sans-serif;color:#9a3412;background:#ffedd5;border:1px solid #fed7aa;border-radius:8px;padding:1px 7px;white-space:nowrap;cursor:default}',
+    '.gcn-sec{padding:10px 12px;border-bottom:1px solid #eee;background:#fffbeb;font:13px Arial,sans-serif;color:#1b1640;text-align:left}',
+    '.gcn-h{font-weight:800;font-size:14px;margin-bottom:6px;display:flex;gap:6px;align-items:baseline;flex-wrap:wrap}.gcn-h .gcn-st{font-weight:600;font-size:11.5px;color:#9a3412}',
+    '.gcn-rs{display:flex;flex-direction:column;gap:4px}.gcn-rs button,.gcn-due button{border:1px solid #fcd34d;background:#fff;border-radius:8px;padding:7px 9px;font:700 12.5px Arial,sans-serif;color:#1b1640;cursor:pointer;text-align:left;min-height:34px}',
+    '.gcn-rs button.on,.gcn-due button.on{background:#f59e0b;border-color:#d97706;color:#fff}',
+    '.gcn-note{width:100%;box-sizing:border-box;margin:6px 0 4px;border:1px solid #d6d3ea;border-radius:8px;padding:7px 8px;font:13px Arial,sans-serif}',
+    '.gcn-due{display:flex;gap:5px;align-items:center;flex-wrap:wrap;font-size:12px;font-weight:700;color:#475569}.gcn-due input{border:1px solid #d6d3ea;border-radius:8px;padding:5px;font:12px Arial,sans-serif}',
+    '.gcn-go{display:block;width:100%;margin-top:8px;border:0;background:#ea580c;color:#fff;border-radius:9px;padding:9px;font:800 14px Arial,sans-serif;cursor:pointer;min-height:40px}',
+    '.gcn-rl{padding:7px 12px 4px;font:800 11px Arial,sans-serif;color:#475569;text-transform:uppercase;letter-spacing:.03em;border-bottom:1px solid #f3f2f8}',
+    '#gcn-menu{position:fixed;z-index:100250;background:#fff;border:1px solid #d6d3ea;border-radius:10px;box-shadow:0 12px 34px rgba(0,0,0,.22);width:300px;max-width:94vw;max-height:80vh;overflow:auto}',
+    '#gcn-menu .gcn-x{float:right;border:0;background:none;font-size:17px;cursor:pointer;color:#475569}#gcn-menu .gcn-ra{display:block;width:100%;border:0;border-top:1px solid #eee;background:#fff;padding:10px 12px;text-align:left;font:700 13px Arial,sans-serif;color:#241968;cursor:pointer;min-height:40px}',
+    '.gcn-btn{border:1px solid #fdba74;background:#fff7ed;color:#9a3412;border-radius:8px;padding:4px 9px;font:800 12px Arial,sans-serif;cursor:pointer;margin-left:6px;min-height:28px;vertical-align:middle}',
+    '.gcn-dr{margin:4px 0}.gcn-job{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:4px;font:12px Arial,sans-serif}',
+    '.gcn-pm{cursor:pointer;border-bottom:1px dashed #94a3b8}.gcn-pm:hover{color:#ea580c}',
+    '.gcn-bar{display:flex;justify-content:flex-end;margin-top:6px}.gcn-add{border:1px solid #0f1d2f;background:#0f1d2f;color:#fff;border-radius:10px;padding:8px 14px;font:800 13px Inter,Arial,sans-serif;cursor:pointer;min-height:38px}',
+    '.gcn-given{margin-top:12px;background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;font:13px Inter,Arial,sans-serif;color:#0f172a}',
+    '.gcn-given>summary{cursor:pointer;padding:10px 12px;font-weight:800;font-size:14px;list-style:none}.gcn-given>summary::-webkit-details-marker{display:none}.gcn-given>summary .n{background:#e2e8f0;border-radius:10px;padding:0 8px;font-size:12px;margin-left:6px}',
+    '.gcn-gr{display:flex;gap:8px;align-items:center;padding:7px 12px;border-top:1px solid #f1f5f9;flex-wrap:wrap}.gcn-gr .t{flex:1;min-width:160px}.gcn-gr .t b{font-weight:650}.gcn-gr .t small{display:block;color:#64748b;font-size:12px}',
+    '.gcn-pill{font:800 11px Arial,sans-serif;border-radius:9px;padding:2px 8px;white-space:nowrap}.gcn-pill.open{background:#dbeafe;color:#1d4ed8}.gcn-pill.over{background:#fee2e2;color:#b91c1c}.gcn-pill.done{background:#dcfce7;color:#166534}',
+    '.gcn-gr button{border:1px solid #cbd5e1;background:#f8fafc;border-radius:8px;padding:4px 9px;font:700 12px Arial,sans-serif;cursor:pointer}',
+    '#gcn-sheet{position:fixed;inset:0;z-index:100300;background:rgba(15,23,42,.55);display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:24px 10px}',
+    '#gcn-sheet .b{background:#fff;border-radius:14px;width:520px;max-width:100%;padding:16px 18px;font:14px Inter,Arial,sans-serif;color:#0f172a;box-shadow:0 20px 60px rgba(0,0,0,.4);box-sizing:border-box}',
+    '#gcn-sheet h3{margin:0 0 4px;font-size:18px}#gcn-sheet .m{color:#64748b;font-size:12.5px;margin-bottom:8px}#gcn-sheet label.l{display:block;font-weight:800;font-size:12px;color:#334155;margin:10px 0 4px}',
+    '#gcn-sheet input[type=text],#gcn-sheet textarea,#gcn-sheet select{width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:9px;padding:9px 10px;font:14px Inter,Arial,sans-serif;background:#fff;color:#0f172a}',
+    '#gcn-sheet .seg{display:flex;gap:5px;flex-wrap:wrap;align-items:center}#gcn-sheet .seg button{border:1px solid #cbd5e1;background:#f8fafc;border-radius:9px;padding:7px 11px;font:700 13px Inter,Arial,sans-serif;cursor:pointer;min-height:36px}#gcn-sheet .seg button.on{background:#0f1d2f;color:#fff;border-color:#0f1d2f}',
+    '#gcn-sheet .seg input[type=date]{border:1px solid #cbd5e1;border-radius:9px;padding:6px;font:13px Inter,Arial,sans-serif}',
+    '#gcn-sheet .res{border:1px solid #e2e8f0;border-radius:9px;margin-top:4px;max-height:180px;overflow:auto}#gcn-sheet .res button{display:block;width:100%;text-align:left;border:0;border-bottom:1px solid #f1f5f9;background:#fff;padding:8px 10px;font:13px Inter,Arial,sans-serif;cursor:pointer}',
+    '#gcn-sheet .chip{display:inline-flex;gap:6px;align-items:center;background:#eef2ff;color:#3730a3;border-radius:9px;padding:5px 9px;font-weight:700;font-size:13px;margin-top:4px}#gcn-sheet .chip button{border:0;background:none;cursor:pointer;font-size:14px}',
+    '#gcn-sheet .act{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}#gcn-sheet .act button{border:1px solid #0f1d2f;background:#fff;border-radius:9px;padding:9px 14px;font:800 14px Inter,Arial,sans-serif;cursor:pointer;min-height:40px}#gcn-sheet .act .pri{background:#16a34a;border-color:#16a34a;color:#fff}#gcn-sheet .err{color:#b91c1c;font-weight:700;font-size:13px;margin-top:6px}',
+    '#gcn-card{position:fixed;right:16px;top:70px;z-index:100240;width:340px;max-width:calc(100vw - 32px);background:#fff;border:2px solid #fb923c;border-radius:12px;box-shadow:0 12px 34px rgba(0,0,0,.25);padding:10px 12px;font:13px Inter,Arial,sans-serif;color:#0f172a;box-sizing:border-box}',
+    '#gcn-card .hd{font-weight:800;color:#9a3412;margin-bottom:4px}#gcn-card .tt{font-weight:700}#gcn-card .sb{color:#64748b;font-size:12px;margin-top:2px}#gcn-card .ac{display:flex;gap:6px;margin-top:8px}#gcn-card .ac button{flex:1;border:1px solid #cbd5e1;background:#f8fafc;border-radius:8px;padding:7px;font:800 13px Inter,Arial,sans-serif;cursor:pointer;min-height:36px}#gcn-card .ac .pri{background:#ea580c;border-color:#ea580c;color:#fff}',
+    '#gcn-toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:2147482700;background:#0f172a;color:#fff;border-radius:12px;padding:10px 16px;font:600 13.5px Inter,Arial,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.35);max-width:calc(100vw - 24px)}#gcn-toast.bad{background:#7f1d1d}',
+    '@media (max-width:640px){#gcn-card{top:auto;bottom:calc(84px + env(safe-area-inset-bottom,0px));right:12px;left:12px;width:auto}}'
+  ].join('');
+  (D.head || D.documentElement).appendChild(c);
+}
+var TT = null;
+function toast(msg, bad){ try { var t = D.getElementById('gcn-toast'); if (t) t.remove(); t = D.createElement('div'); t.id = 'gcn-toast'; t.setAttribute('data-gc-keep', '1'); t.setAttribute('role', 'status'); if (bad) t.className = 'bad'; t.textContent = msg; D.body.appendChild(t); if (TT) clearTimeout(TT); TT = later(function(){ if (t.parentNode) t.remove(); }, 4500); } catch (e) {} }
+
+/* the CRM's name auto-complete (it opens on text boxes near words like "assign" / "project") stays off these boxes */
+function noAc(el){ Array.prototype.forEach.call(el.querySelectorAll('input'), function(i){ i._acInit = true; }); }
+/* ── the nudge part of a menu ── */
+function secHtml(kind, id){
+  var t = target(kind, id); if (!t || !t.who) return '';
+  var r = (kind === 'job' ? index().job : index().lead)[t.id], nm = first(t.who);
+  return '<div class="gcn-sec" data-gcn-sec="' + esc(kind) + '" data-gcn-id="' + esc(t.id) + '" data-gc-keep="1">'
+    + '<div class="gcn-h">👉 Nudge ' + esc(nm) + (r ? ' <span class="gcn-st" title="' + esc(tagTip(r)) + '">' + esc(tagText(r)) + '</span>' : '') + '</div>'
+    + '<div class="gcn-rs">' + REASONS.filter(function(x){ return kind !== 'job' || !/Bid it|mark Lost/.test(x); }).map(function(x){ return '<button type="button" data-gcn-r="' + esc(x) + '">' + esc(x) + '</button>'; }).join('') + '</div>'
+    + '<input type="text" class="gcn-note" data-gcn-note maxlength="500" placeholder="Or write your own note (optional)" aria-label="Note">'
+    + '<div class="gcn-due">Due: <button type="button" class="on" data-gcn-d="' + today() + '">Today</button><button type="button" data-gcn-d="' + addDays(today(), 1) + '">Tomorrow</button><input type="date" data-gcn-dd aria-label="Due date" min="' + today() + '"><button type="button" data-gcn-d="">No date</button></div>'
+    + '<button type="button" class="gcn-go" data-gcn-go>👉 Nudge ' + esc(nm) + '</button></div>';
+}
+function wireSec(sec, done){
+  if (!sec || sec.__gcn) return; sec.__gcn = true; noAc(sec);
+  var pick = { r: '', d: today() };
+  function sendNow(){ var note = s((sec.querySelector('[data-gcn-note]') || {}).value); var r = send(sec.getAttribute('data-gcn-sec'), sec.getAttribute('data-gcn-id'), { reason: pick.r, note: note, due: pick.d }); if (r && done) done(r); }
+  sec.addEventListener('click', function(e){
+    var b = e.target.closest && e.target.closest('button'); if (!b || !sec.contains(b)) return;
+    e.stopPropagation(); e.preventDefault();
+    if (b.hasAttribute('data-gcn-r')) { pick.r = pick.r === b.getAttribute('data-gcn-r') ? '' : b.getAttribute('data-gcn-r'); Array.prototype.forEach.call(sec.querySelectorAll('[data-gcn-r]'), function(x){ x.classList.toggle('on', x.getAttribute('data-gcn-r') === pick.r); }); return; }
+    if (b.hasAttribute('data-gcn-d')) { pick.d = b.getAttribute('data-gcn-d'); Array.prototype.forEach.call(sec.querySelectorAll('[data-gcn-d]'), function(x){ x.classList.toggle('on', x === b); }); var di = sec.querySelector('[data-gcn-dd]'); if (di) di.value = ''; return; }
+    if (b.hasAttribute('data-gcn-go')) sendNow();
+  });
+  var di = sec.querySelector('[data-gcn-dd]'); if (di) di.addEventListener('change', function(){ if (di.value) { pick.d = di.value; Array.prototype.forEach.call(sec.querySelectorAll('[data-gcn-d]'), function(x){ x.classList.remove('on'); }); } });
+  var ni = sec.querySelector('[data-gcn-note]'); if (ni) ni.addEventListener('keydown', function(e){ if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); sendNow(); } });
+}
+/* the Leads list: the Assigned chip still opens the assign picker (it is the "Reassign to…"); the nudge goes on top */
+var PEND = null;
+W.addEventListener('click', function(e){
+  var t = e.target; if (!t || !t.closest) return;
+  var b = t.closest('#gc-leads-hub [data-gcl-asg]'); if (!b) { PEND = null; return; }
+  var id = b.getAttribute('data-gcl-asg'), l = leadById(id); if (!l || !leadWho(l) || !canGive()) { PEND = null; return; }
+  PEND = { id: id, at: Date.now(), el: b };
+  [0, 60, 200].forEach(function(ms){ later(addToPicker, ms); });
+}, true);
+function addToPicker(){
+  if (!PEND || Date.now() - PEND.at > 3000) return;
+  var p = D.getElementById('gcl-asgpick'); if (!p || p.querySelector('.gcn-sec')) return;
+  var h = secHtml('lead', PEND.id); if (!h) return;
+  var anchor = p.querySelector('[data-asg-to]'), wrap = D.createElement('div'); wrap.innerHTML = h + '<div class="gcn-rl">👤 Reassign to…</div>';
+  var hd = p.firstElementChild;
+  while (wrap.firstChild) { var n = wrap.firstChild; if (anchor) p.insertBefore(n, anchor); else p.appendChild(n); }
+  var hs = hd && hd.querySelector('span'); if (hs && /Assign to/.test(hs.textContent)) hs.textContent = '👤 ' + first(leadWho(leadById(PEND.id))) + ' — ' + leadName(leadById(PEND.id));
+  p.style.maxHeight = '80vh'; p.style.width = '300px';
+  wireSec(p.querySelector('.gcn-sec'), function(){ var x = D.getElementById('gcl-asgpick'); if (x) x.remove(); paint(); });
+  var r = PEND.el.getBoundingClientRect(), ph = p.offsetHeight, pw = p.offsetWidth;
+  p.style.left = Math.max(8, Math.min(r.left, W.innerWidth - pw - 8)) + 'px';
+  p.style.top = Math.max(8, Math.min(r.bottom + 4, W.innerHeight - ph - 8)) + 'px';
+  PEND = null;
+}
+/* a menu of its own (the lead drawer, the Projects list, the job page) */
+function closeMenu(){ var m = D.getElementById('gcn-menu'); if (m) m.remove(); }
+function openFor(kind, id, anchor){
+  closeMenu(); css();
+  if (!canGive()) return null;
+  var t = target(kind, id); if (!t || !t.who) return null;
+  var m = D.createElement('div'); m.id = 'gcn-menu'; m.setAttribute('data-gc-keep', '1'); m.setAttribute('role', 'dialog'); m.setAttribute('aria-label', 'Nudge ' + t.who);
+  m.innerHTML = '<div style="padding:9px 12px;font:800 14px Arial,sans-serif;border-bottom:1px solid #eee">👤 ' + esc(t.who) + ' — ' + esc(t.name.slice(0, 40)) + '<button type="button" class="gcn-x" data-gcn-x aria-label="Close">✕</button></div>'
+    + secHtml(kind, t.id) + '<button type="button" class="gcn-ra" data-gcn-re>👤 Reassign…</button>';
+  D.body.appendChild(m);
+  var r = anchor && anchor.getBoundingClientRect ? anchor.getBoundingClientRect() : { left: 40, bottom: 120 };
+  m.style.left = Math.max(8, Math.min(r.left, W.innerWidth - m.offsetWidth - 8)) + 'px'; m.style.top = Math.max(8, Math.min(r.bottom + 4, W.innerHeight - m.offsetHeight - 8)) + 'px';
+  wireSec(m.querySelector('.gcn-sec'), function(){ closeMenu(); paint(); });
+  m.addEventListener('click', function(e){
+    var b = e.target.closest && e.target.closest('button'); if (!b) return; e.stopPropagation();
+    if (b.hasAttribute('data-gcn-x')) return closeMenu();
+    if (b.hasAttribute('data-gcn-re')) { closeMenu(); reassign(kind, t.id, anchor); }
+  });
+  later(function(){
+    var off = function(e){ if (!m.parentNode) { D.removeEventListener('pointerdown', off, true); return; } if (m.contains(e.target) || (anchor && anchor.contains && anchor.contains(e.target))) return; closeMenu(); D.removeEventListener('pointerdown', off, true); };
+    D.addEventListener('pointerdown', off, true);
+  }, 0);
+  return m;
+}
+/* Reassign: the CRM's own pickers — the Leads assign picker (assign() saves and notifies), a job's PM picker */
+function reassign(kind, id, anchor){
+  if (kind === 'lead') { try { if (W._gcLeadsHub && W._gcLeadsHub.picker) return W._gcLeadsHub.picker([id], anchor); } catch (e) { warn(e); } return; }
+  var p = projById(id); if (!p || typeof W._gcChoosePM !== 'function') return openJob(id);
+  W._gcChoosePM(s(p.pm), jobName(p)).then(function(v){
+    v = s(v); if (!v || v === s(p.pm)) return;
+    Promise.resolve(typeof W._gcxPatchJob === 'function' ? W._gcxPatchJob(p.id, { pm: v }, 'PM reassigned (👉 nudge menu)') : false).then(function(ok){ toast(ok ? '👤 ' + v + ' is now the PM on ' + jobName(p) : 'Could not save — open the job and change the PM there', !ok); later(sweep, 600); });
+  });
+}
+D.addEventListener('keydown', function(e){ if (e.key === 'Escape') { closeMenu(); var sh = D.getElementById('gcn-sheet'); if (sh) sh.remove(); } }, true);
+/* the drawer / job page / Projects list buttons */
+W.addEventListener('click', function(e){
+  var t = e.target; if (!t || !t.closest) return;
+  var b = t.closest('[data-gcn-open]'), pm = !b && t.closest('[data-gcn-pm]');
+  if (b) { e.stopPropagation(); e.preventDefault(); var v = b.getAttribute('data-gcn-open').split('|'); openFor(v[0], v.slice(1).join('|'), b); return; }
+  if (pm && canGive()) { e.stopPropagation(); e.preventDefault(); openFor('job', pm.getAttribute('data-gcn-pm'), pm); }
+}, true);
+
+/* ── painting: the Leads rows, the drawer, the job page ── */
+function setTag(host, r, before){
+  var tag = host.querySelector(':scope > .gcn-tag'), txt = tagText(r);
+  if (!txt) { if (tag) tag.remove(); return; }
+  if (!tag) { tag = D.createElement('div'); tag.className = 'gcn-tag'; tag.setAttribute('data-gc-keep', '1'); if (before) host.insertBefore(tag, before); else host.appendChild(tag); }
+  if (tag.textContent !== txt) tag.textContent = txt;
+  var tip = tagTip(r); if (tag.title !== tip) tag.title = tip;
+}
+function paintLeads(x){
+  var hub = D.getElementById('gc-leads-hub'); if (!hub) return;
+  var rows = hub.querySelectorAll('tr.gcl-lr[data-gcl-id], .gcl-card[data-gcl-id]');
+  for (var i = 0; i < rows.length && i < 600; i++) {
+    var row = rows[i], id = row.getAttribute('data-gcl-id'), r = x.lead[id], cell = row.querySelector('td.c-who') || row;
+    if (r || cell.querySelector(':scope > .gcn-tag')) setTag(cell, r);
+  }
+}
+function paintDrawer(x){
+  var dr = D.getElementById('gcl-drawer'); if (!dr) return;
+  var b = dr.querySelector('[data-gclu-assigned]'); if (!b) return;
+  var id = ''; try { id = s(W._gcLeadsHub && W._gcLeadsHub.ui && W._gcLeadsHub.ui().open); } catch (e) {}
+  var l = leadById(id); if (!l) return;
+  var box = b.closest('.gclu-asg') || b.parentNode, kv = b.closest('.kv') || b, holder = box.querySelector(':scope > .gcn-dr');
+  var can = canGive() && !!leadWho(l), r = x.lead[s(l.id)];
+  if (!holder) { holder = D.createElement('div'); holder.className = 'gcn-dr'; holder.setAttribute('data-gc-keep', '1'); if (kv.nextSibling) box.insertBefore(holder, kv.nextSibling); else box.appendChild(holder); }
+  var h = (can ? '<button type="button" class="gcn-btn" data-gcn-open="lead|' + esc(l.id) + '" title="Nudge ' + esc(leadWho(l)) + ' about this lead">👉 Nudge ' + esc(first(leadWho(l))) + '</button>' : '')
+    + (r ? ' <span class="gcn-tag" title="' + esc(tagTip(r)) + '">' + esc(tagText(r)) + '</span>' : '');
+  if (holder.__h !== h) { holder.__h = h; holder.innerHTML = h; }
+}
+function paintJob(x){
+  var op = W._gcOpenProject, main = D.querySelector('main');
+  var old = D.querySelectorAll('.gcn-job');
+  var p = op && op.id ? projById(op.id) : null;
+  if (!p || !main || D.documentElement.classList.contains('_fieldmode')) { Array.prototype.forEach.call(old, function(e){ e.remove(); }); return; }
+  var h1 = null, hs = main.getElementsByTagName('h1');
+  for (var i = 0; i < hs.length && i < 12; i++) if (s(hs[i].textContent) === s(p.name)) { h1 = hs[i]; break; }
+  var sub = h1 && h1.parentElement && h1.parentElement.nextElementSibling;
+  if (!sub || !/PM:/.test(sub.textContent || '')) { Array.prototype.forEach.call(old, function(e){ e.remove(); }); return; }
+  var r = x.job[s(p.id)], can = canGive() && !!s(p.pm);
+  var h = (can ? '<button type="button" class="gcn-btn" style="margin-left:0" data-gcn-open="job|' + esc(p.id) + '" title="Nudge ' + esc(p.pm) + ' about this job">👉 Nudge ' + esc(first(p.pm)) + '</button>' : '') + (r ? '<span class="gcn-tag" title="' + esc(tagTip(r)) + '">' + esc(tagText(r)) + '</span>' : '');
+  var el = sub.nextElementSibling && sub.nextElementSibling.classList.contains('gcn-job') ? sub.nextElementSibling : null;
+  Array.prototype.forEach.call(old, function(e){ if (e !== el) e.remove(); });
+  if (!h) { if (el) el.remove(); return; }
+  if (!el) { el = D.createElement('div'); el.className = 'gcn-job'; el.setAttribute('data-gc-keep', '1'); sub.parentNode.insertBefore(el, sub.nextSibling); }
+  if (el.__h !== h || el.getAttribute('data-pid') !== s(p.id)) { el.__h = h; el.innerHTML = h; el.setAttribute('data-pid', s(p.id)); }
+}
+/* the Projects list's PM cell (patch DUPJOB's _gcPmCell is the cell's text): admins / the office can tap the name */
+function hookPmCell(){
+  var f = W._gcPmCell; if (typeof f !== 'function' || f.__gcn) return;
+  var g = function(p){
+    var v = f.apply(this, arguments);
+    try {
+      var R = W.__GC_APP_REACT__; if (!v || typeof v !== 'string' || !p || !p.id || !R || !R.createElement || !canGive()) return v;
+      var r = index().job[s(p.id)];
+      return R.createElement('span', { className: 'gcn-pm', 'data-gcn-pm': s(p.id), title: (r ? tagText(r) + ' — ' : '') + 'Tap to nudge ' + first(v) + ' or reassign' }, v, r ? ' 👉' : null);
+    } catch (e) { return v; }
+  };
+  g.__gcn = true; g.__orig = f; W._gcPmCell = g;
+}
+
+/* ── the To-Do page: ➕ To-Do for someone, 📤 Given by me ── */
+function givenRows(){
+  var t0 = today(), cut = new Date(Date.now() - 14 * 864e5).toISOString();
+  return index().all.filter(function(r){ return !r.deleted && iGave(r) && !(r.done && s(r.doneAt) < cut) && !(r.self && isMine(r)); })
+    .map(function(r){ var st = r.done ? 'done' : (r.due && r.due < t0 ? 'over' : 'open'); return { r: r, st: st }; })
+    .sort(function(a, b){ var k = { over: 0, open: 1, done: 2 }; return k[a.st] - k[b.st] || (s(b.r.updatedAt) < s(a.r.updatedAt) ? -1 : 1); });
+}
+var GOPEN = true;   /* open until the person folds it (this visit) */
+function givenHtml(){
+  var g = givenRows(); if (!g.length) return '';
+  var nOpen = g.filter(function(x){ return x.st !== 'done'; }).length, nOver = g.filter(function(x){ return x.st === 'over'; }).length;
+  return '<details class="gcn-given" data-gcn-given' + (GOPEN ? ' open' : '') + '><summary>📤 Given by me <span class="n">' + nOpen + ' open</span>' + (nOver ? ' <span class="gcn-pill over">' + nOver + ' overdue</span>' : '') + '</summary>'
+    + g.slice(0, 60).map(function(x){
+      var r = x.r, pill = x.st === 'done' ? '<span class="gcn-pill done">✓ Done</span>' : x.st === 'over' ? '<span class="gcn-pill over">⏰ Overdue</span>' : '<span class="gcn-pill open">Open</span>';
+      var why = x.st === 'done' ? (r.autoDone ? 'cleared on its own — ' + s(r.autoDone) : 'by ' + first(r.doneBy || r.assignee)) + ' ' + ago(r.doneAt) : (r.seenAt ? '👀 seen ' + ago(r.seenAt) : 'not seen yet');
+      return '<div class="gcn-gr" data-gcn-gid="' + esc(r.id) + '">' + pill + '<div class="t"><b>' + esc(r.label) + '</b><small>to ' + esc(r.assignee || '—') + (r.due ? ' · due ' + esc(dueTxt(r.due)) : '') + ' · given ' + esc(ago(r.addedAt)) + (r.kind === 'nudge' && (parseInt(r.repeats, 10) || 1) > 1 ? ' · nudged ×' + r.repeats : '') + ' · ' + esc(why) + '</small></div>'
+        + ((r.kind === 'nudge' || r.linkLead || r.pid) ? '<button type="button" data-gcn-gopen>Open</button>' : '') + (x.st !== 'done' ? '<button type="button" data-gcn-gdel title="Take it off their To-Do">✕ Cancel</button>' : '') + '</div>';
+    }).join('') + '</details>';
+}
+function paintTodo(){
+  var roots = D.querySelectorAll('.td2[data-td2-host]'), can = canGive();
+  Array.prototype.forEach.call(roots, function(root){
+    var host = root.getAttribute('data-td2-host'); if (host === 'as') return;
+    var tools = root.querySelector('.td2-tools'), bar = root.querySelector('.gcn-bar');
+    if (!can) { if (bar) bar.remove(); var gg = root.querySelector('.gcn-given'); if (gg) gg.remove(); return; }
+    if (tools && !bar) { bar = D.createElement('div'); bar.className = 'gcn-bar'; bar.setAttribute('data-gc-keep', '1'); bar.innerHTML = '<button type="button" class="gcn-add" data-gcn-sheet>➕ To-Do for someone</button>'; var qp = tools.querySelector('.td2-qp'); if (qp && qp.nextSibling) tools.insertBefore(bar, qp.nextSibling); else tools.appendChild(bar); }
+    var h = givenHtml(), box = root.querySelector(':scope > .gcn-given-wrap');
+    if (!h) { if (box) box.remove(); return; }
+    if (!box) { box = D.createElement('div'); box.className = 'gcn-given-wrap'; box.setAttribute('data-gc-keep', '1'); root.appendChild(box);
+      box.addEventListener('toggle', function(e){ if (e.target && e.target.matches && e.target.matches('details.gcn-given')) GOPEN = e.target.open; }, true);
+      box.addEventListener('click', function(e){
+        var b = e.target.closest && e.target.closest('button'); if (!b) return; var row = b.closest('[data-gcn-gid]'); if (!row) return; var id = row.getAttribute('data-gcn-gid');
+        var r = index().all.filter(function(x){ return s(x.id) === id; })[0]; if (!r) return;
+        if (b.hasAttribute('data-gcn-gopen')) return openRec(r);
+        if (b.hasAttribute('data-gcn-gdel') && W.confirm('Take "' + s(r.label).slice(0, 80) + '" off ' + first(r.assignee) + '’s To-Do?')) { mut(id, function(t){ t.done = true; t.deleted = true; t.deletedBy = myName(); t.deletedAt = nowIso(); t.doneAt = t.deletedAt; t.doneBy = myName(); }); toast('Taken off ' + first(r.assignee) + '’s To-Do'); paint(); }
+      });
+    }
+    if (box.__h !== h) { box.__h = h; box.innerHTML = h; }
+  });
+}
+D.addEventListener('click', function(e){ var b = e.target && e.target.closest && e.target.closest('[data-gcn-sheet]'); if (!b) return; e.stopPropagation(); sheet(); }, true);
+/* the sheet */
+function linkHits(q){
+  q = low(q); if (q.length < 2) return [];
+  var co = coPicked(), out = [];
+  var okCo = function(kind, x){ if (co === 'all' || !W._gcCo) return true; try { return coOf(kind, x) === co; } catch (e) { return true; } };
+  leadsAll().forEach(function(l){ if (!l || !l.id || l.deleted || leadShut(l) || out.length > 40) return; var hay = low([l.name, l.client, l.title, l.company, l.address, l.city].join(' ')); if (hay.indexOf(q) >= 0 && okCo('lead', l)) out.push({ kind: 'lead', id: s(l.id), name: leadName(l), sub: '🎯 Lead · ' + leadStage(l) + (leadWho(l) ? ' · ' + leadWho(l) : '') }); });
+  arr(W._crm && W._crm.projects).forEach(function(p){ if (!p || !p.id || p.deleted || out.length > 60) return; var hay = low([p.name, p.client, p.address, p.autoPO, p.po].join(' ')); if (hay.indexOf(q) >= 0 && okCo('job', p)) out.push({ kind: 'job', id: s(p.id), name: jobName(p), sub: '🏗 Job' + (s(p.autoPO) ? ' ' + s(p.autoPO) : '') + (s(p.status) ? ' · ' + s(p.status) : '') + (s(p.pm) ? ' · PM ' + s(p.pm) : '') }); });
+  return out.slice(0, 10);
+}
+function sheet(pre){
+  if (!canGive()) return null; css(); pre = pre || {};
+  var old = D.getElementById('gcn-sheet'); if (old) old.remove();
+  var co = coPicked(), ppl = staff(co), coName = '';
+  try { if (co !== 'all' && W._gcCo && W._gcCo.get) { var c = W._gcCo.get(co); coName = s(c && (c.short || c.name)) || co; } } catch (e) {}
+  var F = { who: s(pre.to) ? (personOf(pre.to) || {}).key : '', due: today(), prio: 'med', link: pre.link || null };
+  var ov = D.createElement('div'); ov.id = 'gcn-sheet'; ov.setAttribute('data-gc-keep', '1');
+  ov.innerHTML = '<div class="b" role="dialog" aria-modal="true" aria-labelledby="gcn-sh-t"><h3 id="gcn-sh-t">➕ To-Do for someone</h3><div class="m">It goes on their To-Do (from ' + esc(first(myName())) + '); they check it off; you see it under 📤 Given by me.' + (coName ? ' People for <b>' + esc(coName) + '</b>.' : '') + '</div>'
+    + '<label class="l" for="gcn-f-who">Who</label><select id="gcn-f-who" data-gcn-f="who"><option value="">— pick a person —</option>' + ppl.map(function(p){ return '<option value="' + esc(p.key) + '"' + (p.key === F.who ? ' selected' : '') + '>' + esc(p.name) + (p.role ? ' — ' + esc(p.role) : '') + '</option>'; }).join('') + '</select>'
+    + '<label class="l" for="gcn-f-title">To-Do</label><input type="text" id="gcn-f-title" data-gcn-f="title" maxlength="200" placeholder="e.g. Send the Conzz kitchen estimate" value="' + esc(pre.title || '') + '">'
+    + '<label class="l" for="gcn-f-note">Note (optional)</label><textarea id="gcn-f-note" data-gcn-f="note" rows="2" maxlength="1000"></textarea>'
+    + '<label class="l">Due</label><div class="seg" data-gcn-seg="due"><button type="button" class="on" data-v="' + today() + '">Today</button><button type="button" data-v="' + addDays(today(), 1) + '">Tomorrow</button><button type="button" data-v="' + addDays(today(), ((8 - new Date().getDay()) % 7) || 7) + '">Next Monday</button><input type="date" data-gcn-f="dued" aria-label="Due date"><button type="button" data-v="">No date</button></div>'
+    + '<label class="l">Priority</label><div class="seg" data-gcn-seg="prio"><button type="button" data-v="high">🔴 High</button><button type="button" class="on" data-v="med">Normal</button><button type="button" data-v="low">Low</button></div>'
+    + '<label class="l" for="gcn-f-q">Link to a lead or job (optional)</label><div data-gcn-linkbox></div><input type="text" id="gcn-f-q" data-gcn-f="q" placeholder="Search leads and jobs…" autocomplete="off"><div class="res" data-gcn-res hidden></div>'
+    + '<div class="err" data-gcn-err></div>'
+    + '<div class="act"><button type="button" data-gcn-a="x">Cancel</button><button type="button" class="pri" data-gcn-a="go">➕ Add to their To-Do</button></div></div>';
+  D.body.appendChild(ov);
+  noAc(ov);
+  var $ = function(q){ return ov.querySelector(q); };
+  function linkPaint(){ var b = $('[data-gcn-linkbox]'); b.innerHTML = F.link ? '<span class="chip">' + (F.link.kind === 'job' ? '🏗 ' : '🎯 ') + esc(F.link.name) + ' <button type="button" data-gcn-unlink aria-label="Remove the link">✕</button></span>' : ''; $('[data-gcn-f="q"]').hidden = !!F.link; }
+  function goBtn(){ var p = ppl.filter(function(x){ return x.key === F.who; })[0]; $('[data-gcn-a="go"]').textContent = p ? '➕ Add to ' + first(p.name) + '’s To-Do' : '➕ Add to their To-Do'; }
+  linkPaint(); goBtn();
+  $('[data-gcn-f="who"]').addEventListener('change', function(e){ F.who = e.target.value; goBtn(); });
+  $('[data-gcn-f="dued"]').addEventListener('change', function(e){ if (e.target.value) { F.due = e.target.value; Array.prototype.forEach.call(ov.querySelectorAll('[data-gcn-seg="due"] button'), function(x){ x.classList.remove('on'); }); } });
+  $('[data-gcn-f="q"]').addEventListener('input', function(e){ var hits = linkHits(e.target.value), res = $('[data-gcn-res]'); res.hidden = !hits.length; res.innerHTML = hits.map(function(h, i){ return '<button type="button" data-gcn-hit="' + i + '"><b>' + esc(h.name) + '</b> <span style="color:#64748b;font-size:12px">' + esc(h.sub) + '</span></button>'; }).join(''); res.__hits = hits; });
+  ov.addEventListener('click', function(e){
+    if (e.target === ov) { ov.remove(); return; }
+    var b = e.target.closest && e.target.closest('button'); if (!b) return;
+    var seg = b.closest('[data-gcn-seg]');
+    if (seg) { var k = seg.getAttribute('data-gcn-seg'); F[k] = b.getAttribute('data-v'); Array.prototype.forEach.call(seg.querySelectorAll('button'), function(x){ x.classList.toggle('on', x === b); }); if (k === 'due') $('[data-gcn-f="dued"]').value = ''; return; }
+    if (b.hasAttribute('data-gcn-hit')) { var res = $('[data-gcn-res]'); F.link = (res.__hits || [])[+b.getAttribute('data-gcn-hit')] || null; res.hidden = true; $('[data-gcn-f="q"]').value = ''; linkPaint(); return; }
+    if (b.hasAttribute('data-gcn-unlink')) { F.link = null; linkPaint(); return; }
+    var a = b.getAttribute('data-gcn-a');
+    if (a === 'x') { ov.remove(); return; }
+    if (a === 'go') {
+      var p = ppl.filter(function(x){ return x.key === F.who; })[0], title = s($('[data-gcn-f="title"]').value), err = $('[data-gcn-err]');
+      if (!p) { err.textContent = 'Pick who it is for.'; return; } if (!title) { err.textContent = 'Write what the To-Do is.'; $('[data-gcn-f="title"]').focus(); return; }
+      var rec = give({ to: p, title: title, note: $('[data-gcn-f="note"]').value, due: F.due, prio: F.prio, link: F.link });
+      if (rec) { ov.remove(); GOPEN = true; paint(); } else err.textContent = 'Not saved — try again.';
+    }
+  });
+  later(function(){ try { (F.who ? $('[data-gcn-f="title"]') : $('[data-gcn-f="who"]')).focus(); } catch (e) {} }, 30);
+  return ov;
+}
+
+/* ── the in-app notice for the person: the newest nudge / To-Do given to me that I have not seen ── */
+var CARD = { id: '' };
+function forMe(){ return index().all.filter(function(r){ return !r.done && !r.deleted && !r.seenAt && isMine(r) && !iGave(r); }).sort(function(a, b){ return s(b.lastNudgeAt || b.addedAt) < s(a.lastNudgeAt || a.addedAt) ? -1 : 1; }); }
+function paintCard(){
+  var el = D.getElementById('gcn-card');
+  if (vas() || !authEmail() || D.getElementById('gc-auth-email')) { if (el) el.remove(); return; }
+  var l = forMe(); if (!l.length) { if (el) el.remove(); return; }
+  var r = l[0], L = r.kind === 'nudge' ? lastOf(r) : { by: r.addedBy, at: r.addedAt }, sig = r.id + ':' + (r.repeats || 1) + ':' + l.length;
+  if (el && el.__sig === sig) return;
+  if (!el) { el = D.createElement('div'); el.id = 'gcn-card'; el.setAttribute('data-gc-keep', '1'); el.setAttribute('role', 'status'); D.body.appendChild(el);
+    el.addEventListener('click', function(e){ var b = e.target.closest && e.target.closest('button'); if (!b) return; var id = el.getAttribute('data-id'), x = index().all.filter(function(y){ return s(y.id) === id; })[0];
+      if (b.hasAttribute('data-gcn-seen')) { seen(id); later(paintCard, 30); return; }
+      if (b.hasAttribute('data-gcn-copen')) { openRec(x); later(paintCard, 30); return; }
+      if (b.hasAttribute('data-gcn-all')) { l.forEach(function(y){ seen(y.id); }); try { W._gcTD2 && W._gcTD2.openToday && W._gcTD2.openToday(); } catch (z) {} later(paintCard, 30); } });
+  }
+  el.__sig = sig; el.setAttribute('data-id', r.id);
+  el.innerHTML = '<div class="hd">' + (r.kind === 'nudge' ? '👉 ' + esc(first(L.by)) + ' nudged you' + ((parseInt(r.repeats, 10) || 1) > 1 ? ' (×' + r.repeats + ')' : '') : '📋 New To-Do from ' + esc(first(L.by))) + '</div>'
+    + '<div class="tt">' + esc(r.label) + '</div><div class="sb">' + esc(ago(L.at)) + (r.due ? ' · due ' + esc(dueTxt(r.due)) : '') + (L.note || r.givenNote ? ' · ' + esc(s(L.note || r.givenNote).slice(0, 140)) : '') + '</div>'
+    + '<div class="ac"><button type="button" class="pri" data-gcn-copen>Open</button><button type="button" data-gcn-seen>✓ Got it</button>' + (l.length > 1 ? '<button type="button" data-gcn-all>All ' + l.length + ' ›</button>' : '') + '</div>';
+  /* a browser notice only when this computer already allows them, and not in the CRM's overnight quiet hours */
+  try {
+    var quiet = typeof W._gcQuietHoursHold === 'function' && !!W._gcQuietHoursHold(), k = 'gcn_notified', nk = r.id + ':' + (r.repeats || 1);
+    if (!quiet && W.Notification && Notification.permission === 'granted' && localStorage.getItem(k) !== nk) { localStorage.setItem(k, nk); new Notification(r.kind === 'nudge' ? 'GrayCo — ' + first(L.by) + ' nudged you' : 'GrayCo — To-Do from ' + first(L.by), { body: s(r.label).slice(0, 140) }); }
+  } catch (e) {}
+}
+
+/* ── the loop ── */
+var ERRS = [];
+function paint(){ var x = index(); [paintLeads, paintDrawer, paintJob, paintTodo].forEach(function(f){ try { f(x); } catch (e) { warn(e); ERRS.unshift(f.name + ': ' + (e && e.message || e)); ERRS = ERRS.slice(0, 10); } }); }
+var lastSweep = 0;
+function tick(){
+  try {
+    css(); hookPmCell();
+    if (D.hidden) return;
+    paint(); paintCard();
+    var x = index(); if (Date.now() - lastSweep > 4000 && (Object.keys(x.lead).length || Object.keys(x.job).length)) { lastSweep = Date.now(); sweep(); }
+  } catch (e) { warn(e); }
+}
+RI.call(W, tick, 1500); later(tick, 600);   /* the browser's own interval (patch SYNCPERF's REAL one): light work, never idle-paced */
+try { if (W.__GC_ON_CHANGE__) W.__GC_ON_CHANGE__(function(){ IDX.sig = ''; }); } catch (e) {}
+W.addEventListener('storage', function(e){ if (e.key === OT) { IDX.sig = ''; later(tick, 50); } });
+
+W._gcNudge = { send: send, give: give, sweep: sweep, openFor: openFor, sheet: sheet, reasons: REASONS.slice(), canGive: canGive, staff: staff,
+  state: function(){ var x = index(); return { open: Object.keys(x.lead).map(function(k){ return { lead: k, to: x.lead[k].assignee, n: x.lead[k].repeats }; }).concat(Object.keys(x.job).map(function(k){ return { job: k, to: x.job[k].assignee, n: x.job[k].repeats }; })), mine: forMe().map(function(r){ return r.id; }), given: givenRows().map(function(g){ return { id: g.r.id, st: g.st, to: g.r.assignee, label: g.r.label }; }), log: LOG.slice() }; },
+  errs: function(){ return ERRS.slice(); }, records: function(){ return index().all.map(function(r){ return JSON.parse(JSON.stringify(r)); }); } };
+try { console.log('[GC] 👉 Nudge + ➕ To-Do for someone (patch NUDGE) — _gcNudge.state()'); } catch (e) {}
 })(window);
 </script>
