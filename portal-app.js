@@ -333,6 +333,28 @@ Object.assign(L.es, { prBtn: '📩 Pedir planos / más información', prSmall: '
   prSend: 'Enviar pedido', prPickOne: 'Marque lo que necesita.', prOtherNote: 'Escriba lo que necesita.', prSent: 'Pedido enviado — el gerente / estimador del trabajo le responderá.', prOpen: 'Pedido enviado {d}',
   prWaiting: 'GrayCo lo tiene — le responderán aquí y por correo.', prPosted: 'Los planos ya están publicados.', prAnswered: 'GrayCo contestó', prSentNote: 'GrayCo le envió lo que pidió', prAgain: '📩 Pedir otra cosa', prTag: '📩 Pedido' });
 var PR_KEYS = ['plans', 'specs', 'sitewalk', 'other'];
+/* patch PLANREQ-T (owner 11/12: "need to put what trades we are bidding on some places"): "✓ Your trade: Drywall" when the job wants it */
+Object.assign(L.en, { yourTrade: 'Your trade', dTitle: 'Bid details', dWalk: 'Site walk / pre-bid', dQs: 'Questions due by', dStart: 'Start / duration', dReq: 'Requirements', dAlt: 'Alternates', dUnit: 'Unit prices requested', dContacts: 'Contacts', dHow: 'How to bid', dOwner: 'Bidding to', dLines: 'Price each line GrayCo asks for', dClosed: 'Bidding is closed — GrayCo is not taking new bids or changes.' });
+Object.assign(L.es, { yourTrade: 'Su oficio', dTitle: 'Detalles de la oferta', dWalk: 'Visita / reunión previa', dQs: 'Preguntas hasta el', dStart: 'Inicio / duración', dReq: 'Requisitos', dAlt: 'Alternativas', dUnit: 'Precios unitarios', dContacts: 'Contactos', dHow: 'Cómo ofertar', dOwner: 'Ofertamos a', dLines: 'Ponga precio a cada línea que pide GrayCo', dClosed: 'Las ofertas están cerradas — GrayCo no recibe ofertas ni cambios nuevos.' });
+/* patch PLANREQ-E: what GrayCo filled in on 📂 Manage → 📝 Details */
+function detailsBox(j){
+  var d = j.details || {}, w = d.siteWalk, r = d.requirements || {}, c = d.contacts || {}, rows = [];
+  var req = [r.bond && 'Bond', r.prevailingWage && 'Prevailing wage / Davis-Bacon', r.certifiedPayroll && 'Certified payroll', r.coi && ('COI' + ([r.coiGl && 'GL ' + r.coiGl, r.coiWc && 'WC ' + r.coiWc, r.coiAuto && 'Auto ' + r.coiAuto].filter(Boolean).length ? ' (' + [r.coiGl && 'GL ' + r.coiGl, r.coiWc && 'WC ' + r.coiWc, r.coiAuto && 'Auto ' + r.coiAuto].filter(Boolean).join(', ') + ')' : '')), r.licenses && ('Licenses' + (r.licensesText ? ': ' + r.licensesText : '')), r.mbeWbe && ('MBE / WBE' + (r.mbeWbeText ? ': ' + r.mbeWbeText : ''))].filter(Boolean);
+  if (d.ownerGc) rows.push(['dOwner', d.ownerGc]);
+  if (w) rows.push(['dWalk', dt(w.date) + (w.time ? ' ' + w.time : '') + (w.location ? ' — ' + w.location : '') + (w.mandatory ? ' (!)' : '')]);
+  if (d.questionsDue) rows.push(['dQs', dt(d.questionsDue)]);
+  if (d.startDate || d.duration) rows.push(['dStart', [d.startDate ? dt(d.startDate) : '', d.duration].filter(Boolean).join(' · ')]);
+  if (req.length) rows.push(['dReq', req.join(' · ')]);
+  if ((d.alternates || []).length) rows.push(['dAlt', d.alternates.join(' · ')]);
+  if ((d.unitPrices || []).length) rows.push(['dUnit', d.unitPrices.join(' · ')]);
+  if (c.pmName || c.estName) rows.push(['dContacts', [c.pmName && ('PM ' + [c.pmName, c.pmPhone, c.pmEmail].filter(Boolean).join(' · ')), c.estName && [c.estName, c.estPhone, c.estEmail].filter(Boolean).join(' · ')].filter(Boolean).join(' | ')]);
+  if (!rows.length && !d.instructions) return null;
+  return h('div', { class: 'box', 'data-biddetails': j.id }, [h('b', { text: t('dTitle') }), h('dl', { class: 'info' }, [].concat.apply([], rows.map(function(x){ return [h('dt', { text: t(x[0]) }), h('dd', { text: x[1] })]; })))]
+    .concat(d.instructions ? [h('b', { text: t('dHow') }), h('p', { class: 'pre', text: d.instructions })] : []));
+}
+function yourTrades(j){ var mine = ((BIDS && BIDS.me && BIDS.me.trades) || []).map(function(x){ return String(x).toLowerCase().trim(); }).filter(Boolean);
+  return String(j.tradesSought || '').split(/\s*[,;\/]\s*/).filter(Boolean).filter(function(t0){ var a = t0.toLowerCase(); return mine.some(function(b){ return a.indexOf(b) > -1 || b.indexOf(a) > -1; }); }); }
+function yourTradeTag(j){ var y = yourTrades(j); return y.length ? h('div', { class: 'yourtrade', 'data-yourtrade': j.id, text: '✓ ' + t('yourTrade') + ': ' + y.join(', ') }) : null; }
 function prLbl(k){ return t({ plans: 'prPlans', specs: 'prSpecs', sitewalk: 'prSitewalk', other: 'prOther' }[k] || 'prOther'); }
 function prIsOpen(q){ return !!q && q.status !== 'closed' && !q.closedAt && !q.notifiedAt; }
 function planReqBox(j){
@@ -381,6 +403,7 @@ function bidCss(){
     '.bidpapers ul{margin:0;padding-left:18px}.bidpapers .btn{align-self:flex-start;min-height:40px;font-size:14px;padding:0 12px}.duesoon{color:#8a1c1c;font-weight:700}.bidform{display:flex;flex-direction:column;gap:10px}.bidform[aria-disabled="true"]{opacity:.55}' +
     '.bidsheet .mybid{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}.bidsheet .mybid b{font-size:22px}.bidsheet .err{white-space:pre-wrap}' +
     '.prbig{background:#fffbeb;border:1px solid #e9c46a}.prbig > .btn{width:100%}.prchks{display:flex;flex-wrap:wrap;gap:8px}.prchk{display:inline-flex;align-items:center;gap:6px;min-height:40px;padding:4px 12px;border:1px solid var(--edge);border-radius:999px;background:#fff;font-size:15px}.prchk input{width:20px;height:20px}' +
+    '.yourtrade{align-self:flex-start;background:var(--greenBg,#e7f6ec);color:var(--green,#166534);font-weight:800;font-size:13px;padding:3px 10px;border-radius:999px}' +
     '.linkbtn{background:none;border:0;padding:8px 0;min-height:40px;font:inherit;font-weight:700;color:var(--navy,#1b1640);text-decoration:underline;cursor:pointer;align-self:flex-start}.prsmall{display:flex;flex-direction:column;gap:6px}.bidjob .prtag{font-size:13px}';   /* patch PLANREQ */
   document.head.appendChild(st);
 }
@@ -427,6 +450,7 @@ function paintBids(){
       h('div', { class: 'row' }, [h('b', { text: j.title }), bidPill(j)]),
       meta ? h('div', { class: 'muted' + (j.canBid && n != null && n <= 3 ? ' duesoon' : ''), text: meta }) : null,
       j.tradesSought ? h('div', { class: 'muted', text: t('tradesLbl') + ': ' + j.tradesSought }) : null,
+      yourTradeTag(j),   /* patch PLANREQ-T */
       short ? h('p', { class: 'scp', text: short }) : null,
       planLinks(j),
       prIsOpen(j.request) ? h('div', { class: 'muted prtag', 'data-prtag': j.id, text: t('prTag') + ' · ' + dt(j.request.at) }) : null,   /* patch PLANREQ */
@@ -437,6 +461,9 @@ function paintBids(){
 function bidSheet(j){
   var D = BIDS || {}, docs = D.docs || {}, b = j.myBid, kids = [];
   if (j.address) kids.push(h('div', { class: 'muted', text: j.address }));
+  var yt = yourTradeTag(j); if (yt) kids.push(yt);   /* patch PLANREQ-T */
+  var dbx = detailsBox(j); if (dbx) kids.push(dbx);   /* patch PLANREQ-E */
+  if (j.biddingClosed) kids.push(h('div', { class: 'how', 'data-bidclosed': j.id, text: '⏸ ' + t('dClosed') }));
   kids.push(h('dl', { class: 'info' }, [j.bidDueDate ? h('dt', { text: t('bidDue') }) : null, j.bidDueDate ? h('dd', { text: dueText(j.bidDueDate).replace(t('bidDue') + ' ', '') }) : null,
     j.tradesSought ? h('dt', { text: t('tradesLbl') }) : null, j.tradesSought ? h('dd', { text: j.tradesSought }) : null]));
   (j.tradeScopes || []).forEach(function(x){ kids.push(h('div', { class: 'box', 'data-tradescope': x.trade || '' }, [h('b', { text: t('yourTradeScope') + (x.trade ? ' — ' + x.trade : '') }), x.scope ? h('p', { class: 'pre', text: x.scope }) : null].concat((x.files || []).map(function(f){   /* patch PLANREQ-C: the trade's scope files */
@@ -464,15 +491,19 @@ function bidSheet(j){
     var blocked = !docs.ok;
     var amt = h('input', { class: 'inp', id: 'bidAmt', type: 'number', inputmode: 'decimal', min: '0', step: '0.01', disabled: blocked, placeholder: '0.00' });
     var nt = h('textarea', { class: 'inp', id: 'bidNotes', rows: '4', maxlength: '4000', disabled: blocked });
+    var bf = ((j.details || {}).bidForm || []), have = {}; ((b && b.lines) || []).forEach(function(l){ have[l.id] = l; });   /* patch PLANREQ-E: the bid form's line items */
+    var lineIn = bf.map(function(x){ var i = h('input', { class: 'inp', type: 'number', inputmode: 'decimal', step: '0.01', 'data-bidline': x.id, disabled: blocked, placeholder: '$' }); if (have[x.id] && have[x.id].amount != null) i.value = String(have[x.id].amount); return { x: x, i: i }; });
     if (b) { amt.value = String(b.amount); nt.value = b.notes || ''; }
     var err = h('div', { class: 'err', role: 'alert' });
     var go = h('button', { type: 'button', class: 'btn gold', id: 'bidSend', disabled: blocked, text: b ? t('bidUpdate') : t('bidSubmit') });
-    sec.push(h('div', { class: 'bidform', 'aria-disabled': blocked ? 'true' : 'false' }, [blocked ? h('div', { class: 'muted', text: t('papersBlocked') }) : null, field(t('bidAmount'), amt), field(t('bidNotes'), nt), err, go]));
+    sec.push(h('div', { class: 'bidform', 'aria-disabled': blocked ? 'true' : 'false' }, [blocked ? h('div', { class: 'muted', text: t('papersBlocked') }) : null, field(t('bidAmount'), amt)]
+      .concat(lineIn.length ? [h('b', { text: t('dLines') })].concat(lineIn.map(function(l){ return field(l.x.item + (l.x.trade ? ' · ' + l.x.trade : '') + (l.x.unit ? ' (' + l.x.unit + ')' : ''), l.i); })) : [])
+      .concat([field(t('bidNotes'), nt), err, go])));
     go.addEventListener('click', function(){
       err.textContent = '';
       if (!(Number(amt.value) > 0)) { err.textContent = t('amountNeed'); amt.focus(); return; }
       busy(go, true);
-      api('p-bid-save', { jobId: j.id, amount: amt.value, notes: nt.value }).then(function(r){
+      api('p-bid-save', { jobId: j.id, amount: amt.value, notes: nt.value, lines: lineIn.map(function(l){ return { id: l.x.id, amount: l.i.value === '' ? null : l.i.value }; }) }).then(function(r){
         sh.close(); toast(r.created ? t('bidSent') : t('bidUpdated'));
         return loadBids(true).then(paintBids);
       }, function(e){ busy(go, false); err.textContent = e.message; toast(e.message, true); });

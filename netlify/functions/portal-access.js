@@ -1344,7 +1344,7 @@ async function bidPapers(profileId){
   return out;
 }
 function bidStatus(b){ return b.accepted ? 'accepted' : b.rejected ? 'rejected' : 'pending'; }
-function myBidOut(b){ return b ? { id: s(b.id), amount: money(b.amount), notes: clip(b.notes, 4000), submittedAt: s(b.submittedAt), updatedAt: s(b.updatedAt), status: bidStatus(b), award: awardOut(b) } : null; }
+function myBidOut(b){ return b ? { lines: arr(b.lines).map(function(l){ return { id: s(l.id), amount: l.amount, note: clip(l.note, 300) }; }), id: s(b.id), amount: money(b.amount), notes: clip(b.notes, 4000), submittedAt: s(b.submittedAt), updatedAt: s(b.updatedAt), status: bidStatus(b), award: awardOut(b) } : null; }
 /* patch BIDSCOPE: an awarded bid — when, the GrayCo PM to call, what GrayCo asks them to confirm (the CRM's award confirm sheet) */
 function awardOut(b){
   if (!b || !b.accepted) return null;
@@ -1394,10 +1394,20 @@ async function pBidJobs(sub){
       tradeScopes: arr(j.tradeScopes).slice(0, 10).map(function(x){ return { trade: clip(x.trade, 80), scope: clip(x.scope, 6000), files: arr(x.files).slice(0, 20).map(function(f){ return /^https:\/\//.test(s(f.dataUrl)) ? { name: clip(f.name, 160) || 'Scope', type: clip(f.type, 80), url: f.dataUrl } : null; }).filter(Boolean) }; }).filter(function(x){ return x.scope || x.files.length; }),   /* patch PLANREQ-C: + the trade's scope files (signed) */
       scope: clip(j.scope, 8000), specifications: clip(j.specifications, 8000), notes: clip(j.notes, 4000),
       plansLinks: linkList(j.plansLinks), plans: plans[id] || [], invited: invited.has(id), canBid: open, myBid: myBidOut(b),
+      details: detailsOut(j), biddingClosed: !!j.biddingClosed,   /* patch PLANREQ-E: what GrayCo filled in on 📂 Manage → 📝 Details (never internal notes / the RSVP list) */
       questions: (qs[id] || []).sort(function(a, b){ return s(a.at).localeCompare(s(b.at)); }).slice(-40), request: reqs[id] || null };
   });
   jobs.sort(function(a, b){ return (b.canBid ? 1 : 0) - (a.canBid ? 1 : 0) || (b.invited ? 1 : 0) - (a.invited ? 1 : 0) || (a.bidDueDate || '9').localeCompare(b.bidDueDate || '9'); });
-  return { ok: true, linked: true, approved: true, url: bidsBase(), docs: docs, jobs: jobs.slice(0, 60), me: { company: clip(c.profile.company, 160), name: clip(c.profile.name, 120), phone: clip(c.profile.phone, 40), email: low(c.profile.email) } };   /* patch PLANREQ: the request form shows who it is from */
+  return { ok: true, linked: true, approved: true, url: bidsBase(), docs: docs, jobs: jobs.slice(0, 60), me: { company: clip(c.profile.company, 160), name: clip(c.profile.name, 120), phone: clip(c.profile.phone, 40), email: low(c.profile.email), trades: (Array.isArray(c.profile.trades) ? c.profile.trades : []).map(function(x){ return clip(x, 60); }).slice(0, 20) } };   /* patch PLANREQ: the request form shows who it is from; PLANREQ-T: their trades ("Your trade") */
+}
+function detailsOut(j){
+  const r = j.requirements || {}, w = j.siteWalk || {}, c = j.contacts || {};
+  return { projectType: clip(j.projectType, 30), ownerGc: j.showOwnerGc ? clip(j.ownerGc, 200) : '', siteWalk: w.date ? { date: ymd(w.date), time: clip(w.time, 5), location: clip(w.location, 240), mandatory: w.mandatory === true } : null,
+    questionsDue: ymd(j.questionsDue), startDate: ymd(j.startDate), duration: clip(j.duration, 80), instructions: clip(j.bidInstructions, 8000),
+    requirements: { bond: !!r.bond, prevailingWage: !!r.prevailingWage, certifiedPayroll: !!r.certifiedPayroll, coi: !!r.coi, coiGl: clip(r.coiGl, 120), coiWc: clip(r.coiWc, 120), coiAuto: clip(r.coiAuto, 120), licenses: !!r.licenses, licensesText: clip(r.licensesText, 120), mbeWbe: !!r.mbeWbe, mbeWbeText: clip(r.mbeWbeText, 120) },
+    alternates: (Array.isArray(j.alternates) ? j.alternates : []).map(function(x){ return clip(x, 300); }).filter(Boolean).slice(0, 30), unitPrices: (Array.isArray(j.unitPrices) ? j.unitPrices : []).map(function(x){ return clip(x, 200); }).filter(Boolean).slice(0, 40),
+    bidForm: arr(j.bidForm).slice(0, 80).map(function(x){ return { id: s(x.id), trade: clip(x.trade, 60), item: clip(x.item, 200), unit: clip(x.unit, 30) }; }),
+    contacts: { pmName: clip(c.pmName, 120), pmPhone: clip(c.pmPhone, 40), pmEmail: okEmail(low(c.pmEmail)) ? low(c.pmEmail) : '', estName: clip(c.estName, 120), estPhone: clip(c.estPhone, 40), estEmail: okEmail(low(c.estEmail)) ? low(c.estEmail) : '' } };
 }
 function papersFail(docs){
   const name = function(k){ return (BID_PAPERS.find(function(x){ return x[0] === k; }) || [k, k])[1]; };
@@ -1445,6 +1455,7 @@ async function pBidSave(sub, body){
   if (!docs.ok) throw papersFail(docs);
   const rec = prev ? { id: s(prev.id), jobId: jobId, amount: amount, notes: clip(body.notes, 4000), scope: s(prev.scope), docs: arr(prev.docs), submittedAt: prev.submittedAt }
                    : { id: 'b_' + Date.now().toString(36) + crypto.randomBytes(6).toString('hex'), jobId: jobId, amount: amount, notes: clip(body.notes, 4000), scope: '', docs: [] };
+  if (Array.isArray(body.lines)) rec.lines = body.lines.slice(0, 80).map(function(l){ return { id: clip(l && l.id, 60), amount: l && l.amount, note: clip(l && l.note, 300) }; });   /* patch PLANREQ-E: the bid form */
   await HUB().saveCollection(c.who, 'bids', [rec], [], { scope: sc });
   const after = await HUB().getRow('bids', rec.id);
   if (!after || s(after.user_id) !== me) throw Fail(502, 'The bid could not be saved. Try again.');

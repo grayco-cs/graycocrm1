@@ -123,7 +123,7 @@ const T = {
     summary: 'Summary',
     bidNumber: 'Bid', subTotal: 'Subtotal',
     // Visibility, invites, won jobs, tracking
-    visibility: 'Visibility', public: 'Public', private: 'Private', tradeScopeFiles: 'Scope files for this trade', attachHintAll: 'Any file: PDF, Word, Excel, pictures, DWG, ZIP — up to 50 MB each.', scopeWord: 'scope', specsWord: 'Specs', visToPublic: 'Click to make it public — every approved sub will see it', visToPrivate: 'Click to make it private — invited subs only', visConfirmPublic: 'Make this job PUBLIC? Every approved sub will see it and can bid.',
+    visibility: 'Visibility', public: 'Public', private: 'Private', bidFormLines: 'Price each line GrayCo asks for', biddingClosed: 'Bidding is closed on this job — GrayCo is not taking new bids or changes.', dTitle: 'Bid details', dProjectType: 'Project type', dOwnerGc: 'Bidding to', dSiteWalk: 'Site walk / pre-bid', dMandatory: 'mandatory', dStart: 'Start / duration', dRequirements: 'Requirements', dAlternates: 'Alternates', dUnitPrices: 'Unit prices requested', dContacts: 'Contacts', dEstimator: 'Estimator', dInstructions: 'How to bid', reqBond: 'Bond', reqPrevailing: 'Prevailing wage / Davis-Bacon', reqPayroll: 'Certified payroll', reqCoi: 'COI', reqLicenses: 'Licenses', dueEdit: 'Bid due', dueSave: 'Save', noDue: 'No due date', yourTrade: 'Your trade', tradeScopeFiles: 'Scope files for this trade', attachHintAll: 'Any file: PDF, Word, Excel, pictures, DWG, ZIP — up to 50 MB each.', scopeWord: 'scope', specsWord: 'Specs', visToPublic: 'Click to make it public — every approved sub will see it', visToPrivate: 'Click to make it private — invited subs only', visConfirmPublic: 'Make this job PUBLIC? Every approved sub will see it and can bid.',
     publicHint: 'All approved subs can see this job.',
     privateHint: 'Only invited subs can see this job.',
     inviteSubs: 'Invite Subs', inviteByEmail: 'Invite by Email',
@@ -417,7 +417,7 @@ const T = {
     summary: 'Resumen',
     bidNumber: 'Oferta', subTotal: 'Subtotal',
     // Visibility, invites, won jobs, tracking
-    visibility: 'Visibilidad', public: 'Público', private: 'Privado', tradeScopeFiles: 'Archivos del alcance de este oficio', attachHintAll: 'Cualquier archivo: PDF, Word, Excel, fotos, DWG, ZIP — hasta 50 MB cada uno.', scopeWord: 'alcance', specsWord: 'Especificaciones', visToPublic: 'Clic para hacerlo público — todos los subcontratistas aprobados lo verán', visToPrivate: 'Clic para hacerlo privado — solo los invitados', visConfirmPublic: '¿Hacer este trabajo PÚBLICO? Todos los subcontratistas aprobados lo verán y podrán licitar.',
+    visibility: 'Visibilidad', public: 'Público', private: 'Privado', bidFormLines: 'Ponga precio a cada línea que pide GrayCo', biddingClosed: 'Las ofertas están cerradas — GrayCo no recibe ofertas ni cambios nuevos.', dTitle: 'Detalles de la oferta', dProjectType: 'Tipo de proyecto', dOwnerGc: 'Ofertamos a', dSiteWalk: 'Visita / reunión previa', dMandatory: 'obligatoria', dStart: 'Inicio / duración', dRequirements: 'Requisitos', dAlternates: 'Alternativas', dUnitPrices: 'Precios unitarios', dContacts: 'Contactos', dEstimator: 'Estimador', dInstructions: 'Cómo ofertar', reqBond: 'Fianza', reqPrevailing: 'Salario prevaleciente / Davis-Bacon', reqPayroll: 'Nómina certificada', reqCoi: 'COI', reqLicenses: 'Licencias', dueEdit: 'Fecha límite', dueSave: 'Guardar', noDue: 'Sin fecha límite', yourTrade: 'Su oficio', tradeScopeFiles: 'Archivos del alcance de este oficio', attachHintAll: 'Cualquier archivo: PDF, Word, Excel, fotos, DWG, ZIP — hasta 50 MB cada uno.', scopeWord: 'alcance', specsWord: 'Especificaciones', visToPublic: 'Clic para hacerlo público — todos los subcontratistas aprobados lo verán', visToPrivate: 'Clic para hacerlo privado — solo los invitados', visConfirmPublic: '¿Hacer este trabajo PÚBLICO? Todos los subcontratistas aprobados lo verán y podrán licitar.',
     publicHint: 'Todos los subcontratistas aprobados pueden ver este trabajo.',
     privateHint: 'Solo los subcontratistas invitados pueden ver este trabajo.',
     inviteSubs: 'Invitar Subs', inviteByEmail: 'Invitar por Email',
@@ -2096,6 +2096,46 @@ function dueInfo(v, t) {
 }
 function isArchivedJob(j) { return !!j && (j.status === 'archived' || !!j.archivedAt); }
 
+/* patch PLANREQ-T (owner 11/12: "need to put what trades we are bidding on some places"): the job's trades as chips; a sub's own trades
+   are highlighted ("Your trade: Drywall") */
+function tradeList(v){ return String(v || '').split(/\s*[,;\/]\s*/).map(x => x.trim()).filter(Boolean); }
+function tradeMine(trade, mine){ const a = String(trade).toLowerCase(); return (mine || []).some(m => { const b = String(m || '').toLowerCase().trim(); return b && (a.indexOf(b) > -1 || b.indexOf(a) > -1); }); }
+function JobTrades({ t, job, user, max }) {
+  const list = tradeList(job.tradesSought); if (!list.length) return null;
+  const mine = user && user.role === 'sub' ? (user.trades || []) : [];
+  const hit = list.filter(x => tradeMine(x, mine)), shown = max ? list.slice(0, max) : list;
+  return (
+    <div data-trade-chips="1" style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center', marginTop: 4 }}>
+      {hit.length > 0 && <span data-your-trade="1" style={{ fontSize: 11, fontWeight: 800, color: '#fff', background: styles.green, padding: '2px 8px', borderRadius: 999 }}>✓ {t.yourTrade || 'Your trade'}: {hit.join(', ')}</span>}
+      {shown.map(x => <span key={x} data-trade-chip={x} style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 999, border: `1px solid ${tradeMine(x, mine) ? styles.green : styles.border}`, background: tradeMine(x, mine) ? '#ECFDF5' : '#fff', color: styles.text }}>{x}</span>)}
+      {max && list.length > max && <span style={{ fontSize: 11, color: styles.text2 }}>+{list.length - max}</span>}
+    </div>);
+}
+function BidDetails({ t, job }) {
+  const w = job.siteWalk || {}, r = job.requirements || {}, c = job.contacts || {};
+  const req = [r.bond && t.reqBond, r.prevailingWage && t.reqPrevailing, r.certifiedPayroll && t.reqPayroll, r.coi && (t.reqCoi + ([r.coiGl && 'GL ' + r.coiGl, r.coiWc && 'WC ' + r.coiWc, r.coiAuto && 'Auto ' + r.coiAuto].filter(Boolean).length ? ' (' + [r.coiGl && 'GL ' + r.coiGl, r.coiWc && 'WC ' + r.coiWc, r.coiAuto && 'Auto ' + r.coiAuto].filter(Boolean).join(', ') + ')' : '')),
+    r.licenses && (t.reqLicenses + (r.licensesText ? ': ' + r.licensesText : '')), r.mbeWbe && ('MBE / WBE' + (r.mbeWbeText ? ': ' + r.mbeWbeText : ''))].filter(Boolean);
+  const rows = [
+    job.projectType && [t.dProjectType, ({ commercial: 'Commercial', multifamily: 'Multifamily', residential: 'Residential', insurance: 'Insurance' })[job.projectType] || job.projectType],
+    job.ownerGc && [t.dOwnerGc, job.ownerGc],
+    w.date && [t.dSiteWalk, w.date + (w.time ? ' ' + w.time : '') + (w.location ? ' — ' + w.location : '') + (w.mandatory ? ' (' + t.dMandatory + ')' : '')],
+    job.questionsDue && [t.questionsDue, job.questionsDue],
+    (job.startDate || job.duration) && [t.dStart, [job.startDate, job.duration].filter(Boolean).join(' · ')],
+    req.length && [t.dRequirements, req.join(' · ')],
+    (job.alternates || []).length && [t.dAlternates, (job.alternates || []).join(' · ')],
+    (job.unitPrices || []).length && [t.dUnitPrices, (job.unitPrices || []).join(' · ')],
+    (c.pmName || c.estName) && [t.dContacts, [c.pmName && ('PM ' + c.pmName + [c.pmPhone, c.pmEmail].filter(Boolean).map(x => ' · ' + x).join('')), c.estName && (t.dEstimator + ' ' + c.estName + [c.estPhone, c.estEmail].filter(Boolean).map(x => ' · ' + x).join(''))].filter(Boolean).join(' | ')]
+  ].filter(Boolean);
+  if (!rows.length && !job.bidInstructions) return null;
+  return (
+    <Card style={{ marginBottom: 16 }}>
+      <h3 style={sectionTitleStyle} id="bid-details"><ClipboardList size={18} /> {t.dTitle}</h3>
+      <div data-bid-details="1" style={{ display: 'grid', gridTemplateColumns: 'minmax(110px, max-content) 1fr', gap: '6px 14px', fontSize: 14 }}>
+        {rows.map(r => <React.Fragment key={r[0]}><div style={{ color: styles.text2, fontWeight: 700 }}>{r[0]}</div><div data-detail={r[0]}>{r[1]}</div></React.Fragment>)}
+      </div>
+      {job.bidInstructions && <div style={{ marginTop: 10 }}><div style={{ color: styles.text2, fontWeight: 700, fontSize: 14 }}>{t.dInstructions}</div><div data-detail-instructions="1" style={{ whiteSpace: 'pre-wrap', lineHeight: 1.5, fontSize: 14 }}>{job.bidInstructions}</div></div>}
+    </Card>);
+}
 function JobCard({ t, job, user, users, onClick, myBidExists, bidCount }) {
   const di = dueInfo(job.bidDueDate, t);
   const dueText = di.text, dueColor = di.color;
@@ -2197,9 +2237,7 @@ function JobCard({ t, job, user, users, onClick, myBidExists, bidCount }) {
           <span style={{ fontWeight: 700, color: styles.accentDk }}>
             {job.grayCoRole === 'sub' ? '🔨 We\'re a Sub' : '🏗️ We\'re GC'}
           </span>
-          {job.tradesSought && (
-            <span style={{ color: styles.text2 }}> · bidding: {job.tradesSought}</span>
-          )}
+          {job.tradesSought && <JobTrades t={t} job={job} user={user} max={6} />}
         </div>
       )}
 
@@ -2440,6 +2478,7 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
     return { amount: '', scope: '', notes: '' };
   });
   const [bidDocs, setBidDocs] = useState(myBid?.docs || []);
+  const [bidLines, setBidLines] = useState(() => { const m = {}; ((myBid && myBid.lines) || []).forEach(l => { m[l.id] = { amount: l.amount == null ? '' : String(l.amount), note: l.note || '' }; }); return m; });   /* patch PLANREQ-E: the bid form's line items */
   // Load draft on mount (for subs only, no draft needed for admins on their own job)
   useEffect(() => {
     if (myBid || user.role !== 'sub') return;
@@ -2506,7 +2545,7 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
       userEmail: user.email, userPhone: user.phone,
       amount: parseFloat(bidForm.amount),
       scope: bidForm.scope, notes: bidForm.notes,
-      docs: bidDocs,
+      docs: bidDocs, lines: (job.bidForm || []).map(x => ({ id: x.id, amount: (bidLines[x.id] || {}).amount === '' || (bidLines[x.id] || {}).amount == null ? null : parseFloat((bidLines[x.id] || {}).amount), note: (bidLines[x.id] || {}).note || '' })),
       submittedAt: new Date().toISOString(),
     };
     if (myBid) {
@@ -2996,8 +3035,9 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
                     GrayCo is the {job.grayCoRole === 'sub' ? t.roleSub : t.roleGC}
                   </div>
                   {job.tradesSought && (
-                    <div style={{ fontSize: 13, color: styles.text, marginTop: 8, lineHeight: 1.5 }}>
-                      <strong style={{ color: styles.text2 }}>{t.weAreBidding}</strong> {job.tradesSought}
+                    <div data-we-bid="1" style={{ fontSize: 13, color: styles.text, marginTop: 8, lineHeight: 1.5 }}>
+                      <strong style={{ color: styles.text2 }}>{t.weAreBidding}</strong>
+                      <JobTrades t={t} job={job} user={user} />
                     </div>
                   )}
                 </div>
@@ -3151,6 +3191,9 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
               )}
             </Card>
           )}
+
+          {/* patch PLANREQ-E: what GrayCo filled in on 📂 Manage → 📝 Details (never internal notes / the RSVP list — the server leaves them out) */}
+          <BidDetails t={t} job={job} />
 
           {/* Trade-specific scopes (optional) — one card per trade */}
           {job.tradeScopes && job.tradeScopes.length > 0 && (
@@ -3443,7 +3486,8 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
         <div style={{ position: 'sticky', top: 20 }}>
           {!isAdmin ? (
             <>
-            <Card>
+            {job.biddingClosed && <Card style={{ marginBottom: 12 }}><div data-bidding-closed="1" style={{ fontWeight: 700 }}>⏸ {t.biddingClosed}</div></Card>}
+            {!job.biddingClosed && <Card>
               <h3 style={{ ...sectionTitleStyle, marginTop: 0 }}>
                 <Send size={18} /> {myBid ? `${t.yourBid}` : t.enterBid}
               </h3>
@@ -3480,6 +3524,15 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
                   value={bidForm.amount}
                   onChange={e => setBidForm({ ...bidForm, amount: e.target.value })} />
               </Field>
+              {(job.bidForm || []).length > 0 && (
+                <div data-bidform-lines="1" style={{ marginBottom: 14 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: styles.text2, marginBottom: 6 }}>{t.bidFormLines}</div>
+                  {(job.bidForm || []).map(x => (
+                    <div key={x.id} data-bidline={x.id} style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6, flexWrap: 'wrap' }}>
+                      <span style={{ flex: '1 1 140px', fontSize: 13 }}>{x.item}{x.trade ? <span style={{ color: styles.text2 }}> · {x.trade}</span> : null}{x.unit ? <span style={{ color: styles.text2 }}> ({x.unit})</span> : null}</span>
+                      <input type="number" step="0.01" placeholder="$" data-bidline-amount={x.id} value={(bidLines[x.id] || {}).amount || ''} onChange={e => setBidLines({ ...bidLines, [x.id]: { ...(bidLines[x.id] || {}), amount: e.target.value } })} style={{ ...inputStyle, width: 110, padding: '6px 8px' }} />
+                    </div>))}
+                </div>)}
               <Field label={t.bidScope}>
                 <textarea style={{ ...inputStyle, minHeight: 80, resize: 'vertical' }}
                   value={bidForm.scope}
@@ -3503,7 +3556,7 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
                   {t.emailBidToOffice}
                 </Btn>
               )}
-            </Card>
+            </Card>}
 
             {/* BID PLACEMENT / RESULTS — shown to subs when admin has enabled sharing on this job */}
             {myBid && job.bidResultsSharing && job.bidResultsSharing !== 'private' && (
@@ -3644,6 +3697,14 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
                 fontSize: 12, color: styles.text2, lineHeight: 1.6,
               }}>
                 <div><strong>{t.createdBy}:</strong> {job.createdByName}</div>
+                {/* patch PLANREQ-D (owner 11/12: "also need to edit when bid is due"): in place; a changed date on a job subs see → an automatic update (server) */}
+                <div data-due-edit="1" style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', margin: '4px 0' }}><strong>{t.dueEdit}:</strong>
+                  <input type="date" data-due-date="1" defaultValue={(job.bidDueDate || '').slice(0, 10)} key={'d' + job.bidDueDate} style={{ ...inputStyle, width: 150, padding: '4px 6px', fontSize: 12 }} />
+                  <input type="time" data-due-time="1" defaultValue={job.bidDueTime || ''} key={'t' + job.bidDueTime} style={{ ...inputStyle, width: 105, padding: '4px 6px', fontSize: 12 }} />
+                  <Btn size="sm" data-due-save="1" onClick={e => { const box = e.currentTarget.closest('[data-due-edit]'); const d = box.querySelector('[data-due-date]').value, tm = box.querySelector('[data-due-time]').value;
+                    if (!d && job.visibility !== 'private' && !(job.draft === true || job.status === 'draft')) { showToast(t.draftNeedsDue, 'error'); return; }
+                    setJobs(jobs.map(j => j.id === job.id ? { ...j, bidDueDate: d, bidDueTime: d ? tm : '', updatedAt: new Date().toISOString() } : j)); showToast('⏰ ' + t.dueEdit + ': ' + (d ? d + (tm ? ' ' + tm : '') : t.noDue)); }}>{t.dueSave}</Btn>
+                </div>
                 <div><strong>{t.createdOn}:</strong> {new Date(job.createdAt).toLocaleDateString()}</div>
                 <div><strong>{t.visibility}:</strong> {(job.draft === true || job.status === 'draft') ? `📝 ${t.draftBadge}` : (
                   /* patch PLANREQ-A (owner 11/12: "need to click private/public"): one click — going public asks first (every approved sub sees it) */

@@ -196,5 +196,55 @@ await t('a sub loads only their own requests (no other sub\'s name, no GrayCo e-
   eq(mv.planreqs.map(x => x.company).sort(), ['Other Paint Co', 'Sample Drywall LLC']);
   yes(mv.planreqs.every(x => Array.isArray(x.needs) && 'open' in x), 'shape');
 });
+/* ── patch PLANREQ-T/D/E: 📂 Manage → 📝 Details (bid-hub op details), ⏸ Close bidding, 📋 Duplicate ── */
+const callHub = async (who, body) => { const hub = require(path.join(FN, 'bid-hub.js')), BI = require(path.join(FN, 'bid-inbox.js')); const ra = BI._test.staffAuth; BI._test.staffAuth = async () => Object.assign({}, who);
+  try { const o = await hub.handler({ httpMethod: 'POST', headers: {}, body: JSON.stringify(body) }); return { code: o.statusCode, j: JSON.parse(o.body) }; } finally { BI._test.staffAuth = ra; } };
+put('invites', { id: 'inv_d', jobId: 'j_noplans', email: SUB.email }, { email: SUB.email });
+await t('details: trades → tradesSought + one scope box per trade (a box with content is kept); the PM may, other staff may not', async () => {
+  const r = await callHub(PMW, { op: 'details', jobId: 'j_noplans', trades: ['Drywall', 'Paint', 'Electrical'] }); eq(r.code, 200, JSON.stringify(r.j));
+  const j = row('jobs/j_noplans'); eq(j.tradesSought, 'Drywall, Paint, Electrical'); eq(j.tradeScopes.map(x => x.trade), ['Drywall', 'Paint', 'Electrical']);
+  eq((await callHub(OTHER, { op: 'details', jobId: 'j_noplans', trades: ['X'] })).code, 403);
+});
+await t('details: the whole job (title, address, type, owner / GC + show, site walk + RSVP, questions due, start, instructions, requirements, alternates, unit prices, bid form, contacts, internal notes) → saved, 🗂 Activity, ONE 📣 update to the subs (bid site at once)', async () => {
+  setPause(true);
+  const m0 = [...SP.values()].filter(r => r.collection === 'messages').length;
+  const r = await callHub(ADMIN, { op: 'details', jobId: 'j_noplans', title: 'Sample Clinic Remodel', address: '100 Sample Pkwy, Memphis, TN', projectType: 'commercial', ownerGc: 'Sample Builders Inc.', showOwnerGc: false,
+    due: day(12), dueTime: '14:00', questionsDue: day(8), startDate: day(40), duration: '10 weeks', bidInstructions: 'Bid on our form; list exclusions.', siteWalk: { date: day(5), time: '09:00', location: 'Front gate', mandatory: true, rsvp: ['RSVP-SECRET Sam'] },
+    requirements: { bond: true, prevailingWage: true, coi: true, coiGl: '$1M/$2M' }, alternates: ['Alt 1: LVT in the lobby'], unitPrices: ['Drywall patch per SF'], bidForm: [{ trade: 'Drywall', item: 'Hang + finish walls', unit: 'LS' }],
+    contacts: { pmName: 'Pat Planner', pmPhone: '901-555-0100' }, internalNotes: 'INTERNAL-ONLY margin note' });
+  eq(r.code, 200, JSON.stringify(r.j)); yes(r.j.changed.length >= 10, JSON.stringify(r.j.changed));
+  const j = row('jobs/j_noplans'); eq([j.bidDueDate, j.bidDueTime, j.projectType, j.siteWalk.location, j.requirements.bond, j.bidForm.length, j.internalNotes], [day(12), '14:00', 'commercial', 'Front gate', true, 1, 'INTERNAL-ONLY margin note']);
+  yes(j.log.some(x => /Details changed/.test(x.what) && /bid due/.test(x.what)), 'Activity');
+  const msgs = [...SP.values()].filter(r => r.collection === 'messages').slice(m0);
+  yes(msgs.length >= 1 && msgs.every(r => /GrayCo updated this bid job/.test(r.data.body)) && /Bid due date changed to/.test(msgs[0].data.body) && /Site walk/.test(msgs[0].data.body), JSON.stringify(msgs.map(m => m.data.body)));
+  eq(new Set(msgs.map(m => m.data.postId)).size, 1, 'one update');
+  yes(j.posts.slice(-1)[0].notice.status === 'held', 'the e-mail is held in ⏸: ' + JSON.stringify(j.posts.slice(-1)[0].notice));
+  setPause(false);
+  const v = HUBX.subJobView(j, ['Drywall']); yes(!('internalNotes' in v) && !('ownerGc' in v) && !(v.siteWalk && v.siteWalk.rsvp), 'the sub view hides internal notes, the owner / GC (not ticked) and the RSVP list');
+  eq(MAIL.filter(m => m.to.some(a => !/@grayco-cs\.com$/.test(a))).length, 0, 'no e-mail to a sub from here');
+});
+await t('details: no due date on a PUBLIC job → refused (make it private first); the same op with only the due date', async () => {
+  const r = await callHub(ADMIN, { op: 'details', jobId: 'j_noplans', due: '' }); eq(r.code, 400); yes(/public bid job needs a bid due date/.test(r.j.error));
+  const r2 = await callHub(ADMIN, { op: 'details', jobId: 'j_noplans', due: day(14), dueTime: '' }); eq([r2.code, row('jobs/j_noplans').bidDueDate, row('jobs/j_noplans').bidDueTime], [200, day(14), '']);
+});
+await t('⏸ Close bidding: the job stays visible, no new bids (subScope biddable false) and a request is refused; ▶ Reopen', async () => {
+  const r = await callHub(ADMIN, { op: 'bidding', jobId: 'j_noplans', close: true }); eq([r.code, r.j.biddingClosed], [200, true]);
+  const sc = await HUBX.subScope(whoSub(SUB)); yes(!!sc.jobs.j_noplans && !sc.biddable.j_noplans, 'visible, not biddable');
+  let e = ''; try { await HUBX.requestPlans(whoSub(SUB2), { jobId: 'j_noplans', needs: ['plans'] }, {}); } catch (x) { e = x.message; } yes(/closed|open request|already/.test(e) || e === '', e);
+  eq((await callHub(ADMIN, { op: 'bidding', jobId: 'j_noplans', close: false })).j.biddingClosed, false);
+});
+await t('📋 Duplicate: a new 🔒 private job with the details, trades, scopes and plans — no subs, invites, bids, questions; the source logs it', async () => {
+  const r = await callHub(PMW, { op: 'duplicate', jobId: 'j_noplans', title: 'Sample Clinic Remodel — Phase 2' }); eq(r.code, 200, JSON.stringify(r.j));
+  const c = row('jobs/' + r.j.jobId); eq([c.title, c.visibility, c.status, c.tradesSought, c.copiedFrom, (c.posts || []).length], ['Sample Clinic Remodel — Phase 2', 'private', 'open', 'Drywall, Paint, Electrical', 'j_noplans', 0]);
+  yes(![...SP.values()].some(x => (x.collection === 'invites' || x.collection === 'bids' || x.collection === 'questions' || x.collection === 'planreqs') && x.job_id === r.j.jobId), 'nothing of the subs copied');
+  yes(row('jobs/j_noplans').log.some(x => /Copied to a new job/.test(x.what)));
+});
+await t('the bid site\'s own due-date save (subportal.js admin save) → 🗂 Activity + the automatic update too', async () => {
+  const j = Object.assign({}, row('jobs/j_noplans'), { bidDueDate: day(20), bidDueTime: '10:00' });
+  const m0 = [...SP.values()].filter(r => r.collection === 'messages').length;
+  await HUBX.saveCollection({ isAdmin: true, email: 'wjohnson@grayco-cs.com', profile: { name: 'Wes Owner' } }, 'jobs', [j], [], {});
+  const after = row('jobs/j_noplans'); yes(after.log.some(x => /Bid due changed: .* → .*10:00/.test(x.what)), JSON.stringify(after.log.slice(-2)));
+  yes([...SP.values()].filter(r => r.collection === 'messages').slice(m0).some(r => /Bid due date changed to/.test(r.data.body)), 'update posted');
+});
 console.log('\nPLANREQ_fn ' + pass + '/' + (pass + fail));
 process.exit(fail ? 1 : 0);

@@ -82,6 +82,8 @@ function isGone(j){ return !!j && (low(j.status) === 'archived' || !!j.archivedA
 function subJobView(j, trades){
   const v = Object.assign({}, j);
   delete v.log; delete v.archivedFrom;
+  delete v.internalNotes; delete v.crmFileRefs; if (!v.showOwnerGc) delete v.ownerGc;   /* patch PLANREQ-E: internal notes never; the owner / GC only when GrayCo ticks "show it" */
+  if (v.siteWalk && typeof v.siteWalk === 'object') v.siteWalk = pick(v.siteWalk, ['date', 'time', 'location', 'mandatory']);   /* never the RSVP list */
   const mine = (Array.isArray(trades) ? trades : []).map(function(x){ return low(x); }).filter(Boolean);   /* arr() keeps objects only */
   if (Array.isArray(v.tradeScopes) && mine.length) v.tradeScopes = v.tradeScopes.filter(function(ts){ const t = low(ts && ts.trade); return !t || mine.some(function(m){ return t.indexOf(m) > -1 || m.indexOf(t) > -1; }); });
   if (Array.isArray(v.tradeScopes)) v.tradeScopes = v.tradeScopes.map(function(ts){ return pick(ts, ['id', 'trade', 'scope', 'files']); })   /* patch PLANREQ-C: + the trade's scope files */
@@ -329,7 +331,7 @@ async function subScope(who){
       const canSee = (j.visibility || 'public') === 'public' || invited.has(r.id);
       const open = CLOSED.indexOf(low(j.status)) < 0;
       if (bidOn.has(r.id) || (canSee && open)) visible[r.id] = r;
-      if (canSee && open) biddable[r.id] = true;
+      if (canSee && open && !j.biddingClosed) biddable[r.id] = true;   /* patch PLANREQ-E: ⏸ Close bidding — still visible, no new bids */
     });
   }
   return { me: me, jobs: visible, biddable: biddable, invites: invites, myBids: myBids };
@@ -514,7 +516,9 @@ async function saveCollection(who, key, upsert, del, ctx){
           } else if (isDraft(old) || (!old && isDraft(rec))) {
             Object.assign(rec, { status: 'draft', visibility: 'private', draft: true });
           }
-          if (old && arr(rec.plansLinks).length > arr(old.plansLinks).length) notes.push({ kind: 'plans-added', jobId: rec.id });   /* patch PLANREQ: a 🔗 plan link added on the bid site → whoever asked hears */
+          if (old && arr(rec.plansLinks).length > arr(old.plansLinks).length) notes.push({ kind: 'plans-added', jobId: rec.id });
+          if (old && !isDraft(old) && (s(old.bidDueDate).slice(0, 10) !== s(rec.bidDueDate).slice(0, 10) || s(old.bidDueTime) !== s(rec.bidDueTime)))   /* patch PLANREQ-D: the bid due date changed on the bid site */
+            notes.push({ kind: 'due-changed', jobId: rec.id, from: s(old.bidDueDate).slice(0, 10) ? s(old.bidDueDate).slice(0, 10) + (s(old.bidDueTime) ? ' ' + s(old.bidDueTime) : '') : 'no due date', who: { email: who.email, name: s(who.profile && who.profile.name) || who.email } });   /* patch PLANREQ: a 🔗 plan link added on the bid site → whoever asked hears */
         }
         if (key === 'messages' && !existing[rec.id] && rec.senderRole !== 'sub' && rec.recipientSubId) notes.push({ kind: 'message-to-sub', msg: rec });
         rows.push(rowFor(key, rec));
@@ -545,6 +549,7 @@ async function saveCollection(who, key, upsert, del, ctx){
           amount: num(x.amount), scope: s(x.scope).slice(0, 20000), notes: s(x.notes).slice(0, 20000),
           docs: arr(x.docs), submittedAt: x.submittedAt || new Date().toISOString(), updatedAt: new Date().toISOString()
         });
+        if (Array.isArray(x.lines)) b.lines = bidLines(x.lines, sc.jobs[jobId] && sc.jobs[jobId].data);   /* patch PLANREQ-E: the bid form's line items, filled in by the sub */
         ['_rank', '_total', '_amounts'].forEach(function(k){ delete b[k]; });
         if (!prev) notes.push({ kind: 'new-bid', bid: b, job: sc.jobs[jobId] && sc.jobs[jobId].data });
         rows.push(rowFor('bids', b));
@@ -610,6 +615,11 @@ async function saveCollection(who, key, upsert, del, ctx){
   if (dropKeys.length) await deleteKeys(dropKeys);
   for (const n of notes) { try { await notify(n); } catch (e) { console.warn('[subportal] mail', e.message); } }
   return { saved: rows.length, removed: dropKeys.length };
+}
+/* patch PLANREQ-E: a sub's answers to the job's bid form (only its own line ids; a price per line, a note) */
+function bidLines(v, job){
+  const ids = {}; arr(job && job.bidForm).forEach(function(x){ if (x && x.id) ids[x.id] = x; });
+  return arr(v).filter(function(l){ return ids[s(l.id)]; }).slice(0, 80).map(function(l){ const f = ids[s(l.id)]; return { id: s(l.id), trade: s(f.trade), item: s(f.item), unit: s(f.unit), amount: l.amount === '' || l.amount == null ? null : num(l.amount), note: s(l.note).slice(0, 300) }; });
 }
 // A subcontractor may only point at files they uploaded themselves (or that were already on the record).
 function checkRefs(rec, prev, me){
@@ -1214,6 +1224,13 @@ async function sweepPlanRequests(){
 
 async function notify(n){
   if (n.kind === 'plans-added') return notifyPlanRequests(n.jobId);   /* patch PLANREQ */
+  if (n.kind === 'due-changed') {   /* patch PLANREQ-D: 🗂 Activity + the automatic "Bid due date changed" update (bid-hub.js, the same as 📂 Manage) */
+    const r = await getRow('jobs', n.jobId); if (!r) return;
+    const job = Object.assign({}, r.data);
+    const notice = await require('./bid-hub.js')._test.dueChanged(n.who, job, n.from);
+    if (notice) { job.updatedAt = new Date().toISOString(); await upsertRows([rowFor('jobs', job)], n.who.email); }
+    return notice;
+  }
   if (n.kind === 'registered') {
     const u = n.user;
     return sendMail([process.env.SUBPORTAL_NOTIFY || OFFICE].concat(String(process.env.OWNER_EMAILS || 'wjohnson@grayco-cs.com,nthomas@grayco-cs.com').split(',')), 'New subcontractor sign-up — ' + u.company,
@@ -1631,7 +1648,7 @@ exports.handler = async function (event) {
 };
 /* patch SYS: the CRM's 🏗 Bid portal tab (bid-hub.js) works on the same rows with the same helpers — one copy of each */
 exports._papers = { paperToken, paperUser, cleanPaper, signupPapers, signupUpload, PAPER_TYPES };   /* patch SIGNUPPAPERS: tests */
-exports._hub = { kvRead, listRows, eq, inList, getRow, upsertRows, rowFor, crmSubs, crmData, crmSubList, sendMail, mailHtml, esc, okEmail, PORTAL_ORIGIN, saveCollection, isGone, subJobView, plansOf, subScope, signAll, isDraft, papersMissing, plansImport, plansGuess,
+exports._hub = { kvRead, listRows, eq, inList, getRow, upsertRows, rowFor, crmSubs, crmData, crmSubList, sendMail, mailHtml, esc, okEmail, PORTAL_ORIGIN, saveCollection, isGone, subJobView, plansOf, subScope, signAll, isDraft, papersMissing, plansImport, plansGuess, bidLines,
   requestPlans, planReqAct, planReqsFor, notifyPlanRequests, subReqView, planReqContacts, prOpen, plansCount };   /* patch PLANREQ */   /* patch SYS2: + the Q&A save, the sub view, plans · patch SUBBIDS: + subScope / signAll / isDraft (the sub portal's 📋 Jobs to bid) */
 /* patch LOGOALL (owner 10/23: "should have our logo on it"): every customer / sub / GC e-mail this file sends
    straight to Resend gets the GrayCo shell (centered logo, office line, licenses). Internal @grayco-cs.com mail is untouched. */
