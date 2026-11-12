@@ -206910,9 +206910,11 @@ function proj(pid){ var x = arr(C().projects).filter(function(p){ return p && s(
 function jobsOf(a){
   var J = null; try { J = F() && F().jobs ? F().jobs() : null; } catch (e) {}
   if ((a === 'mit' || a === 'env') && W._gcMitWS && W._gcMitWS.fieldJobs) { try { return { today: false, list: fpSort(arr(W._gcMitWS.fieldJobs(a))) }; } catch (e) { warn(e); } }   /* patch MITWS: that company's jobs */
-  if ((a === 'pm' || a === 'crew') && J) return { today: !!J.today, list: fpSort(arr(J.list)) };
-  return { today: false, list: fpSort(allMine().filter(activeJob)) };
+  if ((a === 'pm' || a === 'crew') && J) return { today: !!J.today, list: fpSort(coJobs(arr(J.list))) };
+  return { today: false, list: fpSort(coJobs(allMine().filter(activeJob))) };
 }
+/* patch QAB (overnight QA 11/12): with one company picked, the home's job lists are that company's jobs (and jobs shared with it) */
+function coJobs(l){ try { var C0 = W._gcCo; if (C0 && C0.filter() !== 'all') return l.filter(function(p){ return C0.passJob(p); }); } catch (e) {} return l; }
 function dayOf(pid){ try { return F().day(pid) || {}; } catch (e) { return {}; } }
 
 /* ── leads, claims, money (read through the existing APIs) ── */

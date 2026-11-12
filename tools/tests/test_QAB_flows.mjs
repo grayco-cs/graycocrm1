@@ -63,6 +63,12 @@ await sleep(4500);
 const st = await A.ev(() => ({ p: (window._crm.projects.find(x => x.id === 'MZ1') || {}).companyId, l: (window._crm.leads.find(x => x.id === 'LZ2') || {}).companyId }));
 ok('M2 a job and a lead made here while Mitigation is picked are filed under Mitigation', st.p === 'mitigation' && st.l === 'mitigation', st);
 
+/* the owner's home (desk app) with Mitigation picked: its job list is Mitigation's */
+await A.ev(() => window._gcRA.open && window._gcRA.open()); await sleep(1800);
+const dk = await A.ev(() => (document.getElementById('gc-ra-desk') || {}).innerText || '');
+ok('M2 the owner\'s home (desk) with Mitigation picked: All jobs = Mitigation\'s (no Conzz / Envzz job)', /All jobs/.test(dk) && /Zedd Ross basement/.test(dk) && !/Conzz Smith deck|Conzz Fire rebuild|Envzz Tile asbestos/.test(dk), dk.split('\n').filter(x => /zz|Zedd|All jobs/.test(x)).slice(0, 8));
+await A.ev(() => { const b = document.querySelector('#gc-ra-desk [data-ra-a="full"]'); b && b.click(); window._gcRA.hide && window._gcRA.hide(); }); await sleep(800);
+
 /* ═══ M3 the drying file ═══ */
 await A.ev(() => window._setView('mws_jobs')); await sleep(1800);
 const dj0 = await A.ev(() => document.getElementById('gc-mws-mount').innerText);
