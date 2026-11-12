@@ -58,12 +58,18 @@ var SG_WEAK = [
 var SG_NEED = /\b(water|leak(s|ing|ed)?|roof(s|ing)?|storm|hail|wind\s+damage|tree|fire|smoke|flood(ed|ing)?|pipe|burst|mou?ld|insurance|claim|adjuster|estimate|inspection|repair|damage|ceiling|gutters?|siding|shingles?|project|bids?|renovat\w*|remodel\w*|building|sq\s*ft|square\s+feet)\b|\bmy\s+(house|home|roof|property|ceiling|basement|kitchen|bathroom|attic|garage)\b/i;
 /* an adjuster / a carrier / a claim: never a pitch on its own */
 var SG_TRUST = /\b(adjuster|adjustor|claim\s*(#|no\.?|number)|policy\s*(#|holder|number)|insured|state\s*farm|allstate|usaa|farmers|nationwide|liberty\s+mutual|progressive|travelers|geico|erie|auto[\s-]?owners|shelter\s+insurance|homesite|safeco)\b/i;
+/* patch LEADBOTH (owner 11/12: "in the automatic leads I want to see asbestos and mold leads"): a message about asbestos / lead paint /
+   mold / abatement work is never held as a sales pitch (the same words as _lib/envwords.js; mosquito / tax / weed abatement and
+   injection molds do not count) */
+var SG_ENV = /\basbestos\b|\bACMs?\b|\blead[\s-]*(based\s+)?paint\b|\bLBP\b|\blead\s+(abatement|hazard|remediation|inspection|testing|removal)\b|\bRRP\b|\bmou?ld\b|\bmicrobial\b|\bhaz[\s-]?mat\b|\bhazardous\s+materials?\b|\benvironmental\s+remediation\b|\babatement\b/i;
+var SG_ENV_NOT = /\b(mosquito|pest|weed|noise|tax|nuisance|odou?r|dust|rodent|vector|graffiti)\s+abatement\b|\b(injection|plastic|blow|die|casting|concrete|silicone|rubber)\s+mou?lds?\b|\bmou?lds?\s+(injection|making|maker|press)\b/ig;
 var SG_DOMAIN = /(seo|market|leads?|digital|media|growth|agency|funding|capital|ventures|outreach|automation)[\w-]*\.[a-z]{2,}$/i;
 function sgStr(v){ return v == null ? '' : String(v); }
 /* → '' (not sales) or the reasons, e.g. "AI agent / AI receptionist; SEO (score 9)" */
 function sgWhy(text, sender){
   var t = sgStr(text), snd = sender && typeof sender === 'object' ? sender : { email: sgStr(sender) };
   if (!t.replace(/\s+/g, '')) return '';
+  if (SG_ENV.test(t.replace(SG_ENV_NOT, ' '))) return '';   /* patch LEADBOTH: abatement / mold work is kept */
   var why = [], score = 0, strong = 0, i;
   for (i = 0; i < SG_STRONG.length; i++) if (SG_STRONG[i][1].test(t)) { why.push(SG_STRONG[i][0]); score += 3; strong++; }
   for (i = 0; i < SG_WEAK.length; i++) if (SG_WEAK[i][1].test(t)) { why.push(SG_WEAK[i][0]); score += 1; }

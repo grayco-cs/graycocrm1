@@ -10637,7 +10637,7 @@ e.jsx("button",{style:{background:"#ef444422",border:"1px solid #ef444455",borde
 ]})
 })(),_st==="pnl"&&e.jsx(__gcStable("bu",bu),{}),_st==="cctrans"&&e.jsx(__gcStable("yl",yl),{}),_st==="reports"&&e.jsx(__gcStable("wu",wu),{}),_st==="estvactual"&&e.jsx(__gcStable("Yf",Yf),{}),e.jsx("div",{id:"tc-mount",style:{display:_st==="tax"?"block":"none",width:"100%",height:"calc(100vh - 100px)"}})]})},
 _spay=function(nm){var _i=Ba.filter(function(x){return x.sub===nm&&x.status==="paid"});return{t:_i.reduce(function(a,x){return a+(parseFloat(x.amt)||0)},0),m:_i.filter(function(x){return(x.paidDate||x.recvDate||"").slice(0,7)===new Date().toISOString().slice(0,7)}).reduce(function(a,x){return a+(parseFloat(x.amt)||0)},0),y:_i.filter(function(x){return(x.paidDate||x.recvDate||"").slice(0,4)===""+new Date().getFullYear()}).reduce(function(a,x){return a+(parseFloat(x.amt)||0)},0),inv:_i}},
-ch=()=>{if(/^(mws|ews)_[a-z]+$/.test(P||""))return e.jsx("div",{key:"gc-view-"+P,id:"gc-mws-mount","data-mws":P,ref:function(el){try{if(el&&window._gcMitWS)window._gcMitWS.mount(el,P)}catch(_x){}},style:{width:"100%",minHeight:"calc(100vh - 60px)"}});/* patch MITWS */if(P==="planbuilder")return e.jsx("div",{key:"gc-view-planbuilder",id:"gc-pb-mount",ref:function(el){try{if(el&&window._gcMitWS)window._gcMitWS.planbuilder(el)}catch(_x){}},style:{width:"100%",height:"calc(100vh - 60px)"}});/* patch MITWS: 📐 PlanBuilder */switch(P){case"dashboard":return e.jsx(__gcStable("vu",vu),{});case"leads":return e.jsx(__gcStable("th",th),{});case"projects":return e.jsx(__gcStable("id",id),{});case"cordova":return e.jsx("div",{id:"cordova-club-root",ref:function(el){if(el&&!el._ccInit){el._ccInit=true;window.__mountCC&&window.__mountCC(el)}},style:{width:"100%",height:"calc(100vh - 60px)",overflow:"auto"}});case"scopes":return e.jsx(__gcStable("Gf",Gf),{});case"estimates":return e.jsx(__gcStable("Kf",Kf),{});case"templates":return e.jsx(__gcStable("Xf",Xf),{});case"estvactual":return e.jsx(__gcStable("Yf",Yf),{});case"expenses":return e.jsx(__gcStable("rh",rh),{});case"gmail":return e.jsxs("div",{style:{width:"100%",height:"calc(100vh - 60px)",position:"relative"},children:[e.jsx("div",{id:"gmail-mount",style:{width:"100%",height:"100%"}}),e.jsx("a",{href:"https://mail.google.com",target:"_blank",style:{position:"absolute",top:10,right:10,zIndex:10,padding:"8px 16px",background:"#d4a017",color:"#0d1b2a",borderRadius:6,textDecoration:"none",fontWeight:700,fontSize:12},children:"Open Gmail ↗"})]});case"claude":return e.jsx("div",{style:{height:"calc(100vh - 60px)",overflow:"auto"},children:(window.GrayCoBrain?e.jsx(window.GrayCoBrain,(function(_B){var C=window._gcCo;if(!C||C.filter()==="all")return _B;var f=C.filter(),R=window._gcCoRecs||function(x){return x};return Object.assign({},_B,{projects:_B.projects.filter(function(p){return C.passJob(p)}),invs:_B.invs.filter(function(i){return C.pass(i,"inv")}),expenses:R(_B.expenses),leads:_B.leads.filter(function(l){return C.ofLead(l)===f}),cos:R(_B.cos)})})({projects:(window._crm&&window._crm.projects)||[],invs:(window._crm&&window._crm.invoices)||[],expenses:(window._crm&&window._crm.expenses)||[],leads:(window._crm&&window._crm.leads)||[],bidLists:(window._crm&&window._crm.bidLists)||[],cos:(window._crm&&window._crm.changeOrders)||[],currentUser:(yi||n)}))/* patch COLEAK2: the Brain reads the picked company's records */:e.jsx("div",{style:{padding:20,color:u.tx2},children:"Business Brain is loading\u2026"}))});case"brain-manager":return e.jsx("div",{style:{height:"calc(100vh - 60px)",overflow:"auto"},children:(window.BrainManagerTab?e.jsx(window.BrainManagerTab,{currentUser:(yi||n)}):e.jsx("div",{style:{padding:20,color:u.tx2},children:"Brain Manager is loading\u2026"}))});case"roofscout":return e.jsx("iframe",{src:"/roofscout/",title:"RoofScout",allow:"clipboard-write",style:{display:"block",width:"100%",height:"calc(100vh - 60px)",border:"none",borderRadius:8,background:"#f3f5f9"}});case"subportal":return e.jsx("iframe",{src:"/subportal/",title:"Sub Portal",allow:"clipboard-write",style:{display:"block",width:"100%",height:"calc(100vh - 60px)",border:"none",borderRadius:8,background:"#FBFAF7"}});case"review-queue":return e.jsx("div",{style:{height:"calc(100vh - 60px)",overflow:"auto"},children:(window.ReviewQueueTab?e.jsx(window.ReviewQueueTab,{currentUser:(yi||n)}):e.jsx("div",{style:{padding:20,color:u.tx2},children:"Review Queue is loading\u2026"}))});case"qbimport":return e.jsxs("div",{children:[
+ch=()=>{if(/^(mws|ews)_[a-z]+$/.test(P||""))return e.jsx("div",{key:"gc-view-"+P,id:"gc-mws-mount","data-mws":P,ref:function(el){try{if(el&&window._gcMitWS)window._gcMitWS.mount(el,P)}catch(_x){}},style:{width:"100%",minHeight:"calc(100vh - 60px)"}});/* patch MITWS */if(P==="planbuilder")return e.jsx("div",{key:"gc-view-planbuilder",id:"gc-pb-mount",ref:function(el){try{if(el&&window._gcMitWS)window._gcMitWS.planbuilder(el)}catch(_x){}},style:{width:"100%",height:"calc(100vh - 60px)"}});/* patch MITWS: 📐 PlanBuilder */switch(P){case"dashboard":return e.jsx(__gcStable("vu",vu),{});case"leads":return e.jsx(__gcStable("th",th),{});case"projects":return e.jsx(__gcStable("id",id),{});case"cordova":return e.jsx("div",{id:"cordova-club-root",ref:function(el){if(el&&!el._ccInit){el._ccInit=true;window.__mountCC&&window.__mountCC(el)}},style:{width:"100%",height:"calc(100vh - 60px)",overflow:"auto"}});case"scopes":return e.jsx(__gcStable("Gf",Gf),{});case"estimates":return e.jsx(__gcStable("Kf",Kf),{});case"templates":return e.jsx(__gcStable("Xf",Xf),{});case"estvactual":return e.jsx(__gcStable("Yf",Yf),{});case"expenses":return e.jsx(__gcStable("rh",rh),{});case"gmail":return e.jsxs("div",{style:{width:"100%",height:"calc(100vh - 60px)",position:"relative"},children:[e.jsx("div",{id:"gmail-mount",style:{width:"100%",height:"100%"}}),e.jsx("a",{href:"https://mail.google.com",target:"_blank",style:{position:"absolute",top:10,right:10,zIndex:10,padding:"8px 16px",background:"#d4a017",color:"#0d1b2a",borderRadius:6,textDecoration:"none",fontWeight:700,fontSize:12},children:"Open Gmail ↗"})]});case"claude":return e.jsx("div",{style:{height:"calc(100vh - 60px)",overflow:"auto"},children:(window.GrayCoBrain?e.jsx(window.GrayCoBrain,(function(_B){var C=window._gcCo;if(!C||C.filter()==="all")return _B;var f=C.filter(),R=window._gcCoRecs||function(x){return x};return Object.assign({},_B,{projects:_B.projects.filter(function(p){return C.passJob(p)}),invs:_B.invs.filter(function(i){return C.pass(i,"inv")}),expenses:R(_B.expenses),leads:_B.leads.filter(function(l){return C.passLead?C.passLead(l,f):C.ofLead(l)===f})/* patch LEADBOTH */,cos:R(_B.cos)})})({projects:(window._crm&&window._crm.projects)||[],invs:(window._crm&&window._crm.invoices)||[],expenses:(window._crm&&window._crm.expenses)||[],leads:(window._crm&&window._crm.leads)||[],bidLists:(window._crm&&window._crm.bidLists)||[],cos:(window._crm&&window._crm.changeOrders)||[],currentUser:(yi||n)}))/* patch COLEAK2: the Brain reads the picked company's records */:e.jsx("div",{style:{padding:20,color:u.tx2},children:"Business Brain is loading\u2026"}))});case"brain-manager":return e.jsx("div",{style:{height:"calc(100vh - 60px)",overflow:"auto"},children:(window.BrainManagerTab?e.jsx(window.BrainManagerTab,{currentUser:(yi||n)}):e.jsx("div",{style:{padding:20,color:u.tx2},children:"Brain Manager is loading\u2026"}))});case"roofscout":return e.jsx("iframe",{src:"/roofscout/",title:"RoofScout",allow:"clipboard-write",style:{display:"block",width:"100%",height:"calc(100vh - 60px)",border:"none",borderRadius:8,background:"#f3f5f9"}});case"subportal":return e.jsx("iframe",{src:"/subportal/",title:"Sub Portal",allow:"clipboard-write",style:{display:"block",width:"100%",height:"calc(100vh - 60px)",border:"none",borderRadius:8,background:"#FBFAF7"}});case"review-queue":return e.jsx("div",{style:{height:"calc(100vh - 60px)",overflow:"auto"},children:(window.ReviewQueueTab?e.jsx(window.ReviewQueueTab,{currentUser:(yi||n)}):e.jsx("div",{style:{padding:20,color:u.tx2},children:"Review Queue is loading\u2026"}))});case"qbimport":return e.jsxs("div",{children:[
 e.jsx("div",{style:{fontSize:18,fontWeight:800,marginBottom:4},children:"QuickBooks Import & Sync"}),
 e.jsx("div",{style:{fontSize:11,color:u.tx2,marginBottom:14},children:"Import your QuickBooks data — customers, invoices, expenses, vendors, and jobs. Export CSV files from QuickBooks and upload them here."}),
 
@@ -130779,10 +130779,11 @@ function fromItem(it, prev){
   l.docs = arr(it.files).filter(function(f){ return f && f.ref; }).map(function(f){ return { ref: f.ref, name: f.name, type: f.type, size: f.size, hash: f.hash, kind: f.kind, addendum: f.addendum }; }).concat(mineDocs);
   l.rawEmailRef = s(it.rawRef); l.emails = arr(it.emails).map(function(e){ return { subject: e.subject, from: e.from, fromName: e.fromName, date: e.date, rawRef: e.rawRef }; }).slice(-10);   /* patch PRIMESUB: + who sent it */
   l.sources = arr(it.sources).map(function(x){ return x.name; }); l.alsoOn = arr(it.alsoOn); l.inboxFlag = s(it.flag); l.addendumCount = it.addendumCount || 0;
-  l.matchNotes = arr(it.notes).slice(-6); l.needsReview = !!it.needsReview; l.origin = s(it.origin); if (window._gcBidMerge) { try { window._gcBidMerge.fromItem(l, it, prev); } catch (e) {} }   /* patch BIDMERGE */
+  l.matchNotes = arr(it.notes).slice(-6); l.needsReview = !!it.needsReview; l.origin = s(it.origin); if (it.envScope) { l.envScope = true; l.envWords = arr(it.envWords).slice(0, 8); }   /* patch LEADBOTH: the server's ☢️ tag (asbestos / lead / mold) */ if (window._gcBidMerge) { try { window._gcBidMerge.fromItem(l, it, prev); } catch (e) {} }   /* patch BIDMERGE */
   if (it.portal && it.portal.jobId) l.bidPortalJob = it.portal.jobId;
   if (it.hold && window._gcLeadHold) { try { window._gcLeadHold.fromItem(l, it, fresh); } catch (e) {} }   /* patch LEADHOLD: the server's hold / its 5 PM release */
   if (fresh && it.leadExtra && typeof it.leadExtra === 'object') Object.keys(it.leadExtra).forEach(function(k){ if (/^[a-zA-Z][a-zA-Z0-9]{0,40}$/.test(k)) l[k] = it.leadExtra[k]; });   /* patch WEB: a new website / Brain lead's own fields (owner GrayCo, commission source…), set once */
+  try { if (window._gcLeadKeep) window._gcLeadKeep.apply(l); } catch (e) {}   /* patch LEADKEEP: an import never drops what a person set (priority, stage, PM / estimator …) */
   return stamp(l);
 }
 /* ── collect: the server's list → leads on the Lead Pipeline ─────────────────── */
@@ -131035,7 +131036,7 @@ function normName(t){ return low(t).replace(/\b(re-?roof(ing)?|roof(ing)? replac
 function rsShown(l){ return isRs(l) && !l.converted && !l.rsRemoved && !l.doNotContact && l.status !== 'converted'; }
 function inboxLeads(){ return leads().filter(function(l){ return l && (l.inboxId || rsShown(l)) && l.stage !== 'Won' && l.stage !== 'Lost' && coLead(l); }); }
 /* patch LEADCO2 (owner 11/12, Mitigation picked: "these shouldn't be showing on mitigation, should be empty"): the inbox count / chips follow the Leads page's company */
-function coLead(l){ try { var C = window._gcCo; if (!C || !C.leadView || !C.ofLead) return true; var v = C.leadView(); return v === 'all' || C.ofLead(l) === v; } catch (e) { return true; } }
+function coLead(l){ try { var C = window._gcCo; if (!C || !C.leadView || !C.ofLead) return true; var v = C.leadView(); return v === 'all' || (C.passLead ? C.passLead(l, v) : C.ofLead(l) === v); } catch (e) { return true; } }   /* patch LEADBOTH: a GC bid with abatement counts on Construction and Environmental */
 function isNew(l){
   if (isRs(l)) return !l.pm && !l.pid && !l.jobId && (!l.stage || l.stage === 'New Lead') && Date.now() - Date.parse(l.createdAt || 0) < 14 * 86400000;
   return (l.inboxState === 'new' || !l.inboxState) && !l.pm && !l.pid;
@@ -139909,7 +139910,7 @@ function teamPeople(){
 }
 function personNums(u){
   var nm = low(u.name), ps = arr(W._crm && W._crm.projects).filter(function(p){ return p && !/complete|closed|lost|dead|cancel/i.test(s(p.status)) && (!W._gcCo || W._gcCo.passJob(p)) /* patch COLEAK2 */ && (low(p.pm) === nm || low(p.apm) === nm || low(p.superintendent) === nm || low(p.estimator) === nm); });
-  var ls = arr(W._crm && W._crm.leads).filter(function(l){ return l && !/won|lost|dead|converted|closed/i.test(s(l.stage) + ' ' + s(l.status)) && (!W._gcCo || W._gcCo.filter() === 'all' || W._gcCo.ofLead(l) === W._gcCo.filter()) /* patch COLEAK2 */ && (low(l.pm) === nm || low(l.estimator) === nm); });
+  var ls = arr(W._crm && W._crm.leads).filter(function(l){ return l && !/won|lost|dead|converted|closed/i.test(s(l.stage) + ' ' + s(l.status)) && (!W._gcCo || W._gcCo.filter() === 'all' || (W._gcCo.passLead ? W._gcCo.passLead(l, W._gcCo.filter()) : W._gcCo.ofLead(l) === W._gcCo.filter())) /* patch COLEAK2 + LEADBOTH */ && (low(l.pm) === nm || low(l.estimator) === nm); });
   var contract = ps.reduce(function(a, p){ var v = parseFloat(String(p.contract || p.contractAmount || 0).replace(/[^0-9.\-]/g, '')); return a + (isFinite(v) ? v : 0); }, 0);
   return { jobs: ps.length, contract: contract, leads: ls.length, bids: bidsOf(u.name).filter(function(l){ return !closed(l); }).length };
 }
@@ -167393,7 +167394,7 @@ function pidOk(pid){ var p = proj(pid); return p ? W._gcCo.passJob(p) : W._gcCo.
 function recOk(rec){ var C = W._gcCo; if (!rec) return C.filter() === 'construction'; if (C.valid(rec.companyId)) return rec.companyId === C.filter(); var pid = s(rec.jobId || rec.pid || rec.projectId); return pid ? pidOk(pid) : C.filter() === 'construction'; }
 function keyOk(id){
   var C = W._gcCo; id = bareKey(id); var m;
-  if ((m = /^td:hot1:asg:(.+)$/.exec(id))) { var ld = arr(crm().leads).filter(function(l){ return l && s(l.id) === m[1]; })[0]; return (ld ? C.ofLead(ld) : 'construction') === C.filter(); }
+  if ((m = /^td:hot1:asg:(.+)$/.exec(id))) { var ld = arr(crm().leads).filter(function(l){ return l && s(l.id) === m[1]; })[0]; return ld ? (C.passLead ? C.passLead(ld, C.filter()) : C.ofLead(ld) === C.filter()) : 'construction' === C.filter(); }   /* patch LEADBOTH */
   if ((m = /^ap2:(.+)$/.exec(id))) return recOk(queue().filter(function(x){ return x && s(x.id) === m[1]; })[0]);
   if ((m = /^eq:(.+)$/.exec(id))) return recOk(emailQ().filter(function(x){ return x && s(x.id) === m[1]; })[0]);
   if ((m = /^sub:(.+)$/.exec(id))) return recOk(subs().filter(function(x){ return x && (s(x.id) === m[1] || s(x.invId) === m[1]); })[0]);
@@ -174399,6 +174400,44 @@ function typeOf(l){ var t = low(l.leadKind || l.type); if (/gov/.test(t)) return
 var TYPE_IC = { residential: '🏠', commercial: '🏢', government: '🏛', insurance: '🛡', mitigation: '💧' };
 function srcOf(l){ return s(l.source || l.leadSource) || 'Other'; }
 function srcIc(l){ var x = low(srcOf(l)); if (/website|leads@|web/.test(x)) return '🌐'; if (/referr/.test(x)) return '🎁'; if (/partner|api|realtor|agent/.test(x)) return '🔌'; if (/missed|call|phone/.test(x)) return '📞'; if (/roofscout/.test(x)) return '🛰'; if (/google|lsa|facebook|ad/.test(x)) return '📣'; if (/bid|county|city|state|mscs|mscaa|board|buildingconnected|planhub|sam/.test(x)) return '🏗'; return '•'; }
+/* patch LEADSRC (owner 11/12: "do all my website and text leads have a spot in leads, are they just mixed in? I'd like to sort by how we got
+   the lead, where it's from"): HOW a lead came in, read from the lead (nothing saved in bulk): a person's pick (sourceChannel, office /
+   admin, on the lead page) → the lead's own flags (text, call, permit, RoofScout, partner) → its id (CompanyCam / QuickBooks imports,
+   permits, the old Bid Board) → the Lead Inbox's origin (e-mail, bid watchers, website / text forms) → the source words → a lead on the
+   Lead Inbox → a lead someone typed in → Unknown. The raw source stays visible on hover and on the lead page. */
+var CHANS = [['website', '🌐', 'Website'], ['text', '💬', 'Text'], ['email', '✉️', 'E-mail'], ['inbox', '📥', 'Lead Inbox'], ['bids', '🏗', 'Bid sites / plan rooms'], ['permit', '📋', 'Permits'],
+  ['dodge', '📊', 'Dodge'], ['phone', '📞', 'Phone'], ['referral', '🤝', 'Referral'], ['roofscout', '🛰', 'RoofScout'], ['imported', '📦', 'CompanyCam / QuickBooks'], ['manual', '✍️', 'Manual'], ['other', '•', 'Other'], ['unknown', '❔', 'Unknown']];
+var CHAN_BY = {}; CHANS.forEach(function(c){ CHAN_BY[c[0]] = c; });
+var CHAN_M = {}, CHAN_N = 0;
+function chanOf(l){
+  if (!l) return 'unknown'; var ck = s(l.id) + '|' + s(l.updatedAt || l.savedAt) + '|' + s(l.source) + '|' + s(l.sourceChannel); var v = CHAN_M[ck]; if (v) return v; if (++CHAN_N > 8000) { CHAN_M = {}; CHAN_N = 0; }
+  return (CHAN_M[ck] = chanOf0(l));
+}
+function chanOf0(l){
+  if (CHAN_BY[s(l.sourceChannel)]) return s(l.sourceChannel);
+  var id = s(l.id), x = low([l.source, l.leadSource, l.mkSource].filter(Boolean).join(' ')), og = low(l.origin);
+  if (l.textMessage || l.smsFrom || /text message|\bsms\b|\btext\b/.test(x)) return 'text';
+  if (l.lsaCall || l.callSid || l.missedCall || l.callrailId || /missed call|callrail|phone call|\bcall(ed)?\b|google lsa|local services/.test(x)) return 'phone';
+  if (l.permitKey || /^LPMT_/.test(id) || /building permit|permit/.test(x)) return 'permit';
+  if (/dodge/.test(x)) return 'dodge';
+  if (l.rsLeadId || /^LEAD_RS_/.test(id) || /roofscout/.test(x)) return 'roofscout';
+  if (l.partnerCode || l.partnerName || /referr|partner|realtor/.test(x)) return 'referral';
+  if (/^(LQB_|LCC_|LCCR_|LGN_|LEADmsg|PRJcc_)/.test(id)) return 'imported';
+  if (/^LBB_/.test(id) || l.fromBidBoard) return 'bids';
+  if (og === 'watch' || /buildingconnected|planhub|constructconnect|isqft|plan ?room|bid ?board|sam\.gov|bidnet|public bid|schools|county|city of|state of|airport|mscaa|government/.test(x)) return 'bids';
+  if (og === 'email' || /e-?mail|bids@|leads@/.test(x)) return 'email';
+  if (l.websiteLead || og === 'website' || /website|web ?form|grayco-cs\.com/.test(x)) return 'website';
+  if (/companycam|quickbooks/.test(x)) return 'imported';
+  if (s(l.inboxId) || /^LEADIN-/.test(id)) return 'inbox';
+  if (x && !/^(other|unknown|lead inbox)$/.test(x)) return /business brain|estimate builder|walk|yard sign|google|facebook|repeat|existing/.test(x) || s(l.addedBy || l.createdBy) ? 'manual' : 'other';
+  if (s(l.addedBy || l.createdBy || l.enteredBy)) return 'manual';
+  return 'unknown';
+}
+function chanBadge(l, big){ var c = CHAN_BY[chanOf(l)] || CHAN_BY.unknown, raw = s(l.source || l.leadSource); return '<span class="gcl-src" data-gcl-src="' + c[0] + '" title="' + esc('Came in: ' + c[2] + (raw && low(raw) !== low(c[2]) ? ' — ' + raw : '') + (l.sourceChannel ? ' (set by ' + s(l.sourceSetBy || 'the office') + ')' : '')) + '" style="display:inline-flex;align-items:center;gap:3px;padding:0 6px;border-radius:999px;background:#f1f5f9;border:1px solid #e2e8f0;color:#334155;font:600 ' + (big ? '12px' : '11px') + '/1.7 Arial;white-space:nowrap">' + c[1] + ' ' + esc(c[2]) + '</span>'; }
+function chKey(){ return 'gc_leads_ch:' + (myEmail() || 'me'); }
+function chPick(){ if (UI.ch === undefined) { try { UI.ch = localStorage.getItem(chKey()) || ''; } catch (e) { UI.ch = ''; } if (!CHAN_BY[UI.ch]) UI.ch = ''; } return UI.ch; }
+function chSave(){ try { localStorage.setItem(chKey(), UI.ch || ''); } catch (e) {} }
+W._gcLeadChan = { of: chanOf, list: CHANS, badge: chanBadge };   /* (W._gcLeadSource is the job lead-source helper) */
 /* patch LCLEAN: the pipeline counts the estimated value (else the value), and only real numbers — text like
    "3 bids, 0 awarded" no longer turns into $30 */
 /* patch LCLEAN: one source list — the standard sources, then any other source found on a lead ("website" = "Website") */
@@ -174488,7 +174527,7 @@ function inScopeFor(l, sc){
   return false;
 }
 function inScope(l){ return inScopeFor(l, myScope()); }
-function scoped(){ var sc = myScope(), all = leads(), lv = W._gcCo ? (W._gcCo.leadView ? W._gcCo.leadView() : W._gcCo.filter()) : 'all'; if (W._gcCo && lv !== 'all') all = all.filter(function(l){ return W._gcCo.ofLead(l) === lv; });   /* LEADCO: All companies → Construction's leads */   /* patch MULTICO: the picked company */
+function scoped(){ var sc = myScope(), all = leads(), lv = W._gcCo ? (W._gcCo.leadView ? W._gcCo.leadView() : W._gcCo.filter()) : 'all'; if (W._gcCo && lv !== 'all') all = all.filter(function(l){ return W._gcCo.passLead ? W._gcCo.passLead(l, lv) : W._gcCo.ofLead(l) === lv; });   /* patch LEADBOTH: leadCos */   /* LEADCO: All companies → Construction's leads */   /* patch MULTICO: the picked company */
   return sc.kind === 'all' ? all : all.filter(function(l){ return inScopeFor(l, sc); }); }   /* the scope once per call (LEADPERF) */
 function officeAsg(){ try { return typeof W._gcIsOfficeFull === 'function' && !!W._gcIsOfficeFull() && !(W._gcVAS && W._gcVAS.active && W._gcVAS.active()); } catch (e) { return false; } }   /* patch OFFFIX1: the office assigns leads (her Approvals' "Assign this lead") */
 function canAssignAll(){ return (isAdmin() && myScope().kind === 'all' && myScope().why === 'admin') || officeAsg(); }
@@ -174588,6 +174627,7 @@ function filtered(){
     if (UI.who === '__mybids' && (low(assignee(l)) !== low(myName()) || !isBidL(l))) return false;
     if (UI.who && UI.who.indexOf('__') !== 0 && low(assignee(l)) !== low(UI.who)) return false;
     if (UI.src && srcCanon(l) !== srcLabel(UI.src)) return false;   /* patch LCLEAN: "website" = "Website" */
+    if (chPick() && chanOf(l) !== UI.ch) return false;   /* patch LEADSRC */
     if (UI.type && typesOf(l).indexOf(TYPE_OLD[UI.type] || UI.type) < 0) return false;
     if (UI.role) { var rr = roleOfL(l); if (UI.role === 'unset' ? (rr || !isBidL(l)) : rr !== UI.role) return false; }   /* patch PRIMESUB */   /* patch LCLEAN: Roofing, restoration kinds … */
     if (UI.stage && stageOf(l) !== UI.stage) return false;
@@ -174732,7 +174772,7 @@ function cardHtml(l){
     + '<div class="m">' + (TYPE_IC[typeOf(l)] || '') + ' ' + esc(typeOf(l)) + (value(l) ? ' · <b>' + money(value(l)) + '</b>' : '') + '</div>'
     + '<div class="m" title="When it came in and where from">📥 ' + esc(shortDay(receivedMs(l)) || '—') + ' · ' + esc(srcOf(l)) + '</div>'   /* patch HOT2 */
     + '<div class="m" style="margin-top:4px">' + '<span class="gcl-av' + (a ? '' : ' none') + '" title="' + esc(a || 'Unassigned') + '">' + esc(a ? initials(a) : '!') + '</span>'
-    + roleChip(l) + (W._gcLeadHold ? W._gcLeadHold.chip(l) : '') /* patch LEADHOLD */ + prioChip(l) + dueChip(l) + speedChip(l) + (pl.files.length ? '<span class="gcl-chip" title="Plans stored in the CRM">📐 ' + pl.files.length + '</span>' : pl.links.length ? '<span class="gcl-chip warn" title="Plans by link">🔗 plans</span>' : '') + portalChip(l) + (bids ? '<span class="gcl-chip">' + esc(bids) + '</span>' : '') + '</div>'
+    + roleChip(l) + (W._gcLeadHold ? W._gcLeadHold.chip(l) : '') /* patch LEADHOLD */ + (W._gcCo && W._gcCo.bothChip ? W._gcCo.bothChip(l) : '') /* patch LEADBOTH */ + prioChip(l) + dueChip(l) + speedChip(l) + (pl.files.length ? '<span class="gcl-chip" title="Plans stored in the CRM">📐 ' + pl.files.length + '</span>' : pl.links.length ? '<span class="gcl-chip warn" title="Plans by link">🔗 plans</span>' : '') + portalChip(l) + (bids ? '<span class="gcl-chip">' + esc(bids) + '</span>' : '') + '</div>'
     + '<div class="m" style="margin-top:5px">' + (!contacted(l) && !closed(l) ? '<button type="button" class="gcl-mv" data-gcl-contact="' + esc(l.id) + '">✅ Contacted</button>' : '')
     + (canAssignAll() ? '<button type="button" class="gcl-mv gcl-asg" data-gcl-asg="' + esc(l.id) + '" title="Assign this lead to a PM / estimator">👤 ' + ((window._gcBidRole && window._gcBidRole.isBid(l)) ? (assignee(l) ? 'Change estimator' : 'Assign estimator') : (assignee(l) ? 'Reassign' : 'Assign to PM')) + '</button>' : '')   /* patch LROLEVIEW; BIDROLE */
     + '<select class="gcl-mv" data-gcl-move="' + esc(l.id) + '" aria-label="Move to stage">' + STAGES.map(function(st){ return '<option' + (st === stageOf(l) ? ' selected' : '') + '>' + st + '</option>'; }).join('') + '</select></div>'
@@ -174865,14 +174905,14 @@ function chipPass(l, now){
   if (UI.mi) { var d = distOf(l); if (d == null || d > UI.mi) return false; }
   return true;
 }
-function anyFilter(){ return !!(UI.k || UI.un || UI.wk || UI.d7 || UI.nc || UI.mi || s(UI.q) || UI.who || UI.src || UI.type || UI.stage || UI.due || UI.prio || UI.role || UI.exp || UI.closed || UI.imp || UI.arch); }
-function clearFilters(){ ['k', 'q', 'who', 'src', 'type', 'stage', 'due', 'prio', 'role'].forEach(function(k){ UI[k] = ''; }); ['un', 'wk', 'd7', 'nc', 'exp', 'closed', 'imp', 'arch'].forEach(function(k){ UI[k] = false; }); UI.mi = 0; MORE.ulist = 0; }
+function anyFilter(){ return !!(UI.k || UI.un || UI.wk || UI.d7 || UI.nc || UI.mi || s(UI.q) || UI.who || UI.src || chPick() || UI.type || UI.stage || UI.due || UI.prio || UI.role || UI.exp || UI.closed || UI.imp || UI.arch); }
+function clearFilters(){ ['k', 'q', 'who', 'src', 'type', 'stage', 'due', 'prio', 'role', 'ch'].forEach(function(k){ UI[k] = ''; }); chSave(); ['un', 'wk', 'd7', 'nc', 'exp', 'closed', 'imp', 'arch'].forEach(function(k){ UI[k] = false; }); UI.mi = 0; MORE.ulist = 0; }
 
 /* ── one model per (lead list, filters, distances): rows, counts, Bid-to groups ── */
 var MD = { key: '', v: null };
 function model(){
   var r = rawLeads(), sc = myScope();
-  var key = [refId(r), OVL_V, sc.kind, sc.why, myName(), (function(){ try { return W._gcCo ? (W._gcCo.leadView ? W._gcCo.leadView() : W._gcCo.filter()) : ''; } catch (e) { return ''; } })(), JSON.stringify([UI.k, UI.un, UI.wk, UI.d7, UI.nc, UI.mi, UI.q, UI.who, UI.src, UI.type, UI.stage, UI.due, UI.prio, UI.role, UI.exp, UI.closed, UI.imp, UI.arch, UI.preset, UI.lsort, UI.ldir]), GEO.ver, GEO.from, Object.keys(LC_GONE).length, s(inboxRaw()).length, Math.floor(Date.now() / 6e5)].join('|');
+  var key = [refId(r), OVL_V, sc.kind, sc.why, myName(), (function(){ try { return W._gcCo ? (W._gcCo.leadView ? W._gcCo.leadView() : W._gcCo.filter()) : ''; } catch (e) { return ''; } })(), JSON.stringify([UI.k, UI.un, UI.wk, UI.d7, UI.nc, UI.mi, UI.q, UI.who, UI.src, chPick(), UI.type, UI.stage, UI.due, UI.prio, UI.role, UI.exp, UI.closed, UI.imp, UI.arch, UI.preset, UI.lsort, UI.ldir]), GEO.ver, GEO.from, Object.keys(LC_GONE).length, s(inboxRaw()).length, Math.floor(Date.now() / 6e5)].join('|');
   if (MD.key === key && MD.v) return MD.v;
   var list = filtered().filter(function(l){ return !LC_GONE[s(l.id)]; }), now = Date.now();
   var base = scoped().filter(function(l){ return !importedL(l) && !shut(l) && !LC_GONE[s(l.id)]; });
@@ -174886,7 +174926,7 @@ function inboxRaw(){ try { return localStorage.getItem('gc_ldi_cache_v2') || '';
 function modelRows(){ var m = model(); if (!m.rows) m.rows = lcSorted(m.list); return m.rows; }
 
 /* ── the list (LEADCOLS code: Lead | Due | Priority | Bid to | Stage | Assigned | Distance | 🗑) ── */
-var LC_COLS = [['name', 'Lead'], ['due', 'Due'], ['prio', 'Priority'], ['bidto', 'Bid to'], ['stage', 'Stage'], ['who', 'Assigned'], ['dist', 'Distance']];
+var LC_COLS = [['name', 'Lead'], ['due', 'Due'], ['prio', 'Priority'], ['bidto', 'Bid to'], ['role', 'Prime / Sub'], ['src', 'Source'], ['stage', 'Stage'], ['who', 'Assigned'], ['dist', 'Distance']];   /* patch PRIMESORT: + Prime / Sub (sortable) */
 var LC_PAGE = 60, LC_ROW = {}, LC_N = 0, LC_GONE = {};
 function lcCanDel(){ try { var L = W._gcLDEL, me = L && L.who && L.who(); return !!(me && me.email && (me.all || me.est)); } catch (e) { return false; } }
 function lcBidTo(l, role){
@@ -174912,7 +174952,7 @@ function lcRow(l){
   var role = roleOfL(l), to = lcBidTo(l, role), st = stageOf(l), t = dueMs(l), p = prioOf(l), C = W._gcBidRoleCore || {}, gc = [], d = distOf(l), who = assignee(l);
   if (role !== 'prime') [s(l.dueToCompany), s(l.gc)].forEach(function(g){ var pb = false; try { pb = !!(C.isPublic && C.isPublic(g)); } catch (e) {} if (g && !pb) gc.push(g); });
   r = { sig: sig, to: to, stage: st, role: role, gc: gc, pk: (role === 'sub' || isBidL(l)) ? lcProjKey(l) : '', d: d, who: who,
-    k: { name: low(l.name || l.title), due: isFinite(t) ? t : NaN, prio: p || NaN, bidto: low(to), stage: STAGES.indexOf(st), who: low(who) || NaN, dist: d == null ? NaN : d, born: receivedMs(l) || NaN },
+    k: { name: low(l.name || l.title), due: isFinite(t) ? t : NaN, prio: p || NaN, bidto: low(to), stage: STAGES.indexOf(st), who: low(who) || NaN, dist: d == null ? NaN : d, born: receivedMs(l) || NaN, role: role === 'prime' ? 1 : role === 'sub' ? 2 : NaN, src: (function(){ var c = chanOf(l); return c === 'unknown' ? NaN : (CHAN_BY[c] || ['', '', 'zz'])[2].toLowerCase(); })() },   /* patch LEADSRC: sort by source */   /* patch PRIMESORT: sort by 🏛 prime / 🔧 sub */
     name: esc(s(l.name || l.title) || 'Lead'), addr: esc([l.address, l.city].filter(Boolean).join(', ')), ic: srcIc(l), note: (function(n){ return n ? { t: esc(s(n.text).slice(0, 160)), tip: esc(s(n.text).slice(0, 500) + (n.by || n.at ? ' — ' + [s(n.by), n.at ? new Date(n.at).toLocaleString() : ''].filter(Boolean).join(', ') : '')) } : null; })(lastNote(l)) };
   return (LC_ROW[id] = r);
 }
@@ -174986,11 +175026,13 @@ function lcRowHtml(l, r, bc, del, now){
   return '<tr class="gcl-lr' + bkRowCls(l) + '" data-gcl-id="' + id + '"><td class="c-name">' + bkChk(l)   /* patch LEADBULK */
     + '<button type="button" class="gclu-nb" data-gclu-note="' + id + '" title="Add a quick note" aria-label="Add a quick note">📝</button>'
     + (function(){ try { return W._gcBidPost && W._gcBidPost.canPost({ leadId: l.id }) ? '<button type="button" class="gclu-nb" data-gclu-bp="' + id + '" title="📢 Put on bid portal" aria-label="Put on bid portal">📢</button>' : ''; } catch (e) { return ''; } })()   /* patch LEADBP */
-    + '<b>' + r.ic + ' ' + r.name + '</b> ' + roleChip(l) + (W._gcBidMerge ? W._gcBidMerge.chip(l) : '') /* patch BIDMERGE */ + (r.addr ? '<div class="gcl-addr">' + r.addr + (r.d != null ? ' <span class="gclu-mi">· ' + miTxt(r.d) + '</span>' : '') + '</div>' : '')
+    + '<b>' + r.ic + ' ' + r.name + '</b> ' + roleChip(l) + (W._gcBidMerge ? W._gcBidMerge.chip(l) : '') /* patch BIDMERGE */ + (W._gcCo && W._gcCo.bothChip ? W._gcCo.bothChip(l) : '') /* patch LEADBOTH */ + (r.addr ? '<div class="gcl-addr">' + r.addr + (r.d != null ? ' <span class="gclu-mi">· ' + miTxt(r.d) + '</span>' : '') + '</div>' : '')
     + (r.note ? '<div class="gclu-np" title="' + r.note.tip + '">📝 ' + r.note.t + '</div>' : '') + '</td>'
     + '<td class="c-due">' + lcDue(l, r, now) + '</td>'
     + '<td class="c-prio">' + lcPrio(l) + '</td>'
     + (bc.names.length > 1 ? '<td class="c-bidto" title="' + esc('Bid to ' + bc.names.length + ' GCs: ' + bc.names.join(' · ')) + '"><button type="button" class="gcl-gcs" data-gcl-gcs="' + esc(l.id) + '" data-names="' + esc(JSON.stringify(bc.names)) + '">🏢 ' + esc(bc.txt) + '</button></td>' : cell('bidto', bc.txt, bc.txt))
+    + '<td class="c-role">' + (r.role === 'prime' ? '🏛 Prime' : r.role === 'sub' ? '🔧 Sub' : '<span class="gcl-dash">—</span>') + '</td>'   /* patch PRIMESORT */
+    + '<td class="c-src">' + chanBadge(l) + '</td>'   /* patch LEADSRC */
     + '<td class="c-stage">' + (STAGE_IC[r.stage] || '') + ' ' + esc(r.stage) + '</td>'
     + '<td class="c-who">' + lcWho(l, r) + '</td>'
     + '<td class="c-dist">' + (r.d != null ? esc(miTxt(r.d)) : '<span class="gcl-dash">—</span>') + '</td>'
@@ -175124,6 +175166,7 @@ function moreMenu(){
     + (W._gcBidMerge && W._gcBidMerge.show() ? it('data-gcl-bidmerge', W._gcBidMerge.label(), 'One project that came in as several leads (other trades, other GCs, another board) — a dry run first, then merge; Undo for 30 days') : '')   /* patch BIDMERGE */
     + (office ? it('data-gclu-dups', '🧹 Duplicates', 'Records entered twice — merge or archive, 7-day Undo') : '')
     + (adm ? it('data-gcl-settings', '⚙ Lead settings', 'Bid boards, keywords & switches, Check public bids now, Set-up') : '')
+    + (adm && W._gcLeadKeep ? it('data-gcl-restoreprio', '↩ Restore priorities from last night\'s backup', 'Fills only priorities, stages and assignees that are EMPTY now, from the nightly backup taken before 11/12 5 PM UTC — nothing set since is changed') : '')   /* patch LEADKEEP */
     + (adm ? it('data-gclu-claims', '🛡 Insurance claims go to…', 'Who a new claims@ claim is assigned to') : '')
     + it('data-gclu-oldbb', '📋 Old Bid Board (archived, read-only)', 'The old manual bid list — its open bids are now leads')
     + (bkAllowed() ? it('data-gclb-trash', '🗑 Recently deleted', 'Leads deleted in the last 30 days — Restore') : '')   /* patch LEADBULK */
@@ -175161,6 +175204,9 @@ function hubHtml(){
       + chipB('bids', '📐 Bids', UI.k === 'bids', 'Commercial / government bids (Lead Inbox bid mail, bid boards, plan rooms, GCs)')
       + chipB('res', '🏠 Residential', UI.k === 'res')
       + chipB('ins', '🛡 Insurance', UI.k === 'ins', 'Insurance claims, restoration and mitigation')
+      + chipB('rprime', '🏗 Prime', UI.role === 'prime', 'Bids we send to the owner (city, county, school, state, federal)') + chipB('rsub', '🔧 Sub', UI.role === 'sub', 'Bids we send to a GC (BuildingConnected, PlanHub, plan rooms)')   /* patch PRIMESORT */
+      + (function(){ var n = {}; try { scoped().forEach(function(l){ if (dead(l) || importedL(l) && !UI.imp) return; var k = chanOf(l); n[k] = (n[k] || 0) + 1; }); } catch (e) {} var cur = chPick();   /* patch LEADSRC: how it came in, with counts */
+          return '<select class="gclu-chip' + (cur ? ' on' : '') + '" data-gcl-f="ch" aria-label="How the lead came in" title="How the lead came in (remembered for you)"><option value="">📡 Any source</option>' + CHANS.filter(function(c){ return n[c[0]] || c[0] === cur; }).map(function(c){ return '<option value="' + c[0] + '"' + (c[0] === cur ? ' selected' : '') + '>' + c[1] + ' ' + esc(c[2]) + ' (' + (n[c[0]] || 0) + ')</option>'; }).join('') + '</select>'; })()
       + chipB('un', '👤 Unassigned', UI.un)
       + chipB('wk', '⏰ Due this week', UI.wk, 'Bid due from today through Sunday')
       + '<label class="gclu-within' + (UI.mi ? ' on' : '') + '">📍 Within <select data-gclu-mi aria-label="Distance">' + mi.map(function(n){ return '<option value="' + n + '"' + ((+UI.mi || 0) === n ? ' selected' : '') + '>' + (n ? n + ' mi' : 'any') + '</option>'; }).join('') + '</select></label>'
@@ -175208,7 +175254,7 @@ D.addEventListener('click', function(ev){
   if (b.hasAttribute('data-gcl-v')) return setView(b.getAttribute('data-gcl-v'));
   if (b.hasAttribute('data-gclu-more')) { LU.more = !LU.more; return redraw(); }
   if (b.hasAttribute('data-gclu-chip')) { var k = b.getAttribute('data-gclu-chip');
-    if (k === 'all') clearFilters(); else if (k === 'un' || k === 'wk') UI[k] = !UI[k]; else UI.k = UI.k === k ? '' : k;
+    if (k === 'all') clearFilters(); else if (k === 'rprime' || k === 'rsub') { var rv = k === 'rprime' ? 'prime' : 'sub'; UI.role = UI.role === rv ? '' : rv; }   /* patch PRIMESORT */ else if (k === 'un' || k === 'wk') UI[k] = !UI[k]; else UI.k = UI.k === k ? '' : k;
     MORE.ulist = 0; return redraw(); }
   if (b.hasAttribute('data-gclu-cnt')) { var c = b.getAttribute('data-gclu-cnt'); UI[c] = !UI[c]; MORE.ulist = 0; if (UI.v === 'outreach') setView('list'); return redraw(); }
   if (b.hasAttribute('data-gclu-clear')) { clearFilters(); return redraw(); }
@@ -175313,7 +175359,8 @@ function drawerHtml(l){
   var held = ''; try { held = W._gcLeadHold && W._gcLeadHold.drawer && asgPre.indexOf('data-gclh-box') < 0 ? s(W._gcLeadHold.drawer(l)) : ''; } catch (e) {}
   var own = ownOf(l);
   var due = /<div class="row"><input type="datetime-local" data-d="due"[\s\S]*?<\/div>/.exec(bid), dueKv = /<div class="kv"><span>Due:<\/span>[\s\S]*?<\/div>/.exec(bid);
-  var d = r.d, prRow = /<div class="row gcl-role-row">[\s\S]*?<\/div>/.exec(ov), ovRest = (ov.match(/<div class="kv">[\s\S]*?<\/div>/g) || []).join('');
+  var d = r.d, prRow = /<div class="row gcl-role-row">[\s\S]*?<\/div>/.exec(ov), ovRest = (ov.match(/<div class="kv">[\s\S]*?<\/div>/g) || []).join(''), ovTop = '';
+  ovRest = ovRest.replace(/<div class="kv"><span(?: data-gc-lb-row="1")?>(?:📡 Came in:|☢️ Environmental:)[\s\S]*?<\/div>/g, function(m){ ovTop += m; return ''; });   /* patch LEADSRC / LEADBOTH: how it came in + Also-on-Environmental stay in sight (Status), not folded under More */
   var edit = /<button type="button" class="b" data-d="editfull"[\s\S]*?data-d="delfull">[^<]*<\/button>/.exec(ov);
   var subp = secOf(old, /Sub bid portal/), est = secOf(old, /Estimate &amp; job|Estimate & job/);
   var notes = s(l.notes).trim();
@@ -175324,6 +175371,7 @@ function drawerHtml(l){
     + '<div class="row gcl-prio-row"><span class="kv"><span>Priority:</span></span> ' + prioChip(l) + ' ' + (canPrio(l) ? prioPicker(l) : '<span class="note">An admin sets the priority' + (isBidL(l) ? ' (or the estimator, on a bid)' : '') + '.</span>') + '</div>'
     + '<div class="gclu-asg"><span class="kv"><span>' + ((W._gcBidRole && W._gcBidRole.isBid(l)) ? 'Estimator' : 'Assigned to') + ':</span> <b data-gclu-assigned>' + esc(assignee(l) || 'Unassigned') + '</b></span>' + (own ? ' ' + own : '') + held + asgPre + asgRow + '</div>'
     + (l.lostReason ? '<div class="note">Lost because: ' + esc(l.lostReason) + '</div>' : '')
+    + ovTop
     + '</section>'
     + (bidOn ? '<section><h4>⏰ Bid</h4>'   /* patch LEADBULK: a bid only */
     + (dueKv ? dueKv[0] : '') + (s(l.bidDue) ? '<div class="note">Due date ' + dueFrom(l) + (s(l.bidDue).length <= 10 ? ' · time not stated' : '') + '</div>' : '')
@@ -175556,7 +175604,7 @@ function bind(hub){
     if (t.hasAttribute('data-gcl-move')) { moveStage(t.getAttribute('data-gcl-move'), t.value); return; }
     var f = t.getAttribute('data-gcl-f'); if (!f) return;
     if (f === 'q') return qNow(t);
-    UI[f] = t.type === 'checkbox' ? t.checked : t.value; saveUI(); redraw();
+    UI[f] = t.type === 'checkbox' ? t.checked : t.value; saveUI(); if (f === 'ch') chSave();   /* patch LEADSRC: remembered per person */ redraw();
   });
   var QT = null;
   function qNow(t){ if (UI.q === t.value) return; UI.q = t.value; MORE.list = 0; try { if (QT) W.clearTimeout(QT); } catch (e) {} QT = later(function(){ QT = null; redraw(); }, 250); }   /* patch LEADFREEZE-4: 250 ms after the last key, not one full draw per key */
@@ -175799,6 +175847,10 @@ function drawerHtml0(l){
     + '<section><h4>Overview</h4>'
     + '<div class="kv"><span>Value:</span> ' + (value(l) ? money(value(l)) : '—') + ' &nbsp; <span>Came in:</span> ' + (born(l) ? new Date(born(l)).toLocaleString() : '—') + ' ' + speedChip(l) + '</div>'
     + '<div class="kv"><span>Address:</span> ' + esc([l.address, l.city, l.state, l.zip].filter(Boolean).join(', ') || '—') + '</div>'
+    + (function(){ try { var C = W._gcCo; if (!C || !C.leadCos || C.ofLead(l) === 'environmental') return ''; var on = C.leadCos(l).indexOf('environmental') > -1;   /* patch LEADBOTH: "Also show on Environmental" (admins; stored on this lead) */
+        return '<div class="kv"><span data-gc-lb-row="1">☢️ Environmental:</span> ' + (adm ? '<label style="cursor:pointer"><input type="checkbox" data-d="alsoenv"' + (on ? ' checked' : '') + '> Also show on Environmental</label>' : (on ? 'also on the Environmental Leads page' : '—')) + (on ? ' ' + C.bothChip(l) : '') + '</div>'; } catch (e) { return ''; } })()
+    + (function(){ var ed = false; try { ed = isAdmin() || officeAsg() || myScope().why === 'office'; } catch (e) {} var raw = s(l.source || l.leadSource);   /* patch LEADSRC: how it came in (office / admin can change it) */
+        return '<div class="kv"><span>📡 Came in:</span> ' + chanBadge(l, true) + (raw ? ' <span class="note">' + esc(raw) + '</span>' : '') + (ed ? ' <select data-d="srcch" aria-label="How the lead came in"><option value="">✎ change…</option>' + CHANS.filter(function(c){ return c[0] !== 'unknown'; }).map(function(c){ return '<option value="' + c[0] + '">' + c[1] + ' ' + esc(c[2]) + '</option>'; }).join('') + '</select>' : '') + '</div>'; })()
     + '<div class="row"><select data-d="stage" aria-label="Stage">' + STAGES.map(function(st){ return '<option' + (st === stageOf(l) ? ' selected' : '') + '>' + st + '</option>'; }).join('') + '</select>'
     + (!contacted(l) && !closed(l) ? '<button type="button" class="b" data-d="contacted">✅ Contacted</button>' : '')
     + '<button type="button" class="b gold" data-d="won">🏆 Won</button><button type="button" class="b red" data-d="lost">✖ Lost</button>' + (classicRow(l.id) ? '<button type="button" class="b" data-d="editfull" title="Name, phone, e-mail, address, type, value … — the full lead form">✏️ Edit details</button><button type="button" class="b red" data-d="delfull">🗑 Delete…</button>' : '') + '</div>'   /* patch HOT2b */
@@ -175864,6 +175916,9 @@ function drawerChange(ev){
   var t = ev.target, k = t.getAttribute('data-d'), l = cur(); if (!l) return;
   if (k === 'stage') moveStage(l.id, t.value);
   if (k === 'kind') setKind(l.id, t.value);   /* patch LEADBULK */
+  if (k === 'srcch' && t.value && CHAN_BY[t.value] && (isAdmin() || officeAsg() || myScope().why === 'office')) { var cv = t.value, raw0 = s(l.source || l.leadSource), nraw = W.prompt('Where it came from (optional — e.g. "Google Ads", "BuildingConnected", a person\'s name):', raw0); if (nraw === null) { openDrawer(l.id); return; }
+    patchLead(l.id, function(x){ x.sourceChannel = cv; if (s(nraw) !== raw0) { if (raw0 && !s(x.sourceWas)) x.sourceWas = raw0; x.source = s(nraw).slice(0, 80); } x.sourceSetBy = myName(); x.sourceSetAt = nowIso(); logAct(x, 'note', '📡 Source → ' + CHAN_BY[cv][2] + (s(nraw) ? ' (' + s(nraw).slice(0, 60) + ')' : '')); }).then(function(){ openDrawer(l.id); redraw(); }); toast('📡 Source: ' + CHAN_BY[cv][2]); return; }   /* patch LEADSRC */
+  if (k === 'alsoenv' && isAdmin()) { var onE = !!t.checked; patchLead(l.id, function(x){ var a0 = arr(x.alsoCos).filter(function(c){ return c !== 'environmental'; }); if (onE) a0.push('environmental'); x.alsoCos = a0; x.alsoCosBy = myName(); x.alsoCosAt = nowIso(); }).then(function(){ redraw(); }); toast(onE ? '☢️ Also on the Environmental Leads page' : 'Off the Environmental Leads page'); }   /* patch LEADBOTH */
   if (k === 'assign' && t.value) assign(l.id, t.value).then(function(){ openDrawer(l.id); });
   if (k === 'share') {
     var n = noteLines(l)[+t.getAttribute('data-i')], on = t.checked;
@@ -183012,12 +183067,18 @@ var SG_WEAK = [
 var SG_NEED = /\b(water|leak(s|ing|ed)?|roof(s|ing)?|storm|hail|wind\s+damage|tree|fire|smoke|flood(ed|ing)?|pipe|burst|mou?ld|insurance|claim|adjuster|estimate|inspection|repair|damage|ceiling|gutters?|siding|shingles?|project|bids?|renovat\w*|remodel\w*|building|sq\s*ft|square\s+feet)\b|\bmy\s+(house|home|roof|property|ceiling|basement|kitchen|bathroom|attic|garage)\b/i;
 /* an adjuster / a carrier / a claim: never a pitch on its own */
 var SG_TRUST = /\b(adjuster|adjustor|claim\s*(#|no\.?|number)|policy\s*(#|holder|number)|insured|state\s*farm|allstate|usaa|farmers|nationwide|liberty\s+mutual|progressive|travelers|geico|erie|auto[\s-]?owners|shelter\s+insurance|homesite|safeco)\b/i;
+/* patch LEADBOTH (owner 11/12: "in the automatic leads I want to see asbestos and mold leads"): a message about asbestos / lead paint /
+   mold / abatement work is never held as a sales pitch (the same words as _lib/envwords.js; mosquito / tax / weed abatement and
+   injection molds do not count) */
+var SG_ENV = /\basbestos\b|\bACMs?\b|\blead[\s-]*(based\s+)?paint\b|\bLBP\b|\blead\s+(abatement|hazard|remediation|inspection|testing|removal)\b|\bRRP\b|\bmou?ld\b|\bmicrobial\b|\bhaz[\s-]?mat\b|\bhazardous\s+materials?\b|\benvironmental\s+remediation\b|\babatement\b/i;
+var SG_ENV_NOT = /\b(mosquito|pest|weed|noise|tax|nuisance|odou?r|dust|rodent|vector|graffiti)\s+abatement\b|\b(injection|plastic|blow|die|casting|concrete|silicone|rubber)\s+mou?lds?\b|\bmou?lds?\s+(injection|making|maker|press)\b/ig;
 var SG_DOMAIN = /(seo|market|leads?|digital|media|growth|agency|funding|capital|ventures|outreach|automation)[\w-]*\.[a-z]{2,}$/i;
 function sgStr(v){ return v == null ? '' : String(v); }
 /* → '' (not sales) or the reasons, e.g. "AI agent / AI receptionist; SEO (score 9)" */
 function sgWhy(text, sender){
   var t = sgStr(text), snd = sender && typeof sender === 'object' ? sender : { email: sgStr(sender) };
   if (!t.replace(/\s+/g, '')) return '';
+  if (SG_ENV.test(t.replace(SG_ENV_NOT, ' '))) return '';   /* patch LEADBOTH: abatement / mold work is kept */
   var why = [], score = 0, strong = 0, i;
   for (i = 0; i < SG_STRONG.length; i++) if (SG_STRONG[i][1].test(t)) { why.push(SG_STRONG[i][0]); score += 3; strong++; }
   for (i = 0; i < SG_WEAK.length; i++) if (SG_WEAK[i][1].test(t)) { why.push(SG_WEAK[i][0]); score += 1; }
@@ -184858,10 +184919,37 @@ function info(x){
   return v;
 }
 
+/* patch LEADBOTH-SAMEJOB (owner 11/12: "63800 - Desoto County Schools Press Box Improvements Phase 2" ⟷ "63789 - … Phase 1": "I cleared
+   these once before"): the numbers in a project's NAME tell jobs apart. numsOf(title) → { ids: the project / bid numbers (a leading
+   "63800 -", "Bid #…", "Project No. …"), nums: other 4+ digit numbers (not years), parts: { phase, package, area, building } }.
+   diffJob(a, b, ask) → why they are different jobs ('' = nothing says so): different ids, or a different Phase / Area / Building value;
+   for the "Same job?" question (ask) also: both with other 4+ digit numbers and none in common, or a different Package number. */
+var ROMAN = { i: 1, ii: 2, iii: 3, iv: 4, v: 5, vi: 6, vii: 7, viii: 8, ix: 9, x: 10 };
+function partVal(v){ v = low(v); return ROMAN[v] ? String(ROMAN[v]) : String(/^\d+$/.test(v) ? parseInt(v, 10) : v); }
+function numsOf(title){
+  var t = s(title), ids = [], nums = [], parts = {}, m;
+  if ((m = /^\s*#?\s*(\d{4,}[a-z]?)\b/i.exec(t))) ids.push(low(m[1]));
+  var IDRX = /\b(?:bid|project|proj|job|solicitation|contract|rfp|rfq|itb|ifb)\s*(?:#|no\.?|num(?:ber)?)\s*:?\s*([a-z0-9][a-z0-9-]*\d[a-z0-9-]*)/gi;
+  while ((m = IDRX.exec(t))) ids.push(low(m[1]).replace(/-/g, ''));
+  var NRX = /\b(\d{4,})\b/g; while ((m = NRX.exec(t))) { var n = m[1]; if (/^(19|20)\d\d$/.test(n)) continue; if (ids.indexOf(n) < 0) nums.push(n); }
+  var PRX = /\b(phase|ph|bid\s*package|package|pkg|bp|area|building|bldg)\.?\s*(?:#|no\.?)?\s*([0-9]{1,3}|[ivx]{1,4}|[a-h])\b/gi;
+  while ((m = PRX.exec(t))) { var k = low(m[1]).replace(/\s+/g, ' '); k = /^ph/.test(k) ? 'phase' : /package|pkg|^bp$/.test(k) ? 'package' : /^b(ui)?ld/.test(k) ? 'building' : 'area'; (parts[k] = parts[k] || []).push(partVal(m[2])); }
+  return { ids: uniq(ids), nums: uniq(nums), parts: parts };
+}
+function diffJob(a, b, ask){
+  var x = numsOf(titleOf(a)), y = numsOf(titleOf(b)), i;
+  var bx = bidNo(a && a.bidNumber), by = bidNo(b && b.bidNumber); if (bx) x.ids.push(bx); if (by) y.ids.push(by);
+  if (x.ids.length && y.ids.length && !x.ids.some(function(v){ return y.ids.indexOf(v) >= 0; })) return 'different project / bid numbers (' + x.ids[0] + ' · ' + y.ids[0] + ')';
+  if (ask && x.nums.length && y.nums.length && !x.nums.some(function(v){ return y.nums.indexOf(v) >= 0; })) return 'different numbers in the names (' + x.nums[0] + ' · ' + y.nums[0] + ')';
+  var K = ['phase', 'area', 'building'].concat(ask ? ['package'] : []);
+  for (i = 0; i < K.length; i++) { var p = x.parts[K[i]], q = y.parts[K[i]]; if (p && q && !p.some(function(v){ return q.indexOf(v) >= 0; })) return 'different ' + K[i] + ' (' + p[0] + ' · ' + q[0] + ')'; }
+  return '';
+}
 /* ── are a and b the same project? { ok, why } or { no, why } (a hard "never") ── */
 function same(a, b, A, B){
   A = A || info(a); B = B || info(b); var i;
   if (!titleOf(a) || !titleOf(b)) return { ok: false, why: 'no name' };
+  var dj = diffJob(a, b, false); if (dj) return { no: true, why: dj };   /* patch LEADBOTH-SAMEJOB */
   var gap = gapDays(A.due, B.due), addOk = A.add || B.add;
   for (i = 0; i < A.ids.length; i++) if (B.ids.indexOf(A.ids[i]) >= 0) {
     if (gap != null && gap > ID_DAYS) return { no: true, why: 'same board id, bid due ' + gap + ' days apart' };
@@ -184998,6 +185086,12 @@ function mergeLeads(keeper, others, o){
   k.alsoOn = k.sources.filter(function(n){ return low(n) !== low(k.source); });
   ['address', 'city', 'state', 'zip', 'gc', 'owner', 'bidNumber', 'dueToCompany', 'dueToContact', 'dueToEmail', 'dueToPhone', 'submitMethod', 'submitWhere', 'contactName', 'phone', 'email', 'scope', 'preBid',
     'estimator', 'estimatorEmail', 'pm', 'pmEmail', 'rawEmailRef', 'estVal', 'estValue'].forEach(function(f){ if (!s(k[f])) { var d = others.filter(function(l){ return s(l[f]); })[0]; if (d) k[f] = d[f]; } });
+  /* patch LEADKEEP: what a person set on a copy is not lost in the merge — the newest priority / stage / "also on" by its own time; Different-jobs and tags added up */
+  [['priority', 'prioritySetAt', ['prioritySetBy']], ['stage', 'stageChangedAt', []], ['alsoCos', 'alsoCosAt', []]].forEach(function(g){
+    var best = null; all.forEach(function(l){ if (l[g[0]] != null && s(l[g[1]]) && (!best || tms(l[g[1]]) > tms(best[g[1]]))) best = l; });
+    if (best && best !== keeper && tms(best[g[1]]) > tms(keeper[g[1]])) { k[g[0]] = JSON.parse(JSON.stringify(best[g[0]])); k[g[1]] = best[g[1]]; g[2].forEach(function(f){ if (best[f] != null) k[f] = best[f]; }); }
+  });
+  ['notSameAs', 'tags'].forEach(function(f){ var u = uniq([].concat.apply([], all.map(function(l){ return arr(l[f]); }))); if (u.length) k[f] = u; });
   var notes = [s(keeper.notes || keeper.note)].filter(Boolean);
   others.forEach(function(l){ var n = s(l.notes || l.note); if (n && notes.join('\n').indexOf(n) < 0) notes.push('— from "' + s(l.name || l.title) + '" (' + (s(l.dueToCompany || l.gc) || s(l.source) || 'lead') + '):\n' + n); });
   if (notes.length) { if ('note' in keeper && !('notes' in keeper)) k.note = notes.join('\n'); else k.notes = notes.join('\n'); }
@@ -185016,7 +185110,7 @@ function mergeLeads(keeper, others, o){
 
 var API = { DUE_DAYS: DUE_DAYS, same: same, info: info, titleInfo: titleInfo, cleanTitle: cleanTitle, titleSim: titleSim, streetOf: streetOf, cityOf: cityOf, portalIds: portalIds, bidNo: bidNo, coKey: coKey,
   gcOf: gcOf, seedGcs: seedGcs, addGc: addGc, gcLine: gcLine, tradesOf: tradesOf, summary: summary, earliest: earliest, sooner: sooner, gapDays: gapDays,
-  isBidLead: isBidLead, liveLead: liveLead, groups: groups, mergeLeads: mergeLeads, received: received };
+  isBidLead: isBidLead, liveLead: liveLead, groups: groups, mergeLeads: mergeLeads, received: received, numsOf: numsOf, diffJob: diffJob };
 if (typeof module === 'object' && module && module.exports) module.exports = API;
 if (typeof window !== 'undefined' && root === window) root._gcBidMergeCore = API;
 })(typeof window !== 'undefined' ? window : this);
@@ -190335,7 +190429,7 @@ function insLeads(){
   return allLeads().filter(function(l){
     if (!l || l.deleted || /won|lost|closed|dead|archiv|convert/i.test(s(l.status) + ' ' + s(l.stage))) return false;
     if (l.projectId && claimFor(l.projectId)) return false;
-    try { var CO = W._gcCo; if (CO && CO.filter() !== 'all' && CO.ofLead(l) !== CO.filter()) return false; } catch (e) {}   /* patch COLEAK2: the picked company's insurance leads */
+    try { var CO = W._gcCo; if (CO && CO.filter() !== 'all' && !(CO.passLead ? CO.passLead(l, CO.filter()) : CO.ofLead(l) === CO.filter())) return false; } catch (e) {}   /* patch LEADBOTH */   /* patch COLEAK2: the picked company's insurance leads */
     try { if (LR && LR.classify) return LR.classify(l) === 'insurance'; } catch (e) {}
     return /insurance|claim|water damage|fire|storm|mitigation|restoration/i.test(s(l.type) + ' ' + s(l.desc || l.notes || l.message));
   });
@@ -208915,7 +209009,7 @@ function crm(){ return W._crm || {}; }
    a company's TV (open({ co }) or the #tv=mitigation link) counts that company's jobs, invoices, leads and people only;
    the Construction TV (no co) is unchanged. People: patch MITWS's membership rule (users[].companies; owners in all). */
 var TVCO = '';
-function coOk(kind, x){ if (!TVCO) return true; try { var C = W._gcCo; if (!C) return true; return (kind === 'job' ? C.ofJob(x) : kind === 'inv' ? C.ofInv(x) : C.ofLead(x)) === TVCO; } catch (e) { return true; } }
+function coOk(kind, x){ if (!TVCO) return true; try { var C = W._gcCo; if (!C) return true; if (kind === 'lead' && C.passLead) return C.passLead(x, TVCO);   /* patch LEADBOTH */ return (kind === 'job' ? C.ofJob(x) : kind === 'inv' ? C.ofInv(x) : C.ofLead(x)) === TVCO; } catch (e) { return true; } }
 function coUser(u){ if (!TVCO) return true; try { return W._gcMitWS && W._gcMitWS.inCo ? !!W._gcMitWS.inCo(u, TVCO) : true; } catch (e) { return true; } }
 function tvHashCo(){ var m = /^#\/?tv=([a-z]+)$/i.exec(location.hash || ''), c = m ? m[1].toLowerCase() : ssGet('gc_tv_co'); return /^(mitigation|environmental)$/.test(c) ? c : ''; }
 function projects(){ return arr(crm().projects).filter(function(p){ return p && p.id && !p.deleted && !p._deleted && coOk('job', p); }); }
@@ -213324,7 +213418,7 @@ var COF = { p: {}, l: {} };
 function coList(l, k){
   try { var C0 = W._gcCo, f = C0 ? C0.filter() : 'all'; if (!C0 || f === 'all' || !Array.isArray(l)) return l;
     var m = COF[k]; if (m.src === l && m.f === f && m.n === l.length) return m.out;
-    var o = l.filter(function(x){ return x && (k === 'p' ? C0.passJob(x) : C0.ofLead(x) === f); }); if (l.__dfSig) o.__dfSig = l.__dfSig;
+    var o = l.filter(function(x){ return x && (k === 'p' ? C0.passJob(x) : C0.passLead ? C0.passLead(x, f) : C0.ofLead(x) === f); });   /* patch LEADBOTH */ if (l.__dfSig) o.__dfSig = l.__dfSig;
     COF[k] = { src: l, f: f, n: l.length, out: o }; return o; } catch (e) { return l; }
 }
 var CACHE = { sig: '', at: 0, res: null, byPid: {}, ix: null };
@@ -219347,14 +219441,16 @@ function arr(v){ return Array.isArray(v) ? v : []; }
 function pairs(){
   var C = core(); if (!C) return [];
   var CO = W._gcCo, V = 'all'; try { V = CO && CO.leadView ? CO.leadView() : 'all'; } catch (e) {}   /* patch LEADCO2: only the picked company's leads (Mitigation shows none of Construction's bid pairs) */
-  var L = leads().filter(function(l){ return l && l.id && C.liveLead(l) && C.isBidLead(l) && (V === 'all' || !CO.ofLead || CO.ofLead(l) === V); });
+  var L = leads().filter(function(l){ return l && l.id && C.liveLead(l) && C.isBidLead(l) && (V === 'all' || !CO.ofLead || (CO.passLead ? CO.passLead(l, V) : CO.ofLead(l) === V)); });   /* patch LEADBOTH */
   var sure = {}; try { arr(W._gcBidMerge && W._gcBidMerge.groups()).forEach(function(g){ arr(g.ids).forEach(function(a){ arr(g.ids).forEach(function(b){ sure[a + '|' + b] = 1; }); }); }); } catch (e) {}
   var I = L.map(function(l){ return C.info(l); }), out = [];
   for (var i = 0; i < L.length; i++) for (var j = i + 1; j < L.length; j++) {
     var a = L[i], b = L[j], A = I[i], B = I[j];
     if (sure[a.id + '|' + b.id]) continue;
     if (arr(a.notSameAs).indexOf(b.id) > -1 || arr(b.notSameAs).indexOf(a.id) > -1) continue;
+    if (isNo(a, b)) continue;   /* patch LEADBOTH-SAMEJOB: "✗ Different jobs" is kept for good (gc_kv gc_samejob_no) */
     if (A.no && B.no && A.no !== B.no) continue;
+    if (C.diffJob && C.diffJob(a, b, true)) continue;   /* patch LEADBOTH-SAMEJOB: different project / bid numbers, Phase, Package, Area, Building */
     var gap = C.gapDays(A.due, B.due); if (gap != null && gap > 5) continue;
     var ta = C.titleInfo(a.name || a.title || '', '').tokens, tb = C.titleInfo(b.name || b.title || '', '').tokens;   /* place words kept: "Coahoma" */
     var t = C.titleSim(ta, tb); t = { shared: t.shared + acro(ta, tb) + acro(tb, ta), j: t.j };
@@ -219367,8 +219463,53 @@ function pairs(){
 /* "cc" in one name ~ "community college" in the other */
 function acro(x, y){ var n = 0; x.forEach(function(w){ if (!/^[a-z]{2,4}$/.test(w) || y.indexOf(w) > -1) return; for (var i = 0; i + w.length <= y.length; i++) { if (y.slice(i, i + w.length).map(function(z){ return z[0]; }).join('') === w) { n++; return; } } }); return n; }
 function can(){ try { return W._gcBidMerge && W._gcBidMerge.can ? !!W._gcBidMerge.can() : false; } catch (e) { return false; } }
+/* patch LEADBOTH-SAMEJOB: the "✗ Different jobs" answers, shared and durable — gc_kv 'gc_samejob_no' { pairs: [{ a, b, ka, kb, at, by }] }:
+   both lead ids AND a stable identity for each side (its bid number, else its name words + city + GC), so a pair stays answered after
+   a sync, a re-import (the Lead Inbox re-makes a lead with a new id) or a merge. Old answers (lead.notSameAs) are copied in on load. */
+var NOKEY = 'gc_samejob_no', SBU = 'https://ieeonhpfahmwwecizdut.supabase.co', NO = { pairs: [] }, NO_AT = 0, NO_IDX = null;
+try { NO = JSON.parse(localStorage.getItem(NOKEY) || 'null') || NO; } catch (e) {}
+function low(v){ return s(v).toLowerCase(); }
+function idOf(l){
+  var C = core(); if (!C || !l) return '';
+  var no = C.bidNo ? C.bidNo(l.bidNumber) : ''; if (no) return 'no:' + no;
+  var nn = C.numsOf ? C.numsOf(l.name || l.title || '') : null; if (nn && nn.ids.length) return 'no:' + nn.ids[0];
+  var tk = C.titleInfo(l.name || l.title || '', C.cityOf ? C.cityOf(l) : '').tokens.slice().sort().join(' ');
+  return 'n:' + tk + '|' + low(C.cityOf ? C.cityOf(l) : l.city) + '|' + (C.coKey ? C.coKey(l.gc || l.dueToCompany || '') : low(l.gc));
+}
+function index(){
+  if (NO_IDX && NO_IDX.n === arr(NO.pairs).length) return NO_IDX;
+  var x = { n: arr(NO.pairs).length, ids: {}, keys: {} };
+  arr(NO.pairs).forEach(function(p){ if (!p) return; if (p.a && p.b) { x.ids[p.a + '|' + p.b] = 1; x.ids[p.b + '|' + p.a] = 1; } if (p.ka && p.kb && p.ka !== p.kb) { x.keys[p.ka + '|' + p.kb] = 1; x.keys[p.kb + '|' + p.ka] = 1; } });
+  return (NO_IDX = x);
+}
+function isNo(a, b){ var x = index(); if (x.ids[a.id + '|' + b.id]) return true; var ka = idOf(a), kb = idOf(b); return !!(ka && kb && ka !== kb && x.keys[ka + '|' + kb]); }
+function kvGet(){ return W.fetch(SBU + '/rest/v1/gc_kv?key=eq.' + NOKEY + '&select=value', { cache: 'no-store' }).then(function(r){ return r.ok ? r.json() : null; }).then(function(rows){ var v = rows && rows[0] ? rows[0].value : null; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } } return v && typeof v === 'object' ? v : { pairs: [] }; }, function(){ return null; }); }
+function kvPut(v){ return W.fetch(SBU + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ key: NOKEY, value: v, updated_at: new Date().toISOString() }) }).then(function(r){ return r.ok; }, function(){ return false; }); }
+function keep(v){ NO = v && Array.isArray(v.pairs) ? v : { pairs: [] }; NO_IDX = null; try { localStorage.setItem(NOKEY, JSON.stringify(NO)); } catch (e) {} }
+function merged(base, add){ var out = arr(base && base.pairs).slice(), seen = {}; out.forEach(function(p){ if (p) seen[[p.a, p.b].sort().join('|') + '#' + [p.ka, p.kb].sort().join('|')] = 1; });
+  arr(add).forEach(function(p){ var k = [p.a, p.b].sort().join('|') + '#' + [p.ka, p.kb].sort().join('|'); if (!seen[k]) { seen[k] = 1; out.push(p); } }); return { pairs: out.slice(-3000), updatedAt: new Date().toISOString() }; }
+/* add answers: read the shared list first (another person's answers are kept), then write it back */
+function remember(add){
+  if (!add.length) return Promise.resolve(true);
+  keep(merged(NO, add));
+  return kvGet().then(function(v){ var m = merged(v || NO, add); m = merged(m, NO.pairs); keep(m); return kvPut(m); });
+}
+function who(){ try { return s(W.__GC_AUTH__ && W.__GC_AUTH__.email ? W.__GC_AUTH__.email() : '') || s(localStorage.getItem('grayco_user')); } catch (e) { return ''; } }
+function pairRec(a, b, at){ return { a: s(a.id), b: s(b.id), ka: idOf(a), kb: idOf(b), at: at || new Date().toISOString(), by: who() }; }
+function load(){
+  NO_AT = Date.now();
+  return kvGet().then(function(v){ if (v) keep(merged(v, NO.pairs)); backfill(); });
+}
+/* old "✗ Different jobs" answers on the leads themselves (notSameAs) → the shared list (once each) */
+function backfill(){
+  if (!can()) return; var L = leads(), by = {}, add = [], x = index();
+  L.forEach(function(l){ if (l && l.id) by[l.id] = l; });
+  L.forEach(function(l){ if (!l || !l.id) return; arr(l.notSameAs).forEach(function(o){ var m = by[o]; if (!m || x.ids[l.id + '|' + m.id]) return; x.ids[l.id + '|' + m.id] = x.ids[m.id + '|' + l.id] = 1; add.push(pairRec(l, m, s(l.updatedAt) || undefined)); }); });
+  if (add.length) remember(add);
+}
 function notSame(a, b){
   var now = new Date().toISOString();
+  try { var la = leads().filter(function(l){ return l && l.id === a; })[0], lb = leads().filter(function(l){ return l && l.id === b; })[0]; if (la && lb) remember([pairRec(la, lb, now)]); } catch (e) {}   /* patch LEADBOTH-SAMEJOB */
   var f = function(list){ return (list || []).map(function(l){ if (!l || (l.id !== a && l.id !== b)) return l; var n = Object.assign({}, l), o = arr(n.notSameAs).slice(), other = l.id === a ? b : a; if (o.indexOf(other) < 0) o.push(other); n.notSameAs = o; n.updatedAt = now; return n; }); };
   if (W._setLeads) W._setLeads(f); else if (W._crm) W._crm.leads = f(W._crm.leads);
   try { if (W._gcApplySync && W._crm) W._gcApplySync('leads', W._crm.leads); } catch (e) {}
@@ -219402,7 +219543,8 @@ D.addEventListener('click', function(e){
   Promise.resolve(W._gcBidMerge.apply([{ keeper: keep.id, ids: [p.a.id, p.b.id] }])).then(function(){ SIG = ''; setTimeout(paint, 400); }, function(){ t.disabled = false; });
 });
 setInterval(paint, 2500);
-W._gcSameJob = { pairs: pairs, notSame: notSame, paint: paint };
+setTimeout(load, 4000); setInterval(function(){ if (Date.now() - NO_AT > 90000) load(); }, 30000);   /* patch LEADBOTH-SAMEJOB: the shared answers */
+W._gcSameJob = { pairs: pairs, notSame: notSame, paint: paint, isNo: isNo, idOf: idOf, load: load, answers: function(){ return NO; } };
 })(window);
 </script>
 <script>/*__GC_PATCH_SUPPLIERINV__ (owner 11/9, screenshot of Sub Invoices: "a lot of these are suppliers — let's make supplier invoices so
@@ -220201,17 +220343,46 @@ function ofJob(p){ if (!p) return 'construction'; if (MISFILED[String(p.id)] && 
    a lead's company = its own companyId when it is Mitigation / Environmental; otherwise what the lead is about — environmental work
    (asbestos, lead paint, mold, abatement …) → Environmental; an emergency / board-up / tarp / water extraction & dry-out / sewage /
    flood / smoke clean-up → Mitigation; anything else → Construction. (A rebuild after a fire stays Construction.) */
-var ENV_RE = /\benvironmental\b|asbestos|\blead[- ]?(paint|based|abatement|safe|rrp|hazard|test(ing)?|inspection|risk)\b|\bmou?ld\b|abatement|hazmat|\bradon\b|biohazard|meth[- ]?lab|trauma clean/i;
+var ENV_RE = /\benvironmental\b|asbestos|\blead[- ]?(paint|based|abatement|safe|rrp|hazard|test(ing)?|inspection|risk)\b|\bLBP\b|\bRRP\b|\bACM\b|\bmou?ld\b|microbial|abatement|haz[- ]?mat|hazardous materials?|\bradon\b|biohazard|meth[- ]?lab|trauma clean/i;   /* patch LEADBOTH: + LBP / RRP / ACM / microbial / hazardous materials (the scanners' words: W._gcEnvWords) */
 var MIT_RE = /\bemergenc|board[- ]?up|\btarp(ing)?\b|water (damage|extraction|removal|mitigation|in (my|the))|\bflood|sewage|sewer back|dry[- ]?out|drying|dehumidif|burst|pipe (burst|broke|leak)|smoke (damage|clean)|soot|\bmitigation\b/i;
 function leadText(l){ var c = l.contact && typeof l.contact === 'object' ? l.contact : {}; return [l.type, l.leadKind, l.service, l.workType, l.title, l.name && l.title ? '' : '', l.scope, l.detail, l.notes && typeof l.notes === 'string' ? l.notes.slice(0, 400) : '', l.message, l.description, c.message].map(function(v){ return v == null ? '' : String(v); }).join(' '); }
 function ofLead(l){
   if (!l) return 'construction';
   if (l.companyId === 'mitigation' || l.companyId === 'environmental') return l.companyId;
-  var t = leadText(l);
-  if (/^environmental$/i.test(String(l.type || l.leadKind || '')) || ENV_RE.test(t)) return 'environmental';
+  if (l.companyId === 'construction' && l.companyIdBy) return 'construction';   /* patch LEADBOTH: filed under Construction on purpose (a permit's GC job …) */
+  var t = leadText(l), bid = gcBid(l, t);
+  if (/^environmental$/i.test(String(l.type || l.leadKind || '')) || l.envScope === true || ENV_RE.test(bid ? t + ' ' + s(l.name) : t)) return bid ? 'construction' : 'environmental';   /* a bid's name is its project title */   /* patch LEADBOTH: a GC / public bid job stays Construction's (leadCos adds Environmental) */
   if (l.emergency === true || /^emergency$/i.test(String(l.urgency || '')) || MIT_RE.test(t)) return 'mitigation';
   return 'construction';
 }
+/* patch LEADBOTH (owner 11/12: "On Construction I want asbestos and lead jobs that are public, because there are also GC jobs when those
+   are around, but also put those leads in Environmental leads too"; "in the automatic leads I want to see asbestos and mold leads"):
+   a GC / public bid lead (bid board invite, bids@ e-mail, a GC / bid due / bid number on it — BIDMERGE's isBidLead) about asbestos /
+   lead / mold abatement is Construction's lead (ofLead) AND shows on the Environmental Leads page. A residential / direct one stays
+   Environmental only. leadCos(l) = every company whose Leads page lists the lead; lead.alsoCos (an admin's "Also show on
+   Environmental" tick, stored on that lead) replaces the automatic extra when it is set. passLead(l, view) = the one test. */
+function gcBid(l, t){
+  if (!l) return false;
+  if (l.websiteLead || l.textMessage || l.rsLeadId || /^(website|brain|portal|partner|referral|lsa|google)$/i.test(s(l.origin))) return false;
+  if (/^(residential|homeowner|insurance)$/i.test(s(l.leadKind))) return false;
+  try { var B = W._gcBidMergeCore; if (B && B.isBidLead && l.id && B.isBidLead(l)) return true; } catch (e) {}
+  if (s(l.gc) || s(l.dueToCompany) || s(l.bidNumber) || s(l.bidDue) || s(l.bidRole) || s(l.inboxId) || arr(l.gcs).length) return true;
+  if (/\bbids?@|bid\s*board|buildingconnected|planhub|constructconnect|isqft|plan\s*room/i.test(s(l.source) + ' ' + s(l.email) + ' ' + s(l.from))) return true;
+  return /\(\s*GC\s*:|\bgeneral contractor\s*:|\bbid (due|no\.?|number|date)\b|\bITB\b|\binvitation to bid\b|\bRFP\b/i.test((t == null ? leadText(l) : t) + ' ' + s(l.name));
+}
+function envOf(l){ if (!l) return false; var t = leadText(l); return /^environmental$/i.test(String(l.type || l.leadKind || '')) || l.envScope === true || ENV_RE.test(gcBid(l, t) ? t + ' ' + s(l.name) : t); }
+function leadCos(l){
+  var c = ofLead(l), out = [c];
+  var extra = Array.isArray(l && l.alsoCos) ? arr(l.alsoCos) : (c === 'construction' && envOf(l) ? ['environmental'] : []);
+  extra.forEach(function(x){ x = s(x); if (valid(x) && out.indexOf(x) < 0) out.push(x); });
+  return out;
+}
+function passLead(l, v){ if (v == null) v = leadView(); return v === 'all' || leadCos(l).indexOf(v) > -1; }
+/* the chip a shared lead wears: on Construction / All "☢️ abatement scope", on Environmental "☢️ also Environmental" */
+function bothChip(l, v){
+  try { var cs = leadCos(l); if (cs.length < 2 || cs.indexOf('environmental') < 0) return ''; if (v == null) v = leadView();
+    var lab = v === 'environmental' ? '☢️ also Environmental' : '☢️ abatement scope', tip = v === 'environmental' ? 'A ' + get(cs[0]).short + ' lead (GC / public bid) — also listed here because it has abatement work' : 'Asbestos / lead / mold abatement in this bid — it is also on the Environmental Leads page';
+    return '<span class="gc-lb-chip" data-gc-lb="' + (v === 'environmental' ? 'env' : 'con') + '" title="' + esc(tip) + '" style="display:inline-flex;align-items:center;padding:0 6px;border-radius:999px;font:700 10.5px/1.6 Inter,Arial,sans-serif;color:#065f46;background:#d1fae5;border:1px solid #6ee7b7;white-space:nowrap;margin-left:4px">' + esc(lab) + '</span>'; } catch (e) { return ''; } }
 /* the Leads page: one company picked → its leads; "All companies" → Construction's leads only, unless "Show every company's leads" is on */
 var LK_ALL = 'gc_co_leads_all';
 function leadsAll(){ try { return localStorage.getItem(LK_ALL) === '1'; } catch (e) { return false; } }
@@ -220267,13 +220438,13 @@ function ownList0(u){ return u ? arr(u.companies).filter(valid) : []; }
 function setFilter(f){ if (!canSwitch()) f = lockedCo(); else if (f !== 'all' && valid(f) && myCos().indexOf(f) < 0) f = 'all'; try { localStorage.setItem(FK, f === 'all' || valid(f) ? f : 'all'); } catch (e) {} paintAll(); try { W.dispatchEvent(new CustomEvent('gc-co-filter', { detail: filter() })); } catch (e) {} }
 /* a job shared with a company (job.sharedWith: ['environmental']) shows in that company's lists and photos — its money stays with its own company */
 function passJob(p){ var f = filter(); if (f === 'all') return true; return ofJob(p) === f || arr(p && p.sharedWith).indexOf(f) > -1; }
-function pass(x, kind){ var f = filter(); if (f === 'all') return true; var c = kind === 'job' ? ofJob(x) : kind === 'lead' ? ofLead(x) : kind === 'inv' ? ofInv(x) : of(x); return c === f; }
+function pass(x, kind){ var f = filter(); if (f === 'all') return true; var c = kind === 'job' ? ofJob(x) : kind === 'lead' ? ofLead(x) : kind === 'inv' ? ofInv(x) : of(x); return c === f || (kind === 'lead' && passLead(x, f)); }   /* patch LEADBOTH */
 function badge(id, small){ var c = get(id); return '<span class="gc-co-b" data-co="' + esc(c.id) + '" style="display:inline-flex;align-items:center;gap:3px;padding:' + (small ? '0 6px' : '1px 8px') + ';border-radius:999px;font:700 ' + (small ? '10.5px' : '11.5px') + '/1.6 Inter,Arial,sans-serif;color:#fff;background:' + esc(c.color) + ';white-space:nowrap">' + esc(c.icon) + ' ' + esc(c.short) + '</span>'; }
 /* a company's letterhead lines (documents): name, address, phone, license, EIN */
 function letterhead(id){ var c = get(id), a = c.address; if (!a && c.id === 'construction') { try { a = W._gcCompanyAddress ? W._gcCompanyAddress() : ''; } catch (e) {} } return { legal: c.legal, short: c.short, address: a, phone: c.phone, email: c.email, license: c.license, ein: c.ein, logo: c.logo || '/portal-logo.png', prefix: c.prefix }; }
 var paints = [];
 function paintAll(){ paints.forEach(function(f){ try { f(); } catch (e) {} }); }
-W._gcCo = { userCos: userCos, userIn: userIn, canSwitch: canSwitch, myCos: myCos, allCos: allCos, leadView: leadView, leadsAll: leadsAll, setLeadsAll: setLeadsAll, list: list, get: get, valid: valid, of: of, ofJob: ofJob, ofLead: ofLead, ofInv: ofInv, jobById: jobById, byType: byType,
+W._gcCo = { userCos: userCos, userIn: userIn, canSwitch: canSwitch, myCos: myCos, allCos: allCos, leadView: leadView, leadCos: leadCos, passLead: passLead, bothChip: bothChip, gcBid: gcBid, ENV_RE: ENV_RE, leadsAll: leadsAll, setLeadsAll: setLeadsAll, list: list, get: get, valid: valid, of: of, ofJob: ofJob, ofLead: ofLead, ofInv: ofInv, jobById: jobById, byType: byType,
   filter: filter, setFilter: setFilter, pass: pass, passJob: passJob, badge: badge, letterhead: letterhead, save: save, pull: pull, onPaint: function(f){ paints.push(f); }, DEF: DEF };
 if (D.readyState === 'loading') D.addEventListener('DOMContentLoaded', function(){ setTimeout(pull, 1500); }); else setTimeout(pull, 1500);
 })(window);
@@ -220436,12 +220607,12 @@ function stamp(kind){
   var list = kind === 'p' ? (W._crm && W._crm.projects) : kind === 'e' ? (W._crm && W._crm.expenses) : (W._crm && W._crm.leads);
   if (!Array.isArray(list)) return;
   if (!SEEN[kind]) { SEEN[kind] = {}; list.forEach(function(x){ if (x && x.id != null) SEEN[kind][x.id] = 1; }); return; }
-  var f = GEST.co, fix = [];
-  list.forEach(function(x){ if (!x || x.id == null || SEEN[kind][x.id]) return; SEEN[kind][x.id] = 1; if (C.valid(f) && !C.valid(x.companyId) && madeHere(x) && !(kind === 'e' && (x.pid || x.projectId || x.jobId))) fix.push(x.id); });   /* QA B8: an expense with no job follows the picked company; one on a job follows the job */
+  var f = GEST.co, fix = [], coFor = {};
+  list.forEach(function(x){ if (!x || x.id == null || SEEN[kind][x.id]) return; SEEN[kind][x.id] = 1; if (C.valid(f) && !C.valid(x.companyId) && madeHere(x) && !(kind === 'e' && (x.pid || x.projectId || x.jobId))) { fix.push(x.id); if (kind === 'p') { try { var bl = W._gcLeadBoth && W._gcLeadBoth.leadOfJob ? W._gcLeadBoth.leadOfJob(x) : null; if (bl && C.leadCos(bl).length > 1) coFor[x.id] = C.ofLead(bl); } catch (e2) {} } } });   /* patch LEADBOTH: a job from a GC bid with abatement stays its lead's company (Construction), whatever is picked */   /* QA B8: an expense with no job follows the picked company; one on a job follows the job */
   if (!fix.length) return;
   var at = new Date().toISOString(), set = kind === 'p' ? W._setProjects : kind === 'e' ? W._setExpenses : W._setLeads;
   if (typeof set !== 'function') return;
-  try { set(function(prev){ return Array.isArray(prev) ? prev.map(function(x){ return x && fix.indexOf(x.id) > -1 && !C.valid(x.companyId) ? Object.assign({}, x, { companyId: f, updatedAt: at }) : x; }) : prev; }); } catch (e) {}
+  try { set(function(prev){ return Array.isArray(prev) ? prev.map(function(x){ return x && fix.indexOf(x.id) > -1 && !C.valid(x.companyId) ? Object.assign({}, x, { companyId: coFor[x.id] || f, updatedAt: at }) : x; }) : prev; }); } catch (e) {}
 }
 (W.__GC_NATIVE_SETINTERVAL__ || W.setInterval).call(W, function(){ try { stamp('p'); stamp('l'); stamp('e'); } catch (e) {} }, 2000);
 /* QA B5 (11/11): with one company picked, every schedule list that goes through _gcSchedVisible (the Dashboard cards, the desk home,
@@ -224207,7 +224378,7 @@ function settingsHtml(){
   var c = S.settings || {}, inc = c.include || {}, labels = S.incLabels || [];
   if (!labels.length) labels = Object.keys(inc).map(function(k){ return [k, k]; });
   var uses = c.uses || {}, ul = S.useLabels || [];
-  return '<div id="gc-pj-set"><h4>⚙ Which permits show here</h4><div class="mut" style="margin:0 0 6px">Default (owner 11/12): large commercial jobs only — $1,000,000 and up, no residential.</div><div class="g">' + labels.map(function(l){ return '<label><input type="checkbox" data-pj-inc="' + esc(l[0]) + '"' + (inc[l[0]] ? ' checked' : '') + '> ' + esc(l[1]) + '</label>'; }).join('') + '</div>'
+  return '<div id="gc-pj-set"><h4>⚙ Which permits show here</h4><div class="mut" style="margin:0 0 6px">Default (owner 11/12): large commercial jobs only — $1,000,000 and up, no residential — plus ☢️ asbestos / lead / mold permits at any value (Environmental).</div><div class="g">' + labels.map(function(l){ return '<label><input type="checkbox" data-pj-inc="' + esc(l[0]) + '"' + (inc[l[0]] ? ' checked' : '') + '> ' + esc(l[1]) + '</label>'; }).join('') + '</div>'
     + (ul.length ? '<div style="margin-top:6px"><b>Kinds of building</b> <span class="mut">(untick to leave one out)</span><div class="g">' + ul.map(function(u){ return '<label><input type="checkbox" data-pj-use="' + esc(u[0]) + '"' + (uses[u[0]] !== false ? ' checked' : '') + '> ' + esc(u[1]) + '</label>'; }).join('') + '</div></div>' : '')
     + '<div class="g" style="margin-top:6px"><label>Minimum job value ($; repair words, roofs and demolitions — when ticked — show at any value)<br><input type="number" min="0" step="1000" data-pj-set="minValue" value="' + esc(c.minValue) + '"></label>'
     + '<label>Only permits from the last … days<br><input type="number" min="1" max="90" data-pj-set="maxAgeDays" value="' + esc(c.maxAgeDays) + '"></label></div>'
@@ -224409,6 +224580,11 @@ function leadOf(x){
     created: at.slice(0, 10), createdAt: at, updatedAt: at, addedBy: me(), note: note,
     permitKey: x.key, permitNumber: s(x.number), permitSource: x.src, permitLink: s(x.link), permitContractor: s(x.contractor), permitContractorPhone: s(x.contractorPhone), permitContractorEmail: s(x.contractorEmail) };
   if (co) { l.companyId = co; l.companyIdBy = me() || 'permits'; }
+  /* patch LEADBOTH: a ☢️ permit (asbestos / lead / mold) is Environmental's lead; a commercial / multifamily one (a GC job) is Construction's
+     and also on the Environmental Leads page */
+  if (x.category === 'environmental' || arr(x.envWords).length) { l.envScope = true; l.envWords = arr(x.envWords).slice(0, 8); }
+  if (arr(x.cos).length > 1 && arr(x.cos).indexOf('environmental') > -1) { l.companyId = 'construction'; l.companyIdBy = me() || 'permits'; l.alsoCos = ['environmental']; l.type = l.projectType = 'Commercial'; }
+  else if (x.category === 'environmental' && !co) { l.companyId = 'environmental'; l.companyIdBy = me() || 'permits'; l.type = l.projectType = 'Environmental'; }
   if (x.lat && x.lon) { l.lat = +x.lat; l.lng = +x.lon; }
   return l;
 }
@@ -226705,7 +226881,7 @@ function emptyMit(){ return '<div class="mws-empty"><b>No drying jobs yet.</b><b
 function emergLeads(co){
   var L = []; try { L = typeof W._gcLaLeads === 'function' ? arr(W._gcLaLeads()) : []; } catch (e) {} if (!L.length) L = arr(crm().leads);
   var isE = function(l){ try { if (W._gcLeadHoldCore && W._gcLeadHoldCore.isEmergency) return !!W._gcLeadHoldCore.isEmergency(l); } catch (e) {} return l.emergency === true || /^emergency$/i.test(s(l.urgency)); };
-  return L.filter(function(l){ return l && !l.deleted && !l.converted && !/won|lost|dead|declined|converted|spam/i.test(s(l.stage) + ' ' + s(l.status)) && isE(l) && (function(){ try { return !W._gcCo || W._gcCo.ofLead(l) === co; } catch (e) { return true; } })(); });
+  return L.filter(function(l){ return l && !l.deleted && !l.converted && !/won|lost|dead|declined|converted|spam/i.test(s(l.stage) + ' ' + s(l.status)) && isE(l) && (function(){ try { return !W._gcCo || (W._gcCo.passLead ? W._gcCo.passLead(l, co) : W._gcCo.ofLead(l) === co); } catch (e) { return true; } })(); });   /* patch LEADBOTH */
 }
 var V = {};
 V.mws_jobs = function(el){
@@ -227151,7 +227327,7 @@ W._gcCoItem = function(it){
   if (C.valid(r.companyId)) return r.companyId === f;
   var pid = s(it.pid || r.pid || r.jobId); if (pid) return pidOk(pid);
   var lid = s(r.leadId || it.leadId), m = !lid && /(?:^|[|:])lead[|:]([^|:]+)/i.exec(s(it.key) + ' ' + s(it.thing)); if (m) lid = m[1];
-  var ld = lid ? leadById(lid) : null; if (ld) return C.ofLead(ld) === f;
+  var ld = lid ? leadById(lid) : null; if (ld) return C.passLead ? C.passLead(ld, f) : C.ofLead(ld) === f;   /* patch LEADBOTH */
   return f === 'construction';
 };
 /* a list of job records (change orders, punch items, estimates …): a record on a job follows the job; one with no job its own stamp, else Construction */
@@ -227164,7 +227340,7 @@ W._gcCoCust = function(c){
   if (C.valid(c.companyId)) return c.companyId === f;
   var n = low(c.name), id = s(c.id), any = false, hit = false;
   arr(crm().projects).forEach(function(p){ if (!p || hit) return; if ((n && low(p.client) === n) || (id && (s(p.customerId) === id || s(p.custId) === id))) { any = true; if (C.passJob(p)) hit = true; } });
-  if (!hit) arr(crm().leads).forEach(function(l){ if (!l || hit) return; if ((n && (low(l.client) === n || low(l.name) === n)) || (id && s(l.customerId) === id)) { any = true; if (C.ofLead(l) === f) hit = true; } });
+  if (!hit) arr(crm().leads).forEach(function(l){ if (!l || hit) return; if ((n && (low(l.client) === n || low(l.name) === n)) || (id && s(l.customerId) === id)) { any = true; if (C.passLead ? C.passLead(l, f) : C.ofLead(l) === f) hit = true; } });   /* patch LEADBOTH */
   return hit || (!any && f === 'construction');
 };
 /* ── drop-downs: people and jobs of the picked company only (the one already chosen stays) ── */
@@ -227382,6 +227558,239 @@ async function pmBonusFor(prof, from, to){
 W._gcPayEm = { afterHours: afterHours, isEmergencyJob: isEmergencyJob, clockTap: clockTap, punchIn: punchIn, punchOut: punchOut, openPunch: openPunch,
   applyRaise: applyRaise, pmBonusFor: pmBonusFor, historyHtml: historyHtml, bust: bust, DAY: DAY };
 try { console.log('[GC] 🚨 Emergency call-out 1.5× + 🎖 cert raises / 🏆 PM bonus on paychecks (patch PAYEM): _gcPayEm'); } catch (e) {}
+})(window);
+</script>
+<script id="gc-patch-leadboth">
+/* patch LEADBOTH (owner 11/12: "On Construction I want asbestos and lead jobs that are public, because there are also GC jobs when
+   those are around, but also put those leads in Environmental leads too"): the read side lives in the multico core
+   (_gcCo.leadCos / passLead / bothChip). This block: a job made from such a lead stays Construction's — and an admin is offered
+   "🔗 Share with Environmental" (job.sharedWith, patch MULTICO-LINK) so it also shows on Environmental's lists.
+   W._gcLeadBoth = { leadOfJob(job), both(lead), offer(jobId), check() } */
+(function(W){
+'use strict';
+var D = W.document;
+function s(v){ return v == null ? '' : String(v); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function C(){ return W._gcCo || null; }
+function admin(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()) || (typeof W._gcIsOfficeFull === 'function' && !!W._gcIsOfficeFull()); } catch (e) { return false; } }
+function leads(){ return arr(W._crm && W._crm.leads); }
+function jobs(){ return arr(W._crm && W._crm.projects); }
+function leadOfJob(p){
+  if (!p) return null; var lid = s(p.leadId || p.fromLeadId || p.fromLead || p.convertedFrom), id = s(p.id), L = leads(), i;
+  if (lid) for (i = 0; i < L.length; i++) if (L[i] && s(L[i].id) === lid) return L[i];
+  if (id) for (i = 0; i < L.length; i++) { var l = L[i]; if (l && (s(l.projectId) === id || s(l.convertedTo) === id || s(l.jobId) === id || s(l.pid) === id)) return l; }
+  return null;
+}
+function both(l){ try { var c = C(); return !!(c && c.leadCos && l && c.leadCos(l).length > 1 && c.leadCos(l).indexOf('environmental') > -1); } catch (e) { return false; } }
+var AK = 'gc_leadboth_asked';
+function asked(){ try { return JSON.parse(localStorage.getItem(AK) || '{}') || {}; } catch (e) { return {}; } }
+function setAsked(id){ try { var a = asked(); a[id] = Date.now(); var k = Object.keys(a); if (k.length > 200) k.slice(0, k.length - 200).forEach(function(x){ delete a[x]; }); localStorage.setItem(AK, JSON.stringify(a)); } catch (e) {} }
+function wants(p){ var c = C(); if (!c || !p || !p.id) return false; var l = leadOfJob(p); return !!l && both(l) && c.ofJob(p) !== 'environmental' && arr(p.sharedWith).indexOf('environmental') < 0; }
+function close(){ var b = D.getElementById('gc-lb-offer'); if (b) b.remove(); }
+function offer(pid){
+  var c = C(), p = c && c.jobById ? c.jobById(pid) : null; if (!p || !wants(p) || !admin()) return false;
+  close(); var b = D.createElement('div'); b.id = 'gc-lb-offer'; b.setAttribute('role', 'dialog'); b.setAttribute('aria-label', 'Share with Environmental'); b.setAttribute('data-gc-keep', '1'); b.setAttribute('data-pid', s(p.id));
+  b.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:99990;max-width:min(380px,calc(100vw - 32px));background:#fff;border:1px solid #6ee7b7;border-left:5px solid #059669;border-radius:12px;box-shadow:0 12px 32px rgba(15,23,42,.25);padding:12px 14px;font:14px Inter,Arial,sans-serif;color:#0f172a';
+  b.innerHTML = '<div style="font-weight:800;margin-bottom:4px">☢️ Abatement work on this job</div><div style="font-size:13px;color:#334155;margin-bottom:10px"><b>' + esc(p.name || 'This job') + '</b> came from a GC bid with asbestos / lead / mold work. It stays a ' + esc(c.get(c.ofJob(p)).short) + ' job — share it so it also shows on Environmental\'s lists (its money stays here).</div>'
+    + '<div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" data-lb-share style="background:#059669;color:#fff;border:0;border-radius:8px;padding:8px 12px;font:700 13px Inter,Arial,sans-serif;cursor:pointer">🔗 Share with Environmental</button><button type="button" data-lb-no style="background:#fff;border:1px solid #cbd5e1;border-radius:8px;padding:8px 12px;font:600 13px Inter,Arial,sans-serif;cursor:pointer">Not now</button></div>';
+  D.body.appendChild(b); return true;
+}
+D.addEventListener('click', function(e){
+  var t = e.target && e.target.closest ? e.target.closest('#gc-lb-offer [data-lb-share], #gc-lb-offer [data-lb-no]') : null; if (!t) return;
+  var b = D.getElementById('gc-lb-offer'), pid = b ? b.getAttribute('data-pid') : ''; e.preventDefault();
+  setAsked(pid); close();
+  if (t.hasAttribute('data-lb-share')) { try { var p = C().jobById(pid); if (p && arr(p.sharedWith).indexOf('environmental') < 0 && W._gcCoLink) W._gcCoLink.share(pid, 'environmental'); } catch (x) {} }
+}, true);
+/* new jobs since the page loaded (made here or synced in a moment ago) — offered once per job, admins only */
+var SEEN = null, SEEN_AT = 0;
+function check(){
+  if (!W._crm || !Array.isArray(W._crm.projects)) return; var J = jobs();
+  if (!SEEN) { SEEN = {}; SEEN_AT = Date.now(); J.forEach(function(p){ if (p && p.id != null) SEEN[p.id] = 1; }); return; }
+  if (!admin() || D.getElementById('gc-lb-offer')) { J.forEach(function(p){ if (p && p.id != null && !SEEN[p.id] && (!admin() || !wants(p))) SEEN[p.id] = 1; }); return; }
+  var a = asked();
+  for (var i = 0; i < J.length; i++) { var p = J[i]; if (!p || p.id == null || SEEN[p.id]) continue; if (!leadOfJob(p) && Date.now() - Date.parse(s(p.createdAt || p.created)) < 120000) continue;   /* its lead link may land a moment later */
+    SEEN[p.id] = 1; var ca = s(p.createdAt || p.savedAt), made = ca.length > 10 ? Date.parse(ca) : NaN;
+    if (isFinite(made) ? Date.now() - made > 15 * 60000 : Date.now() - SEEN_AT < 20000) continue;   /* a job made just now (not the list loading in) */
+    if (a[p.id] || !wants(p)) continue; if (offer(p.id)) break; }
+}
+(W.__GC_NATIVE_SETINTERVAL__ || W.setInterval).call(W, function(){ try { check(); } catch (e) {} }, 2500);
+W._gcLeadBoth = { leadOfJob: leadOfJob, both: both, offer: offer, check: check, wants: wants };
+})(window);
+</script>
+<script id="gc-patch-leadkeep">
+/* patch LEADKEEP (owner 11/12, Leads list: Priority shows "SET" on bid leads — "I've set these before"). THE CAUSE: the Lead Inbox
+   import (patch LD2 importItems → fromItem) rebuilds a LEADIN lead from THIS computer's copy and stamps it updatedAt = now; the cloud
+   keeps the newest updatedAt for the WHOLE record. A computer whose copy of the lead was older (opened after a release, its saved copy
+   from before the priority was set) re-wrote every Lead Inbox lead it touched with a fresh time — and the copy without the priority
+   won everywhere (the 54 LEADIN leads all re-written ~17:00 UTC 11/12). PRIOKEEP could not help: the old copy had no history line either.
+   THE FIX: what a PERSON set on a lead is kept apart from the record, in gc_kv 'gc_lead_keep', by a stable identity (every id the lead
+   has had, its inbox item, its bid number, its name + city + GC), field by field with the person's own time:
+     priority (prioritySetAt) · stage (stageChangedAt) · the PM / estimator (assignedAt, by a person) · "Also show on Environmental"
+     (alsoCosAt) · its company (companyIdBy) · "Different jobs" (notSameAs, added to) · tags (added to) · notes (only when they come back empty).
+   Any copy that comes back with an OLDER (or no) time for a field gets the person's value back — in fromItem itself (an import never
+   drops them) and on every computer that sees such a copy. Nothing is invented: values come only from a lead's own stamped fields,
+   its history (activity "Priority 8", stageHistory by a person), or W._gcLeadKeep.seed(oldLeads) with an older copy (a backup).
+   W._gcLeadKeep = { apply(lead) → changed?, capture(), heal(), seed(list), find(lead), keys(lead), load(), data() } */
+(function(W){
+'use strict';
+var D = W.document, KEY = 'gc_lead_keep', SBU = 'https://ieeonhpfahmwwecizdut.supabase.co';
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function tms(v){ var t = Date.parse(s(v)); return isFinite(t) ? t : 0; }
+function iso(t){ try { return new Date(t).toISOString(); } catch (e) { return ''; } }
+function core(){ return W._gcBidMergeCore || null; }
+function leads(){ return arr(W._crm && W._crm.leads); }
+function isAdmin(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()) || (typeof W._gcIsOfficeFull === 'function' && !!W._gcIsOfficeFull()); } catch (e) { return false; } }
+var DB = { recs: [] }, IDX = null, DIRTY = false, LOADED = false;
+try { DB = JSON.parse(localStorage.getItem(KEY) || 'null') || DB; } catch (e) {}
+/* ── identity ── */
+function keys(l){
+  if (!l) return []; var C = core(), out = [];
+  if (s(l.id)) out.push('id:' + s(l.id));
+  arr(l.mergedFrom).forEach(function(x){ if (s(x)) out.push('id:' + s(x)); });
+  if (s(l.inboxId)) { out.push('ib:' + s(l.inboxId)); out.push('id:LEADIN-' + s(l.inboxId).replace(/^LI-/, '')); }
+  if (s(l.inboxLinked)) out.push('ib:' + s(l.inboxLinked));
+  try { var no = C && C.bidNo ? C.bidNo(l.bidNumber) : ''; if (!no && C && C.numsOf) { var nn = C.numsOf(l.name || l.title || ''); if (nn.ids.length) no = nn.ids[0]; } if (no) out.push('no:' + no); } catch (e) {}
+  try { if (C && C.titleInfo && s(l.name || l.title)) { var city = C.cityOf ? C.cityOf(l) : low(l.city), tk = C.titleInfo(l.name || l.title, city).tokens.slice().sort().join(' '); if (tk.length >= 6) out.push('n:' + tk + '|' + low(city) + '|' + (C.coKey ? C.coKey(l.gc || l.dueToCompany || '') : low(l.gc))); } } catch (e) {}
+  var seen = {}; return out.filter(function(k){ if (seen[k]) return false; seen[k] = 1; return true; });
+}
+function index(){
+  if (IDX && IDX.n === DB.recs.length && IDX.v === DB.v) return IDX;
+  var m = {}; DB.recs.forEach(function(r, i){ arr(r && r.k).forEach(function(k){ if (m[k] == null) m[k] = i; }); });
+  return (IDX = { n: DB.recs.length, v: DB.v, m: m });
+}
+/* the record for a lead: by an id first, then its inbox item, bid number, name (a weaker key never joins two leads that are both here) */
+var LIVE = { ref: null, ids: {} };
+function liveIds(){ var L = W._crm && W._crm.leads; if (L !== LIVE.ref) { LIVE.ref = L; LIVE.ids = {}; arr(L).forEach(function(x){ if (x && x.id != null && !x.deleted && !x._deleted && !x.mergedInto) LIVE.ids[s(x.id)] = 1; }); } return LIVE.ids; }
+/* a record found by a weaker key (inbox item, bid #, name) belongs to this lead only when none of its other lead ids is still on the
+   list — two live copies (a CompanyCam and a QuickBooks "Altus", two leads on one inbox item) never share one record */
+function others(r, l){ var live = liveIds(), me = s(l.id); return arr(r.k).some(function(k){ return k.indexOf('id:') === 0 && k.slice(3) !== me && live[k.slice(3)]; }); }
+function find(l){ var I = index(), ks = keys(l); for (var p = 0; p < 4; p++) { var pre = ['id:', 'ib:', 'no:', 'n:'][p]; for (var i = 0; i < ks.length; i++) if (ks[i].indexOf(pre) === 0 && I.m[ks[i]] != null) { var r = DB.recs[I.m[ks[i]]]; if (p === 0 || !others(r, l)) return r; } } return null; }
+function recFor(l){ var r = find(l); if (!r) { r = { k: [], f: {} }; DB.recs.push(r); IDX = null; } var ks = keys(l), I = index(); ks.forEach(function(k){ if (r.k.indexOf(k) < 0 && (k.indexOf('id:') === 0 || I.m[k] == null)) { r.k.push(k); IDX = null; } });   /* a weaker key already on another record stays there */ if (r.k.length > 40) r.k = r.k.slice(-40); return r; }
+/* ── what a person set, from the lead itself ── */
+function prioN(v){ var n = +v; return n >= 1 && n <= 10 && Math.round(n) === n ? n : 0; }
+function lastPrioAct(l){ var a = arr(l.activity); for (var i = a.length - 1; i >= 0; i--) { var x = a[i]; if (x && x.type === 'priority') { var m = /(\d+)\s*$/.exec(s(x.text)), n = m ? +m[1] : 0; if (n >= 1 && n <= 10) return { v: n, at: s(x.at), by: s(x.by) }; } } return null; }
+function lastStageAct(l){ var h = arr(l.stageHistory); for (var i = h.length - 1; i >= 0; i--) { var x = h[i]; if (x && s(x.to) && s(x.at) && s(x.by) && !/^auto|lead inbox|grayco$/i.test(s(x.by))) return { v: s(x.to), at: s(x.at), by: s(x.by) }; } return null; }
+function facts(l){
+  var F = {};
+  var pn = prioN(l.priority);
+  if (pn && s(l.prioritySetAt)) F.prio = { v: pn, at: s(l.prioritySetAt), by: s(l.prioritySetBy) };
+  else { var pa = lastPrioAct(l); if (pa && (pn === pa.v || !pn)) F.prio = pa; }
+  var st = s(l.stage);
+  if (st && s(l.stageChangedAt)) F.stage = { v: st, at: s(l.stageChangedAt) }; else { var sa = lastStageAct(l); if (sa && (!st || st === sa.v)) F.stage = sa; }
+  if (s(l.assignedAt) && s(l.assignedBy) && !/^(auto|lead inbox|grayco)/i.test(s(l.assignedBy)) && (s(l.pm) || s(l.estimator))) F.asg = { v: { pm: s(l.pm), pmEmail: s(l.pmEmail), estimator: s(l.estimator), estimatorEmail: s(l.estimatorEmail), assignedBy: s(l.assignedBy) }, at: s(l.assignedAt) };
+  if (Array.isArray(l.alsoCos) && s(l.alsoCosAt)) F.also = { v: l.alsoCos.slice(0, 3), at: s(l.alsoCosAt) };
+  if (s(l.companyId) && s(l.companyIdBy)) F.co = { v: { companyId: s(l.companyId), companyIdBy: s(l.companyIdBy) }, at: s(l.companyIdAt) || s(l.createdAt) || '1970-01-01T00:00:00.000Z' };
+  if (s(l.sourceChannel) && s(l.sourceSetAt)) F.src = { v: { sourceChannel: s(l.sourceChannel), source: s(l.source) }, at: s(l.sourceSetAt), by: s(l.sourceSetBy) };   /* patch LEADSRC: a person's "how it came in" */
+  if (arr(l.notSameAs).length) F.nsa = { v: arr(l.notSameAs).slice(0, 60) };
+  if (arr(l.tags).length) F.tags = { v: arr(l.tags).slice(0, 30) };
+  if (s(l.notes) && s(l.notes).length > 3) F.notes = { v: s(l.notes).slice(0, 6000), at: s(l.updatedAt) };
+  return F;
+}
+function union(a, b){ var o = arr(a).slice(); arr(b).forEach(function(x){ if (o.indexOf(x) < 0) o.push(x); }); return o; }
+function takeFacts(r, F){
+  var ch = false;
+  Object.keys(F).forEach(function(g){
+    var n = F[g], o = r.f[g];
+    if (g === 'nsa' || g === 'tags') { var u = union(o && o.v, n.v); if (!o || u.length !== arr(o.v).length) { r.f[g] = { v: u.slice(-80) }; ch = true; } return; }
+    if (g === 'notes') { if (!o || (tms(n.at) > tms(o.at) && n.v !== o.v)) { r.f[g] = n; ch = true; } return; }
+    if (!o || tms(n.at) > tms(o.at)) { if (!o || JSON.stringify(o.v) !== JSON.stringify(n.v) || o.at !== n.at) { r.f[g] = n; ch = true; } }
+  });
+  return ch;
+}
+function capture(list){
+  var ch = false; arr(list || leads()).forEach(function(l){ if (!l || !l.id || l.deleted || l._deleted) return; var F = facts(l); if (!Object.keys(F).length && !find(l)) return; var r = recFor(l); if (takeFacts(r, F)) ch = true; });
+  if (ch) { DB.v = (DB.v || 0) + 1; DIRTY = true; save(); }
+  return ch;
+}
+/* ── put a person's values back on a copy that came back without them (mutates l; true when it changed) ── */
+function apply(l){
+  if (!l || !l.id) return false; var r = find(l); if (!r) return false; var f = r.f || {}, ch = false, x;
+  if ((x = f.prio) && prioN(x.v) && tms(x.at) > tms(l.prioritySetAt) && prioN(l.priority) !== x.v) { l.priority = x.v; l.prioritySetAt = x.at; if (x.by) l.prioritySetBy = x.by; ch = true; }
+  if ((x = f.stage) && s(x.v) && tms(x.at) > tms(l.stageChangedAt) && s(l.stage) !== x.v) { l.stage = x.v; l.stageChangedAt = x.at; ch = true; }
+  if ((x = f.asg) && x.v && tms(x.at) > tms(l.assignedAt)) { var v = x.v; if (s(l.pm) !== v.pm || s(l.estimator) !== v.estimator) { ['pm', 'pmEmail', 'estimator', 'estimatorEmail', 'assignedBy'].forEach(function(k){ if (v[k]) l[k] = v[k]; else delete l[k]; }); l.assignedAt = x.at; if (l.inboxState === 'new') l.inboxState = 'assigned'; ch = true; } }
+  if ((x = f.also) && tms(x.at) > tms(l.alsoCosAt) && JSON.stringify(arr(l.alsoCos)) !== JSON.stringify(arr(x.v))) { l.alsoCos = arr(x.v).slice(); l.alsoCosAt = x.at; ch = true; }
+  if ((x = f.co) && x.v && !s(l.companyIdBy) && s(l.companyId) !== x.v.companyId) { l.companyId = x.v.companyId; l.companyIdBy = x.v.companyIdBy; ch = true; }
+  if ((x = f.src) && x.v && tms(x.at) > tms(l.sourceSetAt) && s(l.sourceChannel) !== x.v.sourceChannel) { l.sourceChannel = x.v.sourceChannel; if (x.v.source) l.source = x.v.source; l.sourceSetAt = x.at; if (x.by) l.sourceSetBy = x.by; ch = true; }
+  if ((x = f.nsa)) { var u = union(l.notSameAs, x.v); if (u.length !== arr(l.notSameAs).length) { l.notSameAs = u; ch = true; } }
+  if ((x = f.tags)) { var t = union(l.tags, x.v); if (t.length !== arr(l.tags).length) { l.tags = t; ch = true; } }
+  if ((x = f.notes) && !s(l.notes) && s(x.v)) { l.notes = x.v; ch = true; }
+  return ch;
+}
+/* every computer: a lead on the list that lost a person's value gets it back (saved like any edit; the newest time wins) */
+function heal(){
+  if (!LOADED || typeof W._setLeads !== 'function') return Promise.resolve(0);
+  var L = leads(), need = {}; L.forEach(function(l){ if (!l || !l.id || l.deleted) return; var c = JSON.parse(JSON.stringify(l)); if (apply(c)) need[l.id] = 1; });
+  var n = Object.keys(need).length; if (!n) return Promise.resolve(0);
+  var at = new Date().toISOString(), out = null;
+  try { W._setLeads(function(prev){ if (!Array.isArray(prev)) return prev; out = prev.map(function(l){ if (!l || !need[l.id]) return l; var c = Object.assign({}, l); return apply(c) ? Object.assign(c, { updatedAt: at, savedAt: at, keptBy: 'LEADKEEP' }) : l; }); return out; }); } catch (e) { return Promise.resolve(0); }
+  try { setTimeout(function(){ var cur = W._crm && W._crm.leads; cur = Array.isArray(cur) && cur.length ? cur : out; if (typeof W._supaUpsertNow === 'function' && Array.isArray(cur)) W._supaUpsertNow('leads', cur); }, 400); } catch (e) {}   /* the list as it is THEN (an edit made meanwhile is not pushed back) */
+  try { console.log('[GC] LEADKEEP: put back what a person set on ' + n + ' lead' + (n === 1 ? '' : 's') + '.'); } catch (e) {}
+  return Promise.resolve(n);
+}
+/* an older copy of the leads (a backup): its stamped / logged values join the record (newest time still wins) */
+function seed(list){ var n = 0; arr(list).forEach(function(l){ if (!l || !l.id) return; var F = facts(l); if (!Object.keys(F).length) return; if (takeFacts(recFor(l), F)) n++; }); if (n) { DB.v = (DB.v || 0) + 1; DIRTY = true; save(); } return n; }
+/* ── the shared copy (gc_kv): read, merge (field by field, newest time), write ── */
+function kvGet(){ return W.fetch(SBU + '/rest/v1/gc_kv?key=eq.' + KEY + '&select=value', { cache: 'no-store' }).then(function(r){ return r.ok ? r.json() : null; }).then(function(rows){ if (!rows) return null; var v = rows[0] ? rows[0].value : null; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } } return v && Array.isArray(v.recs) ? v : { recs: [] }; }, function(){ return null; }); }
+function kvPut(v){ return W.fetch(SBU + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ key: KEY, value: v, updated_at: new Date().toISOString() }) }).then(function(r){ return r.ok; }, function(){ return false; }); }
+function mergeIn(other){
+  arr(other && other.recs).forEach(function(o){ if (!o || !arr(o.k).length) return;
+    var I = index(), hit = null; for (var i = 0; i < o.k.length && !hit; i++) if (/^(id|ib):/.test(o.k[i]) && I.m[o.k[i]] != null) hit = DB.recs[I.m[o.k[i]]];
+    if (!hit) { DB.recs.push({ k: o.k.slice(), f: JSON.parse(JSON.stringify(o.f || {})) }); IDX = null; return; }
+    o.k.forEach(function(k){ if (hit.k.indexOf(k) < 0) hit.k.push(k); }); IDX = null; takeFacts(hit, o.f || {}); });
+  if (DB.recs.length > 4000) DB.recs = DB.recs.slice(-4000);
+  DB.v = (DB.v || 0) + 1; IDX = null;
+}
+function local(){ try { localStorage.setItem(KEY, JSON.stringify(DB)); } catch (e) {} }
+var PUT_T = 0;
+function save(){ local(); if (PUT_T) return; PUT_T = setTimeout(function(){ PUT_T = 0; if (!DIRTY) return; DIRTY = false; kvGet().then(function(v){ if (v) mergeIn(v); local(); return kvPut({ recs: DB.recs, updatedAt: new Date().toISOString() }); }); }, 1500); }
+function load(){ return kvGet().then(function(v){ if (v) { mergeIn(v); local(); } LOADED = true; capture(); return heal(); }); }
+/* the import path itself: fromItem's copy keeps a person's values (patch LD2 calls W._gcLeadKeep.apply before it stamps) */
+var LAST = null;
+function tick(){ var L = W._crm && W._crm.leads; if (!Array.isArray(L) || !L.length) return; if (L !== LAST) { LAST = L; capture(L); if (LOADED) heal(); } }
+(W.__GC_NATIVE_SETINTERVAL__ || W.setInterval).call(W, function(){ try { tick(); } catch (e) {} }, 3000);
+setTimeout(function(){ load(); }, 3500); (W.__GC_NATIVE_SETINTERVAL__ || W.setInterval).call(W, function(){ try { load(); } catch (e) {} }, 120000);
+/* ↩ Restore from last night's backup (admins; Leads ⋯ More): gc-backup.js {action:'leadkeep'} → the leads as they were before the
+   re-write; ONLY fields that are empty now are filled (a number priority, a stage still at New Lead, nobody assigned, Also-on, company,
+   Different-jobs / tags added) — nothing a person set since is touched. The filled values join the shared record (other computers too). */
+function emptyPrio(l){ return !prioN(l.priority); }
+function fillFrom(cur, old, at){
+  var n = { prio: 0, other: 0 }, ch = false;
+  var op = prioN(old.priority) || (lastPrioAct(old) || {}).v || 0;
+  if (op && emptyPrio(cur)) { cur.priority = op; cur.prioritySetAt = s(old.prioritySetAt) || (lastPrioAct(old) || {}).at || at; if (old.prioritySetBy) cur.prioritySetBy = old.prioritySetBy; n.prio++; ch = true; }
+  if (s(old.stage) && s(old.stage) !== 'New Lead' && (!s(cur.stage) || (s(cur.stage) === 'New Lead' && !s(cur.stageChangedAt)))) { cur.stage = old.stage; cur.stageChangedAt = s(old.stageChangedAt) || at; n.other++; ch = true; }
+  if ((s(old.pm) || s(old.estimator)) && !s(cur.pm) && !s(cur.estimator)) { ['pm', 'pmEmail', 'estimator', 'estimatorEmail', 'assignedBy'].forEach(function(k){ if (s(old[k])) cur[k] = old[k]; }); cur.assignedAt = s(old.assignedAt) || at; if (cur.inboxState === 'new') cur.inboxState = 'assigned'; n.other++; ch = true; }
+  if (Array.isArray(old.alsoCos) && !Array.isArray(cur.alsoCos)) { cur.alsoCos = old.alsoCos.slice(); cur.alsoCosAt = s(old.alsoCosAt) || at; ch = true; }
+  if (s(old.companyId) && !s(cur.companyId)) { cur.companyId = old.companyId; if (old.companyIdBy) cur.companyIdBy = old.companyIdBy; ch = true; }
+  ['notSameAs', 'tags'].forEach(function(f){ var u = union(cur[f], old[f]); if (u.length !== arr(cur[f]).length) { cur[f] = u; ch = true; } });
+  return ch ? n : null;
+}
+function restoreFrom(old, at){
+  at = s(at) || new Date().toISOString(); var I = {}, cnt = { prio: 0, other: 0, leads: 0 };
+  arr(old).forEach(function(o){ if (!o || !o.id) return; keys(o).forEach(function(k){ if (I[k] == null) I[k] = o; }); });
+  var pick = function(l){ var ks = keys(l); for (var p = 0; p < 4; p++) { var pre = ['id:', 'ib:', 'no:', 'n:'][p]; for (var i = 0; i < ks.length; i++) if (ks[i].indexOf(pre) === 0 && I[ks[i]]) return I[ks[i]]; } return null; };
+  var now = new Date().toISOString(), out = null;
+  return new Promise(function(res){
+    if (typeof W._setLeads !== 'function') return res(cnt);
+    try { W._setLeads(function(prev){ if (!Array.isArray(prev)) return prev; out = prev.map(function(l){ if (!l || !l.id || l.deleted) return l; var o = pick(l); if (!o) return l; var c = Object.assign({}, l), n = fillFrom(c, o, at); if (!n) return l; cnt.prio += n.prio; cnt.other += n.other; cnt.leads++; c.updatedAt = c.savedAt = now; c.keptBy = 'LEADKEEP backup'; return c; }); return out; }); } catch (e) {}
+    setTimeout(function(){ try { var cur = W._crm && W._crm.leads; cur = Array.isArray(cur) && cur.length ? cur : out; if (cnt.leads && typeof W._supaUpsertNow === 'function' && Array.isArray(cur)) W._supaUpsertNow('leads', cur); } catch (e) {} capture(); res(cnt); }, 400);
+  });
+}
+function restoreBackup(before){
+  return W.fetch('/.netlify/functions/gc-backup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'leadkeep', before: before || '2026-11-12T17:00:00Z' }) })
+    .then(function(r){ return r.json().catch(function(){ return { ok: false, error: 'HTTP ' + r.status }; }); })
+    .then(function(j){ if (!j || !j.ok) throw new Error((j && j.error) || 'Could not read the backup'); return restoreFrom(j.leads, j.at).then(function(c){ c.at = j.at; return c; }); });
+}
+function toast(m, bad){ try { if (W._gcToast) return W._gcToast(m, bad); } catch (e) {} var d = D.createElement('div'); d.textContent = m; d.setAttribute('role', 'status'); d.className = 'gcl-toast'; d.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:2147483600;padding:10px 16px;border-radius:10px;font:600 14px system-ui;color:#fff;background:' + (bad ? '#B42318' : '#1B1452'); D.body.appendChild(d); setTimeout(function(){ d.remove(); }, 4200); }
+D.addEventListener('click', function(e){
+  var b = e.target && e.target.closest ? e.target.closest('[data-gcl-restoreprio]') : null; if (!b || !isAdmin()) return;
+  e.preventDefault(); e.stopPropagation(); if (b.disabled) return; b.disabled = true; b.textContent = '↩ Restoring…';
+  restoreBackup().then(function(c){ toast('↩ Restored ' + c.prio + ' priorit' + (c.prio === 1 ? 'y' : 'ies') + (c.other ? ' (+ ' + c.other + ' stage / assignee)' : '') + ' from the backup of ' + new Date(c.at).toLocaleString()); b.textContent = '↩ Restored ' + c.prio + ' priorities'; },
+    function(err){ toast('Could not restore: ' + (err && err.message || err), true); b.disabled = false; b.textContent = '↩ Restore priorities from last night\'s backup'; });
+}, true);
+W._gcLeadKeep = { apply: apply, capture: capture, heal: heal, seed: seed, find: find, keys: keys, load: load, facts: facts, restoreFrom: restoreFrom, restoreBackup: restoreBackup, data: function(){ return DB; } };
 })(window);
 </script>
 <script id="gc-patch-timeoff">

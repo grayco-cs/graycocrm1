@@ -158,10 +158,37 @@ function info(x){
   return v;
 }
 
+/* patch LEADBOTH-SAMEJOB (owner 11/12: "63800 - Desoto County Schools Press Box Improvements Phase 2" ⟷ "63789 - … Phase 1": "I cleared
+   these once before"): the numbers in a project's NAME tell jobs apart. numsOf(title) → { ids: the project / bid numbers (a leading
+   "63800 -", "Bid #…", "Project No. …"), nums: other 4+ digit numbers (not years), parts: { phase, package, area, building } }.
+   diffJob(a, b, ask) → why they are different jobs ('' = nothing says so): different ids, or a different Phase / Area / Building value;
+   for the "Same job?" question (ask) also: both with other 4+ digit numbers and none in common, or a different Package number. */
+var ROMAN = { i: 1, ii: 2, iii: 3, iv: 4, v: 5, vi: 6, vii: 7, viii: 8, ix: 9, x: 10 };
+function partVal(v){ v = low(v); return ROMAN[v] ? String(ROMAN[v]) : String(/^\d+$/.test(v) ? parseInt(v, 10) : v); }
+function numsOf(title){
+  var t = s(title), ids = [], nums = [], parts = {}, m;
+  if ((m = /^\s*#?\s*(\d{4,}[a-z]?)\b/i.exec(t))) ids.push(low(m[1]));
+  var IDRX = /\b(?:bid|project|proj|job|solicitation|contract|rfp|rfq|itb|ifb)\s*(?:#|no\.?|num(?:ber)?)\s*:?\s*([a-z0-9][a-z0-9-]*\d[a-z0-9-]*)/gi;
+  while ((m = IDRX.exec(t))) ids.push(low(m[1]).replace(/-/g, ''));
+  var NRX = /\b(\d{4,})\b/g; while ((m = NRX.exec(t))) { var n = m[1]; if (/^(19|20)\d\d$/.test(n)) continue; if (ids.indexOf(n) < 0) nums.push(n); }
+  var PRX = /\b(phase|ph|bid\s*package|package|pkg|bp|area|building|bldg)\.?\s*(?:#|no\.?)?\s*([0-9]{1,3}|[ivx]{1,4}|[a-h])\b/gi;
+  while ((m = PRX.exec(t))) { var k = low(m[1]).replace(/\s+/g, ' '); k = /^ph/.test(k) ? 'phase' : /package|pkg|^bp$/.test(k) ? 'package' : /^b(ui)?ld/.test(k) ? 'building' : 'area'; (parts[k] = parts[k] || []).push(partVal(m[2])); }
+  return { ids: uniq(ids), nums: uniq(nums), parts: parts };
+}
+function diffJob(a, b, ask){
+  var x = numsOf(titleOf(a)), y = numsOf(titleOf(b)), i;
+  var bx = bidNo(a && a.bidNumber), by = bidNo(b && b.bidNumber); if (bx) x.ids.push(bx); if (by) y.ids.push(by);
+  if (x.ids.length && y.ids.length && !x.ids.some(function(v){ return y.ids.indexOf(v) >= 0; })) return 'different project / bid numbers (' + x.ids[0] + ' · ' + y.ids[0] + ')';
+  if (ask && x.nums.length && y.nums.length && !x.nums.some(function(v){ return y.nums.indexOf(v) >= 0; })) return 'different numbers in the names (' + x.nums[0] + ' · ' + y.nums[0] + ')';
+  var K = ['phase', 'area', 'building'].concat(ask ? ['package'] : []);
+  for (i = 0; i < K.length; i++) { var p = x.parts[K[i]], q = y.parts[K[i]]; if (p && q && !p.some(function(v){ return q.indexOf(v) >= 0; })) return 'different ' + K[i] + ' (' + p[0] + ' · ' + q[0] + ')'; }
+  return '';
+}
 /* ── are a and b the same project? { ok, why } or { no, why } (a hard "never") ── */
 function same(a, b, A, B){
   A = A || info(a); B = B || info(b); var i;
   if (!titleOf(a) || !titleOf(b)) return { ok: false, why: 'no name' };
+  var dj = diffJob(a, b, false); if (dj) return { no: true, why: dj };   /* patch LEADBOTH-SAMEJOB */
   var gap = gapDays(A.due, B.due), addOk = A.add || B.add;
   for (i = 0; i < A.ids.length; i++) if (B.ids.indexOf(A.ids[i]) >= 0) {
     if (gap != null && gap > ID_DAYS) return { no: true, why: 'same board id, bid due ' + gap + ' days apart' };
@@ -298,6 +325,12 @@ function mergeLeads(keeper, others, o){
   k.alsoOn = k.sources.filter(function(n){ return low(n) !== low(k.source); });
   ['address', 'city', 'state', 'zip', 'gc', 'owner', 'bidNumber', 'dueToCompany', 'dueToContact', 'dueToEmail', 'dueToPhone', 'submitMethod', 'submitWhere', 'contactName', 'phone', 'email', 'scope', 'preBid',
     'estimator', 'estimatorEmail', 'pm', 'pmEmail', 'rawEmailRef', 'estVal', 'estValue'].forEach(function(f){ if (!s(k[f])) { var d = others.filter(function(l){ return s(l[f]); })[0]; if (d) k[f] = d[f]; } });
+  /* patch LEADKEEP: what a person set on a copy is not lost in the merge — the newest priority / stage / "also on" by its own time; Different-jobs and tags added up */
+  [['priority', 'prioritySetAt', ['prioritySetBy']], ['stage', 'stageChangedAt', []], ['alsoCos', 'alsoCosAt', []]].forEach(function(g){
+    var best = null; all.forEach(function(l){ if (l[g[0]] != null && s(l[g[1]]) && (!best || tms(l[g[1]]) > tms(best[g[1]]))) best = l; });
+    if (best && best !== keeper && tms(best[g[1]]) > tms(keeper[g[1]])) { k[g[0]] = JSON.parse(JSON.stringify(best[g[0]])); k[g[1]] = best[g[1]]; g[2].forEach(function(f){ if (best[f] != null) k[f] = best[f]; }); }
+  });
+  ['notSameAs', 'tags'].forEach(function(f){ var u = uniq([].concat.apply([], all.map(function(l){ return arr(l[f]); }))); if (u.length) k[f] = u; });
   var notes = [s(keeper.notes || keeper.note)].filter(Boolean);
   others.forEach(function(l){ var n = s(l.notes || l.note); if (n && notes.join('\n').indexOf(n) < 0) notes.push('— from "' + s(l.name || l.title) + '" (' + (s(l.dueToCompany || l.gc) || s(l.source) || 'lead') + '):\n' + n); });
   if (notes.length) { if ('note' in keeper && !('notes' in keeper)) k.note = notes.join('\n'); else k.notes = notes.join('\n'); }
@@ -316,7 +349,7 @@ function mergeLeads(keeper, others, o){
 
 var API = { DUE_DAYS: DUE_DAYS, same: same, info: info, titleInfo: titleInfo, cleanTitle: cleanTitle, titleSim: titleSim, streetOf: streetOf, cityOf: cityOf, portalIds: portalIds, bidNo: bidNo, coKey: coKey,
   gcOf: gcOf, seedGcs: seedGcs, addGc: addGc, gcLine: gcLine, tradesOf: tradesOf, summary: summary, earliest: earliest, sooner: sooner, gapDays: gapDays,
-  isBidLead: isBidLead, liveLead: liveLead, groups: groups, mergeLeads: mergeLeads, received: received };
+  isBidLead: isBidLead, liveLead: liveLead, groups: groups, mergeLeads: mergeLeads, received: received, numsOf: numsOf, diffJob: diffJob };
 if (typeof module === 'object' && module && module.exports) module.exports = API;
 if (typeof window !== 'undefined' && root === window) root._gcBidMergeCore = API;
 })(typeof window !== 'undefined' ? window : this);

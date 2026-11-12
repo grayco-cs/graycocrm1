@@ -99,7 +99,7 @@ async function act(token, body){ const r = await W.handler(ev(token, body)); ret
   ok('40 days old → out (max age 14 days)', !c(10).match && /older/.test(c(10).why), c(10));
   ok('"fire alarm / sprinkler" at a fire station is NOT fire damage (Construction)', c(11).match && !c(11).reasons.some(r => /fire\/smoke/.test(r)) && c(11).hint === 'construction', c(11));
   ok('"tree fell on house during storm" $3k → 🌪, Mitigation', c(12).match && c(12).reasons.includes('🌪 storm/hail/wind words') && c(12).hint === 'mitigation', c(12));
-  ok('asbestos abatement → ☣, Environmental', c(13).match && c(13).reasons.includes('☣ mold/asbestos/lead words') && c(13).hint === 'environmental', c(13));
+  ok('asbestos abatement on a commercial rehab → ☣ + ☢️, Construction AND Environmental (LEADBOTH: a GC job)', c(13).match && c(13).reasons.includes('☣ mold/asbestos/lead words') && c(13).reasons[0] === '☢️ Abatement / mold' && c(13).hint === 'construction' && c(13).cos.join() === 'construction,environmental', c(13));
   ok('"in the event of a flood" on a new warehouse is not a flood → Commercial new $5.2M', c(14).match && c(14).reasons.includes('Commercial new $5.2M') && c(14).reasons.includes('🏭 Industrial / warehouse') && !c(14).reasons.some(r => /water/.test(r)), c(14));
   ok('"replace rooftop units" is HVAC work in a commercial rehab, not a roof', c(15).match && c(15).bucket === 'commercialRehab' && !c(15).reasons.some(r => /^Roof/.test(r)), c(15));
   const sp = P.fromShovels(SHOV['38671'][0], '38671'), sc = P.classify(sp, S, NOW);
@@ -300,7 +300,8 @@ async function act(token, body){ const r = await W.handler(ev(token, body)); ret
     ok('no value listed → out at $1M', !cl({ type: 'Building Commercial - New', value: null }).match);
     const noHotel = P.clean({ uses: { hotel: false } });
     ok('kinds of building are editable: hotels left out → the hotel is out, an office is still in', !P.classify(Object.assign({ src: 'n', id: 'h', issued: isoAgo(1) }, { type: 'Building Commercial - New', subtype: 'Hotel / Motel', value: 12000000 }), noHotel, NOW).match && P.classify({ src: 'n', id: 'o', issued: isoAgo(1), type: 'Building Commercial - New', subtype: 'General Office, Professional Services', value: 3000000 }, noHotel, NOW).match);
-    ok('the Nashville query asks ArcGIS for $1M+ commercial / multifamily only', W._test.nashWhere(D0, '2026-11-01') === "Date_Issued >= TIMESTAMP '2026-11-01 00:00:00' AND Const_Cost >= 1000000 AND (Permit_Type_Description LIKE '%Commercial%' OR Permit_Subtype_Description LIKE '%Multifamily%' OR Permit_Subtype_Description LIKE '%Apartment%' OR Permit_Subtype_Description LIKE '%Condominium%')", W._test.nashWhere(D0, '2026-11-01'));
+    ok('the Nashville query asks ArcGIS for $1M+ commercial / multifamily only (☢️ box off)', W._test.nashWhere(P.clean({ include: { environmental: false } }), '2026-11-01') === "Date_Issued >= TIMESTAMP '2026-11-01 00:00:00' AND Const_Cost >= 1000000 AND (Permit_Type_Description LIKE '%Commercial%' OR Permit_Subtype_Description LIKE '%Multifamily%' OR Permit_Subtype_Description LIKE '%Apartment%' OR Permit_Subtype_Description LIKE '%Condominium%')", W._test.nashWhere(P.clean({ include: { environmental: false } }), '2026-11-01'));
+    ok('…with ☢️ on (default) it also asks for the asbestos / lead / mold words at any value (LEADBOTH)', / OR \(UPPER\(Purpose\) LIKE '%ASBESTOS%'/.test(W._test.nashWhere(D0, '2026-11-01')), W._test.nashWhere(D0, '2026-11-01'));
     ok('…with the small kinds ticked (repairs, roofs, demolitions) it asks by date only (classify filters)', W._test.nashWhere(P.clean(BROAD), '2026-11-01') === "Date_Issued >= TIMESTAMP '2026-11-01 00:00:00'");
     /* already stored rows follow today's filters */
     const gq = rig({ noSettings: true });

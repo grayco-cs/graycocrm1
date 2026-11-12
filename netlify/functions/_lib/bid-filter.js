@@ -25,6 +25,7 @@
    Exported lists are plain words ("renovat*" = any ending) so the CRM can show them.
    ========================================================================== */
 'use strict';
+const EW = require('./envwords.js');   /* patch LEADBOTH */
 
 function s(v){ return v == null ? '' : String(v).trim(); }
 function low(v){ return s(v).toLowerCase(); }
@@ -104,6 +105,8 @@ function clean(list, drop){ const d = {}; arr(drop).forEach(x => { d[low(x)] = 1
 
 /* ── the gate ──────────────────────────────────────────────────────────────── */
 function evalText(text, extra){
+  const env = EW.hits(text);   /* patch LEADBOTH: asbestos / lead / mold abatement is always our work (Environmental) — before any skip word */
+  if (env.length) return { ok: true, rule: 0, hit: env[0], env: env };
   const t = normalize(text).replace(NEUTRAL, ' ').replace(/\s+/g, ' ');
   const clear = anyRx(t, CLEAR), inst = anyRx(t, INSTALL);
   const hard = anyWord(t, extra.exclude) || anyWord(t, EXCLUDE);
