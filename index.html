@@ -223596,7 +223596,10 @@ function post(){
     JOBS.at = 0; jobs(true).then(paint);
     try { if (W._gcSys && W._gcSys.bp) W._gcSys.bp.load(true); } catch (e) {}
     return r;
-  }, function(e){ go.disabled = false; go.textContent = '📢 Put on bid portal'; err.textContent = e.message; });
+  }, function(e){ go.disabled = false; go.textContent = '📢 Put on bid portal';
+    /* patch QAA: a big plan set can run past the server's time limit — the job is saved first, so say where it is and how to add big files */
+    err.textContent = files.length && /\b50[234]\b|failed to fetch|timed? ?out|network/i.test(s(e && e.message)) ? 'The plan files took too long to copy (' + s(e && e.message) + '). The job itself is probably already on the bid portal — check 🏗 Bid portal. Add big plan files there (🧰 Full bid portal → the job → Plans), or paste a 🔗 Drive link here and post again.' : e.message;
+    JOBS.at = 0; try { if (W._gcSys && W._gcSys.bp) W._gcSys.bp.load(true); } catch (x) {} });
 }
 /* the CRM keeps the link: the job (bidJobId — the 📊 Bids → estimate link) and the lead (subPortal) */
 function remember(c, r){
