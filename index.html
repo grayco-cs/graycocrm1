@@ -218900,15 +218900,19 @@ function meInfo(){
   } catch (e) { ME.v = null; }
   return ME.v;
 }
+/* LOCKED only when the person's record names exactly ONE company (an office manager for one company …) and they are not an admin /
+   the owner / the master office login / Marketing. No companies on the record (everyone today) = as before: may switch. 2+ companies
+   = may switch among those (and All). */
 function canSwitch(){
   var m = meInfo(); if (!m) return true;   /* not signed in yet: nothing to lock */
-  if (m.admin || (m.u && allCos(m.u) && !ownList(m.u).length)) return true;
-  var own = ownList(m.u); if (own.length >= 2) return true; if (own.length === 1) return false;
-  return m.office || m.mkt;
+  if (ownList(m.u).length !== 1) return true;
+  return !!(m.admin || (m.u && low(m.u.payType) === 'owner') || m.mkt || (m.office && /^office@/.test(m.email)));
 }
 function lockedCo(){ var m = meInfo(); return userCos(m && m.u)[0]; }
-function filter(){ if (!canSwitch()) return lockedCo(); try { var f = localStorage.getItem(FK) || 'all'; return f === 'all' || valid(f) ? f : 'all'; } catch (e) { return 'all'; } }
-function setFilter(f){ if (!canSwitch()) f = lockedCo(); try { localStorage.setItem(FK, f === 'all' || valid(f) ? f : 'all'); } catch (e) {} paintAll(); try { W.dispatchEvent(new CustomEvent('gc-co-filter', { detail: filter() })); } catch (e) {} }
+/* the companies this person may pick (2+ on their record: those; otherwise every company) */
+function myCos(){ var m = meInfo(), own = ownList(m && m.u); return own.length >= 2 && !(m.admin || low(m.u.payType) === 'owner' || m.mkt || (m.office && /^office@/.test(m.email))) ? ALLCO.filter(function(c){ return own.indexOf(c) > -1; }) : ALLCO.slice(); }
+function filter(){ if (!canSwitch()) return lockedCo(); try { var f = localStorage.getItem(FK) || 'all'; if (f !== 'all' && valid(f) && myCos().indexOf(f) < 0) return 'all'; return f === 'all' || valid(f) ? f : 'all'; } catch (e) { return 'all'; } }
+function setFilter(f){ if (!canSwitch()) f = lockedCo(); else if (f !== 'all' && valid(f) && myCos().indexOf(f) < 0) f = 'all'; try { localStorage.setItem(FK, f === 'all' || valid(f) ? f : 'all'); } catch (e) {} paintAll(); try { W.dispatchEvent(new CustomEvent('gc-co-filter', { detail: filter() })); } catch (e) {} }
 /* a job shared with a company (job.sharedWith: ['environmental']) shows in that company's lists and photos — its money stays with its own company */
 function passJob(p){ var f = filter(); if (f === 'all') return true; return ofJob(p) === f || arr(p && p.sharedWith).indexOf(f) > -1; }
 function pass(x, kind){ var f = filter(); if (f === 'all') return true; var c = kind === 'job' ? ofJob(x) : kind === 'lead' ? ofLead(x) : kind === 'inv' ? ofInv(x) : of(x); return c === f; }
@@ -218917,7 +218921,7 @@ function badge(id, small){ var c = get(id); return '<span class="gc-co-b" data-c
 function letterhead(id){ var c = get(id), a = c.address; if (!a && c.id === 'construction') { try { a = W._gcCompanyAddress ? W._gcCompanyAddress() : ''; } catch (e) {} } return { legal: c.legal, short: c.short, address: a, phone: c.phone, email: c.email, license: c.license, ein: c.ein, logo: c.logo || '/portal-logo.png', prefix: c.prefix }; }
 var paints = [];
 function paintAll(){ paints.forEach(function(f){ try { f(); } catch (e) {} }); }
-W._gcCo = { userCos: userCos, userIn: userIn, canSwitch: canSwitch, allCos: allCos, leadView: leadView, leadsAll: leadsAll, setLeadsAll: setLeadsAll, list: list, get: get, valid: valid, of: of, ofJob: ofJob, ofLead: ofLead, ofInv: ofInv, jobById: jobById, byType: byType,
+W._gcCo = { userCos: userCos, userIn: userIn, canSwitch: canSwitch, myCos: myCos, allCos: allCos, leadView: leadView, leadsAll: leadsAll, setLeadsAll: setLeadsAll, list: list, get: get, valid: valid, of: of, ofJob: ofJob, ofLead: ofLead, ofInv: ofInv, jobById: jobById, byType: byType,
   filter: filter, setFilter: setFilter, pass: pass, passJob: passJob, badge: badge, letterhead: letterhead, save: save, pull: pull, onPaint: function(f){ paints.push(f); }, DEF: DEF };
 if (D.readyState === 'loading') D.addEventListener('DOMContentLoaded', function(){ setTimeout(pull, 1500); }); else setTimeout(pull, 1500);
 })(window);
@@ -218944,7 +218948,8 @@ function btnHtml(){
 }
 function popHtml(){
   var f = C.filter(), h = '<div style="font:700 11px Inter,Arial,sans-serif;color:#64748b;letter-spacing:.06em;text-transform:uppercase;padding:4px 10px 6px">Switch company</div>';
-  [{ id: 'all', icon: '🏢', short: 'All companies', legal: 'Everything — every company\'s jobs, leads and money', color: '#334155' }].concat(C.list()).forEach(function(c){ var on = f === c.id;
+  var mine = C.myCos ? C.myCos() : null;   /* patch COLEAK2: someone in 2+ companies picks among theirs */
+  [{ id: 'all', icon: '🏢', short: 'All companies', legal: 'Everything — every company\'s jobs, leads and money', color: '#334155' }].concat(C.list().filter(function(c){ return !mine || mine.indexOf(c.id) > -1; })).forEach(function(c){ var on = f === c.id;
     h += '<button type="button" role="menuitemradio" aria-checked="' + on + '" data-co-f="' + esc(c.id) + '" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;border:0;border-left:4px solid ' + esc(c.color) + ';background:' + (on ? '#f1f5f9' : '#fff') + ';padding:9px 12px;margin:2px 0;border-radius:8px;cursor:pointer;font:14px Inter,Arial,sans-serif;color:#0f172a"><span style="font-size:18px">' + esc(c.icon) + '</span><span><b>' + esc(c.short) + '</b>' + (on ? ' ✓' : '') + '<br><span style="font-size:12px;color:#64748b">' + esc(c.legal) + '</span></span></button>'; });
   if (admin()) h += '<button type="button" data-co-set style="width:100%;text-align:left;border:0;border-top:1px solid #e2e8f0;background:#fff;padding:9px 12px;margin-top:4px;cursor:pointer;font:700 13px Inter,Arial,sans-serif;color:#0f172a">⚙ Company settings — names, EINs, licenses</button>';
   return h;
