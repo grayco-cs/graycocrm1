@@ -286,7 +286,7 @@ var S = {
     notActive: 'This link is not active — call GrayCo ' + OFFICE, msgPh: 'Write a message to your GrayCo team', send: 'Send', noMsgs: 'No messages yet. Write to your Project Manager here.', you: 'You', read: 'Read', sentM: 'Sent',
     yourTeam: 'your GrayCo team', loadFail: 'We could not load your job just now. Check your signal and try again, or call GrayCo ' + OFFICE + '.', photosAll: 'Every photo of your job', seeAll: 'See your job photos',
     allProjects: '‹ All projects', emailL: 'E-mail or mobile number', pwL: 'Password', pwHint: 'New here? Your password is your first name.', forgot: 'Forgot password? E-mail me a code', back2: '‹ Back to sign in',
-    ownPw: 'Make your own password', ownPwNote: 'You signed in with your first name. You can pick your own password (8 or more characters) — or keep using your first name.', newPw: 'New password', savePw: 'Save password', later: 'Not now', pwSaved: 'Your password is saved.' },
+    ownPw: 'Make your own password', ownPwNote: 'You signed in with your first name. You can pick your own password (8 or more characters) — or keep using your first name.', newPw: 'New password', savePw: 'Save password', later: 'Not now', pwSaved: 'Your password is saved.', signupBtn: 'New subcontractor? Create your account' },
   es: { title: 'Portal GrayCo', welcome: 'Bienvenido a su Portal GrayCo', openLink: 'Entre con su correo (o número de celular) y contraseña — o abra el enlace que le enviamos.', who: 'Correo o número de celular', sendCode: 'Enviarme un código',
     codeNote: 'Enviamos un código de 6 dígitos al correo que tenemos de usted (los mensajes de texto llegarán pronto). Sirve por 10 minutos.', codeSent: 'Si eso está en el archivo de GrayCo, le llega un código de 6 dígitos. Revise su correo.',
     code: 'Código de 6 dígitos', signIn: 'Entrar', other: 'Usar otro correo o número', resend: 'Enviar un código nuevo', badCode: 'Ese código no es correcto o ya venció. Pida uno nuevo.', wait: 'Demasiados intentos. Espere unos minutos.',
@@ -295,7 +295,7 @@ var S = {
     notActive: 'Este enlace no está activo — llame a GrayCo ' + OFFICE, msgPh: 'Escriba un mensaje a su equipo de GrayCo', send: 'Enviar', noMsgs: 'Todavía no hay mensajes. Escríbale a su Gerente de Proyecto aquí.', you: 'Usted', read: 'Leído', sentM: 'Enviado',
     yourTeam: 'su equipo de GrayCo', loadFail: 'No pudimos cargar su trabajo. Revise su señal e intente otra vez, o llame a GrayCo ' + OFFICE + '.', photosAll: 'Todas las fotos de su trabajo', seeAll: 'Ver las fotos de su trabajo',
     allProjects: '‹ Todos los proyectos', emailL: 'Correo o número de celular', pwL: 'Contraseña', pwHint: '¿Primera vez? Su contraseña es su primer nombre.', forgot: '¿Olvidó la contraseña? Envíenme un código', back2: '‹ Volver a entrar',
-    ownPw: 'Cree su propia contraseña', ownPwNote: 'Entró con su primer nombre. Puede escoger su propia contraseña (8 caracteres o más) — o seguir usando su primer nombre.', newPw: 'Contraseña nueva', savePw: 'Guardar contraseña', later: 'Ahora no', pwSaved: 'Su contraseña quedó guardada.' }
+    ownPw: 'Cree su propia contraseña', ownPwNote: 'Entró con su primer nombre. Puede escoger su propia contraseña (8 caracteres o más) — o seguir usando su primer nombre.', newPw: 'Contraseña nueva', savePw: 'Guardar contraseña', later: 'Ahora no', pwSaved: 'Su contraseña quedó guardada.', signupBtn: '¿Subcontratista nuevo? Cree su cuenta' }
 };
 var LANG = 'en';
 try { LANG = localStorage.getItem('gc_lang') === 'es' ? 'es' : 'en'; } catch (e) {}
@@ -359,7 +359,7 @@ function paintLang(){
 $('langBtn').addEventListener('click', function(){
   LANG = LANG === 'es' ? 'en' : 'es'; store('gc_lang', LANG); paintLang();
   if (window.GCPartner && window.GCPartner._state && window.GCPartner._state().home) { window.GCPartner.setLang(LANG, true); return; }
-  if (V) draw(); else if (JOBS) picker(); else if ($('signinBox')) signin(); else if ($('deviceBox')) deviceScreen(lastDevice);
+  if (V) draw(); else if (JOBS) picker(); else if ($('signinBox')) signin(); else if ($('signupBox')) signup(); else if ($('deviceBox')) deviceScreen(lastDevice);
 });
 $('signOut').addEventListener('click', function(){
   var s0 = session;
@@ -397,6 +397,7 @@ function signin(step, who){
     box.appendChild(h('p', { class: 'muted', text: tr('pwHint') }));
     box.appendChild(enter); box.appendChild(err);
     box.appendChild(h('button', { type: 'button', class: 'btn', id: 'siForgot', text: tr('forgot'), on: { click: function(){ signin('who', em.value.trim()); } } }));
+    box.appendChild(h('button', { type: 'button', class: 'btn navy', id: 'siSignup', text: tr('signupBtn'), on: { click: function(){ signup(); } } }));   /* patch SUBSIGNUP */
     function login(){
       if (!em.value.trim() || !pw.value) { err.textContent = tr('needWho'); return; }
       enter.disabled = true;
@@ -458,6 +459,28 @@ function signin(step, who){
   setTimeout(function(){ try { code.focus(); } catch (e) {} }, 50);
 }
 
+/* patch SUBSIGNUP: "New subcontractor? Create your account" — the form lives in portal-app.js (GCPartner.signup) and posts to the
+   bid site's register (subportal.js): the account sees nothing until GrayCo approves it. A job invite (?invite=…&job=… or #invite=…)
+   is passed through (invited sign-ups are approved at once) and fills in the e-mail. */
+var APP_JS = '/portal-app.js?v=33.229-subbids', SIGNUP_KEEP = {};
+function loadApp(cb){
+  if (window.GCPartner) return cb();
+  var s = document.createElement('script'); s.src = APP_JS; s.onload = cb; s.onerror = function(){ notActive(tr('loadFail')); };
+  document.head.appendChild(s);
+}
+function inviteOf(){
+  var src = (location.search || '') + '&' + String(location.hash || '').replace(/^#/, '');
+  var i = /(?:^\?|&)invite=([a-f0-9]{16,64})(?:&|$)/.exec(src), j = /(?:^\?|&)job=([A-Za-z0-9_.:-]{1,120})(?:&|$)/.exec(src);
+  return i ? { invite: i[1], job: j ? j[1] : '' } : null;
+}
+function signup(){
+  $('tabs').hidden = true; $('hello').hidden = true;
+  $('main').innerHTML = '<div class="skel"></div>';
+  loadApp(function(){
+    var inv = inviteOf() || {};
+    window.GCPartner.signup({ main: $('main'), lang: LANG, invite: inv.invite || '', job: inv.job || '', keep: SIGNUP_KEEP, back: function(email){ signin('pw', email || ''); } });
+  });
+}
 /* ── a new phone opening a sub link: confirm it with a code ── */
 var lastDevice = null;
 function deviceScreen(info){
@@ -504,8 +527,7 @@ function startPartner(){
   document.title = tr('title');
   function go(){ window.GCPartner.start({ session: session, host: host, lang: LANG }); }
   if (window.GCPartner) return go();
-  var s = document.createElement('script'); s.src = '/portal-app.js?v=33.228-care'; s.onload = go; s.onerror = function(){ notActive(tr('loadFail')); };
-  document.head.appendChild(s);
+  loadApp(go);
 }
 
 /* ═══ THE CUSTOMER PORTAL ═══ */
@@ -1065,7 +1087,8 @@ else if (token) {
     if (!r.data.ok) { store('gc_portal_s', ''); if (APPMODE) store('gc_portal_app', ''); session = ''; return signin(); }   /* patch PORTALAPP: signed out from the office → the sign-in, then remembered again */
     route(r.data.kind);
   }, function(){ notActive(tr('loadFail')); });
-} else signin();
+} else if (inviteOf()) signup();   /* patch SUBSIGNUP: a job invite opens the sign-up */
+else signin();
 }
 /* patch PORTALAPP: the installed app's first open (iPhone: its own storage) trades the install's one-time code for
    this app's own device session; an app opened with only the link gets one too (so "Sign out all devices" reaches it) */

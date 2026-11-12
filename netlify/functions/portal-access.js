@@ -16,6 +16,8 @@
 // SUB (sub session):                          p-home, p-job, p-scope, p-upload, p-invoice, p-photos-add,
 //                                             p-progress, p-punch, p-paper, p-msgs, p-send, p-lang,
 //                                             p-photos, p-bids, p-checkin {op:'here'|'done'} (optional), p-photo-state
+//                                             p-bidjobs, p-bid-save {jobId, amount, notes} (patch SUBBIDS: 📋 Jobs to bid —
+//                                             the bid site's open jobs + their own bid, through subportal.js's rules)
 //                                             (patch SUBPHOTOS: p-invoice needs enough photos from the sub on the job — _lib/subwork.js)
 // STAFF (signed in to the CRM + on gc_staff): s-sync, s-thread, s-send, s-scopes, s-scope-save,
 //                                             s-scope-approve, s-scope-void, s-link, s-link-send, s-ack,
@@ -272,7 +274,7 @@ function fileOut(f, signed){ const ref = s(f && f.ref); const url = signed[ref] 
 
 /* ── rate limits (per warm instance) ───────────────────────────────────────── */
 const hits = new Map();
-const LIMITS = { pub: { req: 120, bad: 10 }, signin: { req: 12, bad: 10 }, verify: { req: 25, bad: 10 }, app: { req: 600, bad: 20 } };
+const LIMITS = { pub: { req: 120, bad: 10 }, signin: { req: 12, bad: 10 }, verify: { req: 25, bad: 10 }, app: { req: 600, bad: 20 }, bid: { req: 40, bad: 20 } };   /* bid: p-bid-save (patch SUBBIDS) */
 function ipOf(event){ return s(gcHeader(event, 'x-nf-client-connection-ip') || gcHeader(event, 'x-forwarded-for').split(',')[0] || gcHeader(event, 'client-ip') || 'unknown'); }
 function limited(ip, kind){
   const L = LIMITS[kind] || LIMITS.pub, key = kind + '|' + ip, now = Date.now();
@@ -818,7 +820,7 @@ async function bidsState(sub){
     const rows = await dbGet('sp_rows', 'select=id,data&collection=eq.users&order=key.asc');
     const p = rows.map(function(r){ return r.data || {}; }).find(function(u){ return u.role === 'sub' && (s(u.crmSubId) === s(sub.id) || (okEmail(sub.email) && low(u.email) === low(sub.email))); });
     if (!p) return { state: 'invite', url: bidsBase(), email: maskEmail(sub.email), canAccept: okEmail(sub.email) };
-    if (p.approved === true) return { state: 'approved', url: bidsBase(), jobs: await bidJobsFor(p, sub) };   /* BIDLIST */
+    if (p.approved === true) return { state: 'approved', url: bidsBase() };   /* BIDLIST → patch SUBBIDS: the jobs come from p-bidjobs (📋 Jobs to bid) */
     if (p.bidsRevoked === true) return { state: 'off', url: bidsBase() };
     return { state: 'waiting', url: bidsBase() };
   } catch (e) { return { state: 'unavailable', url: bidsBase() }; }
@@ -1114,6 +1116,8 @@ async function partnerAction(action, body, ctx){
   }
   if (action === 'p-photos-code') return { ok: true, code: await photosCode(sub, ctx.jobs.map(function(j){ return s(j.id); })) };
   if (action === 'p-bids') return bidsAccept(sub, body);
+  if (action === 'p-bidjobs') return pBidJobs(sub);               /* patch SUBBIDS: 📋 Jobs to bid — the bid site's open jobs this sub may bid on + their own bid */
+  if (action === 'p-bid-save') return pBidSave(sub, body);         /* patch SUBBIDS: send / update their bid (papers first) */
   throw Fail(400, 'Bad request');
 }
 /* photos a sub may see (until the GrayCo Photos API takes over): their own photos on the job, and the job's
@@ -1227,6 +1231,111 @@ async function bidsAccept(sub, body){
   await sendMail(ownerEmails(), 'Bid site request — ' + s(sub.company || sub.name),
     mailHtml('Approve a company for the bid site', s(sub.company || sub.name) + ' (' + s(sub.trade) + ') asked to bid on GrayCo jobs at bids.grayco-cs.com. Approve or deny it in the CRM: Subs tab → Bid site requests, or the 🔨 Sub Portal tab → Pending Subs.', '', { href: 'https://crm.grayco-cs.com/', label: 'Open the CRM' }));
   return { ok: true, state: 'waiting' };
+}
+
+/* patch SUBBIDS (owner 11/11: "a sub should see and bid on our open bid jobs from their own portal, not a separate site") ──────────
+   📋 Jobs to bid on the sub's Home. The bid site's own rules and records, never a copy of them:
+   • the sub's bid-site profile = the sp_rows users row (role 'sub') with the sub's e-mail (or the one GrayCo linked: crmSubId) —
+     the link bidsAccept makes; none yet → linked:false and the page offers "Join GrayCo bids" (bidsAccept)
+   • which jobs: subportal.js subScope() — an approved profile; never a draft or a deleted job; public, or private and invited;
+     open (not closed / won / lost). A job they already bid on stays listed (their bid's status), without the form once it is closed.
+   • the bid: written by subportal.js saveCollection('bids') as that sub — the same record (id, jobId, userId, userName, userCompany,
+     userEmail, userPhone, amount, scope, notes, docs, submittedAt, updatedAt), the same "already decided can't change" and "job open
+     for bids" rules, the same 'new-bid' e-mail to the job's PM / estimator (PORTAL_MAIL_OFF respected there)
+   • papers first: W-9, general liability and workers' comp on file in the bid site's My Documents (subdocs:<profileId>), not expired
+   • only their own bid, ever: never another sub's name, bid or amount, never bid results / ranks. */
+const BID_PAPERS = [['w9', 'W-9'], ['insurance_general', 'General liability insurance (GL)'], ['insurance_workers_comp', "Workers' comp insurance (WC)"]];
+function HUB(){ return require('./subportal.js')._hub; }
+function bidJobId(v){ const t = s(v); return /^[^\/\s"]{1,120}$/.test(t) ? t : ''; }
+async function bidProfileOf(sub){
+  if (okEmail(sub.email)) {
+    const r = (await dbGet('sp_rows', 'select=id,email,data&collection=eq.users&email=' + eq(low(sub.email)))).map(function(x){ return x.data || {}; }).find(function(u){ return u.role === 'sub'; });
+    if (r) return r;
+  }
+  const all = await dbGet('sp_rows', 'select=id,data&collection=eq.users&order=key.asc');
+  return all.map(function(x){ return x.data || {}; }).find(function(u){ return u.role === 'sub' && s(u.crmSubId) && s(u.crmSubId) === s(sub.id); }) || null;
+}
+function bidWho(p){ return { email: low(p.email), uid: s(p.authUserId), staff: null, profile: p, isAdmin: false, isSub: true, approved: p.approved === true && p.bidsRevoked !== true }; }
+async function bidPapers(profileId){
+  const rows = await dbGet('sp_rows', 'select=id,data&key=' + eq('subdocs/' + profileId));
+  const items = arr(rows[0] && rows[0].data && rows[0].data.items), today = new Date().toISOString().slice(0, 10);
+  const out = { ok: true, missing: [], expired: [], have: [] };
+  BID_PAPERS.forEach(function(k){
+    const docs = items.filter(function(d){ return s(d.type) === k[0]; });
+    if (!docs.length) { out.missing.push(k[0]); return; }
+    const cur = docs.filter(function(d){ const e = ymd(d.expirationDate); return !e || e >= today; });
+    if (!cur.length) { out.expired.push(k[0]); return; }
+    const exp = cur.map(function(d){ return ymd(d.expirationDate); }).filter(Boolean).sort().pop() || '';
+    out.have.push({ type: k[0], exp: exp });
+  });
+  out.ok = !out.missing.length && !out.expired.length;
+  return out;
+}
+function bidStatus(b){ return b.accepted ? 'accepted' : b.rejected ? 'rejected' : 'pending'; }
+function myBidOut(b){ return b ? { id: s(b.id), amount: money(b.amount), notes: clip(b.notes, 4000), submittedAt: s(b.submittedAt), updatedAt: s(b.updatedAt), status: bidStatus(b) } : null; }
+function linkList(v){ return arr(v).map(function(l){ const u = s(l.url); return /^https:\/\/[^\s"<>]{4,1500}$/i.test(u) ? { url: u, label: clip(l.label, 120) || u.replace(/^https:\/\//, '').split('/')[0] } : null; }).filter(Boolean).slice(0, 20); }
+function tradesOf(v){ return Array.isArray(v) ? v.map(function(x){ return s(x && typeof x === 'object' ? x.trade : x); }).filter(Boolean).join(', ') : s(v); }
+async function bidCtx(sub){
+  const p = await bidProfileOf(sub);
+  if (!p) return { linked: false, approved: false };
+  const who = bidWho(p);
+  if (!who.approved) return { linked: true, approved: false, profile: p, who: who };
+  const sc = await HUB().subScope(who);
+  return { linked: true, approved: true, profile: p, who: who, sc: sc };
+}
+async function pBidJobs(sub){
+  const c = await bidCtx(sub);
+  if (!c.linked) return { ok: true, linked: false, approved: false, canJoin: okEmail(sub.email), url: bidsBase(), docs: { ok: false, missing: BID_PAPERS.map(function(k){ return k[0]; }), expired: [] }, jobs: [] };
+  const docs = await bidPapers(c.profile.id);
+  if (!c.approved) return { ok: true, linked: true, approved: false, url: bidsBase(), docs: docs, jobs: [] };
+  const sc = c.sc, mine = {}, invited = new Set(sc.invites.map(function(r){ return s(r.job_id); }));
+  sc.myBids.forEach(function(r){ if (s(r.user_id) === s(c.profile.id)) mine[s(r.job_id)] = r.data || {}; });
+  const ids = Object.keys(sc.jobs);
+  const plans = {};
+  if (ids.length) {
+    const H2 = HUB(), rows = await H2.listRows([H2.eq('collection', 'plans'), H2.inList('id', ids)]);
+    const items = {}; rows.forEach(function(r){ items[s(r.id)] = arr(r.data && r.data.items).slice(0, 60).map(function(f){ return { name: clip(f.name, 160) || 'Plan', category: clip(f.category, 60), type: clip(f.type, 60), fileRef: s(f.fileRef) }; }).filter(function(f){ return f.fileRef; }); });
+    try { await H2.signAll(items); } catch (e) {}
+    Object.keys(items).forEach(function(id){ plans[id] = items[id].map(function(f){ return /^https:\/\//.test(s(f.dataUrl)) ? { name: f.name, category: f.category, type: f.type, url: f.dataUrl } : null; }).filter(Boolean); });
+  }
+  const trades = Array.isArray(c.profile.trades) ? c.profile.trades : [];
+  const jobs = ids.map(function(id){
+    const j = HUB().subJobView(sc.jobs[id].data || {}, trades), b = mine[id] || null, open = !!sc.biddable[id];
+    return { id: s(id), title: clip(j.title, 200) || 'Bid job', address: clip(j.address, 240), bidDueDate: ymd(j.bidDueDate), tradesSought: clip(tradesOf(j.tradesSought), 300),
+      tradeScopes: arr(j.tradeScopes).slice(0, 10).map(function(x){ return { trade: clip(x.trade, 80), scope: clip(x.scope, 6000) }; }).filter(function(x){ return x.scope; }),
+      scope: clip(j.scope, 8000), specifications: clip(j.specifications, 8000), notes: clip(j.notes, 4000),
+      plansLinks: linkList(j.plansLinks), plans: plans[id] || [], invited: invited.has(id), canBid: open, myBid: myBidOut(b) };
+  });
+  jobs.sort(function(a, b){ return (b.canBid ? 1 : 0) - (a.canBid ? 1 : 0) || (b.invited ? 1 : 0) - (a.invited ? 1 : 0) || (a.bidDueDate || '9').localeCompare(b.bidDueDate || '9'); });
+  return { ok: true, linked: true, approved: true, url: bidsBase(), docs: docs, jobs: jobs.slice(0, 60) };
+}
+function papersFail(docs){
+  const name = function(k){ return (BID_PAPERS.find(function(x){ return x[0] === k; }) || [k, k])[1]; };
+  const parts = [];
+  if (docs.missing.length) parts.push('missing: ' + docs.missing.map(name).join(', '));
+  if (docs.expired.length) parts.push('expired: ' + docs.expired.map(name).join(', '));
+  return Fail(409, 'Before you can bid, GrayCo needs your papers on file — ' + parts.join('; ') + '. Upload ' + (docs.missing.length + docs.expired.length === 1 ? 'it' : 'them') +
+    ' in My Documents on the bid site (' + bidsBase().replace(/^https:\/\//, '') + '), or send ' + (docs.missing.length + docs.expired.length === 1 ? 'it' : 'them') + ' to GrayCo from Papers here, then try again.', { papers: docs });
+}
+async function pBidSave(sub, body){
+  const jobId = bidJobId(body.jobId); if (!jobId) throw Fail(400, 'Pick a job.');
+  const amount = money(body.amount);
+  if (!(amount > 0) || amount > 1e9) throw Fail(400, 'Enter your bid amount.');
+  const c = await bidCtx(sub);
+  if (!c.linked) throw Fail(403, 'Join GrayCo bids first (📋 Jobs to bid on Home).');
+  if (!c.approved) throw Fail(403, 'Your company is waiting for GrayCo to approve it for bids.');
+  const sc = c.sc, me = s(c.profile.id);
+  const prevRow = sc.myBids.find(function(r){ return s(r.job_id) === jobId && s(r.user_id) === me; }) || null, prev = prevRow ? prevRow.data || {} : null;
+  if (prev && (prev.accepted || prev.rejected)) throw Fail(409, 'This bid has already been decided by GrayCo and can no longer be changed.');
+  if (!sc.biddable[jobId]) throw Fail(403, 'This job is not open for bids.');
+  const docs = await bidPapers(me);
+  if (!docs.ok) throw papersFail(docs);
+  const rec = prev ? { id: s(prev.id), jobId: jobId, amount: amount, notes: clip(body.notes, 4000), scope: s(prev.scope), docs: arr(prev.docs), submittedAt: prev.submittedAt }
+                   : { id: 'b_' + Date.now().toString(36) + crypto.randomBytes(6).toString('hex'), jobId: jobId, amount: amount, notes: clip(body.notes, 4000), scope: '', docs: [] };
+  await HUB().saveCollection(c.who, 'bids', [rec], [], { scope: sc });
+  const after = await HUB().getRow('bids', rec.id);
+  if (!after || s(after.user_id) !== me) throw Fail(502, 'The bid could not be saved. Try again.');
+  return { ok: true, created: !prev, bid: myBidOut(after.data) };
 }
 
 /* ── messages (customer per job; sub per job + sub) ─────────────────────────── */
@@ -1533,6 +1642,7 @@ exports.handler = async function (event) {
       if (!pids) { noteBad(ip, 'pub'); return notActive(headers, t0); }
       return reply(200, await customerAction(action, body, pids));
     }
+    if (action === 'p-bid-save' && limited(ip, 'bid')) return reply(429, { ok: false, error: 'Too many bids sent from here. Wait a few minutes.' });   /* patch SUBBIDS */
     if (/^p-/.test(action)) {
       const sess = await sessionOf(gcHeader(event, 'x-portal-session'));
       if (!sess || sess.kind !== 'partner') { noteBad(ip, 'app'); return notActive(headers, t0); }

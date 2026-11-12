@@ -304,30 +304,150 @@ function jobRow(j){
   var sub = [j.address, j.start ? t('starts') + ' ' + dt(j.start) : '', j.pct ? j.pct + '% ' + t('done') : ''].filter(Boolean).join(' · ');
   return h('button', { type: 'button', class: 'jobrow', 'data-job': j.id, on: { click: function(){ openJob(j.id, 'overview'); } } }, [h('span', { class: 'grow' }, [h('b', { text: j.name }), h('span', { class: 'muted', text: sub })]), h('span', { class: 'tags' }, tags)]);
 }
+/* patch SUBBIDS (owner 11/11): 📋 Jobs to bid — GrayCo's open bid jobs and the sub's own bid, right here (p-bidjobs / p-bid-save).
+   Not joined yet → "Join GrayCo bids" (p-bids: a password, then GrayCo approves the company). Papers first: W-9, GL, WC. */
+Object.assign(L.en, { jobsToBid: '📋 Jobs to bid', bidsJoin: 'Join GrayCo bids', bidsJoinWhy: 'See GrayCo’s open jobs to bid and send your bids right here in your portal. Join once — GrayCo approves your company, then the jobs show up here.',
+  bidsPwShort: 'Choose a password with at least 8 characters.', bidsLoading: 'Loading jobs to bid…', bidsNoneOpen: 'No jobs to bid right now — GrayCo invites you when one fits your trade.',
+  daysLeft: '{n} days left', dayLeft: '1 day left', dueToday: 'Due today', pastDue: 'Past due', bidInvited: '📨 Invited', bidOpen: 'Open to bid', bidPending: '✓ Bid sent', bidAccepted: '✅ Accepted', bidRejected: 'Not selected', bidClosed: 'Closed',
+  bidOpenBtn: 'Open & bid ›', bidSeeBtn: 'See my bid ›', plansLbl: 'Plans', planFiles: 'Plan files', scopeLbl: 'Scope of work', specsLbl: 'Specifications', notesLbl: 'Notes', tradesLbl: 'Trades', yourTradeScope: 'Scope for your trade',
+  yourBid: 'Your bid', bidAmount: 'Bid amount ($)', bidNotes: 'Notes for GrayCo (what is included / not included, timing)', bidSubmit: 'Submit bid', bidUpdate: 'Update bid', bidSent: 'Bid sent to GrayCo', bidUpdated: 'Bid updated',
+  bidDecided: 'GrayCo has decided on this bid — it can no longer be changed.', bidClosedNote: 'Bids are closed on this job.', bidSentOn: 'Sent {d}', bidUpdOn: 'updated {d}', amountNeed: 'Enter your bid amount.',
+  papersOk: 'Papers on file: W-9, GL, WC', papersNeed: 'Before you can bid, GrayCo needs these papers on file:', papersMissing: 'missing', papersExpired: 'expired', papersHow: 'Upload them in My Documents on the bid site, or send them to GrayCo from Papers here.',
+  papersOpen: 'Open My Documents', papersBlocked: 'The bid form opens once your papers are on file.', pW9: 'W-9', pGL: 'General liability (GL)', pWC: 'Workers’ comp (WC)', bidsSite: 'Open bids.grayco-cs.com' });
+Object.assign(L.es, { jobsToBid: '📋 Trabajos para licitar', bidsJoin: 'Unirse a licitaciones GrayCo', bidsJoinWhy: 'Vea los trabajos abiertos de GrayCo y envíe sus ofertas aquí mismo en su portal. Únase una vez — GrayCo aprueba su compañía y los trabajos aparecen aquí.',
+  bidsPwShort: 'Escoja una contraseña de al menos 8 caracteres.', bidsLoading: 'Cargando trabajos para licitar…', bidsNoneOpen: 'No hay trabajos para licitar ahora — GrayCo le invita cuando uno sea de su oficio.',
+  daysLeft: 'Quedan {n} días', dayLeft: 'Queda 1 día', dueToday: 'Vence hoy', pastDue: 'Ya venció', bidInvited: '📨 Invitado', bidOpen: 'Abierto para licitar', bidPending: '✓ Oferta enviada', bidAccepted: '✅ Aceptada', bidRejected: 'No seleccionada', bidClosed: 'Cerrado',
+  bidOpenBtn: 'Abrir y licitar ›', bidSeeBtn: 'Ver mi oferta ›', plansLbl: 'Planos', planFiles: 'Archivos de planos', scopeLbl: 'Alcance del trabajo', specsLbl: 'Especificaciones', notesLbl: 'Notas', tradesLbl: 'Oficios', yourTradeScope: 'Alcance para su oficio',
+  yourBid: 'Su oferta', bidAmount: 'Monto de la oferta ($)', bidNotes: 'Notas para GrayCo (qué incluye / qué no, tiempos)', bidSubmit: 'Enviar oferta', bidUpdate: 'Actualizar oferta', bidSent: 'Oferta enviada a GrayCo', bidUpdated: 'Oferta actualizada',
+  bidDecided: 'GrayCo ya decidió sobre esta oferta — ya no se puede cambiar.', bidClosedNote: 'Las ofertas están cerradas en este trabajo.', bidSentOn: 'Enviada {d}', bidUpdOn: 'actualizada {d}', amountNeed: 'Escriba el monto de su oferta.',
+  papersOk: 'Papeles en archivo: W-9, GL, WC', papersNeed: 'Antes de licitar, GrayCo necesita estos papeles en archivo:', papersMissing: 'falta', papersExpired: 'vencido', papersHow: 'Súbalos en Mis Documentos del sitio de licitaciones, o envíelos a GrayCo desde Papeles aquí.',
+  papersOpen: 'Abrir Mis Documentos', papersBlocked: 'El formulario de oferta se abre cuando sus papeles estén en archivo.', pW9: 'W-9', pGL: 'Responsabilidad general (GL)', pWC: 'Compensación al trabajador (WC)', bidsSite: 'Abrir bids.grayco-cs.com' });
+var BIDS = null, BIDS_AT = 0, bidBody = null;
+function bidCss(){
+  if (document.getElementById('gc-subbid-css')) return;
+  var st = document.createElement('style'); st.id = 'gc-subbid-css';
+  st.textContent = '.bidjob .bidlinks,.bidsheet .bidlinks{display:flex;flex-wrap:wrap;gap:6px}.bidlinks a{display:inline-flex;align-items:center;min-height:36px;font-size:14px;font-weight:600;padding:4px 12px;border:1px solid var(--edge);border-radius:999px;text-decoration:none;background:#fff;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
+    '.bidjob .scp{margin:0;font-size:14px;line-height:1.45;color:var(--ink);overflow-wrap:anywhere}.bidjob > .btn{width:100%}@media(min-width:700px){.bidjob > .btn{width:auto;align-self:flex-start;padding:0 18px}}' +
+    '.bidpapers{border-radius:10px;padding:10px 12px;font-size:14px;line-height:1.45;display:flex;flex-direction:column;gap:6px}.bidpapers.ok{background:var(--greenBg);color:var(--green);font-weight:600}.bidpapers.bad{background:#fdf1f1;border:1px solid #e7b4b4;color:#7a1a1a}' +
+    '.bidpapers ul{margin:0;padding-left:18px}.bidpapers .btn{align-self:flex-start;min-height:40px;font-size:14px;padding:0 12px}.duesoon{color:#8a1c1c;font-weight:700}.bidform{display:flex;flex-direction:column;gap:10px}.bidform[aria-disabled="true"]{opacity:.55}' +
+    '.bidsheet .mybid{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}.bidsheet .mybid b{font-size:22px}.bidsheet .err{white-space:pre-wrap}';
+  document.head.appendChild(st);
+}
+function daysTo(d){ if (!d) return null; var a = new Date(d + 'T12:00:00'), b = new Date(todayYmd() + 'T12:00:00'); return Math.round((a - b) / 864e5); }
+function dueText(d){ var n = daysTo(d); if (n == null) return ''; return t('bidDue') + ' ' + dt(d) + ' · ' + (n < 0 ? t('pastDue') : n === 0 ? t('dueToday') : n === 1 ? t('dayLeft') : t('daysLeft', { n: n })); }
+function bidPill(j){
+  var b = j.myBid;
+  if (b && b.status === 'accepted') return pill(t('bidAccepted'), 'ok');
+  if (b && b.status === 'rejected') return pill(t('bidRejected'), 'skip');
+  if (b) return pill(t('bidPending') + ' · ' + usd(b.amount), 'ok');
+  if (!j.canBid) return pill(t('bidClosed'), 'skip');
+  return j.invited ? pill(t('bidInvited'), 'due') : pill(t('bidOpen'));
+}
+function paperName(k){ return k === 'w9' ? t('pW9') : k === 'insurance_general' ? t('pGL') : k === 'insurance_workers_comp' ? t('pWC') : k; }
+function papersBox(docs, url){
+  docs = docs || {};
+  if (docs.ok) return h('div', { class: 'bidpapers ok', 'data-bidpapers': 'ok', text: '✅ ' + t('papersOk') });
+  var li = (docs.missing || []).map(function(k){ return h('li', { text: paperName(k) + ' — ' + t('papersMissing') }); }).concat((docs.expired || []).map(function(k){ return h('li', { text: paperName(k) + ' — ' + t('papersExpired') }); }));
+  return h('div', { class: 'bidpapers bad', 'data-bidpapers': 'missing', role: 'note' }, [h('b', { text: '⚠️ ' + t('papersNeed') }), h('ul', null, li), h('span', { text: t('papersHow') }),
+    h('div', { class: 'btns' }, [url ? h('a', { class: 'btn', href: url, target: '_blank', rel: 'noopener', text: '📄 ' + t('papersOpen') }) : null, h('button', { type: 'button', class: 'btn', text: t('papers'), on: { click: function(){ var s = document.querySelector('.sheet .x'); if (s) s.click(); goTab('papers'); } } })])]);
+}
+function planLinks(j){
+  var a = (j.plansLinks || []).map(function(l){ return h('a', { href: l.url, target: '_blank', rel: 'noopener', 'data-planlink': '1', title: l.url, text: '🔗 ' + l.label }); });
+  return a.length ? h('div', { class: 'bidlinks' }, a) : null;
+}
+function loadBids(force){
+  if (!force && BIDS && Date.now() - BIDS_AT < 60000) return Promise.resolve(BIDS);
+  return api('p-bidjobs').then(function(r){ BIDS = r; BIDS_AT = Date.now(); return r; });
+}
+function paintBids(){
+  var body = bidBody; if (!body) return;
+  body.innerHTML = '';
+  var D = BIDS;
+  if (!D) { body.appendChild(h('div', { class: 'muted', text: t('bidsLoading') })); return; }
+  if (D.err) { body.appendChild(h('div', { class: 'muted', text: D.err })); return; }
+  if (!D.approved) { body.appendChild(h('div', { class: 'muted', text: t('bidsWaiting') })); return; }
+  body.appendChild(papersBox(D.docs, D.url));
+  var J = D.jobs || [];
+  if (!J.length) body.appendChild(h('div', { class: 'empty', text: t('bidsNoneOpen') }));
+  J.forEach(function(j){
+    var meta = [j.address, j.bidDueDate ? dueText(j.bidDueDate) : ''].filter(Boolean).join(' · '), n = daysTo(j.bidDueDate);
+    var short = String(j.scope || (j.tradeScopes[0] || {}).scope || '').replace(/\s+/g, ' ').trim(); if (short.length > 170) short = short.slice(0, 168).replace(/\s+\S*$/, '') + '…';
+    body.appendChild(h('div', { class: 'post bidjob', 'data-bidjob': j.id }, [
+      h('div', { class: 'row' }, [h('b', { text: j.title }), bidPill(j)]),
+      meta ? h('div', { class: 'muted' + (j.canBid && n != null && n <= 3 ? ' duesoon' : ''), text: meta }) : null,
+      j.tradesSought ? h('div', { class: 'muted', text: t('tradesLbl') + ': ' + j.tradesSought }) : null,
+      short ? h('p', { class: 'scp', text: short }) : null,
+      planLinks(j),
+      h('button', { type: 'button', class: 'btn' + (j.canBid && !j.myBid ? ' gold' : ''), 'data-bidopen': j.id, text: j.myBid || !j.canBid ? t('bidSeeBtn') : t('bidOpenBtn'), on: { click: function(){ bidSheet(j); } } })]));
+  });
+  body.appendChild(h('a', { class: 'btn navy', href: D.url, target: '_blank', rel: 'noopener', text: t('bidsSite') }));
+}
+function bidSheet(j){
+  var D = BIDS || {}, docs = D.docs || {}, b = j.myBid, kids = [];
+  if (j.address) kids.push(h('div', { class: 'muted', text: j.address }));
+  kids.push(h('dl', { class: 'info' }, [j.bidDueDate ? h('dt', { text: t('bidDue') }) : null, j.bidDueDate ? h('dd', { text: dueText(j.bidDueDate).replace(t('bidDue') + ' ', '') }) : null,
+    j.tradesSought ? h('dt', { text: t('tradesLbl') }) : null, j.tradesSought ? h('dd', { text: j.tradesSought }) : null]));
+  (j.tradeScopes || []).forEach(function(x){ kids.push(h('div', { class: 'box' }, [h('b', { text: t('yourTradeScope') + (x.trade ? ' — ' + x.trade : '') }), h('p', { class: 'pre', text: x.scope })])); });
+  [['scopeLbl', j.scope], ['specsLbl', j.specifications], ['notesLbl', j.notes]].forEach(function(r){ if (r[1]) kids.push(h('div', { class: 'box' }, [h('b', { text: t(r[0]) }), h('p', { class: 'pre', text: r[1] })])); });
+  if ((j.plansLinks || []).length || (j.plans || []).length) kids.push(h('div', { class: 'box', 'data-bidplans': '1' }, [h('b', { text: t('plansLbl') }), planLinks(j)].concat((j.plans || []).map(function(f){
+    return h('div', { class: 'doc' }, [h('span', { text: /pdf/.test(f.type) ? '📄' : /image/.test(f.type) ? '🖼️' : '📎' }), h('span', { class: 'grow' }, [h('span', { class: 'n', text: f.name }), f.category ? h('span', { class: 'muted', text: f.category }) : null]), h('a', { class: 'btn', href: f.url, target: '_blank', rel: 'noopener', text: t('open') })]); }))));
+  var sec = [h('div', { class: 'row' }, [h('h2', { text: t('yourBid') }), bidPill(j)])];
+  if (b) sec.push(h('div', { class: 'mybid' }, [h('b', { text: usd(b.amount) }), h('span', { class: 'muted', text: t('bidSentOn', { d: dt(b.submittedAt) }) + (b.updatedAt && b.updatedAt.slice(0, 16) !== String(b.submittedAt || '').slice(0, 16) ? ' · ' + t('bidUpdOn', { d: dt(b.updatedAt) }) : '') })]));
+  if (b && b.notes) sec.push(h('p', { class: 'pre muted', text: b.notes }));
+  var decided = b && (b.status === 'accepted' || b.status === 'rejected');
+  if (decided) sec.push(h('div', { class: 'how', text: t('bidDecided') }));
+  else if (!j.canBid) sec.push(h('div', { class: 'how', text: t('bidClosedNote') }));
+  else {
+    sec.push(papersBox(docs, D.url));
+    var blocked = !docs.ok;
+    var amt = h('input', { class: 'inp', id: 'bidAmt', type: 'number', inputmode: 'decimal', min: '0', step: '0.01', disabled: blocked, placeholder: '0.00' });
+    var nt = h('textarea', { class: 'inp', id: 'bidNotes', rows: '4', maxlength: '4000', disabled: blocked });
+    if (b) { amt.value = String(b.amount); nt.value = b.notes || ''; }
+    var err = h('div', { class: 'err', role: 'alert' });
+    var go = h('button', { type: 'button', class: 'btn gold', id: 'bidSend', disabled: blocked, text: b ? t('bidUpdate') : t('bidSubmit') });
+    sec.push(h('div', { class: 'bidform', 'aria-disabled': blocked ? 'true' : 'false' }, [blocked ? h('div', { class: 'muted', text: t('papersBlocked') }) : null, field(t('bidAmount'), amt), field(t('bidNotes'), nt), err, go]));
+    go.addEventListener('click', function(){
+      err.textContent = '';
+      if (!(Number(amt.value) > 0)) { err.textContent = t('amountNeed'); amt.focus(); return; }
+      busy(go, true);
+      api('p-bid-save', { jobId: j.id, amount: amt.value, notes: nt.value }).then(function(r){
+        sh.close(); toast(r.created ? t('bidSent') : t('bidUpdated'));
+        return loadBids(true).then(paintBids);
+      }, function(e){ busy(go, false); err.textContent = e.message; toast(e.message, true); });
+    });
+  }
+  kids.push(h('section', { class: 'card', 'data-mybid': '1' }, sec));
+  var sh = sheet(j.title, [h('div', { class: 'bidsheet', 'data-bidsheet': j.id, style: 'display:flex;flex-direction:column;gap:12px' }, kids)]);
+  return sh;
+}
 function bidsCard(b){
   if (!b) return null;
+  bidCss();
   var kids = [];
   if (b.state === 'invite') {
-    kids.push(h('p', { class: 'muted', text: t('bidsInvite') }));
-    if (b.canAccept) kids.push(h('button', { type: 'button', class: 'btn gold', id: 'bidsAccept', text: t('bidsAccept'), on: { click: function(){
+    kids.push(h('p', { class: 'muted', text: t('bidsJoinWhy') }));
+    if (b.canAccept) kids.push(h('button', { type: 'button', class: 'btn gold', id: 'bidsAccept', text: t('bidsJoin'), on: { click: function(){
       var pw = h('input', { type: 'password', autocomplete: 'new-password', minlength: '8', class: 'inp', id: 'bidsPw' });
-      var go = h('button', { type: 'button', class: 'btn gold', text: t('bidsAccept') });
-      var sh = sheet(t('bidsTitle'), [h('p', { text: t('bidsInvite') }), field(t('bidsPw'), pw), go]);
-      go.addEventListener('click', function(){ busy(go, true); api('p-bids', { password: pw.value }).then(function(){ sh.close(); toast(t('bidsWaiting')); reloadHome(); }, function(e){ busy(go, false); toast(e.message, true); }); });
+      var err = h('div', { class: 'err', role: 'alert' });
+      var go = h('button', { type: 'button', class: 'btn gold', id: 'bidsJoinGo', text: t('bidsJoin') });
+      var sh = sheet(t('bidsJoin'), [h('p', { text: t('bidsJoinWhy') }), b.email ? h('div', { class: 'muted', text: b.email }) : null, field(t('bidsPw'), pw), err, go]);
+      go.addEventListener('click', function(){
+        err.textContent = '';
+        if (String(pw.value || '').length < 8) { err.textContent = t('bidsPwShort'); pw.focus(); return; }
+        busy(go, true); api('p-bids', { password: pw.value }).then(function(){ sh.close(); toast(t('bidsWaiting')); BIDS = null; reloadHome(); }, function(e){ busy(go, false); err.textContent = e.message; toast(e.message, true); });
+      });
     } } }));
     else kids.push(h('p', { class: 'muted', text: t('bidsNoEmail') }));
   } else if (b.state === 'waiting') kids.push(h('div', { class: 'row' }, [h('span', { text: t('bidsWaiting') }), pill(t('bidsTitle'))]));
-  else if (b.state === 'approved') {   /* BIDLIST: the jobs to bid */
-    var J = b.jobs || [], W2 = { invited: '📨 Invited', open: 'Open to bid', sent: '✓ Bid sent', awarded: '✅ Awarded', 'not-selected': 'Not selected' };
-    if (J.length) J.forEach(function(j){ kids.push(h('div', { class: 'post', 'data-bidjob': j.id }, [h('div', { class: 'row' }, [h('b', { text: j.title }), pill(W2[j.state] || j.state, j.state === 'awarded' || j.state === 'sent' ? 'ok' : j.state === 'invited' ? 'due' : '')]),
-      h('div', { class: 'muted', text: [j.area, j.due ? t('bidDue') + ' ' + dt(j.due) : '', (j.trades || []).join(', ')].filter(Boolean).join(' · ') }),
-      (j.state === 'invited' || j.state === 'open') ? h('a', { class: 'btn gold', href: b.url + '/?job=' + encodeURIComponent(j.id), target: '_blank', rel: 'noopener', text: t('bidOpenBid') }) : null])); });
-    else kids.push(h('p', { class: 'muted', text: t('bidsNone') }));
-    kids.push(h('a', { class: 'btn navy', href: b.url, target: '_blank', rel: 'noopener', text: t('bidsOpen') }));
+  else if (b.state === 'approved') {
+    bidBody = h('div', { class: 'bidlist', 'data-bidlist': '1', style: 'display:flex;flex-direction:column;gap:12px' });
+    kids.push(bidBody);
+    paintBids();
+    loadBids(false).then(function(){ paintBids(); }, function(e){ if (!BIDS) { BIDS = { err: e.message || t('loadFail') }; BIDS_AT = Date.now() - 50000; } paintBids(); });
   }
   else if (b.state === 'off') kids.push(h('p', { class: 'muted', text: t('bidsOff') }));
   if (!kids.length) return null;
-  return card(b.state === 'approved' ? t('toBid') : t('bidsTitle'), kids, 'bids');
+  return card(t('jobsToBid'), kids, 'bids');
 }
 function contactCard(title, name, phone, email){
   var ini = String(name || 'G').split(/\s+/).map(function(x){ return x[0] || ''; }).join('').slice(0, 2).toUpperCase();
@@ -770,6 +890,128 @@ function buildTabs(){
   nav.hidden = false;
 }
 
+/* patch SUBSIGNUP (owner 11/11): "New subcontractor? Create your account" — from the portal's own sign-in screen. The bid site's
+   register (netlify/functions/subportal.js): a sign-in + a sub profile that sees nothing until GrayCo approves it (Admin Approvals
+   in the CRM) — unless the sub came from a job invite (?invite=…&job=…), which is approved at once. Then they sign in here. */
+var SP = '/.netlify/functions/subportal';
+Object.assign(L.en, { suTitle: 'Create your subcontractor account', suWhy: 'For subcontractors who want to work with GrayCo. GrayCo reviews every new account before you can see jobs or bid.',
+  suFirst: 'First name', suLast: 'Last name', suCompany: 'Company name', suDba: 'DBA (optional)', suEmail: 'E-mail (this is your login)', suPhone: 'Mobile phone', suTrades: 'Your trade(s) — separate with commas',
+  suTradesPh: 'Drywall, paint, framing', suAddr: 'Business address', suCity: 'City', suState: 'State', suZip: 'ZIP', suLic: 'License numbers (optional)', suEin: 'EIN — last 4 digits (optional)',
+  suPw: 'Password (8 or more characters)', suPw2: 'Password again', suAgree: 'I agree to the ', suAnd: ' and the ', suTerms: 'Sub Portal Terms of Use', suPriv: 'Sub Portal Privacy Notice', suGo: 'Create my account',
+  suBack: '‹ Back to sign in', suNeed: 'Please fill in: {f}.', suEmailBad: 'Enter a valid e-mail address.', suPwShort: 'The password must be at least 8 characters.', suPwDiff: 'The two passwords do not match.',
+  suAgreeNeed: 'Please agree to the Sub Portal Terms of Use and Privacy Notice.', suStateBad: 'Use the 2-letter state (TN, MS, AR …).', suEinBad: 'The EIN part is the last 4 digits only.',
+  suDupT: 'Is your company already with GrayCo?', suDupX: 'We found a company that looks like yours. If one of these is you, sign in instead (or call GrayCo ' + OFFICE + ').', suDupWhy: 'matched on',
+  suForce: 'That’s not us — create anyway', suTaken: 'That e-mail already has an account. Sign in with it — or tap “Forgot password? E-mail me a code”.', suSignin: 'Sign in',
+  suDoneT: 'Account created', suDone: 'Thanks — GrayCo reviews new accounts (usually the same day). We’ll e-mail you when you’re approved. Then sign in here with your e-mail.',
+  suDoneInv: 'Thanks — you came with a GrayCo invite, so your account is approved. Sign in here with your e-mail.', suInvited: 'You’re invited to bid on {j}.', suInvitedAny: 'You’re invited to bid on a GrayCo job.' });
+Object.assign(L.es, { suTitle: 'Cree su cuenta de subcontratista', suWhy: 'Para subcontratistas que quieren trabajar con GrayCo. GrayCo revisa cada cuenta nueva antes de que usted pueda ver trabajos o licitar.',
+  suFirst: 'Nombre', suLast: 'Apellido', suCompany: 'Nombre de la compañía', suDba: 'DBA (opcional)', suEmail: 'Correo (es su usuario)', suPhone: 'Celular', suTrades: 'Su(s) oficio(s) — separe con comas',
+  suTradesPh: 'Tabla roca, pintura, estructura', suAddr: 'Dirección del negocio', suCity: 'Ciudad', suState: 'Estado', suZip: 'Código postal', suLic: 'Números de licencia (opcional)', suEin: 'EIN — últimos 4 dígitos (opcional)',
+  suPw: 'Contraseña (8 caracteres o más)', suPw2: 'Repita la contraseña', suAgree: 'Acepto los ', suAnd: ' y el ', suTerms: 'Términos de uso del Portal de Subcontratistas', suPriv: 'Aviso de privacidad del Portal de Subcontratistas', suGo: 'Crear mi cuenta',
+  suBack: '‹ Volver a entrar', suNeed: 'Por favor llene: {f}.', suEmailBad: 'Escriba un correo válido.', suPwShort: 'La contraseña debe tener al menos 8 caracteres.', suPwDiff: 'Las dos contraseñas no son iguales.',
+  suAgreeNeed: 'Por favor acepte los Términos de uso y el Aviso de privacidad.', suStateBad: 'Use el estado de 2 letras (TN, MS, AR …).', suEinBad: 'Del EIN solo los últimos 4 dígitos.',
+  suDupT: '¿Su compañía ya está con GrayCo?', suDupX: 'Encontramos una compañía que se parece a la suya. Si es usted, entre en su cuenta (o llame a GrayCo ' + OFFICE + ').', suDupWhy: 'coincide en',
+  suForce: 'No somos nosotros — crear de todos modos', suTaken: 'Ese correo ya tiene una cuenta. Entre con él — o toque “¿Olvidó la contraseña? Envíenme un código”.', suSignin: 'Entrar',
+  suDoneT: 'Cuenta creada', suDone: 'Gracias — GrayCo revisa las cuentas nuevas (normalmente el mismo día). Le enviaremos un correo cuando esté aprobada. Después entre aquí con su correo.',
+  suDoneInv: 'Gracias — usted vino con una invitación de GrayCo, así que su cuenta está aprobada. Entre aquí con su correo.', suInvited: 'Está invitado a licitar en {j}.', suInvitedAny: 'Está invitado a licitar en un trabajo de GrayCo.' });
+var DUPWHY = { es: { 'company name': 'nombre de la compañía', address: 'dirección', phone: 'teléfono', EIN: 'EIN' } };
+function suCss(){
+  if (document.getElementById('gc-signup-css')) return;
+  var st = document.createElement('style'); st.id = 'gc-signup-css';
+  st.textContent = '.card.signup{max-width:680px;margin:0 auto;width:100%}.su-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:12px}@media(min-width:620px){.su-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.su-grid .wide2{grid-column:1/-1}.su-grid.addr{grid-template-columns:minmax(0,1fr) 90px 120px}}' +
+    '.su-agree{display:flex;gap:10px;align-items:flex-start;font-size:14px;line-height:1.45}.su-agree input{width:22px;height:22px;flex:0 0 22px;margin:1px 0 0}.su-dup{border:1px solid var(--gold);background:var(--goldBg);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:8px;font-size:14px}' +
+    '.su-dup ul{margin:0;padding-left:18px}.su-req{color:#8a1c1c}.su-done{display:flex;flex-direction:column;gap:12px;align-items:stretch;text-align:center}.su-done .big{font-size:22px}';
+  document.head.appendChild(st);
+}
+function sp(body){
+  return fetch(SP, { method: 'POST', headers: { 'Content-Type': 'application/json' }, cache: 'no-store', credentials: 'omit', body: JSON.stringify(body) })
+    .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ return { status: r.status, data: j || {} }; }); });
+}
+function signup(opts){
+  opts = opts || {};
+  if (opts.lang) LANG = opts.lang === 'es' ? 'es' : 'en';
+  suCss();
+  var main = opts.main || document.getElementById('main'), keep = opts.keep || {};
+  main.innerHTML = '';
+  var box = h('section', { class: 'card signin signup', id: 'signupBox' });
+  main.appendChild(box);
+  var F = {};
+  function inp(k, attrs){ var el = h('input', Object.assign({ class: 'inp', id: 'su_' + k, 'data-su': k }, attrs || {})); if (keep[k] != null) el.value = keep[k]; el.addEventListener('input', function(){ keep[k] = el.value; }); F[k] = el; return el; }
+  function req(label){ return h('span', null, [label, h('span', { class: 'su-req', 'aria-hidden': 'true', text: ' *' })]); }
+  function fld(label, el, cls, required){ return h('label', { class: 'fld' + (cls ? ' ' + cls : '') }, [required ? req(label) : h('span', { text: label }), el]); }
+  var inviteNote = h('div', { class: 'how', id: 'suInvite', hidden: true });
+  var err = h('div', { class: 'err', role: 'alert', id: 'suErr' }), dup = h('div', { id: 'suDup' });
+  var agree = h('input', { type: 'checkbox', id: 'su_agree', 'data-su': 'agree' }); agree.checked = !!keep.agree; agree.addEventListener('change', function(){ keep.agree = agree.checked; });
+  var go = h('button', { type: 'button', class: 'btn gold', id: 'suGo', text: t('suGo') });
+  box.appendChild(h('button', { type: 'button', class: 'back', id: 'suBack', style: 'align-self:flex-start', text: t('suBack'), on: { click: function(){ if (opts.back) opts.back(F.email && F.email.value.trim()); } } }));
+  box.appendChild(h('h2', { text: t('suTitle') }));
+  box.appendChild(h('p', { class: 'muted', text: t('suWhy') }));
+  box.appendChild(inviteNote);
+  box.appendChild(h('div', { class: 'su-grid' }, [fld(t('suFirst'), inp('first', { autocomplete: 'given-name', maxlength: '40' }), '', true), fld(t('suLast'), inp('last', { autocomplete: 'family-name', maxlength: '40' }), '', true),
+    fld(t('suCompany'), inp('company', { autocomplete: 'organization', maxlength: '120' }), '', true), fld(t('suDba'), inp('dba', { maxlength: '120' })),
+    fld(t('suEmail'), inp('email', { type: 'email', inputmode: 'email', autocomplete: 'email', maxlength: '200' }), '', true), fld(t('suPhone'), inp('phone', { type: 'tel', inputmode: 'tel', autocomplete: 'tel', maxlength: '40' }), '', true),
+    fld(t('suTrades'), inp('trades', { placeholder: t('suTradesPh'), maxlength: '400' }), 'wide2', true)]));
+  box.appendChild(fld(t('suAddr'), inp('addr', { autocomplete: 'street-address', maxlength: '200' }), '', true));
+  box.appendChild(h('div', { class: 'su-grid addr' }, [fld(t('suCity'), inp('city', { autocomplete: 'address-level2', maxlength: '80' }), '', true), fld(t('suState'), inp('state', { autocomplete: 'address-level1', maxlength: '2', style: 'text-transform:uppercase' }), '', true), fld(t('suZip'), inp('zip', { autocomplete: 'postal-code', inputmode: 'numeric', maxlength: '10' }), '', true)]));
+  box.appendChild(h('div', { class: 'su-grid' }, [fld(t('suLic'), inp('lic', { maxlength: '400' })), fld(t('suEin'), inp('ein', { inputmode: 'numeric', maxlength: '4' }))]));
+  box.appendChild(h('div', { class: 'su-grid' }, [fld(t('suPw'), inp('pw', { type: 'password', autocomplete: 'new-password', minlength: '8' }), '', true), fld(t('suPw2'), inp('pw2', { type: 'password', autocomplete: 'new-password', minlength: '8' }), '', true)]));
+  box.appendChild(h('label', { class: 'su-agree' }, [agree, h('span', null, [t('suAgree'), h('a', { href: '#', 'data-href': '/sub-terms.html', text: t('suTerms') }), t('suAnd'), h('a', { href: '#', 'data-href': '/sub-privacy.html', text: t('suPriv') }), '.'])]));
+  Array.prototype.forEach.call(box.querySelectorAll('a[data-href]'), function(a){ a.setAttribute('href', a.getAttribute('data-href')); a.setAttribute('target', '_blank'); a.setAttribute('rel', 'noopener'); });
+  box.appendChild(dup); box.appendChild(err); box.appendChild(go);
+  if (opts.invite) sp({ action: 'invite-info', invite: opts.invite, job: opts.job || '' }).then(function(r){
+    if (!r.data || !r.data.ok) return;
+    inviteNote.textContent = r.data.jobTitle ? t('suInvited', { j: r.data.jobTitle }) : t('suInvitedAny'); inviteNote.hidden = false;
+    if (r.data.email && !F.email.value) { F.email.value = r.data.email; keep.email = r.data.email; }
+  }, function(){});
+  function v(k){ return String(F[k].value || '').trim(); }
+  function submit(force){
+    err.textContent = ''; dup.innerHTML = '';
+    var need = [['first', 'suFirst'], ['last', 'suLast'], ['company', 'suCompany'], ['email', 'suEmail'], ['phone', 'suPhone'], ['trades', 'suTrades'], ['addr', 'suAddr'], ['city', 'suCity'], ['state', 'suState'], ['zip', 'suZip']].filter(function(x){ return !v(x[0]); });
+    if (need.length) { err.textContent = t('suNeed', { f: need.map(function(x){ return t(x[1]).replace(/ —.*$/, '').replace(/ \(.*\)$/, ''); }).join(', ') }); F[need[0][0]].focus(); return; }
+    if (!/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(v('email'))) { err.textContent = t('suEmailBad'); F.email.focus(); return; }
+    if (!/^[A-Za-z]{2}$/.test(v('state'))) { err.textContent = t('suStateBad'); F.state.focus(); return; }
+    if (v('ein') && !/^\d{4}$/.test(v('ein'))) { err.textContent = t('suEinBad'); F.ein.focus(); return; }
+    if (String(F.pw.value).length < 8) { err.textContent = t('suPwShort'); F.pw.focus(); return; }
+    if (F.pw.value !== F.pw2.value) { err.textContent = t('suPwDiff'); F.pw2.focus(); return; }
+    if (!agree.checked) { err.textContent = t('suAgreeNeed'); agree.focus(); return; }
+    var body = { action: 'register', email: v('email').toLowerCase(), password: F.pw.value, force: force ? true : undefined,
+      profile: { name: v('first') + ' ' + v('last'), company: v('company'), dbaName: v('dba'), phone: v('phone'),
+        trades: v('trades').split(/[,;\n]+/).map(function(x){ return x.trim(); }).filter(Boolean).slice(0, 30),
+        businessAddress: v('addr'), businessCity: v('city'), businessState: v('state').toUpperCase(), businessZip: v('zip'), licenseNumbers: v('lic'), einLast4: v('ein'), lang: LANG } };
+    if (opts.invite) { body.invite = opts.invite; body.job = opts.job || ''; }
+    busy(go, true);
+    sp(body).then(function(r){
+      busy(go, false);
+      var d = r.data || {};
+      if (r.status === 200 && d.duplicates && d.duplicates.length) {
+        dup.appendChild(h('div', { class: 'su-dup', 'data-su-dup': '1' }, [h('b', { text: t('suDupT') }), h('span', { text: t('suDupX') }),
+          h('ul', null, d.duplicates.map(function(x){ return h('li', { text: x.company + (x.dbaName ? ' (DBA ' + x.dbaName + ')' : '') + ' — ' + t('suDupWhy') + ' ' + (x.reasons || []).map(function(w){ return (DUPWHY[LANG] || {})[w] || w; }).join(', ') }); })),
+          h('div', { class: 'btns' }, [h('button', { type: 'button', class: 'btn', id: 'suDupSignin', text: t('suSignin'), on: { click: function(){ if (opts.back) opts.back(v('email')); } } }),
+            h('button', { type: 'button', class: 'btn gold', id: 'suForce', text: t('suForce'), on: { click: function(){ submit(true); } } })])]));
+        dup.scrollIntoView({ block: 'center' });
+        return;
+      }
+      if (r.status === 409) {
+        dup.appendChild(h('div', { class: 'su-dup', 'data-su-taken': '1' }, [h('span', { text: t('suTaken') }), h('button', { type: 'button', class: 'btn gold', id: 'suTakenSignin', text: t('suSignin'), on: { click: function(){ if (opts.back) opts.back(v('email')); } } })]));
+        return;
+      }
+      if (r.status !== 200 || !d.ok) { err.textContent = d.error || t('failed'); return; }
+      done(!!d.approved, body.email);
+    }, function(){ busy(go, false); err.textContent = t('loadFail'); });
+  }
+  go.addEventListener('click', function(){ submit(false); });
+  function done(approved, email){
+    main.innerHTML = '';
+    Object.keys(keep).forEach(function(k){ delete keep[k]; });
+    main.appendChild(h('section', { class: 'card signin signup su-done', id: 'signupDone', 'data-approved': approved ? '1' : '0' }, [h('div', { class: 'big', text: '✅ ' + t('suDoneT') }),
+      h('p', { text: approved ? t('suDoneInv') : t('suDone') }), email ? h('div', { class: 'muted', text: email }) : null,
+      h('button', { type: 'button', class: 'btn gold', id: 'suDoneSignin', text: t('suSignin'), on: { click: function(){ if (opts.back) opts.back(email); } } })]));
+    window.scrollTo(0, 0);
+  }
+  window.scrollTo(0, 0);
+  return { el: box };
+}
+
 /* portal.html calls this: host = { hello(big, small, sub), ended(), setLang(l) } */
 window.GCPartner = {
   start: function(opts){
@@ -787,6 +1029,7 @@ window.GCPartner = {
     }, function(e){ document.getElementById('main').innerHTML = ''; document.getElementById('main').appendChild(h('div', { class: 'off' }, [h('p', { text: e.message || t('loadFail') })])); });
   },
   setLang: setLang,
+  signup: signup,   /* patch SUBSIGNUP: portal.html's sign-in screen → "New subcontractor? Create your account" */
   _state: function(){ return { home: HOME, job: JOB, tab: TAB, jtab: JTAB, lang: LANG }; },
   L: L
 };
