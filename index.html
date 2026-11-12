@@ -85705,6 +85705,7 @@ function totalsOf(lines){
     if(L.status==='denied') return;
     ['gross','fed','ss','med','addlMed','state','otherDed','net','employerSS','employerMed','futa','suta'].forEach(function(k){ t[k]+=n2(L[k]); });
     t.hours+=n2(L.hours)+n2(L.otHours);
+    t.emHours=n2(t.emHours)+n2(L.emHours); t.emPay=n2(t.emPay)+n2(L.emPay); t.pmBonus=n2(t.pmBonus)+n2(L.pmBonus);   /* patch PAYEM */
   });
   Object.keys(t).forEach(function(k){ t[k]=r2(t[k]); });
   t.irs941 = r2(t.fed + t.ss*2 + t.med*2 + t.addlMed);
@@ -85755,7 +85756,10 @@ function drawLines(out){
         +'<td style="'+CSS.td+'">TOTALS</td><td style="'+CSS.num+'">'+t.hours.toFixed(2)+'</td>'
         +'<td style="'+CSS.num+'">'+money(t.gross)+'</td><td style="'+CSS.num+'">'+money(t.fed)+'</td>'
         +'<td style="'+CSS.num+'">'+money(r2(t.ss+t.med+t.addlMed))+'</td><td style="'+CSS.num+'">'+money(t.state)+'</td>'
-        +'<td style="'+CSS.num+'">'+money(t.otherDed)+'</td><td style="'+CSS.num+'color:#16a34a;">'+money(t.net)+'</td><td></td></tr></tfoot>'
+        +'<td style="'+CSS.num+'">'+money(t.otherDed)+'</td><td style="'+CSS.num+'color:#16a34a;">'+money(t.net)+'</td><td></td></tr>'
+        +((t.emHours>0||t.pmBonus>0)?('<tr data-payem-tot="1" style="background:#fef2f2;font-weight:700;font-size:12px;"><td colspan="9" style="'+CSS.td+'color:#7f1d1d;">'
+          +(t.emHours>0?('🚨 Emergency call-out 1.5×: '+t.emHours.toFixed(2)+' h · '+money(t.emPay)+' (in gross)'):'')+(t.emHours>0&&t.pmBonus>0?' · ':'')+(t.pmBonus>0?('🏆 Bonus — PM year-end: '+money(t.pmBonus)+' (in gross, federal at 22%)'):'')+'</td></tr>'):'')   /* patch PAYEM */
+        +'</tfoot>'
       +'</table></div>'
     +'</div>'
     + employerCard(t);
@@ -85926,7 +85930,8 @@ function runCard(r){
       +'<th style="'+CSS.th+'">Check #</th><th style="'+CSS.th+'">Status</th><th style="'+CSS.th+'"></th></tr></thead><tbody>'
       +(r.lines||[]).map(function(L,i){
         return '<tr>'
-          +'<td style="'+CSS.td+'">'+esc(L.name)+((L.status==='denied'&&L.denyReason)?('<div style="font-size:11px;color:#991b1b;">denied: '+esc(L.denyReason)+'</div>'):'')+'</td>'   /* patch LINEAPPR */
+          +'<td style="'+CSS.td+'">'+esc(L.name)+((L.status==='denied'&&L.denyReason)?('<div style="font-size:11px;color:#991b1b;">denied: '+esc(L.denyReason)+'</div>'):'')
+            +((n2(L.emHours)>0||n2(L.pmBonus)>0)?('<div data-payem-line="1" style="font-size:11px;color:#7f1d1d;font-weight:700;">'+(n2(L.emHours)>0?('🚨 Emergency call-out 1.5× '+n2(L.emHours).toFixed(2)+' h · '+money(L.emPay)):'')+(n2(L.emHours)>0&&n2(L.pmBonus)>0?' · ':'')+(n2(L.pmBonus)>0?('🏆 Bonus — PM year-end '+money(L.pmBonus)):'')+'</div>'):'')+'</td>'   /* patch LINEAPPR · patch PAYEM */
           +'<td style="'+CSS.num+'">'+money(L.gross)+'</td>'
           +'<td style="'+CSS.num+'">'+money(L.fed)+'</td>'
           +'<td style="'+CSS.num+'">'+money(r2(n2(L.ss)+n2(L.med)+n2(L.addlMed)))+'</td>'
