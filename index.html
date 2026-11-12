@@ -5496,7 +5496,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.246-2026-11-12-r34n2 -->
+<!-- GrayCo CRM Build: 33.247-2026-11-12-r34o1 -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6445,7 +6445,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.246-2026-11-12-r34n2");
+  console.log("[GC] Build 33.247-2026-11-12-r34o1");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6493,7 +6493,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.246-2026-11-12-r34n2"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.247-2026-11-12-r34o1"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -167366,6 +167366,7 @@ function keyOk(id){
   if ((m = /^sub:(.+)$/.exec(id))) return recOk(subs().filter(function(x){ return x && (s(x.id) === m[1] || s(x.invId) === m[1]); })[0]);
   if ((m = /^inv:(.+)$/.exec(id))) return recOk(arr(crm().invoices).filter(function(x){ return x && s(x.id) === m[1]; })[0]);
   if ((m = /^exp:(.+)$/.exec(id))) { var ex = arr(crm().expenses).filter(function(x){ return x && s(x.id) === m[1]; })[0]; return recOk(ex || expenses().filter(function(x){ return x && s(x.expId || x.id) === m[1]; })[0]); }
+  if ((m = /^(?:td:)?to:(.+)$/.exec(id))) { try { return !!(W._gcTimeOff && W._gcTimeOff.coOk(m[1])); } catch (e) { return true; } }   /* patch TIMEOFF: a time-off request follows the person's company */
   if ((m = /^td:(.+)$/.exec(id))) { var it = td2Items().filter(function(x){ return x && x.key === m[1]; })[0]; return it ? (W._gcCoItem ? !!W._gcCoItem(it) : pidOk(it.pid)) : C.filter() === 'construction'; }
   return C.filter() === 'construction';
 }
@@ -167704,6 +167705,7 @@ function denyTo(r){
 function doDeny(r){
   var inp = D.querySelector('[data-apx-deny-in="' + cssq(r.key) + '"]'), why = s((inp && inp.value) || DREASON[r.key]);
   /* patch APPRCOUNT: a reason is optional */
+  var _to = /^(?:td:)?to:(.+?)(?:#\d+)?$/.exec(s(r.key)); if (_to && W._gcTimeOff && W._gcTimeOff.decide) { delete DENYBOX[r.key]; delete DREASON[r.key]; Promise.resolve(W._gcTimeOff.decide(_to[1], false, why)).then(function(){ DENYC.at = 0; fresh(); paintSoon(); }); return; }   /* patch TIMEOFF: ✕ Deny on a time-off request denies it (the person sees the note) */
   var to = denyTo(r) || 'the office', me = myName() || myEmail(), at = new Date().toISOString(), title = s(r.title).slice(0, 120);
   var d = { key: r.key.replace(/#\d+$/, ''), src: r.src, id: s(r.id), title: title, pid: s(r.pid), by: me, at: at, reason: why.slice(0, 500), to: to };
   try {
@@ -174944,6 +174946,7 @@ function lcRowHtml(l, r, bc, del, now){
   var id = esc(l.id), cell = function(c, v, tip){ return '<td class="c-' + c + '"' + (tip ? ' title="' + esc(tip) + '"' : '') + '>' + (v ? esc(v) : '<span class="gcl-dash">—</span>') + '</td>'; };
   return '<tr class="gcl-lr' + bkRowCls(l) + '" data-gcl-id="' + id + '"><td class="c-name">' + bkChk(l)   /* patch LEADBULK */
     + '<button type="button" class="gclu-nb" data-gclu-note="' + id + '" title="Add a quick note" aria-label="Add a quick note">📝</button>'
+    + (function(){ try { return W._gcBidPost && W._gcBidPost.canPost({ leadId: l.id }) ? '<button type="button" class="gclu-nb" data-gclu-bp="' + id + '" title="📢 Put on bid portal" aria-label="Put on bid portal">📢</button>' : ''; } catch (e) { return ''; } })()   /* patch LEADBP */
     + '<b>' + r.ic + ' ' + r.name + '</b> ' + roleChip(l) + (W._gcBidMerge ? W._gcBidMerge.chip(l) : '') /* patch BIDMERGE */ + (W._gcCo && W._gcCo.bothChip ? W._gcCo.bothChip(l) : '') /* patch LEADBOTH */ + (r.addr ? '<div class="gcl-addr">' + r.addr + (r.d != null ? ' <span class="gclu-mi">· ' + miTxt(r.d) + '</span>' : '') + '</div>' : '')
     + (r.note ? '<div class="gclu-np" title="' + r.note.tip + '">📝 ' + r.note.t + '</div>' : '') + '</td>'
     + '<td class="c-due">' + lcDue(l, r, now) + '</td>'
@@ -176089,10 +176092,11 @@ function bkBar(){
   var h = '<span data-gclb-n>' + n + ' selected</span>'
     + (sp.job.length ? '<span class="gclb-skip" data-gclb-skip>' + sp.job.length + ' already ' + (sp.job.length === 1 ? 'a job' : 'jobs') + ' — skipped</span>' : '')
     + '<span class="gclb-dot">·</span><button type="button" data-gclb-a="del"' + (sp.go.length ? '' : ' disabled') + '>🗑 Delete selected' + (sp.job.length && sp.go.length ? ' (' + sp.go.length + ')' : '') + '</button>'
+    + ((function(){ try { return W._gcBidPost && W._gcBidPost.canBulk && W._gcBidPost.canBulk(); } catch (e) { return false; } })() && n ? '<span class="gclb-dot">·</span><button type="button" data-gclb-a="bp" style="background:#d4a017;color:#1b1640">📢 Put selected on bid portal</button>' : '')   /* patch LEADBP */
     + '<span class="gclb-dot">·</span><button type="button" data-gclb-a="cancel">Cancel</button>';
   if (el.__h !== h) { el.__h = h; el.innerHTML = h; }
 }
-function bkBarClick(ev){ var b = ev.target.closest && ev.target.closest('[data-gclb-a]'); if (!b || b.disabled) return; var a = b.getAttribute('data-gclb-a'); if (a === 'cancel') bkStop(); else if (a === 'del') bkAsk(); }
+function bkBarClick(ev){ var b = ev.target.closest && ev.target.closest('[data-gclb-a]'); if (!b || b.disabled) return; var a = b.getAttribute('data-gclb-a'); if (a === 'cancel') bkStop(); else if (a === 'del') bkAsk(); else if (a === 'bp' && W._gcBidPost && W._gcBidPost.bulk) W._gcBidPost.bulk(bkIds()); }   /* patch LEADBP */
 function bkTick(){
   if (!BULK.on) { BULK.loop = false; bkBar(); return; }
   if (view() !== 'leads' || !bkView() || !D.getElementById('gc-leads-hub')) { BULK.on = false; BULK.sel = {}; BULK.v++; BULK.loop = false; bkBar(); return; }   /* left Leads, or Calendar / Map */
@@ -224088,7 +224092,14 @@ function fn(path, body){
 }
 function crm(){ return W._crm || {}; }
 function proj(id){ id = s(id); return id ? arr(crm().projects).filter(function(p){ return p && s(p.id) === id; })[0] || null : null; }
-function lead(id){ id = s(id); return id ? arr(crm().leads).filter(function(l){ return l && s(l.id) === id; })[0] || null : null; }
+function lead(id){ id = s(id); if (!id) return null;
+  /* patch LEADBP (owner 11/12: "I need to be able to put leads onto the bid portal as admin, Glenn needs to too"): the Leads page's own live list
+     (W._gcLeadsHubKit.all — newer leads, Lead Inbox bid leads) is searched too; window._crm.leads can be an old copy without them, and then the
+     lead drawer had no 📢 button at all */
+  var hit = arr(crm().leads).filter(function(l){ return l && s(l.id) === id; })[0];
+  if (!hit) { try { hit = arr(W._gcLeadsHubKit && W._gcLeadsHubKit.all && W._gcLeadsHubKit.all()).filter(function(l){ return l && s(l.id) === id; })[0]; } catch (e) {} }
+  if (!hit) { try { hit = arr(W._gcLeadsList).filter(function(l){ return l && s(l.id) === id; })[0]; } catch (e) {} }
+  return hit || null; }
 function est(id){ id = s(id); if (!id) return null; var l = arr(W._gcEstimatesState).length ? W._gcEstimatesState : arr(crm().estimates); var e = arr(l).filter(function(x){ return x && s(x.id) === id; })[0]; if (!e) { try { e = (typeof estimates !== 'undefined' && Array.isArray(estimates) ? estimates : []).filter(function(x){ return x && s(x.id) === id; })[0]; } catch (x) {} } return e || null; }
 
 /* ── who may post ── */
@@ -224389,7 +224400,23 @@ W._gcBidJobGone = function(id){ id = s(id); if (!id) return false;
   var lists = [{ at: JOBS.at || 0, l: arr(JOBS.list) }]; try { if (W._gcSys && W._gcSys.bp && W._gcSys.bp.jobs) lists.push({ at: (W._gcSys.bp.at && W._gcSys.bp.at()) || 0, l: arr(W._gcSys.bp.jobs()) }); } catch (e) {}
   var hit = null; lists.sort(function(a, b){ return b.at - a.at; }).some(function(x){ hit = x.l.filter(function(j){ return j && j.id === id; })[0] || null; return !!hit; });   /* the newest list that knows the job */
   return !!(hit && hit.deleted); };
-W._gcBidPost = { open: open, close: close, canPost: function(c){ return canPost(ctxOf(c)); }, jobs: jobs, paint: paint, todo: function(){ QA.at = 0; return todoItems(); }, trades: tradeList,
+/* patch LEADBP: 📢 from the Leads list — a row's 📢 button, and "📢 Put selected on bid portal" for selected leads (admins / estimators): each goes
+   on as 🔒 private (invited subs only), its sub due date 1 day before our due date; trades / files are added on 📂 Manage afterwards */
+function bulkPost(ids){
+  ids = arr(ids).map(s).filter(Boolean); var ok = ids.filter(function(id){ return canPost(ctxOf({ leadId: id })); }), skip = 0;
+  if (!ok.length) return toast('You can put only your own leads on the bid portal (admins and estimators: any lead).', true);
+  if (!W.confirm('📢 Put ' + ok.length + ' lead' + (ok.length === 1 ? '' : 's') + ' on the bid portal?\n\nEach goes on 🔒 private (only subs you invite see it), with the sub due date one day before our due date. Pick its trades and add plans on 🏗 Bid portal → 📂 Manage.')) return;
+  var done = 0, fail = [];
+  return ok.reduce(function(pr, id){ return pr.then(function(){
+    var c = ctxOf({ leadId: id }), l = c.l || {}, j = postedFor(c); if (j && !j.deleted) { skip++; return; }
+    var our = ourDueOf(l), pmN = s(l.pm || l.estimator), pmU = arr(crm().users).filter(function(u){ return u && pmN && low(u.name) === low(pmN); })[0];
+    var body = { op: 'postjob', leadId: id, title: s(l.name || l.title) || 'Bid job', address: [s(l.address), s(l.city), s(l.state)].filter(Boolean).join(', '), visibility: 'private', trades: [],
+      due: subDue(our.date), dueTime: our.time, ourDue: our.date, ourDueTime: our.time, scope: scopeText(c), specs: '', pmName: pmN, pmEmail: low(pmU && pmU.email), files: [], links: [] };
+    return fn('bid-hub', body).then(function(){ done++; }, function(e){ fail.push(s(l.name || id) + ': ' + e.message); });
+  }); }, Promise.resolve()).then(function(){ toast('📢 ' + done + ' on the bid portal (🔒 private)' + (skip ? ' · ' + skip + ' already there' : '') + (fail.length ? ' · not posted: ' + fail.slice(0, 2).join('; ') : ''), !!fail.length && !done); jobs(true); });
+}
+D.addEventListener('click', function(ev){ var b = ev.target && ev.target.closest && ev.target.closest('[data-gclu-bp]'); if (!b) return; ev.preventDefault(); ev.stopPropagation(); if (ev.stopImmediatePropagation) ev.stopImmediatePropagation(); open({ leadId: b.getAttribute('data-gclu-bp') }); }, true);
+W._gcBidPost = { bulk: bulkPost, canBulk: function(){ return isAdmin() || isEst(); }, open: open, close: close, canPost: function(c){ return canPost(ctxOf(c)); }, jobs: jobs, paint: paint, todo: function(){ QA.at = 0; return todoItems(); }, trades: tradeList,
   state: function(){ return { jobs: JOBS.list ? JOBS.list.length : null, at: JOBS.at, admin: isAdmin(), est: isEst(), me: myEmail(), name: myName(), ticks: TICK }; } };
 try { console.log('[GC] patch BIDPOST: 📢 Put on bid portal (estimate / job / lead; admin, estimator, the job\'s PM) — nothing goes on by itself — _gcBidPost.state()'); } catch (e) {}
 })(window);
@@ -226798,5 +226825,748 @@ D.addEventListener('click', function(e){
     function(err){ toast('Could not restore: ' + (err && err.message || err), true); b.disabled = false; b.textContent = '↩ Restore priorities from last night\'s backup'; });
 }, true);
 W._gcLeadKeep = { apply: apply, capture: capture, heal: heal, seed: seed, find: find, keys: keys, load: load, facts: facts, restoreFrom: restoreFrom, restoreBackup: restoreBackup, data: function(){ return DB; } };
+})(window);
+</script>
+<script id="gc-patch-timeoff">
+/* __GC_PATCH_TIMEOFF__ — 📅 MY SCHEDULE, TIME OFF, SICK, RUNNING LATE, AVAILABILITY   (patch TIMEOFF)
+   Owner 11/12: "have an employee field view in schedule where they can ask for time off or mark sick etc."
+   • Each person (GrayCo Field on a phone — the strip under the home buttons; the Desk app — a "📅 My schedule & time off" card;
+     the full CRM — the Schedule screen's 🏖 bar) sees their own next 14 days of jobs by day and four buttons:
+       🏖 Request time off (from / to, full day or half day AM / PM, reason optional) → ✅ Approvals for their manager
+          (user.manager / reportsTo / supervisor, when set), the office of their company and the admins; Approve / Deny with
+          an optional note; the person sees the answer on their screen and in "My requests".
+       🤒 Call in sick (today / tomorrow, note) — no approval: their manager, the PM / foreman of that day's jobs, the office
+          of their company and the admins get an in-app notice at once, and a To-Do "Cover <name>'s jobs today: <jobs>"
+          goes to the manager / the jobs' PMs (the office when there is nobody).
+       ⏰ Running late (minutes + note) → a notice to the PM / foreman of today's jobs (the office when none).
+       📅 My availability — the weekdays they never work and an hours note (e.g. "Wed after 3 PM").
+   • Schedule: approved time off and sick days are "🏖 Off" / "🤒 Sick" blocks in the Schedule screen's "Who's out" board
+     (14 days, by person); putting someone on the schedule on a day they are off shows a warning (a warning only).
+     window._gcTimeOff = { isOff(email, 'YYYY-MM-DD' | {from,to} | [from,to]) → { off, kind, note, … }, list(email) } for
+     the schedule pickers (patch CERTROLE reads it).
+   • Payroll: approved time off and sick days show on 🕐 Timesheets as their own rows ("not clocked hours"), Paid only when the
+     person's record has a paid-leave balance (ptoDays / ptoHours / paidLeave — the CRM has no such field today, so: Unpaid,
+     recorded). The 'timesheets' list and the pay math are NOT touched.
+   • Company: a request belongs to the person's company (their companies list, the picked one when it is theirs); the office
+     sees its own company's requests; the company switcher filters the Approvals items and the board.
+   Data: gc_kv gc_timeoff = { v: 1, list: [record], updatedAt } — read-merge-write, newest updatedAt per record wins (a staff key:
+   everyone reads and writes it, like gc_office_tasks). The To-Do is a gc_office_tasks record (kind "given", the NUDGE format).
+   Kill switch: localStorage gc_timeoff_off = "1" (this device: no strip / card / bar / notices; the API still answers). */
+(function(W){
+'use strict';
+if (W.__GC_PATCH_TIMEOFF__) return; W.__GC_PATCH_TIMEOFF__ = true;
+var D = W.document, KEY = 'gc_timeoff', LKEY = 'gc_timeoff_cache', SEENK = 'gc_timeoff_seen', OT = 'gc_office_tasks';
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout, RI = W.__GC_REAL_SETINTERVAL__ || W.__GC_NATIVE_SETINTERVAL__ || W.setInterval;
+function later(f, ms){ return ST.call(W, f, ms || 0); }
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v.filter(function(x){ return x != null; }) : []; }
+function num(v){ var n = parseFloat(String(v == null ? '' : v).replace(/[^0-9.\-]/g, '')); return isFinite(n) ? n : 0; }
+function esc(v){ return String(v == null ? '' : v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function warn(e){ try { console.warn('[GC TIMEOFF]', e && e.message || e); } catch (x) {} }
+function nowIso(){ return new Date().toISOString(); }
+function pad(n){ return (n < 10 ? '0' : '') + n; }
+function ymdOf(d){ return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+function today(){ return ymdOf(new Date()); }
+function ymd(v){ if (v instanceof Date) return isNaN(v.getTime()) ? '' : ymdOf(v); var t = s(v); return /^\d{4}-\d{2}-\d{2}/.test(t) ? t.slice(0, 10) : ''; }
+function addDays(y, n){ var d = new Date((ymd(y) || today()) + 'T12:00:00'); d.setDate(d.getDate() + n); return ymdOf(d); }
+function dow(y){ return new Date(ymd(y) + 'T12:00:00').getDay(); }
+var WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], WDL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function short(y){ y = ymd(y); if (!y) return ''; var d = new Date(y + 'T12:00:00'); return WD[d.getDay()] + ' ' + MON[d.getMonth()] + ' ' + d.getDate(); }
+function dayWord(y){ var t = today(); return y === t ? 'today' : y === addDays(t, 1) ? 'tomorrow' : short(y); }
+function rangeTxt(a, b){ a = ymd(a); b = ymd(b) || a; return a === b ? short(a) : short(a) + ' – ' + short(b); }
+function eachDay(a, b, cap){ var out = [], d = ymd(a), e = ymd(b) || d; if (!d) return out; while (d <= e && out.length < (cap || 400)) { out.push(d); d = addDays(d, 1); } return out; }
+function hash(t){ t = String(t || ''); var h = 5381; for (var i = 0; i < t.length; i++) h = ((h << 5) + h + t.charCodeAt(i)) | 0; return (h >>> 0).toString(36); }
+function uid(p){ return (p || 'TO') + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+function first(n){ return s(n).split(/\s+/)[0] || s(n); }
+function lsGet(k){ try { return localStorage.getItem(k); } catch (e) { return null; } }
+function lsSet(k, v){ try { localStorage.setItem(k, v); return true; } catch (e) { return false; } }
+function off(){ return lsGet('gc_timeoff_off') === '1'; }
+function toast(m, bad){
+  try {
+    var t = D.getElementById('gc-to-toast'); if (!t) { t = D.createElement('div'); t.id = 'gc-to-toast'; t.setAttribute('data-gc-keep', '1'); t.setAttribute('data-gcnav-ignore', '1'); D.body.appendChild(t); }
+    t.textContent = m; t.className = bad ? 'bad' : ''; t.style.display = 'block'; clearTimeout(t.__t); t.__t = later(function(){ t.style.display = 'none'; }, bad ? 7000 : 4500);
+  } catch (e) {}
+}
+
+/* ── people ── */
+function C(){ return W._crm || {}; }
+function users(){ return arr(C().users).filter(function(u){ return u && (s(u.email) || s(u.name)); }); }
+function active(u){ return !!u && u.active !== false && !u.departed && !/disabled|inactive|terminated/i.test(s(u.status)); }
+function userBy(x){
+  var k = low(typeof x === 'object' && x ? (x.email || x.name) : x); if (!k) return null;
+  var L = users(), hit = null;
+  for (var i = 0; i < L.length; i++) { var u = L[i]; if (low(u.email) === k || low(u.name) === k) { if (!hit || (active(u) && !active(hit))) hit = u; } }
+  return hit;
+}
+function authEmail(){ try { var A = W.__GC_AUTH__, e = A && A.email && A.email(); return low(e); } catch (e) { return ''; } }
+function vas(){ try { return !!(W._gcVAS && W._gcVAS.active && W._gcVAS.active()); } catch (e) { return false; } }
+/* the person whose screen this is (in 👁 View as…, the previewed person — read only) */
+function meEmail(){ if (vas()) { try { var e = W._gcVAS.email(); if (e) return low(e); } catch (x) {} } return authEmail(); }
+function meUser(){ var e = meEmail(); return (e && userBy(e)) || null; }
+function meName(){ var u = meUser(); return s(u && u.name) || (meEmail() ? meEmail().split('@')[0] : ''); }
+function realAdmin(){ if (vas()) return false; try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()); } catch (e) { return false; } }
+function adminUser(u){ return !!u && active(u) && (/^admin$/i.test(s(u.role)) || low(u.payType) === 'owner'); }
+function officeUser(u){ return !!u && active(u) && (/office/i.test(s(u.role)) || /^office@/.test(low(u.email))); }
+function meAdmin(){ if (realAdmin()) return true; if (vas() || !authEmail()) return false; var u = meUser(); return low(u && u.payType) === 'owner'; }
+function meOffice(){ if (vas()) return false; try { if (W._gcIsOfficeFull && W._gcIsOfficeFull()) return true; } catch (e) {} return officeUser(meUser()); }
+/* companies */
+function CO(){ return W._gcCo || null; }
+function validCo(c){ return /^(construction|mitigation|environmental)$/.test(s(c)); }
+function cosOf(u){ if (!u) return ['construction']; if (/^office@/.test(low(u.email)) || adminUser(u) && low(u.payType) === 'owner') return ['construction', 'mitigation', 'environmental']; try { if (CO() && CO().userCos) return CO().userCos(u); } catch (e) {} var l = arr(u.companies).filter(validCo); return l.length ? l : ['construction']; }
+function picked(){ try { return CO() && CO().filter ? s(CO().filter()) || 'all' : 'all'; } catch (e) { return 'all'; } }
+function myCos(){ if (meAdmin()) return ['construction', 'mitigation', 'environmental']; var u = meUser(); if (!u && meOffice() && /^office@/.test(authEmail())) return ['construction', 'mitigation', 'environmental']; return cosOf(u); }   /* the person's own companies (the master office login: all) */
+function homeCo(u){ var l = cosOf(u), f = picked(); return l.indexOf(f) >= 0 ? f : l[0] || 'construction'; }
+function coPass(rec){ var f = picked(); return f === 'all' || s(rec && rec.companyId || 'construction') === f; }
+/* the person's own manager, when their record names one */
+function managersOf(u){ var out = []; ['manager', 'reportsTo', 'supervisor', 'managerEmail'].forEach(function(f){ arr([].concat(u && u[f] || [])).forEach(function(v){ var m = userBy(v); if (m && active(m) && low(m.email) !== low(u.email) && out.indexOf(m) < 0) out.push(m); }); }); return out; }
+function emailsOf(L){ var out = []; arr(L).forEach(function(u){ var e = low(u && u.email); if (e && out.indexOf(e) < 0) out.push(e); }); return out; }
+function officeOf(co){ return users().filter(function(u){ return officeUser(u) && cosOf(u).indexOf(co) >= 0; }); }
+function adminsAll(){ return users().filter(adminUser); }
+
+/* ── jobs and schedule ── */
+var CREW = ['pm', 'apm', 'superintendent', 'foreman', 'mitTech', 'envTech', 'tech', 'cleanTech', 'abatementSupervisor', 'crew', 'crewLead', 'techs'];
+var LEADS = ['pm', 'apm', 'superintendent', 'foreman', 'crewLead', 'abatementSupervisor'];
+function projects(){ return arr(C().projects); }
+function proj(id){ id = s(id); if (!id) return null; var L = projects(); for (var i = 0; i < L.length; i++) if (L[i] && s(L[i].id) === id) return L[i]; return null; }
+function namesIn(v){ var out = []; (Array.isArray(v) ? v : [v]).forEach(function(x){ var n = s(typeof x === 'object' && x ? (x.name || x.email) : x); if (n) n.split(/\s*[,;&\/]\s*|\s+and\s+/i).forEach(function(p){ p = low(p); if (p) out.push(p); }); }); return out; }
+function onJob(u, p){ if (!u || !p) return false; var n = low(u.name), e = low(u.email); return CREW.some(function(f){ return namesIn(p[f]).some(function(x){ return x === n || x === e; }); }); }
+function openJob(p){ return !!p && !p.deleted && !/complete|closed|cancel|lost|dead|archiv|bidding/i.test(s(p.status)); }
+function schedule(){ var L = arr(C().schedule); try { if (W._gcSchedVisible) L = arr(W._gcSchedVisible(L)); } catch (e) {} return L; }
+function itemDays(x){ var a = ymd(x.date || x.start || x.startDate), b = ymd(x.endDateSch || x.end || x.endDate); if (!a) return []; if (!b || b < a || x.groupId) return [a]; return eachDay(a, b, 60); }
+function itemPeople(x){ return namesIn([x.assignee, x.who, x.crew, x.people, x.schedFor].filter(Boolean)); }
+/* a person's work on a day: their schedule items (theirs by name, or on a job they work on), else the open jobs they are on (today only) */
+function jobsOn(u, day){
+  if (!u) return [];
+  var n = low(u.name), e = low(u.email), out = [], seen = {};
+  schedule().forEach(function(x){
+    if (!x || x.deleted || x.completed && day < today()) return;
+    if (itemDays(x).indexOf(day) < 0) return;
+    var ppl = itemPeople(x), mine = ppl.indexOf(n) >= 0 || ppl.indexOf(e) >= 0;
+    if (!mine && s(x.scope) === 'personal') return;
+    var p = proj(x.pid || x.projectId || x.jobId);
+    if (!mine && !(p && onJob(u, p))) return;
+    if (!mine && ppl.length) return;   /* someone else's item on my job */
+    var k = s(x.id) || s(x.title) + day; if (seen[k]) return; seen[k] = 1;
+    out.push({ id: s(x.id), pid: p ? s(p.id) : '', job: p ? s(p.name || p.address) : '', title: s(x.title) || 'Work', time: s(x.time), p: p });
+  });
+  return out;
+}
+function jobNames(J){ var out = []; J.forEach(function(j){ var t = j.job ? j.job + (j.title && j.title !== 'Work' && j.title.indexOf(j.job) < 0 ? ' (' + j.title + ')' : '') : j.title; if (t && out.indexOf(t) < 0) out.push(t); }); return out; }
+/* nothing on the schedule today: the open jobs they work on as crew (not the jobs they PM) */
+function todayJobs(u, day){ var J = jobsOn(u, day); if (J.length || day !== today()) return J; var n = low(u.name), e = low(u.email); return projects().filter(function(p){ return openJob(p) && CREW.slice(2).some(function(f){ var L = namesIn(p[f]); return L.indexOf(n) >= 0 || L.indexOf(e) >= 0; }); }).slice(0, 8).map(function(p){ return { id: '', pid: s(p.id), job: s(p.name || p.address), title: '', p: p }; }); }
+function leadsOf(J, u){ var out = []; J.forEach(function(j){ var p = j.p || proj(j.pid); if (!p) return; LEADS.forEach(function(f){ namesIn(p[f]).forEach(function(n){ var m = userBy(n); if (m && active(m) && low(m.email) !== low(u && u.email) && out.indexOf(m) < 0) out.push(m); }); }); }); return out; }
+
+/* ── the store ── */
+var STORE = { list: null, loaded: false, owe: false, pulling: null, at: 0 };
+function parse(v){ if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } } if (Array.isArray(v)) return v; return v && typeof v === 'object' ? arr(v.list) : []; }
+function newer(a, b){ return s(a && (a.updatedAt || a.at)) > s(b && (b.updatedAt || b.at)); }   /* a tie: the later one (the second list) wins */
+function merge(a, b){
+  var by = {}, order = [];
+  arr(a).concat(arr(b)).forEach(function(x){ if (!x || !s(x.id)) return; var k = s(x.id); if (!(k in by)) { by[k] = x; order.push(k); } else if (!newer(by[k], x)) by[k] = x; });
+  return order.map(function(k){ return by[k]; });
+}
+function prune(L){ var cut = addDays(today(), -400); return arr(L).filter(function(x){ return x && (s(x.to || x.from) >= cut || x.kind === 'avail'); }).slice(-3000); }
+function local(){ if (STORE.list) return STORE.list; var L = []; try { L = parse(lsGet(LKEY)); } catch (e) {} STORE.list = L; return L; }
+function keepLocal(L){ STORE.list = prune(L); lsSet(LKEY, JSON.stringify(STORE.list)); }
+function cloudGet(){ try { return Promise.resolve(W._ehSb ? W._ehSb(KEY) : undefined).then(function(v){ return v; }, function(){ return undefined; }); } catch (e) { return Promise.resolve(undefined); } }
+function cloudPut(L){ try { var f = W._supaUpsertNow || W._supaUpsert; return Promise.resolve(f ? f(KEY, { v: 1, list: L, updatedAt: nowIso() }) : null); } catch (e) { return Promise.resolve(null); } }
+function pull(){
+  if (STORE.pulling) return STORE.pulling;
+  if (!authEmail()) return Promise.resolve(local());
+  STORE.pulling = cloudGet().then(function(v){
+    if (v === undefined) return local();
+    var inc = parse(v), before = JSON.stringify(local()), m = prune(merge(inc, local()));
+    keepLocal(m); STORE.loaded = true; STORE.at = Date.now();
+    var mineNewer = JSON.stringify(prune(merge(inc, []))) !== JSON.stringify(m);
+    if ((STORE.owe || mineNewer) && !vas()) { STORE.owe = false; return cloudPut(m).then(function(){ return m; }, function(){ STORE.owe = true; return m; }); }
+    if (before !== JSON.stringify(m)) changed();
+    return m;
+  }).catch(function(e){ warn(e); return local(); }).then(function(v){ STORE.pulling = null; return v; });
+  return STORE.pulling;
+}
+/* a write: this computer first (instant), then read-merge-write to the cloud */
+function put(recs){
+  if (vas()) { toast('👁 View as… is a preview — nothing is saved.', true); return Promise.resolve(false); }
+  recs = arr(recs).map(function(r){ var at = nowIso(), old = byId(r.id), o = s(old && old.updatedAt); if (o && o >= at) at = new Date(Date.parse(o) + 1).toISOString(); r.updatedAt = at; return r; });   /* always newer than the copy it changes */
+  keepLocal(merge(local(), recs)); STORE.owe = true; changed();
+  return cloudGet().then(function(v){ var m = prune(merge(parse(v), local())); keepLocal(m); return cloudPut(m); }).then(function(){ STORE.owe = false; return true; }, function(e){ warn(e); return true; });
+}
+function all(){ return local(); }
+function byId(id){ id = s(id); var L = all(); for (var i = 0; i < L.length; i++) if (s(L[i].id) === id) return L[i]; return null; }
+var LIS = [];
+function changed(){ try { if (W._gcApprovalSetFresh) W._gcApprovalSetFresh(); } catch (e) {} try { W.dispatchEvent(new CustomEvent('gc-timeoff-changed')); } catch (e) {} LIS.forEach(function(f){ try { f(); } catch (e) {} }); later(paintAll, 30); }
+
+/* ── the rules ── */
+function live(r){ return !!r && !r.deleted && r.status !== 'cancelled'; }
+function covers(r, a, b){ var f = ymd(r.from), t = ymd(r.to) || f; return !!f && f <= b && t >= a; }
+function normRange(q){
+  if (Array.isArray(q)) return [ymd(q[0]), ymd(q[1]) || ymd(q[0])];
+  if (q && typeof q === 'object' && !(q instanceof Date)) return [ymd(q.from || q.start || q.date), ymd(q.to || q.end || q.from || q.start || q.date)];
+  var t = s(q instanceof Date ? ymd(q) : q), m = /^(\d{4}-\d{2}-\d{2})\s*(?:\.\.|to|–|—)\s*(\d{4}-\d{2}-\d{2})$/.exec(t);
+  if (m) return [m[1], m[2]];
+  var d = ymd(t) || today(); return [d, d];
+}
+function partTxt(r){ return r.part === 'am' ? 'half day (morning)' : r.part === 'pm' ? 'half day (afternoon)' : 'full day'; }
+function kindLabel(r){ return r.kind === 'sick' ? 'Sick' : r.kind === 'off' ? (r.part === 'am' || r.part === 'pm' ? 'Off ½ (' + (r.part === 'am' ? 'AM' : 'PM') + ')' : 'Off') : r.kind === 'avail' ? 'Unavailable' : r.kind === 'late' ? 'Running late' : s(r.kind); }
+function recsOf(email){ email = low(email); return all().filter(function(r){ return r && low(r.email) === email; }); }
+/* is this person off on that day / any day of that range? (approved time off, a sick call, a weekday they never work) */
+function isOff(email, q){
+  var R = normRange(q), a = R[0], b = R[1] < R[0] ? R[0] : R[1], mine = recsOf(email).filter(live);
+  var sick = mine.filter(function(r){ return r.kind === 'sick' && covers(r, a, b); })[0];
+  if (sick) return { off: true, kind: 'Sick', note: s(sick.note) || 'called in sick', id: sick.id, status: 'sick', from: sick.from, to: sick.to || sick.from };
+  var offR = mine.filter(function(r){ return r.kind === 'off' && r.status === 'approved' && covers(r, a, b); })[0];
+  if (offR) return { off: true, kind: kindLabel(offR), half: offR.part === 'am' || offR.part === 'pm' ? offR.part : '', note: s(offR.reason) || 'time off (approved)', id: offR.id, status: 'approved', from: offR.from, to: offR.to || offR.from };
+  var av = mine.filter(function(r){ return r.kind === 'avail' && arr(r.days).length; })[0];
+  if (av) { var hit = eachDay(a, b, 62).filter(function(d){ return arr(av.days).indexOf(dow(d)) >= 0; })[0]; if (hit) return { off: true, kind: 'Unavailable', note: 'does not work ' + WDL[dow(hit)] + 's' + (s(av.hours) ? ' · ' + s(av.hours) : ''), id: av.id, status: 'regular', from: hit, to: hit }; }
+  var pend = mine.filter(function(r){ return r.kind === 'off' && r.status === 'pending' && covers(r, a, b); })[0];
+  if (pend) return { off: false, pending: true, kind: 'Time off asked (pending)', note: s(pend.reason), id: pend.id, status: 'pending', from: pend.from, to: pend.to || pend.from };
+  return { off: false };
+}
+function workDays(r){ var d = eachDay(r.from, r.to || r.from, 400).filter(function(x){ return dow(x) !== 0; }).length; return r.kind === 'off' && (r.part === 'am' || r.part === 'pm') ? d * 0.5 : d; }
+/* who decides a time-off request: an admin, the office of that company, the person's own manager — never the person (except the owner) */
+function canDecide(r, viewer){
+  if (!r || r.kind !== 'off' || r.status !== 'pending') return false;
+  var v = viewer || null, ve = low(v ? v.email : meEmail()); if (!ve) return false;
+  var self = ve === low(r.email), vu = v || meUser();
+  if (self && low(vu && vu.payType) !== 'owner') return false;
+  var adm = v ? adminUser(v) : meAdmin(); if (adm) return true;
+  var ofc = v ? officeUser(v) : meOffice(), cos = v ? cosOf(v) : myCos();
+  if (ofc && cos.indexOf(s(r.companyId) || 'construction') >= 0) return true;
+  var person = userBy(r.email); return managersOf(person).some(function(m){ return low(m.email) === ve; });
+}
+/* who sees a record: the person, the people it was sent to, the admins, the office of that company, the person's manager */
+function canSee(r, viewer){
+  var ve = low(viewer ? viewer.email : meEmail()); if (!r || !ve) return false;
+  if (low(r.email) === ve || arr(r.notify).indexOf(ve) >= 0) return true;
+  if (viewer ? adminUser(viewer) : meAdmin()) return true;
+  if ((viewer ? officeUser(viewer) : meOffice()) && (viewer ? cosOf(viewer) : myCos()).indexOf(s(r.companyId) || 'construction') >= 0) return true;
+  return managersOf(userBy(r.email)).some(function(m){ return low(m.email) === ve; });
+}
+function validate(o){
+  var k = o.kind, t = today();
+  if (k === 'off') {
+    var f = ymd(o.from), to = ymd(o.to) || f;
+    if (!f) return 'Pick the first day off.';
+    if (f < t) return 'That day is already past — pick today or later.';
+    if (to < f) return 'The last day is before the first day.';
+    if (eachDay(f, to, 400).length > 60) return 'That is more than 60 days — talk to the office about a leave.';
+    if ((o.part === 'am' || o.part === 'pm') && to !== f) return 'A half day is one day — set the last day the same as the first.';
+  } else if (k === 'sick') {
+    var d = ymd(o.from); if (d !== t && d !== addDays(t, 1)) return 'A sick call is for today or tomorrow.';
+  } else if (k === 'late') {
+    var m = num(o.minutes); if (!(m > 0 && m <= 480)) return 'How many minutes late? (1 – 480)';
+  } else if (k === 'avail') {
+    if (!arr(o.days).length && !s(o.hours)) return 'Tick the days you cannot work, or write the hours.';
+  } else return 'Unknown request.';
+  return '';
+}
+/* the record for a request (nothing saved): who is told, which jobs, the To-Do */
+function build(o, u){
+  u = u || meUser(); if (!u || !s(u.email)) return { error: 'Your e-mail is not on the people list yet — ask the office to add you.' };
+  var err = validate(o); if (err) return { error: err };
+  var co = homeCo(u), at = nowIso(), r = { id: o.kind === 'avail' ? 'AV_' + hash(low(u.email)) : uid('TO'), kind: o.kind, email: low(u.email), name: s(u.name) || low(u.email), companyId: co, at: at, by: s(u.name), status: o.kind === 'off' ? 'pending' : 'noted' };
+  var mgr = managersOf(u), ofc = officeOf(co), adm = adminsAll(), me = low(u.email);
+  var notMe = function(L){ return emailsOf(L).filter(function(e){ return e !== me; }); };
+  if (o.kind === 'off') {
+    r.from = ymd(o.from); r.to = ymd(o.to) || r.from; r.part = /^(am|pm)$/.test(o.part) ? o.part : 'full'; r.reason = s(o.reason).slice(0, 500);
+    r.days = workDays(r);
+    var J = []; eachDay(r.from, r.to, 60).forEach(function(d){ jobsOn(u, d).forEach(function(j){ J.push({ date: d, pid: j.pid, job: j.job, title: j.title }); }); });
+    r.jobs = J.slice(0, 40); r.notify = notMe(mgr.concat(ofc, adm));
+  } else if (o.kind === 'sick') {
+    r.from = r.to = ymd(o.from); r.note = s(o.note).slice(0, 500);
+    var JS = todayJobs(u, r.from); r.jobs = JS.map(function(j){ return { date: r.from, pid: j.pid, job: j.job, title: j.title }; });
+    var leads = leadsOf(JS, u); r.notify = notMe(mgr.concat(leads, ofc, adm));
+    var cov = notMe(mgr.concat(leads)); if (!cov.length) cov = notMe(ofc); if (!cov.length) cov = notMe(adm);
+    var names = jobNames(JS), when = r.from === today() ? 'today' : 'tomorrow (' + short(r.from) + ')';
+    r.todo = { id: 'TOCOVER_' + r.id, assignees: cov, label: '🤒 Cover ' + r.name + '’s jobs ' + when + ': ' + (names.length ? names.join(', ') : 'nothing on the schedule — check the crew'), due: r.from, pid: JS[0] ? JS[0].pid : '' };
+  } else if (o.kind === 'late') {
+    r.from = r.to = today(); r.minutes = Math.round(num(o.minutes)); r.note = s(o.note).slice(0, 300);
+    var JL = todayJobs(u, r.from); r.jobs = JL.map(function(j){ return { date: r.from, pid: j.pid, job: j.job, title: j.title }; });
+    var ld = notMe(mgr.concat(leadsOf(JL, u))); if (!ld.length) ld = notMe(ofc); if (!ld.length) ld = notMe(adm);
+    r.notify = ld;
+  } else if (o.kind === 'avail') {
+    r.days = arr(o.days).map(function(x){ return parseInt(x, 10); }).filter(function(x){ return x >= 0 && x <= 6; }).sort();
+    r.hours = s(o.hours).slice(0, 200); r.from = today(); r.to = ''; r.notify = notMe(mgr.concat(ofc));
+  }
+  return { rec: r };
+}
+/* the To-Do (gc_office_tasks, kind "given" — patch NUDGE's format, so it shows "📋 New To-Do from <name>" to the people it is for) */
+function todoRec(r, t){
+  var at = nowIso();
+  var o = { id: t.id, kind: 'given', label: t.label.slice(0, 220), note: 'from ' + first(r.name) + (r.note ? ' — ' + r.note : '') + ' (🤒 sick call)', givenNote: s(r.note), addedBy: r.name, addedByEmail: r.email,
+    addedAt: at, updatedAt: at, done: false, assignees: t.assignees.slice(0, 12), assignee: (userBy(t.assignees[0]) || {}).name || t.assignees[0] || '', personal: true, shared: false, self: false, prio: 'high', due: t.due || '', timeoffId: r.id };
+  if (t.pid) o.pid = t.pid; if (validCo(r.companyId)) o.companyId = r.companyId;
+  return o;
+}
+function addTodo(o){
+  if (vas() || !o || !arr(o.assignees).length) return false;
+  var l = []; try { l = JSON.parse(lsGet(OT) || '[]'); } catch (e) {} if (!Array.isArray(l)) l = [];
+  if (l.some(function(x){ return x && x.id === o.id; })) return true;
+  l.push(o);
+  if (!lsSet(OT, JSON.stringify(l))) return false;
+  try { if (W._gcApplySync) W._gcApplySync(OT, l); } catch (e) {}
+  try { if (typeof W._gcOfficeTasksPush === 'function') W._gcOfficeTasksPush(); else if (typeof W._supaUpsertNow === 'function') W._supaUpsertNow(OT, JSON.stringify(l)); } catch (e) { warn(e); }
+  try { if (W._gcTD2 && W._gcTD2.paint) W._gcTD2.paint(); } catch (e) {}
+  return true;
+}
+function submit(o){
+  var b = build(o); if (b.error) { toast(b.error, true); return Promise.resolve({ ok: false, error: b.error }); }
+  var r = b.rec, t = r.todo; delete r.todo;
+  if (r.kind === 'avail') { var old = byId(r.id); if (old) r.at = old.at || r.at; }
+  if (t) r.todoId = t.id;
+  return put([r]).then(function(ok){
+    if (!ok) return { ok: false };
+    if (t) addTodo(todoRec(r, t));
+    var who = arr(r.notify).map(function(e){ var u = userBy(e); return first(u ? u.name : e); });
+    toast(r.kind === 'off' ? '🏖 Asked — it is on ✅ Approvals for ' + (who.length ? who.slice(0, 3).join(', ') + (who.length > 3 ? '…' : '') : 'the office') + '. You will see the answer here.'
+      : r.kind === 'sick' ? '🤒 Feel better — ' + (who.length ? who.slice(0, 4).join(', ') + (who.length > 4 ? '…' : '') + ' told now' : 'the office was told') + (t ? '; your jobs are on a To-Do to cover.' : '.')
+      : r.kind === 'late' ? '⏰ ' + (who.length ? who.slice(0, 3).join(', ') : 'The office') + ' told: ' + r.minutes + ' min late.' : '📅 Availability saved.');
+    later(pull, 400);
+    return { ok: true, rec: r };
+  });
+}
+function decide(id, ok, note){
+  var r = byId(id); if (!r) return Promise.resolve({ ok: false, error: 'Not found.' });
+  if (!canDecide(r)) { toast('Only the admins, the office of that company or the person’s manager can decide that.', true); return Promise.resolve({ ok: false }); }
+  var me = meUser() || {}, x = Object.assign({}, r, { status: ok ? 'approved' : 'denied', decidedBy: s(me.name) || meEmail(), decidedByEmail: meEmail(), decidedAt: nowIso(), decisionNote: s(note).slice(0, 500) });
+  return put([x]).then(function(){
+    if (ok) {
+      var J = []; eachDay(x.from, x.to, 60).forEach(function(d){ jobsOn(userBy(x.email), d).forEach(function(j){ J.push(j.job || j.title); }); });
+      J = J.filter(function(v, i){ return v && J.indexOf(v) === i; });
+      if (J.length) addTodo({ id: 'TOMOVE_' + x.id, kind: 'given', label: '📅 Move ' + x.name + '’s jobs off ' + rangeTxt(x.from, x.to) + ' (time off approved): ' + J.slice(0, 6).join(', '), note: 'from the 🏖 time-off approval', givenNote: '', addedBy: x.decidedBy, addedByEmail: meEmail(),
+        addedAt: nowIso(), updatedAt: nowIso(), done: false, assignees: [meEmail()], assignee: x.decidedBy, personal: true, shared: false, self: true, prio: 'high', due: addDays(x.from, -1) < today() ? today() : addDays(x.from, -1), companyId: x.companyId, timeoffId: x.id });
+    }
+    toast((ok ? '✅ Approved' : '✖ Denied') + ' — ' + first(x.name) + ' sees it now.');
+    try { W.dispatchEvent(new CustomEvent('gc-approvals-changed')); } catch (e) {}
+    return { ok: true, rec: x };
+  });
+}
+function cancel(id){
+  var r = byId(id); if (!r || low(r.email) !== meEmail()) return Promise.resolve({ ok: false });
+  return put([Object.assign({}, r, { status: 'cancelled', cancelledAt: nowIso() })]).then(function(){ toast('Cancelled.'); return { ok: true }; });
+}
+/* what an approver has waiting (the one approval set — patch fix_3 / HOT1 — reads this) */
+function pendingForMe(){ return all().filter(function(r){ return r.kind === 'off' && r.status === 'pending' && ymd(r.to || r.from) >= today() && canDecide(r) && coPass(r); }); }
+function apprItems(){
+  if (!meEmail()) return [];
+  return pendingForMe().map(function(r){
+    var soon = r.from <= addDays(today(), 3);
+    return { id: 'to:' + r.id, at: s(r.at), urgency: soon ? 'asap' : 'soon', title: '🏖 Time off: ' + r.name + ' · ' + rangeTxt(r.from, r.to) + (r.part !== 'full' ? ' (½ ' + (r.part === 'am' ? 'AM' : 'PM') + ')' : ''),
+      sub: (r.reason ? r.reason + ' · ' : '') + workDays(r) + ' work day' + (workDays(r) === 1 ? '' : 's') + (arr(r.jobs).length ? ' · ⚠ ' + arr(r.jobs).length + ' scheduled item' + (arr(r.jobs).length === 1 ? '' : 's') : ''),
+      act: { l: 'Review', f: function(){ decideSheet(r.id); } } };
+  });
+}
+function hookApprovals(){
+  var prev = W._gcHot1Approvals; if (prev && prev.__gcTimeOff) return;
+  var w = function(){ var base = []; try { base = typeof prev === 'function' ? arr(prev.apply(this, arguments)) : []; } catch (e) {} try { var have = {}; base.forEach(function(x){ if (x && x.id) have[x.id] = 1; }); return base.concat(apprItems().filter(function(x){ return !have[x.id]; })); } catch (e) { return base; } };
+  try { if (prev) Object.keys(prev).forEach(function(k){ w[k] = prev[k]; }); } catch (e) {}
+  w.__gcTimeOff = true; W._gcHot1Approvals = w;
+}
+/* payroll: the days, paid only from a paid-leave balance on the person's record */
+function balanceOf(u){ if (!u) return null; if (num(u.ptoHours) > 0) return num(u.ptoHours); if (num(u.ptoDays) > 0) return num(u.ptoDays) * 8; if (num(u.paidLeaveDays) > 0) return num(u.paidLeaveDays) * 8; if (u.paidLeave === true) return Infinity; return null; }
+function payroll(from, to, email){
+  var a = ymd(from) || addDays(today(), -30), b = ymd(to) || addDays(today(), 30), out = [], left = {};
+  all().filter(function(r){ return live(r) && (r.kind === 'sick' || r.kind === 'off' && r.status === 'approved') && (!email || low(r.email) === low(email)); })
+    .sort(function(x, y){ return s(x.from) < s(y.from) ? -1 : 1; })
+    .forEach(function(r){
+      var u = userBy(r.email), k = low(r.email);
+      if (!(k in left)) left[k] = balanceOf(u);
+      eachDay(r.from, r.to || r.from, 120).forEach(function(d){
+        if (dow(d) === 0) return;
+        var h = r.kind === 'off' && r.part !== 'full' ? 4 : 8, bal = left[k], paid = bal != null && bal >= h;
+        if (paid && bal !== Infinity) left[k] = bal - h;
+        if (d >= a && d <= b) out.push({ id: r.id + ':' + d, recId: r.id, email: k, name: r.name, date: d, kind: r.kind === 'sick' ? 'Sick' : kindLabel(r), hours: h, paid: paid,
+          pay: paid ? 'Paid leave (balance on their record)' : bal == null ? 'Unpaid — no paid leave on their record' : 'Unpaid — paid-leave balance used up', note: s(r.reason || r.note), companyId: r.companyId });
+      });
+    });
+  return out;
+}
+
+/* ═════ screens ═════ */
+function css(){
+  if (D.getElementById('gc-to-css')) return;
+  var c = D.createElement('style'); c.id = 'gc-to-css';
+  c.textContent = [
+    '#gc-to-toast{position:fixed;left:50%;bottom:92px;transform:translateX(-50%);z-index:1000090;background:#14532d;color:#fff;font:600 14px/1.35 Inter,-apple-system,sans-serif;padding:10px 16px;border-radius:12px;max-width:min(92vw,520px);box-shadow:0 8px 24px rgba(0,0,0,.25);display:none}',
+    '#gc-to-toast.bad{background:#7f1d1d}',
+    '.gc-to-ov{position:fixed;inset:0;z-index:1000060;background:rgba(15,23,42,.45);display:flex;align-items:flex-end;justify-content:center;font-family:Inter,-apple-system,sans-serif}',
+    '@media (min-width:700px){.gc-to-ov{align-items:center}}',
+    '.gc-to-ov .in{background:#fff;color:#0f172a;width:100%;max-width:560px;max-height:92vh;display:flex;flex-direction:column;border-radius:18px 18px 0 0;box-shadow:0 -8px 32px rgba(0,0,0,.2)}',
+    '@media (min-width:700px){.gc-to-ov .in{border-radius:18px}}',
+    '.gc-to-ov .hd{display:flex;align-items:center;gap:8px;padding:14px 16px;border-bottom:1px solid #e5e7eb}.gc-to-ov .hd b{flex:1;font-size:17px}',
+    '.gc-to-ov .hd button{border:none;background:#f1f5f9;border-radius:10px;padding:8px 12px;font-weight:800;cursor:pointer;color:#0f172a}',
+    '.gc-to-ov .bd{overflow:auto;-webkit-overflow-scrolling:touch;padding:12px 16px 20px}',
+    '.gc-to-ov label{display:block;font:700 12px Inter,sans-serif;color:#475569;margin:10px 0 4px;text-transform:uppercase;letter-spacing:.03em}',
+    '.gc-to-ov input,.gc-to-ov textarea,.gc-to-ov select{width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:10px;padding:10px;font:500 15px Inter,sans-serif;color:#0f172a;background:#fff}',
+    '.gc-to-two{display:grid;grid-template-columns:1fr 1fr;gap:10px}',
+    '.gc-to-seg{display:flex;gap:6px;flex-wrap:wrap}.gc-to-seg button{flex:1;min-width:64px;border:1px solid #cbd5e1;background:#fff;border-radius:10px;padding:10px 6px;font:700 14px Inter,sans-serif;cursor:pointer;color:#0f172a}',
+    '.gc-to-seg button.on{background:#1d4ed8;border-color:#1d4ed8;color:#fff}',
+    '.gc-to-go{width:100%;margin-top:14px;border:none;border-radius:12px;padding:14px;font:800 16px Inter,sans-serif;background:#16a34a;color:#fff;cursor:pointer}',
+    '.gc-to-go.red{background:#dc2626}.gc-to-go.blue{background:#1d4ed8}.gc-to-go:disabled{opacity:.6}',
+    '.gc-to-err{color:#b91c1c;font-weight:700;font-size:13px;margin-top:8px;min-height:1px}',
+    '.gc-to-note{background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px;font-size:13px;color:#334155;margin-top:8px}',
+    '.gc-to-note.warn{background:#fffbeb;border-color:#fde68a;color:#92400e}',
+    '.gc-to-day{border-bottom:1px solid #f1f5f9;padding:8px 0}.gc-to-day h4{margin:0 0 4px;font:800 13px Inter,sans-serif;color:#334155}.gc-to-day .j{font-size:14px;padding:2px 0}.gc-to-day .none{color:#94a3b8;font-size:13px}',
+    '.gc-to-chip{display:inline-block;border-radius:999px;padding:2px 9px;font:700 11.5px/1.6 Inter,sans-serif;white-space:nowrap}',
+    '.gc-to-chip.pending{background:#fef3c7;color:#92400e}.gc-to-chip.approved{background:#dcfce7;color:#166534}.gc-to-chip.denied{background:#fee2e2;color:#991b1b}',
+    '.gc-to-chip.cancelled{background:#f1f5f9;color:#64748b}.gc-to-chip.noted{background:#e0f2fe;color:#075985}.gc-to-chip.off{background:#dbeafe;color:#1e40af}.gc-to-chip.sick{background:#fee2e2;color:#991b1b}.gc-to-chip.unav{background:#f1f5f9;color:#475569}',
+    '.gc-to-req{display:flex;gap:8px;align-items:flex-start;border:1px solid #e5e7eb;border-radius:12px;padding:10px;margin-bottom:8px}.gc-to-req .t{flex:1;min-width:0;font-size:14px}.gc-to-req small{display:block;color:#64748b;font-size:12.5px;margin-top:2px}',
+    '.gc-to-req button{border:1px solid #cbd5e1;background:#fff;border-radius:9px;padding:6px 10px;font-weight:700;cursor:pointer}',
+    '.gc-to-btns{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}',
+    '.gc-to-btns button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:#fff;border:1px solid #e5e7eb;border-radius:12px;min-height:58px;padding:4px 2px;font:800 11.5px Inter,sans-serif;color:#1f2a37;cursor:pointer;text-align:center}',
+    '.gc-to-btns button .e{font-size:20px;line-height:1}',
+    '#gc-to-strip{margin:4px 0 10px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:14px;padding:8px;box-sizing:border-box;max-width:100%}',
+    '#gc-to-strip .hd{display:flex;align-items:center;gap:8px;width:100%;border:none;background:transparent;padding:2px 4px 8px;cursor:pointer;text-align:left;color:#0f172a}',
+    '#gc-to-strip .hd b{font:800 14px Inter,sans-serif;white-space:nowrap}#gc-to-strip .hd small{flex:1;min-width:0;color:#64748b;font:600 12px Inter,sans-serif;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+    '#gc-to-strip .st{font:600 12px Inter,sans-serif;color:#334155;padding:6px 4px 0}',
+    '#gc-to-schedbar{background:#fff;color:#0f172a;border:1px solid #e2e8f0;border-radius:12px;padding:10px 12px;margin:0 0 12px;font-family:Inter,-apple-system,sans-serif;max-width:100%;box-sizing:border-box}',
+    '#gc-to-schedbar .top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}#gc-to-schedbar .top b{font-size:14px;flex:1;min-width:150px}',
+    '#gc-to-schedbar .top button{border:1px solid #cbd5e1;background:#fff;border-radius:9px;padding:6px 10px;font:700 12.5px Inter,sans-serif;cursor:pointer;color:#0f172a}#gc-to-schedbar .top button.pri{background:#1d4ed8;border-color:#1d4ed8;color:#fff}',
+    '#gc-to-schedbar .grid{display:grid;grid-template-columns:repeat(14,minmax(104px,1fr));gap:4px;overflow-x:auto;padding-bottom:4px}',
+    '#gc-to-schedbar .c{background:#f8fafc;border:1px solid #f1f5f9;border-radius:8px;padding:4px;min-height:44px}#gc-to-schedbar .c.t{border-color:#93c5fd;background:#eff6ff}#gc-to-schedbar .c.sun{opacity:.6}',
+    '#gc-to-schedbar .c h5{margin:0 0 3px;font:800 11px Inter,sans-serif;color:#475569;white-space:nowrap}',
+    '#gc-to-schedbar .blk{display:block;border-radius:6px;padding:2px 5px;margin-bottom:2px;font:700 11px/1.35 Inter,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+    '#gc-to-schedbar .blk.off{background:#dbeafe;color:#1e40af}#gc-to-schedbar .blk.sick{background:#fee2e2;color:#991b1b}#gc-to-schedbar .blk.pend{background:#fef3c7;color:#92400e}#gc-to-schedbar .blk.unav{background:#f1f5f9;color:#475569}',
+    '#gc-to-schedbar .warn{background:#fffbeb;border:1px solid #fde68a;color:#92400e;border-radius:8px;padding:6px 8px;font:700 12.5px Inter,sans-serif;margin-bottom:8px}',
+    '#gc-to-schedbar .empty{color:#64748b;font-size:12.5px}',
+    '#gc-to-note-card{position:fixed;left:16px;bottom:16px;z-index:1000050;width:min(380px,calc(100vw - 32px));background:#fff;color:#0f172a;border:1px solid #e2e8f0;border-left:5px solid #1d4ed8;border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.18);padding:12px 14px;font-family:Inter,-apple-system,sans-serif;box-sizing:border-box}',
+    '#gc-to-note-card.sick{border-left-color:#dc2626}#gc-to-note-card.ok{border-left-color:#16a34a}#gc-to-note-card.no{border-left-color:#dc2626}#gc-to-note-card.late{border-left-color:#f59e0b}',
+    '#gc-to-note-card .hd{font:800 14px Inter,sans-serif}#gc-to-note-card .sb{font-size:13px;color:#475569;margin-top:3px}#gc-to-note-card .ac{display:flex;gap:8px;margin-top:8px}',
+    '#gc-to-note-card .ac button{border:1px solid #cbd5e1;background:#fff;border-radius:9px;padding:6px 12px;font-weight:700;cursor:pointer}#gc-to-note-card .ac button.pri{background:#1d4ed8;border-color:#1d4ed8;color:#fff}',
+    'html._fieldmode #gc-to-note-card{bottom:auto;top:calc(64px + env(safe-area-inset-top,0px))}',   /* the NUDGE card sits at the bottom on a phone */
+    '#gc-to-ts{margin-top:16px;border-top:1px solid #24405f;padding-top:12px}#gc-to-ts h3{margin:0 0 6px;font-size:15px}#gc-to-ts table{width:100%;border-collapse:collapse;font-size:13px}#gc-to-ts td,#gc-to-ts th{padding:6px 8px;text-align:left;border-bottom:1px solid #1d334d}'
+  ].join('\n');
+  (D.head || D.documentElement).appendChild(c);
+}
+function sheet(title, html){
+  css(); closeSheets();
+  var o = D.createElement('div'); o.className = 'gc-to-ov'; o.setAttribute('data-gc-keep', '1'); o.setAttribute('data-gcnav-ignore', '1');
+  o.innerHTML = '<div class="in" role="dialog" aria-label="' + esc(title) + '"><div class="hd"><b>' + esc(title) + '</b><button type="button" data-to-x aria-label="Close">✕</button></div><div class="bd">' + html + '</div></div>';
+  o.addEventListener('click', function(e){ if (e.target === o || (e.target.closest && e.target.closest('[data-to-x]'))) o.remove(); });
+  D.body.appendChild(o);
+  return o;
+}
+function closeSheets(){ Array.prototype.forEach.call(D.querySelectorAll('.gc-to-ov'), function(o){ o.remove(); }); }
+D.addEventListener('keydown', function(e){ if (e.key === 'Escape') { var o = D.querySelectorAll('.gc-to-ov'); if (o.length) o[o.length - 1].remove(); } });
+function seg(name, opts, cur){ return '<div class="gc-to-seg" data-seg="' + name + '">' + opts.map(function(o){ return '<button type="button" data-v="' + esc(o[0]) + '"' + (o[0] === cur ? ' class="on"' : '') + '>' + esc(o[1]) + '</button>'; }).join('') + '</div>'; }
+function segWire(o, F){ o.addEventListener('click', function(e){ var b = e.target.closest && e.target.closest('[data-seg] button'); if (!b) return; var g = b.parentNode; F[g.getAttribute('data-seg')] = b.getAttribute('data-v'); Array.prototype.forEach.call(g.children, function(x){ x.classList.toggle('on', x === b); }); if (F.__on) F.__on(); }); }
+function chip(r){ var st = r.kind === 'off' ? r.status : 'noted', L = { pending: '⏳ Waiting', approved: '✅ Approved', denied: '✖ Denied', cancelled: 'Cancelled', noted: r.kind === 'sick' ? '🤒 Told' : r.kind === 'late' ? '⏰ Told' : '📅 Saved' }; return '<span class="gc-to-chip ' + esc(r.status === 'cancelled' ? 'cancelled' : st) + '">' + esc(L[r.status === 'cancelled' ? 'cancelled' : st] || st) + '</span>'; }
+function whoTold(r){ var n = arr(r.notify).map(function(e){ var u = userBy(e); return first(u ? u.name : e); }); return n.length ? n.slice(0, 5).join(', ') + (n.length > 5 ? ' +' + (n.length - 5) : '') : ''; }
+function reqLine(r, mine, extra){
+  var what = r.kind === 'off' ? '🏖 ' + rangeTxt(r.from, r.to) + (r.part !== 'full' ? ' · ' + partTxt(r) : '') + (r.reason ? ' — ' + esc(r.reason) : '')
+    : r.kind === 'sick' ? '🤒 Sick ' + dayWord(r.from) + (r.note ? ' — ' + esc(r.note) : '')
+    : r.kind === 'late' ? '⏰ ' + r.minutes + ' min late · ' + dayWord(r.from) + (r.note ? ' — ' + esc(r.note) : '')
+    : '📅 Never works: ' + (arr(r.days).length ? arr(r.days).map(function(d){ return WD[d]; }).join(', ') : '—') + (r.hours ? ' · ' + esc(r.hours) : '');
+  var sub = r.kind === 'off' ? (r.status === 'pending' ? 'Asked ' + short(r.at) : r.decidedBy ? (r.status === 'approved' ? 'Approved' : r.status === 'denied' ? 'Denied' : 'Decided') + ' by ' + esc(r.decidedBy) + (r.decisionNote ? ' — “' + esc(r.decisionNote) + '”' : '') : '')
+    : whoTold(r) ? 'Told: ' + esc(whoTold(r)) : '';
+  var can = mine && r.status !== 'cancelled' && (r.kind === 'off' && (r.status === 'pending' || r.status === 'approved' && s(r.from) > today()) || r.kind === 'sick' && s(r.from) >= today());
+  return '<div class="gc-to-req" data-id="' + esc(r.id) + '"><div class="t">' + (mine ? '' : '<b>' + esc(r.name) + '</b> · ') + what + (sub ? '<small>' + sub + '</small>' : '') + '</div>' + chip(r) + (can ? '<button type="button" data-to-a="cancel" data-id="' + esc(r.id) + '">Cancel</button>' : '') + (extra || '') + '</div>';
+}
+/* 📅 My schedule — the next 14 days, my requests, the four buttons */
+function mySheet(){
+  var u = meUser(); if (!u) { toast('Your e-mail is not on the people list yet — ask the office to add you.', true); return null; }
+  var t = today(), h = btnsHtml();
+  h += '<label>Next 2 weeks</label>';
+  eachDay(t, addDays(t, 13)).forEach(function(d){
+    var J = jobsOn(u, d), o = isOff(u.email, d), tag = o.off ? ' <span class="gc-to-chip ' + (o.kind === 'Sick' ? 'sick' : o.kind === 'Unavailable' ? 'unav' : 'off') + '">' + (o.kind === 'Sick' ? '🤒 ' : o.kind === 'Unavailable' ? '' : '🏖 ') + esc(o.kind) + '</span>' : o.pending ? ' <span class="gc-to-chip pending">⏳ Off asked</span>' : '';
+    if (dow(d) === 0 && !J.length && !tag) return;
+    h += '<div class="gc-to-day"><h4>' + esc(d === t ? 'Today · ' + short(d) : d === addDays(t, 1) ? 'Tomorrow · ' + short(d) : short(d)) + tag + '</h4>' +
+      (J.length ? J.map(function(j){ return '<div class="j">' + (j.time ? '<b>' + esc(j.time) + '</b> ' : '') + esc(j.job ? j.job + (j.title && j.title !== 'Work' ? ' — ' + j.title : '') : j.title) + '</div>'; }).join('') : '<div class="none">Nothing scheduled</div>') + '</div>';
+  });
+  var mine = recsOf(u.email).filter(function(r){ return r.kind !== 'avail' && (s(r.to || r.from) >= addDays(t, -30)); }).sort(function(a, b){ return s(b.at) < s(a.at) ? -1 : 1; }).slice(0, 25);
+  var av = recsOf(u.email).filter(function(r){ return r.kind === 'avail'; });
+  h += '<label>My requests</label>' + (mine.length || av.length ? av.concat(mine).map(function(r){ return reqLine(r, true); }).join('') : '<div class="gc-to-note">Nothing yet.</div>');
+  var o = sheet('📅 My schedule — ' + first(u.name), h); o.setAttribute('data-to-sheet', 'mine'); return o;
+}
+function btnsHtml(){ return '<div class="gc-to-btns"><button type="button" data-to-a="off"><span class="e">🏖</span>Time off</button><button type="button" data-to-a="sick"><span class="e">🤒</span>Call in sick</button><button type="button" data-to-a="late"><span class="e">⏰</span>Running late</button><button type="button" data-to-a="avail"><span class="e">📅</span>Availability</button></div>'; }
+function offSheet(){
+  var u = meUser(); if (!u) { toast('Your e-mail is not on the people list yet — ask the office to add you.', true); return null; }
+  var F = { part: 'full' }, t = today();
+  var o = sheet('🏖 Request time off', '<div class="gc-to-two"><div><label>First day</label><input type="date" data-f="from" min="' + t + '" value="' + addDays(t, 1) + '"></div><div><label>Last day</label><input type="date" data-f="to" min="' + t + '" value="' + addDays(t, 1) + '"></div></div>' +
+    '<label>How long</label>' + seg('part', [['full', 'Full day(s)'], ['am', '½ day AM'], ['pm', '½ day PM']], 'full') +
+    '<label>Reason (optional)</label><input type="text" data-f="reason" maxlength="300" placeholder="e.g. family trip, appointment">' +
+    '<div class="gc-to-note" data-f="info"></div><div class="gc-to-err" data-f="err"></div><button type="button" class="gc-to-go blue" data-go>Send request</button>');
+  o.setAttribute('data-to-sheet', 'off');
+  var $ = function(q){ return o.querySelector(q); };
+  function info(){
+    var f = $('[data-f="from"]').value, to2 = $('[data-f="to"]').value;
+    if (F.part !== 'full' && f) { $('[data-f="to"]').value = f; to2 = f; }
+    if (f && to2 && to2 < f) { $('[data-f="to"]').value = f; to2 = f; }
+    var J = []; if (f) eachDay(f, to2 || f, 60).forEach(function(d){ jobsOn(u, d).forEach(function(j){ J.push(short(d) + ': ' + (j.job || j.title)); }); });
+    var who = emailsOf(managersOf(u).concat(officeOf(homeCo(u)), adminsAll())).filter(function(e){ return e !== low(u.email); }).map(function(e){ return first((userBy(e) || {}).name || e); });
+    $('[data-f="info"]').innerHTML = (J.length ? '⚠ On the schedule: ' + esc(J.slice(0, 5).join(' · ')) + (J.length > 5 ? ' …' : '') + '<br>' : '') + 'Goes to ✅ Approvals for ' + esc(who.slice(0, 4).join(', ') || 'the office') + (who.length > 4 ? '…' : '') + '.';
+  }
+  F.__on = info; segWire(o, F); $('[data-f="from"]').addEventListener('change', info); $('[data-f="to"]').addEventListener('change', info); info();
+  $('[data-go]').addEventListener('click', function(){
+    var b = this, r = { kind: 'off', from: $('[data-f="from"]').value, to: $('[data-f="to"]').value, part: F.part, reason: $('[data-f="reason"]').value }, e = validate(r);
+    if (e) { $('[data-f="err"]').textContent = e; return; }
+    b.disabled = true; b.textContent = 'Sending…';
+    submit(r).then(function(x){ if (x.ok) { o.remove(); } else { b.disabled = false; b.textContent = 'Send request'; $('[data-f="err"]').textContent = x.error || 'Not saved — try again.'; } });
+  });
+  return o;
+}
+function sickSheet(){
+  var u = meUser(); if (!u) { toast('Your e-mail is not on the people list yet — ask the office to add you.', true); return null; }
+  var t = today(), F = { day: t };
+  var o = sheet('🤒 Call in sick', '<label>Which day</label>' + seg('day', [[t, 'Today'], [addDays(t, 1), 'Tomorrow']], t) +
+    '<label>Note (optional)</label><input type="text" data-f="note" maxlength="300" placeholder="e.g. fever — back Thursday">' +
+    '<div class="gc-to-note" data-f="info"></div><div class="gc-to-err" data-f="err"></div><button type="button" class="gc-to-go red" data-go>🤒 Call in sick</button>');
+  o.setAttribute('data-to-sheet', 'sick');
+  var $ = function(q){ return o.querySelector(q); };
+  function info(){ var b = build({ kind: 'sick', from: F.day, note: '' }, u), r = b.rec || {}; $('[data-f="info"]').innerHTML = 'No approval needed. ' + (arr(r.jobs).length ? 'Your jobs ' + esc(dayWord(F.day)) + ': <b>' + esc(arr(r.jobs).map(function(j){ return j.job || j.title; }).filter(function(v, i, a){ return a.indexOf(v) === i; }).join(', ')) + '</b>. ' : 'Nothing on your schedule ' + esc(dayWord(F.day)) + '. ') + 'Told at once: ' + esc(whoTold(r) || 'the office') + '.'; }
+  F.__on = info; segWire(o, F); info();
+  $('[data-go]').addEventListener('click', function(){
+    var b = this; b.disabled = true; b.textContent = 'Sending…';
+    submit({ kind: 'sick', from: F.day, note: $('[data-f="note"]').value }).then(function(x){ if (x.ok) o.remove(); else { b.disabled = false; b.textContent = '🤒 Call in sick'; $('[data-f="err"]').textContent = x.error || 'Not saved — try again.'; } });
+  });
+  return o;
+}
+function lateSheet(){
+  var u = meUser(); if (!u) { toast('Your e-mail is not on the people list yet — ask the office to add you.', true); return null; }
+  var F = { min: '15' };
+  var o = sheet('⏰ Running late', '<label>How late</label>' + seg('min', [['15', '15 min'], ['30', '30 min'], ['45', '45 min'], ['60', '1 hr'], ['90', '1½ hr']], '15') +
+    '<label>Or minutes</label><input type="number" inputmode="numeric" min="1" max="480" data-f="mins" placeholder="e.g. 20">' +
+    '<label>Note (optional)</label><input type="text" data-f="note" maxlength="200" placeholder="e.g. traffic on I-40">' +
+    '<div class="gc-to-note" data-f="info"></div><div class="gc-to-err" data-f="err"></div><button type="button" class="gc-to-go" data-go style="background:#d97706">⏰ Send</button>');
+  o.setAttribute('data-to-sheet', 'late');
+  var $ = function(q){ return o.querySelector(q); };
+  var b0 = build({ kind: 'late', minutes: 15 }, u), r0 = b0.rec || {};
+  $('[data-f="info"]').innerHTML = (arr(r0.jobs).length ? 'Today: <b>' + esc(arr(r0.jobs).map(function(j){ return j.job || j.title; }).filter(function(v, i, a){ return a.indexOf(v) === i; }).join(', ')) + '</b>. ' : '') + 'Told: ' + esc(whoTold(r0) || 'the office') + '.';
+  segWire(o, F);
+  $('[data-go]').addEventListener('click', function(){
+    var b = this, m = s($('[data-f="mins"]').value) || F.min; b.disabled = true; b.textContent = 'Sending…';
+    submit({ kind: 'late', minutes: m, note: $('[data-f="note"]').value }).then(function(x){ if (x.ok) o.remove(); else { b.disabled = false; b.textContent = '⏰ Send'; $('[data-f="err"]').textContent = x.error || 'Not saved — try again.'; } });
+  });
+  return o;
+}
+function availSheet(){
+  var u = meUser(); if (!u) { toast('Your e-mail is not on the people list yet — ask the office to add you.', true); return null; }
+  var cur = recsOf(u.email).filter(function(r){ return r.kind === 'avail'; })[0] || { days: [], hours: '' };
+  var o = sheet('📅 My availability', '<div class="gc-to-note">The days you can <b>never</b> work, every week (the schedule shows a warning when someone books you then).</div><label>Days I can’t work</label>' +
+    '<div class="gc-to-seg" data-f="days">' + WD.map(function(d, i){ return '<button type="button" data-d="' + i + '"' + (arr(cur.days).indexOf(i) >= 0 ? ' class="on"' : '') + '>' + d + '</button>'; }).join('') + '</div>' +
+    '<label>Hours I can’t work (optional)</label><input type="text" data-f="hours" maxlength="200" value="' + esc(cur.hours) + '" placeholder="e.g. Wednesdays after 3 PM">' +
+    '<div class="gc-to-err" data-f="err"></div><button type="button" class="gc-to-go blue" data-go>Save</button>');
+  o.setAttribute('data-to-sheet', 'avail');
+  var $ = function(q){ return o.querySelector(q); };
+  $('[data-f="days"]').addEventListener('click', function(e){ var b = e.target.closest('button'); if (b) b.classList.toggle('on'); });
+  $('[data-go]').addEventListener('click', function(){
+    var b = this, days = Array.prototype.map.call(o.querySelectorAll('[data-f="days"] button.on'), function(x){ return +x.getAttribute('data-d'); });
+    var hrs = $('[data-f="hours"]').value;
+    if (!days.length && !s(hrs) && cur.id) { b.disabled = true; put([Object.assign({}, cur, { days: [], hours: '', status: 'cancelled' })]).then(function(){ toast('📅 Availability cleared — you can be booked any day.'); o.remove(); }); return; }
+    b.disabled = true; b.textContent = 'Saving…';
+    submit({ kind: 'avail', days: days, hours: hrs }).then(function(x){ if (x.ok) o.remove(); else { b.disabled = false; b.textContent = 'Save'; $('[data-f="err"]').textContent = x.error || 'Not saved — try again.'; } });
+  });
+  return o;
+}
+/* the approver's sheet: who, when, what is on the schedule then, Approve / Deny with a note */
+function decideSheet(id){
+  var r = byId(id); if (!r) { toast('That request is gone (cancelled?).', true); return null; }
+  var u = userBy(r.email), J = [];
+  eachDay(r.from, r.to, 60).forEach(function(d){ jobsOn(u, d).forEach(function(j){ J.push(short(d) + ': ' + (j.job || j.title) + (j.title && j.job && j.title !== 'Work' ? ' — ' + j.title : '')); }); });
+  var others = all().filter(function(x){ return x.id !== r.id && live(x) && (x.kind === 'off' && x.status === 'approved' || x.kind === 'sick') && covers(x, r.from, r.to || r.from) && s(x.companyId) === s(r.companyId); }).map(function(x){ return first(x.name) + ' (' + rangeTxt(x.from, x.to) + ')'; });
+  var pay = balanceOf(u), can = canDecide(r);
+  var h = '<div style="font-size:16px;font-weight:800">' + esc(r.name) + '</div><div style="color:#475569;margin-top:2px">' + esc(rangeTxt(r.from, r.to)) + ' · ' + esc(partTxt(r)) + ' · ' + workDays(r) + ' work day' + (workDays(r) === 1 ? '' : 's') + '</div>' +
+    (r.reason ? '<div class="gc-to-note">“' + esc(r.reason) + '”</div>' : '') +
+    (J.length ? '<div class="gc-to-note warn">⚠ On the schedule then: ' + esc(J.slice(0, 8).join(' · ')) + (J.length > 8 ? ' …' : '') + '</div>' : '<div class="gc-to-note">Nothing on the schedule those days.</div>') +
+    (others.length ? '<div class="gc-to-note warn">Also out then: ' + esc(others.join(', ')) + '</div>' : '') +
+    '<div class="gc-to-note">Payroll: ' + (pay == null ? 'unpaid — no paid leave on their record' : pay === Infinity ? 'paid leave (their record)' : 'paid from their balance (' + pay + ' h)') + '. Asked ' + esc(short(r.at)) + '.</div>' +
+    (r.status !== 'pending' ? '<div class="gc-to-note">' + chip(r) + ' ' + esc(r.decidedBy || '') + (r.decisionNote ? ' — “' + esc(r.decisionNote) + '”' : '') + '</div>' : '') +
+    (can ? '<label>Note to ' + esc(first(r.name)) + ' (optional)</label><input type="text" data-f="note" maxlength="300" placeholder="e.g. OK — enjoy / We need you that Friday">' +
+      '<div class="gc-to-two"><button type="button" class="gc-to-go" data-go="1">✅ Approve</button><button type="button" class="gc-to-go red" data-go="0">✖ Deny</button></div>' : '');
+  var o = sheet('🏖 Time off request', h); o.setAttribute('data-to-sheet', 'decide'); o.setAttribute('data-id', r.id);
+  Array.prototype.forEach.call(o.querySelectorAll('[data-go]'), function(b){ b.addEventListener('click', function(){
+    var yes = b.getAttribute('data-go') === '1', n = (o.querySelector('[data-f="note"]') || {}).value || '';
+    Array.prototype.forEach.call(o.querySelectorAll('[data-go]'), function(x){ x.disabled = true; });
+    decide(r.id, yes, n).then(function(x){ if (x.ok) o.remove(); else Array.prototype.forEach.call(o.querySelectorAll('[data-go]'), function(y){ y.disabled = false; }); });
+  }); });
+  return o;
+}
+/* admins / office / managers: every request they may see (the picked company) */
+function teamSheet(){
+  var t = today(), L = all().filter(function(r){ return r.kind !== 'avail' && canSee(r) && coPass(r) && low(r.email) !== meEmail() && live(r) && s(r.to || r.from) >= addDays(t, -14); });
+  var pend = L.filter(function(r){ return r.kind === 'off' && r.status === 'pending' && s(r.to || r.from) >= t; }), up = L.filter(function(r){ return !(r.kind === 'off' && r.status === 'pending'); }).sort(function(a, b){ return s(a.from) < s(b.from) ? 1 : -1; });
+  var avs = all().filter(function(r){ return r.kind === 'avail' && live(r) && canSee(r) && coPass(r) && low(r.email) !== meEmail() && (arr(r.days).length || r.hours); });
+  var h = '<label>Waiting on a decision (' + pend.length + ')</label>' + (pend.length ? pend.map(function(r){ return reqLine(r, false, canDecide(r) ? '<button type="button" data-to-a="decide" data-id="' + esc(r.id) + '">Review</button>' : ''); }).join('') : '<div class="gc-to-note">Nothing waiting.</div>') +
+    '<label>Lately and coming up</label>' + (up.length ? up.slice(0, 40).map(function(r){ return reqLine(r, false); }).join('') : '<div class="gc-to-note">Nothing.</div>') +
+    (avs.length ? '<label>Regular availability</label>' + avs.map(function(r){ return reqLine(r, false); }).join('') : '');
+  var o = sheet('🏖 Time off & sick — team', h); o.setAttribute('data-to-sheet', 'team'); return o;
+}
+D.addEventListener('click', function(e){
+  var b = e.target && e.target.closest && e.target.closest('[data-to-a]'); if (!b) return;
+  var a = b.getAttribute('data-to-a'), id = b.getAttribute('data-id');
+  e.preventDefault(); e.stopPropagation();
+  try {
+    if (a === 'mine') mySheet(); else if (a === 'off') offSheet(); else if (a === 'sick') sickSheet(); else if (a === 'late') lateSheet(); else if (a === 'avail') availSheet();
+    else if (a === 'team') teamSheet(); else if (a === 'decide') decideSheet(id);
+    else if (a === 'cancel') { if (W.confirm('Cancel this?')) cancel(id).then(function(){ var sh = D.querySelector('.gc-to-ov[data-to-sheet="mine"]'); if (sh) mySheet(); }); }
+    else if (a === 'seen') { seen(b.getAttribute('data-k')); paintNote(); }
+    else if (a === 'note-open') { var k = b.getAttribute('data-k'); seen(k); paintNote(); var r = byId(id); if (r && canDecide(r)) decideSheet(id); else if (r && low(r.email) === meEmail()) mySheet(); else teamSheet(); }
+  } catch (x) { warn(x); toast('That did not open: ' + (x && x.message || x), true); }
+}, true);
+
+/* ── the in-app notices (newest first, one at a time; "Got it" is remembered on this device) ── */
+function seenMap(){ try { var o = JSON.parse(lsGet(SEENK) || '{}'); return o && typeof o === 'object' ? o : {}; } catch (e) { return {}; } }
+function seen(k){ var o = seenMap(); o[k] = Date.now(); var ks = Object.keys(o); if (ks.length > 400) ks.sort(function(a, b){ return o[a] - o[b]; }).slice(0, ks.length - 300).forEach(function(x){ delete o[x]; }); lsSet(SEENK, JSON.stringify(o)); }
+function notices(){
+  var me = meEmail(); if (!me || vas()) return [];
+  var S = seenMap(), out = [], cut = Date.now() - 2 * 864e5;
+  all().forEach(function(r){
+    if (!r || r.deleted) return;
+    if (low(r.email) === me) {
+      if (r.kind === 'off' && (r.status === 'approved' || r.status === 'denied') && Date.parse(r.decidedAt || 0) > Date.now() - 14 * 864e5) {
+        var k = 'd:' + r.id + ':' + r.status; if (!S[k]) out.push({ k: k, id: r.id, at: r.decidedAt, cls: r.status === 'approved' ? 'ok' : 'no', hd: (r.status === 'approved' ? '✅ Time off approved: ' : '✖ Time off denied: ') + rangeTxt(r.from, r.to), sb: 'by ' + s(r.decidedBy) + (r.decisionNote ? ' — “' + s(r.decisionNote) + '”' : '') });
+      }
+      return;
+    }
+    if (arr(r.notify).indexOf(me) < 0 || r.status === 'cancelled' || !(Date.parse(r.at || 0) > cut)) return;
+    var k2 = 'n:' + r.id; if (S[k2]) return;
+    if (r.kind === 'sick') out.push({ k: k2, id: r.id, at: r.at, cls: 'sick', hd: '🤒 ' + r.name + ' called in sick ' + dayWord(r.from), sb: (arr(r.jobs).length ? 'Jobs: ' + jobNames(arr(r.jobs)).join(', ') : 'Nothing on the schedule') + (r.note ? ' · “' + s(r.note) + '”' : '') });
+    else if (r.kind === 'late' && r.from === today()) out.push({ k: k2, id: r.id, at: r.at, cls: 'late', hd: '⏰ ' + r.name + ' is running ' + r.minutes + ' min late', sb: (arr(r.jobs).length ? jobNames(arr(r.jobs)).join(', ') : '') + (r.note ? ' · “' + s(r.note) + '”' : '') });
+    else if (r.kind === 'off' && r.status === 'pending' && canDecide(r)) out.push({ k: k2, id: r.id, at: r.at, cls: '', hd: '🏖 ' + r.name + ' asks for time off', sb: rangeTxt(r.from, r.to) + (r.part !== 'full' ? ' · ' + partTxt(r) : '') + (r.reason ? ' · “' + s(r.reason) + '”' : '') });
+  });
+  return out.sort(function(a, b){ return s(b.at) < s(a.at) ? -1 : 1; });
+}
+function paintNote(){
+  var el = D.getElementById('gc-to-note-card'), L = off() ? [] : notices();
+  if (!L.length) { if (el) el.remove(); return; }
+  css();
+  var n = L[0], sig = n.k + '|' + L.length;
+  if (!el) { el = D.createElement('div'); el.id = 'gc-to-note-card'; el.setAttribute('data-gc-keep', '1'); el.setAttribute('data-gcnav-ignore', '1'); el.setAttribute('role', 'status'); D.body.appendChild(el); }
+  if (el.__sig === sig) return; el.__sig = sig; el.className = n.cls || '';
+  el.innerHTML = '<div class="hd">' + esc(n.hd) + '</div>' + (n.sb ? '<div class="sb">' + esc(n.sb) + '</div>' : '') + '<div class="ac"><button type="button" class="pri" data-to-a="note-open" data-k="' + esc(n.k) + '" data-id="' + esc(n.id) + '">Open</button><button type="button" data-to-a="seen" data-k="' + esc(n.k) + '">✓ Got it</button>' + (L.length > 1 ? '<span style="align-self:center;color:#64748b;font-size:12px">+' + (L.length - 1) + ' more</span>' : '') + '</div>';
+}
+
+/* ── GrayCo Field (phone / crews): the strip under the home buttons ── */
+function stripHtml(u){
+  var t = today(), tj = jobNames(jobsOn(u, t)), tm = jobNames(jobsOn(u, addDays(t, 1))), o = isOff(u.email, t);
+  var line = (o.off ? 'Today: ' + o.kind : 'Today: ' + (tj.length ? tj.join(', ') : 'nothing scheduled')) + ' · Tomorrow: ' + (isOff(u.email, addDays(t, 1)).off ? isOff(u.email, addDays(t, 1)).kind : tm.length ? tm.join(', ') : '—');
+  var mine = recsOf(u.email).filter(function(r){ return r.kind === 'off' && r.status !== 'cancelled' && s(r.to || r.from) >= t; }).sort(function(a, b){ return s(a.from) < s(b.from) ? -1 : 1; });
+  var st = mine.slice(0, 2).map(function(r){ return '🏖 ' + rangeTxt(r.from, r.to) + ' — ' + (r.status === 'pending' ? '⏳ waiting' : r.status === 'approved' ? '✅ approved' : '✖ denied'); }).join(' · ');
+  return '<button type="button" class="hd" data-to-a="mine"><b>📅 My schedule</b><small>' + esc(line) + '</small><span aria-hidden="true">›</span></button>' + btnsHtml() + (st ? '<div class="st">' + esc(st) + '</div>' : '');
+}
+function paintStrip(){
+  var home = D.querySelector('#_gcJobPick.gc-fh'), wrap = home && home.querySelector('.fh-wrap'), el = D.getElementById('gc-to-strip');
+  var u = meUser();
+  if (!wrap || off() || !u) { if (el && (!wrap || !wrap.contains(el))) el.remove(); return; }
+  css();
+  if (!el || !wrap.contains(el)) { if (el) el.remove(); el = D.createElement('div'); el.id = 'gc-to-strip'; }
+  var top = wrap.querySelector('.gc-ra-top'); if (el.parentNode !== wrap || (top ? el.previousSibling !== top : el !== wrap.firstChild)) wrap.insertBefore(el, top ? top.nextSibling : wrap.firstChild);
+  var h = stripHtml(u); if (el.__h !== h) { el.innerHTML = h; el.__h = h; }
+}
+/* the Desk app (patch ROLEAPPS): a card */
+function deskCard(a, card){
+  if (off()) return ''; var u = meUser(); if (!u) return '';
+  css(); var t = today(), rows = '';
+  eachDay(t, addDays(t, 4)).forEach(function(d){ var J = jobNames(jobsOn(u, d)), o = isOff(u.email, d); if (dow(d) === 0 && !J.length) return; rows += '<div class="gc-ra-item"><div class="t"><b>' + esc(d === t ? 'Today' : short(d)) + '</b><small>' + esc(o.off ? o.kind : J.length ? J.join(', ') : 'nothing scheduled') + '</small></div></div>'; });
+  var n = pendingForMe().length;
+  return card('timeoff', '📅 My schedule & time off', btnsHtml() + rows + '<div class="gc-ra-item"><div class="t"><b>My requests</b></div><div class="b"><button type="button" class="gc-ra-sm pri" data-to-a="mine">Open</button>' + (n || meAdmin() || meOffice() ? '<button type="button" class="gc-ra-sm" data-to-a="team">🏖 Team' + (n ? ' (' + n + ' waiting)' : '') + '</button>' : '') + '</div></div>');
+}
+function hookDesk(){ var L = W._gcRaCards; if (!Array.isArray(L)) L = W._gcRaCards = []; if (!L.some(function(f){ return f && f.__gcTimeOff; })) { deskCard.__gcTimeOff = true; L.push(deskCard); } }
+
+/* ── the Schedule screen: "Who's out" (14 days) + the warnings ── */
+var WARN = [];
+function outOn(day){
+  var res = [];
+  var seenP = {};
+  all().forEach(function(r){
+    if (!live(r) || !coPass(r) || r.kind === 'late' || r.kind === 'avail') return;
+    if (!(r.kind === 'sick' || r.kind === 'off' && (r.status === 'approved' || r.status === 'pending'))) return;
+    if (!covers(r, day, day)) return;
+    var k = low(r.email) + (r.kind === 'off' && r.status === 'pending' ? ':p' : ''); if (seenP[k]) return; seenP[k] = 1;
+    res.push({ r: r, cls: r.kind === 'sick' ? 'sick' : r.status === 'pending' ? 'pend' : 'off', txt: (r.kind === 'sick' ? '🤒 Sick · ' : r.status === 'pending' ? '⏳ Off? · ' : '🏖 Off · ') + first(r.name) + (r.kind === 'off' && r.part !== 'full' ? ' ½' : '') });
+  });
+  all().forEach(function(r){ if (r.kind === 'avail' && live(r) && coPass(r) && arr(r.days).indexOf(dow(day)) >= 0 && dow(day) !== 0) res.push({ r: r, cls: 'unav', txt: '— ' + first(r.name) + ' (never ' + WD[dow(day)] + ')' }); });
+  return res;
+}
+function schedBarHtml(){
+  var t = today(), n = pendingForMe().length, mgr = meAdmin() || meOffice() || n > 0;
+  var cells = eachDay(t, addDays(t, 13)).map(function(d){
+    var L = outOn(d);
+    return '<div class="c' + (d === t ? ' t' : '') + (dow(d) === 0 ? ' sun' : '') + '" data-day="' + d + '"><h5>' + esc(d === t ? 'Today' : WD[dow(d)] + ' ' + (new Date(d + 'T12:00:00').getMonth() + 1) + '/' + new Date(d + 'T12:00:00').getDate()) + '</h5>' +
+      L.map(function(x){ return '<span class="blk ' + x.cls + '" title="' + esc(x.r.name + ' — ' + (x.r.kind === 'avail' ? 'regular availability' : rangeTxt(x.r.from, x.r.to) + (x.r.reason || x.r.note ? ' · ' + (x.r.reason || x.r.note) : ''))) + '">' + esc(x.txt) + '</span>'; }).join('') + '</div>';
+  }).join('');
+  var any = eachDay(t, addDays(t, 13)).some(function(d){ return outOn(d).length; });
+  return '<div class="top"><b>🏖 Who’s out — next 2 weeks</b><button type="button" class="pri" data-to-a="mine">🙋 My schedule & time off</button>' + (mgr ? '<button type="button" data-to-a="team">🏖 Requests' + (n ? ' (' + n + ' waiting)' : '') + '</button>' : '') + '</div>' +
+    WARN.filter(function(w){ return Date.now() - w.t < 10 * 60e3; }).slice(0, 3).map(function(w){ return '<div class="warn">' + esc(w.msg) + '</div>'; }).join('') +
+    (any ? '<div class="grid">' + cells + '</div>' : '<div class="empty">Nobody is off in the next 2 weeks.</div>');
+}
+function paintSchedBar(){
+  var el = D.getElementById('gc-to-schedbar');
+  if (off() || lsGet('grayco_view') !== 'schedule' || !meEmail()) { if (el) el.remove(); return; }
+  var main = D.querySelector('#root main') || D.querySelector('main'); if (!main) return;
+  var h1 = null; Array.prototype.some.call(main.querySelectorAll('h1'), function(x){ if (/^\s*Schedule\b/.test(x.textContent || '') && x.getClientRects().length) { h1 = x; return true; } return false; });
+  if (!h1) { if (el) el.remove(); return; }
+  var fb = D.getElementById('gc-sched-filterbar'), row = fb && fb.parentNode && main.contains(fb) ? fb : h1.parentNode && h1.parentNode.parentNode; if (!row || !row.parentNode) return;   /* under the Filter bar (else the header) */
+  css();
+  if (!el) { el = D.createElement('div'); el.id = 'gc-to-schedbar'; el.setAttribute('data-gc-keep', '1'); }
+  if (el.parentNode !== row.parentNode || el.previousSibling !== row) row.parentNode.insertBefore(el, row.nextSibling);
+  var h = schedBarHtml(); if (el.__h !== h) { el.innerHTML = h; el.__h = h; }
+}
+/* someone put on the schedule on a day they are off → a warning (a warning only: the scheduler decides) */
+var SNAP = { ref: null, sig: null }, lastInput = 0;
+D.addEventListener('pointerdown', function(){ lastInput = Date.now(); }, true);
+D.addEventListener('keydown', function(){ lastInput = Date.now(); }, true);
+function schedSig(L){ var o = {}; arr(L).forEach(function(x){ if (x && x.id) o[x.id] = s(x.date) + '|' + s(x.assignee) + '|' + s(x.who) + '|' + JSON.stringify(x.crew || '') + '|' + JSON.stringify(x.people || ''); }); return o; }
+function warnFor(nameOrEmail, day){ var u = userBy(nameOrEmail); if (!u || !s(u.email)) return null; var o = isOff(u.email, day); return o.off ? { user: u, off: o } : null; }
+function schedCheck(L){
+  if (L === SNAP.ref) return; var sig = schedSig(L), prev = SNAP.sig; SNAP.ref = L; SNAP.sig = sig;
+  if (!prev || Date.now() - lastInput > 8000) return;
+  Object.keys(sig).forEach(function(id){
+    if (prev[id] === sig[id]) return;
+    var x = arr(L).filter(function(y){ return y && y.id === id; })[0]; if (!x || x.deleted) return;
+    var day = ymd(x.date); if (!day || day < today()) return;
+    namesIn([x.assignee, x.who, x.crew, x.people]).forEach(function(n){
+      var w = warnFor(n, day); if (!w) return;
+      var msg = '⚠ ' + s(w.user.name) + ' is ' + (w.off.kind === 'Unavailable' ? 'not available' : w.off.kind === 'Sick' ? 'out sick' : w.off.half ? 'off half the day (' + w.off.half.toUpperCase() + ')' : 'off (time off)') + ' on ' + short(day) + (w.off.note ? ' — ' + w.off.note : '') + ' — you scheduled “' + s(x.title || 'work') + '”. A warning only.';
+      if (WARN.some(function(z){ return z.msg === msg && Date.now() - z.t < 60e3; })) return;
+      WARN.unshift({ t: Date.now(), msg: msg }); WARN = WARN.slice(0, 10); toast(msg, true);
+      var el = D.getElementById('gc-to-schedbar'); if (el) el.__h = '';
+    });
+  });
+}
+/* every schedule change is pushed through window._supaUpsert('schedule', list) (the CRM's own save): watch it there (kept wrapped) */
+function hookSched(){
+  var f = W._supaUpsert; if (typeof f !== 'function' || f.__gcTimeOff) return;
+  var w = function(k, v){ try { if (k === 'schedule' && Array.isArray(v)) { var L = v; later(function(){ schedCheck(L); }, 0); } } catch (e) {} return f.apply(this, arguments); };
+  try { Object.keys(f).forEach(function(k){ w[k] = f[k]; }); } catch (e) {}
+  w.__gcTimeOff = true; W._supaUpsert = w;
+}
+(function(){ var prev = W.__gcCrmBox; W.__gcCrmBox = function(o){ var r = typeof prev === 'function' ? prev(o) : o; try { if (o && o.schedule) later(function(){ schedCheck(o.schedule); }, 0); } catch (e) {} return r; }; })();
+
+/* ── 🕐 Timesheets: the days off, as their own rows (not clocked hours) ── */
+function paintTimesheets(){
+  var tb = D.getElementById('_tsTable'); if (!tb || off()) return;
+  var box = tb.parentNode; if (!box || box.querySelector('#gc-to-ts')) return;
+  var me = meEmail(), all2 = meAdmin() || meOffice();
+  var L = payroll(addDays(today(), -60), addDays(today(), 60), all2 ? '' : me).filter(function(x){ return all2 ? coPass(x) && (meAdmin() || myCos().indexOf(s(x.companyId) || 'construction') >= 0) : true; }).sort(function(a, b){ return a.date < b.date ? 1 : -1; });
+  var el = D.createElement('div'); el.id = 'gc-to-ts';
+  el.innerHTML = '<h3>🏖 Time off & sick days <span style="font-weight:500;color:#9db4cf;font-size:12px">— not clocked hours; recorded for payroll (paid only with a paid-leave balance on the person’s record)</span></h3>' +
+    (L.length ? '<table><thead><tr><th>EMPLOYEE</th><th>DATE</th><th>KIND</th><th style="text-align:right">HOURS</th><th>PAY</th></tr></thead><tbody>' + L.slice(0, 200).map(function(x){ return '<tr data-to-ts="' + esc(x.id) + '"><td>' + esc(x.name) + '</td><td>' + esc(x.date) + '</td><td>' + esc(x.kind) + (x.note ? ' <span style="color:#7f93ad;font-size:11px">' + esc(x.note) + '</span>' : '') + '</td><td style="text-align:right">' + x.hours.toFixed(2) + '</td><td>' + esc(x.pay) + '</td></tr>'; }).join('') + '</tbody></table>'
+      : '<div style="color:#7f93ad;font-size:13px">No time off or sick days in the last / next 60 days.</div>');
+  box.appendChild(el);
+}
+
+/* ── the loop ── */
+function paintAll(){ if (D.hidden) return; try { if (!SNAP.sig && W._crm && Array.isArray(W._crm.schedule)) { SNAP.ref = W._crm.schedule; SNAP.sig = schedSig(W._crm.schedule); } } catch (e) {} [hookApprovals, hookDesk, hookSched, paintStrip, paintSchedBar, paintNote, paintTimesheets].forEach(function(f){ try { f(); } catch (e) { warn(e); } }); }
+var lastPull = 0;
+RI.call(W, function(){ paintAll(); if (!D.hidden && authEmail() && Date.now() - lastPull > 20000) { lastPull = Date.now(); pull(); } }, 1000);
+D.addEventListener('visibilitychange', function(){ if (!D.hidden && authEmail()) { lastPull = Date.now(); pull(); } });
+W.addEventListener('gc-co-filter', function(){ var el = D.getElementById('gc-to-schedbar'); if (el) el.__h = ''; later(paintAll, 50); });
+hookApprovals(); later(hookApprovals, 4000);
+
+W._gcTimeOff = {
+  isOff: isOff,
+  list: function(email){ return (email ? recsOf(email) : all().filter(function(r){ return canSee(r); })).map(function(r){ return JSON.parse(JSON.stringify(r)); }); },
+  request: submit, decide: decide, cancel: cancel, pull: pull, payroll: payroll, pending: pendingForMe, approvals: apprItems,
+  canDecide: function(r, viewer){ return canDecide(typeof r === 'string' ? byId(r) : r, viewer); }, canSee: function(r, viewer){ return canSee(typeof r === 'string' ? byId(r) : r, viewer); },
+  coOk: function(id){ var r = byId(s(id).replace(/^to:/, '')); return r ? coPass(r) : picked() === 'construction' || picked() === 'all'; },
+  warnFor: warnFor, outOn: outOn, jobsOn: function(who, day){ return jobsOn(userBy(who), ymd(day) || today()).map(function(j){ return { id: j.id, pid: j.pid, job: j.job, title: j.title }; }); },
+  open: mySheet, openTeam: teamSheet, openOff: offSheet, openSick: sickSheet, openLate: lateSheet, openAvail: availSheet, openDecide: decideSheet,
+  onChange: function(f){ if (typeof f === 'function') LIS.push(f); },
+  _t: { build: build, validate: validate, merge: merge, workDays: workDays, managersOf: managersOf, todoRec: todoRec, normRange: normRange, keepLocal: keepLocal, notices: notices, kindLabel: kindLabel }
+};
+try { console.log('[GC] 📅 My schedule, 🏖 time off, 🤒 sick, ⏰ late, availability (patch TIMEOFF) — _gcTimeOff.isOff(email, day)'); } catch (e) {}
 })(window);
 </script>
