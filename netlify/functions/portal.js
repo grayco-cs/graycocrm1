@@ -121,7 +121,7 @@ const STAGES = ['Lead', 'Contacted', 'Appointment booked', 'Estimate sent', 'Con
 const REVIEW_URL = 'https://share.google/quDuhdlL0ckxPLLY3';
 const FACEBOOK_URL = 'https://www.facebook.com/p/GrayCo-Construction-Services-LLC-100092932745320/';
 const KV_KEYS = ['projects', 'invs', 'invoices', 'cos', 'changeOrders', 'estimates', 'projectDocs', 'users',
-                 'customers', 'leads', 'punch', 'projectPayments', 'gc_deleted_projects', 'gc_claims', 'jobAutoDefaults', 'gc_companies',   /* patch COTRAIN: each company's marketing switch */
+                 'customers', 'leads', 'punch', 'projectPayments', 'gc_deleted_projects', 'gc_claims', 'jobAutoDefaults', 'gc_companies',   /* patch COTRAIN: the marketing switch of each company */
                  'gc_portal_auto_posts',   /* patch AUTAI: approved weekly updates / voice posts */
                  'gc_senior_pm', 'gc_team_settings',   /* patch PMG: the Senior PM, "APMs may approve" (Admin → Employees) */
                  'gc_claim_help',   /* patch CLAIMHELP: "🛡 Your insurance claim" — the published steps + Q&A (_lib/claimhelp.js) */
