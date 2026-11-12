@@ -12,8 +12,8 @@ const USERS = pm => [{ id: 'u1', name: 'Wesley Johnson', email: 'wjohnson@grayco
 const LEGACY = { id: 'u6', name: 'Pmzz Legacy', email: 'sbiffle@grayco-cs.com', role: 'Project Manager', payType: 'salary', active: true };
 const MITMGR = { id: 'u6', name: 'Mitzz Officemgr', email: 'sbiffle@grayco-cs.com', role: 'Office Manager', payType: 'salary', active: true, companies: ['mitigation'] };
 cset('users', USERS(LEGACY));
-cset('projects', [{ id: 'C1', name: 'Conzz Alpha', client: 'Conzz Client', contract: 77777, status: 'active', pm: 'Wesley Johnson', createdAt: at, updatedAt: at },
-  { id: 'M1', name: 'Mitzz Beta', client: 'Mitzz Client', contract: 5000, status: 'active', companyId: 'mitigation', pm: 'Wesley Johnson', createdAt: at, updatedAt: at }]);
+cset('projects', [{ id: 'C1', name: 'Conzz Alpha', client: 'Conzz Client', contract: 77777, status: 'active', pm: 'Pmzz Legacy', createdAt: at, updatedAt: at },
+  { id: 'M1', name: 'Mitzz Beta', client: 'Mitzz Client', contract: 5000, status: 'active', companyId: 'mitigation', pm: 'Pmzz Legacy', createdAt: at, updatedAt: at }]);
 cset('leads', [{ id: 'L1', client: 'Conzz Kitchen', name: 'Conzz Kitchen', type: 'Residential Reno', scope: 'Kitchen remodel', stage: 'New', createdAt: at, updatedAt: at }]);
 const errs = [];
 async function as(email){ const A = await computer(email, { build: process.argv[2] }); A.page().on('pageerror', e => errs.push(String(e.message).slice(0, 200))); await signIn(A, email, 15000); await sleep(6000); return A; }
@@ -23,7 +23,7 @@ await A.ev(() => window._gcCo.setFilter('mitigation')); await sleep(1000);
 let lg = await A.ev(() => ({ f: window._gcCo.filter(), can: window._gcCo.canSwitch(), cos: window._gcCo.myCos() }));
 await A.ev(() => window._setView('projects')); await sleep(3500);
 let t0 = await A.ev(() => document.body.innerText);
-ok('a legacy PM (no companies on the record) can still switch: Mitigation picked, the Mitigation job shows', lg.f === 'mitigation' && lg.can && lg.cos.length === 3 && /Mitzz Beta/.test(t0) && !/Conzz Alpha/.test(t0), lg);
+ok('a legacy PM (no companies on the record) can still switch: Mitigation picked, the Mitigation job shows', lg.f === 'mitigation' && lg.can && lg.cos.length === 3 && /Mitzz Beta/.test(t0) && !/Conzz Alpha/.test(t0), { lg, t: t0.split('\n').filter(l => /zz/.test(l)).slice(0, 8) });
 await A.ev(() => window._gcCo.setFilter('all')); await sleep(500); await A.b.close();
 /* the Mitigation office manager (companies: [mitigation]): locked */
 cset('users', USERS(MITMGR));
