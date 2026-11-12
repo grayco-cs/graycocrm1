@@ -195451,7 +195451,7 @@ D.addEventListener('click', function(e){ var b = e.target && e.target.closest ? 
 
 /* start: one read for the To-Do (admins only) */
 later(function(){ if (isAdmin()) load(); }, 4000);
-W._gcCerts = { open: open_, list: function(){ return live(); }, load: load, status: status, applyBy: applyBy, templates: TEMPLATES, _addMonths: addMonths };
+W._gcCerts = { open: open_, canOpen: function(){ return isAdmin(); } /* patch QAB */, list: function(){ return live(); }, load: load, status: status, applyBy: applyBy, templates: TEMPLATES, _addMonths: addMonths };
 try { console.log('[GC] 📜 Certifications (patch CERTS): _gcCerts'); } catch (e) {}
 })();
 </script>
@@ -218797,6 +218797,7 @@ function certsHtml(){
   var l = arr(C.list()).filter(function(c){ return c && !c.archived && /lead|asbestos|rrp|abate|iicrc|haag|mold|epa|mdeq|tdec|adh|environment|hazard/i.test(s(c.name) + ' ' + s(c.tpl) + ' ' + s(c.issuer)); });
   var h = l.length ? '<ul style="list-style:none;padding:0;margin:0">' + l.map(function(c){ var st = {}; try { st = C.status(c) || {}; } catch (e) {} return '<li><span class="st ' + esc(st.k || 'nodate') + '">' + esc(st.l || '—') + '</span> <b>' + esc(c.name) + '</b> <span class="m">' + esc([c.holderName, c.number ? '#' + c.number : '', c.expires ? 'expires ' + c.expires : ''].filter(Boolean).join(' · ')) + '</span></li>'; }).join('') + '</ul>'
     : '<div class="m">No lead / asbestos / IICRC certifications entered yet.</div>';
+  if (C.canOpen && !C.canOpen()) return h;   /* patch QAB: only the people who can open Certifications get the button (a tech got "Only admins can open Certifications.") */
   return h + '<div style="margin-top:8px"><button type="button" class="chip" data-env="certs">📜 Open Certifications (add / renew)</button></div>';
 }
 function draw(){
