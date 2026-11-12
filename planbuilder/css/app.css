@@ -567,8 +567,19 @@ body.locked > *:not(#pb-gate) { visibility: hidden; }
 #v-rec.rec { color: #fff; background: #d92d20 !important; border-color: #d92d20 !important; animation: recPulse 1.2s ease-in-out infinite; }
 @keyframes recPulse { 50% { box-shadow: 0 0 0 6px rgba(217, 45, 32, 0.25); } }
 #v-tour.on, #v-doors.on { color: var(--accent); border-color: var(--accent); }
-.view-pane { position: relative; }
+.view-pane { position: relative; overflow: hidden; }
 .tour-cap { position: absolute; left: 50%; bottom: 28px; transform: translateX(-50%); padding: 10px 22px; border-radius: 999px; background: rgba(6, 12, 26, 0.72); color: #fff; font: 600 18px 'Space Grotesk', Inter, sans-serif; letter-spacing: .01em; pointer-events: none; backdrop-filter: blur(6px); animation: capIn .45s ease; z-index: 5; }
 @keyframes capIn { from { opacity: 0; transform: translate(-50%, 10px); } }
 .pcard[draggable="true"] { cursor: grab; }
 .pcard[draggable="true"]:active { cursor: grabbing; }
+
+/* ---------- 3D Show menu ---------- */
+.show-wrap { position: relative; }
+.show-menu { position: absolute; top: calc(100% + 6px); left: 0; min-width: 300px; padding: 8px; display: flex; flex-direction: column; gap: 2px; z-index: 20; }
+.show-row { display: grid !important; grid-template-columns: 18px 1fr auto; gap: 8px; align-items: center; padding: 6px 8px !important; border-radius: 7px; border: 0 !important; background: transparent !important; cursor: pointer; font-size: 13px; }
+.show-row:hover { background: var(--panel2) !important; }
+.show-row small { color: var(--muted); font-variant-numeric: tabular-nums; }
+.show-row.none { opacity: .55; }
+.show-btns { display: flex; gap: 6px; padding: 6px 4px 2px; border-top: 1px solid var(--line); margin-top: 4px; }
+.show-btns button { flex: 1; font-size: 12px; }
+#v-show.on { color: #fff; }

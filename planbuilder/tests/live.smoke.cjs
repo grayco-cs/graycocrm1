@@ -104,6 +104,29 @@ const shots = process.argv[2];
   });
   if (!win.skipped) { assert.equal(win.added, 1, 'window dropped on a wall'); assert.equal(win.kind, 'opening'); }
 
+  // 3b) Show ▾: furniture and wall art off and back on, with the estimate untouched
+  await p.click('[data-view="plan"]').catch(() => {}); await ev(() => PlanBuilder.select(null));
+  await p.click('.style-card:has-text("Craftsman")'); await p.click('button:has-text("Furnish all rooms")');
+  await p.click('[data-view="3d"]'); await p.waitForTimeout(600);
+  const total0 = await ev(() => Math.round(PlanBuilder.takeoff.totals.grand));
+  const vis = grp => ev(g => { const out = { on: 0, off: 0 }; PlanBuilder.view3d.root.traverse(o => { if (o.isGroup && o.userData.show === g) out[o.visible ? 'on' : 'off']++; }); return out; }, grp);
+  assert.ok((await vis('furniture')).on >= 8, 'furniture in 3D');
+  await p.click('#v-show');
+  await p.locator('#menu-show .show-row', { hasText: 'Furniture' }).locator('input').uncheck();
+  await p.locator('#menu-show .show-row', { hasText: 'Wall art' }).locator('input').uncheck();
+  await p.waitForTimeout(1500);
+  let f = await vis('furniture'), w = await vis('art');
+  assert.equal(f.on, 0, 'furniture hidden'); assert.equal(w.on, 0, 'art hidden'); assert.ok((await vis('kitchen')).on > 0, 'cabinets still there');
+  if (shots) await p.screenshot({ path: shots + '/live-empty.png' });
+  // hidden stays hidden through a rebuild and a reload, and can't be clicked
+  await ev(() => PlanBuilder.view3d.rebuild()); assert.equal((await vis('furniture')).on, 0);
+  assert.deepEqual(await ev(() => JSON.parse(localStorage.getItem('pb.pref.hide3d')).sort()), ['art', 'furniture']);
+  assert.equal(await ev(() => Math.round(PlanBuilder.takeoff.totals.grand)), total0, 'estimate unchanged');
+  await p.click('#menu-show button:has-text("Show all")'); await p.waitForTimeout(1500);
+  f = await vis('furniture'); assert.equal(f.off, 0, 'furniture back');
+  await p.click('#v-show').catch(() => {});
+  await ev(() => document.querySelector('#menu-show').hidden = true);
+
   // 4) the tour, recorded to a video
   await ev(() => PlanBuilder.view3d.setPreset('iso')); await p.waitForTimeout(800);
   const canRec = await ev(() => PlanBuilder.view3d.live.canRecord());

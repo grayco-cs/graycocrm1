@@ -13,6 +13,7 @@ import { installStudio } from './studio.js';
 import { installImport } from './importui.js';
 import { installCmd } from './cmdline.js';
 import { installCRM } from './crmui.js';
+import { SHOW_GROUPS } from './furnkinds.js';
 import { requireSignIn, signOut, signedInEmail, gateNeeded } from './auth.js';
 
 const $ = (s, el = document) => el.querySelector(s);
@@ -274,6 +275,28 @@ const app = {
     $('#v-tour').addEventListener('click', e => { const L = live(); if (!L) return; if (L.touring) { L.stopTour(); return; } e.currentTarget.classList.add('on'); e.currentTarget.textContent = '■ Stop tour'; L.tour({ record: false }); });
     this.onRecord = (on, blob) => { $('#v-rec').classList.toggle('rec', on); $('#v-rec').textContent = on ? '■ Stop recording' : '⏺ Record'; if (!on && blob) this.toast(`Video saved to your computer (${(blob.size / 1048576).toFixed(1)} MB).`); };
     $('#v-rec').addEventListener('click', () => { const L = live(); if (!L) return; L.record(!L.recorder); });
+    // Show ▾: turn furniture, art, rugs … on and off in 3D (the estimate is not changed)
+    const drawShow = () => {
+      const v = this.ensure3D(), hide = (v.opts && v.opts.hide) || new Set(), L = live(), m = $('#menu-show');
+      m.innerHTML = '';
+      SHOW_GROUPS.forEach(([id, name]) => {
+        const n = L ? L.countShown(id) : 0;
+        const cb = h('input', { type: 'checkbox', checked: !hide.has(id), onchange: e => { if (L) L.setShown(id, e.target.checked); $('#v-show').classList.toggle('on', hide.size > 0); } });
+        m.append(h('label', { class: 'show-row' + (n ? '' : ' none') }, cb, h('span', {}, name), h('small', {}, n ? String(n) : '–')));
+      });
+      m.append(h('div', { class: 'show-btns' },
+        h('button', { onclick: () => { SHOW_GROUPS.forEach(([id]) => { if (hide.has(id) && L) L.setShown(id, true); }); drawShow(); $('#v-show').classList.remove('on'); } }, 'Show all'),
+        h('button', { onclick: () => { ['furniture', 'art', 'rugs', 'plants'].forEach(id => { if (!hide.has(id) && L) L.setShown(id, false); }); drawShow(); $('#v-show').classList.add('on'); } }, 'Empty rooms')));
+    };
+    $('#v-show').addEventListener('click', e => {
+      e.stopPropagation(); const m = $('#menu-show'); if (m.hidden) drawShow(); m.hidden = !m.hidden;
+      if (!m.hidden) {   // open toward the side with room, never past the edge of the 3D view
+        const pane = $('#view-pane').getBoundingClientRect(), b = e.currentTarget.getBoundingClientRect();
+        const left = b.left - pane.left + m.offsetWidth > pane.width - 8;
+        m.style.left = left ? 'auto' : '0'; m.style.right = left ? '0' : 'auto';
+      }
+    });
+    document.addEventListener('click', e => { const m = $('#menu-show'); if (m && !m.hidden && !e.target.closest('.show-wrap')) m.hidden = true; });
     $$('#phase-seg button').forEach(b => b.addEventListener('click', () => this.setPhase(b.dataset.phase)));
     $('#btn-rend').addEventListener('click', () => this.showRenditions());
     $('#btn-customer').addEventListener('click', () => this.setCustomer(!this.customer));

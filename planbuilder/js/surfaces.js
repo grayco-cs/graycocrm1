@@ -43,6 +43,7 @@ export function surfaceKind(p) {
   }
   if (c === 'countertop') return /granite|marble|quartz|quartzite/.test(n) ? 'stoneSlab' : /butcher/.test(n) ? 'wood' : 'plain';
   if (c === 'paint' && /shiplap|beadboard/.test(n)) return 'lap';
+  if (c === 'paint') return 'paint';   // eggshell: a soft, slightly uneven painted wall (not flat CG)
   return 'plain';
 }
 
@@ -51,8 +52,12 @@ const SPEC = {
   wood: [4, 0.5], tile: [4, 0.28], hex: [2, 0.25], carpet: [2, 1], concrete: [8, 0.45], brick: [4, 0.95], block: [8, 0.9], stone: [6, 0.95],
   lap: [4, 0.75], batten: [4, 0.75], shake: [4, 0.9], stucco: [6, 0.95], metalwall: [4, 0.4], shingle: [4, 0.95], roofmetal: [4, 0.35],
   rooftile: [4, 0.6], slate: [4, 0.7], membrane: [8, 0.8], grass: [6, 1], mulch: [4, 1], rock: [3, 0.9], pavers: [4, 0.85], flagstone: [6, 0.8],
-  asphalt: [8, 0.95], deck: [4, 0.6], stoneSlab: [6, 0.18], plain: [8, 0.85],
+  asphalt: [8, 0.95], deck: [4, 0.6], stoneSlab: [6, 0.18], paint: [6, 0.9], plain: [8, 0.85],
 };
+// How deep each surface's texture reads in the light (bump), 0 = flat.
+const BUMP = { wood: 1.2, deck: 2, tile: 1.6, hex: 1.6, carpet: 1.4, brick: 2.4, block: 2.2, stone: 2.6, flagstone: 2, lap: 1.8, batten: 1.8, shake: 2, stucco: 1.6,
+  shingle: 1.8, slate: 1.6, rooftile: 2.2, pavers: 2, paint: 0.15, concrete: 0.6, mulch: 1.5, rock: 2, grass: 1 };
+export function surfaceBump(kind) { return BUMP[kind] || 0; }
 export function surfaceSpec(kind) { const s = SPEC[kind] || SPEC.plain; return { span: s[0], roughness: s[1], metal: kind === 'roofmetal' || kind === 'metalwall' ? 0.55 : 0 }; }
 
 function speckle(x, w, h, base, amount, count, r) {
@@ -166,6 +171,11 @@ export function surfaceCanvas(kind, color, seed = '') {
         x.fill();
       }
       x.globalAlpha = 1; break;
+    }
+    case 'paint': {   // eggshell: a barely-there stipple, the color stays true
+      for (let i = 0; i < 16000; i++) { x.fillStyle = shade(color, 0.985 + r() * 0.03); x.globalAlpha = 0.6; x.fillRect(r() * S, r() * S, 1 + r(), 1 + r()); }
+      x.globalAlpha = 1;
+      break;
     }
     default: speckle(x, S, S, color, 0.06, 4000, r);
   }

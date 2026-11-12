@@ -80,6 +80,10 @@ Click **Studio** in the top bar. The model is shown the way it gets built, on a 
 - **⏺ Record:** saves what the 3D view shows to a video file (.webm; Chrome / Edge) — press 🎬 Tour while recording for a presentation video, or move around yourself.
 - **Drag from the product list onto the 3D:** furniture and fixtures land where you drop them, doors and windows on the wall you drop them on, flooring / paint / siding / roofing on the floor, wall, room or roof under the pointer.
 - New pieces pop into place, and a ripple runs across the ground when a style or furniture is applied.
+- **👁 Show ▾** turns groups on and off in 3D, with each piece shrinking away or springing back: Furniture, Wall art & mirrors, Rugs, Plants, Lights & fans, Kitchen & bath, Yard & outdoor; **Empty rooms** hides the furnishings in one click. Only the view changes; the estimate stays the same. The choice is remembered.
+- **Furniture, fixtures and appliances are real shapes** (`js/furniture3d.js`): upholstered sofas and armchairs with cushions and pillows, beds with tufted headboards, bedding and throws, dining / office / counter chairs, tables with aprons and tapered legs, lamps with glowing shades, pendants and chandeliers, ceiling fans, plants with leaves, bookshelves with books and vases, framed art with a mat, shaker or slab cabinets with doors and pulls, French-door fridge, range with cooktop and oven window, dishwasher, washer & dryer, sinks and faucets, toilet, tub and shower. Materials: fabric with a soft sheen and weave, wood grain, brushed and polished metal, glazed ceramic, glass.
+- **Surfaces have depth:** grout, plank seams, mortar, siding laps and carpet weave catch the light; painted walls have a soft eggshell finish; finished wood floors a soft sheen.
+- Furniture drops in, squashes and settles when the model builds; a picked piece pulses for a moment.
 
 ## Damage, entered estimates and the customer view
 - **Damage:** select a room → Damage & repair → *Damaged* and what happened; roofs have *Damaged* too. 3D **Show damage** paints damaged floors and roofs red; the printout lists damage with photos.
@@ -158,6 +162,7 @@ Each project's estimate is priced from **your catalog prices** (the default) or 
 | `js/auth.js` | Sign-in: the CRM's sign-in and staff list, token refresh, idle sign-out, the sign-in screen |
 | `js/crm.js`, `js/crmui.js`, `data/crm-products.json` | CRM prices: reading the GrayCo CRM's Rate Book, Products, Labor Rates and tax / margin in this browser, unit conversion, links and suggestions; the CRM prices window |
 | `js/live3d.js` | Live 3D: sun and time of day, night lights, opening doors, the tour, video recording, drag-and-drop onto the 3D, pop-in and ripple |
+| `js/furniture3d.js`, `js/furnkinds.js` | Furniture, fixtures, appliances and decor as real shapes, their materials, and which Show group each belongs to |
 | `js/surfaces.js` | Drawn surfaces for the 3D view (wood, tile, brick, siding, shingles, grass …) in each product's color |
 | `vendor/pdfjs/` | pdf.js 4.10 (Apache-2.0, see `PDFJS-LICENSE.txt`) for reading PDF plans, served from here |
 | `vendor/` | Three.js r170 and its add-ons in `vendor/addons/` (orbit controls, studio light, rounded boxes, glow, .glb export; MIT, see `THREE-LICENSE.txt`), served from here so it works without the internet |

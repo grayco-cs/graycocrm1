@@ -137,6 +137,25 @@ export function installLive(v, app) {
     v.scene.add(m); L.rings.push(m);
   };
 
+  // ---------- Show ▾: furniture, art, rugs, plants, lights, kitchen & bath, yard ----------
+  L.fades = [];
+  L.setShown = (group, on) => {
+    const hide = v.opts.hide;
+    if (on) hide.delete(group); else hide.add(group);
+    try { localStorage.setItem('pb.pref.hide3d', JSON.stringify([...hide])); } catch (e) { /* ignore */ }
+    const list = []; v.root.traverse(o => { if (o.isGroup && o.userData.show === group) list.push(o); });
+    const t0 = performance.now(), step = Math.min(25, 600 / Math.max(1, list.length));
+    list.forEach((g, i) => {
+      const base = g.userData.baseScale || (g.userData.baseScale = g.scale.clone());
+      if (on && !g.visible) { g.visible = true; g.scale.setScalar(0.001); }
+      g.userData.fade = { t0: t0 + i * step, on, base, from: on ? 0 : 1 };
+      if (!L.fades.includes(g)) L.fades.push(g);
+    });
+    v.render();
+    return list.length;
+  };
+  L.countShown = group => { let n = 0; v.root.traverse(o => { if (o.isGroup && o.userData.show === group) n++; }); return n; };
+
   // ---------- every frame ----------
   L.tick = now => {
     let moved = false, geo = false;
@@ -172,6 +191,21 @@ export function installLive(v, app) {
         if (k >= 1) { g.scale.copy(p.s); delete g.userData.pop; return false; }
         return true;
       });
+    }
+    if (L.fades.length) {   // pieces shrinking away / springing back
+      L.fades = L.fades.filter(g => {
+        const f = g.userData.fade; if (!f) return false;
+        const k = Math.max(0, Math.min(1, (now - f.t0) / 340));
+        const s = f.on ? (k <= 0 ? 0.001 : 1 + 1.6 * Math.pow(k - 1, 3) + 0.6 * Math.pow(k - 1, 2)) : 1 - ease(k);
+        g.scale.set(f.base.x * Math.max(0.001, s), f.base.y * Math.max(0.001, s), f.base.z * Math.max(0.001, s)); geo = true;
+        if (k >= 1) { g.scale.copy(f.base); if (!f.on) g.visible = false; delete g.userData.fade; return false; }
+        return true;
+      });
+    }
+    if (v._hl && v._hl.length && v._hlAt && now - v._hlAt < 1700) {   // a picked piece pulses for a moment
+      const k = 0.25 + 0.35 * (0.5 + 0.5 * Math.sin((now - v._hlAt) / 1700 * Math.PI * 6 - Math.PI / 2));
+      v._hl.forEach(([o]) => (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => { if (m.emissive) m.emissiveIntensity = k; }));
+      moved = true;
     }
     if (L.rings.length) {
       L.rings = L.rings.filter(m => {

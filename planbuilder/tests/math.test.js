@@ -11,6 +11,7 @@ import { cleanWalls, findRooms, nameRooms, parseDXF, dxfScale, planFromDXF, norm
 import { parsePoint } from '../js/cmdline.js';
 import { readFileSync } from 'fs';
 import { buildSystems, analyzeSystems, structureType, systemOfLine, isFixture, rates, setCrmRates } from '../js/systems.js';
+import { refine, showGroup } from '../js/furnkinds.js';
 import { buildCRM, normUnit, unitFactor, sheetSF, resolveLink, applyCRM, crmSystemRates, suggest, autoLink, marginToMarkup } from '../js/crm.js';
 
 let n = 0; const t = (name, fn) => { fn(); n++; };
@@ -355,6 +356,15 @@ t('shed roof: tall side is walled in 3D and sided in the estimate', () => {
   assert.ok(tall.every(q => Math.abs(q.y - 30) < 1e-9), 'on the high wall line');
   near(Math.max(...tall.map(q => q.z)), 16.5); near(Math.min(...tall.map(q => q.z)), 9);
   near(gableArea({ ...sec, style: 'gable' }), 30 * 3.75);
+});
+
+t('3D furniture kinds and Show groups', () => {
+  const k = id => refine(DEFAULT_CATALOG.find(p => p.id === id));
+  assert.equal(k('ap-fridge'), 'fridge'); assert.equal(k('ap-range'), 'range'); assert.equal(k('ap-dw'), 'dishwasher'); assert.equal(k('pl-ksink'), 'sink');
+  assert.equal(k('fn-sofa'), 'sofa'); assert.equal(k('fn-bed-q'), 'bed'); assert.equal(k('cab-vanity'), 'vanity'); assert.equal(k('el-fan'), 'fan');
+  const g = id => showGroup(DEFAULT_CATALOG.find(p => p.id === id));
+  assert.equal(g('fn-sofa'), 'furniture'); assert.equal(g('fn-art-large'), 'art'); assert.equal(g('fn-rug-8x10'), 'rugs'); assert.equal(g('fn-plant-floor'), 'plants');
+  assert.equal(g('el-pendant'), 'lights'); assert.equal(g('ap-fridge'), 'kitchen'); assert.equal(g('cab-base'), 'kitchen');
 });
 
 console.log(`PlanBuilder math: ${n} tests passed`);

@@ -4,10 +4,11 @@
 
 import * as THREE from 'three';
 import { installLive } from './live3d.js';
+import { refine as refineKind, showGroup, build as buildFurniture, makeKit } from './furniture3d.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { surfaceKind, surfaceSpec, surfaceCanvas } from './surfaces.js';
+import { surfaceKind, surfaceSpec, surfaceCanvas, surfaceBump } from './surfaces.js';
 import { wallLength, wallPieces, wallHeight, wallOpenings, pointInPoly, roofTriangles, bbox, lerp, projectOnSeg, polyArea, centroid, ridgeAxis as ridgeAxisOf } from './geom.js';
 import { findProduct } from './catalog.js';
 import { FLOOR_DEPTH, wallsAtPoint } from './model.js';
@@ -18,6 +19,9 @@ function shade(hex, k) {
   const f = v => Math.max(0, Math.min(255, Math.round(v * k)));
   return '#' + [f(n >> 16 & 255), f(n >> 8 & 255), f(n & 255)].map(v => v.toString(16).padStart(2, '0')).join('');
 }
+
+// Seen on screen: it and every group it sits in are visible (hidden furniture groups can't be clicked).
+function shown(o) { for (; o; o = o.parent) if (!o.visible) return false; return true; }
 
 // A box with softly rounded edges (radius clamped to fit), so nothing in the model looks blocky.
 function RB(w, h, d, r = 0.07) {
@@ -56,7 +60,7 @@ export class View3D {
     this.root = new THREE.Group(); this.scene.add(this.root);
     this.texCache = new Map();
     this.matCache = new Map();
-    this.opts = { showRoof: true, upTo: -1, cutaway: false, ceilings: false, phaseView: 'after', highlightNew: false, damage: false, holo: false, spin: false, studio: false };
+    this.opts = { hide: (() => { try { return new Set(JSON.parse(localStorage.getItem('pb.pref.hide3d') || '[]')); } catch (e) { return new Set(); } })(), showRoof: true, upTo: -1, cutaway: false, ceilings: false, phaseView: 'after', highlightNew: false, damage: false, holo: false, spin: false, studio: false };
     this._lights();
     this._ground();
     this.ray = new THREE.Raycaster();
@@ -247,6 +251,9 @@ export class View3D {
       const Ctor = kind === 'stoneSlab' ? THREE.MeshPhysicalMaterial : THREE.MeshStandardMaterial;
       m = new Ctor({ map: tx, roughness: spec.roughness, metalness: spec.metal, side: opts.side ?? THREE.FrontSide });
       if (kind === 'stoneSlab') { m.clearcoat = 1; m.clearcoatRoughness = 0.12; }
+      const bump = surfaceBump(kind);
+      if (bump) { m.bumpMap = tx; m.bumpScale = bump; }   // grout, plank seams, mortar and weave catch the light
+      if (kind === 'wood' && !opts.side) { m.roughness = 0.42; }   // finished floors have a soft sheen
       m.userData.repeatFt = spec.span;
       this.matCache.set(key, m);
     }
@@ -327,7 +334,7 @@ export class View3D {
   setSelection(sel, again) {
     if (this.opts.studio) { this._sel = sel; return; }
     if (this._hl) this._hl.forEach(([o, m]) => { o.material = m; });
-    this._hl = []; this._sel = sel;
+    this._hl = []; this._sel = sel; this._hlAt = performance.now();
     if (sel) {
       this.root.traverse(o => {
         if (!o.isMesh || !o.userData.pick || o.userData.pick.id !== sel.id) return;
@@ -481,7 +488,11 @@ export class View3D {
     const m = it.color ? this.mat(it.color, { roughness: 0.7 }) : this.productMat(it.productId, color, 2, { roughness: 0.6 });
     const add = (geo, mat, x, y, z) => { const mesh = new THREE.Mesh(geo, mat); mesh.position.set(x, y, z); mesh.castShadow = true; mesh.receiveShadow = true; mesh.userData.pick = grp.userData.pick; grp.add(mesh); return mesh; };
     const W = it.w, D = it.d, H = it.h;
-    if (type === 'base') {
+    const kind = refineKind(p);
+    grp.userData.show = showGroup(p);
+    const ctx = { W, D, H, add, K: this.kit(), color, p, it, level, main: m, grp, art: kind === 'art' || kind === 'tv' ? this.artTexture(it.id, it.color || color) : null };
+    if (buildFurniture(kind, ctx)) { /* drawn as a real shape (furniture3d.js) */ }
+    else if (type === 'base') {
       add(RB(W, H - 0.15, D - 0.1), m, 0, (H - 0.15) / 2, 0.05);
       add(RB(W + 0.05, 0.15, D + 0.05, 0.04), this.counterMat(), 0, H - 0.075, 0);
       add(RB(W - 0.1, 0.35, 0.02), this.mat('#222'), 0, 0.2, D / 2 - 0.04);  // toe kick shadow
@@ -578,8 +589,10 @@ export class View3D {
       add(RB(W, H, D), m, 0, H / 2, 0);
     }
     if (p && ['landscape', 'hardscape', 'outdoor'].includes(p.category) && level.elevation === 0) grp.position.y -= FLOOR_DEPTH * (this._onSlab(it, level) ? 0 : 1);
+    if (this.opts.hide && this.opts.hide.has(grp.userData.show)) grp.visible = false;   // 3D toolbar → Show ▾
     g.add(this._tag(grp, 4, type === 'tree' || type === 'shrub' ? 'pop' : 'drop'));
   }
+  kit() { return this._kit || (this._kit = makeKit(this)); }
   // Is a placed item inside a (non-outdoor) room, i.e. standing on the slab rather than the ground?
   _onSlab(it, level) { return level.rooms.some(r => !r.outdoor && pointInPoly({ x: it.x, y: it.y }, r.points)); }
 
@@ -657,7 +670,11 @@ export class View3D {
       if (k === 'grow') { const e = Math.max(0.001, ease(p)); o.scale.y = a.scale.y * e; o.position.y = a.pos.y - a.h / 2 + (a.h * e) / 2; }
       else if (k === 'rise') { o.position.y = a.pos.y - 0.8 * (1 - ease(p)); }
       else if (k === 'pop') { const e = Math.max(0.001, back(p)); o.scale.set(a.scale.x * e, a.scale.y * e, a.scale.z * e); }
-      else if (k === 'drop') { o.position.y = a.pos.y + 7 * (1 - back(p)); }
+      else if (k === 'drop') {   // fall in, then squash and settle
+        o.position.y = a.pos.y + 7 * (1 - ease(Math.min(1, p / 0.7)));
+        const q = p < 0.7 ? 0 : (p - 0.7) / 0.3, sq = Math.sin(q * Math.PI) * 0.12 * (1 - q * 0.4);
+        o.scale.set(a.scale.x * (1 + sq * 0.5), a.scale.y * (1 - sq), a.scale.z * (1 + sq * 0.5));
+      }
       else if (k === 'lower') { o.position.y = a.pos.y + 14 * (1 - ease(p)); }
     };
     items.forEach(o => apply(o, 0));
@@ -787,7 +804,7 @@ export class View3D {
 
   // ---------- pointer: click to select, drag the selected piece to move it, walk-mode look / glide ----------
   _ndc(e) { const r = this.renderer.domElement.getBoundingClientRect(); return new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1); }
-  _hits(e) { this.ray.setFromCamera(this._ndc(e), this.camera); return this.ray.intersectObjects(this.root.children, true).filter(h => h.object.userData.pick && h.object.visible); }
+  _hits(e) { this.ray.setFromCamera(this._ndc(e), this.camera); return this.ray.intersectObjects(this.root.children, true).filter(h => h.object.userData.pick && shown(h.object)); }
   _floorPoint(e, y) { this.ray.setFromCamera(this._ndc(e), this.camera); const p = new THREE.Vector3(); return this.ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -y), p) ? p : null; }
   _pDown(e) {
     this._down = { x: e.clientX, y: e.clientY };

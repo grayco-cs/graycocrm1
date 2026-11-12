@@ -192,6 +192,8 @@ export function autoFurnish(level, rooms, styleId, catalog) {
   rooms.forEach(r => {
     if (phaseOf(r) === 'demo') return;
     level.items = level.items.filter(it => !(it.auto && it.roomId === r.id));
+    // the starter plans' "display only" furniture in this room makes way too (it would sit under the new pieces)
+    level.items = level.items.filter(it => !(/^fn-(sofa|bed-q|table|desk)$/.test(it.productId) && pointInPoly({ x: it.x, y: it.y }, r.points)));
     const b = bbox(r.points), g = 0.45;                       // gap from the wall centre line
     const X0 = b.x + g, Y0 = b.y + g, X1 = b.x + b.w - g, Y1 = b.y + b.h - g, W = X1 - X0, H = Y1 - Y0, cx = (X0 + X1) / 2, cy = (Y0 + Y1) / 2;
     if (W < 4 || H < 4) return;
