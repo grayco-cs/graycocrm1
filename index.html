@@ -195607,6 +195607,80 @@ function iicrc(id, name, days, why){ return R(id, name, M[id], days, why || 'Gra
 var MASTER_PM = function(){ return [iicrc('asd', 'IICRC ASD — Applied Structural Drying (Master Restorer course)', 365), iicrc('amrt', 'IICRC AMRT — Applied Microbial Remediation (Master Restorer course)', 365),
   iicrc('fsrt', 'IICRC FSRT — Fire & Smoke Restoration (Master Restorer course)', 365), iicrc('oct', 'IICRC OCT — Odor Control (Master Restorer course)', 365),
   iicrc('cct', 'IICRC CCT — Carpet Cleaning (Master Restorer course)', 365), iicrc('uft', 'IICRC UFT — Upholstery & Fabric (Master Restorer course)', 365)]; };
+/* patch CERTROLE (owner 11/12): "before we send the tech/PM to the class for a cert, make them do the training on the CRM for that class".
+   CLASS: certificate (requirement id) → the CRM training course(s) in 🎓 Training that prepare for that class (module ids as
+   _gcTrain.modules() has them). Passed = every mapped course passed (its test part passed, or — a course with no test — every part
+   ticked). Certificates with no CRM course yet get a short prep course here (PREP → window.__GC_TRAIN_EXTRA__: overview, key terms,
+   what the class covers, a 10-question test, 80 % to pass). */
+var CLASS = { wrt: ['b:resto-water'], asd: ['b:iicrc-s500'], amrt: ['b:iicrc-s520'], fsrt: ['b:resto-fire'], oct: ['b:resto-odor'], cct: ['b:prep-cct'], uft: ['b:prep-uft'],
+  mr: ['b:prep-mr'], rrp: ['b:co-env-lead'], leadwork: ['b:co-env-lead'], leadsup: ['b:co-env-lead'], asbwork: ['b:co-env-asbestos'], asbsup: ['b:co-env-asbestos'],
+  asbinsp: ['b:co-env-asbestos'], hazwoper: ['b:co-env-hazwoper'], hazref: ['b:co-env-hazwoper'], resp: ['b:co-env-resp'], trauma: ['b:iicrc-bio'], osha10: ['b:prep-osha'], osha30: ['b:prep-osha'] };
+function PQ(q, c, a, why){ return { q: q, c: c, a: a, why: why }; }
+function prepCourse(id, title, cos, overview, terms, covers, quiz){
+  return { id: id, title: title, cat: /OSHA/.test(title) ? 'OSHA / Safety' : 'IICRC', cos: cos, required: [], passPct: 80, certPrep: true,
+    intro: 'Do this before GrayCo sends you to the class (owner: "make them do the training on the CRM for that class"). Read each part, then pass the test (8 of 10). Course fee paid by GrayCo · training days are unpaid · travel paid for courses out of town.',
+    parts: [{ id: 'overview', title: '1. What the certificate is', body: overview }, { id: 'terms', title: '2. Key terms', body: terms }, { id: 'covers', title: '3. What the class covers', body: covers },
+      { id: 'quiz', title: 'Test: pass 8 of 10 to finish', body: 'Take it after you have read every part.', quiz: quiz }] };
+}
+var PREP = [
+  prepCourse('prep-cct', '🧽 Before the IICRC CCT class (Carpet Cleaning Technician)', ['mitigation'],
+    '- **IICRC CCT** = Carpet Cleaning Technician: a 2-day class (about 14 hours) and an exam.\n- One of the courses on the way to **Master Textile Cleaner** and **Master Restorer**.\n- At GrayCo it is used on water losses for carpet that can be saved (Category 1, cleaned and dried fast).',
+    '- **Fiber**: nylon, polyester, olefin, wool — each cleans differently.\n- **pH**: alkaline cleaners for soil, acidic rinse to neutralize.\n- **HWE** (hot-water extraction): the main cleaning method.\n- **Wicking / browning**: stains that come back up as carpet dries.\n- **Pile reversal / shading**: not a defect — explain it to the customer.',
+    '- Fiber identification (burn test), carpet construction.\n- The cleaning principles: chemical, agitation, heat, time (CHAT).\n- Spotting and stain removal, pre-spraying, extraction, grooming and drying.\n- Safety, customer communication, and what can and cannot be saved after a water loss.',
+    [PQ('What does CCT stand for?', ['Carpet Cleaning Technician', 'Certified Contents Tech', 'Carpet Category Test', 'Cleaning Chemical Training'], 0, 'IICRC CCT = Carpet Cleaning Technician.'),
+     PQ('About how long is the CCT class?', ['2 days (about 14 hours)', '1 hour', '2 weeks', '40 hours'], 0, 'It is a 2-day class.'),
+     PQ('The main professional cleaning method taught is…', ['Hot-water extraction', 'Dry sweeping', 'Bleach and rinse', 'Pressure washing'], 0, 'HWE is the main method.'),
+     PQ('CHAT stands for chemical, heat, agitation and…', ['Time', 'Temperature', 'Tools', 'Tension'], 0, 'Chemical, heat, agitation, time.'),
+     PQ('A stain that comes back as the carpet dries is called…', ['Wicking', 'Shading', 'Pilling', 'Matting'], 0, 'Wicking brings soil up as it dries.'),
+     PQ('Pile reversal (shading) is…', ['A normal look, not a defect', 'Always a cleaning error', 'Mold', 'Water damage'], 0, 'Explain it to the customer.'),
+     PQ('Which fiber needs the gentlest, low-pH care?', ['Wool', 'Olefin', 'Polyester', 'Nylon'], 0, 'Wool is protein — keep pH low.'),
+     PQ('CCT counts toward which IICRC Master?', ['Master Textile Cleaner (and Master Restorer)', 'Master Electrician', 'None', 'Master Plumber'], 0, 'It is on the Master Textile path.'),
+     PQ('Category 3 (sewage) carpet should usually be…', ['Removed and thrown away', 'Cleaned and kept', 'Dried in place only', 'Shampooed'], 0, 'Cat 3 carpet and pad go.'),
+     PQ('Who pays the course fee for an approved class?', ['GrayCo', 'The employee', 'The customer', 'The insurance carrier'], 0, 'GrayCo pays the fee; training days are unpaid.')]),
+  prepCourse('prep-uft', '🛋 Before the IICRC UFT class (Upholstery & Fabric Cleaning)', ['mitigation'],
+    '- **IICRC UFT** = Upholstery and Fabric Cleaning Technician: a 2-day class (about 14 hours) and an exam.\n- A course on the way to **Master Textile Cleaner** and **Master Restorer**.\n- At GrayCo: contents on water and fire losses — what can be cleaned and what goes.',
+    '- **Fabric codes**: W (water), S (solvent), WS (either), X (vacuum only).\n- **Dye bleeding / browning / shrinkage**: the risks to test for first.\n- **Pre-test**: always test an unseen spot.\n- **Natural vs synthetic** fibers.',
+    '- Fiber and fabric identification, the cleaning codes.\n- Pre-inspection and testing, choosing water or solvent methods.\n- Spotting, cleaning, rinsing and fast drying; protecting the furniture frame.\n- Documenting contents and talking with the customer.',
+    [PQ('What does fabric code "S" mean?', ['Solvent cleaning only', 'Steam only', 'Safe for anything', 'Silk'], 0, 'S = solvent.'),
+     PQ('Code "X" means…', ['Vacuum only — no water or solvent', 'Extra strong cleaner', 'Extraction only', 'X-ray inspect'], 0, 'X = vacuum only.'),
+     PQ('Before cleaning upholstery you always…', ['Pre-test an unseen spot', 'Soak it', 'Use bleach', 'Skip inspection'], 0, 'Test first.'),
+     PQ('About how long is the UFT class?', ['2 days (about 14 hours)', '1 hour', '40 hours', '1 week'], 0, '2 days.'),
+     PQ('A common risk when wet-cleaning natural fibers is…', ['Browning and shrinkage', 'Rust', 'Static', 'None'], 0, 'Natural fibers can brown and shrink.'),
+     PQ('Code "W" means…', ['Water-based cleaning', 'Wool only', 'Wait', 'Wax'], 0, 'W = water.'),
+     PQ('UFT counts toward which IICRC Master?', ['Master Textile Cleaner (and Master Restorer)', 'Master Water Restorer only', 'None', 'Master Electrician'], 0, 'Textile path.'),
+     PQ('Fast drying after cleaning helps prevent…', ['Browning, odor and mildew', 'Fading', 'Static', 'Nothing'], 0, 'Dry fast.'),
+     PQ('On a loss, contents that cannot be saved are…', ['Documented (photos, inventory) before disposal', 'Thrown away right away', 'Left in place', 'Sold'], 0, 'Document first.'),
+     PQ('Training days for an approved class are…', ['Unpaid', 'Paid at 1.5×', 'Paid double', 'Vacation'], 0, 'Course fee paid by GrayCo; training days unpaid.')]),
+  prepCourse('prep-mr', '⭐ Before the IICRC Master Restorer path', ['mitigation'],
+    '- **IICRC Master Restorer** = the top IICRC designation for restoration: it includes **Master Water Restorer** and **Master Fire & Smoke Restorer**.\n- It needs the courses (WRT, ASD, AMRT, FSRT, OCT, CCT/UFT …), years of experience and the IICRC points.\n- Owner: "PMs have to be masters" — it is required for Insurance and Mitigation PMs and is the step from tech / foreman to PM.',
+    '- **Master Water Restorer** (WRT + ASD + AMRT + experience).\n- **Master Fire & Smoke Restorer** (FSRT + OCT + CCT/UFT + experience).\n- **Points / experience**: IICRC counts years in the trade and the courses.',
+    '- The order of the courses, what each one adds, keeping the certificates current (CECs).\n- How GrayCo pays: course fee paid, training days unpaid, travel paid for out-of-town classes; the PM commission plan once promoted.',
+    [PQ('Master Restorer includes which two designations?', ['Master Water Restorer and Master Fire & Smoke Restorer', 'OSHA 10 and OSHA 30', 'RRP and HazCom', 'CCT and UFT only'], 0, 'MWR + MFSR.'),
+     PQ('Which course is the first water course?', ['WRT', 'FSRT', 'OCT', 'CCT'], 0, 'WRT first.'),
+     PQ('ASD stands for…', ['Applied Structural Drying', 'Advanced Smoke Damage', 'Asbestos Safety Diploma', 'Air Scrubber Design'], 0, 'Applied Structural Drying.'),
+     PQ('AMRT is about…', ['Mold (applied microbial remediation)', 'Roofing', 'Electrical', 'Payroll'], 0, 'Mold remediation.'),
+     PQ('FSRT is about…', ['Fire and smoke restoration', 'Floor sanding', 'First aid', 'Fall safety'], 0, 'Fire & smoke.'),
+     PQ('At GrayCo, who must hold Master Restorer?', ['Insurance and Mitigation PMs', 'Office staff', 'Estimators', 'Nobody'], 0, '"PMs have to be masters".'),
+     PQ('Besides courses, Master designations need…', ['Years of experience (IICRC points)', 'A college degree', 'Nothing else', 'A CDL'], 0, 'Experience counts.'),
+     PQ('Keeping IICRC certificates current needs…', ['Continuing education (CECs) and renewal', 'Nothing', 'A new exam every month', 'A letter from a customer'], 0, 'CECs.'),
+     PQ('Travel for an out-of-town class is…', ['Paid by GrayCo', 'Paid by the employee', 'Not allowed', 'Paid by the customer'], 0, 'Travel paid for courses out of town.'),
+     PQ('A tech who holds Master Restorer is…', ['⭐ Eligible for promotion to PM', 'Given a $5 raise as a tech', 'Moved to the office', 'Nothing changes'], 0, 'The pay comes with the PM commission plan.')]),
+  prepCourse('prep-osha', '🦺 Before the OSHA 10 / OSHA 30 class (construction)', ['construction', 'mitigation', 'environmental'],
+    '- **OSHA 10** (10 hours) for workers, **OSHA 30** (30 hours) for supervisors and PMs — the OSHA Outreach construction courses, with a DOL card.\n- GrayCo pays: OSHA 10 +$1/hr, OSHA 30 +$2/hr (not on commission-paid PM tracks).',
+    '- **Focus Four**: falls, struck-by, caught-in/between, electrocution.\n- **Competent person**: can spot hazards and has the authority to fix them.\n- **PPE**, **HazCom / SDS**, **scaffolds and ladders**, **excavations**.',
+    '- OSHA\'s role and workers\' rights, the Focus Four hazards, PPE, health hazards (silica, lead, asbestos, noise), HazCom, ladders and scaffolds, fall protection; OSHA 30 adds managing safety on the job.',
+    [PQ('How long is OSHA 30?', ['30 hours', '10 hours', '3 hours', '1 week'], 0, '30 hours.'),
+     PQ('The Focus Four includes falls, struck-by, caught-in/between and…', ['Electrocution', 'Heat', 'Noise', 'Paperwork'], 0, 'Electrocution.'),
+     PQ('Fall protection in construction starts at…', ['6 feet', '20 feet', '2 feet', '50 feet'], 0, '6 feet (1926.501).'),
+     PQ('A competent person…', ['Can identify hazards and has authority to correct them', 'Is any worker', 'Is the customer', 'Is OSHA'], 0, 'Identify + authority.'),
+     PQ('SDS stands for…', ['Safety Data Sheet', 'Site Daily Summary', 'Standard Drying Spec', 'Safe Distance Sign'], 0, 'Safety Data Sheet.'),
+     PQ('Who usually takes OSHA 10?', ['Workers / crew', 'Only owners', 'Customers', 'Inspectors only'], 0, 'Workers.'),
+     PQ('Ladders should extend above the landing by…', ['3 feet', '1 inch', '10 feet', '0'], 0, '3 feet.'),
+     PQ('Silica dust comes from…', ['Cutting concrete, brick and stone', 'Water', 'Paint only', 'Wood only'], 0, 'Concrete / masonry.'),
+     PQ('OSHA 30 raise at GrayCo (hourly track)…', ['+$2/hr', '+$5/hr', '+$1/hr', 'None'], 0, 'Owner: OSHA 30 = $2.'),
+     PQ('Course fee for an approved class…', ['Paid by GrayCo', 'Paid by the worker', 'Split', 'Paid by OSHA'], 0, 'GrayCo pays the course fee.')])
+];
+(function(){ var X = Array.isArray(W.__GC_TRAIN_EXTRA__) ? W.__GC_TRAIN_EXTRA__ : (W.__GC_TRAIN_EXTRA__ = []); PREP.forEach(function(c){ if (!X.some(function(x){ return x && x.id === c.id; })) X.push(c); }); })();
 /* patch CERTROLE: a Construction PM's list — the IICRC / Master Restorer set required (Insurance PM) or recommended (Roofing / Construction PM) */
 var REC_WHY = 'Recommended — required only for Insurance PMs';
 function recd(r){ return Object.assign({}, r, { rec: true, why: REC_WHY }); }
@@ -195684,8 +195758,24 @@ function autoHr(rr){ return num(rr.hours) >= 32 || /master|supervisor/.test(s(rr
 function rateOf(rr){ return rr.hr == null || s(rr.hr) === '' ? autoHr(rr) : num(rr.hr); }
 function yrOf(rr){ return rr.yr == null || s(rr.yr) === '' ? Math.round(rateOf(rr) * HRS_YR) : num(rr.yr); }
 var POLICY = 'Course fee paid by GrayCo · training days are unpaid · travel paid for courses out of town';
-var PLAN = null, CERTS = [], LOADED = false, OV = null, UI = { tab: 'people', year: String(new Date().getFullYear()) };
-function defaults(){ return { tracks: TRACKS(), raises: RAISES(), people: {}, done: [], bonus: {}, suggested: false, tracksV: 2, raisesV: 2, caps: {}, travel: [], masterOnce: true, excLog: [] }; }
+var TP = {};   /* patch CERTROLE: email → that person's 🎓 Training progress (gc_train_p_<email>.done) */
+function tslug(v){ return low(v).replace(/[^a-z0-9@]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 80); }
+function loadTP(){ return Promise.all(staff().map(function(u){ var em = low(u.email); return sb('gc_train_p_' + tslug(em)).then(function(v){ TP[em] = isObj(v) && isObj(v.done) ? v.done : {}; }); })); }
+function trainMods(){ try { return W._gcTrain && W._gcTrain.modules ? arr(W._gcTrain.modules()) : []; } catch (e) { return []; } }
+/* one person × one requirement → { k: 'none'|'not'|'prog'|'pass', l, score, at, mods } */
+function trainOf(email, reqId){
+  var ids = CLASS[reqId]; if (!ids) return { k: 'none' };
+  var mods = trainMods(), done = TP[low(email)] || {}, res = ids.map(function(mid){
+    var m = mods.filter(function(x){ return x.id === mid; })[0]; if (!m) return { k: 'not', mid: mid, title: mid };
+    var parts = arr(m.parts), q = parts.filter(function(x){ return x && x.quiz; })[0], keys = parts.map(function(x){ return m.id + '|' + x.id; }), any = keys.some(function(k){ return !!done[k]; });
+    if (q) { var r = done[m.id + '|' + q.id]; if (isObj(r) && r.passed) return { k: 'pass', title: m.title, score: (r.best != null ? r.best : r.score) + ' of ' + r.of, at: r.at, mid: mid }; if (r === true || (typeof r === 'string' && r)) return { k: 'pass', title: m.title, mid: mid }; }
+    else if (keys.length && keys.every(function(k){ return !!done[k]; })) return { k: 'pass', title: m.title, mid: mid };
+    return { k: any ? 'prog' : 'not', title: m.title, mid: mid }; });
+  var k = res.every(function(x){ return x.k === 'pass'; }) ? 'pass' : res.some(function(x){ return x.k !== 'not'; }) ? 'prog' : 'not';
+  var l = k === 'pass' ? 'passed' + res.filter(function(x){ return x.score; }).map(function(x){ return ' (' + x.score + (x.at ? ', ' + fmt(x.at) : '') + ')'; }).join('') : k === 'prog' ? 'in progress' : 'not started';
+  return { k: k, l: l, mods: res };
+} UI = { tab: 'people', year: String(new Date().getFullYear()) };
+function defaults(){ return { tracks: TRACKS(), raises: RAISES(), people: {}, done: [], bonus: {}, suggested: false, tracksV: 2, raisesV: 2, caps: {}, travel: [], masterOnce: true, excLog: [], classes: [] }; }
 /* patch CERTROLE: a plan saved before the PM split → add the Roofing / Insurance PM tracks (in order) and make the IICRC set recommended
    for the plain Construction PM; the admin's own lines and edits stay */
 function upgradeTracks(st){
@@ -195704,8 +195794,8 @@ function plan(){ var p = PLAN || {}, d = defaults(), has = isObj(p.tracks) && Ob
   var newR = (+p.raisesV || 1) < 2;   /* patch CERTROLE: the owner set the amounts (11/12) — a plan saved with the old suggested amounts takes the owner's */
   return { tracks: !has ? d.tracks : (+p.tracksV || 1) < 2 ? upgradeTracks(p.tracks) : p.tracks, raises: !newR && Array.isArray(p.raises) && p.raises.length ? p.raises : d.raises,
   people: isObj(p.people) ? p.people : {}, done: arr(p.done), bonus: isObj(p.bonus) ? p.bonus : {}, suggested: newR ? false : p.suggested === true, tracksV: 2, raisesV: 2,
-  caps: isObj(p.caps) ? p.caps : {}, travel: arr(p.travel), mileRate: num(p.mileRate) > 0 ? num(p.mileRate) : 0.70, masterOnce: p.masterOnce !== false, excLog: arr(p.excLog) }; }
-function load(){ return Promise.all([sb(KEY), sb('gc_certs')]).then(function(v){ PLAN = isObj(v[0]) ? v[0] : null; CERTS = arr(isObj(v[1]) ? v[1].list : (W._gcCerts && W._gcCerts.list ? W._gcCerts.list() : [])); LOADED = true; bust(); return plan(); }); }
+  caps: isObj(p.caps) ? p.caps : {}, travel: arr(p.travel), mileRate: num(p.mileRate) > 0 ? num(p.mileRate) : 0.70, masterOnce: p.masterOnce !== false, excLog: arr(p.excLog), classes: arr(p.classes) }; }
+function load(){ return Promise.all([sb(KEY), sb('gc_certs'), loadTP()]).then(function(v){ PLAN = isObj(v[0]) ? v[0] : null; CERTS = arr(isObj(v[1]) ? v[1].list : (W._gcCerts && W._gcCerts.list ? W._gcCerts.list() : [])); LOADED = true; bust(); return plan(); }); }
 function save(mut){ return sb(KEY).then(function(v){ var cur = isObj(v) ? v : {}; var p = { tracks: cur.tracks, raises: cur.raises, people: cur.people, done: cur.done, bonus: cur.bonus, suggested: cur.suggested };
   PLAN = cur; var full = plan(); mut(full); full.updatedAt = nowISO(); PLAN = full; bust(); return put(KEY, full).then(function(){ return full; }); }); }
 function bust(){ try { if (W._gcBustTodoCache) W._gcBustTodoCache(); } catch (e) {} }
@@ -195768,6 +195858,9 @@ function isDual(tk){ return /^dual_/.test(s(tk)); }
 function xtrainHas(t){ return XTRAIN.filter(function(x){ var r = rx(M[x[0]]); return x[0] === 'hazwoper' ? t.split(' | ').some(function(c){ return r.test(c) && !rx(M.hazref).test(c); }) : r.test(t); }); }
 var MASTER_RX = M.mr + '|' + M.mwr + '|' + M.mfsr + '|' + M.mtc;
 function isPmTrack(tk, p){ var tr = (p || plan()).tracks[tk] || {}; return tr.pm != null ? !!tr.pm : /_pm$|^mit_manager$/.test(s(tk)); }
+/* patch CERTROLE (owner 11/12): "PMs are required all certs without raise — they get paid commissions so they need the certs" — a track
+   marked commission-paid (default: every PM track) earns no certificate raises; tr.commission = true / false overrides */
+function commissionOf(tk, p){ var tr = (p || plan()).tracks[tk] || {}; return tr.commission != null ? !!tr.commission : isPmTrack(tk, p); }
 function startOf(tk, p){ var tr = (p || plan()).tracks[tk] || {}; return tr.start !== undefined ? num(tr.start) : num(DEF_START[tk]); }
 function excOf(u, p){ var x = (p || plan()).people[low(u && u.email)]; return x && isObj(x.exc) ? x.exc : {}; }
 function capOf(tk, p, u){
@@ -195779,7 +195872,7 @@ function capOf(tk, p, u){
 function hrEq(d){ return d.hr != null && s(d.hr) !== '' ? num(d.hr) : d.unit === 'yr' ? num(d.amount) / HRS_YR : num(d.amount); }
 function isMasterRule(rr){ return s(rr && rr.level) === 'master'; }
 function raiseCalc(u, p){
-  p = p || plan(); var tk = trackOf(u, p), unit = (p.tracks[tk] || {}).unit || 'hr', held = heldBy(u.email), cap = capOf(tk, p, u), em = low(u.email), pm = isPmTrack(tk, p);
+  p = p || plan(); var tk = trackOf(u, p), unit = (p.tracks[tk] || {}).unit || 'hr', held = heldBy(u.email), cap = capOf(tk, p, u), em = low(u.email), pm = isPmTrack(tk, p), comm = commissionOf(tk, p);
   var mine = p.done.filter(function(d){ return low(d.email) === em && !d.skip; }), earnedHr = mine.reduce(function(a, d){ return a + hrEq(d); }, 0), usedHr = earnedHr, usedN = mine.length, due = [], blocked = [], seen = {};
   var masterPaid = mine.some(function(d){ return d.master || /^(mr|master:)/.test(s(d.rule)); });
   p.raises.forEach(function(rr){ var r = rx(rr.m), n = rr.n ? rx(rr.n) : null;
@@ -195787,32 +195880,33 @@ function raiseCalc(u, p){
       var key = rr.each ? (rr.grp || rr.id) + ':' + low(s(c.name)).replace(/[^a-z0-9]+/g, '-') : (rr.grp || rr.id);
       if (seen[key] || p.done.some(function(d){ return low(d.email) === em && d.rule === key; })) return; seen[key] = 1;
       var hr = rateOf(rr), x = { rule: key, ruleName: rr.name, cert: s(c.name), hr: hr, amount: unit === 'yr' ? yrOf(rr) : hr, unit: unit, master: isMasterRule(rr) };
-      if (x.master && !pm) { x.why = 'notpm'; x.hr = 0; x.amount = 0; blocked.push(x); return; }   /* the raise comes with the PM promotion */
+      if (comm) { x.why = 'commission'; x.hr = 0; x.amount = 0; blocked.push(x); return; }   /* commission-paid: required, no raise */
+      if (x.master && !pm) { x.why = 'notpm'; x.hr = 0; x.amount = 0; blocked.push(x); return; }   /* the pay comes with the PM commission plan */
       if (x.master && p.masterOnce && masterPaid) { x.why = 'master'; blocked.push(x); return; }
       if (cap.n && usedN >= cap.n) { x.why = 'cap'; blocked.push(x); return; }
       if (cap.hr) { var left = Math.round((cap.hr - usedHr) * 100) / 100; if (left <= 0) { x.why = 'cap'; blocked.push(x); return; }
         if (hr > left) { x.amount = unit === 'yr' ? Math.round(x.amount * left / hr) : left; x.hr = left; x.trimmed = true; } }
       if (x.master) masterPaid = true;
       usedN++; usedHr += x.hr; due.push(x); }); });
-  if (isDual(tk) && !p.done.some(function(d){ return low(d.email) === em && d.rule === 'xtrain'; })) {
+  if (!comm && isDual(tk) && !p.done.some(function(d){ return low(d.email) === em && d.rule === 'xtrain'; })) {
     var ht = held.filter(function(c){ return certStatus(c) === 'held'; }).map(function(c){ return s(c.name) + ' ' + s(c.issuer); }).join(' | ');
     if (xtrainHas(ht).length === XTRAIN.length) { var xb = num(p.xtrainHr) > 0 ? num(p.xtrainHr) : 2, xx = { rule: 'xtrain', ruleName: 'Cross-training bonus (once)', cert: 'Cross-training bonus — WRT + AMRT + lead worker + asbestos worker + HAZWOPER 40', hr: xb, amount: xb, unit: unit };
       if (cap.hr && Math.round((cap.hr - usedHr) * 100) / 100 <= 0) { xx.why = 'cap'; blocked.push(xx); }
       else { if (cap.hr && xb > cap.hr - usedHr) { xx.hr = xx.amount = Math.round((cap.hr - usedHr) * 100) / 100; xx.trimmed = true; } usedN++; usedHr += xx.hr; due.push(xx); } } }
-  return { due: due, blocked: blocked, earnedHr: Math.round(earnedHr * 100) / 100, earnedN: mine.length, cap: cap, unit: unit, track: tk, pm: pm,
+  return { due: due, blocked: blocked, earnedHr: Math.round(earnedHr * 100) / 100, earnedN: mine.length, cap: cap, unit: unit, track: tk, pm: pm, commission: comm,
     reached: !!((cap.n && usedN >= cap.n) || (cap.hr && usedHr >= cap.hr - 0.001)) };
 }
 function raisesDue(u, p){ return raiseCalc(u, p).due; }
 /* every certificate on a track that pays a raise (+ IICRC Master Restorer on a track with the IICRC set; with "pays once" off, each Master
    designation too) — for the 📈 Raise outlook and "still available" on a card. Master level pays $0 off a PM track (promo: true). */
 function payList(tk, p, mo){
-  p = p || plan(); mo = mo == null ? p.masterOnce : mo; var tr = p.tracks[tk] || { reqs: [] }, out = [], seen = {}, pm = isPmTrack(tk, p);
-  var add = function(r, rr, name, rec){ if (!rr || seen[rr.id]) return; seen[rr.id] = 1; var m = isMasterRule(rr); if (m && mo && out.some(function(x){ return x.master; })) return; out.push({ req: r, rule: rr, name: name, hr: m && !pm ? 0 : rateOf(rr), rec: rec, master: m, promo: m && !pm }); };
+  p = p || plan(); mo = mo == null ? p.masterOnce : mo; var tr = p.tracks[tk] || { reqs: [] }, out = [], seen = {}, pm = isPmTrack(tk, p), comm = commissionOf(tk, p);
+  var add = function(r, rr, name, rec){ if (!rr || seen[rr.id]) return; seen[rr.id] = 1; var m = isMasterRule(rr); if (m && mo && out.some(function(x){ return x.master; })) return; out.push({ req: r, rule: rr, name: name, hr: comm || (m && !pm) ? 0 : rateOf(rr), rec: rec, master: m, promo: m && !pm }); };
   arr(tr.reqs).forEach(function(r){ if (!r || /^(rrpojt)$/.test(s(r.id))) return; add(r, ruleFor(s(r.name).replace(/\([^)]*\)/g, ''), p), s(r.name), !!r.rec); });   /* "(Master Restorer course)" is not the Master Restorer */
   var iic = arr(tr.reqs).some(function(r){ return r && s(r.id) === 'wrt' && /IICRC/.test(s(r.name)); });   /* a track with the IICRC water course (not Environmental's mold line) */
   if (iic) p.raises.filter(function(x){ return MR_COURSES.indexOf(x.id) >= 0; }).forEach(function(x){ add(null, x, s(x.name), true); });   /* every IICRC course earns its raise */
   if (iic) p.raises.filter(function(x){ return isMasterRule(x) && (x.id === 'mr' || !mo); }).forEach(function(x){ add(null, x, s(x.name) + (x.id === 'mr' ? ' (all the courses)' : ''), true); });
-  if (isDual(tk)) out.push({ req: null, rule: { id: 'xtrain', m: '$^' }, name: 'Cross-training bonus (once)', hr: num(p.xtrainHr) > 0 ? num(p.xtrainHr) : 2, rec: false, xtrain: true });
+  if (isDual(tk) && !comm) out.push({ req: null, rule: { id: 'xtrain', m: '$^' }, name: 'Cross-training bonus (once)', hr: num(p.xtrainHr) > 0 ? num(p.xtrainHr) : 2, rec: false, xtrain: true });
   return out;
 }
 /* the outlook for one track: total possible, with the cap, how many master raises are in it */
@@ -195820,7 +195914,7 @@ function outlookOf(tk, p, mo){
   p = p || plan(); var pl = payList(tk, p, mo), cp = capOf(tk, p), tot = pl.reduce(function(a, x){ return a + x.hr; }, 0), w = tot;
   if (cp.n) w = pl.map(function(x){ return x.hr; }).sort(function(a, b){ return b - a; }).slice(0, cp.n).reduce(function(a, x){ return a + x; }, 0);
   if (cp.hr) w = Math.min(w, cp.hr);
-  return { pl: pl, tot: Math.round(tot * 100) / 100, withCap: Math.round(w * 100) / 100, cap: cp, masters: pl.filter(function(x){ return x.master; }).length, start: startOf(tk, p) };
+  return { pl: pl, tot: Math.round(tot * 100) / 100, withCap: Math.round(w * 100) / 100, cap: cp, masters: pl.filter(function(x){ return x.master; }).length, start: startOf(tk, p), commission: commissionOf(tk, p) };
 }
 /* ⭐ promotion: on a PM track a Master designation → eligible (as before); on a mitigation tech / foreman track only Master Restorer
    (or the admin's exception) → "Promotion eligible — PM", else "Needs Master Restorer for PM: X of Y courses done" */
@@ -195857,6 +195951,8 @@ W._gcTodoExt.push(function(){
     staff().forEach(function(u){
       var rd = raisesDue(u, p); if (rd.length) out.push({ key: 'cpraise:' + low(u.email) + ':' + rd.map(function(r){ return r.rule; }).join(','), cat: 'jobs', thing: 'cpraise|' + low(u.email), prio: 'med', due: today(),
         title: '💵 Raise due: ' + s(u.name) + ' — ' + rd.map(function(r){ return r.cert; }).join(', '), sub: rd.map(function(r){ return money(r.amount, r.unit); }).join(' + ') + ' · approve in 🎖 Required certs, raises & promotion', who: [s(u0.name)], vis: 'who', act: { l: '🎖 Open', f: function(){ open_('raises'); } } });
+      p.classes.filter(function(c){ return c.status === 'requested' && low(c.email) === low(u.email); }).forEach(function(c){   /* patch CERTROLE: a class request to approve */
+        out.push({ key: 'cpclass:' + c.id, cat: 'jobs', thing: 'cpclass|' + c.id, prio: 'med', due: today(), title: '🎓 Class request: ' + s(u.name) + ' — ' + s(c.course), sub: (c.cost ? '$' + num(c.cost).toFixed(2) + ' · ' : '') + (c.dates ? c.dates + ' · ' : '') + (c.travel ? 'travel: yes' : 'travel: no') + ' · CRM training ' + s(c.training) + (c.override ? ' (override: ' + s(c.override) + ')' : ''), who: [s(u0.name)], vis: 'who', act: { l: '🎖 Open', f: function(){ open_('people'); } } }); });
       var tr = p.tracks[trackOf(u, p)], held = heldBy(u.email);   /* patch CERTROLE: only a required certificate that EXPIRED — nothing is "overdue" */
       var bad = arr(tr && tr.reqs).filter(function(r){ return !r.rec && reqStatus(r, held).k === 'expired'; });
       if (bad.length) out.push({ key: 'cpreq:' + low(u.email) + ':' + bad.length, cat: 'jobs', thing: 'cpreq|' + low(u.email), prio: 'high', due: today(), title: '🎖 ' + s(u.name) + ': ' + bad.length + ' required certificate' + (bad.length === 1 ? '' : 's') + ' expired — renew', sub: bad.map(function(r){ return r.name; }).join(' · ').slice(0, 200), who: [s(u0.name)], vis: 'who', act: { l: '🎖 Open', f: function(){ open_('people'); } } });
@@ -195894,8 +195990,6 @@ function rateLine(u, p, c){
   var em = low(u.email), add = p.done.filter(function(d){ return low(d.email) === em && !d.skip; }).reduce(function(a, d){ return a + (c.unit === 'yr' ? (d.unit === 'yr' ? num(d.amount) : num(d.amount) * HRS_YR) : hrEq(d)); }, 0);
   return '<div data-cp-rate="' + esc(em) + '" style="margin-top:3px">💲 Starting rate <b>' + amtTxt(st, c.unit) + '</b> + approved certificate raises <b>' + amtTxt(add, c.unit) + '</b> = current <b>' + amtTxt(st + add, c.unit) + '</b></div>';
 }
-function pmAdd(list, p){ var r = list.map(function(x){ var rr = p.raises.filter(function(z){ return isMasterRule(z) && rx(z.m).test(x.cert); })[0]; return rr ? rateOf(rr) : 5; });
-  return p.masterOnce ? Math.max.apply(null, r.concat([0])) : r.reduce(function(a, v){ return a + v; }, 0); }
 function raiseBox(u, p, held){
   var c = raiseCalc(u, p), em = low(u.email), pl = payList(c.track, p), got = held.filter(function(x){ return certStatus(x) === 'held'; }).map(function(x){ return s(x.name) + ' ' + s(x.issuer); }).join(' | ');
   var avail = pl.filter(function(x){ return !(x.req ? rx(x.req.m).test(got) : rx(x.rule.m).test(got)); }), availHr = avail.reduce(function(a, x){ return a + x.hr; }, 0);
@@ -195908,7 +196002,8 @@ function raiseBox(u, p, held){
     (c.reached ? '<span class="gccp-chip amb" data-cp-capreached="1">🧢 cap reached (' + (c.cap.hr ? hrTxt(c.cap.hr) : c.cap.n + ' raises') + ')</span>' + (capB ? ' — ' + capB + ' held back' : '') :
       'still available: ' + (avail.length ? avail.length + ' (up to +' + hrTxt(left == null ? availHr : Math.min(availHr, left)) + (c.cap.hr ? ', cap ' + hrTxt(c.cap.hr) : '') + (c.cap.n ? ', max ' + c.cap.n + ' raises' : '') + ')' : 'none on this track')) + '</span>' +
     (avail.length && !c.reached ? '<div class="gccp-mut" data-cp-avail="1">' + avail.map(function(x){ return esc(x.name.replace(/ \(.*$/, '')) + ' +' + hrTxt(x.hr); }).join(' · ') + '</div>' : '') +
-    (nB.length ? '<div class="gccp-mut" data-cp-notpm="1">⭐ ' + nB.map(function(x){ return esc(x.cert); }).join(', ') + ': $0 on this track — the master-level raise comes with the PM promotion (on a PM track it would add +' + hrTxt(pmAdd(nB, p)) + ').</div>' : '') +
+    (nB.length ? '<div class="gccp-mut" data-cp-notpm="1">⭐ ' + nB.map(function(x){ return esc(x.cert); }).join(', ') + ': $0 on this track — the pay for a master level comes with the PM commission plan.</div>' : '') +
+    (c.commission ? '<div class="gccp-mut" data-cp-comm="1">💼 Commission-paid role: the certificates are required, with no certificate raises (the PM commission plan pays).</div>' : '') +
     (isDual(c.track) ? '<div class="gccp-mut" data-cp-ladder="1">🪜 Dual tech → Dual foreman (a supervisor license, or OSHA 30 + 1 year) → PM (Master Restorer) or Environmental supervisor / PM (lead + asbestos supervisor). Cross-training bonus +' + hrTxt(num(p.xtrainHr) > 0 ? p.xtrainHr : 2) + ' once with WRT + AMRT + lead worker + asbestos worker + HAZWOPER 40 (' + xtrainHas(got).length + ' of ' + XTRAIN.length + ').</div>' : '') +
     rateLine(u, p, c) +
     '<div class="gccp-mut" style="margin-top:4px" data-cp-policy="1">🎓 ' + esc(POLICY) + '.</div>' +
@@ -195919,6 +196014,29 @@ function raiseBox(u, p, held){
       '<label>Date<br><input class="gccp-in" type="date" data-tv="date" value="' + esc(today()) + '"></label><label>Miles<br><input class="gccp-in" data-tv="miles" style="width:70px"></label>' +
       '<label>$/mile<br><input class="gccp-in" data-tv="rate" style="width:60px" value="' + esc(p.mileRate) + '"></label><label>Hotel $<br><input class="gccp-in" data-tv="hotel" style="width:80px"></label><label>Other $ (meals, flight)<br><input class="gccp-in" data-tv="other" style="width:80px"></label>' +
       '<button type="button" class="gccp-btn pri" data-cp="tvsave" data-em="' + esc(em) + '">Save travel</button></div></div>' : '') + '</div>';
+}
+/* patch CERTROLE: 🎓 classes — the CRM training first, then "Request class" (an admin may override with a reason) → admins approve */
+var CLASS_OK = 'Class approved — company pays the course fee; training days unpaid; travel paid if out of town';
+function classBox(u, p, sts){
+  var em = low(u.email), ex = excOf(u, p), ovr = isObj(ex.classOk) ? ex.classOk : {};
+  var rows = sts.filter(function(x){ return x.st.k !== 'ok' && CLASS[x.r.id]; }), mine = p.classes.filter(function(c){ return low(c.email) === em; });
+  var held = heldBy(u.email).filter(function(c){ return certStatus(c) === 'held'; });
+  var linked = mine.filter(function(c){ return c.status === 'approved'; }).map(function(c){ var r = arr((p.tracks[trackOf(u, p)] || {}).reqs).filter(function(x){ return x.id === c.req; })[0], h = r ? held.filter(function(x){ return rx(r.m).test(s(x.name) + ' ' + s(x.issuer)); })[0] : null; return h ? { c: c, h: h } : null; }).filter(Boolean);
+  if (!rows.length && !mine.length) return '';
+  return '<div class="gccp-rec" data-cp-classbox="' + esc(em) + '"><b>🎓 Classes</b> <span class="gccp-mut">— the CRM training for a class comes first (🎓 Training), then request the class; ' + esc(POLICY) + '</span>' +
+    (rows.length ? '<table class="gccp-tbl gccp-fx" data-cp-classes="1"><tr><th>Certificate</th><th>📚 CRM training</th><th>Class</th></tr>' + rows.map(function(x){
+      var tr0 = trainOf(em, x.r.id), cl = mine.filter(function(c){ return c.req === x.r.id && c.status !== 'declined'; }).slice(-1)[0], ok = tr0.k === 'pass' || !!ovr[x.r.id], key = em + '|' + x.r.id;
+      var act = cl ? (cl.status === 'approved' ? '<span class="gccp-chip ok" data-cp-clst="approved">✅ ' + esc(CLASS_OK) + ' (' + esc(cl.approvedBy || '') + ', ' + esc(fmt(cl.approvedAt)) + ')</span>' :
+          '<span class="gccp-chip amb" data-cp-clst="requested">⏳ Class requested ' + esc(fmt(cl.at)) + '</span> <button type="button" class="gccp-btn grn" data-cp="clapprove" data-id="' + esc(cl.id) + '">✅ Approve</button> <button type="button" class="gccp-btn" data-cp="cldecline" data-id="' + esc(cl.id) + '">Decline</button>') :
+        '<button type="button" class="gccp-btn pri" data-cp="clreq" data-key="' + esc(key) + '"' + (ok ? '' : ' disabled title="Finish the CRM training first"') + '>🎓 Request class</button>' +
+        (!ok ? ' <button type="button" class="gccp-btn" style="font-size:12px" data-cp="clovr" data-key="' + esc(key) + '">✋ Override…</button>' : ovr[x.r.id] ? ' <span class="gccp-mut">(override: ' + esc(ovr[x.r.id].reason) + ')</span>' : '');
+      var form = UI.cl === key ? '<div class="gccp-card" style="margin:6px 0;padding:8px" data-cp-clform="' + esc(key) + '"><b>🎓 Request the class — ' + esc(x.r.name.replace(/ — .*$/, '')) + '</b><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;margin-top:6px">' +
+          '<label>Course / provider<br><input class="gccp-in" data-cl="course" style="width:220px" value="' + esc(x.r.name.replace(/ — .*$/, '').replace(/ \(.*$/, '')) + '"></label><label>Course fee $<br><input class="gccp-in" data-cl="cost" style="width:80px"></label>' +
+          '<label>Dates<br><input class="gccp-in" data-cl="dates" style="width:150px" placeholder="e.g. Jan 12–14"></label><label><input type="checkbox" data-cl="travel"> Out of town (travel)</label>' +
+          '<button type="button" class="gccp-btn pri" data-cp="clsend" data-key="' + esc(key) + '">Send the request</button></div></div>' :
+        UI.ovr === key ? '<div class="gccp-card" style="margin:6px 0;padding:8px" data-cp-ovrform="' + esc(key) + '">✋ Override — request the class before the CRM training is passed. <input class="gccp-in" data-cl="why" placeholder="Reason (required)" style="width:260px"> <button type="button" class="gccp-btn" data-cp="clovrsave" data-key="' + esc(key) + '">Save the override</button></div>' : '';
+      return '<tr data-cp-clrow="' + esc(x.r.id) + '"><td>' + esc(x.r.name) + (x.r.rec ? ' <span class="gccp-mut">💡</span>' : '') + '</td><td><span class="gccp-chip ' + (tr0.k === 'pass' ? 'ok' : tr0.k === 'prog' ? 'amb' : 'gry') + '" data-cp-train="' + esc(tr0.k) + '">📚 ' + esc(tr0.l) + '</span><div class="gccp-mut">' + esc(arr(tr0.mods).map(function(m){ return m.title; }).join(' · ')) + '</div></td><td>' + act + form + '</td></tr>'; }).join('') + '</table>' : '') +
+    (linked.length ? '<div class="gccp-mut" data-cp-cllinked="1">' + linked.map(function(x){ return '🔗 ' + esc(x.h.name) + ' — linked to the class approved ' + esc(fmt(x.c.approvedAt)); }).join(' · ') + '</div>' : '') + '</div>';
 }
 /* patch CERTROLE: per-person exceptions (admins only — the whole panel is admins only) */
 function excBox(u, p, tr){
@@ -195951,7 +196069,7 @@ function render(){
   var p = plan(), ppl = staff(), tabs = [['people', '👥 People'], ['raises', '💵 Raises due'], ['reqs', '📋 Requirements by role'], ['amounts', '⚙ Raise amounts'], ['outlook', '📈 Raise outlook & caps'], ['bonus', '🏆 PM year-end bonus'], ['pay', '⏱ Emergency & overtime pay']];
   var h = '<div class="gccp-h"><b>🎖 Required certs, raises &amp; promotion</b><span><button type="button" class="gccp-btn" data-cp="close">✕</button></span></div>' +
     '<p class="gccp-mut">Required and recommended certificates by role and company (no hire-date deadlines — keep on), a raise for every certificate earned, and ⭐ promotion eligibility once someone holds a Master designation. The certificates themselves live in 📜 Certifications — add one there and it shows up here.</p>' +
-    '<div class="gccp-note" data-cp-rulenote="1">💵 <b>The owner\'s raise rule</b> (each one editable in ⚙ Raise amounts): <b>$5/hr</b> for Master Restorer, the Master designations, lead / asbestos <b>supervisor</b>, HAZWOPER 40-hour and any other 32–40-hour supervisor / master-level class · <b>$2/hr</b> for OSHA 30 · <b>$1/hr</b> for everything else (IICRC courses, RRP, lead / asbestos worker, OSHA 10 …). Salaried: × 2,080 hours a year. 🎓 ' + esc(POLICY) + '. Lines marked <span class="gccp-law">LAW</span> are legally required when the employee does that work (cited on each line); check the current state rules on renewal.</div>' +
+    '<div class="gccp-note" data-cp-rulenote="1">💵 <b>The owner\'s raise rule</b> (each one editable in ⚙ Raise amounts): <b>$5/hr</b> for Master Restorer, the Master designations, lead / asbestos <b>supervisor</b>, HAZWOPER 40-hour and any other 32–40-hour supervisor / master-level class · <b>$2/hr</b> for OSHA 30 · <b>$1/hr</b> for everything else (IICRC courses, RRP, lead / asbestos worker, OSHA 10 …). Salaried: × 2,080 hours a year. 💼 PMs are commission-paid: their certificates are required, with no certificate raises; a master level pays through the PM commission plan. 🎓 ' + esc(POLICY) + '. Lines marked <span class="gccp-law">LAW</span> are legally required when the employee does that work (cited on each line); check the current state rules on renewal.</div>' +
     '<div class="gccp-tabs">' + tabs.map(function(t){ return '<span class="gccp-tab' + (UI.tab === t[0] ? ' on' : '') + '" data-cptab="' + t[0] + '">' + t[1] + (t[0] === 'raises' ? ' (' + ppl.reduce(function(n, u){ return n + raisesDue(u, p).length; }, 0) + ')' : '') + '</span>'; }).join('') + '</div>';
   if (!LOADED) h += '<p>Loading…</p>';
   else if (UI.tab === 'people') h += ppl.map(function(u){
@@ -195967,7 +196085,7 @@ function render(){
       'Hired <input class="gccp-in" type="date" data-cp-hired="' + esc(low(u.email)) + '" value="' + esc(hired) + '"></span></div>' +
       (req.length ? '<div class="gccp-mut" style="margin:4px 0 0" data-cp-count="1">' + okN + ' of ' + req.length + ' required certificates held</div><div class="gccp-bar"><i style="width:' + Math.round(100 * okN / req.length) + '%"></i></div>' + reqRows(u, req, false) : '<p class="gccp-mut">No certificates required for this role.</p>') +
       (rec.length ? '<div class="gccp-rec" data-cp-recsec="1"><b>💡 Recommended</b> <span class="gccp-mut">— not required for this role, no due date; each one still earns its raise · ' + okR + ' of ' + rec.length + ' held</span>' + reqRows(u, rec, true) + '</div>' : '') +
-      raiseBox(u, p, held) + excBox(u, p, tr) + '</div>';
+      raiseBox(u, p, held) + classBox(u, p, sts) + excBox(u, p, tr) + '</div>';
   }).join('') || '<p class="gccp-mut">No active employees.</p>';
   else if (UI.tab === 'raises') { var rows = []; ppl.forEach(function(u){ raisesDue(u, p).forEach(function(r){ rows.push({ u: u, r: r }); }); });
     var past = p.done.slice().reverse().slice(0, 60), capped = []; ppl.forEach(function(u){ var c = raiseCalc(u, p); c.blocked.forEach(function(r){ capped.push({ u: u, r: r, c: c }); }); });
@@ -195988,7 +196106,7 @@ function render(){
       '<label style="display:block;margin:6px 0"><input type="checkbox" data-cp-masteronce="1"' + (mo ? ' checked' : '') + '> ⭐ <b>Highest master level pays once</b> — Master Restorer already includes Master Water and Master Fire &amp; Smoke Restorer, so one $5 raise for the master path instead of one per designation. <span class="gccp-mut">(The owner has not decided — on by default.)</span></label>' +
       '<table class="gccp-tbl" data-cp-outlook="1"><tr><th>Role</th><th>Certificates that pay</th><th>Starting rate</th><th>Max certificate raises</th><th>Max $/hr cap</th><th>Max # raises</th><th>Top rate</th></tr>' +
       Object.keys(p.tracks).map(function(k){ var tr = p.tracks[k], pl = payList(k, p), o = outlookOf(k, p), alt = outlookOf(k, p, !mo), st = startOf(k, p), cp = o.cap, yr = tr.unit === 'yr';
-        return '<tr data-cp-ol="' + k + '"><td><b>' + esc(tr.label) + '</b><div class="gccp-mut">' + (yr ? 'salaried' : 'hourly') + '</div></td><td class="gccp-mut">' + (pl.length ? pl.map(function(x){ return esc(x.name.replace(/ \(.*$/, '').replace(/ — .*$/, '')) + ' <b>+' + hrTxt(x.hr) + '</b>' + (x.rec ? ' 💡' : ''); }).join(' · ') : 'none') + '</td>' +
+        return '<tr data-cp-ol="' + k + '"><td><b>' + esc(tr.label) + '</b><div class="gccp-mut">' + (yr ? 'salaried' : 'hourly') + '</div><label class="gccp-mut"><input type="checkbox" data-cp-comm="' + k + '"' + (o.commission ? ' checked' : '') + '> 💼 commission-paid — no certificate raises</label></td><td class="gccp-mut">' + (pl.length ? pl.map(function(x){ return esc(x.name.replace(/ \(.*$/, '').replace(/ — .*$/, '')) + ' <b>+' + hrTxt(x.hr) + '</b>' + (x.rec ? ' 💡' : ''); }).join(' · ') : 'none') + '</td>' +
           '<td>$<input class="gccp-in" style="width:70px" data-cp-start="' + k + '" value="' + esc(st > 0 ? st : '') + '" placeholder="' + (yr ? '/yr' : '/hr') + '"></td>' +
           '<td data-cp-tot="' + k + '"><b>+' + hrTxt(o.tot) + '</b><div class="gccp-mut">' + pl.length + ' raise' + (pl.length === 1 ? '' : 's') + (yr ? ' · $' + Math.round(o.tot * HRS_YR).toLocaleString('en-US') + '/yr' : '') + (o.masters ? ' · master path ' + (mo ? 'once' : 'each') + ' (' + (mo ? 'off' : 'on') + ': +' + hrTxt(alt.tot) + ')' : '') + '</div></td>' +
           '<td>$<input class="gccp-in" style="width:60px" data-cp-caphr="' + k + '" value="' + esc(cp.hr || '') + '"></td><td><input class="gccp-in" style="width:50px" data-cp-capn="' + k + '" value="' + esc(cp.n || '') + '"></td>' +
@@ -196037,7 +196155,21 @@ function open_(tab){
         if (hr != null) r.hr = hr === '' ? null : num(hr); if (yr != null) r.yr = yr === '' ? null : num(yr); if (hs != null) r.hours = hs === '' ? null : num(hs); if (lv != null) r.level = lv; }); p.suggested = false; }).then(function(){ toast('💵 Raise amounts saved'); render(); });
     if (a === 'savecaps') save(function(p){ p.caps = isObj(p.caps) ? p.caps : {}; Object.keys(p.tracks).forEach(function(k){ var h1 = OV.querySelector('[data-cp-caphr="' + k + '"]'), n1 = OV.querySelector('[data-cp-capn="' + k + '"]'), s1 = OV.querySelector('[data-cp-start="' + k + '"]');
         if (s1) { p.tracks[k].start = s(s1.value) === '' ? null : num(s1.value); }
+        var c1 = OV.querySelector('[data-cp-comm="' + k + '"]'); if (c1) p.tracks[k].commission = !!c1.checked;   /* patch CERTROLE */
         if (!h1 && !n1) return; var c = { hr: h1 && s(h1.value) !== '' ? num(h1.value) : null, n: n1 && s(n1.value) !== '' ? Math.round(num(n1.value)) : null }; if (c.hr == null && c.n == null) delete p.caps[k]; else p.caps[k] = c; }); }).then(function(){ toast('🧢 Starting rates & caps saved'); render(); });
+    if (a === 'clreq' || a === 'clovr') { var kq = t.getAttribute('data-key'); if (a === 'clreq') { UI.cl = UI.cl === kq ? '' : kq; UI.ovr = ''; } else { UI.ovr = UI.ovr === kq ? '' : kq; UI.cl = ''; } render(); }
+    if (a === 'clsend' || a === 'clovrsave') { var kk = t.getAttribute('data-key'), pe = kk.split('|'), em5 = pe[0], rid = pe[1], bx5 = OV.querySelector(a === 'clsend' ? '[data-cp-clform="' + kk + '"]' : '[data-cp-ovrform="' + kk + '"]'), gv = function(f){ var el = bx5 && bx5.querySelector('[data-cl="' + f + '"]'); return el ? (el.type === 'checkbox' ? el.checked : s(el.value)) : ''; };
+      var who5 = s(u0.name || u0.email), at5 = nowISO();
+      if (a === 'clovrsave') { if (!gv('why')) return toast('Type the reason for the override.', true);
+        save(function(p){ var x = isObj(p.people[em5]) ? p.people[em5] : {}; x.exc = isObj(x.exc) ? x.exc : {}; x.exc.classOk = isObj(x.exc.classOk) ? x.exc.classOk : {}; x.exc.classOk[rid] = { reason: gv('why').slice(0, 300), by: who5, at: at5 }; p.people[em5] = x;
+          p.excLog = arr(p.excLog); p.excLog.push({ id: uid(), email: em5, kind: 'classOk', text: 'class before the CRM training: ' + rid, reason: gv('why').slice(0, 300), by: who5, at: at5 }); }).then(function(){ UI.ovr = ''; toast('✋ Override saved'); render(); }); return; }
+      var person5 = staff().filter(function(x){ return low(x.email) === em5; })[0] || { email: em5 }, tr5 = trainOf(em5, rid), ov5 = excOf(person5, plan()).classOk;
+      if (tr5.k !== 'pass' && !(isObj(ov5) && ov5[rid])) return toast('Finish the CRM training first.', true);
+      save(function(p){ p.classes = arr(p.classes); p.classes.push({ id: uid(), email: em5, req: rid, course: gv('course').slice(0, 160), cost: num(gv('cost')), dates: gv('dates').slice(0, 80), travel: !!gv('travel'), training: tr5.l, override: isObj(ov5) && ov5[rid] ? ov5[rid].reason : '', status: 'requested', at: at5, by: who5 }); })
+        .then(function(){ UI.cl = ''; toast('🎓 Class requested — it is on the admins\' To-Do to approve'); render(); }); }
+    if (a === 'clapprove' || a === 'cldecline') { var cid = t.getAttribute('data-id'), who6 = s(u0.name || u0.email);
+      save(function(p){ p.classes.forEach(function(c){ if (c.id === cid) { c.status = a === 'clapprove' ? 'approved' : 'declined'; c[a === 'clapprove' ? 'approvedBy' : 'declinedBy'] = who6; c[a === 'clapprove' ? 'approvedAt' : 'declinedAt'] = nowISO(); if (a === 'clapprove') c.note = CLASS_OK; } }); })
+        .then(function(){ toast(a === 'clapprove' ? '✅ ' + CLASS_OK : 'Class request declined'); render(); }); }
     if (a === 'excform') { var ee = t.getAttribute('data-em'); UI.exc = UI.exc === ee ? '' : ee; render(); }
     if (/^x(pm|cap|waive|unwaive|raise)$/.test(a || '')) { var xe = t.getAttribute('data-em'), fb = OV.querySelector('[data-cp-excform="' + xe + '"]'), xv = function(f){ var el = fb && fb.querySelector('[data-x="' + f + '"]'); return el ? (el.type === 'checkbox' ? el.checked : s(el.value)) : ''; };
       var why = a === 'xpm' ? xv('pmnmwhy') : a === 'xcap' ? xv('capwhy') : a === 'xwaive' ? xv('wvwhy') : a === 'xraise' ? xv('mwhy') : 'undone';
@@ -196076,7 +196208,7 @@ function open_(tab){
 /* the button in 📜 Certifications */
 D.addEventListener('click', function(e){ var b = e.target && e.target.closest ? e.target.closest('[data-gccp-open]') : null; if (!b) return; e.preventDefault(); e.stopPropagation(); open_(); }, true);
 later(function(){ if (isAdmin()) load(); }, 5000);
-W._gcCertPlan = { open: open_, load: load, plan: plan, trackOf: trackOf, targetOf: targetOf, raiseCalc: raiseCalc, payList: payList, outlookOf: outlookOf, rateOf: rateOf, POLICY: POLICY, reqStatus: reqStatus, raisesDue: raisesDue, masterOf: masterOf, weekPay: weekPay, defaults: defaults, _set: function(p, c){ PLAN = p; CERTS = arr(c); LOADED = true; } };
+W._gcCertPlan = { open: open_, load: load, plan: plan, trackOf: trackOf, targetOf: targetOf, trainOf: trainOf, CLASS: CLASS, raiseCalc: raiseCalc, payList: payList, outlookOf: outlookOf, rateOf: rateOf, POLICY: POLICY, reqStatus: reqStatus, raisesDue: raisesDue, masterOf: masterOf, weekPay: weekPay, defaults: defaults, _set: function(p, c){ PLAN = p; CERTS = arr(c); LOADED = true; } };
 try { console.log('[GC] 🎖 Required certs, raises & promotion (patch CERTPLAN): _gcCertPlan'); } catch (e) {}
 })();
 </script>
