@@ -194,7 +194,7 @@ ok('4 the approved sub sees exactly ONE job (the apartments) — days left · du
 await shot(S, 'fs07_sub_list_one_job');
 await S.click('text=Zedd Flats Apartments'); await S.waitForSelector('#bid-planlinks', { timeout: 20000 }).catch(() => {}); await sleep(1500);
 const sv = await S.evaluate(() => ({ body: document.body.innerText, links: [...document.querySelectorAll('a[href*="drive.google.com"]')].map(a => a.textContent.trim()) }));
-ok('4 the job: the 2 copied files and the unpacked sheets, 🔗 Open plans ↗ (Drive), the trades and the scope', /architectural set\.pdf/.test(sv.body) && /structural sheets\.zip/.test(sv.body) && /M1\.1 HVAC plan\.pdf/.test(sv.body) && sv.links.some(l => /Open plans/.test(l)) && /Framing/.test(sv.body) && /24-unit/.test(sv.body), { links: sv.links, body: sv.body.slice(0, 900) });
+ok('4 the job: the 2 copied files and the unpacked sheets, 🔗 Open plans ↗ (Drive), the trades and the scope', /architectural set\.pdf/.test(sv.body) && /structural sheets\.zip/.test(sv.body) && /M1\.1 HVAC plan\.pdf/.test(sv.body) && sv.links.some(l => /Open plans/.test(l)) && /Framing/.test(sv.body) && /24-unit/.test(sv.body) && !/Trade-Specific Scopes/i.test(sv.body), { links: sv.links, body: sv.body.slice(0, 900) });
 await shot(S, 'fs08_sub_job_detail', true);
 /* open a plan: a signed link to the real file */
 const signReq = []; SC.on('request', r => { if (/\/storage\/v1\/object\/sign\/subportal-files\//.test(r.url())) signReq.push(r.url()); });

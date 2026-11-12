@@ -61,5 +61,6 @@ W.TOK['t-zz'] = 'zz@demo.test';
 const L = JSON.parse((await F.sp.handler({ httpMethod: 'POST', headers: { authorization: 'Bearer t-zz', origin: 'https://bids.test' }, body: JSON.stringify({ action: 'load', keys: ['jobs', 'plans:' + r.jobId] }) })).body);
 const sj = (L.data.jobs || []).find(j => j.id === r.jobId), sp = L.data['plans:' + r.jobId] || [];
 ok('3 the approved sub gets the job with its plans listed and a signed link for each file', !!sj && (sj.plans || []).length === 2 && sp.length === 2 && sp.every(x => /^https:\/\/sb\.test\/storage\/v1\/object\/sign\/subportal-files\//.test(x.dataUrl || '')), { sj: sj && sj.plans, sp });
+ok('3 … no empty trade-scope boxes for the sub (the trades had no scope written)', Array.isArray(sj && sj.tradeScopes) && sj.tradeScopes.length === 0 && /Framing/.test(sj.tradesSought), sj && sj.tradeScopes);
 ok('3 none of the archived auto-added jobs reach the sub', !(L.data.jobs || []).some(j => /^J_(lp|ls|path|autopriv)$/.test(j.id)), (L.data.jobs || []).map(j => j.id));
 const n = R.filter(Boolean).length; console.log('QAA_BIDCLEAN ' + n + '/' + R.length); process.exit(n === R.length ? 0 : 1);
