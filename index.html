@@ -5496,7 +5496,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.239-2026-11-12-r34f -->
+<!-- GrayCo CRM Build: 33.240-2026-11-12-r34g -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6445,7 +6445,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.239-2026-11-12-r34f");
+  console.log("[GC] Build 33.240-2026-11-12-r34g");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6493,7 +6493,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.239-2026-11-12-r34f"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.240-2026-11-12-r34g"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -217886,20 +217886,32 @@ function items(){
   [].some.call(D.querySelectorAll('[data-mm-open]'), function(b0){ var n4 = num(/\((\d+)\)/, txt(b0)); if (n4) { out.push({ k: 'mm', ic: '📧', l: 'Receipts e-mailed in', n: n4, el: b0, go: b0 }); return true; } return false; });
   return out;
 }
-var LAST = [];
-function paint(){
-  try {
-    var mount = D.getElementById('_todoMount'), cur = D.getElementById('gc-tt2');
-    if (!mount || D.hidden) { if (cur && !mount) cur.remove(); return; }
-    var L = items(); LAST = L;
-    if (!L.length) { if (cur) cur.remove(); return; }
-    var main = mount.parentElement; if (!main) return;
-    if (!D.getElementById('gc-tt2-css')) { var sc = D.createElement('style'); sc.id = 'gc-tt2-css';
+/* patch TODOJUMP (owner 11/12: "this glitches / jumps"): the cards' order rule is in place from the start, so they never land above
+   the To-Do first and then move; the bar keeps its last list (also across reloads) and is drawn at once; a list that is briefly
+   empty (the cards are re-drawing) keeps the bar for 10 s instead of taking it away and putting it back */
+function css(){
+  if (D.getElementById('gc-tt2-css')) return; var sc = D.createElement('style'); sc.id = 'gc-tt2-css';
       /* owner 11/9 (2nd screenshot): the big cards go to the BOTTOM, under the To-Do; the short list stays on top. Done with CSS order so
          the cards' own code (which puts them back above the To-Do every few seconds) never fights a move — no lag */
       sc.textContent = ':has(> #_todoMount){display:flex!important;flex-direction:column}:has(> #_todoMount) > *{order:10}:has(> #_todoMount) > #gc-tt2{order:0}:has(> #_todoMount) > #_todoMount{order:20}'
         + ':has(> #_todoMount) > #gc-money-needs,:has(> #_todoMount) > #gc-ot,:has(> #_todoMount) > #gc-mm,:has(> #_todoMount) > .gc-df-banner,:has(> #_todoMount) > [data-df-banner],:has(> #_todoMount) > #gc-exp2-todo,:has(> #_todoMount) > #gc-sl-todo{order:30;margin-top:10px}';
-      D.head.appendChild(sc); }
+  (D.head || D.documentElement).appendChild(sc);
+}
+var LAST = [], EMPTY_AT = 0, SAVED = null;
+function saved(){ if (SAVED) return SAVED; try { SAVED = JSON.parse(localStorage.getItem('gc_tt2_last') || '[]') || []; } catch (e) { SAVED = []; } return SAVED; }
+function paint(){
+  try {
+    var mount = D.getElementById('_todoMount'), cur = D.getElementById('gc-tt2');
+    if (!mount || D.hidden) { if (cur && !mount) cur.remove(); return; }
+    var L = items();
+    if (!L.length) {
+      if (!EMPTY_AT) EMPTY_AT = Date.now();
+      if (Date.now() - EMPTY_AT < 10000 && (cur || saved().length)) { if (cur) return; L = saved().map(function(x){ return { k: x.k, ic: x.ic, l: x.l, n: x.n, el: null, go: null }; }); }
+      else { if (cur) cur.remove(); try { localStorage.setItem('gc_tt2_last', '[]'); } catch (e) {} SAVED = []; return; }
+    } else { EMPTY_AT = 0; try { var sv = JSON.stringify(L.map(function(x){ return { k: x.k, ic: x.ic, l: x.l, n: x.n }; })); if (sv !== JSON.stringify(saved())) { localStorage.setItem('gc_tt2_last', sv); SAVED = JSON.parse(sv); } } catch (e) {} }
+    LAST = L;
+    var main = mount.parentElement; if (!main) return;
+    css();
     var sig = L.map(function(x){ return x.k + x.n; }).join('|');
     if (!cur) { cur = D.createElement('div'); cur.id = 'gc-tt2'; cur.setAttribute('data-gc-keep', '1');
       cur.style.cssText = 'background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:8px 10px;margin:0 0 12px;font:14px Inter,Arial,sans-serif;color:#0f172a;display:flex;flex-wrap:wrap;gap:8px;align-items:center'; }
@@ -217917,7 +217929,7 @@ D.addEventListener('click', function(e){
   var x = LAST[+b.getAttribute('data-tt2')]; if (!x) return;
   try { if (x.k === 'ot' && x.el.tagName === 'DETAILS') x.el.open = true; x.el.scrollIntoView({ behavior: 'smooth', block: 'center' }); if (x.go) setTimeout(function(){ try { x.go.click(); } catch (er) {} }, 350); } catch (er) {}
 });
-setInterval(paint, 2500);
+css(); setInterval(paint, 2500); var FAST = setInterval(paint, 300); setTimeout(function(){ clearInterval(FAST); }, 15000);   /* patch TODOJUMP: quick first draw */
 W._gcTodoTop2 = { items: items, paint: paint };
 })(window);
 </script>
