@@ -22,7 +22,8 @@ const day = n => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
 {
   const saveFetch = global.fetch;
   Object.assign(process.env, { SUPABASE_URL: 'https://sb.test', SUPABASE_SERVICE_KEY: 'svc-test' });
-  const KV = { vendors: [{ id: 'V1', name: 'Old Sub LLC', email: 'old@example.com', isSub: true, trade: 'Drywall', w9: true, insExp: day(200), wcExp: day(10), contact: 'Olive Old' }],
+  const KV = { vendors: [{ id: 'V1', name: 'Old Sub LLC', email: 'old@example.com', phone: '901-555-0001', isSub: true, trade: 'Drywall', w9: true, insExp: day(200), wcExp: day(10), contact: 'Olive Old' },
+      { id: 'VE', name: 'Elite Earthworks LLC', isSub: true, trade: '' }, { id: 'VA', name: 'Acme Roofing', isSub: true, email: 'acme@roof.test' }],
     subs: [], gc_tombstones: { 'vendors:VGONE': '2026-11-01T00:00:00Z' } };
   const SPR = [
     { key: 'users:u_a', collection: 'users', id: 'u_a', email: 'zz@demo.test', data: { id: 'u_a', email: 'zz@demo.test', role: 'sub', approved: true, name: 'Zed Demo', company: 'Zed Demo Earthworks', trades: ['Earthwork'], phone: '901-555-0100', businessAddress: '1 Demo Rd', businessCity: 'Memphis', businessState: 'TN', licenseNumbers: 'TN 12345',
@@ -30,6 +31,10 @@ const day = n => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
     { key: 'users:u_b', collection: 'users', id: 'u_b', email: 'gone@demo.test', data: { id: 'u_b', email: 'gone@demo.test', role: 'sub', approved: true, name: 'Gone Demo', company: 'Gone Demo Co', crmSubId: 'VGONE' } },
     { key: 'users:u_c', collection: 'users', id: 'u_c', email: 'wait@demo.test', data: { id: 'u_c', email: 'wait@demo.test', role: 'sub', approved: false, name: 'Wait Demo' } },
     { key: 'users:u_o', collection: 'users', id: 'u_o', email: 'old@example.com', data: { id: 'u_o', email: 'old@example.com', role: 'sub', approved: true, name: 'Olive Old', company: 'Old Sub LLC' } },
+    { key: 'users:u_p', collection: 'users', id: 'u_p', email: 'olive@oldsub.test', data: { id: 'u_p', email: 'olive@oldsub.test', role: 'sub', approved: true, name: 'Olive Old', company: 'Old Sub Co', phone: '(901) 555-0001' } },
+    { key: 'users:u_e', collection: 'users', id: 'u_e', email: 'elite@demo.test', data: { id: 'u_e', email: 'elite@demo.test', role: 'sub', approved: true, name: 'Eli Demo', company: 'ELITE EARTHWORKS,LLC', phone: '901-555-0777' } },
+    { key: 'users:u_w', collection: 'users', id: 'u_w', email: 'pros@acmeroof.test', data: { id: 'u_w', email: 'pros@acmeroof.test', role: 'sub', approved: true, name: 'Al Demo', company: 'Acme Roofing Pros', phone: '901-555-0888' } },
+    { key: 'users:u_n', collection: 'users', id: 'u_n', email: 'newbie@demo.test', data: { id: 'u_n', email: 'newbie@demo.test', role: 'sub', approved: false, name: 'Ned Demo', company: 'Old Sub LLC', phone: '901-555-0999' } },
     { key: 'invites:i1', collection: 'invites', id: 'i1', job_id: 'J1', email: 'old@example.com', data: { jobId: 'J1', email: 'old@example.com' } },
     { key: 'invites:i2', collection: 'invites', id: 'i2', job_id: 'J2', email: 'old@example.com', data: { jobId: 'J2', email: 'old@example.com' } },
     { key: 'invites:i3', collection: 'invites', id: 'i3', job_id: 'J2', email: 'zz@demo.test', data: { jobId: 'J2', email: 'zz@demo.test' } }];
@@ -46,8 +51,29 @@ const day = n => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
     !!z && z.notInCrm === true && z.crmDeleted === false && z.contact === 'Zed Demo' && z.phone === '901-555-0100' && z.address === '1 Demo Rd' && z.license === 'TN 12345' && z.pp.w9 && z.pp.coi && z.pp.coiExp === day(90) && z.pp.wc && z.pp.wcExp === day(-3) && z.invitedCount === 1 && z.invited === true, z);
   ok('0b a CRM sub: its own papers (W-9, COI expiry, WC expiry), contact, on the bid site, invited to 2 jobs', !!o && o.crmId === 'V1' && o.onBidSite === true && o.invitedCount === 2 && o.pp.w9 && o.pp.coiExp === day(200) && o.pp.wcExp === day(10) && o.contact === 'Olive Old', o);
   ok('0c a bid-site sub whose linked CRM sub was deleted on purpose → crmDeleted (the CRM never adds it back); a sub not approved is not listed', !!g && g.crmDeleted === true && !L.some(x => x.email === 'wait@demo.test'), { g, n: L.length });
+  const lp = L.find(x => x.email === 'olive@oldsub.test'), le = L.find(x => x.email === 'elite@demo.test'), lw = L.find(x => x.email === 'pros@acmeroof.test');
+  ok('0d no duplicate (server): a bid-site account with another e-mail but the CRM sub\'s phone → linked to that sub (crmId V1, matched by phone, one row in the lists: dupOf), and V1 shows on the bid site', !!lp && lp.crmId === 'V1' && lp.notInCrm === false && lp.dupOf === 'V1' && /phone/.test(lp.matchedBy) && o.onBidSite === true, { lp, o });
+  ok('0e "ELITE EARTHWORKS,LLC" = the CRM\'s "Elite Earthworks LLC" (company name) → linked, not new', !!le && le.crmId === 'VE' && le.notInCrm === false && /company/.test(le.matchedBy), le);
+  ok('0f only a similar name ("Acme Roofing Pros" / "Acme Roofing") → not linked, not merged: sameSub for an owner', !!lw && lw.notInCrm === true && !lw.crmId && Array.isArray(lw.sameSub) && lw.sameSub[0].id === 'VA', lw);
+  /* the sub portal's sign-in (portal-access): the same matcher */
+  const PA = require(path.join(BUILD, 'netlify/functions/portal-access.js'))._match;
+  const data = { vendors: KV.vendors, subs: [] };
+  const profP = SPR.find(r => r.id === 'u_p').data;
+  ok('0g sub portal: an approved account that only shares the CRM sub\'s PHONE does not open that sub\'s portal (pay / jobs) until GrayCo confirms the link', PA.crmSubOf(data, profP) === null, PA.crmSubOf(data, profP));
+  const data2 = { vendors: KV.vendors.map(v => v.id === 'V1' ? Object.assign({}, v, { bidPortalUserId: 'u_p', portalAliases: ['SBPoliveoldsubtest'], bidPortalLinkVerified: true }) : v), subs: [] };
+  ok('0h …once an owner merged them ("🔗 Same sub?" → Merge): the account opens Old Sub LLC', (PA.crmSubOf(data2, profP) || {}).id === 'V1', PA.crmSubOf(data2, profP));
+  const viaSbp = await PA.subResolve(data2, 'SBPoliveoldsubtest');
+  ok('0i sub portal: an old bid-only session (SBP… id) of that account continues as Old Sub LLC', !!viaSbp && viaSbp.id === 'V1', viaSbp);
+  const M = require(path.join(BUILD, 'sub-match.js'));
+  const rec = { id: 'V9', name: 'Staff Typed LLC', contact: 'Typed Contact', email: 'office@typed.test', phone: '901-555-0123', address: '9 Typed Rd' };
+  const n1 = M.merge(rec, { email: 'Owner@Typed.test', phone: '901-555-0456', contact: 'Other Name', address: '1 Other St', trades: ['Paint'], portalUserId: 'u_t', license: 'L-1' });
+  ok('0j merge keeps every staff value, fills only empty ones (trade, license), keeps the new e-mail / phone as extra contacts, links it', n1 > 0 && rec.email === 'office@typed.test' && rec.phone === '901-555-0123' && rec.contact === 'Typed Contact' && rec.address === '9 Typed Rd' && rec.trade === 'Paint' && rec.license === 'L-1' && rec.altEmails[0] === 'owner@typed.test' && rec.altPhones[0] === '901-555-0456' && rec.bidPortalUserId === 'u_t' && rec.tags.includes('On bid portal'), rec);
+  ok('0k the matcher: e-mail any case, phone digits (1-901…), company variants ("A & B Roofing, L.L.C." = "A and B Roofing"), two candidates → weak',
+    M.match({ email: 'OFFICE@typed.TEST' }, [rec]).kind === 'strong' && M.match({ phone: '1 (901) 555-0123' }, [rec]).kind === 'strong' && M.match({ company: 'A & B Roofing, L.L.C.' }, [{ id: 'R', name: 'A and B Roofing' }]).kind === 'strong'
+    && M.match({ phone: '9015550123', email: 'x@other.test' }, [rec, { id: 'V10', name: 'Other', email: 'x@other.test' }]).kind === 'weak');
   global.fetch = saveFetch;
 }
+if (process.env.SUBSYNC_FN_ONLY) { const n = R.filter(Boolean).length; console.log('SUBSYNC (server part) ' + n + '/' + R.length); process.exit(n === R.length ? 0 : 1); }
 
 const { computer, signIn, sleep, cset, cget, resetCloud } = await import(process.env.GC_HARNESS || '/tmp/claude-0/-home-user-graycocrm1/6a5b2b6b-8a4d-5505-9f82-62521adb6674/scratchpad/wN/harness_N.mjs');
 const now = new Date().toISOString(), old = new Date(Date.now() - 2 * 864e5).toISOString();
@@ -58,7 +84,11 @@ cset('vendors', [
   { id: 'V2', name: 'Pref Paint Co', contact: 'Pam Pref', email: 'pref@paint.test', isSub: true, trade: 'Paint', subFlag: 'preferred', w9: true, coi: true, insExp: day(-5), wc: true, wcExp: day(300), updatedAt: old },
   { id: 'V3', name: 'Nope Roofing', email: 'nope@roof.test', isSub: true, trade: 'Roofing', subFlag: 'dnu', updatedAt: old },
   { id: 'V4', name: 'No Email Framing', isSub: true, trade: 'Framing', phone: '901-555-0004', updatedAt: old },
-  { id: 'V5', name: 'Home Supply Depot', email: 'orders@supply.test', isSub: false, updatedAt: old }]);
+  { id: 'V5', name: 'Home Supply Depot', email: 'orders@supply.test', isSub: false, updatedAt: old },
+  { id: 'V6', name: 'Elite Earthworks LLC', isSub: true, updatedAt: old },
+  { id: 'V7', name: 'Acme Roofing', contact: 'Al Acme', email: 'al@acmeroof.test', isSub: true, trade: 'Roofing', updatedAt: old },
+  { id: 'V8', name: 'Bob Cat Grading LLC', email: 'bob@bobcat.test', isSub: true, trade: 'Grading', updatedAt: old },
+  { id: 'V9', name: 'Cash Only Hauling', isSub: true, trade: 'Hauling', updatedAt: old }]);
 cset('projects', [{ id: 'P1', name: 'Sample Clinic Remodel', client: 'Sample Health', status: 'active', autoPO: 'T101', createdAt: old, updatedAt: old }]);
 const PAP = (id, k, exp) => ({ id: id + '_' + k, kind: k, ref: 'sb:crm-files/' + id + '/' + k + '.pdf', name: k + '.pdf', type: 'application/pdf', exp: exp || '', at: old });
 /* the bid site's users (sp_rows users): Demo Paving was approved yesterday (before this fix) — Zedd and Yara are waiting */
@@ -66,9 +96,18 @@ const BIDUSERS = [
   { id: 'u_d', email: 'dee@demopaving.test', role: 'sub', approved: true, name: 'Dee Demo', company: 'Demo Paving LLC', phone: '901-555-0201', trades: ['Paving', 'Concrete'], businessAddress: '200 Demo Ave', businessCity: 'Memphis', businessState: 'TN', businessZip: '38103', licenseNumbers: 'TN CL-777',
     papersCrm: [PAP('u_d', 'w9'), PAP('u_d', 'coi', day(120)), PAP('u_d', 'wc', day(20))], bidsApprovedAt: old },
   { id: 'u_z', email: 'zedd@zeddearth.test', role: 'sub', approved: false, name: 'Zedd Demo', company: 'ZEDD EARTHWORKS', phone: '901-555-0301', trades: ['Earthwork', 'Excavation'], businessAddress: '300 Sample Hwy', businessCity: 'Olive Branch', businessState: 'MS', businessZip: '38654', licenseNumbers: 'MS 55-123', at: old },
+  /* already in the CRM under another e-mail / the same e-mail in other letters / a company-name variant / look-alikes (patch SUBSYNC: no duplicates) */
+  { id: 'u_p', email: 'olive@oldsub.test', role: 'sub', approved: true, name: 'Olive Other', company: 'Old Sub Co', phone: '(901) 555-0001', trades: ['Drywall', 'Tape'], businessAddress: '1 Other St', businessCity: 'Memphis', businessState: 'TN', papersCrm: [PAP('u_p', 'w9')], bidsApprovedAt: old },
+  { id: 'u_c', email: 'Pref@Paint.TEST', role: 'sub', approved: true, name: 'Pam Pref', company: 'Pref Paint', phone: '', trades: ['Paint'], bidsApprovedAt: old },
+  { id: 'u_e', email: 'elite@demo.test', role: 'sub', approved: true, name: 'Eli Demo', company: 'ELITE EARTHWORKS,LLC', phone: '901-555-0777', trades: ['Earthwork'], businessAddress: '7 Dirt Rd', businessCity: 'Memphis', businessState: 'TN', bidsApprovedAt: old },
+  { id: 'u_a', email: 'pros@acmeroofpros.test', role: 'sub', approved: true, name: 'Ann Demo', company: 'Acme Roofing Pros', phone: '901-555-0888', trades: ['Roofing'], bidsApprovedAt: old },
+  { id: 'u_b', email: 'hi@bobcatgrading.test', role: 'sub', approved: true, name: 'Bea Demo', company: 'Bobcat Grading', phone: '901-555-0889', trades: ['Grading'], bidsApprovedAt: old },
+  { id: 'u_q', email: 'quinn@framing.test', role: 'sub', approved: false, name: 'Quinn Demo', company: 'No Email Framing Inc', phone: '901.555.0004', trades: ['Framing'], at: old },
   { id: 'u_y', email: 'yara@demotile.test', role: 'sub', approved: false, name: 'Yara Demo', company: 'Demo Tile Co', phone: '901-555-0401', trades: ['Tile'], businessAddress: '400 Sample St', businessCity: 'Memphis', businessState: 'TN', licenseNumbers: '', at: old }];
 const PAPERS_ON_APPROVE = { u_z: [PAP('u_z', 'w9'), PAP('u_z', 'coi', day(200)), PAP('u_z', 'wc', day(-2)), Object.assign(PAP('u_z', 'license', day(365)), { licState: 'MS', licType: 'Contractor', licNumber: '55-123' })], u_y: [PAP('u_y', 'w9')] };
-const CALLS = [], HUB = [];
+const CALLS = [], HUB = [], ACKED = {};
+/* a paper sent from the sub portal under Olive's old bid-only id (SBP…) — after the merge it must land on Old Sub LLC (V1), not nowhere */
+const EVENTS = [{ id: 'ev_olive_coi', kind: 'paper', sub_id: 'SBPoliveoldsubtest', project_id: '', created_at: now, data: { paper: 'coi', exp: day(150), files: [{ ref: 'sb:portal/olive/coi.pdf', name: 'coi.pdf', type: 'application/pdf' }], subName: 'Old Sub Co' } }];
 function serverSubs(jobId){   /* what bid-hub ?subs=1 answers (the real shape: CRM subs ranked ⭐ first, ⛔ out; then approved bid-site subs not in the CRM) */
   const crm = (cget('vendors') || []).filter(v => v && v.isSub && v.email && v.subFlag !== 'dnu');
   const inv = { 'old@example.com': 2, 'pref@paint.test': 1 };
@@ -86,7 +125,8 @@ async function routes(c, who){
   const admin = who === 'wjohnson@grayco-cs.com';
   await c.ctx.route('**/.netlify/functions/portal-access*', async rt => { const b = JSON.parse(rt.request().postData() || '{}'); CALLS.push(Object.assign({ who }, b));
     const J = v => rt.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(v) });
-    if (b.action === 's-sync') return J({ ok: true, events: [], unread: {}, links: {}, waiting: [], codes: [], admin, me: who, bids: admin ? BIDUSERS.filter(u => !u.approved && !u.denied).map(u => ({ id: u.id, company: u.company, name: u.name, email: u.email, phone: u.phone, trades: u.trades, city: u.businessCity, state: u.businessState, selfSignup: true, at: u.at, papers: { w9: { ok: true }, gl: null, wc: null, licenses: [], ready: false } })) : [] });
+    if (b.action === 's-ack') { (b.ids || []).forEach(i => { ACKED[i] = 1; }); return J({ ok: true }); }
+    if (b.action === 's-sync') return J({ ok: true, events: admin ? EVENTS.filter(e => !ACKED[e.id]) : [], unread: {}, links: {}, waiting: [], codes: [], admin, me: who, bids: admin ? BIDUSERS.filter(u => !u.approved && !u.denied).map(u => ({ id: u.id, company: u.company, name: u.name, email: u.email, phone: u.phone, trades: u.trades, city: u.businessCity, state: u.businessState, selfSignup: true, at: u.at, papers: { w9: { ok: true }, gl: null, wc: null, licenses: [], ready: false } })) : [] });
     if (b.action === 's-bids-approve') { const u = BIDUSERS.find(y => y.id === b.id); if (!admin || !u) return J({ ok: false, error: 'no' }); if (b.approve) { u.approved = true; u.bidsApprovedAt = new Date().toISOString(); u.papersCrm = PAPERS_ON_APPROVE[u.id] || []; } else u.denied = true; return J({ ok: true, approved: !!b.approve }); }
     return J({ ok: true }); });
   await c.ctx.route('**/.netlify/functions/bid-hub*', async rt => { const req = rt.request(), u = new URL(req.url()), J = (v, st) => rt.fulfill({ status: st || 200, contentType: 'application/json', body: JSON.stringify(v) });
@@ -116,6 +156,48 @@ await sleep(3500);
 ok('1c …saved to the cloud\'s vendors row (the list every computer loads)', cloudHas('dee@demopaving.test') === 1, (cget('vendors') || []).map(v => v.email));
 ok('1d the bid-hub sub list was read with the sign-in (Authorization) — and the sync says when', HUB.some(h => /subs=1/.test(h.q) && h.auth) && (await A.ev(() => window._gcBidSubs.last().okAt > 0)), HUB.filter(h => /subs=1/.test(h.q)));
 
+/* 1e–1j. no duplicates (patch SUBSYNC): the approved accounts already in the CRM are merged, look-alikes wait for an owner */
+await sleep(1500);
+V = await vend(A);
+const full = await A.ev(() => (window._crm.vendors || []).filter(v => /^V[1-8]$/.test(v.id)).map(v => JSON.parse(JSON.stringify(v))));
+const R1 = full.find(v => v.id === 'V1') || {}, R2 = full.find(v => v.id === 'V2') || {}, R6 = full.find(v => v.id === 'V6') || {};
+const emails = V.map(v => v.email);
+ok('1e matched by PHONE only (another e-mail): no new sub — Old Sub LLC keeps its e-mail, contact and source; the bid-site e-mail / phone kept as an extra contact; linked ("On bid portal"); their W-9 added',
+  !emails.includes('olive@oldsub.test') && R1.email === 'old@example.com' && R1.contact === 'Olive Old' && !R1.source && (R1.altEmails || []).includes('olive@oldsub.test') && R1.bidPortalUserId === 'u_p' && (R1.tags || []).includes('On bid portal') && (R1.files || []).some(f => f.ref === 'sb:crm-files/u_p/w9.pdf') && R1.trade === 'Drywall', R1);
+ok('1f matched by E-MAIL in other letters: Pref Paint linked, nothing added, no extra e-mail', !V.some(v => v.id !== 'V2' && /pref@paint\.test/i.test(v.email)) && R2.bidPortalUserId === 'u_c' && !(R2.altEmails || []).length && R2.email === 'pref@paint.test', R2);
+ok('1g matched by COMPANY NAME ("ELITE EARTHWORKS,LLC" = "Elite Earthworks LLC"): linked, its empty e-mail / phone / trade / address filled, nothing added', !V.some(v => v.id !== 'V6' && v.email === 'elite@demo.test') && R6.email === 'elite@demo.test' && R6.phone === '901-555-0777' && R6.trade === 'Earthwork' && /7 Dirt Rd/.test(R6.address) && R6.bidPortalUserId === 'u_e', R6);
+const same1 = await A.ev(() => window._gcBidSubs.same().map(i => i.key + ':' + i.cands.map(c => c.id + '/' + c.why).join(',')));
+ok('1h look-alikes ("Acme Roofing Pros" ~ "Acme Roofing", "Bobcat Grading" ~ "Bob Cat Grading LLC"): NOT added, NOT merged — two "🔗 Same sub?" items', !emails.includes('pros@acmeroofpros.test') && !emails.includes('hi@bobcatgrading.test') && same1.some(x => /^u_a:V7\//.test(x)) && same1.some(x => /^u_b:V8\//.test(x)) && same1.length === 2, { same1, emails });
+const filesV1 = (R1.files || []).length;
+await A.ev(() => window._gcBidSubs.run({ force: true })); await sleep(1500);
+const R1b = await A.ev(() => JSON.parse(JSON.stringify((window._crm.vendors || []).find(v => v.id === 'V1'))));
+ok('1i the next sync: the same papers are not added again, the extra e-mail not twice', (R1b.files || []).length === filesV1 && (R1b.altEmails || []).length === 1, R1b.files);
+
+/* 1j. ✅ Approvals → 🔗 Same sub? → Merge / Different subs (remembered in the cloud) */
+await A.ev(() => { window._gcBpAppr.refresh(); window._setView('approvals'); });
+const sameRows = await waitOn(A, () => { const l = [...document.querySelectorAll('.apx-row[data-k^="bp:same:"]')].map(r => r.getAttribute('data-k')); return l.length >= 2 ? l : null; }, null, 30000);
+ok('1j ✅ Approvals (🏗 Bid portal) has the two "🔗 Same sub?" rows', !!sameRows && sameRows.includes('bp:same:u_a') && sameRows.includes('bp:same:u_b'), sameRows);
+await A.ev(() => [...document.querySelectorAll('.apx-row[data-k="bp:same:u_a"] button')].find(b => /Review/.test(b.textContent)).click());
+const sh1 = await waitOn(A, () => { const m = document.getElementById('gcbpa-same'); return m ? m.textContent : null; }, null, 8000);
+await shot(A, '05_same_sub');
+ok('1k the sheet: the bid-portal sub and the CRM sub side by side, 🔗 Merge into Acme Roofing / Different subs', !!sh1 && /Acme Roofing Pros/.test(sh1) && /pros@acmeroofpros\.test/.test(sh1) && /Al Acme/.test(sh1) && /Merge into Acme Roofing/.test(sh1) && /Different subs/.test(sh1), sh1);
+await A.ev(() => document.querySelector('#gcbpa-same [data-bps2="same"][data-id="V7"]').click()); await sleep(1500);
+await A.ev(() => [...document.querySelectorAll('.apx-row[data-k="bp:same:u_b"] button')].find(b => /Review/.test(b.textContent)).click());
+await waitOn(A, () => !!document.querySelector('#gcbpa-same [data-bps2="diff"]'), null, 8000);
+await A.ev(() => document.querySelector('#gcbpa-same [data-bps2="diff"]').click()); await sleep(3000);
+const R7 = await A.ev(() => JSON.parse(JSON.stringify((window._crm.vendors || []).find(v => v.id === 'V7'))));
+V = await vend(A);
+const decs = cget('gc_sub_same') || {};
+ok('1l Merge → Acme Roofing keeps its own e-mail / contact, gets the bid-site e-mail as an extra contact and the link; Different → Bobcat Grading added as its own sub; both answers in the cloud (gc_sub_same)',
+  R7.email === 'al@acmeroof.test' && R7.contact === 'Al Acme' && (R7.altEmails || []).includes('pros@acmeroofpros.test') && R7.bidPortalUserId === 'u_a' && !V.some(v => v.email === 'pros@acmeroofpros.test') && V.filter(v => v.email === 'hi@bobcatgrading.test' && v.source === 'Bid portal').length === 1
+  && (decs['u_a|V7'] || {}).d === 'same' && (decs['u_b|V8'] || {}).d === 'different', { R7, decs });
+const r1m = await A.ev(() => window._gcBidSubs.run({ force: true })); await sleep(1500);
+ok('1m never asked again: no "🔗 Same sub?" left after the next sync, nothing added twice', (await A.ev(() => window._gcBidSubs.same().length)) === 0 && (await vend(A)).filter(v => v.email === 'hi@bobcatgrading.test').length === 1, r1m);
+/* 1n. the sub portal: a paper sent under Olive's old bid-only id lands on Old Sub LLC */
+await A.ev(() => window._gcSubsBids.sync());
+const fv = await waitOn(A, () => { const v = (window._crm.vendors || []).find(x => x.id === 'V1'); return v && (v.files || []).some(f => f.id === 'SPF_ev_olive_coi') ? v.files.map(f => f.id) : null; }, null, 40000);
+ok('1n sub portal: a paper the merged sub sent under their old bid-only id (SBP…) is filed onto Old Sub LLC (no orphan, no new sub)', !!fv && !(await vend(A)).some(v => /^SBPolive/.test(v.id)), fv);
+
 /* 2. ✅ Approvals → ✅ Approve */
 await A.ev(() => { window._gcSubsBids.sync(); }); await sleep(1500);
 await A.ev(() => { window._gcBpAppr.refresh(); window._setView('approvals'); });
@@ -140,6 +222,19 @@ const y1 = await waitOn(A, () => (window._crm.vendors || []).find(v => v.email =
 V = await vend(A); const y = V.find(v => v.email === 'yara@demotile.test') || {};
 ok('3b Approve there → Yara on the Subs list (Demo Tile Co, Tile, 400 Sample St, W-9 on the record)', !!y1 && y.name === 'Demo Tile Co' && y.trade === 'Tile' && /400 Sample St/.test(y.address) && y.w9 && !y.coi && y.source === 'Bid portal', y);
 await sleep(2500);
+
+/* 3c. approval time: the 📋 Review sheet says "Already in CRM: … (matched by phone)"; ✅ Approve links, never adds */
+await A.ev(() => { window._gcSubsBids.sync(); window._gcBpAppr.refresh(); window._setView('approvals'); });
+await waitOn(A, () => !!document.querySelector('.apx-row[data-k="bp:su:u_q"]'), null, 30000);
+const qRow = await A.ev(() => document.querySelector('.apx-row[data-k="bp:su:u_q"]').textContent);
+await A.ev(() => [...document.querySelectorAll('.apx-row[data-k="bp:su:u_q"] button')].find(b => /Review/.test(b.textContent)).click());
+const qs = await waitOn(A, () => { const m = document.getElementById('gcbpa-sheet'), x = m && m.querySelector('[data-bpa-match]'); return x ? x.getAttribute('data-bpa-match') + '|' + x.textContent : null; }, null, 8000);
+await shot(A, '06_approve_already_in_crm');
+ok('3c the sign-up row and the 📋 Review sheet: "Already in CRM: No Email Framing (matched by phone + company name)"', /already in CRM: No Email Framing/.test(qRow) && /^strong\|.*Already in CRM: No Email Framing.*matched by phone/.test(qs || ''), { qRow, qs });
+await A.ev(() => document.querySelector('#gcbpa-sheet [data-bpa="ok"]').click());
+const R4 = await waitOn(A, () => { const v = (window._crm.vendors || []).find(x => x.id === 'V4'); return v && v.email === 'quinn@framing.test' ? JSON.parse(JSON.stringify(v)) : null; }, null, 15000);
+V = await vend(A);
+ok('3d ✅ Approve → linked to No Email Framing (its empty e-mail filled, its phone kept), no new sub', !!R4 && R4.phone === '901-555-0004' && R4.bidPortalUserId === 'u_q' && V.filter(v => v.email === 'quinn@framing.test').length === 1, R4);
 
 /* 4. no duplicates */
 let r = await A.ev(() => window._gcBidSubs.run({ force: true }));
@@ -166,7 +261,7 @@ const list = await waitOn(A, () => { const r = [...document.querySelectorAll('#g
 await shot(A, '01_subs_tab');
 const T = await A.ev(() => { const m = document.getElementById('gc-sys-bp-mount'); const row = e => m.querySelector('[data-bps-row="' + e + '"]');
   return { on: !!m.querySelector('[data-sys="bpmode"][data-m="subs"].on'), crmHidden: m.querySelector('#gc-sys-bp').style.display === 'none', first: (m.querySelector('[data-bps-row]') || {}).getAttribute && m.querySelector('[data-bps-row]').getAttribute('data-bps-row'),
-    nope: !!row('nope@roof.test'), noEmail: (function(){ const r = [...m.querySelectorAll('[data-bps-row]')].find(x => /No Email Framing/.test(x.textContent)); return r ? { box: !!r.querySelector('input[data-bps=pick]'), t: r.textContent } : null; })(),
+    nope: !!row('nope@roof.test'), noEmail: (function(){ const r = [...m.querySelectorAll('[data-bps-row]')].find(x => /Cash Only Hauling/.test(x.textContent)); return r ? { box: !!r.querySelector('input[data-bps=pick]'), t: r.textContent } : null; })(),
     vendor: !!row('orders@supply.test'), dee: row('dee@demopaving.test') ? row('dee@demopaving.test').innerHTML : '', old: row('old@example.com') ? row('old@example.com').innerHTML : '', pref: row('pref@paint.test') ? row('pref@paint.test').innerHTML : '', zedd: !!row('zedd@zeddearth.test') }; });
 ok('7 🏗 Bid portal → 👷 Subs: the switch is on, the other views hidden; ⭐ Preferred first; ⛔ Do not use hidden; a vendor is not a sub; the no-e-mail sub listed without a tick box',
   T.on && T.crmHidden && T.first === 'pref@paint.test' && /⭐/.test(T.pref) && !T.nope && !T.vendor && T.noEmail && !T.noEmail.box && /no e-mail/.test(T.noEmail.t), T);

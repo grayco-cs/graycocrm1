@@ -26,6 +26,7 @@ const crypto = require('crypto');
 const BI = require('./bid-inbox.js');
 const L = BI._lib, T = BI._test;
 const SP = require('./subportal.js')._hub;
+const SM = require('../../sub-match.js');   /* patch SUBSYNC: the one sub matcher (the CRM page loads the same file) */
 const { s, low, arr, nowIso } = L;
 
 const GONE = /^(deleted|archived)$/i;
@@ -289,21 +290,36 @@ async function subsList(jobId){
   const deleted = id => !!s(id) && !!(tomb['vendors:' + s(id)] || tomb['subs:' + s(id)] || delL[s(id)]);
   const invited = {}, invN = {};
   inv.forEach(r => { const e = low(r.email || (r.data && r.data.email)); if (!e) return; invN[e] = (invN[e] || 0) + 1; if (jobId && s(r.job_id || (r.data && r.data.jobId)) === s(jobId)) invited[e] = 1; });
+  /* patch SUBSYNC (owner: "subs … we already have in the CRM — make sure we don't duplicate if they use the same phone number, name, email
+     etc. — make it merge"): each approved bid-site account is matched to the CRM's Subs / Vendors with the shared matcher (sub-match.js:
+     link → e-mail → phone → company name; a similar name or two candidates = "🔗 Same sub?" for an owner, never merged on its own) */
+  let dec = {}; try { dec = (await SP.kvRead(['gc_sub_same'])).gc_sub_same || {}; if (typeof dec === 'string') dec = JSON.parse(dec); } catch (e) { dec = {}; }
+  const recs = [], recSeen = {};
+  arr(data && data.vendors).concat(arr(data && data.subs)).forEach(r => { const id = r && s(r.id); if (!id || recSeen[id] || deleted(id)) return; recSeen[id] = 1; recs.push(r); });
+  const bidUsers = us.filter(u => u.role === 'sub' && u.approved && SP.okEmail(low(u.email)));
+  const mOf = {}, linkOf = {};
+  bidUsers.forEach(u => {
+    const m = SM.match({ email: u.email, phone: u.phone, company: u.company, dba: u.dbaName, name: u.name, city: u.businessCity, state: u.businessState, portalUserId: u.id, crmId: u.crmSubId }, recs, { decisions: dec });
+    mOf[s(u.id)] = m; if (m.kind === 'strong' && !linkOf[s(m.rec.id)]) linkOf[s(m.rec.id)] = u;
+  });
   const seen = {}, out = [];
   ranked.forEach(c => {
     if (!SP.okEmail(c.email) || seen[c.email]) return; seen[c.email] = 1;
     if (c.flag === 'dnu') return;   /* ⛔ Do not use: never offered */
-    const u = us.find(x => low(x.email) === c.email), rr = rawById[c.id] || {};
+    const u = us.find(x => low(x.email) === c.email) || linkOf[s(c.id)], rr = rawById[c.id] || {};
     out.push({ email: c.email, name: c.name, company: c.company || (u && u.company) || '', trade: c.trade || (u && arr(u.trades)[0]) || '', trades: uniqTrades(arr(u && u.trades).concat(s(c.trade).split(/\s*[,;\/]\s*/))),
       flag: c.flag, grade: c.grade, score: c.score, lang: langOf(u, rr), onBidSite: !!(u && u.approved), invited: !!invited[c.email], invitedCount: invN[c.email] || 0, crmId: s(c.id), portalUserId: s(u && u.id), papers: arr(u && u.papersCrm).slice(0, 20),   /* patch SIGNUPPAPERS */
       contact: s(rr.contact) || s(u && u.name), phone: s(c.phone || rr.phone), license: s(rr.license || rr.licenseNumbers), pp: papersSum(rr, u && u.papersCrm) });
   });
   us.filter(u => u.role === 'sub' && u.approved && SP.okEmail(low(u.email)) && !seen[low(u.email)]).forEach(u => {
-    const e = low(u.email); seen[e] = 1; const c = u.crmSubId && rawById[s(u.crmSubId)];
+    const e = low(u.email); seen[e] = 1; const m = mOf[s(u.id)] || { kind: 'none', cands: [] };
+    const c = (u.crmSubId && rawById[s(u.crmSubId)]) || (m.kind === 'strong' ? m.rec : null);
     if (c && low(c.subFlag) === 'dnu') return;
+    const dupOf = c && out.some(x => x.crmId === s(c.id)) ? s(c.id) : '';   /* the CRM row above already stands for them (lists show one) */
     out.push({ email: e, name: s(u.name), company: s(u.company), trade: arr(u.trades)[0] || '', trades: arr(u.trades), flag: '', grade: '', score: null, lang: langOf(u, c), onBidSite: true, invited: !!invited[e], invitedCount: invN[e] || 0,
       notInCrm: !c, crmDeleted: !c && deleted(u.crmSubId), phone: s(u.phone), portalUserId: s(u.id), papers: arr(u.papersCrm).slice(0, 20), crmId: s(c && c.id), city: s(u.businessCity), state: s(u.businessState), address: s(u.businessAddress), zip: s(u.businessZip), licenses: s(u.licenseNumbers),
-      contact: s(u.name), license: s(u.licenseNumbers), dba: s(u.dbaName), website: s(u.website), approvedAt: s(u.bidsApprovedAt), pp: papersSum(c, u.papersCrm) });   /* BIDSUBS: what the CRM needs to add them */
+      contact: s(u.name), license: s(u.licenseNumbers), dba: s(u.dbaName), website: s(u.website), approvedAt: s(u.bidsApprovedAt), pp: papersSum(c, u.papersCrm),   /* BIDSUBS: what the CRM needs to add them */
+      matchedBy: c ? (m.kind === 'strong' ? m.why : 'linked') : '', dupOf, sameSub: !c && m.kind === 'weak' ? m.cands.map(x => ({ id: s(x.rec.id), name: s(x.rec.name || x.rec.company), why: x.why })) : undefined });
   });
   return out;
 }
@@ -336,7 +352,7 @@ async function invite(who, b){
   const trades = arr(b.trades).map(low).map(x => x.trim()).filter(Boolean).slice(0, 20);
   const pool = await subsList(jobId);
   let targets;
-  if (b.all) targets = pool.filter(x => tradeHit(x, trades));
+  if (b.all) targets = pool.filter(x => !x.dupOf && tradeHit(x, trades));   /* patch SUBSYNC: a bid-site account linked to a CRM sub is that sub (one e-mail) */
   else {
     const want = Array.from(new Set(arr(b.emails).map(low).filter(SP.okEmail)));
     const dnu = {}; (await crmRanked()).forEach(c => { if (c.flag === 'dnu' && c.email) dnu[c.email] = 1; });
