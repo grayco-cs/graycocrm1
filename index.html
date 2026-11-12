@@ -83787,7 +83787,7 @@ window._gcForceFixSchedule = async function(silent){
       +'<div><div style="font-size:10px;color:#9db4cf;">DATE</div><input id="_tsD" type="date" value="'+today()+'" style="padding:5px;border-radius:6px;border:1px solid #2f4d6f;background:#0b1626;color:#fff;"></div>'
       +'<div><div style="font-size:10px;color:#9db4cf;">IN</div><input id="_tsI" type="time" value="08:00" style="padding:5px;border-radius:6px;border:1px solid #2f4d6f;background:#0b1626;color:#fff;"></div>'
       +'<div><div style="font-size:10px;color:#9db4cf;">OUT</div><input id="_tsO" type="time" value="17:00" style="padding:5px;border-radius:6px;border:1px solid #2f4d6f;background:#0b1626;color:#fff;"></div>'
-      +'<div><div style="font-size:10px;color:#9db4cf;">CODE</div><select id="_tsC" style="padding:5px;border-radius:6px;border:1px solid #2f4d6f;background:#0b1626;color:#fff;"><option value="">Regular work</option><option value="training">🎓 Training (unpaid)</option></select></div>'   /* patch CERTROLE */
+      +'<div><div style="font-size:10px;color:#9db4cf;">CODE</div><select id="_tsC" style="padding:5px;border-radius:6px;border:1px solid #2f4d6f;background:#0b1626;color:#fff;"><option value="">Regular work</option><option value="crmtrain">📘 CRM training — current job (paid)</option><option value="training">🎯 Next-role training (optional, unpaid)</option></select></div>'   /* patch CERTROLE: owner — paid CRM training for their own job 1 day a week; next-role training after hours, unpaid */
       +'<button id="_tsAdd" style="background:#1f7a3d;color:#fff;border:none;border-radius:6px;padding:7px 12px;font-weight:700;cursor:pointer;">+ Add time</button></div>') : '';
 
     function tableHtml(){
@@ -83800,7 +83800,7 @@ window._gcForceFixSchedule = async function(silent){
           +'<td style="padding:6px 8px;">'+r.date+'</td>'
           +'<td style="padding:6px 8px;">'+(r.clockIn||'—')+(r.actualIn&&r.actualIn!==r.clockIn?' <span style="color:#7f93ad;font-size:10px;">(in '+r.actualIn+')</span>':'')+'</td>'
           +'<td style="padding:6px 8px;">'+(r.clockOut||'—')+'</td>'
-          +'<td style="padding:6px 8px;text-align:right;">'+h.toFixed(2)+(r.code==='training'?' <span title="Training (unpaid): recorded, pays $0, not counted toward overtime" style="background:#3b2f0b;color:#fde68a;border-radius:6px;padding:1px 5px;font-size:10px;">🎓 unpaid</span>':'')+'</td>'
+          +'<td style="padding:6px 8px;text-align:right;">'+h.toFixed(2)+(r.code==='training'?' <span title="Next-role training (optional, after hours): recorded, pays $0, not counted toward overtime" style="background:#3b2f0b;color:#fde68a;border-radius:6px;padding:1px 5px;font-size:10px;">🎯 unpaid</span>':r.code==='crmtrain'?' <span title="CRM training for their current job: paid at the regular rate, counts toward overtime" style="background:#0b3b2a;color:#bbf7d0;border-radius:6px;padding:1px 5px;font-size:10px;">📘 paid training</span>':'')+'</td>'
           +(editable?('<td style="padding:6px 8px;text-align:right;white-space:nowrap;">'
              +'<button class="_tsEdit" data-id="'+r.id+'" style="background:#26466b;color:#cfe3ff;border:none;border-radius:5px;padding:4px 8px;cursor:pointer;font-size:11px;margin-right:4px;">Edit</button>'
              +'<button class="_tsDel" data-id="'+r.id+'" style="background:#7a2626;color:#ffd7d7;border:none;border-radius:5px;padding:4px 8px;cursor:pointer;font-size:11px;">Delete</button></td>'):'<td></td>')
@@ -83831,7 +83831,7 @@ window._gcForceFixSchedule = async function(silent){
         var u=box.querySelector('#_tsU').value.trim(); var d=box.querySelector('#_tsD').value; var i=box.querySelector('#_tsI').value; var o=box.querySelector('#_tsO').value;
         if(!u||!d){ alert('Enter at least an employee name and date.'); return; }
         var tc=(box.querySelector('#_tsC')||{}).value||'';   /* patch CERTROLE: 🎓 Training (unpaid) */
-        list.push(Object.assign({ id:'TS'+Date.now()+Math.floor(Math.random()*999), user:u, date:d, clockIn:i, clockOut:o, manual:true, updatedAt:new Date().toISOString(), savedAt:new Date().toISOString() }, tc==='training'?{code:'training'}:{}));
+        list.push(Object.assign({ id:'TS'+Date.now()+Math.floor(Math.random()*999), user:u, date:d, clockIn:i, clockOut:o, manual:true, updatedAt:new Date().toISOString(), savedAt:new Date().toISOString() }, tc==='training'||tc==='crmtrain'?{code:tc}:{}));
         await persist(); refresh();
       };
     }
@@ -83896,7 +83896,7 @@ window._gcForceFixSchedule = async function(silent){
     var total=0;
     ts.forEach(function(r){
       if(r.user!==name) return;
-      if(r.code==='training') return;   /* patch CERTROLE: 🎓 Training (unpaid) — recorded, pays $0 */
+      if(r.code==='training') return;   /* patch CERTROLE: 🎯 next-role training (optional, after hours) — recorded, pays $0; 📘 crmtrain (current job) is paid like any hour */
       if(fromDate && r.date<fromDate) return;
       if(toDate && r.date>toDate) return;
       if(r.clockIn&&r.clockOut){
@@ -84999,7 +84999,7 @@ async function hoursFor(name, from, to, otAfter){
   var byWeek={}, days=[];
   rows.forEach(function(r){
     if(!r.clockIn || !r.clockOut) return;
-    if(r.code==='training') return;   /* patch CERTROLE: 🎓 Training (unpaid) — recorded, pays $0 and does not count toward overtime */
+    if(r.code==='training') return;   /* patch CERTROLE: 🎯 next-role training (optional, after hours) — recorded, pays $0, not toward overtime; 📘 crmtrain (current job) is regular paid time */
     var mins=minutes(r.clockOut)-minutes(r.clockIn);
     if(mins<=0) return;
     var h=mins/60;
@@ -195761,6 +195761,10 @@ function autoHr(rr){ return num(rr.hours) >= 32 || /master|supervisor/.test(s(rr
 function rateOf(rr){ return rr.hr == null || s(rr.hr) === '' ? autoHr(rr) : num(rr.hr); }
 function yrOf(rr){ return rr.yr == null || s(rr.yr) === '' ? Math.round(rateOf(rr) * HRS_YR) : num(rr.yr); }
 var POLICY = 'Course fee paid by GrayCo · training days are unpaid · travel paid for courses out of town';
+var ATTY = 'Attorney review pending on unpaid class days';   /* owner 11/12: he will check */
+/* patch CERTROLE (owner 11/12): "CRM training will be done 1 day a week each week they are hired — paid CRM training for their job;
+   training for future job / raises etc. is after hours, not paid" */
+var TPAY = '📘 CRM training for their current job: paid, 1 day a week · 🎯 training for the next role: optional, after hours, unpaid';
 var TP = {};   /* patch CERTROLE: email → that person's 🎓 Training progress (gc_train_p_<email>.done) */
 function tslug(v){ return low(v).replace(/[^a-z0-9@]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 80); }
 function loadTP(){ return Promise.all(staff().map(function(u){ var em = low(u.email); return sb('gc_train_p_' + tslug(em)).then(function(v){ TP[em] = isObj(v) && isObj(v.done) ? v.done : {}; }); })); }
@@ -196045,7 +196049,7 @@ function raiseBox(u, p, held){
       '<div class="gccp-mut" data-cp-labenv="1">🪜 Path 2 — Environmental tech ($' + startOf('env_tech', p) + '/hr): certificates <b>' + ep.certs + ' of ' + ep.certsOf + '</b> (EPA RRP, lead worker, asbestos worker)' + (ep.missing.length ? ' — missing ' + esc(ep.missing.join(', ')) : '') + ' · Environmental CRM training <b>' + ep.passed + ' of ' + ep.of + ' passed</b>' + (ep.ready ? ' — ⭐ Ready for Environmental tech status (in 💵 Raises due)' : '') + '. No certificate raises before tech status (certificates are still recorded).</div>'; })() : '') +
     (isDual(c.track) ? '<div class="gccp-mut" data-cp-ladder="1">🪜 Dual tech → Dual foreman (a supervisor license, or OSHA 30 + 1 year) → PM (Master Restorer) or Environmental supervisor / PM (lead + asbestos supervisor). Cross-training bonus +' + hrTxt(num(p.xtrainHr) > 0 ? p.xtrainHr : 2) + ' once with WRT + AMRT + lead worker + asbestos worker + HAZWOPER 40 (' + xtrainHas(got).length + ' of ' + XTRAIN.length + ').</div>' : '') +
     rateLine(u, p, c) +
-    '<div class="gccp-mut" style="margin-top:4px" data-cp-policy="1">🎓 ' + esc(POLICY) + '.</div>' +
+    '<div class="gccp-mut" style="margin-top:4px" data-cp-policy="1">🎓 ' + esc(POLICY) + ' <i>(' + esc(ATTY) + ')</i>.</div>' + planBox(u, p) +
     '<div class="gccp-mut" style="margin-top:4px">🚗 Course travel paid by GrayCo: ' + (tv.length ? '<b data-cp-tvsum="1">$' + tvSum.toFixed(2) + '</b> (' + tv.map(function(x){ return esc(x.cert) + ' ' + esc(fmt(x.date)); }).join(' · ') + ')' : 'none yet') +
     ' <button type="button" class="gccp-btn" style="font-size:12px;padding:2px 8px" data-cp="tvform" data-em="' + esc(em) + '">＋ Course travel</button>' + (typeof W._gcFieldLogExpense === 'function' ? ' <button type="button" class="gccp-btn" style="font-size:12px;padding:2px 8px" data-cp="receipt">🧾 Snap the receipt</button>' : '') + '</div>' +
     (UI.tv === em ? '<div class="gccp-card" data-cp-tvbox="' + esc(em) + '" style="margin:6px 0;padding:8px"><b>🚗 Course travel (company-paid, linked to the certificate)</b><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;margin-top:6px">' +
@@ -196053,6 +196057,25 @@ function raiseBox(u, p, held){
       '<label>Date<br><input class="gccp-in" type="date" data-tv="date" value="' + esc(today()) + '"></label><label>Miles<br><input class="gccp-in" data-tv="miles" style="width:70px"></label>' +
       '<label>$/mile<br><input class="gccp-in" data-tv="rate" style="width:60px" value="' + esc(p.mileRate) + '"></label><label>Hotel $<br><input class="gccp-in" data-tv="hotel" style="width:80px"></label><label>Other $ (meals, flight)<br><input class="gccp-in" data-tv="other" style="width:80px"></label>' +
       '<button type="button" class="gccp-btn pri" data-cp="tvsave" data-em="' + esc(em) + '">Save travel</button></div></div>' : '') + '</div>';
+}
+/* patch CERTROLE: the person's CRM training plan — 📘 current job (paid, 1 day a week) and 🎯 next role (optional, after hours, unpaid) */
+var TRK = { con_pm: ['pm'], con_roof_pm: ['pm'], con_ins_pm: ['pm', 'insurance'], est_com: ['estimator'], con_foreman: ['super'], con_crew: ['super'], mit_manager: ['insurance'], mit_foreman: ['insurance'], mit_tech: ['insurance'],
+  env_pm: ['enviro'], env_tech: ['enviro'], dual_tech: ['insurance', 'enviro'], dual_fore: ['insurance', 'enviro'], gen_lab: ['laborer'], office: ['office'] };
+var NEXT = { mit_tech: ['mit_foreman'], mit_foreman: ['mit_manager'], con_crew: ['con_foreman'], con_foreman: ['con_pm'], env_tech: ['env_pm'], dual_tech: ['dual_fore'], dual_fore: ['mit_manager', 'env_pm'] };
+function modsFor(rks){ var out = [], seen = {}; arr(rks).forEach(function(rk){ var l = []; try { l = W._gcTrain && W._gcTrain.required ? arr(W._gcTrain.required(rk)) : []; } catch (e) {} l.forEach(function(m){ if (m && !seen[m.id]) { seen[m.id] = 1; out.push(m); } }); }); return out; }
+function trainPlan(u, p){
+  p = p || plan(); var tk = trackOf(u, p), cur = modsFor(TRK[tk] || []), curIds = {}; cur.forEach(function(m){ curIds[m.id] = 1; });
+  var nx = tk === 'gen_lab' ? [labTarget(u, p), 'env_tech'] : arr(NEXT[tk]), nrk = []; nx.forEach(function(k){ arr(TRK[k]).forEach(function(r){ if (nrk.indexOf(r) < 0) nrk.push(r); }); });
+  var next = modsFor(nrk).filter(function(m){ return !curIds[m.id]; }), st = function(m){ return modState(u.email, m).k; };
+  var week = cur.filter(function(m){ return st(m) !== 'pass'; })[0] || null;
+  return { track: tk, cur: cur, next: next, nextTracks: nx, curPassed: cur.filter(function(m){ return st(m) === 'pass'; }).length, nextPassed: next.filter(function(m){ return st(m) === 'pass'; }).length, week: week, tag: function(m){ return curIds[m.id] ? 'cur' : 'next'; } };
+}
+function planBox(u, p){
+  var tp = trainPlan(u, p); if (!tp.cur.length && !tp.next.length) return '';
+  var lbl = tp.nextTracks.map(function(k){ return (p.tracks[k] || {}).label || k; }).map(function(x){ return x.replace(/ — .*$/, ''); }).join(' / ');
+  return '<div class="gccp-mut" style="margin-top:4px" data-cp-plan="' + esc(low(u.email)) + '">📚 <b>CRM training plan</b> — 📘 <b>Current job — paid</b> (1 day a week): ' + tp.curPassed + ' of ' + tp.cur.length + ' passed' +
+    (tp.week ? ' · <span data-cp-week="1">This week\'s paid training: <b>' + esc(tp.week.title) + '</b></span>' : ' · all done') +
+    (tp.next.length ? '<br>🎯 <b>Next role' + (lbl ? ' (' + esc(lbl) + ')' : '') + '</b> — <span data-cp-nexttag="1">Optional · after hours · unpaid · counts toward your promotion / raise</span>: ' + tp.nextPassed + ' of ' + tp.next.length + ' passed' : '') + '</div>';
 }
 /* patch CERTROLE: 🎓 classes — the CRM training first, then "Request class" (an admin may override with a reason) → admins approve */
 var CLASS_OK = 'Class approved — company pays the course fee; training days unpaid; travel paid if out of town';
@@ -196134,7 +196157,7 @@ function render(){
       (capped.length ? '<h3 style="margin:14px 0 4px">🧢 Held back</h3><table class="gccp-tbl" data-cp-capped="1"><tr><th>Employee</th><th>Certificate</th><th>Why</th></tr>' + capped.map(function(x){ return '<tr><td><b>' + esc(x.u.name) + '</b></td><td>' + esc(x.r.cert) + '</td><td><span class="gccp-chip amb">' + (x.r.why === 'master' ? '⭐ a master level is paid once' : 'cap reached (' + (x.c.cap.hr ? hrTxt(x.c.cap.hr) : x.c.cap.n + ' raises') + ')') + '</span></td></tr>'; }).join('') + '</table>' : '') +
       '<h3 style="margin:14px 0 4px">History</h3>' + (past.length ? '<table class="gccp-tbl"><tr><th>When</th><th>Employee</th><th>Certificate</th><th>Raise</th><th>By</th></tr>' + past.map(function(d){ var u = ppl.filter(function(x){ return low(x.email) === low(d.email); })[0]; return '<tr><td>' + esc(fmt(d.at)) + '</td><td>' + esc(u ? u.name : d.email) + '</td><td>' + esc(d.cert) + '</td><td>' + (d.skip ? '<span class="gccp-chip gry">not a raise</span>' : esc(money(d.amount, d.unit))) + '</td><td class="gccp-mut">' + esc(d.by) + '</td></tr>'; }).join('') + '</table>' : '<p class="gccp-mut">None yet.</p>');
     UI.rows = rows; }
-  else if (UI.tab === 'reqs') h += '<div class="gccp-note" data-cp-policy="1">🎓 Training policy: ' + esc(POLICY) + '. Training days go on the timesheet as 🎓 Training (unpaid): the hours are recorded, they pay $0 and do not count toward overtime.</div>' + Object.keys(p.tracks).map(function(k){ var tr = p.tracks[k];
+  else if (UI.tab === 'reqs') h += '<div class="gccp-note" data-cp-policy="1">🎓 Training policy: ' + esc(POLICY) + ' (' + esc(ATTY) + '). ' + esc(TPAY) + '. On the timesheet: 📘 CRM training — current job (paid: regular hours, counts toward overtime) · 🎯 Next-role training (optional: recorded, pays $0, not toward overtime).</div>' + Object.keys(p.tracks).map(function(k){ var tr = p.tracks[k];
     return '<div class="gccp-card"><b>' + esc(tr.label) + '</b> <span class="gccp-mut">' + (tr.unit === 'yr' ? 'salaried — raises in $/yr' : 'hourly — raises in $/hr') + '</span>' +
       (tr.reqs.length ? '<table class="gccp-tbl"><tr><th>Certificate</th><th>Kind</th><th>Why</th><th></th></tr>' + tr.reqs.map(function(r, i){ return '<tr><td>' + esc(r.name) + (r.legal ? ' <span class="gccp-law">LAW</span>' : '') + '</td><td>' + (r.legal ? (r.rec ? '<span class="gccp-chip gry">💡 Law only if doing that field work</span>' : '<span class="gccp-chip amb">📌 Law — before that work</span>') : '<select class="gccp-in" data-cp-rec="' + k + '|' + i + '"><option value="req"' + (r.rec ? '' : ' selected') + '>Required — keep on</option><option value="rec"' + (r.rec ? ' selected' : '') + '>💡 Recommended</option></select>') + '</td><td class="gccp-mut">' + esc(r.why) + '</td><td><button type="button" class="gccp-btn" data-cp="rmreq" data-k="' + k + '" data-i="' + i + '">Remove</button></td></tr>'; }).join('') + '</table>' : '<p class="gccp-mut">None.</p>') +
       '<div style="margin-top:6px"><input class="gccp-in" style="width:320px;max-width:100%" placeholder="＋ Add a requirement (e.g. Asbestos inspector)" data-cp-newreq="' + k + '"> <select class="gccp-in" data-cp-newrec="' + k + '"><option value="req">Required — keep on</option><option value="rec">💡 Recommended</option></select> <button type="button" class="gccp-btn pri" data-cp="addreq" data-k="' + k + '">Add</button></div></div>'; }).join('');
@@ -196250,7 +196273,7 @@ function open_(tab){
 /* the button in 📜 Certifications */
 D.addEventListener('click', function(e){ var b = e.target && e.target.closest ? e.target.closest('[data-gccp-open]') : null; if (!b) return; e.preventDefault(); e.stopPropagation(); open_(); }, true);
 later(function(){ if (isAdmin()) load(); }, 5000);
-W._gcCertPlan = { open: open_, load: load, plan: plan, trackOf: trackOf, targetOf: targetOf, trainOf: trainOf, techCourses: techCourses, envPath: envPath, CLASS: CLASS, raiseCalc: raiseCalc, payList: payList, outlookOf: outlookOf, rateOf: rateOf, POLICY: POLICY, reqStatus: reqStatus, raisesDue: raisesDue, masterOf: masterOf, weekPay: weekPay, defaults: defaults, _set: function(p, c){ PLAN = p; CERTS = arr(c); LOADED = true; } };
+W._gcCertPlan = { open: open_, load: load, plan: plan, trackOf: trackOf, targetOf: targetOf, trainOf: trainOf, trainPlan: trainPlan, techCourses: techCourses, envPath: envPath, CLASS: CLASS, raiseCalc: raiseCalc, payList: payList, outlookOf: outlookOf, rateOf: rateOf, POLICY: POLICY, reqStatus: reqStatus, raisesDue: raisesDue, masterOf: masterOf, weekPay: weekPay, defaults: defaults, _set: function(p, c){ PLAN = p; CERTS = arr(c); LOADED = true; } };
 try { console.log('[GC] 🎖 Required certs, raises & promotion (patch CERTPLAN): _gcCertPlan'); } catch (e) {}
 })();
 </script>
