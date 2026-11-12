@@ -39,6 +39,7 @@ const crypto = require('crypto');
 const L = require('./bid-inbox.js')._lib;
 const BD = require('./_lib/bid-due.js');
 const BF = require('./_lib/bid-filter.js');   /* patch BIDFILTER */
+const EW = require('./_lib/envwords.js');   /* patch LEADBOTH: ☢️ asbestos / lead / mold words */
 const { env, s, low, arr, nowIso, sha256, sb, kvGet, kvCas, kvPut, upsert, itemId, isoDay, decodeEntities, htmlToText, DEFAULT_SETTINGS, KV, KV_SET } = L;
 
 const UA = 'GrayCoBidWatch/1.0 (+https://crm.grayco-cs.com; leads@grayco-cs.com; GrayCo Construction Services, Bartlett TN)';
@@ -297,6 +298,7 @@ function matchWords(text, settings, desc){
      it lifts the keyword requirement, never the gate (equipment, vehicles, supplies and services are skipped) */
   const g = BF.check(text, desc, BF.optsFrom(st));
   if (!g.ok) return { ok: false, hits: [], bad: bad.concat(g.hit ? [g.hit] : []), gate: g };
+  if (arr(g.env).length) return { ok: true, hits: hits.concat(g.env.filter(w => hits.indexOf(w) < 0)), bad: [], gate: g };   /* patch LEADBOTH: an abatement / mold bid is always kept (any keyword list) */
   if (st.allBids) return { ok: true, hits: hits.length ? hits : [g.hit || 'construction'], bad: [], gate: g };
   return { ok: hits.length > 0, hits, bad: [], gate: g };
 }
@@ -507,7 +509,7 @@ async function samRun(settings, prev, opts){
       const n = s(o.naicsCode).replace(/\D/g, ''); if (!cfg.naics.some(w => n.indexOf(w) === 0)) return;
       if (!BF.check(s(o.title), 'NAICS ' + n, BF.optsFrom(st)).ok) return;   /* patch BIDFILTER: the construction gate (replaces the bare exclude list) */
       const rec = samRecord(o); if (expired(rec.bidDue)) return;
-      seenId[o.noticeId] = 1; out.records.push(rec);
+      seenId[o.noticeId] = 1; out.records.push(EW.tag(rec, s(o.title) + (n.indexOf('562910') === 0 ? ' environmental remediation' : '')));   /* patch LEADBOTH: ☢️ tag (NAICS 562910 = remediation) */
     });
   }
   return out;
@@ -565,7 +567,7 @@ async function runAll(opts){
         const mw = matchWords(it.title, settings, it.context);
         if (!mw.ok) return;
         st.matched++;
-        records.push(toRecord(src, it, mw.hits));
+        records.push(EW.tag(toRecord(src, it, mw.hits), [it.title, it.context].join(' ')));   /* patch LEADBOTH: ☢️ tag */
       });
       /* BARGEROOM: only the jobs within range (300 mi of Memphis + the Atlanta area) */
       if (src.radius && records.length > from0) {

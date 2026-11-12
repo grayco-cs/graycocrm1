@@ -95,6 +95,7 @@ require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every o
 const crypto = require('crypto');
 const BD = require('./_lib/bid-due.js');
 const BF = require('./_lib/bid-filter.js');   /* patch BIDFILTER: the always-on construction gate */
+const EW = require('./_lib/envwords.js');   /* patch LEADBOTH: the ☢️ asbestos / lead / mold words (kept + tagged) */
 const BR = require('./_lib/bid-role.js');   /* patch PRIMESUB: 🏛 prime (to the owner) or 🔧 sub (to a GC) */
 const BM = require('./_lib/bid-merge.js');   /* patch BIDMERGE: one lead per project, every GC and trade on it */
 
@@ -522,6 +523,7 @@ function aiPrompt(mail, links, hint){
     + 'notice, a public bid notice, a GC writing directly, an addendum, a reminder, or not a lead at all.\n'
     + 'Call the record_bid_leads tool exactly once with what you find. One entry per project (a digest listing three projects gives three entries). '
     + 'Use only what is written in the e-mail and its attachments: leave a field empty rather than guess. GrayCo is never the GC or the owner. '
+    + 'GrayCo also has an environmental company (asbestos, lead-based paint / LBP / RRP, mold remediation, hazmat / hazardous materials surveys, demolition with abatement): an invitation or notice for that work IS a bid opportunity for GrayCo, never not_a_lead. '
     + 'Dates as YYYY-MM-DD, times as 24-hour HH:MM local time. Always give the bid due date and who the bid is due to (submit_to_*) and how it is submitted when written. For an addendum, set addendum_number. For something that is not a bid opportunity, use kind "not_a_lead" and an empty leads list.\n\n'
     + 'From: ' + (mail.from.name ? mail.from.name + ' ' : '') + '<' + mail.from.email + '>' + (hint ? ' (looks like: ' + hint + ')' : '') + '\nSubject: ' + mail.subject + '\n'
     + 'Attachments: ' + (mail.files.length ? mail.files.map((f, i) => i + ': ' + f.name + ' (' + f.type + ')').join(', ') : 'none') + '\n'
@@ -705,6 +707,7 @@ function upsert(items, rec){
   hit.emailIds = uniqBy(arr(hit.emailIds).concat(arr(rec.emailIds)), x => x).slice(-60);
   hit.watchKeys = uniqBy(arr(hit.watchKeys).concat(arr(rec.watchKeys)), x => x);
   hit.trades = uniqBy(arr(hit.trades).concat(arr(rec.trades)), x => low(x)).slice(0, 20);
+  if (rec.envScope) { hit.envScope = true; hit.envWords = uniqBy(arr(hit.envWords).concat(arr(rec.envWords)), x => low(x)).slice(0, 8); hit.tags = uniqBy(arr(hit.tags).concat(arr(rec.tags)), x => x).slice(0, 12); }   /* patch LEADBOTH: ☢️ */
   if (rec.addendum) {
     hit.addenda = arr(hit.addenda); if (!hit.addenda.some(a => a.n === rec.addendum)) hit.addenda.push({ n: rec.addendum, at: t, subject: rec.sourceRef || '' });
     hit.addendumCount = Math.max(hit.addendumCount || 0, rec.addendum);
@@ -792,6 +795,7 @@ function recordsFrom(mail, ai, links, hint, stored, rawRef){
       emails: [emailRow], emailIds: mail.id ? [mail.id] : [], rawRef, notes, addendum: isAdd ? (parseInt(addN, 10) || 1) : 0,
       needsReview: !ai.ok, aiConfidence: L.confidence != null ? +L.confidence : null, origin: 'email'
     };
+    EW.tag(rec, [title, L.scope_summary, arr(L.trades).join(' '), L.notes, mail.subject, mail.text.slice(0, 3000)].join(' '));   /* patch LEADBOTH: ☢️ asbestos / lead / mold — the CRM lists it on Environmental (a GC bid also on Construction) */
     if (!rec.contact.email && mail.from.domain && !/grayco-cs\.com$/.test(mail.from.domain) && !boardOf(mail.from.domain)) rec.contact = { name: rec.contact.name || mail.from.name, email: mail.from.email, phone: rec.contact.phone };
     return rec;
   });
@@ -1091,12 +1095,13 @@ async function radiusGate(leads, settings){
   const links = linksOf(mail), hint = sourceHint(mail, links);
   const ai = await extract(mail, links, hint, opts.inline ? 18000 : 0);
   const pdfs = mail.files.filter(f => f.type === 'application/pdf').length;
-  if (ai.ok && (low(ai.kind) === 'not_a_lead' || !ai.leads.length) && !pdfs) return { status: 200, body: { ok: true, ignored: 'not a bid opportunity' } };
+  const envMail = EW.test(mail.subject + ' ' + mail.text.slice(0, 4000)) && (BID_WORDS.test(mail.subject + ' ' + mail.text.slice(0, 4000)) || !!hint);   /* patch LEADBOTH: an abatement / mold bid is never thrown away */
+  if (ai.ok && (low(ai.kind) === 'not_a_lead' || !ai.leads.length) && !pdfs && !envMail) return { status: 200, body: { ok: true, ignored: 'not a bid opportunity' } };
   /* patch BIDFILTER: a bid NOTICE (a public solicitation / a bid board telling of new projects) is held to the same construction
      gate as the public bid watcher; a GC's own invitation to bid (invitation, gc_direct, addendum …) is always construction */
-  if (ai.ok) { const g = noticeGate(ai, dbReady() ? await kvGet(KV_SET).catch(() => null) : null); if (g.dropped) { ai.leads = g.leads; if (!ai.leads.length) return { status: 200, body: { ok: true, ignored: 'not construction work', skipped: g.dropped } }; } }
+  if (ai.ok) { const g = noticeGate(ai, dbReady() ? await kvGet(KV_SET).catch(() => null) : null); if (g.dropped) { ai.leads = g.leads; if (!ai.leads.length && !envMail) return { status: 200, body: { ok: true, ignored: 'not construction work', skipped: g.dropped } }; } }
   /*RADIUS*/ if (ai.ok && ai.leads.length) { const rg = await radiusGate(ai.leads, dbReady() ? await kvGet(KV_SET).catch(() => null) : null); if (rg.dropped.length) { ai.leads = rg.leads; if (!ai.leads.length) return { status: 200, body: { ok: true, ignored: 'too far from Memphis', skipped: rg.dropped } }; } }
-  if (!ai.ok && !pdfs && !hint && !BID_WORDS.test(mail.subject + ' ' + mail.text.slice(0, 2000))) return { status: 200, body: { ok: true, ignored: 'not a bid opportunity (not read by the AI)' } };
+  if (!ai.ok && !pdfs && !hint && !envMail && !BID_WORDS.test(mail.subject + ' ' + mail.text.slice(0, 2000))) return { status: 200, body: { ok: true, ignored: 'not a bid opportunity (not read by the AI)' } };
   /* the files, then the e-mail itself as a text document */
   const stored = [];
   for (const f of mail.files) { const st = await storeFile(f.buf, f.type, f.name); stored.push({ ref: st.ref, hash: st.hash, name: f.name, type: f.type, size: f.size, stored: st.stored, kind: fileKind(f.name) }); }
@@ -1435,7 +1440,8 @@ const DEFAULT_SETTINGS = {
     'tenant improvement', 'interior improvements', 'improvements', 'facility improvements', 'facility', 'building repairs', 'repair', 'maintenance', 'restoration',
     'bathroom', 'restroom', 'kitchen', 'flooring', 'floor', 'carpet', 'tile', 'painting', 'paint', 'drywall', 'framing', 'carpentry', 'ceiling', 'siding', 'gutter', 'gutters',
     'windows', 'window', 'doors', 'door', 'storefront', 'canopy', 'envelope', 'waterproofing', 'masonry', 'concrete', 'sidewalk', 'demolition', 'abatement',
-    'water damage', 'fire damage', 'storm damage', 'mold', 'mitigation', 'remediation', 'ada', 'accessibility', 'hvac', 'mechanical', 'plumbing', 'electrical upgrades', 'insulation'], BF.INCLUDE),
+    'water damage', 'fire damage', 'storm damage', 'mold', 'mitigation', 'remediation', 'ada', 'accessibility', 'hvac', 'mechanical', 'plumbing', 'electrical upgrades', 'insulation',
+    'asbestos', 'lead paint', 'lead-based paint', 'lead abatement', 'lbp', 'rrp', 'mold remediation', 'microbial', 'hazmat', 'hazardous materials', 'environmental remediation'], BF.INCLUDE),   /* patch LEADBOTH */
   exclude: BF.merge(['vehicle', 'truck', 'automobile', 'software', 'laptop', 'computer', 'it services', 'telecommunication', 'janitorial', 'custodial', 'uniform', 'food', 'catering',
     'fuel', 'lobbying', 'audit', 'consultant', 'consulting services', 'legal services', 'staffing', 'insurance broker', 'printing services', 'printing', 'mowing', 'lawn care',
     'medical', 'pharmaceutical', 'pharmacy', 'office supplies', 'textbook', 'furniture', 'bus', 'tires', 'ammunition', 'firearms'], BF.EXCLUDE),

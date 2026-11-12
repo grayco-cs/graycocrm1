@@ -10637,7 +10637,7 @@ e.jsx("button",{style:{background:"#ef444422",border:"1px solid #ef444455",borde
 ]})
 })(),_st==="pnl"&&e.jsx(__gcStable("bu",bu),{}),_st==="cctrans"&&e.jsx(__gcStable("yl",yl),{}),_st==="reports"&&e.jsx(__gcStable("wu",wu),{}),_st==="estvactual"&&e.jsx(__gcStable("Yf",Yf),{}),e.jsx("div",{id:"tc-mount",style:{display:_st==="tax"?"block":"none",width:"100%",height:"calc(100vh - 100px)"}})]})},
 _spay=function(nm){var _i=Ba.filter(function(x){return x.sub===nm&&x.status==="paid"});return{t:_i.reduce(function(a,x){return a+(parseFloat(x.amt)||0)},0),m:_i.filter(function(x){return(x.paidDate||x.recvDate||"").slice(0,7)===new Date().toISOString().slice(0,7)}).reduce(function(a,x){return a+(parseFloat(x.amt)||0)},0),y:_i.filter(function(x){return(x.paidDate||x.recvDate||"").slice(0,4)===""+new Date().getFullYear()}).reduce(function(a,x){return a+(parseFloat(x.amt)||0)},0),inv:_i}},
-ch=()=>{if(/^(mws|ews)_[a-z]+$/.test(P||""))return e.jsx("div",{key:"gc-view-"+P,id:"gc-mws-mount","data-mws":P,ref:function(el){try{if(el&&window._gcMitWS)window._gcMitWS.mount(el,P)}catch(_x){}},style:{width:"100%",minHeight:"calc(100vh - 60px)"}});/* patch MITWS */if(P==="planbuilder")return e.jsx("div",{key:"gc-view-planbuilder",id:"gc-pb-mount",ref:function(el){try{if(el&&window._gcMitWS)window._gcMitWS.planbuilder(el)}catch(_x){}},style:{width:"100%",height:"calc(100vh - 60px)"}});/* patch MITWS: 📐 PlanBuilder */switch(P){case"dashboard":return e.jsx(__gcStable("vu",vu),{});case"leads":return e.jsx(__gcStable("th",th),{});case"projects":return e.jsx(__gcStable("id",id),{});case"cordova":return e.jsx("div",{id:"cordova-club-root",ref:function(el){if(el&&!el._ccInit){el._ccInit=true;window.__mountCC&&window.__mountCC(el)}},style:{width:"100%",height:"calc(100vh - 60px)",overflow:"auto"}});case"scopes":return e.jsx(__gcStable("Gf",Gf),{});case"estimates":return e.jsx(__gcStable("Kf",Kf),{});case"templates":return e.jsx(__gcStable("Xf",Xf),{});case"estvactual":return e.jsx(__gcStable("Yf",Yf),{});case"expenses":return e.jsx(__gcStable("rh",rh),{});case"gmail":return e.jsxs("div",{style:{width:"100%",height:"calc(100vh - 60px)",position:"relative"},children:[e.jsx("div",{id:"gmail-mount",style:{width:"100%",height:"100%"}}),e.jsx("a",{href:"https://mail.google.com",target:"_blank",style:{position:"absolute",top:10,right:10,zIndex:10,padding:"8px 16px",background:"#d4a017",color:"#0d1b2a",borderRadius:6,textDecoration:"none",fontWeight:700,fontSize:12},children:"Open Gmail ↗"})]});case"claude":return e.jsx("div",{style:{height:"calc(100vh - 60px)",overflow:"auto"},children:(window.GrayCoBrain?e.jsx(window.GrayCoBrain,(function(_B){var C=window._gcCo;if(!C||C.filter()==="all")return _B;var f=C.filter(),R=window._gcCoRecs||function(x){return x};return Object.assign({},_B,{projects:_B.projects.filter(function(p){return C.passJob(p)}),invs:_B.invs.filter(function(i){return C.pass(i,"inv")}),expenses:R(_B.expenses),leads:_B.leads.filter(function(l){return C.ofLead(l)===f}),cos:R(_B.cos)})})({projects:(window._crm&&window._crm.projects)||[],invs:(window._crm&&window._crm.invoices)||[],expenses:(window._crm&&window._crm.expenses)||[],leads:(window._crm&&window._crm.leads)||[],bidLists:(window._crm&&window._crm.bidLists)||[],cos:(window._crm&&window._crm.changeOrders)||[],currentUser:(yi||n)}))/* patch COLEAK2: the Brain reads the picked company's records */:e.jsx("div",{style:{padding:20,color:u.tx2},children:"Business Brain is loading\u2026"}))});case"brain-manager":return e.jsx("div",{style:{height:"calc(100vh - 60px)",overflow:"auto"},children:(window.BrainManagerTab?e.jsx(window.BrainManagerTab,{currentUser:(yi||n)}):e.jsx("div",{style:{padding:20,color:u.tx2},children:"Brain Manager is loading\u2026"}))});case"roofscout":return e.jsx("iframe",{src:"/roofscout/",title:"RoofScout",allow:"clipboard-write",style:{display:"block",width:"100%",height:"calc(100vh - 60px)",border:"none",borderRadius:8,background:"#f3f5f9"}});case"subportal":return e.jsx("iframe",{src:"/subportal/",title:"Sub Portal",allow:"clipboard-write",style:{display:"block",width:"100%",height:"calc(100vh - 60px)",border:"none",borderRadius:8,background:"#FBFAF7"}});case"review-queue":return e.jsx("div",{style:{height:"calc(100vh - 60px)",overflow:"auto"},children:(window.ReviewQueueTab?e.jsx(window.ReviewQueueTab,{currentUser:(yi||n)}):e.jsx("div",{style:{padding:20,color:u.tx2},children:"Review Queue is loading\u2026"}))});case"qbimport":return e.jsxs("div",{children:[
+ch=()=>{if(/^(mws|ews)_[a-z]+$/.test(P||""))return e.jsx("div",{key:"gc-view-"+P,id:"gc-mws-mount","data-mws":P,ref:function(el){try{if(el&&window._gcMitWS)window._gcMitWS.mount(el,P)}catch(_x){}},style:{width:"100%",minHeight:"calc(100vh - 60px)"}});/* patch MITWS */if(P==="planbuilder")return e.jsx("div",{key:"gc-view-planbuilder",id:"gc-pb-mount",ref:function(el){try{if(el&&window._gcMitWS)window._gcMitWS.planbuilder(el)}catch(_x){}},style:{width:"100%",height:"calc(100vh - 60px)"}});/* patch MITWS: 📐 PlanBuilder */switch(P){case"dashboard":return e.jsx(__gcStable("vu",vu),{});case"leads":return e.jsx(__gcStable("th",th),{});case"projects":return e.jsx(__gcStable("id",id),{});case"cordova":return e.jsx("div",{id:"cordova-club-root",ref:function(el){if(el&&!el._ccInit){el._ccInit=true;window.__mountCC&&window.__mountCC(el)}},style:{width:"100%",height:"calc(100vh - 60px)",overflow:"auto"}});case"scopes":return e.jsx(__gcStable("Gf",Gf),{});case"estimates":return e.jsx(__gcStable("Kf",Kf),{});case"templates":return e.jsx(__gcStable("Xf",Xf),{});case"estvactual":return e.jsx(__gcStable("Yf",Yf),{});case"expenses":return e.jsx(__gcStable("rh",rh),{});case"gmail":return e.jsxs("div",{style:{width:"100%",height:"calc(100vh - 60px)",position:"relative"},children:[e.jsx("div",{id:"gmail-mount",style:{width:"100%",height:"100%"}}),e.jsx("a",{href:"https://mail.google.com",target:"_blank",style:{position:"absolute",top:10,right:10,zIndex:10,padding:"8px 16px",background:"#d4a017",color:"#0d1b2a",borderRadius:6,textDecoration:"none",fontWeight:700,fontSize:12},children:"Open Gmail ↗"})]});case"claude":return e.jsx("div",{style:{height:"calc(100vh - 60px)",overflow:"auto"},children:(window.GrayCoBrain?e.jsx(window.GrayCoBrain,(function(_B){var C=window._gcCo;if(!C||C.filter()==="all")return _B;var f=C.filter(),R=window._gcCoRecs||function(x){return x};return Object.assign({},_B,{projects:_B.projects.filter(function(p){return C.passJob(p)}),invs:_B.invs.filter(function(i){return C.pass(i,"inv")}),expenses:R(_B.expenses),leads:_B.leads.filter(function(l){return C.passLead?C.passLead(l,f):C.ofLead(l)===f})/* patch LEADBOTH */,cos:R(_B.cos)})})({projects:(window._crm&&window._crm.projects)||[],invs:(window._crm&&window._crm.invoices)||[],expenses:(window._crm&&window._crm.expenses)||[],leads:(window._crm&&window._crm.leads)||[],bidLists:(window._crm&&window._crm.bidLists)||[],cos:(window._crm&&window._crm.changeOrders)||[],currentUser:(yi||n)}))/* patch COLEAK2: the Brain reads the picked company's records */:e.jsx("div",{style:{padding:20,color:u.tx2},children:"Business Brain is loading\u2026"}))});case"brain-manager":return e.jsx("div",{style:{height:"calc(100vh - 60px)",overflow:"auto"},children:(window.BrainManagerTab?e.jsx(window.BrainManagerTab,{currentUser:(yi||n)}):e.jsx("div",{style:{padding:20,color:u.tx2},children:"Brain Manager is loading\u2026"}))});case"roofscout":return e.jsx("iframe",{src:"/roofscout/",title:"RoofScout",allow:"clipboard-write",style:{display:"block",width:"100%",height:"calc(100vh - 60px)",border:"none",borderRadius:8,background:"#f3f5f9"}});case"subportal":return e.jsx("iframe",{src:"/subportal/",title:"Sub Portal",allow:"clipboard-write",style:{display:"block",width:"100%",height:"calc(100vh - 60px)",border:"none",borderRadius:8,background:"#FBFAF7"}});case"review-queue":return e.jsx("div",{style:{height:"calc(100vh - 60px)",overflow:"auto"},children:(window.ReviewQueueTab?e.jsx(window.ReviewQueueTab,{currentUser:(yi||n)}):e.jsx("div",{style:{padding:20,color:u.tx2},children:"Review Queue is loading\u2026"}))});case"qbimport":return e.jsxs("div",{children:[
 e.jsx("div",{style:{fontSize:18,fontWeight:800,marginBottom:4},children:"QuickBooks Import & Sync"}),
 e.jsx("div",{style:{fontSize:11,color:u.tx2,marginBottom:14},children:"Import your QuickBooks data — customers, invoices, expenses, vendors, and jobs. Export CSV files from QuickBooks and upload them here."}),
 
@@ -130737,7 +130737,7 @@ function fromItem(it, prev){
   l.docs = arr(it.files).filter(function(f){ return f && f.ref; }).map(function(f){ return { ref: f.ref, name: f.name, type: f.type, size: f.size, hash: f.hash, kind: f.kind, addendum: f.addendum }; }).concat(mineDocs);
   l.rawEmailRef = s(it.rawRef); l.emails = arr(it.emails).map(function(e){ return { subject: e.subject, from: e.from, fromName: e.fromName, date: e.date, rawRef: e.rawRef }; }).slice(-10);   /* patch PRIMESUB: + who sent it */
   l.sources = arr(it.sources).map(function(x){ return x.name; }); l.alsoOn = arr(it.alsoOn); l.inboxFlag = s(it.flag); l.addendumCount = it.addendumCount || 0;
-  l.matchNotes = arr(it.notes).slice(-6); l.needsReview = !!it.needsReview; l.origin = s(it.origin); if (window._gcBidMerge) { try { window._gcBidMerge.fromItem(l, it, prev); } catch (e) {} }   /* patch BIDMERGE */
+  l.matchNotes = arr(it.notes).slice(-6); l.needsReview = !!it.needsReview; l.origin = s(it.origin); if (it.envScope) { l.envScope = true; l.envWords = arr(it.envWords).slice(0, 8); }   /* patch LEADBOTH: the server's ☢️ tag (asbestos / lead / mold) */ if (window._gcBidMerge) { try { window._gcBidMerge.fromItem(l, it, prev); } catch (e) {} }   /* patch BIDMERGE */
   if (it.portal && it.portal.jobId) l.bidPortalJob = it.portal.jobId;
   if (it.hold && window._gcLeadHold) { try { window._gcLeadHold.fromItem(l, it, fresh); } catch (e) {} }   /* patch LEADHOLD: the server's hold / its 5 PM release */
   if (fresh && it.leadExtra && typeof it.leadExtra === 'object') Object.keys(it.leadExtra).forEach(function(k){ if (/^[a-zA-Z][a-zA-Z0-9]{0,40}$/.test(k)) l[k] = it.leadExtra[k]; });   /* patch WEB: a new website / Brain lead's own fields (owner GrayCo, commission source…), set once */
@@ -130993,7 +130993,7 @@ function normName(t){ return low(t).replace(/\b(re-?roof(ing)?|roof(ing)? replac
 function rsShown(l){ return isRs(l) && !l.converted && !l.rsRemoved && !l.doNotContact && l.status !== 'converted'; }
 function inboxLeads(){ return leads().filter(function(l){ return l && (l.inboxId || rsShown(l)) && l.stage !== 'Won' && l.stage !== 'Lost' && coLead(l); }); }
 /* patch LEADCO2 (owner 11/12, Mitigation picked: "these shouldn't be showing on mitigation, should be empty"): the inbox count / chips follow the Leads page's company */
-function coLead(l){ try { var C = window._gcCo; if (!C || !C.leadView || !C.ofLead) return true; var v = C.leadView(); return v === 'all' || C.ofLead(l) === v; } catch (e) { return true; } }
+function coLead(l){ try { var C = window._gcCo; if (!C || !C.leadView || !C.ofLead) return true; var v = C.leadView(); return v === 'all' || (C.passLead ? C.passLead(l, v) : C.ofLead(l) === v); } catch (e) { return true; } }   /* patch LEADBOTH: a GC bid with abatement counts on Construction and Environmental */
 function isNew(l){
   if (isRs(l)) return !l.pm && !l.pid && !l.jobId && (!l.stage || l.stage === 'New Lead') && Date.now() - Date.parse(l.createdAt || 0) < 14 * 86400000;
   return (l.inboxState === 'new' || !l.inboxState) && !l.pm && !l.pid;
@@ -139867,7 +139867,7 @@ function teamPeople(){
 }
 function personNums(u){
   var nm = low(u.name), ps = arr(W._crm && W._crm.projects).filter(function(p){ return p && !/complete|closed|lost|dead|cancel/i.test(s(p.status)) && (!W._gcCo || W._gcCo.passJob(p)) /* patch COLEAK2 */ && (low(p.pm) === nm || low(p.apm) === nm || low(p.superintendent) === nm || low(p.estimator) === nm); });
-  var ls = arr(W._crm && W._crm.leads).filter(function(l){ return l && !/won|lost|dead|converted|closed/i.test(s(l.stage) + ' ' + s(l.status)) && (!W._gcCo || W._gcCo.filter() === 'all' || W._gcCo.ofLead(l) === W._gcCo.filter()) /* patch COLEAK2 */ && (low(l.pm) === nm || low(l.estimator) === nm); });
+  var ls = arr(W._crm && W._crm.leads).filter(function(l){ return l && !/won|lost|dead|converted|closed/i.test(s(l.stage) + ' ' + s(l.status)) && (!W._gcCo || W._gcCo.filter() === 'all' || (W._gcCo.passLead ? W._gcCo.passLead(l, W._gcCo.filter()) : W._gcCo.ofLead(l) === W._gcCo.filter())) /* patch COLEAK2 + LEADBOTH */ && (low(l.pm) === nm || low(l.estimator) === nm); });
   var contract = ps.reduce(function(a, p){ var v = parseFloat(String(p.contract || p.contractAmount || 0).replace(/[^0-9.\-]/g, '')); return a + (isFinite(v) ? v : 0); }, 0);
   return { jobs: ps.length, contract: contract, leads: ls.length, bids: bidsOf(u.name).filter(function(l){ return !closed(l); }).length };
 }
@@ -167346,7 +167346,7 @@ function pidOk(pid){ var p = proj(pid); return p ? W._gcCo.passJob(p) : W._gcCo.
 function recOk(rec){ var C = W._gcCo; if (!rec) return C.filter() === 'construction'; if (C.valid(rec.companyId)) return rec.companyId === C.filter(); var pid = s(rec.jobId || rec.pid || rec.projectId); return pid ? pidOk(pid) : C.filter() === 'construction'; }
 function keyOk(id){
   var C = W._gcCo; id = bareKey(id); var m;
-  if ((m = /^td:hot1:asg:(.+)$/.exec(id))) { var ld = arr(crm().leads).filter(function(l){ return l && s(l.id) === m[1]; })[0]; return (ld ? C.ofLead(ld) : 'construction') === C.filter(); }
+  if ((m = /^td:hot1:asg:(.+)$/.exec(id))) { var ld = arr(crm().leads).filter(function(l){ return l && s(l.id) === m[1]; })[0]; return ld ? (C.passLead ? C.passLead(ld, C.filter()) : C.ofLead(ld) === C.filter()) : 'construction' === C.filter(); }   /* patch LEADBOTH */
   if ((m = /^ap2:(.+)$/.exec(id))) return recOk(queue().filter(function(x){ return x && s(x.id) === m[1]; })[0]);
   if ((m = /^eq:(.+)$/.exec(id))) return recOk(emailQ().filter(function(x){ return x && s(x.id) === m[1]; })[0]);
   if ((m = /^sub:(.+)$/.exec(id))) return recOk(subs().filter(function(x){ return x && (s(x.id) === m[1] || s(x.invId) === m[1]); })[0]);
@@ -174436,7 +174436,7 @@ function inScopeFor(l, sc){
   return false;
 }
 function inScope(l){ return inScopeFor(l, myScope()); }
-function scoped(){ var sc = myScope(), all = leads(), lv = W._gcCo ? (W._gcCo.leadView ? W._gcCo.leadView() : W._gcCo.filter()) : 'all'; if (W._gcCo && lv !== 'all') all = all.filter(function(l){ return W._gcCo.ofLead(l) === lv; });   /* LEADCO: All companies → Construction's leads */   /* patch MULTICO: the picked company */
+function scoped(){ var sc = myScope(), all = leads(), lv = W._gcCo ? (W._gcCo.leadView ? W._gcCo.leadView() : W._gcCo.filter()) : 'all'; if (W._gcCo && lv !== 'all') all = all.filter(function(l){ return W._gcCo.passLead ? W._gcCo.passLead(l, lv) : W._gcCo.ofLead(l) === lv; });   /* patch LEADBOTH: leadCos */   /* LEADCO: All companies → Construction's leads */   /* patch MULTICO: the picked company */
   return sc.kind === 'all' ? all : all.filter(function(l){ return inScopeFor(l, sc); }); }   /* the scope once per call (LEADPERF) */
 function officeAsg(){ try { return typeof W._gcIsOfficeFull === 'function' && !!W._gcIsOfficeFull() && !(W._gcVAS && W._gcVAS.active && W._gcVAS.active()); } catch (e) { return false; } }   /* patch OFFFIX1: the office assigns leads (her Approvals' "Assign this lead") */
 function canAssignAll(){ return (isAdmin() && myScope().kind === 'all' && myScope().why === 'admin') || officeAsg(); }
@@ -174680,7 +174680,7 @@ function cardHtml(l){
     + '<div class="m">' + (TYPE_IC[typeOf(l)] || '') + ' ' + esc(typeOf(l)) + (value(l) ? ' · <b>' + money(value(l)) + '</b>' : '') + '</div>'
     + '<div class="m" title="When it came in and where from">📥 ' + esc(shortDay(receivedMs(l)) || '—') + ' · ' + esc(srcOf(l)) + '</div>'   /* patch HOT2 */
     + '<div class="m" style="margin-top:4px">' + '<span class="gcl-av' + (a ? '' : ' none') + '" title="' + esc(a || 'Unassigned') + '">' + esc(a ? initials(a) : '!') + '</span>'
-    + roleChip(l) + (W._gcLeadHold ? W._gcLeadHold.chip(l) : '') /* patch LEADHOLD */ + prioChip(l) + dueChip(l) + speedChip(l) + (pl.files.length ? '<span class="gcl-chip" title="Plans stored in the CRM">📐 ' + pl.files.length + '</span>' : pl.links.length ? '<span class="gcl-chip warn" title="Plans by link">🔗 plans</span>' : '') + portalChip(l) + (bids ? '<span class="gcl-chip">' + esc(bids) + '</span>' : '') + '</div>'
+    + roleChip(l) + (W._gcLeadHold ? W._gcLeadHold.chip(l) : '') /* patch LEADHOLD */ + (W._gcCo && W._gcCo.bothChip ? W._gcCo.bothChip(l) : '') /* patch LEADBOTH */ + prioChip(l) + dueChip(l) + speedChip(l) + (pl.files.length ? '<span class="gcl-chip" title="Plans stored in the CRM">📐 ' + pl.files.length + '</span>' : pl.links.length ? '<span class="gcl-chip warn" title="Plans by link">🔗 plans</span>' : '') + portalChip(l) + (bids ? '<span class="gcl-chip">' + esc(bids) + '</span>' : '') + '</div>'
     + '<div class="m" style="margin-top:5px">' + (!contacted(l) && !closed(l) ? '<button type="button" class="gcl-mv" data-gcl-contact="' + esc(l.id) + '">✅ Contacted</button>' : '')
     + (canAssignAll() ? '<button type="button" class="gcl-mv gcl-asg" data-gcl-asg="' + esc(l.id) + '" title="Assign this lead to a PM / estimator">👤 ' + ((window._gcBidRole && window._gcBidRole.isBid(l)) ? (assignee(l) ? 'Change estimator' : 'Assign estimator') : (assignee(l) ? 'Reassign' : 'Assign to PM')) + '</button>' : '')   /* patch LROLEVIEW; BIDROLE */
     + '<select class="gcl-mv" data-gcl-move="' + esc(l.id) + '" aria-label="Move to stage">' + STAGES.map(function(st){ return '<option' + (st === stageOf(l) ? ' selected' : '') + '>' + st + '</option>'; }).join('') + '</select></div>'
@@ -174930,7 +174930,7 @@ function lcRowHtml(l, r, bc, del, now){
   var id = esc(l.id), cell = function(c, v, tip){ return '<td class="c-' + c + '"' + (tip ? ' title="' + esc(tip) + '"' : '') + '>' + (v ? esc(v) : '<span class="gcl-dash">—</span>') + '</td>'; };
   return '<tr class="gcl-lr' + bkRowCls(l) + '" data-gcl-id="' + id + '"><td class="c-name">' + bkChk(l)   /* patch LEADBULK */
     + '<button type="button" class="gclu-nb" data-gclu-note="' + id + '" title="Add a quick note" aria-label="Add a quick note">📝</button>'
-    + '<b>' + r.ic + ' ' + r.name + '</b> ' + roleChip(l) + (W._gcBidMerge ? W._gcBidMerge.chip(l) : '') /* patch BIDMERGE */ + (r.addr ? '<div class="gcl-addr">' + r.addr + (r.d != null ? ' <span class="gclu-mi">· ' + miTxt(r.d) + '</span>' : '') + '</div>' : '')
+    + '<b>' + r.ic + ' ' + r.name + '</b> ' + roleChip(l) + (W._gcBidMerge ? W._gcBidMerge.chip(l) : '') /* patch BIDMERGE */ + (W._gcCo && W._gcCo.bothChip ? W._gcCo.bothChip(l) : '') /* patch LEADBOTH */ + (r.addr ? '<div class="gcl-addr">' + r.addr + (r.d != null ? ' <span class="gclu-mi">· ' + miTxt(r.d) + '</span>' : '') + '</div>' : '')
     + (r.note ? '<div class="gclu-np" title="' + r.note.tip + '">📝 ' + r.note.t + '</div>' : '') + '</td>'
     + '<td class="c-due">' + lcDue(l, r, now) + '</td>'
     + '<td class="c-prio">' + lcPrio(l) + '</td>'
@@ -175743,6 +175743,8 @@ function drawerHtml0(l){
     + '<section><h4>Overview</h4>'
     + '<div class="kv"><span>Value:</span> ' + (value(l) ? money(value(l)) : '—') + ' &nbsp; <span>Came in:</span> ' + (born(l) ? new Date(born(l)).toLocaleString() : '—') + ' ' + speedChip(l) + '</div>'
     + '<div class="kv"><span>Address:</span> ' + esc([l.address, l.city, l.state, l.zip].filter(Boolean).join(', ') || '—') + '</div>'
+    + (function(){ try { var C = W._gcCo; if (!C || !C.leadCos || C.ofLead(l) === 'environmental') return ''; var on = C.leadCos(l).indexOf('environmental') > -1;   /* patch LEADBOTH: "Also show on Environmental" (admins; stored on this lead) */
+        return '<div class="kv"><span data-gc-lb-row="1">☢️ Environmental:</span> ' + (adm ? '<label style="cursor:pointer"><input type="checkbox" data-d="alsoenv"' + (on ? ' checked' : '') + '> Also show on Environmental</label>' : (on ? 'also on the Environmental Leads page' : '—')) + (on ? ' ' + C.bothChip(l) : '') + '</div>'; } catch (e) { return ''; } })()
     + '<div class="row"><select data-d="stage" aria-label="Stage">' + STAGES.map(function(st){ return '<option' + (st === stageOf(l) ? ' selected' : '') + '>' + st + '</option>'; }).join('') + '</select>'
     + (!contacted(l) && !closed(l) ? '<button type="button" class="b" data-d="contacted">✅ Contacted</button>' : '')
     + '<button type="button" class="b gold" data-d="won">🏆 Won</button><button type="button" class="b red" data-d="lost">✖ Lost</button>' + (classicRow(l.id) ? '<button type="button" class="b" data-d="editfull" title="Name, phone, e-mail, address, type, value … — the full lead form">✏️ Edit details</button><button type="button" class="b red" data-d="delfull">🗑 Delete…</button>' : '') + '</div>'   /* patch HOT2b */
@@ -175808,6 +175810,7 @@ function drawerChange(ev){
   var t = ev.target, k = t.getAttribute('data-d'), l = cur(); if (!l) return;
   if (k === 'stage') moveStage(l.id, t.value);
   if (k === 'kind') setKind(l.id, t.value);   /* patch LEADBULK */
+  if (k === 'alsoenv' && isAdmin()) { var onE = !!t.checked; patchLead(l.id, function(x){ var a0 = arr(x.alsoCos).filter(function(c){ return c !== 'environmental'; }); if (onE) a0.push('environmental'); x.alsoCos = a0; x.alsoCosBy = myName(); x.alsoCosAt = nowIso(); }).then(function(){ redraw(); }); toast(onE ? '☢️ Also on the Environmental Leads page' : 'Off the Environmental Leads page'); }   /* patch LEADBOTH */
   if (k === 'assign' && t.value) assign(l.id, t.value).then(function(){ openDrawer(l.id); });
   if (k === 'share') {
     var n = noteLines(l)[+t.getAttribute('data-i')], on = t.checked;
@@ -182871,12 +182874,18 @@ var SG_WEAK = [
 var SG_NEED = /\b(water|leak(s|ing|ed)?|roof(s|ing)?|storm|hail|wind\s+damage|tree|fire|smoke|flood(ed|ing)?|pipe|burst|mou?ld|insurance|claim|adjuster|estimate|inspection|repair|damage|ceiling|gutters?|siding|shingles?|project|bids?|renovat\w*|remodel\w*|building|sq\s*ft|square\s+feet)\b|\bmy\s+(house|home|roof|property|ceiling|basement|kitchen|bathroom|attic|garage)\b/i;
 /* an adjuster / a carrier / a claim: never a pitch on its own */
 var SG_TRUST = /\b(adjuster|adjustor|claim\s*(#|no\.?|number)|policy\s*(#|holder|number)|insured|state\s*farm|allstate|usaa|farmers|nationwide|liberty\s+mutual|progressive|travelers|geico|erie|auto[\s-]?owners|shelter\s+insurance|homesite|safeco)\b/i;
+/* patch LEADBOTH (owner 11/12: "in the automatic leads I want to see asbestos and mold leads"): a message about asbestos / lead paint /
+   mold / abatement work is never held as a sales pitch (the same words as _lib/envwords.js; mosquito / tax / weed abatement and
+   injection molds do not count) */
+var SG_ENV = /\basbestos\b|\bACMs?\b|\blead[\s-]*(based\s+)?paint\b|\bLBP\b|\blead\s+(abatement|hazard|remediation|inspection|testing|removal)\b|\bRRP\b|\bmou?ld\b|\bmicrobial\b|\bhaz[\s-]?mat\b|\bhazardous\s+materials?\b|\benvironmental\s+remediation\b|\babatement\b/i;
+var SG_ENV_NOT = /\b(mosquito|pest|weed|noise|tax|nuisance|odou?r|dust|rodent|vector|graffiti)\s+abatement\b|\b(injection|plastic|blow|die|casting|concrete|silicone|rubber)\s+mou?lds?\b|\bmou?lds?\s+(injection|making|maker|press)\b/ig;
 var SG_DOMAIN = /(seo|market|leads?|digital|media|growth|agency|funding|capital|ventures|outreach|automation)[\w-]*\.[a-z]{2,}$/i;
 function sgStr(v){ return v == null ? '' : String(v); }
 /* → '' (not sales) or the reasons, e.g. "AI agent / AI receptionist; SEO (score 9)" */
 function sgWhy(text, sender){
   var t = sgStr(text), snd = sender && typeof sender === 'object' ? sender : { email: sgStr(sender) };
   if (!t.replace(/\s+/g, '')) return '';
+  if (SG_ENV.test(t.replace(SG_ENV_NOT, ' '))) return '';   /* patch LEADBOTH: abatement / mold work is kept */
   var why = [], score = 0, strong = 0, i;
   for (i = 0; i < SG_STRONG.length; i++) if (SG_STRONG[i][1].test(t)) { why.push(SG_STRONG[i][0]); score += 3; strong++; }
   for (i = 0; i < SG_WEAK.length; i++) if (SG_WEAK[i][1].test(t)) { why.push(SG_WEAK[i][0]); score += 1; }
@@ -190194,7 +190203,7 @@ function insLeads(){
   return allLeads().filter(function(l){
     if (!l || l.deleted || /won|lost|closed|dead|archiv|convert/i.test(s(l.status) + ' ' + s(l.stage))) return false;
     if (l.projectId && claimFor(l.projectId)) return false;
-    try { var CO = W._gcCo; if (CO && CO.filter() !== 'all' && CO.ofLead(l) !== CO.filter()) return false; } catch (e) {}   /* patch COLEAK2: the picked company's insurance leads */
+    try { var CO = W._gcCo; if (CO && CO.filter() !== 'all' && !(CO.passLead ? CO.passLead(l, CO.filter()) : CO.ofLead(l) === CO.filter())) return false; } catch (e) {}   /* patch LEADBOTH */   /* patch COLEAK2: the picked company's insurance leads */
     try { if (LR && LR.classify) return LR.classify(l) === 'insurance'; } catch (e) {}
     return /insurance|claim|water damage|fire|storm|mitigation|restoration/i.test(s(l.type) + ' ' + s(l.desc || l.notes || l.message));
   });
@@ -207996,7 +208005,7 @@ function crm(){ return W._crm || {}; }
    a company's TV (open({ co }) or the #tv=mitigation link) counts that company's jobs, invoices, leads and people only;
    the Construction TV (no co) is unchanged. People: patch MITWS's membership rule (users[].companies; owners in all). */
 var TVCO = '';
-function coOk(kind, x){ if (!TVCO) return true; try { var C = W._gcCo; if (!C) return true; return (kind === 'job' ? C.ofJob(x) : kind === 'inv' ? C.ofInv(x) : C.ofLead(x)) === TVCO; } catch (e) { return true; } }
+function coOk(kind, x){ if (!TVCO) return true; try { var C = W._gcCo; if (!C) return true; if (kind === 'lead' && C.passLead) return C.passLead(x, TVCO);   /* patch LEADBOTH */ return (kind === 'job' ? C.ofJob(x) : kind === 'inv' ? C.ofInv(x) : C.ofLead(x)) === TVCO; } catch (e) { return true; } }
 function coUser(u){ if (!TVCO) return true; try { return W._gcMitWS && W._gcMitWS.inCo ? !!W._gcMitWS.inCo(u, TVCO) : true; } catch (e) { return true; } }
 function tvHashCo(){ var m = /^#\/?tv=([a-z]+)$/i.exec(location.hash || ''), c = m ? m[1].toLowerCase() : ssGet('gc_tv_co'); return /^(mitigation|environmental)$/.test(c) ? c : ''; }
 function projects(){ return arr(crm().projects).filter(function(p){ return p && p.id && !p.deleted && !p._deleted && coOk('job', p); }); }
@@ -212405,7 +212414,7 @@ var COF = { p: {}, l: {} };
 function coList(l, k){
   try { var C0 = W._gcCo, f = C0 ? C0.filter() : 'all'; if (!C0 || f === 'all' || !Array.isArray(l)) return l;
     var m = COF[k]; if (m.src === l && m.f === f && m.n === l.length) return m.out;
-    var o = l.filter(function(x){ return x && (k === 'p' ? C0.passJob(x) : C0.ofLead(x) === f); }); if (l.__dfSig) o.__dfSig = l.__dfSig;
+    var o = l.filter(function(x){ return x && (k === 'p' ? C0.passJob(x) : C0.passLead ? C0.passLead(x, f) : C0.ofLead(x) === f); });   /* patch LEADBOTH */ if (l.__dfSig) o.__dfSig = l.__dfSig;
     COF[k] = { src: l, f: f, n: l.length, out: o }; return o; } catch (e) { return l; }
 }
 var CACHE = { sig: '', at: 0, res: null, byPid: {}, ix: null };
@@ -218428,7 +218437,7 @@ function arr(v){ return Array.isArray(v) ? v : []; }
 function pairs(){
   var C = core(); if (!C) return [];
   var CO = W._gcCo, V = 'all'; try { V = CO && CO.leadView ? CO.leadView() : 'all'; } catch (e) {}   /* patch LEADCO2: only the picked company's leads (Mitigation shows none of Construction's bid pairs) */
-  var L = leads().filter(function(l){ return l && l.id && C.liveLead(l) && C.isBidLead(l) && (V === 'all' || !CO.ofLead || CO.ofLead(l) === V); });
+  var L = leads().filter(function(l){ return l && l.id && C.liveLead(l) && C.isBidLead(l) && (V === 'all' || !CO.ofLead || (CO.passLead ? CO.passLead(l, V) : CO.ofLead(l) === V)); });   /* patch LEADBOTH */
   var sure = {}; try { arr(W._gcBidMerge && W._gcBidMerge.groups()).forEach(function(g){ arr(g.ids).forEach(function(a){ arr(g.ids).forEach(function(b){ sure[a + '|' + b] = 1; }); }); }); } catch (e) {}
   var I = L.map(function(l){ return C.info(l); }), out = [];
   for (var i = 0; i < L.length; i++) for (var j = i + 1; j < L.length; j++) {
@@ -219282,17 +219291,46 @@ function ofJob(p){ if (!p) return 'construction'; if (MISFILED[String(p.id)] && 
    a lead's company = its own companyId when it is Mitigation / Environmental; otherwise what the lead is about — environmental work
    (asbestos, lead paint, mold, abatement …) → Environmental; an emergency / board-up / tarp / water extraction & dry-out / sewage /
    flood / smoke clean-up → Mitigation; anything else → Construction. (A rebuild after a fire stays Construction.) */
-var ENV_RE = /\benvironmental\b|asbestos|\blead[- ]?(paint|based|abatement|safe|rrp|hazard|test(ing)?|inspection|risk)\b|\bmou?ld\b|abatement|hazmat|\bradon\b|biohazard|meth[- ]?lab|trauma clean/i;
+var ENV_RE = /\benvironmental\b|asbestos|\blead[- ]?(paint|based|abatement|safe|rrp|hazard|test(ing)?|inspection|risk)\b|\bLBP\b|\bRRP\b|\bACM\b|\bmou?ld\b|microbial|abatement|haz[- ]?mat|hazardous materials?|\bradon\b|biohazard|meth[- ]?lab|trauma clean/i;   /* patch LEADBOTH: + LBP / RRP / ACM / microbial / hazardous materials (the scanners' words: W._gcEnvWords) */
 var MIT_RE = /\bemergenc|board[- ]?up|\btarp(ing)?\b|water (damage|extraction|removal|mitigation|in (my|the))|\bflood|sewage|sewer back|dry[- ]?out|drying|dehumidif|burst|pipe (burst|broke|leak)|smoke (damage|clean)|soot|\bmitigation\b/i;
 function leadText(l){ var c = l.contact && typeof l.contact === 'object' ? l.contact : {}; return [l.type, l.leadKind, l.service, l.workType, l.title, l.name && l.title ? '' : '', l.scope, l.detail, l.notes && typeof l.notes === 'string' ? l.notes.slice(0, 400) : '', l.message, l.description, c.message].map(function(v){ return v == null ? '' : String(v); }).join(' '); }
 function ofLead(l){
   if (!l) return 'construction';
   if (l.companyId === 'mitigation' || l.companyId === 'environmental') return l.companyId;
-  var t = leadText(l);
-  if (/^environmental$/i.test(String(l.type || l.leadKind || '')) || ENV_RE.test(t)) return 'environmental';
+  if (l.companyId === 'construction' && l.companyIdBy) return 'construction';   /* patch LEADBOTH: filed under Construction on purpose (a permit's GC job …) */
+  var t = leadText(l), bid = gcBid(l, t);
+  if (/^environmental$/i.test(String(l.type || l.leadKind || '')) || l.envScope === true || ENV_RE.test(bid ? t + ' ' + s(l.name) : t)) return bid ? 'construction' : 'environmental';   /* a bid's name is its project title */   /* patch LEADBOTH: a GC / public bid job stays Construction's (leadCos adds Environmental) */
   if (l.emergency === true || /^emergency$/i.test(String(l.urgency || '')) || MIT_RE.test(t)) return 'mitigation';
   return 'construction';
 }
+/* patch LEADBOTH (owner 11/12: "On Construction I want asbestos and lead jobs that are public, because there are also GC jobs when those
+   are around, but also put those leads in Environmental leads too"; "in the automatic leads I want to see asbestos and mold leads"):
+   a GC / public bid lead (bid board invite, bids@ e-mail, a GC / bid due / bid number on it — BIDMERGE's isBidLead) about asbestos /
+   lead / mold abatement is Construction's lead (ofLead) AND shows on the Environmental Leads page. A residential / direct one stays
+   Environmental only. leadCos(l) = every company whose Leads page lists the lead; lead.alsoCos (an admin's "Also show on
+   Environmental" tick, stored on that lead) replaces the automatic extra when it is set. passLead(l, view) = the one test. */
+function gcBid(l, t){
+  if (!l) return false;
+  if (l.websiteLead || l.textMessage || l.rsLeadId || /^(website|brain|portal|partner|referral|lsa|google)$/i.test(s(l.origin))) return false;
+  if (/^(residential|homeowner|insurance)$/i.test(s(l.leadKind))) return false;
+  try { var B = W._gcBidMergeCore; if (B && B.isBidLead && l.id && B.isBidLead(l)) return true; } catch (e) {}
+  if (s(l.gc) || s(l.dueToCompany) || s(l.bidNumber) || s(l.bidDue) || s(l.bidRole) || s(l.inboxId) || arr(l.gcs).length) return true;
+  if (/\bbids?@|bid\s*board|buildingconnected|planhub|constructconnect|isqft|plan\s*room/i.test(s(l.source) + ' ' + s(l.email) + ' ' + s(l.from))) return true;
+  return /\(\s*GC\s*:|\bgeneral contractor\s*:|\bbid (due|no\.?|number|date)\b|\bITB\b|\binvitation to bid\b|\bRFP\b/i.test((t == null ? leadText(l) : t) + ' ' + s(l.name));
+}
+function envOf(l){ if (!l) return false; var t = leadText(l); return /^environmental$/i.test(String(l.type || l.leadKind || '')) || l.envScope === true || ENV_RE.test(gcBid(l, t) ? t + ' ' + s(l.name) : t); }
+function leadCos(l){
+  var c = ofLead(l), out = [c];
+  var extra = Array.isArray(l && l.alsoCos) ? arr(l.alsoCos) : (c === 'construction' && envOf(l) ? ['environmental'] : []);
+  extra.forEach(function(x){ x = s(x); if (valid(x) && out.indexOf(x) < 0) out.push(x); });
+  return out;
+}
+function passLead(l, v){ if (v == null) v = leadView(); return v === 'all' || leadCos(l).indexOf(v) > -1; }
+/* the chip a shared lead wears: on Construction / All "☢️ abatement scope", on Environmental "☢️ also Environmental" */
+function bothChip(l, v){
+  try { var cs = leadCos(l); if (cs.length < 2 || cs.indexOf('environmental') < 0) return ''; if (v == null) v = leadView();
+    var lab = v === 'environmental' ? '☢️ also Environmental' : '☢️ abatement scope', tip = v === 'environmental' ? 'A ' + get(cs[0]).short + ' lead (GC / public bid) — also listed here because it has abatement work' : 'Asbestos / lead / mold abatement in this bid — it is also on the Environmental Leads page';
+    return '<span class="gc-lb-chip" data-gc-lb="' + (v === 'environmental' ? 'env' : 'con') + '" title="' + esc(tip) + '" style="display:inline-flex;align-items:center;padding:0 6px;border-radius:999px;font:700 10.5px/1.6 Inter,Arial,sans-serif;color:#065f46;background:#d1fae5;border:1px solid #6ee7b7;white-space:nowrap;margin-left:4px">' + esc(lab) + '</span>'; } catch (e) { return ''; } }
 /* the Leads page: one company picked → its leads; "All companies" → Construction's leads only, unless "Show every company's leads" is on */
 var LK_ALL = 'gc_co_leads_all';
 function leadsAll(){ try { return localStorage.getItem(LK_ALL) === '1'; } catch (e) { return false; } }
@@ -219344,13 +219382,13 @@ function filter(){ if (!canSwitch()) return lockedCo(); try { var f = localStora
 function setFilter(f){ if (!canSwitch()) f = lockedCo(); else if (f !== 'all' && valid(f) && myCos().indexOf(f) < 0) f = 'all'; try { localStorage.setItem(FK, f === 'all' || valid(f) ? f : 'all'); } catch (e) {} paintAll(); try { W.dispatchEvent(new CustomEvent('gc-co-filter', { detail: filter() })); } catch (e) {} }
 /* a job shared with a company (job.sharedWith: ['environmental']) shows in that company's lists and photos — its money stays with its own company */
 function passJob(p){ var f = filter(); if (f === 'all') return true; return ofJob(p) === f || arr(p && p.sharedWith).indexOf(f) > -1; }
-function pass(x, kind){ var f = filter(); if (f === 'all') return true; var c = kind === 'job' ? ofJob(x) : kind === 'lead' ? ofLead(x) : kind === 'inv' ? ofInv(x) : of(x); return c === f; }
+function pass(x, kind){ var f = filter(); if (f === 'all') return true; var c = kind === 'job' ? ofJob(x) : kind === 'lead' ? ofLead(x) : kind === 'inv' ? ofInv(x) : of(x); return c === f || (kind === 'lead' && passLead(x, f)); }   /* patch LEADBOTH */
 function badge(id, small){ var c = get(id); return '<span class="gc-co-b" data-co="' + esc(c.id) + '" style="display:inline-flex;align-items:center;gap:3px;padding:' + (small ? '0 6px' : '1px 8px') + ';border-radius:999px;font:700 ' + (small ? '10.5px' : '11.5px') + '/1.6 Inter,Arial,sans-serif;color:#fff;background:' + esc(c.color) + ';white-space:nowrap">' + esc(c.icon) + ' ' + esc(c.short) + '</span>'; }
 /* a company's letterhead lines (documents): name, address, phone, license, EIN */
 function letterhead(id){ var c = get(id), a = c.address; if (!a && c.id === 'construction') { try { a = W._gcCompanyAddress ? W._gcCompanyAddress() : ''; } catch (e) {} } return { legal: c.legal, short: c.short, address: a, phone: c.phone, email: c.email, license: c.license, ein: c.ein, logo: c.logo || '/portal-logo.png', prefix: c.prefix }; }
 var paints = [];
 function paintAll(){ paints.forEach(function(f){ try { f(); } catch (e) {} }); }
-W._gcCo = { userCos: userCos, userIn: userIn, canSwitch: canSwitch, myCos: myCos, allCos: allCos, leadView: leadView, leadsAll: leadsAll, setLeadsAll: setLeadsAll, list: list, get: get, valid: valid, of: of, ofJob: ofJob, ofLead: ofLead, ofInv: ofInv, jobById: jobById, byType: byType,
+W._gcCo = { userCos: userCos, userIn: userIn, canSwitch: canSwitch, myCos: myCos, allCos: allCos, leadView: leadView, leadCos: leadCos, passLead: passLead, bothChip: bothChip, gcBid: gcBid, ENV_RE: ENV_RE, leadsAll: leadsAll, setLeadsAll: setLeadsAll, list: list, get: get, valid: valid, of: of, ofJob: ofJob, ofLead: ofLead, ofInv: ofInv, jobById: jobById, byType: byType,
   filter: filter, setFilter: setFilter, pass: pass, passJob: passJob, badge: badge, letterhead: letterhead, save: save, pull: pull, onPaint: function(f){ paints.push(f); }, DEF: DEF };
 if (D.readyState === 'loading') D.addEventListener('DOMContentLoaded', function(){ setTimeout(pull, 1500); }); else setTimeout(pull, 1500);
 })(window);
@@ -219513,12 +219551,12 @@ function stamp(kind){
   var list = kind === 'p' ? (W._crm && W._crm.projects) : kind === 'e' ? (W._crm && W._crm.expenses) : (W._crm && W._crm.leads);
   if (!Array.isArray(list)) return;
   if (!SEEN[kind]) { SEEN[kind] = {}; list.forEach(function(x){ if (x && x.id != null) SEEN[kind][x.id] = 1; }); return; }
-  var f = GEST.co, fix = [];
-  list.forEach(function(x){ if (!x || x.id == null || SEEN[kind][x.id]) return; SEEN[kind][x.id] = 1; if (C.valid(f) && !C.valid(x.companyId) && madeHere(x) && !(kind === 'e' && (x.pid || x.projectId || x.jobId))) fix.push(x.id); });   /* QA B8: an expense with no job follows the picked company; one on a job follows the job */
+  var f = GEST.co, fix = [], coFor = {};
+  list.forEach(function(x){ if (!x || x.id == null || SEEN[kind][x.id]) return; SEEN[kind][x.id] = 1; if (C.valid(f) && !C.valid(x.companyId) && madeHere(x) && !(kind === 'e' && (x.pid || x.projectId || x.jobId))) { fix.push(x.id); if (kind === 'p') { try { var bl = W._gcLeadBoth && W._gcLeadBoth.leadOfJob ? W._gcLeadBoth.leadOfJob(x) : null; if (bl && C.leadCos(bl).length > 1) coFor[x.id] = C.ofLead(bl); } catch (e2) {} } } });   /* patch LEADBOTH: a job from a GC bid with abatement stays its lead's company (Construction), whatever is picked */   /* QA B8: an expense with no job follows the picked company; one on a job follows the job */
   if (!fix.length) return;
   var at = new Date().toISOString(), set = kind === 'p' ? W._setProjects : kind === 'e' ? W._setExpenses : W._setLeads;
   if (typeof set !== 'function') return;
-  try { set(function(prev){ return Array.isArray(prev) ? prev.map(function(x){ return x && fix.indexOf(x.id) > -1 && !C.valid(x.companyId) ? Object.assign({}, x, { companyId: f, updatedAt: at }) : x; }) : prev; }); } catch (e) {}
+  try { set(function(prev){ return Array.isArray(prev) ? prev.map(function(x){ return x && fix.indexOf(x.id) > -1 && !C.valid(x.companyId) ? Object.assign({}, x, { companyId: coFor[x.id] || f, updatedAt: at }) : x; }) : prev; }); } catch (e) {}
 }
 (W.__GC_NATIVE_SETINTERVAL__ || W.setInterval).call(W, function(){ try { stamp('p'); stamp('l'); stamp('e'); } catch (e) {} }, 2000);
 /* QA B5 (11/11): with one company picked, every schedule list that goes through _gcSchedVisible (the Dashboard cards, the desk home,
@@ -223284,7 +223322,7 @@ function settingsHtml(){
   var c = S.settings || {}, inc = c.include || {}, labels = S.incLabels || [];
   if (!labels.length) labels = Object.keys(inc).map(function(k){ return [k, k]; });
   var uses = c.uses || {}, ul = S.useLabels || [];
-  return '<div id="gc-pj-set"><h4>⚙ Which permits show here</h4><div class="mut" style="margin:0 0 6px">Default (owner 11/12): large commercial jobs only — $1,000,000 and up, no residential.</div><div class="g">' + labels.map(function(l){ return '<label><input type="checkbox" data-pj-inc="' + esc(l[0]) + '"' + (inc[l[0]] ? ' checked' : '') + '> ' + esc(l[1]) + '</label>'; }).join('') + '</div>'
+  return '<div id="gc-pj-set"><h4>⚙ Which permits show here</h4><div class="mut" style="margin:0 0 6px">Default (owner 11/12): large commercial jobs only — $1,000,000 and up, no residential — plus ☢️ asbestos / lead / mold permits at any value (Environmental).</div><div class="g">' + labels.map(function(l){ return '<label><input type="checkbox" data-pj-inc="' + esc(l[0]) + '"' + (inc[l[0]] ? ' checked' : '') + '> ' + esc(l[1]) + '</label>'; }).join('') + '</div>'
     + (ul.length ? '<div style="margin-top:6px"><b>Kinds of building</b> <span class="mut">(untick to leave one out)</span><div class="g">' + ul.map(function(u){ return '<label><input type="checkbox" data-pj-use="' + esc(u[0]) + '"' + (uses[u[0]] !== false ? ' checked' : '') + '> ' + esc(u[1]) + '</label>'; }).join('') + '</div></div>' : '')
     + '<div class="g" style="margin-top:6px"><label>Minimum job value ($; repair words, roofs and demolitions — when ticked — show at any value)<br><input type="number" min="0" step="1000" data-pj-set="minValue" value="' + esc(c.minValue) + '"></label>'
     + '<label>Only permits from the last … days<br><input type="number" min="1" max="90" data-pj-set="maxAgeDays" value="' + esc(c.maxAgeDays) + '"></label></div>'
@@ -223486,6 +223524,11 @@ function leadOf(x){
     created: at.slice(0, 10), createdAt: at, updatedAt: at, addedBy: me(), note: note,
     permitKey: x.key, permitNumber: s(x.number), permitSource: x.src, permitLink: s(x.link), permitContractor: s(x.contractor), permitContractorPhone: s(x.contractorPhone), permitContractorEmail: s(x.contractorEmail) };
   if (co) { l.companyId = co; l.companyIdBy = me() || 'permits'; }
+  /* patch LEADBOTH: a ☢️ permit (asbestos / lead / mold) is Environmental's lead; a commercial / multifamily one (a GC job) is Construction's
+     and also on the Environmental Leads page */
+  if (x.category === 'environmental' || arr(x.envWords).length) { l.envScope = true; l.envWords = arr(x.envWords).slice(0, 8); }
+  if (arr(x.cos).length > 1 && arr(x.cos).indexOf('environmental') > -1) { l.companyId = 'construction'; l.companyIdBy = me() || 'permits'; l.alsoCos = ['environmental']; l.type = l.projectType = 'Commercial'; }
+  else if (x.category === 'environmental' && !co) { l.companyId = 'environmental'; l.companyIdBy = me() || 'permits'; l.type = l.projectType = 'Environmental'; }
   if (x.lat && x.lon) { l.lat = +x.lat; l.lng = +x.lon; }
   return l;
 }
@@ -225678,7 +225721,7 @@ function emptyMit(){ return '<div class="mws-empty"><b>No drying jobs yet.</b><b
 function emergLeads(co){
   var L = []; try { L = typeof W._gcLaLeads === 'function' ? arr(W._gcLaLeads()) : []; } catch (e) {} if (!L.length) L = arr(crm().leads);
   var isE = function(l){ try { if (W._gcLeadHoldCore && W._gcLeadHoldCore.isEmergency) return !!W._gcLeadHoldCore.isEmergency(l); } catch (e) {} return l.emergency === true || /^emergency$/i.test(s(l.urgency)); };
-  return L.filter(function(l){ return l && !l.deleted && !l.converted && !/won|lost|dead|declined|converted|spam/i.test(s(l.stage) + ' ' + s(l.status)) && isE(l) && (function(){ try { return !W._gcCo || W._gcCo.ofLead(l) === co; } catch (e) { return true; } })(); });
+  return L.filter(function(l){ return l && !l.deleted && !l.converted && !/won|lost|dead|declined|converted|spam/i.test(s(l.stage) + ' ' + s(l.status)) && isE(l) && (function(){ try { return !W._gcCo || (W._gcCo.passLead ? W._gcCo.passLead(l, co) : W._gcCo.ofLead(l) === co); } catch (e) { return true; } })(); });   /* patch LEADBOTH */
 }
 var V = {};
 V.mws_jobs = function(el){
@@ -226116,7 +226159,7 @@ W._gcCoItem = function(it){
   if (C.valid(r.companyId)) return r.companyId === f;
   var pid = s(it.pid || r.pid || r.jobId); if (pid) return pidOk(pid);
   var lid = s(r.leadId || it.leadId), m = !lid && /(?:^|[|:])lead[|:]([^|:]+)/i.exec(s(it.key) + ' ' + s(it.thing)); if (m) lid = m[1];
-  var ld = lid ? leadById(lid) : null; if (ld) return C.ofLead(ld) === f;
+  var ld = lid ? leadById(lid) : null; if (ld) return C.passLead ? C.passLead(ld, f) : C.ofLead(ld) === f;   /* patch LEADBOTH */
   return f === 'construction';
 };
 /* a list of job records (change orders, punch items, estimates …): a record on a job follows the job; one with no job its own stamp, else Construction */
@@ -226129,7 +226172,7 @@ W._gcCoCust = function(c){
   if (C.valid(c.companyId)) return c.companyId === f;
   var n = low(c.name), id = s(c.id), any = false, hit = false;
   arr(crm().projects).forEach(function(p){ if (!p || hit) return; if ((n && low(p.client) === n) || (id && (s(p.customerId) === id || s(p.custId) === id))) { any = true; if (C.passJob(p)) hit = true; } });
-  if (!hit) arr(crm().leads).forEach(function(l){ if (!l || hit) return; if ((n && (low(l.client) === n || low(l.name) === n)) || (id && s(l.customerId) === id)) { any = true; if (C.ofLead(l) === f) hit = true; } });
+  if (!hit) arr(crm().leads).forEach(function(l){ if (!l || hit) return; if ((n && (low(l.client) === n || low(l.name) === n)) || (id && s(l.customerId) === id)) { any = true; if (C.passLead ? C.passLead(l, f) : C.ofLead(l) === f) hit = true; } });   /* patch LEADBOTH */
   return hit || (!any && f === 'construction');
 };
 /* ── drop-downs: people and jobs of the picked company only (the one already chosen stays) ── */
@@ -226347,5 +226390,63 @@ async function pmBonusFor(prof, from, to){
 W._gcPayEm = { afterHours: afterHours, isEmergencyJob: isEmergencyJob, clockTap: clockTap, punchIn: punchIn, punchOut: punchOut, openPunch: openPunch,
   applyRaise: applyRaise, pmBonusFor: pmBonusFor, historyHtml: historyHtml, bust: bust, DAY: DAY };
 try { console.log('[GC] 🚨 Emergency call-out 1.5× + 🎖 cert raises / 🏆 PM bonus on paychecks (patch PAYEM): _gcPayEm'); } catch (e) {}
+})(window);
+</script>
+<script id="gc-patch-leadboth">
+/* patch LEADBOTH (owner 11/12: "On Construction I want asbestos and lead jobs that are public, because there are also GC jobs when
+   those are around, but also put those leads in Environmental leads too"): the read side lives in the multico core
+   (_gcCo.leadCos / passLead / bothChip). This block: a job made from such a lead stays Construction's — and an admin is offered
+   "🔗 Share with Environmental" (job.sharedWith, patch MULTICO-LINK) so it also shows on Environmental's lists.
+   W._gcLeadBoth = { leadOfJob(job), both(lead), offer(jobId), check() } */
+(function(W){
+'use strict';
+var D = W.document;
+function s(v){ return v == null ? '' : String(v); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function C(){ return W._gcCo || null; }
+function admin(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()) || (typeof W._gcIsOfficeFull === 'function' && !!W._gcIsOfficeFull()); } catch (e) { return false; } }
+function leads(){ return arr(W._crm && W._crm.leads); }
+function jobs(){ return arr(W._crm && W._crm.projects); }
+function leadOfJob(p){
+  if (!p) return null; var lid = s(p.leadId || p.fromLeadId || p.fromLead || p.convertedFrom), id = s(p.id), L = leads(), i;
+  if (lid) for (i = 0; i < L.length; i++) if (L[i] && s(L[i].id) === lid) return L[i];
+  if (id) for (i = 0; i < L.length; i++) { var l = L[i]; if (l && (s(l.projectId) === id || s(l.convertedTo) === id || s(l.jobId) === id || s(l.pid) === id)) return l; }
+  return null;
+}
+function both(l){ try { var c = C(); return !!(c && c.leadCos && l && c.leadCos(l).length > 1 && c.leadCos(l).indexOf('environmental') > -1); } catch (e) { return false; } }
+var AK = 'gc_leadboth_asked';
+function asked(){ try { return JSON.parse(localStorage.getItem(AK) || '{}') || {}; } catch (e) { return {}; } }
+function setAsked(id){ try { var a = asked(); a[id] = Date.now(); var k = Object.keys(a); if (k.length > 200) k.slice(0, k.length - 200).forEach(function(x){ delete a[x]; }); localStorage.setItem(AK, JSON.stringify(a)); } catch (e) {} }
+function wants(p){ var c = C(); if (!c || !p || !p.id) return false; var l = leadOfJob(p); return !!l && both(l) && c.ofJob(p) !== 'environmental' && arr(p.sharedWith).indexOf('environmental') < 0; }
+function close(){ var b = D.getElementById('gc-lb-offer'); if (b) b.remove(); }
+function offer(pid){
+  var c = C(), p = c && c.jobById ? c.jobById(pid) : null; if (!p || !wants(p) || !admin()) return false;
+  close(); var b = D.createElement('div'); b.id = 'gc-lb-offer'; b.setAttribute('role', 'dialog'); b.setAttribute('aria-label', 'Share with Environmental'); b.setAttribute('data-gc-keep', '1'); b.setAttribute('data-pid', s(p.id));
+  b.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:99990;max-width:min(380px,calc(100vw - 32px));background:#fff;border:1px solid #6ee7b7;border-left:5px solid #059669;border-radius:12px;box-shadow:0 12px 32px rgba(15,23,42,.25);padding:12px 14px;font:14px Inter,Arial,sans-serif;color:#0f172a';
+  b.innerHTML = '<div style="font-weight:800;margin-bottom:4px">☢️ Abatement work on this job</div><div style="font-size:13px;color:#334155;margin-bottom:10px"><b>' + esc(p.name || 'This job') + '</b> came from a GC bid with asbestos / lead / mold work. It stays a ' + esc(c.get(c.ofJob(p)).short) + ' job — share it so it also shows on Environmental\'s lists (its money stays here).</div>'
+    + '<div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" data-lb-share style="background:#059669;color:#fff;border:0;border-radius:8px;padding:8px 12px;font:700 13px Inter,Arial,sans-serif;cursor:pointer">🔗 Share with Environmental</button><button type="button" data-lb-no style="background:#fff;border:1px solid #cbd5e1;border-radius:8px;padding:8px 12px;font:600 13px Inter,Arial,sans-serif;cursor:pointer">Not now</button></div>';
+  D.body.appendChild(b); return true;
+}
+D.addEventListener('click', function(e){
+  var t = e.target && e.target.closest ? e.target.closest('#gc-lb-offer [data-lb-share], #gc-lb-offer [data-lb-no]') : null; if (!t) return;
+  var b = D.getElementById('gc-lb-offer'), pid = b ? b.getAttribute('data-pid') : ''; e.preventDefault();
+  setAsked(pid); close();
+  if (t.hasAttribute('data-lb-share')) { try { var p = C().jobById(pid); if (p && arr(p.sharedWith).indexOf('environmental') < 0 && W._gcCoLink) W._gcCoLink.share(pid, 'environmental'); } catch (x) {} }
+}, true);
+/* new jobs since the page loaded (made here or synced in a moment ago) — offered once per job, admins only */
+var SEEN = null, SEEN_AT = 0;
+function check(){
+  if (!W._crm || !Array.isArray(W._crm.projects)) return; var J = jobs();
+  if (!SEEN) { SEEN = {}; SEEN_AT = Date.now(); J.forEach(function(p){ if (p && p.id != null) SEEN[p.id] = 1; }); return; }
+  if (!admin() || D.getElementById('gc-lb-offer')) { J.forEach(function(p){ if (p && p.id != null && !SEEN[p.id] && (!admin() || !wants(p))) SEEN[p.id] = 1; }); return; }
+  var a = asked();
+  for (var i = 0; i < J.length; i++) { var p = J[i]; if (!p || p.id == null || SEEN[p.id]) continue; if (!leadOfJob(p) && Date.now() - Date.parse(s(p.createdAt || p.created)) < 120000) continue;   /* its lead link may land a moment later */
+    SEEN[p.id] = 1; var ca = s(p.createdAt || p.savedAt), made = ca.length > 10 ? Date.parse(ca) : NaN;
+    if (isFinite(made) ? Date.now() - made > 15 * 60000 : Date.now() - SEEN_AT < 20000) continue;   /* a job made just now (not the list loading in) */
+    if (a[p.id] || !wants(p)) continue; if (offer(p.id)) break; }
+}
+(W.__GC_NATIVE_SETINTERVAL__ || W.setInterval).call(W, function(){ try { check(); } catch (e) {} }, 2500);
+W._gcLeadBoth = { leadOfJob: leadOfJob, both: both, offer: offer, check: check, wants: wants };
 })(window);
 </script>
