@@ -18853,9 +18853,21 @@ function getAll(){
    The input is never moved now. The dropdown floats over the page and is put
    where it needs to be when it opens, so the box he is typing in is never
    touched. */
+/* patch PLANREQ-G (owner 11/12, 📂 Manage → 📝 Details: "this came up, won't go away"): (a) a box inside [data-gc-noac] (the bid portal's
+   Manage / Details / Put on bid portal / invite sheets, …) never gets this dropdown; (b) any open dropdown closes on Escape, on a click
+   anywhere else, and as soon as its box is gone or hidden (a redraw used to leave it floating for up to 5 s, and a new one opened on the new box). */
+function acHideAll(except){ try{ document.querySelectorAll("._ac-list.show").forEach(function(l){ if(l!==except) l.classList.remove("show"); }); }catch(e){} }
+if(!window.__gcAcClose){ window.__gcAcClose=true;
+  document.addEventListener("keydown",function(e){ if(e.key==="Escape") acHideAll(); },true);
+  document.addEventListener("mousedown",function(e){ var t=e.target; var l=t&&t.closest?t.closest("._ac-list"):null; acHideAll(l||(t&&t._acList)||null); },true);
+  setInterval(function(){ try{ document.querySelectorAll("._ac-list.show").forEach(function(l){ var i=l._acInput; if(!i||!document.contains(i)||!i.offsetParent||(i.closest&&i.closest("[data-gc-noac]"))) l.classList.remove("show"); }); }catch(e){} },400);
+}
+function noAc(inp){ try{ return !!(inp.closest&&inp.closest("[data-gc-noac]")); }catch(e){ return false; } }
 function createAC(input){
   if(input._acInit)return;input._acInit=true;
+  if(noAc(input))return;   /* patch PLANREQ-G */
   var list=document.createElement("div");list.className="_ac-list";
+  list._acInput=input; input._acList=list;
   document.body.appendChild(list);
   function place(){
     try{
@@ -18871,7 +18883,7 @@ function createAC(input){
   }, 5000);
   var selIdx=-1,filtered=[];
   function show(q){
-    if(!q||q.length<1){list.classList.remove("show");return}
+    if(!q||q.length<1||noAc(input)||!document.contains(input)){list.classList.remove("show");return}   /* patch PLANREQ-G */
     var all=getAll(),ql=q.toLowerCase();
     filtered=all.filter(function(it){return(it.name||"").toLowerCase().indexOf(ql)>-1||(it.sub||"").toLowerCase().indexOf(ql)>-1||(it.extra||"").toLowerCase().indexOf(ql)>-1||(it.phone||"").toLowerCase().indexOf(ql)>-1||(it.email||"").toLowerCase().indexOf(ql)>-1}).slice(0,20);
     if(!filtered.length){list.classList.remove("show");return}
@@ -18904,6 +18916,7 @@ function scanInputs(){
   document.querySelectorAll('input[type="text"],input:not([type])').forEach(function(inp){
     /* patch OFFICEFIX: the box with the cursor too — createAC never moves it now */
     if(inp._acInit||inp.type==="date"||inp.type==="number"||inp.type==="file"||inp.type==="checkbox"||inp.type==="radio"||inp.type==="hidden"||inp.type==="password"||inp.type==="email")return;
+    if(noAc(inp)){ inp._acInit=true; return; }   /* patch PLANREQ-G: opted out (the bid portal's own sheets) */
     var ph=(inp.placeholder||"").toLowerCase(),pt=(inp.closest&&inp.closest("label,div")?inp.closest("label,div").textContent:"").toLowerCase();
     var triggers=["customer","client","sub","vendor","contractor","project","assign","pm","manager","company","contact","owner","general contractor","name"];
     if(triggers.some(function(t){return ph.indexOf(t)>-1||pt.indexOf(t)>-1}))createAC(inp);
@@ -178537,7 +178550,7 @@ function bidsTable(list, jobId, opts){
 /* ── modal ── */
 function modal(html){
   closeModal(); css();
-  var m = D.createElement('div'); m.id = 'gcsys-modal'; m.setAttribute('data-gc-keep', '1'); m.innerHTML = '<div class="box gcsys" role="dialog">' + html + '</div>';
+  var m = D.createElement('div'); m.id = 'gcsys-modal'; m.setAttribute('data-gc-keep', '1'); m.setAttribute('data-gc-noac', '1'); m.innerHTML = '<div class="box gcsys" role="dialog">' + html + '</div>';   /* patch PLANREQ-G */
   m.addEventListener('click', function(ev){ if (ev.target === m) closeModal(); });
   m.addEventListener('click', onClick);
   D.body.appendChild(m); return m;
@@ -178591,6 +178604,7 @@ function freshFrame(){ try { var m = D.getElementById('gc-sys-bp-mount'), fb = m
   if (fb.style.display === 'none') fb.innerHTML = ''; else f.src = f.getAttribute('src'); } catch (e) { warn(e); } }
 function drawBP(){
   var m = D.getElementById('gc-sys-bp-mount'); if (!m) return;
+  m.setAttribute('data-gc-noac', '1');   /* patch PLANREQ-G: the bid portal tab's own boxes (search, the inline due date) — no app-wide name dropdown */
   css();
   if (!m.__sys) { m.__sys = 1; m.addEventListener('click', onClick); m.addEventListener('input', function(ev){ if (ev.target.getAttribute('data-sys') === 'q') { BP.q = ev.target.value; drawRows(); } }); }
   if (!m.querySelector('.gcsys')) m.innerHTML = (bpFullOk() ? '<div class="gcsys gcsys-bpsw" style="padding-bottom:0;max-width:none"><div class="bar" role="group" aria-label="Bid portal view" style="margin:0 0 8px">'
@@ -179076,8 +179090,9 @@ function open(jobId, tab){
   var sh = D.getElementById('gcsys2-shade'); if (!sh) { sh = D.createElement('div'); sh.id = 'gcsys2-shade'; sh.setAttribute('data-gc-keep', '1'); sh.onclick = close; D.body.appendChild(sh); }
   var d = D.getElementById('gcsys2');
   if (!d) {
-    d = D.createElement('div'); d.id = 'gcsys2'; d.setAttribute('data-gc-keep', '1'); d.setAttribute('role', 'dialog'); d.setAttribute('aria-label', 'Manage bid job');
+    d = D.createElement('div'); d.id = 'gcsys2'; d.setAttribute('data-gc-keep', '1'); d.setAttribute('data-gc-noac', '1'); d.setAttribute('role', 'dialog');   /* patch PLANREQ-G: never the app-wide name dropdown */ d.setAttribute('aria-label', 'Manage bid job');
     d.addEventListener('click', onClick); d.addEventListener('change', onChange);
+    d.addEventListener('input', function(ev){ if (ev.target && ev.target.getAttribute('data-k') === 'dtradeq' && DT) { DT.q = ev.target.value; DT.allOpen = true; readBf(); draw(); var q = D.querySelector('#gcsys2 [data-k=dtradeq]'); if (q) { q.focus(); try { q.setSelectionRange(q.value.length, q.value.length); } catch (e) {} } } });   /* patch PLANREQ-H */
     d.addEventListener('keydown', function(ev){ if (ev.key === 'Escape') close(); });
     ['dragover', 'dragenter'].forEach(function(k){ d.addEventListener(k, function(ev){ var z = ev.target.closest && ev.target.closest('.drop'); if (z) { ev.preventDefault(); z.classList.add('over'); } }); });
     d.addEventListener('dragleave', function(ev){ var z = ev.target.closest && ev.target.closest('.drop'); if (z) z.classList.remove('over'); });
@@ -179089,7 +179104,8 @@ function open(jobId, tab){
 function close(){ ['gcsys2', 'gcsys2-shade'].forEach(function(id){ var x = D.getElementById(id); if (x) x.remove(); }); M.jobId = ''; }
 function load(){
   var id = M.jobId; M.busy = true;
-  return fn('bid-hub?manage=' + encodeURIComponent(id)).then(function(r){ if (M.jobId !== id) return; M.data = r; M.err = ''; if (!M.ts || M.tsFiles) { var keepTxt = {}; arr(M.ts).forEach(function(x){ if (x.id) keepTxt[x.id] = x; }); M.ts = arr(r.job.tradeScopes).map(function(x){ var k = keepTxt[x.id]; return { id: x.id, trade: k ? k.trade : x.trade, scope: k ? k.scope : x.scope, mode: x.mode || 'manual', files: arr(x.files) }; }).concat(arr(M.ts).filter(function(x){ return !x.id; })); M.tsFiles = false; } },   /* patch PLANREQ-C: + each trade's files (kept typing survives a reload) */
+  return fn('bid-hub?manage=' + encodeURIComponent(id)).then(function(r){ if (M.jobId !== id) return; M.data = r; M.err = '';
+    if (r.resort > 0 && !M.resorted) { M.resorted = true; fn('bid-hub', { op: 'resort', jobId: id }).then(function(x){ var mv = arr(x.moved); if (mv.length || arr(x.relabeled).length) { toast('📝 ' + (mv.length ? mv.map(function(m){ return m.name + ' → ' + m.trades.join(', ') + ' (📝 Scope)'; }).join(' · ') : '') + (arr(x.relabeled).length ? (mv.length ? ' · ' : '') + arr(x.relabeled).length + ' scope(s) for every sub kept with the plans' : '')); M.tsFiles = true; load(); } }, function(e){ warn(e); }); }   /* patch PLANREQ-I: trade scopes saved with the plans move to their trade, once */ if (!M.ts || M.tsFiles) { var keepTxt = {}; arr(M.ts).forEach(function(x){ if (x.id) keepTxt[x.id] = x; }); M.ts = arr(r.job.tradeScopes).map(function(x){ var k = keepTxt[x.id]; return { id: x.id, trade: k ? k.trade : x.trade, scope: k ? k.scope : x.scope, mode: x.mode || 'manual', files: arr(x.files) }; }).concat(arr(M.ts).filter(function(x){ return !x.id; })); M.tsFiles = false; } },   /* patch PLANREQ-C: + each trade's files (kept typing survives a reload) */
     function(e){ M.err = e.message; }).then(function(){ M.busy = false; draw(); });
 }
 function keepInputs(f){   /* a redraw keeps what is being typed */
@@ -179112,7 +179128,8 @@ function draw(){
       + '</div><button type="button" data-a="close" aria-label="Close">✕</button></div>'
       + '<div class="tabs" role="tablist">' + TABS.map(function(t){ return '<button type="button" role="tab" data-a="tab" data-t="' + t[0] + '"' + (M.tab === t[0] ? ' class="on"' : '') + '>' + t[1] + (t[0] === 'qa' && r ? ' (' + arr(r.questions).length + ')' + (openReqs().length ? ' · 📩 ' + openReqs().length : '') : t[0] === 'addenda' && r ? ' (' + arr(j.addenda).length + ')' : '') + '</button>'; }).join('') + '</div>'
       + '<div class="bd" data-tab="' + M.tab + '">' + (r && r.paused ? '<div class="paused">⏸ Data-entry mode is on: what you post shows on the bid site, but no e-mail goes to a sub (it is held; send it after the pause).</div>' : '')
-      + (M.err && !r ? '<div style="color:#b91c1c">' + esc(M.err) + '</div>' : !r ? '<div class="mut">Loading…</div>' : body()) + '</div>';
+      + (M.err && !r ? '<div style="color:#b91c1c">' + esc(M.err) + '</div>' : !r ? '<div class="mut">Loading…</div>' : body()) + '</div>'
+      + (r && M.tab === 'details' ? '<div class="ft" data-details-foot style="flex:none;border-top:1px solid #e7e3f2;background:#fff;padding:10px 16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button type="button" class="b pri" data-a="dsave">💾 Save details</button><span class="mut">On a job subs can see, what changes for them (due date, site walk, requirements, bid form…) goes to them as one 📣 Update.</span></div>' : '');
   });
 }
 function body(){
@@ -179145,7 +179162,7 @@ function chipsHtml(list, max){ if (!list.length) return '<span class="mut">no tr
   return sh.map(function(t){ return '<span class="pill grey" data-trade-chip="' + esc(t) + '" style="background:#efeaff;color:#241968">' + tIcon(t) + ' ' + esc(t) + '</span>'; }).join(' ') + (max && list.length > max ? ' <span class="mut">+' + (list.length - max) + '</span>' : ''); }
 function hdrTradesDue(j){
   var tl = tradesOf(j);
-  return '<div data-hdr-trades style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span class="mut" style="color:#c9c3ea">Trades we are bidding:</span> ' + chipsHtml(tl)
+  return '<div data-hdr-trades style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span class="mut" style="color:#c9c3ea">Trades we are bidding:</span> ' + chipsHtml(tl) + (!tl.length && s(j.tradesSuggested) ? ' <span class="mut" style="color:#fcd34d" data-hdr-sugg>💡 ' + s(j.tradesSuggested).split(/\s*[,;]\s*/).filter(Boolean).length + ' suggested from the invite — pick them in ✏️ Trades</span>' : '')
     + ' <button type="button" data-a="dtab" data-f="trades" style="font:700 12px system-ui;min-height:26px;min-width:0;padding:2px 10px;border:1px solid #c9c3ea;border-radius:999px;color:#fff;background:rgba(255,255,255,.08)">✏️ Trades</button>'
     + ' <span class="mut" style="color:#c9c3ea;margin-left:6px" data-hdr-due>⏰ ' + esc(j.due ? 'Subs due ' + j.due + (j.dueTime ? ' ' + j.dueTime : '') : 'No sub due date') + (j.ourDue ? ' · Our bid due ' + j.ourDue + (j.ourDueTime ? ' ' + j.ourDueTime : '') : '') + '</span>'   /* patch PLANREQ-F */
     + ' <button type="button" data-a="dtab" data-f="due" style="font:700 12px system-ui;min-height:26px;min-width:0;padding:2px 10px;border:1px solid #c9c3ea;border-radius:999px;color:#fff;background:rgba(255,255,255,.08)">✏️ Due</button>'
@@ -179155,15 +179172,21 @@ function lst(v){ return arr(v).join('\n'); }
 function detailsHtml(){
   var j = job(), w = j.siteWalk || {}, rq = j.requirements || {}, c = j.contacts || {};
   if (!DT) DT = { trades: tradesOf(j), bidForm: arr(j.bidForm).map(function(x){ return { id: x.id, trade: x.trade, item: x.item, unit: x.unit }; }) };
-  var opts = tradeOpts(); DT.trades.forEach(function(t){ if (opts.indexOf(t) < 0) opts.push(t); });
+  var opts = tradeOpts(), selL = DT.trades.slice(), sugL = s(j.tradesSuggested).split(/\s*[,;]\s*/).filter(function(t){ return t && !selL.some(function(x){ return low(x) === low(t); }); });
+  var restL = opts.filter(function(t){ return !selL.some(function(x){ return low(x) === low(t); }) && !sugL.some(function(x){ return low(x) === low(t); }) && (!DT.q || low(t).indexOf(low(DT.q)) > -1); });
+  var tbtn = function(t, on, sug){ return '<button type="button" class="b' + (on ? ' pri' : '') + '" data-a="dtrade" data-t="' + esc(t) + '" aria-pressed="' + on + '"' + (sug ? ' style="border-style:dashed"' : '') + '>' + (sug ? '💡 ' : on ? '✓ ' : '') + tIcon(t) + ' ' + esc(t) + '</button>'; };
   var inp = function(k, v, ph, type, wdt){ return '<input type="' + (type || 'text') + '" data-d="' + k + '" value="' + esc(v) + '"' + (ph ? ' placeholder="' + esc(ph) + '"' : '') + ' style="' + (wdt ? 'width:' + wdt : 'flex:1;min-width:180px') + '">'; };
   var chk = function(k, on, label){ return '<label style="display:inline-flex;gap:5px;align-items:center;margin-right:10px"><input type="checkbox" data-d="' + k + '"' + (on ? ' checked' : '') + '> ' + label + '</label>'; };
   var projs = arr((W._crm || {}).projects).filter(function(p){ return p && p.id && !p.deleted; }).slice(0, 400), leads = arr((W._crm || {}).leads).filter(function(l){ return l && l.id && !l.deleted; }).slice(-300);
   var map = s(j.address) ? ' <a href="https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(j.address) + '" target="_blank" rel="noopener" data-maplink>📍 Map ↗</a>' : '';
   return '<div data-details>'
     + '<h4>🔨 Trades we are bidding</h4><div class="mut">Subs see these on the job; their own trade is highlighted. Each trade gets its own box on 📝 Scope. ✉️ Invite subs starts with these trades picked.</div>'
-    + '<div class="row" data-trades-picker>' + opts.map(function(t){ var on = DT.trades.indexOf(t) > -1; return '<button type="button" class="b' + (on ? ' pri' : '') + '" data-a="dtrade" data-t="' + esc(t) + '" aria-pressed="' + on + '">' + tIcon(t) + ' ' + esc(t) + '</button>'; }).join('')
-    + '<input type="text" data-k="dtradeadd" placeholder="Another trade" style="width:150px"><button type="button" class="b" data-a="dtradeadd">+ Add</button></div>'
+    + '<div data-trades-picker>'   /* patch PLANREQ-H: Selected first, then Suggested (from the invite — never pre-selected), then all trades (searchable) */
+    + '<div class="mut" style="margin-top:6px"><b>Selected (' + selL.length + ')</b></div><div class="row" data-tp-sel>' + (selL.length ? selL.map(function(t){ return tbtn(t, true); }).join('') : '<span class="mut">none yet — tap a trade below</span>') + '</div>'
+    + (sugL.length ? '<div class="mut"><b>💡 Suggested from the invite</b> — tap to add</div><div class="row" data-tp-sugg>' + sugL.map(function(t){ return tbtn(t, false, true); }).join('') + '</div>' : '')
+    + '<details data-tp-all' + (DT.allOpen || !selL.length ? ' open' : '') + '><summary class="mut" style="cursor:pointer"><b>All trades</b> (' + restL.length + ')</summary>'
+    + '<div class="row"><input type="search" data-k="dtradeq" placeholder="🔍 Find a trade" value="' + esc(DT.q || '') + '" style="width:180px"><input type="text" data-k="dtradeadd" placeholder="Another trade" style="width:150px"><button type="button" class="b" data-a="dtradeadd">+ Add</button></div>'
+    + '<div class="row" data-tp-rest>' + restL.map(function(t){ return tbtn(t, false); }).join('') + '</div></details></div>'
     + '<h4>📋 The job</h4>'
     + '<div class="row"><label style="flex:1">Title ' + inp('title', j.title, 'Job title') + '</label></div>'
     + '<div class="row"><label style="flex:1">Site address ' + inp('address', j.address, 'Street, city, state') + '</label>' + map + '</div>'
@@ -179191,7 +179214,7 @@ function detailsHtml(){
     + '<h4>🔗 CRM</h4><div class="row"><label>Project <select data-d="crmProjectId"><option value="">— none —</option>' + projs.map(function(p){ return '<option value="' + esc(p.id) + '"' + (p.id === j.crmProjectId ? ' selected' : '') + '>' + esc((p.autoPO ? p.autoPO + ' · ' : '') + (p.name || p.id)) + '</option>'; }).join('') + '</select></label>'
     + '<label>Lead <select data-d="crmLeadId"><option value="">— none —</option>' + leads.map(function(l){ return '<option value="' + esc(l.id) + '"' + (l.id === j.crmLeadId ? ' selected' : '') + '>' + esc(l.name || l.id) + '</option>'; }).join('') + '</select></label></div>'
     + '<h4>🔒 Internal notes <span class="mut">(never shown to a sub)</span></h4><textarea data-d="internalNotes">' + esc(j.internalNotes) + '</textarea>'
-    + '<div class="row" style="position:sticky;bottom:0;background:#fff;padding:8px 0"><button type="button" class="b pri" data-a="dsave">💾 Save details</button><span class="mut">On a job subs can see, what changes for them (due date, site walk, requirements, bid form…) goes to them as one 📣 Update.</span></div></div>';
+    + '</div>';   /* patch PLANREQ-H: 💾 Save is a footer under the scrolling sheet (it sat over the fields) */
 }
 function dval(k){ var x = D.querySelector('#gcsys2 [data-d="' + k + '"]'); return x ? (x.type === 'checkbox' ? x.checked : s(x.value)) : undefined; }
 function readBf(){ Array.prototype.forEach.call(D.querySelectorAll('#gcsys2 [data-bf]'), function(x){ var r = DT.bidForm[+x.getAttribute('data-i')]; if (r) r[x.getAttribute('data-bf')] = x.value; }); }
@@ -179202,7 +179225,7 @@ function saveDetails(btn){
     due: dval('due'), dueTime: dval('dueTime'), ourDue: dval('ourDue'), ourDueTime: dval('ourDueTime'), questionsDue: dval('questionsDue'), startDate: dval('startDate'), duration: dval('duration'), bidInstructions: dval('bidInstructions'),
     siteWalk: { date: dval('walkDate'), time: dval('walkTime'), location: dval('walkLocation'), mandatory: !!dval('walkMandatory'), rsvp: lines('rsvp') },
     requirements: { bond: !!dval('rq_bond'), prevailingWage: !!dval('rq_prevailingWage'), certifiedPayroll: !!dval('rq_certifiedPayroll'), coi: !!dval('rq_coi'), coiGl: dval('rq_coiGl'), coiWc: dval('rq_coiWc'), coiAuto: dval('rq_coiAuto'), licenses: !!dval('rq_licenses'), licensesText: dval('rq_licensesText'), mbeWbe: !!dval('rq_mbeWbe'), mbeWbeText: dval('rq_mbeWbeText') },
-    alternates: lines('alternates'), unitPrices: lines('unitPrices'), bidForm: DT.bidForm.filter(function(x){ return s(x.item); }), trades: DT.trades.slice(),
+    alternates: lines('alternates'), unitPrices: lines('unitPrices'), bidForm: DT.bidForm.filter(function(x){ return s(x.item); }), trades: DT.touched || tradesOf(job()).length ? DT.trades.slice() : undefined,   /* patch PLANREQ-H: an invite's trades stay suggestions until a person picks */
     contacts: { pmName: dval('pmName'), pmPhone: dval('pmPhone'), pmEmail: dval('pmEmail'), estName: dval('estName'), estPhone: dval('estPhone'), estEmail: dval('estEmail') },
     internalNotes: dval('internalNotes'), crmLeadId: dval('crmLeadId') };
   var pid = dval('crmProjectId'), was = s(job().crmProjectId);
@@ -179224,8 +179247,8 @@ var ACCEPT_ALL = '.pdf,.png,.jpg,.jpeg,.gif,.webp,.heic,.heif,.tif,.tiff,.bmp,.d
 var ALL_RE = /\.(pdf|png|jpe?g|gif|webp|heic|heif|tiff?|bmp|docx?|xlsx?|xlsm|csv|pptx?|txt|rtf|dwg|dxf|dwf|zip)$/i;
 var TICON = { Electrical: '⚡', Plumbing: '🚿', HVAC: '❄️', Roofing: '🏠', Drywall: '🧱', Paint: '🎨', Flooring: '🪵', Tile: '🔲', Concrete: '🏗', Masonry: '🧱', Framing: '🪚', 'Fire protection': '🔥', Landscaping: '🌳', Demolition: '🔨', 'Windows & Doors': '🚪', Cabinets: '🗄', Insulation: '🧶', Ceilings: '⬜' };
 function tIcon(t){ return TICON[t] || '🔧'; }
-function tradeOpts(){ var l = []; try { l = W._gcBidPost && W._gcBidPost.trades ? arr(W._gcBidPost.trades()).slice() : []; } catch (e) {} if (!l.length) l = ['Demolition', 'Framing', 'Drywall', 'Paint', 'Flooring', 'Tile', 'Roofing', 'Siding', 'Gutters', 'Windows & Doors', 'Insulation', 'Ceilings', 'Cabinets', 'Concrete', 'Masonry', 'Electrical', 'Plumbing', 'HVAC', 'Fire protection', 'Landscaping', 'Mitigation', 'Abatement', 'Cleaning'];
-  arr(M.ts).forEach(function(x){ if (s(x.trade) && l.indexOf(x.trade) < 0) l.push(x.trade); }); return l; }
+function tradeOpts(){ var l = []; try { l = W._gcBidPost && W._gcBidPost.trades ? arr(W._gcBidPost.trades()).slice() : []; } catch (e) {}   /* patch PLANREQ-H: the standard list (bidpost) */ if (!l.length) l = ['Demolition', 'Framing', 'Drywall', 'Paint', 'Flooring', 'Tile', 'Roofing', 'Siding', 'Gutters', 'Windows & Doors', 'Insulation', 'Ceilings', 'Cabinets', 'Concrete', 'Masonry', 'Electrical', 'Plumbing', 'HVAC', 'Fire protection', 'Landscaping', 'Mitigation', 'Abatement', 'Cleaning'];
+  tradesOf(job()).concat(DT ? DT.trades : []).forEach(function(t){ if (t && !l.some(function(x){ return low(x) === low(t); })) l.push(t); }); return l; }
 var RV = { items: [] };   /* uploaded, waiting for 💾 Save: [{ ref, name, size, zip, files: [{ key, name, kind, trades, why }] }] */
 function reviewHtml(){
   if (!RV.items.length) return '';
@@ -179310,6 +179333,7 @@ async function saveReview(){
 function scopeHtml(){
   var ts = M.ts || [];
   tradesOf(job()).forEach(function(tr){ if (!ts.some(function(x){ return low(x.trade) === low(tr); })) ts.push({ trade: tr, scope: '', mode: 'manual', files: [] }); });   /* patch PLANREQ-T: one box per trade we are bidding */
+  var picked = tradesOf(job()); ts = ts.filter(function(x){ return !x.id || s(x.scope) || arr(x.files).length || picked.some(function(t){ return low(t) === low(x.trade); }); });   /* patch PLANREQ-H: no empty boxes for an invite's trades */
   M.ts = ts;
   return '<p class="mut">One scope per trade. A sub sees only the scopes of their own trades. Made from an estimate (or Claude), every price is removed — here and again on the server. GrayCo prices never reach a sub.</p>'
     + ts.map(function(x, i){ return '<div class="card" data-ts="' + i + '"><div class="row"><input type="text" data-ti="trade" data-i="' + i + '" value="' + esc(x.trade) + '" placeholder="Trade (Roofing, Electrical…)" style="width:220px"><span class="pill grey">' + (x.mode === 'estimate' ? '📐 from estimate · no prices' : x.mode === 'claude' ? '✨ Claude · no prices' : '✍️ typed') + '</span><button type="button" class="b red" data-a="rmts" data-i="' + i + '">🗑</button></div>'
@@ -179437,8 +179461,8 @@ function onClick(ev){
   if (a === 'pick') return pickFiles(function(fs){ uploadPlans(fs); });
   if (a === 'rvsave') return saveReview();   /* patch PLANREQ-C */
   if (a === 'dtab') { M.tab = 'details'; draw(); var f = t.getAttribute('data-f'); later(function(){ var x = D.querySelector(f === 'due' ? '#gcsys2 [data-d="due"]' : '#gcsys2 [data-trades-picker]'); if (x) { x.scrollIntoView({ block: 'center' }); if (x.focus) x.focus(); } }, 50); return; }   /* patch PLANREQ-T/D */
-  if (a === 'dtrade') { readBf(); var tt = t.getAttribute('data-t'), ix = DT.trades.indexOf(tt); if (ix > -1) DT.trades.splice(ix, 1); else DT.trades.push(tt); return draw(); }
-  if (a === 'dtradeadd') { readBf(); var nt = val('dtradeadd'); if (nt && DT.trades.indexOf(nt) < 0) DT.trades.push(nt); var xi = D.querySelector('#gcsys2 [data-k=dtradeadd]'); if (xi) xi.value = ''; return draw(); }
+  if (a === 'dtrade') { readBf(); var tt = t.getAttribute('data-t'), ix = DT.trades.indexOf(tt); if (ix > -1) DT.trades.splice(ix, 1); else DT.trades.push(tt); DT.touched = true; var ad = D.querySelector('#gcsys2 [data-tp-all]'); DT.allOpen = !!(ad && ad.open); return draw(); }
+  if (a === 'dtradeadd') { readBf(); var nt = val('dtradeadd'); if (nt && DT.trades.indexOf(nt) < 0) { DT.trades.push(nt); DT.touched = true; } var xi = D.querySelector('#gcsys2 [data-k=dtradeadd]'); if (xi) xi.value = ''; return draw(); }
   if (a === 'bfadd') { readBf(); DT.bidForm.push({ trade: DT.trades.length === 1 ? DT.trades[0] : '', item: '', unit: 'LS' }); return draw(); }
   if (a === 'bfrm') { readBf(); DT.bidForm.splice(+t.getAttribute('data-i'), 1); return draw(); }
   if (a === 'nodue') { var dd = D.querySelector('#gcsys2 [data-d="due"]'), dtm = D.querySelector('#gcsys2 [data-d="dueTime"]'); if (dd) dd.value = ''; if (dtm) dtm.value = ''; return; }
@@ -223986,10 +224010,11 @@ function postedFor(c){
 /* ── the CRM's trades ── */
 var TRADES = ['Demolition', 'Framing', 'Drywall', 'Paint', 'Flooring', 'Tile', 'Roofing', 'Siding', 'Gutters', 'Windows & Doors', 'Insulation', 'Ceilings', 'Cabinets', 'Concrete', 'Masonry',
   'Electrical', 'Plumbing', 'HVAC', 'Fire protection', 'Landscaping', 'Mitigation', 'Abatement', 'Cleaning'];
-function tradeList(){
+function tradeList(){   /* patch PLANREQ-H (owner 11/12: a messy list — "shingle roof", "5 tool", "cmu"…): the CRM's standard trades only (a job's own
+     typed trades are added where it is shown) — no longer every word typed on a vendor / sub record */
   var seen = {}, out = [];
-  TRADES.concat(arr(crm().vendors).concat(arr(crm().subs)).map(function(v){ return s(v && (v.trade || v.cat2)); }).join(',').split(/[,;\/]/)).forEach(function(t){ t = s(t); var k = low(t); if (!t || seen[k] || t.length > 40 || /^subcontractor$/i.test(t)) return; seen[k] = 1; out.push(t); });
-  return out.slice(0, 60);
+  TRADES.forEach(function(t){ t = s(t); var k = low(t); if (!t || seen[k]) return; seen[k] = 1; out.push(t); });
+  return out;
 }
 /* the job's files (CRM file storage) and links to share */
 var DOCS_DISK = null;
@@ -224039,7 +224064,7 @@ function open(c0){
   if (!canPost(c)) { toast('Only an admin, an estimator, or this job\'s PM puts it on the bid portal.', true); return null; }
   css(); close();
   UI = { c: c, job: null, trades: {}, vis: 'private', files: filesOf(c) };
-  var m = D.createElement('div'); m.id = 'gcbp-modal'; m.setAttribute('data-gc-keep', '1');
+  var m = D.createElement('div'); m.id = 'gcbp-modal'; m.setAttribute('data-gc-keep', '1'); m.setAttribute('data-gc-noac', '1');   /* patch PLANREQ-G */
   m.innerHTML = '<div class="box" role="dialog" aria-label="Put on bid portal"><div class="mut">Loading…</div></div>';
   m.addEventListener('click', function(ev){ if (ev.target === m) close(); });
   m.addEventListener('click', onClick);
@@ -224066,7 +224091,8 @@ function draw(pj, jl){
   UI.our = our;
   var scope = J ? s(J.scope) : scopeText(c), specs = J ? s(J.specs) : '';
   var refs = {}; arr(J && J.crmFileRefs).forEach(function(r){ refs[r] = 1; }); var links = {}; arr(J && J.links).forEach(function(x){ links[s(x.url)] = 1; });
-  var tl = tradeList(); arr(J && J.trades).forEach(function(t){ if (tl.indexOf(t) < 0) tl.push(t); });
+  var tl = tradeList(); arr(J && J.trades).forEach(function(t){ if (!tl.some(function(x){ return low(x) === low(t); })) tl.push(t); });
+  var sugg = arr(J && J.tradesSuggested).filter(function(t){ return !UI.trades[t]; });   /* patch PLANREQ-H: from the invite — tap to add, never pre-selected */
   var what = e ? 'estimate “' + esc(e.name) + '”' : p ? 'job “' + esc(p.name) + '”' : l ? 'lead “' + esc(l.name || l.title) + '”' : 'job';
   box.innerHTML = '<div style="display:flex;justify-content:space-between;gap:8px"><h3>📢 ' + (on ? 'On the bid portal' : 'Put on bid portal') + '</h3><button type="button" class="b" data-bp="close" aria-label="Close">✕</button></div>'
     + '<div class="mut">For the ' + what + '. Subs see the job, the scope and what you share — never prices, never the customer\'s details. Subs can bid or ask a question.' + (on ? ' <b>Posted' + (J.postedBy ? ' by ' + esc(J.postedBy) : '') + '.</b>' : J && J.archived ? ' <b>It was taken off — posting puts it back.</b>' : '') + '</div>'
@@ -224074,7 +224100,8 @@ function draw(pj, jl){
     + '<label class="' + (UI.vis === 'private' ? 'on' : '') + '"><input type="radio" name="gcbp-vis" value="private"' + (UI.vis === 'private' ? ' checked' : '') + '> <b>🔒 Private</b><div class="mut">Only subs you invite (✉️ Invite subs on the 🏗 Bid portal tab).</div></label>'
     + '<label class="' + (UI.vis === 'public' ? 'on' : '') + '"><input type="radio" name="gcbp-vis" value="public"' + (UI.vis === 'public' ? ' checked' : '') + '> <b>🌐 Public</b><div class="mut">Every approved sub on bids.grayco-cs.com can see it and bid. Needs a due date.</div></label></div>'
     + '<label class="f" for="gcbp-title">Job title</label><input type="text" id="gcbp-title" maxlength="200" value="' + esc(title) + '">'
-    + '<label class="f">Trades we need priced</label><div class="chips" data-bp-trades>' + tl.map(function(t){ return '<button type="button" class="chip' + (UI.trades[t] ? ' on' : '') + '" data-bp="trade" data-t="' + esc(t) + '">' + esc(t) + '</button>'; }).join('') + '</div>'
+    + '<label class="f">Trades we need priced</label>' + (sugg.length ? '<div class="mut" data-bp-suggested>💡 Suggested from the invite (tap to add): </div><div class="chips" data-bp-sugg>' + sugg.map(function(t){ return '<button type="button" class="chip" data-bp="trade" data-t="' + esc(t) + '" style="border-style:dashed">💡 ' + esc(t) + '</button>'; }).join('') + '</div>' : '')
+    + '<div class="chips" data-bp-trades>' + tl.map(function(t){ return '<button type="button" class="chip' + (UI.trades[t] ? ' on' : '') + '" data-bp="trade" data-t="' + esc(t) + '">' + esc(t) + '</button>'; }).join('') + '</div>'
     + '<div style="display:flex;gap:6px;margin-top:6px"><input type="text" id="gcbp-trade" placeholder="Another trade (e.g. Exterior paint)" maxlength="40"><button type="button" class="b" data-bp="addtrade">＋ Add</button></div>'
     + '<div class="row2"><div><label class="f" for="gcbp-due">Sub bid due date <span class="mut">(what subs see)</span></label><input type="date" id="gcbp-due" value="' + esc(due) + '"> <input type="time" id="gcbp-duet" value="' + esc(dueT) + '" style="width:110px">'
       + (our.date ? '<div class="mut" data-bp-ourdue>Our bid due: <b>' + esc(md(our.date) + (our.time ? ' ' + our.time : '')) + '</b>' + (!(J && J.due) ? ' — subs due 1 day before our due date (a weekend → the Friday before)' : '') + '</div>' : '') + '</div><div><label class="f" for="gcbp-addr">Site address</label><input type="text" id="gcbp-addr" maxlength="240" value="' + esc(addr) + '"></div></div>'

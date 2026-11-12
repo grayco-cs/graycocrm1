@@ -26,6 +26,7 @@ const MSG = { id: 'M_PR_sample1', pid: 'P1', authorId: 'bidsite:u_sam', authorNa
   tags: ['u3', 'u4'], mentions: [{ id: 'u3', e: 'sbiffle@grayco-cs.com', n: 'Sam Biffle' }, { id: 'u4', e: 'gestimator@grayco-cs.com', n: 'Gus Estimator' }],
   notify: [{ id: 'u3', e: 'sbiffle@grayco-cs.com', n: 'Sam Biffle', why: 'mention' }, { id: 'u4', e: 'gestimator@grayco-cs.com', n: 'Gus Estimator', why: 'mention' }], at: now, source: 'bidsite', bidJobId: 'J1', planReqId: 'J1__u_sam' };
 cset('gc_job_messages', JSON.stringify([MSG]));
+cset('vendors', [{ id: 'V1', name: 'Sample Roof Supply', trade: '5 tool, shingles, shingle roof', isSub: true }, { id: 'V2', name: 'Sample Masonry', trade: 'cmu, Brick', isSub: true }]);   /* patch PLANREQ-H: junk trade words on vendor records */
 cset('gc_office_tasks', JSON.stringify([{ id: 'planreq_J1__u_sam', kind: 'planreq', label: '📩 Sample Drywall LLC asked for plans — Sample Clinic Remodel', note: 'Plans, Site walk / access', pid: 'P1', bidJobId: 'J1', planReqId: 'J1__u_sam',
   assignees: ['sbiffle@grayco-cs.com', 'gestimator@grayco-cs.com'], assignee: 'Sam Biffle, Gus Estimator', personal: false, shared: true, prio: 'high', due: now.slice(0, 10), addedBy: 'Bid site', addedAt: now, updatedAt: now, done: false }]));
 
@@ -54,6 +55,7 @@ async function routes(c, who){
       if (b.op === 'scope') { TS = b.tradeScopes.map(x => Object.assign({ id: x.id || 'ts_' + Math.random().toString(36).slice(2, 6) }, x)); return J({ ok: true, tradeScopes: TS }); }
       return J({ ok: true }); }
     if (q.get('jobs')) return J({ ok: true, jobs: JOBS, me: { email: who, admin: who === 'wjohnson@grayco-cs.com', canInvite: true, canPublic: who === 'wjohnson@grayco-cs.com' } });
+    if (q.get('manage') === 'J5') return J({ ok: true, paused: false, job: { id: 'J5', title: 'New Female Dormitory', address: '1 Sample Way', due: '', visibility: 'private', deleted: false, trades: '', tradesSuggested: 'Prefabricated Wood Trusses, Standing Seam Metal Roofing, Flashing & Trim', tradeScopes: [{ id: 'tsa', trade: 'Prefabricated Wood Trusses', scope: '', files: [] }], plansLinks: [], addenda: [], posts: [], log: [], contacts: {} }, plans: [], planreqs: [], questions: [], acks: [], activity: [], audience: [] });
     if (q.get('manage')) return J(MAN());
     return J({ ok: true, subs: [], bids: [] });
   });
@@ -197,6 +199,23 @@ const pf = await A.ev(() => ({ due: document.getElementById('gcbp-due').value, t
 ok('6 📢 Put on bid portal from a lead (our due Mon 11/30 15:30): the sub due is prefilled Fri 11/27 15:30 — "Our bid due: 11/30 15:30 — subs due 1 day before our due date"', pf.due === '2026-11-27' && pf.t === '15:30' && /Our bid due: 11\/30 15:30/.test(pf.our) && /1 day before our due date/.test(pf.our), pf);
 await shot(A, 'crm09_put_on_bid_portal_sub_due_prefill');
 await A.ev(() => { const m = document.getElementById('gcbp-modal'); if (m) m.remove(); });
+/* 7. patch PLANREQ-H: an invite's trades are SUGGESTED, never pre-selected; a clean list (no "5 tool" / "shingles"); the 💾 Save footer never covers a field */
+await A.ev(() => window._gcSys2.open('J5', 'details'));
+await wait(A, () => document.querySelector('#gcsys2 [data-trades-picker]'));
+const tp = await A.ev(() => ({ sel: [...document.querySelectorAll('#gcsys2 [data-tp-sel] [data-a="dtrade"]')].map(b => b.getAttribute('data-t')), sugg: [...document.querySelectorAll('#gcsys2 [data-tp-sugg] [data-a="dtrade"]')].map(b => b.getAttribute('data-t') + ':' + b.getAttribute('aria-pressed')),
+  all: [...document.querySelectorAll('#gcsys2 [data-tp-rest] [data-a="dtrade"]')].map(b => b.getAttribute('data-t')), hdr: (document.querySelector('#gcsys2 [data-hdr-sugg]') || {}).textContent || '' }));
+ok('7 nothing pre-selected; "💡 Suggested from the invite" lists the invite\'s 3 trades (not pressed); the header says so', tp.sel.length === 0 && tp.sugg.join() === 'Prefabricated Wood Trusses:false,Standing Seam Metal Roofing:false,Flashing & Trim:false' && /3 suggested from the invite/.test(tp.hdr), tp);
+ok('7 "All trades" is the standard list — no "5 tool", "shingles", "cmu" from vendor records', tp.all.indexOf('Drywall') > -1 && !tp.all.some(t => /5 tool|shingle|^cmu$|^brick$/i.test(t)), tp.all);
+const lay = await A.ev(() => { const bd = document.querySelector('#gcsys2 .bd').getBoundingClientRect(), ft = document.querySelector('#gcsys2 [data-details-foot]'), fr = ft && ft.getBoundingClientRect(); return { foot: !!ft, parent: ft && ft.parentNode.id, bdBottom: Math.round(bd.bottom), ftTop: fr && Math.round(fr.top) }; });
+ok('7 💾 Save details is a footer under the scrolling sheet (it never sits over a field)', lay.foot && lay.parent === 'gcsys2' && lay.bdBottom <= lay.ftTop, lay);
+await shot(A, 'crm11_details_trades_suggested_footer');
+await A.ev(() => [...document.querySelectorAll('#gcsys2 [data-tp-sugg] [data-a="dtrade"]')].find(b => b.getAttribute('data-t') === 'Flashing & Trim').click()); await sleep(200);
+const tp2 = await A.ev(() => [...document.querySelectorAll('#gcsys2 [data-tp-sel] [data-a="dtrade"]')].map(b => b.getAttribute('data-t')));
+ok('7 tapping a suggestion selects it', tp2.join() === 'Flashing & Trim', tp2);
+await A.ev(() => { const q = document.querySelector('#gcsys2 [data-k=dtradeq]'); q.value = 'plumb'; q.dispatchEvent(new Event('input', { bubbles: true })); }); await sleep(200);
+const tp3 = await A.ev(() => [...document.querySelectorAll('#gcsys2 [data-tp-rest] [data-a="dtrade"]')].map(b => b.getAttribute('data-t')));
+ok('7 🔍 find a trade filters the list', tp3.join() === 'Plumbing', tp3);
+await A.ev(() => window._gcSys2.close());
 ok('no page errors (admin)', !errs.length, errs);
 /* 4. the PM: 🔔 For you + the To-Do */
 const P = await computer('sbiffle@grayco-cs.com', { build: BUILD });
@@ -213,5 +232,5 @@ ok('no page errors (PM)', !errs2.length, errs2);
 if (SHOTS) fs.writeFileSync(SHOTS + '/index-planreq-crm.txt', ['CRM screenshots (test_PLANREQ_CRM.mjs) — made-up data',
   'crm01  🏗 Bid portal list: 🔒 Private ⇄ / 📝 Draft · Post it ▸ one-click pills, 📩 1 request', 'crm02  📂 Manage → 💬 Q&A: the plan request with ↩ Reply / ✅ Mark sent',
   'crm03  📐 Plans & specs: 4 files of different types, each with its guessed kind + trade ▾ before 💾 Save', 'crm04  📝 Scope: each trade with its files + 📎 Add scope files',
-  'crm05  ⋯ Actions: the full menu', 'crm07  the list row: click the sub due date → date + time → Save (past dates red)', 'crm08  the lead\'s due date changed → "Also move the sub due date to …?"', 'crm09  📢 Put on bid portal from a lead: sub due prefilled 1 day before our due (Friday for a weekend)', 'crm06  📂 Manage → 📝 Details: trades picker, dates, site walk, requirements, bid form, contacts, CRM link, internal notes; header trades + due', ''].join('\n'));
+  'crm05  ⋯ Actions: the full menu', 'crm07  the list row: click the sub due date → date + time → Save (past dates red)', 'crm08  the lead\'s due date changed → "Also move the sub due date to …?"', 'crm09  📢 Put on bid portal from a lead: sub due prefilled 1 day before our due (Friday for a weekend)', 'crm11  📝 Details on an invite job: nothing pre-selected, 💡 suggested trades, clean list, Save footer', 'crm06  📂 Manage → 📝 Details: trades picker, dates, site walk, requirements, bid form, contacts, CRM link, internal notes; header trades + due', ''].join('\n'));
 const n = R.filter(Boolean).length; console.log('PLANREQ_CRM ' + n + '/' + R.length); process.exit(n === R.length ? 0 : 1);
