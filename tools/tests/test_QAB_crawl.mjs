@@ -87,6 +87,8 @@ async function crawlDesktop(key, cfg){
   const rec = { combo: key, email: cfg.email, role: ACC[cfg.email] || (cfg.email.startsWith('wjohnson') ? 'Admin' : 'Office'), co: cfg.co || coOfEmail(cfg.email), mobile: !!cfg.mobile, tabs: [], problems: [], leaks: [], desk: null, field: null, errs: [], cons: [], fns: {} };
   A.page().on('console', m => { if (m.type() === 'error') { const t = m.text(); if (!/net::ERR|Failed to load resource|blockedbyclient|favicon/i.test(t)) rec.cons.push(t.slice(0, 220)); } });
   A.page().on('request', r => { const u = r.url(); const m = u.match(/\/\.netlify\/functions\/([^?#/]+)/); if (m) rec.fns[m[1]] = (rec.fns[m[1]] || 0) + 1; });
+  const MAIN = A.page(); A.page = () => MAIN; A.ev = (fn, arg) => MAIN.evaluate(fn, arg);   /* a button that opens a new window (a printable paper) must not steal the crawl */
+  const popups = async () => { let n = 0; for (const p of A.pages) if (p !== MAIN && !p.isClosed()) { n++; await p.close().catch(() => {}); } return n; };
   const errAt = () => A.errs.length;
   const shot = async name => { const f = SHOTS + '/' + key + '_' + name.replace(/[^a-z0-9_-]+/gi, '_').slice(0, 60) + '.png'; await A.page().screenshot({ path: f }).catch(() => {}); return f.split('/').pop(); };
   await signIn(A, cfg.email, 14000); await sleep(6000);
@@ -129,7 +131,7 @@ async function crawlDesktop(key, cfg){
     await A.page().mouse.move(700 + Math.random() * 50, 400).catch(() => {});   /* a person at the computer (the idle pacing slows the timers) */
     const e0 = errAt(), c0 = rec.cons.length;
     const clicked = await A.ev(l => { const b = [...document.querySelectorAll('aside nav button, aside button, nav button')].find(x => x.offsetParent && x.innerText.replace(/\s+/g, ' ').trim() === l); if (b) { b.click(); return true; } return false; }, label);
-    await sleep(1600);
+    await sleep(1600); await popups();
     const st = await A.ev(() => { const m = document.querySelector('#root main') || document.querySelector('main') || document.body; const v = localStorage.getItem('grayco_view');
       const vis = el => !!(el.offsetParent || el.getClientRects().length);
       const ov = [...document.querySelectorAll('body > div')].filter(d => { const cs = getComputedStyle(d); return vis(d) && (cs.position === 'fixed') && +cs.zIndex >= 50 && d.offsetWidth > 300 && d.offsetHeight > 300 && !/gc-ra-dock|gc-fh-tabs|gc-co-|toast/.test(d.id || ''); }).map(d => d.id || d.className.slice(0, 30));
@@ -144,23 +146,27 @@ async function crawlDesktop(key, cfg){
       const all = [...document.querySelectorAll('#root main button, #root main [role=button], #root main a[href="#"], #gc-mws-mount button, #gc-leads-hub button')];
       return all.filter(b => b.offsetParent && !b.disabled && !b.closest('aside,nav,#gc-ra-dock')).map(b => (b.innerText || b.getAttribute('aria-label') || b.title || '').replace(/\s+/g, ' ').trim()).filter(t => t && t.length < 60 && !R.test(t) && !seen[t] && (seen[t] = 1)); }, DESTRUCT.source);
     for (const bt of cand.slice(0, MAXB)) {
-      const b0 = errAt(), cc0 = rec.cons.length;
+      const b0 = errAt(), cc0 = rec.cons.length, dl0 = A.dialogs.length;
       const r0 = await A.ev(t => {
         const all = [...document.querySelectorAll('#root main button, #root main [role=button], #root main a[href="#"], #gc-mws-mount button, #gc-leads-hub button')].filter(b => b.offsetParent && !b.disabled && !b.closest('aside,nav'));
         const b = all.find(x => (x.innerText || x.getAttribute('aria-label') || x.title || '').replace(/\s+/g, ' ').trim() === t); if (!b) return { gone: true };
-        try { window.__qabMO && window.__qabMO.disconnect(); } catch (e) {}
-        window.__qabM = 0; const mo = new MutationObserver(l => { window.__qabM += l.length; }); mo.observe(document.body, { subtree: true, childList: true, attributes: true, characterData: true }); window.__qabMO = mo;
+        const sig = () => document.body.innerText.length + ':' + document.getElementsByTagName('*').length + ':' + [...document.querySelectorAll('input,select,textarea')].map(i => i.value).join('|').length;
+        window.__qabS0 = sig();
         window.__qabV0 = localStorage.getItem('grayco_view') + '|' + location.hash;
         try { b.click(); } catch (e) { return { err: String(e) }; }
         return {};
       }, bt).catch(e => ({ err: String(e).slice(0, 120) }));
       await sleep(700);
-      const r = r0.gone || r0.err ? r0 : await A.ev(() => { try { window.__qabMO.disconnect(); } catch (e) {} const v = localStorage.getItem('grayco_view') + '|' + location.hash; return { muts: window.__qabM, v: localStorage.getItem('grayco_view'), moved: v !== window.__qabV0 }; }).catch(e => ({ err: String(e).slice(0, 120) }));
+      const r = r0.gone || r0.err ? r0 : await A.ev(() => { const sig = () => document.body.innerText.length + ':' + document.getElementsByTagName('*').length + ':' + [...document.querySelectorAll('input,select,textarea')].map(i => i.value).join('|').length;
+        const v = localStorage.getItem('grayco_view') + '|' + location.hash; return { muts: sig() !== window.__qabS0 ? 1 : 0, v: localStorage.getItem('grayco_view'), moved: v !== window.__qabV0 }; }).catch(e => ({ err: String(e).slice(0, 120) }));
+      const np = await popups(); if (np) r.popup = np;
       const br = { t: bt, muts: r.muts, moved: r.moved };
       if (r.err) br.err = r.err;
       if (A.errs.length > b0) { br.pageerr = A.errs.slice(b0); rec.problems.push({ where: 'tab ' + label + ' → ' + bt, err: br.pageerr, shot: await shot('err_' + label + '_' + bt) }); }
       if (rec.cons.length > cc0) br.cons = rec.cons.slice(cc0);
-      if (!r.gone && !r.err && r.muts === 0 && !r.moved) br.nothing = true;
+      if (r.popup) br.popup = r.popup;
+      if (!r.gone && !r.err && r.muts === 0 && !r.moved && !r.popup && A.dialogs.length === dl0) br.nothing = true;
+      if (A.dialogs.length > dl0) br.dialog = A.dialogs.slice(dl0);
       /* a leak in what it opened */
       const lr2 = leakRe();
       if (lr2) { const tx = await A.ev(() => document.body.innerText).catch(() => ''); if (lr2.test(tx)) { const lines = tx.split('\n').filter(x => lr2.test(x)).slice(0, 4); if (!rec.leaks.some(l => l.where.startsWith('tab ' + label))) rec.leaks.push({ where: 'tab ' + label + ' → ' + bt, lines, shot: await shot('leak_' + label + '_' + bt) }); } }
@@ -182,7 +188,7 @@ async function crawlDesktop(key, cfg){
 async function closeAll(A){
   for (let i = 0; i < 3; i++) {
     const open = await A.ev(() => { const vis = el => !!(el.offsetParent || el.getClientRects().length);
-      return [...document.querySelectorAll('body > div, .gc-ra-sheet, #gc-mws-sheet, [role=dialog]')].filter(d => { if (!vis(d)) return false; const cs = getComputedStyle(d); return (cs.position === 'fixed') && (+cs.zIndex >= 100) && d.offsetWidth > 280 && d.offsetHeight > 200 && !/gc-ra-dock|gc-fh-tabs|gc-ra-desk|gc-co-sw|toast|gc-adm-warns|gcnav/.test((d.id || '') + ' ' + String(d.className || '')); }).map(d => d.id || String(d.className || '').slice(0, 40) || d.tagName); }).catch(() => []);
+      return [...document.querySelectorAll('body > div, .gc-ra-sheet, #gc-mws-sheet, [role=dialog]')].filter(d => { if (!vis(d)) return false; const cs = getComputedStyle(d); return (cs.position === 'fixed') && (+cs.zIndex >= 100) && d.offsetWidth > 280 && d.offsetHeight > 200 && !/gc-ra-dock|gc-fh-tabs|gc-ra-desk|gc-co-sw|toast|gc-adm-warns|gcnav|gc-est-notes-panel/.test((d.id || '') + ' ' + String(d.className || '')); }).map(d => d.id || String(d.className || '').slice(0, 40) || d.tagName); }).catch(() => []);
     if (!open.length) return '';
     await A.page().keyboard.press('Escape').catch(() => {}); await sleep(250);
     await A.ev(() => { const vis = el => !!(el.offsetParent || el.getClientRects().length);

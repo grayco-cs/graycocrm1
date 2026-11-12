@@ -246,7 +246,7 @@ R.hero = function(sl){
     '<div class="col">' + kick(F(sl, 'h')) + '<h1 class="sm">' + esc((p && p.cap) || F(sl, 'sub')) + '</h1><div class="sub" style="font-size:1.9em">' + esc(F(sl, 't')) + '</div></div></div>';
 };
 function noReviews(sl){
-  var u = brand().reviewUrl || T.reviewUrl;
+  var u = brand().reviewUrl || (brand().co ? '' : T.reviewUrl);   /* patch QAB: a company's lobby never falls back to GrayCo Construction's review page */
   return '<div class="row" style="align-items:center"><div class="col">' + kick('Reviews') + '<h1>' + esc(F(sl, 'h')) + '</h1><div class="sub">Read what your neighbors say about GrayCo — and add your own.</div><div style="font-size:5em;margin-top:.6em">' + stars(5) + '</div></div>' +
     '<div class="qrw">' + qrCard(u, 'Read our Google reviews') + '</div></div>';
 }
@@ -450,7 +450,7 @@ function setData(d, only){
   DATA = d; ONLY = only == null ? null : only;
   try { var lg = D.getElementById('logo'); if (lg && lg.getAttribute('src') !== brandLogo()) { lg.src = brandLogo(); lg.alt = brand().name || 'GrayCo Construction Services'; } if (d && d.brand && /^#[0-9a-f]{6}$/i.test(d.brand.color || '')) D.documentElement.style.setProperty('--gc-co', d.brand.color); } catch (e) {}   /* patch MITWS */
   LIST = arr(d && d.slides).filter(usable);
-  if (!LIST.length) { blank(PREVIEW ? '' : 'GrayCo Construction Services'); return; }
+  if (!LIST.length) { blank(PREVIEW ? '' : (brand().name || 'GrayCo Construction Services')); return; }   /* patch QAB: the company's own name */
   var na = D.querySelector('.na'); if (na) na.remove();
   AT = ONLY == null ? -1 : ONLY; next();
 }
