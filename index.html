@@ -17024,6 +17024,9 @@ W._gcTypeCell = function(p){ return '⚠ Pick job type'; };
 /* the estimate builder's estimator select: the saved name, never the first employee */
 W._gcSetEstPick = function(el, v){
   if (!el) return; v = clean(v);
+  /* patch PLANREQ-J (owner 11/12: "make sure we know who's doing what estimate"): an estimate with no estimator gets the person working it
+     (when they estimate — not office), else the Lead Estimator; admins / estimators can change it */
+  if (!v) { try { var me = meUser(); if (me && canEstimate(me.name)) v = clean(me.name); else { var le = leadEst(); if (le && le.name) v = clean(le.name); } } catch (e) {} }
   if (el.options && v && !Array.prototype.some.call(el.options, function(o){ return o.value === v || clean(o.text) === v; })) { var o = document.createElement('option'); o.value = v; o.text = v; el.appendChild(o); }
   if (el.options && !v && !Array.prototype.some.call(el.options, function(o){ return o.value === ''; })) { var b = document.createElement('option'); b.value = ''; b.text = ''; el.insertBefore(b, el.firstChild); }
   try { el.value = v; } catch (e) {}
@@ -174945,7 +174948,10 @@ function lcPrio(l){
 function lcWho(l, r){
   var hc = heldOf(l), asg = canAssignAll();
   var inner = r.who ? '<span class="gclu-av">' + esc(initials(r.who)) + '</span> ' + esc(r.who) : hc ? hc : '<span class="gclu-un">Unassigned</span>', own = ownOf(l);
-  return (asg ? '<button type="button" class="gclu-who" data-gcl-asg="' + esc(l.id) + '" title="Assign this lead">' + inner + '</button>' : inner) + (own ? '<div class="gclu-own">' + own + '</div>' : '');
+  var en = ''; try { en = W._gcEstimatorFor ? String(W._gcEstimatorFor({ leadId: l.id }) || '') : ''; } catch (e) {}   /* patch PLANREQ-J: who is doing the estimate on this lead */
+  var hasEst = !!en && !!(W._gcEstimateOf && W._gcEstimateOf({ leadId: l.id }));   /* an estimate is in progress on this lead */
+  return (asg ? '<button type="button" class="gclu-who" data-gcl-asg="' + esc(l.id) + '" title="Assign this lead">' + inner + '</button>' : inner) + (own ? '<div class="gclu-own">' + own + '</div>' : '')
+    + (hasEst ? '<div class="gclu-nt" data-lead-estimating="' + esc(l.id) + '" style="color:#6d28d9;font-weight:700">📐 Estimating: ' + esc(en) + '</div>' : '');
 }
 function lcRowHtml(l, r, bc, del, now){
   var id = esc(l.id), cell = function(c, v, tip){ return '<td class="c-' + c + '"' + (tip ? ' title="' + esc(tip) + '"' : '') + '>' + (v ? esc(v) : '<span class="gcl-dash">—</span>') + '</td>'; };
@@ -179174,7 +179180,8 @@ function hdrTradesDue(j){
     + ' <button type="button" data-a="dtab" data-f="trades" style="font:700 12px system-ui;min-height:26px;min-width:0;padding:2px 10px;border:1px solid #c9c3ea;border-radius:999px;color:#fff;background:rgba(255,255,255,.08)">✏️ Trades</button>'
     + ' <span class="mut" style="color:#c9c3ea;margin-left:6px" data-hdr-due>⏰ ' + esc(j.due ? 'Subs due ' + j.due + (j.dueTime ? ' ' + j.dueTime : '') : 'No sub due date') + (j.ourDue ? ' · Our bid due ' + j.ourDue + (j.ourDueTime ? ' ' + j.ourDueTime : '') : '') + '</span>'   /* patch PLANREQ-F */
     + ' <button type="button" data-a="dtab" data-f="due" style="font:700 12px system-ui;min-height:26px;min-width:0;padding:2px 10px;border:1px solid #c9c3ea;border-radius:999px;color:#fff;background:rgba(255,255,255,.08)">✏️ Due</button>'
-    + (j.biddingClosed ? ' <span class="pill warn">⏸ bidding closed</span>' : '') + '</div>';
+    + (j.biddingClosed ? ' <span class="pill warn">⏸ bidding closed</span>' : '')
+    + (function(){ var en = ''; try { var lk = linkGuess(j); en = W._gcEstimatorFor ? s(W._gcEstimatorFor({ leadId: lk.leadId, pid: lk.pid })) : ''; } catch (e) {} return en ? ' <span class="mut" style="color:#e9d5ff" data-hdr-estimating>📐 Estimating: ' + esc(en) + '</span>' : ''; })() + '</div>';   /* patch PLANREQ-J */
 }
 function lst(v){ return arr(v).join('\n'); }
 function detailsHtml(){
@@ -179186,6 +179193,10 @@ function detailsHtml(){
   var inp = function(k, v, ph, type, wdt){ return '<input type="' + (type || 'text') + '" data-d="' + k + '" value="' + esc(v) + '"' + (ph ? ' placeholder="' + esc(ph) + '"' : '') + ' style="' + (wdt ? 'width:' + wdt : 'flex:1;min-width:180px') + '">'; };
   var chk = function(k, on, label){ return '<label style="display:inline-flex;gap:5px;align-items:center;margin-right:10px"><input type="checkbox" data-d="' + k + '"' + (on ? ' checked' : '') + '> ' + label + '</label>'; };
   var projs = arr((W._crm || {}).projects).filter(function(p){ return p && p.id && !p.deleted; }).slice(0, 400), leads = arr((W._crm || {}).leads).filter(function(l){ return l && l.id && !l.deleted; }).slice(-300);
+  var lk = DT.lk || (DT.lk = linkGuess(j));   /* patch PLANREQ-J */
+  if (!DT.c) { var c0 = j.contacts || {}; DT.c = (s(c0.pmName) || s(c0.estName)) ? { pmName: s(c0.pmName), pmPhone: s(c0.pmPhone), pmEmail: s(c0.pmEmail), estName: s(c0.estName), estPhone: s(c0.estPhone), estEmail: s(c0.estEmail) } : contactsGuess(j, lk); DT.cAuto = !(s(c0.pmName) || s(c0.estName)); }
+  c = DT.c; var same = s(c.pmName) && low(c.pmName) === low(c.estName);
+  var estNow = ''; try { estNow = W._gcEstimatorFor ? s(W._gcEstimatorFor({ leadId: lk.leadId, pid: lk.pid })) : ''; } catch (e) {}
   var map = s(j.address) ? ' <a href="https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(j.address) + '" target="_blank" rel="noopener" data-maplink>📍 Map ↗</a>' : '';
   return '<div data-details>'
     + '<h4>🔨 Trades we are bidding</h4><div class="mut">Subs see these on the job; their own trade is highlighted. Each trade gets its own box on 📝 Scope. ✉️ Invite subs starts with these trades picked.</div>'
@@ -179217,13 +179228,45 @@ function detailsHtml(){
     + '<h4>🧾 Bid form — line items subs fill in</h4>' + DT.bidForm.map(function(x, i){ return '<div class="row" data-bfrow="' + i + '"><select data-bf="trade" data-i="' + i + '"><option value="">Any trade</option>' + DT.trades.concat(x.trade && DT.trades.indexOf(x.trade) < 0 ? [x.trade] : []).map(function(t){ return '<option' + (x.trade === t ? ' selected' : '') + '>' + esc(t) + '</option>'; }).join('') + '</select>'
       + '<input type="text" data-bf="item" data-i="' + i + '" value="' + esc(x.item) + '" placeholder="Line item (e.g. Hang + finish walls)" style="flex:1;min-width:180px"><input type="text" data-bf="unit" data-i="' + i + '" value="' + esc(x.unit) + '" placeholder="Unit (LS, SF…)" style="width:90px"><button type="button" class="b red" data-a="bfrm" data-i="' + i + '">🗑</button></div>'; }).join('')
     + '<div class="row"><button type="button" class="b" data-a="bfadd">+ Add a line item</button></div>'
-    + '<h4>☎️ Contacts subs see</h4><div class="row">' + inp('pmName', c.pmName || j.pmName, 'PM name', 'text', '160px') + inp('pmPhone', c.pmPhone, 'PM phone', 'text', '130px') + inp('pmEmail', c.pmEmail || j.pmEmail, 'PM e-mail', 'text', '200px') + '</div>'
-    + '<div class="row">' + inp('estName', c.estName, 'Estimator name', 'text', '160px') + inp('estPhone', c.estPhone, 'Estimator phone', 'text', '130px') + inp('estEmail', c.estEmail, 'Estimator e-mail', 'text', '200px') + '</div>'
-    + '<h4>🔗 CRM</h4><div class="row"><label>Project <select data-d="crmProjectId"><option value="">— none —</option>' + projs.map(function(p){ return '<option value="' + esc(p.id) + '"' + (p.id === j.crmProjectId ? ' selected' : '') + '>' + esc((p.autoPO ? p.autoPO + ' · ' : '') + (p.name || p.id)) + '</option>'; }).join('') + '</select></label>'
-    + '<label>Lead <select data-d="crmLeadId"><option value="">— none —</option>' + leads.map(function(l){ return '<option value="' + esc(l.id) + '"' + (l.id === j.crmLeadId ? ' selected' : '') + '>' + esc(l.name || l.id) + '</option>'; }).join('') + '</select></label></div>'
+    + '<h4>☎️ Contacts subs see <button type="button" class="b" data-a="cfill" style="margin-left:8px">↻ Fill from CRM</button></h4>'
+    + (DT.cAuto ? '<div class="mut" data-contacts-auto>Filled from the CRM' + (lk.pid || lk.leadId ? ' (the linked ' + (lk.pid ? 'job' : 'lead') + ')' : '') + ' — change anything, then 💾 Save.</div>' : '')
+    + (same ? '<div class="mut" data-contacts-same><b>PM &amp; estimator: ' + esc(c.pmName) + '</b> — subs see one contact.</div>' : !s(c.pmName) && s(c.estName) ? '<div class="mut" data-contacts-main>No PM yet — the estimator is the main contact for subs.</div>' : '')
+    + (estNow ? '<div class="mut" data-estimating-now>📐 Estimating: <b>' + esc(estNow) + '</b></div>' : '')
+    + '<div class="row"><span style="width:70px">PM</span>' + staffSel('pmName', c.pmName) + inp('pmPhone', c.pmPhone, 'PM phone', 'text', '130px') + inp('pmEmail', c.pmEmail, 'PM e-mail', 'text', '200px') + '</div>'
+    + '<div class="row"><span style="width:70px">Estimator</span>' + staffSel('estName', c.estName) + inp('estPhone', c.estPhone, 'Estimator phone', 'text', '130px') + inp('estEmail', c.estEmail, 'Estimator e-mail', 'text', '200px') + '</div>'
+    + '<h4>🔗 CRM</h4>' + (lk.guessed ? '<div class="mut" data-crm-guessed>Found in the CRM by its lead / title / address — check it, then 💾 Save.</div>' : '') + '<div class="row"><label>Project <select data-d="crmProjectId"><option value="">— none —</option>' + projs.map(function(p){ return '<option value="' + esc(p.id) + '"' + (p.id === lk.pid ? ' selected' : '') + '>' + esc((p.autoPO ? p.autoPO + ' · ' : '') + (p.name || p.id)) + '</option>'; }).join('') + '</select></label>'
+    + '<label>Lead <select data-d="crmLeadId"><option value="">— none —</option>' + leads.map(function(l){ return '<option value="' + esc(l.id) + '"' + (l.id === lk.leadId ? ' selected' : '') + '>' + esc(l.name || l.id) + '</option>'; }).join('') + '</select></label></div>'
     + '<h4>🔒 Internal notes <span class="mut">(never shown to a sub)</span></h4><textarea data-d="internalNotes">' + esc(j.internalNotes) + '</textarea>'
     + '</div>';   /* patch PLANREQ-H: 💾 Save is a footer under the scrolling sheet (it sat over the fields) */
 }
+/* patch PLANREQ-J (owner 11/12: "should auto fill out; sometimes the PM is also the estimator; auto fill PM, if no PM autofill the estimator
+   doing the estimate"): the CRM project / lead is found for the bid job (its own link, the Lead Inbox id, else the title / address) and
+   preselected; the contacts subs see fill themselves (when empty) — PM = the job's PM (or the lead's), Estimator = whoever is doing the
+   estimate (window._gcEstimatorFor), else the lead's estimator, else the Senior Estimator — names picked from the staff list, which fills
+   phone and e-mail. One person doing both shows once ("PM & estimator"). "↻ Fill from CRM" redoes it; anything typed can be changed. */
+function staffUsers(){ return arr((W._crm || {}).users).filter(function(u){ return u && s(u.name) && u.active !== false && !/sub|vendor|customer|client/i.test(s(u.role) + ' ' + s(u.type)); }); }
+function userByName(n){ n = low(n); return n ? staffUsers().filter(function(u){ return low(u.name) === n || low(u.email) === n; })[0] || null : null; }
+function nrm(v){ return low(v).replace(/[^a-z0-9]+/g, ' ').trim(); }
+function linkGuess(j){
+  var C = W._crm || {}, projs = arr(C.projects).filter(function(p){ return p && !p.deleted; }), leads = arr(C.leads).filter(function(l){ return l && !l.deleted; }), out = { pid: s(j.crmProjectId), leadId: s(j.crmLeadId), guessed: false };
+  if (!out.leadId && s(j.leadId)) { var hit = null; try { hit = typeof W._gcLeadByInbox === 'function' ? W._gcLeadByInbox(leads, j.leadId) : null; } catch (e) {} if (!hit) hit = leads.filter(function(l){ return s(l.inboxId) === s(j.leadId) || s(l.leadInboxId) === s(j.leadId) || 'LEADIN-' + s(j.leadId).replace(/^LI-/, '') === s(l.id); })[0]; if (hit) { out.leadId = s(hit.id); out.guessed = true; } }
+  var t = nrm(j.title), a = nrm(s(j.address).split(',')[0]);
+  if (!out.leadId && t) { var l2 = leads.filter(function(l){ return nrm(l.name || l.title) === t || (a && nrm(s(l.address).split(',')[0]) === a); })[0]; if (l2) { out.leadId = s(l2.id); out.guessed = true; } }
+  if (!out.pid && t) { var p2 = projs.filter(function(p){ return nrm(p.name) === t || (a && nrm(s(p.address).split(',')[0]) === a) || (out.leadId && (s(p.leadId) === out.leadId || s(p.fromLead) === out.leadId)); })[0]; if (p2) { out.pid = s(p2.id); out.guessed = true; } }
+  return out;
+}
+function contactsGuess(j, lk){
+  var C = W._crm || {}, p = lk.pid ? arr(C.projects).filter(function(x){ return x && s(x.id) === lk.pid; })[0] : null, l = lk.leadId ? arr(C.leads).filter(function(x){ return x && s(x.id) === lk.leadId; })[0] : null;
+  var pm = s(p && (p.pm || p.projectManager)) || s(l && (l.pm || l.assignedTo || l.assigned || l.owner)) || s(j.pmName);
+  var est = ''; try { est = W._gcEstimatorFor ? s(W._gcEstimatorFor({ leadId: lk.leadId, pid: lk.pid })) : ''; } catch (e) {}
+  if (!est) est = s(l && l.estimator); if (!est) { try { est = W._gcDefEstName ? s(W._gcDefEstName()) : ''; } catch (e) {} }
+  var pu = userByName(pm) || userByName(j.pmEmail), eu = userByName(est);
+  var o = { pmName: pu ? s(pu.name) : pm, pmPhone: s(pu && (pu.phone || pu.cell || pu.mobile)), pmEmail: low(pu && pu.email) || (pm && low(pm) === low(j.pmName) ? low(j.pmEmail) : ''),
+    estName: eu ? s(eu.name) : est, estPhone: s(eu && (eu.phone || eu.cell || eu.mobile)), estEmail: low(eu && eu.email) };
+  return o;
+}
+function staffSel(k, v){ var us = staffUsers(), has = !v || us.some(function(u){ return low(u.name) === low(v); });
+  return '<select data-d="' + k + '" data-staffpick="' + k + '" style="width:170px"><option value="">— pick —</option>' + (has ? '' : '<option selected>' + esc(v) + '</option>') + us.map(function(u){ return '<option' + (low(u.name) === low(v) ? ' selected' : '') + '>' + esc(u.name) + '</option>'; }).join('') + '</select>'; }
 function dval(k){ var x = D.querySelector('#gcsys2 [data-d="' + k + '"]'); return x ? (x.type === 'checkbox' ? x.checked : s(x.value)) : undefined; }
 function readBf(){ Array.prototype.forEach.call(D.querySelectorAll('#gcsys2 [data-bf]'), function(x){ var r = DT.bidForm[+x.getAttribute('data-i')]; if (r) r[x.getAttribute('data-bf')] = x.value; }); }
 function saveDetails(btn){
@@ -179458,6 +179501,12 @@ function post(body, btn, ok){
 }
 function onChange(ev){
   var t = ev.target, pa = t.getAttribute('data-pa'), ti = t.getAttribute('data-ti');
+  var sp = t.getAttribute('data-staffpick'); if (sp && DT) { var u = userByName(t.value), pre = sp === 'pmName' ? 'pm' : 'est';   /* patch PLANREQ-J: a staff pick fills phone + e-mail */
+    DT.c = DT.c || {}; ['pmName', 'pmPhone', 'pmEmail', 'estName', 'estPhone', 'estEmail'].forEach(function(k){ var x = D.querySelector('#gcsys2 [data-d="' + k + '"]'); if (x) DT.c[k] = x.value; });
+    DT.c[pre + 'Name'] = t.value; DT.c[pre + 'Phone'] = s(u && (u.phone || u.cell || u.mobile)); DT.c[pre + 'Email'] = low(u && u.email); DT.cAuto = false; readBf(); draw();
+    ['Phone', 'Email'].forEach(function(k){ var x = D.querySelector('#gcsys2 [data-d="' + pre + k + '"]'); if (x) x.value = DT.c[pre + k] || ''; });   /* the redraw keeps typed values — these come from the pick */
+    return; }
+  if ((t.getAttribute('data-d') === 'crmProjectId' || t.getAttribute('data-d') === 'crmLeadId') && DT && DT.lk) { DT.lk[t.getAttribute('data-d') === 'crmProjectId' ? 'pid' : 'leadId'] = t.value; DT.lk.guessed = false; }
   if (pa) post({ op: 'plans', ref: t.getAttribute('data-ref'), version: pa === 'version' ? t.value : undefined, date: pa === 'date' ? t.value : undefined }, null, function(){ toast('Saved'); });
   if (ti && M.ts) { var i = +t.getAttribute('data-i'); if (M.ts[i]) M.ts[i][ti] = t.value; }
 }
@@ -179475,6 +179524,7 @@ function onClick(ev){
   if (a === 'bfrm') { readBf(); DT.bidForm.splice(+t.getAttribute('data-i'), 1); return draw(); }
   if (a === 'nodue') { var dd = D.querySelector('#gcsys2 [data-d="due"]'), dtm = D.querySelector('#gcsys2 [data-d="dueTime"]'); if (dd) dd.value = ''; if (dtm) dtm.value = ''; return; }
   if (a === 'dsave') return saveDetails(t);
+  if (a === 'cfill') { readBf(); DT.c = contactsGuess(job(), DT.lk || linkGuess(job())); DT.cAuto = true; draw(); ['pmName', 'pmPhone', 'pmEmail', 'estName', 'estPhone', 'estEmail'].forEach(function(k){ var x = D.querySelector('#gcsys2 [data-d="' + k + '"]'); if (x) x.value = DT.c[k] || ''; }); return toast('↻ Contacts filled from the CRM'); }   /* patch PLANREQ-J */
   if (a === 'rvdrop') { RV.items = []; return draw(); }
   if (a === 'tsfiles') { var ti0 = M.ts[+t.getAttribute('data-i')]; if (!ti0 || !s(ti0.trade)) return; if (!ti0.id) return toast('Save the scopes first (💾), then add files to ' + ti0.trade + '.', true); return pickFiles(function(fs){ uploadPlans(fs, { kind: 'scope', trades: [ti0.trade] }); }); }
   if (a === 'rmtsfile') { var ti1 = M.ts[+t.getAttribute('data-i')]; if (!ti1) return; ti1.files = arr(ti1.files).filter(function(_, k){ return k !== +t.getAttribute('data-k'); }); return post({ op: 'scope', tradeScopes: M.ts || [] }, t, function(r){ M.ts = arr(r.tradeScopes).map(function(x){ return { id: x.id, trade: x.trade, scope: x.scope, mode: x.mode, files: arr(x.files) }; }); toast('🗑 Taken off ' + ti1.trade + '\'s scope'); }); }
@@ -223996,6 +224046,21 @@ function ourDueOf(l){ var v = s(l && (l.bidDue || l.dueDate || l.bidDueDate)); v
 function subDue(d){ d = s(d).slice(0, 10); if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return ''; var x = new Date(d + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() - 1);
   while (x.getUTCDay() === 0 || x.getUTCDay() === 6) x.setUTCDate(x.getUTCDate() - 1); return x.toISOString().slice(0, 10); }
 function md(d){ d = s(d); return /^\d{4}-\d{2}-\d{2}/.test(d) ? (+d.slice(5, 7)) + '/' + (+d.slice(8, 10)) : ''; }
+/* patch PLANREQ-J: who is doing the estimate for a lead / job / estimate — the newest estimate's estimator (else who made it), else the
+   lead's estimator. window._gcEstimatorFor({ leadId, pid, estId }) → name */
+function estOfCtx(c){
+  c = c || {}; var src = arr(W._gcEstimatesState).length ? W._gcEstimatesState : arr(crm().estimates); if (!src.length) { try { src = typeof estimates !== 'undefined' && Array.isArray(estimates) ? estimates : []; } catch (x) { src = []; } }   /* the same lists est() reads */
+  var es = arr(src).filter(function(e){ return e && !e.deleted && ((c.estId && s(e.id) === s(c.estId)) || (c.leadId && s(e.leadId) === s(c.leadId)) || (c.pid && (s(e.pid) === s(c.pid) || s(e.projectId) === s(c.pid)))); });
+  es.sort(function(a, b){ return s(b.updatedAt || b.savedAt || b.date).localeCompare(s(a.updatedAt || a.savedAt || a.date)); });
+  var e = es[0]; var n = s(e && (e.estimator || e.estimatorName || e.by || e.createdByName || e.createdBy));
+  if (!n || /@/.test(n) && !arr(crm().users).some(function(u){ return low(u.email) === low(n); })) { var l = c.leadId ? lead(c.leadId) : null; n = n || s(l && l.estimator); }
+  if (/@/.test(n)) { var u = arr(crm().users).filter(function(x){ return low(x.email) === low(n); })[0]; if (u) n = s(u.name); }
+  return n;
+}
+W._gcEstimatorFor = estOfCtx;
+W._gcEstimateOf = function(c){ c = c || {}; var src = arr(W._gcEstimatesState).length ? W._gcEstimatesState : arr(crm().estimates); if (!src.length) { try { src = typeof estimates !== 'undefined' && Array.isArray(estimates) ? estimates : []; } catch (x) { src = []; } }
+  return arr(src).filter(function(e){ return e && !e.deleted && ((c.leadId && s(e.leadId) === s(c.leadId)) || (c.pid && (s(e.pid) === s(c.pid) || s(e.projectId) === s(c.pid)))); })
+    .sort(function(a, b){ return s(b.updatedAt || b.savedAt || b.date).localeCompare(s(a.updatedAt || a.savedAt || a.date)); })[0] || null; };   /* patch PLANREQ-J: the lead's / job's newest estimate */
 W._gcSubDue = function(v){ var o = ourDueOf({ bidDue: v }); return { date: subDue(o.date), time: o.time }; };
 function ctxOf(c){
   c = c || {}; var e = c.estId ? est(c.estId) : null, pid = s(c.pid) || s(e && e.pid), p = proj(pid), l = lead(c.leadId) || (e && e.leadId ? lead(e.leadId) : null);
@@ -224186,7 +224251,8 @@ function onClick(ev){
 }
 
 /* ── the buttons: the builder's bar, a job's page, a lead's drawer ── */
-function btnHtml(c){ var j = postedFor(c), on = j && !j.deleted; return '<button type="button" class="gcbp-btn" data-bidpost="1" title="' + (on ? 'On the bid portal — change it or take it off' : 'Put this job on the GrayCo bid portal for sub pricing') + '">📢 ' + (on ? 'On bid portal · ' + (j.visibility === 'public' ? '🌐' : '🔒') + ' Edit' : 'Put on bid portal') + '</button>'; }
+function btnHtml(c){ var j = postedFor(c), on = j && !j.deleted, en = ''; try { en = estOfCtx({ leadId: c.leadId, pid: c.pid, estId: c.estId }); } catch (e) {}
+  return (en ? '<span class="gcbp-esting" data-estimating="' + esc(en) + '" style="font:700 12px system-ui;color:#5b21b6;background:#f3e8ff;border-radius:999px;padding:3px 9px;margin-right:6px">📐 Estimating: ' + esc(en) + '</span>' : '') + '<button type="button" class="gcbp-btn" data-bidpost="1" title="' + (on ? 'On the bid portal — change it or take it off' : 'Put this job on the GrayCo bid portal for sub pricing') + '">📢 ' + (on ? 'On bid portal · ' + (j.visibility === 'public' ? '🌐' : '🔒') + ' Edit' : 'Put on bid portal') + '</button>'; }
 function paintEst(){
   var acts = D.getElementById('gc-est3-acts'), old = D.getElementById('gcbp-est');
   if (!acts) { if (old) old.remove(); return; }

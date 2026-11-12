@@ -2124,7 +2124,9 @@ function BidDetails({ t, job }) {
     req.length && [t.dRequirements, req.join(' · ')],
     (job.alternates || []).length && [t.dAlternates, (job.alternates || []).join(' · ')],
     (job.unitPrices || []).length && [t.dUnitPrices, (job.unitPrices || []).join(' · ')],
-    (c.pmName || c.estName) && [t.dContacts, [c.pmName && ('PM ' + c.pmName + [c.pmPhone, c.pmEmail].filter(Boolean).map(x => ' · ' + x).join('')), c.estName && (t.dEstimator + ' ' + c.estName + [c.estPhone, c.estEmail].filter(Boolean).map(x => ' · ' + x).join(''))].filter(Boolean).join(' | ')]
+    (c.pmName || c.estName) && [t.dContacts, (c.pmName && c.estName && c.pmName.toLowerCase() === c.estName.toLowerCase())   /* patch PLANREQ-J: one person doing both → once */
+      ? 'PM & ' + t.dEstimator.toLowerCase() + ' ' + c.pmName + [c.pmPhone || c.estPhone, c.pmEmail || c.estEmail].filter(Boolean).map(x => ' · ' + x).join('')
+      : [c.pmName && ('PM ' + c.pmName + [c.pmPhone, c.pmEmail].filter(Boolean).map(x => ' · ' + x).join('')), c.estName && (t.dEstimator + ' ' + c.estName + [c.estPhone, c.estEmail].filter(Boolean).map(x => ' · ' + x).join(''))].filter(Boolean).join(' | ')]
   ].filter(Boolean);
   if (!rows.length && !job.bidInstructions) return null;
   return (

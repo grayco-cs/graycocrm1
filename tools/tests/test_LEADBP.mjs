@@ -23,6 +23,7 @@ cset('users', [{ id: 'u1', name: 'Wesley Johnson', email: 'wjohnson@grayco-cs.co
 cset('leads', [{ id: 'L1', name: 'Sample Church Reroof', type: 'Commercial', stage: 'New Lead', address: '5 Sample Rd', city: 'Memphis', state: 'TN', pm: 'Pat Sample', bidDue: due + 'T14:00', createdAt: at, updatedAt: at },
   { id: 'LEADIN-ab12', name: 'Sample Clinic — Bid Invite', type: 'Commercial', stage: 'New Lead', gc: 'Sample Builders Inc.', bidDue: due + 'T10:00', inboxId: 'LI-ab12', source: 'bid board', address: '9 Sample Pkwy', createdAt: at, updatedAt: at },
   { id: 'L3', name: 'Other PM Lead', type: 'Residential', stage: 'New Lead', pm: 'Wesley Johnson', createdAt: at, updatedAt: at }]);
+cset('estimates', [{ id: 'E1', name: 'Church reroof — base', leadId: 'L1', estimator: 'Glenn Sample', status: 'Draft', lines: [{ id: 'x', desc: 'Shingles', cost: 1, qty: 1 }], updatedAt: at, savedAt: at, date: at.slice(0, 10) }]);   /* patch PLANREQ-J */
 const POSTS = [];
 async function routes(c, who){
   await c.ctx.route('**/.netlify/functions/bid-hub*', async rt => {
@@ -67,6 +68,9 @@ async function check(email, label, leads, notLead){
     ok(label + ' · the Leads list rows have a 📢 button', !!rb, rb);
     if (rb) { await C.ev(() => document.querySelector('[data-gclu-bp]').click()); ok(label + ' · a row\'s 📢 opens the sheet (not the drawer)', !!(await wait(C, () => document.getElementById('gcbp-modal'), null, 8000)));
       await C.ev(() => { const m = document.getElementById('gcbp-modal'); if (m) m.remove(); }); }
+    const es = await wait(C, () => { const x = document.querySelector('[data-lead-estimating="L1"]'); return x ? x.textContent : null; }, null, 8000);
+    ok(label + ' · the Leads list shows who is doing the estimate ("📐 Estimating: Glenn Sample")', /Estimating: Glenn Sample/.test(es || ''), es);
+    if (SHOTS && label === 'admin') await C.page().screenshot({ path: SHOTS + '/leadbp_list_row_bp_estimating.png' });
     const bulk = await C.ev(() => window._gcBidPost.canBulk());
     ok(label + ' · may put SELECTED leads on the bid portal (multi-select)', bulk === true);
     if (label === 'admin') { C.acceptConfirm = true; C.page().on('dialog', d => d.accept().catch(() => {})); const n0 = POSTS.length; await C.ev(() => window._gcBidPost.bulk(['L3'])); await wait(C, () => true, null, 300); await sleep(1500);
