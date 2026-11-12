@@ -161,7 +161,10 @@ try {
   await A.ev(() => window._setView('approvals')); await sleep(2500);
   const clicked = await A.ev(() => { const cards = [...document.querySelectorAll('#gc-apx-mount *')].filter(e => /Time off: Zedd Demo/.test(e.textContent || '') && [...e.querySelectorAll('button')].some(b => /Deny/.test(b.textContent))); const c = cards[cards.length - 1]; if (!c) return false; [...c.querySelectorAll('button')].find(b => /Deny/.test(b.textContent)).click(); return true; });
   await sleep(700);
-  const went = await A.ev(() => { const i = document.querySelector('[data-apx-deny-in]'); if (!i) return false; i.value = 'Busy week'; i.dispatchEvent(new Event('input', { bubbles: true })); const g = document.querySelector('[data-apx-act$="|denygo"]'); if (!g) return false; g.click(); return true; });
+  const went = await A.ev(() => {   /* the deny bar ("✕ Denied — … Why? · Send back · ↩ Undo"), or the older in-card box */
+    const w = document.querySelector('[data-apx-dwhy]');
+    if (w) { w.value = 'Busy week'; w.dispatchEvent(new Event('input', { bubbles: true })); const g = document.querySelector('[data-apx-dsend]'); if (!g) return false; g.click(); return true; }
+    const i = document.querySelector('[data-apx-deny-in]'); if (!i) return false; i.value = 'Busy week'; i.dispatchEvent(new Event('input', { bubbles: true })); const g = document.querySelector('[data-apx-act$="|denygo"]'); if (!g) return false; g.click(); return true; });
   await sleep(2500);
   const r2c = (H.cget('gc_timeoff') || { list: [] }).list.find(r => r.id === r2);
   ok(clicked && went && r2c && r2c.status === 'denied' && r2c.decisionNote === 'Busy week', 'Approvals row ✕ Deny (with a reason) denies the time-off request', { clicked, went, st: r2c && r2c.status, n: r2c && r2c.decisionNote });
