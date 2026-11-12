@@ -195774,7 +195774,8 @@ function trainOf(email, reqId){
   var k = res.every(function(x){ return x.k === 'pass'; }) ? 'pass' : res.some(function(x){ return x.k !== 'not'; }) ? 'prog' : 'not';
   var l = k === 'pass' ? 'passed' + res.filter(function(x){ return x.score; }).map(function(x){ return ' (' + x.score + (x.at ? ', ' + fmt(x.at) : '') + ')'; }).join('') : k === 'prog' ? 'in progress' : 'not started';
   return { k: k, l: l, mods: res };
-} UI = { tab: 'people', year: String(new Date().getFullYear()) };
+}
+var PLAN = null, CERTS = [], LOADED = false, OV = null, UI = { tab: 'people', year: String(new Date().getFullYear()) };
 function defaults(){ return { tracks: TRACKS(), raises: RAISES(), people: {}, done: [], bonus: {}, suggested: false, tracksV: 2, raisesV: 2, caps: {}, travel: [], masterOnce: true, excLog: [], classes: [] }; }
 /* patch CERTROLE: a plan saved before the PM split → add the Roofing / Insurance PM tracks (in order) and make the IICRC set recommended
    for the plain Construction PM; the admin's own lines and edits stay */
