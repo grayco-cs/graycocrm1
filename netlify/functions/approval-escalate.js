@@ -43,7 +43,7 @@ function isScheduled(event){
    tiny read of the "last changed" times of those keys comes first; nothing changed since the last full scan → no scan.
    A full scan still runs at least every 2 hours (so nothing can be missed for long), and after any scan that failed. */
 const GATE_SIG_KEYS = ['projects', 'invs', 'invoices', 'cos', 'changeOrders', 'estimates', 'projectDocs', 'users', 'customers', 'leads', 'punch',
-  'projectPayments', 'gc_deleted_projects', 'gc_claims', 'jobAutoDefaults', 'gc_portal_auto_posts', 'gc_senior_pm', 'gc_team_settings', 'gc_portal_gate', 'gc_claim_help', 'schedule'];   /* + CLAIMHELP, SCHEDPICK (portal.js KV_KEYS) */
+  'projectPayments', 'gc_deleted_projects', 'gc_claims', 'jobAutoDefaults', 'gc_portal_auto_posts', 'gc_senior_pm', 'gc_team_settings', 'gc_portal_gate', 'gc_claim_help', 'schedule', 'gc_companies'];   /* + CLAIMHELP, SCHEDPICK, COTRAIN (portal.js KV_KEYS) */
 const GATE_FULL_MS = 2 * 3600e3, GATE_STATE = 'gc_gate_scan_sig';
 const GD = { now: function(){ return Date.now(); }, lib: function(){ return require('./bid-inbox.js')._lib; } };   /* tests swap these */
 async function gateSig(){
