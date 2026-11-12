@@ -3,7 +3,8 @@
 //      IS auto-added (archived); one with a plan a person uploaded on the bid site, a bid, an invite, a question, or posted on purpose is NOT
 //   2. 📢 postjob with CRM files: the copied files are in the plans row AND listed on the job (job.plans — what the bid site shows)
 //   3. the bid site shows the sub that job WITH its plans (subportal load jobs + plans:<id>)
-import path from 'path'; import crypto from 'crypto';
+import path from 'path'; import crypto from 'crypto'; import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
 const W = await import('./qaa_world.mjs');
 const { DB, STORE, putRow, rowData, PDF } = W;
 const BUILD = path.resolve(process.argv[2] || '.');
@@ -44,6 +45,15 @@ ok('2 … and listed on the job (job.plans: names, sizes, types) — the bid sit
 ok('2 … the job\'s PM is its contact on the bid site (pmId = their bid-site staff profile)', job.pmId === 'st_pat_demo' && job.pmName === 'Pat Demo', { pmId: job.pmId });
 const r2 = await Hb.postjob(ADMIN, { jobId: r.jobId, pid: 'P1', title: 'Demo Apartments', visibility: 'public', trades: ['Framing'], files: [{ ref: 'sb:crm-files/' + H64('a') + '.pdf', name: 'Arch set.pdf' }] });
 ok('2 posting again: no copy twice; job.plans kept', r2.ok && r2.files === 0 && rowData('jobs/' + r.jobId).plans.length === 2 && (rowData('plans/' + r.jobId)).items.length === 2, rowData('jobs/' + r.jobId).plans);
+/* 2b. a plan set so big the copy runs past the time limit: the job is already posted (saved before the copy) */
+{ const BPL = require(path.join(BUILD, 'netlify/functions/_lib/bid-portal.js')), real = BPL.make;
+  BPL.make = d => Object.assign(real(d), { _copyFile: () => new Promise(() => {}) });   /* never finishes — as a function cut off at its time limit */
+  W.H.cset('projects', [{ id: 'P1', name: 'Demo Apartments', pm: 'Pat Demo' }, { id: 'P9', name: 'Demo Big Set Job', pm: 'Pat Demo' }]);
+  const pr = Hb.postjob(ADMIN, { pid: 'P9', title: 'Demo Big Set Job', visibility: 'public', due: new Date(Date.now() + 9 * 864e5).toISOString().slice(0, 10), trades: ['Framing'], files: [{ ref: 'sb:crm-files/' + H64('a') + '.pdf', name: 'Huge set.pdf' }] });
+  await new Promise(r => setTimeout(r, 400));
+  const j9 = DB.sp_rows.map(r => r.data).find(d => d && d.crmProjectId === 'P9');
+  ok('2b the copy is cut off: the job is already ON the bid portal (public, open) — only its files are missing', !!j9 && j9.visibility === 'public' && j9.status === 'open' && j9.draft === false, j9);
+  BPL.make = real; void pr; }
 /* 3. the sub's view */
 putRow('users', 'u_zz', { id: 'u_zz', role: 'sub', approved: true, email: 'zz@demo.test', name: 'Zz Demo', company: 'Zz Framing', trades: ['Framing'] }, { user_id: 'u_zz', email: 'zz@demo.test' });
 DB.gc_staff.push({ email: 'wjohnson@grayco-cs.com', name: 'Wesley Johnson', role: 'admin', active: true });

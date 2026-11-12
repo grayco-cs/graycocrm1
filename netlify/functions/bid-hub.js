@@ -187,6 +187,9 @@ async function postjob(who, b){
   /* the job's files picked in the CRM (crm-files) → copied to the bid site's own bucket once each */
   const had = {}; arr(job.crmFileRefs).forEach(r => { had[r] = 1; });
   const want = arr(b.files).filter(f => f && /^sb:crm-files\//.test(s(f.ref)) && !had[s(f.ref)]).slice(0, 30), copied = [], failed = [];
+  /* patch QAA: the job itself is saved BEFORE the files are copied — a big plan set that runs past the function's time limit
+     still leaves the job posted (its files can then go up on the bid site, or as a 🔗 link); posting again copies the rest */
+  if (want.length) await SP.upsertRows([SP.rowFor('jobs', Object.assign({}, job, { updatedAt: at }))], who.email);
   for (const f of want) {
     let c = null; try { c = await L.portalApi()._copyFile({ ref: s(f.ref), name: s(f.name).slice(0, 160) || 'file', type: s(f.type), size: Number(f.size) || 0, kind: 'plans' }); } catch (e) { c = { name: s(f.name), why: s(e && e.message) }; }
     if (c && c.fileRef) { copied.push({ name: c.name, size: c.size, type: c.type, fileRef: c.fileRef, category: s(f.category).slice(0, 60) || 'Plans', at, by: who.email }); had[s(f.ref)] = 1; } else failed.push({ name: s(f.name), why: s(c && c.why) || 'not copied' });
