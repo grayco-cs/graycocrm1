@@ -1,4 +1,4 @@
-// test_ENVIRO.mjs <build-dir> — ENVIRO + HAZTEXT (owner 11/10): 🌿 Environmental tab for admins / insurance PMs / mitigation managers (not a regular PM);
+// test_ENVIRO.mjs <build-dir> — ENVIRO + HAZTEXT (owner 11/10): ☢️ Environmental tab for admins / insurance PMs / mitigation managers (not a regular PM);
 // hazardous jobs come from the job's own words; a plain residential job gets no ☣️ lead / asbestos card. Offline harness, made-up data.
 import { computer, signIn, sleep, cset, resetCloud, ACCOUNTS } from '/tmp/claude-0/-home-user-graycocrm1/6a5b2b6b-8a4d-5505-9f82-62521adb6674/scratchpad/wN/harness_N.mjs';
 const R = []; const ok = (n, c, i) => { R.push(!!c); console.log((c ? 'PASS ' : 'FAIL ') + n + (i !== undefined ? '  ' + JSON.stringify(i).slice(0, 400) : '')); };
@@ -16,7 +16,7 @@ const A = await computer('wjohnson@grayco-cs.com', { build: process.argv[2] });
 const errs = []; A.page().on('pageerror', e => errs.push(String(e.message).slice(0, 200)));
 await signIn(A, 'wjohnson@grayco-cs.com', 15000); await sleep(9000);
 const nav = await A.ev(() => [...document.querySelectorAll('nav button, aside button')].filter(b => b.offsetParent).map(b => b.innerText.replace(/\s+/g, ' ').trim()));
-ok('admin menu has 🌿 Environmental', nav.some(t => /Environmental/.test(t)), nav);
+ok('admin menu has ☢️ Environmental', nav.some(t => /Environmental/.test(t)), nav);
 const hz = await A.ev(() => Object.fromEntries((window._crm.projects || []).map(p => [p.id, Object.keys(window._gcHazOf(p)).filter(k => window._gcHazOf(p)[k])])));
 ok('hazards from the job\'s own words (H1 lead · H2 mold+sewage · H3 fire · plain deck none — "lead carpenter" / "sales lead" are not lead paint)', hz.H1.join() === 'lead' && hz.H2.join() === 'mold,sewage' && hz.H3.join() === 'fire' && !hz.P1.length, hz);
 ok('WATERCAT: Cat 2 (washer / gray water) and Cat 3 (flood water) show; a clean Cat 1 pipe burst does not', hz.W2.join() === 'cat2' && hz.W3.join() === 'sewage' && !hz.W1.length, hz);

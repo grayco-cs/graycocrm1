@@ -38,6 +38,6 @@ ok('a Lead Inbox lead that lands right after a click is still left alone', st.jo
 const def = await A.ev(() => { const fld = { k: 'x', get def(){ const f = window._gcCo.filter(); return f !== 'all' ? f : 'construction'; } }; return fld.def; });
 ok('B7: the picked company (Mitigation) is the New-lead default', def === 'mitigation', def);
 const src = await A.ev(() => [...document.scripts].map(s => s.textContent).join('\n').includes('{k:"companyId",l:"Company",type:"select",opts:[{v:"construction",l:"🏗 Construction"}'));
-ok('B7: the New-lead Company field shows names (🏗 Construction / 💧 Mitigation / 🌿 Environmental)', src);
+ok('B7: the New-lead Company field shows names (🏗 Construction / 💧 Mitigation / ☢️ Environmental)', src);
 ok('no page errors', !errs.length, errs);
 const n = R.filter(Boolean).length; console.log('COSTAMP ' + n + '/' + R.length); process.exit(n === R.length ? 0 : 1);

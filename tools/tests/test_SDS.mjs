@@ -46,14 +46,14 @@ const setCo = async c => { await A.ev(c => window._gcCo.setFilter(c), c); await 
 await setCo('mitigation');
 await A.ev(() => window._setView('sds')); await sleep(2500);
 let n = await nav();
-ok('Mitigation picked: 🧪 Materials & SDS in the left menu (after 💧 Mitigation; no 🌿 Environmental, no RoofScout)', /Materials & SDS/.test(n) && n.indexOf('Materials & SDS') > n.indexOf('💧 Mitigation') && !/Environmental/.test(n) && !/RoofScout/.test(n), n.slice(0, 500));
+ok('Mitigation picked: 🧪 Materials & SDS in the left menu (after 💧 Mitigation; no ☢️ Environmental, no RoofScout)', /Materials & SDS/.test(n) && n.indexOf('Materials & SDS') > n.indexOf('💧 Mitigation') && !/Environmental/.test(n) && !/RoofScout/.test(n), n.slice(0, 500));
 let t = await A.ev(() => (document.querySelector('.gcsds') || {}).innerText || '');
 ok('the tab opens: library, the "Typical — always follow the product\'s own SDS and label" note, the jobs card', /Materials library/.test(t) && /Typical — always follow the product's own SDS and label/.test(t) && /Jobs — materials/.test(t), t.slice(0, 300));
 if (SHOT) await A.page().screenshot({ path: SHOT + '/sds_mitigation_tab.png' });
 await setCo('environmental');
 await A.ev(() => window._setView('sds')); await sleep(2000);
 n = await nav();
-ok('Environmental picked: 🧪 Materials & SDS in the left menu too (after 🌿 Environmental; no 💧 Mitigation, no RoofScout)', /Materials & SDS/.test(n) && n.indexOf('Materials & SDS') > n.indexOf('Environmental') && !/RoofScout/.test(n), n.slice(0, 500));
+ok('Environmental picked: 🧪 Materials & SDS in the left menu too (after ☢️ Environmental; no 💧 Mitigation, no RoofScout)', /Materials & SDS/.test(n) && n.indexOf('Materials & SDS') > n.indexOf('Environmental') && !/RoofScout/.test(n), n.slice(0, 500));
 await A.ev(() => document.querySelector('.gcsds [data-sds-g="lead"]').click()); await sleep(600);
 if (SHOT) await A.page().screenshot({ path: SHOT + '/sds_environmental_tab.png' });
 const who = await A.ev(() => { const u0 = window._gcMeUser, a0 = window.__GC_AUTH__.isAdmin, f0 = localStorage.getItem('gc_co_filter');
