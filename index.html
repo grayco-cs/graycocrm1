@@ -212026,8 +212026,17 @@ function leadsList(){ var l = []; try { if (typeof W._gcLaLeads === 'function') 
 function estList(){ try { return arr(W._gcEstimatesState); } catch (e) { return []; } }
 function dataNow(){
   var c = C();
-  return { projects: c.projects, customers: arr(c.customers).length ? c.customers : W._graycoCustomers, schedule: c.schedule, invs: c.invoices, estimates: estList(),
-    projectDocs: arr(W._gcProjectDocs).length ? W._gcProjectDocs : c.projectDocs, leads: leadsList(), gc_claims: claimsList(), gc_est_sent: EXTRA.est, gc_photo_ai: EXTRA.ai };
+  return { projects: coList(c.projects, 'p'), customers: arr(c.customers).length ? c.customers : W._graycoCustomers, schedule: c.schedule, invs: c.invoices, estimates: estList(),
+    projectDocs: arr(W._gcProjectDocs).length ? W._gcProjectDocs : c.projectDocs, leads: coList(leadsList(), 'l'), gc_claims: claimsList(), gc_est_sent: EXTRA.est, gc_photo_ai: EXTRA.ai };
+}
+/* patch QAB (overnight QA 11/12, To-Do → 🧾 Missing job data with GrayCo Mitigation picked listed Construction's jobs): with one company
+   picked, the board, its banner and its counts are that company's jobs (and jobs shared with it) and leads; "All companies" unchanged */
+var COF = { p: {}, l: {} };
+function coList(l, k){
+  try { var C0 = W._gcCo, f = C0 ? C0.filter() : 'all'; if (!C0 || f === 'all' || !Array.isArray(l)) return l;
+    var m = COF[k]; if (m.src === l && m.f === f && m.n === l.length) return m.out;
+    var o = l.filter(function(x){ return x && (k === 'p' ? C0.passJob(x) : C0.ofLead(x) === f); }); if (l.__dfSig) o.__dfSig = l.__dfSig;
+    COF[k] = { src: l, f: f, n: l.length, out: o }; return o; } catch (e) { return l; }
 }
 var CACHE = { sig: '', at: 0, res: null, byPid: {}, ix: null };
 function sigNow(d){ return [d.projects, d.customers, d.schedule, d.invs, d.projectDocs, d.estimates, d.leads].map(function(x){ return Array.isArray(x) ? x.length : 0; }).join('.') + ':' + (d.projects && d.projects.__dfSig || ''); }

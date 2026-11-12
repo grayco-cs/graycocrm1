@@ -69,6 +69,9 @@ const dk = await A.ev(() => (document.getElementById('gc-ra-desk') || {}).innerT
 ok('M2 the owner\'s home (desk) with Mitigation picked: All jobs = Mitigation\'s (no Conzz / Envzz job)', /All jobs/.test(dk) && /Zedd Ross basement/.test(dk) && !/Conzz Smith deck|Conzz Fire rebuild|Envzz Tile asbestos/.test(dk), dk.split('\n').filter(x => /zz|Zedd|All jobs/.test(x)).slice(0, 8));
 await A.ev(() => { const b = document.querySelector('#gc-ra-desk [data-ra-a="full"]'); b && b.click(); window._gcRA.hide && window._gcRA.hide(); }); await sleep(800);
 
+const dfj = await A.ev(() => { const r = window._gcDataFull && window._gcDataFull.all(); return r ? r.jobs.map(j => j.pid) : null; });
+ok('M2 🧾 Missing job data (To-Do board) with Mitigation picked: Mitigation\'s jobs only', Array.isArray(dfj) && dfj.includes('MZ1') && !dfj.some(x => /^(C1|C2|E1)$/.test(x)), dfj);
+
 /* ═══ M3 the drying file ═══ */
 await A.ev(() => window._setView('mws_jobs')); await sleep(1800);
 const dj0 = await A.ev(() => document.getElementById('gc-mws-mount').innerText);
