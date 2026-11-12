@@ -18853,9 +18853,21 @@ function getAll(){
    The input is never moved now. The dropdown floats over the page and is put
    where it needs to be when it opens, so the box he is typing in is never
    touched. */
+/* patch PLANREQ-G (owner 11/12, 📂 Manage → 📝 Details: "this came up, won't go away"): (a) a box inside [data-gc-noac] (the bid portal's
+   Manage / Details / Put on bid portal / invite sheets, …) never gets this dropdown; (b) any open dropdown closes on Escape, on a click
+   anywhere else, and as soon as its box is gone or hidden (a redraw used to leave it floating for up to 5 s, and a new one opened on the new box). */
+function acHideAll(except){ try{ document.querySelectorAll("._ac-list.show").forEach(function(l){ if(l!==except) l.classList.remove("show"); }); }catch(e){} }
+if(!window.__gcAcClose){ window.__gcAcClose=true;
+  document.addEventListener("keydown",function(e){ if(e.key==="Escape") acHideAll(); },true);
+  document.addEventListener("mousedown",function(e){ var t=e.target; var l=t&&t.closest?t.closest("._ac-list"):null; acHideAll(l||(t&&t._acList)||null); },true);
+  setInterval(function(){ try{ document.querySelectorAll("._ac-list.show").forEach(function(l){ var i=l._acInput; if(!i||!document.contains(i)||!i.offsetParent||(i.closest&&i.closest("[data-gc-noac]"))) l.classList.remove("show"); }); }catch(e){} },400);
+}
+function noAc(inp){ try{ return !!(inp.closest&&inp.closest("[data-gc-noac]")); }catch(e){ return false; } }
 function createAC(input){
   if(input._acInit)return;input._acInit=true;
+  if(noAc(input))return;   /* patch PLANREQ-G */
   var list=document.createElement("div");list.className="_ac-list";
+  list._acInput=input; input._acList=list;
   document.body.appendChild(list);
   function place(){
     try{
@@ -18871,7 +18883,7 @@ function createAC(input){
   }, 5000);
   var selIdx=-1,filtered=[];
   function show(q){
-    if(!q||q.length<1){list.classList.remove("show");return}
+    if(!q||q.length<1||noAc(input)||!document.contains(input)){list.classList.remove("show");return}   /* patch PLANREQ-G */
     var all=getAll(),ql=q.toLowerCase();
     filtered=all.filter(function(it){return(it.name||"").toLowerCase().indexOf(ql)>-1||(it.sub||"").toLowerCase().indexOf(ql)>-1||(it.extra||"").toLowerCase().indexOf(ql)>-1||(it.phone||"").toLowerCase().indexOf(ql)>-1||(it.email||"").toLowerCase().indexOf(ql)>-1}).slice(0,20);
     if(!filtered.length){list.classList.remove("show");return}
@@ -18904,6 +18916,7 @@ function scanInputs(){
   document.querySelectorAll('input[type="text"],input:not([type])').forEach(function(inp){
     /* patch OFFICEFIX: the box with the cursor too — createAC never moves it now */
     if(inp._acInit||inp.type==="date"||inp.type==="number"||inp.type==="file"||inp.type==="checkbox"||inp.type==="radio"||inp.type==="hidden"||inp.type==="password"||inp.type==="email")return;
+    if(noAc(inp)){ inp._acInit=true; return; }   /* patch PLANREQ-G: opted out (the bid portal's own sheets) */
     var ph=(inp.placeholder||"").toLowerCase(),pt=(inp.closest&&inp.closest("label,div")?inp.closest("label,div").textContent:"").toLowerCase();
     var triggers=["customer","client","sub","vendor","contractor","project","assign","pm","manager","company","contact","owner","general contractor","name"];
     if(triggers.some(function(t){return ph.indexOf(t)>-1||pt.indexOf(t)>-1}))createAC(inp);
@@ -178535,7 +178548,7 @@ function bidsTable(list, jobId, opts){
 /* ── modal ── */
 function modal(html){
   closeModal(); css();
-  var m = D.createElement('div'); m.id = 'gcsys-modal'; m.setAttribute('data-gc-keep', '1'); m.innerHTML = '<div class="box gcsys" role="dialog">' + html + '</div>';
+  var m = D.createElement('div'); m.id = 'gcsys-modal'; m.setAttribute('data-gc-keep', '1'); m.setAttribute('data-gc-noac', '1'); m.innerHTML = '<div class="box gcsys" role="dialog">' + html + '</div>';   /* patch PLANREQ-G */
   m.addEventListener('click', function(ev){ if (ev.target === m) closeModal(); });
   m.addEventListener('click', onClick);
   D.body.appendChild(m); return m;
@@ -178589,6 +178602,7 @@ function freshFrame(){ try { var m = D.getElementById('gc-sys-bp-mount'), fb = m
   if (fb.style.display === 'none') fb.innerHTML = ''; else f.src = f.getAttribute('src'); } catch (e) { warn(e); } }
 function drawBP(){
   var m = D.getElementById('gc-sys-bp-mount'); if (!m) return;
+  m.setAttribute('data-gc-noac', '1');   /* patch PLANREQ-G: the bid portal tab's own boxes (search, the inline due date) — no app-wide name dropdown */
   css();
   if (!m.__sys) { m.__sys = 1; m.addEventListener('click', onClick); m.addEventListener('input', function(ev){ if (ev.target.getAttribute('data-sys') === 'q') { BP.q = ev.target.value; drawRows(); } }); }
   if (!m.querySelector('.gcsys')) m.innerHTML = (bpFullOk() ? '<div class="gcsys gcsys-bpsw" style="padding-bottom:0;max-width:none"><div class="bar" role="group" aria-label="Bid portal view" style="margin:0 0 8px">'
@@ -179074,7 +179088,7 @@ function open(jobId, tab){
   var sh = D.getElementById('gcsys2-shade'); if (!sh) { sh = D.createElement('div'); sh.id = 'gcsys2-shade'; sh.setAttribute('data-gc-keep', '1'); sh.onclick = close; D.body.appendChild(sh); }
   var d = D.getElementById('gcsys2');
   if (!d) {
-    d = D.createElement('div'); d.id = 'gcsys2'; d.setAttribute('data-gc-keep', '1'); d.setAttribute('role', 'dialog'); d.setAttribute('aria-label', 'Manage bid job');
+    d = D.createElement('div'); d.id = 'gcsys2'; d.setAttribute('data-gc-keep', '1'); d.setAttribute('data-gc-noac', '1'); d.setAttribute('role', 'dialog');   /* patch PLANREQ-G: never the app-wide name dropdown */ d.setAttribute('aria-label', 'Manage bid job');
     d.addEventListener('click', onClick); d.addEventListener('change', onChange);
     d.addEventListener('keydown', function(ev){ if (ev.key === 'Escape') close(); });
     ['dragover', 'dragenter'].forEach(function(k){ d.addEventListener(k, function(ev){ var z = ev.target.closest && ev.target.closest('.drop'); if (z) { ev.preventDefault(); z.classList.add('over'); } }); });
@@ -224037,7 +224051,7 @@ function open(c0){
   if (!canPost(c)) { toast('Only an admin, an estimator, or this job\'s PM puts it on the bid portal.', true); return null; }
   css(); close();
   UI = { c: c, job: null, trades: {}, vis: 'private', files: filesOf(c) };
-  var m = D.createElement('div'); m.id = 'gcbp-modal'; m.setAttribute('data-gc-keep', '1');
+  var m = D.createElement('div'); m.id = 'gcbp-modal'; m.setAttribute('data-gc-keep', '1'); m.setAttribute('data-gc-noac', '1');   /* patch PLANREQ-G */
   m.innerHTML = '<div class="box" role="dialog" aria-label="Put on bid portal"><div class="mut">Loading…</div></div>';
   m.addEventListener('click', function(ev){ if (ev.target === m) close(); });
   m.addEventListener('click', onClick);
