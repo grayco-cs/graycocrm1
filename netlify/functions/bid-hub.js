@@ -91,21 +91,25 @@ async function jobsList(){
    click) archives those (status archived, archivedReason auto — restorable any time from 🗄 Archived); nothing is deleted. */
 function validDay(v){ const d = s(v).slice(0, 10); if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || s(v).length > 10 && !/^[T ]/.test(s(v).slice(10, 11))) return ''; const x = new Date(d + 'T12:00:00Z'); return !isNaN(x) && x.toISOString().slice(0, 10) === d ? d : ''; }
 function counts(invites, bids, mail, plans, qs){
-  const n = {}; const add = (id, k, v) => { if (!id) return; const o = n[id] || (n[id] = { invites: 0, bids: 0, plans: 0, questions: 0, openQ: 0 }); o[k] += v == null ? 1 : v; };
+  const n = {}; const add = (id, k, v) => { if (!id) return; const o = n[id] || (n[id] = { invites: 0, bids: 0, plans: 0, leadPlans: 0, questions: 0, openQ: 0 }); o[k] += v == null ? 1 : v; };
   invites.forEach(r => add(r.job_id, 'invites'));
   bids.forEach(r => { if (!(r.data && r.data.fromEmailBid)) add(r.job_id, 'bids'); });
   mail.forEach(x => { if (x && x.jobId) add(x.jobId, 'bids'); });
-  plans.forEach(r => add(r.job_id || r.id, 'plans', arr(r.data && r.data.items).length));
+  plans.forEach(r => { const it = arr(r.data && r.data.items); add(r.job_id || r.id, 'plans', it.length); add(r.job_id || r.id, 'leadPlans', it.filter(leadFile).length); });   /* patch QAA: the bid-board files the Lead Inbox copied in */
   qs.forEach(r => { add(r.job_id, 'questions'); if (!s(r.data && r.data.answer)) add(r.job_id, 'openQ'); });
-  return id => n[id] || { invites: 0, bids: 0, plans: 0, questions: 0, openQ: 0 };
+  return id => n[id] || { invites: 0, bids: 0, plans: 0, leadPlans: 0, questions: 0, openQ: 0 };
 }
 function postedOnPurpose(j){
   const person = v => !!s(v) && s(v) !== 'auto' && s(v) !== 'lead-inbox';
   return !!(s(j.postedAt) || (s(j.publishedAt) && person(j.publishedBy)) || (s(j.openedPrivateAt) && !j.autoPrivate && person(j.openedBy)));
 }
+/* patch QAA (owner 11/12: "start fresh — bid portal empty"): a plan / spec file the Lead Inbox copied in from the bid-board e-mail
+   (fromLead, or its staff/lead-inbox/ path) was put there by the old automatic sync, not by a person — it does not make an auto-added
+   job "real". A file a person uploaded on the bid site (staff/<month>/…, staff/plans/…) still does. Archived, never deleted. */
+function leadFile(f){ return !!f && (f.fromLead === true || /^staff\/lead-inbox\//.test(s(f.fileRef))); }
 function autoAdded(j, k){
   const fromLead = s(j.createdBy) === 'lead-inbox' || !!(j.leadInbox && s(j.leadInbox.id));
-  return fromLead && !postedOnPurpose(j) && !k.plans && !k.bids && !k.invites && !k.questions && !arr(j.specDocs).length;
+  return fromLead && !postedOnPurpose(j) && !(k.plans - (k.leadPlans || 0)) && !k.bids && !k.invites && !k.questions && !arr(j.specDocs).filter(f => !leadFile(f)).length;
 }
 async function cleanup(who, b){
   if (!who.admin) return { code: 403, error: 'Only an admin cleans up the bid portal.' };
@@ -175,19 +179,27 @@ async function postjob(who, b){
     status: /^(closed|won|lost|awarded)$/i.test(s(job.status)) ? job.status : 'open', postedAt: job.postedAt || at, postedBy: job.postedBy || who.email, postedByName: job.postedByName || s(who.name) || who.email,
     lastPostedAt: at, lastPostedBy: who.email, crmProjectId: pid || s(job.crmProjectId), crmProjectName: s(b.projectName).slice(0, 200) || s(job.crmProjectName), crmLeadId: leadId || s(job.crmLeadId), crmEstId: estId || s(job.crmEstId),
     pmEmail: low(b.pmEmail).slice(0, 160) || s(job.pmEmail), pmName: s(b.pmName).slice(0, 120) || s(job.pmName), plansLinks: links0 !== undefined ? arr(links0) : cleanLinks(b.links), autoPrivate: false, updatedAt: at });
+  /* patch QAA: the bid site lists the job's PM as its contact (job.pmId = their bid-site staff profile, as the bid site's own Add Job picks it);
+     the card said "Send bids and questions to: the Project Manager listed on the job" with nobody listed */
+  if (!s(job.pmId) && SP.okEmail(low(job.pmEmail))) job.pmId = 'st_' + low(job.pmEmail).split('@')[0].replace(/[^a-z0-9]+/g, '_').slice(0, 40);
   if (vis === 'public') Object.assign(job, { publishedAt: job.publishedAt || at, publishedBy: who.email, madePublicAt: job.madePublicAt || at });
   else Object.assign(job, { openedPrivateAt: job.openedPrivateAt || at, openedBy: who.email });
   /* the job's files picked in the CRM (crm-files) → copied to the bid site's own bucket once each */
   const had = {}; arr(job.crmFileRefs).forEach(r => { had[r] = 1; });
   const want = arr(b.files).filter(f => f && /^sb:crm-files\//.test(s(f.ref)) && !had[s(f.ref)]).slice(0, 30), copied = [], failed = [];
+  /* patch QAA: the job itself is saved BEFORE the files are copied — a big plan set that runs past the function's time limit
+     still leaves the job posted (its files can then go up on the bid site, or as a 🔗 link); posting again copies the rest */
+  if (want.length) await SP.upsertRows([SP.rowFor('jobs', Object.assign({}, job, { updatedAt: at }))], who.email);
   for (const f of want) {
     let c = null; try { c = await L.portalApi()._copyFile({ ref: s(f.ref), name: s(f.name).slice(0, 160) || 'file', type: s(f.type), size: Number(f.size) || 0, kind: 'plans' }); } catch (e) { c = { name: s(f.name), why: s(e && e.message) }; }
     if (c && c.fileRef) { copied.push({ name: c.name, size: c.size, type: c.type, fileRef: c.fileRef, category: s(f.category).slice(0, 60) || 'Plans', at, by: who.email }); had[s(f.ref)] = 1; } else failed.push({ name: s(f.name), why: s(c && c.why) || 'not copied' });
   }
   job.crmFileRefs = Object.keys(had).slice(0, 200);
+  let pl0 = null; if (copied.length) { pl0 = await SP.plansOf(job.id).catch(() => []);   /* patch QAA: the job record lists its plans too (job.plans — what the bid site shows a sub; it said "No plans yet") */
+    job.plans = pl0.concat(copied).map(x => ({ name: s(x.name), size: x.size || 0, type: s(x.type), category: s(x.category), version: s(x.version), date: s(x.date), current: !!x.current })); }
   logTo(job, who, (isNew ? '📢 Put on the bid portal' : wasGone ? '📢 Back on the bid portal' : '📢 Bid portal job changed') + ' (' + (vis === 'public' ? '🌐 public' : '🔒 private, invited subs only') + ')' + (trades.length ? ' · trades: ' + trades.join(', ') : '') + (copied.length ? ' · ' + copied.length + ' file(s)' : ''));
   const rows = [SP.rowFor('jobs', job)];
-  if (copied.length) { const pl = await SP.plansOf(job.id).catch(() => []); rows.push({ collection: 'plans', id: job.id, job_id: job.id, data: { items: pl.concat(copied) } }); }
+  if (copied.length) rows.push({ collection: 'plans', id: job.id, job_id: job.id, data: { items: pl0.concat(copied) } });
   await SP.upsertRows(rows, who.email);
   return { ok: true, jobId: job.id, created: isNew, visibility: vis, files: copied.length, notCopied: failed, role };
 }

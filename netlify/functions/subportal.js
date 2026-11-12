@@ -84,7 +84,8 @@ function subJobView(j, trades){
   delete v.log; delete v.archivedFrom;
   const mine = (Array.isArray(trades) ? trades : []).map(function(x){ return low(x); }).filter(Boolean);   /* arr() keeps objects only */
   if (Array.isArray(v.tradeScopes) && mine.length) v.tradeScopes = v.tradeScopes.filter(function(ts){ const t = low(ts && ts.trade); return !t || mine.some(function(m){ return t.indexOf(m) > -1 || m.indexOf(t) > -1; }); });
-  if (Array.isArray(v.tradeScopes)) v.tradeScopes = v.tradeScopes.map(function(ts){ return pick(ts, ['id', 'trade', 'scope']); });
+  if (Array.isArray(v.tradeScopes)) v.tradeScopes = v.tradeScopes.map(function(ts){ return pick(ts, ['id', 'trade', 'scope']); })
+    .filter(function(ts){ return s(ts.scope) || (Array.isArray(ts.files) && ts.files.length); });   /* patch QAA: a trade with no scope written yet is not an empty box on the sub's page (the trades are listed under "We are bidding") */
   if (Array.isArray(v.addenda)) v.addenda = v.addenda.filter(function(a){ return a && a.publishedAt; }).map(function(a){ return pick(a, ['num', 'date', 'title', 'text', 'files', 'dueFrom', 'dueTo', 'publishedAt']); });
   return v;
 }
