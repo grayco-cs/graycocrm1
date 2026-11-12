@@ -226262,7 +226262,7 @@ function css(){
     '#gc-to-schedbar{background:#fff;color:#0f172a;border:1px solid #e2e8f0;border-radius:12px;padding:10px 12px;margin:0 0 12px;font-family:Inter,-apple-system,sans-serif;max-width:100%;box-sizing:border-box}',
     '#gc-to-schedbar .top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}#gc-to-schedbar .top b{font-size:14px;flex:1;min-width:150px}',
     '#gc-to-schedbar .top button{border:1px solid #cbd5e1;background:#fff;border-radius:9px;padding:6px 10px;font:700 12.5px Inter,sans-serif;cursor:pointer;color:#0f172a}#gc-to-schedbar .top button.pri{background:#1d4ed8;border-color:#1d4ed8;color:#fff}',
-    '#gc-to-schedbar .grid{display:grid;grid-template-columns:repeat(14,minmax(84px,1fr));gap:4px;overflow-x:auto;padding-bottom:4px}',
+    '#gc-to-schedbar .grid{display:grid;grid-template-columns:repeat(14,minmax(104px,1fr));gap:4px;overflow-x:auto;padding-bottom:4px}',
     '#gc-to-schedbar .c{background:#f8fafc;border:1px solid #f1f5f9;border-radius:8px;padding:4px;min-height:44px}#gc-to-schedbar .c.t{border-color:#93c5fd;background:#eff6ff}#gc-to-schedbar .c.sun{opacity:.6}',
     '#gc-to-schedbar .c h5{margin:0 0 3px;font:800 11px Inter,sans-serif;color:#475569;white-space:nowrap}',
     '#gc-to-schedbar .blk{display:block;border-radius:6px;padding:2px 5px;margin-bottom:2px;font:700 11px/1.35 Inter,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
@@ -226273,7 +226273,7 @@ function css(){
     '#gc-to-note-card.sick{border-left-color:#dc2626}#gc-to-note-card.ok{border-left-color:#16a34a}#gc-to-note-card.no{border-left-color:#dc2626}#gc-to-note-card.late{border-left-color:#f59e0b}',
     '#gc-to-note-card .hd{font:800 14px Inter,sans-serif}#gc-to-note-card .sb{font-size:13px;color:#475569;margin-top:3px}#gc-to-note-card .ac{display:flex;gap:8px;margin-top:8px}',
     '#gc-to-note-card .ac button{border:1px solid #cbd5e1;background:#fff;border-radius:9px;padding:6px 12px;font-weight:700;cursor:pointer}#gc-to-note-card .ac button.pri{background:#1d4ed8;border-color:#1d4ed8;color:#fff}',
-    'html._fieldmode #gc-to-note-card{bottom:84px}',
+    'html._fieldmode #gc-to-note-card{bottom:auto;top:calc(64px + env(safe-area-inset-top,0px))}',   /* the NUDGE card sits at the bottom on a phone */
     '#gc-to-ts{margin-top:16px;border-top:1px solid #24405f;padding-top:12px}#gc-to-ts h3{margin:0 0 6px;font-size:15px}#gc-to-ts table{width:100%;border-collapse:collapse;font-size:13px}#gc-to-ts td,#gc-to-ts th{padding:6px 8px;text-align:left;border-bottom:1px solid #1d334d}'
   ].join('\n');
   (D.head || D.documentElement).appendChild(c);
@@ -226496,7 +226496,7 @@ function paintStrip(){
 /* the Desk app (patch ROLEAPPS): a card */
 function deskCard(a, card){
   if (off()) return ''; var u = meUser(); if (!u) return '';
-  var t = today(), rows = '';
+  css(); var t = today(), rows = '';
   eachDay(t, addDays(t, 4)).forEach(function(d){ var J = jobNames(jobsOn(u, d)), o = isOff(u.email, d); if (dow(d) === 0 && !J.length) return; rows += '<div class="gc-ra-item"><div class="t"><b>' + esc(d === t ? 'Today' : short(d)) + '</b><small>' + esc(o.off ? o.kind : J.length ? J.join(', ') : 'nothing scheduled') + '</small></div></div>'; });
   var n = pendingForMe().length;
   return card('timeoff', '📅 My schedule & time off', btnsHtml() + rows + '<div class="gc-ra-item"><div class="t"><b>My requests</b></div><div class="b"><button type="button" class="gc-ra-sm pri" data-to-a="mine">Open</button>' + (n || meAdmin() || meOffice() ? '<button type="button" class="gc-ra-sm" data-to-a="team">🏖 Team' + (n ? ' (' + n + ' waiting)' : '') + '</button>' : '') + '</div></div>');
@@ -226536,7 +226536,7 @@ function paintSchedBar(){
   var main = D.querySelector('#root main') || D.querySelector('main'); if (!main) return;
   var h1 = null; Array.prototype.some.call(main.querySelectorAll('h1'), function(x){ if (/^\s*Schedule\b/.test(x.textContent || '') && x.getClientRects().length) { h1 = x; return true; } return false; });
   if (!h1) { if (el) el.remove(); return; }
-  var row = h1.parentNode && h1.parentNode.parentNode; if (!row || !row.parentNode) return;
+  var fb = D.getElementById('gc-sched-filterbar'), row = fb && fb.parentNode && main.contains(fb) ? fb : h1.parentNode && h1.parentNode.parentNode; if (!row || !row.parentNode) return;   /* under the Filter bar (else the header) */
   css();
   if (!el) { el = D.createElement('div'); el.id = 'gc-to-schedbar'; el.setAttribute('data-gc-keep', '1'); }
   if (el.parentNode !== row.parentNode || el.previousSibling !== row) row.parentNode.insertBefore(el, row.nextSibling);
@@ -226557,12 +226557,19 @@ function schedCheck(L){
     var day = ymd(x.date); if (!day || day < today()) return;
     namesIn([x.assignee, x.who, x.crew, x.people]).forEach(function(n){
       var w = warnFor(n, day); if (!w) return;
-      var msg = '⚠ ' + s(w.user.name) + ' is ' + (w.off.kind === 'Unavailable' ? 'not available' : w.off.kind === 'Sick' ? 'out sick' : 'off (' + w.off.kind + ')') + ' on ' + short(day) + (w.off.note ? ' — ' + w.off.note : '') + ' — you scheduled “' + s(x.title || 'work') + '”. A warning only.';
+      var msg = '⚠ ' + s(w.user.name) + ' is ' + (w.off.kind === 'Unavailable' ? 'not available' : w.off.kind === 'Sick' ? 'out sick' : w.off.half ? 'off half the day (' + w.off.half.toUpperCase() + ')' : 'off (time off)') + ' on ' + short(day) + (w.off.note ? ' — ' + w.off.note : '') + ' — you scheduled “' + s(x.title || 'work') + '”. A warning only.';
       if (WARN.some(function(z){ return z.msg === msg && Date.now() - z.t < 60e3; })) return;
       WARN.unshift({ t: Date.now(), msg: msg }); WARN = WARN.slice(0, 10); toast(msg, true);
       var el = D.getElementById('gc-to-schedbar'); if (el) el.__h = '';
     });
   });
+}
+/* every schedule change is pushed through window._supaUpsert('schedule', list) (the CRM's own save): watch it there (kept wrapped) */
+function hookSched(){
+  var f = W._supaUpsert; if (typeof f !== 'function' || f.__gcTimeOff) return;
+  var w = function(k, v){ try { if (k === 'schedule' && Array.isArray(v)) { var L = v; later(function(){ schedCheck(L); }, 0); } } catch (e) {} return f.apply(this, arguments); };
+  try { Object.keys(f).forEach(function(k){ w[k] = f[k]; }); } catch (e) {}
+  w.__gcTimeOff = true; W._supaUpsert = w;
 }
 (function(){ var prev = W.__gcCrmBox; W.__gcCrmBox = function(o){ var r = typeof prev === 'function' ? prev(o) : o; try { if (o && o.schedule) later(function(){ schedCheck(o.schedule); }, 0); } catch (e) {} return r; }; })();
 
@@ -226580,7 +226587,7 @@ function paintTimesheets(){
 }
 
 /* ── the loop ── */
-function paintAll(){ if (D.hidden) return; [hookApprovals, hookDesk, paintStrip, paintSchedBar, paintNote, paintTimesheets].forEach(function(f){ try { f(); } catch (e) { warn(e); } }); }
+function paintAll(){ if (D.hidden) return; try { if (!SNAP.sig && W._crm && Array.isArray(W._crm.schedule)) { SNAP.ref = W._crm.schedule; SNAP.sig = schedSig(W._crm.schedule); } } catch (e) {} [hookApprovals, hookDesk, hookSched, paintStrip, paintSchedBar, paintNote, paintTimesheets].forEach(function(f){ try { f(); } catch (e) { warn(e); } }); }
 var lastPull = 0;
 RI.call(W, function(){ paintAll(); if (!D.hidden && authEmail() && Date.now() - lastPull > 20000) { lastPull = Date.now(); pull(); } }, 1000);
 D.addEventListener('visibilitychange', function(){ if (!D.hidden && authEmail()) { lastPull = Date.now(); pull(); } });
