@@ -863,7 +863,7 @@ async function pHome(ctx){
   punch.forEach(function(x){ const p = ctx.jobs.find(function(j){ return s(j.id) === s(x.pid); }) || {}; needs.push({ kind: 'punch', pid: s(p.id), job: s(p.name), title: clip(SS().clean(x.item), 160) }); });   /* patch SUBPORTAL3: SS().clean */
   Object.keys(unread).forEach(function(pid){ const p = ctx.jobs.find(function(j){ return s(j.id) === pid; }) || {}; needs.push({ kind: 'message', pid: pid, job: s(p.name), count: unread[pid] }); });
   if (papers.coi.days != null && papers.coi.days <= 30 && !papers.coi.sent) needs.push({ kind: papers.coi.days < 0 ? 'coi-expired' : 'coi-expiring', days: papers.coi.days, exp: papers.coi.exp });
-  if (!papers.w9.onFile && !papers.w9.sent) needs.push({ kind: 'w9' });
+  if (!papers.w9.onFile && !papers.w9.sent && !sub.bidOnly) needs.push({ kind: 'w9' });   /* BIDONLY: their papers are on the bid site (📋 Jobs to bid shows them) */
   return {
     ok: true, kind: 'partner', lang: lang(sub.lang),
     me: { name: s(sub.contact) || s(sub.name), company: s(sub.company || sub.name), trade: s(sub.trade || sub.cat) },
