@@ -95,6 +95,9 @@ const eclB2 = Q.check(by('Ecl'), BJ);
 ok(!coraB.ok && coraB.law && /blast-cleaning equipment training/.test(coraB.missing.join()) && !eclB.ok && eclB2.ok && Q.of(by('Ecl')).can.some(x => x.k === 'blast'), 'BLAST: soda-blasting job needs respirator + blasting training + silica; Ecl with all three is ✓, Cora is not', { coraB, eclB2 });
 C.open('people'); await new Promise(r => setTimeout(r, 30));
 ok(/Cleaning materials:.*Dry-chem \(soot\) sponges/.test(dlg.innerHTML) && /Tools &amp; equipment:.*Soda and dry-ice blasters/.test(dlg.innerHTML) && W._gcTrain && C.CLASS.blasttrain[0] === 'b:prep-clean', 'cleaning roles: the materials and tools lists on the card; the blasting class needs the 🧽 cleaning CRM course first');
+/* class days: paid when the job requires the certificate, unpaid (growth) otherwise */
+const cpT = C.classPay(by('Tia'), 'wrt'), cpG = C.classPay(by('Tia'), 'oct'), cpE = C.classPay(by('Eli'), 'asbwork'), cpL = C.classPay(by('Lou'), 'leadwork');
+ok(cpT.pay === 'paid' && /Mitigation Technician/.test(cpT.why) && cpG.pay === 'growth' && cpE.pay === 'paid' && cpL.pay === 'growth', 'CLASS PAY: WRT for a mitigation tech and asbestos worker for an abatement tech are paid; OCT for the tech and lead worker for a laborer are growth (unpaid)', { cpT, cpG, cpE, cpL });
 const tabs = ['people', 'raises', 'reqs', 'amounts', 'outlook', 'jobs', 'bonus', 'pay'], bad = [];
 for (const tb of tabs) { C.open(tb); await new Promise(r => setTimeout(r, 30)); const h = dlg.innerHTML.replace(/data-[a-z-]+="[^"]*"/g, ''); if (!h || /undefined|NaN/.test(h)) bad.push(tb + ':' + ((h.match(/.{40}(undefined|NaN).{20}/) || [''])[0])); }
 ok(!bad.length, 'every tab draws (no "undefined" / "NaN")', bad);

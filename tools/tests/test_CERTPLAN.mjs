@@ -117,7 +117,7 @@ for (const [em, f] of [['gary@example.com', 'certrole_gary_estimator'], ['sue@ex
   await A.page().screenshot({ path: (process.argv[3] || '/tmp') + '/' + f + '.png' }); }
 const cardTxt = em => A.ev(e => (document.querySelector('[data-cp-person="' + e + '"]') || {}).innerText || '', em);
 const moT = await cardTxt('mo@example.com'), tiaT = await cardTxt('tia@example.com'), dexT = await cardTxt('dex@example.com');
-const cardChk = { start: /Starting rate \$18\.00\/hr \+ approved certificate raises \$0\.00\/hr = current \$18\.00\/hr/.test(moT), policy: /Course fee paid by GrayCo · training days are unpaid · travel paid for courses out of town/.test(moT), cap: /cap reached \(\$8\/hr\)/.test(tiaT), promo: /Promotion eligible — PM/.test(tiaT), notpm: /comes with the PM commission plan/.test(tiaT), ladder: /Dual tech → Dual foreman/.test(dexT), dstart: /Starting rate \$23\.00\/hr/.test(dexT) };
+const cardChk = { start: /Starting rate \$18\.00\/hr \+ approved certificate raises \$0\.00\/hr = current \$18\.00\/hr/.test(moT), policy: /Course fee paid by GrayCo · class days paid for the certificates the job requires, unpaid for growth classes · travel paid for courses out of town/.test(moT), cap: /cap reached \(\$8\/hr\)/.test(tiaT), promo: /Promotion eligible — PM/.test(tiaT), notpm: /comes with the PM commission plan/.test(tiaT), ladder: /Dual tech → Dual foreman/.test(dexT), dstart: /Starting rate \$23\.00\/hr/.test(dexT) };
 ok('CARD: starting rate + approved raises = current rate; training policy; course travel; Tia shows 🧢 cap reached and ⭐ Promotion eligible — PM; Dex shows the ladder', Object.values(cardChk).every(Boolean), cardChk);
 await A.ev(() => document.querySelector('[data-cp-person="tia@example.com"]').scrollIntoView()); await sleep(300);
 await A.page().screenshot({ path: (process.argv[3] || '/tmp') + '/certrole_tia_tech_cap_master.png' });
@@ -156,13 +156,18 @@ ok('CLASS: the request is saved (course, $450, dates, travel yes, training score
 await A.ev(() => document.querySelector('[data-cp-person="ina@example.com"] [data-cp="clapprove"]').click()); await sleep(1500);
 await cloudWait(c => c.classes[0].status === 'approved');
 const k2 = cget('gc_cert_plan'), cl2 = await clState();
-ok('CLASS: ✅ Approve records "Class approved — company pays the course fee; training days unpaid; travel paid if out of town" (who, when) and shows it on the card', k2.classes[0].status === 'approved' && k2.classes[0].approvedBy === 'Wesley Johnson' && /company pays the course fee; training days unpaid; travel paid if out of town/.test(k2.classes[0].note) && cl2.st === 'approved' && /Class approved/.test(cl2.txt), { c: k2.classes[0], cl2 });
+ok('CLASS: ✅ Approve — WRT is required for the Insurance PM → "✅ Required for 🛡 Insurance PM — paid"; the record says class days are PAID (📘 Required class — paid), course fee paid by the company', k2.classes[0].status === 'approved' && k2.classes[0].approvedBy === 'Wesley Johnson' && k2.classes[0].pay === 'paid' && /Required for 🛡 Insurance PM/.test(k2.classes[0].payWhy) && /company pays the course fee; class days are PAID/.test(k2.classes[0].note) && cl2.st === 'approved' && /Required for 🛡 Insurance PM — paid/.test(cl2.txt), { c: k2.classes[0], cl2 });
 ok('CLASS: ASD (IICRC S500 course not passed) is still blocked', cl2.dis2 === true, cl2);
 await A.ev(() => document.querySelector('[data-cp-person="ina@example.com"] [data-cp-clrow="asd"] [data-cp="clovr"]').click()); await sleep(300);
 await A.ev(() => { const f = document.querySelector('[data-cp-ovrform="ina@example.com|asd"]'); f.querySelector('[data-cl="why"]').value = 'Class seat opened tomorrow'; f.querySelector('[data-cp="clovrsave"]').click(); }); await sleep(1500);
 const k3 = cget('gc_cert_plan'), cl3 = await clState();
 ok('CLASS: an admin override (reason required) is logged — "Exception by Wesley Johnson …" — and enables Request class for ASD', k3.people['ina@example.com'].exc.classOk.asd.reason === 'Class seat opened tomorrow' && k3.excLog.some(x => x.kind === 'classOk' && x.email === 'ina@example.com') && cl3.dis2 === false, { exc: k3.people['ina@example.com'].exc, cl3 });
 await A.page().screenshot({ path: (process.argv[3] || '/tmp') + '/certrole_class_approved.png' });
+const cid0 = (cget('gc_cert_plan').classes || [])[0].id;
+await A.ev(id => { const i = document.querySelector('[data-cp-flipwhy="' + id + '"]'); i.value = 'Demo: she asked for it for her own growth'; document.querySelector('[data-cp="clflip"][data-id="' + id + '"]').click(); }, cid0); await sleep(1500);
+await cloudWait(c => c.classes[0].pay === 'growth');
+const k4 = cget('gc_cert_plan');
+ok('CLASS: an admin flips it to 🎯 Growth with a reason (logged) — the record now says class days are unpaid, after hours, with the attorney note', k4.classes[0].pay === 'growth' && /unpaid, after hours/.test(k4.classes[0].note) && /Attorney review pending on unpaid class days/.test(k4.classes[0].note) && k4.excLog.some(x => x.kind === 'classpay' && /her own growth/.test(x.reason)), k4.classes[0]);
 /* the track picker: Roofing / Insurance options; a change is saved for that person only */
 const opts = await A.ev(() => [...document.querySelector('[data-cp-track="sam@example.com"]').options].map(o => o.value));
 await A.ev(() => { const s = document.querySelector('[data-cp-track="sam@example.com"]'); s.value = 'con_ins_pm'; s.dispatchEvent(new Event('change', { bubbles: true })); }); await sleep(1500);
@@ -257,7 +262,7 @@ await A.ev(() => { const o = document.getElementById('gc-certplan'); if (o) o.re
 if (await A.ev(() => typeof window._gcOpenTimesheets === 'function')) {
   await A.ev(() => window._gcOpenTimesheets()); await sleep(1200);
   const tc = await A.ev(() => { const s = document.querySelector('#_tsC'); return s ? [...s.options].map(o => o.text) : null; });
-  ok('⏱ Timesheets: an admin can add time as 📘 CRM training — current job (paid) or 🎯 Next-role training (optional, unpaid)', tc && tc.includes('📘 CRM training — current job (paid)') && tc.includes('🎯 Next-role training (optional, unpaid)'), tc);
+  ok('⏱ Timesheets: an admin can add time as 📘 CRM training — current job (paid), 📘 Required class — paid, or 🎯 Next-role training / growth class (unpaid)', tc && tc.includes('📘 CRM training — current job (paid)') && tc.includes('📘 Required class — paid') && tc.includes('🎯 Next-role training / growth class (unpaid)'), tc);
   await A.ev(() => { document.querySelector('#_tsU').value = 'Tia Demo'; document.querySelector('#_tsC').value = 'training'; document.querySelector('#_tsAdd').click(); }); await sleep(1200);
   const ts = await A.ev(async () => { const l = (window.idbGet ? await window.idbGet('timesheets') : null) || []; return l.filter(r => r.user === 'Tia Demo').map(r => r.code || ''); });
   ok('⏱ the training entry is saved with code "training" (payroll counts it as $0, not toward overtime)', ts.includes('training'), ts);
