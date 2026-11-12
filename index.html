@@ -5496,7 +5496,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.238-2026-11-12-r34e -->
+<!-- GrayCo CRM Build: 33.239-2026-11-12-r34f -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6445,7 +6445,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.238-2026-11-12-r34e");
+  console.log("[GC] Build 33.239-2026-11-12-r34f");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6493,7 +6493,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.238-2026-11-12-r34e"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.239-2026-11-12-r34f"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -141399,12 +141399,24 @@ function subStats(sb){
   jobs.forEach(function(p){ un += unreadOf(p.id).subs[sb.id] || 0; inv += invoicesWaiting(p.id, sb).length; files += filesOf(p.id, sb).length; });
   return { jobs: jobs, unread: un, inv: inv, files: files };
 }
+/* patch SIGNUPPAPERS: what the sub uploaded at sign-up — "📎 Papers: W-9 ✓ · GL ✓ (exp …) · WC ✓ · License ✓", each a link; ⚡ when the three
+   required papers are in and current (an approved sub can bid at once) */
+function papersLine(P){
+  if (!P) return '';
+  var one = function(lbl, x, key){ if (!x) return '<span class="gcsub-muted" data-paper="' + key + '" data-ok="0" data-state="missing">' + lbl + ' —</span>';
+    if (x.says) return '<span data-paper="' + key + '" data-ok="0" data-state="says" title="Ticked at sign-up — not on file yet">' + lbl + ' ☑ ' + (x.exempt ? 'says exempt' : 'says has it') + '</span>';
+    var txt = lbl + (x.ok ? ' ✓ on file' : ' ⚠ expired') + (x.exempt ? ' (exempt)' : x.exp ? ' (exp ' + esc(x.exp) + ')' : '');
+    return x.url ? '<a href="' + esc(x.url) + '" target="_blank" rel="noopener" data-paper="' + key + '" data-ok="' + (x.ok ? 1 : 0) + '" data-state="file">' + txt + '</a>' : '<span data-paper="' + key + '" data-ok="' + (x.ok ? 1 : 0) + '" data-state="file">' + txt + '</span>'; };
+  var lic = (P.licenses || []).map(function(l, i){ return one('License' + (l.state ? ' ' + esc(l.state) : '') + (l.number ? ' #' + esc(l.number) : ''), l, 'lic' + i); });
+  return '<div class="gcsub-papers" style="font-size:12px;margin-top:3px">📎 Papers: ' + [one('W-9', P.w9, 'w9'), one('GL', P.gl, 'gl'), one('WC', P.wc, 'wc')].concat(lic.length ? lic : ['<span class="gcsub-muted">License —</span>']).join(' · ')
+    + (P.ready ? ' <b data-quick="1" style="background:#fef3c7;color:#92400e;border-radius:999px;padding:1px 8px;margin-left:4px">⚡ Ready for quick approval</b>' : '') + '</div>';
+}
 function panelHtml(){
   var all = subsList(), h = '<div class="gcsub-ph"><b>Sub portal</b> <span class="gcsub-muted">portal.grayco-cs.com · each sub sees only their jobs, scopes (no GrayCo prices), messages and pay</span></div>';
   if (ST.admin) {
     var toSend = all.filter(function(r){ return !ST.links[r.id] && (r.email || digits(r.phone)); });
     if (false && toSend.length) h += '<div class="gcsub-card gcsub-wait" data-sec="tosend"><b>📨 Portal links to send (' + toSend.length + ')</b> <span class="gcsub-muted">one tap each — your tap is the approval</span>' + toSend.slice(0, 30).map(function(r){ return '<div class="gcsub-row2"><span>' + esc(r.name) + ' <span class="gcsub-muted">' + esc(r.email || r.phone) + '</span></span><button type="button" class="gcsub-btn g" data-p="send-link" data-id="' + esc(r.id) + '">Approve & send portal link</button></div>'; }).join('') + '</div>';
-    if (ST.bids.length) h += '<div class="gcsub-card gcsub-wait" data-sec="bids"><b>🔨 Bid site requests (' + ST.bids.length + ')</b>' + ST.bids.map(function(b){ return '<div class="gcsub-row2"><span>' + esc(b.company) + ' <span class="gcsub-muted">' + esc(b.email) + '</span></span><button type="button" class="gcsub-btn g" data-p="bids-ok" data-id="' + esc(b.id) + '">Approve for bids.grayco-cs.com</button><button type="button" class="gcsub-btn r" data-p="bids-no" data-id="' + esc(b.id) + '">Deny</button></div>'; }).join('') + '</div>';
+    if (ST.bids.length) h += '<div class="gcsub-card gcsub-wait" data-sec="bids"><b>🔨 Bid site requests (' + ST.bids.length + ')</b>' + ST.bids.map(function(b){ return '<div class="gcsub-row2" data-bidreq="' + esc(b.id) + '"><span>' + esc(b.company) + ' <span class="gcsub-muted">' + esc(b.email) + '</span>' + ((b.trades || []).length || b.city ? '<div class="gcsub-muted" style="font-size:12px">' + esc([(b.trades || []).join(', '), [b.city, b.state].filter(Boolean).join(', '), b.crew ? 'crew ' + b.crew : '', b.area].filter(Boolean).join(' · ')) + '</div>' : '') + papersLine(b.papers) + '</span><button type="button" class="gcsub-btn g" data-p="bids-ok" data-id="' + esc(b.id) + '">Approve for bids.grayco-cs.com</button><button type="button" class="gcsub-btn r" data-p="bids-no" data-id="' + esc(b.id) + '">Deny</button></div>'; }).join('') + '</div>';
   }
   /* plans requested on the bid site (owner request 21 Oct 2026): who asked, and one tap to upload a ZIP / PDF */
   var preq = plansReqByJob();
@@ -175693,6 +175705,7 @@ function refreshInbox(){ fn('bid-inbox?list=1').then(function(j){ var k = lsGet(
 /* ── every lead on the sub bid portal, as a PRIVATE draft (staff-only; never public by itself) ── */
 var SWEEP = lsGet('gc_leads_portal_sweep_v1', {}) || {};
 function sweepPortal(){
+  return;   /* patch BIDPOST (owner 11/12: "make it where I have to put jobs into the bid portal, nothing goes automatic"): no lead goes on the bid portal by itself — 📢 Put on bid portal */
   if (!isAdmin() && !isEstimatorMe()) return;
   if (typeof W._setLeads !== 'function' || view() !== 'leads' || !D.getElementById('gc-leads-hub')) return;   /* only while the Leads tab is open: never races another screen's save */
   var todo = leads().filter(function(l){ return !closed(l) && !l.inboxId && !(l.subPortal && l.subPortal.jobId) && !SWEEP[l.id]; }).slice(0, 2);
@@ -178351,7 +178364,7 @@ function loadJobs(force){
   BP.busy = true;
   fn('bid-hub?jobs=1').then(function(j){ BP.jobs = arr(j.jobs); BP.me = j.me || null; BP.err = ''; BP.at = Date.now(); }, function(e){ BP.err = e.message; })
     .then(function(){ BP.busy = false; drawBP(); });
-  if (!BP.swept && (realAdmin() || isEst())) {   /* the backfill: estimator leads' drafts → private (once a session) */
+  if (false && !BP.swept && (realAdmin() || isEst())) {   /* patch BIDPOST: off — nothing goes on the bid portal by itself (owner 11/12) */
     BP.swept = true;
     fn('bid-hub', { op: 'sweep' }).then(function(r){ if (r && r.opened) { toast('🔒 ' + r.opened + ' estimator lead' + (r.opened === 1 ? ' is' : 's are') + ' now private bid jobs'); loadJobs(true); } }, function(){});
   }
@@ -178359,7 +178372,8 @@ function loadJobs(force){
 function shown(){
   var q = low(BP.q);
   return arr(BP.jobs).filter(function(j){
-    if (BP.f === 'deleted') { if (!j.deleted) return false; }   /* patch SYS2 */
+    if (BP.f === 'deleted') { if (!j.deleted || j.archived) return false; }   /* patch SYS2 */
+    else if (BP.f === 'archived') { if (!j.archived) return false; }   /* patch BIDPOST: 🗄 Archived (auto-added, taken off) */
     else if (j.deleted) return false;
     if (BP.f === 'open' && /^(closed|won|lost|awarded)$/i.test(j.status)) return false;
     if (BP.f === 'private' && j.visibility !== 'private') return false;
@@ -178392,7 +178406,7 @@ function drawBP(){
   if (!m.querySelector('.gcsys')) m.innerHTML = (bpFullOk() ? '<div class="gcsys gcsys-bpsw" style="padding-bottom:0;max-width:none"><div class="bar" role="group" aria-label="Bid portal view" style="margin:0 0 8px">'
       + '<button type="button" class="b" data-sys="bpmode" data-m="full">🧰 Full bid portal — add / edit jobs, approvals, plans</button>'
       + '<button type="button" class="b" data-sys="bpmode" data-m="crm">📊 Bids &amp; invites</button></div></div><div data-bp-full style="display:none;padding:0 12px 12px"></div>' : '')
-    + '<div class="gcsys" id="gc-sys-bp"><h2>🏗 Bid portal</h2><p class="sub">Every bid job on bids.grayco-cs.com. Estimator leads are <b>🔒 private</b> (invited subs only) until an admin or an estimator makes them public. Subs and their prices are never shown to a customer.</p>'
+    + '<div class="gcsys" id="gc-sys-bp"><h2>🏗 Bid portal</h2><p class="sub">Every bid job on bids.grayco-cs.com. Nothing goes on by itself: a job is on the bid portal only when someone puts it there (📢 Put on bid portal on a lead, an estimate or a job). <b>🔒 Private</b> = invited subs only; <b>🌐 Public</b> = every approved sub. Subs and their prices are never shown to a customer.</p>'
     + '<div class="bar"><button type="button" class="b gold" data-sys="openbids">Open the bid portal ↗</button><button type="button" class="b" data-sys="refresh">↻ Refresh</button><input type="search" data-sys="q" placeholder="Search jobs, address, PO, trade" aria-label="Search bid jobs"></div>'
     + '<div class="bar" role="tablist" data-sys-filters></div><div data-sys-rows></div></div>';
   applyBpMode();   /* patch BIDEST */
@@ -178406,22 +178420,24 @@ function drawRows(){
   var fbar = m.querySelector('[data-sys-filters]'), box = m.querySelector('[data-sys-rows]'); if (!box) return;
   var all = arr(BP.jobs), cnt = function(f){ var o = BP.f; BP.f = f; var n = shown().length; BP.f = o; return n; };
   var q0 = BP.q; BP.q = '';
-  fbar.innerHTML = [['open', 'Open'], ['private', '🔒 Private'], ['public', '🌐 Public'], ['draft', '📝 Drafts'], ['all', 'All'], ['deleted', '🗑 Deleted']].map(function(x){ return '<button type="button" class="b' + (BP.f === x[0] ? ' on' : '') + '" data-sys="f" data-f="' + x[0] + '">' + x[1] + (BP.jobs ? ' (' + cnt(x[0]) + ')' : '') + '</button>'; }).join('');
+  fbar.innerHTML = [['open', 'Open'], ['private', '🔒 Private'], ['public', '🌐 Public'], ['draft', '📝 Drafts'], ['all', 'All'], ['archived', '🗄 Archived'], ['deleted', '🗑 Deleted']].map(function(x){ return '<button type="button" class="b' + (BP.f === x[0] ? ' on' : '') + '" data-sys="f" data-f="' + x[0] + '">' + x[1] + (BP.jobs ? ' (' + cnt(x[0]) + ')' : '') + '</button>'; }).join('');
   BP.q = q0;
   if (BP.err && !BP.jobs) { box.innerHTML = '<div class="mut" style="color:#b91c1c">' + esc(BP.err) + '</div>'; return; }
   if (!BP.jobs) { box.innerHTML = '<div class="mut">Loading the bid jobs…</div>'; return; }
-  var rows = shown(), del = BP.f === 'deleted', bulk = realAdmin() && !del;
+  var rows = shown(), del = BP.f === 'deleted' || BP.f === 'archived', bulk = realAdmin() && !del;
+  var autoN = all.filter(function(j){ return j.auto; }).length;   /* patch BIDPOST: 🧹 Clean up auto-added jobs (an admin's click) */
   Object.keys(SEL).forEach(function(id){ if (!rows.some(function(j){ return j.id === id; })) delete SEL[id]; });
   var nSel = Object.keys(SEL).length;
-  box.innerHTML = (bulk && nSel ? '<div class="bulk" data-sys-bulk><b>' + nSel + ' selected</b><button type="button" class="b" data-sys="bulkdel" style="color:#b91c1c">🗑 Delete selected</button><button type="button" class="b" data-sys="selnone">Clear</button></div>' : '')
+  box.innerHTML = (realAdmin() && autoN && !del ? '<div class="bulk" data-sys-auto style="background:#eff6ff;border-color:#bfdbfe"><span><b>' + autoN + ' auto-added job' + (autoN === 1 ? '' : 's') + '</b> — made from leads by the old automatic sync, never posted, no plans / bids / invites.</span><button type="button" class="b" data-sys="cleanup">🧹 Clean up auto-added jobs (' + autoN + ')</button></div>' : '')
+    + (bulk && nSel ? '<div class="bulk" data-sys-bulk><b>' + nSel + ' selected</b><button type="button" class="b" data-sys="bulkdel" style="color:#b91c1c">🗑 Delete selected</button><button type="button" class="b" data-sys="selnone">Clear</button></div>' : '')
     + (!all.length ? '<div class="mut">No bid jobs yet. Every estimator lead becomes one (private) as soon as it comes in.</div>'
     : '<table class="bpt"><colgroup>' + (bulk ? '<col style="width:34px">' : '') + '<col><col style="width:104px"><col style="width:66px"><col style="width:70px"><col style="width:112px"><col style="width:' + (del ? 128 : 236) + 'px"></colgroup>'
     + '<thead><tr>' + (bulk ? '<th><input type="checkbox" data-sys="selall" aria-label="Select all"' + (nSel && nSel === rows.length ? ' checked' : '') + '></th>' : '') + '<th>Bid job</th><th>Who sees it</th><th>Invited</th><th>Bids</th><th>' + (del ? 'Deleted' : 'Bid due') + '</th><th></th></tr></thead><tbody>' + rows.map(function(j){
       var left = del && j.deletedAt ? Math.max(0, 30 - Math.floor((Date.now() - Date.parse(j.deletedAt)) / 864e5)) : 0;
       return '<tr data-sys-job="' + esc(j.id) + '"' + (del ? ' class="del"' : '') + '>' + (bulk ? '<td><input type="checkbox" data-sys="sel" data-job="' + esc(j.id) + '"' + (SEL[j.id] ? ' checked' : '') + ' aria-label="Select"></td>' : '')
-        + '<td class="t" title="' + esc(j.title) + '"><b>' + esc(j.title || 'Bid job') + '</b><div class="mut">' + esc([j.address, j.po, j.trades].filter(Boolean).join(' · ')) + '</div></td>'
+        + '<td class="t" title="' + esc(j.title) + '"><b>' + esc(j.title || 'Bid job') + '</b><div class="mut">' + (j.auto ? '🤖 auto-added · ' : j.postedBy ? '📢 posted by ' + esc(j.postedByName || j.postedBy) + ' · ' : '') + (j.archived ? '🗄 ' + esc(j.archivedReason === 'auto' ? 'archived (auto-added)' : 'taken off the bid portal') + ' · ' : '') + esc([j.address, j.po, j.trades].filter(Boolean).join(' · ')) + '</div></td>'
         + '<td data-l="Who sees it">' + (del ? '<span class="pill draft">🗑 Deleted</span>' : visPill(j.visibility)) + '</td><td class="num" data-l="Invited">' + j.invited + '</td><td class="num" data-l="Bids">' + j.bids + '</td>'
-        + '<td data-l="' + (del ? 'Deleted' : 'Bid due') + '">' + (del ? '<span class="mut">' + esc(when(j.deletedAt)) + '<br>' + left + ' day' + (left === 1 ? '' : 's') + ' left</span>' : j.due ? esc(j.due + (j.dueTime ? ' ' + j.dueTime : '')) : '<span class="mut">—</span>') + '</td>'
+        + '<td data-l="' + (del ? 'Deleted' : 'Bid due') + '">' + (del ? '<span class="mut">' + esc(when(j.deletedAt)) + '<br>' + (j.archived ? 'keep — restore any time' : left + ' day' + (left === 1 ? '' : 's') + ' left') + '</span>' : j.due ? esc(j.due + (j.dueTime ? ' ' + j.dueTime : '')) : '<span class="mut">—</span>') + '</td>'
         + '<td><div class="acts">' + (del ? (canDelete() ? '<button type="button" class="b" data-sys="restore" data-job="' + esc(j.id) + '">↩ Restore</button>' : '')
           : (canInvite() ? '<button type="button" class="b pri" data-sys="manage" data-job="' + esc(j.id) + '">📂 Manage</button>' : '')
           + '<button type="button" class="b" data-sys="bids" data-job="' + esc(j.id) + '" title="Every bid for this job, by trade, lowest first — award / add to the estimate">📊 Bids (' + (+j.bids || 0) + ')</button>'   /* patch BIDEST */
@@ -178554,6 +178570,13 @@ function onClick(ev){
   if (a === 'refresh') { BP.at = 0; return loadJobs(true); }
   if (a === 'f') { BP.f = t.getAttribute('data-f'); return drawRows(); }
   if (a === 'bpmode') return setBpMode(t.getAttribute('data-m'));   /* patch BIDEST */
+  if (a === 'cleanup') {   /* patch BIDPOST */
+    return fn('bid-hub', { op: 'cleanup', dry: true }).then(function(r){
+      if (!r.count) { toast('Nothing to clean up.'); return loadJobs(true); }
+      if (!W.confirm('Archive ' + r.count + ' auto-added bid job' + (r.count === 1 ? '' : 's') + '?\n\nThey were made from leads by the old automatic sync, never posted by anyone, and have no plans, bids, invites or questions. Nothing is deleted: they move to 🗄 Archived (restore any time) and subs stop seeing them.\n\n' + arr(r.sample).slice(0, 8).join('\n') + (r.count > 8 ? '\n…' : ''))) return;
+      return fn('bid-hub', { op: 'cleanup' }).then(function(x){ toast('🧹 ' + x.archived + ' auto-added job' + (x.archived === 1 ? '' : 's') + ' archived — see 🗄 Archived'); loadJobs(true); });
+    }, function(e){ toast(e.message, true); });
+  }
   if (a === 'bids') return openBids(job);
   if (a === 'lbids') return openBids(job, t.getAttribute('data-lead'));
   if (a === 'invite') { if (!BP.jobs) BP.jobs = []; if (!arr(BP.jobs).some(function(j){ return j.id === job; }) && t.getAttribute('data-title')) BP.jobs.push({ id: job, title: t.getAttribute('data-title'), visibility: '' }); return openInvite(job); }
@@ -221643,8 +221666,22 @@ function run(){
       add.push({ id: id, name: s(x.company) || s(x.name) || s(x.email), company: s(x.company), contact: s(x.name), email: low(x.email), phone: s(x.phone), trade: s(x.trade) || arr(x.trades).join(', '),
         address: [s(x.address), s(x.city), s(x.state)].filter(Boolean).join(', '), license: s(x.licenses), isSub: true, cat: 'Subcontractor', source: 'Bid portal', bidPortalUserId: s(x.portalUserId),
         lang: s(x.lang), addedDate: at.slice(0, 10), createdAt: at, updatedAt: at, savedAt: at, note: 'Added from the bid portal (bids.grayco-cs.com) — papers (W-9, insurance) are on the bid site.' });
+      papersOnto(add[add.length - 1], x.papers);
     });
-    if (!add.length) return { added: 0 };
+    /* patch SIGNUPPAPERS: the papers a sub uploaded when they signed up (copied into the CRM's files when an owner approved them)
+       go onto their Subs record — W-9, COI (GL), workers' comp, licenses — like the papers sent from the sub portal */
+    var upd = {};
+    arr(j && j.subs).forEach(function(x){
+      if (!x || !arr(x.papers).length) return;
+      var v = arr(W._crm.vendors).filter(function(o){ return o && ((s(x.crmId) && s(o.id) === s(x.crmId)) || (s(x.email) && low(o.email) === low(x.email)) || (s(x.portalUserId) && s(o.bidPortalUserId) === s(x.portalUserId))); })[0];
+      if (!v || add.some(function(a){ return a.id === v.id; })) return;
+      var c = Object.assign({}, v); if (papersOnto(c, x.papers)) { c.updatedAt = at; c.savedAt = at; upd[s(v.id)] = c; }
+    });
+    if (Object.keys(upd).length) {
+      W._setVendors(function(prev){ return Array.isArray(prev) ? prev.map(function(p){ return p && upd[s(p.id)] ? upd[s(p.id)] : p; }) : prev; });
+      setTimeout(function(){ try { if (W._supaUpsertNow && Array.isArray(W._crm.vendors)) W._supaUpsertNow('vendors', W._crm.vendors); } catch (e) {} }, 800);
+    }
+    if (!add.length) return { added: 0, papers: Object.keys(upd).length };
     W._setVendors(function(prev){ return Array.isArray(prev) ? prev.concat(add.filter(function(a){ return !prev.some(function(p){ return p && (p.id === a.id || low(p.email) === a.email); }); })) : prev; });
     setTimeout(function(){ try { if (W._supaUpsertNow && Array.isArray(W._crm.vendors)) W._supaUpsertNow('vendors', W._crm.vendors); } catch (e) {} }, 800);
     LAST = { at: Date.now(), added: add.map(function(a){ return a.name; }) };
@@ -221654,7 +221691,21 @@ function run(){
 }
 setTimeout(run, 25000);
 (W.__GC_NATIVE_SETINTERVAL__ || W.setInterval).call(W, function(){ if (!document.hidden) run(); }, 600000);
-W._gcBidSubs = { run: run, last: function(){ return LAST; } };
+function papersOnto(v, papers){
+  var have = {}; arr(v.files).forEach(function(f){ if (f && f.id) have[f.id] = 1; }); var n = 0;
+  arr(papers).forEach(function(p){
+    if (!p || !p.id || have[p.id] || !/^sb:crm-files\//.test(s(p.ref))) return;
+    v.files = arr(v.files).concat([{ id: p.id, ref: p.ref, name: s(p.name) || 'paper.pdf', type: s(p.type), kind: p.kind === 'wc' ? 'coi' : p.kind, sub: p.kind, exp: s(p.exp), date: s(p.at).slice(0, 10), source: 'bid portal sign-up',
+      label: p.kind === 'w9' ? 'W-9' : p.kind === 'coi' ? 'General liability COI' : p.kind === 'wc' ? (p.exempt ? 'Workers\' comp exemption' : 'Workers\' comp COI') : 'License ' + [p.licState, p.licType, p.licNumber].filter(Boolean).join(' ') }]);
+    if (p.kind === 'w9') v.w9 = true;
+    if (p.kind === 'coi') { v.coi = true; if (p.exp) { v.insExp = p.exp; v.glExp = p.exp; v.coiExp = p.exp; } }
+    if (p.kind === 'wc') { v.wc = true; if (p.exempt) v.wcExempt = true; if (p.exp) v.wcExp = p.exp; }
+    if (p.kind === 'license') { v.license = s(v.license) || [p.licState, p.licType, p.licNumber].filter(Boolean).join(' '); if (p.exp) v.licenseExp = p.exp; }
+    n++;
+  });
+  return n;
+}
+W._gcBidSubs = { run: run, last: function(){ return LAST; }, papersOnto: papersOnto };
 })(window);
 </script>
 
@@ -223267,5 +223318,288 @@ SI.call(W, function(){ try { if (email()) { pull(); paintChip(); } } catch (e) {
 
 W._gcNavPins = { list: function(){ return pins().slice(); }, pin: pin, unpin: unpin, allowed: allowed, base: function(){ return BASE.slice(); }, pinnable: function(){ return PINNABLE.map(function(p){ return { id: p[0], label: p[1], allowed: allowed(p[0]) }; }); }, refresh: function(){ PINS = null; pulled = ''; pull(); bump(); }, key: function(){ return KEY(); } };
 try { console.log('[GC] patch PERMITS2: 📧 MSCCE request, Dodge (later), 📌 my pinned integration tabs — _gcNavPins.list()'); } catch (e) {}
+})(window);
+</script>
+<script id="gc-patch-bidpost">
+/* BIDPOST (owner 11/12): "make it where I have to put jobs into the bid portal, nothing goes automatic … when Glenn is estimating jobs let
+   him click a button when he makes the est/project if he wants it on our public bid portal or private — he decides if he needs prices —
+   and state what trades we need priced. Either admin or Glenn can add to the bid portal like that; PMs can also add to the bid portal for
+   specific jobs they have … you can also add a 2,500 SF exterior paint job with some specs and subs can inquire about it or bid."
+   - "📢 Put on bid portal" on an estimate (the builder's bar), a job (its page) and a lead (its drawer, any type). One sheet: 🔒 Private
+     (invited subs only) or 🌐 Public, the trades we need priced (the CRM's trade list + your own), bid due date, scope / specs (filled
+     from the estimate / lead / job), the job's files and links to share, the site address. It makes or updates the bid site job linked
+     to the lead / job (bid-hub op postjob); "Take off bid portal" archives it (op unpost; back any time).
+   - Who: an admin, an estimator, and the PM of that job / lead. Nobody else sees the button; the server checks the same.
+   - Subs ask "❓" on the bid site or in the sub portal: the person who posted it / the PM gets a To-Do until it is answered (📂 Manage → Q&A,
+     private or to all bidders).
+   Console: _gcBidPost.open({ pid | leadId | estId })  _gcBidPost.state() */
+(function(W){
+'use strict';
+if (W.__GC_PATCH_BIDPOST__) return; W.__GC_PATCH_BIDPOST__ = true;
+var D = W.document;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout, RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+function later(f, ms){ return ST.call(W, f, ms || 0); }
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function warn(e){ try { console.warn('[GC BIDPOST]', e && e.message || e); } catch (x) {} }
+function toast(m, bad){ try { if (W._gcSys && W._gcSys.toast) return W._gcSys.toast(m, bad); if (W._gcToast) W._gcToast(m); } catch (e) {} }
+function fn(path, body){
+  if (W._gcSys && W._gcSys.fn) return W._gcSys.fn(path, body);
+  return W.fetch('/.netlify/functions/' + path, { method: body ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined, cache: 'no-store' })
+    .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ if (!r.ok) throw new Error(j.error || ('The server answered ' + r.status)); return j; }); });
+}
+function crm(){ return W._crm || {}; }
+function proj(id){ id = s(id); return id ? arr(crm().projects).filter(function(p){ return p && s(p.id) === id; })[0] || null : null; }
+function lead(id){ id = s(id); return id ? arr(crm().leads).filter(function(l){ return l && s(l.id) === id; })[0] || null : null; }
+function est(id){ id = s(id); if (!id) return null; var l = arr(W._gcEstimatesState).length ? W._gcEstimatesState : arr(crm().estimates); var e = arr(l).filter(function(x){ return x && s(x.id) === id; })[0]; if (!e) { try { e = (typeof estimates !== 'undefined' && Array.isArray(estimates) ? estimates : []).filter(function(x){ return x && s(x.id) === id; })[0]; } catch (x) {} } return e || null; }
+
+/* ── who may post ── */
+function myEmail(){ try { return low(W.__GC_AUTH__ && W.__GC_AUTH__.email && W.__GC_AUTH__.email()); } catch (e) { return ''; } }
+function myName(){ try { var m = W._gcMeNow; if (m && m.name) return s(m.name); } catch (e) {} var u = arr(crm().users).filter(function(x){ return x && low(x.email) === myEmail(); })[0]; return s(u && u.name); }
+function isAdmin(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()); } catch (e) { return false; } }
+function role(){ try { var m = W._gcMeNow; if (typeof W._gcRoleOf === 'function') return s(W._gcRoleOf(m)); return s(m && m.role); } catch (e) { return ''; } }
+function isEst(){ return /estimat/i.test(role()); }
+function mine(v){ v = low(v); return !!v && (v === low(myName()) || v === myEmail()); }
+function ctxOf(c){
+  c = c || {}; var e = c.estId ? est(c.estId) : null, pid = s(c.pid) || s(e && e.pid), p = proj(pid), l = lead(c.leadId) || (e && e.leadId ? lead(e.leadId) : null);
+  return { pid: p ? s(p.id) : '', p: p, leadId: l ? s(l.id) : s(c.leadId), l: l, estId: e ? s(e.id) : s(c.estId), e: e };
+}
+function canPost(c){
+  c = c && c.p !== undefined ? c : ctxOf(c);
+  if (isAdmin() || isEst()) return true;
+  if (c.p && (mine(c.p.pm) || mine(c.p.pmEmail))) return true;
+  if (c.l && (mine(c.l.pm) || mine(c.l.estimator) || mine(c.l.pmEmail))) return true;
+  return false;
+}
+
+/* ── the bid jobs (to know what is already posted) ── */
+var JOBS = { at: 0, list: null, busy: null };
+function jobs(force){
+  if (!force && JOBS.list && Date.now() - JOBS.at < 120000) return Promise.resolve(JOBS.list);
+  if (JOBS.busy) return JOBS.busy;
+  JOBS.busy = fn('bid-hub?jobs=1').then(function(r){ JOBS.list = arr(r && r.jobs); JOBS.at = Date.now(); JOBS.busy = null; QA.at = 0; return JOBS.list; }, function(e){ JOBS.busy = null; warn(e); return JOBS.list || []; });
+  return JOBS.busy;
+}
+function postedFor(c){
+  var l = arr(JOBS.list).filter(function(j){ return j && ((c.pid && j.crmProjectId === c.pid) || (c.leadId && j.crmLeadId === c.leadId) || (c.estId && j.crmEstId === c.estId) || (c.p && c.p.bidJobId && j.id === c.p.bidJobId)); });
+  return l.filter(function(j){ return !j.deleted; })[0] || l[0] || null;
+}
+
+/* ── the CRM's trades ── */
+var TRADES = ['Demolition', 'Framing', 'Drywall', 'Paint', 'Flooring', 'Tile', 'Roofing', 'Siding', 'Gutters', 'Windows & Doors', 'Insulation', 'Ceilings', 'Cabinets', 'Concrete', 'Masonry',
+  'Electrical', 'Plumbing', 'HVAC', 'Fire protection', 'Landscaping', 'Mitigation', 'Abatement', 'Cleaning'];
+function tradeList(){
+  var seen = {}, out = [];
+  TRADES.concat(arr(crm().vendors).concat(arr(crm().subs)).map(function(v){ return s(v && (v.trade || v.cat2)); }).join(',').split(/[,;\/]/)).forEach(function(t){ t = s(t); var k = low(t); if (!t || seen[k] || t.length > 40 || /^subcontractor$/i.test(t)) return; seen[k] = 1; out.push(t); });
+  return out.slice(0, 60);
+}
+/* the job's files (CRM file storage) and links to share */
+var DOCS_DISK = null;
+function docsList(){ var by = {}, out = []; arr(W._gcProjectDocs).concat(arr(crm().projectDocs), arr(DOCS_DISK)).forEach(function(d){ if (!d) return; var k = s(d.id) || JSON.stringify([d.pid, d.name, d.data]); if (by[k]) return; by[k] = 1; out.push(d); }); return out; }
+function filesOf(c){
+  var out = [], seen = {};
+  docsList().forEach(function(d){
+    if (!d || !c.pid || s(d.pid) !== c.pid || d.deleted) return;
+    var ref = /^sb:crm-files\//.test(s(d.ref)) ? s(d.ref) : /^sb:crm-files\//.test(s(d.data)) ? s(d.data) : '', link = /^https?:\/\//.test(s(d.link)) ? s(d.link) : (s(d.type) === 'link' && /^https?:\/\//.test(s(d.data)) ? s(d.data) : '');
+    var k = ref || link; if (!k || seen[k]) return; seen[k] = 1;
+    out.push({ ref: ref, link: link, name: s(d.name || d.label) || (link ? 'Link' : 'File'), type: s(d.type), size: Number(d.size) || 0, category: s(d.cat), pick: /plan|drawing|spec|scope/i.test(s(d.cat) + ' ' + s(d.name)) });
+  });
+  arr(c.l && c.l.plansLinks).concat(c.l && s(c.l.plansLink) ? [{ url: c.l.plansLink, label: 'Plans' }] : []).forEach(function(x){ var u = s(x && x.url); if (!/^https?:\/\//.test(u) || seen[u]) return; seen[u] = 1; out.push({ link: u, name: s(x.label || x.board) || 'Plans', pick: true }); });
+  return out;
+}
+function scopeText(c){
+  var e = c.e, l = c.l, p = c.p, sc = e && e.scope || {};
+  var parts = [];
+  if (e) { if (s(sc.text)) parts.push(s(sc.text)); if (s(sc.inc)) parts.push('Includes:\n' + s(sc.inc)); if (s(sc.exc)) parts.push('Excludes:\n' + s(sc.exc)); }
+  if (!parts.length && l) parts.push(s(l.scope || l.desc || l.description || l.notes || l.message));
+  if (!parts.length && p) parts.push(s(p.scope || p.description || p.desc || p.notes));
+  return parts.filter(Boolean).join('\n\n').slice(0, 8000);
+}
+
+/* ── the sheet ── */
+function css(){
+  if (D.getElementById('gcbp-css')) return;
+  var st = D.createElement('style'); st.id = 'gcbp-css'; st.setAttribute('data-gc-keep', '1');
+  st.textContent = '#gcbp-modal{position:fixed;inset:0;background:rgba(15,10,40,.45);z-index:100003;display:flex;align-items:flex-start;justify-content:center;padding:4vh 12px;overflow:auto;font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#1b1640}'
+    + '#gcbp-modal .box{background:#fff;border-radius:14px;max-width:760px;width:100%;padding:18px;box-shadow:0 18px 50px rgba(0,0,0,.25);box-sizing:border-box}#gcbp-modal h3{margin:0 0 4px;font-size:19px}'
+    + '#gcbp-modal label.f{display:block;font-weight:700;font-size:13px;margin:12px 0 4px}#gcbp-modal input[type=text],#gcbp-modal input[type=date],#gcbp-modal input[type=time],#gcbp-modal textarea{width:100%;box-sizing:border-box;border:1px solid #d6d1e6;border-radius:8px;padding:8px 10px;font:inherit}'
+    + '#gcbp-modal .vis{display:flex;gap:8px;flex-wrap:wrap}#gcbp-modal .vis label{flex:1;min-width:220px;border:2px solid #e7e3f2;border-radius:10px;padding:10px;cursor:pointer}#gcbp-modal .vis label.on{border-color:#d4a017;background:#fffbeb}'
+    + '#gcbp-modal .chips{display:flex;flex-wrap:wrap;gap:6px}#gcbp-modal .chip{border:1px solid #d6d1e6;background:#fff;border-radius:999px;padding:5px 11px;cursor:pointer;font:600 12.5px system-ui}#gcbp-modal .chip.on{background:#241968;color:#fff;border-color:#241968}'
+    + '#gcbp-modal .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}#gcbp-modal .files{border:1px solid #eeeaf6;border-radius:10px;max-height:180px;overflow:auto}#gcbp-modal .files label{display:flex;gap:8px;padding:6px 10px;border-bottom:1px solid #f4f2fa;font-size:13px}'
+    + '#gcbp-modal .bar{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}#gcbp-modal button.b{border:1px solid #d6d1e6;background:#fff;border-radius:8px;padding:8px 14px;font-weight:700;cursor:pointer}#gcbp-modal button.pri{background:#241968;color:#fff;border-color:#241968}#gcbp-modal button.red{color:#b91c1c}'
+    + '#gcbp-modal .mut{color:#6b6787;font-size:12px}#gcbp-modal .err{color:#b91c1c;font-weight:600;min-height:1em;margin-top:8px}@media(max-width:560px){#gcbp-modal .row2{grid-template-columns:1fr}}'
+    + '.gcbp-btn{border:1px solid #d4a017;background:#fffbeb;color:#1b1640;border-radius:8px;padding:6px 12px;font:700 13px system-ui;cursor:pointer}.gcbp-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0;font:13px system-ui}';
+  D.head.appendChild(st);
+}
+var UI = { c: null, job: null, trades: {}, vis: 'private' };
+function close(){ var m = D.getElementById('gcbp-modal'); if (m) m.remove(); }
+function open(c0){
+  var c = ctxOf(c0);
+  if (!canPost(c)) { toast('Only an admin, an estimator, or this job\'s PM puts it on the bid portal.', true); return null; }
+  css(); close();
+  UI = { c: c, job: null, trades: {}, vis: 'private', files: filesOf(c) };
+  var m = D.createElement('div'); m.id = 'gcbp-modal'; m.setAttribute('data-gc-keep', '1');
+  m.innerHTML = '<div class="box" role="dialog" aria-label="Put on bid portal"><div class="mut">Loading…</div></div>';
+  m.addEventListener('click', function(ev){ if (ev.target === m) close(); });
+  m.addEventListener('click', onClick);
+  D.body.appendChild(m);
+  var disk = (!c.pid || docsList().some(function(d){ return d && s(d.pid) === c.pid; }) || typeof W.idbGet !== 'function') ? Promise.resolve() :
+    Promise.resolve(W.idbGet('projectDocs')).then(function(v){ DOCS_DISK = arr(v); UI.files = filesOf(c); }, function(){});
+  return Promise.all([jobs(false), disk]).then(function(){
+    var j = postedFor(c);
+    if (!j) return draw(null);
+    return fn('bid-hub?posted=' + encodeURIComponent(j.id)).then(function(r){ draw(r.job); }, function(){ draw(null, j); });
+  });
+}
+function draw(pj, jl){
+  var m = D.getElementById('gcbp-modal'); if (!m) return; var c = UI.c, box = m.querySelector('.box');
+  var p = c.p, l = c.l, e = c.e;
+  UI.job = pj || (jl ? { id: jl.id, title: jl.title, address: jl.address, due: jl.due, visibility: jl.visibility, trades: s(jl.trades).split(/\s*,\s*/).filter(Boolean), scope: '', specs: '', links: [], archived: jl.deleted } : null);
+  var J = UI.job, on = J && !J.archived;
+  UI.vis = J && J.visibility === 'public' ? 'public' : 'private';
+  UI.trades = {}; arr(J && J.trades).forEach(function(t){ UI.trades[t] = 1; });
+  var title = (J && J.title) || s(e && e.name) || s(p && p.name) || s(l && (l.name || l.title)) || '';
+  var addr = (J && J.address) || [s((p || l || {}).address), s((p || l || {}).city), s((p || l || {}).state)].filter(Boolean).join(', ') || s(e && e.address);
+  var due = (J && J.due) || s(l && l.bidDue).slice(0, 10);
+  var scope = J ? s(J.scope) : scopeText(c), specs = J ? s(J.specs) : '';
+  var refs = {}; arr(J && J.crmFileRefs).forEach(function(r){ refs[r] = 1; }); var links = {}; arr(J && J.links).forEach(function(x){ links[s(x.url)] = 1; });
+  var tl = tradeList(); arr(J && J.trades).forEach(function(t){ if (tl.indexOf(t) < 0) tl.push(t); });
+  var what = e ? 'estimate “' + esc(e.name) + '”' : p ? 'job “' + esc(p.name) + '”' : l ? 'lead “' + esc(l.name || l.title) + '”' : 'job';
+  box.innerHTML = '<div style="display:flex;justify-content:space-between;gap:8px"><h3>📢 ' + (on ? 'On the bid portal' : 'Put on bid portal') + '</h3><button type="button" class="b" data-bp="close" aria-label="Close">✕</button></div>'
+    + '<div class="mut">For the ' + what + '. Subs see the job, the scope and what you share — never prices, never the customer\'s details. Subs can bid or ask a question.' + (on ? ' <b>Posted' + (J.postedBy ? ' by ' + esc(J.postedBy) : '') + '.</b>' : J && J.archived ? ' <b>It was taken off — posting puts it back.</b>' : '') + '</div>'
+    + '<label class="f">Who sees it</label><div class="vis" data-bp-vis>'
+    + '<label class="' + (UI.vis === 'private' ? 'on' : '') + '"><input type="radio" name="gcbp-vis" value="private"' + (UI.vis === 'private' ? ' checked' : '') + '> <b>🔒 Private</b><div class="mut">Only subs you invite (✉️ Invite subs on the 🏗 Bid portal tab).</div></label>'
+    + '<label class="' + (UI.vis === 'public' ? 'on' : '') + '"><input type="radio" name="gcbp-vis" value="public"' + (UI.vis === 'public' ? ' checked' : '') + '> <b>🌐 Public</b><div class="mut">Every approved sub on bids.grayco-cs.com can see it and bid. Needs a due date.</div></label></div>'
+    + '<label class="f" for="gcbp-title">Job title</label><input type="text" id="gcbp-title" maxlength="200" value="' + esc(title) + '">'
+    + '<label class="f">Trades we need priced</label><div class="chips" data-bp-trades>' + tl.map(function(t){ return '<button type="button" class="chip' + (UI.trades[t] ? ' on' : '') + '" data-bp="trade" data-t="' + esc(t) + '">' + esc(t) + '</button>'; }).join('') + '</div>'
+    + '<div style="display:flex;gap:6px;margin-top:6px"><input type="text" id="gcbp-trade" placeholder="Another trade (e.g. Exterior paint)" maxlength="40"><button type="button" class="b" data-bp="addtrade">＋ Add</button></div>'
+    + '<div class="row2"><div><label class="f" for="gcbp-due">Bid due date</label><input type="date" id="gcbp-due" value="' + esc(due) + '"></div><div><label class="f" for="gcbp-addr">Site address</label><input type="text" id="gcbp-addr" maxlength="240" value="' + esc(addr) + '"></div></div>'
+    + '<label class="f" for="gcbp-scope">Scope of work</label><textarea id="gcbp-scope" rows="5" maxlength="20000" placeholder="e.g. 2,500 SF exterior repaint: pressure wash, scrape, prime bare wood, 2 coats SW Duration">' + esc(scope) + '</textarea>'
+    + '<label class="f" for="gcbp-specs">Specs / notes for bidders</label><textarea id="gcbp-specs" rows="3" maxlength="20000" placeholder="e.g. Colors: body SW 7036, trim SW 7006. Work hours 8–5, occupied home.">' + esc(specs) + '</textarea>'
+    + '<label class="f">Plans / files to share</label>' + (UI.files.length ? '<div class="files" data-bp-files>' + UI.files.map(function(f, i){ var was = (f.ref && refs[f.ref]) || (f.link && links[f.link]);
+        return '<label><input type="checkbox" data-bp-file="' + i + '"' + (was || (!J && f.pick) ? ' checked' : '') + (f.ref && refs[f.ref] ? ' disabled' : '') + '> <span>' + (f.link ? '🔗 ' : '📄 ') + esc(f.name) + (f.ref && refs[f.ref] ? ' <span class="mut">(shared)</span>' : '') + '</span></label>'; }).join('') + '</div>'
+      : '<div class="mut">No files on this ' + (p ? 'job' : 'lead') + ' yet. Paste a plan-room / Drive link below.</div>')
+    + '<label class="f" for="gcbp-link">Plan room / Drive link (optional)</label><input type="text" id="gcbp-link" placeholder="https://drive.google.com/…">'
+    + '<div class="err" data-bp-err></div>'
+    + '<div class="bar"><button type="button" class="b pri" data-bp="post">' + (on ? '💾 Save changes' : '📢 Put on bid portal') + '</button>' + (on ? '<button type="button" class="b red" data-bp="unpost">Take off bid portal</button>' : '') + '<button type="button" class="b" data-bp="close">Cancel</button></div>';
+  box.querySelectorAll('input[name="gcbp-vis"]').forEach(function(r){ r.addEventListener('change', function(){ UI.vis = r.value; box.querySelectorAll('[data-bp-vis] label').forEach(function(x){ x.classList.toggle('on', x.contains(r) ? r.checked : false); }); }); });
+}
+function val(id){ var e = D.getElementById(id); return e ? s(e.value) : ''; }
+function post(){
+  var m = D.getElementById('gcbp-modal'); if (!m) return; var c = UI.c, err = m.querySelector('[data-bp-err]'), go = m.querySelector('[data-bp="post"]');
+  var trades = Object.keys(UI.trades).filter(function(t){ return UI.trades[t]; });
+  var body = { op: 'postjob', jobId: UI.job && UI.job.id || '', pid: c.pid, leadId: c.leadId, estId: c.estId, title: val('gcbp-title'), address: val('gcbp-addr'), visibility: UI.vis, trades: trades,
+    due: val('gcbp-due'), scope: val('gcbp-scope'), specs: val('gcbp-specs'), projectName: c.p ? [s(c.p.autoPO), s(c.p.name)].filter(Boolean).join(' · ') : '', po: s(c.p && c.p.autoPO) };
+  var pmN = s(c.p && c.p.pm) || s(c.l && (c.l.pm || c.l.estimator)), pmU = arr(crm().users).filter(function(u){ return u && pmN && low(u.name) === low(pmN); })[0];
+  body.pmName = pmN; body.pmEmail = low(pmU && pmU.email) || low(c.p && c.p.pmEmail);
+  var files = [], links = arr(UI.job && UI.job.links).slice();
+  m.querySelectorAll('[data-bp-file]').forEach(function(x){ var f = UI.files[+x.getAttribute('data-bp-file')]; if (!f || !x.checked || x.disabled) return; if (f.ref) files.push({ ref: f.ref, name: f.name, type: f.type, size: f.size, category: f.category }); else if (f.link && !links.some(function(y){ return s(y.url) === f.link; })) links.push({ url: f.link, label: f.name }); });
+  var lk = val('gcbp-link'); if (lk) { if (!/^https?:\/\/\S+$/i.test(lk)) { err.textContent = 'Paste a full link (https://…).'; return; } links.push({ url: lk, label: 'Plan room' }); }
+  body.files = files; body.links = links;
+  if (!body.title) { err.textContent = 'Give the job a title.'; return; }
+  if (!trades.length) { err.textContent = 'Pick at least one trade we need priced.'; return; }
+  if (UI.vis === 'public' && !body.due) { err.textContent = 'A public job needs a bid due date (or post it 🔒 private).'; return; }
+  err.textContent = ''; go.disabled = true; go.textContent = 'Posting…';
+  return fn('bid-hub', body).then(function(r){
+    close();
+    toast((r.created ? '📢 On the bid portal — ' : '💾 Bid portal job saved — ') + (r.visibility === 'public' ? '🌐 public' : '🔒 private (invite subs on the 🏗 Bid portal tab)') + (r.files ? ' · ' + r.files + ' file(s) shared' : '') + (arr(r.notCopied).length ? ' · not copied: ' + r.notCopied.map(function(x){ return x.name; }).join(', ') : ''));
+    remember(c, r);
+    JOBS.at = 0; jobs(true).then(paint);
+    try { if (W._gcSys && W._gcSys.bp) W._gcSys.bp.load(true); } catch (e) {}
+    return r;
+  }, function(e){ go.disabled = false; go.textContent = '📢 Put on bid portal'; err.textContent = e.message; });
+}
+/* the CRM keeps the link: the job (bidJobId — the 📊 Bids → estimate link) and the lead (subPortal) */
+function remember(c, r){
+  if (!r || !r.jobId) return;
+  try { if (c.pid && W._gcBidEst && W._gcBidEst.link) W._gcBidEst.link(r.jobId, c.pid); } catch (e) { warn(e); }
+  try {
+    if (c.leadId && typeof W._setLeads === 'function') {
+      var at = new Date().toISOString();
+      W._setLeads(function(list){ return arr(list).map(function(l){ return l && s(l.id) === c.leadId ? Object.assign({}, l, { subPortal: Object.assign({}, l.subPortal || {}, { jobId: r.jobId, visibility: r.visibility, state: r.visibility, at: at, by: myEmail() }), updatedAt: at }) : l; }); });
+      later(function(){ try { if (W._supaUpsertNow && Array.isArray(crm().leads)) W._supaUpsertNow('leads', crm().leads); } catch (e) {} }, 700);
+    }
+  } catch (e) { warn(e); }
+}
+function unpost(){
+  var J = UI.job; if (!J || !J.id) return;
+  if (!W.confirm('Take "' + (J.title || 'this job') + '" off the bid portal?\n\nSubs stop seeing it. Nothing is deleted: it moves to 🗄 Archived, and 📢 Put on bid portal puts it back.')) return;
+  return fn('bid-hub', { op: 'unpost', jobId: J.id }).then(function(){ close(); toast('Taken off the bid portal (🗄 Archived)'); JOBS.at = 0; jobs(true).then(paint); try { if (W._gcSys && W._gcSys.bp) W._gcSys.bp.load(true); } catch (e) {} }, function(e){ toast(e.message, true); });
+}
+function onClick(ev){
+  var t = ev.target && ev.target.closest ? ev.target.closest('[data-bp]') : null; if (!t) return;
+  var a = t.getAttribute('data-bp');
+  if (a === 'close') return close();
+  if (a === 'trade') { var k = t.getAttribute('data-t'); UI.trades[k] = !UI.trades[k]; t.classList.toggle('on', !!UI.trades[k]); return; }
+  if (a === 'addtrade') { var inp = D.getElementById('gcbp-trade'), v = s(inp && inp.value); if (!v) return; UI.trades[v] = 1; var b = D.createElement('button'); b.type = 'button'; b.className = 'chip on'; b.setAttribute('data-bp', 'trade'); b.setAttribute('data-t', v); b.textContent = v; D.querySelector('#gcbp-modal [data-bp-trades]').appendChild(b); inp.value = ''; return; }
+  if (a === 'post') return post();
+  if (a === 'unpost') return unpost();
+}
+
+/* ── the buttons: the builder's bar, a job's page, a lead's drawer ── */
+function btnHtml(c){ var j = postedFor(c), on = j && !j.deleted; return '<button type="button" class="gcbp-btn" data-bidpost="1" title="' + (on ? 'On the bid portal — change it or take it off' : 'Put this job on the GrayCo bid portal for sub pricing') + '">📢 ' + (on ? 'On bid portal · ' + (j.visibility === 'public' ? '🌐' : '🔒') + ' Edit' : 'Put on bid portal') + '</button>'; }
+function paintEst(){
+  var acts = D.getElementById('gc-est3-acts'), old = D.getElementById('gcbp-est');
+  if (!acts) { if (old) old.remove(); return; }
+  var sl = null; try { sl = typeof openSlots !== 'undefined' && typeof activeSlot !== 'undefined' ? openSlots[activeSlot] : null; } catch (e) {}
+  var id = s(sl && sl._savedEstId), c = ctxOf({ estId: id });
+  if (!id || !canPost(c)) { if (old) old.remove(); return; }
+  var h = btnHtml(c); if (old && old.__h === h && old.__id === id) return;
+  css(); if (!old) { old = D.createElement('span'); old.id = 'gcbp-est'; old.addEventListener('click', function(){ open({ estId: old.__id }); }); acts.appendChild(old); }
+  old.__h = h; old.__id = id; old.innerHTML = h;
+}
+function paintJob(){
+  var old = D.getElementById('gcbp-job'), op = W._gcOpenProject, p = op && op.id ? proj(op.id) : null, main = D.querySelector('main');
+  if (!p || !main || typeof W._gcJobBox !== 'function') { if (old) old.remove(); return; }
+  var back = null, bs = main.getElementsByTagName('button'); for (var i = 0; i < bs.length && i < 80; i++) if (/^\s*←\s*All Projects\s*$/.test(bs[i].textContent || '')) { back = bs[i]; break; }
+  var c = ctxOf({ pid: p.id });
+  if (!back || !canPost(c)) { if (old) old.remove(); return; }
+  var root = W._gcJobBox(back); if (!root) return;
+  var h = btnHtml(c);
+  if (old && old.__h === h && old.__pid === p.id && old.parentNode === root) return;
+  css(); if (!old) { old = D.createElement('div'); old.id = 'gcbp-job'; old.className = 'gcbp-bar'; old.setAttribute('data-gc-keep', '1'); old.addEventListener('click', function(ev){ if (ev.target.closest('[data-bidpost]')) open({ pid: old.__pid }); }); }
+  old.__h = h; old.__pid = p.id; old.innerHTML = h + '<span style="color:#94a3b8;font-size:12px">subs price it on bids.grayco-cs.com</span>';
+  if (old.parentNode !== root) root.insertBefore(old, root.firstChild ? root.firstChild.nextSibling : null);
+}
+function paintLead(){
+  var d = D.getElementById('gcl-drawer'), old = D.getElementById('gcbp-lead');
+  var id = ''; try { var ui = W._gcLeadsHub && W._gcLeadsHub.ui && W._gcLeadsHub.ui(); id = s(ui && ui.open); } catch (e) {}
+  if (!d || !d.isConnected || !id || getComputedStyle(d).display === 'none') { if (old) old.remove(); return; }
+  var c = ctxOf({ leadId: id }); if (!c.l || !canPost(c)) { if (old) old.remove(); return; }
+  var h = btnHtml(c);
+  if (old && old.__h === h && old.__id === id && d.contains(old)) return;
+  css(); if (!old) { old = D.createElement('div'); old.id = 'gcbp-lead'; old.className = 'gcbp-bar'; old.setAttribute('data-gc-keep', '1'); old.addEventListener('click', function(ev){ if (ev.target.closest('[data-bidpost]')) open({ leadId: old.__id }); }); }
+  old.__h = h; old.__id = id; old.innerHTML = h + '<span style="color:#94a3b8;font-size:12px">any lead — subs can bid or ask questions</span>';
+  if (!d.contains(old)) { var body = d.querySelector('.gcl-body, [data-gcl-body]') || d; body.insertBefore(old, body.firstChild); }
+}
+function paint(){ try { paintEst(); } catch (e) { warn(e); } try { paintJob(); } catch (e) { warn(e); } try { paintLead(); } catch (e) { warn(e); } }
+var TICK = 0;
+RI.call(W, function(){ if (D.hidden) return; TICK++; if (!JOBS.list && !JOBS.busy && (isAdmin() || isEst() || arr(crm().projects).some(function(p){ return p && mine(p.pm); })) && W._crm) jobs(false); paint(); }, 1500);
+
+/* ── the To-Do: a sub asked a question on a job you posted / you are the PM of (until it is answered) ── */
+var QA = { at: 0, v: [] };
+function todoItems(){
+  if (Date.now() - QA.at < 20000) return QA.v;
+  var me = myEmail(), big = isAdmin() || isEst(), out = [], t0 = new Date().toISOString().slice(0, 10);
+  arr(JOBS.list).forEach(function(j){
+    if (!j || j.deleted || !(j.openQ > 0)) return;
+    var mineJ = low(j.postedBy) === me || low(j.pmEmail) === me;
+    if (!mineJ && !big) return;
+    var who = [j.postedByName || j.postedBy, j.pmName].filter(Boolean);
+    out.push({ key: 'bidq:' + j.id, cat: 'jobs', prio: 'high', due: t0, pid: s(j.crmProjectId), title: '❓ ' + j.openQ + ' bid question' + (j.openQ === 1 ? '' : 's') + ' to answer — ' + s(j.title),
+      sub: 'Subs asked on the bid portal · answer privately or to all bidders', who: who, vis: mineJ ? 'who' : 'company',
+      act: { l: 'Answer', f: function(){ try { if (W._gcSys2 && W._gcSys2.open) W._gcSys2.open(j.id); else if (W._setView) W._setView('bidportal'); } catch (e) { warn(e); } } } });
+  });
+  QA = { at: Date.now(), v: out };
+  return out;
+}
+W._gcTodoExt = Array.isArray(W._gcTodoExt) ? W._gcTodoExt : []; W._gcTodoExt.push(function(){ try { return todoItems(); } catch (e) { warn(e); return []; } });
+RI.call(W, function(){ if (!D.hidden && JOBS.list) jobs(false); }, 300000);
+
+W._gcBidPost = { open: open, close: close, canPost: function(c){ return canPost(ctxOf(c)); }, jobs: jobs, paint: paint, todo: function(){ QA.at = 0; return todoItems(); }, trades: tradeList,
+  state: function(){ return { jobs: JOBS.list ? JOBS.list.length : null, at: JOBS.at, admin: isAdmin(), est: isEst(), me: myEmail(), name: myName(), ticks: TICK }; } };
+try { console.log('[GC] patch BIDPOST: 📢 Put on bid portal (estimate / job / lead; admin, estimator, the job\'s PM) — nothing goes on by itself — _gcBidPost.state()'); } catch (e) {}
 })(window);
 </script>

@@ -65,23 +65,145 @@ function langOf(spUser, crmRaw){ return low((spUser && spUser.lang) || (crmRaw &
 
 /* ── the bid jobs ── */
 async function jobsList(){
-  const [jobs, invites, bids] = await Promise.all([
-    SP.listRows([SP.eq('collection', 'jobs')]), SP.listRows([SP.eq('collection', 'invites')]).catch(() => []), SP.listRows([SP.eq('collection', 'bids')]).catch(() => [])]);
+  const [jobs, invites, bids, plans, qs] = await Promise.all([
+    SP.listRows([SP.eq('collection', 'jobs')]), SP.listRows([SP.eq('collection', 'invites')]).catch(() => []), SP.listRows([SP.eq('collection', 'bids')]).catch(() => []),
+    SP.listRows([SP.eq('collection', 'plans')]).catch(() => []), SP.listRows([SP.eq('collection', 'questions')]).catch(() => [])]);
   const mail = arr(await L.kvGet(T.KV_SUBBIDS).catch(() => []));
-  const inv = {}, nb = {}, nm = {};
-  invites.forEach(r => { if (r.job_id) inv[r.job_id] = (inv[r.job_id] || 0) + 1; });
-  bids.forEach(r => { if (r.job_id && !(r.data && r.data.fromEmailBid)) nb[r.job_id] = (nb[r.job_id] || 0) + 1; });
-  mail.forEach(x => { if (x && x.jobId) nm[x.jobId] = (nm[x.jobId] || 0) + 1; });
-  return jobs.map(r => r.data || {}).filter(j => j.id && (!GONE.test(s(j.status)) || restorable(j))).map(j => ({
+  const c = counts(invites, bids, mail, plans, qs);
+  return jobs.map(r => r.data || {}).filter(j => j.id && (!GONE.test(s(j.status)) || restorable(j))).map(j => {
+    const k = c(j.id);
+    return {
     deleted: GONE.test(s(j.status)), deletedAt: s(j.archivedAt), deletedBy: s(j.archivedBy),   /* patch SYS2: 🗑 Deleted (n), restorable for 30 days */
+    archived: GONE.test(s(j.status)) && /^(auto|taken off)$/.test(s(j.archivedReason)), archivedReason: s(j.archivedReason),   /* patch BIDPOST: 🗄 Archived (auto-added, taken off) */
     id: s(j.id), title: s(j.title), address: s(j.address), po: s(j.poNumber), status: s(j.status), draft: j.draft === true || low(j.status) === 'draft',
-    visibility: j.draft === true || low(j.status) === 'draft' ? 'draft' : (s(j.visibility) || 'public'), due: s(j.bidDueDate), dueTime: s(j.bidDueTime), trades: s(j.tradesSought),
-    invited: inv[j.id] || 0, bids: (nb[j.id] || 0) + (nm[j.id] || 0), leadId: s(j.leadInbox && j.leadInbox.id), source: s(j.leadInbox && j.leadInbox.source), autoPrivate: !!j.autoPrivate, updatedAt: s(j.updatedAt),
-    crmProjectId: s(j.crmProjectId), crmProjectName: s(j.crmProjectName)   /* patch BIDEST: the CRM project this job's awarded bids go into */
-  })).sort((a, b) => (a.draft - b.draft) || (s(a.due) || '9999').localeCompare(s(b.due) || '9999') || a.title.localeCompare(b.title));
+    visibility: j.draft === true || low(j.status) === 'draft' ? 'draft' : (s(j.visibility) || 'public'), due: validDay(j.bidDueDate), dueTime: s(j.bidDueTime), trades: s(j.tradesSought),
+    invited: k.invites, bids: k.bids, plans: k.plans, openQ: k.openQ, leadId: s(j.leadInbox && j.leadInbox.id), source: s(j.leadInbox && j.leadInbox.source), autoPrivate: !!j.autoPrivate, updatedAt: s(j.updatedAt),
+    crmProjectId: s(j.crmProjectId), crmProjectName: s(j.crmProjectName),   /* patch BIDEST: the CRM project this job's awarded bids go into */
+    crmLeadId: s(j.crmLeadId), crmEstId: s(j.crmEstId), postedBy: s(j.postedBy), postedByName: s(j.postedByName), postedAt: s(j.postedAt), pmEmail: s(j.pmEmail), pmName: s(j.pmName),   /* patch BIDPOST */
+    auto: !GONE.test(s(j.status)) && autoAdded(j, k)
+  }; }).sort((a, b) => (a.draft - b.draft) || (s(a.due) || '9999').localeCompare(s(b.due) || '9999') || a.title.localeCompare(b.title));
 }
+/* ── patch BIDPOST (owner 11/12): "so many not needed, not real leads or plans — make it where I have to put jobs into the bid portal,
+   nothing goes automatic" ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+   A job a PERSON posted: 📢 Put on bid portal (postedAt), an admin's / estimator's Publish or Make private / public (publishedBy /
+   openedBy that is a person), or one made on the bid site itself. AUTO-ADDED: made by the Lead Inbox / the CRM's old "every lead →
+   a draft" sweep, never posted by a person, with no plans, bids, invites or questions. "🧹 Clean up auto-added jobs" (an admin's
+   click) archives those (status archived, archivedReason auto — restorable any time from 🗄 Archived); nothing is deleted. */
+function validDay(v){ const d = s(v).slice(0, 10); if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || s(v).length > 10 && !/^[T ]/.test(s(v).slice(10, 11))) return ''; const x = new Date(d + 'T12:00:00Z'); return !isNaN(x) && x.toISOString().slice(0, 10) === d ? d : ''; }
+function counts(invites, bids, mail, plans, qs){
+  const n = {}; const add = (id, k, v) => { if (!id) return; const o = n[id] || (n[id] = { invites: 0, bids: 0, plans: 0, questions: 0, openQ: 0 }); o[k] += v == null ? 1 : v; };
+  invites.forEach(r => add(r.job_id, 'invites'));
+  bids.forEach(r => { if (!(r.data && r.data.fromEmailBid)) add(r.job_id, 'bids'); });
+  mail.forEach(x => { if (x && x.jobId) add(x.jobId, 'bids'); });
+  plans.forEach(r => add(r.job_id || r.id, 'plans', arr(r.data && r.data.items).length));
+  qs.forEach(r => { add(r.job_id, 'questions'); if (!s(r.data && r.data.answer)) add(r.job_id, 'openQ'); });
+  return id => n[id] || { invites: 0, bids: 0, plans: 0, questions: 0, openQ: 0 };
+}
+function postedOnPurpose(j){
+  const person = v => !!s(v) && s(v) !== 'auto' && s(v) !== 'lead-inbox';
+  return !!(s(j.postedAt) || (s(j.publishedAt) && person(j.publishedBy)) || (s(j.openedPrivateAt) && !j.autoPrivate && person(j.openedBy)));
+}
+function autoAdded(j, k){
+  const fromLead = s(j.createdBy) === 'lead-inbox' || !!(j.leadInbox && s(j.leadInbox.id));
+  return fromLead && !postedOnPurpose(j) && !k.plans && !k.bids && !k.invites && !k.questions && !arr(j.specDocs).length;
+}
+async function cleanup(who, b){
+  if (!who.admin) return { code: 403, error: 'Only an admin cleans up the bid portal.' };
+  const [jobs, invites, bids, plans, qs] = await Promise.all([SP.listRows([SP.eq('collection', 'jobs')]), SP.listRows([SP.eq('collection', 'invites')]).catch(() => []),
+    SP.listRows([SP.eq('collection', 'bids')]).catch(() => []), SP.listRows([SP.eq('collection', 'plans')]).catch(() => []), SP.listRows([SP.eq('collection', 'questions')]).catch(() => [])]);
+  const c = counts(invites, bids, arr(await L.kvGet(T.KV_SUBBIDS).catch(() => [])), plans, qs);
+  const todo = jobs.map(r => Object.assign({}, r.data || {})).filter(j => j.id && !GONE.test(s(j.status)) && autoAdded(j, c(j.id)));
+  if (b.dry) return { ok: true, count: todo.length, sample: todo.slice(0, 25).map(j => s(j.title) || j.id) };
+  const at = nowIso();
+  todo.forEach(j => { j.archivedFrom = { status: s(j.status), visibility: s(j.visibility), draft: j.draft === true }; Object.assign(j, { status: 'archived', archivedAt: at, archivedBy: who.email, archivedReason: 'auto' });
+    logTo(j, who, '🗄 Archived by "Clean up auto-added jobs" (auto-added, never posted, no plans / bids / invites)'); j.updatedAt = at; });
+  if (todo.length) await SP.upsertRows(todo.map(j => SP.rowFor('jobs', j)), who.email);
+  return { ok: true, archived: todo.length };
+}
+/* who may put a job on the bid portal: an admin, an estimator, or the PM of that job / lead (and whoever posted it, for changes) */
+let CRMC = null;
+async function crmLists(){ if (CRMC && Date.now() - CRMC.at < 30000) return CRMC.v; let v = {}; try { v = await SP.kvRead(['projects', 'leads', 'users']); } catch (e) { v = {}; } CRMC = { at: Date.now(), v }; return v; }
+async function posterRole(who, ref, job){
+  if (who.admin) return 'admin';
+  if (who.estimator) return 'estimator';
+  if (job && (low(job.postedBy) === who.email || low(job.pmEmail) === who.email)) return 'poster';
+  const d = await crmLists(), me = arr(d.users).find(u => u && low(u.email) === who.email);
+  const names = [low(me && me.name), low(who.name), who.email].filter(Boolean);
+  const pid = s(ref.pid) || s(job && job.crmProjectId), leadId = s(ref.leadId) || s(job && job.crmLeadId);
+  const p = pid && arr(d.projects).find(x => x && s(x.id) === pid);
+  if (p && (names.indexOf(low(p.pm)) > -1 || low(p.pmEmail) === who.email)) return 'pm';
+  const l = leadId && arr(d.leads).find(x => x && s(x.id) === leadId);
+  if (l && (names.indexOf(low(l.pm)) > -1 || names.indexOf(low(l.estimator)) > -1 || low(l.pmEmail) === who.email)) return 'pm';
+  return '';
+}
+function cleanLinks(v){ return arr(v).filter(x => x && /^https?:\/\/\S+$/i.test(s(x.url))).map(x => ({ url: s(x.url).slice(0, 1000), label: s(x.label).slice(0, 120) || 'Plans' })).slice(0, 20); }
+async function postedView(who, jobId){
+  const job = await jobRow(jobId); if (!job) return { code: 404, error: 'No such bid job.' };
+  if (!(await posterRole(who, {}, job))) return { code: 403, error: 'Only an admin, an estimator or the job\'s PM sees this.' };
+  const pl = await SP.plansOf(job.id).catch(() => []);
+  return { ok: true, job: { id: job.id, title: s(job.title), address: s(job.address), due: validDay(job.bidDueDate), dueTime: s(job.bidDueTime), visibility: job.draft === true ? 'draft' : s(job.visibility) || 'public',
+    trades: s(job.tradesSought).split(/\s*,\s*/).filter(Boolean), scope: s(job.scope), specs: s(job.specifications), links: arr(job.plansLinks), files: pl.map(f => ({ name: s(f.name) })), crmFileRefs: arr(job.crmFileRefs),
+    archived: GONE.test(s(job.status)), postedBy: s(job.postedBy), postedAt: s(job.postedAt), crmProjectId: s(job.crmProjectId), crmLeadId: s(job.crmLeadId) } };
+}
+async function postjob(who, b){
+  const pid = s(b.pid).slice(0, 120), leadId = s(b.leadId).slice(0, 120), estId = s(b.estId).slice(0, 120);
+  let job = s(b.jobId) ? await jobRow(b.jobId) : null;
+  if (s(b.jobId) && !job) return { code: 404, error: 'No such bid job.' };
+  if (!job && (pid || leadId)) {
+    const hit = (await SP.listRows([SP.eq('collection', 'jobs')])).map(r => r.data || {}).filter(j => (pid && s(j.crmProjectId) === pid) || (leadId && s(j.crmLeadId) === leadId))
+      .sort((x, y) => (GONE.test(s(x.status)) - GONE.test(s(y.status))) || s(y.updatedAt).localeCompare(s(x.updatedAt)))[0];
+    if (hit) job = Object.assign({}, hit);
+  }
+  const role = await posterRole(who, { pid, leadId }, job);
+  if (!role) return { code: 403, error: 'Only an admin, an estimator, or the PM of this job puts it on the bid portal.' };
+  const title = s(b.title).slice(0, 200); if (!title) return { code: 400, error: 'Give the job a title.' };
+  const keep = (k, v) => b[k] === undefined && job ? v : undefined;   /* a field not sent keeps what the job has */
+  const vis = s(b.visibility) === 'public' ? 'public' : 'private', due = b.due === undefined && job ? validDay(job.bidDueDate) : validDay(b.due);
+  if (s(b.due) && !due) return { code: 400, error: 'The bid due date is not a date.' };
+  if (vis === 'public' && !due) return { code: 400, error: 'Add a bid due date — a public bid job needs one (or post it private, for invited subs only).' };
+  const trades = Array.from(new Set(arr(b.trades).map(x => s(x).slice(0, 60)).filter(Boolean))).slice(0, 30);
+  const at = nowIso(), isNew = !job;
+  if (!job) job = { id: 'j_' + Date.now().toString(36) + crypto.randomBytes(3).toString('hex'), createdBy: 'crm-post', createdByName: s(who.name) || who.email, createdAt: at,
+    tradeScopes: [], scopeDocs: [], specDocs: [], bidResultsSharing: 'private', grayCoRole: 'gc', poNumber: s(b.po).slice(0, 40), pmId: '', estimatorId: '' };
+  const wasGone = GONE.test(s(job.status));
+  if (wasGone) { delete job.archivedAt; delete job.archivedBy; delete job.archivedReason; delete job.archivedFrom; }
+  const keepTs = {}; arr(job.tradeScopes).forEach(x => { if (x && s(x.trade)) keepTs[low(x.trade)] = x; });
+  const addr0 = keep('address', job && job.address), scope0 = keep('scope', job && job.scope), specs0 = keep('specs', job && job.specifications), links0 = keep('links', job && job.plansLinks);
+  Object.assign(job, { title, address: addr0 !== undefined ? s(addr0) : s(b.address).slice(0, 240), bidDueDate: due, bidDueTime: /^\d{2}:\d{2}$/.test(s(b.dueTime)) ? s(b.dueTime) : s(job.bidDueTime),
+    scope: scope0 !== undefined ? s(scope0) : s(b.scope).slice(0, 20000), specifications: specs0 !== undefined ? s(specs0) : s(b.specs).slice(0, 20000),
+    tradesSought: trades.join(', '), tradeScopes: trades.map(tr => keepTs[low(tr)] || { trade: tr, scope: '' }), visibility: vis, draft: false,
+    status: /^(closed|won|lost|awarded)$/i.test(s(job.status)) ? job.status : 'open', postedAt: job.postedAt || at, postedBy: job.postedBy || who.email, postedByName: job.postedByName || s(who.name) || who.email,
+    lastPostedAt: at, lastPostedBy: who.email, crmProjectId: pid || s(job.crmProjectId), crmProjectName: s(b.projectName).slice(0, 200) || s(job.crmProjectName), crmLeadId: leadId || s(job.crmLeadId), crmEstId: estId || s(job.crmEstId),
+    pmEmail: low(b.pmEmail).slice(0, 160) || s(job.pmEmail), pmName: s(b.pmName).slice(0, 120) || s(job.pmName), plansLinks: links0 !== undefined ? arr(links0) : cleanLinks(b.links), autoPrivate: false, updatedAt: at });
+  if (vis === 'public') Object.assign(job, { publishedAt: job.publishedAt || at, publishedBy: who.email, madePublicAt: job.madePublicAt || at });
+  else Object.assign(job, { openedPrivateAt: job.openedPrivateAt || at, openedBy: who.email });
+  /* the job's files picked in the CRM (crm-files) → copied to the bid site's own bucket once each */
+  const had = {}; arr(job.crmFileRefs).forEach(r => { had[r] = 1; });
+  const want = arr(b.files).filter(f => f && /^sb:crm-files\//.test(s(f.ref)) && !had[s(f.ref)]).slice(0, 30), copied = [], failed = [];
+  for (const f of want) {
+    let c = null; try { c = await L.portalApi()._copyFile({ ref: s(f.ref), name: s(f.name).slice(0, 160) || 'file', type: s(f.type), size: Number(f.size) || 0, kind: 'plans' }); } catch (e) { c = { name: s(f.name), why: s(e && e.message) }; }
+    if (c && c.fileRef) { copied.push({ name: c.name, size: c.size, type: c.type, fileRef: c.fileRef, category: s(f.category).slice(0, 60) || 'Plans', at, by: who.email }); had[s(f.ref)] = 1; } else failed.push({ name: s(f.name), why: s(c && c.why) || 'not copied' });
+  }
+  job.crmFileRefs = Object.keys(had).slice(0, 200);
+  logTo(job, who, (isNew ? '📢 Put on the bid portal' : wasGone ? '📢 Back on the bid portal' : '📢 Bid portal job changed') + ' (' + (vis === 'public' ? '🌐 public' : '🔒 private, invited subs only') + ')' + (trades.length ? ' · trades: ' + trades.join(', ') : '') + (copied.length ? ' · ' + copied.length + ' file(s)' : ''));
+  const rows = [SP.rowFor('jobs', job)];
+  if (copied.length) { const pl = await SP.plansOf(job.id).catch(() => []); rows.push({ collection: 'plans', id: job.id, job_id: job.id, data: { items: pl.concat(copied) } }); }
+  await SP.upsertRows(rows, who.email);
+  return { ok: true, jobId: job.id, created: isNew, visibility: vis, files: copied.length, notCopied: failed, role };
+}
+async function unpost(who, b){
+  const job = await jobRow(b.jobId); if (!job) return { code: 404, error: 'No such bid job.' };
+  if (!(await posterRole(who, {}, job))) return { code: 403, error: 'Only an admin, an estimator, or the PM of this job takes it off the bid portal.' };
+  if (GONE.test(s(job.status))) return { ok: true, jobId: job.id, already: true };
+  job.archivedFrom = { status: s(job.status), visibility: s(job.visibility), draft: job.draft === true };
+  Object.assign(job, { status: 'archived', archivedAt: nowIso(), archivedBy: who.email, archivedReason: 'taken off' });
+  logTo(job, who, '📢 Taken off the bid portal (🗄 Archived — put it back any time)'); await saveJob(job, who);
+  return { ok: true, jobId: job.id };
+}
+
 const KEEP_DAYS = 30;
-function restorable(j){ const t = Date.parse(s(j && j.archivedAt)); return !!t && Date.now() - t < KEEP_DAYS * 864e5; }
+function restorable(j){ if (/^(auto|taken off)$/.test(s(j && j.archivedReason))) return true;   /* patch BIDPOST: archived, not deleted — always back */
+  const t = Date.parse(s(j && j.archivedAt)); return !!t && Date.now() - t < KEEP_DAYS * 864e5; }
 
 /* patch BIDEST: a sub bid's file — its name, and the stored ref / link when there is one (the CRM opens it) */
 function fileOut(f){ const o = { name: s(f && (f.name || f.fileName)) || 'file' }; const ref = s(f && (f.ref || f.fileRef)); const url = s(f && (f.url || f.link)); if (/^sb:/.test(ref)) o.ref = ref; if (/^https?:\/\//i.test(url)) o.url = url; return o; }
@@ -128,13 +250,13 @@ async function subsList(jobId){
     if (c.flag === 'dnu') return;   /* ⛔ Do not use: never offered */
     const u = us.find(x => low(x.email) === c.email);
     out.push({ email: c.email, name: c.name, company: c.company || (u && u.company) || '', trade: c.trade || (u && arr(u.trades)[0]) || '', trades: arr(u && u.trades).concat(c.trade ? [c.trade] : []),
-      flag: c.flag, grade: c.grade, score: c.score, lang: langOf(u, rawById[c.id]), onBidSite: !!(u && u.approved), invited: !!invited[c.email] });
+      flag: c.flag, grade: c.grade, score: c.score, lang: langOf(u, rawById[c.id]), onBidSite: !!(u && u.approved), invited: !!invited[c.email], crmId: s(c.id), portalUserId: s(u && u.id), papers: arr(u && u.papersCrm).slice(0, 20) });   /* patch SIGNUPPAPERS */
   });
   us.filter(u => u.role === 'sub' && u.approved && SP.okEmail(low(u.email)) && !seen[low(u.email)]).forEach(u => {
     const e = low(u.email); seen[e] = 1; const c = u.crmSubId && rawById[s(u.crmSubId)];
     if (c && low(c.subFlag) === 'dnu') return;
     out.push({ email: e, name: s(u.name), company: s(u.company), trade: arr(u.trades)[0] || '', trades: arr(u.trades), flag: '', grade: '', score: null, lang: langOf(u, c), onBidSite: true, invited: !!invited[e],
-      notInCrm: !c, phone: s(u.phone), portalUserId: s(u.id), city: s(u.businessCity), state: s(u.businessState), address: s(u.businessAddress), licenses: s(u.licenseNumbers) });   /* BIDSUBS: what the CRM needs to add them */
+      notInCrm: !c, phone: s(u.phone), portalUserId: s(u.id), papers: arr(u.papersCrm).slice(0, 20), crmId: s(c && c.id), city: s(u.businessCity), state: s(u.businessState), address: s(u.businessAddress), licenses: s(u.licenseNumbers) });   /* BIDSUBS: what the CRM needs to add them */
   });
   return out;
 }
@@ -360,6 +482,7 @@ async function award(who, b){
 /* the backfill: every estimator lead's DRAFT bid job → PRIVATE (a public job is never touched) */
 async function sweep(who){
   if (!(who.admin || who.estimator)) return { ok: true, opened: 0 };
+  if (process.env.BID_PORTAL_AUTO !== '1') return { ok: true, opened: 0, off: true };   /* patch BIDPOST: nothing goes on the bid portal by itself */
   const jobs = await SP.listRows([SP.eq('collection', 'jobs')]);
   const items = arr(await L.kvGet(L.KV).catch(() => [])); const byId = {}; items.forEach(x => { if (x && x.id) byId[x.id] = x; });
   const todo = jobs.map(r => r.data || {}).filter(j => (j.draft === true || low(j.status) === 'draft') && j.leadInbox && s(j.leadInbox.id)).filter(j => {
@@ -569,8 +692,8 @@ async function post(who, b){
 
 /* a sub's question: answer privately, or publish the answer to every bidder (its e-mail waits on approval, as before) */
 async function answer(who, b){
-  if (!who.canInvite) return { code: 403, error: 'Only an admin, an estimator or the office answers bid questions.' };
   const q = await SP.getRow('questions', s(b.id)); if (!q) return { code: 404, error: 'No such question.' };
+  if (!who.canInvite && !(await posterRole(who, {}, await jobRow(q.data.jobId)))) return { code: 403, error: 'Only an admin, an estimator, the office or the job\'s PM answers bid questions.' };   /* patch BIDPOST: + the poster / PM */
   const pub = b.publish === true;
   const r = await SP.saveCollection({ isAdmin: true, email: who.email, profile: { name: s(who.name) || who.email } }, 'questions',
     [{ id: q.data.id, answer: s(b.answer).slice(0, 8000), visibility: pub ? 'public' : 'private' }], [], {});
@@ -601,12 +724,13 @@ exports.handler = async function(event){
   const who = await whoIs(event); if (!who.ok) return J(who.code || 401, { error: who.error }, C);
   try {
     if (event.httpMethod === 'GET') {
-      if (q.jobs) return J(200, { ok: true, jobs: await jobsList(), me: { admin: who.admin, estimator: who.estimator, office: who.office, canInvite: who.canInvite, canPublic: who.canPublic } }, C);
+      if (q.jobs) return J(200, { ok: true, jobs: await jobsList(), me: { email: who.email, admin: who.admin, estimator: who.estimator, office: who.office, canInvite: who.canInvite, canPublic: who.canPublic } }, C);
       if (q.subbids || q.lead) {
         const jobId = s(q.subbids) || L.portalApi().jobIdFor({ id: s(q.lead) });
         return J(200, { ok: true, jobId, bids: await subBids(jobId), sent: await sentScope(jobId) }, C);   /* patch BIDSCOPE: + the scope GrayCo sent */
       }
-      if (q.manage) { if (!who.canInvite) return J(403, { error: 'Only an admin, an estimator or the office manages a bid job.' }, C); const r = await manageView(s(q.manage)); return r.code ? J(r.code, { error: r.error }, C) : J(200, r, C); }   /* patch SYS2 */
+      if (q.posted) { const r = await postedView(who, s(q.posted)); return r.code ? J(r.code, { error: r.error }, C) : J(200, r, C); }   /* patch BIDPOST */
+      if (q.manage) { if (!who.canInvite && !(await posterRole(who, {}, await jobRow(s(q.manage)))))  return J(403, { error: 'Only an admin, an estimator or the office manages a bid job.' }, C); const r = await manageView(s(q.manage)); return r.code ? J(r.code, { error: r.error }, C) : J(200, r, C); }   /* patch SYS2 */
       if (q.subs) { if (!who.canInvite) return J(403, { error: 'Only an admin, an estimator or the office invites subs.' }, C); return J(200, { ok: true, subs: await subsList(s(q.job)) }, C); }
       return J(400, { error: 'What do you want?' }, C);
     }
@@ -618,9 +742,12 @@ exports.handler = async function(event){
     else if (b.op === 'award') r = await award(who, b);
     else if (b.op === 'sweep') r = await sweep(who);
     else if (b.op === 'link') r = await link(who, b);   /* patch BIDEST */
+    else if (b.op === 'postjob') r = await postjob(who, b);   /* patch BIDPOST: 📢 Put on bid portal */
+    else if (b.op === 'unpost') r = await unpost(who, b);
+    else if (b.op === 'cleanup') r = await cleanup(who, b);
     else if (b.op === 'archive') r = await archive(who, b);   /* patch SYS2 */
     else if (b.op === 'restore') r = await restore(who, b);
-    else if (/^(plans|scope|addendum|post|answer|notice)$/.test(s(b.op)) && !who.canInvite) r = { code: 403, error: 'Only an admin, an estimator or the office changes a bid job.' };
+    else if (/^(plans|scope|addendum|post|notice)$/.test(s(b.op)) && !who.canInvite && !(await posterRole(who, {}, await jobRow(b.jobId)))) r = { code: 403, error: 'Only an admin, an estimator or the office changes a bid job.' };
     else if (b.op === 'plans') r = await plans(who, b);
     else if (b.op === 'scope') r = await scope(who, b);
     else if (b.op === 'addendum') r = await addendum(who, b);
@@ -633,7 +760,7 @@ exports.handler = async function(event){
     return J(e.status || 502, { error: e.status ? e.message : 'The bid portal could not be reached: ' + s(e && e.message) }, C);
   }
 };
-exports._test = { sentScope, awardMail, notSelectedMail, mailGate, pmOf, link, fileOut, amountOf, subBids, subsList, jobsList, invite, visibility, award, sweep, inviteMail, whoIs, archive, restore, manageView, audience, noticeMail };
+exports._test = { postjob, unpost, cleanup, postedView, posterRole, autoAdded, postedOnPurpose, validDay, jobsList, sentScope, awardMail, notSelectedMail, mailGate, pmOf, link, fileOut, amountOf, subBids, subsList, jobsList, invite, visibility, award, sweep, inviteMail, whoIs, archive, restore, manageView, audience, noticeMail };
 /* patch LOGOALL (owner 10/23: "should have our logo on it"): every customer / sub / GC e-mail this file sends
    straight to Resend gets the GrayCo shell (centered logo, office line, licenses). Internal @grayco-cs.com mail is untouched. */
 try { require('./_lib/brand.js').installResend(); } catch (e) {}

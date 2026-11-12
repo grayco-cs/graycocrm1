@@ -286,6 +286,59 @@ async function signRefs(refs){
 }
 function fileOut(f, signed){ const ref = s(f && f.ref); const url = signed[ref] || ''; return url ? { name: clip(f.name || 'File', 120), type: s(f.type), url: url } : null; }
 
+/* ── patch SIGNUPPAPERS: the papers a sub uploaded on the bid site / at sign-up (sp_rows subdocs, bucket subportal-files) ── */
+const SP_BUCKET = 'subportal-files';
+async function spSign(paths){
+  const out = {}; paths = Array.from(new Set(paths.filter(function(p){ return /^(u|staff)\/[^\s]{3,300}$/.test(s(p)); }))).slice(0, 200);
+  if (!paths.length) return out;
+  try {
+    const r = await fetch(sbUrl() + '/storage/v1/object/sign/' + SP_BUCKET, { method: 'POST', headers: H(), body: JSON.stringify({ expiresIn: SIGN_SECS, paths: paths }) });
+    if (!r.ok) return out;
+    (await r.json() || []).forEach(function(x){ const u = s(x && (x.signedURL || x.signedUrl)); if (x && x.path && u && !x.error) out[x.path] = /^https:/.test(u) ? u : sbUrl() + '/storage/v1' + (u[0] === '/' ? '' : '/') + u; });
+  } catch (e) {}
+  return out;
+}
+function spPapersOf(items, signed, claimed){
+  claimed = claimed || {};
+  const today = new Date().toISOString().slice(0, 10), newest = function(type){ return arr(items).filter(function(d){ return d && d.type === type; }).sort(function(a, b){ return s(b.uploadedAt).localeCompare(s(a.uploadedAt)); }); };
+  const cur = function(d){ return !!d && (d.wcExempt === true || !s(d.expirationDate) || s(d.expirationDate).slice(0, 10) >= today); };
+  const one = function(d){ return d ? { ok: cur(d), exp: s(d.expirationDate).slice(0, 10), exempt: d.wcExempt === true, name: clip(d.fileName || d.label, 160), url: s(signed[s(d.fileRef)]) } : null; };
+  const w9 = newest('w9')[0], gl = newest('insurance_general')[0], wc = newest('insurance_workers_comp')[0];
+  const lic = newest('license').map(function(d){ return Object.assign(one(d), { state: s(d.licState), type: clip(d.licType, 80), number: clip(d.licNumber, 60), label: clip(d.label, 120) }); });
+  /* on file (a real paper), or only "says they have it" (ticked at sign-up — not on file, never counts for ⚡ / bids) */
+  const says = function(x, k, ex){ return x || (claimed[k] || (ex && claimed.wcExempt) ? { says: true, exempt: !!(ex && claimed.wcExempt) } : null); };
+  return { w9: says(one(w9), 'w9'), gl: says(one(gl), 'gl'), wc: says(one(wc), 'wc', true), licenses: lic, ready: !!(w9 && cur(gl) && cur(wc)) };
+}
+async function withPapers(list){
+  if (!list.length) return list;
+  const rows = await dbGet('sp_rows', 'select=id,data&collection=eq.subdocs&id=in.(' + list.map(function(x){ return '"' + s(x.id).replace(/"/g, '') + '"'; }).join(',') + ')');
+  const by = {}; rows.forEach(function(r){ by[s(r.id)] = arr(r.data && r.data.items); });
+  const paths = []; Object.keys(by).forEach(function(k){ by[k].forEach(function(d){ if (d && d.fileRef) paths.push(s(d.fileRef)); }); });
+  const signed = await spSign(paths);
+  return list.map(function(x){ return Object.assign({}, x, { papers: spPapersOf(by[x.id] || [], signed, x.claimed) }); });
+}
+/* on approval: each paper is copied into the CRM's own files (crm-files) — the CRM's Subs record gets them (patch BIDSUBS files them) */
+async function papersToCrm(userId){
+  const rows = await dbGet('sp_rows', 'select=id,data&collection=eq.subdocs&id=eq.' + encodeURIComponent(userId));
+  const items = arr(rows[0] && rows[0].data && rows[0].data.items), out = [];
+  const KIND = { w9: 'w9', insurance_general: 'coi', insurance_workers_comp: 'wc', license: 'license' };
+  for (const d of items.slice(0, 20)) {
+    if (!d || !KIND[d.type] || !/^(u|staff)\//.test(s(d.fileRef))) continue;
+    try {
+      const g = await fetch(sbUrl() + '/storage/v1/object/' + SP_BUCKET + '/' + s(d.fileRef).split('/').map(encodeURIComponent).join('/'), { headers: keyHeaders(svcKey()) });
+      if (!g.ok) continue;
+      const buf = Buffer.from(await g.arrayBuffer()); if (!buf.length || buf.length > 50 * 1024 * 1024) continue;
+      const hash = crypto.createHash('sha256').update(buf).digest('hex'), ext = (/\.([a-z0-9]{2,5})$/i.exec(s(d.fileName || d.fileRef)) || [0, 'pdf'])[1].toLowerCase(), path = hash + '.' + ext;
+      const p = await fetch(sbUrl() + '/storage/v1/object/crm-files/' + path, { method: 'POST', headers: Object.assign(keyHeaders(svcKey()), { 'Content-Type': s(d.fileType) || 'application/octet-stream', 'x-upsert': 'false' }), body: buf });
+      if (!p.ok && p.status !== 409) continue;
+      out.push({ id: 'SBPAP_' + s(d.id), kind: KIND[d.type], ref: 'sb:crm-files/' + path, name: clip(d.fileName || d.label, 160), type: s(d.fileType), exp: s(d.expirationDate).slice(0, 10), exempt: d.wcExempt === true,
+        licState: s(d.licState), licType: clip(d.licType, 80), licNumber: clip(d.licNumber, 60), at: new Date().toISOString() });
+    } catch (e) {}
+  }
+  return out;
+}
+exports._papers = { papersOf: spPapersOf, withPapers, papersToCrm, spSign };
+
 /* ── rate limits (per warm instance) ───────────────────────────────────────── */
 const hits = new Map();
 const LIMITS = { pub: { req: 120, bad: 10 }, signin: { req: 12, bad: 10 }, verify: { req: 25, bad: 10 }, app: { req: 600, bad: 20 }, bid: { req: 40, bad: 20 } };   /* bid: p-bid-save (patch SUBBIDS) */
@@ -1134,7 +1187,8 @@ async function partnerAction(action, body, ctx){
   if (action === 'p-photos-code') return { ok: true, code: await photosCode(sub, ctx.jobs.map(function(j){ return s(j.id); })) };
   if (action === 'p-bids') return bidsAccept(sub, body);
   if (action === 'p-bidjobs') return pBidJobs(sub);               /* patch SUBBIDS: 📋 Jobs to bid — the bid site's open jobs this sub may bid on + their own bid */
-  if (action === 'p-bid-save') return pBidSave(sub, body);         /* patch SUBBIDS: send / update their bid (papers first) */
+  if (action === 'p-bid-save') return pBidSave(sub, body);
+  if (action === 'p-bid-ask') return pBidAsk(sub, body);           /* patch BIDPOST: ❓ Ask a question about a job */         /* patch SUBBIDS: send / update their bid (papers first) */
   throw Fail(400, 'Bad request');
 }
 /* photos a sub may see (until the GrayCo Photos API takes over): their own photos on the job, and the job's
@@ -1323,12 +1377,18 @@ async function pBidJobs(sub){
     Object.keys(items).forEach(function(id){ plans[id] = items[id].map(function(f){ return /^https:\/\//.test(s(f.dataUrl)) ? { name: f.name, category: f.category, type: f.type, url: f.dataUrl } : null; }).filter(Boolean); });
   }
   const trades = Array.isArray(c.profile.trades) ? c.profile.trades : [];
+  /* patch BIDPOST: the Q&A — their own questions, and every answer GrayCo shared with all bidders (no names) */
+  const qs = {};
+  if (ids.length) { try { (await HUB().listRows([HUB().eq('collection', 'questions'), HUB().inList('job_id', ids)])).forEach(function(r){ const q = r.data || {};
+    if (s(q.userId) !== s(c.profile.id) && !(q.visibility === 'public' && s(q.answer))) return;
+    (qs[s(q.jobId)] = qs[s(q.jobId)] || []).push({ id: s(q.id), body: clip(q.body, 4000), at: s(q.at), answer: clip(q.answer, 8000), answeredAt: s(q.answeredAt), mine: s(q.userId) === s(c.profile.id), shared: q.visibility === 'public' }); }); } catch (e) {} }
   const jobs = ids.map(function(id){
     const j = HUB().subJobView(sc.jobs[id].data || {}, trades), b = mine[id] || null, open = !!sc.biddable[id];
     return { id: s(id), title: clip(j.title, 200) || 'Bid job', address: clip(j.address, 240), bidDueDate: ymd(j.bidDueDate), tradesSought: clip(tradesOf(j.tradesSought), 300),
       tradeScopes: arr(j.tradeScopes).slice(0, 10).map(function(x){ return { trade: clip(x.trade, 80), scope: clip(x.scope, 6000) }; }).filter(function(x){ return x.scope; }),
       scope: clip(j.scope, 8000), specifications: clip(j.specifications, 8000), notes: clip(j.notes, 4000),
-      plansLinks: linkList(j.plansLinks), plans: plans[id] || [], invited: invited.has(id), canBid: open, myBid: myBidOut(b) };
+      plansLinks: linkList(j.plansLinks), plans: plans[id] || [], invited: invited.has(id), canBid: open, myBid: myBidOut(b),
+      questions: (qs[id] || []).sort(function(a, b){ return s(a.at).localeCompare(s(b.at)); }).slice(-40) };
   });
   jobs.sort(function(a, b){ return (b.canBid ? 1 : 0) - (a.canBid ? 1 : 0) || (b.invited ? 1 : 0) - (a.invited ? 1 : 0) || (a.bidDueDate || '9').localeCompare(b.bidDueDate || '9'); });
   return { ok: true, linked: true, approved: true, url: bidsBase(), docs: docs, jobs: jobs.slice(0, 60) };
@@ -1340,6 +1400,19 @@ function papersFail(docs){
   if (docs.expired.length) parts.push('expired: ' + docs.expired.map(name).join(', '));
   return Fail(409, 'Before you can bid, GrayCo needs your papers on file — ' + parts.join('; ') + '. Upload ' + (docs.missing.length + docs.expired.length === 1 ? 'it' : 'them') +
     ' in My Documents on the bid site (' + bidsBase().replace(/^https:\/\//, '') + '), or send ' + (docs.missing.length + docs.expired.length === 1 ? 'it' : 'them') + ' to GrayCo from Papers here, then try again.', { papers: docs });
+}
+async function pBidAsk(sub, body){   /* patch BIDPOST: a sub's question → the bid site's Q&A (the poster / PM / estimator hear; the answer comes back here) */
+  const jobId = bidJobId(body.jobId); if (!jobId) throw Fail(400, 'Pick a job.');
+  const text = clip(body.text, 4000); if (!text) throw Fail(400, 'Type your question.');
+  const c = await bidCtx(sub);
+  if (!c.linked) throw Fail(403, 'Join GrayCo bids first (📋 Jobs to bid on Home).');
+  if (!c.approved) throw Fail(403, 'Your company is waiting for GrayCo to approve it for bids.');
+  if (!c.sc.jobs[jobId]) throw Fail(403, 'That job is not open to you.');
+  const id = 'q_' + Date.now().toString(36) + crypto.randomBytes(4).toString('hex');
+  await HUB().saveCollection(c.who, 'questions', [{ id: id, jobId: jobId, body: text, attachments: [] }], [], { scope: c.sc });
+  const after = await HUB().getRow('questions', id);
+  if (!after) throw Fail(502, 'The question could not be sent. Try again.');
+  return { ok: true, id: id };
 }
 async function pBidSave(sub, body){
   const jobId = bidJobId(body.jobId); if (!jobId) throw Fail(400, 'Pick a job.');
@@ -1446,7 +1519,8 @@ async function staffAction(action, body, who){
       /* owner 11/11: "when accounts are created I want to approve them from admin approvals" — every sub who signed up on the bid site
          (Request Access, or from the sub portal) and is not approved or denied yet */
       .filter(function(u){ return u.role === 'sub' && u.approved !== true && u.bidsRevoked !== true; })
-      .map(function(u){ return { id: s(u.id), company: s(u.company), name: s(u.name), email: low(u.email), crmSubId: s(u.crmSubId), at: s(u.bidsRequestedAt || u.createdAt), phone: s(u.phone), trades: arr(u.trades).slice(0, 6), selfSignup: u.bidsRequested !== true }; }); } catch (e) {}
+      .map(function(u){ return { id: s(u.id), company: s(u.company), name: s(u.name), email: low(u.email), crmSubId: s(u.crmSubId), at: s(u.bidsRequestedAt || u.createdAt), phone: s(u.phone), trades: arr(u.trades).slice(0, 6), selfSignup: u.bidsRequested !== true, claimed: u.papersClaimed || null, city: s(u.businessCity), state: s(u.businessState), area: s(u.serviceArea), crew: u.numEmployees || null }; }); } catch (e) {}
+    try { bidsReq = await withPapers(bidsReq); } catch (e) {}   /* patch SIGNUPPAPERS: 📎 Papers + ⚡ Ready for quick approval */
     return { ok: true, events: events, unread: unread, links: links, waiting: waiting, bids: bidsReq, codes: relays, text: textReady(), admin: isAdmin(who), me: me, at: new Date().toISOString() };
   }
   if (action === 's-thread') {
@@ -1544,6 +1618,7 @@ async function staffAction(action, body, who){
     const ok = body.approve !== false, now = new Date().toISOString();
     const prof = Object.assign({}, r.data, ok ? { approved: true, bidsRevoked: false, bidsApprovedAt: now, bidsApprovedBy: me } : { approved: false, bidsRevoked: true, bidsRevokedAt: now });
     await dbPost('sp_rows?on_conflict=key', [{ key: r.key, collection: 'users', id: r.id, user_id: r.id, email: low(prof.email), data: prof, updated_at: now, updated_by: who.email }], 'resolution=merge-duplicates,return=minimal');
+    if (ok) { try { prof.papersCrm = await papersToCrm(r.id); if (prof.papersCrm.length) await dbPost('sp_rows?on_conflict=key', [{ key: r.key, collection: 'users', id: r.id, user_id: r.id, email: low(prof.email), data: prof, updated_at: new Date().toISOString(), updated_by: who.email }], 'resolution=merge-duplicates,return=minimal'); } catch (e) {} }   /* patch SIGNUPPAPERS: the papers go with them into the CRM's Subs */
     if (ok) { const L = MAIL[lang(prof.lang)]; await sendMail(prof.email, L.approvedSubj, mailHtml(L.approvedSubj, L.approvedBody, '', { href: portalBase(), label: L.approvedBtn })); }
     return { ok: true, approved: ok };
   }
@@ -1666,6 +1741,7 @@ exports.handler = async function (event) {
       if (!pids) { noteBad(ip, 'pub'); return notActive(headers, t0); }
       return reply(200, await customerAction(action, body, pids));
     }
+    if (action === 'p-bid-ask' && limited(ip, 'bid')) return reply(429, { ok: false, error: 'Too many questions sent from here. Wait a few minutes.' });   /* patch BIDPOST */
     if (action === 'p-bid-save' && limited(ip, 'bid')) return reply(429, { ok: false, error: 'Too many bids sent from here. Wait a few minutes.' });   /* patch SUBBIDS */
     if (/^p-/.test(action)) {
       const sess = await sessionOf(gcHeader(event, 'x-portal-session'));

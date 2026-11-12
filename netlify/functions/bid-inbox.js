@@ -1125,9 +1125,11 @@ async function afterStore(results, items, opt){
   /* patch LEADS: plans that are a plain public file link (a PDF / ZIP / drawing) are stored in the CRM too;
      a link that needs a login or is a web page stays a link (always kept on the lead) */
   try { await fetchPlans(touched.map(t => t.it)); } catch (e) {}
+  /* patch BIDPOST (owner 11/12: "make it where I have to put jobs into the bid portal, nothing goes automatic"): a new lead no
+     longer becomes a bid portal draft by itself. A person posts it (CRM: 📢 Put on bid portal). BID_PORTAL_AUTO=1 brings the old way back. */
   const BP = portalApi();
   const marks = {};
-  for (const t of touched) {
+  if (env('BID_PORTAL_AUTO') === '1') for (const t of touched) {
     try {
       const r = await BP.draft(t.it);
       out.portal.push({ id: t.it.id, state: r.state, jobId: r.jobId });
@@ -1324,6 +1326,7 @@ async function estimatorOf(settings){
 }
 /* drafts that waited for the portal (it was not set up yet): created as soon as it is */
 async function flushPortal(){
+  if (env('BID_PORTAL_AUTO') !== '1') return { created: 0, off: true, why: 'automatic bid portal drafts are off (patch BIDPOST)' };
   try {
     const r = await portalApi().flush(async ids => { const items = arr(await kvGet(KV)); const o = {}; items.forEach(x => { if (x && ids.indexOf(x.id) >= 0) o[x.id] = x; }); return o; });
     if (r.results && r.results.length) {
@@ -1805,7 +1808,7 @@ exports.handler = async function(event){
       if (s(b.id)) { const items = arr(await kvGet(KV)); it = items.find(x => x && x.id === s(b.id)); if (it) it = liveTarget(items, it); if (!it || it.status === 'dismissed') return J(404, { error: 'No such lead in the inbox.' }, C); }
       else if (b.lead && s(b.lead.id)) it = leadItem(b.lead);
       else return J(400, { error: 'No lead.' }, C);
-      const auto = mode === 'draft' && isCommercial(it);   /* patch SYS: an estimator lead's bid job is PRIVATE at once (never downgrades a public one) */
+      const auto = env('BID_PORTAL_AUTO') === '1' && mode === 'draft' && isCommercial(it);   /* patch BIDPOST: no automatic private job */   /* patch SYS: an estimator lead's bid job is PRIVATE at once (never downgrades a public one) */
       let pr; try { pr = await portalApi().setPortal(it, { mode: auto ? 'private' : mode, auto, scope: b.scope, scopeMode: b.scopeMode, sharedNotes: b.sharedNotes, plansLinks: b.plansLinks || it.plansLinks }, who); } catch (e) { return J(502, { error: 'The sub bid portal could not be reached: ' + s(e && e.message) }, C); }
       if (!pr.ok) return J(pr.code || 502, { error: pr.error }, C);
       const mark = { jobId: pr.jobId, state: pr.state, visibility: pr.visibility, at: nowIso(), by: who.email };

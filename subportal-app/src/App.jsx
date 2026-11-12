@@ -11,7 +11,7 @@ import {
 // Records and files go through the portal's server function (it filters what each person sees)
 import { sget as _sget, sset as _sset, sdel as _sdel, sloadMany, COLLECTIONS, openFile, uploadDataUrl,
   saveGeneration, savesPending, setSaveErrorHandler, rememberLoaded, uploadBlob } from './storage.js';
-import { signIn as authSignIn, signUp as authSignUp, signOut as authSignOut, changePassword as authChangePw,
+import { authToken, signIn as authSignIn, signUp as authSignUp, signOut as authSignOut, changePassword as authChangePw,
   checkPassword, getCurrentUser, inviteInfo as fetchInviteInfo, requestPasswordReset, takeRecoveryFromUrl, api } from './auth.js';
 import { EMBEDDED, COMPANY as CFG_COMPANY, PORTAL_URL } from './config.js';
 import logoUrl from './grayco-logo.png';
@@ -234,6 +234,12 @@ const T = {
     signupBusinessDetails: 'Business Details',
     signupOptionalInfo: 'Optional but Helpful',
     signupDocsInfo: 'Company Documents',
+    openPlans: 'Open plans', linkNeed: 'Paste the share link.', linkBad: 'That is not a link.', linkAdded: 'Plan link added — subs see "Open plans ↗".', driveBig: 'Upload big file to Google Drive', linkOr: 'Or paste a Drive / Dropbox link', linkBig: 'Over 50 MB? Paste a Drive/Dropbox link', linkLabelPh: 'Name (e.g. Full plan set)', linkAddBtn: 'Add plan link',
+    noDueDate: 'No due date', archivedJobs: 'Archived', showArchived: 'Show archived', hideArchived: 'Hide archived', archivedBadge: 'Archived',
+    ppLater: 'I have it — will send later', ppUpload: 'Upload', ppExemptS: 'Exempt (sole proprietor)', ppLicOpt: 'License (optional)', cellPhone: 'Cell phone', crewSize: 'Crew size', tradesTap: 'Your trade(s) — tap all that fit', tradeOther: 'Other trade(s) — type them here', optional: 'optional',
+    ppT: 'Your papers — optional', ppWhy: 'Upload these now for faster approval — a PDF or a phone photo is fine. With your W-9, general liability and workers’ comp on file, GrayCo can approve you and you can bid right away. No files handy? Tick “I have it — will send later”.',
+    ppW9: 'W-9', ppGl: 'General liability certificate (COI)', ppWc: 'Workers’ comp certificate (COI)', ppExp: 'Expiration date', ppExempt: 'Exempt / sole proprietor — upload the TN workers’ comp exemption form instead',
+    ppLic: 'Licenses', ppLicState: 'State', ppLicType: 'Type', ppLicNum: 'Number', ppLicAdd: '+ Add another license', ppExpNeed: 'Add the expiration date for: ', ppSaved: 'Your papers were uploaded.',
     signupDocsHint: 'You can upload these now to speed things up, or add them later from My Documents. Note: W-9, General Liability, and Workers Comp are all REQUIRED before you can submit any bids.',
     legalCompanyName: 'Legal Company Name',
     legalCompanyNameHint: 'The exact name that appears on your W-9 and insurance certificates.',
@@ -504,6 +510,12 @@ const T = {
     signupBusinessDetails: 'Detalles del Negocio',
     signupOptionalInfo: 'Opcional pero Útil',
     signupDocsInfo: 'Documentos de la Compañía',
+    openPlans: 'Abrir planos', linkNeed: 'Pegue el enlace.', linkBad: 'Eso no es un enlace.', linkAdded: 'Enlace agregado — los subcontratistas ven "Abrir planos ↗".', driveBig: 'Subir archivo grande a Google Drive', linkOr: 'O pegue un enlace de Drive / Dropbox', linkBig: '¿Más de 50 MB? Pegue un enlace de Drive/Dropbox', linkLabelPh: 'Nombre (p. ej. Juego completo)', linkAddBtn: 'Agregar enlace',
+    noDueDate: 'Sin fecha límite', archivedJobs: 'Archivados', showArchived: 'Ver archivados', hideArchived: 'Ocultar archivados', archivedBadge: 'Archivado',
+    ppLater: 'Lo tengo — lo envío después', ppUpload: 'Subir', ppExemptS: 'Exento (propietario único)', ppLicOpt: 'Licencia (opcional)', cellPhone: 'Celular', crewSize: 'Cuadrilla', tradesTap: 'Su(s) oficio(s) — toque todos los que hace', tradeOther: 'Otro(s) oficio(s) — escríbalos aquí', optional: 'opcional',
+    ppT: 'Sus documentos — opcional', ppWhy: 'Súbalos ahora para una aprobación más rápida. Con el W-9, el seguro de responsabilidad general y el de compensación de trabajadores, GrayCo puede aprobarlo y usted puede licitar de inmediato. También puede agregarlos después en Mis Documentos.',
+    ppW9: 'W-9', ppGl: 'Certificado de responsabilidad general (COI)', ppWc: 'Certificado de compensación de trabajadores (COI)', ppExp: 'Fecha de vencimiento', ppExempt: 'Exento / propietario único — suba el formulario de exención de TN',
+    ppLic: 'Licencias', ppLicState: 'Estado', ppLicType: 'Tipo', ppLicNum: 'Número', ppLicAdd: '+ Agregar otra licencia', ppExpNeed: 'Agregue la fecha de vencimiento de: ', ppSaved: 'Sus documentos se subieron.',
     signupDocsHint: 'Puede subirlos ahora o después desde Mis Documentos. Nota: W-9, Responsabilidad General y Compensación Laboral son REQUERIDOS antes de ofertar.',
     legalCompanyName: 'Razón Social',
     legalCompanyNameHint: 'El nombre exacto que aparece en su W-9 y certificados de seguro.',
@@ -719,6 +731,88 @@ async function saveSubDocs(userId, docs) {
 }
 async function loadSubDocs(userId) {
   return (await sget(`subdocs:${userId}`)) || [];
+}
+
+/* patch SIGNUPPAPERS: W-9, GL COI, WC COI (or the TN exemption), licenses at sign-up — optional */
+function readPicked(f) {
+  return new Promise((res, rej) => {
+    if (!f) { res(null); return; }
+    if (f.size > MAX_FILE) { rej(new Error('50 MB at most')); return; }
+    const r = new FileReader(); r.onload = () => res({ name: f.name, size: f.size, type: f.type, dataUrl: r.result }); r.onerror = rej; r.readAsDataURL(f);
+  });
+}
+function signupDocs(p, t) {
+  /* each paper: '' (not answered), 'later' (says they have it — not on file), 'upload' (a file), and for WC 'exempt' */
+  const docs = [], missingExp = [], now = new Date().toISOString(), claimed = { w9: false, gl: false, wc: false, wcExempt: false };
+  const mk = (type, file, extra) => ({ id: newId('d'), type, label: '', fileName: file.name, fileSize: file.size, fileType: file.type, dataUrl: file.dataUrl, expirationDate: null, uploadedAt: now, atSignup: true, ...extra });
+  if (p.w9c === 'later' || (p.w9c === 'upload' && !p.w9)) claimed.w9 = true; else if (p.w9c === 'upload') docs.push(mk('w9', p.w9, { label: 'W-9' }));
+  if (p.glc === 'later' || (p.glc === 'upload' && !p.gl)) claimed.gl = true; else if (p.glc === 'upload') { if (!p.glExp) missingExp.push('GL'); else docs.push(mk('insurance_general', p.gl, { label: 'General liability COI', expirationDate: p.glExp })); }
+  if (p.wcc === 'later' || (p.wcc === 'upload' && !p.wc)) claimed.wc = true;
+  else if (p.wcc === 'upload') { if (!p.wcExp) missingExp.push('WC'); else docs.push(mk('insurance_workers_comp', p.wc, { label: 'Workers\' comp COI', expirationDate: p.wcExp })); }
+  else if (p.wcc === 'exempt') { claimed.wcExempt = true; if (p.wc) docs.push(mk('insurance_workers_comp', p.wc, { label: 'Workers\' comp exemption (sole proprietor)', wcExempt: true })); }
+  (p.lics || []).slice(0, 1).forEach(l => { if (l.file) docs.push(mk('license', l.file, { label: ['License', (l.state || '').toUpperCase(), l.type, l.number].filter(Boolean).join(' '), licState: (l.state || '').toUpperCase().slice(0, 2), licType: l.type, licNumber: l.number, expirationDate: null })); });
+  return { docs, missingExp, claimed };
+}
+const SU_TRADES = ['Drywall', 'Paint', 'Framing', 'Flooring', 'Tile', 'Roofing', 'Siding', 'Electrical', 'Plumbing', 'HVAC', 'Concrete', 'Masonry', 'Insulation', 'Cabinets', 'Windows & Doors', 'Demolition', 'Landscaping', 'Cleaning'];
+function TradeChips({ picked, onChange }) {
+  const [list, setList] = useState(SU_TRADES);
+  useEffect(() => { let off = false; api('trade-list', {}, { anonymous: true }).then(r => { if (!off && r && Array.isArray(r.trades) && r.trades.length) setList(r.trades); }).catch(() => {}); return () => { off = true; }; }, []);
+  return (
+    <div data-su="trades" style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+      {list.map(tr => <button key={tr} type="button" data-su-trade={tr} aria-pressed={!!picked[tr]} onClick={() => onChange({ ...picked, [tr]: !picked[tr] })}
+        style={{ border: `1px solid ${picked[tr] ? styles.navy : styles.border}`, background: picked[tr] ? styles.navy : '#fff', color: picked[tr] ? '#fff' : styles.text, borderRadius: 999, padding: '6px 12px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>{tr}</button>)}
+    </div>
+  );
+}
+const ACCEPT_DOCS = 'application/pdf,image/*,.heic,.heif,.doc,.docx,.rtf,.odt,.txt,.pages';
+function SignupPapers({ t, papers, setPapers }) {
+  const pick = async (key, e, i) => {
+    const f = e.target.files && e.target.files[0];
+    try {
+      const v = await readPicked(f);
+      if (i == null) setPapers(p => ({ ...p, [key]: v }));
+      else setPapers(p => ({ ...p, lics: p.lics.map((l, j) => j === i ? { ...l, file: v } : l) }));
+    } catch (err) { alert((f && f.name) + ': ' + err.message); e.target.value = ''; }
+  };
+  const setLic = (k, v) => setPapers(p => ({ ...p, lics: p.lics.map((l, j) => j === 0 ? { ...l, [k]: v } : l) }));
+  const Row = ({ k, label, exp, exempt }) => {
+    const c = papers[k + 'c'];
+    const opt = (v, txt) => (
+      <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13, minHeight: 30 }}>
+        <input type="radio" name={'pp_' + k} data-pp={k + '_' + v} checked={c === v} onChange={() => setPapers(p => ({ ...p, [k + 'c']: v }))} /> {txt}
+      </label>);
+    return (
+      <div data-pp-row={k} style={{ padding: '8px 0', borderTop: `1px dashed ${styles.border}` }}>
+        <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>{label}</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 16px' }}>
+          {opt('later', t.ppLater)}{opt('upload', '📎 ' + t.ppUpload)}{exempt && opt('exempt', t.ppExemptS)}
+        </div>
+        {(c === 'upload' || c === 'exempt') && <div style={{ display: 'grid', gridTemplateColumns: exp && c === 'upload' ? '1fr 160px' : '1fr', gap: 8, marginTop: 6 }}>
+          <input type="file" accept={ACCEPT_DOCS} data-pp={k} onChange={e => pick(k, e)} />
+          {exp && c === 'upload' && <input style={inputStyle} type="date" title={t.ppExp} aria-label={t.ppExp} data-pp={k + 'e'} value={papers[k + 'Exp']} onChange={e => setPapers(p => ({ ...p, [k + 'Exp']: e.target.value }))} />}
+        </div>}
+      </div>
+    );
+  };
+  const l = papers.lics[0] || {};
+  return (
+    <div data-signup-papers="1" style={{ marginTop: 16, padding: 14, border: `1px solid ${styles.border}`, borderRadius: 10, background: styles.surface }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: styles.text, marginBottom: 4 }}>📎 {t.ppT}</div>
+      <div style={{ fontSize: 12, color: styles.text2, lineHeight: 1.5, marginBottom: 8 }}>{t.ppWhy}</div>
+      {Row({ k: 'w9', label: t.ppW9 })}
+      {Row({ k: 'gl', label: t.ppGl, exp: true })}
+      {Row({ k: 'wc', label: t.ppWc, exp: true, exempt: true })}
+      <div data-pp-row="lic" style={{ padding: '8px 0', borderTop: `1px dashed ${styles.border}` }}>
+        <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>{t.ppLicOpt || t.ppLic}</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '64px 1fr 1fr', gap: 8 }}>
+          <input style={inputStyle} placeholder={t.ppLicState} maxLength={2} value={l.state || ''} onChange={e => setLic('state', e.target.value)} />
+          <input style={inputStyle} placeholder={t.ppLicType} value={l.type || ''} onChange={e => setLic('type', e.target.value)} />
+          <input style={inputStyle} placeholder={t.ppLicNum} value={l.number || ''} onChange={e => setLic('number', e.target.value)} />
+        </div>
+        <input type="file" accept={ACCEPT_DOCS} style={{ marginTop: 6 }} data-pp="lic" onChange={e => pick('lic', e, 0)} />
+      </div>
+    </div>
+  );
 }
 
 /* ============================================================
@@ -1026,6 +1120,8 @@ export default function App() {
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [view, setView] = useState('jobs');
   const [activeJob, setActiveJob] = useState(null);
+  /* patch BIDPOST: the open job follows the job list (plans just uploaded, a plan link just added show at once) */
+  useEffect(() => { setActiveJob(prev => prev ? (jobs.find(j => j.id === prev.id) || prev) : prev); }, [jobs]);
   const [loading, setLoading] = useState(true);
   const [authMode, setAuthMode] = useState('login'); // 'login' | 'register'
   const [toast, setToast] = useState(null);
@@ -1581,6 +1677,7 @@ function AuthScreen({ t, lang, setLang, mode, setMode, onLogin, showToast }) {
     trades: '',
   });
   const [duplicateWarning, setDuplicateWarning] = useState(null);  // { matches: [{company, dbaName, reasons}] } or null
+  const [papers, setPapers] = useState({ w9c: '', w9: null, glc: '', gl: null, glExp: '', wcc: '', wc: null, wcExp: '', lics: [{ state: '', type: '', number: '', exp: '', file: null }] });   /* patch SIGNUPPAPERS */
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -1610,7 +1707,8 @@ function AuthScreen({ t, lang, setLang, mode, setMode, onLogin, showToast }) {
   async function handleRegister(force = false) {
     setError('');
     // Basic required fields
-    if (!form.password || !form.name || !form.email || !form.company) {
+    const tradesList = Object.keys(form.tradesPicked || {}).filter(k => form.tradesPicked[k]).concat(form.trades.split(/[,;\n]+/).map(s => s.trim()).filter(Boolean)).slice(0, 30);
+    if (!form.password || !form.name || !form.email || !form.company || !form.phone || !form.businessCity || !form.businessState || !tradesList.length) {
       setError('Please fill all required fields (marked with *).'); return;
     }
     if (!form.email.includes('@')) {
@@ -1619,18 +1717,13 @@ function AuthScreen({ t, lang, setLang, mode, setMode, onLogin, showToast }) {
     if (form.password.length < 8) {
       setError('Password must be at least 8 characters.'); return;
     }
+    const papersDocs = signupDocs(papers, t);   /* patch SIGNUPPAPERS */
+    if (papersDocs.missingExp.length) { setError(t.ppExpNeed + papersDocs.missingExp.join(', ')); return; }
     const profileData = {
-      name: form.name,
-      phone: form.phone,
-      contactTitle: form.contactTitle,
-      company: form.company, dbaName: form.dbaName,
-      businessAddress: form.businessAddress, businessCity: form.businessCity,
-      businessState: form.businessState, businessZip: form.businessZip,
-      website: form.website, yearsInBusiness: form.yearsInBusiness,
-      numEmployees: form.numEmployees, unionAffiliation: form.unionAffiliation,
-      serviceArea: form.serviceArea, licenseNumbers: form.licenseNumbers,
-      einLast4: form.einLast4,
-      trades: form.trades.split(',').map(s => s.trim()).filter(Boolean),
+      name: form.name, phone: form.phone, company: form.company,
+      businessCity: form.businessCity, businessState: form.businessState,
+      numEmployees: form.numEmployees, serviceArea: form.serviceArea,
+      trades: tradesList, lang, papersClaimed: papersDocs.claimed,
     };
     setBusy(true);
     let result;
@@ -1652,6 +1745,9 @@ function AuthScreen({ t, lang, setLang, mode, setMode, onLogin, showToast }) {
     setDuplicateWarning(null);
     // Signed up: sign straight in
     const login = await authSignIn(form.email, form.password);
+    if (login.user && papersDocs.docs.length) {   /* patch SIGNUPPAPERS: saved as their My Documents (the bid-papers check reads these) */
+      try { await saveSubDocs(login.user.id, papersDocs.docs); showToast(t.ppSaved); } catch (e) { /* they can add them in My Documents */ }
+    }
     if (login.user) {
       showToast(result.approved ? t.signupComplete : t.accountPending);
       onLogin(login.user);
@@ -1759,134 +1855,33 @@ function AuthScreen({ t, lang, setLang, mode, setMode, onLogin, showToast }) {
             </>
           ) : (
             <>
-              {/* CONTACT SECTION */}
-              <div style={{ fontSize: 11, fontWeight: 700, color: styles.text2, letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 8, marginTop: 4 }}>
-                {t.signupContactInfo}
-              </div>
-              <Field label={t.fullName} required>
-                <input style={inputStyle} value={form.name}
-                  onChange={e => setForm({ ...form, name: e.target.value })} />
-              </Field>
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 12 }}>
-                <Field label={t.email + ' *'}>
-                  <input style={inputStyle} type="email" value={form.email}
-                    onChange={e => setForm({ ...form, email: e.target.value })} />
-                </Field>
-                <Field label={t.phone}>
-                  <input style={inputStyle} type="tel" value={form.phone}
-                    onChange={e => setForm({ ...form, phone: e.target.value })} />
-                </Field>
-              </div>
-              <Field label={t.contactTitle}>
-                <input style={inputStyle} value={form.contactTitle}
-                  placeholder="Owner / Estimator / Project Manager"
-                  onChange={e => setForm({ ...form, contactTitle: e.target.value })} />
-              </Field>
-
-              {/* COMPANY IDENTITY */}
-              <div style={{ fontSize: 11, fontWeight: 700, color: styles.text2, letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 8, marginTop: 16 }}>
-                {t.signupCompanyInfo}
-              </div>
-              <Field label={t.legalCompanyName + ' *'}>
-                <input style={inputStyle} value={form.company}
-                  onChange={e => setForm({ ...form, company: e.target.value })} />
-                <div style={{ fontSize: 11, color: styles.text3, marginTop: 4 }}>{t.legalCompanyNameHint}</div>
-              </Field>
-              <Field label={t.dbaName}>
-                <input style={inputStyle} value={form.dbaName}
-                  onChange={e => setForm({ ...form, dbaName: e.target.value })} />
-                <div style={{ fontSize: 11, color: styles.text3, marginTop: 4 }}>{t.dbaNameHint}</div>
-              </Field>
-              <Field label={t.businessAddress}>
-                <input style={inputStyle} value={form.businessAddress}
-                  placeholder="Street address"
-                  onChange={e => setForm({ ...form, businessAddress: e.target.value })} />
-              </Field>
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12 }}>
-                <Field label={t.businessCity}>
-                  <input style={inputStyle} value={form.businessCity}
-                    onChange={e => setForm({ ...form, businessCity: e.target.value })} />
-                </Field>
-                <Field label={t.businessState}>
-                  <input style={inputStyle} value={form.businessState} maxLength={2}
-                    placeholder="TN"
-                    onChange={e => setForm({ ...form, businessState: e.target.value.toUpperCase() })} />
-                </Field>
-                <Field label={t.businessZip}>
-                  <input style={inputStyle} value={form.businessZip} maxLength={10}
-                    onChange={e => setForm({ ...form, businessZip: e.target.value })} />
-                </Field>
-              </div>
-              <Field label={t.website}>
-                <input style={inputStyle} value={form.website} type="url"
-                  placeholder="https://"
-                  onChange={e => setForm({ ...form, website: e.target.value })} />
-              </Field>
-
-              {/* BUSINESS DETAILS */}
-              <div style={{ fontSize: 11, fontWeight: 700, color: styles.text2, letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 8, marginTop: 16 }}>
-                {t.signupBusinessDetails}
-              </div>
-              <Field label={t.tradesPerformed}>
-                <input style={inputStyle} value={form.trades}
-                  placeholder="Drywall, Paint, Flooring"
-                  onChange={e => setForm({ ...form, trades: e.target.value })} />
-                <div style={{ fontSize: 11, color: styles.text3, marginTop: 4 }}>{t.tradesPerformedHint}</div>
-              </Field>
-              <Field label={t.serviceArea}>
-                <input style={inputStyle} value={form.serviceArea}
-                  placeholder="Memphis metro, West TN, N. MS"
-                  onChange={e => setForm({ ...form, serviceArea: e.target.value })} />
-              </Field>
-              <Field label={t.licenseNumbers}>
-                <input style={inputStyle} value={form.licenseNumbers}
-                  onChange={e => setForm({ ...form, licenseNumbers: e.target.value })} />
-                <div style={{ fontSize: 11, color: styles.text3, marginTop: 4 }}>{t.licenseNumbersHint}</div>
-              </Field>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <Field label={t.yearsInBusiness}>
-                  <input style={inputStyle} value={form.yearsInBusiness} type="number" min="0"
-                    onChange={e => setForm({ ...form, yearsInBusiness: e.target.value })} />
-                </Field>
-                <Field label={t.numEmployees}>
-                  <input style={inputStyle} value={form.numEmployees} type="number" min="0"
-                    onChange={e => setForm({ ...form, numEmployees: e.target.value })} />
-                </Field>
+              {/* patch SIGNUPPAPERS (owner 11/12: "just what I need: their trades and some basic stuff") — one short screen */}
+              <div data-signup-short="1" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <Field label={t.legalCompanyName + ' *'}><input style={inputStyle} data-su="company" value={form.company} onChange={e => setForm({ ...form, company: e.target.value })} /></Field>
+                <Field label={t.fullName + ' *'}><input style={inputStyle} data-su="name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></Field>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <Field label={t.unionAffiliation}>
-                  <select style={inputStyle} value={form.unionAffiliation}
-                    onChange={e => setForm({ ...form, unionAffiliation: e.target.value })}>
-                    <option value="">Select…</option>
-                    <option value="non-union">Non-Union</option>
-                    <option value="union">Union</option>
-                    <option value="both">Both / Merit</option>
-                  </select>
-                </Field>
-                <Field label={t.einTaxId}>
-                  <input style={inputStyle} value={form.einLast4} maxLength={4}
-                    placeholder="XXXX"
-                    onChange={e => setForm({ ...form, einLast4: e.target.value.replace(/\D/g, '') })} />
-                </Field>
+                <Field label={t.email + ' *'}><input style={inputStyle} type="email" data-su="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></Field>
+                <Field label={(t.cellPhone || t.phone) + ' *'}><input style={inputStyle} type="tel" data-su="phone" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} /></Field>
               </div>
-
-              {/* LOGIN CREDENTIALS */}
-              <div style={{ fontSize: 11, fontWeight: 700, color: styles.text2, letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 8, marginTop: 16 }}>
-                Login Credentials
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 70px 1fr', gap: 12 }}>
+                <Field label={t.businessCity + ' *'}><input style={inputStyle} data-su="city" value={form.businessCity} onChange={e => setForm({ ...form, businessCity: e.target.value })} /></Field>
+                <Field label={t.businessState + ' *'}><input style={inputStyle} data-su="state" maxLength={2} value={form.businessState} onChange={e => setForm({ ...form, businessState: e.target.value.toUpperCase() })} /></Field>
+                <Field label={t.crewSize || 'Crew size'}><input style={inputStyle} type="number" min="1" data-su="crew" value={form.numEmployees} onChange={e => setForm({ ...form, numEmployees: e.target.value })} /></Field>
               </div>
-
+              <Field label={(t.tradesTap || 'Your trade(s) — tap all that fit') + ' *'}>
+                <TradeChips picked={form.tradesPicked || {}} onChange={tp => setForm({ ...form, tradesPicked: tp })} />
+                <input style={{ ...inputStyle, marginTop: 6 }} data-su="tradeOther" placeholder={t.tradeOther || 'Other trade(s) — type them here'} value={form.trades} onChange={e => setForm({ ...form, trades: e.target.value })} />
+              </Field>
+              <Field label={t.serviceArea + ' (' + (t.optional || 'optional') + ')'}>
+                <input style={inputStyle} data-su="area" value={form.serviceArea} placeholder="Shelby, DeSoto, Fayette…" onChange={e => setForm({ ...form, serviceArea: e.target.value })} />
+              </Field>
               <Field label={t.password + ' *'}>
-                <input style={inputStyle} type="password" value={form.password}
-                  onChange={e => setForm({ ...form, password: e.target.value })} />
+                <input style={inputStyle} type="password" data-su="pw" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} />
               </Field>
 
-              {/* Docs upload note */}
-              <div style={{
-                marginTop: 16, padding: 12, background: styles.surface, borderRadius: 8,
-                fontSize: 12, color: styles.text2, lineHeight: 1.5,
-              }}>
-                <strong style={{ color: styles.text }}>{t.signupDocsInfo}:</strong> {t.signupDocsHint}
-              </div>
+              {/* patch SIGNUPPAPERS: the papers, optional — for faster approval */}
+              <SignupPapers t={t} papers={papers} setPapers={setPapers} />
             </>
           )}
 
@@ -1992,22 +1987,35 @@ function JobList({ t, jobs, user, users, invites, onOpen, bids }) {
   //  - PRIVATE jobs they were invited to (by email match)
   //  - jobs they already bid on (so they can find them later even if status changes)
   const bidJobIds = new Set(bids.filter(b => b.userId === user.id).map(b => b.jobId));
+  /* patch BIDPOST: archived jobs (deleted in the CRM, auto-added ones cleaned up, taken off the bid portal) are hidden — "Show archived" */
+  const [showArch, setShowArch] = useState(false);
+  const archN = user.role === 'admin' ? jobs.filter(isArchivedJob).length : 0;
   const visibleJobs = user.role === 'admin'
-    ? jobs
+    ? jobs.filter(j => showArch ? isArchivedJob(j) : !isArchivedJob(j))
     : jobs.filter(j => {
+        if (isArchivedJob(j)) return false;
         if (bidJobIds.has(j.id)) return true;  // always show jobs they've bid on
         if (j.status === 'closed' || j.status === 'won' || j.status === 'lost') return false;
         return canSeeJob(j, user, invites);
       });
 
+  const archBtn = archN > 0 && (
+    <div style={{ margin: '0 0 12px' }}>
+      <button type="button" data-archived-toggle="1" onClick={() => setShowArch(!showArch)}
+        style={{ border: `1px solid ${styles.border}`, background: showArch ? '#FFFBEB' : '#fff', borderRadius: 999, padding: '6px 14px', cursor: 'pointer', fontWeight: 600, fontSize: 13 }}>
+        🗄 {showArch ? t.hideArchived : t.showArchived} ({archN})
+      </button>
+    </div>
+  );
   if (visibleJobs.length === 0) {
-    return <EmptyState icon={Briefcase}
-      message={user.role === 'admin' ? t.noJobsAdmin : t.noJobs} />;
+    return <div>{archBtn}<EmptyState icon={Briefcase}
+      message={user.role === 'admin' ? t.noJobsAdmin : t.noJobs} /></div>;
   }
 
   return (
     <div>
-      <SectionHeader icon={Briefcase} title={t.jobs} count={visibleJobs.length} />
+      <SectionHeader icon={Briefcase} title={showArch ? `${t.jobs} — ${t.archivedJobs}` : t.jobs} count={visibleJobs.length} />
+      {archBtn}
       <div style={{ display: 'grid', gap: 14, gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))' }}>
         {visibleJobs.map(job => {
           const myBidExists = bids.some(b => b.jobId === job.id && b.userId === user.id);
@@ -2040,7 +2048,7 @@ function docGroups(job) {
 function DocPills({ t, job, onPick, compact }) {
   const gs = docGroups(job);
   if (!gs.length) return null;
-  const label = g => g.kind === 'plans' ? t.docPlans : g.kind === 'specs' ? t.docSpecs : g.kind === 'addendum' ? (t.addendumN || 'Addendum #') + g.num : (g.label || t.docRoom);
+  const label = g => g.kind === 'plans' ? t.docPlans : g.kind === 'specs' ? t.docSpecs : g.kind === 'addendum' ? (t.addendumN || 'Addendum #') + g.num : (t.openPlans || g.label || t.docRoom);
   const pill = { display: 'inline-flex', alignItems: 'center', gap: 7, padding: compact ? '7px 13px' : '10px 18px', borderRadius: 999, border: 'none', cursor: 'pointer',
     background: styles.navyDeep, color: styles.accent, fontFamily: styles.fontDisplay, fontWeight: 600, fontSize: compact ? 11 : 12.5, letterSpacing: '0.08em',
     textTransform: 'uppercase', textDecoration: 'none', boxShadow: '0 4px 12px rgba(10,3,56,.18)', transition: 'transform .15s ease, box-shadow .15s ease' };
@@ -2059,14 +2067,26 @@ function DocPills({ t, job, onPick, compact }) {
   );
 }
 
+/* patch BIDPOST: a missing / bad due date says "No due date" (it said "NaN days left · Due Invalid Date"); a YYYY-MM-DD date is that day here */
+function parseDue(v) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v || ''));
+  const d = m ? new Date(+m[1], +m[2] - 1, +m[3], 12) : (v ? new Date(v) : null);
+  return d && !isNaN(d.getTime()) ? d : null;
+}
+function dueInfo(v, t) {
+  const d = parseDue(v);
+  if (!d) return { ok: false, text: t.noDueDate || 'No due date', color: styles.text2, date: '' };
+  const today = new Date(); today.setHours(12, 0, 0, 0);
+  const days = Math.round((d - today) / 864e5);
+  if (days < 0) return { ok: true, days, text: t.overdue, color: styles.red, date: d.toLocaleDateString() };
+  if (days === 0) return { ok: true, days, text: t.dueToday, color: styles.accent, date: d.toLocaleDateString() };
+  return { ok: true, days, text: `${days} ${t.daysLeft}`, color: days <= 3 ? styles.accent : styles.text2, date: d.toLocaleDateString() };
+}
+function isArchivedJob(j) { return !!j && (j.status === 'archived' || !!j.archivedAt); }
+
 function JobCard({ t, job, user, users, onClick, myBidExists, bidCount }) {
-  const due = new Date(job.bidDueDate);
-  const now = new Date();
-  const daysLeft = Math.ceil((due - now) / (1000 * 60 * 60 * 24));
-  let dueText, dueColor;
-  if (daysLeft < 0) { dueText = t.overdue; dueColor = styles.red; }
-  else if (daysLeft === 0) { dueText = t.dueToday; dueColor = styles.accent; }
-  else { dueText = `${daysLeft} ${t.daysLeft}`; dueColor = daysLeft <= 3 ? styles.accent : styles.text2; }
+  const di = dueInfo(job.bidDueDate, t);
+  const dueText = di.text, dueColor = di.color;
   const pm = users?.find(u => u.id === job.pmId);
   const estimator = users?.find(u => u.id === job.estimatorId);
 
@@ -2117,6 +2137,7 @@ function JobCard({ t, job, user, users, onClick, myBidExists, bidCount }) {
           {job.status === 'closed' && <Badge color={styles.text2}>{t.closed}</Badge>}
           {(job.draft === true || job.status === 'draft') && <Badge color={styles.accent}>📝 {t.draftBadge}</Badge>}
           {(job.visibility === 'private') && <Badge color={styles.blue}>🔒 {t.private}</Badge>}
+          {isArchivedJob(job) && <Badge color={styles.text2}>🗄 {t.archivedBadge}</Badge>}
         </div>
         {myBidExists && <Badge color={styles.blue}>✓ {t.yourBid}</Badge>}
       </div>
@@ -2176,7 +2197,7 @@ function JobCard({ t, job, user, users, onClick, myBidExists, bidCount }) {
         background: dueColor === styles.red ? styles.redSoft : (dueColor === styles.accent ? styles.accentSoft : styles.surface),
         padding: '5px 10px', borderRadius: styles.radiusFull, letterSpacing: '-0.01em',
       }}>
-        <Clock size={12} /> {dueText} · Due {due.toLocaleDateString()}
+        <Clock size={12} /> {dueText}{di.ok ? ` · Due ${di.date}` : ''}
       </div>
 
       {(pm || estimator) && (
@@ -2227,7 +2248,58 @@ function JobCard({ t, job, user, users, onClick, myBidExists, bidCount }) {
    who asked and uploads a ZIP or a PDF (a ZIP is unpacked on the server, folders kept as categories); everyone
    who asked gets "Plans are ready" by e-mail.
    ============================================================ */
-function PlansRequests({ t, job, user, isAdmin, showToast, onAdded }) {
+/* patch BIDPOST (owner: "can I add a decent size plan set to it as a public bid?"): a single file up to 50 MB, a ZIP (unpacked, 250 MB),
+   and over 50 MB a 🔗 plan link (Google Drive / Dropbox share link) — or, when Google Drive is set up (netlify/functions/gdrive.js), the big
+   file goes straight to the job's Drive folder and its view link is added. Subs see a link as "Open plans ↗". */
+async function driveCall(body) {
+  const tk = await authToken();
+  const r = await fetch('/.netlify/functions/gdrive', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tk }, body: JSON.stringify(body) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || j.ok === false) throw new Error(j.error || ('Google Drive answered ' + r.status));
+  return j;
+}
+function PlanLinkBox({ t, job, showToast, onLink }) {
+  const [url, setUrl] = useState(''), [label, setLabel] = useState(''), [drive, setDrive] = useState(null), [busy, setBusy] = useState('');
+  const bigRef = useRef(null);
+  useEffect(() => { let off = false; driveCall({ action: 'status' }).then(r => { if (!off) setDrive(!!(r && r.configured)); }).catch(() => { if (!off) setDrive(false); }); return () => { off = true; }; }, []);
+  function add(u, l) {
+    let v = String(u || '').trim(); if (!v) { showToast(t.linkNeed || 'Paste the share link.', 'error'); return false; }
+    if (!/^https?:\/\//i.test(v)) v = 'https://' + v;
+    if (!/^https:\/\/[^\s"<>]{4,1500}$/i.test(v)) { showToast(t.linkBad || 'That is not a link.', 'error'); return false; }
+    onLink({ id: newId('pl'), url: v, label: String(l || '').trim() || (/drive\.google|docs\.google/i.test(v) ? 'Plans (Google Drive)' : /dropbox/i.test(v) ? 'Plans (Dropbox)' : 'Plans'), at: new Date().toISOString() });
+    showToast(t.linkAdded || 'Plan link added — subs see "Open plans ↗".');
+    return true;
+  }
+  async function big(f) {
+    if (!f) return;
+    setBusy(f.name);
+    try {
+      const st = await driveCall({ action: 'upload-start', pid: job.crmProjectId || job.id, job: job.title, name: f.name, type: f.type || 'application/pdf', size: f.size });
+      const put = await fetch(st.uploadUrl, { method: 'PUT', headers: { 'Content-Type': f.type || 'application/pdf' }, body: f });
+      const meta = await put.json().catch(() => ({}));
+      if (!put.ok || !meta.id) throw new Error('The upload to Google Drive did not finish (' + put.status + ').');
+      const done = await driveCall({ action: 'upload-done', fileId: meta.id });
+      add(done.link, f.name);
+    } catch (e) { showToast(e.message, 'error'); }
+    setBusy('');
+    if (bigRef.current) bigRef.current.value = '';
+  }
+  return (
+    <div data-planlink-box="1" style={{ marginTop: 10, paddingTop: 10, borderTop: `1px dashed ${styles.border}` }}>
+      {drive && <div style={{ marginBottom: 8 }}>
+        <input ref={bigRef} type="file" accept=".pdf,.zip,.dwg,.dxf,application/pdf" style={{ display: 'none' }} data-plans="bigfile" onChange={e => big((e.target.files || [])[0])} />
+        <Btn data-plans="drive" disabled={!!busy} onClick={() => bigRef.current && bigRef.current.click()}>{busy ? (t.plansUploading + ' ' + busy) : '☁ ' + (t.driveBig || 'Upload big file to Google Drive')}</Btn>
+      </div>}
+      <div style={{ fontSize: 12, fontWeight: 700, color: styles.text2, marginBottom: 6 }} data-plans="linkhint">{drive ? (t.linkOr || 'Or paste a Drive / Dropbox link') : (t.linkBig || 'Over 50 MB? Paste a Drive/Dropbox link')}</div>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        <input style={{ ...inputStyle, flex: '2 1 220px' }} data-plans="linkurl" placeholder="https://drive.google.com/…  or  https://www.dropbox.com/…" value={url} onChange={e => setUrl(e.target.value)} />
+        <input style={{ ...inputStyle, flex: '1 1 140px' }} data-plans="linklabel" placeholder={t.linkLabelPh || 'Name (e.g. Full plan set)'} value={label} onChange={e => setLabel(e.target.value)} />
+        <Btn data-plans="linkadd" onClick={() => { if (add(url, label)) { setUrl(''); setLabel(''); } }}>🔗 {t.linkAddBtn || 'Add plan link'}</Btn>
+      </div>
+    </div>
+  );
+}
+function PlansRequests({ t, job, user, isAdmin, showToast, onAdded, onLink }) {
   const [reqs, setReqs] = useState(null);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
@@ -2273,6 +2345,7 @@ function PlansRequests({ t, job, user, isAdmin, showToast, onAdded }) {
           onChange={e => upload(Array.from(e.target.files || []))} />
         <Btn data-plans="upload" disabled={busy} onClick={() => fileRef.current && fileRef.current.click()}>{busy ? t.plansUploading : '⬆ ' + t.uploadPlansZip}</Btn>
         <div style={{ fontSize: 11, color: styles.text2, marginTop: 6 }}>{t.plansZipHint}</div>
+        {onLink && <PlanLinkBox t={t} job={job} showToast={showToast} onLink={onLink} />}
       </div>
     );
   }
@@ -2300,7 +2373,7 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
   const isAdmin = user.role === 'admin';
   const myBid = bids.find(b => b.jobId === job.id && b.userId === user.id);
   const jobBids = bids.filter(b => b.jobId === job.id);
-  const due = new Date(job.bidDueDate);
+  const dueI = dueInfo(job.bidDueDate, t);
 
   // Bid form starts from existing bid if there is one, otherwise blank.
   // If the sub navigates away mid-typing, their draft is loaded from storage on mount.
@@ -2527,7 +2600,7 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
       ``,
       `Project: ${job.title}`,
       job.address ? `Address: ${job.address}` : '',
-      `Bid Due: ${new Date(job.bidDueDate).toLocaleDateString()}`,
+      `Bid Due: ${dueInfo(job.bidDueDate, t).ok ? dueInfo(job.bidDueDate, t).date : (t.noDueDate || 'No due date')}`,
       pm ? `Project Manager: ${pm.name}${pm.phone ? ' • ' + pm.phone : ''}` : '',
       estimator && estimator.id !== pm?.id ? `Estimator: ${estimator.name}${estimator.phone ? ' • ' + estimator.phone : ''}` : '',
       ``,
@@ -2831,7 +2904,7 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
 
           <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 24, color: styles.text2, fontSize: 14 }}>
             {job.address && <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}><MapPin size={16} /> {job.address}</div>}
-            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}><Calendar size={16} /> Due {due.toLocaleDateString()}</div>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}><Calendar size={16} /> {dueI.ok ? `Due ${dueI.date}` : dueI.text}</div>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
               <Users size={16} /> {jobBids.length} {jobBids.length === 1 ? t.bid : t.bids}
             </div>
@@ -3122,7 +3195,8 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
           <Card style={{ marginBottom: 16 }}>
             <h3 style={sectionTitleStyle}><FileText size={18} /> {t.plans}</h3>
             <PlansRequests t={t} job={job} user={user} isAdmin={isAdmin} showToast={showToast}
-              onAdded={(added) => { setJobs(jobs.map(j => j.id === job.id ? { ...j, plans: [...(j.plans || []), ...added] } : j)); loadPlansFor(job.id).then(setFullPlans).catch(() => {}); }} />
+              onAdded={(added) => { setJobs(jobs.map(j => j.id === job.id ? { ...j, plans: [...(j.plans || []), ...added] } : j)); loadPlansFor(job.id).then(setFullPlans).catch(() => {}); }}
+              onLink={(link) => { setJobs(jobs.map(j => j.id === job.id ? { ...j, plansLinks: [...(j.plansLinks || []), link] } : j)); }} />
             {(!job.plans || job.plans.length === 0) ? (
               <div style={{ color: styles.text2, fontSize: 13 }}>{t.noPlansYet}</div>
             ) : (
@@ -3174,7 +3248,7 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {job.plansLinks.map((l, i) => (
                   <a key={l.id || i} href={l.url} target="_blank" rel="noopener noreferrer" style={{ display: 'flex', gap: 8, alignItems: 'center', color: styles.accent, fontWeight: 600, textDecoration: 'none', fontSize: 14 }}>
-                    🔗 {l.label || t.openLink}{l.version ? ` · ${t.versionL} ${l.version}` : ''}{l.date ? ` · ${new Date(l.date + 'T12:00:00').toLocaleDateString()}` : ''}
+                    🔗 {t.openPlans || 'Open plans'} ↗ — {l.label || t.openLink}{l.version ? ` · ${t.versionL} ${l.version}` : ''}{l.date ? ` · ${new Date(l.date + 'T12:00:00').toLocaleDateString()}` : ''}
                   </a>
                 ))}
               </div>
