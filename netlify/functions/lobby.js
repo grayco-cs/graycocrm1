@@ -8,6 +8,7 @@
    No token / bad token → 401.  Signed in but not staff → 403.
    (Kept inline in every function on purpose: each function is bundled alone.) */
 require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
+const JA = require('./_lib/job-auto.js');   /* patch QAB: companyOf (with the MISFILED read-side repair) */
 const GC_SB_DEFAULT_URL = 'https://ieeonhpfahmwwecizdut.supabase.co';
 /* the PUBLIC anon key (it is already in index.html — not a secret) */
 const GC_SB_DEFAULT_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImllZW9uaHBmYWhtd3dlY2l6ZHV0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyNTU2MDgsImV4cCI6MjA4ODgzMTYwOH0.imxBPB0xD4LKy40smBWSUq27iwpCy6fEOMtVx8Cu8ls';
@@ -219,7 +220,7 @@ async function build(doc, offersDoc, opts){
   arr(data.projects).forEach(function(p){ if (p && p.id) P[s(p.id)] = p; });
   arr(data.gc_photos).forEach(function(r){
     if (!r || r.deleted === true || r.source === 'ccflag' || !s(r.id)) return;
-    if (opts.co) { const pj = P[s(r.jobId)]; if (!pj || s(pj.companyId) !== opts.co) return; }   /* patch MITWS: a company's lobby — its own jobs' photos */
+    { const pj = P[s(r.jobId)]; if ((opts.co || 'construction') !== (pj ? JA.companyOf(pj) : 'construction')) return; }   /* patch MITWS: a company's lobby — its own jobs' photos; patch QAB: by the job's real company (the MISFILED repair), and GrayCo Construction's lobby never shows a Mitigation / Environmental job's photos */
     if (!sharedOf(r)) return; if (r.source === 'sub' && !(r.shared === true && s(r.custOkBy))) return;
     photos[s(r.id)] = r;
   });
