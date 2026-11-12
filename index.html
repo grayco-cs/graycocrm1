@@ -225004,6 +225004,16 @@ function wrapSetView(){
 /* screens their menu has are theirs to open (a "Mitigation PM" is not in the role table: Customers / Insurance are on its menu) */
 /* patch QAB (overnight QA 11/12): the claims app's own boards inside the tool tabs (💧 Drying jobs, 💧 Mitigation, 🛡 Insurance) for a
    Mitigation / Environmental person — or with that company picked — list only that company's claims (inWs), never a Construction job's claim */
+/* patch QAB (overnight QA 11/12): a Mitigation / Environmental person (their role) works in their own company — the company pick reads as
+   their company everywhere (Leads showed them Construction's leads, Projects / Invoices / Approvals every company's), whatever is stored.
+   Admins, the office and everyone else are unchanged (the company switch itself is patch MULTICO-UI's). */
+function wrapCoFilter(){
+  var C0 = W._gcCo; if (!C0 || typeof C0.filter !== 'function' || C0.filter.__qab) return;
+  var f0 = C0.filter;
+  var w = function(){ var f = f0.apply(this, arguments); try { var k = myKind(); if (k) return k.indexOf('mit') === 0 ? 'mitigation' : 'environmental'; } catch (e) {} return f; };
+  w.__qab = true; C0.filter = w;
+  try { var l0 = C0.leadView; if (typeof l0 === 'function' && !l0.__qab) { C0.leadView = function(){ try { var k = myKind(); if (k) return k.indexOf('mit') === 0 ? 'mitigation' : 'environmental'; } catch (e) {} return l0.apply(this, arguments); }; C0.leadView.__qab = true; } } catch (e) {}
+}
 function wrapInsVisible(){
   var f = W._gcInsVisible; if (typeof f !== 'function' || f.__qab) return;
   var w = function(c, p){ try { var W0 = ws(); if (W0 && !inWs(p || (c && proj(c.projectId)), c, W0.co)) return false; } catch (e) {} return f.apply(this, arguments); };
@@ -225592,7 +225602,7 @@ function css(){
 
 /* ═════ keep it current ═════ */
 function tick(){
-  try { wrapMenu(); wrapSetView(); wrapAllowed(); regField(); wrapInsVisible(); } catch (e) { warn(e); }
+  try { wrapMenu(); wrapSetView(); wrapAllowed(); regField(); wrapInsVisible(); wrapCoFilter(); } catch (e) { warn(e); }
   try { if (UI.el && UI.el.isConnected && !D.hidden) draw(false); } catch (e) {}
   try { if (view() === 'dashboard' || D.getElementById('gc-mws-dash')) dash(); } catch (e) {}
 }

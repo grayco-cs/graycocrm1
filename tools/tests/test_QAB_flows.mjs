@@ -204,6 +204,12 @@ ok('M7 a Mitigation PM\'s new job and lead are filed under Mitigation (not Const
 await B.ev(() => window._setView('mws_jobs')); await sleep(1500);
 const bj = await B.ev(() => (document.getElementById('gc-mws-mount') || {}).innerText || '');
 ok('M7 … so it shows in their 💧 Drying jobs, and no Construction job / claim does', /Zedd Lane laundry leak/.test(bj) && !/Conzz/.test(bj), bj.split('\n').filter(x => /zz|Zedd/.test(x)).slice(0, 6));
+await B.ev(() => window._setView('leads')); await sleep(5000);
+const bl = await B.ev(() => (document.getElementById('gc-leads-hub') || document.querySelector('#root main') || document.body).innerText);
+ok('M7 the Mitigation PM\'s Leads page: Mitigation\'s leads (Zedd flood), not Construction\'s (Conzz roof lead)', /Zedd flood/.test(bl) && !/Conzz roof lead/.test(bl), bl.split('\n').filter(x => /zz|Zedd/.test(x)).slice(0, 6));
+await B.ev(() => window._setView('projects')); await sleep(2500);
+const bp = await B.ev(() => (document.querySelector('#root main') || document.body).innerText);
+ok('M7 the Mitigation PM\'s Projects: no Construction / Environmental job', /Zedd/.test(bp) && !/Conzz Smith deck|Conzz Fire rebuild|Envzz Tile asbestos/.test(bp), bp.split('\n').filter(x => /zz|Zedd/.test(x)).slice(0, 6));
 ok('M7 no page errors', !errsB.length, errsB);
 await B.b.close();
 
