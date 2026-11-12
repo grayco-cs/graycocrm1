@@ -1188,7 +1188,8 @@ async function partnerAction(action, body, ctx){
   if (action === 'p-bids') return bidsAccept(sub, body);
   if (action === 'p-bidjobs') return pBidJobs(sub);               /* patch SUBBIDS: 📋 Jobs to bid — the bid site's open jobs this sub may bid on + their own bid */
   if (action === 'p-bid-save') return pBidSave(sub, body);
-  if (action === 'p-bid-ask') return pBidAsk(sub, body);           /* patch BIDPOST: ❓ Ask a question about a job */         /* patch SUBBIDS: send / update their bid (papers first) */
+  if (action === 'p-bid-ask') return pBidAsk(sub, body);
+  if (action === 'p-bid-request') return pBidRequest(sub, body);   /* patch PLANREQ: 📩 Request plans / more info */           /* patch BIDPOST: ❓ Ask a question about a job */         /* patch SUBBIDS: send / update their bid (papers first) */
   throw Fail(400, 'Bad request');
 }
 /* photos a sub may see (until the GrayCo Photos API takes over): their own photos on the job, and the job's
@@ -1382,13 +1383,15 @@ async function pBidJobs(sub){
   if (ids.length) { try { (await HUB().listRows([HUB().eq('collection', 'questions'), HUB().inList('job_id', ids)])).forEach(function(r){ const q = r.data || {};
     if (s(q.userId) !== s(c.profile.id) && !(q.visibility === 'public' && s(q.answer))) return;
     (qs[s(q.jobId)] = qs[s(q.jobId)] || []).push({ id: s(q.id), body: clip(q.body, 4000), at: s(q.at), answer: clip(q.answer, 8000), answeredAt: s(q.answeredAt), mine: s(q.userId) === s(c.profile.id), shared: q.visibility === 'public' }); }); } catch (e) {} }
+  const reqs = {};   /* patch PLANREQ: their own 📩 requests only */
+  if (ids.length) { try { (await HUB().listRows([HUB().eq('collection', 'planreqs'), HUB().eq('user_id', s(c.profile.id))])).forEach(function(r){ reqs[s(r.job_id)] = HUB().subReqView(r.data); }); } catch (e) {} }
   const jobs = ids.map(function(id){
     const j = HUB().subJobView(sc.jobs[id].data || {}, trades), b = mine[id] || null, open = !!sc.biddable[id];
     return { id: s(id), title: clip(j.title, 200) || 'Bid job', address: clip(j.address, 240), bidDueDate: ymd(j.bidDueDate), tradesSought: clip(tradesOf(j.tradesSought), 300),
       tradeScopes: arr(j.tradeScopes).slice(0, 10).map(function(x){ return { trade: clip(x.trade, 80), scope: clip(x.scope, 6000) }; }).filter(function(x){ return x.scope; }),
       scope: clip(j.scope, 8000), specifications: clip(j.specifications, 8000), notes: clip(j.notes, 4000),
       plansLinks: linkList(j.plansLinks), plans: plans[id] || [], invited: invited.has(id), canBid: open, myBid: myBidOut(b),
-      questions: (qs[id] || []).sort(function(a, b){ return s(a.at).localeCompare(s(b.at)); }).slice(-40) };
+      questions: (qs[id] || []).sort(function(a, b){ return s(a.at).localeCompare(s(b.at)); }).slice(-40), request: reqs[id] || null };
   });
   jobs.sort(function(a, b){ return (b.canBid ? 1 : 0) - (a.canBid ? 1 : 0) || (b.invited ? 1 : 0) - (a.invited ? 1 : 0) || (a.bidDueDate || '9').localeCompare(b.bidDueDate || '9'); });
   return { ok: true, linked: true, approved: true, url: bidsBase(), docs: docs, jobs: jobs.slice(0, 60) };
@@ -1413,6 +1416,16 @@ async function pBidAsk(sub, body){   /* patch BIDPOST: a sub's question → the 
   const after = await HUB().getRow('questions', id);
   if (!after) throw Fail(502, 'The question could not be sent. Try again.');
   return { ok: true, id: id };
+}
+async function pBidRequest(sub, body){   /* patch PLANREQ: the bid site's request (one open per sub per job; the PM + estimator hear) */
+  const jobId = bidJobId(body.jobId); if (!jobId) throw Fail(400, 'Pick a job.');
+  const c = await bidCtx(sub);
+  if (!c.linked) throw Fail(403, 'Join GrayCo bids first (📋 Jobs to bid on Home).');
+  if (!c.approved) throw Fail(403, 'Your company is waiting for GrayCo to approve it for bids.');
+  if (!c.sc.jobs[jobId]) throw Fail(403, 'That job is not open to you.');
+  const needs = Array.isArray(body.needs) ? body.needs.slice(0, 6).map(function(x){ return clip(x, 20); }) : [];
+  const r = await HUB().requestPlans(c.who, { jobId: jobId, needs: needs, note: clip(body.note, 1000), via: 'portal' }, { scope: c.sc });
+  return { ok: true, already: !!r.already, request: r.request };
 }
 async function pBidSave(sub, body){
   const jobId = bidJobId(body.jobId); if (!jobId) throw Fail(400, 'Pick a job.');
@@ -1741,6 +1754,7 @@ exports.handler = async function (event) {
       if (!pids) { noteBad(ip, 'pub'); return notActive(headers, t0); }
       return reply(200, await customerAction(action, body, pids));
     }
+    if (action === 'p-bid-request' && limited(ip, 'bid')) return reply(429, { ok: false, error: 'Too many requests sent from here. Wait a few minutes.' });   /* patch PLANREQ */
     if (action === 'p-bid-ask' && limited(ip, 'bid')) return reply(429, { ok: false, error: 'Too many questions sent from here. Wait a few minutes.' });   /* patch BIDPOST */
     if (action === 'p-bid-save' && limited(ip, 'bid')) return reply(429, { ok: false, error: 'Too many bids sent from here. Wait a few minutes.' });   /* patch SUBBIDS */
     if (/^p-/.test(action)) {
