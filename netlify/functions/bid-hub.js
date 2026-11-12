@@ -69,6 +69,7 @@ async function jobsList(){
     SP.listRows([SP.eq('collection', 'jobs')]), SP.listRows([SP.eq('collection', 'invites')]).catch(() => []), SP.listRows([SP.eq('collection', 'bids')]).catch(() => []),
     SP.listRows([SP.eq('collection', 'plans')]).catch(() => []), SP.listRows([SP.eq('collection', 'questions')]).catch(() => [])]);
   const mail = arr(await L.kvGet(T.KV_SUBBIDS).catch(() => []));
+  const reqN = {}; (await SP.listRows([SP.eq('collection', 'planreqs')]).catch(() => [])).forEach(r => { if (SP.prOpen && SP.prOpen(r.data)) reqN[r.job_id] = (reqN[r.job_id] || 0) + 1; });   /* patch PLANREQ: 📩 open plan / info requests */
   const c = counts(invites, bids, mail, plans, qs);
   return jobs.map(r => r.data || {}).filter(j => j.id && (!GONE.test(s(j.status)) || restorable(j))).map(j => {
     const k = c(j.id);
@@ -77,8 +78,8 @@ async function jobsList(){
     archived: GONE.test(s(j.status)) && /^(auto|taken off)$/.test(s(j.archivedReason)), archivedReason: s(j.archivedReason),   /* patch BIDPOST: 🗄 Archived (auto-added, taken off) */
     id: s(j.id), title: s(j.title), address: s(j.address), po: s(j.poNumber), status: s(j.status), draft: j.draft === true || low(j.status) === 'draft',
     visibility: j.draft === true || low(j.status) === 'draft' ? 'draft' : (s(j.visibility) || 'public'), due: validDay(j.bidDueDate), dueTime: s(j.bidDueTime), trades: s(j.tradesSought),
-    invited: k.invites, bids: k.bids, plans: k.plans, openQ: k.openQ, leadId: s(j.leadInbox && j.leadInbox.id), source: s(j.leadInbox && j.leadInbox.source), autoPrivate: !!j.autoPrivate, updatedAt: s(j.updatedAt),
-    crmProjectId: s(j.crmProjectId), crmProjectName: s(j.crmProjectName),   /* patch BIDEST: the CRM project this job's awarded bids go into */
+    invited: k.invites, bids: k.bids, plans: k.plans, openQ: k.openQ, openReq: reqN[s(j.id)] || 0, leadId: s(j.leadInbox && j.leadInbox.id), source: s(j.leadInbox && j.leadInbox.source), autoPrivate: !!j.autoPrivate, updatedAt: s(j.updatedAt),
+    biddingClosed: !!j.biddingClosed, projectType: s(j.projectType), crmProjectId: s(j.crmProjectId), crmProjectName: s(j.crmProjectName),   /* patch BIDEST: the CRM project this job's awarded bids go into */
     crmLeadId: s(j.crmLeadId), crmEstId: s(j.crmEstId), postedBy: s(j.postedBy), postedByName: s(j.postedByName), postedAt: s(j.postedAt), pmEmail: s(j.pmEmail), pmName: s(j.pmName),   /* patch BIDPOST */
     auto: !GONE.test(s(j.status)) && autoAdded(j, k)
   }; }).sort((a, b) => (a.draft - b.draft) || (s(a.due) || '9999').localeCompare(s(b.due) || '9999') || a.title.localeCompare(b.title));
@@ -192,15 +193,20 @@ async function postjob(who, b){
   if (want.length) await SP.upsertRows([SP.rowFor('jobs', Object.assign({}, job, { updatedAt: at }))], who.email);
   for (const f of want) {
     let c = null; try { c = await L.portalApi()._copyFile({ ref: s(f.ref), name: s(f.name).slice(0, 160) || 'file', type: s(f.type), size: Number(f.size) || 0, kind: 'plans' }); } catch (e) { c = { name: s(f.name), why: s(e && e.message) }; }
-    if (c && c.fileRef) { copied.push({ name: c.name, size: c.size, type: c.type, fileRef: c.fileRef, category: s(f.category).slice(0, 60) || 'Plans', at, by: who.email }); had[s(f.ref)] = 1; } else failed.push({ name: s(f.name), why: s(c && c.why) || 'not copied' });
+    if (c && c.fileRef) { const g = require('./_lib/tradeguess.js').guess(c.name, '');   /* patch PLANREQ-C: sorted by trade from the name (a scope file also goes on its trade) */
+      copied.push({ name: c.name, size: c.size, type: c.type, fileRef: c.fileRef, category: g.kind === 'specs' ? 'Specs' : g.kind === 'scope' ? 'Scope' : s(f.category).slice(0, 60) || 'Plans', trades: g.trades, kind: g.kind, at, by: who.email }); had[s(f.ref)] = 1; } else failed.push({ name: s(f.name), why: s(c && c.why) || 'not copied' });
   }
   job.crmFileRefs = Object.keys(had).slice(0, 200);
   let pl0 = null; if (copied.length) { pl0 = await SP.plansOf(job.id).catch(() => []);   /* patch QAA: the job record lists its plans too (job.plans — what the bid site shows a sub; it said "No plans yet") */
-    job.plans = pl0.concat(copied).map(x => ({ name: s(x.name), size: x.size || 0, type: s(x.type), category: s(x.category), version: s(x.version), date: s(x.date), current: !!x.current })); }
+    job.plans = pl0.concat(copied).map(x => ({ name: s(x.name), size: x.size || 0, type: s(x.type), category: s(x.category), version: s(x.version), date: s(x.date), current: !!x.current, trades: arr(x.trades).length ? x.trades : undefined }));
+    copied.filter(x => x.kind === 'scope' && arr(x.trades).length).forEach(x => x.trades.forEach(tr => {   /* patch PLANREQ-C */
+      let ts = arr(job.tradeScopes).find(y => low(y.trade) === low(tr)); if (!ts) { ts = { id: 'ts_' + crypto.randomBytes(4).toString('hex'), trade: tr, scope: '', files: [] }; job.tradeScopes = arr(job.tradeScopes).concat([ts]); }
+      ts.files = arr(ts.files); if (!ts.files.some(f => f.fileRef === x.fileRef)) ts.files.push({ name: x.name, size: x.size, type: x.type, fileRef: x.fileRef, at, by: who.email }); })); }
   logTo(job, who, (isNew ? '📢 Put on the bid portal' : wasGone ? '📢 Back on the bid portal' : '📢 Bid portal job changed') + ' (' + (vis === 'public' ? '🌐 public' : '🔒 private, invited subs only') + ')' + (trades.length ? ' · trades: ' + trades.join(', ') : '') + (copied.length ? ' · ' + copied.length + ' file(s)' : ''));
   const rows = [SP.rowFor('jobs', job)];
   if (copied.length) rows.push({ collection: 'plans', id: job.id, job_id: job.id, data: { items: pl0.concat(copied) } });
   await SP.upsertRows(rows, who.email);
+  if (copied.length || arr(job.plansLinks).length) { try { await SP.notifyPlanRequests(job.id); } catch (e) {} }   /* patch PLANREQ */
   return { ok: true, jobId: job.id, created: isNew, visibility: vis, files: copied.length, notCopied: failed, role };
 }
 async function unpost(who, b){
@@ -584,10 +590,16 @@ async function manageView(jobId){
     SP.listRows([SP.eq('collection', 'acks'), SP.eq('job_id', job.id)]).catch(() => []),
     SP.listRows([SP.eq('collection', 'activity'), SP.eq('job_id', job.id)]).catch(() => []), audience(job)]);
   let paused = false; try { paused = await require('./_lib/pause').isPaused(); } catch (e) { paused = true; }
-  return { ok: true, paused, job: { id: job.id, title: s(job.title), address: s(job.address), po: s(job.poNumber), due: s(job.bidDueDate), dueTime: s(job.bidDueTime),
+  let reqs = []; try { reqs = await SP.planReqsFor(job.id); } catch (e) { reqs = []; }   /* patch PLANREQ: 📩 the subs' plan / info requests (staff only) */
+  return { ok: true, paused, planreqs: reqs.map(q => ({ id: s(q.id), company: s(q.company), name: s(q.name), phone: s(q.phone), email: s(q.email), trade: s(q.trade), needs: arr(q.needs).length ? q.needs : ['plans'], note: s(q.note), at: s(q.at),
+      open: SP.prOpen(q), closedHow: s(q.closedHow) || (s(q.notifiedAt) ? 'plans' : ''), closedAt: s(q.closedAt), closedBy: s(q.closedBy), reply: s(q.reply), repliedByName: s(q.repliedByName), sentNote: s(q.sentNote), notifiedAt: s(q.notifiedAt), mailHeld: !!q.mailHeld, replyMail: s(q.replyMail), to: arr(q.to).map(x => ({ name: s(x.name), roles: arr(x.roles) })) })),
+    job: { id: job.id, title: s(job.title), address: s(job.address), po: s(job.poNumber), due: s(job.bidDueDate), dueTime: s(job.bidDueTime),
       visibility: job.draft === true ? 'draft' : s(job.visibility) || 'public', deleted: GONE.test(s(job.status)), trades: s(job.tradesSought), scope: s(job.scope),
-      tradeScopes: arr(job.tradeScopes), plansLinks: arr(job.plansLinks), addenda: arr(job.addenda), posts: arr(job.posts), log: arr(job.log).slice(-200), leadId: s(job.leadInbox && job.leadInbox.id) },
-    plans: plans.map(p => ({ name: s(p.name), size: p.size || 0, type: s(p.type), fileRef: s(p.fileRef), category: s(p.category), version: s(p.version), date: s(p.date), current: !!p.current, at: s(p.at), by: s(p.by) })),
+      tradeScopes: arr(job.tradeScopes), plansLinks: arr(job.plansLinks), addenda: arr(job.addenda), posts: arr(job.posts), log: arr(job.log).slice(-200), leadId: s(job.leadInbox && job.leadInbox.id),
+      /* patch PLANREQ-E: 📝 Details */ ownerGc: s(job.ownerGc), showOwnerGc: !!job.showOwnerGc, projectType: s(job.projectType), siteWalk: job.siteWalk || null, questionsDue: s(job.questionsDue), startDate: s(job.startDate), duration: s(job.duration),
+      bidInstructions: s(job.bidInstructions), requirements: job.requirements || {}, alternates: arr([]).concat(job.alternates || []), unitPrices: arr([]).concat(job.unitPrices || []), bidForm: arr(job.bidForm), contacts: job.contacts || {},
+      internalNotes: s(job.internalNotes), crmLeadId: s(job.crmLeadId), crmProjectId: s(job.crmProjectId), crmProjectName: s(job.crmProjectName), biddingClosed: !!job.biddingClosed, pmName: s(job.pmName), pmEmail: s(job.pmEmail), status: s(job.status) },
+    plans: plans.map(p => ({ name: s(p.name), size: p.size || 0, type: s(p.type), fileRef: s(p.fileRef), category: s(p.category), version: s(p.version), date: s(p.date), current: !!p.current, at: s(p.at), by: s(p.by), trades: arr(p.trades) })),
     questions: qs.map(r => r.data || {}).sort((a, b) => s(b.at).localeCompare(s(a.at))),
     acks: acks.map(r => r.data || {}), activity: act.map(r => r.data || {}).sort((a, b) => s(b.at).localeCompare(s(a.at))).slice(0, 200),
     audience: aud.map(x => ({ email: x.email, name: x.name, company: x.company, trades: x.trades, how: x.how, account: !!x.userId, lang: x.lang })) };
@@ -601,7 +613,9 @@ async function plans(who, b){
     const url = s(b.addLink.url); if (!/^https?:\/\/\S+$/i.test(url)) return { code: 400, error: 'Paste a full link (https://…).' };
     job.plansLinks = arr(job.plansLinks).concat([{ id: 'pl_' + crypto.randomBytes(4).toString('hex'), url: url.slice(0, 1000), label: s(b.addLink.label).slice(0, 120) || 'Plan room', version: s(b.addLink.version).slice(0, 40), date: s(b.addLink.date).slice(0, 10), at, by: who.email }]).slice(0, 40);
     logTo(job, who, '🔗 Plan link added: ' + (s(b.addLink.label) || url));
-    await saveJob(job, who); return { ok: true };
+    await saveJob(job, who);
+    let told = 0; try { told = await SP.notifyPlanRequests(job.id); } catch (e) {}   /* patch PLANREQ: whoever asked for plans hears */
+    return { ok: true, told };
   }
   const link = arr(job.plansLinks).find(x => x && x.id === ref);
   if (link) {
@@ -621,7 +635,8 @@ async function plans(who, b){
     if (b.current === false) it.current = false;
   }
   await SP.upsertRows([{ collection: 'plans', id: job.id, job_id: job.id, data: { items: list } }], who.email);
-  job.plans = list.map(x => ({ name: x.name, size: x.size, type: x.type, category: x.category, version: x.version || '', date: x.date || '', current: !!x.current }));   /* what the bid site lists */
+  if (Array.isArray(b.trades) && !b.remove) { it.trades = b.trades.map(x => s(x).slice(0, 60)).filter(Boolean).slice(0, 8); if (b.kind === 'specs' || b.kind === 'plans') it.category = b.kind === 'specs' ? 'Specs' : (it.category === 'Specs' ? 'Plans' : it.category); }   /* patch PLANREQ-C: re-file a plan / spec by trade */
+  job.plans = list.map(x => ({ name: x.name, size: x.size, type: x.type, category: x.category, version: x.version || '', date: x.date || '', current: !!x.current, trades: arr(x.trades).length ? x.trades : undefined }));   /* what the bid site lists */
   logTo(job, who, (b.remove ? '🗑 Plan removed: ' : b.current ? '⭐ Marked current: ' : '✏️ Plan changed: ') + s(it.name) + (it.version ? ' (' + it.version + ')' : ''));
   await saveJob(job, who);
   return { ok: true };
@@ -631,9 +646,13 @@ async function plans(who, b){
 async function scope(who, b){
   const job = await jobRow(b.jobId); if (!job) return { code: 404, error: 'No such bid job.' };
   const BP = L.portalApi();
-  job.tradeScopes = arr(b.tradeScopes).filter(x => x && (s(x.trade) || s(x.scope))).slice(0, 30).map(x => {
+  job.tradeScopes = arr(b.tradeScopes).filter(x => x && (s(x.trade) || s(x.scope) || arr(x.files).length)).slice(0, 30).map(x => {
     const mode = /^(estimate|claude|xactimate)$/.test(s(x.mode)) ? s(x.mode) : 'manual';
-    return { id: s(x.id) || 'ts_' + crypto.randomBytes(4).toString('hex'), trade: s(x.trade).slice(0, 80), scope: (mode === 'manual' ? s(x.scope) : BP._noPrices(x.scope)).slice(0, 20000), mode, at: nowIso(), by: who.email };
+    const old = arr(job.tradeScopes).find(y => y && s(y.id) && s(y.id) === s(x.id));
+    /* patch PLANREQ-C: a trade's scope files stay (sent back as they are, or a removal) — only files already on the job / uploaded to the bid site's staff area */
+    const files = (Array.isArray(x.files) ? arr(x.files) : arr(old && old.files)).filter(f => /^staff\/[A-Za-z0-9._\/-]{3,300}$/.test(s(f.fileRef)) && s(f.fileRef).indexOf('..') < 0).slice(0, 40)
+      .map(f => ({ name: s(f.name).slice(0, 200) || 'scope', size: Number(f.size) || 0, type: s(f.type).slice(0, 120), fileRef: s(f.fileRef), at: s(f.at) || nowIso(), by: s(f.by) || who.email }));
+    return { id: s(x.id) || 'ts_' + crypto.randomBytes(4).toString('hex'), trade: s(x.trade).slice(0, 80), scope: (mode === 'manual' ? s(x.scope) : BP._noPrices(x.scope)).slice(0, 20000), mode, files, at: nowIso(), by: who.email };
   });
   logTo(job, who, '📝 Scopes saved: ' + (job.tradeScopes.map(x => x.trade || 'general').join(', ') || 'none'));
   await saveJob(job, who);
@@ -708,6 +727,126 @@ async function post(who, b){
   return { ok: true, id, n: aud.length, inPortal: rows.length, notice: p.notice };
 }
 
+/* patch PLANREQ-T / PLANREQ-D (owner 11/12: "need to put what trades we are bidding on some places"; "also need to edit when bid is due"):
+   📂 Manage's ✏️ Trades and ✏️ Bid due (the bids-site admin page saves its due date through subportal.js, which calls dueChanged too).
+     trades → tradesSought + one trade-scope box per trade (a box with a scope or files is kept even when its trade is taken off);
+     due / dueTime → the bid due date ("" = No due date — only on a private job: a public one needs a date, the 📢 rule).
+   A changed due date on a job subs can see: 🗂 Activity, and an automatic 📣 Update "Bid due date changed to …" — on the bid site at once
+   (Messages / Updates from GrayCo), the e-mail queued on ✅ Approvals like any update (held while ⏸ data-entry mode is on).
+   Who: an admin, an estimator, the office, or the job's poster / PM (the Put on bid portal rule). */
+/* patch PLANREQ-E (owner 11/12: "need Manage and Actions to have more ways to edit and add info to the bid portal"): 📂 Manage → 📝 Details edits
+   the whole bid job in place — title, site address, the owner / GC we bid to (shown to subs only when ticked), project type, bid due, site walk /
+   pre-bid meeting (date, time, place, RSVP list — staff only), questions deadline, start date + duration, bid instructions, requirements (bond,
+   prevailing wage / Davis-Bacon, certified payroll, COI limits GL / WC / auto, licenses, MBE / WBE), alternates, unit prices, the bid form's
+   line items per trade (a sub fills them in when bidding), the PM / estimator contacts subs see, internal notes (never to a sub), trades, the
+   CRM lead. Every change → 🗂 Activity; what matters to subs (due, walk, questions deadline, start, instructions, requirements, alternates,
+   unit prices, bid form) on a job they can see → one automatic 📣 Update (bid site at once; e-mail on ✅ Approvals, held in ⏸).
+   ⏸ Close bidding (op bidding): no new bids or changes, the job stays visible; 📋 Duplicate (op duplicate): a copy as a new 🔒 private job
+   (details, trades, scopes, plans, links — no subs, invites, bids, questions). */
+function dueText(d, tm){ return d ? d + (tm ? ' ' + tm : '') : 'no due date'; }
+const PTYPES = ['commercial', 'multifamily', 'residential', 'insurance'];
+const REQ_KEYS = ['bond', 'prevailingWage', 'certifiedPayroll', 'coi', 'licenses', 'mbeWbe'];
+function cleanList(v, n, len){ return arr([]).concat(Array.isArray(v) ? v : s(v).split(/\n/)).map(x => s(typeof x === 'object' && x ? x.text || x.name : x).slice(0, len || 300)).filter(Boolean).slice(0, n || 30); }
+function reqText(r){ r = r || {}; const l = [];
+  if (r.bond) l.push('bond'); if (r.prevailingWage) l.push('prevailing wage / Davis-Bacon'); if (r.certifiedPayroll) l.push('certified payroll');
+  if (r.coi) l.push('COI' + ([r.coiGl ? 'GL ' + r.coiGl : '', r.coiWc ? 'WC ' + r.coiWc : '', r.coiAuto ? 'auto ' + r.coiAuto : ''].filter(Boolean).length ? ' (' + [r.coiGl ? 'GL ' + r.coiGl : '', r.coiWc ? 'WC ' + r.coiWc : '', r.coiAuto ? 'auto ' + r.coiAuto : ''].filter(Boolean).join(', ') + ')' : ''));
+  if (r.licenses) l.push('licenses' + (r.licensesText ? ': ' + r.licensesText : '')); if (r.mbeWbe) l.push('MBE / WBE' + (r.mbeWbeText ? ': ' + r.mbeWbeText : '')); return l.join(', '); }
+/* an automatic update to the subs who can see the job (on the bid site at once; the e-mail waits on ✅ Approvals, held in ⏸) */
+async function subNotice(who, job, body){
+  if (job.draft === true || low(job.status) === 'draft' || GONE.test(s(job.status))) return { status: 'not posted' };
+  const aud = await audience(job);
+  if (!aud.length) return { status: 'nobody', n: 0 };
+  const id = 'bpu_' + Date.now().toString(36) + crypto.randomBytes(3).toString('hex'), at = nowIso();
+  const sender = { senderId: 'st_' + s(who.email).split('@')[0].replace(/[^a-z0-9]+/g, '_').slice(0, 40), senderName: s(who.name) || 'GrayCo', senderCompany: 'GrayCo Construction Services', senderRole: 'admin' };
+  const rows = aud.filter(x => x.userId).map((x, i) => SP.rowFor('messages', Object.assign({ id: id + '_' + i, jobId: job.id, recipientSubId: x.userId, body, at, readBy: [], kind: 'update', postId: id }, sender)));
+  if (rows.length) await SP.upsertRows(rows, who.email);
+  const p = { id, at, by: who.email, body, target: { kind: 'all', trade: '', email: '' }, n: aud.length, inPortal: rows.length, auto: 'details' };
+  p.notice = await queueNotice(who, job, 'post', id, p, aud);
+  job.posts = arr(job.posts).concat([p]).slice(-200);
+  return p.notice;
+}
+async function dueChanged(who, job, from){   /* the bid site's own due-date save (subportal.js) */
+  const to = dueText(validDay(job.bidDueDate), s(job.bidDueTime));
+  if (to === from) return null;
+  logTo(job, who, '⏰ Bid due changed: ' + from + ' → ' + to);
+  return subNotice(who, job, (validDay(job.bidDueDate) ? 'Bid due date changed to ' + to : 'The bid due date was taken off (no due date for now)') + ' (was ' + from + ').');
+}
+async function details(who, b){
+  const job = await jobRow(b.jobId); if (!job || GONE.test(s(job.status))) return { code: 404, error: 'No such bid job.' };
+  if (!who.canInvite && !(await posterRole(who, {}, job))) return { code: 403, error: 'Only an admin, an estimator, the office or the job\'s PM changes a bid job.' };
+  const out = { ok: true, jobId: job.id }, log = [], subs = [];
+  const set = (k, v, label, forSubs, show) => { const was = JSON.stringify(job[k] === undefined ? '' : job[k]); if (was === JSON.stringify(v)) return; job[k] = v; log.push(label); if (forSubs) subs.push(show || label); };
+  if (b.title !== undefined) { const t = s(b.title).slice(0, 200); if (!t) return { code: 400, error: 'Give the job a title.' }; set('title', t, 'title'); }
+  if (b.address !== undefined) set('address', s(b.address).slice(0, 240), 'site address', true, 'Site address: ' + s(b.address).slice(0, 240));
+  if (b.ownerGc !== undefined) set('ownerGc', s(b.ownerGc).slice(0, 200), 'owner / GC');
+  if (b.showOwnerGc !== undefined) set('showOwnerGc', b.showOwnerGc === true, 'owner / GC shown to subs: ' + (b.showOwnerGc === true ? 'yes' : 'no'));
+  if (b.projectType !== undefined) set('projectType', PTYPES.indexOf(s(b.projectType)) > -1 ? s(b.projectType) : '', 'project type');
+  if (b.siteWalk !== undefined) { const w = b.siteWalk || {}; const v = { date: validDay(w.date), time: /^\d{2}:\d{2}$/.test(s(w.time)) ? s(w.time) : '', location: s(w.location).slice(0, 240), rsvp: cleanList(w.rsvp, 60, 120), mandatory: w.mandatory === true };
+    const pub = x => JSON.stringify([x && x.date, x && x.time, x && x.location, x && x.mandatory]);
+    if (pub(job.siteWalk) !== pub(v)) subs.push(v.date ? 'Site walk / pre-bid meeting: ' + v.date + (v.time ? ' ' + v.time : '') + (v.location ? ' at ' + v.location : '') + (v.mandatory ? ' (mandatory)' : '') : 'The site walk was taken off');
+    if (JSON.stringify(job.siteWalk || null) !== JSON.stringify(v)) { job.siteWalk = v; log.push('site walk'); } }
+  if (b.questionsDue !== undefined) set('questionsDue', validDay(b.questionsDue), 'questions deadline', true, 'Questions due by ' + (validDay(b.questionsDue) || '— (no deadline)'));
+  if (b.startDate !== undefined) set('startDate', validDay(b.startDate), 'start date', true, 'Expected start: ' + (validDay(b.startDate) || 'not set'));
+  if (b.duration !== undefined) set('duration', s(b.duration).slice(0, 80), 'duration', true, 'Duration: ' + s(b.duration).slice(0, 80));
+  if (b.bidInstructions !== undefined) set('bidInstructions', s(b.bidInstructions).slice(0, 8000), 'bid instructions', true, 'Bid instructions were updated');
+  if (b.requirements !== undefined) { const r = b.requirements || {}, v = {}; REQ_KEYS.forEach(k => { v[k] = r[k] === true; });
+    ['coiGl', 'coiWc', 'coiAuto', 'licensesText', 'mbeWbeText'].forEach(k => { v[k] = s(r[k]).slice(0, 120); }); set('requirements', v, 'requirements', true, 'Requirements: ' + (reqText(v) || 'none')); }
+  if (b.alternates !== undefined) { const v = cleanList(b.alternates, 30, 300); set('alternates', v, 'alternates', true, 'Alternates: ' + (v.join('; ') || 'none')); }
+  if (b.unitPrices !== undefined) { const v = cleanList(b.unitPrices, 40, 200); set('unitPrices', v, 'unit prices', true, 'Unit prices requested: ' + (v.join('; ') || 'none')); }
+  if (b.bidForm !== undefined) { const v = arr(b.bidForm).filter(x => s(x.item)).slice(0, 80).map(x => ({ id: s(x.id) || 'bf_' + crypto.randomBytes(3).toString('hex'), trade: s(x.trade).slice(0, 60), item: s(x.item).slice(0, 200), unit: s(x.unit).slice(0, 30) }));
+    set('bidForm', v, 'bid form', true, 'The bid form now has ' + v.length + ' line item' + (v.length === 1 ? '' : 's')); }
+  if (b.contacts !== undefined) { const c = b.contacts || {}, v = {}; ['pmName', 'pmPhone', 'pmEmail', 'estName', 'estPhone', 'estEmail'].forEach(k => { v[k] = s(c[k]).slice(0, 120); }); set('contacts', v, 'contacts shown to subs'); }
+  if (b.internalNotes !== undefined) set('internalNotes', s(b.internalNotes).slice(0, 8000), 'internal notes');
+  if (b.crmLeadId !== undefined) set('crmLeadId', s(b.crmLeadId).slice(0, 120), 'CRM lead');
+  if (Array.isArray(b.trades)) {
+    const trades = Array.from(new Set(b.trades.map(x => s(x).slice(0, 60)).filter(Boolean))).slice(0, 30);
+    const keep = arr(job.tradeScopes), byT = {}; keep.forEach(x => { if (x && s(x.trade)) byT[low(x.trade)] = x; });
+    job.tradeScopes = trades.map(tr => byT[low(tr)] || { id: 'ts_' + crypto.randomBytes(4).toString('hex'), trade: tr, scope: '', files: [] })
+      .concat(keep.filter(x => x && !trades.some(tr => low(tr) === low(x.trade)) && (s(x.scope) || arr(x.files).length)));
+    if (s(job.tradesSought) !== trades.join(', ')) { job.tradesSought = trades.join(', '); log.push('trades: ' + (job.tradesSought || 'none')); }
+    out.trades = trades;
+  }
+  if (b.due !== undefined) {
+    const d = validDay(b.due); if (s(b.due) && !d) return { code: 400, error: 'The bid due date is not a date.' };
+    if (!d && s(job.visibility) === 'public' && !(job.draft === true)) return { code: 400, error: 'A public bid job needs a bid due date — make it private first to have no due date.' };
+    const from = dueText(validDay(job.bidDueDate), s(job.bidDueTime));
+    job.bidDueDate = d; job.bidDueTime = d ? (/^\d{2}:\d{2}$/.test(s(b.dueTime)) ? s(b.dueTime) : (b.dueTime === '' ? '' : s(job.bidDueTime))) : '';
+    const to = dueText(job.bidDueDate, job.bidDueTime);
+    if (to !== from) { log.push('⏰ bid due ' + from + ' → ' + to); subs.unshift(d ? 'Bid due date changed to ' + to + ' (was ' + from + ')' : 'The bid due date was taken off (was ' + from + ')'); }
+    out.due = job.bidDueDate; out.dueTime = job.bidDueTime;
+  }
+  if (log.length) logTo(job, who, '📝 Details changed: ' + log.join(' · '));
+  if (subs.length) out.notice = await subNotice(who, job, 'GrayCo updated this bid job:\n• ' + subs.join('\n• '));
+  await saveJob(job, who);
+  out.changed = log;
+  return out;
+}
+async function bidding(who, b){   /* ⏸ Close bidding / ▶ Reopen: no new bids or changes; the job stays visible */
+  const job = await jobRow(b.jobId); if (!job || GONE.test(s(job.status))) return { code: 404, error: 'No such bid job.' };
+  if (!who.canInvite && !(await posterRole(who, {}, job))) return { code: 403, error: 'Only an admin, an estimator, the office or the job\'s PM closes bidding.' };
+  const close = b.close === true;
+  if (!!job.biddingClosed === close) return { ok: true, biddingClosed: close, same: true };
+  job.biddingClosed = close; job.biddingClosedAt = close ? nowIso() : ''; job.biddingClosedBy = close ? who.email : '';
+  logTo(job, who, close ? '⏸ Bidding closed (no new bids; the job stays visible)' : '▶ Bidding reopened');
+  const notice = await subNotice(who, job, close ? 'Bidding is closed on this job — GrayCo is no longer taking new bids or changes. Thank you to everyone who bid.' : 'Bidding is open again on this job.');
+  await saveJob(job, who);
+  return { ok: true, biddingClosed: close, notice };
+}
+async function duplicate(who, b){   /* 📋 a copy as a new private job: the details, trades, scopes, plans and links — never subs, invites, bids or questions */
+  const job = await jobRow(b.jobId); if (!job) return { code: 404, error: 'No such bid job.' };
+  if (!who.canInvite && !(await posterRole(who, {}, job))) return { code: 403, error: 'Only an admin, an estimator, the office or the job\'s PM copies a bid job.' };
+  const at = nowIso(), id = 'j_' + Date.now().toString(36) + crypto.randomBytes(3).toString('hex');
+  const copy = JSON.parse(JSON.stringify(job));
+  ['log', 'posts', 'addenda', 'archivedAt', 'archivedBy', 'archivedReason', 'archivedFrom', 'publishedAt', 'publishedBy', 'madePublicAt', 'biddingClosed', 'biddingClosedAt', 'biddingClosedBy', 'awardedAt', 'leadInbox', 'crmFileRefs'].forEach(k => { delete copy[k]; });
+  Object.assign(copy, { id, title: s(b.title).slice(0, 200) || 'Copy of ' + s(job.title), status: 'open', visibility: 'private', draft: false, createdAt: at, createdBy: 'crm-copy', createdByName: s(who.name) || who.email,
+    postedAt: at, postedBy: who.email, postedByName: s(who.name) || who.email, openedPrivateAt: at, openedBy: who.email, copiedFrom: job.id, updatedAt: at });
+  logTo(copy, who, '📋 Copied from "' + s(job.title) + '" (🔒 private — no subs invited yet)');
+  const rows = [SP.rowFor('jobs', copy)], pl = await SP.plansOf(job.id).catch(() => []);
+  if (pl.length) rows.push({ collection: 'plans', id, job_id: id, data: { items: pl } });
+  await SP.upsertRows(rows, who.email);
+  const src = await jobRow(job.id); if (src) { logTo(src, who, '📋 Copied to a new job "' + copy.title + '"'); await saveJob(src, who); }
+  return { ok: true, jobId: id, title: copy.title };
+}
 /* a sub's question: answer privately, or publish the answer to every bidder (its e-mail waits on approval, as before) */
 async function answer(who, b){
   const q = await SP.getRow('questions', s(b.id)); if (!q) return { code: 404, error: 'No such question.' };
@@ -719,6 +858,15 @@ async function answer(who, b){
   if (job) { logTo(job, who, '💬 Answered ' + s(q.data.userCompany) + '\'s question' + (pub ? ' — published to all bidders' : ' (private)')); await saveJob(job, who); }
   const now = await SP.getRow('questions', s(b.id));
   return { ok: true, saved: r.saved, question: now && now.data };
+}
+/* patch PLANREQ: a sub's 📩 plan / info request — ↩ Reply (to that sub: bid site + e-mail, held in ⏸) or ✅ Mark sent; either clears its To-Do */
+async function planreq(who, b){
+  const q = await SP.getRow('planreqs', s(b.id)); if (!q) return { code: 404, error: 'No such request.' };
+  const job = await jobRow(q.data.jobId);
+  if (!who.canInvite && !(await posterRole(who, {}, job))) return { code: 403, error: 'Only an admin, an estimator, the office or the job\'s PM answers plan requests.' };
+  const r = await SP.planReqAct(who, { id: s(b.id), act: s(b.act), text: s(b.text) });
+  if (job) { logTo(job, who, (s(b.act) === 'reply' ? '↩ Replied to ' : '✅ Marked sent: ') + s(q.data.company) + '\'s request (' + arr(q.data.needs).join(', ') + ')'); await saveJob(job, who); }
+  return r;
 }
 async function noticeAgain(who, b){   /* "Send now" after ⏸ ended: queue the held e-mail on Approvals */
   if (!who.canInvite) return { code: 403, error: 'Not allowed.' };
@@ -772,13 +920,17 @@ exports.handler = async function(event){
     else if (b.op === 'post') r = await post(who, b);
     else if (b.op === 'answer') r = await answer(who, b);
     else if (b.op === 'notice') r = await noticeAgain(who, b);
+    else if (b.op === 'planreq') r = await planreq(who, b);   /* patch PLANREQ */
+    else if (b.op === 'details') r = await details(who, b);   /* patch PLANREQ-T/D: ✏️ trades, ✏️ bid due */
+    else if (b.op === 'bidding') r = await bidding(who, b);   /* patch PLANREQ-E: ⏸ Close bidding / ▶ Reopen */
+    else if (b.op === 'duplicate') r = await duplicate(who, b);   /* patch PLANREQ-E: 📋 Duplicate */
     else return J(400, { error: 'Unknown action.' }, C);
     return r.code ? J(r.code, { error: r.error }, C) : J(200, r, C);
   } catch (e) {
     return J(e.status || 502, { error: e.status ? e.message : 'The bid portal could not be reached: ' + s(e && e.message) }, C);
   }
 };
-exports._test = { postjob, unpost, cleanup, postedView, posterRole, autoAdded, postedOnPurpose, validDay, jobsList, sentScope, awardMail, notSelectedMail, mailGate, pmOf, link, fileOut, amountOf, subBids, subsList, jobsList, invite, visibility, award, sweep, inviteMail, whoIs, archive, restore, manageView, audience, noticeMail };
+exports._test = { postjob, unpost, cleanup, postedView, posterRole, autoAdded, postedOnPurpose, validDay, jobsList, sentScope, awardMail, notSelectedMail, mailGate, pmOf, link, fileOut, amountOf, subBids, subsList, jobsList, invite, visibility, award, sweep, inviteMail, whoIs, archive, restore, manageView, audience, noticeMail, planreq, details, dueChanged, bidding, duplicate, subNotice };
 /* patch LOGOALL (owner 10/23: "should have our logo on it"): every customer / sub / GC e-mail this file sends
    straight to Resend gets the GrayCo shell (centered logo, office line, licenses). Internal @grayco-cs.com mail is untouched. */
 try { require('./_lib/brand.js').installResend(); } catch (e) {}

@@ -82,9 +82,11 @@ function isGone(j){ return !!j && (low(j.status) === 'archived' || !!j.archivedA
 function subJobView(j, trades){
   const v = Object.assign({}, j);
   delete v.log; delete v.archivedFrom;
+  delete v.internalNotes; delete v.crmFileRefs; if (!v.showOwnerGc) delete v.ownerGc;   /* patch PLANREQ-E: internal notes never; the owner / GC only when GrayCo ticks "show it" */
+  if (v.siteWalk && typeof v.siteWalk === 'object') v.siteWalk = pick(v.siteWalk, ['date', 'time', 'location', 'mandatory']);   /* never the RSVP list */
   const mine = (Array.isArray(trades) ? trades : []).map(function(x){ return low(x); }).filter(Boolean);   /* arr() keeps objects only */
   if (Array.isArray(v.tradeScopes) && mine.length) v.tradeScopes = v.tradeScopes.filter(function(ts){ const t = low(ts && ts.trade); return !t || mine.some(function(m){ return t.indexOf(m) > -1 || m.indexOf(t) > -1; }); });
-  if (Array.isArray(v.tradeScopes)) v.tradeScopes = v.tradeScopes.map(function(ts){ return pick(ts, ['id', 'trade', 'scope']); })
+  if (Array.isArray(v.tradeScopes)) v.tradeScopes = v.tradeScopes.map(function(ts){ return pick(ts, ['id', 'trade', 'scope', 'files']); })   /* patch PLANREQ-C: + the trade's scope files */
     .filter(function(ts){ return s(ts.scope) || (Array.isArray(ts.files) && ts.files.length); });   /* patch QAA: a trade with no scope written yet is not an empty box on the sub's page (the trades are listed under "We are bidding") */
   if (Array.isArray(v.addenda)) v.addenda = v.addenda.filter(function(a){ return a && a.publishedAt; }).map(function(a){ return pick(a, ['num', 'date', 'title', 'text', 'files', 'dueFrom', 'dueTo', 'publishedAt']); });
   return v;
@@ -202,6 +204,7 @@ function rowFor(collection, rec){
   else if (collection === 'invites') { r.job_id = s(rec.jobId); r.email = low(rec.email); }
   else if (collection === 'questions') { r.job_id = s(rec.jobId); r.user_id = s(rec.userId); }
   else if (collection === 'acks') { r.job_id = s(rec.jobId); r.user_id = s(rec.userId); }
+  else if (collection === 'planreqs') { r.job_id = s(rec.jobId); r.user_id = s(rec.userId); r.email = low(rec.email); }   /* patch PLANREQ */
   return r;
 }
 function threadOf(m){ return s(m.senderRole === 'sub' ? m.senderId : m.recipientSubId); }
@@ -328,7 +331,7 @@ async function subScope(who){
       const canSee = (j.visibility || 'public') === 'public' || invited.has(r.id);
       const open = CLOSED.indexOf(low(j.status)) < 0;
       if (bidOn.has(r.id) || (canSee && open)) visible[r.id] = r;
-      if (canSee && open) biddable[r.id] = true;
+      if (canSee && open && !j.biddingClosed) biddable[r.id] = true;   /* patch PLANREQ-E: ⏸ Close bidding — still visible, no new bids */
     });
   }
   return { me: me, jobs: visible, biddable: biddable, invites: invites, myBids: myBids };
@@ -360,7 +363,8 @@ async function loadKey(who, key, ctx){
   if (key === 'planreqs') {   /* plans requests: GrayCo sees all, a sub only their own */
     if (who.isAdmin) return (await listRows([eq('collection', 'planreqs')])).map(function(r){ return r.data; });
     if (!who.profile) return [];
-    return (await listRows([eq('collection', 'planreqs'), eq('user_id', who.profile.id)])).map(function(r){ return { jobId: r.data.jobId, at: r.data.at, notifiedAt: r.data.notifiedAt }; });
+    if (!who.approved) return [];
+    return (await listRows([eq('collection', 'planreqs'), eq('user_id', who.profile.id)])).map(function(r){ return subReqView(r.data); });   /* patch PLANREQ: their own, never anyone else's */
   }
   if (COLLECTIONS.indexOf(key) > -1) {
     if (who.isAdmin) {
@@ -512,6 +516,9 @@ async function saveCollection(who, key, upsert, del, ctx){
           } else if (isDraft(old) || (!old && isDraft(rec))) {
             Object.assign(rec, { status: 'draft', visibility: 'private', draft: true });
           }
+          if (old && arr(rec.plansLinks).length > arr(old.plansLinks).length) notes.push({ kind: 'plans-added', jobId: rec.id });
+          if (old && !isDraft(old) && (s(old.bidDueDate).slice(0, 10) !== s(rec.bidDueDate).slice(0, 10) || s(old.bidDueTime) !== s(rec.bidDueTime)))   /* patch PLANREQ-D: the bid due date changed on the bid site */
+            notes.push({ kind: 'due-changed', jobId: rec.id, from: s(old.bidDueDate).slice(0, 10) ? s(old.bidDueDate).slice(0, 10) + (s(old.bidDueTime) ? ' ' + s(old.bidDueTime) : '') : 'no due date', who: { email: who.email, name: s(who.profile && who.profile.name) || who.email } });   /* patch PLANREQ: a 🔗 plan link added on the bid site → whoever asked hears */
         }
         if (key === 'messages' && !existing[rec.id] && rec.senderRole !== 'sub' && rec.recipientSubId) notes.push({ kind: 'message-to-sub', msg: rec });
         rows.push(rowFor(key, rec));
@@ -542,6 +549,7 @@ async function saveCollection(who, key, upsert, del, ctx){
           amount: num(x.amount), scope: s(x.scope).slice(0, 20000), notes: s(x.notes).slice(0, 20000),
           docs: arr(x.docs), submittedAt: x.submittedAt || new Date().toISOString(), updatedAt: new Date().toISOString()
         });
+        if (Array.isArray(x.lines)) b.lines = bidLines(x.lines, sc.jobs[jobId] && sc.jobs[jobId].data);   /* patch PLANREQ-E: the bid form's line items, filled in by the sub */
         ['_rank', '_total', '_amounts'].forEach(function(k){ delete b[k]; });
         if (!prev) notes.push({ kind: 'new-bid', bid: b, job: sc.jobs[jobId] && sc.jobs[jobId].data });
         rows.push(rowFor('bids', b));
@@ -607,6 +615,11 @@ async function saveCollection(who, key, upsert, del, ctx){
   if (dropKeys.length) await deleteKeys(dropKeys);
   for (const n of notes) { try { await notify(n); } catch (e) { console.warn('[subportal] mail', e.message); } }
   return { saved: rows.length, removed: dropKeys.length };
+}
+/* patch PLANREQ-E: a sub's answers to the job's bid form (only its own line ids; a price per line, a note) */
+function bidLines(v, job){
+  const ids = {}; arr(job && job.bidForm).forEach(function(x){ if (x && x.id) ids[x.id] = x; });
+  return arr(v).filter(function(l){ return ids[s(l.id)]; }).slice(0, 80).map(function(l){ const f = ids[s(l.id)]; return { id: s(l.id), trade: s(f.trade), item: s(f.item), unit: s(f.unit), amount: l.amount === '' || l.amount == null ? null : num(l.amount), note: s(l.note).slice(0, 300) }; });
 }
 // A subcontractor may only point at files they uploaded themselves (or that were already on the record).
 function checkRefs(rec, prev, me){
@@ -821,8 +834,8 @@ async function staffEmailsFor(job){
      (no approval step).
    • Subs see plans only of jobs they may see (approved, and the job public or they are invited; never a draft). */
 const zlib = require('zlib');
-const PLAN_EXT = { pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif',
-  tif: 'image/tiff', tiff: 'image/tiff', heic: 'image/heic', dwg: 'application/acad', dxf: 'image/vnd.dxf' };
+/* patch PLANREQ-B: every common file type (was PDF / pictures / DWG only) — the ZIP itself is unpacked, not stored */
+const PLAN_EXT = (function(){ const T = require('./_lib/tradeguess.js').TYPES, o = {}; Object.keys(T).forEach(function(k){ if (k !== 'zip') o[k] = T[k]; }); return o; })();
 const ZIP_LIMITS = { files: 300, total: 250 * 1024 * 1024, each: MAX_FILE };
 function extOf(n){ const m = /\.([A-Za-z0-9]{2,5})$/.exec(s(n)); return m ? m[1].toLowerCase() : ''; }
 /* a small ZIP reader (stored + deflate; no encryption, no ZIP64) — every size is checked before anything is unpacked */
@@ -843,7 +856,7 @@ function unzip(buf){
     if (!base || name.endsWith('/')) continue;                                         /* a folder */
     if (/(^|\/)(__MACOSX|\.)/.test(name) || /^\./.test(base) || /^thumbs\.db$/i.test(base)) continue;   /* Mac / Windows extras */
     const ext = extOf(base);
-    if (!PLAN_EXT[ext]) { skipped.push({ name: name, why: 'not a PDF, picture or DWG' }); continue; }
+    if (!PLAN_EXT[ext]) { skipped.push({ name: name, why: 'not a file type a bid job takes' }); continue; }
     if (flags & 1) { skipped.push({ name: name, why: 'password-protected' }); continue; }
     if (csize === 0xFFFFFFFF || usize === 0xFFFFFFFF) { skipped.push({ name: name, why: 'too big' }); continue; }
     if (usize > ZIP_LIMITS.each) { skipped.push({ name: name, why: 'over 50 MB' }); continue; }
@@ -871,6 +884,35 @@ async function storagePut(path, buf, type){
   if (!r.ok && r.status !== 409) throw Fail(502, 'Could not store ' + path.split('/').pop() + ' (' + r.status + ').');
 }
 async function plansOf(jobId){ const r = await getRow('plans', jobId); return r ? arr(r.data.items) : []; }
+/* patch PLANREQ-B/C (owner 11/12: "make sure I can add all types of files … if I add scopes and plans and specs put them in scopes by trade"):
+   every common file type goes on a bid job (PDF, pictures incl. HEIC / TIFF, Word, Excel / CSV, PowerPoint, TXT / RTF, DWG / DXF, ZIP — 50 MB
+   each; bigger → a 🔗 link), and each file is sorted (_lib/tradeguess.js — the name, and the start of a PDF / Word / Excel file's text):
+     plans  → the job's plans (category Plans or the ZIP folder), linked to the trades a sheet number names (E-101 → Electrical);
+     specs  → the plans list, category Specs, linked to their trades (Div 09 → Drywall, Paint, Flooring, Tile, Ceilings);
+     scope  → that trade's scope on the job (tradeScopes[].files — a sub sees the scopes of their own trades only); no trade → category Scope.
+   The person's choice wins: body.sort { "<ZIP path or file name>": { kind, trades } } (CRM 📂 Manage shows the guesses with a ▾ to change),
+   or body.kind / body.trades for one file (a trade's own 📎 Add files). */
+function TG(){ return require('./_lib/tradeguess.js'); }
+function sortOf(body, key, name, buf){
+  const pick = body && body.sort && typeof body.sort === 'object' ? (body.sort[key] || body.sort[name]) : null;
+  const want = pick || (body && (body.kind || body.trades) && !body.sort ? { kind: body.kind, trades: body.trades } : null);
+  const g = TG().guess(key || name, buf && buf.length <= 20 * 1024 * 1024 ? TG().text(buf, extOf(name)) : '');
+  const kind = want && TG().KINDS.indexOf(s(want.kind)) > -1 ? s(want.kind) : g.kind;
+  const trades = want && Array.isArray(want.trades) ? want.trades.map(function(x){ return s(x).slice(0, 60); }).filter(Boolean).slice(0, 8) : g.trades;
+  return { kind: kind, trades: trades, why: want ? 'picked' : g.why };
+}
+async function plansGuess(who, body){   /* staff: what each file (or each file inside a ZIP) looks like, before it is saved */
+  const ref = s(body.fileRef), name = s(body.name) || ref.split('/').pop(), ext = extOf(name);
+  if (!/^staff\/[A-Za-z0-9._\/-]{3,300}$/.test(ref) || ref.indexOf('..') > -1) throw Fail(400, 'Upload the file first.');
+  if (ext === 'zip') {
+    const z = unzip(await storageGet(ref));
+    return { ok: true, zip: true, files: z.files.map(function(f){ const key = (f.folder ? f.folder + '/' : '') + f.name, g = sortOf({}, key, f.name, f.data); return { key: key, name: f.name, folder: f.folder, size: f.data.length, kind: g.kind, trades: g.trades, why: g.why }; }), skipped: z.skipped };
+  }
+  if (!PLAN_EXT[ext]) throw Fail(400, 'That kind of file can not go on a bid job: ' + name);
+  let buf = null; if ((Number(body.size) || 0) <= 20 * 1024 * 1024 && /^(pdf|docx|xlsx|xlsm|pptx|txt|csv|rtf)$/.test(ext)) { try { buf = await storageGet(ref); } catch (e) { buf = null; } }
+  const g = sortOf({}, name, name, buf);
+  return { ok: true, zip: false, files: [{ key: name, name: name, folder: '', size: Number(body.size) || 0, kind: g.kind, trades: g.trades, why: g.why }] };
+}
 async function plansImport(who, body){
   const jobId = s(body.jobId), ref = s(body.fileRef);
   if (!okId(jobId)) throw Fail(400, 'Pick a bid job first.');
@@ -878,34 +920,53 @@ async function plansImport(who, body){
   if (!/^staff\/[A-Za-z0-9._\/-]{3,300}$/.test(ref) || ref.indexOf('..') > -1) throw Fail(400, 'Upload the file first.');
   const name = s(body.name) || ref.split('/').pop(), ext = extOf(name);
   const have = await plansOf(jobId), known = {}; have.forEach(function(x){ if (x && x.sha) known[x.sha] = 1; });
-  const added = [], skipped = [];
+  const jd = Object.assign({}, job.data); jd.tradeScopes = arr(jd.tradeScopes).map(function(x){ return Object.assign({}, x, { files: arr(x.files).slice() }); });
+  const added = [], skipped = [], toScope = [];
+  const place = function(item, srt){
+    item.kind = srt.kind; item.trades = srt.trades;
+    if (srt.kind === 'scope' && srt.trades.length) { toScope.push(item); return; }
+    if (srt.kind === 'specs' && (!item.category || item.category === 'Plans')) item.category = 'Specs';
+    if (srt.kind === 'scope') item.category = 'Scope';
+    added.push(item);
+  };
   if (ext === 'zip') {
     const z = unzip(await storageGet(ref));
     skipped.push.apply(skipped, z.skipped);
     for (const f of z.files) {
-      const sha = crypto.createHash('sha256').update(f.data).digest('hex');
-      if (known[sha]) { skipped.push({ name: (f.folder ? f.folder + '/' : '') + f.name, why: 'already on the job' }); continue; }
+      const sha = crypto.createHash('sha256').update(f.data).digest('hex'), key = (f.folder ? f.folder + '/' : '') + f.name;
+      if (known[sha]) { skipped.push({ name: key, why: 'already on the job' }); continue; }
       const path = 'staff/plans/' + jobId + '/' + sha.slice(0, 16) + '-' + safeName(f.name);
       await storagePut(path, f.data, PLAN_EXT[f.ext]);
       known[sha] = 1;
-      added.push({ name: f.name, size: f.data.length, type: PLAN_EXT[f.ext], fileRef: path, category: f.folder || 'Plans', sha: sha, from: name, at: new Date().toISOString(), by: who.email });
+      place({ name: f.name, size: f.data.length, type: PLAN_EXT[f.ext], fileRef: path, category: f.folder || 'Plans', sha: sha, from: name, at: new Date().toISOString(), by: who.email }, sortOf(body, key, f.name, f.data));
     }
   } else if (PLAN_EXT[ext]) {
-    added.push({ name: name, size: Number(body.size) || 0, type: PLAN_EXT[ext], fileRef: ref, category: s(body.category).slice(0, 80) || 'Plans', at: new Date().toISOString(), by: who.email });
-  } else throw Fail(400, 'Upload a ZIP, a PDF, a picture or a DWG.');
+    let buf = null; if ((Number(body.size) || 0) <= 20 * 1024 * 1024 && !body.sort && !body.kind && /^(pdf|docx|xlsx|xlsm|pptx|txt|csv|rtf)$/.test(ext)) { try { buf = await storageGet(ref); } catch (e) { buf = null; } }
+    place({ name: name, size: Number(body.size) || 0, type: PLAN_EXT[ext], fileRef: ref, category: s(body.category).slice(0, 80) || 'Plans', at: new Date().toISOString(), by: who.email }, sortOf(body, name, name, buf));
+  } else throw Fail(400, 'That kind of file can not go on a bid job (' + (ext || 'no extension') + '). PDF, pictures, Word, Excel, PowerPoint, text, DWG / DXF or a ZIP.');
   if (added.length) {
     /* the same name twice (A1.pdf in two folders): the folder goes in front, so each one is its own download */
     const names = {}; have.forEach(function(x){ names[low(x.name)] = 1; });
     added.forEach(function(x){ if (names[low(x.name)] && x.category && x.category !== 'Plans') x.name = x.category.split(' / ').pop() + ' — ' + x.name; names[low(x.name)] = 1; });
     await upsertRows([{ collection: 'plans', id: jobId, job_id: jobId, data: { items: have.concat(added) } }], who.email);
-    /* the job record lists the plans too (name / size / type / category — what the bid site shows) */
-    const jd = Object.assign({}, job.data);
-    jd.plans = arr(jd.plans).concat(added.map(function(x){ return { name: x.name, size: x.size, type: x.type, category: x.category }; }));
+    /* the job record lists the plans too (name / size / type / category / trades — what the bid site shows) */
+    jd.plans = arr(jd.plans).concat(added.map(function(x){ return { name: x.name, size: x.size, type: x.type, category: x.category, trades: x.trades || [] }; }));
+  }
+  toScope.forEach(function(x){   /* a scope file → each trade it is for (a new trade box when the job has none yet) */
+    x.trades.forEach(function(tr){
+      let ts = jd.tradeScopes.find(function(y){ return low(y.trade) === low(tr); });
+      if (!ts) { ts = { id: 'ts_' + crypto.randomBytes(4).toString('hex'), trade: tr, scope: '', mode: 'manual', files: [] }; jd.tradeScopes.push(ts); }
+      if (!ts.files.some(function(f){ return f.fileRef === x.fileRef; })) ts.files.push({ name: x.name, size: x.size, type: x.type, fileRef: x.fileRef, at: x.at, by: x.by });
+    });
+  });
+  if (added.length || toScope.length) {
+    if (toScope.length) { const want = arr([]).concat(s(jd.tradesSought).split(/\s*,\s*/).filter(Boolean)); jd.tradeScopes.forEach(function(ts){ if (s(ts.trade) && !want.some(function(w){ return low(w) === low(ts.trade); })) want.push(s(ts.trade)); }); jd.tradesSought = want.join(', '); }
     jd.updatedAt = new Date().toISOString();
     await upsertRows([{ collection: 'jobs', id: jobId, job_id: jobId, data: jd }], who.email);
   }
   const told = added.length ? await notifyPlanRequests(jobId) : 0;
-  return { ok: true, added: added.map(function(x){ return { name: x.name, category: x.category, size: x.size, type: x.type }; }), skipped: skipped, total: have.length + added.length, notified: told };
+  const out = function(x){ return { name: x.name, category: x.category, size: x.size, type: x.type, kind: x.kind, trades: x.trades || [] }; };
+  return { ok: true, added: added.map(out), scoped: toScope.map(out), skipped: skipped, total: have.length + added.length, notified: told };
 }
 async function estimatorEmail(job){
   const id = s(job && job.estimatorId);
@@ -915,14 +976,14 @@ async function estimatorEmail(job){
   }
   return defaultEstimatorEmail();   /* patch EST4: the Senior Estimator (the Estimator role / Leads ⚙), never a name */
 }
-async function defaultEstimatorEmail(){
+async function defaultEstimatorEmail(noOwner){
   let settings = null;
   for (const table of ['gc_lead_inbox_kv', 'gc_kv']) {
     try { const r = await fetch(sbUrl() + '/rest/v1/' + table + '?select=value&key=eq.gc_lead_inbox_settings', { headers: H() }); if (r.ok) { const v = ((await r.json())[0] || {}).value; if (v) { settings = typeof v === 'string' ? JSON.parse(v) : v; break; } } } catch (e) {}
   }
   const sbf = function(path){ return fetch(sbUrl() + '/rest/v1/' + path, { headers: H() }); };
   const r = await require('./_lib/estimator.js').resolve({ sb: sbf, settings: settings || {} });
-  return r.email || ownerEmails()[0] || '';
+  return r.email || (noOwner ? '' : ownerEmails()[0] || '');   /* patch PLANREQ: noOwner — the request falls back to office@ instead */
 }
 function ownerEmails(){ return String(process.env.OWNER_EMAILS || 'wjohnson@grayco-cs.com,nthomas@grayco-cs.com').split(',').map(low).filter(okEmail); }
 function loadWebPush(){ try { return require('web-push'); } catch (e) { return null; } }
@@ -938,70 +999,238 @@ async function pushTo(emails, title, text){
   }
   return sent;
 }
-/* the CRM's office to-do list (gc_kv gc_office_tasks, JSON text) — added once per job, the same careful way portal.js does */
-async function officeTodo(id, label, note){
+/* a shared list in gc_kv (gc_office_tasks, gc_job_messages — JSON text, the CRM's format) changed without losing anybody's save:
+   read, change, read again just before writing (changed meanwhile: start over), write, read back (the same careful way portal.js does) */
+async function kvListUpd(key, mutate){
+  const read = async function(){ const r = await fetch(sbUrl() + '/rest/v1/gc_kv?select=value,updated_at&key=eq.' + encodeURIComponent(key), { headers: H() }); if (!r.ok) return null; const rows = await r.json().catch(function(){ return null; }); if (!Array.isArray(rows)) return null; let v = rows[0] ? rows[0].value : ''; if (v == null || v === '') v = []; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { return null; } } return Array.isArray(v) ? { list: v, at: s(rows[0] && rows[0].updated_at) } : null; };
   for (let tries = 0; tries < 5; tries++) {
-    const read = async function(){ const r = await fetch(sbUrl() + '/rest/v1/gc_kv?select=value,updated_at&key=eq.gc_office_tasks', { headers: H() }); if (!r.ok) return null; const rows = await r.json().catch(function(){ return null; }); if (!Array.isArray(rows)) return null; let v = rows[0] ? rows[0].value : ''; if (v == null || v === '') v = []; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { return null; } } return Array.isArray(v) ? { list: v, at: s(rows[0] && rows[0].updated_at) } : null; };
-    const cur = await read(); if (!cur) return false;
-    if (cur.list.some(function(t){ return t && s(t.id) === id; })) return true;
+    const cur = await read(); if (!cur) return { ok: false };
+    const m = mutate(clone(cur.list)); if (!m || !m.list) return { ok: true, unchanged: true };
+    const again = await read(); if (!again || again.at !== cur.at || JSON.stringify(again.list) !== JSON.stringify(cur.list)) { await new Promise(function(r){ setTimeout(r, 150 + 200 * tries); }); continue; }
     const now = new Date().toISOString();
-    const next = cur.list.concat([{ id: id, label: label, note: note, addedBy: 'Bid site', addedAt: now, updatedAt: now, done: false }]);
-    const again = await read(); if (!again || again.at !== cur.at) { await new Promise(function(r){ setTimeout(r, 150 + 200 * tries); }); continue; }
-    const w = await fetch(sbUrl() + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: H({ Prefer: 'resolution=merge-duplicates,return=minimal' }), body: JSON.stringify({ key: 'gc_office_tasks', value: JSON.stringify(next), updated_at: now }) });
-    if (!w.ok) return false;
-    const after = await read(); if (after && after.list.some(function(t){ return t && s(t.id) === id; })) return true;
+    const w = await fetch(sbUrl() + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: H({ Prefer: 'resolution=merge-duplicates,return=minimal' }), body: JSON.stringify({ key: key, value: JSON.stringify(m.list), updated_at: now }) });
+    if (!w.ok) return { ok: false };
+    const after = await read(); if (!after || !m.check || m.check(after.list)) return { ok: true };
   }
-  return false;
+  return { ok: false };
 }
+/* the CRM's office to-do list (gc_kv gc_office_tasks, JSON text) — added once per id */
+async function officeTodo(id, label, note){
+  const has = function(l){ return l.some(function(t){ return t && s(t.id) === id; }); }, now = new Date().toISOString();
+  const r = await kvListUpd('gc_office_tasks', function(l){ return has(l) ? null : { list: l.concat([{ id: id, label: label, note: note, addedBy: 'Bid site', addedAt: now, updatedAt: now, done: false }]), check: has }; });
+  return !!r.ok;
+}
+/* ── patch PLANREQ (owner 11/12: "on bid portal if I don't have plans have where sub can request plans or more info and it emails and
+   messages the PM or estimator") ─────────────────────────────────────────────────────────────────────────────────────────────────
+   A sub (approved, and the job open to them for bids — the same rule as bidding) taps "📩 Request plans / more info" on the bid site's
+   job page or the sub portal's 📋 Jobs to bid sheet: what they need (Plans · Specs · Site walk / access · Other) + a note; their company,
+   name, phone and e-mail come from their profile. ONE open request per sub per job (planreqs/<jobId>__<userId>; a new one only after the
+   last was answered or plans were posted).
+   Who hears: the job's PM AND its estimator, whoever is set (the bid job's pmEmail / pmId / estimatorId, else the CRM project's PM and the
+   CRM lead's PM / estimator); neither → the person who posted it → the Senior Estimator (Owner setup "Set the default estimator") →
+   office@. Each of them gets
+     • an e-mail (staff only — it goes in ⏸ data-entry mode too, the same sendMail as the ❓ question e-mail),
+     • a 💬 Job Messages post on the job's thread (the CRM project, else the lead, else the bid job) naming them → 🔔 For you,
+     • a To-Do "📩 <Sub> asked for plans — <job>" (gc_office_tasks, assignees = them), done when plans / a plan link are added to the job
+       or someone taps ✅ Mark sent / ↩ Reply (CRM 🏗 Bid portal → 📂 Manage → 💬 Q&A, bid-hub op planreq).
+   Plans added later (a file or a 🔗 link, from the bid site, the CRM drawer, 📢 Put on bid portal or the Lead Inbox): every sub who asked
+   gets "Plans are now posted for <job>" on the bid site / sub portal at once, and by e-mail — that e-mail goes to a sub, so ⏸ data-entry
+   mode HOLDS it (sent on a later look once the pause is off). Never a price; never another sub's name. */
+const PR_NEEDS = { plans: 'Plans', specs: 'Specs', sitewalk: 'Site walk / access', other: 'Other' };
+const PR_NEEDS_ES = { plans: 'Planos', specs: 'Especificaciones', sitewalk: 'Visita al sitio / acceso', other: 'Otro' };
+function prNeeds(v){ return Array.from(new Set((Array.isArray(v) ? v : []).map(low).filter(function(k){ return PR_NEEDS[k]; }))); }
+function prOpen(q){ return !!q && s(q.status) !== 'closed' && !s(q.closedAt) && !s(q.notifiedAt); }
+function prWhat(q, es){ const n = prNeeds(q && q.needs); return (n.length ? n : ['plans']).map(function(k){ return (es ? PR_NEEDS_ES : PR_NEEDS)[k]; }).join(', '); }
+function prAsk(q){ const n = prNeeds(q && q.needs); return !n.length || n.indexOf('plans') > -1 ? 'plans' : 'more info'; }
+function plansCount(job, items){ return arr(items).length + arr(job && job.plansLinks).filter(function(l){ return /^https?:\/\//i.test(s(l && l.url)); }).length; }
+function crmUrl(){ const v = s(process.env.CRM_URL).replace(/\/$/, ''); return (/^https:\/\//.test(v) ? v : 'https://crm.grayco-cs.com') + '/'; }
+/* what a sub sees of their own request (never who else asked) */
+function subReqView(q){ return q ? { jobId: s(q.jobId), at: s(q.at), needs: prNeeds(q.needs).length ? prNeeds(q.needs) : ['plans'], note: s(q.note), status: prOpen(q) ? 'open' : 'closed',
+  notifiedAt: s(q.notifiedAt), closedAt: s(q.closedAt), closedHow: s(q.closedHow) || (s(q.notifiedAt) ? 'plans' : ''), reply: s(q.reply), repliedAt: s(q.repliedAt), sentNote: s(q.sentNote) } : null; }
+/* the GrayCo people a request goes to: [{ email, name, roles, crmId }] */
+async function planReqContacts(job){
+  const out = [], seen = {};
+  const add = function(email, name, role){ email = low(email); if (!okEmail(email)) return; if (seen[email]) { if (seen[email].roles.indexOf(role) < 0) seen[email].roles.push(role); return; } seen[email] = { email: email, name: s(name), roles: [role], crmId: '' }; out.push(seen[email]); };
+  let crm = {}; try { crm = await kvRead(['users', 'projects', 'leads']); } catch (e) { crm = {}; }
+  let staff = []; try { staff = await staffList(); } catch (e) { staff = []; }
+  const users = arr(crm.users).filter(function(u){ return u && u.active !== false; });
+  const byName = function(n){ n = low(n); return n ? users.find(function(u){ return low(u.name) === n; }) || null : null; };
+  const byStaffId = function(id){ id = s(id); return id ? staff.find(function(x){ return staffId(x.email) === id; }) || null : null; };
+  const proj = s(job.crmProjectId) ? arr(crm.projects).find(function(p){ return p && s(p.id) === s(job.crmProjectId); }) : null;
+  const lead = s(job.crmLeadId) ? arr(crm.leads).find(function(l){ return l && s(l.id) === s(job.crmLeadId); }) : null;
+  /* the PM */
+  let pmE = low(job.pmEmail), pmN = s(job.pmName);
+  if (!okEmail(pmE)) { const st = byStaffId(job.pmId); if (st) { pmE = st.email; pmN = pmN || st.name; } }
+  if (!okEmail(pmE)) { const u = byName(s(proj && proj.pm) || s(lead && lead.pm)); if (u) { pmE = low(u.email); pmN = s(u.name); } else if (okEmail(low(proj && proj.pmEmail))) pmE = low(proj.pmEmail); }
+  add(pmE, pmN, 'PM');
+  /* the estimator */
+  let esE = '', esN = '';
+  const est = byStaffId(job.estimatorId);
+  if (est) { esE = est.email; esN = est.name; }
+  else if (s(job.estimatorId)) { try { const r = await getRow('users', s(job.estimatorId)); if (r && r.data && r.data.role === 'admin') { esE = low(r.email || r.data.email); esN = s(r.data.name); } } catch (e) {} }
+  if (!okEmail(esE)) { const u = byName(s(lead && lead.estimator) || s(proj && proj.estimator)); if (u) { esE = low(u.email); esN = s(u.name); } else if (okEmail(low(lead && lead.estimatorEmail))) esE = low(lead.estimatorEmail); }
+  add(esE, esN, 'Estimator');
+  /* nobody set: the poster → the Senior Estimator (Owner setup) → the office */
+  if (!out.length && !/^(auto|lead-inbox)$/.test(s(job.postedBy))) add(job.postedBy, job.postedByName, 'Posted it');
+  if (!out.length) { try { add(await defaultEstimatorEmail(true), '', 'Estimator'); } catch (e) {} }
+  if (!out.length) add(process.env.SUBPORTAL_NOTIFY || OFFICE, 'Office', 'Office');
+  out.forEach(function(c){
+    const u = users.find(function(x){ return low(x.email) === c.email; }) || byName(c.name);
+    if (!c.name) c.name = s(u && u.name) || s((staff.find(function(x){ return x.email === c.email; }) || {}).name) || (KNOWN_STAFF[c.email] || {}).name || c.email.split('@')[0];
+    c.name = c.name.replace(/\s+/g, ' ').trim(); c.crmId = s(u && u.id);
+  });
+  return out;
+}
+/* the CRM side of a new request: a 💬 Job Messages post naming them (→ 🔔 For you) and their To-Do */
+async function planReqCrm(job, rec, contacts){
+  const pid = s(job.crmProjectId) || s(job.crmLeadId) || ('bidjob:' + s(job.id));
+  const contact = [rec.name, rec.phone, rec.email].filter(Boolean).join(' · ');
+  const text = '📩 ' + contacts.map(function(c){ return '@' + c.name; }).join(' ') + ' — ' + rec.company + (contact ? ' (' + contact + ')' : '') + ' asked for ' + prWhat(rec).toLowerCase() +
+    ' on the bid portal job "' + s(job.title) + '"' + (rec.note ? ': “' + rec.note + '”' : '.') + ' Answer in 🏗 Bid portal → 📂 Manage → 💬 Q&A (↩ Reply / ✅ Mark sent), or add the plans there — everyone who asked is told.';
+  const mid = 'M_PR_' + crypto.createHash('sha256').update(rec.id + '|' + rec.at).digest('hex').slice(0, 14);
+  const notify = contacts.map(function(c){ return { id: c.crmId, e: c.email, n: c.name, why: 'mention' }; });
+  const msg = { id: mid, pid: pid, authorId: 'bidsite:' + rec.userId, authorName: rec.company + ' (bid site)', text: text, tags: contacts.map(function(c){ return c.crmId || c.email; }),
+    mentions: notify.map(function(x){ return { id: x.id, e: x.e, n: x.n }; }), notify: notify, at: rec.at, source: 'bidsite', bidJobId: s(job.id), planReqId: rec.id };
+  const hasM = function(l){ return l.some(function(m){ return m && s(m.id) === mid; }); };
+  let r1 = { ok: false }; try { r1 = await kvListUpd('gc_job_messages', function(l){ return hasM(l) ? null : { list: l.concat([msg]), check: hasM }; }); } catch (e) {}
+  const tid = 'planreq_' + rec.id;
+  const task = { id: tid, kind: 'planreq', label: '📩 ' + rec.company + ' asked for ' + prAsk(rec) + ' — ' + s(job.title).slice(0, 90),
+    note: prWhat(rec) + (rec.note ? ' — “' + rec.note.slice(0, 300) + '”' : '') + (contact ? ' · ' + contact : '') + ' · Answer: 🏗 Bid portal → 📂 Manage → 💬 Q&A, or add the plans (it clears itself).',
+    pid: s(job.crmProjectId), bidJobId: s(job.id), planReqId: rec.id, assignees: contacts.map(function(c){ return c.email; }), assignee: contacts.map(function(c){ return c.name; }).join(', '),
+    personal: contacts.length === 1, shared: contacts.length > 1, prio: 'high', due: rec.at.slice(0, 10), addedBy: 'Bid site', addedAt: rec.at, updatedAt: rec.at, done: false };
+  const hasT = function(l){ return l.some(function(t){ return t && s(t.id) === tid; }); };
+  let r2 = { ok: false }; try { r2 = await kvListUpd('gc_office_tasks', function(l){ return hasT(l) ? null : { list: l.concat([task]), check: hasT }; }); } catch (e) {}
+  return { msgId: r1.ok ? mid : '', todoId: r2.ok ? tid : '', pid: pid };
+}
+/* close requests (plans posted / answered / sent): the record, and each one's To-Do is done */
+async function planReqClose(rows, how, by, extra){
+  if (!rows.length) return [];
+  const at = new Date().toISOString();
+  const out = rows.map(function(r){ return { collection: 'planreqs', id: r.id, job_id: r.job_id, user_id: r.user_id, email: r.email,
+    data: Object.assign({}, r.data, { status: 'closed', closedAt: at, closedHow: how, closedBy: s(by) }, extra || {}) }; });
+  await upsertRows(out, s(by) || 'plans');
+  const ids = {}; rows.forEach(function(r){ ids['planreq_' + r.id] = 1; if (how === 'plans') ids['planreq_' + r.job_id] = 1; });   /* + the older one-per-job to-do */
+  const why = how === 'plans' ? 'plans posted' : how === 'answered' ? 'answered' : 'marked sent';
+  try { await kvListUpd('gc_office_tasks', function(l){ let ch = false; l.forEach(function(t){ if (t && ids[s(t.id)] && !t.done) { t.done = true; t.doneAt = at; t.doneBy = s(by) || 'Bid site'; t.doneWhy = why; t.updatedAt = at; ch = true; } });
+    return ch ? { list: l, check: function(l2){ return l2.every(function(t){ return !t || !ids[s(t.id)] || t.done; }); } } : null; }); } catch (e) {}
+  return out;
+}
+/* a notice on the bid site (the job's "Updates from GrayCo" + Messages) for the sub who asked — never an e-mail from here */
+function prNotice(q, job, body){
+  return rowFor('messages', { id: 'prn_' + crypto.randomBytes(5).toString('hex'), jobId: s(q.jobId), recipientSubId: s(q.userId), senderId: 'st_grayco', senderName: 'GrayCo',
+    senderCompany: 'GrayCo Construction Services', senderRole: 'admin', body: body, at: new Date().toISOString(), readBy: [], kind: 'update', postId: 'planreq_' + q.id });
+}
+async function mailPaused(){ try { return await require('./_lib/pause').isPaused({ fresh: true }); } catch (e) { return true; } }
 async function requestPlans(who, body, ctx){
+  if (who.isAdmin) throw Fail(403, 'This button is for subcontractors — GrayCo answers requests in the CRM (🏗 Bid portal → 📂 Manage → 💬 Q&A).');
   needSub(who, true);
   const jobId = s(body.jobId); if (!okId(jobId)) throw Fail(400, 'Pick a job.');
   const sc = ctx.scope || (ctx.scope = await subScope(who));
   if (!sc.jobs[jobId]) throw Fail(404, 'That job is not open to you.');
+  if (!sc.biddable[jobId]) throw Fail(403, 'Bids are closed on this job.');
   const job = sc.jobs[jobId].data, p = who.profile, id = jobId + '__' + p.id;
   const old = await getRow('planreqs', id);
-  if (old) return { ok: true, already: true, request: old.data };
-  const rec = { id: id, jobId: jobId, userId: p.id, email: low(p.email || who.email), name: s(p.name), company: s(p.company), trade: s(body.trade).slice(0, 80) || arr(p.trades).join(', ').slice(0, 80),
-    note: s(body.note).slice(0, 600), lang: p.lang === 'es' ? 'es' : 'en', at: new Date().toISOString(), notifiedAt: '' };
+  if (old && prOpen(old.data)) return { ok: true, already: true, request: subReqView(old.data) };   /* one open request per sub per job */
+  const needs = prNeeds(body.needs); if (!needs.length) needs.push('plans');   /* the older button sent only a note: plans */
+  const note = s(body.note).slice(0, 1000);
+  if (needs.length === 1 && needs[0] === 'other' && !note) throw Fail(400, 'Write what you need.');
+  const at = new Date().toISOString();
+  const rec = { id: id, jobId: jobId, userId: p.id, email: low(p.email || who.email), name: s(p.name), company: s(p.company) || s(p.name), phone: s(p.phone),
+    trade: s(body.trade).slice(0, 80) || arr([]).concat(Array.isArray(p.trades) ? p.trades : []).join(', ').slice(0, 80), needs: needs, note: note, lang: p.lang === 'es' ? 'es' : 'en',
+    at: at, notifiedAt: '', status: 'open', plansAtAsk: plansCount(job, await plansOf(jobId)), via: body.via === 'portal' ? 'portal' : 'bidsite',
+    history: old ? arr(old.data.history).concat([pick(old.data, ['at', 'needs', 'note', 'closedAt', 'closedHow', 'reply'])]).slice(-5) : [] };
+  const contacts = await planReqContacts(job);
+  rec.to = contacts.map(function(c){ return { email: c.email, name: c.name, roles: c.roles }; });
   await upsertRows([{ collection: 'planreqs', id: id, job_id: jobId, user_id: p.id, email: rec.email, data: rec }], who.email);
-  const all = await listRows([eq('collection', 'planreqs'), eq('job_id', jobId)]);
-  const to = Array.from(new Set(ownerEmails().concat([await estimatorEmail(job)])));
-  const title = 'Plans requested — ' + s(job.title);
-  await sendMail(to, title + ' — ' + rec.company, mailHtml(title, ['<b>' + esc(rec.company) + '</b> (' + esc(rec.name) + (rec.trade ? ', ' + esc(rec.trade) : '') + ') is interested in bidding and asked for the plans.',
-    rec.note ? '“' + esc(rec.note) + '”' : '', all.length + ' sub' + (all.length === 1 ? ' has' : 's have') + ' asked so far. Upload the plans (ZIP or PDF) in the CRM — Subs tab → Plans requested — or on the job in the bid site. Everyone who asked gets an e-mail as soon as they are there.'].filter(Boolean),
-    { href: portalLink(), label: 'Open the bid site' })).catch(function(){});
-  try { await pushTo(to, title, rec.company + ' asked for the plans (' + all.length + ' so far)'); } catch (e) {}
-  await officeTodo('planreq_' + jobId, 'Upload plans for ' + s(job.title).slice(0, 80) + ' (bid site)', 'Subs asked for the plans. CRM → Subs tab → Plans requested → Upload plans (ZIP/PDF).');
-  return { ok: true, request: rec, count: all.length };
+  const title = '📩 ' + rec.company + ' asked for ' + prAsk(rec) + ' — ' + s(job.title);
+  const lines = ['<b>' + esc(rec.company) + '</b> asked for <b>' + esc(prWhat(rec)) + '</b> on the bid job <b>' + esc(job.title) + '</b>' + (s(job.address) ? ' (' + esc(job.address) + ')' : '') + '.',
+    rec.note ? '“' + esc(rec.note).replace(/\n/g, '<br>') + '”' : '',
+    'Contact: ' + esc([rec.name, rec.phone, rec.email].filter(Boolean).join(' · ')) + (rec.trade ? ' · ' + esc(rec.trade) : ''),
+    'Sent to ' + esc(contacts.map(function(c){ return c.name + ' (' + c.roles.join(', ') + ')'; }).join(', ')) + '.',
+    'Answer it in the CRM: 🏗 Bid portal → 📂 Manage → 💬 Q&A (↩ Reply or ✅ Mark sent) — or add the plans / a plan link there; everyone who asked is told when they are posted.'];
+  try { rec.mailed = !!(await sendMail(contacts.map(function(c){ return c.email; }), title, mailHtml(title.replace(/^📩 /, ''), lines.filter(Boolean), { href: crmUrl(), label: 'Open the CRM' }))); } catch (e) { rec.mailed = false; }
+  try { await pushTo(contacts.map(function(c){ return c.email; }), '📩 ' + prAsk(rec) + ' requested', rec.company + ' — ' + s(job.title)); } catch (e) {}
+  const crm = await planReqCrm(job, rec, contacts).catch(function(){ return {}; });
+  Object.assign(rec, { msgId: s(crm.msgId), todoId: s(crm.todoId), threadPid: s(crm.pid) });
+  await upsertRows([{ collection: 'planreqs', id: id, job_id: jobId, user_id: p.id, email: rec.email, data: rec }], who.email);
+  return { ok: true, request: subReqView(rec), to: contacts.map(function(c){ return { name: c.name, roles: c.roles }; }) };
 }
-/* every sub who asked hears once, when the job has plans */
+/* GrayCo answers a request (CRM 📂 Manage → 💬 Q&A; bid-hub op planreq checks who may): ↩ reply / ✅ mark sent */
+async function planReqAct(who, body){
+  const r = await getRow('planreqs', s(body.id)); if (!r) throw Fail(404, 'No such request.');
+  const q = r.data, act = s(body.act), text = s(body.text).slice(0, 4000), by = low(who.email), byName = s(who.name) || by;
+  const jr = await getRow('jobs', s(q.jobId)), job = jr ? jr.data : { id: q.jobId, title: '' }, es = q.lang === 'es';
+  if (act === 'reply') {
+    if (!text) throw Fail(400, 'Write the reply.');
+    const row = (await planReqClose([r], 'answered', by, { reply: text, repliedAt: new Date().toISOString(), repliedBy: by, repliedByName: byName }))[0];
+    await upsertRows([prNotice(q, job, (es ? 'GrayCo contestó su pedido (' : 'GrayCo answered your request (') + prWhat(q, es) + '): ' + text)], by);
+    let mail = 'off';
+    if (await mailPaused()) mail = 'held';   /* it goes to a sub: ⏸ data-entry mode holds it (they see it on the bid site) */
+    else { try { mail = (await sendMail(q.email, (es ? 'Respuesta de GrayCo — ' : 'GrayCo answered your request — ') + s(job.title), mailHtml(es ? 'Respuesta a su pedido' : 'Answer to your request',
+      [(es ? 'Hola ' : 'Hi ') + esc(q.name) + ',', (es ? 'Usted pidió <b>' : 'You asked for <b>') + esc(prWhat(q, es)) + '</b> ' + (es ? 'en ' : 'on ') + '<b>' + esc(job.title) + '</b>.', esc(text).replace(/\n/g, '<br>')],
+      { href: PORTAL_ORIGIN + '/', label: es ? 'Abrir el sitio de licitaciones' : 'Open the bid site' }))) ? 'sent' : 'off'; } catch (e) { mail = 'off'; } }
+    row.data.replyMail = mail; await upsertRows([row], by);
+    return { ok: true, request: row.data, mail: mail };
+  }
+  if (act === 'sent') {
+    const row = (await planReqClose([r], 'sent', by, { sentNote: text, sentAt: new Date().toISOString(), sentBy: by, sentByName: byName }))[0];
+    await upsertRows([prNotice(q, job, (es ? 'GrayCo le envió lo que pidió (' : 'GrayCo sent what you asked for (') + prWhat(q, es) + ')' + (text ? ': ' + text : '.'))], by);
+    return { ok: true, request: row.data };
+  }
+  throw Fail(400, 'Reply or Mark sent?');
+}
+async function planReqsFor(jobId){ return (await listRows([eq('collection', 'planreqs'), eq('job_id', s(jobId))])).map(function(r){ return r.data || {}; }).sort(function(a, b){ return s(b.at).localeCompare(s(a.at)); }); }
+/* plans (a file or a link) are on the job: every sub who asked since hears — on the bid site at once, by e-mail when not paused */
 async function notifyPlanRequests(jobId){
-  const reqs = (await listRows([eq('collection', 'planreqs'), eq('job_id', jobId)])).filter(function(r){ return !s(r.data.notifiedAt); });
-  if (!reqs.length) return 0;
-  if (!(await plansOf(jobId)).length) return 0;
-  const job = await getRow('jobs', jobId); const title = job ? s(job.data.title) : 'a GrayCo job';
+  const all = await listRows([eq('collection', 'planreqs'), eq('job_id', jobId)]);
+  if (!all.length) return 0;
+  const jr = await getRow('jobs', jobId), jd = jr ? jr.data : {};
+  const count = plansCount(jd, await plansOf(jobId));
+  if (!count) return 0;
+  const title = s(jd.title) || 'a GrayCo job';
+  const fresh = all.filter(function(r){ return prOpen(r.data) && count > (Number(r.data.plansAtAsk) || 0); });
+  if (fresh.length) {
+    const closed = await planReqClose(fresh, 'plans', 'plans posted', { plansPostedAt: new Date().toISOString() });
+    await upsertRows(fresh.map(function(r){ const es = r.data.lang === 'es'; return prNotice(r.data, jd, es ? 'Los planos ya están publicados para ' + title + '. Abra el trabajo para verlos.' : 'Plans are now posted for ' + title + '. Open the job to see them.'); }), 'plans posted');
+    closed.forEach(function(c){ const i = all.findIndex(function(r){ return r.id === c.id; }); if (i > -1) all[i] = Object.assign({}, all[i], { data: c.data }); });
+  }
+  const due = all.filter(function(r){ return s(r.data.closedHow) === 'plans' && !s(r.data.notifiedAt); });
+  if (!due.length) return 0;
+  if (await mailPaused()) {   /* ⏸ data-entry mode: the e-mail to a sub waits; a later look sends it */
+    const mark = due.filter(function(r){ return !r.data.mailHeld; }).map(function(r){ return { collection: 'planreqs', id: r.id, job_id: r.job_id, user_id: r.user_id, email: r.email, data: Object.assign({}, r.data, { mailHeld: true }) }; });
+    if (mark.length) await upsertRows(mark, 'plans posted');
+    return 0;
+  }
   let n = 0;
-  for (const r of reqs) {
+  for (const r of due) {
     const q = r.data, es = q.lang === 'es', link = PORTAL_ORIGIN + '/';
-    const ok = await sendMail(q.email, (es ? 'Los planos están listos — ' : 'Plans are ready for ') + title,
-      mailHtml(es ? 'Los planos están listos' : 'Plans are ready',
-        es ? ['Hola ' + esc(q.name || '') + ',', 'Los planos de <b>' + esc(title) + '</b> ya están en el sitio de licitaciones de GrayCo.', 'Entre en ' + esc(link.replace(/^https:\/\//, '').replace(/\/$/, '')) + ' para verlos y enviar su oferta (o envíe su oferta por correo a bids@grayco-cs.com).']
-           : ['Hi ' + esc(q.name || '') + ',', 'The plans for <b>' + esc(title) + '</b> are now on the GrayCo bid site.', 'Sign in at ' + esc(link.replace(/^https:\/\//, '').replace(/\/$/, '')) + ' to see them and send your bid (or e-mail your bid to bids@grayco-cs.com).'],
+    const ok = await sendMail(q.email, (es ? 'Los planos están publicados — ' : 'Plans are now posted for ') + title,
+      mailHtml(es ? 'Los planos están publicados' : 'Plans are now posted',
+        es ? ['Hola ' + esc(q.name || '') + ',', 'Los planos de <b>' + esc(title) + '</b> ya están en el sitio de licitaciones de GrayCo.', 'Entre en ' + esc(link.replace(/^https:\/\//, '').replace(/\/$/, '')) + ' (o en su Portal GrayCo → 📋 Trabajos para licitar) para verlos y enviar su oferta.']
+           : ['Hi ' + esc(q.name || '') + ',', 'The plans for <b>' + esc(title) + '</b> are now posted on the GrayCo bid site.', 'Sign in at ' + esc(link.replace(/^https:\/\//, '').replace(/\/$/, '')) + ' (or your GrayCo Portal → 📋 Jobs to bid) to see them and send your bid.'],
         { href: link, label: es ? 'Ver los planos' : 'See the plans' })).catch(function(){ return false; });
-    if (ok) { await upsertRows([{ collection: 'planreqs', id: r.id, job_id: jobId, user_id: r.user_id, email: r.email, data: Object.assign({}, q, { notifiedAt: new Date().toISOString() }) }], 'plans-ready'); n++; }
+    if (ok) { await upsertRows([{ collection: 'planreqs', id: r.id, job_id: jobId, user_id: r.user_id, email: r.email, data: Object.assign({}, q, { notifiedAt: new Date().toISOString(), mailHeld: false }) }], 'plans-ready'); n++; }
   }
   return n;
 }
 /* plans that arrived some other way (the Lead Inbox, the bid site's own Save): a quick look on every load */
 async function sweepPlanRequests(){
   try {
-    const open = (await listRows([eq('collection', 'planreqs')])).filter(function(r){ return !s(r.data.notifiedAt); });
+    const open = (await listRows([eq('collection', 'planreqs')])).filter(function(r){ return prOpen(r.data) || (s(r.data.closedHow) === 'plans' && !s(r.data.notifiedAt)); });   /* patch PLANREQ */
     const jobs = Array.from(new Set(open.map(function(r){ return r.job_id; })));
     for (const j of jobs.slice(0, 20)) await notifyPlanRequests(j);
   } catch (e) { console.warn('[subportal] plans sweep', e.message); }
 }
 
 async function notify(n){
+  if (n.kind === 'plans-added') return notifyPlanRequests(n.jobId);   /* patch PLANREQ */
+  if (n.kind === 'due-changed') {   /* patch PLANREQ-D: 🗂 Activity + the automatic "Bid due date changed" update (bid-hub.js, the same as 📂 Manage) */
+    const r = await getRow('jobs', n.jobId); if (!r) return;
+    const job = Object.assign({}, r.data);
+    const notice = await require('./bid-hub.js')._test.dueChanged(n.who, job, n.from);
+    if (notice) { job.updatedAt = new Date().toISOString(); await upsertRows([rowFor('jobs', job)], n.who.email); }
+    return notice;
+  }
   if (n.kind === 'registered') {
     const u = n.user;
     return sendMail([process.env.SUBPORTAL_NOTIFY || OFFICE].concat(String(process.env.OWNER_EMAILS || 'wjohnson@grayco-cs.com,nthomas@grayco-cs.com').split(',')), 'New subcontractor sign-up — ' + u.company,
@@ -1391,6 +1620,10 @@ exports.handler = async function (event) {
       return J(200, await plansImport(who, body));
     }
     if (action === 'request-plans') return J(200, await requestPlans(who, body, ctx));
+    if (action === 'plans-guess') {   /* patch PLANREQ-C: the trade / kind of each file before it is saved */
+      if (!who.isAdmin) return J(403, { error: 'GrayCo staff only.' });
+      return J(200, await plansGuess(who, body));
+    }
     if (action === 'my-work') {
       if (who.isAdmin && !body.userId) return J(400, { error: 'Pick a subcontractor.' });
       const target = who.isAdmin ? (await getRow('users', s(body.userId)) || {}).data : who.profile;
@@ -1415,7 +1648,8 @@ exports.handler = async function (event) {
 };
 /* patch SYS: the CRM's 🏗 Bid portal tab (bid-hub.js) works on the same rows with the same helpers — one copy of each */
 exports._papers = { paperToken, paperUser, cleanPaper, signupPapers, signupUpload, PAPER_TYPES };   /* patch SIGNUPPAPERS: tests */
-exports._hub = { kvRead, listRows, eq, inList, getRow, upsertRows, rowFor, crmSubs, crmData, crmSubList, sendMail, mailHtml, esc, okEmail, PORTAL_ORIGIN, saveCollection, isGone, subJobView, plansOf, subScope, signAll, isDraft, papersMissing };   /* patch SYS2: + the Q&A save, the sub view, plans · patch SUBBIDS: + subScope / signAll / isDraft (the sub portal's 📋 Jobs to bid) */
+exports._hub = { kvRead, listRows, eq, inList, getRow, upsertRows, rowFor, crmSubs, crmData, crmSubList, sendMail, mailHtml, esc, okEmail, PORTAL_ORIGIN, saveCollection, isGone, subJobView, plansOf, subScope, signAll, isDraft, papersMissing, plansImport, plansGuess, bidLines,
+  requestPlans, planReqAct, planReqsFor, notifyPlanRequests, subReqView, planReqContacts, prOpen, plansCount };   /* patch PLANREQ */   /* patch SYS2: + the Q&A save, the sub view, plans · patch SUBBIDS: + subScope / signAll / isDraft (the sub portal's 📋 Jobs to bid) */
 /* patch LOGOALL (owner 10/23: "should have our logo on it"): every customer / sub / GC e-mail this file sends
    straight to Resend gets the GrayCo shell (centered logo, office line, licenses). Internal @grayco-cs.com mail is untouched. */
 try { require('./_lib/brand.js').installResend(); } catch (e) {}
