@@ -195731,6 +195731,13 @@ function TRACKS(){ return {
   /* patch CERTROLE (owner 11/12): "also add cleaning certs and contents as options for a content manager we don't have yet" · "contents manager
      will also be the cleaning manager" · "same for techs" — one Contents & Cleaning Tech under one Contents & Cleaning Manager */
   cont_tech: { label: 'Contents & Cleaning Tech — GrayCo Mitigation', co: 'mitigation', unit: 'hr', reqs: contReqs(false) },
+  /* patch CERTROLE (owner 11/12): "environmental cleaning tech will require more certs" — starts at $23/hr (owner confirmed); raises / cap like
+     the Environmental tech */
+  env_clean: { label: 'Environmental Cleaning Tech — GrayCo Environmental', co: 'environmental', unit: 'hr', reqs: [LAW.bbp, LAW.hazcom, LAW.resp,
+    Object.assign({}, LAW.rrp, { why: 'Lead-safe cleaning and cleaning verification on pre-1978 work. ' + LAW.rrp.why }), envMold(), LAW.hazwoper, LAW.hazref,
+    R('trauma', 'Trauma / biohazard clean-up certificate (IICRC BRT or ABRA / equivalent — provider TBD)', M.trauma, 0, 'Owner: required for the Environmental Cleaning Tech (GrayCo requirement — keep on). Bloodborne pathogens (LAW) applies as well.'),
+    Object.assign({}, LAW.asbwork, { name: 'Asbestos abatement worker — when cleaning in asbestos areas' }), LAW.fall,
+    Object.assign(R('osha10', 'OSHA 10 (construction)', M.osha10, 0, 'Recommended — earns its raise'), { rec: true }), Object.assign(iicrc('oct', 'IICRC OCT — Odor Control', 0, 'Recommended — earns its raise'), { rec: true })] },
   cont_mgr: { label: 'Contents & Cleaning Manager — GrayCo Mitigation (future role — no one assigned yet)', co: 'mitigation', unit: 'yr', pm: true, future: true, reqs: contReqs(true) },
   /* patch CERTROLE: construction crew (laborers / carpenters / helpers) — starting rate $18, the field-safety law lines */
   con_crew: { label: 'Crew — GrayCo Construction', co: 'construction', unit: 'hr', reqs: [LAW.rrpojt, LAW.hazcom, LAW.fall, LAW.leadaware, Object.assign(R('osha10', 'OSHA 10 (construction)', M.osha10, 0, 'Recommended — keep on'), { rec: true })] },
@@ -195839,6 +195846,7 @@ function trackOf(u, p){
   var env = /environ|abatement|asbestos/i.test(t) || co === 'environmental', mit = /mitig/i.test(t) || co === 'mitigation';
   if (/general\s*labou?rer|entry[- ]level|\btrainee\b|no experience/i.test(t) && (p || plan()).tracks.gen_lab) return 'gen_lab';   /* patch CERTROLE */
   if (/(contents?|cleaning)\s*(&\s*cleaning\s*)?manager/i.test(t) && (p || plan()).tracks.cont_mgr) return 'cont_mgr';
+  if (/environment\w*\s*cleaning/i.test(t) && (p || plan()).tracks.env_clean) return 'env_clean';
   if (/contents?|cleaning tech|carpet|upholster|pack-?out/i.test(t) && (p || plan()).tracks.cont_tech) return 'cont_tech';
   if (/restoration\s*&?\s*(and\s*)?abatement|\bdual\b/i.test(t) && (p || plan()).tracks.dual_tech) return /foreman|crew lead|supervis|lead\b/i.test(t) ? 'dual_fore' : 'dual_tech';   /* patch CERTROLE */
   if (mit && /manag|director|lead\b/i.test(t)) return 'mit_manager';
@@ -195885,8 +195893,8 @@ function ruleFor(text, p){ var out = null; (p || plan()).raises.some(function(rr
    hold Master Restorer), "highest master level pays once" (setting, on by default), and per-person admin exceptions:
    people[email].exc = { pmNoMaster: {reason,by,at}, cap: {hr|null, none, reason,by,at}, waive: { reqId: {reason,by,at} } } + one-off manual
    raises (done[] with manual: true) — every one logged in excLog[] and shown on the card "Exception by <admin> on <date>: <reason>". */
-var DEF_START = { cont_tech: 18, gen_lab: 15, con_crew: 18, con_foreman: 18, mit_tech: 18, mit_foreman: 18, env_tech: 23, dual_tech: 23, dual_fore: 23 };
-var DEF_CAP = { cont_tech: 8, con_crew: 8, mit_tech: 8, con_foreman: 12, mit_foreman: 12, env_tech: 10, dual_tech: 12, dual_fore: 15 };
+var DEF_START = { env_clean: 23, cont_tech: 18, gen_lab: 15, con_crew: 18, con_foreman: 18, mit_tech: 18, mit_foreman: 18, env_tech: 23, dual_tech: 23, dual_fore: 23 };
+var DEF_CAP = { env_clean: 10, cont_tech: 8, con_crew: 8, mit_tech: 8, con_foreman: 12, mit_foreman: 12, env_tech: 10, dual_tech: 12, dual_fore: 15 };
 /* the cross-training bonus (dual tracks): once, when they hold WRT + AMRT + lead worker + asbestos worker + HAZWOPER 40 — inside the cap */
 var XTRAIN = [['wrt', 'WRT'], ['amrt', 'AMRT'], ['leadwork', 'lead worker'], ['asbwork', 'asbestos worker'], ['hazwoper', 'HAZWOPER 40']];
 function isDual(tk){ return /^dual_/.test(s(tk)); }
@@ -196091,7 +196099,7 @@ function raiseBox(u, p, held){
 }
 /* patch CERTROLE: the person's CRM training plan — 📘 current job (paid, 1 day a week) and 🎯 next role (optional, after hours, unpaid) */
 var TRK = { con_pm: ['pm'], con_roof_pm: ['pm'], con_ins_pm: ['pm', 'insurance'], est_com: ['estimator'], con_foreman: ['super'], con_crew: ['super'], mit_manager: ['insurance'], mit_foreman: ['insurance'], mit_tech: ['insurance'],
-  env_pm: ['enviro'], env_tech: ['enviro'], dual_tech: ['insurance', 'enviro'], dual_fore: ['insurance', 'enviro'], gen_lab: ['laborer'], office: ['office'], cont_tech: ['insurance'], cont_mgr: ['insurance'] };
+  env_pm: ['enviro'], env_tech: ['enviro'], dual_tech: ['insurance', 'enviro'], dual_fore: ['insurance', 'enviro'], gen_lab: ['laborer'], office: ['office'], cont_tech: ['insurance'], cont_mgr: ['insurance'], env_clean: ['enviro'] };
 var NEXT = { cont_tech: ['cont_mgr'], mit_tech: ['mit_foreman'], mit_foreman: ['mit_manager'], con_crew: ['con_foreman'], con_foreman: ['con_pm'], env_tech: ['env_pm'], dual_tech: ['dual_fore'], dual_fore: ['mit_manager', 'env_pm'] };
 function modsFor(rks){ var out = [], seen = {}; arr(rks).forEach(function(rk){ var l = []; try { l = W._gcTrain && W._gcTrain.required ? arr(W._gcTrain.required(rk)) : []; } catch (e) {} l.forEach(function(m){ if (m && !seen[m.id]) { seen[m.id] = 1; out.push(m); } }); }); return out; }
 function trainPlan(u, p){
@@ -198482,6 +198490,7 @@ function holderIs(k){ try { var h = W._gcLeadRoles && W._gcLeadRoles.holder ? W.
 function rk(){
   var r = role();
   if (/restoration\s*&?\s*(and\s*)?abatement|\bdual\b/i.test(r)) return 'dual';   /* patch CERTROLE: cross-trained — the Mitigation and the Environmental field tools */
+  if (/contents?\s*&?\s*(and\s*)?cleaning|cleaning\s*tech|final\s*clean/i.test(r) || /environment\w*\s*cleaning/i.test(r)) return 'clean';   /* patch CERTROLE: Contents & Cleaning / Environmental Cleaning techs — final cleans */
   if (/environment|abatement|hazmat|asbestos/i.test(r)) return 'env';   /* patch MITWS: environmental / abatement roles */
   if (/mitigation/i.test(r)) return 'mit';   /* patch MITWS: a mitigation tech / crew is a mitigation person first */
   if (/superintendent|crew|foreman|laborer/i.test(r)) return 'super';
@@ -198532,6 +198541,7 @@ function mine(p){
   if (k === 'mit') return [p.mitTech, p.tech, p.superintendent, p.pm].some(function(x){ return low(x) === n; });
   if (k === 'env') return [p.envTech, p.abatementSupervisor, p.tech, p.superintendent, p.pm].some(function(x){ return low(x) === n; });   /* patch MITWS */
   if (k === 'dual') return [p.mitTech, p.envTech, p.abatementSupervisor, p.tech, p.superintendent, p.pm].some(function(x){ return low(x) === n; });   /* patch CERTROLE */
+  if (k === 'clean') { try { if (W._gcMitWS && W._gcMitWS.fieldJobs) return W._gcMitWS.fieldJobs('clean').some(function(x){ return x && x.id === p.id; }); } catch (e) {} return [p.cleanTech, p.finalCleanBy].some(function(x){ return low(x) === n; }); }
   return [p.pm, p.apm, p.assistantPm].some(function(x){ return low(x) === n; });
 }
 function schedToday(p){
@@ -198544,7 +198554,7 @@ function schedToday(p){
 }
 function myJobs(){
   var k = rk(), all = arr(C().projects).filter(active);
-  if (k === 'pm' || k === 'roof' || k === 'super' || k === 'est' || k === 'mit' || k === 'ins' || k === 'env' || k === 'dual') {
+  if (k === 'pm' || k === 'roof' || k === 'super' || k === 'est' || k === 'mit' || k === 'ins' || k === 'env' || k === 'dual' || k === 'clean') {
     var m = all.filter(mine), t = m.filter(function(p){ return schedToday(p).length > 0; });
     return { today: t.length > 0, company: false, list: t.length ? t : m };
   }
@@ -198761,6 +198771,7 @@ var ROLE_TOOLS = {
   mit:    ['nav', 'info', 'call', 'photos', 'readings', 'sign', 'safety', 'problem', 'mat', 'measure', 'receipt', 'voice'],
   env:    ['nav', 'info', 'call', 'photos', 'safety', 'problem', 'mat', 'measure', 'receipt', 'voice'],   /* patch MITWS: + its own tools (registered by patch MITWS) */
   dual:   ['nav', 'info', 'call', 'photos', 'readings', 'sign', 'safety', 'problem', 'mat', 'measure', 'receipt', 'voice'],   /* patch CERTROLE: mitigation's + environmental's (registered) */
+  clean:  ['nav', 'info', 'call', 'photos', 'safety', 'problem', 'receipt', 'voice'],   /* patch CERTROLE: + 🧽 Final clean / ☣️ Hazard clean (registered) */
   ins:    ['nav', 'info', 'call', 'photos', 'xact', 'sign', 'measure', 'est', 'problem', 'receipt', 'voice'],
   office: ['nav', 'info', 'call', 'photos', 'msgs', 'receipt', 'problem', 'voice'],
   mkt:    ['nav', 'info', 'photos', 'msgs'],
@@ -198774,6 +198785,7 @@ var LAYOUT = {
   mit:    { tiles: ['readings', 'oncall', 'photos', 'addjob'], sections: ['dry', 'jobs', 'approvals'] },
   env:    { tiles: ['photos', 'safety', 'addjob'], sections: ['jobs', 'approvals'] },   /* patch MITWS */
   dual:   { tiles: ['readings', 'oncall', 'photos', 'safety', 'addjob'], sections: ['dry', 'jobs', 'approvals'] },   /* patch CERTROLE */
+  clean:  { tiles: ['photos', 'safety'], sections: ['jobs', 'approvals'] },
   ins:    { tiles: ['xact', 'photos', 'addjob'], sections: ['claims', 'approvals', 'jobs'] },
   office: { tiles: ['receipt', 'msgs', 'todo', 'photos'], sections: ['approvals', 'todos', 'jobs'] },
   mkt:    { tiles: ['marketing', 'photos', 'msgs', 'todo'], sections: ['approvals', 'todos'] },
@@ -207481,8 +207493,8 @@ function gateUp(){ var g = D.getElementById('gc-auth-email'); return !!(g && g.g
 /* ready: signed in, the person known (the app's own user and the team list), the sign-in screen gone */
 function ready(){ return signedIn() && !gateUp() && !!F() && (realAdmin() || (!!W._gcMeNow && arr(C().users).length > 0)); }
 function rk(){ try { return s(F().state().rk); } catch (e) { return ''; } }
-var APPOF = { admin: 'admin', pm: 'pm', roof: 'pm', est: 'est', ins: 'ins', mit: 'mit', super: 'crew', office: 'office', env: 'env', dual: 'dual' };   /* patch CERTROLE: dual */   /* patch MITWS: mitigation / environmental have their own app */
-var APPNAME = { admin: 'Admin', pm: 'Project Manager', est: 'Estimator', ins: 'Insurance & Mitigation', crew: 'Crew', office: 'Office', mit: 'Mitigation', env: 'Environmental', dual: 'Mitigation + Environmental' };
+var APPOF = { admin: 'admin', pm: 'pm', roof: 'pm', est: 'est', ins: 'ins', mit: 'mit', super: 'crew', office: 'office', env: 'env', dual: 'dual', clean: 'clean' };   /* patch CERTROLE: dual, clean */   /* patch MITWS: mitigation / environmental have their own app */
+var APPNAME = { admin: 'Admin', pm: 'Project Manager', est: 'Estimator', ins: 'Insurance & Mitigation', crew: 'Crew', office: 'Office', mit: 'Mitigation', env: 'Environmental', dual: 'Mitigation + Environmental', clean: 'Contents & Cleaning' };
 function app(){ if (off() || !ready()) return ''; return APPOF[rk()] || ''; }
 function mode(a){ a = a === undefined ? app() : a; if (!a) return ''; if (a === 'crew') return 'field'; try { var vp = W._gcView ? W._gcView.pref() : ''; if (vp) return vp; } catch (e) {} /* patch FIELDDESK */ return phone() ? 'field' : 'desk'; }
 function myName(){ try { return s(F().state().me); } catch (e) { return ''; } }
@@ -207497,7 +207509,7 @@ function proj(pid){ var x = arr(C().projects).filter(function(p){ return p && s(
 /* the role's jobs: PM / crew — GrayCo Field's own list (today's, else their active ones); everyone else — every job they may open */
 function jobsOf(a){
   var J = null; try { J = F() && F().jobs ? F().jobs() : null; } catch (e) {}
-  if ((a === 'mit' || a === 'env' || a === 'dual') && W._gcMitWS && W._gcMitWS.fieldJobs) { try { return { today: false, list: fpSort(arr(W._gcMitWS.fieldJobs(a))) }; } catch (e) { warn(e); } }   /* patch MITWS: that company's jobs */
+  if ((a === 'mit' || a === 'env' || a === 'dual' || a === 'clean') && W._gcMitWS && W._gcMitWS.fieldJobs) { try { return { today: false, list: fpSort(arr(W._gcMitWS.fieldJobs(a))) }; } catch (e) { warn(e); } }   /* patch MITWS: that company's jobs */
   if ((a === 'pm' || a === 'crew') && J) return { today: !!J.today, list: fpSort(coJobs(arr(J.list))) };
   return { today: false, list: fpSort(coJobs(allMine().filter(activeJob))) };
 }
@@ -207603,7 +207615,8 @@ var HOME = {
   mit:    ['mws_read', 'mws_photos', 'mws_equip', 'mws_log', 'mws_auth', 'mws_note', 'clock', 'mws_emerg'],
   env:    ['ews_air', 'ews_contain', 'ews_ppe', 'ews_waste', 'ews_photos', 'clock', 'ews_note'],
   /* patch CERTROLE: a cross-trained tech — Mitigation's buttons first, then Environmental's */
-  dual:   ['mws_read', 'mws_photos', 'mws_equip', 'mws_log', 'mws_auth', 'mws_note', 'clock', 'mws_emerg', 'ews_air', 'ews_contain', 'ews_ppe', 'ews_waste']
+  dual:   ['mws_read', 'mws_photos', 'mws_equip', 'mws_log', 'mws_auth', 'mws_note', 'clock', 'mws_emerg', 'ews_air', 'ews_contain', 'ews_ppe', 'ews_waste'],
+  clean:  ['fclean', 'hzclean', 'mws_photos', 'clock', 'mws_note']   /* patch CERTROLE: 🧽 Final clean first (☣️ Hazard clean for the Environmental Cleaning Tech) */
 };
 var MORE = {
   admin:  ['maint', 'search', 'photos', 'msgs', 'receipt', 'oncall', 'claims', 'match', 'todo'],
@@ -207614,7 +207627,8 @@ var MORE = {
   office: ['maint', 'photos', 'receipt', 'leads', 'search'],
   mit:    ['mws_calc', 'mws_sds', 'oncall', 'emerg', 'msgs', 'appr', 'addjob', 'receipt', 'todo', 'search'],   /* patch MITWS */
   env:    ['ews_survey', 'ews_notice', 'ews_sds', 'msgs', 'appr', 'addjob', 'receipt', 'todo', 'search'],
-  dual:   ['mws_calc', 'mws_sds', 'ews_survey', 'ews_notice', 'oncall', 'emerg', 'msgs', 'appr', 'addjob', 'receipt', 'todo', 'search']
+  dual:   ['mws_calc', 'mws_sds', 'ews_survey', 'ews_notice', 'oncall', 'emerg', 'msgs', 'appr', 'addjob', 'receipt', 'todo', 'search'],
+  clean:  ['mws_sds', 'msgs', 'receipt', 'todo', 'search']
 };
 /* the bottom bar: [key, icon, label]; Field keys home / jobs / appr / photos / msgs / more are GrayCo Field's own */
 var BAR = {
@@ -207626,13 +207640,14 @@ var BAR = {
   office: [['home', '▣', 'Home'], ['appr', '✅', 'Approvals'], ['msgs', '💬', 'Messages'], ['more', '☰', 'More']],
   mit:    [['home', '▣', 'Home'], ['ra-claims', '💧', 'Drying'], ['jobs', '◫', 'Jobs'], ['photos', '📸', 'Photos'], ['more', '☰', 'More']],   /* patch MITWS */
   env:    [['home', '▣', 'Home'], ['jobs', '◫', 'Jobs'], ['appr', '✅', 'Approvals'], ['photos', '📸', 'Photos'], ['more', '☰', 'More']],
-  dual:   [['home', '▣', 'Home'], ['ra-claims', '💧', 'Drying'], ['jobs', '◫', 'Jobs'], ['photos', '📸', 'Photos'], ['more', '☰', 'More']]
+  dual:   [['home', '▣', 'Home'], ['ra-claims', '💧', 'Drying'], ['jobs', '◫', 'Jobs'], ['photos', '📸', 'Photos'], ['more', '☰', 'More']],
+  clean:  [['home', '▣', 'Home'], ['jobs', '◫', 'Jobs'], ['photos', '📸', 'Photos'], ['more', '☰', 'More']]
 };
 /* GrayCo Field's home sections, in the role's order (the Field's own sections; the quick buttons replace its tiles) */
 var FIELD_SECTIONS = {
   admin: ['approvals', 'scorecard'], pm: ['jobs', 'approvals', 'estimates', 'commission'], roof: ['jobs', 'bids', 'approvals', 'estimates', 'commission'],
   est: ['bids', 'jobs', 'approvals'], ins: ['claims', 'dry', 'jobs', 'approvals'], mit: ['dry', 'claims', 'jobs', 'approvals'],
-  super: ['jobs', 'approvals'], office: ['approvals', 'todos', 'jobs'], env: ['jobs', 'approvals'], dual: ['dry', 'jobs', 'approvals']   /* patch MITWS · CERTROLE */
+  super: ['jobs', 'approvals'], office: ['approvals', 'todos', 'jobs'], env: ['jobs', 'approvals'], dual: ['dry', 'jobs', 'approvals'], clean: ['jobs', 'approvals']   /* patch MITWS · CERTROLE */
 };
 function shown(id){ var x = A[id]; if (!x) return false; if (x.view && !viewOk(x.view)) return false; try { return typeof x.show !== 'function' || !!x.show(); } catch (e) { return false; } }
 function label(id){ var x = A[id]; return typeof x.l === 'function' ? x.l() : x.l; }
@@ -219520,7 +219535,8 @@ var FK = 'gc_co_filter';
    unless their record names ONE company — and anyone whose companies list 2+. Everyone else is locked to their own company. */
 var ALLCO = ['construction', 'mitigation', 'environmental'];
 function allCos(u){ return !!u && (low(u.payType) === 'owner' || /^(wesley johnson|nick thomas)$/i.test(s(u.name).trim()) || /^(wjohnson|nthomas)@grayco-cs\.com$/i.test(s(u.email).trim())); }
-function ownList(u){ var l = u ? arr(u.companies).filter(valid) : []; if (!l.length && u && dualRole(u)) l = ['mitigation', 'environmental']; return l; }   /* patch CERTROLE: a cross-trained role is in both */
+function ownList(u){ var l = u ? arr(u.companies).filter(valid) : []; if (!l.length && u && dualRole(u)) l = ['mitigation', 'environmental']; if (!l.length && u && cleanRole(u)) l = cleanRole(u); return l; }   /* patch CERTROLE: a cross-trained role is in both; cleaning techs do final cleans for several companies */
+function cleanRole(u){ var r = s(u.role) + ' ' + s(u.title); if (/^admin$/i.test(s(u.role))) return null; if (/environment\w*\s*cleaning/i.test(r)) return ['environmental', 'mitigation', 'construction']; return /contents?\s*&?\s*(and\s*)?cleaning|cleaning\s*tech|final\s*clean/i.test(r) ? ['mitigation', 'construction'] : null; }
 function dualRole(u){ return !!u && /restoration\s*&?\s*(and\s*)?abatement|\bdual\b/i.test(s(u.role) + ' ' + s(u.title)) && !/^admin$/i.test(s(u.role)); }
 function userCos(u){ var l = ownList(u); if (l.length) return ALLCO.filter(function(c){ return l.indexOf(c) > -1; }); return allCos(u) ? ALLCO.slice() : ['construction']; }
 function userIn(u, co){ return userCos(u).indexOf(co) > -1; }
@@ -225540,7 +225556,7 @@ function kindOf(r){
   if (/mitigation|water\s*(tech|restoration)|drying\s*tech|restoration\s*tech/i.test(r)) return tech ? 'mittech' : 'mitpm';
   return '';
 }
-function myKind(){ if (adminNow() || officeFull()) return ''; return kindOf(roleNow()); }
+function myKind(){ if (adminNow() || officeFull()) return ''; return kindOf(roleNow()); }   /* a cleaning tech is no Mitigation / Environmental "person": their companies come from _gcCo (patch CERTROLE) */
 function coF(){ try { return W._gcCo ? W._gcCo.filter() : 'all'; } catch (e) { return 'all'; } }
 function isDualK(k){ return /^dual/.test(s(k)); }
 function dualCo(){ var f = 'all'; try { f = W._gcCo && W._gcCo.filter.__raw ? W._gcCo.filter.__raw() : coF(); } catch (e) {} return f === 'environmental' ? 'environmental' : 'mitigation'; }   /* their pick between the two; Mitigation first */
@@ -225719,7 +225735,14 @@ function envJobs(all){
   projects().forEach(function(p){ if (seen[p.id] || !inWs(p, null, 'environmental') || (!all && !activeJob(p))) return; var h = {}; try { h = H ? H(p) : {}; } catch (e) {} out.push({ p: p, k: Object.keys(h).filter(function(k){ return h[k]; }) }); });
   return out;
 }
+function cleanJobs(){
+  var n = low(myName()); if (!n) return [];
+  var sch = []; try { sch = arr(W._gcSchedVisible ? W._gcSchedVisible(crm().schedule) : crm().schedule); } catch (e) {}
+  var byS = {}; sch.forEach(function(x){ if (!x || x.deleted || !/final\s*clean/i.test(s(x.title) + ' ' + s(x.task) + ' ' + s(x.type))) return; var who = [x.who, x.assignee, x.crew, x.people].map(function(v){ return Array.isArray(v) ? v.join(' ') : s(v); }).join(' ').toLowerCase(); if (who.indexOf(n) >= 0) byS[s(x.pid || x.projectId || x.jobId)] = 1; });
+  return projects().filter(function(p){ return activeJob(p) && (low(p.cleanTech) === n || low(p.finalCleanBy) === n || byS[s(p.id)]); });
+}
 function fieldJobs(a){
+  if (a === 'clean') return cleanJobs();   /* patch CERTROLE: the cleaning tech's final cleans */
   if (a === 'dual') { var seen0 = {}; return fieldJobs('mit').concat(fieldJobs('env')).filter(function(p){ if (!p || seen0[p.id]) return false; seen0[p.id] = 1; return true; }); }   /* patch CERTROLE */
   var n = low(myName()), mine = function(p){ return [p.pm, p.mitTech, p.envTech, p.tech, p.superintendent, p.abatementSupervisor].some(function(x){ return low(x) === n && !!n; }); };
   var l = (a === 'env' ? envJobs().map(function(x){ return x.p; }) : mitJobs().map(function(x){ return x.p; })).filter(Boolean), ids = {};
@@ -225780,6 +225803,11 @@ var ENVK = {
     ['fit', 'Fit test date', 'date'], ['med', 'Medical clearance on file?', 'sel', ['', 'Yes', 'No']], ['suit', 'Suit / gloves / boot covers', 'sel', ['', 'Yes', 'No']], ['note', 'Notes', 'text']] },
   waste: { t: '🛢 Waste', tab: 'ews_waste', f: [['date', 'Date', 'date'], ['wtype', 'Waste', 'sel', ['Asbestos (ACM) — friable', 'Asbestos (ACM) — non-friable', 'Lead — TCLP tested', 'Lead — paint debris', 'Mold debris', 'Biohazard', 'Cat 3 water debris']],
     ['cont', 'Containers', 'text', 'e.g. 12 bags · 2 drums'], ['manifest', 'Manifest / waste shipment record #', 'text'], ['hauler', 'Hauler', 'text'], ['landfill', 'Landfill / facility', 'text'], ['ret', 'Signed copy back from the landfill?', 'sel', ['', 'Yes', 'Not yet']]] },
+  /* patch CERTROLE: cleaning techs' final cleans (Mitigation / Construction jobs) and the Environmental Cleaning Tech's hazard clean */
+  fclean: { t: '🧽 Final clean', tab: 'ews_jobs', chk: [['hepa', 'HEPA vacuum (floors, ledges, vents)'], ['wipe', 'Wipe surfaces (counters, trim, doors, fixtures)'], ['floors', 'Floors cleaned / mopped'], ['debris', 'Debris and plastic removed'], ['odor', 'Odor check — no odor left'], ['photos', 'After photos taken']],
+    f: [['date', 'Date', 'date'], ['area', 'Areas cleaned', 'text'], ['note', 'Notes', 'text']] },
+  hzclean: { t: '☣️ Hazard clean', tab: 'ews_jobs', chk: [['ppe', 'PPE on (respirator, suit, gloves)'], ['contain', 'Containment checked (barriers, negative air)'], ['hepa', 'HEPA vacuum and wet wipe'], ['waste', 'Waste bagged and labeled'], ['clear', 'Clearance photos taken']],
+    f: [['date', 'Date', 'date'], ['hazard', 'Hazard', 'sel', ['Lead', 'Asbestos', 'Mold', 'Biohazard / trauma', 'Sewage (Cat 3)', 'Other']], ['area', 'Area', 'text'], ['note', 'Notes', 'text']] },
   notice: { t: '📨 Notice', tab: 'ews_notice', f: [['date', 'Sent', 'date'], ['agency', 'Agency', 'sel', ['TDEC (Tennessee)', 'MDEQ (Mississippi)', 'ADEQ (Arkansas)', 'EPA region 4', 'City / county']],
     ['ntype', 'Notice', 'sel', ['Asbestos — 10 working days before', 'Demolition — 10 working days before', 'Lead abatement — before work', 'Revised start date', 'Emergency notice']], ['start', 'Work starts', 'date'], ['conf', 'Confirmation #', 'text']] }
 };
@@ -226098,6 +226126,8 @@ function fieldActions(){
     mws_auth: { ic: '✍️', l: 'Work authorization / signature', job: true, run: J(signOnDevice) },
     mws_note: { ic: '🗒', l: 'Notes', job: true, run: J(noteFor) },
     mws_emerg: { ic: '🚨', l: 'Emergency checklist', job: true, run: J(emergSheet) },
+    fclean: { ic: '🧽', l: 'Final clean', job: true, run: J(function(p){ envSheet(p, 'fclean'); }) },   /* patch CERTROLE */
+    hzclean: { ic: '☣️', l: 'Hazard clean', job: true, show: function(){ return /environment\w*\s*cleaning/i.test(roleNow()); }, run: J(function(p){ envSheet(p, 'hzclean'); }) },
     mws_calc: { ic: '🧮', l: 'Drying calculator', run: function(){ if (W.innerWidth <= 600) { sheet('🧮 Drying calculator', calcHtml()); var o = D.getElementById('gc-mws-sheet'); if (o) calcPaint(o.querySelector('.gcmws')); } else go('mws_calc'); } },
     mws_sds: { ic: '🧪', l: 'Materials & SDS', run: function(){ go('sds'); } },
     ews_air: { ic: '🌫', l: 'Air monitoring', job: true, run: J(function(p){ envSheet(p, 'air'); }) },
@@ -226121,6 +226151,8 @@ function regField(){
     T.register({ id: 'ews_contain', icon: '🚧', label: 'Containment', roles: ['env', 'dual'], needsSigned: false, order: 51, run: function(p){ envSheet(p, 'contain'); } });
     T.register({ id: 'ews_ppe', icon: '😷', label: 'PPE / respirator', roles: ['env', 'dual'], needsSigned: false, order: 52, run: function(p){ envSheet(p, 'ppe'); } });
     T.register({ id: 'ews_waste', icon: '🛢', label: 'Waste log', roles: ['env', 'dual'], needsSigned: false, order: 53, run: function(p){ envSheet(p, 'waste'); } });
+    T.register({ id: 'fclean', icon: '🧽', label: 'Final clean', roles: ['clean'], needsSigned: false, order: 30, run: function(p){ envSheet(p, 'fclean'); } });   /* patch CERTROLE */
+    T.register({ id: 'hzclean', icon: '☣️', label: 'Hazard clean', roles: ['clean'], needsSigned: false, order: 31, show: function(){ return /environment\w*\s*cleaning/i.test(roleNow()); }, run: function(p){ envSheet(p, 'hzclean'); } });
   } catch (e) { warn(e); }
 }
 /* the role app's desk cards (patch ROLEAPPS' _gcRaCards hook) */
