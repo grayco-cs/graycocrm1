@@ -140,7 +140,7 @@ const T = {
     prSent: 'Request sent — the job\'s PM / estimator will get back to you.', prOpen: 'Request sent {d}', prWaiting: 'GrayCo\'s PM / estimator has it — you will hear back here and by e-mail.', prPosted: 'Plans are now posted — see them below.',
     prAnswered: 'GrayCo answered', prSentNote: 'GrayCo sent what you asked for', prAgain: '📩 Ask for something else', prAdminTitle: '📩 Plan / info requests', prAdminNone: 'No requests yet.', prAdminOpen: 'open', prAdminClosed: 'closed', prAdminHow: 'Answer them in the CRM: 🏗 Bid portal → 📂 Manage → 💬 Q&A. Adding plans or a plan link here closes them and tells each sub.',
     plansAsked: 'Request sent — we will e-mail you when the plans are ready.', plansAskedNote: 'Plans requested — we will e-mail you as soon as they are here.', plansReadyNote: 'The plans are ready (we e-mailed you).',
-    plansRequestedBy: 'Plans requested by {n} sub(s)', plansAllTold: 'all told', uploadPlansZip: 'Upload plans (ZIP/PDF)', plansUploading: 'Uploading…', plansZipHint: 'A ZIP is unpacked into its drawings (folders become categories). PDF, pictures and DWG only, up to 50 MB a file.',
+    plansRequestedBy: 'Plans requested by {n} sub(s)', plansAllTold: 'all told', uploadPlansZip: 'Upload plans, specs or scopes', plansUploading: 'Uploading…', plansZipHint: 'Any file — PDF, Word, Excel, PowerPoint, pictures, DWG, or a ZIP (unpacked; folders become categories) — up to 50 MB each. Each file is sorted by trade: a scope goes on its trade, a sheet like E-101 is linked to Electrical.',
     plansUploaded: '{n} plan file(s) added.', plansTold: '{n} sub(s) e-mailed that the plans are ready.', plansSkipped: 'left out',
     draftBadge: 'Draft', draftHint: 'From the CRM Lead Inbox. Subcontractors cannot see it until you publish it.', publishDraft: 'Publish to bid portal', draftPublished: 'Published — subs can see it now.', draftNeedsDue: 'Add a bid due date first (Edit Job Details).',
     won: 'Won', lost: 'Lost',
@@ -434,7 +434,7 @@ const T = {
     prSent: 'Pedido enviado — el gerente / estimador del trabajo le responderá.', prOpen: 'Pedido enviado {d}', prWaiting: 'El gerente / estimador de GrayCo lo tiene — le responderán aquí y por correo.', prPosted: 'Los planos ya están publicados — véalos abajo.',
     prAnswered: 'GrayCo contestó', prSentNote: 'GrayCo le envió lo que pidió', prAgain: '📩 Pedir otra cosa', prAdminTitle: '📩 Pedidos de planos / información', prAdminNone: 'Aún no hay pedidos.', prAdminOpen: 'abierto', prAdminClosed: 'cerrado', prAdminHow: 'Contéstelos en el CRM: 🏗 Bid portal → 📂 Manage → 💬 Q&A. Subir planos o un enlace aquí los cierra y avisa a cada subcontratista.',
     plansAsked: 'Pedido enviado — le avisaremos por correo cuando estén los planos.', plansAskedNote: 'Planos pedidos — le avisaremos por correo en cuanto estén.', plansReadyNote: 'Los planos ya están (le enviamos un correo).',
-    plansRequestedBy: 'Planos pedidos por {n} subcontratista(s)', plansAllTold: 'todos avisados', uploadPlansZip: 'Subir planos (ZIP/PDF)', plansUploading: 'Subiendo…', plansZipHint: 'Un ZIP se separa en sus planos (las carpetas son categorías). Solo PDF, imágenes y DWG, hasta 50 MB por archivo.',
+    plansRequestedBy: 'Planos pedidos por {n} subcontratista(s)', plansAllTold: 'todos avisados', uploadPlansZip: 'Subir planos, especificaciones o alcances', plansUploading: 'Subiendo…', plansZipHint: 'Cualquier archivo — PDF, Word, Excel, PowerPoint, fotos, DWG o un ZIP (se separa; las carpetas son categorías) — hasta 50 MB cada uno. Cada archivo se ordena por oficio.',
     plansUploaded: '{n} plano(s) agregados.', plansTold: '{n} subcontratista(s) avisados.', plansSkipped: 'no incluidos',
     draftBadge: 'Borrador', draftHint: 'Del buzón de oportunidades del CRM. Los subcontratistas no lo ven hasta que usted lo publique.', publishDraft: 'Publicar en el portal de licitaciones', draftPublished: 'Publicado — los subcontratistas ya lo ven.', draftNeedsDue: 'Primero ponga la fecha límite (Editar trabajo).',
     won: 'Ganado', lost: 'Perdido',
@@ -879,6 +879,7 @@ const fontImport = `
 body, html { margin: 0; padding: 0; font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11'; -webkit-font-smoothing: antialiased; }
 input, textarea, select, button { font-family: inherit; }
 input:focus, textarea:focus, select:focus { outline: 2px solid ${styles.accent}; outline-offset: 1px; border-color: ${styles.accent}; }
+@media (max-width: 760px) { .gc-jobgrid { grid-template-columns: minmax(0, 1fr) !important; } }
 .btn-primary:hover { background: ${styles.accentDk} !important; transform: translateY(-1px); box-shadow: ${styles.shadowMd}; }
 .btn-secondary:hover { background: ${styles.navy2} !important; transform: translateY(-1px); box-shadow: ${styles.shadowMd}; }
 .btn-ghost:hover { background: ${styles.surface} !important; border-color: ${styles.borderDk} !important; }
@@ -2945,7 +2946,7 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
         </Card>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: 24, alignItems: 'start' }}>
+      <div className="gc-jobgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: 24, alignItems: 'start' }}>   {/* patch PLANREQ: one column on a phone (was 668 px wide at 390) */}
         {/* MAIN PANEL */}
         <div>
           <div style={{ marginBottom: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
