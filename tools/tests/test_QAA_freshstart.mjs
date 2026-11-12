@@ -55,7 +55,10 @@ putRow('jobs', 'j_takenoff', { id: 'j_takenoff', title: 'Demo old posted job', s
 const at = new Date(Date.now() - 864e5).toISOString();
 cset('users', [{ id: 'u1', name: 'Wesley Johnson', email: 'wjohnson@grayco-cs.com', role: 'Admin', payType: 'owner', active: true },
   { id: 'u2', name: 'Glenn Demo', email: 'sbiffle@grayco-cs.com', role: 'Estimator', active: true }, { id: 'u3', name: 'Pat Demo', email: 'pat.demo@grayco-cs.com', role: 'Project Manager', phone: '(901) 555-0188', active: true }]);
-cset('leads', OLD.slice(0, 30).map((o, i) => ({ id: 'L' + i, name: 'Demo bid-board lead #' + i, type: 'Commercial', stage: 'New Lead', inboxId: o.li, subPortal: { jobId: o.id, state: o.kind === 'autoprivate' ? 'private' : 'draft', visibility: 'private', at: ago }, createdAt: ago, updatedAt: ago })));
+cset('leads', OLD.slice(0, 30).map((o, i) => ({ id: 'L' + i, name: 'Demo bid-board lead #' + i, type: 'Commercial', stage: 'New Lead', inboxId: o.li, subPortal: { jobId: o.id, state: o.kind === 'autoprivate' ? 'private' : 'draft', visibility: 'private', at: ago }, createdAt: ago, updatedAt: ago }))
+  .concat([{ id: 'LAPT', name: 'Demo Oak Apartments — 12 units', type: 'Commercial', stage: 'New Lead', createdAt: ago, updatedAt: ago,
+    docs: [{ ref: 'sb:crm-files/' + crypto.createHash('sha256').update('lead-a').digest('hex') + '.pdf', name: 'Oak Apartments plans.pdf', type: 'application/pdf', size: 3200000 }],
+    files: [{ ref: 'sb:crm-files/' + crypto.createHash('sha256').update('lead-b').digest('hex') + '.pdf', name: 'Bid invitation.pdf', kind: 'email' }, { ref: 'sb:crm-files/' + crypto.createHash('sha256').update('lead-c').digest('hex') + '.pdf', name: 'Oak specs.pdf', type: 'application/pdf' }] }]));
 const H64 = n => crypto.createHash('sha256').update(n).digest('hex');
 const BIG = 48 * 1024 * 1024, HUGE = 51 * 1024 * 1024;
 STORE.set('crm-files/' + H64('a1') + '.pdf', PDF('A-set', BIG));
@@ -153,6 +156,11 @@ ok('2 the 48 MB PDF and the ZIP are copied to the bid site; the 51 MB one is ref
   && STORE.has('subportal-files/' + plansRow[0].fileRef), { plans: plansRow.map(x => x.name), toastT });
 ok('2 … and the job record lists them for the bid site (job.plans — what the bid site shows a sub)', (pj.plans || []).map(x => x.name).sort().join('|') === 'Zedd Flats — architectural set.pdf|Zedd Flats — structural sheets.zip', pj.plans);
 await sleep(1500);
+/* 📢 from a LEAD that has its plan files stored in the CRM: they are offered too (not the e-mail itself) */
+await A.ev(() => window._gcBidPost.open({ leadId: 'LAPT' })); await wait(A, () => document.querySelector('#gcbp-modal #gcbp-title'));
+const lsh = await A.ev(() => [...document.querySelectorAll('#gcbp-modal [data-bp-file]')].map(x => x.parentNode.textContent.trim() + (x.checked ? ' [x]' : '')));
+ok('2 📢 on a lead: the lead\'s own plan files are offered (ticked) — not the bid e-mail', lsh.length === 2 && lsh.some(t => /Oak Apartments plans\.pdf \[x\]/.test(t)) && lsh.some(t => /Oak specs\.pdf \[x\]/.test(t)), lsh);
+await A.ev(() => window._gcBidPost.close());
 await A.ev(() => window._setView('bidportal')); await sleep(400);
 await A.ev(() => { const b = document.querySelector('#gc-sys-bp-mount [data-sys="bpmode"][data-m="crm"]'); b && b.click(); if (window._gcSys && window._gcSys.bp) window._gcSys.bp.load(true); });
 await wait(A, () => document.querySelectorAll('#gc-sys-bp-mount tr[data-sys-job]').length === 1, null, 20000);

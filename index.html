@@ -223496,6 +223496,9 @@ function filesOf(c){
     var k = ref || link; if (!k || seen[k]) return; seen[k] = 1;
     out.push({ ref: ref, link: link, name: s(d.name || d.label) || (link ? 'Link' : 'File'), type: s(d.type), size: Number(d.size) || 0, category: s(d.cat), pick: /plan|drawing|spec|scope/i.test(s(d.cat) + ' ' + s(d.name)) });
   });
+  /* patch QAA: a lead's own plan files (stored in the CRM: the Lead Inbox's attachments, files dropped on the lead) — offered too (it said "No files on this lead yet") */
+  arr(c.l && c.l.files).concat(arr(c.l && c.l.docs)).forEach(function(f){ var ref = f && s(f.ref); if (!/^sb:crm-files\//.test(ref) || f.kind === 'email' || seen[ref]) return; seen[ref] = 1;
+    out.push({ ref: ref, link: '', name: s(f.name) || 'File', type: s(f.type), size: Number(f.size) || 0, category: 'Plans', pick: true }); });
   arr(c.l && c.l.plansLinks).concat(c.l && s(c.l.plansLink) ? [{ url: c.l.plansLink, label: 'Plans' }] : []).forEach(function(x){ var u = s(x && x.url); if (!/^https?:\/\//.test(u) || seen[u]) return; seen[u] = 1; out.push({ link: u, name: s(x.label || x.board) || 'Plans', pick: true }); });
   return out;
 }
