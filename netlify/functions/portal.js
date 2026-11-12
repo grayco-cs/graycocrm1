@@ -121,7 +121,7 @@ const STAGES = ['Lead', 'Contacted', 'Appointment booked', 'Estimate sent', 'Con
 const REVIEW_URL = 'https://share.google/quDuhdlL0ckxPLLY3';
 const FACEBOOK_URL = 'https://www.facebook.com/p/GrayCo-Construction-Services-LLC-100092932745320/';
 const KV_KEYS = ['projects', 'invs', 'invoices', 'cos', 'changeOrders', 'estimates', 'projectDocs', 'users',
-                 'customers', 'leads', 'punch', 'projectPayments', 'gc_deleted_projects', 'gc_claims', 'jobAutoDefaults',
+                 'customers', 'leads', 'punch', 'projectPayments', 'gc_deleted_projects', 'gc_claims', 'jobAutoDefaults', 'gc_companies',   /* patch COTRAIN: each company's marketing switch */
                  'gc_portal_auto_posts',   /* patch AUTAI: approved weekly updates / voice posts */
                  'gc_senior_pm', 'gc_team_settings',   /* patch PMG: the Senior PM, "APMs may approve" (Admin → Employees) */
                  'gc_claim_help',   /* patch CLAIMHELP: "🛡 Your insurance claim" — the published steps + Q&A (_lib/claimhelp.js) */
@@ -217,7 +217,7 @@ function listOf(data, keys){
   return out;
 }
 /* patch JA: what this job's automations say (its own choices, else the company defaults for its type) */
-function jaAdmin(data){ return JA.parseAdmin(data && data.jobAutoDefaults); }
+function jaAdmin(data){ return JA.parseAdmin(data && data.jobAutoDefaults, data && data.gc_companies); }   /* patch COTRAIN: + the companies' marketing switches */
 function jaAllows(data, p, key){ return JA.allows(p, key, jaAdmin(data)); }
 function findProject(data, pid){
   const delList = Array.isArray(data.gc_deleted_projects) ? data.gc_deleted_projects : [];
@@ -893,9 +893,10 @@ async function buildView(data, p, opts){
     docs: docs.slice(0, 60),
     estimates: await estPortalCards(data, p, ests, signed),   /* patch ESTPDF: the Estimate card — the same estimate the PDF was made from */
     companyCam: { url: '', linked: !!ccId },          /* patch U2: the portal never links to CompanyCam */
+    company: require('./_lib/cobrand.js').info(p, data.gc_companies),   /* patch COTRAIN: a Mitigation / Environmental job's portal carries that company (null = Construction) */
     warranty: warrantyOf(insClaim(data, pid) ? Object.assign({}, p, { isInsurance: true }) : p, stage),   /* patch BB2: claim jobs = insurance / restoration, 5 years */
     showReview: stage >= 7,
-    review: stage >= 7 && jaAllows(data, p, 'reviewRequest') ? { google: REVIEW_URL, facebook: FACEBOOK_URL } : null
+    review: stage >= 7 && jaAllows(data, p, 'reviewRequest') ? (JA.otherCo(p) ? (JA.reviewLinkFor(p, jaAdmin(data), REVIEW_URL) ? { google: JA.reviewLinkFor(p, jaAdmin(data), REVIEW_URL), facebook: '' } : null) : { google: REVIEW_URL, facebook: FACEBOOK_URL }) : null   /* patch COTRAIN: never Construction's review pages on a Mitigation / Environmental job */
   };
   if (ins) {   /* patch INSP: the insurance-claim view */
     insTagDocs(view.docs, pdocs, signed);
@@ -1567,7 +1568,7 @@ function invoiceDoc(data, p, r){
 function invoiceView(data, p, r){
   const flat = function(o){ const out = {}; Object.keys(o || {}).forEach(function(k){ const v = o[k]; if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') out[k] = v; }); return out; };
   const both = scrub({ inv: flat(r), proj: flat(p) }, carrierWords(p).concat(claimWords(data, s(p.id), false)));
-  const review = jaAllows(data, p, 'reviewRequest') && (invFinal(r) || invPaid(r)) ? REVIEW_URL : '';
+  const review = jaAllows(data, p, 'reviewRequest') && (invFinal(r) || invPaid(r)) ? JA.reviewLinkFor(p, jaAdmin(data), REVIEW_URL) : '';   /* patch COTRAIN */
   return { inv: both.inv, proj: both.proj, reviewUrl: review };
 }
 function invoicePdf(data, p, r){
@@ -1812,6 +1813,7 @@ async function aqSend(item, now){
   if (!isMoneyKind(item.kind) && item.meta && item.meta.fromPm === true && /^[^@\s<>"]+@grayco-cs\.com$/i.test(s(item.pmEmail)) && !/^office@/i.test(s(item.pmEmail))) from = s(item.pm).replace(/[<>"]/g, '') + ' \u2014 GrayCo Construction Services <' + low(item.pmEmail) + '>';
   let subj = item.subject; if (item.jobId) { try { const dj = await crmData(false); subj = withJob(subj, findProject(dj, item.jobId)); } catch (e) {} }
   const payload = { from: from, reply_to: replyToFor(item.pmEmail, item.kind), to: [item.to], subject: subj, html: html };
+  if (item.jobId) { try { const dj = await crmData(false), pj = findProject(dj, item.jobId), CB = require('./_lib/cobrand.js'); CB.apply(payload, CB.info(pj, dj.gc_companies)); } catch (e) {} }   /* patch COTRAIN: a Mitigation / Environmental job's e-mail is that company's (sender, subject, logo, "check made out to") */
   if (Array.isArray(item.cc) && item.cc.length) payload.cc = item.cc.slice(0, 5);   /* patch AP2: an approver's CC */
   /* patch AP2: the invoice PDF, made fresh from the CRM's record, goes with the e-mail */
   const pdfs = (item.attachments || []).filter(function(a){ return a && a.kind === 'pdf' && a.invoiceId; });

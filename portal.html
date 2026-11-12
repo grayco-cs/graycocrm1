@@ -13,6 +13,7 @@ window.gcDocHead = function(){
   var a = document.createElement('div'); a.style.cssText = 'font-size:16px;font-weight:800'; a.textContent = 'GrayCo Construction Services';
   var b = document.createElement('div'); b.style.cssText = 'font-size:13px'; b.textContent = '901-585-0944 \u00B7 grayco-cs.com';
   var c = document.createElement('div'); c.style.cssText = 'font-size:11.5px;color:#55626F'; c.textContent = 'TN #85034 BCB \u00B7 AR #0486990627 \u00B7 MS #27769';
+  try { var K = window.__gcPortalCo; if (K) { im.setAttribute('src', K.logo); a.textContent = String(K.legal).replace(/,? *LLC\.?$/i, ''); c.textContent = K.license || ''; } } catch (e) {}   /* patch COTRAIN: the job's company */
   tx.appendChild(a); tx.appendChild(b); tx.appendChild(c); d.appendChild(im); d.appendChild(tx); return d;
 };
 </script>
@@ -552,11 +553,24 @@ function picker(){
       [h('span', { class: 'grow' }, [h('b', { text: j.name }), h('span', { class: 'muted', text: j.address || '' })]), j.unread ? h('span', { class: 'badge', text: String(j.unread) }) : null]);
   }))));
 }
+/* patch COTRAIN: a GrayCo Mitigation / Environmental job → that company's logo, name and license in the header, footer and papers
+   (V.company from the server; null = GrayCo Construction Services, the page as it is) */
+var CO0 = null;
+function coName(){ return V && V.company ? String(V.company.legal).replace(/,? *LLC\.?$/i, '') : 'GrayCo Construction Services'; }
+function coBrand(c){
+  var hd = document.querySelector('header img.logo'), ft = document.querySelector('footer.lic');
+  if (!CO0) CO0 = { src: hd ? hd.getAttribute('src') : '', alt: hd ? hd.getAttribute('alt') : '', foot: ft ? ft.innerHTML : '' };
+  if (!c) { if (hd) { hd.setAttribute('src', CO0.src); hd.setAttribute('alt', CO0.alt); } if (ft) ft.innerHTML = CO0.foot; window.__gcPortalCo = null; return; }
+  window.__gcPortalCo = c;
+  if (hd) { hd.setAttribute('src', c.logo); hd.setAttribute('alt', c.legal); }
+  if (ft) ft.innerHTML = CO0.foot.replace('GrayCo Construction Services, LLC', c.legal.replace(/[<>&]/g, '')).replace('TN #85034 BCB &middot; AR #0486990627 &middot; MS #27769', String(c.license || '').replace(/[<>&]/g, ''));
+}
 function loadView(){
   $('main').innerHTML = '<div class="skel"></div><div class="skel"></div><div class="skel"></div>';
   return api('view').then(function(r){
     if (!r.data || !r.data.ok) { notActive(r.data && r.data.error); return; }
     V = r.data;
+    try { coBrand(V.company); } catch (e) {}   /* patch COTRAIN */
     var c = V.customer || {}, j = V.job || {};
     $('hi').textContent = (LANG === 'es' ? 'Hola ' : 'Hi ') + (c.firstName || (LANG === 'es' ? '' : 'there')) + (LANG === 'es' ? ' — su proyecto' : ' — your project');
     $('jobName').textContent = j.name || 'Your project';
@@ -636,7 +650,7 @@ function reviewCard(){
   return card('Thank you for choosing GrayCo!', [
     h('p', { class: 'muted', style: 'margin:0', text: 'If you were happy with our work, a quick review helps a lot.' }),
     h('a', { class: 'btn gold', href: V.review.google, target: '_blank', rel: 'noopener', text: '★ Leave a Google review' }),
-    h('a', { class: 'btn', href: V.review.facebook, target: '_blank', rel: 'noopener', text: 'Find us on Facebook' })]);
+    V.review.facebook ? h('a', { class: 'btn', href: V.review.facebook, target: '_blank', rel: 'noopener', text: 'Find us on Facebook' }) : null].filter(Boolean));   /* patch COTRAIN: a company without its own Facebook page shows none */
 }
 /* signed in with the starter password (first name): an optional, dismissible card — never forced */
 function ownPwCard(){
@@ -872,7 +886,7 @@ function pay(){
       h('div', null, [h('span', { class: 'muted', text: 'Change orders' }), h('b', { text: usd((m.changeOrders || []).reduce(function(t, c){ return t + (Number(c.amount) || 0); }, 0)) })])
     ]),
     h('div', { class: 'how' }, [h('b', { text: 'How to pay' }),
-      h('span', null, ['Pay by ', h('b', { text: 'check' }), ' made out to GrayCo Construction Services, or ', h('b', { text: 'cash' }), ' — hand it to your Project Manager' + (V.pm && V.pm.name ? ' (' + V.pm.name + ')' : '') + '. Every payment shows on your ', h('b', { text: 'final invoice' }), '.'])])
+      h('span', null, ['Pay by ', h('b', { text: 'check' }), ' made out to ' + coName() + ', or ', h('b', { text: 'cash' }), ' — hand it to your Project Manager' + (V.pm && V.pm.name ? ' (' + V.pm.name + ')' : '') + '. Every payment shows on your ', h('b', { text: 'final invoice' }), '.'])])
   ]));
   var fi = m.finalInvoice;
   out.push(h('section', { class: 'card' }, [h('div', { class: 'row' }, [h('h2', { text: 'Final invoice' }), fi ? h('span', { class: 'pill ' + (fi.balance > 0 ? 'due' : 'ok'), text: fi.balance > 0 ? 'Balance ' + usd(fi.balance) : 'Paid — thank you!' }) : null]),
@@ -1010,7 +1024,7 @@ function insPay(){
   (m.upgrades || []).forEach(function(u){ owe.appendChild(h('div', { class: 'line' }, [h('span', { text: u.title }), h('span', { text: usd(u.amount) })])); });
   owe.appendChild(h('div', { class: 'line total' }, [h('span', { text: 'Your part (deductible + upgrades)' }), h('span', { text: usd(m.youOwe) })]));
   owe.appendChild(h('div', { class: 'how' }, [h('b', { text: 'How to pay your part' }),
-    h('span', null, ['A ', h('b', { text: 'check' }), ' made out to GrayCo Construction Services, or ', h('b', { text: 'cash' }), ' — hand it to your Project Manager' + (V.pm && V.pm.name ? ' (' + V.pm.name + ')' : '') + '.'])]));
+    h('span', null, ['A ', h('b', { text: 'check' }), ' made out to ' + coName() + ', or ', h('b', { text: 'cash' }), ' — hand it to your Project Manager' + (V.pm && V.pm.name ? ' (' + V.pm.name + ')' : '') + '.'])]));
   out.push(owe);
   var chk = h('section', { class: 'card', id: 'insChecks' }, [h('h2', { text: 'Insurance checks' })]);
   if (m.claimTotal) chk.appendChild(h('div', { class: 'line' }, [h('span', { text: 'Approved by your insurance company' }), h('span', { text: usd(m.claimTotal) })]));
@@ -1500,10 +1514,10 @@ function itemBox(x){
     if (keep['p_' + x.id] === undefined) { smsPh.value = x.sms.phone || ''; keep['p_' + x.id] = smsPh.value; }
     smsBox = kept(h('input', { type: 'checkbox', id: 'gcesign-sms-' + x.id, 'data-gc-sms': '1' }), 's_' + x.id, true);
     box.appendChild(h('label', { class: 'muted', text: 'Mobile number for texts' })); box.appendChild(smsPh);
-    box.appendChild(h('label', { class: 'sel-agree' }, [smsBox, h('span', {}, [h('strong', { text: 'Job texts:' }), ' I agree to receive text messages from GrayCo Construction Services about my job (appointment and crew scheduling, job updates, estimates and invoices). Message frequency varies. Msg & data rates may apply. Reply STOP to opt out, HELP for help. Consent is not a condition of purchase.'])]));
+    box.appendChild(h('label', { class: 'sel-agree' }, [smsBox, h('span', {}, [h('strong', { text: 'Job texts:' }), ' I agree to receive text messages from ' + coName() + ' about my job (appointment and crew scheduling, job updates, estimates and invoices). Message frequency varies. Msg & data rates may apply. Reply STOP to opt out, HELP for help. Consent is not a condition of purchase.'])]));
     /* patch SMSC2: the separate, optional OFFERS box — unchecked by default, never required */
-    mktBox = kept(h('input', { type: 'checkbox', id: 'gcesign-mkt-' + x.id, 'data-gc-mkt': '1' }), 'm_' + x.id, true);
-    box.appendChild(h('label', { class: 'sel-agree' }, [mktBox, h('span', {}, [h('strong', { text: 'Offers (optional, separate):' }), ' I also agree to receive occasional promotional text messages from GrayCo Construction Services (seasonal service offers, up to 4 per month). Msg & data rates may apply. Reply STOP to opt out, HELP for help. Consent is not a condition of purchase.'])]));
+    if (!(V && V.company)) mktBox = kept(h('input', { type: 'checkbox', id: 'gcesign-mkt-' + x.id, 'data-gc-mkt': '1' }), 'm_' + x.id, true);   /* patch COTRAIN: no promotional-text sign-up for a company whose marketing is not set up */
+    if (mktBox) box.appendChild(h('label', { class: 'sel-agree' }, [mktBox, h('span', {}, [h('strong', { text: 'Offers (optional, separate):' }), ' I also agree to receive occasional promotional text messages from ' + coName() + ' (seasonal service offers, up to 4 per month). Msg & data rates may apply. Reply STOP to opt out, HELP for help. Consent is not a condition of purchase.'])]));
   }
   box.appendChild(h('div', { class: 'es-btns' }, [go, no])); box.appendChild(msg);
   go.addEventListener('click', function(){
@@ -2070,7 +2084,7 @@ function gcDraw(){
   if (PREVIEW_ANY) main.appendChild(h('div', { class: 'muted', text: 'Preview — this is what the GC sees.' }));
   /* who to call */
   var pm = v.pm || {};
-  main.appendChild(card('Your GrayCo contact', [h('div', { text: pm.name || 'GrayCo Construction Services' }),
+  main.appendChild(card('Your GrayCo contact', [h('div', { text: pm.name || coName() }),
     h('div', { class: 'gcp-acts' }, [h('a', { class: 'btn', href: 'tel:' + String(pm.phone || OFFICE).replace(/[^0-9+]/g, ''), text: '📞 Call' }), pm.email ? h('a', { class: 'btn', href: 'mailto:' + pm.email, text: '✉️ E-mail' }) : null]),
     v.job.stageName ? h('div', { class: 'muted', text: 'Status: ' + v.job.stageName }) : null]));
   /* pay apps */
