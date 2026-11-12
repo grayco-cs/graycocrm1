@@ -195787,7 +195787,10 @@ var ATTY = 'Attorney review pending on unpaid class days';   /* owner 11/12: he 
 var TPAY = '📘 CRM training for their current job: paid, 1 day a week · 🎯 training for the next role: optional, after hours, unpaid';
 var TP = {};   /* patch CERTROLE: email → that person's 🎓 Training progress (gc_train_p_<email>.done) */
 function tslug(v){ return low(v).replace(/[^a-z0-9@]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 80); }
-function loadTP(){ return Promise.all(staff().map(function(u){ var em = low(u.email); return sb('gc_train_p_' + tslug(em)).then(function(v){ TP[em] = isObj(v) && isObj(v.done) ? v.done : {}; }); })); }
+function loadTP(){   /* a few at a time (a burst of reads for the whole team came back empty under load) */
+  var q = staff().map(function(u){ return low(u.email); }), next = function(){ var em = q.shift(); if (!em) return Promise.resolve();
+    return sb('gc_train_p_' + tslug(em)).then(function(v){ if (isObj(v) && isObj(v.done)) TP[em] = v.done; else if (!TP[em]) TP[em] = {}; }).then(next); };
+  return Promise.all([next(), next(), next()]); }
 function trainMods(){ try { return W._gcTrain && W._gcTrain.modules ? arr(W._gcTrain.modules()) : []; } catch (e) { return []; } }
 /* one person × one 🎓 Training module → { k: 'not'|'prog'|'pass', title, score, at } */
 function modState(email, m){
@@ -196454,7 +196457,7 @@ function open_(tab){
 /* the button in 📜 Certifications */
 D.addEventListener('click', function(e){ var b = e.target && e.target.closest ? e.target.closest('[data-gccp-open]') : null; if (!b) return; e.preventDefault(); e.stopPropagation(); open_(); }, true);
 later(function(){ load(); }, 5000);   /* patch CERTROLE: everyone — the job block and the clock-in check need the certificates */
-W._gcCertPlan = { open: open_, load: load, plan: plan, trackOf: trackOf, targetOf: targetOf, trainOf: trainOf, trainPlan: trainPlan, techCourses: techCourses, envPath: envPath, CLASS: CLASS, raiseCalc: raiseCalc, payList: payList, outlookOf: outlookOf, rateOf: rateOf, POLICY: POLICY, reqStatus: reqStatus, raisesDue: raisesDue, masterOf: masterOf, weekPay: weekPay, defaults: defaults, _set: function(p, c){ PLAN = p; CERTS = arr(c); LOADED = true; CERTS_OK = true; } };
+W._gcCertPlan = { _tp: function(){ return TP; }, open: open_, load: load, plan: plan, trackOf: trackOf, targetOf: targetOf, trainOf: trainOf, trainPlan: trainPlan, techCourses: techCourses, envPath: envPath, CLASS: CLASS, raiseCalc: raiseCalc, payList: payList, outlookOf: outlookOf, rateOf: rateOf, POLICY: POLICY, reqStatus: reqStatus, raisesDue: raisesDue, masterOf: masterOf, weekPay: weekPay, defaults: defaults, _set: function(p, c){ PLAN = p; CERTS = arr(c); LOADED = true; CERTS_OK = true; } };
 try { console.log('[GC] 🎖 Required certs, raises & promotion (patch CERTPLAN): _gcCertPlan'); } catch (e) {}
 })();
 </script>
