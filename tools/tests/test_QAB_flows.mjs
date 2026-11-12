@@ -150,6 +150,11 @@ await shot('m6_new_claim_picker');
 const gen = await A.ev(() => { const sel = document.createElement('select'); sel.innerHTML = ['C1', 'MZ1', 'E1', 'C2'].map(v => '<option value="' + v + '">' + v + '</option>').join(''); document.body.appendChild(sel); window._gcJobSelectSweep(); const vis = [...sel.options].filter(o => !o.hidden).map(o => o.value); window._gcCo.setFilter('all'); window._gcJobSelectSweep(); const all = [...sel.options].filter(o => !o.hidden).map(o => o.value); window._gcCo.setFilter('mitigation'); sel.remove(); return { vis, all }; });
 ok('M6 any job dropdown: Mitigation picked → its jobs only; All companies → every job again', gen.vis.join() === 'MZ1' && gen.all.length === 4, gen);
 
+await A.ev(() => window._setView('systems')); await sleep(2000);
+const sysPick = await A.ev(async () => { const b = document.querySelector('#gc-sys-sys-mount [data-k="custportal"]'); if (!b) return null; b.click(); await new Promise(r => (window.__GC_NATIVE_SETTIMEOUT__ || setTimeout)(r, 900)); const t = document.body.innerText; return { zedd: /Zedd Ross basement/.test(t), other: /Conzz Smith deck|Conzz Fire rebuild|Envzz Tile asbestos/.test(t) }; });
+ok('M6 🧭 GrayCo Systems → 🏠 Customer portal → pick a job: Mitigation\'s jobs only', sysPick && sysPick.zedd && !sysPick.other, sysPick);
+await A.page().keyboard.press('Escape'); await sleep(400);
+
 /* ═══ E1 the asbestos job ═══ */
 await setCo('environmental');
 const envSave = async (tab, kind, vals, chk) => { await A.ev(t => window._setView(t), tab); await sleep(1400);

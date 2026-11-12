@@ -178735,7 +178735,8 @@ function TILES(){
 var URLS = { bidsite: 'https://bids.grayco-cs.com/', subportal: 'https://portal.grayco-cs.com/', photosapp: '/?app=photos', companycam: 'https://app.companycam.com/', website: 'https://grayco-cs.com/', news: 'https://grayco-cs.com/news/',
   partner: '/partner.html', roofcheck: '/roofcheck.html', giveaway: '/giveaway.html', coupon: '/coupon.html', supabase: 'https://supabase.com/dashboard/project/ieeonhpfahmwwecizdut', netlify: 'https://app.netlify.com/', resend: 'https://resend.com/emails', gadmin: 'https://admin.google.com/' };
 var VIEWS = { bidportal: 'bidportal', roofscout: 'roofscout', photos: 'allphotos', bidsin: 'leads', marketing: 'marketing', brain: 'claude', qb: 'qbimport' };
-function projects(){ return arr((W._crm || {}).projects).filter(function(p){ return p && p.id && !p.deleted && !p._deleted; }); }
+function projects(){ return arr((W._crm || {}).projects).filter(function(p){ return p && p.id && !p.deleted && !p._deleted && coPass(p); }); }
+function coPass(p){ try { var C0 = W._gcCo; return !C0 || C0.filter() === 'all' || C0.passJob(p); } catch (e) { return true; } }   /* patch QAB: 🧭 GrayCo Systems' job pickers — the picked company's jobs */
 function pickJob(title, list, onPick){
   var m = modal('<button type="button" class="b x" data-sys="close">✕</button><h3>' + esc(title) + '</h3><input type="search" data-sys="q2" placeholder="Search jobs" style="width:100%;margin:8px 0"><div class="list" data-sys-jobs></div>');
   function draw(q){ var b = m.querySelector('[data-sys-jobs]'); q = low(q);
