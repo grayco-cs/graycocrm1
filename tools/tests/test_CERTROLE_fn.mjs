@@ -7,7 +7,7 @@ const i = html.indexOf('<script id="gc-patch-certplan">'), src = html.slice(html
 let pass = 0, fail = 0; const ok = (c, m, info) => { if (c) { pass++; console.log('  ✓ ' + m); } else { fail++; console.log('  ✗ FAIL ' + m + (info !== undefined ? '  ' + JSON.stringify(info).slice(0, 400) : '')); } };
 const dlg = { innerHTML: '' };
 const el = () => ({ setAttribute(){}, style: {}, remove(){}, addEventListener(){}, querySelector(s){ return s === '.gccp-dlg' ? dlg : null; }, querySelectorAll(){ return []; } });
-const W = { console, setTimeout, Promise, Date, Math, JSON, RegExp, String, Number, Array, Object, isFinite, parseFloat };
+const W = { console, setTimeout, setInterval: () => 0, Promise, Date, Math, JSON, RegExp, String, Number, Array, Object, isFinite, parseFloat };
 W.window = W; W.document = { getElementById(){ return null; }, addEventListener(){}, createElement: el, head: { appendChild(){} }, body: { appendChild(){} } };
 W.localStorage = { getItem(){ return null; }, setItem(){} };
 W.__GC_AUTH__ = { isAdmin: () => true }; W._ehSb = async () => null; W._supaUpsertNow = async () => true;
@@ -59,14 +59,12 @@ const asked = await Q.confirmAssign(by('Cora'), J1);
 ok(asked === false && C.plan().allowReq.some(r => r.email === 'cora@example.com' && r.status === 'open'), 'non-admin: blocked, "Ask an admin to allow" request created');
 W.__GC_AUTH__.isAdmin = () => true;
 /* the job-save guard (every path that saves a job through _setProjects: job page, Quick Add edits, field assignment) */
-let STATE = W._crm.projects.map(x => Object.assign({}, x)); W._setProjects = v => { STATE = typeof v === 'function' ? v(STATE) : v; };
-Q._guard();
-W._setProjects(prev => prev.map(x => x.id === 'J2' ? Object.assign({}, x, { mitTech: 'Lou Demo' }) : x));
-const j2a = STATE.find(x => x.id === 'J2').mitTech;
-W._setProjects(prev => prev.map(x => x.id === 'J2' ? Object.assign({}, x, { mitTech: 'Tia Demo' }) : x));
-const j2b = STATE.find(x => x.id === 'J2').mitTech;
-W._setProjects(prev => prev.map(x => x.id === 'J3' ? Object.assign({}, x, { superintendent: 'Lou Demo' }) : x));
-const j3 = STATE.find(x => x.id === 'J3').superintendent;
+let STATE = W._crm.projects.map(x => Object.assign({}, x)); W._crm.projects = STATE; W._setProjects = v => { STATE = typeof v === 'function' ? v(STATE) : v; W._crm.projects = STATE; };
+Q._tick();   /* the baseline */
+const put = (id, f, v) => { W._crm.projects = STATE = STATE.map(x => x.id === id ? Object.assign({}, x, { [f]: v }) : x); Q._tick(); };
+put('J2', 'mitTech', 'Lou Demo'); const j2a = STATE.find(x => x.id === 'J2').mitTech;
+put('J2', 'mitTech', 'Tia Demo'); const j2b = STATE.find(x => x.id === 'J2').mitTech;
+put('J3', 'superintendent', 'Lou Demo'); const j3 = STATE.find(x => x.id === 'J3').superintendent;
 ok(!j2a && j2b === 'Tia Demo' && j3 === 'Lou Demo', 'GUARD: putting Lou (no WRT) on the Mitigation water job is undone; Tia (WRT) stays; a Construction "roof leak" job is not blocked', { j2a, j2b, j3 });
 const tabs = ['people', 'raises', 'reqs', 'amounts', 'outlook', 'jobs', 'bonus', 'pay'], bad = [];
 for (const tb of tabs) { C.open(tb); await new Promise(r => setTimeout(r, 30)); const h = dlg.innerHTML.replace(/data-[a-z-]+="[^"]*"/g, ''); if (!h || /undefined|NaN/.test(h)) bad.push(tb + ':' + ((h.match(/.{40}(undefined|NaN).{20}/) || [''])[0])); }
