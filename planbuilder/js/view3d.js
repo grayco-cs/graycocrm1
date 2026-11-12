@@ -3,6 +3,7 @@
 // Plan (x, y) maps to 3D (x, z); height is 3D y. 1 unit = 1 foot.
 
 import * as THREE from 'three';
+import { installLive } from './live3d.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
@@ -69,7 +70,8 @@ export class View3D {
     window.addEventListener('keydown', e => { if (this.walk && !/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) this._keys.add(e.code); });
     window.addEventListener('keyup', e => this._keys.delete(e.code));
     this.resize();
-    const loop = () => { requestAnimationFrame(loop); if (!this.visible) return; if (this.walk) this._walkStep(); if (this.controls.enabled) this.controls.update(); };
+    installLive(this, app);   // sun & time of day, doors, tour & video, drag-and-drop, pop-in
+    const loop = () => { requestAnimationFrame(loop); if (!this.visible) return; if (this.walk) this._walkStep(); if (this.controls.enabled) this.controls.update(); this.live.tick(performance.now()); };
     loop();
   }
 
@@ -257,6 +259,7 @@ export class View3D {
     if (this._anim) this.stopBuild();
     this.root.traverse(o => { if (o.geometry) o.geometry.dispose(); });
     this.root.clear();
+    if (this.live) this.live.beforeRebuild();
     if (this.opts.studio) {   // Studio: the construction systems instead of the finished house
       const A = this.app.studioAnalysis && this.app.studioAnalysis();
       if (A) this.studio.build(A);
@@ -282,6 +285,7 @@ export class View3D {
     if (this.opts.holo) this._holoize();
     if (this._sel) this.setSelection(this._sel, true);
     if (this.walk) this._walkPrep();
+    if (this.live) this.live.afterRebuild();
     this.render();
   }
 
@@ -455,6 +459,7 @@ export class View3D {
       const pivot = new THREE.Group(); pivot.position.set(hingeX, 0, 0); grp.add(pivot);
       grp.remove(leaf); leaf.position.set(-hingeX, -fr / 2, 0); pivot.add(leaf);
       pivot.rotation.y = -(o.flip ? -1 : 1) * (o.hinge === 'right' ? -1 : 1) * 0.35;   // same side as the swing arc on the plan
+      if (this.live) this.live.registerDoor(o.id, pivot, pivot.rotation.y);   // click it (or walk up to it) to open
       const knob = new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 8), this.mat('#b08d57', { metalness: 0.8, roughness: 0.3 }));
       knob.position.set(-hingeX * 1.8, -0.6, 0.12); pivot.add(knob);
     } else if (o.type === 'garage') {
@@ -831,7 +836,9 @@ export class View3D {
     if (d) { this.controls.enabled = !this.walk; if (d.active) { this.app.commit('Moved in 3D'); return; } }
     if (!this._down || Math.hypot(e.clientX - this._down.x, e.clientY - this._down.y) >= 4) return;
     if (this._anim) return;
-    if (this.walk) {   // click a floor to glide there
+    if (this.walk) {   // click a door to open / shut it, or a floor to glide there
+      const d = this._doorHit(this._hits(e)[0]);
+      if (d) { this.live.toggleDoor(d); return; }
       const h = this._hits(e).find(x => x.object.userData.pick.kind === 'room');
       if (h) this.walk.glide = { x: h.point.x, z: h.point.z };
       return;
@@ -912,8 +919,11 @@ export class View3D {
 
   pick(e) {
     const h = this._hits(e)[0];
+    // a door that is already selected swings open / shut
+    if (h && this._doorHit(h) && this.app.selection && this.app.selection.id === h.object.userData.pick.id) { this.live.toggleDoor(h.object.userData.pick.id); return; }
     if (h) this.app.pickFrom3D(h.object.userData.pick); else this.app.select(null);
   }
+  _doorHit(h) { const pk = h && h.object.userData.pick; return pk && pk.kind === 'opening' && this.live && this.live.doors.has(pk.id) ? pk.id : null; }
 
   screenshot() { this._sharpen(); this.render(); return this.renderer.domElement.toDataURL('image/png'); }
   shots(names) { this._shot = true; const out = names.map(n => { this.setPreset(n); return this.screenshot(); }); this._shot = false; return out; }

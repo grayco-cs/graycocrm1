@@ -73,6 +73,14 @@ Click **Studio** in the top bar. The model is shown the way it gets built, on a 
 - **Edit in 3D:** click a piece to select it (it lights up blue), then drag it: furniture and fixtures slide across the floor, doors and windows slide along their wall, walls move square to themselves (joined corners follow). Q / E turn a piece, Delete removes it, and the panel on the right edits everything else. The 2D plan and the estimate follow.
 - **🚶 Walk:** W / S or ↑ / ↓ walk, A / D step sideways, ← / → turn, Shift runs, drag to look, **click a floor to glide there**. Walls stop you; doors and openings let you through. Each room you walk into lights up and shows a card with its name, style, finishes, damage and photos. On phones and tablets use the on-screen arrows.
 
+## Live 3D: sun, doors, tour, video, drag and drop
+- **☀ Time of day** (3D toolbar): drag the slider and the sun moves across the sky (east in the morning, south at noon, west in the evening; plan up is north), shadows follow, dawn and dusk turn warm, and at night the sky goes dark and the rooms light up (lit windows). **☀ ▶** plays a whole day; double-click the slider for the standard light.
+- **🚪 Doors:** click a door that is already selected to swing it open or shut, or open / shut them all. In **🚶 Walk**, doors open as you reach them and close behind you.
+- **🎬 Tour:** the camera circles the house, looks down into the rooms, then visits each room at eye height with its name on screen, and ends outside. Press again to stop.
+- **⏺ Record:** saves what the 3D view shows to a video file (.webm; Chrome / Edge) — press 🎬 Tour while recording for a presentation video, or move around yourself.
+- **Drag from the product list onto the 3D:** furniture and fixtures land where you drop them, doors and windows on the wall you drop them on, flooring / paint / siding / roofing on the floor, wall, room or roof under the pointer.
+- New pieces pop into place, and a ripple runs across the ground when a style or furniture is applied.
+
 ## Damage, entered estimates and the customer view
 - **Damage:** select a room → Damage & repair → *Damaged* and what happened; roofs have *Damaged* too. 3D **Show damage** paints damaged floors and roofs red; the printout lists damage with photos.
 - **✍ Enter Xactimate estimate** (Estimate screen, or a room's *Add what we will do*): paste lines from your Xactimate estimate (Excel columns or PDF text: code, activity, description, quantity, unit, price) or type them, and pick the room. They go on the job, tied to the room, and their prices are kept in **GrayCo price memory** (a price list that updates with every estimate you enter; typing a known code fills in its description, unit and last price).
@@ -149,6 +157,7 @@ Each project's estimate is priced from **your catalog prices** (the default) or 
 | `js/cmdline.js` | The AutoCAD-style command line, ORTHO / OSNAP / SNAP |
 | `js/auth.js` | Sign-in: the CRM's sign-in and staff list, token refresh, idle sign-out, the sign-in screen |
 | `js/crm.js`, `js/crmui.js`, `data/crm-products.json` | CRM prices: reading the GrayCo CRM's Rate Book, Products, Labor Rates and tax / margin in this browser, unit conversion, links and suggestions; the CRM prices window |
+| `js/live3d.js` | Live 3D: sun and time of day, night lights, opening doors, the tour, video recording, drag-and-drop onto the 3D, pop-in and ripple |
 | `js/surfaces.js` | Drawn surfaces for the 3D view (wood, tile, brick, siding, shingles, grass …) in each product's color |
 | `vendor/pdfjs/` | pdf.js 4.10 (Apache-2.0, see `PDFJS-LICENSE.txt`) for reading PDF plans, served from here |
 | `vendor/` | Three.js r170 and its add-ons in `vendor/addons/` (orbit controls, studio light, rounded boxes, glow, .glb export; MIT, see `THREE-LICENSE.txt`), served from here so it works without the internet |
@@ -158,5 +167,6 @@ Each project's estimate is priced from **your catalog prices** (the default) or 
 | `tests/import.smoke.cjs` | Browser test of importing a picture, a PDF with room names and a DXF (`tests/fixtures/`), and of the command line (same way to run) |
 | `tests/crm.smoke.cjs` | Browser test of CRM prices with the CRM's storage filled in: reading it, linking (typed, hourly, automatic + check), estimate prices, tax & margin, Studio rates, a CRM price change, customer view (same way to run) |
 | `tests/auth.smoke.cjs` | Browser test of the sign-in (with a stand-in sign-in service): refused people, starting password, staff in, shared CRM session, refresh, idle sign-out, CRM sign-out, Sign out (same way to run) |
+| `tests/live.smoke.cjs` | Browser test of the live 3D: sun by hour, night lights, play a day, doors (all, one, walking up), drag-and-drop (furniture, floor, window), pop-in, the tour and its video (same way to run) |
 | `tests/save.smoke.cjs` | Browser test of saving to the computer, Done – save & remove, reopening a job (with its custom products, photos, renditions), versions, the note after saving, and the weekly clean-up (same way to run) |
 | `tests/ui.smoke.cjs` | Browser test that draws with every tool: start `python3 -m http.server 8765` in the repo, then `NODE_PATH=$(npm root -g) node planbuilder/tests/ui.smoke.cjs` |

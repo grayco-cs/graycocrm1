@@ -260,6 +260,20 @@ const app = {
     $('#plan-pane').addEventListener('drop', e => { const f = e.dataTransfer.files && e.dataTransfer.files[0]; if (f && /\.(pdf|dxf|png|jpe?g|webp|gif|bmp)$/i.test(f.name)) { e.preventDefault(); this.showImport(f); } });
     $('#v-holo').addEventListener('click', async e => { const v = this.ensure3D(); const on = !v.opts.holo; e.currentTarget.classList.toggle('on', on); await v.setHolo(on); });
     $('#v-spin').addEventListener('click', e => { const v = this.ensure3D(); const on = !v.opts.spin; e.currentTarget.classList.toggle('on', on); v.setSpin(on); });
+    // live 3D: time of day, doors, tour, video
+    const fmtHour = x => { const h = Math.floor(x), m = Math.round((x - h) * 60), ap = h >= 12 ? 'PM' : 'AM'; return `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')} ${ap}`; };
+    const live = () => { const v = this.ensure3D(); return v.live || null; };
+    this.onHour = x => { $('#v-sun').value = x; $('#v-sun-t').textContent = fmtHour(x); };
+    this.onDayEnd = () => $('#v-sunplay').classList.remove('on');
+    $('#v-sun').addEventListener('input', e => { const L = live(); if (!L) return; L.playDay(false); $('#v-sunplay').classList.remove('on'); L.setTime(+e.target.value); this.onHour(+e.target.value); });
+    $('#v-sun').addEventListener('dblclick', () => { const L = live(); if (!L) return; L.playDay(false); L.setTime(null); $('#v-sun-t').textContent = 'Sun'; });
+    $('#v-sunplay').addEventListener('click', e => { const L = live(); if (!L) return; L.playDay(); e.currentTarget.classList.toggle('on', L.playing); if (L.playing) L.setTime(L.hour); });
+    $('#v-doors').addEventListener('click', e => { const L = live(); if (!L) return; const open = !e.currentTarget.classList.contains('on'); L.allDoors(open); e.currentTarget.classList.toggle('on', open); });
+    this.tourCaption = t => { const c = $('#tour-cap'); c.textContent = t; c.hidden = !t; };
+    this.onTourEnd = () => { $('#v-tour').classList.remove('on'); $('#v-tour').textContent = '🎬 Tour'; };
+    $('#v-tour').addEventListener('click', e => { const L = live(); if (!L) return; if (L.touring) { L.stopTour(); return; } e.currentTarget.classList.add('on'); e.currentTarget.textContent = '■ Stop tour'; L.tour({ record: false }); });
+    this.onRecord = (on, blob) => { $('#v-rec').classList.toggle('rec', on); $('#v-rec').textContent = on ? '■ Stop recording' : '⏺ Record'; if (!on && blob) this.toast(`Video saved to your computer (${(blob.size / 1048576).toFixed(1)} MB).`); };
+    $('#v-rec').addEventListener('click', () => { const L = live(); if (!L) return; L.record(!L.recorder); });
     $$('#phase-seg button').forEach(b => b.addEventListener('click', () => this.setPhase(b.dataset.phase)));
     $('#btn-rend').addEventListener('click', () => this.showRenditions());
     $('#btn-customer').addEventListener('click', () => this.setCustomer(!this.customer));
@@ -541,7 +555,7 @@ const app = {
     const items = this.catalog.filter(p => (!cat || p.category === cat) && (!keep || p.brand === keep) && (!q || q.split(/\s+/).every(w => productText(p).includes(w))));
     if (!items.length) list.append(h('p', { class: 'hint' }, 'No products. Add some in 📦 Catalog.'));
     items.forEach(p => {
-      list.append(h('div', { class: 'pcard' + (this.activeProduct && this.activeProduct.id === p.id ? ' on' : ''), title: p.notes || p.name, onclick: () => this.useProduct(p) },
+      list.append(h('div', { class: 'pcard' + (this.activeProduct && this.activeProduct.id === p.id ? ' on' : ''), title: (p.notes || p.name) + ' — click to use, or drag it onto the 3D', draggable: 'true', ondragstart: e => { e.dataTransfer.setData('text/pb-product', p.id); e.dataTransfer.effectAllowed = 'copy'; }, onclick: () => this.useProduct(p) },
         swatch(p), h('div', {}, h('div', { class: 'nm' }, p.name), (p.brand || p.colorName || p.finish || p.material) ? h('div', { class: 'pr' }, [p.brand && !p.name.includes(p.brand) ? p.brand : '', p.colorName && !p.name.includes(p.colorName) ? p.colorName : '', p.material && !p.name.includes(p.material) ? p.material : '', p.finish].filter(Boolean).join(' · ')) : null, h('div', { class: 'pr' }, h('span', { class: 'price-only' }, `${money(+p.price + +p.labor)} / ${p.unit}`), (p.w ? ` · ${fmtFtIn(p.w)}${p.d ? ' × ' + fmtFtIn(p.d) : ''}${p.h ? ' × ' + fmtFtIn(p.h) : ''}` : '')))));
     // (in customer view the price part is hidden by CSS)
     });
@@ -697,9 +711,9 @@ const app = {
     if (pickSt) {
       el.append(h('p', { class: 'hint', style: 'margin:6px 0' }, h('b', {}, pickSt.name + ': '), pickSt.desc));
       el.append(h('div', { class: 'row' },
-        h('button', { class: 'btn small primary', onclick: () => { const d = applyStyle(P, pickSt.id, { kind: 'all' }, this.catalog); this.commit(`${pickSt.name} – whole house: ${d.join(', ')}`); } }, 'Apply to whole house'),
+        h('button', { class: 'btn small primary', onclick: () => { const d = applyStyle(P, pickSt.id, { kind: 'all' }, this.catalog); this.commit(`${pickSt.name} – whole house: ${d.join(', ')}`); this.ripple3D(); } }, 'Apply to whole house'),
         h('button', { class: 'btn small', title: 'Only what is marked New / remodel (an addition)', onclick: () => { const d = applyStyle(P, pickSt.id, { kind: 'new' }, this.catalog); this.commit(d.length ? `${pickSt.name} – new work: ${d.join(', ')}` : 'Nothing is marked New / remodel'); } }, 'Apply to new work only'),
-        h('button', { class: 'btn small', onclick: () => { let n = 0; P.levels.forEach(l => { n += autoFurnish(l, l.rooms, pickSt.id, this.catalog); }); this.commit(`Furnished every room: ${n} pieces`); } }, '🛋 Furnish all rooms')));
+        h('button', { class: 'btn small', onclick: () => { let n = 0; P.levels.forEach(l => { n += autoFurnish(l, l.rooms, pickSt.id, this.catalog); }); this.commit(`Furnished every room: ${n} pieces`); this.ripple3D(); } }, '🛋 Furnish all rooms')));
     } else el.append(h('p', { class: 'hint', style: 'margin:6px 0' }, 'Pick a style, then apply it to the whole house or just the addition. It sets siding / brick, the roof (style, pitch, material), windows, doors, trim, paint, floors by room, cabinets and counters, and frames a roof if there is none.'));
     el.append(h('hr', { class: 'sep' }), h('h3', {}, 'This level'));
     el.append(field('Name', h('input', { value: L.name, onchange: e => { L.name = e.target.value || 'Level'; this.commit('Level name'); } })));
@@ -1201,6 +1215,7 @@ function shrinkImage(dataUrl, max) {
 // ensure3D is used by the 3D option boxes, which only show once the view exists
 app.ensure3D = function () { return this.view3d || { opts: {}, rebuild() {}, setPreset() {}, toggleWalk() {}, setHolo() {}, setSpin() {} }; };
 
+app.ripple3D = function () { if (this.view3d && this.view3d.live) setTimeout(() => this.view3d.live.ripple(), 60); };
 window.PlanBuilder = app;   // handy for debugging and the smoke test
 requireSignIn().then(() => app.init());   // the GrayCo CRM sign-in comes first on the live site
 
