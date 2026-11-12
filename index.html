@@ -38366,6 +38366,7 @@ function buildTodoItems(){
   // The office manager's list is the full set of things that aren't done or aren't right.
   try{
     var _p=_data.projects||[], _iv=_data.invs||[], _co=_data.cos||[], _ex=_data.expenses||[], _dc=_data.docs||[];
+    try { if (window._gcCo && window._gcCo.passJob) _p = _p.filter(function(pr){ return window._gcCo.passJob(pr); }); } catch (_e) {}   /* patch QAFINAL: the office task list follows the picked company (COLEAK2 final gate) */
     var _NB=['bidding','estimate sent','estimate','lead','draft','lost','cancelled','canceled','declined','proposal'];
     function _active(pr){ return pr && _NB.indexOf(String(pr.status||'').toLowerCase())<0; }
     function _pname(pr){ return (pr&&pr.name)||''; }

@@ -57,7 +57,8 @@ for (const co of ['construction', 'mitigation', 'environmental', 'all']) {
       if (co === 'all' && !jc.t) console.log('   note: on All companies the 📊 Job costing card was not drawn within 6 s (the same on r34h — not this fix)');
       else ok(co + ': Accounting\'s 📊 Job costing card lists ' + (co === 'all' ? 'every company\'s open jobs' : 'only Construction\'s jobs'), co === 'all' ? (jc.C && jc.M && jc.E) : (jc.C && !jc.M && !jc.E), jc);
     }
-    if (co === 'mitigation' || co === 'environmental') ok(co + ': ' + v + ' shows the "starts fresh" page and none of Construction\'s rows', s.fresh && !s.C, s);
+    if ((co === 'mitigation' || co === 'environmental') && v === 'approvals') ok(co + ': approvals shows none of Construction\'s rows (COLEAK2: Approvals is split by company, not a "starts fresh" page)', !s.C, s);
+    else if (co === 'mitigation' || co === 'environmental') ok(co + ': ' + v + ' shows the "starts fresh" page and none of Construction\'s rows', s.fresh && !s.C, s);
     else ok(co + ': ' + v + ' is the normal page', !s.fresh, s.t.slice(0, 80));
   }
 }
