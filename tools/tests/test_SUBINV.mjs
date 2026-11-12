@@ -93,12 +93,12 @@ await t('parses the fields; normalizes "8382 Laurett Cove" / "Cv"', () => {
   assert.strictEqual(f.lines.length, 2);
 });
 await t('pay rule: in by Wednesday → Friday of the following week; Thursday → the Friday after; later invoice terms win', () => {
-  assert.strictEqual(SI.payRule('2026-10-27').payDate, '2026-11-06');   /* Tue */
-  assert.strictEqual(SI.payRule('2026-10-28').payDate, '2026-11-06');   /* Wed */
-  assert.strictEqual(SI.payRule('2026-10-29').payDate, '2026-11-13');   /* Thu */
-  assert.strictEqual(SI.payRule('2026-11-01').payDate, '2026-11-13');   /* Sun */
+  assert.strictEqual(SI.payRule('2026-10-27').payDate, '2026-10-30');   /* patch QAC: owner 11/4 SUBPAYWED — in by Wednesday → paid THAT Friday */   /* Tue */
+  assert.strictEqual(SI.payRule('2026-10-28').payDate, '2026-10-30');   /* Wed */
+  assert.strictEqual(SI.payRule('2026-10-29').payDate, '2026-11-06');   /* Thu */
+  assert.strictEqual(SI.payRule('2026-11-01').payDate, '2026-11-06');   /* Sun */
   assert.strictEqual(SI.payDateFor('2026-10-27', { dueDate: '2026-11-30' }).payDate, '2026-11-30');
-  assert.strictEqual(SI.payDateFor('2026-10-27', { dueDate: '2026-10-30' }).payDate, '2026-11-06');   /* earlier terms: the rule */
+  assert.strictEqual(SI.payDateFor('2026-10-27', { dueDate: '2026-10-29' }).payDate, '2026-10-30');   /* earlier terms: the rule */
   assert.strictEqual(SI.payDateFor('2026-10-27', { invoiceDate: '2026-10-26', terms: 'Net 45' }).payDate, '2026-12-10');
 });
 
@@ -109,7 +109,7 @@ await t('.docx invoice by address → route book, job P1, sub S1, pay date, reta
   const rec = S.kv.gc_mail_money[0];
   assert.strictEqual(rec.si.job.pid, 'P1'); assert.strictEqual(rec.si.sub.id, 'S1'); assert.strictEqual(rec.si.read.total, 10750); assert.strictEqual(rec.si.read.invoiceNumber, 'RR-2041');
   assert.strictEqual(rec.si.payDate, '2026-11-10');   /* Net 15 from 10/26 is later than the rule's 11/06 */
-  assert.strictEqual(rec.si.ruleDate, '2026-11-06');
+  assert.strictEqual(rec.si.ruleDate, '2026-10-30');
   assert.strictEqual(rec.si.retainagePct, 10); assert.strictEqual(rec.si.retainage, 1075); assert.strictEqual(rec.si.net, 9675);
   assert.ok(rec.files[0].sha && /wordprocessingml/.test(rec.files[0].type));
 });
@@ -117,7 +117,7 @@ const PDF2 = pdf(['DELTA GUTTER CO', 'Invoice No: 5531', 'Date: 10/27/2026', 'Pr
 await t('PDF invoice by address (text layer) → book on P2; the AI reader is used when it is on', async () => {
   const r = await MM.fromEmail(mail({ from: { email: 'office@deltagutter.test', name: 'Delta Gutter' }, subject: '123 Senatobia Dr Invoice', files: [{ name: 'inv5531.pdf', type: 'application/pdf', size: PDF2.length, buf: PDF2 }] }), 'sub_invoice', S.deps());
   assert.strictEqual(r.route, 'book', r.why);
-  const rec = S.kv.gc_mail_money.find(x => x.si && x.si.read.invoiceNumber === '5531'); assert.strictEqual(rec.si.job.pid, 'P2'); assert.strictEqual(rec.si.sub.id, 'S2'); assert.strictEqual(rec.si.payDate, '2026-11-06');
+  const rec = S.kv.gc_mail_money.find(x => x.si && x.si.read.invoiceNumber === '5531'); assert.strictEqual(rec.si.job.pid, 'P2'); assert.strictEqual(rec.si.sub.id, 'S2'); assert.strictEqual(rec.si.payDate, '2026-10-30');
   /* the same PDF through the AI path (mocked): a PDF document block is sent */
   let sent = null;
   const ai = { ready: () => true, ask: async o => { sent = o; return { ok: true, out: { isInvoice: true, weOwe: true, vendor: 'Delta Gutter Co', invoiceNumber: '5532', invoiceDate: '2026-10-27', jobAddress: '123 Senatobia Drive, Hernando MS', total: 990 } }; } };
