@@ -13,7 +13,7 @@ const HERE = path.dirname(new URL(import.meta.url).pathname);
 const SRC = path.resolve(process.argv[2] || path.join(HERE, '../../netlify/functions'));
 const TOKEN = 'fake-twilio-token-sb';
 Object.assign(process.env, { SUPABASE_URL: 'https://sb.test', SUPABASE_SERVICE_KEY: 'svc-test', RESEND_API_KEY: 're-test', OWNER_EMAILS: 'owner@grayco-cs.com', BID_ALERT_TO: '',
-  TWILIO_ACCOUNT_SID: 'ACtest', TWILIO_AUTH_TOKEN: TOKEN, TWILIO_FROM: '+19015550000', CRM_URL: 'https://crm.grayco-cs.com', WEBSITE_ZAPIER_KEY: 'zap-test', LEAD_KEY_ROOF_IGNITE: 'ri-test' });
+  TWILIO_ACCOUNT_SID: 'ACtest', TWILIO_AUTH_TOKEN: TOKEN, TWILIO_FROM: '+19015550000', CRM_URL: 'https://crm.grayco-cs.com', WEBSITE_ZAPIER_KEY: 'zap-test', LEAD_KEY_THUMBTACK: 'ri-test' });
 ['ANTHROPIC_API_KEY', 'TWILIO_RING_TO', 'URL', 'DEPLOY_PRIME_URL', 'EMERG_OFF', 'ONCALL_OFF', 'LEAD_INTAKE_ALERTS', 'SALESBLOCK_SECRET', 'TWILIO_FROM_ALERTS', 'PORTAL_AUTO_EMAIL', 'WEBSITE_AUTO_REPLY', 'ROOFING_IGNITE_KEY'].forEach(k => delete process.env[k]);
 let pass = 0, fail = 0;
 function ok(c, m, i){ if (c) { pass++; console.log('  ok   ' + m); } else { fail++; console.log('  FAIL ' + m + (i !== undefined ? '  ' + JSON.stringify(i).slice(0, 900) : '')); } }

@@ -46,7 +46,7 @@ var ROWS = [
   ['staff_text_alerts', 'safety', 'B', 1, 1, 'server', 'Staff text alerts', 'Text alerts to staff cells (new lead, emergency, missed call); replies relayed.'],
   /* ── lead intake, sync, backups ── */
   ['website_intake', 'sync', 'C', 1, 1, 'server', 'Website leads', 'Website forms and the roof price widget go into the Lead Inbox.'],
-  ['lead_intake', 'sync', 'C', 1, 1, 'server', 'Partner lead intake (Roof Ignite …)', 'Leads posted by lead partners come into the CRM.'],
+  ['lead_intake', 'sync', 'C', 1, 1, 'server', 'Partner lead intake (lead companies)', 'Leads posted by lead partners come into the CRM.'],
   ['partner_api', 'sync', 'C', 1, 1, 'server', 'Partner API', 'Partners post leads, bids and jobs.'],
   ['callrail', 'sync', 'C', 1, 1, 'server', 'CallRail calls', 'Logs tracking-number calls; a first-time caller becomes a lead.'],
   ['bids_inbox', 'sync', 'C', 1, 1, 'server', 'bids@ / leads@ inbox', 'Bid invites and lead e-mails become leads; GC replies and sub bids are filed.'],
