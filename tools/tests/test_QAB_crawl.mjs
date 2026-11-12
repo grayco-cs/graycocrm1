@@ -198,7 +198,7 @@ async function fieldCrawl(A, rec, shot){
   await sleep(4000);
   const f = await A.ev(() => ({ app: window._gcRA && window._gcRA.state && window._gcRA.state(), q: [...document.querySelectorAll('#_gcJobPick .gc-ra-q [data-ra-a]')].map(b => b.getAttribute('data-ra-a') + ':' + b.innerText.replace(/\s+/g, ' ').trim()),
     bar: [...document.querySelectorAll('#gc-fh-tabs [data-t]')].map(b => b.getAttribute('data-t') + ':' + b.innerText.replace(/\s+/g, ' ').trim()),
-    logo: [...document.querySelectorAll('#_gcJobPick img, #gc-fh-head img, header img')].filter(i => i.offsetParent).map(i => i.getAttribute('src')).slice(0, 3),
+    logo: [...document.querySelectorAll('img.fh-logo, #_gcJobPick img, #gc-fh-head img, header img')].filter(i => i.offsetParent).map(i => i.getAttribute('src')).slice(0, 3),
     txt: document.body.innerText.slice(0, 1500), pick: !!document.getElementById('_gcJobPick') }));
   rec.field = f;
   await A.page().screenshot({ path: SHOTS + '/' + rec.combo + '_field_home.png' }).catch(() => {});

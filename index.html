@@ -157701,6 +157701,9 @@ function newClaim(f){
     adjuster: f.adjuster || {}, deskAdjuster: f.deskAdjuster || {}, mortgageCo: s(f.mortgageCo), loanNumber: s(f.loanNumber),
     notes: [], estimates: [], payments: [], docs: [], moisture: [], checks: {}, links: {} };
   if (f.sync) c.sync = f.sync;   /* otherwise: every program switched on in ⚙ Integrations */
+  /* patch QAB: a claim made with no job ("+ New mitigation job") belongs to the company it was made in — the picked company, or a
+     Mitigation / Environmental person's own — so it stays in that company's lists (a claim on a job follows its job) */
+  try { if (!c.projectId) { var CO = window._gcCo, W0 = window._gcMitWS && window._gcMitWS.ws ? window._gcMitWS.ws() : null, cf = CO ? CO.filter() : 'all', cc = s(f.companyId) || (W0 && W0.co) || (cf !== 'all' ? cf : ''); if (CO && CO.valid(cc) && cc !== 'construction') c.companyId = cc; } } catch (e) {}
   return c;
 }
 function saveClaim(c, quiet){ return CL.put(c, quiet); }
@@ -224996,23 +224999,32 @@ function ofJob(p){ try { return W._gcCo ? W._gcCo.ofJob(p) : 'construction'; } c
 function claimOf(pid){ var C = CL(); try { return C && C.forProject ? C.forProject(pid) || null : null; } catch (e) { return null; } }
 function claimTitle(c, p){ return s(c && c.title) || s(p && p.name) || s(c && c.insured) || 'Claim'; }
 function myName(){ var m = W._gcMeNow; return s(m && m.name) || s((function(){ try { return localStorage.getItem('grayco_user'); } catch (e) { return ''; } })()); }
+/* patch QAB (overnight QA 11/12, "zero leaks"): a job is this company's when it is filed under it (window._gcCo.ofJob — with the MISFILED
+   repair) or shared with it (job.sharedWith, patch MULTICO-LINK); a claim with no job follows its own companyId (stamped when it is made
+   while Mitigation / Environmental is picked or by their people), else the claims app's own rule (a mitigation claim → Mitigation). */
+function inWs(p, c, co){
+  if (p) return ofJob(p) === co || arr(p.sharedWith).indexOf(co) >= 0;
+  try { if (c && W._gcCo && W._gcCo.valid(c.companyId)) return c.companyId === co; } catch (e) {}
+  return co === 'mitigation';
+}
 /* the drying jobs: the mitigation claims (the claims app's own rule) + the Mitigation company's jobs without a drying file yet */
 function mitJobs(all){
   var C = CL(), out = [], seen = {}, t = today();
   try {
     arr(C && C.mit ? C.mit.claims() : []).forEach(function(c){
       if (!c || (!all && /closed/i.test(s(c.phase)))) return;
-      var p = proj(c.projectId); var D0 = null; try { D0 = P2().dryingState(c, t); } catch (e) {}
+      var p = proj(c.projectId); var D0 = null;
+      if (!inWs(p, c, 'mitigation')) return;   /* patch QAB: a Construction (or Environmental) job's claim never shows in Mitigation's tools, Dashboard or TV */ try { D0 = P2().dryingState(c, t); } catch (e) {}
       out.push({ c: c, p: p, d: D0, id: p ? p.id : 'c:' + c.id, t: claimTitle(c, p), day: C.mit.day ? C.mit.day(c) : null }); if (p) seen[p.id] = 1;
     });
   } catch (e) { warn(e); }
-  projects().forEach(function(p){ if (seen[p.id] || ofJob(p) !== 'mitigation' || (!all && !activeJob(p))) return; var c = claimOf(p.id); var D0 = null; try { if (c) D0 = P2().dryingState(c, t); } catch (e) {} out.push({ c: c, p: p, d: D0, id: p.id, t: s(p.name) || s(p.client) || 'Job', day: c && C.mit && C.mit.day ? C.mit.day(c) : null }); });
+  projects().forEach(function(p){ if (seen[p.id] || !inWs(p, null, 'mitigation') || (!all && !activeJob(p))) return; var c = claimOf(p.id); var D0 = null; try { if (c) D0 = P2().dryingState(c, t); } catch (e) {} out.push({ c: c, p: p, d: D0, id: p.id, t: s(p.name) || s(p.client) || 'Job', day: c && C.mit && C.mit.day ? C.mit.day(c) : null }); });
   return out;
 }
 function envJobs(all){
   var out = [], seen = {}, H = W._gcHazOf;
-  try { arr(W._gcEnviro && W._gcEnviro.jobs ? W._gcEnviro.jobs() : []).forEach(function(x){ if (!x || !x.p || (!all && !activeJob(x.p))) return; seen[x.p.id] = 1; out.push({ p: x.p, k: x.k }); }); } catch (e) { warn(e); }
-  projects().forEach(function(p){ if (seen[p.id] || ofJob(p) !== 'environmental' || (!all && !activeJob(p))) return; var h = {}; try { h = H ? H(p) : {}; } catch (e) {} out.push({ p: p, k: Object.keys(h).filter(function(k){ return h[k]; }) }); });
+  try { arr(W._gcEnviro && W._gcEnviro.jobs ? W._gcEnviro.jobs() : []).forEach(function(x){ if (!x || !x.p || (!all && !activeJob(x.p)) || !inWs(x.p, null, 'environmental')) return; seen[x.p.id] = 1; out.push({ p: x.p, k: x.k }); }); } catch (e) { warn(e); }   /* patch QAB: a Construction job with "fire" / "mold" in its notes is not Environmental's */
+  projects().forEach(function(p){ if (seen[p.id] || !inWs(p, null, 'environmental') || (!all && !activeJob(p))) return; var h = {}; try { h = H ? H(p) : {}; } catch (e) {} out.push({ p: p, k: Object.keys(h).filter(function(k){ return h[k]; }) }); });
   return out;
 }
 function fieldJobs(a){
@@ -225021,7 +225033,7 @@ function fieldJobs(a){
   l.forEach(function(p){ ids[p.id] = 1; });
   /* + their own open jobs and (mitigation) any open water / fire / mold job not filed under a company yet */
   var re = a === 'env' ? /lead|asbestos|abatement|hazmat|environment/i : /water|mitigat|dry-?out|flood|fire|smoke|mold|sewage/i;
-  projects().filter(function(p){ return activeJob(p) && !ids[p.id] && (mine(p) || (ofJob(p) === 'construction' && re.test(s(p.type) + ' ' + s(p.name) + ' ' + s(p.jobType)))) && (ofJob(p) !== (a === 'env' ? 'mitigation' : 'environmental')); }).forEach(function(p){ ids[p.id] = 1; l.push(p); });
+  projects().filter(function(p){ return activeJob(p) && !ids[p.id] && mine(p) && (ofJob(p) !== (a === 'env' ? 'mitigation' : 'environmental')); }).forEach(function(p){ ids[p.id] = 1; l.push(p); });   /* patch QAB: no other Construction jobs by their words ("fire", "water") — only the ones they are assigned to */
   return l.filter(mine).concat(l.filter(function(p){ return !mine(p); }));
 }
 /* save a change on a job (the CRM's own way: setProjects + the projects push) */
