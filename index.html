@@ -174400,7 +174400,7 @@ function chanBadge(l, big){ var c = CHAN_BY[chanOf(l)] || CHAN_BY.unknown, raw =
 function chKey(){ return 'gc_leads_ch:' + (myEmail() || 'me'); }
 function chPick(){ if (UI.ch === undefined) { try { UI.ch = localStorage.getItem(chKey()) || ''; } catch (e) { UI.ch = ''; } if (!CHAN_BY[UI.ch]) UI.ch = ''; } return UI.ch; }
 function chSave(){ try { localStorage.setItem(chKey(), UI.ch || ''); } catch (e) {} }
-W._gcLeadSource = { of: chanOf, list: CHANS, badge: chanBadge };
+W._gcLeadChan = { of: chanOf, list: CHANS, badge: chanBadge };   /* (W._gcLeadSource is the job lead-source helper) */
 /* patch LCLEAN: the pipeline counts the estimated value (else the value), and only real numbers — text like
    "3 bids, 0 awarded" no longer turns into $30 */
 /* patch LCLEAN: one source list — the standard sources, then any other source found on a lead ("website" = "Website") */
@@ -175319,7 +175319,8 @@ function drawerHtml(l){
   var held = ''; try { held = W._gcLeadHold && W._gcLeadHold.drawer && asgPre.indexOf('data-gclh-box') < 0 ? s(W._gcLeadHold.drawer(l)) : ''; } catch (e) {}
   var own = ownOf(l);
   var due = /<div class="row"><input type="datetime-local" data-d="due"[\s\S]*?<\/div>/.exec(bid), dueKv = /<div class="kv"><span>Due:<\/span>[\s\S]*?<\/div>/.exec(bid);
-  var d = r.d, prRow = /<div class="row gcl-role-row">[\s\S]*?<\/div>/.exec(ov), ovRest = (ov.match(/<div class="kv">[\s\S]*?<\/div>/g) || []).join('');
+  var d = r.d, prRow = /<div class="row gcl-role-row">[\s\S]*?<\/div>/.exec(ov), ovRest = (ov.match(/<div class="kv">[\s\S]*?<\/div>/g) || []).join(''), ovTop = '';
+  ovRest = ovRest.replace(/<div class="kv"><span(?: data-gc-lb-row="1")?>(?:📡 Came in:|☢️ Environmental:)[\s\S]*?<\/div>/g, function(m){ ovTop += m; return ''; });   /* patch LEADSRC / LEADBOTH: how it came in + Also-on-Environmental stay in sight (Status), not folded under More */
   var edit = /<button type="button" class="b" data-d="editfull"[\s\S]*?data-d="delfull">[^<]*<\/button>/.exec(ov);
   var subp = secOf(old, /Sub bid portal/), est = secOf(old, /Estimate &amp; job|Estimate & job/);
   var notes = s(l.notes).trim();
@@ -175330,6 +175331,7 @@ function drawerHtml(l){
     + '<div class="row gcl-prio-row"><span class="kv"><span>Priority:</span></span> ' + prioChip(l) + ' ' + (canPrio(l) ? prioPicker(l) : '<span class="note">An admin sets the priority' + (isBidL(l) ? ' (or the estimator, on a bid)' : '') + '.</span>') + '</div>'
     + '<div class="gclu-asg"><span class="kv"><span>' + ((W._gcBidRole && W._gcBidRole.isBid(l)) ? 'Estimator' : 'Assigned to') + ':</span> <b data-gclu-assigned>' + esc(assignee(l) || 'Unassigned') + '</b></span>' + (own ? ' ' + own : '') + held + asgPre + asgRow + '</div>'
     + (l.lostReason ? '<div class="note">Lost because: ' + esc(l.lostReason) + '</div>' : '')
+    + ovTop
     + '</section>'
     + (bidOn ? '<section><h4>⏰ Bid</h4>'   /* patch LEADBULK: a bid only */
     + (dueKv ? dueKv[0] : '') + (s(l.bidDue) ? '<div class="note">Due date ' + dueFrom(l) + (s(l.bidDue).length <= 10 ? ' · time not stated' : '') + '</div>' : '')

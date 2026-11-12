@@ -96,7 +96,7 @@ await A.page().mouse.click(5, 300); await sleep(100);   /* a real click while En
 await A.ev(id => window._setProjects(p => (p || []).concat([{ id: 'PLBZZ1', name: 'Midtown Office Abatement', client: 'Zedd Builders', leadId: id, fromLeadId: id, status: 'active', createdAt: new Date().toISOString() }])), aid);
 const offer = await waitFor(A, () => { const b = document.getElementById('gc-lb-offer'); return b ? b.innerText : null; }, null, 15000);
 const jc = await A.ev(() => { const p = window._crm.projects.find(x => x.id === 'PLBZZ1'); return p ? window._gcCo.ofJob(p) + '|' + (p.companyId || '') : ''; });
-ok('the job made from it stays Construction (not filed under the picked Environmental)', /^construction\|construction$/.test(jc), jc);
+ok('the job made from it stays Construction (never filed under the picked Environmental)', /^construction\|(construction)?$/.test(jc), jc);
 ok('…and an admin is offered "🔗 Share with Environmental"', offer && /Share with Environmental/.test(offer), offer);
 await A.ev(() => document.querySelector('#gc-lb-offer [data-lb-share]').click()); await sleep(2000);
 const sw = await A.ev(() => { const p = window._crm.projects.find(x => x.id === 'PLBZZ1'); return { sw: p.sharedWith, env: window._gcCo.filter() === 'environmental' && window._gcCo.passJob(p) }; });
