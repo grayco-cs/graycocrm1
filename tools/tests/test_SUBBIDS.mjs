@@ -58,7 +58,7 @@ const JOBS = [
   { id: 'j_gone', title: 'DELETED-JOB', status: 'open', visibility: 'public', archivedAt: now },
   { id: 'j_dec', title: 'Sample Office (decided)', status: 'open', visibility: 'public', bidDueDate: day(9) },
   { id: 'j_won', title: 'Sample School (bid, now closed)', status: 'won', visibility: 'public' } ];
-const T = { gc_portal_session: [], gc_sub_link: [], gc_sub_event: [], gc_sub_scope: [], gc_portal_msg: [], gc_portal: [], sp_rows: [] };
+const T = { gc_portal_lock: [], gc_portal_session: [], gc_sub_link: [], gc_sub_event: [], gc_sub_scope: [], gc_portal_msg: [], gc_portal: [], sp_rows: [] };
 const spRow = (collection, id, data, extra) => Object.assign({ key: collection + '/' + id, collection, id, job_id: null, user_id: null, email: null, data, updated_at: now }, extra || {});
 Object.values(U).forEach(u => T.sp_rows.push(spRow('users', u.id, u, { user_id: u.id, email: u.email })));
 JOBS.forEach(j => T.sp_rows.push(spRow('jobs', j.id, j, { job_id: j.id })));
@@ -91,6 +91,7 @@ global.fetch = async (url, init) => {
     return res(200, keys.filter(x => KV[x] !== undefined).map(x => ({ key: x, value: KV[x], updated_at: 'T0' })));
   }
   if (u.pathname === '/auth/v1/admin/users' && m === 'POST') return res(200, { id: 'auth-' + crypto.randomBytes(3).toString('hex') });
+  if (u.pathname === '/auth/v1/token' && m === 'POST') { const b = JSON.parse(init.body); return b.password === 'Right-Pass-1' ? res(200, { access_token: 'x' }) : res(400, { error: 'invalid_grant' }); }   /* BIDONLY: the bid-site password */
   if (u.pathname.startsWith('/storage/v1/object/sign/')) { const b = JSON.parse(init.body); const bucket = u.pathname.split('/').pop(); return res(200, b.paths.map(p => ({ path: p, signedURL: '/object/sign/' + bucket + '/' + p + '?token=signed' }))); }
   const tm = /^\/rest\/v1\/([a-z_]+)$/.exec(u.pathname);
   if (tm && T[tm[1]]) {
@@ -232,6 +233,30 @@ await t('portal-app.js: the card, the sheet and the form are there in English an
 
 /* ── the browser: portal.html + portal-app.js, phone and desktop ── */
 const SPD = '/tmp/claude-0/-home-user-graycocrm1/6a5b2b6b-8a4d-5505-9f82-62521adb6674/scratchpad';
+/* BIDONLY (owner 11/11: "only can see in it after we approve … whoever signs in can see plans tomorrow"): a sub approved on the bid site who
+   is NOT in the CRM yet signs in to the portal with the e-mail + password they chose and sees the jobs to bid; unapproved → no portal */
+T.sp_rows.push(spRow('users', 'u_f1', { id: 'u_f1', role: 'sub', approved: true, email: 'fay@freshframing.test', name: 'Fay Fresh', company: 'Fresh Framing LLC', phone: '901-555-0177', trades: ['Framing'] }, { user_id: 'u_f1', email: 'fay@freshframing.test' }));
+T.sp_rows.push(spRow('users', 'u_g1', { id: 'u_g1', role: 'sub', approved: false, email: 'gus@notyet.test', name: 'Gus Notyet', company: 'Not Yet Co' }, { user_id: 'u_g1', email: 'gus@notyet.test' }));
+const pw = async (email, password) => { const r = await PA.handler({ httpMethod: 'POST', headers: { origin: 'https://portal.grayco-cs.com', 'x-nf-client-connection-ip': '10.9.0.' + (++ipN % 250) }, body: JSON.stringify({ action: 'signin-password', email, password }) }); let j = {}; try { j = JSON.parse(r.body); } catch (e) {} return { code: r.statusCode, j }; };
+await t('BIDONLY: approved on the bid site, not in the CRM → e-mail + password opens the portal (portal turned on automatically)', async () => {
+  const r = await pw('fay@freshframing.test', 'Right-Pass-1'); eq(r.code, 200, JSON.stringify(r.j)); eq(r.j.kind, 'partner');
+  yes(T.gc_sub_link.some(l => l.sub_id === 'SBPfayfreshframingtest' && l.revoked === false), 'a link was made for the CRM id the CRM will give them');
+  SESS.F = r.j.session;
+  const h = await call('F', 'p-home'); eq(h.code, 200, h.raw);
+  const b = await call('F', 'p-bidjobs'); eq(b.code, 200, b.raw); eq([b.j.linked, b.j.approved], [true, true]);
+  yes(b.j.jobs.some(j => j.id === 'j_open' && j.plansLinks && j.plansLinks.length), 'sees the open job with its plan links');
+  yes(!b.j.jobs.some(j => /DRAFT|PRIVATE-NOT|CLOSED|DELETED/.test(j.title)), 'never a hidden job');
+});
+await t('BIDONLY: wrong password → no; not approved yet → no portal', async () => {
+  eq((await pw('fay@freshframing.test', 'wrong-pass-9')).code, 401);
+  const r = await pw('gus@notyet.test', 'Right-Pass-1'); yes(r.code === 403 || r.code === 401, 'got ' + r.code + ' ' + JSON.stringify(r.j));
+  yes(!T.gc_sub_link.some(l => l.sub_id === 'SBPgusnotyettest'), 'no link for an unapproved sub');
+});
+await t('BIDONLY: an approved sub who IS in the CRM but had no portal link gets one at sign-in', async () => {
+  KV.vendors.push({ id: 'SH', name: 'Has Crm LLC', company: 'Has Crm LLC', email: 'hal@hascrm.test', isSub: true, trade: 'Paint' });
+  T.sp_rows.push(spRow('users', 'u_h1', { id: 'u_h1', role: 'sub', approved: true, email: 'hal@hascrm.test', name: 'Hal', company: 'Has Crm LLC' }, { user_id: 'u_h1', email: 'hal@hascrm.test' }));
+  const r = await pw('hal@hascrm.test', 'Right-Pass-1'); eq(r.code, 200, JSON.stringify(r.j)); yes(T.gc_sub_link.some(l => l.sub_id === 'SH'), 'link made for the CRM sub');
+});
 let chromium = null;
 if (!NO_BROWSER) { try { ({ chromium } = await import(SPD + '/node_modules/playwright/index.mjs')); } catch (e) { console.log('  (no Playwright here — browser checks skipped)'); } }
 if (chromium) {

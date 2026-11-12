@@ -208,6 +208,20 @@ function crmSubs(data){
   return out;
 }
 function subById(data, id){ return crmSubs(data).find(function(r){ return s(r.id) === s(id); }) || null; }
+/* BIDONLY (owner 11/11: "only can see in it after we approve … whoever signs in can see plans tomorrow"): a sub approved on the bid site
+   who is not in the CRM's Subs list yet gets the portal at once, as a "bid-only" sub whose id is the one the CRM gives them when it adds
+   them (index.html patch BIDSUBS: 'SBP' + the e-mail's letters) — so the day the CRM adds them, the same session / link just continues. */
+function bidSubId(email){ return 'SBP' + low(email).replace(/[^a-z0-9]+/g, '').slice(0, 24); }
+function bidOnlySub(prof){
+  if (!prof || prof.role !== 'sub' || prof.approved !== true || prof.bidsRevoked === true || !okEmail(low(prof.email))) return null;
+  return { id: bidSubId(prof.email), name: s(prof.company) || s(prof.name) || low(prof.email), company: s(prof.company), contact: s(prof.name), email: low(prof.email),
+    phone: s(prof.phone), trade: arr(prof.trades).join(', '), lang: s(prof.lang), isSub: true, bidOnly: true };
+}
+/* subById, or (for an 'SBP…' id) the approved bid-site profile behind it */
+async function subResolve(data, id){
+  const sub = subById(data, id); if (sub || !/^SBP/.test(s(id))) return sub;
+  try { const rows = await dbGet('sp_rows', 'select=data&collection=eq.users&limit=5000'); const prof = rows.map(function(r){ return r.data || {}; }).find(function(u){ return u.role === 'sub' && bidSubId(u.email) === s(id); }); return bidOnlySub(prof); } catch (e) { return null; }
+}
 function rowIsSub(row, sub){
   if (!row || !sub) return false;
   const rid = s(row.subId || row.vendorId);
@@ -293,7 +307,7 @@ const MAIL = {
     linkSubj: 'Your GrayCo Portal', linkHead: 'Your own GrayCo page', linkBody: 'This is your private GrayCo Portal: your jobs with GrayCo, scopes, messages with your Project Manager, photos, invoices and payments, and your paperwork. No password needed — keep this e-mail. Send all invoices and pay requests to invoices@grayco-cs.com (include the job name/PO).',
     linkBtn: 'Open my GrayCo Portal', scopeSubj: 'Sub agreement to sign — ', scopeBody: 'GrayCo sent you a sub agreement: the scope of work and what you will be paid on this job. Open your portal to review it and sign it, or ask a question. Send all invoices and pay requests to invoices@grayco-cs.com (include the job name/PO).', scopeBtn: 'Review and sign',
     coSignSubj: 'Change order to sign — ', coSignBody: 'GrayCo sent you a change order to your scope on this job. Open your portal to review it and sign it, or ask a question.',
-    approvedSubj: 'You can now sign in at bids.grayco-cs.com', approvedBody: 'GrayCo approved your company for the GrayCo bid site. Sign in with the e-mail and password you chose.', approvedBtn: 'Open the bid site',
+    approvedSubj: 'You are approved — sign in to your GrayCo Portal', approvedBody: 'GrayCo approved your company. Sign in at portal.grayco-cs.com with the e-mail and password you chose to see the jobs to bid, the plans and your papers. (bids.grayco-cs.com works with the same sign-in.)', approvedBtn: 'Open my GrayCo Portal',
     foot: 'Questions? Call GrayCo at ' + OFFICE_PHONE + '.'
   },
   es: {
@@ -301,7 +315,7 @@ const MAIL = {
     linkSubj: 'Su Portal GrayCo', linkHead: 'Su propia página de GrayCo', linkBody: 'Este es su Portal GrayCo privado: sus trabajos con GrayCo, alcances, mensajes con su Gerente de Proyecto, fotos, facturas y pagos, y sus papeles. No necesita contraseña — guarde este correo. Envíe todas las facturas a invoices@grayco-cs.com (con el nombre del trabajo y el PO).',
     linkBtn: 'Abrir mi Portal GrayCo', scopeSubj: 'Acuerdo de subcontrato para firmar — ', scopeBody: 'GrayCo le envió un acuerdo de subcontrato: el alcance del trabajo y lo que se le pagará en este trabajo. Abra su portal para revisarlo y firmarlo, o hacer una pregunta. Envíe todas las facturas a invoices@grayco-cs.com (con el nombre del trabajo y el PO).', scopeBtn: 'Revisar y firmar',
     coSignSubj: 'Orden de cambio para firmar — ', coSignBody: 'GrayCo le envió una orden de cambio a su alcance en este trabajo. Abra su portal para revisarla y firmarla, o hacer una pregunta.',
-    approvedSubj: 'Ya puede entrar en bids.grayco-cs.com', approvedBody: 'GrayCo aprobó a su compañía para el sitio de licitaciones de GrayCo. Entre con el correo y la contraseña que escogió.', approvedBtn: 'Abrir el sitio de licitaciones',
+    approvedSubj: 'Aprobado — entre a su Portal GrayCo', approvedBody: 'GrayCo aprobó a su compañía. Entre en portal.grayco-cs.com con el correo y la contraseña que escogió para ver los trabajos para licitar, los planos y sus papeles. (bids.grayco-cs.com funciona con la misma cuenta.)', approvedBtn: 'Abrir mi Portal GrayCo',
     foot: '¿Preguntas? Llame a GrayCo al ' + OFFICE_PHONE + '.'
   }
 };
@@ -611,11 +625,14 @@ async function subPasswordLogin(data, email, password){
     ok = r.ok;
   } catch (e) { ok = false; }
   if (!ok) return null;
-  let crmId = '';
-  try { const rows = await dbGet('sp_rows', 'select=data&collection=eq.users&email=' + eq(email)); const prof = rows[0] && rows[0].data; if (prof && prof.role === 'sub') crmId = s(prof.crmSubId); } catch (e) {}
-  const sub = crmId ? subById(data, crmId) : crmSubs(data).find(function(r){ return low(r.email) === email; });
+  let crmId = '', prof = null;
+  try { const rows = await dbGet('sp_rows', 'select=data&collection=eq.users&email=' + eq(email)); prof = rows[0] && rows[0].data; if (prof && prof.role === 'sub') crmId = s(prof.crmSubId); } catch (e) {}
+  let sub = (crmId ? subById(data, crmId) : null) || crmSubs(data).find(function(r){ return low(r.email) === email; }) || null;
+  const approved = !!bidOnlySub(prof);
+  if (!sub && approved) sub = bidOnlySub(prof);   /* BIDONLY: approved on the bid site, not in the CRM yet */
   if (!sub) return { noPortal: true };
-  const link = await subLinkActive(sub.id);
+  let link = await subLinkActive(sub.id);
+  if (!link && approved) { try { link = await subLinkCreate(sub.id, sub.name, 'bid site approval (automatic)'); } catch (e) { link = null; } }   /* BIDONLY: approval turns their portal on */
   if (!link) return { noPortal: true };
   return { sub: sub, links: [link.token] };
 }
@@ -686,7 +703,7 @@ async function openLink(event){
   const l = await subLinkRow(token);
   if (!l) return null;
   const data = await crmData(false);
-  const sub = subById(data, l.sub_id);
+  const sub = await subResolve(data, l.sub_id);
   if (!sub) return null;
   if (deviceCheckNeeded(data, sub) && !(await deviceOk(l, gcHeader(event, 'x-portal-device')))) {
     return { ok: true, kind: 'partner', need: 'device', to: maskEmail(sub.email), lang: lang(sub.lang) };
@@ -699,7 +716,7 @@ async function deviceStart(event){
   const l = TOKEN_RE.test(token) ? await subLinkRow(token) : null;
   if (!l) return null;
   const data = await crmData(false);
-  const sub = subById(data, l.sub_id); if (!sub) return null;
+  const sub = await subResolve(data, l.sub_id); if (!sub) return null;
   const key = 'd:' + token;
   const recent = await dbGet('gc_portal_code', 'select=id&ident=' + eq(hmac(key)) + '&created_at=gt.' + encodeURIComponent(new Date(Date.now() - 3600e3).toISOString()));
   if (recent.length >= 5) return { ok: true, sent: true };
@@ -727,7 +744,7 @@ async function deviceVerify(event, body){
    customer's phone / e-mail (unless the PM turned on "sub may see the customer" for that job). */
 async function partnerCtx(sess){
   const data = await crmData(false);
-  const sub = subById(data, sess.sub_id);
+  const sub = await subResolve(data, sess.sub_id);
   if (!sub) throw Fail(404, NOT_ACTIVE);
   const scopes = await dbGet('gc_sub_scope', 'select=*&sub_id=' + eq(sub.id) + '&status=in.(published,accepted,question)');
   const scopePids = new Set(scopes.map(function(x){ return s(x.project_id); }));
@@ -1520,7 +1537,7 @@ async function staffAction(action, body, who){
     const ok = body.approve !== false, now = new Date().toISOString();
     const prof = Object.assign({}, r.data, ok ? { approved: true, bidsRevoked: false, bidsApprovedAt: now, bidsApprovedBy: me } : { approved: false, bidsRevoked: true, bidsRevokedAt: now });
     await dbPost('sp_rows?on_conflict=key', [{ key: r.key, collection: 'users', id: r.id, user_id: r.id, email: low(prof.email), data: prof, updated_at: now, updated_by: who.email }], 'resolution=merge-duplicates,return=minimal');
-    if (ok) { const L = MAIL[lang(prof.lang)]; await sendMail(prof.email, L.approvedSubj, mailHtml(L.approvedSubj, L.approvedBody, '', { href: bidsBase(), label: L.approvedBtn })); }
+    if (ok) { const L = MAIL[lang(prof.lang)]; await sendMail(prof.email, L.approvedSubj, mailHtml(L.approvedSubj, L.approvedBody, '', { href: portalBase(), label: L.approvedBtn })); }
     return { ok: true, approved: ok };
   }
   if (action === 's-login') {
