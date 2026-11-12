@@ -170,6 +170,9 @@ function s(v){ return v == null ? '' : String(v).trim(); }
 function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
 function arr(v){ return Array.isArray(v) ? v : []; }
 function tokenOf(){ var m = /[#&]t=([A-Za-z0-9_-]{20,})/.exec(location.hash || ''); return m ? m[1] : ''; }
+/* patch MITWS: a company's lobby (#t=…&co=mitigation): its link, its name and logo */
+function coOf(){ var m = /[#&]co=(mitigation|environmental)\b/.exec(location.hash || ''); return m ? m[1] : ''; }
+function brandLogo(){ return (DATA && DATA.brand && /^\/img\/grayco-[a-z]+-logo\.(png|jpg)$/.test(DATA.brand.logo || '') && DATA.brand.logo) || '/portal-logo.png'; }
 /* ── icons (line art, the GrayCo gold) ── */
 var IC = {
   drop: '<path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/><path d="M9 14.5a3 3 0 0 0 3 3"/>',
@@ -222,7 +225,7 @@ function daysLeft(end){ var t = Date.parse(s(end) + 'T23:59:59'); return isFinit
 var R = {};
 R.welcome = function(sl){
   var n = new Date();
-  return '<div class="welcome"><img src="/portal-logo.png" alt="GrayCo Construction Services"><h1>' + esc(F(sl, 'h')) + '</h1><div class="sub">' + esc(F(sl, 'sub')) + '</div>' +
+  return '<div class="welcome"><img src="' + esc(brandLogo()) + '" alt="' + esc(brand().name || 'GrayCo Construction Services') + '"><h1>' + esc(F(sl, 'h')) + '</h1><div class="sub">' + esc(F(sl, 'sub')) + '</div>' +
     '<div class="tm"><b data-tm2>' + esc(n.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })) + '</b><i></i><span data-dt2>' + esc(n.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })) + '</span></div></div>';
 };
 R.beforeafter = function(sl){
@@ -445,6 +448,7 @@ function subRotate(){   /* the promo rotation: every live offer gets its turn in
 }
 function setData(d, only){
   DATA = d; ONLY = only == null ? null : only;
+  try { var lg = D.getElementById('logo'); if (lg && lg.getAttribute('src') !== brandLogo()) { lg.src = brandLogo(); lg.alt = brand().name || 'GrayCo Construction Services'; } if (d && d.brand && /^#[0-9a-f]{6}$/i.test(d.brand.color || '')) D.documentElement.style.setProperty('--gc-co', d.brand.color); } catch (e) {}   /* patch MITWS */
   LIST = arr(d && d.slides).filter(usable);
   if (!LIST.length) { blank(PREVIEW ? '' : 'GrayCo Construction Services'); return; }
   var na = D.querySelector('.na'); if (na) na.remove();
@@ -481,7 +485,8 @@ var TOK = tokenOf(), BUSY = false;
 function pull(){
   if (BUSY) return; BUSY = true;
   if (!TOK) { blank(''); BUSY = false; return; }
-  fetch('/.netlify/functions/lobby', { headers: { 'x-lobby-token': TOK }, cache: 'no-store' }).then(function(r){
+  var hd = { 'x-lobby-token': TOK }; if (coOf()) hd['x-lobby-co'] = coOf();   /* patch MITWS */
+  fetch('/.netlify/functions/lobby', { headers: hd, cache: 'no-store' }).then(function(r){
     return r.json().then(function(j){ return { st: r.status, j: j }; }, function(){ return { st: r.status, j: null }; });
   }).then(function(x){
     BUSY = false;

@@ -62,12 +62,13 @@ const ROLES = {
   pm:     { app: 'pm',     field: ['Home', 'My Jobs', 'Approvals', 'Photos', 'More'], desk: ['Home', 'My Jobs', 'Approvals', 'Photos', 'More'] },
   est:    { app: 'est',    field: ['Home', 'Leads', 'Estimates', 'Photos', 'More'], desk: ['Home', 'Leads', 'Estimates', 'Photos', 'More'] },
   ins:    { app: 'ins',    field: ['Home', 'Claims', 'Leads', 'Photos', 'More'], desk: ['Home', 'Claims', 'Leads', 'Photos', 'More'] },
-  mit:    { app: 'ins',    field: ['Home', 'Claims', 'Leads', 'Photos', 'More'], desk: ['Home', 'Claims', 'Leads', 'Photos', 'More'] },
+  mit:    { app: 'mit',    field: ['Home', 'Drying', 'Jobs', 'Photos', 'More'], desk: ['Home', 'Drying', 'Jobs', 'Photos', 'More'] },   /* MITWS (owner 11/12): Mitigation has its own app */
   crew:   { app: 'crew',   field: ['Home', 'Today', 'Photos', 'Messages'], desk: null },
   office: { app: 'office', field: ['Home', 'Approvals', 'Messages', 'More'], desk: ['Home', 'Approvals', 'Messages', 'More'] }
 };
 const HOMEBTN = { admin: ['appr', 'leads', 'money', 'viewas', 'systems', 'addjob'], pm: ['log', 'photos', 'punch', 'sched', 'msgs', 'appr'], est: ['sendest', 'newcust', 'bids', 'visit', 'myleads', 'quickest', 'roofscout', 'photos'],   /* patch ESTPDF: 📤 Send estimate, 👤 New customer */
-  ins: ['emerg', 'oncall', 'drying', 'equip', 'photos', 'claims', 'tpa'], crew: ['clock', 'photos', 'log', 'punch'], office: ['appr', 'msgs', 'match', 'todo'] };
+  ins: ['emerg', 'oncall', 'drying', 'equip', 'photos', 'claims', 'tpa'], crew: ['clock', 'photos', 'log', 'punch'], office: ['appr', 'msgs', 'match', 'todo'],
+  mit: ['mws_read', 'mws_photos', 'mws_equip', 'mws_log', 'mws_auth', 'mws_note', 'clock', 'mws_emerg'] };   /* MITWS: the mitigation field buttons, in work order */
 const ONLY = process.env.ONLY ? process.env.ONLY.split(',') : null;
 const W = []; const closeAll = async () => { for (const c of W) await c.b.close().catch(() => {}); W.length = 0; };
 
@@ -225,7 +226,7 @@ async function viewAs(where){
   const c = await device('VAS-' + where, mobile);
   await H.signIn(c, PEOPLE.admin.email, 9000);
   ok(!!(await waitHome(c, where, 'admin')), `owner ${where}: the Admin app`);
-  const PLAN = [['Project Manager', 'pm', where], ['Estimator', 'est', where], ['Insurance', 'ins', where], ['Mitigation', 'ins', where], ['Superintendent', 'crew', 'field'], ['Office', 'office', where], ['Marketing Manager', '', ''], ['', 'admin', where]];
+  const PLAN = [['Project Manager', 'pm', where], ['Estimator', 'est', where], ['Insurance', 'ins', where], ['Mitigation', 'mit', where], ['Superintendent', 'crew', 'field'], ['Office', 'office', where], ['Marketing Manager', '', ''], ['', 'admin', where]];
   for (const [v, a, w] of PLAN) {
     await c.ev(x => window._gcVAS.set(x), v);
     if (!a) {
@@ -235,7 +236,7 @@ async function viewAs(where){
     }
     if (mobile || w === 'field') await c.ev(() => { try { if (!document.querySelector('#_gcJobPick.gc-fh')) window._gcField.open(); } catch (e) {} });
     const hh = await waitHome(c, w, a, 20000);
-    const want = ROLES[{ pm: 'pm', est: 'est', ins: 'ins', crew: 'crew', office: 'office', admin: 'admin' }[a]][w];
+    const want = ROLES[{ pm: 'pm', est: 'est', ins: 'ins', mit: 'mit', crew: 'crew', office: 'office', admin: 'admin' }[a]][w];
     let bl = await barLabels(c, w);
     /* a computer previewing a crew member: the home can be drawn a moment before the role app puts the computer in Field
        (its next tick, under a second) and shows the bar — give it that moment (patch FIELDDESK) */

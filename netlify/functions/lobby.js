@@ -99,6 +99,13 @@ function H(){ const k = svcKey(); return { apikey: k, Authorization: 'Bearer ' +
 function centralDay(){ try { return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()); } catch (e) { return new Date(Date.now() - 6 * 3600e3).toISOString().slice(0, 10); } }
 function J(code, body, extra){ return { statusCode: code, headers: Object.assign({ 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex' }, extra || {}), body: JSON.stringify(body) }; }
 const NOPE = { ok: false, error: 'This lobby screen is not active.' };
+/* patch MITWS (owner 11/12: the TVs per company): GrayCo Mitigation and GrayCo Environmental each have their own lobby — their own
+   playlist, offers and link (gc_kv <key>__mitigation / <key>__environmental, header x-lobby-co), their name and logo, and only the
+   photos of their own jobs. No company → GrayCo Construction's lobby, exactly as before. */
+const COS = { mitigation: { name: 'GrayCo Mitigation', logo: '/img/grayco-mitigation-logo.png', color: '#0e7490' }, environmental: { name: 'GrayCo Environmental', logo: '/img/grayco-environmental-logo.png', color: '#15803d' } };
+function coOf(v){ v = low(v); return COS[v] ? v : ''; }
+function coKey(k, co){ return co ? k + '__' + co : k; }
+const CO_DEFAULTS = { mitigation: ['welcome', 'restoration', 'emergency', 'claims', 'process', 'review', 'beforeafter', 'leavereview'], environmental: ['welcome', 'emergency', 'process', 'review', 'leavereview'] };
 
 /* the CRM's records (gc_kv), read with the service key; a big list may be in pieces (<key>__manifest + __chunkN) */
 async function kvRead(keys){
@@ -212,6 +219,7 @@ async function build(doc, offersDoc, opts){
   arr(data.projects).forEach(function(p){ if (p && p.id) P[s(p.id)] = p; });
   arr(data.gc_photos).forEach(function(r){
     if (!r || r.deleted === true || r.source === 'ccflag' || !s(r.id)) return;
+    if (opts.co) { const pj = P[s(r.jobId)]; if (!pj || s(pj.companyId) !== opts.co) return; }   /* patch MITWS: a company's lobby — its own jobs' photos */
     if (!sharedOf(r)) return; if (r.source === 'sub' && !(r.shared === true && s(r.custOkBy))) return;
     photos[s(r.id)] = r;
   });
@@ -282,6 +290,7 @@ async function build(doc, offersDoc, opts){
   const states = (s(B.licenses).match(/\b(TN|AR|MS|AL|KY|MO|GA|LA|TX)\b/g) || []).filter(function(v, i, a){ return a.indexOf(v) === i; }).join(' · ');
   const out = { ok: true, at: new Date().toISOString(), interval: Math.max(12, Math.min(15, +doc.interval || 14)), slides: slides, offers: offers, tiers: tiers, handyman: handyman, referral: referral, care: care,
     brand: { name: s(B.name) || 'GrayCo Construction Services', phone: s(B.phone) || '(901) 585-0944', emergency: emergency, licenses: s(B.licenses), states: states, reviewUrl: httpsUrl(obj(mk.cfg).reviewLink) || s(B.reviewUrl) || TY.reviewUrl } };
+  if (opts.co && COS[opts.co]) { out.brand.name = COS[opts.co].name; out.brand.logo = COS[opts.co].logo; out.brand.color = COS[opts.co].color; out.brand.co = opts.co; }   /* patch MITWS */
   if (types.weather) out.weather = await weather();
   return out;
 }
@@ -300,7 +309,7 @@ exports.handler = async function(event){
     const who = await gcStaffAuth(event); if (!who.ok) return J(who.statusCode || 401, { ok: false, error: who.error }, gcCors(event));
     const doc = obj(body.lobby), offers = obj(body.offers), only = body.only == null || body.only === '' ? null : Math.max(0, parseInt(body.only, 10) || 0);
     try {
-      const data = await build(doc, offers, { all: only != null });
+      const data = await build(doc, offers, { all: only != null, co: coOf(body.co) });   /* patch MITWS */
       return J(200, { ok: true, data: data, only: only == null ? null : Math.min(only, Math.max(0, data.slides.length - 1)) }, gcCors(event));
     } catch (e) { return J(500, { ok: false, error: 'The preview could not be made (' + s(e && e.message).slice(0, 120) + ').' }, gcCors(event)); }
   }
@@ -309,19 +318,20 @@ exports.handler = async function(event){
   if (limited(ip)) return J(429, { ok: false, error: 'Slow down.' });
   const tok = gcHeader(event, 'x-lobby-token').trim();
   if (!/^[A-Za-z0-9_-]{32,128}$/.test(tok)) return J(404, NOPE);
+  const co = coOf(gcHeader(event, 'x-lobby-co'));   /* patch MITWS: which company's lobby */
   try {
-    const kv = await kvRead(['gc_lobby_access']);
-    const acc = obj(kv.gc_lobby_access);
+    const kv = await kvRead([coKey('gc_lobby_access', co)]);
+    const acc = obj(kv[coKey('gc_lobby_access', co)]);
     if (!acc.on || !/^[A-Za-z0-9_-]{32,128}$/.test(s(acc.token)) || !crypto.timingSafeEqual(digest(acc.token), digest(tok))) return J(404, NOPE);
-    const key = digest(tok).toString('hex') + '|' + s(acc.at);
+    const key = digest(tok).toString('hex') + '|' + s(acc.at) + '|' + co;
     if (CACHE.key === key && Date.now() - CACHE.at < 60e3) return J(200, CACHE.body);
-    const kv2 = await kvRead(['gc_lobby', 'gc_lobby_offers', 'gc_tv_goals']);   /* patch TVMUSIC: + the lobby's company music */
-    const doc = obj(kv2.gc_lobby);
-    if (!arr(doc.slides).length) doc.slides = TY.defaults.map(function(k){ return { id: 'd_' + k, type: k, on: true }; });
-    const out = await build(doc, obj(kv2.gc_lobby_offers), {});
+    const kv2 = await kvRead([coKey('gc_lobby', co), coKey('gc_lobby_offers', co), 'gc_tv_goals']);   /* patch TVMUSIC: + the lobby's company music */
+    const doc = obj(kv2[coKey('gc_lobby', co)]);
+    if (!arr(doc.slides).length) doc.slides = (co ? CO_DEFAULTS[co].filter(function(k){ return TY.by[k]; }) : TY.defaults).map(function(k){ return { id: 'd_' + k, type: k, on: true }; });
+    const out = await build(doc, obj(kv2[coKey('gc_lobby_offers', co)]), { co: co });
     const mu = musicUrl(obj(kv2.gc_tv_goals).lobbyMusic); if (mu) out.music = mu;   /* patch TVMUSIC */
     CACHE = { key: key, at: Date.now(), body: out };
     return J(200, out);
   } catch (e) { return J(503, { ok: false, error: 'The lobby could not be loaded right now.' }); }
 };
-exports._test = { cleaner: cleaner, build: build, musicUrl: musicUrl, reset: function(){ CACHE = { key: '', at: 0, body: null }; RL.clear(); WX = { at: 0, v: null }; } };
+exports._test = { coOf: coOf, coKey: coKey, cleaner: cleaner, build: build, musicUrl: musicUrl, reset: function(){ CACHE = { key: '', at: 0, body: null }; RL.clear(); WX = { at: 0, v: null }; } };
