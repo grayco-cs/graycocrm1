@@ -123,7 +123,7 @@ const T = {
     summary: 'Summary',
     bidNumber: 'Bid', subTotal: 'Subtotal',
     // Visibility, invites, won jobs, tracking
-    visibility: 'Visibility', public: 'Public', private: 'Private',
+    visibility: 'Visibility', public: 'Public', private: 'Private', tradeScopeFiles: 'Scope files for this trade', attachHintAll: 'Any file: PDF, Word, Excel, pictures, DWG, ZIP — up to 50 MB each.', scopeWord: 'scope', specsWord: 'Specs', visToPublic: 'Click to make it public — every approved sub will see it', visToPrivate: 'Click to make it private — invited subs only', visConfirmPublic: 'Make this job PUBLIC? Every approved sub will see it and can bid.',
     publicHint: 'All approved subs can see this job.',
     privateHint: 'Only invited subs can see this job.',
     inviteSubs: 'Invite Subs', inviteByEmail: 'Invite by Email',
@@ -417,7 +417,7 @@ const T = {
     summary: 'Resumen',
     bidNumber: 'Oferta', subTotal: 'Subtotal',
     // Visibility, invites, won jobs, tracking
-    visibility: 'Visibilidad', public: 'Público', private: 'Privado',
+    visibility: 'Visibilidad', public: 'Público', private: 'Privado', tradeScopeFiles: 'Archivos del alcance de este oficio', attachHintAll: 'Cualquier archivo: PDF, Word, Excel, fotos, DWG, ZIP — hasta 50 MB cada uno.', scopeWord: 'alcance', specsWord: 'Especificaciones', visToPublic: 'Clic para hacerlo público — todos los subcontratistas aprobados lo verán', visToPrivate: 'Clic para hacerlo privado — solo los invitados', visConfirmPublic: '¿Hacer este trabajo PÚBLICO? Todos los subcontratistas aprobados lo verán y podrán licitar.',
     publicHint: 'Todos los subcontratistas aprobados pueden ver este trabajo.',
     privateHint: 'Solo los subcontratistas invitados pueden ver este trabajo.',
     inviteSubs: 'Invitar Subs', inviteByEmail: 'Invitar por Email',
@@ -773,6 +773,9 @@ function TradeChips({ picked, onChange }) {
   );
 }
 const ACCEPT_DOCS = 'application/pdf,image/*,.heic,.heif,.doc,.docx,.rtf,.odt,.txt,.pages';
+/* patch PLANREQ-B (owner 11/12: "make sure I can add all types of files"): every common type on a bid job — 50 MB each, bigger → a 🔗 link */
+const ACCEPT_ALL = '.pdf,.png,.jpg,.jpeg,.gif,.webp,.heic,.heif,.tif,.tiff,.bmp,.doc,.docx,.xls,.xlsx,.xlsm,.csv,.ppt,.pptx,.txt,.rtf,.dwg,.dxf,.dwf,.zip,application/pdf,image/*';
+const ALL_RE = /\.(pdf|png|jpe?g|gif|webp|heic|heif|tiff?|bmp|docx?|xlsx?|xlsm|csv|pptx?|txt|rtf|dwg|dxf|dwf|zip)$/i;
 function SignupPapers({ t, papers, setPapers }) {
   const pick = async (key, e, i) => {
     const f = e.target.files && e.target.files[0];
@@ -2295,7 +2298,7 @@ function PlanLinkBox({ t, job, showToast, onLink }) {
   return (
     <div data-planlink-box="1" style={{ marginTop: 10, paddingTop: 10, borderTop: `1px dashed ${styles.border}` }}>
       {drive && <div style={{ marginBottom: 8 }}>
-        <input ref={bigRef} type="file" accept=".pdf,.zip,.dwg,.dxf,application/pdf" style={{ display: 'none' }} data-plans="bigfile" onChange={e => big((e.target.files || [])[0])} />
+        <input ref={bigRef} type="file" accept={ACCEPT_ALL} style={{ display: 'none' }} data-plans="bigfile" onChange={e => big((e.target.files || [])[0])} />
         <Btn data-plans="drive" disabled={!!busy} onClick={() => bigRef.current && bigRef.current.click()}>{busy ? (t.plansUploading + ' ' + busy) : '☁ ' + (t.driveBig || 'Upload big file to Google Drive')}</Btn>
       </div>}
       <div style={{ fontSize: 12, fontWeight: 700, color: styles.text2, marginBottom: 6 }} data-plans="linkhint">{drive ? (t.linkOr || 'Or paste a Drive / Dropbox link') : (t.linkBig || 'Over 50 MB? Paste a Drive/Dropbox link')}</div>
@@ -2340,16 +2343,17 @@ function PlansRequests({ t, job, user, isAdmin, showToast, onAdded, onLink }) {
     if (!files || !files.length) return;
     setBusy(true);
     try {
-      let added = [], skipped = [], told = 0;
+      let added = [], scoped = [], skipped = [], told = 0;
       for (const f of files) {
-        if (!/\.(zip|pdf|png|jpe?g|webp|gif|tiff?|heic|dwg|dxf)$/i.test(f.name)) { skipped.push(f.name); continue; }
+        if (!ALL_RE.test(f.name)) { skipped.push(f.name); continue; }
         if (f.size > 50 * 1024 * 1024) { skipped.push(f.name + ' (over 50 MB)'); continue; }
         const path = await uploadBlob(f, f.name);
         const r = await api('plans-import', { jobId: job.id, fileRef: path, name: f.name, size: f.size });
-        added = added.concat(r.added || []); skipped = skipped.concat((r.skipped || []).map(x => x.name + ' (' + x.why + ')')); told += r.notified || 0;
+        added = added.concat(r.added || []); scoped = scoped.concat(r.scoped || []); skipped = skipped.concat((r.skipped || []).map(x => x.name + ' (' + x.why + ')')); told += r.notified || 0;
       }
-      if (added.length) onAdded(added);
-      showToast(t.plansUploaded.replace('{n}', added.length) + (told ? ' ' + t.plansTold.replace('{n}', told) : '') + (skipped.length ? ' — ' + t.plansSkipped + ': ' + skipped.slice(0, 4).join(', ') : ''), skipped.length && !added.length ? 'error' : undefined);
+      if (added.length || scoped.length) onAdded(added, scoped);
+      const where = added.concat(scoped).filter(x => (x.trades || []).length || x.kind !== 'plans').slice(0, 4).map(x => x.name + ' → ' + (x.kind === 'scope' ? (x.trades || []).join(', ') + ' ' + t.scopeWord : x.kind === 'specs' ? t.specsWord + ((x.trades || []).length ? ' (' + x.trades.join(', ') + ')' : '') : t.plans + ' (' + (x.trades || []).join(', ') + ')'));
+      showToast(t.plansUploaded.replace('{n}', added.length + scoped.length) + (where.length ? ' · ' + where.join(' · ') : '') + (told ? ' ' + t.plansTold.replace('{n}', told) : '') + (skipped.length ? ' — ' + t.plansSkipped + ': ' + skipped.slice(0, 4).join(', ') : ''), skipped.length && !added.length ? 'error' : undefined);
       if (added.length) api('load', { keys: ['planreqs'] }).then(r => setReqs(((r && r.data && r.data.planreqs) || []).filter(q => q.jobId === job.id))).catch(() => {});
     } catch (e) { showToast(e.message, 'error'); }
     setBusy(false);
@@ -2364,7 +2368,7 @@ function PlansRequests({ t, job, user, isAdmin, showToast, onAdded, onLink }) {
           const isOpen = q.status !== 'closed' && !q.closedAt && !q.notifiedAt;
           return <div key={q.id || q.userId} data-planreq={q.id} style={{ fontSize: 12, color: styles.text2 }}><b style={{ color: styles.text }}>{q.company || q.name || q.email}</b>{' · '}{(q.needs && q.needs.length ? q.needs : ['plans']).map(k => prLabel(t, k)).join(', ')}{q.note ? ' — “' + q.note + '”' : ''}{' · '}{[q.name, q.phone, q.email].filter(Boolean).join(' · ')} <span style={{ fontWeight: 700, color: isOpen ? '#92400e' : styles.green }}>{isOpen ? t.prAdminOpen : t.prAdminClosed}</span></div>; })}
           <div style={{ fontSize: 11, color: styles.text2 }}>{t.prAdminHow}</div></div>}
-        <input ref={fileRef} type="file" multiple accept=".zip,.pdf,.png,.jpg,.jpeg,.webp,.gif,.tif,.tiff,.heic,.dwg,.dxf" style={{ display: 'none' }} data-plans="file"
+        <input ref={fileRef} type="file" multiple accept={ACCEPT_ALL} style={{ display: 'none' }} data-plans="file"
           onChange={e => upload(Array.from(e.target.files || []))} />
         <Btn data-plans="upload" disabled={busy} onClick={() => fileRef.current && fileRef.current.click()}>{busy ? t.plansUploading : '⬆ ' + t.uploadPlansZip}</Btn>
         <div style={{ fontSize: 11, color: styles.text2, marginTop: 6 }}>{t.plansZipHint}</div>
@@ -2925,7 +2929,7 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
           </Field>
           <TradeScopesEditor t={t}
             tradeScopes={editForm.tradeScopes}
-            setTradeScopes={ts => setEditForm({ ...editForm, tradeScopes: ts })} />
+            setTradeScopes={ts => setEditForm({ ...editForm, tradeScopes: ts })} showToast={showToast} />
           <Field label={t.notes}>
             <textarea style={{ ...inputStyle, minHeight: 60, resize: 'vertical' }} value={editForm.notes}
               onChange={e => setEditForm({ ...editForm, notes: e.target.value })} />
@@ -3170,6 +3174,14 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
                         {ts.scope}
                       </div>
                     )}
+                    {/* patch PLANREQ-C: the trade's scope files (sorted here by trade when uploaded) */}
+                    {(ts.files || []).length > 0 && <div data-tradefiles={ts.trade || ''} style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: ts.scope ? 10 : 0 }}>
+                      {(ts.files || []).map((f, i) => (
+                        <div key={f.fileRef || i} data-scopefile={f.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '8px 12px', background: styles.cream, borderRadius: 6, border: `1px solid ${styles.border}`, fontSize: 13 }}>
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}><FileText size={16} color={styles.accent} style={{ flexShrink: 0 }} /><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span></span>
+                          {f.dataUrl && <Btn size="sm" icon={Download} onClick={() => openFile(f.dataUrl, f.name)}>{t.downloadPlans}</Btn>}
+                        </div>))}
+                    </div>}
                   </div>
                 ))}
               </div>
@@ -3247,7 +3259,10 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
           <Card style={{ marginBottom: 16 }}>
             <h3 style={sectionTitleStyle}><FileText size={18} /> {t.plans}</h3>
             <PlansRequests t={t} job={job} user={user} isAdmin={isAdmin} showToast={showToast}
-              onAdded={(added) => { setJobs(jobs.map(j => j.id === job.id ? { ...j, plans: [...(j.plans || []), ...added] } : j)); loadPlansFor(job.id).then(setFullPlans).catch(() => {}); }}
+              onAdded={(added, scoped) => { loadPlansFor(job.id).then(setFullPlans).catch(() => {});
+                /* patch PLANREQ-C: files sorted into a trade's scope changed the job on the server — take the server's copy (never save a stale one over it) */
+                if ((scoped || []).length) api('load', { keys: ['jobs'] }).then(r => { const fresh = ((r && r.data && r.data.jobs) || []).find(x => x.id === job.id); if (fresh) setJobs(js => js.map(j => j.id === job.id ? { ...j, ...fresh } : j)); }).catch(() => {});
+                else setJobs(jobs.map(j => j.id === job.id ? { ...j, plans: [...(j.plans || []), ...added] } : j)); }}
               onLink={(link) => { setJobs(jobs.map(j => j.id === job.id ? { ...j, plansLinks: [...(j.plansLinks || []), link] } : j)); }} />
             {(!job.plans || job.plans.length === 0) ? (
               <div style={{ color: styles.text2, fontSize: 13 }}>{t.noPlansYet}</div>
@@ -3264,7 +3279,7 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
                       <div>
                         <div style={{ fontWeight: 600, fontSize: 14 }}>{plan.name}{plan.current && <span data-current="1" style={{ marginLeft: 8, fontSize: 10, fontWeight: 800, background: styles.green, color: '#fff', padding: '2px 7px', borderRadius: 999 }}>{t.currentSet}</span>}</div>
                         {(plan.version || plan.date) && <div style={{ fontSize: 11, color: styles.text2 }}>{plan.version ? `${t.versionL} ${plan.version}` : ''}{plan.version && plan.date ? ' · ' : ''}{plan.date ? new Date(plan.date + 'T12:00:00').toLocaleDateString() : ''}</div>}
-                        {plan.category && <div style={{ fontSize: 11, color: styles.accentDk || styles.text2, fontWeight: 700, textTransform: 'uppercase' }}>{plan.category}</div>}
+                        {plan.category && <div style={{ fontSize: 11, color: styles.accentDk || styles.text2, fontWeight: 700, textTransform: 'uppercase' }}>{plan.category}{(plan.trades || []).length ? ' · ' + plan.trades.join(', ') : ''}</div>}
                         <div style={{ fontSize: 12, color: styles.text2 }}>{(plan.size / 1024).toFixed(0)} KB</div>
                       </div>
                     </div>
@@ -3629,7 +3644,18 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
               }}>
                 <div><strong>{t.createdBy}:</strong> {job.createdByName}</div>
                 <div><strong>{t.createdOn}:</strong> {new Date(job.createdAt).toLocaleDateString()}</div>
-                <div><strong>{t.visibility}:</strong> {job.visibility === 'private' ? `🔒 ${t.private}` : `🌐 ${t.public}`}</div>
+                <div><strong>{t.visibility}:</strong> {(job.draft === true || job.status === 'draft') ? `📝 ${t.draftBadge}` : (
+                  /* patch PLANREQ-A (owner 11/12: "need to click private/public"): one click — going public asks first (every approved sub sees it) */
+                  <button type="button" data-vis-toggle={job.visibility === 'private' ? 'public' : 'private'} title={job.visibility === 'private' ? t.visToPublic : t.visToPrivate}
+                    onClick={() => {
+                      const toPub = job.visibility === 'private';
+                      if (toPub && !job.bidDueDate) { showToast(t.draftNeedsDue, 'error'); return; }
+                      if (toPub && !window.confirm(t.visConfirmPublic)) return;
+                      setJobs(jobs.map(j => j.id === job.id ? { ...j, visibility: toPub ? 'public' : 'private', updatedAt: new Date().toISOString() } : j));
+                      showToast(toPub ? '🌐 ' + t.public : '🔒 ' + t.private);
+                    }}
+                    style={{ cursor: 'pointer', border: `1px solid ${styles.border}`, background: '#fff', borderRadius: 999, padding: '2px 10px', fontWeight: 700, fontSize: 12 }}>
+                    {job.visibility === 'private' ? `🔒 ${t.private} ⇄` : `🌐 ${t.public} ⇄`}</button>)}</div>
               </div>
               {(job.draft === true || job.status === 'draft') && (
                 <div id="draft-panel" style={{ marginTop: 12, padding: 12, border: `2px solid ${styles.accent}`, borderRadius: 8, background: '#FFFBEB', fontSize: 13, lineHeight: 1.5 }}>
@@ -3803,7 +3829,7 @@ function AttachmentList({ t, label, hint, docs, setDocs, accept, showToast }) {
         <span style={{ fontSize: 11, color: styles.text2 }}>{docs.length} file{docs.length !== 1 ? 's' : ''}</span>
       </div>
       <input ref={fileRef} type="file"
-        accept={accept || '.pdf,.doc,.docx,.xls,.xlsx,.txt,.png,.jpg,.jpeg,application/pdf'}
+        accept={accept || ACCEPT_ALL}
         multiple onChange={handleFiles} style={{ display: 'none' }} />
       <Btn variant="ghost" size="sm" icon={Upload} onClick={() => fileRef.current.click()}>
         {t.attachDoc}
@@ -4474,7 +4500,7 @@ function TakeoffModal({ plan, jobId, user, onClose, t, readOnly = false, sharedF
    Lets user add/remove/edit per-trade scope entries.
    Each entry: { id, trade, scope }
    ============================================================ */
-function TradeScopesEditor({ t, tradeScopes, setTradeScopes }) {
+function TradeScopesEditor({ t, tradeScopes, setTradeScopes, showToast }) {
   function addOne() {
     setTradeScopes([...tradeScopes, {
       id: newId('ts'),
@@ -4521,6 +4547,10 @@ function TradeScopesEditor({ t, tradeScopes, setTradeScopes }) {
               <textarea style={{ ...inputStyle, minHeight: 70, resize: 'vertical' }}
                 placeholder={t.tradeScopePlaceholder} value={ts.scope}
                 onChange={e => update(ts.id, { scope: e.target.value })} />
+              {/* patch PLANREQ-B (owner 11/12: "I have scopes I can't add in scopes"): each trade's scope takes files too, any type */}
+              <div data-tradescope-files={ts.trade || idx} style={{ marginTop: 8 }}>
+                <AttachmentList t={t} label={t.tradeScopeFiles || 'Scope files for this trade'} hint={t.attachHintAll} docs={ts.files || []} setDocs={d => update(ts.id, { files: d })} accept={ACCEPT_ALL} showToast={showToast} />
+              </div>
             </div>
           ))}
         </div>
@@ -4662,7 +4692,7 @@ function AddJob({ t, jobs, setJobs, user, users, showToast, setView }) {
         <h3 style={{ ...sectionTitleStyle, marginTop: 0 }}>
           <FileText size={18} /> {t.uploadPlans}
         </h3>
-        <input ref={fileRef} type="file" accept=".pdf,.zip,.dwg,.dxf,.dwf,.rvt,.skp,.png,.jpg,.jpeg,.tif,.tiff,application/pdf,application/zip,image/*" multiple onChange={handleFiles}
+        <input ref={fileRef} type="file" accept={ACCEPT_ALL + ',.rvt,.skp,application/zip'} multiple onChange={handleFiles}
           style={{ display: 'none' }} />
         <Btn variant="ghost" icon={Upload} onClick={() => fileRef.current.click()}>
           {t.chooseFile}

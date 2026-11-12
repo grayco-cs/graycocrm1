@@ -84,7 +84,7 @@ function subJobView(j, trades){
   delete v.log; delete v.archivedFrom;
   const mine = (Array.isArray(trades) ? trades : []).map(function(x){ return low(x); }).filter(Boolean);   /* arr() keeps objects only */
   if (Array.isArray(v.tradeScopes) && mine.length) v.tradeScopes = v.tradeScopes.filter(function(ts){ const t = low(ts && ts.trade); return !t || mine.some(function(m){ return t.indexOf(m) > -1 || m.indexOf(t) > -1; }); });
-  if (Array.isArray(v.tradeScopes)) v.tradeScopes = v.tradeScopes.map(function(ts){ return pick(ts, ['id', 'trade', 'scope']); })
+  if (Array.isArray(v.tradeScopes)) v.tradeScopes = v.tradeScopes.map(function(ts){ return pick(ts, ['id', 'trade', 'scope', 'files']); })   /* patch PLANREQ-C: + the trade's scope files */
     .filter(function(ts){ return s(ts.scope) || (Array.isArray(ts.files) && ts.files.length); });   /* patch QAA: a trade with no scope written yet is not an empty box on the sub's page (the trades are listed under "We are bidding") */
   if (Array.isArray(v.addenda)) v.addenda = v.addenda.filter(function(a){ return a && a.publishedAt; }).map(function(a){ return pick(a, ['num', 'date', 'title', 'text', 'files', 'dueFrom', 'dueTo', 'publishedAt']); });
   return v;
@@ -824,8 +824,8 @@ async function staffEmailsFor(job){
      (no approval step).
    • Subs see plans only of jobs they may see (approved, and the job public or they are invited; never a draft). */
 const zlib = require('zlib');
-const PLAN_EXT = { pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif',
-  tif: 'image/tiff', tiff: 'image/tiff', heic: 'image/heic', dwg: 'application/acad', dxf: 'image/vnd.dxf' };
+/* patch PLANREQ-B: every common file type (was PDF / pictures / DWG only) — the ZIP itself is unpacked, not stored */
+const PLAN_EXT = (function(){ const T = require('./_lib/tradeguess.js').TYPES, o = {}; Object.keys(T).forEach(function(k){ if (k !== 'zip') o[k] = T[k]; }); return o; })();
 const ZIP_LIMITS = { files: 300, total: 250 * 1024 * 1024, each: MAX_FILE };
 function extOf(n){ const m = /\.([A-Za-z0-9]{2,5})$/.exec(s(n)); return m ? m[1].toLowerCase() : ''; }
 /* a small ZIP reader (stored + deflate; no encryption, no ZIP64) — every size is checked before anything is unpacked */
@@ -846,7 +846,7 @@ function unzip(buf){
     if (!base || name.endsWith('/')) continue;                                         /* a folder */
     if (/(^|\/)(__MACOSX|\.)/.test(name) || /^\./.test(base) || /^thumbs\.db$/i.test(base)) continue;   /* Mac / Windows extras */
     const ext = extOf(base);
-    if (!PLAN_EXT[ext]) { skipped.push({ name: name, why: 'not a PDF, picture or DWG' }); continue; }
+    if (!PLAN_EXT[ext]) { skipped.push({ name: name, why: 'not a file type a bid job takes' }); continue; }
     if (flags & 1) { skipped.push({ name: name, why: 'password-protected' }); continue; }
     if (csize === 0xFFFFFFFF || usize === 0xFFFFFFFF) { skipped.push({ name: name, why: 'too big' }); continue; }
     if (usize > ZIP_LIMITS.each) { skipped.push({ name: name, why: 'over 50 MB' }); continue; }
@@ -874,6 +874,35 @@ async function storagePut(path, buf, type){
   if (!r.ok && r.status !== 409) throw Fail(502, 'Could not store ' + path.split('/').pop() + ' (' + r.status + ').');
 }
 async function plansOf(jobId){ const r = await getRow('plans', jobId); return r ? arr(r.data.items) : []; }
+/* patch PLANREQ-B/C (owner 11/12: "make sure I can add all types of files … if I add scopes and plans and specs put them in scopes by trade"):
+   every common file type goes on a bid job (PDF, pictures incl. HEIC / TIFF, Word, Excel / CSV, PowerPoint, TXT / RTF, DWG / DXF, ZIP — 50 MB
+   each; bigger → a 🔗 link), and each file is sorted (_lib/tradeguess.js — the name, and the start of a PDF / Word / Excel file's text):
+     plans  → the job's plans (category Plans or the ZIP folder), linked to the trades a sheet number names (E-101 → Electrical);
+     specs  → the plans list, category Specs, linked to their trades (Div 09 → Drywall, Paint, Flooring, Tile, Ceilings);
+     scope  → that trade's scope on the job (tradeScopes[].files — a sub sees the scopes of their own trades only); no trade → category Scope.
+   The person's choice wins: body.sort { "<ZIP path or file name>": { kind, trades } } (CRM 📂 Manage shows the guesses with a ▾ to change),
+   or body.kind / body.trades for one file (a trade's own 📎 Add files). */
+function TG(){ return require('./_lib/tradeguess.js'); }
+function sortOf(body, key, name, buf){
+  const pick = body && body.sort && typeof body.sort === 'object' ? (body.sort[key] || body.sort[name]) : null;
+  const want = pick || (body && (body.kind || body.trades) && !body.sort ? { kind: body.kind, trades: body.trades } : null);
+  const g = TG().guess(key || name, buf && buf.length <= 20 * 1024 * 1024 ? TG().text(buf, extOf(name)) : '');
+  const kind = want && TG().KINDS.indexOf(s(want.kind)) > -1 ? s(want.kind) : g.kind;
+  const trades = want && Array.isArray(want.trades) ? want.trades.map(function(x){ return s(x).slice(0, 60); }).filter(Boolean).slice(0, 8) : g.trades;
+  return { kind: kind, trades: trades, why: want ? 'picked' : g.why };
+}
+async function plansGuess(who, body){   /* staff: what each file (or each file inside a ZIP) looks like, before it is saved */
+  const ref = s(body.fileRef), name = s(body.name) || ref.split('/').pop(), ext = extOf(name);
+  if (!/^staff\/[A-Za-z0-9._\/-]{3,300}$/.test(ref) || ref.indexOf('..') > -1) throw Fail(400, 'Upload the file first.');
+  if (ext === 'zip') {
+    const z = unzip(await storageGet(ref));
+    return { ok: true, zip: true, files: z.files.map(function(f){ const key = (f.folder ? f.folder + '/' : '') + f.name, g = sortOf({}, key, f.name, f.data); return { key: key, name: f.name, folder: f.folder, size: f.data.length, kind: g.kind, trades: g.trades, why: g.why }; }), skipped: z.skipped };
+  }
+  if (!PLAN_EXT[ext]) throw Fail(400, 'That kind of file can not go on a bid job: ' + name);
+  let buf = null; if ((Number(body.size) || 0) <= 20 * 1024 * 1024 && /^(pdf|docx|xlsx|xlsm|pptx|txt|csv|rtf)$/.test(ext)) { try { buf = await storageGet(ref); } catch (e) { buf = null; } }
+  const g = sortOf({}, name, name, buf);
+  return { ok: true, zip: false, files: [{ key: name, name: name, folder: '', size: Number(body.size) || 0, kind: g.kind, trades: g.trades, why: g.why }] };
+}
 async function plansImport(who, body){
   const jobId = s(body.jobId), ref = s(body.fileRef);
   if (!okId(jobId)) throw Fail(400, 'Pick a bid job first.');
@@ -881,34 +910,53 @@ async function plansImport(who, body){
   if (!/^staff\/[A-Za-z0-9._\/-]{3,300}$/.test(ref) || ref.indexOf('..') > -1) throw Fail(400, 'Upload the file first.');
   const name = s(body.name) || ref.split('/').pop(), ext = extOf(name);
   const have = await plansOf(jobId), known = {}; have.forEach(function(x){ if (x && x.sha) known[x.sha] = 1; });
-  const added = [], skipped = [];
+  const jd = Object.assign({}, job.data); jd.tradeScopes = arr(jd.tradeScopes).map(function(x){ return Object.assign({}, x, { files: arr(x.files).slice() }); });
+  const added = [], skipped = [], toScope = [];
+  const place = function(item, srt){
+    item.kind = srt.kind; item.trades = srt.trades;
+    if (srt.kind === 'scope' && srt.trades.length) { toScope.push(item); return; }
+    if (srt.kind === 'specs' && (!item.category || item.category === 'Plans')) item.category = 'Specs';
+    if (srt.kind === 'scope') item.category = 'Scope';
+    added.push(item);
+  };
   if (ext === 'zip') {
     const z = unzip(await storageGet(ref));
     skipped.push.apply(skipped, z.skipped);
     for (const f of z.files) {
-      const sha = crypto.createHash('sha256').update(f.data).digest('hex');
-      if (known[sha]) { skipped.push({ name: (f.folder ? f.folder + '/' : '') + f.name, why: 'already on the job' }); continue; }
+      const sha = crypto.createHash('sha256').update(f.data).digest('hex'), key = (f.folder ? f.folder + '/' : '') + f.name;
+      if (known[sha]) { skipped.push({ name: key, why: 'already on the job' }); continue; }
       const path = 'staff/plans/' + jobId + '/' + sha.slice(0, 16) + '-' + safeName(f.name);
       await storagePut(path, f.data, PLAN_EXT[f.ext]);
       known[sha] = 1;
-      added.push({ name: f.name, size: f.data.length, type: PLAN_EXT[f.ext], fileRef: path, category: f.folder || 'Plans', sha: sha, from: name, at: new Date().toISOString(), by: who.email });
+      place({ name: f.name, size: f.data.length, type: PLAN_EXT[f.ext], fileRef: path, category: f.folder || 'Plans', sha: sha, from: name, at: new Date().toISOString(), by: who.email }, sortOf(body, key, f.name, f.data));
     }
   } else if (PLAN_EXT[ext]) {
-    added.push({ name: name, size: Number(body.size) || 0, type: PLAN_EXT[ext], fileRef: ref, category: s(body.category).slice(0, 80) || 'Plans', at: new Date().toISOString(), by: who.email });
-  } else throw Fail(400, 'Upload a ZIP, a PDF, a picture or a DWG.');
+    let buf = null; if ((Number(body.size) || 0) <= 20 * 1024 * 1024 && !body.sort && !body.kind && /^(pdf|docx|xlsx|xlsm|pptx|txt|csv|rtf)$/.test(ext)) { try { buf = await storageGet(ref); } catch (e) { buf = null; } }
+    place({ name: name, size: Number(body.size) || 0, type: PLAN_EXT[ext], fileRef: ref, category: s(body.category).slice(0, 80) || 'Plans', at: new Date().toISOString(), by: who.email }, sortOf(body, name, name, buf));
+  } else throw Fail(400, 'That kind of file can not go on a bid job (' + (ext || 'no extension') + '). PDF, pictures, Word, Excel, PowerPoint, text, DWG / DXF or a ZIP.');
   if (added.length) {
     /* the same name twice (A1.pdf in two folders): the folder goes in front, so each one is its own download */
     const names = {}; have.forEach(function(x){ names[low(x.name)] = 1; });
     added.forEach(function(x){ if (names[low(x.name)] && x.category && x.category !== 'Plans') x.name = x.category.split(' / ').pop() + ' — ' + x.name; names[low(x.name)] = 1; });
     await upsertRows([{ collection: 'plans', id: jobId, job_id: jobId, data: { items: have.concat(added) } }], who.email);
-    /* the job record lists the plans too (name / size / type / category — what the bid site shows) */
-    const jd = Object.assign({}, job.data);
-    jd.plans = arr(jd.plans).concat(added.map(function(x){ return { name: x.name, size: x.size, type: x.type, category: x.category }; }));
+    /* the job record lists the plans too (name / size / type / category / trades — what the bid site shows) */
+    jd.plans = arr(jd.plans).concat(added.map(function(x){ return { name: x.name, size: x.size, type: x.type, category: x.category, trades: x.trades || [] }; }));
+  }
+  toScope.forEach(function(x){   /* a scope file → each trade it is for (a new trade box when the job has none yet) */
+    x.trades.forEach(function(tr){
+      let ts = jd.tradeScopes.find(function(y){ return low(y.trade) === low(tr); });
+      if (!ts) { ts = { id: 'ts_' + crypto.randomBytes(4).toString('hex'), trade: tr, scope: '', mode: 'manual', files: [] }; jd.tradeScopes.push(ts); }
+      if (!ts.files.some(function(f){ return f.fileRef === x.fileRef; })) ts.files.push({ name: x.name, size: x.size, type: x.type, fileRef: x.fileRef, at: x.at, by: x.by });
+    });
+  });
+  if (added.length || toScope.length) {
+    if (toScope.length) { const want = arr([]).concat(s(jd.tradesSought).split(/\s*,\s*/).filter(Boolean)); jd.tradeScopes.forEach(function(ts){ if (s(ts.trade) && !want.some(function(w){ return low(w) === low(ts.trade); })) want.push(s(ts.trade)); }); jd.tradesSought = want.join(', '); }
     jd.updatedAt = new Date().toISOString();
     await upsertRows([{ collection: 'jobs', id: jobId, job_id: jobId, data: jd }], who.email);
   }
   const told = added.length ? await notifyPlanRequests(jobId) : 0;
-  return { ok: true, added: added.map(function(x){ return { name: x.name, category: x.category, size: x.size, type: x.type }; }), skipped: skipped, total: have.length + added.length, notified: told };
+  const out = function(x){ return { name: x.name, category: x.category, size: x.size, type: x.type, kind: x.kind, trades: x.trades || [] }; };
+  return { ok: true, added: added.map(out), scoped: toScope.map(out), skipped: skipped, total: have.length + added.length, notified: told };
 }
 async function estimatorEmail(job){
   const id = s(job && job.estimatorId);
@@ -1555,6 +1603,10 @@ exports.handler = async function (event) {
       return J(200, await plansImport(who, body));
     }
     if (action === 'request-plans') return J(200, await requestPlans(who, body, ctx));
+    if (action === 'plans-guess') {   /* patch PLANREQ-C: the trade / kind of each file before it is saved */
+      if (!who.isAdmin) return J(403, { error: 'GrayCo staff only.' });
+      return J(200, await plansGuess(who, body));
+    }
     if (action === 'my-work') {
       if (who.isAdmin && !body.userId) return J(400, { error: 'Pick a subcontractor.' });
       const target = who.isAdmin ? (await getRow('users', s(body.userId)) || {}).data : who.profile;
@@ -1579,7 +1631,7 @@ exports.handler = async function (event) {
 };
 /* patch SYS: the CRM's 🏗 Bid portal tab (bid-hub.js) works on the same rows with the same helpers — one copy of each */
 exports._papers = { paperToken, paperUser, cleanPaper, signupPapers, signupUpload, PAPER_TYPES };   /* patch SIGNUPPAPERS: tests */
-exports._hub = { kvRead, listRows, eq, inList, getRow, upsertRows, rowFor, crmSubs, crmData, crmSubList, sendMail, mailHtml, esc, okEmail, PORTAL_ORIGIN, saveCollection, isGone, subJobView, plansOf, subScope, signAll, isDraft, papersMissing,
+exports._hub = { kvRead, listRows, eq, inList, getRow, upsertRows, rowFor, crmSubs, crmData, crmSubList, sendMail, mailHtml, esc, okEmail, PORTAL_ORIGIN, saveCollection, isGone, subJobView, plansOf, subScope, signAll, isDraft, papersMissing, plansImport, plansGuess,
   requestPlans, planReqAct, planReqsFor, notifyPlanRequests, subReqView, planReqContacts, prOpen, plansCount };   /* patch PLANREQ */   /* patch SYS2: + the Q&A save, the sub view, plans · patch SUBBIDS: + subScope / signAll / isDraft (the sub portal's 📋 Jobs to bid) */
 /* patch LOGOALL (owner 10/23: "should have our logo on it"): every customer / sub / GC e-mail this file sends
    straight to Resend gets the GrayCo shell (centered logo, office line, licenses). Internal @grayco-cs.com mail is untouched. */

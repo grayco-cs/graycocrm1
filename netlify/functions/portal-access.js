@@ -1383,12 +1383,15 @@ async function pBidJobs(sub){
   if (ids.length) { try { (await HUB().listRows([HUB().eq('collection', 'questions'), HUB().inList('job_id', ids)])).forEach(function(r){ const q = r.data || {};
     if (s(q.userId) !== s(c.profile.id) && !(q.visibility === 'public' && s(q.answer))) return;
     (qs[s(q.jobId)] = qs[s(q.jobId)] || []).push({ id: s(q.id), body: clip(q.body, 4000), at: s(q.at), answer: clip(q.answer, 8000), answeredAt: s(q.answeredAt), mine: s(q.userId) === s(c.profile.id), shared: q.visibility === 'public' }); }); } catch (e) {} }
+  const signQ = [];   /* patch PLANREQ-C: trade scope files to sign */
   const reqs = {};   /* patch PLANREQ: their own 📩 requests only */
   if (ids.length) { try { (await HUB().listRows([HUB().eq('collection', 'planreqs'), HUB().eq('user_id', s(c.profile.id))])).forEach(function(r){ reqs[s(r.job_id)] = HUB().subReqView(r.data); }); } catch (e) {} }
+  const views = {}; ids.forEach(function(id){ views[id] = HUB().subJobView(sc.jobs[id].data || {}, trades); if (arr(views[id].tradeScopes).some(function(x){ return arr(x.files).length; })) signQ.push(views[id].tradeScopes); });
+  if (signQ.length) { try { await HUB().signAll(signQ); } catch (e) {} }   /* patch PLANREQ-C: their trades' scope files, as 8-hour links */
   const jobs = ids.map(function(id){
-    const j = HUB().subJobView(sc.jobs[id].data || {}, trades), b = mine[id] || null, open = !!sc.biddable[id];
+    const j = views[id], b = mine[id] || null, open = !!sc.biddable[id];
     return { id: s(id), title: clip(j.title, 200) || 'Bid job', address: clip(j.address, 240), bidDueDate: ymd(j.bidDueDate), tradesSought: clip(tradesOf(j.tradesSought), 300),
-      tradeScopes: arr(j.tradeScopes).slice(0, 10).map(function(x){ return { trade: clip(x.trade, 80), scope: clip(x.scope, 6000) }; }).filter(function(x){ return x.scope; }),
+      tradeScopes: arr(j.tradeScopes).slice(0, 10).map(function(x){ return { trade: clip(x.trade, 80), scope: clip(x.scope, 6000), files: arr(x.files).slice(0, 20).map(function(f){ return /^https:\/\//.test(s(f.dataUrl)) ? { name: clip(f.name, 160) || 'Scope', type: clip(f.type, 80), url: f.dataUrl } : null; }).filter(Boolean) }; }).filter(function(x){ return x.scope || x.files.length; }),   /* patch PLANREQ-C: + the trade's scope files (signed) */
       scope: clip(j.scope, 8000), specifications: clip(j.specifications, 8000), notes: clip(j.notes, 4000),
       plansLinks: linkList(j.plansLinks), plans: plans[id] || [], invited: invited.has(id), canBid: open, myBid: myBidOut(b),
       questions: (qs[id] || []).sort(function(a, b){ return s(a.at).localeCompare(s(b.at)); }).slice(-40), request: reqs[id] || null };

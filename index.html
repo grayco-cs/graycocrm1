@@ -178942,7 +178942,7 @@ var M = { jobId: '', data: null, tab: 'plans', busy: false, err: '', ts: null };
 function job(){ return (M.data && M.data.job) || {}; }
 function open(jobId, tab){
   if (!jobId) return;
-  css(); M = { jobId: jobId, data: null, tab: tab || 'plans', busy: false, err: '', ts: null };
+  css(); M = { jobId: jobId, data: null, tab: tab || 'plans', busy: false, err: '', ts: null }; RV.items = [];
   var sh = D.getElementById('gcsys2-shade'); if (!sh) { sh = D.createElement('div'); sh.id = 'gcsys2-shade'; sh.setAttribute('data-gc-keep', '1'); sh.onclick = close; D.body.appendChild(sh); }
   var d = D.getElementById('gcsys2');
   if (!d) {
@@ -178959,7 +178959,7 @@ function open(jobId, tab){
 function close(){ ['gcsys2', 'gcsys2-shade'].forEach(function(id){ var x = D.getElementById(id); if (x) x.remove(); }); M.jobId = ''; }
 function load(){
   var id = M.jobId; M.busy = true;
-  return fn('bid-hub?manage=' + encodeURIComponent(id)).then(function(r){ if (M.jobId !== id) return; M.data = r; M.err = ''; if (!M.ts) M.ts = arr(r.job.tradeScopes).map(function(x){ return { id: x.id, trade: x.trade, scope: x.scope, mode: x.mode || 'manual' }; }); },
+  return fn('bid-hub?manage=' + encodeURIComponent(id)).then(function(r){ if (M.jobId !== id) return; M.data = r; M.err = ''; if (!M.ts || M.tsFiles) { var keepTxt = {}; arr(M.ts).forEach(function(x){ if (x.id) keepTxt[x.id] = x; }); M.ts = arr(r.job.tradeScopes).map(function(x){ var k = keepTxt[x.id]; return { id: x.id, trade: k ? k.trade : x.trade, scope: k ? k.scope : x.scope, mode: x.mode || 'manual', files: arr(x.files) }; }).concat(arr(M.ts).filter(function(x){ return !x.id; })); M.tsFiles = false; } },   /* patch PLANREQ-C: + each trade's files (kept typing survives a reload) */
     function(e){ M.err = e.message; }).then(function(){ M.busy = false; draw(); });
 }
 function keepInputs(f){   /* a redraw keeps what is being typed */
@@ -179003,13 +179003,37 @@ function noticeTag(n){
 }
 
 /* ── 📐 plans & specs ── */
+/* patch PLANREQ-B/C (owner 11/12: "make sure I can add all types of files … if I add scopes and plans and specs put them in scopes by trade"):
+   any common file (PDF, pictures, Word, Excel / CSV, PowerPoint, TXT / RTF, DWG / DXF, ZIP — 50 MB each; bigger → 🔗 link). Each file (each
+   sheet in a ZIP) is looked at first (subportal.js plans-guess: its name + the start of its text) and shown as "📎 Electrical scope.pdf →
+   📝 Scope · ⚡ Electrical ▾" — change the kind or the trade, then 💾 Save: plans stay under Plans (linked to their trades), specs under
+   Specs (by trade), scopes go on that trade's scope (📝 Scope tab) where only that trade's subs see them. */
+var ACCEPT_ALL = '.pdf,.png,.jpg,.jpeg,.gif,.webp,.heic,.heif,.tif,.tiff,.bmp,.doc,.docx,.xls,.xlsx,.xlsm,.csv,.ppt,.pptx,.txt,.rtf,.dwg,.dxf,.dwf,.zip';
+var ALL_RE = /\.(pdf|png|jpe?g|gif|webp|heic|heif|tiff?|bmp|docx?|xlsx?|xlsm|csv|pptx?|txt|rtf|dwg|dxf|dwf|zip)$/i;
+var TICON = { Electrical: '⚡', Plumbing: '🚿', HVAC: '❄️', Roofing: '🏠', Drywall: '🧱', Paint: '🎨', Flooring: '🪵', Tile: '🔲', Concrete: '🏗', Masonry: '🧱', Framing: '🪚', 'Fire protection': '🔥', Landscaping: '🌳', Demolition: '🔨', 'Windows & Doors': '🚪', Cabinets: '🗄', Insulation: '🧶', Ceilings: '⬜' };
+function tIcon(t){ return TICON[t] || '🔧'; }
+function tradeOpts(){ var l = []; try { l = W._gcBidPost && W._gcBidPost.trades ? arr(W._gcBidPost.trades()).slice() : []; } catch (e) {} if (!l.length) l = ['Demolition', 'Framing', 'Drywall', 'Paint', 'Flooring', 'Tile', 'Roofing', 'Siding', 'Gutters', 'Windows & Doors', 'Insulation', 'Ceilings', 'Cabinets', 'Concrete', 'Masonry', 'Electrical', 'Plumbing', 'HVAC', 'Fire protection', 'Landscaping', 'Mitigation', 'Abatement', 'Cleaning'];
+  arr(M.ts).forEach(function(x){ if (s(x.trade) && l.indexOf(x.trade) < 0) l.push(x.trade); }); return l; }
+var RV = { items: [] };   /* uploaded, waiting for 💾 Save: [{ ref, name, size, zip, files: [{ key, name, kind, trades, why }] }] */
+function reviewHtml(){
+  if (!RV.items.length) return '';
+  var opts = tradeOpts(), n = 0;
+  var rows = RV.items.map(function(it, i){ return it.files.map(function(f, k){ n++; var tv = arr(f.trades).join('|'), has = !tv || opts.indexOf(tv) > -1;
+    return '<tr data-rv="' + i + ':' + k + '"><td title="' + esc(f.key) + '">📎 <b>' + esc(f.name) + '</b>' + (it.zip ? '<div class="mut">in ' + esc(it.name) + (f.folder ? ' / ' + esc(f.folder) : '') + '</div>' : '') + '<div class="mut">' + esc(f.why || '') + '</div></td>'
+      + '<td><select data-rvk="' + i + ':' + k + '"><option value="plans"' + (f.kind === 'plans' ? ' selected' : '') + '>📐 Plans</option><option value="specs"' + (f.kind === 'specs' ? ' selected' : '') + '>📘 Specs</option><option value="scope"' + (f.kind === 'scope' ? ' selected' : '') + '>📝 Scope</option></select></td>'
+      + '<td><select data-rvt="' + i + ':' + k + '"><option value="">— every trade —</option>' + (!has ? '<option value="' + esc(tv) + '" selected>' + esc(arr(f.trades).map(function(t){ return tIcon(t) + ' ' + t; }).join(', ')) + '</option>' : '')
+        + opts.map(function(t){ return '<option value="' + esc(t) + '"' + (tv === t ? ' selected' : '') + '>' + tIcon(t) + ' ' + esc(t) + '</option>'; }).join('') + '</select></td></tr>'; }).join(''); }).join('');
+  return '<div class="card" data-review style="border-color:#c9c3ea;background:#faf9fe"><b>Check where each file goes (' + n + ')</b><div class="mut">The guess is from the file name and what the file says. Change the kind or the trade, then save. A 📝 Scope goes on that trade\'s scope — only that trade\'s subs see it.</div>'
+    + '<table><colgroup><col><col style="width:120px"><col style="width:200px"></colgroup><tbody>' + rows + '</tbody></table>'
+    + '<div class="row"><button type="button" class="b pri" data-a="rvsave">💾 Save ' + n + ' file' + (n === 1 ? '' : 's') + ' to the bid job</button><button type="button" class="b" data-a="rvdrop">Cancel</button></div></div>';
+}
 function plansHtml(){
   var r = M.data, ps = arr(r.plans), ls = arr(job().plansLinks);
-  return '<div class="drop" data-for="plans" data-a="pick" tabindex="0">⬆ <b>Drop plans and specs here</b>, or tap to pick (several at once)<div class="mut">PDF, DWG / DXF, pictures, or a ZIP (unpacked into its sheets) — up to 50 MB a file. They go to the bid site; invited subs download them there.</div></div>'
+  return reviewHtml() + '<div class="drop" data-for="plans" data-a="pick" tabindex="0">⬆ <b>Drop plans, specs and scopes here</b>, or tap to pick (several at once)<div class="mut">Any file — PDF, Word, Excel, PowerPoint, pictures, DWG / DXF, or a ZIP (unpacked into its sheets) — up to 50 MB a file (bigger: add a 🔗 link below). Each is sorted by trade before you save. They go to the bid site; invited subs download them there.</div></div>'
     + '<div class="row"><label>Category <select data-k="pcat"><option>Plans</option><option>Specs</option><option>Addenda</option><option>Photos</option></select></label><label>Version <input type="text" data-k="pver" placeholder="Rev 2 / IFC / 100% CD" style="width:150px"></label><label>Date <input type="date" data-k="pdate"></label></div>'
     + '<h4>Files on the job (' + ps.length + ')</h4>'
     + (ps.length ? '<table><colgroup><col><col style="width:110px"><col style="width:130px"><col style="width:150px"></colgroup><tbody>' + ps.map(function(p){
-      return '<tr data-plan="' + esc(p.fileRef) + '"><td title="' + esc(p.name) + '"><b>' + esc(p.name) + '</b>' + (p.current ? ' <span class="pill ok">⭐ current</span>' : '') + '<div class="mut">' + esc([p.category, p.size ? Math.round(p.size / 1024) + ' KB' : '', p.at ? 'added ' + when(p.at) : ''].filter(Boolean).join(' · ')) + '</div></td>'
+      return '<tr data-plan="' + esc(p.fileRef) + '"><td title="' + esc(p.name) + '"><b>' + esc(p.name) + '</b>' + (p.current ? ' <span class="pill ok">⭐ current</span>' : '') + (arr(p.trades).length ? ' <span class="pill grey" data-plantrades>' + esc(arr(p.trades).map(function(t){ return tIcon(t) + ' ' + t; }).join(', ')) + '</span>' : '') + '<div class="mut">' + esc([p.category, p.size ? Math.round(p.size / 1024) + ' KB' : '', p.at ? 'added ' + when(p.at) : ''].filter(Boolean).join(' · ')) + '</div></td>'
         + '<td><input type="text" value="' + esc(p.version) + '" placeholder="Version" data-pa="version" data-ref="' + esc(p.fileRef) + '" style="width:100%"></td>'
         + '<td><input type="date" value="' + esc(p.date) + '" data-pa="date" data-ref="' + esc(p.fileRef) + '" style="width:100%"></td>'
         + '<td><button type="button" class="b" data-a="current" data-ref="' + esc(p.fileRef) + '"' + (p.current ? ' disabled' : '') + '>⭐ Current</button> <button type="button" class="b red" data-a="rmplan" data-ref="' + esc(p.fileRef) + '" aria-label="Remove">🗑</button></td></tr>';
@@ -179018,7 +179042,7 @@ function plansHtml(){
     + '<div class="row"><input type="url" data-k="lurl" placeholder="https://plan room or shared folder" style="flex:1;min-width:220px"><input type="text" data-k="llabel" placeholder="Label (Plan room)" style="width:160px"><button type="button" class="b pri" data-a="addlink">+ Add link</button></div>';
 }
 function pickFiles(cb, accept){
-  var inp = D.createElement('input'); inp.type = 'file'; inp.multiple = true; inp.accept = accept || '.zip,.pdf,.png,.jpg,.jpeg,.webp,.gif,.tif,.tiff,.heic,.dwg,.dxf'; inp.style.display = 'none'; inp.id = 'gcsys2-file';
+  var inp = D.createElement('input'); inp.type = 'file'; inp.multiple = true; inp.accept = accept || ACCEPT_ALL;   /* patch PLANREQ-B: every common type */ inp.style.display = 'none'; inp.id = 'gcsys2-file';
   inp.onchange = function(){ var fs = Array.prototype.slice.call(inp.files || []); inp.remove(); cb(fs); };
   D.body.appendChild(inp); inp.click();
 }
@@ -179030,23 +179054,44 @@ async function putFile(f){   /* a signed upload straight into the bid site's buc
   return up.path;
 }
 function val(k){ var x = D.querySelector('#gcsys2 [data-k="' + k + '"]'); return x ? (x.type === 'checkbox' ? x.checked : s(x.value)) : ''; }
-async function uploadPlans(files){
-  var ok = /\.(zip|pdf|png|jpe?g|webp|gif|tiff?|heic|dwg|dxf)$/i, added = 0, left = [], cat = val('pcat') || 'Plans', ver = val('pver'), dt = val('pdate');
+/* step 1: upload + look at each file (nothing is on the job yet); step 2 (💾 Save): plans-import with the kinds / trades shown */
+async function uploadPlans(files, force){
+  var left = [], got = 0;
   if (!files.length) return;
   toast('Uploading ' + files.length + ' file' + (files.length === 1 ? '' : 's') + '…');
   for (var i = 0; i < files.length; i++) {
     var f = files[i];
-    if (!ok.test(f.name)) { left.push(f.name); continue; }
-    if (f.size > 50 * 1024 * 1024) { left.push(f.name + ' (over 50 MB)'); continue; }
+    if (!ALL_RE.test(f.name)) { left.push(f.name + ' (not a file type a bid job takes)'); continue; }
+    if (f.size > 50 * 1024 * 1024) { left.push(f.name + ' (over 50 MB — add a 🔗 link instead)'); continue; }
     try {
       var ref = await putFile(f);
-      var r = await bidApi({ action: 'plans-import', jobId: M.jobId, fileRef: ref, name: f.name, size: f.size, category: cat });
-      added += arr(r.added).length;
-      if ((ver || dt) && arr(r.added).length === 1 && !/\.zip$/i.test(f.name)) await fn('bid-hub', { op: 'plans', jobId: M.jobId, ref: ref, version: ver, date: dt });
+      var g = await bidApi({ action: 'plans-guess', fileRef: ref, name: f.name, size: f.size }).catch(function(){ return { files: [{ key: f.name, name: f.name, kind: 'plans', trades: [], why: '' }] }; });
+      var fl = arr(g.files); if (force) fl.forEach(function(x){ x.kind = force.kind; x.trades = force.trades.slice(); x.why = 'added on the ' + force.trades[0] + ' scope'; });
+      RV.items.push({ ref: ref, name: f.name, size: f.size, zip: !!g.zip, files: fl }); got++;
     } catch (e) { toast(e.message, true); left.push(f.name); }
   }
-  toast(added + ' file' + (added === 1 ? '' : 's') + ' on the bid site' + (left.length ? ' · left out: ' + left.slice(0, 3).join(', ') : ''), !added);
-  load();
+  if (left.length) toast('Left out: ' + left.slice(0, 3).join(', '), true);
+  if (force && got) return saveReview();
+  if (got) { M.tab = 'plans'; draw(); }
+}
+function readReview(){
+  Array.prototype.forEach.call(D.querySelectorAll('#gcsys2 [data-rvk]'), function(x){ var p = x.getAttribute('data-rvk').split(':'), f = RV.items[+p[0]] && RV.items[+p[0]].files[+p[1]]; if (f) f.kind = x.value; });
+  Array.prototype.forEach.call(D.querySelectorAll('#gcsys2 [data-rvt]'), function(x){ var p = x.getAttribute('data-rvt').split(':'), f = RV.items[+p[0]] && RV.items[+p[0]].files[+p[1]]; if (f) f.trades = x.value ? x.value.split('|') : []; });
+}
+async function saveReview(){
+  readReview();
+  var cat = val('pcat') || 'Plans', ver = val('pver'), dt = val('pdate'), added = 0, scoped = 0, items = RV.items.slice(); RV.items = [];
+  for (var i = 0; i < items.length; i++) {
+    var it = items[i], body = { action: 'plans-import', jobId: M.jobId, fileRef: it.ref, name: it.name, size: it.size, category: cat };
+    if (it.zip) { body.sort = {}; it.files.forEach(function(f){ body.sort[f.key] = { kind: f.kind, trades: arr(f.trades) }; }); }
+    else { body.kind = (it.files[0] || {}).kind || 'plans'; body.trades = arr((it.files[0] || {}).trades); }
+    try {
+      var r = await bidApi(body); added += arr(r.added).length; scoped += arr(r.scoped).length;
+      if ((ver || dt) && arr(r.added).length === 1 && !it.zip) await fn('bid-hub', { op: 'plans', jobId: M.jobId, ref: it.ref, version: ver, date: dt });
+    } catch (e) { toast(e.message, true); }
+  }
+  toast(added + ' plan / spec file' + (added === 1 ? '' : 's') + (scoped ? ' · ' + scoped + ' scope file' + (scoped === 1 ? '' : 's') + ' on their trade' : '') + ' — on the bid site', !(added + scoped));
+  M.tsFiles = true; load();
 }
 
 /* ── 📝 scope per trade ── */
@@ -179054,7 +179099,10 @@ function scopeHtml(){
   var ts = M.ts || [];
   return '<p class="mut">One scope per trade. A sub sees only the scopes of their own trades. Made from an estimate (or Claude), every price is removed — here and again on the server. GrayCo prices never reach a sub.</p>'
     + ts.map(function(x, i){ return '<div class="card" data-ts="' + i + '"><div class="row"><input type="text" data-ti="trade" data-i="' + i + '" value="' + esc(x.trade) + '" placeholder="Trade (Roofing, Electrical…)" style="width:220px"><span class="pill grey">' + (x.mode === 'estimate' ? '📐 from estimate · no prices' : x.mode === 'claude' ? '✨ Claude · no prices' : '✍️ typed') + '</span><button type="button" class="b red" data-a="rmts" data-i="' + i + '">🗑</button></div>'
-      + '<textarea data-ti="scope" data-i="' + i + '" placeholder="Scope of work for this trade (no prices)">' + esc(x.scope) + '</textarea></div>'; }).join('')
+      + '<textarea data-ti="scope" data-i="' + i + '" placeholder="Scope of work for this trade (no prices)">' + esc(x.scope) + '</textarea>'
+      /* patch PLANREQ-B (owner 11/12: "I have scopes I can't add in scopes"): the trade's scope takes files too — any type */
+      + '<div data-tsfiles="' + i + '">' + arr(x.files).map(function(f, k){ return '<div class="row" style="margin:3px 0" data-tsfile="' + esc(f.name) + '">📎 <span>' + esc(f.name) + '</span><span class="mut">' + (f.size ? Math.round(f.size / 1024) + ' KB' : '') + '</span><button type="button" class="b red" data-a="rmtsfile" data-i="' + i + '" data-k="' + k + '" aria-label="Remove">🗑</button></div>'; }).join('')
+      + (x.trade ? '<button type="button" class="b" data-a="tsfiles" data-i="' + i + '">📎 Add scope files for ' + esc(x.trade) + '</button>' : '<span class="mut">Name the trade, then add its scope files.</span>') + '</div></div>'; }).join('')
     + '<div class="row"><button type="button" class="b" data-a="addts">+ Add a trade</button><button type="button" class="b" data-a="fromest">📐 From an estimate (prices removed)</button><button type="button" class="b pri" data-a="savets">💾 Save & publish scopes</button></div>';
 }
 function estimates(){ var l = arr((W._crm || {}).estimates); return l.filter(function(e){ return e && !e.deleted && arr(e.lines || e.lineItems || e.items).length; }); }
@@ -179172,8 +179220,12 @@ function onClick(ev){
   var a = t.getAttribute('data-a');
   if (a === 'close') return close();
   if (a === 'tab') { M.tab = t.getAttribute('data-t'); return draw(); }
-  if (a === 'pick') return pickFiles(uploadPlans);
-  if (a === 'apick') return pickFiles(addFiles, '.pdf,.png,.jpg,.jpeg,.webp,.dwg,.dxf,.doc,.docx,.xls,.xlsx,.zip');
+  if (a === 'pick') return pickFiles(function(fs){ uploadPlans(fs); });
+  if (a === 'rvsave') return saveReview();   /* patch PLANREQ-C */
+  if (a === 'rvdrop') { RV.items = []; return draw(); }
+  if (a === 'tsfiles') { var ti0 = M.ts[+t.getAttribute('data-i')]; if (!ti0 || !s(ti0.trade)) return; if (!ti0.id) return toast('Save the scopes first (💾), then add files to ' + ti0.trade + '.', true); return pickFiles(function(fs){ uploadPlans(fs, { kind: 'scope', trades: [ti0.trade] }); }); }
+  if (a === 'rmtsfile') { var ti1 = M.ts[+t.getAttribute('data-i')]; if (!ti1) return; ti1.files = arr(ti1.files).filter(function(_, k){ return k !== +t.getAttribute('data-k'); }); return post({ op: 'scope', tradeScopes: M.ts || [] }, t, function(r){ M.ts = arr(r.tradeScopes).map(function(x){ return { id: x.id, trade: x.trade, scope: x.scope, mode: x.mode, files: arr(x.files) }; }); toast('🗑 Taken off ' + ti1.trade + '\'s scope'); }); }
+  if (a === 'apick') return pickFiles(addFiles, ACCEPT_ALL);   /* patch PLANREQ-B */
   if (a === 'current') return post({ op: 'plans', ref: t.getAttribute('data-ref'), current: true }, t, function(){ toast('⭐ Marked current'); });
   if (a === 'rmplan') { if (!W.confirm('Take this file off the bid job? Subs will no longer see it.')) return; return post({ op: 'plans', ref: t.getAttribute('data-ref'), remove: true }, t); }
   if (a === 'rmlink') return post({ op: 'plans', ref: t.getAttribute('data-ref'), remove: true }, t);
@@ -179181,7 +179233,7 @@ function onClick(ev){
   if (a === 'addts') { M.ts = (M.ts || []).concat([{ trade: '', scope: '', mode: 'manual' }]); return draw(); }
   if (a === 'rmts') { M.ts.splice(+t.getAttribute('data-i'), 1); return draw(); }
   if (a === 'fromest') return fromEstimate();
-  if (a === 'savets') return post({ op: 'scope', tradeScopes: M.ts || [] }, t, function(r){ M.ts = arr(r.tradeScopes).map(function(x){ return { id: x.id, trade: x.trade, scope: x.scope, mode: x.mode }; }); toast('📝 Scopes on the bid site'); });
+  if (a === 'savets') return post({ op: 'scope', tradeScopes: M.ts || [] }, t, function(r){ M.ts = arr(r.tradeScopes).map(function(x){ return { id: x.id, trade: x.trade, scope: x.scope, mode: x.mode, files: arr(x.files) }; }); toast('📝 Scopes on the bid site'); });
   if (a === 'postadd') {
     var nd = val('adue'), msg = 'Post addendum' + (val('atitle') ? ' "' + val('atitle') + '"' : '') + ' to the bid site?' + (nd ? '\n\nThe bid due date changes to ' + nd + '.' : '') + (val('anotify') ? '\n\nThe e-mail to the subs waits on ✅ Approvals.' : '');
     if (!W.confirm(msg)) return;

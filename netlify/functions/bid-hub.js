@@ -193,11 +193,15 @@ async function postjob(who, b){
   if (want.length) await SP.upsertRows([SP.rowFor('jobs', Object.assign({}, job, { updatedAt: at }))], who.email);
   for (const f of want) {
     let c = null; try { c = await L.portalApi()._copyFile({ ref: s(f.ref), name: s(f.name).slice(0, 160) || 'file', type: s(f.type), size: Number(f.size) || 0, kind: 'plans' }); } catch (e) { c = { name: s(f.name), why: s(e && e.message) }; }
-    if (c && c.fileRef) { copied.push({ name: c.name, size: c.size, type: c.type, fileRef: c.fileRef, category: s(f.category).slice(0, 60) || 'Plans', at, by: who.email }); had[s(f.ref)] = 1; } else failed.push({ name: s(f.name), why: s(c && c.why) || 'not copied' });
+    if (c && c.fileRef) { const g = require('./_lib/tradeguess.js').guess(c.name, '');   /* patch PLANREQ-C: sorted by trade from the name (a scope file also goes on its trade) */
+      copied.push({ name: c.name, size: c.size, type: c.type, fileRef: c.fileRef, category: g.kind === 'specs' ? 'Specs' : g.kind === 'scope' ? 'Scope' : s(f.category).slice(0, 60) || 'Plans', trades: g.trades, kind: g.kind, at, by: who.email }); had[s(f.ref)] = 1; } else failed.push({ name: s(f.name), why: s(c && c.why) || 'not copied' });
   }
   job.crmFileRefs = Object.keys(had).slice(0, 200);
   let pl0 = null; if (copied.length) { pl0 = await SP.plansOf(job.id).catch(() => []);   /* patch QAA: the job record lists its plans too (job.plans — what the bid site shows a sub; it said "No plans yet") */
-    job.plans = pl0.concat(copied).map(x => ({ name: s(x.name), size: x.size || 0, type: s(x.type), category: s(x.category), version: s(x.version), date: s(x.date), current: !!x.current })); }
+    job.plans = pl0.concat(copied).map(x => ({ name: s(x.name), size: x.size || 0, type: s(x.type), category: s(x.category), version: s(x.version), date: s(x.date), current: !!x.current, trades: arr(x.trades).length ? x.trades : undefined }));
+    copied.filter(x => x.kind === 'scope' && arr(x.trades).length).forEach(x => x.trades.forEach(tr => {   /* patch PLANREQ-C */
+      let ts = arr(job.tradeScopes).find(y => low(y.trade) === low(tr)); if (!ts) { ts = { id: 'ts_' + crypto.randomBytes(4).toString('hex'), trade: tr, scope: '', files: [] }; job.tradeScopes = arr(job.tradeScopes).concat([ts]); }
+      ts.files = arr(ts.files); if (!ts.files.some(f => f.fileRef === x.fileRef)) ts.files.push({ name: x.name, size: x.size, type: x.type, fileRef: x.fileRef, at, by: who.email }); })); }
   logTo(job, who, (isNew ? '📢 Put on the bid portal' : wasGone ? '📢 Back on the bid portal' : '📢 Bid portal job changed') + ' (' + (vis === 'public' ? '🌐 public' : '🔒 private, invited subs only') + ')' + (trades.length ? ' · trades: ' + trades.join(', ') : '') + (copied.length ? ' · ' + copied.length + ' file(s)' : ''));
   const rows = [SP.rowFor('jobs', job)];
   if (copied.length) rows.push({ collection: 'plans', id: job.id, job_id: job.id, data: { items: pl0.concat(copied) } });
@@ -592,7 +596,7 @@ async function manageView(jobId){
     job: { id: job.id, title: s(job.title), address: s(job.address), po: s(job.poNumber), due: s(job.bidDueDate), dueTime: s(job.bidDueTime),
       visibility: job.draft === true ? 'draft' : s(job.visibility) || 'public', deleted: GONE.test(s(job.status)), trades: s(job.tradesSought), scope: s(job.scope),
       tradeScopes: arr(job.tradeScopes), plansLinks: arr(job.plansLinks), addenda: arr(job.addenda), posts: arr(job.posts), log: arr(job.log).slice(-200), leadId: s(job.leadInbox && job.leadInbox.id) },
-    plans: plans.map(p => ({ name: s(p.name), size: p.size || 0, type: s(p.type), fileRef: s(p.fileRef), category: s(p.category), version: s(p.version), date: s(p.date), current: !!p.current, at: s(p.at), by: s(p.by) })),
+    plans: plans.map(p => ({ name: s(p.name), size: p.size || 0, type: s(p.type), fileRef: s(p.fileRef), category: s(p.category), version: s(p.version), date: s(p.date), current: !!p.current, at: s(p.at), by: s(p.by), trades: arr(p.trades) })),
     questions: qs.map(r => r.data || {}).sort((a, b) => s(b.at).localeCompare(s(a.at))),
     acks: acks.map(r => r.data || {}), activity: act.map(r => r.data || {}).sort((a, b) => s(b.at).localeCompare(s(a.at))).slice(0, 200),
     audience: aud.map(x => ({ email: x.email, name: x.name, company: x.company, trades: x.trades, how: x.how, account: !!x.userId, lang: x.lang })) };
@@ -628,7 +632,8 @@ async function plans(who, b){
     if (b.current === false) it.current = false;
   }
   await SP.upsertRows([{ collection: 'plans', id: job.id, job_id: job.id, data: { items: list } }], who.email);
-  job.plans = list.map(x => ({ name: x.name, size: x.size, type: x.type, category: x.category, version: x.version || '', date: x.date || '', current: !!x.current }));   /* what the bid site lists */
+  if (Array.isArray(b.trades) && !b.remove) { it.trades = b.trades.map(x => s(x).slice(0, 60)).filter(Boolean).slice(0, 8); if (b.kind === 'specs' || b.kind === 'plans') it.category = b.kind === 'specs' ? 'Specs' : (it.category === 'Specs' ? 'Plans' : it.category); }   /* patch PLANREQ-C: re-file a plan / spec by trade */
+  job.plans = list.map(x => ({ name: x.name, size: x.size, type: x.type, category: x.category, version: x.version || '', date: x.date || '', current: !!x.current, trades: arr(x.trades).length ? x.trades : undefined }));   /* what the bid site lists */
   logTo(job, who, (b.remove ? '🗑 Plan removed: ' : b.current ? '⭐ Marked current: ' : '✏️ Plan changed: ') + s(it.name) + (it.version ? ' (' + it.version + ')' : ''));
   await saveJob(job, who);
   return { ok: true };
@@ -638,9 +643,13 @@ async function plans(who, b){
 async function scope(who, b){
   const job = await jobRow(b.jobId); if (!job) return { code: 404, error: 'No such bid job.' };
   const BP = L.portalApi();
-  job.tradeScopes = arr(b.tradeScopes).filter(x => x && (s(x.trade) || s(x.scope))).slice(0, 30).map(x => {
+  job.tradeScopes = arr(b.tradeScopes).filter(x => x && (s(x.trade) || s(x.scope) || arr(x.files).length)).slice(0, 30).map(x => {
     const mode = /^(estimate|claude|xactimate)$/.test(s(x.mode)) ? s(x.mode) : 'manual';
-    return { id: s(x.id) || 'ts_' + crypto.randomBytes(4).toString('hex'), trade: s(x.trade).slice(0, 80), scope: (mode === 'manual' ? s(x.scope) : BP._noPrices(x.scope)).slice(0, 20000), mode, at: nowIso(), by: who.email };
+    const old = arr(job.tradeScopes).find(y => y && s(y.id) && s(y.id) === s(x.id));
+    /* patch PLANREQ-C: a trade's scope files stay (sent back as they are, or a removal) — only files already on the job / uploaded to the bid site's staff area */
+    const files = (Array.isArray(x.files) ? arr(x.files) : arr(old && old.files)).filter(f => /^staff\/[A-Za-z0-9._\/-]{3,300}$/.test(s(f.fileRef)) && s(f.fileRef).indexOf('..') < 0).slice(0, 40)
+      .map(f => ({ name: s(f.name).slice(0, 200) || 'scope', size: Number(f.size) || 0, type: s(f.type).slice(0, 120), fileRef: s(f.fileRef), at: s(f.at) || nowIso(), by: s(f.by) || who.email }));
+    return { id: s(x.id) || 'ts_' + crypto.randomBytes(4).toString('hex'), trade: s(x.trade).slice(0, 80), scope: (mode === 'manual' ? s(x.scope) : BP._noPrices(x.scope)).slice(0, 20000), mode, files, at: nowIso(), by: who.email };
   });
   logTo(job, who, '📝 Scopes saved: ' + (job.tradeScopes.map(x => x.trade || 'general').join(', ') || 'none'));
   await saveJob(job, who);
