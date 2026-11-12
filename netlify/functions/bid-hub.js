@@ -43,6 +43,9 @@ async function whoIs(event){
   let prof = '';
   try { const r = await L.sb('gc_staff?select=profile,role&email=eq.' + encodeURIComponent(who.email)); if (r.ok) { const row = arr(await r.json())[0]; prof = low(row && (s(row.profile) + ' ' + s(row.role))); } } catch (e) {}
   who.estimator = /estimat/.test(prof + ' ' + who.role);
+  /* patch LEADBP (owner 11/12: "Glenn needs to [put leads on the bid portal] too"): the CRM's people list (Admin → Employees, role "Estimator")
+     counts too — the gc_staff row of an estimator often says only "staff" */
+  if (!who.estimator && !who.admin) { try { const d = await crmLists(); const u = arr(d.users).find(x => x && low(x.email) === who.email && x.active !== false); if (u && /estimat/i.test(s(u.role) + ' ' + s(u.profile) + ' ' + s(u.title))) who.estimator = true; } catch (e) {} }
   who.office = /office/.test(prof + ' ' + who.role) || who.email === 'office@grayco-cs.com';
   who.canInvite = who.admin || who.estimator || who.office;
   who.canPublic = who.admin || who.estimator;
@@ -69,7 +72,7 @@ async function jobsList(){
     SP.listRows([SP.eq('collection', 'jobs')]), SP.listRows([SP.eq('collection', 'invites')]).catch(() => []), SP.listRows([SP.eq('collection', 'bids')]).catch(() => []),
     SP.listRows([SP.eq('collection', 'plans')]).catch(() => []), SP.listRows([SP.eq('collection', 'questions')]).catch(() => [])]);
   const mail = arr(await L.kvGet(T.KV_SUBBIDS).catch(() => []));
-  const reqN = {}; (await SP.listRows([SP.eq('collection', 'planreqs')]).catch(() => [])).forEach(r => { if (SP.prOpen && SP.prOpen(r.data)) reqN[r.job_id] = (reqN[r.job_id] || 0) + 1; });   /* patch PLANREQ: 📩 open plan / info requests */
+  const reqN = {}, reqAt = {}; (await SP.listRows([SP.eq('collection', 'planreqs')]).catch(() => [])).forEach(r => { if (SP.prOpen && SP.prOpen(r.data)) { reqN[r.job_id] = (reqN[r.job_id] || 0) + 1; const a = s(r.data && r.data.at); if (a && (!reqAt[r.job_id] || a < reqAt[r.job_id])) reqAt[r.job_id] = a; } });   /* + the oldest open one (patch BPAPPR) */   /* patch PLANREQ: 📩 open plan / info requests */
   const c = counts(invites, bids, mail, plans, qs);
   return jobs.map(r => r.data || {}).filter(j => j.id && (!GONE.test(s(j.status)) || restorable(j))).map(j => {
     const k = c(j.id);
@@ -78,7 +81,7 @@ async function jobsList(){
     archived: GONE.test(s(j.status)) && /^(auto|taken off)$/.test(s(j.archivedReason)), archivedReason: s(j.archivedReason),   /* patch BIDPOST: 🗄 Archived (auto-added, taken off) */
     id: s(j.id), title: s(j.title), address: s(j.address), po: s(j.poNumber), status: s(j.status), draft: j.draft === true || low(j.status) === 'draft',
     visibility: j.draft === true || low(j.status) === 'draft' ? 'draft' : (s(j.visibility) || 'public'), due: validDay(j.bidDueDate), dueTime: s(j.bidDueTime), trades: tradesPicked(j) ? s(j.tradesSought) : '', tradesSuggested: tradesPicked(j) ? '' : s(j.tradesSought),   /* patch PLANREQ-H */
-    invited: k.invites, bids: k.bids, plans: k.plans, openQ: k.openQ, openReq: reqN[s(j.id)] || 0, leadId: s(j.leadInbox && j.leadInbox.id), source: s(j.leadInbox && j.leadInbox.source), autoPrivate: !!j.autoPrivate, updatedAt: s(j.updatedAt),
+    invited: k.invites, bids: k.bids, plans: k.plans, openQ: k.openQ, openReq: reqN[s(j.id)] || 0, reqSince: reqAt[s(j.id)] || '', leadId: s(j.leadInbox && j.leadInbox.id), source: s(j.leadInbox && j.leadInbox.source), autoPrivate: !!j.autoPrivate, updatedAt: s(j.updatedAt),
     biddingClosed: !!j.biddingClosed, projectType: s(j.projectType), ourDue: validDay(j.ourDue), ourDueTime: s(j.ourDueTime), crmProjectId: s(j.crmProjectId), crmProjectName: s(j.crmProjectName),   /* patch BIDEST: the CRM project this job's awarded bids go into */
     crmLeadId: s(j.crmLeadId), crmEstId: s(j.crmEstId), postedBy: s(j.postedBy), postedByName: s(j.postedByName), postedAt: s(j.postedAt), pmEmail: s(j.pmEmail), pmName: s(j.pmName),   /* patch BIDPOST */
     auto: !GONE.test(s(j.status)) && autoAdded(j, k)
