@@ -526,15 +526,21 @@ async function archive(who, b){
   if (!ids.length) return { code: 400, error: 'Pick a bid job.' };
   if (!who.canPublic) return { code: 403, error: 'Only an admin or an estimator deletes a bid job.' };
   if (ids.length > 1 && !who.admin) return { code: 403, error: 'Only an admin deletes several bid jobs at once.' };
-  const at = nowIso(), done = [], leads = [];
-  for (const id of ids) {
-    const job = await jobRow(id); if (!job || GONE.test(s(job.status))) continue;
-    job.archivedFrom = { status: s(job.status), visibility: s(job.visibility), draft: job.draft === true };
-    Object.assign(job, { status: 'archived', archivedAt: at, archivedBy: who.email });
-    logTo(job, who, '🗑 Deleted from the bid portal' + (b.markLead ? ' (lead marked not bidding)' : ''));
-    await saveJob(job, who); done.push(id);
-    if (job.leadInbox && s(job.leadInbox.id)) leads.push(s(job.leadInbox.id));
+  const at = nowIso(), done = [], leads = [], save = [];
+  /* patch HOTDEL (owner 11/12: Delete on 184 selected jobs "didn't click" — one read + one write per job ran past the function's time
+     limit): read the jobs 20 at a time in parallel, then write them all in ONE upsert */
+  for (let i = 0; i < ids.length; i += 20) {
+    const got = await Promise.all(ids.slice(i, i + 20).map(id => jobRow(id).catch(() => null)));
+    got.forEach((job, k) => {
+      if (!job || GONE.test(s(job.status))) return;
+      job.archivedFrom = { status: s(job.status), visibility: s(job.visibility), draft: job.draft === true };
+      Object.assign(job, { status: 'archived', archivedAt: at, archivedBy: who.email });
+      logTo(job, who, '🗑 Deleted from the bid portal' + (b.markLead ? ' (lead marked not bidding)' : ''));
+      job.updatedAt = at; save.push(job); done.push(ids[i + k]);
+      if (job.leadInbox && s(job.leadInbox.id)) leads.push(s(job.leadInbox.id));
+    });
   }
+  if (save.length) await SP.upsertRows(save.map(j => SP.rowFor('jobs', j)), s(who && who.email) || 'bid-hub');
   /* the lead itself stays as it is — unless the person ticked "also mark the lead Lost / not bidding" */
   if (b.markLead && leads.length) {
     const inbox = leads.filter(x => !/^crm:/.test(x));

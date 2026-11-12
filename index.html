@@ -5496,7 +5496,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.243-2026-11-12-r34j -->
+<!-- GrayCo CRM Build: 33.243-2026-11-12-r34j1 -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6445,7 +6445,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.243-2026-11-12-r34j");
+  console.log("[GC] Build 33.243-2026-11-12-r34j1");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6493,7 +6493,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.243-2026-11-12-r34j"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.243-2026-11-12-r34j1"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -178589,7 +178589,7 @@ function doDelete(ids, markLead){
     }
     toast('🗑 ' + r.deleted + ' bid job' + (r.deleted === 1 ? '' : 's') + ' deleted — restore from 🗑 Deleted for 30 days');
     loadJobs(true);
-  }, function(e){ toast(e.message, true); });
+  }, function(e){ toast(e.message, true); try { var b0 = D.querySelector('#gcsys-modal [data-sys=delgo]'); if (b0) { b0.disabled = false; b0.textContent = '🗑 Delete'; } } catch (x) {} });   /* patch HOTDEL */
 }
 function restoreJob(id){
   fn('bid-hub', { op: 'restore', jobId: id }).then(function(){ toast('↩ Restored to the bid portal'); loadJobs(true); }, function(e){ toast(e.message, true); });
@@ -178704,7 +178704,7 @@ function onClick(ev){
   if (a === 'del') return askDelete([job]);
   if (a === 'bulkdel') return askDelete(Object.keys(SEL));
   if (a === 'selnone') { SEL = {}; return drawRows(); }
-  if (a === 'delgo') { var mk = D.querySelector('#gcsys-modal [data-sys=marklead]'); return doDelete(s(t.getAttribute('data-ids')).split(',').filter(Boolean), !!(mk && mk.checked)); }
+  if (a === 'delgo') { if (t.disabled) return; var mk = D.querySelector('#gcsys-modal [data-sys=marklead]'); var dn = s(t.getAttribute('data-ids')).split(',').filter(Boolean); t.disabled = true; t.textContent = 'Deleting ' + dn.length + '…'; return doDelete(dn, !!(mk && mk.checked)); }   /* patch HOTDEL: the button shows it is working (a big delete takes a few seconds) */
   if (a === 'restore') return restoreJob(job);
 }
 
