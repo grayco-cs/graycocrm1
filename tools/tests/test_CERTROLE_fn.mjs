@@ -13,7 +13,8 @@ W.localStorage = { getItem(){ return null; }, setItem(){} };
 W.__GC_AUTH__ = { isAdmin: () => true }; W._ehSb = async () => null; W._supaUpsertNow = async () => true;
 const U = [['Tia', 'Mitigation Tech'], ['Dex', 'Restoration & Abatement Tech'], ['Ina', 'Insurance PM'], ['Ross', 'Project Manager', 'Roofing'], ['Gary', 'Estimator'], ['Lou', 'General Laborer'], ['Cora', 'Contents & Cleaning Tech'], ['Ecl', 'Environmental Cleaning Tech'], ['Eli', 'Abatement Technician'], ['Max', 'Mitigation Manager']]
   .map(([n, r, pr]) => ({ name: n + ' Demo', email: n.toLowerCase() + '@example.com', role: r, profile: pr || '', active: true }));
-W._crm = { users: U, projects: [{ id: 'J1', name: 'Demo tile job', scope: 'asbestos floor tile', status: 'active' }, { id: 'J2', name: 'Demo basement', type: 'Water Damage', status: 'active' }] };
+W._crm = { users: U, projects: [{ id: 'J1', name: 'Demo tile job', scope: 'asbestos floor tile', status: 'active' }, { id: 'J2', name: 'Demo basement', type: 'Water Damage', status: 'active', companyId: 'mitigation' }, { id: 'J3', name: 'Demo roof leak', type: 'Roofing', status: 'active' }] };
+W._gcCo = { ofJob: x => x.companyId || 'construction', userIn: () => true };
 W._gcTrain = { required: rk => [{ id: 'b:start', title: 'Start here', parts: [{ id: 'a' }] }, { id: 'b:' + rk, title: rk + ' course', parts: [{ id: 'q', quiz: [1] }] }], modules: () => [{ id: 'b:resto-water', title: 'GrayCo Water', parts: [{ id: 'q', quiz: [1] }] }] };
 vm.createContext(W); vm.runInContext(src, W);
 const C = W._gcCertPlan, Q = W._gcCertQual, by = n => U.find(u => u.name === n + ' Demo');
@@ -64,7 +65,9 @@ W._setProjects(prev => prev.map(x => x.id === 'J2' ? Object.assign({}, x, { mitT
 const j2a = STATE.find(x => x.id === 'J2').mitTech;
 W._setProjects(prev => prev.map(x => x.id === 'J2' ? Object.assign({}, x, { mitTech: 'Tia Demo' }) : x));
 const j2b = STATE.find(x => x.id === 'J2').mitTech;
-ok(!j2a && j2b === 'Tia Demo', 'GUARD: putting Lou (no WRT) on the water job is undone; Tia (WRT) stays', { j2a, j2b });
+W._setProjects(prev => prev.map(x => x.id === 'J3' ? Object.assign({}, x, { superintendent: 'Lou Demo' }) : x));
+const j3 = STATE.find(x => x.id === 'J3').superintendent;
+ok(!j2a && j2b === 'Tia Demo' && j3 === 'Lou Demo', 'GUARD: putting Lou (no WRT) on the Mitigation water job is undone; Tia (WRT) stays; a Construction "roof leak" job is not blocked', { j2a, j2b, j3 });
 const tabs = ['people', 'raises', 'reqs', 'amounts', 'outlook', 'jobs', 'bonus', 'pay'], bad = [];
 for (const tb of tabs) { C.open(tb); await new Promise(r => setTimeout(r, 30)); const h = dlg.innerHTML.replace(/data-[a-z-]+="[^"]*"/g, ''); if (!h || /undefined|NaN/.test(h)) bad.push(tb + ':' + ((h.match(/.{40}(undefined|NaN).{20}/) || [''])[0])); }
 ok(!bad.length, 'every tab draws (no "undefined" / "NaN")', bad);

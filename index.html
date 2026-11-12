@@ -196065,7 +196065,13 @@ function qualForJob(pj){ return staff().map(function(u){ return { u: u, c: qualC
    when the job closes). Everyone else gets "Ask an admin to allow" (an item on the admins' To-Do). */
 function jobOpen(pj){ return !!pj && !/(complete|closed|lost|cancel|archiv|dead|void)/i.test(s(pj.status)) && !pj.deleted; }
 function jobExcOf(u, pj){ var x = isObj(plan().jobExc) ? plan().jobExc[low(u && u.email) + '|' + s(pj && pj.id)] : null; return x && jobOpen(pj) ? x : null; }
-function blockOf(u, pj){ if (!u || !pj || !LOADED || !CERTS_OK) return null; var c = qualCheck(u, pj); if (c.ok) return null; var ex = jobExcOf(u, pj); if (ex) return null; return c; }
+/* what blocks: on Mitigation / Environmental jobs every job type above; on a Construction job only asbestos, hazmat and biohazard (a roof
+   "leak" or a pre-1978 remodel stays a warning there — RRP crews work under the certified renovator) */
+function enforcedKinds(pj){ var co = 'construction'; try { co = W._gcCo && W._gcCo.ofJob ? W._gcCo.ofJob(pj) : co; } catch (e) {} return co === 'construction' ? ['asbestos', 'hazmat', 'bio'] : null; }
+function blockOf(u, pj){ if (!u || !pj || !LOADED || !CERTS_OK) return null; var c = qualCheck(u, pj); if (c.ok) return null; var ex = jobExcOf(u, pj); if (ex) return null;
+  var ek = enforcedKinds(pj); if (ek) { var ks = jobKinds(pj), q = qualOf(u), canK = q.can.map(function(x){ return x.k; }), bad = ks.filter(function(k){ return ek.indexOf(k.k) >= 0 && canK.indexOf(k.k) < 0; }); if (!bad.length) return null;
+    return { ok: false, kinds: bad.map(function(k){ return k.l; }), missing: bad.map(function(k){ return (q.next.filter(function(n){ return n.k === k.k; })[0] || { missing: [] }).missing.join(' + '); }), law: true, label: c.label }; }
+  return c; }
 function allowOnJob(u, pj, reason){
   if (!isAdmin()) { toast('Only an admin can let someone on a job without the certificates.', true); return Promise.resolve(false); }
   var why = s(reason); if (!why) { toast('Type the reason.', true); return Promise.resolve(false); }
