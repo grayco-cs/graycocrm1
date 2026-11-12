@@ -43,6 +43,28 @@ ok(Q.of(by('Eli')).can.some(x => x.k === 'asbestos') && Q.check(by('Tia'), W._cr
 ok(C.trainOf('ina@example.com', 'wrt').k === 'not' && C.CLASS.wrt[0] === 'b:resto-water', 'class gate: WRT needs the GrayCo Water course first (not started)');
 const tp = C.trainPlan(by('Lou'), p);
 ok(tp.cur.length === 2 && tp.next.length === 2 && !tp.cur.some(m => tp.next.includes(m)) && tp.week.title === 'Start here', 'training plan: laborer current-job (paid) vs next-role (unpaid) courses, this week\'s paid course');
+/* the job block: not qualified → blocked; an admin's exception for that person + job (reason) lifts it until the job closes; others ask */
+const J1 = W._crm.projects[0], tiaU = by('Tia'), eliU = by('Eli');
+ok(Q.block(tiaU, J1) && Q.block(tiaU, J1).missing.join() === 'asbestos worker' && !Q.block(eliU, J1), 'BLOCK: Tia (no asbestos worker) is blocked from the asbestos job; Eli is not');
+J1.mitTech = 'Tia Demo';
+ok(Q.crewIssues(J1).map(x => x.u.name).join() === 'Tia Demo', 'BLOCK: a job lists "⚠ Tia Demo is on this job without asbestos worker"');
+const okNo = await Q.allow(tiaU, J1, '');
+const okYes = await Q.allow(tiaU, J1, 'Demo: supervised removal, licensed worker on site');
+ok(!okNo && okYes && !Q.block(tiaU, J1) && !Q.crewIssues(J1).length && C.plan().excLog.some(x => x.kind === 'job' && x.reason.startsWith('Demo')), 'EXCEPTION: an admin\'s exception needs a reason, is logged and lifts the block for that job');
+J1.status = 'Completed';
+ok(!Q.exception(tiaU, J1), 'EXCEPTION: it ends when the job closes'); J1.status = 'active';
+W.__GC_AUTH__.isAdmin = () => false;
+const asked = await Q.confirmAssign(by('Cora'), J1);
+ok(asked === false && C.plan().allowReq.some(r => r.email === 'cora@example.com' && r.status === 'open'), 'non-admin: blocked, "Ask an admin to allow" request created');
+W.__GC_AUTH__.isAdmin = () => true;
+/* the job-save guard (every path that saves a job through _setProjects: job page, Quick Add edits, field assignment) */
+let STATE = W._crm.projects.map(x => Object.assign({}, x)); W._setProjects = v => { STATE = typeof v === 'function' ? v(STATE) : v; };
+Q._guard();
+W._setProjects(prev => prev.map(x => x.id === 'J2' ? Object.assign({}, x, { mitTech: 'Lou Demo' }) : x));
+const j2a = STATE.find(x => x.id === 'J2').mitTech;
+W._setProjects(prev => prev.map(x => x.id === 'J2' ? Object.assign({}, x, { mitTech: 'Tia Demo' }) : x));
+const j2b = STATE.find(x => x.id === 'J2').mitTech;
+ok(!j2a && j2b === 'Tia Demo', 'GUARD: putting Lou (no WRT) on the water job is undone; Tia (WRT) stays', { j2a, j2b });
 const tabs = ['people', 'raises', 'reqs', 'amounts', 'outlook', 'jobs', 'bonus', 'pay'], bad = [];
 for (const tb of tabs) { C.open(tb); await new Promise(r => setTimeout(r, 30)); const h = dlg.innerHTML.replace(/data-[a-z-]+="[^"]*"/g, ''); if (!h || /undefined|NaN/.test(h)) bad.push(tb + ':' + ((h.match(/.{40}(undefined|NaN).{20}/) || [''])[0])); }
 ok(!bad.length, 'every tab draws (no "undefined" / "NaN")', bad);
