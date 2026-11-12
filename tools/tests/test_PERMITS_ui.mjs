@@ -82,7 +82,7 @@ await shot(A, '2_detail_sheet', '#gc-pj-sheet .bx');
 /* ➕ Make it a lead (from the sheet) */
 await A.page().click('#gc-pj-sheet [data-pj-a="lead"]'); await sleep(2500);
 const lE = await A.ev(() => { const l = (window._crm.leads || []).find(x => x.permitKey === 'nashville:T2026000903'); return l ? { id: l.id, companyId: l.companyId, type: l.type, source: l.source, note: l.note, state: l.state, co: window._gcCo ? window._gcCo.ofLead(l) : '' } : null; });
-ok('➕ Make it a lead → an 🌿 Environmental lead, source "Building permit — Nashville", TN on the lead', lE && /^LPMT_/.test(lE.id) && lE.companyId === 'environmental' && lE.co === 'environmental' && lE.type === 'Environmental' && lE.source === 'Building permit — Nashville' && lE.state === 'TN', lE);
+ok('➕ Make it a lead → an ☢️ Environmental lead, source "Building permit — Nashville", TN on the lead', lE && /^LPMT_/.test(lE.id) && lE.companyId === 'environmental' && lE.co === 'environmental' && lE.type === 'Environmental' && lE.source === 'Building permit — Nashville' && lE.state === 'TN', lE);
 ok('…the contractor and the permit # are in the notes', lE && /Contractor on the permit: Mock Wrecking Co/.test(lE.note) && /Permit #T2026000903/.test(lE.note), lE && lE.note);
 ok('…the server was told (set-state lead + the lead id); the sheet says ✓ Made a lead', SRV.calls.some(b => b.action === 'set-state' && b.id === 'nashville:T2026000903' && b.state === 'lead' && b.leadId === (lE && lE.id)) && await A.ev(() => /Made a lead/.test(document.getElementById('gc-pj-sheet').innerText)));
 await A.page().click('#gc-pj-sheet [data-pj-a="sheetclose"]'); await sleep(400);
