@@ -38027,7 +38027,7 @@ async function loadAll(){
 }
 
 function activeProjects(){
-  return _data.projects.filter(function(p){ return ['active','approved','completed','on_hold'].includes(p.status); });
+  return _data.projects.filter(function(p){ return ['active','approved','completed','on_hold'].includes(p.status) && (!window._gcCo || window._gcCo.passJob(p)); });   /* patch COLEAK2 */
 }
 
 function flagItem(id, note, label){
@@ -38173,7 +38173,7 @@ function renderInvoices(){
 function buildTodoItems(){
   var items = [];
   var today = new Date().toISOString().slice(0,10);
-  var p = _data.projects || [];
+  var p = (_data.projects || []).filter(function(x){ try { return !window._gcCo || window._gcCo.passJob(x); } catch (e) { return true; } });   /* patch COLEAK2: the picked company's jobs (also when the page kept data read under another pick) */
   var invs = _data.invs || [];
   var cos = _data.cos || [];
 
@@ -38611,7 +38611,7 @@ function renderTodo(){
 }
 
 function renderPhotos(){
-  var p = _data.projects || [];
+  var p = (_data.projects || []).filter(function(x){ try { return !window._gcCo || window._gcCo.passJob(x); } catch (e) { return true; } });   /* patch COLEAK2: the picked company's jobs (also when the page kept data read under another pick) */
   var docs = _data.docs || [];
   // Find docs that are photos or CompanyCam links
   var photoDocs = docs.filter(function(d){
@@ -219001,19 +219001,24 @@ function meInfo(){
     var A = W.__GC_AUTH__, em = low(A && A.email ? A.email() : ''); if (!em) return null;
     var us = arr(W._crm && W._crm.users), u = null;
     for (var i = 0; i < us.length; i++) { var x = us[i]; if (x && low(x.email) === em && x.active !== false) { if (!u || ownList(x).length) u = x; } }
-    ME.v = { u: u, email: em, admin: !!(A.isAdmin && A.isAdmin()), office: typeof W._gcIsOfficeFull === 'function' && !!W._gcIsOfficeFull(), mkt: !!(A.marketing && A.marketing()) || /marketing/i.test(s(u && u.role)) };
+    ME.v = { u: u, email: em, admin: !!(A.isAdmin && A.isAdmin()), office: typeof W._gcIsOfficeFull === 'function' && !!W._gcIsOfficeFull(), mkt: !!(A.marketing && A.marketing()) || /marketing/i.test(s(u && u.role)), rc: roleCo() };
   } catch (e) { ME.v = null; }
   return ME.v;
 }
 /* LOCKED only when the person's record names exactly ONE company (an office manager for one company …) and they are not an admin /
    the owner / the master office login / Marketing. No companies on the record (everyone today) = as before: may switch. 2+ companies
    = may switch among those (and All). */
+/* … and a Mitigation / Environmental person by their ROLE (no companies on the record: patch QAB reads their pick the same way) */
+function roleCo(){ try { var k = W._gcMitWS && typeof W._gcMitWS.kind === 'function' ? s(W._gcMitWS.kind()) : ''; return k ? (k.indexOf('mit') === 0 ? 'mitigation' : 'environmental') : ''; } catch (e) { return ''; } }
+function privileged(m){ return !!(m.admin || (m.u && low(m.u.payType) === 'owner') || m.mkt || (m.office && /^office@/.test(m.email))); }
 function canSwitch(){
   var m = meInfo(); if (!m) return true;   /* not signed in yet: nothing to lock */
-  if (ownList(m.u).length !== 1) return true;
-  return !!(m.admin || (m.u && low(m.u.payType) === 'owner') || m.mkt || (m.office && /^office@/.test(m.email)));
+  var n = ownList(m.u).length;
+  if (n === 1) return privileged(m);
+  if (n === 0 && m.rc) return privileged(m);
+  return true;
 }
-function lockedCo(){ var m = meInfo(); return userCos(m && m.u)[0]; }
+function lockedCo(){ var m = meInfo(), own = ownList(m && m.u); if (!own.length && m && m.rc) return m.rc; return userCos(m && m.u)[0]; }
 /* the companies this person may pick (2+ on their record: those; otherwise every company) */
 function myCos(){ var m = meInfo(), own = ownList(m && m.u); return own.length >= 2 && !(m.admin || low(m.u.payType) === 'owner' || m.mkt || (m.office && /^office@/.test(m.email))) ? ALLCO.filter(function(c){ return own.indexOf(c) > -1; }) : ALLCO.slice(); }
 function filter(){ if (!canSwitch()) return lockedCo(); try { var f = localStorage.getItem(FK) || 'all'; if (f !== 'all' && valid(f) && myCos().indexOf(f) < 0) return 'all'; return f === 'all' || valid(f) ? f : 'all'; } catch (e) { return 'all'; } }

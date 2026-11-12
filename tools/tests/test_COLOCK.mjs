@@ -10,6 +10,7 @@ const USERS = pm => [{ id: 'u1', name: 'Wesley Johnson', email: 'wjohnson@grayco
   pm,
   { id: 'u2', name: 'Conzz Carpenter', email: 'conzz.worker@example.test', role: 'Field', payType: 'hourly', active: true }];
 const LEGACY = { id: 'u6', name: 'Pmzz Legacy', email: 'sbiffle@grayco-cs.com', role: 'Project Manager', payType: 'salary', active: true };
+const MITTECH = { id: 'u6', name: 'Mitzz Techzz', email: 'sbiffle@grayco-cs.com', role: 'Mitigation Technician', payType: 'hourly', active: true };
 const MITMGR = { id: 'u6', name: 'Mitzz Officemgr', email: 'sbiffle@grayco-cs.com', role: 'Office Manager', payType: 'salary', active: true, companies: ['mitigation'] };
 cset('users', USERS(LEGACY));
 cset('projects', [{ id: 'C1', name: 'Conzz Alpha', client: 'Conzz Client', contract: 77777, status: 'active', pm: 'Pmzz Legacy', createdAt: at, updatedAt: at },
@@ -25,6 +26,13 @@ await A.ev(() => window._setView('projects')); await sleep(3500);
 let t0 = await A.ev(() => document.body.innerText);
 ok('a legacy PM (no companies on the record) can still switch: Mitigation picked, the Mitigation job shows', lg.f === 'mitigation' && lg.can && lg.cos.length === 3 && /Mitzz Beta/.test(t0) && !/Conzz Alpha/.test(t0), { lg, t: t0.split('\n').filter(l => /zz/.test(l)).slice(0, 8) });
 await A.ev(() => window._gcCo.setFilter('all')); await sleep(500); await A.b.close();
+/* a Mitigation person by ROLE (no companies on the record): locked to Mitigation, the same as patch QAB's pick */
+cset('users', USERS(MITTECH));
+A = await as('sbiffle@grayco-cs.com');
+await A.ev(() => { try { localStorage.setItem('gc_co_filter', 'construction'); } catch (e) {} }); await sleep(1500);
+let rt = await A.ev(() => ({ f: window._gcCo.filter(), can: window._gcCo.canSwitch() }));
+ok('a Mitigation Technician by role (no companies on the record) is locked to Mitigation', rt.f === 'mitigation' && rt.can === false, rt);
+await A.b.close();
 /* the Mitigation office manager (companies: [mitigation]): locked */
 cset('users', USERS(MITMGR));
 A = await as('sbiffle@grayco-cs.com');
