@@ -196030,6 +196030,46 @@ W._gcTodoExt.push(function(){
   } catch (e) { return []; }
 });
 
+/* patch CERTROLE (owner 11/12): "they can approve jobs in the company by certs and improve pay" — certificates unlock job types.
+   QUAL: job type → the certificate(s) it needs (law: true = LAW-required work: assigning someone not qualified needs an admin's reason,
+   logged). jobKinds(p) reads the job's type / name / scope / notes. API window._gcCertQual = { of(u), jobKinds(p), check(u, p),
+   forJob(p) (qualified first, ✓ / ⚠ missing …), confirmAssign(u, p, reason) } — for the crew / assignee pickers. */
+var QUAL = [
+  { k: 'water', l: 'Water', need: [['wrt', 'IICRC WRT']], rx: /water|flood|leak|burst|mitigat|dry-?out/i },
+  { k: 'fire', l: 'Fire / smoke', need: [['fsrt', 'IICRC FSRT']], rx: /fire|smoke|soot/i },
+  { k: 'mold', l: 'Mold', need: [['mold', 'IICRC AMRT (or equivalent)']], rx: /mold|mould|microbial/i },
+  { k: 'lead', l: 'Lead', law: true, need: [['leadwork|leadsup|rrp', 'lead worker or EPA RRP']], rx: /\blead\b|\brrp\b|pre-?19[0-7]\d|built (in )?19[0-7]\d/i },
+  { k: 'asbestos', l: 'Asbestos', law: true, need: [['asbwork|asbsup', 'asbestos worker']], rx: /asbestos|\bacm\b|vermiculite/i },
+  { k: 'bio', l: 'Biohazard / trauma', law: true, need: [['bbp', 'bloodborne pathogens training'], ['trauma', 'a trauma / biohazard certificate']], rx: /trauma|biohazard|crime[- ]scene|sewage|unattended death|blood/i },
+  { k: 'clean', l: 'Cleaning / contents', need: [['cct|uft|rct|oct', 'IICRC CCT, UFT, RCT or OCT']], rx: /final clean|contents|pack-?out|carpet|upholster|cleaning/i },
+  { k: 'hazmat', l: 'Hazmat', law: true, need: [['hazwoper', 'HAZWOPER 40']], rx: /hazmat|hazardous waste|hazwoper/i }
+];
+function needRx(ids){ return rx(ids.split('|').map(function(id){ return M[id]; }).join('|')); }
+function qualOf(u){
+  var ht = heldBy(u.email).filter(function(c){ return certStatus(c) === 'held'; }).map(function(c){ return s(c.name) + ' ' + s(c.issuer); }).join(' | ');
+  var can = [], next = [];
+  QUAL.forEach(function(q){ var miss = q.need.filter(function(n){ return !needRx(n[0]).test(ht); }).map(function(n){ return n[1]; }); if (miss.length) next.push({ k: q.k, l: q.l, law: !!q.law, missing: miss }); else can.push({ k: q.k, l: q.l }); });
+  return { can: can, next: next };
+}
+function jobKinds(pj){ var tx = [pj && pj.type, pj && pj.jobType, pj && pj.name, pj && pj.scope, pj && pj.notes, pj && pj.hazard, pj && pj.lossType].concat(arr(pj && pj.trades)).map(function(v){ return typeof v === 'string' ? v : ''; }).join(' | ');
+  return QUAL.filter(function(q){ return q.rx.test(tx); }); }
+function qualCheck(u, pj){ var ks = jobKinds(pj), q = qualOf(u), canK = q.can.map(function(x){ return x.k; }), miss = ks.filter(function(k){ return canK.indexOf(k.k) < 0; });
+  var missing = miss.map(function(k){ return (q.next.filter(function(n){ return n.k === k.k; })[0] || { missing: [] }).missing.join(' + '); });
+  return { ok: !miss.length, kinds: ks.map(function(k){ return k.l; }), missing: missing, law: miss.some(function(k){ return k.law; }), label: miss.length ? '⚠ missing ' + missing.join(', ') : '✓' }; }
+function qualForJob(pj){ return staff().map(function(u){ return { u: u, c: qualCheck(u, pj) }; }).sort(function(a, b){ return (b.c.ok ? 1 : 0) - (a.c.ok ? 1 : 0) || s(a.u.name).localeCompare(s(b.u.name)); }); }
+function confirmAssign(u, pj, reason){
+  var c = qualCheck(u, pj); if (c.ok || !c.law) return Promise.resolve(true);
+  if (!isAdmin()) { toast('Only an admin can put someone without the ' + c.missing.join(', ') + ' on this job (the law requires it).', true); return Promise.resolve(false); }
+  var why = s(reason); if (!why) { try { why = s(W.prompt(s(u.name) + ' is missing ' + c.missing.join(', ') + ' — required by law for this work. Reason to assign anyway:', '')); } catch (e) { why = ''; } }
+  if (!why) return Promise.resolve(false);
+  var by = s(me().name || me().email);
+  return save(function(p){ p.excLog = arr(p.excLog); p.excLog.push({ id: uid(), email: low(u.email), kind: 'assign', text: 'assigned to ' + s(pj && (pj.name || pj.id)) + ' without ' + c.missing.join(', '), reason: why.slice(0, 300), by: by, at: nowISO(), job: s(pj && pj.id) }); }).then(function(){ return true; });
+}
+W._gcCertQual = { of: qualOf, jobKinds: function(pj){ return jobKinds(pj).map(function(k){ return k.k; }); }, check: qualCheck, forJob: qualForJob, confirmAssign: confirmAssign, QUAL: QUAL };
+function qualHtml(u){ var q = qualOf(u);
+  return '<div class="gccp-mut" style="margin-top:4px" data-cp-qual="' + esc(low(u.email)) + '">🔓 <b>Can work:</b> ' + (q.can.length ? q.can.map(function(x){ return '<span class="gccp-chip ok">' + esc(x.l) + '</span>'; }).join('') : '<span class="gccp-mut">no certified job types yet</span>') +
+    (q.next.length ? ' · <b>Next unlock:</b> ' + q.next.slice(0, 3).map(function(x){ return esc(x.l) + ' — take ' + esc(x.missing.join(' + ')); }).join(' · ') : '') + ' <span class="gccp-mut">(more certificates → more jobs → more hours and raises)</span></div>'; }
+
 /* patch CERTROLE: the person's own 📘 paid CRM training for this week on their desk / GrayCo Field home (patch ROLEAPPS' card hook) */
 (W._gcRaCards = Array.isArray(W._gcRaCards) ? W._gcRaCards : []).push(function(a, card0){
   try {
@@ -196087,7 +196127,7 @@ function raiseBox(u, p, held){
     (c.track === 'gen_lab' ? (function(){ var tc = techCourses(u, p), ep = envPath(u, p); return '<div class="gccp-mut" data-cp-labstep="1">🪜 Path 1 — ' + esc((p.tracks[tc.target] || {}).label || tc.target) + ' (+$' + TECH_STEP + '/hr → $' + (startOf('gen_lab', p) + TECH_STEP) + '): <b>' + tc.passed + ' of ' + tc.of + ' CRM courses passed</b>' + (tc.ready ? ' — ⭐ Ready for tech status (in 💵 Raises due)' : tc.left.length ? ' · still to pass: ' + tc.left.map(function(m){ return esc(m.title); }).join(' · ') : '') + '</div>' +
       '<div class="gccp-mut" data-cp-labenv="1">🪜 Path 2 — Environmental tech ($' + startOf('env_tech', p) + '/hr): certificates <b>' + ep.certs + ' of ' + ep.certsOf + '</b> (EPA RRP, lead worker, asbestos worker)' + (ep.missing.length ? ' — missing ' + esc(ep.missing.join(', ')) : '') + ' · Environmental CRM training <b>' + ep.passed + ' of ' + ep.of + ' passed</b>' + (ep.ready ? ' — ⭐ Ready for Environmental tech status (in 💵 Raises due)' : '') + '. No certificate raises before tech status (certificates are still recorded).</div>'; })() : '') +
     (isDual(c.track) ? '<div class="gccp-mut" data-cp-ladder="1">🪜 Dual tech → Dual foreman (a supervisor license, or OSHA 30 + 1 year) → PM (Master Restorer) or Environmental supervisor / PM (lead + asbestos supervisor). Cross-training bonus +' + hrTxt(num(p.xtrainHr) > 0 ? p.xtrainHr : 2) + ' once with WRT + AMRT + lead worker + asbestos worker + HAZWOPER 40 (' + xtrainHas(got).length + ' of ' + XTRAIN.length + ').</div>' : '') +
-    rateLine(u, p, c) +
+    rateLine(u, p, c) + qualHtml(u) +
     '<div class="gccp-mut" style="margin-top:4px" data-cp-policy="1">🎓 ' + esc(POLICY) + ' <i>(' + esc(ATTY) + ')</i>.</div>' + planBox(u, p) +
     '<div class="gccp-mut" style="margin-top:4px">🚗 Course travel paid by GrayCo: ' + (tv.length ? '<b data-cp-tvsum="1">$' + tvSum.toFixed(2) + '</b> (' + tv.map(function(x){ return esc(x.cert) + ' ' + esc(fmt(x.date)); }).join(' · ') + ')' : 'none yet') +
     ' <button type="button" class="gccp-btn" style="font-size:12px;padding:2px 8px" data-cp="tvform" data-em="' + esc(em) + '">＋ Course travel</button>' + (typeof W._gcFieldLogExpense === 'function' ? ' <button type="button" class="gccp-btn" style="font-size:12px;padding:2px 8px" data-cp="receipt">🧾 Snap the receipt</button>' : '') + '</div>' +
@@ -196167,7 +196207,7 @@ function reqRows(u, sts, rec){
 
 function render(){
   if (!OV) return; css();
-  var p = plan(), ppl = staff(), tabs = [['people', '👥 People'], ['raises', '💵 Raises due'], ['reqs', '📋 Requirements by role'], ['amounts', '⚙ Raise amounts'], ['outlook', '📈 Raise outlook & caps'], ['bonus', '🏆 PM year-end bonus'], ['pay', '⏱ Emergency & overtime pay']];
+  var p = plan(), ppl = staff(), tabs = [['people', '👥 People'], ['raises', '💵 Raises due'], ['reqs', '📋 Requirements by role'], ['amounts', '⚙ Raise amounts'], ['outlook', '📈 Raise outlook & caps'], ['jobs', '👷 Who can work'], ['bonus', '🏆 PM year-end bonus'], ['pay', '⏱ Emergency & overtime pay']];
   var h = '<div class="gccp-h"><b>🎖 Required certs, raises &amp; promotion</b><span><button type="button" class="gccp-btn" data-cp="close">✕</button></span></div>' +
     '<p class="gccp-mut">Required and recommended certificates by role and company (no hire-date deadlines — keep on), a raise for every certificate earned, and ⭐ promotion eligibility once someone holds a Master designation. The certificates themselves live in 📜 Certifications — add one there and it shows up here.</p>' +
     '<div class="gccp-note" data-cp-rulenote="1">💵 <b>The owner\'s raise rule</b> (each one editable in ⚙ Raise amounts): <b>$5/hr</b> for Master Restorer, the Master designations, lead / asbestos <b>supervisor</b>, HAZWOPER 40-hour and any other 32–40-hour supervisor / master-level class · <b>$2/hr</b> for OSHA 30 · <b>$1/hr</b> for everything else (IICRC courses, RRP, lead / asbestos worker, OSHA 10 …). Salaried: × 2,080 hours a year. 💼 PMs are commission-paid: their certificates are required, with no certificate raises; a master level pays through the PM commission plan. 🎓 ' + esc(POLICY) + '. Lines marked <span class="gccp-law">LAW</span> are legally required when the employee does that work (cited on each line); check the current state rules on renewal.</div>' +
@@ -196203,6 +196243,11 @@ function render(){
   else if (UI.tab === 'amounts') h += '<div class="gccp-note">The raise for each certificate earned — <b>the owner\'s amounts</b>. Hourly employees get the $/hr amount; salaried PMs and managers get the $/yr amount (blank = $/hr × 2,080). Course hours and level are for reference: a blank $/hr follows the rule <b>32+ hours or supervisor / master level → $5, else $1</b>. OSHA 30 is a 30-hour class: the owner set it at $2. ⭐ Anyone holding a Master designation is promotion eligible.</div><table class="gccp-tbl" data-cp-amts="1"><tr><th>Certificate</th><th>Course hours</th><th>Level</th><th>Hourly raise</th><th>Salaried raise</th></tr>' +
     p.raises.map(function(r, i){ return '<tr data-cp-rule="' + esc(r.id) + '"><td>' + esc(r.name) + (r.each ? '<div class="gccp-mut">each one</div>' : '') + '</td><td><input class="gccp-in" style="width:60px" data-cp-hrs="' + i + '" value="' + esc(r.hours == null ? '' : r.hours) + '"> h</td><td><select class="gccp-in" data-cp-lvl="' + i + '">' + [['', '—'], ['supervisor', 'Supervisor'], ['master', 'Master']].map(function(o){ return '<option value="' + o[0] + '"' + (s(r.level) === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></td>' +
       '<td>$<input class="gccp-in" style="width:70px" data-cp-hr="' + i + '" placeholder="' + esc(autoHr(r)) + '" value="' + esc(r.hr == null ? '' : r.hr) + '">/hr</td><td>$<input class="gccp-in" style="width:90px" data-cp-yr="' + i + '" placeholder="' + esc(Math.round(rateOf(r) * HRS_YR)) + '" value="' + esc(r.yr == null ? '' : r.yr) + '">/yr</td></tr>'; }).join('') + '</table><p><button type="button" class="gccp-btn pri" data-cp="saveamts">Save amounts</button></p>';
+  else if (UI.tab === 'jobs') { var js = arr(((W._crm || {}).projects) || []).filter(function(x){ return x && x.id && !x.deleted && !/(complete|closed|lost|cancel|archiv|dead|void)/i.test(s(x.status)) && jobKinds(x).length; }).slice(0, 80);
+    h += '<div class="gccp-note">👷 Each active job that needs certified people (from its type, name and scope), with who is qualified (✓) and who is not (⚠ missing …). For <span class="gccp-law">LAW</span> work — asbestos, lead, biohazard, hazmat — putting someone not qualified on the job asks an admin for a reason, and it is logged (window._gcCertQual.confirmAssign for the crew pickers).</div>' +
+      (js.length ? '<table class="gccp-tbl" data-cp-whojobs="1"><tr><th>Job</th><th>Needs</th><th>✓ Qualified</th><th>⚠ Not yet</th></tr>' + js.map(function(pj){ var L = qualForJob(pj), ks = jobKinds(pj);
+        return '<tr data-cp-whojob="' + esc(pj.id) + '"><td><b>' + esc(pj.name || pj.client || pj.id) + '</b></td><td>' + ks.map(function(k){ return '<span class="gccp-chip ' + (k.law ? 'amb' : 'gry') + '">' + esc(k.l) + (k.law ? ' · LAW' : '') + '</span>'; }).join('') + '</td><td>' +
+          L.filter(function(x){ return x.c.ok; }).map(function(x){ return '✓ ' + esc(x.u.name); }).join('<br>') + '</td><td class="gccp-mut">' + L.filter(function(x){ return !x.c.ok; }).slice(0, 12).map(function(x){ return '⚠ ' + esc(x.u.name) + ' — missing ' + esc(x.c.missing.join(', ')); }).join('<br>') + '</td></tr>'; }).join('') + '</table>' : '<p class="gccp-mut">No active job needs certified people right now.</p>'); }
   else if (UI.tab === 'outlook') { var mo = p.masterOnce;
     h += '<div class="gccp-note">📈 What each role can earn from certificates: the <b>starting rate</b> (no certificates), every certificate on the role that pays a raise (required and 💡 recommended), and the <b>top rate</b>. An optional <b>cap</b> per role — "max $/hr from certificates" and / or "max number of certificate raises" (blank = no cap) — holds back raises past it ("cap reached").</div>' +
       '<label style="display:block;margin:6px 0"><input type="checkbox" data-cp-masteronce="1"' + (mo ? ' checked' : '') + '> ⭐ <b>Highest master level pays once</b> — Master Restorer already includes Master Water and Master Fire &amp; Smoke Restorer, so one $5 raise for the master path instead of one per designation. <span class="gccp-mut">(The owner has not decided — on by default.)</span></label>' +
