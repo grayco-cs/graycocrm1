@@ -191635,7 +191635,7 @@ function rowHtml(it){
   if (st.done) right = '<span class="ot-ok">✓ ' + (st.how === 'auto' ? 'Done (the CRM sees it)' : 'Done' + (st.by ? ' · ' + esc(st.by) : '')) + '</span>' + (st.how === 'manual' ? ' <button type="button" class="ot-b" data-ot-undo="' + esc(it.id) + '">Undo</button>' : '');
   else right = '<button type="button" class="ot-b p" data-ot-done="' + esc(it.id) + '">Done</button>';
   var hint = !st.done && it.auto && st.auto === false ? '<div class="ot-h" style="color:#b45309">The CRM checked: not done yet.</div>' : '';
-  var opn = it.open && typeof W[it.open] === 'function' ? '<button type="button" class="ot-b" data-ot-open="' + esc(it.id) + '">' + esc(it.openLabel || 'Open') + '</button> ' : '';   /* patch PERMITS2: a step with its own settings opens them here */
+  var opn = it.open && typeof W[it.open] === 'function' ? '<button type="button" class="ot-b" data-ot-open="' + esc(it.id) + '" style="color:#241968;background:#fff">' + esc(it.openLabel || 'Open') + '</button> ' : '';   /* patch PERMITS2: a step with its own settings opens them here */
   return '<div class="ot-r' + (st.done ? ' done' : '') + '"><div class="ot-main"><div class="ot-t">' + esc(it.t) + '</div><div class="ot-h">' + esc(it.how) + '</div>' + hint + '</div>' + opn + right + '</div>';
 }
 function cardHtml(){
