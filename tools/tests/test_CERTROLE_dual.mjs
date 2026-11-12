@@ -64,5 +64,32 @@ const fk = await F.ev(() => window._gcMitWS.state().kind); n = await navOf(F);
 ok('Dual Foreman: kind "dualfore", both sets of tool tabs incl. 🛡 Claims & adjusters and 📨 Notifications', fk === 'dualfore' && n.includes('🛡 Claims & adjusters') && n.includes('📨 Notifications') && n.includes('💧 Drying jobs') && n.includes('☣️ Hazard jobs'), { fk, n });
 await F.b.close();
 
+/* ═══ a Contents & Cleaning Tech: Mitigation + Construction, 🧽 Final clean on the phone, no clock-in on a job they are not qualified for ═══ */
+cset('users', USERS('Contents & Cleaning Tech'));
+cset('gc_certs', { list: [] });
+cset('projects', [
+  { id: 'M1', name: 'Demo Ross basement', client: 'Demo Ross', status: 'active', type: 'Water Damage', companyId: 'mitigation', updatedAt: now },
+  { id: 'C2', name: 'Demo Smith final clean', client: 'Demo Smith', status: 'active', type: 'Residential Reno', cleanTech: 'Dex Demo', updatedAt: now }]);
+const K = await computer('sbiffle@grayco-cs.com', { build: BUILD, mobile: true });
+K.page().on('pageerror', e => errs.push('K ' + String(e.message).slice(0, 200)));
+await signIn(K, 'sbiffle@grayco-cs.com', 15000); await sleep(12000);
+const kc = await K.ev(() => ({ app: window._gcRA && window._gcRA.state ? window._gcRA.state().app : '', q: [...document.querySelectorAll('#_gcJobPick .gc-ra-q [data-ra-a]')].map(b => b.getAttribute('data-ra-a')),
+  cos: window._gcCo.userCos(window._crm.users.find(u => u.email === 'sbiffle@grayco-cs.com')), can: window._gcCo.canSwitch(), jobs: window._gcMitWS.fieldJobs('clean').map(p => p.id) }));
+ok('📱 Contents & Cleaning Tech: app "clean" — 🧽 Final clean first (no ☣️ Hazard clean), in Mitigation + Construction (may switch), their job = the final clean they are on', kc.app === 'clean' && kc.q[0] === 'fclean' && !kc.q.includes('hzclean') && kc.cos.join() === 'construction,mitigation' && kc.can && kc.jobs.join() === 'C2', kc);
+if (SHOT) await K.page().screenshot({ path: SHOT + '/certrole_clean_field_phone.png' });
+await K.ev(() => document.querySelector('#_gcJobPick .gc-ra-q [data-ra-a="fclean"]').click()); await sleep(1200);
+await K.ev(() => { const s = document.querySelector('.gc-ra-sheet'); if (s) { const b = s.querySelector('[data-pj="C2"]'); if (b) b.click(); } }); await sleep(1000);
+await K.ev(() => { const f = document.querySelector('#gc-mws-sheet form[data-mws-env="fclean"]'); ['hepa', 'wipe', 'floors', 'debris', 'odor', 'photos'].forEach(k => { f.querySelector('[data-mws-c="' + k + '"]').checked = true; }); f.querySelector('[data-mws-f="area"]').value = 'Kitchen, hall'; f.requestSubmit(); }); await sleep(2000);
+const fc = await K.ev(() => { const p = window._crm.projects.find(x => x.id === 'C2'); const r = (p.envLog || []).filter(x => x.kind === 'fclean')[0]; return r && { n: Object.keys(r.chk || {}).length, area: r.area, by: r.by }; });
+ok('🧽 the Final clean checklist (6 of 6, areas, who) is saved on the Construction job', fc && fc.n === 6 && fc.area === 'Kitchen, hall' && fc.by === 'Dex Demo', fc);
+if (SHOT) await K.page().screenshot({ path: SHOT + '/certrole_final_clean_saved.png' });
+await K.ev(() => { const o = document.getElementById('gc-mws-sheet'); if (o) o.remove(); });
+const blk = await K.ev(() => { const u = window._crm.users.find(x => x.email === 'sbiffle@grayco-cs.com'), p = window._crm.projects.find(x => x.id === 'M1'); return window._gcCertQual.block(u, p); });
+await K.ev(() => { try { window._gcFieldTools.run('day', 'M1'); } catch (e) {} }); await sleep(800);
+const toastTxt = await K.ev(() => document.body.innerText);
+ok('⏱ clock-in refused: "You need IICRC WRT to work this job — talk to your manager" on the Mitigation water job (no WRT); no start-day sheet', blk && /IICRC WRT/.test(blk.missing.join()) && /You need IICRC WRT to work this job — talk to your manager/.test(toastTxt) && !/Start day — Demo Ross basement/.test(toastTxt), { blk, t: toastTxt.slice(0, 200) });
+if (SHOT) await K.page().screenshot({ path: SHOT + '/certrole_clockin_refused.png' });
+await K.b.close();
+
 ok('no page errors', !errs.length, errs);
 const k = R.filter(Boolean).length; console.log('CERTROLE_dual ' + k + '/' + R.length); process.exit(k === R.length ? 0 : 1);
