@@ -175579,7 +175579,7 @@ function drawerHtml0(l){
   arr(it.notes).slice(-5).forEach(function(n){ tl.push({ at: it.updatedAt || it.at, t: '📥 ' + s(n).slice(0, 160), by: 'Lead Inbox' }); });
   tl.sort(function(x, y){ return s(y.at).localeCompare(s(x.at)); });
   var ppl = people();
-  var pst = p && p.jobId ? s(p.state || p.visibility) : '';
+  var pst = p && p.jobId && !(typeof W._gcBidJobGone === 'function' && W._gcBidJobGone(p.jobId)) ? s(p.state || p.visibility) : '';   /* patch QAA: archived / deleted on the bid portal → "Not on the portal yet" */
   return '<div class="hd"><h3>' + srcIc(l) + ' ' + esc(s(l.name || l.title) || 'Lead') + '<div style="font:400 12px Arial;opacity:.85;margin-top:3px">' + STAGE_IC[stageOf(l)] + ' ' + esc(stageOf(l)) + ' · ' + kindPick(l) /* patch LEADBULK */ + ' · ' + esc(srcOf(l)) + '</div></h3><button type="button" data-d="x" aria-label="Close">✕</button></div>'
     /* overview */
     + '<section><h4>Overview</h4>'
@@ -178591,7 +178591,7 @@ function onClick(ev){
     return fn('bid-hub', { op: 'cleanup', dry: true }).then(function(r){
       if (!r.count) { toast('Nothing to clean up.'); return loadJobs(true); }
       if (!W.confirm('Archive ' + r.count + ' auto-added bid job' + (r.count === 1 ? '' : 's') + '?\n\nThey were made from leads by the old automatic sync, never posted by anyone, and have no bids, invites or questions and no plans a person added (the bid-board files the old sync copied in do not count — patch QAA). Nothing is deleted: they move to 🗄 Archived (restore any time) and subs stop seeing them.\n\n' + arr(r.sample).slice(0, 8).join('\n') + (r.count > 8 ? '\n…' : ''))) return;
-      return fn('bid-hub', { op: 'cleanup' }).then(function(x){ toast('🧹 ' + x.archived + ' auto-added job' + (x.archived === 1 ? '' : 's') + ' archived — see 🗄 Archived'); loadJobs(true); });
+      return fn('bid-hub', { op: 'cleanup' }).then(function(x){ toast('🧹 ' + x.archived + ' auto-added job' + (x.archived === 1 ? '' : 's') + ' archived — see 🗄 Archived'); loadJobs(true); try { if (W._gcBidPost && W._gcBidPost.jobs) W._gcBidPost.jobs(true); } catch (e) {} /* patch QAA: the 📢 buttons / Leads chips read it too */ });
     }, function(e){ toast(e.message, true); });
   }
   if (a === 'bids') return openBids(job);
@@ -178775,7 +178775,7 @@ function tick(){
   } catch (e) { TERR = s(e && e.message); warn(e); }
 }
 RI.call(W, tick, 1200); later(tick, 500);
-W._gcSys = { drawSys: function(){ try { drawSys(); } catch (e) { warn(e); } }, bp: { mode: bpMode, setMode: setBpMode, load: loadJobs, draw: drawBP, invite: openInvite, bids: openBids, table: bidsTable, vis: setVis, jobs: function(){ return arr(BP.jobs); }, del: askDelete }, modal: modal, closeModal: closeModal, toast: toast, fn: fn, css: css, tiles: function(){ return TILES().map(function(t){ return t.k; }); }, tile: tile, ping: ping, drawer: drawerTick, leadKey: leadKey,
+W._gcSys = { drawSys: function(){ try { drawSys(); } catch (e) { warn(e); } }, bp: { at: function(){ return BP.at; } /* patch QAA */, mode: bpMode, setMode: setBpMode, load: loadJobs, draw: drawBP, invite: openInvite, bids: openBids, table: bidsTable, vis: setVis, jobs: function(){ return arr(BP.jobs); }, del: askDelete }, modal: modal, closeModal: closeModal, toast: toast, fn: fn, css: css, tiles: function(){ return TILES().map(function(t){ return t.k; }); }, tile: tile, ping: ping, drawer: drawerTick, leadKey: leadKey,
   state: function(){ return { jobs: arr(BP.jobs).length, me: BP.me, err: BP.err, pings: JSON.parse(JSON.stringify(PING)), lsb: LSB.key, role: role(), ticks: TICKS, err2: TERR }; } };
 try { console.log('[GC] patch SYS: 🏗 Bid portal tab, 🧭 GrayCo Systems tab, 📨 one sub-bid list (bids@ + bid portal + sub portal) — _gcSys.state()'); } catch (e) {}
 })();
@@ -223686,8 +223686,10 @@ W._gcTodoExt = Array.isArray(W._gcTodoExt) ? W._gcTodoExt : []; W._gcTodoExt.pus
 RI.call(W, function(){ if (!D.hidden && JOBS.list) jobs(false); }, 300000);
 
 /* patch QAA: a bid job the CRM knows is archived / deleted (🧹 Clean up, Take off, 🗑 Delete) — the Leads chips read it */
-W._gcBidJobGone = function(id){ id = s(id); if (!id) return false; var l = arr(JOBS.list); try { if (W._gcSys && W._gcSys.bp && W._gcSys.bp.jobs) l = l.concat(W._gcSys.bp.jobs()); } catch (e) {}
-  var hit = l.filter(function(j){ return j && j.id === id; }); return !!hit.length && hit.every(function(j){ return !!j.deleted; }); };
+W._gcBidJobGone = function(id){ id = s(id); if (!id) return false;
+  var lists = [{ at: JOBS.at || 0, l: arr(JOBS.list) }]; try { if (W._gcSys && W._gcSys.bp && W._gcSys.bp.jobs) lists.push({ at: (W._gcSys.bp.at && W._gcSys.bp.at()) || 0, l: arr(W._gcSys.bp.jobs()) }); } catch (e) {}
+  var hit = null; lists.sort(function(a, b){ return b.at - a.at; }).some(function(x){ hit = x.l.filter(function(j){ return j && j.id === id; })[0] || null; return !!hit; });   /* the newest list that knows the job */
+  return !!(hit && hit.deleted); };
 W._gcBidPost = { open: open, close: close, canPost: function(c){ return canPost(ctxOf(c)); }, jobs: jobs, paint: paint, todo: function(){ QA.at = 0; return todoItems(); }, trades: tradeList,
   state: function(){ return { jobs: JOBS.list ? JOBS.list.length : null, at: JOBS.at, admin: isAdmin(), est: isEst(), me: myEmail(), name: myName(), ticks: TICK }; } };
 try { console.log('[GC] patch BIDPOST: 📢 Put on bid portal (estimate / job / lead; admin, estimator, the job\'s PM) — nothing goes on by itself — _gcBidPost.state()'); } catch (e) {}

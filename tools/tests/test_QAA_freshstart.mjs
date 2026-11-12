@@ -111,6 +111,10 @@ await shot(A.page(), 'fs03_crm_fullportal_empty');
 await A.ev(() => window._setView('leads')); await wait(A, () => document.querySelector('#gc-leads-hub [data-gcl-v="list"]'), null, 20000);
 await A.ev(() => { const b = document.querySelector('#gc-leads-hub [data-gcl-v="board"]'); b && b.click(); }); await sleep(2500);
 const chips = await A.ev(() => [...document.querySelectorAll('#gc-leads-hub .gcl-chip')].map(c => c.textContent).filter(t => /^🏗/.test(t)));
+await A.ev(() => window._gcLeadsHub.open('L3')); await sleep(1200);
+const drw = await A.ev(() => { const d = document.getElementById('gcl-drawer'); return d ? d.innerText : ''; });
+ok('1 a cleaned-up lead\'s page: the sub bid portal status says "Not on the portal yet" (not "Private draft")', /Not on the portal yet/.test(drw) && !/Private draft — staff only/.test(drw), drw.slice(0, 300));
+await A.ev(() => window._gcLeadsHub.close()); await sleep(400);
 ok('1 Leads board: no "🏗 draft" / "🏗 private" chips left for the archived jobs (shows 🏗 —)', chips.length > 0 && chips.every(t => t === '🏗 —'), chips.slice(0, 8));
 
 /* ═══ 2. 📢 Put on bid portal from the new apartment job ═══ */

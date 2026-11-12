@@ -151,7 +151,8 @@ async function crawlRole(key, co){
   if (rec.consoleErrors.length) console.log('   CONSOLE: ' + JSON.stringify([...new Set(rec.consoleErrors.map(x => x.tab + ': ' + x.t))].slice(0, 12)).slice(0, 1500));
   results.push(rec);
 }
-for (const r of ROLES) for (const co of (PHONE ? ['construction'] : PEOPLE[r].cos)) {
+const COS = process.env.COS ? process.env.COS.split(',') : null;
+for (const r of ROLES) for (const co of (PHONE ? ['construction'] : PEOPLE[r].cos).filter(x => !COS || COS.includes(x))) {
   try { await crawlRole(r, co); } catch (e) { console.log('CRASH ' + r + ' × ' + co + ': ' + String(e && e.stack || e).slice(0, 400)); results.push({ role: r, co, crash: String(e && e.message) }); }
 }
 const bad = results.filter(r => r.crash || (r.pageErrors || []).length);
