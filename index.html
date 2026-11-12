@@ -173373,7 +173373,7 @@ function recat(id, src, k){
   try { set(function(prev){ return arr(prev).map(function(e){ return e && s(e.id) === s(id) ? Object.assign({}, e, { category: CAT_TO_EXP[k] || 'Other Expense', jcCat: k, updatedAt: nowIso() }) : e; }); }); return Promise.resolve(true); } catch (e) { warn(e); return Promise.resolve(false); }
 }
 function openCosting(){
-  var list = allCosts(true), O = overlay('📊 Job costing — open jobs', (seesBooks() ? 'All open jobs' : 'Your open jobs') + ', worst projected margin first. Target margin: <b>' + (num(CFG.target) || 20) + '%</b>' + (isAdmin() ? ' <button data-a="target">⚙ Change</button>' : '') + '.');
+  var list = coCosts(allCosts(true)), O = overlay('📊 Job costing — open jobs', (seesBooks() ? 'All open jobs' : 'Your open jobs') + ', worst projected margin first. Target margin: <b>' + (num(CFG.target) || 20) + '%</b>' + (isAdmin() ? ' <button data-a="target">⚙ Change</button>' : '') + '.');
   var h = '<table class="dp2-t"><thead><tr><th>Job</th><th>PM</th><th>Contract</th><th>% done</th><th>Spent</th><th>Projected cost</th><th>Projected margin</th><th></th></tr></thead><tbody>' +
     list.map(function(r){ return '<tr data-pid="' + esc(r.pid) + '" class="dp2-click' + (r.alerts.length ? ' dp2-over' : '') + '"><td>' + esc((r.po ? r.po + ' · ' : '') + r.name) + (r.noEstimate ? ' <small class="dp2-mut">(no estimate)</small>' : '') + '</td><td>' + esc(r.pm) + '</td><td>' + money0(r.revenue) + '</td><td>' + r.pct + '%</td><td>' + money0(r.actual) + '</td><td>' + money0(r.projected) + '</td><td>' + marginChip(r) + '</td><td>' + (r.alerts.length ? '⚠️ ' + r.alerts.length : '') + '</td></tr>'; }).join('') +
     '</tbody></table>' + (list.length ? '' : '<p class="dp2-mut">No open jobs with a contract amount yet.</p>');
@@ -173384,8 +173384,10 @@ function openCosting(){
     O.close(); jobDetail(t.getAttribute('data-pid'));
   });
 }
+/* patch QAC: with one company picked, the Accounting job-costing card and its list show only that company's jobs (as the P&L) */
+function coCosts(list){ try { var C = W._gcCo, f = C && C.filter ? C.filter() : 'all'; if (!f || f === 'all' || !C.jobById) return list; return list.filter(function(r){ var j = C.jobById(r.pid); return j ? C.ofJob(j) === f : f === 'construction'; }); } catch (e) { return list; } }
 function costingCard(){
-  var list = allCosts(false), bad = list.filter(function(r){ return r.alerts.length; });
+  var list = coCosts(allCosts(false)), bad = list.filter(function(r){ return r.alerts.length; });
   var top = list.slice(0, 5);
   return '<div class="dp2-card" data-dp2="taxcenter"><div class="dp2-hd"><b>📊 Job costing</b><span class="dp2-mut">' + list.length + ' open job' + (list.length === 1 ? '' : 's') + (bad.length ? ' · <b style="color:#B42318">⚠️ ' + bad.length + ' need a look</b>' : ' · all within budget') + '</span><button data-a="all">Open job costing</button></div>' +
     (top.length ? '<table class="dp2-t dp2-small"><tbody>' + top.map(function(r){ return '<tr data-pid="' + esc(r.pid) + '" class="dp2-click"><td>' + esc((r.po ? r.po + ' · ' : '') + r.name) + '</td><td>' + r.pct + '% done</td><td>spent ' + money0(r.actual) + ' of ' + money0(r.budget) + '</td><td>' + marginChip(r) + '</td><td>' + (r.alerts.length ? '⚠️' : '') + '</td></tr>'; }).join('') + '</tbody></table>' : '') + '</div>';
@@ -173582,7 +173584,7 @@ function mount(){
   Array.prototype.forEach.call(have, function(x){ if (!main || x.getAttribute('data-v') !== v || x.parentElement !== main) x.remove(); });
   if (!main || !CARDS[v]) return;
   var box = main.querySelector(':scope > .dp2-mount');
-  var sig = v + '|' + arr(crm().projects).length + '|' + arr(crm().expenses).length + '|' + arr(crm().schedule).length + '|' + arr(crm().invoices).length + '|' + Object.keys(VP).length + '|' + ORDERS.length + '|' + JSON.stringify(CAP) + '|' + CFG.target;
+  var sig = v + '|' + arr(crm().projects).length + '|' + arr(crm().expenses).length + '|' + arr(crm().schedule).length + '|' + arr(crm().invoices).length + '|' + Object.keys(VP).length + '|' + ORDERS.length + '|' + JSON.stringify(CAP) + '|' + CFG.target + '|' + (W._gcCo && W._gcCo.filter ? W._gcCo.filter() : '');   /* patch QAC: + the picked company */
   var atEnd = v === 'taxcenter';   /* patch VAS2: Accounting — the costing card goes after everything else */
   if (box && atEnd && box !== main.lastElementChild) main.appendChild(box);
   if (box && sig === lastSig) return;
