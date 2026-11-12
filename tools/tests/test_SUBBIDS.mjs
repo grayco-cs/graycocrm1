@@ -91,6 +91,7 @@ global.fetch = async (url, init) => {
   if (u.host === 'api.resend.com') { MAIL.push(JSON.parse(init.body)); return res(200, { id: 'mail' + MAIL.length }); }
   if (u.host !== 'sb.test') { OUT.push(u.host); return res(404, {}); }
   if (u.pathname === '/rest/v1/gc_kv') {
+    if (m === 'POST') { const b = JSON.parse(init.body); (Array.isArray(b) ? b : [b]).forEach(r => { KV[r.key] = r.value; }); return res(201, []); }   /* patch PLANREQ: the To-Do / Job Messages writes */
     const k = q.get('key') || ''; const keys = k.startsWith('in.') ? inl(k) : [val(k)];
     return res(200, keys.filter(x => KV[x] !== undefined).map(x => ({ key: x, value: KV[x], updated_at: 'T0' })));
   }
@@ -233,7 +234,7 @@ await t('portal-app.js: the card, the sheet and the form are there in English an
   new Function(app);
   yes(/api\('p-bidjobs'\)/.test(app) && /api\('p-bid-save'/.test(app) && /data-bidjob/.test(app) && /bidSheet\(/.test(app));
   for (const k of ['jobsToBid', 'bidsJoin', 'papersNeed', 'bidSubmit', 'bidUpdate', 'bidDecided']) yes((app.match(new RegExp('\\b' + k + ':', 'g')) || []).length >= 2, k + ' in EN and ES');
-  yes(/\/portal-app\.js\?v=33\.231-bidpost/.test(html), 'cache-bust');
+  yes(/\/portal-app\.js\?v=33\.244-planreq/.test(html), 'cache-bust');
 });
 
 /* ── the browser: portal.html + portal-app.js, phone and desktop ── */
@@ -263,6 +264,30 @@ await t('BIDONLY: an approved sub who IS in the CRM but had no portal link gets 
   const r = await pw('hal@hascrm.test', 'Right-Pass-1'); eq(r.code, 200, JSON.stringify(r.j)); yes(T.gc_sub_link.some(l => l.sub_id === 'SH'), 'link made for the CRM sub');
 });
 let chromium = null;
+/* ── patch PLANREQ: 📩 Request plans / more info from the sub portal (p-bid-request) + each trade's scope files (PLANREQ-C) ── */
+await t('PLANREQ p-bid-request: an approved sub asks on a job open to them → the bid site\'s request (via portal), the PM\'s To-Do + 💬 Job Messages post; twice → "already"', async () => {
+  KV.gc_office_tasks = '[]'; KV.gc_job_messages = '[]';
+  const r = await call('A', 'p-bid-request', { jobId: 'j_inv', needs: ['plans', 'specs'], note: 'Need the drawings.' }); eq(r.code, 200, r.raw);
+  eq([r.j.already, r.j.request.status, r.j.request.needs], [false, 'open', ['plans', 'specs']]);
+  const q = T.sp_rows.find(x => x.key === 'planreqs/j_inv__u_a1'); yes(q && q.data.via === 'portal' && q.data.company === 'Sample Drywall LLC', JSON.stringify(q && q.data));
+  yes(JSON.parse(KV.gc_office_tasks).some(x => x.id === 'planreq_j_inv__u_a1' && !x.done), 'To-Do');
+  yes(JSON.parse(KV.gc_job_messages).some(x => x.planReqId === 'j_inv__u_a1' && x.pid === 'bidjob:j_inv'), 'Job Messages');
+  const r2 = await call('A', 'p-bid-request', { jobId: 'j_inv', needs: ['other'], note: 'again' }); eq(r2.j.already, true);
+  const pj = (await call('A', 'p-bidjobs')).j; eq(pj.jobs.find(x => x.id === 'j_inv').request.status, 'open'); eq(pj.me.company, 'Sample Drywall LLC');
+  yes(!/Otto|Other Paint/.test(JSON.stringify(pj.jobs.map(x => x.request))), 'never another sub');
+});
+await t('PLANREQ p-bid-request: not approved / not their job → refused', async () => {
+  eq((await call('D', 'p-bid-request', { jobId: 'j_open', needs: ['plans'] })).code, 403);
+  eq((await call('A', 'p-bid-request', { jobId: 'j_priv', needs: ['plans'] })).code, 403);
+});
+await t('PLANREQ-C p-bidjobs: their trade\'s scope files as signed links (Drywall), never another trade\'s (Paint), never a fileRef', async () => {
+  const jr = T.sp_rows.find(x => x.key === 'jobs/j_open');
+  jr.data.tradeScopes[0].files = [{ name: 'Drywall scope.docx', type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', fileRef: 'staff/plans/j_open/dw-scope.docx' }];
+  jr.data.tradeScopes[1].files = [{ name: 'PAINT-SCOPE-FILE.pdf', type: 'application/pdf', fileRef: 'staff/plans/j_open/paint.pdf' }];
+  const r = await call('A', 'p-bidjobs'), j = r.j.jobs.find(x => x.id === 'j_open');
+  eq(j.tradeScopes.map(x => [x.trade, x.files.map(f => f.name + '|' + f.url)]), [['Drywall', ['Drywall scope.docx|https://sb.test/storage/v1/object/sign/subportal-files/staff/plans/j_open/dw-scope.docx?token=signed']]]);
+  yes(!/PAINT-SCOPE-FILE|fileRef/.test(r.raw), 'another trade / a ref leaked');
+});
 if (!NO_BROWSER) { try { ({ chromium } = await import(SPD + '/node_modules/playwright/index.mjs')); } catch (e) { console.log('  (no Playwright here — browser checks skipped)'); } }
 if (chromium) {
   if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
@@ -481,6 +506,30 @@ if (chromium) {
       await (await p.$('[data-bidqa="j_open"]')).scrollIntoViewIfNeeded();
       await shot(p, '13_bid_question', 'A job: ❓ questions (a shared answer, their own question waiting)');
       T.sp_rows = T.sp_rows.filter(r => r !== q);
+      await p.close();
+    });
+    await t(tag + '📩 Request plans / more info (patch PLANREQ): a job with no plans → the big button → the form (from their profile) → sent; a job with plans → the small link; their trade\'s scope file', async () => {
+      T.sp_rows = T.sp_rows.filter(r => r.collection !== 'planreqs'); PA._core._reset && PA._core._reset();
+      const p = await S.page(SESS.A); await p.goto('https://portal.test/');
+      await p.waitForSelector('[data-bidopen="j_inv"]', { timeout: 30000 }); await p.click('[data-bidopen="j_inv"]');
+      await p.waitForSelector('[data-planreq="j_inv"] [data-propen="big"]');
+      yes(/📩 Request plans \/ more info/.test(await p.textContent('[data-propen="big"]')) && /No plans posted yet/.test(await p.textContent('[data-planreq="j_inv"]')));
+      await (await p.$('[data-planreq="j_inv"]')).scrollIntoViewIfNeeded();
+      await shot(p, '20_planreq_button', '📋 Jobs to bid → a job with no plans: 📩 Request plans / more info');
+      await p.click('[data-propen="big"]'); await p.waitForSelector('[data-prform="j_inv"] [data-prneed="specs"]');
+      yes(/Sample Drywall LLC · Sam Sample · 901-555-0141 · sam@sampledrywall\.test/.test(await p.textContent('[data-prfrom]')), await p.textContent('[data-prfrom]'));
+      eq(await p.$$eval('[data-prneed]', l => l.map(x => x.getAttribute('data-prneed') + (x.checked ? '+' : ''))), ['plans+', 'specs', 'sitewalk', 'other']);
+      await p.check('[data-prneed="sitewalk"]'); await p.fill('[data-prnote]', 'When can we walk the site?');
+      await shot(p, '21_planreq_form', 'The request form: Plans / Specs / Site walk / Other + note, from their profile');
+      await p.click('[data-prsend="j_inv"]'); await p.waitForSelector('[data-planreq="j_inv"] [data-prstatus="open"]', { timeout: 15000 });
+      const q = T.sp_rows.find(x => x.key === 'planreqs/j_inv__u_a1'); yes(q && q.data.needs.join() === 'plans,sitewalk' && /walk the site/.test(q.data.note) && q.data.via === 'portal', JSON.stringify(q && q.data));
+      await shot(p, '22_planreq_sent', 'Sent: ✓ Request sent — GrayCo has it');
+      await p.click('.sheet .x'); await p.waitForSelector('[data-prtag="j_inv"]', { timeout: 15000 });
+      await p.click('[data-bidopen="j_open"]'); await p.waitForSelector('[data-planreq="j_open"] [data-propen="small"]');
+      yes(/📩 Request more info/.test(await p.textContent('[data-propen="small"]')));
+      yes(/Drywall scope\.docx/.test(await p.textContent('[data-bidsheet="j_open"]')) && !/PAINT-SCOPE-FILE/.test(await p.textContent('[data-bidsheet="j_open"]')), 'their trade\'s scope file');
+      await (await p.$('[data-planreq="j_open"]')).scrollIntoViewIfNeeded();
+      await shot(p, '23_planreq_small_link_and_scope_file', 'A job with plans: the small 📩 Request more info link; the Drywall scope file');
       await p.close();
     });
     await t(tag + 'an awarded bid: 🏆 Awarded with the GrayCo PM (name / phone / e-mail), the next step and what to confirm (patch BIDSCOPE)', async () => {

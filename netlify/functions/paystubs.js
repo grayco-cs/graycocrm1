@@ -126,7 +126,7 @@ function cleanStub(st, who){
     ssn4: ssn4.length === 4 ? ssn4 : '',
     payType: s(st.payType).slice(0, 40), periodFrom: s(st.periodFrom).slice(0, 10), periodTo: s(st.periodTo).slice(0, 10),
     payDate: s(st.payDate).slice(0, 10), checkNo: s(st.checkNo).slice(0, 30), runId: s(st.runId).slice(0, 80),
-    hours: r2(st.hours), otHours: r2(st.otHours), rate: r2(st.rate), filing: s(st.filing).slice(0, 12),
+    hours: r2(st.hours), otHours: r2(st.otHours), emHours: r2(st.emHours), /* patch PAYEM */ rate: r2(st.rate), filing: s(st.filing).slice(0, 12),
     earnings: cleanLines(st.earnings), taxes: cleanLines(st.taxes), deductions: cleanLines(st.deductions),
     gross: r2(st.gross), net: r2(st.net), reimbursement: r2(st.reimbursement), dedShort: r2(st.dedShort),
     withholdState: s(st.withholdState).toUpperCase().slice(0, 2), stateTaxVerified: st.stateTaxVerified === true,   /* patch PAY2 */

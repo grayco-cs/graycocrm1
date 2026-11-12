@@ -5496,7 +5496,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.243-2026-11-12-r34j1 -->
+<!-- GrayCo CRM Build: 33.246-2026-11-12-r34n2 -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6445,7 +6445,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.243-2026-11-12-r34j1");
+  console.log("[GC] Build 33.246-2026-11-12-r34n2");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6493,7 +6493,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.243-2026-11-12-r34j1"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.246-2026-11-12-r34n2"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -18853,9 +18853,21 @@ function getAll(){
    The input is never moved now. The dropdown floats over the page and is put
    where it needs to be when it opens, so the box he is typing in is never
    touched. */
+/* patch PLANREQ-G (owner 11/12, 📂 Manage → 📝 Details: "this came up, won't go away"): (a) a box inside [data-gc-noac] (the bid portal's
+   Manage / Details / Put on bid portal / invite sheets, …) never gets this dropdown; (b) any open dropdown closes on Escape, on a click
+   anywhere else, and as soon as its box is gone or hidden (a redraw used to leave it floating for up to 5 s, and a new one opened on the new box). */
+function acHideAll(except){ try{ document.querySelectorAll("._ac-list.show").forEach(function(l){ if(l!==except) l.classList.remove("show"); }); }catch(e){} }
+if(!window.__gcAcClose){ window.__gcAcClose=true;
+  document.addEventListener("keydown",function(e){ if(e.key==="Escape") acHideAll(); },true);
+  document.addEventListener("mousedown",function(e){ var t=e.target; var l=t&&t.closest?t.closest("._ac-list"):null; acHideAll(l||(t&&t._acList)||null); },true);
+  setInterval(function(){ try{ document.querySelectorAll("._ac-list.show").forEach(function(l){ var i=l._acInput; if(!i||!document.contains(i)||!i.offsetParent||(i.closest&&i.closest("[data-gc-noac]"))) l.classList.remove("show"); }); }catch(e){} },400);
+}
+function noAc(inp){ try{ return !!(inp.closest&&inp.closest("[data-gc-noac]")); }catch(e){ return false; } }
 function createAC(input){
   if(input._acInit)return;input._acInit=true;
+  if(noAc(input))return;   /* patch PLANREQ-G */
   var list=document.createElement("div");list.className="_ac-list";
+  list._acInput=input; input._acList=list;
   document.body.appendChild(list);
   function place(){
     try{
@@ -18871,7 +18883,7 @@ function createAC(input){
   }, 5000);
   var selIdx=-1,filtered=[];
   function show(q){
-    if(!q||q.length<1){list.classList.remove("show");return}
+    if(!q||q.length<1||noAc(input)||!document.contains(input)){list.classList.remove("show");return}   /* patch PLANREQ-G */
     var all=getAll(),ql=q.toLowerCase();
     filtered=all.filter(function(it){return(it.name||"").toLowerCase().indexOf(ql)>-1||(it.sub||"").toLowerCase().indexOf(ql)>-1||(it.extra||"").toLowerCase().indexOf(ql)>-1||(it.phone||"").toLowerCase().indexOf(ql)>-1||(it.email||"").toLowerCase().indexOf(ql)>-1}).slice(0,20);
     if(!filtered.length){list.classList.remove("show");return}
@@ -18904,6 +18916,7 @@ function scanInputs(){
   document.querySelectorAll('input[type="text"],input:not([type])').forEach(function(inp){
     /* patch OFFICEFIX: the box with the cursor too — createAC never moves it now */
     if(inp._acInit||inp.type==="date"||inp.type==="number"||inp.type==="file"||inp.type==="checkbox"||inp.type==="radio"||inp.type==="hidden"||inp.type==="password"||inp.type==="email")return;
+    if(noAc(inp)){ inp._acInit=true; return; }   /* patch PLANREQ-G: opted out (the bid portal's own sheets) */
     var ph=(inp.placeholder||"").toLowerCase(),pt=(inp.closest&&inp.closest("label,div")?inp.closest("label,div").textContent:"").toLowerCase();
     var triggers=["customer","client","sub","vendor","contractor","project","assign","pm","manager","company","contact","owner","general contractor","name"];
     if(triggers.some(function(t){return ph.indexOf(t)>-1||pt.indexOf(t)>-1}))createAC(inp);
@@ -83737,8 +83750,9 @@ window._gcForceFixSchedule = async function(silent){
       var u=user(); if(!u) return;
       var list=await idbGet(KEY); if(!Array.isArray(list)) list=[];
       var d=today();
-      var existing=list.find(function(r){ return r.user===u && r.date===d && !r.manual; });
+      var existing=list.find(function(r){ return r.user===u && r.date===d && !r.manual && !r.emergency; });   /* patch PAYEM: a 🚨 call-out is its own punch */
       if(existing) return;                       // already clocked in today
+      try{ if(window._gcPayEm && window._gcPayEm.openPunch && window._gcPayEm.openPunch()) return; }catch(_pe){}   /* patch PAYEM: on a 🚨 call-out now */
       var actual=nowHM();
       var start=graceStart(actual);
       list.push({ id:'TS'+Date.now()+Math.floor(Math.random()*999), user:u, date:d,
@@ -83754,7 +83768,7 @@ window._gcForceFixSchedule = async function(silent){
       var u=user(); if(!u) return;
       var list=await idbGet(KEY); if(!Array.isArray(list)) return;
       var d=today();
-      var rec=list.find(function(r){ return r.user===u && r.date===d && !r.clockOut && !r.manual; });
+      var rec=list.find(function(r){ return r.user===u && r.date===d && !r.clockOut && !r.manual && !r.emergency; });   /* patch PAYEM: a 🚨 call-out is clocked out with its own button */
       if(rec){ rec.clockOut=nowHM(); rec.updatedAt=new Date().toISOString(); await idbSet(KEY, list); }
     }catch(e){}
   }
@@ -83762,9 +83776,12 @@ window._gcForceFixSchedule = async function(silent){
   function hoursOf(r){
     if(!r.clockIn||!r.clockOut) return 0;
     var mins=toMin(r.clockOut)-toMin(r.clockIn);
+    if(mins<=0 && r.emergency) mins+=1440;   /* patch PAYEM: a 🚨 call-out past midnight */
     if(mins<0) mins=0;
     return mins/60;
   }
+  /* patch PAYEM: the time clock's own storage for the 🚨 emergency punch (a crew member without the payroll key keeps their own list) */
+  window._gcTimeClock = { list: function(){ return idbGet(KEY); }, save: function(l){ return idbSet(KEY, l); }, user: user, today: today, nowHM: nowHM, hoursOf: hoursOf };
 
   // ── Timesheet panel (employee: own; admin: everyone + edit/add/delete) ──
   window._gcOpenTimesheets = async function(){
@@ -83788,6 +83805,7 @@ window._gcForceFixSchedule = async function(silent){
       +'<div><div style="font-size:10px;color:#9db4cf;">IN</div><input id="_tsI" type="time" value="08:00" style="padding:5px;border-radius:6px;border:1px solid #2f4d6f;background:#0b1626;color:#fff;"></div>'
       +'<div><div style="font-size:10px;color:#9db4cf;">OUT</div><input id="_tsO" type="time" value="17:00" style="padding:5px;border-radius:6px;border:1px solid #2f4d6f;background:#0b1626;color:#fff;"></div>'
       +'<div><div style="font-size:10px;color:#9db4cf;">CODE</div><select id="_tsC" style="padding:5px;border-radius:6px;border:1px solid #2f4d6f;background:#0b1626;color:#fff;"><option value="">Regular work</option><option value="crmtrain">📘 CRM training — current job (paid)</option><option value="training">🎯 Next-role training (optional, unpaid)</option></select></div>'   /* patch CERTROLE: owner — paid CRM training for their own job 1 day a week; next-role training after hours, unpaid */
+      +'<label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#fecaca;font-weight:700;padding-bottom:6px;"><input id="_tsE" type="checkbox"> 🚨 Emergency call-out (after hours) — 1.5×</label>'   /* patch PAYEM */
       +'<button id="_tsAdd" style="background:#1f7a3d;color:#fff;border:none;border-radius:6px;padding:7px 12px;font-weight:700;cursor:pointer;">+ Add time</button></div>') : '';
 
     function tableHtml(){
@@ -83797,11 +83815,12 @@ window._gcForceFixSchedule = async function(silent){
         var editable = admin;
         return '<tr data-id="'+r.id+'" style="border-bottom:1px solid #1d334d;">'
           +'<td style="padding:6px 8px;">'+(r.user||'')+'</td>'
-          +'<td style="padding:6px 8px;">'+r.date+'</td>'
+          +'<td style="padding:6px 8px;">'+r.date+(r.emergency?' <span data-ts-em="1" title="Emergency call-out (after hours) — paid 1.5×" style="background:#7f1d1d;color:#fff;border-radius:5px;padding:1px 5px;font-size:10px;font-weight:700;">🚨 Emergency 1.5×</span>':'')+'</td>'   /* patch PAYEM */
           +'<td style="padding:6px 8px;">'+(r.clockIn||'—')+(r.actualIn&&r.actualIn!==r.clockIn?' <span style="color:#7f93ad;font-size:10px;">(in '+r.actualIn+')</span>':'')+'</td>'
           +'<td style="padding:6px 8px;">'+(r.clockOut||'—')+'</td>'
           +'<td style="padding:6px 8px;text-align:right;">'+h.toFixed(2)+(r.code==='training'?' <span title="Next-role training (optional, after hours): recorded, pays $0, not counted toward overtime" style="background:#3b2f0b;color:#fde68a;border-radius:6px;padding:1px 5px;font-size:10px;">🎯 unpaid</span>':r.code==='crmtrain'?' <span title="CRM training for their current job: paid at the regular rate, counts toward overtime" style="background:#0b3b2a;color:#bbf7d0;border-radius:6px;padding:1px 5px;font-size:10px;">📘 paid training</span>':'')+'</td>'
           +(editable?('<td style="padding:6px 8px;text-align:right;white-space:nowrap;">'
+             +'<button class="_tsEm" data-id="'+r.id+'" title="Mark / unmark as an emergency call-out (after hours) — paid 1.5×" style="background:'+(r.emergency?'#7f1d1d':'#26466b')+';color:#fff;border:none;border-radius:5px;padding:4px 8px;cursor:pointer;font-size:11px;margin-right:4px;">🚨</button>'   /* patch PAYEM */
              +'<button class="_tsEdit" data-id="'+r.id+'" style="background:#26466b;color:#cfe3ff;border:none;border-radius:5px;padding:4px 8px;cursor:pointer;font-size:11px;margin-right:4px;">Edit</button>'
              +'<button class="_tsDel" data-id="'+r.id+'" style="background:#7a2626;color:#ffd7d7;border:none;border-radius:5px;padding:4px 8px;cursor:pointer;font-size:11px;">Delete</button></td>'):'<td></td>')
           +'</tr>';
@@ -83823,6 +83842,7 @@ window._gcForceFixSchedule = async function(silent){
 
     function wire(){
       Array.prototype.forEach.call(box.querySelectorAll('._tsDel'), function(b){ b.onclick=async function(){ var id=b.getAttribute('data-id'); if(!confirm('Delete this time entry?'))return; var idx=list.findIndex(function(r){return r.id===id;}); if(idx>=0){ if(window._gcTombstone)try{window._gcTombstone('timesheets',id);}catch(e){} list.splice(idx,1); await persist(); refresh(); } }; });
+      Array.prototype.forEach.call(box.querySelectorAll('._tsEm'), function(b){ b.onclick=async function(){ var r=list.find(function(x){return x.id===b.getAttribute('data-id');}); if(!r)return; r.emergency=!r.emergency; if(r.emergency){ r.emBy=user(); } r.updatedAt=new Date().toISOString(); r.savedAt=r.updatedAt; await persist(); refresh(); }; });   /* patch PAYEM */
       Array.prototype.forEach.call(box.querySelectorAll('._tsEdit'), function(b){ b.onclick=async function(){ var id=b.getAttribute('data-id'); var r=list.find(function(x){return x.id===id;}); if(!r)return; var ni=prompt('Clock IN (HH:MM)', r.clockIn||'08:00'); if(ni===null)return; var no=prompt('Clock OUT (HH:MM)', r.clockOut||'17:00'); if(no===null)return; r.clockIn=ni; r.clockOut=no; r.manual=true; r.updatedAt=new Date().toISOString(); r.savedAt=r.updatedAt; await persist(); refresh(); }; });
     }
     wire();
@@ -83830,8 +83850,9 @@ window._gcForceFixSchedule = async function(silent){
       box.querySelector('#_tsAdd').onclick=async function(){
         var u=box.querySelector('#_tsU').value.trim(); var d=box.querySelector('#_tsD').value; var i=box.querySelector('#_tsI').value; var o=box.querySelector('#_tsO').value;
         if(!u||!d){ alert('Enter at least an employee name and date.'); return; }
-        var tc=(box.querySelector('#_tsC')||{}).value||'';   /* patch CERTROLE: 🎓 Training (unpaid) */
-        list.push(Object.assign({ id:'TS'+Date.now()+Math.floor(Math.random()*999), user:u, date:d, clockIn:i, clockOut:o, manual:true, updatedAt:new Date().toISOString(), savedAt:new Date().toISOString() }, tc==='training'||tc==='crmtrain'?{code:tc}:{}));
+        var tc=(box.querySelector('#_tsC')||{}).value||'';   /* patch CERTROLE: 📘 crmtrain (paid) / 🎯 training (unpaid) */
+        var _em=!!(box.querySelector('#_tsE')||{}).checked;   /* patch PAYEM */
+        list.push(Object.assign({ id:'TS'+Date.now()+Math.floor(Math.random()*999), user:u, date:d, clockIn:i, clockOut:o, manual:true, updatedAt:new Date().toISOString(), savedAt:new Date().toISOString() }, _em?{ emergency:true, emBy:user() }:{}, tc==='training'||tc==='crmtrain'?{code:tc}:{}));
         await persist(); refresh();
       };
     }
@@ -84992,32 +85013,72 @@ async function timesheetRows(name, from, to){
     return true;
   }).sort(function(a,b){ return (a.date+(a.clockIn||'')).localeCompare(b.date+(b.clockIn||'')); });
 }
-// Regular vs overtime hours, computed per calendar week.
+/* patch PAYEM — ONE pay rule for 🚨 emergency after-hours call-outs and overtime, the same as 🎖 CERTPLAN's ⏱ "Check a week"
+   calculator (window._gcCertPlan.weekPay calls this): emergency after-hours hours are paid 1.5×; hours over 40 in the work week are
+   paid 1.5× (the profile's overtime multiplier); the two are NEVER stacked (an hour is never paid 2.25×). Premium hours = the
+   emergency hours + the hours over 40, at most the hours worked — the over-40 hours fall on the non-emergency hours first, the
+   way that pays the employee more (owner 11/11 + 11/12: "yes emergency 1.5 on paychecks"). Emergency hours count toward the 40.
+   → { total, straight (1×), em (emergency 1.5×), ot (overtime 1.5×, not emergency), premium (em + ot), over (hours past 40) } */
+function weekSplit(total, emerg, otAfter){
+  total = Math.max(0, n2(total)); otAfter = n2(otAfter) || 40;
+  var em = Math.min(total, Math.max(0, n2(emerg))), over = Math.max(0, total - otAfter), prem = Math.min(total, em + over);
+  return { total: r2(total), straight: r2(total - prem), em: r2(em), ot: r2(prem - em), premium: r2(prem), over: r2(over) };
+}
+window._gcPayWeekSplit = weekSplit;
+/* patch PAYEM: a clock-in marked 🚨 emergency may run past midnight (in 22:00, out 02:00) */
+function rowHours(r){
+  if(!r || !r.clockIn || !r.clockOut) return 0;
+  var mins=minutes(r.clockOut)-minutes(r.clockIn);
+  if(mins<=0 && r.emergency) mins+=1440;
+  if(mins<=0) return 0;
+  var h=mins/60;
+  if(n2(r.breakMins)>0) h-=n2(r.breakMins)/60;
+  return h>0 ? h : 0;
+}
+/* Regular vs overtime hours, computed per work week. patch PAYEM: ot = ALL premium hours (overtime + 🚨 emergency, so reg + ot is
+   still every hour worked for the screens that add them), em = the emergency part of ot, otOnly = the overtime part. */
 async function hoursFor(name, from, to, otAfter){
   otAfter = n2(otAfter)||40;
   var rows=await timesheetRows(name, from, to);
-  var byWeek={}, days=[];
+  var byWeek={}, emWeek={}, days=[];
   rows.forEach(function(r){
-    if(!r.clockIn || !r.clockOut) return;
     if(r.code==='training') return;   /* patch CERTROLE: 🎯 next-role training (optional, after hours) — recorded, pays $0, not toward overtime; 📘 crmtrain (current job) is regular paid time */
-    var mins=minutes(r.clockOut)-minutes(r.clockIn);
-    if(mins<=0) return;
-    var h=mins/60;
-    if(n2(r.breakMins)>0) h-=n2(r.breakMins)/60;
+    var h=rowHours(r);
     if(h<=0) return;
     var wk=weekKey(r.date);
     byWeek[wk]=(byWeek[wk]||0)+h;
-    days.push({date:r.date, inT:r.clockIn, outT:r.clockOut, hours:r2(h)});
+    if(r.emergency) emWeek[wk]=(emWeek[wk]||0)+h;
+    days.push({date:r.date, inT:r.clockIn, outT:r.clockOut, hours:r2(h), emergency:!!r.emergency});
   });
-  var reg=0, ot=0, weeks=[];
+  var reg=0, ot=0, em=0, weeks=[];
   Object.keys(byWeek).sort().forEach(function(wk){
-    var h=byWeek[wk], o=Math.max(0,h-otAfter), r=h-o;
-    reg+=r; ot+=o;
-    weeks.push({week:wk, total:r2(h), reg:r2(r), ot:r2(o)});
+    var x=weekSplit(byWeek[wk], emWeek[wk]||0, otAfter);
+    reg+=x.straight; ot+=x.premium; em+=x.em;
+    weeks.push({week:wk, total:x.total, reg:x.straight, ot:x.premium, em:x.em, otOnly:x.ot});
   });
-  return { total:r2(reg+ot), reg:r2(reg), ot:r2(ot), weeks:weeks, days:days };
+  return { total:r2(reg+ot), reg:r2(reg), ot:r2(ot), em:r2(em), otOnly:r2(ot-em), weeks:weeks, days:days };
 }
 window._gcPayrollHours = hoursFor;
+/* patch PAYEM: "40.00 + 5.00 OT + 3.00 🚨" — hours on a line, the emergency ones apart from the overtime */
+function hoursText(L){ var em=n2(L&&L.emHours), ot=r2(n2(L&&L.otHours)-em); return n2(L&&L.hours).toFixed(2)+(ot>0?(' + '+ot.toFixed(2)+' OT'):'')+(em>0?(' + '+em.toFixed(2)+' 🚨'):''); }
+window._gcPayHoursText = hoursText;
+/* patch PAYEM: the office's own figure for the emergency hours in a period (Payroll → ✏️ hours): spread over the weeks in order,
+   never more than a week's hours, then the same week rule */
+function withEmHours(h, emTotal, otAfter){
+  var left=Math.max(0, n2(emTotal)), ws=(h.weeks&&h.weeks.length)?h.weeks:[{ week:'', total:n2(h.total)||r2(n2(h.reg)+n2(h.ot)) }];
+  var reg=0, ot=0, em=0, weeks=ws.map(function(w){ var e=Math.min(left, n2(w.total)); left-=e; var x=weekSplit(w.total, e, otAfter);
+    reg+=x.straight; ot+=x.premium; em+=x.em; return { week:w.week, total:x.total, reg:x.straight, ot:x.premium, em:x.em, otOnly:x.ot }; });
+  return Object.assign({}, h, { total:r2(reg+ot), reg:r2(reg), ot:r2(ot), em:r2(em), otOnly:r2(ot-em), weeks:weeks, emOverride:true });
+}
+/* patch PAYEM: the pay rate in effect — a 🎖 certification raise (or any dated change in prof.rateHistory) takes effect on its
+   effective date; prof.hourlyRate / annualSalary always hold the NEWEST rate. A pay period is paid at the rate in effect on its
+   LAST day, so a raise that starts inside a period is paid for that whole period (never less than the raise promised). */
+function rateAsOf(prof, field, date){
+  var cur=n2(prof && prof[field]), d=String(date||'').slice(0,10), hist=(prof && Array.isArray(prof.rateHistory)) ? prof.rateHistory : [];
+  var later=hist.filter(function(e){ return e && e.field===field && String(e.effective||'').slice(0,10) > d; })
+    .sort(function(a,b){ return String(a.effective).localeCompare(String(b.effective)) || String(a.at||'').localeCompare(String(b.at||'')); });
+  return later.length ? n2(later[0].from) : cur;
+}
 
 /* ── year-to-date, from approved/paid runs ───────────────────────────────── */
 async function runs(){ var l=await get(K_RUNS); l=Array.isArray(l)?l:[];   /* patch PAYMANUAL: a deleted run (gc_tombstones) is never read back */
@@ -85076,8 +85137,11 @@ function _pcFed(amt, ppy, pf, year){
 function setHoursOf(prof){ if(prof && prof.defaultWeeklyHours!=null && String(prof.defaultWeeklyHours)!=='') return n2(prof.defaultWeeklyHours); return /^brittany\b/i.test(String(prof&&prof.name||'')) ? 13 : 0; }
 async function computeLine(prof, from, to, set, ytd, manualGross, extras){
   var ppy = (window._gcRunPPY && window._gcRunPPY(from, to)) || PERIODS[prof.period] || 26;   /* patch BUGV: a 7-day run is 1/52 of the year, 14 days 1/26 */
-  var trace = [], gross = 0, hours = 0, otHours = 0, parts = [];
+  var trace = [], gross = 0, hours = 0, otHours = 0, emHours = 0, parts = [], _rate = n2(prof.hourlyRate);   /* patch PAYEM */
   extras = extras || {}; var bonus = r2(Math.max(0, n2(extras.bonus))), reimb = r2(Math.max(0, n2(extras.reimbursement)));   /* patch PAY */
+  /* patch PAYEM: an approved 🏆 PM year-end bonus rides on the next paycheck (window._gcPayEm.pmBonusFor reads 🎖 CERTPLAN) */
+  var pmB = null; try{ if(extras.pmBonus!=null) pmB = { amount:n2(extras.pmBonus), key:String(extras.pmBonusKey||'') }; else if(window._gcPayEm && window._gcPayEm.pmBonusFor) pmB = await window._gcPayEm.pmBonusFor(prof, from, to); }catch(_pbE){ pmB = null; }
+  var pmBonus = r2(Math.max(0, n2(pmB && pmB.amount))), pmBonusKey = pmBonus>0 ? String(pmB.key||'') : '';
 
   function T(label, detail, amt){ trace.push({label:label, detail:detail, amt:(amt==null?null:r2(amt))}); }
 
@@ -85090,10 +85154,11 @@ async function computeLine(prof, from, to, set, ytd, manualGross, extras){
     T('Gross pay', 'Entered by hand for this run', gross);
   } else {
     if(pt==='salary' || pt==='salary_commission' || pt==='owner_draw' || pt==='contractor_1099'){
-      var per = n2(prof.annualSalary)/ppy;
+      var _sal = rateAsOf(prof, 'annualSalary', to);   /* patch PAYEM: the salary in effect for this period */
+      var per = _sal/ppy;
       if(per>0){
         gross += per; parts.push({label:(pt==='contractor_1099'?'1099 pay':'Salary'), amount:r2(per)});
-        T(pt==='contractor_1099'?'1099 contract pay':'Salary', money(prof.annualSalary)+' a year ÷ '+ppy+' pay periods', per);
+        T(pt==='contractor_1099'?'1099 contract pay':'Salary', money(_sal)+' a year ÷ '+ppy+' pay periods'+(_sal!==n2(prof.annualSalary)?' (the raise to '+money(prof.annualSalary)+' starts after this period)':''), per);
       }
     }
     if(pt==='hourly'){
@@ -85107,17 +85172,28 @@ async function computeLine(prof, from, to, set, ytd, manualGross, extras){
         h = { total:r2(_dwh*_wks), reg:r2(_dwh*_wks), ot:0, weeks:[], days:[], setHours:true };
         T('Set hours', _dwh+' hrs a week × '+_wks+' week'+(_wks===1?'':'s')+' (no clock-ins this period — Payroll → Employees → Set hours per week)', null);
       }
-      hours=h.reg; otHours=h.ot;
-      var regPay = h.reg * n2(prof.hourlyRate);
-      var otPay  = h.ot  * n2(prof.hourlyRate) * (n2(prof.otMultiplier)||1.5);
-      gross += regPay + otPay;
-      parts.push({label:'Regular hours', amount:r2(regPay)});
-      T('Regular hours', h.reg.toFixed(2)+' hrs × '+money(prof.hourlyRate)+'/hr', regPay);
-      if(h.ot>0){
-        parts.push({label:'Overtime', amount:r2(otPay)});
-        T('Overtime', h.ot.toFixed(2)+' hrs × '+money(prof.hourlyRate)+' × '+(n2(prof.otMultiplier)||1.5)+
-          ' (over '+(n2(prof.otAfter)||40)+' hrs in a week)', otPay);
+      /* patch PAYEM: 🚨 emergency after-hours hours (clock-ins marked emergency, or the office's figure in the run) at 1.5×,
+         overtime at the multiplier, never stacked (weekSplit); the rate in effect for the period (a 🎖 cert raise) */
+      if(extras.emHours!=null && extras.emHours!=='') h = withEmHours(h, extras.emHours, prof.otAfter);
+      var _rt = rateAsOf(prof, 'hourlyRate', to), _mult = n2(prof.otMultiplier)||1.5;
+      var _em = n2(h.em), _otOnly = r2(Math.max(0, n2(h.ot) - _em));
+      hours=h.reg; otHours=h.ot; emHours=_em;
+      var regPay = h.reg * _rt;
+      var emPay  = _em * _rt * 1.5;
+      var otPay  = _otOnly * _rt * _mult;
+      gross += regPay + emPay + otPay;
+      parts.push({label:'Regular hours', amount:r2(regPay), hours:r2(h.reg), rate:r2(_rt)});
+      T('Regular hours', h.reg.toFixed(2)+' hrs × '+money(_rt)+'/hr'+(_rt!==n2(prof.hourlyRate)?' (the raise to '+money(prof.hourlyRate)+' starts after this period)':''), regPay);
+      if(_em>0){
+        parts.push({label:'Emergency call-out 1.5×', amount:r2(emPay), hours:r2(_em), rate:r2(_rt*1.5)});
+        T('🚨 Emergency call-out 1.5×', _em.toFixed(2)+' hrs × '+money(_rt)+' × 1.5 (after-hours emergency; counts toward the '+(n2(prof.otAfter)||40)+' — never stacked with overtime)'+(h.emOverride?' — hours set in the payroll run':''), emPay);
       }
+      if(_otOnly>0){
+        parts.push({label:'Overtime', amount:r2(otPay), hours:r2(_otOnly), rate:r2(_rt*_mult)});
+        T('Overtime', _otOnly.toFixed(2)+' hrs × '+money(_rt)+' × '+_mult+
+          ' (over '+(n2(prof.otAfter)||40)+' hrs in a week'+(_em>0?'; emergency hours already at 1.5× are not paid again':'')+')', otPay);
+      }
+      _rate = _rt;
       if(h.weeks.length>1) T('Hours by week', h.weeks.map(function(w){ return w.week+': '+w.total+'h'; }).join(' · '), null);
     }
     if(pt==='commission' || pt==='salary_commission'){
@@ -85139,6 +85215,7 @@ async function computeLine(prof, from, to, set, ytd, manualGross, extras){
     }
   }
   if(bonus>0){ gross += bonus; parts.push({label:'Bonus', amount:bonus}); T('Bonus', 'Taxed like wages (added to this check)', bonus); }   /* patch PAY */
+  if(pmBonus>0){ gross += pmBonus; parts.push({label:'Bonus — PM year-end', amount:pmBonus, supplemental:true}); T('🏆 Bonus — PM year-end', 'Approved in 🎖 Required certs, raises & promotion · taxable supplemental wages (Social Security, Medicare and state as wages; federal at the 22% supplemental rate)', pmBonus); }   /* patch PAYEM */
   gross = r2(gross);
   T('GROSS PAY', parts.map(function(p){ return p.label+' '+money(p.amount); }).join(' + ') || '—', gross);
 
@@ -85184,13 +85261,15 @@ async function computeLine(prof, from, to, set, ytd, manualGross, extras){
 
   // ---- FEDERAL INCOME TAX (Pub 15-T percentage method) ----
   var fed = 0, zeroFedReason = '';
+  /* patch PAYEM: IRS optional flat rate for supplemental wages (Pub. 15 §7) — the PM year-end bonus is identified separately on this check */
+  var _supp = (pmBonus>0 && pt!=='contractor_1099') ? r2(Math.min(pmBonus, taxable)) : 0, _f22 = (_supp>0 && !prof.exemptFed) ? r2(_supp*0.22) : 0;
   if(pt==='contractor_1099'){
     T('Federal income tax', '1099 contractor — GrayCo withholds no federal income tax', 0);
   } else if(prof.exemptFed){
     T('Federal income tax', 'W-4 claims EXEMPT — nothing withheld', 0);
   } else {
-    var annual = r2(taxable * ppy);
-    T('Annualize the pay', money(taxable)+' × '+ppy+' pay periods', annual);
+    var annual = r2((taxable - _supp) * ppy);   /* patch PAYEM: the PM bonus is withheld on its own (22%) below */
+    T('Annualize the pay', money(r2(taxable - _supp))+' × '+ppy+' pay periods'+(_supp>0?' (the PM bonus is withheld on its own)':''), annual);
     var adj = annual + n2(prof.otherIncome) - n2(prof.deductions);
     if(n2(prof.otherIncome)) T('W-4 step 4(a) other income', '+ '+money(prof.otherIncome), null);
     if(n2(prof.deductions))  T('W-4 step 4(b) deductions', '− '+money(prof.deductions), null);
@@ -85216,6 +85295,7 @@ async function computeLine(prof, from, to, set, ytd, manualGross, extras){
     fed = r2(afterCredit / ppy);
     T('Federal per paycheck', money(afterCredit)+' ÷ '+ppy, fed);
     if(n2(prof.extra)){ fed = r2(fed + n2(prof.extra)); T('W-4 step 4(c) extra withholding', '+ '+money(prof.extra)+' each check', fed); }
+    if(_f22>0){ fed = r2(fed + _f22); T('Federal on the PM year-end bonus', money(_supp)+' × 22% (supplemental wage flat rate)', _f22); }   /* patch PAYEM */
   }
 
   // ---- STATE ----
@@ -85272,7 +85352,7 @@ async function computeLine(prof, from, to, set, ytd, manualGross, extras){
       try{ var c = window._gcStateWithholding({ state: whSt, table: stTbl, exemptionClaimed: prof.msExemption, grossPerCheck: amt, taxable: amt, periodsPerYear: ppy,
         filing: prof.msFiling||prof.filing||'single', dependents: n2(prof.stateDependents||prof.dependents), age65: !!prof.age65, blind: !!prof.blind,
         year: parseInt(String(set.taxYear||new Date().getFullYear()),10) }); return r2(n2(c && c.amount)); }catch(e){ return 0; } };
-    var _fS = _pcFed(_salT, ppy, prof, set.taxYear), _fC = prof.exemptFed ? 0 : (_cm === 'flat22' ? r2(_comm * 0.22) : _pcFed(_comm, ppy, { filing: 'single' }, set.taxYear));
+    var _fS = r2(_pcFed(r2(_salT - _supp), ppy, prof, set.taxYear) + _f22), _fC = prof.exemptFed ? 0 : (_cm === 'flat22' ? r2(_comm * 0.22) : _pcFed(_comm, ppy, { filing: 'single' }, set.taxYear));
     var _sS = _stOf(_salT), _sC = _stOf(_comm);
     var _capped = r2(ssWages) < taxable, _ssS = _capped ? r2(ss * _salT / Math.max(0.01, taxable)) : r2(_salT * n2(set.ssRate)), _ssC = _capped ? r2(ss - _ssS) : r2(_comm * n2(set.ssRate));
     var _mS = r2(_salT * n2(set.medRate)), _mC = r2(_comm * n2(set.medRate));
@@ -85333,7 +85413,8 @@ async function computeLine(prof, from, to, set, ytd, manualGross, extras){
 
   return {
     empId: prof.userId || prof.name, name: prof.name, payType: pt, period: prof.period,
-    hours: r2(hours), otHours: r2(otHours), rate: n2(prof.hourlyRate),
+    hours: r2(hours), otHours: r2(otHours), rate: n2(_rate),
+    emHours: r2(emHours), emPay: r2(emHours * _rate * 1.5), pmBonus: pmBonus, pmBonusKey: pmBonusKey,   /* patch PAYEM: 🚨 emergency hours are part of otHours (premium hours); emPay is their whole 1.5× pay */
     grossParts: parts, gross: gross, preTax: r2(preTax), postTax: r2(postTax),
     /* otherDed used to be preTax+postTax — the pre-tax amount counted twice
        whenever anything added preTax to it separately. It is now the AFTER-tax
@@ -85433,6 +85514,7 @@ window.__GC_PAY = {
   profiles:profiles, saveProfiles:saveProfiles, blankProfile:blankProfile, seedFromUser:seedFromUser,
   hoursFor:hoursFor, timesheetRows:timesheetRows,
   runs:runs, saveRuns:saveRuns, ytdFor:ytdFor, computeLine:computeLine, setHoursOf:setHoursOf,
+  weekSplit:weekSplit, rowHours:rowHours, hoursText:hoursText, rateAsOf:rateAsOf, withEmHours:withEmHours,   /* patch PAYEM */
   payReplace:payReplace, foldDupRuns:foldDupRuns, replaceDrafts:replaceDrafts,   /* patch PAYREPLACE */
   K_PROF:K_PROF, K_RUNS:K_RUNS, K_SET:K_SET, K_TS:K_TS
 };
@@ -85640,6 +85722,7 @@ function totalsOf(lines){
     if(L.status==='denied') return;
     ['gross','fed','ss','med','addlMed','state','otherDed','net','employerSS','employerMed','futa','suta'].forEach(function(k){ t[k]+=n2(L[k]); });
     t.hours+=n2(L.hours)+n2(L.otHours);
+    t.emHours=n2(t.emHours)+n2(L.emHours); t.emPay=n2(t.emPay)+n2(L.emPay); t.pmBonus=n2(t.pmBonus)+n2(L.pmBonus);   /* patch PAYEM */
   });
   Object.keys(t).forEach(function(k){ t[k]=r2(t[k]); });
   t.irs941 = r2(t.fed + t.ss*2 + t.med*2 + t.addlMed);
@@ -85656,7 +85739,7 @@ function drawLines(out){
     var open=!!S.openMath[i];
     var h='<tr>'
       +'<td style="'+CSS.td+'"><b>'+esc(L.name)+'</b><div style="font-size:10px;color:#94a3b8;">'+esc(payTypeLabel(L.payType))+'</div></td>'
-      +'<td style="'+CSS.num+'">'+((L.hours||L.otHours)?((L.hours).toFixed(2)+(L.otHours?(' +'+L.otHours.toFixed(2)+' OT'):'')):'—')+'</td>'
+      +'<td style="'+CSS.num+'">'+((L.hours||L.otHours)?P.hoursText(L):'—')+'</td>'   /* patch PAYEM */
       +'<td style="'+CSS.num+'"><b>'+money(L.gross)+'</b></td>'
       +'<td style="'+CSS.num+'color:#b45309;">'+money(L.fed)
         +(( n2(L.fed)===0 && L.zeroFedReason) ? ('<div style="font-size:9px;color:#94a3b8;font-weight:600;text-align:right;max-width:150px;white-space:normal;">no federal — see why</div>') : '')+'</td>'
@@ -85690,7 +85773,10 @@ function drawLines(out){
         +'<td style="'+CSS.td+'">TOTALS</td><td style="'+CSS.num+'">'+t.hours.toFixed(2)+'</td>'
         +'<td style="'+CSS.num+'">'+money(t.gross)+'</td><td style="'+CSS.num+'">'+money(t.fed)+'</td>'
         +'<td style="'+CSS.num+'">'+money(r2(t.ss+t.med+t.addlMed))+'</td><td style="'+CSS.num+'">'+money(t.state)+'</td>'
-        +'<td style="'+CSS.num+'">'+money(t.otherDed)+'</td><td style="'+CSS.num+'color:#16a34a;">'+money(t.net)+'</td><td></td></tr></tfoot>'
+        +'<td style="'+CSS.num+'">'+money(t.otherDed)+'</td><td style="'+CSS.num+'color:#16a34a;">'+money(t.net)+'</td><td></td></tr>'
+        +((t.emHours>0||t.pmBonus>0)?('<tr data-payem-tot="1" style="background:#fef2f2;font-weight:700;font-size:12px;"><td colspan="9" style="'+CSS.td+'color:#7f1d1d;">'
+          +(t.emHours>0?('🚨 Emergency call-out 1.5×: '+t.emHours.toFixed(2)+' h · '+money(t.emPay)+' (in gross)'):'')+(t.emHours>0&&t.pmBonus>0?' · ':'')+(t.pmBonus>0?('🏆 Bonus — PM year-end: '+money(t.pmBonus)+' (in gross, federal at 22%)'):'')+'</td></tr>'):'')   /* patch PAYEM */
+        +'</tfoot>'
       +'</table></div>'
     +'</div>'
     + employerCard(t);
@@ -85861,7 +85947,8 @@ function runCard(r){
       +'<th style="'+CSS.th+'">Check #</th><th style="'+CSS.th+'">Status</th><th style="'+CSS.th+'"></th></tr></thead><tbody>'
       +(r.lines||[]).map(function(L,i){
         return '<tr>'
-          +'<td style="'+CSS.td+'">'+esc(L.name)+((L.status==='denied'&&L.denyReason)?('<div style="font-size:11px;color:#991b1b;">denied: '+esc(L.denyReason)+'</div>'):'')+'</td>'   /* patch LINEAPPR */
+          +'<td style="'+CSS.td+'">'+esc(L.name)+((L.status==='denied'&&L.denyReason)?('<div style="font-size:11px;color:#991b1b;">denied: '+esc(L.denyReason)+'</div>'):'')
+            +((n2(L.emHours)>0||n2(L.pmBonus)>0)?('<div data-payem-line="1" style="font-size:11px;color:#7f1d1d;font-weight:700;">'+(n2(L.emHours)>0?('🚨 Emergency call-out 1.5× '+n2(L.emHours).toFixed(2)+' h · '+money(L.emPay)):'')+(n2(L.emHours)>0&&n2(L.pmBonus)>0?' · ':'')+(n2(L.pmBonus)>0?('🏆 Bonus — PM year-end '+money(L.pmBonus)):'')+'</div>'):'')+'</td>'   /* patch LINEAPPR · patch PAYEM */
           +'<td style="'+CSS.num+'">'+money(L.gross)+'</td>'
           +'<td style="'+CSS.num+'">'+money(L.fed)+'</td>'
           +'<td style="'+CSS.num+'">'+money(r2(n2(L.ss)+n2(L.med)+n2(L.addlMed)))+'</td>'
@@ -85871,7 +85958,7 @@ function runCard(r){
           +'<td style="'+CSS.td+'">'+statusChip(L.status==='denied'?'denied':(r.status==='approved'||r.status==='paid'?'approved':(L.status||'pending')))+'</td>'
           +'<td style="'+CSS.td+'white-space:nowrap;">'
             +'<button data-stub="'+r.id+'" data-idx="'+i+'" style="'+CSS.btn2+'padding:4px 9px;font-size:11px;">Pay stub</button> '
-            +((P.isAdmin()&&(r.status==='pending'||r.status==='draft')&&(window._gcDraftEditLine||window._gcEditPayLine))?(   /* patch DRAFTEDIT */
+            +(((P.isAdmin()||window._gcPayOfficeEdit&&window._gcPayOfficeEdit())&&(r.status==='pending'||r.status==='draft')&&(window._gcDraftEditLine||window._gcEditPayLine))?(   /* patch DRAFTEDIT */
             '<button data-ledit="'+esc(r.id)+'" data-idx="'+i+'" style="'+CSS.btn2+'padding:4px 9px;font-size:11px;color:#1d4ed8;">✏️ Edit</button> '):'')   /* patch PAYEDIT2 */
             +(P.isAdmin()&&r.status==='pending'?(L.status==='denied'?('<button data-line="'+r.id+'" data-idx="'+i+'" data-act="pending" style="'+CSS.btn2+'padding:4px 9px;font-size:11px;color:#dc2626;">Undo</button>'):   /* patch LINEAPPR */
               ('<button data-lappr="'+esc(r.id)+'" data-idx="'+i+'" style="'+CSS.btn2+'padding:4px 9px;font-size:11px;color:#166534;font-weight:800;">✓ Approve this check</button> '
@@ -86249,6 +86336,7 @@ window._gcRenderEmployeeProfile = async function(body, S, render){
         +fld('Active','<select data-p="active" style="'+CSS.inp+'width:100%;"><option value="yes"'+(p.active!==false?' selected':'')+'>Yes — include in payroll</option><option value="no"'+(p.active===false?' selected':'')+'>No — do not pay</option></select>')
         +fld('Hire date','<input data-p="hireDate" type="date" value="'+esc(p.hireDate||'')+'" style="'+CSS.inp+'width:100%;">')
       +'</div>'
+      +((window._gcPayEm&&window._gcPayEm.historyHtml)?window._gcPayEm.historyHtml(p):'')   /* patch PAYEM: 📈 pay rate history (🎖 cert raises) */
       +((p.payType==='commission'||p.payType==='salary_commission')
         ? '<div style="margin-top:8px;font-size:11px;color:#475569;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:8px 10px;">'
           +'Commission comes from the pay structure already set on this person (💎 → Pay Structures / PM Pay), calculated on payments <b>collected</b> during the pay period. Payroll does not change that setup — it just pays it and withholds taxes on it.</div>' : '')
@@ -86428,7 +86516,7 @@ window._gcPayStub = async function(runId, idx){
   function line(a,b,c){ return '<tr><td style="padding:5px 8px;border-bottom:1px solid #eee;">'+a+'</td>'
     +'<td style="padding:5px 8px;border-bottom:1px solid #eee;text-align:right;">'+b+'</td>'
     +'<td style="padding:5px 8px;border-bottom:1px solid #eee;text-align:right;color:#666;">'+(c||'')+'</td></tr>'; }
-  var earn=(L.grossParts||[]).map(function(g){ return line(esc(g.label), money(g.amount), ''); }).join('') || line('Gross pay', money(L.gross), '');
+  var earn=(L.grossParts||[]).map(function(g){ return line(esc(g.label)+((n2(g.hours)>0)?(' <span style="color:#666;font-size:11px;">'+n2(g.hours).toFixed(2)+' h × '+money(g.rate)+'</span>'):''), money(g.amount), ''); }).join('') || line('Gross pay', money(L.gross), '');   /* patch PAYEM: hours × rate on each earning */
   var ded=''
     + line('Federal income tax', '-'+money(L.fed), money(ytd.fed))
     + line('Social Security', '-'+money(L.ss), money(ytd.ss))
@@ -86450,7 +86538,7 @@ window._gcPayStub = async function(runId, idx){
       +'<div><div style="font-size:10px;color:#666;text-transform:uppercase;">Employee</div><div style="font-size:16px;font-weight:700;">'+esc(L.name)+'</div></div>'
       +'<div><div style="font-size:10px;color:#666;text-transform:uppercase;">Pay period</div><div style="font-size:14px;">'+esc(r.from)+' → '+esc(r.to)+'</div></div>'
       +'<div><div style="font-size:10px;color:#666;text-transform:uppercase;">Pay type</div><div style="font-size:14px;">'+esc(P.payTypeLabel(L.payType))+'</div></div>'
-      +((n2(L.hours)+n2(L.otHours))>0?('<div><div style="font-size:10px;color:#666;text-transform:uppercase;">Hours</div><div style="font-size:14px;">'+n2(L.hours).toFixed(2)+(n2(L.otHours)?(' + '+n2(L.otHours).toFixed(2)+' OT'):'')+'</div></div>'):'')
+      +((n2(L.hours)+n2(L.otHours))>0?('<div><div style="font-size:10px;color:#666;text-transform:uppercase;">Hours</div><div style="font-size:14px;">'+P.hoursText(L)+'</div></div>'):'')   /* patch PAYEM */
     +'</div></div>'
     +'<div class="box"><table><thead><tr><th>Earnings</th><th style="text-align:right">This check</th><th style="text-align:right">YTD</th></tr></thead>'
       +'<tbody>'+earn+line('<b>Gross pay</b>','<b>'+money(L.gross)+'</b>','<b>'+money(ytd.gross)+'</b>')+'</tbody></table></div>'
@@ -141356,7 +141444,7 @@ function bidQSheet(back){
   });
   return sh;
 }
-function plansReqByJob(){ var out = {}; (BQ.reqs || []).forEach(function(q){ if (!q || !q.jobId) return; var o = out[q.jobId] || (out[q.jobId] = { n: 0, waiting: 0 }); o.n++; if (!q.notifiedAt) o.waiting++; }); return out; }
+function plansReqByJob(){ var out = {}; (BQ.reqs || []).forEach(function(q){ if (!q || !q.jobId) return; var o = out[q.jobId] || (out[q.jobId] = { n: 0, waiting: 0 }); o.n++; if (!q.notifiedAt && q.status !== 'closed' && !q.closedAt) o.waiting++; }); return out; }   /* patch PLANREQ: answered / marked sent counts as told */
 /* upload plans for a bid job from the CRM: each file goes straight to the bid site's bucket (a signed upload),
    then the server lists it on the job (a ZIP is unpacked there) and e-mails whoever asked */
 function pickPlans(jobId){
@@ -178426,6 +178514,16 @@ function css(){
 var SRC = { email: { ic: '✉️', l: 'bids@' }, portal: { ic: '🏗', l: 'Bid portal' }, subportal: { ic: '🔨', l: 'Sub portal' } };
 function srcTag(x){ var o = SRC[x] || SRC.portal; return '<span title="Came in by ' + esc(o.l) + '">' + o.ic + ' ' + esc(o.l) + '</span>'; }
 function visPill(v){ return v === 'public' ? '<span class="pill pub">🌐 Public</span>' : v === 'draft' ? '<span class="pill draft">📝 Draft</span>' : '<span class="pill priv">🔒 Private</span>'; }
+/* patch PLANREQ-A (owner 11/12: "need to click private/public"): the pill is a one-click switch — 🔒 Private → 🌐 Public (a confirm: every
+   approved sub will see it), 🌐 Public → 🔒 Private, 📝 Draft → "Post it" (private, invited subs only). The same bid-hub op visibility and
+   the same role rule as ⋯ Actions (public: an admin / estimator; private: + the office); no right → the plain pill. */
+function visNext(j){ var v = j && j.visibility; if (v === 'public') return canInvite() ? 'private' : ''; if (v === 'draft') return canInvite() ? 'private' : ''; return canPublic() ? 'public' : ''; }
+function visToggle(j){
+  var nx = visNext(j); if (!nx) return visPill(j.visibility);
+  var tip = j.visibility === 'draft' ? 'Post it on the bid portal — 🔒 private (invited subs only); make it public after' : nx === 'public' ? 'Click to make it 🌐 Public — every approved sub will see it' : 'Click to make it 🔒 Private — invited subs only';
+  return '<button type="button" class="pill ' + (j.visibility === 'public' ? 'pub' : j.visibility === 'draft' ? 'draft' : 'priv') + '" data-sys="togvis" data-job="' + esc(j.id) + '" data-to="' + nx + '" title="' + esc(tip) + '" style="cursor:pointer;border:1px solid currentColor">'
+    + (j.visibility === 'public' ? '🌐 Public ⇄' : j.visibility === 'draft' ? '📝 Draft · Post it ▸' : '🔒 Private ⇄') + '</button>';
+}
 
 /* ── the sub bids table (Bid portal tab and the lead drawer): grouped by trade, the low bid marked ── */
 function bidsTable(list, jobId, opts){
@@ -178454,7 +178552,7 @@ function bidsTable(list, jobId, opts){
 /* ── modal ── */
 function modal(html){
   closeModal(); css();
-  var m = D.createElement('div'); m.id = 'gcsys-modal'; m.setAttribute('data-gc-keep', '1'); m.innerHTML = '<div class="box gcsys" role="dialog">' + html + '</div>';
+  var m = D.createElement('div'); m.id = 'gcsys-modal'; m.setAttribute('data-gc-keep', '1'); m.setAttribute('data-gc-noac', '1'); m.innerHTML = '<div class="box gcsys" role="dialog">' + html + '</div>';   /* patch PLANREQ-G */
   m.addEventListener('click', function(ev){ if (ev.target === m) closeModal(); });
   m.addEventListener('click', onClick);
   D.body.appendChild(m); return m;
@@ -178508,6 +178606,7 @@ function freshFrame(){ try { var m = D.getElementById('gc-sys-bp-mount'), fb = m
   if (fb.style.display === 'none') fb.innerHTML = ''; else f.src = f.getAttribute('src'); } catch (e) { warn(e); } }
 function drawBP(){
   var m = D.getElementById('gc-sys-bp-mount'); if (!m) return;
+  m.setAttribute('data-gc-noac', '1');   /* patch PLANREQ-G: the bid portal tab's own boxes (search, the inline due date) — no app-wide name dropdown */
   css();
   if (!m.__sys) { m.__sys = 1; m.addEventListener('click', onClick); m.addEventListener('input', function(ev){ if (ev.target.getAttribute('data-sys') === 'q') { BP.q = ev.target.value; drawRows(); } }); }
   if (!m.querySelector('.gcsys')) m.innerHTML = (bpFullOk() ? '<div class="gcsys gcsys-bpsw" style="padding-bottom:0;max-width:none"><div class="bar" role="group" aria-label="Bid portal view" style="margin:0 0 8px">'
@@ -178521,6 +178620,31 @@ function drawBP(){
   loadJobs(false);
 }
 function canDelete(){ return realAdmin() || isEst() || !!(BP.me && BP.me.canPublic); }   /* patch SYS2: an admin or an estimator */
+/* patch PLANREQ-F (owner 11/12): the bid due date is edited right in the list (click it → date + time → Save: bid-hub op details, the same rule and
+   the same automatic 📣 update as 📂 Manage); a past due date is red; "Subs due 11/24 · Our bid due 11/25" (our date: staff only) */
+function mdy(d){ d = s(d); return /^\d{4}-\d{2}-\d{2}/.test(d) ? (+d.slice(5, 7)) + '/' + (+d.slice(8, 10)) + '/' + d.slice(2, 4) : ''; }
+function dueCell(j){
+  var past = j.due && j.due < new Date().toISOString().slice(0, 10) && !/^(closed|won|lost|awarded)$/i.test(s(j.status));
+  var ed = canInvite() || !!(BP.me && BP.me.canInvite);
+  var lbl = j.due ? 'Subs due ' + mdy(j.due) + (j.dueTime ? ' ' + j.dueTime : '') : 'No due date';
+  return (ed ? '<button type="button" class="b" data-sys="dueedit" data-job="' + esc(j.id) + '" title="Change the date subs see" style="padding:2px 7px;font-size:12px;white-space:normal;text-align:left;max-width:100%' + (past ? ';color:#b91c1c;border-color:#fca5a5;font-weight:800' : '') + '"' + (past ? ' data-pastdue="1"' : '') + '>' + esc(lbl) + ' ✏️</button>'
+      : '<span' + (past ? ' style="color:#b91c1c;font-weight:800" data-pastdue="1"' : '') + '>' + esc(lbl) + '</span>')
+    + (j.ourDue ? '<div class="mut" data-ourdue="' + esc(j.id) + '">Our bid due ' + esc(mdy(j.ourDue) + (j.ourDueTime ? ' ' + j.ourDueTime : '')) + '</div>' : '');
+}
+function dueEdit(id){
+  var td = D.querySelector('#gc-sys-bp-mount [data-sys-duecell="' + id + '"]'); if (!td) return; var j = jobOf(id);
+  td.innerHTML = '<div data-sys-dueform="' + esc(id) + '" style="display:flex;flex-direction:column;gap:4px"><input type="date" data-k="due" value="' + esc(j.due) + '" style="font-size:12px"><input type="time" data-k="duet" value="' + esc(j.dueTime) + '" style="font-size:12px">'
+    + (j.ourDue ? '<span class="mut">Our bid due ' + esc(mdy(j.ourDue)) + '</span>' : '')
+    + '<span><button type="button" class="b pri" data-sys="duesave" data-job="' + esc(id) + '" style="padding:2px 8px;font-size:12px">Save</button> <button type="button" class="b" data-sys="duenone" data-job="' + esc(id) + '" style="padding:2px 6px;font-size:12px">No date</button> <button type="button" class="b" data-sys="duecancel" style="padding:2px 6px;font-size:12px">✕</button></span></div>';
+  var x = td.querySelector('[data-k=due]'); if (x) x.focus();
+}
+function dueSave(id, none){
+  var f = D.querySelector('#gc-sys-bp-mount [data-sys-dueform="' + id + '"]'); if (!f) return;
+  var d = none ? '' : s(f.querySelector('[data-k=due]').value), tm = none ? '' : s(f.querySelector('[data-k=duet]').value);
+  fn('bid-hub', { op: 'details', jobId: id, due: d, dueTime: tm }).then(function(r){ var n = r.notice || {};
+    toast('⏰ Subs due ' + (d ? mdy(d) + (tm ? ' ' + tm : '') : '— no date') + (n.status === 'waiting' ? ' · 📣 the subs get an update (its e-mail waits on ✅ Approvals)' : n.status === 'held' ? ' · 📣 update posted (e-mail held — data-entry mode)' : ''));
+    loadJobs(true); }, function(e){ toast(e.message, true); drawRows(); });
+}
 var SEL = {};
 function drawRows(){
   var m = D.getElementById('gc-sys-bp-mount'); if (!m) return;
@@ -178538,13 +178662,14 @@ function drawRows(){
   box.innerHTML = (realAdmin() && autoN && !del ? '<div class="bulk" data-sys-auto style="background:#eff6ff;border-color:#bfdbfe"><span><b>' + autoN + ' auto-added job' + (autoN === 1 ? '' : 's') + '</b> — made from leads by the old automatic sync, never posted, no bids / invites / plans added by a person.</span><button type="button" class="b" data-sys="cleanup">🧹 Clean up auto-added jobs (' + autoN + ')</button></div>' : '')
     + (bulk && nSel ? '<div class="bulk" data-sys-bulk><b>' + nSel + ' selected</b><button type="button" class="b" data-sys="bulkdel" style="color:#b91c1c">🗑 Delete selected</button><button type="button" class="b" data-sys="selnone">Clear</button></div>' : '')
     + (!all.length ? '<div class="mut">No bid jobs yet. Nothing goes on by itself: 📢 Put on bid portal on a lead, an estimate or a job.</div>'
-    : '<table class="bpt"><colgroup>' + (bulk ? '<col style="width:34px">' : '') + '<col><col style="width:104px"><col style="width:66px"><col style="width:70px"><col style="width:112px"><col style="width:' + (del ? 128 : 236) + 'px"></colgroup>'
+    : '<table class="bpt"><colgroup>' + (bulk ? '<col style="width:34px">' : '') + '<col><col style="width:104px"><col style="width:66px"><col style="width:70px"><col style="width:' + (del ? 112 : 150) + 'px"><col style="width:' + (del ? 128 : 236) + 'px"></colgroup>'
     + '<thead><tr>' + (bulk ? '<th><input type="checkbox" data-sys="selall" aria-label="Select all"' + (nSel && nSel === rows.length ? ' checked' : '') + '></th>' : '') + '<th>Bid job</th><th>Who sees it</th><th>Invited</th><th>Bids</th><th>' + (del ? 'Deleted' : 'Bid due') + '</th><th></th></tr></thead><tbody>' + rows.map(function(j){
       var left = del && j.deletedAt ? Math.max(0, 30 - Math.floor((Date.now() - Date.parse(j.deletedAt)) / 864e5)) : 0;
       return '<tr data-sys-job="' + esc(j.id) + '"' + (del ? ' class="del"' : '') + '>' + (bulk ? '<td><input type="checkbox" data-sys="sel" data-job="' + esc(j.id) + '"' + (SEL[j.id] ? ' checked' : '') + ' aria-label="Select"></td>' : '')
-        + '<td class="t" title="' + esc(j.title) + '"><b>' + esc(j.title || 'Bid job') + '</b><div class="mut">' + (j.auto ? '🤖 auto-added · ' : j.postedBy ? '📢 posted by ' + esc(j.postedByName || j.postedBy) + ' · ' : '') + (j.archived ? '🗄 ' + esc(j.archivedReason === 'auto' ? 'archived (auto-added)' : 'taken off the bid portal') + ' · ' : '') + esc([j.address, j.po, j.trades].filter(Boolean).join(' · ')) + '</div></td>'
-        + '<td data-l="Who sees it">' + (del ? '<span class="pill draft">🗑 Deleted</span>' : visPill(j.visibility)) + '</td><td class="num" data-l="Invited">' + j.invited + '</td><td class="num" data-l="Bids">' + j.bids + '</td>'
-        + '<td data-l="' + (del ? 'Deleted' : 'Bid due') + '">' + (del ? '<span class="mut">' + esc(when(j.deletedAt)) + '<br>' + (j.archived ? 'keep — restore any time' : left + ' day' + (left === 1 ? '' : 's') + ' left') + '</span>' : j.due ? esc(j.due + (j.dueTime ? ' ' + j.dueTime : '')) : '<span class="mut">—</span>') + '</td>'
+        + '<td class="t" title="' + esc(j.title) + '"><b>' + esc(j.title || 'Bid job') + '</b><div class="mut">' + (j.auto ? '🤖 auto-added · ' : j.postedBy ? '📢 posted by ' + esc(j.postedByName || j.postedBy) + ' · ' : '') + (j.archived ? '🗄 ' + esc(j.archivedReason === 'auto' ? 'archived (auto-added)' : 'taken off the bid portal') + ' · ' : '') + (j.biddingClosed ? '⏸ bidding closed · ' : '') + esc([j.address, j.po].filter(Boolean).join(' · ')) + '</div>'
+        + (s(j.trades) ? '<div class="mut" data-row-trades="' + esc(j.id) + '">🔨 Trades: ' + esc((function(l){ return l.slice(0, 3).join(' · ') + (l.length > 3 ? ' +' + (l.length - 3) : ''); })(s(j.trades).split(/\s*[,;\/]\s*/).filter(Boolean))) + '</div>' : '') + '</td>'   /* patch PLANREQ-T */
+        + '<td data-l="Who sees it">' + (del ? '<span class="pill draft">🗑 Deleted</span>' : visToggle(j)) + (j.openReq > 0 ? '<div><span class="pill draft" data-sys-req="' + esc(j.id) + '" title="Subs asked for plans / more info — answer in 📂 Manage → 💬 Q&amp;A" style="background:#fef3c7;color:#92400e">📩 ' + j.openReq + ' request' + (j.openReq === 1 ? '' : 's') + '</span></div>' : '') + '</td><td class="num" data-l="Invited">' + j.invited + '</td><td class="num" data-l="Bids">' + j.bids + '</td>'
+        + '<td data-l="' + (del ? 'Deleted' : 'Bid due') + '" data-sys-duecell="' + esc(j.id) + '">' + (del ? '<span class="mut">' + esc(when(j.deletedAt)) + '<br>' + (j.archived ? 'keep — restore any time' : left + ' day' + (left === 1 ? '' : 's') + ' left') + '</span>' : dueCell(j)) + '</td>'
         + '<td><div class="acts">' + (del ? (canDelete() ? '<button type="button" class="b" data-sys="restore" data-job="' + esc(j.id) + '">↩ Restore</button>' : '')
           : (canInvite() ? '<button type="button" class="b pri" data-sys="manage" data-job="' + esc(j.id) + '">📂 Manage</button>' : '')
           + '<button type="button" class="b" data-sys="bids" data-job="' + esc(j.id) + '" title="Every bid for this job, by trade, lowest first — award / add to the estimate">📊 Bids (' + (+j.bids || 0) + ')</button>'   /* patch BIDEST */
@@ -178556,14 +178681,24 @@ function closeMenu(){ var x = D.getElementById('gcsys-menu'); if (x) x.remove();
 function openMenu(btn, jobId){
   closeMenu(); var j = jobOf(jobId);
   var items = [];
-  if (canInvite()) items.push(['invite', '✉️ Invite subs']);
+  /* patch PLANREQ-E (owner 11/12: "need Manage and Actions to have more ways to edit and add info to the bid portal"): the whole menu; the
+     editing ones open 📂 Manage on the right tab (the same server ops and role rules) */
+  var ed = canInvite() || !!(BP.me && (BP.me.canInvite || BP.me.admin));
+  if (ed) items.push(['m:details', '📝 Edit details']);
   if (canPublic() && j.visibility !== 'public') items.push(['public', '🌐 Make public']);
   if (canInvite() && j.visibility === 'public') items.push(['private', '🔒 Make private']);
-  items.push(['bids', '📨 Sub bids']);
+  if (ed) items.push(['m:due', '✏️ Due date']);
+  if (canInvite()) items.push(['invite', '✉️ Invite subs (by trade)']);
+  if (ed) items.push(['m:updates', '📣 Post update'], ['m:addenda', '📎 Post addendum'], ['m:plans', '📎 Add plans / specs / scopes'], ['m:link', '🔗 Add plan-room link'], ['m:qa', '❓ Answer questions' + (j.openReq ? ' · 📩 ' + j.openReq : '')]);
+  items.push(['bids', '📊 Bids (compare / award)']);
+  if (ed) items.push(['dup', '📋 Duplicate job'], ['m:crm', '🔗 Link to CRM lead / project']);
   if (j.leadId) items.push(['lead', '◈ Open the lead']);
+  if (ed) items.push([j.biddingClosed ? 'reopenbid' : 'closebid', j.biddingClosed ? '▶ Reopen bidding' : '⏸ Close bidding']);
+  if (ed) items.push(['takeoff', '🗄 Archive']);
   if (canDelete()) items.push(['del', '🗑 Delete…']);
   var m = D.createElement('div'); m.id = 'gcsys-menu'; m.setAttribute('data-gc-keep', '1'); m.setAttribute('role', 'menu');
   m.innerHTML = items.map(function(x){ return '<button type="button" role="menuitem" data-sys="' + x[0] + '" data-job="' + esc(jobId) + '"' + (j.leadId ? ' data-lead="' + esc(j.leadId) + '"' : '') + (x[0] === 'del' ? ' class="red"' : '') + '>' + x[1] + '</button>'; }).join('');
+  m.style.maxHeight = (W.innerHeight - 16) + 'px'; m.style.overflowY = 'auto'; m.style.zIndex = '2147483000';   /* patch PLANREQ-E: the longer menu fits and sits above banners */
   D.body.appendChild(m);
   var r = btn.getBoundingClientRect(), w = m.offsetWidth, h = m.offsetHeight;
   m.style.left = Math.max(8, Math.min(r.right - w, W.innerWidth - w - 8)) + 'px';
@@ -178647,11 +178782,11 @@ function sendInvite(body){
     loadJobs(true);
   }, function(e){ toast(e.message, true); Array.prototype.forEach.call(bt, function(x){ x.disabled = false; }); });
 }
-function setVis(jobId, mode){
+function setVis(jobId, mode, quiet){   /* quiet: the one-click pill — going private / posting a draft needs no confirm (patch PLANREQ-A) */
   var j = jobOf(jobId);
   if (mode === 'public' && !W.confirm('Make "' + j.title + '" PUBLIC?\n\nEvery approved sub on bids.grayco-cs.com will see it and can bid. (Prices and your notes stay private.)')) return;
-  if (mode === 'private' && !W.confirm('Make "' + j.title + '" PRIVATE?\n\nOnly the subs you invited will see it.')) return;
-  fn('bid-hub', { op: 'visibility', jobId: jobId, mode: mode }).then(function(){ toast(mode === 'public' ? '🌐 Public — every approved sub can see it' : '🔒 Private — invited subs only'); loadJobs(true); }, function(e){ toast(e.message, true); });
+  if (mode === 'private' && !quiet && !W.confirm('Make "' + j.title + '" PRIVATE?\n\nOnly the subs you invited will see it.')) return;
+  return fn('bid-hub', { op: 'visibility', jobId: jobId, mode: mode }).then(function(){ toast(mode === 'public' ? '🌐 Public — every approved sub can see it' : '🔒 Private — invited subs only'); loadJobs(true); try { if (W._gcSys2 && W._gcSys2.state().jobId === jobId) W._gcSys2.reload(); } catch (e) {} }, function(e){ toast(e.message, true); });
 }
 function award(t, on){
   fn('bid-hub', { op: 'award', jobId: t.getAttribute('data-job'), source: t.getAttribute('data-src'), id: t.getAttribute('data-id'), on: on }).then(function(){
@@ -178688,6 +178823,24 @@ function onClick(ev){
   if (a === 'lbids') return openBids(job, t.getAttribute('data-lead'));
   if (a === 'invite') { if (!BP.jobs) BP.jobs = []; if (!arr(BP.jobs).some(function(j){ return j.id === job; }) && t.getAttribute('data-title')) BP.jobs.push({ id: job, title: t.getAttribute('data-title'), visibility: '' }); return openInvite(job); }
   if (a === 'public' || a === 'private') return setVis(job, a);
+  if (a === 'togvis') return setVis(job, t.getAttribute('data-to'), true);   /* patch PLANREQ-A */
+  if (a === 'dueedit') return dueEdit(job);   /* patch PLANREQ-F */
+  if (a === 'duesave' || a === 'duenone') return dueSave(job, a === 'duenone');
+  if (a === 'duecancel') return drawRows();
+  if (/^m:/.test(a)) {   /* patch PLANREQ-E: the Actions that edit open 📂 Manage on their tab */
+    var mt = a.slice(2), tab = { details: 'details', due: 'details', crm: 'details', updates: 'updates', addenda: 'addenda', plans: 'plans', link: 'plans', qa: 'qa' }[mt] || 'details';
+    if (!W._gcSys2 || !W._gcSys2.open) return toast('Manage is still loading — try again.', true);
+    W._gcSys2.open(job, tab);
+    var focus = { due: '[data-d="due"]', crm: '[data-d="crmProjectId"]', link: '[data-k="lurl"]', plans: '[data-a="pick"]' }[mt];
+    if (focus) { var tries = 0; (function f(){ var x = D.querySelector('#gcsys2 ' + focus); if (x) { x.scrollIntoView({ block: 'center' }); if (x.focus) x.focus(); } else if (tries++ < 30) later(f, 200); })(); }
+    return;
+  }
+  if (a === 'dup') { var jj = jobOf(job), nt = W.prompt('📋 Duplicate "' + jj.title + '" as a new 🔒 private bid job (details, trades, scopes, plans — no subs, invites or bids). Its title:', 'Copy of ' + jj.title); if (nt == null) return;
+    return fn('bid-hub', { op: 'duplicate', jobId: job, title: nt }).then(function(r){ toast('📋 "' + r.title + '" made — 🔒 private'); loadJobs(true); try { if (W._gcSys2) W._gcSys2.open(r.jobId, 'details'); } catch (e) {} }, function(e){ toast(e.message, true); }); }
+  if (a === 'closebid' || a === 'reopenbid') { var cj = jobOf(job); if (a === 'closebid' && !W.confirm('⏸ Close bidding on "' + cj.title + '"?\n\nThe job stays visible to the subs, but no new bids or changes are taken. They are told on the bid site (the e-mail waits on ✅ Approvals).')) return;
+    return fn('bid-hub', { op: 'bidding', jobId: job, close: a === 'closebid' }).then(function(){ toast(a === 'closebid' ? '⏸ Bidding closed — the job stays visible' : '▶ Bidding reopened'); loadJobs(true); }, function(e){ toast(e.message, true); }); }
+  if (a === 'takeoff') { var oj = jobOf(job); if (!W.confirm('🗄 Archive "' + oj.title + '"?\n\nIt comes off the bid portal (no sub sees it); nothing is deleted — put it back any time from 🗄 Archived.')) return;
+    return fn('bid-hub', { op: 'unpost', jobId: job }).then(function(){ toast('🗄 Archived — restore from 🗄 Archived'); loadJobs(true); freshFrame(); }, function(e){ toast(e.message, true); }); }
   if (a === 'lead') return openLead(t.getAttribute('data-lead'));
   if (a === 'award' || a === 'unaward') return award(t, a === 'award');
   if (a === 'trade') { var k = t.getAttribute('data-t'); if (INV.trades[k]) delete INV.trades[k]; else INV.trades[k] = 1; return drawInvite(); }
@@ -178935,12 +179088,13 @@ var M = { jobId: '', data: null, tab: 'plans', busy: false, err: '', ts: null };
 function job(){ return (M.data && M.data.job) || {}; }
 function open(jobId, tab){
   if (!jobId) return;
-  css(); M = { jobId: jobId, data: null, tab: tab || 'plans', busy: false, err: '', ts: null };
+  css(); M = { jobId: jobId, data: null, tab: tab || 'details', busy: false, err: '', ts: null }; RV.items = []; DT = null;
   var sh = D.getElementById('gcsys2-shade'); if (!sh) { sh = D.createElement('div'); sh.id = 'gcsys2-shade'; sh.setAttribute('data-gc-keep', '1'); sh.onclick = close; D.body.appendChild(sh); }
   var d = D.getElementById('gcsys2');
   if (!d) {
-    d = D.createElement('div'); d.id = 'gcsys2'; d.setAttribute('data-gc-keep', '1'); d.setAttribute('role', 'dialog'); d.setAttribute('aria-label', 'Manage bid job');
+    d = D.createElement('div'); d.id = 'gcsys2'; d.setAttribute('data-gc-keep', '1'); d.setAttribute('data-gc-noac', '1'); d.setAttribute('role', 'dialog');   /* patch PLANREQ-G: never the app-wide name dropdown */ d.setAttribute('aria-label', 'Manage bid job');
     d.addEventListener('click', onClick); d.addEventListener('change', onChange);
+    d.addEventListener('input', function(ev){ if (ev.target && ev.target.getAttribute('data-k') === 'dtradeq' && DT) { DT.q = ev.target.value; DT.allOpen = true; readBf(); draw(); var q = D.querySelector('#gcsys2 [data-k=dtradeq]'); if (q) { q.focus(); try { q.setSelectionRange(q.value.length, q.value.length); } catch (e) {} } } });   /* patch PLANREQ-H */
     d.addEventListener('keydown', function(ev){ if (ev.key === 'Escape') close(); });
     ['dragover', 'dragenter'].forEach(function(k){ d.addEventListener(k, function(ev){ var z = ev.target.closest && ev.target.closest('.drop'); if (z) { ev.preventDefault(); z.classList.add('over'); } }); });
     d.addEventListener('dragleave', function(ev){ var z = ev.target.closest && ev.target.closest('.drop'); if (z) z.classList.remove('over'); });
@@ -178952,30 +179106,36 @@ function open(jobId, tab){
 function close(){ ['gcsys2', 'gcsys2-shade'].forEach(function(id){ var x = D.getElementById(id); if (x) x.remove(); }); M.jobId = ''; }
 function load(){
   var id = M.jobId; M.busy = true;
-  return fn('bid-hub?manage=' + encodeURIComponent(id)).then(function(r){ if (M.jobId !== id) return; M.data = r; M.err = ''; if (!M.ts) M.ts = arr(r.job.tradeScopes).map(function(x){ return { id: x.id, trade: x.trade, scope: x.scope, mode: x.mode || 'manual' }; }); },
+  return fn('bid-hub?manage=' + encodeURIComponent(id)).then(function(r){ if (M.jobId !== id) return; M.data = r; M.err = '';
+    if (r.resort > 0 && !M.resorted) { M.resorted = true; fn('bid-hub', { op: 'resort', jobId: id }).then(function(x){ var mv = arr(x.moved); if (mv.length || arr(x.relabeled).length) { toast('📝 ' + (mv.length ? mv.map(function(m){ return m.name + ' → ' + m.trades.join(', ') + ' (📝 Scope)'; }).join(' · ') : '') + (arr(x.relabeled).length ? (mv.length ? ' · ' : '') + arr(x.relabeled).length + ' scope(s) for every sub kept with the plans' : '')); M.tsFiles = true; load(); } }, function(e){ warn(e); }); }   /* patch PLANREQ-I: trade scopes saved with the plans move to their trade, once */ if (!M.ts || M.tsFiles) { var keepTxt = {}; arr(M.ts).forEach(function(x){ if (x.id) keepTxt[x.id] = x; }); M.ts = arr(r.job.tradeScopes).map(function(x){ var k = keepTxt[x.id]; return { id: x.id, trade: k ? k.trade : x.trade, scope: k ? k.scope : x.scope, mode: x.mode || 'manual', files: arr(x.files) }; }).concat(arr(M.ts).filter(function(x){ return !x.id; })); M.tsFiles = false; } },   /* patch PLANREQ-C: + each trade's files (kept typing survives a reload) */
     function(e){ M.err = e.message; }).then(function(){ M.busy = false; draw(); });
 }
 function keepInputs(f){   /* a redraw keeps what is being typed */
   var d = D.getElementById('gcsys2'), keep = {};
-  if (d) Array.prototype.forEach.call(d.querySelectorAll('[data-k]'), function(x){ keep[x.getAttribute('data-k')] = x.type === 'checkbox' ? x.checked : x.value; });
+  if (d) Array.prototype.forEach.call(d.querySelectorAll('[data-k],[data-d]'), function(x){ keep[x.getAttribute('data-k') || ('d:' + x.getAttribute('data-d'))] = x.type === 'checkbox' ? x.checked : x.value; });   /* patch PLANREQ-E: + the Details form */
   f();
   d = D.getElementById('gcsys2');
-  if (d) Array.prototype.forEach.call(d.querySelectorAll('[data-k]'), function(x){ var k = x.getAttribute('data-k'); if (k in keep) { if (x.type === 'checkbox') x.checked = keep[k]; else x.value = keep[k]; } });
+  if (d) Array.prototype.forEach.call(d.querySelectorAll('[data-k],[data-d]'), function(x){ var k = x.getAttribute('data-k') || ('d:' + x.getAttribute('data-d')); if (k in keep) { if (x.type === 'checkbox') x.checked = keep[k]; else x.value = keep[k]; } });
 }
-var TABS = [['plans', '📐 Plans & specs'], ['scope', '📝 Scope'], ['addenda', '📎 Addenda'], ['updates', '📣 Updates'], ['qa', '💬 Q&A'], ['log', '🗂 Activity']];
+var TABS = [['details', '📝 Details'], ['plans', '📐 Plans & specs'], ['scope', '📝 Scope'], ['addenda', '📎 Addenda'], ['updates', '📣 Updates'], ['qa', '💬 Q&A'], ['log', '🗂 Activity']];
 function draw(){
   var d = D.getElementById('gcsys2'); if (!d) return;
   keepInputs(function(){
     var j = job(), r = M.data;
     var vis = j.visibility === 'public' ? '🌐 Public — every approved sub' : j.visibility === 'draft' ? '📝 Draft — staff only' : '🔒 Private — invited subs only';
     d.innerHTML = '<div class="hd"><div style="flex:1;min-width:0"><h3>📂 ' + esc(j.title || 'Bid job') + '</h3><div class="mut">' + esc([j.address, j.po, j.due ? 'Bid due ' + j.due + (j.dueTime ? ' ' + j.dueTime : '') : ''].filter(Boolean).join(' · ')) + '</div>'
-      + (r ? '<div class="mut">' + vis + ' · ' + arr(r.audience).length + ' sub' + (arr(r.audience).length === 1 ? '' : 's') + ' can see what you post</div>' : '') + '</div><button type="button" data-a="close" aria-label="Close">✕</button></div>'
-      + '<div class="tabs" role="tablist">' + TABS.map(function(t){ return '<button type="button" role="tab" data-a="tab" data-t="' + t[0] + '"' + (M.tab === t[0] ? ' class="on"' : '') + '>' + t[1] + (t[0] === 'qa' && r ? ' (' + arr(r.questions).length + ')' : t[0] === 'addenda' && r ? ' (' + arr(j.addenda).length + ')' : '') + '</button>'; }).join('') + '</div>'
+      + (r ? '<div class="mut">' + vis + ' · ' + arr(r.audience).length + ' sub' + (arr(r.audience).length === 1 ? '' : 's') + ' can see what you post'
+        + (j.deleted ? '' : ' <button type="button" class="b" data-a="vis" data-to="' + (j.visibility === 'public' ? 'private' : j.visibility === 'draft' ? 'private' : 'public') + '" style="margin-left:6px;padding:2px 10px;font:700 12px system-ui;min-height:26px;min-width:0;border:1px solid #c9c3ea;border-radius:999px;color:#fff;background:rgba(255,255,255,.08)">' + (j.visibility === 'public' ? '🔒 Make private' : j.visibility === 'draft' ? '📢 Post it (private)' : '🌐 Make public') + '</button>') + '</div>' : '')   /* patch PLANREQ-A */
+      + (r ? hdrTradesDue(j) : '')   /* patch PLANREQ-T/D: the trades we are bidding + ✏️, the bid due + ✏️ */
+      + '</div><button type="button" data-a="close" aria-label="Close">✕</button></div>'
+      + '<div class="tabs" role="tablist">' + TABS.map(function(t){ return '<button type="button" role="tab" data-a="tab" data-t="' + t[0] + '"' + (M.tab === t[0] ? ' class="on"' : '') + '>' + t[1] + (t[0] === 'qa' && r ? ' (' + arr(r.questions).length + ')' + (openReqs().length ? ' · 📩 ' + openReqs().length : '') : t[0] === 'addenda' && r ? ' (' + arr(j.addenda).length + ')' : '') + '</button>'; }).join('') + '</div>'
       + '<div class="bd" data-tab="' + M.tab + '">' + (r && r.paused ? '<div class="paused">⏸ Data-entry mode is on: what you post shows on the bid site, but no e-mail goes to a sub (it is held; send it after the pause).</div>' : '')
-      + (M.err && !r ? '<div style="color:#b91c1c">' + esc(M.err) + '</div>' : !r ? '<div class="mut">Loading…</div>' : body()) + '</div>';
+      + (M.err && !r ? '<div style="color:#b91c1c">' + esc(M.err) + '</div>' : !r ? '<div class="mut">Loading…</div>' : body()) + '</div>'
+      + (r && M.tab === 'details' ? '<div class="ft" data-details-foot style="flex:none;border-top:1px solid #e7e3f2;background:#fff;padding:10px 16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button type="button" class="b pri" data-a="dsave">💾 Save details</button><span class="mut">On a job subs can see, what changes for them (due date, site walk, requirements, bid form…) goes to them as one 📣 Update.</span></div>' : '');
   });
 }
 function body(){
+  if (M.tab === 'details') return detailsHtml();
   if (M.tab === 'plans') return plansHtml();
   if (M.tab === 'scope') return scopeHtml();
   if (M.tab === 'addenda') return addendaHtml();
@@ -178993,14 +179153,124 @@ function noticeTag(n){
   return st ? '<span class="pill grey">' + esc(st) + '</span>' : '';
 }
 
+/* ── 📝 Details (patch PLANREQ-E, owner 11/12: "need Manage and Actions to have more ways to edit and add info to the bid portal";
+   PLANREQ-T "need to put what trades we are bidding on some places"; PLANREQ-D "also need to edit when bid is due") ──
+   The whole bid job, edited in place and saved with bid-hub op details (the Put on bid portal role rule). What matters to subs on a job they
+   can see becomes one automatic 📣 Update (the e-mail waits on ✅ Approvals; held in ⏸). Internal notes and the RSVP list never reach a sub. */
+var DT = null;   /* the form while it is being edited: { trades: [], bidForm: [] } */
+var PT = [['', '—'], ['commercial', 'Commercial'], ['multifamily', 'Multifamily'], ['residential', 'Residential'], ['insurance', 'Insurance']];
+function tradesOf(j){ return s(j.trades).split(/\s*[,;\/]\s*/).filter(Boolean); }
+function chipsHtml(list, max){ if (!list.length) return '<span class="mut">no trades picked yet</span>'; var sh = max ? list.slice(0, max) : list;
+  return sh.map(function(t){ return '<span class="pill grey" data-trade-chip="' + esc(t) + '" style="background:#efeaff;color:#241968">' + tIcon(t) + ' ' + esc(t) + '</span>'; }).join(' ') + (max && list.length > max ? ' <span class="mut">+' + (list.length - max) + '</span>' : ''); }
+function hdrTradesDue(j){
+  var tl = tradesOf(j);
+  return '<div data-hdr-trades style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span class="mut" style="color:#c9c3ea">Trades we are bidding:</span> ' + chipsHtml(tl) + (!tl.length && s(j.tradesSuggested) ? ' <span class="mut" style="color:#fcd34d" data-hdr-sugg>💡 ' + s(j.tradesSuggested).split(/\s*[,;]\s*/).filter(Boolean).length + ' suggested from the invite — pick them in ✏️ Trades</span>' : '')
+    + ' <button type="button" data-a="dtab" data-f="trades" style="font:700 12px system-ui;min-height:26px;min-width:0;padding:2px 10px;border:1px solid #c9c3ea;border-radius:999px;color:#fff;background:rgba(255,255,255,.08)">✏️ Trades</button>'
+    + ' <span class="mut" style="color:#c9c3ea;margin-left:6px" data-hdr-due>⏰ ' + esc(j.due ? 'Subs due ' + j.due + (j.dueTime ? ' ' + j.dueTime : '') : 'No sub due date') + (j.ourDue ? ' · Our bid due ' + j.ourDue + (j.ourDueTime ? ' ' + j.ourDueTime : '') : '') + '</span>'   /* patch PLANREQ-F */
+    + ' <button type="button" data-a="dtab" data-f="due" style="font:700 12px system-ui;min-height:26px;min-width:0;padding:2px 10px;border:1px solid #c9c3ea;border-radius:999px;color:#fff;background:rgba(255,255,255,.08)">✏️ Due</button>'
+    + (j.biddingClosed ? ' <span class="pill warn">⏸ bidding closed</span>' : '') + '</div>';
+}
+function lst(v){ return arr(v).join('\n'); }
+function detailsHtml(){
+  var j = job(), w = j.siteWalk || {}, rq = j.requirements || {}, c = j.contacts || {};
+  if (!DT) DT = { trades: tradesOf(j), bidForm: arr(j.bidForm).map(function(x){ return { id: x.id, trade: x.trade, item: x.item, unit: x.unit }; }) };
+  var opts = tradeOpts(), selL = DT.trades.slice(), sugL = s(j.tradesSuggested).split(/\s*[,;]\s*/).filter(function(t){ return t && !selL.some(function(x){ return low(x) === low(t); }); });
+  var restL = opts.filter(function(t){ return !selL.some(function(x){ return low(x) === low(t); }) && !sugL.some(function(x){ return low(x) === low(t); }) && (!DT.q || low(t).indexOf(low(DT.q)) > -1); });
+  var tbtn = function(t, on, sug){ return '<button type="button" class="b' + (on ? ' pri' : '') + '" data-a="dtrade" data-t="' + esc(t) + '" aria-pressed="' + on + '"' + (sug ? ' style="border-style:dashed"' : '') + '>' + (sug ? '💡 ' : on ? '✓ ' : '') + tIcon(t) + ' ' + esc(t) + '</button>'; };
+  var inp = function(k, v, ph, type, wdt){ return '<input type="' + (type || 'text') + '" data-d="' + k + '" value="' + esc(v) + '"' + (ph ? ' placeholder="' + esc(ph) + '"' : '') + ' style="' + (wdt ? 'width:' + wdt : 'flex:1;min-width:180px') + '">'; };
+  var chk = function(k, on, label){ return '<label style="display:inline-flex;gap:5px;align-items:center;margin-right:10px"><input type="checkbox" data-d="' + k + '"' + (on ? ' checked' : '') + '> ' + label + '</label>'; };
+  var projs = arr((W._crm || {}).projects).filter(function(p){ return p && p.id && !p.deleted; }).slice(0, 400), leads = arr((W._crm || {}).leads).filter(function(l){ return l && l.id && !l.deleted; }).slice(-300);
+  var map = s(j.address) ? ' <a href="https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(j.address) + '" target="_blank" rel="noopener" data-maplink>📍 Map ↗</a>' : '';
+  return '<div data-details>'
+    + '<h4>🔨 Trades we are bidding</h4><div class="mut">Subs see these on the job; their own trade is highlighted. Each trade gets its own box on 📝 Scope. ✉️ Invite subs starts with these trades picked.</div>'
+    + '<div data-trades-picker>'   /* patch PLANREQ-H: Selected first, then Suggested (from the invite — never pre-selected), then all trades (searchable) */
+    + '<div class="mut" style="margin-top:6px"><b>Selected (' + selL.length + ')</b></div><div class="row" data-tp-sel>' + (selL.length ? selL.map(function(t){ return tbtn(t, true); }).join('') : '<span class="mut">none yet — tap a trade below</span>') + '</div>'
+    + (sugL.length ? '<div class="mut"><b>💡 Suggested from the invite</b> — tap to add</div><div class="row" data-tp-sugg>' + sugL.map(function(t){ return tbtn(t, false, true); }).join('') + '</div>' : '')
+    + '<details data-tp-all' + (DT.allOpen || !selL.length ? ' open' : '') + '><summary class="mut" style="cursor:pointer"><b>All trades</b> (' + restL.length + ')</summary>'
+    + '<div class="row"><input type="search" data-k="dtradeq" placeholder="🔍 Find a trade" value="' + esc(DT.q || '') + '" style="width:180px"><input type="text" data-k="dtradeadd" placeholder="Another trade" style="width:150px"><button type="button" class="b" data-a="dtradeadd">+ Add</button></div>'
+    + '<div class="row" data-tp-rest>' + restL.map(function(t){ return tbtn(t, false); }).join('') + '</div></details></div>'
+    + '<h4>📋 The job</h4>'
+    + '<div class="row"><label style="flex:1">Title ' + inp('title', j.title, 'Job title') + '</label></div>'
+    + '<div class="row"><label style="flex:1">Site address ' + inp('address', j.address, 'Street, city, state') + '</label>' + map + '</div>'
+    + '<div class="row"><label>Project type <select data-d="projectType">' + PT.map(function(o){ return '<option value="' + o[0] + '"' + (s(j.projectType) === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></label>'
+    + '<label style="flex:1">Owner / GC we bid to ' + inp('ownerGc', j.ownerGc, 'e.g. Sample Builders Inc.') + '</label>' + chk('showOwnerGc', j.showOwnerGc, 'show it to subs') + '</div>'
+    + '<h4>⏰ Dates</h4>'
+    + '<div class="row"><label>Our bid due <span class="mut">(to the GC / owner — staff only)</span> <input type="date" data-d="ourDue" value="' + esc(j.ourDue) + '"></label><label><input type="time" data-d="ourDueTime" value="' + esc(j.ourDueTime) + '"></label></div>'   /* patch PLANREQ-F */
+    + '<div class="row"><label>Subs due <span class="mut">(what subs see)</span> <input type="date" data-d="due" value="' + esc(j.due) + '"></label><label><input type="time" data-d="dueTime" value="' + esc(j.dueTime) + '"></label><button type="button" class="b" data-a="nodue">No due date</button>'
+    + '<label>Questions due by <input type="date" data-d="questionsDue" value="' + esc(j.questionsDue) + '"></label></div>'
+    + '<div class="row"><label>Site walk / pre-bid <input type="date" data-d="walkDate" value="' + esc(w.date) + '"></label><label><input type="time" data-d="walkTime" value="' + esc(w.time) + '"></label>'
+    + '<label style="flex:1">Where ' + inp('walkLocation', w.location, 'Meet at the front gate') + '</label>' + chk('walkMandatory', w.mandatory, 'mandatory') + '</div>'
+    + '<div class="row"><label style="flex:1">RSVP list (staff only — one per line)<textarea data-d="rsvp" style="min-height:50px">' + esc(lst(w.rsvp)) + '</textarea></label></div>'
+    + '<div class="row"><label>Start date <input type="date" data-d="startDate" value="' + esc(j.startDate) + '"></label><label>Duration ' + inp('duration', j.duration, 'e.g. 10 weeks', 'text', '140px') + '</label></div>'
+    + '<h4>📄 How to bid</h4><textarea data-d="bidInstructions" placeholder="How to bid, what to include (scope sheet, schedule, exclusions…)">' + esc(j.bidInstructions) + '</textarea>'
+    + '<h4>✅ Requirements</h4><div class="row">' + chk('rq_bond', rq.bond, 'Bond') + chk('rq_prevailingWage', rq.prevailingWage, 'Prevailing wage / Davis-Bacon') + chk('rq_certifiedPayroll', rq.certifiedPayroll, 'Certified payroll') + chk('rq_mbeWbe', rq.mbeWbe, 'MBE / WBE') + '</div>'
+    + '<div class="row">' + chk('rq_coi', rq.coi, 'COI limits:') + inp('rq_coiGl', rq.coiGl, 'GL $1M/$2M', 'text', '130px') + inp('rq_coiWc', rq.coiWc, 'WC statutory', 'text', '130px') + inp('rq_coiAuto', rq.coiAuto, 'Auto $1M', 'text', '110px') + '</div>'
+    + '<div class="row">' + chk('rq_licenses', rq.licenses, 'Licenses:') + inp('rq_licensesText', rq.licensesText, 'TN contractor license', 'text', '200px') + inp('rq_mbeWbeText', rq.mbeWbeText, 'MBE / WBE goal (e.g. 10%)', 'text', '200px') + '</div>'
+    + '<div class="row"><label style="flex:1">Alternates (one per line)<textarea data-d="alternates" style="min-height:50px">' + esc(lst(j.alternates)) + '</textarea></label>'
+    + '<label style="flex:1">Unit prices requested (one per line)<textarea data-d="unitPrices" style="min-height:50px">' + esc(lst(j.unitPrices)) + '</textarea></label></div>'
+    + '<h4>🧾 Bid form — line items subs fill in</h4>' + DT.bidForm.map(function(x, i){ return '<div class="row" data-bfrow="' + i + '"><select data-bf="trade" data-i="' + i + '"><option value="">Any trade</option>' + DT.trades.concat(x.trade && DT.trades.indexOf(x.trade) < 0 ? [x.trade] : []).map(function(t){ return '<option' + (x.trade === t ? ' selected' : '') + '>' + esc(t) + '</option>'; }).join('') + '</select>'
+      + '<input type="text" data-bf="item" data-i="' + i + '" value="' + esc(x.item) + '" placeholder="Line item (e.g. Hang + finish walls)" style="flex:1;min-width:180px"><input type="text" data-bf="unit" data-i="' + i + '" value="' + esc(x.unit) + '" placeholder="Unit (LS, SF…)" style="width:90px"><button type="button" class="b red" data-a="bfrm" data-i="' + i + '">🗑</button></div>'; }).join('')
+    + '<div class="row"><button type="button" class="b" data-a="bfadd">+ Add a line item</button></div>'
+    + '<h4>☎️ Contacts subs see</h4><div class="row">' + inp('pmName', c.pmName || j.pmName, 'PM name', 'text', '160px') + inp('pmPhone', c.pmPhone, 'PM phone', 'text', '130px') + inp('pmEmail', c.pmEmail || j.pmEmail, 'PM e-mail', 'text', '200px') + '</div>'
+    + '<div class="row">' + inp('estName', c.estName, 'Estimator name', 'text', '160px') + inp('estPhone', c.estPhone, 'Estimator phone', 'text', '130px') + inp('estEmail', c.estEmail, 'Estimator e-mail', 'text', '200px') + '</div>'
+    + '<h4>🔗 CRM</h4><div class="row"><label>Project <select data-d="crmProjectId"><option value="">— none —</option>' + projs.map(function(p){ return '<option value="' + esc(p.id) + '"' + (p.id === j.crmProjectId ? ' selected' : '') + '>' + esc((p.autoPO ? p.autoPO + ' · ' : '') + (p.name || p.id)) + '</option>'; }).join('') + '</select></label>'
+    + '<label>Lead <select data-d="crmLeadId"><option value="">— none —</option>' + leads.map(function(l){ return '<option value="' + esc(l.id) + '"' + (l.id === j.crmLeadId ? ' selected' : '') + '>' + esc(l.name || l.id) + '</option>'; }).join('') + '</select></label></div>'
+    + '<h4>🔒 Internal notes <span class="mut">(never shown to a sub)</span></h4><textarea data-d="internalNotes">' + esc(j.internalNotes) + '</textarea>'
+    + '</div>';   /* patch PLANREQ-H: 💾 Save is a footer under the scrolling sheet (it sat over the fields) */
+}
+function dval(k){ var x = D.querySelector('#gcsys2 [data-d="' + k + '"]'); return x ? (x.type === 'checkbox' ? x.checked : s(x.value)) : undefined; }
+function readBf(){ Array.prototype.forEach.call(D.querySelectorAll('#gcsys2 [data-bf]'), function(x){ var r = DT.bidForm[+x.getAttribute('data-i')]; if (r) r[x.getAttribute('data-bf')] = x.value; }); }
+function saveDetails(btn){
+  if (!DT) return; readBf();
+  var lines = function(k){ return s(dval(k)).split(/\n/).map(s).filter(Boolean); };
+  var body = { op: 'details', title: dval('title'), address: dval('address'), projectType: dval('projectType'), ownerGc: dval('ownerGc'), showOwnerGc: !!dval('showOwnerGc'),
+    due: dval('due'), dueTime: dval('dueTime'), ourDue: dval('ourDue'), ourDueTime: dval('ourDueTime'), questionsDue: dval('questionsDue'), startDate: dval('startDate'), duration: dval('duration'), bidInstructions: dval('bidInstructions'),
+    siteWalk: { date: dval('walkDate'), time: dval('walkTime'), location: dval('walkLocation'), mandatory: !!dval('walkMandatory'), rsvp: lines('rsvp') },
+    requirements: { bond: !!dval('rq_bond'), prevailingWage: !!dval('rq_prevailingWage'), certifiedPayroll: !!dval('rq_certifiedPayroll'), coi: !!dval('rq_coi'), coiGl: dval('rq_coiGl'), coiWc: dval('rq_coiWc'), coiAuto: dval('rq_coiAuto'), licenses: !!dval('rq_licenses'), licensesText: dval('rq_licensesText'), mbeWbe: !!dval('rq_mbeWbe'), mbeWbeText: dval('rq_mbeWbeText') },
+    alternates: lines('alternates'), unitPrices: lines('unitPrices'), bidForm: DT.bidForm.filter(function(x){ return s(x.item); }), trades: DT.touched || tradesOf(job()).length ? DT.trades.slice() : undefined,   /* patch PLANREQ-H: an invite's trades stay suggestions until a person picks */
+    contacts: { pmName: dval('pmName'), pmPhone: dval('pmPhone'), pmEmail: dval('pmEmail'), estName: dval('estName'), estPhone: dval('estPhone'), estEmail: dval('estEmail') },
+    internalNotes: dval('internalNotes'), crmLeadId: dval('crmLeadId') };
+  var pid = dval('crmProjectId'), was = s(job().crmProjectId);
+  return post(body, btn, function(r){
+    DT = null; M.tsFiles = true;
+    if (pid !== was && W._gcBidEst && W._gcBidEst.link) { try { W._gcBidEst.link(M.jobId, pid); } catch (e) { warn(e); } }
+    var n = r.notice || {}; toast('💾 Saved' + (arr(r.changed).length ? ' — ' + arr(r.changed).length + ' change' + (arr(r.changed).length === 1 ? '' : 's') : ' (nothing changed)') + (n.status === 'waiting' ? ' · 📣 update posted, its e-mail waits on ✅ Approvals' : n.status === 'held' ? ' · 📣 update posted (e-mail held — data-entry mode)' : ''));
+    try { if (W._gcSys && W._gcSys.bp && W._gcSys.bp.load) W._gcSys.bp.load(true); } catch (e) {}
+  });
+}
+
 /* ── 📐 plans & specs ── */
+/* patch PLANREQ-B/C (owner 11/12: "make sure I can add all types of files … if I add scopes and plans and specs put them in scopes by trade"):
+   any common file (PDF, pictures, Word, Excel / CSV, PowerPoint, TXT / RTF, DWG / DXF, ZIP — 50 MB each; bigger → 🔗 link). Each file (each
+   sheet in a ZIP) is looked at first (subportal.js plans-guess: its name + the start of its text) and shown as "📎 Electrical scope.pdf →
+   📝 Scope · ⚡ Electrical ▾" — change the kind or the trade, then 💾 Save: plans stay under Plans (linked to their trades), specs under
+   Specs (by trade), scopes go on that trade's scope (📝 Scope tab) where only that trade's subs see them. */
+var ACCEPT_ALL = '.pdf,.png,.jpg,.jpeg,.gif,.webp,.heic,.heif,.tif,.tiff,.bmp,.doc,.docx,.xls,.xlsx,.xlsm,.csv,.ppt,.pptx,.txt,.rtf,.dwg,.dxf,.dwf,.zip';
+var ALL_RE = /\.(pdf|png|jpe?g|gif|webp|heic|heif|tiff?|bmp|docx?|xlsx?|xlsm|csv|pptx?|txt|rtf|dwg|dxf|dwf|zip)$/i;
+var TICON = { Electrical: '⚡', Plumbing: '🚿', HVAC: '❄️', Roofing: '🏠', Drywall: '🧱', Paint: '🎨', Flooring: '🪵', Tile: '🔲', Concrete: '🏗', Masonry: '🧱', Framing: '🪚', 'Fire protection': '🔥', Landscaping: '🌳', Demolition: '🔨', 'Windows & Doors': '🚪', Cabinets: '🗄', Insulation: '🧶', Ceilings: '⬜' };
+function tIcon(t){ return TICON[t] || '🔧'; }
+function tradeOpts(){ var l = []; try { l = W._gcBidPost && W._gcBidPost.trades ? arr(W._gcBidPost.trades()).slice() : []; } catch (e) {}   /* patch PLANREQ-H: the standard list (bidpost) */ if (!l.length) l = ['Demolition', 'Framing', 'Drywall', 'Paint', 'Flooring', 'Tile', 'Roofing', 'Siding', 'Gutters', 'Windows & Doors', 'Insulation', 'Ceilings', 'Cabinets', 'Concrete', 'Masonry', 'Electrical', 'Plumbing', 'HVAC', 'Fire protection', 'Landscaping', 'Mitigation', 'Abatement', 'Cleaning'];
+  tradesOf(job()).concat(DT ? DT.trades : []).forEach(function(t){ if (t && !l.some(function(x){ return low(x) === low(t); })) l.push(t); }); return l; }
+var RV = { items: [] };   /* uploaded, waiting for 💾 Save: [{ ref, name, size, zip, files: [{ key, name, kind, trades, why }] }] */
+function reviewHtml(){
+  if (!RV.items.length) return '';
+  var opts = tradeOpts(), n = 0;
+  var rows = RV.items.map(function(it, i){ return it.files.map(function(f, k){ n++; var tv = arr(f.trades).join('|'), has = !tv || opts.indexOf(tv) > -1;
+    return '<tr data-rv="' + i + ':' + k + '"><td title="' + esc(f.key) + '">📎 <b>' + esc(f.name) + '</b>' + (it.zip ? '<div class="mut">in ' + esc(it.name) + (f.folder ? ' / ' + esc(f.folder) : '') + '</div>' : '') + '<div class="mut">' + esc(f.why || '') + '</div></td>'
+      + '<td><select data-rvk="' + i + ':' + k + '"><option value="plans"' + (f.kind === 'plans' ? ' selected' : '') + '>📐 Plans</option><option value="specs"' + (f.kind === 'specs' ? ' selected' : '') + '>📘 Specs</option><option value="scope"' + (f.kind === 'scope' ? ' selected' : '') + '>📝 Scope</option></select></td>'
+      + '<td><select data-rvt="' + i + ':' + k + '"><option value="">— every trade —</option>' + (!has ? '<option value="' + esc(tv) + '" selected>' + esc(arr(f.trades).map(function(t){ return tIcon(t) + ' ' + t; }).join(', ')) + '</option>' : '')
+        + opts.map(function(t){ return '<option value="' + esc(t) + '"' + (tv === t ? ' selected' : '') + '>' + tIcon(t) + ' ' + esc(t) + '</option>'; }).join('') + '</select></td></tr>'; }).join(''); }).join('');
+  return '<div class="card" data-review style="border-color:#c9c3ea;background:#faf9fe"><b>Check where each file goes (' + n + ')</b><div class="mut">The guess is from the file name and what the file says. Change the kind or the trade, then save. A 📝 Scope goes on that trade\'s scope — only that trade\'s subs see it.</div>'
+    + '<table><colgroup><col><col style="width:120px"><col style="width:200px"></colgroup><tbody>' + rows + '</tbody></table>'
+    + '<div class="row"><button type="button" class="b pri" data-a="rvsave">💾 Save ' + n + ' file' + (n === 1 ? '' : 's') + ' to the bid job</button><button type="button" class="b" data-a="rvdrop">Cancel</button></div></div>';
+}
 function plansHtml(){
   var r = M.data, ps = arr(r.plans), ls = arr(job().plansLinks);
-  return '<div class="drop" data-for="plans" data-a="pick" tabindex="0">⬆ <b>Drop plans and specs here</b>, or tap to pick (several at once)<div class="mut">PDF, DWG / DXF, pictures, or a ZIP (unpacked into its sheets) — up to 50 MB a file. They go to the bid site; invited subs download them there.</div></div>'
+  return reviewHtml() + '<div class="drop" data-for="plans" data-a="pick" tabindex="0">⬆ <b>Drop plans, specs and scopes here</b>, or tap to pick (several at once)<div class="mut">Any file — PDF, Word, Excel, PowerPoint, pictures, DWG / DXF, or a ZIP (unpacked into its sheets) — up to 50 MB a file (bigger: add a 🔗 link below). Each is sorted by trade before you save. They go to the bid site; invited subs download them there.</div></div>'
     + '<div class="row"><label>Category <select data-k="pcat"><option>Plans</option><option>Specs</option><option>Addenda</option><option>Photos</option></select></label><label>Version <input type="text" data-k="pver" placeholder="Rev 2 / IFC / 100% CD" style="width:150px"></label><label>Date <input type="date" data-k="pdate"></label></div>'
     + '<h4>Files on the job (' + ps.length + ')</h4>'
     + (ps.length ? '<table><colgroup><col><col style="width:110px"><col style="width:130px"><col style="width:150px"></colgroup><tbody>' + ps.map(function(p){
-      return '<tr data-plan="' + esc(p.fileRef) + '"><td title="' + esc(p.name) + '"><b>' + esc(p.name) + '</b>' + (p.current ? ' <span class="pill ok">⭐ current</span>' : '') + '<div class="mut">' + esc([p.category, p.size ? Math.round(p.size / 1024) + ' KB' : '', p.at ? 'added ' + when(p.at) : ''].filter(Boolean).join(' · ')) + '</div></td>'
+      return '<tr data-plan="' + esc(p.fileRef) + '"><td title="' + esc(p.name) + '"><b>' + esc(p.name) + '</b>' + (p.current ? ' <span class="pill ok">⭐ current</span>' : '') + (arr(p.trades).length ? ' <span class="pill grey" data-plantrades>' + esc(arr(p.trades).map(function(t){ return tIcon(t) + ' ' + t; }).join(', ')) + '</span>' : '') + '<div class="mut">' + esc([p.category, p.size ? Math.round(p.size / 1024) + ' KB' : '', p.at ? 'added ' + when(p.at) : ''].filter(Boolean).join(' · ')) + '</div></td>'
         + '<td><input type="text" value="' + esc(p.version) + '" placeholder="Version" data-pa="version" data-ref="' + esc(p.fileRef) + '" style="width:100%"></td>'
         + '<td><input type="date" value="' + esc(p.date) + '" data-pa="date" data-ref="' + esc(p.fileRef) + '" style="width:100%"></td>'
         + '<td><button type="button" class="b" data-a="current" data-ref="' + esc(p.fileRef) + '"' + (p.current ? ' disabled' : '') + '>⭐ Current</button> <button type="button" class="b red" data-a="rmplan" data-ref="' + esc(p.fileRef) + '" aria-label="Remove">🗑</button></td></tr>';
@@ -179009,7 +179279,7 @@ function plansHtml(){
     + '<div class="row"><input type="url" data-k="lurl" placeholder="https://plan room or shared folder" style="flex:1;min-width:220px"><input type="text" data-k="llabel" placeholder="Label (Plan room)" style="width:160px"><button type="button" class="b pri" data-a="addlink">+ Add link</button></div>';
 }
 function pickFiles(cb, accept){
-  var inp = D.createElement('input'); inp.type = 'file'; inp.multiple = true; inp.accept = accept || '.zip,.pdf,.png,.jpg,.jpeg,.webp,.gif,.tif,.tiff,.heic,.dwg,.dxf'; inp.style.display = 'none'; inp.id = 'gcsys2-file';
+  var inp = D.createElement('input'); inp.type = 'file'; inp.multiple = true; inp.accept = accept || ACCEPT_ALL;   /* patch PLANREQ-B: every common type */ inp.style.display = 'none'; inp.id = 'gcsys2-file';
   inp.onchange = function(){ var fs = Array.prototype.slice.call(inp.files || []); inp.remove(); cb(fs); };
   D.body.appendChild(inp); inp.click();
 }
@@ -179021,31 +179291,58 @@ async function putFile(f){   /* a signed upload straight into the bid site's buc
   return up.path;
 }
 function val(k){ var x = D.querySelector('#gcsys2 [data-k="' + k + '"]'); return x ? (x.type === 'checkbox' ? x.checked : s(x.value)) : ''; }
-async function uploadPlans(files){
-  var ok = /\.(zip|pdf|png|jpe?g|webp|gif|tiff?|heic|dwg|dxf)$/i, added = 0, left = [], cat = val('pcat') || 'Plans', ver = val('pver'), dt = val('pdate');
+/* step 1: upload + look at each file (nothing is on the job yet); step 2 (💾 Save): plans-import with the kinds / trades shown */
+async function uploadPlans(files, force){
+  var left = [], got = 0;
   if (!files.length) return;
   toast('Uploading ' + files.length + ' file' + (files.length === 1 ? '' : 's') + '…');
   for (var i = 0; i < files.length; i++) {
     var f = files[i];
-    if (!ok.test(f.name)) { left.push(f.name); continue; }
-    if (f.size > 50 * 1024 * 1024) { left.push(f.name + ' (over 50 MB)'); continue; }
+    if (!ALL_RE.test(f.name)) { left.push(f.name + ' (not a file type a bid job takes)'); continue; }
+    if (f.size > 50 * 1024 * 1024) { left.push(f.name + ' (over 50 MB — add a 🔗 link instead)'); continue; }
     try {
       var ref = await putFile(f);
-      var r = await bidApi({ action: 'plans-import', jobId: M.jobId, fileRef: ref, name: f.name, size: f.size, category: cat });
-      added += arr(r.added).length;
-      if ((ver || dt) && arr(r.added).length === 1 && !/\.zip$/i.test(f.name)) await fn('bid-hub', { op: 'plans', jobId: M.jobId, ref: ref, version: ver, date: dt });
+      var g = await bidApi({ action: 'plans-guess', fileRef: ref, name: f.name, size: f.size }).catch(function(){ return { files: [{ key: f.name, name: f.name, kind: 'plans', trades: [], why: '' }] }; });
+      var fl = arr(g.files); if (force) fl.forEach(function(x){ x.kind = force.kind; x.trades = force.trades.slice(); x.why = 'added on the ' + force.trades[0] + ' scope'; });
+      RV.items.push({ ref: ref, name: f.name, size: f.size, zip: !!g.zip, files: fl }); got++;
     } catch (e) { toast(e.message, true); left.push(f.name); }
   }
-  toast(added + ' file' + (added === 1 ? '' : 's') + ' on the bid site' + (left.length ? ' · left out: ' + left.slice(0, 3).join(', ') : ''), !added);
-  load();
+  if (left.length) toast('Left out: ' + left.slice(0, 3).join(', '), true);
+  if (force && got) return saveReview();
+  if (got) { M.tab = 'plans'; draw(); }
+}
+function readReview(){
+  Array.prototype.forEach.call(D.querySelectorAll('#gcsys2 [data-rvk]'), function(x){ var p = x.getAttribute('data-rvk').split(':'), f = RV.items[+p[0]] && RV.items[+p[0]].files[+p[1]]; if (f) f.kind = x.value; });
+  Array.prototype.forEach.call(D.querySelectorAll('#gcsys2 [data-rvt]'), function(x){ var p = x.getAttribute('data-rvt').split(':'), f = RV.items[+p[0]] && RV.items[+p[0]].files[+p[1]]; if (f) f.trades = x.value ? x.value.split('|') : []; });
+}
+async function saveReview(){
+  readReview();
+  var cat = val('pcat') || 'Plans', ver = val('pver'), dt = val('pdate'), added = 0, scoped = 0, items = RV.items.slice(); RV.items = [];
+  for (var i = 0; i < items.length; i++) {
+    var it = items[i], body = { action: 'plans-import', jobId: M.jobId, fileRef: it.ref, name: it.name, size: it.size, category: cat };
+    if (it.zip) { body.sort = {}; it.files.forEach(function(f){ body.sort[f.key] = { kind: f.kind, trades: arr(f.trades) }; }); }
+    else { body.kind = (it.files[0] || {}).kind || 'plans'; body.trades = arr((it.files[0] || {}).trades); }
+    try {
+      var r = await bidApi(body); added += arr(r.added).length; scoped += arr(r.scoped).length;
+      if ((ver || dt) && arr(r.added).length === 1 && !it.zip) await fn('bid-hub', { op: 'plans', jobId: M.jobId, ref: it.ref, version: ver, date: dt });
+    } catch (e) { toast(e.message, true); }
+  }
+  toast(added + ' plan / spec file' + (added === 1 ? '' : 's') + (scoped ? ' · ' + scoped + ' scope file' + (scoped === 1 ? '' : 's') + ' on their trade' : '') + ' — on the bid site', !(added + scoped));
+  M.tsFiles = true; load();
 }
 
 /* ── 📝 scope per trade ── */
 function scopeHtml(){
   var ts = M.ts || [];
+  tradesOf(job()).forEach(function(tr){ if (!ts.some(function(x){ return low(x.trade) === low(tr); })) ts.push({ trade: tr, scope: '', mode: 'manual', files: [] }); });   /* patch PLANREQ-T: one box per trade we are bidding */
+  var picked = tradesOf(job()); ts = ts.filter(function(x){ return !x.id || s(x.scope) || arr(x.files).length || picked.some(function(t){ return low(t) === low(x.trade); }); });   /* patch PLANREQ-H: no empty boxes for an invite's trades */
+  M.ts = ts;
   return '<p class="mut">One scope per trade. A sub sees only the scopes of their own trades. Made from an estimate (or Claude), every price is removed — here and again on the server. GrayCo prices never reach a sub.</p>'
     + ts.map(function(x, i){ return '<div class="card" data-ts="' + i + '"><div class="row"><input type="text" data-ti="trade" data-i="' + i + '" value="' + esc(x.trade) + '" placeholder="Trade (Roofing, Electrical…)" style="width:220px"><span class="pill grey">' + (x.mode === 'estimate' ? '📐 from estimate · no prices' : x.mode === 'claude' ? '✨ Claude · no prices' : '✍️ typed') + '</span><button type="button" class="b red" data-a="rmts" data-i="' + i + '">🗑</button></div>'
-      + '<textarea data-ti="scope" data-i="' + i + '" placeholder="Scope of work for this trade (no prices)">' + esc(x.scope) + '</textarea></div>'; }).join('')
+      + '<textarea data-ti="scope" data-i="' + i + '" placeholder="Scope of work for this trade (no prices)">' + esc(x.scope) + '</textarea>'
+      /* patch PLANREQ-B (owner 11/12: "I have scopes I can't add in scopes"): the trade's scope takes files too — any type */
+      + '<div data-tsfiles="' + i + '">' + arr(x.files).map(function(f, k){ return '<div class="row" style="margin:3px 0" data-tsfile="' + esc(f.name) + '">📎 <span>' + esc(f.name) + '</span><span class="mut">' + (f.size ? Math.round(f.size / 1024) + ' KB' : '') + '</span><button type="button" class="b red" data-a="rmtsfile" data-i="' + i + '" data-k="' + k + '" aria-label="Remove">🗑</button></div>'; }).join('')
+      + (x.trade ? '<button type="button" class="b" data-a="tsfiles" data-i="' + i + '">📎 Add scope files for ' + esc(x.trade) + '</button>' : '<span class="mut">Name the trade, then add its scope files.</span>') + '</div></div>'; }).join('')
     + '<div class="row"><button type="button" class="b" data-a="addts">+ Add a trade</button><button type="button" class="b" data-a="fromest">📐 From an estimate (prices removed)</button><button type="button" class="b pri" data-a="savets">💾 Save & publish scopes</button></div>';
 }
 function estimates(){ var l = arr((W._crm || {}).estimates); return l.filter(function(e){ return e && !e.deleted && arr(e.lines || e.lineItems || e.items).length; }); }
@@ -179109,10 +179406,29 @@ function updatesHtml(){
 }
 
 /* ── 💬 Q&A ── */
+/* patch PLANREQ: 📩 the subs' "Request plans / more info" — who, what, their contact; ↩ Reply (to that sub: the bid site + an e-mail, held in
+   ⏸ data-entry mode) or ✅ Mark sent (you sent it another way). Either one, or plans / a plan link added on 📐 Plans & specs, clears its To-Do. */
+var NEED = { plans: 'Plans', specs: 'Specs', sitewalk: 'Site walk / access', other: 'Other' };
+function openReqs(){ return arr(M.data && M.data.planreqs).filter(function(q){ return q.open; }); }
+function reqHtml(){
+  var l = arr(M.data.planreqs); if (!l.length) return '';
+  return '<h4>📩 Plan / info requests (' + openReqs().length + ' open)</h4><div class="mut" style="margin-bottom:4px">Add the plans or a plan link on 📐 Plans &amp; specs and everyone who asked is told (e-mail held while ⏸ is on). Or answer one sub here.</div>'
+    + l.map(function(q){
+      var how = q.open ? '<span class="pill warn">📩 waiting</span>' : q.closedHow === 'plans' ? '<span class="pill ok">✅ plans posted' + (q.notifiedAt ? ' · e-mailed' : q.mailHeld ? ' · e-mail held (⏸)' : '') + '</span>'
+        : q.closedHow === 'answered' ? '<span class="pill ok">↩ replied' + (q.repliedByName ? ' by ' + esc(q.repliedByName) : '') + (q.replyMail === 'held' ? ' · e-mail held (⏸)' : '') + '</span>' : '<span class="pill ok">✅ marked sent</span>';
+      return '<div class="card" data-planreq="' + esc(q.id) + '"><div class="row"><b>' + esc(q.company || q.name) + '</b><span class="mut">' + esc(when(q.at)) + '</span>' + how + '</div>'
+        + '<div><b>Needs:</b> ' + esc(arr(q.needs).map(function(k){ return NEED[k] || k; }).join(', ')) + (q.trade ? ' <span class="mut">· ' + esc(q.trade) + '</span>' : '') + '</div>'
+        + (q.note ? '<div style="white-space:pre-wrap">“' + esc(q.note) + '”</div>' : '')
+        + '<div class="mut">' + esc([q.name, q.phone, q.email].filter(Boolean).join(' · ')) + (arr(q.to).length ? ' · told: ' + esc(arr(q.to).map(function(x){ return x.name + ' (' + arr(x.roles).join(', ') + ')'; }).join(', ')) : '') + '</div>'
+        + (q.reply ? '<div style="white-space:pre-wrap"><b>Reply:</b> ' + esc(q.reply) + '</div>' : '') + (q.sentNote ? '<div><b>Sent:</b> ' + esc(q.sentNote) + '</div>' : '')
+        + (q.open ? '<textarea data-k="pr_' + esc(q.id) + '" placeholder="Reply to ' + esc(q.company || 'the sub') + ' (or a note for Mark sent)" style="min-height:60px"></textarea>'
+          + '<div class="row"><button type="button" class="b pri" data-a="prreply" data-id="' + esc(q.id) + '">↩ Reply</button><button type="button" class="b" data-a="prsent" data-id="' + esc(q.id) + '">✅ Mark sent</button></div>' : '')
+        + '</div>'; }).join('') + '<h4>💬 Questions</h4>';
+}
 function qaHtml(){
   var qs = arr(M.data.questions);
-  if (!qs.length) return '<div class="mut">No questions from the subs yet. They ask on the bid site (Questions); you answer here.</div>';
-  return qs.map(function(q){ return '<div class="card" data-q="' + esc(q.id) + '"><div class="row"><b>' + esc(q.userCompany || q.userName) + '</b><span class="mut">' + esc(when(q.at)) + '</span>' + (q.visibility === 'public' ? '<span class="pill ok">Q' + esc(q.num || '') + ' · answered to all bidders</span>' : s(q.answer) ? '<span class="pill grey">answered privately</span>' : '<span class="pill warn">waiting for an answer</span>')
+  if (!qs.length) return reqHtml() + '<div class="mut">No questions from the subs yet. They ask on the bid site (Questions); you answer here.</div>';
+  return reqHtml() + qs.map(function(q){ return '<div class="card" data-q="' + esc(q.id) + '"><div class="row"><b>' + esc(q.userCompany || q.userName) + '</b><span class="mut">' + esc(when(q.at)) + '</span>' + (q.visibility === 'public' ? '<span class="pill ok">Q' + esc(q.num || '') + ' · answered to all bidders</span>' : s(q.answer) ? '<span class="pill grey">answered privately</span>' : '<span class="pill warn">waiting for an answer</span>')
     + (q.noticeStatus === 'waiting' ? '<span class="pill warn">e-mail to bidders waits on approval</span>' : q.noticeStatus === 'sent' ? '<span class="pill ok">e-mailed to bidders</span>' : '') + '</div>'
     + '<div style="white-space:pre-wrap">' + esc(q.body) + '</div>'
     + '<textarea data-k="qa_' + esc(q.id) + '" placeholder="Your answer">' + esc(q.answer) + '</textarea>'
@@ -179144,8 +179460,19 @@ function onClick(ev){
   var a = t.getAttribute('data-a');
   if (a === 'close') return close();
   if (a === 'tab') { M.tab = t.getAttribute('data-t'); return draw(); }
-  if (a === 'pick') return pickFiles(uploadPlans);
-  if (a === 'apick') return pickFiles(addFiles, '.pdf,.png,.jpg,.jpeg,.webp,.dwg,.dxf,.doc,.docx,.xls,.xlsx,.zip');
+  if (a === 'pick') return pickFiles(function(fs){ uploadPlans(fs); });
+  if (a === 'rvsave') return saveReview();   /* patch PLANREQ-C */
+  if (a === 'dtab') { M.tab = 'details'; draw(); var f = t.getAttribute('data-f'); later(function(){ var x = D.querySelector(f === 'due' ? '#gcsys2 [data-d="due"]' : '#gcsys2 [data-trades-picker]'); if (x) { x.scrollIntoView({ block: 'center' }); if (x.focus) x.focus(); } }, 50); return; }   /* patch PLANREQ-T/D */
+  if (a === 'dtrade') { readBf(); var tt = t.getAttribute('data-t'), ix = DT.trades.indexOf(tt); if (ix > -1) DT.trades.splice(ix, 1); else DT.trades.push(tt); DT.touched = true; var ad = D.querySelector('#gcsys2 [data-tp-all]'); DT.allOpen = !!(ad && ad.open); return draw(); }
+  if (a === 'dtradeadd') { readBf(); var nt = val('dtradeadd'); if (nt && DT.trades.indexOf(nt) < 0) { DT.trades.push(nt); DT.touched = true; } var xi = D.querySelector('#gcsys2 [data-k=dtradeadd]'); if (xi) xi.value = ''; return draw(); }
+  if (a === 'bfadd') { readBf(); DT.bidForm.push({ trade: DT.trades.length === 1 ? DT.trades[0] : '', item: '', unit: 'LS' }); return draw(); }
+  if (a === 'bfrm') { readBf(); DT.bidForm.splice(+t.getAttribute('data-i'), 1); return draw(); }
+  if (a === 'nodue') { var dd = D.querySelector('#gcsys2 [data-d="due"]'), dtm = D.querySelector('#gcsys2 [data-d="dueTime"]'); if (dd) dd.value = ''; if (dtm) dtm.value = ''; return; }
+  if (a === 'dsave') return saveDetails(t);
+  if (a === 'rvdrop') { RV.items = []; return draw(); }
+  if (a === 'tsfiles') { var ti0 = M.ts[+t.getAttribute('data-i')]; if (!ti0 || !s(ti0.trade)) return; if (!ti0.id) return toast('Save the scopes first (💾), then add files to ' + ti0.trade + '.', true); return pickFiles(function(fs){ uploadPlans(fs, { kind: 'scope', trades: [ti0.trade] }); }); }
+  if (a === 'rmtsfile') { var ti1 = M.ts[+t.getAttribute('data-i')]; if (!ti1) return; ti1.files = arr(ti1.files).filter(function(_, k){ return k !== +t.getAttribute('data-k'); }); return post({ op: 'scope', tradeScopes: M.ts || [] }, t, function(r){ M.ts = arr(r.tradeScopes).map(function(x){ return { id: x.id, trade: x.trade, scope: x.scope, mode: x.mode, files: arr(x.files) }; }); toast('🗑 Taken off ' + ti1.trade + '\'s scope'); }); }
+  if (a === 'apick') return pickFiles(addFiles, ACCEPT_ALL);   /* patch PLANREQ-B */
   if (a === 'current') return post({ op: 'plans', ref: t.getAttribute('data-ref'), current: true }, t, function(){ toast('⭐ Marked current'); });
   if (a === 'rmplan') { if (!W.confirm('Take this file off the bid job? Subs will no longer see it.')) return; return post({ op: 'plans', ref: t.getAttribute('data-ref'), remove: true }, t); }
   if (a === 'rmlink') return post({ op: 'plans', ref: t.getAttribute('data-ref'), remove: true }, t);
@@ -179153,7 +179480,7 @@ function onClick(ev){
   if (a === 'addts') { M.ts = (M.ts || []).concat([{ trade: '', scope: '', mode: 'manual' }]); return draw(); }
   if (a === 'rmts') { M.ts.splice(+t.getAttribute('data-i'), 1); return draw(); }
   if (a === 'fromest') return fromEstimate();
-  if (a === 'savets') return post({ op: 'scope', tradeScopes: M.ts || [] }, t, function(r){ M.ts = arr(r.tradeScopes).map(function(x){ return { id: x.id, trade: x.trade, scope: x.scope, mode: x.mode }; }); toast('📝 Scopes on the bid site'); });
+  if (a === 'savets') return post({ op: 'scope', tradeScopes: M.ts || [] }, t, function(r){ M.ts = arr(r.tradeScopes).map(function(x){ return { id: x.id, trade: x.trade, scope: x.scope, mode: x.mode, files: arr(x.files) }; }); toast('📝 Scopes on the bid site'); });
   if (a === 'postadd') {
     var nd = val('adue'), msg = 'Post addendum' + (val('atitle') ? ' "' + val('atitle') + '"' : '') + ' to the bid site?' + (nd ? '\n\nThe bid due date changes to ' + nd + '.' : '') + (val('anotify') ? '\n\nThe e-mail to the subs waits on ✅ Approvals.' : '');
     if (!W.confirm(msg)) return;
@@ -179164,6 +179491,10 @@ function onClick(ev){
     return post({ op: 'post', body: val('ubody'), email: !!val('uemail'), target: { kind: k, trade: k === 'trade' ? v : '', email: k === 'sub' ? v : '' } }, t, function(r){ var x = D.querySelector('#gcsys2 [data-k=ubody]'); if (x) x.value = ''; toast('📣 Posted to ' + r.n + ' sub' + (r.n === 1 ? '' : 's')); });
   }
   if (a === 'answer' || a === 'answerall') { var id = t.getAttribute('data-id'); return post({ op: 'answer', id: id, answer: val('qa_' + id), publish: a === 'answerall' }, t, function(){ toast(a === 'answerall' ? '📣 Answer published to all bidders (its e-mail waits on approval)' : '↩ Answered privately'); }); }
+  if (a === 'prreply' || a === 'prsent') { var pid = t.getAttribute('data-id'), txt = val('pr_' + pid);   /* patch PLANREQ */
+    if (a === 'prreply' && !txt) return toast('Write the reply first.', true);
+    return post({ op: 'planreq', id: pid, act: a === 'prreply' ? 'reply' : 'sent', text: txt }, t, function(r){ toast(a === 'prreply' ? '↩ Reply sent to the sub' + (r.mail === 'held' ? ' (e-mail held — data-entry mode; they see it on the bid site)' : '') : '✅ Marked sent — the To-Do is cleared'); }); }
+  if (a === 'vis') { var to = t.getAttribute('data-to'); if (W._gcSys && W._gcSys.bp && W._gcSys.bp.vis) { var pr = W._gcSys.bp.vis(M.jobId, to, to !== 'public'); if (pr && pr.then) pr.then(function(){ load(); }); } return; }   /* patch PLANREQ-A */
   if (a === 'resend') return post({ op: 'notice', what: t.getAttribute('data-w'), ref: t.getAttribute('data-ref') }, t, function(r){ toast(r.notice && r.notice.status === 'waiting' ? '✉️ The e-mail waits on ✅ Approvals' : 'Still held'); });
 }
 
@@ -185018,6 +185349,7 @@ function stubFromLine(run, L, set, profs){
     var o = { label: g.label, amount: r2(g.amount) };
     if (g.label === 'Regular hours') { o.hours = r2(L.hours); o.rate = r2(L.rate); }
     if (g.label === 'Overtime') { o.hours = r2(L.otHours); }
+    if (g.hours != null) o.hours = r2(g.hours); if (g.rate != null) o.rate = r2(g.rate);   /* patch PAYEM: the part's own hours (🚨 emergency apart from overtime) */
     return o;
   });
   if (!earn.length) earn = [{ label: 'Gross pay', amount: r2(L.gross) }];
@@ -185030,7 +185362,7 @@ function stubFromLine(run, L, set, profs){
   return {
     empKey: s(L.empId || L.name), name: s(L.name), email: emailFor(L, profs), ssn4: ssn4For(L, profs),
     payType: s(L.payType), periodFrom: s(run.from), periodTo: s(run.to), payDate: s(run.payDate), checkNo: s(L.checkNo), runId: s(run.id),
-    hours: r2(L.hours), otHours: r2(L.otHours), rate: r2(L.rate), filing: s(L.filing),
+    hours: r2(L.hours), otHours: r2(L.otHours), emHours: r2(L.emHours), rate: r2(L.rate), filing: s(L.filing),   /* patch PAYEM */
     earnings: earn, taxes: taxes, deductions: ded, gross: r2(L.gross), net: r2(L.net), reimbursement: r2(L.reimbursement), dedShort: r2(L.dedShort),
     withholdState: wst, stateTaxVerified: !!L.stateTaxVerified,
     company: companyBlock(set)
@@ -185090,7 +185422,7 @@ function stubHtml(st){
     + '<div><div class="y" style="font-size:10px">EMPLOYEE</div><b>' + esc(st.name) + '</b>' + '<div class="y" style="font-size:12px">SSN ' + (st.ssn4 ? '***-**-' + esc(st.ssn4) : '—') + '</div>' + '</div>'
     + '<div><div class="y" style="font-size:10px">PAY PERIOD</div>' + esc(st.periodFrom) + ' → ' + esc(st.periodTo) + '</div>'
     + '<div><div class="y" style="font-size:10px">PAY DATE</div>' + esc(st.payDate) + (st.checkNo ? ' · Check #' + esc(st.checkNo) : '') + '</div>'
-    + ((n2(st.hours) + n2(st.otHours)) > 0 ? '<div><div class="y" style="font-size:10px">HOURS</div>' + n2(st.hours).toFixed(2) + (n2(st.otHours) ? ' + ' + n2(st.otHours).toFixed(2) + ' OT' : '') + '</div>' : '')
+    + ((n2(st.hours) + n2(st.otHours)) > 0 ? '<div><div class="y" style="font-size:10px">HOURS</div>' + (W._gcPayHoursText ? W._gcPayHoursText(st) : n2(st.hours).toFixed(2) + (n2(st.otHours) ? ' + ' + n2(st.otHours).toFixed(2) + ' OT' : '')) + '</div>' : '')
     + '</div>'
     + (st.withholdState === 'MS' && !st.stateTaxVerified ? '<div class="box" style="background:#fef3c7;color:#92400e"><b>⚠ Mississippi withholding rates not yet verified by our CPA.</b> The MS amount may change once they are confirmed.</div>' : '')
     + (st.adjusts ? '<div class="box" style="background:#fff7ed">This stub corrects stub ' + esc(st.adjusts) + (st.note ? ': ' + esc(st.note) : '') + '</div>' : '')
@@ -196009,9 +196341,12 @@ function masterOf(u, p){ p = p || plan(); var held = heldBy(u.email).filter(func
 /* ── 💵 pay rule: emergency after-hours = 1.5×; over 40 / week = 1.5×; never stacked ──
    premium hours = the emergency after-hours hours + the hours over 40 that are not already premium; counted the way that pays
    the employee more when we do not know which hours came last (safe under the FLSA, 29 U.S.C. 207(e)(6) / (h)) */
+/* patch PAYEM: a raise starts on the next pay period (the day after the period being paid now ends) */
+function nextPayStart(){ try { var c = W._gcCurrentPayPeriod && W._gcCurrentPayPeriod(); if (c && c.end) return addDays(c.end, 1); } catch (e) {} return today(); }
 function weekPay(rate, total, emerg){
   rate = num(rate); total = Math.max(0, num(total)); emerg = Math.min(total, Math.max(0, num(emerg)));
   var ot = Math.max(0, total - 40), prem = Math.min(total, emerg + ot), straight = total - prem;
+  if (typeof W._gcPayWeekSplit === 'function') { var x = W._gcPayWeekSplit(total, emerg, 40); prem = x.premium; straight = x.straight; ot = x.over; emerg = x.em; }   /* patch PAYEM: the paycheck's own rule (one place) */
   return { straight: straight, premium: prem, emergency: emerg, overtime: ot, pay: Math.round((straight * rate + prem * rate * 1.5) * 100) / 100 };
 }
 
@@ -196324,11 +196659,10 @@ function render(){
   }).join('') || '<p class="gccp-mut">No active employees.</p>';
   else if (UI.tab === 'raises') { var rows = []; ppl.forEach(function(u){ raisesDue(u, p).forEach(function(r){ rows.push({ u: u, r: r }); }); });
     var past = p.done.slice().reverse().slice(0, 60), capped = []; ppl.forEach(function(u){ var c = raiseCalc(u, p); c.blocked.forEach(function(r){ capped.push({ u: u, r: r, c: c }); }); });
-    h += '<div class="gccp-note">Every certificate an employee earns is a raise. When one is added in 📜 Certifications it lands here to approve (the amount comes from ⚙ Raise amounts; hourly people get $/hr, salaried people $/yr; a raise is cut or held back at the role\'s cap in 📈 Raise outlook &amp; caps). Approve it, then change their pay rate in 💰 Pay Structures.</div>' +
-      (rows.length ? '<table class="gccp-tbl" data-cp-raises="1"><tr><th>Employee</th><th>Certificate</th><th>Raise</th><th></th></tr>' + rows.map(function(x, i){ return '<tr><td><b>' + esc(x.u.name) + '</b></td><td>' + esc(x.r.cert) + '<div class="gccp-mut">' + esc(x.r.ruleName) + '</div></td><td><input class="gccp-in" style="width:90px" data-cp-amt="' + i + '" value="' + esc(x.r.amount) + '"> ' + (x.r.unit === 'yr' ? '/yr' : '/hr') + (x.r.trimmed ? '<div class="gccp-mut">cut to the cap</div>' : '') +
-        (x.r.rule === 'techstatus_env' ? '<div class="gccp-mut">Moves to the Environmental tech track ($' + startOf('env_tech', p) + '/hr)</div>' : x.r.rule === 'techstatus' ? '<div class="gccp-mut">Move to <select class="gccp-in" data-cp-techto="' + i + '">' + ['con_crew', 'mit_tech', 'env_tech', 'dual_tech'].filter(function(k){ return p.tracks[k]; }).map(function(k){ return '<option value="' + k + '"' + (k === x.r.tech ? ' selected' : '') + '>' + esc(p.tracks[k].label) + '</option>'; }).join('') + '</select> — Environmental tech starts at $' + startOf('env_tech', p) + '/hr: set the raise to reach it if you pick it.</div>' : '') + '</td><td><button type="button" class="gccp-btn grn" data-cp="approve" data-i="' + i + '">✅ Approve</button> <button type="button" class="gccp-btn" data-cp="skip" data-i="' + i + '">Not a raise</button></td></tr>'; }).join('') + '</table>' : '<p class="gccp-mut">No raises waiting. 👍</p>') +
+    h += '<div class="gccp-note">Every certificate an employee earns is a raise. When one is added in 📜 Certifications it lands here to approve (the amount comes from ⚙ Raise amounts; hourly people get $/hr, salaried people $/yr; a raise is cut or held back at the role\'s cap in 📈 Raise outlook &amp; caps; PM tracks are commission-paid — no certificate raises). ✅ Approve it and their pay rate in Payroll changes by itself from the date it starts (the next pay period unless you pick another day) — written in their pay rate history with who approved it and why.</div>' +   /* patch PAYEM */
+      (rows.length ? '<table class="gccp-tbl" data-cp-raises="1"><tr><th>Employee</th><th>Certificate</th><th>Raise</th><th>Starts</th><th></th></tr>' + rows.map(function(x, i){ return '<tr><td><b>' + esc(x.u.name) + '</b></td><td>' + esc(x.r.cert) + '<div class="gccp-mut">' + esc(x.r.ruleName) + '</div></td><td><input class="gccp-in" style="width:90px" data-cp-amt="' + i + '" value="' + esc(x.r.amount) + '"> ' + (x.r.unit === 'yr' ? '/yr' : '/hr') + (x.r.trimmed ? '<div class="gccp-mut">cut to the cap</div>' : '') + (x.r.rule === 'techstatus_env' ? '<div class="gccp-mut">Moves to the Environmental tech track ($' + startOf('env_tech', p) + '/hr)</div>' : x.r.rule === 'techstatus' ? '<div class="gccp-mut">Move to <select class="gccp-in" data-cp-techto="' + i + '">' + ['con_crew', 'mit_tech', 'env_tech', 'dual_tech'].filter(function(k){ return p.tracks[k]; }).map(function(k){ return '<option value="' + k + '"' + (k === x.r.tech ? ' selected' : '') + '>' + esc(p.tracks[k].label) + '</option>'; }).join('') + '</select> — Environmental tech starts at $' + startOf('env_tech', p) + '/hr: set the raise to reach it if you pick it.</div>' : '') + '</td><td><input class="gccp-in" type="date" data-cp-eff="' + i + '" value="' + esc(nextPayStart()) + '"><div class="gccp-mut">next pay period</div></td><td><button type="button" class="gccp-btn grn" data-cp="approve" data-i="' + i + '">✅ Approve</button> <button type="button" class="gccp-btn" data-cp="skip" data-i="' + i + '">Not a raise</button></td></tr>'; }).join('') + '</table>' : '<p class="gccp-mut">No raises waiting. 👍</p>') +
       (capped.length ? '<h3 style="margin:14px 0 4px">🧢 Held back</h3><table class="gccp-tbl" data-cp-capped="1"><tr><th>Employee</th><th>Certificate</th><th>Why</th></tr>' + capped.map(function(x){ return '<tr><td><b>' + esc(x.u.name) + '</b></td><td>' + esc(x.r.cert) + '</td><td><span class="gccp-chip amb">' + (x.r.why === 'master' ? '⭐ a master level is paid once' : 'cap reached (' + (x.c.cap.hr ? hrTxt(x.c.cap.hr) : x.c.cap.n + ' raises') + ')') + '</span></td></tr>'; }).join('') + '</table>' : '') +
-      '<h3 style="margin:14px 0 4px">History</h3>' + (past.length ? '<table class="gccp-tbl"><tr><th>When</th><th>Employee</th><th>Certificate</th><th>Raise</th><th>By</th></tr>' + past.map(function(d){ var u = ppl.filter(function(x){ return low(x.email) === low(d.email); })[0]; return '<tr><td>' + esc(fmt(d.at)) + '</td><td>' + esc(u ? u.name : d.email) + '</td><td>' + esc(d.cert) + '</td><td>' + (d.skip ? '<span class="gccp-chip gry">not a raise</span>' : esc(money(d.amount, d.unit))) + '</td><td class="gccp-mut">' + esc(d.by) + '</td></tr>'; }).join('') + '</table>' : '<p class="gccp-mut">None yet.</p>');
+      '<h3 style="margin:14px 0 4px">History</h3>' + (past.length ? '<table class="gccp-tbl"><tr><th>When</th><th>Employee</th><th>Certificate</th><th>Raise</th><th>By</th></tr>' + past.map(function(d){ var u = ppl.filter(function(x){ return low(x.email) === low(d.email); })[0]; return '<tr><td>' + esc(fmt(d.at)) + '</td><td>' + esc(u ? u.name : d.email) + '</td><td>' + esc(d.cert) + '</td><td>' + (d.skip ? '<span class="gccp-chip gry">not a raise</span>' : esc(money(d.amount, d.unit)) + (d.effective ? '<div class="gccp-mut">from ' + esc(fmt(d.effective)) + (d.payroll === 'applied' ? ' · in Payroll ✓' : d.payroll ? ' · ' + esc(d.payroll) : '') + '</div>' : '')) + '</td><td class="gccp-mut">' + esc(d.by) + '</td></tr>'; }).join('') + '</table>' : '<p class="gccp-mut">None yet.</p>');
     UI.rows = rows; }
   else if (UI.tab === 'reqs') h += '<div class="gccp-note" data-cp-policy="1">🎓 Training policy: ' + esc(POLICY) + ' (' + esc(ATTY) + '). ' + esc(TPAY) + '. On the timesheet: 📘 CRM training — current job (paid: regular hours, counts toward overtime) · 🎯 Next-role training (optional: recorded, pays $0, not toward overtime).</div>' + Object.keys(p.tracks).map(function(k){ var tr = p.tracks[k];
     return '<div class="gccp-card"><b>' + esc(tr.label) + '</b> <span class="gccp-mut">' + (tr.unit === 'yr' ? 'salaried — raises in $/yr' : 'hourly — raises in $/hr') + '</span>' +
@@ -196359,7 +196693,9 @@ function render(){
   else if (UI.tab === 'bonus') { var yr = UI.year, B = isObj(p.bonus[yr]) ? p.bonus[yr] : {}, pms = ppl.filter(function(u){ return /_pm$|mit_manager/.test(trackOf(u, p)); });
     h += '<div class="gccp-note">🏆 PMs get a bonus at the end of the year based on performance. Suggested measures: gross profit against the estimate, collections (days to get paid), customer reviews, jobs finished on schedule, safety (no injuries / OSHA issues), certificates done on time, and 🚩 missed emergency calls. The owners set the amount.</div>' +
       '<div>Year <select class="gccp-in" data-cp-year="1">' + [0, 1, 2].map(function(k){ var y = String(new Date().getFullYear() - k); return '<option' + (y === yr ? ' selected' : '') + '>' + y + '</option>'; }).join('') + '</select></div>' +
-      (pms.length ? '<table class="gccp-tbl" data-cp-bonus="1"><tr><th>PM</th><th>Performance notes</th><th>Bonus</th><th>Paid</th></tr>' + pms.map(function(u){ var b = B[low(u.email)] || {}; return '<tr><td><b>' + esc(u.name) + '</b><div class="gccp-mut">' + esc((p.tracks[trackOf(u, p)] || {}).label) + '</div></td><td><textarea class="gccp-in" rows="2" style="width:100%" data-cp-bn="' + esc(low(u.email)) + '">' + esc(b.notes || '') + '</textarea></td><td>$<input class="gccp-in" style="width:90px" data-cp-ba="' + esc(low(u.email)) + '" value="' + esc(b.amount || '') + '"></td><td><input type="checkbox" data-cp-bp="' + esc(low(u.email)) + '"' + (b.paid ? ' checked' : '') + '></td></tr>'; }).join('') + '</table><p><button type="button" class="gccp-btn pri" data-cp="savebonus">Save ' + esc(yr) + ' bonuses</button></p>' : '<p class="gccp-mut">No PMs yet.</p>'); }
+      (pms.length ? '<table class="gccp-tbl" data-cp-bonus="1"><tr><th>PM</th><th>Performance notes</th><th>Bonus</th><th>Paycheck</th><th>Paid outside payroll</th></tr>' + pms.map(function(u){ var b = B[low(u.email)] || {}, em = esc(low(u.email)); return '<tr><td><b>' + esc(u.name) + '</b><div class="gccp-mut">' + esc((p.tracks[trackOf(u, p)] || {}).label) + '</div></td><td><textarea class="gccp-in" rows="2" style="width:100%" data-cp-bn="' + em + '">' + esc(b.notes || '') + '</textarea></td><td>$<input class="gccp-in" style="width:90px" data-cp-ba="' + em + '" value="' + esc(b.amount || '') + '"></td>' +
+        '<td data-cp-bstat="' + em + '">' + (b.approvedAt ? '<span class="gccp-chip ok">✅ Approved ' + esc(fmt(b.approvedAt)) + '</span><div class="gccp-mut">' + esc(money(b.amount, 'x').replace('/hr', '')) + ' as "Bonus — PM year-end" on the next paycheck' + (b.periodEnd ? ' (week ending ' + esc(fmt(b.periodEnd)) + ')' : '') + ' · by ' + esc(b.approvedBy || '') + '</div><button type="button" class="gccp-btn" data-cp="bonusundo" data-em="' + em + '">Undo</button>' : '<button type="button" class="gccp-btn grn" data-cp="bonusok" data-em="' + em + '">✅ Approve → next paycheck</button>') + '</td>' +   /* patch PAYEM */
+        '<td><input type="checkbox" data-cp-bp="' + em + '"' + (b.paid ? ' checked' : '') + '></td></tr>'; }).join('') + '</table><p><button type="button" class="gccp-btn pri" data-cp="savebonus">Save ' + esc(yr) + ' bonuses</button></p>' : '<p class="gccp-mut">No PMs yet.</p>'); }
   else if (UI.tab === 'pay') h += '<div class="gccp-card"><b>⏱ How hourly employees are paid for emergencies and overtime</b><ul style="margin:6px 0 0 18px">' +
       '<li><b>Emergency after-hours work</b> (an emergency call worked outside the normal work day, nights, weekends and holidays set in 📟 On call) is paid at <b>time and a half</b> (1.5×).</li>' +
       '<li><b>Overtime</b> — hours over 40 in a work week — is paid at <b>time and a half</b> (1.5×), emergency or not.</li>' +
@@ -196389,9 +196725,17 @@ function open_(tab){
     var a = t.getAttribute('data-cp'), u0 = me();
     if (a === 'close') { OV.remove(); OV = null; return; }
     if (a === 'approve' || a === 'skip') { var x = (UI.rows || [])[+t.getAttribute('data-i')]; if (!x) return; var amt = num((OV.querySelector('[data-cp-amt="' + t.getAttribute('data-i') + '"]') || {}).value);
-      var techTo = /^techstatus/.test(x.r.rule) && a !== 'skip' ? s((OV.querySelector('[data-cp-techto="' + t.getAttribute('data-i') + '"]') || {}).value) || x.r.tech : '';
-      save(function(p){ if (techTo) { var px = isObj(p.people[low(x.u.email)]) ? p.people[low(x.u.email)] : {}; px.track = techTo; px.start = startOf('gen_lab', p); px.techAt = nowISO(); p.people[low(x.u.email)] = px; }   /* patch CERTROLE: tech status → the tech track, keeping their $15 start */
-        p.done.push(Object.assign({ id: uid(), email: low(x.u.email), rule: x.r.rule, cert: x.r.cert, amount: a === 'skip' ? 0 : amt, hr: a === 'skip' ? 0 : x.r.unit === 'yr' ? Math.round(amt / HRS_YR * 100) / 100 : amt, master: !!x.r.master, unit: x.r.unit, at: nowISO(), by: s(u0.name || u0.email), skip: a === 'skip' }, techTo ? { tech: techTo } : {})); }).then(function(){ toast(a === 'skip' ? 'Marked: not a raise' : '💵 Raise approved — ' + money(amt, x.r.unit) + ' for ' + s(x.u.name) + '. Update their rate in 💰 Pay Structures.'); render(); }); }
+      /* patch PAYEM: the raise reaches the paycheck by itself — the payroll profile's rate changes from the start date (pay rate history: who / when / why) */
+      var eff = ymd((OV.querySelector('[data-cp-eff="' + t.getAttribute('data-i') + '"]') || {}).value) || nextPayStart(), did = uid();
+      var techTo = /^techstatus/.test(x.r.rule) && a !== 'skip' ? s((OV.querySelector('[data-cp-techto="' + t.getAttribute('data-i') + '"]') || {}).value) || x.r.tech : '';   /* patch CERTROLE: tech status → the tech track, keeping their $15 start */
+      var rec = { id: did, email: low(x.u.email), rule: x.r.rule, cert: x.r.cert, amount: a === 'skip' ? 0 : amt, unit: x.r.unit, at: nowISO(), by: s(u0.name || u0.email), skip: a === 'skip', hr: a === 'skip' ? 0 : x.r.unit === 'yr' ? Math.round(amt / HRS_YR * 100) / 100 : amt, master: !!x.r.master };   /* patch CERTROLE: $/hr for the cap, master level */
+      if (techTo) rec.tech = techTo;
+      if (a === 'approve') rec.effective = eff;
+      save(function(p){ if (techTo) { var px = isObj(p.people[low(x.u.email)]) ? p.people[low(x.u.email)] : {}; px.track = techTo; px.start = startOf('gen_lab', p); px.techAt = nowISO(); p.people[low(x.u.email)] = px; } p.done.push(rec); }).then(function(){
+        if (a === 'skip' || !(amt > 0) || !(W._gcPayEm && W._gcPayEm.applyRaise)) return a === 'skip' ? 'skip' : (amt > 0 ? 'Payroll is not loaded — set the rate in Payroll → Employees.' : 'no amount');
+        return W._gcPayEm.applyRaise({ doneId: did, email: x.u.email, name: x.u.name, userId: x.u.id, amount: amt, unit: x.r.unit, effective: eff, cert: x.r.cert + (techTo ? ' (tech status → ' + techTo + ')' : ''), by: rec.by }).then(function(r){ return r && r.ok ? 'applied' : (r && r.why) || 'not applied'; }, function(e){ return 'not applied: ' + (e && e.message || e); });
+      }).then(function(res){ if (a !== 'skip') save(function(p){ p.done.forEach(function(d){ if (d.id === did) d.payroll = res; }); });
+        toast(a === 'skip' ? 'Marked: not a raise' : res === 'applied' ? '💵 Raise approved — ' + money(amt, x.r.unit) + ' for ' + s(x.u.name) + ', on their paychecks from ' + fmt(eff) + '.' : '💵 Raise approved — ' + money(amt, x.r.unit) + ' for ' + s(x.u.name) + '. ⚠ ' + res, a !== 'skip' && res !== 'applied'); render(); }); }
     if (a === 'rmreq') { var k = t.getAttribute('data-k'), i = +t.getAttribute('data-i'); save(function(p){ p.tracks[k].reqs.splice(i, 1); }).then(render); }
     if (a === 'addreq') { var k2 = t.getAttribute('data-k'), nm = s((OV.querySelector('[data-cp-newreq="' + k2 + '"]') || {}).value), dd = s((OV.querySelector('[data-cp-newrec="' + k2 + '"]') || {}).value) === 'rec'; if (!nm) return toast('Type the certificate name.', true);
       var words = nm.replace(/[^A-Za-z0-9 ]+/g, ' ').trim().split(/\s+/).filter(function(w){ return w.length > 2; }).slice(0, 3).map(function(w){ return w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); });
@@ -196423,16 +196767,19 @@ function open_(tab){
       var why = a === 'xpm' ? xv('pmnmwhy') : a === 'xcap' ? xv('capwhy') : a === 'xwaive' ? xv('wvwhy') : a === 'xraise' ? xv('mwhy') : 'undone';
       if (!isAdmin()) return toast('Only admins can set exceptions.', true);
       if (!why) return toast('Type the reason for the exception.', true);
-      var person = staff().filter(function(x){ return low(x.email) === xe; })[0] || { email: xe, name: xe }, by = s(u0.name || u0.email), at = nowISO(), txt = '';
+      var person = staff().filter(function(x){ return low(x.email) === xe; })[0] || { email: xe, name: xe }, by = s(u0.name || u0.email), at = nowISO(), txt = '', manual = null;
       if (a === 'xraise' && !(num(xv('mamt')) > 0)) return toast('Type the raise amount.', true);
       save(function(p){ var x = isObj(p.people[xe]) ? p.people[xe] : {}; x.exc = isObj(x.exc) ? x.exc : {}; var stamp = { reason: why.slice(0, 300), by: by, at: at };
         if (a === 'xpm') { if (xv('pmnm')) { x.exc.pmNoMaster = stamp; txt = 'PM without Master Restorer'; } else { delete x.exc.pmNoMaster; txt = 'PM without Master Restorer — removed'; } }
         if (a === 'xcap') { var md = xv('capmode'); if (md === 'def') { delete x.exc.cap; txt = 'raise cap back to the role default'; } else if (md === 'none') { x.exc.cap = Object.assign({ none: true }, stamp); txt = 'no raise cap'; } else { x.exc.cap = Object.assign({ hr: num(xv('caphr')) }, stamp); txt = 'raise cap +' + hrTxt(xv('caphr')); } }
         if (a === 'xwaive') { x.exc.waive = isObj(x.exc.waive) ? x.exc.waive : {}; x.exc.waive[xv('wvid')] = stamp; txt = 'requirement waived: ' + xv('wvid'); }
         if (a === 'xunwaive') { var wid = t.getAttribute('data-id'); if (isObj(x.exc.waive)) delete x.exc.waive[wid]; txt = 'waiver undone: ' + wid; }
-        if (a === 'xraise') { var un = ((p.tracks[trackOf(person, p)] || {}).unit) || 'hr', am = num(xv('mamt')); p.done.push({ id: uid(), email: xe, rule: 'manual:' + uid(), cert: 'One-off raise — ' + why.slice(0, 120), amount: am, hr: un === 'yr' ? Math.round(am / HRS_YR * 100) / 100 : am, unit: un, at: at, by: by, manual: true, reason: why.slice(0, 300) }); txt = 'one-off raise ' + amtTxt(am, un); }
+        if (a === 'xraise') { var un = ((p.tracks[trackOf(person, p)] || {}).unit) || 'hr', am = num(xv('mamt')); manual = { id: uid(), amount: am, unit: un }; p.done.push({ id: manual.id, effective: nextPayStart(), email: xe, rule: 'manual:' + uid(), cert: 'One-off raise — ' + why.slice(0, 120), amount: am, hr: un === 'yr' ? Math.round(am / HRS_YR * 100) / 100 : am, unit: un, at: at, by: by, manual: true, reason: why.slice(0, 300) }); txt = 'one-off raise ' + amtTxt(am, un); }
         p.people[xe] = x; p.excLog = arr(p.excLog); p.excLog.push({ id: uid(), email: xe, kind: a, text: txt, reason: why.slice(0, 300), by: by, at: at }); })
-        .then(function(){ toast('✋ Exception saved for ' + s(person.name)); render(); }); }
+        .then(function(){   /* a one-off raise reaches Payroll like any approved raise (patch PAYEM's applyRaise) */
+          if (!manual || !(W._gcPayEm && W._gcPayEm.applyRaise)) return '';
+          return W._gcPayEm.applyRaise({ doneId: manual.id, email: person.email, name: person.name, userId: person.id, amount: manual.amount, unit: manual.unit, effective: nextPayStart(), cert: 'One-off raise — ' + why.slice(0, 120), by: by }).then(function(r){ return r && r.ok ? 'applied' : (r && r.why) || 'not applied'; }, function(){ return 'not applied'; });
+        }).then(function(res){ if (manual && res) save(function(p){ p.done.forEach(function(d){ if (d.id === manual.id) d.payroll = res; }); }); toast('✋ Exception saved for ' + s(person.name) + (res && res !== 'applied' ? ' — ⚠ payroll: ' + res : '')); render(); }); }
     if (a === 'tvform') { var e1 = t.getAttribute('data-em'); UI.tv = UI.tv === e1 ? '' : e1; render(); }
     if (a === 'receipt') { try { W._gcFieldLogExpense(); } catch (e2) {} }
     if (a === 'tvsave') { var e3 = t.getAttribute('data-em'), bx = OV.querySelector('[data-cp-tvbox="' + e3 + '"]'), g = function(f){ var el = bx && bx.querySelector('[data-tv="' + f + '"]'); return el ? s(el.value) : ''; };
@@ -196440,7 +196787,16 @@ function open_(tab){
       save(function(p){ p.travel = arr(p.travel); p.travel.push({ id: uid(), email: e3, cert: g('cert').slice(0, 160), date: ymd(g('date')) || today(), miles: num(g('miles')), rate: num(g('rate')) || p.mileRate, hotel: num(g('hotel')), other: num(g('other')), by: s(u0.name || u0.email), at: nowISO() }); })
         .then(function(){ UI.tv = ''; toast('🚗 Course travel saved (company-paid)'); render(); }); }
     if (a === 'savebonus') save(function(p){ var y = UI.year; p.bonus[y] = isObj(p.bonus[y]) ? p.bonus[y] : {}; Array.prototype.forEach.call(OV.querySelectorAll('[data-cp-ba]'), function(inp){ var em = inp.getAttribute('data-cp-ba');
-        p.bonus[y][em] = { amount: num(inp.value), notes: s((OV.querySelector('[data-cp-bn="' + em + '"]') || {}).value).slice(0, 2000), paid: !!(OV.querySelector('[data-cp-bp="' + em + '"]') || {}).checked, by: s(u0.name || u0.email), at: nowISO() }; }); }).then(function(){ toast('🏆 ' + UI.year + ' bonuses saved'); render(); });
+        p.bonus[y][em] = Object.assign({}, isObj(p.bonus[y][em]) ? p.bonus[y][em] : {}, { amount: num(inp.value), notes: s((OV.querySelector('[data-cp-bn="' + em + '"]') || {}).value).slice(0, 2000), paid: !!(OV.querySelector('[data-cp-bp="' + em + '"]') || {}).checked, by: s(u0.name || u0.email), at: nowISO() }); }); }).then(function(){ toast('🏆 ' + UI.year + ' bonuses saved'); render(); });   /* patch PAYEM: keeps the paycheck approval */
+    /* patch PAYEM: ✅ Approve → the PM year-end bonus goes on the next paycheck as "Bonus — PM year-end" (taxable supplemental wages) */
+    if (a === 'bonusok' || a === 'bonusundo') { var bem = t.getAttribute('data-em'), by0 = UI.year, bamt = num((OV.querySelector('[data-cp-ba="' + bem + '"]') || {}).value), bnote = s((OV.querySelector('[data-cp-bn="' + bem + '"]') || {}).value).slice(0, 2000);
+      if (a === 'bonusok' && !(bamt > 0)) return toast('Type the bonus amount first.', true);
+      if (a === 'bonusok' && !W.confirm('Approve a ' + money(bamt, 'x').replace('/hr', '') + ' PM year-end bonus? It goes on the next paycheck as "Bonus — PM year-end" (taxed as supplemental wages).')) return;
+      var pe = ''; try { var cp = W._gcCurrentPayPeriod && W._gcCurrentPayPeriod(); pe = cp && cp.end ? cp.end : ''; } catch (e) {}
+      save(function(p){ p.bonus[by0] = isObj(p.bonus[by0]) ? p.bonus[by0] : {}; var b = Object.assign({}, isObj(p.bonus[by0][bem]) ? p.bonus[by0][bem] : {});
+        if (a === 'bonusok') Object.assign(b, { amount: bamt, notes: bnote, approvedAt: nowISO(), approvedBy: s(u0.name || u0.email), periodEnd: pe });
+        else { delete b.approvedAt; delete b.approvedBy; delete b.periodEnd; }
+        p.bonus[by0][bem] = b; }).then(function(){ try { if (W._gcPayEm && W._gcPayEm.bust) W._gcPayEm.bust(); } catch (e) {} toast(a === 'bonusok' ? '🏆 Approved — on the next paycheck' : 'Bonus approval undone'); render(); }); }
   });
   OV.addEventListener('change', function(e){
     var t = e.target; if (!t || !t.getAttribute) return;
@@ -196457,7 +196813,7 @@ function open_(tab){
 /* the button in 📜 Certifications */
 D.addEventListener('click', function(e){ var b = e.target && e.target.closest ? e.target.closest('[data-gccp-open]') : null; if (!b) return; e.preventDefault(); e.stopPropagation(); open_(); }, true);
 later(function(){ load(); }, 5000);   /* patch CERTROLE: everyone — the job block and the clock-in check need the certificates */
-W._gcCertPlan = { _tp: function(){ return TP; }, open: open_, load: load, plan: plan, trackOf: trackOf, targetOf: targetOf, trainOf: trainOf, trainPlan: trainPlan, techCourses: techCourses, envPath: envPath, CLASS: CLASS, raiseCalc: raiseCalc, payList: payList, outlookOf: outlookOf, rateOf: rateOf, POLICY: POLICY, reqStatus: reqStatus, raisesDue: raisesDue, masterOf: masterOf, weekPay: weekPay, defaults: defaults, _set: function(p, c){ PLAN = p; CERTS = arr(c); LOADED = true; CERTS_OK = true; } };
+W._gcCertPlan = { nextPayStart: nextPayStart, _tp: function(){ return TP; }, open: open_, load: load, plan: plan, trackOf: trackOf, targetOf: targetOf, trainOf: trainOf, trainPlan: trainPlan, techCourses: techCourses, envPath: envPath, CLASS: CLASS, raiseCalc: raiseCalc, payList: payList, outlookOf: outlookOf, rateOf: rateOf, POLICY: POLICY, reqStatus: reqStatus, raisesDue: raisesDue, masterOf: masterOf, weekPay: weekPay, defaults: defaults, _set: function(p, c){ PLAN = p; CERTS = arr(c); LOADED = true; CERTS_OK = true; } };
 try { console.log('[GC] 🎖 Required certs, raises & promotion (patch CERTPLAN): _gcCertPlan'); } catch (e) {}
 })();
 </script>
@@ -207709,7 +208065,7 @@ function openDrying(screen){ var A = claimsApi(); if (!A) { toast('Mitigation is
 function tool(id, p){ try { if (W._gcFieldTools && W._gcFieldTools.run(id, p.id)) return true; } catch (e) { warn(e); } toast('That is not on this device yet.'); return false; }
 function fpRun(a, p){ try { if (FP() && FP().run && FP().run(a, p)) return true; } catch (e) { warn(e); } toast('Not on this job for you.'); return false; }
 function openJob(p){ if (!p) return; W._gcCurrentJob = p; try { if (typeof W._gcJobDashboard === 'function') { W._gcJobDashboard(p.id); return; } } catch (e) {} try { W._gcOpenJobProfile(p.id); } catch (e) {} }
-function clockLabel(){ var p = jobsOf('crew').list[0]; if (!p) return 'Clock in'; var d = dayOf(p.id); return d.ended ? 'Clocked out ✓' : d.started ? 'Clock out' : 'Clock in'; }
+function clockLabel(){ try { if (W._gcPayEm && W._gcPayEm.openPunch && W._gcPayEm.openPunch()) return '🚨 Clock out (emergency)'; } catch (e) {} var p = jobsOf('crew').list[0]; if (!p) return 'Clock in';   /* patch PAYEM */ var d = dayOf(p.id); return d.ended ? 'Clocked out ✓' : d.started ? 'Clock out' : 'Clock in'; }
 
 /* ── the buttons: one list for the Field and the Desk apps ──
    job: true → the button needs a job (the only one, or a pick from the role's jobs) */
@@ -207741,7 +208097,8 @@ var A = {
   equip:     { ic: '🌀', l: 'Equipment', show: claimsApi, n: function(){ var k = mitK(); return k ? k.equipmentOut : 0; }, run: function(){ openDrying('equipment'); } },
   claims:    { ic: '🛡', l: 'Claim info', show: claimsApi, n: function(){ return claimsVis().length; }, run: function(){ openClaims({}); } },
   tpa:       { ic: '📆', l: 'TPA dates', show: claimsApi, n: function(){ return tpaDates().filter(function(x){ return x.late; }).length; }, run: function(){ tpaSheet(); } },
-  clock:     { ic: '⏱', l: clockLabel, job: true, run: function(p){ var d = dayOf(p.id); if (!d.started) { try { if (W._gcClockInNow) W._gcClockInNow(); } catch (e) {} } tool('day', p); } },
+  clock:     { ic: '⏱', l: clockLabel, job: true, run: function(p){ var go = function(q){ var d = dayOf(q.id); if (!d.started) { try { if (W._gcClockInNow) W._gcClockInNow(); } catch (e) {} } tool('day', q); };
+    try { if (W._gcPayEm && W._gcPayEm.clockTap && W._gcPayEm.clockTap(p, go)) return; } catch (e) { warn(e); } go(p); } },   /* patch PAYEM: 🚨 emergency call-out (after hours) choice */
   match:     { ic: '🧾', l: 'Invoices to match', show: function(){ return !!(W._gcMoney && W._gcMoney.openNeeds); }, n: function(){ return needs().length; }, run: function(){ W._gcMoney.openNeeds(); } },
   todo:      { ic: '☑', l: "Today's to-dos", view: 'todo', n: todoN, run: function(){ go('todo'); } },
   receipt:   { ic: '🧾', l: 'Snap a receipt', show: function(){ return typeof W._gcFieldLogExpense === 'function'; }, run: function(){ W._gcFieldLogExpense(); } },
@@ -214477,7 +214834,7 @@ function compute(opt){
       T.eeSS+=n2(L.ss); T.eeMed+=n2(L.med); T.eeAddl+=n2(L.addlMed); T.eeL7+=eeL; T.storedSSW+=n2(L.ssWages!=null?L.ssWages:fw);
       T.futaStored+=n2(L.futa); T.sutaStored+=n2(L.suta); T.checks++;
       var mo=month[pd.slice(0,7)]; mo.fed+=n2(L.fed); mo.ssW+=ssW; mo.medW+=fw; mo.addlW+=addlW; mo.ee+=eeL; mo.checks++;
-      reg.push({ payDate:pd, run:s(r.id), key:key, name:nm, hours:r2(n2(L.hours)+n2(L.otHours)), gross:r2(L.gross), preTax:r2(L.preTax), wages:r2(w),
+      reg.push({ payDate:pd, run:s(r.id), key:key, name:nm, hours:r2(n2(L.hours)+n2(L.otHours)), gross:r2(L.gross), emer:r2(L.emPay), pmBonus:r2(L.pmBonus),   /* patch PAYEM */ preTax:r2(L.preTax), wages:r2(w),
         fed:r2(L.fed), ss:r2(L.ss), med:r2(n2(L.med)+n2(L.addlMed)), net:r2(L.net), paid:paidHow(L) });
       ru.checks++; ru.wages+=w; ru.fed+=n2(L.fed); ru.ee+=eeL;
       if(n2(L.gross)>0 && (L.fed==null || L.ss==null || L.med==null)) warn.push('Withholding is MISSING on '+nm+'’s check in the run paid '+pd+' (no '+[L.fed==null?'federal':'',L.ss==null?'Social Security':'',L.med==null?'Medicare':''].filter(Boolean).join(' / ')+' figure). Lines 3, 5 and 7 are wrong until it is fixed.');
@@ -214580,7 +214937,7 @@ function compute(opt){
 
   var emps=Object.keys(emp).map(function(k){ var e=emp[k]; ['wages','fed','ssW','medW','addlW','ee','storedSSW'].forEach(function(f){ e[f]=r2(e[f]); }); return e; });
   reg.sort(function(a,b){ return a.payDate<b.payDate?-1:a.payDate>b.payDate?1:(a.name<b.name?-1:1); });
-  var RF=['hours','gross','preTax','wages','fed','ss','med','net'], regEmp={}, regTot={ name:'TOTAL', checks:0 };
+  var RF=['hours','gross','emer','pmBonus','preTax','wages','fed','ss','med','net'], regEmp={}, regTot={ name:'TOTAL', checks:0 };
   RF.forEach(function(f){ regTot[f]=0; });
   reg.forEach(function(x){ var e=regEmp[x.key]||(regEmp[x.key]={ name:x.name, checks:0 }); e.checks++; regTot.checks++;
     RF.forEach(function(f){ e[f]=(e[f]||0)+x[f]; regTot[f]+=x[f]; }); });
@@ -214622,11 +214979,11 @@ function copyText(R){
     + (R.warnings.length?('\n\nWARNINGS:\n- '+R.warnings.join('\n- ')):'');
 }
 function regRows(R){
-  var G=R.register, f=function(v){ return n2(v).toFixed(2); }, out=[['Pay date','Employee','Hours','Gross','Pre-tax deductions','Taxable wages (line 2)','Federal income tax','Social Security (6.2%)','Medicare (1.45% + additional)','Net pay','Paid how']];
-  G.rows.forEach(function(x){ out.push([x.payDate,x.name,x.hours.toFixed(2),f(x.gross),f(x.preTax),f(x.wages),f(x.fed),f(x.ss),f(x.med),f(x.net),x.paid]); });
-  G.emps.forEach(function(e){ out.push(['QUARTER TOTAL',e.name+' ('+e.checks+' checks)',e.hours.toFixed(2),f(e.gross),f(e.preTax),f(e.wages),f(e.fed),f(e.ss),f(e.med),f(e.net),'']); });
-  var T=G.total; out.push(['GRAND TOTAL',T.checks+' checks',T.hours.toFixed(2),f(T.gross),f(T.preTax),f(T.wages),f(T.fed),f(T.ss),f(T.med),f(T.net),'']);
-  out.push(['FORM','line 2 / line 3 / 6.2% of 5a / 1.45% of 5c + 5d','','','',f(R.lines.L2),f(R.lines.L3),f(G.check.ssForm),f(G.check.medForm),'','difference = line 7']);
+  var G=R.register, f=function(v){ return n2(v).toFixed(2); }, out=[['Pay date','Employee','Hours','Gross','Emergency call-out 1.5x (in gross)','PM year-end bonus (in gross)','Pre-tax deductions','Taxable wages (line 2)','Federal income tax','Social Security (6.2%)','Medicare (1.45% + additional)','Net pay','Paid how']];   /* patch PAYEM */
+  G.rows.forEach(function(x){ out.push([x.payDate,x.name,x.hours.toFixed(2),f(x.gross),f(x.emer),f(x.pmBonus),f(x.preTax),f(x.wages),f(x.fed),f(x.ss),f(x.med),f(x.net),x.paid]); });
+  G.emps.forEach(function(e){ out.push(['QUARTER TOTAL',e.name+' ('+e.checks+' checks)',e.hours.toFixed(2),f(e.gross),f(e.emer),f(e.pmBonus),f(e.preTax),f(e.wages),f(e.fed),f(e.ss),f(e.med),f(e.net),'']); });
+  var T=G.total; out.push(['GRAND TOTAL',T.checks+' checks',T.hours.toFixed(2),f(T.gross),f(T.emer),f(T.pmBonus),f(T.preTax),f(T.wages),f(T.fed),f(T.ss),f(T.med),f(T.net),'']);
+  out.push(['FORM','line 2 / line 3 / 6.2% of 5a / 1.45% of 5c + 5d','','','','','',f(R.lines.L2),f(R.lines.L3),f(G.check.ssForm),f(G.check.medForm),'','difference = line 7']);
   return out;
 }
 function csvLine(r){ return r.map(function(c){ return '"'+String(c==null?'':c).replace(/"/g,'""')+'"'; }).join(','); }
@@ -214805,6 +215162,7 @@ function regHtml(R){
        : '<tr><td colspan="11" style="'+td+';text-align:left;color:#991b1b;font-weight:700">No W-2 paychecks in this quarter.</td></tr>')
     + G.emps.map(function(e){ return '<tr style="background:#f8fafc;font-weight:700"><td style="'+td+';text-align:left">Quarter total</td><td style="'+td+';text-align:left">'+esc(e.name)+' ('+e.checks+')</td>'+cols(e)+'<td style="'+td+'"></td></tr>'; }).join('')
     + '<tr data-f941-reg-total="1" style="background:#eef2ff;font-weight:800"><td style="'+td+';text-align:left">GRAND TOTAL</td><td style="'+td+';text-align:left">'+G.total.checks+' checks</td>'+cols(G.total)+'<td style="'+td+'"></td></tr>'
+    + ((n2(G.total.emer)>0 || n2(G.total.pmBonus)>0) ? '<tr data-f941-em="1" style="font-size:11.5px;color:#7c2d12"><td colspan="11" style="'+td+';text-align:left">Gross wages above include '+(n2(G.total.emer)>0?'🚨 '+m(G.total.emer)+' emergency call-out pay (1.5×)':'')+(n2(G.total.emer)>0&&n2(G.total.pmBonus)>0?' and ':'')+(n2(G.total.pmBonus)>0?'🏆 '+m(G.total.pmBonus)+' PM year-end bonus':'')+' — all of it is wages on line 2.</td></tr>' : '')   /* patch PAYEM */
     + '<tr style="font-size:11px;color:#475569"><td colspan="5" style="'+td+';text-align:left">On the form</td><td style="'+td+'">L2 '+m(R.lines.L2)+' '+ok(G.check.wagesEqL2)+'</td><td style="'+td+'">L3 '+m(R.lines.L3)+' '+ok(G.check.fedEqL3)+'</td><td style="'+td+'">6.2% × 5a '+m(G.check.ssForm)+'</td><td style="'+td+'">1.45% × 5c + 5d '+m(G.check.medForm)+'</td><td colspan="2" style="'+td+';text-align:left">difference '+m(r2(G.check.ssDiff+G.check.medDiff))+' = line 7</td></tr>'
     + '</table></div></div>';
 }
@@ -216361,7 +216719,7 @@ function compute(o){
       var expC = r2(due.reduce(function(a, e){ return a + e.amount; }, 0));
       if(!lines.length && !(setup && expC)) return;
       var paidC = r2(lines.reduce(function(a, L){ return a + lineComm(L); }, 0));
-      var paidS = r2(lines.reduce(function(a, L){ return a + n2(L.gross) - lineComm(L) - n2(L.bonus); }, 0));
+      var paidS = r2(lines.reduce(function(a, L){ return a + n2(L.gross) - lineComm(L) - n2(L.bonus) - n2(L.pmBonus); }, 0));   /* patch PAYEM: a 🏆 PM year-end bonus is not salary */
       var per = PERIODS[low((lines[0] && lines[0].period) || p.period) || 'weekly'] || 52;
       var expS = salaried && lines.length ? r2(n2(p.annualSalary) / per) : null;
       var row = { empId:pm.key, name:pm.name, payDate:d, quarter:quarterOf(d), known:isKnown(d), expComm:setup ? expC : null, paidComm:paidC, expSal:expS, paidSal:paidS, runs:runIds, jobs:due };
@@ -216675,15 +217033,17 @@ function touched(run, note){
   run.history = (Array.isArray(run.history) ? run.history : []).concat([{ at: now, by: who(), action: 'line edited', note: note }]);
 }
 
+/* owner 11/12: "office can edit payroll lines" — admins + the office (master office login or an Office role); not in View as */
+W._gcPayOfficeEdit = function(){ try { if (W._gcVAS && W._gcVAS.active && W._gcVAS.active()) return false; if (W._gcIsOfficeFull && W._gcIsOfficeFull()) return true; var m = W._gcMeNow || {}; return /office/i.test(String(m.role || '') + ' ' + String(m.profile || '')); } catch (e) { return false; } };
 W._gcDraftEditLine = async function(runId, idx){
   var p = P(); if (!p) return;
-  if (!p.isAdmin()) { alert('Only an admin can edit payroll.'); return; }
+  if (!p.isAdmin() && !(W._gcPayOfficeEdit && W._gcPayOfficeEdit())) { alert('Only an admin or the office can edit payroll.'); return; }
   var all = await p.runs(), run = all.filter(function(r){ return r && String(r.id) === String(runId); })[0], L = run && (run.lines || [])[idx];
   if (!L) { alert('Could not find that pay line.'); return; }
   var profs = []; try { profs = await p.profiles(); } catch (e) {}
   var key = low(L.empId || L.userId), prof = (profs || []).filter(function(x){ return x && ((key && (low(x.userId) === key || low(x.id) === key)) || low(x.name) === low(L.name)); })[0];
   if (!prof || s(prof.payType) !== 'hourly') return otherEdit(runId, idx);
-  var rate = n2(prof.hourlyRate) || n2(L.rate), after = n2(prof.otAfter) || 40, mult = n2(prof.otMultiplier) || 1.5;
+  var rate = (p.rateAsOf ? p.rateAsOf(prof, 'hourlyRate', run.to) : n2(prof.hourlyRate)) || n2(L.rate), after = n2(prof.otAfter) || 40, mult = n2(prof.otMultiplier) || 1.5;   /* patch PAYEM: the rate in effect (🎖 cert raise) */
   var was = r2(n2(L.hours) + n2(L.otHours));
   var old = D.getElementById('gc-draftedit-ov'); if (old) old.remove();
   var ov = D.createElement('div'); ov.id = 'gc-draftedit-ov'; ov.setAttribute('data-gc-keep', '1');
@@ -216693,22 +217053,28 @@ W._gcDraftEditLine = async function(runId, idx){
     + '<div style="font-size:12px;color:#556;margin:2px 0 12px">Week ' + esc(run.from) + ' → ' + esc(run.to) + ' · ' + money(rate) + '/hr (from the profile)</div>'
     + '<label style="font-size:11px;font-weight:700">Hours worked this week</label>'
     + '<input data-de="hrs" type="number" step="0.01" min="0" inputmode="decimal" value="' + was + '" style="width:100%;padding:10px;border:1px solid #ccd;border-radius:7px;font-size:16px;text-align:right;margin:3px 0 10px">'
+    + '<label style="font-size:11px;font-weight:700">🚨 of those, emergency call-out (after hours) — paid 1.5×</label>'   /* patch PAYEM */
+    + '<input data-de="em" type="number" step="0.01" min="0" inputmode="decimal" value="' + r2(n2(L.emHours)) + '" style="width:100%;padding:10px;border:1px solid #ccd;border-radius:7px;font-size:16px;text-align:right;margin:3px 0 10px">'
     + '<div data-de="calc" style="background:#f1f5f9;border-radius:8px;padding:10px;font-size:13px;margin-bottom:12px"></div>'
     + '<div style="display:flex;gap:8px"><button data-de="save" style="flex:1;background:#166534;color:#fff;border:none;border-radius:8px;padding:11px;font-weight:800;cursor:pointer;font-size:14px">Save &amp; recalculate taxes</button>'
     + '<button data-de="cancel" style="background:#e5e7eb;border:none;border-radius:8px;padding:11px 16px;font-weight:700;cursor:pointer">Cancel</button></div>'
     + '<div data-de="msg" style="color:#b91c1c;font-size:12.5px;font-weight:700;margin-top:8px"></div></div>';
   D.body.appendChild(ov);
   var q = function(k){ return ov.querySelector('[data-de="' + k + '"]'); };
-  function split(){ var h = Math.max(0, n2(q('hrs').value)), ot = r2(Math.max(0, h - after)); return { reg: r2(h - ot), ot: ot, total: r2(h) }; }
-  function paint(){ var h = split(), g = r2(h.reg * rate + h.ot * rate * mult);
-    q('calc').innerHTML = 'Regular ' + h.reg.toFixed(2) + ' h × ' + money(rate) + (h.ot > 0 ? '<br>Overtime ' + h.ot.toFixed(2) + ' h × ' + money(rate) + ' × ' + mult : '') + '<br><b>Gross ' + money(g) + '</b> (was ' + money(L.gross) + ') — taxes are worked out again when you save.'; }
+  /* patch PAYEM: the same week rule as the engine and 🎖 CERTPLAN's calculator — 🚨 emergency 1.5×, over 40 1.5×, never stacked */
+  function split(){ var h = Math.max(0, n2(q('hrs').value)), e = Math.min(h, Math.max(0, n2(q('em').value)));
+    var x = W._gcPayWeekSplit ? W._gcPayWeekSplit(h, e, after) : { straight: r2(Math.max(0, h - Math.max(0, h - after))), em: 0, ot: r2(Math.max(0, h - after)), premium: r2(Math.max(0, h - after)) };
+    return { reg: x.straight, ot: x.premium, em: x.em, otOnly: x.ot, total: r2(h) }; }
+  function grossOf(h){ return r2(h.reg * rate + h.em * rate * 1.5 + h.otOnly * rate * mult); }
+  function paint(){ var h = split(), g = grossOf(h);
+    q('calc').innerHTML = 'Regular ' + h.reg.toFixed(2) + ' h × ' + money(rate) + (h.em > 0 ? '<br>🚨 Emergency call-out ' + h.em.toFixed(2) + ' h × ' + money(rate) + ' × 1.5' : '') + (h.otOnly > 0 ? '<br>Overtime ' + h.otOnly.toFixed(2) + ' h × ' + money(rate) + ' × ' + mult : '') + (h.em > 0 && n2(q('hrs').value) > after ? '<br><span style="color:#64748b">Not stacked: an hour is never paid more than 1.5×.</span>' : '') + '<br><b>Gross ' + money(g) + '</b> (was ' + money(L.gross) + ') — taxes are worked out again when you save.'; }
   ov.addEventListener('input', paint); paint();
   ov.addEventListener('click', function(e){ if (e.target === ov) ov.remove(); });
   q('cancel').onclick = function(){ ov.remove(); };
   q('save').onclick = async function(){
     var b = q('save'); if (b.disabled) return; b.disabled = true; b.textContent = 'Working it out…';
     try {
-      var h = split(), gross = r2(h.reg * rate + h.ot * rate * mult);
+      var h = split(), gross = grossOf(h);   /* patch PAYEM */
       var fresh = await p.runs(), R = fresh.filter(function(r){ return r && String(r.id) === String(runId); })[0], X = R && (R.lines || [])[idx];
       if (!X) throw new Error('that run is not here any more');
       if (['draft', 'pending'].indexOf(s(R.status)) < 0) throw new Error('this run is ' + s(R.status) + ' now');
@@ -216717,12 +217083,15 @@ W._gcDraftEditLine = async function(runId, idx){
       var extras = {}; if (n2(X.bonus) > 0) extras.bonus = X.bonus; if (n2(X.reimbursement) > 0) extras.reimbursement = X.reimbursement;
       var N = await p.computeLine(prof, R.from, R.to, set, ytd, gross, extras);
       if (!N) throw new Error('the payroll engine gave nothing back');
-      var parts = [{ label: 'Regular hours', amount: r2(h.reg * rate) }]; if (h.ot > 0) parts.push({ label: 'Overtime', amount: r2(h.ot * rate * mult) });
+      var parts = [{ label: 'Regular hours', amount: r2(h.reg * rate), hours: h.reg, rate: rate }];   /* patch PAYEM */
+      if (h.em > 0) parts.push({ label: 'Emergency call-out 1.5×', amount: r2(h.em * rate * 1.5), hours: h.em, rate: r2(rate * 1.5) });
+      if (h.otOnly > 0) parts.push({ label: 'Overtime', amount: r2(h.otOnly * rate * mult), hours: h.otOnly, rate: r2(rate * mult) });
       (N.grossParts || []).forEach(function(g){ if (g && g.label !== 'Manual amount') parts.push(g); });
       var before = { hours: X.hours, otHours: X.otHours, gross: X.gross, fed: X.fed, ss: X.ss, med: X.med, state: X.state, net: X.net };
       var keep = { status: X.status, checkNo: X.checkNo, edits: X.edits };
-      Object.assign(X, N, keep, { hours: h.reg, otHours: h.ot, rate: rate, grossParts: parts, ytdBefore: ytd });
-      X.edits = (Array.isArray(X.edits) ? X.edits : []).concat([{ at: new Date().toISOString(), by: who(), note: 'hours ' + was + ' → ' + h.total, before: before }]);
+      var wasEm = r2(n2(X.emHours));
+      Object.assign(X, N, keep, { hours: h.reg, otHours: h.ot, emHours: h.em, emPay: r2(h.em * rate * 1.5), rate: rate, grossParts: parts, ytdBefore: ytd });   /* patch PAYEM */
+      X.edits = (Array.isArray(X.edits) ? X.edits : []).concat([{ at: new Date().toISOString(), by: who(), note: 'hours ' + was + ' → ' + h.total + (h.em !== wasEm ? ' · 🚨 emergency ' + wasEm + ' → ' + h.em : ''), before: before }]);
       touched(R, 'hours changed by ' + who() + ' for ' + s(X.name) + ' from ' + was + ' to ' + h.total + ' (gross ' + money(before.gross) + ' → ' + money(X.gross) + ', net ' + money(before.net) + ' → ' + money(X.net) + ')');
       await p.saveRuns(fresh);
       ov.remove(); rerender();
@@ -224291,6 +224660,16 @@ function isAdmin(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.
 function role(){ try { var m = W._gcMeNow; if (typeof W._gcRoleOf === 'function') return s(W._gcRoleOf(m)); return s(m && m.role); } catch (e) { return ''; } }
 function isEst(){ return /estimat/i.test(role()); }
 function mine(v){ v = low(v); return !!v && (v === low(myName()) || v === myEmail()); }
+/* patch PLANREQ-F (owner 11/12): two dates. On the LEAD the bid date is OUR due date (when GrayCo sends its bid to the GC / owner). The
+   bid portal date (what subs see) defaults to ONE DAY BEFORE it — same time of day; a Saturday / Sunday → the Friday before. Subs only ever
+   see the sub due date (the server leaves ourDue out of their view). A later change of our due date on the lead OFFERS to move the sub due
+   date too — never silently (subs may already have it). window._gcSubDue('2026-11-25T14:00') → { date: '2026-11-24', time: '14:00' } */
+function ourDueOf(l){ var v = s(l && (l.bidDue || l.dueDate || l.bidDueDate)); var d = v.slice(0, 10); if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return { date: '', time: '' };
+  var t = (/T(\d{2}:\d{2})/.exec(v) || [])[1] || (/^\d{2}:\d{2}$/.test(s(l && l.bidDueTime)) ? s(l.bidDueTime) : ''); return { date: d, time: t }; }
+function subDue(d){ d = s(d).slice(0, 10); if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return ''; var x = new Date(d + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() - 1);
+  while (x.getUTCDay() === 0 || x.getUTCDay() === 6) x.setUTCDate(x.getUTCDate() - 1); return x.toISOString().slice(0, 10); }
+function md(d){ d = s(d); return /^\d{4}-\d{2}-\d{2}/.test(d) ? (+d.slice(5, 7)) + '/' + (+d.slice(8, 10)) : ''; }
+W._gcSubDue = function(v){ var o = ourDueOf({ bidDue: v }); return { date: subDue(o.date), time: o.time }; };
 function ctxOf(c){
   c = c || {}; var e = c.estId ? est(c.estId) : null, pid = s(c.pid) || s(e && e.pid), p = proj(pid), l = lead(c.leadId) || (e && e.leadId ? lead(e.leadId) : null);
   return { pid: p ? s(p.id) : '', p: p, leadId: l ? s(l.id) : s(c.leadId), l: l, estId: e ? s(e.id) : s(c.estId), e: e };
@@ -224319,10 +224698,11 @@ function postedFor(c){
 /* ── the CRM's trades ── */
 var TRADES = ['Demolition', 'Framing', 'Drywall', 'Paint', 'Flooring', 'Tile', 'Roofing', 'Siding', 'Gutters', 'Windows & Doors', 'Insulation', 'Ceilings', 'Cabinets', 'Concrete', 'Masonry',
   'Electrical', 'Plumbing', 'HVAC', 'Fire protection', 'Landscaping', 'Mitigation', 'Abatement', 'Cleaning'];
-function tradeList(){
+function tradeList(){   /* patch PLANREQ-H (owner 11/12: a messy list — "shingle roof", "5 tool", "cmu"…): the CRM's standard trades only (a job's own
+     typed trades are added where it is shown) — no longer every word typed on a vendor / sub record */
   var seen = {}, out = [];
-  TRADES.concat(arr(crm().vendors).concat(arr(crm().subs)).map(function(v){ return s(v && (v.trade || v.cat2)); }).join(',').split(/[,;\/]/)).forEach(function(t){ t = s(t); var k = low(t); if (!t || seen[k] || t.length > 40 || /^subcontractor$/i.test(t)) return; seen[k] = 1; out.push(t); });
-  return out.slice(0, 60);
+  TRADES.forEach(function(t){ t = s(t); var k = low(t); if (!t || seen[k]) return; seen[k] = 1; out.push(t); });
+  return out;
 }
 /* the job's files (CRM file storage) and links to share */
 var DOCS_DISK = null;
@@ -224372,7 +224752,7 @@ function open(c0){
   if (!canPost(c)) { toast('Only an admin, an estimator, or this job\'s PM puts it on the bid portal.', true); return null; }
   css(); close();
   UI = { c: c, job: null, trades: {}, vis: 'private', files: filesOf(c) };
-  var m = D.createElement('div'); m.id = 'gcbp-modal'; m.setAttribute('data-gc-keep', '1');
+  var m = D.createElement('div'); m.id = 'gcbp-modal'; m.setAttribute('data-gc-keep', '1'); m.setAttribute('data-gc-noac', '1');   /* patch PLANREQ-G */
   m.innerHTML = '<div class="box" role="dialog" aria-label="Put on bid portal"><div class="mut">Loading…</div></div>';
   m.addEventListener('click', function(ev){ if (ev.target === m) close(); });
   m.addEventListener('click', onClick);
@@ -224394,10 +224774,13 @@ function draw(pj, jl){
   UI.trades = {}; arr(J && J.trades).forEach(function(t){ UI.trades[t] = 1; });
   var title = (J && J.title) || s(e && e.name) || s(p && p.name) || s(l && (l.name || l.title)) || '';
   var addr = (J && J.address) || [s((p || l || {}).address), s((p || l || {}).city), s((p || l || {}).state)].filter(Boolean).join(', ') || s(e && e.address);
-  var due = (J && J.due) || s(l && l.bidDue).slice(0, 10);
+  var our = (J && J.ourDue) ? { date: J.ourDue, time: s(J.ourDueTime) } : ourDueOf(l || (e && e.leadId ? lead(e.leadId) : null) || p);   /* patch PLANREQ-F */
+  var due = (J && J.due) || subDue(our.date), dueT = (J && J.due) ? s(J.dueTime) : our.time;
+  UI.our = our;
   var scope = J ? s(J.scope) : scopeText(c), specs = J ? s(J.specs) : '';
   var refs = {}; arr(J && J.crmFileRefs).forEach(function(r){ refs[r] = 1; }); var links = {}; arr(J && J.links).forEach(function(x){ links[s(x.url)] = 1; });
-  var tl = tradeList(); arr(J && J.trades).forEach(function(t){ if (tl.indexOf(t) < 0) tl.push(t); });
+  var tl = tradeList(); arr(J && J.trades).forEach(function(t){ if (!tl.some(function(x){ return low(x) === low(t); })) tl.push(t); });
+  var sugg = arr(J && J.tradesSuggested).filter(function(t){ return !UI.trades[t]; });   /* patch PLANREQ-H: from the invite — tap to add, never pre-selected */
   var what = e ? 'estimate “' + esc(e.name) + '”' : p ? 'job “' + esc(p.name) + '”' : l ? 'lead “' + esc(l.name || l.title) + '”' : 'job';
   box.innerHTML = '<div style="display:flex;justify-content:space-between;gap:8px"><h3>📢 ' + (on ? 'On the bid portal' : 'Put on bid portal') + '</h3><button type="button" class="b" data-bp="close" aria-label="Close">✕</button></div>'
     + '<div class="mut">For the ' + what + '. Subs see the job, the scope and what you share — never prices, never the customer\'s details. Subs can bid or ask a question.' + (on ? ' <b>Posted' + (J.postedBy ? ' by ' + esc(J.postedBy) : '') + '.</b>' : J && J.archived ? ' <b>It was taken off — posting puts it back.</b>' : '') + '</div>'
@@ -224405,9 +224788,11 @@ function draw(pj, jl){
     + '<label class="' + (UI.vis === 'private' ? 'on' : '') + '"><input type="radio" name="gcbp-vis" value="private"' + (UI.vis === 'private' ? ' checked' : '') + '> <b>🔒 Private</b><div class="mut">Only subs you invite (✉️ Invite subs on the 🏗 Bid portal tab).</div></label>'
     + '<label class="' + (UI.vis === 'public' ? 'on' : '') + '"><input type="radio" name="gcbp-vis" value="public"' + (UI.vis === 'public' ? ' checked' : '') + '> <b>🌐 Public</b><div class="mut">Every approved sub on bids.grayco-cs.com can see it and bid. Needs a due date.</div></label></div>'
     + '<label class="f" for="gcbp-title">Job title</label><input type="text" id="gcbp-title" maxlength="200" value="' + esc(title) + '">'
-    + '<label class="f">Trades we need priced</label><div class="chips" data-bp-trades>' + tl.map(function(t){ return '<button type="button" class="chip' + (UI.trades[t] ? ' on' : '') + '" data-bp="trade" data-t="' + esc(t) + '">' + esc(t) + '</button>'; }).join('') + '</div>'
+    + '<label class="f">Trades we need priced</label>' + (sugg.length ? '<div class="mut" data-bp-suggested>💡 Suggested from the invite (tap to add): </div><div class="chips" data-bp-sugg>' + sugg.map(function(t){ return '<button type="button" class="chip" data-bp="trade" data-t="' + esc(t) + '" style="border-style:dashed">💡 ' + esc(t) + '</button>'; }).join('') + '</div>' : '')
+    + '<div class="chips" data-bp-trades>' + tl.map(function(t){ return '<button type="button" class="chip' + (UI.trades[t] ? ' on' : '') + '" data-bp="trade" data-t="' + esc(t) + '">' + esc(t) + '</button>'; }).join('') + '</div>'
     + '<div style="display:flex;gap:6px;margin-top:6px"><input type="text" id="gcbp-trade" placeholder="Another trade (e.g. Exterior paint)" maxlength="40"><button type="button" class="b" data-bp="addtrade">＋ Add</button></div>'
-    + '<div class="row2"><div><label class="f" for="gcbp-due">Bid due date</label><input type="date" id="gcbp-due" value="' + esc(due) + '"></div><div><label class="f" for="gcbp-addr">Site address</label><input type="text" id="gcbp-addr" maxlength="240" value="' + esc(addr) + '"></div></div>'
+    + '<div class="row2"><div><label class="f" for="gcbp-due">Sub bid due date <span class="mut">(what subs see)</span></label><input type="date" id="gcbp-due" value="' + esc(due) + '"> <input type="time" id="gcbp-duet" value="' + esc(dueT) + '" style="width:110px">'
+      + (our.date ? '<div class="mut" data-bp-ourdue>Our bid due: <b>' + esc(md(our.date) + (our.time ? ' ' + our.time : '')) + '</b>' + (!(J && J.due) ? ' — subs due 1 day before our due date (a weekend → the Friday before)' : '') + '</div>' : '') + '</div><div><label class="f" for="gcbp-addr">Site address</label><input type="text" id="gcbp-addr" maxlength="240" value="' + esc(addr) + '"></div></div>'
     + '<label class="f" for="gcbp-scope">Scope of work</label><textarea id="gcbp-scope" rows="5" maxlength="20000" placeholder="e.g. 2,500 SF exterior repaint: pressure wash, scrape, prime bare wood, 2 coats SW Duration">' + esc(scope) + '</textarea>'
     + '<label class="f" for="gcbp-specs">Specs / notes for bidders</label><textarea id="gcbp-specs" rows="3" maxlength="20000" placeholder="e.g. Colors: body SW 7036, trim SW 7006. Work hours 8–5, occupied home.">' + esc(specs) + '</textarea>'
     + '<label class="f">Plans / files to share</label>' + (UI.files.length ? '<div class="files" data-bp-files>' + UI.files.map(function(f, i){ var was = (f.ref && refs[f.ref]) || (f.link && links[f.link]);
@@ -224423,7 +224808,7 @@ function post(){
   var m = D.getElementById('gcbp-modal'); if (!m) return; var c = UI.c, err = m.querySelector('[data-bp-err]'), go = m.querySelector('[data-bp="post"]');
   var trades = Object.keys(UI.trades).filter(function(t){ return UI.trades[t]; });
   var body = { op: 'postjob', jobId: UI.job && UI.job.id || '', pid: c.pid, leadId: c.leadId, estId: c.estId, title: val('gcbp-title'), address: val('gcbp-addr'), visibility: UI.vis, trades: trades,
-    due: val('gcbp-due'), scope: val('gcbp-scope'), specs: val('gcbp-specs'), projectName: c.p ? [s(c.p.autoPO), s(c.p.name)].filter(Boolean).join(' · ') : '', po: s(c.p && c.p.autoPO) };
+    due: val('gcbp-due'), dueTime: val('gcbp-duet'), ourDue: s(UI.our && UI.our.date), ourDueTime: s(UI.our && UI.our.time), scope: val('gcbp-scope'), specs: val('gcbp-specs'), projectName: c.p ? [s(c.p.autoPO), s(c.p.name)].filter(Boolean).join(' · ') : '', po: s(c.p && c.p.autoPO) };
   var pmN = s(c.p && c.p.pm) || s(c.l && (c.l.pm || c.l.estimator)), pmU = arr(crm().users).filter(function(u){ return u && pmN && low(u.name) === low(pmN); })[0];
   body.pmName = pmN; body.pmEmail = low(pmU && pmU.email) || low(c.p && c.p.pmEmail);
   var files = [], links = arr(UI.job && UI.job.links).slice();
@@ -224509,7 +224894,35 @@ function paintLead(){
   old.__h = h; old.__id = id; old.innerHTML = h + '<span style="color:#94a3b8;font-size:12px">any lead — subs can bid or ask questions</span>';
   if (!d.contains(old)) { var body = d.querySelector('.gcl-body, [data-gcl-body]') || d; body.insertBefore(old, body.firstChild); }
 }
-function paint(){ try { paintEst(); } catch (e) { warn(e); } try { paintJob(); } catch (e) { warn(e); } try { paintLead(); } catch (e) { warn(e); } }
+/* patch PLANREQ-F: our due date on the lead changed after the job went on the bid portal → OFFER to move the sub due date (never silently) */
+var DUEASK = {};
+function dueOffers(){
+  var out = []; arr(JOBS.list).forEach(function(j){
+    if (!j || j.deleted || !s(j.crmLeadId) || !s(j.ourDue)) return;
+    var l = lead(j.crmLeadId), o = ourDueOf(l); if (!o.date) return;
+    if (o.date === s(j.ourDue) && o.time === s(j.ourDueTime)) return;
+    var k = j.id + '|' + o.date + '|' + o.time; if (DUEASK[k]) return;
+    out.push({ job: j, our: o, sub: subDue(o.date), key: k });
+  }); return out;
+}
+W._gcBidDueOffers = function(){ return dueOffers().map(function(x){ return { jobId: x.job.id, our: x.our.date, sub: x.sub, subNow: s(x.job.due) }; }); };
+function paintDueOffer(){
+  var old = D.getElementById('gcbp-dueoffer'), list = dueOffers();
+  if (!list.length || !(isAdmin() || isEst() || list.some(function(x){ return mine(x.job.pmName) || low(x.job.pmEmail) === myEmail() || low(x.job.postedBy) === myEmail(); }))) { if (old) old.remove(); return; }
+  var x = list[0], h = '<b>⏰ Our bid due on "' + esc(x.job.title) + '" changed to ' + esc(md(x.our.date) + (x.our.time ? ' ' + x.our.time : '')) + '.</b> Also move the sub due date to <b>' + esc(md(x.sub)) + '</b>? <span class="mut">(subs see ' + esc(x.job.due ? md(x.job.due) : 'no date') + ' now)</span> '
+    + '<button type="button" data-dueoffer="move">Move it to ' + esc(md(x.sub)) + '</button> <button type="button" data-dueoffer="keep">Keep ' + esc(x.job.due ? md(x.job.due) : 'it') + '</button>';
+  if (old && old.__h === h) return;
+  if (!old) { old = D.createElement('div'); old.id = 'gcbp-dueoffer'; old.setAttribute('data-gc-keep', '1'); old.setAttribute('role', 'alert');
+    old.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:84px;z-index:100240;max-width:min(720px,94vw);background:#fffbeb;border:1px solid #fcd34d;color:#78350f;border-radius:12px;padding:10px 14px;font:14px/1.45 system-ui;box-shadow:0 8px 24px rgba(0,0,0,.18)';
+    old.addEventListener('click', function(ev){ var b = ev.target.closest('[data-dueoffer]'); if (!b || !old.__x) return; var y = old.__x, mv = b.getAttribute('data-dueoffer') === 'move'; DUEASK[y.key] = 1; old.remove();
+      var body = { op: 'details', jobId: y.job.id, ourDue: y.our.date, ourDueTime: y.our.time }; if (mv) { body.due = y.sub; body.dueTime = y.our.time || s(y.job.dueTime); }
+      W.fetch('/.netlify/functions/bid-hub', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(function(r){ return r.json(); }).then(function(r){
+        if (r.error) throw new Error(r.error); try { if (W._gcSys && W._gcSys.toast) W._gcSys.toast(mv ? '⏰ Sub due date moved to ' + md(y.sub) + ' — the subs get an update' : '⏰ Our bid due saved; the sub due date stays'); } catch (e) {} jobs(true); }, function(e){ warn(e); try { W._gcSys.toast(e.message, true); } catch (x2) {} }); });
+    D.body.appendChild(old); }
+  old.__h = h; old.__x = x; old.innerHTML = h;
+  Array.prototype.forEach.call(old.querySelectorAll('button'), function(b){ b.style.cssText = 'border:1px solid #d97706;background:' + (b.getAttribute('data-dueoffer') === 'move' ? '#d97706;color:#fff' : '#fff;color:#78350f') + ';border-radius:8px;padding:5px 10px;font-weight:700;cursor:pointer;margin-left:4px'; });
+}
+function paint(){ try { paintEst(); } catch (e) { warn(e); } try { paintJob(); } catch (e) { warn(e); } try { paintLead(); } catch (e) { warn(e); } try { paintDueOffer(); } catch (e) { warn(e); } }
 var TICK = 0;
 RI.call(W, function(){ if (D.hidden) return; TICK++; if (!JOBS.list && !JOBS.busy && (isAdmin() || isEst() || arr(crm().projects).some(function(p){ return p && mine(p.pm); })) && W._crm) jobs(false); paint(); }, 1500);
 
@@ -226579,5 +226992,176 @@ W.addEventListener('gc-co-filter', function(){
   setTimeout(tick, 60);
 });
 W._gcCoLeak2 = { userCos: userCos, passUser: passUser, paintSelects: paintSelects, paintUserBoxes: paintUserBoxes };
+})(window);
+</script>
+<script id="gc-patch-payem">
+/* patch PAYEM — 🚨 Emergency call-out (after hours) 1.5× on paychecks, 🎖 certification raises and the 🏆 PM year-end bonus on paychecks
+   (owner 11/12: "yes emergency 1.5 on paychecks" · "cert raises on paycheck" · payroll stays ONE company for now: "payroll goes all to
+   construction right now, I'll change later to by company" · Brittany's 13 h/week set hours stay as they are).
+   • Field app ⏱ Clock in, after hours (before 7 AM, from 6 PM, weekends) or on an emergency job: "🚨 Emergency call-out (after hours)" or
+     "🕐 Regular time". The call-out is its own timesheet row { emergency: true } (an open regular punch made moments ago becomes the
+     call-out; an older open one ends at that minute, so no hour is counted twice). The button reads "🚨 Clock out (emergency)" until it
+     is closed. Timesheets: 🚨 on "+ Add time" and a 🚨 toggle on each row (office / admin). Payroll → ✏️ hours: "🚨 of those, emergency".
+   • Pay: the payroll engine's weekSplit (window._gcPayWeekSplit — 🎖 CERTPLAN's ⏱ calculator uses the same function): emergency hours
+     1.5×, over 40 1.5×, never stacked; emergency hours count toward the 40. "Emergency call-out 1.5×" is its own earning on the run, the
+     stub, the e-mailed stub, the 941 register and its CSV.
+   • 🎖 Raise approved → applyRaise: the payroll profile's rate goes up, a dated entry in prof.rateHistory (who / when / why / from → to);
+     the engine pays a period at the rate in effect on its last day (__GC_PAY.rateAsOf).
+   • 🏆 PM year-end bonus approved → pmBonusFor: on the next paycheck as "Bonus — PM year-end" (supplemental, federal 22%), once.
+   API: window._gcPayEm = { afterHours, isEmergencyJob, clockTap, punchIn, punchOut, openPunch, applyRaise, pmBonusFor, historyHtml, bust } */
+(function(W){
+'use strict';
+if (W.__GC_PATCH_PAYEM__) return; W.__GC_PATCH_PAYEM__ = true;
+var D = W.document, OPEN_K = 'gc_payem_open_v1';
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+function later(f, ms){ return ST.call(W, f, ms || 0); }
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function num(v){ var n = parseFloat(String(v == null ? '' : v).replace(/[^0-9.\-]/g, '')); return isFinite(n) ? n : 0; }
+function r2(v){ return Math.round(num(v) * 100) / 100; }
+function esc(v){ return String(v == null ? '' : v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function money(v){ return '$' + num(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function nowISO(){ return new Date().toISOString(); }
+function TC(){ return W._gcTimeClock || null; }
+function users(){ return arr((W._crm || {}).users); }
+function meName(){ try { var t = TC(); if (t) return t.user(); } catch (e) {} try { return s(localStorage.getItem('grayco_user')); } catch (e) { return ''; } }
+function lsGet(k){ try { return localStorage.getItem(k); } catch (e) { return null; } }
+function lsSet(k, v){ try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) {} }
+function toast(m, bad){ try { var t = D.createElement('div'); t.setAttribute('data-gc-keep', '1'); t.id = 'gc-payem-toast'; t.textContent = m; t.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:2147483600;background:' + (bad ? '#7f1d1d' : '#14532d') + ';color:#fff;padding:11px 16px;border-radius:10px;font:600 14px Inter,Arial,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.25);max-width:92vw;text-align:center'; var o = D.getElementById('gc-payem-toast'); if (o) o.remove(); D.body.appendChild(t); later(function(){ t.remove(); }, 3600); } catch (e) {} }
+
+/* ── after hours / emergency job ─────────────────────────────────────────── */
+var DAY = { start: 7 * 60, end: 18 * 60 };   /* the normal work day, Monday–Friday 7 AM – 6 PM (owner 11/12) */
+function afterHours(d){ d = d || new Date(); var dow = d.getDay(), m = d.getHours() * 60 + d.getMinutes(); return dow === 0 || dow === 6 || m < DAY.start || m >= DAY.end; }
+function isEmergencyJob(p){ if (!p) return false; if (p.emergency === true || p.isEmergency === true) return true;
+  return /emergenc/i.test([p.urgency, p.priority, p.jobType, p.type, p.lossType, p.tag, p.tags && p.tags.join && p.tags.join(' ')].map(s).join(' ')); }
+
+/* ── the open 🚨 punch (this person, this device) ─────────────────────── */
+function openPunch(){ var o = null; try { o = JSON.parse(lsGet(OPEN_K) || 'null'); } catch (e) {} if (!o || !o.id) return null; return low(o.user) === low(meName()) ? o : null; }
+async function punchIn(p){
+  var tc = TC(); if (!tc) throw new Error('the time clock is not loaded yet');
+  var u = tc.user(), d = tc.today(), now = tc.nowHM(), at = nowISO(), t0 = Date.now();
+  if (!u) throw new Error('not signed in');
+  var list = await tc.list(); list = Array.isArray(list) ? list : [];
+  var conv = null;
+  list.forEach(function(r){
+    if (!r || r.user !== u || r.manual || r.emergency || r.clockOut) return;
+    var made = Date.parse(r.savedAt || r.updatedAt || '') || 0;
+    if (!conv && r.date === d && t0 - made < 30 * 60e3) { conv = r; return; }   /* the punch the app made a moment ago (this tap / signing in) IS the call-out */
+    r.clockOut = r.date === d ? now : (r.clockOut || ''); if (r.clockOut) { r.endedBy = '🚨 emergency call-out started'; r.updatedAt = at; r.savedAt = at; }   /* one open punch at a time */
+  });
+  var rec = conv || { id: 'TS' + Date.now() + Math.floor(Math.random() * 999), user: u, date: d, clockOut: '', manual: false };
+  Object.assign(rec, { clockIn: conv ? (s(conv.actualIn) || now) : now, actualIn: conv ? (s(conv.actualIn) || now) : now, emergency: true, emBy: 'clock', pid: s(p && p.id), job: s(p && (p.name || p.client)), updatedAt: at, savedAt: at });
+  if (!conv) list.push(rec);
+  await tc.save(list);
+  lsSet(OPEN_K, JSON.stringify({ id: rec.id, user: u, date: rec.date, at: at, inT: rec.clockIn, pid: rec.pid, job: rec.job }));
+  return rec;
+}
+async function punchOut(){
+  var tc = TC(), op = openPunch(); if (!tc || !op) return null;
+  var list = await tc.list(); list = Array.isArray(list) ? list : [];
+  var r = list.filter(function(x){ return x && x.id === op.id; })[0];
+  lsSet(OPEN_K, null);
+  if (!r) return null;
+  r.clockOut = tc.nowHM(); r.updatedAt = nowISO(); r.savedAt = r.updatedAt;
+  await tc.save(list);
+  return { rec: r, hours: r2(tc.hoursOf(r)) };
+}
+function refreshHome(){ try { if (W._gcRA && W._gcRA.sync) W._gcRA.sync(); } catch (e) {} try { if (W._gcField && W._gcField.render) W._gcField.render(true); } catch (e) {} }
+
+/* ── the field sheet ─────────────────────────────────────────────────────── */
+function sheet(html){
+  var o = D.getElementById('gc-payem-sheet'); if (o) o.remove();
+  o = D.createElement('div'); o.id = 'gc-payem-sheet'; o.setAttribute('data-gc-keep', '1');
+  o.style.cssText = 'position:fixed;inset:0;z-index:2147483500;background:rgba(15,23,42,.55);display:flex;align-items:flex-end;justify-content:center;font-family:Inter,Arial,sans-serif';
+  o.innerHTML = '<div style="background:#fff;color:#0f172a;width:min(520px,100vw);border-radius:16px 16px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom));box-shadow:0 -10px 30px rgba(0,0,0,.25)">' + html + '</div>';
+  o.addEventListener('click', function(e){ if (e.target === o || (e.target.closest && e.target.closest('[data-pe="x"]'))) o.remove(); });
+  D.body.appendChild(o); return o;
+}
+var BTN = 'display:block;width:100%;border:none;border-radius:12px;padding:15px 14px;font-size:16px;font-weight:800;margin-top:10px;cursor:pointer;text-align:left';
+function clockTap(p, go){
+  var op = openPunch();
+  if (op) {
+    var o = sheet('<div style="font-size:18px;font-weight:800">🚨 On an emergency call-out</div><div style="font-size:13.5px;color:#475569;margin:4px 0 6px">Since ' + esc(op.inT) + (op.job ? ' · ' + esc(op.job) : '') + ' — paid 1.5×.</div>' +
+      '<button type="button" data-pe="out" style="' + BTN + ';background:#7f1d1d;color:#fff">🏁 Clock out of the call-out</button>' +
+      '<button type="button" data-pe="x" style="' + BTN + ';background:#e2e8f0;color:#0f172a;text-align:center">Keep working</button>');
+    o.querySelector('[data-pe="out"]').onclick = function(){ var b = this; b.disabled = true; b.textContent = 'Clocking out…';
+      punchOut().then(function(r){ o.remove(); toast(r ? '🏁 Clocked out — ' + r.hours.toFixed(2) + ' h emergency call-out (1.5×)' : 'Clocked out.'); refreshHome(); }, function(e){ o.remove(); toast('Not saved: ' + (e && e.message || e), true); }); };
+    return true;
+  }
+  var ah = afterHours(), ej = isEmergencyJob(p);
+  if (!ah) return false;   /* owner 11/12: "emergency jobs during work hours are standard pay, real emergencies are after hours" */
+  var o2 = sheet('<div style="font-size:18px;font-weight:800">⏱ Clock in' + (p && p.name ? ' — ' + esc(p.name) : '') + '</div>' +
+    '<div style="font-size:13.5px;color:#475569;margin:4px 0 4px">' + (ej ? 'This is an emergency job, after hours.' : 'It is after hours.') + ' Is this an emergency call-out?</div>' +
+    '<button type="button" data-pe="em" style="' + BTN + ';background:#b91c1c;color:#fff">🚨 Emergency call-out (after hours)<div style="font-size:12.5px;font-weight:600;opacity:.9">Paid time and a half (1.5×)</div></button>' +
+    '<button type="button" data-pe="reg" style="' + BTN + ';background:#0f2440;color:#fff">🕐 Regular time</button>' +
+    '<button type="button" data-pe="x" style="' + BTN + ';background:#e2e8f0;color:#0f172a;text-align:center">Cancel</button>');
+  o2.querySelector('[data-pe="reg"]').onclick = function(){ o2.remove(); go(p); };
+  o2.querySelector('[data-pe="em"]').onclick = function(){ var b = this; b.disabled = true;
+    punchIn(p).then(function(r){ o2.remove(); toast('🚨 Clocked in at ' + r.clockIn + ' — emergency call-out, paid 1.5×. Tap ⏱ again to clock out.'); refreshHome(); },
+      function(e){ o2.remove(); toast('Not clocked in: ' + (e && e.message || e), true); }); };
+  return true;
+}
+
+/* ── 🎖 certification raise → the payroll profile ────────────────────── */
+async function applyRaise(o){
+  var P = W.__GC_PAY; if (!P || !P.profiles || !P.saveProfiles) return { ok: false, why: 'Payroll is not loaded on this computer — set the new rate in Payroll → Employees.' };
+  var profs = await P.profiles(); profs = Array.isArray(profs) ? profs : [];
+  var em = low(o.email), id = s(o.userId), nm = low(o.name);
+  var pr = profs.filter(function(x){ return x && ((em && low(x.email) === em) || (id && s(x.userId) === id)); })[0] || profs.filter(function(x){ return x && nm && low(x.name) === nm; })[0];
+  if (!pr) return { ok: false, why: 'No payroll profile for ' + s(o.name) + ' yet — add them in Payroll → Employees, then set the rate.' };
+  pr.rateHistory = arr(pr.rateHistory);
+  if (o.doneId && pr.rateHistory.some(function(h){ return h && h.doneId === o.doneId; })) return { ok: true, dup: true };
+  var pt = s(pr.payType), hourly = pt === 'hourly';
+  if (!hourly && !/^(salary|salary_commission)$/.test(pt)) return { ok: false, why: s(o.name) + ' is paid ' + (pt || 'with no pay type') + ' — no hourly rate or salary to raise. Change their pay in Payroll → Employees.' };
+  var field = hourly ? 'hourlyRate' : 'annualSalary', amt = num(o.amount);
+  if (o.unit === 'yr' && hourly) amt = r2(amt / 2080); else if (o.unit !== 'yr' && !hourly) amt = r2(amt * 2080);
+  var from = r2(pr[field]), to = r2(from + amt), at = nowISO();
+  pr[field] = to;
+  pr.rateHistory.push({ id: 'RH' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), field: field, from: from, to: to, change: amt, effective: s(o.effective).slice(0, 10), at: at, by: s(o.by), why: 'Certification raise — ' + s(o.cert), source: 'certplan', doneId: s(o.doneId) });
+  pr.updatedAt = at;
+  await P.saveProfiles(profs);
+  return { ok: true, field: field, from: from, to: to };
+}
+function historyHtml(p){
+  var h = arr(p && p.rateHistory).slice().sort(function(a, b){ return s(b.effective || b.at).localeCompare(s(a.effective || a.at)); });
+  if (!h.length) return '';
+  var P = W.__GC_PAY, today = P && P.today ? P.today() : new Date().toISOString().slice(0, 10);
+  return '<div data-payem-hist="1" style="margin-top:10px;border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px;background:#f8fafc;font-size:12px;color:#334155">' +
+    '<div style="font-weight:800;margin-bottom:4px">📈 Pay rate history</div>' + h.map(function(x){ var yr = x.field === 'annualSalary', f = function(v){ return money(v) + (yr ? '/yr' : '/hr'); };
+      return '<div style="padding:3px 0;border-top:1px solid #e2e8f0">' + (s(x.effective) > today ? '<b style="color:#92400e">starts ' : '<b>from ') + esc(x.effective || s(x.at).slice(0, 10)) + '</b> · ' + esc(f(x.from)) + ' → <b>' + esc(f(x.to)) + '</b> (+' + esc(f(x.change)) + ') · ' + esc(x.why) + ' · approved by ' + esc(x.by || '—') + ' ' + esc(s(x.at).slice(0, 10)) + '</div>'; }).join('') + '</div>';
+}
+
+/* ── 🏆 PM year-end bonus → the next paycheck ───────────────────────────── */
+var CACHE = { at: 0, plan: null };
+function bust(){ CACHE.at = 0; CACHE.plan = null; }
+async function planNow(){
+  if (CACHE.plan && Date.now() - CACHE.at < 20000) return CACHE.plan;
+  var C = W._gcCertPlan; if (!C) return null;
+  try { await C.load(); } catch (e) {}
+  try { CACHE.plan = C.plan(); CACHE.at = Date.now(); } catch (e) { CACHE.plan = null; }
+  return CACHE.plan;
+}
+async function pmBonusFor(prof, from, to){
+  if (!prof) return null;
+  var em = low(prof.email);
+  if (!em) { var u = users().filter(function(x){ return x && ((prof.userId && s(x.id) === s(prof.userId)) || low(x.name) === low(prof.name)); })[0]; em = low(u && u.email); }
+  if (!em) return null;
+  var p = await planNow(); if (!p || !p.bonus) return null;
+  var yrs = Object.keys(p.bonus).sort().filter(function(y){ var b = p.bonus[y] && p.bonus[y][em]; return b && b.approvedAt && !b.paid && num(b.amount) > 0 && !(b.periodEnd && s(b.periodEnd) > s(to)); });
+  if (!yrs.length) return null;
+  var runs = []; try { runs = await W.__GC_PAY.runs(); } catch (e) {}
+  for (var i = 0; i < yrs.length; i++) {
+    var key = 'pmbonus:' + yrs[i] + ':' + em;
+    var carried = arr(runs).some(function(r){ return r && !(s(r.from) === s(from) && s(r.to) === s(to)) && ['denied', 'voided', 'void', 'deleted'].indexOf(low(r.status)) < 0
+      && arr(r.lines).some(function(L){ return L && L.pmBonusKey === key && low(L.status) !== 'denied'; }); });
+    if (!carried) return { amount: r2(p.bonus[yrs[i]][em].amount), key: key, year: yrs[i] };
+  }
+  return null;
+}
+
+W._gcPayEm = { afterHours: afterHours, isEmergencyJob: isEmergencyJob, clockTap: clockTap, punchIn: punchIn, punchOut: punchOut, openPunch: openPunch,
+  applyRaise: applyRaise, pmBonusFor: pmBonusFor, historyHtml: historyHtml, bust: bust, DAY: DAY };
+try { console.log('[GC] 🚨 Emergency call-out 1.5× + 🎖 cert raises / 🏆 PM bonus on paychecks (patch PAYEM): _gcPayEm'); } catch (e) {}
 })(window);
 </script>
