@@ -32,9 +32,10 @@ const JOBS = [
   { id: 'J2', title: 'Sample Apartment Fire', status: 'draft', visibility: 'draft', due: '', invited: 0, bids: 0, plans: 0, auto: false, address: '2817 Sample Ct' }];
 const REQ = { id: 'J1__u_sam', company: 'Sample Drywall LLC', name: 'Sam Sample', phone: '901-555-0141', email: 'sam@sampledrywall.test', trade: 'Drywall', needs: ['plans', 'sitewalk'], note: 'Need the full set.', at: now, open: true,
   to: [{ name: 'Sam Biffle', roles: ['PM'] }, { name: 'Gus Estimator', roles: ['Estimator'] }] };
-const MAN = () => ({ ok: true, paused: false, job: { id: 'J1', title: 'Sample Clinic Remodel', address: '100 Sample St', po: 'T101', due, visibility: JOBS[0].visibility, deleted: false, trades: 'Drywall, Electrical',
+const MAN = () => ({ ok: true, paused: false, job: { id: 'J1', title: 'Sample Clinic Remodel', address: '100 Sample St', po: 'T101', due: JOBS[0].due, dueTime: JOBS[0].dueTime || '', visibility: JOBS[0].visibility, deleted: false, trades: JOBS[0].trades,
+  siteWalk: DET.siteWalk || null, bidForm: DET.bidForm || [], requirements: DET.requirements || {}, internalNotes: DET.internalNotes || '', crmProjectId: 'P1',
   tradeScopes: TS, plansLinks: [], addenda: [], posts: [], log: [] }, plans: PLANS, planreqs: [REQ], questions: [], acks: [], activity: [], audience: [{ email: 'sam@sampledrywall.test', company: 'Sample Drywall LLC', trades: ['Drywall'], how: 'invited', account: true }] });
-let TS = [{ id: 'ts1', trade: 'Drywall', scope: 'Hang and finish.', files: [] }], PLANS = [];
+const DET = {}; let TS = [{ id: 'ts1', trade: 'Drywall', scope: 'Hang and finish.', files: [] }], PLANS = [];
 const POSTS = [], SP = [];
 async function routes(c, who){
   await c.ctx.route('**/.netlify/functions/bid-hub*', async rt => {
@@ -42,6 +43,11 @@ async function routes(c, who){
     if (rt.request().method() === 'POST') { const b = JSON.parse(rt.request().postData() || '{}'); POSTS.push(Object.assign({ who }, b));
       if (b.op === 'visibility') { const j = JOBS.find(x => x.id === b.jobId); if (j) { j.visibility = b.mode; j.status = 'open'; } return J({ ok: true, jobId: b.jobId, visibility: b.mode }); }
       if (b.op === 'planreq') { REQ.open = false; if (b.act === 'reply') { REQ.closedHow = 'answered'; REQ.reply = b.text; REQ.repliedByName = 'Wesley Johnson'; } else { REQ.closedHow = 'sent'; REQ.sentNote = b.text; } JOBS[0].openReq = 0; return J({ ok: true, mail: 'sent' }); }
+      if (b.op === 'details') { const j = JOBS.find(x => x.id === b.jobId); if (Array.isArray(b.trades)) { j.trades = b.trades.join(', '); b.trades.forEach(tr => { if (!TS.some(x => x.trade === tr)) TS.push({ id: 'ts_' + tr, trade: tr, scope: '', files: [] }); }); }
+        if (b.due !== undefined) { j.due = b.due; j.dueTime = b.dueTime; } Object.assign(DET, { siteWalk: b.siteWalk, bidForm: (b.bidForm || []).map((x, i) => Object.assign({ id: 'bf' + i }, x)), requirements: b.requirements, internalNotes: b.internalNotes });
+        return J({ ok: true, jobId: b.jobId, changed: ['trades', 'bid due', 'site walk', 'bid form'], notice: { status: 'waiting', n: 1 } }); }
+      if (b.op === 'duplicate') { JOBS.push({ id: 'J3', title: b.title, status: 'open', visibility: 'private', due: '', invited: 0, bids: 0, plans: 0, trades: JOBS[0].trades }); return J({ ok: true, jobId: 'J3', title: b.title }); }
+      if (b.op === 'bidding') { JOBS.find(x => x.id === b.jobId).biddingClosed = b.close; return J({ ok: true, biddingClosed: b.close }); }
       if (b.op === 'scope') { TS = b.tradeScopes.map(x => Object.assign({ id: x.id || 'ts_' + Math.random().toString(36).slice(2, 6) }, x)); return J({ ok: true, tradeScopes: TS }); }
       return J({ ok: true }); }
     if (q.get('jobs')) return J({ ok: true, jobs: JOBS, me: { email: who, admin: who === 'wjohnson@grayco-cs.com', canInvite: true, canPublic: who === 'wjohnson@grayco-cs.com' } });
@@ -123,6 +129,47 @@ await wait(A, () => [...document.querySelectorAll('#gcsys2 [data-tsfile]')].some
 ok('3 "📎 Add scope files for Drywall" (a .txt) → straight onto the Drywall scope', SP.some(x => x.action === 'plans-import' && x.name === 'Drywall notes.txt' && x.kind === 'scope' && x.trades.join() === 'Drywall'));
 await shot(A, 'crm04_manage_scopes_with_files');
 await A.ev(() => window._gcSys2.close());
+/* 5. patch PLANREQ-T/D/E: trades in the list, the full ⋯ Actions menu, 📂 Manage → 📝 Details */
+await A.ev(() => window._gcSys.bp.load(true)); await sleep(800);
+const rt = await A.ev(() => (document.querySelector('[data-row-trades="J1"]') || {}).textContent || '');
+ok('5 the list row says the trades: "🔨 Trades: Drywall · Electrical"', /Trades: Drywall · Electrical/.test(rt), rt);
+await A.ev(() => document.querySelector('tr[data-sys-job="J1"] [data-sys="menu"]').click()); await sleep(300);
+const mi = await A.ev(() => [...document.querySelectorAll('#gcsys-menu [role=menuitem]')].map(b => b.textContent));
+ok('5 ⋯ Actions: Edit details · Public/Private · Due date · Invite (by trade) · Post update · Addendum · Add plans/specs/scopes · Plan-room link · Answer questions · Bids · Duplicate · Link to CRM · Close bidding · Archive · Delete',
+  ['📝 Edit details', '✏️ Due date', '✉️ Invite subs (by trade)', '📣 Post update', '📎 Post addendum', '📎 Add plans / specs / scopes', '🔗 Add plan-room link', '📊 Bids (compare / award)', '📋 Duplicate job', '🔗 Link to CRM lead / project', '⏸ Close bidding', '🗄 Archive', '🗑 Delete…'].every(x => mi.indexOf(x) > -1) && mi.some(x => /Make public|Make private/.test(x)) && mi.some(x => /Answer questions/.test(x)), mi);
+await shot(A, 'crm05_actions_menu');
+await A.ev(() => [...document.querySelectorAll('#gcsys-menu [role=menuitem]')].find(b => /Close bidding/.test(b.textContent)).click());
+await wait(A, () => /bidding closed/.test((document.querySelector('tr[data-sys-job="J1"]') || {}).textContent || ''));
+ok('5 ⏸ Close bidding (a confirm) → op bidding; the row says "⏸ bidding closed"', POSTS.some(p => p.op === 'bidding' && p.close === true));
+await A.ev(() => { document.querySelector('tr[data-sys-job="J1"] [data-sys="menu"]').click(); }); await sleep(200);
+await A.ev(() => [...document.querySelectorAll('#gcsys-menu [role=menuitem]')].find(b => /Edit details/.test(b.textContent)).click());
+await wait(A, () => document.querySelector('#gcsys2 [data-details]'));
+const hd = await A.ev(() => ({ chips: [...document.querySelectorAll('#gcsys2 [data-hdr-trades] [data-trade-chip]')].map(x => x.getAttribute('data-trade-chip')), due: (document.querySelector('#gcsys2 [data-hdr-due]') || {}).textContent, tab: document.querySelector('#gcsys2 .tabs button.on').textContent }));
+ok('5 📝 Edit details opens 📂 Manage on 📝 Details; the header shows the trades (chips + ✏️ Trades) and "⏰ Bid due …" (✏️ Due)', hd.chips.join() === 'Drywall,Electrical' && /Bid due/.test(hd.due) && /Details/.test(hd.tab), hd);
+await A.ev(() => { [...document.querySelectorAll('#gcsys2 [data-a="dtrade"]')].find(b => b.getAttribute('data-t') === 'Paint').click(); });
+await A.ev(nd => { const set = (k, v) => { const x = document.querySelector('#gcsys2 [data-d="' + k + '"]'); if (x.type === 'checkbox') x.checked = v; else x.value = v; };
+  set('due', nd); set('dueTime', '14:00'); set('walkDate', nd); set('walkTime', '09:00'); set('walkLocation', 'Front gate'); set('walkMandatory', true); set('rq_bond', true); set('rq_coi', true); set('rq_coiGl', '$1M/$2M'); set('internalNotes', 'Margin note — staff only'); },
+  new Date(Date.now() + 12 * 864e5).toISOString().slice(0, 10));
+await A.ev(() => document.querySelector('#gcsys2 [data-a="bfadd"]').click()); await sleep(200);
+await A.ev(() => { const x = document.querySelector('#gcsys2 [data-bf="item"][data-i="0"]'); x.value = 'Hang + finish walls'; });
+const kept = await A.ev(() => document.querySelector('#gcsys2 [data-d="walkLocation"]').value);
+ok('5 typing survives a redraw (+ Add a line item kept the site-walk place)', kept === 'Front gate', kept);
+await A.ev(() => { const d = document.querySelector('#gcsys2 [data-details]'); d.scrollTop = 0; document.querySelector('#gcsys2 .bd').scrollTop = 0; });
+await shot(A, 'crm06_manage_details_tab');
+await A.ev(() => document.querySelector('#gcsys2 [data-a="dsave"]').click());
+await wait(A, () => POSTS.some(p => p.op === 'details'));
+const dp = POSTS.find(p => p.op === 'details') || {};
+ok('5 💾 Save details → op details: trades + Paint, the new due date / time, site walk, requirements, the bid form line, internal notes', dp.trades && dp.trades.join() === 'Drywall,Electrical,Paint' && dp.dueTime === '14:00' && dp.siteWalk.location === 'Front gate' && dp.siteWalk.mandatory === true && dp.requirements.bond === true && dp.requirements.coiGl === '$1M/$2M' && dp.bidForm[0].item === 'Hang + finish walls' && dp.internalNotes === 'Margin note — staff only', dp);
+await wait(A, () => [...document.querySelectorAll('#gcsys2 [data-hdr-trades] [data-trade-chip]')].length === 3);
+await A.ev(() => [...document.querySelectorAll('#gcsys2 [data-a="tab"]')].find(b => b.getAttribute('data-t') === 'scope').click()); await sleep(300);
+const sc2 = await A.ev(() => [...document.querySelectorAll('#gcsys2 [data-ti="trade"]')].map(x => x.value));
+ok('5 📝 Scope: one box per trade we are bidding (Paint added)', sc2.indexOf('Paint') > -1 && sc2.indexOf('Drywall') > -1 && sc2.indexOf('Electrical') > -1, sc2);
+await A.ev(() => window._gcSys2.close());
+await A.ev(() => document.querySelector('tr[data-sys-job="J1"] [data-sys="menu"]').click()); await sleep(200);
+await A.ev(() => { window.__p0 = window.prompt; window.prompt = (m, d) => d; [...document.querySelectorAll('#gcsys-menu [role=menuitem]')].find(b => /Duplicate/.test(b.textContent)).click(); });
+await wait(A, () => POSTS.some(p => p.op === 'duplicate'));
+ok('5 📋 Duplicate job → op duplicate (asks the new title: "Copy of …")', POSTS.some(p => p.op === 'duplicate' && p.jobId === 'J1' && p.title === 'Copy of Sample Clinic Remodel'), POSTS.filter(p => p.op === 'duplicate'));
+await A.ev(() => { try { window._gcSys2.close(); } catch (e) {} });
 ok('no page errors (admin)', !errs.length, errs);
 /* 4. the PM: 🔔 For you + the To-Do */
 const P = await computer('sbiffle@grayco-cs.com', { build: BUILD });
@@ -138,5 +185,6 @@ ok('4 the To-Do "📩 Sample Drywall LLC asked for plans — Sample Clinic Remod
 ok('no page errors (PM)', !errs2.length, errs2);
 if (SHOTS) fs.writeFileSync(SHOTS + '/index-planreq-crm.txt', ['CRM screenshots (test_PLANREQ_CRM.mjs) — made-up data',
   'crm01  🏗 Bid portal list: 🔒 Private ⇄ / 📝 Draft · Post it ▸ one-click pills, 📩 1 request', 'crm02  📂 Manage → 💬 Q&A: the plan request with ↩ Reply / ✅ Mark sent',
-  'crm03  📐 Plans & specs: 4 files of different types, each with its guessed kind + trade ▾ before 💾 Save', 'crm04  📝 Scope: each trade with its files + 📎 Add scope files', ''].join('\n'));
+  'crm03  📐 Plans & specs: 4 files of different types, each with its guessed kind + trade ▾ before 💾 Save', 'crm04  📝 Scope: each trade with its files + 📎 Add scope files',
+  'crm05  ⋯ Actions: the full menu', 'crm06  📂 Manage → 📝 Details: trades picker, dates, site walk, requirements, bid form, contacts, CRM link, internal notes; header trades + due', ''].join('\n'));
 const n = R.filter(Boolean).length; console.log('PLANREQ_CRM ' + n + '/' + R.length); process.exit(n === R.length ? 0 : 1);

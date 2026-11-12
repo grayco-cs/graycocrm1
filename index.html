@@ -178580,6 +178580,7 @@ function openMenu(btn, jobId){
   if (canDelete()) items.push(['del', '🗑 Delete…']);
   var m = D.createElement('div'); m.id = 'gcsys-menu'; m.setAttribute('data-gc-keep', '1'); m.setAttribute('role', 'menu');
   m.innerHTML = items.map(function(x){ return '<button type="button" role="menuitem" data-sys="' + x[0] + '" data-job="' + esc(jobId) + '"' + (j.leadId ? ' data-lead="' + esc(j.leadId) + '"' : '') + (x[0] === 'del' ? ' class="red"' : '') + '>' + x[1] + '</button>'; }).join('');
+  m.style.maxHeight = (W.innerHeight - 16) + 'px'; m.style.overflowY = 'auto'; m.style.zIndex = '2147483000';   /* patch PLANREQ-E: the longer menu fits and sits above banners */
   D.body.appendChild(m);
   var r = btn.getBoundingClientRect(), w = m.offsetWidth, h = m.offsetHeight;
   m.style.left = Math.max(8, Math.min(r.right - w, W.innerWidth - w - 8)) + 'px';

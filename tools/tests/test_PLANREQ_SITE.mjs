@@ -196,6 +196,13 @@ const j3 = await waitFor(() => { const j = rowOf('jobs/j_np'); return j && (j.tr
 ok('3 "Drywall scope.docx" → the Drywall trade\'s scope files; "A-101 Floor plan.pdf" → Plans', !!j3, rowOf('jobs/j_np'));
 const q3 = await waitFor(() => { const q = rowOf('planreqs/j_np__u_sam'); return q && q.status === 'closed' ? q : null; });
 ok('3 plans added → the request closes ("plans"), its To-Do is done', q3 && q3.closedHow === 'plans' && kvl('gc_office_tasks').find(x => x.id === 'planreq_j_np__u_sam').done === true, q3);
+/* patch PLANREQ-D: the bid due date, edited in place on the admin's job page → the subs get an update on the bid site */
+const nd = day(15);
+await A.fill('[data-due-date]', nd); await A.fill('[data-due-time]', '14:00'); await A.click('[data-due-save]');
+const jd = await waitFor(() => { const j = rowOf('jobs/j_np'); return j && j.bidDueDate === nd && j.bidDueTime === '14:00' ? j : null; });
+ok('3 ✏️ Bid due on the admin job page → saved (date + time)', !!jd, rowOf('jobs/j_np') && [rowOf('jobs/j_np').bidDueDate, rowOf('jobs/j_np').bidDueTime]);
+const upd = await waitFor(() => DB.sp_rows.find(r => r.collection === 'messages' && r.user_id === 'u_sam' && /Bid due date changed to/.test(r.data.body)));
+ok('3 … the sub gets the automatic "Bid due date changed to …" update; 🗂 Activity has it', !!upd && (rowOf('jobs/j_np').log || []).some(x => /Bid due changed/.test(x.what)), upd && upd.data.body);
 await sleep(800); await A.evaluate(() => { const e = document.getElementById('plans-admin'); if (e) e.scrollIntoView({ block: 'start' }); });
 await shot(A, 'pr06_bidsite_admin_requests_upload_sorted');
 /* 4. the sub again */
@@ -204,6 +211,8 @@ await S3.waitForSelector('[data-plans="ready"]', { timeout: 20000 });
 const s4 = await S3.evaluate(() => ({ body: document.body.innerText, files: [...document.querySelectorAll('[data-scopefile]')].map(x => x.getAttribute('data-scopefile')) }));
 ok('4 the sub: "✅ Plans are now posted", the update from GrayCo, the new sheet, and "Drywall scope.docx" under their Drywall scope', /Plans are now posted/.test(s4.body) && /Plans are now posted for Sample Clinic Remodel/.test(s4.body) && /A-101 Floor plan\.pdf/.test(s4.body) && s4.files.indexOf('Drywall scope.docx') > -1, s4.files);
 ok('4 the small "📩 Ask for something else" link is back (a new request can be made)', !!(await S3.$('[data-planreq-open="small"]')));
+const yt = await S3.evaluate(() => ({ your: (document.querySelector('[data-your-trade]') || {}).textContent || '', chips: [...document.querySelectorAll('[data-we-bid] [data-trade-chip]')].map(x => x.getAttribute('data-trade-chip')), upd: /Bid due date changed to/.test(document.body.innerText) }));
+ok('4 the trades we are bidding as chips, the sub\'s own highlighted ("✓ Your trade: Drywall, Paint"), and the due-date update', /Your trade: Drywall, Paint/.test(yt.your) && yt.chips.join() === 'Drywall,Paint' && yt.upd, yt);
 await shot(S3, 'pr07_bidsite_sub_plans_posted', true);
 ok('no page errors', !errs.length, errs);
 if (SHOTS) fs.writeFileSync(path.join(SHOTS, 'index-planreq-site.txt'), ['Bid site screenshots (test_PLANREQ_SITE.mjs) — made-up data; the built bid site against the real subportal.js',

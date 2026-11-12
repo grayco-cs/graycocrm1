@@ -234,7 +234,7 @@ await t('portal-app.js: the card, the sheet and the form are there in English an
   new Function(app);
   yes(/api\('p-bidjobs'\)/.test(app) && /api\('p-bid-save'/.test(app) && /data-bidjob/.test(app) && /bidSheet\(/.test(app));
   for (const k of ['jobsToBid', 'bidsJoin', 'papersNeed', 'bidSubmit', 'bidUpdate', 'bidDecided']) yes((app.match(new RegExp('\\b' + k + ':', 'g')) || []).length >= 2, k + ' in EN and ES');
-  yes(/\/portal-app\.js\?v=33\.231-bidpost/.test(html), 'cache-bust');
+  yes(/\/portal-app\.js\?v=33\.244-planreq/.test(html), 'cache-bust');
 });
 
 /* ── the browser: portal.html + portal-app.js, phone and desktop ── */
