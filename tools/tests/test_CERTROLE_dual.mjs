@@ -87,10 +87,12 @@ await K.ev(() => { const o = document.getElementById('gc-mws-sheet'); if (o) o.r
 /* WARN ONLY (the default until the owner switches it on): heads-up, clock-in allowed, they stay on the job */
 await K.ev(() => { window.__toasts = []; new MutationObserver(ms => ms.forEach(m => m.addedNodes.forEach(n => { if (n.textContent) window.__toasts.push(n.textContent); }))).observe(document.body, { childList: true }); });
 const wm = await K.ev(() => window._gcCertQual.mode());
-await K.ev(() => { try { window._gcFieldTools.run('day', 'M1'); } catch (e) {} }); await sleep(900);
+await K.ev(() => { try { window._gcFieldTools.run('day', 'M1'); } catch (e) {} }); await sleep(2500);
 const wDay = await K.ev(() => ({ toasts: window.__toasts.join(' | '), sheet: /Start day — Demo Ross basement/.test(document.body.innerText) }));
 await K.ev(() => { document.querySelectorAll('.gc-fh-sheet, .gc-fh-ov, [class*="sheet"]').forEach(x => { if (/Start day/.test(x.textContent || '')) x.remove(); }); });
 await K.ev(() => window._setProjects(prev => prev.map(x => x.id === 'M1' ? Object.assign({}, x, { mitTech: 'Dex Demo' }) : x))); await sleep(4500);
+const wDbg = await K.ev(() => { const Q = window._gcCertQual, u = window._crm.users.find(x => x.email === 'sbiffle@grayco-cs.com'), p = window._crm.projects.find(x => x.id === 'M1'); Q._tick(); return { block: !!Q.block(u, p), issues: Q.crewIssues(p).length, mode: Q.mode() }; }); await sleep(500);
+console.log('WDBG ' + JSON.stringify(wDbg));
 const wStay = await K.ev(() => ({ tech: window._crm.projects.find(x => x.id === 'M1').mitTech || '', toasts: window.__toasts.join(' | ') }));
 ok('WARN ONLY (default): clock-in allowed with "Heads-up: IICRC WRT is required for this job"; put on the water job he stays on it (heads-up, no admin request)', wm === 'warn' && wDay.sheet && /Heads-up: IICRC WRT is required for this job/.test(wDay.toasts) && wStay.tech === 'Dex Demo' && /Heads-up: IICRC WRT is required for Demo Ross basement/.test(wStay.toasts) && !((cget('gc_cert_plan') || {}).allowReq || []).length, { wm, wDay, wStay });
 if (SHOT) await K.page().screenshot({ path: SHOT + '/certrole_warn_only.png' });
