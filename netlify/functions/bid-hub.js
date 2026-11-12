@@ -43,6 +43,9 @@ async function whoIs(event){
   let prof = '';
   try { const r = await L.sb('gc_staff?select=profile,role&email=eq.' + encodeURIComponent(who.email)); if (r.ok) { const row = arr(await r.json())[0]; prof = low(row && (s(row.profile) + ' ' + s(row.role))); } } catch (e) {}
   who.estimator = /estimat/.test(prof + ' ' + who.role);
+  /* patch LEADBP (owner 11/12: "Glenn needs to [put leads on the bid portal] too"): the CRM's people list (Admin → Employees, role "Estimator")
+     counts too — the gc_staff row of an estimator often says only "staff" */
+  if (!who.estimator && !who.admin) { try { const d = await crmLists(); const u = arr(d.users).find(x => x && low(x.email) === who.email && x.active !== false); if (u && /estimat/i.test(s(u.role) + ' ' + s(u.profile) + ' ' + s(u.title))) who.estimator = true; } catch (e) {} }
   who.office = /office/.test(prof + ' ' + who.role) || who.email === 'office@grayco-cs.com';
   who.canInvite = who.admin || who.estimator || who.office;
   who.canPublic = who.admin || who.estimator;

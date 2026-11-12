@@ -174943,6 +174943,7 @@ function lcRowHtml(l, r, bc, del, now){
   var id = esc(l.id), cell = function(c, v, tip){ return '<td class="c-' + c + '"' + (tip ? ' title="' + esc(tip) + '"' : '') + '>' + (v ? esc(v) : '<span class="gcl-dash">—</span>') + '</td>'; };
   return '<tr class="gcl-lr' + bkRowCls(l) + '" data-gcl-id="' + id + '"><td class="c-name">' + bkChk(l)   /* patch LEADBULK */
     + '<button type="button" class="gclu-nb" data-gclu-note="' + id + '" title="Add a quick note" aria-label="Add a quick note">📝</button>'
+    + (function(){ try { return W._gcBidPost && W._gcBidPost.canPost({ leadId: l.id }) ? '<button type="button" class="gclu-nb" data-gclu-bp="' + id + '" title="📢 Put on bid portal" aria-label="Put on bid portal">📢</button>' : ''; } catch (e) { return ''; } })()   /* patch LEADBP */
     + '<b>' + r.ic + ' ' + r.name + '</b> ' + roleChip(l) + (W._gcBidMerge ? W._gcBidMerge.chip(l) : '') /* patch BIDMERGE */ + (r.addr ? '<div class="gcl-addr">' + r.addr + (r.d != null ? ' <span class="gclu-mi">· ' + miTxt(r.d) + '</span>' : '') + '</div>' : '')
     + (r.note ? '<div class="gclu-np" title="' + r.note.tip + '">📝 ' + r.note.t + '</div>' : '') + '</td>'
     + '<td class="c-due">' + lcDue(l, r, now) + '</td>'
@@ -176082,10 +176083,11 @@ function bkBar(){
   var h = '<span data-gclb-n>' + n + ' selected</span>'
     + (sp.job.length ? '<span class="gclb-skip" data-gclb-skip>' + sp.job.length + ' already ' + (sp.job.length === 1 ? 'a job' : 'jobs') + ' — skipped</span>' : '')
     + '<span class="gclb-dot">·</span><button type="button" data-gclb-a="del"' + (sp.go.length ? '' : ' disabled') + '>🗑 Delete selected' + (sp.job.length && sp.go.length ? ' (' + sp.go.length + ')' : '') + '</button>'
+    + ((function(){ try { return W._gcBidPost && W._gcBidPost.canBulk && W._gcBidPost.canBulk(); } catch (e) { return false; } })() && n ? '<span class="gclb-dot">·</span><button type="button" data-gclb-a="bp" style="background:#d4a017;color:#1b1640">📢 Put selected on bid portal</button>' : '')   /* patch LEADBP */
     + '<span class="gclb-dot">·</span><button type="button" data-gclb-a="cancel">Cancel</button>';
   if (el.__h !== h) { el.__h = h; el.innerHTML = h; }
 }
-function bkBarClick(ev){ var b = ev.target.closest && ev.target.closest('[data-gclb-a]'); if (!b || b.disabled) return; var a = b.getAttribute('data-gclb-a'); if (a === 'cancel') bkStop(); else if (a === 'del') bkAsk(); }
+function bkBarClick(ev){ var b = ev.target.closest && ev.target.closest('[data-gclb-a]'); if (!b || b.disabled) return; var a = b.getAttribute('data-gclb-a'); if (a === 'cancel') bkStop(); else if (a === 'del') bkAsk(); else if (a === 'bp' && W._gcBidPost && W._gcBidPost.bulk) W._gcBidPost.bulk(bkIds()); }   /* patch LEADBP */
 function bkTick(){
   if (!BULK.on) { BULK.loop = false; bkBar(); return; }
   if (view() !== 'leads' || !bkView() || !D.getElementById('gc-leads-hub')) { BULK.on = false; BULK.sel = {}; BULK.v++; BULK.loop = false; bkBar(); return; }   /* left Leads, or Calendar / Map */
@@ -223960,7 +223962,14 @@ function fn(path, body){
 }
 function crm(){ return W._crm || {}; }
 function proj(id){ id = s(id); return id ? arr(crm().projects).filter(function(p){ return p && s(p.id) === id; })[0] || null : null; }
-function lead(id){ id = s(id); return id ? arr(crm().leads).filter(function(l){ return l && s(l.id) === id; })[0] || null : null; }
+function lead(id){ id = s(id); if (!id) return null;
+  /* patch LEADBP (owner 11/12: "I need to be able to put leads onto the bid portal as admin, Glenn needs to too"): the Leads page's own live list
+     (W._gcLeadsHubKit.all — newer leads, Lead Inbox bid leads) is searched too; window._crm.leads can be an old copy without them, and then the
+     lead drawer had no 📢 button at all */
+  var hit = arr(crm().leads).filter(function(l){ return l && s(l.id) === id; })[0];
+  if (!hit) { try { hit = arr(W._gcLeadsHubKit && W._gcLeadsHubKit.all && W._gcLeadsHubKit.all()).filter(function(l){ return l && s(l.id) === id; })[0]; } catch (e) {} }
+  if (!hit) { try { hit = arr(W._gcLeadsList).filter(function(l){ return l && s(l.id) === id; })[0]; } catch (e) {} }
+  return hit || null; }
 function est(id){ id = s(id); if (!id) return null; var l = arr(W._gcEstimatesState).length ? W._gcEstimatesState : arr(crm().estimates); var e = arr(l).filter(function(x){ return x && s(x.id) === id; })[0]; if (!e) { try { e = (typeof estimates !== 'undefined' && Array.isArray(estimates) ? estimates : []).filter(function(x){ return x && s(x.id) === id; })[0]; } catch (x) {} } return e || null; }
 
 /* ── who may post ── */
@@ -224261,7 +224270,23 @@ W._gcBidJobGone = function(id){ id = s(id); if (!id) return false;
   var lists = [{ at: JOBS.at || 0, l: arr(JOBS.list) }]; try { if (W._gcSys && W._gcSys.bp && W._gcSys.bp.jobs) lists.push({ at: (W._gcSys.bp.at && W._gcSys.bp.at()) || 0, l: arr(W._gcSys.bp.jobs()) }); } catch (e) {}
   var hit = null; lists.sort(function(a, b){ return b.at - a.at; }).some(function(x){ hit = x.l.filter(function(j){ return j && j.id === id; })[0] || null; return !!hit; });   /* the newest list that knows the job */
   return !!(hit && hit.deleted); };
-W._gcBidPost = { open: open, close: close, canPost: function(c){ return canPost(ctxOf(c)); }, jobs: jobs, paint: paint, todo: function(){ QA.at = 0; return todoItems(); }, trades: tradeList,
+/* patch LEADBP: 📢 from the Leads list — a row's 📢 button, and "📢 Put selected on bid portal" for selected leads (admins / estimators): each goes
+   on as 🔒 private (invited subs only), its sub due date 1 day before our due date; trades / files are added on 📂 Manage afterwards */
+function bulkPost(ids){
+  ids = arr(ids).map(s).filter(Boolean); var ok = ids.filter(function(id){ return canPost(ctxOf({ leadId: id })); }), skip = 0;
+  if (!ok.length) return toast('You can put only your own leads on the bid portal (admins and estimators: any lead).', true);
+  if (!W.confirm('📢 Put ' + ok.length + ' lead' + (ok.length === 1 ? '' : 's') + ' on the bid portal?\n\nEach goes on 🔒 private (only subs you invite see it), with the sub due date one day before our due date. Pick its trades and add plans on 🏗 Bid portal → 📂 Manage.')) return;
+  var done = 0, fail = [];
+  return ok.reduce(function(pr, id){ return pr.then(function(){
+    var c = ctxOf({ leadId: id }), l = c.l || {}, j = postedFor(c); if (j && !j.deleted) { skip++; return; }
+    var our = ourDueOf(l), pmN = s(l.pm || l.estimator), pmU = arr(crm().users).filter(function(u){ return u && pmN && low(u.name) === low(pmN); })[0];
+    var body = { op: 'postjob', leadId: id, title: s(l.name || l.title) || 'Bid job', address: [s(l.address), s(l.city), s(l.state)].filter(Boolean).join(', '), visibility: 'private', trades: [],
+      due: subDue(our.date), dueTime: our.time, ourDue: our.date, ourDueTime: our.time, scope: scopeText(c), specs: '', pmName: pmN, pmEmail: low(pmU && pmU.email), files: [], links: [] };
+    return fn('bid-hub', body).then(function(){ done++; }, function(e){ fail.push(s(l.name || id) + ': ' + e.message); });
+  }); }, Promise.resolve()).then(function(){ toast('📢 ' + done + ' on the bid portal (🔒 private)' + (skip ? ' · ' + skip + ' already there' : '') + (fail.length ? ' · not posted: ' + fail.slice(0, 2).join('; ') : ''), !!fail.length && !done); jobs(true); });
+}
+D.addEventListener('click', function(ev){ var b = ev.target && ev.target.closest && ev.target.closest('[data-gclu-bp]'); if (!b) return; ev.preventDefault(); ev.stopPropagation(); if (ev.stopImmediatePropagation) ev.stopImmediatePropagation(); open({ leadId: b.getAttribute('data-gclu-bp') }); }, true);
+W._gcBidPost = { bulk: bulkPost, canBulk: function(){ return isAdmin() || isEst(); }, open: open, close: close, canPost: function(c){ return canPost(ctxOf(c)); }, jobs: jobs, paint: paint, todo: function(){ QA.at = 0; return todoItems(); }, trades: tradeList,
   state: function(){ return { jobs: JOBS.list ? JOBS.list.length : null, at: JOBS.at, admin: isAdmin(), est: isEst(), me: myEmail(), name: myName(), ticks: TICK }; } };
 try { console.log('[GC] patch BIDPOST: 📢 Put on bid portal (estimate / job / lead; admin, estimator, the job\'s PM) — nothing goes on by itself — _gcBidPost.state()'); } catch (e) {}
 })(window);
