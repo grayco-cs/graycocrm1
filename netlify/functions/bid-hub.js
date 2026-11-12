@@ -17,6 +17,7 @@
      POST {op:'visibility', jobId, mode:'private'|'public'}   public: an admin or an estimator, and a bid due date
      POST {op:'invite', jobId, emails:[…] | all:true, trades:[…]}   one e-mail per sub (in Spanish when that is theirs)
      POST {op:'award', jobId, source, id, on}                  mark a sub bid awarded (or not)
+     POST {op:'link', jobId, projectId, projectName}            the CRM project its awarded bids go into (patch BIDEST)
      POST {op:'sweep'}            every estimator lead's draft bid job → PRIVATE (the backfill; never touches a public one)
    ========================================================================== */
 'use strict';
@@ -75,11 +76,15 @@ async function jobsList(){
     deleted: GONE.test(s(j.status)), deletedAt: s(j.archivedAt), deletedBy: s(j.archivedBy),   /* patch SYS2: 🗑 Deleted (n), restorable for 30 days */
     id: s(j.id), title: s(j.title), address: s(j.address), po: s(j.poNumber), status: s(j.status), draft: j.draft === true || low(j.status) === 'draft',
     visibility: j.draft === true || low(j.status) === 'draft' ? 'draft' : (s(j.visibility) || 'public'), due: s(j.bidDueDate), dueTime: s(j.bidDueTime), trades: s(j.tradesSought),
-    invited: inv[j.id] || 0, bids: (nb[j.id] || 0) + (nm[j.id] || 0), leadId: s(j.leadInbox && j.leadInbox.id), source: s(j.leadInbox && j.leadInbox.source), autoPrivate: !!j.autoPrivate, updatedAt: s(j.updatedAt)
+    invited: inv[j.id] || 0, bids: (nb[j.id] || 0) + (nm[j.id] || 0), leadId: s(j.leadInbox && j.leadInbox.id), source: s(j.leadInbox && j.leadInbox.source), autoPrivate: !!j.autoPrivate, updatedAt: s(j.updatedAt),
+    crmProjectId: s(j.crmProjectId), crmProjectName: s(j.crmProjectName)   /* patch BIDEST: the CRM project this job's awarded bids go into */
   })).sort((a, b) => (a.draft - b.draft) || (s(a.due) || '9999').localeCompare(s(b.due) || '9999') || a.title.localeCompare(b.title));
 }
 const KEEP_DAYS = 30;
 function restorable(j){ const t = Date.parse(s(j && j.archivedAt)); return !!t && Date.now() - t < KEEP_DAYS * 864e5; }
+
+/* patch BIDEST: a sub bid's file — its name, and the stored ref / link when there is one (the CRM opens it) */
+function fileOut(f){ const o = { name: s(f && (f.name || f.fileName)) || 'file' }; const ref = s(f && (f.ref || f.fileRef)); const url = s(f && (f.url || f.link)); if (/^sb:/.test(ref)) o.ref = ref; if (/^https?:\/\//i.test(url)) o.url = url; return o; }
 
 /* ── ONE list of a job's sub bids, from bids@, the bid portal and the sub portal ── */
 async function subBids(jobId){
@@ -91,12 +96,12 @@ async function subBids(jobId){
     const viaPortal = s(b.via) === 'portal' || !!(u.crmSubId || u.bidsRequested);
     return { source: viaPortal ? 'subportal' : 'portal', id: s(b.id), sub: s(b.userName || u.name), company: s(b.userCompany || u.company), email: low(b.userEmail || u.email),
       trade: s(b.trade) || tradeOf(u, crmByEmail, b.userEmail || u.email), amount: b.amount == null || b.amount === '' ? null : Number(b.amount),
-      files: arr(b.docs).map(f => ({ name: s(f && (f.name || f.fileName)) || 'file' })), at: s(b.submittedAt || b.updatedAt), awarded: !!b.accepted, notSelected: !b.accepted && !!b.rejected, scope: s(b.scope).slice(0, 600) };
+      files: arr(b.docs).map(fileOut), at: s(b.submittedAt || b.updatedAt), awarded: !!b.accepted, notSelected: !b.accepted && !!b.rejected, scope: s(b.scope).slice(0, 600) };
   });
   arr(await L.kvGet(T.KV_SUBBIDS).catch(() => [])).filter(x => x && x.jobId === jobId).forEach(x => {
     const sub = x.sub || {};
     out.push({ source: 'email', id: s(x.id), sub: s(sub.name), company: s(sub.company), email: low(sub.email), trade: s(x.trade) || tradeOf(byEmail[low(sub.email)], crmByEmail, sub.email),
-      amount: x.amount != null ? Number(x.amount) : amountOf(s(x.subject) + '\n' + s(x.text)), files: arr(x.files).map(f => ({ name: s(f && f.name) || 'file' })), at: s(x.at), awarded: !!x.awarded, scope: s(x.text).slice(0, 600) });
+      amount: x.amount != null ? Number(x.amount) : amountOf(s(x.subject) + '\n' + s(x.text)), files: arr(x.files).map(fileOut), at: s(x.at), awarded: !!x.awarded, scope: s(x.text).slice(0, 600) });
   });
   return out.sort((a, b) => s(a.trade).localeCompare(s(b.trade)) || (a.amount == null) - (b.amount == null) || (a.amount || 0) - (b.amount || 0));
 }
@@ -197,6 +202,18 @@ async function visibility(who, b){
   job.updatedAt = nowIso();
   await SP.upsertRows([SP.rowFor('jobs', job)], who.email);
   return { ok: true, jobId: job.id, visibility: job.visibility };
+}
+
+/* patch BIDEST: remember which CRM project a bid job's awarded bids go into (the estimate's project) */
+async function link(who, b){
+  if (!who.canInvite) return { code: 403, error: 'Only an admin, an estimator or the office links a bid job to a project.' };
+  const job = await jobRow(b.jobId); if (!job) return { code: 404, error: 'No such bid job.' };
+  const pid = s(b.projectId).slice(0, 120), name = s(b.projectName).slice(0, 200);
+  if (s(job.crmProjectId) === pid && s(job.crmProjectName) === name) return { ok: true, jobId: job.id, projectId: pid, same: true };
+  job.crmProjectId = pid; job.crmProjectName = name; job.crmProjectBy = who.email; job.crmProjectAt = nowIso();
+  logTo(job, who, pid ? '📁 Linked to the CRM project ' + (name || pid) + ' (awarded bids go into its estimate)' : '📁 CRM project link taken off');
+  await saveJob(job, who);
+  return { ok: true, jobId: job.id, projectId: pid };
 }
 
 async function award(who, b){
@@ -483,6 +500,7 @@ exports.handler = async function(event){
     else if (b.op === 'visibility') r = await visibility(who, b);
     else if (b.op === 'award') r = await award(who, b);
     else if (b.op === 'sweep') r = await sweep(who);
+    else if (b.op === 'link') r = await link(who, b);   /* patch BIDEST */
     else if (b.op === 'archive') r = await archive(who, b);   /* patch SYS2 */
     else if (b.op === 'restore') r = await restore(who, b);
     else if (/^(plans|scope|addendum|post|answer|notice)$/.test(s(b.op)) && !who.canInvite) r = { code: 403, error: 'Only an admin, an estimator or the office changes a bid job.' };
@@ -498,7 +516,7 @@ exports.handler = async function(event){
     return J(e.status || 502, { error: e.status ? e.message : 'The bid portal could not be reached: ' + s(e && e.message) }, C);
   }
 };
-exports._test = { amountOf, subBids, subsList, jobsList, invite, visibility, award, sweep, inviteMail, whoIs, archive, restore, manageView, audience, noticeMail };
+exports._test = { link, fileOut, amountOf, subBids, subsList, jobsList, invite, visibility, award, sweep, inviteMail, whoIs, archive, restore, manageView, audience, noticeMail };
 /* patch LOGOALL (owner 10/23: "should have our logo on it"): every customer / sub / GC e-mail this file sends
    straight to Resend gets the GrayCo shell (centered logo, office line, licenses). Internal @grayco-cs.com mail is untouched. */
 try { require('./_lib/brand.js').installResend(); } catch (e) {}

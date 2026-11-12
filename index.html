@@ -178306,6 +178306,9 @@ function bidsTable(list, jobId, opts){
   if (!list.length) return '<div class="mut">No sub bids yet — they come in by ✉️ bids@, the 🏗 bid portal and the 🔨 sub portal.</div>';
   var by = {}, order = [];
   list.forEach(function(b){ var t = s(b.trade) || 'Trade not given'; if (!by[t]) { by[t] = []; order.push(t); } by[t].push(b); });
+  /* patch BIDEST (owner: "show us by trade; if a trade has multiple, show the bids lowest first"): trades A→Z (no trade last), lowest first */
+  order.sort(function(a, b){ return (a === 'Trade not given') - (b === 'Trade not given') || a.toLowerCase().localeCompare(b.toLowerCase()); });
+  order.forEach(function(t){ by[t] = by[t].map(function(b, i){ return [b, i]; }).sort(function(x, y){ var a = x[0].amount, b = y[0].amount; return (a == null) - (b == null) || (a || 0) - (b || 0) || x[1] - y[1]; }).map(function(x){ return x[0]; }); });
   var aw = canPublic();
   return '<table><thead><tr><th>Sub</th><th>Amount</th><th>Files</th><th>Received</th><th>From</th><th></th></tr></thead><tbody>' + order.map(function(t){
     var rows = by[t], lowAmt = Math.min.apply(null, rows.map(function(b){ return b.amount == null ? Infinity : b.amount; }));
@@ -178355,13 +178358,34 @@ function shown(){
     return !q || low(j.title + ' ' + j.address + ' ' + j.po + ' ' + j.trades).indexOf(q) > -1;
   });
 }
+/* patch BIDEST (owner: "the bid portal tab on admin should open up where I can add, edit, see info etc."): two switches on top —
+   🧰 Full bid portal (the bid site's own admin, /subportal/, signed in with the CRM sign-in; the default) and 📊 Bids & invites
+   (this view). Admins, the office and estimators; everyone else sees this view as before. The last pick is kept per person. */
+function bpFullOk(){ return realAdmin() || isEst() || isOffice() || role() === 'Admin'; }
+function bpModeKey(){ return 'gc_bp_mode:' + (myEmail() || 'me'); }
+function bpMode(){ if (!bpFullOk()) return 'crm'; var v = ''; try { v = localStorage.getItem(bpModeKey()) || ''; } catch (e) {} return v === 'crm' ? 'crm' : 'full'; }
+function setBpMode(v){ try { localStorage.setItem(bpModeKey(), v === 'crm' ? 'crm' : 'full'); } catch (e) {} applyBpMode(); }
+function applyBpMode(){
+  var m = D.getElementById('gc-sys-bp-mount'); if (!m) return;
+  var full = bpMode() === 'full', fb = m.querySelector('[data-bp-full]'), crmv = m.querySelector('#gc-sys-bp');
+  Array.prototype.forEach.call(m.querySelectorAll('[data-sys="bpmode"]'), function(b){ var on = b.getAttribute('data-m') === (full ? 'full' : 'crm'); b.classList.toggle('on', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+  if (crmv) crmv.style.display = full ? 'none' : '';
+  if (fb) {
+    fb.style.display = full ? '' : 'none';
+    if (full && !fb.querySelector('iframe')) fb.innerHTML = '<iframe src="/subportal/" title="Bid portal — full admin" allow="clipboard-write" data-bp-frame style="display:block;width:100%;height:calc(100vh - 118px);min-height:480px;border:none;border-radius:8px;background:#FBFAF7"></iframe>';
+  }
+}
 function drawBP(){
   var m = D.getElementById('gc-sys-bp-mount'); if (!m) return;
   css();
   if (!m.__sys) { m.__sys = 1; m.addEventListener('click', onClick); m.addEventListener('input', function(ev){ if (ev.target.getAttribute('data-sys') === 'q') { BP.q = ev.target.value; drawRows(); } }); }
-  if (!m.querySelector('.gcsys')) m.innerHTML = '<div class="gcsys" id="gc-sys-bp"><h2>🏗 Bid portal</h2><p class="sub">Every bid job on bids.grayco-cs.com. Estimator leads are <b>🔒 private</b> (invited subs only) until an admin or an estimator makes them public. Subs and their prices are never shown to a customer.</p>'
+  if (!m.querySelector('.gcsys')) m.innerHTML = (bpFullOk() ? '<div class="gcsys gcsys-bpsw" style="padding-bottom:0;max-width:none"><div class="bar" role="group" aria-label="Bid portal view" style="margin:0 0 8px">'
+      + '<button type="button" class="b" data-sys="bpmode" data-m="full">🧰 Full bid portal — add / edit jobs, approvals, plans</button>'
+      + '<button type="button" class="b" data-sys="bpmode" data-m="crm">📊 Bids &amp; invites</button></div></div><div data-bp-full style="display:none;padding:0 12px 12px"></div>' : '')
+    + '<div class="gcsys" id="gc-sys-bp"><h2>🏗 Bid portal</h2><p class="sub">Every bid job on bids.grayco-cs.com. Estimator leads are <b>🔒 private</b> (invited subs only) until an admin or an estimator makes them public. Subs and their prices are never shown to a customer.</p>'
     + '<div class="bar"><button type="button" class="b gold" data-sys="openbids">Open the bid portal ↗</button><button type="button" class="b" data-sys="refresh">↻ Refresh</button><input type="search" data-sys="q" placeholder="Search jobs, address, PO, trade" aria-label="Search bid jobs"></div>'
     + '<div class="bar" role="tablist" data-sys-filters></div><div data-sys-rows></div></div>';
+  applyBpMode();   /* patch BIDEST */
   drawRows();
   loadJobs(false);
 }
@@ -178390,7 +178414,7 @@ function drawRows(){
         + '<td data-l="' + (del ? 'Deleted' : 'Bid due') + '">' + (del ? '<span class="mut">' + esc(when(j.deletedAt)) + '<br>' + left + ' day' + (left === 1 ? '' : 's') + ' left</span>' : j.due ? esc(j.due + (j.dueTime ? ' ' + j.dueTime : '')) : '<span class="mut">—</span>') + '</td>'
         + '<td><div class="acts">' + (del ? (canDelete() ? '<button type="button" class="b" data-sys="restore" data-job="' + esc(j.id) + '">↩ Restore</button>' : '')
           : (canInvite() ? '<button type="button" class="b pri" data-sys="manage" data-job="' + esc(j.id) + '">📂 Manage</button>' : '')
-          + '<button type="button" class="b" data-sys="bids" data-job="' + esc(j.id) + '">📨 Bids</button>'
+          + '<button type="button" class="b" data-sys="bids" data-job="' + esc(j.id) + '" title="Every bid for this job, by trade, lowest first — award / add to the estimate">📊 Bids (' + (+j.bids || 0) + ')</button>'   /* patch BIDEST */
           + '<button type="button" class="b" data-sys="menu" data-job="' + esc(j.id) + '" aria-label="More actions" title="More actions">⋯ Actions</button>') + '</div></td></tr>';
     }).join('') + (rows.length ? '' : '<tr><td colspan="' + (bulk ? 7 : 6) + '" class="mut">Nothing in this view.</td></tr>') + '</tbody></table>');
 }
@@ -178444,6 +178468,7 @@ function restoreJob(id){
 function jobOf(id){ return arr(BP.jobs).filter(function(j){ return j.id === id; })[0] || { id: id, title: 'Bid job' }; }
 
 function openBids(jobId, lead){
+  try { if (W._gcBidEst && typeof W._gcBidEst.open === 'function') return W._gcBidEst.open(jobId, lead); } catch (e) { warn(e); }   /* patch BIDEST: 📊 all bids by trade */
   var j = jobOf(jobId);
   var m = modal('<button type="button" class="b x" data-sys="close">✕</button><h3>📨 Sub bids — ' + esc(j.title) + '</h3><p class="mut">One list from all three doors: ✉️ e-mailed to bids@, 🏗 the bid portal, 🔨 the sub portal. Grouped by trade, the low bid in green.</p><div data-sys-list class="mut">Loading…</div>');
   fn('bid-hub?' + (lead ? 'lead=' + encodeURIComponent(lead) : 'subbids=' + encodeURIComponent(jobId))).then(function(r){
@@ -178497,6 +178522,7 @@ function setVis(jobId, mode){
 }
 function award(t, on){
   fn('bid-hub', { op: 'award', jobId: t.getAttribute('data-job'), source: t.getAttribute('data-src'), id: t.getAttribute('data-id'), on: on }).then(function(){
+    try { if (W._gcBidEst && W._gcBidEst.sync) W._gcBidEst.sync(t.getAttribute('data-job'), t.getAttribute('data-src'), t.getAttribute('data-id'), on); } catch (e) { warn(e); }   /* patch BIDEST: the project's estimate follows */
     toast(on ? '🏆 Marked awarded' + (arguments[0] && arguments[0].notSelected ? ' · ' + arguments[0].notSelected + ' other bid' + (arguments[0].notSelected === 1 ? '' : 's') + ' in this trade → Not selected' : '') : 'Award taken off');
     if (D.getElementById('gcsys-modal')) openBids(t.getAttribute('data-job'));
     LSB.at = 0; LSB.key = '';
@@ -178517,6 +178543,7 @@ function onClick(ev){
   if (a === 'openbids') return W.open('https://bids.grayco-cs.com/', '_blank', 'noopener');
   if (a === 'refresh') { BP.at = 0; return loadJobs(true); }
   if (a === 'f') { BP.f = t.getAttribute('data-f'); return drawRows(); }
+  if (a === 'bpmode') return setBpMode(t.getAttribute('data-m'));   /* patch BIDEST */
   if (a === 'bids') return openBids(job);
   if (a === 'lbids') return openBids(job, t.getAttribute('data-lead'));
   if (a === 'invite') { if (!BP.jobs) BP.jobs = []; if (!arr(BP.jobs).some(function(j){ return j.id === job; }) && t.getAttribute('data-title')) BP.jobs.push({ id: job, title: t.getAttribute('data-title'), visibility: '' }); return openInvite(job); }
@@ -178696,7 +178723,7 @@ function tick(){
   } catch (e) { TERR = s(e && e.message); warn(e); }
 }
 RI.call(W, tick, 1200); later(tick, 500);
-W._gcSys = { drawSys: function(){ try { drawSys(); } catch (e) { warn(e); } }, bp: { load: loadJobs, draw: drawBP, invite: openInvite, bids: openBids, vis: setVis, jobs: function(){ return arr(BP.jobs); }, del: askDelete }, modal: modal, closeModal: closeModal, toast: toast, fn: fn, css: css, tiles: function(){ return TILES().map(function(t){ return t.k; }); }, tile: tile, ping: ping, drawer: drawerTick, leadKey: leadKey,
+W._gcSys = { drawSys: function(){ try { drawSys(); } catch (e) { warn(e); } }, bp: { mode: bpMode, setMode: setBpMode, load: loadJobs, draw: drawBP, invite: openInvite, bids: openBids, table: bidsTable, vis: setVis, jobs: function(){ return arr(BP.jobs); }, del: askDelete }, modal: modal, closeModal: closeModal, toast: toast, fn: fn, css: css, tiles: function(){ return TILES().map(function(t){ return t.k; }); }, tile: tile, ping: ping, drawer: drawerTick, leadKey: leadKey,
   state: function(){ return { jobs: arr(BP.jobs).length, me: BP.me, err: BP.err, pings: JSON.parse(JSON.stringify(PING)), lsb: LSB.key, role: role(), ticks: TICKS, err2: TERR }; } };
 try { console.log('[GC] patch SYS: 🏗 Bid portal tab, 🧭 GrayCo Systems tab, 📨 one sub-bid list (bids@ + bid portal + sub portal) — _gcSys.state()'); } catch (e) {}
 })();
@@ -221590,5 +221617,480 @@ function run(){
 setTimeout(run, 25000);
 (W.__GC_NATIVE_SETINTERVAL__ || W.setInterval).call(W, function(){ if (!document.hidden) run(); }, 600000);
 W._gcBidSubs = { run: run, last: function(){ return LAST; } };
+})(window);
+</script>
+
+<script id="gc-patch-bidest">
+/* BIDEST (owner 11/12: "the admin page should have a spot where all bids for a job are at, and the selected bid then goes into
+   the estimate builder as a bid for the project in projects"; "all bids in the bid portal show us by trade; if a trade has
+   multiple, show the bids lowest first").
+   - 🏗 Bid portal tab → a job's "📊 Bids (N)" (also ⋯ → 📨 Sub bids, and the lead drawer's list): EVERY bid for the job from all
+     three doors (✉️ bids@, 🏗 bid portal, 🔨 sub portal; netlify/functions/bid-hub.js ?subbids=), by trade A→Z, lowest first in
+     a trade (no amount last), the low bid marked, amount / company / scope / files / status (pending · 🏆 awarded · not selected),
+     with 🏆 Award (bid-hub op award) and ➕ Add to estimate.
+   - Award or ➕ puts the bid into the LINKED CRM project's estimate (the 📐 Estimates builder's own record: the company list
+     "estimates", one record per estimate with pid + lines[]; patch EST3) as ONE subcontractor line (type sub; cost = the bid,
+     the estimate's own sub margin applies): trade, sub company (supplier), the bid's reference (bidRef: key source:id, job,
+     company, scope, files) — never twice (the line is found by bidRef.key). Un-award / ➖ takes that line off an open estimate
+     (on a signed / closed one it is only marked); a line a person typed is never touched. The estimate: the newest open one of
+     the project (same company), else a new Draft estimate for the project.
+   - The linked project: the one stored (project.bidJobId / the bid job's crmProjectId), else the project made from the bid job's
+     lead (the lead's company decides when the lead has projects in two companies); none / ambiguous → a searchable picker
+     (the pick is remembered on the project and on the bid job).
+   - In the builder a bid line shows "🏆 Awarded bid" + where it came from; the totals are the builder's own.
+   Console: _gcBidEst.state()   _gcBidEst.open(jobId)   _gcBidEst.group(bids)   _gcBidEst.resolve(jobId) */
+(function(W){
+'use strict';
+if (W.__GC_PATCH_BIDEST__) return; W.__GC_PATCH_BIDEST__ = true;
+var D = W.document;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout, RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+function later(f, ms){ return ST.call(W, f, ms || 0); }
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function num(v){ var n = parseFloat(String(v == null ? '' : v).replace(/[^0-9.\-]/g, '')); return isFinite(n) ? n : 0; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function money(n){ return n == null || n === '' || !isFinite(n) ? '—' : '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 }); }
+function nowIso(){ return new Date().toISOString(); }
+function clone(o){ return JSON.parse(JSON.stringify(o)); }
+function warn(e){ try { console.warn('[GC BIDEST]', e && e.message || e); } catch (x) {} }
+function sys(){ return W._gcSys || null; }
+function toast(m, bad){ try { var S = sys(); if (S && S.toast) return S.toast(m, bad); if (W._gcToast) W._gcToast(m); } catch (e) {} }
+function fn(path, body){
+  var S = sys(); if (S && S.fn) return S.fn(path, body);
+  return W.fetch('/.netlify/functions/' + path, { method: body ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined, cache: 'no-store' })
+    .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ if (!r.ok) throw new Error(j.error || ('The server answered ' + r.status)); return j; }); });
+}
+function myName(){ try { var m = W._gcMeNow; if (m && m.name) return s(m.name); } catch (e) {} try { return s(W.__GC_AUTH__.email()); } catch (e) { return ''; } }
+var LOG = [];
+function note(x){ LOG.push(Object.assign({ at: nowIso() }, x)); if (LOG.length > 60) LOG.shift(); }
+
+/* ── the CRM's lists ── */
+function crm(){ return W._crm || {}; }
+function projects(){ return arr(crm().projects); }
+function leads(){ return arr(crm().leads); }
+function proj(id){ id = s(id); if (!id) return null; return projects().filter(function(p){ return p && s(p.id) === id; })[0] || null; }
+function projOk(p){ return !!(p && p.id && !p.deleted && !p._deleted && !p._tombstoned && !/^(deleted|archived|void)$/i.test(s(p.status))); }
+function coValid(c){ try { return !!(W._gcCo && W._gcCo.valid(c)); } catch (e) { return false; } }
+function coOfJob(p){ try { return W._gcCo ? W._gcCo.ofJob(p) : 'construction'; } catch (e) { return 'construction'; } }
+function coOfLead(l){ try { return W._gcCo ? W._gcCo.ofLead(l) : 'construction'; } catch (e) { return 'construction'; } }
+function coBadge(c){ try { return W._gcCo && W._gcCo.badge ? W._gcCo.badge(c, true) : ''; } catch (e) { return ''; } }
+function poOf(p){ return s(p && (p.autoPO || p.po || p.poNumber)); }
+function projLabel(p){ return [poOf(p), s(p && (p.name || p.client)) || 'Project'].filter(Boolean).join(' · '); }
+
+/* the bid job (the Bid portal tab's list) */
+var STUB = {};   /* a job not in the tab's list yet (opened from a lead's drawer): what we know of it */
+function jobOf(id){ id = s(id); var S = sys(), j = null; try { j = S && S.bp ? arr(S.bp.jobs()).filter(function(x){ return x && x.id === id; })[0] : null; } catch (e) {} return j || STUB[id] || (STUB[id] = { id: id, title: 'Bid job', leadId: id && id === UI.jobId ? UI.lead : '' }); }
+function leadOfJob(job){
+  var lid = s(job && job.leadId); if (!lid) return null;
+  var key = /^crm:/.test(lid) ? lid.slice(4) : lid, L = leads(), hit = null;
+  try { if (typeof W._gcLeadByInbox === 'function') hit = W._gcLeadByInbox(L, key); } catch (e) {}
+  return hit || L.filter(function(x){ return x && (x.id === key || x.id === 'LEADIN-' + key.replace(/^LI-/, '')); })[0] || null;
+}
+
+/* ── the linked CRM project ── */
+function resolve(jobOrId){
+  var job = typeof jobOrId === 'string' ? jobOf(jobOrId) : (jobOrId || {});
+  var P = projects().filter(projOk), out = { pid: '', p: null, why: '', cands: [], lead: null, jobId: s(job.id) };
+  var linked = P.filter(function(p){ return s(p.bidJobId) === s(job.id) && s(job.id); });
+  var sp = s(job.crmProjectId) && proj(job.crmProjectId);
+  if (sp && projOk(sp) && linked.indexOf(sp) < 0) linked.push(sp);
+  if (linked.length === 1) { out.p = linked[0]; out.pid = s(linked[0].id); out.why = 'linked'; return out; }
+  if (linked.length > 1) { out.cands = linked; out.why = 'ambiguous'; return out; }
+  var l = leadOfJob(job); out.lead = l;
+  if (!l) { out.why = 'none'; return out; }
+  var ids = [s(l.id), s(job.leadId), s(l.inboxId)].filter(Boolean), own = [l.pid, l.projectId, l.jobId, l.convertedPid, l.wonPid].map(s).filter(Boolean);
+  var c = P.filter(function(p){ return own.indexOf(s(p.id)) > -1 || [p.leadId, p.fromLeadId, p.fromLead, p.leadInboxId].some(function(v){ return s(v) && ids.indexOf(s(v)) > -1; }); });
+  if (c.length === 1) { out.p = c[0]; out.pid = s(c[0].id); out.why = 'lead'; return out; }
+  if (c.length > 1) {   /* a lead with projects in two companies: the lead's own company decides */
+    var co = coOfLead(l), same = c.filter(function(p){ return coOfJob(p) === co; });
+    if (same.length === 1) { out.p = same[0]; out.pid = s(same[0].id); out.why = 'lead-company'; return out; }
+    out.cands = c; out.why = 'ambiguous'; return out;
+  }
+  out.why = 'lead-no-project'; return out;
+}
+function whyText(r){
+  return { linked: 'linked to this bid job', lead: 'made from this bid job\'s lead', 'lead-company': 'made from this bid job\'s lead (the lead\'s company)' }[r.why] || '';
+}
+/* remember the pick: on the project (bidJobId, synced like every project field) and on the bid job (bid-hub op link) */
+function link(jobId, pid){
+  jobId = s(jobId); pid = s(pid); var p = proj(pid); if (!jobId || !p) return Promise.resolve(false);
+  var at = nowIso();
+  try {
+    if (typeof W._setProjects === 'function') W._setProjects(function(list){ return arr(list).map(function(x){
+      if (!x) return x;
+      if (s(x.id) === pid) return Object.assign({}, x, { bidJobId: jobId, bidJobLinkedAt: at, bidJobLinkedBy: myName(), updatedAt: at });
+      if (s(x.bidJobId) === jobId) { var y = Object.assign({}, x, { updatedAt: at }); delete y.bidJobId; return y; }
+      return x; }); });
+    later(function(){ try { if (W._supaUpsertNow && Array.isArray(crm().projects)) W._supaUpsertNow('projects', crm().projects); } catch (e) { warn(e); } }, 700);
+  } catch (e) { warn(e); }
+  try { var j = jobOf(jobId); j.crmProjectId = pid; j.crmProjectName = projLabel(p); } catch (e) {}
+  note({ op: 'link', jobId: jobId, pid: pid });
+  return fn('bid-hub', { op: 'link', jobId: jobId, projectId: pid, projectName: projLabel(p) }).then(function(){ return true; }, function(e){ warn(e); return true; });
+}
+
+/* ── the estimates (the 📐 Estimates builder's records; patch EST3) ── */
+var CLOSED = /^(won|lost|signed|accepted|approved|awarded|contract|declined|rejected|cancel+ed|dead|archived|closed|void)/i;
+function isOpen(e){ return !CLOSED.test(s(e && e.status)); }
+function crmEsts(){ var a = arr(W._gcEstimatesState); if (!a.length) a = arr(crm().estimates); return a; }
+function bEsts(){ try { return typeof estimates !== 'undefined' && Array.isArray(estimates) ? estimates : null; } catch (e) { return null; } }
+function bLines(){ try { return typeof lines !== 'undefined' && Array.isArray(lines) ? lines : null; } catch (e) { return null; } }
+function bSlots(){ try { return typeof openSlots !== 'undefined' && Array.isArray(openSlots) ? openSlots : []; } catch (e) { return []; } }
+function bActive(){ try { return typeof activeSlot !== 'undefined' ? activeSlot : -1; } catch (e) { return -1; } }
+function storedEst(id){
+  id = s(id); var c = crmEsts().filter(function(e){ return e && e.id === id; })[0] || null, b = arr(bEsts()).filter(function(e){ return e && e.id === id; })[0] || null;
+  var st = function(e){ if (!e) return ''; var a = s(e.updatedAt || e.updated_at), x = s(e.savedAt); return a > x ? a : x; };
+  return c && b ? (st(b) > st(c) ? b : c) : (c || b);
+}
+function linesOf(e){ if (!e) return []; if (Array.isArray(e.lines) && e.lines.length) return e.lines; try { if (W._gcNormalizeEstLines) return arr(W._gcNormalizeEstLines(e)); } catch (x) {} return arr(e.lines); }
+function isBidLine(l, key){ return !!(l && l.bidRef && l.bidRef.from === 'bid portal' && (!key || l.bidRef.key === key)); }
+function estsOfJob(pid){
+  var l = null; try { if (W._gcEST3 && typeof W._gcEST3.byJob === 'function') l = W._gcEST3.byJob(pid); } catch (e) {}
+  if (!Array.isArray(l)) l = crmEsts().filter(function(e){ return e && s(e.pid) === s(pid) && !e._isDraft && !/^draft_/.test(s(e.id)) && !e._promotedTo && !e._supersededBy; });
+  return l;
+}
+function allWithKey(key){
+  var seen = {}, out = [];
+  crmEsts().concat(arr(bEsts())).forEach(function(e){ if (!e || !e.id || seen[e.id]) return; if (linesOf(e).some(function(l){ return isBidLine(l, key); })) { seen[e.id] = 1; out.push(storedEst(e.id) || e); } });
+  return out;
+}
+/* the estimate a bid goes into: the one that already has it, else the project's newest open one (same company) */
+function target(pid, key){
+  var p = proj(pid), co = coOfJob(p);
+  var l = estsOfJob(pid).filter(function(e){ return e && (!coValid(e.companyId) || e.companyId === co); });
+  var has = l.filter(function(e){ return linesOf(storedEst(e.id) || e).some(function(x){ return isBidLine(x, key); }); })[0];
+  if (has) return storedEst(has.id) || has;
+  var op = l.filter(isOpen)[0];
+  return op ? (storedEst(op.id) || op) : null;
+}
+/* the line math with the estimate's own settings (only to keep the saved totals right; the builder recomputes on open) */
+function mm(pct){ try { if (W._gcMarginMult) return W._gcMarginMult(pct); } catch (e) {} var p = parseFloat(pct); if (!isFinite(p) || p <= 0 || p >= 95) p = 30; return Math.round((1 / (1 - p / 100)) * 10000) / 10000; }
+function lineMath(l, rec){
+  if (!l) return { c: 0, h: 0 };
+  var st = (rec && rec.settings) || {}, t = s(l.type) || 'labor', qty = parseFloat(l.qty) || 1, cost = parseFloat(l.cost) || 0;
+  if (t === 'mh') return { c: qty * (num(st.mhCost) || 44.44), h: qty * (num(st.mhCharge) || 75) };
+  var base = cost * qty; if (t === 'material') base = base * (1 + num(st.tax) / 100);
+  if (st.jobState === 'MS') base = base * (1 + (num(st.msContractorTax) || 3.5) / 100);
+  var m;
+  if (l.mult && l.mult !== 'type' && parseFloat(l.mult) > 0) m = parseFloat(l.mult);
+  else if (rec && rec.useOvr) m = num(rec.ovrMult) || 1.5;
+  else if (rec && rec.jobMult && rec.jobMult !== 'mat' && parseFloat(rec.jobMult) > 0) m = parseFloat(rec.jobMult);
+  else { var k = { material: 'matMult', labor: 'labMult', sub: 'subMult', equipment: 'eqMult' }[t] || 'labMult'; m = num(st[k]) || mm(st.marginPct || 30); }
+  return { c: base, h: base * m };
+}
+function bump(rec, add, take){
+  var a = lineMath(add, rec), t = lineMath(take, rec);
+  rec.totalCost = Math.round((num(rec.totalCost) + a.c - t.c) * 100) / 100;
+  rec.totalCharge = Math.round((num(rec.totalCharge) + a.h - t.h) * 100) / 100;
+}
+/* put one record into the company list (in memory, this computer's disk, the cloud) — the same way patch EST3 saves */
+function write(rec){
+  rec = clone(rec); rec._isDraft = false; rec.updatedAt = nowIso(); rec.savedAt = rec.updatedAt;
+  try { if (typeof W._gcSetEstimates === 'function') W._gcSetEstimates(function(prev){ var a = arr(prev).slice(); var i = a.findIndex(function(x){ return x && x.id === rec.id; }); if (i >= 0) a[i] = Object.assign({}, a[i], rec); else a.unshift(rec); return a; }); } catch (e) { warn(e); }
+  try { var be = bEsts(); if (be) { var j = be.findIndex(function(x){ return x && x.id === rec.id; }); if (j >= 0) be[j] = clone(rec); else be.unshift(clone(rec)); } } catch (e) { warn(e); }
+  try {
+    if (typeof W.idbGet === 'function' && typeof W.idbSet === 'function') Promise.resolve(W.idbGet('estimates')).then(function(list){
+      list = arr(list).slice(); var i = list.findIndex(function(x){ return x && x.id === rec.id; }); if (i >= 0) list[i] = Object.assign({}, list[i], rec); else list.unshift(rec);
+      return Promise.resolve(W.idbSet('estimates', list)).then(function(){ try { W.__GC_MANUAL_SAVE__ = true; if (W._supaUpsert) W._supaUpsert('estimates', list); else if (W._supaUpsertNow) W._supaUpsertNow('estimates', list); } catch (e) { warn(e); } });
+    }).catch(warn);
+  } catch (e) { warn(e); }
+  return rec;
+}
+/* the estimate open in the builder right now: change the builder's own lines (it saves itself) */
+function liveSlot(estId){ var sl = bSlots(), a = bActive(); return sl[a] && s(sl[a]._savedEstId) === s(estId) ? sl[a] : null; }
+function liveApply(estId, change){
+  var sl = liveSlot(estId), L = bLines(); if (!sl || !L) return false;
+  change(L); sl.lines = L;
+  try { W.renderLines(); } catch (e) { warn(e); } try { W.renderSummary(); } catch (e) { warn(e); }
+  keepSlots();   /* as the builder's own Add line does: the open tabs are stored (a sync must not bring back the older tabs) */
+  var saved = false; try { saved = !!(W._gcEST3 && W._gcEST3.save && W._gcEST3.save()); } catch (e) { warn(e); }
+  if (!saved) { try { if (typeof W.doSave === 'function') { W.doSave(true); saved = true; } } catch (e) { warn(e); } }
+  later(decorate, 50);
+  return saved;
+}
+/* the other tabs of the builder holding the same estimate: keep their lines in step */
+function keepSlots(){ try { if (typeof saveSlotState === 'function') saveSlotState(); } catch (e) { warn(e); } try { if (typeof _gcSaveSlots === 'function') _gcSaveSlots(); } catch (e) { warn(e); } }
+function slotsApply(estId, change){ var a = bActive(), hit = 0; bSlots().forEach(function(sl, i){ if (sl && i !== a && s(sl._savedEstId) === s(estId) && Array.isArray(sl.lines)) { change(sl.lines); hit++; } }); if (hit) { try { if (typeof _gcSaveSlots === 'function') _gcSaveSlots(); } catch (e) { warn(e); } } }
+
+var CATS = [[/drywall|sheetrock|gyp/, 'Drywall'], [/fram/, 'Framing'], [/paint|coating|wallcover/, 'Paint'], [/floor|carpet|lvp|vct|hardwood/, 'Flooring'], [/siding/, 'Siding'], [/roof/, 'Roofing'],
+  [/hvac|mechanical|heating|air cond|duct/, 'HVAC'], [/electric/, 'Electrical'], [/plumb/, 'Plumbing'], [/concrete|flatwork|slab/, 'Concrete'], [/mason|brick|stone|stucco/, 'Masonry'],
+  [/window|door|glass|glaz|storefront/, 'Windows & Doors'], [/gutter/, 'Gutters'], [/insulat/, 'Insulation'], [/ceiling|\bact\b|acoustic/, 'Ceilings'], [/tile|bath/, 'Tile & Bath'],
+  [/cabinet|millwork|counter/, 'Cabinets'], [/landscap|sod|irrigat/, 'Landscaping'], [/demo/, 'Demolition']];
+function catFor(trade){ var t = low(trade); for (var i = 0; i < CATS.length; i++) if (CATS[i][0].test(t)) return CATS[i][1]; return s(trade) ? s(trade).replace(/\b\w/g, function(c){ return c.toUpperCase(); }) : 'General'; }
+function keyOf(b){ return s(b && b.source || 'portal') + ':' + s(b && b.id); }
+function lineId(key){ return 'bid_' + key.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 80); }
+function short(t, n){ t = s(t).replace(/\s+/g, ' '); return t.length > n ? t.slice(0, n - 1) + '…' : t; }
+function makeLine(b, job, awarded){
+  var key = keyOf(b), at = nowIso(), company = s(b.company || b.sub || b.email) || 'Sub';
+  return { id: lineId(key), desc: (s(b.trade) || 'Subcontract') + ' — subcontractor bid', cost: b.amount == null ? 0 : num(b.amount), qty: 1, cat: catFor(b.trade), type: 'sub', mult: 'type', unit: 'lump sum',
+    supplier: company, fromBidPortal: true,
+    bidRef: { from: 'bid portal', key: key, source: s(b.source), id: s(b.id), jobId: s(job && job.id), jobTitle: s(job && job.title), company: company, sub: s(b.sub), email: s(b.email), trade: s(b.trade),
+      amount: b.amount == null ? null : num(b.amount), scope: short(b.scope, 220), files: arr(b.files).slice(0, 8).map(function(f){ var o = { name: s(f && f.name) || 'file' }; if (f && f.ref) o.ref = s(f.ref); if (f && f.url) o.url = s(f.url); return o; }),
+      receivedAt: s(b.at), awarded: !!awarded, awardedAt: awarded ? at : '', addedAt: at, addedBy: myName() } };
+}
+function newEstimate(p, line){
+  var at = nowIso(), st = {};
+  try { if (typeof settings !== 'undefined' && settings) st = clone(settings); } catch (e) {}
+  var rec = { id: 'est_' + Date.now() + '_' + Math.floor(Math.random() * 1000), _isDraft: false, name: s(p.name) || s(p.client) || 'Estimate', gc: s(p.client), num: poOf(p), estimator: s(p.estimator) || myName(),
+    date: at.slice(0, 10), status: 'Draft', notes: '', address: s(p.address), po: poOf(p), pid: s(p.id), companyId: coOfJob(p), scope: { text: '', inc: '', exc: '', notes: '' }, settings: st,
+    jobMult: 'mat', ovrMult: 1.5, useOvr: false, lines: [line], totalCost: 0, totalCharge: 0, versions: [], versionNo: 1, createdAt: at, firstSavedAt: at, savedAt: at, updatedAt: at,
+    source: 'bid portal', createdFrom: 'bid portal (sub bids)', createdBy: myName() };
+  bump(rec, line, null);
+  return rec;
+}
+
+/* ➕ / 🏆: the bid into the project's estimate — never twice */
+function putLine(pid, b, job, awarded){
+  var p = proj(pid); if (!p) return { error: 'That project is not in the CRM on this computer.' };
+  var key = keyOf(b), line = makeLine(b, job, awarded), e = target(pid, key);
+  if (!e) { var rec = write(newEstimate(p, line)); note({ op: 'add', key: key, est: rec.id, created: true }); return { estId: rec.id, estName: rec.name, created: true, p: p }; }
+  var cur = linesOf(e), old = cur.filter(function(l){ return isBidLine(l, key); })[0] || null;
+  var upd = function(o){
+    var r = Object.assign({}, o, { bidRef: Object.assign({}, o.bidRef, line.bidRef, { addedAt: o.bidRef.addedAt || line.bidRef.addedAt, addedBy: o.bidRef.addedBy || line.bidRef.addedBy, unawardedAt: '' }) });
+    if (!awarded && o.bidRef.awarded) { r.bidRef.awarded = true; r.bidRef.awardedAt = o.bidRef.awardedAt; }   /* ➕ after 🏆: still the awarded bid */
+    if (num(o.cost) === num(o.bidRef.amount) && line.bidRef.amount != null) r.cost = line.cost;   /* a price typed over the bid stays */
+    return r;
+  };
+  if (old) {
+    var nu = upd(old);
+    if (JSON.stringify([nu.cost, nu.bidRef.awarded, nu.bidRef.unawardedAt]) === JSON.stringify([old.cost, old.bidRef.awarded, old.bidRef.unawardedAt || ''])) { note({ op: 'same', key: key, est: e.id }); return { estId: e.id, estName: e.name, same: true, p: p }; }
+  }
+  var doIt = function(L){ var i = L.findIndex(function(l){ return isBidLine(l, key); }); if (i >= 0) L[i] = upd(L[i]); else L.push(clone(line)); };
+  if (liveApply(e.id, doIt)) { note({ op: old ? 'update' : 'add', key: key, est: e.id, live: true }); return { estId: e.id, estName: e.name, updated: !!old, p: p, live: true }; }
+  var rec = clone(e); rec.lines = clone(cur); doIt(rec.lines);
+  bump(rec, rec.lines.filter(function(l){ return isBidLine(l, key); })[0], old);
+  slotsApply(e.id, doIt);
+  write(rec); note({ op: old ? 'update' : 'add', key: key, est: rec.id });
+  return { estId: rec.id, estName: rec.name, updated: !!old, p: p };
+}
+/* un-award / ➖: the bid's own line off (an open estimate) or marked (a signed / closed one) — typed lines are never touched */
+function takeLine(key){
+  var done = [];
+  allWithKey(key).forEach(function(e){
+    var open = isOpen(e), at = nowIso();
+    var doIt = function(L){ for (var i = L.length - 1; i >= 0; i--) { if (!isBidLine(L[i], key)) continue; if (open) L.splice(i, 1); else L[i] = Object.assign({}, L[i], { bidRef: Object.assign({}, L[i].bidRef, { awarded: false, unawardedAt: at }) }); } };
+    if (liveApply(e.id, doIt)) { done.push({ estId: e.id, estName: e.name, removed: open, live: true }); return; }
+    var rec = clone(e), cur = linesOf(rec), old = cur.filter(function(l){ return isBidLine(l, key); });
+    rec.lines = clone(cur); doIt(rec.lines);
+    if (open) old.forEach(function(l){ bump(rec, null, l); });
+    slotsApply(e.id, doIt);
+    write(rec); done.push({ estId: rec.id, estName: rec.name, removed: open });
+  });
+  note({ op: 'take', key: key, n: done.length });
+  return done;
+}
+function inEst(key){ var e = allWithKey(key)[0]; if (!e) return null; var l = linesOf(e).filter(function(x){ return isBidLine(x, key); })[0]; return { est: e, line: l }; }
+
+/* ── the comparison: by trade A→Z, lowest first, the low bid marked ── */
+function group(list){
+  var by = {}, names = {};
+  arr(list).forEach(function(b){ if (!b) return; var t = s(b.trade), k = low(t) || '~none'; if (!by[k]) { by[k] = []; names[k] = t || 'Trade not given'; } by[k].push(b); });
+  return Object.keys(by).sort(function(a, b){ return (a === '~none') - (b === '~none') || names[a].toLowerCase().localeCompare(names[b].toLowerCase()); }).map(function(k){
+    var bids = by[k].map(function(b, i){ return [b, i]; }).sort(function(x, y){ var a = x[0].amount, c = y[0].amount; return (a == null) - (c == null) || (a || 0) - (c || 0) || x[1] - y[1]; }).map(function(x){ return x[0]; });
+    var priced = bids.filter(function(b){ return b.amount != null && isFinite(b.amount); }), lowAmt = priced.length ? Math.min.apply(null, priced.map(function(b){ return Number(b.amount); })) : null;
+    var aw = bids.some(function(b){ return b.awarded; });
+    return { trade: names[k], key: k, low: lowAmt, awarded: aw, bids: bids.map(function(b){
+      return Object.assign({}, b, { isLow: priced.length > 1 && b.amount != null && Number(b.amount) === lowAmt, status: b.awarded ? 'awarded' : (b.notSelected || aw) ? 'notselected' : 'pending' }); }) };
+  });
+}
+var SRC = { email: ['✉️', 'bids@'], portal: ['🏗', 'Bid portal'], subportal: ['🔨', 'Sub portal'] };
+var UI = { jobId: '', lead: '', bids: null, err: '', busy: false, pick: null };
+function css(){
+  if (D.getElementById('gc-bidest-css')) return;
+  var st = D.createElement('style'); st.id = 'gc-bidest-css'; st.setAttribute('data-gc-keep', '1');
+  st.textContent = '#gcsys-modal .box.gcbe{max-width:1180px}.gcbe .bepj{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:#f7f5fc;border:1px solid #e7e3f2;border-radius:10px;padding:8px 12px;margin:8px 0 10px}'
+    + '.gcbe .bepj.warn{background:#fff7ed;border-color:#fed7aa}.gcbe .betr{margin:14px 0 6px;display:flex;flex-wrap:wrap;gap:8px;align-items:baseline}.gcbe .betr b{font-size:15px}.gcbe .bewrap{overflow-x:auto}'
+    + '.gcbe table{min-width:900px;table-layout:fixed}.gcbe td,.gcbe th{overflow-wrap:anywhere;word-break:normal;white-space:normal!important;overflow:hidden}.gcbe td.sc{font-size:12.5px;color:#3f3b5c}.gcbe .acts{flex-direction:column;align-items:stretch}.gcbe .acts .b{white-space:normal;padding:6px 8px;font-size:12px;text-align:center}.gcbe tr.low td{background:#ecfdf3}.gcbe .lowtag{display:inline-block;background:#16a34a;color:#fff;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:800;margin-left:6px}'
+    + '.gcbe .st{display:inline-block;border-radius:999px;padding:2px 9px;font-size:12px;font-weight:700;white-space:nowrap}.gcbe .st.awarded{background:#dcfce7;color:#166534}.gcbe .st.notselected{background:#f3f4f6;color:#6b7280}.gcbe .st.pending{background:#fef9c3;color:#854d0e}'
+    + '.gcbe .ine{font-size:12px;color:#166534;font-weight:700}.gcbe .fl{display:block;border:0;background:none;padding:0;color:#1d4ed8;cursor:pointer;font:inherit;text-align:left;text-decoration:underline}'
+    + '.gcbe .pl{max-height:52vh;overflow:auto;border:1px solid #eeeaf6;border-radius:10px;margin:10px 0}.gcbe .pl button{display:flex;gap:10px;align-items:center;width:100%;text-align:left;border:0;border-bottom:1px solid #f1eef8;background:#fff;padding:9px 12px;cursor:pointer;font:inherit;color:#1b1640}'
+    + '.gcbe .pl button:hover{background:#f7f5fc}.gcbe .pl button.cand{background:#fffbeb}'
+    + '.gc-bidest-tag{display:inline-block;border-radius:999px;padding:0 7px;font-size:10px;font-weight:800;background:#d4a017;color:#1b1640;margin-left:2px;white-space:nowrap}.gc-bidest-tag.off{background:#fee2e2;color:#991b1b}.gc-bidest-tag.sub{background:#e0e7ff;color:#3730a3}'
+    + '.gc-bidest-note{font-size:11px;color:var(--text2,#64748b);margin:3px 0 0;line-height:1.35}';
+  D.head.appendChild(st);
+}
+function shell(){
+  var m = D.getElementById('gcsys-modal');
+  if (!m || !m.__bidest) {
+    try { var S = sys(); if (S && S.css) S.css(); } catch (e) {}
+    if (m) m.remove(); css();
+    m = D.createElement('div'); m.id = 'gcsys-modal'; m.__bidest = 1; m.setAttribute('data-gc-keep', '1'); m.setAttribute('data-bidest', '1');
+    m.innerHTML = '<div class="box gcsys gcbe" role="dialog" aria-label="All bids for this job"></div>';
+    m.addEventListener('click', function(ev){ if (ev.target === m) close(); });
+    m.addEventListener('click', onClick); m.addEventListener('input', onInput);
+    D.body.appendChild(m);
+  }
+  return m.querySelector('.box');
+}
+function close(){ var m = D.getElementById('gcsys-modal'); if (m) m.remove(); UI.pick = null; }
+function canAward(){ try { var A = W.__GC_AUTH__; if (A && A.isAdmin && A.isAdmin()) return true; } catch (e) {} try { var S = sys(), st = S && S.state ? S.state() : null; if (st && st.me && st.me.canPublic) return true; if (st && /estimat|^admin$/i.test(s(st.role))) return true; } catch (e) {} return false; }
+function open(jobId, lead){
+  UI.jobId = s(jobId); UI.lead = s(lead); UI.bids = null; UI.err = ''; UI.pick = null;
+  try { var S = sys(); if (S && S.bp && !arr(S.bp.jobs()).length) S.bp.load(false); } catch (e) {}   /* the job list (its lead, its project link) */
+  draw(); return load();
+}
+function load(){
+  var q = UI.lead && !UI.jobId ? 'lead=' + encodeURIComponent(UI.lead) : 'subbids=' + encodeURIComponent(UI.jobId);
+  if (UI.lead && UI.jobId) q = 'lead=' + encodeURIComponent(UI.lead);
+  return fn('bid-hub?' + q).then(function(r){ if (r && r.jobId) { UI.jobId = s(r.jobId); if (UI.lead && !STUB[UI.jobId]) STUB[UI.jobId] = { id: UI.jobId, title: 'Bid job', leadId: UI.lead }; } UI.bids = arr(r && r.bids); UI.err = ''; if (!UI.pick) draw(); return UI.bids; },
+    function(e){ UI.err = s(e && e.message) || 'Could not load the bids.'; if (!UI.pick) draw(); return null; });
+}
+function bidByKey(key){ return arr(UI.bids).filter(function(b){ return keyOf(b) === key; })[0] || null; }
+function head(job){
+  var r = resolve(job);
+  if (r.pid) return '<div class="bepj" data-be-proj="' + esc(r.pid) + '">📁 Awarded bids go into the estimate of <b>' + esc(projLabel(r.p)) + '</b> ' + coBadge(coOfJob(r.p)) + ' <span class="mut">' + esc(whyText(r)) + '</span>'
+    + '<button type="button" class="b" data-be="pick">Change</button></div>';
+  var why = r.why === 'ambiguous' ? 'This bid job matches ' + r.cands.length + ' CRM projects — pick the one its bids go into.'
+    : r.why === 'lead-no-project' ? 'The lead “' + esc(s(r.lead && (r.lead.name || r.lead.title)) || 'lead') + '” is not a project yet. When it is, its bids go into that project’s estimate — or pick a project now.'
+    : 'This bid job is not tied to a CRM project yet.';
+  return '<div class="bepj warn" data-be-proj="">⚠ ' + why + ' <button type="button" class="b pri" data-be="pick">📁 Pick the project</button></div>';
+}
+function draw(){
+  if (UI.pick) return drawPicker();
+  var box = shell(), job = jobOf(UI.jobId), aw = canAward();
+  var h = '<button type="button" class="b x" data-be="close">✕</button><h3>📊 All bids — ' + esc(job.title || 'Bid job') + '</h3>'
+    + '<p class="mut">Every bid for this job from all three doors — ✉️ e-mailed to bids@, 🏗 the bid portal, 🔨 the sub portal — by trade, lowest first (the low bid in green). 🏆 Award puts the bid into the project\'s estimate as a subcontractor line; Undo takes it off.</p>'
+    + head(job);
+  if (UI.err && !UI.bids) h += '<div class="mut" style="color:#b91c1c">' + esc(UI.err) + '</div>';
+  else if (!UI.bids) h += '<div class="mut">Loading the bids…</div>';
+  else if (!UI.bids.length) h += '<div class="mut">No bids yet — they come in by ✉️ bids@, the 🏗 bid portal and the 🔨 sub portal.</div>';
+  else group(UI.bids).forEach(function(g){
+    h += '<div class="betr" data-be-trade="' + esc(g.trade) + '"><b>' + esc(g.trade) + '</b><span class="mut">' + g.bids.length + ' bid' + (g.bids.length === 1 ? '' : 's') + (g.low != null ? ' · low ' + money(g.low) : '') + (g.awarded ? ' · 🏆 awarded' : '') + '</span></div>'
+      + '<div class="bewrap"><table><colgroup><col style="width:15%"><col style="width:10%"><col style="width:20%"><col style="width:13%"><col style="width:10%"><col style="width:10%"><col style="width:10%"><col style="width:12%"></colgroup><thead><tr><th>Sub</th><th>Amount</th><th>Scope / notes</th><th>Files</th><th>Came in</th><th>Status</th><th>Estimate</th><th></th></tr></thead><tbody>' + g.bids.map(function(b){
+        var k = keyOf(b), ie = inEst(k), src = SRC[b.source] || SRC.portal, busy = UI.busy === k;
+        var acts = (aw ? (b.awarded ? '<button type="button" class="b" data-be="unaward" data-k="' + esc(k) + '"' + (busy ? ' disabled' : '') + '>Undo award</button>' : '<button type="button" class="b gold" data-be="award" data-k="' + esc(k) + '"' + (busy ? ' disabled' : '') + '>🏆 Award</button>') : '')
+          + (ie ? '<button type="button" class="b" data-be="remove" data-k="' + esc(k) + '"' + (busy ? ' disabled' : '') + '>➖ Take off estimate</button>' : '<button type="button" class="b" data-be="add" data-k="' + esc(k) + '"' + (busy ? ' disabled' : '') + '>➕ Add to estimate</button>');
+        return '<tr data-be-bid="' + esc(k) + '" data-amount="' + (b.amount == null ? '' : esc(b.amount)) + '"' + (b.isLow ? ' class="low"' : '') + '>'
+          + '<td><b>' + esc(b.company || b.sub || b.email || 'Sub') + '</b>' + (b.sub && b.company ? '<div class="mut">' + esc(b.sub) + '</div>' : '') + (b.email ? '<div class="mut">' + esc(b.email) + '</div>' : '') + '</td>'
+          + '<td class="num">' + money(b.amount) + (b.isLow ? '<span class="lowtag" data-be-low>⬇ Lowest</span>' : '') + '</td>'
+          + '<td class="sc" title="' + esc(b.scope) + '">' + (s(b.scope) ? esc(short(b.scope, 180)) : '<span class="mut">—</span>') + '</td>'
+          + '<td>' + (arr(b.files).length ? arr(b.files).map(function(f){ return (f.ref || f.url) ? '<button type="button" class="fl" data-be="file" data-ref="' + esc(f.ref || '') + '" data-url="' + esc(f.url || '') + '" data-name="' + esc(f.name) + '">📄 ' + esc(f.name) + '</button>' : '<span>📄 ' + esc(f.name) + '</span>'; }).join('') : '<span class="mut">—</span>') + '</td>'
+          + '<td class="mut">' + src[0] + ' ' + esc(src[1]) + (b.at ? '<br>' + esc(when(b.at)) : '') + '</td>'
+          + '<td><span class="st ' + b.status + '" data-be-status="' + b.status + '">' + { awarded: '🏆 Awarded', notselected: 'Not selected', pending: 'Pending' }[b.status] + '</span></td>'
+          + '<td>' + (ie ? '<span class="ine" title="' + esc(ie.est.name) + '">✓ In estimate</span><div class="mut">' + esc(short(ie.est.name, 40)) + '</div>' : '<span class="mut">—</span>') + '</td>'
+          + '<td><div class="acts">' + acts + '</div></td></tr>';
+      }).join('') + '</tbody></table></div>';
+  });
+  box.innerHTML = h;
+}
+function when(t){ try { return t ? new Date(t).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''; } catch (e) { return ''; } }
+
+/* ── the project picker (searchable) ── */
+function picker(then, cancel){ UI.pick = { then: then, cancel: cancel, q: '' }; drawPicker(); }
+function pickList(){
+  var r = resolve(jobOf(UI.jobId)), cand = {}; arr(r.cands).forEach(function(p){ cand[p.id] = 1; });
+  var q = low(UI.pick && UI.pick.q), list = projects().filter(projOk).filter(function(p){ return !q || low([p.name, p.client, p.address, poOf(p), p.pm].join(' ')).indexOf(q) > -1; });
+  var rank = function(p){ return (cand[p.id] ? 2 : 0) + (/complete|closed|lost|cancel/i.test(s(p.status)) ? 0 : 1); };
+  return { r: r, cand: cand, list: list.sort(function(a, b){ return rank(b) - rank(a) || s(b.updatedAt || b.savedAt).localeCompare(s(a.updatedAt || a.savedAt)) || s(a.name).localeCompare(s(b.name)); }).slice(0, 80) };
+}
+function drawPicker(){
+  var box = shell(), job = jobOf(UI.jobId), x = pickList(), r = x.r;
+  var why = r.why === 'ambiguous' ? 'This bid job matches ' + r.cands.length + ' projects (marked) — pick the one its bids go into.' : r.why === 'lead-no-project' ? 'The lead “' + esc(s(r.lead && (r.lead.name || r.lead.title))) + '” is not a project yet. Pick the project this bid job is for (or close and make the lead a project first).' : 'Pick the CRM project this bid job is for.';
+  var listHtml = x.list.length ? x.list.map(function(p){ return '<button type="button" data-be="pickp" data-pid="' + esc(p.id) + '"' + (x.cand[p.id] ? ' class="cand"' : '') + '><span style="flex:1;min-width:0"><b>' + esc(projLabel(p)) + '</b> <span class="mut">' + esc([p.client !== p.name ? p.client : '', p.address, p.status, p.pm ? 'PM ' + p.pm : ''].filter(Boolean).join(' · ')) + '</span></span>' + coBadge(coOfJob(p)) + '</button>'; }).join('') : '<div class="mut" style="padding:10px">No project matches.</div>';
+  var inp = box.querySelector('[data-be-q]');
+  if (inp && box.querySelector('[data-be-picker]')) { var pl = box.querySelector('.pl'); if (pl) pl.innerHTML = listHtml; return; }   /* typing: only the list redraws */
+  box.innerHTML = '<button type="button" class="b x" data-be="close">✕</button><h3 data-be-picker>📁 Which project is “' + esc(job.title || 'this bid job') + '” for?</h3><p class="mut">' + why + ' The pick is remembered on the project and on the bid job.</p>'
+    + '<input type="search" data-be-q placeholder="Search projects — name, customer, address, PO" aria-label="Search projects" style="width:100%;box-sizing:border-box">'
+    + '<div class="pl">' + listHtml + '</div><div class="bar"><button type="button" class="b" data-be="pickcancel">Cancel</button></div>';
+  try { box.querySelector('[data-be-q]').focus(); } catch (e) {}
+}
+function onInput(ev){ var t = ev.target; if (t && t.hasAttribute && t.hasAttribute('data-be-q') && UI.pick) { UI.pick.q = t.value; drawPicker(); } }
+/* the project for this job: linked, or asked */
+function withProject(then, cancel){
+  var r = resolve(jobOf(UI.jobId));
+  if (r.pid) return then(r.pid);
+  picker(function(pid){ link(UI.jobId, pid); then(pid); }, cancel);
+}
+function said(res, verb){
+  if (!res) return;
+  if (res.error) return toast(res.error, true);
+  var where = '“' + s(res.estName) + '” (' + projLabel(res.p) + ')';
+  toast(res.same ? 'Already in the estimate ' + where + ' — not added twice' : res.created ? verb + ' — a new estimate ' + where + ' was made with this sub line' : res.updated ? verb + ' — the line in ' + where + ' is up to date' : verb + ' — added to the estimate ' + where);
+}
+function doAward(key, on){
+  var b = bidByKey(key); if (!b) return;
+  UI.busy = key; draw();
+  return fn('bid-hub', { op: 'award', jobId: UI.jobId, source: b.source, id: b.id, on: on }).then(function(r){
+    if (on) {
+      return new Promise(function(done){
+        withProject(function(pid){ UI.pick = null; said(putLine(pid, Object.assign({}, b, { awarded: true }), jobOf(UI.jobId), true), '🏆 Awarded' + (r && r.notSelected ? ' (' + r.notSelected + ' other bid' + (r.notSelected === 1 ? '' : 's') + ' in this trade → Not selected)' : '')); done(); },
+          function(){ UI.pick = null; toast('🏆 Awarded — not in an estimate yet (no project picked).'); done(); });
+      });
+    }
+    var t = takeLine(key); toast('Award taken off' + (t.length ? ' — the bid line ' + (t.some(function(x){ return x.removed; }) ? 'is off' : 'is marked in') + ' “' + s(t[0].estName) + '”' : ''));
+  }, function(e){ toast(e.message, true); }).then(function(){ UI.busy = false; return load(); });
+}
+function doAdd(key){
+  var b = bidByKey(key); if (!b) return;
+  if (b.amount == null) toast('This bid has no amount — the line goes in at $0; type the price in the estimate.', true);
+  withProject(function(pid){ UI.pick = null; said(putLine(pid, b, jobOf(UI.jobId), !!b.awarded), '➕ Added'); draw(); }, function(){ UI.pick = null; draw(); });
+}
+function onClick(ev){
+  var t = ev.target && ev.target.closest ? ev.target.closest('[data-be]') : null; if (!t) return;
+  ev.preventDefault(); ev.stopPropagation();
+  var a = t.getAttribute('data-be'), k = t.getAttribute('data-k');
+  if (a === 'close') return close();
+  if (a === 'award') return doAward(k, true);
+  if (a === 'unaward') return doAward(k, false);
+  if (a === 'add') return doAdd(k);
+  if (a === 'remove') { var tk = takeLine(k); toast(tk.length ? '➖ Taken off “' + s(tk[0].estName) + '”' : 'Not in an estimate.'); return draw(); }
+  if (a === 'file') { var ref = t.getAttribute('data-ref'), url = t.getAttribute('data-url'), nm = t.getAttribute('data-name'); try { if (ref && W._gcDownloadRef) return W._gcDownloadRef(ref, nm); if (url) return W.open(url, '_blank', 'noopener'); } catch (e) { warn(e); } return; }
+  if (a === 'pick') return picker(function(pid){ link(UI.jobId, pid).then(function(){ draw(); }); UI.pick = null; draw(); toast('📁 Linked — awarded bids go into ' + projLabel(proj(pid)) + '’s estimate'); }, function(){ UI.pick = null; draw(); });
+  if (a === 'pickp') { var P = UI.pick; if (P && P.then) { UI.pick = null; P.then(t.getAttribute('data-pid')); } return; }
+  if (a === 'pickcancel') { var Q = UI.pick; UI.pick = null; if (Q && Q.cancel) Q.cancel(); else draw(); return; }
+}
+/* an award made elsewhere (the lead drawer's list): the estimate follows */
+function sync(jobId, source, id, on){
+  var key = s(source || 'portal') + ':' + s(id);
+  if (!on) { takeLine(key); return Promise.resolve(true); }
+  return fn('bid-hub?subbids=' + encodeURIComponent(jobId)).then(function(r){
+    var b = arr(r && r.bids).filter(function(x){ return keyOf(x) === key; })[0]; if (!b) return false;
+    UI.jobId = s(jobId);
+    var res = resolve(jobOf(jobId));
+    if (res.pid) { said(putLine(res.pid, Object.assign({}, b, { awarded: true }), jobOf(jobId), true), '🏆 Awarded'); return true; }
+    UI.bids = arr(r.bids); picker(function(pid){ link(jobId, pid); UI.pick = null; said(putLine(pid, Object.assign({}, b, { awarded: true }), jobOf(jobId), true), '🏆 Awarded'); draw(); }, function(){ UI.pick = null; draw(); });
+    return true;
+  }, function(e){ warn(e); return false; });
+}
+
+/* ── the builder: "🏆 Awarded bid" on a bid line ── */
+var OBS = { el: null, o: null };
+function decorate(){
+  var wrap = D.getElementById('est-lines'), L = bLines(); if (!wrap || !L) return;
+  if (!wrap.querySelector('.el[data-lineid^="bid_"]')) return;
+  css();
+  L.forEach(function(l){
+    if (!isBidLine(l)) return;
+    var el = null; try { el = wrap.querySelector('.el[data-lineid="' + (W.CSS && CSS.escape ? CSS.escape(String(l.id)) : String(l.id)) + '"]'); } catch (e) {}
+    if (!el) return;
+    var r = l.bidRef, off = !!r.unawardedAt, sig = [r.awarded, off, r.company, r.amount, l.cost].join('|');
+    var tag = el.querySelector('.gc-bidest-tag'); if (tag && tag.__sig === sig) return;
+    if (tag) tag.remove(); var old = el.querySelector('.gc-bidest-note'); if (old) old.remove();
+    var row = el.querySelector('.elm > div:first-child > div:nth-child(2)') || el.querySelector('.elm > div:first-child') || el;
+    tag = D.createElement('span'); tag.className = 'gc-bidest-tag' + (off ? ' off' : r.awarded ? '' : ' sub'); tag.__sig = sig; tag.setAttribute('data-bidest-tag', r.key);
+    tag.textContent = off ? '⚠ Award taken off' : r.awarded ? '🏆 Awarded bid' : '🏗 Sub bid';
+    tag.title = 'From the bid portal — ' + r.company + ' · ' + (SRC[r.source] || SRC.portal)[1] + ' · bid ' + r.id + (r.jobTitle ? ' · ' + r.jobTitle : '');
+    row.appendChild(tag);
+    var n = D.createElement('div'); n.className = 'gc-bidest-note';
+    n.innerHTML = '🏗 From the bid portal · <b>' + esc(r.company) + '</b> · ' + (SRC[r.source] || SRC.portal)[0] + ' ' + esc((SRC[r.source] || SRC.portal)[1]) + ' · bid ' + money(r.amount)
+      + (r.scope ? ' · “' + esc(short(r.scope, 120)) + '”' : '') + (arr(r.files).length ? ' · 📄 ' + esc(arr(r.files).map(function(f){ return f.name; }).join(', ')) : '');
+    var first = el.querySelector('.elm > div:first-child'); (first || el).appendChild(n);
+  });
+}
+function tick(){
+  try {
+    if (D.hidden) return;
+    var wrap = D.getElementById('est-lines');
+    if (wrap && wrap !== OBS.el && W.MutationObserver) { try { if (OBS.o) OBS.o.disconnect(); } catch (e) {} OBS.el = wrap; OBS.o = new MutationObserver(function(){ try { decorate(); } catch (e) { warn(e); } }); OBS.o.observe(wrap, { childList: true }); }
+    if (wrap) decorate();
+  } catch (e) { warn(e); }
+}
+RI.call(W, tick, 1500); later(tick, 800);
+
+W._gcBidEst = { open: open, load: load, close: close, group: group, resolve: function(j){ return resolve(typeof j === 'string' ? jobOf(j) : j); }, link: link, sync: sync,
+  put: function(jobId, bid, awarded){ var r = resolve(jobOf(jobId)); return r.pid ? putLine(r.pid, bid, jobOf(jobId), awarded !== false) : { error: 'no linked project', why: r.why }; },
+  take: takeLine, inEst: inEst, keyOf: keyOf, decorate: decorate, lineMath: lineMath,
+  state: function(){ return { jobId: UI.jobId, bids: UI.bids ? UI.bids.length : null, err: UI.err, picking: !!UI.pick, log: LOG.slice(-20) }; } };
+try { console.log('[GC] patch BIDEST: 📊 all bids for a job by trade (lowest first) → 🏆 award / ➕ into the project\'s estimate — _gcBidEst.state()'); } catch (e) {}
 })(window);
 </script>
