@@ -174835,7 +174835,7 @@ function inboxRaw(){ try { return localStorage.getItem('gc_ldi_cache_v2') || '';
 function modelRows(){ var m = model(); if (!m.rows) m.rows = lcSorted(m.list); return m.rows; }
 
 /* ── the list (LEADCOLS code: Lead | Due | Priority | Bid to | Stage | Assigned | Distance | 🗑) ── */
-var LC_COLS = [['name', 'Lead'], ['due', 'Due'], ['prio', 'Priority'], ['bidto', 'Bid to'], ['stage', 'Stage'], ['who', 'Assigned'], ['dist', 'Distance']];
+var LC_COLS = [['name', 'Lead'], ['due', 'Due'], ['prio', 'Priority'], ['bidto', 'Bid to'], ['role', 'Prime / Sub'], ['stage', 'Stage'], ['who', 'Assigned'], ['dist', 'Distance']];   /* patch PRIMESORT: + Prime / Sub (sortable) */
 var LC_PAGE = 60, LC_ROW = {}, LC_N = 0, LC_GONE = {};
 function lcCanDel(){ try { var L = W._gcLDEL, me = L && L.who && L.who(); return !!(me && me.email && (me.all || me.est)); } catch (e) { return false; } }
 function lcBidTo(l, role){
@@ -174861,7 +174861,7 @@ function lcRow(l){
   var role = roleOfL(l), to = lcBidTo(l, role), st = stageOf(l), t = dueMs(l), p = prioOf(l), C = W._gcBidRoleCore || {}, gc = [], d = distOf(l), who = assignee(l);
   if (role !== 'prime') [s(l.dueToCompany), s(l.gc)].forEach(function(g){ var pb = false; try { pb = !!(C.isPublic && C.isPublic(g)); } catch (e) {} if (g && !pb) gc.push(g); });
   r = { sig: sig, to: to, stage: st, role: role, gc: gc, pk: (role === 'sub' || isBidL(l)) ? lcProjKey(l) : '', d: d, who: who,
-    k: { name: low(l.name || l.title), due: isFinite(t) ? t : NaN, prio: p || NaN, bidto: low(to), stage: STAGES.indexOf(st), who: low(who) || NaN, dist: d == null ? NaN : d, born: receivedMs(l) || NaN },
+    k: { name: low(l.name || l.title), due: isFinite(t) ? t : NaN, prio: p || NaN, bidto: low(to), stage: STAGES.indexOf(st), who: low(who) || NaN, dist: d == null ? NaN : d, born: receivedMs(l) || NaN, role: role === 'prime' ? 1 : role === 'sub' ? 2 : NaN },   /* patch PRIMESORT: sort by 🏛 prime / 🔧 sub */
     name: esc(s(l.name || l.title) || 'Lead'), addr: esc([l.address, l.city].filter(Boolean).join(', ')), ic: srcIc(l), note: (function(n){ return n ? { t: esc(s(n.text).slice(0, 160)), tip: esc(s(n.text).slice(0, 500) + (n.by || n.at ? ' — ' + [s(n.by), n.at ? new Date(n.at).toLocaleString() : ''].filter(Boolean).join(', ') : '')) } : null; })(lastNote(l)) };
   return (LC_ROW[id] = r);
 }
@@ -174936,6 +174936,7 @@ function lcRowHtml(l, r, bc, del, now){
     + '<td class="c-due">' + lcDue(l, r, now) + '</td>'
     + '<td class="c-prio">' + lcPrio(l) + '</td>'
     + (bc.names.length > 1 ? '<td class="c-bidto" title="' + esc('Bid to ' + bc.names.length + ' GCs: ' + bc.names.join(' · ')) + '"><button type="button" class="gcl-gcs" data-gcl-gcs="' + esc(l.id) + '" data-names="' + esc(JSON.stringify(bc.names)) + '">🏢 ' + esc(bc.txt) + '</button></td>' : cell('bidto', bc.txt, bc.txt))
+    + '<td class="c-role">' + (r.role === 'prime' ? '🏛 Prime' : r.role === 'sub' ? '🔧 Sub' : '<span class="gcl-dash">—</span>') + '</td>'   /* patch PRIMESORT */
     + '<td class="c-stage">' + (STAGE_IC[r.stage] || '') + ' ' + esc(r.stage) + '</td>'
     + '<td class="c-who">' + lcWho(l, r) + '</td>'
     + '<td class="c-dist">' + (r.d != null ? esc(miTxt(r.d)) : '<span class="gcl-dash">—</span>') + '</td>'
@@ -175069,6 +175070,7 @@ function moreMenu(){
     + (W._gcBidMerge && W._gcBidMerge.show() ? it('data-gcl-bidmerge', W._gcBidMerge.label(), 'One project that came in as several leads (other trades, other GCs, another board) — a dry run first, then merge; Undo for 30 days') : '')   /* patch BIDMERGE */
     + (office ? it('data-gclu-dups', '🧹 Duplicates', 'Records entered twice — merge or archive, 7-day Undo') : '')
     + (adm ? it('data-gcl-settings', '⚙ Lead settings', 'Bid boards, keywords & switches, Check public bids now, Set-up') : '')
+    + (adm && W._gcLeadKeep ? it('data-gcl-restoreprio', '↩ Restore priorities from last night\'s backup', 'Fills only priorities, stages and assignees that are EMPTY now, from the nightly backup taken before 11/12 5 PM UTC — nothing set since is changed') : '')   /* patch LEADKEEP */
     + (adm ? it('data-gclu-claims', '🛡 Insurance claims go to…', 'Who a new claims@ claim is assigned to') : '')
     + it('data-gclu-oldbb', '📋 Old Bid Board (archived, read-only)', 'The old manual bid list — its open bids are now leads')
     + (bkAllowed() ? it('data-gclb-trash', '🗑 Recently deleted', 'Leads deleted in the last 30 days — Restore') : '')   /* patch LEADBULK */
@@ -175106,6 +175108,7 @@ function hubHtml(){
       + chipB('bids', '📐 Bids', UI.k === 'bids', 'Commercial / government bids (Lead Inbox bid mail, bid boards, plan rooms, GCs)')
       + chipB('res', '🏠 Residential', UI.k === 'res')
       + chipB('ins', '🛡 Insurance', UI.k === 'ins', 'Insurance claims, restoration and mitigation')
+      + chipB('rprime', '🏗 Prime', UI.role === 'prime', 'Bids we send to the owner (city, county, school, state, federal)') + chipB('rsub', '🔧 Sub', UI.role === 'sub', 'Bids we send to a GC (BuildingConnected, PlanHub, plan rooms)')   /* patch PRIMESORT */
       + chipB('un', '👤 Unassigned', UI.un)
       + chipB('wk', '⏰ Due this week', UI.wk, 'Bid due from today through Sunday')
       + '<label class="gclu-within' + (UI.mi ? ' on' : '') + '">📍 Within <select data-gclu-mi aria-label="Distance">' + mi.map(function(n){ return '<option value="' + n + '"' + ((+UI.mi || 0) === n ? ' selected' : '') + '>' + (n ? n + ' mi' : 'any') + '</option>'; }).join('') + '</select></label>'
@@ -175153,7 +175156,7 @@ D.addEventListener('click', function(ev){
   if (b.hasAttribute('data-gcl-v')) return setView(b.getAttribute('data-gcl-v'));
   if (b.hasAttribute('data-gclu-more')) { LU.more = !LU.more; return redraw(); }
   if (b.hasAttribute('data-gclu-chip')) { var k = b.getAttribute('data-gclu-chip');
-    if (k === 'all') clearFilters(); else if (k === 'un' || k === 'wk') UI[k] = !UI[k]; else UI.k = UI.k === k ? '' : k;
+    if (k === 'all') clearFilters(); else if (k === 'rprime' || k === 'rsub') { var rv = k === 'rprime' ? 'prime' : 'sub'; UI.role = UI.role === rv ? '' : rv; }   /* patch PRIMESORT */ else if (k === 'un' || k === 'wk') UI[k] = !UI[k]; else UI.k = UI.k === k ? '' : k;
     MORE.ulist = 0; return redraw(); }
   if (b.hasAttribute('data-gclu-cnt')) { var c = b.getAttribute('data-gclu-cnt'); UI[c] = !UI[c]; MORE.ulist = 0; if (UI.v === 'outreach') setView('list'); return redraw(); }
   if (b.hasAttribute('data-gclu-clear')) { clearFilters(); return redraw(); }
@@ -226659,6 +226662,44 @@ var LAST = null;
 function tick(){ var L = W._crm && W._crm.leads; if (!Array.isArray(L) || !L.length) return; if (L !== LAST) { LAST = L; capture(L); if (LOADED) heal(); } }
 (W.__GC_NATIVE_SETINTERVAL__ || W.setInterval).call(W, function(){ try { tick(); } catch (e) {} }, 3000);
 setTimeout(function(){ load(); }, 3500); (W.__GC_NATIVE_SETINTERVAL__ || W.setInterval).call(W, function(){ try { load(); } catch (e) {} }, 120000);
-W._gcLeadKeep = { apply: apply, capture: capture, heal: heal, seed: seed, find: find, keys: keys, load: load, facts: facts, data: function(){ return DB; } };
+/* ↩ Restore from last night's backup (admins; Leads ⋯ More): gc-backup.js {action:'leadkeep'} → the leads as they were before the
+   re-write; ONLY fields that are empty now are filled (a number priority, a stage still at New Lead, nobody assigned, Also-on, company,
+   Different-jobs / tags added) — nothing a person set since is touched. The filled values join the shared record (other computers too). */
+function emptyPrio(l){ return !prioN(l.priority); }
+function fillFrom(cur, old, at){
+  var n = { prio: 0, other: 0 }, ch = false;
+  var op = prioN(old.priority) || (lastPrioAct(old) || {}).v || 0;
+  if (op && emptyPrio(cur)) { cur.priority = op; cur.prioritySetAt = s(old.prioritySetAt) || (lastPrioAct(old) || {}).at || at; if (old.prioritySetBy) cur.prioritySetBy = old.prioritySetBy; n.prio++; ch = true; }
+  if (s(old.stage) && s(old.stage) !== 'New Lead' && (!s(cur.stage) || (s(cur.stage) === 'New Lead' && !s(cur.stageChangedAt)))) { cur.stage = old.stage; cur.stageChangedAt = s(old.stageChangedAt) || at; n.other++; ch = true; }
+  if ((s(old.pm) || s(old.estimator)) && !s(cur.pm) && !s(cur.estimator)) { ['pm', 'pmEmail', 'estimator', 'estimatorEmail', 'assignedBy'].forEach(function(k){ if (s(old[k])) cur[k] = old[k]; }); cur.assignedAt = s(old.assignedAt) || at; if (cur.inboxState === 'new') cur.inboxState = 'assigned'; n.other++; ch = true; }
+  if (Array.isArray(old.alsoCos) && !Array.isArray(cur.alsoCos)) { cur.alsoCos = old.alsoCos.slice(); cur.alsoCosAt = s(old.alsoCosAt) || at; ch = true; }
+  if (s(old.companyId) && !s(cur.companyId)) { cur.companyId = old.companyId; if (old.companyIdBy) cur.companyIdBy = old.companyIdBy; ch = true; }
+  ['notSameAs', 'tags'].forEach(function(f){ var u = union(cur[f], old[f]); if (u.length !== arr(cur[f]).length) { cur[f] = u; ch = true; } });
+  return ch ? n : null;
+}
+function restoreFrom(old, at){
+  at = s(at) || new Date().toISOString(); var I = {}, cnt = { prio: 0, other: 0, leads: 0 };
+  arr(old).forEach(function(o){ if (!o || !o.id) return; keys(o).forEach(function(k){ if (I[k] == null) I[k] = o; }); });
+  var pick = function(l){ var ks = keys(l); for (var p = 0; p < 4; p++) { var pre = ['id:', 'ib:', 'no:', 'n:'][p]; for (var i = 0; i < ks.length; i++) if (ks[i].indexOf(pre) === 0 && I[ks[i]]) return I[ks[i]]; } return null; };
+  var now = new Date().toISOString(), out = null;
+  return new Promise(function(res){
+    if (typeof W._setLeads !== 'function') return res(cnt);
+    try { W._setLeads(function(prev){ if (!Array.isArray(prev)) return prev; out = prev.map(function(l){ if (!l || !l.id || l.deleted) return l; var o = pick(l); if (!o) return l; var c = Object.assign({}, l), n = fillFrom(c, o, at); if (!n) return l; cnt.prio += n.prio; cnt.other += n.other; cnt.leads++; c.updatedAt = c.savedAt = now; c.keptBy = 'LEADKEEP backup'; return c; }); return out; }); } catch (e) {}
+    setTimeout(function(){ try { if (cnt.leads && typeof W._supaUpsertNow === 'function' && Array.isArray(out)) W._supaUpsertNow('leads', out); } catch (e) {} capture(); res(cnt); }, 400);
+  });
+}
+function restoreBackup(before){
+  return W.fetch('/.netlify/functions/gc-backup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'leadkeep', before: before || '2026-11-12T17:00:00Z' }) })
+    .then(function(r){ return r.json().catch(function(){ return { ok: false, error: 'HTTP ' + r.status }; }); })
+    .then(function(j){ if (!j || !j.ok) throw new Error((j && j.error) || 'Could not read the backup'); return restoreFrom(j.leads, j.at).then(function(c){ c.at = j.at; return c; }); });
+}
+function toast(m, bad){ try { if (W._gcToast) return W._gcToast(m, bad); } catch (e) {} var d = D.createElement('div'); d.textContent = m; d.setAttribute('role', 'status'); d.className = 'gcl-toast'; d.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:2147483600;padding:10px 16px;border-radius:10px;font:600 14px system-ui;color:#fff;background:' + (bad ? '#B42318' : '#1B1452'); D.body.appendChild(d); setTimeout(function(){ d.remove(); }, 4200); }
+D.addEventListener('click', function(e){
+  var b = e.target && e.target.closest ? e.target.closest('[data-gcl-restoreprio]') : null; if (!b || !isAdmin()) return;
+  e.preventDefault(); e.stopPropagation(); if (b.disabled) return; b.disabled = true; b.textContent = '↩ Restoring…';
+  restoreBackup().then(function(c){ toast('↩ Restored ' + c.prio + ' priorit' + (c.prio === 1 ? 'y' : 'ies') + (c.other ? ' (+ ' + c.other + ' stage / assignee)' : '') + ' from the backup of ' + new Date(c.at).toLocaleString()); b.textContent = '↩ Restored ' + c.prio + ' priorities'; },
+    function(err){ toast('Could not restore: ' + (err && err.message || err), true); b.disabled = false; b.textContent = '↩ Restore priorities from last night\'s backup'; });
+}, true);
+W._gcLeadKeep = { apply: apply, capture: capture, heal: heal, seed: seed, find: find, keys: keys, load: load, facts: facts, restoreFrom: restoreFrom, restoreBackup: restoreBackup, data: function(){ return DB; } };
 })(window);
 </script>
