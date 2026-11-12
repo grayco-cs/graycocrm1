@@ -26,6 +26,7 @@ const crypto = require('crypto');
 const BI = require('./bid-inbox.js');
 const L = BI._lib, T = BI._test;
 const SP = require('./subportal.js')._hub;
+const SM = require('../../sub-match.js');   /* patch SUBSYNC: the one sub matcher (the CRM page loads the same file) */
 const { s, low, arr, nowIso } = L;
 
 const GONE = /^(deleted|archived)$/i;
@@ -268,23 +269,57 @@ async function sentScope(jobId){
 }
 
 /* ── the invite picker ── */
+/* patch SUBSYNC (owner 11/12: "I approved 2 sub sign-ups on the bid portal — did the info go into our subs list?" / "and a sub list in the bid
+   portal to invite to jobs"): one list for the invite picker, the 🏗 Bid portal tab's 👷 Subs list and the CRM's bid-site → Subs sync —
+   + contact / phone / license, the papers on file (W-9 / COI / WC with their expiry: the CRM record's own, else the sign-up papers copied to the
+   CRM), how many bid jobs each was invited to, and crmDeleted (the CRM sub this bid-site account is linked to was deleted there on purpose:
+   the CRM never adds it back). The CRM lists are read ONCE (the tombstones row is ~20 MB; two parallel reads doubled it). */
+function papersSum(raw, papers){
+  const P = arr(papers), has = k => P.some(p => p && p.kind === k), expOf = k => s((P.filter(p => p && p.kind === k && p.exp).map(p => p.exp).sort().reverse()[0]) || '');
+  const r = raw || {}, files = arr(r.files), fk = re => files.some(f => f && re.test(s(f.kind) + ' ' + s(f.sub) + ' ' + s(f.label) + ' ' + s(f.name)));
+  return { w9: !!(r.w9 || fk(/w-?9/i) || has('w9')), coi: !!(r.coi || s(r.insExp || r.coiExp || r.glExp) || fk(/\bcoi\b|liabil/i) || has('coi')), coiExp: s(r.insExp || r.coiExp || r.glExp || r.insuranceExp) || expOf('coi'),
+    wc: !!(r.wc || r.wcExempt || s(r.wcExp) || fk(/workers|\bwc\b/i) || has('wc')), wcExp: s(r.wcExp) || expOf('wc'), wcExempt: !!(r.wcExempt || P.some(p => p && p.kind === 'wc' && p.exempt)) };
+}
+function uniqTrades(l){ const seen = {}; return arr(l).map(s).filter(t => t && !seen[low(t)] && (seen[low(t)] = 1)); }
 async function subsList(jobId){
-  const [ranked, raw, us, inv] = await Promise.all([crmRanked(), crmSubsRaw(), users(), jobId ? SP.listRows([SP.eq('collection', 'invites'), SP.eq('job_id', jobId)]).catch(() => []) : []]);
+  let data = {}; try { data = await SP.crmData(); } catch (e) {}   /* the cache the next three read */
+  const [ranked, raw, us, inv] = await Promise.all([crmRanked(), crmSubsRaw(), users(), SP.listRows([SP.eq('collection', 'invites')]).catch(() => [])]);
   const rawById = {}; raw.forEach(r => { if (r && r.id) rawById[s(r.id)] = r; });
-  const invited = {}; inv.forEach(r => { invited[low(r.email || (r.data && r.data.email))] = 1; });
+  const tomb = (data && data.gc_tombstones && typeof data.gc_tombstones === 'object' && !Array.isArray(data.gc_tombstones)) ? data.gc_tombstones : {};
+  const delL = {}; ['subs', 'vendors'].forEach(k => arr(data && data['gc_deleted_' + k]).forEach(id => { delL[s(id)] = 1; }));
+  const deleted = id => !!s(id) && !!(tomb['vendors:' + s(id)] || tomb['subs:' + s(id)] || delL[s(id)]);
+  const invited = {}, invN = {};
+  inv.forEach(r => { const e = low(r.email || (r.data && r.data.email)); if (!e) return; invN[e] = (invN[e] || 0) + 1; if (jobId && s(r.job_id || (r.data && r.data.jobId)) === s(jobId)) invited[e] = 1; });
+  /* patch SUBSYNC (owner: "subs … we already have in the CRM — make sure we don't duplicate if they use the same phone number, name, email
+     etc. — make it merge"): each approved bid-site account is matched to the CRM's Subs / Vendors with the shared matcher (sub-match.js:
+     link → e-mail → phone → company name; a similar name or two candidates = "🔗 Same sub?" for an owner, never merged on its own) */
+  let dec = {}; try { dec = (await SP.kvRead(['gc_sub_same'])).gc_sub_same || {}; if (typeof dec === 'string') dec = JSON.parse(dec); } catch (e) { dec = {}; }
+  const recs = [], recSeen = {};
+  arr(data && data.vendors).concat(arr(data && data.subs)).forEach(r => { const id = r && s(r.id); if (!id || recSeen[id] || deleted(id)) return; recSeen[id] = 1; recs.push(r); });
+  const bidUsers = us.filter(u => u.role === 'sub' && u.approved && SP.okEmail(low(u.email)));
+  const mOf = {}, linkOf = {};
+  bidUsers.forEach(u => {
+    const m = SM.match({ email: u.email, phone: u.phone, company: u.company, dba: u.dbaName, name: u.name, city: u.businessCity, state: u.businessState, portalUserId: u.id, crmId: u.crmSubId }, recs, { decisions: dec });
+    mOf[s(u.id)] = m; if (m.kind === 'strong' && !linkOf[s(m.rec.id)]) linkOf[s(m.rec.id)] = u;
+  });
   const seen = {}, out = [];
   ranked.forEach(c => {
     if (!SP.okEmail(c.email) || seen[c.email]) return; seen[c.email] = 1;
     if (c.flag === 'dnu') return;   /* ⛔ Do not use: never offered */
-    const u = us.find(x => low(x.email) === c.email);
-    out.push({ email: c.email, name: c.name, company: c.company || (u && u.company) || '', trade: c.trade || (u && arr(u.trades)[0]) || '', trades: arr(u && u.trades).concat(c.trade ? [c.trade] : []),
-      flag: c.flag, grade: c.grade, score: c.score, lang: langOf(u, rawById[c.id]), onBidSite: !!(u && u.approved), invited: !!invited[c.email], crmId: s(c.id), portalUserId: s(u && u.id), papers: arr(u && u.papersCrm).slice(0, 20) });   /* patch SIGNUPPAPERS */
+    const u = us.find(x => low(x.email) === c.email) || linkOf[s(c.id)], rr = rawById[c.id] || {};
+    out.push({ email: c.email, name: c.name, company: c.company || (u && u.company) || '', trade: c.trade || (u && arr(u.trades)[0]) || '', trades: uniqTrades(arr(u && u.trades).concat(s(c.trade).split(/\s*[,;\/]\s*/))),
+      flag: c.flag, grade: c.grade, score: c.score, lang: langOf(u, rr), onBidSite: !!(u && u.approved), invited: !!invited[c.email], invitedCount: invN[c.email] || 0, crmId: s(c.id), portalUserId: s(u && u.id), papers: arr(u && u.papersCrm).slice(0, 20),   /* patch SIGNUPPAPERS */
+      contact: s(rr.contact) || s(u && u.name), phone: s(c.phone || rr.phone), license: s(rr.license || rr.licenseNumbers), pp: papersSum(rr, u && u.papersCrm) });
   });
   us.filter(u => u.role === 'sub' && u.approved && SP.okEmail(low(u.email)) && !seen[low(u.email)]).forEach(u => {
-    const e = low(u.email); seen[e] = 1; const c = u.crmSubId && rawById[s(u.crmSubId)];
+    const e = low(u.email); seen[e] = 1; const m = mOf[s(u.id)] || { kind: 'none', cands: [] };
+    const c = (u.crmSubId && rawById[s(u.crmSubId)]) || (m.kind === 'strong' ? m.rec : null);
     if (c && low(c.subFlag) === 'dnu') return;
-    out.push({ email: e, name: s(u.name), company: s(u.company), trade: arr(u.trades)[0] || '', trades: arr(u.trades), flag: '', grade: '', score: null, lang: langOf(u, c), onBidSite: true, invited: !!invited[e],
-      notInCrm: !c, phone: s(u.phone), portalUserId: s(u.id), papers: arr(u.papersCrm).slice(0, 20), crmId: s(c && c.id), city: s(u.businessCity), state: s(u.businessState), address: s(u.businessAddress), licenses: s(u.licenseNumbers) });   /* BIDSUBS: what the CRM needs to add them */
+    const dupOf = c && out.some(x => x.crmId === s(c.id)) ? s(c.id) : '';   /* the CRM row above already stands for them (lists show one) */
+    out.push({ email: e, name: s(u.name), company: s(u.company), trade: arr(u.trades)[0] || '', trades: arr(u.trades), flag: '', grade: '', score: null, lang: langOf(u, c), onBidSite: true, invited: !!invited[e], invitedCount: invN[e] || 0,
+      notInCrm: !c, crmDeleted: !c && deleted(u.crmSubId), phone: s(u.phone), portalUserId: s(u.id), papers: arr(u.papersCrm).slice(0, 20), crmId: s(c && c.id), city: s(u.businessCity), state: s(u.businessState), address: s(u.businessAddress), zip: s(u.businessZip), licenses: s(u.licenseNumbers),
+      contact: s(u.name), license: s(u.licenseNumbers), dba: s(u.dbaName), website: s(u.website), approvedAt: s(u.bidsApprovedAt), pp: papersSum(c, u.papersCrm),   /* BIDSUBS: what the CRM needs to add them */
+      matchedBy: c ? (m.kind === 'strong' ? m.why : 'linked') : '', dupOf, sameSub: !c && m.kind === 'weak' ? m.cands.map(x => ({ id: s(x.rec.id), name: s(x.rec.name || x.rec.company), why: x.why })) : undefined });
   });
   return out;
 }
@@ -317,7 +352,7 @@ async function invite(who, b){
   const trades = arr(b.trades).map(low).map(x => x.trim()).filter(Boolean).slice(0, 20);
   const pool = await subsList(jobId);
   let targets;
-  if (b.all) targets = pool.filter(x => tradeHit(x, trades));
+  if (b.all) targets = pool.filter(x => !x.dupOf && tradeHit(x, trades));   /* patch SUBSYNC: a bid-site account linked to a CRM sub is that sub (one e-mail) */
   else {
     const want = Array.from(new Set(arr(b.emails).map(low).filter(SP.okEmail)));
     const dnu = {}; (await crmRanked()).forEach(c => { if (c.flag === 'dnu' && c.email) dnu[c.email] = 1; });
@@ -977,7 +1012,7 @@ exports.handler = async function(event){
     return J(e.status || 502, { error: e.status ? e.message : 'The bid portal could not be reached: ' + s(e && e.message) }, C);
   }
 };
-exports._test = { postjob, unpost, cleanup, postedView, posterRole, autoAdded, postedOnPurpose, validDay, jobsList, sentScope, awardMail, notSelectedMail, mailGate, pmOf, link, fileOut, amountOf, subBids, subsList, jobsList, invite, visibility, award, sweep, inviteMail, whoIs, archive, restore, manageView, audience, noticeMail, planreq, details, dueChanged, bidding, duplicate, subNotice, tradesPicked, resort, resortCount };
+exports._test = { papersSum, postjob, unpost, cleanup, postedView, posterRole, autoAdded, postedOnPurpose, validDay, jobsList, sentScope, awardMail, notSelectedMail, mailGate, pmOf, link, fileOut, amountOf, subBids, subsList, jobsList, invite, visibility, award, sweep, inviteMail, whoIs, archive, restore, manageView, audience, noticeMail, planreq, details, dueChanged, bidding, duplicate, subNotice, tradesPicked, resort, resortCount };
 /* patch LOGOALL (owner 10/23: "should have our logo on it"): every customer / sub / GC e-mail this file sends
    straight to Resend gets the GrayCo shell (centered logo, office line, licenses). Internal @grayco-cs.com mail is untouched. */
 try { require('./_lib/brand.js').installResend(); } catch (e) {}
