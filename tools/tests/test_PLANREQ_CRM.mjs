@@ -18,6 +18,8 @@ const at = new Date(Date.now() - 864e5).toISOString(), due = new Date(Date.now()
 resetCloud();
 cset('users', [{ id: 'u1', name: 'Wesley Johnson', email: 'wjohnson@grayco-cs.com', role: 'Admin', payType: 'owner', active: true },
   { id: 'u3', name: 'Sam Biffle', email: 'sbiffle@grayco-cs.com', role: 'Project Manager', active: true }, { id: 'u4', name: 'Gus Estimator', email: 'gestimator@grayco-cs.com', role: 'Estimator', active: true }]);
+cset('leads', [{ id: 'L1', name: 'Sample Clinic Remodel', type: 'Commercial', stage: 'Bidding', bidDue: '2026-11-23T14:00', createdAt: at, updatedAt: at },
+  { id: 'L2', name: 'Sample Gym Refresh', type: 'Commercial', stage: 'Bidding', bidDue: '2026-11-30T15:30', address: '9 Sample Rd', createdAt: at, updatedAt: at }]);   /* patch PLANREQ-F: our due dates (a Monday each) */
 cset('projects', [{ id: 'P1', name: 'Sample Clinic Remodel', client: 'Sample Health LLC', address: '100 Sample St', status: 'estimating', autoPO: 'T101', pm: 'Sam Biffle', createdAt: at, updatedAt: at }]);
 /* what subportal.js requestPlans writes (the same shape — test_PLANREQ_fn checks the server side) */
 const MSG = { id: 'M_PR_sample1', pid: 'P1', authorId: 'bidsite:u_sam', authorName: 'Sample Drywall LLC (bid site)', text: '📩 @Sam Biffle @Gus Estimator — Sample Drywall LLC (Sam Sample · 901-555-0141 · sam@sampledrywall.test) asked for plans, site walk / access on the bid portal job "Sample Clinic Remodel": “Need the full set.” Answer in 🏗 Bid portal → 📂 Manage → 💬 Q&A (↩ Reply / ✅ Mark sent), or add the plans there — everyone who asked is told.',
@@ -28,11 +30,12 @@ cset('gc_office_tasks', JSON.stringify([{ id: 'planreq_J1__u_sam', kind: 'planre
   assignees: ['sbiffle@grayco-cs.com', 'gestimator@grayco-cs.com'], assignee: 'Sam Biffle, Gus Estimator', personal: false, shared: true, prio: 'high', due: now.slice(0, 10), addedBy: 'Bid site', addedAt: now, updatedAt: now, done: false }]));
 
 const JOBS = [
-  { id: 'J1', title: 'Sample Clinic Remodel', status: 'open', visibility: 'private', due, invited: 2, bids: 0, plans: 0, openReq: 1, postedBy: 'wjohnson@grayco-cs.com', postedByName: 'Wesley Johnson', crmProjectId: 'P1', trades: 'Drywall, Electrical' },
-  { id: 'J2', title: 'Sample Apartment Fire', status: 'draft', visibility: 'draft', due: '', invited: 0, bids: 0, plans: 0, auto: false, address: '2817 Sample Ct' }];
+  { id: 'J1', title: 'Sample Clinic Remodel', status: 'open', visibility: 'private', due, ourDue: '2026-11-20', ourDueTime: '14:00', crmLeadId: 'L1', invited: 2, bids: 0, plans: 0, openReq: 1, postedBy: 'wjohnson@grayco-cs.com', postedByName: 'Wesley Johnson', crmProjectId: 'P1', trades: 'Drywall, Electrical' },
+  { id: 'J2', title: 'Sample Apartment Fire', status: 'draft', visibility: 'draft', due: '', invited: 0, bids: 0, plans: 0, auto: false, address: '2817 Sample Ct' },
+  { id: 'J4', title: 'Sample Past Due Job', status: 'open', visibility: 'public', due: '2026-05-13', invited: 0, bids: 0, plans: 0 }];
 const REQ = { id: 'J1__u_sam', company: 'Sample Drywall LLC', name: 'Sam Sample', phone: '901-555-0141', email: 'sam@sampledrywall.test', trade: 'Drywall', needs: ['plans', 'sitewalk'], note: 'Need the full set.', at: now, open: true,
   to: [{ name: 'Sam Biffle', roles: ['PM'] }, { name: 'Gus Estimator', roles: ['Estimator'] }] };
-const MAN = () => ({ ok: true, paused: false, job: { id: 'J1', title: 'Sample Clinic Remodel', address: '100 Sample St', po: 'T101', due: JOBS[0].due, dueTime: JOBS[0].dueTime || '', visibility: JOBS[0].visibility, deleted: false, trades: JOBS[0].trades,
+const MAN = () => ({ ok: true, paused: false, job: { id: 'J1', title: 'Sample Clinic Remodel', address: '100 Sample St', po: 'T101', due: JOBS[0].due, dueTime: JOBS[0].dueTime || '', ourDue: JOBS[0].ourDue, ourDueTime: JOBS[0].ourDueTime, visibility: JOBS[0].visibility, deleted: false, trades: JOBS[0].trades,
   siteWalk: DET.siteWalk || null, bidForm: DET.bidForm || [], requirements: DET.requirements || {}, internalNotes: DET.internalNotes || '', crmProjectId: 'P1',
   tradeScopes: TS, plansLinks: [], addenda: [], posts: [], log: [] }, plans: PLANS, planreqs: [REQ], questions: [], acks: [], activity: [], audience: [{ email: 'sam@sampledrywall.test', company: 'Sample Drywall LLC', trades: ['Drywall'], how: 'invited', account: true }] });
 const DET = {}; let TS = [{ id: 'ts1', trade: 'Drywall', scope: 'Hang and finish.', files: [] }], PLANS = [];
@@ -44,7 +47,7 @@ async function routes(c, who){
       if (b.op === 'visibility') { const j = JOBS.find(x => x.id === b.jobId); if (j) { j.visibility = b.mode; j.status = 'open'; } return J({ ok: true, jobId: b.jobId, visibility: b.mode }); }
       if (b.op === 'planreq') { REQ.open = false; if (b.act === 'reply') { REQ.closedHow = 'answered'; REQ.reply = b.text; REQ.repliedByName = 'Wesley Johnson'; } else { REQ.closedHow = 'sent'; REQ.sentNote = b.text; } JOBS[0].openReq = 0; return J({ ok: true, mail: 'sent' }); }
       if (b.op === 'details') { const j = JOBS.find(x => x.id === b.jobId); if (Array.isArray(b.trades)) { j.trades = b.trades.join(', '); b.trades.forEach(tr => { if (!TS.some(x => x.trade === tr)) TS.push({ id: 'ts_' + tr, trade: tr, scope: '', files: [] }); }); }
-        if (b.due !== undefined) { j.due = b.due; j.dueTime = b.dueTime; } Object.assign(DET, { siteWalk: b.siteWalk, bidForm: (b.bidForm || []).map((x, i) => Object.assign({ id: 'bf' + i }, x)), requirements: b.requirements, internalNotes: b.internalNotes });
+        if (b.due !== undefined) { j.due = b.due; j.dueTime = b.dueTime; } if (b.ourDue !== undefined) { j.ourDue = b.ourDue; j.ourDueTime = b.ourDueTime; } Object.assign(DET, { siteWalk: b.siteWalk, bidForm: (b.bidForm || []).map((x, i) => Object.assign({ id: 'bf' + i }, x)), requirements: b.requirements, internalNotes: b.internalNotes });
         return J({ ok: true, jobId: b.jobId, changed: ['trades', 'bid due', 'site walk', 'bid form'], notice: { status: 'waiting', n: 1 } }); }
       if (b.op === 'duplicate') { JOBS.push({ id: 'J3', title: b.title, status: 'open', visibility: 'private', due: '', invited: 0, bids: 0, plans: 0, trades: JOBS[0].trades }); return J({ ok: true, jobId: 'J3', title: b.title }); }
       if (b.op === 'bidding') { JOBS.find(x => x.id === b.jobId).biddingClosed = b.close; return J({ ok: true, biddingClosed: b.close }); }
@@ -145,7 +148,7 @@ await A.ev(() => { document.querySelector('tr[data-sys-job="J1"] [data-sys="menu
 await A.ev(() => [...document.querySelectorAll('#gcsys-menu [role=menuitem]')].find(b => /Edit details/.test(b.textContent)).click());
 await wait(A, () => document.querySelector('#gcsys2 [data-details]'));
 const hd = await A.ev(() => ({ chips: [...document.querySelectorAll('#gcsys2 [data-hdr-trades] [data-trade-chip]')].map(x => x.getAttribute('data-trade-chip')), due: (document.querySelector('#gcsys2 [data-hdr-due]') || {}).textContent, tab: document.querySelector('#gcsys2 .tabs button.on').textContent }));
-ok('5 📝 Edit details opens 📂 Manage on 📝 Details; the header shows the trades (chips + ✏️ Trades) and "⏰ Bid due …" (✏️ Due)', hd.chips.join() === 'Drywall,Electrical' && /Bid due/.test(hd.due) && /Details/.test(hd.tab), hd);
+ok('5 📝 Edit details opens 📂 Manage on 📝 Details; the header shows the trades (chips + ✏️ Trades) and "⏰ Bid due …" (✏️ Due)', hd.chips.join() === 'Drywall,Electrical' && /Subs due .* · Our bid due 2026-11-20 14:00/.test(hd.due) && /Details/.test(hd.tab), hd);
 await A.ev(() => { [...document.querySelectorAll('#gcsys2 [data-a="dtrade"]')].find(b => b.getAttribute('data-t') === 'Paint').click(); });
 await A.ev(nd => { const set = (k, v) => { const x = document.querySelector('#gcsys2 [data-d="' + k + '"]'); if (x.type === 'checkbox') x.checked = v; else x.value = v; };
   set('due', nd); set('dueTime', '14:00'); set('walkDate', nd); set('walkTime', '09:00'); set('walkLocation', 'Front gate'); set('walkMandatory', true); set('rq_bond', true); set('rq_coi', true); set('rq_coiGl', '$1M/$2M'); set('internalNotes', 'Margin note — staff only'); },
@@ -170,6 +173,30 @@ await A.ev(() => { window.__p0 = window.prompt; window.prompt = (m, d) => d; [..
 await wait(A, () => POSTS.some(p => p.op === 'duplicate'));
 ok('5 📋 Duplicate job → op duplicate (asks the new title: "Copy of …")', POSTS.some(p => p.op === 'duplicate' && p.jobId === 'J1' && p.title === 'Copy of Sample Clinic Remodel'), POSTS.filter(p => p.op === 'duplicate'));
 await A.ev(() => { try { window._gcSys2.close(); } catch (e) {} });
+/* 6. patch PLANREQ-F: the due date in the list row; two dates (subs / ours); the lead's due date change is OFFERED, never silent; 📢 prefills sub due = our due − 1 day */
+await A.ev(() => window._gcSys.bp.load(true)); await sleep(800);
+const dc = await A.ev(() => ({ j1: (document.querySelector('[data-sys-duecell="J1"]') || {}).textContent, past: !!document.querySelector('[data-sys-duecell="J4"] [data-pastdue]'), pastColor: getComputedStyle(document.querySelector('[data-sys-duecell="J4"] [data-pastdue]')).color }));
+ok('6 the list row: "Subs due … ✏️" and "Our bid due 11/20/26 14:00"; a past due date is red', /Subs due .* ✏️/.test(dc.j1) && /Our bid due 11\/20\/26 14:00/.test(dc.j1) && dc.past && /185, 28, 28/.test(dc.pastColor), dc);
+await A.ev(() => document.querySelector('[data-sys-duecell="J4"] [data-sys="dueedit"]').click()); await sleep(200);
+await A.ev(() => { const f = document.querySelector('[data-sys-dueform="J4"]'); f.querySelector('[data-k=due]').value = '2026-12-04'; f.querySelector('[data-k=duet]').value = '10:00'; });
+await shot(A, 'crm07_list_due_inline_edit');
+await A.ev(() => document.querySelector('[data-sys-dueform="J4"] [data-sys="duesave"]').click());
+await wait(A, () => /Subs due 12\/4\/26 10:00/.test((document.querySelector('[data-sys-duecell="J4"]') || {}).textContent || ''));
+ok('6 click the date → date + time → Save: op details (due, dueTime) — the same op / rule / automatic update as 📂 Manage; the row shows it', POSTS.some(p => p.op === 'details' && p.jobId === 'J4' && p.due === '2026-12-04' && p.dueTime === '10:00'));
+const off = await wait(A, () => document.querySelector('#gcbp-dueoffer') ? document.querySelector('#gcbp-dueoffer').innerText : null);
+ok('6 our bid due on the lead (Mon 11/23) ≠ the one the job was posted with (11/20) → an OFFER: "Also move the sub due date to 11/20?" (Friday: the day before is a weekend… Sunday) — nothing moved yet', !!off && /changed to 11\/23 14:00/.test(off) && /Also move the sub due date to 11\/20/.test(off) && !POSTS.some(p => p.op === 'details' && p.jobId === 'J1' && p.ourDue === '2026-11-23'), off);
+await shot(A, 'crm08_lead_due_change_offer');
+await A.ev(() => document.querySelector('#gcbp-dueoffer [data-dueoffer="move"]').click());
+await wait(A, () => POSTS.some(p => p.op === 'details' && p.jobId === 'J1' && p.ourDue === '2026-11-23'));
+const mv = POSTS.find(p => p.op === 'details' && p.jobId === 'J1' && p.ourDue === '2026-11-23');
+ok('6 "Move it" → op details: our due 11/23 14:00 and the sub due 11/20 14:00', mv.ourDueTime === '14:00' && mv.due === '2026-11-20' && mv.dueTime === '14:00', mv);
+const sd = await A.ev(() => [window._gcSubDue('2026-11-25T09:00'), window._gcSubDue('2026-11-23'), window._gcSubDue('2026-11-22T08:00')]);
+ok('6 sub due = our due − 1 day, same time; a weekend → the Friday before (Wed 11/25 → Tue 11/24; Mon 11/23 → Fri 11/20; Sun 11/22 → Fri 11/20)', JSON.stringify(sd) === JSON.stringify([{ date: '2026-11-24', time: '09:00' }, { date: '2026-11-20', time: '' }, { date: '2026-11-20', time: '08:00' }]), sd);
+await A.ev(() => window._gcBidPost.open({ leadId: 'L2' })); await wait(A, () => document.querySelector('#gcbp-modal #gcbp-due'));
+const pf = await A.ev(() => ({ due: document.getElementById('gcbp-due').value, t: document.getElementById('gcbp-duet').value, our: (document.querySelector('#gcbp-modal [data-bp-ourdue]') || {}).textContent }));
+ok('6 📢 Put on bid portal from a lead (our due Mon 11/30 15:30): the sub due is prefilled Fri 11/27 15:30 — "Our bid due: 11/30 15:30 — subs due 1 day before our due date"', pf.due === '2026-11-27' && pf.t === '15:30' && /Our bid due: 11\/30 15:30/.test(pf.our) && /1 day before our due date/.test(pf.our), pf);
+await shot(A, 'crm09_put_on_bid_portal_sub_due_prefill');
+await A.ev(() => { const m = document.getElementById('gcbp-modal'); if (m) m.remove(); });
 ok('no page errors (admin)', !errs.length, errs);
 /* 4. the PM: 🔔 For you + the To-Do */
 const P = await computer('sbiffle@grayco-cs.com', { build: BUILD });
@@ -186,5 +213,5 @@ ok('no page errors (PM)', !errs2.length, errs2);
 if (SHOTS) fs.writeFileSync(SHOTS + '/index-planreq-crm.txt', ['CRM screenshots (test_PLANREQ_CRM.mjs) — made-up data',
   'crm01  🏗 Bid portal list: 🔒 Private ⇄ / 📝 Draft · Post it ▸ one-click pills, 📩 1 request', 'crm02  📂 Manage → 💬 Q&A: the plan request with ↩ Reply / ✅ Mark sent',
   'crm03  📐 Plans & specs: 4 files of different types, each with its guessed kind + trade ▾ before 💾 Save', 'crm04  📝 Scope: each trade with its files + 📎 Add scope files',
-  'crm05  ⋯ Actions: the full menu', 'crm06  📂 Manage → 📝 Details: trades picker, dates, site walk, requirements, bid form, contacts, CRM link, internal notes; header trades + due', ''].join('\n'));
+  'crm05  ⋯ Actions: the full menu', 'crm07  the list row: click the sub due date → date + time → Save (past dates red)', 'crm08  the lead\'s due date changed → "Also move the sub due date to …?"', 'crm09  📢 Put on bid portal from a lead: sub due prefilled 1 day before our due (Friday for a weekend)', 'crm06  📂 Manage → 📝 Details: trades picker, dates, site walk, requirements, bid form, contacts, CRM link, internal notes; header trades + due', ''].join('\n'));
 const n = R.filter(Boolean).length; console.log('PLANREQ_CRM ' + n + '/' + R.length); process.exit(n === R.length ? 0 : 1);
