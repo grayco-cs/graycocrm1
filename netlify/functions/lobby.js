@@ -8,6 +8,7 @@
    No token / bad token → 401.  Signed in but not staff → 403.
    (Kept inline in every function on purpose: each function is bundled alone.) */
 require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
+const JA = require('./_lib/job-auto.js');   /* patch QAB: companyOf (with the MISFILED read-side repair) */
 const GC_SB_DEFAULT_URL = 'https://ieeonhpfahmwwecizdut.supabase.co';
 /* the PUBLIC anon key (it is already in index.html — not a secret) */
 const GC_SB_DEFAULT_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImllZW9uaHBmYWhtd3dlY2l6ZHV0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyNTU2MDgsImV4cCI6MjA4ODgzMTYwOH0.imxBPB0xD4LKy40smBWSUq27iwpCy6fEOMtVx8Cu8ls';
@@ -214,12 +215,12 @@ async function weather(){
 /* ── build the lobby from a playlist ── */
 async function build(doc, offersDoc, opts){
   opts = opts || {};
-  const data = await kvRead(['gc_photos', 'gc_mkt_v1', 'projects', 'customers', 'leads', 'gc_maint_plans']);
+  const data = await kvRead(['gc_photos', 'gc_mkt_v1', 'projects', 'customers', 'leads', 'gc_maint_plans'].concat(opts.co ? ['gc_companies'] : []));   /* patch QAB: + the company's own settings */
   const C = cleaner(data), P = {}, photos = {}, uploads = {};
   arr(data.projects).forEach(function(p){ if (p && p.id) P[s(p.id)] = p; });
   arr(data.gc_photos).forEach(function(r){
     if (!r || r.deleted === true || r.source === 'ccflag' || !s(r.id)) return;
-    if (opts.co) { const pj = P[s(r.jobId)]; if (!pj || s(pj.companyId) !== opts.co) return; }   /* patch MITWS: a company's lobby — its own jobs' photos */
+    { const pj = P[s(r.jobId)]; if ((opts.co || 'construction') !== (pj ? JA.companyOf(pj) : 'construction')) return; }   /* patch MITWS: a company's lobby — its own jobs' photos; patch QAB: by the job's real company (the MISFILED repair), and GrayCo Construction's lobby never shows a Mitigation / Environmental job's photos */
     if (!sharedOf(r)) return; if (r.source === 'sub' && !(r.shared === true && s(r.custOkBy))) return;
     photos[s(r.id)] = r;
   });
@@ -291,6 +292,16 @@ async function build(doc, offersDoc, opts){
   const out = { ok: true, at: new Date().toISOString(), interval: Math.max(12, Math.min(15, +doc.interval || 14)), slides: slides, offers: offers, tiers: tiers, handyman: handyman, referral: referral, care: care,
     brand: { name: s(B.name) || 'GrayCo Construction Services', phone: s(B.phone) || '(901) 585-0944', emergency: emergency, licenses: s(B.licenses), states: states, reviewUrl: httpsUrl(obj(mk.cfg).reviewLink) || s(B.reviewUrl) || TY.reviewUrl } };
   if (opts.co && COS[opts.co]) { out.brand.name = COS[opts.co].name; out.brand.logo = COS[opts.co].logo; out.brand.color = COS[opts.co].color; out.brand.co = opts.co; }   /* patch MITWS */
+  /* patch QAB (overnight QA 11/12): a Mitigation / Environmental lobby never sends people to GrayCo Construction's Google review page or shows its
+     contractor licenses — that company's own review link (🏢 Companies → its Marketing, when an admin turned it on), license line and phone, else none */
+  if (opts.co && COS[opts.co]) {
+    let cv = data.gc_companies; if (typeof cv === 'string') { try { cv = JSON.parse(cv); } catch (e) { cv = null; } }
+    const cc = arr(cv && cv.list).filter(function(c){ return c && c.id === opts.co; })[0] || {}, mk = obj(cc.marketing), rl = s(obj(mk.accounts).reviewLink);
+    out.brand.reviewUrl = mk.active === true && /^https:\/\//.test(rl) ? rl : '';
+    out.brand.licenses = s(cc.license);
+    out.brand.states = (s(cc.license).match(/\b(TN|AR|MS|AL|KY|MO|GA|LA|TX)\b/g) || []).filter(function(v, i, a){ return a.indexOf(v) === i; }).join(' · ');
+    if (s(cc.phone)) out.brand.phone = s(cc.phone);
+  }
   if (types.weather) out.weather = await weather();
   return out;
 }

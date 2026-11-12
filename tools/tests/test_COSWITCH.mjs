@@ -21,11 +21,12 @@ async function run(role){
   await sleep(1500);
   ok(role + ': picks Mitigation', pick && await B.ev(() => window._gcCo.filter()) === 'mitigation', await B.ev(() => window._gcCo.filter()));
   const nav = await B.ev(() => [...document.querySelectorAll('nav a, nav button, aside a, aside button')].map(x => (x.innerText || '').trim()).filter(Boolean).join(' | '));
-  ok(role + ': the menu is Mitigation-shaped (Drying jobs tab)', /Drying jobs/.test(nav), nav.slice(0, 400));
-  if (/office/i.test(role)) ok(role + ': has the combined 💧 Mitigation tab', /(^|\n|\| )Mitigation( \||$)/.test(nav), nav.slice(0, 400));
+  if (/office/i.test(role)) ok(role + ': the menu is Mitigation-shaped (Drying jobs tab)', /Drying jobs/.test(nav), nav.slice(0, 400));
+  else ok(role + ': the menu keeps Marketing and has no drying / claims tabs (they would not open for this role — patch QAB)', /Marketing/.test(nav) && !/Drying jobs|Claims & adjusters/.test(nav), nav.slice(0, 400));
+  if (/office/i.test(role)) ok(role + ': has the combined 💧 Mitigation tab', /(^|\| |\n)Mitigation( \||$)/.test(nav), nav.slice(0, 400));
   await B.ev(() => window._gcCo.setFilter('environmental')); await sleep(1500);
   const nav2 = await B.ev(() => [...document.querySelectorAll('nav a, nav button, aside a, aside button')].map(x => (x.innerText || '').trim()).filter(Boolean).join(' | '));
-  if (/office/i.test(role)) ok(role + ': Environmental picked → the combined ☢️ Environmental tab', /(^|\n|\| )Environmental( \||$)/.test(nav2), nav2.slice(0, 400));
+  if (/office/i.test(role)) ok(role + ': Environmental picked → the combined ☢️ Environmental tab', /(^|\| |\n)Environmental( \||$)/.test(nav2), nav2.slice(0, 400));
   ok(role + ': no page errors', !errs.length, errs);
   await B.close?.();
 }
