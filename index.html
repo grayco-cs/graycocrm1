@@ -131242,6 +131242,7 @@ function boardOnly(l){ return !arr(l.docs).length && arr(l.plansLinks).some(func
 function portalTag(l){
   var p = portalOf(l), st = S.portal || {};
   if (!l.inboxId) return '';
+  if (p && p.jobId && typeof window._gcBidJobGone === 'function' && window._gcBidJobGone(p.jobId)) return '';   /* patch QAA: archived / deleted on the bid portal */
   if (p && p.state === 'published') return '<span class="tg t-bp on">✓ On the bid portal</span>';
   if (p && p.state === 'removed') return '<span class="tg t-bp">Bid-portal draft deleted</span>';
   if ((p && p.state === 'queued') || st.ready === false) return '<span class="tg t-bp" title="' + esc(st.why || (p && p.why) || '') + '">Bid-portal draft waiting (portal not set up)</span>';
@@ -174310,6 +174311,7 @@ function plansOf(l){
 function portalOf(l){ var it = inboxOf(l); var p = (it && it.portal) || l.subPortal || null; return p; }
 function portalChip(l){
   var p = portalOf(l); if (!p || !p.jobId) return '<span class="gcl-chip mute" title="Not on the sub bid portal yet">🏗 —</span>';
+  if (typeof W._gcBidJobGone === 'function' && W._gcBidJobGone(p.jobId)) return '<span class="gcl-chip mute" title="Taken off the sub bid portal (🗄 Archived / deleted)">🏗 —</span>';   /* patch QAA: cleaned up → not "draft / private" any more */
   var st = s(p.state || p.visibility); var pub = /public|published/.test(st);
   return '<span class="gcl-chip ' + (pub ? 'pub' : 'priv') + '" title="Sub bid portal: ' + (pub ? 'public to all subs' : /private/.test(st) ? 'open to invited subs (private)' : 'private draft (staff only)') + '">🏗 ' + (pub ? 'public' : /private/.test(st) ? 'private' : 'draft') + '</span>';
 }
@@ -178443,9 +178445,9 @@ function drawRows(){
   var autoN = all.filter(function(j){ return j.auto; }).length;   /* patch BIDPOST: 🧹 Clean up auto-added jobs (an admin's click) */
   Object.keys(SEL).forEach(function(id){ if (!rows.some(function(j){ return j.id === id; })) delete SEL[id]; });
   var nSel = Object.keys(SEL).length;
-  box.innerHTML = (realAdmin() && autoN && !del ? '<div class="bulk" data-sys-auto style="background:#eff6ff;border-color:#bfdbfe"><span><b>' + autoN + ' auto-added job' + (autoN === 1 ? '' : 's') + '</b> — made from leads by the old automatic sync, never posted, no plans / bids / invites.</span><button type="button" class="b" data-sys="cleanup">🧹 Clean up auto-added jobs (' + autoN + ')</button></div>' : '')
+  box.innerHTML = (realAdmin() && autoN && !del ? '<div class="bulk" data-sys-auto style="background:#eff6ff;border-color:#bfdbfe"><span><b>' + autoN + ' auto-added job' + (autoN === 1 ? '' : 's') + '</b> — made from leads by the old automatic sync, never posted, no bids / invites / plans added by a person.</span><button type="button" class="b" data-sys="cleanup">🧹 Clean up auto-added jobs (' + autoN + ')</button></div>' : '')
     + (bulk && nSel ? '<div class="bulk" data-sys-bulk><b>' + nSel + ' selected</b><button type="button" class="b" data-sys="bulkdel" style="color:#b91c1c">🗑 Delete selected</button><button type="button" class="b" data-sys="selnone">Clear</button></div>' : '')
-    + (!all.length ? '<div class="mut">No bid jobs yet. Every estimator lead becomes one (private) as soon as it comes in.</div>'
+    + (!all.length ? '<div class="mut">No bid jobs yet. Nothing goes on by itself: 📢 Put on bid portal on a lead, an estimate or a job.</div>'
     : '<table class="bpt"><colgroup>' + (bulk ? '<col style="width:34px">' : '') + '<col><col style="width:104px"><col style="width:66px"><col style="width:70px"><col style="width:112px"><col style="width:' + (del ? 128 : 236) + 'px"></colgroup>'
     + '<thead><tr>' + (bulk ? '<th><input type="checkbox" data-sys="selall" aria-label="Select all"' + (nSel && nSel === rows.length ? ' checked' : '') + '></th>' : '') + '<th>Bid job</th><th>Who sees it</th><th>Invited</th><th>Bids</th><th>' + (del ? 'Deleted' : 'Bid due') + '</th><th></th></tr></thead><tbody>' + rows.map(function(j){
       var left = del && j.deletedAt ? Math.max(0, 30 - Math.floor((Date.now() - Date.parse(j.deletedAt)) / 864e5)) : 0;
@@ -178588,7 +178590,7 @@ function onClick(ev){
   if (a === 'cleanup') {   /* patch BIDPOST */
     return fn('bid-hub', { op: 'cleanup', dry: true }).then(function(r){
       if (!r.count) { toast('Nothing to clean up.'); return loadJobs(true); }
-      if (!W.confirm('Archive ' + r.count + ' auto-added bid job' + (r.count === 1 ? '' : 's') + '?\n\nThey were made from leads by the old automatic sync, never posted by anyone, and have no plans, bids, invites or questions. Nothing is deleted: they move to 🗄 Archived (restore any time) and subs stop seeing them.\n\n' + arr(r.sample).slice(0, 8).join('\n') + (r.count > 8 ? '\n…' : ''))) return;
+      if (!W.confirm('Archive ' + r.count + ' auto-added bid job' + (r.count === 1 ? '' : 's') + '?\n\nThey were made from leads by the old automatic sync, never posted by anyone, and have no bids, invites or questions and no plans a person added (the bid-board files the old sync copied in do not count — patch QAA). Nothing is deleted: they move to 🗄 Archived (restore any time) and subs stop seeing them.\n\n' + arr(r.sample).slice(0, 8).join('\n') + (r.count > 8 ? '\n…' : ''))) return;
       return fn('bid-hub', { op: 'cleanup' }).then(function(x){ toast('🧹 ' + x.archived + ' auto-added job' + (x.archived === 1 ? '' : 's') + ' archived — see 🗄 Archived'); loadJobs(true); });
     }, function(e){ toast(e.message, true); });
   }
@@ -223683,6 +223685,9 @@ function todoItems(){
 W._gcTodoExt = Array.isArray(W._gcTodoExt) ? W._gcTodoExt : []; W._gcTodoExt.push(function(){ try { return todoItems(); } catch (e) { warn(e); return []; } });
 RI.call(W, function(){ if (!D.hidden && JOBS.list) jobs(false); }, 300000);
 
+/* patch QAA: a bid job the CRM knows is archived / deleted (🧹 Clean up, Take off, 🗑 Delete) — the Leads chips read it */
+W._gcBidJobGone = function(id){ id = s(id); if (!id) return false; var l = arr(JOBS.list); try { if (W._gcSys && W._gcSys.bp && W._gcSys.bp.jobs) l = l.concat(W._gcSys.bp.jobs()); } catch (e) {}
+  var hit = l.filter(function(j){ return j && j.id === id; }); return !!hit.length && hit.every(function(j){ return !!j.deleted; }); };
 W._gcBidPost = { open: open, close: close, canPost: function(c){ return canPost(ctxOf(c)); }, jobs: jobs, paint: paint, todo: function(){ QA.at = 0; return todoItems(); }, trades: tradeList,
   state: function(){ return { jobs: JOBS.list ? JOBS.list.length : null, at: JOBS.at, admin: isAdmin(), est: isEst(), me: myEmail(), name: myName(), ticks: TICK }; } };
 try { console.log('[GC] patch BIDPOST: 📢 Put on bid portal (estimate / job / lead; admin, estimator, the job\'s PM) — nothing goes on by itself — _gcBidPost.state()'); } catch (e) {}
