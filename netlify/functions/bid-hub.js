@@ -79,7 +79,7 @@ async function jobsList(){
     id: s(j.id), title: s(j.title), address: s(j.address), po: s(j.poNumber), status: s(j.status), draft: j.draft === true || low(j.status) === 'draft',
     visibility: j.draft === true || low(j.status) === 'draft' ? 'draft' : (s(j.visibility) || 'public'), due: validDay(j.bidDueDate), dueTime: s(j.bidDueTime), trades: s(j.tradesSought),
     invited: k.invites, bids: k.bids, plans: k.plans, openQ: k.openQ, openReq: reqN[s(j.id)] || 0, leadId: s(j.leadInbox && j.leadInbox.id), source: s(j.leadInbox && j.leadInbox.source), autoPrivate: !!j.autoPrivate, updatedAt: s(j.updatedAt),
-    biddingClosed: !!j.biddingClosed, projectType: s(j.projectType), crmProjectId: s(j.crmProjectId), crmProjectName: s(j.crmProjectName),   /* patch BIDEST: the CRM project this job's awarded bids go into */
+    biddingClosed: !!j.biddingClosed, projectType: s(j.projectType), ourDue: validDay(j.ourDue), ourDueTime: s(j.ourDueTime), crmProjectId: s(j.crmProjectId), crmProjectName: s(j.crmProjectName),   /* patch BIDEST: the CRM project this job's awarded bids go into */
     crmLeadId: s(j.crmLeadId), crmEstId: s(j.crmEstId), postedBy: s(j.postedBy), postedByName: s(j.postedByName), postedAt: s(j.postedAt), pmEmail: s(j.pmEmail), pmName: s(j.pmName),   /* patch BIDPOST */
     auto: !GONE.test(s(j.status)) && autoAdded(j, k)
   }; }).sort((a, b) => (a.draft - b.draft) || (s(a.due) || '9999').localeCompare(s(b.due) || '9999') || a.title.localeCompare(b.title));
@@ -146,7 +146,7 @@ async function postedView(who, jobId){
   const job = await jobRow(jobId); if (!job) return { code: 404, error: 'No such bid job.' };
   if (!(await posterRole(who, {}, job))) return { code: 403, error: 'Only an admin, an estimator or the job\'s PM sees this.' };
   const pl = await SP.plansOf(job.id).catch(() => []);
-  return { ok: true, job: { id: job.id, title: s(job.title), address: s(job.address), due: validDay(job.bidDueDate), dueTime: s(job.bidDueTime), visibility: job.draft === true ? 'draft' : s(job.visibility) || 'public',
+  return { ok: true, job: { id: job.id, title: s(job.title), address: s(job.address), due: validDay(job.bidDueDate), dueTime: s(job.bidDueTime), ourDue: validDay(job.ourDue), ourDueTime: s(job.ourDueTime), visibility: job.draft === true ? 'draft' : s(job.visibility) || 'public',
     trades: s(job.tradesSought).split(/\s*,\s*/).filter(Boolean), scope: s(job.scope), specs: s(job.specifications), links: arr(job.plansLinks), files: pl.map(f => ({ name: s(f.name) })), crmFileRefs: arr(job.crmFileRefs),
     archived: GONE.test(s(job.status)), postedBy: s(job.postedBy), postedAt: s(job.postedAt), crmProjectId: s(job.crmProjectId), crmLeadId: s(job.crmLeadId) } };
 }
@@ -180,6 +180,8 @@ async function postjob(who, b){
     status: /^(closed|won|lost|awarded)$/i.test(s(job.status)) ? job.status : 'open', postedAt: job.postedAt || at, postedBy: job.postedBy || who.email, postedByName: job.postedByName || s(who.name) || who.email,
     lastPostedAt: at, lastPostedBy: who.email, crmProjectId: pid || s(job.crmProjectId), crmProjectName: s(b.projectName).slice(0, 200) || s(job.crmProjectName), crmLeadId: leadId || s(job.crmLeadId), crmEstId: estId || s(job.crmEstId),
     pmEmail: low(b.pmEmail).slice(0, 160) || s(job.pmEmail), pmName: s(b.pmName).slice(0, 120) || s(job.pmName), plansLinks: links0 !== undefined ? arr(links0) : cleanLinks(b.links), autoPrivate: false, updatedAt: at });
+  /* patch PLANREQ-F (owner 11/12): OUR bid due (to the GC / owner — the lead's date, staff only) is kept apart from the SUB due date subs see */
+  if (b.ourDue !== undefined) { job.ourDue = validDay(b.ourDue); job.ourDueTime = job.ourDue && /^\d{2}:\d{2}$/.test(s(b.ourDueTime)) ? s(b.ourDueTime) : ''; }
   /* patch QAA: the bid site lists the job's PM as its contact (job.pmId = their bid-site staff profile, as the bid site's own Add Job picks it);
      the card said "Send bids and questions to: the Project Manager listed on the job" with nobody listed */
   if (!s(job.pmId) && SP.okEmail(low(job.pmEmail))) job.pmId = 'st_' + low(job.pmEmail).split('@')[0].replace(/[^a-z0-9]+/g, '_').slice(0, 40);
@@ -598,7 +600,7 @@ async function manageView(jobId){
       tradeScopes: arr(job.tradeScopes), plansLinks: arr(job.plansLinks), addenda: arr(job.addenda), posts: arr(job.posts), log: arr(job.log).slice(-200), leadId: s(job.leadInbox && job.leadInbox.id),
       /* patch PLANREQ-E: 📝 Details */ ownerGc: s(job.ownerGc), showOwnerGc: !!job.showOwnerGc, projectType: s(job.projectType), siteWalk: job.siteWalk || null, questionsDue: s(job.questionsDue), startDate: s(job.startDate), duration: s(job.duration),
       bidInstructions: s(job.bidInstructions), requirements: job.requirements || {}, alternates: arr([]).concat(job.alternates || []), unitPrices: arr([]).concat(job.unitPrices || []), bidForm: arr(job.bidForm), contacts: job.contacts || {},
-      internalNotes: s(job.internalNotes), crmLeadId: s(job.crmLeadId), crmProjectId: s(job.crmProjectId), crmProjectName: s(job.crmProjectName), biddingClosed: !!job.biddingClosed, pmName: s(job.pmName), pmEmail: s(job.pmEmail), status: s(job.status) },
+      internalNotes: s(job.internalNotes), ourDue: validDay(job.ourDue), ourDueTime: s(job.ourDueTime), crmLeadId: s(job.crmLeadId), crmProjectId: s(job.crmProjectId), crmProjectName: s(job.crmProjectName), biddingClosed: !!job.biddingClosed, pmName: s(job.pmName), pmEmail: s(job.pmEmail), status: s(job.status) },
     plans: plans.map(p => ({ name: s(p.name), size: p.size || 0, type: s(p.type), fileRef: s(p.fileRef), category: s(p.category), version: s(p.version), date: s(p.date), current: !!p.current, at: s(p.at), by: s(p.by), trades: arr(p.trades) })),
     questions: qs.map(r => r.data || {}).sort((a, b) => s(b.at).localeCompare(s(a.at))),
     acks: acks.map(r => r.data || {}), activity: act.map(r => r.data || {}).sort((a, b) => s(b.at).localeCompare(s(a.at))).slice(0, 200),
@@ -798,6 +800,8 @@ async function details(who, b){
   if (b.contacts !== undefined) { const c = b.contacts || {}, v = {}; ['pmName', 'pmPhone', 'pmEmail', 'estName', 'estPhone', 'estEmail'].forEach(k => { v[k] = s(c[k]).slice(0, 120); }); set('contacts', v, 'contacts shown to subs'); }
   if (b.internalNotes !== undefined) set('internalNotes', s(b.internalNotes).slice(0, 8000), 'internal notes');
   if (b.crmLeadId !== undefined) set('crmLeadId', s(b.crmLeadId).slice(0, 120), 'CRM lead');
+  if (b.ourDue !== undefined) { const od = validDay(b.ourDue); if (s(b.ourDue) && !od) return { code: 400, error: 'Our bid due date is not a date.' };   /* patch PLANREQ-F: staff only — never posted to subs */
+    set('ourDue', od, 'our bid due ' + (od || 'none')); set('ourDueTime', od && /^\d{2}:\d{2}$/.test(s(b.ourDueTime)) ? s(b.ourDueTime) : '', 'our bid due time'); out.ourDue = job.ourDue; out.ourDueTime = job.ourDueTime; }
   if (Array.isArray(b.trades)) {
     const trades = Array.from(new Set(b.trades.map(x => s(x).slice(0, 60)).filter(Boolean))).slice(0, 30);
     const keep = arr(job.tradeScopes), byT = {}; keep.forEach(x => { if (x && s(x.trade)) byT[low(x.trade)] = x; });

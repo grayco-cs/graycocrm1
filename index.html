@@ -178602,6 +178602,31 @@ function drawBP(){
   loadJobs(false);
 }
 function canDelete(){ return realAdmin() || isEst() || !!(BP.me && BP.me.canPublic); }   /* patch SYS2: an admin or an estimator */
+/* patch PLANREQ-F (owner 11/12): the bid due date is edited right in the list (click it → date + time → Save: bid-hub op details, the same rule and
+   the same automatic 📣 update as 📂 Manage); a past due date is red; "Subs due 11/24 · Our bid due 11/25" (our date: staff only) */
+function mdy(d){ d = s(d); return /^\d{4}-\d{2}-\d{2}/.test(d) ? (+d.slice(5, 7)) + '/' + (+d.slice(8, 10)) + '/' + d.slice(2, 4) : ''; }
+function dueCell(j){
+  var past = j.due && j.due < new Date().toISOString().slice(0, 10) && !/^(closed|won|lost|awarded)$/i.test(s(j.status));
+  var ed = canInvite() || !!(BP.me && BP.me.canInvite);
+  var lbl = j.due ? 'Subs due ' + mdy(j.due) + (j.dueTime ? ' ' + j.dueTime : '') : 'No due date';
+  return (ed ? '<button type="button" class="b" data-sys="dueedit" data-job="' + esc(j.id) + '" title="Change the date subs see" style="padding:2px 7px;font-size:12px;white-space:normal;text-align:left;max-width:100%' + (past ? ';color:#b91c1c;border-color:#fca5a5;font-weight:800' : '') + '"' + (past ? ' data-pastdue="1"' : '') + '>' + esc(lbl) + ' ✏️</button>'
+      : '<span' + (past ? ' style="color:#b91c1c;font-weight:800" data-pastdue="1"' : '') + '>' + esc(lbl) + '</span>')
+    + (j.ourDue ? '<div class="mut" data-ourdue="' + esc(j.id) + '">Our bid due ' + esc(mdy(j.ourDue) + (j.ourDueTime ? ' ' + j.ourDueTime : '')) + '</div>' : '');
+}
+function dueEdit(id){
+  var td = D.querySelector('#gc-sys-bp-mount [data-sys-duecell="' + id + '"]'); if (!td) return; var j = jobOf(id);
+  td.innerHTML = '<div data-sys-dueform="' + esc(id) + '" style="display:flex;flex-direction:column;gap:4px"><input type="date" data-k="due" value="' + esc(j.due) + '" style="font-size:12px"><input type="time" data-k="duet" value="' + esc(j.dueTime) + '" style="font-size:12px">'
+    + (j.ourDue ? '<span class="mut">Our bid due ' + esc(mdy(j.ourDue)) + '</span>' : '')
+    + '<span><button type="button" class="b pri" data-sys="duesave" data-job="' + esc(id) + '" style="padding:2px 8px;font-size:12px">Save</button> <button type="button" class="b" data-sys="duenone" data-job="' + esc(id) + '" style="padding:2px 6px;font-size:12px">No date</button> <button type="button" class="b" data-sys="duecancel" style="padding:2px 6px;font-size:12px">✕</button></span></div>';
+  var x = td.querySelector('[data-k=due]'); if (x) x.focus();
+}
+function dueSave(id, none){
+  var f = D.querySelector('#gc-sys-bp-mount [data-sys-dueform="' + id + '"]'); if (!f) return;
+  var d = none ? '' : s(f.querySelector('[data-k=due]').value), tm = none ? '' : s(f.querySelector('[data-k=duet]').value);
+  fn('bid-hub', { op: 'details', jobId: id, due: d, dueTime: tm }).then(function(r){ var n = r.notice || {};
+    toast('⏰ Subs due ' + (d ? mdy(d) + (tm ? ' ' + tm : '') : '— no date') + (n.status === 'waiting' ? ' · 📣 the subs get an update (its e-mail waits on ✅ Approvals)' : n.status === 'held' ? ' · 📣 update posted (e-mail held — data-entry mode)' : ''));
+    loadJobs(true); }, function(e){ toast(e.message, true); drawRows(); });
+}
 var SEL = {};
 function drawRows(){
   var m = D.getElementById('gc-sys-bp-mount'); if (!m) return;
@@ -178619,14 +178644,14 @@ function drawRows(){
   box.innerHTML = (realAdmin() && autoN && !del ? '<div class="bulk" data-sys-auto style="background:#eff6ff;border-color:#bfdbfe"><span><b>' + autoN + ' auto-added job' + (autoN === 1 ? '' : 's') + '</b> — made from leads by the old automatic sync, never posted, no bids / invites / plans added by a person.</span><button type="button" class="b" data-sys="cleanup">🧹 Clean up auto-added jobs (' + autoN + ')</button></div>' : '')
     + (bulk && nSel ? '<div class="bulk" data-sys-bulk><b>' + nSel + ' selected</b><button type="button" class="b" data-sys="bulkdel" style="color:#b91c1c">🗑 Delete selected</button><button type="button" class="b" data-sys="selnone">Clear</button></div>' : '')
     + (!all.length ? '<div class="mut">No bid jobs yet. Nothing goes on by itself: 📢 Put on bid portal on a lead, an estimate or a job.</div>'
-    : '<table class="bpt"><colgroup>' + (bulk ? '<col style="width:34px">' : '') + '<col><col style="width:104px"><col style="width:66px"><col style="width:70px"><col style="width:112px"><col style="width:' + (del ? 128 : 236) + 'px"></colgroup>'
+    : '<table class="bpt"><colgroup>' + (bulk ? '<col style="width:34px">' : '') + '<col><col style="width:104px"><col style="width:66px"><col style="width:70px"><col style="width:' + (del ? 112 : 150) + 'px"><col style="width:' + (del ? 128 : 236) + 'px"></colgroup>'
     + '<thead><tr>' + (bulk ? '<th><input type="checkbox" data-sys="selall" aria-label="Select all"' + (nSel && nSel === rows.length ? ' checked' : '') + '></th>' : '') + '<th>Bid job</th><th>Who sees it</th><th>Invited</th><th>Bids</th><th>' + (del ? 'Deleted' : 'Bid due') + '</th><th></th></tr></thead><tbody>' + rows.map(function(j){
       var left = del && j.deletedAt ? Math.max(0, 30 - Math.floor((Date.now() - Date.parse(j.deletedAt)) / 864e5)) : 0;
       return '<tr data-sys-job="' + esc(j.id) + '"' + (del ? ' class="del"' : '') + '>' + (bulk ? '<td><input type="checkbox" data-sys="sel" data-job="' + esc(j.id) + '"' + (SEL[j.id] ? ' checked' : '') + ' aria-label="Select"></td>' : '')
         + '<td class="t" title="' + esc(j.title) + '"><b>' + esc(j.title || 'Bid job') + '</b><div class="mut">' + (j.auto ? '🤖 auto-added · ' : j.postedBy ? '📢 posted by ' + esc(j.postedByName || j.postedBy) + ' · ' : '') + (j.archived ? '🗄 ' + esc(j.archivedReason === 'auto' ? 'archived (auto-added)' : 'taken off the bid portal') + ' · ' : '') + (j.biddingClosed ? '⏸ bidding closed · ' : '') + esc([j.address, j.po].filter(Boolean).join(' · ')) + '</div>'
         + (s(j.trades) ? '<div class="mut" data-row-trades="' + esc(j.id) + '">🔨 Trades: ' + esc((function(l){ return l.slice(0, 3).join(' · ') + (l.length > 3 ? ' +' + (l.length - 3) : ''); })(s(j.trades).split(/\s*[,;\/]\s*/).filter(Boolean))) + '</div>' : '') + '</td>'   /* patch PLANREQ-T */
         + '<td data-l="Who sees it">' + (del ? '<span class="pill draft">🗑 Deleted</span>' : visToggle(j)) + (j.openReq > 0 ? '<div><span class="pill draft" data-sys-req="' + esc(j.id) + '" title="Subs asked for plans / more info — answer in 📂 Manage → 💬 Q&amp;A" style="background:#fef3c7;color:#92400e">📩 ' + j.openReq + ' request' + (j.openReq === 1 ? '' : 's') + '</span></div>' : '') + '</td><td class="num" data-l="Invited">' + j.invited + '</td><td class="num" data-l="Bids">' + j.bids + '</td>'
-        + '<td data-l="' + (del ? 'Deleted' : 'Bid due') + '">' + (del ? '<span class="mut">' + esc(when(j.deletedAt)) + '<br>' + (j.archived ? 'keep — restore any time' : left + ' day' + (left === 1 ? '' : 's') + ' left') + '</span>' : j.due ? esc(j.due + (j.dueTime ? ' ' + j.dueTime : '')) : '<span class="mut">—</span>') + '</td>'
+        + '<td data-l="' + (del ? 'Deleted' : 'Bid due') + '" data-sys-duecell="' + esc(j.id) + '">' + (del ? '<span class="mut">' + esc(when(j.deletedAt)) + '<br>' + (j.archived ? 'keep — restore any time' : left + ' day' + (left === 1 ? '' : 's') + ' left') + '</span>' : dueCell(j)) + '</td>'
         + '<td><div class="acts">' + (del ? (canDelete() ? '<button type="button" class="b" data-sys="restore" data-job="' + esc(j.id) + '">↩ Restore</button>' : '')
           : (canInvite() ? '<button type="button" class="b pri" data-sys="manage" data-job="' + esc(j.id) + '">📂 Manage</button>' : '')
           + '<button type="button" class="b" data-sys="bids" data-job="' + esc(j.id) + '" title="Every bid for this job, by trade, lowest first — award / add to the estimate">📊 Bids (' + (+j.bids || 0) + ')</button>'   /* patch BIDEST */
@@ -178781,6 +178806,9 @@ function onClick(ev){
   if (a === 'invite') { if (!BP.jobs) BP.jobs = []; if (!arr(BP.jobs).some(function(j){ return j.id === job; }) && t.getAttribute('data-title')) BP.jobs.push({ id: job, title: t.getAttribute('data-title'), visibility: '' }); return openInvite(job); }
   if (a === 'public' || a === 'private') return setVis(job, a);
   if (a === 'togvis') return setVis(job, t.getAttribute('data-to'), true);   /* patch PLANREQ-A */
+  if (a === 'dueedit') return dueEdit(job);   /* patch PLANREQ-F */
+  if (a === 'duesave' || a === 'duenone') return dueSave(job, a === 'duenone');
+  if (a === 'duecancel') return drawRows();
   if (/^m:/.test(a)) {   /* patch PLANREQ-E: the Actions that edit open 📂 Manage on their tab */
     var mt = a.slice(2), tab = { details: 'details', due: 'details', crm: 'details', updates: 'updates', addenda: 'addenda', plans: 'plans', link: 'plans', qa: 'qa' }[mt] || 'details';
     if (!W._gcSys2 || !W._gcSys2.open) return toast('Manage is still loading — try again.', true);
@@ -179117,7 +179145,7 @@ function hdrTradesDue(j){
   var tl = tradesOf(j);
   return '<div data-hdr-trades style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span class="mut" style="color:#c9c3ea">Trades we are bidding:</span> ' + chipsHtml(tl)
     + ' <button type="button" data-a="dtab" data-f="trades" style="font:700 12px system-ui;min-height:26px;min-width:0;padding:2px 10px;border:1px solid #c9c3ea;border-radius:999px;color:#fff;background:rgba(255,255,255,.08)">✏️ Trades</button>'
-    + ' <span class="mut" style="color:#c9c3ea;margin-left:6px" data-hdr-due>⏰ ' + esc(j.due ? 'Bid due ' + j.due + (j.dueTime ? ' ' + j.dueTime : '') : 'No due date') + '</span>'
+    + ' <span class="mut" style="color:#c9c3ea;margin-left:6px" data-hdr-due>⏰ ' + esc(j.due ? 'Subs due ' + j.due + (j.dueTime ? ' ' + j.dueTime : '') : 'No sub due date') + (j.ourDue ? ' · Our bid due ' + j.ourDue + (j.ourDueTime ? ' ' + j.ourDueTime : '') : '') + '</span>'   /* patch PLANREQ-F */
     + ' <button type="button" data-a="dtab" data-f="due" style="font:700 12px system-ui;min-height:26px;min-width:0;padding:2px 10px;border:1px solid #c9c3ea;border-radius:999px;color:#fff;background:rgba(255,255,255,.08)">✏️ Due</button>'
     + (j.biddingClosed ? ' <span class="pill warn">⏸ bidding closed</span>' : '') + '</div>';
 }
@@ -179140,7 +179168,8 @@ function detailsHtml(){
     + '<div class="row"><label>Project type <select data-d="projectType">' + PT.map(function(o){ return '<option value="' + o[0] + '"' + (s(j.projectType) === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></label>'
     + '<label style="flex:1">Owner / GC we bid to ' + inp('ownerGc', j.ownerGc, 'e.g. Sample Builders Inc.') + '</label>' + chk('showOwnerGc', j.showOwnerGc, 'show it to subs') + '</div>'
     + '<h4>⏰ Dates</h4>'
-    + '<div class="row"><label>Bid due <input type="date" data-d="due" value="' + esc(j.due) + '"></label><label><input type="time" data-d="dueTime" value="' + esc(j.dueTime) + '"></label><button type="button" class="b" data-a="nodue">No due date</button>'
+    + '<div class="row"><label>Our bid due <span class="mut">(to the GC / owner — staff only)</span> <input type="date" data-d="ourDue" value="' + esc(j.ourDue) + '"></label><label><input type="time" data-d="ourDueTime" value="' + esc(j.ourDueTime) + '"></label></div>'   /* patch PLANREQ-F */
+    + '<div class="row"><label>Subs due <span class="mut">(what subs see)</span> <input type="date" data-d="due" value="' + esc(j.due) + '"></label><label><input type="time" data-d="dueTime" value="' + esc(j.dueTime) + '"></label><button type="button" class="b" data-a="nodue">No due date</button>'
     + '<label>Questions due by <input type="date" data-d="questionsDue" value="' + esc(j.questionsDue) + '"></label></div>'
     + '<div class="row"><label>Site walk / pre-bid <input type="date" data-d="walkDate" value="' + esc(w.date) + '"></label><label><input type="time" data-d="walkTime" value="' + esc(w.time) + '"></label>'
     + '<label style="flex:1">Where ' + inp('walkLocation', w.location, 'Meet at the front gate') + '</label>' + chk('walkMandatory', w.mandatory, 'mandatory') + '</div>'
@@ -179168,7 +179197,7 @@ function saveDetails(btn){
   if (!DT) return; readBf();
   var lines = function(k){ return s(dval(k)).split(/\n/).map(s).filter(Boolean); };
   var body = { op: 'details', title: dval('title'), address: dval('address'), projectType: dval('projectType'), ownerGc: dval('ownerGc'), showOwnerGc: !!dval('showOwnerGc'),
-    due: dval('due'), dueTime: dval('dueTime'), questionsDue: dval('questionsDue'), startDate: dval('startDate'), duration: dval('duration'), bidInstructions: dval('bidInstructions'),
+    due: dval('due'), dueTime: dval('dueTime'), ourDue: dval('ourDue'), ourDueTime: dval('ourDueTime'), questionsDue: dval('questionsDue'), startDate: dval('startDate'), duration: dval('duration'), bidInstructions: dval('bidInstructions'),
     siteWalk: { date: dval('walkDate'), time: dval('walkTime'), location: dval('walkLocation'), mandatory: !!dval('walkMandatory'), rsvp: lines('rsvp') },
     requirements: { bond: !!dval('rq_bond'), prevailingWage: !!dval('rq_prevailingWage'), certifiedPayroll: !!dval('rq_certifiedPayroll'), coi: !!dval('rq_coi'), coiGl: dval('rq_coiGl'), coiWc: dval('rq_coiWc'), coiAuto: dval('rq_coiAuto'), licenses: !!dval('rq_licenses'), licensesText: dval('rq_licensesText'), mbeWbe: !!dval('rq_mbeWbe'), mbeWbeText: dval('rq_mbeWbeText') },
     alternates: lines('alternates'), unitPrices: lines('unitPrices'), bidForm: DT.bidForm.filter(function(x){ return s(x.item); }), trades: DT.trades.slice(),
@@ -223917,6 +223946,16 @@ function isAdmin(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.
 function role(){ try { var m = W._gcMeNow; if (typeof W._gcRoleOf === 'function') return s(W._gcRoleOf(m)); return s(m && m.role); } catch (e) { return ''; } }
 function isEst(){ return /estimat/i.test(role()); }
 function mine(v){ v = low(v); return !!v && (v === low(myName()) || v === myEmail()); }
+/* patch PLANREQ-F (owner 11/12): two dates. On the LEAD the bid date is OUR due date (when GrayCo sends its bid to the GC / owner). The
+   bid portal date (what subs see) defaults to ONE DAY BEFORE it — same time of day; a Saturday / Sunday → the Friday before. Subs only ever
+   see the sub due date (the server leaves ourDue out of their view). A later change of our due date on the lead OFFERS to move the sub due
+   date too — never silently (subs may already have it). window._gcSubDue('2026-11-25T14:00') → { date: '2026-11-24', time: '14:00' } */
+function ourDueOf(l){ var v = s(l && (l.bidDue || l.dueDate || l.bidDueDate)); var d = v.slice(0, 10); if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return { date: '', time: '' };
+  var t = (/T(\d{2}:\d{2})/.exec(v) || [])[1] || (/^\d{2}:\d{2}$/.test(s(l && l.bidDueTime)) ? s(l.bidDueTime) : ''); return { date: d, time: t }; }
+function subDue(d){ d = s(d).slice(0, 10); if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return ''; var x = new Date(d + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() - 1);
+  while (x.getUTCDay() === 0 || x.getUTCDay() === 6) x.setUTCDate(x.getUTCDate() - 1); return x.toISOString().slice(0, 10); }
+function md(d){ d = s(d); return /^\d{4}-\d{2}-\d{2}/.test(d) ? (+d.slice(5, 7)) + '/' + (+d.slice(8, 10)) : ''; }
+W._gcSubDue = function(v){ var o = ourDueOf({ bidDue: v }); return { date: subDue(o.date), time: o.time }; };
 function ctxOf(c){
   c = c || {}; var e = c.estId ? est(c.estId) : null, pid = s(c.pid) || s(e && e.pid), p = proj(pid), l = lead(c.leadId) || (e && e.leadId ? lead(e.leadId) : null);
   return { pid: p ? s(p.id) : '', p: p, leadId: l ? s(l.id) : s(c.leadId), l: l, estId: e ? s(e.id) : s(c.estId), e: e };
@@ -224020,7 +224059,9 @@ function draw(pj, jl){
   UI.trades = {}; arr(J && J.trades).forEach(function(t){ UI.trades[t] = 1; });
   var title = (J && J.title) || s(e && e.name) || s(p && p.name) || s(l && (l.name || l.title)) || '';
   var addr = (J && J.address) || [s((p || l || {}).address), s((p || l || {}).city), s((p || l || {}).state)].filter(Boolean).join(', ') || s(e && e.address);
-  var due = (J && J.due) || s(l && l.bidDue).slice(0, 10);
+  var our = (J && J.ourDue) ? { date: J.ourDue, time: s(J.ourDueTime) } : ourDueOf(l || (e && e.leadId ? lead(e.leadId) : null) || p);   /* patch PLANREQ-F */
+  var due = (J && J.due) || subDue(our.date), dueT = (J && J.due) ? s(J.dueTime) : our.time;
+  UI.our = our;
   var scope = J ? s(J.scope) : scopeText(c), specs = J ? s(J.specs) : '';
   var refs = {}; arr(J && J.crmFileRefs).forEach(function(r){ refs[r] = 1; }); var links = {}; arr(J && J.links).forEach(function(x){ links[s(x.url)] = 1; });
   var tl = tradeList(); arr(J && J.trades).forEach(function(t){ if (tl.indexOf(t) < 0) tl.push(t); });
@@ -224033,7 +224074,8 @@ function draw(pj, jl){
     + '<label class="f" for="gcbp-title">Job title</label><input type="text" id="gcbp-title" maxlength="200" value="' + esc(title) + '">'
     + '<label class="f">Trades we need priced</label><div class="chips" data-bp-trades>' + tl.map(function(t){ return '<button type="button" class="chip' + (UI.trades[t] ? ' on' : '') + '" data-bp="trade" data-t="' + esc(t) + '">' + esc(t) + '</button>'; }).join('') + '</div>'
     + '<div style="display:flex;gap:6px;margin-top:6px"><input type="text" id="gcbp-trade" placeholder="Another trade (e.g. Exterior paint)" maxlength="40"><button type="button" class="b" data-bp="addtrade">＋ Add</button></div>'
-    + '<div class="row2"><div><label class="f" for="gcbp-due">Bid due date</label><input type="date" id="gcbp-due" value="' + esc(due) + '"></div><div><label class="f" for="gcbp-addr">Site address</label><input type="text" id="gcbp-addr" maxlength="240" value="' + esc(addr) + '"></div></div>'
+    + '<div class="row2"><div><label class="f" for="gcbp-due">Sub bid due date <span class="mut">(what subs see)</span></label><input type="date" id="gcbp-due" value="' + esc(due) + '"> <input type="time" id="gcbp-duet" value="' + esc(dueT) + '" style="width:110px">'
+      + (our.date ? '<div class="mut" data-bp-ourdue>Our bid due: <b>' + esc(md(our.date) + (our.time ? ' ' + our.time : '')) + '</b>' + (!(J && J.due) ? ' — subs due 1 day before our due date (a weekend → the Friday before)' : '') + '</div>' : '') + '</div><div><label class="f" for="gcbp-addr">Site address</label><input type="text" id="gcbp-addr" maxlength="240" value="' + esc(addr) + '"></div></div>'
     + '<label class="f" for="gcbp-scope">Scope of work</label><textarea id="gcbp-scope" rows="5" maxlength="20000" placeholder="e.g. 2,500 SF exterior repaint: pressure wash, scrape, prime bare wood, 2 coats SW Duration">' + esc(scope) + '</textarea>'
     + '<label class="f" for="gcbp-specs">Specs / notes for bidders</label><textarea id="gcbp-specs" rows="3" maxlength="20000" placeholder="e.g. Colors: body SW 7036, trim SW 7006. Work hours 8–5, occupied home.">' + esc(specs) + '</textarea>'
     + '<label class="f">Plans / files to share</label>' + (UI.files.length ? '<div class="files" data-bp-files>' + UI.files.map(function(f, i){ var was = (f.ref && refs[f.ref]) || (f.link && links[f.link]);
@@ -224049,7 +224091,7 @@ function post(){
   var m = D.getElementById('gcbp-modal'); if (!m) return; var c = UI.c, err = m.querySelector('[data-bp-err]'), go = m.querySelector('[data-bp="post"]');
   var trades = Object.keys(UI.trades).filter(function(t){ return UI.trades[t]; });
   var body = { op: 'postjob', jobId: UI.job && UI.job.id || '', pid: c.pid, leadId: c.leadId, estId: c.estId, title: val('gcbp-title'), address: val('gcbp-addr'), visibility: UI.vis, trades: trades,
-    due: val('gcbp-due'), scope: val('gcbp-scope'), specs: val('gcbp-specs'), projectName: c.p ? [s(c.p.autoPO), s(c.p.name)].filter(Boolean).join(' · ') : '', po: s(c.p && c.p.autoPO) };
+    due: val('gcbp-due'), dueTime: val('gcbp-duet'), ourDue: s(UI.our && UI.our.date), ourDueTime: s(UI.our && UI.our.time), scope: val('gcbp-scope'), specs: val('gcbp-specs'), projectName: c.p ? [s(c.p.autoPO), s(c.p.name)].filter(Boolean).join(' · ') : '', po: s(c.p && c.p.autoPO) };
   var pmN = s(c.p && c.p.pm) || s(c.l && (c.l.pm || c.l.estimator)), pmU = arr(crm().users).filter(function(u){ return u && pmN && low(u.name) === low(pmN); })[0];
   body.pmName = pmN; body.pmEmail = low(pmU && pmU.email) || low(c.p && c.p.pmEmail);
   var files = [], links = arr(UI.job && UI.job.links).slice();
@@ -224135,7 +224177,35 @@ function paintLead(){
   old.__h = h; old.__id = id; old.innerHTML = h + '<span style="color:#94a3b8;font-size:12px">any lead — subs can bid or ask questions</span>';
   if (!d.contains(old)) { var body = d.querySelector('.gcl-body, [data-gcl-body]') || d; body.insertBefore(old, body.firstChild); }
 }
-function paint(){ try { paintEst(); } catch (e) { warn(e); } try { paintJob(); } catch (e) { warn(e); } try { paintLead(); } catch (e) { warn(e); } }
+/* patch PLANREQ-F: our due date on the lead changed after the job went on the bid portal → OFFER to move the sub due date (never silently) */
+var DUEASK = {};
+function dueOffers(){
+  var out = []; arr(JOBS.list).forEach(function(j){
+    if (!j || j.deleted || !s(j.crmLeadId) || !s(j.ourDue)) return;
+    var l = lead(j.crmLeadId), o = ourDueOf(l); if (!o.date) return;
+    if (o.date === s(j.ourDue) && o.time === s(j.ourDueTime)) return;
+    var k = j.id + '|' + o.date + '|' + o.time; if (DUEASK[k]) return;
+    out.push({ job: j, our: o, sub: subDue(o.date), key: k });
+  }); return out;
+}
+W._gcBidDueOffers = function(){ return dueOffers().map(function(x){ return { jobId: x.job.id, our: x.our.date, sub: x.sub, subNow: s(x.job.due) }; }); };
+function paintDueOffer(){
+  var old = D.getElementById('gcbp-dueoffer'), list = dueOffers();
+  if (!list.length || !(isAdmin() || isEst() || list.some(function(x){ return mine(x.job.pmName) || low(x.job.pmEmail) === myEmail() || low(x.job.postedBy) === myEmail(); }))) { if (old) old.remove(); return; }
+  var x = list[0], h = '<b>⏰ Our bid due on "' + esc(x.job.title) + '" changed to ' + esc(md(x.our.date) + (x.our.time ? ' ' + x.our.time : '')) + '.</b> Also move the sub due date to <b>' + esc(md(x.sub)) + '</b>? <span class="mut">(subs see ' + esc(x.job.due ? md(x.job.due) : 'no date') + ' now)</span> '
+    + '<button type="button" data-dueoffer="move">Move it to ' + esc(md(x.sub)) + '</button> <button type="button" data-dueoffer="keep">Keep ' + esc(x.job.due ? md(x.job.due) : 'it') + '</button>';
+  if (old && old.__h === h) return;
+  if (!old) { old = D.createElement('div'); old.id = 'gcbp-dueoffer'; old.setAttribute('data-gc-keep', '1'); old.setAttribute('role', 'alert');
+    old.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:84px;z-index:100240;max-width:min(720px,94vw);background:#fffbeb;border:1px solid #fcd34d;color:#78350f;border-radius:12px;padding:10px 14px;font:14px/1.45 system-ui;box-shadow:0 8px 24px rgba(0,0,0,.18)';
+    old.addEventListener('click', function(ev){ var b = ev.target.closest('[data-dueoffer]'); if (!b || !old.__x) return; var y = old.__x, mv = b.getAttribute('data-dueoffer') === 'move'; DUEASK[y.key] = 1; old.remove();
+      var body = { op: 'details', jobId: y.job.id, ourDue: y.our.date, ourDueTime: y.our.time }; if (mv) { body.due = y.sub; body.dueTime = y.our.time || s(y.job.dueTime); }
+      W.fetch('/.netlify/functions/bid-hub', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(function(r){ return r.json(); }).then(function(r){
+        if (r.error) throw new Error(r.error); try { if (W._gcSys && W._gcSys.toast) W._gcSys.toast(mv ? '⏰ Sub due date moved to ' + md(y.sub) + ' — the subs get an update' : '⏰ Our bid due saved; the sub due date stays'); } catch (e) {} jobs(true); }, function(e){ warn(e); try { W._gcSys.toast(e.message, true); } catch (x2) {} }); });
+    D.body.appendChild(old); }
+  old.__h = h; old.__x = x; old.innerHTML = h;
+  Array.prototype.forEach.call(old.querySelectorAll('button'), function(b){ b.style.cssText = 'border:1px solid #d97706;background:' + (b.getAttribute('data-dueoffer') === 'move' ? '#d97706;color:#fff' : '#fff;color:#78350f') + ';border-radius:8px;padding:5px 10px;font-weight:700;cursor:pointer;margin-left:4px'; });
+}
+function paint(){ try { paintEst(); } catch (e) { warn(e); } try { paintJob(); } catch (e) { warn(e); } try { paintLead(); } catch (e) { warn(e); } try { paintDueOffer(); } catch (e) { warn(e); } }
 var TICK = 0;
 RI.call(W, function(){ if (D.hidden) return; TICK++; if (!JOBS.list && !JOBS.busy && (isAdmin() || isEst() || arr(crm().projects).some(function(p){ return p && mine(p.pm); })) && W._crm) jobs(false); paint(); }, 1500);
 
