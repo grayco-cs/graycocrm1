@@ -66,6 +66,16 @@ put('J2', 'mitTech', 'Lou Demo'); const j2a = STATE.find(x => x.id === 'J2').mit
 put('J2', 'mitTech', 'Tia Demo'); const j2b = STATE.find(x => x.id === 'J2').mitTech;
 put('J3', 'superintendent', 'Lou Demo'); const j3 = STATE.find(x => x.id === 'J3').superintendent;
 ok(!j2a && j2b === 'Tia Demo' && j3 === 'Lou Demo', 'GUARD: putting Lou (no WRT) on the Mitigation water job is undone; Tia (WRT) stays; a Construction "roof leak" job is not blocked', { j2a, j2b, j3 });
+/* the Schedule: ✓ / 🚫 / ⚠ per person × job × day (time off from window._gcTimeOff), and a 🚫 person dropped on a job's entry is taken off */
+const TD = new Date().toISOString().slice(0, 10);
+W._gcTimeOff = { isOff: (em, d) => em === 'tia@example.com' ? { off: true, kind: 'Sick', note: '' } : { off: false } };
+let SCH = [{ id: 'S1', pid: 'J3', date: TD, title: 'Demo roof leak', crew: 'Eli Demo' }, { id: 'S2', pid: 'J2', date: TD, title: 'Demo dry-out', crew: '' }];
+W._crm.schedule = SCH; W._setSchedule = v => { SCH = typeof v === 'function' ? v(SCH) : v; W._crm.schedule = SCH; };
+const avLou = Q.avail(by('Lou'), STATE.find(x => x.id === 'J2'), TD), avTia = Q.avail(by('Tia'), STATE.find(x => x.id === 'J2'), TD), avEli = Q.avail(by('Eli'), STATE.find(x => x.id === 'J2'), TD);
+ok(avLou.mark === '🚫' && /needs IICRC WRT/.test(avLou.reasons.join()) && avTia.mark === '⚠' && /Sick/.test(avTia.reasons.join()) && avEli.reasons.some(r => /double-booked: Demo roof leak/.test(r)), 'SCHEDULE: Lou 🚫 needs IICRC WRT; Tia ⚠ Sick (window._gcTimeOff); Eli ⚠ double-booked', { avLou, avTia, avEli });
+Q._tick();
+W._crm.schedule = SCH = SCH.map(x => x.id === 'S2' ? Object.assign({}, x, { crew: 'Lou Demo, Tia Demo' }) : x); Q._tick();
+ok(SCH.find(x => x.id === 'S2').crew === 'Tia Demo', 'SCHEDULE: dropping Lou (🚫) on the dry-out entry is refused — he is taken off, Tia stays', SCH.find(x => x.id === 'S2'));
 const tabs = ['people', 'raises', 'reqs', 'amounts', 'outlook', 'jobs', 'bonus', 'pay'], bad = [];
 for (const tb of tabs) { C.open(tb); await new Promise(r => setTimeout(r, 30)); const h = dlg.innerHTML.replace(/data-[a-z-]+="[^"]*"/g, ''); if (!h || /undefined|NaN/.test(h)) bad.push(tb + ':' + ((h.match(/.{40}(undefined|NaN).{20}/) || [''])[0])); }
 ok(!bad.length, 'every tab draws (no "undefined" / "NaN")', bad);

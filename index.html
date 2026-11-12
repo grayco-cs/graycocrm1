@@ -196434,7 +196434,7 @@ function confirmAssign(u, pj, reason){
   return save(function(p){ p.excLog = arr(p.excLog); p.excLog.push({ id: uid(), email: low(u.email), kind: 'assign', text: 'assigned to ' + s(pj && (pj.name || pj.id)) + ' without ' + c.missing.join(', '), reason: why.slice(0, 300), by: by, at: nowISO(), job: s(pj && pj.id) }); }).then(function(){ return true; });
 }
 W._gcCertQual = { of: qualOf, jobKinds: function(pj){ return jobKinds(pj).map(function(k){ return k.k; }); }, check: qualCheck, forJob: qualForJob, confirmAssign: confirmAssign, QUAL: QUAL,
-  block: blockOf, allow: allowOnJob, ask: askAllow, exception: jobExcOf, crewIssues: crewIssues, userByName: userByName, avail: availOf, _tick: function(){ guardTick(); } };
+  block: blockOf, allow: allowOnJob, ask: askAllow, exception: jobExcOf, crewIssues: crewIssues, userByName: userByName, avail: availOf, _tick: function(){ guardTick(); schedTick(); } };
 /* patch CERTROLE (owner: "when making the schedule make sure to show when they can't be on a job") — one person × one job × one day:
    { mark: '✓' | '🚫' | '⚠', block, reasons: [...] }: 🚫 = a missing required certificate (blocked; admins only can allow); ⚠ = double-booked,
    time off (window._gcTimeOff.isOff when present), not in that company, a laborer not yet tech — warnings the scheduler decides on. */
@@ -196480,7 +196480,33 @@ function guardTick(){
     toast('🚫 ' + hit.map(function(h){ return s(h.u.name) + ' needs ' + h.missing.join(', '); }).join(' · ') + ' for ' + s(hit[0].pj.name || 'this job') + ' — taken off the job.' + (isAdmin() ? ' Add an exception in 🎖 Required certs → 👷 Who can work.' : ' An admin was asked to allow it.'), true);
   } catch (e) {}
 }
-(W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval).call(W, guardTick, 2500);
+/* the same for the Schedule (owner: "when making the schedule make sure to show when they can't be on a job"): a 🚫 person put on a
+   job's schedule entry (assignee / crew / who / people — the board, drag-and-drop, the add-to-schedule pickers all save the schedule list)
+   is taken off it again with the reason. Double-booked / time off / company / laborer stay warnings (👷 Who can work, _gcCertQual.avail). */
+var SF = ['assignee', 'crew', 'who', 'people'], SSNAP = null;
+function schedNames(x){ var out = []; SF.forEach(function(f){ var v = x && x[f]; (Array.isArray(v) ? v : typeof v === 'string' ? v.split(/\s*[,;\/&]\s*|\s+and\s+/) : []).forEach(function(n){ n = s(typeof n === 'object' && n ? (n.name || n.email) : n); if (n && out.indexOf(n) < 0) out.push(n); }); }); return out; }
+function schedTick(){
+  try {
+    if (!LOADED || !CERTS_OK || D.hidden) return;
+    var L = arr(((W._crm || {}).schedule) || []), now = {}; L.forEach(function(x){ if (x && x.id) now[x.id] = schedNames(x); });
+    if (!SSNAP) { SSNAP = now; return; }
+    var ch = L.filter(function(x){ return x && x.id && (x.pid || x.projectId || x.jobId) && now[x.id].join('|') !== (SSNAP[x.id] || []).join('|'); });
+    if (!ch.length || ch.length > 3) { SSNAP = now; return; }
+    var P = arr(((W._crm || {}).projects) || []), hit = [];
+    ch.forEach(function(x){ var pj = P.filter(function(q){ return q && s(q.id) === s(x.pid || x.projectId || x.jobId); })[0]; if (!pj) return;
+      now[x.id].filter(function(n){ return (SSNAP[x.id] || []).indexOf(n) < 0; }).forEach(function(n){ var u = userByName(n), b = u ? blockOf(u, pj) : null; if (b) hit.push({ e: x, u: u, pj: pj, n: n, missing: b.missing }); }); });
+    SSNAP = now;
+    if (!hit.length || typeof W._setSchedule !== 'function') return;
+    W._setSchedule(function(prev){ return arr(prev).map(function(x){ var hs = hit.filter(function(h){ return h.e.id === (x && x.id); }); if (!hs.length) return x; var y = Object.assign({}, x);
+      hs.forEach(function(h){ SF.forEach(function(f){ var v = y[f]; if (Array.isArray(v)) y[f] = v.filter(function(c){ return low(typeof c === 'object' && c ? (c.name || c.email) : c) !== low(h.n); });
+        else if (typeof v === 'string' && v) y[f] = v.split(/\s*[,;\/&]\s*|\s+and\s+/).filter(function(c){ return low(c) !== low(h.n); }).join(', '); }); });
+      y.updatedAt = new Date().toISOString(); return y; }); });
+    hit.forEach(function(h){ if (SSNAP[h.e.id]) SSNAP[h.e.id] = SSNAP[h.e.id].filter(function(n){ return n !== h.n; }); if (!isAdmin()) askAllow(h.u, h.pj, 'schedule'); });
+    later(function(){ try { if (W._supaUpsertNow && W._crm && Array.isArray(W._crm.schedule)) W._supaUpsertNow('schedule', W._crm.schedule); } catch (e) {} }, 600);
+    toast('🚫 Not on the schedule: ' + hit.map(function(h){ return s(h.u.name) + ' — needs ' + h.missing.join(', ') + ' for ' + s(h.pj.name || 'that job'); }).join(' · ') + (isAdmin() ? '. Add an exception in 🎖 Required certs → 👷 Who can work.' : '. An admin was asked to allow it.'), true);
+  } catch (e) {}
+}
+(W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval).call(W, function(){ guardTick(); schedTick(); }, 2500);
 function jobWarn(){
   try {
     var main = D.querySelector('main'); if (!main) return; var op = W._gcOpenProject, pj = op && op.id ? arr(((W._crm || {}).projects) || []).filter(function(x){ return x && x.id === op.id; })[0] : null;
@@ -196673,12 +196699,14 @@ function render(){
       '<td>$<input class="gccp-in" style="width:70px" data-cp-hr="' + i + '" placeholder="' + esc(autoHr(r)) + '" value="' + esc(r.hr == null ? '' : r.hr) + '">/hr</td><td>$<input class="gccp-in" style="width:90px" data-cp-yr="' + i + '" placeholder="' + esc(Math.round(rateOf(r) * HRS_YR)) + '" value="' + esc(r.yr == null ? '' : r.yr) + '">/yr</td></tr>'; }).join('') + '</table><p><button type="button" class="gccp-btn pri" data-cp="saveamts">Save amounts</button></p>';
   else if (UI.tab === 'jobs') { var js = arr(((W._crm || {}).projects) || []).filter(function(x){ return x && x.id && !x.deleted && !/(complete|closed|lost|cancel|archiv|dead|void)/i.test(s(x.status)) && jobKinds(x).length; }).slice(0, 80);
     h += '<div class="gccp-note">👷 Each active job that needs certified people (from its type, name and scope), with who is qualified (✓) and who is not (⚠ missing …). For <span class="gccp-law">LAW</span> work — asbestos, lead, biohazard, hazmat — putting someone not qualified on the job asks an admin for a reason, and it is logged (window._gcCertQual.confirmAssign for the crew pickers).</div>' +
-      (js.length ? '<table class="gccp-tbl" data-cp-whojobs="1"><tr><th>Job</th><th>Needs</th><th>✓ Qualified</th><th>⚠ Not yet</th></tr>' + js.map(function(pj){ var L = qualForJob(pj), ks = jobKinds(pj);
+      '<div style="margin:6px 0">Day <input type="date" class="gccp-in" data-cp-wday="1" value="' + esc(UI.wday || today()) + '"> <span class="gccp-mut" data-cp-legend="1">✓ can be on it · 🚫 not allowed (missing a required certificate — admins only can allow) · ⚠ check: double-booked, time off, not in that company, laborer not tech yet</span></div>' +
+      (js.length ? '<table class="gccp-tbl" data-cp-whojobs="1"><tr><th>Job</th><th>Needs</th><th>✓ Can be on it</th><th>🚫 Not allowed · ⚠ Check</th></tr>' + js.map(function(pj){ var L = qualForJob(pj), ks = jobKinds(pj), AV = staff().map(function(u){ return { u: u, a: availOf(u, pj, UI.wday || today()) }; });
         var iss = crewIssues(pj), req = arr(p.allowReq).filter(function(r){ return r.pid === s(pj.id) && r.status === 'open'; });
         return '<tr data-cp-whojob="' + esc(pj.id) + '"><td><b>' + esc(pj.name || pj.client || pj.id) + '</b>' + iss.map(function(x){ return '<div class="gccp-chip bad">⚠ ' + esc(x.u.name) + ' is on this job without ' + esc(x.missing.join(', ')) + '</div>'; }).join('') +
           req.map(function(r){ return '<div class="gccp-mut">🙋 ' + esc(r.by) + ' asks to allow ' + esc(r.name) + ' (missing ' + esc(arr(r.missing).join(', ')) + ')</div>'; }).join('') +
           '<div style="margin-top:4px"><select class="gccp-in" data-cp-exu="' + esc(pj.id) + '">' + L.filter(function(x){ return !x.c.ok; }).map(function(x){ return '<option value="' + esc(low(x.u.email)) + '">' + esc(x.u.name) + (jobExcOf(x.u, pj) ? ' (allowed)' : '') + '</option>'; }).join('') + '</select> <input class="gccp-in" data-cp-exwhy="' + esc(pj.id) + '" placeholder="Reason (admins only)" style="width:160px"> <button type="button" class="gccp-btn" data-cp="jobexc" data-id="' + esc(pj.id) + '">✋ Allow on this job</button></div></td><td>' + ks.map(function(k){ return '<span class="gccp-chip ' + (k.law ? 'amb' : 'gry') + '">' + esc(k.l) + (k.law ? ' · LAW' : '') + '</span>'; }).join('') + '</td><td>' +
-          L.filter(function(x){ return x.c.ok; }).map(function(x){ return '✓ ' + esc(x.u.name); }).join('<br>') + '</td><td class="gccp-mut">' + L.filter(function(x){ return !x.c.ok; }).slice(0, 12).map(function(x){ return '⚠ ' + esc(x.u.name) + ' — missing ' + esc(x.c.missing.join(', ')); }).join('<br>') + '</td></tr>'; }).join('') + '</table>' : '<p class="gccp-mut">No active job needs certified people right now.</p>'); }
+          AV.filter(function(x){ return x.a.mark === '✓'; }).map(function(x){ return '<span data-cp-av="ok">✓ ' + esc(x.u.name) + '</span>'; }).join('<br>') + '</td><td class="gccp-mut">' +
+          AV.filter(function(x){ return x.a.mark !== '✓'; }).sort(function(a, b){ return (b.a.block ? 1 : 0) - (a.a.block ? 1 : 0); }).slice(0, 16).map(function(x){ return '<span data-cp-av="' + (x.a.block ? 'no' : 'warn') + '">' + (x.a.block ? '🚫 ' : '⚠ ') + esc(x.u.name) + ' — ' + esc(x.a.reasons.join(' · ').replace(/^(🚫|⚠) /, '').replace(/ · (🚫|⚠) /g, ' · ')) + '</span>'; }).join('<br>') + '</td></tr>'; }).join('') + '</table>' : '<p class="gccp-mut">No active job needs certified people right now.</p>'); }
   else if (UI.tab === 'outlook') { var mo = p.masterOnce;
     h += '<div class="gccp-note">📈 What each role can earn from certificates: the <b>starting rate</b> (no certificates), every certificate on the role that pays a raise (required and 💡 recommended), and the <b>top rate</b>. An optional <b>cap</b> per role — "max $/hr from certificates" and / or "max number of certificate raises" (blank = no cap) — holds back raises past it ("cap reached").</div>' +
       '<label style="display:block;margin:6px 0"><input type="checkbox" data-cp-masteronce="1"' + (mo ? ' checked' : '') + '> ⭐ <b>Highest master level pays once</b> — Master Restorer already includes Master Water and Master Fire &amp; Smoke Restorer, so one $5 raise for the master path instead of one per designation. <span class="gccp-mut">(The owner has not decided — on by default.)</span></label>' +
@@ -196806,6 +196834,7 @@ function open_(tab){
     var dk = t.getAttribute('data-cp-rec'); if (dk) { var a = dk.split('|'); save(function(p){ var r = p.tracks[a[0]] && p.tracks[a[0]].reqs[+a[1]]; if (r && !r.legal) { r.rec = t.value === 'rec'; if (!r.rec && r.why === REC_WHY) r.why = 'GrayCo requirement'; } }).then(render); }   /* patch CERTROLE */
     var tg = t.getAttribute('data-cp-target'); if (tg) { var b = tg.split('|'); save(function(p){ var x = isObj(p.people[b[0]]) ? p.people[b[0]] : {}; x.targets = isObj(x.targets) ? x.targets : {}; if (ymd(t.value)) x.targets[b[1]] = ymd(t.value); else delete x.targets[b[1]]; p.people[b[0]] = x; }).then(render); }
     if (t.hasAttribute('data-cp-year')) { UI.year = t.value; render(); }
+    if (t.hasAttribute('data-cp-wday')) { UI.wday = ymd(t.value) || today(); render(); }   /* patch CERTROLE: 👷 Who can work — that day */
     if (t.hasAttribute('data-cp-masteronce')) save(function(p){ p.masterOnce = !!t.checked; }).then(render);   /* patch CERTROLE */
   });
   OV.addEventListener('input', function(e){ if (e.target && e.target.closest && e.target.closest('[data-cp-rate],[data-cp-tot],[data-cp-em]')) calc(); });
