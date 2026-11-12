@@ -55,11 +55,16 @@ async function closeOverlays(c){
   for (let i = 0; i < 3; i++) {
     await p.keyboard.press('Escape').catch(() => {}); await sleep(150);
     const left = await c.ev(() => {
+      /* drawers / dialogs that are not full-screen: their own ✕, or the shade behind them */
+      const dlg = [...document.querySelectorAll('[role=dialog], #gcl-drawer, .gcl-drawer')].filter(e => e.getClientRects().length && getComputedStyle(e).display !== 'none');
+      for (const e of dlg) { const x = [...e.querySelectorAll('button,[role=button]')].find(b => /^(✕|×|close)$/i.test((b.textContent || '').trim()) || /close/i.test(b.getAttribute('aria-label') || '') || b.getAttribute('data-d') === 'x'); if (x) { x.click(); return 'closed:dlg'; } }
+      const sh = [...document.querySelectorAll('[id$="shade"], .gc-shade')].find(e => e.getClientRects().length && getComputedStyle(e).display !== 'none'); if (sh) { sh.click(); return 'closed:shade'; }
       const big = [...document.querySelectorAll('body > *')].filter(e => { const cs = getComputedStyle(e); if (cs.display === 'none' || cs.visibility === 'hidden' || !e.getClientRects().length) return false; if (!/fixed|absolute/.test(cs.position)) return false; const r = e.getBoundingClientRect(); return r.width * r.height > innerWidth * innerHeight * 0.45 && +cs.zIndex >= 50 && !/gc-ra-dock|gc-fh-tabs|gc-auth/.test(e.id || ''); });
       for (const e of big) { const x = [...e.querySelectorAll('button,[role=button],a')].find(b => /^(✕|×|x|close|cancel|done|back|‹ back|← back)$/i.test((b.textContent || b.getAttribute('aria-label') || '').trim()) || /close/i.test(b.getAttribute('aria-label') || '')); if (x) { x.click(); return 'closed:' + (e.id || e.className).toString().slice(0, 40); } }
       return big.map(e => (e.id || String(e.className)).slice(0, 50));
     }).catch(() => []);
     if (Array.isArray(left) && !left.length) return [];
+    if (typeof left === 'string') { await sleep(250); continue; }
     if (i === 2) return Array.isArray(left) ? left : [];
     await sleep(300);
   }
