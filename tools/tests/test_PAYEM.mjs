@@ -46,9 +46,12 @@ ok(!!home, 'crew on a phone: GrayCo Field with ⏱ Clock in');
 await sleep(9500);   // the sign-in clock-in (8 s) has run: its open regular punch becomes the call-out
 const tapClock = async () => { const loc = C.page().locator('#_gcJobPick .gc-ra-q [data-ra-a="clock"]').first(); await loc.tap({ timeout: 5000 }).catch(async () => { await loc.click({ timeout: 5000 }); }); await sleep(1200);
   if (await C.page().locator('.gc-ra-sheet [data-pj]').count()) { await C.page().locator('.gc-ra-sheet [data-pj]').first().tap().catch(() => {}); await sleep(1200); } };
+const dayCheck = await C.ev(() => { const P = window._gcPayEm; const d = new Date(2026, 10, 11, 10, 0); const e = new Date(2026, 10, 11, 18, 5); return { ten: P.afterHours(d), six: P.afterHours(e), sat: P.afterHours(new Date(2026, 10, 14, 10, 0)) }; });
+ok(dayCheck && !dayCheck.ten && dayCheck.six && dayCheck.sat, 'owner 11/12: regular hours are Mon–Fri 7 AM–6 PM — 10 AM weekday is work hours, 6:05 PM and Saturday are after hours', dayCheck);
+await C.ev(() => { window._gcPayEm.DAY.start = 0; window._gcPayEm.DAY.end = 0; });   /* the rest of this test runs as after hours (an emergency job during work hours is standard pay) */
 await tapClock();
 const sh = await C.ev(() => { const o = document.getElementById('gc-payem-sheet'); return o ? { em: !!o.querySelector('[data-pe="em"]'), reg: !!o.querySelector('[data-pe="reg"]'), txt: o.innerText } : null; });
-ok(sh && sh.em && sh.reg && /emergency job/.test(sh.txt), '⏱ on an emergency job asks: 🚨 Emergency call-out (after hours) or 🕐 Regular time', sh);
+ok(sh && sh.em && sh.reg && /emergency job|after hours/.test(sh.txt), '⏱ after hours (on an emergency job) asks: 🚨 Emergency call-out (after hours) or 🕐 Regular time', sh);
 await C.page().screenshot({ path: SHOTS + 'payem_1_field_choice.png' });
 await C.page().locator('#gc-payem-sheet [data-pe="em"]').tap();
 await sleep(1800);
