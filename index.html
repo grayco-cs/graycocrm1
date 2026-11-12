@@ -131256,6 +131256,7 @@ function boardOnly(l){ return !arr(l.docs).length && arr(l.plansLinks).some(func
 function portalTag(l){
   var p = portalOf(l), st = S.portal || {};
   if (!l.inboxId) return '';
+  if (p && p.jobId && typeof window._gcBidJobGone === 'function' && window._gcBidJobGone(p.jobId)) return '';   /* patch QAA: archived / deleted on the bid portal */
   if (p && p.state === 'published') return '<span class="tg t-bp on">✓ On the bid portal</span>';
   if (p && p.state === 'removed') return '<span class="tg t-bp">Bid-portal draft deleted</span>';
   if ((p && p.state === 'queued') || st.ready === false) return '<span class="tg t-bp" title="' + esc(st.why || (p && p.why) || '') + '">Bid-portal draft waiting (portal not set up)</span>';
@@ -157133,8 +157134,29 @@ function logoJpeg(){
   });
 }
 /* a GrayCo report: indigo band with the logo + title, blocks, footer with the license line + page # */
+/* patch QAB (overnight QA 11/12): a GrayCo Mitigation / GrayCo Environmental claim's PDF (drying report, claim package, supplement,
+   the claim papers) carries THAT company — its name, license line, phone and logo — never "GrayCo Construction Services" and the
+   construction licenses. The company: o.co (the claim's job, set by the callers), else the paper's company (window._gcDocCo). */
+var QAB_LOGO = {};
+function claimCo(c){ try { var C = window._gcCo; if (!C || !c) return ''; var p = proj(c.projectId); return p ? C.ofJob(p) : (C.valid(c.companyId) ? c.companyId : ''); } catch (e) { return ''; } }
+function qabCo(o){ try { var C = window._gcCo; if (!C) return 'construction'; var co = o && C.valid(o.co) ? o.co : (window._gcDocCo && window._gcDocCo.get ? window._gcDocCo.get() : 'construction'); return C.valid(co) ? co : 'construction'; } catch (e) { return 'construction'; } }
+function qabLogo(co){
+  if (QAB_LOGO[co] !== undefined) return QAB_LOGO[co]; QAB_LOGO[co] = null;
+  try { var c = window._gcCo.get(co), im = new Image(); im.onload = function(){ try { var h = 96, w = Math.max(1, Math.round(im.naturalWidth * h / Math.max(1, im.naturalHeight))), cv = document.createElement('canvas'); cv.width = w + 16; cv.height = h + 16;
+      var g = cv.getContext('2d'); g.fillStyle = '#FFFFFF'; g.fillRect(0, 0, cv.width, cv.height); g.drawImage(im, 8, 8, w, h);
+      var u = cv.toDataURL('image/jpeg', 0.92), b = atob(u.slice(u.indexOf(',') + 1)), bytes = new Uint8Array(b.length); for (var i = 0; i < b.length; i++) bytes[i] = b.charCodeAt(i);
+      QAB_LOGO[co] = { bytes: bytes, w: cv.width, h: cv.height }; } catch (e) {} }; im.src = c.logo; } catch (e) {}
+  return null;
+}
+later(function(){ try { if (window._gcCo) { qabLogo('mitigation'); qabLogo('environmental'); } } catch (e) {} }, 4000);
 function pdfReport(o, logo){
   var D = PdfDoc(), M = 44, Wd = D.W - 2 * M, y = 0;
+  var QCO = qabCo(o);   /* patch QAB */
+  if (QCO !== 'construction') {
+    var QC = window._gcCo.get(QCO), qNm = s(QC.legal).replace(/,? *LLC\.?$/i, ''), qLic = s(QC.license), qT0 = D.text;
+    logo = qabLogo(QCO);
+    D.text = function(x, y0, t, op){ if (typeof t === 'string') t = t.split(GC_NAME + ', LLC').join(s(QC.legal)).split(GC_NAME).join(qNm).split(GC_NAME.toUpperCase()).join(qNm.toUpperCase()).split(LICENSE_LINE).join(qLic).split('TN #85034 BCB \u00B7 AR #0486990627 \u00B7 MS #27769').join(qLic).split('901-585-0944').join(s(QC.phone) || '901-585-0944'); return qT0.call(D, x, y0, t, op); };
+  }
   if (logo) D.img = logo;
   function band(){
     D.rect(0, 0, D.W, 70, INDIGO); D.rect(0, 70, D.W, 3, GOLD);
@@ -157703,6 +157725,9 @@ function newClaim(f){
     adjuster: f.adjuster || {}, deskAdjuster: f.deskAdjuster || {}, mortgageCo: s(f.mortgageCo), loanNumber: s(f.loanNumber),
     notes: [], estimates: [], payments: [], docs: [], moisture: [], checks: {}, links: {} };
   if (f.sync) c.sync = f.sync;   /* otherwise: every program switched on in ⚙ Integrations */
+  /* patch QAB: a claim made with no job ("+ New mitigation job") belongs to the company it was made in — the picked company, or a
+     Mitigation / Environmental person's own — so it stays in that company's lists (a claim on a job follows its job) */
+  try { if (!c.projectId) { var CO = window._gcCo, W0 = window._gcMitWS && window._gcMitWS.ws ? window._gcMitWS.ws() : null, cf = CO ? CO.filter() : 'all', cc = s(f.companyId) || (W0 && W0.co) || (cf !== 'all' ? cf : ''); if (CO && CO.valid(cc) && cc !== 'construction') c.companyId = cc; } } catch (e) {}
   return c;
 }
 function saveClaim(c, quiet){ return CL.put(c, quiet); }
@@ -158056,6 +158081,7 @@ function buildSupplement(claimId, carrierId, graycoId){
   var at = nowIso(), id = uid('SUP'), L = supplementBlocks(c, R, items, { at: at, by: myName() });
   var name = 'Supplement request — ' + claimTitle(c) + ' — ' + at.slice(0, 10) + '.pdf';
   return logoJpeg().then(function(logo){
+    if (L && !L.co) L.co = claimCo(c);   /* patch QAB: the claim's company */
     var bytes = pdfReport(L, logo), file = bytesToFile(bytes, name);
     var stored = typeof window._gcStoreFile === 'function' ? window._gcStoreFile(file, { kind: 'doc', pid: c.projectId, name: name }).then(function(m){ return (m && m.ref) || ''; }, function(){ return ''; }) : Promise.resolve('');
     return stored.then(function(ref){
@@ -158203,6 +158229,7 @@ var LAST_DOC = {};
 function makeClaimPdf(id, kind, L, name, extra){
   var c = claim(id); if (!c) return Promise.reject(new Error('claim not found'));
   return logoJpeg().then(function(logo){
+    if (L && !L.co) L.co = claimCo(c);   /* patch QAB: the claim's company */
     var bytes = pdfReport(L, logo), file = bytesToFile(bytes, name);
     var st = typeof window._gcStoreFile === 'function' ? window._gcStoreFile(file, { kind: 'doc', pid: c.projectId, name: name }).then(function(m){ return (m && m.ref) || ''; }, function(){ return ''; }) : Promise.resolve('');
     return st.then(function(ref){
@@ -159290,7 +159317,7 @@ EXT_ACT.cmpreview = function(A, v){ A.S.cmpSupp = v || ''; return A.render(true)
 EXT_ACT.cmppdf = function(A, v, t, ev, c){
   var sp = arr(c.supplements).find(function(x){ return x.id === v; }); if (!sp) return;
   if (sp.ref && typeof window._gcFileUrl === 'function') return A.openDoc(sp.ref);
-  var go = LAST_PDF[sp.id] ? Promise.resolve(LAST_PDF[sp.id]) : logoJpeg().then(function(logo){ var R = runCompare(c, sp.carrierId, sp.graycoId); return pdfReport(supplementBlocks(c, R || { carrier: {}, grayco: {}, totals: { carrier: {}, grayco: {} }, under: 0 }, sp.items, { at: sp.at, by: sp.by }), logo); });
+  var go = LAST_PDF[sp.id] ? Promise.resolve(LAST_PDF[sp.id]) : logoJpeg().then(function(logo){ var R = runCompare(c, sp.carrierId, sp.graycoId); return pdfReport(Object.assign(supplementBlocks(c, R || { carrier: {}, grayco: {}, totals: { carrier: {}, grayco: {} }, under: 0 }, sp.items, { at: sp.at, by: sp.by }), { co: claimCo(c) }), logo); });   /* patch QAB: the claim's company */
   return go.then(function(b){ downloadBytes(b, sp.name); });
 };
 EXT_ACT.cmpsend = function(A, v, t, ev, c){ var to = A.val('[name="suppTo-' + v + '"]'); return cmpDo(A, prepareSupplement(c.id, v, to, true), 'Prepared — waiting for approval (📋)'); };
@@ -160028,7 +160055,7 @@ window._gcClaims = {
   p2: { gpp: gpp, dewPointF: dewPointF, gppDrop: gppDrop, roomCalc: roomCalc, waterClass: waterClass, equipmentPlan: equipmentPlan, equipDays: equipDays, equipTotals: equipTotals, mitigationLines: mitigationLines, moisturePoints: moisturePoints, dryingState: dryingState, slas: slas, nextStep: nextStep, photoStatus: photoStatus, templateItems: templateItems, contactsDir: contactsDir, eqCfg: eqCfg, EQ_DEFAULTS: EQ_DEFAULTS, JOB_TYPES: JOB_TYPES, PAPERS: PAPERS, dryingBlocks: dryingBlocks, paperBlocks: paperBlocks, packageBlocks: packageBlocks, autoFillFrom: autoFillFrom, lastDoc: function(id){ return LAST_DOC[id] || null; } },
   /* BB2 */ visible: visClaims, mit: { claims: mitClaims, kpis: mitKpis, isMit: isMitClaim, day: mitDay }, more: { kpis: moreKpis, milestones: milestones, late: lateSlas, MILESTONES: MILESTONES },
   /* AUTO7-ext */ ext: { EXT_ACT: EXT_ACT, P2TABS: P2TABS, prepareFinal: prepareFinal, enqueue: enqueue, outboxFor: outboxFor, suppAddress: suppAddress, compareChoices: compareChoices, runCompare: runCompare,
-    latestCompare: latestCompare, money: money, claimTitle: claimTitle, logoJpeg: logoJpeg, pdfReport: pdfReport, bytesToFile: bytesToFile, LICENSE_LINE: LICENSE_LINE },
+    latestCompare: latestCompare, money: money, claimTitle: claimTitle, logoJpeg: logoJpeg, pdfReport: pdfReport, bytesToFile: bytesToFile, LICENSE_LINE: LICENSE_LINE, claimCo: claimCo /* patch QAB */ },
   core: { calc: calc, normEstimate: normEstimate, diffEstimates: diffEstimates, parseEsx: parseEsx, parseXactXml: parseXactXml, mergeClaim: mergeClaim, mergeClaims: mergeClaims, kpis: kpis, cycle: cycle, checklist: checklist, rooms: rooms, PHASES: PHASES },
   _test: { IB: IB, setSender: function(f){ SENDER = f; }, setAi: function(f){ AI_SENDER = f; }, setImporter: function(f){ IMPORTER = f; }, CL: CL, OB: OB, ST: ST, payloadFor: payloadFor, SERVER: SERVER, apps: function(){ return APPS; } }
 };
@@ -163337,6 +163364,7 @@ function buildSupp(c, items){
   ] };
   var name = 'Supplement request (closeout) — ' + E.claimTitle(c) + ' — ' + at.slice(0, 10) + '.pdf';
   return E.logoJpeg().then(function(logo){
+    try { if (!L.co && E.claimCo) L.co = E.claimCo(c); } catch (e) {}   /* patch QAB: the claim's company */
     var bytes = E.pdfReport(L, logo), file = E.bytesToFile(bytes, name);
     var stored = typeof W._gcStoreFile === 'function' ? Promise.resolve(W._gcStoreFile(file, { kind: 'doc', pid: c.projectId, name: name })).then(function(m){ return (m && m.ref) || ''; }, function(){ return ''; }) : Promise.resolve('');
     return stored.then(function(ref){
@@ -174355,9 +174383,13 @@ function plansOf(l){
   arr(it.plansLinks).concat(arr(l.plansLinks)).concat(s(l.plansLink) ? [{ url: l.plansLink, label: 'Plans' }] : []).forEach(function(x){ var u = s(x && x.url); if (!/^https?:\/\//.test(u)) return; if (!byUrl[u]) { byUrl[u] = Object.assign({}, x); links.push(byUrl[u]); } else { var y = byUrl[u]; if (!y.why && x.why) y.why = x.why; if (!y.stored && x.stored) y.stored = x.stored; if (!y.label && x.label) y.label = x.label; } });
   return { files: files, links: links };
 }
-function portalOf(l){ var it = inboxOf(l); var p = (it && it.portal) || l.subPortal || null; return p; }
+function portalOf(l){ var it = inboxOf(l); var a = it && it.portal, b = l.subPortal;
+  /* patch QAA: the lead posted again with 📢 (l.subPortal → the new bid job) after its old auto-added job was cleaned up — the new one counts */
+  if (a && b && a.jobId && b.jobId && a.jobId !== b.jobId) { var g = W._gcBidJobGone; if ((typeof g === 'function' && g(a.jobId) && !g(b.jobId)) || s(b.at) > s(a.at)) return b; }
+  return a || b || null; }
 function portalChip(l){
   var p = portalOf(l); if (!p || !p.jobId) return '<span class="gcl-chip mute" title="Not on the sub bid portal yet">🏗 —</span>';
+  if (typeof W._gcBidJobGone === 'function' && W._gcBidJobGone(p.jobId)) return '<span class="gcl-chip mute" title="Taken off the sub bid portal (🗄 Archived / deleted)">🏗 —</span>';   /* patch QAA: cleaned up → not "draft / private" any more */
   var st = s(p.state || p.visibility); var pub = /public|published/.test(st);
   return '<span class="gcl-chip ' + (pub ? 'pub' : 'priv') + '" title="Sub bid portal: ' + (pub ? 'public to all subs' : /private/.test(st) ? 'open to invited subs (private)' : 'private draft (staff only)') + '">🏗 ' + (pub ? 'public' : /private/.test(st) ? 'private' : 'draft') + '</span>';
 }
@@ -175625,7 +175657,7 @@ function drawerHtml0(l){
   arr(it.notes).slice(-5).forEach(function(n){ tl.push({ at: it.updatedAt || it.at, t: '📥 ' + s(n).slice(0, 160), by: 'Lead Inbox' }); });
   tl.sort(function(x, y){ return s(y.at).localeCompare(s(x.at)); });
   var ppl = people();
-  var pst = p && p.jobId ? s(p.state || p.visibility) : '';
+  var pst = p && p.jobId && !(typeof W._gcBidJobGone === 'function' && W._gcBidJobGone(p.jobId)) ? s(p.state || p.visibility) : '';   /* patch QAA: archived / deleted on the bid portal → "Not on the portal yet" */
   return '<div class="hd"><h3>' + srcIc(l) + ' ' + esc(s(l.name || l.title) || 'Lead') + '<div style="font:400 12px Arial;opacity:.85;margin-top:3px">' + STAGE_IC[stageOf(l)] + ' ' + esc(stageOf(l)) + ' · ' + kindPick(l) /* patch LEADBULK */ + ' · ' + esc(srcOf(l)) + '</div></h3><button type="button" data-d="x" aria-label="Close">✕</button></div>'
     /* overview */
     + '<section><h4>Overview</h4>'
@@ -178462,6 +178494,9 @@ function applyBpMode(){
     if (full && !fb.querySelector('iframe')) fb.innerHTML = '<iframe src="/subportal/" title="Bid portal — full admin" allow="clipboard-write" data-bp-frame style="display:block;width:100%;height:calc(100vh - 118px);min-height:480px;border:none;border-radius:8px;background:#FBFAF7"></iframe>';
   }
 }
+/* patch QAA: after 🧹 Clean up / 📢 Put on / Take off, the 🧰 Full bid portal frame shows the new list at once (it refreshed only every minute) */
+function freshFrame(){ try { var m = D.getElementById('gc-sys-bp-mount'), fb = m && m.querySelector('[data-bp-full]'), f = fb && fb.querySelector('iframe'); if (!f) return;
+  if (fb.style.display === 'none') fb.innerHTML = ''; else f.src = f.getAttribute('src'); } catch (e) { warn(e); } }
 function drawBP(){
   var m = D.getElementById('gc-sys-bp-mount'); if (!m) return;
   css();
@@ -178491,9 +178526,9 @@ function drawRows(){
   var autoN = all.filter(function(j){ return j.auto; }).length;   /* patch BIDPOST: 🧹 Clean up auto-added jobs (an admin's click) */
   Object.keys(SEL).forEach(function(id){ if (!rows.some(function(j){ return j.id === id; })) delete SEL[id]; });
   var nSel = Object.keys(SEL).length;
-  box.innerHTML = (realAdmin() && autoN && !del ? '<div class="bulk" data-sys-auto style="background:#eff6ff;border-color:#bfdbfe"><span><b>' + autoN + ' auto-added job' + (autoN === 1 ? '' : 's') + '</b> — made from leads by the old automatic sync, never posted, no plans / bids / invites.</span><button type="button" class="b" data-sys="cleanup">🧹 Clean up auto-added jobs (' + autoN + ')</button></div>' : '')
+  box.innerHTML = (realAdmin() && autoN && !del ? '<div class="bulk" data-sys-auto style="background:#eff6ff;border-color:#bfdbfe"><span><b>' + autoN + ' auto-added job' + (autoN === 1 ? '' : 's') + '</b> — made from leads by the old automatic sync, never posted, no bids / invites / plans added by a person.</span><button type="button" class="b" data-sys="cleanup">🧹 Clean up auto-added jobs (' + autoN + ')</button></div>' : '')
     + (bulk && nSel ? '<div class="bulk" data-sys-bulk><b>' + nSel + ' selected</b><button type="button" class="b" data-sys="bulkdel" style="color:#b91c1c">🗑 Delete selected</button><button type="button" class="b" data-sys="selnone">Clear</button></div>' : '')
-    + (!all.length ? '<div class="mut">No bid jobs yet. Every estimator lead becomes one (private) as soon as it comes in.</div>'
+    + (!all.length ? '<div class="mut">No bid jobs yet. Nothing goes on by itself: 📢 Put on bid portal on a lead, an estimate or a job.</div>'
     : '<table class="bpt"><colgroup>' + (bulk ? '<col style="width:34px">' : '') + '<col><col style="width:104px"><col style="width:66px"><col style="width:70px"><col style="width:112px"><col style="width:' + (del ? 128 : 236) + 'px"></colgroup>'
     + '<thead><tr>' + (bulk ? '<th><input type="checkbox" data-sys="selall" aria-label="Select all"' + (nSel && nSel === rows.length ? ' checked' : '') + '></th>' : '') + '<th>Bid job</th><th>Who sees it</th><th>Invited</th><th>Bids</th><th>' + (del ? 'Deleted' : 'Bid due') + '</th><th></th></tr></thead><tbody>' + rows.map(function(j){
       var left = del && j.deletedAt ? Math.max(0, 30 - Math.floor((Date.now() - Date.parse(j.deletedAt)) / 864e5)) : 0;
@@ -178636,8 +178671,8 @@ function onClick(ev){
   if (a === 'cleanup') {   /* patch BIDPOST */
     return fn('bid-hub', { op: 'cleanup', dry: true }).then(function(r){
       if (!r.count) { toast('Nothing to clean up.'); return loadJobs(true); }
-      if (!W.confirm('Archive ' + r.count + ' auto-added bid job' + (r.count === 1 ? '' : 's') + '?\n\nThey were made from leads by the old automatic sync, never posted by anyone, and have no plans, bids, invites or questions. Nothing is deleted: they move to 🗄 Archived (restore any time) and subs stop seeing them.\n\n' + arr(r.sample).slice(0, 8).join('\n') + (r.count > 8 ? '\n…' : ''))) return;
-      return fn('bid-hub', { op: 'cleanup' }).then(function(x){ toast('🧹 ' + x.archived + ' auto-added job' + (x.archived === 1 ? '' : 's') + ' archived — see 🗄 Archived'); loadJobs(true); });
+      if (!W.confirm('Archive ' + r.count + ' auto-added bid job' + (r.count === 1 ? '' : 's') + '?\n\nThey were made from leads by the old automatic sync, never posted by anyone, and have no bids, invites or questions and no plans a person added (the bid-board files the old sync copied in do not count — patch QAA). Nothing is deleted: they move to 🗄 Archived (restore any time) and subs stop seeing them.\n\n' + arr(r.sample).slice(0, 8).join('\n') + (r.count > 8 ? '\n…' : ''))) return;
+      return fn('bid-hub', { op: 'cleanup' }).then(function(x){ toast('🧹 ' + x.archived + ' auto-added job' + (x.archived === 1 ? '' : 's') + ' archived — see 🗄 Archived'); loadJobs(true); freshFrame(); try { if (W._gcBidPost && W._gcBidPost.jobs) W._gcBidPost.jobs(true); } catch (e) {} /* patch QAA: the 📢 buttons / Leads chips read it too */ });
     }, function(e){ toast(e.message, true); });
   }
   if (a === 'bids') return openBids(job);
@@ -178756,7 +178791,8 @@ function TILES(){
 var URLS = { bidsite: 'https://bids.grayco-cs.com/', subportal: 'https://portal.grayco-cs.com/', photosapp: '/?app=photos', companycam: 'https://app.companycam.com/', website: 'https://grayco-cs.com/', news: 'https://grayco-cs.com/news/',
   partner: '/partner.html', roofcheck: '/roofcheck.html', giveaway: '/giveaway.html', coupon: '/coupon.html', supabase: 'https://supabase.com/dashboard/project/ieeonhpfahmwwecizdut', netlify: 'https://app.netlify.com/', resend: 'https://resend.com/emails', gadmin: 'https://admin.google.com/' };
 var VIEWS = { bidportal: 'bidportal', roofscout: 'roofscout', photos: 'allphotos', bidsin: 'leads', marketing: 'marketing', brain: 'claude', qb: 'qbimport' };
-function projects(){ return arr((W._crm || {}).projects).filter(function(p){ return p && p.id && !p.deleted && !p._deleted; }); }
+function projects(){ return arr((W._crm || {}).projects).filter(function(p){ return p && p.id && !p.deleted && !p._deleted && coPass(p); }); }
+function coPass(p){ try { var C0 = W._gcCo; return !C0 || C0.filter() === 'all' || C0.passJob(p); } catch (e) { return true; } }   /* patch QAB: 🧭 GrayCo Systems' job pickers — the picked company's jobs */
 function pickJob(title, list, onPick){
   var m = modal('<button type="button" class="b x" data-sys="close">✕</button><h3>' + esc(title) + '</h3><input type="search" data-sys="q2" placeholder="Search jobs" style="width:100%;margin:8px 0"><div class="list" data-sys-jobs></div>');
   function draw(q){ var b = m.querySelector('[data-sys-jobs]'); q = low(q);
@@ -178821,7 +178857,7 @@ function tick(){
   } catch (e) { TERR = s(e && e.message); warn(e); }
 }
 RI.call(W, tick, 1200); later(tick, 500);
-W._gcSys = { drawSys: function(){ try { drawSys(); } catch (e) { warn(e); } }, bp: { mode: bpMode, setMode: setBpMode, load: loadJobs, draw: drawBP, invite: openInvite, bids: openBids, table: bidsTable, vis: setVis, jobs: function(){ return arr(BP.jobs); }, del: askDelete }, modal: modal, closeModal: closeModal, toast: toast, fn: fn, css: css, tiles: function(){ return TILES().map(function(t){ return t.k; }); }, tile: tile, ping: ping, drawer: drawerTick, leadKey: leadKey,
+W._gcSys = { drawSys: function(){ try { drawSys(); } catch (e) { warn(e); } }, bp: { at: function(){ return BP.at; }, freshFrame: freshFrame /* patch QAA */, mode: bpMode, setMode: setBpMode, load: loadJobs, draw: drawBP, invite: openInvite, bids: openBids, table: bidsTable, vis: setVis, jobs: function(){ return arr(BP.jobs); }, del: askDelete }, modal: modal, closeModal: closeModal, toast: toast, fn: fn, css: css, tiles: function(){ return TILES().map(function(t){ return t.k; }); }, tile: tile, ping: ping, drawer: drawerTick, leadKey: leadKey,
   state: function(){ return { jobs: arr(BP.jobs).length, me: BP.me, err: BP.err, pings: JSON.parse(JSON.stringify(PING)), lsb: LSB.key, role: role(), ticks: TICKS, err2: TERR }; } };
 try { console.log('[GC] patch SYS: 🏗 Bid portal tab, 🧭 GrayCo Systems tab, 📨 one sub-bid list (bids@ + bid portal + sub portal) — _gcSys.state()'); } catch (e) {}
 })();
@@ -179187,8 +179223,13 @@ W._gcJobTag = function(p){ return W._gcJobLabel(p); };
 function jobById(){ var m = {}; projects().forEach(function(p){ m[s(p.id)] = p; }); return m; }
 function relabel(sel, by){
   var opts = sel.options; if (!opts || !opts.length) return;
+  var CO = W._gcCo, cf = 'all'; try { cf = CO ? CO.filter() : 'all'; } catch (e) {}
   for (var i = 0; i < opts.length; i++) {
     var op = opts[i], p = op.value && by[op.value]; if (!p || op.hasAttribute('data-gc-keep')) continue;
+    /* patch QAB (overnight QA 11/12, "zero leaks"): with one company picked, a job dropdown offers that company's jobs (and jobs shared
+       with it) only — another company's job is hidden unless it is the one already chosen; "All companies" shows every job again */
+    try { if (cf !== 'all' && !CO.passJob(p) && !op.selected) { if (!op.hasAttribute('data-gc-cohide')) { op.hidden = true; op.disabled = true; op.setAttribute('data-gc-cohide', '1'); } }
+      else if (op.hasAttribute('data-gc-cohide')) { op.hidden = false; op.disabled = false; op.removeAttribute('data-gc-cohide'); } } catch (e) {}
     var cur = op.textContent;
     if (cur === op.getAttribute('data-gc-lab')) continue;
     var pre = (/^\s*(🛡\s*)/.exec(cur) || [])[1] || '', tail = (/\s(\((?!PO)[^()]*\))\s*$/.exec(cur) || [])[1] || '';
@@ -187815,7 +187856,7 @@ var CHECKS = [
   ['contact', 'Customer contact', 'overview'], ['address', 'Address', 'overview']];
 function photoLinked(p){ return !!(p.ccProjectId || p.companyCamId || p.companycamId || p.ccId || p.photoCount || arr(p.photos).length); }
 function completeness(){
-  return projects().filter(isOpen).map(function(p){
+  return projects().filter(isOpen).filter(function(p){ try { var C0 = W._gcCo; return !C0 || C0.filter() === 'all' || C0.passJob(p); } catch (e) { return true; } }).map(function(p){   /* patch QAB: the picked company's jobs */
     var c = counts(p);
     var ok = { contract: (+p.contract || 0) > 0 || c.estimates > 0, schedule: c.schedule > 0, scope: c.estimates > 0 || !!s(p.scope || p.sow), files: c.files > 0,
       expenses: c.expenses > 0, invoices: c.invoices > 0, photos: photoLinked(p), pm: !!s(p.pm), contact: !!(s(p.clientPhone || p.phone) || s(p.clientEmail || p.email)), address: !!s(p.address) };
@@ -189248,6 +189289,7 @@ function saveSupplement(c){
   var total = r2(items.reduce(function(t, x){ return t + num(x.amount); }, 0)), at = nowIso(), id = uid('SUP'), docId = uid('D');
   var name = 'Supplement request — ' + claimTitle(c) + ' — ' + at.slice(0, 10) + '.pdf', E = G().ext, L = suppBlocks(c, items, total);
   var mk = Promise.resolve(null);
+  try { if (E && E.claimCo && !L.co) L.co = E.claimCo(c); } catch (e) {}   /* patch QAB: the claim's company */
   try { if (E && E.pdfReport && E.logoJpeg) mk = E.logoJpeg().then(function(logo){ return E.pdfReport(L, logo); }, function(){ return E.pdfReport(L, null); }); } catch (e) { warn(e); }
   return mk.then(function(bytes){
     var file = bytes && E.bytesToFile ? E.bytesToFile(bytes, name) : null;
@@ -195466,7 +195508,7 @@ D.addEventListener('click', function(e){ var b = e.target && e.target.closest ? 
 
 /* start: one read for the To-Do (admins only) */
 later(function(){ if (isAdmin()) load(); }, 4000);
-W._gcCerts = { open: open_, list: function(){ return live(); }, load: load, status: status, applyBy: applyBy, templates: TEMPLATES, _addMonths: addMonths };
+W._gcCerts = { open: open_, canOpen: function(){ return isAdmin(); } /* patch QAB */, list: function(){ return live(); }, load: load, status: status, applyBy: applyBy, templates: TEMPLATES, _addMonths: addMonths };
 try { console.log('[GC] 📜 Certifications (patch CERTS): _gcCerts'); } catch (e) {}
 })();
 </script>
@@ -206931,9 +206973,11 @@ function proj(pid){ var x = arr(C().projects).filter(function(p){ return p && s(
 function jobsOf(a){
   var J = null; try { J = F() && F().jobs ? F().jobs() : null; } catch (e) {}
   if ((a === 'mit' || a === 'env') && W._gcMitWS && W._gcMitWS.fieldJobs) { try { return { today: false, list: fpSort(arr(W._gcMitWS.fieldJobs(a))) }; } catch (e) { warn(e); } }   /* patch MITWS: that company's jobs */
-  if ((a === 'pm' || a === 'crew') && J) return { today: !!J.today, list: fpSort(arr(J.list)) };
-  return { today: false, list: fpSort(allMine().filter(activeJob)) };
+  if ((a === 'pm' || a === 'crew') && J) return { today: !!J.today, list: fpSort(coJobs(arr(J.list))) };
+  return { today: false, list: fpSort(coJobs(allMine().filter(activeJob))) };
 }
+/* patch QAB (overnight QA 11/12): with one company picked, the home's job lists are that company's jobs (and jobs shared with it) */
+function coJobs(l){ try { var C0 = W._gcCo; if (C0 && C0.filter() !== 'all') return l.filter(function(p){ return C0.passJob(p); }); } catch (e) {} return l; }
 function dayOf(pid){ try { return F().day(pid) || {}; } catch (e) { return {}; } }
 
 /* ── leads, claims, money (read through the existing APIs) ── */
@@ -212045,8 +212089,17 @@ function leadsList(){ var l = []; try { if (typeof W._gcLaLeads === 'function') 
 function estList(){ try { return arr(W._gcEstimatesState); } catch (e) { return []; } }
 function dataNow(){
   var c = C();
-  return { projects: c.projects, customers: arr(c.customers).length ? c.customers : W._graycoCustomers, schedule: c.schedule, invs: c.invoices, estimates: estList(),
-    projectDocs: arr(W._gcProjectDocs).length ? W._gcProjectDocs : c.projectDocs, leads: leadsList(), gc_claims: claimsList(), gc_est_sent: EXTRA.est, gc_photo_ai: EXTRA.ai };
+  return { projects: coList(c.projects, 'p'), customers: arr(c.customers).length ? c.customers : W._graycoCustomers, schedule: c.schedule, invs: c.invoices, estimates: estList(),
+    projectDocs: arr(W._gcProjectDocs).length ? W._gcProjectDocs : c.projectDocs, leads: coList(leadsList(), 'l'), gc_claims: claimsList(), gc_est_sent: EXTRA.est, gc_photo_ai: EXTRA.ai };
+}
+/* patch QAB (overnight QA 11/12, To-Do → 🧾 Missing job data with GrayCo Mitigation picked listed Construction's jobs): with one company
+   picked, the board, its banner and its counts are that company's jobs (and jobs shared with it) and leads; "All companies" unchanged */
+var COF = { p: {}, l: {} };
+function coList(l, k){
+  try { var C0 = W._gcCo, f = C0 ? C0.filter() : 'all'; if (!C0 || f === 'all' || !Array.isArray(l)) return l;
+    var m = COF[k]; if (m.src === l && m.f === f && m.n === l.length) return m.out;
+    var o = l.filter(function(x){ return x && (k === 'p' ? C0.passJob(x) : C0.ofLead(x) === f); }); if (l.__dfSig) o.__dfSig = l.__dfSig;
+    COF[k] = { src: l, f: f, n: l.length, out: o }; return o; } catch (e) { return l; }
 }
 var CACHE = { sig: '', at: 0, res: null, byPid: {}, ix: null };
 function sigNow(d){ return [d.projects, d.customers, d.schedule, d.invs, d.projectDocs, d.estimates, d.leads].map(function(x){ return Array.isArray(x) ? x.length : 0; }).join('.') + ':' + (d.projects && d.projects.__dfSig || ''); }
@@ -218752,7 +218805,9 @@ function arr(v){ return Array.isArray(v) ? v : []; }
 function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
 function me(){ try { return (typeof W._gcMeUser === 'function' ? W._gcMeUser() : JSON.parse(localStorage.getItem('grayco_user') || '{}')) || {}; } catch (e) { return {}; } }
 function admin(){ try { if (W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()) return true; } catch (e) {} var u = me(); return /^admin$/i.test(s(u.role)) || /owner/i.test(s(u.payType)); }
-W._gcEnviroCanSee = function(){ if (admin()) return true; var u = me(); return /insurance|mitigat|restoration|environment/i.test(s(u.role) + ' ' + s(u.title) + ' ' + s(u.position)); };
+W._gcEnviroCanSee = function(){ if (admin()) return true; var u = me();
+  try { if (typeof W._gcIsOfficeFull === 'function' && W._gcIsOfficeFull()) return true; } catch (e) {} if (/^office/i.test(s(u.role))) return true;   /* patch QAA (owner 11/12: "office can have mit and env tab too"): with Construction / All picked the office had 💧 Mitigation but no ☢️ Environmental */
+  return /insurance|mitigat|restoration|environment/i.test(s(u.role) + ' ' + s(u.title) + ' ' + s(u.position)); };
 var KINDS = [['lead', '🧪 Lead'], ['asbestos', '☣️ Asbestos'], ['mold', '🍄 Mold'], ['fire', '🔥 Fire & smoke'], ['trauma', '🩸 Trauma / biohazard'], ['sewage', '🚽 Cat 3 water (sewage / flood)'], ['cat2', '💧 Cat 2 water (gray water)']];
 var UI = { k: 'all', all: false, el: null };
 function jobs(){
@@ -218806,6 +218861,7 @@ function certsHtml(){
   var l = arr(C.list()).filter(function(c){ return c && !c.archived && /lead|asbestos|rrp|abate|iicrc|haag|mold|epa|mdeq|tdec|adh|environment|hazard/i.test(s(c.name) + ' ' + s(c.tpl) + ' ' + s(c.issuer)); });
   var h = l.length ? '<ul style="list-style:none;padding:0;margin:0">' + l.map(function(c){ var st = {}; try { st = C.status(c) || {}; } catch (e) {} return '<li><span class="st ' + esc(st.k || 'nodate') + '">' + esc(st.l || '—') + '</span> <b>' + esc(c.name) + '</b> <span class="m">' + esc([c.holderName, c.number ? '#' + c.number : '', c.expires ? 'expires ' + c.expires : ''].filter(Boolean).join(' · ')) + '</span></li>'; }).join('') + '</ul>'
     : '<div class="m">No lead / asbestos / IICRC certifications entered yet.</div>';
+  if (C.canOpen && !C.canOpen()) return h;   /* patch QAB: only the people who can open Certifications get the button (a tech got "Only admins can open Certifications.") */
   return h + '<div style="margin-top:8px"><button type="button" class="chip" data-env="certs">📜 Open Certifications (add / renew)</button></div>';
 }
 function draw(){
@@ -219118,7 +219174,8 @@ var tries = 0;
    press in this tab — never a lead or job that arrived by sync (another user, the website, the Lead Inbox, a missed call, LSA …);
    and filed under the company that was picked when they clicked (not whatever is picked at the next tick). */
 var SEEN = { p: null, l: null, e: null }, GEST = { at: 0, co: 'all' }, GEST_MS = 6000;
-function gest(e){ if (e && e.isTrusted === false) return; GEST.at = Date.now(); try { GEST.co = C.filter(); } catch (x) {} }
+function gest(e){ if (e && e.isTrusted === false) return; GEST.at = Date.now(); try { GEST.co = C.filter(); } catch (x) {}
+  try { if (GEST.co === 'all') { var W0 = W._gcMitWS && W._gcMitWS.ws ? W._gcMitWS.ws() : null; if (W0 && W0.role && C.valid(W0.co)) GEST.co = W0.co; } } catch (x) {} }   /* patch QAB: a Mitigation / Environmental person's new job or lead is filed under their company (they work in it whatever is picked) */
 W.document.addEventListener('pointerdown', gest, true); W.document.addEventListener('keydown', gest, true);
 var INBOUND = ['inboxId', 'leadInboxId', 'websiteForm', 'callSid', 'smsFrom', 'missedCall', 'textMessage', 'externalId', 'lsaId', 'callrailId', 'ccProjectId', 'companyCamId', 'emailId', 'gmailId', 'partnerId', 'importedAt'];
 function madeHere(x){
@@ -223580,6 +223637,9 @@ function filesOf(c){
     var k = ref || link; if (!k || seen[k]) return; seen[k] = 1;
     out.push({ ref: ref, link: link, name: s(d.name || d.label) || (link ? 'Link' : 'File'), type: s(d.type), size: Number(d.size) || 0, category: s(d.cat), pick: /plan|drawing|spec|scope/i.test(s(d.cat) + ' ' + s(d.name)) });
   });
+  /* patch QAA: a lead's own plan files (stored in the CRM: the Lead Inbox's attachments, files dropped on the lead) — offered too (it said "No files on this lead yet") */
+  arr(c.l && c.l.files).concat(arr(c.l && c.l.docs)).forEach(function(f){ var ref = f && s(f.ref); if (!/^sb:crm-files\//.test(ref) || f.kind === 'email' || seen[ref]) return; seen[ref] = 1;
+    out.push({ ref: ref, link: '', name: s(f.name) || 'File', type: s(f.type), size: Number(f.size) || 0, category: 'Plans', pick: true }); });
   arr(c.l && c.l.plansLinks).concat(c.l && s(c.l.plansLink) ? [{ url: c.l.plansLink, label: 'Plans' }] : []).forEach(function(x){ var u = s(x && x.url); if (!/^https?:\/\//.test(u) || seen[u]) return; seen[u] = 1; out.push({ link: u, name: s(x.label || x.board) || 'Plans', pick: true }); });
   return out;
 }
@@ -223681,9 +223741,12 @@ function post(){
     toast((r.created ? '📢 On the bid portal — ' : '💾 Bid portal job saved — ') + (r.visibility === 'public' ? '🌐 public' : '🔒 private (invite subs on the 🏗 Bid portal tab)') + (r.files ? ' · ' + r.files + ' file(s) shared' : '') + (arr(r.notCopied).length ? ' · not copied: ' + r.notCopied.map(function(x){ return x.name; }).join(', ') : ''));
     remember(c, r);
     JOBS.at = 0; jobs(true).then(paint);
-    try { if (W._gcSys && W._gcSys.bp) W._gcSys.bp.load(true); } catch (e) {}
+    try { if (W._gcSys && W._gcSys.bp) { W._gcSys.bp.load(true); if (W._gcSys.bp.freshFrame) W._gcSys.bp.freshFrame(); } } catch (e) {}
     return r;
-  }, function(e){ go.disabled = false; go.textContent = '📢 Put on bid portal'; err.textContent = e.message; });
+  }, function(e){ go.disabled = false; go.textContent = '📢 Put on bid portal';
+    /* patch QAA: a big plan set can run past the server's time limit — the job is saved first, so say where it is and how to add big files */
+    err.textContent = files.length && /\b50[234]\b|failed to fetch|timed? ?out|network/i.test(s(e && e.message)) ? 'The plan files took too long to copy (' + s(e && e.message) + '). The job itself is probably already on the bid portal — check 🏗 Bid portal. Add big plan files there (🧰 Full bid portal → the job → Plans), or paste a 🔗 Drive link here and post again.' : e.message;
+    JOBS.at = 0; try { if (W._gcSys && W._gcSys.bp) W._gcSys.bp.load(true); } catch (x) {} });
 }
 /* the CRM keeps the link: the job (bidJobId — the 📊 Bids → estimate link) and the lead (subPortal) */
 function remember(c, r){
@@ -223700,7 +223763,7 @@ function remember(c, r){
 function unpost(){
   var J = UI.job; if (!J || !J.id) return;
   if (!W.confirm('Take "' + (J.title || 'this job') + '" off the bid portal?\n\nSubs stop seeing it. Nothing is deleted: it moves to 🗄 Archived, and 📢 Put on bid portal puts it back.')) return;
-  return fn('bid-hub', { op: 'unpost', jobId: J.id }).then(function(){ close(); toast('Taken off the bid portal (🗄 Archived)'); JOBS.at = 0; jobs(true).then(paint); try { if (W._gcSys && W._gcSys.bp) W._gcSys.bp.load(true); } catch (e) {} }, function(e){ toast(e.message, true); });
+  return fn('bid-hub', { op: 'unpost', jobId: J.id }).then(function(){ close(); toast('Taken off the bid portal (🗄 Archived)'); JOBS.at = 0; jobs(true).then(paint); try { if (W._gcSys && W._gcSys.bp) { W._gcSys.bp.load(true); if (W._gcSys.bp.freshFrame) W._gcSys.bp.freshFrame(); } } catch (e) {} }, function(e){ toast(e.message, true); });
 }
 function onClick(ev){
   var t = ev.target && ev.target.closest ? ev.target.closest('[data-bp]') : null; if (!t) return;
@@ -223772,6 +223835,11 @@ function todoItems(){
 W._gcTodoExt = Array.isArray(W._gcTodoExt) ? W._gcTodoExt : []; W._gcTodoExt.push(function(){ try { return todoItems(); } catch (e) { warn(e); return []; } });
 RI.call(W, function(){ if (!D.hidden && JOBS.list) jobs(false); }, 300000);
 
+/* patch QAA: a bid job the CRM knows is archived / deleted (🧹 Clean up, Take off, 🗑 Delete) — the Leads chips read it */
+W._gcBidJobGone = function(id){ id = s(id); if (!id) return false;
+  var lists = [{ at: JOBS.at || 0, l: arr(JOBS.list) }]; try { if (W._gcSys && W._gcSys.bp && W._gcSys.bp.jobs) lists.push({ at: (W._gcSys.bp.at && W._gcSys.bp.at()) || 0, l: arr(W._gcSys.bp.jobs()) }); } catch (e) {}
+  var hit = null; lists.sort(function(a, b){ return b.at - a.at; }).some(function(x){ hit = x.l.filter(function(j){ return j && j.id === id; })[0] || null; return !!hit; });   /* the newest list that knows the job */
+  return !!(hit && hit.deleted); };
 W._gcBidPost = { open: open, close: close, canPost: function(c){ return canPost(ctxOf(c)); }, jobs: jobs, paint: paint, todo: function(){ QA.at = 0; return todoItems(); }, trades: tradeList,
   state: function(){ return { jobs: JOBS.list ? JOBS.list.length : null, at: JOBS.at, admin: isAdmin(), est: isEst(), me: myEmail(), name: myName(), ticks: TICK }; } };
 try { console.log('[GC] patch BIDPOST: 📢 Put on bid portal (estimate / job / lead; admin, estimator, the job\'s PM) — nothing goes on by itself — _gcBidPost.state()'); } catch (e) {}
@@ -225014,13 +225082,14 @@ function shape(r, Uf){
   if (W0.hub && base.indexOf(hub) < 0) base.push(hub);
   if (MITMGR && base.indexOf('enviro') < 0) base.push('enviro');
   var want = base.filter(function(id){ return !hide[id] && !TOOL[id] && id !== 'sds' && id !== 'planbuilder'; });
-  tools.forEach(function(t){ want.push(t.id); });
+  tools.forEach(function(t){ if (!W0.role && !W0.hub && !toolOk(t.id)) return; want.push(t.id); });   /* patch QAB: a tab is on the menu only when it opens for them (a Marketing Manager has no drying / claims tools) */
   if (canPB && !W0.tech) want.push('planbuilder');
   var ord = ORDER[co], seen = {}, out = [];
   ord.forEach(function(id){ if (want.indexOf(id) >= 0 && !seen[id]) { seen[id] = 1; out.push(id); } });
   want.forEach(function(id){ if (!seen[id]) { seen[id] = 1; out.push(id); } });
   return out.map(function(id){ return itemOf(Uf, id); }).filter(Boolean);
 }
+function toolOk(id){ try { var f = W._gcViewAllowed; return typeof f !== 'function' || !!f(id); } catch (e) { return true; } }
 function menuIds(){ try { return arr(MENU.last).map(function(g){ return g.id; }); } catch (e) { return []; } }
 var MENU = { last: null };
 function wrapMenu(){
@@ -225044,6 +225113,23 @@ function wrapSetView(){
   w.__mws = true; W._setView = w;
 }
 /* screens their menu has are theirs to open (a "Mitigation PM" is not in the role table: Customers / Insurance are on its menu) */
+/* patch QAB (overnight QA 11/12): the claims app's own boards inside the tool tabs (💧 Drying jobs, 💧 Mitigation, 🛡 Insurance) for a
+   Mitigation / Environmental person — or with that company picked — list only that company's claims (inWs), never a Construction job's claim */
+/* patch QAB (overnight QA 11/12): a Mitigation / Environmental person (their role) works in their own company — the company pick reads as
+   their company everywhere (Leads showed them Construction's leads, Projects / Invoices / Approvals every company's), whatever is stored.
+   Admins, the office and everyone else are unchanged (the company switch itself is patch MULTICO-UI's). */
+function wrapCoFilter(){
+  var C0 = W._gcCo; if (!C0 || typeof C0.filter !== 'function' || C0.filter.__qab) return;
+  var f0 = C0.filter;
+  var w = function(){ var f = f0.apply(this, arguments); try { var k = myKind(); if (k) return k.indexOf('mit') === 0 ? 'mitigation' : 'environmental'; } catch (e) {} return f; };
+  w.__qab = true; C0.filter = w;
+  try { var l0 = C0.leadView; if (typeof l0 === 'function' && !l0.__qab) { C0.leadView = function(){ try { var k = myKind(); if (k) return k.indexOf('mit') === 0 ? 'mitigation' : 'environmental'; } catch (e) {} return l0.apply(this, arguments); }; C0.leadView.__qab = true; } } catch (e) {}
+}
+function wrapInsVisible(){
+  var f = W._gcInsVisible; if (typeof f !== 'function' || f.__qab) return;
+  var w = function(c, p){ try { var W0 = ws(); if (W0 && !inWs(p || (c && proj(c.projectId)), c, W0.co)) return false; } catch (e) {} return f.apply(this, arguments); };
+  w.__qab = true; W._gcInsVisible = w;
+}
 function wrapAllowed(){
   var f = W._gcViewAllowed; if (typeof f !== 'function' || f.__mws) return;
   var w = function(v){ try { if (myKind() && menuIds().indexOf(v) >= 0) return true; } catch (e) {} return f.apply(this, arguments); };
@@ -225060,23 +225146,32 @@ function ofJob(p){ try { return W._gcCo ? W._gcCo.ofJob(p) : 'construction'; } c
 function claimOf(pid){ var C = CL(); try { return C && C.forProject ? C.forProject(pid) || null : null; } catch (e) { return null; } }
 function claimTitle(c, p){ return s(c && c.title) || s(p && p.name) || s(c && c.insured) || 'Claim'; }
 function myName(){ var m = W._gcMeNow; return s(m && m.name) || s((function(){ try { return localStorage.getItem('grayco_user'); } catch (e) { return ''; } })()); }
+/* patch QAB (overnight QA 11/12, "zero leaks"): a job is this company's when it is filed under it (window._gcCo.ofJob — with the MISFILED
+   repair) or shared with it (job.sharedWith, patch MULTICO-LINK); a claim with no job follows its own companyId (stamped when it is made
+   while Mitigation / Environmental is picked or by their people), else the claims app's own rule (a mitigation claim → Mitigation). */
+function inWs(p, c, co){
+  if (p) return ofJob(p) === co || arr(p.sharedWith).indexOf(co) >= 0;
+  try { if (c && W._gcCo && W._gcCo.valid(c.companyId)) return c.companyId === co; } catch (e) {}
+  return co === 'mitigation';
+}
 /* the drying jobs: the mitigation claims (the claims app's own rule) + the Mitigation company's jobs without a drying file yet */
 function mitJobs(all){
   var C = CL(), out = [], seen = {}, t = today();
   try {
     arr(C && C.mit ? C.mit.claims() : []).forEach(function(c){
       if (!c || (!all && /closed/i.test(s(c.phase)))) return;
-      var p = proj(c.projectId); var D0 = null; try { D0 = P2().dryingState(c, t); } catch (e) {}
+      var p = proj(c.projectId); var D0 = null;
+      if (!inWs(p, c, 'mitigation')) return;   /* patch QAB: a Construction (or Environmental) job's claim never shows in Mitigation's tools, Dashboard or TV */ try { D0 = P2().dryingState(c, t); } catch (e) {}
       out.push({ c: c, p: p, d: D0, id: p ? p.id : 'c:' + c.id, t: claimTitle(c, p), day: C.mit.day ? C.mit.day(c) : null }); if (p) seen[p.id] = 1;
     });
   } catch (e) { warn(e); }
-  projects().forEach(function(p){ if (seen[p.id] || ofJob(p) !== 'mitigation' || (!all && !activeJob(p))) return; var c = claimOf(p.id); var D0 = null; try { if (c) D0 = P2().dryingState(c, t); } catch (e) {} out.push({ c: c, p: p, d: D0, id: p.id, t: s(p.name) || s(p.client) || 'Job', day: c && C.mit && C.mit.day ? C.mit.day(c) : null }); });
+  projects().forEach(function(p){ if (seen[p.id] || !inWs(p, null, 'mitigation') || (!all && !activeJob(p))) return; var c = claimOf(p.id); var D0 = null; try { if (c) D0 = P2().dryingState(c, t); } catch (e) {} out.push({ c: c, p: p, d: D0, id: p.id, t: s(p.name) || s(p.client) || 'Job', day: c && C.mit && C.mit.day ? C.mit.day(c) : null }); });
   return out;
 }
 function envJobs(all){
   var out = [], seen = {}, H = W._gcHazOf;
-  try { arr(W._gcEnviro && W._gcEnviro.jobs ? W._gcEnviro.jobs() : []).forEach(function(x){ if (!x || !x.p || (!all && !activeJob(x.p))) return; seen[x.p.id] = 1; out.push({ p: x.p, k: x.k }); }); } catch (e) { warn(e); }
-  projects().forEach(function(p){ if (seen[p.id] || ofJob(p) !== 'environmental' || (!all && !activeJob(p))) return; var h = {}; try { h = H ? H(p) : {}; } catch (e) {} out.push({ p: p, k: Object.keys(h).filter(function(k){ return h[k]; }) }); });
+  try { arr(W._gcEnviro && W._gcEnviro.jobs ? W._gcEnviro.jobs() : []).forEach(function(x){ if (!x || !x.p || (!all && !activeJob(x.p)) || !inWs(x.p, null, 'environmental')) return; seen[x.p.id] = 1; out.push({ p: x.p, k: x.k }); }); } catch (e) { warn(e); }   /* patch QAB: a Construction job with "fire" / "mold" in its notes is not Environmental's */
+  projects().forEach(function(p){ if (seen[p.id] || !inWs(p, null, 'environmental') || (!all && !activeJob(p))) return; var h = {}; try { h = H ? H(p) : {}; } catch (e) {} out.push({ p: p, k: Object.keys(h).filter(function(k){ return h[k]; }) }); });
   return out;
 }
 function fieldJobs(a){
@@ -225085,7 +225180,7 @@ function fieldJobs(a){
   l.forEach(function(p){ ids[p.id] = 1; });
   /* + their own open jobs and (mitigation) any open water / fire / mold job not filed under a company yet */
   var re = a === 'env' ? /lead|asbestos|abatement|hazmat|environment/i : /water|mitigat|dry-?out|flood|fire|smoke|mold|sewage/i;
-  projects().filter(function(p){ return activeJob(p) && !ids[p.id] && (mine(p) || (ofJob(p) === 'construction' && re.test(s(p.type) + ' ' + s(p.name) + ' ' + s(p.jobType)))) && (ofJob(p) !== (a === 'env' ? 'mitigation' : 'environmental')); }).forEach(function(p){ ids[p.id] = 1; l.push(p); });
+  projects().filter(function(p){ return activeJob(p) && !ids[p.id] && mine(p) && (ofJob(p) !== (a === 'env' ? 'mitigation' : 'environmental')); }).forEach(function(p){ ids[p.id] = 1; l.push(p); });   /* patch QAB: no other Construction jobs by their words ("fire", "water") — only the ones they are assigned to */
   return l.filter(mine).concat(l.filter(function(p){ return !mine(p); }));
 }
 /* save a change on a job (the CRM's own way: setProjects + the projects push) */
@@ -225417,7 +225512,7 @@ function dashHtml(co){
       card('mws_read', '⏰', 'Readings due today', due.length, due.length ? 'Read every point + temp & RH' : 'Nothing due', due.slice(0, 3).map(function(x){ return li(x.t); }).join(''), due.length ? 'bad' : '') +
       card('mws_equip', '🌀', 'Equipment on jobs', eq, eq ? Object.keys(by).filter(function(k){ return by[k]; }).map(function(k){ return by[k] + ' ' + NM[k] + (by[k] === 1 || k === 'negair' ? '' : 's'); }).join(' · ') : 'Nothing out') +
       card('mws_claims', '🛡', 'Claims waiting', ap, meet.length ? meet.length + ' adjuster meeting' + (meet.length === 1 ? '' : 's') + ' this week' : 'No adjuster meetings this week', meet.slice(0, 3).map(li).join(''), ap ? 'warn' : '') +
-      card('mws_emerg', '🚨', 'Emergencies', E.length, openChk.length ? openChk.length + ' first-response checklist' + (openChk.length === 1 ? '' : 's') + ' open' : 'No open emergency calls', E.slice(0, 3).map(function(l){ return li(s(l.client || l.name)); }).join(''), E.length ? 'bad' : '') + '</div>';
+      card('mws_emerg', '🚨', 'Emergencies', E.length, openChk.length ? openChk.length + ' first-response checklist' + (openChk.length === 1 ? '' : 's') + ' open' : E.length ? 'Call' + (E.length === 1 ? '' : 's') + ' waiting — open 🚨 Emergencies' : 'No open emergency calls',   /* patch QAB: the card said "No open emergency calls" under a count of 1 */ E.slice(0, 3).map(function(l){ return li(s(l.client || l.name)); }).join(''), E.length ? 'bad' : '') + '</div>';
   }
   var J = envJobs(), all = [], mon = today().slice(0, 7); J.forEach(function(x){ arr(x.p.envLog).forEach(function(r){ if (r && !r.deleted) all.push(r); }); });
   var air = all.filter(function(r){ return r.kind === 'air'; }), fail = air.filter(function(r){ return r.pass === 'Fail'; }), wait = air.filter(function(r){ return r.pass === 'Waiting on lab'; });
@@ -225618,7 +225713,7 @@ function css(){
 
 /* ═════ keep it current ═════ */
 function tick(){
-  try { wrapMenu(); wrapSetView(); wrapAllowed(); regField(); } catch (e) { warn(e); }
+  try { wrapMenu(); wrapSetView(); wrapAllowed(); regField(); wrapInsVisible(); wrapCoFilter(); } catch (e) { warn(e); }
   try { if (UI.el && UI.el.isConnected && !D.hidden) draw(false); } catch (e) {}
   try { if (view() === 'dashboard' || D.getElementById('gc-mws-dash')) dash(); } catch (e) {}
 }
