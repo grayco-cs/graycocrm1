@@ -18,7 +18,10 @@ cset('users', [{ id: 'u1', name: 'Wesley Johnson', email: 'wjohnson@grayco-cs.co
   { id: 'u10', name: 'Eli Demo', email: 'eli@example.com', role: 'Abatement Technician', companyId: 'environmental', hireDate: ago(400), active: true },
   /* raises: a mitigation tech with Master Restorer and every course (cap +$8), a cross-trained tech */
   { id: 'u11', name: 'Tia Demo', email: 'tia@example.com', role: 'Mitigation Tech', hireDate: ago(700), active: true },
-  { id: 'u12', name: 'Dex Demo', email: 'dex@example.com', role: 'Restoration & Abatement Tech', hireDate: ago(300), active: true }]);
+  { id: 'u12', name: 'Dex Demo', email: 'dex@example.com', role: 'Restoration & Abatement Tech', hireDate: ago(300), active: true },
+  /* entry level: General Laborers ($15) — path 1 (all CRM training → +$3 tech) and path 2 (RRP + lead + asbestos worker + Environmental training → $23) */
+  { id: 'u13', name: 'Lou Demo', email: 'lou@example.com', role: 'General Laborer', companyId: 'mitigation', hireDate: ago(30), active: true },
+  { id: 'u14', name: 'Lea Demo', email: 'lea@example.com', role: 'General Laborer', hireDate: ago(30), active: true }]);
 cset('gc_certs', { list: [
   { id: 'c1', holderType: 'person', holder: 'pat@example.com', holderName: 'Pat Planner', name: 'IICRC WRT (Water Restoration Technician)', issuer: 'IICRC', expires: ahead(200) },
   { id: 'c2', holderType: 'person', holder: 'pat@example.com', holderName: 'Pat Planner', name: 'EPA RRP Certified Renovator', issuer: 'EPA', expires: ago(5) },
@@ -26,6 +29,7 @@ cset('gc_certs', { list: [
   { id: 'c4', holderType: 'person', holder: 'max@example.com', holderName: 'Max Master', name: 'IICRC Master Water Restorer', issuer: 'IICRC', expires: ahead(300) },
   { id: 'c5', holderType: 'person', holder: 'sam@example.com', holderName: 'Sam Demo', name: 'IICRC UFT (Upholstery & Fabric)', issuer: 'IICRC', expires: ahead(300) }]
   .concat(['IICRC WRT', 'IICRC ASD', 'IICRC AMRT', 'IICRC FSRT', 'IICRC OCT', 'IICRC CCT', 'IICRC UFT', 'IICRC Master Restorer', 'OSHA 30 (construction)'].map((n, i) => ({ id: 't' + i, holderType: 'person', holder: 'tia@example.com', holderName: 'Tia Demo', name: n, issuer: /IICRC/.test(n) ? 'IICRC' : 'OSHA', expires: ahead(300) })))
+  .concat(['EPA RRP Certified Renovator', 'Lead abatement worker (TN)', 'Asbestos abatement worker (AHERA)'].map((n, i) => ({ id: 'l' + i, holderType: 'person', holder: 'lea@example.com', holderName: 'Lea Demo', name: n, issuer: '', expires: ahead(900) })))
   .concat([{ id: 'g1', holderType: 'person', holder: 'gary@example.com', holderName: 'Gary Demo', name: 'OSHA 30 (construction)', issuer: 'OSHA', expires: ahead(900) }])
   .concat(['IICRC WRT', 'IICRC AMRT', 'Lead abatement worker (TN)', 'Asbestos abatement worker (AHERA)', 'HAZWOPER 40-hour'].map((n, i) => ({ id: 'd' + i, holderType: 'person', holder: 'dex@example.com', holderName: 'Dex Demo', name: n, issuer: '', expires: ahead(300) }))) });
 const A = await computer('wjohnson@grayco-cs.com', { build: process.argv[2] });
@@ -196,6 +200,27 @@ const c2 = cget('gc_cert_plan');
 ok('📋 an admin can switch a line between Required and 💡 Recommended per role (Roofing PM WRT → Required)', c2.tracks.con_roof_pm.reqs[0].id === 'wrt' && c2.tracks.con_roof_pm.reqs[0].rec === false && c2.tracks.con_ins_pm.reqs[0].rec !== true && c2.tracks.con_pm.reqs[0].rec === true, c2.tracks.con_roof_pm.reqs[0]);
 const todo = await A.ev(() => window._gcTodoExt.map(f => { try { return f(); } catch (e) { return []; } }).flat().filter(x => /^cp/.test(x.key)).map(x => x.title));
 ok('To-Do: raises due, and only EXPIRED required certificates (never "overdue") for admins', todo.some(t => /💵 Raise due: Mo Tech/.test(t)) && todo.some(t => /Pat Planner: 1 required certificate expired — renew/.test(t)) && !todo.some(t => /overdue/i.test(t)) && !todo.some(t => /(Mo Tech|Eve Abate|Sam Demo|Ina Demo): \d+ required/.test(t)), todo);
+/* ── General Laborer → tech status ── */
+const lab0 = await A.ev(() => { const C = window._gcCertPlan, U = window._crm.users, f = e => U.find(u => u.email === e), lou = C.raiseCalc(f('lou@example.com')), lea = C.raiseCalc(f('lea@example.com'));
+  return { louT: lou.track, louDue: lou.due.length, leaDue: lea.due.length, leaBlocked: lea.blocked.map(x => x.why), p1: C.techCourses(f('lou@example.com')), p2: C.envPath(f('lea@example.com')), ol: C.outlookOf('gen_lab').start }; });
+ok('LABORER: "General Laborer" → the entry track ($15 start); nothing due yet; Lea\'s RRP / lead / asbestos worker certificates are recorded but earn no raise before tech status', lab0.louT === 'gen_lab' && lab0.ol === 15 && lab0.louDue === 0 && lab0.leaDue === 0 && lab0.leaBlocked.length === 3 && lab0.leaBlocked.every(w => w === 'laborer') && lab0.p1.of > 0 && lab0.p1.passed === 0 && lab0.p1.target === 'mit_tech' && lab0.p2.certs === 3 && !lab0.p2.ready, { lab0: { ...lab0, p1: { of: lab0.p1.of, passed: lab0.p1.passed, target: lab0.p1.target }, p2: { certs: lab0.p2.certs, of: lab0.p2.of } } });
+const passAll = rk => A.ev(rk => { const done = {}; window._gcTrain.required(rk).forEach(m => { (m.parts || []).forEach(x => { done[m.id + '|' + x.id] = x.quiz ? { score: 10, of: 10, best: 10, tries: 1, passed: true, at: new Date().toISOString() } : new Date().toISOString(); }); }); return done; }, rk);
+cset('gc_train_p_lou@example_com', { done: await passAll('insurance') });
+cset('gc_train_p_lea@example_com', { done: await passAll('enviro') });
+await A.ev(async () => { await window._gcCertPlan.load(); window._gcCertPlan.open('people'); }); await sleep(1500);
+const louCard = await cardTxt('lou@example.com'), leaCard = await cardTxt('lea@example.com');
+ok('LABORER: both paths with progress on the card — Lou "Path 1 … N of N CRM courses passed — ⭐ Ready for tech status"; Lea "Path 2 — Environmental tech … certificates 3 of 3 … ⭐ Ready for Environmental tech status"', /Path 1 — Mitigation Technician[\s\S]*?(\d+) of \1 CRM courses passed — ⭐ Ready for tech status/.test(louCard) && /Path 2 — Environmental tech \(\$23\/hr\): certificates 3 of 3[\s\S]*⭐ Ready for Environmental tech status/.test(leaCard), { lou: louCard.slice(-600), lea: leaCard.slice(-500) });
+await A.ev(() => document.querySelector('[data-cp-person="lou@example.com"]').scrollIntoView()); await sleep(200);
+await A.page().screenshot({ path: (process.argv[3] || '/tmp') + '/certrole_laborer_paths.png' });
+await A.ev(() => document.querySelector('[data-cptab="raises"]').click()); await sleep(600);
+const rowsL = await A.ev(() => [...document.querySelectorAll('[data-cp-raises] tr')].filter(r => /Lou Demo|Lea Demo/.test(r.innerText)).map(r => r.innerText.replace(/\s+/g, ' ')));
+ok('LABORER: 💵 Raises due shows "⭐ Ready for tech status — +$3/hr" (Lou) and "⭐ Ready for Environmental tech status — $23/hr (+$8/hr)" (Lea)', rowsL.some(r => /Lou Demo/.test(r) && /Ready for tech status — \+\$3\/hr/.test(r)) && rowsL.some(r => /Lea Demo/.test(r) && /Ready for Environmental tech status — \$23\/hr \(\+\$8\/hr\)/.test(r)), rowsL);
+await A.page().screenshot({ path: (process.argv[3] || '/tmp') + '/certrole_laborer_raises_due.png' });
+for (const nm of ['Lou Demo', 'Lea Demo']) { await A.ev(nm => [...document.querySelectorAll('[data-cp-raises] tr')].find(r => r.innerText.includes(nm) && /tech status/.test(r.innerText)).querySelector('[data-cp="approve"]').click(), nm); await sleep(1500); }
+const lp = cget('gc_cert_plan');
+await A.ev(() => document.querySelector('[data-cptab="people"]').click()); await sleep(600);
+const louC2 = await cardTxt('lou@example.com'), leaC2 = await cardTxt('lea@example.com');
+ok('LABORER: approving moves Lou to Mitigation tech at $15 + $3 = $18 and Lea to Environmental tech at $15 + $8 = $23 (logged in the raise history; the step is outside the tech cap)', lp.people['lou@example.com'].track === 'mit_tech' && lp.people['lou@example.com'].start === 15 && lp.people['lea@example.com'].track === 'env_tech' && lp.done.some(d => d.email === 'lou@example.com' && d.rule === 'techstatus' && d.amount === 3) && lp.done.some(d => d.email === 'lea@example.com' && d.rule === 'techstatus_env' && d.amount === 8) && /current \$18\.00\/hr/.test(louC2) && /current \$23\.00\/hr/.test(leaC2) && await A.ev(() => { const C = window._gcCertPlan, u = window._crm.users.find(x => x.email === 'lea@example.com'), c = C.raiseCalc(u); return c.track === 'env_tech' && c.earnedHr === 0 && c.due.length === 3; }), { lou: lp.people['lou@example.com'], lea: lp.people['lea@example.com'] });
 await A.ev(() => { const o = document.getElementById('gc-certplan'); if (o) o.remove(); });
 if (await A.ev(() => typeof window._gcOpenTimesheets === 'function')) {
   await A.ev(() => window._gcOpenTimesheets()); await sleep(1200);

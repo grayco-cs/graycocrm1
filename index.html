@@ -195717,6 +195717,9 @@ function TRACKS(){ return {
     iicrc('amrt', 'IICRC AMRT — Applied Microbial Remediation', 0), iicrc('fsrt', 'IICRC FSRT — Fire & Smoke Restoration', 0), iicrc('oct', 'IICRC OCT — Odor Control', 0),
     iicrc('cct', 'IICRC CCT — Carpet Cleaning (Master Restorer course)', 0), iicrc('uft', 'IICRC UFT — Upholstery & Fabric (Master Restorer course)', 0),
     R('mr', 'IICRC Master Restorer — required for this role (includes the Master designations)', M.mr, 0, 'Owner: "PMs have to be masters"'), LAW.rrp, LAW.firstaid, LAW.hazcom, LAW.resp, LAW.bbp, LAW.fall] },
+  /* patch CERTROLE (owner 11/12): "General laborer, no experience, starts at $15/hr; gets tech status and a $3 raise by passing all training
+     in the CRM" — no certificate raises before tech status (certificates are still recorded) */
+  gen_lab: { label: 'General Laborer (entry, no experience)', co: '', unit: 'hr', reqs: [LAW.hazcom, LAW.fall, LAW.rrpojt] },
   /* patch CERTROLE: construction crew (laborers / carpenters / helpers) — starting rate $18, the field-safety law lines */
   con_crew: { label: 'Crew — GrayCo Construction', co: 'construction', unit: 'hr', reqs: [LAW.rrpojt, LAW.hazcom, LAW.fall, LAW.leadaware, Object.assign(R('osha10', 'OSHA 10 (construction)', M.osha10, 0, 'Recommended — keep on'), { rec: true })] },
   mit_foreman: { label: 'Foreman — GrayCo Mitigation', co: 'mitigation', unit: 'hr', reqs: [iicrc('wrt', 'IICRC WRT — Water Restoration Technician', 90), iicrc('asd', 'IICRC ASD — Applied Structural Drying', 365), LAW.rrp, LAW.firstaid, LAW.hazcom, LAW.resp, LAW.bbp, LAW.fall] },
@@ -195762,6 +195765,13 @@ var TP = {};   /* patch CERTROLE: email → that person's 🎓 Training progress
 function tslug(v){ return low(v).replace(/[^a-z0-9@]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 80); }
 function loadTP(){ return Promise.all(staff().map(function(u){ var em = low(u.email); return sb('gc_train_p_' + tslug(em)).then(function(v){ TP[em] = isObj(v) && isObj(v.done) ? v.done : {}; }); })); }
 function trainMods(){ try { return W._gcTrain && W._gcTrain.modules ? arr(W._gcTrain.modules()) : []; } catch (e) { return []; } }
+/* one person × one 🎓 Training module → { k: 'not'|'prog'|'pass', title, score, at } */
+function modState(email, m){
+  var done = TP[low(email)] || {}, parts = arr(m && m.parts), q = parts.filter(function(x){ return x && x.quiz; })[0], keys = parts.map(function(x){ return m.id + '|' + x.id; }), any = keys.some(function(k){ return !!done[k]; });
+  if (q) { var r = done[m.id + '|' + q.id]; if (isObj(r) && r.passed) return { k: 'pass', title: m.title, score: (r.best != null ? r.best : r.score) + ' of ' + r.of, at: r.at, mid: m.id }; if (r === true || (typeof r === 'string' && r)) return { k: 'pass', title: m.title, mid: m.id }; }
+  else if (keys.length && keys.every(function(k){ return !!done[k]; })) return { k: 'pass', title: m.title, mid: m.id };
+  return { k: any ? 'prog' : 'not', title: m && m.title, mid: m && m.id };
+}
 /* one person × one requirement → { k: 'none'|'not'|'prog'|'pass', l, score, at, mods } */
 function trainOf(email, reqId){
   var ids = CLASS[reqId]; if (!ids) return { k: 'none' };
@@ -195806,6 +195816,7 @@ function trackOf(u, p){
   var set = (p || plan()).people[low(u.email)]; if (set && set.track && (p || plan()).tracks[set.track]) return set.track;
   var t = [u.role, u.title, u.position, u.jobTitle, u.profile, u.department, u.specialty].map(s).join(' '), co = low(u.companyId || u.company);
   var env = /environ|abatement|asbestos/i.test(t) || co === 'environmental', mit = /mitig/i.test(t) || co === 'mitigation';
+  if (/general\s*labou?rer|entry[- ]level|\btrainee\b|no experience/i.test(t) && (p || plan()).tracks.gen_lab) return 'gen_lab';   /* patch CERTROLE */
   if (/restoration\s*&?\s*(and\s*)?abatement|\bdual\b/i.test(t) && (p || plan()).tracks.dual_tech) return /foreman|crew lead|supervis|lead\b/i.test(t) ? 'dual_fore' : 'dual_tech';   /* patch CERTROLE */
   if (mit && /manag|director|lead\b/i.test(t)) return 'mit_manager';
   if (env && /manag|director|supervis|\bpm\b|project manager/i.test(t)) return 'env_pm';   /* patch CERTROLE: Environmental PM / supervisor / manager */
@@ -195851,11 +195862,29 @@ function ruleFor(text, p){ var out = null; (p || plan()).raises.some(function(rr
    hold Master Restorer), "highest master level pays once" (setting, on by default), and per-person admin exceptions:
    people[email].exc = { pmNoMaster: {reason,by,at}, cap: {hr|null, none, reason,by,at}, waive: { reqId: {reason,by,at} } } + one-off manual
    raises (done[] with manual: true) — every one logged in excLog[] and shown on the card "Exception by <admin> on <date>: <reason>". */
-var DEF_START = { con_crew: 18, con_foreman: 18, mit_tech: 18, mit_foreman: 18, env_tech: 23, dual_tech: 23, dual_fore: 23 };
+var DEF_START = { gen_lab: 15, con_crew: 18, con_foreman: 18, mit_tech: 18, mit_foreman: 18, env_tech: 23, dual_tech: 23, dual_fore: 23 };
 var DEF_CAP = { con_crew: 8, mit_tech: 8, con_foreman: 12, mit_foreman: 12, env_tech: 10, dual_tech: 12, dual_fore: 15 };
 /* the cross-training bonus (dual tracks): once, when they hold WRT + AMRT + lead worker + asbestos worker + HAZWOPER 40 — inside the cap */
 var XTRAIN = [['wrt', 'WRT'], ['amrt', 'AMRT'], ['leadwork', 'lead worker'], ['asbwork', 'asbestos worker'], ['hazwoper', 'HAZWOPER 40']];
 function isDual(tk){ return /^dual_/.test(s(tk)); }
+/* ── the General Laborer → tech status step ── */
+var TECH_STEP = 3;
+function labTarget(u, p){ var x = (p || plan()).people[low(u.email)], set = x && s(x.labTarget); if (set) return set;
+  var t0 = [u.role, u.title, u.profile, u.companyId, u.company].concat(arr(u.companies)).map(s).join(' ');
+  return /mitig|water|restor/i.test(t0) ? 'mit_tech' : 'con_crew'; }   /* path A: Construction crew / Mitigation tech (Environmental is path B, envPath) */
+function techCourses(u, p){ var tk = labTarget(u, p), rk = tk === 'env_tech' ? 'enviro' : tk === 'mit_tech' ? 'insurance' : 'super';
+  var req = []; try { req = W._gcTrain && W._gcTrain.required ? arr(W._gcTrain.required(rk)) : []; } catch (e) {}
+  var done = req.filter(function(m){ return modState(u.email, m).k === 'pass'; });
+  return { target: tk, rk: rk, list: req, passed: done.length, of: req.length, ready: req.length > 0 && done.length === req.length, left: req.filter(function(m){ return done.indexOf(m) < 0; }) }; }
+/* path B (owner 11/12): a laborer becomes an Environmental tech by holding EPA RRP + lead worker + asbestos worker AND passing the
+   Environmental CRM training → "⭐ Ready for Environmental tech status" → the Environmental tech track at its starting rate ($23) */
+var ENV_CERTS = [['rrp', 'EPA RRP'], ['leadwork', 'lead worker'], ['asbwork', 'asbestos worker']];
+function envPath(u, p){
+  var ht = heldBy(u.email).filter(function(c){ return certStatus(c) === 'held'; }).map(function(c){ return s(c.name) + ' ' + s(c.issuer); }).join(' | ');
+  var has = ENV_CERTS.filter(function(x){ return rx(M[x[0]]).test(ht); }), req = []; try { req = W._gcTrain && W._gcTrain.required ? arr(W._gcTrain.required('enviro')) : []; } catch (e) {}
+  var done = req.filter(function(m){ return modState(u.email, m).k === 'pass'; });
+  return { certs: has.length, certsOf: ENV_CERTS.length, missing: ENV_CERTS.filter(function(x){ return has.indexOf(x) < 0; }).map(function(x){ return x[1]; }), passed: done.length, of: req.length,
+    left: req.filter(function(m){ return done.indexOf(m) < 0; }), ready: has.length === ENV_CERTS.length && req.length > 0 && done.length === req.length }; }
 function xtrainHas(t){ return XTRAIN.filter(function(x){ var r = rx(M[x[0]]); return x[0] === 'hazwoper' ? t.split(' | ').some(function(c){ return r.test(c) && !rx(M.hazref).test(c); }) : r.test(t); }); }
 var MASTER_RX = M.mr + '|' + M.mwr + '|' + M.mfsr + '|' + M.mtc;
 function isPmTrack(tk, p){ var tr = (p || plan()).tracks[tk] || {}; return tr.pm != null ? !!tr.pm : /_pm$|^mit_manager$/.test(s(tk)); }
@@ -195876,12 +195905,15 @@ function raiseCalc(u, p){
   p = p || plan(); var tk = trackOf(u, p), unit = (p.tracks[tk] || {}).unit || 'hr', held = heldBy(u.email), cap = capOf(tk, p, u), em = low(u.email), pm = isPmTrack(tk, p), comm = commissionOf(tk, p);
   var mine = p.done.filter(function(d){ return low(d.email) === em && !d.skip; }), earnedHr = mine.reduce(function(a, d){ return a + hrEq(d); }, 0), usedHr = earnedHr, usedN = mine.length, due = [], blocked = [], seen = {};
   var masterPaid = mine.some(function(d){ return d.master || /^(mr|master:)/.test(s(d.rule)); });
+  var lab = tk === 'gen_lab';   /* patch CERTROLE: a laborer — no certificate raises before tech status */
+  mine.filter(function(d){ return /^techstatus/.test(s(d.rule)); }).forEach(function(d){ earnedHr -= hrEq(d); usedHr -= hrEq(d); usedN--; });   /* the tech-status step is not a certificate raise (outside the tech cap) */
   p.raises.forEach(function(rr){ var r = rx(rr.m), n = rr.n ? rx(rr.n) : null;
     held.filter(function(c){ var x = s(c.name) + ' ' + s(c.issuer); return r.test(x) && !(n && n.test(x)); }).forEach(function(c){
       var key = rr.each ? (rr.grp || rr.id) + ':' + low(s(c.name)).replace(/[^a-z0-9]+/g, '-') : (rr.grp || rr.id);
       if (seen[key] || p.done.some(function(d){ return low(d.email) === em && d.rule === key; })) return; seen[key] = 1;
       var hr = rateOf(rr), x = { rule: key, ruleName: rr.name, cert: s(c.name), hr: hr, amount: unit === 'yr' ? yrOf(rr) : hr, unit: unit, master: isMasterRule(rr) };
       if (comm) { x.why = 'commission'; x.hr = 0; x.amount = 0; blocked.push(x); return; }   /* commission-paid: required, no raise */
+      if (lab) { x.why = 'laborer'; x.hr = 0; x.amount = 0; blocked.push(x); return; }   /* recorded; the raises start at tech status */
       if (x.master && !pm) { x.why = 'notpm'; x.hr = 0; x.amount = 0; blocked.push(x); return; }   /* the pay comes with the PM commission plan */
       if (x.master && p.masterOnce && masterPaid) { x.why = 'master'; blocked.push(x); return; }
       if (cap.n && usedN >= cap.n) { x.why = 'cap'; blocked.push(x); return; }
@@ -195889,6 +195921,9 @@ function raiseCalc(u, p){
         if (hr > left) { x.amount = unit === 'yr' ? Math.round(x.amount * left / hr) : left; x.hr = left; x.trimmed = true; } }
       if (x.master) masterPaid = true;
       usedN++; usedHr += x.hr; due.push(x); }); });
+  if (lab && !p.done.some(function(d){ return low(d.email) === em && /^techstatus/.test(s(d.rule)); })) { var tc = techCourses(u, p), ep = envPath(u, p), envUp = Math.max(0, startOf('env_tech', p) - startOf('gen_lab', p));
+    if (ep.ready) due.push({ rule: 'techstatus_env', ruleName: 'Environmental tech status — EPA RRP + lead worker + asbestos worker held, the Environmental CRM training passed (' + ep.passed + ' of ' + ep.of + ')', cert: '⭐ Ready for Environmental tech status — $' + startOf('env_tech', p) + '/hr (+$' + envUp + '/hr)', hr: envUp, amount: envUp, unit: 'hr', tech: 'env_tech' });
+    if (tc.ready) due.push({ rule: 'techstatus', ruleName: 'Tech status — every CRM training course for ' + ((p.tracks[tc.target] || {}).label || tc.target) + ' passed (' + tc.passed + ' of ' + tc.of + ')', cert: '⭐ Ready for tech status — +$' + TECH_STEP + '/hr', hr: TECH_STEP, amount: TECH_STEP, unit: 'hr', tech: tc.target }); }
   if (!comm && isDual(tk) && !p.done.some(function(d){ return low(d.email) === em && d.rule === 'xtrain'; })) {
     var ht = held.filter(function(c){ return certStatus(c) === 'held'; }).map(function(c){ return s(c.name) + ' ' + s(c.issuer); }).join(' | ');
     if (xtrainHas(ht).length === XTRAIN.length) { var xb = num(p.xtrainHr) > 0 ? num(p.xtrainHr) : 2, xx = { rule: 'xtrain', ruleName: 'Cross-training bonus (once)', cert: 'Cross-training bonus — WRT + AMRT + lead worker + asbestos worker + HAZWOPER 40', hr: xb, amount: xb, unit: unit };
@@ -195907,6 +195942,7 @@ function payList(tk, p, mo){
   var iic = arr(tr.reqs).some(function(r){ return r && s(r.id) === 'wrt' && /IICRC/.test(s(r.name)); });   /* a track with the IICRC water course (not Environmental's mold line) */
   if (iic) p.raises.filter(function(x){ return MR_COURSES.indexOf(x.id) >= 0; }).forEach(function(x){ add(null, x, s(x.name), true); });   /* every IICRC course earns its raise */
   if (iic) p.raises.filter(function(x){ return isMasterRule(x) && (x.id === 'mr' || !mo); }).forEach(function(x){ add(null, x, s(x.name) + (x.id === 'mr' ? ' (all the courses)' : ''), true); });
+  if (tk === 'gen_lab') return [{ req: null, rule: { id: 'techstatus', m: '$^' }, name: '⭐ Tech status (pass all the CRM training) → $' + (startOf('gen_lab', p) + TECH_STEP) + '; or Environmental tech (RRP + lead + asbestos worker + its CRM training) → $' + startOf('env_tech', p), hr: TECH_STEP, rec: false }];
   if (isDual(tk) && !comm) out.push({ req: null, rule: { id: 'xtrain', m: '$^' }, name: 'Cross-training bonus (once)', hr: num(p.xtrainHr) > 0 ? num(p.xtrainHr) : 2, rec: false, xtrain: true });
   return out;
 }
@@ -195987,7 +196023,7 @@ function stChip(st){ var c = st.k === 'ok' ? 'ok' : st.k === 'waived' ? 'gry' : 
 function hrTxt(v){ v = Math.round(num(v) * 100) / 100; return '$' + (v % 1 ? v.toFixed(2) : String(v)) + '/hr'; }
 function amtTxt(v, unit){ return unit === 'yr' ? '$' + Math.round(num(v)).toLocaleString('en-US') + '/yr' : '$' + num(v).toFixed(2) + '/hr'; }
 function rateLine(u, p, c){
-  var st = startOf(c.track, p); if (!(st > 0)) return '';
+  var px = p.people[low(u.email)], st = px && px.start != null && s(px.start) !== '' ? num(px.start) : startOf(c.track, p); if (!(st > 0)) return '';   /* a person's own start (a laborer moved to tech keeps $15 + $3) */
   var em = low(u.email), add = p.done.filter(function(d){ return low(d.email) === em && !d.skip; }).reduce(function(a, d){ return a + (c.unit === 'yr' ? (d.unit === 'yr' ? num(d.amount) : num(d.amount) * HRS_YR) : hrEq(d)); }, 0);
   return '<div data-cp-rate="' + esc(em) + '" style="margin-top:3px">💲 Starting rate <b>' + amtTxt(st, c.unit) + '</b> + approved certificate raises <b>' + amtTxt(add, c.unit) + '</b> = current <b>' + amtTxt(st + add, c.unit) + '</b></div>';
 }
@@ -196005,6 +196041,8 @@ function raiseBox(u, p, held){
     (avail.length && !c.reached ? '<div class="gccp-mut" data-cp-avail="1">' + avail.map(function(x){ return esc(x.name.replace(/ \(.*$/, '')) + ' +' + hrTxt(x.hr); }).join(' · ') + '</div>' : '') +
     (nB.length ? '<div class="gccp-mut" data-cp-notpm="1">⭐ ' + nB.map(function(x){ return esc(x.cert); }).join(', ') + ': $0 on this track — the pay for a master level comes with the PM commission plan.</div>' : '') +
     (c.commission ? '<div class="gccp-mut" data-cp-comm="1">💼 Commission-paid role: the certificates are required, with no certificate raises (the PM commission plan pays).</div>' : '') +
+    (c.track === 'gen_lab' ? (function(){ var tc = techCourses(u, p), ep = envPath(u, p); return '<div class="gccp-mut" data-cp-labstep="1">🪜 Path 1 — ' + esc((p.tracks[tc.target] || {}).label || tc.target) + ' (+$' + TECH_STEP + '/hr → $' + (startOf('gen_lab', p) + TECH_STEP) + '): <b>' + tc.passed + ' of ' + tc.of + ' CRM courses passed</b>' + (tc.ready ? ' — ⭐ Ready for tech status (in 💵 Raises due)' : tc.left.length ? ' · still to pass: ' + tc.left.map(function(m){ return esc(m.title); }).join(' · ') : '') + '</div>' +
+      '<div class="gccp-mut" data-cp-labenv="1">🪜 Path 2 — Environmental tech ($' + startOf('env_tech', p) + '/hr): certificates <b>' + ep.certs + ' of ' + ep.certsOf + '</b> (EPA RRP, lead worker, asbestos worker)' + (ep.missing.length ? ' — missing ' + esc(ep.missing.join(', ')) : '') + ' · Environmental CRM training <b>' + ep.passed + ' of ' + ep.of + ' passed</b>' + (ep.ready ? ' — ⭐ Ready for Environmental tech status (in 💵 Raises due)' : '') + '. No certificate raises before tech status (certificates are still recorded).</div>'; })() : '') +
     (isDual(c.track) ? '<div class="gccp-mut" data-cp-ladder="1">🪜 Dual tech → Dual foreman (a supervisor license, or OSHA 30 + 1 year) → PM (Master Restorer) or Environmental supervisor / PM (lead + asbestos supervisor). Cross-training bonus +' + hrTxt(num(p.xtrainHr) > 0 ? p.xtrainHr : 2) + ' once with WRT + AMRT + lead worker + asbestos worker + HAZWOPER 40 (' + xtrainHas(got).length + ' of ' + XTRAIN.length + ').</div>' : '') +
     rateLine(u, p, c) +
     '<div class="gccp-mut" style="margin-top:4px" data-cp-policy="1">🎓 ' + esc(POLICY) + '.</div>' +
@@ -196091,7 +196129,8 @@ function render(){
   else if (UI.tab === 'raises') { var rows = []; ppl.forEach(function(u){ raisesDue(u, p).forEach(function(r){ rows.push({ u: u, r: r }); }); });
     var past = p.done.slice().reverse().slice(0, 60), capped = []; ppl.forEach(function(u){ var c = raiseCalc(u, p); c.blocked.forEach(function(r){ capped.push({ u: u, r: r, c: c }); }); });
     h += '<div class="gccp-note">Every certificate an employee earns is a raise. When one is added in 📜 Certifications it lands here to approve (the amount comes from ⚙ Raise amounts; hourly people get $/hr, salaried people $/yr; a raise is cut or held back at the role\'s cap in 📈 Raise outlook &amp; caps). Approve it, then change their pay rate in 💰 Pay Structures.</div>' +
-      (rows.length ? '<table class="gccp-tbl" data-cp-raises="1"><tr><th>Employee</th><th>Certificate</th><th>Raise</th><th></th></tr>' + rows.map(function(x, i){ return '<tr><td><b>' + esc(x.u.name) + '</b></td><td>' + esc(x.r.cert) + '<div class="gccp-mut">' + esc(x.r.ruleName) + '</div></td><td><input class="gccp-in" style="width:90px" data-cp-amt="' + i + '" value="' + esc(x.r.amount) + '"> ' + (x.r.unit === 'yr' ? '/yr' : '/hr') + (x.r.trimmed ? '<div class="gccp-mut">cut to the cap</div>' : '') + '</td><td><button type="button" class="gccp-btn grn" data-cp="approve" data-i="' + i + '">✅ Approve</button> <button type="button" class="gccp-btn" data-cp="skip" data-i="' + i + '">Not a raise</button></td></tr>'; }).join('') + '</table>' : '<p class="gccp-mut">No raises waiting. 👍</p>') +
+      (rows.length ? '<table class="gccp-tbl" data-cp-raises="1"><tr><th>Employee</th><th>Certificate</th><th>Raise</th><th></th></tr>' + rows.map(function(x, i){ return '<tr><td><b>' + esc(x.u.name) + '</b></td><td>' + esc(x.r.cert) + '<div class="gccp-mut">' + esc(x.r.ruleName) + '</div></td><td><input class="gccp-in" style="width:90px" data-cp-amt="' + i + '" value="' + esc(x.r.amount) + '"> ' + (x.r.unit === 'yr' ? '/yr' : '/hr') + (x.r.trimmed ? '<div class="gccp-mut">cut to the cap</div>' : '') +
+        (x.r.rule === 'techstatus_env' ? '<div class="gccp-mut">Moves to the Environmental tech track ($' + startOf('env_tech', p) + '/hr)</div>' : x.r.rule === 'techstatus' ? '<div class="gccp-mut">Move to <select class="gccp-in" data-cp-techto="' + i + '">' + ['con_crew', 'mit_tech', 'env_tech', 'dual_tech'].filter(function(k){ return p.tracks[k]; }).map(function(k){ return '<option value="' + k + '"' + (k === x.r.tech ? ' selected' : '') + '>' + esc(p.tracks[k].label) + '</option>'; }).join('') + '</select> — Environmental tech starts at $' + startOf('env_tech', p) + '/hr: set the raise to reach it if you pick it.</div>' : '') + '</td><td><button type="button" class="gccp-btn grn" data-cp="approve" data-i="' + i + '">✅ Approve</button> <button type="button" class="gccp-btn" data-cp="skip" data-i="' + i + '">Not a raise</button></td></tr>'; }).join('') + '</table>' : '<p class="gccp-mut">No raises waiting. 👍</p>') +
       (capped.length ? '<h3 style="margin:14px 0 4px">🧢 Held back</h3><table class="gccp-tbl" data-cp-capped="1"><tr><th>Employee</th><th>Certificate</th><th>Why</th></tr>' + capped.map(function(x){ return '<tr><td><b>' + esc(x.u.name) + '</b></td><td>' + esc(x.r.cert) + '</td><td><span class="gccp-chip amb">' + (x.r.why === 'master' ? '⭐ a master level is paid once' : 'cap reached (' + (x.c.cap.hr ? hrTxt(x.c.cap.hr) : x.c.cap.n + ' raises') + ')') + '</span></td></tr>'; }).join('') + '</table>' : '') +
       '<h3 style="margin:14px 0 4px">History</h3>' + (past.length ? '<table class="gccp-tbl"><tr><th>When</th><th>Employee</th><th>Certificate</th><th>Raise</th><th>By</th></tr>' + past.map(function(d){ var u = ppl.filter(function(x){ return low(x.email) === low(d.email); })[0]; return '<tr><td>' + esc(fmt(d.at)) + '</td><td>' + esc(u ? u.name : d.email) + '</td><td>' + esc(d.cert) + '</td><td>' + (d.skip ? '<span class="gccp-chip gry">not a raise</span>' : esc(money(d.amount, d.unit))) + '</td><td class="gccp-mut">' + esc(d.by) + '</td></tr>'; }).join('') + '</table>' : '<p class="gccp-mut">None yet.</p>');
     UI.rows = rows; }
@@ -196146,7 +196185,9 @@ function open_(tab){
     var a = t.getAttribute('data-cp'), u0 = me();
     if (a === 'close') { OV.remove(); OV = null; return; }
     if (a === 'approve' || a === 'skip') { var x = (UI.rows || [])[+t.getAttribute('data-i')]; if (!x) return; var amt = num((OV.querySelector('[data-cp-amt="' + t.getAttribute('data-i') + '"]') || {}).value);
-      save(function(p){ p.done.push({ id: uid(), email: low(x.u.email), rule: x.r.rule, cert: x.r.cert, amount: a === 'skip' ? 0 : amt, hr: a === 'skip' ? 0 : x.r.unit === 'yr' ? Math.round(amt / HRS_YR * 100) / 100 : amt, master: !!x.r.master, unit: x.r.unit, at: nowISO(), by: s(u0.name || u0.email), skip: a === 'skip' }); }).then(function(){ toast(a === 'skip' ? 'Marked: not a raise' : '💵 Raise approved — ' + money(amt, x.r.unit) + ' for ' + s(x.u.name) + '. Update their rate in 💰 Pay Structures.'); render(); }); }
+      var techTo = /^techstatus/.test(x.r.rule) && a !== 'skip' ? s((OV.querySelector('[data-cp-techto="' + t.getAttribute('data-i') + '"]') || {}).value) || x.r.tech : '';
+      save(function(p){ if (techTo) { var px = isObj(p.people[low(x.u.email)]) ? p.people[low(x.u.email)] : {}; px.track = techTo; px.start = startOf('gen_lab', p); px.techAt = nowISO(); p.people[low(x.u.email)] = px; }   /* patch CERTROLE: tech status → the tech track, keeping their $15 start */
+        p.done.push(Object.assign({ id: uid(), email: low(x.u.email), rule: x.r.rule, cert: x.r.cert, amount: a === 'skip' ? 0 : amt, hr: a === 'skip' ? 0 : x.r.unit === 'yr' ? Math.round(amt / HRS_YR * 100) / 100 : amt, master: !!x.r.master, unit: x.r.unit, at: nowISO(), by: s(u0.name || u0.email), skip: a === 'skip' }, techTo ? { tech: techTo } : {})); }).then(function(){ toast(a === 'skip' ? 'Marked: not a raise' : '💵 Raise approved — ' + money(amt, x.r.unit) + ' for ' + s(x.u.name) + '. Update their rate in 💰 Pay Structures.'); render(); }); }
     if (a === 'rmreq') { var k = t.getAttribute('data-k'), i = +t.getAttribute('data-i'); save(function(p){ p.tracks[k].reqs.splice(i, 1); }).then(render); }
     if (a === 'addreq') { var k2 = t.getAttribute('data-k'), nm = s((OV.querySelector('[data-cp-newreq="' + k2 + '"]') || {}).value), dd = s((OV.querySelector('[data-cp-newrec="' + k2 + '"]') || {}).value) === 'rec'; if (!nm) return toast('Type the certificate name.', true);
       var words = nm.replace(/[^A-Za-z0-9 ]+/g, ' ').trim().split(/\s+/).filter(function(w){ return w.length > 2; }).slice(0, 3).map(function(w){ return w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); });
@@ -196209,7 +196250,7 @@ function open_(tab){
 /* the button in 📜 Certifications */
 D.addEventListener('click', function(e){ var b = e.target && e.target.closest ? e.target.closest('[data-gccp-open]') : null; if (!b) return; e.preventDefault(); e.stopPropagation(); open_(); }, true);
 later(function(){ if (isAdmin()) load(); }, 5000);
-W._gcCertPlan = { open: open_, load: load, plan: plan, trackOf: trackOf, targetOf: targetOf, trainOf: trainOf, CLASS: CLASS, raiseCalc: raiseCalc, payList: payList, outlookOf: outlookOf, rateOf: rateOf, POLICY: POLICY, reqStatus: reqStatus, raisesDue: raisesDue, masterOf: masterOf, weekPay: weekPay, defaults: defaults, _set: function(p, c){ PLAN = p; CERTS = arr(c); LOADED = true; } };
+W._gcCertPlan = { open: open_, load: load, plan: plan, trackOf: trackOf, targetOf: targetOf, trainOf: trainOf, techCourses: techCourses, envPath: envPath, CLASS: CLASS, raiseCalc: raiseCalc, payList: payList, outlookOf: outlookOf, rateOf: rateOf, POLICY: POLICY, reqStatus: reqStatus, raisesDue: raisesDue, masterOf: masterOf, weekPay: weekPay, defaults: defaults, _set: function(p, c){ PLAN = p; CERTS = arr(c); LOADED = true; } };
 try { console.log('[GC] 🎖 Required certs, raises & promotion (patch CERTPLAN): _gcCertPlan'); } catch (e) {}
 })();
 </script>
