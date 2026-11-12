@@ -187800,7 +187800,7 @@ var CHECKS = [
   ['contact', 'Customer contact', 'overview'], ['address', 'Address', 'overview']];
 function photoLinked(p){ return !!(p.ccProjectId || p.companyCamId || p.companycamId || p.ccId || p.photoCount || arr(p.photos).length); }
 function completeness(){
-  return projects().filter(isOpen).map(function(p){
+  return projects().filter(isOpen).filter(function(p){ try { var C0 = W._gcCo; return !C0 || C0.filter() === 'all' || C0.passJob(p); } catch (e) { return true; } }).map(function(p){   /* patch QAB: the picked company's jobs */
     var c = counts(p);
     var ok = { contract: (+p.contract || 0) > 0 || c.estimates > 0, schedule: c.schedule > 0, scope: c.estimates > 0 || !!s(p.scope || p.sow), files: c.files > 0,
       expenses: c.expenses > 0, invoices: c.invoices > 0, photos: photoLinked(p), pm: !!s(p.pm), contact: !!(s(p.clientPhone || p.phone) || s(p.clientEmail || p.email)), address: !!s(p.address) };
