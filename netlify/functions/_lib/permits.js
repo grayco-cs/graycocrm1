@@ -1,6 +1,6 @@
 /* netlify/functions/_lib/permits.js — patch PERMITS (owner 11/12: "Can we go through building permits filed in Arkansas, TN, Mississippi in
    the leads scan … put these in owner setup and do whatever you can to make these active and scan in leads").
-   The pure part of 🏗️ Permits (no network, no database): the settings and their defaults, the two adapters (Nashville's
+   The pure part of 🏗️ Permitted jobs (no network, no database): the settings and their defaults, the two adapters (Nashville's
    public ArcGIS feed, the paid Shovels API) that turn a raw permit into ONE shape, and the filter that says whether a
    permit is a lead for GrayCo, why (reason chips) and for which company (Construction / Mitigation / Environmental).
    netlify/functions/permit-watch.js does the fetching and the storing; tools/tests/test_PERMITS.js tests this file. */
@@ -12,16 +12,21 @@ function num(v){ const n = typeof v === 'number' ? v : parseFloat(String(v == nu
 function clip(v, n){ const t = s(v); return t.length > n ? t.slice(0, n - 1) + '…' : t; }
 function title(v){ return s(v).toLowerCase().replace(/\b([a-z])/g, function(m){ return m.toUpperCase(); }); }
 
-/* ── GrayCo's service area for Shovels (Nashville is free and read separately) ── */
+/* ── the built-in ZIP list by county (picking ZIPs in the CRM never asks Shovels, so it costs no credits).
+   [group, label, ZIPs, on by default]. Davidson Co. is free through Metro Nashville's own feed, so it is off for Shovels. ── */
 const ZIP_GROUPS = [
-  ['Memphis / Shelby Co., TN', ['38103', '38104', '38105', '38106', '38107', '38108', '38109', '38111', '38112', '38114', '38115', '38116', '38117', '38118', '38119', '38120', '38122', '38125', '38126', '38127', '38128', '38131', '38132', '38141']],
-  ['Bartlett / Cordova / Germantown / Collierville, TN', ['38133', '38134', '38135', '38138', '38139', '38016', '38018', '38017']],
-  ['Arlington / Lakeland / Millington, TN', ['38002', '38053', '38028']],
-  ['DeSoto Co., MS (Southaven, Olive Branch, Horn Lake, Hernando)', ['38671', '38672', '38654', '38637', '38632', '38651', '38680']],
-  ['Little Rock / North Little Rock, AR', ['72201', '72202', '72204', '72205', '72206', '72207', '72209', '72210', '72211', '72212', '72223', '72227', '72114', '72116', '72117', '72118', '72120']],
-  ['Jonesboro, AR', ['72401', '72404']]
+  ['Memphis / Shelby Co., TN', ['38103', '38104', '38105', '38106', '38107', '38108', '38109', '38111', '38112', '38114', '38115', '38116', '38117', '38118', '38119', '38120', '38122', '38125', '38126', '38127', '38128', '38131', '38132', '38141'], true],
+  ['Bartlett / Cordova / Germantown / Collierville, TN (Shelby Co.)', ['38133', '38134', '38135', '38138', '38139', '38016', '38018', '38017'], true],
+  ['Arlington / Lakeland / Millington, TN (Shelby Co.)', ['38002', '38053', '38028'], true],
+  ['DeSoto Co., MS (Southaven, Olive Branch, Horn Lake, Hernando)', ['38671', '38672', '38654', '38637', '38632', '38651', '38680', '38641'], true],
+  ['Little Rock / North Little Rock, AR (Pulaski Co.)', ['72201', '72202', '72204', '72205', '72206', '72207', '72209', '72210', '72211', '72212', '72223', '72227', '72114', '72116', '72117', '72118', '72120', '72113', '72076'], true],
+  ['Jonesboro, AR (Craighead Co.)', ['72401', '72404', '72416', '72417', '72437', '72411', '72419', '72447'], true],
+  ['Nashville / Davidson Co., TN — free from Metro already', ['37201', '37203', '37204', '37205', '37206', '37207', '37208', '37209', '37210', '37211', '37212', '37213', '37214', '37215', '37216', '37217', '37218', '37219', '37220', '37221', '37013', '37072', '37076', '37080', '37115', '37138', '37189'], false]
 ];
-const DEFAULT_ZIPS = ZIP_GROUPS.reduce(function(a, g){ return a.concat(g[1]); }, []);
+const DEFAULT_ZIPS = ZIP_GROUPS.reduce(function(a, g){ return g[2] ? a.concat(g[1]) : a; }, []);
+/* Shovels' permit tags we know (from its tag list) — picked in the CRM; "-" in front = leave out */
+const SHOVELS_TAGS = [['new_construction', 'New construction'], ['addition', 'Addition'], ['adu', 'ADU'], ['kitchen', 'Kitchen'], ['bathroom', 'Bathroom'], ['roofing', 'Roofing'], ['window_door', 'Window / door'],
+  ['solar', 'Solar'], ['hvac', 'HVAC'], ['water_heater', 'Water heater'], ['pool_and_hot_tub', 'Pool / hot tub']];
 function areaOfZip(zip){
   const z = s(zip).slice(0, 5);
   for (let i = 0; i < ZIP_GROUPS.length; i++) if (ZIP_GROUPS[i][1].indexOf(z) > -1) return ZIP_GROUPS[i][0];
@@ -48,7 +53,7 @@ function defaults(){
   const inc = {}; INCLUDE.forEach(function(x){ inc[x[0]] = x[2]; });
   return { v: 1, include: inc, exclude: DEFAULT_EXCLUDE.slice(), minValue: 25000, maxAgeDays: 14,
     nashville: { on: true },
-    shovels: { on: true, zips: DEFAULT_ZIPS.slice(), maxPerRun: 300, lookbackDays: 7, contractorNames: true } };
+    shovels: { on: false, auto: false, zips: DEFAULT_ZIPS.slice(), tags: ['-solar', '-pool_and_hot_tub', '-hvac', '-water_heater'], q: '', minJobValue: 0, windowDays: 14, perRun: 25, budget: 500 } };
 }
 function clean(v){
   const d = defaults(); v = v && typeof v === 'object' && !Array.isArray(v) ? v : {};
@@ -58,13 +63,18 @@ function clean(v){
   const sh = v.shovels && typeof v.shovels === 'object' ? v.shovels : {};
   let zips = Array.isArray(sh.zips) ? sh.zips : (typeof sh.zips === 'string' ? sh.zips.split(/[\s,;]+/) : null);
   zips = zips ? zips.map(function(z){ return s(z).slice(0, 5); }).filter(function(z, i, a){ return /^\d{5}$/.test(z) && a.indexOf(z) === i; }).slice(0, 200) : d.shovels.zips;
-  const per = num(sh.maxPerRun), lb = num(sh.lookbackDays);
+  const per = num(sh.perRun != null ? sh.perRun : sh.maxPerRun), bud = num(sh.budget), win = num(sh.windowDays), mjv = num(sh.minJobValue);
+  let tags = Array.isArray(sh.tags) ? sh.tags : (typeof sh.tags === 'string' ? sh.tags.split(/[\s,;]+/) : null);
+  tags = tags ? tags.map(low).filter(function(x, i, a){ return /^-?[a-z0-9_]{2,40}$/.test(x) && a.indexOf(x) === i; }).slice(0, 20) : d.shovels.tags;
   const out = { v: 1, include: inc, exclude: ex,
     minValue: mv == null ? d.minValue : Math.max(0, Math.min(1e9, Math.round(mv))),
     maxAgeDays: age == null ? d.maxAgeDays : Math.max(1, Math.min(90, Math.round(age))),
     nashville: { on: !(v.nashville && v.nashville.on === false) },
-    shovels: { on: sh.on !== false, zips: zips, maxPerRun: per == null ? d.shovels.maxPerRun : Math.max(10, Math.min(2000, Math.round(per))),
-      lookbackDays: lb == null ? d.shovels.lookbackDays : Math.max(1, Math.min(90, Math.round(lb))), contractorNames: sh.contractorNames !== false } };
+    shovels: { on: sh.on === true, auto: sh.auto === true, zips: zips, tags: tags, q: clip(sh.q, 50).replace(/[\u0000-\u001f]/g, ''),
+      minJobValue: mjv == null ? 0 : Math.max(0, Math.min(1e9, Math.round(mjv))),
+      windowDays: win == null ? d.shovels.windowDays : Math.max(1, Math.min(90, Math.round(win))),
+      perRun: per == null ? d.shovels.perRun : Math.max(1, Math.min(1000, Math.round(per))),
+      budget: bud == null ? d.shovels.budget : Math.max(0, Math.min(1e7, Math.round(bud))) } };
   if (s(v.updatedAt)) out.updatedAt = s(v.updatedAt);
   if (s(v.updatedBy)) out.updatedBy = clip(v.updatedBy, 80);
   return out;
@@ -196,7 +206,7 @@ function fromNashville(a){
   const id = s(a.Permit__) || s(a.ObjectId);
   if (!id) return null;
   return { src: 'nashville', area: 'Nashville', areaLong: 'Nashville / Davidson Co., TN', id: id, number: s(a.Permit__), type: s(a.Permit_Type_Description), subtype: s(a.Permit_Subtype_Description),
-    desc: clip(a.Purpose, 900), value: num(a.Const_Cost), issued: isoDay(a.Date_Issued), filed: isoDay(a.Date_Entered), address: title(a.Address), city: title(a.City) || 'Nashville', state: s(a.State) || 'TN',
+    desc: clip(a.Purpose, 900), value: num(a.Const_Cost), issued: isoDay(a.Date_Issued), filed: isoDay(a.Date_Entered), address: title(a.Address), city: title(a.City) || 'Nashville', usState: s(a.State) || 'TN',
     zip: s(a.ZIP).slice(0, 5), contractor: clip(a.Contact, 160), parcel: s(a.Parcel), lat: num(a.Lat), lon: num(a.Lon), link: id ? nashLink(a.Permit__ || id) : '' };
 }
 function fromShovels(p, zip){
@@ -207,10 +217,10 @@ function fromShovels(p, zip){
   const z = s(ad.zip_code).slice(0, 5) || s(zip).slice(0, 5);
   return { src: 'shovels', area: city ? city + (st ? ', ' + st : '') : areaOfZip(z), areaLong: areaOfZip(z) || (city + (st ? ', ' + st : '')), id: id, number: s(p.number), type: s(p.type), subtype: s(p.subtype),
     desc: clip(p.description || p.description_derived, 900), value: p.job_value == null ? null : Math.round(num(p.job_value) / 100), issued: s(p.issue_date), filed: s(p.file_date || p.start_date),
-    address: title([s(ad.street_no), s(ad.street)].filter(Boolean).join(' ')), city: city, state: st, zip: z, contractor: '', contractorId: s(p.contractor_id),
+    address: title([s(ad.street_no), s(ad.street)].filter(Boolean).join(' ')), city: city, usState: st, zip: z, contractor: '', contractorId: s(p.contractor_id),
     owner: clip(p.property_legal_owner, 160), yearBuilt: num(p.property_year_built), propertyType: s(p.property_type), propertyDetail: s(p.property_type_detail), units: num(p.property_unit_count),
     tags: arr(p.tags).map(s).filter(Boolean).slice(0, 20), jurisdiction: s(p.jurisdiction), status: s(p.status), lat: num(ll[0]), lon: num(ll[1]), link: '' };
 }
 function keyOf(p){ return s(p.src) + ':' + s(p.id); }
 
-module.exports = { defaults, clean, classify, fromNashville, fromShovels, keyOf, money, areaOfZip, INCLUDE, DEFAULT_ZIPS, ZIP_GROUPS, DEFAULT_EXCLUDE, HINT_LABEL, NASH_URL, NASH_FIELDS, RX };
+module.exports = { defaults, clean, classify, fromNashville, fromShovels, keyOf, money, areaOfZip, INCLUDE, DEFAULT_ZIPS, ZIP_GROUPS, SHOVELS_TAGS, DEFAULT_EXCLUDE, HINT_LABEL, NASH_URL, NASH_FIELDS, RX };

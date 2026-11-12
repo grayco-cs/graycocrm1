@@ -545,9 +545,9 @@
 [functions."referral-scheduled"]
   schedule = "37 * * * *"
 
-# patch PERMITS: 🏗️ Permits (netlify/functions/permit-watch.js) — 11:23 UTC = 5:23 AM Central in winter (6:23 AM in summer). Reads new
-# building permits (Nashville's free ArcGIS feed; Memphis / DeSoto / Little Rock / Jonesboro through Shovels once SHOVELS_API_KEY is
-# set — one pass a day, capped) and keeps the ones that look like GrayCo work for Leads → 🏗️ Permits. Never makes a lead by itself.
+# patch PERMITS: 🏗️ Permitted jobs (netlify/functions/permit-watch.js) — 11:23 UTC = 5:23 AM Central in winter (6:23 AM in summer).
+# Reads new building permits from Nashville's free ArcGIS feed and keeps the ones that look like GrayCo work for the 🏗️ Permitted jobs
+# tab. No alerts; never a lead by itself. (Shovels — paid, Integrations — is off; even when on it pulls here only if its daily pull is on.)
 [functions."permit-watch-scheduled"]
   schedule = "23 11 * * *"
 

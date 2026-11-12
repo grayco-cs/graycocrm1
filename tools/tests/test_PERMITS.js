@@ -64,7 +64,7 @@ function rig(o){
     }
     if (url.host === 'api.shovels.ai') {
       if (url.pathname === '/v2/usage') return J(o.usageStatus || 200, st.usage);
-      if (url.pathname === '/v2/contractors') return J(200, { items: url.searchParams.getAll('id').map(id => ({ id, business_name: id === 'C1' ? 'Example Roofing Co' : 'Sample Contractors Inc' })) });
+      if (url.pathname === '/v2/contractors') return J(200, { items: url.searchParams.getAll('id').map(id => (id === 'C1' ? { id, business_name: 'Example Roofing Co', name: 'Pat Example', primary_phone: '5550100111', phone: '5550100111,5550100112', primary_email: 'hello@exampleroofing.example', website: 'exampleroofing.example', license: 'TN-000001', address: { street_no: '1', street: 'MOCK WAY', city: 'MEMPHIS', state: 'TN', zip_code: '38100' } } : { id, business_name: 'Sample Contractors Inc', phone: '5550100222' })) });
       if (url.pathname === '/v2/permits/search') {
         if (st.shovelsStatus !== 200) return J(st.shovelsStatus, { detail: 'nope' });
         const z = url.searchParams.get('geo_id'); const items = st.shov[z] || [];
@@ -102,7 +102,7 @@ async function act(token, body){ const r = await W.handler(ev(token, body)); ret
   ok('"in the event of a flood" on a new warehouse is not a flood → Commercial new $5.2M', c(14).match && c(14).reasons[0] === 'Commercial new $5.2M' && !c(14).reasons.some(r => /water/.test(r)), c(14));
   ok('"replace rooftop units" is HVAC work in a commercial rehab, not a roof', c(15).match && c(15).bucket === 'commercialRehab' && !c(15).reasons.some(r => /^Roof/.test(r)), c(15));
   const sp = P.fromShovels(SHOV['38671'][0], '38671'), sc = P.classify(sp, S, NOW);
-  ok('Shovels adapter: cents → dollars, address object, owner, year built, area', sp.value === 20000 && sp.address === '20 Pretend Blvd' && sp.city === 'Southaven' && sp.state === 'MS' && sp.zip === '38671' && sp.owner === 'SAMPLE OWNER TRUST' && sp.yearBuilt === 1965 && /DeSoto/.test(sp.areaLong), sp);
+  ok('Shovels adapter: cents → dollars, address object, owner, year built, area', sp.value === 20000 && sp.address === '20 Pretend Blvd' && sp.city === 'Southaven' && sp.usState === 'MS' && sp.zip === '38671' && sp.owner === 'SAMPLE OWNER TRUST' && sp.yearBuilt === 1965 && /DeSoto/.test(sp.areaLong), sp);
   ok('Shovels demolition built 1965 → "Demolition — built 1965 (Environmental)"', sc.match && sc.reasons[0] === 'Demolition — built 1965 (Environmental)' && sc.hint === 'environmental', sc);
   const lr = P.classify(P.fromShovels(SHOV['72201'][0], '72201'), S, NOW);
   ok('a remodel in a 1950 house → "Built 1950 (pre-1978 …)" chip, Environmental hint', lr.match && lr.reasons.some(r => /^Built 1950/.test(r)) && lr.hint === 'environmental', lr);
@@ -112,19 +112,20 @@ async function act(token, body){ const r = await W.handler(ev(token, body)); ret
   ok('settings: a new house is in when Residential new is ticked', P.classify(P.fromNashville(NASH_ROWS[6]), S2, NOW).match);
   ok('settings: an excluded word in the type / subtype takes the permit out', !P.classify({ src: 'x', id: '1', type: 'Remodel', desc: '', value: 900000, issued: isoAgo(1) }, S2, NOW).match);
   ok('settings: a higher minimum value takes the $50k-style remodel out', !P.classify(P.fromNashville(NASH_ROWS[5]), P.clean({ minValue: 100000 }), NOW).match);
-  ok('settings clean: ZIP list from text, bad ZIPs dropped, numbers clamped', (() => { const x = P.clean({ shovels: { zips: '38117, 3811, abcde 72201 38117', maxPerRun: 999999 }, maxAgeDays: 0 }); return x.shovels.zips.join() === '38117,72201' && x.shovels.maxPerRun === 2000 && x.maxAgeDays === 1; })());
+  ok('settings clean: ZIP list from text, bad ZIPs dropped, numbers clamped', (() => { const x = P.clean({ shovels: { zips: '38117, 3811, abcde 72201 38117', perRun: 999999, tags: 'roofing, -solar, BAD!TAG', q: 'x'.repeat(80) }, maxAgeDays: 0 }); return x.shovels.zips.join() === '38117,72201' && x.shovels.perRun === 1000 && x.maxAgeDays === 1 && x.shovels.tags.join() === 'roofing,-solar' && x.shovels.q.length <= 50 && P.clean({}).shovels.on === false && P.clean({}).shovels.auto === false && P.clean({}).shovels.budget === 500 && P.clean({}).shovels.perRun === 25; })());
   ok('the default ZIP list covers Shelby Co. TN, DeSoto Co. MS, Little Rock / NLR and Jonesboro', ['38103', '38138', '38017', '38016', '38002', '38053', '38671', '38654', '38637', '38632', '72201', '72116', '72401'].every(z => P.DEFAULT_ZIPS.includes(z)) && !P.DEFAULT_ZIPS.some(z => /^37/.test(z)));
 
   /* ── 2. a run: Nashville only (no key) ── */
   let g = rig();
   let r = await W.run({ by: 'test' });
   const st1 = g.kv.gc_permit_status, items1 = g.kv.gc_permit_leads;
-  ok('no SHOVELS_API_KEY → Shovels not called, status "Not connected — add SHOVELS_API_KEY in Netlify"', !g.calls.some(x => x.host === 'api.shovels.ai') && st1.shovels.active === false && /SHOVELS_API_KEY/.test(st1.shovels.note), st1.shovels);
+  ok('Shovels is OFF by default ("Off · for later", Integrations) → not called', !g.calls.some(x => x.host === 'api.shovels.ai') && st1.shovels.active === false && st1.shovels.off === true && /for later/.test(st1.shovels.note), st1.shovels);
   const want1 = [0, 1, 2, 7, 8, 9, 11, 12, 13, 14, 15].length;
   ok('Nashville status: read ' + NASH_ROWS.length + ', matched ' + want1 + ', no error', st1.nashville.ok && st1.nashville.read === NASH_ROWS.length && st1.nashville.matched === want1 && !st1.nashville.error, st1.nashville);
   ok('the Nashville query asks for the last 14 days, newest first, no geometry', (() => { const q = new URLSearchParams(g.calls.find(x => x.host === 'services2.arcgis.com').q); return /Date_Issued >= TIMESTAMP '\d{4}-\d{2}-\d{2} 00:00:00'/.test(q.get('where')) && q.get('orderByFields') === 'Date_Issued DESC' && q.get('returnGeometry') === 'false' && q.get('f') === 'json'; })());
   ok('stored: one per permit, all "new", newest issued first, each with reasons + hint', items1.length === want1 && items1.every(x => x.state === 'new' && x.key === 'nashville:' + x.id && x.reasons.length && x.hint) && items1.every((x, i) => i === 0 || items1[i - 1].issued >= x.issued), items1.map(x => x.issued));
-  ok('nothing went into the Lead Inbox', !('gc_lead_inbox' in g.kv));
+  ok('no alerts: nothing into the Lead Inbox, the To-Do, Approvals or alert keys — only the gc_permit_* keys are written', Object.keys(g.kv).every(k => /^gc_permit_/.test(k)), Object.keys(g.kv));
+  ok('no alerts: the only hosts called are the permit sources (no e-mail / text / push service)', g.calls.every(x => x.host === 'services2.arcgis.com' || x.host === 'api.shovels.ai'), [...new Set(g.calls.map(x => x.host))]);
   ok('run result: added counts', r.ok && r.added.nashville === want1 && r.added.shovels === 0, r);
   /* the same run again → no duplicates, a person's choice kept */
   g.kv.gc_permit_leads[0].state = 'dismissed';
@@ -140,67 +141,129 @@ async function act(token, body){ const r = await W.handler(ev(token, body)); ret
   /* the list keeps the newest 1500 */
   ok('the list keeps the newest ' + W._test.KEEP, await (async () => { const g3 = rig(); g3.kv.gc_permit_leads = Array.from({ length: 1600 }, (_, i) => ({ key: 'nashville:OLD' + i, id: 'OLD' + i, src: 'nashville', issued: '2026-01-01', firstSeen: '2026-01-01T00:00:00Z', state: 'new', reasons: ['x'] })); await W.run({}); const l = g3.kv.gc_permit_leads; return l.length === 1500 && l[0].issued > '2026-10-01' && !l.some(x => x.id === 'OLD1599' && false); })());
 
-  /* ── 3. Shovels with a key ── */
+  { const gx = rig(); await D_settings(gx, {}); await W.run({}); const sx = gx.kv.gc_permit_status.shovels;
+    ok('switched on but no SHOVELS_API_KEY → not called, "add SHOVELS_API_KEY in Netlify"', !gx.calls.some(x => x.host === 'api.shovels.ai') && /SHOVELS_API_KEY/.test(sx.note), sx); }
+  { const gx = rig({ env: { SHOVELS_API_KEY: 'k' } }); await W.run({}); await act('admin', { action: 'shovels-pull', confirm: true });
+    ok('a key alone does not turn it on: still no Shovels call until it is switched on', !gx.calls.some(x => x.host === 'api.shovels.ai') && gx.kv.gc_permit_status.shovels.off === true); }
+  /* ── 3. Shovels with a key: credits (1 per record returned), budget, cap, incremental windows, cache ── */
+  const recs = () => g.calls.filter(x => x.path === '/v2/permits/search');
+  const SH3 = { zips: ['38117', '38671', '72201'], perRun: 50, budget: 500 };
   g = rig({ env: { SHOVELS_API_KEY: 'test-key-123' } });
-  await D_settings(g, { shovels: { zips: ['38117', '38671', '72201'], maxPerRun: 300 } });
-  r = await W.run({ by: 'test' });
+  await D_settings(g, { shovels: Object.assign({}, SH3, { auto: false }) });
+  r = await W.run({ by: 'schedule' });
   let ss = g.kv.gc_permit_status.shovels;
+  ok('the daily run does NOT pull from Shovels by default (manual only) — no Shovels call at all', !g.calls.some(x => x.host === 'api.shovels.ai') && ss.manualOnly === true && /manual/i.test(ss.note), ss);
+  ok('…Nashville (free) still ran', g.kv.gc_permit_status.nashville.ok && g.kv.gc_permit_status.nashville.read === NASH_ROWS.length);
+  let a3 = await act('admin', { action: 'shovels-preview' });
+  ok('the estimate is free (no Shovels call): 3 ZIPs, the first 14-day window, at most 50 credits, 500 left', a3.code === 200 && !g.calls.some(x => x.host === 'api.shovels.ai') && a3.body.zips.length === 3 && a3.body.zips[0].from === W._test.centralDay(NOW - 14 * 864e5) && a3.body.maxCredits === 50 && a3.body.left === 500, a3.body);
+  ok('a pull needs the confirm (after the estimate) and an admin / the office', (await act('admin', { action: 'shovels-pull' })).code === 400 && (await act('staff', { action: 'shovels-pull', confirm: true })).code === 403 && !g.calls.some(x => x.path === '/v2/permits/search'));
+  a3 = await act('admin', { action: 'shovels-pull', confirm: true });
+  ss = g.kv.gc_permit_status.shovels;
   const sCalls = g.calls.filter(x => x.host === 'api.shovels.ai');
-  ok('with SHOVELS_API_KEY → active: /usage, then /permits/search per ZIP with the X-API-Key header', ss.active === true && sCalls.length >= 4 && sCalls.every(x => x.key === 'test-key-123') && sCalls[0].path === '/v2/usage' && ['38117', '38671', '72201'].every(z => sCalls.some(x => x.path === '/v2/permits/search' && new URLSearchParams(x.q).get('geo_id') === z)), sCalls);
-  ok('Shovels search asks permit_from / permit_to (first run = the 14-day window)', (() => { const q = new URLSearchParams(sCalls.find(x => x.path === '/v2/permits/search').q); return q.get('permit_from') === W._test.centralDay(NOW - 14 * 864e5) && q.get('permit_to') === W._test.centralDay(NOW) && +q.get('size') <= 100; })());
-  ok('Shovels status: read 6, matched 4 (pool + electrical out), credits shown, ZIPs 3/3, day done', ss.read === 6 && ss.matched === 4 && ss.credits.used === 120 && ss.zipsToday === 3 && ss.dayDone === true && !ss.error, ss);
+  ok('Pull from Shovels now: /usage, then /permits/search per ZIP with the X-API-Key header', a3.code === 200 && sCalls.every(x => x.key === 'test-key-123') && sCalls[0].path === '/v2/usage' && ['38117', '38671', '72201'].every(z => recs().some(x => new URLSearchParams(x.q).get('geo_id') === z)), sCalls.map(x => x.path));
+  ok('the search carries what was set in the CRM: tags (minus solar / pool / HVAC / water heater), dates, small pages', (() => { const q = new URLSearchParams(recs()[0].q); return q.getAll('permit_tags').join() === '-solar,-pool_and_hot_tub,-hvac,-water_heater' && q.get('permit_from') === W._test.centralDay(NOW - 14 * 864e5) && q.get('permit_to') === W._test.centralDay(NOW) && +q.get('size') <= 50 && !q.get('permit_q') && !q.get('permit_min_job_value'); })(), recs()[0].q);
+  ok('credits counted: 6 records = 6 credits (our own ledger), 494 left; Shovels /usage shown', ss.spentRun === 6 && ss.spent30 === 6 && ss.left === 494 && ss.usage.used === 120 && ss.read === 6 && ss.matched === 4, ss);
   const shItems = g.kv.gc_permit_leads.filter(x => x.src === 'shovels');
-  ok('Shovels matches stored with the contractor names (one /contractors call)', shItems.length === 4 && shItems.some(x => x.contractor === 'Example Roofing Co') && shItems.some(x => x.contractor === 'Sample Contractors Inc') && sCalls.filter(x => x.path === '/v2/contractors').length === 1, shItems.map(x => x.contractor));
+  ok('everything paid for is kept: 4 matching + 2 "pulled, not matching" (pool, electrical)', shItems.length === 6 && shItems.filter(x => x.nomatch).length === 2 && shItems.filter(x => !x.nomatch).length === 4, shItems.map(x => [x.desc, !!x.nomatch]));
+  ok('…with the property owner of record; no contractor look-up was made (that is on demand)', shItems.every(x => x.owner === 'SAMPLE OWNER TRUST') && !g.calls.some(x => x.path === '/v2/contractors') && shItems.every(x => !x.contractorPhone));
   ok('the hail roof in Memphis → Mitigation, "Roof $15k" + 🌪', shItems.some(x => x.hint === 'mitigation' && x.reasons.includes('Roof $15k') && x.reasons.includes('🌪 storm/hail/wind words')), shItems.map(x => x.reasons));
-  /* one run a day */
-  const before = g.calls.filter(x => x.host === 'api.shovels.ai').length;
-  g.tick(2 * 3600e3);
-  r = await W.run({ by: 'test' });
-  ss = g.kv.gc_permit_status.shovels;
-  ok('a second run the same day does not call Shovels again (credits) and says so', g.calls.filter(x => x.host === 'api.shovels.ai').length === before && ss.skipped === true && /Already ran today/.test(ss.note), ss);
+  ok('no alerts with Shovels on either: only gc_permit_* keys, only the permit hosts', Object.keys(g.kv).every(k => /^gc_permit_/.test(k)) && g.calls.every(x => x.host === 'services2.arcgis.com' || x.host === 'api.shovels.ai'), { keys: Object.keys(g.kv), hosts: [...new Set(g.calls.map(x => x.host))] });
+  /* browsing never spends */
+  const nBefore = g.calls.length;
+  for (const b of [{ action: 'list' }, { action: 'settings-get' }, { action: 'shovels-preview' }, { action: 'list' }]) await act('staff', b);
+  ok('browsing the tab (list, settings, the estimate) makes no Shovels call', g.calls.slice(nBefore).every(x => x.host !== 'api.shovels.ai'));
+  /* same day again: every ZIP is pulled through today → nothing asked */
+  g.tick(3600e3);
+  const before = recs().length;
+  a3 = await act('admin', { action: 'shovels-pull', confirm: true });
+  ok('a second pull the same day asks no ZIP again (pulled through today) and spends nothing', recs().length === before && g.kv.gc_permit_status.shovels.spentRun === 0 && g.kv.gc_permit_status.shovels.spent30 === 6, g.kv.gc_permit_status.shovels);
+  ok('…the estimate says so (0 ZIPs to ask, 3 up to date)', (await act('admin', { action: 'shovels-preview' })).body.upToDate === 3);
+  /* the next day: only from the day after */
   g.setClock(NOW + 864e5);
-  r = await W.run({ by: 'test' });
-  ss = g.kv.gc_permit_status.shovels;
-  ok('the next day it runs again, with the shorter look-back (7 days), and adds no duplicates', !ss.skipped && ss.window.startsWith(W._test.centralDay(NOW + 864e5 - 7 * 864e5)) && r.added.shovels === 0 && g.kv.gc_permit_leads.filter(x => x.src === 'shovels').length === 4, ss);
-  /* the cap */
+  await act('admin', { action: 'shovels-pull', confirm: true });
+  const q2 = new URLSearchParams(recs()[recs().length - 1].q);
+  ok('next day: each ZIP only from the day after the last pull (permit_from = tomorrow-of-last), no duplicates', q2.get('permit_from') === W._test.centralDay(NOW + 864e5) && g.kv.gc_permit_leads.filter(x => x.src === 'shovels').length === 6, q2.toString());
+  /* keyword + min job value from the CRM */
+  { const gx = rig({ env: { SHOVELS_API_KEY: 'k' } }); await D_settings(gx, { shovels: { zips: ['38117'], q: 'fire damage', minJobValue: 50000, tags: ['roofing', '-solar'] } }); await act('admin', { action: 'shovels-pull', confirm: true });
+    const q = new URLSearchParams(gx.calls.find(x => x.path === '/v2/permits/search').q);
+    ok('keyword (permit_q), minimum job value (in cents) and picked tags go to Shovels', q.get('permit_q') === 'fire damage' && q.get('permit_min_job_value') === '5000000' && q.getAll('permit_tags').join() === 'roofing,-solar', q.toString()); }
+  /* the per-pull cap and resuming with the cursor */
   g = rig({ env: { SHOVELS_API_KEY: 'k' } });
-  await D_settings(g, { shovels: { zips: ['38117', '38671', '72201'], maxPerRun: 10 } });
+  await D_settings(g, { shovels: { zips: ['38117', '38671'], perRun: 10 } });
   g.st.shov = { '38117': Array.from({ length: 30 }, (_, i) => shov({ description: 'remodel ' + i })) };
-  await W.run({});
+  await act('admin', { action: 'shovels-pull', confirm: true });
   ss = g.kv.gc_permit_status.shovels;
-  ok('max per run is respected (10 read, then it stops; next day starts at the next ZIP)', ss.readToday === 10 && ss.read === 10 && ss.dayDone === true && ss.nextZip === 1, ss);
+  ok('per-pull cap 10: exactly 10 records read (pages never bigger than what is left), the ZIP keeps its cursor', ss.read === 10 && ss.spentRun === 10 && ss.zips['38117'].cursor === '10' && ss.nextZip === 0 && recs().every(x => +new URLSearchParams(x.q).get('size') <= 10), ss);
+  await act('admin', { action: 'shovels-pull', confirm: true });
+  ss = g.kv.gc_permit_status.shovels;
+  ok('the next pull resumes the same window from the cursor (no record bought twice)', new URLSearchParams(recs()[recs().length - 1].q).get('cursor') === '10' && ss.read === 10 && g.kv.gc_permit_leads.filter(x => x.src === 'shovels').length === 20, recs().map(x => new URLSearchParams(x.q).get('cursor')));
+  /* the budget */
+  g = rig({ env: { SHOVELS_API_KEY: 'k' } });
+  await D_settings(g, { shovels: { zips: ['38117'], perRun: 100, budget: 12 } });
+  g.st.shov = { '38117': Array.from({ length: 30 }, (_, i) => shov({ description: 'remodel ' + i })) };
+  g.kv.gc_permit_status = { shovels: { spent: { [W._test.centralDay(NOW - 2 * 864e5)]: 5 } } };
+  a3 = await act('admin', { action: 'shovels-preview' });
+  ok('the estimate: budget 12, 5 already spent in 30 days → at most 7 credits', a3.body.maxCredits === 7 && a3.body.spent30 === 5, a3.body);
+  await act('admin', { action: 'shovels-pull', confirm: true });
+  ss = g.kv.gc_permit_status.shovels;
+  ok('budget stop: the pull reads 7 and stops BEFORE going over 12', ss.read === 7 && ss.spent30 === 12 && ss.left === 0, ss);
+  const n7 = recs().length; await act('admin', { action: 'shovels-pull', confirm: true }); ss = g.kv.gc_permit_status.shovels;
+  ok('…the next pull asks nothing ("budget is used up")', recs().length === n7 && /budget is used up/.test(ss.note), ss.note);
+  { const gx = rig({ env: { SHOVELS_API_KEY: 'k' }, usage: { credits_used: 498, credit_limit: 500, is_over_limit: false } }); await D_settings(gx, { shovels: { zips: ['38117'], perRun: 25 } }); gx.st.shov = { '38117': Array.from({ length: 30 }, (_, i) => shov({ description: 'remodel ' + i })) };
+    await act('admin', { action: 'shovels-pull', confirm: true }); const sx = gx.kv.gc_permit_status.shovels;
+    ok('Shovels\' own /usage counts too: 498 of 500 used → only 2 records read', sx.read === 2 && sx.usage.used === 498, sx); }
   /* stop on 401 / 402 / 429 */
   for (const code of [401, 402, 429]) {
     const gx = rig({ env: { SHOVELS_API_KEY: 'k' }, shovelsStatus: code });
     await D_settings(gx, { shovels: { zips: ['38117', '38671', '72201'] } });
-    await W.run({});
+    await act('admin', { action: 'shovels-pull', confirm: true });
     const sx = gx.kv.gc_permit_status.shovels;
     const searches = gx.calls.filter(x => x.path === '/v2/permits/search').length;
-    ok('Shovels ' + code + ' → stops after the first call, the reason is in the status, Nashville still ran', searches === 1 && sx.code === code && sx.error === W._test.STOP[code] && sx.dayDone === true && gx.kv.gc_permit_status.nashville.ok, { searches, sx });
+    ok('Shovels ' + code + ' → stops after the first call, the reason is in the status', searches === 1 && sx.code === code && sx.error === W._test.STOP[code], { searches, sx });
   }
-  { const gx = rig({ env: { SHOVELS_API_KEY: 'k' }, usageStatus: 401 }); await W.run({}); const sx = gx.kv.gc_permit_status.shovels;
+  { const gx = rig({ env: { SHOVELS_API_KEY: 'k' }, usageStatus: 401 }); await D_settings(gx, {}); await act('admin', { action: 'shovels-pull', confirm: true }); const sx = gx.kv.gc_permit_status.shovels;
     ok('a 401 on /usage stops before any search', sx.code === 401 && !gx.calls.some(x => x.path === '/v2/permits/search')); }
-  { const gx = rig({ env: { SHOVELS_API_KEY: 'k' }, usage: { credits_used: 5000, credit_limit: 5000, is_over_limit: true, available_at: '2026-12-01' } }); await W.run({}); const sx = gx.kv.gc_permit_status.shovels;
+  { const gx = rig({ env: { SHOVELS_API_KEY: 'k' }, usage: { credits_used: 500, credit_limit: 500, is_over_limit: true, available_at: '2026-12-01' } }); await D_settings(gx, {}); await act('admin', { action: 'shovels-pull', confirm: true }); const sx = gx.kv.gc_permit_status.shovels;
     ok('credits used up (/usage over the limit) → nothing searched, "until 2026-12-01"', /until 2026-12-01/.test(sx.error) && !gx.calls.some(x => x.path === '/v2/permits/search'), sx); }
-  { const gx = rig({ env: { SHOVELS_API_KEY: 'k' } }); await D_settings(gx, { shovels: { on: false } }); await W.run({}); const sx = gx.kv.gc_permit_status.shovels;
-    ok('Shovels turned off in ⚙ Filters → not called, "Turned off"', !gx.calls.some(x => x.host === 'api.shovels.ai') && /Turned off/.test(sx.note)); }
-  { const gx = rig(); gx.kv.gc_permit_status = { running: { at: new Date(NOW - 30e3).toISOString(), by: 'x' } }; const rr = await W.run({});
-    ok('two runs at once: the second one waits ("running right now")', rr.busy === true && !gx.calls.length); }
+  { const gx = rig({ env: { SHOVELS_API_KEY: 'k' } }); await D_settings(gx, { shovels: { on: false } }); await act('admin', { action: 'shovels-pull', confirm: true }); const sx = gx.kv.gc_permit_status.shovels;
+    ok('Shovels turned off in ⚙ Filters → not called, "Turned off"', !gx.calls.some(x => x.host === 'api.shovels.ai') && /Off · for later/.test(sx.note)); }
+  /* the daily pull when the owner turns it on */
+  { const gx = rig({ env: { SHOVELS_API_KEY: 'k' } }); await D_settings(gx, { shovels: { zips: ['38117'], auto: true, perRun: 25 } }); await W.run({ by: 'schedule' }); const n1 = gx.calls.filter(x => x.path === '/v2/permits/search').length;
+    gx.tick(3600e3); await W.run({ by: 'schedule' }); const sx = gx.kv.gc_permit_status.shovels;
+    ok('daily pull ON: the morning run pulls once (capped); a second run that day does not', n1 === 1 && gx.calls.filter(x => x.path === '/v2/permits/search').length === 1 && sx.skipped === true, sx); }
+  /* contractor phone / e-mail: on demand only, 1 credit, cached for good */
+  g = rig({ env: { SHOVELS_API_KEY: 'k' } });
+  await D_settings(g, { shovels: { zips: ['38117'] } });
+  await act('admin', { action: 'shovels-pull', confirm: true });
+  ok('no contractor look-up during a pull', !g.calls.some(x => x.path === '/v2/contractors'));
+  a3 = await act('staff', { action: 'contractor-lookup', contractorId: 'C1' });
+  const r1 = g.kv.gc_permit_leads.find(x => x.contractorId === 'C1') || {};
+  ok('"Get phone / e-mail" → one /contractors call: phone, e-mail, website, license, address on every permit of that contractor', a3.code === 200 && a3.body.spent === 1 && g.calls.filter(x => x.path === '/v2/contractors').length === 1 && r1.contractor === 'Example Roofing Co' && r1.contractorPhone === '5550100111' && r1.contractorEmail === 'hello@exampleroofing.example' && r1.contractorWebsite === 'exampleroofing.example' && r1.contractorLicense === 'TN-000001' && /1 MOCK WAY MEMPHIS TN 38100/.test(r1.contractorAddress) && g.kv.gc_permit_leads.filter(x => x.contractorId === 'C1').every(x => x.contractorPhone), { body: a3.body, r1 });
+  ok('…1 credit in the ledger, cached in gc_permit_contractors', g.kv.gc_permit_status.shovels.spent30 === 3 + 1 && g.kv.gc_permit_contractors.C1.phone === '5550100111', g.kv.gc_permit_status.shovels);
+  a3 = await act('staff', { action: 'contractor-lookup', contractorId: 'C1' });
+  ok('…asking again is free (from the cache, no call)', a3.body.cached === true && a3.body.spent === 0 && g.calls.filter(x => x.path === '/v2/contractors').length === 1);
+  g.setClock(NOW + 864e5); g.st.shov = { '38117': [shov({ description: 'second remodel', id: 'SHVNEW', issue_date: W._test.centralDay(NOW + 864e5) })] };
+  await act('admin', { action: 'shovels-pull', confirm: true });
+  ok('a later pull puts the cached phone on that contractor\'s new permits for free', (g.kv.gc_permit_leads.find(x => x.id === 'SHVNEW') || {}).contractorPhone === '5550100111' && g.calls.filter(x => x.path === '/v2/contractors').length === 1);
+  ok('ZIP search on Shovels only when confirmed (it uses credits)', (await act('admin', { action: 'zip-search', q: 'Memphis' })).code === 400 && !g.calls.some(x => x.path === '/v2/zipcodes/search'));
 
   /* ── 4. the CRM's calls ── */
   g = rig({ env: { SHOVELS_API_KEY: 'k' } });
   await D_settings(g, { shovels: { zips: ['38117'] } });
   ok('no sign-in → 401', (await act('nobody', { action: 'list' })).code === 401);
   let a = await act('staff', { action: 'run' });
-  ok('staff: Run now runs both sources', a.code === 200 && a.body.ok && a.body.status.nashville.ok && a.body.status.shovels.active, a.body);
+  ok('staff: Run now runs Nashville; Shovels stays manual (no credits spent)', a.code === 200 && a.body.ok && a.body.status.nashville.ok && a.body.status.shovels.active && a.body.status.shovels.manualOnly && !g.calls.some(x => x.path === '/v2/permits/search'), a.body.status);
+  await act('admin', { action: 'shovels-pull', confirm: true });
   a = await act('staff', { action: 'list' });
-  ok('staff: list → items, status per source, settings, Shovels active', a.code === 200 && a.body.items.length === want1 + 2 && a.body.status.nashville && a.body.active.shovels === true && a.body.shovelsConfigured === true && a.body.counts.new === want1 + 2, { n: a.body.items && a.body.items.length, active: a.body.active });
+  ok('staff: list → items, status per source, settings, Shovels active', a.code === 200 && a.body.items.length === want1 + 3 && a.body.status.nashville && a.body.active.shovels === true && a.body.shovelsConfigured === true && a.body.counts.new === want1 + 3 && a.body.items.filter(x => x.nomatch).length === 1, { n: a.body.items && a.body.items.length, active: a.body.active });
   a = await act('staff', { action: 'settings-set', settings: { minValue: 1 } });
   ok('staff cannot change the filters (403)', a.code === 403);
-  a = await act('admin', { action: 'settings-set', settings: { minValue: 75000, maxAgeDays: 30, include: { residentialNew: true, multifamily: false }, exclude: ['sign', 'pool'], shovels: { zips: '38117 38138', maxPerRun: 120 } } });
+  a = await act('admin', { action: 'settings-set', settings: { minValue: 75000, maxAgeDays: 30, include: { residentialNew: true, multifamily: false }, exclude: ['sign', 'pool'], shovels: { zips: '38117 38138', perRun: 40, budget: 300, auto: true } } });
   ok('admin: settings-set is cleaned and stored (who + when)', a.code === 200 && g.kv.gc_permit_settings.minValue === 75000 && g.kv.gc_permit_settings.include.multifamily === false && g.kv.gc_permit_settings.shovels.zips.join() === '38117,38138' && g.kv.gc_permit_settings.updatedBy === 'Ada Admin', g.kv.gc_permit_settings);
+  a = await act('admin', { action: 'settings-set', settings: { minValue: 75000 } });
+  ok('⚙ Filters saving only its part keeps the Shovels settings (merge)', g.kv.gc_permit_settings.shovels.perRun === 40 && g.kv.gc_permit_settings.shovels.on === true && g.kv.gc_permit_settings.maxAgeDays === 30, g.kv.gc_permit_settings.shovels);
   a = await act('staff', { action: 'settings-get' });
-  ok('settings round trip: settings-get gives back what was saved + the defaults and the labels', a.body.ok && a.body.settings.minValue === 75000 && a.body.settings.maxAgeDays === 30 && a.body.settings.include.residentialNew === true && a.body.settings.shovels.maxPerRun === 120 && a.body.defaults.minValue === 25000 && a.body.include.length === P.INCLUDE.length, a.body.settings);
+  ok('settings round trip: settings-get gives back what was saved + the defaults and the labels', a.body.ok && a.body.settings.minValue === 75000 && a.body.settings.maxAgeDays === 30 && a.body.settings.include.residentialNew === true && a.body.settings.shovels.perRun === 40 && a.body.settings.shovels.budget === 300 && a.body.settings.shovels.auto === true && a.body.defaults.minValue === 25000 && a.body.include.length === P.INCLUDE.length && a.body.zipGroups.length === 7 && a.body.tags.length > 5, a.body.settings);
   const k0 = g.kv.gc_permit_leads[1].key;
   a = await act('staff', { action: 'set-state', id: k0, state: 'lead', leadId: 'LPMT_abc' });
   ok('set-state lead → state, who, the lead id', a.code === 200 && g.kv.gc_permit_leads[1].state === 'lead' && g.kv.gc_permit_leads[1].leadId === 'LPMT_abc' && g.kv.gc_permit_leads[1].stateBy === 'Pat PM', g.kv.gc_permit_leads[1]);
@@ -232,4 +295,4 @@ async function act(token, body){ const r = await W.handler(ev(token, body)); ret
 
   const n = R.filter(Boolean).length; console.log('PERMITS ' + n + '/' + R.length); process.exit(n === R.length ? 0 : 1);
 })().catch(e => { console.error(e); process.exit(1); });
-async function D_settings(g, v){ g.kv.gc_permit_settings = P.clean(v); }
+async function D_settings(g, v){ v = Object.assign({}, v); v.shovels = Object.assign({ on: true }, v.shovels || {}); g.kv.gc_permit_settings = P.clean(v); }   /* Shovels is off by default: these tests switch it on */

@@ -1,4 +1,4 @@
-// netlify/functions/permit-watch-scheduled.js — patch PERMITS: the daily 🏗️ Permits scan (netlify.toml, early morning Central).
+// netlify/functions/permit-watch-scheduled.js — patch PERMITS: the daily 🏗️ Permitted jobs scan (netlify.toml, early morning Central).
 // The CRM's own calls (list, Run now, ⚙ Filters, Make it a lead) go to permit-watch.js, which has no schedule (a scheduled function
 // cannot be called by its URL in production). Nothing here answers the web. PERMITS_OFF=1 stops it.
 'use strict';
