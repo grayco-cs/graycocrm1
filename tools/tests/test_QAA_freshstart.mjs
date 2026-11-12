@@ -266,6 +266,15 @@ const np = (rowsOf('users').find(r => r.data.email === 'nova@novaelectric.test')
 ok('5 a brand-new sub signs up: profile saved NOT approved, and the screen says GrayCo will review / approve it; no jobs shown', !!np && np.approved === false && /approv|review/i.test(nv) && !/Zedd Flats Apartments/.test(nv), { np: np && { approved: np.approved, trades: np.trades }, nv: nv.slice(0, 400) });
 await shot(N, 'fs12_new_sub_waiting');
 
+/* 6. a Lead Inbox lead whose old auto-added job was cleaned up, posted again with 📢 (private): its chip / page follow the NEW job */
+await A.ev(() => window._setView('leads')); await sleep(1500);
+await A.ev(() => window._gcBidPost.open({ leadId: 'L0' })); await wait(A, () => document.querySelector('#gcbp-modal #gcbp-title'));
+await A.ev(() => { [...document.querySelectorAll('#gcbp-modal [data-bp="trade"]')].filter(b => b.textContent === 'Paint').forEach(b => b.click()); document.querySelector('#gcbp-modal [data-bp="post"]').click(); });
+await wait(A, () => !document.getElementById('gcbp-modal'), null, 30000); await sleep(2500);
+await A.ev(ids => { try { localStorage.setItem('gc_ldi_cache_v2', JSON.stringify({ at: new Date().toISOString(), items: ids.map(o => ({ id: o.li, status: 'imported', portal: { jobId: o.id, state: 'draft', at: '2026-10-20T10:00:00Z' } })) })); } catch (e) {} }, OLD.slice(0, 30));
+await A.ev(() => { const b = document.querySelector('#gc-leads-hub [data-gcl-v="board"]'); b && b.click(); if (window._gcLeadsHub) window._gcLeadsHub.redraw(); }); await sleep(2000);
+const c6 = await A.ev(() => { const card = document.querySelector('#gc-leads-hub [data-gcl-id="L0"]'), card1 = document.querySelector('#gc-leads-hub [data-gcl-id="L1"]'); const ch = e => e ? [...e.querySelectorAll('.gcl-chip')].map(x => x.textContent).filter(t => /^🏗/.test(t)) : null; return { l0: ch(card), l1: ch(card1) }; });
+ok('6 the re-posted lead shows "🏗 private" (its new job), a cleaned-up one "🏗 —" — even with the Lead Inbox still pointing at the old drafts', c6.l0 && c6.l0[0] === '🏗 private' && c6.l1 && c6.l1[0] === '🏗 —', c6);
 ok('no page errors (CRM + bid site)', !errs.length, errs);
 const fnErr = W.CALLS.filter(x => /:5\d\d$/.test(x));
 ok('no server 5xx answers', !fnErr.length, fnErr);

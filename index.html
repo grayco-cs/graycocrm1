@@ -174308,7 +174308,10 @@ function plansOf(l){
   arr(it.plansLinks).concat(arr(l.plansLinks)).concat(s(l.plansLink) ? [{ url: l.plansLink, label: 'Plans' }] : []).forEach(function(x){ var u = s(x && x.url); if (!/^https?:\/\//.test(u)) return; if (!byUrl[u]) { byUrl[u] = Object.assign({}, x); links.push(byUrl[u]); } else { var y = byUrl[u]; if (!y.why && x.why) y.why = x.why; if (!y.stored && x.stored) y.stored = x.stored; if (!y.label && x.label) y.label = x.label; } });
   return { files: files, links: links };
 }
-function portalOf(l){ var it = inboxOf(l); var p = (it && it.portal) || l.subPortal || null; return p; }
+function portalOf(l){ var it = inboxOf(l); var a = it && it.portal, b = l.subPortal;
+  /* patch QAA: the lead posted again with 📢 (l.subPortal → the new bid job) after its old auto-added job was cleaned up — the new one counts */
+  if (a && b && a.jobId && b.jobId && a.jobId !== b.jobId) { var g = W._gcBidJobGone; if ((typeof g === 'function' && g(a.jobId) && !g(b.jobId)) || s(b.at) > s(a.at)) return b; }
+  return a || b || null; }
 function portalChip(l){
   var p = portalOf(l); if (!p || !p.jobId) return '<span class="gcl-chip mute" title="Not on the sub bid portal yet">🏗 —</span>';
   if (typeof W._gcBidJobGone === 'function' && W._gcBidJobGone(p.jobId)) return '<span class="gcl-chip mute" title="Taken off the sub bid portal (🗄 Archived / deleted)">🏗 —</span>';   /* patch QAA: cleaned up → not "draft / private" any more */
