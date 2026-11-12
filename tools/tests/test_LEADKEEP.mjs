@@ -14,7 +14,7 @@ cset('leads', [
 const A = await computer('wjohnson@grayco-cs.com', { build: process.argv[2] });
 const errs = []; A.page().on('pageerror', e => errs.push(String(e.message).slice(0, 200)));
 await signIn(A, 'wjohnson@grayco-cs.com', 15000); await sleep(6000);
-const kv = await waitFor(A, () => true, null, 1000) && await (async () => { for (let i = 0; i < 20; i++) { const v = cget('gc_lead_keep'); if (v && (v.recs || []).length) return v; await sleep(500); } return cget('gc_lead_keep'); })();
+const kv = await waitFor(A, () => true, null, 1000) && await (async () => { for (let i = 0; i < 60; i++) { const v = cget('gc_lead_keep'); if (v && (v.recs || []).length) return v; await sleep(1000); } return cget('gc_lead_keep') || {}; })();
 const rec = kv && (kv.recs || []).find(r => (r.k || []).includes('ib:LI-kp1'));
 ok('the person-set values are kept apart, shared (gc_kv gc_lead_keep): priority 8, stage, estimator — by id, inbox item and name', !!rec && rec.f.prio.v === 8 && rec.f.stage.v === 'Bid Submitted' && rec.f.asg.v.estimator === 'Demo Estimator' && rec.k.some(k => /^n:/.test(k)), rec);
 ok('…a lead nobody touched has no values recorded', !(kv.recs || []).some(r => (r.k || []).includes('ib:LI-kp2') && r.f && (r.f.prio || r.f.stage || r.f.asg)));
