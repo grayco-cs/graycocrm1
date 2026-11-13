@@ -1083,6 +1083,7 @@ async function pHome(ctx){
              approved: money(inv.filter(function(x){ return x.state === 'approved'; }).reduce(function(t, x){ return t + x.amount; }, 0)),
              paidMonth: money(inv.filter(function(x){ return x.state === 'paid' && x.paidDate.slice(0, 7) === mon; }).reduce(function(t, x){ return t + x.amount; }, 0)) },
     invoices: inv.slice(0, 60), papers: papers, bids: await bidsState(sub),
+    poGuard: await srHome(ctx),   /* patch POGUARD: 🧾 their receipts + ✏️ Add PO */
     payRule: 'wed-fri'
   };
 }
@@ -1229,6 +1230,82 @@ async function simPdf(ctx, body){
   return { ok: true, url: out.url, name: out.name, type: out.type };
 }
 /* patch SUBSCHED: the sub's own schedule entries (rules + handlers: _lib/subsched.js) */
+/* ═══ patch POGUARD (owner 11/13: "make sure sub and PM can [put] POs on every receipt and expense" · "when the guys don't put
+   a PO … notification to admin and office 'no PO' …") — the sub's receipts / expenses ═══
+   p-receipt     { po | projectId, amount, vendor, date, note, uploadId } → kept in the server-only store "gc_sub_receipts"
+                 (bid-inbox _lib kvCas) + a gc_sub_event 'receipt' (the CRM files it as a PENDING expense "SPR_<id>" on the job,
+                 the receipt in the job's documents). No PO / a PO that is not one of their jobs → the No-PO alert (_lib/poguard.js):
+                 the office + admins, the suggested job's PM, and the sub (their portal thread + ✏️ Add PO on their home).
+   p-receipt-po  { id, po | projectId } → their own receipt only, until GrayCo approved it (the CRM expense approved / posted). */
+function PGL(){ return require('./_lib/poguard.js'); }
+function srOut(r, locked){ return { id: s(r.id), pid: s(r.pid), job: s(r.job), po: s(r.po), amount: money(r.amount), vendor: s(r.vendor), date: ymd(r.date), note: s(r.note), at: s(r.at), needsPo: !s(r.pid), locked: !!locked, file: arr(r.files).length > 0 }; }
+async function srExpenses(){ try { return arr((await kvRead(['expenses'])).expenses); } catch (e) { return []; } }
+function srLocked(exps, id){ const e = exps.find(function(x){ return x && s(x.id) === 'SPR_' + s(id); }); return !!(e && (e.approved === true || e._posted === true || /^(approved|posted|paid)$/i.test(s(e.status)))); }
+function srJob(ctx, body){
+  if (s(body.projectId)) { const p = jobOf(ctx, body.projectId); return { p: p, po: s(body.po) || SW().poOf(p) }; }
+  const po = clip(body.po, 40);
+  if (!po) return { p: null, po: '' };
+  const p = PGL().jobByPo(po, ctx.jobs);
+  return { p: p, po: p ? (SW().poOf(p) || po) : po };
+}
+async function srDeps(ctx){
+  const L = x10Lib(), pg = PGL();
+  const data = await pg.liveData(require('./portal.js')._core);
+  Object.assign(data, await pg.subFacts(L, dbGet, ctx.sub.id));
+  return Object.assign(pg.liveDeps(data), { msgInsert: msgInsert }, exports._pgDeps || {});
+}
+async function pReceipt(ctx, body){
+  const sub = ctx.sub, amount = money(body.amount);
+  if (!(amount > 0) || amount > 1e6) throw Fail(400, (s(body.lang) === 'es' || lang(ctx.sub.lang) === 'es') ? 'Escriba el monto del recibo.' : 'Enter the receipt amount.');
+  const vendor = clip(body.vendor, 80); if (vendor.length < 2) throw Fail(400, (s(body.lang) === 'es' || lang(ctx.sub.lang) === 'es') ? 'Escriba la tienda / el proveedor.' : 'Enter the store / vendor.');
+  const today = todayCentral(); let date = ymd(body.date) || today;
+  if (date > today || date < new Date(Date.now() - 366 * 864e5).toISOString().slice(0, 10)) throw Fail(400, 'Check the date on the receipt.');
+  const j = srJob(ctx, body), pid = j.p ? s(j.p.id) : '';
+  const files = await uploadsOf(sub, [body.uploadId], pid || null);
+  const id = 'SR' + Date.now().toString(36) + crypto.randomBytes(3).toString('hex');
+  const rec = { id: id, subId: s(sub.id), subName: s(sub.company || sub.name), pid: pid, job: j.p ? s(j.p.name) : '', po: j.po, amount: amount, vendor: vendor, date: date, note: clip(body.note, 500), files: files, at: new Date().toISOString(), edits: [] };
+  await x10Lib().kvCas(PGL().SUBR_KEY, function(v){ const st = v && v.list && typeof v.list === 'object' ? v : { v: 1, list: {} }; st.list[id] = rec;
+    const mine = Object.keys(st.list).filter(function(k){ return st.list[k] && st.list[k].subId === rec.subId; }).sort(function(a, b){ return s(st.list[a].at).localeCompare(s(st.list[b].at)); });
+    while (mine.length > 300) delete st.list[mine.shift()]; return st; });
+  await addEvent('receipt', sub, pid || null, { receiptId: id, amount: amount, vendor: vendor, date: date, po: j.po, pid: pid, note: rec.note, files: files });
+  let alert = null;
+  if (!pid) {
+    try { const D = await srDeps(ctx); const r = await PGL().flag([{ key: 'sub:' + id, src: 'sub', srid: id, amt: amount, vendor: vendor, date: date, po: j.po, pid: '', subJobs: ctx.jobs.map(function(p){ return s(p.id); }),
+      by: { kind: 'sub', name: s(sub.company || sub.name), subId: s(sub.id), email: low(sub.email) } }], D); alert = (r.made || [])[0] || null; } catch (e) { alert = null; }
+  }
+  return { ok: true, receipt: srOut(rec, false), needsPo: !pid, badPo: !pid && !!j.po, suggestion: alert && alert.sug && alert.sug[0] ? { pid: alert.sug[0].pid, job: alert.sug[0].name, po: alert.sug[0].po, why: alert.sug[0].why } : null };
+}
+async function pReceiptPo(ctx, body){
+  const sub = ctx.sub, id = s(body.id);
+  if (!/^SR[a-z0-9]{6,30}$/.test(id)) throw Fail(400, 'Bad request');
+  const v = await x10Lib().kvGet(PGL().SUBR_KEY), rec = v && v.list && v.list[id];
+  if (!rec || s(rec.subId) !== s(sub.id)) throw Fail(404, 'That receipt is not yours.');
+  if (srLocked(await srExpenses(), id)) throw Fail(409, (s(body.lang) === 'es' || lang(ctx.sub.lang) === 'es') ? 'GrayCo ya aprobó este recibo — llame a la oficina para cambiarlo.' : 'GrayCo already approved this receipt — call the office to change it.');
+  const j = srJob(ctx, body);
+  if (!j.p) throw Fail(400, (s(body.lang) === 'es' || lang(ctx.sub.lang) === 'es') ? 'Ese PO no es de uno de sus trabajos. Escoja el trabajo.' : 'That PO is not one of your jobs. Pick the job.');
+  const at = new Date().toISOString();
+  let out = null;
+  await x10Lib().kvCas(PGL().SUBR_KEY, function(v2){ const st = v2 && v2.list ? v2 : { v: 1, list: {} }; const r = st.list[id]; if (!r) return undefined;
+    r.edits = arr(r.edits).concat([{ at: at, from: { pid: r.pid, po: r.po }, to: { pid: s(j.p.id), po: j.po } }]).slice(-10); r.pid = s(j.p.id); r.job = s(j.p.name); r.po = j.po; out = r; return st; });
+  if (!out) throw Fail(404, 'That receipt is not yours.');
+  await addEvent('receipt', sub, s(j.p.id), { receiptId: id, op: 'po', amount: out.amount, vendor: out.vendor, date: out.date, po: j.po, pid: s(j.p.id), note: out.note, files: arr(out.files) });
+  try { await PGL().resolve([{ key: 'sub:' + id, pid: s(j.p.id), po: j.po, by: s(sub.company || sub.name) + ' (sub)', how: 'sub' }], await srDeps(ctx)); } catch (e) {}
+  return { ok: true, receipt: srOut(out, false) };
+}
+/* the sub's home: their receipts (newest 40) + the ones waiting for a PO (with GrayCo's question, if asked) */
+async function srHome(ctx){
+  try {
+    const v = await x10Lib().kvGet(PGL().SUBR_KEY), l = v && v.list ? v.list : {};
+    const mine = Object.keys(l).map(function(k){ return l[k]; }).filter(function(r){ return r && s(r.subId) === s(ctx.sub.id); }).sort(function(a, b){ return s(b.at).localeCompare(s(a.at)); }).slice(0, 40);
+    const exps = mine.length ? await srExpenses() : [];
+    const g = await x10Lib().kvGet(PGL().KEY), open = PGL().forSub(g, ctx.sub.id);
+    const asked = {}; open.forEach(function(a){ asked[a.srid || a.mailId || a.id] = a; });
+    const receipts = mine.map(function(r){ const o = srOut(r, srLocked(exps, r.id)); const a = asked[r.id]; if (a) { o.ask = (arr(a.asks).slice(-1)[0] || {}).text || ''; o.sug = a.sug && a.sug[0] ? { pid: a.sug[0].pid, job: a.sug[0].name, po: a.sug[0].po, why: a.sug[0].why } : null; } return o; });
+    const poNeeded = open.map(function(a){ return { id: a.srid || '', alert: a.id, src: a.src, amount: a.amt, vendor: a.vendor, date: a.date, po: a.po, ask: (arr(a.asks).slice(-1)[0] || {}).text || '', sug: a.sug && a.sug[0] ? { pid: a.sug[0].pid, job: a.sug[0].name, po: a.sug[0].po, why: a.sug[0].why } : null }; })
+      .filter(function(x){ return x.id || x.src === 'mail'; });
+    return { receipts: receipts, poNeeded: poNeeded };
+  } catch (e) { return { receipts: [], poNeeded: [] }; }
+}
 function SSCH(){ return require('./_lib/subsched.js'); }
 function schedDeps(data){
   return { jobOf: jobOf, rowFor: rowFor, poOf: function(p){ return SW().poOf(p); }, pmOf: function(p){ return pmOf(data, p); }, addEvent: addEvent, msgInsert: function(){ return msgInsert.apply(null, arguments); },
@@ -1370,6 +1447,8 @@ async function partnerAction(action, body, ctx){
   if (action === 'p-bidjobs') return pBidJobs(sub);               /* patch SUBBIDS: 📋 Jobs to bid — the bid site's open jobs this sub may bid on + their own bid */
   if (action === 'p-bid-save') return pBidSave(sub, body);
   if (action === 'p-bid-ask') return pBidAsk(sub, body);
+  if (action === 'p-receipt') return pReceipt(ctx, body);         /* patch POGUARD: 🧾 Send a receipt / expense — with its PO (or "I don't know" → the No-PO alert) */
+  if (action === 'p-receipt-po') return pReceiptPo(ctx, body);   /* patch POGUARD: ✏️ Add / fix the PO on their own receipt until it is approved */
   if (action === 'p-sched') return SSCH().partner(ctx, body, schedDeps(ctx.data));   /* patch SUBSCHED: 📅 My schedule for this job (list / save / cancel) */
   if (action === 'p-bid-request') return pBidRequest(sub, body);   /* patch PLANREQ: 📩 Request plans / more info */           /* patch BIDPOST: ❓ Ask a question about a job */         /* patch SUBBIDS: send / update their bid (papers first) */
   throw Fail(400, 'Bad request');

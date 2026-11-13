@@ -140951,6 +140951,11 @@ async function fileEvents(events){
           try { if (window._gcSubSched) nST(function(){ window._gcSubSched.refresh(); }, 50); } catch (e) {}
         } else if (ev.kind === 'lang') {
           if (!alreadyOnSub(ev)) changeSub(ev.sub_id, function(x){ x.lang = d.lang === 'es' ? 'es' : 'en'; });
+        } else if (ev.kind === 'receipt') {   /* patch POGUARD: 🧾 a receipt / expense from the sub portal → a pending expense "SPR_<id>" (gc-patch POGUARD); ✏️ Add PO moves it */
+          if (!(window._gcPoGuard && window._gcPoGuard.fileSubReceipt)) { onProj = _onProj; return; }   /* not loaded yet: filed on the next look */
+          window._gcPoGuard.fileSubReceipt(ev);
+          if (d.op !== 'po' && pid) docs = docs.concat(fileDocs(ev, d.files, 'Receipts'));
+          onProj(pid, function(q){ activity(q, 'SPA_' + ev.id, '🧾 ' + nm + (d.op === 'po' ? ' set the PO on their receipt ' + money(d.amount) + ' at ' + (d.vendor || 'a store') + ': ' + (d.po || '') : ' sent a receipt ' + money(d.amount) + ' at ' + (d.vendor || 'a store') + (d.po ? ' (PO ' + d.po + ')' : ''))); });
         }
         onProj = _onProj;
         done.push(ev.id);
@@ -232161,5 +232166,422 @@ function start(){
 if (D.body) start(); else D.addEventListener('DOMContentLoaded', start);
 W._gcNewProj = { scan: scan, ctxOf: ctxOf, norm: norm, matches: matches, make: make, form: form, jobPicker: jobPicker, moneyCtx: moneyCtx };
 try { console.log('[GC] ➕ New project… in the invoice / money job pickers (patch NEWPROJ) — _gcNewProjectFor(inv, cb)'); } catch (e) {}
+})();
+</script>
+<script>
+/* __GC_PATCH_POGUARD__ — 🧾 A PO ON EVERY RECEIPT, AND "NO PO" ALERTS.   (patch POGUARD, owner 11/13)
+   Owner: "when the guys don't put a PO make sure we get a notification to admin and office 'no PO' to then message the sub
+   what PO, and if they are active on a job it'll suggest that's the job the receipt is for, and also alert them and PM 'no PO
+   for an expense'." · "make sure sub and PM can [put] POs on every receipt and expense."
+   1. GrayCo Field 🧾 Log Expense: a PO box under the job — pick the PO of one of your active jobs (picks the job too), ✏️ type
+      it, or ❓ I don't know the PO. No job and no PO → Save asks once more, then it is saved WITHOUT a job (a pending expense)
+      and sent to the No-PO check at once; the answer shows "Suggested: <job> (on that job that day)" with one-tap ✓ Use.
+      With a job, the PO (and who sent it) is written on the saved expense.
+   2. The No-PO check (netlify/functions/po-guard.js + _lib/poguard.js — the server keeps the alerts, one per receipt): admin +
+      office get "🧾 No PO — <person>, $<amount>, <merchant>, <date>" (To-Do + phone push), the suggested job's PM the same,
+      the person who sent it "Add the PO for this receipt" (push + the notice below; a sub: their portal thread + ✏️ Add PO).
+      More than N from one person in a day → one daily digest. The CRM's own expenses with no job / no PO (office computers
+      look every 2 minutes; card charges are left to the card import) go the same way. Sub-portal receipts and e-mailed
+      receipts are flagged by the server.
+   3. 🧾 No PO (To-Do chip, admin / office / PMs) and 🧾 Receipts & POs (the crew's notice, GrayCo Field's tool grid): each
+      alert with ✓ Use the suggestion · pick the job / type the PO · 💬 Ask for the PO (admin / office: the sub's portal
+      thread, or the crew member's Field notice + push — never an e-mail). Set by anyone → every alert of that receipt is
+      cleared (its To-Dos done) and the PO / job is written on the expense (a sub's: on its CRM expense too; an e-mailed
+      one: booked on that job like 📥 Needs a job does). The Receipts tab: recent receipts / expenses you may fix — admin /
+      office all, a PM their jobs' and their own, crew their own until posted.
+   4. Sub-portal receipts (gc_sub_event 'receipt', filed by the SUB block): a PENDING expense "SPR_<id>" on the job (or no
+      job yet), the sub's later ✏️ Add PO moves it (until approved).
+   API: window._gcPoGuard = { state, load, scan, open, setPo, ask, fileSubReceipt, jobByPo, poOf, myJobs } */
+(function(){
+'use strict';
+if (window.__GC_PATCH_POGUARD__) return; window.__GC_PATCH_POGUARD__ = true;
+var W = window, D = document;
+var ST = function(f, ms){ return (W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout).call(W, f, ms || 0); };
+var SIv = function(f, ms){ return (W.__GC_NATIVE_SETINTERVAL__ || W.setInterval).call(W, f, ms); };
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { return []; } } return Array.isArray(v) ? v.filter(function(x){ return x && typeof x === 'object'; }) : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function num(v){ var n = parseFloat(String(v == null ? '' : v).replace(/[$,\s]/g, '')); return isFinite(n) ? n : 0; }
+function money(n){ return '$' + (Math.round(num(n) * 100) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function nowIso(){ return new Date().toISOString(); }
+function today(){ var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+function niceDay(d){ var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s(d)); return m ? (+m[2]) + '/' + (+m[3]) : s(d); }
+function lsGet(k){ try { return Storage.prototype.getItem.call(localStorage, k); } catch (e) { return null; } }
+function lsSet(k, v){ try { Storage.prototype.setItem.call(localStorage, k, v); } catch (e) {} }
+function uid(p){ return p + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+function crm(){ return W._crm || {}; }
+function projects(){ return arr(crm().projects).filter(function(p){ return p.id != null && p.deleted !== true; }); }
+function proj(pid){ return pid ? projects().filter(function(p){ return String(p.id) === String(pid); })[0] || null : null; }
+function users(){ return arr(crm().users); }
+function myEmail(){ var e = ''; try { e = low(W.__GC_AUTH__ && W.__GC_AUTH__.email && W.__GC_AUTH__.email()); } catch (x) {} if (!e && /@/.test(s(lsGet('grayco_user')))) e = low(lsGet('grayco_user')); return e; }
+function meUser(){ var e = myEmail(), n = low(lsGet('grayco_user')); return users().filter(function(u){ return (e && low(u.email) === e) || (n && low(u.name) === n); })[0] || {}; }
+function myName(){ return s(meUser().name) || s(lsGet('grayco_user')) || myEmail() || 'someone'; }
+function isAdmin(){ try { if (W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()) return true; } catch (e) {} var u = meUser(); return /^admin$/i.test(s(u.role)) || low(u.payType) === 'owner'; }
+function isOffice(){ return isAdmin() || /office/i.test(s(meUser().role)); }
+function isPm(){ return /project manager|\bpm\b|apm|super/i.test(s(meUser().role)); }
+function openJob(p){ return p && !/complete|closed|lost|cancel|archiv|warrant|dead/i.test(s(p.status)); }
+function poKey(v){ return s(v).toUpperCase().replace(/^P\.?\s?O\.?\s*(#|NO\.?|NUM(BER)?)?\s*[:#-]?\s*/, '').replace(/[^A-Z0-9]/g, ''); }
+function posOf(p){ return [p && p.autoPO, p && p.po, p && p.poNumber].map(s).filter(function(x, i, a){ return x && poKey(x).length >= 3 && a.indexOf(x) === i; }); }
+function poOf(p){ return posOf(p)[0] || ''; }
+function jobByPo(po){
+  var k = poKey(po); if (k.length < 3) return null;
+  var hits = projects().filter(function(p){ return posOf(p).some(function(c){ return poKey(c) === k; }); }), open = hits.filter(openJob);
+  return open.length === 1 ? open[0] : (!open.length && hits.length === 1 ? hits[0] : null);
+}
+function jobLabel(p){ return (poOf(p) ? 'PO ' + poOf(p) + ' · ' : '') + s(p.name) + (p.address ? ' · ' + s(p.address).split(',')[0] : ''); }
+var CREW_F = ['pm', 'apm', 'assistantPm', 'projectManager', 'mitTech', 'envTech', 'tech', 'cleanTech', 'abatementSupervisor', 'superintendent', 'crew', 'crewNames', 'assigned', 'team'];
+var SCHED_F = ['assignee', 'assignees', 'assignedTo', 'crew', 'who', 'people', 'tech', 'techs', 'employee', 'employees', 'user'];
+function namesOf(x, fields){ var out = []; fields.forEach(function(f){ var v = x && x[f]; (Array.isArray(v) ? v : typeof v === 'string' ? v.split(/\s*[,;\/&]\s*|\s+and\s+/) : []).forEach(function(n){ n = low(typeof n === 'object' && n ? (n.name || n.email) : n); if (n && out.indexOf(n) < 0) out.push(n); }); }); return out; }
+function myKeys(){ var k = [low(myName()), myEmail(), low(meUser().name)].filter(Boolean); if (myEmail()) k.push(myEmail().split('@')[0]); return k; }
+/* the jobs this person is on now: their PM / crew fields, or on the schedule within a week either way */
+function myJobs(){
+  var keys = myKeys(), lo = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10), hi = new Date(Date.now() + 7 * 864e5).toISOString().slice(0, 10), sched = {};
+  arr(crm().schedule).forEach(function(x){ var d = s(x.date || x.start).slice(0, 10); if (x.deleted || !d || d < lo || d > hi) return; if (namesOf(x, SCHED_F).some(function(n){ return keys.indexOf(n) > -1; })) sched[s(x.pid || x.projectId || x.jobId)] = 1; });
+  return projects().filter(openJob).filter(function(p){ return sched[s(p.id)] || namesOf(p, CREW_F).some(function(n){ return keys.indexOf(n) > -1; }); });
+}
+function fn(path, body, method){
+  return W.fetch('/.netlify/functions/' + path, method === 'GET' ? { method: 'GET', cache: 'no-store' } : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) })
+    .then(function(r){ return r.text().then(function(t){ var j = {}; try { j = JSON.parse(t); } catch (e) { j = { error: t.slice(0, 200) }; } j.__status = r.status; return j; }); },
+      function(e){ return { ok: false, error: 'No internet (' + e.message + ')', __status: 0 }; });
+}
+function toast(t){ var d = D.createElement('div'); d.setAttribute('data-gc-keep', '1'); d.textContent = t; d.style.cssText = 'position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:2147483600;background:#0f172a;color:#fff;padding:10px 16px;border-radius:10px;font:600 14px Inter,Arial,sans-serif;max-width:92vw'; D.body.appendChild(d); ST(function(){ d.remove(); }, 3800); }
+function push(){ try { if (W._gcPushAll) ST(function(){ W._gcPushAll(); }, 900); } catch (e) {} }
+
+/* ── who sent an expense ── */
+function byOf(e){
+  var em = low(e.byEmail || e.enteredByEmail || e.createdByEmail || (/@/.test(s(e.by)) ? e.by : ''));
+  var u = users().filter(function(x){ return (em && low(x.email) === em) || (!em && s(e.by) && low(x.name) === low(e.by)); })[0];
+  var role = s(u && u.role);
+  return { kind: /project manager|\bpm\b|apm/i.test(role) ? 'pm' : /office/i.test(role) ? 'office' : /^admin$/i.test(role) ? 'admin' : (u || em ? 'crew' : 'unknown'), name: s(u && u.name) || s(e.by).replace(/\s*\(.*\)$/, ''), email: low(u && u.email) || em };
+}
+function itemOf(e){ return { key: 'exp:' + s(e.id), src: 'expense', expId: s(e.id), amt: num(e.amt != null ? e.amt : e.amount), vendor: s(e.vendor || e.payee || e.desc).slice(0, 80), date: s(e.date).slice(0, 10) || s(e.at || e.enteredAt).slice(0, 10), po: s(e.po), pid: s(e.pid || e.jobId), by: byOf(e) }; }
+function hasJob(e){ return !!(proj(e.pid || e.jobId) || (s(e.po) && jobByPo(e.po))); }
+
+/* ── the expense list (the CRM's own state setter; never shrinks) ── */
+function setExp(id, patch){
+  if (typeof W._setExpenses !== 'function') return false;
+  var at = nowIso(), hit = false;
+  W._setExpenses(function(prev){ return (Array.isArray(prev) ? prev : []).map(function(x){ if (x && s(x.id) === s(id)) { hit = true; return Object.assign({}, x, patch, { updatedAt: at }); } return x; }); });
+  push(); return true;
+}
+function expById(id){ return arr(crm().expenses).filter(function(x){ return s(x.id) === s(id); })[0] || null; }
+function locked(e){ return !!(e && (e._posted === true || e.postedAt)); }
+function canEditExp(e){
+  if (!e) return false; if (isOffice()) return true;
+  var b = byOf(e), mine = (b.email && b.email === myEmail()) || (!b.email && low(b.name) === low(myName()));
+  if (isPm()) { var p = proj(e.pid || e.jobId); if (mine || (p && namesOf(p, ['pm', 'apm', 'assistantPm', 'projectManager']).indexOf(low(myName())) > -1)) return true; }
+  return mine && !locked(e);
+}
+
+/* ═════ the alerts (po-guard.js) ═════ */
+var PG = { alerts: [], at: 0, err: '', busy: false, sent: {} };
+try { var _s0 = JSON.parse(lsGet('gc_poguard_sent') || '{}'); if (_s0 && typeof _s0 === 'object') PG.sent = _s0; } catch (e) {}
+function load(){
+  if (!myEmail()) return Promise.resolve(PG);
+  return fn('po-guard?list=1', null, 'GET').then(function(j){
+    if (!j.ok) { PG.err = s(j.error) || ('error ' + j.__status); return PG; }
+    PG.alerts = arr(j.alerts); PG.at = Date.now(); PG.err = ''; PG.n = j.n;
+    try { applyResolved(); } catch (e) {}
+    paint(); return PG;
+  });
+}
+function flag(items){
+  items = arr(items); if (!items.length) return Promise.resolve({ ok: true, made: [] });
+  return fn('po-guard', { op: 'flag', items: items }).then(function(j){ if (j.ok) { items.forEach(function(it){ PG.sent[it.expId] = Date.now(); }); saveSent(); ST(load, 600); } return j; });
+}
+function saveSent(){ var cut = Date.now() - 40 * 864e5, o = {}; Object.keys(PG.sent).forEach(function(k){ if (PG.sent[k] > cut) o[k] = PG.sent[k]; }); PG.sent = o; lsSet('gc_poguard_sent', JSON.stringify(o)); }
+/* a PO / job for an alert → the server resolves it; here the expense gets it */
+function setPo(a, o){
+  return fn('po-guard', { op: 'set', id: a.id, po: o.po || undefined, pid: o.po ? undefined : o.pid, how: o.how || '' }).then(function(j){
+    if (!j.ok) return j;
+    applyOne(a, j.pid, j.po, myName());
+    a.status = 'resolved'; a.setPid = j.pid; a.setPo = j.po; a.resolvedBy = myName();
+    paint(); ST(load, 800); return j;
+  });
+}
+function applyOne(a, pid, po, by){
+  var p = proj(pid); if (!p) return false;
+  if (a.src === 'expense' || a.src === 'sub') {
+    var id = a.src === 'sub' ? 'SPR_' + a.srid : a.expId, e = expById(id);
+    if (e && !proj(e.pid || e.jobId)) return setExp(id, { pid: s(p.id), jobId: s(p.id), po: po || poOf(p), needsPo: false, poSetBy: by, poSetAt: nowIso(), matchedBy: by });
+    return false;
+  }
+  if (a.src === 'mail') {
+    var M = W._gcMoney, st = M && M.state ? M.state() : null, rec = st ? arr(st.list).filter(function(x){ return s(x.id) === s(a.mailId); })[0] : null;
+    if (!rec || !M.bookOne) return false;
+    var r2 = JSON.parse(JSON.stringify(rec)); r2.si = r2.si || {}; r2.si.route = 'book'; r2.si.job = { pid: s(p.id), name: s(p.name), address: s(p.address), po: poOf(p), conf: 100, why: 'PO ' + (po || poOf(p)) + ' set by ' + by };
+    try { return !!M.bookOne(r2, by); } catch (e) { return false; }
+  }
+  return false;
+}
+/* set elsewhere (another computer, the sub, the server's sweep): write it here too (office computers, or the person's own) */
+function applyResolved(){
+  var cut = Date.now() - 3 * 864e5;
+  PG.alerts.forEach(function(a){
+    if (a.status !== 'resolved' || !a.setPid || Date.parse(a.resolvedAt || 0) < cut) return;
+    if (!(isOffice() || (a.by && a.by.email && a.by.email === myEmail()))) return;
+    if (a.src === 'mail' && !isOffice()) return;
+    applyOne(a, a.setPid, a.setPo, a.resolvedBy || 'someone');
+  });
+}
+function ask(a, text){ return fn('po-guard', { op: 'ask', id: a.id, text: text }).then(function(j){ if (j.ok) { a.asks = arr(a.asks).concat([{ at: nowIso(), by: myName(), text: j.text, via: j.via }]); ST(load, 600); } return j; }); }
+
+/* the CRM's own expenses with no job / no PO (office computers; card charges belong to the card import) */
+function cardCharge(e){ return /credit card|card/i.test(s(e.payMethod)) || /cc import|card|statement|quickbooks|qb ?csv|bank/i.test(s(e.by) + ' ' + s(e.source)) || !!e.ccRef || !!e.cardId || !!e.qbId || !!e.qbTxnId; }
+function scan(){
+  if (!myEmail() || !isOffice() || PG.busy) return Promise.resolve(0);
+  var cut = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10);
+  var L = arr(crm().expenses).filter(function(e){
+    if (!e.id || PG.sent[s(e.id)] || e.deleted === true || e.overhead === true || /void|reject|deleted/i.test(s(e.status)) || cardCharge(e) || /^SPR_/.test(s(e.id)) || e.mailId) return false;
+    if (!(num(e.amt != null ? e.amt : e.amount) > 0) || hasJob(e)) return false;
+    var d = s(e.enteredAt || e.at || e.createdAt || e.date).slice(0, 10); return d >= cut;
+  }).slice(0, 50);
+  if (!L.length) return Promise.resolve(0);
+  PG.busy = true;
+  return flag(L.map(itemOf)).then(function(j){ PG.busy = false; return (j.made || []).length; }, function(){ PG.busy = false; return 0; });
+}
+
+/* ═════ GrayCo Field 🧾 Log Expense: the PO box ═════ */
+function poOptions(sel){
+  var mine = myJobs().filter(function(p){ return poOf(p); }), pool = mine.length ? mine : projects().filter(openJob).filter(function(p){ return poOf(p); }).slice(0, 300);
+  return '<option value="">— pick the PO —</option>' + (mine.length ? '<optgroup label="Your jobs">' : '<optgroup label="Open jobs">') +
+    pool.map(function(p){ return '<option value="pid:' + esc(p.id) + '"' + (s(sel) === s(p.id) ? ' selected' : '') + '>' + esc(poOf(p) + ' · ' + s(p.name)) + '</option>'; }).join('') + '</optgroup>' +
+    '<option value="__type">✏️ Type a PO…</option><option value="__dk">❓ I don\'t know the PO</option>';
+}
+function hookField(){
+  var f = W._gcFieldLogExpense;
+  if (typeof f !== 'function' || f.__pog) return;
+  var w = function(){ var r = f.apply(this, arguments); ST(function(){ try { enhanceField(); } catch (e) {} }, 40); return r; };
+  w.__pog = true; if (f.__autai) w.__autai = true; W._gcFieldLogExpense = w;
+}
+function enhanceField(){
+  var ov = D.getElementById('_gcLogExpOv'); if (!ov || ov.__pog) return;
+  var job = ov.querySelector('#_leJob'); if (!job) return; ov.__pog = true;
+  var box = D.createElement('div'); box.id = '_pgPoBox';
+  box.innerHTML = '<label style="font-size:12px;color:#9fb3c8;display:block">PO <span style="color:#7089a6">(the job\'s PO — on every receipt)</span></label>' +
+    '<select id="_pgPo" style="width:100%;padding:11px;border-radius:9px;margin:4px 0 4px;font-size:15px;box-sizing:border-box">' + poOptions(job.value) + '</select>' +
+    '<input id="_pgPoTxt" placeholder="Type the PO (e.g. K729)" autocapitalize="characters" style="display:none;width:100%;padding:11px;border-radius:9px;margin:4px 0 4px;font-size:15px;box-sizing:border-box">' +
+    '<div id="_pgPoHint" style="font-size:12.5px;margin:2px 0 12px;color:#9fb3c8"></div>';
+  job.parentNode.insertBefore(box, job.nextSibling);
+  var sel = box.querySelector('#_pgPo'), txt = box.querySelector('#_pgPoTxt'), hint = box.querySelector('#_pgPoHint'), armed = false;
+  function setJob(pid){ if (!pid) { job.value = ''; return; } if (![].some.call(job.options, function(o){ return o.value === String(pid); })) { var p = proj(pid), o = D.createElement('option'); o.value = String(pid); o.textContent = p ? s(p.name) : String(pid); job.appendChild(o); } job.value = String(pid); }
+  function showFor(pid){ var p = proj(pid); hint.style.color = '#7dd3a0'; hint.textContent = p ? '✓ ' + (poOf(p) ? 'PO ' + poOf(p) + ' — ' : '') + s(p.name) : ''; }
+  function fromJob(){ var p = proj(job.value); if (!p) return; var v = 'pid:' + s(p.id); if (sel.value === '__type' && poKey(txt.value) && jobByPo(txt.value) === p) return;
+    if (poOf(p) && ![].some.call(sel.options, function(o){ return o.value === v; })) { var o = D.createElement('option'); o.value = v; o.textContent = poOf(p) + ' · ' + s(p.name); sel.insertBefore(o, sel.options[1] || null); }
+    if (poOf(p)) { sel.value = v; txt.style.display = 'none'; } showFor(p.id); }
+  sel.addEventListener('change', function(){
+    var v = sel.value; armed = false; txt.style.display = v === '__type' ? '' : 'none';
+    if (v.indexOf('pid:') === 0) { setJob(v.slice(4)); showFor(v.slice(4)); try { job.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {} }
+    else if (v === '__type') { hint.textContent = ''; try { txt.focus(); } catch (e) {} }
+    else if (v === '__dk') { hint.style.color = '#fbbf24'; hint.textContent = 'No PO — it is sent to the office and your PM; you get a reminder to add it. Pick the job above if you know it.'; }
+    else hint.textContent = '';
+  });
+  txt.addEventListener('input', function(){ armed = false; var j = jobByPo(txt.value); if (j) { setJob(j.id); showFor(j.id); } else if (poKey(txt.value).length >= 3) { hint.style.color = '#fbbf24'; hint.textContent = '⚠ PO "' + s(txt.value) + '" is not a job\'s PO — it goes to the office to sort out.'; } else hint.textContent = ''; });
+  job.addEventListener('change', fromJob);
+  if (job.value) fromJob();
+  /* Save: with a job → the form's own save (then the PO and who sent it go on the expense); no job → saved here, no PO */
+  ov.addEventListener('click', function(ev){
+    var t = ev.target; if (!t || t.id !== '_leSave') return;
+    var v = sel.value, typed = s(txt.value), po = v.indexOf('pid:') === 0 ? poOf(proj(v.slice(4))) : (v === '__type' ? typed : '');
+    var pid = s(job.value);
+    if (!pid && po) { var j = jobByPo(po); if (j) { setJob(j.id); pid = s(j.id); } }
+    var msg = ov.querySelector('#_leMsg'), price = num((ov.querySelector('#_lePrice') || {}).value);
+    if (pid) { TAG = { t0: Date.now(), price: price, po: po || poOf(proj(pid)), n: 0 }; ST(tagLoop, 500); return; }
+    ev.stopImmediatePropagation(); ev.preventDefault();
+    if (!(price > 0)) { if (msg) msg.textContent = 'Enter a price.'; return; }
+    if (v !== '__dk' && !(v === '__type' && typed) && !armed) { armed = true; if (msg) { msg.style.color = '#fbbf24'; msg.textContent = 'No PO and no job? Tap Save again to send it without one — the office and your PM are told, and you add the PO later (🧾 Receipts & POs).'; } return; }
+    saveNoJob(ov, po);
+  }, true);
+}
+var TAG = null;
+function tagLoop(){
+  var r = TAG; if (!r || typeof W._setExpenses !== 'function') return;
+  var mine = function(x){ return x && /^field$/i.test(s(x.source)) && Math.abs(num(x.amt) - r.price) < 0.01 && Date.parse(x.at || x.savedAt || 0) >= r.t0 - 2000 && !x.byEmail; };
+  if (arr(crm().expenses).some(mine)) { var at = nowIso(), me = myName(), em = myEmail(); W._setExpenses(function(list){ return (list || []).map(function(x){ return mine(x) ? Object.assign({}, x, { po: s(x.po) || r.po, by: s(x.by) || me, byEmail: em, updatedAt: at }) : x; }); }); TAG = null; push(); return; }
+  if (++r.n < 16) ST(tagLoop, 600); else TAG = null;
+}
+function readFile(f){ return new Promise(function(res){ if (!f) { res(null); return; } var fr = new FileReader(); fr.onload = function(){ res(String(fr.result)); }; fr.onerror = function(){ res(null); }; fr.readAsDataURL(f); }); }
+function saveNoJob(ov, po){
+  var q = function(x){ return ov.querySelector(x); }, msg = q('#_leMsg');
+  var store = s((q('#_leStore') || {}).value), price = num((q('#_lePrice') || {}).value), date = s((q('#_leDate') || {}).value) || today(), cat = s((q('#_leCat') || {}).value) || 'Materials';
+  var ph = q('#_lePhoto'), file = ph && ph.files && ph.files[0];
+  var exp = { id: uid('EXP'), pid: '', type: 'expense', vendor: store || '(field expense)', desc: store ? 'Field purchase - ' + store : 'Field expense', amt: price, category: cat, status: 'pending', approved: false, date: date,
+    source: 'field', at: nowIso(), enteredAt: nowIso(), by: myName(), byEmail: myEmail(), po: s(po), needsPo: true };
+  if (msg) { msg.style.color = '#93c5fd'; msg.textContent = 'Saving…'; }
+  return readFile(file).then(function(data){
+    if (data) { exp.receipt = data; exp.receiptName = (file && file.name) || 'receipt.jpg'; }
+    return Promise.resolve(W.idbGet ? W.idbGet('expenses') : null).then(function(list){
+      list = Array.isArray(list) ? list.slice() : arr(crm().expenses).slice(); list.push(exp);
+      return Promise.resolve(W.idbSet ? W.idbSet('expenses', list) : null).then(function(){ try { if (W._setExpenses) W._setExpenses(function(prev){ var l = Array.isArray(prev) ? prev : []; return l.some(function(x){ return x && x.id === exp.id; }) ? l : l.concat([exp]); }); } catch (e) {} push(); });
+    });
+  }).then(function(){ return flag([itemOf(exp)]); }).then(function(j){
+    var a = (j && j.made || [])[0], g = a && a.sug && a.sug[0];
+    if (!msg) return;
+    msg.style.color = '#e2e8f0';
+    msg.innerHTML = '<div style="background:#0a1628;border:1px solid #b45309;border-radius:10px;padding:10px">✅ Saved ' + esc(money(price)) + ' — <b>no PO yet</b>. The office and your PM were told.' +
+      (g ? '<div style="margin-top:6px;color:#fde68a">Suggested: <b>' + esc(g.name) + '</b>' + (g.po ? ' (PO ' + esc(g.po) + ')' : '') + ' — ' + esc(g.why) + '</div><button type="button" id="_pgUse" style="width:100%;margin-top:8px;padding:12px;border:none;border-radius:10px;background:#16a34a;color:#fff;font-weight:800;font-size:15px;cursor:pointer">✓ Use ' + esc(g.name) + '</button>' : '<div style="margin-top:6px;color:#9fb3c8">Add the PO when you know it: 🧾 Receipts & POs.</div>') +
+      (j && !j.ok ? '<div style="color:#fbbf24;margin-top:6px">The office will see it when the phone is back online (' + esc(j.error || '') + ').</div>' : '') +
+      '<button type="button" id="_pgDone" style="width:100%;margin-top:8px;padding:10px;border:none;border-radius:10px;background:#334155;color:#fff;cursor:pointer">Done</button></div>';
+    var u = msg.querySelector('#_pgUse'), dn = msg.querySelector('#_pgDone');
+    if (dn) dn.onclick = function(){ ov.remove(); };
+    if (u && a) u.onclick = function(){ u.disabled = true; u.textContent = 'Saving…'; setPo(a, { pid: g.pid, how: 'suggested' }).then(function(r){ if (r.ok) { u.textContent = '✓ On ' + (r.job || g.name) + (r.po ? ' (PO ' + r.po + ')' : ''); ST(function(){ ov.remove(); }, 1200); } else { u.disabled = false; u.textContent = '⚠ ' + (r.error || 'Try again'); } }); };
+  });
+}
+
+/* ═════ the screens ═════ */
+function css(){
+  if (D.getElementById('gc-pog-css')) return;
+  var st = D.createElement('style'); st.id = 'gc-pog-css'; st.setAttribute('data-gc-keep', '1');
+  st.textContent = '.gcpog-ov{position:fixed;inset:0;z-index:2147483000;background:rgba(15,23,42,.6);display:flex;align-items:flex-start;justify-content:center;padding:14px;overflow:auto;font-family:Inter,-apple-system,Arial,sans-serif}' +
+    '.gcpog-c{background:#fff;color:#0f172a;border-radius:12px;width:min(780px,100%);padding:16px;margin-top:8px;box-sizing:border-box}.gcpog-row{border:1px solid #e2e8f0;border-radius:10px;padding:10px;margin:7px 0}' +
+    '.gcpog-b{padding:7px 12px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;cursor:pointer;font-size:13px;font-weight:600}.gcpog-g{background:#16a34a;border-color:#16a34a;color:#fff}.gcpog-n{background:#1d4ed8;border-color:#1d4ed8;color:#fff}' +
+    '.gcpog-sel,.gcpog-in{padding:7px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;box-sizing:border-box}.gcpog-sug{background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:7px 9px;margin:6px 0;font-size:13px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}' +
+    '.gcpog-m{font-size:12px;color:#64748b}.gcpog-tab{border:none;background:#e2e8f0;border-radius:16px;padding:6px 12px;font-weight:700;cursor:pointer;margin-right:6px}.gcpog-tab.on{background:#0f172a;color:#fff}' +
+    '#gc-poguard-note{position:fixed;left:12px;bottom:84px;z-index:2147482000;background:#7c2d12;color:#fff;border-radius:12px;padding:10px 12px;font:600 14px Inter,Arial,sans-serif;max-width:min(360px,calc(100vw - 24px));box-shadow:0 6px 18px rgba(0,0,0,.3);display:flex;gap:8px;align-items:center}';
+  D.head.appendChild(st);
+}
+function visible(){ return PG.alerts; }
+function openAlerts(){ return visible().filter(function(a){ return a.status === 'open'; }); }
+function mineOpen(){ var em = myEmail(); return openAlerts().filter(function(a){ return a.by && a.by.email && a.by.email === em; }); }
+function jobSelect(a){
+  var tops = arr(a && a.sug).filter(function(g){ return proj(g.pid); }), mine = myJobs(), open = (isOffice() || isPm()) ? projects().filter(openJob) : mine;
+  var seen = {}, opt = function(p){ if (seen[p.id]) return ''; seen[p.id] = 1; return '<option value="' + esc(p.id) + '">' + esc(jobLabel(p)) + '</option>'; };
+  return '<select class="gcpog-sel" data-pg="job" style="flex:1;min-width:200px"><option value="">— pick the job / PO —</option>' +
+    (tops.length ? '<optgroup label="Suggested">' + tops.map(function(g){ return opt(proj(g.pid)); }).join('') + '</optgroup>' : '') +
+    (mine.length ? '<optgroup label="Your jobs">' + mine.map(opt).join('') + '</optgroup>' : '') +
+    '<optgroup label="Open jobs">' + open.map(opt).join('') + '</optgroup></select>';
+}
+function alertRow(a, i){
+  var g = arr(a.sug)[0], open = a.status === 'open', canAsk = isOffice() && open && a.by && (a.by.subId || a.by.email);
+  return '<div class="gcpog-row" data-i="' + i + '"' + (open ? '' : ' style="opacity:.65"') + '>' +
+    '<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><b>' + esc(a.head || ('🧾 No PO — ' + money(a.amt))) + '</b><span class="gcpog-m">' + esc(a.src === 'sub' ? 'sub portal' : a.src === 'mail' ? 'e-mailed' : 'expense') + ' · ' + esc(s(a.at).slice(0, 10)) + '</span></div>' +
+    (a.badPo ? '<div style="font-size:12.5px;color:#92400e">They wrote PO "' + esc(a.po) + '" — that is no job\'s PO.</div>' : '') +
+    arr(a.asks).map(function(x){ return '<div class="gcpog-m">💬 ' + esc(x.by) + ' asked ' + esc(niceDay(s(x.at).slice(0, 10))) + ': ' + esc(x.text) + '</div>'; }).join('') +
+    (open ? (g && proj(g.pid) ? '<div class="gcpog-sug">Suggested: <b>' + esc(g.name) + '</b>' + (g.po ? ' (PO ' + esc(g.po) + ')' : '') + ' <span style="color:#065f46">— ' + esc(g.why) + '</span> <button type="button" class="gcpog-b gcpog-g" data-pg="use">✓ Use</button></div>' : '<div class="gcpog-m" style="margin:4px 0">No job to suggest.</div>') +
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">' + jobSelect(a) + '<input class="gcpog-in" data-pg="po" placeholder="or type the PO" style="width:130px"><button type="button" class="gcpog-b gcpog-n" data-pg="save">Save</button>' +
+      (canAsk ? '<button type="button" class="gcpog-b" data-pg="ask">💬 Ask for the PO</button>' : '') + '</div><div data-pg="askbox"></div>'
+      : '<div style="color:#15803d;font-size:13px">✓ ' + (a.setPo ? 'PO ' + esc(a.setPo) + ' — ' : '') + esc((proj(a.setPid) || {}).name || '') + ' · set by ' + esc(a.resolvedBy) + '</div>') +
+    '<div data-pg="msg" style="font-size:12.5px;margin-top:4px"></div></div>';
+}
+function myExpenses(){
+  var cut = new Date(Date.now() - 45 * 864e5).toISOString().slice(0, 10);
+  return arr(crm().expenses).filter(function(e){ return !e.deleted && s(e.date || e.at).slice(0, 10) >= cut && canEditExp(e) && (isOffice() ? !cardCharge(e) : true); })
+    .sort(function(a, b){ return s(b.date || b.at).localeCompare(s(a.date || a.at)); }).slice(0, 150);
+}
+function expRow(e, i){
+  var p = proj(e.pid || e.jobId);
+  return '<div class="gcpog-row" data-e="' + i + '"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><b>' + esc(money(e.amt != null ? e.amt : e.amount)) + ' · ' + esc(e.vendor || e.payee || e.desc) + '</b><span class="gcpog-m">' + esc(s(e.date).slice(0, 10)) + ' · ' + esc(byOf(e).name || '') + '</span></div>' +
+    '<div style="font-size:13px">' + (p ? '✓ ' + esc(jobLabel(p)) : '<span style="color:#b45309">No job</span>') + (s(e.po) && (!p || poKey(e.po) !== poKey(poOf(p))) ? ' · PO ' + esc(e.po) : '') + (p && !s(e.po) ? ' · <span style="color:#b45309">no PO on it</span>' : '') + '</div>' +
+    '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:5px">' + jobSelect(null) + '<input class="gcpog-in" data-pg="po" placeholder="or type the PO" style="width:130px"><button type="button" class="gcpog-b gcpog-n" data-pg="esave">✏️ Set PO</button></div><div data-pg="msg" style="font-size:12.5px;margin-top:4px"></div></div>';
+}
+function open(opts){
+  opts = opts || {}; css();
+  var old = D.getElementById('gc-pog-ov'); if (old) old.remove();
+  var tab = opts.tab || 'nopo', mineOnly = !isOffice() && !isPm();
+  var ov = D.createElement('div'); ov.id = 'gc-pog-ov'; ov.className = 'gcpog-ov'; ov.setAttribute('data-gc-keep', '1'); ov.setAttribute('data-gc-linked', '1');
+  D.body.appendChild(ov);
+  var L = [], E = [];
+  function draw(){
+    L = visible().filter(function(a){ return mineOnly ? a.by && a.by.email === myEmail() : true; }).sort(function(a, b){ return (a.status === 'open' ? 0 : 1) - (b.status === 'open' ? 0 : 1) || s(b.at).localeCompare(s(a.at)); });
+    E = tab === 'all' ? myExpenses() : [];
+    var nOpen = L.filter(function(a){ return a.status === 'open'; }).length;
+    ov.innerHTML = '<div class="gcpog-c"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b style="font-size:17px">🧾 ' + (mineOnly ? 'My receipts & POs' : 'Receipts & POs') + '</b><button type="button" data-pg="x" aria-label="Close" style="border:none;background:none;font-size:20px;cursor:pointer">✕</button></div>' +
+      '<div style="margin:8px 0"><button type="button" class="gcpog-tab' + (tab === 'nopo' ? ' on' : '') + '" data-pg="tab" data-t="nopo">🧾 No PO (' + nOpen + ')</button><button type="button" class="gcpog-tab' + (tab === 'all' ? ' on' : '') + '" data-pg="tab" data-t="all">📋 ' + (mineOnly ? 'My receipts' : 'Receipts & expenses') + '</button></div>' +
+      (tab === 'nopo' ? '<div class="gcpog-m" style="margin-bottom:6px">Receipts and expenses that came in with no PO (or a PO that is no job\'s). Use the suggestion, pick the job, or type its PO — every alert for it clears.' + (isOffice() ? ' 💬 Ask for the PO messages the sub in their portal (crew: a phone notice) — never an e-mail.' : '') + '</div>' +
+        (PG.err && !L.length ? '<div style="color:#b91c1c">⚠ ' + esc(PG.err) + '</div>' : '') + (L.length ? L.map(alertRow).join('') : '<div style="padding:16px;text-align:center;color:#16a34a">Every receipt has its PO. ✅</div>')
+        : '<div class="gcpog-m" style="margin-bottom:6px">' + (isOffice() ? 'Every receipt / expense of the last 45 days (card charges: the card import).' : isPm() ? 'Your jobs\' receipts / expenses and your own (last 45 days).' : 'Your own receipts (last 45 days) — until they are posted.') + '</div>' + (E.length ? E.map(expRow).join('') : '<div style="padding:16px;text-align:center;color:#64748b">Nothing here.</div>')) + '</div>';
+  }
+  draw();
+  ov.addEventListener('click', function(ev){
+    var t = ev.target, b = t && t.closest ? t.closest('[data-pg]') : null, k = b ? b.getAttribute('data-pg') : '';
+    if (t === ov || k === 'x') { ov.remove(); return; }
+    if (k === 'tab') { tab = b.getAttribute('data-t'); draw(); return; }
+    var row = t.closest && t.closest('[data-i],[data-e]'); if (!row) return; var msg = row.querySelector('[data-pg="msg"]');
+    var pick = function(){ var po = s((row.querySelector('[data-pg="po"]') || {}).value), pid = s((row.querySelector('[data-pg="job"]') || {}).value); if (po) { var j = jobByPo(po); if (!j) { msg.style.color = '#b91c1c'; msg.textContent = 'PO "' + po + '" is not a job\'s PO — pick the job instead.'; return null; } return { po: po, pid: s(j.id) }; } if (pid) return { pid: pid }; msg.style.color = '#b91c1c'; msg.textContent = 'Pick the job or type its PO.'; return null; };
+    if (row.hasAttribute('data-e')) {
+      if (k !== 'esave') return; var e = E[+row.getAttribute('data-e')], o = pick(); if (!o || !e) return;
+      var p = proj(o.pid), al = PG.alerts.filter(function(a){ return a.status === 'open' && (a.expId === s(e.id) || ('SPR_' + a.srid) === s(e.id)); })[0];
+      if (!canEditExp(e)) { msg.textContent = 'You can change only your own receipts (or your jobs\', as their PM).'; return; }
+      if (al) { setPo(al, o).then(function(r){ msg.style.color = r.ok ? '#15803d' : '#b91c1c'; msg.textContent = r.ok ? '✓ PO ' + r.po + ' — ' + r.job : '⚠ ' + (r.error || 'Try again'); if (r.ok) ST(draw, 900); }); return; }
+      setExp(e.id, { pid: s(p.id), jobId: s(p.id), po: o.po || poOf(p), needsPo: false, poSetBy: myName(), poSetAt: nowIso() });
+      msg.style.color = '#15803d'; msg.textContent = '✓ PO ' + (o.po || poOf(p)) + ' — ' + s(p.name); ST(draw, 900); return;
+    }
+    var a = L[+row.getAttribute('data-i')]; if (!a) return;
+    if (k === 'use' || k === 'save') {
+      var o2 = k === 'use' ? { pid: s((arr(a.sug)[0] || {}).pid), how: 'suggested' } : pick(); if (!o2) return;
+      b.disabled = true; msg.style.color = '#334155'; msg.textContent = 'Saving…';
+      setPo(a, o2).then(function(r){ b.disabled = false; if (r.ok) { msg.style.color = '#15803d'; msg.textContent = '✓ PO ' + r.po + ' — ' + r.job + '. The alerts are cleared.'; ST(draw, 1200); } else { msg.style.color = '#b91c1c'; msg.textContent = '⚠ ' + (r.error || 'Try again'); } });
+      return;
+    }
+    if (k === 'ask') {
+      var box = row.querySelector('[data-pg="askbox"]');
+      box.innerHTML = '<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap"><textarea data-pg="asktext" rows="2" class="gcpog-in" style="flex:1;min-width:220px">' + esc(a.ask || ('What PO is this receipt for? ' + money(a.amt) + ' at ' + (a.vendor || 'the store') + ' on ' + niceDay(a.date) + '.')) + '</textarea><button type="button" class="gcpog-b gcpog-n" data-pg="asksend">Send to ' + esc(a.by.kind === 'sub' ? 'their portal' : 'their phone') + '</button></div>';
+      return;
+    }
+    if (k === 'asksend') {
+      var tx = s((row.querySelector('[data-pg="asktext"]') || {}).value); b.disabled = true;
+      ask(a, tx).then(function(r){ b.disabled = false; msg.style.color = r.ok ? '#15803d' : '#b91c1c'; msg.textContent = r.ok ? '✓ Sent (' + (r.via === 'portal' ? 'their portal thread' : r.via === 'portal home' ? 'their portal home' : 'their phone') + ')' : '⚠ ' + (r.error || 'Try again'); if (r.ok) row.querySelector('[data-pg="askbox"]').innerHTML = ''; });
+    }
+  });
+  if (Date.now() - PG.at > 20000) load().then(function(){ if (D.body.contains(ov)) draw(); });
+  return ov;
+}
+W._gcOpenPoGuard = open;
+
+/* the To-Do chip (admin / office / PMs) — next to 📥 Needs a job */
+var chipSig = '';
+function paintChip(){
+  var mount = D.getElementById('_todoMount'), host = D.getElementById('gc-poguard-chip');
+  var n = (isOffice() || isPm()) ? openAlerts().length : 0;
+  if (!mount || !n) { if (host) { host.remove(); chipSig = ''; } return; }
+  if (!host) { host = D.createElement('div'); host.id = 'gc-poguard-chip'; host.setAttribute('data-gc-keep', '1'); host.setAttribute('data-gc-linked', '1'); host.style.cssText = 'display:inline-flex;gap:6px;margin:6px 6px 6px 0';
+    host.addEventListener('click', function(ev){ if (ev.target.closest && ev.target.closest('[data-pgc]')) open(); }); chipSig = ''; }
+  if (host.parentElement !== mount.parentElement) mount.parentElement.insertBefore(host, mount);
+  var html = '<button type="button" data-pgc="1" style="border:1px solid #9a3412;background:#9a3412;color:#fff;border-radius:8px;padding:7px 12px;font-weight:700;cursor:pointer">🧾 No PO (' + n + ')</button>';
+  if (html !== chipSig) { host.innerHTML = html; chipSig = html; }
+}
+/* the notice for the person who sent it (crew / PM — GrayCo Field or the desk) */
+var noteSig = '', noteHide = '';
+function paintNote(){
+  var L = mineOpen(), el = D.getElementById('gc-poguard-note');
+  var sig = L.map(function(a){ return a.id + ':' + arr(a.asks).length; }).join(',');
+  if (!L.length || sig === noteHide) { if (el) el.remove(); noteSig = ''; return; }
+  css();
+  if (!el) { el = D.createElement('div'); el.id = 'gc-poguard-note'; el.setAttribute('data-gc-keep', '1'); el.setAttribute('role', 'status'); D.body.appendChild(el);
+    el.addEventListener('click', function(ev){ if (ev.target.closest && ev.target.closest('[data-pgx]')) { noteHide = noteSig; el.remove(); return; } open({ tab: 'nopo' }); }); }
+  if (sig === noteSig) return; noteSig = sig;
+  var last = L.map(function(a){ return arr(a.asks).slice(-1)[0]; }).filter(Boolean)[0];
+  el.innerHTML = '<span style="flex:1;cursor:pointer">🧾 Add the PO for ' + (L.length === 1 ? 'your receipt: ' + money(L[0].amt) + ' at ' + esc(L[0].vendor || 'the store') + ' (' + niceDay(L[0].date) + ')' : L.length + ' receipts') + (last ? '<br><span style="font-weight:400;font-size:12.5px">💬 ' + esc(last.text) + '</span>' : '') + ' <u>✏️ Add PO</u></span><button type="button" data-pgx="1" aria-label="Hide" style="border:none;background:none;color:#fff;font-size:16px;cursor:pointer">✕</button>';
+}
+function paint(){ try { paintChip(); } catch (e) {} try { paintNote(); } catch (e) {} }
+
+/* GrayCo Field's tool grid: 🧾 Receipts & POs */
+(function reg(n){ var T = W._gcFieldTools; if (T && typeof T.register === 'function') { try { T.register({ id: 'poguard', icon: '🧾', label: 'Receipts & POs', group: 'small', order: 102, needsSigned: false, run: function(){ open({ tab: 'nopo' }); } }); } catch (e) {} return; } if (n < 120) ST(function(){ reg(n + 1); }, 1000); })(0);
+
+/* ═════ sub-portal receipts (the SUB block files gc_sub_event 'receipt' here) ═════ */
+function fileSubReceipt(ev){
+  var d = (ev && ev.data) || {}; if (!d.receiptId || typeof W._setExpenses !== 'function') return false;
+  var id = 'SPR_' + s(d.receiptId), pid = s(d.pid || ev.project_id); if (pid && !proj(pid)) pid = '';
+  var cur = expById(id), at = nowIso(), f0 = arr(d.files)[0] || {};
+  if (cur) {
+    if (d.op === 'po' && pid && !(cur.approved === true || cur._posted === true) && s(cur.pid) !== pid) setExp(id, { pid: pid, jobId: pid, po: s(d.po), needsPo: false, poSetBy: s(d.subName) + ' (sub)', poSetAt: at });
+    return true;
+  }
+  var e = { id: id, srid: s(d.receiptId), pid: pid, jobId: pid, type: 'expense', vendor: s(d.vendor), payee: s(d.subName), sub: s(d.subName), subId: s(ev.sub_id), amt: num(d.amount),
+    desc: 'Receipt from ' + s(d.subName) + ' (sub portal)' + (d.note ? ' — ' + s(d.note) : ''), category: 'Materials', status: 'pending', approved: false, date: s(d.date) || s(ev.created_at).slice(0, 10), po: s(d.po),
+    source: 'sub-portal', by: s(d.subName) + ' (sub portal)', receipt: f0.ref || null, receiptName: s(f0.name), files: arr(d.files).map(function(f){ return { ref: f.ref, name: f.name, type: f.type }; }),
+    needsPo: !pid, enteredAt: s(ev.created_at) || at, createdAt: s(ev.created_at) || at, updatedAt: at };
+  W._setExpenses(function(prev){ var l = Array.isArray(prev) ? prev : []; return l.some(function(x){ return x && s(x.id) === id; }) ? l : [e].concat(l); });
+  push(); return true;
+}
+
+/* ── start ── */
+SIv(hookField, 2000); ST(hookField, 400);
+SIv(function(){ if (!D.hidden && myEmail()) load(); }, 90000); ST(function(){ if (myEmail()) load(); }, 8000);
+SIv(function(){ if (!D.hidden) scan(); }, 120000); ST(scan, 25000);
+SIv(paint, 3000);
+W._gcPoGuard = { state: function(){ return PG; }, load: load, scan: scan, open: open, setPo: setPo, ask: ask, flag: flag, fileSubReceipt: fileSubReceipt, jobByPo: jobByPo, poOf: poOf, myJobs: myJobs, enhanceField: enhanceField, itemOf: itemOf, canEditExp: canEditExp, paint: paint };
+try { console.log('[GC] 🧾 A PO on every receipt + No-PO alerts (patch POGUARD) — _gcPoGuard.state(), _gcOpenPoGuard()'); } catch (e) {}
 })();
 </script>

@@ -588,7 +588,8 @@ function home(){
   var v = HOME, out = [];
   var needs = v.needs || [];
   if ((v.today || []).length) out.push(card(t('today'), v.today.map(todayCard), 'today'));   /* patch SUBPHOTOS */
-  out.push(card(t('needs'), needs.length ? needs.map(needRow) : [h('div', { class: 'empty', text: t('nothingNeeded') })], 'needs'));
+  var pgN = pgNeedRows();   /* patch POGUARD: 🧾 Add the PO for your receipt */
+  out.push(card(t('needs'), needs.length || pgN.length ? pgN.concat(needs.map(needRow)) : [h('div', { class: 'empty', text: t('nothingNeeded') })], 'needs'));
   var m = v.money || {};
   out.push(card(t('money'), [h('div', { class: 'money3' }, [
     h('div', null, [h('span', { class: 'muted', text: t('submitted') }), h('b', { text: usd(m.submitted) })]),
@@ -597,6 +598,7 @@ function home(){
   var wk = v.week || [];
   out.push(card(t('week'), wk.length ? wk.map(function(x){ return lateRow(x, h('div', { class: 'line' }, [h('span', { text: dts(x.date) + (x.time ? ' · ' + x.time : '') }), h('span', { text: x.job + (x.title ? ' — ' + x.title : '') })])); }) : [h('div', { class: 'empty', text: t('noWeek') })]));
   out.push(card(t('avail'), [h('button', { type: 'button', class: 'btn', text: '📅 ' + t('availBtn'), on: { click: availSheet } })]));   /* patch X10 */
+  if ((v.jobs || []).length || (pgState().receipts || []).length) out.push(pgCard());   /* patch POGUARD: 🧾 Send a receipt / expense + their receipts */
   /* SUBHOME3: To bid · Jobs I'm on now · Awarded / coming up · Done */
   var bc = bidsCard(v.bids); if (bc) out.push(bc);
   var G = jobGroups(v.jobs || []);
@@ -631,7 +633,7 @@ function invRow(x){
 function payTab(){
   var inv = HOME.invoices || [];
   return [card(t('invoices'), [h('div', { class: 'how', text: t('payRule') }), (HOME.jobs || []).length ? h('button', { type: 'button', class: 'btn gold', id: 'payNewInv', text: t('newInvoice'), on: { click: function(){ invoiceSheet(null); } } }) : null, (HOME.jobs || []).length ? mkButton(null, 'payMakeInv') : null]
-    .concat(inv.length ? inv.map(invRow) : [h('div', { class: 'empty', text: t('noInvoices') })]))];
+    .concat(inv.length ? inv.map(invRow) : [h('div', { class: 'empty', text: t('noInvoices') })])), pgCard()];   /* patch POGUARD */
 }
 function invoiceSheet(pid){
   var jobs = HOME.jobs || [];
@@ -1658,6 +1660,100 @@ function pendContact(me, load){
 /* ═══ end patch SUBPEND (client) ═══ */
 
 /* portal.html calls this: host = { hello(big, small, sub), ended(), setLang(l) } */
+/* ── patch POGUARD (owner 11/13: "make sure sub and PM can [put] POs on every receipt and expense" · "when the guys don't put
+   a PO … message the sub what PO") ──
+   🧾 Send a receipt / expense (Home and Pay): the PO is picked from the jobs they are on (or ✏️ typed, or ❓ "I don't know");
+   amount, store, date, note, a photo / PDF. No PO → GrayCo's office and the PM are told, and the server suggests the job they
+   were on that day (✓ Use it). Their receipts list: the job / PO, or ✏️ Add PO — theirs to fix until GrayCo approved it.
+   "Needs you" on Home: 🧾 Add the PO for your receipt … (with GrayCo's question when they asked). p-receipt / p-receipt-po. */
+Object.assign(L.en, { pgSend: '🧾 Send a receipt / expense', pgTitle: '🧾 Receipt / expense', pgPo: 'PO (which job is it for?)', pgPick: '— pick the PO —', pgType: '✏️ Type a PO…', pgDk: '❓ I don\'t know the PO',
+  pgTypePh: 'Type the PO', pgStore: 'Store / vendor', pgDate: 'Date on the receipt', pgNote: 'What was it for (optional)', pgPhoto: '📷 Photo / PDF of the receipt', pgReceipts: '🧾 Your receipts',
+  pgNoPo: 'No PO yet', pgAddPo: '✏️ Add PO', pgNeed: '🧾 Add the PO for your receipt', pgSentNoPo: 'Sent — it has no PO yet. GrayCo\'s office will ask you; you can add it any time here.',
+  pgSug: 'Is it this job?', pgUse: '✓ Use', pgSaved: 'PO saved', pgLocked: 'Approved by GrayCo', pgNone: 'No receipts sent yet.', pgAsked: 'GrayCo asks', pgDkHint: 'GrayCo\'s office and your PM are told; you can add the PO later.',
+  pgBadPo: 'That PO is not one of your jobs — it goes to the office to sort out.', pgAmountNeed: 'Enter the amount.', pgStoreNeed: 'Enter the store / vendor.', pgPoNeed: 'Pick the PO — or "I don\'t know the PO".' });
+Object.assign(L.es, { pgSend: '🧾 Enviar un recibo / gasto', pgTitle: '🧾 Recibo / gasto', pgPo: 'PO (¿para qué trabajo es?)', pgPick: '— escoja el PO —', pgType: '✏️ Escribir un PO…', pgDk: '❓ No sé el PO',
+  pgTypePh: 'Escriba el PO', pgStore: 'Tienda / proveedor', pgDate: 'Fecha del recibo', pgNote: 'Para qué fue (opcional)', pgPhoto: '📷 Foto / PDF del recibo', pgReceipts: '🧾 Sus recibos',
+  pgNoPo: 'Sin PO todavía', pgAddPo: '✏️ Agregar PO', pgNeed: '🧾 Agregue el PO de su recibo', pgSentNoPo: 'Enviado — todavía no tiene PO. La oficina de GrayCo le preguntará; puede agregarlo aquí cuando quiera.',
+  pgSug: '¿Es este trabajo?', pgUse: '✓ Usar', pgSaved: 'PO guardado', pgLocked: 'Aprobado por GrayCo', pgNone: 'Todavía no ha enviado recibos.', pgAsked: 'GrayCo pregunta', pgDkHint: 'Se avisa a la oficina de GrayCo y a su PM; puede agregar el PO después.',
+  pgBadPo: 'Ese PO no es de uno de sus trabajos — va a la oficina para revisarlo.', pgAmountNeed: 'Escriba el monto.', pgStoreNeed: 'Escriba la tienda / el proveedor.', pgPoNeed: 'Escoja el PO — o "No sé el PO".' });
+function pgJobs(){ return (HOME && HOME.jobs) || []; }
+function pgJobByPo(po){ var k = String(po || '').toUpperCase().replace(/^P\.?\s?O\.?\s*#?\s*[:#-]?\s*/, '').replace(/[^A-Z0-9]/g, ''); if (k.length < 3) return null; var m = pgJobs().filter(function(j){ return String(j.po || '').toUpperCase().replace(/[^A-Z0-9]/g, '') === k; }); return m.length === 1 ? m[0] : null; }
+function pgPoSelect(pid, withDk){
+  var sel = h('select', { class: 'inp', 'data-pg-po': '1' }, [h('option', { value: '', text: t('pgPick') })].concat(pgJobs().map(function(j){ return h('option', { value: j.id, text: (j.po ? j.po + ' · ' : '') + j.name }); }))
+    .concat([h('option', { value: '__type', text: t('pgType') })]).concat(withDk ? [h('option', { value: '__dk', text: t('pgDk') })] : []));
+  if (pid) sel.value = pid; return sel;
+}
+function pgState(){ return (HOME && HOME.poGuard) || { receipts: [], poNeeded: [] }; }
+function pgNeedRows(){
+  return (pgState().poNeeded || []).filter(function(n){ return n.id; }).map(function(n){
+    var r = (pgState().receipts || []).filter(function(x){ return x.id === n.id; })[0] || { id: n.id, amount: n.amount, vendor: n.vendor, date: n.date };
+    return h('button', { type: 'button', class: 'need', 'data-pg-need': n.id, on: { click: function(){ pgPoSheet(r, n); } } }, [h('span', { class: 'dotg', 'aria-hidden': 'true' }),
+      h('span', null, [t('pgNeed') + ': ' + usd(n.amount) + ' · ' + (n.vendor || '') + ' · ' + dt(n.date)].concat(n.ask ? [h('br'), h('small', { text: '💬 ' + t('pgAsked') + ': ' + n.ask })] : [])),
+      h('span', { class: 'chev', 'aria-hidden': 'true', text: '›' })]);
+  });
+}
+function pgRow(r){
+  var kids = [h('div', { class: 'row' }, [h('span', null, [h('b', { text: usd(r.amount) }), ' ', h('span', { class: 'muted', text: [r.vendor, dt(r.date)].filter(Boolean).join(' · ') })]),
+    r.needsPo ? pill(t('pgNoPo'), 'due') : pill((r.po ? t('po') + ' ' + r.po : '') + (r.job ? ' · ' + r.job : ''), 'ok')])];
+  if (r.locked) kids.push(h('div', { class: 'muted', text: '✓ ' + t('pgLocked') }));
+  else kids.push(h('button', { type: 'button', class: 'btn sm', 'data-pg-edit': r.id, text: r.needsPo ? t('pgAddPo') : '✏️ ' + t('po'), on: { click: function(){ pgPoSheet(r, null); } } }));
+  return h('div', { class: 'inv', 'data-pg-rcpt': r.id }, kids);
+}
+function pgCard(){
+  var R = pgState().receipts || [];
+  return card(t('pgReceipts'), [pgJobs().length ? h('button', { type: 'button', class: 'btn gold', id: 'pgNewRcpt', text: t('pgSend'), on: { click: function(){ pgReceiptSheet(JOB && JOB.job ? JOB.job.id : null); } } }) : null]
+    .concat(R.length ? R.slice(0, 15).map(pgRow) : [h('div', { class: 'empty', text: t('pgNone') })]), 'pg-receipts');
+}
+function pgPoPick(sel, txt, hint){
+  sel.addEventListener('change', function(){ txt.style.display = sel.value === '__type' ? '' : 'none'; hint.textContent = sel.value === '__dk' ? t('pgDkHint') : ''; if (sel.value === '__type') try { txt.focus(); } catch (e) {} });
+  txt.addEventListener('input', function(){ var j = pgJobByPo(txt.value); hint.textContent = j ? '✓ ' + j.name : (String(txt.value).replace(/\W/g, '').length >= 3 ? t('pgBadPo') : ''); });
+}
+function pgReceiptSheet(pid){
+  var sel = pgPoSelect(pid, true), txt = h('input', { class: 'inp', id: 'pgPoTxt', placeholder: t('pgTypePh'), style: 'display:none' }), hint = h('div', { class: 'muted', 'data-pg-hint': '1' });
+  sel.id = 'pgPo'; pgPoPick(sel, txt, hint);
+  var amt = h('input', { class: 'inp', id: 'pgAmt', type: 'number', inputmode: 'decimal', min: '0', step: '0.01' }), store = h('input', { class: 'inp', id: 'pgStore' }),
+    date = h('input', { class: 'inp', id: 'pgDate', type: 'date', value: todayYmd() }), note = h('input', { class: 'inp', id: 'pgNote' });
+  var file = null, fname = h('span', { class: 'muted', text: '' });
+  var pick = h('button', { type: 'button', class: 'btn', id: 'pgPick', text: t('pgPhoto'), on: { click: function(){ picker('image/*,application/pdf', false, function(fs){ file = fs[0] || null; fname.textContent = file ? file.name : ''; }); } } });
+  var err = h('div', { class: 'err', 'data-pg-err': '1', style: 'color:#b91c1c' }), go = h('button', { type: 'button', class: 'btn gold', id: 'pgSendBtn', text: t('send') });
+  var sh = sheet(t('pgTitle'), [field(t('pgPo'), sel), txt, hint, field(t('amount'), amt), field(t('pgStore'), store), field(t('pgDate'), date), field(t('pgNote'), note), h('div', { class: 'row' }, [pick, fname]), err, go]);
+  go.addEventListener('click', function(){
+    err.textContent = '';
+    if (!(parseFloat(amt.value) > 0)) { err.textContent = t('pgAmountNeed'); return; }
+    if (String(store.value).trim().length < 2) { err.textContent = t('pgStoreNeed'); return; }
+    var v = sel.value; if (!v || (v === '__type' && !String(txt.value).trim())) { err.textContent = t('pgPoNeed'); return; }
+    var body = { amount: amt.value, vendor: store.value, date: date.value, note: note.value, lang: LANG };
+    if (v === '__type') { var j = pgJobByPo(txt.value); if (j) body.projectId = j.id; else body.po = txt.value; } else if (v !== '__dk') body.projectId = v;
+    busy(go, true);
+    (file ? upload(file, 'receipt', body.projectId) : Promise.resolve(null)).then(function(u){ if (u) body.uploadId = u.id; return api('p-receipt', body); }).then(function(r){
+      busy(go, false);
+      if (!r.needsPo) { sh.close(); toast(t('saved')); reloadHome(); return; }
+      var g = r.suggestion, box = h('div', { class: 'card', 'data-pg-after': '1' }, [h('p', { text: t('pgSentNoPo') })]);
+      if (g && g.pid) box.appendChild(h('div', { class: 'row' }, [h('span', { text: t('pgSug') + ' ' + g.job + (g.po ? ' (' + t('po') + ' ' + g.po + ')' : '') }),
+        h('button', { type: 'button', class: 'btn gold', id: 'pgUseSug', text: t('pgUse'), on: { click: function(ev){ var b = ev.currentTarget; busy(b, true); api('p-receipt-po', { id: r.receipt.id, projectId: g.pid, lang: LANG }).then(function(){ sh.close(); toast(t('pgSaved')); reloadHome(); }, function(e){ busy(b, false); toast(e.message, true); }); } } })]));
+      box.appendChild(h('button', { type: 'button', class: 'btn', text: t('close'), on: { click: function(){ sh.close(); reloadHome(); } } }));
+      go.style.display = 'none'; go.parentNode.appendChild(box);
+    }, function(e){ busy(go, false); err.textContent = e.message; });
+  });
+}
+function pgPoSheet(r, n){
+  var sug = (n && n.sug) || r.sug || null;
+  var sel = pgPoSelect(r.pid || '', false), txt = h('input', { class: 'inp', placeholder: t('pgTypePh'), style: 'display:none' }), hint = h('div', { class: 'muted' });
+  sel.id = 'pgPoFix'; pgPoPick(sel, txt, hint);
+  var err = h('div', { class: 'err', style: 'color:#b91c1c' }), go = h('button', { type: 'button', class: 'btn gold', id: 'pgPoSave', text: t('send') });
+  var kids = [h('p', null, [h('b', { text: usd(r.amount) }), ' · ' + (r.vendor || '') + ' · ' + dt(r.date)])];
+  if (n && n.ask) kids.push(h('div', { class: 'how', text: '💬 ' + t('pgAsked') + ': ' + n.ask }));
+  if (sug && sug.pid) kids.push(h('div', { class: 'row' }, [h('span', { text: t('pgSug') + ' ' + sug.job + (sug.po ? ' (' + t('po') + ' ' + sug.po + ')' : '') }), h('button', { type: 'button', class: 'btn sm', 'data-pg-use': '1', text: t('pgUse'), on: { click: function(){ sel.value = sug.pid; txt.style.display = 'none'; } } })]));
+  var sh = sheet(t('pgAddPo'), kids.concat([field(t('pgPo'), sel), txt, hint, err, go]));
+  go.addEventListener('click', function(){
+    var v = sel.value, body = { id: r.id, lang: LANG };
+    if (v === '__type') { var j = pgJobByPo(txt.value); if (j) body.projectId = j.id; else body.po = txt.value; } else if (v) body.projectId = v;
+    if (!body.projectId && !body.po) { err.textContent = t('pgPoNeed').replace(/ — .*$/, ''); return; }
+    busy(go, true);
+    api('p-receipt-po', body).then(function(){ sh.close(); toast(t('pgSaved')); reloadHome(); }, function(e){ busy(go, false); err.textContent = e.message; });
+  });
+}
+
 window.GCPartner = {
   start: function(opts){
     session = opts.session; H = opts.host;
