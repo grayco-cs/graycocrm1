@@ -19,6 +19,8 @@
 //                                             p-bidjobs, p-bid-save {jobId, amount, notes} (patch SUBBIDS: 📋 Jobs to bid —
 //                                             the bid site's open jobs + their own bid, through subportal.js's rules)
 //                                             (patch SUBPHOTOS: p-invoice needs enough photos from the sub on the job — _lib/subwork.js)
+//                                             p-invoice-make {projectId, lines, total, invNum, invDate, note, op:'check'|'send', okOver},
+//                                             p-invoice-pdf {id} (patch SUBINVMAKE: ✍️ Make an invoice — _lib/subinvmake.js)
 // STAFF (signed in to the CRM + on gc_staff): s-sync, s-thread, s-send, s-scopes, s-scope-save,
 //                                             s-scope-approve, s-scope-void, s-link, s-link-send, s-ack,
 //                                             s-bids-approve, s-settings
@@ -378,7 +380,7 @@ exports._papers = { papersOf: spPapersOf, withPapers, papersToCrm, spSign };
 
 /* ── rate limits (per warm instance) ───────────────────────────────────────── */
 const hits = new Map();
-const LIMITS = { pub: { req: 120, bad: 10 }, signin: { req: 12, bad: 10 }, verify: { req: 25, bad: 10 }, app: { req: 600, bad: 20 }, bid: { req: 40, bad: 20 }, sched: { req: 60, bad: 20 }, pw: { req: 300, bad: 300 } };   /* pw: password sign-in, no lock-out for people (patch PWNOLOCK) */   /* sched: p-sched save / cancel (patch SUBSCHED) */   /* bid: p-bid-save (patch SUBBIDS) */
+const LIMITS = { pub: { req: 120, bad: 10 }, signin: { req: 12, bad: 10 }, verify: { req: 25, bad: 10 }, app: { req: 600, bad: 20 }, bid: { req: 40, bad: 20 }, sched: { req: 60, bad: 20 }, pw: { req: 300, bad: 300 }, invmk: { req: 20, bad: 20 } };   /* invmk: p-invoice-make send (patch SUBINVMAKE) */   /* pw: password sign-in, no lock-out for people (patch PWNOLOCK) */   /* sched: p-sched save / cancel (patch SUBSCHED) */   /* bid: p-bid-save (patch SUBBIDS) */
 function ipOf(event){ return s(gcHeader(event, 'x-nf-client-connection-ip') || gcHeader(event, 'x-forwarded-for').split(',')[0] || gcHeader(event, 'client-ip') || 'unknown'); }
 function limited(ip, kind){
   const L = LIMITS[kind] || LIMITS.pub, key = kind + '|' + ip, now = Date.now();
@@ -890,6 +892,7 @@ async function partnerInvoices(ctx){
   const out = list.map(function(iv){
     const st = invState(iv);
     return { id: s(iv.id), pid: s(iv.pid), job: jobName[s(iv.pid)] || '', number: s(iv.invNum), po: s(iv.po), amount: money(iv.amt),
+      made: iv.madeIn === 'sub-portal', file: /^SPI_E/.test(s(iv.id)) && arr(iv.files).length > 0,   /* patch SUBINVMAKE */
       state: st, submitted: ymd(iv.recvDate || iv.date), approved: ymd(iv.approvedDate || iv.approvedAt),
       payDate: st === 'approved' ? ymd(iv.payDateOverride || iv.payDate) || payDateFor(iv.recvDate || iv.date) : '', paidDate: st === 'paid' ? ymd(iv.paidDate || iv.date) : '' };
   }).filter(function(x){ return x.state !== 'void'; });
@@ -897,7 +900,7 @@ async function partnerInvoices(ctx){
   const have = new Set(out.map(function(x){ return x.id; }));
   (await dbGet('gc_sub_event', 'select=id,project_id,data,created_at&kind=eq.invoice&sub_id=' + eq(ctx.sub.id) + '&order=created_at.desc&limit=200')).forEach(function(e){
     const d = e.data || {}; if (have.has(s(d.invId))) return;
-    out.push({ id: s(d.invId), pid: s(e.project_id), job: jobName[s(e.project_id)] || '', number: s(d.invNum), po: s(d.po), amount: money(d.amount), state: 'submitted',
+    out.push({ id: s(d.invId), pid: s(e.project_id), job: jobName[s(e.project_id)] || '', number: s(d.invNum), po: s(d.po), amount: money(d.amount), state: 'submitted', made: d.made === true, file: arr(d.files).length > 0,   /* patch SUBINVMAKE */
       submitted: ymd(e.created_at), approved: '', payDate: '', paidDate: '' });
   });
   out.sort(function(a, b){ return (b.paidDate || b.submitted).localeCompare(a.paidDate || a.submitted); });
@@ -1113,6 +1116,25 @@ async function photoState(ctx, p){
   const events = await dbGet('gc_sub_event', 'select=kind,project_id,sub_id,data&sub_id=' + eq(ctx.sub.id) + '&project_id=' + eq(p.id) + '&kind=in.(photos,progress,punch)&order=created_at.desc&limit=500');
   return SW().invoiceGate({ job: p, sub: ctx.sub, schedule: ctx.data.schedule, settings: settingsOf(ctx.data), gcPhotos: kv.gc_photos, events: events, today: todayCentral() });
 }
+/* patch SUBINVMAKE: ✍️ Make an invoice (rules, totals, number, PDF: _lib/subinvmake.js) — wired to this file's own pieces */
+function SIM(){ return require('./_lib/subinvmake.js'); }
+function simDeps(ctx){
+  return { Fail: Fail, today: todayCentral, photoState: photoState, invoices: partnerInvoices, rowFor: rowFor, poOf: function(p){ return SW().poOf(p); },
+    madeCount: async function(sub){ const ev = await dbGet('gc_sub_event', 'select=id,data&kind=eq.invoice&sub_id=' + eq(sub.id) + '&order=created_at.desc&limit=1000');
+      return { count: ev.filter(function(e){ return (e.data || {}).made === true && (e.data || {}).numbered === 'auto'; }).length, nums: ev.map(function(e){ return s((e.data || {}).invNum); }).concat(arr(ctx.data.invs).concat(arr(ctx.data.invoices)).filter(function(iv){ return s(iv.subId) === s(sub.id); }).map(function(iv){ return s(iv.invNum); })).filter(Boolean) }; },
+    companies: function(){ return kvRead(['gc_companies']).then(function(x){ return x.gc_companies; }, function(){ return null; }); },
+    storeFile: storeFile, postEvent: function(row){ return dbPost('gc_sub_event', row); }, newId: newId, payDateFor: payDateFor };
+}
+async function simPdf(ctx, body){
+  const m = /^SPI_(E[A-Za-z0-9]{6,60})$/.exec(s(body.id));
+  if (!m) throw Fail(404, 'That invoice is not yours.');
+  const rows = await dbGet('gc_sub_event', 'select=id,project_id,data&kind=eq.invoice&id=' + eq(m[1]) + '&sub_id=' + eq(ctx.sub.id));
+  const f = rows[0] && arr((rows[0].data || {}).files)[0];
+  if (!f) throw Fail(404, 'That invoice has no file.');
+  const signed = await signRefs([f.ref]), out = fileOut(f, signed);
+  if (!out) throw Fail(502, 'The file could not be opened just now. Try again.');
+  return { ok: true, url: out.url, name: out.name, type: out.type };
+}
 /* patch SUBSCHED: the sub's own schedule entries (rules + handlers: _lib/subsched.js) */
 function SSCH(){ return require('./_lib/subsched.js'); }
 function schedDeps(data){
@@ -1182,6 +1204,8 @@ async function partnerAction(action, body, ctx){
       recvDate: today, payDate: payDateFor(today), files: files } });
     return { ok: true, id: 'SPI_' + eid, payDate: payDateFor(today) };
   }
+  if (action === 'p-invoice-make') return SIM().handle(ctx, body, simDeps(ctx));   /* patch SUBINVMAKE: ✍️ Make an invoice — the same 'invoice' event as p-invoice */
+  if (action === 'p-invoice-pdf') return simPdf(ctx, body);                         /* patch SUBINVMAKE: the invoice's file (the made PDF, or the one they attached) */
   if (action === 'p-photos-add') {
     const p = jobOf(ctx, body.projectId);
     const files = await uploadsOf(sub, body.uploadIds, p.id);
@@ -1841,6 +1865,7 @@ exports.handler = async function (event) {
     if (action === 'p-bid-ask' && limited(ip, 'bid')) return reply(429, { ok: false, error: 'Too many questions sent from here. Wait a few minutes.' });   /* patch BIDPOST */
     if (action === 'p-sched' && s(body.op) && s(body.op) !== 'list' && limited(ip, 'sched')) return reply(429, { ok: false, error: 'Too many schedule changes sent from here. Wait a few minutes.' });   /* patch SUBSCHED */
     if (action === 'p-bid-save' && limited(ip, 'bid')) return reply(429, { ok: false, error: 'Too many bids sent from here. Wait a few minutes.' });   /* patch SUBBIDS */
+    if (action === 'p-invoice-make' && s(body.op) === 'send' && limited(ip, 'invmk')) return reply(429, { ok: false, error: 'Too many invoices sent from here. Wait a few minutes.' });   /* patch SUBINVMAKE */
     if (/^p-/.test(action)) {
       const sess = await sessionOf(gcHeader(event, 'x-portal-session'));
       if (!sess || sess.kind !== 'partner') { noteBad(ip, 'app'); return notActive(headers, t0); }
