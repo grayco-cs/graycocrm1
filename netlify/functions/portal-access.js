@@ -615,7 +615,7 @@ async function signinStart(body, ip){
       sub_id: m.kind === 'partner' ? s(m.sub.id) : null, expires_at: new Date(Date.now() + CODE_MIN * 60e3).toISOString(), tries: 0, ip: clip(ip, 60) });
     const L = MAIL[m.lang];
     if (id.kind === 'phone' && textReady()) await require('./_lib/custquiet.js').run('reply', () => sendText(id.value, 'GrayCo Portal code: ' + code + ' (10 min)'));   /* patch CUSTQUIET: a sign-in code they just asked for goes at once */
-    else if (id.kind === 'email' || okEmail(m.email)) await sendMail(id.kind === 'email' ? id.value : m.email, L.codeSubj, mailHtml(L.codeHead, L.codeBody, code));
+    else if (id.kind === 'email' || okEmail(m.email)) await require('./_lib/custquiet.js').run('reply', () => sendMail(id.kind === 'email' ? id.value : m.email, L.codeSubj, mailHtml(L.codeHead, L.codeBody, code)));   /* patch RESETMAIL: goes in data-entry mode too */
     else {
       /* no texting yet and no e-mail on file: the code waits in the CRM for the PM to text it from their phone */
       await dbPatch('gc_portal_code', 'id=' + eq(rid), { relay: { phone: id.value, code: code, pids: m.pids || [], who: m.name || '' } });
@@ -827,7 +827,7 @@ async function deviceStart(event){
     expires_at: new Date(Date.now() + CODE_MIN * 60e3).toISOString(), tries: 0 });
   const L = MAIL[lang(sub.lang)];
   if (textReady() && phone10(sub.phone)) await require('./_lib/custquiet.js').run('reply', () => sendText(phone10(sub.phone), 'GrayCo: ' + code));   /* patch CUSTQUIET: the sign-in code goes at once */
-  else await sendMail(sub.email, L.codeSubj, mailHtml(L.codeHead, L.codeBody, code));
+  else await require('./_lib/custquiet.js').run('reply', () => sendMail(sub.email, L.codeSubj, mailHtml(L.codeHead, L.codeBody, code)));   /* patch RESETMAIL */
   return { ok: true, sent: true, to: maskEmail(sub.email) };
 }
 async function deviceVerify(event, body){

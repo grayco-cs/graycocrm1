@@ -813,6 +813,42 @@ async function sendMail(to, subject, html){
     body: JSON.stringify({ from: 'GrayCo Bids <portal@grayco-cs.com>', reply_to: (String(process.env.REPLY_TO_ADMIN || '').trim() || 'replies@grayco-cs.com'), to: to, subject: require('./_lib/mailtag.js').tag(subject, to, 'subs bids'), html: html }) });
   return r.ok;
 }
+/* patch RESETMAIL (owner 11/13: "the link didn't send to one guy for forgot password … fix this right now"): the bid site's
+   "Forgot password?" no longer depends on Supabase's own mailer (it only e-mails a few addresses an hour, and only addresses
+   allowed on the Supabase project). The server makes the one-time Supabase reset link (admin generate_link, type recovery)
+   and e-mails it from portal@grayco-cs.com through Resend — tagged as a reply the person asked for, so ⏸ data-entry mode
+   lets it go. Same answer whether or not the address has an account (no account lookup by strangers). */
+const RESET_SEEN = new Map();
+function resetBack(v){
+  try { const u = new URL(s(v)); const ok = [new URL(PORTAL_ORIGIN).host, 'bids.grayco-cs.com', 'crm.grayco-cs.com', 'graycocrm1.netlify.app'];
+    if (u.protocol === 'https:' && ok.indexOf(u.host) > -1) return u.origin + u.pathname; } catch (e) {}
+  return PORTAL_ORIGIN + '/';
+}
+async function resetPassword(body){
+  const email = low(body.email);
+  if (!okEmail(email)) throw Fail(400, 'Enter the e-mail you signed up with.');
+  const now = Date.now(), last = RESET_SEEN.get(email) || 0;
+  if (now - last < 45e3) return { ok: true, sent: true };   /* one e-mail per address every 45 s (a double tap) */
+  RESET_SEEN.set(email, now); if (RESET_SEEN.size > 2000) RESET_SEEN.clear();
+  const back = resetBack(body.back);
+  let link = '';
+  try {
+    const r = await fetch(sbUrl() + '/auth/v1/admin/generate_link', { method: 'POST', headers: H(), body: JSON.stringify({ type: 'recovery', email: email, redirect_to: back }) });
+    let j = {}; try { j = await r.json(); } catch (e) {}
+    link = s(j.action_link || (j.properties && j.properties.action_link));
+    if (!r.ok || !link) { try { console.log('[reset] no link for an address (' + r.status + ')'); } catch (e) {} return { ok: true, sent: true }; }
+  } catch (e) { throw Fail(503, 'The sign-in service did not answer. Try again in a minute.'); }
+  let es = false;
+  try { const rows = await fetch(sbUrl() + '/rest/v1/sp_rows?select=data&collection=eq.users&email=eq.' + encodeURIComponent(email) + '&limit=1', { headers: H() }).then(function(x){ return x.ok ? x.json() : []; }); es = !!(rows[0] && rows[0].data && rows[0].data.lang === 'es'); } catch (e) {}
+  const subj = es ? 'Cambie su contraseña de GrayCo Bids' : 'Reset your GrayCo Bids password';
+  const html = mailHtml(es ? 'Cambiar la contraseña' : 'Reset your password', es
+    ? ['Alguien (esperamos que usted) pidió cambiar la contraseña de ' + esc(email) + ' en bids.grayco-cs.com.', 'Toque el botón para elegir una contraseña nueva. El enlace sirve una sola vez.', 'Si no lo pidió, ignore este correo.']
+    : ['Someone (hopefully you) asked to reset the password for ' + esc(email) + ' on bids.grayco-cs.com.', 'Tap the button to choose a new password. The link works once.', 'If you did not ask, you can ignore this e-mail.'],
+    { href: link, label: es ? 'Elegir una contraseña nueva' : 'Choose a new password' });
+  const ok = await require('./_lib/custquiet.js').run('reply', function(){ return sendMail(email, subj, html); });
+  if (!ok) throw Fail(502, 'The e-mail could not be sent. Call GrayCo ' + OFFICE_PHONE + '.');
+  return { ok: true, sent: true };
+}
 async function staffEmailsFor(job){
   const out = [process.env.SUBPORTAL_NOTIFY || OFFICE];
   if (job) [job.postedBy, job.pmEmail].forEach(function(e){ if (okEmail(low(e))) out.push(low(e)); });   /* patch BIDPOST: the person who posted it and its PM hear too */
@@ -1565,6 +1601,10 @@ exports.handler = async function (event) {
     if (action === 'register') {
       if (limited(ipOf(event), 12)) return J(429, { error: 'Too many tries. Wait a few minutes and try again.' });
       return J(200, await register(body));
+    }
+    if (action === 'reset-password') {   /* patch RESETMAIL */
+      if (limited(ipOf(event), 20)) return J(429, { error: 'Please wait a minute before asking for another e-mail.' });
+      return J(200, await resetPassword(body));
     }
     if (action === 'trade-list') {   /* patch SIGNUPPAPERS: the sign-up's trade buttons — GrayCo's list + the trades of the CRM's subs */
       if (limited(ipOf(event), 60)) return J(429, { error: 'Too many tries.' });

@@ -170,6 +170,9 @@ async function guardedFetch(raw, url, opts){
      custquiet.run('staff' | 'emergency' | 'reply', …) still goes: staff alerts / on-call / staff relays ('staff'), the
      emergency call chain and replies to an emergency the customer started ('emergency'), and the HELP answer / a sign-in
      code the person just asked for ('reply'). Every other send stays skipped. */
+  /* patch RESETMAIL (owner 11/13: a sub's "Forgot password" never arrived): a sign-in code or password-reset link the person
+     just asked for (tagged custquiet.run('reply', …)) is e-mailed in data-entry mode too — it is not GrayCo reaching out. */
+  if (c && c.mail && safetyTag() === 'reply' && await isPaused()) { try { console.log('[pause] let through ' + c.kind + ' (sign-in / reset the person asked for)'); } catch (e) {} c = null; }
   if (c && c.twilio && PASS_TAGS[safetyTag()] && await isPaused()) { try { console.log('[pause] let through ' + c.kind + ' (tagged ' + safetyTag() + ')'); } catch (e) {} c = null; }
   if (c && await isPaused()) {
     let host = ''; try { host = new URL(s(target)).hostname; } catch (e) {}
@@ -200,6 +203,6 @@ function install(){
   return module.exports;
 }
 /* for code that holds its own fetch: true when this send must be skipped right now */
-async function shouldSkip(url, opts){ const c = classify(url, opts); if (c && c.twilio && PASS_TAGS[safetyTag()]) return false; return !!(c && await isPaused()); }
+async function shouldSkip(url, opts){ const c = classify(url, opts); if (c && c.twilio && PASS_TAGS[safetyTag()]) return false; if (c && c.mail && safetyTag() === 'reply') return false; return !!(c && await isPaused()); }
 
 module.exports = { install, isPaused, why, reset, classify, staffOnly, shouldSkip, KEY, PASS_TAGS, _t: { readFlag, addrList, fakeResponse, sendKind, logSend } };
