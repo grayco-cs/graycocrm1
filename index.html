@@ -5496,7 +5496,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.247-2026-11-13-r35d -->
+<!-- GrayCo CRM Build: 33.247-2026-11-13-r35f -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6445,7 +6445,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.247-2026-11-13-r35d");
+  console.log("[GC] Build 33.247-2026-11-13-r35f");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6493,7 +6493,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.247-2026-11-13-r35d"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.247-2026-11-13-r35f"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -192169,6 +192169,149 @@ W._gcMailRecv = { load: load, open: function(){ M.open = true; load(true); paint
 try { console.log('[GC] 📬 Mail received: the last 50 e-mails to invoices@ / receipts@ / leads@ / bids@ (patch MAILFIX)'); } catch (e) {}
 })();
 </script>
+<script id="gc-patch-invmail">
+/* __GC_PATCH_INVMAIL__ — 📥 POSSIBLE INVOICES FROM E-MAIL + 📭 "Wesley/Nick/office mail not connected yet" (patch INVMAIL)
+   Owner (11/13): "all emails for invoices — make sure to read Nick, Wesley and office, and don't miss: if someone were to send me and
+   Nick an invoice and not invoices@ or office@ then it shouldn't miss the invoice."
+   The server (netlify/functions/_lib/invmail.js) reads every copy of Wesley's, Nick's and office@'s mail that reaches the CRM (a Google
+   routing-rule copy, the e-mail-history copy, or the 🌐 All GrayCo e-mail sync): a sure invoice goes into the SAME intake as invoices@
+   (▥ Invoices / ✅ Approvals, booked by patch SUBINV), a receipt into 📧 Receipts e-mailed in; the ones it is NOT sure about wait here:
+   ✓ It's an invoice (→ that intake) / ✕ Not an invoice — the answer is remembered for that sender. Until mail of each of those mailboxes
+   has been seen, a clear 📭 notice says the mailboxes are not connected (docs/INVMAIL-SETUP.md).
+   Read through /.netlify/functions/bid-inbox?invmail=1 (admins + the office); shown in ✅ Approvals (above 📬 Mail received) and on
+   ⚙ Admin. Nothing is sent to anyone. API: window._gcInvMail = { load, state, open } */
+(function(){
+'use strict';
+if (window.__GC_PATCH_INVMAIL__) return; window.__GC_PATCH_INVMAIL__ = true;
+var W = window, D = document;
+var RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+function s(v){ return v == null ? '' : String(v).trim(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function me(){ try { if (typeof W._gcMeUser === 'function') { var u = W._gcMeUser(); if (u) return u; } } catch (e) {} return {}; }
+function allowed(){ var u = me(); return /^(admin|office)/i.test(s(u.role)) || /^office/i.test(s(u.profile)) || s(u.payType).toLowerCase() === 'owner'; }
+var FN = '/.netlify/functions/bid-inbox?invmail=1';
+var M = { items: [], seen: {}, boxes: [], caught: [], gmail: false, copyTo: '', at: 0, busy: false, err: '', denied: false, open: false, msg: '', busyId: '' };
+var els = [];
+function api(body){
+  return W.fetch(FN, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), cache: 'no-store' } : { cache: 'no-store' })
+    .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ if (r.status === 403) M.denied = true; if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status)); return j; }); });
+}
+function load(force){
+  if (M.busy || M.denied) return Promise.resolve(M);
+  if (!force && Date.now() - M.at < 120000) return Promise.resolve(M);
+  M.busy = true;
+  return api().then(function(j){ M.items = arr(j.items); M.seen = j.seen && typeof j.seen === 'object' ? j.seen : {}; M.boxes = arr(j.boxes); M.caught = arr(j.caught); M.gmail = !!j.gmailReading; M.copyTo = s(j.copyTo); M.err = ''; }, function(e){ M.err = s(e && e.message); })
+    .then(function(){ M.busy = false; M.at = Date.now(); paint(); return M; });
+}
+function when(v){ var d = new Date(v); if (isNaN(d)) return ''; return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); }
+function short(e){ return s(e).replace(/@grayco-cs\.com$/i, '@'); }
+function lbl(b){ return s(b.label).replace(/@$/, ''); }
+function openItems(){ return M.items.filter(function(x){ return x.status === 'open'; }); }
+/* which watched mailboxes have never been seen (no copy, no history copy, no Gmail sync), and which went quiet */
+function unseen(){ return M.boxes.filter(function(b){ var x = M.seen[b.box] || {}; return !(x.copy || x.history || x.gmail || x.at); }); }
+function quiet(){ return M.boxes.filter(function(b){ var x = M.seen[b.box] || {}; return x.at && Date.now() - Date.parse(x.at) > 4 * 864e5; }); }
+function noticeHtml(){
+  if (!M.at || M.err || !M.boxes.length) return '';
+  var u = unseen(), q = quiet();
+  if (!u.length && !q.length) return '<div data-im-ok style="color:#86efac;font-size:12px;margin:2px 0 6px">✓ Wesley, Nick and office@ mail is connected — invoices sent only to them are caught.</div>';
+  var h = '';
+  if (u.length) h += '<div data-im-notice style="background:#3b2a07;border:1px solid #f59e0b;color:#fde68a;border-radius:10px;padding:8px 10px;margin:4px 0 8px;font-size:13px">' +
+    '<b>📭 ' + esc(u.map(lbl).join('/')) + ' mail not connected yet</b> — an invoice sent only to ' + esc(u.map(lbl).join(' or ')) + ' (not invoices@) does not reach the CRM until it is. ' +
+    'Owner setup (admin.google.com, ~5 min): a routing rule that also delivers their incoming mail to <code style="color:#fff">' + esc(M.copyTo || 'invoicecopy@in.grayco-cs.com') + '</code>' +
+    (M.gmail ? '' : ', or turn on 🌐 All GrayCo e-mail') + ' — docs/INVMAIL-SETUP.md.</div>';
+  if (q.length) h += '<div data-im-quiet style="color:#fcd34d;font-size:12px;margin:2px 0 6px">⚠️ No mail seen from ' + esc(q.map(function(b){ return lbl(b) + ' since ' + when((M.seen[b.box] || {}).at); }).join(', ')) + ' — is the routing rule still on?</div>';
+  return h;
+}
+function btn(attr, id, label, bg){ return '<button type="button" ' + attr + '="' + esc(id) + '"' + (M.busyId === id ? ' disabled' : '') + ' style="background:' + bg + ';color:#fff;border:none;border-radius:8px;padding:6px 12px;font-weight:800;cursor:pointer;margin:4px 6px 0 0">' + label + '</button>'; }
+function itemsHtml(){
+  if (M.err) return '<div style="color:#fca5a5;padding:6px 0">Could not read the list: ' + esc(M.err) + '</div>';
+  var open = openItems(), done = M.items.filter(function(x){ return x.status !== 'open'; }).slice(0, 8);
+  var h = '';
+  if (!open.length) h += '<div style="color:#8fa8c4;padding:4px 0">' + (M.busy || !M.at ? 'Loading…' : 'Nothing to check — the CRM was sure about every invoice it saw.') + '</div>';
+  h += open.map(function(x){
+    return '<div data-im-item="' + esc(x.id) + '" style="border-left:3px solid #f59e0b;padding:7px 9px;margin:7px 0;background:rgba(255,255,255,.05);border-radius:6px">' +
+      '<div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap"><b style="color:#fff;overflow-wrap:anywhere">' + esc(x.subject || '(no subject)') + '</b><span style="color:#8fa8c4;font-size:12px">' + esc(when(x.sent || x.at)) + '</span></div>' +
+      '<div style="color:#cbd5e1;font-size:12px;overflow-wrap:anywhere">From ' + esc(x.fromName ? x.fromName + ' <' + x.from + '>' : x.from) + ' · came to ' + esc(arr(x.cameTo).map(short).join(', ') || '?') + '</div>' +
+      (arr(x.files).length ? '<div style="font-size:12px;margin-top:3px">' + arr(x.files).map(function(f){ return '<a href="#" data-im-file="' + esc(f.ref) + '" data-im-name="' + esc(f.name) + '" style="color:#60a5fa;margin-right:10px;overflow-wrap:anywhere">📎 ' + esc(f.name) + '</a>'; }).join('') + '</div>' : '') +
+      (s(x.text) ? '<div style="color:#94a3b8;font-size:12px;margin-top:3px;max-height:3.2em;overflow:hidden;overflow-wrap:anywhere">' + esc(s(x.text).slice(0, 240)) + '</div>' : '') +
+      '<div style="color:#fcd34d;font-size:12px;margin-top:3px">Why it might be: ' + esc(arr(x.reasons).join(' · ') || s(x.why)) + '</div>' +
+      btn('data-im-yes', x.id, '✓ It\'s an invoice', '#15803d') + btn('data-im-no', x.id, '✕ Not an invoice', '#475569') +
+      '</div>';
+  }).join('');
+  if (done.length) h += '<div style="color:#8fa8c4;font-size:12px;margin-top:8px">Answered lately: ' + done.map(function(x){ return esc((x.status === 'yes' ? '✓ ' : '✕ ') + (x.fromName || x.from) + ' — ' + s(x.subject).slice(0, 40)) + (x.by ? ' (' + esc(x.by) + ')' : ''); }).join(' · ') + '</div>';
+  if (M.caught.length) h += '<details style="margin-top:8px"><summary style="cursor:pointer;color:#cbd5e1;font-size:12px">Invoices lately caught from Wesley / Nick / office@ mail (' + M.caught.length + ')</summary>' +
+    M.caught.map(function(c){ return '<div data-im-caught style="font-size:12px;color:#cbd5e1;padding:3px 0;overflow-wrap:anywhere">' + esc(when(c.at)) + ' · ' + esc(c.vendor || c.fromName || c.from) + (c.invoiceNumber ? ' #' + esc(c.invoiceNumber) : '') + (c.total ? ' · $' + Number(c.total).toFixed(2) : '') + (c.kind === 'receipt' ? ' (receipt)' : '') +
+      ' · came to ' + esc(arr(c.cameTo).map(short).join(', ')) + '</div>'; }).join('') + '</details>';
+  return h;
+}
+function make(){
+  var w = D.createElement('div'); w.className = 'gc-invmail';
+  w.style.cssText = 'margin:14px 0;padding:10px 12px;border-radius:12px;background:#0f2440;border:1px solid rgba(255,255,255,.1);color:#e2e8f0;font-family:inherit;max-width:860px;box-sizing:border-box';
+  w.innerHTML = '<div data-im-top></div><details data-im-d><summary style="cursor:pointer;font-weight:800;font-size:14px">📥 Possible invoices from e-mail <span data-im-n style="color:#fcd34d;font-weight:700;font-size:12px"></span></summary>' +
+    '<div style="color:#8fa8c4;font-size:12px;margin:6px 0">E-mail to Wesley, Nick or office@ that might be an invoice — the CRM was not sure. ✓ sends it to the invoices@ intake (▥ Invoices / ✅ Approvals); either answer is remembered for that sender. ' +
+    '<a href="#" data-im-reload style="color:#60a5fa">Refresh</a></div><div data-im-msg style="color:#86efac;font-size:12px"></div><div data-im-list></div></details>';
+  var d = w.querySelector('[data-im-d]');
+  d.addEventListener('toggle', function(){ M.open = d.open; if (d.open) load(true); });
+  w.addEventListener('click', function(e){
+    var t = e.target; if (!t || !t.closest) return;
+    if (t.closest('[data-im-reload]')) { e.preventDefault(); load(true); return; }
+    var f = t.closest('[data-im-file]');
+    if (f) { e.preventDefault(); try { if (typeof W._gcOpenRef === 'function') W._gcOpenRef(f.getAttribute('data-im-file'), f.getAttribute('data-im-name')); } catch (x) {} return; }
+    var y = t.closest('[data-im-yes]'), n = t.closest('[data-im-no]'); if (!y && !n) return;
+    var id = (y || n).getAttribute(y ? 'data-im-yes' : 'data-im-no');
+    M.busyId = id; paint();
+    api({ op: y ? 'yes' : 'no', id: id }).then(function(j){ M.msg = y ? '✓ Sent to the invoice intake' + (j.route === 'book' ? ' — booked on its job (✅ Approvals).' : ' — see ✅ Approvals → 🧾 Match this invoice.') : '✕ Set aside — the CRM will not ask about ' + s(j.sender) + ' again.'; },
+      function(x){ M.msg = 'Could not save that: ' + s(x && x.message); })
+      .then(function(){ M.busyId = ''; M.at = 0; return load(true); });
+  });
+  return w;
+}
+function paint(){
+  var n = openItems().length;
+  els.forEach(function(w){
+    var d = w.querySelector('[data-im-d]'); if (d && d.open !== M.open) d.open = M.open;
+    var top = w.querySelector('[data-im-top]'); if (top) { var th = noticeHtml(); if (top.__h !== th) { top.innerHTML = th; top.__h = th; } }
+    var c = w.querySelector('[data-im-n]'); if (c) c.textContent = n ? '(' + n + ' to check)' : '';
+    var m = w.querySelector('[data-im-msg]'); if (m) m.textContent = M.msg;
+    var l = w.querySelector('[data-im-list]'); if (l && (d && d.open)) { var h = itemsHtml(); if (l.__h !== h) { l.innerHTML = h; l.__h = h; } }
+  });
+}
+/* ✅ Approvals (the overlay's list, and the left-menu tab) above 📬 Mail received; ⚙ Admin */
+var A = null, B = null;
+function mount(){
+  if (M.denied || !allowed()) { els.forEach(function(w){ if (w.parentNode) w.parentNode.removeChild(w); }); return; }
+  var shown = false;
+  var list = D.querySelector('#_gcApprOv ._apList');
+  if (list) {
+    if (!A) { A = make(); els.push(A); }
+    var mr = list.querySelector(':scope > .gc-mailrecv');
+    if (mr) { if (A.parentNode !== list || A.nextSibling !== mr) list.insertBefore(A, mr); } else if (A.parentNode !== list) list.appendChild(A);
+    shown = true;
+  } else {
+    var apx = D.getElementById('gc-apx-mount');
+    if (apx && apx.parentNode && apx.offsetParent) {
+      if (!A) { A = make(); els.push(A); }
+      A.setAttribute('data-gc-keep', '1');
+      var after = apx.nextSibling && apx.nextSibling.classList && apx.nextSibling.classList.contains('gc-mailrecv') ? apx.nextSibling : apx;
+      if (A.parentNode !== apx.parentNode || after.nextSibling !== A) apx.parentNode.insertBefore(A, after.nextSibling);
+      shown = true;
+    } else if (A && A.isConnected) A.parentNode.removeChild(A);
+  }
+  var main = D.querySelector('main'), h1 = null;
+  if (main) { var hs = main.querySelectorAll('h1'); for (var i = 0; i < hs.length; i++) if (s(hs[i].textContent) === 'Admin') { h1 = hs[i]; break; } }
+  if (h1) {
+    if (!B) { B = make(); els.push(B); }
+    if (!B.isConnected) h1.parentNode.insertBefore(B, h1.nextSibling);
+    shown = true;
+  } else if (B && B.isConnected) B.parentNode.removeChild(B);
+  if (shown) { if (!M.at || Date.now() - M.at > 120000) load(); else paint(); }
+}
+RI.call(W, function(){ try { mount(); } catch (e) {} }, 1000);
+W._gcInvMail = { load: load, state: M, open: function(){ M.open = true; load(true); paint(); } };
+try { console.log('[GC] 📥 Possible invoices from e-mail + 📭 Wesley/Nick/office mail connection (patch INVMAIL)'); } catch (e) {}
+})();
+</script>
 <script id="gc-patch-ownertodo">
 /* __GC_PATCH_OWNERTODO__ — THE OWNER'S SETUP STEPS ON THE ADMINS' TO-DO, AND RECEIPTS / SUB INVOICES BY E-MAIL
    Owner (10/24): "don't i have owner setup to do? should show those in wesley and nicks todo also" ·
@@ -208724,7 +208867,7 @@ function curView(){ return lsGet('grayco_view') || ''; }
 /* patch OFFICEDESK (owner 11/13: "Brittany's home page looks like it's the field view — change it back to desk view ASAP"): on a
    computer the Office role gets the regular CRM (Dashboard + the left menu), not the role-app home card screen. Her phone keeps
    GrayCo Field. An admin's 👁 View as… Office still previews the role home. */
-function noDeskApp(a){ return a === 'office' && !vas(); }
+function noDeskApp(a){ return !!a && !vas(); }   /* patch DESKALL (owner 11/13: "Glenn's main screen opens to field view too — computers should open to desk and have the desktop"): every role on a computer gets the regular CRM; phones keep GrayCo Field; 👁 View as… still previews a role home */
 function deskOpen(){
   var a = app(); if (!a || mode(a) !== 'desk' || noDeskApp(a)) return false;
   css(); closeSheets(); DESK.view = curView();
