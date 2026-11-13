@@ -99,7 +99,8 @@ const SUB_DAYS = 365;
 const SESSION_DAYS = 30, CODE_MIN = 10, CODE_TRIES = 5, MIN_FAIL_MS = 250, SIGN_SECS = 3600;
 const MAX_UPLOAD = 4.5 * 1024 * 1024;
 const KV_KEYS = ['gc_senior_pm', 'projects', 'subs', 'vendors', 'users', 'invs', 'invoices', 'punch', 'schedule', 'projectDocs', 'customers',
-                 'gc_tombstones', 'gc_deleted_projects', 'gc_deleted_subs', 'gc_deleted_vendors', 'gc_deleted_invs', 'gc_sub_portal_settings'];
+                 'gc_tombstones', 'gc_deleted_projects', 'gc_deleted_subs', 'gc_deleted_vendors', 'gc_deleted_invs', 'gc_sub_portal_settings',
+                 'gc_sub_signin_off'];   /* patch SUBACCT: accounts an owner turned off (sub-accounts.js) */
 
 /* ── small helpers ─────────────────────────────────────────────────────────── */
 function s(v){ return v == null ? '' : String(v).trim(); }
@@ -248,12 +249,18 @@ async function subResolve(data, id){
    again; still not found while a piece of them could not be read → 503 (try again), never "not active" (that signs the sub out). */
 async function subSure(data, id){
   let sub = await subResolve(data, id);
-  if (sub) return { data: data, sub: sub };
+  if (sub) { subOffCheck(data, id, sub); return { data: data, sub: sub }; }
   const again = await crmData(true);
   sub = await subResolve(again, id);
   if (!sub && again._partial) throw Fail(503, 'The portal cannot read GrayCo\'s records just now. Try again in a minute.');
+  if (sub) subOffCheck(again, id, sub);   /* patch SUBACCT */
   return { data: again, sub: sub };
 }
+/* patch SUBACCT (owner 11/13): an account an owner turned off in Admin → 🔐 Sub portal accounts (sub-accounts.js: gc_kv gc_sub_signin_off,
+   keyed by the ids its portal runs under) opens nothing — not a link, a code sign-in, a password or a device session */
+const SUB_OFF_MSG = 'This account is turned off. Please call GrayCo ' + OFFICE_PHONE + '.';
+function subOff(data, ids){ const v = data && data.gc_sub_signin_off, m = v && typeof v === 'object' && v.ids && typeof v.ids === 'object' ? v.ids : null; return !!m && ids.some(function(x){ return !!s(x) && !!m[s(x)]; }); }
+function subOffCheck(data, id, sub){ if (subOff(data, [id, sub && sub.id])) throw Fail(403, SUB_OFF_MSG); }
 function rowIsSub(row, sub){
   if (!row || !sub) return false;
   const rid = s(row.subId || row.vendorId);
@@ -596,6 +603,7 @@ async function customerMatch(data, id){
 async function partnerMatch(data, id){
   const subs = crmSubs(data).filter(function(r){ return id.kind === 'email' ? [r.email].concat(arr(r.altEmails)).map(low).indexOf(id.value) > -1 : [r.phone].concat(arr(r.altPhones)).map(phone10).indexOf(id.value) > -1; });   /* patch SUBSYNC: + the e-mail / phone their bid-site account brought (merged in as altEmails / altPhones) */
   for (const sub of subs) {
+    if (subOff(data, [sub.id])) continue;   /* patch SUBACCT: turned off — no code is sent */
     const link = await subLinkActive(sub.id);
     if (link) return { kind: 'partner', sub: sub, links: [link.token], email: low(sub.email), lang: lang(sub.lang) };
   }
@@ -1977,3 +1985,6 @@ exports._core = { msgInsert: function(){ return msgInsert.apply(null, arguments)
 exports._sched = { schedFor: schedFor, bidJobsFor: bidJobsFor };   /* patch VOICESCHED: tests · BIDLIST */
 exports._bids = { myBidOut: myBidOut, awardOut: awardOut };   /* patch BIDSCOPE: tests */
 exports._match = { crmSubOf: crmSubOf, subResolve: subResolve, partnerMatch: partnerMatch };   /* patch SUBSYNC: tests */
+/* patch SUBACCT: Admin → 🔐 Sub portal accounts (netlify/functions/sub-accounts.js) uses the same links, matcher and records */
+exports._acct = { crmData: function(f){ return crmData(f); }, crmSubs: crmSubs, subById: subById, crmSubOf: crmSubOf, bidSubId: bidSubId, linkFor: linkFor,
+  subLinkActive: function(){ return subLinkActive.apply(null, arguments); }, subLinkCreate: function(){ return subLinkCreate.apply(null, arguments); }, subLinkRevoke: function(){ return subLinkRevoke.apply(null, arguments); }, subOff: subOff };
