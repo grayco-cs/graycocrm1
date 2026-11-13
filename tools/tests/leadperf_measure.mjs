@@ -43,6 +43,8 @@ export async function measure(build, opt){
   await cdp.send('Performance.enable');
   const ok = await H.signIn(A, 'wjohnson@grayco-cs.com', 25000);
   await H.waitFor(A, n => window._crm && (window._crm.leads || []).length >= n && (window._crm.projects || []).length >= 500, W.leads.length - 5, 40000);
+  /* the usual way in: the To-Do first (it adds its own page styles, which stay), then the dashboard */
+  if (opt.visitTodo !== false) { await A.ev(() => window._setView('todo')); await H.sleep(4000); }
   await A.ev(() => { try { window._gcCo && window._gcCo.setFilter && window._gcCo.setFilter('all'); } catch (e) {} window._setView('dashboard'); });
   await H.sleep(opt.settle || 15000);
   const M = { signedIn: ok, leads: W.leads.length, projects: W.projects.length };
@@ -101,13 +103,21 @@ export async function measure(build, opt){
   await P1('chips');
   /* 4) row → drawer */
   await P0();
-  const row = await A.ev(() => { const b = document.querySelector('table.gcl-list tr.gcl-lr td.c-name b'); if (!b) return null; const r = b.getBoundingClientRect(); return { x: r.x + Math.min(40, r.width / 2), y: r.y + r.height / 2, name: b.innerText }; });
+  await H.sleep(1000);
+  const row = await A.ev(async () => { const b = document.querySelector('table.gcl-list tr.gcl-lr td.c-name b'); if (!b) return null; b.scrollIntoView({ block: 'center' }); await new Promise(r => setTimeout(r, 300)); const r = b.getBoundingClientRect(); return { x: r.x + Math.min(40, r.width / 2), y: r.y + r.height / 2, name: b.innerText }; });
   if (row) {
     const d0 = await now(); await clickAt(A, row);
-    const shown = await A.ev(async ([t0]) => { const t = performance.now(); const before = document.body.innerHTML.length; while (performance.now() - t < 8000) { const d = document.getElementById('gcl-drawer') || [...document.querySelectorAll('[class*=drawer], [id*=drawer], [class*=Drawer], [role=dialog]')].find(x => x.offsetParent || getComputedStyle(x).position === 'fixed'); if (d && d.getBoundingClientRect().width > 200) { await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); return performance.now() - t0; } await new Promise(r => setTimeout(r, 16)); } return -1; }, [d0]);
+    let shown = await A.ev(async ([t0]) => { const t = performance.now(); const before = document.body.innerHTML.length; while (performance.now() - t < 8000) { const d = document.getElementById('gcl-drawer') || [...document.querySelectorAll('[class*=drawer], [id*=drawer], [class*=Drawer], [role=dialog]')].find(x => x.offsetParent || getComputedStyle(x).position === 'fixed'); if (d && d.getBoundingClientRect().width > 200) { await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); return performance.now() - t0; } await new Promise(r => setTimeout(r, 16)); } return -1; }, [d0]);
+    let retried = false;
+    const hit = shown < 0 ? await A.ev(([x, y]) => { const e = document.elementFromPoint(x, y); const chain = []; for (let n = e; n && chain.length < 6; n = n.parentElement) chain.push(n.tagName + (n.id ? '#' + n.id : '') + (n.className && typeof n.className === 'string' ? '.' + n.className.split(' ')[0] : '')); return chain.join('<') + ' | top-fixed: ' + [...document.body.children].filter(c => { const cs = getComputedStyle(c); return cs.position === 'fixed' && cs.display !== 'none' && c.getBoundingClientRect().width > 300; }).map(c => c.id || c.className).join(','); }, [row.x, row.y]) : '';
+    if (shown < 0) {   /* the click landed while the list was being redrawn (the row under the pointer replaced): once more */
+      retried = true; const r2 = await A.ev(async () => { const b = document.querySelector('table.gcl-list tr.gcl-lr td.c-name b'); if (!b) return null; b.scrollIntoView({ block: 'center' }); await new Promise(r => setTimeout(r, 300)); const r = b.getBoundingClientRect(); return { x: r.x + Math.min(40, r.width / 2), y: r.y + r.height / 2 }; });
+      if (r2) { const d2 = await now(); await clickAt(A, r2); shown = await A.ev(async ([t0]) => { const t = performance.now(); while (performance.now() - t < 8000) { const d = document.getElementById('gcl-drawer'); if (d && d.getBoundingClientRect().width > 200) { await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); return performance.now() - t0; } await new Promise(r => setTimeout(r, 16)); } return -1; }, [d2]); }
+    }
     await H.sleep(1500); const d1 = await now();
     const e = (await evs(d0, d1)).filter(x => /click|pointer|mouse/.test(x.n)); const l = await lts(d0, d1);
-    M.drawer = { shownMs: Math.round(shown), inpMs: Math.round(Math.max(0, ...e.map(x => x.d))), longTasks: l.length, blockedMs: Math.round(l.reduce((s, x) => s + x.d, 0)) };
+    const dbg = await A.ev(() => { const d = document.getElementById('gcl-drawer'); let u = null; try { u = window._gcLeadsHub && window._gcLeadsHub.ui && window._gcLeadsHub.ui().open; } catch (e) {} return { el: !!d, w: d ? Math.round(d.getBoundingClientRect().width) : 0, disp: d ? getComputedStyle(d).display + '/' + getComputedStyle(d).visibility + '/' + getComputedStyle(d).transform : '', open: u }; });
+    M.drawer = { hit, retried, dbg, clicked: row.name, shownMs: Math.round(shown), inpMs: Math.round(Math.max(0, ...e.map(x => x.d))), longTasks: l.length, blockedMs: Math.round(l.reduce((s, x) => s + x.d, 0)) };
     await A.page().keyboard.press('Escape'); await H.sleep(600);
     await A.ev(() => { const x = [...document.querySelectorAll('button')].find(b => b.offsetParent && /^(✕|×|Close)$/.test(b.innerText.trim()) && b.closest('[class*=drawer], [class*=Drawer], [role=dialog]')); if (x) x.click(); });
     await H.sleep(800);
