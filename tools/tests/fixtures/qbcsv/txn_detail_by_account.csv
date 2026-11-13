@@ -1,0 +1,18 @@
+Demo Builders LLC (made-up test data)
+Transaction Detail by Account
+November 2026
+
+,Date,Transaction Type,Num,Name,Memo/Description,Split,Amount,Balance
+Accounts Receivable (A/R),,,,,,,,
+,11/05/2026,Invoice,5020,Bob Baker,,-Split-,"3,300.00","3,300.00"
+Total for Accounts Receivable (A/R),,,,,,,"$3,300.00",
+Demo Bank Checking,,,,,,,,
+,11/06/2026,Check,1110,Demo Plumbing,450 Elm St - water heater,Subcontractors,-950.00,-950.00
+Total for Demo Bank Checking,,,,,,,-$950.00,
+Construction Income,,,,,,,,
+,11/05/2026,Invoice,5020,Bob Baker,Baker Water Loss - mitigation,Accounts Receivable (A/R),"3,000.00","3,000.00"
+,11/05/2026,Invoice,5020,Bob Baker,Baker Water Loss - mitigation,Accounts Receivable (A/R),300.00,"3,300.00"
+Total for Construction Income,,,,,,,"$3,300.00",
+Subcontractors,,,,,,,,
+,11/06/2026,Check,1110,Demo Plumbing,450 Elm St - water heater,Demo Bank Checking,950.00,950.00
+Total for Subcontractors,,,,,,,$950.00,

@@ -37,18 +37,19 @@ const ri = await p.locator('.gc-money-ov [data-i]').filter({ hasText: 'Farrell C
 const row = p.locator('.gc-money-ov [data-i="' + ri + '"]');
 const sel = row.locator('select[data-m="job"]');
 const opts = await sel.evaluate(s => [...s.options].slice(0, 3).map(o => o.value + '|' + o.textContent));
-ok(opts[1] === '__newjob|＋ New job…', 'the job picker offers "＋ New job…" first', opts);
+ok(opts[1] === '__newjob|➕ New project…', 'the job picker offers "➕ New project…" first (patch NEWPROJ\'s form)', opts);
 await sel.selectOption('__newjob');
-await p.waitForSelector('#gc-inj-ov', { timeout: 5000 });
-const pre = await p.evaluate(() => { const q = k => document.querySelector('#gc-inj-ov [data-j="' + k + '"]'); return { name: q('name').value, po: q('po').value, status: q('status').value, type: q('type').value, custs: document.querySelectorAll('#gc-inj-custs option').length }; });
+await p.waitForSelector('#gc-np-ov', { timeout: 5000 });
+const pre = await p.evaluate(() => { const q = k => document.querySelector('#gc-np-ov [data-np="' + k + '"]'); return { name: q('name').value, po: q('po').value, status: q('status').value, type: q('type').value, custs: document.querySelectorAll('#gc-np-custs option').length }; });
 ok(pre.name === 'Enterprise' && pre.po === 'ENTERPRISE' && pre.status === 'active', 'the form: name "Enterprise", PO "ENTERPRISE", Active', pre);
 ok(pre.custs > 0, 'the customer field searches the existing customers', pre.custs);
-await p.locator('#gc-inj-ov [data-j="ok"]').click(); await sleep(800);
-const pid = await sel.inputValue();
-ok(/^PRJ/.test(pid) && !(await p.locator('#gc-inj-ov').count()), 'Create job → the new job is selected in the picker', pid);
+await p.locator('#gc-np-ov [data-np="ok"]').click(); await sleep(800);
+if (await p.locator('#gc-np-ov [data-np="ok"]').count()) { await p.locator('#gc-np-ov [data-np="ok"]').click(); await sleep(800); }   /* a close match: the second click */
+const pid = await p.evaluate(() => ((window._crm.projects || []).find(x => x && x.name === 'Enterprise' && x.createdVia === 'invoice-entry') || {}).id || '');
+ok(/^PRJ/.test(pid) && !(await p.locator('#gc-np-ov').count()), 'Create → the new job is made and chosen', pid);
 
-/* 3. Save */
-await row.locator('[data-m="save"]').click(); await sleep(1500);
+/* 3. booked at once (patch NEWPROJ presses the row's Save) */
+await sleep(1500);
 const saved = (await row.innerText()).trim();
 ok(/✓ Saved on Enterprise/.test(saved), 'Save → "✓ Saved on Enterprise"', saved);
 const st = await p.evaluate(([pid, mid]) => { const j = (window._crm.projects || []).find(x => x.id === pid) || null; const e = (window._crm.expenses || []).find(x => x.mailId === mid) || null;
@@ -70,7 +71,7 @@ const nx = await p.evaluate(b => { const pr = window._gcMoney.poRule(b.si); cons
 ok(nx.pr === pid && (nx.auto === false || nx.e === pid), 'the next ENTERPRISE bill goes to the Enterprise job (booked by itself when auto-booking is on, else preselected)', nx);
 const crew = await p.evaluate(() => { const f = window._gcMeUser, a = window.__GC_AUTH__, o = window._gcIsOfficeFull; window._gcMeUser = () => ({ name: 'Crew Guy', role: 'Crew Lead' }); window.__GC_AUTH__ = null; window._gcIsOfficeFull = () => false;
   const r = window._gcCanCreateProject(), opt = window._gcNewJobOpt(); window._gcMeUser = f; window.__GC_AUTH__ = a; window._gcIsOfficeFull = o; return { r, opt }; });
-ok(crew.r === false && crew.opt === '', 'the crew may not make jobs (no "＋ New job…")', crew);
+ok(crew.r === false && crew.opt === '', 'the crew may not make jobs (no "➕ New project…")', crew);
 const errs = c.errs.filter(e => /PAGEERROR/.test(e));
 ok(!errs.length, 'no page errors', errs.slice(0, 5));
 console.log((fail ? 'FAILED ' : 'ALL PASS ') + pass + ' passed, ' + fail + ' failed');

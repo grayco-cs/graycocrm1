@@ -1,0 +1,9 @@
+Demo Builders LLC (made-up test data)
+Sales by Customer Detail
+October 2026
+
+,Date,Transaction Type,Num,Product/Service,Memo/Description,Qty,Sales Price,Amount,Balance
+Mary Jones,,,,,,,,,
+,10/15/2026,Invoice,5040,Labor,kitchen labor,1,"1,000.00","1,000.00","1,000.00"
+,10/15/2026,Invoice,5040,Materials,kitchen materials,1,500.00,500.00,"1,500.00"
+Total for Mary Jones,,,,,,,,"$1,500.00",
