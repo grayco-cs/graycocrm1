@@ -268,3 +268,230 @@ let SR1, SR2, ALS;
   ok('A27 … the e-mailed receipt\'s person = the staff member who sent it (Carl, crew) → his suggestion / his notices', it.by.kind === 'crew' && it.by.email === 'carl@grayco-cs.com' && it.amt === 51.2 && it.key === 'mail:' + r2.id, it);
 }
 if (process.argv.includes('--node-only')) { const n = R.filter(Boolean).length; console.log('\nPOGUARD (node) ' + n + '/' + R.length + ' passed'); process.exit(n === R.length ? 0 : 1); }
+
+/* ─── B. the CRM / GrayCo Field (index.html's own scripts in a stub page) ─── */
+const { chromium } = require(PWDIR);
+const browser = await chromium.launch({ args: ['--proxy-server=http://127.0.0.1:9'] });
+const html = fs.readFileSync(path.join(BUILD, 'index.html'), 'utf8');
+const block = (re) => { const i = html.search(re); if (i < 0) return ''; const st = html.lastIndexOf('<script', i), en = html.indexOf('</script>', i); return html.slice(html.indexOf('>', st) + 1, en); };
+const S_LOG = block(/FIELD: Log Expense \(receipt photo \+ manual price\/store\/date -> job expense\)/), S_SUB = block(/__GC_PATCH_SUB__ \n|GrayCo — THE PORTALS, CRM SIDE/), S_PG = block(/__GC_PATCH_POGUARD__ — /);
+ok('B0 index.html has the scripts: GrayCo Field\'s 🧾 Log Expense, the SUB filing block (with the receipt branch), patch POGUARD', S_LOG.length > 2000 && S_SUB.length > 10000 && /ev\.kind === 'receipt'/.test(S_SUB) && S_PG.length > 10000, [S_LOG.length, S_SUB.length, S_PG.length]);
+let ME = 'carl@grayco-cs.com';
+const cerrs = [];
+async function crmPage(email, extra){
+  ME = email;
+  const C = await browser.newContext({ viewport: { width: 420, height: 900 }, serviceWorkers: 'block' });
+  await C.route('**/*', async r => {
+    const rq = r.request(), u = new URL(rq.url());
+    if (u.pathname === '/.netlify/functions/po-guard') { resetAll(); const resp = await PGF.handler({ httpMethod: rq.method(), headers: { origin: 'https://crm.grayco-cs.com', authorization: 'Bearer staff:' + ME }, queryStringParameters: Object.fromEntries(u.searchParams.entries()), body: rq.postData() || '' }); return r.fulfill({ status: resp.statusCode, contentType: 'application/json', body: resp.body }); }
+    if (u.pathname === '/.netlify/functions/portal-access') { resetAll(); const resp = await PA.handler({ httpMethod: 'POST', headers: { origin: 'https://crm.grayco-cs.com', authorization: 'Bearer staff:wjohnson@grayco-cs.com' }, body: rq.postData() || '{}' }); return r.fulfill({ status: resp.statusCode, contentType: 'application/json', body: resp.body }); }
+    if (u.host === 'crm.test') return r.fulfill({ status: 200, contentType: 'text/html', body: '<!doctype html><html><head><meta charset="utf-8"></head><body><main><div><div id="_todoMount"></div></div></main></body></html>' });
+    return r.fulfill({ status: 404, body: '' });
+  });
+  const P = await C.newPage(); P.on('pageerror', e => cerrs.push(String(e.message).slice(0, 200))); P.on('dialog', d => d.accept().catch(() => {}));
+  await P.goto('https://crm.test/');
+  await P.evaluate(([projects, users, schedule, email, expenses]) => {
+    const real = Date.now; let skew = 0; Date.now = () => real() + skew; window.__skew = v => { skew = v; };
+    const IDB = { expenses: expenses.slice(), projectDocs: [] }; window.idbGet = async k => IDB[k]; window.idbSet = async (k, v) => { IDB[k] = v; if (k === 'expenses') window._crm.expenses = v; };
+    window._crm = { projects, users, schedule, expenses: expenses.slice(), vendors: [], subs: [], invoices: [], projectDocs: [], punch: [] };
+    window._setExpenses = fn => { window._crm.expenses = typeof fn === 'function' ? fn(window._crm.expenses) : fn; IDB.expenses = window._crm.expenses; };
+    window._setInvoices = fn => { window._crm.invoices = fn(window._crm.invoices); };
+    window._setProjectDocs = fn => { window._crm.projectDocs = fn(window._crm.projectDocs); };
+    window._setProjects = fn => { window._crm.projects = fn(window._crm.projects); };
+    window._supaUpsertNow = () => Promise.resolve(true); window._gcPushAll = () => {};
+    window.__GC_AUTH__ = { email: () => email, mode: () => 'google', isAdmin: () => email === 'wjohnson@grayco-cs.com' };
+    localStorage.setItem('grayco_user', email);
+  }, [KV.projects, USERS, SCHED, email, extra || []]);
+  for (const src of [S_LOG, S_SUB, S_PG]) await P.addScriptTag({ content: src });
+  await waitFor(() => P.evaluate(() => !!(window._gcFieldLogExpense && window._gcFieldLogExpense.__pog)), 5000);
+  return { C, P };
+}
+const exps = P => P.evaluate(() => window._crm.expenses);
+{
+  const { C, P } = await crmPage('carl@grayco-cs.com');
+  await P.evaluate(() => window._gcFieldLogExpense(null));
+  await P.waitForSelector('#_pgPo');
+  const opts = await P.evaluate(() => [...document.querySelectorAll('#_pgPo option')].map(o => o.textContent));
+  ok('B1 GrayCo Field 🧾 Log Expense has a PO box under the job: the POs of HIS active jobs (Demo Roof A — his crew; Demo Bath B — on today\'s schedule), ✏️ Type a PO…, ❓ I don\'t know the PO',
+    opts.includes('K729 · Demo Roof A') && opts.includes('B314 · Demo Bath B') && !opts.some(o => /Demo Kitchen C/.test(o)) && opts.includes('✏️ Type a PO…') && opts.includes('❓ I don\'t know the PO'), opts);
+  await P.selectOption('#_pgPo', 'pid:PB2');
+  const jobv = await P.evaluate(() => document.getElementById('_leJob').value);
+  await P.fill('#_leStore', 'Lowes'); await P.fill('#_lePrice', '23.45');
+  await shot(P, 'poguard_b1_field');
+  await P.click('#_leSave');
+  const e1 = await waitFor(async () => (await exps(P)).find(x => x.amt === 23.45 && x.byEmail), 9000);
+  ok('B2 picking the PO picks the job; Save → the expense is on Demo Bath B with PO B314 and who sent it (Carl)', jobv === 'PB2' && e1 && e1.pid === 'PB2' && e1.po === 'B314' && e1.byEmail === 'carl@grayco-cs.com' && e1.by === 'Carl Crew', { jobv, e1 });
+  await sleep(1300);
+  await P.evaluate(() => window._gcFieldLogExpense(null));
+  await P.waitForSelector('#_pgPo');
+  await P.selectOption('#_pgPo', '__type'); await P.fill('#_pgPoTxt', 'k729');
+  const typed = await P.evaluate(() => ({ job: document.getElementById('_leJob').value, hint: document.getElementById('_pgPoHint').textContent }));
+  await P.fill('#_pgPoTxt', 'Q12345');
+  const typed2 = await P.evaluate(() => ({ job: document.getElementById('_leJob').value, hint: document.getElementById('_pgPoHint').textContent }));
+  ok('B3 typing the PO: "k729" → Demo Roof A picked ("✓ PO K729 — Demo Roof A"); "Q12345" → "not a job\'s PO — it goes to the office"', typed.job === 'PA1' && /K729 — Demo Roof A/.test(typed.hint) && /not a job's PO/.test(typed2.hint), [typed, typed2]);
+  await P.evaluate(() => { document.getElementById('_leJob').value = ''; });
+  await P.selectOption('#_pgPo', ''); await P.fill('#_leStore', 'Home Depot'); await P.fill('#_lePrice', '61.07');
+  const n0 = (await exps(P)).length;
+  await P.click('#_leSave');
+  const armed = await P.evaluate(() => document.getElementById('_leMsg').textContent);
+  const n1 = (await exps(P)).length;
+  ok('B4 no PO and no job → Save asks once ("Tap Save again to send it without one …"); nothing saved yet', /Tap Save again/.test(armed) && n1 === n0, armed);
+  await P.click('#_leSave');
+  await P.waitForSelector('#_pgUse', { timeout: 10000 }).catch(() => {});
+  const e2 = (await exps(P)).find(x => x.amt === 61.07) || {};
+  const box = await P.evaluate(() => (document.getElementById('_leMsg') || {}).innerText || '');
+  const al = alerts().find(a => a.expId === e2.id) || {};
+  ok('B5 second Save → saved WITHOUT a job (pending, no PO, Carl) and flagged at once; the phone shows "Suggested: Demo Bath B (PO B314) — on that job that day" with ✓ Use',
+    e2.id && !e2.pid && e2.needsPo === true && e2.status === 'pending' && e2.byEmail === 'carl@grayco-cs.com' && al.status === 'open' && /Suggested: Demo Bath B \(PO B314\) — on that job that day/.test(box), { e2, box, al });
+  await shot(P, 'poguard_b5_nopo');
+  await P.click('#_pgUse');
+  const e2b = await waitFor(async () => { const x = (await exps(P)).find(z => z.id === e2.id); return x && x.pid ? x : null; }, 8000);
+  const al2 = alerts().find(a => a.expId === e2.id) || {};
+  ok('B6 ✓ Use → the expense is on Demo Bath B with PO B314; the alert is resolved and its To-Dos are done', e2b && e2b.pid === 'PB2' && e2b.po === 'B314' && al2.status === 'resolved' && tasks().filter(t => t.poGuard === al2.id).every(t => t.done), { e2b, al2 });
+  /* one more with ❓ I don't know, left open, for the notice */
+  await sleep(1300);
+  await P.evaluate(() => window._gcFieldLogExpense(null)); await P.waitForSelector('#_pgPo');
+  await P.evaluate(() => { document.getElementById('_leJob').value = ''; });
+  await P.selectOption('#_pgPo', '__dk'); await P.fill('#_leStore', 'Ace Hardware'); await P.fill('#_lePrice', '15.5');
+  await P.click('#_leSave'); await P.waitForSelector('#_pgDone', { timeout: 10000 }).catch(() => {}); await P.click('#_pgDone').catch(() => {});
+  await P.evaluate(() => window._gcPoGuard.load());
+  const note = await waitFor(() => P.evaluate(() => { const n = document.getElementById('gc-poguard-note'); return n ? n.innerText : null; }), 6000);
+  ok('B7 ❓ I don\'t know the PO → saved in one tap; Carl\'s own notice: "🧾 Add the PO for your receipt: $15.50 at Ace Hardware … ✏️ Add PO"', /Add the PO for your receipt: \$15\.50 at Ace Hardware/.test(note || '') && /Add PO/.test(note || ''), note);
+  await P.click('#gc-poguard-note span');
+  const panel = await waitFor(() => P.evaluate(() => { const o = document.getElementById('gc-pog-ov'); return o ? o.innerText : null; }), 5000);
+  ok('B8 the notice opens "🧾 My receipts & POs" with his receipt and the suggestion', /My receipts & POs/.test(panel || '') && /Ace Hardware/.test(panel || '') && /Suggested:\s*Demo Bath B/.test(panel || '') && !/Dan Demo/.test(panel || ''), panel);
+  await C.close();
+}
+{
+  /* Olive (office): the To-Do chip, the screen, ✓ Use / Save / 💬 Ask; the CRM's own expense with no job is flagged */
+  const msgs0 = T.gc_portal_msg.length;
+  const sr = await sub('p-receipt', { amount: 88.8, vendor: 'Floor & Decor', date: TODAY });
+  const { C, P } = await crmPage('olive@grayco-cs.com', [{ id: 'EXPOF1', amt: 33, vendor: 'Ace', by: 'Olive Office', byEmail: 'olive@grayco-cs.com', date: TODAY, enteredAt: now(), source: 'crm' }]);
+  const made = await P.evaluate(() => window._gcPoGuard.scan());
+  ok('B9 the office computer\'s look: a CRM expense with no job / no PO (entered by Olive) → flagged (card charges are left to the card import)', made === 1 && alerts().some(a => a.expId === 'EXPOF1' && a.by.kind === 'office'), made);
+  await P.evaluate(() => window._gcPoGuard.load()); 
+  const chip = await waitFor(() => P.evaluate(() => { window._gcPoGuard.paint(); const c = document.querySelector('#gc-poguard-chip button'); return c ? c.textContent : null; }), 6000);
+  ok('B10 the To-Do shows "🧾 No PO (n)" to the office', /🧾 No PO \(\d+\)/.test(chip || ''), chip);
+  await P.click('#gc-poguard-chip button');
+  await P.waitForSelector('#gc-pog-ov .gcpog-row');
+  const rows = await P.evaluate(() => [...document.querySelectorAll('#gc-pog-ov .gcpog-row')].map(r => r.innerText));
+  const subRow = rows.findIndex(t => /Floor & Decor/.test(t));
+  ok('B11 the screen lists every open one (Carl\'s, Dan\'s, the sub\'s) with "Suggested: … ✓ Use", a job / PO picker and 💬 Ask for the PO', subRow > -1 && rows.some(t => /Ace Hardware/.test(t)) && rows.some(t => /Dan Demo/.test(t)) && /Suggested:\s*Demo Roof A/.test(rows[subRow]) && /Ask for the PO/.test(rows[subRow]), rows.slice(0, 6));
+  await shot(P, 'poguard_b11_office');
+  const subSel = '#gc-pog-ov .gcpog-row:nth-of-type(' + 1 + ')';
+  const rowEl = (await P.$$('#gc-pog-ov .gcpog-row'))[subRow];
+  await (await rowEl.$('[data-pg="ask"]')).click();
+  const pre = await (await rowEl.$('[data-pg="asktext"]')).inputValue();
+  await (await rowEl.$('[data-pg="asksend"]')).click();
+  const m = await waitFor(() => T.gc_portal_msg.slice(msgs0).find(x => /What PO is this receipt for\? \$88\.80/.test(x.text)), 6000);
+  ok('B12 💬 Ask for the PO: prefilled "What PO is this receipt for? $88.80 at Floor & Decor on …" → the sub\'s portal thread on the suggested job (no e-mail)', /^What PO is this receipt for\? \$88\.80 at Floor & Decor on \d+\/\d+\.$/.test(pre) && m && m.party === 's:' + SUB.id && m.project_id === 'PA1' && m.side === 'gc', { pre, m });
+  const aceIdx = rows.findIndex(t => /Ace Hardware/.test(t));
+  await (await (await P.$$('#gc-pog-ov .gcpog-row'))[aceIdx].$('[data-pg="use"]')).click();
+  const aceAl = await waitFor(() => { const a = alerts().find(z => z.vendor === 'Ace Hardware'); return a && a.status === 'resolved' ? a : null; }, 6000);
+  ok('B13 ✓ Use on Carl\'s receipt (office) → resolved by Olive Office on Demo Bath B', aceAl && aceAl.setPid === 'PB2' && aceAl.resolvedBy === 'Olive Office', aceAl);
+  await P.evaluate(() => { const o = document.getElementById('gc-pog-ov'); if (o) o.remove(); window._gcPoGuard.open(); });
+  await P.waitForSelector('#gc-pog-ov .gcpog-row');
+  const rows2 = await P.$$('#gc-pog-ov .gcpog-row'); let ofRow = null;
+  for (const r of rows2) if (/\$33\.00, Ace/.test(await r.innerText())) ofRow = r;
+  await (await ofRow.$('[data-pg="po"]')).fill('c555'); await (await ofRow.$('[data-pg="save"]')).click();
+  const ofE = await waitFor(async () => { const x = (await exps(P)).find(z => z.id === 'EXPOF1'); return x && x.pid ? x : null; }, 6000);
+  ok('B14 typing the PO (c555) + Save → the CRM expense gets Demo Kitchen C / C555 and its alert clears', ofE && ofE.pid === 'PC3' && ofE.po === 'c555' && alerts().find(a => a.expId === 'EXPOF1').status === 'resolved', ofE);
+  /* the sub's receipts are filed in the CRM (the SUB block → patch POGUARD) */
+  await P.evaluate(() => window.__skew(60000));
+  await P.evaluate(() => window._gcSubHub.sync());
+  const spr = await waitFor(async () => { const l = (await exps(P)).filter(x => /^SPR_/.test(x.id)); return l.length >= 3 ? l : null; }, 10000);
+  const s1 = (spr || []).find(x => x.id === 'SPR_' + SR1.id) || {}, s0 = (spr || []).find(x => x.amt === 120.5) || {}, s3 = (spr || []).find(x => x.amt === 88.8) || {};
+  ok('B15 sub-portal receipts are filed as PENDING expenses "SPR_<id>": the one with its PO on Demo Bath B; the one the sub fixed later on the job its ✏️ Add PO set (B314); the one with no PO still without a job',
+    s0.pid === 'PB2' && s0.po === 'B314' && s0.status === 'pending' && s0.subId === SUB.id && s1.pid === 'PB2' && s1.po === 'B314' && s3.id && !s3.pid && s3.needsPo === true, { s0, s1, s3 });
+  ok('no page errors (CRM)', cerrs.length === 0, cerrs.slice(0, 6));
+  await C.close();
+}
+{
+  /* Dan (crew): only his own; he can't edit Carl's */
+  const { C, P } = await crmPage('dan@grayco-cs.com');
+  await P.evaluate(() => window._gcPoGuard.load()); await P.evaluate(() => window._gcPoGuard.open());
+  await P.waitForSelector('#gc-pog-ov .gcpog-c');
+  const txt = await P.evaluate(() => document.getElementById('gc-pog-ov').innerText);
+  const carlAl = alerts().find(a => a.by.email === 'carl@grayco-cs.com' && a.status === 'open');
+  const tryIt = carlAl ? await P.evaluate(id => window._gcPoGuard.setPo({ id, src: 'expense' }, { pid: 'PC3' }), carlAl.id) : { error: 'none open' };
+  ok('B16 crew (Dan) sees only his own receipts ("My receipts & POs", Store 1–3), none of Carl\'s; setting Carl\'s is refused', /My receipts & POs/.test(txt) && /Store 1/.test(txt) && !/Carl Crew/.test(txt) && (!carlAl || (tryIt && tryIt.ok !== true && /Only the office/.test(tryIt.error))), { tryIt, txt: txt.slice(0, 300) });
+  await C.close();
+}
+
+/* ─── C. the sub portal (phone) ─── */
+async function portalCtx(){
+  const ctx = await browser.newContext({ serviceWorkers: 'block', bypassCSP: true, viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  await ctx.route('**/*', async r => {
+    const rq = r.request(), u = new URL(rq.url());
+    if (u.host !== 'portal.test') return r.abort('blockedbyclient');
+    const fm = /^\/\.netlify\/functions\/([a-z-]+)$/.exec(u.pathname);
+    if (fm) {
+      if (fm[1] !== 'portal-access') return r.fulfill({ status: 404, contentType: 'application/json', body: '{"ok":false}' });
+      resetAll();
+      const resp = await PA.handler({ httpMethod: rq.method(), headers: Object.assign({ origin: 'https://portal.test', 'x-nf-client-connection-ip': '10.5.' + (NET++ % 250) + '.1' }, rq.headers()), body: rq.postData() || '' });
+      return r.fulfill({ status: resp.statusCode, contentType: 'application/json', body: resp.body });
+    }
+    if (u.pathname === '/' || u.pathname === '/portal.html') return r.fulfill({ status: 200, contentType: 'text/html', body: fs.readFileSync(path.join(BUILD, 'portal.html'), 'utf8') });
+    const f = path.join(BUILD, decodeURIComponent(u.pathname));
+    if (fs.existsSync(f) && fs.statSync(f).isFile()) return r.fulfill({ path: f });
+    return r.fulfill({ status: 404, body: '' });
+  });
+  return ctx;
+}
+{
+  const perrs = [];
+  const C = await portalCtx(), P = await C.newPage(); P.on('pageerror', e => perrs.push(String(e.message).slice(0, 200))); P.on('dialog', d => d.accept().catch(() => {}));
+  await P.goto('https://portal.test/');
+  await P.evaluate(([s]) => { localStorage.setItem('gc_portal_s', s); localStorage.setItem('gc_lang', 'en'); }, [SESS]);
+  await P.reload();
+  const need = await waitFor(() => P.evaluate(() => { const b = document.querySelector('[data-pg-need]'); return b ? b.innerText : null; }), 30000);
+  ok('C1 the sub\'s home → "Needs you": "🧾 Add the PO for your receipt: $88.80 · Floor & Decor …" with GrayCo\'s question', /Add the PO for your receipt: \$88\.80/.test(need || '') && /What PO is this receipt for/.test(need || ''), need);
+  await shot(P, 'poguard_c1_home');
+  await P.click('#pgNewRcpt');
+  await P.waitForSelector('#pgPo');
+  const o = await P.evaluate(() => [...document.querySelectorAll('#pgPo option')].map(x => x.textContent));
+  ok('C2 🧾 Send a receipt / expense: the PO is picked from THEIR jobs (K729 · Demo Roof A, B314 · Demo Bath B — not Demo Kitchen C) + ✏️ Type a PO… + ❓ I don\'t know the PO', o.includes('K729 · Demo Roof A') && o.includes('B314 · Demo Bath B') && !o.some(x => /Kitchen C/.test(x)) && o.includes('✏️ Type a PO…') && o.includes('❓ I don\'t know the PO'), o);
+  await P.click('#pgSendBtn');
+  const e0 = await P.evaluate(() => document.querySelector('[data-pg-err]').textContent);
+  await P.fill('#pgAmt', '19.99'); await P.fill('#pgStore', 'QuikTrip'); await P.click('#pgSendBtn');
+  const e1 = await P.evaluate(() => document.querySelector('[data-pg-err]').textContent);
+  ok('C3 the form asks for the amount, then the PO ("Pick the PO — or \\"I don\'t know the PO\\"")', /amount/.test(e0) && /Pick the PO/.test(e1), [e0, e1]);
+  const ev0 = T.gc_sub_event.filter(e => e.kind === 'receipt').length;
+  await P.selectOption('#pgPo', 'PA1'); await P.click('#pgSendBtn');
+  const sent = await waitFor(() => { const e = T.gc_sub_event.filter(x => x.kind === 'receipt'); return e.length > ev0 ? e[e.length - 1] : null; }, 8000);
+  ok('C4 with the PO picked → sent on Demo Roof A (PO K729), no alert', sent && sent.project_id === 'PA1' && sent.data.po === 'K729' && sent.data.amount === 19.99 && !alerts().some(a => a.srid === sent.data.receiptId), sent && sent.data);
+  await waitFor(() => P.evaluate(() => !document.querySelector('.sheet')), 6000);
+  await P.click('#pgNewRcpt'); await P.waitForSelector('#pgPo');
+  await P.selectOption('#pgPo', '__dk'); await P.fill('#pgAmt', '7.25'); await P.fill('#pgStore', 'Shell'); await P.click('#pgSendBtn');
+  const after = await waitFor(() => P.evaluate(() => { const b = document.querySelector('[data-pg-after]'); return b ? b.innerText : null; }), 8000);
+  ok('C5 ❓ I don\'t know the PO → "Sent — it has no PO yet …" + "Is it this job? Demo Roof A (PO K729)" ✓ Use (their own schedule today)', /no PO yet/.test(after || '') && /Is it this job\? Demo Roof A \(PO# K729\)/.test(after || ''), after);
+  await shot(P, 'poguard_c5_sug');
+  await P.click('#pgUseSug');
+  const shellAl = await waitFor(() => { const a = alerts().find(z => z.vendor === 'Shell'); return a && a.status === 'resolved' ? a : null; }, 8000);
+  ok('C6 ✓ Use → the receipt is on Demo Roof A; GrayCo\'s alert is resolved by the sub', shellAl && shellAl.setPid === 'PA1' && /Zedd Drywall LLC \(sub\)/.test(shellAl.resolvedBy), shellAl);
+  await waitFor(() => P.evaluate(() => !document.querySelector('.sheet')), 6000);
+  await P.reload();
+  await waitFor(() => P.evaluate(() => !!document.querySelector('[data-pg-need]')), 20000);
+  await P.click('[data-pg-need]'); await P.waitForSelector('#pgPoFix');
+  const fixTxt = await P.evaluate(() => document.querySelector('.sheet').innerText);
+  await P.click('[data-pg-use]'); await P.click('#pgPoSave');
+  const fdAl = await waitFor(() => { const a = alerts().find(z => z.vendor === 'Floor & Decor'); return a && a.status === 'resolved' ? a : null; }, 8000);
+  const gone = await waitFor(() => P.evaluate(() => !document.querySelector('[data-pg-need]') ? true : null), 8000);
+  ok('C7 ✏️ Add PO from "Needs you": GrayCo\'s question + the suggested job (✓ Use) → saved; the alert clears and the row leaves "Needs you"', /What PO is this receipt for/.test(fixTxt) && /Demo Roof A/.test(fixTxt) && fdAl && fdAl.setPid === 'PA1' && gone === true, { fixTxt, fdAl });
+  KV.expenses = [{ id: 'SPR_' + SR1.id, pid: 'PB2', amt: 64.1, approved: true, _posted: true }];
+  await P.reload(); await waitFor(() => P.evaluate(() => document.querySelectorAll('[data-pg-rcpt]').length >= 4), 20000);
+  const list = await P.evaluate(() => [...document.querySelectorAll('[data-pg-rcpt]')].map(x => x.innerText));
+  const hd = list.find(t => /Home Depot/.test(t)) || '';
+  ok('C8 "🧾 Your receipts": each with its PO / job and ✏️ to fix it; the one GrayCo approved is locked ("Approved by GrayCo", no ✏️)', list.length >= 5 && list.filter(t => /PO# K729 · Demo Roof A/.test(t) && /✏️/.test(t)).length >= 3 && /Approved by GrayCo/.test(hd) && !/✏️/.test(hd), list.slice(0, 6));
+  KV.expenses = [];
+  await P.evaluate(() => window.GCPartner.setLang('es')); await sleep(600); await P.reload();
+  const es = await waitFor(() => P.evaluate(() => { const b = document.getElementById('pgNewRcpt'); return b ? b.textContent : null; }), 20000);
+  ok('C9 Español: "🧾 Enviar un recibo / gasto"', es === '🧾 Enviar un recibo / gasto', es);
+  await P.evaluate(() => { try { window.GCPartner.setLang('en'); } catch (e) {} });
+  ok('no page errors (sub portal)', perrs.length === 0, perrs.slice(0, 6));
+  await C.close();
+}
+await browser.close();
+const n = R.filter(Boolean).length;
+console.log('\nPOGUARD ' + n + '/' + R.length + ' passed');
+process.exit(n === R.length ? 0 : 1);
