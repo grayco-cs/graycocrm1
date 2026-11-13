@@ -45,14 +45,27 @@ function candidate(r){
   return WORDS.test(s(r.subject)) || (r.att && WORDS.test(s(r.snippet)));
 }
 /* mail-all's sync hands over the rows of each mailbox it read → the queue (once per message) */
+/* patch INVMAIL: Wesley's, Nick's and office@'s mailboxes (INVMAIL_BOXES) are WATCHED: a wider look (any invoice / bill / statement /
+   receipt word, a file from a sub or supplier on the CRM's lists, a sender someone marked "sends invoices"), and the whole message is
+   judged by the invoice detector (_lib/invmail.js) → the invoices@ intake, the receipts flow or 📥 Possible invoices from e-mail. */
+function IM(){ return require('./invmail.js'); }
+let KNOWN = { at: 0, fn: null };
+async function invCtx(C){
+  const ctx = { senders: {}, knownEmail: null };
+  try { ctx.senders = await IM().senders(); } catch (e) {}
+  if (!KNOWN.fn || Date.now() - KNOWN.at > 300000) { try { KNOWN = { at: Date.now(), fn: IM().knownIndex(await C.kvRead(['subs', 'vendors', 'ccw_suppliers'])) }; } catch (e) { KNOWN = { at: Date.now(), fn: function(){ return false; } }; } }
+  ctx.knownEmail = KNOWN.fn; return ctx;
+}
 async function queue(box, rows, deps){
   box = low(box);
-  const full = moneyBoxes().indexOf(box) >= 0;
-  if (!full && !invoiceAll()) return 0;
-  const since = Date.now() - Math.max(1, parseInt(env('MONEY_MAILBOX_DAYS') || '3', 10)) * 864e5;   /* the first look reads 30 days of mail: only the newest days become invoices */
-  const add = arr(rows).filter(function(r){ return (full ? candidate(r) : invoiceCandidate(r)) && !(Date.parse(r.at) < since); }).map(function(r){ const q = { key: box + ':' + r.id, box: box, id: s(r.id), mid: s(r.mid), subject: s(r.subject).slice(0, 160), at: new Date().toISOString() }; if (!full) q.invOnly = true; return q; });
-  if (!add.length) return 0;
+  const full = moneyBoxes().indexOf(box) >= 0, watched = IM().boxes().indexOf(box) >= 0;
+  if (!full && !watched && !invoiceAll()) return 0;
   const C = (deps && deps.core) || core();
+  let ctx = null;
+  if (watched) { try { await IM().markSeen([box], 'gmail', deps && deps.kv ? { kv: deps.kv } : undefined); } catch (e) {} try { ctx = await invCtx(C); } catch (e) { ctx = {}; } }
+  const since = Date.now() - Math.max(1, parseInt(env('MONEY_MAILBOX_DAYS') || '3', 10)) * 864e5;   /* the first look reads 30 days of mail: only the newest days become invoices */
+  const add = arr(rows).filter(function(r){ return (watched && IM().rowCandidate(r, ctx) || (full ? candidate(r) : invoiceCandidate(r))) && !(Date.parse(r.at) < since); }).map(function(r){ const q = { key: box + ':' + r.id, box: box, id: s(r.id), mid: s(r.mid), subject: s(r.subject).slice(0, 160), at: new Date().toISOString() }; if (watched) q.inv = true; else if (!full) q.invOnly = true; return q; });
+  if (!add.length) return 0;
   let n = 0;
   const w = await C.kvListUpdate(QKEY, function(l){
     const have = {}; l.forEach(function(x){ if (x && x.key) have[x.key] = 1; });
@@ -82,7 +95,8 @@ async function mailOf(G, box, id){
     files.push({ name: s(q.filename), type: low(q.mimeType), size: buf.length, buf: buf });
   }
   const text = s(body.text) || s(body.html).replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|tr|li)>/gi, '\n').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/[ \t]+/g, ' ');
-  return { id: 'gm_' + id, from: from, to: [], cc: [], subject: H.subject || '', text: text.slice(0, 40000), html: s(body.html).slice(0, 400000),
+  const em = function(v){ return (s(v).match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi) || []).map(function(e){ return { email: low(e), name: '' }; }); };   /* patch INVMAIL: who it was sent to */
+  return { id: 'gm_' + id, from: from, to: em(H.to), cc: em(H.cc), subject: H.subject || '', text: text.slice(0, 40000), html: s(body.html).slice(0, 400000),
     date: m.internalDate ? new Date(parseInt(m.internalDate, 10)).toISOString() : (H.date || ''), files: files, skipped: skipped, headers: H, messageId: H['message-id'] || '' };
 }
 
@@ -117,6 +131,7 @@ function moneyDeps(storeFile, extra){
     crmData: function(){ return C.kvRead(['projects', 'subs', 'vendors', 'invs', 'invoices', 'gc_deleted_projects', 'ccw_suppliers', 'expenses']); },
     doneRead: function(){ return C.kvRead(['gc_mail_money_done']).then(function(o){ const v = o && o.gc_mail_money_done; return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; }); },   /* patch MAILFIX */
     ai: require('./ai.js'),
+    loadRef: function(ref){ return require('./invmail.js').loadRef(ref); },   /* patch SHIPTO: a dropped file's text again */
     driveExport: driveExporter(moneyBoxes())
   }, extra || {});
 }
@@ -140,7 +155,14 @@ async function drain(opts){
       const mail = await mailOf(G, q.box, q.id);
       out.read++;
       const fwd = /^\s*(fwd?|fw)\s*:/i.test(mail.subject);
-      if (staff(mail.from.email) && !fwd) res = { ignored: 'sent by GrayCo' };
+      let inv = null;
+      if (q.inv) {   /* patch INVMAIL: a watched mailbox (Wesley / Nick / office@) — the invoice detector decides */
+        inv = await IM().take(mail, { boxes: [q.box].concat(IM().watchedIn(mail, [])), road: 'gmail', via: q.box + ' mailbox', storeFile: storeFile, gmail: { box: q.box, id: q.id },
+          moneyDeps: function(extra){ return moneyDeps(storeFile, extra); } });
+        if (inv && inv.invmail === 'ignore' && moneyBoxes().indexOf(q.box) >= 0 && !/GrayCo|CRM|newsletter|automatic|bounce|bid/i.test(s(inv.ignored)) && FA.looksLikeOrder(mail)) inv = Object.assign({ kind: 'order' }, await FA.fromEmail(mail));   /* office@ still takes supplier orders */
+      }
+      if (inv) res = inv;
+      else if (staff(mail.from.email) && !fwd) res = { ignored: 'sent by GrayCo' };
       else if (/^(out of office|automatic reply|auto(matic)?[- ]?reply|undeliverable)/i.test(mail.subject)) res = { ignored: 'automatic reply' };
       else {
         const kind = MM.kindFromWords(mail);

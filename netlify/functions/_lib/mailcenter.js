@@ -68,7 +68,7 @@ function rowOf(evt, result){
   let what = '';
   if (b.ignored) what = 'not kept — ' + s(b.ignored).slice(0, 80);
   else if (b.inbox === 'history') what = b.stored ? 'job e-mail history' : 'not a job e-mail (thrown away)';
-  else if (b.inbox) what = { leads: 'lead', 'sub-bids': 'sub bid', orders: 'supplier order', 'bid-replies': 'GC reply to our bid', unsorted: 'bids@ — unsorted' }[b.inbox] || s(b.inbox);
+  else if (b.inbox) what = { leads: 'lead', 'sub-bids': 'sub bid', orders: 'supplier order', 'bid-replies': 'GC reply to our bid', unsorted: 'bids@ — unsorted', 'mailbox-copy': b.invmail === 'maybe' ? 'possible invoice (📥 to review)' : b.invmail === 'receipt' ? 'receipt (Wesley / Nick / office@ mail)' : 'invoice (Wesley / Nick / office@ mail)' }[b.inbox] || s(b.inbox);
   else if (b.results) what = 'bid results answer';
   else if (b.notice) what = 'Google group notice';
   else if (b.accepted) what = 'received (being processed)';
@@ -83,6 +83,7 @@ async function log(evt, result, kv){
      mail copied by the routing rule is thrown away on arrival — not stored, not logged) */
   const b = (result && result.body) || {};
   if (b.inbox === 'history' && !b.stored) return null;
+  if (b.inbox === 'mailbox-copy' && !b.kept) return null;   /* patch INVMAIL: the same rule for the Wesley / Nick / office@ copies — only an invoice / receipt / possible invoice is noted */
   const row = rowOf(evt, result);
   await kv.kvCas(LOG_KEY, v => {
     const l = arr(v);

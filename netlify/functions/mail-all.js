@@ -48,6 +48,7 @@ async function mailboxes(){
   } catch (e) {}
   let set = null; try { set = MC.settings(await require('./bid-inbox.js')._lib.kvGet(MC.SET_KEY)); } catch (e) { set = MC.settings(null); }
   arr(set.mailboxes).forEach(add); add('office@' + dom);
+  try { require('./_lib/invmail.js').boxes().forEach(add); } catch (e) {}   /* patch INVMAIL: Wesley's, Nick's and office@'s mailboxes are always read (invoices) */
   arr(set.aliases).forEach(a => { if (a && (a.kind === 'mailbox')) add(a.address); if (a && a.mailbox) add(a.mailbox); });
   const hidden = arr(set.hidden).map(low);
   return out.filter(e => hidden.indexOf(e) < 0);

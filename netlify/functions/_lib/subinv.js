@@ -346,6 +346,8 @@ function scoreJob(p, f){
     else if (sameNum && (nameEq || nameNear)) { sc = 80; why.push('house number and street name'); }
     else if (nameEq && sufOk && a.name.length >= 5) { sc = 35; why.push('street name only'); }
   } else if (!a && pa && pa.name.length >= 5 && (' ' + normName(f.hay) + ' ').indexOf(' ' + pa.name + ' ') >= 0) { sc = 30; why.push('street name "' + pa.name + '" in the text'); }
+  /* patch SHIPTO: the ZIP, when both have one — the same house number and street in another town is not this job */
+  if (f.zip && sc >= 80) { const pz = (/\b(\d{5})(?:-\d{4})?\s*$/.exec(jobAddr(p)) || /\b[A-Z]{2}\s+(\d{5})\b/i.exec(jobAddr(p)) || [])[1]; if (pz && pz !== s(f.zip)) { sc -= 30; why.push('but another ZIP (' + f.zip + ' vs ' + pz + ')'); } else if (pz) { sc += 2; why.push('ZIP ' + pz); } }
   const po = s(p.autoPO || p.po).toUpperCase();
   if (po && po.length >= 3) {
     if (f.po && s(f.po).toUpperCase() === po) { sc = Math.max(sc, 95) + (sc >= 80 ? 4 : 0); why.push('PO ' + po); }
@@ -529,7 +531,22 @@ async function analyze(mail, files, deps){
   const sub = matchSub(payees, { email: who.email || read.vendorEmail, name: who.name, vendor: read.vendor, hay: fileHay });
   /* the job: the CRM PO on the invoice first (patch MONEY), then the address / customer / job name, then the sub's open jobs */
   const hay = text.slice(0, 20000) + ' ' + fileHay + ' ' + bodyText.slice(0, 4000);
-  const jm = matchJob(data.projects, { jobAddress: read.jobAddress, po: read.po, customer: read.customer, hay: text.slice(0, 20000) + ' ' + fileHay }, data.gc_deleted_projects);
+  /* patch SHIPTO (owner 11/13: "match invoices from companies for job address like on ABC"): every address on the paper with the label
+     it sits under (ship to / job site / deliver to / job name …; never GrayCo's own, the bill-to / remit-to last) is tried against the
+     jobs, this vendor's usual spot first (_lib/shipto.js) */
+  const SH = require('./shipto.js');
+  const bj = SH.bestJob({ read: read, text: s(text) + '\n' + s(deps.shipText), projects: data.projects, deleted: data.gc_deleted_projects, po: read.po, customer: read.customer,
+    hay: text.slice(0, 20000) + ' ' + s(deps.shipText).slice(0, 20000) + ' ' + fileHay, mailList: deps.mailList, data: data, sub: sub, fromEmail: who.email });
+  const jm = bj.jm;
+  read.addrs = bj.cands.filter(function(c){ return c.kind !== 'ours'; }).slice(0, 6).map(function(c){ return { label: c.label, address: c.address, zip: c.zip, kind: c.kind }; });
+  if (!s(read.customer) && bj.jobName) read.customer = bj.jobName.slice(0, 120);
+  let shipTo = null;
+  if (bj.pick && bj.pick.kind !== 'read' && jm.best && jm.best.conf >= 50) {
+    shipTo = { label: bj.pick.label || 'address', address: bj.pick.address, zip: bj.pick.zip, tpl: !!(bj.tpl && bj.tpl.label === bj.pick.label) };
+    read.jobAddress = bj.pick.address + (bj.pick.zip ? ' ' + bj.pick.zip : '');
+    jm.best = Object.assign({}, jm.best, { why: 'matched by the ' + (bj.pick.label ? bj.pick.label + ' ' : '') + 'address ' + bj.pick.address + (shipTo.tpl ? ' (where ' + s(read.vendor || (sub && sub.name)) + ' prints the job)' : '') + (jm.best.why ? ' · ' + jm.best.why : '') });
+    jm.top = [jm.best].concat(arr(jm.top).filter(function(x){ return x.pid !== jm.best.pid; })).slice(0, 3);
+  }
   let job = jm.best, how = job ? 'match' : '';
   const pj = poJob(data.projects, { po: read.po, hay: hay }, data.gc_deleted_projects);
   if (pj) {
@@ -559,12 +576,14 @@ async function analyze(mail, files, deps){
   else if (dup) { route = 'dup'; why = dup.why; }
   else if (!(read.total > 0)) { route = 'match'; why = 'the amount could not be read'; }
   else if (payKind === 'sub' && (!read.isInvoice || !read.weOwe)) { route = 'review'; why = 'it does not say GrayCo owes it (paid, a statement or not an invoice)'; }
+  else if (!jm.certain && jm.twoJobs) { route = 'match'; why = 'the invoice names two job addresses (' + arr(jm.top).map(function(x){ return s(x.name); }).join(' / ') + ') — pick the job once; the CRM learns where this vendor prints it'; }   /* patch SHIPTO */
   else if (!jm.certain) { route = 'match'; why = job ? 'the job is not certain (best ' + job.conf + '%: ' + job.why + ')' : 'no job matched' + (read.po ? ' (PO "' + read.po + '" is not a CRM job)' : '') + (read.jobAddress ? ' "' + read.jobAddress + '"' : ''); }
   else if (payKind === 'sub' && (!sub || sub.conf < 80)) { route = 'match'; why = 'the sub is not on the CRM\'s sub list' + (read.vendor ? ' ("' + read.vendor + '")' : ''); }
   return { v: 1, route: route, why: why, src: src, payee: payKind, kind: deps.kind || 'sub_invoice', jobBy: jm.certain ? how || 'match' : '', file: used ? { name: s(used.name), kind: used.kind, ref: s(used.ref), link: s(used.link) } : null,
     read: read, sub: sub ? { id: sub.id, name: sub.name, conf: sub.conf, why: sub.why } : { id: '', name: read.vendor || who.name, conf: 0, why: 'not on the sub list' },
     job: job, top: jm.top, certain: !!jm.certain, dup: dup, recvDate: recvDate, payDate: pay.payDate, ruleDate: pay.ruleDate, payRule: pay.rule, byTerms: pay.byTerms,
     retainagePct: retPct, retainage: retainage, net: r2(read.total - retainage), fromEmail: who.email, fromName: who.name, subject: subject,
+    shipTo: shipTo, tpl: bj.tpl || null,   /* patch SHIPTO */
     forwardedBy: fw ? fw.by : '', links: linkInfo.length ? linkInfo : links.map(function(l){ return { url: l.url, kind: l.kind, ok: false }; }), at: new Date(now).toISOString() };
 }
 
@@ -577,4 +596,4 @@ function clientDup(read, invoices){
 function fileHash(buf){ return crypto.createHash('sha256').update(buf).digest('hex'); }
 module.exports = { analyze, parseText, docxText, xlsxText, docText, pdfText, csvText, textOf, kindOf, typeFor, unzipEntries, addrParts, findAddress, matchJob, matchSub, scoreJob,
   payRule, payDateFor, centralYmd, findDup, invKey, forwarded, googleLinks, fetchGoogle, retainageFor, aiRead, AI_TOOL, fileHash,
-  poJob, poTokens, subOpenJobs, payeeKind, supplierRows, findExpDup, ownInvoice, clientDup };
+  poJob, poTokens, subOpenJobs, payeeKind, supplierRows, findExpDup, ownInvoice, clientDup, sameSub, normName };   /* patch INVMAIL: + sameSub, normName */
