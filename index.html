@@ -83251,7 +83251,20 @@ window._gcPickZ = window._gcPickZ || function(sel, base){   /* patch PICKZ: abov
             var m=window._gcUnionMerge(key, Array.isArray(local)?local:[], val);
             await idbSet(key, m);
             try{ if(window._applyOrQueue) window._applyOrQueue(key, m); }catch(e){}
-            try{ var _s=window['_set'+key.charAt(0).toUpperCase()+key.slice(1)]||(key==='invs'?window._setInvoices:null)||(key==='estimates'?window._gcSetEstimates:null); if(_s)_s(m.slice()); }catch(e){}
+            /* patch LEADPERF (LEADKEEP restore race): "local" above is this computer's saved copy, which is written a moment AFTER
+               the screen changes — a lead added (or a value set) less than ~1 s before this pull (a pull runs on every tab change)
+               was not in it yet, and putting m on the screen threw it away for good. Now m is joined with what is on the
+               screen at that moment (window._crm): a record on the screen that m does not have yet is kept (unless it was deleted —
+               the union's own rule); every record m has is taken from m exactly as before. */
+            try{ var _s=window['_set'+key.charAt(0).toUpperCase()+key.slice(1)]||(key==='invs'?window._setInvoices:null)||(key==='estimates'?window._gcSetEstimates:null);
+              if(_s){ var _out=m.slice();
+                try{ var _cur=window._crm && window._crm[key==='invs'?'invoices':key]; if(!Array.isArray(_cur) && key==='invs') _cur=window._crm && window._crm.invs;
+                  if(Array.isArray(_cur) && _cur.length && window._gcUnionMerge){
+                    var _in={}; m.forEach(function(r){ if(r && r.id!=null) _in[r.id]=1; });
+                    var _extra=_cur.filter(function(r){ return r && typeof r==='object' && r.id!=null && !_in[r.id]; });
+                    if(_extra.length){ _extra=window._gcUnionMerge(key, _extra, []); if(Array.isArray(_extra) && _extra.length){ _out=m.concat(_extra); try{ await idbSet(key, _out); }catch(_w){} } }
+                  } }catch(_u){}
+                _s(_out); } }catch(e){}
           }
         }
       }
@@ -228503,11 +228516,15 @@ function restoreFrom(old, at){
   at = s(at) || new Date().toISOString(); var I = {}, cnt = { prio: 0, other: 0, leads: 0 };
   arr(old).forEach(function(o){ if (!o || !o.id) return; keys(o).forEach(function(k){ if (I[k] == null) I[k] = o; }); });
   var pick = function(l){ var ks = keys(l); for (var p = 0; p < 4; p++) { var pre = ['id:', 'ib:', 'no:', 'n:'][p]; for (var i = 0; i < ks.length; i++) if (ks[i].indexOf(pre) === 0 && I[ks[i]]) return I[ks[i]]; } return null; };
-  var now = new Date().toISOString(), out = null;
+  var now = new Date().toISOString(), out = null, ran = false;
   return new Promise(function(res){
     if (typeof W._setLeads !== 'function') return res(cnt);
-    try { W._setLeads(function(prev){ if (!Array.isArray(prev)) return prev; out = prev.map(function(l){ if (!l || !l.id || l.deleted) return l; var o = pick(l); if (!o) return l; var c = Object.assign({}, l), n = fillFrom(c, o, at); if (!n) return l; cnt.prio += n.prio; cnt.other += n.other; cnt.leads++; c.updatedAt = c.savedAt = now; c.keptBy = 'LEADKEEP backup'; return c; }); return out; }); } catch (e) {}
-    setTimeout(function(){ try { var cur = W._crm && W._crm.leads; cur = Array.isArray(cur) && cur.length ? cur : out; if (cnt.leads && typeof W._supaUpsertNow === 'function' && Array.isArray(cur)) W._supaUpsertNow('leads', cur); } catch (e) {} capture(); res(cnt); }, 400);
+    /* patch LEADPERF: React may run this "work it out" function more than once (and not at once): the counts start over on each run
+       (they were added up twice — "Restored 2 priorities" for one) and the answer waits until it has run (below) */
+    try { W._setLeads(function(prev){ if (!Array.isArray(prev)) return prev; cnt.prio = 0; cnt.other = 0; cnt.leads = 0; ran = true; out = prev.map(function(l){ if (!l || !l.id || l.deleted) return l; var o = pick(l); if (!o) return l; var c = Object.assign({}, l), n = fillFrom(c, o, at); if (!n) return l; cnt.prio += n.prio; cnt.other += n.other; cnt.leads++; c.updatedAt = c.savedAt = now; c.keptBy = 'LEADKEEP backup'; return c; }); return out; }); } catch (e) {}
+    var t0 = Date.now();   /* patch LEADPERF: on a busy computer the list was not redrawn within a fixed 400 ms, so it said "Restored 0" */
+    (function done(){ if ((!ran || Date.now() - t0 < 400) && Date.now() - t0 < 10000) { setTimeout(done, 100); return; }
+      try { var cur = W._crm && W._crm.leads; cur = Array.isArray(cur) && cur.length ? cur : out; if (cnt.leads && typeof W._supaUpsertNow === 'function' && Array.isArray(cur)) W._supaUpsertNow('leads', cur); } catch (e) {} capture(); res(cnt); })();
   });
 }
 function restoreBackup(before){

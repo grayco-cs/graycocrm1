@@ -135,6 +135,13 @@ export async function measure(build, opt){
   const F = await A.ev(() => window.__lpF.slice(1)); const ls = await lts(g0, await now());
   M.scroll = { frames: F.length, maxGapMs: Math.round(Math.max(0, ...F)), gapsOver50: F.filter(x => x > 50).length, longTasks: ls.length };
 
+  /* 7) nobody at the computer for over a minute, still on Leads (the CRM slows its background loops after 60 s) */
+  if (opt.idleLong) {
+    await H.sleep(65000);
+    const j0 = await now(), c0 = await busy(); await H.sleep(opt.idleLong * 1000); const j1 = await now(), c1 = await busy();
+    const lj = await lts(j0, j1);
+    M.idleLong = { seconds: opt.idleLong, cpuBusyPct: Math.round((c1 - c0) / ((j1 - j0) / 1000) * 1000) / 10, longTasks: lj.length, longestMs: Math.round(Math.max(0, ...lj.map(x => x.d))) };
+  }
   M.errors = A.errs.slice(0, 10);
   await A.close();
   return M;
@@ -152,7 +159,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
   const a = process.argv.slice(2); const build = path.resolve(a[0] || '.');
   const prof = a.indexOf('--profile') >= 0 ? a[a.indexOf('--profile') + 1] : '';
   const idle = a.indexOf('--idle') >= 0 ? +a[a.indexOf('--idle') + 1] : 10;
-  const M = await measure(build, { profile: prof, idle, attrib: a.includes('--attrib') });
+  const M = await measure(build, { profile: prof, idle, attrib: a.includes('--attrib'), idleLong: a.indexOf('--idlelong') >= 0 ? +a[a.indexOf('--idlelong') + 1] : 0 });
   console.log(JSON.stringify(M, null, 1));
   process.exit(0);
 }
