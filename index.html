@@ -115760,6 +115760,16 @@ async function fillFromQuickBooks(rec){
   if(!rec.customer && !rec.vendor && who) { if(q.entity==='Purchase'||q.entity==='Bill'||q.entity==='BillPayment') rec.vendor=s(who.name); else rec.customer=s(who.name); }
   try{ rec.address=s(o.ShipAddr&&o.ShipAddr.Line1)||s(o.BillAddr&&o.BillAddr.Line1)||rec.address; }catch(e){}
   rec.missing=[]; if(!rec.amount) rec.missing.push('amount');
+  /* patch LUMPSUM: a BillPayment / Payment that pays several bills / invoices lists them (LinkedTxn) — read their numbers (GET only) so
+     accepting it marks each one paid instead of booking a new cost (window._gcLumpSum.applyQb) */
+  if((q.entity==='BillPayment'||q.entity==='Payment') && Array.isArray(o.Line)){
+    try{
+      var _ap=[];
+      for(var _i=0;_i<o.Line.length && _i<60;_i++){ var _l=o.Line[_i]||{}; var _lt=(_l.LinkedTxn||[]).filter(function(x){ return x && /^(Bill|Invoice)$/.test(s(x.TxnType)); });
+        for(var _j=0;_j<_lt.length;_j++){ var _d=await qbGet('/'+low(_lt[_j].TxnType)+'/'+encodeURIComponent(s(_lt[_j].TxnId))); var _o=_d&&(_d[_lt[_j].TxnType]||_d); _ap.push({ num:s(_o&&_o.DocNumber), txnId:s(_lt[_j].TxnId), amount:num(_l.Amount) }); } }
+      if(_ap.length) rec.applied=_ap;
+    }catch(e){}
+  }
   rec.fetched=true;
   return rec;
 }
@@ -230912,6 +230922,61 @@ function hookQb(){
   w.__lump = true; W._gcQbCsvApply = w;
 }
 SI(hookQb, 4000); ST(hookQb, 1200);
+/* the Money Inbox (QuickBooks webhook): a payment to / from someone with open bills / invoices goes ON them — never a second cost */
+function markInbox(id, lumpId){
+  return Promise.resolve(W.idbGet ? W.idbGet('gc_money_inbox') : []).then(function(l){
+    l = arr(l); var r = l.filter(function(x){ return x.id === id; })[0]; if (!r) return;
+    r.status = 'accepted'; r.acceptedAs = 'lump-sum'; r.lumpId = lumpId; r.acceptedAt = nowIso(); r.acceptedBy = myName();
+    return Promise.resolve(W.idbSet && W.idbSet('gc_money_inbox', l)).then(function(){ try { if (W._supaUpsert) W._supaUpsert('gc_money_inbox', l); } catch (e) {} try { if (D.getElementById('_moneyInbox') && W._gcOpenMoneyInbox) W._gcOpenMoneyInbox(); } catch (e) {} });
+  });
+}
+function hookMoney(){
+  var f = W._gcMoneyAccept; if (typeof f !== 'function' || f.__lump) return;
+  var w = function(id, pid, asType){
+    var self = this, args = arguments;
+    return Promise.resolve(W.idbGet ? W.idbGet('gc_money_inbox') : []).then(function(l){
+      var r = arr(l).filter(function(x){ return x.id === id; })[0], type = s(asType) || (r && r.type);
+      if (!r || type !== 'payment' || r.status !== 'pending' || !canUse()) return f.apply(self, args);
+      var vend = !!(r.vendor && !r.customer), name = vend ? r.vendor : r.customer, kind = vend ? 'billpayment' : 'payment';
+      var key = 'QB:' + kind + ':' + (s(r.docNumber) || s(r.ref) || (s(r.date) + ':' + c(r.amount))) + ':' + (normParty(name).split(' ')[0] || '');
+      if (arr(r.applied).length) { var x = applyQb({ key: key, kind: kind, name: name, amount: r.amount, date: r.date, num: r.docNumber, applied: r.applied }); if (x.ok && (x.id || x.already)) return markInbox(id, x.id || '').then(function(){ return { ok: true, lumpId: x.id, already: !!x.already }; }); }
+      var side = vend ? 'pay' : 'receive', op = invoices().filter(function(v){ return (vend ? isBill(v) : isClientInv(v)) && isOpen(v) && (sameParty(partyOf(v), name) || looseParty(partyOf(v), name)); });
+      if (!op.length) return f.apply(self, args);
+      var tot = op.reduce(function(a, v){ return a + c(openOf(v)); }, 0) / 100;
+      if (!W.confirm('This ' + money(r.amount) + ' payment ' + (vend ? 'to ' : 'from ') + name + ' — they have ' + op.length + ' open ' + (vend ? 'bill' : 'invoice') + (op.length === 1 ? '' : 's') + ' (' + money(tot) + ').\n\nOK = mark which ' + (vend ? 'bills' : 'invoices') + ' it pays (nothing counted twice)\nCancel = book it the old way (' + (vend ? 'a new paid cost' : 'a payment on the job') + ')')) return f.apply(self, args);
+      open({ side: side, party: partyOf(op[0]), amount: r2(r.amount), date: s(r.date), checkNo: s(r.docNumber), ref: 'QuickBooks ' + (vend ? 'bill payment' : 'payment') + (r.docNumber ? ' #' + r.docNumber : ''), qbKey: key, onSaved: function(rec){ markInbox(id, rec.id); } });
+      if (UI) autoApply();
+      return { ok: true, pending: 'lump-sum screen' };
+    });
+  };
+  w.__lump = true; W._gcMoneyAccept = w;
+}
+/* the QuickBooks "needs a home" to-do for a payment: "🔗 It pays several bills / invoices" */
+function hookQbHome(){
+  var f = W._gcOpenQbHome; if (typeof f !== 'function' || f.__lump) return;
+  var w = function(taskId){
+    var out = f.apply(this, arguments);
+    try {
+      var T = arr(JSON.parse(lsGet('gc_office_tasks') || '[]')), t = T.filter(function(x){ return x.id === taskId; })[0], q = (t && t.qb) || {};
+      var ov = D.getElementById('_gcQbHomeOv');
+      if (ov && /^(payment|billpayment)$/.test(q.kind) && canUse() && !ov.querySelector('[data-lump-qb]')) {
+        var b = D.createElement('div'); b.style.margin = '8px 0';
+        b.innerHTML = '<button type="button" data-lump-qb="1" style="border:0;background:#0F1D2F;color:#fff;border-radius:8px;padding:8px 14px;font-weight:800;cursor:pointer">🔗 It pays several ' + (q.kind === 'billpayment' ? 'bills' : 'invoices') + ' — mark each one</button>';
+        var host = ov.querySelector('div') || ov; host.appendChild(b);
+        b.firstChild.onclick = function(){
+          ov.remove();
+          var side = q.kind === 'billpayment' ? 'pay' : 'receive', nm = s(q.name), p1 = invoices().filter(function(v){ return (side === 'pay' ? isBill(v) : isClientInv(v)) && isOpen(v) && looseParty(partyOf(v), nm); })[0];
+          open({ side: side, party: p1 ? partyOf(p1) : nm, amount: r2(q.amount), date: s(q.date), checkNo: s(q.num), ref: 'QuickBooks ' + (side === 'pay' ? 'bill payment' : 'payment') + (q.num ? ' #' + q.num : ''), qbKey: s(t.qbKey),
+            onSaved: function(rec){ try { var L2 = arr(JSON.parse(lsGet('gc_office_tasks') || '[]')); L2.forEach(function(x){ if (x.id === taskId) { x.done = true; x.doneAt = nowIso(); x.updatedAt = x.doneAt; x.resolution = 'put on ' + rec.applied.length + ' ' + (side === 'pay' ? 'bills' : 'invoices') + ' (lump-sum payment ' + rec.id + ')'; x.resolvedBy = myName(); } }); lsSet('gc_office_tasks', JSON.stringify(L2)); if (W._gcApplySync) W._gcApplySync('gc_office_tasks', L2); } catch (e) {} } });
+          if (UI) autoApply();
+        };
+      }
+    } catch (e) {}
+    return out;
+  };
+  w.__lump = true; W._gcOpenQbHome = w;
+}
+SI(function(){ hookMoney(); hookQbHome(); }, 4000); ST(function(){ hookMoney(); hookQbHome(); }, 1500);
 
 /* ═════════════ the screen ═════════════ */
 var CSS = '#gc-lump{position:fixed;inset:0;z-index:100050;background:rgba(15,29,47,.55);display:flex;align-items:flex-start;justify-content:center;padding:18px 10px;overflow:auto;font:14px Inter,Arial,sans-serif;color:#0f172a}' +
@@ -230963,7 +231028,7 @@ function open(opt){
   var stmt = opt.statementInvId ? invoices().filter(function(r){ return r.id === opt.statementInvId; })[0] : null;
   UI = { ov: ov, side: opt.side === 'receive' ? 'receive' : 'pay', party: s(opt.party || (stmt && partyOf(stmt))), from: '', to: '', job: '', amount: opt.amount != null ? r2(opt.amount) : (stmt ? amtOf(stmt) : ''),
     date: s(opt.date) || today(), method: s(opt.method) || (opt.side === 'receive' ? 'check' : 'check'), checkNo: s(opt.checkNo), ref: s(opt.ref), stmtNo: s(opt.stmtNo || (stmt && invNo(stmt))), note: '', file: null,
-    sel: {}, credit: false, statementInvId: stmt ? stmt.id : '', view: opt.view || 'new', msg: '' };
+    sel: {}, credit: false, statementInvId: stmt ? stmt.id : '', view: opt.view || 'new', msg: '', qbKey: s(opt.qbKey), onSaved: typeof opt.onSaved === 'function' ? opt.onSaved : null };
   ov.addEventListener('click', onClick); ov.addEventListener('input', onInput); ov.addEventListener('change', onChange);
   D.body.appendChild(ov); draw();
   if (Array.isArray(opt.preselect)) { opt.preselect.forEach(function(id){ var r = invoices().filter(function(x){ return x.id === id; })[0]; if (r && isOpen(r)) UI.sel[id] = openOf(r); }); if (UI.amount === '') UI.amount = r2(tot()); draw(); }
@@ -230991,7 +231056,8 @@ function draw(){
   var u = UI, ov = u.ov, pay = u.side === 'pay';
   if (u.view === 'list') return drawList();
   if (u.view === 'show') return drawShow(u.showId);
-  var P = partiesFor(u.side), R = u.party ? rowsFor() : [], jobs = {};
+  var P = partiesFor(u.side), R = u.party ? rowsFor() : [], jobs = {}, CHK = {};
+  try { arr(JSON.parse(lsGet('gc_check_queue') || '[]')).forEach(function(k){ if (k.subInvId && /^(entered|written|signed)$/.test(s(k.status))) CHK[k.subInvId] = s(k.status); }); } catch (e) {}
   invoices().forEach(function(r){ if ((pay ? isBill(r) : isClientInv(r)) && isOpen(r) && u.party && sameParty(partyOf(r), u.party) && r.pid) jobs[r.pid] = 1; });
   var stmt = u.statementInvId ? invoices().filter(function(r){ return r.id === u.statementInvId; })[0] : null;
   var h = '<div class="lp"><div style="display:flex;gap:10px;align-items:center"><h2 style="flex:1">' + (pay ? '💵 Pay several invoices at once' : '💰 Record one payment for several invoices') + '</h2>' +
@@ -231020,7 +231086,7 @@ function draw(){
     h += '<div style="overflow-x:auto"><table><thead><tr><th></th><th>Job</th><th>Invoice #</th><th>QB #</th><th>Date</th><th class="n">Amount</th><th class="n">Open</th><th>Status</th><th class="n">Apply</th></tr></thead><tbody>' +
       (R.length ? R.map(function(x){ var r = x.inv, on = x.id in u.sel;
         return '<tr data-id="' + esc(x.id) + '"' + (on ? ' class="on"' : '') + '><td><input type="checkbox" data-lp="tick"' + (on ? ' checked' : '') + '></td><td>' + jobText(r) + '</td><td>' + esc(invNo(r) || '—') + (r.desc ? '<div class="sub">' + esc(s(r.desc).slice(0, 60)) + '</div>' : '') + '</td><td>' + qbBadge(r) + '</td><td>' + esc(invDay(r)) + '</td>' +
-          '<td class="n">' + money(amtOf(r)) + '</td><td class="n">' + money(x.open) + '</td><td><span class="pill">' + esc(r.status || 'open') + '</span></td>' +
+          '<td class="n">' + money(amtOf(r)) + '</td><td class="n">' + money(x.open) + '</td><td><span class="pill">' + esc(r.status || 'open') + '</span>' + (CHK[r.id] ? ' <span class="pill" style="background:#fef3c7;color:#92400e" title="A single check for this bill is already in the check queue — void it there if this payment covers it">✍ check ' + esc(CHK[r.id]) + '</span>' : '') + (r.payHold ? ' <span class="pill">⏸ on hold</span>' : '') + '</td>' +
           '<td class="n"><input class="ap" data-lp="ap" inputmode="decimal" value="' + (on ? esc(r2(u.sel[x.id]).toFixed(2)) : '') + '" placeholder="—"></td></tr>'; }).join('') : '<tr><td colspan="9" class="sub">Nothing open for this ' + (pay ? 'vendor' : 'customer') + (u.from || u.to || u.job ? ' with these filters' : '') + '.</td></tr>') +
       '</tbody></table></div>';
   }
@@ -231098,8 +231164,9 @@ function doSave(){
   var u = UI, btn = u.ov.querySelector('[data-lp="save"]'); if (btn) btn.disabled = true;
   var lines = Object.keys(u.sel).map(function(id){ return { invId: id, amount: u.sel[id] }; });
   var go = function(file){
-    var r = save({ side: u.side, party: u.party, amount: u.amount, date: u.date, method: u.method, checkNo: u.checkNo, ref: u.ref, stmtNo: u.stmtNo, note: u.note, file: file, lines: lines, keepCredit: u.credit, statementInvId: u.statementInvId });
+    var r = save({ side: u.side, party: u.party, amount: u.amount, date: u.date, method: u.method, checkNo: u.checkNo, ref: u.ref, stmtNo: u.stmtNo, note: u.note, file: file, lines: lines, keepCredit: u.credit, statementInvId: u.statementInvId, qbKey: u.qbKey || undefined, source: u.qbKey ? 'quickbooks' : 'manual' });
     if (!r.ok) { u.msg = r.error; repaintSum(); return; }
+    if (u.onSaved) { try { u.onSaved(r.record); } catch (e) {} u.onSaved = null; }
     toast('✓ ' + money(u.amount) + ' saved — ' + r.record.applied.length + ' invoice(s) marked ' + (r.record.applied.every(function(x){ return x.full; }) ? 'paid' : 'paid / partly paid') + '.');
     u.view = 'show'; u.showId = r.id; u.sel = {}; u.statementInvId = ''; ST(draw, 60);
   };
@@ -231154,6 +231221,7 @@ function paint(){
     [].forEach.call(D.querySelectorAll('h1'), function(h){ if (s(h.textContent) === 'Invoices') { var p = h.nextElementSibling; if (p && /PO# required/.test(p.textContent)) hosts.push(h.parentElement.parentElement); } });
     /* Accounting (the expense center tab row) */
     var tab = D.querySelector('.gc-exc-tab'); if (tab && tab.parentElement) hosts.push(tab.parentElement);
+    [].forEach.call(D.querySelectorAll('.gck-tabs'), function(x){ hosts.push(x); });   /* Accounting (Home · Money In · Money Out …) */
     hosts.forEach(function(h){
       if (!h || !h.parentElement) return;
       var nx = h.nextElementSibling; if (nx && nx.classList && nx.classList.contains('gc-lumpbar')) return;
