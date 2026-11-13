@@ -7,7 +7,7 @@
 import path from 'path'; import fs from 'fs'; import { pathToFileURL, fileURLToPath } from 'url';
 const SP = '/tmp/claude-0/-home-user-graycocrm1/6a5b2b6b-8a4d-5505-9f82-62521adb6674/scratchpad';
 const H = await import(pathToFileURL(process.env.GC_HARNESS || SP + '/wN/harness_N.mjs').href);
-const { settled } = await import(pathToFileURL(path.join(path.dirname(fileURLToPath(import.meta.url)), 'leadperf_world.mjs')).href);
+const { settled, lsInit } = await import(pathToFileURL(path.join(path.dirname(fileURLToPath(import.meta.url)), 'leadperf_world.mjs')).href);
 
 /* in the page before anything else: long tasks, event timing, and (attrib) who runs timers / observers */
 const INIT = (attrib) => `(() => {
@@ -17,13 +17,15 @@ const INIT = (attrib) => `(() => {
   if (!${attrib}) return;
   /* the creating line in index.html, past the CRM's own timer / observer wrappers (PERFCLICK speed watchdog …) */
   const SKIP = window.__lpSkip = window.__lpSkip || [];
-  const where = () => { const L = String(new Error().stack || '').split('\\n').slice(3).map(x => /app\\.local\\/[^:]*:(\\d+):\\d+\\)?\\s*$/.exec(x)).filter(Boolean).map(m => +m[1]).filter(n => !(n >= 1430 && n <= 1475) && !SKIP.some(r => n >= r[0] && n <= r[1])); return L.length ? 'L' + L.slice(0, 2).join('<') : '?'; };
-  const add = (T, k, t, recs) => { const r = T[k] || (T[k] = { n: 0, ms: 0, recs: 0 }); r.n++; r.ms += performance.now() - t; r.recs += recs || 0; };
+  const where = () => { const L = String(new Error().stack || '').split('\\n').slice(3).map(x => /app\\.local\\/[^:]*:(\\d+):\\d+\\)?\\s*$/.exec(x)).filter(Boolean).map(m => +m[1]).filter(n => !(n >= 1430 && n <= 1475) && !(n >= 5500 && n <= 5560) && !(n >= 5900 && n <= 6060) && !SKIP.some(r => n >= r[0] && n <= r[1])); return L.length ? 'L' + L.slice(0, 2).join('<') : '?'; };
+  const add = (T, k, t, recs) => { const r = T[k] || (T[k] = { n: 0, ms: 0, recs: 0, max: 0 }); const d = performance.now() - t; r.n++; r.ms += d; r.max = Math.max(r.max, d); r.recs += recs || 0; };
   for (const name of ['setTimeout', 'setInterval']) {
     const o = window[name];
     window[name] = function(fn, ms) { if (typeof fn !== 'function') return o.apply(this, arguments); const k = name.slice(3, 4) + ':' + where() + ':' + (ms | 0); const a = [].slice.call(arguments); a[0] = function(){ if (!P.on) return fn.apply(this, arguments); const t = performance.now(); try { return fn.apply(this, arguments); } finally { add(P.timers, k, t); } }; return o.apply(this, a); };
   }
   const oR = window.requestAnimationFrame; window.requestAnimationFrame = function(fn){ const k = 'raf:' + where(); return oR.call(window, function(ts){ if (!P.on) return fn(ts); const t = performance.now(); try { return fn(ts); } finally { add(P.timers, k, t); } }); };
+  P.idb = {};
+  for (const op of ['put', 'get']) { const o = IDBObjectStore.prototype[op]; IDBObjectStore.prototype[op] = function(){ if (P.on) { const k = op + ':' + String(op === 'put' ? arguments[1] : arguments[0]).slice(0, 40) + ':' + where(); P.idb[k] = (P.idb[k] || 0) + 1; } return o.apply(this, arguments); }; }
   const MO = window.MutationObserver;
   function W(cb){ const k = where(); return new MO(function(m, o){ if (!P.on) return cb.call(this, m, o); const t = performance.now(); try { return cb.call(this, m, o); } finally { add(P.mo, k, t, m.length); } }); }
   W.prototype = MO.prototype; window.MutationObserver = W;
@@ -36,7 +38,7 @@ const findText = ([sel, rx]) => { const R = new RegExp(rx); const e = [...docume
 export async function measure(build, opt){
   opt = opt || {};
   const W = await settled(H, build, opt.seed || 7, opt.cache || SP + '/wN');
-  const A = await H.computer('perf', { build, init: INIT(!!opt.attrib), viewport: { width: 1440, height: 900 } });
+  const A = await H.computer('perf', { build, init: [lsInit(W), INIT(!!opt.attrib)], viewport: { width: 1440, height: 900 } });
   const cdp = await A.ctx.newCDPSession(A.page());
   await cdp.send('Performance.enable');
   const ok = await H.signIn(A, 'wjohnson@grayco-cs.com', 25000);
@@ -67,15 +69,21 @@ export async function measure(build, opt){
 
   /* 2) idle on Leads: long tasks, CPU, callbacks per second */
   const idleS = opt.idle || 10;
-  await P0(); await A.ev(() => { window.__lp.on = true; window.__lp.timers = {}; window.__lp.mo = {}; });
+  if (opt.attrib) await A.ev(() => { for (const nm of ['idbSet', '_supaUpsert', '_gcAcW', '_gcIDBSet', '_gcAddToRegister']) { const o = window[nm]; if (typeof o !== 'function' || o.__lp) continue; const w = function(k){ if (window.__lp.on) { const L = String(new Error().stack || '').split('\n').slice(2).map(x => /app\.local\/[^:]*:(\d+):\d+\)?\s*$/.exec(x)).filter(Boolean).map(m => m[1]).slice(0, 4).join('<'); const kk = nm + ':' + (k && typeof k === 'object' ? (k.srcInvId || k.id) + '|' + k.source : String(k)).slice(0, 40) + ':' + L; window.__lp.idb[kk] = (window.__lp.idb[kk] || 0) + 1; } return o.apply(this, arguments); }; w.__lp = 1; window[nm] = w; } });
+  await P0(); await A.ev(() => { window.__lp.on = true; window.__lp.timers = {}; window.__lp.mo = {}; window.__lp.idb = {}; });
+  const js0 = opt.attrib ? await A.ev(() => (window._gcTimerStats ? window._gcTimerStats() : []).map(j => ({ k: j.ms + ':' + j.src, n: j.n, total: j.total }))) : [];
   const i0 = await now(), b0 = await busy(); await H.sleep(idleS * 1000); const i1 = await now(), b1 = await busy();
+  const js1 = opt.attrib ? await A.ev(() => (window._gcTimerStats ? window._gcTimerStats() : []).map(j => ({ k: j.ms + ':' + j.src, n: j.n, total: j.total, max: j.max }))) : [];
   await A.ev(() => { window.__lp.on = false; }); await P1('idle');
   const lti = await lts(i0, i1);
   M.idle = { seconds: idleS, cpuBusyPct: Math.round((b1 - b0) / ((i1 - i0) / 1000) * 1000) / 10, longTasks: lti.length, longestMs: Math.round(Math.max(0, ...lti.map(x => x.d))) };
   if (opt.attrib) {
-    const T = await A.ev(() => ({ t: window.__lp.timers, m: window.__lp.mo }));
-    const top = o => Object.entries(o).map(([k, v]) => ({ k, perS: Math.round(v.n / idleS * 10) / 10, msPerS: Math.round(v.ms / idleS * 10) / 10, recs: v.recs })).sort((a, b) => b.msPerS - a.msPerS || b.perS - a.perS).slice(0, 15);
+    const T = await A.ev(() => ({ t: window.__lp.timers, m: window.__lp.mo, idb: window.__lp.idb }));
+    M.idle.idb = Object.entries(T.idb || {}).sort((a, b) => b[1] - a[1]).slice(0, 20);
+    const top = o => Object.entries(o).map(([k, v]) => ({ k, perS: Math.round(v.n / idleS * 10) / 10, msPerS: Math.round(v.ms / idleS * 10) / 10, max: Math.round(v.max), recs: v.recs })).sort((a, b) => b.msPerS - a.msPerS || b.perS - a.perS).slice(0, 25);
     M.idle.timers = top(T.t); M.idle.observers = top(T.m);
+    const J0 = {}; js0.forEach(j => { J0[j.k] = j; });
+    M.idle.jobs = js1.map(j => ({ k: j.k.slice(0, 110), perS: Math.round((j.n - ((J0[j.k] || {}).n || 0)) / idleS * 10) / 10, msPerS: Math.round((j.total - ((J0[j.k] || {}).total || 0)) / idleS * 10) / 10, max: Math.round(j.max) })).filter(j => j.perS > 0).sort((a, b) => b.msPerS - a.msPerS).slice(0, 20);
     M.idle.timerCallsPerS = Math.round(Object.values(T.t).reduce((s, v) => s + v.n, 0) / idleS * 10) / 10;
     M.idle.observerCallsPerS = Math.round(Object.values(T.m).reduce((s, v) => s + v.n, 0) / idleS * 10) / 10;
   }
@@ -96,7 +104,7 @@ export async function measure(build, opt){
   const row = await A.ev(() => { const b = document.querySelector('table.gcl-list tr.gcl-lr td.c-name b'); if (!b) return null; const r = b.getBoundingClientRect(); return { x: r.x + Math.min(40, r.width / 2), y: r.y + r.height / 2, name: b.innerText }; });
   if (row) {
     const d0 = await now(); await clickAt(A, row);
-    const shown = await A.ev(async ([t0]) => { const t = performance.now(); const before = document.body.innerHTML.length; while (performance.now() - t < 8000) { const d = [...document.querySelectorAll('[class*=drawer], [id*=drawer], [class*=Drawer], [role=dialog]')].find(x => x.offsetParent || getComputedStyle(x).position === 'fixed'); if (d && d.getBoundingClientRect().width > 200) { await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); return performance.now() - t0; } await new Promise(r => setTimeout(r, 16)); } return -1; }, [d0]);
+    const shown = await A.ev(async ([t0]) => { const t = performance.now(); const before = document.body.innerHTML.length; while (performance.now() - t < 8000) { const d = document.getElementById('gcl-drawer') || [...document.querySelectorAll('[class*=drawer], [id*=drawer], [class*=Drawer], [role=dialog]')].find(x => x.offsetParent || getComputedStyle(x).position === 'fixed'); if (d && d.getBoundingClientRect().width > 200) { await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); return performance.now() - t0; } await new Promise(r => setTimeout(r, 16)); } return -1; }, [d0]);
     await H.sleep(1500); const d1 = await now();
     const e = (await evs(d0, d1)).filter(x => /click|pointer|mouse/.test(x.n)); const l = await lts(d0, d1);
     M.drawer = { shownMs: Math.round(shown), inpMs: Math.round(Math.max(0, ...e.map(x => x.d))), longTasks: l.length, blockedMs: Math.round(l.reduce((s, x) => s + x.d, 0)) };
