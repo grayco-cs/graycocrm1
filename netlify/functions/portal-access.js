@@ -1831,7 +1831,7 @@ async function staffAction(action, body, who){
     if (ok) {   /* patch BPFAST: the papers copy and the approval e-mail run side by side (the Approve click waited for both, one after the other) */
       const L = MAIL[lang(prof.lang)];
       await Promise.all([ (async function(){ try { prof.papersCrm = await papersToCrm(r.id); if (prof.papersCrm.length) await dbPost('sp_rows?on_conflict=key', [{ key: r.key, collection: 'users', id: r.id, user_id: r.id, email: low(prof.email), data: prof, updated_at: new Date().toISOString(), updated_by: who.email }], 'resolution=merge-duplicates,return=minimal'); } catch (e) {} })(),   /* patch SIGNUPPAPERS: the papers go with them into the CRM's Subs */
-        sendMail(prof.email, L.approvedSubj, mailHtml(L.approvedSubj, L.approvedBody, '', { href: portalBase(), label: L.approvedBtn })) ]);
+        require('./_lib/custquiet.js').run('reply', () => sendMail(prof.email, L.approvedSubj, mailHtml(L.approvedSubj, L.approvedBody, '', { href: portalBase(), label: L.approvedBtn }))) ]);   /* patch SIGNUPNOTE: the approval e-mail answers their sign-up — goes in data-entry mode too */
     }
     return { ok: true, approved: ok };
   }
