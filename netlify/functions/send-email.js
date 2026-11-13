@@ -243,7 +243,7 @@ async function sendPersonal(body, who, key, headers){
     attachments: att.files.map(function(f){ return f.filename; }), resendId: data && data.id || '' };
   let logged = false; try { logged = await logSent(entry); } catch (e) {}
   await noteEstAttachments(body, { to: to.join(', '), by: name, byEmail: me, via: 'compose', emailId: entry.id, pid: body.pid });   /* patch ESTPDF */
-  return { statusCode: 200, headers, body: JSON.stringify({ ok: true, id: data && data.id, from: payload.from, logged: logged, entry: entry }) };
+  return { statusCode: 200, headers, body: JSON.stringify({ ok: true, id: data && data.id, from: payload.from, logged: logged, entry: entry, paused: !!(data && data.paused) }) };   /* patch SCOPESEND: say when ⏸ data-entry mode held it */
 }
 
 /* patch BIDSEND — "📤 Send bid" (owner 10/22: "I never want to say submitted to multiple contractors … always

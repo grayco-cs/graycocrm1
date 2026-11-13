@@ -665,7 +665,7 @@ var ROWS = [
   ['staff_text_alerts', 'safety', 'B', 1, 1, 'server', 'Staff text alerts', 'Text alerts to staff cells (new lead, emergency, missed call); replies relayed.'],
   /* ── lead intake, sync, backups ── */
   ['website_intake', 'sync', 'C', 1, 1, 'server', 'Website leads', 'Website forms and the roof price widget go into the Lead Inbox.'],
-  ['lead_intake', 'sync', 'C', 1, 1, 'server', 'Partner lead intake (Roof Ignite …)', 'Leads posted by lead partners come into the CRM.'],
+  ['lead_intake', 'sync', 'C', 1, 1, 'server', 'Partner lead intake (lead companies)', 'Leads posted by lead partners come into the CRM.'],
   ['partner_api', 'sync', 'C', 1, 1, 'server', 'Partner API', 'Partners post leads, bids and jobs.'],
   ['callrail', 'sync', 'C', 1, 1, 'server', 'CallRail calls', 'Logs tracking-number calls; a first-time caller becomes a lead.'],
   ['bids_inbox', 'sync', 'C', 1, 1, 'server', 'bids@ / leads@ inbox', 'Bid invites and lead e-mails become leads; GC replies and sub bids are filed.'],
@@ -5496,7 +5496,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.247-2026-11-12-r34t -->
+<!-- GrayCo CRM Build: 33.247-2026-11-12-r34u -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6445,7 +6445,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.247-2026-11-12-r34t");
+  console.log("[GC] Build 33.247-2026-11-12-r34u");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6493,7 +6493,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.247-2026-11-12-r34t"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.247-2026-11-12-r34u"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -112939,7 +112939,7 @@ function alreadyHave(lead){
 
 /* ── one lead → one job at bidding ──────────────────────────────────────── */
 function toProject(lead){
-  var name = s(lead.name) || 'Roof Ignite lead';
+  var name = s(lead.name) || 'Partner lead';
   var addr = s(lead.address);
   var title = addr ? (name+' — '+addr.split(',')[0]) : name;
   var out = s(lead.outreach && lead.outreach.email && lead.outreach.email.sent
@@ -112990,7 +112990,7 @@ window._gcRoofIgniteCheck = async function(loud){
   var t=token();
   if(!t){
     if(loud) alert('This computer has not been given the collection token yet.\n\n'
-      +'Open 💎 → Roof Ignite and paste it in. It is on Netlify under the name '
+      +'Open 💎 → Lead sources & API keys and paste it in. It is on Netlify under the name '
       +'CRM_DRAIN_TOKEN.');
     return {ok:false, why:'no drain token on this device'};
   }
@@ -113009,7 +113009,7 @@ window._gcRoofIgniteCheck = async function(loud){
     var leads = (data && Array.isArray(data.leads)) ? data.leads : [];
     if(!leads.length){
       checking=false;
-      if(loud) alert('No new Roof Ignite leads waiting.');
+      if(loud) alert('No new partner leads waiting.');
       return {ok:true, added:0, leads:0};
     }
 
@@ -113017,6 +113017,7 @@ window._gcRoofIgniteCheck = async function(loud){
     var made = [], keys = [];
     leads.forEach(function(L){
       if(!L || typeof L!=='object') return;
+      if(/roof(ing)?\s*-?\s*ignite/i.test(s(L.leadSource))){ skipped.push((L.name||'a lead')+' — Roof Ignite (no longer taken)'); return; }   /* patch SCOPESEND-RI */
       var dupe = alreadyHave(L);
       if(dupe){ skipped.push((L.name||'a lead')+' — '+dupe); return; }
       var p = toProject(L);
@@ -113027,7 +113028,7 @@ window._gcRoofIgniteCheck = async function(loud){
 
     if(made.length){
       try{ window.__GC_MANUAL_SAVE__=true; }catch(e){}
-      try{ if(window._gcManualNow) window._gcManualNow('roof ignite leads in'); }catch(e){}
+      try{ if(window._gcManualNow) window._gcManualNow('partner leads in'); }catch(e){}
       await window.idbSet('projects', list);
       try{ if(window._setProjects) window._setProjects(list.slice()); }catch(e){}
       try{ if(window._supaUpsert) window._supaUpsert('projects', list); }catch(e){}
@@ -113039,7 +113040,7 @@ window._gcRoofIgniteCheck = async function(loud){
     checking=false;
 
     if(made.length){
-      try{ console.log('%c[GC] '+made.length+' Roof Ignite lead(s) on the board',
+      try{ console.log('%c[GC] '+made.length+' partner lead(s) on the board',
         'background:#166534;color:#fff;padding:2px 6px;font-weight:bold'); }catch(e){}
       made.forEach(function(p){
         try{ console.log('   '+p.client+(p.clientPhone?(' · '+p.clientPhone):'')
@@ -113051,7 +113052,7 @@ window._gcRoofIgniteCheck = async function(loud){
     }
     if(loud){
       alert(made.length
-        ? ('✅ '+made.length+' new Roof Ignite lead'+(made.length===1?'':'s')+' added at bidding.\n\n'
+        ? ('✅ '+made.length+' new partner lead'+(made.length===1?'':'s')+' added at bidding.\n\n'
            + made.map(function(p){ return '• '+p.client+(p.riContacted?' (already emailed)':' (NOT contacted)'); }).join('\n'))
         : ('Nothing new — '+skipped.length+' already on the board.'));
     }
@@ -113149,18 +113150,18 @@ window._gcRoofIgnite = function(){
     +'box-shadow:0 24px 70px rgba(0,0,0,.45);overflow:hidden">'
     +'<div style="padding:16px 20px;background:#0f2440;color:#fff">'
       +'<div style="font-size:19px;font-weight:800">🔥 Lead sources — bids straight into the CRM</div>'
-      +'<div style="font-size:12.5px;opacity:.85;margin-top:3px">Roof Ignite, Contractor Connection, '
+      +'<div style="font-size:12.5px;opacity:.85;margin-top:3px">Contractor Connection, '
       +'Alacrity, Sedgwick — each with its own key. They post a lead, the customer gets an email from us '
       +'within seconds, and the job lands at bidding.</div>'
     +'</div>'
     +'<div style="padding:18px 20px;max-height:74vh;overflow:auto">'
 
-      +'<div style="font-size:14px;font-weight:800;margin-bottom:6px">1. Give Roofing Ignite these two things</div>'
+      +'<div style="font-size:14px;font-weight:800;margin-bottom:6px">1. Give the lead company these two things</div>'
       +'<div style="'+box+';margin-bottom:8px"><b>The address to post to</b>'
         +'<div style="'+mono+';margin-top:6px">POST '+esc(url)+'</div></div>'
       +'<div style="'+box+';margin-bottom:8px"><b>An API key — one per company</b> — press the button, '
         +'send that company the key, and put the same key on Netlify as '
-        +'<b>LEAD_KEY_ROOF_IGNITE</b> (or LEAD_KEY_CONTRACTOR_CONNECTION, LEAD_KEY_ALACRITY, '
+        +'<b>LEAD_KEY_CONTRACTOR_CONNECTION</b> (or LEAD_KEY_ALACRITY, '
         +'LEAD_KEY_SEDGWICK — the name after LEAD_KEY_ becomes the lead source on the job). '
         +'<b>Never give two companies the same key</b>: then you cannot tell who sent what, '
         +'cannot switch one off without breaking the others, and one leak is everybody\u2019s. '
@@ -113188,7 +113189,7 @@ window._gcRoofIgnite = function(){
 
       +'<div style="font-size:14px;font-weight:800;margin:16px 0 6px">3. Set these on Netlify</div>'
       +'<div style="'+box+'">Site settings → Environment variables:<br>'
-        +'<b>LEAD_KEY_ROOF_IGNITE</b> — the key above (one variable per company)<br>'
+        +'<b>LEAD_KEY_&lt;COMPANY&gt;</b> — the key above (one variable per company)<br>'
         +'<b>LEAD_INSURANCE_SOURCES</b> — the claims networks, comma separated, e.g. '
         +'<i>Contractor Connection,Alacrity,Sedgwick</i> — their work is insurance work '
         +'and scores differently in the commission split<br>'
@@ -113267,13 +113268,13 @@ window._gcRoofIgnite = function(){
     }catch(e){}
   }
   try{
-    if(window.__GC_BEAT) window.__GC_BEAT('roof ignite menu', add);
+    if(window.__GC_BEAT) window.__GC_BEAT('lead sources menu', add);
     else RI.call(window, add, 3000);
   }catch(e){}
   document.addEventListener('click', function(){ setTimeout(add, 150); }, true);
 })();
 
-console.log('[GC] Roof Ignite lead intake ready — 💎 → Roof Ignite leads, or _gcRoofIgnite().');
+console.log('[GC] Lead-company intake ready — 💎 → Lead sources & API keys, or _gcRoofIgnite(). Roof Ignite leads are no longer taken (patch SCOPESEND-RI).');
 })();
 
 </script>
@@ -142628,7 +142629,6 @@ function SECTIONS0(){ return withCustom([
   { id: 'leads', ic: '📥', t: 'Leads, bids & portals', d: 'Who gets bids, the bid watcher, customer & sub portals', rows: [
     row('Commercial bids go to', 'The estimator new commercial bids are assigned to (Leads ⚙).', 'Leads → ⚙ Commercial bids go to', V('leads', '#gc-la-set', 'flash'), 'view'),
     row('Lead Inbox — sources, keywords, public bid watcher', 'Where bids come from (leads@, BuildingConnected, PlanHub, planrooms, public bids), the keywords, and “Check public bids now”.', 'Leads → Lead Inbox ⚙', V('leads', '#gc-ldi [data-a="settings"]', 'click'), 'view'),
-    row('Roofing Ignite lead intake', 'The web address Roofing Ignite sends leads to, and whether it answers.', '💎 → Roofing Ignite', F('_gcRoofIgnite')),
     row('Bid portal and sub portal', 'Publish a bid job to bids.grayco-cs.com; subs bid there (Lead Inbox → Publish).', 'Leads → Lead Inbox', V('leads', '#gc-ldi', 'flash'), 'view'),
     row('Recycle bin — deleted leads', 'Leads deleted in the last 30 days, with Restore.', 'Leads → 🗑 Recently deleted', V('leads', '[data-a="trash"]', 'click'), 'view'),
     { t: 'Customer portal — send the link automatically', d: 'New customers get their portal link by e-mail when their job is created. Each job’s own link (send, regenerate, revoke) is in the job’s Customer portal box.', w: 'Job → Customer portal', kind: 'embed', embed: 'portal' },
@@ -142755,7 +142755,7 @@ function status(){
 var ST_ROWS = [
   ['database', 'Database (Supabase)'], ['resend', 'E-mail out (Resend)'], ['inbound', 'E-mail in (Resend inbound)'], ['portal', 'Customer portal'],
   ['bidPortal', 'Bid portal'], ['companycam', 'CompanyCam'], ['quickbooks', 'QuickBooks (webhook — CSV import works without it)'], ['google', 'Google (this computer)'],
-  ['texting', 'Texting (Twilio)'], ['ai', 'AI (Claude)'], ['tiles', 'Map Tiles (RoofScout satellite)'], ['leadIntake', 'Lead intake (Roofing Ignite)'],
+  ['texting', 'Texting (Twilio)'], ['ai', 'AI (Claude)'], ['tiles', 'Map Tiles (RoofScout satellite)'], ['leadIntake', 'Lead intake (lead companies)'],
   ['moneyIntake', 'Money intake'], ['buildingConnected', 'BuildingConnected API'], ['push', 'Phone push alerts'], ['alerts', 'Bid alerts to admins']
 ];
 function chip(v, yes, no){
@@ -148514,7 +148514,7 @@ window.__gcQr = qrcode;
 var CHANNELS = ['Google Ads', 'Facebook/Instagram Ads', 'TikTok', 'Google organic', 'Google Business Profile', 'Nextdoor', 'Referral', 'Yard sign', 'Repeat customer', 'Other'];
 /* channels the numbers can also show (not in the "how did you hear" list: they come from lead services / imports) */
 var EXTRA_CHANNELS = ['Angi/HomeAdvisor'];
-var LEAD_SERVICES = ['Roof Ignite', 'Contractor Connection', 'Alacrity', 'Sedgwick', 'Thumbtack', 'Porch', 'Networx', 'Modernize', 'Bark'];
+var LEAD_SERVICES = ['Contractor Connection', 'Alacrity', 'Sedgwick', 'Thumbtack', 'Porch', 'Networx', 'Modernize', 'Bark'];
 
 function s(v){ return v == null ? '' : String(v).trim(); }
 function low(v){ return s(v).toLowerCase(); }
@@ -162290,7 +162290,7 @@ function paint(){
         + '<td class="hide-s">' + when(k.createdAt) + '<div class="w">' + esc(k.createdBy) + '</div></td><td>' + when(k.lastUsed) + '</td><td>' + (k.count || 0) + '</td>'
         + '<td style="white-space:nowrap"><button type="button" class="g" data-api="instr" data-id="' + esc(k.id) + '">📄 Instructions</button> ' + (k.revoked ? '' : '<button type="button" class="r" data-api="revoke" data-id="' + esc(k.id) + '">Revoke</button>') + '</td></tr>';
     }).join('') + '</tbody></table></div>';
-  h += '<div class="w" style="margin-top:8px">Roofing Ignite and the other lead companies set up on Netlify (LEAD_KEY_…) keep working as before.</div></div>';
+  h += '<div class="w" style="margin-top:8px">The lead companies set up on Netlify (LEAD_KEY_…) keep working as before.</div></div>';
   box.innerHTML = h;
 }
 function load(){ UI.err = ''; return api('?keys=1').then(function(j){ UI.keys = arr(j.keys); UI.endpoint = s(j.endpoint); UI.scopes = arr(j.scopes); paint(); }, function(e){ UI.keys = UI.keys || []; UI.err = e.message; paint(); }); }
@@ -174445,7 +174445,7 @@ W._gcLeadChan = { of: chanOf, list: CHANS, badge: chanBadge };   /* (W._gcLeadSo
    "3 bids, 0 awarded" no longer turns into $30 */
 /* patch LCLEAN: one source list — the standard sources, then any other source found on a lead ("website" = "Website") */
 var SRC_STD = ['Website', 'Google / Google Business', 'Google LSA', 'Google Ads', 'Google organic', 'Facebook', 'Instagram', 'Facebook/Instagram Ads', 'TikTok', 'LinkedIn', 'Nextdoor', 'Referral', 'Partner', 'Repeat customer',
-  'Door hanger', 'Yard sign', 'Event', 'Phone call', 'Walk-in', 'BuildingConnected', 'PlanHub', 'iSqFt / ConstructConnect', 'Bid invitation (GC direct)', 'Government', 'RoofScout', 'Roofing Ignite',
+  'Door hanger', 'Yard sign', 'Event', 'Phone call', 'Walk-in', 'BuildingConnected', 'PlanHub', 'iSqFt / ConstructConnect', 'Bid invitation (GC direct)', 'Government', 'RoofScout',
   'CompanyCam (PM\'s own)', 'QuickBooks (imported)', 'Lead Inbox (leads@)', 'Other'];
 var SRC_ALIAS = { 'web': 'Website', 'website form': 'Website', 'web form': 'Website', 'site': 'Website', 'google': 'Google / Google Business', 'google business': 'Google / Google Business', 'google business profile': 'Google / Google Business', 'gbp': 'Google / Google Business', 'google maps': 'Google / Google Business',
   'lsa': 'Google LSA', 'local services': 'Google LSA', 'local services ads': 'Google LSA', 'google local services': 'Google LSA', 'google guaranteed': 'Google LSA', 'fb': 'Facebook', 'ig': 'Instagram', 'referred': 'Referral', 'referral program': 'Referral',
@@ -193030,7 +193030,7 @@ var SETUP = [
   { id: 'acct_stmt', t: 'Import last month\'s card statements', how: 'Bank website → the card → Statements → download the PDF statement (or Activity → Download → CSV). Accounting → 💳 Import card statement → choose the file → check the lines, the totals and the jobs → Import. Bank accounts the same way with 🏦 Import bank statement. Do it every month (about 10 minutes a card).' },
   { id: 'acct_rules', t: 'Teach the vendor rules once', how: 'In the first import, set the category and job (or Overhead) for each regular vendor (Home Depot, fuel, phones, software, ads). The CRM remembers them; next month they fill themselves. Change a rule by picking a different job / category in the next import.' },
   { id: 'acct_cats', t: 'Check the expense categories', how: 'Accounting → 🧾 Expense Center → categories. Keep: Materials, Subcontractor, Equipment Rental, Fuel/Gas, Permits/Fees, Dumpster/Disposal, Advertising/Marketing, Software/Phone, Office Supplies, Meals, Travel, Insurance, Payroll, Rent/Lease, Utilities. Match them to the QuickBooks chart of accounts names.' },
-  { id: 'acct_mkt', t: 'Set the marketing sources and monthly budgets', how: '📣 Marketing → 📊 Dashboard → ad spend: one line per source per month (Google Ads, Facebook/Instagram, Angi, Roof Ignite…) — or let card charges to those vendors count by themselves (category Advertising/Marketing). Make sure every lead has its Source filled in, so cost per lead and per won job are right.' },
+  { id: 'acct_mkt', t: 'Set the marketing sources and monthly budgets', how: '📣 Marketing → 📊 Dashboard → ad spend: one line per source per month (Google Ads, Facebook/Instagram, Angi…) — or let card charges to those vendors count by themselves (category Advertising/Marketing). Make sure every lead has its Source filled in, so cost per lead and per won job are right.' },
   { id: 'acct_open', t: 'Enter opening balances (Jan 1, 2026)', how: '💎 → 🏦 Bank Accounts → each account → opening balance on 1/1/2026 from the December 2025 bank statement. 💎 → 💳 Credit cards → each card → the balance owed on 1/1/2026.' },
   { id: 'acct_qb25', t: 'Import 2025 from QuickBooks (history)', how: 'First 💎 → ⏸ Data-entry mode → on. QuickBooks → Reports → Transaction Detail by Account (Jan 1 – Dec 31 2025) → Export → CSV; also Invoice List and Bill List. CRM → 💎 → 📥 Import from QuickBooks (CSV) → tick "Import as history" → choose each file. Then ▶ Resume sending.' },
   { id: 'acct_qbmail', t: 'QuickBooks: send GrayCo a copy of every invoice', how: 'QuickBooks → ⚙ → Account and settings → Sales → Messages → Edit → "Email me a copy" / Bcc new invoices to: invoices@grayco-cs.com → Save. Every invoice e-mailed from QuickBooks then shows up in ▥ Invoices on its job (the same invoice # is never added twice).' },
@@ -228875,5 +228875,878 @@ function paintAll(){
 nSI(function(){ if (!D.hidden) paintAll(); }, 1500);
 W._gcSubSched = { refresh: refresh, open: open, apply: apply, plan: plan, expected: function(){ return arr(ST.entries).map(function(e){ return itemsFor(e, sched()); }); }, live: baseList, state: function(){ return { entries: arr(ST.entries).slice(), at: ST.at, err: ST.err, writes: ST.writes, restored: ST.restored }; }, _loaded: function(t){ LOADED = t; } };
 try { console.log('[GC] patch SUBSCHED: subs\' own schedule entries → the company schedule — _gcSubSched.state()'); } catch (e) {}
+})(window, document);
+</script>
+
+<script id="gc-patch-scopesend">
+/* __GC_PATCH_SCOPESEND__ ═════════════════════════════════════════════════════════════════════════════════════════
+   GrayCo — A SCOPE FOR THE SUBS ALWAYS COMES WITH ITS 💲 BUDGET, AND IT CAN BE EDITED AND SENT TO A SUB (patch SCOPESEND).
+
+   Owner, 11/12: "Make sure when you make a scope without numbers you also make one with budget numbers … also when you
+   make a scope let you edit it to send to sub or send in sub portal and what sub on the job do I send it to."
+
+   ONE PAIR PER SCOPE, kept in the CRM's own synced list "scopes" (idb → screen → cloud, like every list):
+     📋 the SUB SCOPE   kind 'sub'    — what, where, how much (qty / unit / notes). NEVER a price. This is what goes out.
+     💲 the BUDGET      kind 'budget' — the same lines and sections plus a budget $ per line (from the job's estimate line —
+                        our cost — else the Price Book × qty, else an empty $ box to fill). internal: true. It is never
+                        e-mailed, never posted to the sub portal or the bid portal; the send code refuses it.
+   The two point at each other (pairId). Saving one mirrors its lines / sections to the other (the budget keeps its $ per
+   line, matched by the line's key). Regenerating from the source (the estimate, the job's Scopes-tab text, the bid portal's
+   trade scope, the Xactimate scope) replaces the lines only when nobody edited them by hand — otherwise it ASKS
+   (replace, or keep the edits and only add the new lines).
+
+   WHEN A NO-PRICE SCOPE IS MADE, ITS BUDGET IS MADE TOO:
+     · 📐 Estimate builder → 📋 Scope by trade → "Save master to job" (and the estimate's own scope spot: _gcSaveMasterScope)
+     · 📋 Scopes tab — ⚡ Generate / EDIT → 💾 Save (the job's scope text)
+     · Leads / Insurance — a scope saved with no prices (_gcScopeStore.save: the Xactimate import, the lead's sub scope)
+     · 🏗 Bid portal → 📂 Manage → 📝 Scope per trade → 💾 (each trade, on the job / lead the bid job came from)
+   and by hand: 📋 Scopes & 💲 budgets on a job (Scopes tab card, 👷 Subs & portal on the job) → ➕ From the estimate / blank.
+
+   ✏️ EDIT — a line list (section, work, qty, unit, note; the budget adds $), included / not included / notes, title, trade.
+   📤 SEND TO SUB — pick WHICH subs: the subs on this job first (🏆 awarded on the bid portal, the job's sub rows: awarded,
+     in progress, bidding), then 🔎 any sub in the Subs list. Pick HOW:
+     ✉️ E-mail — the CRM's own "send from your own e-mail" path (send-email.js mode personal: from you, Reply-To you, a copy
+        in your mailbox, logged on the job's e-mail history, held while ⏸ Data-entry mode is on). The scope is in the e-mail
+        and attached as a PDF (made the way the proposal PDF is made) when the PDF can be made.
+     🔨 Sub portal — posted to that sub's job in the GrayCo Portal (portal-access.js s-send: the job's message thread with
+        that one sub, the PDF attached). A sub who is not on the job yet is added to it as "Bidding" first (asked), so only
+        that sub sees it. With the sub's total filled in it goes as a sub agreement to sign instead (s-scope-save) — that
+        one waits for the job's PM (or an owner) to approve it, as every sub agreement does.
+     Every send is written on the scope (🕘 Sent): when, who sent it, to which sub, which version, how, what happened.
+
+   API: _gcScopeSend.open(pid) · .list(pid) · .make(o) · .edit(id) · .send(id) · .budgetOf(id) · .pairOf(id) · .regen(id)
+   ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════ */
+(function(W, D){
+'use strict';
+if (W.__GC_SCOPESEND__) return; W.__GC_SCOPESEND__ = true;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+var RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+function later(f, ms){ return ST.call(W, f, ms); }
+function every(f, ms){ return RI.call(W, f, ms); }
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function num(v){ var n = parseFloat(String(v == null ? '' : v).replace(/[$,\s]/g, '')); return isFinite(n) ? n : 0; }
+function r2(n){ return Math.round(n * 100) / 100; }
+function esc(v){ return String(v == null ? '' : v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function norm(v){ return low(v).replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim(); }
+function nowIso(){ return new Date().toISOString(); }
+function money(n){ return '$' + num(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function uid(p){ return p + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+function hash(t){ t = String(t || ''); var h = 5381; for (var i = 0; i < t.length; i++) h = ((h << 5) + h + t.charCodeAt(i)) | 0; return (h >>> 0).toString(36); }
+function warn(e){ try { console.warn('[GC] scopesend', e); } catch (x) {} }
+function crm(){ return W._crm || {}; }
+function projects(){ return arr(crm().projects).filter(Boolean); }
+function proj(pid){ pid = s(pid); return pid ? projects().find(function(p){ return s(p.id) === pid; }) || null : null; }
+function leads(){ return arr(W.__gcLeadsLive).length ? arr(W.__gcLeadsLive) : arr(crm().leads); }
+function lead(id){ id = s(id); return id ? leads().find(function(l){ return l && s(l.id) === id; }) || null : null; }
+function users(){ return arr(crm().users); }
+function myEmail(){ try { return low(W.__GC_AUTH__ && W.__GC_AUTH__.email && W.__GC_AUTH__.email()); } catch (e) { return ''; } }
+function myName(){ var e = myEmail(), u = users().find(function(x){ return x && low(x.email) === e; }); return s(u && u.name) || s(W._gcMeNow && W._gcMeNow.name) || e.split('@')[0] || 'GrayCo'; }
+function strip(t){ try { return typeof W._gcStripPrices === 'function' ? W._gcStripPrices(t) : s(t); } catch (e) { return s(t); } }
+function stripLine(t){ return strip(s(t)).replace(/\n+/g, ' ').trim(); }
+function toast(msg, bad, act){
+  try {
+    Array.prototype.forEach.call(D.querySelectorAll('.gcss-toast'), function(x){ x.remove(); });
+    var t = D.createElement('div'); t.className = 'gcss-toast'; t.setAttribute('data-gc-keep', '1');
+    t.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom,0px));z-index:2147483300;background:' + (bad ? '#B42318' : '#1D5E2C') + ';color:#fff;padding:12px 16px;border-radius:10px;font:600 14px Inter,Arial,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.3);max-width:92vw;display:flex;gap:10px;align-items:center';
+    var sp = D.createElement('span'); sp.textContent = msg; t.appendChild(sp);
+    if (act) { var b = D.createElement('button'); b.type = 'button'; b.textContent = act.l; b.style.cssText = 'background:#fff;color:#1D5E2C;border:0;border-radius:7px;padding:6px 10px;font-weight:800;cursor:pointer'; b.onclick = function(){ t.remove(); act.f(); }; t.appendChild(b); }
+    D.body.appendChild(t); later(function(){ t.remove(); }, act ? 9000 : 4500);
+  } catch (e) {}
+}
+
+/* ═══ the store: the CRM's synced "scopes" list (records with ss: 1 are ours) ═══ */
+var KEY = 'scopes', MEM = [];
+function load(){ return Promise.resolve(typeof W.idbGet === 'function' ? W.idbGet(KEY) : null).then(function(v){ MEM = arr(v); return MEM; }, function(){ return MEM; }); }
+function mine(x){ return x && x.ss === 1 && x.deleted !== true; }
+function allDocs(){ return MEM.filter(mine); }
+function byId(id){ id = s(id); return MEM.find(function(x){ return x && s(x.id) === id; }) || null; }
+function forJob(pid, leadId){
+  pid = s(pid); leadId = s(leadId);
+  return allDocs().filter(function(x){ return (pid && s(x.pid) === pid) || (leadId && s(x.leadId) === leadId && (!x.pid || !pid)); });
+}
+var saving = Promise.resolve();
+function putDocs(docs){
+  saving = saving.then(function(){ return load().then(function(list){
+    var at = {}; list.forEach(function(x, i){ if (x && x.id != null) at[s(x.id)] = i; });
+    var out = list.slice();
+    docs.forEach(function(d){ if (!d) return; var i = at[s(d.id)]; if (i == null) out.push(d); else out[i] = d; });
+    MEM = out;
+    try { W.__GC_MANUAL_SAVE__ = true; if (W._gcManualNow) W._gcManualNow('scope saved'); } catch (e) {}
+    return Promise.resolve(typeof W.idbSet === 'function' ? W.idbSet(KEY, out) : null).then(function(){
+      try { if (typeof W._gcApplySync === 'function') W._gcApplySync(KEY, out); } catch (e) {}
+      try { var f = W._supaUpsertNow || W._supaUpsert; if (typeof f === 'function') f(KEY, out); } catch (e) {}
+      later(function(){ try { W.__GC_MANUAL_SAVE__ = false; } catch (e) {} }, 1500);
+      return docs;
+    });
+  }); }, function(){ return docs; });
+  return saving;
+}
+
+/* ═══ where the numbers come from ═══ */
+function estimatesAll(){
+  var a = [];
+  try { if (W._gcEST && typeof W._gcEST.all === 'function') a = arr(W._gcEST.all()); } catch (e) {}
+  if (!a.length) a = arr(W._gcEstimatesState).length ? arr(W._gcEstimatesState) : arr(crm().estimates);
+  return a.filter(function(e){ return e && !e.deleted && e._isDraft !== true; });
+}
+function estimatesFor(pid, leadId){
+  pid = s(pid); leadId = s(leadId);
+  var p = proj(pid), codes = p ? [p.po, p.autoPO].filter(Boolean).map(low) : [];
+  var l = leadId ? lead(leadId) : null;
+  return estimatesAll().filter(function(e){
+    return (pid && (s(e.pid) === pid || s(e.projectId) === pid)) || (leadId && s(e.leadId) === leadId) || (l && l.pid && s(e.pid || e.projectId) === s(l.pid)) || (codes.length && e.po && codes.indexOf(low(e.po)) > -1);
+  }).sort(function(a, b){ return s(b.savedAt || b.updatedAt || b.date).localeCompare(s(a.savedAt || a.updatedAt || a.date)); });
+}
+function estLines(e){
+  var out = [];
+  arr(e && (e.lines || e.lineItems || e.items)).forEach(function(l){ if (l) out.push(l); });
+  if (out.length) return out;   /* the builder's lines are the estimate; mats / labor are the older shape of the same thing */
+  arr(e && e.mats).forEach(function(m){ if (m) out.push({ id: m.id, desc: m.name, cat: m.cat, qty: m.qty, unit: m.unit, uc: m.uc, type: 'material' }); });
+  arr(e && e.labor).forEach(function(m){ if (m) out.push({ id: m.id, desc: m.desc || m.trade, cat: m.cat || m.trade, qty: m.hrs, unit: m.hrs ? 'hrs' : '', uc: m.rate, type: 'labor' }); });
+  return out;
+}
+/* our cost for one estimate line (the budget is what we expect to pay — never the sell price) */
+function lineCost(l){
+  if (!l) return 0;
+  var q = num(l.qty != null ? l.qty : l.quantity) || 1;
+  if (num(l.totalCost)) return r2(num(l.totalCost));
+  if (num(l.extCost)) return r2(num(l.extCost));
+  var uc = l.uc != null && s(l.uc) !== '' ? num(l.uc) : (l.unitCost != null && s(l.unitCost) !== '' ? num(l.unitCost) : num(l.cost));
+  if (uc) return r2(uc * q);
+  if (num(l.hrs) && num(l.rate)) return r2(num(l.hrs) * num(l.rate));
+  return 0;
+}
+/* the Price Book: the 📐 Estimate builder's rate book (gc_rates_v3: desc / cost / unit — live when the builder is open, else read
+   from this computer's store) and the master product list (_gcAllProducts follows the live list, with the custom items) */
+var PB = [], PB_AT = 0;
+function loadPB(){
+  if (Date.now() - PB_AT < 120000) return Promise.resolve(PB); PB_AT = Date.now();
+  try { return Promise.resolve(W.storage && typeof W.storage.get === 'function' ? W.storage.get('gc_rates_v3', true) : null).then(function(r){ var v = r && r.value; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = []; } } PB = arr(v); return PB; }, function(){ return PB; }); } catch (e) { return Promise.resolve(PB); }
+}
+function priceBook(){
+  var live = []; try { if (typeof rates !== 'undefined' && Array.isArray(rates)) live = rates; } catch (e) {}   /* the builder's own (global) rate book */
+  var prods = arr(W._gcAllProducts); try { if (!prods.length && typeof W._gcGetProducts === 'function') prods = arr(W._gcGetProducts()); } catch (e) {}
+  return (live.length ? live : PB).map(function(r){ return r && { name: s(r.desc || r.name), cost: num(r.cost != null ? r.cost : r.uc) }; })
+    .concat(prods.map(function(x){ return x && { name: s(x.name), cost: num(x.cost) }; })).filter(function(x){ return x && x.name && x.cost > 0; });
+}
+/* the budget for a line: its own estimate line, else a matching estimate line, else the Price Book × qty, else blank */
+function budgetFor(line, ctx){
+  if (line.srcCost != null && num(line.srcCost)) return { amt: r2(num(line.srcCost)), src: 'estimate' };
+  var d = norm(line.desc); if (!d) return { amt: '', src: '' };
+  var el = ctx.est.find(function(l){ var n = norm(l.desc || l.description || l.name); return n && (n === d || (n.length > 8 && (d.indexOf(n) > -1 || n.indexOf(d) > -1))); });
+  if (el && lineCost(el)) return { amt: lineCost(el), src: 'estimate' };
+  var pb = ctx.pb.find(function(x){ var n = norm(x.name); return n && (n === d || (n.length >= 6 && d.indexOf(n) === 0)); });
+  if (pb) return { amt: r2(num(pb.cost) * (num(line.qty) || 1)), src: 'pricebook' };
+  return { amt: '', src: '' };
+}
+function ctxFor(pid, leadId){ var es = estimatesFor(pid, leadId); return { est: es.length ? estLines(es[0]) : [], pb: priceBook() }; }
+
+/* ═══ lines: from estimate lines, or from a no-price scope text ═══ */
+function fromEstimate(e, trade){
+  var out = [], seen = {};
+  estLines(e).forEach(function(l){
+    var cat = s(l.cat || l.category || l.trade || l.room || l.group) || 'General';
+    if (trade && low(cat) !== low(trade) && low(l.trade) !== low(trade)) return;
+    var d = stripLine(l.desc || l.description || l.name || l.item); if (!d) return;
+    var k = 'e:' + (s(l.id) || hash(cat + '|' + d)); if (seen[k]) k += ':' + out.length; seen[k] = 1;
+    out.push({ k: k, sec: stripLine(cat), desc: d, qty: l.qty == null || s(l.qty) === '' ? '' : num(l.qty), unit: s(l.unit || l.uom), note: stripLine(l.calcNote || l.note || l.notes), srcCost: lineCost(l) });
+  });
+  return out;
+}
+var HEAD_RE = /^(project|client|address|type|pm|po|date|contractor|location|claim\s*#?|insured|date of loss)\s*:/i;
+function fromText(text){
+  var out = [], sec = '', seen = {}, notes = [];
+  String(text || '').split(/\r?\n/).forEach(function(raw){
+    var t = raw.replace(/\t/g, ' ').trim();
+    if (!t || /^[═─=\-_*~]{4,}$/.test(t)) return;
+    if (HEAD_RE.test(t) && !out.length) return;   /* the job header (client, address …) is the CRM's, not the sub's */
+    var bullet = /^([•\-*–·]|\d+[.)])\s+/.test(t);
+    var body = t.replace(/^([•\-*–·]|\d+[.)])\s+/, '').trim();
+    if (!bullet && (/:$/.test(body) || /—\s*scope of work$/i.test(body) || (body.length <= 60 && body === body.toUpperCase() && /[A-Z]/.test(body)))) { sec = stripLine(body.replace(/:$/, '').replace(/\s*—\s*scope of work$/i, '')); return; }
+    var d = stripLine(body); if (!d) return;
+    var q = '', u = '', m = /^(.*?)\s*(?:—|-)\s*qty\s+([\d.,]+)\s*([a-z]{1,8})?/i.exec(d) || /^(.*?)\s*\[([\d.,]+)\s*([a-z]{1,8})?\]/i.exec(d);
+    if (m) { d = m[1].trim() || d; q = num(m[2]); u = s(m[3]); }
+    var k = 't:' + hash(norm(sec) + '|' + norm(d)); if (seen[k]) k += ':' + out.length; seen[k] = 1;
+    out.push({ k: k, sec: sec, desc: d, qty: q, unit: u, note: '' });
+  });
+  return { lines: out, head: notes.join('\n') };
+}
+function cleanLines(lines, kind, ctx){
+  return arr(lines).map(function(l){
+    var o = { k: s(l.k) || ('m:' + uid('')), sec: stripLine(l.sec), desc: stripLine(l.desc), qty: l.qty === '' || l.qty == null ? '' : num(l.qty), unit: stripLine(l.unit).slice(0, 20), note: stripLine(l.note).slice(0, 400) };
+    if (kind === 'budget') {
+      if (l.budget !== undefined && s(l.budget) !== '') { o.budget = r2(num(l.budget)); o.bsrc = s(l.bsrc) || 'typed'; }
+      else if (ctx) { var b = budgetFor(l, ctx); o.budget = b.amt; o.bsrc = b.src; }
+      else { o.budget = ''; o.bsrc = ''; }
+    }
+    return o;
+  }).filter(function(l){ return l.desc || l.sec; });
+}
+function sig(lines){ return hash(JSON.stringify(arr(lines).map(function(l){ return [l.k, l.sec, l.desc, l.qty, l.unit, l.note]; }))); }
+function budgetTotal(d){ return r2(arr(d && d.lines).reduce(function(t, l){ return t + num(l.budget); }, 0)); }
+
+/* mirror one side's lines / sections onto the other: the budget keeps its $ per line (by key); the sub never gets a $ */
+function mirror(from, to, ctx){
+  var old = {}; arr(to.lines).forEach(function(l){ old[l.k] = l; });
+  to.lines = arr(from.lines).map(function(l){
+    var o = { k: l.k, sec: l.sec, desc: l.desc, qty: l.qty, unit: l.unit, note: l.note };
+    if (to.kind === 'budget') {
+      var was = old[l.k];
+      if (from.kind === 'budget') { o.budget = l.budget; o.bsrc = l.bsrc; }
+      else if (was && s(was.budget) !== '') { o.budget = was.budget; o.bsrc = was.bsrc; }
+      else { var b = budgetFor(Object.assign({}, l, { srcCost: l.srcCost }), ctx || ctxFor(to.pid, to.leadId)); o.budget = b.amt; o.bsrc = b.src; }
+    }
+    return o;
+  });
+  to.title = to.kind === 'budget' ? '💲 Budget — ' + s(from.title).replace(/^💲 Budget — /, '') : s(from.title).replace(/^💲 Budget — /, '');
+  to.trade = from.trade; to.updatedAt = nowIso(); to.by = myName();
+  if (from.kind === 'sub') to.subVersion = from.version; else to.version = Math.max(num(to.version), 1);
+  return to;
+}
+function snap(d){ return { v: d.version, at: d.updatedAt, by: d.by, title: d.title, lines: JSON.parse(JSON.stringify(arr(d.lines))), included: d.included || '', excluded: d.excluded || '', notes: d.notes || '' }; }
+function bump(d){
+  d.version = num(d.version) + 1; d.updatedAt = nowIso(); d.by = myName();
+  if (d.kind === 'sub') { d.hist = arr(d.hist).concat([snap(d)]).slice(-15); }
+  return d;
+}
+
+/* ═══ make (or refresh) a pair ═══
+   o = { pid, leadId, title, trade, lines | text, src: { kind, estId, jobId, trade }, included, excluded, notes, quiet } */
+function srcKey(o){ var sr = o.src || {}; return [s(sr.kind) || 'manual', s(sr.estId || sr.jobId), low(o.trade || sr.trade)].join('|'); }
+function make(o){
+  o = o || {};
+  var pid = s(o.pid), leadId = s(o.leadId);
+  if (!pid && leadId) { var l = lead(leadId); if (l && proj(l.pid)) pid = s(l.pid); }
+  if (!pid && !leadId) return Promise.resolve(null);
+  return Promise.all([load(), loadPB()]).then(function(){
+    var ctx = ctxFor(pid, leadId), head = '';
+    var lines = o.lines;
+    if (!lines && s(o.text)) { var ft = fromText(o.text); lines = ft.lines; head = ft.head; }
+    lines = cleanLines(lines, 'sub');
+    var raw = arr(o.lines || (s(o.text) ? fromText(o.text).lines : []));
+    var cost = {}; raw.forEach(function(l){ if (l && l.k && l.srcCost != null) cost[l.k] = l.srcCost; });
+    if (!lines.length && o.blank !== true) return null;
+    var key = srcKey(o);
+    var have = forJob(pid, leadId).find(function(x){ return x.kind === 'sub' && x.srcKey === key && o.src && o.src.kind !== 'manual'; });
+    var at = nowIso();
+    if (!have) {
+      var sid = uid('SCS_'), bid = uid('SCB_');
+      var sub = { id: sid, ss: 1, kind: 'sub', internal: false, pairId: bid, pid: pid, leadId: leadId, title: stripLine(o.title) || 'Scope of work', trade: stripLine(o.trade), lines: lines,
+        included: strip(o.included), excluded: strip(o.excluded), notes: strip(o.notes || head), src: o.src || { kind: 'manual' }, srcKey: key, srcSig: sig(lines), edited: false,
+        version: 1, createdAt: at, updatedAt: at, by: myName(), sends: [], hist: [] };
+      sub.hist = [snap(sub)];
+      var bud = { id: bid, ss: 1, kind: 'budget', internal: true, pairId: sid, pid: pid, leadId: leadId, title: '', trade: '', lines: [], notes: '', src: sub.src, srcKey: key, edited: false, version: 1, createdAt: at, updatedAt: at, by: myName() };
+      var withCost = { kind: 'sub', title: sub.title, trade: sub.trade, version: 1, lines: lines.map(function(l){ return Object.assign({}, l, { srcCost: cost[l.k] }); }) };
+      mirror(withCost, bud, ctx);
+      return putDocs([sub, bud]).then(function(){ return { sub: sub, budget: bud, created: true }; });
+    }
+    var pair = byId(have.pairId);
+    var edited = have.edited || (pair && pair.edited);
+    if (have.srcSig === sig(lines) && !(o.force && edited)) return { sub: have, budget: pair, created: false, same: true };   /* ↻ by hand on an edited scope: it asks even when the source did not change */
+    var replace = true;
+    if (edited) {
+      replace = W.confirm('📋 "' + s(have.title) + '" (and its 💲 budget) were edited by hand since they were made.\n\nThe ' + srcLabel(have.src) + ' changed.\n\nOK = replace the lines with the new ones (your hand edits to the lines are lost; the budget keeps the $ of lines that stay).\nCancel = keep your edits and only add the lines that are new.');
+    }
+    var next = replace ? lines : arr(have.lines).concat(lines.filter(function(l){ return !arr(have.lines).some(function(x){ return x.k === l.k; }); }));
+    if (sig(cleanLines(next, 'sub')) === sig(have.lines)) { if (replace && edited) { have.edited = false; if (pair) pair.edited = false; } have.srcSig = sig(lines); return putDocs([have, pair].filter(Boolean)).then(function(){ return { sub: have, budget: pair, created: false, same: true }; }); }   /* nothing new: no new version */
+    have.lines = cleanLines(next, 'sub'); have.srcSig = sig(lines); if (replace) have.edited = false;
+    if (s(o.title) && !edited) have.title = stripLine(o.title);
+    bump(have);
+    var bud2 = pair || { id: uid('SCB_'), ss: 1, kind: 'budget', internal: true, pairId: have.id, pid: have.pid, leadId: have.leadId, lines: [], version: 1, createdAt: at };
+    have.pairId = bud2.id;
+    mirror({ kind: 'sub', title: have.title, trade: have.trade, version: have.version, lines: have.lines.map(function(l){ return Object.assign({}, l, { srcCost: cost[l.k] }); }) }, bud2, ctx);
+    if (replace) bud2.edited = false;
+    return putDocs([have, bud2]).then(function(){ return { sub: have, budget: bud2, created: false, replaced: replace }; });
+  });
+}
+function srcLabel(sr){ var k = s(sr && sr.kind); return { estimate: 'estimate', jobscope: 'job\'s scope text (Scopes tab)', bidportal: 'bid portal trade scope', xactimate: 'Xactimate scope', store: 'saved scope', manual: 'scope' }[k] || 'source'; }
+function announce(r, where){
+  if (!r || !r.sub) return;
+  if (r.same) return;
+  toast((r.created ? '📋 Sub scope + 💲 budget scope made' : '📋 Sub scope + 💲 budget updated') + (where ? ' (' + where + ')' : ''), false, { l: 'Open', f: function(){ open(r.sub.pid, r.sub.leadId); } });
+}
+
+/* regenerate from where it came from */
+function regen(id){
+  return load().then(function(){
+    var d = byId(id); if (!d) return null;
+    var sub = d.kind === 'sub' ? d : byId(d.pairId); if (!sub) return null;
+    var sr = sub.src || {}, o = { pid: sub.pid, leadId: sub.leadId, trade: sub.trade, src: sr, title: sub.title, force: true };
+    if (sr.kind === 'estimate') { var e = estimatesAll().find(function(x){ return s(x.id) === s(sr.estId); }) || estimatesFor(sub.pid, sub.leadId)[0]; if (!e) { toast('The estimate it came from is not on this computer.', true); return null; } o.lines = fromEstimate(e, sr.trade || sub.trade); }
+    else if (sr.kind === 'jobscope') { var p = proj(sub.pid); o.text = p && p.scope; }
+    else if (sr.kind === 'manual' || !sr.kind) { var es = estimatesFor(sub.pid, sub.leadId); if (!es.length) { toast('No estimate on this job to make it from.', true); return null; } o.src = { kind: 'estimate', estId: es[0].id, trade: sub.trade }; o.lines = fromEstimate(es[0], sub.trade); sub.srcKey = srcKey(o); sub.src = o.src; }
+    else { toast('This scope came from the ' + srcLabel(sr) + ' — make it again there.', true); return null; }
+    if (!arr(o.lines).length && !s(o.text)) { toast('Nothing to make it from.', true); return null; }
+    return make(o);
+  });
+}
+
+/* ═══ the UI ═══ */
+var CSS = '.gcss-ov{position:fixed;inset:0;z-index:2147483200;background:rgba(6,12,20,.78);display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:calc(10px + env(safe-area-inset-top,0px)) 8px 30px;font-family:Inter,-apple-system,Arial,sans-serif}'
+  + '.gcss-box{background:#f8fafc;color:#0f172a;border-radius:14px;width:min(980px,100%);box-shadow:0 24px 70px rgba(0,0,0,.45);overflow:hidden}'
+  + '.gcss-hd{display:flex;align-items:center;gap:8px;padding:12px 14px;background:#0f2440;color:#fff}.gcss-hd b{flex:1;font-size:16px}.gcss-hd button{background:#1e3a5f;color:#fff;border:0;border-radius:8px;padding:7px 11px;font-weight:700;cursor:pointer}'
+  + '.gcss-bd{padding:12px 14px}.gcss-card{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;margin-bottom:10px}.gcss-card.bud{border-color:#f5d48a;background:#fffbeb}'
+  + '.gcss-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.gcss-mut{color:#64748b;font-size:12px}.gcss-b{border:1px solid #cbd5e1;background:#fff;color:#0f2440;border-radius:8px;padding:8px 11px;font-weight:700;font-size:13px;cursor:pointer;min-height:36px}'
+  + '.gcss-b.g{background:#166534;color:#fff;border-color:#166534}.gcss-b.n{background:#0f2440;color:#fff;border-color:#0f2440}.gcss-b.y{background:#b45309;color:#fff;border-color:#b45309}.gcss-b.r{color:#b91c1c;border-color:#fecaca}.gcss-b[disabled]{opacity:.5;cursor:default}'
+  + '.gcss-in{width:100%;box-sizing:border-box;padding:8px 9px;border:1px solid #cbd5e1;border-radius:7px;font:14px Inter,Arial,sans-serif;background:#fff;color:#0f172a}'
+  + '.gcss-lines{display:flex;flex-direction:column;gap:6px;margin:8px 0}.gcss-ln{display:grid;grid-template-columns:150px 1fr 70px 70px 160px 32px;gap:5px;align-items:center}.gcss-ln.bud{grid-template-columns:140px 1fr 64px 64px 130px 110px 32px}'
+  + '.gcss-ln .x{border:0;background:none;color:#b91c1c;font-size:16px;cursor:pointer}.gcss-lh{font-size:10px;font-weight:800;color:#64748b;text-transform:uppercase}'
+  + '.gcss-tag{display:inline-block;border-radius:999px;padding:2px 9px;font-size:11px;font-weight:800}.gcss-tag.sub{background:#dbeafe;color:#1e3a8a}.gcss-tag.bud{background:#fef3c7;color:#92400e}'
+  + '.gcss-warn{background:#fef3c7;border:1px solid #f59e0b;color:#7c2d12;border-radius:8px;padding:8px 10px;font-size:13px;font-weight:700;margin:6px 0}'
+  + '.gcss-sec{font-weight:800;color:#0f2440;margin-top:6px}.gcss-sub{display:flex;gap:8px;align-items:center;padding:7px 4px;border-bottom:1px solid #f1f5f9}.gcss-sub label{display:flex;gap:8px;align-items:center;flex:1;cursor:pointer}'
+  + '.gcss-hist{font-size:12px;color:#334155}.gcss-hist div{padding:3px 0;border-bottom:1px dashed #e2e8f0}'
+  + '@media (max-width:700px){.gcss-ln,.gcss-ln.bud{grid-template-columns:1fr 1fr;}.gcss-ln .w{grid-column:1 / -1}.gcss-lh{display:none}}';
+function css(){ if (D.getElementById('gcss-css')) return; var st = D.createElement('style'); st.id = 'gcss-css'; st.textContent = CSS; (D.head || D.documentElement).appendChild(st); }
+var STACK = [];
+function sheet(id, title){
+  css();
+  var old = D.getElementById(id); if (old) old.remove();
+  var ov = D.createElement('div'); ov.id = id; ov.className = 'gcss-ov'; ov.setAttribute('data-gc-keep', '1');
+  ov.innerHTML = '<div class="gcss-box" role="dialog" aria-modal="true"><div class="gcss-hd"><b></b><button type="button" data-x>✕ Close</button></div><div class="gcss-bd"></div></div>';
+  ov.querySelector('.gcss-hd b').textContent = title;
+  D.body.appendChild(ov);
+  var o = { el: ov, body: ov.querySelector('.gcss-bd'), close: function(){ try { ov.remove(); } catch (e) {} STACK = STACK.filter(function(x){ return x !== o; }); if (o.onClose) try { o.onClose(); } catch (e) {} } };
+  ov.querySelector('[data-x]').onclick = o.close;
+  STACK.push(o);
+  return o;
+}
+D.addEventListener('keydown', function(e){ if (e.key === 'Escape' && STACK.length) { var top = STACK[STACK.length - 1]; if (top && top.el.isConnected) { e.stopPropagation(); top.close(); } } }, true);
+
+function jobLabel(pid, leadId){ var p = proj(pid); if (p) return s(p.name) + (p.autoPO ? ' · ' + p.autoPO : ''); var l = lead(leadId); return l ? s(l.name || l.title) + ' (lead)' : 'Job'; }
+function lastSend(d){ var x = arr(d.sends).slice(-1)[0]; return x ? (x.subName + ' · ' + s(x.at).slice(0, 10) + ' · v' + x.version) : ''; }
+
+/* 📋 the job's scopes & budgets */
+function open(pid, leadId){
+  pid = s(pid); leadId = s(leadId);
+  var sh = sheet('gcss-job', '📋 Scopes & 💲 budgets — ' + jobLabel(pid, leadId));
+  function paint(){
+    var docs = forJob(pid, leadId), subs = docs.filter(function(x){ return x.kind === 'sub'; });
+    var es = estimatesFor(pid, leadId), trades = {};
+    if (es.length) estLines(es[0]).forEach(function(l){ var t = s(l.cat || l.category || l.trade); if (t) trades[t] = 1; });
+    var h = '<div class="gcss-mut" style="margin-bottom:8px">Every scope for subs has its 💲 budget twin — same lines, plus our budget per line. The 💲 budget is <b>internal</b>: it is never e-mailed or put on the sub portal or bid portal.</div>';
+    h += '<div class="gcss-row" style="margin-bottom:10px">'
+      + (es.length ? '<select class="gcss-in" data-ss="trade" style="max-width:260px"><option value="">All trades (one scope)</option>' + Object.keys(trades).sort().map(function(t){ return '<option value="' + esc(t) + '">' + esc(t) + ' only</option>'; }).join('') + '</select><button type="button" class="gcss-b g" data-ss="fromest">➕ Make from the estimate (' + esc(s(es[0].name || 'estimate').slice(0, 40)) + ')</button>' : '<span class="gcss-mut">No estimate on this job yet — a blank scope still gets its budget.</span>')
+      + '<button type="button" class="gcss-b" data-ss="blank">➕ Blank scope</button></div>';
+    if (!subs.length) h += '<div class="gcss-card gcss-mut">No scopes for subs on this job yet.</div>';
+    subs.forEach(function(d){
+      var b = byId(d.pairId);
+      h += '<div class="gcss-card" data-ssd="' + esc(d.id) + '"><div class="gcss-row"><span class="gcss-tag sub">📋 Sub scope · no prices</span><b style="flex:1">' + esc(d.title) + (d.trade ? ' — ' + esc(d.trade) : '') + '</b><span class="gcss-mut">v' + num(d.version) + ' · ' + arr(d.lines).length + ' lines · ' + esc(srcLabel(d.src)) + (d.edited ? ' · edited by hand' : '') + '</span></div>'
+        + '<div class="gcss-row" style="margin-top:6px"><button type="button" class="gcss-b n" data-ss="edit">✏️ Edit</button><button type="button" class="gcss-b g" data-ss="send">📤 Send to sub</button>'
+        + '<button type="button" class="gcss-b y" data-ss="budget">💲 Budget' + (b ? ' ' + money(budgetTotal(b)) : '') + '</button><button type="button" class="gcss-b" data-ss="regen">↻ Regenerate</button><button type="button" class="gcss-b" data-ss="print">🖨 Print / PDF</button><button type="button" class="gcss-b r" data-ss="del">🗑</button></div>'
+        + (arr(d.sends).length ? '<details style="margin-top:6px"><summary class="gcss-mut">🕘 Sent ' + arr(d.sends).length + ' time' + (arr(d.sends).length === 1 ? '' : 's') + ' — last: ' + esc(lastSend(d)) + '</summary><div class="gcss-hist" data-ss-hist>' + arr(d.sends).slice().reverse().map(function(x){
+            return '<div>' + esc(s(x.at).slice(0, 16).replace('T', ' ')) + ' · <b>' + esc(x.subName) + '</b>' + (x.email ? ' &lt;' + esc(x.email) + '&gt;' : '') + ' · ' + esc(x.via === 'email' ? '✉️ e-mail' : x.via === 'portal-agreement' ? '🔨 sub portal (agreement to sign)' : '🔨 sub portal') + ' · v' + esc(x.version) + ' · ' + esc(x.status) + (x.detail ? ' — ' + esc(x.detail) : '') + ' · by ' + esc(x.by) + '</div>'; }).join('') + '</div></details>' : '')
+        + '</div>';
+    });
+    sh.body.innerHTML = h;
+  }
+  sh.body.addEventListener('click', function(e){
+    var b = e.target.closest && e.target.closest('[data-ss]'); if (!b) return;
+    var a = b.getAttribute('data-ss'), card = b.closest('[data-ssd]'), id = card ? card.getAttribute('data-ssd') : '';
+    if (a === 'fromest') { var es = estimatesFor(pid, leadId); if (!es.length) return; var tr = s((sh.body.querySelector('[data-ss=trade]') || {}).value); b.disabled = true;
+      return make({ pid: pid, leadId: leadId, trade: tr, title: (tr ? tr + ' — ' : '') + 'Scope of work — ' + s(es[0].name || jobLabel(pid, leadId)), lines: fromEstimate(es[0], tr), src: { kind: 'estimate', estId: es[0].id, trade: tr } })
+        .then(function(r){ b.disabled = false; if (!r) return toast('That estimate has no lines' + (tr ? ' for ' + tr : '') + '.', true); paint(); toast(r.same ? 'Already up to date' : '📋 Sub scope + 💲 budget ' + (r.created ? 'made' : 'updated')); }); }
+    if (a === 'blank') return make({ pid: pid, leadId: leadId, title: 'Scope of work', lines: [{ k: 'm:' + uid(''), sec: '', desc: 'Describe the work', qty: '', unit: '' }], src: { kind: 'manual', at: nowIso() } }).then(function(r){ paint(); if (r) edit(r.sub.id, paint); });
+    if (a === 'edit') return edit(id, paint);
+    if (a === 'budget') { var d = byId(id); return d && edit(d.pairId, paint); }
+    if (a === 'send') return send(id, paint);
+    if (a === 'print') return printDoc(byId(id));
+    if (a === 'regen') return regen(id).then(function(r){ paint(); if (r) toast(r.same ? 'Already matches the ' + srcLabel(r.sub.src) : '↻ Regenerated (budget kept in step)'); });
+    if (a === 'del') { var d2 = byId(id); if (!d2 || !W.confirm('Delete "' + d2.title + '" and its 💲 budget? (What was already sent stays with the sub.)')) return;
+      var p2 = byId(d2.pairId); d2.deleted = true; d2.updatedAt = nowIso(); if (p2) { p2.deleted = true; p2.updatedAt = d2.updatedAt; }
+      return putDocs([d2, p2].filter(Boolean)).then(paint); }
+  });
+  Promise.all([load(), loadPB()]).then(paint);
+  return sh;
+}
+
+/* ✏️ edit one side (the other follows) */
+function edit(id, onDone){
+  var d0 = byId(id); if (!d0) { toast('That scope is not on this computer.', true); return null; }
+  var d = JSON.parse(JSON.stringify(d0)), bud = d.kind === 'budget';
+  var sh = sheet('gcss-edit', (bud ? '💲 Budget scope — INTERNAL' : '📋 Sub scope — no prices') + ' · ' + jobLabel(d.pid, d.leadId));
+  sh.onClose = function(){ if (onDone) onDone(); };
+  var lines = arr(d.lines).map(function(l){ return Object.assign({}, l); });
+  if (!lines.length) lines.push({ k: 'm:' + uid(''), sec: '', desc: '', qty: '', unit: '', note: '' });
+  function row(l, i){
+    return '<div class="gcss-ln' + (bud ? ' bud' : '') + '" data-i="' + i + '"><input class="gcss-in" data-f="sec" placeholder="Section / trade" value="' + esc(l.sec) + '"><input class="gcss-in w" data-f="desc" placeholder="Work" value="' + esc(l.desc) + '">'
+      + '<input class="gcss-in" data-f="qty" placeholder="Qty" inputmode="decimal" value="' + esc(l.qty) + '"><input class="gcss-in" data-f="unit" placeholder="Unit" value="' + esc(l.unit) + '"><input class="gcss-in" data-f="note" placeholder="Note" value="' + esc(l.note) + '">'
+      + (bud ? '<input class="gcss-in" data-f="budget" placeholder="$ budget" inputmode="decimal" title="budget — internal' + (l.bsrc ? ' (from the ' + esc(l.bsrc === 'pricebook' ? 'Price Book' : l.bsrc) + ')' : '') + '" value="' + esc(l.budget === '' || l.budget == null ? '' : l.budget) + '">' : '')
+      + '<button type="button" class="x" data-del="' + i + '" aria-label="Remove line">✕</button></div>';
+  }
+  function read(){
+    Array.prototype.forEach.call(sh.body.querySelectorAll('.gcss-ln'), function(r){ var i = +r.getAttribute('data-i'), l = lines[i]; if (!l) return;
+      ['sec', 'desc', 'qty', 'unit', 'note', 'budget'].forEach(function(f){ var x = r.querySelector('[data-f=' + f + ']'); if (!x) return; var v = x.value;
+        if (f === 'budget') { if (s(v) !== s(l.budget)) { l.budget = s(v) === '' ? '' : r2(num(v)); l.bsrc = s(v) === '' ? '' : 'typed'; } } else l[f] = f === 'qty' ? (s(v) === '' ? '' : num(v)) : v; }); });
+    var g = function(k){ var x = sh.body.querySelector('[data-e=' + k + ']'); return x ? x.value : ''; };
+    d.title = g('title'); d.trade = g('trade');
+    if (!bud) { d.included = g('inc'); d.excluded = g('exc'); d.notes = g('notes'); } else d.notes = g('notes');
+  }
+  function totals(){
+    if (!bud) return '';
+    var by = {}, order = [];
+    lines.forEach(function(l){ var k = s(l.sec) || 'General'; if (!(k in by)) { by[k] = 0; order.push(k); } by[k] += num(l.budget); });
+    var blank = lines.filter(function(l){ return s(l.desc) && s(l.budget) === ''; }).length;
+    return '<div class="gcss-card bud"><b>Budget total ' + money(lines.reduce(function(t, l){ return t + num(l.budget); }, 0)) + '</b> <span class="gcss-mut">budget — internal</span><div class="gcss-mut">' + order.map(function(k){ return esc(k) + ': ' + money(by[k]); }).join(' · ') + '</div>'
+      + (blank ? '<div class="gcss-warn">' + blank + ' line' + (blank === 1 ? ' has' : 's have') + ' no budget yet — fill the $ box (no estimate line or Price Book item matched).</div>' : '') + '</div>';
+  }
+  function paint(){
+    var pair = byId(d.pairId);
+    sh.body.innerHTML = (bud ? '<div class="gcss-warn">💲 budget — internal. Never sent to subs, never on the bid portal or the sub portal. Lines and sections stay the same as the 📋 sub scope "' + esc(pair ? pair.title : '') + '"; only the $ are here.</div>'
+        : '<div class="gcss-mut" style="margin-bottom:6px">What the sub sees — work, quantities and notes. Never a price: any $ typed here is taken out when it is saved or sent. The 💲 budget follows these lines.</div>')
+      + '<div class="gcss-row"><label style="flex:2;min-width:220px">Title<input class="gcss-in" data-e="title" value="' + esc(bud ? s(d.title).replace(/^💲 Budget — /, '') : d.title) + '"></label><label style="flex:1;min-width:140px">Trade<input class="gcss-in" data-e="trade" value="' + esc(d.trade) + '"></label></div>'
+      + '<div class="gcss-ln' + (bud ? ' bud' : '') + '" style="margin-top:10px"><span class="gcss-lh">Section</span><span class="gcss-lh">Work</span><span class="gcss-lh">Qty</span><span class="gcss-lh">Unit</span><span class="gcss-lh">Note</span>' + (bud ? '<span class="gcss-lh">Budget $</span>' : '') + '<span></span></div>'
+      + '<div class="gcss-lines">' + lines.map(row).join('') + '</div><div class="gcss-row"><button type="button" class="gcss-b" data-e="add">＋ Add a line</button><button type="button" class="gcss-b" data-e="addsec">＋ New section</button></div>'
+      + totals()
+      + (bud ? '<label style="display:block;margin-top:8px">Internal notes<textarea class="gcss-in" data-e="notes" rows="2">' + esc(d.notes || '') + '</textarea></label>'
+        : '<div class="gcss-row" style="margin-top:8px;align-items:stretch"><label style="flex:1;min-width:200px">Included<textarea class="gcss-in" data-e="inc" rows="3">' + esc(d.included || '') + '</textarea></label><label style="flex:1;min-width:200px">Not included<textarea class="gcss-in" data-e="exc" rows="3">' + esc(d.excluded || '') + '</textarea></label></div><label style="display:block;margin-top:6px">Notes for the sub<textarea class="gcss-in" data-e="notes" rows="2">' + esc(d.notes || '') + '</textarea></label>')
+      + '<div class="gcss-row" style="margin-top:12px"><button type="button" class="gcss-b g" data-e="save">💾 Save</button>' + (bud ? '<button type="button" class="gcss-b n" data-e="other">📋 Open the sub scope</button>' : '<button type="button" class="gcss-b y" data-e="other">💲 Open the budget</button><button type="button" class="gcss-b g" data-e="savesend">💾 Save & 📤 Send to sub</button>')
+      + '<span class="gcss-mut" data-e="msg"></span></div>';
+  }
+  function save(){
+    read();
+    var before = sig(d0.lines) + '|' + s(d0.title) + '|' + s(d0.trade) + '|' + s(d0.included) + '|' + s(d0.excluded) + '|' + s(d0.notes) + '|' + JSON.stringify(arr(d0.lines).map(function(l){ return l.budget; }));
+    var nl = cleanLines(lines, d.kind);
+    var cur = byId(d.id) || d0;
+    var out = Object.assign({}, cur, { title: bud ? '💲 Budget — ' + stripLine(d.title) : stripLine(d.title), trade: stripLine(d.trade), lines: nl, notes: bud ? s(d.notes) : strip(d.notes) });
+    if (!bud) { out.included = strip(d.included); out.excluded = strip(d.excluded); }
+    var after = sig(out.lines) + '|' + s(out.title) + '|' + s(out.trade) + '|' + s(out.included) + '|' + s(out.excluded) + '|' + s(out.notes) + '|' + JSON.stringify(out.lines.map(function(l){ return l.budget; }));
+    if (before === after) return Promise.resolve(out);
+    out.edited = true; bump(out);
+    var pair = byId(out.pairId), docs = [out];
+    if (pair) { var was = sig(pair.lines) + '|' + s(pair.title) + '|' + s(pair.trade); pair = JSON.parse(JSON.stringify(pair)); mirror(out, pair);
+      if (sig(pair.lines) + '|' + s(pair.title) + '|' + s(pair.trade) !== was) { pair.edited = true; if (pair.kind === 'sub') bump(pair); }   /* the sub scope's lines changed from the budget side: a new version too */
+      docs.push(pair); }
+    return putDocs(docs).then(function(){ d0 = out; d = JSON.parse(JSON.stringify(out)); lines = arr(d.lines).map(function(l){ return Object.assign({}, l); }); return out; });
+  }
+  sh.body.addEventListener('click', function(e){
+    var t = e.target.closest && e.target.closest('[data-e],[data-del]'); if (!t) return;
+    if (t.hasAttribute('data-del')) { read(); lines.splice(+t.getAttribute('data-del'), 1); if (!lines.length) lines.push({ k: 'm:' + uid(''), sec: '', desc: '', qty: '', unit: '', note: '' }); return paint(); }
+    var a = t.getAttribute('data-e');
+    if (a === 'add' || a === 'addsec') { read(); var last = lines[lines.length - 1] || {}; lines.push({ k: 'm:' + uid(''), sec: a === 'addsec' ? 'New section' : s(last.sec), desc: '', qty: '', unit: '', note: '', budget: '' }); paint(); var ins = sh.body.querySelectorAll('.gcss-lines .gcss-ln'); var lastIn = ins[ins.length - 1]; if (lastIn) { var f = lastIn.querySelector(a === 'addsec' ? '[data-f=sec]' : '[data-f=desc]'); if (f) { f.focus(); if (a === 'addsec') f.select(); } } return; }
+    if (a === 'save' || a === 'savesend' || a === 'other') {
+      t.disabled = true;
+      return save().then(function(out){ t.disabled = false; var m = sh.body.querySelector('[data-e=msg]');
+        if (a === 'save') { paint(); var m2 = sh.body.querySelector('[data-e=msg]'); if (m2) m2.textContent = '✅ Saved v' + num(out.version) + ' — the ' + (bud ? '📋 sub scope' : '💲 budget') + ' follows.'; toast('💾 Saved — ' + (bud ? 'sub scope' : 'budget') + ' kept in step'); return; }
+        if (a === 'other') { sh.close(); return edit(out.pairId, onDone); }
+        if (a === 'savesend') { sh.close(); return send(out.id, onDone); }
+        if (m) m.textContent = '';
+      }, function(er){ t.disabled = false; toast('Not saved: ' + s(er && er.message), true); });
+    }
+  });
+  sh.body.addEventListener('input', function(e){ if (bud && e.target.getAttribute('data-f') === 'budget') { read(); var tb = sh.body.querySelector('.gcss-card.bud'); if (tb) { var w = D.createElement('div'); w.innerHTML = totals(); tb.replaceWith(w.firstChild); } } });
+  paint();
+  return sh;
+}
+
+/* the scope as a page (print / PDF / e-mail) — the SUB scope only, every price taken out again */
+function scopeHtml(d, opt){
+  opt = opt || {};
+  if (!d || d.kind !== 'sub' || d.internal) throw new Error('Only a sub scope (no prices) can be printed or sent.');
+  var p = proj(d.pid) || {}, l0 = lead(d.leadId) || {};
+  var groups = [], by = {};
+  arr(d.lines).forEach(function(l){ var k = stripLine(l.sec); if (!(k in by)) { by[k] = []; groups.push(k); } by[k].push(l); });
+  var body = groups.map(function(g){ return (g ? '<div style="font-weight:800;color:#0f2440;border-bottom:2px solid #0f2440;margin:14px 0 4px;padding-bottom:2px">' + esc(g) + '</div>' : '') + '<table style="width:100%;border-collapse:collapse;font-size:13px">' + by[g].map(function(l){
+      return '<tr><td style="padding:4px 6px;border-bottom:1px solid #e5e7eb">' + esc(stripLine(l.desc)) + (stripLine(l.note) ? '<div style="color:#555;font-size:12px">' + esc(stripLine(l.note)) + '</div>' : '') + '</td><td style="padding:4px 6px;border-bottom:1px solid #e5e7eb;white-space:nowrap;text-align:right;width:110px">' + (s(l.qty) !== '' ? esc(l.qty) + (l.unit ? ' ' + esc(stripLine(l.unit)) : '') : esc(stripLine(l.unit))) + '</td></tr>'; }).join('') + '</table>'; }).join('');
+  var block = function(t, v){ v = strip(v); return v ? '<div style="margin-top:12px"><b>' + t + '</b><div style="white-space:pre-wrap">' + esc(v) + '</div></div>' : ''; };
+  var inner = '<div style="font-family:Arial,Helvetica,sans-serif;color:#111;max-width:760px">'
+    + '<div style="font-size:18px;font-weight:800;color:#0f2440">' + esc(stripLine(d.title)) + (d.trade ? ' — ' + esc(stripLine(d.trade)) : '') + '</div>'
+    + '<div style="font-size:13px;color:#334">' + esc(s(p.name || l0.name || l0.title)) + (s(p.address || l0.address) ? ' · ' + esc(s(p.address || l0.address)) : '') + (p.autoPO ? ' · PO ' + esc(p.autoPO) : '') + ' · version ' + num(d.version) + ' · ' + esc(s(d.updatedAt).slice(0, 10)) + '</div>'
+    + body + block('Included', d.included) + block('Not included', d.excluded) + block('Notes', d.notes)
+    + '<div style="margin-top:14px;font-size:11px;color:#666">Scope of work for bidding / performing the work — quantities to be verified on site and on the plans. GrayCo Construction Services.</div></div>';
+  if (opt.fragment) return inner;
+  var head = ''; try { if (typeof W._gcDocHeader === 'function') head = W._gcDocHeader({}) || ''; } catch (e) {}
+  return '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>' + esc(stripLine(d.title)) + '</title><style>body{font-family:Arial,sans-serif;margin:0 auto;padding:18px;max-width:780px}</style></head><body>' + head + inner + '</body></html>';
+}
+function printDoc(d){
+  try { var h = scopeHtml(d); if (typeof W._gcBrandPrintHtml === 'function') h = W._gcBrandPrintHtml(h); var w = W.open('', '_blank'); if (w) { w.document.write(h); w.document.close(); later(function(){ try { w.print(); } catch (e) {} }, 400); } else toast('Allow pop-ups to print.', true); } catch (e) { toast(s(e.message), true); }
+}
+function ensurePdf(){
+  if (W.html2pdf) return Promise.resolve(true);
+  return new Promise(function(res){ var sc = D.createElement('script'); sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js'; sc.onload = function(){ res(!!W.html2pdf); }; sc.onerror = function(){ res(false); }; D.head.appendChild(sc); later(function(){ res(!!W.html2pdf); }, 15000); });
+}
+/* the PDF of the sub scope: { name, base64, blob } or null (then the scope is only in the e-mail / message) */
+function makePdf(d){
+  var name = (stripLine(d.title) + (d.trade ? ' - ' + stripLine(d.trade) : '') + ' v' + num(d.version)).replace(/[\\/:*?"<>|]+/g, '-').slice(0, 100) + '.pdf';
+  var html; try { html = scopeHtml(d); } catch (e) { return Promise.resolve(null); }
+  return ensurePdf().then(function(ok){
+    if (!ok) return null;
+    var holder = D.createElement('div'); holder.className = 'gcss-pdfh'; holder.style.cssText = 'position:fixed;left:-99999px;top:0;width:816px;background:#fff';
+    holder.innerHTML = typeof W._gcPdfHolderHtml === 'function' ? W._gcPdfHolderHtml(html, '.gcss-pdfh') : html;
+    D.body.appendChild(holder);
+    var job = W.html2pdf().set({ margin: 24, filename: name, image: { type: 'jpeg', quality: 0.95 }, html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' }, jsPDF: { unit: 'pt', format: 'letter', orientation: 'portrait' } }).from(holder).toPdf().get('pdf');
+    return Promise.race([job.then(function(pdf){ var uri = pdf.output('datauristring'); var blob = null; try { blob = pdf.output('blob'); } catch (e) {} return { name: name, base64: String(uri).replace(/^data:[^,]*,/, ''), blob: blob }; }), new Promise(function(r){ later(function(){ r(null); }, 25000); })])
+      .then(function(x){ try { holder.remove(); } catch (e) {} return x; }, function(){ try { holder.remove(); } catch (e) {} return null; });
+  });
+}
+
+/* ═══ who on this job can get it ═══ */
+function subsList(){
+  var seen = {}, out = [];
+  arr(crm().subs).concat(arr(crm().vendors)).forEach(function(r){ if (!r || typeof r !== 'object' || !r.id || seen[r.id]) return; if (!(r.isSub === true || (r.isSub === undefined && (r.trade || r.cat === 'Sub')))) return; seen[r.id] = 1; out.push(r); });
+  return out.sort(function(a, b){ return s(a.name).localeCompare(s(b.name)); });
+}
+function subMatch(o){
+  var all = subsList(), id = s(o.subId || o.vendorId), e = low(o.email), n = norm(o.name || o.sub || o.company);
+  return (id && all.find(function(r){ return s(r.id) === id; })) || (e && all.find(function(r){ return low(r.email) === e; })) || (n && all.find(function(r){ return norm(r.name) === n || norm(r.company) === n; })) || null;
+}
+function jobSubs(pid, leadId){
+  var out = [], seen = {};
+  function add(c){ var k = c.id ? 'i:' + c.id : (c.email ? 'e:' + low(c.email) : 'n:' + norm(c.name)); if (!c.name && !c.email) return; if (seen[k]) { var o = out[seen[k] - 1]; if (c.rank < o.rank) { o.rank = c.rank; o.why = c.why; } return; } out.push(c); seen[k] = out.length; }
+  estimatesFor(pid, leadId).forEach(function(e){ arr(e.lines).forEach(function(l){ var b = l && l.bidRef; if (!b || !(b.company || b.sub || b.email)) return; var sb = subMatch({ email: b.email, name: b.company || b.sub });
+    add({ id: sb ? s(sb.id) : '', name: sb ? s(sb.name) : s(b.company || b.sub), email: low((sb && sb.email) || b.email), trade: s(b.trade || (sb && sb.trade)), why: '🏆 Awarded on the bid portal', rank: 0 }); }); });
+  var p = proj(pid);
+  arr(p && p.subs).forEach(function(r){ if (!r) return; var sb = subMatch(r); var st = s(r.status);
+    add({ id: sb ? s(sb.id) : '', name: s(r.name || (sb && sb.name)), email: low((sb && sb.email) || r.email), trade: s(r.trade || (sb && sb.trade)), why: st ? 'On the job · ' + st : 'On the job', rank: /award/i.test(st) ? 0 : /progress|complete/i.test(st) ? 1 : /reject|declin/i.test(st) ? 4 : 2 }); });
+  return out.sort(function(a, b){ return a.rank - b.rank || s(a.name).localeCompare(s(b.name)); });
+}
+
+/* ═══ 📤 send ═══ */
+function fn(name, body){
+  return W.fetch('/.netlify/functions/' + name, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    .then(function(r){ return r.text().then(function(t){ var j = {}; try { j = JSON.parse(t) || {}; } catch (e) {} return { status: r.status, ok: r.ok && j.ok !== false && !j.error, data: j }; }); }, function(){ return { status: 0, ok: false, data: { error: 'No internet — try again.' } }; });
+}
+function scopeText(d){
+  var out = [stripLine(d.title) + (d.trade ? ' — ' + stripLine(d.trade) : '') + ' (v' + num(d.version) + ')'], sec = null;
+  arr(d.lines).forEach(function(l){ if (stripLine(l.sec) !== sec) { sec = stripLine(l.sec); if (sec) out.push('', sec + ':'); } out.push('• ' + stripLine(l.desc) + (s(l.qty) !== '' ? ' — ' + l.qty + (l.unit ? ' ' + stripLine(l.unit) : '') : '') + (stripLine(l.note) ? ' (' + stripLine(l.note) + ')' : '')); });
+  if (strip(d.included)) out.push('', 'Included: ' + strip(d.included));
+  if (strip(d.excluded)) out.push('', 'Not included: ' + strip(d.excluded));
+  if (strip(d.notes)) out.push('', 'Notes: ' + strip(d.notes));
+  return out.join('\n').slice(0, 3900);
+}
+function addToJob(pid, c){
+  /* the CRM's job save (idb → screen → cloud), a person's edit: the sub goes on the job as "Bidding" */
+  return Promise.resolve(W.idbGet ? W.idbGet('projects') : null).then(function(list){
+    list = arr(list).length ? arr(list) : projects();
+    var at = nowIso(), hit = false;
+    var out = list.map(function(p){ if (!p || s(p.id) !== s(c.pid)) return p; hit = true; var q = Object.assign({}, p); q.subs = arr(p.subs).concat([{ name: c.name, trade: c.trade || '', status: 'Bidding', subId: c.id, addedAt: at, addedBy: myName(), via: 'scope sent' }]); q.updatedAt = at; return q; });
+    if (!hit) return false;
+    try { W.__GC_MANUAL_SAVE__ = true; if (W._gcManualNow) W._gcManualNow('sub added to a job'); } catch (e) {}
+    return Promise.resolve(W.idbSet ? W.idbSet('projects', out) : null).then(function(){
+      try { if (W._setProjects) W._setProjects(out.slice()); } catch (e) {}
+      try { if (W._crm) W._crm.projects = out; } catch (e) {}
+      try { var f = W._supaUpsertNow || W._supaUpsert; if (f) f('projects', out); } catch (e) {}
+      later(function(){ try { W.__GC_MANUAL_SAVE__ = false; } catch (e) {} }, 2000);
+      return true;
+    });
+  });
+}
+function send(id, onDone){
+  var d = byId(id);
+  if (d && d.kind === 'budget') { toast('💲 The budget scope is internal — it is never sent. Opening its 📋 sub scope.', true); d = byId(d.pairId); }
+  if (!d || d.kind !== 'sub' || d.internal) { toast('That scope is not on this computer.', true); return null; }
+  var pid = s(d.pid), p = proj(pid);
+  var sh = sheet('gcss-send', '📤 Send "' + stripLine(d.title) + '" (v' + num(d.version) + ') to a sub');
+  sh.onClose = function(){ if (onDone) onDone(); };
+  var picked = {}, cands = jobSubs(pid, d.leadId), extra = [], q = '';
+  function ckey(c){ return c.id ? 'i:' + c.id : (c.email ? 'e:' + low(c.email) : 'n:' + norm(c.name)); }
+  var me = myEmail();
+  var subj = (p ? [p.autoPO ? 'PO ' + p.autoPO : '', s(p.name)].filter(Boolean).join(' · ') + ' — ' : '') + 'Scope of work' + (d.trade ? ' — ' + stripLine(d.trade) : '');
+  var msg = 'Hi,\n\nHere is the scope of work' + (p ? ' for ' + s(p.name) + (p.address ? ' (' + s(p.address) + ')' : '') : '') + (d.trade ? ' — ' + stripLine(d.trade) : '') + '. Please look it over and send us your price, or any questions.\n\nThank you,\n' + myName();
+  function candRow(c){
+    var k = ckey(c), has = !!picked[k];
+    return '<div class="gcss-sub"><label><input type="checkbox" data-pick="' + esc(k) + '"' + (has ? ' checked' : '') + '><span><b>' + esc(c.name) + '</b>' + (c.trade ? ' · ' + esc(c.trade) : '') + '<br><span class="gcss-mut">' + esc(c.why || '') + ' · ' + (c.email ? esc(c.email) : 'no e-mail on file') + (c.id ? '' : ' · not in the Subs list (no portal)') + '</span></span></label></div>';
+  }
+  function results(){ var n = norm(q); if (!n) return []; return subsList().filter(function(r){ return norm([r.name, r.company, r.trade, r.email].join(' ')).indexOf(n) > -1; }).slice(0, 25).map(function(r){ return { id: s(r.id), name: s(r.name), email: low(r.email), trade: s(r.trade), why: 'Subs list', rank: 9 }; }); }
+  function paint(){
+    var res = results();
+    extra = res;
+    sh.body.innerHTML = '<div class="gcss-card"><b>1. Which sub?</b> <span class="gcss-mut">The subs on this job first</span>'
+      + (cands.length ? cands.map(candRow).join('') : '<div class="gcss-mut" style="padding:6px 0">No subs on this job yet (no awarded bid, no sub rows). Search the Subs list below.</div>')
+      + '<div style="margin-top:8px"><input class="gcss-in" data-s="q" placeholder="🔎 Search all subs (name, trade, e-mail)" value="' + esc(q) + '"></div>'
+      + '<div data-s="res">' + res.map(candRow).join('') + '</div></div>'
+      + '<div class="gcss-card"><b>2. How?</b><div class="gcss-row" style="margin-top:6px"><label class="gcss-sub" style="border:0"><input type="checkbox" data-s="email" checked> ✉️ E-mail it (from you, ' + esc(me || 'your sign-in') + ')</label><label class="gcss-sub" style="border:0"><input type="checkbox" data-s="portal"' + (pid ? '' : ' disabled') + '> 🔨 Put it in their sub portal' + (pid ? '' : ' (needs a job)') + '</label></div>'
+      + '<label style="display:block;margin-top:6px">Subject<input class="gcss-in" data-s="subj" value="' + esc(subj) + '"></label><label style="display:block;margin-top:6px">Message<textarea class="gcss-in" data-s="msg" rows="6">' + esc(msg) + '</textarea></label>'
+      + '<label class="gcss-sub" style="border:0"><input type="checkbox" data-s="pdf" checked> 📎 Attach the scope as a PDF</label>'
+      + '<label style="display:block;margin-top:4px">Sub\'s total (optional) <span class="gcss-mut">— only for the sub portal: fill it to send a sub agreement to sign; it then waits for the PM\'s approval</span><input class="gcss-in" data-s="total" inputmode="decimal" placeholder="leave empty to just send the scope"></label>'
+      + '<div class="gcss-mut" style="margin-top:6px">The sub gets the 📋 scope only (no prices). The 💲 budget never leaves the CRM.</div></div>'
+      + '<div class="gcss-row"><button type="button" class="gcss-b g" data-s="go">📤 Send</button><span class="gcss-mut" data-s="note"></span></div><div data-s="out"></div>';
+  }
+  function keep(){ var g = function(k){ var x = sh.body.querySelector('[data-s=' + k + ']'); return x ? x.value : ''; }; subj = g('subj') || subj; msg = g('msg') || msg; }
+  sh.body.addEventListener('change', function(e){ var k = e.target.getAttribute('data-pick'); if (!k) return; var c = cands.concat(extra).find(function(x){ return ckey(x) === k; }); if (e.target.checked && c) picked[k] = c; else delete picked[k]; });
+  sh.body.addEventListener('input', function(e){ if (e.target.getAttribute('data-s') === 'q') { q = e.target.value; var box = sh.body.querySelector('[data-s=res]'); extra = results(); if (box) box.innerHTML = extra.map(candRow).join(''); } });
+  sh.body.addEventListener('click', function(e){
+    var t = e.target.closest && e.target.closest('[data-s=go]'); if (!t) return;
+    keep();
+    var who = Object.keys(picked).map(function(k){ return picked[k]; }).filter(Boolean);
+    var g = function(k){ var x = sh.body.querySelector('[data-s=' + k + ']'); return x ? (x.type === 'checkbox' ? x.checked : x.value) : ''; };
+    var how = { email: !!g('email'), portal: !!g('portal') && !!pid, pdf: !!g('pdf'), total: num(g('total')) };
+    var note = sh.body.querySelector('[data-s=note]');
+    if (!who.length) { note.textContent = 'Pick at least one sub.'; return; }
+    if (!how.email && !how.portal) { note.textContent = 'Pick ✉️ e-mail and / or 🔨 sub portal.'; return; }
+    t.disabled = true; note.textContent = 'Sending…';
+    deliver(d, who, how, s(g('subj')), String(g('msg') || '')).then(function(rows){
+      t.disabled = false; note.textContent = '';
+      var out = sh.body.querySelector('[data-s=out]');
+      out.innerHTML = '<div class="gcss-card"><b>What happened</b>' + rows.map(function(r){ return '<div class="gcss-sub" data-sent="' + esc(r.via) + '" data-ok="' + (r.ok ? 1 : 0) + '">' + (r.ok ? '✅' : '⚠') + ' ' + esc(r.subName) + ' · ' + esc(r.via === 'email' ? '✉️ e-mail' : r.via === 'portal-agreement' ? '🔨 sub portal (agreement)' : '🔨 sub portal') + ' — ' + esc(r.status) + (r.detail ? ' (' + esc(r.detail) + ')' : '') + '</div>'; }).join('') + '</div>';
+      var good = rows.filter(function(r){ return r.ok; }).length;
+      toast(good + ' of ' + rows.length + ' sent — written on the scope (🕘 Sent)', good !== rows.length);
+    }, function(er){ t.disabled = false; note.textContent = '⚠ ' + s(er && er.message); });
+  });
+  paint();
+  return sh;
+}
+/* the sends themselves; returns the rows written on the scope */
+function deliver(d, who, how, subject, message){
+  if (!d || d.kind !== 'sub' || d.internal) return Promise.reject(new Error('Only a sub scope (no prices) can be sent.'));
+  var pid = s(d.pid), rows = [], pdfP = how.pdf ? makePdf(d) : Promise.resolve(null), refP = null;
+  var html = '<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#14202E;white-space:pre-wrap">' + esc(strip(message)) + '</div><div style="margin-top:16px">' + scopeHtml(d, { fragment: true }) + '</div>';
+  function rec(c, via, ok, status, detail, extra){ var r = Object.assign({ id: uid('SND_'), at: nowIso(), by: myName(), byEmail: myEmail(), version: num(d.version), via: via, subId: s(c.id), subName: s(c.name), email: low(c.email), ok: !!ok, status: status, detail: s(detail).slice(0, 300) }, extra || {}); rows.push(r); return r; }
+  function pdfRef(pdf){
+    if (refP) return refP;
+    refP = (pdf && pdf.blob && typeof W._gcStoreFile === 'function') ? Promise.resolve(W._gcStoreFile(new File([pdf.blob], pdf.name, { type: 'application/pdf' }), { kind: 'doc', pid: pid, name: pdf.name })).then(function(m){ return m && m.ref ? { ref: m.ref, name: m.name || pdf.name, type: 'application/pdf' } : null; }, function(){ return null; }) : Promise.resolve(null);
+    return refP;
+  }
+  return pdfP.then(function(pdf){
+    var chain = Promise.resolve();
+    who.forEach(function(c){
+      if (how.email) chain = chain.then(function(){
+        if (!/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(s(c.email))) { rec(c, 'email', false, 'not sent', 'no e-mail on file'); return; }
+        return fn('send-email', { mode: 'personal', to: c.email, subject: subject, html: html, fromName: myName(), attachments: pdf ? [{ filename: pdf.name, content: pdf.base64 }] : [], pid: pid, customer: '', about: 'scope' })
+          .then(function(r){ rec(c, 'email', r.ok, r.ok ? (r.data.paused ? 'held — ⏸ data-entry mode' : 'sent') : 'not sent', r.ok ? (pdf ? 'PDF attached' : (how.pdf ? 'no PDF could be made — the scope is in the e-mail' : '')) : (r.data.error || ('error ' + r.status)), { emailId: s(r.data.entry && r.data.entry.id) }); });
+      });
+      if (how.portal) chain = chain.then(function(){
+        if (!c.id) { rec(c, 'portal', false, 'not sent', 'not in the Subs list — add them there first'); return; }
+        if (how.total > 0) {
+          var sc = { projectId: pid, subId: c.id, kind: 'scope', title: stripLine(d.title) + (d.trade ? ' — ' + stripLine(d.trade) : ''), lines: arr(d.lines).map(function(l){ return { room: stripLine(l.sec), desc: stripLine(l.desc), qty: l.qty, unit: stripLine(l.unit), meas: stripLine(l.note) }; }),
+            included: strip(d.included), excluded: strip(d.excluded), notes: strip(d.notes), total: how.total, source: 'crm', scId: d.id };
+          return pdfRef(pdf).then(function(f){ if (f) sc.files = [f]; return fn('portal-access', { action: 's-scope-save', scope: sc, submit: true }); })
+            .then(function(r){ rec(c, 'portal-agreement', r.ok, r.ok ? 'waiting for the PM\'s approval' : 'not sent', r.ok ? 'sub agreement ' + money(how.total) + ' — 👷 Subs → ✅ Approve & publish' : (r.data.error || ('error ' + r.status)), { portalId: s(r.data.id) }); });
+        }
+        var p = proj(pid), on = arr(p && p.subs).some(function(r){ var m = subMatch(r); return m && s(m.id) === s(c.id) && !/reject|declin/i.test(s(r.status)); });
+        var step = Promise.resolve(true);
+        if (!on) step = Promise.resolve(W.confirm(c.name + ' is not on this job yet.\n\nAdd them to "' + s(p && p.name) + '" as Bidding so they can see the scope in their sub portal? (Only this sub sees it.)'))
+          .then(function(yes){ return yes ? addToJob(pid, { pid: pid, id: c.id, name: c.name, trade: c.trade }) : false; });
+        return step.then(function(okOn){
+          if (!okOn) { rec(c, 'portal', false, 'not sent', 'not on the job — not added'); return; }
+          return pdfRef(pdf).then(function(f){ return fn('portal-access', { action: 's-send', projectId: pid, party: 's:' + c.id, text: strip(message).slice(0, 1500) + '\n\n' + scopeText(d), files: f ? [f] : [] }); })
+            .then(function(r){ rec(c, 'portal', r.ok, r.ok ? 'in their portal (job messages)' : 'not sent', r.ok ? (on ? '' : 'added to the job as Bidding') : (r.data.error || ('error ' + r.status)), { msgId: s(r.data.id) }); });
+        });
+      });
+    });
+    return chain;
+  }).then(function(){
+    return load().then(function(){ var cur = byId(d.id) || d; cur = Object.assign({}, cur); cur.sends = arr(cur.sends).concat(rows).slice(-200); cur.lastSentAt = nowIso(); return putDocs([cur]); }).then(function(){ return rows; });
+  });
+}
+
+/* ═══ hooks: every no-price scope gets its budget ═══ */
+var BUSY = {};
+function once(key, f){ if (BUSY[key]) return; BUSY[key] = 1; later(function(){ delete BUSY[key]; }, 4000); try { f(); } catch (e) { warn(e); } }
+function realPid(pid){ return proj(pid) ? s(pid) : ''; }
+/* 1. 📐 Scope by trade → "Save master to job" (its button calls the inner save directly) and _gcSaveMasterScope */
+function fromEst(est, pid, where){
+  if (!est || !arr(est.lines).length) return;
+  var rp = realPid(pid) || realPid(est.pid || est.projectId), lid = s(est.leadId);
+  if (!rp && !lid) return;
+  once('est:' + s(est.id) + ':' + rp, function(){
+    later(function(){ make({ pid: rp, leadId: lid, title: 'Scope of work — ' + s(est.name || 'estimate'), lines: fromEstimate(est, ''), src: { kind: 'estimate', estId: s(est.id), trade: '' } }).then(function(r){ announce(r, where); }, warn); }, 1200);
+  });
+}
+function wrapMaster(){
+  var f = W._gcSaveMasterScope; if (typeof f !== 'function' || f.__gcss) return;
+  var w = function(est, pid){ var r = f.apply(this, arguments); try { Promise.resolve(r).then(function(){ fromEst(est, pid, 'from the estimate'); }); } catch (e) {} return r; };
+  w.__gcss = true; W._gcSaveMasterScope = w;
+}
+function wrapByTrade(){
+  var f = W._gcOpenScopeByTrade; if (typeof f !== 'function' || f.__gcss) return;
+  var w = function(est, pid){
+    var r = f.apply(this, arguments);
+    try { var bs = D.querySelectorAll('#_scSave'), b = bs[bs.length - 1]; if (b && !b.__gcss) { b.__gcss = true; b.addEventListener('click', function(){ if (pid) fromEst(est, pid, 'Scope by trade'); }); } } catch (e) {}
+    return r;
+  };
+  try { Object.keys(f).forEach(function(k){ w[k] = f[k]; }); } catch (e) {}
+  w.__gcss = true; W._gcOpenScopeByTrade = w;
+}
+/* 2. a scope saved with no prices (Xactimate import, the lead's sub scope) */
+function wrapStore(){
+  var S = W._gcScopeStore; if (!S || typeof S.save !== 'function' || S.save.__gcss) return;
+  var f = S.save;
+  var w = function(pid, sc){
+    var r = f.apply(this, arguments);
+    try { var rp = realPid(pid), l = rp ? null : lead(pid); sc = sc || {};
+      if ((rp || l) && (s(sc.text) || arr(sc.lines).length)) once('store:' + s(pid) + ':' + hash(s(sc.text)), function(){
+        later(function(){ make({ pid: rp, leadId: l ? s(l.id) : '', title: s(sc.title) || 'Scope of work', text: s(sc.text) || (typeof W._gcScopeFromLines === 'function' ? W._gcScopeFromLines(sc.lines, { stripPrices: true }) : ''), src: { kind: /xact/i.test(s(sc.source)) ? 'xactimate' : 'store', jobId: '' } }).then(function(x){ announce(x, 'saved scope'); }, warn); }, 1200); });
+    } catch (e) { warn(e); }
+    return r;
+  };
+  w.__gcss = true; S.save = w;
+}
+/* 3. the 📋 Scopes tab: a job's scope text that changes while someone is on the tab */
+var SEEN = null, TOUCH = 0;
+D.addEventListener('click', function(){ TOUCH = Date.now(); }, true); D.addEventListener('keydown', function(){ TOUCH = Date.now(); }, true);
+function view(){ try { return low(localStorage.getItem('grayco_view')); } catch (e) { return ''; } }
+function watchScopes(){
+  var v = view(), ps = projects();
+  if (!ps.length) return;
+  if (!SEEN) { SEEN = {}; ps.forEach(function(p){ SEEN[s(p.id)] = hash(s(p.scope)); }); return; }
+  ps.forEach(function(p){
+    var k = s(p.id), h = hash(s(p.scope));
+    if (SEEN[k] === h) return;
+    var was = SEEN[k]; SEEN[k] = h;
+    if (was === undefined || v !== 'scopes' || !s(p.scope) || Date.now() - TOUCH > 10000) return;
+    once('job:' + k + ':' + h, function(){ make({ pid: k, title: 'Scope of work — ' + s(p.name), text: s(p.scope), src: { kind: 'jobscope' } }).then(function(r){ announce(r, 'Scopes tab'); }, warn); });
+  });
+}
+/* 4. 🏗 Bid portal → 📂 Manage → 📝 Scope per trade → 💾 (bid-hub op "scope") */
+function bidJob(id){ try { var L = (W._gcSys && W._gcSys.bp && W._gcSys.bp.jobs && W._gcSys.bp.jobs()) || []; var j = arr(L).find(function(x){ return x && s(x.id) === s(id); }); if (j) return j; } catch (e) {} try { return arr(W._gcBpAppr && W._gcBpAppr.jobs && W._gcBpAppr.jobs()).find(function(x){ return x && s(x.id) === s(id); }) || null; } catch (e) { return null; } }
+function onBidScopes(body){
+  var j = bidJob(body.jobId) || {}, lid = s(j.leadId).replace(/^crm:/, ''), rp = realPid(j.crmProjectId || j.projectId || j.pid);
+  if (!rp && lid) { var l = lead(lid); if (l && realPid(l.pid)) rp = s(l.pid); }
+  if (!rp && !lid) return;
+  arr(body.tradeScopes).forEach(function(x){
+    if (!x || !s(x.scope)) return;
+    var tr = s(x.trade);
+    make({ pid: rp, leadId: lid, trade: tr, title: (tr || 'All trades') + ' — bid portal scope', text: s(x.scope), src: { kind: 'bidportal', jobId: s(body.jobId), trade: tr } }).then(function(r){ announce(r, 'bid portal ' + (tr || 'scope')); }, warn);
+  });
+}
+function wrapFetch(){
+  var f = W.fetch; if (typeof f !== 'function' || f.__gcss) return;
+  var w = function(url, o){
+    var p = f.apply(this, arguments);
+    try {
+      if (/\/\.netlify\/functions\/bid-hub/.test(String(url && url.url || url)) && o && /^post$/i.test(s(o.method)) && typeof o.body === 'string' && o.body.indexOf('"tradeScopes"') > -1) {
+        var b = JSON.parse(o.body);
+        if (b && b.op === 'scope' && arr(b.tradeScopes).length) p.then(function(r){ if (r && r.ok) later(function(){ onBidScopes(b); }, 800); }, function(){});
+      }
+    } catch (e) {}
+    return p;
+  };
+  try { Object.keys(f).forEach(function(k){ w[k] = f[k]; }); } catch (e) {}
+  w.__gcss = true; W.fetch = w;
+}
+
+/* ═══ the buttons: 📋 Scopes tab cards, 👷 Subs & portal on a job ═══ */
+function tabButtons(){
+  if (view() !== 'scopes') return;
+  var bs = D.querySelectorAll('main button, #root button');
+  for (var i = 0; i < bs.length; i++) {
+    var b = bs[i]; if (b.textContent !== 'Open →' || b.__gcss) continue;
+    var bar = b.parentNode, card = bar && bar.parentNode && bar.parentNode.parentNode; if (!card) continue;
+    var nm = s((card.querySelector('b') || {}).textContent); if (!nm) continue;
+    var hits = projects().filter(function(p){ return s(p.name) === nm; }); if (hits.length !== 1) continue;
+    b.__gcss = true;
+    var pid = s(hits[0].id), n = forJob(pid).filter(function(x){ return x.kind === 'sub'; }).length;
+    var x = D.createElement('button'); x.type = 'button'; x.className = 'gcss-tabbtn'; x.setAttribute('data-gcss-pid', pid);
+    x.style.cssText = 'font-size:10px;padding:3px 10px;border-radius:5px;border:1px solid #b45309;background:#fffbeb;color:#92400e;font-weight:800;cursor:pointer;font-family:inherit';
+    x.textContent = n ? '📋 Sub scopes + 💲 budgets (' + n + ')' : '📋 Sub scope + 💲 budget';
+    x.onclick = (function(id){ return function(e){ e.stopPropagation(); open(id); }; })(pid);
+    bar.appendChild(x);
+  }
+}
+function hubButton(){
+  var hub = D.getElementById('gcsub-hub'); if (!hub) return;
+  var body = hub.querySelector('.gcsub-body'); if (!body || body.querySelector('.gcss-hubrow')) return;
+  var pid = s(hub.getAttribute('data-pid')); if (!pid) return;
+  var n = forJob(pid).filter(function(x){ return x.kind === 'sub'; }).length;
+  var sec = D.createElement('section'); sec.className = 'gcsub-card gcss-hubrow';
+  sec.innerHTML = '<div class="gcsub-row2"><b>📋 Scopes for subs</b><span class="gcsub-muted">' + (n ? n + ' scope' + (n === 1 ? '' : 's') + ', each with its 💲 budget' : 'none yet') + '</span></div><div class="gcsub-cta"><button type="button" class="gcsub-btn g" data-gcss-hub>📋 Scopes & 💲 budgets — edit · 📤 send to a sub</button></div>';
+  sec.querySelector('[data-gcss-hub]').onclick = function(e){ e.stopPropagation(); open(pid); };
+  body.insertBefore(sec, body.firstChild);
+}
+every(function(){ try { wrapMaster(); wrapByTrade(); wrapStore(); wrapFetch(); } catch (e) { warn(e); } try { if (!D.hidden) { tabButtons(); hubButton(); } } catch (e) { warn(e); } }, 900);
+every(function(){ try { if (!D.hidden) watchScopes(); } catch (e) { warn(e); } }, 2500);
+later(function(){ load(); }, 2500);
+every(function(){ if (!D.hidden && !STACK.length) load(); }, 30000);
+
+W._gcScopeSend = {
+  open: open, edit: edit, send: send, make: make, regen: regen, deliver: deliver, load: load,
+  list: function(pid, leadId){ return forJob(pid, leadId).map(function(x){ return JSON.parse(JSON.stringify(x)); }); },
+  all: function(){ return allDocs().map(function(x){ return JSON.parse(JSON.stringify(x)); }); },
+  pairOf: function(id){ var d = byId(id); return d ? byId(d.pairId) : null; },
+  budgetOf: function(id){ var d = byId(id); if (!d) return null; return d.kind === 'budget' ? d : byId(d.pairId); },
+  jobSubs: jobSubs, html: scopeHtml, text: scopeText, fromText: fromText, fromEstimate: fromEstimate, budgetFor: function(line, pid){ return budgetFor(line, ctxFor(pid)); },
+  _watch: watchScopes
+};
+try { console.log('[GC] patch SCOPESEND: every sub scope (no prices) gets its 💲 budget twin; ✏️ edit · 📤 send to a sub by e-mail / sub portal — _gcScopeSend.open(pid)'); } catch (e) {}
+})(window, document);
+</script>
+<script id="gc-patch-scopesend-ri">
+/* __GC_PATCH_SCOPESEND_RI__ ═══════════════════════════════════════════════════════════════════════════════════════
+   GrayCo — ROOF IGNITE IS GONE (patch SCOPESEND-RI). Owner, 11/12: "delete all roofignite".
+   · netlify/functions/lead-intake.js answers a Roof Ignite post 200 "ignored" and files nothing (ROOF_IGNITE_INTAKE=1 on
+     Netlify turns it back on); the CRM's collector never files one either; the Roof Ignite rows / names are off the
+     Integrations, lead-source and marketing lists.
+   · ⚙ Admin → 🗑 Roof Ignite records (admins only): lists every job, lead and customer whose SOURCE / PARTNER is Roof Ignite
+     (leadSource, source, partner … — never a name or a note that merely mentions it), and "🗑 Delete all Roof Ignite records
+     (N)" deletes them after one confirm, each through the CRM's own delete: jobs → _gcDeleteProject (the job delete:
+     the delete list, the register purge, every computer), leads → _gcLDEL.remove (🗑 Recently deleted, 30 days), customers →
+     the CRM's delete list (_gcTombstone) and the list save. Nothing else is touched.
+   API: _gcRoofIgniteClean.find() · .remove()
+   ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════ */
+(function(W, D){
+'use strict';
+if (W.__GC_SCOPESEND_RI__) return; W.__GC_SCOPESEND_RI__ = true;
+var RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+function s(v){ return v == null ? '' : String(v).trim(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function esc(v){ return String(v == null ? '' : v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+var RE = /\broof(ing)?\s*-?\s*ignite\b|\broofignite\b/i;
+var FIELDS = ['leadSource', 'source', 'partner', 'leadPartner', 'sourceDetail', 'referralSource', 'referral', 'channel', 'origin', 'intakeSource', 'leadCompany', 'leadService'];
+function isRI(x){ if (!x || typeof x !== 'object' || x.deleted === true || x.tombstoned === true) return false; return FIELDS.some(function(f){ return typeof x[f] === 'string' && RE.test(x[f]); }); }
+function isAdmin(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()); } catch (e) { return false; } }
+function dead(k, id){ try { return !!(W._gcxDead && W._gcxDead(k, id)); } catch (e) { return false; } }
+function merged(mem, key){
+  return Promise.resolve(W.idbGet ? W.idbGet(key) : null).then(function(v){ var by = {}, out = []; arr(mem).concat(arr(v)).forEach(function(x){ if (x && x.id != null && !by[x.id]) { by[x.id] = 1; out.push(x); } }); return out; }, function(){ return arr(mem); });
+}
+function find(){
+  var c = W._crm || {};
+  return Promise.all([merged(c.projects, 'projects'), merged(arr(W.__gcLeadsLive).length ? W.__gcLeadsLive : c.leads, 'leads'), merged(W._graycoCustomers || c.customers, 'customers')]).then(function(r){
+    return { projects: r[0].filter(function(x){ return isRI(x) && !dead('projects', x.id); }), leads: r[1].filter(function(x){ return isRI(x) && !dead('leads', x.id); }), customers: r[2].filter(function(x){ return isRI(x) && !dead('customers', x.id); }) };
+  });
+}
+function count(f){ return f.projects.length + f.leads.length + f.customers.length; }
+function name(x){ return s(x.name || x.title || x.company || x.client || x.id); }
+async function remove(){
+  if (!isAdmin()) throw new Error('Only an admin can delete the Roof Ignite records.');
+  var f = await find(), out = { projects: 0, leads: 0, customers: 0 };
+  /* jobs: the job delete itself, one by one; its "Delete this job?" box is answered yes ONLY for the jobs listed here */
+  var ids = {}; f.projects.forEach(function(p){ ids[s(p.id)] = 1; });
+  var ask = W._gcAskDeleteJob;
+  W._gcAskDeleteJob = function(p){ if (p && ids[s(p.id)]) return Promise.resolve(true); return typeof ask === 'function' ? ask.apply(this, arguments) : Promise.resolve(false); };
+  try {
+    for (var i = 0; i < f.projects.length; i++) { try { if (typeof W._gcAllowDelete === 'function') W._gcAllowDelete(); var ok = await W._gcDeleteProject(f.projects[i].id); if (ok !== false) out.projects++; } catch (e) {} }
+  } finally { W._gcAskDeleteJob = ask; }
+  if (f.leads.length && W._gcLDEL && typeof W._gcLDEL.remove === 'function') { var r = await W._gcLDEL.remove(f.leads.map(function(l){ return s(l.id); }), { silent: true }); out.leads = (r && r.deleted) || 0; }
+  if (f.customers.length) {
+    var gone = {}; f.customers.forEach(function(x){ gone[s(x.id)] = 1; try { if (W._gcxDel) W._gcxDel('customers', x.id); else if (W._gcTombstone) W._gcTombstone('customers', x.id); } catch (e) {} });
+    try { W.__GC_MANUAL_SAVE__ = true; W.__GC_EXPLICIT_DELETE__ = true; if (W._gcManualNow) W._gcManualNow('deleted Roof Ignite customers'); } catch (e) {}
+    var cl = arr(await Promise.resolve(W.idbGet ? W.idbGet('customers') : [])).filter(function(x){ return !(x && gone[s(x.id)]); });
+    try { if (W.idbSet) await W.idbSet('customers', cl); } catch (e) {}
+    try { if (W._setCustomers) W._setCustomers(function(prev){ return arr(prev).filter(function(x){ return !(x && gone[s(x.id)]); }); }); } catch (e) {}
+    try { if (Array.isArray(W._graycoCustomers)) W._graycoCustomers = W._graycoCustomers.filter(function(x){ return !(x && gone[s(x.id)]); }); } catch (e) {}
+    try { var up = W._supaUpsertNow || W._supaUpsert; if (up) up('customers', cl); } catch (e) {}
+    setTimeout(function(){ try { W.__GC_MANUAL_SAVE__ = false; W.__GC_EXPLICIT_DELETE__ = false; } catch (e) {} }, 2500);
+    out.customers = f.customers.length;
+  }
+  try { console.log('[GC] Roof Ignite records deleted', out); } catch (e) {}
+  return out;
+}
+function render(box){
+  if (!isAdmin()) { box.innerHTML = '<div style="font:14px Arial;color:#7f1d1d">Admins only.</div>'; return; }
+  box.innerHTML = '<div style="font:14px Arial;color:#555">Looking…</div>';
+  find().then(function(f){
+    var n = count(f);
+    var list = function(t, a){ return a.length ? '<div style="margin-top:8px"><b>' + t + ' (' + a.length + ')</b><ul style="margin:4px 0 0 18px">' + a.map(function(x){ return '<li data-ri-item>' + esc(name(x)) + (x.address ? ' · ' + esc(x.address) : '') + ' <span style="color:#888">(' + esc(s(x.leadSource || x.source || x.partner)) + ')</span></li>'; }).join('') + '</ul></div>' : ''; };
+    box.innerHTML = '<div style="font:14px Arial;color:#1b1640"><p style="color:#555;margin:0 0 6px">Roof Ignite leads are no longer taken: the lead door answers them "ignored" and files nothing. Below: every job, lead and customer whose <b>source / partner</b> is Roof Ignite — nothing else.</p>'
+      + (n ? list('Jobs', f.projects) + list('Leads', f.leads) + list('Customers', f.customers) : '<p data-ri-none style="font-weight:700;color:#166534">✅ No Roof Ignite jobs, leads or customers in the CRM.</p>')
+      + '<button type="button" data-ri-del style="margin-top:10px;background:' + (n ? '#b91c1c' : '#94a3b8') + ';color:#fff;border:0;border-radius:8px;padding:10px 14px;font-weight:800;cursor:' + (n ? 'pointer' : 'default') + '"' + (n ? '' : ' disabled') + '>🗑 Delete all Roof Ignite records (' + n + ')</button> <span data-ri-msg style="color:#555"></span></div>';
+    var b = box.querySelector('[data-ri-del]');
+    if (b && n) b.onclick = function(){
+      if (!W.confirm('Delete ' + n + ' Roof Ignite record' + (n === 1 ? '' : 's') + ' for good on every computer?\n\n' + f.projects.map(function(x){ return 'Job: ' + name(x); }).concat(f.leads.map(function(x){ return 'Lead: ' + name(x); }), f.customers.map(function(x){ return 'Customer: ' + name(x); })).slice(0, 25).join('\n') + (n > 25 ? '\n…' : '') + '\n\nOnly records whose source is Roof Ignite. Deleted leads stay in 🗑 Recently deleted for 30 days.')) return;
+      b.disabled = true; box.querySelector('[data-ri-msg]').textContent = 'Deleting…';
+      remove().then(function(o){ box.querySelector('[data-ri-msg]').textContent = '✅ Deleted ' + o.projects + ' job(s), ' + o.leads + ' lead(s), ' + o.customers + ' customer(s).'; setTimeout(function(){ render(box); }, 1500); }, function(e){ b.disabled = false; box.querySelector('[data-ri-msg]').textContent = '⚠ ' + s(e && e.message); });
+    };
+  });
+}
+var LAST = '?';
+function refreshCount(){ find().then(function(f){ LAST = count(f); }, function(){}); }
+var t = RI.call(W, function(){
+  if (typeof W._gcAdmAddSection !== 'function') return;
+  clearInterval(t);
+  W._gcAdmAddSection({ id: 'roofignite', after: 'leads', ic: '🗑', t: 'Roof Ignite records', d: 'Roof Ignite leads are no longer taken — delete the jobs / leads / customers that came from it', render: render, count: function(){ refreshCount(); return LAST === 0 ? 'none ✅' : (LAST === '?' ? '' : LAST + ' to delete'); } });
+}, 1000);
+W._gcRoofIgniteClean = { find: find, remove: remove, isRI: isRI, render: render };
 })(window, document);
 </script>

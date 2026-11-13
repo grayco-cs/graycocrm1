@@ -12,7 +12,7 @@
 var CHANNELS = ['Google Ads', 'Facebook/Instagram Ads', 'TikTok', 'Google organic', 'Google Business Profile', 'Nextdoor', 'Referral', 'Yard sign', 'Repeat customer', 'Other'];
 /* channels the numbers can also show (not in the "how did you hear" list: they come from lead services / imports) */
 var EXTRA_CHANNELS = ['Angi/HomeAdvisor'];
-var LEAD_SERVICES = ['Roof Ignite', 'Contractor Connection', 'Alacrity', 'Sedgwick', 'Thumbtack', 'Porch', 'Networx', 'Modernize', 'Bark'];
+var LEAD_SERVICES = ['Contractor Connection', 'Alacrity', 'Sedgwick', 'Thumbtack', 'Porch', 'Networx', 'Modernize', 'Bark'];
 
 function s(v){ return v == null ? '' : String(v).trim(); }
 function low(v){ return s(v).toLowerCase(); }

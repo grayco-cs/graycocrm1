@@ -22,14 +22,15 @@
 //                        key: then we know who sent each lead, one can be turned
 //                        off without touching the others, and a leak is one
 //                        company's problem instead of everybody's.
-//                          LEAD_KEY_ROOF_IGNITE
 //                          LEAD_KEY_CONTRACTOR_CONNECTION
 //                          LEAD_KEY_ALACRITY
 //                          LEAD_KEY_SEDGWICK
 //   LEAD_INSURANCE_SOURCES  comma list of the ones that send claims work, e.g.
 //                        "Contractor Connection,Alacrity,Sedgwick". Insurance
 //                        work is scored differently in the commission split.
-//   ROOFING_IGNITE_KEY   still accepted, as Roof Ignite.
+//   ROOF_IGNITE_INTAKE=1 Roof Ignite leads are IGNORED (200, nothing filed) unless this is set (patch SCOPESEND-RI,
+//                        owner 11/12: "delete all roofignite"). LEAD_KEY_ROOF_IGNITE / ROOFING_IGNITE_KEY are still
+//                        recognised so their posts get that polite 200 instead of a 401 the partner would retry.
 //   CRM_DRAIN_TOKEN      lets the CRM collect new leads. Paste it into the CRM
 //                        once, per computer. NOT one of the keys above.
 //   RESEND_API_KEY       already set — the email goes out through it.
@@ -274,6 +275,9 @@ function whoSent(given) {
   });
   return { any, name };
 }
+/* patch SCOPESEND-RI: Roof Ignite is off unless ROOF_IGNITE_INTAKE=1 */
+function isRoofIgnite(name) { return /^roof(ing)?\s*ignite$/i.test(s(name).replace(/[_-]+/g, ' ')); }
+function roofIgniteOn() { return s(process.env.ROOF_IGNITE_INTAKE) === '1'; }
 /* Claims networks send insurance work, and insurance work is scored differently
    in the commission split. Set LEAD_INSURANCE_SOURCES to the ones that are, e.g.
    "Contractor Connection,Alacrity,Sedgwick". */
@@ -302,7 +306,7 @@ exports.handler = async function (event) {
   Object.keys(event.headers || {}).forEach(k => { h[low(k)] = event.headers[k]; });
   const qs = event.queryStringParameters || {};
 
-  /* alive? Useful for Roofing Ignite to check the URL before they wire it up.
+  /* alive? Useful for a lead company to check the URL before they wire it up.
      Says nothing about keys or data. */
   if (event.httpMethod === 'GET' && (qs.ping === '1' || qs.ping === 'true')) {
     return J(200, { ok: true, service: 'GrayCo lead intake', ready: whoSent('').any });
@@ -327,7 +331,7 @@ exports.handler = async function (event) {
           headers: { apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY, Prefer: 'return=minimal' }
         });
       } catch (e) {}
-      return J(200, { leads: rows.map(x => x.lead) });
+      return J(200, { leads: rows.map(x => x.lead).filter(l => !(l && isRoofIgnite(l.leadSource) && !roofIgniteOn())) });   /* patch SCOPESEND-RI */
     } catch (e) {
       return J(502, { error: 'Could not read pending leads.' });
     }
@@ -348,6 +352,11 @@ exports.handler = async function (event) {
   const source = whoSent(given);
   if (!source.any) return J(500, { error: 'Lead intake is not switched on yet (no keys set on the server).' });
   if (!source.name) return J(401, { error: 'Not authorised. Check the API key.' });
+  /* patch SCOPESEND-RI (owner 11/12: "delete all roofignite"): GrayCo no longer takes Roof Ignite leads. A lead posted with the
+     Roof Ignite key (LEAD_KEY_ROOF_IGNITE / ROOFING_IGNITE_KEY) is answered 200 "ignored" — so the partner does not retry it —
+     and nothing else happens: no lead, no first e-mail, no approval, no alert, nothing stored. ROOF_IGNITE_INTAKE=1 on Netlify
+     turns them back on (kill switch, off by default). The other lead companies are not touched. */
+  if (isRoofIgnite(source.name) && !roofIgniteOn()) return J(200, { ok: true, stored: false, ignored: true, receivedFrom: source.name, note: 'GrayCo no longer accepts leads from this source. Nothing was filed.' });
 
   let body;
   try { body = JSON.parse(event.body || '{}'); }
