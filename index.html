@@ -5496,7 +5496,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.247-2026-11-13-r35c -->
+<!-- GrayCo CRM Build: 33.247-2026-11-13-r35d -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6445,7 +6445,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.247-2026-11-13-r35c");
+  console.log("[GC] Build 33.247-2026-11-13-r35d");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6493,7 +6493,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.247-2026-11-13-r35c"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.247-2026-11-13-r35d"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -232192,4 +232192,624 @@ if (D.body) start(); else D.addEventListener('DOMContentLoaded', start);
 W._gcNewProj = { scan: scan, ctxOf: ctxOf, norm: norm, matches: matches, make: make, form: form, jobPicker: jobPicker, moneyCtx: moneyCtx };
 try { console.log('[GC] ➕ New project… in the invoice / money job pickers (patch NEWPROJ) — _gcNewProjectFor(inv, cb)'); } catch (e) {}
 })();
+</script>
+<script id="gc-patch-lumpsum">/*__GC_PATCH_LUMPSUM__ (owner 11/13: "some companies send 1 invoice as a lump sum but we have invoices all month and we need to
+  mark off what jobs are paid when we send that 1 huge invoice; we should get invoices in, but when we pay those make sure we are
+  marking off which jobs that lump sum is for").
+  💵 Pay several invoices at once (suppliers / subs: Farrell Calhoun, ABC Supply, a sub on many jobs — per-job bills all month, ONE
+  statement, ONE payment) and 💰 Record one payment for several invoices (a GC / property manager paying several of our invoices).
+    1. pick the vendor / sub (or customer) → every open bill / invoice of theirs across jobs (job, #, QB #, date, amount, open, status),
+       oldest first; filter by date range / job.
+    2. the lump-sum amount, date, method (check # / ACH / card …), reference / statement #, an optional statement PDF. Apply oldest-first
+       or tick exactly which; one can be partial; live "applied $X of $Y — $Z left / over by $Z". It must balance, or the office ticks
+       "keep the rest as a credit (unapplied)". Over-applied never saves.
+    3. Save → each invoice is paid (or partial, open balance down) exactly the way "Mark paid" does it today (status / paidDate /
+       checkNo, the job's cost row paid, the register's "Sub Paid" / "Client Payment" row) + a row in its payments[] naming the one
+       payment (lumpId, amount applied, prior state). The payment record (gc_kv gc_lump_payments: the GROUPING only — the money stays
+       on the invoices and the register) lists every job + invoice it covered. ↩ Undo restores each invoice as it was.
+    4. A lump-sum bill that duplicates the per-job bills (same vendor, its amount = the open bills ± a little, or it says "statement")
+       is flagged; "🔗 This is a statement for several jobs" opens the same screen and, on save, sets that bill aside (void, isStatement)
+       so the cost is not counted twice. Undo puts it back.
+    5. QuickBooks (read only, never written): a BillPayment / ReceivePayment that lists several bills / invoices (rec.applied =
+       [{num, amount}]) marks each linked CRM record paid the same way; keyed by its qbKey → a re-import does nothing twice.
+  Admins + the office only (window._gcFullAccess); anyone else is refused. Nothing is sent to anyone.
+  API: window._gcLumpSum = { open, core:{allocate, openOf, dupStatements, sameParty, normParty}, save, undo, list, applyQb, canUse } */
+(function(W, D){
+'use strict';
+if (W.__GC_PATCH_LUMPSUM__) return; W.__GC_PATCH_LUMPSUM__ = true;
+var ST = function(f, ms){ return (W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout).call(W, f, ms || 0); };
+var SI = function(f, ms){ return (W.__GC_NATIVE_SETINTERVAL__ || W.setInterval).call(W, f, ms); };
+var KEY = 'gc_lump_payments';
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function num(v){ var n = parseFloat(String(v == null ? '' : v).replace(/[$,\s]/g, '')); return isFinite(n) ? n : 0; }
+function r2(v){ return Math.round(num(v) * 100) / 100; }
+function c(v){ return Math.round(num(v) * 100); }
+function arr(v){ if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { return []; } } return Array.isArray(v) ? v.filter(function(x){ return x && typeof x === 'object'; }) : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(ch){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]; }); }
+function money(n){ var v = r2(n); return (v < 0 ? '-$' : '$') + Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function nowIso(){ return new Date().toISOString(); }
+function today(){ var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+function uid(p){ return p + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+function lsGet(k){ try { return Storage.prototype.getItem.call(localStorage, k); } catch (e) { return null; } }
+function lsSet(k, v){ try { Storage.prototype.setItem.call(localStorage, k, v); } catch (e) {} }
+function crm(){ return W._crm || {}; }
+function invoices(){ var a = arr(crm().invoices); return a.length ? a : arr(crm().invs); }
+function projects(){ return arr(crm().projects); }
+function proj(pid){ if (!pid) return null; return projects().filter(function(p){ return String(p.id) === String(pid); })[0] || null; }
+
+/* ═════════════ the rules (pure — unit tested) ═════════════ */
+function isBill(r){ return /^(sub|supplier)$/.test(low(r && r.type)); }
+function isClientInv(r){ return low(r && r.type) === 'client' && !(r.needsReview === true || low(r.status) === 'needs_review'); }
+function amtOf(r){ return num(r && (r.amt != null && r.amt !== '' ? r.amt : r.amount)); }
+function payAmt(p){ return num(p && (p.amount != null && p.amount !== '' ? p.amount : p.amt)); }
+/* what is still owed on one invoice / bill */
+function paidOf(r){
+  var p = arr(r && r.payments);
+  if (p.length) return r2(p.reduce(function(a, x){ return a + payAmt(x); }, 0));
+  if (low(r.status) === 'paid' || r.paid === true) return amtOf(r);
+  if (num(r.amountPaid) > 0) return r2(r.amountPaid);
+  if (r.openBalance != null && r.openBalance !== '' && isFinite(parseFloat(r.openBalance))) return r2(Math.max(0, amtOf(r) - num(r.openBalance)));
+  return 0;
+}
+function openOf(r){ if (!r) return 0; if (low(r.status) === 'paid' || r.paid === true) return 0; return r2(Math.max(0, amtOf(r) - paidOf(r))); }
+var CLOSED = /^(paid|void|voided|cancel+ed|canceled|denied|rejected|draft|deleted|declined|lost|merged)$/;
+function isOpen(r){
+  if (!r || r.deleted === true || r.isStatement === true) return false;
+  if (CLOSED.test(low(r.status))) return false;
+  if (r.paid === true) return false;
+  return openOf(r) > 0.004;
+}
+function normParty(n){
+  return low(n).replace(/&amp;/g, '&').replace(/&/g, ' and ').replace(/[^a-z0-9 ]+/g, ' ')
+    .replace(/\b(llc|l l c|inc|incorporated|co|company|corp|corporation|ltd|the|of|pllc|lp)\b/g, ' ').replace(/\s+/g, ' ').trim();
+}
+function sameParty(a, b){ var x = normParty(a), y = normParty(b); return !!x && x === y; }
+/* QuickBooks names drift ("ABC Supply" / "ABC Supply Co #12"): the same start, only when nothing matches exactly */
+function looseParty(a, b){ var x = normParty(a), y = normParty(b); if (!x || !y) return false; if (x === y) return true; return (x.length >= 6 && (y + ' ').indexOf(x + ' ') === 0) || (y.length >= 6 && (x + ' ').indexOf(y + ' ') === 0); }
+function partyOf(r){
+  if (isBill(r)) return s(r.sub || r.vendor || r.payee).replace(/&amp;/g, '&');
+  var p = proj(r.pid) || {};
+  return s(r.client || r.billTo || p.client || p.customer).replace(/&amp;/g, '&');
+}
+function invDay(r){ return s(r.recvDate || r.invDate || r.date || r.sentDate || r.createdAt).slice(0, 10); }
+function invNo(r){ return s(r.invNum || r.num || r.number || r.qbNum); }
+function qbNo(r){ if (s(r.qbNum)) return s(r.qbNum); var k = arr([]).concat(r.qbKey ? [r.qbKey] : [], Array.isArray(r.qbKeys) ? r.qbKeys : []).map(s).filter(function(x){ return /^QB:(invoice|bill):/.test(x); })[0]; if (!k) return ''; var m = /^QB:[a-z]+:([^:]+):/.exec(k); return m && !/^\d{4}-\d\d-\d\d$/.test(m[1]) ? m[1] : ''; }
+function byOldest(a, b){ var x = s(a.date), y = s(b.date); if (x !== y) return x < y ? -1 : 1; return s(a.id) < s(b.id) ? -1 : (s(a.id) > s(b.id) ? 1 : 0); }
+/* allocate(total, items:[{id, open, date}], {mode:'oldest'|'manual', manual:{id: amount}})
+   → {lines:[{id, apply, open, after, full}], applied, total, left (unapplied), over (applied past the total), balanced, errors} */
+function allocate(total, items, opt){
+  opt = opt || {};
+  var T = c(total), list = (items || []).map(function(x){ return { id: s(x.id), open: c(x.open), date: s(x.date) }; }).sort(byOldest);
+  var lines = [], applied = 0, errors = [];
+  if (opt.mode === 'manual') {
+    var M = opt.manual || {};
+    list.forEach(function(x){
+      if (!(x.id in M)) return;
+      var a = c(M[x.id]);
+      if (a < 0) { errors.push({ id: x.id, why: 'negative' }); a = 0; }
+      if (a > x.open) { errors.push({ id: x.id, why: 'more than its open balance' }); a = x.open; }
+      if (a > 0) { lines.push({ id: x.id, apply: a, open: x.open }); applied += a; }
+    });
+  } else {
+    var left = Math.max(0, T), only = opt.only ? opt.only.reduce(function(o, k){ o[s(k)] = 1; return o; }, {}) : null;
+    list.forEach(function(x){
+      if (only && !only[x.id]) return;
+      if (left <= 0) return;
+      var a = Math.min(left, x.open); if (a <= 0) return;
+      lines.push({ id: x.id, apply: a, open: x.open }); applied += a; left -= a;
+    });
+  }
+  lines = lines.map(function(l){ return { id: l.id, apply: l.apply / 100, open: l.open / 100, after: (l.open - l.apply) / 100, full: l.apply >= l.open }; });
+  return { lines: lines, applied: applied / 100, total: T / 100, left: Math.max(0, T - applied) / 100, over: Math.max(0, applied - T) / 100, balanced: T === applied, errors: errors };
+}
+/* the one statement that is really the month's per-job bills: same payee, its amount = the other open bills (all of them, the
+   ones dated in its month(s), or an exact handful of them) within max($1, 0.5 %) — or it says "statement" and others are open */
+function subsetHit(target, items){
+  if (items.length < 2 || items.length > 12) return null;
+  var n = items.length, T = c(target);
+  for (var m = 1; m < (1 << n); m++) {
+    if ((m & (m - 1)) === 0) continue;   /* two or more */
+    var sum = 0, pick = [];
+    for (var i = 0; i < n; i++) if (m & (1 << i)) { sum += c(items[i].open); pick.push(items[i]); }
+    if (Math.abs(sum - T) <= 5) return pick;
+  }
+  return null;
+}
+function dupStatements(all){
+  var L = (all || []).filter(function(r){ return isBill(r) && isOpen(r) && !r.notStatement; }), out = [];
+  L.forEach(function(b){
+    var A = amtOf(b); if (!(A > 0)) return;
+    var others = L.filter(function(x){ return x !== b && x.id !== b.id && sameParty(partyOf(x), partyOf(b)); })
+      .map(function(x){ return { id: x.id, open: openOf(x), date: invDay(x), pid: x.pid, inv: x }; });
+    if (others.length < 2) return;
+    var tol = Math.max(100, Math.round(c(A) * 0.005)), bd = invDay(b);
+    var near = others.filter(function(x){ return !bd || !x.date || (x.date <= bd && x.date >= addDays(bd, -62)); });
+    var sumAll = others.reduce(function(a, x){ return a + c(x.open); }, 0), sumNear = near.reduce(function(a, x){ return a + c(x.open); }, 0);
+    var hit = null, why = '';
+    if (Math.abs(sumAll - c(A)) <= tol) { hit = others; why = 'its amount = the ' + others.length + ' other open bills of ' + partyOf(b); }
+    else if (near.length >= 2 && Math.abs(sumNear - c(A)) <= tol) { hit = near; why = 'its amount = the ' + near.length + ' open bills of ' + partyOf(b) + ' dated in the 2 months before it'; }
+    else { var sub = subsetHit(A, (near.length >= 2 ? near : others)); if (sub) { hit = sub; why = 'its amount = ' + sub.length + ' of the open bills of ' + partyOf(b); } }
+    var says = /statement|stmt|monthly|summary|account summary/i.test([b.desc, b.memo, b.invNum, b.note, (arr(b.files)[0] || {}).name].join(' '));
+    if (!hit && says) { hit = others; why = 'it reads like a statement and ' + others.length + ' bills of ' + partyOf(b) + ' are open'; }
+    if (hit) out.push({ id: b.id, inv: b, amount: A, party: partyOf(b), jobs: hit.map(function(x){ return x.id; }), why: why, noJob: !b.pid });
+  });
+  /* a pair that explain each other: keep the bigger one as the statement */
+  return out.filter(function(f){ return !out.some(function(g){ return g !== f && g.jobs.indexOf(f.id) >= 0 && g.amount > f.amount; }); });
+}
+function addDays(d, n){ var t = Date.parse(d + 'T12:00:00'); if (!isFinite(t)) return ''; var x = new Date(t + n * 864e5); return x.getFullYear() + '-' + ('0' + (x.getMonth() + 1)).slice(-2) + '-' + ('0' + x.getDate()).slice(-2); }
+
+/* ═════════════ who may ═════════════ */
+function canUse(){
+  try { if (typeof W._gcFullAccess === 'function') return !!W._gcFullAccess(); } catch (e) {}
+  try { if (typeof W._gcIsOfficeFull === 'function' && W._gcIsOfficeFull()) return true; } catch (e) {}
+  try { if (typeof W.__gcAuthIsAdmin === 'function') return !!W.__gcAuthIsAdmin(); } catch (e) {}
+  return false;
+}
+function myName(){
+  var em = ''; try { em = low(W.__GC_AUTH__ && W.__GC_AUTH__.email && W.__GC_AUTH__.email()); } catch (e) {}
+  var u = arr(crm().users).filter(function(x){ return em && low(x.email) === em; })[0];
+  return s(u && u.name) || s(lsGet('grayco_user')) || em || 'office';
+}
+
+/* ═════════════ the payment records (the grouping; gc_kv gc_lump_payments, union by id) ═════════════ */
+function creds(){ return { u: (s(lsGet('grayco_sb_url')) || 'https://ieeonhpfahmwwecizdut.supabase.co').replace(/\/$/, ''), k: s(lsGet('grayco_sb_key')) }; }
+function sbH(extra){ var k = creds().k, h = { 'Content-Type': 'application/json' }; if (k) { h.apikey = k; h.Authorization = 'Bearer ' + k; } return Object.assign(h, extra || {}); }
+function kvGet(){
+  return W.fetch(creds().u + '/rest/v1/gc_kv?key=eq.' + KEY + '&select=value', { headers: sbH(), cache: 'no-store' })
+    .then(function(r){ return r.ok ? r.json() : Promise.reject(new Error('read ' + r.status)); })
+    .then(function(rows){ return arr(rows && rows[0] ? rows[0].value : []); });
+}
+var LUMPS = arr(lsGet(KEY));
+function mergeById(){ var by = {}, order = []; [].slice.call(arguments).forEach(function(l){ arr(l).forEach(function(m){ if (m.id == null) return; var k = String(m.id); if (!(k in by)) order.push(k); by[k] = m; }); }); return order.map(function(k){ return by[k]; }); }
+function kvAdd(items){
+  LUMPS = mergeById(LUMPS, items); lsSet(KEY, JSON.stringify(LUMPS));
+  return kvGet().then(function(remote){
+    var merged = mergeById(remote, LUMPS.filter(function(x){ return !remote.some(function(y){ return y.id === x.id; }) || items.some(function(i){ return i.id === x.id; }); }));
+    merged.sort(function(a, b){ return s(a.at).localeCompare(s(b.at)); });
+    LUMPS = merged; lsSet(KEY, JSON.stringify(merged));
+    return W.fetch(creds().u + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: sbH({ Prefer: 'resolution=merge-duplicates,return=minimal' }),
+      body: JSON.stringify({ key: KEY, value: JSON.stringify(merged), updated_at: nowIso() }) }).then(function(r){ return { ok: r.ok }; }, function(){ return { ok: false }; });
+  }, function(){ return { ok: false, local: true }; });
+}
+function refresh(){ return kvGet().then(function(l){ LUMPS = mergeById(l, LUMPS.filter(function(x){ return !l.some(function(y){ return y.id === x.id; }); })); lsSet(KEY, JSON.stringify(LUMPS)); return LUMPS; }, function(){ return LUMPS; }); }
+/* a record the invoices still remember even when the cloud list is not loaded (each payment row carries its header) */
+function fromInvoices(){
+  var by = {};
+  invoices().forEach(function(r){ arr(r.payments).forEach(function(p){ if (!p.lumpId) return; var h = by[p.lumpId] || (by[p.lumpId] = Object.assign({ id: p.lumpId, applied: [], fromInvoices: true }, p.lump || {})); h.applied.push({ invId: r.id, pid: r.pid, amount: payAmt(p) }); }); });
+  return Object.keys(by).map(function(k){ return by[k]; });
+}
+function list(){ var l = mergeById(fromInvoices(), LUMPS); return l.sort(function(a, b){ return s(b.at || b.date).localeCompare(s(a.at || a.date)); }); }
+
+/* ═════════════ write ═════════════ */
+function setInv(f){ if (typeof W._setInvoices !== 'function') return false; W._setInvoices(function(l){ return f(Array.isArray(l) ? l : []); }); return true; }
+function setExp(f){ if (typeof W._setExpenses === 'function') { W._setExpenses(function(l){ return f(Array.isArray(l) ? l : []); }); return true; } if (W._crm && Array.isArray(W._crm.expenses)) { W._crm.expenses = f(W._crm.expenses); return true; } return false; }
+function reg(row){ try { if (typeof W._gcAddToRegister === 'function') return W._gcAddToRegister(row); } catch (e) {} }
+function regDel(id){ try { if (typeof W._gcRemoveFromRegister === 'function') return W._gcRemoveFromRegister(id); } catch (e) {} }
+function snap(r){ return { status: r.status === undefined ? null : r.status, paid: r.paid === undefined ? null : r.paid, paidDate: r.paidDate === undefined ? null : r.paidDate, openBalance: r.openBalance === undefined ? null : r.openBalance, amountPaid: r.amountPaid === undefined ? null : r.amountPaid, checkNo: r.checkNo === undefined ? null : r.checkNo, payMethod: r.payMethod === undefined ? null : r.payMethod, nPay: arr(r.payments).length }; }
+function unsnap(y, p){ ['status', 'paid', 'paidDate', 'openBalance', 'amountPaid', 'checkNo', 'payMethod'].forEach(function(k){ if (p[k] === null || p[k] === undefined) delete y[k]; else y[k] = p[k]; }); }
+function methodText(m){ return { check: 'Check', ach: 'ACH / bank transfer', card: 'Card', cash: 'Cash', wire: 'Wire', other: 'Other' }[low(m)] || s(m) || 'Payment'; }
+
+/* save one lump-sum payment. p = { side:'pay'|'receive', party, amount, date, method, checkNo, ref, stmtNo, note, file, lines:[{invId, amount}],
+   keepCredit, statementInvId, source, qbKey, id } */
+function save(p){
+  if (!canUse()) return { ok: false, error: 'Only admins and the office can record payments.' };
+  p = p || {};
+  var side = p.side === 'receive' ? 'receive' : 'pay', total = r2(p.amount), date = s(p.date) || today(), by = myName(), at = nowIso();
+  if (!(total > 0)) return { ok: false, error: 'Enter the payment amount.' };
+  var I = invoices(), byId = {}; I.forEach(function(r){ byId[String(r.id)] = r; });
+  var lines = [], applied = 0, errs = [];
+  (p.lines || []).forEach(function(l){
+    var r = byId[String(l.invId)], a = r2(l.amount); if (!(a > 0)) return;
+    if (!r) { errs.push('invoice ' + l.invId + ' is not loaded'); return; }
+    if (side === 'pay' ? !isBill(r) : !isClientInv(r)) { errs.push((invNo(r) || r.id) + ' is not a ' + (side === 'pay' ? 'bill' : 'customer invoice')); return; }
+    if (!isOpen(r)) { errs.push((invNo(r) || r.id) + ' is already paid'); return; }
+    if (c(a) > c(openOf(r))) { errs.push((invNo(r) || r.id) + ': ' + money(a) + ' is more than its open ' + money(openOf(r))); return; }
+    lines.push({ inv: r, amount: a }); applied += c(a);
+  });
+  if (errs.length) return { ok: false, error: errs.join('; ') };
+  if (!lines.length) return { ok: false, error: 'Pick at least one invoice.' };
+  var left = c(total) - applied;
+  if (left < 0) return { ok: false, error: 'Applied ' + money(applied / 100) + ' is over the payment ' + money(total) + ' by ' + money(-left / 100) + '.' };
+  if (left > 0 && !p.keepCredit) return { ok: false, error: money(left / 100) + ' is not applied — apply it, or tick "keep the rest as a credit".' };
+  var stmt = p.statementInvId ? byId[String(p.statementInvId)] : null;
+  if (p.statementInvId && (!stmt || !isBill(stmt))) return { ok: false, error: 'That statement bill is not loaded.' };
+  if (stmt && lines.some(function(l){ return l.inv.id === stmt.id; })) return { ok: false, error: 'The statement itself cannot be one of the bills it pays.' };
+  if (typeof W._setInvoices !== 'function') return { ok: false, error: 'Invoices are not ready on this screen yet — try again in a moment.' };
+  var id = p.id || uid('LUMP'), method = low(p.method) || 'check';
+  var head = { side: side, party: s(p.party), amount: total, date: date, method: method, checkNo: s(p.checkNo), ref: s(p.ref), stmtNo: s(p.stmtNo), by: by, at: at };
+  var rec = Object.assign({ id: id }, head, { note: s(p.note).slice(0, 500), file: p.file || null, source: p.source || 'manual', qbKey: s(p.qbKey) || undefined,
+    credit: r2(left / 100), applied: [], statementInvId: stmt ? stmt.id : undefined, voided: false });
+  var ch = {}, expSnap = {};
+  lines.forEach(function(l){
+    var r = l.inv, o = openOf(r), after = r2(o - l.amount), full = after <= 0.004, pj = proj(r.pid) || {};
+    ch[r.id] = { amount: l.amount, after: full ? 0 : after, full: full, prev: snap(r), prior: arr(r.payments).length ? 0 : r2(amtOf(r) - o) };
+    rec.applied.push({ invId: r.id, pid: s(r.pid), job: s(pj.name), po: s(r.po || pj.autoPO), invNum: invNo(r), qbNum: qbNo(r), invDate: invDay(r), invAmount: amtOf(r), amount: l.amount, openBefore: o, openAfter: full ? 0 : after, full: full });
+  });
+  setInv(function(list){ return list.map(function(r){
+    if (!r) return r;
+    if (stmt && r.id === stmt.id) return Object.assign({}, r, { status: 'void', isStatement: true, statementLump: id, statementPrev: snap(r), voidReason: 'Statement for several jobs — paid on the per-job bills (payment ' + id + ')', updatedAt: at });
+    var x = ch[r.id]; if (!x) return r;
+    var y = Object.assign({}, r), pays = arr(r.payments).slice();
+    if (!pays.length && x.prior > 0.004) pays.push({ id: 'PRIOR_' + r.id, amt: x.prior, amount: x.prior, date: s(r.paidDate), method: 'earlier', source: 'prior', note: 'paid before this lump sum', at: at });
+    pays.push({ id: id + '_' + r.id, lumpId: id, amt: x.amount, amount: x.amount, date: date, method: method, checkNo: s(p.checkNo), ref: s(p.ref || p.stmtNo), by: by, at: at, source: 'lump',
+      prev: x.prev, lump: { side: side, party: head.party, amount: total, date: date, method: method, checkNo: head.checkNo, ref: head.ref, stmtNo: head.stmtNo, by: by, at: at } });
+    y.payments = pays; y.lumpIds = (Array.isArray(r.lumpIds) ? r.lumpIds : []).concat([id]);
+    if (p.qbKey) { y.qbKeys = (Array.isArray(r.qbKeys) ? r.qbKeys.slice() : []); if (y.qbKeys.indexOf(p.qbKey) < 0) y.qbKeys.push(p.qbKey); }
+    if (x.full) { y.status = 'paid'; y.paid = true; y.paidDate = date; y.openBalance = 0; y.amountPaid = amtOf(r); if (method === 'check' && p.checkNo) y.checkNo = s(p.checkNo); y.payMethod = methodText(method); }
+    else { y.status = 'partial'; y.openBalance = x.after; y.amountPaid = r2(amtOf(r) - x.after); }
+    y.updatedAt = at;
+    return y;
+  }); });
+  /* the job's cost row (sub / supplier bills): paid on that date, the way "Mark paid" does it */
+  if (side === 'pay') {
+    setExp(function(E){ return E.map(function(e){
+      if (!e || !e.subInvId) return e;
+      if (stmt && String(e.subInvId) === String(stmt.id)) { expSnap[e.id] = e.status; return Object.assign({}, e, { status: 'void', voidReason: 'statement — the per-job bills carry the cost', statementLump: id, statusWas: e.status }); }
+      var x = ch[e.subInvId]; if (!x || !x.full || e.status === 'rejected' || e.status === 'denied') return e;
+      expSnap[e.id] = e.status; return Object.assign({}, e, { status: 'paid', paidDate: date, lumpId: id, statusWas: e.status });
+    }); });
+  }
+  rec.expPrev = expSnap;
+  /* the register: "Sub Paid" / "Client Payment" for each one paid in full (same row "Mark paid" writes; upserted by srcInvId) */
+  lines.forEach(function(l){
+    var r = l.inv, x = ch[r.id]; if (!x.full || !r.pid) return;
+    var cl = side === 'receive';
+    reg({ srcInvId: r.id, pid: r.pid, payee: cl ? (r.client || 'Client') : r.sub, desc: (cl ? 'Client Payment' : 'Sub Paid') + ': ' + (r.desc || r.po || '—') + ' — part of ' + money(total) + ' ' + methodText(method).toLowerCase() + (p.checkNo ? ' #' + s(p.checkNo) : '') + (p.ref ? ' (' + s(p.ref) + ')' : ''),
+      po: r.po, amount: amtOf(r), amt: amtOf(r), category: cl ? 'Client Invoice' : 'Subcontractor', date: date, source: cl ? 'clientinvoice' : 'subinvoice', method: 'payment', direction: cl ? 'in' : 'out', isIncome: cl, status: 'paid', lumpId: id });
+  });
+  if (stmt) { regDel('SUB_' + stmt.id); regDel(stmt.id); }
+  var done = kvAdd([rec]);
+  return { ok: true, id: id, record: rec, saved: done };
+}
+
+/* ↩ undo: every invoice back the way it was (unless someone paid more on it since — then its status follows what is left) */
+function undo(id, why){
+  if (!canUse()) return { ok: false, error: 'Only admins and the office can undo payments.' };
+  var rec = list().filter(function(x){ return x.id === id; })[0];
+  if (!rec) return { ok: false, error: 'That payment is not found.' };
+  if (rec.voided) return { ok: false, error: 'That payment was already undone.' };
+  if (typeof W._setInvoices !== 'function') return { ok: false, error: 'Invoices are not ready on this screen yet.' };
+  var at = nowIso(), by = myName(), side = rec.side, NEW = {}, unpaid = {}, stmtIds = {};
+  /* worked out first, from what is on screen; then written in one go */
+  invoices().forEach(function(r){
+    if (r.statementLump === id) { var z = Object.assign({}, r); unsnap(z, r.statementPrev || { status: 'received' }); delete z.isStatement; delete z.statementLump; delete z.statementPrev; delete z.voidReason; z.updatedAt = at; NEW[r.id] = z; stmtIds[r.id] = r; return; }
+    var mine = arr(r.payments).filter(function(p){ return p.lumpId === id; }); if (!mine.length) return;
+    var y = Object.assign({}, r), rest = arr(r.payments).filter(function(p){ return p.lumpId !== id; }), prev = mine[0].prev || {}, wasFull = low(r.status) === 'paid' || r.paid === true;
+    var onlyPrior = rest.length && rest.every(function(p){ return p.source === 'prior'; }) && !prev.nPay;
+    if (onlyPrior || rest.length === (prev.nPay || 0)) {
+      unsnap(y, prev);
+      if (onlyPrior || !rest.length) delete y.payments; else y.payments = rest;
+    } else {
+      y.payments = rest;
+      var pd = r2(rest.reduce(function(a, p){ return a + payAmt(p); }, 0)), A = amtOf(r);
+      if (pd >= A - 0.004) { y.status = 'paid'; y.paid = true; y.openBalance = 0; y.amountPaid = A; }
+      else { delete y.paid; delete y.paidDate; delete y.payMethod; delete y.checkNo; y.amountPaid = pd; y.openBalance = r2(A - pd); y.status = pd > 0 ? 'partial' : (prev.status && prev.status !== 'paid' ? prev.status : (isBill(r) ? 'approved' : 'sent')); }
+    }
+    y.lumpIds = (Array.isArray(r.lumpIds) ? r.lumpIds : []).filter(function(k){ return k !== id; }); if (!y.lumpIds.length) delete y.lumpIds;
+    if (rec.qbKey && Array.isArray(r.qbKeys)) y.qbKeys = r.qbKeys.filter(function(k){ return k !== rec.qbKey; });
+    y.updatedAt = at; NEW[r.id] = y;
+    if (wasFull && !(low(y.status) === 'paid' || y.paid === true)) unpaid[r.id] = r;
+  });
+  setInv(function(L){ return L.map(function(r){ return r && NEW[r.id] ? NEW[r.id] : r; }); });
+  var expPrev = rec.expPrev || {};
+  /* the job's cost row: back to unpaid when its bill is no longer paid in full (whichever payment had marked it) */
+  setExp(function(E){ return E.map(function(e){
+    if (!e) return e;
+    var mine = e.lumpId === id || e.statementLump === id || (e.lumpId && e.subInvId && unpaid[e.subInvId]);
+    if (!mine) return e;
+    var z = Object.assign({}, e, { status: e.statusWas || expPrev[e.id] || 'approved' }); delete z.lumpId; delete z.statementLump; delete z.statusWas; delete z.voidReason; if (e.lumpId) delete z.paidDate; return z;
+  }); });
+  /* the register row goes back to what an unpaid one is */
+  var unpaidRow = function(r){ return { srcInvId: r.id, pid: r.pid, payee: r.sub, desc: 'Sub Invoice: ' + (r.desc || r.po || '—'), po: r.po, amount: amtOf(r), amt: amtOf(r), category: 'Subcontractor', date: s(r.date), source: 'subinvoice', method: 'invoice', direction: 'out', isIncome: false, status: 'pending', lumpId: '' }; };
+  Object.keys(stmtIds).forEach(function(k){ var r = stmtIds[k]; if (r.pid && amtOf(r) > 0) reg(unpaidRow(r)); });
+  Object.keys(unpaid).forEach(function(k){ var r = unpaid[k]; if (!r.pid) return; if (side === 'receive' || isClientInv(r)) regDel(r.id); else reg(unpaidRow(r)); });
+  var v = Object.assign({}, rec, { voided: true, voidedBy: by, voidedAt: at, voidWhy: s(why).slice(0, 300) }); delete v.fromInvoices;
+  var done = kvAdd([v]);
+  return { ok: true, id: id, restored: Object.keys(NEW).length, saved: done };
+}
+
+/* ═════════════ QuickBooks (read only): a BillPayment / ReceivePayment that lists several bills / invoices ═════════════ */
+function slug(k){ return s(k).replace(/[^A-Za-z0-9]+/g, '_').slice(0, 80); }
+function applyQb(q){
+  q = q || {};
+  var key = s(q.key), kind = low(q.kind), side = /bill/.test(kind) ? 'pay' : 'receive';
+  if (!key) return { ok: false, why: 'no QuickBooks key' };
+  var lid = 'LQB_' + slug(key);
+  if (list().some(function(x){ return x.id === lid && !x.voided; }) || invoices().some(function(r){ return Array.isArray(r.qbKeys) && r.qbKeys.indexOf(key) >= 0 && arr(r.payments).some(function(p){ return p.lumpId === lid; }); })) return { ok: true, already: true, id: lid };
+  if (list().some(function(x){ return x.id === lid && x.voided; })) return { ok: true, skipped: 'undone by a person — not applied again', id: lid };
+  var refs = arr(q.applied); if (refs.length < 1) return { ok: false, why: 'QuickBooks did not list which ' + (side === 'pay' ? 'bills' : 'invoices') + ' it pays' };
+  var kindOk = function(r){ return side === 'pay' ? isBill(r) : isClientInv(r); };
+  var pool = invoices().filter(function(r){ return kindOk(r) && sameParty(partyOf(r), q.name); });
+  if (!pool.length) pool = invoices().filter(function(r){ return kindOk(r) && looseParty(partyOf(r), q.name); });
+  var lines = [], miss = [];
+  refs.forEach(function(a){
+    var n = s(a.num), hit = pool.filter(function(r){ return n && (invNo(r) === n || s(r.qbNum) === n || s(r.invNum) === n); });
+    if (hit.length !== 1) { miss.push(n || '?'); return; }
+    var r = hit[0]; if (!isOpen(r)) return;   /* already paid in the CRM: nothing to do for that one */
+    lines.push({ invId: r.id, amount: Math.min(r2(a.amount != null ? a.amount : openOf(r)), openOf(r)) });
+  });
+  if (!lines.length) return { ok: !miss.length, why: miss.length ? 'no CRM record for #' + miss.join(', #') : 'all already paid in the CRM', missing: miss };
+  var applied = lines.reduce(function(a, l){ return a + c(l.amount); }, 0) / 100;
+  var res = save({ id: lid, side: side, party: q.name, amount: Math.max(r2(q.amount), applied), date: q.date, method: s(q.method) || 'check', checkNo: s(q.num), ref: 'QuickBooks ' + (side === 'pay' ? 'bill payment' : 'payment') + (q.num ? ' #' + q.num : ''),
+    lines: lines, keepCredit: true, source: 'quickbooks', qbKey: key, note: miss.length ? 'QuickBooks also listed #' + miss.join(', #') + ' — not in the CRM' : '' });
+  if (res.ok) res.missing = miss;
+  return res;
+}
+/* the QuickBooks CSV import: after it runs, its payment rows that name several bills / invoices are put on them */
+function hookQb(){
+  var f = W._gcQbCsvApply; if (typeof f !== 'function' || f.__lump) return;
+  var w = function(plan){
+    var out = f.apply(this, arguments);
+    return Promise.resolve(out).then(function(v){
+      try { arr(plan && plan.rows).forEach(function(row){ var r = row && row.rec; if (r && /^(payment|billpayment)$/.test(r.kind) && arr(r.applied).length) { var x = applyQb(r); if (x && x.ok && !x.already) row.lumpId = x.id; } }); } catch (e) {}
+      return v;
+    });
+  };
+  w.__lump = true; W._gcQbCsvApply = w;
+}
+SI(hookQb, 4000); ST(hookQb, 1200);
+
+/* ═════════════ the screen ═════════════ */
+var CSS = '#gc-lump{position:fixed;inset:0;z-index:100050;background:rgba(15,29,47,.55);display:flex;align-items:flex-start;justify-content:center;padding:18px 10px;overflow:auto;font:14px Inter,Arial,sans-serif;color:#0f172a}' +
+  '#gc-lump .lp{background:#fff;border-radius:14px;width:100%;max-width:1120px;padding:16px 18px;box-shadow:0 20px 60px rgba(0,0,0,.3)}' +
+  '#gc-lump h2{margin:0;font-size:19px}#gc-lump .sub{color:#64748b;font-size:12.5px}' +
+  '#gc-lump .row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin:10px 0}#gc-lump label{display:flex;flex-direction:column;gap:3px;font-size:12px;font-weight:700;color:#334155}' +
+  '#gc-lump input,#gc-lump select{border:1px solid #cbd5e1;border-radius:8px;padding:7px 9px;font-size:14px;min-height:34px;box-sizing:border-box;background:#fff;color:#0f172a}' +
+  '#gc-lump .b{border:1px solid #cbd5e1;background:#fff;border-radius:8px;padding:7px 13px;font-weight:700;cursor:pointer;min-height:34px;font-size:13.5px}' +
+  '#gc-lump .b.pri{background:#0F1D2F;color:#fff;border-color:#0F1D2F}#gc-lump .b.ok{background:#16a34a;color:#fff;border-color:#16a34a}#gc-lump .b:disabled{opacity:.45;cursor:not-allowed}' +
+  '#gc-lump .tabs .b.on{background:#0F1D2F;color:#fff}' +
+  '#gc-lump table{width:100%;border-collapse:collapse;font-size:13px}#gc-lump th{text-align:left;font-size:11px;text-transform:uppercase;color:#64748b;border-bottom:2px solid #e2e8f0;padding:6px}' +
+  '#gc-lump td{border-bottom:1px solid #f1f5f9;padding:6px;vertical-align:middle}#gc-lump td.n,#gc-lump th.n{text-align:right;white-space:nowrap}#gc-lump tr.on td{background:#f0fdf4}' +
+  '#gc-lump .ap{width:110px;text-align:right}#gc-lump .sum{position:sticky;bottom:0;background:#fff;border-top:2px solid #e2e8f0;padding:10px 0 2px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}' +
+  '#gc-lump .tot{font-weight:800;font-size:15px}#gc-lump .tot.bad{color:#b91c1c}#gc-lump .tot.good{color:#15803d}#gc-lump .tot.warn{color:#b45309}' +
+  '#gc-lump .pill{display:inline-block;border-radius:999px;padding:1px 8px;font-size:11.5px;font-weight:700;background:#f1f5f9;color:#334155}' +
+  '#gc-lump .warnbox{background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:8px 12px;margin:8px 0;font-size:13px}' +
+  '#gc-lump .msg{font-weight:700}#gc-lump .msg.bad{color:#b91c1c}' +
+  '.gc-lumpbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 10px;font:13px Inter,Arial,sans-serif}.gc-lumpbar button{border:1px solid #cbd5e1;background:#fff;color:#0f172a;border-radius:999px;padding:7px 14px;font-weight:700;cursor:pointer;min-height:36px}' +
+  '.gc-lumpbar .flag{border-color:#f59e0b;background:#fffbeb;color:#92400e}';
+function css(){ if (D.getElementById('gc-lump-css')) return; var st = D.createElement('style'); st.id = 'gc-lump-css'; st.textContent = CSS; (D.head || D.documentElement).appendChild(st); }
+var UI = null;
+function jobText(r){ var p = proj(r.pid); return p ? (s(p.name) + (p.autoPO ? ' · ' + p.autoPO : '')) : '<i style="color:#b45309">no job yet</i>'; }
+function qbBadge(r){ try { if (typeof W._gcQbBadge === 'function') { var h = W._gcQbBadge(r); if (h) return h; } } catch (e) {} var q = qbNo(r); return q ? '<span class="pill">QB #' + esc(q) + '</span>' : ''; }
+function partiesFor(side){
+  var by = {};
+  invoices().forEach(function(r){
+    if (!(side === 'pay' ? isBill(r) : isClientInv(r)) || !isOpen(r)) return;
+    var n = partyOf(r); if (!n) return; var k = normParty(n);
+    var g = by[k] || (by[k] = { key: k, name: n, n: 0, open: 0 }); g.n++; g.open = r2(g.open + openOf(r));
+  });
+  return Object.keys(by).map(function(k){ return by[k]; }).sort(function(a, b){ return a.name.localeCompare(b.name); });
+}
+function rowsFor(){
+  var u = UI, out = invoices().filter(function(r){ return (u.side === 'pay' ? isBill(r) : isClientInv(r)) && isOpen(r) && sameParty(partyOf(r), u.party) && r.id !== u.statementInvId; });
+  if (u.from) out = out.filter(function(r){ return !invDay(r) || invDay(r) >= u.from; });
+  if (u.to) out = out.filter(function(r){ return !invDay(r) || invDay(r) <= u.to; });
+  if (u.job) out = out.filter(function(r){ return s(r.pid) === u.job; });
+  return out.map(function(r){ return { id: r.id, open: openOf(r), date: invDay(r), inv: r }; }).sort(byOldest);
+}
+function open(opt){
+  opt = opt || {}; css();
+  var old = D.getElementById('gc-lump'); if (old) old.remove();
+  var ov = D.createElement('div'); ov.id = 'gc-lump'; ov.setAttribute('data-gc-keep', '1');
+  if (!canUse()) {
+    ov.innerHTML = '<div class="lp"><h2>💵 Lump-sum payments</h2><p class="msg bad" data-lp="refused">Only admins and the office can record or undo payments.</p><button type="button" class="b" data-lp="close">Close</button></div>';
+    ov.addEventListener('click', function(e){ if (e.target === ov || (e.target.getAttribute && e.target.getAttribute('data-lp') === 'close')) ov.remove(); });
+    D.body.appendChild(ov); return { refused: true };
+  }
+  var stmt = opt.statementInvId ? invoices().filter(function(r){ return r.id === opt.statementInvId; })[0] : null;
+  UI = { ov: ov, side: opt.side === 'receive' ? 'receive' : 'pay', party: s(opt.party || (stmt && partyOf(stmt))), from: '', to: '', job: '', amount: opt.amount != null ? r2(opt.amount) : (stmt ? amtOf(stmt) : ''),
+    date: s(opt.date) || today(), method: s(opt.method) || (opt.side === 'receive' ? 'check' : 'check'), checkNo: s(opt.checkNo), ref: s(opt.ref), stmtNo: s(opt.stmtNo || (stmt && invNo(stmt))), note: '', file: null,
+    sel: {}, credit: false, statementInvId: stmt ? stmt.id : '', view: opt.view || 'new', msg: '' };
+  ov.addEventListener('click', onClick); ov.addEventListener('input', onInput); ov.addEventListener('change', onChange);
+  D.body.appendChild(ov); draw();
+  if (opt.autoApply && UI.amount) autoApply();
+  return { ok: true };
+}
+function tot(){ var a = 0; Object.keys(UI.sel).forEach(function(k){ a += c(UI.sel[k]); }); return a / 100; }
+function autoApply(){
+  var R = rowsFor(), al = allocate(UI.amount, R, { mode: 'oldest' }); UI.sel = {};
+  al.lines.forEach(function(l){ UI.sel[l.id] = l.apply; }); draw();
+}
+function state(){
+  var T = r2(UI.amount), A = r2(tot()), d = c(T) - c(A);
+  return { total: T, applied: A, left: Math.max(0, d) / 100, over: Math.max(0, -d) / 100, balanced: d === 0, ok: A > 0 && d >= 0 && (d === 0 || UI.credit) && T > 0 };
+}
+function summaryHtml(){
+  var st = state(), cls = st.over > 0 ? 'bad' : (st.balanced ? 'good' : 'warn');
+  var t = 'Applied ' + money(st.applied) + ' of ' + money(st.total) + ' — ' + (st.over > 0 ? 'over by ' + money(st.over) : (st.balanced ? '✓ balanced' : money(st.left) + ' left'));
+  return '<span class="tot ' + cls + '" data-lp="sum">' + t + '</span>' +
+    (st.left > 0 && st.applied > 0 ? '<label style="flex-direction:row;align-items:center;gap:6px;font-weight:600"><input type="checkbox" data-lp="credit"' + (UI.credit ? ' checked' : '') + '> keep the ' + money(st.left) + ' as a credit / unapplied note</label>' : '') +
+    '<span style="flex:1"></span><span class="msg' + (/^✓/.test(UI.msg) ? '' : ' bad') + '" data-lp="msg">' + esc(UI.msg) + '</span>' +
+    '<button type="button" class="b ok" data-lp="save"' + (st.ok ? '' : ' disabled') + '>💾 Save payment</button>';
+}
+function draw(){
+  var u = UI, ov = u.ov, pay = u.side === 'pay';
+  if (u.view === 'list') return drawList();
+  if (u.view === 'show') return drawShow(u.showId);
+  var P = partiesFor(u.side), R = u.party ? rowsFor() : [], jobs = {};
+  invoices().forEach(function(r){ if ((pay ? isBill(r) : isClientInv(r)) && isOpen(r) && u.party && sameParty(partyOf(r), u.party) && r.pid) jobs[r.pid] = 1; });
+  var stmt = u.statementInvId ? invoices().filter(function(r){ return r.id === u.statementInvId; })[0] : null;
+  var h = '<div class="lp"><div style="display:flex;gap:10px;align-items:center"><h2 style="flex:1">' + (pay ? '💵 Pay several invoices at once' : '💰 Record one payment for several invoices') + '</h2>' +
+    '<span class="tabs"><button type="button" class="b' + (pay ? ' on' : '') + '" data-lp="side" data-v="pay">💵 We pay (bills)</button> <button type="button" class="b' + (!pay ? ' on' : '') + '" data-lp="side" data-v="receive">💰 We get paid</button></span> ' +
+    '<button type="button" class="b" data-lp="list">🗂 Payments made</button> <button type="button" class="b" data-lp="close">✕</button></div>' +
+    '<div class="sub">' + (pay ? 'A supplier or sub sent one statement / one big invoice for the month: record the ONE payment and mark which job bills it pays.' : 'A customer, GC or property manager paid several of our invoices with one check: record it once and mark each invoice.') + '</div>';
+  if (stmt) h += '<div class="warnbox" data-lp="stmtbanner">🔗 <b>Statement ' + esc(invNo(stmt) || stmt.id) + ' — ' + money(amtOf(stmt)) + '</b> from ' + esc(partyOf(stmt)) + ' is treated as a statement for several jobs: on save it is set aside (not a cost) and the payment goes on the per-job bills below, so nothing is counted twice.</div>';
+  h += '<div class="row"><label style="min-width:280px">' + (pay ? 'Vendor / sub' : 'Customer / GC') + '<select data-lp="party"><option value="">— pick —</option>' +
+    P.map(function(g){ return '<option value="' + esc(g.name) + '"' + (u.party && sameParty(g.name, u.party) ? ' selected' : '') + '>' + esc(g.name) + ' — ' + g.n + ' open · ' + money(g.open) + '</option>'; }).join('') +
+    (u.party && !P.some(function(g){ return sameParty(g.name, u.party); }) ? '<option selected value="' + esc(u.party) + '">' + esc(u.party) + ' — nothing open</option>' : '') + '</select></label>' +
+    '<label>From<input type="date" data-lp="from" value="' + esc(u.from) + '"></label><label>To<input type="date" data-lp="to" value="' + esc(u.to) + '"></label>' +
+    '<label style="min-width:180px">Job<select data-lp="job"><option value="">All jobs</option>' + Object.keys(jobs).map(function(pid){ var p = proj(pid) || {}; return '<option value="' + esc(pid) + '"' + (u.job === pid ? ' selected' : '') + '>' + esc(s(p.name) || pid) + '</option>'; }).join('') + '</select></label></div>';
+  h += '<div class="row" style="background:#f8fafc;border-radius:10px;padding:8px 10px">' +
+    '<label>Payment amount<input data-lp="amount" inputmode="decimal" style="width:130px;font-weight:800" placeholder="0.00" value="' + esc(u.amount === '' ? '' : u.amount) + '"></label>' +
+    '<label>Date<input type="date" data-lp="date" value="' + esc(u.date) + '"></label>' +
+    '<label>Method<select data-lp="method">' + ['check', 'ach', 'card', 'wire', 'cash', 'other'].map(function(m){ return '<option value="' + m + '"' + (u.method === m ? ' selected' : '') + '>' + methodText(m) + '</option>'; }).join('') + '</select></label>' +
+    '<label>Check # / confirmation<input data-lp="checkNo" style="width:130px" value="' + esc(u.checkNo) + '"></label>' +
+    '<label>Reference<input data-lp="ref" style="width:140px" value="' + esc(u.ref) + '"></label>' +
+    '<label>Statement #<input data-lp="stmtNo" style="width:110px" value="' + esc(u.stmtNo) + '"></label>' +
+    '<label>Statement PDF <span style="font-weight:400">(optional)</span><input type="file" data-lp="file" accept="application/pdf,image/*,.csv"></label>' +
+    '<label style="flex:1;min-width:160px">Note<input data-lp="note" value="' + esc(u.note) + '"></label></div>';
+  if (!u.party) h += '<p class="sub" data-lp="pickfirst">Pick the ' + (pay ? 'vendor / sub' : 'customer') + ' to see every open ' + (pay ? 'bill' : 'invoice') + ' of theirs, on every job.</p>';
+  else {
+    h += '<div class="row" style="margin:6px 0"><button type="button" class="b pri" data-lp="auto">⚡ Apply oldest first</button><button type="button" class="b" data-lp="all">Tick all</button><button type="button" class="b" data-lp="clear">Clear</button>' +
+      '<span class="sub">' + R.length + ' open ' + (pay ? 'bill' : 'invoice') + (R.length === 1 ? '' : 's') + ' · ' + money(R.reduce(function(a, x){ return a + x.open; }, 0)) + ' open in all — tick exactly which, or type an amount on one for a partial payment.</span></div>';
+    h += '<div style="overflow-x:auto"><table><thead><tr><th></th><th>Job</th><th>Invoice #</th><th>QB #</th><th>Date</th><th class="n">Amount</th><th class="n">Open</th><th>Status</th><th class="n">Apply</th></tr></thead><tbody>' +
+      (R.length ? R.map(function(x){ var r = x.inv, on = x.id in u.sel;
+        return '<tr data-id="' + esc(x.id) + '"' + (on ? ' class="on"' : '') + '><td><input type="checkbox" data-lp="tick"' + (on ? ' checked' : '') + '></td><td>' + jobText(r) + '</td><td>' + esc(invNo(r) || '—') + (r.desc ? '<div class="sub">' + esc(s(r.desc).slice(0, 60)) + '</div>' : '') + '</td><td>' + qbBadge(r) + '</td><td>' + esc(invDay(r)) + '</td>' +
+          '<td class="n">' + money(amtOf(r)) + '</td><td class="n">' + money(x.open) + '</td><td><span class="pill">' + esc(r.status || 'open') + '</span></td>' +
+          '<td class="n"><input class="ap" data-lp="ap" inputmode="decimal" value="' + (on ? esc(r2(u.sel[x.id]).toFixed(2)) : '') + '" placeholder="—"></td></tr>'; }).join('') : '<tr><td colspan="9" class="sub">Nothing open for this ' + (pay ? 'vendor' : 'customer') + (u.from || u.to || u.job ? ' with these filters' : '') + '.</td></tr>') +
+      '</tbody></table></div>';
+  }
+  h += '<div class="sum" data-lp="sumbar">' + summaryHtml() + '</div></div>';
+  UI.ov.innerHTML = h;
+}
+function repaintSum(){ var b = UI.ov.querySelector('[data-lp="sumbar"]'); if (b) b.innerHTML = summaryHtml(); }
+function drawList(){
+  var L = list(), pay = UI.side === 'pay';
+  var h = '<div class="lp"><div style="display:flex;gap:10px;align-items:center"><h2 style="flex:1">🗂 Lump-sum payments</h2><button type="button" class="b" data-lp="new">＋ New payment</button> <button type="button" class="b" data-lp="close">✕</button></div>' +
+    '<div class="sub">Each one lists every job and invoice it paid. ↩ Undo puts each invoice back the way it was.</div><div style="overflow-x:auto"><table><thead><tr><th>Date</th><th></th><th>Paid to / by</th><th class="n">Amount</th><th>Method</th><th>Invoices</th><th></th></tr></thead><tbody>' +
+    (L.length ? L.map(function(x){ return '<tr data-lid="' + esc(x.id) + '"' + (x.voided ? ' style="opacity:.5"' : '') + '><td>' + esc(x.date) + '</td><td>' + (x.side === 'receive' ? '💰 in' : '💵 out') + '</td><td>' + esc(x.party) + (x.source === 'quickbooks' ? ' <span class="pill">QuickBooks</span>' : '') + (x.voided ? ' <span class="pill">undone</span>' : '') + '</td><td class="n">' + money(x.amount) + '</td><td>' + esc(methodText(x.method)) + (x.checkNo ? ' #' + esc(x.checkNo) : '') + '</td><td>' + arr(x.applied).length + (x.credit > 0 ? ' · credit ' + money(x.credit) : '') + '</td><td><button type="button" class="b" data-lp="show">Open</button></td></tr>'; }).join('') : '<tr><td colspan="7" class="sub">None yet.</td></tr>') +
+    '</tbody></table></div></div>';
+  UI.ov.innerHTML = h; void pay;
+}
+function drawShow(id){
+  var x = list().filter(function(r){ return r.id === id; })[0]; if (!x) { UI.view = 'list'; return drawList(); }
+  var h = '<div class="lp" data-lp="record"><div style="display:flex;gap:10px;align-items:center"><h2 style="flex:1">' + (x.side === 'receive' ? '💰 ' : '💵 ') + money(x.amount) + ' — ' + esc(x.party) + '</h2><button type="button" class="b" data-lp="list">← All payments</button> <button type="button" class="b" data-lp="close">✕</button></div>' +
+    '<div class="sub">' + esc(x.date) + ' · ' + esc(methodText(x.method)) + (x.checkNo ? ' #' + esc(x.checkNo) : '') + (x.ref ? ' · ' + esc(x.ref) : '') + (x.stmtNo ? ' · statement ' + esc(x.stmtNo) : '') + ' · by ' + esc(x.by) + (x.voided ? ' · <b>undone</b> by ' + esc(x.voidedBy) + ' ' + esc(s(x.voidedAt).slice(0, 10)) : '') + '</div>' +
+    (x.note ? '<p>' + esc(x.note) + '</p>' : '') + (x.file && x.file.ref ? '<p><button type="button" class="b" data-lp="file-open">📄 ' + esc(x.file.name || 'Statement') + '</button></p>' : '') +
+    '<div style="overflow-x:auto"><table><thead><tr><th>Job</th><th>Invoice #</th><th>QB #</th><th>Invoice date</th><th class="n">Invoice</th><th class="n">Applied</th><th>Now</th></tr></thead><tbody>' +
+    arr(x.applied).map(function(a){ var p = proj(a.pid) || {}; return '<tr><td>' + esc(a.job || p.name || '—') + (a.po ? ' · ' + esc(a.po) : '') + '</td><td>' + esc(a.invNum || a.invId) + '</td><td>' + esc(a.qbNum || '') + '</td><td>' + esc(a.invDate || '') + '</td><td class="n">' + money(a.invAmount) + '</td><td class="n">' + money(a.amount) + '</td><td>' + (a.full ? 'paid' : 'partial — ' + money(a.openAfter) + ' still open') + '</td></tr>'; }).join('') +
+    '</tbody></table></div>' + (x.credit > 0 ? '<p class="warnbox">' + money(x.credit) + ' was not applied — kept as a credit / unapplied.</p>' : '') +
+    (x.statementInvId ? '<p class="sub">Statement bill ' + esc(x.statementInvId) + ' was set aside (not counted as a cost).</p>' : '') +
+    (!x.voided ? '<div class="row"><button type="button" class="b" data-lp="undo" data-lid="' + esc(x.id) + '">↩ Undo this payment</button><span class="msg bad" data-lp="msg"></span></div>' : '') + '</div>';
+  UI.ov.innerHTML = h;
+}
+function onClick(e){
+  var t = e.target, a = t && t.getAttribute ? t.getAttribute('data-lp') : null, u = UI;
+  if (t === u.ov || a === 'close') { u.ov.remove(); UI = null; return; }
+  if (!a) return;
+  var tr = t.closest ? t.closest('tr') : null;
+  if (a === 'side') { u.side = t.getAttribute('data-v'); u.party = ''; u.sel = {}; u.job = ''; u.statementInvId = ''; draw(); return; }
+  if (a === 'list') { u.view = 'list'; refresh().then(function(){ if (UI === u && u.view === 'list') draw(); }); draw(); return; }
+  if (a === 'new') { u.view = 'new'; draw(); return; }
+  if (a === 'show') { u.view = 'show'; u.showId = tr.getAttribute('data-lid'); draw(); return; }
+  if (a === 'file-open') { var x = list().filter(function(r){ return r.id === u.showId; })[0]; try { if (x && x.file && typeof W._gcOpenRef === 'function') W._gcOpenRef(x.file.ref, x.file.name); } catch (er) {} return; }
+  if (a === 'undo') {
+    if (!W.confirm('Undo this payment? Each invoice it paid goes back to what it was.')) return;
+    var r = undo(t.getAttribute('data-lid'));
+    if (!r.ok) { var m = u.ov.querySelector('[data-lp="msg"]'); if (m) m.textContent = r.error; return; }
+    toast('↩ Payment undone — ' + r.restored + ' invoice(s) put back.'); ST(draw, 50); return;
+  }
+  if (a === 'auto') { autoApply(); return; }
+  if (a === 'clear') { u.sel = {}; draw(); return; }
+  if (a === 'all') { rowsFor().forEach(function(x){ u.sel[x.id] = x.open; }); draw(); return; }
+  if (a === 'tick') {
+    var id = tr.getAttribute('data-id'), row = rowsFor().filter(function(x){ return x.id === id; })[0]; if (!row) return;
+    if (t.checked) { var room = c(u.amount) - c(tot()); u.sel[id] = room > 0 && room < c(row.open) ? room / 100 : row.open; } else delete u.sel[id];
+    draw(); return;
+  }
+  if (a === 'save') { doSave(); return; }
+}
+function onInput(e){
+  var t = e.target, a = t.getAttribute && t.getAttribute('data-lp'), u = UI; if (!a) return;
+  if (a === 'amount') { u.amount = t.value === '' ? '' : r2(t.value); u.msg = ''; repaintSum(); return; }
+  if (a === 'ap') {
+    var tr = t.closest('tr'), id = tr.getAttribute('data-id'), row = rowsFor().filter(function(x){ return x.id === id; })[0], v = s(t.value);
+    if (v === '') delete u.sel[id]; else u.sel[id] = r2(v);
+    u.msg = row && c(v) > c(row.open) ? (invNo(row.inv) || id) + ': more than its open ' + money(row.open) : '';
+    tr.className = id in u.sel ? 'on' : ''; var ck = tr.querySelector('[data-lp="tick"]'); if (ck) ck.checked = id in u.sel; repaintSum(); return;
+  }
+  if (/^(checkNo|ref|stmtNo|note)$/.test(a)) { u[a] = t.value; return; }
+}
+function onChange(e){
+  var t = e.target, a = t.getAttribute && t.getAttribute('data-lp'), u = UI; if (!a) return;
+  if (a === 'party') { u.party = t.value; u.sel = {}; u.job = ''; draw(); return; }
+  if (a === 'from' || a === 'to' || a === 'job') { u[a] = t.value; var keep = {}; rowsFor().forEach(function(x){ if (x.id in u.sel) keep[x.id] = u.sel[x.id]; }); u.sel = keep; draw(); return; }
+  if (a === 'date' || a === 'method') { u[a] = t.value; return; }
+  if (a === 'credit') { u.credit = t.checked; repaintSum(); return; }
+  if (a === 'file') { u.fileObj = t.files && t.files[0] || null; return; }
+}
+function doSave(){
+  var u = UI, btn = u.ov.querySelector('[data-lp="save"]'); if (btn) btn.disabled = true;
+  var lines = Object.keys(u.sel).map(function(id){ return { invId: id, amount: u.sel[id] }; });
+  var go = function(file){
+    var r = save({ side: u.side, party: u.party, amount: u.amount, date: u.date, method: u.method, checkNo: u.checkNo, ref: u.ref, stmtNo: u.stmtNo, note: u.note, file: file, lines: lines, keepCredit: u.credit, statementInvId: u.statementInvId });
+    if (!r.ok) { u.msg = r.error; repaintSum(); return; }
+    toast('✓ ' + money(u.amount) + ' saved — ' + r.record.applied.length + ' invoice(s) marked ' + (r.record.applied.every(function(x){ return x.full; }) ? 'paid' : 'paid / partly paid') + '.');
+    u.view = 'show'; u.showId = r.id; u.sel = {}; u.statementInvId = ''; ST(draw, 60);
+  };
+  var f = u.fileObj;
+  if (f && typeof W._gcStoreFile === 'function') Promise.resolve(W._gcStoreFile(f, { name: f.name })).then(function(m){ go(m && m.ref ? { ref: m.ref, name: s(m.name || f.name), type: s(m.type), size: m.size || 0 } : null); }, function(){ go(null); });
+  else go(null);
+}
+function toast(msg){ try { var t = D.createElement('div'); t.setAttribute('data-gc-keep', '1'); t.textContent = msg; t.style.cssText = 'position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:#16a34a;color:#fff;padding:11px 18px;border-radius:10px;z-index:2147483200;font:700 14px Inter,Arial,sans-serif;max-width:90vw;text-align:center'; D.body.appendChild(t); ST(function(){ try { t.remove(); } catch (e) {} }, 3600); } catch (e) {} }
+
+/* ═════════════ the buttons (Invoices / Sub Invoices, Accounting) + the statement flag ═════════════ */
+function flagSheet(){
+  var F = dupStatements(invoices()); css();
+  var old = D.getElementById('gc-lump'); if (old) old.remove();
+  var ov = D.createElement('div'); ov.id = 'gc-lump'; ov.setAttribute('data-gc-keep', '1');
+  ov.innerHTML = '<div class="lp"><div style="display:flex;gap:10px;align-items:center"><h2 style="flex:1">⚠ Bills that look like a monthly statement</h2><button type="button" class="b" data-lp="close">✕</button></div>' +
+    '<div class="sub">Each of these equals bills already in the CRM for the same vendor — counting both would put the cost on the books twice.</div>' +
+    (F.length ? F.map(function(f){ var r = f.inv; return '<div class="warnbox" data-sid="' + esc(f.id) + '"><b>' + esc(f.party) + ' — ' + esc(invNo(r) || r.id) + ' — ' + money(f.amount) + '</b> (' + esc(invDay(r)) + (r.pid ? ', on ' + esc((proj(r.pid) || {}).name || r.pid) : ', no job') + ')<div class="sub">' + esc(f.why) + '</div>' +
+      '<div class="row" style="margin:6px 0 0"><button type="button" class="b pri" data-lp="stmt">🔗 This is a statement for several jobs</button><button type="button" class="b" data-lp="notstmt">It is a real separate bill</button></div></div>'; }).join('') : '<p class="sub">Nothing flagged.</p>') + '</div>';
+  ov.addEventListener('click', function(e){
+    var t = e.target, a = t.getAttribute && t.getAttribute('data-lp');
+    if (t === ov || a === 'close') { ov.remove(); return; }
+    var box = t.closest && t.closest('[data-sid]'); if (!box) return; var id = box.getAttribute('data-sid'), f = F.filter(function(x){ return x.id === id; })[0]; if (!f) return;
+    if (a === 'stmt') { ov.remove(); openStatement(id); }
+    if (a === 'notstmt') { if (!canUse()) return; setInv(function(L){ return L.map(function(r){ return r && r.id === id ? Object.assign({}, r, { notStatement: true, updatedAt: nowIso() }) : r; }); }); box.remove(); }
+  });
+  D.body.appendChild(ov);
+}
+function openStatement(invId){
+  var r = invoices().filter(function(x){ return x.id === invId; })[0]; if (!r) return { ok: false };
+  var f = dupStatements(invoices()).filter(function(x){ return x.id === invId; })[0];
+  open({ side: 'pay', party: partyOf(r), amount: amtOf(r), stmtNo: invNo(r), ref: 'Statement ' + (invNo(r) || ''), statementInvId: invId });
+  if (f && UI) { f.jobs.forEach(function(id){ var x = invoices().filter(function(y){ return y.id === id; })[0]; if (x) UI.sel[id] = openOf(x); }); draw(); }
+  return { ok: true };
+}
+function bar(){
+  var b = D.createElement('div'); b.className = 'gc-lumpbar'; b.setAttribute('data-gc-keep', '1');
+  b.innerHTML = '<button type="button" data-lump="pay">💵 Pay several invoices at once</button><button type="button" data-lump="receive">💰 Record one payment for several invoices</button><button type="button" data-lump="list">🗂 Lump-sum payments</button><button type="button" class="flag" data-lump="flags" style="display:none"></button>';
+  return b;
+}
+var FLAGN = -1, FSIG = '', FN = 0;
+/* the flag is worked out again only when the bills change */
+function flagCount(){
+  var I = invoices(), sig = I.length + '|' + I.reduce(function(a, r){ return a + (isBill(r) && isOpen(r) ? c(openOf(r)) + s(r.id).length : 0); }, 0) + '|' + I.filter(function(r){ return r.notStatement; }).length;
+  if (sig !== FSIG) { FSIG = sig; FN = dupStatements(I).length; }
+  return FN;
+}
+function paint(){
+  try {
+    if (!canUse()) { [].forEach.call(D.querySelectorAll('.gc-lumpbar'), function(x){ x.remove(); }); return; }
+    var hosts = [];
+    /* the Invoices page (Sub Invoices / Supplier invoices / client invoices tabs) */
+    [].forEach.call(D.querySelectorAll('h1'), function(h){ if (s(h.textContent) === 'Invoices') { var p = h.nextElementSibling; if (p && /PO# required/.test(p.textContent)) hosts.push(h.parentElement.parentElement); } });
+    /* Accounting (the expense center tab row) */
+    var tab = D.querySelector('.gc-exc-tab'); if (tab && tab.parentElement) hosts.push(tab.parentElement);
+    hosts.forEach(function(h){
+      if (!h || !h.parentElement) return;
+      var nx = h.nextElementSibling; if (nx && nx.classList && nx.classList.contains('gc-lumpbar')) return;
+      h.parentElement.insertBefore(bar(), h.nextSibling);
+    });
+    var n = D.querySelector('.gc-lumpbar') ? flagCount() : 0;
+    { FLAGN = n; [].forEach.call(D.querySelectorAll('.gc-lumpbar [data-lump="flags"]'), function(b){ b.style.display = n ? '' : 'none'; b.textContent = '⚠ ' + n + ' bill' + (n === 1 ? '' : 's') + ' look like a statement for several jobs'; }); }
+  } catch (e) {}
+}
+D.addEventListener('click', function(e){
+  var t = e.target && e.target.closest ? e.target.closest('[data-lump]') : null; if (!t) return;
+  var k = t.getAttribute('data-lump');
+  if (k === 'pay' || k === 'receive') open({ side: k, party: t.getAttribute('data-party') || '' });
+  else if (k === 'list') open({ view: 'list' });
+  else if (k === 'flags') flagSheet();
+  else if (k === 'stmt') openStatement(t.getAttribute('data-inv'));
+});
+SI(paint, 2000); ST(paint, 900); ST(refresh, 9000);
+
+W._gcLumpSum = { open: open, openStatement: openStatement, flags: flagSheet, save: save, undo: undo, list: list, refresh: refresh, applyQb: applyQb, canUse: canUse, paint: paint,
+  core: { allocate: allocate, openOf: openOf, isOpen: isOpen, dupStatements: dupStatements, sameParty: sameParty, normParty: normParty, partyOf: partyOf } };
+try { console.log('[GC] patch LUMPSUM: 💵 pay several invoices at once / 💰 one payment for several invoices — _gcLumpSum.open({side:"pay"|"receive"})'); } catch (e) {}
+})(window, document);
 </script>
