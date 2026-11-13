@@ -231472,6 +231472,7 @@ function undo(batchId){
         l[i] = x; ch[u.list] = true; n.restored++;
       });
       var saves = []; Object.keys(ch).forEach(function(k){ saves.push(saveList(k, lists[k], 'QuickBooks import undone')); });
+      if (arr(b.created && b.created.projectDocs).length) saves.push(docsGet().then(function(docs){ var gone = {}; b.created.projectDocs.forEach(function(id){ gone[id] = 1; }); var l2 = docs.filter(function(d){ return !(d && gone[s(d.id)] && s(d.importId) === b.id); }); n.removed += docs.length - l2.length; return l2.length !== docs.length ? docsSave(l2) : null; }));
       b.undone = nowIso(); b.undoneBy = myName();
       return Promise.all(saves).then(function(){ return saveBatch(b); }).then(function(){ return Object.assign({ ok: true }, n); });
     });
@@ -231578,9 +231579,36 @@ function openImport(src, name, opts){
         (paused() ? '<br>⏸ Data-entry mode is on — this only records history in the CRM; nothing is sent to QuickBooks or anyone.' : ' Nothing is ever sent to QuickBooks or to anyone.') + '</div></div>' +
         '<button class="qbc-btn" data-x title="Close">✕</button></div>' +
         '<div class="qbc-chips" data-chips></div><div class="qbc-wrap"><table class="qbc-tbl"><thead><tr><th></th><th>Date</th><th>Type</th><th>#</th><th>Name</th><th>Memo</th><th style="text-align:right">Amount</th><th style="min-width:230px">Job</th><th>What happens</th></tr></thead><tbody data-body></tbody></table></div>' +
+        '<div class="qbc-sub" data-qbpdf style="margin:10px 0 0"></div>' +
         '<div style="display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap"><button class="qbc-btn qbc-go" data-go></button><button class="qbc-btn" data-x>Cancel</button>' +
         '<span class="qbc-sub" style="margin:0" data-note></span></div>';
       jobDatalist(card);
+      /* 📎 QuickBooks PDFs (read-only link) */
+      var pdfBar = card.querySelector('[data-qbpdf]');
+      function paintPdf(){
+        var need = rows.filter(function(r){ return r.action === 'new' && !r.pid && r.rec.side !== 'skip'; }).length;
+        pdfBar.innerHTML = tok() ? '<label style="font-weight:700;color:#0f172a"><input type="checkbox" data-pdfon checked> 📎 Also get each row\'s PDF from QuickBooks</label> (read-only — put on the record and the job\'s documents, once)' +
+            (need ? ' <button type="button" class="qbc-btn qbc-blue" data-findjobs style="padding:5px 10px;font-size:12.5px">🔎 Find jobs for the ' + need + ' row' + (need === 1 ? '' : 's') + ' with none from QuickBooks (memo, line customer, PDF)</button>' : '') + ' <span data-pdfmsg></span>'
+          : linkHtml('the PDFs and memos');
+      }
+      paintPdf();
+      pdfBar.addEventListener('click', function(e){
+        var b = e.target.closest('button'); if (!b) return;
+        if (b.hasAttribute('data-qbconnect')) { connect(function(){ paintPdf(); }); return; }
+        if (b.hasAttribute('data-findjobs')) {
+          var need = rows.filter(function(r){ return r.action === 'new' && !r.pid && r.rec.side !== 'skip'; }), msgE = pdfBar.querySelector('[data-pdfmsg]');
+          b.disabled = true;
+          var items = need.map(function(r, k){ return { key: 'r' + r.i, kind: r.rec.kind, id: r.rec.qbId, num: r.rec.num, date: r.rec.date, amount: Math.abs(r.rec.amount), name: r.rec.name, files: true, text: true }; });
+          lookupAll(items, function(i, n){ msgE.textContent = 'Asking QuickBooks… ' + i + ' / ' + n; }).then(function(res){
+            var found = 0;
+            need.forEach(function(r){ var x = res.results['r' + r.i]; if (!x || !x.ok) return; r.qbFiles = x.files; r.rec.qbId = r.rec.qbId || x.id;
+              var m = C.matchJob({ memo: r.rec.memo || x.memo, desc: r.rec.desc, cust: r.rec.cust, klass: r.rec.klass, side: r.rec.side, name: r.rec.name, text: [x.memo, x.text].join('\n'), lines: arr(x.lines).map(function(l){ return { memo: l.desc, cust: l.customer, klass: l.cls }; }) }, { jobs: ctx.jobs, memoMap: ctx.memoMap });
+              if (m.pid) { found++; r.match = m; r.pid = m.pid; C.decide(r, m.pid, ctx); } else if (m.cands && m.cands.length) r.match = m; });
+            paint(); paintPdf();
+            var m2 = pdfBar.querySelector('[data-pdfmsg]'); if (m2) m2.textContent = res.stop ? '⚠ ' + s(res.stop.error) : '✓ ' + found + ' found a job from QuickBooks';
+          });
+        }
+      });
       var body = card.querySelector('[data-body]'), chips = card.querySelector('[data-chips]'), go = card.querySelector('[data-go]');
       Array.prototype.forEach.call(card.querySelectorAll('[data-x]'), function(b){ b.onclick = function(){ close(); }; });
       function rowHtml(r){
@@ -231635,14 +231663,33 @@ function openImport(src, name, opts){
       });
       go.onclick = function(){
         go.disabled = true; go.textContent = 'Saving…';
-        apply(rows, { file: fname, what: 'QuickBooks CSV import (' + fname + ')' }).then(function(out){ W._gcQbLastImport = out; summary(out); }, function(e){ go.disabled = false; go.textContent = 'Import'; W.alert('The import did not save: ' + s(e && e.message || e)); });
+        var wantPdf = !!(tok() && pdfBar.querySelector('[data-pdfon]') && pdfBar.querySelector('[data-pdfon]').checked);
+        apply(rows, { file: fname, what: 'QuickBooks CSV import (' + fname + ')' }).then(function(out){ W._gcQbLastImport = out; summary(out); if (wantPdf) pdfsAfter(out); }, function(e){ go.disabled = false; go.textContent = 'Import'; W.alert('The import did not save: ' + s(e && e.message || e)); });
       };
       paint();
+    }
+    /* after the import: each imported row's QuickBooks PDFs onto its record + the job's documents */
+    function pdfsAfter(out){
+      var box = card.querySelector('[data-pdfprog]'); if (!box) return;
+      var pairs = [], items = [];
+      W._gcQbLastImportPlan.rows.forEach(function(r){
+        if (!r.include || r.action === 'skip' || r.action === 'dup' || r.action === 'same') return;
+        var h = C.madeId(r, out.importId).slice(4), list, id;
+        if (r.action === 'new') { list = /^(expense|credit)$/.test(r.make) ? 'expenses' : 'invs'; id = list === 'expenses' ? 'QBX-' + h : 'INVQ' + h; }
+        else if (r.target && r.action === 'update') { list = r.list || 'invs'; id = s(r.target.id); } else return;
+        if (r.qbFiles) { pairs.push({ list: list, id: id, files: r.qbFiles }); return; }
+        items.push({ key: list + '|' + id, kind: r.rec.kind, id: r.rec.qbId, num: r.rec.num, date: r.rec.date, amount: Math.abs(r.rec.amount), name: r.rec.name, files: true });
+      });
+      box.textContent = '📎 Getting the PDFs from QuickBooks… 0 / ' + items.length;
+      lookupAll(items, function(i, n){ box.textContent = '📎 Getting the PDFs from QuickBooks… ' + i + ' / ' + n; }).then(function(res){
+        Object.keys(res.results).forEach(function(k){ var x = res.results[k]; if (x && x.ok && arr(x.files).some(function(f){ return f.ref; })) { var p2 = k.split('|'); pairs.push({ list: p2[0], id: p2.slice(1).join('|'), files: x.files.filter(function(f){ return f.ref; }) }); } });
+        return attachFiles(pairs, out.importId).then(function(n){ box.textContent = '📎 ' + n + ' PDF' + (n === 1 ? '' : 's') + ' from QuickBooks attached (records + job documents)' + (res.stop ? ' — stopped: ' + s(res.stop.error) : '') + '.'; });
+      }, function(e){ box.textContent = '📎 PDFs not fetched: ' + s(e && e.message || e); });
     }
     function summary(out){
       card.innerHTML = '<h2>✓ Imported</h2><div style="font-size:17px;line-height:1.7;margin:8px 0 14px"><b>' + out.added + '</b> added to <b>' + out.jobCount + '</b> job' + (out.jobCount === 1 ? '' : 's') +
         ' · <b>' + out.updated + '</b> updated' + (out.linked ? ' (' + out.linked + ' got their job)' : '') + ' · <b>' + (out.same + out.dup) + '</b> already in the CRM (skipped) · <b>' + out.left + '</b> left out' + (out.conflicts ? ' · ⚠ ' + out.conflicts + ' with a QuickBooks difference (the CRM value was kept)' : '') + '</div>' +
-        '<div class="qbc-sub">The jobs\' P&L shows them now. Rows with no job: 💎 → 🔗 QuickBooks ↔ CRM. Importing the same file again never adds them twice — it only updates what changed.</div>' +
+        '<div class="qbc-sub">The jobs\' P&L shows them now. Rows with no job: 💎 → 🔗 QuickBooks ↔ CRM. Importing the same file again never adds them twice — it only updates what changed.</div><div class="qbc-sub" data-pdfprog style="font-weight:700"></div>' +
         '<div style="display:flex;gap:10px;flex-wrap:wrap"><button class="qbc-btn qbc-red" data-undo style="font-size:15px;padding:12px 18px">↩ Undo this import</button><button class="qbc-btn qbc-blue" data-chk>🔗 QuickBooks ↔ CRM</button><button class="qbc-btn" data-x>Close</button></div>';
       card.querySelector('[data-x]').onclick = function(){ close(out); };
       card.querySelector('[data-chk]').onclick = function(){ close(out); openCheck(); };
@@ -231651,7 +231698,7 @@ function openImport(src, name, opts){
     }
   });
 }
-W._gcQbCsvImport = { open: openImport, apply: apply, undo: undo, isSheet: isSheet, read: readSource };
+W._gcQbCsvImport = { open: openImport, apply: apply, undo: undo, isSheet: isSheet, read: readSource, memo: MEMO };
 
 /* ════════════════════ 4. 🔗 QUICKBOOKS ↔ CRM (and the backfill of the bills with no job) ════════════════════ */
 function descTail(x){ var d = s(x.desc), i = d.indexOf(' — '); return i >= 0 ? d.slice(i + 3) : d.replace(/^(Sub Invoice:\s*)?QuickBooks [a-z ]*(#\s*\S+)?\s*/i, ''); }
@@ -231686,11 +231733,43 @@ function openCheck(){
     W._gcQbCheckItems = items;
     card.innerHTML = '<div style="display:flex;justify-content:space-between;gap:10px"><div><h2>🔗 QuickBooks ↔ CRM</h2><div class="qbc-sub">Every record that came from QuickBooks, with its QuickBooks number. <b>' + noJob.length + '</b> have no job: the CRM read their memo / description and suggests one — check the <b>Job</b> column, tick the ones to put on their job, then press the green button. History stays history: nothing is sent, no reminders.</div></div><button class="qbc-btn" data-x>✕</button></div>' +
       '<div class="qbc-chips"><button class="qbc-chip" data-f="nojob">No job ' + noJob.length + '</button><button class="qbc-chip" data-f="sug">Has a suggestion ' + noJob.filter(function(it){ return it.match && it.match.pid; }).length + '</button><button class="qbc-chip" data-f="all">All ' + items.length + '</button>' +
-      '<input data-q placeholder="Search: QB #, name, memo, amount…" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:999px;min-width:220px"></div>' +
+      '<input data-q placeholder="Search: QB #, name, memo, amount…" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:999px;min-width:220px"></div><div class="qbc-sub" data-qbpdf style="margin:0 0 8px"></div>' +
       '<div class="qbc-wrap"><table class="qbc-tbl"><thead><tr><th><input type="checkbox" data-all title="Tick all shown"></th><th>QB #</th><th>Date</th><th>Kind</th><th>Name</th><th>Memo / description</th><th style="text-align:right">Amount</th><th style="min-width:240px">Job</th></tr></thead><tbody data-body></tbody></table></div>' +
       '<div style="display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap"><button class="qbc-btn qbc-go" data-go></button><button class="qbc-btn" data-csv>⬇ Download CSV</button><button class="qbc-btn" data-x>Close</button><span class="qbc-sub" style="margin:0" data-note></span></div>';
     jobDatalist(card);
-    var body = card.querySelector('[data-body]'), go = card.querySelector('[data-go]'), qbox = card.querySelector('[data-q]');
+    var body = card.querySelector('[data-body]'), go = card.querySelector('[data-go]'), qbox = card.querySelector('[data-q]'), pbar = card.querySelector('[data-qbpdf]');
+    function noFile(it){ return !arr(it.x.files).some(function(f){ return f && f.ref; }) && !s(it.x.fileData); }
+    function paintBar(){
+      var nj = items.filter(function(it){ return !it.had && !it.looked; }).length, nf = items.filter(noFile).length;
+      pbar.innerHTML = tok() ? (nj ? '<button type="button" class="qbc-btn qbc-blue" data-look style="padding:6px 11px;font-size:13px">🔎 Look up the ' + nj + ' with no job in QuickBooks (memo, line customer, PDF)</button> ' : '') +
+        (nf ? '<button type="button" class="qbc-btn" data-pdfs style="padding:6px 11px;font-size:13px">📎 Get the missing PDFs from QuickBooks (' + nf + ')</button> ' : '') + '<span data-pmsg></span>' : linkHtml('memos and PDFs');
+    }
+    paintBar();
+    pbar.addEventListener('click', function(e){
+      var b = e.target.closest('button'); if (!b) return; var msgE = pbar.querySelector('[data-pmsg]');
+      if (b.hasAttribute('data-qbconnect')) { connect(function(){ paintBar(); }); return; }
+      if (b.hasAttribute('data-look')) {
+        var L = items.filter(function(it){ return !it.had && !it.looked; }); b.disabled = true;
+        lookupAll(L.map(function(it){ return Object.assign(itemFor(it.x, 'i' + it.i), { text: true, files: true }); }), function(i, n){ msgE.textContent = 'Asking QuickBooks… ' + i + ' / ' + n; }).then(function(res){
+          var found = 0;
+          L.forEach(function(it){ var x = res.results['i' + it.i]; if (!x) return; it.looked = true; if (!x.ok) return; it.look = x;
+            var inp = recInput(it.x); inp.memo = x.memo || inp.memo; inp.text = x.text; inp.lines = arr(x.lines).map(function(l){ return { memo: l.desc, cust: l.customer, klass: l.cls }; }).concat(inp.lines);
+            var m = C.matchJob(inp, { jobs: ctx.jobs, memoMap: ctx.memoMap }); it.match = m; if (m.pid) { it.pid = m.pid; it.include = m.conf >= 85; found++; } });
+          paint(); paintBar(); var m3 = pbar.querySelector('[data-pmsg]'); if (m3) m3.textContent = res.stop ? '⚠ ' + s(res.stop.error) : '✓ ' + found + ' got a suggested job from QuickBooks';
+        });
+        return;
+      }
+      if (b.hasAttribute('data-pdfs')) {
+        var F2 = items.filter(noFile); b.disabled = true;
+        lookupAll(F2.map(function(it){ return Object.assign(itemFor(it.x, it.list + '|' + s(it.x.id)), { files: true }); }), function(i, n){ msgE.textContent = '📎 ' + i + ' / ' + n + ' (QuickBooks allows a few hundred a minute — this goes slowly on purpose)'; }).then(function(res){
+          var pairs = Object.keys(res.results).map(function(k){ var x = res.results[k], p2 = k.split('|'); return x && x.ok ? { list: p2[0], id: p2.slice(1).join('|'), files: arr(x.files).filter(function(f){ return f.ref; }) } : null; }).filter(function(p){ return p && p.files.length; });
+          var bid = 'QBF' + Date.now().toString(36);
+          return saveBatch({ id: bid, at: nowIso(), by: myName(), what: 'QuickBooks PDFs', created: { invs: [], expenses: [], projectDocs: [] }, updated: [] }).then(function(){ return attachFiles(pairs, bid); }).then(function(n){ msgE.innerHTML = '✓ ' + n + ' PDF' + (n === 1 ? '' : 's') + ' attached' + (res.stop ? ' — stopped: ' + esc(res.stop.error) : '') + ' <button type="button" class="qbc-btn" data-undopdf="' + bid + '" style="padding:4px 9px;font-size:12px">↩ Undo</button>'; });
+        });
+        return;
+      }
+      if (b.hasAttribute('data-undopdf')) { b.disabled = true; undo(b.getAttribute('data-undopdf')).then(function(r){ b.textContent = r.ok ? '✓ Undone' : '✕'; }); }
+    });
     Array.prototype.forEach.call(card.querySelectorAll('[data-x]'), function(b){ b.onclick = function(){ ov.remove(); }; });
     function vis(){
       var q = low(qbox.value), qn = C.qbSearchNum(qbox.value);
@@ -231731,8 +231810,12 @@ function openCheck(){
     go.onclick = function(){
       var list = todo(); if (!list.length) return;
       go.disabled = true; go.textContent = 'Saving…';
-      var rows = list.map(function(it){ return { action: 'update', include: true, picked: true, list: it.list, target: it.x, set: { pid: it.pid }, match: it.match, rec: { memo: recInput(it.x).memo, side: isClientRec(it.x) ? 'income' : 'cost' }, pid: it.pid }; });
+      var rows = list.map(function(it){ var set = { pid: it.pid }, lk = it.look; if (lk && lk.ok) { if (lk.memo) set.qbMemo = lk.memo; if (lk.id) set.qbId = lk.id; if (arr(lk.lines).length) set.qbLines = lk.lines.slice(0, 40).map(function(l){ return { desc: s(l.desc).slice(0, 300), customer: s(l.customer), cls: s(l.cls), account: s(l.account), amount: r2(l.amount) }; }); }
+        return { action: 'update', include: true, picked: true, list: it.list, target: it.x, set: set, match: it.match, rec: { memo: (lk && lk.memo) || recInput(it.x).memo, side: isClientRec(it.x) ? 'income' : 'cost' }, pid: it.pid }; });
       apply(rows, { what: 'QuickBooks ↔ CRM — jobs' }).then(function(out){
+        var pf = list.filter(function(it){ return it.look && arr(it.look.files).some(function(f){ return f.ref; }); }).map(function(it){ return { list: it.list, id: s(it.x.id), files: it.look.files.filter(function(f){ return f.ref; }) }; });
+        return (pf.length ? attachFiles(pf, out.importId) : Promise.resolve(0)).then(function(){ return out; });
+      }).then(function(out){
         card.innerHTML = '<h2>✓ ' + out.updated + ' QuickBooks record' + (out.updated === 1 ? '' : 's') + ' put on ' + out.jobCount + ' job' + (out.jobCount === 1 ? '' : 's') + '</h2><div class="qbc-sub">Bills got their job cost row, so the jobs\' P&L shows them. The memos are remembered for the next import.</div>' +
           '<div style="display:flex;gap:10px"><button class="qbc-btn qbc-red" data-undo>↩ Undo</button><button class="qbc-btn qbc-blue" data-again>Back to the list</button><button class="qbc-btn" data-x>Close</button></div>';
         card.querySelector('[data-x]').onclick = function(){ ov.remove(); };
