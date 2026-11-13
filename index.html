@@ -5496,7 +5496,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.247-2026-11-13-r34z -->
+<!-- GrayCo CRM Build: 33.247-2026-11-13-r34z1 -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6445,7 +6445,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.247-2026-11-13-r34z");
+  console.log("[GC] Build 33.247-2026-11-13-r34z1");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6493,7 +6493,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.247-2026-11-13-r34z"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.247-2026-11-13-r34z1"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -208711,8 +208711,12 @@ function deskRender(force){
   if (keep) { var b2 = el.querySelector('.ra-body'); if (b2) b2.scrollTop = keep; }
 }
 function curView(){ return lsGet('grayco_view') || ''; }
+/* patch OFFICEDESK (owner 11/13: "Brittany's home page looks like it's the field view — change it back to desk view ASAP"): on a
+   computer the Office role gets the regular CRM (Dashboard + the left menu), not the role-app home card screen. Her phone keeps
+   GrayCo Field. An admin's 👁 View as… Office still previews the role home. */
+function noDeskApp(a){ return a === 'office' && !vas(); }
 function deskOpen(){
-  var a = app(); if (!a || mode(a) !== 'desk') return false;
+  var a = app(); if (!a || mode(a) !== 'desk' || noDeskApp(a)) return false;
   css(); closeSheets(); DESK.view = curView();
   var el = deskEl();
   if (!el) { el = D.createElement('div'); el.id = 'gc-ra-desk'; el.setAttribute('data-gc-keep', '1'); el.setAttribute('data-gcnav-ignore', '1'); D.body.appendChild(el); }
@@ -208730,7 +208734,7 @@ function deskHide(){
 }
 function deskRemove(){ DESK.shown = false; var el = deskEl(); if (el) el.remove(); var d = D.getElementById('gc-ra-dock'); if (d) d.remove(); D.documentElement.classList.remove('gc-ra-home', 'gc-ra-desk-on'); }
 function dockPaint(){
-  var a = app(), want = a && mode(a) === 'desk';
+  var a = app(), want = a && mode(a) === 'desk' && !noDeskApp(a);   /* patch OFFICEDESK */
   D.documentElement.classList.toggle('gc-ra-desk-on', !!want);
   var d = D.getElementById('gc-ra-dock');
   if (!want) { if (d) d.remove(); return; }
@@ -208839,7 +208843,8 @@ function sync(){
     if (a) last.seen = true;
     fieldBar(a); fieldInject(); crewDesk(a);
     /* the desk */
-    if (m === 'desk') {
+    if (m === 'desk' && noDeskApp(a)) { if (deskEl() || D.getElementById('gc-ra-dock')) { deskRemove(); try { if (typeof W._setView === 'function' && !curView()) W._setView('dashboard'); } catch (e) {} } }   /* patch OFFICEDESK */
+    else if (m === 'desk') {
       dockPaint();
       if (!DESK.readyAt) DESK.readyAt = Date.now();
       if (!DESK.auto && Date.now() - DESK.readyAt < 1500) { /* let the CRM settle on its first screen */ }
