@@ -223,10 +223,23 @@ function bidOnlySub(prof){
   return { id: bidSubId(prof.email), name: s(prof.company) || s(prof.name) || low(prof.email), company: s(prof.company), contact: s(prof.name), email: low(prof.email),
     phone: s(prof.phone), trade: arr(prof.trades).join(', '), lang: s(prof.lang), isSub: true, bidOnly: true };
 }
-/* subById, or (for an 'SBP…' id) the approved bid-site profile behind it */
+/* patch SUBSYNC (owner 11/12: "subs … we already have in the CRM — make sure we don't duplicate … make it merge"): the CRM sub a bid-site /
+   sub-portal account belongs to. The CRM merges a bid-site account into an existing sub by the shared matcher (/sub-match.js: e-mail,
+   phone, company name) so the Subs list never doubles — but the PORTAL (their jobs, invoices, pay) opens only on a link GrayCo made or
+   confirmed: crmSubId (Approved Subs → CRM record), the same e-mail as the CRM record (as before), or a merge an owner confirmed
+   ("🔗 Same sub?" → Merge: the record's bidPortalLinkVerified) — sign-up details are typed by the sub and not verified, so a matching
+   phone or company name alone never opens anyone's pay (the same rule as the bid site's myWork). */
+function crmSubOf(data, prof){
+  if (!prof || prof.role !== 'sub') return null;
+  const list = crmSubs(data), e = low(prof.email), alias = okEmail(e) ? bidSubId(e) : '';
+  return (s(prof.crmSubId) && subById(data, prof.crmSubId))
+    || list.find(function(r){ return r.bidPortalLinkVerified === true && ((s(prof.id) && s(r.bidPortalUserId) === s(prof.id)) || (alias && arr(r.portalAliases).indexOf(alias) > -1)); })
+    || (okEmail(e) ? list.find(function(r){ return low(r.email) === e; }) : null) || null;
+}
+/* subById, or (for an 'SBP…' id) the CRM sub that account was merged into, else the approved bid-site profile behind it */
 async function subResolve(data, id){
   const sub = subById(data, id); if (sub || !/^SBP/.test(s(id))) return sub;
-  try { const rows = await dbGet('sp_rows', 'select=data&collection=eq.users&limit=5000'); const prof = rows.map(function(r){ return r.data || {}; }).find(function(u){ return u.role === 'sub' && bidSubId(u.email) === s(id); }); return bidOnlySub(prof); }
+  try { const rows = await dbGet('sp_rows', 'select=data&collection=eq.users&limit=5000'); const prof = rows.map(function(r){ return r.data || {}; }).find(function(u){ return u.role === 'sub' && bidSubId(u.email) === s(id); }); return crmSubOf(data, prof) || bidOnlySub(prof); }
   catch (e) { throw (e && e.status) ? e : Fail(503, 'The portal cannot reach the database just now. Try again in a minute.'); }   /* patch SUBSESS: a hiccup is not "no such sub" (that signed subs out) */
 }
 /* patch SUBSESS: the sub behind a session / link, sure: not found in a cached or half-read copy of the CRM records → read them
@@ -579,7 +592,7 @@ async function customerMatch(data, id){
   return { kind: 'customer', links: live.map(function(x){ return x.token; }), pids: live.map(function(x){ return s(x.project_id); }), name: s(p0.client), email: low(p0.clientEmail || p0.email || c0.email), lang: 'en' };
 }
 async function partnerMatch(data, id){
-  const subs = crmSubs(data).filter(function(r){ return id.kind === 'email' ? low(r.email) === id.value : phone10(r.phone) === id.value; });
+  const subs = crmSubs(data).filter(function(r){ return id.kind === 'email' ? [r.email].concat(arr(r.altEmails)).map(low).indexOf(id.value) > -1 : [r.phone].concat(arr(r.altPhones)).map(phone10).indexOf(id.value) > -1; });   /* patch SUBSYNC: + the e-mail / phone their bid-site account brought (merged in as altEmails / altPhones) */
   for (const sub of subs) {
     const link = await subLinkActive(sub.id);
     if (link) return { kind: 'partner', sub: sub, links: [link.token], email: low(sub.email), lang: lang(sub.lang) };
@@ -698,7 +711,7 @@ async function subPasswordLogin(data, email, password){
   if (!ok) return null;
   let crmId = '', prof = null;
   try { const rows = await dbGet('sp_rows', 'select=data&collection=eq.users&email=' + eq(email)); prof = rows[0] && rows[0].data; if (prof && prof.role === 'sub') crmId = s(prof.crmSubId); } catch (e) {}
-  let sub = (crmId ? subById(data, crmId) : null) || crmSubs(data).find(function(r){ return low(r.email) === email; }) || null;
+  let sub = (crmId ? subById(data, crmId) : null) || crmSubOf(data, prof) || crmSubs(data).find(function(r){ return low(r.email) === email; }) || null;   /* patch SUBSYNC: + the merged / matched CRM sub */
   const approved = !!bidOnlySub(prof);
   if (!sub && approved) sub = bidOnlySub(prof);   /* BIDONLY: approved on the bid site, not in the CRM yet */
   if (!sub) return { noPortal: true };
@@ -1821,3 +1834,4 @@ exports._core = { msgInsert: function(){ return msgInsert.apply(null, arguments)
 /* LEGAL2-patch */
 exports._sched = { schedFor: schedFor, bidJobsFor: bidJobsFor };   /* patch VOICESCHED: tests · BIDLIST */
 exports._bids = { myBidOut: myBidOut, awardOut: awardOut };   /* patch BIDSCOPE: tests */
+exports._match = { crmSubOf: crmSubOf, subResolve: subResolve, partnerMatch: partnerMatch };   /* patch SUBSYNC: tests */
