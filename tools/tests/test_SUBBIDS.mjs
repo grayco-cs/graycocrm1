@@ -253,10 +253,12 @@ await t('BIDONLY: approved on the bid site, not in the CRM → e-mail + password
   yes(b.j.jobs.some(j => j.id === 'j_open' && j.plansLinks && j.plansLinks.length), 'sees the open job with its plan links');
   yes(!b.j.jobs.some(j => /DRAFT|PRIVATE-NOT|CLOSED|DELETED/.test(j.title)), 'never a hidden job');
 });
-await t('BIDONLY: wrong password → no; not approved yet → no portal', async () => {
+await t('BIDONLY: wrong password → no; not approved yet → no portal (patch SUBPEND: only the limited "waiting for approval" session)', async () => {
   eq((await pw('fay@freshframing.test', 'wrong-pass-9')).code, 401);
-  const r = await pw('gus@notyet.test', 'Right-Pass-1'); yes(r.code === 403 || r.code === 401, 'got ' + r.code + ' ' + JSON.stringify(r.j));
+  const r = await pw('gus@notyet.test', 'Right-Pass-1'); yes(r.code === 200 && r.j.kind === 'pending', 'got ' + r.code + ' ' + JSON.stringify(r.j));
   yes(!T.gc_sub_link.some(l => l.sub_id === 'SBPgusnotyettest'), 'no link for an unapproved sub');
+  const h = await PA.handler({ httpMethod: 'POST', headers: { origin: 'https://portal.test', 'x-portal-session': r.j.session, 'x-nf-client-connection-ip': '10.77.0.1' }, body: JSON.stringify({ action: 'p-home' }) });
+  eq(h.statusCode, 403, 'a pending session never opens the partner portal');
 });
 await t('BIDONLY: an approved sub who IS in the CRM but had no portal link gets one at sign-in', async () => {
   KV.vendors.push({ id: 'SH', name: 'Has Crm LLC', company: 'Has Crm LLC', email: 'hal@hascrm.test', isSub: true, trade: 'Paint' });
@@ -341,7 +343,8 @@ if (chromium) {
         if (fm[1] !== 'portal-access') { S.bad.push('404 fn ' + fm[1]); return r.fulfill({ status: 404, contentType: 'application/json', body: '{"ok":false}' }); }
         const resp = await PA.handler({ httpMethod: 'POST', headers: Object.assign({ origin: 'https://portal.test', 'x-nf-client-connection-ip': '10.9.' + (kind === 'phone' ? 1 : 2) + '.' + (++ipN % 250) }, r.request().headers()), body });
         S.calls.push(a + ':' + resp.statusCode);
-        if (resp.statusCode === 401 || resp.statusCode >= 500) S.bad.push(a + ' → ' + resp.statusCode + ' ' + String(resp.body).slice(0, 120));
+        if ((resp.statusCode === 401 && a !== 'signin-password') || resp.statusCode >= 500) S.bad.push(   /* patch SUBPEND: the sign-up's own sign-in right after register — the mocked register makes no real account, so it falls back to "Account created → Sign in" */
+          a + ' → ' + resp.statusCode + ' ' + String(resp.body).slice(0, 120));
         return r.fulfill({ status: resp.statusCode, contentType: 'application/json', body: resp.body });
       }
       const f = path.join(ROOT, u.pathname === '/' ? 'portal.html' : decodeURIComponent(u.pathname));

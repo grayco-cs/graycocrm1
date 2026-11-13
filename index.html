@@ -5496,7 +5496,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.247-2026-11-13-r34z1 -->
+<!-- GrayCo CRM Build: 33.247-2026-11-13-r35b -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6445,7 +6445,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.247-2026-11-13-r34z1");
+  console.log("[GC] Build 33.247-2026-11-13-r35b");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6493,7 +6493,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.247-2026-11-13-r34z1"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.247-2026-11-13-r35b"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -179054,6 +179054,7 @@ function TILES(){
     { g: 'Admin only', k: 'resend', ic: '📮', b: 'Resend', d: 'E-mail sent and received' },
     { g: 'Admin only', k: 'gadmin', ic: '🛡', b: 'Google Admin', d: 'GrayCo e-mail accounts' }
   ]);
+  if (adm || (W._gcIsOfficeFull && W._gcIsOfficeFull())) t.splice(3, 0, { g: 'Bids & subs', k: 'subacct', ic: '🔐', b: 'Sub portal accounts', d: 'Every sub sign-in: look up, reset passwords, turn off, delete' });   /* patch SUBACCT */
   t = t.filter(function(x){ return x.k === 'tv' || x.k === 'lobbyed' ? (W._gcTVFIX ? (x.k === 'tv' ? W._gcTVFIX.canTV() : W._gcTVFIX.canTV() && W._gcTVFIX.canLobby()) : x.k === 'tv' && !!(W._gcOTV && W._gcOTV.allowed())) : x.k === 'lobby' ? !!(W._gcLobbyAdmin && W._gcLobbyAdmin.canSee()) : true; });   /* patch OFFICETV: tiles */
   try { if (W._gcMitWS && W._gcMitWS.sysTiles) t = W._gcMitWS.sysTiles(t); } catch (e) { warn(e); }   /* patch MITWS: no RoofScout on Mitigation / Environmental; each company's TVs */
   if (W._gcIsMM && W._gcIsMM()) return t.filter(function(x){ return x.g === 'Website & marketing'; });   /* patch MM: the Marketing Manager — the marketing systems only */
@@ -179085,6 +179086,7 @@ function tile(k){
   if ((k === 'tv' || k === 'lobbyed') && W._gcTVFIX) { try { return k === 'tv' ? W._gcTVFIX.office() : W._gcTVFIX.lobby(); } catch (e) { warn(e); } }   /* patch TVFIX: systems tiles */
   if (k === 'tv') { try { if (W._gcA8 && W._gcA8.tv) return W._gcA8.tv(); } catch (e) { warn(e); } return toast('The office TV scoreboard is not loaded on this computer.', true); }
   if (k === 'health') { go('admin'); return toast('🩺 CRM health is in Admin.'); }
+  if (k === 'subacct') { try { if (W._gcSubAcct) return W._gcSubAcct.open(); } catch (e) { warn(e); } return toast('🔐 Sub portal accounts is in Admin → Admin settings.'); }   /* patch SUBACCT */
   if (k === 'archive') {
     var A5 = W._gcAuto5; if (!A5 || !A5.archive) return toast('The year-end archive is not loaded on this computer.', true);
     var ys = Object.keys((A5.years && A5.years()) || {}).sort(); var y = W.prompt('Year-end archive — which year?' + (ys.length ? ' (closed jobs in: ' + ys.join(', ') + ')' : ''), ys.length ? ys[ys.length - 1] : String(new Date().getFullYear() - 1));
@@ -223578,6 +223580,301 @@ function papersOnto(v, papers){
 W._gcBidSubs = { run: run, apply: apply, approved: approved, idOf: idOf, last: function(){ return Object.assign({}, LAST); }, papersOnto: papersOnto,
   same: function(){ return Object.keys(SAME).map(function(k){ return SAME[k]; }); }, decideSame: decideSame, matchSignup: matchSignup, aliasOf: aliasOf, decisions: function(){ return Object.assign({}, DEC); }, loadDecisions: loadDec };
 })(window);
+</script>
+<script id="gc-patch-subacct">
+/* __GC_PATCH_SUBACCT__ — 🔐 SUB PORTAL ACCOUNTS (owner 11/13: "make sure as admin I can look up all password logins and profiles and
+   reset passwords, delete accounts etc in sub portal, make sure I have a sub portal tab in systems or somewhere in CRM").
+   Admin → Admin settings → 🔐 Sub portal accounts (also: 🧭 Systems → 🔐 Sub portal accounts, Subs → Sub portal and
+   🏗 Bid portal → 🔐 Accounts). Every bid-site / sub-portal sign-in: company, contact, e-mail (the login), phone, trades, status
+   (⏳ pending / ✅ approved / ⛔ denied / 🔒 off), the CRM sub it belongs to, sub-portal link, last sign-in, created, papers.
+   Search + filters. A row opens the profile: contact fields (editable), 🔑 e-mail a reset link / set a temporary password (shown
+   ONCE), ✅ approve / ✕ deny, ⏸ turn sign-in off / ▶ on, 🔗 link to a CRM sub, 🔌 portal link on / off, 🚪 sign out everywhere,
+   🗑 delete (type the company name). Passwords are never readable — Supabase keeps only a hash. Owners change; the office looks.
+   Server: netlify/functions/sub-accounts.js (every change in the audit list at the bottom).
+   API: window._gcSubAcct = { open(), render(box), load(), state(), api(action, body) } */
+(function(W, D){
+'use strict';
+if (W.__GC_PATCH_SUBACCT__) return; W.__GC_PATCH_SUBACCT__ = true;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout, RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+var FN = '/.netlify/functions/sub-accounts';
+function later(f, ms){ return ST.call(W, f, ms || 0); }
+function s(v){ return (v == null ? '' : String(v)).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function when(v, time){ if (!v) return '—'; var d = new Date(v); if (isNaN(d)) return esc(v); return d.toLocaleString('en-US', time ? { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' } : { month: 'short', day: 'numeric', year: 'numeric' }); }
+function warn(e){ try { console.warn('[GC subacct]', e); } catch (x) {} }
+function toast(msg, bad){
+  try { var t = D.createElement('div'); t.setAttribute('data-gc-keep', '1'); t.setAttribute('data-sa-toast', '1'); t.textContent = msg;
+    t.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:2147483400;background:' + (bad ? '#b91c1c' : '#111827') + ';color:#fff;border-radius:10px;padding:10px 16px;font:600 13px Inter,Arial,sans-serif;box-shadow:0 8px 26px rgba(0,0,0,.35);max-width:calc(100vw - 32px)';
+    D.body.appendChild(t); later(function(){ try { t.remove(); } catch (e) {} }, 4500); } catch (e) {}
+}
+function copy(text){
+  try { if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(text).then(function(){ return true; }, function(){ return legacy(); }); } catch (e) {}
+  return Promise.resolve(legacy());
+  function legacy(){ try { var ta = D.createElement('textarea'); ta.value = text; ta.style.cssText = 'position:fixed;left:-9999px'; D.body.appendChild(ta); ta.select(); var ok = D.execCommand('copy'); ta.remove(); return ok; } catch (e) { return false; } }
+}
+function token(){
+  var A = W.__GC_AUTH__;
+  if (!A || typeof A.fresh !== 'function') return Promise.reject(new Error('Sign in to the CRM first.'));
+  return Promise.resolve(A.fresh()).then(function(x){ if (!x || !x.access_token) throw new Error('Sign in to the CRM first.'); return x.access_token; });
+}
+function api(action, body){
+  return token().then(function(t){
+    return W.fetch(FN, { method: 'POST', cache: 'no-store', headers: { Authorization: 'Bearer ' + t, 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ action: action }, body || {})) });
+  }).then(function(r){ return r.text().then(function(t){ var j = {}; try { j = JSON.parse(t); } catch (e) { j = { error: 'The server answered ' + r.status + '.' }; } if (!r.ok || !j.ok) throw new Error(j.error || ('The server answered ' + r.status + '.')); return j; }); });
+}
+function isAdminHere(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()); } catch (e) { return false; } }
+function officeHere(){ try { return !!(W._gcIsOfficeFull && W._gcIsOfficeFull()); } catch (e) { return false; } }
+
+var STAT = { pending: ['⏳', 'Pending approval', 'p'], approved: ['✅', 'Approved', 'a'], denied: ['⛔', 'Denied / revoked', 'd'], disabled: ['🔒', 'Sign-in off', 'x'], orphan: ['⚠', 'Sign-in without a profile', 'o'] };
+var PAPERN = { w9: 'W-9', insurance_general: 'GL insurance', insurance_workers_comp: 'Workers\' comp', license: 'License', other: 'Other paper' };
+var FILT = [['all', 'All'], ['pending', '⏳ Pending'], ['approved', '✅ Approved'], ['disabled', '🔒 Off'], ['denied', '⛔ Denied'], ['unlinked', 'Not in CRM'], ['orphan', '⚠ No profile']];
+var UI = { box: null, list: null, total: 0, counts: {}, page: 1, per: 50, q: '', f: 'all', err: '', busy: false, canEdit: false, log: null, seq: 0 };
+var SH = { id: '', g: null, err: '', busy: '', temp: null, crmSubs: null, del: false };
+
+var CSS = '#gc-sa{font:13px Inter,Arial,sans-serif;color:#0f172a}#gc-sa .w,#gc-sa-sheet .w{color:#64748b;font-size:12px}#gc-sa .note{background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 10px;margin:8px 0;font-size:12.5px}'
+  + '#gc-sa .bar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:8px 0}#gc-sa input[type=search]{flex:1;min-width:200px;padding:8px 10px;border:1px solid #cbd5e1;border-radius:7px;font:13px Inter,Arial,sans-serif}'
+  + '#gc-sa button,#gc-sa-sheet button{padding:7px 12px;border-radius:7px;border:none;background:#0f2440;color:#fff;font:700 12px Inter,Arial,sans-serif;cursor:pointer;min-height:34px}#gc-sa button.g,#gc-sa-sheet button.g{background:#e2e8f0;color:#0f2440}'
+  + '#gc-sa button.r,#gc-sa-sheet button.r{background:#fee2e2;color:#991b1b}#gc-sa button.on{background:#d4a017;color:#140665}#gc-sa button:disabled,#gc-sa-sheet button:disabled{opacity:.5;cursor:default}'
+  + '#gc-sa .tbl{overflow-x:auto}#gc-sa table{width:100%;border-collapse:collapse;font-size:12px}#gc-sa th{text-align:left;font-size:10px;text-transform:uppercase;color:#64748b;padding:5px 4px;border-bottom:1px solid #e2e8f0;white-space:nowrap}'
+  + '#gc-sa td{padding:7px 4px;border-bottom:1px solid #f1f5f9;vertical-align:top}#gc-sa tr[data-sa-row]{cursor:pointer}#gc-sa tr[data-sa-row]:hover td{background:#f8fafc}'
+  + '.gc-sa-st{display:inline-block;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:700;white-space:nowrap}.gc-sa-st.p{background:#fef3c7;color:#92400e}.gc-sa-st.a{background:#dcfce7;color:#166534}.gc-sa-st.d{background:#fee2e2;color:#991b1b}.gc-sa-st.x{background:#e2e8f0;color:#334155}.gc-sa-st.o{background:#ffedd5;color:#9a3412}'
+  + '#gc-sa .err,#gc-sa-sheet .err{color:#b91c1c;font-weight:700;margin:6px 0}#gc-sa .log div{padding:4px 0;border-bottom:1px dashed #e2e8f0;font-size:12px}'
+  + '#gc-sa-sheet{position:fixed;inset:0;z-index:2147483200;background:rgba(6,12,20,.72);display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow:auto;font:13px Inter,Arial,sans-serif;color:#0f172a}'
+  + '#gc-sa-sheet .card{background:#fff;width:100%;max-width:820px;border-radius:12px;padding:16px;box-sizing:border-box}#gc-sa-sheet h3{margin:0 0 4px;font-size:17px}#gc-sa-sheet h4{margin:14px 0 6px;font-size:13px;color:#0f2440}'
+  + '#gc-sa-sheet .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:6px 12px}#gc-sa-sheet label{display:block;font-size:11px;font-weight:700;color:#475569;margin:6px 0 2px}'
+  + '#gc-sa-sheet input[type=text],#gc-sa-sheet input[type=password],#gc-sa-sheet select{width:100%;box-sizing:border-box;padding:7px 9px;border:1px solid #cbd5e1;border-radius:6px;font:13px Inter,Arial,sans-serif}'
+  + '#gc-sa-sheet .acts{display:flex;flex-wrap:wrap;gap:6px}#gc-sa-sheet .box{border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;margin:8px 0}#gc-sa-sheet .kv{display:grid;grid-template-columns:150px 1fr;gap:3px 10px;font-size:12.5px}#gc-sa-sheet .kv b{color:#475569;font-weight:700}'
+  + '#gc-sa-sheet .pw{font:16px ui-monospace,Menlo,Consolas,monospace;background:#0f2440;color:#fde68a;padding:10px;border-radius:7px;word-break:break-all;user-select:all;margin:8px 0}#gc-sa-sheet .new{border:2px solid #16a34a;background:#f0fdf4}#gc-sa-sheet .danger{border:2px solid #fecaca;background:#fff7f7}'
+  + '@media(max-width:640px){#gc-sa .hide-s{display:none}#gc-sa-sheet .kv{grid-template-columns:1fr}}';
+function css(){ if (D.getElementById('gc-sa-css')) return; var st = D.createElement('style'); st.id = 'gc-sa-css'; st.textContent = CSS; D.head.appendChild(st); }
+function chip(st){ var x = STAT[st] || ['', st, 'x']; return '<span class="gc-sa-st ' + x[2] + '" data-sa-status="' + esc(st) + '">' + x[0] + ' ' + esc(x[1]) + '</span>'; }
+function papersTxt(P){
+  if (!P) return '—';
+  var one = function(l, x){ return x ? l + (x.ok ? ' ✓' : ' ⚠') : ''; };
+  var t = [one('W-9', P.w9), one('GL', P.gl), one('WC', P.wc), one('Lic', P.license)].filter(Boolean).join(' · ');
+  return t || (P.n ? P.n + ' file' + (P.n === 1 ? '' : 's') : '—');
+}
+
+/* ── the list ── */
+function paint(){
+  var box = UI.box; if (!box || !box.isConnected) return;
+  var focus = D.activeElement && D.activeElement.getAttribute && D.activeElement.getAttribute('data-sa') === 'q';
+  var h = '<div id="gc-sa"><div class="w">Every subcontractor sign-in for <b>bids.grayco-cs.com</b> and the <b>GrayCo Portal</b> (portal.grayco-cs.com). Tap a row for the profile, password reset, approve, turn off, link, sign out or delete.</div>'
+    + '<div class="note">🔒 <b>Passwords are never stored readable</b> (only a scrambled fingerprint is kept) — no one can look one up. Use <b>🔑 Reset</b> on the profile: e-mail them a reset link, or set a temporary password.' + (UI.canEdit ? '' : ' <b>You can look here; only an owner (Wesley or Nick) can change accounts.</b>') + '</div>'
+    + '<div class="bar"><input type="search" data-sa="q" placeholder="Search company, name, e-mail, phone, trade" aria-label="Search sub accounts" value="' + esc(UI.q) + '"><button type="button" class="g" data-sa="reload">↻ Refresh</button></div>'
+    + '<div class="bar" role="tablist" aria-label="Filter">' + FILT.map(function(f){ var n = UI.counts[f[0]]; return '<button type="button" role="tab" aria-selected="' + (UI.f === f[0]) + '" class="' + (UI.f === f[0] ? 'on' : 'g') + '" data-sa="filter" data-f="' + f[0] + '">' + esc(f[1]) + (n != null ? ' (' + n + ')' : '') + '</button>'; }).join('') + '</div>';
+  if (UI.err) h += '<div class="err">' + esc(UI.err) + '</div>';
+  if (UI.list === null) h += '<div class="w" data-sa-loading>Loading the accounts…</div>';
+  else if (!UI.list.length) h += '<div class="w" data-sa-empty>No accounts' + (UI.q || UI.f !== 'all' ? ' match.' : ' yet.') + '</div>';
+  else {
+    h += '<div class="tbl"><table><thead><tr><th>Company</th><th>Contact</th><th>E-mail (login)</th><th class="hide-s">Phone</th><th class="hide-s">Trades</th><th>Status</th><th>CRM sub</th><th class="hide-s">Portal link</th><th>Last sign-in</th><th class="hide-s">Created</th><th class="hide-s">Papers</th></tr></thead><tbody>'
+      + UI.list.map(function(r){
+        return '<tr data-sa-row="' + esc(r.id) + '" tabindex="0"><td><b>' + esc(r.company || '—') + '</b>' + (r.mustChange ? '<div class="w">asked to change password</div>' : '') + '</td><td>' + esc(r.name || '—') + '</td><td>' + esc(r.email) + '</td><td class="hide-s">' + esc(r.phone || '—') + '</td>'
+          + '<td class="hide-s">' + esc(arr(r.trades).slice(0, 3).join(', ') || '—') + '</td><td>' + chip(r.status) + '</td><td>' + (r.crm ? esc(r.crm.name) : '<span class="w">not in CRM</span>') + '</td>'
+          + '<td class="hide-s">' + (r.link && r.link.on ? '🟢 on' + (r.link.viewed ? '<div class="w">opened ' + when(r.link.viewed) + '</div>' : '') : '<span class="w">off</span>') + '</td>'
+          + '<td>' + (r.lastSignInAt ? when(r.lastSignInAt, true) : '<span class="w">never</span>') + '</td><td class="hide-s">' + when(r.createdAt) + '</td><td class="hide-s">' + esc(papersTxt(r.papers)) + '</td></tr>';
+      }).join('') + '</tbody></table></div>';
+    var pages = Math.max(1, Math.ceil(UI.total / UI.per));
+    h += '<div class="bar"><span class="w" data-sa-total>' + UI.total + ' account' + (UI.total === 1 ? '' : 's') + (pages > 1 ? ' · page ' + UI.page + ' of ' + pages : '') + '</span>'
+      + (pages > 1 ? '<button type="button" class="g" data-sa="prev"' + (UI.page <= 1 ? ' disabled' : '') + '>‹ Prev</button><button type="button" class="g" data-sa="next"' + (UI.page >= pages ? ' disabled' : '') + '>Next ›</button>' : '') + '</div>';
+  }
+  h += '<h4 style="margin:16px 0 4px;font-size:13px;color:#0f2440">📜 Account changes (who / when)</h4><div class="log" data-sa-log>' + (UI.log === null ? '<div class="w">Loading…</div>' : !UI.log.length ? '<div class="w">Nothing changed yet.</div>'
+    : UI.log.slice(0, 40).map(function(e){ return '<div><b>' + when(e.at, true) + '</b> · ' + esc(e.byName || e.by) + ' · ' + esc(e.action) + ' · ' + esc(e.company || e.email) + (e.detail ? ' <span class="w">— ' + esc(e.detail) + '</span>' : '') + '</div>'; }).join('')) + '</div></div>';
+  box.innerHTML = h;
+  if (focus) { var q = box.querySelector('[data-sa=q]'); if (q) { q.focus(); try { q.setSelectionRange(q.value.length, q.value.length); } catch (e) {} } }
+}
+function load(){
+  var seq = ++UI.seq; UI.err = '';
+  var p = api('list', { q: UI.q, filter: UI.f, page: UI.page, per: UI.per }).then(function(j){ if (seq !== UI.seq) return; UI.list = arr(j.accounts); UI.total = j.total || 0; UI.counts = j.counts || {}; UI.canEdit = !!j.canEdit; paint(); },
+    function(e){ if (seq !== UI.seq) return; UI.list = UI.list || []; UI.err = e.message; paint(); });
+  api('log', {}).then(function(j){ UI.log = arr(j.log); paint(); }, function(){ UI.log = UI.log || []; });
+  return p;
+}
+var QT = 0;
+function onInput(ev){ var t = ev.target; if (!t || t.getAttribute('data-sa') !== 'q' || !UI.box || !UI.box.contains(t)) return; UI.q = t.value; UI.page = 1; clearTimeout(QT); QT = later(load, 300); }
+function onClick(ev){
+  var box = UI.box; if (!box || !box.contains(ev.target)) return;
+  var b = ev.target.closest && ev.target.closest('[data-sa]'), row = ev.target.closest && ev.target.closest('[data-sa-row]');
+  if (b) { var a = b.getAttribute('data-sa');
+    if (a === 'filter') { UI.f = b.getAttribute('data-f'); UI.page = 1; UI.list = null; paint(); load(); }
+    else if (a === 'reload') { UI.list = null; paint(); load(); }
+    else if (a === 'prev' && UI.page > 1) { UI.page--; load(); }
+    else if (a === 'next') { UI.page++; load(); }
+    return; }
+  if (row) openSheet(row.getAttribute('data-sa-row'));
+}
+D.addEventListener('click', onClick, false);
+D.addEventListener('input', onInput, false);
+D.addEventListener('keydown', function(ev){ if (ev.key === 'Enter' && ev.target && ev.target.getAttribute && ev.target.getAttribute('data-sa-row') && UI.box && UI.box.contains(ev.target)) openSheet(ev.target.getAttribute('data-sa-row')); }, false);
+function render(box){ css(); UI.box = box; paint(); load(); }
+
+/* ── the profile sheet ── */
+function sheetEl(){ return D.getElementById('gc-sa-sheet'); }
+function closeSheet(){ var m = sheetEl(); if (m) m.remove(); SH.temp = null; SH.id = ''; SH.del = false; try { D.removeEventListener('keydown', escKey, true); } catch (e) {} }
+function escKey(e){ if (e.key === 'Escape' && sheetEl()) { e.stopPropagation(); closeSheet(); } }
+function openSheet(id){
+  css(); closeSheet(); SH = { id: id, g: null, err: '', busy: '', temp: null, crmSubs: SH.crmSubs, del: false };
+  var m = D.createElement('div'); m.id = 'gc-sa-sheet'; m.setAttribute('data-gc-keep', '1'); m.setAttribute('role', 'dialog'); m.setAttribute('aria-modal', 'true'); m.setAttribute('aria-label', 'Sub portal account');
+  D.body.appendChild(m); D.addEventListener('keydown', escKey, true);
+  m.addEventListener('click', sheetClick);
+  paintSheet(); fetchSheet();
+}
+function fetchSheet(){ var id = SH.id; return api('get', { id: id }).then(function(j){ if (SH.id !== id) return; SH.g = j; SH.err = ''; paintSheet(); }, function(e){ if (SH.id !== id) return; SH.err = e.message; paintSheet(); }); }
+function fld(k, lbl, v, max, ro){ return '<div><label for="gc-sa-f-' + k + '">' + esc(lbl) + '</label><input type="text" id="gc-sa-f-' + k + '" data-sa-f="' + k + '" maxlength="' + (max || 120) + '" value="' + esc(v) + '"' + (ro ? ' disabled' : '') + '></div>'; }
+function matchHint(g){
+  try {
+    var M = W._gcSubMatch; if (!M || !M.match || !SH.crmSubs || !g.profile) return '';
+    var p = g.profile, x = { email: low(p.email), phone: s(p.phone), company: s(p.company), name: s(p.name), contact: s(p.name), city: s(p.businessCity), state: s(p.businessState), portalUserId: s(p.id) };
+    var r = M.match(x, SH.crmSubs.map(function(c){ return { id: c.id, name: c.name, email: c.email, phone: c.phone }; }));
+    var cand = r && (r.rec ? [{ rec: r.rec, why: r.why }] : arr(r.cands));
+    if (!cand || !cand.length) return '';
+    return '<div class="w" data-sa-suggest>Looks like: ' + cand.slice(0, 3).map(function(c){ return '<a href="#" data-sa-act="pick" data-crm="' + esc(c.rec.id) + '">' + esc(c.rec.name) + '</a>' + (c.why ? ' (' + esc(arr(c.why).join ? arr(c.why).join(', ') : c.why) + ')' : ''); }).join(' · ') + '</div>';
+  } catch (e) { warn(e); return ''; }
+}
+function paintSheet(){
+  var m = sheetEl(); if (!m) return;
+  var g = SH.g, r = g && g.account, p = (g && g.profile) || {}, au = (g && g.auth) || null, ed = !!(g && g.canEdit), busy = !!SH.busy;
+  var dis = function(x){ return (busy || !ed || x) ? ' disabled' : ''; };
+  var h = '<div class="card"><div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start"><div><h3>🔐 ' + esc((r && (r.company || r.email)) || 'Sub portal account') + '</h3>' + (r ? chip(r.status) + ' <span class="w">' + esc(r.email) + '</span>' : '') + '</div><button type="button" class="g" data-sa-act="close" aria-label="Close">✕ Close</button></div>';
+  if (SH.err) h += '<div class="err" data-sa-err>' + esc(SH.err) + '</div>';
+  if (!g) { m.innerHTML = h + (SH.err ? '' : '<div class="w">Loading…</div>') + '</div>'; return; }
+  if (SH.temp) h += '<div class="box new" data-sa-temp><b>Temporary password for ' + esc(r.email) + '</b> — copy it now and give it to them by phone or text. <b>It will not be shown again.</b><div class="pw" data-sa-pw>' + esc(SH.temp) + '</div>'
+    + '<div class="acts"><button type="button" data-sa-act="copypw">📋 Copy</button><button type="button" class="g" data-sa-act="hidepw">Done — hide it</button></div>'
+    + '<div class="w" style="margin-top:6px">' + (SH.tempMust ? 'They will be asked to pick their own password when they sign in to bids.grayco-cs.com.' : 'They keep this password until they change it.') + ' Their old sign-ins were ended.</div></div>';
+  var orphan = r.status === 'orphan';
+  /* sign-in facts */
+  h += '<div class="box"><div class="kv"><b>Login (e-mail)</b><span>' + esc(r.email) + '</span><b>Password</b><span>🔒 never readable — use 🔑 Reset below</span>'
+    + '<b>Last sign-in</b><span>' + (au && au.lastSignInAt ? when(au.lastSignInAt, true) : 'never') + '</span><b>Created</b><span>' + when(r.createdAt, true) + '</span>'
+    + (au && au.bannedUntil && Date.parse(au.bannedUntil) > Date.now() ? '<b>Sign-in</b><span>🔒 turned off' + (p.signinDisabledBy ? ' by ' + esc(p.signinDisabledBy) + ' ' + when(p.signinDisabledAt, true) : '') + '</span>' : (p.signinDisabled ? '<b>Sign-in</b><span>🔒 turned off</span>' : ''))
+    + (orphan ? '' : '<b>CRM sub</b><span>' + (r.crm ? esc(r.crm.name) : 'not in CRM') + '</span><b>Sub portal link</b><span>' + (r.link && r.link.on ? '🟢 on' + (r.link.viewed ? ' · opened ' + when(r.link.viewed, true) : '') : (r.portalId ? 'off' : 'none yet (link to a CRM sub or approve first)')) + '</span>'
+      + '<b>Signed-in devices</b><span>' + (g.sessions || 0) + (g.portalLastSeen ? ' · last used ' + when(g.portalLastSeen, true) : '') + '</span>'
+      + '<b>Papers on file</b><span>' + (arr(g.papers).length ? arr(g.papers).map(function(d){ return esc(d.label || PAPERN[d.type] || d.type) + (d.exp ? ' (exp ' + esc(d.exp) + ')' : ''); }).join(' · ') : 'none') + '</span>'
+      + (p.tempPasswordAt ? '<b>Temporary password</b><span>set ' + when(p.tempPasswordAt, true) + ' by ' + esc(p.tempPasswordBy) + (p.suggestPasswordChange ? ' · asked to change it' : '') + '</span>' : '')
+      + (p.bidsApprovedAt ? '<b>Approved</b><span>' + when(p.bidsApprovedAt, true) + (p.bidsApprovedBy ? ' by ' + esc(p.bidsApprovedBy) : '') + '</span>' : '')) + '</div></div>';
+  if (orphan) {
+    h += '<div class="box danger"><b>⚠ A sign-in with no profile</b> (a sign-up that broke half way). It cannot do anything; delete it so the e-mail can sign up again.'
+      + (ed ? '<label for="gc-sa-del">Type the e-mail to confirm</label><input type="text" id="gc-sa-del" data-sa-del autocomplete="off"><div class="acts" style="margin-top:8px"><button type="button" class="r" data-sa-act="delete"' + dis() + '>🗑 Delete this sign-in</button></div>' : '') + '</div></div>';
+    m.innerHTML = h; return;
+  }
+  /* profile (contact fields) */
+  h += '<h4>👤 Profile</h4><div class="grid">' + fld('company', 'Company', p.company, 120, !ed) + fld('name', 'Contact name', p.name, 80, !ed) + fld('phone', 'Phone', p.phone, 40, !ed) + fld('contactTitle', 'Title', p.contactTitle, 80, !ed)
+    + fld('trades', 'Trades (comma separated)', arr(p.trades).join(', '), 600, !ed) + fld('businessAddress', 'Address', p.businessAddress, 200, !ed) + fld('businessCity', 'City', p.businessCity, 80, !ed)
+    + fld('businessState', 'State', p.businessState, 2, !ed) + fld('businessZip', 'ZIP', p.businessZip, 10, !ed)
+    + '<div><label for="gc-sa-f-lang">Language</label><select id="gc-sa-f-lang" data-sa-f="lang"' + (ed ? '' : ' disabled') + '><option value="en"' + (p.lang !== 'es' ? ' selected' : '') + '>English</option><option value="es"' + (p.lang === 'es' ? ' selected' : '') + '>Español</option></select></div></div>'
+    + '<div class="w" style="margin-top:4px">' + esc([p.dbaName ? 'DBA ' + p.dbaName : '', p.licenseNumbers ? 'License ' + p.licenseNumbers : '', p.serviceArea ? 'Area ' + p.serviceArea : '', p.numEmployees ? 'Crew ' + p.numEmployees : '', p.website].filter(Boolean).join(' · ')) + '</div>'
+    + (ed ? '<div class="acts" style="margin-top:8px"><button type="button" data-sa-act="save"' + dis() + '>💾 Save profile</button></div>' : '');
+  if (ed) {
+    h += '<h4>🔑 Password</h4><div class="box"><div class="acts"><button type="button" data-sa-act="resetlink"' + dis(!r.email) + '>✉️ E-mail a reset link</button><button type="button" class="g" data-sa-act="genpw"' + dis(!r.hasLogin) + '>🎲 Make a temporary password</button></div>'
+      + '<label for="gc-sa-pw">…or type one (8+ characters, letters and a number)</label><div class="acts"><input type="password" id="gc-sa-pw" data-sa-pw-in autocomplete="new-password" style="max-width:260px"><button type="button" class="g" data-sa-act="setpw"' + dis(!r.hasLogin) + '>Set this password</button></div>'
+      + '<label style="display:flex;gap:6px;align-items:center;font-weight:600;color:#0f172a"><input type="checkbox" data-sa-must checked> Ask them to pick their own password at their next sign-in</label>'
+      + '<div class="w">Setting a password ends every place they are signed in now.</div></div>';
+    h += '<h4>⚙ Account</h4><div class="box"><div class="acts">'
+      + (r.status !== 'approved' && r.status !== 'disabled' ? '<button type="button" data-sa-act="approve"' + dis() + '>✅ Approve for bids</button>' : '')
+      + (r.status !== 'denied' ? '<button type="button" class="r" data-sa-act="deny"' + dis() + '>✕ Deny / revoke bids</button>' : '')
+      + (r.status === 'disabled' ? '<button type="button" data-sa-act="enable"' + dis() + '>▶ Turn sign-in back on</button>' : '<button type="button" class="g" data-sa-act="disable"' + dis() + '>⏸ Turn sign-in off</button>')
+      + (r.portalId ? (r.link && r.link.on ? '<button type="button" class="g" data-sa-act="linkoff"' + dis() + '>🔌 Turn sub-portal link off</button>' : '<button type="button" class="g" data-sa-act="linkon"' + dis() + '>🔌 Turn sub-portal link on</button>') : '')
+      + '<button type="button" class="g" data-sa-act="signout"' + dis() + '>🚪 Sign out everywhere</button></div>'
+      + '<div class="w" style="margin-top:6px">⏸ Off = they cannot sign in to the bid site or the sub portal (link, code or password) until you turn it back on. Their CRM record, jobs and pay stay.</div></div>';
+    h += '<h4>🔗 CRM sub</h4><div class="box">' + (r.crm ? 'Linked to <b>' + esc(r.crm.name) + '</b>. ' : 'Not linked to a CRM sub. ') + '<div class="acts" style="margin-top:6px"><select data-sa-crm style="max-width:360px"><option value="">' + (SH.crmSubs ? '— pick a CRM sub —' : 'Loading the Subs list…') + '</option>'
+      + arr(SH.crmSubs).map(function(c){ return '<option value="' + esc(c.id) + '"' + (r.crm && r.crm.id === c.id ? ' selected' : '') + '>' + esc(c.name) + (c.email ? ' · ' + esc(c.email) : '') + '</option>'; }).join('') + '</select>'
+      + '<button type="button" data-sa-act="link"' + dis() + '>🔗 Link</button>' + (s(p.crmSubId) ? '<button type="button" class="g" data-sa-act="unlink"' + dis() + '>Unlink</button>' : '') + '</div>' + matchHint(g)
+      + '<div class="w">Linking merges their contact details into that Subs record (never overwrites what you typed) and opens that record\'s jobs and pay in their sub portal.</div></div>';
+    h += '<h4>🗑 Delete account</h4><div class="box danger">' + (SH.del ? '<div>Deletes their sign-in and bid-site profile. <b>The CRM Subs record, its files and their bids stay.</b></div><label for="gc-sa-del">Type the company name to confirm: <b>' + esc(p.company || r.email) + '</b></label><input type="text" id="gc-sa-del" data-sa-del autocomplete="off">'
+      + '<label style="display:flex;gap:6px;align-items:center;font-weight:600;color:#0f172a"><input type="checkbox" data-sa-delpapers> Also delete their uploaded papers (My Documents)</label><label style="display:flex;gap:6px;align-items:center;font-weight:600;color:#0f172a"><input type="checkbox" data-sa-dellink checked> Also turn their sub-portal link off</label>'
+      + '<div class="acts" style="margin-top:8px"><button type="button" class="r" data-sa-act="delete"' + dis() + '>🗑 Delete for good</button><button type="button" class="g" data-sa-act="delcancel">Cancel</button></div>' : '<button type="button" class="r" data-sa-act="delask"' + dis() + '>🗑 Delete account…</button>') + '</div>';
+  } else h += '<div class="note" style="margin-top:10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px">You can look; only an owner (Wesley or Nick) can reset a password or change this account.</div>';
+  if (SH.busy) h += '<div class="w" data-sa-busy style="margin-top:8px">' + esc(SH.busy) + '</div>';
+  m.innerHTML = h + '</div>';
+  if (ed && !SH.crmSubs) { SH.crmSubs = []; api('crm-subs', {}).then(function(j){ SH.crmSubs = arr(j.subs); paintSheet(); }, function(){ SH.crmSubs = null; }); }
+}
+function run(label, action, body, done){
+  if (SH.busy) return; SH.busy = label; SH.err = ''; paintSheet();
+  return api(action, Object.assign({ id: SH.id }, body || {})).then(function(j){ SH.busy = ''; try { if (done) done(j); } catch (e) { warn(e); } if (SH.id) fetchSheet(); load(); return j; },
+    function(e){ SH.busy = ''; SH.err = e.message; paintSheet(); toast(e.message, true); });
+}
+function val(sel){ var m = sheetEl(), el = m && m.querySelector(sel); return el ? el.value : ''; }
+function sheetClick(ev){
+  var m = sheetEl(); if (!m) return;
+  if (ev.target === m) return closeSheet();
+  var b = ev.target.closest && ev.target.closest('[data-sa-act]'); if (!b) return;
+  var a = b.getAttribute('data-sa-act'), g = SH.g || {}, r = g.account || {}, name = r.company || r.email;
+  if (a === 'pick') { ev.preventDefault(); var sel = m.querySelector('[data-sa-crm]'); if (sel) sel.value = b.getAttribute('data-crm'); return; }
+  if (b.disabled) return;
+  if (a === 'close') return closeSheet();
+  if (a === 'copypw') return copy(SH.temp || '').then(function(ok){ toast(ok ? 'Password copied — give it to them by phone or text' : 'Select the password and copy it', !ok); });
+  if (a === 'hidepw') { SH.temp = null; return paintSheet(); }
+  if (a === 'save') {
+    var set = {}; Array.prototype.forEach.call(m.querySelectorAll('[data-sa-f]'), function(el){ set[el.getAttribute('data-sa-f')] = el.value; });
+    set.trades = s(set.trades).split(',').map(s).filter(Boolean);
+    return run('Saving…', 'update', { set: set }, function(j){ toast(arr(j.changed).length ? '✓ Profile saved' : 'Nothing changed'); });
+  }
+  if (a === 'resetlink') { if (!W.confirm('E-mail ' + r.email + ' a link to choose a new password?')) return; return run('Sending the reset e-mail…', 'reset-link', {}, function(j){ toast('✉️ Reset link sent to ' + (j.to || r.email)); }); }
+  var must = !!(m.querySelector('[data-sa-must]') || {}).checked;
+  if (a === 'genpw') { if (!W.confirm('Make a new temporary password for ' + name + '? Their current password stops working and they are signed out everywhere.')) return;
+    return run('Setting the password…', 'set-password', { generate: true, mustChange: must }, function(j){ SH.temp = s(j.password); SH.tempMust = !!j.mustChange; }); }
+  if (a === 'setpw') { var pw = val('[data-sa-pw-in]');
+    if (pw.length < 8 || !/[A-Za-z]/.test(pw) || !/\d/.test(pw)) { SH.err = 'Use at least 8 characters with letters and a number.'; return paintSheet(); }
+    if (!W.confirm('Set this password for ' + name + '? Their current password stops working and they are signed out everywhere.')) return;
+    return run('Setting the password…', 'set-password', { password: pw, mustChange: must }, function(j){ SH.temp = pw; SH.tempMust = !!j.mustChange; }); }
+  if (a === 'approve' || a === 'deny') {
+    if (a === 'deny' && !W.confirm('Deny / revoke ' + name + ' on the bid site? They can no longer see or bid on jobs.')) return;
+    return run(a === 'approve' ? 'Approving…' : 'Saving…', 'approve', { approve: a === 'approve' }, function(){
+      toast(a === 'approve' ? '✅ Approved — they got the e-mail' : 'Denied');
+      if (a === 'approve') try { var p = g.profile || {}; if (W._gcBidSubs && W._gcBidSubs.approved) W._gcBidSubs.approved({ id: p.id, email: p.email, company: p.company, name: p.name, phone: p.phone, trades: p.trades, city: p.businessCity, state: p.businessState, crmSubId: p.crmSubId, lang: p.lang }); } catch (e) { warn(e); }   /* patch SUBSYNC: on the Subs list at once */
+    });
+  }
+  if (a === 'disable') { if (!W.confirm('Turn sign-in OFF for ' + name + '? They are signed out everywhere and cannot sign in to the bid site or the sub portal until you turn it back on.')) return; return run('Turning sign-in off…', 'disable', {}, function(j){ toast('🔒 Sign-in off' + (j.ended ? ' · ' + j.ended + ' device(s) signed out' : '')); }); }
+  if (a === 'enable') return run('Turning sign-in on…', 'enable', {}, function(){ toast('▶ Sign-in back on'); });
+  if (a === 'signout') { if (!W.confirm('Sign ' + name + ' out everywhere (bid site and sub portal)? They can sign in again with their password.')) return; return run('Signing out…', 'signout-all', {}, function(j){ toast('🚪 Signed out everywhere' + (j.ended ? ' (' + j.ended + ' device' + (j.ended === 1 ? '' : 's') + ')' : '')); }); }
+  if (a === 'linkon' || a === 'linkoff') { if (a === 'linkoff' && !W.confirm('Turn the sub-portal link OFF for ' + name + '? Every device they use is signed out.')) return;
+    return run('Saving…', 'portal-link', { on: a === 'linkon' }, function(j){ toast(j.on ? '🔌 Sub-portal link on' : '🔌 Sub-portal link off'); }); }
+  if (a === 'link' || a === 'unlink') {
+    var cid = a === 'link' ? val('[data-sa-crm]') : '';
+    if (a === 'link' && !cid) { SH.err = 'Pick a CRM sub first.'; return paintSheet(); }
+    return run('Saving…', 'link', { crmSubId: cid }, function(j){ toast(j.crm ? '🔗 Linked to ' + j.crm.name : 'Unlinked'); try { if (j.crm && W._gcBidSubs && W._gcBidSubs.run) W._gcBidSubs.run({ force: true, why: 'link' }); } catch (e) { warn(e); } });   /* patch SUBSYNC: their details merge into that record */
+  }
+  if (a === 'delask') { SH.del = true; paintSheet(); var di = m.querySelector('[data-sa-del]'); if (di) di.focus(); return; }
+  if (a === 'delcancel') { SH.del = false; return paintSheet(); }
+  if (a === 'delete') {
+    var conf = val('[data-sa-del]');
+    var want = r.status === 'orphan' ? low(r.email) : low((g.profile || {}).company || r.email);
+    if (low(conf).replace(/\s+/g, ' ').trim() !== want.replace(/\s+/g, ' ').trim()) { SH.err = 'Type ' + (r.status === 'orphan' ? 'the e-mail' : 'the company name') + ' exactly to confirm.'; return paintSheet(); }
+    var opts = { confirm: conf, papers: (m.querySelector('[data-sa-delpapers]') || {}).checked ? 'delete' : '', linkOff: !!(m.querySelector('[data-sa-dellink]') || {}).checked };
+    SH.busy = 'Deleting…'; SH.err = ''; paintSheet();
+    return api('delete', Object.assign({ id: SH.id }, opts)).then(function(){ SH.busy = ''; closeSheet(); toast('🗑 Account deleted — the CRM Subs record stays'); load(); },
+      function(e){ SH.busy = ''; SH.err = e.message; paintSheet(); });
+  }
+}
+
+/* ── where to find it ── */
+function addSection(){
+  if (typeof W._gcAdmAddSection !== 'function') return false;
+  W._gcAdmAddSection({ id: 'subacct', after: 'security', ic: '🔐', t: 'Sub portal accounts', d: 'Every sub sign-in for the bid site and the sub portal: look up, reset a password, approve, turn off, link, delete', render: render,
+    count: function(){ var n = UI.counts && UI.counts.all; return n != null ? n + ' account' + (n === 1 ? '' : 's') + (UI.counts.pending ? ' · ' + UI.counts.pending + ' pending' : '') : 'bid site + sub portal sign-ins'; } });
+  return true;
+}
+if (!addSection()) { var tries = 0, iv = RI.call(W, function(){ if (addSection() || ++tries > 120) clearInterval(iv); }, 500); }
+function open(){
+  try { if (W._gcAdm && W._gcAdm.open) return W._gcAdm.open('subacct'); } catch (e) { warn(e); }
+  toast('Open Admin → Admin settings → 🔐 Sub portal accounts.');
+}
+/* a button on Subs → Sub portal and on 🏗 Bid portal (owners and the office) */
+function links(){
+  try {
+    if (!isAdminHere() && !officeHere()) return;
+    var ph = D.querySelector('.gcsub-ph');
+    if (ph && !ph.querySelector('[data-subacct-link]')) { var b = D.createElement('button'); b.type = 'button'; b.className = 'gcsub-btn'; b.setAttribute('data-subacct-link', 'subs'); b.textContent = '🔐 Sub portal accounts'; b.style.marginLeft = '8px'; b.onclick = function(e){ e.preventDefault(); e.stopPropagation(); open(); }; ph.appendChild(b); }
+    var bar = D.querySelector('#gc-sys-bp .bar');
+    if (bar && !bar.querySelector('[data-subacct-link]')) { var c = D.createElement('button'); c.type = 'button'; c.className = 'b'; c.setAttribute('data-subacct-link', 'bp'); c.textContent = '🔐 Accounts'; c.title = 'Every sub sign-in: passwords, approve, turn off, delete'; c.onclick = function(e){ e.preventDefault(); e.stopPropagation(); open(); }; bar.appendChild(c); }
+  } catch (e) { warn(e); }
+}
+RI.call(W, function(){ if (!D.hidden) links(); }, 1500); later(links, 800);
+W._gcSubAcct = { open: open, render: render, load: load, api: api, openSheet: openSheet, closeSheet: closeSheet,
+  state: function(){ return { n: UI.list ? UI.list.length : null, total: UI.total, counts: Object.assign({}, UI.counts), f: UI.f, q: UI.q, page: UI.page, err: UI.err, canEdit: UI.canEdit, sheet: SH.id || null, sheetErr: SH.err, temp: !!SH.temp }; } };
+try { console.log('[GC] patch SUBACCT: Admin → 🔐 Sub portal accounts — _gcSubAcct.state()'); } catch (e) {}
+})(window, document);
 </script>
 
 <script id="gc-patch-bidest">
