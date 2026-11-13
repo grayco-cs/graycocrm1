@@ -219637,12 +219637,25 @@ function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&am
 function leads(){ return (W._crm && W._crm.leads) || []; }
 function core(){ return W._gcBidMergeCore || (W._gcBidMerge && W._gcBidMerge.core) || null; }
 function arr(v){ return Array.isArray(v) ? v : []; }
+/* patch LEADPERF: the pairs are worked out again only when the leads list, the company picked or the answers changed (or 20 s on) —
+   it is every bid lead against every other (~5 000 pairs on the live-size list, 80 ms) and the bar asked for it every 2.5 s */
+var PAIRS = { src: null, v: '', n: -1, at: 0, out: [] };
 function pairs(){
   var C = core(); if (!C) return [];
+  var CO0 = W._gcCo, V0 = 'all'; try { V0 = CO0 && CO0.leadView ? CO0.leadView() : 'all'; } catch (e) {}
+  var src = leads(), n0 = index().n;
+  if (PAIRS.src === src && PAIRS.v === V0 && PAIRS.n === n0 && Date.now() - PAIRS.at < 20000) return PAIRS.out.slice();
+  var out0 = pairs0(C);
+  PAIRS = { src: src, v: V0, n: n0, at: Date.now(), out: out0 };
+  return out0.slice();
+}
+function pairs0(C){
   var CO = W._gcCo, V = 'all'; try { V = CO && CO.leadView ? CO.leadView() : 'all'; } catch (e) {}   /* patch LEADCO2: only the picked company's leads (Mitigation shows none of Construction's bid pairs) */
   var L = leads().filter(function(l){ return l && l.id && C.liveLead(l) && C.isBidLead(l) && (V === 'all' || !CO.ofLead || (CO.passLead ? CO.passLead(l, V) : CO.ofLead(l) === V)); });   /* patch LEADBOTH */
   var sure = {}; try { arr(W._gcBidMerge && W._gcBidMerge.groups()).forEach(function(g){ arr(g.ids).forEach(function(a){ arr(g.ids).forEach(function(b){ sure[a + '|' + b] = 1; }); }); }); } catch (e) {}
   var I = L.map(function(l){ return C.info(l); }), out = [];
+  var TK = [];   /* patch LEADPERF: each name's words once, not once per pair */
+  function tk(i){ return TK[i] || (TK[i] = C.titleInfo(L[i].name || L[i].title || '', '').tokens); }
   for (var i = 0; i < L.length; i++) for (var j = i + 1; j < L.length; j++) {
     var a = L[i], b = L[j], A = I[i], B = I[j];
     if (sure[a.id + '|' + b.id]) continue;
@@ -219651,7 +219664,7 @@ function pairs(){
     if (A.no && B.no && A.no !== B.no) continue;
     if (C.diffJob && C.diffJob(a, b, true)) continue;   /* patch LEADBOTH-SAMEJOB: different project / bid numbers, Phase, Package, Area, Building */
     var gap = C.gapDays(A.due, B.due); if (gap != null && gap > 5) continue;
-    var ta = C.titleInfo(a.name || a.title || '', '').tokens, tb = C.titleInfo(b.name || b.title || '', '').tokens;   /* place words kept: "Coahoma" */
+    var ta = tk(i), tb = tk(j);   /* place words kept: "Coahoma" */
     var t = C.titleSim(ta, tb); t = { shared: t.shared + acro(ta, tb) + acro(tb, ta), j: t.j };
     if (!(t.shared >= 2 || (t.shared >= 1 && t.j >= 0.5))) continue;
     var r = C.same(a, b, A, B); if (r && r.ok) continue;   /* BIDMERGE is sure — it joins them itself */
@@ -219678,10 +219691,13 @@ function idOf(l){
 function index(){
   if (NO_IDX && NO_IDX.n === arr(NO.pairs).length) return NO_IDX;
   var x = { n: arr(NO.pairs).length, ids: {}, keys: {} };
-  arr(NO.pairs).forEach(function(p){ if (!p) return; if (p.a && p.b) { x.ids[p.a + '|' + p.b] = 1; x.ids[p.b + '|' + p.a] = 1; } if (p.ka && p.kb && p.ka !== p.kb) { x.keys[p.ka + '|' + p.kb] = 1; x.keys[p.kb + '|' + p.ka] = 1; } });
+  arr(NO.pairs).forEach(function(p){ if (!p) return; if (p.a && p.b) { x.ids[p.a + '|' + p.b] = 1; x.ids[p.b + '|' + p.a] = 1; } if (p.ka && p.kb && p.ka !== p.kb) { x.keys[p.ka + '|' + p.kb] = 1; x.keys[p.kb + '|' + p.ka] = 1; x.nk = (x.nk || 0) + 1; } });
   return (NO_IDX = x);
 }
-function isNo(a, b){ var x = index(); if (x.ids[a.id + '|' + b.id]) return true; var ka = idOf(a), kb = idOf(b); return !!(ka && kb && ka !== kb && x.keys[ka + '|' + kb]); }
+/* patch LEADPERF: a lead's identity once per lead object (the pair loop asked twice per pair); none asked when no answer has one */
+var IDOF = typeof WeakMap === 'function' ? new WeakMap() : null;
+function idOfM(l){ if (!IDOF || !l || typeof l !== 'object') return idOf(l); var c = IDOF.get(l); if (c && c.name === l.name && c.title === l.title && c.bn === l.bidNumber && c.city === l.city && c.ad === l.address && c.gc === l.gc && c.dc === l.dueToCompany) return c.v; var v = idOf(l); IDOF.set(l, { v: v, name: l.name, title: l.title, bn: l.bidNumber, city: l.city, ad: l.address, gc: l.gc, dc: l.dueToCompany }); return v; }
+function isNo(a, b){ var x = index(); if (x.ids[a.id + '|' + b.id]) return true; if (!x.nk) return false; var ka = idOfM(a), kb = idOfM(b); return !!(ka && kb && ka !== kb && x.keys[ka + '|' + kb]); }
 function kvGet(){ return W.fetch(SBU + '/rest/v1/gc_kv?key=eq.' + NOKEY + '&select=value', { cache: 'no-store' }).then(function(r){ return r.ok ? r.json() : null; }).then(function(rows){ var v = rows && rows[0] ? rows[0].value : null; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } } return v && typeof v === 'object' ? v : { pairs: [] }; }, function(){ return null; }); }
 function kvPut(v){ return W.fetch(SBU + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ key: NOKEY, value: v, updated_at: new Date().toISOString() }) }).then(function(r){ return r.ok; }, function(){ return false; }); }
 function keep(v){ NO = v && Array.isArray(v.pairs) ? v : { pairs: [] }; NO_IDX = null; try { localStorage.setItem(NOKEY, JSON.stringify(NO)); } catch (e) {} }
@@ -231857,8 +231873,19 @@ function decorate(root){
 }
 W._gcQbDecorate = decorate;
 var decoT = null;
-function decoSoon(){ if (decoT) return; decoT = later(function(){ decoT = null; try { css(); decorate(); } catch (e) {} }, 700); }
-try { new MutationObserver(function(ms){ for (var i = 0; i < ms.length; i++) { if (ms[i].addedNodes && ms[i].addedNodes.length && !(ms[i].target && ms[i].target.closest && ms[i].target.closest('.gc-qbnum'))) { decoSoon(); return; } } }).observe(D.body || D.documentElement, { childList: true, subtree: true }); } catch (e) {}
+/* patch LEADPERF: only what was added is read (the places things were put), not every text on the page each time anything was
+   added (the Leads list redrawing: ~6 500 texts a pass); the whole page is still read at most every 15 s and at start */
+var decoRoots = [], decoAll = true, decoFullAt = 0;
+function decoSoon(){ if (decoT) return; decoT = later(function(){
+  decoT = null;
+  try {
+    css();
+    var all = decoAll || decoRoots.length > 150 || Date.now() - decoFullAt > 15000, roots = decoRoots; decoRoots = []; decoAll = false;
+    if (all) { decoFullAt = Date.now(); decorate(); return; }
+    roots.forEach(function(r, i){ if (!r || !r.isConnected) return; for (var j = 0; j < roots.length; j++) if (j !== i && roots[j] && roots[j] !== r && roots[j].isConnected && roots[j].contains(r)) return; decorate(r); });
+  } catch (e) {}
+}, 700); }
+try { new MutationObserver(function(ms){ var hit = false; for (var i = 0; i < ms.length; i++) { if (ms[i].addedNodes && ms[i].addedNodes.length && !(ms[i].target && ms[i].target.closest && ms[i].target.closest('.gc-qbnum'))) { hit = true; var t = ms[i].target; if (t && t.nodeType === 1) { if (decoRoots.indexOf(t) < 0) decoRoots.push(t); } else decoAll = true; } } if (hit) decoSoon(); }).observe(D.body || D.documentElement, { childList: true, subtree: true }); } catch (e) {}
 decoSoon();
 W._gcOpenQbCsvToJobs = function(){ if (!allowed()) { W.alert('Importing QuickBooks files is for admins and the office.'); return; } pickSheet(); };
 function hooks(){ try { hookUploader(); } catch (e) {} try { hookPatchJ(); } catch (e) {} }
