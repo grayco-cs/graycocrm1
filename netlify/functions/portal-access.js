@@ -727,16 +727,7 @@ async function subPasswordLogin(data, email, password){
     ok = r.ok;
   } catch (e) { ok = false; }
   if (!ok) return null;
-  let crmId = '', prof = null;
-  try { const rows = await dbGet('sp_rows', 'select=data&collection=eq.users&email=' + eq(email)); prof = rows[0] && rows[0].data; if (prof && prof.role === 'sub') crmId = s(prof.crmSubId); } catch (e) {}
-  let sub = (crmId ? subById(data, crmId) : null) || crmSubOf(data, prof) || crmSubs(data).find(function(r){ return low(r.email) === email; }) || null;   /* patch SUBSYNC: + the merged / matched CRM sub */
-  const approved = !!bidOnlySub(prof);
-  if (!sub && approved) sub = bidOnlySub(prof);   /* BIDONLY: approved on the bid site, not in the CRM yet */
-  if (!sub) return { noPortal: true };
-  let link = await subLinkActive(sub.id);
-  if (!link && approved) { try { link = await subLinkCreate(sub.id, sub.name, 'bid site approval (automatic)'); } catch (e) { link = null; } }   /* BIDONLY: approval turns their portal on */
-  if (!link) return { noPortal: true };
-  return { sub: sub, links: [link.token] };
+  return subPortalAfterPassword(data, email);   /* patch SUBPEND: the rest (CRM sub, link) is shared with the pending session's upgrade — below */
 }
 async function passwordSignin(body, ip){
   const id = identOf(body.email || body.who), password = String(body.password || '').trim();
@@ -756,9 +747,13 @@ async function passwordSignin(body, ip){
       return { ok: true, kind: 'customer', starter: !(cl.row && cl.row.changed), session: await sessionCreate('customer', hmac(id.key), null, cl.links, body.app === true ? APP_DAYS : 0) };
     }
   }
-  if ((!cl || !cl.row) && email) {
+  if (email) {   /* patch SUBPEND: the sub's own (bid-site) password is checked too when the e-mail is also a customer's with a saved password (was skipped → "don't match") */
     const sp = await subPasswordLogin(data, email, String(body.password || ''));
-    if (sp && sp.noPortal) { await padTo(t0); throw Fail(403, 'Your GrayCo Portal is not turned on yet. Call GrayCo ' + OFFICE_PHONE + '.'); }
+    if (sp && sp.noPortal) {
+      const pend = await pendStart(sp.prof, id, keys);   /* patch SUBPEND: signed up, not approved / not linked yet → the limited "waiting for approval" session (was 403) */
+      if (pend) return pend;
+      await padTo(t0); throw Fail(403, 'Your GrayCo Portal is not turned on yet. Call GrayCo ' + OFFICE_PHONE + '.');
+    }
     if (sp) { await lockClear(keys); return { ok: true, kind: 'partner', lang: lang(sp.sub.lang), session: await sessionCreate('partner', hmac(id.key), s(sp.sub.id), sp.links) }; }
   }
   const fails = await failCount(keys);
@@ -785,6 +780,104 @@ async function customerPassword(event, body){
   await dbPost('gc_portal_login?on_conflict=login', keys.map(function(k){ return { login: k, pw_hash: hash, changed: true, updated_at: now }; }), 'resolution=merge-duplicates,return=minimal');
   return { ok: true };
 }
+
+/* ═══ patch SUBPEND (owner 11/13: "John signed up and then it wouldn't let him enter with the password he just made — make sure that
+   doesn't happen") ══════════════════════════════════════════════════════════════════════════════════════════════════════════════
+   A sub who signed up (sub portal or bid site) and is not approved yet — or approved but whose portal link is not made yet — signs in
+   with that password to a LIMITED session: kind 'pending', tied to their bid-site profile (sp_rows users id, in sub_id; no links).
+   It can only: whoami · pend-me (their own sign-up status, contact details and papers checklist, plus a 2-hour papers token for
+   subportal.js signup-upload / signup-papers — u/<their id>/ and their own subdocs only) · pend-contact (their own contact details)
+   · signout. Never a CRM job, invoice, pay or another sub: sessionOf() does not know this kind, so every c- / p- / s- door stays shut
+   (p- answers 403 "waiting for approval"). On every whoami / pend-me the approval is checked: approved (✅ Approvals or Subs → Bid site
+   requests) → the same row becomes their partner session (link made by itself, as at sign-in) — no second sign-in. Denied (s-bids-approve
+   approve:false, or the bid site's Deny removed the profile) → "Your sign-up was not approved — call GrayCo". */
+const PEND_DENIED = { en: 'Your sign-up was not approved — call GrayCo ' + OFFICE_PHONE + '.', es: 'Su registro no fue aprobado — llame a GrayCo ' + OFFICE_PHONE + '.' };
+const PEND_WAIT = { en: 'GrayCo is still reviewing your sign-up. You get an e-mail when you are approved. Questions? Call ' + OFFICE_PHONE + '.', es: 'GrayCo todavía está revisando su registro. Recibirá un correo cuando esté aprobado. ¿Preguntas? Llame al ' + OFFICE_PHONE + '.' };
+/* 'pending' | 'denied' | 'off' (approved once, then GrayCo turned the bid site off — the old answer stands) */
+function pendStateOf(prof){
+  if (!prof || prof.role !== 'sub') return 'denied';
+  if (prof.bidsRevoked === true && prof.approved !== true) return prof.bidsApprovedAt ? 'off' : 'denied';
+  return 'pending';
+}
+async function pendStart(prof, id, keys){
+  if (!prof || prof.role !== 'sub' || !okId(prof.id) || !okEmail(low(prof.email)) || 'e:' + low(prof.email) !== id.key) return null;
+  const st = pendStateOf(prof);
+  if (st === 'off') return null;
+  if (st === 'denied') throw Fail(403, PEND_DENIED[lang(prof.lang)], { denied: true });
+  await lockClear(keys);
+  return { ok: true, kind: 'pending', lang: lang(prof.lang), session: await sessionCreate('pending', hmac(id.key), s(prof.id), [], SUB_DAYS) };
+}
+async function pendRow(event){
+  const tok = s(gcHeader(event, 'x-portal-session'));
+  if (!TOKEN_RE.test(tok)) return null;
+  const row = (await dbGet('gc_portal_session', 'select=*&kind=eq.pending&id=' + eq(sha(tok))))[0];
+  if (!row || row.kind !== 'pending' || row.revoked === true || Date.parse(row.expires_at) < Date.now() || !okId(row.sub_id)) return null;
+  return row;
+}
+/* their profile (sp_rows users) — only while it is still the same e-mail the session was opened with */
+async function pendProfile(row){
+  const r = (await dbGet('sp_rows', 'select=key,id,data&collection=eq.users&id=' + eq(row.sub_id)))[0];
+  const prof = r && r.data;
+  if (!prof || !okEmail(low(prof.email)) || hmac('e:' + low(prof.email)) !== s(row.ident)) return null;
+  return { key: r.key, id: s(r.id), prof: prof };
+}
+/* approved now? → this same session becomes their partner session (subPasswordLogin's own rule, after the password it already had) */
+async function pendUpgrade(row, prof){
+  if (pendStateOf(prof) !== 'pending') return null;
+  const sub = await subPortalAfterPassword(await crmData(prof.approved === true), low(prof.email));   /* just approved: a fresh read */
+  if (!sub || sub.noPortal) return null;
+  const done = await dbPatch('gc_portal_session', 'kind=eq.pending&id=' + eq(row.id), { kind: 'partner', sub_id: s(sub.sub.id), links: sub.links,
+    expires_at: new Date(Date.now() + SUB_DAYS * 86400e3).toISOString(), last_seen_at: new Date().toISOString() }, true);
+  return Array.isArray(done) && done.length ? { ok: true, kind: 'partner', lang: lang(sub.sub.lang || prof.lang), upgraded: true } : null;
+}
+/* the password was right: the CRM sub + link (subPasswordLogin's part after the password check) */
+async function subPortalAfterPassword(data, email){
+  let crmId = '', prof = null;
+  try { const rows = await dbGet('sp_rows', 'select=data&collection=eq.users&email=' + eq(email)); prof = rows[0] && rows[0].data; if (prof && prof.role === 'sub') crmId = s(prof.crmSubId); } catch (e) {}
+  let sub = (crmId ? subById(data, crmId) : null) || crmSubOf(data, prof) || crmSubs(data).find(function(r){ return low(r.email) === email; }) || null;   /* patch SUBSYNC: + the merged / matched CRM sub */
+  const approved = !!bidOnlySub(prof);
+  if (!sub && approved) sub = bidOnlySub(prof);   /* BIDONLY: approved on the bid site, not in the CRM yet */
+  if (!sub) return { noPortal: true, prof: prof };   /* not approved yet → the caller opens the pending session */
+  let link = await subLinkActive(sub.id);
+  if (!link && approved) { try { link = await subLinkCreate(sub.id, sub.name, 'bid site approval (automatic)'); } catch (e) { link = null; } }   /* BIDONLY: approval turns their portal on */
+  if (!link) return { noPortal: true, prof: prof };
+  return { sub: sub, links: [link.token] };
+}
+function pendMe(prof){
+  return { name: clip(prof.name, 80), company: clip(prof.company, 120), email: low(prof.email), phone: clip(prof.phone, 40), contactTitle: clip(prof.contactTitle, 80),
+    businessCity: clip(prof.businessCity, 80), businessState: clip(prof.businessState, 2), trades: (Array.isArray(prof.trades) ? prof.trades : []).map(function(x){ return clip(x, 60); }).filter(Boolean).slice(0, 30),
+    createdAt: s(prof.createdAt).slice(0, 10), lang: lang(prof.lang) };
+}
+/* → a reply object, or null (not a pending session: the caller answers "not active") */
+async function pendAction(event, action, body){
+  const row = await pendRow(event); if (!row) return null;
+  const P = await pendProfile(row);
+  if (!P) return { ok: true, kind: 'pending', state: 'denied', message: PEND_DENIED.en };   /* the bid site's Deny removed the profile */
+  const st = pendStateOf(P.prof), L = lang(P.prof.lang);
+  if (st !== 'pending') return { ok: true, kind: 'pending', state: 'denied', lang: L, message: PEND_DENIED[L] };
+  const up = await pendUpgrade(row, P.prof);
+  if (up) return up;
+  touchSession(Object.assign({}, row, { kind: 'partner' }));   /* slides like a sub's device session (SUB_DAYS) */
+  if (action === 'whoami') return { ok: true, kind: 'pending', state: 'pending', lang: L };
+  if (action === 'pend-contact') {
+    const c = (body.contact && typeof body.contact === 'object') ? body.contact : {};
+    const put = {};
+    [['name', 80], ['company', 120], ['phone', 40], ['contactTitle', 80], ['businessCity', 80]].forEach(function(f){ if (c[f[0]] != null) put[f[0]] = clip(c[f[0]], f[1]); });
+    if (c.businessState != null) { const v = s(c.businessState).toUpperCase(); if (v && !/^[A-Z]{2}$/.test(v)) throw Fail(400, L === 'es' ? 'Use el estado de 2 letras (TN, MS, AR …).' : 'Use the 2-letter state (TN, MS, AR …).'); put.businessState = v; }
+    if (c.lang != null) put.lang = s(c.lang) === 'es' ? 'es' : 'en';
+    if ((put.name !== undefined && !put.name) || (put.company !== undefined && !put.company)) throw Fail(400, L === 'es' ? 'Escriba su nombre y el de su compañía.' : 'Your name and company name are needed.');
+    const prof = Object.assign({}, P.prof, put, { contactUpdatedAt: new Date().toISOString() });
+    await dbPost('sp_rows?on_conflict=key', [{ key: P.key, collection: 'users', id: P.id, user_id: P.id, email: low(prof.email), data: prof, updated_at: new Date().toISOString(), updated_by: low(prof.email) }], 'resolution=merge-duplicates,return=minimal');
+    return { ok: true, kind: 'pending', state: 'pending', me: pendMe(prof) };
+  }
+  if (action === 'pend-me') {
+    const pap = (await withPapers([{ id: P.id, claimed: P.prof.papersClaimed }]))[0].papers;
+    return { ok: true, kind: 'pending', state: 'pending', lang: L, me: pendMe(P.prof), papers: pap, message: PEND_WAIT[L],
+      paperToken: require('./subportal.js')._papers.paperToken(P.id) };   /* their own papers only (u/<id>/, subdocs <id>), 2 hours */
+  }
+  throw Fail(400, 'Bad request');
+}
+/* ═══ end patch SUBPEND (server) ═══ */
 
 /* ── opening a link: which portal, and the new-phone check for subs ─────────── */
 async function deviceOk(link, devToken){
@@ -1845,8 +1938,13 @@ exports.handler = async function (event) {
     }
     if (action === 'whoami') {
       const sess = await sessionOf(gcHeader(event, 'x-portal-session'));
+      if (!sess) { const pend = await pendAction(event, 'whoami', body); if (pend) return reply(200, pend); }   /* patch SUBPEND: waiting for approval (or just approved → partner) */
       if (!sess) { noteBad(ip, 'pub'); return notActive(headers, t0); }
       return reply(200, { ok: true, kind: sess.kind });
+    }
+    if (action === 'pend-me' || action === 'pend-contact') {   /* patch SUBPEND: the pending session's only doors */
+      const r = await pendAction(event, action, body); if (!r) { noteBad(ip, 'pub'); return notActive(headers, t0); }
+      return reply(200, r);
     }
     if (/^c-/.test(action)) {
       const pids = await customerPids(event);
@@ -1860,6 +1958,7 @@ exports.handler = async function (event) {
     if (action === 'p-invoice-make' && s(body.op) === 'send' && limited(ip, 'invmk')) return reply(429, { ok: false, error: 'Too many invoices sent from here. Wait a few minutes.' });   /* patch SUBINVMAKE */
     if (/^p-/.test(action)) {
       const sess = await sessionOf(gcHeader(event, 'x-portal-session'));
+      if (!sess && await pendRow(event)) return reply(403, { ok: false, pending: true, error: 'Your account is waiting for GrayCo to approve it. Call GrayCo ' + OFFICE_PHONE + '.' });   /* patch SUBPEND: a pending session never opens the partner portal */
       if (!sess || sess.kind !== 'partner') { noteBad(ip, 'app'); return notActive(headers, t0); }
       { const ctx = await partnerCtx(sess); ctx.ip = ipOf(event); ctx.ua = clip(gcHeader(event, 'user-agent'), 200); return reply(200, await partnerAction(action, body, ctx)); }
     }

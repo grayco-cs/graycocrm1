@@ -363,7 +363,7 @@ function paintLang(){
 $('langBtn').addEventListener('click', function(){
   LANG = LANG === 'es' ? 'en' : 'es'; store('gc_lang', LANG); paintLang();
   if (window.GCPartner && window.GCPartner._state && window.GCPartner._state().home) { window.GCPartner.setLang(LANG, true); return; }
-  if (V) draw(); else if (JOBS) picker(); else if ($('signinBox')) signin(); else if ($('signupBox')) signup(); else if ($('deviceBox')) deviceScreen(lastDevice);
+  if (V) draw(); else if (JOBS) picker(); else if ($('signinBox')) signin(); else if ($('signupBox')) signup(); else if ($('deviceBox')) deviceScreen(lastDevice); else if ($('pendBox')) startPending();   /* patch SUBPEND */
 });
 $('signOut').addEventListener('click', function(){
   var s0 = session;
@@ -466,7 +466,7 @@ function signin(step, who){
 /* patch SUBSIGNUP: "New subcontractor? Create your account" — the form lives in portal-app.js (GCPartner.signup) and posts to the
    bid site's register (subportal.js): the account sees nothing until GrayCo approves it. A job invite (?invite=…&job=… or #invite=…)
    is passed through (invited sign-ups are approved at once) and fills in the e-mail. */
-var APP_JS = '/portal-app.js?v=33.247-subinvmake', SIGNUP_KEEP = {};
+var APP_JS = '/portal-app.js?v=33.247-subpend2', SIGNUP_KEEP = {};
 function loadApp(cb){
   if (window.GCPartner) return cb();
   var s = document.createElement('script'); s.src = APP_JS; s.onload = cb; s.onerror = function(){ notActive(tr('loadFail')); };
@@ -482,7 +482,8 @@ function signup(){
   $('main').innerHTML = '<div class="skel"></div>';
   loadApp(function(){
     var inv = inviteOf() || {};
-    window.GCPartner.signup({ main: $('main'), lang: LANG, invite: inv.invite || '', job: inv.job || '', keep: SIGNUP_KEEP, back: function(email){ signin('pw', email || ''); } });
+    window.GCPartner.signup({ main: $('main'), lang: LANG, invite: inv.invite || '', job: inv.job || '', keep: SIGNUP_KEEP, back: function(email){ signin('pw', email || ''); },
+      signedIn: function(s0, kind){ session = s0; store('gc_portal_s', s0); store('gc_portal_t', ''); token = ''; route(kind); } });   /* patch SUBPEND: signed straight in after sign-up */
   });
 }
 /* ── a new phone opening a sub link: confirm it with a code ── */
@@ -516,7 +517,20 @@ function route(kind){
   $('signOut').hidden = !session;
   if (kind === 'partner') return startPartner();
   if (kind === 'customer') return startCustomer();
+  if (kind === 'pending') return startPending();   /* patch SUBPEND */
   signin();
+}
+/* patch SUBPEND: signed up, waiting for GrayCo's approval — the limited page in portal-app.js (GCPartner.pending); approved → the full portal */
+function startPending(){
+  $('tabs').hidden = true; $('hello').hidden = true; $('signOut').hidden = !session;
+  $('main').innerHTML = '<div class="skel"></div>';
+  var picked = ''; try { picked = localStorage.getItem('gc_lang') || ''; } catch (e) {}
+  var host = {
+    ended: function(){ store('gc_portal_s', ''); session = ''; signin(); },
+    upgrade: function(){ route('partner'); },
+    setLang: function(l){ LANG = l; store('gc_lang', l); paintLang(); }
+  };
+  loadApp(function(){ window.GCPartner.pending({ session: session, host: host, lang: LANG, langPicked: !!picked }); });
 }
 function startPartner(){
   $('tabs').hidden = true;
