@@ -5496,7 +5496,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.247-2026-11-13-r35e -->
+<!-- GrayCo CRM Build: 33.247-2026-11-13-r35f -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6445,7 +6445,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.247-2026-11-13-r35e");
+  console.log("[GC] Build 33.247-2026-11-13-r35f");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6493,7 +6493,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.247-2026-11-13-r35e"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.247-2026-11-13-r35f"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -208861,7 +208861,7 @@ function curView(){ return lsGet('grayco_view') || ''; }
 /* patch OFFICEDESK (owner 11/13: "Brittany's home page looks like it's the field view — change it back to desk view ASAP"): on a
    computer the Office role gets the regular CRM (Dashboard + the left menu), not the role-app home card screen. Her phone keeps
    GrayCo Field. An admin's 👁 View as… Office still previews the role home. */
-function noDeskApp(a){ return a === 'office' && !vas(); }
+function noDeskApp(a){ return !!a && !vas(); }   /* patch DESKALL (owner 11/13: "Glenn's main screen opens to field view too — computers should open to desk and have the desktop"): every role on a computer gets the regular CRM; phones keep GrayCo Field; 👁 View as… still previews a role home */
 function deskOpen(){
   var a = app(); if (!a || mode(a) !== 'desk' || noDeskApp(a)) return false;
   css(); closeSheets(); DESK.view = curView();
