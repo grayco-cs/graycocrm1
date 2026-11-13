@@ -106,6 +106,16 @@ export async function run({ ok, BUILD, SHOTS, PROJ, FX, block }){
   await P.setInputFiles('#_duInput', { name: 'list.csv', mimeType: 'text/csv', buffer: Buffer.from('a,b\n') });
   await sleep(300);
   ok('F18 crew: Upload Documents has no QuickBooks tip and a CSV is just a document to upload to the job', await P.evaluate(() => !document.querySelector('[data-qbcsv-tip]') && !document.querySelector('#_gcQbCsvOv') && /list\.csv/.test(document.querySelector('#_duList').textContent)));
+  /* QB # badges on the CRM's own screens (any list that shows the description) */
+  const g = await P.evaluate(async () => {
+    const box = document.createElement('div'); box.id = 'fakeInvoices'; box.innerHTML = '<table><tr><td class="d">QuickBooks bill #85378 — ROUGH IN</td><td>$1,800.00</td></tr><tr><td class="d2">Sub Invoice: QuickBooks invoice #5001 — PO P1001</td></tr><tr><td class="d3">Kitchen draw 2</td></tr></table><input value="QuickBooks bill #9">';
+    document.body.appendChild(box); await new Promise(r => setTimeout(r, 1200));
+    const a = box.querySelector('.d .gc-qbnum'), b = box.querySelector('.d2 .gc-qbnum'), c = box.querySelector('.d3 .gc-qbnum');
+    box.querySelector('.d').firstChild.nodeValue = 'QuickBooks bill #85999 — reused row'; window._gcQbDecorate();
+    return { a: a && a.textContent, b: b && b.textContent, c: !!c, n: box.querySelectorAll('.gc-qbnum').length, re: [...box.querySelectorAll('.d .gc-qbnum')].map(x => x.textContent) };
+  });
+  ok('G1 a list showing "QuickBooks bill #85378 — …" gets a "QB #85378" badge (once; never on plain rows / inputs)', g.a === 'QB #85378' && g.b === 'QB #5001' && !g.c, g);
+  ok('G2 a row React re-uses for another record gets the right badge (the old one removed)', g.re.length === 1 && g.re[0] === 'QB #85999', g.re);
   ok('F19 no page errors', !errs.length, errs);
   await browser.close();
 }
