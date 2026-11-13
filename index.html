@@ -83262,7 +83262,7 @@ window._gcPickZ = window._gcPickZ || function(sel, base){   /* patch PICKZ: abov
                   if(Array.isArray(_cur) && _cur.length && window._gcUnionMerge){
                     var _in={}; m.forEach(function(r){ if(r && r.id!=null) _in[r.id]=1; });
                     var _extra=_cur.filter(function(r){ return r && typeof r==='object' && r.id!=null && !_in[r.id]; });
-                    if(_extra.length){ _extra=window._gcUnionMerge(key, _extra, []); if(Array.isArray(_extra) && _extra.length){ _out=m.concat(_extra); try{ await idbSet(key, _out); }catch(_w){} } }
+                    if(_extra.length){ _extra=window._gcUnionMerge(key, _extra, []); if(Array.isArray(_extra) && _extra.length){ _out=m.concat(_extra); } }
                   } }catch(_u){}
                 _s(_out); } }catch(e){}
           }
