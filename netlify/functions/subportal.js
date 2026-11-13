@@ -282,7 +282,19 @@ async function tokenUser(event){
   } catch (e) { if (e && e.status === 503) throw e; throw Fail(503, 'Could not reach the sign-in service. Try again.'); }
   const email = low(user && user.email);
   if (!email) throw Fail(401, 'Your sign-in has expired. Please sign in again.');
-  return { email: email, uid: s(user.id) };
+  return { email: email, uid: s(user.id), at: signedInAt(m[1]) };
+}
+/* patch SUBACCT: when this sign-in was made (the token's amr time — kept through token renewals; Supabase checked the token above).
+   Admin → 🔐 Sub portal accounts → 🚪 Sign out everywhere / a temporary password refuse sign-ins made before profile.signedOutAt. */
+function signedInAt(tok){
+  try { const p = JSON.parse(Buffer.from(String(tok).split('.')[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'));
+    const ts = (Array.isArray(p.amr) ? p.amr : []).map(function(x){ return Number(x && x.timestamp) || 0; }).filter(Boolean);
+    const t = ts.length ? Math.min.apply(null, ts) : Number(p.iat) || 0; return t ? t * 1000 : 0; } catch (e) { return 0; }
+}
+function subAcctCheck(profile, t){
+  if (profile.signinDisabled === true) throw Fail(401, 'This account is turned off. Please call GrayCo ' + OFFICE_PHONE + '.');
+  const out = Date.parse(s(profile.signedOutAt));
+  if (out && t.at && t.at < out - 2000) throw Fail(401, 'Please sign in again.');
 }
 
 // → { email, uid, staff: {…}|null, profile: {…}|null, isAdmin, isSub, approved }
@@ -304,6 +316,7 @@ async function whoAmI(event){
     return { email: t.email, uid: t.uid, staff: staff, profile: profile, isAdmin: true, isSub: false, approved: true };
   }
   if (!profile || profile.role !== 'sub') return { email: t.email, uid: t.uid, staff: null, profile: null, isAdmin: false, isSub: false, approved: false };
+  subAcctCheck(profile, t);   /* patch SUBACCT: turned off / signed out everywhere by an owner */
   if (profile.authUserId !== t.uid) {
     profile = Object.assign({}, profile, { authUserId: t.uid });
     await upsertRows([rowFor('users', profile)], t.email);
@@ -481,6 +494,7 @@ async function saveCollection(who, key, upsert, del, ctx){
         if (!old && (rec.role === 'admin' || staff.has(rec.email))) continue;   // GrayCo people come from Team access in the CRM
         rec.role = staff.has(rec.email) ? 'admin' : (old && old.role === 'admin' ? 'former' : 'sub');
         if (old) { rec.authUserId = old.authUserId; rec.createdAt = old.createdAt || rec.createdAt; }
+        if (old) ['signinDisabled', 'signinDisabledAt', 'signinDisabledBy', 'signedOutAt', 'signedOutBy', 'tempPasswordAt', 'tempPasswordBy'].forEach(function(k){ if (old[k] !== undefined) rec[k] = old[k]; else delete rec[k]; });   /* patch SUBACCT: only Admin → 🔐 Sub portal accounts sets these */
         if (rec.role === 'sub' && rec.approved === true && old && old.approved !== true) notes.push({ kind: 'approved', user: rec });
         rows.push(rowFor('users', rec));
       }
@@ -1261,6 +1275,7 @@ async function sweepPlanRequests(){
   } catch (e) { console.warn('[subportal] plans sweep', e.message); }
 }
 
+function notifyApproved(n){ return notify(Object.assign({}, n, { kind: '__approved_inner' })); }   /* patch SIGNUPNOTE */
 async function notify(n){
   if (n.kind === 'plans-added') return notifyPlanRequests(n.jobId);   /* patch PLANREQ */
   if (n.kind === 'due-changed') {   /* patch PLANREQ-D: 🗂 Activity + the automatic "Bid due date changed" update (bid-hub.js, the same as 📂 Manage) */
@@ -1272,15 +1287,22 @@ async function notify(n){
   }
   if (n.kind === 'registered') {
     const u = n.user;
-    return sendMail([process.env.SUBPORTAL_NOTIFY || OFFICE].concat(String(process.env.OWNER_EMAILS || 'wjohnson@grayco-cs.com,nthomas@grayco-cs.com').split(',')), 'New subcontractor sign-up — ' + u.company,
+    const owners = String(process.env.OWNER_EMAILS || 'wjohnson@grayco-cs.com,nthomas@grayco-cs.com').split(',').map(low).filter(okEmail);
+    /* patch SIGNUPNOTE (owner 11/13: "make sure we get the approval notification"): a phone notice to the owners too, and the e-mail opens ✅ Approvals in the CRM */
+    if (!u.approved) { try { await pushTo(owners, '🔨 New sub waiting for approval', s(u.company) + (u.trades && u.trades.length ? ' — ' + u.trades.slice(0, 3).join(', ') : '') + ' · open ✅ Approvals'); } catch (e) {} }
+    return sendMail([process.env.SUBPORTAL_NOTIFY || OFFICE].concat(owners), (u.approved ? 'New subcontractor sign-up — ' : '🔨 Approve new sub — ') + u.company,
       mailHtml('New subcontractor sign-up', [
         '<b>' + esc(u.company) + '</b>' + (u.dbaName ? ' (DBA ' + esc(u.dbaName) + ')' : ''),
         esc(u.name) + ' · ' + esc(u.email) + (u.phone ? ' · ' + esc(u.phone) : ''),
         u.trades && u.trades.length ? 'Trades: ' + esc(u.trades.join(', ')) : '',
-        u.approved ? 'They came from a job invite, so they are already approved.' : 'They are waiting for approval: open the portal → <b>Pending Subs</b>.'
-      ].filter(Boolean), { href: portalLink(), label: 'Open the portal' }));
+        u.approved ? 'They came from a job invite, so they are already approved.' : 'They are signed in and waiting for your approval — they see no jobs until you approve them. In the CRM: <b>✅ Approvals → 🏗 Bid portal</b> (⚡ Approve, or 📋 Review first).'
+      ].filter(Boolean), { href: crmUrl(), label: u.approved ? 'Open the CRM' : 'Open ✅ Approvals' }));
   }
   if (n.kind === 'approved') {
+    /* patch SIGNUPNOTE: the 'you are approved' e-mail answers their own sign-up — it goes in ⏸ data-entry mode too */
+    return require('./_lib/custquiet.js').run('reply', function(){ return notifyApproved(n); });
+  }
+  if (n.kind === '__approved_inner') {
     /* 33.151: in the sub's language; the address is the bid site */
     if (n.user.lang === 'es') return sendMail(n.user.email, 'Ya puede entrar en bids.grayco-cs.com',
       mailHtml('Bienvenido, ' + s(n.user.name).split(' ')[0], [
