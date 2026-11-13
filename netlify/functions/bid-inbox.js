@@ -920,6 +920,7 @@ function outcomeOf(r){
     if (b.route === 'book') return { stored: true, what: 'saved: sub invoice on job ' + (s(b.job) || s(b.jobId) || '?') + ' (to approve)' };
     return { stored: true, what: 'waiting to match: ' + (s(b.why) || s(b.route) || 'pick the job') + ' (✅ Approvals → 🧾 Match this invoice)' };
   }
+  if (b.inbox === 'mailbox-copy') return b.kept ? { stored: true, what: b.invmail === 'maybe' ? 'waiting: possible invoice (📥 Possible invoices from e-mail)' : 'saved: ' + (b.invmail === 'receipt' ? 'receipt' : 'invoice') + ' from ' + (arr(b.boxes).join(', ') || 'a watched mailbox') + (b.already ? ' (already in the CRM)' : '') } : { stored: false, what: 'not an invoice' };   /* patch INVMAIL */
   if (b.inbox === 'leads') return { stored: true, what: 'saved: lead' };
   if (b.inbox) return { stored: true, what: 'saved: ' + s(b.inbox) };
   if (b.results) return { stored: true, what: 'saved: bid results answer' };
@@ -929,6 +930,7 @@ function outcomeOf(r){
 }
 function logLine(evt, r, ms){
   const d = (evt && (evt.data || evt)) || {}, o = outcomeOf(r), b = (r && r.body) || {};
+  if (b.inbox === 'mailbox-copy' && !b.kept && r && r.status < 500) return '[bid-inbox] ' + JSON.stringify({ inbox: 'mailbox-copy', status: r.status, stored: false, outcome: 'not an invoice (Wesley / Nick / office@ copy — nothing kept)', ms: ms });   /* patch INVMAIL: personal mail leaves no trace */
   return '[bid-inbox] ' + JSON.stringify({ inbox: recvKind(evt) || s(b.inbox) || 'other', status: r ? r.status : 0, stored: o.stored, outcome: o.what, from: addr(d.from).email, subject: s(d.subject).slice(0, 120), email: s(d.email_id || d.id), ms: ms });
 }
 async function mailRecv(evt, r, opts){
@@ -964,6 +966,16 @@ async function processEventCore(evt, opts){
   /* mail plainly for the bill or claim inbox (same webhook) is not even downloaded */
   if (otherInbox(data)) return { status: 200, body: { ok: true, ignored: 'not addressed to the bid inbox' } };
   const mail = await readMail(data);
+  /* patch INVMAIL: a Google routing-rule copy of mail to Wesley / Nick / office@ (envelope: invoicecopy@in.grayco-cs.com) — only the
+     invoice detector reads it (an invoice → the invoices@ intake, a receipt → the receipts flow, unsure → 📥 Possible invoices from
+     e-mail); anything else is thrown away unseen, like the e-mail-history copies. Never a lead, a bid, an order or job history. */
+  { const IM = require('./_lib/invmail.js');
+    if (IM.isCopy(data, [])) {
+      if (!dbReady()) return { status: 503, body: { ok: false, error: 'database not configured' } };
+      const mk0 = require('./_lib/money-mail.js').kindOf(recipients(mail, data).filter(x => !IM.copyAddrs().includes(x)), {});   /* also sent to invoices@ / receipts@: exactly that inbox's way */
+      try { return { status: 200, body: Object.assign({ inbox: 'mailbox-copy' }, await invmailTake(mail, IM.watchedIn(mail, recipients(mail, data)), 'copy', opts, mk0)) }; }
+      catch (e) { return { status: 503, body: { ok: false, inbox: 'mailbox-copy', error: 'GrayCo could not read this mailbox copy for invoices yet (' + s(e && e.message).slice(0, 120) + ') — retry.' } }; }
+    } }
   /* patch AUTO8: a GC's answer to the estimator's "Bid results?" e-mail (its Reply-To has results+<lead id>@in.grayco-cs.com):
      kept for the CRM (gc_kv gc_bid_results — the lead shows it, the estimator's dashboard counts it); never a new lead */
   const resHit = recipients(mail, data).map(x => /^results\+([a-z0-9_-]{1,60})@in\.grayco-cs\.com$/i.exec(x)).filter(Boolean)[0];
@@ -996,7 +1008,10 @@ async function processEventCore(evt, opts){
   try { const CM = require('./_lib/comms.js'); if (!mk && (CM.isJournal(mail, data, recipients(mail, data)) || CM.isBccCopy(recipients(mail, data), forBids(mail, data) || forLeads(mail, data)))) { if (!dbReady()) return { status: 503, body: { ok: false, error: 'database not configured' } };
     /* patch BIDSEND: a GC's answer to one of our bids that came by the routing rule is filed on its lead too */
     let br = null; if (!/@(in\.)?grayco-cs\.com$/i.test(mail.from.email) && !ownOrAuto(mail)) br = await repliesApi().handle(mail, { via: 'e-mail history', isSub: await knownSubs() });
-    return { status: 200, body: Object.assign({ inbox: 'history' }, await CM.fromJournal(mail), br ? { bidReply: br } : {}) }; } }
+    /* patch INVMAIL: the history copy of mail to Wesley / Nick / office@ is read for invoices too (the job history keeps its copy) */
+    let im = null; const wb = require('./_lib/invmail.js').watchedIn(mail, recipients(mail, data));
+    if (wb.length && !/@(in\.)?grayco-cs\.com$/i.test(mail.from.email)) { try { im = await invmailTake(mail, wb, 'history', opts); } catch (e) { im = { error: s(e && e.message).slice(0, 120) }; } }
+    return { status: 200, body: Object.assign({ inbox: 'history' }, await CM.fromJournal(mail), br ? { bidReply: br } : {}, im ? { invmail: im } : {}) }; } }
   catch (e) { return { status: 503, body: { ok: false, error: 'The e-mail history could not store this yet (' + (e && e.message) + ') — retry.' } }; }
   /* patch OWNERTODO: receipts@ / invoices@ — a receipt or a sub's invoice for the CRM (never a lead, a bid or an order) */
   { const MM = require('./_lib/money-mail.js');
@@ -1056,6 +1071,13 @@ async function processEventCore(evt, opts){
     catch (e) { return { status: 503, body: { ok: false, error: 'GrayCo could not store this lead yet (' + (e && e.message) + ') — retry.' } }; }
   }
   return bidPath(mail, opts);
+}
+/* patch INVMAIL: one copy of a watched mailbox's message → the invoice detector → the invoices@ intake / receipts / 📥 Possible invoices */
+async function invmailTake(mail, boxes, road, opts, kind){
+  const IM = require('./_lib/invmail.js');
+  const via = (boxes[0] || 'a GrayCo mailbox') + (road === 'history' ? ' (e-mail history copy)' : ' (mailbox copy)');
+  const r = await IM.take(mail, { boxes, road, via, storeFile, kind: kind || '', moneyDeps: extra => require('./_lib/money-box.js').moneyDeps(storeFile, Object.assign({ rerun: !!(opts && opts.rerun) }, extra || {})) });
+  return Object.assign({ ok: true, kept: r.invmail !== 'ignore' && !r.ignored }, r);
 }
 /* RADIUS: leads farther than settings.maxMiles (default 300) from Memphis are not made */
 const MEM = [35.1495, -90.0490], KV_GEO = 'gc_geo_places';
@@ -1557,7 +1579,8 @@ exports.handler = async function(event){
       bidPortal: !!(await portalApi().status().catch(() => ({}))).ready, adminAlerts: !!env('RESEND_API_KEY') && env('BID_ALERTS_OFF') !== '1',
       phonePush: !!(env('VAPID_PUBLIC_KEY') && env('VAPID_PRIVATE_KEY')),
       invoicesTo: require('./_lib/money-mail.js').invoiceAddrs(), receiptsTo: require('./_lib/money-mail.js').receiptAddrs(),   /* patch MONEY: where invoices / receipts are read */
-      moneyMailboxes: require('./_lib/money-box.js').moneyBoxes(), invoicesFromEveryMailbox: require('./_lib/money-box.js').invoiceAll() }, C);
+      moneyMailboxes: require('./_lib/money-box.js').moneyBoxes(), invoicesFromEveryMailbox: require('./_lib/money-box.js').invoiceAll(),
+      invoiceMailboxes: require('./_lib/invmail.js').boxes(), invoiceCopyTo: require('./_lib/invmail.js').copyAddrs(), gmailReading: require('./_lib/gmail.js').configured() }, C);   /* patch INVMAIL (yes / no only) */
 
   /* patch MONEY: the e-mailed invoices / receipts list (gc_kv "gc_mail_money" is admin-only in Supabase — docs/email-all.sql —
      so the OFFICE's CRM reads it here): GET → { list, done } · POST { op: 'done', id, val } marks one booked / set aside.
@@ -1657,6 +1680,37 @@ exports.handler = async function(event){
     const t0 = Date.now(), r = await processEvent(evt, { inline: true, rerun: true });
     console.log(logLine(evt, r, Date.now() - t0));
     return J(200, { ok: r.status < 500, status: r.status, outcome: outcomeOf(r).what }, C);
+  }
+  /* patch INVMAIL: 📥 Possible invoices from e-mail (Wesley / Nick / office@ mail the CRM was not sure about) + whether those mailboxes
+     are connected (📭) + the invoices lately caught from them. GET → { items, seen, boxes, gmailReading, caught } ·
+     POST { op: 'yes' | 'no', id } → ✓ It's an invoice (into the invoices@ intake) / ✕ Not an invoice — remembered for that sender.
+     Admins and the office only. */
+  if (qs.invmail && (event.httpMethod === 'GET' || event.httpMethod === 'POST')) {
+    const who = await staffAuth(event); if (!who.ok) return J(who.code, { error: who.error }, C);
+    let office = who.admin || who.office || /^office/i.test(s(who.role));
+    if (!office) { try { const u = arr((await require('./portal.js')._core.kvRead(['users'])).users); office = u.some(x => x && x.active !== false && low(x.email) === low(who.email) && /office/i.test(s(x.role) + ' ' + s(x.profile))); } catch (e) {} }
+    if (!office) return J(403, { error: 'Only an admin or the office sees the possible invoices.' }, C);
+    if (!dbReady()) return J(500, { error: 'Supabase is not configured on Netlify.' }, C);
+    const IM = require('./_lib/invmail.js'), MMK = require('./_lib/money-mail.js');
+    const deps = extra => require('./_lib/money-box.js').moneyDeps(storeFile, extra || {});
+    if (event.httpMethod === 'GET') {
+      try {
+        const [items, seen, money] = [await IM.maybeList(), await IM.seen(), await kvReadGcKv(MMK.KEY)];
+        const mm = arr(money && money.v), ids = {}; mm.forEach(x => { if (x && x.id) ids[x.id] = x; });
+        const boxes = IM.boxes();
+        const watched = x => arr(x.cameTo).some(e => boxes.includes(low(e))) || arr(x.vias).some(v => boxes.some(b => low(v).indexOf(b) === 0));
+        const caught = mm.filter(x => x && x.kind !== 'client_invoice' && watched(x)).slice(-15).reverse().map(x => ({ id: x.id, at: x.at, kind: x.kind, from: x.from, fromName: x.fromName, subject: x.subject,
+          vendor: s(x.si && x.si.read && x.si.read.vendor), invoiceNumber: s(x.si && x.si.read && x.si.read.invoiceNumber), total: x.si && x.si.read ? x.si.read.total : 0, route: s(x.si && x.si.route), cameTo: arr(x.cameTo), vias: arr(x.vias) }));
+        const list = items.filter(x => x && (x.status === 'open' ? !ids[x.id] : Date.now() - Date.parse(x.decidedAt || x.at) < 14 * 864e5)).slice(-120).reverse()
+          .map(x => ({ id: x.id, at: x.at, sent: x.sent, from: x.from, fromName: x.fromName, subject: x.subject, text: s(x.text).slice(0, 600), files: arr(x.files).map(f => ({ name: f.name, type: f.type, size: f.size, ref: f.ref })),
+            reasons: arr(x.reasons), why: x.why, score: x.score, cameTo: arr(x.cameTo), status: x.status, by: x.by, decidedAt: x.decidedAt, mmId: x.mmId || '' }));
+        return J(200, { ok: true, items: list, seen, boxes: boxes.map(b => ({ box: b, label: IM.label(b) })), copyTo: IM.copyAddrs()[0], gmailReading: require('./_lib/gmail.js').configured(), caught, at: nowIso() }, C);
+      } catch (e) { return J(502, { error: 'Could not read the possible invoices.' }, C); }
+    }
+    let b = {}; try { b = JSON.parse(rawBody(event) || '{}'); } catch (e) { return J(400, { error: 'Not JSON.' }, C); }
+    if (!/^(yes|no)$/.test(s(b.op)) || !s(b.id)) return J(400, { error: 'Say yes or no for one e-mail.' }, C);
+    try { const r = await IM.decide(s(b.id), b.op === 'yes', who, { moneyDeps: deps }); return J(r.ok ? 200 : (r.code || 400), r, C); }
+    catch (e) { return J(503, { error: 'Could not save that yet (' + s(e && e.message).slice(0, 120) + ') — try again.' }, C); }
   }
   /* patch LEADSEE: the small list the CRM's import reads (open items only) — every signed-in staff member */
   if (event.httpMethod === 'GET' && qs.leads) {
