@@ -1206,9 +1206,9 @@ function signup(opts){
       if (r.status !== 200 || !d.ok) { err.textContent = d.error || t('failed'); return; }
       if (picked.items.length && d.paperToken) {
         busy(go, true); err.textContent = t('ppUp');
-        return uploadPapers(d.paperToken, picked).then(function(u){ busy(go, false); done(!!d.approved, body.email, u); });
+        return uploadPapers(d.paperToken, picked).then(function(u){ pendAfterSignup(opts, body.email, body.password, keep, function(){ busy(go, false); done(!!d.approved, body.email, u); }); });   /* patch SUBPEND */
       }
-      done(!!d.approved, body.email);
+      busy(go, true); pendAfterSignup(opts, body.email, body.password, keep, function(){ busy(go, false); done(!!d.approved, body.email); });   /* patch SUBPEND: signed straight in (else the old "Account created → Sign in") */
     }, function(){ busy(go, false); err.textContent = t('loadFail'); });
   }
   go.addEventListener('click', function(){ submit(false); });
@@ -1293,6 +1293,170 @@ function msForm(e){
   return sh;
 }
 
+/* ═══ patch SUBPEND (owner 11/13: "John signed up and then it wouldn't let him enter with the password he just made — make sure that
+   doesn't happen") ═══ A sub who signed up and is not approved yet signs in to a limited "waiting for approval" page (portal-access
+   session kind 'pending'): ✅ you're signed in, GrayCo is reviewing it, the papers checklist (W-9 / COI / workers' comp / licenses —
+   on file or 📎 upload, straight into their bid-site papers through subportal.js signup-upload / signup-papers), their contact info,
+   📞 call GrayCo. The page checks by itself (every minute, when shown again, "↻ Check again"); once GrayCo approves, the same sign-in
+   opens the full partner portal. Right after sign-up they are signed straight in with the password they just made. */
+Object.assign(L.en, { pdIn: '✅ You\'re signed in.', pdWhy: 'GrayCo is reviewing your sign-up (usually the same business day). You\'ll get an e-mail when you\'re approved.',
+  pdThen: 'When GrayCo approves you, this page opens your full GrayCo Portal by itself — no need to sign in again.', pdCall: '📞 Call GrayCo ' + OFFICE, pdCheck: '↻ Check again', pdStill: 'Still waiting for GrayCo\'s approval.',
+  pdDenied: 'Your sign-up was not approved — call GrayCo ' + OFFICE + '.', pdPapersT: '📎 Your papers', pdPapersWhy: 'With your W-9, general liability and workers\' comp on file, GrayCo can approve you faster. A PDF or a phone photo is fine.',
+  pdHave: 'On file', pdExp: 'expires {d}', pdExpired: 'Expired {d} — upload a new one', pdSays: 'You said you have it — upload it when you can', pdMissing: 'Not on file yet', pdExemptOn: 'Exempt (sole proprietor) — on file',
+  pdLicNone: 'No license on file (optional)', pdUpload: '📎 Upload', pdNeedFile: 'Pick the file first.', pdNeedExp: 'Add the expiration date.', pdSaved: 'Uploaded — GrayCo sees it with your sign-up.',
+  pdContactT: 'Your contact info', pdEdit: '✏️ Edit', pdSave: 'Save', pdSavedC: 'Saved', pdSince: 'Signed up {d}', pdLoadFail: 'Could not load. Check your signal and try again.' });
+Object.assign(L.es, { pdIn: '✅ Ya entró a su cuenta.', pdWhy: 'GrayCo está revisando su registro (normalmente el mismo día hábil). Recibirá un correo cuando esté aprobado.',
+  pdThen: 'Cuando GrayCo lo apruebe, esta página abre su Portal GrayCo completo sola — no tiene que entrar otra vez.', pdCall: '📞 Llame a GrayCo ' + OFFICE, pdCheck: '↻ Revisar otra vez', pdStill: 'Todavía esperando la aprobación de GrayCo.',
+  pdDenied: 'Su registro no fue aprobado — llame a GrayCo ' + OFFICE + '.', pdPapersT: '📎 Sus documentos', pdPapersWhy: 'Con su W-9, el seguro de responsabilidad general y el de compensación de trabajadores en archivo, GrayCo lo puede aprobar más rápido. Un PDF o una foto del celular sirve.',
+  pdHave: 'En archivo', pdExp: 'vence {d}', pdExpired: 'Venció {d} — suba uno nuevo', pdSays: 'Dijo que lo tiene — súbalo cuando pueda', pdMissing: 'Todavía no está en archivo', pdExemptOn: 'Exento (propietario único) — en archivo',
+  pdLicNone: 'No hay licencia en archivo (opcional)', pdUpload: '📎 Subir', pdNeedFile: 'Escoja el archivo primero.', pdNeedExp: 'Agregue la fecha de vencimiento.', pdSaved: 'Subido — GrayCo lo ve con su registro.',
+  pdContactT: 'Sus datos de contacto', pdEdit: '✏️ Cambiar', pdSave: 'Guardar', pdSavedC: 'Guardado', pdSince: 'Registrado el {d}', pdLoadFail: 'No se pudo cargar. Revise su señal e intente otra vez.' });
+/* right after sign-up: sign in with the password they just made (portal-access signin-password → the pending session, or the full
+   portal when an invite already approved them). Anything else → fallback() (the old "Account created → Sign in" screen). */
+function pendAfterSignup(opts, email, pw, keep, fallback){
+  if (!opts || !opts.signedIn) return fallback();
+  fetch(FN, { method: 'POST', headers: { 'Content-Type': 'application/json' }, cache: 'no-store', credentials: 'omit', body: JSON.stringify({ action: 'signin-password', email: email, password: pw }) })
+    .then(function(r){ return r.json().catch(function(){ return {}; }); })
+    .then(function(j){
+      if (!(j && j.ok && j.session && (j.kind === 'pending' || j.kind === 'partner'))) return fallback();
+      if (keep) Object.keys(keep).forEach(function(k){ delete keep[k]; });
+      opts.signedIn(j.session, j.kind);
+    }, function(){ fallback(); });
+}
+var PD = { timer: null, onShow: null, opts: null, data: null };
+function pdStop(){ if (PD.timer) clearInterval(PD.timer); PD.timer = null; if (PD.onShow) document.removeEventListener('visibilitychange', PD.onShow); PD.onShow = null; }
+function pdCall(action, body){
+  return fetch(FN, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-portal-session': session }, cache: 'no-store', credentials: 'omit', body: JSON.stringify(Object.assign({ action: action }, body || {})) })
+    .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){
+      if (j && j.ok && j.kind === 'partner') { pdStop(); H.upgrade(); throw Object.assign(new Error('upgraded'), { quiet: true }); }   /* approved → the full portal, same sign-in */
+      if (notActiveRes(r, j)) { pdStop(); H.ended(); throw Object.assign(new Error(j.error || ''), { quiet: true }); }
+      if (!r.ok || !j.ok) throw new Error((j && j.error) || t('failed'));
+      return j;
+    }); });
+}
+function pdCss(){
+  if (document.getElementById('gc-pend-css')) return;
+  var st = document.createElement('style'); st.id = 'gc-pend-css';
+  st.textContent = '#pendBox{max-width:680px;margin:0 auto;width:100%;display:flex;flex-direction:column;gap:14px}#pendBox .pd-big{font-size:22px;font-weight:700}#pendBox .pd-row{display:flex;flex-direction:column;gap:6px;padding:10px 0;border-top:1px dashed var(--line,#e5e7eb)}' +
+    '#pendBox .pd-row .pd-st{font-size:14px}#pendBox .pd-ok{color:#166534}#pendBox .pd-no{color:#8a1c1c}#pendBox .pd-form{display:flex;flex-direction:column;gap:8px;border:1px solid var(--line,#e5e7eb);border-radius:10px;padding:10px}#pendBox .pd-form [hidden]{display:none!important}' +
+    '#pendBox .pd-btns{display:flex;flex-wrap:wrap;gap:8px}#pendBox .pd-btns .btn{flex:1 1 180px}#pendBox .pd-kv{display:grid;grid-template-columns:minmax(0,1fr);gap:4px;font-size:15px;overflow-wrap:anywhere}';
+  document.head.appendChild(st);
+}
+function pendStart(opts){
+  PD.opts = opts; session = opts.session; H = opts.host;
+  LANG = opts.lang === 'es' ? 'es' : 'en';
+  suCss(); pdCss(); pdStop();
+  var main = document.getElementById('main'); main.innerHTML = '<div class="skel"></div>';
+  function load(){
+    return pdCall('pend-me').then(function(d){ PD.data = d; if (!opts.langPicked && d.lang && d.lang !== LANG && H.setLang) { LANG = d.lang; H.setLang(d.lang); } pendPaint(main, d, load); },
+      function(e){ if (e.quiet) return; if (!PD.data) { main.innerHTML = ''; main.appendChild(h('div', { class: 'off', id: 'pendFail' }, [h('p', { text: e.message || t('pdLoadFail') }), h('button', { type: 'button', class: 'btn gold', text: t('retry'), on: { click: load } })])); } else toast(e.message || t('pdLoadFail'), true); });
+  }
+  load();
+  /* approved yet? every minute while shown, and when the phone shows the page again */
+  PD.timer = setInterval(function(){ if (!document.hidden && !document.querySelector('#pendBox .pd-form:not([hidden])')) pdCall('whoami').then(function(w){ if (w.state === 'denied' && PD.data && PD.data.state !== 'denied') load(); }, function(){}); }, 60000);
+  PD.onShow = function(){ if (!document.hidden) pdCall('whoami').then(function(){}, function(){}); };
+  document.addEventListener('visibilitychange', PD.onShow);
+  return { reload: load };
+}
+function pendPaint(main, d, load){
+  main.innerHTML = '';
+  var box = h('section', { class: 'card signin', id: 'pendBox', 'data-state': d.state || 'pending' });
+  main.appendChild(box);
+  var callBtn = h('a', { class: 'btn gold', id: 'pendCall', href: 'tel:9015850944', text: t('pdCall') });
+  if (d.state === 'denied') {
+    box.appendChild(h('p', { class: 'pd-big', id: 'pendDenied', text: t('pdDenied') }));
+    box.appendChild(callBtn);
+    pdStop();
+    return;
+  }
+  var me = d.me || {};
+  var check = h('button', { type: 'button', class: 'btn', id: 'pendCheck', text: t('pdCheck'), on: { click: function(){ busy(check, true); load().then(function(){ if (document.getElementById('pendBox')) toast(t('pdStill')); }); } } });
+  box.appendChild(h('div', { class: 'pd-big', id: 'pendIn', text: t('pdIn') }));
+  box.appendChild(h('p', { id: 'pendWhy', text: t('pdWhy') }));
+  box.appendChild(h('p', { class: 'muted', text: t('pdThen') }));
+  if (me.company || me.email) box.appendChild(h('div', { class: 'muted', id: 'pendWho', text: [me.company, me.email].filter(Boolean).join(' · ') + (me.createdAt ? ' · ' + t('pdSince', { d: dt(me.createdAt) }) : '') }));
+  box.appendChild(h('div', { class: 'pd-btns' }, [callBtn, check]));
+  box.appendChild(pendPapers(d, load));
+  box.appendChild(pendContact(me, load));
+}
+function pendPapers(d, load){
+  var P = d.papers || {}, wrap = h('div', { id: 'pendPapers' }, [h('h2', { text: t('pdPapersT') }), h('p', { class: 'how', text: t('pdPapersWhy') })]);
+  function status(x, exemptOk){
+    if (!x) return h('div', { class: 'pd-st pd-no', text: '✕ ' + t('pdMissing') });
+    if (x.says) return h('div', { class: 'pd-st', text: '⏳ ' + t('pdSays') });
+    if (x.exempt && exemptOk) return h('div', { class: 'pd-st pd-ok', text: '✓ ' + t('pdExemptOn') });
+    if (!x.ok) return h('div', { class: 'pd-st pd-no', text: '⚠ ' + t('pdExpired', { d: dt(x.exp) }) });
+    return h('div', { class: 'pd-st pd-ok' }, ['✓ ' + t('pdHave') + (x.exp ? ' — ' + t('pdExp', { d: dt(x.exp) }) : '') + ' ', x.name ? (x.url ? h('a', { href: x.url, target: '_blank', rel: 'noopener', text: x.name }) : h('span', { class: 'muted', text: x.name })) : null]);
+  }
+  function row(k, label, x, type, needExp, exempt){
+    var file = h('input', { type: 'file', class: 'inp', 'data-pd-file': k, accept: ACCEPT_DOCS });
+    var exp = needExp ? h('input', { type: 'date', class: 'inp', 'data-pd-exp': k }) : null;
+    var ex = exempt ? h('input', { type: 'checkbox', 'data-pd-exempt': k }) : null;
+    var lic = type === 'license' ? [h('input', { class: 'inp', 'data-pd-ls': k, maxlength: '2', style: 'text-transform:uppercase', 'aria-label': t('ppLicState') }), h('input', { class: 'inp', 'data-pd-lt': k, maxlength: '80', 'aria-label': t('ppLicType') }), h('input', { class: 'inp', 'data-pd-ln': k, maxlength: '60', 'aria-label': t('ppLicNum') })] : null;
+    var err = h('div', { class: 'err', role: 'alert' });
+    var send = h('button', { type: 'button', class: 'btn gold', 'data-pd-send': k, text: t('send') });
+    var expF = exp ? field(t('ppExp'), exp) : null;
+    if (ex) ex.addEventListener('change', function(){ if (expF) expF.hidden = ex.checked; });
+    var form = h('div', { class: 'pd-form', 'data-pd-form': k, hidden: true }, [field(t('ppFile'), file), expF, ex ? h('label', { class: 'pp-opt' }, [ex, h('span', { text: t('ppExemptS') })]) : null,
+      lic ? h('div', { class: 'su-grid lic' }, [field(t('ppLicState'), lic[0]), field(t('ppLicType'), lic[1]), field(t('ppLicNum'), lic[2])]) : null, err, send]);
+    var open = h('button', { type: 'button', class: 'btn', 'data-pd-up': k, text: t('pdUpload'), on: { click: function(){ form.hidden = !form.hidden; } } });
+    send.addEventListener('click', function(){
+      err.textContent = '';
+      var f = file.files && file.files[0], isEx = !!(ex && ex.checked);
+      if (!f) { err.textContent = t('pdNeedFile'); return; }
+      if (f.size > 50 * 1024 * 1024) { err.textContent = t('ppBig', { f: f.name }); return; }
+      if (needExp && !isEx && !exp.value) { err.textContent = t('pdNeedExp'); return; }
+      var it = { type: type, label: label, expirationDate: exp && !isEx ? exp.value : '', file: f };
+      if (isEx) { it.wcExempt = true; it.label = 'Workers\' comp exemption (sole proprietor)'; }
+      if (lic) { it.licState = lic[0].value.trim().toUpperCase(); it.licType = lic[1].value.trim(); it.licNumber = lic[2].value.trim(); }
+      busy(send, true);
+      pendUpload(it).then(function(){ toast(t('pdSaved')); return load(); }, function(e){ busy(send, false); err.textContent = (e && e.message) || t('failed'); });
+    });
+    return h('div', { class: 'pd-row', 'data-pd': k }, [h('b', { text: label }), x === 'lic' ? null : status(x, exempt), open, form]);
+  }
+  wrap.appendChild(row('w9', t('ppW9'), P.w9, 'w9', false, false));
+  wrap.appendChild(row('gl', t('ppGl'), P.gl, 'insurance_general', true, false));
+  wrap.appendChild(row('wc', t('ppWc'), P.wc, 'insurance_workers_comp', true, true));
+  var lr = row('lic', t('ppLic'), 'lic', 'license', false, false);
+  var lics = P.licenses || [];
+  lr.insertBefore(lics.length ? h('div', { class: 'pd-st pd-ok' }, lics.map(function(l){ return h('div', { text: '✓ ' + ([l.state, l.type, l.number].filter(Boolean).join(' ') || l.label || l.name) + (l.exp ? ' — ' + t('pdExp', { d: dt(l.exp) }) : '') }); })) : h('div', { class: 'pd-st muted', text: t('pdLicNone') }), lr.children[1]);
+  wrap.appendChild(lr);
+  return wrap;
+}
+/* one paper: a fresh token for THEIR papers (pend-me), the signed upload (subportal.js signup-upload), then saved (signup-papers) */
+function pendUpload(it){
+  return pdCall('pend-me').then(function(d){
+    var tok = d.paperToken;
+    return sp({ action: 'signup-upload', paperToken: tok, name: it.file.name, size: it.file.size, type: it.file.type }).then(function(r){
+      if (r.status !== 200 || !r.data.url) throw new Error((r.data && r.data.error) || t('failed'));
+      return fetch(r.data.url, { method: 'PUT', headers: { apikey: r.data.apikey || '', 'Content-Type': it.file.type || 'application/octet-stream', 'x-upsert': 'false' }, body: it.file }).then(function(x){
+        if (!x.ok) throw new Error(t('failed'));
+        var o = Object.assign({}, it, { fileRef: r.data.path, fileName: it.file.name, fileSize: it.file.size, fileType: it.file.type }); delete o.file;
+        return sp({ action: 'signup-papers', paperToken: tok, items: [o] }).then(function(s2){ if (s2.status !== 200 || !(s2.data.saved > 0)) throw new Error((s2.data && s2.data.error) || t('failed')); });
+      });
+    });
+  });
+}
+function pendContact(me, load){
+  var wrap = h('div', { id: 'pendContact' }, [h('h2', { text: t('pdContactT') })]);
+  var view = h('div', { class: 'pd-kv' }, [h('div', { text: me.name || '' }), h('div', { text: me.company || '' }), h('div', { text: me.phone || '' }), h('div', { text: me.email || '' }), h('div', { class: 'muted', text: [me.businessCity, me.businessState].filter(Boolean).join(', ') })]);
+  var F = {};
+  function inp(k, lab, attrs){ F[k] = h('input', Object.assign({ class: 'inp', 'data-pd-c': k, value: me[k] || '' }, attrs || {})); return field(lab, F[k]); }
+  var err = h('div', { class: 'err', role: 'alert' });
+  var save = h('button', { type: 'button', class: 'btn gold', id: 'pendSave', text: t('pdSave') });
+  var form = h('div', { class: 'pd-form', id: 'pendContactForm', hidden: true }, [inp('name', t('suName'), { maxlength: '80', autocomplete: 'name' }), inp('company', t('suCompany'), { maxlength: '120', autocomplete: 'organization' }),
+    inp('phone', t('suPhone'), { type: 'tel', maxlength: '40', autocomplete: 'tel' }), inp('businessCity', t('suCity'), { maxlength: '80' }), inp('businessState', t('suState'), { maxlength: '2', style: 'text-transform:uppercase' }), err, save]);
+  var edit = h('button', { type: 'button', class: 'btn', id: 'pendEdit', text: t('pdEdit'), on: { click: function(){ form.hidden = !form.hidden; } } });
+  save.addEventListener('click', function(){
+    err.textContent = ''; busy(save, true);
+    var c = {}; Object.keys(F).forEach(function(k){ c[k] = F[k].value.trim(); });
+    pdCall('pend-contact', { contact: c }).then(function(){ toast(t('pdSavedC')); return load(); }, function(e){ busy(save, false); if (!e.quiet) err.textContent = e.message || t('failed'); });
+  });
+  wrap.appendChild(view); wrap.appendChild(edit); wrap.appendChild(form);
+  return wrap;
+}
+/* ═══ end patch SUBPEND (client) ═══ */
+
 /* portal.html calls this: host = { hello(big, small, sub), ended(), setLang(l) } */
 window.GCPartner = {
   start: function(opts){
@@ -1322,6 +1486,7 @@ window.GCPartner = {
   },
   setLang: setLang,
   signup: signup,   /* patch SUBSIGNUP: portal.html's sign-in screen → "New subcontractor? Create your account" */
+  pending: pendStart,   /* patch SUBPEND: the "waiting for approval" page (host = { ended(), upgrade(), setLang(l) }) */
   _state: function(){ return { home: HOME, job: JOB, tab: TAB, jtab: JTAB, lang: LANG }; },
   L: L
 };
