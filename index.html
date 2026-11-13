@@ -13661,8 +13661,8 @@ function doSearch(){
 
   // 5. INVOICES
   ((function(){ var L=db.invoices||[]; try{ var _G=window._gcCo; if(_G&&_G.filter()!=="all") L=L.filter(function(x){return _G.pass(x,"inv")}); }catch(_e){} return L; })()).forEach(function(inv){
-    var txt=[inv.desc,inv.sub,inv.po,inv.client,(inv.amt||"").toString(),inv.status,inv.type].filter(Boolean).join(" ").toLowerCase();
-    if(txt.includes(q)){
+    var txt=[inv.desc,inv.sub,inv.po,inv.client,(inv.amt||"").toString(),inv.status,inv.type,inv.invNum,inv.qbNum].filter(Boolean).join(" ").toLowerCase();
+    if(txt.includes(q) || (window._gcQbMatch && window._gcQbMatch.qbSearchHit(inv,q))){   /* patch QBCSV: "QB 85378" / "#85378" */
       var prj=projects.find(function(p){return p.id===inv.pid});
       hits.push({type:"invoice",icon:"▥",label:"$"+Number(inv.amt||0).toLocaleString()+" — "+(inv.desc||inv.sub||"Invoice"),detail:[
         prj?"Project: "+prj.name:"",
@@ -121441,7 +121441,8 @@ function tab(){ var t=V.props.tab; return (t && /^k_/.test(t)) ? t : (t||'k_home
 function pmScope(){ if(seesCompany()) return V.pmView||''; var u=meUser(); return (u&&u.name)||'__nobody__'; }
 
 function q(){ return low((V.root && V.root.querySelector('#gck-q') || {}).value || ''); }
-function matches(o){ var s=q(); if(!s) return true; return Object.keys(o).some(function(k){ var v=o[k]; return (typeof v==='string'||typeof v==='number') && low(v).indexOf(s)>=0; }); }
+function matches(o){ var s=q(); if(!s) return true; var s2=(window._gcQbMatch && /^\s*(qb|#)/i.test(s)) ? low(window._gcQbMatch.qbSearchNum(s)) : '';   /* patch QBCSV: "QB 85378" / "#85378" */
+  return Object.keys(o).some(function(k){ var v=o[k]; return (typeof v==='string'||typeof v==='number') && (low(v).indexOf(s)>=0 || (s2 && low(v).replace(/[^a-z0-9]/g,'').replace(/^qb/,'')===s2)); }); }
 
 /* ── shell (drawn once per mount) ──────────────────────────────────────── */
 function shell(){
@@ -231655,6 +231656,35 @@ function hookPatchJ(){
   }
   var p = W._gcOpenQbCsvImport; if (typeof p === 'function' && !p.__qbcsv) { var w2 = function(){ pickSheet(); }; w2.__qbcsv = true; w2.__orig = p; W._gcOpenQbCsvImport = w2; }
 }
+/* ════════════════════ 6. QB # BADGES ON THE CRM'S OWN SCREENS ════════════════════ */
+/* wherever a record's description shows "QuickBooks bill #85378" (Invoices, Sub Invoices, ✅ Approvals, 📥 Needs a job, the job's
+   P&L lines …) a "QB #85378" badge is added next to it: click = copy (↗ QuickBooks when the record's QuickBooks Id is known) */
+var QB_TXT = /QuickBooks (?:bill|invoice|sales receipt|payment|deposit|expense|check|copy)[^#\n]{0,20}#\s*([A-Za-z0-9][A-Za-z0-9-]{0,24})/i;
+var SKIP_EL = /^(INPUT|TEXTAREA|SELECT|OPTION|SCRIPT|STYLE|BUTTON)$/;
+function idFor(n){ var L = arr(crm().invs).length ? crm().invs : arr(crm().invoices); var hit = L.concat(arr(crm().expenses)).filter(function(x){ var q = x && C.qbNum(x); return q && q.num === n && q.id; })[0]; return hit ? C.qbNum(hit) : null; }
+function decorate(root){
+  root = root || D.body; if (!root || !D.createTreeWalker) return 0;
+  Array.prototype.forEach.call(root.querySelectorAll('.gc-qbnum[data-qbb]'), function(b){ var p = b.parentElement, txt = ''; if (!p) return; Array.prototype.forEach.call(p.childNodes, function(c){ if (c !== b) txt += c.textContent || ''; }); var m = QB_TXT.exec(txt); if (!m || m[1] !== b.getAttribute('data-qbnum')) b.remove(); });   /* a row React re-used for another record */
+  var tw = D.createTreeWalker(root, 4, null), n, todo = [];
+  while ((n = tw.nextNode()) && todo.length < 400) {
+    var v = n.nodeValue; if (!v || v.length < 14 || v.indexOf('QuickBooks') < 0) continue;
+    var m = QB_TXT.exec(v); if (!m) continue;
+    var el = n.parentElement; if (!el || SKIP_EL.test(el.tagName) || el.closest('.gc-qbnum,[data-qbb-done],#_gcQbCsvOv,#_gcQbCheckOv')) continue;
+    todo.push([el, m[1]]);
+  }
+  todo.forEach(function(x){
+    var el = x[0], num = x[1]; if (el.querySelector(':scope > .gc-qbnum')) return;
+    var q = idFor(num), sp = D.createElement('span'); sp.className = 'gc-qbnum'; sp.setAttribute('data-qbnum', num); sp.setAttribute('data-qbb', '1');
+    var link = q ? C.qbLink(q) : ''; if (link) sp.setAttribute('data-qblink', link);
+    sp.title = 'QuickBooks #' + num + ' — click to copy'; sp.textContent = 'QB #' + num; el.appendChild(sp);
+  });
+  return todo.length;
+}
+W._gcQbDecorate = decorate;
+var decoT = null;
+function decoSoon(){ if (decoT) return; decoT = later(function(){ decoT = null; try { css(); decorate(); } catch (e) {} }, 700); }
+try { new MutationObserver(function(ms){ for (var i = 0; i < ms.length; i++) { if (ms[i].addedNodes && ms[i].addedNodes.length && !(ms[i].target && ms[i].target.closest && ms[i].target.closest('.gc-qbnum'))) { decoSoon(); return; } } }).observe(D.body || D.documentElement, { childList: true, subtree: true }); } catch (e) {}
+decoSoon();
 W._gcOpenQbCsvToJobs = function(){ if (!allowed()) { W.alert('Importing QuickBooks files is for admins and the office.'); return; } pickSheet(); };
 function hooks(){ try { hookUploader(); } catch (e) {} try { hookPatchJ(); } catch (e) {} }
 hooks(); later(hooks, 1500); later(hooks, 5000); later(hooks, 15000);
