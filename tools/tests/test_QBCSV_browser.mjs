@@ -9,7 +9,19 @@ export async function run({ ok, BUILD, SHOTS, PROJ, FX, block }){
   const { chromium } = require(PWDIR);
   const browser = await chromium.launch({ args: ['--proxy-server=http://127.0.0.1:9'] });
   const ctx = await browser.newContext({ viewport: { width: 1366, height: 860 }, serviceWorkers: 'block' });
-  await ctx.route('**/*', r => new URL(r.request().url()).host === 'crm.test' ? r.fulfill({ status: 200, contentType: 'text/html', body: '<!doctype html><html><head><meta charset="utf-8"></head><body><main></main></body></html>' }) : r.fulfill({ status: 404, body: '' }));
+  const QBF = { calls: [], mode: 'ok' }; const FAKEREF = n => 'sb:crm-files/' + require('crypto').createHash('sha256').update('pdf-' + n).digest('hex') + '.pdf';
+  await ctx.route('**/*', r => {
+    const u = new URL(r.request().url());
+    if (u.pathname === '/.netlify/functions/qb-proxy') return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ url: 'https://appcenter.intuit.test/connect/oauth2?client_id=abc&x=1' }) });
+    if (u.pathname === '/.netlify/functions/qb-files') {
+      const b = JSON.parse(r.request().postData() || '{}'), h = r.request().headers(); QBF.calls.push({ op: b.op, n: (b.items || []).length, tok: h['x-qb-token'], method: r.request().method() });
+      if (QBF.mode === 'expired') return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: false, notConnected: true, reason: 'expired', error: 'The QuickBooks sign-in on this computer has expired — connect again.' }) });
+      const results = (b.items || []).map(it => it.num === '85390' ? { key: it.key, ok: true, id: '901', memo: '', lines: [{ desc: 'panel', customer: 'Smith, John:Smith Garage', amount: 900 }], files: [{ ref: FAKEREF(it.num), name: 'bill-' + it.num + '.pdf', type: 'application/pdf', size: 900, hash: FAKEREF(it.num).slice(13, 77) }], text: '' }
+        : it.num || it.kind === 'expense' ? { key: it.key, ok: true, id: 'Q' + (it.num || it.date), memo: '', lines: [], files: [{ ref: FAKEREF(it.num || it.date), name: (it.num || it.date) + '.pdf', type: 'application/pdf', size: 100, hash: FAKEREF(it.num || it.date).slice(13, 77) }], text: '' } : { key: it.key, ok: false, error: 'not found in QuickBooks' });
+      return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, results }) });
+    }
+    return u.host === 'crm.test' ? r.fulfill({ status: 200, contentType: 'text/html', body: '<!doctype html><html><head><meta charset="utf-8"></head><body><main></main></body></html>' }) : r.fulfill({ status: 404, body: '' });
+  });
   const P = await ctx.newPage(); const errs = []; P.on('pageerror', e => errs.push(String(e.message).slice(0, 200)));
   const shot = async n => { if (SHOTS) await P.screenshot({ path: path.join(SHOTS, n + '.png') }).catch(() => {}); };
   await P.goto('https://crm.test/');
@@ -117,6 +129,37 @@ export async function run({ ok, BUILD, SHOTS, PROJ, FX, block }){
   ok('G1 a list showing "QuickBooks bill #85378 — …" gets a "QB #85378" badge (once; never on plain rows / inputs)', g.a === 'QB #85378' && g.b === 'QB #5001' && !g.c, g);
   ok('G2 a row React re-uses for another record gets the right badge (the old one removed)', g.re.length === 1 && g.re[0] === 'QB #85999', g.re);
   ok('F19 no page errors', !errs.length, errs);
+
+  /* ═════ I. 📎 QuickBooks PDFs (read-only link) ═════ */
+  await P.evaluate(() => { window.__ROLE = 'Office'; window._crm.invs = window._crm.invs.filter(x => !/^INVQ/.test(x.id)); window._crm.invoices = window._crm.invs; window._crm.expenses = []; window._crm.projectDocs = []; window.__IDB.invs = window._crm.invs; window.__IDB.expenses = []; window.__KV.gc_qb_memo_jobs = {}; localStorage.removeItem('gc_qb_memo_jobs'); window._gcQbCsvImport.memo.map = {}; localStorage.removeItem('gc_qb_read_tokens'); window.open = () => ({ location: {}, close(){} }); });
+  await P.evaluate(t => { window._gcQbCsvImport.open(t, 'oct.csv'); }, FX('transaction_list.csv'));
+  await P.waitForSelector('#_gcQbCsvOv [data-qbconnect]', { timeout: 8000 });
+  ok('I1 not connected: said plainly, with 🔗 Connect QuickBooks (read-only); the import still works', await P.evaluate(() => /not connected on this computer/.test(document.querySelector('#_gcQbCsvOv [data-qbpdf]').textContent) && !document.querySelector('#_gcQbCsvOv [data-go]').disabled));
+  await P.click('#_gcQbCsvOv [data-qbconnect]'); await sleep(300);
+  await P.evaluate(() => { localStorage.setItem('gc_qb_tokens', 'x'); window.gcQB._receiveTokens({ access_token: 'acc', refresh_token: 'ref', realmId: '4620', expires_in: 3600 }); });
+  await P.waitForSelector('#_gcQbCsvOv [data-pdfon]', { timeout: 5000 });
+  const tk = await P.evaluate(() => ({ r: JSON.parse(localStorage.getItem('gc_qb_read_tokens') || 'null'), q: localStorage.getItem('gc_qb_tokens') }));
+  ok('I2 Connect → the read-only sign-in is kept for PDFs only (gc_qb_read_tokens); QuickBooks sync stays off (patch NOQB\'s key untouched by it)', tk.r && tk.r.realmId === '4620' && tk.r.readOnly === true && tk.q === 'x', tk);
+  await P.click('#_gcQbCsvOv [data-findjobs]');
+  await P.waitForFunction(() => /found a job from QuickBooks/.test((document.querySelector('#_gcQbCsvOv [data-pdfmsg]') || {}).textContent || ''), null, { timeout: 15000 }).catch(async e => { console.log('DBG', await P.evaluate(() => (document.querySelector('#_gcQbCsvOv [data-qbpdf]') || {}).innerHTML), JSON.stringify(QBF.calls), errs); });
+  const fj = await P.evaluate(() => { const tr = [...document.querySelectorAll('#_gcQbCsvOv tr[data-i]')].find(t => /85390/.test(t.textContent)); return { job: tr.querySelector('[data-job]').value, why: tr.textContent }; });
+  ok('I3 🔎 Find jobs from QuickBooks: bill 85390 (memo "John Smith" = two jobs) → the QuickBooks line\'s Customer:Job → Smith Garage', /Smith Garage/.test(fj.job) && /line customer/.test(fj.why), fj);
+  await P.click('#_gcQbCsvOv [data-go]');
+  await P.waitForFunction(() => /PDFs? from QuickBooks attached/.test((document.querySelector('#_gcQbCsvOv [data-pdfprog]') || {}).textContent || ''), null, { timeout: 20000 });
+  await shot('qbcsv_pdfs');
+  const pd = await P.evaluate(() => ({ t: document.querySelector('#_gcQbCsvOv [data-pdfprog]').textContent, b: window._crm.invs.find(x => x.invNum === '85390'), docs: window._crm.projectDocs, last: window._gcQbLastImport }));
+  ok('I4 after Import the PDFs come from QuickBooks onto the records (files) and the job\'s documents (Sub Invoices on Smith Garage)', /attached/.test(pd.t) && pd.b && pd.b.files && pd.b.files[0].ref.indexOf('sb:crm-files/') === 0 && pd.docs.some(d => d.pid === 'PJ4' && d.cat === 'Sub Invoices' && d.ref === pd.b.files[0].ref), pd);
+  const n2 = await P.evaluate(b => window._gcQbLink.attach([{ list: 'invs', id: b.id, files: b.files }], ''), pd.b);
+  ok('I5 the same PDF again → not attached twice (record or job documents)', n2 === 0 && await P.evaluate(() => window._crm.projectDocs.length) === pd.docs.length, n2);
+  const qcalls = QBF.calls.slice();
+  ok('I6 only read-only lookups were asked of QuickBooks (op lookup, the read-only token), paced in small batches', qcalls.length >= 2 && qcalls.every(c => c.op === 'lookup' && c.tok === 'acc' && c.n <= 5), qcalls);
+  const un = await P.evaluate(id => window._gcQbCsvImport.undo(id), pd.last.importId);
+  ok('I7 ↩ Undo also takes that import\'s PDFs off the job documents', un.ok && await P.evaluate(() => window._crm.projectDocs.length === 0), un);
+  await P.click('#_gcQbCsvOv [data-x]').catch(() => {});
+  QBF.mode = 'expired';
+  const ex = await P.evaluate(() => window._gcQbLink.lookupAll([{ key: 'a', kind: 'bill', num: '1' }]));
+  ok('I8 an expired QuickBooks sign-in → stopped with plain words ("expired — connect again")', ex.stop && /expired/.test(ex.stop.error), ex);
+  QBF.mode = 'ok';
 
   /* ═════ H. 💳 card / bank lines → job suggestions (patch MONEY + STMTPDF + QBCSV in the same page) ═════ */
   const S_MONEY = block(/__GC_PATCH_MONEY__ — MONEY IN BY ITSELF/), S_STMT = block(/__GC_PATCH_STMTPDF__ — PDF STATEMENTS/);
