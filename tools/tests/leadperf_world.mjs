@@ -79,7 +79,7 @@ export function world(seed){
   const invs = [];
   for (let i = 0; i < 300; i++) { const p = pick(projects); invs.push({ id: 'INV' + i, num: String(1000 + i), projectId: p.id, project: p.name, client: p.client, amount: int(2, 400) * 100, date: day(-int(0, 400)), due: day(-int(-30, 370)), status: pick(['Paid', 'Paid', 'Sent', 'Draft', 'Overdue']), items: [{ desc: 'Progress billing', qty: 1, price: int(2, 400) * 100 }], memo: 'Made-up invoice' }); }
   const estimates = Array.from({ length: 180 }, (_, i) => { const l = pick(leads); return { id: 'E' + i, leadId: l.id, name: l.name, client: l.client, total: int(5, 500) * 100, status: pick(['Draft', 'Sent', 'Accepted']), createdAt: iso(-int(0, 200)), items: [{ desc: 'Line', qty: 1, price: 100 }] }; });
-  const expenses = Array.from({ length: 400 }, (_, i) => ({ id: 'X' + i, projectId: pick(projects).id, vendor: pick(vendors).name, amount: int(5, 3000), date: day(-int(0, 300)), cat: pick(['Materials', 'Labor', 'Rental']), memo: 'Made-up expense' }));
+  const expenses = Array.from({ length: 400 }, (_, i) => { const v = pick(vendors).name; return { id: 'X' + i, projectId: pick(projects).id, vendor: v, desc: v, amount: int(5, 3000), date: day(-int(0, 300)), cat: pick(['Materials', 'Labor', 'Rental']), memo: 'Made-up expense' }; });
   const schedule = Array.from({ length: 250 }, (_, i) => ({ id: 'SC' + i, projectId: pick(projects).id, title: 'Crew day ' + i, date: day(int(-30, 30)), crew: pick(STAFF) }));
   return { users, customers, projects, leads, subs, vendors, invs, estimates, expenses, schedule };
 }
@@ -91,12 +91,15 @@ export function load(H, seed){
 }
 /* the world after the CRM has opened it once and finished its own one-time tidying (normalized invoices, merged vendors, the
    register …) — like the live data, which has long been through that. Made once per seed with the given build (≈2½ min) and
-   cached as JSON (LEADPERF_CACHE, default the OS temp dir). */
+   cached as JSON (LEADPERF_CACHE, default the OS temp dir), with that computer's localStorage (snap.__ls) — seed it with lsInit(snap)
+   so a measuring computer is not a brand-new one (a new computer catches up on things once, e.g. the commission watcher). */
+export const lsInit = snap => `(() => { try { const L = ${JSON.stringify((snap && snap.__ls) || {})}; for (const k in L) if (localStorage.getItem(k) === null) localStorage.setItem(k, L[k]); } catch (e) {} })();`;
 export async function settled(H, build, seed, cacheDir){
   const fs = await import('fs'), os = await import('os'), path = await import('path');
   seed = seed || 7;
   const f = path.join(cacheDir || process.env.LEADPERF_CACHE || os.tmpdir(), 'leadperf_world_' + seed + '.json');
-  if (fs.existsSync(f)) { const snap = JSON.parse(fs.readFileSync(f, 'utf8')); H.resetCloud(); Object.keys(snap).forEach(k => H.cset(k, snap[k])); return snap; }
+  const fl = f.replace(/\.json$/, '_ls.json');   /* this computer's own memory after that first open (what was already done here) */
+  if (fs.existsSync(f) && fs.existsSync(fl)) { const snap = JSON.parse(fs.readFileSync(f, 'utf8')); H.resetCloud(); Object.keys(snap).forEach(k => H.cset(k, snap[k])); Object.defineProperty(snap, '__ls', { value: JSON.parse(fs.readFileSync(fl, 'utf8')) }); return snap; }
   const W = load(H, seed);
   const A = await H.computer('settle', { build });
   await H.signIn(A, 'wjohnson@grayco-cs.com', 25000);
@@ -107,9 +110,11 @@ export async function settled(H, build, seed, cacheDir){
     const n = H.writes ? H.writes.length : 0; quiet = n === n0 && i > 6 ? quiet + 1 : 0; n0 = n;
     try { await A.ev(v => window._setView(v), views[i % 3]); } catch (e) {}
   }
+  const ls = await A.ev(() => { const o = {}; for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (!/^gc_auth|speedlog|^sb-/.test(k)) o[k] = localStorage.getItem(k); } return o; });
   await A.close();
   const snap = {}; for (const [k, v] of H.cloud) if (!/^gc_(adm_dev|perfrep)_/.test(k)) snap[k] = v.value;
-  fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, JSON.stringify(snap));
+  fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, JSON.stringify(snap)); fs.writeFileSync(fl, JSON.stringify(ls));
+  Object.defineProperty(snap, '__ls', { value: ls });
   H.resetCloud(); Object.keys(snap).forEach(k => H.cset(k, snap[k]));
   return snap;
 }

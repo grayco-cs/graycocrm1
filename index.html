@@ -140164,18 +140164,22 @@ function scanText(){
   var w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, { acceptNode: function(n){ var v = n.nodeValue; return v && v.length < 140 && (v.indexOf('@') > 0 || (by[low(v)] && root.contains(n))) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT; } });
   var hits = [], n;
   while((n = w.nextNode())) hits.push(n);
+  /* patch LEADPERF: read everything first, then add the icons — adding one between two "is it shown?" (offsetParent) reads made the
+     browser lay the whole page out again for the next read (on the Leads list: 50-400 ms a pass, every time the list redrew) */
+  var add = [], seen = typeof Set === 'function' ? new Set() : null;
   hits.forEach(function(t){
-    var el = t.parentElement; if(!el || el.querySelector('._gcMailIco')) return;
+    var el = t.parentElement; if(!el || (seen && seen.has(el)) || el.querySelector('._gcMailIco')) return;
     var m = EM.exec(el.textContent || '');
     if(!m){
       var pr = by[low(el.textContent)]; if(!pr || el.children.length || el.closest(SKIP) || !el.offsetParent) return;
-      el.appendChild(ico(pr.email, { about: pr.kind })); return;
+      if(seen) seen.add(el); add.push([el, pr.email, { about: pr.kind }]); return;
     }
     if(el.children.length) return;                                   /* only a plain text holder */
     if(el.closest(SKIP) || !el.offsetParent) return;
     var j = jobOf(m[1]);
-    el.appendChild(ico(m[1], j ? { pid: j.id, customer: j.client } : null));
+    if(seen) seen.add(el); add.push([el, m[1], j ? { pid: j.id, customer: j.client } : null]);
   });
+  add.forEach(function(a){ if(!a[0].querySelector('._gcMailIco')) a[0].appendChild(ico(a[1], a[2])); });
 }
 /* 2. the desk job header */
 function deskJob(){
@@ -145100,7 +145104,9 @@ function state(force){
   var vw = vas() ? 'vas:' + myKey() + ':' + W._gcVAS.label() : '';   /* patch VAS: another person's list → build it again */
   if (vw !== vasWho) { vasWho = vw; force = true; }
   try { vw = W._gcCo ? W._gcCo.filter() : ''; if (vw !== coWho) { coWho = vw; force = true; } } catch (e) {}   /* patch COLEAK2 */
-  if (force || dirty || !STATE || Date.now() - STATE.at > 12000) { dirty = false; STATE = build(); }
+  /* patch LEADPERF: with no To-Do on screen (only the menu badge asks) a list nothing changed in is rebuilt every 60 s, not 12 s — on the
+     live-size data a rebuild is 80-280 ms, so every 12 s the Leads (or any) page froze for the badge; a change still rebuilds at once (dirty) */
+  if (force || dirty || !STATE || Date.now() - STATE.at > (hosts().length ? 12000 : 60000)) { dirty = false; STATE = build(); }
   return STATE;
 }
 
@@ -170181,7 +170187,12 @@ function wrapMenu(){
   var R = W._gcRP;
   if (R && R.menu && R.menu.__est3 && Date.now() - menuKickAt > 2000 && menuStale()) { menuKickAt = Date.now(); try { if (typeof W._gcSetMeUser === 'function' && W._gcMeNow) W._gcSetMeUser(Object.assign({}, W._gcMeNow)); } catch (e) {} }
   if (!R || typeof R.menu !== 'function' || R.menu.__est3) return;
-  var o = R.menu; var w = function(Uf, list){ return unifyMenu(o.apply(this, arguments)); }; w.__est3 = true; R.menu = w;
+  var o = R.menu; var w = function(Uf, list){ return unifyMenu(o.apply(this, arguments)); }; w.__est3 = true;
+  /* patch LEADPERF: the marks of the wrappers already inside are kept on the outside — EST3, MWS and PINS each looked only for their
+     own mark on the outermost function, so they wrapped each other's wrapper again and again (two more layers every ~1.5 s, for
+     good) and each round here redrew the whole app (a copy of the signed-in person): lag that grew the longer the CRM was open */
+  try { for (var k0 in o) if (/^__/.test(k0) && !(k0 in w)) w[k0] = o[k0]; } catch (e) {}
+  R.menu = w;
   try { if (typeof W._gcSetMeUser === 'function' && W._gcMeNow) W._gcSetMeUser(Object.assign({}, W._gcMeNow)); } catch (e) {}
 }
 
@@ -188192,11 +188203,26 @@ function norm(t){ return low(t).replace(/&/g, ' and ').replace(/[^a-z0-9 ]+/g, '
 function addrKey(a){ var m = low(a).replace(/[.,#]/g, ' ').match(/(\d+)\s+([a-z0-9]+)/); return m ? m[1] + ' ' + m[2] : ''; }
 function tokens(t){ return norm(t).split(' ').filter(function(w){ return w.length > 2; }); }
 function poOf(p){ return s(p.autoPO || p.poNumber || p.po); }
-function hasPO(text, po){ return !!po && new RegExp('(^|[^A-Za-z0-9])' + po.replace(/[^A-Za-z0-9]/g, '') + '([^A-Za-z0-9]|$)', 'i').test(s(text)); }
+/* patch LEADPERF: "the PO stands alone in the text" = one of the text's letter/number runs IS the PO — read with a split, not a new
+   RegExp per job per expense (autofill compiled ~200 000 of them a minute on the live-size data: 140 ms freezes on every page) */
+var RUNS = { t: null, set: null };
+function runsOf(t){ if (RUNS.t === t) return RUNS.set; var set = Object.create(null), a = t.split(/[^A-Za-z0-9]+/); for (var i = 0; i < a.length; i++) if (a[i]) set[a[i].toLowerCase()] = 1; RUNS.t = t; RUNS.set = set; return set; }
+function hasPO(text, po){
+  if (!po) return false;
+  var k = po.replace(/[^A-Za-z0-9]/g, '');
+  if (!k) return new RegExp('(^|[^A-Za-z0-9])' + k + '([^A-Za-z0-9]|$)', 'i').test(s(text));
+  return runsOf(s(text))[k.toLowerCase()] === 1;
+}
 function openJobsOfClient(cl){ var n = norm(cl); if (!n) return []; return projects().filter(function(p){ return isOpen(p) && norm(p.client) === n; }); }
 function textOf(x){ return [x.desc, x.description, x.memo, x.note, x.notes, x.vendor, x.payee, x.client, x.customer, x.name, x.projName, x.po, x.projPO, x.ref, x.invNum, x.address, x.jobAddress].map(s).join(' | '); }
 /* the jobs whose PO appears in a text — the only match we trust on its own */
-function posIn(text){ return projects().filter(function(p){ return poOf(p) && hasPO(text, poOf(p)); }); }
+var POIX = { src: null, list: null, at: 0 };   /* patch LEADPERF: the jobs that have a PO, keyed by it — once per projects list (and at most 2 s old, for a PO typed into a job in place) */
+function posIn(text){
+  var src = crm().projects;
+  if (POIX.src !== src || !POIX.list || Date.now() - POIX.at > 2000) { POIX.src = src; POIX.at = Date.now(); POIX.list = projects().map(function(p){ var po = poOf(p); return po ? [p, po, po.replace(/[^A-Za-z0-9]/g, '').toLowerCase()] : null; }).filter(Boolean); }
+  var t = s(text), runs = runsOf(t);
+  return POIX.list.filter(function(x){ return x[2] ? runs[x[2]] === 1 : hasPO(t, x[1]); }).map(function(x){ return x[0]; });
+}
 function score(job, x){
   var t = textOf(x), sc = 0, why = [];
   if (hasPO(t, poOf(job)) || s(x.projPO) === poOf(job) && poOf(job)) { sc += 60; why.push('PO ' + poOf(job)); }
@@ -224929,7 +224955,8 @@ function load(){
     } catch (x) {}
     return r;
   };
-  m.__pj = true; RP.menu = m;
+  m.__pj = true; try { for (var k0 in orig) if (/^__/.test(k0) && !(k0 in m)) m[k0] = orig[k0]; } catch (e) {}   /* patch LEADPERF: keep the inner wrappers' marks (see EST3) */
+  RP.menu = m;
 })();
 
 /* ── the CSS ── */
@@ -225630,7 +225657,8 @@ function pull(){
     } catch (x) {}
     return r;
   };
-  m.__pins = true; m.__pj = orig.__pj; RP.menu = m;
+  m.__pins = true; m.__pj = orig.__pj; try { for (var k0 in orig) if (/^__/.test(k0) && !(k0 in m)) m[k0] = orig[k0]; } catch (e) {}   /* patch LEADPERF: keep the inner wrappers' marks (see EST3) */
+  RP.menu = m;
 })();
 /* the menu is drawn by the app: after a change, the app draws it again (a quick hop of the view and back) */
 function bump(){
@@ -227297,7 +227325,8 @@ function wrapMenu(){
   var P = W._gcRP; if (!P || typeof P.menu !== 'function' || P.menu.__mws) return !!P;
   var o = P.menu;
   var w = function(Uf, list){ var r = o.apply(this, arguments); try { r = shape(r, Uf); MENU.last = r; } catch (e) { warn(e); } return r; };
-  w.__mws = true; P.menu = w; return true;
+  w.__mws = true; try { for (var k0 in o) if (/^__/.test(k0) && !(k0 in w)) w[k0] = o[k0]; } catch (e) {}   /* patch LEADPERF: keep the inner wrappers' marks (see EST3) */
+  P.menu = w; return true;
 }
 /* the combined tab asked for by a mitigation / environmental person → their first tool; a tool tab their menu does not have → Dashboard */
 function wrapSetView(){
