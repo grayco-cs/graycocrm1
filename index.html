@@ -22064,6 +22064,7 @@ if (!localStorage.getItem("_helpShown")) {
         { icon: "\uD83E\uDDF9", label: "Duplicates", fn: function(){ if(window._gcOpenDupeReview) window._gcOpenDupeReview(); } },
         { icon: "\uD83D\uDD0D", label: "Duplicate check", fn: function(){ if(window._gcOpenDupCheck) window._gcOpenDupCheck(); } },
         { icon: "\uD83D\uDCE5", label: "Import from QuickBooks (CSV)", fn: function(){ if(window._gcOpenQbCsvImport) window._gcOpenQbCsvImport(); } },
+        { icon: "🔗", label: "QuickBooks ↔ CRM", fn: function(){ if(window._gcQbCheck) window._gcQbCheck.open(); else alert("Still loading, try again in a moment."); } },   /* patch QBCSV */
         { icon: "💎", label: "Project CRMs", fn: openBigJobPicker },
         { icon: "🚨", label: "Review Queue", fn: openReviewQueue },
         { icon: "🔁", label: "Restore from Backup", fn: openRestoreTool },
@@ -22114,7 +22115,7 @@ if (!localStorage.getItem("_helpShown")) {
         var _isOwner = !!(_u && (String(_u.payType||'').toLowerCase()==='owner' || _u.role==='Admin' || /office/i.test(_u.role||'')));
         if(!_isOwner){ items = items.filter(function(it){ return !it.adminOnly; }); }
       })();
-      var _hubGroups = {"Business Brain": "Daily Work", "Print pack": "Help & Tools", "Job Profile": "Daily Work", "Upload Documents": "Daily Work", "Search Everything": "Daily Work", "Find a Sub": "Daily Work", "Sub Sign-Up": "Daily Work", "Sub Details": "Daily Work", "Contract & Doc Templates": "Daily Work", "Approvals": "Daily Work", "Review Queue": "Daily Work", "Alerts": "Daily Work", "Notifications": "Daily Work", "Recover Approvals": "Daily Work", "Import CompanyCam Jobs": "Daily Work", "Owner Inbox": "Daily Work", "My Daily Digest": "Daily Work", "Project Payments": "Money & Invoices", "All Company Invoices": "Money & Invoices", "Financials": "Money & Invoices", "Cash Position": "Money & Invoices", "Cash Flow": "Money & Invoices", "P&L (auto)": "Money & Invoices", "Overdue Reminders": "Money & Invoices", "Merge Draw Invoices": "Money & Invoices", "Statement Reconcile": "Money & Invoices", "Credit Cards": "Money & Invoices", "Match to Jobs": "Money & Invoices", "Import card statement": "Money & Invoices", "Import bank statement": "Money & Invoices", "Needs a job": "Money & Invoices", "Bank Accounts": "Money & Invoices", "Monthly Bank Check": "Money & Invoices", "Bank / ACH details": "Money & Invoices", "Employee Pay": "Pay & Commissions", "1099 Reports": "Pay & Commissions", "PM Commission Setup": "Pay & Commissions", "Set Flat Commission": "Pay & Commissions", "Job Source (commission)": "Pay & Commissions", "Pay Structures": "Pay & Commissions", "Move Job Schedule": "Schedule", "Print Schedule": "Schedule", "Add to iPhone Calendar": "Schedule", "Edit Schedule": "Schedule", "Fix Schedule Items (no job)": "Schedule", "Recover Schedule": "Schedule", "Download Schedule PDF": "Schedule", "Run the Office (Automation)": "Automation", "Automation Inbox": "Automation", "Business Brain (issues)": "Automation", "Rate Category Check": "Automation", "Team Status": "Data & Setup", "Sync my Google Docs": "Data & Setup", "Import Google Docs": "Data & Setup", "Merge Records": "Data & Setup", "Merge Projects": "Data & Setup", "Merge Customers": "Data & Setup", "Contract Overrides": "Data & Setup", "Project CRMs": "Data & Setup", "Cloud Backups": "Data & Setup", "Restore from Backup": "Data & Setup", "Download Backup": "Data & Setup", "Import / Export Data": "Data & Setup", "Explain Mode (help)": "Help & Tools", "Guided Tour": "Help & Tools", "Help Center": "Help & Tools", "Training": "Help & Tools", "Test the CRM": "Help & Tools", "System Health Check": "Help & Tools", "Reset Button Positions": "Help & Tools", "Purge Test Data": "Help & Tools", "Force-Clean Cloud": "Help & Tools"};
+      var _hubGroups = {"Business Brain": "Daily Work", "Print pack": "Help & Tools", "Job Profile": "Daily Work", "Upload Documents": "Daily Work", "Search Everything": "Daily Work", "Find a Sub": "Daily Work", "Sub Sign-Up": "Daily Work", "Sub Details": "Daily Work", "Contract & Doc Templates": "Daily Work", "Approvals": "Daily Work", "Review Queue": "Daily Work", "Alerts": "Daily Work", "Notifications": "Daily Work", "Recover Approvals": "Daily Work", "Import CompanyCam Jobs": "Daily Work", "Owner Inbox": "Daily Work", "My Daily Digest": "Daily Work", "Project Payments": "Money & Invoices", "All Company Invoices": "Money & Invoices", "Financials": "Money & Invoices", "Cash Position": "Money & Invoices", "Cash Flow": "Money & Invoices", "P&L (auto)": "Money & Invoices", "Overdue Reminders": "Money & Invoices", "Merge Draw Invoices": "Money & Invoices", "Statement Reconcile": "Money & Invoices", "Credit Cards": "Money & Invoices", "Match to Jobs": "Money & Invoices", "Import card statement": "Money & Invoices", "Import bank statement": "Money & Invoices", "Import from QuickBooks (CSV)": "Money & Invoices", "QuickBooks ↔ CRM": "Money & Invoices", "Needs a job": "Money & Invoices", "Bank Accounts": "Money & Invoices", "Monthly Bank Check": "Money & Invoices", "Bank / ACH details": "Money & Invoices", "Employee Pay": "Pay & Commissions", "1099 Reports": "Pay & Commissions", "PM Commission Setup": "Pay & Commissions", "Set Flat Commission": "Pay & Commissions", "Job Source (commission)": "Pay & Commissions", "Pay Structures": "Pay & Commissions", "Move Job Schedule": "Schedule", "Print Schedule": "Schedule", "Add to iPhone Calendar": "Schedule", "Edit Schedule": "Schedule", "Fix Schedule Items (no job)": "Schedule", "Recover Schedule": "Schedule", "Download Schedule PDF": "Schedule", "Run the Office (Automation)": "Automation", "Automation Inbox": "Automation", "Business Brain (issues)": "Automation", "Rate Category Check": "Automation", "Team Status": "Data & Setup", "Sync my Google Docs": "Data & Setup", "Import Google Docs": "Data & Setup", "Merge Records": "Data & Setup", "Merge Projects": "Data & Setup", "Merge Customers": "Data & Setup", "Contract Overrides": "Data & Setup", "Project CRMs": "Data & Setup", "Cloud Backups": "Data & Setup", "Restore from Backup": "Data & Setup", "Download Backup": "Data & Setup", "Import / Export Data": "Data & Setup", "Explain Mode (help)": "Help & Tools", "Guided Tour": "Help & Tools", "Help Center": "Help & Tools", "Training": "Help & Tools", "Test the CRM": "Help & Tools", "System Health Check": "Help & Tools", "Reset Button Positions": "Help & Tools", "Purge Test Data": "Help & Tools", "Force-Clean Cloud": "Help & Tools"};
       var _hubOrder = ['Daily Work','Money & Invoices','Pay & Commissions','Schedule','Automation','Data & Setup','Help & Tools'];
       // Group items, then render each section with a header.
       var _bySec = {}; items.forEach(function(it){ var g=_hubGroups[it.label]||'More'; (_bySec[g]=_bySec[g]||[]).push(it); });
@@ -230258,4 +230259,1109 @@ wrapView(); setTimeout(wrapView, 4000);
 W._gcSubInvMade = { open: open, isMade: function(id){ return isMade(inv(id)); } };
 try { console.log('[GC] patch SUBINVMAKE: sub invoices ✍️ made in the sub portal show their lines — _gcSubInvMade.open(id)'); } catch (e) {}
 })(window, document);
+</script>
+<script id="gc-patch-qbcsv">
+/* __GC_PATCH_QBCSV__ — 📊 QUICKBOOKS CSV → JOBS BY THE MEMO, QUICKBOOKS PDFs, QB # EVERYWHERE (owner 11/13)
+   "upload documents button on the diamond … let it also take in CSVs. On QuickBooks we put job invoices for P&L; the memo is where
+    she [Brittany] matched them to jobs — can we take their memo info and transfer it to the CRM?" · "the PDFs are in QuickBooks, so
+    can it read PDFs from QuickBooks?" · "it put lots of sub invoices in the system but it didn't read anything for projects" ·
+   "it needs to also show the invoice number from QuickBooks so we can match QuickBooks and CRM together".
+   1. ONE MATCHER (window._gcQbMatch, pure — tools/tests/test_QBCSV.mjs runs it in node): a QuickBooks row → its CRM job, MEMO FIRST
+      (what Brittany typed): a memo remembered before (gc_kv "gc_qb_memo_jobs") → the CRM PO / job number / QuickBooks invoice # on the
+      job → the street address (number + street name, typos forgiven) → the job name → the customer's name; then the line's
+      Customer / Customer:Job column, Class / Location, and (for money in) the Name column. Confidence 0-100; two jobs that fit
+      equally → no guess, a job picker.
+   2. 📁 UPLOAD DOCUMENTS TAKES A CSV / SPREADSHEET: a .csv / .tsv / .xlsx / .xls chosen (or dropped) there opens
+      📊 Import from QuickBooks CSV — no job asked first (other files keep the job flow). Admins + the office only.
+      Parser: quoted fields, commas in values, report titles above the table, section headings (accounts / customers), totals,
+      blank lines, $ / (negatives) / debit-credit columns, M/D/YYYY · YYYY-MM-DD · "Oct 3, 2026" dates. Transaction List, Transaction
+      Detail by Account, Invoice List, Expenses, Bill List, Sales by Customer Detail, Profit & Loss Detail (columns found by name).
+      A transaction listed under its bank / A/R / A/P account AND under its P&L accounts is taken once (its P&L lines); lines of
+      one transaction with different memos (two jobs on one bill) stay separate rows.
+   3. PREVIEW before anything is saved: date · type · # · name · memo · amount · → job (searchable, Construction / Mitigation /
+      Environmental, ➕ New project… when the CRM has it) · what it becomes · confidence. Money in: invoice / sales receipt → a client
+      invoice on the job (as history: recorded, never sent); a payment / deposit → marks the job's open invoice paid, else a paid
+      income record. Money out: bill → a Sub / Supplier invoice + its job cost row (like an e-mailed sub invoice); expense / check /
+      card → a paid Expense on the job (like the bank statement import); vendor credit → a cost credit. Bill payments, transfers,
+      journal entries, credit memos, estimates are listed and left out. Already in the CRM (the same QuickBooks key / number +
+      amount, or the same cost from a card / bank import) → "already in CRM", skipped. No job → left out, or 📥 saved with no job
+      (then it waits in 🔗 QuickBooks ↔ CRM).
+   4. IMPORT → a summary (N added to M jobs, K already in, J left out) and ↩ Undo for that import (every record carries importId;
+      gc_kv "gc_qbcsv_batches"). The job each memo went to is remembered for next time.
+   5. 📎 QUICKBOOKS PDFs (read-only, netlify/functions/qb-files.js — GETs only): when this computer has the read-only QuickBooks
+      link, an import pulls each row's attached PDFs into crm-files (sha256 name) and puts them on the record and the job's
+      documents (once — the same file is never attached twice); rows with no job can be matched by the text of their PDF.
+      QuickBooks sync stays OFF (patch NOQB): the link is only used to read attachments / memos. Not connected → said plainly,
+      with 🔗 Connect QuickBooks (read-only); the CSV import works without it.
+   6. THE OLD 💎 Import from QuickBooks (CSV) (patch J) now puts its rows on jobs with the same matcher (a 🔗 Jobs list in its
+      review: suggested job, editable) and keeps the memo / lines / line customer / class on the records (qbMemo, qbLines, qbCust,
+      qbClass) so matching can be redone.
+   7. 🔗 QUICKBOOKS ↔ CRM (💎, admins + office): every QuickBooks record with its QB #, date, name, amount and job — the ones with no
+      job get the matcher's suggestion (and, with the QuickBooks link, the bill's memo and line customers looked up read-only);
+      Apply puts them on their jobs (bills get their job cost row; history stays history: nothing sent, no reminders), ↩ Undo; ⬇ CSV.
+   8. QB # EVERYWHERE: window._gcQbNum(rec) reads the QuickBooks number / kind / Id from the record (qbNum, invNum, qbKey, the
+      "QuickBooks bill #…" description) without rewriting saved records; a "QB #85378" badge (click = copy, ↗ QuickBooks when the
+      Id is known) on the invoice / sub invoice lists, approvals, Needs a job and these screens; search boxes find "QB 85378",
+      "#85378" or "85378".
+   API: window._gcQbMatch (pure) · window._gcQbCsvImport.open(fileOrText, name) · window._gcQbLink · window._gcQbCheck.open() ·
+        window._gcQbNum(rec) · window._gcQbBadge(rec) */
+(function(W){
+'use strict';
+if (W.__GC_PATCH_QBCSV__) return; W.__GC_PATCH_QBCSV__ = true;
+
+/* ════════════════════ 1. THE PURE CORE ════════════════════ */
+var CORE = (function(){
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function nk(v){ return low(v).replace(/&amp;/g, '&').replace(/[^a-z0-9]+/g, ' ').trim(); }
+function num(v){
+  if (typeof v === 'number') return isFinite(v) ? v : 0;
+  var t = s(v).replace(/\s/g, ''); if (!t) return 0;
+  var neg = /^\(.*\)$/.test(t) || /^-/.test(t) || /^\$-/.test(t) || /-$/.test(t) || /CR$/i.test(t);
+  var x = parseFloat(t.replace(/CR$/i, '').replace(/[^0-9.]/g, ''));
+  return isFinite(x) ? (neg ? -x : x) : 0;
+}
+function r2(v){ return Math.round(num(v) * 100) / 100; }
+function cents(v){ return Math.round(Math.abs(num(v)) * 100); }
+function hash(t){ var h = 5381; t = s(t); for (var i = 0; i < t.length; i++) h = ((h << 5) + h + t.charCodeAt(i)) | 0; return (h >>> 0).toString(36); }
+var MON = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, sept: 9, oct: 10, nov: 11, dec: 12 };
+function p2(n){ return ('0' + n).slice(-2); }
+function ymd(v){
+  var t = s(v), m;
+  if (!t) return '';
+  if ((m = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(t))) return m[1] + '-' + p2(m[2]) + '-' + p2(m[3]);
+  if ((m = /^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})\b/.exec(t))) { var y = m[3].length === 2 ? '20' + m[3] : m[3]; if (+m[1] > 12 || +m[2] > 31) return ''; return y + '-' + p2(m[1]) + '-' + p2(m[2]); }
+  if ((m = /^([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{4})/.exec(t)) && MON[low(m[1]).slice(0, m[1].length > 4 && low(m[1]).slice(0, 4) === 'sept' ? 4 : 3)]) return m[3] + '-' + p2(MON[low(m[1]).slice(0, 3)]) + '-' + p2(m[2]);
+  if ((m = /^(\d{1,2})[- ]([A-Za-z]{3})[a-z]*[- ,]+(\d{2,4})$/.exec(t)) && MON[low(m[2])]) return (m[3].length === 2 ? '20' + m[3] : m[3]) + '-' + p2(MON[low(m[2])]) + '-' + p2(m[1]);
+  return '';
+}
+/* ── CSV (quotes, "" inside quotes, commas / new lines in values, CRLF, BOM, tab or ; separated) — every physical row kept ── */
+function parseCsv(text){
+  var t = String(text == null ? '' : text).replace(/^﻿/, '');
+  var first = (t.split(/\r?\n/).filter(function(l){ return l.trim(); })[0] || '');
+  var cnt = function(ch){ var n = 0, q = false; for (var i = 0; i < first.length; i++) { var c = first[i]; if (c === '"') q = !q; else if (!q && c === ch) n++; } return n; };
+  var sep = ','; if (cnt('\t') > cnt(',')) sep = '\t'; else if (cnt(';') > cnt(',') && cnt(';') > 1) sep = ';';
+  var rows = [], row = [], cur = '', q = false;
+  for (var i = 0; i < t.length; i++) {
+    var c = t[i];
+    if (q) { if (c === '"') { if (t[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += c; continue; }
+    if (c === '"') { q = true; continue; }
+    if (c === sep) { row.push(cur); cur = ''; continue; }
+    if (c === '\r') { if (t[i + 1] === '\n') i++; row.push(cur); rows.push(row); row = []; cur = ''; continue; }
+    if (c === '\n') { row.push(cur); rows.push(row); row = []; cur = ''; continue; }
+    cur += c;
+  }
+  if (cur !== '' || row.length) { row.push(cur); rows.push(row); }
+  return rows.map(function(r){ return r.map(function(x){ return String(x).replace(/ /g, ' ').trim(); }); });
+}
+/* ── QuickBooks column names → fields ── */
+var F = {
+  date: ['date', 'transaction date', 'txn date', 'invoice date', 'bill date', 'trans date', 'posting date', 'expense date'],
+  type: ['transaction type', 'type', 'txn type'],
+  num: ['num', 'no.', 'no', 'number', 'invoice no', 'invoice no.', 'invoice #', 'invoice number', 'doc number', 'ref no.', 'ref no', 'ref #', 'ref number', 'bill no.', 'bill no', 'check no.', 'check #', 'check number', 'transaction no.'],
+  nameOnly: ['name', 'payee', 'vendor', 'vendor name', 'display name', 'vendor display name', 'payee name', 'received from', 'supplier', 'from/to'],
+  custish: ['customer', 'customer name', 'customer full name', 'client', 'customer display name', 'customer/project', 'customer:job', 'customer/job', 'customer:project', 'project', 'job', 'customer:job full name', 'project/job', 'billable to'],
+  memo: ['memo/description', 'memo', 'memo / description', 'private note', 'message', 'note', 'notes', 'statement memo'],
+  desc: ['description', 'product/service description', 'line description', 'item description', 'product/service', 'item', 'product/service full name'],
+  account: ['account', 'category', 'account name', 'account full name', 'distribution account', 'expense account', 'income account', 'expense category'],
+  split: ['split', 'split account', 'item split account'],
+  klass: ['class', 'class full name', 'location', 'location full name', 'department'],
+  amount: ['amount', 'total', 'total amount', 'invoice amount', 'amount ($)', 'amount (usd)', 'total ($)', 'total (usd)', 'net amount', 'line amount', 'total amt', 'amt', 'total before sales tax', 'payment amount', 'deposit amount'],
+  debit: ['debit', 'debits', 'debit (usd)', 'debit ($)', 'charge', 'charges'],
+  credit: ['credit', 'credits', 'credit (usd)', 'credit ($)'],
+  open: ['open balance', 'balance due', 'open bal', 'open balance (usd)', 'amount due', 'open'],
+  due: ['due date', 'due'],
+  status: ['status', 'payment status'],
+  address: ['billing address', 'shipping address', 'address', 'bill address', 'ship to', 'ship address', 'job address', 'service address'],
+  id: ['id', 'transaction id', 'txn id', 'qb id']
+};
+function hnorm(h){ return low(h).replace(/\s+/g, ' ').replace(/[:]\s*$/, '').replace(/\s*\*$/, ''); }
+function fieldsOf(h){ h = hnorm(h); var out = []; Object.keys(F).forEach(function(f){ if (F[f].indexOf(h) >= 0) out.push(f); }); return out; }
+function mapHeader(row){
+  var m = {}, hits = 0;
+  row.forEach(function(h, j){ fieldsOf(h).forEach(function(f){ if (m[f] === undefined) { m[f] = j; hits++; } }); });
+  /* Name vs Customer: with a Name / Vendor / Payee column the Customer column is the line's job; alone it is the name */
+  if (m.nameOnly !== undefined) { m.name = m.nameOnly; if (m.custish !== undefined) m.cust = m.custish; }
+  else if (m.custish !== undefined) { m.name = m.custish; m.cust = m.custish; m.nameIsCust = true; }
+  delete m.nameOnly; delete m.custish;
+  if (m.desc !== undefined && m.memo === undefined && /^description$/.test(hnorm(row[m.desc]))) { m.memo = m.desc; delete m.desc; }
+  return { map: m, hits: hits };
+}
+function detectHeader(rows){
+  var best = null;
+  for (var i = 0; i < Math.min(rows.length, 25); i++) {
+    var r = rows[i]; if (!r || r.filter(function(x){ return x; }).length < 2) continue;
+    var mh = mapHeader(r), m = mh.map;
+    if (mh.hits < 2 || (m.date === undefined && m.amount === undefined && m.debit === undefined && m.num === undefined)) continue;
+    if (!best || mh.hits > best.hits) best = { row: i, map: m, hits: mh.hits, headers: r };
+  }
+  return best;
+}
+var TYPES = { 'invoice': 'invoice', 'payment': 'payment', 'receive payment': 'payment', 'sales receipt': 'salesreceipt', 'deposit': 'deposit', 'credit memo': 'creditmemo',
+  'refund': 'refund', 'refund receipt': 'refund', 'bill': 'bill', 'bill payment': 'billpayment', 'bill payment (check)': 'billpayment', 'bill payment (credit card)': 'billpayment',
+  'expense': 'expense', 'check': 'check', 'credit card expense': 'expense', 'cash expense': 'expense', 'purchase': 'expense', 'credit card credit': 'vendorcredit', 'vendor credit': 'vendorcredit',
+  'journal entry': 'journal', 'journal': 'journal', 'transfer': 'transfer', 'credit card payment': 'ccpayment', 'sales tax payment': 'expense', 'payroll check': 'expense', 'paycheck': 'expense',
+  'payroll expense': 'expense', 'estimate': 'estimate', 'purchase order': 'purchaseorder', 'statement charge': 'invoice', 'inventory qty adjust': 'journal', 'delayed charge': 'estimate', 'delayed credit': 'estimate' };
+var INCOME = { invoice: 1, salesreceipt: 1, payment: 1, deposit: 1 }, COST = { bill: 1, expense: 1, check: 1, vendorcredit: 1 };
+function sideOf(kind){ return INCOME[kind] ? 'income' : COST[kind] ? 'cost' : 'skip'; }
+var BS_HEAD = /accounts? (receivable|payable)|\(a\/[rp]\)|^a\/[rp]\b|checking|savings|\bbank\b|credit card|undeposited|\bvisa\b|mastercard|\bamex\b|american express|capital one|line of credit|\bloan\b|liabilit|payable|opening balance|petty cash|clearing|^cash\b|operating account|money market/i;
+var KIND_LABEL = { transactions: 'Transaction List', detail: 'Transaction Detail by Account', pl: 'Profit and Loss Detail', invoicelist: 'Invoice List', billlist: 'Bill List',
+  expenses: 'Expenses', salesbycustomer: 'Sales by Customer Detail', lists: 'a contact list (customers / vendors)', unknown: 'QuickBooks export' };
+function reportKind(title, m){
+  var t = low(title);
+  if (/profit (and|&) loss|p ?& ?l\b/.test(t)) return 'pl';
+  if (/transaction detail by account|general ledger/.test(t)) return 'detail';
+  if (/sales by customer|income by customer/.test(t)) return 'salesbycustomer';
+  if (/invoice list|open invoices|a\/r aging|invoices? and received payments/.test(t)) return 'invoicelist';
+  if (/bill list|unpaid bills|bills? and applied payments|a\/p aging/.test(t)) return 'billlist';
+  if (/expenses?( by vendor)?|vendor expenses|transaction list by vendor/.test(t) && !/transaction list by date/.test(t)) return m.type !== undefined ? 'expenses' : 'billlist';
+  if (/customer contact|vendor contact|customer list|vendor list/.test(t) || (m.amount === undefined && m.debit === undefined)) return 'lists';
+  if (/transaction list/.test(t) || m.type !== undefined) return 'transactions';
+  if (m.num !== undefined && m.amount !== undefined) return /vendor|payee|supplier/.test(low(m.__nameHeader)) ? 'billlist' : 'invoicelist';
+  return 'unknown';
+}
+function isNoise(r){
+  var ne = r.filter(function(x){ return x; }); if (!ne.length) return true;
+  var f = ne[0];
+  if (/^total\b/i.test(f) || /^(net income|gross profit|net operating income|net other income|total income|total expenses?)$/i.test(f)) return true;
+  if (ne.some(function(x){ return /^(accrual|cash) basis\b/i.test(x); })) return true;
+  if (ne.length <= 2 && /^(monday|tuesday|wednesday|thursday|friday|saturday|sunday),/i.test(f)) return true;
+  return false;
+}
+/* rows → transactions (one per QuickBooks transaction, or per memo when one transaction's lines carry different memos) */
+function parseReport(text){
+  var rows = Array.isArray(text) ? text : parseCsv(text), d = detectHeader(rows);
+  if (!d) return { error: 'No QuickBooks column headings found (looked for Date / Type / Num / Name / Memo / Amount …). Export the report from QuickBooks as CSV or Excel and choose that file.', recs: [] };
+  var m = d.map; m.__nameHeader = m.name !== undefined ? d.headers[m.name] : '';
+  var title = rows.slice(0, d.row).map(function(r){ return r.filter(function(x){ return x; }).join(' '); }).join(' · ');
+  var kind = reportKind(title, m);
+  if (kind === 'lists') return { error: 'This is a contact list, not transactions. Use 💎 → Import from QuickBooks (CSV) for customer / vendor lists.', recs: [], kind: kind };
+  var raw = [], head = '', g;
+  for (var i = d.row + 1; i < rows.length; i++) {
+    var r = rows[i] || []; if (isNoise(r)) continue;
+    g = function(f){ return m[f] !== undefined ? s(r[m[f]]) : ''; };
+    var ne = r.filter(function(x){ return x; });
+    var dt = ymd(g('date'));
+    if (ne.length === 1 && !dt && !/^[-($]*[\d,]+(\.\d+)?\)?$/.test(ne[0])) { head = ne[0].replace(/\s*\(deleted\)$/i, ''); continue; }   /* a section heading: an account, or a customer */
+    var amount = 0;
+    if (m.amount !== undefined && g('amount') !== '') amount = num(g('amount'));
+    else if (m.debit !== undefined || m.credit !== undefined) amount = num(g('debit')) - num(g('credit'));
+    var t = low(g('type')), k = TYPES[t] || '';
+    if (!k) k = t ? 'unknown' : ({ invoicelist: 'invoice', salesbycustomer: 'invoice', billlist: 'bill', expenses: 'expense' }[kind] || 'unknown');
+    var name = g('name'), cust = g('cust');
+    if (kind === 'salesbycustomer' && head && !name) { name = head; cust = cust || head; }
+    if (!dt && !g('num')) continue;
+    var voided = /\bvoid/i.test(g('type') + ' ' + g('memo') + ' ' + g('status'));
+    if (!amount && g('open') === '' && !voided) continue;
+    raw.push({ line: i + 1, kind: k, qbType: g('type') || ({ invoice: 'Invoice', bill: 'Bill', expense: 'Expense' }[k] || ''), date: dt, num: g('num').replace(/^#/, ''),
+      name: name, cust: m.nameIsCust ? '' : cust, memo: g('memo'), desc: g('desc'), account: g('account') || (/^split/i.test(s(d.headers[m.split])) ? head : '') || head,
+      split: g('split'), klass: g('klass'), amount: amount, open: g('open') !== '' ? num(g('open')) : null, due: ymd(g('due')), status: g('status'), address: g('address'), qbId: g('id'), head: head, voided: voided,
+      bs: !!head && BS_HEAD.test(head) });
+  }
+  /* group the lines of one transaction */
+  var groups = {}, order = [];
+  raw.forEach(function(x){ var k = x.kind + '|' + (x.num || '') + '|' + x.date + '|' + nk(x.name) + (x.num ? '' : '|' + (kind === 'detail' || kind === 'pl' ? '' : cents(x.amount))); if (!groups[k]) { groups[k] = []; order.push(k); } groups[k].push(x); });
+  var recs = [];
+  order.forEach(function(k){
+    var L = groups[k];
+    var pl = L.filter(function(x){ return !x.bs; });
+    if (pl.length && pl.length < L.length) L = pl;                       /* the bank / A/R / A/P side of a transaction is not a P&L line */
+    else if (!pl.length && L.length > 1) L = [L.reduce(function(a, b){ return Math.abs(b.amount) > Math.abs(a.amount) ? b : a; })];   /* only balance-sheet rows: the one total */
+    var by = {}, bo = [];
+    L.forEach(function(x){ var mk = (sideOf(x.kind) === 'cost' ? nk(x.memo || x.desc) : '') + '|' + nk(x.cust); if (!by[mk]) { by[mk] = []; bo.push(mk); } by[mk].push(x); });   /* money in: one invoice = one record; money out: a line per job */
+    var split = bo.length > 1 && bo.some(function(mk){ return mk.replace('|', '').trim(); });
+    (split ? bo.map(function(mk){ return by[mk]; }) : [L]).forEach(function(part, pi){
+      var a = part[0], sum = part.reduce(function(t, x){ return t + x.amount; }, 0);
+      var rec = { line: a.line, kind: a.kind, qbType: a.qbType, date: a.date, num: a.num, name: a.name, cust: (part.filter(function(x){ return x.cust; })[0] || {}).cust || '',
+        memo: (part.filter(function(x){ return x.memo; })[0] || {}).memo || '', desc: (part.filter(function(x){ return x.desc; })[0] || {}).desc || '',
+        account: (part.filter(function(x){ return x.account && !BS_HEAD.test(x.account); })[0] || a).account || '', klass: (part.filter(function(x){ return x.klass; })[0] || {}).klass || '',
+        open: a.open, due: a.due, status: a.status, address: a.address, qbId: a.qbId, voided: part.some(function(x){ return x.voided; }), signed: Math.round(sum * 100) / 100,
+        lines: part.map(function(x){ return { memo: x.memo, desc: x.desc, cust: x.cust, klass: x.klass, account: x.account, amount: x.amount }; }) };
+      rec.amount = Math.abs(rec.signed);
+      if (/^(vendorcredit|creditmemo|refund)$/.test(rec.kind)) rec.amount = -rec.amount;
+      rec.side = sideOf(rec.kind);
+      rec.baseKey = 'QB:' + rec.kind + ':' + (rec.num ? rec.num : (rec.date + ':' + cents(rec.amount))) + ':' + nk(rec.name).split(' ')[0];   /* the key patch J uses */
+      rec.key = rec.baseKey + (split ? '|' + hash(nk(rec.memo || rec.desc) + '|' + nk(rec.cust)) : '');
+      rec.splitPart = split ? pi + 1 : 0;
+      recs.push(rec);
+    });
+  });
+  return { kind: kind, label: KIND_LABEL[kind] || 'QuickBooks export', title: title, headerRow: d.row + 1,
+    mapping: Object.keys(m).filter(function(f){ return f.indexOf('__') !== 0 && f !== 'nameIsCust'; }).map(function(f){ return { field: f, header: d.headers[m[f]] }; }), recs: recs };
+}
+
+/* ════════ the job index + THE MATCHER ════════ */
+var STOP = { the: 1, and: 1, for: 1, inc: 1, llc: 1, co: 1, corp: 1, company: 1, mr: 1, mrs: 1, ms: 1, of: 1, at: 1, to: 1, on: 1, in: 1, with: 1, new: 1 };
+var GENERIC = { job: 1, project: 1, roof: 1, roofing: 1, repair: 1, repairs: 1, remodel: 1, renovation: 1, reno: 1, construction: 1, services: 1, service: 1, residential: 1, commercial: 1, kitchen: 1, bath: 1, bathroom: 1,
+  replacement: 1, replace: 1, install: 1, installation: 1, damage: 1, water: 1, fire: 1, house: 1, home: 1, building: 1, office: 1, phase: 1, final: 1, invoice: 1, draw: 1, deposit: 1, materials: 1, material: 1, labor: 1 };
+var SUFX = /^(st|street|rd|road|dr|drive|ln|lane|cv|cove|ave|av|avenue|blvd|boulevard|ct|court|cir|circle|pl|place|pkwy|parkway|way|trl|trail|loop|pike|hwy|highway|us|n|s|e|w|ne|nw|se|sw|north|south|east|west|tn|ms|ar|apt|unit|ste|suite|cove)$/;
+function toks(t){ return nk(t).split(' ').filter(function(w){ return w.length >= 3 && !STOP[w] && !/^\d+$/.test(w); }); }
+function dist(ws){ return ws.filter(function(w){ return !GENERIC[w]; }); }
+function lev(a, b){ if (a === b) return 0; var m = a.length, n = b.length; if (Math.abs(m - n) > 2) return 9; var d = []; for (var i = 0; i <= m; i++) { d[i] = [i]; } for (var j = 0; j <= n; j++) d[0][j] = j;
+  for (i = 1; i <= m; i++) for (j = 1; j <= n; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); return d[m][n]; }
+function near(a, b){ if (a === b) return true; if (/^\d+$/.test(a) || /^\d+$/.test(b)) return false; var L = Math.min(a.length, b.length); if (L < 4) return false; return lev(a, b) <= (L >= 7 ? 2 : 1); }
+/* "1234 Oak Ridge Dr, Memphis" → { n:'1234', w:['oak','ridge'] } */
+function jobAddr(a){
+  var t = nk(s(a).split(',')[0]), m = /^(\d{1,6}[a-z]?)\s+(.*)$/.exec(t); if (!m) return null;
+  var w = m[2].split(' ').filter(function(x){ return x && !SUFX.test(x); });
+  return { n: m[1].replace(/[a-z]$/, ''), w: w.slice(0, 3) };
+}
+function addrHit(text, A){
+  if (!A || !A.n) return false;
+  var words = nk(text).split(' ');
+  for (var i = 0; i < words.length; i++) {
+    if (words[i].replace(/[a-z]$/, '') !== A.n) continue;
+    var after = words.slice(i + 1, i + 6).filter(function(x){ return !SUFX.test(x); });
+    if (!A.w.length) return true;
+    if (A.w.some(function(w){ return after.some(function(x){ return near(x, w); }); })) return true;
+  }
+  return false;
+}
+function poNorm(v){ return s(v).toUpperCase().replace(/[^A-Z0-9]/g, ''); }
+function companyOf(p){
+  var c = low(p.companyId || p.division || p.gcCompany || '') + ' ' + low(p.type);
+  if (/mitig|water damage|fire damage|restoration/.test(c)) return 'Mitigation';
+  if (/enviro|asbestos|mold|abatement|lead paint/.test(c)) return 'Environmental';
+  return 'Construction';
+}
+var CLOSED = /^(lost|cancell?ed|dead|declined|rejected|deleted)$/i, DONE = /^(complete|completed|closed|archived|paid)$/i;
+function jobIndex(projects){
+  return (Array.isArray(projects) ? projects : []).filter(function(p){ return p && p.id && !p.deleted; }).map(function(p){
+    var pos = [p.autoPO, p.po, p.poNumber, p.jobNumber, p.jobNo, p.claimNumber, p.claimNo, p.number].map(poNorm).filter(function(x){ return x.length >= 3 && /\d/.test(x); });
+    var qbn = (Array.isArray(p.qbInvoiceNums) ? p.qbInvoiceNums : s(p.qbInvoiceNums).split(/[,\s]+/)).map(poNorm).filter(Boolean);
+    var client = s(p.client || p.customer || p.clientName), qbc = s(p.qbClient);
+    return { id: s(p.id), p: p, name: s(p.name), nameN: nk(p.name), nameT: toks(p.name), client: client, clientN: nk(client), clientT: toks(client), qbClientN: nk(qbc),
+      pos: pos, qbn: qbn, addr: jobAddr(p.address), address: s(p.address), company: companyOf(p), status: s(p.status), lost: CLOSED.test(s(p.status)), done: DONE.test(s(p.status)) };
+  });
+}
+function memoKey(v){ var t = nk(v); return t.length >= 3 ? t.slice(0, 120) : ''; }
+/* one text against one job → { score, how, why } */
+function scoreText(t, J, src){
+  var tn = ' ' + nk(t) + ' ', best = { score: 0, how: '', why: '' };
+  function up(sc, how, why){ if (sc > best.score) best = { score: sc, how: how, why: why }; }
+  if (tn.trim().length < 3) return best;
+  var tokU = (s(t).toUpperCase().match(/\b[A-Z]{0,4}[- #]?\d{2,8}[A-Z]?\b/g) || []).map(poNorm);
+  J.pos.forEach(function(po){ if (tokU.indexOf(po) >= 0) up(97, 'po', 'PO / job # ' + po + ' in the ' + src); });
+  var poNum = /\b(?:p\.?\s?o|job|po\s*#|wo)\s*[#:.-]?\s*([a-z]?-?\d{3,7})\b/i.exec(t);
+  if (poNum) { var pn = poNorm(poNum[1]); J.pos.forEach(function(po){ if (po === pn || po.replace(/^[A-Z]+/, '') === pn.replace(/^[A-Z]+/, '')) up(93, 'po', 'PO ' + po + ' in the ' + src); }); }
+  if (J.addr && addrHit(t, J.addr)) up(92, 'address', 'the address ' + J.address.split(',')[0] + ' in the ' + src);
+  if (J.nameN.length >= 6 && tn.indexOf(' ' + J.nameN + ' ') >= 0) up(89, 'name', 'the job name in the ' + src);
+  if (J.nameT.length) {
+    var tt = toks(t), hitF = function(w){ return tt.some(function(x){ return near(x, w); }); }, hit = J.nameT.filter(hitF), dn = dist(J.nameT);
+    var fr = hit.length / J.nameT.length;
+    if (hit.length >= 2 && (dn.length ? dn.every(hitF) : fr >= 0.6)) up(Math.round(66 + 20 * fr), 'name', 'the job name (' + hit.join(' ') + ') in the ' + src);
+  }
+  var cl = dist(J.clientT);
+  if (cl.length) {
+    var tt2 = toks(t), ch = cl.filter(function(w){ return tt2.some(function(x){ return near(x, w); }); });
+    if (ch.length === cl.length && (cl.length >= 2 || cl[0].length >= 5)) up(cl.length >= 2 ? 78 : 70, 'customer', 'the customer ' + J.client + ' in the ' + src);
+  }
+  if (J.qbClientN && J.qbClientN.length >= 5 && tn.indexOf(' ' + J.qbClientN + ' ') >= 0) up(80, 'customer', 'the QuickBooks customer ' + s(J.p.qbClient) + ' in the ' + src);
+  return best;
+}
+/* THE MATCHER: input { memo, desc, lines:[{memo,desc,cust,klass}], cust, klass, name, side, num, text } · ctx { jobs | projects, memoMap }
+   → { pid, conf, how, why, cands:[{pid, score, why, name}], ambiguous } */
+function matchJob(input, ctx){
+  input = input || {}; ctx = ctx || {};
+  var jobs = ctx.jobs || jobIndex(ctx.projects), byId = {}; jobs.forEach(function(j){ byId[j.id] = j; });
+  var mm = ctx.memoMap || {};
+  /* a memo Brittany's office already put on a job */
+  var mkeys = [input.memo, input.desc, input.cust].concat((input.lines || []).map(function(l){ return l.memo || l.desc; })).map(memoKey).filter(Boolean);
+  for (var i = 0; i < mkeys.length; i++) { var r = mm[mkeys[i]]; if (r && r.pid && byId[s(r.pid)] && !byId[s(r.pid)].lost) return { pid: s(r.pid), conf: 99, how: 'remembered', why: 'this memo went to ' + byId[s(r.pid)].name + ' before', cands: [{ pid: s(r.pid), score: 99, why: 'remembered', name: byId[s(r.pid)].name }] }; }
+  var srcs = [];
+  function add(t, w, src){ t = s(t); if (t && t.length >= 3) srcs.push({ t: t, w: w, src: src }); }
+  add(input.memo, 1, 'memo'); add(input.desc, 0.98, 'description');
+  (input.lines || []).forEach(function(l){ if (s(l.memo) !== s(input.memo)) add(l.memo, 0.98, 'line memo'); if (s(l.desc) !== s(input.desc)) add(l.desc, 0.97, 'line description'); if (s(l.cust) && s(l.cust) !== s(input.cust)) add(l.cust, 1, 'line customer'); if (s(l.klass) && s(l.klass) !== s(input.klass)) add(l.klass, 0.9, 'line class'); });
+  var cu = s(input.cust); if (cu) { add(cu, 1, 'Customer column'); if (cu.indexOf(':') > 0) add(cu.split(':').pop(), 1, 'Customer:Job'); }
+  add(input.klass, 0.9, 'Class / Location');
+  if (input.side === 'income') add(input.name, 0.9, 'Name column');
+  add(input.text, 0.9, 'attached PDF');
+  var num0 = poNorm(input.num);
+  var sc = jobs.map(function(J){
+    var best = { score: 0, how: '', why: '' }, n = 0;
+    if (num0 && input.side === 'income' && J.qbn.indexOf(num0) >= 0) best = { score: 98, how: 'qbnum', why: 'QuickBooks invoice #' + input.num + ' is on this job' };
+    srcs.forEach(function(x){ var r = scoreText(x.t, J, x.src); if (r.score) { n++; var v = r.score * x.w; if (v > best.score) best = { score: v, how: r.how, why: r.why }; } });
+    if (!best.score) return null;
+    var v = best.score + (n >= 2 ? 3 : 0) + (J.lost ? -12 : J.done ? -2 : 1);
+    return { pid: J.id, score: Math.min(99, Math.round(v)), how: best.how, why: best.why, name: J.name, company: J.company };
+  }).filter(Boolean).sort(function(a, b){ return b.score - a.score; });
+  var top = sc[0], sec = sc[1];
+  if (!top || top.score < 50) return { pid: '', conf: 0, how: '', why: 'nothing in the memo, customer or class points to a CRM job', cands: sc.slice(0, 5) };
+  if (top.score >= 70 && (!sec || top.score - sec.score >= 8)) return { pid: top.pid, conf: top.score, how: top.how, why: top.why, cands: sc.slice(0, 5) };
+  return { pid: '', conf: top.score, how: top.how, ambiguous: !!sec && top.score - sec.score < 8, why: sec && top.score - sec.score < 8 ? sc.filter(function(x){ return top.score - x.score < 8; }).length + ' jobs fit (' + top.why + ') — pick one' : 'a weak match (' + top.why + ') — check it', cands: sc.slice(0, 5) };
+}
+
+/* ════════ duplicates + the plan (what each row becomes) ════════ */
+function amtOf(r){ return r ? (r.amt != null && r.amt !== '' ? r.amt : (r.amount != null ? r.amount : r.total)) : 0; }
+function dayDiff(a, b){ var x = Date.parse(s(a).slice(0, 10) + 'T12:00:00Z'), y = Date.parse(s(b).slice(0, 10) + 'T12:00:00Z'); return isFinite(x) && isFinite(y) ? Math.abs(x - y) / 864e5 : 99; }
+function isClient(r){ return /^(client|customer|client-review)$/i.test(s(r.type)) || (!s(r.type) && !!(r.client)); }
+function isSubBill(r){ return /^(sub|supplier)$/i.test(s(r.type)); }
+function invNoOf(r){ return poNorm(r.qbNum || r.invNum || r.num || r.invoiceNumber); }
+function party(r){ return s(r.sub || r.vendor || r.payee || r.client || r.customer); }
+function sameParty(a, b){ var x = nk(a).split(' ')[0], y = nk(b).split(' ')[0]; return !!x && !!y && (x === y || near(x, y)); }
+function vkey(v){ return nk(s(v).replace(/^(sq|tst|pp|paypal|pos|ach|debit)\s*\*\s*/i, '').replace(/[#*].*$/, '')).replace(/\b(the|inc|llc|co|corp)\b/g, '').trim().split(' ').slice(0, 2).join(' '); }
+function hasKey(x, k){ return !!x && (x.qbKey === k || x.qbcsvKey === k || (Array.isArray(x.qbKeys) && x.qbKeys.indexOf(k) >= 0)); }
+function live(x){ return x && !x.deleted && !/^(void|voided|deleted|denied|rejected|cancell?ed)$/i.test(s(x.status)); }
+/* the record a QuickBooks row already is in the CRM (the same QuickBooks key — also the old 'QB:bill:<num>:<vendor>' keys —, the
+   QuickBooks Id, or the same number + name), else a record that is the same money entered another way (card / bank / typed in) */
+function isPayKind(k){ return k === 'payment' || k === 'deposit' || k === 'billpayment'; }
+function kindOk(rec, x){
+  if (isPayKind(rec.kind)) return true;
+  if (rec.kind === 'invoice' || rec.kind === 'salesreceipt') return isClient(x);
+  if (rec.kind === 'bill') return isSubBill(x) || (!isClient(x) && /^QB:bill:/.test(s(x.qbKey)));
+  return !isClient(x);
+}
+function fromQb(x){ return /quickbooks/i.test(s(x.source)) || /^QB:/.test(s(x.qbKey)) || !!s(x.qbcsvKey); }
+function findExisting(rec, pid, ctx){
+  var all = (ctx.invs || []).map(function(x){ return { x: x, list: 'invs' }; }).concat((ctx.expenses || []).map(function(x){ return { x: x, list: 'expenses' }; })).filter(function(o){ return o.x && !o.x.deleted; });
+  var n = poNorm(rec.num), c = cents(rec.amount), nm = nk(rec.name).split(' ')[0];
+  var byKey = all.filter(function(o){ return (hasKey(o.x, rec.key) || (!rec.splitPart && hasKey(o.x, rec.baseKey))) && kindOk(rec, o.x); });
+  if (!byKey.length && rec.qbId) byKey = all.filter(function(o){ return s(o.x.qbId) === s(rec.qbId) && (!s(o.x.qbKind) || s(o.x.qbKind) === rec.kind); });
+  if (!byKey.length && n && !isPayKind(rec.kind) && !rec.splitPart) byKey = all.filter(function(o){ return fromQb(o.x) && kindOk(rec, o.x) && o.list === (rec.kind === 'expense' || rec.kind === 'check' || rec.kind === 'vendorcredit' ? 'expenses' : 'invs') && poNorm(o.x.qbNum || o.x.invNum || o.x.ref) === n && sameParty(party(o.x), rec.name); });
+  if (byKey.length) { var b = byKey.filter(function(o){ return o.list === 'invs'; })[0] || byKey[0]; return { rec: b.x, list: b.list, qb: fromQb(b.x) || isPayKind(rec.kind), why: 'QuickBooks ' + (rec.qbType || rec.kind) + (rec.num ? ' #' + rec.num : '') + ' is ' + s(b.x.id) }; }
+  if (isPayKind(rec.kind)) return null;
+  var I = all.filter(function(o){ return o.list === 'invs' && live(o.x); }), E = all.filter(function(o){ return o.list === 'expenses' && live(o.x); });
+  if (rec.kind === 'invoice' || rec.kind === 'salesreceipt') {
+    var a = n ? I.filter(function(o){ return isClient(o.x) && invNoOf(o.x) === n; }) : [];
+    if (a.length) return { rec: a[0].x, list: 'invs', qb: fromQb(a[0].x), why: 'invoice #' + rec.num + ' is already in the CRM (' + s(a[0].x.id) + ')' };
+    var b2 = pid ? I.filter(function(o){ return isClient(o.x) && s(o.x.pid) === pid && cents(amtOf(o.x)) === c && dayDiff(o.x.date || o.x.sentDate || o.x.recvDate, rec.date) <= 10 && (!invNoOf(o.x) || !n); }) : [];
+    if (b2.length) return { rec: b2[0].x, list: 'invs', qb: false, why: 'the same amount is already invoiced on this job (' + s(b2[0].x.id) + ')' };
+    return null;
+  }
+  if (rec.kind === 'bill' && n) { var e = I.filter(function(o){ return isSubBill(o.x) && invNoOf(o.x) === n && sameParty(party(o.x), rec.name); }); if (e.length) return { rec: e[0].x, list: 'invs', qb: fromQb(e[0].x), why: 'bill #' + rec.num + ' from ' + party(e[0].x) + ' is already in Sub Invoices' }; }
+  var f = E.filter(function(o){ var x = o.x; if (x.subInvId || cents(amtOf(x)) !== c || dayDiff(x.date, rec.date) > 3) return false;
+    if (n && (poNorm(x.ref) === n || poNorm(x.checkNo) === n || poNorm(x.invNum) === n)) return true;
+    if (vkey(x.vendor || x.payee || x.desc) && vkey(x.vendor || x.payee || x.desc) === vkey(rec.name)) return true;
+    return !!pid && s(x.pid) === pid && sameParty(x.vendor || x.payee || x.desc, rec.name); })[0];
+  if (f) return { rec: f.x, list: 'expenses', qb: fromQb(f.x), why: 'already in Expenses (' + (/card/i.test(x0(f.x)) ? 'card import' : /bank/i.test(s(f.x.source)) ? 'bank import' : s(f.x.source) || 'typed in') + ', ' + s(f.x.date) + ')' };
+  var g2 = I.filter(function(o){ return isSubBill(o.x) && cents(amtOf(o.x)) === c && sameParty(party(o.x), rec.name) && dayDiff(o.x.recvDate || o.x.date, rec.date) <= 3; })[0];
+  if (g2) return { rec: g2.x, list: 'invs', qb: fromQb(g2.x), why: 'already a bill in Sub Invoices (' + s(g2.x.id) + ')' };
+  return null;
+}
+function x0(f){ return s(f.source) + ' ' + s(f.method) + ' ' + s(f.payMethod) + (f.cardId ? ' card' : ''); }
+function isPaid(x){ return x.paid === true || /^paid$/i.test(s(x.status)) || (x.openBalance === 0 && /quickbooks/i.test(s(x.source))); }
+/* a person did something to this record in the CRM → QuickBooks never overwrites it (shown as ⚠ instead) */
+function personSet(x){
+  return !!(x.approvedBy || x.pmApprovedBy || x.pmApproved === true || x._pmApproved || x.approvedAt || x.officeApprovedBy || x.statusBy || x.statusSetBy || x.editedBy || x.handEdited || x.manual === true ||
+    /^(approved|pm_approved|office_approved|scheduled|check_drafted|check_printed|posted|void|voided)$/i.test(s(x.status)));
+}
+function pidSetByPerson(x){ return !!s(x.pid) && !(/quickbooks/i.test(s(x.linkedBy)) && !/picked by/i.test(s(x.linkedBy))); }
+function money2(v){ return '$' + r2(v).toFixed(2); }
+/* what changed in QuickBooks for a record the CRM already has → { set, diff:[text], conflicts:[text], job } */
+function diffFor(rec, x, list, pid, ctx){
+  var set = {}, diff = [], conf = [], q = qbFields(rec);
+  function put(f, v, label){ set[f] = v; if (label) diff.push(label); }
+  var pay = isPayKind(rec.kind);
+  if (!pay && !rec.voided) {
+    if (cents(amtOf(x)) !== cents(rec.amount)) {
+      if (personSet(x) || (list === 'invs' && isSubBill(x) && isPaid(x) && !fromQb(x))) conf.push('⚠ QuickBooks says ' + money2(rec.amount) + ' — the CRM has ' + money2(amtOf(x)) + ' (kept)');
+      else { put('amt', r2(rec.amount), 'amount ' + money2(amtOf(x)) + ' → ' + money2(rec.amount)); if (x.amount != null) set.amount = r2(rec.amount); set.qbAmountWas = r2(amtOf(x)); }
+    }
+    var qbPaid = rec.kind === 'salesreceipt' || rec.open === 0, qbOpen = rec.open != null && rec.open > 0;
+    if (list === 'invs') {
+      if (qbPaid && !isPaid(x)) { if (personSet(x) && /^(void|voided)$/i.test(s(x.status))) conf.push('⚠ QuickBooks says paid — the CRM has ' + s(x.status)); else { put('status', 'paid', 'status ' + (s(x.status) || '—') + ' → paid'); set.paid = true; set.openBalance = 0; if (!x.paidDate) set.paidDate = rec.date; if (x.amountPaid != null) set.amountPaid = r2(rec.amount); } }
+      else if (qbOpen && isPaid(x)) conf.push('⚠ QuickBooks says ' + money2(rec.open) + ' is still open — the CRM has it paid (kept)');
+      else if (qbOpen && cents(x.openBalance) !== cents(rec.open)) { put('openBalance', rec.open, 'open balance → ' + money2(rec.open)); if (rec.open < rec.amount) { set.status = 'partial'; set.amountPaid = r2(rec.amount - rec.open); } }
+    }
+    if (rec.date && ymd(x.date) !== rec.date) { if (!s(x.date)) put('date', rec.date, 'date → ' + rec.date); else if (personSet(x)) conf.push('⚠ QuickBooks date ' + rec.date + ' — the CRM has ' + ymd(x.date)); else put('date', rec.date, 'date ' + ymd(x.date) + ' → ' + rec.date); if (set.date && x.recvDate != null) set.recvDate = rec.date; }
+    if (rec.due && ymd(x.dueDate) !== rec.due && !x.payDateBy) put('dueDate', rec.due, 'due ' + (ymd(x.dueDate) || '—') + ' → ' + rec.due);
+    var nmF = list === 'expenses' ? 'vendor' : isSubBill(x) ? 'sub' : 'client';
+    if (rec.name && nk(x[nmF]) !== nk(rec.name) && !(rec.side === 'cost' && isClient(x))) { if (s(x.subId) || personSet(x)) { if (!sameParty(x[nmF], rec.name)) conf.push('⚠ QuickBooks name "' + rec.name + '" — the CRM has "' + s(x[nmF]) + '" (kept)'); } else { put(nmF, rec.name, 'name "' + s(x[nmF]) + '" → "' + rec.name + '"'); if (nmF === 'vendor') set.payee = rec.name; } }
+  }
+  if (rec.voided && !x.qbVoided) { put('qbVoided', true, ''); set.qbVoidedSeen = ctx.today || ''; conf.push('⚠ VOIDED in QuickBooks — flagged, not deleted (check it)'); }
+  ['qbMemo', 'qbCust', 'qbClass', 'qbNum', 'qbKind', 'qbId', 'qbAccount'].forEach(function(f){ if (pay && f !== 'qbMemo') return; if (s(q[f]) && s(x[f]) !== s(q[f]) && !(f === 'qbNum' && s(x.invNum) === s(q[f]) && s(x.qbNum) === '' && false)) { set[f] = q[f]; if (f === 'qbMemo') diff.push('memo → "' + q[f].slice(0, 60) + '"'); } });
+  if (!pay && JSON.stringify(x.qbLines || []) !== JSON.stringify(q.qbLines) && q.qbLines.length) set.qbLines = q.qbLines;
+  if (!pay && !hasKey(x, rec.key)) set.__addKey = rec.key;
+  var job = '';
+  if (!pay && pid && !s(x.pid)) { set.pid = pid; job = pid; diff.push('🔗 gets its job'); }
+  else if (!pay && pid && s(x.pid) && s(x.pid) !== pid) conf.push('⚠ the QuickBooks memo points to another job — the CRM job is kept');
+  return { set: set, diff: diff, conflicts: conf, job: job };
+}
+/* the open invoice a payment / deposit pays */
+function payTarget(rec, pid, ctx){
+  var I = (ctx.invs || []).filter(live).filter(isClient), c = cents(rec.amount), n = poNorm(rec.num);
+  var openOf = function(x){ var a = num(amtOf(x)), p = num(x.amountPaid || 0); return x.openBalance != null && x.openBalance !== '' ? num(x.openBalance) : a - p; };
+  var pool = pid ? I.filter(function(x){ return s(x.pid) === pid; }) : I.filter(function(x){ return sameParty(party(x), rec.name); });
+  var h = n ? pool.filter(function(x){ return invNoOf(x) === n; }) : [];
+  if (h.length !== 1) h = pool.filter(function(x){ return !isPaid(x) && (cents(openOf(x)) === c || cents(amtOf(x)) === c); });
+  if (h.length !== 1) { var op = pool.filter(function(x){ return !isPaid(x); }); if (op.length === 1 && c < cents(openOf(op[0]))) h = op; }
+  if (h.length === 1) return h[0];
+  var paidSame = pool.filter(function(x){ return isPaid(x) && cents(amtOf(x)) === c && dayDiff(x.paidDate || x.date, rec.date) <= 45; });
+  if (paidSame.length) return { __paidAlready: paidSame[0] };
+  return null;
+}
+var SKIP_WHY = { billpayment: 'a bill payment pays a bill — the bill is the cost', transfer: 'a transfer between accounts', journal: 'a journal entry', ccpayment: 'a payment to the credit card',
+  creditmemo: 'a credit memo — enter it on the invoice by hand', refund: 'a refund to a customer — enter it by hand', estimate: 'an estimate is not money', purchaseorder: 'a purchase order is not money' };
+/* what one row becomes: new | update | same | dup | pay | billpay | skip (+ include, becomes, set/diff/conflicts for an update) */
+function actionFor(rec, pid, ctx){
+  var ex = rec.side === 'skip' && rec.kind !== 'billpayment' ? null : findExisting(rec, pid, ctx);
+  if (ex && ex.qb) {
+    var d = diffFor(rec, ex.rec, ex.list, pid, ctx), keys = Object.keys(d.set).filter(function(k){ return k !== '__addKey' && k !== 'qbLines' && !/^qb(Cust|Class|Kind|Id|Account|Num)$/.test(k); });
+    var meta = Object.keys(d.set).length > 0;
+    if (!keys.length && !d.conflicts.length) return { action: meta ? 'same' : 'same', target: ex.rec, list: ex.list, set: d.set, becomes: '✓ already up to date (' + s(ex.rec.id) + ')', include: meta, quiet: true };
+    return { action: 'update', target: ex.rec, list: ex.list, set: d.set, diff: d.diff, conflicts: d.conflicts, gotJob: d.job, becomes: (d.diff.length ? '🔄 ' + d.diff.join(' · ') : '') + (d.conflicts.length ? (d.diff.length ? ' · ' : '') + d.conflicts.join(' · ') : ''), include: true };
+  }
+  if (ex) return { action: 'dup', target: ex.rec, list: ex.list, set: { __addKey: rec.key }, becomes: 'already in CRM — ' + ex.why, include: false };
+  if (rec.voided) return { action: 'skip', becomes: 'left out — voided in QuickBooks', include: false };
+  if (rec.side === 'skip') {
+    if (rec.kind === 'billpayment') {
+      var bl = (ctx.invs || []).filter(live).filter(function(x){ return isSubBill(x) && sameParty(party(x), rec.name) && !isPaid(x) && (cents(amtOf(x)) === cents(rec.amount) || (poNorm(rec.num) && invNoOf(x) === poNorm(rec.num))); });
+      if (bl.length === 1) return { action: 'billpay', target: bl[0], list: 'invs', becomes: '🔄 marks bill ' + (invNoOf(bl[0]) ? '#' + invNoOf(bl[0]) : s(bl[0].id)) + ' paid', include: true };
+    }
+    return { action: 'skip', becomes: 'left out — ' + (SKIP_WHY[rec.kind] || ('QuickBooks type "' + s(rec.qbType || '?') + '" has no place in a job P&L')), include: false };
+  }
+  if (rec.kind === 'payment' || rec.kind === 'deposit') {
+    var t = payTarget(rec, pid, ctx);
+    if (t && t.__paidAlready) return { action: 'dup', target: t.__paidAlready, list: 'invs', set: { __addKey: rec.key }, becomes: 'already in CRM — invoice ' + (invNoOf(t.__paidAlready) ? '#' + invNoOf(t.__paidAlready) : s(t.__paidAlready.id)) + ' is paid', include: false };
+    if (t) return { action: 'pay', target: t, list: 'invs', becomes: '🔄 income: marks invoice ' + (invNoOf(t) ? '#' + invNoOf(t) : s(t.id)) + ' paid' + (cents(rec.amount) < cents(amtOf(t)) ? ' (part)' : ''), include: true, pidFrom: s(t.pid) };
+    return { action: 'new', make: 'income', becomes: '➕ income: a paid ' + (rec.kind === 'deposit' ? 'deposit' : 'payment') + ' on the job (no open invoice found)', include: true };
+  }
+  if (rec.kind === 'invoice') return { action: 'new', make: 'invoice', becomes: '➕ income: client invoice' + (rec.num ? ' #' + rec.num : '') + (rec.open === 0 ? ' (paid)' : rec.open != null && rec.open > 0 && rec.open < rec.amount ? ' (part paid)' : ''), include: true };
+  if (rec.kind === 'salesreceipt') return { action: 'new', make: 'invoice', becomes: '➕ income: sales receipt (paid)', include: true };
+  if (rec.kind === 'bill') return { action: 'new', make: 'bill', becomes: '➕ cost: bill → Sub / Supplier invoice + job cost', include: true };
+  if (rec.kind === 'vendorcredit') return { action: 'new', make: 'credit', becomes: '➕ cost credit (takes ' + money2(-rec.amount) + ' off the job)', include: true };
+  return { action: 'new', make: 'expense', becomes: '➕ cost: ' + (rec.kind === 'check' ? 'check' : /credit card/i.test(rec.qbType) ? 'card expense' : 'expense') + ' → paid Expense', include: true };
+}
+function decide(row, pid, ctx){
+  ['action', 'make', 'target', 'list', 'set', 'diff', 'conflicts', 'gotJob', 'becomes', 'include', 'quiet', 'pidFrom'].forEach(function(k){ delete row[k]; });
+  Object.assign(row, actionFor(row.rec, pid, ctx));
+  if (row.target && s(row.target.pid) && (row.action === 'update' || row.action === 'same' || row.action === 'dup')) row.jobPid = s(row.target.pid);
+  if (row.action === 'new' && !pid) { row.include = false; row.noJob = true; }   /* no job → left out until one is picked (or 📥 no job) */
+  return row;
+}
+function plan(parsed, ctx){
+  ctx = ctx || {}; var jobs = ctx.jobs || jobIndex(ctx.projects), seen = {};
+  var rows = (parsed.recs || []).map(function(rec, i){
+    var mt = matchJob({ memo: rec.memo, desc: rec.desc, lines: rec.lines, cust: rec.cust, klass: rec.klass, name: rec.name, side: rec.side, num: rec.num }, { jobs: jobs, memoMap: ctx.memoMap });
+    var row = { i: i, rec: rec, match: mt, pid: mt.pid };
+    if (seen[rec.key]) { Object.assign(row, { action: 'same', becomes: '✓ the same row twice in this file', include: false, quiet: true }); return row; }
+    seen[rec.key] = 1;
+    decide(row, mt.pid, ctx);
+    if (row.pidFrom && !row.pid) { row.pid = row.pidFrom; row.match = { pid: row.pidFrom, conf: 95, how: 'invoice', why: 'the invoice it pays is on this job', cands: [] }; }
+    if (row.jobPid) row.pid = row.jobPid;
+    return row;
+  });
+  /* a payment for an invoice in this same file (not in the CRM yet) pays that invoice once it is made */
+  rows.forEach(function(r){
+    if (r.action !== 'new' || r.make !== 'income' || r.rec.kind !== 'payment') return;
+    var inv = rows.filter(function(x){ return x.action === 'new' && x.make === 'invoice' && x.rec.kind === 'invoice' && x.rec.open !== 0 && (r.rec.num && x.rec.num === r.rec.num || (sameParty(x.rec.name, r.rec.name) && (!r.pid || !x.pid || x.pid === r.pid))) && cents(r.rec.amount) <= cents(x.rec.amount) && (!r.rec.date || !x.rec.date || x.rec.date <= r.rec.date); });
+    if (inv.length !== 1) return;
+    r.action = 'pay'; r.payRow = inv[0]; delete r.make; r.include = true; r.pid = inv[0].pid || r.pid; r.noJob = false;
+    r.match = { pid: r.pid, conf: 95, how: 'invoice', why: 'pays invoice #' + (inv[0].rec.num || '?') + ' in this file', cands: [] };
+    r.becomes = '🔄 income: marks invoice ' + (inv[0].rec.num ? '#' + inv[0].rec.num : '') + ' (in this file) paid' + (cents(r.rec.amount) < cents(inv[0].rec.amount) ? ' (part)' : '');
+  });
+  return { rows: rows, counts: count(rows) };
+}
+function count(rows){ var c = { rows: rows.length, add: 0, update: 0, same: 0, job: 0, conflict: 0, dup: 0, skip: 0, nojob: 0, include: 0, income: 0, cost: 0 };
+  rows.forEach(function(r){
+    if (r.action === 'skip') c.skip++; else if (r.action === 'dup') c.dup++; else if (r.action === 'same') c.same++;
+    else if (!r.include) c.nojob++;
+    else { c.include++; if (r.action === 'new') c.add++; else c.update++; if (r.rec.side === 'income') c.income++; else c.cost++; if (r.gotJob || (r.action === 'new' && r.pid)) c.job++; }
+    if (r.conflicts && r.conflicts.length) c.conflict++;
+  }); return c; }
+/* ════════ the CRM records a row makes (the same shapes the CRM already uses) ════════ */
+function catFromAccount(acct, vendor){
+  var a = low(s(acct).split(':').pop()) + ' ' + low(vendor);
+  if (/subcontract|contract labor|\blabor\b|sub ?contractor/.test(a)) return 'Subcontractor';
+  if (/material|supplies|lumber|hardware|paint|home ?depot|lowe'?s|supply/.test(a)) return 'Materials';
+  if (/permit|license|inspection|fees?\b/.test(a)) return 'Permits/Fees';
+  if (/dump|disposal|waste|haul/.test(a)) return 'Dumpster/Disposal';
+  if (/equipment rental|rental|sunbelt|united rentals|herc/.test(a)) return 'Equipment Rental';
+  if (/fuel|\bgas\b|gasoline/.test(a)) return 'Fuel/Gas';
+  if (/advertis|marketing/.test(a)) return 'Advertising/Marketing';
+  if (/payroll|wages|salar/.test(a)) return 'Payroll';
+  if (/meal|travel|hotel/.test(a)) return /meal/.test(a) ? 'Meals' : 'Travel';
+  if (/insurance/.test(a)) return 'Insurance';
+  return s(acct) ? s(acct).split(':').pop().trim().slice(0, 40) : 'Materials';
+}
+var HIST = { importedHistory: true, noSend: true, sendState: 'recorded', sent: 'recorded', noReminders: true, noAutoReminders: true, remindersPaused: true };
+function qbFields(rec){ return { qbKey: rec.key, qbcsvKey: rec.key, qbNum: rec.num || '', qbKind: rec.kind, qbType: rec.qbType || '', qbId: rec.qbId || '', qbMemo: rec.memo || '', qbCust: rec.cust || '', qbClass: rec.klass || '', qbAccount: rec.account || '',
+  qbLines: (rec.lines || []).slice(0, 40).map(function(l){ return { desc: s(l.memo || l.desc).slice(0, 300), customer: s(l.cust), cls: s(l.klass), account: s(l.account), amount: r2(l.amount) }; }) }; }
+/* → { invs:[new], expenses:[new], updates:[{ list, id, set }] } — o: { pid, project, importId, by, today, vendor:{id,name}, supplier:bool } */
+function madeId(row, importId){ return 'INVQ' + hash(row.rec.key + '|' + importId); }
+function recordsFor(row, o){
+  var act = row.make || row.action, rec = row.rec, p = o.project || null, pid = s(o.pid), po = p ? poNorm(p.autoPO || p.po) : '', by = s(o.by) || 'office', today = s(o.today), id = hash(rec.key + '|' + o.importId);
+  var memoTxt = rec.memo || rec.desc || rec.cust || '';
+  var tag = Object.assign({ source: 'quickbooks', by: 'QuickBooks CSV import (' + by + ')', importId: o.importId, importedAt: o.at || '', enteredBy: by, matchWhy: s(row.match && row.match.why), linkedBy: pid ? 'QuickBooks CSV import — ' + (row.picked ? 'picked by ' + by : s(row.match && row.match.why)) : '' }, qbFields(rec));
+  var out = { invs: [], expenses: [], updates: [] }, amt = r2(rec.amount);
+  if (act === 'invoice' || act === 'income') {
+    var paid = rec.kind === 'salesreceipt' || act === 'income' || rec.open === 0, part = !paid && rec.open != null && rec.open > 0 && rec.open < amt;
+    out.invs.push(Object.assign({ id: 'INVQ' + id, type: 'client', pid: pid, po: po, client: s(rec.side === 'income' && rec.name) || s(p && (p.client || p.customer)), invNum: act === 'invoice' ? rec.num || '' : '',
+      amt: amt, date: rec.date, recvDate: rec.date, sentDate: rec.date, dueDate: rec.due || '', status: paid ? 'paid' : part ? 'partial' : 'sent', paid: paid || undefined,
+      amountPaid: paid ? amt : part ? r2(amt - rec.open) : undefined, openBalance: paid ? 0 : rec.open != null ? rec.open : undefined, paidDate: paid ? rec.date : undefined,
+      desc: (act === 'income' ? 'QuickBooks ' + (rec.qbType || rec.kind) + ' (no invoice in the CRM)' : 'QuickBooks ' + (rec.kind === 'salesreceipt' ? 'sales receipt' : 'invoice') + (rec.num ? ' #' + rec.num : '')) + (memoTxt ? ' — ' + memoTxt : ''),
+      sentNote: 'Imported from QuickBooks CSV ' + today + ' — not sent', savedAt: o.at || '', updatedAt: o.at || '' }, HIST, tag));
+  } else if (act === 'pay') {
+    var t = row.target, ta = num(amtOf(t)), pd = r2(num(t.amountPaid || 0) + num(rec.amount)), full = pd >= ta - 0.005;
+    out.updates.push({ list: 'invs', id: s(t.id), set: full ? { status: 'paid', paid: true, amountPaid: ta, openBalance: 0, paidDate: rec.date || today } : { status: 'partial', amountPaid: pd, openBalance: r2(ta - pd) }, addKey: rec.key });
+  } else if (act === 'billpay') {
+    out.updates.push({ list: 'invs', id: s(row.target.id), set: { status: 'paid', paid: true, paidDate: rec.date || today }, addKey: rec.key });
+  } else if (act === 'bill') {
+    var v = o.vendor || {}, bpaid = rec.open === 0 || (rec.open == null && rec.date && rec.date < today);
+    var inv = Object.assign({ id: 'INVQ' + id, type: o.supplier ? 'supplier' : 'sub', payeeType: o.supplier ? 'supplier' : 'sub', pid: pid, po: po, sub: s(v.name) || rec.name, subId: s(v.id), invNum: rec.num || '', amt: amt,
+      desc: 'QuickBooks bill' + (rec.num ? ' #' + rec.num : '') + (memoTxt ? ' — ' + memoTxt : ''), recvDate: rec.date, date: rec.date, dueDate: rec.due || '', status: bpaid ? 'paid' : 'received', paid: bpaid || undefined,
+      paidDate: bpaid ? rec.date : undefined, openBalance: rec.open != null ? rec.open : undefined, savedAt: o.at || '', updatedAt: o.at || '' }, HIST, tag);
+    if (inv.type === 'supplier') inv.type = 'sub';   /* Sub Invoices tabs it as a supplier by payeeType (patch SUPPLIERINV) */
+    out.invs.push(inv);
+    if (pid) out.expenses.push(Object.assign({ id: 'EXPQ-' + inv.id, pid: pid, subInvId: inv.id, _fromSub: true, type: 'expense', vendor: inv.sub, payee: inv.sub, desc: 'Sub Invoice: ' + inv.desc, po: po, amt: amt, amount: amt,
+      category: o.supplier ? catFromAccount(rec.account, rec.name) : 'Subcontractor', status: bpaid ? 'paid' : 'pending', date: rec.date, direction: 'out', isIncome: false, enteredAt: o.at || '' }, tag));
+  } else if (act === 'expense' || act === 'credit') {
+    var isChk = rec.kind === 'check', isCard = /credit card/i.test(rec.qbType) || /card|visa|amex|mastercard/i.test(rec.split + ' ' + (rec.lines[0] || {}).account);
+    out.expenses.push(Object.assign({ id: 'QBX-' + id, pid: pid, overhead: false, type: act === 'credit' ? 'refund' : 'expense', date: rec.date, vendor: rec.name, payee: rec.name,
+      desc: (rec.qbType || 'Expense') + (rec.num ? ' #' + rec.num : '') + (memoTxt ? ' — ' + memoTxt : ''), amt: amt, amount: amt, category: catFromAccount(rec.account, rec.name), status: 'paid', approved: true,
+      payMethod: isChk ? 'Check' : isCard ? 'Credit Card' : 'QuickBooks', method: isChk ? 'Check' : isCard ? 'Credit Card' : 'QuickBooks', ref: rec.num || '', checkNo: isChk ? rec.num || '' : '',
+      po: po, direction: act === 'credit' ? 'in' : 'out', isIncome: false, enteredAt: o.at || '' }, tag));
+  }
+  return out;
+}
+
+/* ════════ QB # on any record (read, never rewritten) ════════ */
+var KIND_OF = { invoice: 'invoice', salesreceipt: 'sales receipt', payment: 'payment', deposit: 'deposit', bill: 'bill', billpayment: 'bill payment', expense: 'expense', check: 'check', vendorcredit: 'vendor credit', creditmemo: 'credit memo', customer: '', vendor: '' };
+function qbNum(r){
+  if (!r || typeof r !== 'object') return null;
+  var src = low(r.source), key = s(r.qbKey) || (Array.isArray(r.qbKeys) ? s(r.qbKeys[0]) : ''), km = /^QB:([a-z]+):([^:|]+)(?::(\d+))?/.exec(key);
+  var fromQb = /quickbooks/.test(src) || !!key || !!s(r.qbId) || !!s(r.qbNum) || !!s(r.qbTxnId);
+  if (!fromQb) return null;
+  var kind = s(r.qbKind) || (km ? km[1] : '') || (isSubBill(r) ? 'bill' : isClient(r) ? 'invoice' : /expense|refund/.test(low(r.type)) ? 'expense' : '');
+  var n = s(r.qbNum) || s(r.qbDocNumber);
+  if (!n && km && !km[3] && !/^\d{4}-\d{2}-\d{2}$/.test(km[2])) n = km[2];
+  if (!n && /quickbooks/.test(src)) n = s(r.invNum) || s(r.ref) || s(r.checkNo);
+  if (!n) { var dm = /QuickBooks [a-z ]*#\s*([A-Za-z0-9-]+)/i.exec(s(r.desc)); if (dm) n = dm[1]; }
+  var id = s(r.qbId) || s(r.qbTxnId) || (/^\d+$/.test(s(r.qbInvoiceId)) ? s(r.qbInvoiceId) : '');
+  if (!n && !id) return { num: '', kind: kind, id: '', label: 'QB' };
+  return { num: n, kind: kind, id: id, label: 'QB #' + (n || id) };
+}
+var QBO_PATH = { invoice: 'invoice', salesreceipt: 'salesreceipt', payment: 'recvpayment', deposit: 'deposit', bill: 'bill', billpayment: 'billpayment', expense: 'expense', check: 'check', vendorcredit: 'vendorcredit', creditmemo: 'creditmemo' };
+function qbLink(q){ return q && q.id && QBO_PATH[q.kind] ? 'https://qbo.intuit.com/app/' + QBO_PATH[q.kind] + '?txnId=' + encodeURIComponent(q.id) : ''; }
+/* a search box: "QB 85378", "QB#85378", "#85378", "85378" → the number to look for (or '') */
+function qbSearchNum(q){ var m = /^\s*(?:qb\s*)?#?\s*([A-Za-z]{0,4}-?\d{2,}[A-Za-z0-9-]*)\s*$/i.exec(s(q)); return m ? poNorm(m[1]) : ''; }
+function qbSearchHit(r, q){ var n = qbSearchNum(q); if (!n) return false; var x = qbNum(r); return !!x && (poNorm(x.num) === n || poNorm(x.id) === n); }
+
+return { s: s, nk: nk, num: num, r2: r2, cents: cents, hash: hash, ymd: ymd, parseCsv: parseCsv, parseReport: parseReport, mapHeader: mapHeader, jobIndex: jobIndex, matchJob: matchJob,
+  scoreText: scoreText, memoKey: memoKey, findExisting: findExisting, diffFor: diffFor, actionFor: actionFor, decide: decide, plan: plan, personSet: personSet, count: count, recordsFor: recordsFor, madeId: madeId, qbFields: qbFields, catFromAccount: catFromAccount,
+  companyOf: companyOf, sideOf: sideOf, qbNum: qbNum, qbLink: qbLink, qbSearchNum: qbSearchNum, qbSearchHit: qbSearchHit, poNorm: poNorm, addrHit: addrHit, jobAddr: jobAddr, KIND_LABEL: KIND_LABEL };
+})();
+W._gcQbMatch = CORE;
+W._gcQbNum = CORE.qbNum;
+var D = W.document;
+if (!D || typeof D.createElement !== 'function') return;   /* node (tests): the pure core only */
+
+/* ════════════════════ 2. THE CRM SIDE ════════════════════ */
+var C = CORE, s = C.s, nk = C.nk, r2 = C.r2;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+function later(f, ms){ return ST.call(W, f, ms || 0); }
+function low(v){ return s(v).toLowerCase(); }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function money(v){ var n = r2(v); return (n < 0 ? '-$' : '$') + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function nowIso(){ return new Date().toISOString(); }
+function today(){ var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function crm(){ return W._crm || {}; }
+function lsGet(k){ try { return W.localStorage.getItem(k); } catch (e) { return null; } }
+function lsSet(k, v){ try { W.localStorage.setItem(k, v); } catch (e) {} }
+function me(){ try { if (typeof W._gcMeUser === 'function') { var u = W._gcMeUser(); if (u) return u; } } catch (e) {} try { return JSON.parse(lsGet('grayco_user') || '{}') || {}; } catch (e) { return {}; } }
+function myName(){ var u = me(); return s(u.name) || s(u.email).split('@')[0] || 'office'; }
+function viewingAs(){ try { return !!(W._gcVAS && W._gcVAS.active && W._gcVAS.active()); } catch (e) { return false; } }
+/* admins + the office (Brittany); never the crew, never "view as" */
+function allowed(){
+  if (viewingAs()) return false;
+  try { if (typeof W.__gcAuthIsAdmin === 'function' && W.__gcAuthIsAdmin()) return true; } catch (e) {}
+  try { if (typeof W._gcIsOfficeFull === 'function' && W._gcIsOfficeFull()) return true; } catch (e) {}
+  var u = me(); return /^(admin|office)/i.test(s(u.role)) || /office/i.test(s(u.profile)) || low(u.payType) === 'owner';
+}
+function paused(){ try { var st = W._gcPause && W._gcPause.state && W._gcPause.state(); return !!(st && (st.paused || (st.flag && st.flag.on))); } catch (e) { return false; } }
+function projects(){ return arr(crm().projects).filter(function(p){ return p && !p.deleted; }); }
+function proj(pid){ return projects().filter(function(p){ return s(p.id) === s(pid); })[0] || null; }
+function poOf(p){ return p ? s(p.autoPO || p.po).toUpperCase() : ''; }
+
+/* ── the lists (the way patch J saves them: this computer, the screen, the cloud) ── */
+var SETTER = { invs: '_setInvoices', expenses: '_setExpenses', projectDocs: '_setProjectDocs' };
+function getList(k){
+  var mem = k === 'invs' ? (arr(crm().invs).length ? crm().invs : arr(crm().invoices)) : arr(crm()[k]);
+  return Promise.resolve(W.idbGet ? W.idbGet(k) : null).then(function(v){ v = arr(v); return (v.length >= mem.length ? v : mem).slice(); }, function(){ return mem.slice(); });
+}
+function saveList(k, list, why){
+  try { if (W._gcManualNow) W._gcManualNow(why || 'QuickBooks CSV import'); } catch (e) {}
+  try { W.__GC_MANUAL_SAVE__ = true; if (typeof W._gcHerOwnNow === 'function') W._gcHerOwnNow(); } catch (e) {}
+  try { var f = W[SETTER[k]]; if (typeof f === 'function') f(list.slice()); } catch (e) {}
+  try { if (W._crm) { if (k === 'invs') { W._crm.invs = list; W._crm.invoices = list; } else W._crm[k] = list; } } catch (e) {}
+  try { var up = W._supaUpsertNow || W._supaUpsert; if (up) up(k, list); } catch (e) {}
+  later(function(){ try { W.__GC_MANUAL_SAVE__ = false; } catch (e) {} }, 1500);
+  try { if (W._gcPushAll) later(function(){ W._gcPushAll(); }, 900); } catch (e) {}
+  return Promise.resolve(W.idbSet ? W.idbSet(k, list) : null).then(null, function(){});
+}
+
+/* ── gc_kv (like patch MONEY: the tests swap in window._gcOT_kv) ── */
+function sbBase(){ return s(lsGet('grayco_sb_url') || 'https://ieeonhpfahmwwecizdut.supabase.co').replace(/\/$/, ''); }
+function kvGet(key){
+  if (W._gcOT_kv) return Promise.resolve(W._gcOT_kv.get(key));
+  var k = s(lsGet('grayco_sb_key')); if (!k || !W.fetch) return Promise.resolve(undefined);
+  return W.fetch(sbBase() + '/rest/v1/gc_kv?key=eq.' + encodeURIComponent(key) + '&select=value', { headers: { apikey: k }, cache: 'no-store' })
+    .then(function(r){ return r && r.ok ? r.json() : undefined; }).then(function(rows){ if (!Array.isArray(rows)) return undefined; var v = rows[0] ? rows[0].value : null; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) {} } return v; }, function(){ return undefined; });
+}
+function kvPut(key, value){
+  if (W._gcOT_kv) { W._gcOT_kv.put(key, value); return Promise.resolve(true); }
+  var k = s(lsGet('grayco_sb_key')); if (!k || !W.fetch) return Promise.resolve(false);
+  return W.fetch(sbBase() + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: { apikey: k, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify({ key: key, value: value, updated_at: nowIso() }) }).then(function(r){ return !!(r && r.ok); }, function(){ return false; });
+}
+function obj(v){ return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; }
+/* memo → job (gc_kv "gc_qb_memo_jobs") */
+var MEMO = { map: obj((function(){ try { return JSON.parse(lsGet('gc_qb_memo_jobs') || '{}'); } catch (e) { return {}; } })()), at: 0 };
+function loadMemo(){ return kvGet('gc_qb_memo_jobs').then(function(v){ if (v && typeof v === 'object') { MEMO.map = Object.assign({}, MEMO.map, v); lsSet('gc_qb_memo_jobs', JSON.stringify(MEMO.map)); } MEMO.at = Date.now(); return MEMO.map; }, function(){ return MEMO.map; }); }
+function learnMemos(list){
+  var add = {}; list.forEach(function(x){ var k = C.memoKey(x.memo); if (k && x.pid) add[k] = { pid: s(x.pid), at: nowIso(), by: myName() }; });
+  if (!Object.keys(add).length) return Promise.resolve();
+  MEMO.map = Object.assign({}, MEMO.map, add); lsSet('gc_qb_memo_jobs', JSON.stringify(MEMO.map));
+  return kvGet('gc_qb_memo_jobs').then(function(cur){ var m = Object.assign({}, obj(cur), add); MEMO.map = Object.assign({}, MEMO.map, m); return kvPut('gc_qb_memo_jobs', m); });
+}
+/* import batches (undo) — gc_kv "gc_qbcsv_batches" + this computer */
+function batchesLocal(){ try { return arr(JSON.parse(lsGet('gc_qbcsv_batches') || '[]')); } catch (e) { return []; } }
+function saveBatch(b){
+  var l = batchesLocal().filter(function(x){ return x.id !== b.id; }); l.unshift(b); l = l.slice(0, 15);
+  try { lsSet('gc_qbcsv_batches', JSON.stringify(l)); } catch (e) { lsSet('gc_qbcsv_batches', JSON.stringify(l.slice(0, 3))); }
+  return kvGet('gc_qbcsv_batches').then(function(cur){ var c = arr(cur).filter(function(x){ return x && x.id !== b.id; }); c.unshift(b); return kvPut('gc_qbcsv_batches', c.slice(0, 15)); });
+}
+function findBatch(id){ var b = batchesLocal().filter(function(x){ return x.id === id; })[0]; if (b) return Promise.resolve(b); return kvGet('gc_qbcsv_batches').then(function(c){ return arr(c).filter(function(x){ return x && x.id === id; })[0] || null; }); }
+
+function ctxNow(){
+  return Promise.all([getList('invs'), getList('expenses'), MEMO.at ? MEMO.map : loadMemo()]).then(function(r){
+    return { projects: projects(), jobs: C.jobIndex(projects()), invs: r[0], expenses: r[1], memoMap: MEMO.map, today: today() };
+  });
+}
+function vendorFor(name){
+  var n = nk(name), all = arr(crm().subs).concat(arr(crm().vendors));
+  var v = all.filter(function(x){ return x && nk(x.name) === n; })[0] || null;
+  var sup = false; try { sup = !!(W._gcIsSupplierInv && W._gcIsSupplierInv({ sub: name })); } catch (e) {}
+  return { v: v, supplier: sup };
+}
+
+/* ── APPLY a set of rows (both screens): new records, updates (before-values kept), cost rows for bills on a job ── */
+function costRowFor(E, inv){ return E.filter(function(e){ return e && s(e.subInvId) === s(inv.id); })[0] || null; }
+function apply(rows, o){
+  o = o || {};
+  var importId = o.importId || ('QBI' + Date.now().toString(36)), at = nowIso(), by = myName();
+  return Promise.all([getList('invs'), getList('expenses')]).then(function(L){
+    var I = L[0], E = L[1], ch = { invs: false, expenses: false }, batch = { id: importId, at: at, by: by, file: s(o.file), what: o.what || 'QuickBooks CSV import', created: { invs: [], expenses: [] }, updated: [] }, idx = { invs: {}, expenses: {} };
+    I.forEach(function(x, i){ if (x) idx.invs[s(x.id)] = i; }); E.forEach(function(x, i){ if (x) idx.expenses[s(x.id)] = i; });
+    var out = { added: 0, updated: 0, linked: 0, jobs: {}, same: 0, dup: 0, left: 0, conflicts: 0 };
+    function listOf(k){ return k === 'invs' ? I : E; }
+    function upd(k, id, set){
+      var l = listOf(k), i = idx[k][s(id)]; if (i == null) return null;
+      var x = l[i], before = {}, nx = Object.assign({}, x), any = false;
+      Object.keys(set).forEach(function(f){
+        if (f === '__addKey') { var ks = arr(x.qbKeys).slice(); if (set[f] && ks.indexOf(set[f]) < 0 && s(x.qbKey) !== set[f]) { before.qbKeys = x.qbKeys === undefined ? '__absent__' : x.qbKeys; ks.push(set[f]); nx.qbKeys = ks; any = true; } return; }
+        if (JSON.stringify(x[f]) === JSON.stringify(set[f])) return;
+        if (!(f in before)) before[f] = x[f] === undefined ? '__absent__' : x[f];
+        nx[f] = set[f]; any = true;
+      });
+      if (!any) return null;
+      if (!('updatedAt' in before)) before.updatedAt = x.updatedAt === undefined ? '__absent__' : x.updatedAt;
+      nx.updatedAt = at; l[i] = nx; ch[k] = true; batch.updated.push({ list: k, id: s(id), before: before }); return nx;
+    }
+    function add(k, rec){ if (idx[k][s(rec.id)] != null) return false; var l = listOf(k); idx[k][s(rec.id)] = l.length; l.push(rec); ch[k] = true; batch.created[k].push(s(rec.id)); return true; }
+    /* a bill on a job carries its job cost row (like an e-mailed sub invoice) */
+    function costFor(inv){
+      if (!inv || !inv.pid || !/^(sub|supplier)$/i.test(s(inv.type))) return;
+      var c = costRowFor(E, inv);
+      if (c) { upd('expenses', c.id, { pid: inv.pid, po: inv.po || c.po, amt: inv.amt, amount: c.amount != null ? inv.amt : c.amount }); return; }
+      var c2 = null; try { c2 = W._gcCostRowFor ? W._gcCostRowFor(E, inv) : null; } catch (e) {}
+      if (c2) { upd('expenses', c2.id, { subInvId: inv.id, _fromSub: true }); return; }
+      var paid = inv.paid === true || /^paid$/i.test(s(inv.status)), sup = inv.payeeType === 'supplier' || vendorFor(inv.sub).supplier;
+      add('expenses', Object.assign({ id: 'EXPQ-' + inv.id, pid: inv.pid, subInvId: inv.id, _fromSub: true, type: 'expense', vendor: inv.sub, payee: inv.sub, desc: 'Sub Invoice: ' + s(inv.desc), po: inv.po || '', amt: inv.amt, amount: inv.amt,
+        category: sup ? C.catFromAccount(inv.qbAccount, inv.sub) : 'Subcontractor', status: paid ? 'paid' : 'pending', date: inv.date || inv.recvDate || '', direction: 'out', isIncome: false, source: 'quickbooks', by: 'QuickBooks (' + by + ')',
+        importId: importId, importedAt: at, qbKey: inv.qbKey, qbNum: inv.qbNum || inv.invNum || '', enteredAt: at }));
+    }
+    var later2 = rows.filter(function(r){ return r.payRow && r.include; });
+    rows.filter(function(r){ return !(r.payRow && r.include); }).concat(later2).forEach(function(row){
+      if (row.payRow) { var made0 = I[idx.invs[C.madeId(row.payRow, importId)]]; if (made0) row.target = made0; else { row.action = 'new'; row.make = 'income'; } }
+      if (row.action === 'skip') { out.left++; return; }
+      if (row.action === 'dup') { out.dup++; if (row.target && row.set && row.set.__addKey) upd(row.list || 'invs', row.target.id, { __addKey: row.set.__addKey }); return; }
+      if (row.action === 'same') { out.same++; if (row.target && row.set && Object.keys(row.set).length) upd(row.list, row.target.id, row.set); return; }
+      if (!row.include) { out.left++; return; }
+      var pid = s(row.pid), p = proj(pid);
+      if (row.conflicts && row.conflicts.length) out.conflicts++;
+      if (row.action === 'new') {
+        var vf = row.rec.kind === 'bill' ? vendorFor(row.rec.name) : { v: null, supplier: false };
+        var made = C.recordsFor(row, { pid: pid, project: p, importId: importId, by: by, today: today(), at: at, vendor: vf.v, supplier: vf.supplier });
+        made.invs.forEach(function(x){ if (add('invs', x)) { out.added++; if (pid) out.jobs[pid] = 1; } });
+        made.expenses.forEach(function(x){ if (x.subInvId) { if (add('expenses', x)) {} } else if (add('expenses', x)) { out.added++; if (pid) out.jobs[pid] = 1; } });
+        return;
+      }
+      if (row.action === 'update' || row.action === 'pay' || row.action === 'billpay') {
+        var set = Object.assign({}, row.set || {});
+        if (row.action !== 'update') { var u = C.recordsFor(row, { pid: pid, project: p, importId: importId, by: by, today: today(), at: at }).updates[0]; if (u) { set = Object.assign({}, u.set, { __addKey: u.addKey }); } }
+        if (set.pid) { var pp = proj(set.pid); if (pp) set.po = poOf(pp); set.linkedBy = 'QuickBooks import ' + today() + ' — ' + (row.picked ? 'picked by ' + by : s(row.match && row.match.why)); set.qbLinkedBy = row.picked ? by : 'matcher'; }
+        var nx = upd(row.list || 'invs', row.target.id, set);
+        if (nx) { out.updated++; if (set.pid) { out.linked++; out.jobs[set.pid] = 1; } else if (s(nx.pid)) out.jobs[s(nx.pid)] = 1; if ((row.list || 'invs') === 'invs') costFor(nx); }
+      }
+    });
+    var saves = [];
+    if (ch.invs) saves.push(saveList('invs', I, batch.what));
+    if (ch.expenses) saves.push(saveList('expenses', E, batch.what));
+    out.importId = importId; out.batch = batch; out.jobCount = Object.keys(out.jobs).length;
+    batch.summary = { added: out.added, updated: out.updated, jobs: out.jobCount, same: out.same, dup: out.dup, left: out.left };
+    return Promise.all(saves).then(function(){
+      var learnL = rows.filter(function(r){ return r.include && r.pid && r.rec && (r.picked || (r.match && r.match.how && r.match.how !== 'remembered')); }).map(function(r){ return { memo: r.rec.memo || r.rec.desc || r.rec.cust, pid: r.pid }; });
+      return Promise.all([batch.created.invs.length || batch.created.expenses.length || batch.updated.length ? saveBatch(batch) : null, learnMemos(learnL)]);
+    }).then(function(){ return out; });
+  });
+}
+/* ↩ Undo one batch: its new records go, the records it changed get their old values back */
+function undo(batchId){
+  return findBatch(batchId).then(function(b){
+    if (!b) return { ok: false, why: 'that import is not found on this computer or in the cloud' };
+    return Promise.all([getList('invs'), getList('expenses')]).then(function(L){
+      var lists = { invs: L[0], expenses: L[1] }, ch = {}, n = { removed: 0, restored: 0 };
+      ['invs', 'expenses'].forEach(function(k){
+        var gone = {}; arr(b.created && b.created[k]).forEach(function(id){ gone[id] = 1; });
+        var before = lists[k].length;
+        lists[k] = lists[k].filter(function(x){ return !(x && gone[s(x.id)] && s(x.importId) === b.id); });
+        if (lists[k].length !== before) { ch[k] = true; n.removed += before - lists[k].length; }
+      });
+      arr(b.updated).slice().reverse().forEach(function(u){
+        var l = lists[u.list]; if (!l) return; var i = l.findIndex(function(x){ return x && s(x.id) === s(u.id); }); if (i < 0) return;
+        var x = Object.assign({}, l[i]); Object.keys(u.before || {}).forEach(function(f){ if (u.before[f] === '__absent__') delete x[f]; else x[f] = u.before[f]; });
+        l[i] = x; ch[u.list] = true; n.restored++;
+      });
+      var saves = []; Object.keys(ch).forEach(function(k){ saves.push(saveList(k, lists[k], 'QuickBooks import undone')); });
+      b.undone = nowIso(); b.undoneBy = myName();
+      return Promise.all(saves).then(function(){ return saveBatch(b); }).then(function(){ return Object.assign({ ok: true }, n); });
+    });
+  });
+}
+
+/* ── the screen pieces ── */
+var CSS = '.qbc-ov{position:fixed;inset:0;z-index:100090;background:rgba(15,23,42,.55);display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow:auto;font-family:Inter,-apple-system,Segoe UI,sans-serif}' +
+  '.qbc-card{background:#fff;color:#0f172a;border-radius:14px;max-width:1240px;width:100%;padding:18px 20px;box-shadow:0 20px 50px rgba(0,0,0,.3)}' +
+  '.qbc-card h2{margin:0 0 4px;font-size:20px}.qbc-sub{color:#475569;font-size:13px;margin-bottom:10px;line-height:1.5}' +
+  '.qbc-btn{border:none;border-radius:10px;padding:10px 16px;font-weight:800;font-size:14px;cursor:pointer;background:#e2e8f0;color:#0f172a}.qbc-btn[disabled]{opacity:.5;cursor:default}' +
+  '.qbc-go{background:#15803d;color:#fff;font-size:16px;padding:13px 22px}.qbc-blue{background:#1d4ed8;color:#fff}.qbc-red{background:#b91c1c;color:#fff}' +
+  '.qbc-chips{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}.qbc-chip{border:1px solid #cbd5e1;background:#f8fafc;border-radius:999px;padding:5px 11px;font-size:13px;font-weight:700;cursor:pointer}.qbc-chip.on{background:#1d4ed8;color:#fff;border-color:#1d4ed8}' +
+  '.qbc-tbl{width:100%;border-collapse:collapse;font-size:12.5px}.qbc-tbl th{position:sticky;top:0;background:#f1f5f9;text-align:left;padding:6px;font-size:11.5px;color:#334155;z-index:1}.qbc-tbl td{padding:5px 6px;border-top:1px solid #e2e8f0;vertical-align:top}' +
+  '.qbc-wrap{max-height:56vh;overflow:auto;border:1px solid #e2e8f0;border-radius:10px}.qbc-job{width:100%;min-width:200px;padding:6px 7px;border:1px solid #94a3b8;border-radius:7px;font-size:12.5px}.qbc-job.need{border-color:#d97706;background:#fffbeb}' +
+  '.qbc-pill{display:inline-block;border-radius:6px;padding:1px 6px;font-size:11px;font-weight:800}.qbc-hi{background:#dcfce7;color:#166534}.qbc-mid{background:#fef9c3;color:#854d0e}.qbc-lo{background:#fee2e2;color:#991b1b}' +
+  '.qbc-memo{max-width:260px;color:#334155}.qbc-dim{color:#94a3b8}.qbc-warn{color:#b45309;font-weight:700}.qbc-row-off td{opacity:.55}' +
+  '.gc-qbnum{display:inline-block;font:700 11px/1.4 ui-monospace,Menlo,Consolas,monospace;background:#e0f2fe;color:#075985;border:1px solid #bae6fd;border-radius:6px;padding:0 5px;margin:0 3px;cursor:pointer;white-space:nowrap;vertical-align:middle}' +
+  '@media (max-width:760px){.qbc-card{padding:12px}.qbc-memo{max-width:140px}}';
+function css(){ if (D.getElementById('gc-qbcsv-css')) return; var st = D.createElement('style'); st.id = 'gc-qbcsv-css'; st.textContent = CSS; D.head.appendChild(st); }
+function overlay(id){ css(); var o = D.getElementById(id); if (o) o.remove(); o = D.createElement('div'); o.id = id; o.className = 'qbc-ov'; o.innerHTML = '<div class="qbc-card"></div>'; D.body.appendChild(o); return o; }
+function confPill(m){ if (!m || !m.conf) return ''; var c = m.conf >= 90 ? 'qbc-hi' : m.conf >= 75 ? 'qbc-mid' : 'qbc-lo'; return '<span class="qbc-pill ' + c + '" title="' + esc(m.why) + '">' + m.conf + '%</span>'; }
+/* the job picker: one searchable list (type a PO, name, address or customer), Construction / Mitigation / Environmental */
+var JL = { at: 0, html: '', byLabel: {}, byId: {} };
+var NOJOB = '📥 No job yet — save it anyway', NEWP = '➕ New project…', LEAVE = '— leave it out —';
+function jobLabel(p){ return (poOf(p) ? poOf(p) + ' · ' : '') + s(p.name) + (p.address ? ' · ' + s(p.address).split(',')[0] : '') + ' · ' + C.companyOf(p) + (/^(complete|completed|closed)$/i.test(s(p.status)) ? ' (done)' : ''); }
+function jobList(){
+  if (Date.now() - JL.at < 3000 && JL.html) return JL;
+  JL = { at: Date.now(), html: '', byLabel: {}, byId: {} };
+  var ps = projects().filter(function(p){ return !/^(lost|cancell?ed|dead|declined|rejected)$/i.test(s(p.status)); }).sort(function(a, b){ return C.companyOf(a).localeCompare(C.companyOf(b)) || s(a.name).localeCompare(s(b.name)); });
+  var opts = [LEAVE, NOJOB].concat(typeof W._gcNewProjectFor === 'function' ? [NEWP] : []);
+  ps.forEach(function(p){ var l = jobLabel(p); JL.byLabel[l] = s(p.id); JL.byId[s(p.id)] = l; opts.push(l); });
+  JL.html = opts.map(function(l){ return '<option value="' + esc(l) + '"></option>'; }).join('');
+  return JL;
+}
+function jobDatalist(root){ var J = jobList(); var dl = root.querySelector('#qbcJobs'); if (!dl) { dl = D.createElement('datalist'); dl.id = 'qbcJobs'; root.appendChild(dl); } dl.innerHTML = J.html; }
+function labelFor(pid, noJob){ if (pid) return jobList().byId[s(pid)] || ''; return noJob ? NOJOB : ''; }
+
+/* ── QB # badge ── */
+function badge(rec){ var q = C.qbNum(rec); if (!q || !q.num && !q.id) return ''; return '<span class="gc-qbnum" data-qbnum="' + esc(q.num || q.id) + '" data-qblink="' + esc(C.qbLink(q)) + '" title="QuickBooks ' + esc(q.kind || '') + ' #' + esc(q.num || q.id) + ' — click to copy">' + esc(q.label) + '</span>'; }
+W._gcQbBadge = badge;
+function copyText(t){ try { if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(t); } catch (e) {} try { var ta = D.createElement('textarea'); ta.value = t; D.body.appendChild(ta); ta.select(); D.execCommand('copy'); ta.remove(); } catch (e) {} return Promise.resolve(); }
+function toast(t){ var d = D.createElement('div'); d.textContent = t; d.style.cssText = 'position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:#0f172a;color:#fff;padding:9px 16px;border-radius:10px;font:700 13px Inter,sans-serif;z-index:2147483600'; D.body.appendChild(d); later(function(){ d.remove(); }, 2200); }
+D.addEventListener('click', function(ev){
+  var b = ev.target && ev.target.closest && ev.target.closest('.gc-qbnum'); if (!b) return;
+  ev.preventDefault(); ev.stopPropagation();
+  var n = b.getAttribute('data-qbnum'), link = b.getAttribute('data-qblink');
+  copyText(n); toast('Copied QuickBooks # ' + n);
+  if (link && W.confirm && W.confirm('QuickBooks #' + n + ' copied.\n\nOpen it in QuickBooks?')) { try { W.open(link, '_blank', 'noopener'); } catch (e) {} }
+}, true);
+
+/* ════════════════════ 3. 📊 IMPORT FROM QUICKBOOKS CSV ════════════════════ */
+function isSheet(f){ return !!f && (/\.(csv|tsv|xlsx|xls)$/i.test(s(f.name)) || /text\/csv|tab-separated|spreadsheetml|ms-excel/i.test(s(f.type))); }
+function ensureXlsx(){ if (W.XLSX) return Promise.resolve(); return new Promise(function(res, rej){ var sc = D.createElement('script'); sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; sc.onload = function(){ res(); }; sc.onerror = function(){ rej(new Error('The Excel reader did not load — save the report as CSV and try again.')); }; D.head.appendChild(sc); }); }
+function readSource(src){
+  if (typeof src === 'string') return Promise.resolve(src);
+  if (!src || typeof src.arrayBuffer !== 'function' && typeof src.text !== 'function') return Promise.reject(new Error('no file'));
+  if (/\.(xlsx|xls)$/i.test(s(src.name)) || /spreadsheetml|ms-excel/i.test(s(src.type))) {
+    return ensureXlsx().then(function(){ return src.arrayBuffer(); }).then(function(buf){
+      var wb = W.XLSX.read(buf, { type: 'array', cellDates: false }), best = '', bestN = -1;
+      wb.SheetNames.forEach(function(n){ var csv = W.XLSX.utils.sheet_to_csv(wb.Sheets[n], { FS: ',', RS: '\n', blankrows: true, rawNumbers: false }); var k = csv.split('\n').length; if (k > bestN) { best = csv; bestN = k; } });
+      return best;
+    });
+  }
+  return typeof src.text === 'function' ? src.text() : new Promise(function(res, rej){ var fr = new FileReader(); fr.onload = function(){ res(fr.result); }; fr.onerror = rej; fr.readAsText(src); });
+}
+var KIND_TXT = { invoice: 'Invoice', salesreceipt: 'Sales receipt', payment: 'Payment', deposit: 'Deposit', bill: 'Bill', expense: 'Expense', check: 'Check', vendorcredit: 'Vendor credit', billpayment: 'Bill payment', creditmemo: 'Credit memo', refund: 'Refund', journal: 'Journal', transfer: 'Transfer', ccpayment: 'Card payment', estimate: 'Estimate', purchaseorder: 'Purchase order', unknown: '?' };
+var FILTERS = [['all', 'All'], ['add', '➕ New'], ['update', '🔄 Updates'], ['job', '🔗 Gets a job'], ['conflict', '⚠ Check'], ['nojob', '❓ Needs a job'], ['same', '✓ Up to date'], ['dup', 'Already in CRM'], ['skip', 'Left out']];
+function rowIs(r, f){
+  if (f === 'all') return true;
+  if (f === 'add') return r.include && r.action === 'new';
+  if (f === 'update') return r.include && (r.action === 'update' || r.action === 'pay' || r.action === 'billpay');
+  if (f === 'job') return r.include && (!!r.gotJob || (r.action === 'new' && !!r.pid));
+  if (f === 'conflict') return !!(r.conflicts && r.conflicts.length);
+  if (f === 'nojob') return !r.include && r.action !== 'skip' && r.action !== 'dup' && r.action !== 'same';
+  return r.action === f;
+}
+function openImport(src, name, opts){
+  opts = opts || {};
+  if (!allowed()) { try { W.alert('Importing QuickBooks files is for admins and the office.'); } catch (e) {} return Promise.resolve({ cancelled: true, refused: true }); }
+  var ov = overlay('_gcQbCsvOv'), card = ov.firstChild;
+  card.innerHTML = '<h2>📊 Import from QuickBooks CSV</h2><div class="qbc-sub">Reading ' + esc(name || (src && src.name) || 'the file') + '…</div>';
+  return new Promise(function(done){
+    var finished = false; function fin(v){ if (!finished) { finished = true; done(v); } }
+    function close(v){ ov.remove(); fin(v || { cancelled: true }); }
+    ov.addEventListener('click', function(e){ if (e.target === ov) close(); });
+    readSource(src).then(function(text){
+      var parsed = C.parseReport(text);
+      if (parsed.error) {
+        if (opts.fallback && (parsed.kind === 'lists' || !parsed.recs.length)) { ov.remove(); return Promise.resolve(opts.fallback()).then(fin); }
+        card.innerHTML = '<h2>📊 Import from QuickBooks CSV</h2><div class="qbc-sub" style="color:#b91c1c;font-size:15px">' + esc(parsed.error) + '</div><button class="qbc-btn" data-x>Close</button>';
+        card.querySelector('[data-x]').onclick = function(){ close(); }; return;
+      }
+      return ctxNow().then(function(ctx){ render(parsed, ctx); });
+    }).catch(function(e){ card.innerHTML = '<h2>📊 Import from QuickBooks CSV</h2><div class="qbc-sub" style="color:#b91c1c">' + esc(e && e.message || e) + '</div><button class="qbc-btn" data-x>Close</button>'; card.querySelector('[data-x]').onclick = function(){ close(); }; });
+
+    function render(parsed, ctx){
+      var P = C.plan(parsed, ctx), rows = P.rows, filter = 'all';
+      W._gcQbLastImportPlan = P;
+      var fname = name || (src && src.name) || '';
+      card.innerHTML = '<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start"><div><h2>📊 Import from QuickBooks CSV</h2>' +
+        '<div class="qbc-sub"><b>' + esc(fname) + '</b> — ' + esc(parsed.label) + ' · ' + rows.length + ' rows. Each row is put on its job by the <b>memo</b> first, then the customer / class. ' +
+        'Check the <b>Job</b> column (type a PO, name, address or customer to change it). <b>Nothing is saved until you press Import.</b>' +
+        (paused() ? '<br>⏸ Data-entry mode is on — this only records history in the CRM; nothing is sent to QuickBooks or anyone.' : ' Nothing is ever sent to QuickBooks or to anyone.') + '</div></div>' +
+        '<button class="qbc-btn" data-x title="Close">✕</button></div>' +
+        '<div class="qbc-chips" data-chips></div><div class="qbc-wrap"><table class="qbc-tbl"><thead><tr><th></th><th>Date</th><th>Type</th><th>#</th><th>Name</th><th>Memo</th><th style="text-align:right">Amount</th><th style="min-width:230px">Job</th><th>What happens</th></tr></thead><tbody data-body></tbody></table></div>' +
+        '<div style="display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap"><button class="qbc-btn qbc-go" data-go></button><button class="qbc-btn" data-x>Cancel</button>' +
+        '<span class="qbc-sub" style="margin:0" data-note></span></div>';
+      jobDatalist(card);
+      var body = card.querySelector('[data-body]'), chips = card.querySelector('[data-chips]'), go = card.querySelector('[data-go]');
+      Array.prototype.forEach.call(card.querySelectorAll('[data-x]'), function(b){ b.onclick = function(){ close(); }; });
+      function rowHtml(r){
+        var x = r.rec, memo = x.memo || x.desc || (x.cust ? 'Customer: ' + x.cust : '') || (x.klass ? 'Class: ' + x.klass : '');
+        var canJob = r.action !== 'skip';
+        var lab = labelFor(r.pid, r.include && r.action === 'new' && !r.pid);
+        var why = r.action === 'skip' ? '' : r.match && r.match.why && (r.picked ? 'picked by you' : r.match.why);
+        return '<tr data-i="' + r.i + '"' + (r.include ? '' : ' class="qbc-row-off"') + '><td><input type="checkbox" data-inc ' + (r.include ? 'checked' : '') + (r.action === 'skip' || r.action === 'dup' || r.action === 'same' ? ' disabled' : '') + ' title="Import this row"></td>' +
+          '<td style="white-space:nowrap">' + esc(x.date) + '</td><td>' + esc(x.qbType || KIND_TXT[x.kind] || x.kind) + '</td><td>' + (x.num ? '<span class="gc-qbnum" data-qbnum="' + esc(x.num) + '">QB #' + esc(x.num) + '</span>' : '') + '</td><td>' + esc(x.name) + '</td>' +
+          '<td class="qbc-memo">' + esc(memo).slice(0, 160) + (x.splitPart ? ' <span class="qbc-dim">(line ' + x.splitPart + ')</span>' : '') + '</td><td style="text-align:right;white-space:nowrap">' + money(x.amount) + '</td>' +
+          '<td>' + (canJob ? '<input class="qbc-job' + (!r.pid && r.action !== 'dup' && r.action !== 'same' ? ' need' : '') + '" list="qbcJobs" data-job value="' + esc(lab) + '" placeholder="type to find the job…">' : '<span class="qbc-dim">—</span>') +
+          '<div style="margin-top:2px">' + confPill(r.picked ? { conf: 100, why: 'picked by you' } : r.match) + ' <span class="qbc-dim" style="font-size:11px">' + esc(why || (r.action === 'dup' || r.action === 'same' || r.action === 'skip' ? '' : 'no job found — pick one')) + '</span></div></td>' +
+          '<td>' + esc(r.becomes || '').replace(/⚠[^·]*/g, function(m){ return '<span class="qbc-warn">' + m + '</span>'; }) + (r.action === 'new' && !r.include && !r.pid ? '<div class="qbc-dim">left out until it has a job (or pick "' + esc(NOJOB) + '")</div>' : '') + '</td></tr>';
+      }
+      function paint(){
+        var c = C.count(rows);
+        chips.innerHTML = FILTERS.map(function(f){ var n = f[0] === 'all' ? rows.length : rows.filter(function(r){ return rowIs(r, f[0]); }).length; if (!n && f[0] !== 'all' && f[0] !== filter) return ''; return '<button class="qbc-chip' + (f[0] === filter ? ' on' : '') + '" data-f="' + f[0] + '">' + f[1] + ' ' + n + '</button>'; }).join('');
+        var vis = rows.filter(function(r){ return rowIs(r, filter); });
+        body.innerHTML = vis.slice(0, 3000).map(rowHtml).join('') + (vis.length > 3000 ? '<tr><td colspan="9">… ' + (vis.length - 3000) + ' more (use the buttons above to narrow)</td></tr>' : '') || '<tr><td colspan="9" class="qbc-dim">Nothing here.</td></tr>';
+        go.textContent = c.include ? 'Import ' + c.include + ' row' + (c.include === 1 ? '' : 's') : 'Nothing to import';
+        go.disabled = !c.include;
+        card.querySelector('[data-note]').textContent = c.add + ' new · ' + c.update + ' updates · ' + c.same + ' up to date · ' + c.dup + ' already in the CRM · ' + (c.nojob + c.skip) + ' left out' + (c.conflict ? ' · ⚠ ' + c.conflict + ' to check' : '');
+      }
+      chips.onclick = function(e){ var b = e.target.closest('[data-f]'); if (!b) return; filter = b.getAttribute('data-f'); paint(); };
+      function rowOf(el){ var tr = el.closest('tr[data-i]'); return tr ? rows[+tr.getAttribute('data-i')] : null; }
+      function repaintRow(r){ var tr = body.querySelector('tr[data-i="' + r.i + '"]'); if (tr) { var t = D.createElement('tbody'); t.innerHTML = rowHtml(r); tr.replaceWith(t.firstChild); } paint2(); }
+      function paint2(){ var keep = body.scrollTop; var c = C.count(rows); go.textContent = c.include ? 'Import ' + c.include + ' row' + (c.include === 1 ? '' : 's') : 'Nothing to import'; go.disabled = !c.include; card.querySelector('[data-note]').textContent = c.add + ' new · ' + c.update + ' updates · ' + c.same + ' up to date · ' + c.dup + ' already in the CRM · ' + (c.nojob + c.skip) + ' left out' + (c.conflict ? ' · ⚠ ' + c.conflict + ' to check' : ''); body.scrollTop = keep; }
+      function setJob(r, pid, how){
+        r.pid = pid; r.picked = true;
+        C.decide(r, pid, ctx);
+        if (r.jobPid && !pid) r.pid = r.jobPid;
+        if (how === 'nojob' && r.action === 'new') { r.include = true; r.noJob = false; }
+        if (how === 'leave') r.include = false;
+        repaintRow(r);
+      }
+      body.addEventListener('change', function(e){
+        var r = rowOf(e.target); if (!r) return;
+        if (e.target.hasAttribute('data-inc')) { r.include = !!e.target.checked; if (r.include && r.action === 'new' && !r.pid) r.noJob = false; repaintRow(r); return; }
+        if (!e.target.hasAttribute('data-job')) return;
+        var v = s(e.target.value);
+        if (v === LEAVE) return setJob(r, '', 'leave');
+        if (v === NOJOB) return setJob(r, '', 'nojob');
+        if (v === NEWP && typeof W._gcNewProjectFor === 'function') {
+          var x = r.rec;
+          try { W._gcNewProjectFor({ client: x.side === 'income' ? x.name : (x.cust || ''), customer: x.side === 'income' ? x.name : (x.cust || ''), name: (x.cust && x.cust.split(':').pop()) || x.memo || x.desc || '', memo: x.memo, address: x.address || '', amount: x.amount, amt: x.amount, invNum: x.num, date: x.date, source: 'QuickBooks import' },
+            function(p){ if (!p || !p.id) return; JL.at = 0; ctx.projects = projects(); ctx.jobs = C.jobIndex(ctx.projects); jobDatalist(card); setJob(r, s(p.id), 'new'); }); } catch (er) {}
+          e.target.value = labelFor(r.pid); return;
+        }
+        var pid = jobList().byLabel[v];
+        if (pid) return setJob(r, pid, 'pick');
+        if (!v) return setJob(r, '', 'leave');
+      });
+      go.onclick = function(){
+        go.disabled = true; go.textContent = 'Saving…';
+        apply(rows, { file: fname, what: 'QuickBooks CSV import (' + fname + ')' }).then(function(out){ W._gcQbLastImport = out; summary(out); }, function(e){ go.disabled = false; go.textContent = 'Import'; W.alert('The import did not save: ' + s(e && e.message || e)); });
+      };
+      paint();
+    }
+    function summary(out){
+      card.innerHTML = '<h2>✓ Imported</h2><div style="font-size:17px;line-height:1.7;margin:8px 0 14px"><b>' + out.added + '</b> added to <b>' + out.jobCount + '</b> job' + (out.jobCount === 1 ? '' : 's') +
+        ' · <b>' + out.updated + '</b> updated' + (out.linked ? ' (' + out.linked + ' got their job)' : '') + ' · <b>' + (out.same + out.dup) + '</b> already in the CRM (skipped) · <b>' + out.left + '</b> left out' + (out.conflicts ? ' · ⚠ ' + out.conflicts + ' with a QuickBooks difference (the CRM value was kept)' : '') + '</div>' +
+        '<div class="qbc-sub">The jobs\' P&L shows them now. Rows with no job: 💎 → 🔗 QuickBooks ↔ CRM. Importing the same file again never adds them twice — it only updates what changed.</div>' +
+        '<div style="display:flex;gap:10px;flex-wrap:wrap"><button class="qbc-btn qbc-red" data-undo style="font-size:15px;padding:12px 18px">↩ Undo this import</button><button class="qbc-btn qbc-blue" data-chk>🔗 QuickBooks ↔ CRM</button><button class="qbc-btn" data-x>Close</button></div>';
+      card.querySelector('[data-x]').onclick = function(){ close(out); };
+      card.querySelector('[data-chk]').onclick = function(){ close(out); openCheck(); };
+      card.querySelector('[data-undo]').onclick = function(){ var b = this; if (!W.confirm('Undo this import? Its new records are removed and the records it changed get their old values back.')) return; b.disabled = true; b.textContent = 'Undoing…';
+        undo(out.importId).then(function(r){ b.textContent = r.ok ? '✓ Undone (' + r.removed + ' removed, ' + r.restored + ' restored)' : '✕ ' + r.why; }); };
+    }
+  });
+}
+W._gcQbCsvImport = { open: openImport, apply: apply, undo: undo, isSheet: isSheet, read: readSource };
+
+/* ════════════════════ 4. 🔗 QUICKBOOKS ↔ CRM (and the backfill of the bills with no job) ════════════════════ */
+function descTail(x){ var d = s(x.desc), i = d.indexOf(' — '); return i >= 0 ? d.slice(i + 3) : d.replace(/^(Sub Invoice:\s*)?QuickBooks [a-z ]*(#\s*\S+)?\s*/i, ''); }
+function isClientRec(x){ return /^(client|customer|client-review)$/i.test(s(x.type)); }
+function recInput(x){
+  var tail = descTail(x), q = C.qbNum(x) || {};
+  return { memo: s(x.qbMemo) || tail, desc: s(x.qbMemo) ? tail : '', cust: s(x.qbCust), klass: s(x.qbClass), name: isClientRec(x) ? s(x.client || x.customer) : '', side: isClientRec(x) ? 'income' : 'cost', num: q.num,
+    lines: arr(x.qbLines).map(function(l){ return { memo: s(l.desc), cust: s(l.customer), klass: s(l.cls) }; }).concat(arr(x.lines).slice(0, 20).map(function(l){ return { memo: s(l && (l.desc || l.description || l.name)) }; })) };
+}
+function qbRecords(ctx){
+  var out = [];
+  [['invs', ctx.invs], ['expenses', ctx.expenses]].forEach(function(p){ arr(p[1]).forEach(function(x){
+    if (!x || x.deleted || !(/quickbooks/i.test(s(x.source)) || /^QB:/.test(s(x.qbKey)) || s(x.qbcsvKey))) return;
+    if (p[0] === 'expenses' && x.subInvId) return;   /* a bill's job cost row follows its bill */
+    if (/^(customer|vendor)$/i.test(s(x.qbKind))) return;
+    out.push({ x: x, list: p[0] });
+  }); });
+  return out;
+}
+function openCheck(){
+  if (!allowed()) { try { W.alert('QuickBooks ↔ CRM is for admins and the office.'); } catch (e) {} return; }
+  var ov = overlay('_gcQbCheckOv'), card = ov.firstChild;
+  card.innerHTML = '<h2>🔗 QuickBooks ↔ CRM</h2><div class="qbc-sub">Loading…</div>';
+  ov.addEventListener('click', function(e){ if (e.target === ov) ov.remove(); });
+  ctxNow().then(function(ctx){
+    var items = qbRecords(ctx).map(function(o, i){
+      var x = o.x, m = s(x.pid) ? null : C.matchJob(recInput(x), { jobs: ctx.jobs, memoMap: ctx.memoMap });
+      return { i: i, x: x, list: o.list, q: C.qbNum(x) || {}, pid: s(x.pid) || (m && m.pid) || '', match: m, include: !s(x.pid) && !!(m && m.pid && m.conf >= 85), had: s(x.pid) };
+    });
+    items.sort(function(a, b){ return (a.had ? 1 : 0) - (b.had ? 1 : 0) || s(b.x.date || b.x.recvDate).localeCompare(s(a.x.date || a.x.recvDate)); });
+    var noJob = items.filter(function(it){ return !it.had; }), filter = noJob.length ? 'nojob' : 'all';
+    W._gcQbCheckItems = items;
+    card.innerHTML = '<div style="display:flex;justify-content:space-between;gap:10px"><div><h2>🔗 QuickBooks ↔ CRM</h2><div class="qbc-sub">Every record that came from QuickBooks, with its QuickBooks number. <b>' + noJob.length + '</b> have no job: the CRM read their memo / description and suggests one — check the <b>Job</b> column, tick the ones to put on their job, then press the green button. History stays history: nothing is sent, no reminders.</div></div><button class="qbc-btn" data-x>✕</button></div>' +
+      '<div class="qbc-chips"><button class="qbc-chip" data-f="nojob">No job ' + noJob.length + '</button><button class="qbc-chip" data-f="sug">Has a suggestion ' + noJob.filter(function(it){ return it.match && it.match.pid; }).length + '</button><button class="qbc-chip" data-f="all">All ' + items.length + '</button>' +
+      '<input data-q placeholder="Search: QB #, name, memo, amount…" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:999px;min-width:220px"></div>' +
+      '<div class="qbc-wrap"><table class="qbc-tbl"><thead><tr><th><input type="checkbox" data-all title="Tick all shown"></th><th>QB #</th><th>Date</th><th>Kind</th><th>Name</th><th>Memo / description</th><th style="text-align:right">Amount</th><th style="min-width:240px">Job</th></tr></thead><tbody data-body></tbody></table></div>' +
+      '<div style="display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap"><button class="qbc-btn qbc-go" data-go></button><button class="qbc-btn" data-csv>⬇ Download CSV</button><button class="qbc-btn" data-x>Close</button><span class="qbc-sub" style="margin:0" data-note></span></div>';
+    jobDatalist(card);
+    var body = card.querySelector('[data-body]'), go = card.querySelector('[data-go]'), qbox = card.querySelector('[data-q]');
+    Array.prototype.forEach.call(card.querySelectorAll('[data-x]'), function(b){ b.onclick = function(){ ov.remove(); }; });
+    function vis(){
+      var q = low(qbox.value), qn = C.qbSearchNum(qbox.value);
+      return items.filter(function(it){
+        if (filter === 'nojob' && it.had) return false; if (filter === 'sug' && (it.had || !(it.match && it.match.pid))) return false;
+        if (!q) return true; if (qn && C.qbSearchHit(it.x, qbox.value)) return true;
+        return low([it.q.num, it.x.sub, it.x.client, it.x.vendor, it.x.desc, it.x.qbMemo, r2(it.x.amt != null ? it.x.amt : it.x.amount).toFixed(2)].join(' ')).indexOf(q) >= 0;
+      });
+    }
+    function html(it){
+      var x = it.x, kind = it.q.kind || (isClientRec(x) ? 'invoice' : 'bill');
+      return '<tr data-i="' + it.i + '"><td>' + (it.had && !it.changed ? '' : '<input type="checkbox" data-inc ' + (it.include ? 'checked' : '') + '>') + '</td><td>' + badge(x) + '</td><td style="white-space:nowrap">' + esc(x.date || x.recvDate) + '</td><td>' + esc(KIND_TXT[kind] || kind) + '</td>' +
+        '<td>' + esc(x.sub || x.vendor || x.client || x.payee) + '</td><td class="qbc-memo">' + esc((s(x.qbMemo) || descTail(x)).slice(0, 140)) + '</td><td style="text-align:right;white-space:nowrap">' + money(x.amt != null ? x.amt : x.amount) + '</td>' +
+        '<td><input class="qbc-job' + (it.pid ? '' : ' need') + '" list="qbcJobs" data-job value="' + esc(labelFor(it.pid)) + '" placeholder="type to find the job…"><div style="margin-top:2px">' + (it.had && !it.changed ? '<span class="qbc-dim" style="font-size:11px">on its job</span>' : confPill(it.picked ? { conf: 100, why: 'picked by you' } : it.match) + ' <span class="qbc-dim" style="font-size:11px">' + esc(it.picked ? 'picked by you' : (it.match && it.match.why) || '') + '</span>') + '</div></td></tr>';
+    }
+    function todo(){ return items.filter(function(it){ return it.include && it.pid && it.pid !== it.had; }); }
+    function paint(){
+      Array.prototype.forEach.call(card.querySelectorAll('[data-f]'), function(b){ b.classList.toggle('on', b.getAttribute('data-f') === filter); });
+      var v = vis(); body.innerHTML = v.slice(0, 2500).map(html).join('') || '<tr><td colspan="8" class="qbc-dim">Nothing here.</td></tr>';
+      var n = todo().length; go.textContent = n ? 'Put ' + n + ' on their job' + (n === 1 ? '' : 's') : 'Tick the rows to put on their jobs'; go.disabled = !n;
+      card.querySelector('[data-note]').textContent = v.length + ' shown';
+    }
+    card.querySelector('.qbc-chips').addEventListener('click', function(e){ var b = e.target.closest('[data-f]'); if (b) { filter = b.getAttribute('data-f'); paint(); } });
+    qbox.addEventListener('input', paint);
+    card.querySelector('[data-all]').onchange = function(){ var on = this.checked; vis().forEach(function(it){ if (it.pid && it.pid !== it.had) it.include = on; }); paint(); };
+    body.addEventListener('change', function(e){
+      var tr = e.target.closest('tr[data-i]'); if (!tr) return; var it = items.filter(function(y){ return y.i === +tr.getAttribute('data-i'); })[0]; if (!it) return;
+      if (e.target.hasAttribute('data-inc')) { it.include = !!e.target.checked; paint(); return; }
+      var v = s(e.target.value);
+      if (v === NEWP && typeof W._gcNewProjectFor === 'function') {
+        var x = it.x; try { W._gcNewProjectFor({ client: x.client || x.qbCust || '', name: s(x.qbCust).split(':').pop() || descTail(x), address: '', amount: x.amt, amt: x.amt, invNum: it.q.num, date: x.date, source: 'QuickBooks ↔ CRM' }, function(p){ if (!p || !p.id) return; JL.at = 0; jobDatalist(card); it.pid = s(p.id); it.picked = true; it.include = true; it.changed = true; paint(); }); } catch (er) {}
+        return;
+      }
+      var pid = jobList().byLabel[v];
+      if (pid) { it.pid = pid; it.picked = true; it.include = true; it.changed = true; paint(); }
+      else if (v === LEAVE || v === NOJOB || !v) { it.pid = it.had; it.include = false; paint(); }
+    });
+    go.onclick = function(){
+      var list = todo(); if (!list.length) return;
+      go.disabled = true; go.textContent = 'Saving…';
+      var rows = list.map(function(it){ return { action: 'update', include: true, picked: true, list: it.list, target: it.x, set: { pid: it.pid }, match: it.match, rec: { memo: recInput(it.x).memo, side: isClientRec(it.x) ? 'income' : 'cost' }, pid: it.pid }; });
+      apply(rows, { what: 'QuickBooks ↔ CRM — jobs' }).then(function(out){
+        card.innerHTML = '<h2>✓ ' + out.updated + ' QuickBooks record' + (out.updated === 1 ? '' : 's') + ' put on ' + out.jobCount + ' job' + (out.jobCount === 1 ? '' : 's') + '</h2><div class="qbc-sub">Bills got their job cost row, so the jobs\' P&L shows them. The memos are remembered for the next import.</div>' +
+          '<div style="display:flex;gap:10px"><button class="qbc-btn qbc-red" data-undo>↩ Undo</button><button class="qbc-btn qbc-blue" data-again>Back to the list</button><button class="qbc-btn" data-x>Close</button></div>';
+        card.querySelector('[data-x]').onclick = function(){ ov.remove(); };
+        card.querySelector('[data-again]').onclick = function(){ ov.remove(); openCheck(); };
+        card.querySelector('[data-undo]').onclick = function(){ var b = this; b.disabled = true; undo(out.importId).then(function(r){ b.textContent = r.ok ? '✓ Undone' : '✕ ' + r.why; }); };
+      }, function(e){ go.disabled = false; W.alert('Not saved: ' + s(e && e.message || e)); });
+    };
+    card.querySelector('[data-csv]').onclick = function(){
+      var head = ['QB #', 'Kind', 'Date', 'Name', 'Amount', 'Job PO', 'Job', 'Suggested job', 'Confidence', 'CRM id', 'Memo / description'];
+      var lines = [head].concat(vis().map(function(it){ var x = it.x, p = proj(it.had), sp = !it.had && it.pid ? proj(it.pid) : null;
+        return [it.q.num, it.q.kind, x.date || x.recvDate, x.sub || x.vendor || x.client, r2(x.amt != null ? x.amt : x.amount).toFixed(2), p ? poOf(p) : '', p ? s(p.name) : 'no job', sp ? s(sp.name) : '', it.match && it.match.conf || '', x.id, s(x.qbMemo) || descTail(x)]; }));
+      var csv = lines.map(function(r){ return r.map(function(v){ v = s(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }).join(','); }).join('\n');
+      var a = D.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = 'quickbooks-crm-' + today() + '.csv'; D.body.appendChild(a); a.click(); later(function(){ a.remove(); }, 500);
+    };
+    paint();
+  });
+}
+W._gcQbCheck = { open: openCheck, records: function(){ return ctxNow().then(qbRecords); }, suggest: function(x){ return C.matchJob(recInput(x), { projects: projects(), memoMap: MEMO.map }); } };
+
+/* ════════════════════ 5. THE DOORS ════════════════════ */
+/* 📁 Upload Documents: a CSV / spreadsheet goes to the QuickBooks import (no job asked); other files keep the job flow */
+function topOf(el){ var o = el; while (o && o.parentElement && o.parentElement !== D.body) o = o.parentElement; return o && o.parentElement === D.body ? o : null; }
+function hookUploader(){
+  var f = W._gcOpenDocUploader; if (typeof f !== 'function' || f.__qbcsv) return;
+  var w = function(){
+    var r = f.apply(this, arguments);
+    try {
+      var inputs = D.querySelectorAll('#_duInput'), input = inputs[inputs.length - 1]; if (!input || input.__qbcsv) return r; input.__qbcsv = true;
+      var card = input.parentElement, drop = card.querySelector('#_duDrop');
+      if (allowed()) {
+        var tip = D.createElement('div'); tip.setAttribute('data-qbcsv-tip', '1');
+        tip.style.cssText = 'background:#0a1628;border:1px solid #16a34a;border-radius:10px;padding:10px 12px;margin:0 0 12px;color:#cbd5e1;font-size:13px;line-height:1.5';
+        tip.innerHTML = '📊 <b style="color:#fff">A QuickBooks CSV or Excel file?</b> Choose it here — no job needed: each row goes to its job by the memo. <button type="button" data-qbcsv-pick style="margin-left:6px;background:#16a34a;color:#fff;border:none;border-radius:7px;padding:5px 10px;font-weight:800;cursor:pointer">📊 Import from QuickBooks CSV</button>';
+        if (drop) card.insertBefore(tip, drop);
+        tip.querySelector('[data-qbcsv-pick]').onclick = function(){ pickSheet(function(){ var ov = topOf(card); if (ov) ov.remove(); }); };
+      }
+      var orig = input.onchange;
+      input.onchange = function(ev){
+        var fs = Array.prototype.slice.call(input.files || []), sh = fs.filter(isSheet);
+        if (!sh.length || !allowed()) return orig && orig.call(this, ev);
+        var rest = fs.filter(function(x){ return !isSheet(x); });
+        if (rest.length && typeof DataTransfer === 'function') { try { var dt = new DataTransfer(); rest.forEach(function(x){ dt.items.add(x); }); input.files = dt.files; orig && orig.call(this, ev); } catch (e) {} }
+        try { input.value = ''; } catch (e) {}
+        if (!rest.length) { var ov = topOf(card); if (ov) ov.remove(); }
+        openImport(sh[0], sh[0].name);
+      };
+      card.addEventListener('drop', function(e){
+        var fs = Array.prototype.slice.call((e.dataTransfer && e.dataTransfer.files) || []), sh = fs.filter(isSheet);
+        if (!sh.length || !allowed() || fs.length !== sh.length) return;
+        e.preventDefault(); e.stopImmediatePropagation(); e.stopPropagation();
+        var ov = topOf(card); if (ov) ov.remove();
+        openImport(sh[0], sh[0].name);
+      }, true);
+    } catch (e) {}
+    return r;
+  };
+  w.__qbcsv = true; W._gcOpenDocUploader = w;
+}
+function pickSheet(before){
+  var inp = D.createElement('input'); inp.type = 'file'; inp.accept = '.csv,.tsv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel';
+  inp.onchange = function(){ var f = inp.files && inp.files[0]; if (!f) return; if (before) before(); openImport(f, f.name); };
+  inp.click();
+}
+/* the older 💎 Import from QuickBooks (CSV) (patch J) and every door that hands it a file: transactions come here (one matcher,
+   never a duplicate, a re-import updates); customer / vendor contact lists stay with patch J */
+function hookPatchJ(){
+  var o = W._gcQbCsvOpen; if (typeof o === 'function' && !o.__qbcsv) {
+    var w = function(text, name){ var self = this, args = arguments; return openImport(String(text == null ? '' : text), name, { fallback: function(){ return o.apply(self, args); } }); };
+    w.__qbcsv = true; w.__orig = o; W._gcQbCsvOpen = w;
+  }
+  var p = W._gcOpenQbCsvImport; if (typeof p === 'function' && !p.__qbcsv) { var w2 = function(){ pickSheet(); }; w2.__qbcsv = true; w2.__orig = p; W._gcOpenQbCsvImport = w2; }
+}
+W._gcOpenQbCsvToJobs = function(){ if (!allowed()) { W.alert('Importing QuickBooks files is for admins and the office.'); return; } pickSheet(); };
+function hooks(){ try { hookUploader(); } catch (e) {} try { hookPatchJ(); } catch (e) {} }
+hooks(); later(hooks, 1500); later(hooks, 5000); later(hooks, 15000);
+loadMemo();
+try { console.log('[GC] 📊 QuickBooks CSV → jobs by the memo · 🔗 QuickBooks ↔ CRM · QB # badges (patch QBCSV) — _gcQbCsvImport.open(file) · _gcQbCheck.open()'); } catch (e) {}
+})(typeof window !== "undefined" ? window : globalThis);
 </script>

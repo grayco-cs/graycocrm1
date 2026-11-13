@@ -1,0 +1,22 @@
+"Demo Builders LLC (made-up test data)"
+"Transaction List by Date"
+"October 1-31, 2026"
+
+,Date,Transaction Type,Num,Name,Memo/Description,Account,Split,Amount
+,10/02/2026,Invoice,5001,John Smith,"PO P1001 - roof, tear off & replace",Accounts Receivable (A/R),Construction Income,"$12,500.00"
+,10/03/2026,Bill,85378,Demo Electric Co,"ROUGH IN, 1234 Oak Rdge Dr",Accounts Payable (A/P),Subcontractors,"1,800.00"
+,10/04/2026,Expense,,Demo Lumber Yard,Jones kitchen cabinets,Demo Bank Checking,Job Materials,(642.17)
+,10/05/2026,Check,1102,Demo Dumpsters,dumpster 77 maple cove,Demo Bank Checking,Dumpster,-325.00
+,10/06/2026,Payment,,John Smith,,Undeposited Funds,Accounts Receivable (A/R),"5,000.00"
+,10/07/2026,Credit Card Expense,,Demo Paint Store,Baker water loss - primer,Demo Visa,Job Materials,(88.40)
+,10/08/2026,Bill,85390,Demo Electric Co,John Smith,Accounts Payable (A/P),Subcontractors,900.00
+,10/09/2026,Transfer,,,,Demo Bank Checking,Savings,"2,000.00"
+,10/10/2026,Bill Payment (Check),2001,Demo Electric Co,,Demo Bank Checking,Accounts Payable (A/P),"-1,800.00"
+,10/11/2026,Vendor Credit,VC-7,Demo Lumber Yard,return - jones kitchen,Accounts Payable (A/P),Job Materials,(50.00)
+,10/12/2026,Expense,,Demo Gas Station,fuel,Demo Visa,Fuel,(45.10)
+,10/13/2026,Check,1103,Demo Dumpsters,Voided,Demo Bank Checking,Dumpster,0.00
+
+TOTAL,,,,,,,,"$19,149.13"
+
+
+"Accrual Basis Friday, November 13, 2026 09:15 AM GMT-06:00"

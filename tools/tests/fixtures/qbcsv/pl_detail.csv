@@ -1,0 +1,21 @@
+Demo Builders LLC (made-up test data)
+Profit and Loss Detail
+"January 1 - November 13, 2026"
+
+,Date,Transaction Type,Num,Name,Class,Memo/Description,Split,Amount,Balance
+Income,,,,,,,,,
+Construction Income,,,,,,,,,
+,11/02/2026,Invoice,5010,Mary Jones,,Jones Kitchen Remodel - draw 2,Accounts Receivable (A/R),"8,000.00","8,000.00"
+,11/02/2026,Invoice,5010,Mary Jones,,Jones Kitchen Remodel - draw 2 (permit),Accounts Receivable (A/R),400.00,"8,400.00"
+Total for Construction Income,,,,,,,,"$8,400.00",
+Cost of Goods Sold,,,,,,,,,
+Job Materials,,,,,,,,,
+,11/03/2026,Bill,LY-881,Demo Lumber Yard,Mitigation,450 Elm St drying mats,-Split-,300.00,300.00
+,11/03/2026,Bill,LY-881,Demo Lumber Yard,Construction,T2002 trim,-Split-,120.00,420.00
+,11/04/2026,Expense,,Demo Hardware,,"Lee abatement, 3161 US HWY 64",Demo Visa,75.25,495.25
+Total for Job Materials,,,,,,,,$495.25,
+Total for Cost of Goods Sold,,,,,,,,$495.25,
+Gross Profit,,,,,,,,"$7,904.75",
+Net Income,,,,,,,,"$7,904.75",
+
+"Accrual basis Friday, November 13, 2026 09:20 AM GMT-06:00"
