@@ -262,6 +262,13 @@ export async function changePassword(newPassword) {
  */
 export async function requestPasswordReset(email) {
   const back = window.location.origin + window.location.pathname;
+  /* patch RESETMAIL: GrayCo's own server e-mails the reset link (Supabase's mailer only reaches a few addresses an hour) */
+  try {
+    const g = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'reset-password', email: low(email), back }) });
+    let gj = {}; try { gj = await g.json(); } catch (e) { /* not JSON */ }
+    if (g.ok && gj && gj.ok) return { ok: true };
+    if (g.status === 400 || g.status === 429 || g.status === 502) return { error: gj.error || 'The reset e-mail could not be sent.' };
+  } catch (e) { /* our server not reachable: fall back to Supabase's own e-mail below */ }
   const r = await authPost('recover?redirect_to=' + encodeURIComponent(back), { email: low(email) });
   if (r.net) return { error: 'Could not reach the GrayCo sign-in service.' };
   if (!r.ok && r.status !== 429) return { error: r.json.msg || r.json.message || 'The reset e-mail could not be sent.' };

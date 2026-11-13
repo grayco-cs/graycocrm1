@@ -373,7 +373,7 @@ exports._papers = { papersOf: spPapersOf, withPapers, papersToCrm, spSign };
 
 /* ── rate limits (per warm instance) ───────────────────────────────────────── */
 const hits = new Map();
-const LIMITS = { pub: { req: 120, bad: 10 }, signin: { req: 12, bad: 10 }, verify: { req: 25, bad: 10 }, app: { req: 600, bad: 20 }, bid: { req: 40, bad: 20 }, sched: { req: 60, bad: 20 }, invmk: { req: 20, bad: 20 } };   /* invmk: p-invoice-make send (patch SUBINVMAKE) */   /* sched: p-sched save / cancel (patch SUBSCHED) */   /* bid: p-bid-save (patch SUBBIDS) */
+const LIMITS = { pub: { req: 120, bad: 10 }, signin: { req: 12, bad: 10 }, verify: { req: 25, bad: 10 }, app: { req: 600, bad: 20 }, bid: { req: 40, bad: 20 }, sched: { req: 60, bad: 20 }, pw: { req: 300, bad: 300 }, invmk: { req: 20, bad: 20 } };   /* invmk: p-invoice-make send (patch SUBINVMAKE) */   /* pw: password sign-in, no lock-out for people (patch PWNOLOCK) */   /* sched: p-sched save / cancel (patch SUBSCHED) */   /* bid: p-bid-save (patch SUBBIDS) */
 function ipOf(event){ return s(gcHeader(event, 'x-nf-client-connection-ip') || gcHeader(event, 'x-forwarded-for').split(',')[0] || gcHeader(event, 'client-ip') || 'unknown'); }
 function limited(ip, kind){
   const L = LIMITS[kind] || LIMITS.pub, key = kind + '|' + ip, now = Date.now();
@@ -617,7 +617,7 @@ async function signinStart(body, ip){
       sub_id: m.kind === 'partner' ? s(m.sub.id) : null, expires_at: new Date(Date.now() + CODE_MIN * 60e3).toISOString(), tries: 0, ip: clip(ip, 60) });
     const L = MAIL[m.lang];
     if (id.kind === 'phone' && textReady()) await require('./_lib/custquiet.js').run('reply', () => sendText(id.value, 'GrayCo Portal code: ' + code + ' (10 min)'));   /* patch CUSTQUIET: a sign-in code they just asked for goes at once */
-    else if (id.kind === 'email' || okEmail(m.email)) await sendMail(id.kind === 'email' ? id.value : m.email, L.codeSubj, mailHtml(L.codeHead, L.codeBody, code));
+    else if (id.kind === 'email' || okEmail(m.email)) await require('./_lib/custquiet.js').run('reply', () => sendMail(id.kind === 'email' ? id.value : m.email, L.codeSubj, mailHtml(L.codeHead, L.codeBody, code)));   /* patch RESETMAIL: goes in data-entry mode too */
     else {
       /* no texting yet and no e-mail on file: the code waits in the CRM for the PM to text it from their phone */
       await dbPatch('gc_portal_code', 'id=' + eq(rid), { relay: { phone: id.value, code: code, pids: m.pids || [], who: m.name || '' } });
@@ -626,7 +626,7 @@ async function signinStart(body, ip){
   await padTo(t0);
   return SAME;
 }
-async function padTo(t0){ const w = 700 + Math.floor(Math.random() * 120) - (Date.now() - t0); if (w > 0) await sleep(w); }
+async function padTo(t0, extra){ const w = 700 + (extra || 0) + Math.floor(Math.random() * 120) - (Date.now() - t0); if (w > 0) await sleep(w); }   /* extra: patch PWNOLOCK's short pause after many wrong passwords */
 async function codeCheck(identKey, code, purpose, extraQs){
   const rows = await dbGet('gc_portal_code', 'select=*&purpose=eq.' + purpose + '&ident=' + eq(hmac(identKey)) + '&used_at=is.null' + (extraQs || '') + '&order=created_at.desc&limit=1');
   const row = rows[0];
@@ -656,8 +656,8 @@ async function signinVerify(body){
 /* ── e-mail + password ──────────────────────────────────────────────────────────
    Customers (owner, 20 Oct 2026): user name = the e-mail on the job, starter password = their FIRST NAME
    (case and spaces don't matter). Only a scrypt fingerprint is ever stored, and only once they choose their
-   own password; until then the starter is checked against the job's customer name. 5 wrong tries → 15 minutes
-   locked, per e-mail and per address, with the same message every time. The login works only while the
+   own password; until then the starter is checked against the job's customer name. Wrong tries never lock anyone out (patch PWNOLOCK, owner 11/13 — it
+   was 5 wrong → 15 minutes locked); after many, the answer only slows a little. The login works only while the
    job's portal link is on. Subs: their bid-site account (Supabase sign-in), and only while their link is on. */
 const LOCK_TRIES = 5, LOCK_MIN = 15;
 function pwHash(pw, salt){ salt = salt || crypto.randomBytes(16).toString('hex'); return 'scrypt$' + salt + '$' + crypto.scryptSync(String(pw), salt, 32).toString('hex'); }
@@ -682,6 +682,22 @@ async function lockFail(keys){
     const row = { id: k, fails: fails >= LOCK_TRIES ? 0 : fails, locked_until: fails >= LOCK_TRIES ? new Date(now + LOCK_MIN * 60e3).toISOString() : (r && r.locked_until) || null, updated_at: new Date(now).toISOString() };
     await dbPost('gc_portal_lock?on_conflict=id', row, 'resolution=merge-duplicates,return=minimal');
   }
+}
+/* patch PWNOLOCK: count wrong passwords (never locks) — the count only adds a short pause; it resets after 15 quiet minutes or a good sign-in */
+async function failCount(keys){
+  try {
+    const now = Date.now();
+    const rows = await dbGet('gc_portal_lock', 'select=*&id=' + inq(keys));
+    let worst = 0;
+    for (const k of keys) {
+      const r = rows.find(function(x){ return x.id === k; });
+      const fresh = !r || (r.updated_at && now - Date.parse(r.updated_at) > LOCK_MIN * 60e3);
+      const fails = (fresh ? 0 : Number(r.fails) || 0) + 1;
+      if (k.indexOf('e:') === 0) worst = fails;
+      await dbPost('gc_portal_lock?on_conflict=id', { id: k, fails: fails, locked_until: null, updated_at: new Date(now).toISOString() }, 'resolution=merge-duplicates,return=minimal');
+    }
+    return worst;
+  } catch (e) { return 0; }
 }
 async function lockClear(keys){ await dbPatch('gc_portal_lock', 'id=' + inq(keys), { fails: 0, locked_until: null, updated_at: new Date().toISOString() }); }
 const BADLOGIN = "That e-mail and password don't match. Try again, or tap \"Forgot password?\" to get a code.";
@@ -728,7 +744,9 @@ async function passwordSignin(body, ip){
   const email = id.kind === 'email' ? id.value : '';
   const keys = ['e:' + hmac(id.key), 'ip:' + hmac(ip)];
   const t0 = Date.now();
-  if (await lockState(keys)) { await padTo(t0); throw Fail(429, 'Too many tries. Wait 15 minutes, or tap "Forgot password?" to get a code.'); }
+  /* patch PWNOLOCK (owner 11/13: "don't have a 'if they miss password wait 15 minutes' — give them as many times as they want"): no lock-out.
+     Wrong passwords only slow the next answer a little (up to 3 s, per e-mail / number), so a person can keep trying as often as they like
+     while a password-guessing robot is slowed down. A robot hammering from one address still meets the 'pw' cap (300 tries / 10 min). */
   const data = await crmData(true);
   const cl = await customerLogin(data, id);
   if (cl) {
@@ -743,8 +761,8 @@ async function passwordSignin(body, ip){
     if (sp && sp.noPortal) { await padTo(t0); throw Fail(403, 'Your GrayCo Portal is not turned on yet. Call GrayCo ' + OFFICE_PHONE + '.'); }
     if (sp) { await lockClear(keys); return { ok: true, kind: 'partner', lang: lang(sp.sub.lang), session: await sessionCreate('partner', hmac(id.key), s(sp.sub.id), sp.links) }; }
   }
-  await lockFail(keys);
-  await padTo(t0);
+  const fails = await failCount(keys);
+  await padTo(t0, Math.min(3000, Math.max(0, fails - 5) * 250));
   throw Fail(401, BADLOGIN);
 }
 async function customerPassword(event, body){
@@ -811,7 +829,7 @@ async function deviceStart(event){
     expires_at: new Date(Date.now() + CODE_MIN * 60e3).toISOString(), tries: 0 });
   const L = MAIL[lang(sub.lang)];
   if (textReady() && phone10(sub.phone)) await require('./_lib/custquiet.js').run('reply', () => sendText(phone10(sub.phone), 'GrayCo: ' + code));   /* patch CUSTQUIET: the sign-in code goes at once */
-  else await sendMail(sub.email, L.codeSubj, mailHtml(L.codeHead, L.codeBody, code));
+  else await require('./_lib/custquiet.js').run('reply', () => sendMail(sub.email, L.codeSubj, mailHtml(L.codeHead, L.codeBody, code)));   /* patch RESETMAIL */
   return { ok: true, sent: true, to: maskEmail(sub.email) };
 }
 async function deviceVerify(event, body){
@@ -1792,7 +1810,7 @@ exports.handler = async function (event) {
       return reply(200, await staffAction(action, body, who));
     }
     if (action === 'signin-password') {
-      if (limited(ip, 'verify')) return reply(429, { ok: false, error: 'Too many tries. Wait 15 minutes, or tap "Forgot password?" to get a code.' });
+      if (limited(ip, 'pw')) { await sleep(3000); return reply(429, { ok: false, error: 'Please wait a moment and try again, or tap "Forgot password?" to get a code.' }); }   /* patch PWNOLOCK: robots only (300 tries / 10 min from one address) */
       return reply(200, await passwordSignin(body, ip));
     }
     if (action === 'c-password') {

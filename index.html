@@ -5496,7 +5496,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.247-2026-11-12-r34w -->
+<!-- GrayCo CRM Build: 33.247-2026-11-13-r34y -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6445,7 +6445,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.247-2026-11-12-r34w");
+  console.log("[GC] Build 33.247-2026-11-13-r34y");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6493,7 +6493,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.247-2026-11-12-r34w"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.247-2026-11-13-r34y"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -180790,8 +180790,8 @@ function setOn(on, note){
 function css(){
   if (D.getElementById('gcp-css')) return;
   var st = D.createElement('style'); st.id = 'gcp-css';
-  st.textContent = '#gcp-banner{position:fixed;top:0;left:0;right:0;z-index:100050;background:#f59e0b;color:#1f1300;font:700 13px Inter,sans-serif;display:flex;align-items:center;justify-content:center;gap:10px;padding:5px 12px;box-shadow:0 2px 10px rgba(0,0,0,.25);flex-wrap:wrap;text-align:center}' +
-    'html.gc-paused body{padding-top:30px}' +
+  st.textContent = '#gcp-banner{position:fixed;left:12px;bottom:12px;z-index:100050;max-width:min(560px,calc(100vw - 24px));background:#f59e0b;color:#1f1300;font:700 12px Inter,sans-serif;display:flex;align-items:center;flex-wrap:wrap;gap:6px 8px;padding:6px 8px 6px 12px;border-radius:12px;box-shadow:0 4px 16px rgba(0,0,0,.28)}' +   /* patch PAUSEPILL (owner 11/13: the top banner covered the top-bar buttons and the ⚙ gear): a corner card, nothing pushed or covered */
+    '#gcp-banner.gcp-min{padding:6px 10px;border-radius:999px;cursor:pointer}#gcp-banner.gcp-min .gcp-full{display:none}#gcp-banner:not(.gcp-min) .gcp-short{display:none}' +
     '#gcp-banner button{border:none;border-radius:6px;padding:3px 10px;font:700 12px Inter,sans-serif;cursor:pointer;background:#1f1300;color:#fde68a}' +
     '#gcp-banner .gcp-sub{font-weight:500;font-size:12px;opacity:.85}' +
     '.gcp-note{display:inline-block;margin:4px 6px;padding:2px 8px;border-radius:999px;background:#fef3c7;color:#92400e;font:700 11px Inter,sans-serif;border:1px solid #f59e0b}' +
@@ -180810,15 +180810,17 @@ function paint(){
   var f = STATE.flag || {}, txt = '⏸ Data-entry mode — nothing is sent to customers, subs or GCs.';
   var sub = f.on ? ('On since ' + when(f.since || f.at) + (f.byName || f.by ? ' · by ' + esc(f.byName || f.by) : '') + (f.note ? ' · ' + esc(f.note) : ''))
                  : esc(STATE.why || 'the switch could not be read, so the server is not sending (fail safe)');
-  var html = '<span>' + txt + '</span><span class="gcp-sub">' + sub + '</span>' + (isAdmin() && f.on ? '<button type="button" data-gcp="resume">▶ Resume sending</button>' : '') + (isAdmin() ? '<button type="button" data-gcp="open">Details</button>' : '');
+  var html = '<span class="gcp-short" data-gcp="max" title="Data-entry mode is on — tap for details">⏸ Data-entry mode</span><span class="gcp-full">' + txt + '</span><span class="gcp-sub gcp-full">' + sub + '</span>' + (isAdmin() && f.on ? '<button type="button" class="gcp-full" data-gcp="resume">▶ Resume sending</button>' : '') + (isAdmin() ? '<button type="button" class="gcp-full" data-gcp="open">Details</button>' : '') + '<button type="button" class="gcp-full" data-gcp="min" title="Make it small">–</button>';
   if (!b) {
     b = D.createElement('div'); b.id = 'gcp-banner'; b.setAttribute('data-gc-keep', '1'); b.setAttribute('role', 'status');
     b.addEventListener('click', function(ev){
       var t = ev.target && ev.target.getAttribute && ev.target.getAttribute('data-gcp');
       if (t === 'resume') { if (confirm('Turn data-entry mode OFF?\n\nFrom now on the CRM sends again (invoices, reminders, posts, texts). Nothing that came due while it was on is sent afterwards.')) setOn(false); }
       if (t === 'open') open();
+      if (t === 'min' || t === 'max') { var mn = t === 'min'; b.classList.toggle('gcp-min', mn); try { localStorage.setItem('gcp_min', mn ? '1' : ''); } catch (e) {} }   /* patch PAUSEPILL */
     });
     D.body.appendChild(b);
+    try { if (localStorage.getItem('gcp_min') !== '') b.classList.add('gcp-min'); } catch (e) { b.classList.add('gcp-min'); }   /* small by default */
   }
   if (b.__html !== html) { b.innerHTML = html; b.__html = html; }
 }
