@@ -23,7 +23,7 @@ const PWDIR = process.env.PLAYWRIGHT_DIR || '/tmp/claude-0/-home-user-graycocrm1
 const html = fs.readFileSync(path.join(BUILD, 'index.html'), 'utf8');
 const block = (re) => { const i = html.search(re); if (i < 0) return ''; const st = html.lastIndexOf('<script', i), en = html.indexOf('</script>', i); return html.slice(html.indexOf('>', st) + 1, en); };
 const S_LUMP = block(/__GC_PATCH_LUMPSUM__ \(owner 11\/13/), S_ACCT = block(/if\(window\.__GC_ACCT_K__\) return;/);
-ok('A0 index.html has patch LUMPSUM (its own block, at the end) and the Accounting rules', S_LUMP.length > 20000 && S_ACCT.length > 10000 && html.lastIndexOf('__GC_PATCH_LUMPSUM__') > html.length - S_LUMP.length - 2000, [S_LUMP.length, S_ACCT.length]);
+ok('A0 index.html has patch LUMPSUM (its own block, after the last existing patch) and the Accounting rules', S_LUMP.length > 20000 && S_ACCT.length > 10000 && html.indexOf('__GC_PATCH_LUMPSUM__') > html.indexOf('W.__GC_PATCH_SUBINVMAKE__ = true'), [S_LUMP.length, S_ACCT.length]);
 
 /* ═════ the made-up CRM ═════ */
 const P = [
@@ -223,7 +223,7 @@ let LC;
 {
   await pg.evaluate(() => { document.getElementById('app').innerHTML = '<div><div><div><h1>Invoices</h1><p>PO# required · Sub invoices due by the 25th of each month · Pay on Friday</p></div></div><table><tr><th>PO#</th></tr></table></div>'; window._gcLumpSum.paint(); });
   const bar = await pg.evaluate(() => [...document.querySelectorAll('.gc-lumpbar button')].filter(b => b.style.display !== 'none').map(b => b.textContent));
-  ok('G1 the Invoices page (Sub / Supplier / client tabs) has 💵 Pay several invoices at once · 💰 Record one payment for several invoices · 🗂 Lump-sum payments (office)', bar.length === 3 && /Pay several invoices at once/.test(bar[0]) && /Record one payment for several invoices/.test(bar[1]), bar);
+  ok('G1 the Invoices page (Sub / Supplier / client tabs) has 💵 Pay several invoices at once · 💰 Record one payment for several invoices · 🗂 Lump-sum payments (+ 📒 / 🧾 when LUMPACCT is loaded) (office)', bar.length === 5 && /Pay several invoices at once/.test(bar[0]) && /Record one payment for several invoices/.test(bar[1]), bar);
   await pg.click('.gc-lumpbar [data-lump="pay"]');
   const opts = await pg.evaluate(() => [...document.querySelectorAll('#gc-lump [data-lp="party"] option')].map(o => o.textContent));
   await pg.selectOption('#gc-lump [data-lp="party"]', { index: opts.findIndex(t => /^Demo Lumber/.test(t)) });
