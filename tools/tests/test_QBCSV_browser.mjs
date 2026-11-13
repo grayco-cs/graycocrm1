@@ -117,5 +117,53 @@ export async function run({ ok, BUILD, SHOTS, PROJ, FX, block }){
   ok('G1 a list showing "QuickBooks bill #85378 — …" gets a "QB #85378" badge (once; never on plain rows / inputs)', g.a === 'QB #85378' && g.b === 'QB #5001' && !g.c, g);
   ok('G2 a row React re-uses for another record gets the right badge (the old one removed)', g.re.length === 1 && g.re[0] === 'QB #85999', g.re);
   ok('F19 no page errors', !errs.length, errs);
+
+  /* ═════ H. 💳 card / bank lines → job suggestions (patch MONEY + STMTPDF + QBCSV in the same page) ═════ */
+  const S_MONEY = block(/__GC_PATCH_MONEY__ — MONEY IN BY ITSELF/), S_STMT = block(/__GC_PATCH_STMTPDF__ — PDF STATEMENTS/);
+  await P.evaluate(() => {
+    window.__ROLE = 'Office';
+    window._crm.users = [{ name: 'Steven Demo', email: 'steven@grayco-cs.com', role: 'Crew', active: true }, { name: 'Pat Manager', email: 'pat@grayco-cs.com', role: 'Project Manager', active: true }];
+    window._crm.projects.forEach(p => { p.city = 'Demo City'; });
+    window._crm.projects.push({ id: 'PJT', name: 'Lakeview Deck', client: 'Ann Lake', address: '5 Shore Rd, Lakeview, TN', city: 'Lakeview', autoPO: 'P7007', status: 'active' });
+    window._crm.schedule = [{ id: 'S1', pid: 'PJ2', date: '2026-11-03', assignee: 'Steven Demo', title: 'cabinets' }];
+    window._crm.expenses = [{ id: 'E-old', pid: 'PJ3', vendor: 'DEMO RENTALS', amt: 210, date: '2026-10-20', status: 'paid' }];
+    window.__IDB.timesheets = [{ id: 'T1', user: 'steven@grayco-cs.com', date: '2026-11-04', clockIn: '07:00', clockOut: '15:00', pid: 'PJ1' }];
+    window._gcCards = async () => [{ id: 'c1', name: 'Demo Visa ••1111', last4: '1111', active: true }];
+    window.__KV.gc_card_holders = { c1: { person: 'Steven Demo' } };
+  });
+  await P.addScriptTag({ content: S_MONEY }); await P.addScriptTag({ content: S_STMT });
+  await P.evaluate(() => { window._gcCardHolders && window._gcCardHolders.holderOf('x'); });
+  await sleep(300);
+  await P.evaluate(async () => { localStorage.removeItem('gc_card_holders'); });
+  const H = await P.evaluate(async () => {
+    /* warm the caches (holders from the cloud, cards, timesheets) */
+    window._gcCardHolders.refresh(); await new Promise(r => setTimeout(r, 400));
+    const a = window._gcJobsOnDate('c1', '2026-11-03'), b = window._gcJobsOnDate('Steven Demo', '2026-11-04'), c = window._gcJobsOnDate('1111', '2026-11-09');
+    const s1 = window._gcCardSuggest({ vendor: 'THE HOME DEPOT #4410 DEMO CITY TN', desc: 'THE HOME DEPOT #4410 DEMO CITY TN', date: '2026-11-03', amount: 84.12, cardId: 'c1' }, { pid: '' });
+    const s2 = window._gcCardSuggest({ vendor: 'LOWES #22 LAKEVIEW TN', desc: 'LOWES #22 LAKEVIEW TN', date: '2026-11-10', amount: 40, cardId: '' }, { pid: '' });
+    const s3 = window._gcCardSuggest({ vendor: 'DEMO RENTALS', desc: 'DEMO RENTALS', date: '2026-11-05', amount: 220, cardId: '' }, { pid: '' });
+    const s4 = window._gcCardSuggest({ vendor: 'GAS N GO', desc: 'GAS N GO', memo: 'P1004 truck fuel', date: '2026-11-05', amount: 60 }, { pid: '' });
+    return { a, b, c, s1, s2, s3, s4 };
+  });
+  ok('H1 _gcJobsOnDate(card, date): the card\'s holder (👤 Card holders) was SCHEDULED on Jones Kitchen that day', H.a.length === 1 && H.a[0].pid === 'PJ2' && /Steven was scheduled at 77 Maple Cove that day/.test(H.a[0].why), H.a);
+  ok('H2 … and CLOCKED IN (Timesheets) on Smith Roof the next day; a day with nothing → nothing', H.b[0] && H.b[0].pid === 'PJ1' && /clocked in at 1234 Oak Ridge Dr/.test(H.b[0].why) && H.c.length === 0, [H.b, H.c]);
+  ok('H3 a card charge with no job anywhere in the text → the job the holder was on that day, with the reason, picked (≥ 80 %)', H.s1.pid === 'PJ2' && H.s1.conf >= 80 && /Steven was scheduled/.test(H.s1.why) && H.s1.alts.length >= 1, H.s1);
+  ok('H4 the store\'s town (LOWES … LAKEVIEW TN) = the only open job there → suggested (not picked by itself, under 80 %)', H.s2.alts[0] && H.s2.alts[0].pid === 'PJT' && /Lakeview/.test(H.s2.alts[0].why) && !H.s2.pid, H.s2);
+  ok('H5 the same merchant at a similar amount went to a job before → suggested with the reason', H.s3.alts[0] && H.s3.alts[0].pid === 'PJ3' && /went to this job/.test(H.s3.alts[0].why), H.s3);
+  ok('H6 a PO in the memo still wins (P1004 → Smith Garage)', H.s4.pid === 'PJ4', H.s4);
+  /* the 💳 card statement import itself */
+  await P.evaluate(() => window._gcOpenCardImport && window._gcOpenCardImport());
+  await sleep(500);
+  const hasImp = await P.evaluate(() => !!document.querySelector('[data-c="paste"]'));
+  if (hasImp) {
+    await P.evaluate(() => { const ta = document.querySelector('[data-c="paste"]'); ta.value = 'Transaction Date,Description,Amount\n11/03/2026,THE HOME DEPOT #4410 DEMO CITY TN,-84.12\n11/10/2026,LOWES #22 LAKEVIEW TN,-40.00\n11/12/2026,PAYMENT THANK YOU,500.00\n'; document.querySelector('[data-c="read"]').click(); });
+    await sleep(900);
+    const im = await P.evaluate(() => { const rows = [...document.querySelectorAll('tr[data-r]')]; return rows.map(tr => ({ job: tr.querySelector('[data-c="job"]').value, alts: [...tr.querySelectorAll('[data-c="alt"]')].map(b => b.textContent), why: tr.children[6] ? tr.children[6].textContent : '' })).concat([{ all: !!document.querySelector('[data-c="altall"]') }]); });
+    await shot('qbcsv_cardimport');
+    ok('H7 💳 Import card statement: the Home Depot line comes in on Jones Kitchen (who had the card that day) with the reason; the Lowe\'s line offers "→ Lakeview Deck" (one tap)', im[0].job === 'PJ2' && /Steven was scheduled/.test(im[0].why) && im[1].job === '' && im[1].alts.some(t => /Lakeview Deck/.test(t)), im);
+    await P.evaluate(() => { [...document.querySelectorAll('tr[data-r]')][1].querySelector('[data-c="alt"]').click(); });
+    ok('H8 one tap on a suggestion puts the line on that job', await P.evaluate(() => [...document.querySelectorAll('tr[data-r]')][1].querySelector('[data-c="job"]').value === 'PJT'));
+  } else ok('H7 the card import window opened', false);
+  ok('H9 no page errors (MONEY + STMTPDF + QBCSV together)', !errs.length, errs);
   await browser.close();
 }

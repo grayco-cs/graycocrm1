@@ -196,6 +196,7 @@ function simApply(P, ctx, pick){
 
 const done = () => { const f = R.filter(x => !x).length; console.log((f ? 'FAILED ' : 'ALL PASS ') + (R.length - f) + '/' + R.length); process.exit(f ? 1 : 0); };
 if (process.argv.includes('--node-only')) done();
-await (await import('./test_QBCSV_server.mjs')).run({ ok, BUILD });
+await (await import('./test_QBCSV_server.mjs')).run({ ok, BUILD, M, PROJ });
+if (process.argv.includes('--no-browser')) done();
 await (await import('./test_QBCSV_browser.mjs')).run({ ok, BUILD, SHOTS, html, PROJ, FX, block });
 done();
