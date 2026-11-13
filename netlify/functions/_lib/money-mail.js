@@ -125,11 +125,29 @@ async function fromEmail(mail, kind, deps){
     cameTo: cameTo, vias: [via0], mids: mid0 ? [mid0] : [] };   /* patch INVMAIL */
   /* patch MONEY: receipts and QuickBooks client invoices are read and placed too (receipt → an Expense on the job its PO / address
      names; client invoice → ▥ Invoices) — the same reader, job match and duplicate check as a sub invoice */
+  let data = {};
   if (kind === 'sub_invoice' || kind === 'receipt' || kind === 'client_invoice') {
-    let data = {}; try { data = deps.crmData ? (await deps.crmData()) || {} : {}; } catch (e) { data = {}; }
+    try { data = deps.crmData ? (await deps.crmData()) || {} : {}; } catch (e) { data = {}; }
     try { rec.si = await SI().analyze(mail, keep, { data: data, mailList: list.filter(function(x){ return !(x && done[x.id] && done[x.id].skip); }), selfId: id, ai: deps.ai, fetch: deps.fetch, driveExport: deps.driveExport, now: deps.now, kind: kind }); }
     catch (e) { rec.si = { v: 1, route: 'match', why: 'it could not be read (' + s(e && e.message).slice(0, 80) + ')', read: {}, top: [], at: rec.at }; }
     if (rec.si && rec.si.forwardedBy) { rec.forwardedBy = rec.si.forwardedBy; rec.from = rec.si.fromEmail || rec.from; rec.fromName = rec.si.fromName || rec.fromName; }
+  }
+  /* patch POGUARD: a receipt's PO — in the subject, the e-mail or on the receipt, in ANY job PO format ("PO-2026-0012", "K729",
+     "PO# 4471") → that job (the PO wins, as for invoices); no PO / a PO that is no job's → the 🧾 No-PO alert (after it is kept) */
+  let pgFlag = false;
+  if (kind === 'receipt') {
+    try {
+      const PG = require('./poguard.js'), rd = (rec.si && rec.si.read) || {};
+      const pf = PG.poFromText([rec.subject, rd.po ? 'PO ' + rd.po : '', body.slice(0, 4000)].join(' \n '), PG.jobs(data));
+      if (pf.po) rec.po = pf.po;
+      const sure = rec.si && rec.si.job && (rec.si.route === 'book' || rec.si.route === 'dup');
+      if (pf.pid && rec.si && !sure && rec.si.route !== 'dup') {
+        const pj = pf.job;
+        rec.si.job = { pid: s(pj.id), name: s(pj.name), address: s(pj.address), po: PG.poOf(pj), pm: s(pj.pm || pj.projectManager), conf: 97, why: 'PO ' + pf.po + ' in the e-mail' };
+        rec.si.top = [rec.si.job].concat((rec.si.top || []).filter(function(x){ return x && x.pid !== s(pj.id); })).slice(0, 3);
+        rec.si.route = 'book'; rec.si.why = 'PO ' + pf.po + ' in the e-mail'; rec.si.poGuard = pf.how;
+      } else if (!pf.pid && !sure && !(rec.si && rec.si.route === 'dup')) pgFlag = true;
+    } catch (e) {}
   }
   /* patch INVMAIL: the same invoice already came in another way (invoices@ and Wesley's / Nick's / office@'s mailbox) → noted on that one */
   if (rec.si && !deps.rerun) { const twin = sameInvoice(list, rec, done); if (twin) { await noteCame(deps, s(twin.id), cameTo, via0, mid0); return { ok: true, kind: kind, id: s(twin.id), already: true, sameInvoiceAs: s(twin.id), cameTo: cameTo }; } }
@@ -143,7 +161,8 @@ async function fromEmail(mail, kind, deps){
   });
   if (!w.ok) throw new Error('could not save it (' + (w.error || 'busy') + ')');
   if (twin2) return { ok: true, kind: kind, id: twin2, already: true, sameAs: twin2, cameTo: cameTo };
-  return { ok: true, kind: kind, id: id, files: files.length, already: !!w.unchanged, cameTo: cameTo, route: rec.si ? rec.si.route : undefined, why: rec.si ? rec.si.why : undefined,
+  if (pgFlag && !w.unchanged) { try { await (deps.poGuard || require('./poguard.js').flagMail)(rec, {}); } catch (e) {} }   /* patch POGUARD: never stops the intake */
+  return { ok: true, kind: kind, id: id, files: files.length, noPo: pgFlag || undefined, already: !!w.unchanged, cameTo: cameTo, route: rec.si ? rec.si.route : undefined, why: rec.si ? rec.si.why : undefined,
     jobId: rec.si && rec.si.job ? s(rec.si.job.pid) : undefined, job: rec.si && rec.si.job ? s(rec.si.job.name || rec.si.job.address).slice(0, 80) : undefined };
 }
 /* the office@ mailbox (patch SUBINV): which money inbox a mailbox e-mail belongs to ('' = none) */

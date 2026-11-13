@@ -23,7 +23,7 @@ const PWDIR = process.env.PLAYWRIGHT_DIR || '/tmp/claude-0/-home-user-graycocrm1
 const html = fs.readFileSync(path.join(BUILD, 'index.html'), 'utf8');
 const block = (re) => { const i = html.search(re); if (i < 0) return ''; const st = html.lastIndexOf('<script', i), en = html.indexOf('</script>', i); return html.slice(html.indexOf('>', st) + 1, en); };
 const S_LUMP = block(/__GC_PATCH_LUMPSUM__ \(owner 11\/13/), S_ACCT = block(/if\(window\.__GC_ACCT_K__\) return;/);
-ok('A0 index.html has patch LUMPSUM (its own block, at the end) and the Accounting rules', S_LUMP.length > 20000 && S_ACCT.length > 10000 && html.lastIndexOf('__GC_PATCH_LUMPSUM__') > html.length - S_LUMP.length - 2000, [S_LUMP.length, S_ACCT.length]);
+ok('A0 index.html has patch LUMPSUM (its own block, after the last existing patch) and the Accounting rules', S_LUMP.length > 20000 && S_ACCT.length > 10000 && html.indexOf('__GC_PATCH_LUMPSUM__') > html.indexOf('W.__GC_PATCH_SUBINVMAKE__ = true'), [S_LUMP.length, S_ACCT.length]);
 
 /* ═════ the made-up CRM ═════ */
 const P = [
@@ -223,7 +223,7 @@ let LC;
 {
   await pg.evaluate(() => { document.getElementById('app').innerHTML = '<div><div><div><h1>Invoices</h1><p>PO# required · Sub invoices due by the 25th of each month · Pay on Friday</p></div></div><table><tr><th>PO#</th></tr></table></div>'; window._gcLumpSum.paint(); });
   const bar = await pg.evaluate(() => [...document.querySelectorAll('.gc-lumpbar button')].filter(b => b.style.display !== 'none').map(b => b.textContent));
-  ok('G1 the Invoices page (Sub / Supplier / client tabs) has 💵 Pay several invoices at once · 💰 Record one payment for several invoices · 🗂 Lump-sum payments (office)', bar.length === 3 && /Pay several invoices at once/.test(bar[0]) && /Record one payment for several invoices/.test(bar[1]), bar);
+  ok('G1 the Invoices page (Sub / Supplier / client tabs) has 💵 Pay several invoices at once · 💰 Record one payment for several invoices · 🗂 Lump-sum payments (+ 📒 / 🧾 when LUMPACCT is loaded) (office)', bar.length === 5 && /Pay several invoices at once/.test(bar[0]) && /Record one payment for several invoices/.test(bar[1]), bar);
   await pg.click('.gc-lumpbar [data-lump="pay"]');
   const opts = await pg.evaluate(() => [...document.querySelectorAll('#gc-lump [data-lp="party"] option')].map(o => o.textContent));
   await pg.selectOption('#gc-lump [data-lp="party"]', { index: opts.findIndex(t => /^Demo Lumber/.test(t)) });
@@ -262,6 +262,42 @@ let LC;
   ok('G9 the bar warns "⚠ 1 bill look(s) like a statement for several jobs" → the list with 🔗 This is a statement for several jobs / It is a real separate bill', /⚠ 1 bill look like a statement/.test(fl) && /This is a statement for several jobs/.test(fs1) && /It is a real separate bill/.test(fs1), { fl, fs1: fs1.slice(0, 300) });
   await pg.click('#gc-lump [data-lp="notstmt"]');
   ok('G10 "It is a real separate bill" clears the flag for good (notStatement on the bill)', (await inv('BS2')).notStatement === true && (await pg.evaluate(() => window._gcLumpSum.core.dupStatements(window._crm.invoices).length)) === 0);
+}
+/* ─── H. QuickBooks webhook (Money Inbox) + the QuickBooks "needs a home" to-do ─── */
+{
+  await pg.evaluate(() => {
+    const IDB = { gc_money_inbox: [
+      { id: 'M1', type: 'payment', status: 'pending', vendor: 'Demo Lumber Supply', amount: 2000.5, date: '2026-11-11', docNumber: '6001', ref: 'qb:BillPayment:991', applied: [{ num: 'DL-101', amount: 1200 }, { num: 'DL-102', amount: 800.5 }] },
+      { id: 'M2', type: 'payment', status: 'pending', vendor: 'Demo Lumber Supply LLC', amount: 450, date: '2026-11-12', docNumber: '6002', ref: 'qb:BillPayment:992' },
+      { id: 'M3', type: 'payment', status: 'pending', vendor: 'Nobody Owed Co', amount: 75, date: '2026-11-12', docNumber: '6003' }] };
+    window.idbGet = async k => JSON.parse(JSON.stringify(IDB[k] || null)); window.idbSet = async (k, v) => { IDB[k] = v; }; window.__IDB = IDB;
+    window.__oldAccept = 0; window._gcMoneyAccept = async function(id){ window.__oldAccept++; return { ok: true, old: id }; };
+    localStorage.setItem('gc_office_tasks', JSON.stringify([{ id: 'TQB1', kind: 'qb_home', qbKey: 'QB:payment:7001:acme', label: 'Payment #7001 — Acme', qb: { kind: 'payment', num: '7001', name: 'Acme Property Mgmt', amount: 8000, date: '2026-11-12' }, done: false }]));
+    window._gcOpenQbHome = function(id){ const o = document.createElement('div'); o.id = '_gcQbHomeOv'; o.innerHTML = '<div>QuickBooks row that needs a home</div>'; document.body.appendChild(o); };
+  });
+  await sleep(4500);
+  const m1 = await pg.evaluate(async () => { const r = await window._gcMoneyAccept('M1', ''); return { r, inbox: window.__IDB.gc_money_inbox[0], old: window.__oldAccept }; });
+  const b1 = await inv('B1'), b2 = await inv('B2');
+  ok('H1 Money Inbox: a QuickBooks bill payment that lists DL-101 + DL-102 → both bills paid 11/11 (not a new cost), the inbox row accepted as lump-sum, the old "new paid expense" path not used',
+    m1.r.ok && m1.inbox.status === 'accepted' && m1.inbox.acceptedAs === 'lump-sum' && m1.old === 0 && b1.status === 'paid' && b1.paidDate === '2026-11-11' && b2.status === 'paid' && (await pg.evaluate(() => window._crm.expenses.filter(e => !e.subInvId).length)) === 0, { m1, b1 });
+  const m2 = await pg.evaluate(async () => { const r = await window._gcMoneyAccept('M2', ''); const o = document.getElementById('gc-lump'); return { r, party: o && o.querySelector('[data-lp="party"]').value, amt: o && o.querySelector('[data-lp="amount"]').value, on: o ? [...o.querySelectorAll('tr.on')].map(x => x.getAttribute('data-id')) : [] }; });
+  ok('H2 a payment with no bill list, to a vendor with open bills → asks, then the lump-sum screen (vendor, $450, oldest first ticked)', m2.r.pending && /Demo Lumber/.test(m2.party) && m2.amt === '450' && m2.on.length >= 1, m2);
+  await pg.click('#gc-lump [data-lp="save"]'); await sleep(400);
+  const in2 = await pg.evaluate(() => window.__IDB.gc_money_inbox[1]);
+  ok('H3 … saved → the inbox row accepted (lump-sum, its payment id)', in2.status === 'accepted' && /^LUMP/.test(in2.lumpId), in2);
+  await pg.evaluate(() => document.getElementById('gc-lump') && document.getElementById('gc-lump').remove());
+  const m3 = await pg.evaluate(async () => { const r = await window._gcMoneyAccept('M3', 'PJ1'); return { r, old: window.__oldAccept }; });
+  ok('H4 a payment to someone with nothing open → the old path, unchanged', m3.r.old === 'M3' && m3.old === 1, m3);
+  await pg.evaluate(() => { const x = window._gcLumpSum.list().find(r => r.qbKey === 'QB:payment:9001:acme' && !r.voided); if (x) window._gcLumpSum.undo(x.id); });   /* 1001 + 1002 open again */
+  await sleep(300);
+  await pg.evaluate(() => window._gcOpenQbHome('TQB1'));
+  const hb = await pg.evaluate(() => (document.querySelector('#_gcQbHomeOv [data-lump-qb]') || {}).textContent || '');
+  ok('H5 the QuickBooks "needs a home" to-do for a payment gets "🔗 It pays several invoices — mark each one"', /It pays several invoices/.test(hb), hb);
+  await pg.click('#_gcQbHomeOv [data-lump-qb]');
+  const qs = await pg.evaluate(() => { const o = document.getElementById('gc-lump'); return { amt: o.querySelector('[data-lp="amount"]').value, ck: o.querySelector('[data-lp="checkNo"]').value, sum: o.querySelector('[data-lp="sum"]').textContent }; });
+  await pg.click('#gc-lump [data-lp="save"]'); await sleep(400);
+  const tk = await pg.evaluate(() => JSON.parse(localStorage.getItem('gc_office_tasks'))[0]), c1 = await inv('C1');
+  ok('H6 … opens prefilled ($8,000, #7001, applied oldest first: 1001 + 1002), saved → each invoice paid with the QuickBooks key, the to-do done', qs.amt === '8000' && qs.ck === '7001' && /✓ balanced/.test(qs.sum) && c1.status === 'paid' && c1.qbKeys.includes('QB:payment:7001:acme') && tk.done === true && /lump-sum payment/.test(tk.resolution), { qs, tk, c1 });
 }
 ok('no page errors', errs.length === 0, errs.slice(0, 6));
 await C.close(); await browser.close();
