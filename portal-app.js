@@ -626,11 +626,11 @@ function invRow(x){
   var bar = h('ol', { class: 'track', 'aria-label': st }, steps.map(function(k, i){ return h('li', { class: i <= at ? 'on' : '' }, [h('span', { text: t(k === 'submitted' ? 'stSubmitted' : k === 'approved' ? 'stApproved' : k === 'scheduled' ? 'stScheduled' : 'stPaid') })]); }));
   var when = x.state === 'paid' ? t('paidOn') + ' ' + dt(x.paidDate) : x.payDate ? t('payOn') + ' ' + dt(x.payDate) : dt(x.submitted);
   return h('div', { class: 'inv' }, [h('div', { class: 'row' }, [h('span', null, [h('b', { text: usd(x.amount) }), ' ', h('span', { class: 'muted', text: [x.job, x.number ? '#' + x.number : '', x.po ? t('po') + ' ' + x.po : ''].filter(Boolean).join(' · ') })]), pill(st, x.state === 'paid' ? 'ok' : x.state === 'declined' ? 'due' : 'now')]),
-    x.state !== 'declined' ? bar : null, h('div', { class: 'muted', text: when })]);
+    x.state !== 'declined' ? bar : null, h('div', { class: 'muted', text: when }), mkInvExtras(x)]);   /* patch SUBINVMAKE: ✍️ made here · ⬇️ PDF */
 }
 function payTab(){
   var inv = HOME.invoices || [];
-  return [card(t('invoices'), [h('div', { class: 'how', text: t('payRule') }), (HOME.jobs || []).length ? h('button', { type: 'button', class: 'btn gold', id: 'payNewInv', text: t('newInvoice'), on: { click: function(){ invoiceSheet(null); } } }) : null]
+  return [card(t('invoices'), [h('div', { class: 'how', text: t('payRule') }), (HOME.jobs || []).length ? h('button', { type: 'button', class: 'btn gold', id: 'payNewInv', text: t('newInvoice'), on: { click: function(){ invoiceSheet(null); } } }) : null, (HOME.jobs || []).length ? mkButton(null, 'payMakeInv') : null]
     .concat(inv.length ? inv.map(invRow) : [h('div', { class: 'empty', text: t('noInvoices') })]))];
 }
 function invoiceSheet(pid){
@@ -660,6 +660,206 @@ function invoiceSheet(pid){
       return api('p-invoice', { projectId: sel.value, amount: amt.value, invNum: num.value, note: note.value, scopeId: scopeSel.value, uploadId: u ? u.id : undefined });
     }).then(function(r){ sh.close(); toast(t('saved') + ' · ' + t('payOn') + ' ' + dt(r.payDate)); reloadHome(); if (JOB) openJob(JOB.job.id, 'invoices'); }, function(e){ busy(go, false); toast(e.message, true); });
   });
+}
+
+/* ── patch SUBINVMAKE (owner 11/13: "on subs portal make where they can manually enter an invoice if they don't have an invoice
+   app — make it very simple for them, just enter the line items, make them write a description and it'll make a total for them
+   from the line items, then it will make an invoice in our own system for them") ──
+   ✍️ Make an invoice next to 🧾 Send an invoice (job page → Invoices, and Pay). The job is preselected (name, address, PO — read
+   only); date = today; their own invoice # optional (else the server numbers it SUB-<code>-<seq>). Lines: a description (required),
+   qty (1), price → the line total and the TOTAL, live. 👁 Preview asks the server (it adds the lines up again, checks the photo rule
+   and what is left on their agreement, and shows the number) → 📨 Send invoice. The server makes the PDF and sends it down the same
+   road as an uploaded invoice (p-invoice-make → gc_sub_event 'invoice'). A draft is kept on this device until it is sent. */
+Object.assign(L.en, { mkBtn: '✍️ Make an invoice', mkHint: 'No invoice app? Type your work below — we add it up and make the invoice for you.', mkTitle: '✍️ Make an invoice',
+  mkJob: 'Job', mkAddr: 'Address', mkDate: 'Invoice date', mkNum: 'Your invoice # (optional)', mkNumPh: 'Leave blank — we number it for you', mkLines: 'What you did',
+  mkDesc: 'Description', mkDescPh: 'What work is this? e.g. Hang drywall — kitchen', mkQty: 'Qty', mkPrice: 'Price (each)', mkLineTotal: 'Line total', mkAdd: '+ Add line', mkDel: 'Remove line',
+  mkTotal: 'TOTAL', mkNote: 'Note (optional)', mkPreview: '👁 Preview', mkEdit: '‹ Edit', mkSend: '📨 Send invoice', mkSent: 'Invoice sent to GrayCo',
+  mkDescNeed: 'Write what this line is for (at least 3 letters).', mkPriceNeed: 'Enter the price — the line total must be more than $0.', mkNeedLine: 'Add at least one line.',
+  mkTooMany: 'At most 50 lines on one invoice.', mkFrom: 'From', mkBill: 'Bill to', mkNumAuto: '(we number it)', mkOver: 'This is more than what is left on your agreement for this job: {left} left of {agreement}.',
+  mkOverOk: 'Send it anyway — my PM will look at it', mkPhotos: 'Before you can send it:', mkMade: '✍️ Made in the portal', mkPdf: '⬇️ PDF', mkDraft: 'Your draft was kept on this phone.',
+  mkLeft: 'Left on your agreement: {left} of {agreement}', mkChecking: 'Checking…', mkFor: 'For' });
+Object.assign(L.es, { mkBtn: '✍️ Hacer una factura', mkHint: '¿No tiene app de facturas? Escriba su trabajo abajo — nosotros sumamos y hacemos la factura por usted.', mkTitle: '✍️ Hacer una factura',
+  mkJob: 'Trabajo', mkAddr: 'Dirección', mkDate: 'Fecha de la factura', mkNum: 'Su factura # (opcional)', mkNumPh: 'Déjelo en blanco — nosotros le ponemos número', mkLines: 'Lo que hizo',
+  mkDesc: 'Descripción', mkDescPh: '¿Qué trabajo es? ej. Colgar drywall — cocina', mkQty: 'Cant.', mkPrice: 'Precio (c/u)', mkLineTotal: 'Total de la línea', mkAdd: '+ Agregar línea', mkDel: 'Quitar línea',
+  mkTotal: 'TOTAL', mkNote: 'Nota (opcional)', mkPreview: '👁 Vista previa', mkEdit: '‹ Editar', mkSend: '📨 Enviar factura', mkSent: 'Factura enviada a GrayCo',
+  mkDescNeed: 'Escriba para qué es esta línea (al menos 3 letras).', mkPriceNeed: 'Escriba el precio — el total de la línea debe ser mayor que $0.', mkNeedLine: 'Agregue al menos una línea.',
+  mkTooMany: 'Como máximo 50 líneas en una factura.', mkFrom: 'De', mkBill: 'Facturar a', mkNumAuto: '(nosotros le ponemos número)', mkOver: 'Esto es más de lo que queda en su acuerdo para este trabajo: quedan {left} de {agreement}.',
+  mkOverOk: 'Enviarla de todos modos — mi PM la revisará', mkPhotos: 'Antes de poder enviarla:', mkMade: '✍️ Hecha en el portal', mkPdf: '⬇️ PDF', mkDraft: 'Su borrador se guardó en este teléfono.',
+  mkLeft: 'Queda en su acuerdo: {left} de {agreement}', mkChecking: 'Revisando…', mkFor: 'Por' });
+var MK_MAX = 50;
+function mkCss(){
+  if (document.getElementById('mk-css')) return;
+  var st = document.createElement('style'); st.id = 'mk-css';
+  st.textContent = '.mk-line{border:1px solid var(--edge,#E2DCCD);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:8px;background:#fff}' +
+    '.mk-line.bad{border-color:#B42318;background:#FFF5F4}.mk-nums{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr) minmax(0,1.3fr) auto;gap:8px;align-items:end}' +
+    '.mk-nums label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mute,#55626F)}.mk-amt{font-weight:700;font-size:16px;min-height:48px;display:flex;align-items:center;justify-content:flex-end;color:var(--ink,#14202E)}' +
+    '.mk-err{color:#B42318;font-size:13px;font-weight:600}.mk-total{display:flex;justify-content:space-between;align-items:center;background:var(--navy,#0F1D2F);color:#fff;border-radius:10px;padding:14px;font-size:20px;font-weight:800}' +
+    '.mk-total b{color:var(--gold,#D4A017);font-size:24px}.mk-job{background:var(--goldBg,#FCF0CF);border-radius:10px;padding:10px 12px;line-height:1.5;font-size:14px}.mk-del{min-width:44px}' +
+    '.mk-prev table{width:100%;border-collapse:collapse;font-size:14px}.mk-prev td,.mk-prev th{padding:6px 4px;border-bottom:1px solid var(--rule,#EFEAE0);text-align:left;vertical-align:top}.mk-prev .r{text-align:right;white-space:nowrap}' +
+    '.mk-warn{background:#FEF3C7;color:#92400E;border-radius:10px;padding:10px 12px;font-size:14px;display:flex;flex-direction:column;gap:8px}.mk-badge{display:inline-block;background:var(--goldBg,#FCF0CF);color:var(--goldDk,#8A5A00);border-radius:999px;padding:2px 8px;font-size:12px;font-weight:700}' +
+    '@media (max-width:380px){.mk-nums{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.mk-amt{justify-content:flex-start}}';
+  document.head.appendChild(st);
+}
+function mkButton(pid, id){ return h('div', { class: 'mk-wrap', style: 'display:flex;flex-direction:column;gap:4px' }, [h('button', { type: 'button', class: 'btn navy', id: id, text: t('mkBtn'), on: { click: function(){ makeInvoiceSheet(pid); } } }), h('div', { class: 'muted', text: t('mkHint') })]); }
+function mkInvExtras(x){
+  if (!x || (!x.made && !x.file)) return null;
+  var kids = [];
+  if (x.made) kids.push(h('span', { class: 'mk-badge', 'data-mk-made': x.id, text: t('mkMade') }));
+  if (x.file) { var b = h('button', { type: 'button', class: 'btn sm', 'data-mk-pdf': x.id, text: t('mkPdf'), on: { click: function(){
+    var w = null; try { w = window.open('', '_blank'); } catch (e) {}
+    busy(b, true);
+    api('p-invoice-pdf', { id: x.id }).then(function(r){ busy(b, false); if (w) { try { w.location = r.url; return; } catch (e) {} } var a = h('a', { href: r.url, target: '_blank', rel: 'noopener' }); document.body.appendChild(a); a.click(); a.remove(); },
+      function(e){ busy(b, false); if (w) try { w.close(); } catch (x2) {} toast(e.message, true); }); } } }); kids.push(b); }
+  return h('div', { class: 'row', style: 'justify-content:flex-start;gap:8px;flex-wrap:wrap' }, kids);
+}
+function mkR2(n){ return Math.round((Number(n) || 0) * 100) / 100; }
+function mkNum(v){ var n = parseFloat(String(v == null ? '' : v).replace(/[$,\s]/g, '')); return isFinite(n) ? n : NaN; }
+function mkLetters(v){ return String(v || '').replace(/[^A-Za-zÀ-ɏ]/g, '').length; }
+function mkDraftKey(pid){ return 'gc_sub_invdraft_' + pid; }
+function mkDraftGet(pid){ try { var v = JSON.parse(localStorage.getItem(mkDraftKey(pid)) || 'null'); return v && Array.isArray(v.lines) ? v : null; } catch (e) { return null; } }
+function mkDraftPut(pid, v){ try { localStorage.setItem(mkDraftKey(pid), JSON.stringify(v)); } catch (e) {} }
+function mkDraftDrop(pid){ try { localStorage.removeItem(mkDraftKey(pid)); } catch (e) {} }
+function makeInvoiceSheet(pid0){
+  mkCss();
+  var jobs = HOME.jobs || [];
+  var pid = pid0 || (jobs[0] && jobs[0].id) || '';
+  if (!pid) return;
+  var lines = [], restored = false, preview = null;
+  var form = h('div', { class: 'mk-form', style: 'display:flex;flex-direction:column;gap:12px' });
+  var pv = h('div', { class: 'mk-prev', style: 'display:none;flex-direction:column;gap:12px' });
+  var sh = sheet(t('mkTitle'), [form, pv]);
+  sh.el.classList.add('mk-sheet');
+  var jobSel = null;
+  if (!pid0 && jobs.length > 1) {
+    jobSel = h('select', { class: 'inp', id: 'mkJobPick' }, jobs.map(function(j){ return h('option', { value: j.id, text: j.name }); }));
+    jobSel.value = pid;
+    jobSel.addEventListener('change', function(){ pid = jobSel.value; load(); });
+  }
+  var jobBox = h('div', { class: 'mk-job', id: 'mkJobInfo' });
+  var date = h('input', { class: 'inp', id: 'mkDate', type: 'date' });
+  var num = h('input', { class: 'inp', id: 'mkNum', maxlength: '40', placeholder: t('mkNumPh'), autocomplete: 'off' });
+  var scopeSel = h('select', { class: 'inp', id: 'mkFor' });
+  var scopeFld = field(t('mkFor'), scopeSel);
+  var note = h('textarea', { class: 'inp', id: 'mkNote', rows: '2', maxlength: '500' });
+  var list = h('div', { id: 'mkLines', style: 'display:flex;flex-direction:column;gap:10px' });
+  var add = h('button', { type: 'button', class: 'btn', id: 'mkAdd', text: t('mkAdd') });
+  var totalB = h('b', { id: 'mkTotal', text: usd(0) });
+  var photoBox = h('div', { id: 'mkPhotoRule' });
+  var errTop = h('div', { class: 'mk-err', id: 'mkErr', role: 'alert' });
+  var go = h('button', { type: 'button', class: 'btn gold', id: 'mkPreview', text: t('mkPreview') });
+  [h('div', { class: 'how', text: t('mkHint') }), jobSel ? field(t('mkJob'), jobSel) : null, jobBox, photoBox, field(t('mkDate'), date), field(t('mkNum'), num), scopeFld,
+    h('h3', { style: 'margin:4px 0 0', text: t('mkLines') }), list, add, h('div', { class: 'mk-total' }, [h('span', { text: t('mkTotal') }), totalB]), field(t('mkNote'), note), errTop, go]
+    .forEach(function(k){ if (k) form.appendChild(k); });
+  function job(){ return jobs.filter(function(j){ return j.id === pid; })[0] || {}; }
+  function jobState(){ return JOB && JOB.job && JOB.job.id === pid ? JOB : null; }
+  function paintJob(){
+    var j = job(), js = jobState();
+    jobBox.innerHTML = '';
+    jobBox.appendChild(h('div', null, [h('b', { 'data-mk-name': '', text: (js ? js.job.name : j.name) || '' })]));
+    var addr = (js ? js.job.address : j.address) || '', po = (js ? js.job.po : j.po) || '';
+    if (addr) jobBox.appendChild(h('div', { 'data-mk-addr': '', text: t('mkAddr') + ': ' + addr }));
+    if (po) jobBox.appendChild(h('div', { 'data-mk-po': '', text: t('po') + ' ' + po }));
+    photoBox.innerHTML = '';
+    var pr = js && js.photoRule;
+    if (pr && !pr.invoiceOk) photoBox.appendChild(h('div', { class: 'mk-warn' }, [h('b', { text: t('mkPhotos') }), h('span', { text: pr.message || t('photoRule', { have: pr.have, need: pr.need }) }),
+      h('button', { type: 'button', class: 'btn', text: t('addPhotos'), on: { click: function(){ addPhotos(pid); } } })]));
+    scopeSel.innerHTML = ''; scopeSel.appendChild(h('option', { value: '', text: t('whole') }));
+    var sc = js ? (js.scopes || []).concat(js.cos || []) : [];
+    sc.forEach(function(x){ scopeSel.appendChild(h('option', { value: x.id, text: x.title })); });
+    scopeFld.style.display = sc.length ? '' : 'none';
+  }
+  function lineEl(l){
+    var d = h('textarea', { class: 'inp', rows: '2', 'data-mk-desc': '', 'aria-label': t('mkDesc'), placeholder: t('mkDescPh'), maxlength: '300' }); d.value = l.desc || '';
+    var q = h('input', { class: 'inp', 'data-mk-qty': '', type: 'number', inputmode: 'decimal', min: '0', step: 'any', 'aria-label': t('mkQty') }); q.value = l.qty == null ? '1' : l.qty;
+    var p = h('input', { class: 'inp', 'data-mk-price': '', type: 'number', inputmode: 'decimal', min: '0', step: '0.01', 'aria-label': t('mkPrice'), placeholder: '0.00' }); p.value = l.price == null ? '' : l.price;
+    var amt = h('span', { class: 'mk-amt', 'data-mk-amt': '' });
+    var err = h('div', { class: 'mk-err', 'data-mk-err': '' });
+    var del = h('button', { type: 'button', class: 'btn mk-del', 'data-mk-del': '', 'aria-label': t('mkDel'), title: t('mkDel'), text: '✕' });
+    var box = h('div', { class: 'mk-line', 'data-mk-line': '' }, [h('label', { class: 'fld' }, [h('span', { text: t('mkDesc') + ' *' }), d]),
+      h('div', { class: 'mk-nums' }, [h('label', null, [t('mkQty'), q]), h('label', null, [t('mkPrice'), p]), h('label', null, [t('mkLineTotal'), amt]), del]), err]);
+    l.el = box; l.d = d; l.q = q; l.p = p; l.amt = amt; l.err = err; l.delB = del;
+    [d, q, p].forEach(function(x){ x.addEventListener('input', function(){ read(l); if (l.tried) check(l); recalc(); save(); }); });
+    d.addEventListener('blur', function(){ if (d.value.trim() || l.tried) { l.tried = true; check(l); } });
+    del.addEventListener('click', function(){ if (lines.length < 2) return; lines.splice(lines.indexOf(l), 1); box.remove(); recalc(); save(); });
+    return box;
+  }
+  function read(l){ l.desc = l.d.value; l.qty = l.q.value; l.price = l.p.value; }
+  function lineTotal(l){ var q = String(l.qty == null ? '' : l.qty).trim() === '' ? 1 : mkNum(l.qty), p = mkNum(l.price); return isNaN(q) || isNaN(p) ? NaN : mkR2(q * p); }
+  function blank(l){ return !String(l.desc || '').trim() && String(l.price == null ? '' : l.price).trim() === ''; }
+  function check(l){
+    var bad = '';
+    if (mkLetters(l.desc) < 3) bad = t('mkDescNeed');
+    else { var lt = lineTotal(l); if (!(lt > 0)) bad = t('mkPriceNeed'); }
+    l.err.textContent = bad; l.el.classList.toggle('bad', !!bad); l.d.setAttribute('aria-invalid', bad && mkLetters(l.desc) < 3 ? 'true' : 'false');
+    return !bad;
+  }
+  function recalc(){
+    var tot = 0;
+    lines.forEach(function(l){ var lt = lineTotal(l); l.amt.textContent = isNaN(lt) ? '—' : usd(lt); if (lt > 0) tot = mkR2(tot + lt); l.delB.style.visibility = lines.length > 1 ? 'visible' : 'hidden'; });
+    totalB.textContent = usd(tot); add.disabled = lines.length >= MK_MAX;
+    return tot;
+  }
+  function addLine(l, focus){ if (lines.length >= MK_MAX) { toast(t('mkTooMany'), true); return; } l = l || { qty: '1' }; lines.push(l); list.appendChild(lineEl(l)); recalc(); if (focus) try { l.d.focus(); } catch (e) {} }
+  function save(){ mkDraftPut(pid, { at: Date.now(), invNum: num.value, invDate: date.value, note: note.value, scopeId: scopeSel.value, lines: lines.map(function(l){ return { desc: l.desc || '', qty: l.qty == null ? '1' : l.qty, price: l.price == null ? '' : l.price }; }) }); }
+  function load(){
+    paintJob(); lines = []; list.innerHTML = ''; errTop.textContent = '';
+    var d = mkDraftGet(pid);
+    date.value = (d && d.invDate) || todayYmd(); num.value = (d && d.invNum) || ''; note.value = (d && d.note) || '';
+    if (d && d.scopeId) scopeSel.value = d.scopeId;
+    if (d && d.lines.length && d.lines.some(function(l){ return String(l.desc || '').trim() || String(l.price || '').trim(); })) { restored = true; d.lines.slice(0, MK_MAX).forEach(function(l){ addLine({ desc: l.desc, qty: l.qty, price: l.price }); }); toast(t('mkDraft')); }
+    else addLine({ qty: '1' });
+  }
+  [num, date, note, scopeSel].forEach(function(x){ x.addEventListener('input', save); x.addEventListener('change', save); });
+  add.addEventListener('click', function(){ addLine({ qty: '1' }, true); save(); });
+  function payload(op, okOver){
+    var use = lines.filter(function(l){ return !(blank(l) && lines.length > 1); });
+    return { projectId: pid, op: op, okOver: okOver === true, lang: LANG, invNum: num.value.trim(), invDate: date.value, note: note.value.trim(), scopeId: scopeSel.value,
+      lines: use.map(function(l){ return { desc: String(l.desc || '').trim(), qty: String(l.qty == null ? '' : l.qty).trim() === '' ? 1 : mkNum(l.qty), price: mkNum(l.price) }; }),
+      total: use.reduce(function(t2, l){ var lt = lineTotal(l); return lt > 0 ? mkR2(t2 + lt) : t2; }, 0) };
+  }
+  go.addEventListener('click', function(){
+    errTop.textContent = '';
+    lines.forEach(read);
+    var use = lines.filter(function(l){ return !(blank(l) && lines.length > 1); });
+    if (!use.length) { errTop.textContent = t('mkNeedLine'); return; }
+    var firstBad = null;
+    use.forEach(function(l){ l.tried = true; if (!check(l) && !firstBad) firstBad = l; });
+    lines.filter(function(l){ return use.indexOf(l) < 0; }).forEach(function(l){ l.err.textContent = ''; l.el.classList.remove('bad'); });
+    if (firstBad) { errTop.textContent = firstBad.err.textContent; try { firstBad.el.scrollIntoView({ block: 'center' }); firstBad.d.focus(); } catch (e) {} return; }
+    busy(go, true);
+    api('p-invoice-make', payload('check')).then(function(r){ busy(go, false); preview = r; showPreview(r); }, function(e){ busy(go, false); errTop.textContent = e.message; toast(e.message, true); });
+  });
+  function showPreview(r){
+    pv.innerHTML = '';
+    var j = r.job || {};
+    pv.appendChild(h('div', { class: 'mk-job' }, [h('div', null, [h('b', { text: t('mkFrom') + ': ' }), h('span', { text: r.from })]), h('div', { 'data-mk-billto': '' }, [h('b', { text: t('mkBill') + ': ' }), h('span', { text: r.billTo })]),
+      h('div', null, [h('b', { text: t('mkJob') + ': ' }), h('span', { text: j.name + (j.address ? ' · ' + j.address : '') })]), j.po ? h('div', null, [h('b', { text: t('po') + ' ' }), h('span', { text: j.po })]) : null,
+      h('div', null, [h('b', { text: '# ' }), h('span', { 'data-mk-number': '', text: r.number }), r.ownNumber ? null : h('span', { class: 'muted', text: ' ' + t('mkNumAuto') }), h('span', { text: ' · ' + dt(r.date) })])]));
+    pv.appendChild(h('table', null, [h('thead', null, [h('tr', null, [h('th', { text: t('mkDesc') }), h('th', { class: 'r', text: t('mkQty') }), h('th', { class: 'r', text: t('mkPrice') }), h('th', { class: 'r', text: t('mkLineTotal') })])]),
+      h('tbody', null, r.lines.map(function(l){ return h('tr', { 'data-mk-pline': '' }, [h('td', { text: l.desc }), h('td', { class: 'r', text: String(l.qty) }), h('td', { class: 'r', text: usd(l.price) }), h('td', { class: 'r', text: usd(l.amount) })]); }))]));
+    pv.appendChild(h('div', { class: 'mk-total' }, [h('span', { text: t('mkTotal') }), h('b', { id: 'mkPvTotal', text: usd(r.total) })]));
+    if (note.value.trim()) pv.appendChild(h('div', { class: 'muted', text: t('mkNote').replace(/ \(.*\)$/, '') + ': ' + note.value.trim() }));
+    var send = h('button', { type: 'button', class: 'btn gold', id: 'mkSend', text: t('mkSend') });
+    var ag = r.agreement, overBox = null;
+    if (ag && ag.over) {
+      overBox = h('input', { type: 'checkbox', id: 'mkOver' });
+      pv.appendChild(h('div', { class: 'mk-warn', id: 'mkOverWarn' }, [h('span', { text: t('mkOver', { left: usd(Math.max(0, ag.left)), agreement: usd(ag.agreement) }) }), h('label', { style: 'display:flex;gap:8px;align-items:center;font-weight:700' }, [overBox, t('mkOverOk')])]));
+      send.disabled = true; overBox.addEventListener('change', function(){ send.disabled = !overBox.checked || !r.photos.ok; });
+    } else if (ag) pv.appendChild(h('div', { class: 'muted', id: 'mkLeft', text: t('mkLeft', { left: usd(ag.left), agreement: usd(ag.agreement) }) }));
+    if (r.photos && !r.photos.ok) { send.disabled = true; pv.appendChild(h('div', { class: 'mk-warn', id: 'mkPvPhotos' }, [h('b', { text: t('mkPhotos') }), h('span', { text: r.photos.message || t('photoRule', { have: r.photos.have, need: r.photos.need }) }), h('button', { type: 'button', class: 'btn', text: t('addPhotos'), on: { click: function(){ addPhotos(pid); } } })])); }
+    var back = h('button', { type: 'button', class: 'btn', id: 'mkEdit', text: t('mkEdit'), on: { click: function(){ pv.style.display = 'none'; form.style.display = 'flex'; } } });
+    pv.appendChild(h('div', { class: 'btns', style: 'display:grid;grid-template-columns:1fr 2fr;gap:8px' }, [back, send]));
+    send.addEventListener('click', function(){
+      busy(send, true);
+      api('p-invoice-make', payload('send', overBox ? overBox.checked : false)).then(function(x){
+        mkDraftDrop(pid); sh.close(); toast(t('mkSent') + ' · #' + x.number + ' · ' + t('payOn') + ' ' + dt(x.payDate)); reloadHome(); if (JOB) openJob(JOB.job.id, 'invoices');
+      }, function(e){ busy(send, false); toast(e.message, true); });
+    });
+    form.style.display = 'none'; pv.style.display = 'flex';
+    try { sh.el.querySelector('.sheet-body').scrollTop = 0; } catch (e) {}
+  }
+  load();
+  return sh;
 }
 
 /* ── PAPERS ── */
@@ -902,7 +1102,7 @@ function punchPane(){
   }) : [h('div', { class: 'empty', text: t('noPunch') })])];
 }
 function invoicesPane(){
-  return [card(t('invoices'), [h('div', { class: 'how', text: t('payRule') + (JOB.job.po ? ' ' + t('po') + ' ' + JOB.job.po : '') }), h('button', { type: 'button', class: 'btn gold', id: 'jobNewInv', text: t('newInvoice'), on: { click: function(){ invoiceSheet(JOB.job.id); } } })]
+  return [card(t('invoices'), [h('div', { class: 'how', text: t('payRule') + (JOB.job.po ? ' ' + t('po') + ' ' + JOB.job.po : '') }), h('button', { type: 'button', class: 'btn gold', id: 'jobNewInv', text: t('newInvoice'), on: { click: function(){ invoiceSheet(JOB.job.id); } } }), mkButton(JOB.job.id, 'jobMakeInv')]
     .concat(JOB.invoices.length ? JOB.invoices.map(invRow) : [h('div', { class: 'empty', text: t('noInvoices') })]))];
 }
 var msgTimer = null;
