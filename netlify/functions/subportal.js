@@ -282,7 +282,19 @@ async function tokenUser(event){
   } catch (e) { if (e && e.status === 503) throw e; throw Fail(503, 'Could not reach the sign-in service. Try again.'); }
   const email = low(user && user.email);
   if (!email) throw Fail(401, 'Your sign-in has expired. Please sign in again.');
-  return { email: email, uid: s(user.id) };
+  return { email: email, uid: s(user.id), at: signedInAt(m[1]) };
+}
+/* patch SUBACCT: when this sign-in was made (the token's amr time — kept through token renewals; Supabase checked the token above).
+   Admin → 🔐 Sub portal accounts → 🚪 Sign out everywhere / a temporary password refuse sign-ins made before profile.signedOutAt. */
+function signedInAt(tok){
+  try { const p = JSON.parse(Buffer.from(String(tok).split('.')[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'));
+    const ts = (Array.isArray(p.amr) ? p.amr : []).map(function(x){ return Number(x && x.timestamp) || 0; }).filter(Boolean);
+    const t = ts.length ? Math.min.apply(null, ts) : Number(p.iat) || 0; return t ? t * 1000 : 0; } catch (e) { return 0; }
+}
+function subAcctCheck(profile, t){
+  if (profile.signinDisabled === true) throw Fail(401, 'This account is turned off. Please call GrayCo ' + OFFICE_PHONE + '.');
+  const out = Date.parse(s(profile.signedOutAt));
+  if (out && t.at && t.at < out - 2000) throw Fail(401, 'Please sign in again.');
 }
 
 // → { email, uid, staff: {…}|null, profile: {…}|null, isAdmin, isSub, approved }
@@ -304,6 +316,7 @@ async function whoAmI(event){
     return { email: t.email, uid: t.uid, staff: staff, profile: profile, isAdmin: true, isSub: false, approved: true };
   }
   if (!profile || profile.role !== 'sub') return { email: t.email, uid: t.uid, staff: null, profile: null, isAdmin: false, isSub: false, approved: false };
+  subAcctCheck(profile, t);   /* patch SUBACCT: turned off / signed out everywhere by an owner */
   if (profile.authUserId !== t.uid) {
     profile = Object.assign({}, profile, { authUserId: t.uid });
     await upsertRows([rowFor('users', profile)], t.email);
@@ -481,6 +494,7 @@ async function saveCollection(who, key, upsert, del, ctx){
         if (!old && (rec.role === 'admin' || staff.has(rec.email))) continue;   // GrayCo people come from Team access in the CRM
         rec.role = staff.has(rec.email) ? 'admin' : (old && old.role === 'admin' ? 'former' : 'sub');
         if (old) { rec.authUserId = old.authUserId; rec.createdAt = old.createdAt || rec.createdAt; }
+        if (old) ['signinDisabled', 'signinDisabledAt', 'signinDisabledBy', 'signedOutAt', 'signedOutBy', 'tempPasswordAt', 'tempPasswordBy'].forEach(function(k){ if (old[k] !== undefined) rec[k] = old[k]; else delete rec[k]; });   /* patch SUBACCT: only Admin → 🔐 Sub portal accounts sets these */
         if (rec.role === 'sub' && rec.approved === true && old && old.approved !== true) notes.push({ kind: 'approved', user: rec });
         rows.push(rowFor('users', rec));
       }
