@@ -144,10 +144,11 @@ await t('mailbox reader: office@ takes invoices, receipts and orders; the owners
   ];
   assert.strictEqual(await MB.queue('office@grayco-cs.com', rows, { core }), 4);   /* office@ also reads an invoice typed in the e-mail */
   added.length = 0;
-  assert.strictEqual(await MB.queue('wjohnson@grayco-cs.com', rows, { core }), 1);
+  /* (patch INVMAIL: Wesley's / Nick's mailboxes are WATCHED now — test_INVMAIL_fn.mjs; a PM's mailbox keeps the invoices-only look) */
+  assert.strictEqual(await MB.queue('sbiffle@grayco-cs.com', rows, { core }), 1);
   assert.strictEqual(added[0].id, 'g1'); assert.strictEqual(added[0].invOnly, true);
   process.env.MONEY_INVOICE_ALL = '0'; added.length = 0;
-  assert.strictEqual(await MB.queue('wjohnson@grayco-cs.com', rows, { core }), 0);
+  assert.strictEqual(await MB.queue('sbiffle@grayco-cs.com', rows, { core }), 0);
   delete process.env.MONEY_INVOICE_ALL;
 });
 await t('bid-inbox ?moneymail=1: the office reads the list and marks one done; a PM is refused', async () => {

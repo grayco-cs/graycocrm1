@@ -5496,7 +5496,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.247-2026-11-13-r35c -->
+<!-- GrayCo CRM Build: 33.247-2026-11-13-r35h -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6445,7 +6445,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.247-2026-11-13-r35c");
+  console.log("[GC] Build 33.247-2026-11-13-r35h");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6493,7 +6493,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.247-2026-11-13-r35c"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.247-2026-11-13-r35h"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -13661,8 +13661,8 @@ function doSearch(){
 
   // 5. INVOICES
   ((function(){ var L=db.invoices||[]; try{ var _G=window._gcCo; if(_G&&_G.filter()!=="all") L=L.filter(function(x){return _G.pass(x,"inv")}); }catch(_e){} return L; })()).forEach(function(inv){
-    var txt=[inv.desc,inv.sub,inv.po,inv.client,(inv.amt||"").toString(),inv.status,inv.type].filter(Boolean).join(" ").toLowerCase();
-    if(txt.includes(q)){
+    var txt=[inv.desc,inv.sub,inv.po,inv.client,(inv.amt||"").toString(),inv.status,inv.type,inv.invNum,inv.qbNum].filter(Boolean).join(" ").toLowerCase();
+    if(txt.includes(q) || (window._gcQbMatch && window._gcQbMatch.qbSearchHit(inv,q))){   /* patch QBCSV: "QB 85378" / "#85378" */
       var prj=projects.find(function(p){return p.id===inv.pid});
       hits.push({type:"invoice",icon:"▥",label:"$"+Number(inv.amt||0).toLocaleString()+" — "+(inv.desc||inv.sub||"Invoice"),detail:[
         prj?"Project: "+prj.name:"",
@@ -22064,6 +22064,7 @@ if (!localStorage.getItem("_helpShown")) {
         { icon: "\uD83E\uDDF9", label: "Duplicates", fn: function(){ if(window._gcOpenDupeReview) window._gcOpenDupeReview(); } },
         { icon: "\uD83D\uDD0D", label: "Duplicate check", fn: function(){ if(window._gcOpenDupCheck) window._gcOpenDupCheck(); } },
         { icon: "\uD83D\uDCE5", label: "Import from QuickBooks (CSV)", fn: function(){ if(window._gcOpenQbCsvImport) window._gcOpenQbCsvImport(); } },
+        { icon: "👤", label: "Card holders", fn: function(){ if(window._gcCardHolders) window._gcCardHolders.open(); else alert("Still loading, try again in a moment."); } },   /* patch QBCSV */
         { icon: "🔗", label: "QuickBooks ↔ CRM", fn: function(){ if(window._gcQbCheck) window._gcQbCheck.open(); else alert("Still loading, try again in a moment."); } },   /* patch QBCSV */
         { icon: "💎", label: "Project CRMs", fn: openBigJobPicker },
         { icon: "🚨", label: "Review Queue", fn: openReviewQueue },
@@ -22115,7 +22116,7 @@ if (!localStorage.getItem("_helpShown")) {
         var _isOwner = !!(_u && (String(_u.payType||'').toLowerCase()==='owner' || _u.role==='Admin' || /office/i.test(_u.role||'')));
         if(!_isOwner){ items = items.filter(function(it){ return !it.adminOnly; }); }
       })();
-      var _hubGroups = {"Business Brain": "Daily Work", "Print pack": "Help & Tools", "Job Profile": "Daily Work", "Upload Documents": "Daily Work", "Search Everything": "Daily Work", "Find a Sub": "Daily Work", "Sub Sign-Up": "Daily Work", "Sub Details": "Daily Work", "Contract & Doc Templates": "Daily Work", "Approvals": "Daily Work", "Review Queue": "Daily Work", "Alerts": "Daily Work", "Notifications": "Daily Work", "Recover Approvals": "Daily Work", "Import CompanyCam Jobs": "Daily Work", "Owner Inbox": "Daily Work", "My Daily Digest": "Daily Work", "Project Payments": "Money & Invoices", "All Company Invoices": "Money & Invoices", "Financials": "Money & Invoices", "Cash Position": "Money & Invoices", "Cash Flow": "Money & Invoices", "P&L (auto)": "Money & Invoices", "Overdue Reminders": "Money & Invoices", "Merge Draw Invoices": "Money & Invoices", "Statement Reconcile": "Money & Invoices", "Credit Cards": "Money & Invoices", "Match to Jobs": "Money & Invoices", "Import card statement": "Money & Invoices", "Import bank statement": "Money & Invoices", "Import from QuickBooks (CSV)": "Money & Invoices", "QuickBooks ↔ CRM": "Money & Invoices", "Needs a job": "Money & Invoices", "Bank Accounts": "Money & Invoices", "Monthly Bank Check": "Money & Invoices", "Bank / ACH details": "Money & Invoices", "Employee Pay": "Pay & Commissions", "1099 Reports": "Pay & Commissions", "PM Commission Setup": "Pay & Commissions", "Set Flat Commission": "Pay & Commissions", "Job Source (commission)": "Pay & Commissions", "Pay Structures": "Pay & Commissions", "Move Job Schedule": "Schedule", "Print Schedule": "Schedule", "Add to iPhone Calendar": "Schedule", "Edit Schedule": "Schedule", "Fix Schedule Items (no job)": "Schedule", "Recover Schedule": "Schedule", "Download Schedule PDF": "Schedule", "Run the Office (Automation)": "Automation", "Automation Inbox": "Automation", "Business Brain (issues)": "Automation", "Rate Category Check": "Automation", "Team Status": "Data & Setup", "Sync my Google Docs": "Data & Setup", "Import Google Docs": "Data & Setup", "Merge Records": "Data & Setup", "Merge Projects": "Data & Setup", "Merge Customers": "Data & Setup", "Contract Overrides": "Data & Setup", "Project CRMs": "Data & Setup", "Cloud Backups": "Data & Setup", "Restore from Backup": "Data & Setup", "Download Backup": "Data & Setup", "Import / Export Data": "Data & Setup", "Explain Mode (help)": "Help & Tools", "Guided Tour": "Help & Tools", "Help Center": "Help & Tools", "Training": "Help & Tools", "Test the CRM": "Help & Tools", "System Health Check": "Help & Tools", "Reset Button Positions": "Help & Tools", "Purge Test Data": "Help & Tools", "Force-Clean Cloud": "Help & Tools"};
+      var _hubGroups = {"Business Brain": "Daily Work", "Print pack": "Help & Tools", "Job Profile": "Daily Work", "Upload Documents": "Daily Work", "Search Everything": "Daily Work", "Find a Sub": "Daily Work", "Sub Sign-Up": "Daily Work", "Sub Details": "Daily Work", "Contract & Doc Templates": "Daily Work", "Approvals": "Daily Work", "Review Queue": "Daily Work", "Alerts": "Daily Work", "Notifications": "Daily Work", "Recover Approvals": "Daily Work", "Import CompanyCam Jobs": "Daily Work", "Owner Inbox": "Daily Work", "My Daily Digest": "Daily Work", "Project Payments": "Money & Invoices", "All Company Invoices": "Money & Invoices", "Financials": "Money & Invoices", "Cash Position": "Money & Invoices", "Cash Flow": "Money & Invoices", "P&L (auto)": "Money & Invoices", "Overdue Reminders": "Money & Invoices", "Merge Draw Invoices": "Money & Invoices", "Statement Reconcile": "Money & Invoices", "Credit Cards": "Money & Invoices", "Match to Jobs": "Money & Invoices", "Import card statement": "Money & Invoices", "Import bank statement": "Money & Invoices", "Import from QuickBooks (CSV)": "Money & Invoices", "QuickBooks ↔ CRM": "Money & Invoices", "Card holders": "Money & Invoices", "Needs a job": "Money & Invoices", "Bank Accounts": "Money & Invoices", "Monthly Bank Check": "Money & Invoices", "Bank / ACH details": "Money & Invoices", "Employee Pay": "Pay & Commissions", "1099 Reports": "Pay & Commissions", "PM Commission Setup": "Pay & Commissions", "Set Flat Commission": "Pay & Commissions", "Job Source (commission)": "Pay & Commissions", "Pay Structures": "Pay & Commissions", "Move Job Schedule": "Schedule", "Print Schedule": "Schedule", "Add to iPhone Calendar": "Schedule", "Edit Schedule": "Schedule", "Fix Schedule Items (no job)": "Schedule", "Recover Schedule": "Schedule", "Download Schedule PDF": "Schedule", "Run the Office (Automation)": "Automation", "Automation Inbox": "Automation", "Business Brain (issues)": "Automation", "Rate Category Check": "Automation", "Team Status": "Data & Setup", "Sync my Google Docs": "Data & Setup", "Import Google Docs": "Data & Setup", "Merge Records": "Data & Setup", "Merge Projects": "Data & Setup", "Merge Customers": "Data & Setup", "Contract Overrides": "Data & Setup", "Project CRMs": "Data & Setup", "Cloud Backups": "Data & Setup", "Restore from Backup": "Data & Setup", "Download Backup": "Data & Setup", "Import / Export Data": "Data & Setup", "Explain Mode (help)": "Help & Tools", "Guided Tour": "Help & Tools", "Help Center": "Help & Tools", "Training": "Help & Tools", "Test the CRM": "Help & Tools", "System Health Check": "Help & Tools", "Reset Button Positions": "Help & Tools", "Purge Test Data": "Help & Tools", "Force-Clean Cloud": "Help & Tools"};
       var _hubOrder = ['Daily Work','Money & Invoices','Pay & Commissions','Schedule','Automation','Data & Setup','Help & Tools'];
       // Group items, then render each section with a header.
       var _bySec = {}; items.forEach(function(it){ var g=_hubGroups[it.label]||'More'; (_bySec[g]=_bySec[g]||[]).push(it); });
@@ -121441,7 +121442,8 @@ function tab(){ var t=V.props.tab; return (t && /^k_/.test(t)) ? t : (t||'k_home
 function pmScope(){ if(seesCompany()) return V.pmView||''; var u=meUser(); return (u&&u.name)||'__nobody__'; }
 
 function q(){ return low((V.root && V.root.querySelector('#gck-q') || {}).value || ''); }
-function matches(o){ var s=q(); if(!s) return true; return Object.keys(o).some(function(k){ var v=o[k]; return (typeof v==='string'||typeof v==='number') && low(v).indexOf(s)>=0; }); }
+function matches(o){ var s=q(); if(!s) return true; var s2=(window._gcQbMatch && /^\s*(qb|#)/i.test(s)) ? low(window._gcQbMatch.qbSearchNum(s)) : '';   /* patch QBCSV: "QB 85378" / "#85378" */
+  return Object.keys(o).some(function(k){ var v=o[k]; return (typeof v==='string'||typeof v==='number') && (low(v).indexOf(s)>=0 || (s2 && low(v).replace(/[^a-z0-9]/g,'').replace(/^qb/,'')===s2)); }); }
 
 /* ── shell (drawn once per mount) ──────────────────────────────────────── */
 function shell(){
@@ -192172,6 +192174,149 @@ W._gcMailRecv = { load: load, open: function(){ M.open = true; load(true); paint
 try { console.log('[GC] 📬 Mail received: the last 50 e-mails to invoices@ / receipts@ / leads@ / bids@ (patch MAILFIX)'); } catch (e) {}
 })();
 </script>
+<script id="gc-patch-invmail">
+/* __GC_PATCH_INVMAIL__ — 📥 POSSIBLE INVOICES FROM E-MAIL + 📭 "Wesley/Nick/office mail not connected yet" (patch INVMAIL)
+   Owner (11/13): "all emails for invoices — make sure to read Nick, Wesley and office, and don't miss: if someone were to send me and
+   Nick an invoice and not invoices@ or office@ then it shouldn't miss the invoice."
+   The server (netlify/functions/_lib/invmail.js) reads every copy of Wesley's, Nick's and office@'s mail that reaches the CRM (a Google
+   routing-rule copy, the e-mail-history copy, or the 🌐 All GrayCo e-mail sync): a sure invoice goes into the SAME intake as invoices@
+   (▥ Invoices / ✅ Approvals, booked by patch SUBINV), a receipt into 📧 Receipts e-mailed in; the ones it is NOT sure about wait here:
+   ✓ It's an invoice (→ that intake) / ✕ Not an invoice — the answer is remembered for that sender. Until mail of each of those mailboxes
+   has been seen, a clear 📭 notice says the mailboxes are not connected (docs/INVMAIL-SETUP.md).
+   Read through /.netlify/functions/bid-inbox?invmail=1 (admins + the office); shown in ✅ Approvals (above 📬 Mail received) and on
+   ⚙ Admin. Nothing is sent to anyone. API: window._gcInvMail = { load, state, open } */
+(function(){
+'use strict';
+if (window.__GC_PATCH_INVMAIL__) return; window.__GC_PATCH_INVMAIL__ = true;
+var W = window, D = document;
+var RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+function s(v){ return v == null ? '' : String(v).trim(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function me(){ try { if (typeof W._gcMeUser === 'function') { var u = W._gcMeUser(); if (u) return u; } } catch (e) {} return {}; }
+function allowed(){ var u = me(); return /^(admin|office)/i.test(s(u.role)) || /^office/i.test(s(u.profile)) || s(u.payType).toLowerCase() === 'owner'; }
+var FN = '/.netlify/functions/bid-inbox?invmail=1';
+var M = { items: [], seen: {}, boxes: [], caught: [], gmail: false, copyTo: '', at: 0, busy: false, err: '', denied: false, open: false, msg: '', busyId: '' };
+var els = [];
+function api(body){
+  return W.fetch(FN, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), cache: 'no-store' } : { cache: 'no-store' })
+    .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ if (r.status === 403) M.denied = true; if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status)); return j; }); });
+}
+function load(force){
+  if (M.busy || M.denied) return Promise.resolve(M);
+  if (!force && Date.now() - M.at < 120000) return Promise.resolve(M);
+  M.busy = true;
+  return api().then(function(j){ M.items = arr(j.items); M.seen = j.seen && typeof j.seen === 'object' ? j.seen : {}; M.boxes = arr(j.boxes); M.caught = arr(j.caught); M.gmail = !!j.gmailReading; M.copyTo = s(j.copyTo); M.err = ''; }, function(e){ M.err = s(e && e.message); })
+    .then(function(){ M.busy = false; M.at = Date.now(); paint(); return M; });
+}
+function when(v){ var d = new Date(v); if (isNaN(d)) return ''; return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); }
+function short(e){ return s(e).replace(/@grayco-cs\.com$/i, '@'); }
+function lbl(b){ return s(b.label).replace(/@$/, ''); }
+function openItems(){ return M.items.filter(function(x){ return x.status === 'open'; }); }
+/* which watched mailboxes have never been seen (no copy, no history copy, no Gmail sync), and which went quiet */
+function unseen(){ return M.boxes.filter(function(b){ var x = M.seen[b.box] || {}; return !(x.copy || x.history || x.gmail || x.at); }); }
+function quiet(){ return M.boxes.filter(function(b){ var x = M.seen[b.box] || {}; return x.at && Date.now() - Date.parse(x.at) > 4 * 864e5; }); }
+function noticeHtml(){
+  if (!M.at || M.err || !M.boxes.length) return '';
+  var u = unseen(), q = quiet();
+  if (!u.length && !q.length) return '<div data-im-ok style="color:#86efac;font-size:12px;margin:2px 0 6px">✓ Wesley, Nick and office@ mail is connected — invoices sent only to them are caught.</div>';
+  var h = '';
+  if (u.length) h += '<div data-im-notice style="background:#3b2a07;border:1px solid #f59e0b;color:#fde68a;border-radius:10px;padding:8px 10px;margin:4px 0 8px;font-size:13px">' +
+    '<b>📭 ' + esc(u.map(lbl).join('/')) + ' mail not connected yet</b> — an invoice sent only to ' + esc(u.map(lbl).join(' or ')) + ' (not invoices@) does not reach the CRM until it is. ' +
+    'Owner setup (admin.google.com, ~5 min): a routing rule that also delivers their incoming mail to <code style="color:#fff">' + esc(M.copyTo || 'invoicecopy@in.grayco-cs.com') + '</code>' +
+    (M.gmail ? '' : ', or turn on 🌐 All GrayCo e-mail') + ' — docs/INVMAIL-SETUP.md.</div>';
+  if (q.length) h += '<div data-im-quiet style="color:#fcd34d;font-size:12px;margin:2px 0 6px">⚠️ No mail seen from ' + esc(q.map(function(b){ return lbl(b) + ' since ' + when((M.seen[b.box] || {}).at); }).join(', ')) + ' — is the routing rule still on?</div>';
+  return h;
+}
+function btn(attr, id, label, bg){ return '<button type="button" ' + attr + '="' + esc(id) + '"' + (M.busyId === id ? ' disabled' : '') + ' style="background:' + bg + ';color:#fff;border:none;border-radius:8px;padding:6px 12px;font-weight:800;cursor:pointer;margin:4px 6px 0 0">' + label + '</button>'; }
+function itemsHtml(){
+  if (M.err) return '<div style="color:#fca5a5;padding:6px 0">Could not read the list: ' + esc(M.err) + '</div>';
+  var open = openItems(), done = M.items.filter(function(x){ return x.status !== 'open'; }).slice(0, 8);
+  var h = '';
+  if (!open.length) h += '<div style="color:#8fa8c4;padding:4px 0">' + (M.busy || !M.at ? 'Loading…' : 'Nothing to check — the CRM was sure about every invoice it saw.') + '</div>';
+  h += open.map(function(x){
+    return '<div data-im-item="' + esc(x.id) + '" style="border-left:3px solid #f59e0b;padding:7px 9px;margin:7px 0;background:rgba(255,255,255,.05);border-radius:6px">' +
+      '<div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap"><b style="color:#fff;overflow-wrap:anywhere">' + esc(x.subject || '(no subject)') + '</b><span style="color:#8fa8c4;font-size:12px">' + esc(when(x.sent || x.at)) + '</span></div>' +
+      '<div style="color:#cbd5e1;font-size:12px;overflow-wrap:anywhere">From ' + esc(x.fromName ? x.fromName + ' <' + x.from + '>' : x.from) + ' · came to ' + esc(arr(x.cameTo).map(short).join(', ') || '?') + '</div>' +
+      (arr(x.files).length ? '<div style="font-size:12px;margin-top:3px">' + arr(x.files).map(function(f){ return '<a href="#" data-im-file="' + esc(f.ref) + '" data-im-name="' + esc(f.name) + '" style="color:#60a5fa;margin-right:10px;overflow-wrap:anywhere">📎 ' + esc(f.name) + '</a>'; }).join('') + '</div>' : '') +
+      (s(x.text) ? '<div style="color:#94a3b8;font-size:12px;margin-top:3px;max-height:3.2em;overflow:hidden;overflow-wrap:anywhere">' + esc(s(x.text).slice(0, 240)) + '</div>' : '') +
+      '<div style="color:#fcd34d;font-size:12px;margin-top:3px">Why it might be: ' + esc(arr(x.reasons).join(' · ') || s(x.why)) + '</div>' +
+      btn('data-im-yes', x.id, '✓ It\'s an invoice', '#15803d') + btn('data-im-no', x.id, '✕ Not an invoice', '#475569') +
+      '</div>';
+  }).join('');
+  if (done.length) h += '<div style="color:#8fa8c4;font-size:12px;margin-top:8px">Answered lately: ' + done.map(function(x){ return esc((x.status === 'yes' ? '✓ ' : '✕ ') + (x.fromName || x.from) + ' — ' + s(x.subject).slice(0, 40)) + (x.by ? ' (' + esc(x.by) + ')' : ''); }).join(' · ') + '</div>';
+  if (M.caught.length) h += '<details style="margin-top:8px"><summary style="cursor:pointer;color:#cbd5e1;font-size:12px">Invoices lately caught from Wesley / Nick / office@ mail (' + M.caught.length + ')</summary>' +
+    M.caught.map(function(c){ return '<div data-im-caught style="font-size:12px;color:#cbd5e1;padding:3px 0;overflow-wrap:anywhere">' + esc(when(c.at)) + ' · ' + esc(c.vendor || c.fromName || c.from) + (c.invoiceNumber ? ' #' + esc(c.invoiceNumber) : '') + (c.total ? ' · $' + Number(c.total).toFixed(2) : '') + (c.kind === 'receipt' ? ' (receipt)' : '') +
+      ' · came to ' + esc(arr(c.cameTo).map(short).join(', ')) + '</div>'; }).join('') + '</details>';
+  return h;
+}
+function make(){
+  var w = D.createElement('div'); w.className = 'gc-invmail';
+  w.style.cssText = 'margin:14px 0;padding:10px 12px;border-radius:12px;background:#0f2440;border:1px solid rgba(255,255,255,.1);color:#e2e8f0;font-family:inherit;max-width:860px;box-sizing:border-box';
+  w.innerHTML = '<div data-im-top></div><details data-im-d><summary style="cursor:pointer;font-weight:800;font-size:14px">📥 Possible invoices from e-mail <span data-im-n style="color:#fcd34d;font-weight:700;font-size:12px"></span></summary>' +
+    '<div style="color:#8fa8c4;font-size:12px;margin:6px 0">E-mail to Wesley, Nick or office@ that might be an invoice — the CRM was not sure. ✓ sends it to the invoices@ intake (▥ Invoices / ✅ Approvals); either answer is remembered for that sender. ' +
+    '<a href="#" data-im-reload style="color:#60a5fa">Refresh</a></div><div data-im-msg style="color:#86efac;font-size:12px"></div><div data-im-list></div></details>';
+  var d = w.querySelector('[data-im-d]');
+  d.addEventListener('toggle', function(){ M.open = d.open; if (d.open) load(true); });
+  w.addEventListener('click', function(e){
+    var t = e.target; if (!t || !t.closest) return;
+    if (t.closest('[data-im-reload]')) { e.preventDefault(); load(true); return; }
+    var f = t.closest('[data-im-file]');
+    if (f) { e.preventDefault(); try { if (typeof W._gcOpenRef === 'function') W._gcOpenRef(f.getAttribute('data-im-file'), f.getAttribute('data-im-name')); } catch (x) {} return; }
+    var y = t.closest('[data-im-yes]'), n = t.closest('[data-im-no]'); if (!y && !n) return;
+    var id = (y || n).getAttribute(y ? 'data-im-yes' : 'data-im-no');
+    M.busyId = id; paint();
+    api({ op: y ? 'yes' : 'no', id: id }).then(function(j){ M.msg = y ? '✓ Sent to the invoice intake' + (j.route === 'book' ? ' — booked on its job (✅ Approvals).' : ' — see ✅ Approvals → 🧾 Match this invoice.') : '✕ Set aside — the CRM will not ask about ' + s(j.sender) + ' again.'; },
+      function(x){ M.msg = 'Could not save that: ' + s(x && x.message); })
+      .then(function(){ M.busyId = ''; M.at = 0; return load(true); });
+  });
+  return w;
+}
+function paint(){
+  var n = openItems().length;
+  els.forEach(function(w){
+    var d = w.querySelector('[data-im-d]'); if (d && d.open !== M.open) d.open = M.open;
+    var top = w.querySelector('[data-im-top]'); if (top) { var th = noticeHtml(); if (top.__h !== th) { top.innerHTML = th; top.__h = th; } }
+    var c = w.querySelector('[data-im-n]'); if (c) c.textContent = n ? '(' + n + ' to check)' : '';
+    var m = w.querySelector('[data-im-msg]'); if (m) m.textContent = M.msg;
+    var l = w.querySelector('[data-im-list]'); if (l && (d && d.open)) { var h = itemsHtml(); if (l.__h !== h) { l.innerHTML = h; l.__h = h; } }
+  });
+}
+/* ✅ Approvals (the overlay's list, and the left-menu tab) above 📬 Mail received; ⚙ Admin */
+var A = null, B = null;
+function mount(){
+  if (M.denied || !allowed()) { els.forEach(function(w){ if (w.parentNode) w.parentNode.removeChild(w); }); return; }
+  var shown = false;
+  var list = D.querySelector('#_gcApprOv ._apList');
+  if (list) {
+    if (!A) { A = make(); els.push(A); }
+    var mr = list.querySelector(':scope > .gc-mailrecv');
+    if (mr) { if (A.parentNode !== list || A.nextSibling !== mr) list.insertBefore(A, mr); } else if (A.parentNode !== list) list.appendChild(A);
+    shown = true;
+  } else {
+    var apx = D.getElementById('gc-apx-mount');
+    if (apx && apx.parentNode && apx.offsetParent) {
+      if (!A) { A = make(); els.push(A); }
+      A.setAttribute('data-gc-keep', '1');
+      var after = apx.nextSibling && apx.nextSibling.classList && apx.nextSibling.classList.contains('gc-mailrecv') ? apx.nextSibling : apx;
+      if (A.parentNode !== apx.parentNode || after.nextSibling !== A) apx.parentNode.insertBefore(A, after.nextSibling);
+      shown = true;
+    } else if (A && A.isConnected) A.parentNode.removeChild(A);
+  }
+  var main = D.querySelector('main'), h1 = null;
+  if (main) { var hs = main.querySelectorAll('h1'); for (var i = 0; i < hs.length; i++) if (s(hs[i].textContent) === 'Admin') { h1 = hs[i]; break; } }
+  if (h1) {
+    if (!B) { B = make(); els.push(B); }
+    if (!B.isConnected) h1.parentNode.insertBefore(B, h1.nextSibling);
+    shown = true;
+  } else if (B && B.isConnected) B.parentNode.removeChild(B);
+  if (shown) { if (!M.at || Date.now() - M.at > 120000) load(); else paint(); }
+}
+RI.call(W, function(){ try { mount(); } catch (e) {} }, 1000);
+W._gcInvMail = { load: load, state: M, open: function(){ M.open = true; load(true); paint(); } };
+try { console.log('[GC] 📥 Possible invoices from e-mail + 📭 Wesley/Nick/office mail connection (patch INVMAIL)'); } catch (e) {}
+})();
+</script>
 <script id="gc-patch-ownertodo">
 /* __GC_PATCH_OWNERTODO__ — THE OWNER'S SETUP STEPS ON THE ADMINS' TO-DO, AND RECEIPTS / SUB INVOICES BY E-MAIL
    Owner (10/24): "don't i have owner setup to do? should show those in wesley and nicks todo also" ·
@@ -192853,7 +192998,8 @@ function needs(){
   /* card charges with no job and not overhead */
   arr(crm().expenses).forEach(function(e){ if (e.deleted || e.pid || e.overhead === true || /reject|void/i.test(s(e.status)) || !cardCharge(e)) return;
     var sg = suggest({ vendor: e.vendor || e.payee, memo: s(e.desc) + ' ' + s(e.memo), desc: e.desc });
-    out.push({ k: 'card', id: s(e.id), at: s(e.date), who: s(e.vendor || e.payee || e.desc), amt: num(e.amt != null ? e.amt : e.amount), what: 'Card charge', why: sg.pid ? 'suggested: ' + sg.why : 'no job yet', sg: sg }); });
+    try { if (W._gcCardSuggest) sg = W._gcCardSuggest({ vendor: e.vendor || e.payee, memo: s(e.memo), desc: s(e.desc), date: s(e.date).slice(0, 10), amount: num(e.amt != null ? e.amt : e.amount), cardId: s(e.cardId), card: s(e.card), person: s(e.cardHolder) }, sg) || sg; } catch (x) {}   /* patch QBCSV: who had the card that day, the store's town, earlier charges */
+    out.push({ k: 'card', id: s(e.id), at: s(e.date), who: s(e.vendor || e.payee || e.desc), amt: num(e.amt != null ? e.amt : e.amount), what: 'Card charge', why: sg.pid ? 'suggested: ' + sg.why : (sg.why || 'no job yet'), sg: sg, top: arr(sg.alts).map(function(x){ return { pid: x.pid, name: x.name, conf: x.conf }; }) }); });
   out.sort(function(a, b){ return s(b.at).localeCompare(s(a.at)); });
   return out;
 }
@@ -193745,12 +193891,13 @@ function openImport(o){
     var dirOut = r.dir === 'out';
     var sg = { pid: '', how: '', why: '' }, c = { category: 'Misc', why: '' };
     try { if (M().suggest) sg = M().suggest({ vendor: r.desc, memo: s(r.memo) + ' ' + s(r.desc), desc: r.desc }) || sg; } catch (e) {}
+    try { if (W._gcCardSuggest && dirOut) { var A0 = acct(); sg = W._gcCardSuggest({ vendor: r.desc, memo: s(r.memo), desc: r.desc, date: r.date, amount: r.amount, cardId: card ? A0.cardId : '', card: A0.name, last4: res && res.info && res.info.last4 || '' }, sg) || sg; } } catch (e) {}   /* patch QBCSV: who had the card that day, the store's town, earlier lines */
     try { if (M().catFor) c = M().catFor(r.desc, r.memo) || c; } catch (e) {}
     if (r.kind === 'interest') c = { category: 'Interest', why: 'interest charge' };
     if (r.kind === 'fee' && (c.category === 'Misc' || !c.category)) c = { category: 'Bank/Card Fees', why: 'a fee' };
     if (r.kind === 'check' && c.category === 'Misc') c = { category: 'Subcontractor', why: 'a check (change it if it was not a sub)' };
     var ov2 = (r.kind === 'interest' || (r.kind === 'fee' && mode === 'card')) && !sg.pid;
-    return Object.assign(r, { on: importable(r, mode) && !r.dup, vendor: r.desc, category: c.category, pid: sg.pid || '', overhead: !!sg.overhead || ov2, how: sg.how || (ov2 ? 'kind' : ''),
+    return Object.assign(r, { alts: arr(sg.alts), on: importable(r, mode) && !r.dup, vendor: r.desc, category: c.category, pid: sg.pid || '', overhead: !!sg.overhead || ov2, how: sg.how || (ov2 ? 'kind' : ''),
       why: [sg.why, c.why ? 'category: ' + c.why : ''].filter(Boolean).join(' · '), dirOut: dirOut });
   }
   function useResult(r0){
@@ -193803,12 +193950,13 @@ function openImport(o){
           (r.checkNo ? ' <span style="color:#475569">(check #' + esc(r.checkNo) + ')</span>' : '') + (r.memo ? '<div style="color:#64748b">' + esc(r.memo) + '</div>' : '') + (r.dup ? '<div data-c="dup" style="color:#b45309;font-weight:700">already in the CRM — not added again</div>' : '') + '</td>' +
           '<td style="text-align:right;white-space:nowrap' + ((r.signed || 0) < 0 ? ';color:#b91c1c' : '') + '">' + amtTxt(r) + '</td>' +
           '<td><select data-c="cat" style="padding:4px;max-width:150px">' + catOpts(r.category) + '</select></td>' +
-          '<td><select data-c="job" style="padding:4px;max-width:240px">' + jobOpts(r.overhead && !r.pid ? '__oh' : r.pid) + '</select></td><td style="color:#475569;font-size:11.5px">' + esc(r.why) + '</td><td style="font-size:11.5px">' + esc(KL[r.kind] || r.kind) + '</td></tr>'; }).join('') + '</table>' +
+          '<td><select data-c="job" style="padding:4px;max-width:240px">' + jobOpts(r.overhead && !r.pid ? '__oh' : r.pid) + '</select>' + arr(r.alts).filter(function(x){ return x.pid !== r.pid; }).slice(0, 3).map(function(x){ return '<button type="button" data-c="alt" data-pid="' + esc(x.pid) + '" title="' + esc(x.why) + '" style="display:block;margin-top:3px;border:1px solid #bfdbfe;background:#eff6ff;color:#1e3a8a;border-radius:6px;padding:2px 6px;font-size:11px;cursor:pointer;text-align:left;max-width:240px">→ ' + esc(x.name) + ' (' + x.conf + '%) <span style="color:#475569">' + esc(x.why) + '</span></button>'; }).join('') + '</td><td style="color:#475569;font-size:11.5px">' + esc(r.why) + '</td><td style="font-size:11.5px">' + esc(KL[r.kind] || r.kind) + '</td></tr>'; }).join('') + '</table>' +
       (oth.length ? '<div style="margin-top:10px;font-weight:700;font-size:13px">' + (card ? 'Payments to the card (not costs — left out)' : 'Money in and card payments / transfers (not costs — left out)') + '</div><table data-c="other" style="width:100%;border-collapse:collapse;font-size:12.5px">' +
         oth.map(function(i){ var r = rows[i]; return '<tr data-x="' + i + '" style="border-top:1px solid #e2e8f0;color:#475569"><td style="padding:4px;white-space:nowrap">' + esc(r.date) + '</td><td>' + esc(r.desc) + (r.dup ? ' <span style="color:#b45309">(already in)</span>' : '') + '</td><td style="text-align:right;white-space:nowrap">' + amtTxt(r) + '</td><td style="font-size:11.5px">' + esc(KL[r.kind] || r.kind) + '</td></tr>'; }).join('') + '</table>' : '') +
       totalsBlock() +
       '<div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap"><b data-c="sum">' + imp.filter(function(i){ return rows[i].on; }).length + ' ticked · ' + money(imp.filter(function(i){ return rows[i].on; }).reduce(function(x, i){ return x + (rows[i].dir === 'out' ? rows[i].amount : -rows[i].amount); }, 0)) + '</b>' +
       (!card ? '<button type="button" data-c="recon" style="padding:8px 12px;border:1px solid #1d4ed8;border-radius:8px;background:#fff;color:#1d4ed8;font-weight:700;cursor:pointer">🧾 Check these lines against the CRM (Monthly Bank Check)</button>' : '') +
+      (imp.some(function(i){ var r = rows[i]; return !r.pid && !r.overhead && arr(r.alts)[0] && r.alts[0].conf >= 70; }) ? '<button type="button" data-c="altall" style="padding:8px 12px;border:none;border-radius:8px;background:#0f766e;color:#fff;font-weight:700;cursor:pointer">✨ Use the top suggestion where it is 70 %+</button>' : '') +   /* patch QBCSV */
       '<button type="button" data-c="go" style="margin-left:auto;padding:9px 16px;border:none;border-radius:8px;background:#16a34a;color:#fff;font-weight:700;cursor:pointer">Import ' + imp.filter(function(i){ return rows[i].on; }).length + (card ? ' charges' : ' costs') + '</button></div><div data-c="reconmsg" style="font-size:12.5px;margin-top:6px"></div>';
   }
   function readPdfFile(f){
@@ -193856,6 +194004,8 @@ function openImport(o){
       return;
     }
     if (a === 'recon') { runRecon(rows, q('reconmsg')); return; }
+    if (a === 'alt') { var trA = b.closest('[data-r]'), rA = trA && rows[+trA.getAttribute('data-r')], pA = b.getAttribute('data-pid'); if (rA && pA) { var xA = arr(rA.alts).filter(function(x){ return x.pid === pA; })[0] || {}; rA.pid = pA; rA.overhead = false; rA.how = 'manual'; rA.why = 'you picked: ' + s(xA.why); draw(); } return; }   /* patch QBCSV */
+    if (a === 'altall') { rows.forEach(function(r){ if (!r.pid && !r.overhead && arr(r.alts)[0] && r.alts[0].conf >= 70) { r.pid = r.alts[0].pid; r.how = 'suggested'; r.why = r.alts[0].why; } }); draw(); return; }   /* patch QBCSV */
     if (a === 'go') {
       var pick = rows.filter(function(r){ return r.on && importable(r, mode) && !r.dup; });
       var dups = rows.filter(function(r){ return r.dup && importable(r, mode); }).length;
@@ -208722,7 +208872,7 @@ function curView(){ return lsGet('grayco_view') || ''; }
 /* patch OFFICEDESK (owner 11/13: "Brittany's home page looks like it's the field view — change it back to desk view ASAP"): on a
    computer the Office role gets the regular CRM (Dashboard + the left menu), not the role-app home card screen. Her phone keeps
    GrayCo Field. An admin's 👁 View as… Office still previews the role home. */
-function noDeskApp(a){ return a === 'office' && !vas(); }
+function noDeskApp(a){ return !!a && !vas(); }   /* patch DESKALL (owner 11/13: "Glenn's main screen opens to field view too — computers should open to desk and have the desktop"): every role on a computer gets the regular CRM; phones keep GrayCo Field; 👁 View as… still previews a role home */
 function deskOpen(){
   var a = app(); if (!a || mode(a) !== 'desk' || noDeskApp(a)) return false;
   css(); closeSheets(); DESK.view = curView();
@@ -231327,6 +231477,7 @@ function undo(batchId){
         l[i] = x; ch[u.list] = true; n.restored++;
       });
       var saves = []; Object.keys(ch).forEach(function(k){ saves.push(saveList(k, lists[k], 'QuickBooks import undone')); });
+      if (arr(b.created && b.created.projectDocs).length) saves.push(docsGet().then(function(docs){ var gone = {}; b.created.projectDocs.forEach(function(id){ gone[id] = 1; }); var l2 = docs.filter(function(d){ return !(d && gone[s(d.id)] && s(d.importId) === b.id); }); n.removed += docs.length - l2.length; return l2.length !== docs.length ? docsSave(l2) : null; }));
       b.undone = nowIso(); b.undoneBy = myName();
       return Promise.all(saves).then(function(){ return saveBatch(b); }).then(function(){ return Object.assign({ ok: true }, n); });
     });
@@ -231433,9 +231584,36 @@ function openImport(src, name, opts){
         (paused() ? '<br>⏸ Data-entry mode is on — this only records history in the CRM; nothing is sent to QuickBooks or anyone.' : ' Nothing is ever sent to QuickBooks or to anyone.') + '</div></div>' +
         '<button class="qbc-btn" data-x title="Close">✕</button></div>' +
         '<div class="qbc-chips" data-chips></div><div class="qbc-wrap"><table class="qbc-tbl"><thead><tr><th></th><th>Date</th><th>Type</th><th>#</th><th>Name</th><th>Memo</th><th style="text-align:right">Amount</th><th style="min-width:230px">Job</th><th>What happens</th></tr></thead><tbody data-body></tbody></table></div>' +
+        '<div class="qbc-sub" data-qbpdf style="margin:10px 0 0"></div>' +
         '<div style="display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap"><button class="qbc-btn qbc-go" data-go></button><button class="qbc-btn" data-x>Cancel</button>' +
         '<span class="qbc-sub" style="margin:0" data-note></span></div>';
       jobDatalist(card);
+      /* 📎 QuickBooks PDFs (read-only link) */
+      var pdfBar = card.querySelector('[data-qbpdf]');
+      function paintPdf(){
+        var need = rows.filter(function(r){ return r.action === 'new' && !r.pid && r.rec.side !== 'skip'; }).length;
+        pdfBar.innerHTML = tok() ? '<label style="font-weight:700;color:#0f172a"><input type="checkbox" data-pdfon checked> 📎 Also get each row\'s PDF from QuickBooks</label> (read-only — put on the record and the job\'s documents, once)' +
+            (need ? ' <button type="button" class="qbc-btn qbc-blue" data-findjobs style="padding:5px 10px;font-size:12.5px">🔎 Find jobs for the ' + need + ' row' + (need === 1 ? '' : 's') + ' with none from QuickBooks (memo, line customer, PDF)</button>' : '') + ' <span data-pdfmsg></span>'
+          : linkHtml('the PDFs and memos');
+      }
+      paintPdf();
+      pdfBar.addEventListener('click', function(e){
+        var b = e.target.closest('button'); if (!b) return;
+        if (b.hasAttribute('data-qbconnect')) { connect(function(){ paintPdf(); }); return; }
+        if (b.hasAttribute('data-findjobs')) {
+          var need = rows.filter(function(r){ return r.action === 'new' && !r.pid && r.rec.side !== 'skip'; }), msgE = pdfBar.querySelector('[data-pdfmsg]');
+          b.disabled = true;
+          var items = need.map(function(r, k){ return { key: 'r' + r.i, kind: r.rec.kind, id: r.rec.qbId, num: r.rec.num, date: r.rec.date, amount: Math.abs(r.rec.amount), name: r.rec.name, files: true, text: true }; });
+          lookupAll(items, function(i, n){ msgE.textContent = 'Asking QuickBooks… ' + i + ' / ' + n; }).then(function(res){
+            var found = 0;
+            need.forEach(function(r){ var x = res.results['r' + r.i]; if (!x || !x.ok) return; r.qbFiles = x.files; r.rec.qbId = r.rec.qbId || x.id;
+              var m = C.matchJob({ memo: r.rec.memo || x.memo, desc: r.rec.desc, cust: r.rec.cust, klass: r.rec.klass, side: r.rec.side, name: r.rec.name, text: [x.memo, x.text].join('\n'), lines: arr(x.lines).map(function(l){ return { memo: l.desc, cust: l.customer, klass: l.cls }; }) }, { jobs: ctx.jobs, memoMap: ctx.memoMap });
+              if (m.pid) { found++; r.match = m; r.pid = m.pid; C.decide(r, m.pid, ctx); } else if (m.cands && m.cands.length) r.match = m; });
+            paint(); paintPdf();
+            var m2 = pdfBar.querySelector('[data-pdfmsg]'); if (m2) m2.textContent = res.stop ? '⚠ ' + s(res.stop.error) : '✓ ' + found + ' found a job from QuickBooks';
+          });
+        }
+      });
       var body = card.querySelector('[data-body]'), chips = card.querySelector('[data-chips]'), go = card.querySelector('[data-go]');
       Array.prototype.forEach.call(card.querySelectorAll('[data-x]'), function(b){ b.onclick = function(){ close(); }; });
       function rowHtml(r){
@@ -231490,14 +231668,33 @@ function openImport(src, name, opts){
       });
       go.onclick = function(){
         go.disabled = true; go.textContent = 'Saving…';
-        apply(rows, { file: fname, what: 'QuickBooks CSV import (' + fname + ')' }).then(function(out){ W._gcQbLastImport = out; summary(out); }, function(e){ go.disabled = false; go.textContent = 'Import'; W.alert('The import did not save: ' + s(e && e.message || e)); });
+        var wantPdf = !!(tok() && pdfBar.querySelector('[data-pdfon]') && pdfBar.querySelector('[data-pdfon]').checked);
+        apply(rows, { file: fname, what: 'QuickBooks CSV import (' + fname + ')' }).then(function(out){ W._gcQbLastImport = out; summary(out); if (wantPdf) pdfsAfter(out); }, function(e){ go.disabled = false; go.textContent = 'Import'; W.alert('The import did not save: ' + s(e && e.message || e)); });
       };
       paint();
+    }
+    /* after the import: each imported row's QuickBooks PDFs onto its record + the job's documents */
+    function pdfsAfter(out){
+      var box = card.querySelector('[data-pdfprog]'); if (!box) return;
+      var pairs = [], items = [];
+      W._gcQbLastImportPlan.rows.forEach(function(r){
+        if (!r.include || r.action === 'skip' || r.action === 'dup' || r.action === 'same') return;
+        var h = C.madeId(r, out.importId).slice(4), list, id;
+        if (r.action === 'new') { list = /^(expense|credit)$/.test(r.make) ? 'expenses' : 'invs'; id = list === 'expenses' ? 'QBX-' + h : 'INVQ' + h; }
+        else if (r.target && r.action === 'update') { list = r.list || 'invs'; id = s(r.target.id); } else return;
+        if (r.qbFiles) { pairs.push({ list: list, id: id, files: r.qbFiles }); return; }
+        items.push({ key: list + '|' + id, kind: r.rec.kind, id: r.rec.qbId, num: r.rec.num, date: r.rec.date, amount: Math.abs(r.rec.amount), name: r.rec.name, files: true });
+      });
+      box.textContent = '📎 Getting the PDFs from QuickBooks… 0 / ' + items.length;
+      lookupAll(items, function(i, n){ box.textContent = '📎 Getting the PDFs from QuickBooks… ' + i + ' / ' + n; }).then(function(res){
+        Object.keys(res.results).forEach(function(k){ var x = res.results[k]; if (x && x.ok && arr(x.files).some(function(f){ return f.ref; })) { var p2 = k.split('|'); pairs.push({ list: p2[0], id: p2.slice(1).join('|'), files: x.files.filter(function(f){ return f.ref; }) }); } });
+        return attachFiles(pairs, out.importId).then(function(n){ box.textContent = '📎 ' + n + ' PDF' + (n === 1 ? '' : 's') + ' from QuickBooks attached (records + job documents)' + (res.stop ? ' — stopped: ' + s(res.stop.error) : '') + '.'; });
+      }, function(e){ box.textContent = '📎 PDFs not fetched: ' + s(e && e.message || e); });
     }
     function summary(out){
       card.innerHTML = '<h2>✓ Imported</h2><div style="font-size:17px;line-height:1.7;margin:8px 0 14px"><b>' + out.added + '</b> added to <b>' + out.jobCount + '</b> job' + (out.jobCount === 1 ? '' : 's') +
         ' · <b>' + out.updated + '</b> updated' + (out.linked ? ' (' + out.linked + ' got their job)' : '') + ' · <b>' + (out.same + out.dup) + '</b> already in the CRM (skipped) · <b>' + out.left + '</b> left out' + (out.conflicts ? ' · ⚠ ' + out.conflicts + ' with a QuickBooks difference (the CRM value was kept)' : '') + '</div>' +
-        '<div class="qbc-sub">The jobs\' P&L shows them now. Rows with no job: 💎 → 🔗 QuickBooks ↔ CRM. Importing the same file again never adds them twice — it only updates what changed.</div>' +
+        '<div class="qbc-sub">The jobs\' P&L shows them now. Rows with no job: 💎 → 🔗 QuickBooks ↔ CRM. Importing the same file again never adds them twice — it only updates what changed.</div><div class="qbc-sub" data-pdfprog style="font-weight:700"></div>' +
         '<div style="display:flex;gap:10px;flex-wrap:wrap"><button class="qbc-btn qbc-red" data-undo style="font-size:15px;padding:12px 18px">↩ Undo this import</button><button class="qbc-btn qbc-blue" data-chk>🔗 QuickBooks ↔ CRM</button><button class="qbc-btn" data-x>Close</button></div>';
       card.querySelector('[data-x]').onclick = function(){ close(out); };
       card.querySelector('[data-chk]').onclick = function(){ close(out); openCheck(); };
@@ -231506,7 +231703,7 @@ function openImport(src, name, opts){
     }
   });
 }
-W._gcQbCsvImport = { open: openImport, apply: apply, undo: undo, isSheet: isSheet, read: readSource };
+W._gcQbCsvImport = { open: openImport, apply: apply, undo: undo, isSheet: isSheet, read: readSource, memo: MEMO };
 
 /* ════════════════════ 4. 🔗 QUICKBOOKS ↔ CRM (and the backfill of the bills with no job) ════════════════════ */
 function descTail(x){ var d = s(x.desc), i = d.indexOf(' — '); return i >= 0 ? d.slice(i + 3) : d.replace(/^(Sub Invoice:\s*)?QuickBooks [a-z ]*(#\s*\S+)?\s*/i, ''); }
@@ -231541,11 +231738,43 @@ function openCheck(){
     W._gcQbCheckItems = items;
     card.innerHTML = '<div style="display:flex;justify-content:space-between;gap:10px"><div><h2>🔗 QuickBooks ↔ CRM</h2><div class="qbc-sub">Every record that came from QuickBooks, with its QuickBooks number. <b>' + noJob.length + '</b> have no job: the CRM read their memo / description and suggests one — check the <b>Job</b> column, tick the ones to put on their job, then press the green button. History stays history: nothing is sent, no reminders.</div></div><button class="qbc-btn" data-x>✕</button></div>' +
       '<div class="qbc-chips"><button class="qbc-chip" data-f="nojob">No job ' + noJob.length + '</button><button class="qbc-chip" data-f="sug">Has a suggestion ' + noJob.filter(function(it){ return it.match && it.match.pid; }).length + '</button><button class="qbc-chip" data-f="all">All ' + items.length + '</button>' +
-      '<input data-q placeholder="Search: QB #, name, memo, amount…" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:999px;min-width:220px"></div>' +
+      '<input data-q placeholder="Search: QB #, name, memo, amount…" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:999px;min-width:220px"></div><div class="qbc-sub" data-qbpdf style="margin:0 0 8px"></div>' +
       '<div class="qbc-wrap"><table class="qbc-tbl"><thead><tr><th><input type="checkbox" data-all title="Tick all shown"></th><th>QB #</th><th>Date</th><th>Kind</th><th>Name</th><th>Memo / description</th><th style="text-align:right">Amount</th><th style="min-width:240px">Job</th></tr></thead><tbody data-body></tbody></table></div>' +
       '<div style="display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap"><button class="qbc-btn qbc-go" data-go></button><button class="qbc-btn" data-csv>⬇ Download CSV</button><button class="qbc-btn" data-x>Close</button><span class="qbc-sub" style="margin:0" data-note></span></div>';
     jobDatalist(card);
-    var body = card.querySelector('[data-body]'), go = card.querySelector('[data-go]'), qbox = card.querySelector('[data-q]');
+    var body = card.querySelector('[data-body]'), go = card.querySelector('[data-go]'), qbox = card.querySelector('[data-q]'), pbar = card.querySelector('[data-qbpdf]');
+    function noFile(it){ return !arr(it.x.files).some(function(f){ return f && f.ref; }) && !s(it.x.fileData); }
+    function paintBar(){
+      var nj = items.filter(function(it){ return !it.had && !it.looked; }).length, nf = items.filter(noFile).length;
+      pbar.innerHTML = tok() ? (nj ? '<button type="button" class="qbc-btn qbc-blue" data-look style="padding:6px 11px;font-size:13px">🔎 Look up the ' + nj + ' with no job in QuickBooks (memo, line customer, PDF)</button> ' : '') +
+        (nf ? '<button type="button" class="qbc-btn" data-pdfs style="padding:6px 11px;font-size:13px">📎 Get the missing PDFs from QuickBooks (' + nf + ')</button> ' : '') + '<span data-pmsg></span>' : linkHtml('memos and PDFs');
+    }
+    paintBar();
+    pbar.addEventListener('click', function(e){
+      var b = e.target.closest('button'); if (!b) return; var msgE = pbar.querySelector('[data-pmsg]');
+      if (b.hasAttribute('data-qbconnect')) { connect(function(){ paintBar(); }); return; }
+      if (b.hasAttribute('data-look')) {
+        var L = items.filter(function(it){ return !it.had && !it.looked; }); b.disabled = true;
+        lookupAll(L.map(function(it){ return Object.assign(itemFor(it.x, 'i' + it.i), { text: true, files: true }); }), function(i, n){ msgE.textContent = 'Asking QuickBooks… ' + i + ' / ' + n; }).then(function(res){
+          var found = 0;
+          L.forEach(function(it){ var x = res.results['i' + it.i]; if (!x) return; it.looked = true; if (!x.ok) return; it.look = x;
+            var inp = recInput(it.x); inp.memo = x.memo || inp.memo; inp.text = x.text; inp.lines = arr(x.lines).map(function(l){ return { memo: l.desc, cust: l.customer, klass: l.cls }; }).concat(inp.lines);
+            var m = C.matchJob(inp, { jobs: ctx.jobs, memoMap: ctx.memoMap }); it.match = m; if (m.pid) { it.pid = m.pid; it.include = m.conf >= 85; found++; } });
+          paint(); paintBar(); var m3 = pbar.querySelector('[data-pmsg]'); if (m3) m3.textContent = res.stop ? '⚠ ' + s(res.stop.error) : '✓ ' + found + ' got a suggested job from QuickBooks';
+        });
+        return;
+      }
+      if (b.hasAttribute('data-pdfs')) {
+        var F2 = items.filter(noFile); b.disabled = true;
+        lookupAll(F2.map(function(it){ return Object.assign(itemFor(it.x, it.list + '|' + s(it.x.id)), { files: true }); }), function(i, n){ msgE.textContent = '📎 ' + i + ' / ' + n + ' (QuickBooks allows a few hundred a minute — this goes slowly on purpose)'; }).then(function(res){
+          var pairs = Object.keys(res.results).map(function(k){ var x = res.results[k], p2 = k.split('|'); return x && x.ok ? { list: p2[0], id: p2.slice(1).join('|'), files: arr(x.files).filter(function(f){ return f.ref; }) } : null; }).filter(function(p){ return p && p.files.length; });
+          var bid = 'QBF' + Date.now().toString(36);
+          return saveBatch({ id: bid, at: nowIso(), by: myName(), what: 'QuickBooks PDFs', created: { invs: [], expenses: [], projectDocs: [] }, updated: [] }).then(function(){ return attachFiles(pairs, bid); }).then(function(n){ msgE.innerHTML = '✓ ' + n + ' PDF' + (n === 1 ? '' : 's') + ' attached' + (res.stop ? ' — stopped: ' + esc(res.stop.error) : '') + ' <button type="button" class="qbc-btn" data-undopdf="' + bid + '" style="padding:4px 9px;font-size:12px">↩ Undo</button>'; });
+        });
+        return;
+      }
+      if (b.hasAttribute('data-undopdf')) { b.disabled = true; undo(b.getAttribute('data-undopdf')).then(function(r){ b.textContent = r.ok ? '✓ Undone' : '✕'; }); }
+    });
     Array.prototype.forEach.call(card.querySelectorAll('[data-x]'), function(b){ b.onclick = function(){ ov.remove(); }; });
     function vis(){
       var q = low(qbox.value), qn = C.qbSearchNum(qbox.value);
@@ -231586,8 +231815,12 @@ function openCheck(){
     go.onclick = function(){
       var list = todo(); if (!list.length) return;
       go.disabled = true; go.textContent = 'Saving…';
-      var rows = list.map(function(it){ return { action: 'update', include: true, picked: true, list: it.list, target: it.x, set: { pid: it.pid }, match: it.match, rec: { memo: recInput(it.x).memo, side: isClientRec(it.x) ? 'income' : 'cost' }, pid: it.pid }; });
+      var rows = list.map(function(it){ var set = { pid: it.pid }, lk = it.look; if (lk && lk.ok) { if (lk.memo) set.qbMemo = lk.memo; if (lk.id) set.qbId = lk.id; if (arr(lk.lines).length) set.qbLines = lk.lines.slice(0, 40).map(function(l){ return { desc: s(l.desc).slice(0, 300), customer: s(l.customer), cls: s(l.cls), account: s(l.account), amount: r2(l.amount) }; }); }
+        return { action: 'update', include: true, picked: true, list: it.list, target: it.x, set: set, match: it.match, rec: { memo: (lk && lk.memo) || recInput(it.x).memo, side: isClientRec(it.x) ? 'income' : 'cost' }, pid: it.pid }; });
       apply(rows, { what: 'QuickBooks ↔ CRM — jobs' }).then(function(out){
+        var pf = list.filter(function(it){ return it.look && arr(it.look.files).some(function(f){ return f.ref; }); }).map(function(it){ return { list: it.list, id: s(it.x.id), files: it.look.files.filter(function(f){ return f.ref; }) }; });
+        return (pf.length ? attachFiles(pf, out.importId) : Promise.resolve(0)).then(function(){ return out; });
+      }).then(function(out){
         card.innerHTML = '<h2>✓ ' + out.updated + ' QuickBooks record' + (out.updated === 1 ? '' : 's') + ' put on ' + out.jobCount + ' job' + (out.jobCount === 1 ? '' : 's') + '</h2><div class="qbc-sub">Bills got their job cost row, so the jobs\' P&L shows them. The memos are remembered for the next import.</div>' +
           '<div style="display:flex;gap:10px"><button class="qbc-btn qbc-red" data-undo>↩ Undo</button><button class="qbc-btn qbc-blue" data-again>Back to the list</button><button class="qbc-btn" data-x>Close</button></div>';
         card.querySelector('[data-x]').onclick = function(){ ov.remove(); };
@@ -231660,6 +231893,244 @@ function hookPatchJ(){
   }
   var p = W._gcOpenQbCsvImport; if (typeof p === 'function' && !p.__qbcsv) { var w2 = function(){ pickSheet(); }; w2.__qbcsv = true; w2.__orig = p; W._gcOpenQbCsvImport = w2; }
 }
+/* ════════════════════ 6. QB # BADGES ON THE CRM'S OWN SCREENS ════════════════════ */
+/* wherever a record's description shows "QuickBooks bill #85378" (Invoices, Sub Invoices, ✅ Approvals, 📥 Needs a job, the job's
+   P&L lines …) a "QB #85378" badge is added next to it: click = copy (↗ QuickBooks when the record's QuickBooks Id is known) */
+var QB_TXT = /QuickBooks (?:bill|invoice|sales receipt|payment|deposit|expense|check|copy)[^#\n]{0,20}#\s*([A-Za-z0-9][A-Za-z0-9-]{0,24})/i;
+var SKIP_EL = /^(INPUT|TEXTAREA|SELECT|OPTION|SCRIPT|STYLE|BUTTON)$/;
+function idFor(n){ var L = arr(crm().invs).length ? crm().invs : arr(crm().invoices); var hit = L.concat(arr(crm().expenses)).filter(function(x){ var q = x && C.qbNum(x); return q && q.num === n && q.id; })[0]; return hit ? C.qbNum(hit) : null; }
+function decorate(root){
+  root = root || D.body; if (!root || !D.createTreeWalker) return 0;
+  Array.prototype.forEach.call(root.querySelectorAll('.gc-qbnum[data-qbb]'), function(b){ var p = b.parentElement, txt = ''; if (!p) return; Array.prototype.forEach.call(p.childNodes, function(c){ if (c !== b) txt += c.textContent || ''; }); var m = QB_TXT.exec(txt); if (!m || m[1] !== b.getAttribute('data-qbnum')) b.remove(); });   /* a row React re-used for another record */
+  var tw = D.createTreeWalker(root, 4, null), n, todo = [];
+  while ((n = tw.nextNode()) && todo.length < 400) {
+    var v = n.nodeValue; if (!v || v.length < 14 || v.indexOf('QuickBooks') < 0) continue;
+    var m = QB_TXT.exec(v); if (!m) continue;
+    var el = n.parentElement; if (!el || SKIP_EL.test(el.tagName) || el.closest('.gc-qbnum,[data-qbb-done],#_gcQbCsvOv,#_gcQbCheckOv')) continue;
+    todo.push([el, m[1]]);
+  }
+  todo.forEach(function(x){
+    var el = x[0], num = x[1]; if (el.querySelector(':scope > .gc-qbnum')) return;
+    var q = idFor(num), sp = D.createElement('span'); sp.className = 'gc-qbnum'; sp.setAttribute('data-qbnum', num); sp.setAttribute('data-qbb', '1');
+    var link = q ? C.qbLink(q) : ''; if (link) sp.setAttribute('data-qblink', link);
+    sp.title = 'QuickBooks #' + num + ' — click to copy'; sp.textContent = 'QB #' + num; el.appendChild(sp);
+  });
+  return todo.length;
+}
+W._gcQbDecorate = decorate;
+var decoT = null;
+function decoSoon(){ if (decoT) return; decoT = later(function(){ decoT = null; try { css(); decorate(); } catch (e) {} }, 700); }
+try { new MutationObserver(function(ms){ for (var i = 0; i < ms.length; i++) { if (ms[i].addedNodes && ms[i].addedNodes.length && !(ms[i].target && ms[i].target.closest && ms[i].target.closest('.gc-qbnum'))) { decoSoon(); return; } } }).observe(D.body || D.documentElement, { childList: true, subtree: true }); } catch (e) {}
+decoSoon();
+/* ════════════════════ 7. 📎 THE READ-ONLY QUICKBOOKS LINK (PDFs, memos) ════════════════════ */
+/* QuickBooks sync stays off (patch NOQB). This keeps its own sign-in on this computer ("gc_qb_read_tokens") that is only ever sent
+   to netlify/functions/qb-files.js, which only READS (GET) QuickBooks: transactions' memo / line customer and their attachments. */
+var LK = 'gc_qb_read_tokens', QBF = '/.netlify/functions/qb-files', QBP = '/.netlify/functions/qb-proxy';
+function tok(){ try { var t = JSON.parse(lsGet(LK) || 'null'); return t && t.access_token && t.realmId ? t : null; } catch (e) { return null; } }
+function setTok(t){ lsSet(LK, JSON.stringify(t)); }
+function freshTok(){
+  var t = tok(); if (!t) return Promise.resolve(null);
+  var exp = Date.parse(t.connectedAt || 0) + (Number(t.expires_in) || 3600) * 1000;
+  if (Date.now() < exp - 90000) return Promise.resolve(t);
+  return W.fetch(QBP + '?action=refresh', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ refresh_token: t.refresh_token }) })
+    .then(function(r){ return r.json(); }).then(function(n){ if (n && n.access_token) { t = Object.assign({}, t, n, { connectedAt: nowIso() }); setTok(t); return t; } return null; }, function(){ return null; });
+}
+function qbf(body){
+  return freshTok().then(function(t){
+    if (!t) return { ok: false, notConnected: true, reason: 'not-connected', error: 'QuickBooks is not connected on this computer.' };
+    return W.fetch(QBF, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-qb-token': t.access_token, 'x-qb-realm': s(t.realmId), 'x-qb-sandbox': t.sandbox ? 'true' : 'false' }, body: JSON.stringify(body) })
+      .then(function(r){ return r.json().catch(function(){ return { ok: false, error: 'answer ' + r.status }; }); }, function(e){ return { ok: false, error: 'offline: ' + s(e && e.message) }; });
+  });
+}
+var LINK = { want: 0, cb: null };
+function connect(cb){
+  LINK.want = Date.now(); LINK.cb = cb || null;
+  var pop = null; try { pop = W.open('about:blank', 'qb_auth', 'width=600,height=720'); } catch (e) {}
+  return W.fetch(QBP + '?action=auth_url').then(function(r){ return r.json(); }).then(function(d){
+    if (!d || !d.url || /client_id=(&|$)/.test(d.url)) { if (pop) pop.close(); W.alert('QuickBooks cannot be connected: the QuickBooks app keys (QB_CLIENT_ID / QB_CLIENT_SECRET) are not set on Netlify. Ask Wesley.'); return false; }
+    if (pop) pop.location.href = d.url; else W.open(d.url, 'qb_auth', 'width=600,height=720');
+    return true;
+  }, function(){ if (pop) pop.close(); W.alert('Could not reach the QuickBooks sign-in. Try again.'); return false; });
+}
+function received(p){
+  if (!p || !p.access_token || !LINK.want || Date.now() - LINK.want > 15 * 60000) return false;
+  setTok(Object.assign({}, p, { connectedAt: nowIso(), readOnly: true })); LINK.want = 0;
+  try { if (LINK.cb) LINK.cb(true); } catch (e) {} LINK.cb = null; toast('✓ QuickBooks connected (read-only, for PDFs and memos)'); return true;
+}
+function hookReceive(){
+  var g = W.gcQB = W.gcQB || {}; var f = g._receiveTokens; if (f && f.__qbread) return;
+  var w = function(t){ if (received(t)) return; if (typeof f === 'function') return f.apply(this, arguments); }; w.__qbread = true; g._receiveTokens = w;
+}
+W.addEventListener('message', function(e){ if (e && e.data && e.data.type === 'qb_tokens') received(e.data.payload); });
+hookReceive(); later(hookReceive, 3000);
+function disconnect(){ try { W.localStorage.removeItem(LK); } catch (e) {} }
+function linkHtml(what){
+  return tok() ? '<span data-qblink-on>📎 QuickBooks is connected on this computer (read-only).</span>'
+    : '<span data-qblink-off>📎 QuickBooks is not connected on this computer, so ' + esc(what) + ' cannot be read from it (everything else works). <button type="button" class="qbc-btn qbc-blue" data-qbconnect style="padding:5px 10px;font-size:12.5px">🔗 Connect QuickBooks (read-only)</button></span>';
+}
+var KIND_QB = { invoice: 'invoice', 'client': 'invoice', customer: 'invoice', sub: 'bill', supplier: 'bill' };
+function itemFor(x, key){
+  var q = C.qbNum(x) || {}, kind = s(x.qbKind) || q.kind || KIND_QB[low(x.type)] || (/^QBX-|CARD/.test(s(x.id)) ? 'expense' : 'bill');
+  return { key: key || s(x.id), kind: kind, id: s(x.qbId), num: s(q.num), date: s(x.date || x.recvDate).slice(0, 10), amount: Math.abs(r2(x.amt != null ? x.amt : x.amount)), name: s(x.sub || x.vendor || x.client || x.payee) };
+}
+/* many lookups, paced well under QuickBooks' 500 calls / minute: 5 a call, a pause between calls */
+function lookupAll(items, prog){
+  var out = {}, i = 0, stop = null;
+  function next(){
+    if (i >= items.length || stop) return Promise.resolve({ results: out, stop: stop });
+    var part = items.slice(i, i + 5); i += part.length;
+    return qbf({ op: 'lookup', items: part }).then(function(j){
+      if (!j || !j.ok) { if (j && j.busy) { i -= part.length; return new Promise(function(r){ later(r, 20000); }).then(next); } stop = j || { error: 'no answer' }; return { results: out, stop: stop }; }
+      arr(j.results).forEach(function(r){ out[r.key] = r; });
+      try { if (prog) prog(Math.min(i, items.length), items.length); } catch (e) {}
+      return new Promise(function(r){ later(r, 2000); }).then(next);
+    });
+  }
+  return next();
+}
+/* attach QuickBooks files to a record + its job's documents, once (the same file = the same sha256 ref) */
+function docsGet(){ return Promise.resolve(W._gcRecIDBget ? W._gcRecIDBget('projectDocs') : null).then(function(d){ return Array.isArray(d) ? d.slice() : arr(crm().projectDocs).slice(); }, function(){ return arr(crm().projectDocs).slice(); }); }
+function docsSave(docs){
+  try { if (typeof W._setProjectDocs === 'function') W._setProjectDocs(docs.slice()); } catch (e) {}
+  try { if (W._crm) W._crm.projectDocs = docs; } catch (e) {}
+  try { if (W._gcApplySync) W._gcApplySync('projectDocs', docs); } catch (e) {}
+  try { if (W._supaUpsert) W._supaUpsert('projectDocs', docs); } catch (e) {}
+  return Promise.resolve(W._gcRecIDBput ? W._gcRecIDBput('projectDocs', docs) : null).then(null, function(){});
+}
+function attachFiles(pairs, batchId){
+  /* pairs: [{ list, id, files:[{ref,name,type,size,hash,qbAttachId}] }] */
+  return Promise.all([getList('invs'), getList('expenses'), docsGet(), batchId ? findBatch(batchId) : null]).then(function(L){
+    var lists = { invs: L[0], expenses: L[1] }, docs = L[2], b = L[3], ch = {}, n = 0, by = myName(), at = nowIso();
+    pairs.forEach(function(pr){
+      var l = lists[pr.list]; if (!l) return; var i = l.findIndex(function(x){ return x && s(x.id) === s(pr.id); }); if (i < 0) return;
+      var x = Object.assign({}, l[i]), have = arr(x.files).map(function(f){ return s(f && f.ref); }), add = arr(pr.files).filter(function(f){ return f && f.ref && have.indexOf(f.ref) < 0; });
+      if (!add.length) return;
+      if (b) b.updated.push({ list: pr.list, id: s(x.id), before: { files: x.files === undefined ? '__absent__' : x.files, fileName: x.fileName === undefined ? '__absent__' : x.fileName, fileData: x.fileData === undefined ? '__absent__' : x.fileData } });
+      x.files = arr(x.files).concat(add.map(function(f){ return { name: f.name, ref: f.ref, type: f.type, size: f.size, hash: f.hash, qbAttachId: f.qbAttachId, from: 'QuickBooks' }; }));
+      if (!x.fileName && pr.list === 'invs') { x.fileName = add[0].name; x.fileData = add[0].ref; }
+      x.updatedAt = at; l[i] = x; ch[pr.list] = true; n += add.length;
+      if (x.pid) add.forEach(function(f){
+        if (docs.some(function(d){ return d && s(d.pid) === s(x.pid) && s(d.ref) === f.ref && !d.deleted; })) return;
+        var did = 'QBD-' + s(f.hash).slice(0, 16) + '-' + s(x.pid);
+        docs.push({ id: did, pid: s(x.pid), cat: isClientRec(x) ? 'Invoice' : /^(sub|supplier)$/i.test(s(x.type)) ? 'Sub Invoices' : 'Receipt', name: f.name, ref: f.ref, type: f.type, size: f.size, hash: f.hash,
+          uploaded: today(), by: by + ' (from QuickBooks)', confirmed: true, source: 'quickbooks', recId: s(x.id), qbNum: s(x.qbNum || x.invNum), importId: batchId || '' });
+        ch.docs = true; if (b) { b.created.projectDocs = arr(b.created.projectDocs); b.created.projectDocs.push(did); }
+      });
+    });
+    var saves = []; ['invs', 'expenses'].forEach(function(k){ if (ch[k]) saves.push(saveList(k, lists[k], 'QuickBooks PDFs')); }); if (ch.docs) saves.push(docsSave(docs));
+    if (b && (ch.invs || ch.expenses || ch.docs)) saves.push(saveBatch(b));
+    return Promise.all(saves).then(function(){ return n; });
+  });
+}
+W._gcQbLink = { connected: function(){ return !!tok(); }, connect: connect, disconnect: disconnect, status: function(){ return qbf({ op: 'status' }); }, lookup: function(items){ return qbf({ op: 'lookup', items: items }); }, lookupAll: lookupAll, attach: attachFiles, itemFor: itemFor, _received: received };
+/* ════════════════════ 8. 💳 CARD / BANK LINES → JOB SUGGESTIONS (owner 11/13: "when we upload a credit card CSV make sure it
+   suggests jobs — it could be by dates etc.") ════════════════════
+   For a card / bank line (💳 / 🏦 statement import) and a card charge with no job (📥 Needs a job), besides patch MONEY's own rules:
+     a. WHO had the card that day: the card's holder (👤 Card holders, gc_kv "gc_card_holders": card / last-4 → person) → the job they
+        clocked in on (Timesheets), were scheduled on (Schedule), or — a PM — their only active jobs: "Steven was on 123 Main St that day";
+     b. the STORE's town (the merchant line "… MEMPHIS TN") = the only open job there, or one of the holder's jobs there;
+     c. the same merchant at a similar amount put on a job before (the last 180 days);
+     d. a PO / job name / address in the description or memo (the QuickBooks matcher).
+   Top 1-3 with the reason; one tap on a suggestion picks it; "✨ Use the sure ones" picks every ≥ 85 %.
+   window._gcJobsOnDate(personOrCard, 'YYYY-MM-DD') → [{ pid, name, conf, why }] (also for patch POGUARD). */
+var TS = { list: [], at: 0, busy: false };
+function loadTs(){ if (TS.busy || Date.now() - TS.at < 60000) return; TS.busy = true; Promise.resolve(W.idbGet ? W.idbGet('timesheets') : []).then(function(v){ TS.list = arr(v); TS.at = Date.now(); TS.busy = false; }, function(){ TS.busy = false; TS.at = Date.now(); }); }
+var HOLD = { map: obj((function(){ try { return JSON.parse(lsGet('gc_card_holders') || '{}'); } catch (e) { return {}; } })()), at: 0 };
+function loadHolders(){ if (Date.now() - HOLD.at < 300000) return; HOLD.at = Date.now(); kvGet('gc_card_holders').then(function(v){ if (v && typeof v === 'object') { HOLD.map = Object.assign({}, HOLD.map, v); lsSet('gc_card_holders', JSON.stringify(HOLD.map)); } }); }
+var CARDS = { list: [], at: 0 };
+function loadCards(){ if (Date.now() - CARDS.at < 60000 || typeof W._gcCards !== 'function') return; CARDS.at = Date.now(); Promise.resolve(W._gcCards()).then(function(l){ CARDS.list = arr(l); }, function(){}); }
+function warm(){ try { loadTs(); loadHolders(); loadCards(); } catch (e) {} }
+function holderOf(x){
+  x = s(x); if (!x) return '';
+  var c = CARDS.list.filter(function(k){ return s(k.id) === x || (x.length === 4 && s(k.last4) === x) || low(k.name) === low(x); })[0];
+  var keys = [x, c && c.id, c && c.last4, x.replace(/\D/g, '').slice(-4)].filter(Boolean);
+  for (var i = 0; i < keys.length; i++) if (HOLD.map[keys[i]]) return s(HOLD.map[keys[i]].person || HOLD.map[keys[i]]);
+  if (c && (c.holder || c.owner || c.person)) return s(c.holder || c.owner || c.person);
+  return /^[\w.+-]+@|[a-z]{2,}\s+[a-z]{2,}/i.test(x) || /^[A-Za-z]{3,}$/.test(x) ? x : '';
+}
+function people(){ return arr(crm().users); }
+function personKeys(p){
+  p = s(p); if (!p) return [];
+  var u = people().filter(function(x){ return x && (low(x.email) === low(p) || nk(x.name) === nk(p) || (nk(x.name).split(' ')[0] === nk(p) && nk(p).length >= 3)); })[0];
+  var out = [nk(p)]; if (u) { out.push(nk(u.name)); if (u.email) out.push(low(u.email), nk(s(u.email).split('@')[0])); }
+  return out.filter(Boolean);
+}
+function samePerson(v, keys){ var a = nk(v), e = low(v); if (!a) return false; return keys.some(function(k){ return k === a || k === e || (k.indexOf(' ') > 0 && a.indexOf(' ') > 0 && k.split(' ')[0] === a.split(' ')[0] && k.split(' ').pop() === a.split(' ').pop()); }); }
+function onDate(e, d){ var a = s(e.date || e.start || e.startDate).slice(0, 10), b = s(e.endDate || e.end || e.endDateSch).slice(0, 10) || a; if (!a) return false; if (!b || b < a) b = a; return a <= d && d <= b; }
+function jobName(p){ return s(p.address).split(',')[0] || s(p.name); }
+function jobsOnDate(who, date){
+  warm(); var d = C.ymd(date) || s(date).slice(0, 10); if (!d) return [];
+  var person = holderOf(who) || s(who), keys = personKeys(person); if (!keys.length) return [];
+  var nm = s((people().filter(function(u){ return samePerson(u.name, keys) || samePerson(u.email, keys); })[0] || {}).name) || person, first = nm.split(' ')[0];
+  var by = {};
+  function add(pid, conf, why){ var p = proj(pid); if (!p || /^(lost|cancell?ed|dead|declined)$/i.test(s(p.status))) return; var x = by[pid] || (by[pid] = { pid: s(pid), name: s(p.name), conf: 0, why: [] }); if (conf > x.conf) x.conf = conf; if (x.why.indexOf(why) < 0) x.why.push(why); }
+  TS.list.forEach(function(t){ if (!t || s(t.date).slice(0, 10) !== d || !s(t.pid) || !samePerson(t.user || t.name || t.emp || t.employee, keys)) return; var p = proj(t.pid); if (p) add(t.pid, 90, first + ' clocked in at ' + jobName(p) + ' that day'); });
+  arr(crm().schedule).forEach(function(e){ if (!e || !s(e.pid) || !onDate(e, d)) return; if (![e.assignee, e.who, e.crew, e.schedFor, e.person].concat(arr(e.assignees)).some(function(v){ return samePerson(v, keys); })) return; var p = proj(e.pid); if (p) add(e.pid, 82, first + ' was scheduled at ' + jobName(p) + ' that day'); });
+  var pmJobs = projects().filter(function(p){ return samePerson(p.pm, keys) && /^(active|in progress|scheduled|started|won|sold|in-progress|production)$/i.test(s(p.status)) && (!s(p.startDate) || s(p.startDate).slice(0, 10) <= d) && (!s(p.endDate) || s(p.endDate).slice(0, 10) >= d); });
+  if (pmJobs.length && pmJobs.length <= 3) pmJobs.forEach(function(p){ add(p.id, pmJobs.length === 1 ? 72 : 58, jobName(p) + ' is ' + first + '\'s ' + (pmJobs.length === 1 ? 'only' : 'one of ' + pmJobs.length) + ' active job' + (pmJobs.length === 1 ? '' : 's')); });
+  return Object.keys(by).map(function(k){ var x = by[k]; return { pid: x.pid, name: x.name, conf: Math.min(95, x.conf + (x.why.length > 1 ? 5 : 0)), why: x.why.join(' · '), person: nm }; }).sort(function(a, b){ return b.conf - a.conf; });
+}
+W._gcJobsOnDate = jobsOnDate;
+var ST_RE = /\b([A-Z][A-Za-z .'-]{2,24}?)[ ,]+(TN|MS|AR|AL|KY|GA|MO|TX|LA|FL)\b(?:\s+\d{5})?\s*$/;
+function townOf(desc){ var m = ST_RE.exec(s(desc).replace(/\s+/g, ' ')); if (!m) return ''; var t = nk(m[1]).replace(/^(.*\s)?(store|depot|lowes|supply|inc|llc)\s/, '').split(' ').filter(function(w){ return !/\d/.test(w); }); return t.slice(-2).join(' '); }
+function jobTown(p){ return nk(p.city || (s(p.address).split(',')[1] || '')); }
+function vkey2(v){ try { if (W._gcMoney && W._gcMoney.vendorKey) return W._gcMoney.vendorKey(v); } catch (e) {} return nk(v).split(' ').slice(0, 2).join(' '); }
+function openP(p){ return p && !p.deleted && !/^(completed?|closed|lost|dead|cancel+ed|archived|declined|bidding|estimating)$/i.test(s(p.status)); }
+/* o: { vendor, memo, desc, date, amount, cardId, card, last4, person } · base: patch MONEY's suggestion → the same shape + alts:[{pid,name,conf,why}] */
+function cardSuggest(o, base){
+  o = o || {}; base = base || { pid: '', conf: 0, how: '', why: '' }; warm();
+  var by = {};
+  function add(pid, conf, why, how){ if (!pid || !proj(pid)) return; var x = by[pid] || (by[pid] = { pid: s(pid), name: s(proj(pid).name), conf: 0, why: [], how: how }); if (conf > x.conf) { x.conf = conf; x.how = how; } if (why && x.why.indexOf(why) < 0) x.why.push(why); }
+  if (base.pid) add(base.pid, base.conf || 75, base.why, base.how || 'rule');
+  /* d. PO / job name / address in the text */
+  try { var m = C.matchJob({ memo: o.memo, desc: o.desc, side: 'cost' }, { projects: projects(), memoMap: MEMO.map }); if (m.pid) add(m.pid, m.conf, m.why, m.how); else arr(m.cands).filter(function(c){ return c.score >= 60; }).slice(0, 3).forEach(function(c){ add(c.pid, c.score - 10, c.why, c.how); }); } catch (e) {}
+  /* a. who had the card that day */
+  var who = s(o.person) || holderOf(o.cardId) || holderOf(o.last4) || holderOf(o.card), mine = who && o.date ? jobsOnDate(who, o.date) : [];
+  mine.forEach(function(j){ add(j.pid, j.conf - (mine.length > 1 ? 8 : 0), j.why, 'date'); });
+  /* b. the store's town */
+  var town = townOf(o.desc || o.vendor);
+  if (town) {
+    var inTown = projects().filter(function(p){ return openP(p) && jobTown(p) === town; });
+    var mineT = inTown.filter(function(p){ return mine.some(function(j){ return j.pid === s(p.id); }); });
+    if (mineT.length === 1) add(mineT[0].id, 88, 'the store is in ' + town.replace(/\b\w/g, function(c){ return c.toUpperCase(); }) + ' — the same town as that job', 'town');
+    else if (inTown.length === 1) add(inTown[0].id, 66, 'the store is in ' + town.replace(/\b\w/g, function(c){ return c.toUpperCase(); }) + ' — the only open job there', 'town');
+  }
+  /* c. the same store, a similar amount, put on a job before */
+  var vk = vkey2(o.vendor || o.desc), amt = Math.abs(r2(o.amount));
+  if (vk && amt > 0) {
+    var since = o.date ? Date.parse(C.ymd(o.date) + 'T12:00:00Z') - 180 * 864e5 : 0, hits = {};
+    arr(crm().expenses).forEach(function(e){ if (!e || !e.pid || e.deleted || vkey2(e.vendor || e.payee || e.desc) !== vk) return; var t = Date.parse(s(e.date).slice(0, 10) + 'T12:00:00Z'); if (since && isFinite(t) && t < since) return; var a = Math.abs(r2(e.amt != null ? e.amt : e.amount)); if (!(a > 0) || Math.abs(a - amt) / Math.max(a, amt) > 0.15) return; (hits[e.pid] = hits[e.pid] || []).push(e); });
+    var hk = Object.keys(hits).filter(function(k){ return openP(proj(k)); });
+    if (hk.length === 1) { var e0 = hits[hk[0]][0]; add(hk[0], hits[hk[0]].length >= 2 ? 76 : 68, vk + ' ' + money(e0.amt != null ? e0.amt : e0.amount) + ' on ' + s(e0.date).slice(0, 10) + ' went to this job', 'pattern'); }
+  }
+  var L = Object.keys(by).map(function(k){ var x = by[k]; return { pid: x.pid, name: x.name, conf: Math.min(97, Math.round(x.conf + (x.why.length > 1 ? 6 * (x.why.length - 1) : 0))), why: x.why.join(' · '), how: x.how }; }).sort(function(a, b){ return b.conf - a.conf; });
+  var top = L[0], sec = L[1], out = Object.assign({}, base, { alts: L.slice(0, 3) });
+  if (top && top.conf >= 80 && (!sec || top.conf - sec.conf >= 8)) { out.pid = top.pid; out.conf = top.conf; out.how = top.how; out.why = top.why; out.overhead = false; }
+  else if (top && !base.pid) { out.pid = ''; out.why = 'maybe: ' + L.slice(0, 3).map(function(x){ return x.name + ' (' + x.why + ')'; }).join(' · '); }
+  return out;
+}
+W._gcCardSuggest = cardSuggest;
+warm(); later(warm, 4000);
+/* 👤 Card holders: which person carries which card (for "who was on which job that day") */
+function openHolders(){
+  if (!allowed()) { W.alert('Card holders are for admins and the office.'); return; }
+  loadCards(); var ov = overlay('_gcCardHoldOv'), card = ov.firstChild; card.style.maxWidth = '640px';
+  Promise.resolve(typeof W._gcCards === 'function' ? W._gcCards() : []).then(function(l){
+    var cards = arr(l).filter(function(c){ return c && c.active !== false; });
+    var names = people().filter(function(u){ return u && u.active !== false && u.name; }).map(function(u){ return '<option value="' + esc(u.name) + '"></option>'; }).join('');
+    card.innerHTML = '<h2>👤 Card holders</h2><div class="qbc-sub">Who carries each card. The card import then suggests the job that person clocked in on or was scheduled on that day.</div>' +
+      '<datalist id="qbcPeople">' + names + '</datalist>' +
+      (cards.length ? cards.map(function(c){ var h = HOLD.map[c.id] || HOLD.map[c.last4] || {}; return '<div style="display:flex;gap:8px;align-items:center;margin:6px 0"><b style="min-width:200px">' + esc(c.name || c.issuer || 'Card') + (c.last4 ? ' ••' + esc(c.last4) : '') + '</b><input data-card="' + esc(c.id) + '" data-l4="' + esc(c.last4 || '') + '" list="qbcPeople" class="qbc-job" style="max-width:260px" value="' + esc(s(h.person || h)) + '" placeholder="who carries it"></div>'; }).join('') : '<div class="qbc-sub">No cards yet — they are added by 💳 Import card statement.</div>') +
+      '<div style="display:flex;gap:10px;margin-top:12px"><button class="qbc-btn qbc-go" data-save>Save</button><button class="qbc-btn" data-x>Close</button></div>';
+    card.querySelector('[data-x]').onclick = function(){ ov.remove(); };
+    var sv = card.querySelector('[data-save]'); sv.onclick = function(){
+      var add = {}; Array.prototype.forEach.call(card.querySelectorAll('[data-card]'), function(i){ var v = s(i.value), rec = v ? { person: v, at: nowIso(), by: myName() } : null; add[i.getAttribute('data-card')] = rec; if (i.getAttribute('data-l4')) add[i.getAttribute('data-l4')] = rec; });
+      Object.keys(add).forEach(function(k){ if (add[k]) HOLD.map[k] = add[k]; else delete HOLD.map[k]; }); lsSet('gc_card_holders', JSON.stringify(HOLD.map));
+      sv.disabled = true; kvGet('gc_card_holders').then(function(cur){ var m = Object.assign({}, obj(cur)); Object.keys(add).forEach(function(k){ if (add[k]) m[k] = add[k]; else delete m[k]; }); return kvPut('gc_card_holders', m); }).then(function(){ sv.textContent = '✓ Saved'; later(function(){ ov.remove(); }, 700); });
+    };
+  });
+}
+W._gcCardHolders = { open: openHolders, holderOf: holderOf, map: function(){ return HOLD.map; }, refresh: function(){ TS.at = 0; HOLD.at = 0; CARDS.at = 0; warm(); } };
 W._gcOpenQbCsvToJobs = function(){ if (!allowed()) { W.alert('Importing QuickBooks files is for admins and the office.'); return; } pickSheet(); };
 function hooks(){ try { hookUploader(); } catch (e) {} try { hookPatchJ(); } catch (e) {} }
 hooks(); later(hooks, 1500); later(hooks, 5000); later(hooks, 15000);
@@ -232584,4 +233055,1001 @@ SIv(paint, 3000);
 W._gcPoGuard = { state: function(){ return PG; }, load: load, scan: scan, open: open, setPo: setPo, ask: ask, flag: flag, fileSubReceipt: fileSubReceipt, jobByPo: jobByPo, poOf: poOf, myJobs: myJobs, enhanceField: enhanceField, itemOf: itemOf, canEditExp: canEditExp, paint: paint };
 try { console.log('[GC] 🧾 A PO on every receipt + No-PO alerts (patch POGUARD) — _gcPoGuard.state(), _gcOpenPoGuard()'); } catch (e) {}
 })();
+</script>
+<script id="gc-patch-lumpsum">/*__GC_PATCH_LUMPSUM__ (owner 11/13: "some companies send 1 invoice as a lump sum but we have invoices all month and we need to
+  mark off what jobs are paid when we send that 1 huge invoice; we should get invoices in, but when we pay those make sure we are
+  marking off which jobs that lump sum is for").
+  💵 Pay several invoices at once (suppliers / subs: Farrell Calhoun, ABC Supply, a sub on many jobs — per-job bills all month, ONE
+  statement, ONE payment) and 💰 Record one payment for several invoices (a GC / property manager paying several of our invoices).
+    1. pick the vendor / sub (or customer) → every open bill / invoice of theirs across jobs (job, #, QB #, date, amount, open, status),
+       oldest first; filter by date range / job.
+    2. the lump-sum amount, date, method (check # / ACH / card …), reference / statement #, an optional statement PDF. Apply oldest-first
+       or tick exactly which; one can be partial; live "applied $X of $Y — $Z left / over by $Z". It must balance, or the office ticks
+       "keep the rest as a credit (unapplied)". Over-applied never saves.
+    3. Save → each invoice is paid (or partial, open balance down) exactly the way "Mark paid" does it today (status / paidDate /
+       checkNo, the job's cost row paid, the register's "Sub Paid" / "Client Payment" row) + a row in its payments[] naming the one
+       payment (lumpId, amount applied, prior state). The payment record (gc_kv gc_lump_payments: the GROUPING only — the money stays
+       on the invoices and the register) lists every job + invoice it covered. ↩ Undo restores each invoice as it was.
+    4. A lump-sum bill that duplicates the per-job bills (same vendor, its amount = the open bills ± a little, or it says "statement")
+       is flagged; "🔗 This is a statement for several jobs" opens the same screen and, on save, sets that bill aside (void, isStatement)
+       so the cost is not counted twice. Undo puts it back.
+    5. QuickBooks (read only, never written): a BillPayment / ReceivePayment that lists several bills / invoices (rec.applied =
+       [{num, amount}]) marks each linked CRM record paid the same way; keyed by its qbKey → a re-import does nothing twice.
+  Admins + the office only (window._gcFullAccess); anyone else is refused. Nothing is sent to anyone.
+  API: window._gcLumpSum = { open, core:{allocate, openOf, dupStatements, sameParty, normParty}, save, undo, list, applyQb, canUse } */
+(function(W, D){
+'use strict';
+if (W.__GC_PATCH_LUMPSUM__) return; W.__GC_PATCH_LUMPSUM__ = true;
+var ST = function(f, ms){ return (W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout).call(W, f, ms || 0); };
+var SI = function(f, ms){ return (W.__GC_NATIVE_SETINTERVAL__ || W.setInterval).call(W, f, ms); };
+var KEY = 'gc_lump_payments';
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function num(v){ var n = parseFloat(String(v == null ? '' : v).replace(/[$,\s]/g, '')); return isFinite(n) ? n : 0; }
+function r2(v){ return Math.round(num(v) * 100) / 100; }
+function c(v){ return Math.round(num(v) * 100); }
+function arr(v){ if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { return []; } } return Array.isArray(v) ? v.filter(function(x){ return x && typeof x === 'object'; }) : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(ch){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]; }); }
+function money(n){ var v = r2(n); return (v < 0 ? '-$' : '$') + Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function nowIso(){ return new Date().toISOString(); }
+function today(){ var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+function uid(p){ return p + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+function lsGet(k){ try { return Storage.prototype.getItem.call(localStorage, k); } catch (e) { return null; } }
+function lsSet(k, v){ try { Storage.prototype.setItem.call(localStorage, k, v); } catch (e) {} }
+function crm(){ return W._crm || {}; }
+function invoices(){ var a = arr(crm().invoices); return a.length ? a : arr(crm().invs); }
+function projects(){ return arr(crm().projects); }
+function proj(pid){ if (!pid) return null; return projects().filter(function(p){ return String(p.id) === String(pid); })[0] || null; }
+
+/* ═════════════ the rules (pure — unit tested) ═════════════ */
+function isBill(r){ return /^(sub|supplier)$/.test(low(r && r.type)); }
+function isClientInv(r){ return low(r && r.type) === 'client' && !(r.needsReview === true || low(r.status) === 'needs_review'); }
+function amtOf(r){ return num(r && (r.amt != null && r.amt !== '' ? r.amt : r.amount)); }
+function payAmt(p){ return num(p && (p.amount != null && p.amount !== '' ? p.amount : p.amt)); }
+/* what is still owed on one invoice / bill */
+function paidOf(r){
+  var p = arr(r && r.payments);
+  if (p.length) return r2(p.reduce(function(a, x){ return a + payAmt(x); }, 0));
+  if (low(r.status) === 'paid' || r.paid === true) return amtOf(r);
+  if (num(r.amountPaid) > 0) return r2(r.amountPaid);
+  if (r.openBalance != null && r.openBalance !== '' && isFinite(parseFloat(r.openBalance))) return r2(Math.max(0, amtOf(r) - num(r.openBalance)));
+  return 0;
+}
+function openOf(r){ if (!r) return 0; if (low(r.status) === 'paid' || r.paid === true) return 0; return r2(Math.max(0, amtOf(r) - paidOf(r))); }
+var CLOSED = /^(paid|void|voided|cancel+ed|canceled|denied|rejected|draft|deleted|declined|lost|merged)$/;
+function isOpen(r){
+  if (!r || r.deleted === true || r.isStatement === true) return false;
+  if (CLOSED.test(low(r.status))) return false;
+  if (r.paid === true) return false;
+  return openOf(r) > 0.004;
+}
+function normParty(n){
+  return low(n).replace(/&amp;/g, '&').replace(/&/g, ' and ').replace(/[^a-z0-9 ]+/g, ' ')
+    .replace(/\b(llc|l l c|inc|incorporated|co|company|corp|corporation|ltd|the|of|pllc|lp)\b/g, ' ').replace(/\s+/g, ' ').trim();
+}
+function sameParty(a, b){ var x = normParty(a), y = normParty(b); return !!x && x === y; }
+/* QuickBooks names drift ("ABC Supply" / "ABC Supply Co #12"): the same start, only when nothing matches exactly */
+function looseParty(a, b){ var x = normParty(a), y = normParty(b); if (!x || !y) return false; if (x === y) return true; return (x.length >= 6 && (y + ' ').indexOf(x + ' ') === 0) || (y.length >= 6 && (x + ' ').indexOf(y + ' ') === 0); }
+function partyOf(r){
+  if (isBill(r)) return s(r.sub || r.vendor || r.payee).replace(/&amp;/g, '&');
+  var p = proj(r.pid) || {};
+  return s(r.client || r.billTo || p.client || p.customer).replace(/&amp;/g, '&');
+}
+function invDay(r){ return s(r.recvDate || r.invDate || r.date || r.sentDate || r.createdAt).slice(0, 10); }
+function invNo(r){ return s(r.invNum || r.num || r.number || r.qbNum); }
+function qbNo(r){ if (s(r.qbNum)) return s(r.qbNum); var k = arr([]).concat(r.qbKey ? [r.qbKey] : [], Array.isArray(r.qbKeys) ? r.qbKeys : []).map(s).filter(function(x){ return /^QB:(invoice|bill):/.test(x); })[0]; if (!k) return ''; var m = /^QB:[a-z]+:([^:]+):/.exec(k); return m && !/^\d{4}-\d\d-\d\d$/.test(m[1]) ? m[1] : ''; }
+function byOldest(a, b){ var x = s(a.date), y = s(b.date); if (x !== y) return x < y ? -1 : 1; return s(a.id) < s(b.id) ? -1 : (s(a.id) > s(b.id) ? 1 : 0); }
+/* allocate(total, items:[{id, open, date}], {mode:'oldest'|'manual', manual:{id: amount}})
+   → {lines:[{id, apply, open, after, full}], applied, total, left (unapplied), over (applied past the total), balanced, errors} */
+function allocate(total, items, opt){
+  opt = opt || {};
+  var T = c(total), list = (items || []).map(function(x){ return { id: s(x.id), open: c(x.open), date: s(x.date) }; }).sort(byOldest);
+  var lines = [], applied = 0, errors = [];
+  if (opt.mode === 'manual') {
+    var M = opt.manual || {};
+    list.forEach(function(x){
+      if (!(x.id in M)) return;
+      var a = c(M[x.id]);
+      if (a < 0) { errors.push({ id: x.id, why: 'negative' }); a = 0; }
+      if (a > x.open) { errors.push({ id: x.id, why: 'more than its open balance' }); a = x.open; }
+      if (a > 0) { lines.push({ id: x.id, apply: a, open: x.open }); applied += a; }
+    });
+  } else {
+    var left = Math.max(0, T), only = opt.only ? opt.only.reduce(function(o, k){ o[s(k)] = 1; return o; }, {}) : null;
+    list.forEach(function(x){
+      if (only && !only[x.id]) return;
+      if (left <= 0) return;
+      var a = Math.min(left, x.open); if (a <= 0) return;
+      lines.push({ id: x.id, apply: a, open: x.open }); applied += a; left -= a;
+    });
+  }
+  lines = lines.map(function(l){ return { id: l.id, apply: l.apply / 100, open: l.open / 100, after: (l.open - l.apply) / 100, full: l.apply >= l.open }; });
+  return { lines: lines, applied: applied / 100, total: T / 100, left: Math.max(0, T - applied) / 100, over: Math.max(0, applied - T) / 100, balanced: T === applied, errors: errors };
+}
+/* the one statement that is really the month's per-job bills: same payee, its amount = the other open bills (all of them, the
+   ones dated in its month(s), or an exact handful of them) within max($1, 0.5 %) — or it says "statement" and others are open */
+function subsetHit(target, items){
+  if (items.length < 2 || items.length > 12) return null;
+  var n = items.length, T = c(target);
+  for (var m = 1; m < (1 << n); m++) {
+    if ((m & (m - 1)) === 0) continue;   /* two or more */
+    var sum = 0, pick = [];
+    for (var i = 0; i < n; i++) if (m & (1 << i)) { sum += c(items[i].open); pick.push(items[i]); }
+    if (Math.abs(sum - T) <= 5) return pick;
+  }
+  return null;
+}
+function dupStatements(all){
+  var L = (all || []).filter(function(r){ return isBill(r) && isOpen(r) && !r.notStatement; }), out = [];
+  L.forEach(function(b){
+    var A = amtOf(b); if (!(A > 0)) return;
+    var others = L.filter(function(x){ return x !== b && x.id !== b.id && sameParty(partyOf(x), partyOf(b)); })
+      .map(function(x){ return { id: x.id, open: openOf(x), date: invDay(x), pid: x.pid, inv: x }; });
+    if (others.length < 2) return;
+    var tol = Math.max(100, Math.round(c(A) * 0.005)), bd = invDay(b);
+    var near = others.filter(function(x){ return !bd || !x.date || (x.date <= bd && x.date >= addDays(bd, -62)); });
+    var sumAll = others.reduce(function(a, x){ return a + c(x.open); }, 0), sumNear = near.reduce(function(a, x){ return a + c(x.open); }, 0);
+    var hit = null, why = '';
+    if (Math.abs(sumAll - c(A)) <= tol) { hit = others; why = 'its amount = the ' + others.length + ' other open bills of ' + partyOf(b); }
+    else if (near.length >= 2 && Math.abs(sumNear - c(A)) <= tol) { hit = near; why = 'its amount = the ' + near.length + ' open bills of ' + partyOf(b) + ' dated in the 2 months before it'; }
+    else { var sub = subsetHit(A, (near.length >= 2 ? near : others)); if (sub) { hit = sub; why = 'its amount = ' + sub.length + ' of the open bills of ' + partyOf(b); } }
+    var says = /statement|stmt|monthly|summary|account summary/i.test([b.desc, b.memo, b.invNum, b.note, (arr(b.files)[0] || {}).name].join(' '));
+    if (!hit && says) { hit = others; why = 'it reads like a statement and ' + others.length + ' bills of ' + partyOf(b) + ' are open'; }
+    if (hit) out.push({ id: b.id, inv: b, amount: A, party: partyOf(b), jobs: hit.map(function(x){ return x.id; }), why: why, noJob: !b.pid });
+  });
+  /* a pair that explain each other: keep the bigger one as the statement */
+  return out.filter(function(f){ return !out.some(function(g){ return g !== f && g.jobs.indexOf(f.id) >= 0 && g.amount > f.amount; }); });
+}
+function addDays(d, n){ var t = Date.parse(d + 'T12:00:00'); if (!isFinite(t)) return ''; var x = new Date(t + n * 864e5); return x.getFullYear() + '-' + ('0' + (x.getMonth() + 1)).slice(-2) + '-' + ('0' + x.getDate()).slice(-2); }
+
+/* ═════════════ who may ═════════════ */
+function canUse(){
+  try { if (typeof W._gcFullAccess === 'function') return !!W._gcFullAccess(); } catch (e) {}
+  try { if (typeof W._gcIsOfficeFull === 'function' && W._gcIsOfficeFull()) return true; } catch (e) {}
+  try { if (typeof W.__gcAuthIsAdmin === 'function') return !!W.__gcAuthIsAdmin(); } catch (e) {}
+  return false;
+}
+function myName(){
+  var em = ''; try { em = low(W.__GC_AUTH__ && W.__GC_AUTH__.email && W.__GC_AUTH__.email()); } catch (e) {}
+  var u = arr(crm().users).filter(function(x){ return em && low(x.email) === em; })[0];
+  return s(u && u.name) || s(lsGet('grayco_user')) || em || 'office';
+}
+
+/* ═════════════ the payment records (the grouping; gc_kv gc_lump_payments, union by id) ═════════════ */
+function creds(){ return { u: (s(lsGet('grayco_sb_url')) || 'https://ieeonhpfahmwwecizdut.supabase.co').replace(/\/$/, ''), k: s(lsGet('grayco_sb_key')) }; }
+function sbH(extra){ var k = creds().k, h = { 'Content-Type': 'application/json' }; if (k) { h.apikey = k; h.Authorization = 'Bearer ' + k; } return Object.assign(h, extra || {}); }
+function kvGet(){
+  return W.fetch(creds().u + '/rest/v1/gc_kv?key=eq.' + KEY + '&select=value', { headers: sbH(), cache: 'no-store' })
+    .then(function(r){ return r.ok ? r.json() : Promise.reject(new Error('read ' + r.status)); })
+    .then(function(rows){ return arr(rows && rows[0] ? rows[0].value : []); });
+}
+var LUMPS = arr(lsGet(KEY));
+function mergeById(){ var by = {}, order = []; [].slice.call(arguments).forEach(function(l){ arr(l).forEach(function(m){ if (m.id == null) return; var k = String(m.id); if (!(k in by)) order.push(k); by[k] = m; }); }); return order.map(function(k){ return by[k]; }); }
+function kvAdd(items){
+  LUMPS = mergeById(LUMPS, items); lsSet(KEY, JSON.stringify(LUMPS));
+  return kvGet().then(function(remote){
+    var merged = mergeById(remote, LUMPS.filter(function(x){ return !remote.some(function(y){ return y.id === x.id; }) || items.some(function(i){ return i.id === x.id; }); }));
+    merged.sort(function(a, b){ return s(a.at).localeCompare(s(b.at)); });
+    LUMPS = merged; lsSet(KEY, JSON.stringify(merged));
+    return W.fetch(creds().u + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: sbH({ Prefer: 'resolution=merge-duplicates,return=minimal' }),
+      body: JSON.stringify({ key: KEY, value: JSON.stringify(merged), updated_at: nowIso() }) }).then(function(r){ return { ok: r.ok }; }, function(){ return { ok: false }; });
+  }, function(){ return { ok: false, local: true }; });
+}
+function refresh(){ return kvGet().then(function(l){ LUMPS = mergeById(l, LUMPS.filter(function(x){ return !l.some(function(y){ return y.id === x.id; }); })); lsSet(KEY, JSON.stringify(LUMPS)); return LUMPS; }, function(){ return LUMPS; }); }
+/* a record the invoices still remember even when the cloud list is not loaded (each payment row carries its header) */
+function fromInvoices(){
+  var by = {};
+  invoices().forEach(function(r){ arr(r.payments).forEach(function(p){ if (!p.lumpId) return; var h = by[p.lumpId] || (by[p.lumpId] = Object.assign({ id: p.lumpId, applied: [], fromInvoices: true }, p.lump || {})); h.applied.push({ invId: r.id, pid: r.pid, amount: payAmt(p) }); }); });
+  return Object.keys(by).map(function(k){ return by[k]; });
+}
+function list(){ var l = mergeById(fromInvoices(), LUMPS); return l.sort(function(a, b){ return s(b.at || b.date).localeCompare(s(a.at || a.date)); }); }
+
+/* ═════════════ write ═════════════ */
+function setInv(f){ if (typeof W._setInvoices !== 'function') return false; W._setInvoices(function(l){ return f(Array.isArray(l) ? l : []); }); return true; }
+function setExp(f){ if (typeof W._setExpenses === 'function') { W._setExpenses(function(l){ return f(Array.isArray(l) ? l : []); }); return true; } if (W._crm && Array.isArray(W._crm.expenses)) { W._crm.expenses = f(W._crm.expenses); return true; } return false; }
+function reg(row){ try { if (typeof W._gcAddToRegister === 'function') return W._gcAddToRegister(row); } catch (e) {} }
+function regDel(id){ try { if (typeof W._gcRemoveFromRegister === 'function') return W._gcRemoveFromRegister(id); } catch (e) {} }
+function snap(r){ return { status: r.status === undefined ? null : r.status, paid: r.paid === undefined ? null : r.paid, paidDate: r.paidDate === undefined ? null : r.paidDate, openBalance: r.openBalance === undefined ? null : r.openBalance, amountPaid: r.amountPaid === undefined ? null : r.amountPaid, checkNo: r.checkNo === undefined ? null : r.checkNo, payMethod: r.payMethod === undefined ? null : r.payMethod, nPay: arr(r.payments).length }; }
+function unsnap(y, p){ ['status', 'paid', 'paidDate', 'openBalance', 'amountPaid', 'checkNo', 'payMethod'].forEach(function(k){ if (p[k] === null || p[k] === undefined) delete y[k]; else y[k] = p[k]; }); }
+function methodText(m){ return { check: 'Check', ach: 'ACH / bank transfer', card: 'Card', cash: 'Cash', wire: 'Wire', other: 'Other' }[low(m)] || s(m) || 'Payment'; }
+
+/* save one lump-sum payment. p = { side:'pay'|'receive', party, amount, date, method, checkNo, ref, stmtNo, note, file, lines:[{invId, amount}],
+   keepCredit, statementInvId, source, qbKey, id } */
+function save(p){
+  if (!canUse()) return { ok: false, error: 'Only admins and the office can record payments.' };
+  p = p || {};
+  var side = p.side === 'receive' ? 'receive' : 'pay', total = r2(p.amount), date = s(p.date) || today(), by = myName(), at = nowIso();
+  if (!(total > 0)) return { ok: false, error: 'Enter the payment amount.' };
+  var I = invoices(), byId = {}; I.forEach(function(r){ byId[String(r.id)] = r; });
+  var lines = [], applied = 0, errs = [];
+  (p.lines || []).forEach(function(l){
+    var r = byId[String(l.invId)], a = r2(l.amount); if (!(a > 0)) return;
+    if (!r) { errs.push('invoice ' + l.invId + ' is not loaded'); return; }
+    if (side === 'pay' ? !isBill(r) : !isClientInv(r)) { errs.push((invNo(r) || r.id) + ' is not a ' + (side === 'pay' ? 'bill' : 'customer invoice')); return; }
+    if (!isOpen(r)) { errs.push((invNo(r) || r.id) + ' is already paid'); return; }
+    if (c(a) > c(openOf(r))) { errs.push((invNo(r) || r.id) + ': ' + money(a) + ' is more than its open ' + money(openOf(r))); return; }
+    lines.push({ inv: r, amount: a }); applied += c(a);
+  });
+  if (errs.length) return { ok: false, error: errs.join('; ') };
+  if (!lines.length) return { ok: false, error: 'Pick at least one invoice.' };
+  var left = c(total) - applied;
+  if (left < 0) return { ok: false, error: 'Applied ' + money(applied / 100) + ' is over the payment ' + money(total) + ' by ' + money(-left / 100) + '.' };
+  if (left > 0 && !p.keepCredit) return { ok: false, error: money(left / 100) + ' is not applied — apply it, or tick "keep the rest as a credit".' };
+  var stmt = p.statementInvId ? byId[String(p.statementInvId)] : null;
+  if (p.statementInvId && (!stmt || !isBill(stmt))) return { ok: false, error: 'That statement bill is not loaded.' };
+  if (stmt && lines.some(function(l){ return l.inv.id === stmt.id; })) return { ok: false, error: 'The statement itself cannot be one of the bills it pays.' };
+  if (typeof W._setInvoices !== 'function') return { ok: false, error: 'Invoices are not ready on this screen yet — try again in a moment.' };
+  var id = p.id || uid('LUMP'), method = low(p.method) || 'check';
+  var head = { side: side, party: s(p.party), amount: total, date: date, method: method, checkNo: s(p.checkNo), ref: s(p.ref), stmtNo: s(p.stmtNo), by: by, at: at };
+  var rec = Object.assign({ id: id }, head, { note: s(p.note).slice(0, 500), file: p.file || null, source: p.source || 'manual', qbKey: s(p.qbKey) || undefined,
+    credit: r2(left / 100), applied: [], statementInvId: stmt ? stmt.id : undefined, voided: false });
+  var ch = {}, expSnap = {};
+  lines.forEach(function(l){
+    var r = l.inv, o = openOf(r), after = r2(o - l.amount), full = after <= 0.004, pj = proj(r.pid) || {};
+    ch[r.id] = { amount: l.amount, after: full ? 0 : after, full: full, prev: snap(r), prior: arr(r.payments).length ? 0 : r2(amtOf(r) - o) };
+    rec.applied.push({ invId: r.id, pid: s(r.pid), job: s(pj.name), po: s(r.po || pj.autoPO), invNum: invNo(r), qbNum: qbNo(r), invDate: invDay(r), invAmount: amtOf(r), amount: l.amount, openBefore: o, openAfter: full ? 0 : after, full: full });
+  });
+  setInv(function(list){ return list.map(function(r){
+    if (!r) return r;
+    if (stmt && r.id === stmt.id) return Object.assign({}, r, { status: 'void', isStatement: true, statementLump: id, statementPrev: snap(r), voidReason: 'Statement for several jobs — paid on the per-job bills (payment ' + id + ')', updatedAt: at });
+    var x = ch[r.id]; if (!x) return r;
+    var y = Object.assign({}, r), pays = arr(r.payments).slice();
+    if (!pays.length && x.prior > 0.004) pays.push({ id: 'PRIOR_' + r.id, amt: x.prior, amount: x.prior, date: s(r.paidDate), method: 'earlier', source: 'prior', note: 'paid before this lump sum', at: at });
+    pays.push({ id: id + '_' + r.id, lumpId: id, amt: x.amount, amount: x.amount, date: date, method: method, checkNo: s(p.checkNo), ref: s(p.ref || p.stmtNo), by: by, at: at, source: 'lump',
+      prev: x.prev, lump: { side: side, party: head.party, amount: total, date: date, method: method, checkNo: head.checkNo, ref: head.ref, stmtNo: head.stmtNo, by: by, at: at, qbKey: s(p.qbKey) || undefined, source: p.source || 'manual' } });
+    y.payments = pays; y.lumpIds = (Array.isArray(r.lumpIds) ? r.lumpIds : []).concat([id]);
+    if (p.qbKey) { y.qbKeys = (Array.isArray(r.qbKeys) ? r.qbKeys.slice() : []); if (y.qbKeys.indexOf(p.qbKey) < 0) y.qbKeys.push(p.qbKey); }
+    if (x.full) { y.status = 'paid'; y.paid = true; y.paidDate = date; y.openBalance = 0; y.amountPaid = amtOf(r); if (method === 'check' && p.checkNo) y.checkNo = s(p.checkNo); y.payMethod = methodText(method); }
+    else { y.status = 'partial'; y.openBalance = x.after; y.amountPaid = r2(amtOf(r) - x.after); }
+    y.updatedAt = at;
+    return y;
+  }); });
+  /* the job's cost row (sub / supplier bills): paid on that date, the way "Mark paid" does it */
+  if (side === 'pay') {
+    setExp(function(E){ return E.map(function(e){
+      if (!e || !e.subInvId) return e;
+      if (stmt && String(e.subInvId) === String(stmt.id)) { expSnap[e.id] = e.status; return Object.assign({}, e, { status: 'void', voidReason: 'statement — the per-job bills carry the cost', statementLump: id, statusWas: e.status }); }
+      var x = ch[e.subInvId]; if (!x || !x.full || e.status === 'rejected' || e.status === 'denied') return e;
+      expSnap[e.id] = e.status; return Object.assign({}, e, { status: 'paid', paidDate: date, lumpId: id, statusWas: e.status });
+    }); });
+  }
+  rec.expPrev = expSnap;
+  /* the register: "Sub Paid" / "Client Payment" for each one paid in full (same row "Mark paid" writes; upserted by srcInvId) */
+  lines.forEach(function(l){
+    var r = l.inv, x = ch[r.id]; if (!x.full || !r.pid) return;
+    var cl = side === 'receive';
+    reg({ srcInvId: r.id, pid: r.pid, payee: cl ? (r.client || 'Client') : r.sub, desc: (cl ? 'Client Payment' : 'Sub Paid') + ': ' + (r.desc || r.po || '—') + ' — part of ' + money(total) + ' ' + methodText(method).toLowerCase() + (p.checkNo ? ' #' + s(p.checkNo) : '') + (p.ref ? ' (' + s(p.ref) + ')' : ''),
+      po: r.po, amount: amtOf(r), amt: amtOf(r), category: cl ? 'Client Invoice' : 'Subcontractor', date: date, source: cl ? 'clientinvoice' : 'subinvoice', method: 'payment', direction: cl ? 'in' : 'out', isIncome: cl, status: 'paid', lumpId: id });
+  });
+  if (stmt) { regDel('SUB_' + stmt.id); regDel(stmt.id); }
+  var done = kvAdd([rec]);
+  return { ok: true, id: id, record: rec, saved: done };
+}
+
+/* ↩ undo: every invoice back the way it was (unless someone paid more on it since — then its status follows what is left) */
+function undo(id, why){
+  if (!canUse()) return { ok: false, error: 'Only admins and the office can undo payments.' };
+  var rec = list().filter(function(x){ return x.id === id; })[0];
+  if (!rec) return { ok: false, error: 'That payment is not found.' };
+  if (rec.voided) return { ok: false, error: 'That payment was already undone.' };
+  if (typeof W._setInvoices !== 'function') return { ok: false, error: 'Invoices are not ready on this screen yet.' };
+  var at = nowIso(), by = myName(), side = rec.side, NEW = {}, unpaid = {}, stmtIds = {};
+  /* worked out first, from what is on screen; then written in one go */
+  invoices().forEach(function(r){
+    if (r.statementLump === id) { var z = Object.assign({}, r); unsnap(z, r.statementPrev || { status: 'received' }); delete z.isStatement; delete z.statementLump; delete z.statementPrev; delete z.voidReason; z.updatedAt = at; NEW[r.id] = z; stmtIds[r.id] = r; return; }
+    var mine = arr(r.payments).filter(function(p){ return p.lumpId === id; }); if (!mine.length) return;
+    var y = Object.assign({}, r), rest = arr(r.payments).filter(function(p){ return p.lumpId !== id; }), prev = mine[0].prev || {}, wasFull = low(r.status) === 'paid' || r.paid === true;
+    var onlyPrior = rest.length && rest.every(function(p){ return p.source === 'prior'; }) && !prev.nPay;
+    if (onlyPrior || rest.length === (prev.nPay || 0)) {
+      unsnap(y, prev);
+      if (onlyPrior || !rest.length) delete y.payments; else y.payments = rest;
+    } else {
+      y.payments = rest;
+      var pd = r2(rest.reduce(function(a, p){ return a + payAmt(p); }, 0)), A = amtOf(r);
+      if (pd >= A - 0.004) { y.status = 'paid'; y.paid = true; y.openBalance = 0; y.amountPaid = A; }
+      else { delete y.paid; delete y.paidDate; delete y.payMethod; delete y.checkNo; y.amountPaid = pd; y.openBalance = r2(A - pd); y.status = pd > 0 ? 'partial' : (prev.status && prev.status !== 'paid' ? prev.status : (isBill(r) ? 'approved' : 'sent')); }
+    }
+    y.lumpIds = (Array.isArray(r.lumpIds) ? r.lumpIds : []).filter(function(k){ return k !== id; }); if (!y.lumpIds.length) delete y.lumpIds;
+    if (rec.qbKey && Array.isArray(r.qbKeys)) y.qbKeys = r.qbKeys.filter(function(k){ return k !== rec.qbKey; });
+    y.updatedAt = at; NEW[r.id] = y;
+    if (wasFull && !(low(y.status) === 'paid' || y.paid === true)) unpaid[r.id] = r;
+  });
+  setInv(function(L){ return L.map(function(r){ return r && NEW[r.id] ? NEW[r.id] : r; }); });
+  var expPrev = rec.expPrev || {};
+  /* the job's cost row: back to unpaid when its bill is no longer paid in full (whichever payment had marked it) */
+  setExp(function(E){ return E.map(function(e){
+    if (!e) return e;
+    var mine = e.lumpId === id || e.statementLump === id || (e.lumpId && e.subInvId && unpaid[e.subInvId]);
+    if (!mine) return e;
+    var z = Object.assign({}, e, { status: e.statusWas || expPrev[e.id] || 'approved' }); delete z.lumpId; delete z.statementLump; delete z.statusWas; delete z.voidReason; if (e.lumpId) delete z.paidDate; return z;
+  }); });
+  /* the register row goes back to what an unpaid one is */
+  var unpaidRow = function(r){ return { srcInvId: r.id, pid: r.pid, payee: r.sub, desc: 'Sub Invoice: ' + (r.desc || r.po || '—'), po: r.po, amount: amtOf(r), amt: amtOf(r), category: 'Subcontractor', date: s(r.date), source: 'subinvoice', method: 'invoice', direction: 'out', isIncome: false, status: 'pending', lumpId: '' }; };
+  Object.keys(stmtIds).forEach(function(k){ var r = stmtIds[k]; if (r.pid && amtOf(r) > 0) reg(unpaidRow(r)); });
+  Object.keys(unpaid).forEach(function(k){ var r = unpaid[k]; if (!r.pid) return; if (side === 'receive' || isClientInv(r)) regDel(r.id); else reg(unpaidRow(r)); });
+  var v = Object.assign({}, rec, { voided: true, voidedBy: by, voidedAt: at, voidWhy: s(why).slice(0, 300) }); delete v.fromInvoices;
+  var done = kvAdd([v]);
+  return { ok: true, id: id, restored: Object.keys(NEW).length, saved: done };
+}
+
+/* ═════════════ QuickBooks (read only): a BillPayment / ReceivePayment that lists several bills / invoices ═════════════ */
+function slug(k){ return s(k).replace(/[^A-Za-z0-9]+/g, '_').slice(0, 80); }
+function applyQb(q){
+  q = q || {};
+  var key = s(q.key), kind = low(q.kind), side = /bill/.test(kind) ? 'pay' : 'receive';
+  if (!key) return { ok: false, why: 'no QuickBooks key' };
+  var lid = 'LQB_' + slug(key);
+  if (list().some(function(x){ return (x.id === lid || (x.qbKey && x.qbKey === key)) && !x.voided; }) || invoices().some(function(r){ return Array.isArray(r.qbKeys) && r.qbKeys.indexOf(key) >= 0 && arr(r.payments).some(function(p){ return p.lumpId === lid; }); })) return { ok: true, already: true, id: lid };
+  if (list().some(function(x){ return (x.id === lid || (x.qbKey && x.qbKey === key)) && x.voided; })) return { ok: true, skipped: 'undone by a person — not applied again', id: lid };
+  var refs = arr(q.applied); if (refs.length < 1) return { ok: false, why: 'QuickBooks did not list which ' + (side === 'pay' ? 'bills' : 'invoices') + ' it pays' };
+  var kindOk = function(r){ return side === 'pay' ? isBill(r) : isClientInv(r); };
+  var pool = invoices().filter(function(r){ return kindOk(r) && sameParty(partyOf(r), q.name); });
+  if (!pool.length) pool = invoices().filter(function(r){ return kindOk(r) && looseParty(partyOf(r), q.name); });
+  var lines = [], miss = [];
+  refs.forEach(function(a){
+    var n = s(a.num), hit = pool.filter(function(r){ return n && (invNo(r) === n || s(r.qbNum) === n || s(r.invNum) === n); });
+    if (hit.length !== 1) { miss.push(n || '?'); return; }
+    var r = hit[0]; if (!isOpen(r)) return;   /* already paid in the CRM: nothing to do for that one */
+    lines.push({ invId: r.id, amount: Math.min(r2(a.amount != null ? a.amount : openOf(r)), openOf(r)) });
+  });
+  if (!lines.length) return { ok: !miss.length, why: miss.length ? 'no CRM record for #' + miss.join(', #') : 'all already paid in the CRM', missing: miss };
+  var applied = lines.reduce(function(a, l){ return a + c(l.amount); }, 0) / 100;
+  var res = save({ id: lid, side: side, party: q.name, amount: Math.max(r2(q.amount), applied), date: q.date, method: s(q.method) || 'check', checkNo: s(q.num), ref: 'QuickBooks ' + (side === 'pay' ? 'bill payment' : 'payment') + (q.num ? ' #' + q.num : ''),
+    lines: lines, keepCredit: true, source: 'quickbooks', qbKey: key, note: miss.length ? 'QuickBooks also listed #' + miss.join(', #') + ' — not in the CRM' : '' });
+  if (res.ok) res.missing = miss;
+  return res;
+}
+/* the QuickBooks CSV import: after it runs, its payment rows that name several bills / invoices are put on them */
+function hookQb(){
+  var f = W._gcQbCsvApply; if (typeof f !== 'function' || f.__lump) return;
+  var w = function(plan){
+    var out = f.apply(this, arguments);
+    return Promise.resolve(out).then(function(v){
+      try { arr(plan && plan.rows).forEach(function(row){ var r = row && row.rec; if (r && /^(payment|billpayment)$/.test(r.kind) && arr(r.applied).length) { var x = applyQb(r); if (x && x.ok && !x.already) row.lumpId = x.id; } }); } catch (e) {}
+      return v;
+    });
+  };
+  w.__lump = true; W._gcQbCsvApply = w;
+}
+SI(hookQb, 4000); ST(hookQb, 1200);
+
+/* ═════════════ the screen ═════════════ */
+var CSS = '#gc-lump{position:fixed;inset:0;z-index:100050;background:rgba(15,29,47,.55);display:flex;align-items:flex-start;justify-content:center;padding:18px 10px;overflow:auto;font:14px Inter,Arial,sans-serif;color:#0f172a}' +
+  '#gc-lump .lp{background:#fff;border-radius:14px;width:100%;max-width:1120px;padding:16px 18px;box-shadow:0 20px 60px rgba(0,0,0,.3)}' +
+  '#gc-lump h2{margin:0;font-size:19px}#gc-lump .sub{color:#64748b;font-size:12.5px}' +
+  '#gc-lump .row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin:10px 0}#gc-lump label{display:flex;flex-direction:column;gap:3px;font-size:12px;font-weight:700;color:#334155}' +
+  '#gc-lump input,#gc-lump select{border:1px solid #cbd5e1;border-radius:8px;padding:7px 9px;font-size:14px;min-height:34px;box-sizing:border-box;background:#fff;color:#0f172a}' +
+  '#gc-lump .b{border:1px solid #cbd5e1;background:#fff;border-radius:8px;padding:7px 13px;font-weight:700;cursor:pointer;min-height:34px;font-size:13.5px}' +
+  '#gc-lump .b.pri{background:#0F1D2F;color:#fff;border-color:#0F1D2F}#gc-lump .b.ok{background:#16a34a;color:#fff;border-color:#16a34a}#gc-lump .b:disabled{opacity:.45;cursor:not-allowed}' +
+  '#gc-lump .tabs .b.on{background:#0F1D2F;color:#fff}' +
+  '#gc-lump table{width:100%;border-collapse:collapse;font-size:13px}#gc-lump th{text-align:left;font-size:11px;text-transform:uppercase;color:#64748b;border-bottom:2px solid #e2e8f0;padding:6px}' +
+  '#gc-lump td{border-bottom:1px solid #f1f5f9;padding:6px;vertical-align:middle}#gc-lump td.n,#gc-lump th.n{text-align:right;white-space:nowrap}#gc-lump tr.on td{background:#f0fdf4}' +
+  '#gc-lump .ap{width:110px;text-align:right}#gc-lump .sum{position:sticky;bottom:0;background:#fff;border-top:2px solid #e2e8f0;padding:10px 0 2px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}' +
+  '#gc-lump .tot{font-weight:800;font-size:15px}#gc-lump .tot.bad{color:#b91c1c}#gc-lump .tot.good{color:#15803d}#gc-lump .tot.warn{color:#b45309}' +
+  '#gc-lump .pill{display:inline-block;border-radius:999px;padding:1px 8px;font-size:11.5px;font-weight:700;background:#f1f5f9;color:#334155}' +
+  '#gc-lump .warnbox{background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:8px 12px;margin:8px 0;font-size:13px}' +
+  '#gc-lump .msg{font-weight:700}#gc-lump .msg.bad{color:#b91c1c}' +
+  '.gc-lumpbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 10px;font:13px Inter,Arial,sans-serif}.gc-lumpbar button{border:1px solid #cbd5e1;background:#fff;color:#0f172a;border-radius:999px;padding:7px 14px;font-weight:700;cursor:pointer;min-height:36px}' +
+  '.gc-lumpbar .flag{border-color:#f59e0b;background:#fffbeb;color:#92400e}';
+function css(){ if (D.getElementById('gc-lump-css')) return; var st = D.createElement('style'); st.id = 'gc-lump-css'; st.textContent = CSS; (D.head || D.documentElement).appendChild(st); }
+var UI = null;
+function jobText(r){ var p = proj(r.pid); return p ? (s(p.name) + (p.autoPO ? ' · ' + p.autoPO : '')) : '<i style="color:#b45309">no job yet</i>'; }
+function qbBadge(r){ try { if (typeof W._gcQbBadge === 'function') { var h = W._gcQbBadge(r); if (h) return h; } } catch (e) {} var q = qbNo(r); return q ? '<span class="pill">QB #' + esc(q) + '</span>' : ''; }
+function partiesFor(side){
+  var by = {};
+  invoices().forEach(function(r){
+    if (!(side === 'pay' ? isBill(r) : isClientInv(r)) || !isOpen(r)) return;
+    var n = partyOf(r); if (!n) return; var k = normParty(n);
+    var g = by[k] || (by[k] = { key: k, name: n, n: 0, open: 0 }); g.n++; g.open = r2(g.open + openOf(r));
+  });
+  return Object.keys(by).map(function(k){ return by[k]; }).sort(function(a, b){ return a.name.localeCompare(b.name); });
+}
+function rowsFor(){
+  var u = UI, out = invoices().filter(function(r){ return (u.side === 'pay' ? isBill(r) : isClientInv(r)) && isOpen(r) && sameParty(partyOf(r), u.party) && r.id !== u.statementInvId; });
+  if (u.from) out = out.filter(function(r){ return !invDay(r) || invDay(r) >= u.from; });
+  if (u.to) out = out.filter(function(r){ return !invDay(r) || invDay(r) <= u.to; });
+  if (u.job) out = out.filter(function(r){ return s(r.pid) === u.job; });
+  return out.map(function(r){ return { id: r.id, open: openOf(r), date: invDay(r), inv: r }; }).sort(byOldest);
+}
+function open(opt){
+  opt = opt || {}; css();
+  var old = D.getElementById('gc-lump'); if (old) old.remove();
+  var ov = D.createElement('div'); ov.id = 'gc-lump'; ov.setAttribute('data-gc-keep', '1');
+  if (!canUse()) {
+    ov.innerHTML = '<div class="lp"><h2>💵 Lump-sum payments</h2><p class="msg bad" data-lp="refused">Only admins and the office can record or undo payments.</p><button type="button" class="b" data-lp="close">Close</button></div>';
+    ov.addEventListener('click', function(e){ if (e.target === ov || (e.target.getAttribute && e.target.getAttribute('data-lp') === 'close')) ov.remove(); });
+    D.body.appendChild(ov); return { refused: true };
+  }
+  var stmt = opt.statementInvId ? invoices().filter(function(r){ return r.id === opt.statementInvId; })[0] : null;
+  UI = { ov: ov, side: opt.side === 'receive' ? 'receive' : 'pay', party: s(opt.party || (stmt && partyOf(stmt))), from: '', to: '', job: '', amount: opt.amount != null ? r2(opt.amount) : (stmt ? amtOf(stmt) : ''),
+    date: s(opt.date) || today(), method: s(opt.method) || (opt.side === 'receive' ? 'check' : 'check'), checkNo: s(opt.checkNo), ref: s(opt.ref), stmtNo: s(opt.stmtNo || (stmt && invNo(stmt))), note: '', file: null,
+    sel: {}, credit: false, statementInvId: stmt ? stmt.id : '', view: opt.view || 'new', msg: '' };
+  ov.addEventListener('click', onClick); ov.addEventListener('input', onInput); ov.addEventListener('change', onChange);
+  D.body.appendChild(ov); draw();
+  if (Array.isArray(opt.preselect)) { opt.preselect.forEach(function(id){ var r = invoices().filter(function(x){ return x.id === id; })[0]; if (r && isOpen(r)) UI.sel[id] = openOf(r); }); if (UI.amount === '') UI.amount = r2(tot()); draw(); }
+  if (opt.autoApply && UI.amount) autoApply();
+  return { ok: true };
+}
+function tot(){ var a = 0; Object.keys(UI.sel).forEach(function(k){ a += c(UI.sel[k]); }); return a / 100; }
+function autoApply(){
+  var R = rowsFor(), al = allocate(UI.amount, R, { mode: 'oldest' }); UI.sel = {};
+  al.lines.forEach(function(l){ UI.sel[l.id] = l.apply; }); draw();
+}
+function state(){
+  var T = r2(UI.amount), A = r2(tot()), d = c(T) - c(A);
+  return { total: T, applied: A, left: Math.max(0, d) / 100, over: Math.max(0, -d) / 100, balanced: d === 0, ok: A > 0 && d >= 0 && (d === 0 || UI.credit) && T > 0 };
+}
+function summaryHtml(){
+  var st = state(), cls = st.over > 0 ? 'bad' : (st.balanced ? 'good' : 'warn');
+  var t = 'Applied ' + money(st.applied) + ' of ' + money(st.total) + ' — ' + (st.over > 0 ? 'over by ' + money(st.over) : (st.balanced ? '✓ balanced' : money(st.left) + ' left'));
+  return '<span class="tot ' + cls + '" data-lp="sum">' + t + '</span>' +
+    (st.left > 0 && st.applied > 0 ? '<label style="flex-direction:row;align-items:center;gap:6px;font-weight:600"><input type="checkbox" data-lp="credit"' + (UI.credit ? ' checked' : '') + '> keep the ' + money(st.left) + ' as a credit / unapplied note</label>' : '') +
+    '<span style="flex:1"></span><span class="msg' + (/^✓/.test(UI.msg) ? '' : ' bad') + '" data-lp="msg">' + esc(UI.msg) + '</span>' +
+    '<button type="button" class="b ok" data-lp="save"' + (st.ok ? '' : ' disabled') + '>💾 Save payment</button>';
+}
+function draw(){
+  var u = UI, ov = u.ov, pay = u.side === 'pay';
+  if (u.view === 'list') return drawList();
+  if (u.view === 'show') return drawShow(u.showId);
+  var P = partiesFor(u.side), R = u.party ? rowsFor() : [], jobs = {};
+  invoices().forEach(function(r){ if ((pay ? isBill(r) : isClientInv(r)) && isOpen(r) && u.party && sameParty(partyOf(r), u.party) && r.pid) jobs[r.pid] = 1; });
+  var stmt = u.statementInvId ? invoices().filter(function(r){ return r.id === u.statementInvId; })[0] : null;
+  var h = '<div class="lp"><div style="display:flex;gap:10px;align-items:center"><h2 style="flex:1">' + (pay ? '💵 Pay several invoices at once' : '💰 Record one payment for several invoices') + '</h2>' +
+    '<span class="tabs"><button type="button" class="b' + (pay ? ' on' : '') + '" data-lp="side" data-v="pay">💵 We pay (bills)</button> <button type="button" class="b' + (!pay ? ' on' : '') + '" data-lp="side" data-v="receive">💰 We get paid</button></span> ' +
+    (u.party && W._gcVendorAcct ? '<button type="button" class="b" data-lp="acct">📒 Account</button> ' : '') + '<button type="button" class="b" data-lp="list">🗂 Payments made</button> <button type="button" class="b" data-lp="close">✕</button></div>' +
+    '<div class="sub">' + (pay ? 'A supplier or sub sent one statement / one big invoice for the month: record the ONE payment and mark which job bills it pays.' : 'A customer, GC or property manager paid several of our invoices with one check: record it once and mark each invoice.') + '</div>';
+  if (stmt) h += '<div class="warnbox" data-lp="stmtbanner">🔗 <b>Statement ' + esc(invNo(stmt) || stmt.id) + ' — ' + money(amtOf(stmt)) + '</b> from ' + esc(partyOf(stmt)) + ' is treated as a statement for several jobs: on save it is set aside (not a cost) and the payment goes on the per-job bills below, so nothing is counted twice.</div>';
+  h += '<div class="row"><label style="min-width:280px">' + (pay ? 'Vendor / sub' : 'Customer / GC') + '<select data-lp="party"><option value="">— pick —</option>' +
+    P.map(function(g){ return '<option value="' + esc(g.name) + '"' + (u.party && sameParty(g.name, u.party) ? ' selected' : '') + '>' + esc(g.name) + ' — ' + g.n + ' open · ' + money(g.open) + '</option>'; }).join('') +
+    (u.party && !P.some(function(g){ return sameParty(g.name, u.party); }) ? '<option selected value="' + esc(u.party) + '">' + esc(u.party) + ' — nothing open</option>' : '') + '</select></label>' +
+    '<label>From<input type="date" data-lp="from" value="' + esc(u.from) + '"></label><label>To<input type="date" data-lp="to" value="' + esc(u.to) + '"></label>' +
+    '<label style="min-width:180px">Job<select data-lp="job"><option value="">All jobs</option>' + Object.keys(jobs).map(function(pid){ var p = proj(pid) || {}; return '<option value="' + esc(pid) + '"' + (u.job === pid ? ' selected' : '') + '>' + esc(s(p.name) || pid) + '</option>'; }).join('') + '</select></label></div>';
+  h += '<div class="row" style="background:#f8fafc;border-radius:10px;padding:8px 10px">' +
+    '<label>Payment amount<input data-lp="amount" inputmode="decimal" style="width:130px;font-weight:800" placeholder="0.00" value="' + esc(u.amount === '' ? '' : u.amount) + '"></label>' +
+    '<label>Date<input type="date" data-lp="date" value="' + esc(u.date) + '"></label>' +
+    '<label>Method<select data-lp="method">' + ['check', 'ach', 'card', 'wire', 'cash', 'other'].map(function(m){ return '<option value="' + m + '"' + (u.method === m ? ' selected' : '') + '>' + methodText(m) + '</option>'; }).join('') + '</select></label>' +
+    '<label>Check # / confirmation<input data-lp="checkNo" style="width:130px" value="' + esc(u.checkNo) + '"></label>' +
+    '<label>Reference<input data-lp="ref" style="width:140px" value="' + esc(u.ref) + '"></label>' +
+    '<label>Statement #<input data-lp="stmtNo" style="width:110px" value="' + esc(u.stmtNo) + '"></label>' +
+    '<label>Statement PDF <span style="font-weight:400">(optional)</span><input type="file" data-lp="file" accept="application/pdf,image/*,.csv"></label>' +
+    '<label style="flex:1;min-width:160px">Note<input data-lp="note" value="' + esc(u.note) + '"></label></div>';
+  if (!u.party) h += '<p class="sub" data-lp="pickfirst">Pick the ' + (pay ? 'vendor / sub' : 'customer') + ' to see every open ' + (pay ? 'bill' : 'invoice') + ' of theirs, on every job.</p>';
+  else {
+    h += '<div class="row" style="margin:6px 0"><button type="button" class="b pri" data-lp="auto">⚡ Apply oldest first</button><button type="button" class="b" data-lp="all">Tick all</button><button type="button" class="b" data-lp="clear">Clear</button>' +
+      '<span class="sub">' + R.length + ' open ' + (pay ? 'bill' : 'invoice') + (R.length === 1 ? '' : 's') + ' · ' + money(R.reduce(function(a, x){ return a + x.open; }, 0)) + ' open in all — tick exactly which, or type an amount on one for a partial payment.</span></div>';
+    h += '<div style="overflow-x:auto"><table><thead><tr><th></th><th>Job</th><th>Invoice #</th><th>QB #</th><th>Date</th><th class="n">Amount</th><th class="n">Open</th><th>Status</th><th class="n">Apply</th></tr></thead><tbody>' +
+      (R.length ? R.map(function(x){ var r = x.inv, on = x.id in u.sel;
+        return '<tr data-id="' + esc(x.id) + '"' + (on ? ' class="on"' : '') + '><td><input type="checkbox" data-lp="tick"' + (on ? ' checked' : '') + '></td><td>' + jobText(r) + '</td><td>' + esc(invNo(r) || '—') + (r.desc ? '<div class="sub">' + esc(s(r.desc).slice(0, 60)) + '</div>' : '') + '</td><td>' + qbBadge(r) + '</td><td>' + esc(invDay(r)) + '</td>' +
+          '<td class="n">' + money(amtOf(r)) + '</td><td class="n">' + money(x.open) + '</td><td><span class="pill">' + esc(r.status || 'open') + '</span></td>' +
+          '<td class="n"><input class="ap" data-lp="ap" inputmode="decimal" value="' + (on ? esc(r2(u.sel[x.id]).toFixed(2)) : '') + '" placeholder="—"></td></tr>'; }).join('') : '<tr><td colspan="9" class="sub">Nothing open for this ' + (pay ? 'vendor' : 'customer') + (u.from || u.to || u.job ? ' with these filters' : '') + '.</td></tr>') +
+      '</tbody></table></div>';
+  }
+  h += '<div class="sum" data-lp="sumbar">' + summaryHtml() + '</div></div>';
+  UI.ov.innerHTML = h;
+}
+function repaintSum(){ var b = UI.ov.querySelector('[data-lp="sumbar"]'); if (b) b.innerHTML = summaryHtml(); }
+function drawList(){
+  var L = list(), pay = UI.side === 'pay';
+  var h = '<div class="lp"><div style="display:flex;gap:10px;align-items:center"><h2 style="flex:1">🗂 Lump-sum payments</h2><button type="button" class="b" data-lp="new">＋ New payment</button> <button type="button" class="b" data-lp="close">✕</button></div>' +
+    '<div class="sub">Each one lists every job and invoice it paid. ↩ Undo puts each invoice back the way it was.</div><div style="overflow-x:auto"><table><thead><tr><th>Date</th><th></th><th>Paid to / by</th><th class="n">Amount</th><th>Method</th><th>Invoices</th><th></th></tr></thead><tbody>' +
+    (L.length ? L.map(function(x){ return '<tr data-lid="' + esc(x.id) + '"' + (x.voided ? ' style="opacity:.5"' : '') + '><td>' + esc(x.date) + '</td><td>' + (x.side === 'receive' ? '💰 in' : '💵 out') + '</td><td>' + esc(x.party) + (x.source === 'quickbooks' ? ' <span class="pill">QuickBooks</span>' : '') + (x.voided ? ' <span class="pill">undone</span>' : '') + '</td><td class="n">' + money(x.amount) + '</td><td>' + esc(methodText(x.method)) + (x.checkNo ? ' #' + esc(x.checkNo) : '') + '</td><td>' + arr(x.applied).length + (x.credit > 0 ? ' · credit ' + money(x.credit) : '') + '</td><td><button type="button" class="b" data-lp="show">Open</button></td></tr>'; }).join('') : '<tr><td colspan="7" class="sub">None yet.</td></tr>') +
+    '</tbody></table></div></div>';
+  UI.ov.innerHTML = h; void pay;
+}
+function drawShow(id){
+  var x = list().filter(function(r){ return r.id === id; })[0]; if (!x) { UI.view = 'list'; return drawList(); }
+  var h = '<div class="lp" data-lp="record"><div style="display:flex;gap:10px;align-items:center"><h2 style="flex:1">' + (x.side === 'receive' ? '💰 ' : '💵 ') + money(x.amount) + ' — ' + esc(x.party) + '</h2><button type="button" class="b" data-lp="list">← All payments</button> <button type="button" class="b" data-lp="close">✕</button></div>' +
+    '<div class="sub">' + esc(x.date) + ' · ' + esc(methodText(x.method)) + (x.checkNo ? ' #' + esc(x.checkNo) : '') + (x.ref ? ' · ' + esc(x.ref) : '') + (x.stmtNo ? ' · statement ' + esc(x.stmtNo) : '') + ' · by ' + esc(x.by) + (x.voided ? ' · <b>undone</b> by ' + esc(x.voidedBy) + ' ' + esc(s(x.voidedAt).slice(0, 10)) : '') + '</div>' +
+    (x.note ? '<p>' + esc(x.note) + '</p>' : '') + (x.file && x.file.ref ? '<p><button type="button" class="b" data-lp="file-open">📄 ' + esc(x.file.name || 'Statement') + '</button></p>' : '') +
+    '<div style="overflow-x:auto"><table><thead><tr><th>Job</th><th>Invoice #</th><th>QB #</th><th>Invoice date</th><th class="n">Invoice</th><th class="n">Applied</th><th>Now</th></tr></thead><tbody>' +
+    arr(x.applied).map(function(a){ var p = proj(a.pid) || {}; return '<tr><td>' + esc(a.job || p.name || '—') + (a.po ? ' · ' + esc(a.po) : '') + '</td><td>' + esc(a.invNum || a.invId) + '</td><td>' + esc(a.qbNum || '') + '</td><td>' + esc(a.invDate || '') + '</td><td class="n">' + money(a.invAmount) + '</td><td class="n">' + money(a.amount) + '</td><td>' + (a.full ? 'paid' : 'partial — ' + money(a.openAfter) + ' still open') + '</td></tr>'; }).join('') +
+    '</tbody></table></div>' + (x.credit > 0 ? '<p class="warnbox">' + money(x.credit) + ' was not applied — kept as a credit / unapplied.</p>' : '') +
+    (x.statementInvId ? '<p class="sub">Statement bill ' + esc(x.statementInvId) + ' was set aside (not counted as a cost).</p>' : '') +
+    (!x.voided ? '<div class="row"><button type="button" class="b" data-lp="undo" data-lid="' + esc(x.id) + '">↩ Undo this payment</button><span class="msg bad" data-lp="msg"></span></div>' : '') + '</div>';
+  UI.ov.innerHTML = h;
+}
+function onClick(e){
+  var t = e.target, a = t && t.getAttribute ? t.getAttribute('data-lp') : null, u = UI;
+  if (t === u.ov || a === 'close') { u.ov.remove(); UI = null; return; }
+  if (!a) return;
+  var tr = t.closest ? t.closest('tr') : null;
+  if (a === 'side') { u.side = t.getAttribute('data-v'); u.party = ''; u.sel = {}; u.job = ''; u.statementInvId = ''; draw(); return; }
+  if (a === 'list') { u.view = 'list'; refresh().then(function(){ if (UI === u && u.view === 'list') draw(); }); draw(); return; }
+  if (a === 'new') { u.view = 'new'; draw(); return; }
+  if (a === 'acct') { var pa = u.party, sd = u.side; u.ov.remove(); UI = null; if (W._gcVendorAcct) W._gcVendorAcct.open(pa, sd); return; }
+  if (a === 'show') { u.view = 'show'; u.showId = tr.getAttribute('data-lid'); draw(); return; }
+  if (a === 'file-open') { var x = list().filter(function(r){ return r.id === u.showId; })[0]; try { if (x && x.file && typeof W._gcOpenRef === 'function') W._gcOpenRef(x.file.ref, x.file.name); } catch (er) {} return; }
+  if (a === 'undo') {
+    if (!W.confirm('Undo this payment? Each invoice it paid goes back to what it was.')) return;
+    var r = undo(t.getAttribute('data-lid'));
+    if (!r.ok) { var m = u.ov.querySelector('[data-lp="msg"]'); if (m) m.textContent = r.error; return; }
+    toast('↩ Payment undone — ' + r.restored + ' invoice(s) put back.'); ST(draw, 50); return;
+  }
+  if (a === 'auto') { autoApply(); return; }
+  if (a === 'clear') { u.sel = {}; draw(); return; }
+  if (a === 'all') { rowsFor().forEach(function(x){ u.sel[x.id] = x.open; }); draw(); return; }
+  if (a === 'tick') {
+    var id = tr.getAttribute('data-id'), row = rowsFor().filter(function(x){ return x.id === id; })[0]; if (!row) return;
+    if (t.checked) { var room = c(u.amount) - c(tot()); u.sel[id] = room > 0 && room < c(row.open) ? room / 100 : row.open; } else delete u.sel[id];
+    draw(); return;
+  }
+  if (a === 'save') { doSave(); return; }
+}
+function onInput(e){
+  var t = e.target, a = t.getAttribute && t.getAttribute('data-lp'), u = UI; if (!a) return;
+  if (a === 'amount') { u.amount = t.value === '' ? '' : r2(t.value); u.msg = ''; repaintSum(); return; }
+  if (a === 'ap') {
+    var tr = t.closest('tr'), id = tr.getAttribute('data-id'), row = rowsFor().filter(function(x){ return x.id === id; })[0], v = s(t.value);
+    if (v === '') delete u.sel[id]; else u.sel[id] = r2(v);
+    u.msg = row && c(v) > c(row.open) ? (invNo(row.inv) || id) + ': more than its open ' + money(row.open) : '';
+    tr.className = id in u.sel ? 'on' : ''; var ck = tr.querySelector('[data-lp="tick"]'); if (ck) ck.checked = id in u.sel; repaintSum(); return;
+  }
+  if (/^(checkNo|ref|stmtNo|note)$/.test(a)) { u[a] = t.value; return; }
+}
+function onChange(e){
+  var t = e.target, a = t.getAttribute && t.getAttribute('data-lp'), u = UI; if (!a) return;
+  if (a === 'party') { u.party = t.value; u.sel = {}; u.job = ''; draw(); return; }
+  if (a === 'from' || a === 'to' || a === 'job') { u[a] = t.value; var keep = {}; rowsFor().forEach(function(x){ if (x.id in u.sel) keep[x.id] = u.sel[x.id]; }); u.sel = keep; draw(); return; }
+  if (a === 'date' || a === 'method') { u[a] = t.value; return; }
+  if (a === 'credit') { u.credit = t.checked; repaintSum(); return; }
+  if (a === 'file') { u.fileObj = t.files && t.files[0] || null; return; }
+}
+function doSave(){
+  var u = UI, btn = u.ov.querySelector('[data-lp="save"]'); if (btn) btn.disabled = true;
+  var lines = Object.keys(u.sel).map(function(id){ return { invId: id, amount: u.sel[id] }; });
+  var go = function(file){
+    var r = save({ side: u.side, party: u.party, amount: u.amount, date: u.date, method: u.method, checkNo: u.checkNo, ref: u.ref, stmtNo: u.stmtNo, note: u.note, file: file, lines: lines, keepCredit: u.credit, statementInvId: u.statementInvId });
+    if (!r.ok) { u.msg = r.error; repaintSum(); return; }
+    toast('✓ ' + money(u.amount) + ' saved — ' + r.record.applied.length + ' invoice(s) marked ' + (r.record.applied.every(function(x){ return x.full; }) ? 'paid' : 'paid / partly paid') + '.');
+    u.view = 'show'; u.showId = r.id; u.sel = {}; u.statementInvId = ''; ST(draw, 60);
+  };
+  var f = u.fileObj;
+  if (f && typeof W._gcStoreFile === 'function') Promise.resolve(W._gcStoreFile(f, { name: f.name })).then(function(m){ go(m && m.ref ? { ref: m.ref, name: s(m.name || f.name), type: s(m.type), size: m.size || 0 } : null); }, function(){ go(null); });
+  else go(null);
+}
+function toast(msg){ try { var t = D.createElement('div'); t.setAttribute('data-gc-keep', '1'); t.textContent = msg; t.style.cssText = 'position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:#16a34a;color:#fff;padding:11px 18px;border-radius:10px;z-index:2147483200;font:700 14px Inter,Arial,sans-serif;max-width:90vw;text-align:center'; D.body.appendChild(t); ST(function(){ try { t.remove(); } catch (e) {} }, 3600); } catch (e) {} }
+
+/* ═════════════ the buttons (Invoices / Sub Invoices, Accounting) + the statement flag ═════════════ */
+function flagSheet(){
+  var F = dupStatements(invoices()); css();
+  var old = D.getElementById('gc-lump'); if (old) old.remove();
+  var ov = D.createElement('div'); ov.id = 'gc-lump'; ov.setAttribute('data-gc-keep', '1');
+  ov.innerHTML = '<div class="lp"><div style="display:flex;gap:10px;align-items:center"><h2 style="flex:1">⚠ Bills that look like a monthly statement</h2><button type="button" class="b" data-lp="close">✕</button></div>' +
+    '<div class="sub">Each of these equals bills already in the CRM for the same vendor — counting both would put the cost on the books twice.</div>' +
+    (F.length ? F.map(function(f){ var r = f.inv; return '<div class="warnbox" data-sid="' + esc(f.id) + '"><b>' + esc(f.party) + ' — ' + esc(invNo(r) || r.id) + ' — ' + money(f.amount) + '</b> (' + esc(invDay(r)) + (r.pid ? ', on ' + esc((proj(r.pid) || {}).name || r.pid) : ', no job') + ')<div class="sub">' + esc(f.why) + '</div>' +
+      '<div class="row" style="margin:6px 0 0"><button type="button" class="b pri" data-lp="stmt">🔗 This is a statement for several jobs</button><button type="button" class="b" data-lp="notstmt">It is a real separate bill</button></div></div>'; }).join('') : '<p class="sub">Nothing flagged.</p>') + '</div>';
+  ov.addEventListener('click', function(e){
+    var t = e.target, a = t.getAttribute && t.getAttribute('data-lp');
+    if (t === ov || a === 'close') { ov.remove(); return; }
+    var box = t.closest && t.closest('[data-sid]'); if (!box) return; var id = box.getAttribute('data-sid'), f = F.filter(function(x){ return x.id === id; })[0]; if (!f) return;
+    if (a === 'stmt') { ov.remove(); openStatement(id); }
+    if (a === 'notstmt') { if (!canUse()) return; setInv(function(L){ return L.map(function(r){ return r && r.id === id ? Object.assign({}, r, { notStatement: true, updatedAt: nowIso() }) : r; }); }); box.remove(); }
+  });
+  D.body.appendChild(ov);
+}
+function openStatement(invId){
+  var r = invoices().filter(function(x){ return x.id === invId; })[0]; if (!r) return { ok: false };
+  var f = dupStatements(invoices()).filter(function(x){ return x.id === invId; })[0];
+  open({ side: 'pay', party: partyOf(r), amount: amtOf(r), stmtNo: invNo(r), ref: 'Statement ' + (invNo(r) || ''), statementInvId: invId });
+  if (f && UI) { f.jobs.forEach(function(id){ var x = invoices().filter(function(y){ return y.id === id; })[0]; if (x) UI.sel[id] = openOf(x); }); draw(); }
+  return { ok: true };
+}
+function bar(){
+  var b = D.createElement('div'); b.className = 'gc-lumpbar'; b.setAttribute('data-gc-keep', '1');
+  b.innerHTML = '<button type="button" data-lump="pay">💵 Pay several invoices at once</button><button type="button" data-lump="receive">💰 Record one payment for several invoices</button><button type="button" data-lump="list">🗂 Lump-sum payments</button><button type="button" data-lump="accts">📒 Vendor accounts</button><button type="button" data-lump="week">🧾 This week\'s supplier checks</button><button type="button" class="flag" data-lump="flags" style="display:none"></button>';
+  return b;
+}
+var FLAGN = -1, FSIG = '', FN = 0;
+/* the flag is worked out again only when the bills change */
+function flagCount(){
+  var I = invoices(), sig = I.length + '|' + I.reduce(function(a, r){ return a + (isBill(r) && isOpen(r) ? c(openOf(r)) + s(r.id).length : 0); }, 0) + '|' + I.filter(function(r){ return r.notStatement; }).length;
+  if (sig !== FSIG) { FSIG = sig; FN = dupStatements(I).length; }
+  return FN;
+}
+function paint(){
+  try {
+    if (!canUse()) { [].forEach.call(D.querySelectorAll('.gc-lumpbar'), function(x){ x.remove(); }); return; }
+    var hosts = [];
+    /* the Invoices page (Sub Invoices / Supplier invoices / client invoices tabs) */
+    [].forEach.call(D.querySelectorAll('h1'), function(h){ if (s(h.textContent) === 'Invoices') { var p = h.nextElementSibling; if (p && /PO# required/.test(p.textContent)) hosts.push(h.parentElement.parentElement); } });
+    /* Accounting (the expense center tab row) */
+    var tab = D.querySelector('.gc-exc-tab'); if (tab && tab.parentElement) hosts.push(tab.parentElement);
+    hosts.forEach(function(h){
+      if (!h || !h.parentElement) return;
+      var nx = h.nextElementSibling; if (nx && nx.classList && nx.classList.contains('gc-lumpbar')) return;
+      h.parentElement.insertBefore(bar(), h.nextSibling);
+    });
+    var n = D.querySelector('.gc-lumpbar') ? flagCount() : 0;
+    { FLAGN = n; [].forEach.call(D.querySelectorAll('.gc-lumpbar [data-lump="flags"]'), function(b){ b.style.display = n ? '' : 'none'; b.textContent = '⚠ ' + n + ' bill' + (n === 1 ? '' : 's') + ' look like a statement for several jobs'; }); }
+  } catch (e) {}
+}
+D.addEventListener('click', function(e){
+  var t = e.target && e.target.closest ? e.target.closest('[data-lump]') : null; if (!t) return;
+  var k = t.getAttribute('data-lump');
+  if (k === 'pay' || k === 'receive') open({ side: k, party: t.getAttribute('data-party') || '' });
+  else if (k === 'list') open({ view: 'list' });
+  else if (k === 'flags') flagSheet();
+  else if (k === 'stmt') openStatement(t.getAttribute('data-inv'));
+  else if (k === 'accts' && W._gcVendorAcct) W._gcVendorAcct.list();
+  else if (k === 'week' && W._gcVendorAcct) W._gcVendorAcct.week();
+  else if (k === 'acct' && W._gcVendorAcct) W._gcVendorAcct.open(t.getAttribute('data-party'), t.getAttribute('data-side') || 'pay');
+});
+SI(paint, 2000); ST(paint, 900); ST(refresh, 9000);
+
+W._gcLumpSum = { open: open, openStatement: openStatement, flags: flagSheet, save: save, undo: undo, list: list, refresh: refresh, applyQb: applyQb, canUse: canUse, paint: paint,
+  core: { allocate: allocate, openOf: openOf, paidOf: paidOf, payAmt: payAmt, isOpen: isOpen, isBill: isBill, isClientInv: isClientInv, amtOf: amtOf, invDay: invDay, invNo: invNo, qbNo: qbNo, dupStatements: dupStatements, sameParty: sameParty, looseParty: looseParty, normParty: normParty, partyOf: partyOf, methodText: methodText, css: css } };
+try { console.log('[GC] patch LUMPSUM: 💵 pay several invoices at once / 💰 one payment for several invoices — _gcLumpSum.open({side:"pay"|"receive"})'); } catch (e) {}
+})(window, document);
+</script>
+<script id="gc-patch-lumpacct">/*__GC_PATCH_LUMPACCT__ (owner 11/13, with LUMPSUM):
+  1. RUNNING ACCOUNTS — "running account number for some companies — when we pay a monthly payment it needs to be written down in
+     there so it's running invoices and open invoices". 📒 Account for each vendor / supplier (and customer): their account # with us
+     and pay terms (kept on the vendor record — the vendors list syncs to everyone), every invoice (date, #, QB #, job + address, amount,
+     paid, open, due, pays on, "due in N days"), every payment (date, amount, check / ACH #, which invoices it covered — the LUMPSUM
+     records + single payments on the invoices), the running balance, the open total, aging (current / 31-60 / 61-90 / 90+), ⬇ CSV and
+     🖨 print. 🔎 Reconcile with their statement (PDF / CSV / pasted): their invoices we do not have, ours missing from theirs, amounts
+     that differ.
+  2. NET 30 — "invoices from companies to be paid 30 days after we get the invoice, on the payroll for approval, so we won't send huge
+     checks all the time". Built on the existing sub pay terms (_gcSubTerms / _gcSubPayDate / gc_sub_pay_terms): a SUPPLIER's bill with
+     no terms of its own is Net 30 (the vendor's terms when set: Net 15 / 30 / 45 …); the date is received + N days, on that week's
+     Friday pay day. Subs keep their rule (in by Wednesday → Friday) unless their terms say otherwise. They land in the same pay lists
+     (Friday check run, 💵 Everyone we owe) by that date and still need their normal approval. ⏸ Hold keeps one off the pay lists;
+     ⚡ Pay early / 📅 date use the existing tools. 🧾 This week's supplier checks: ONE check per vendor for the bills due this week →
+     the LUMPSUM screen with them ticked (so the one check is written down against each job).
+  API: window._gcVendorAcct = { open(name, side), list(), week(), ledger(name, side), reconcile(text, name), setVendor(name, {accountNo, payTerms}),
+       hold(invId, on), termsFor(inv), netPayDate(inv) } */
+(function(W, D){
+'use strict';
+if (W.__GC_PATCH_LUMPACCT__) return; W.__GC_PATCH_LUMPACCT__ = true;
+var ST = function(f, ms){ return (W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout).call(W, f, ms || 0); };
+var SI = function(f, ms){ return (W.__GC_NATIVE_SETINTERVAL__ || W.setInterval).call(W, f, ms); };
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function num(v){ var n = parseFloat(String(v == null ? '' : v).replace(/[$,\s]/g, '')); return isFinite(n) ? n : 0; }
+function r2(v){ return Math.round(num(v) * 100) / 100; }
+function c(v){ return Math.round(num(v) * 100); }
+function arr(v){ return Array.isArray(v) ? v.filter(function(x){ return x && typeof x === 'object'; }) : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(ch){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]; }); }
+function money(n){ var v = r2(n); return (v < 0 ? '-$' : '$') + Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function pad(n){ return (n < 10 ? '0' : '') + n; }
+function ymd(d){ return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+function today(){ return ymd(new Date()); }
+function dt(x){ var m = /^(\d{4})-(\d\d)-(\d\d)/.exec(s(x)); return m ? new Date(+m[1], +m[2] - 1, +m[3], 12) : null; }
+function plus(x, n){ var d = dt(x) || dt(today()); d.setDate(d.getDate() + n); return ymd(d); }
+function days(a, b){ var x = dt(a), y = dt(b); return x && y ? Math.round((y - x) / 864e5) : 0; }
+function crm(){ return W._crm || {}; }
+function invoices(){ var a = arr(crm().invoices); return a.length ? a : arr(crm().invs); }
+function proj(pid){ return arr(crm().projects).filter(function(p){ return String(p.id) === String(pid); })[0] || null; }
+function L(){ return (W._gcLumpSum && W._gcLumpSum.core) || null; }
+function canUse(){ try { return !!(W._gcLumpSum && W._gcLumpSum.canUse()); } catch (e) { return false; } }
+
+/* ═════════ vendor record: account # + terms (vendors list, synced) ═════════ */
+var TERMS = { net15: 'Net 15', net30: 'Net 30', net45: 'Net 45', net60: 'Net 60', friday: 'Paid Friday (sub rule)', thisfriday: 'Always this Friday', nextpayroll: 'Next pay run', ondemand: 'On receipt' };
+function vendorRec(name){
+  var k = L() ? L().normParty(name) : low(name); if (!k) return null;
+  var pool = arr(crm().vendors).concat(arr(crm().subs));
+  return pool.filter(function(v){ return L().normParty(v.name || v.company) === k; })[0] || null;
+}
+function setVendor(name, patch){
+  if (!canUse()) return { ok: false, error: 'Only admins and the office can change a vendor\'s account.' };
+  var nm = s(name).replace(/&amp;/g, '&'); if (!nm) return { ok: false, error: 'No vendor.' };
+  var now = new Date().toISOString(), P = {};
+  if ('accountNo' in patch) P.accountNo = s(patch.accountNo).slice(0, 60);
+  if ('payTerms' in patch) { var t = low(patch.payTerms); if (t && !TERMS[t]) return { ok: false, error: 'Unknown terms.' }; P.payTerms = t; P.payTermsSetAt = now; }
+  var V = arr(crm().vendors).slice(), i = V.findIndex(function(x){ return L().normParty(x.name || x.company) === L().normParty(nm); });
+  if (i > -1) V[i] = Object.assign({}, V[i], P, { updatedAt: now });
+  else {
+    var sb = arr(crm().subs).filter(function(x){ return L().normParty(x.name || x.company) === L().normParty(nm); })[0];
+    if (sb && typeof W._setSubs === 'function') {   /* a sub's terms live on the sub */
+      W._setSubs(function(S){ return arr(S).map(function(x){ return x === sb || x.id === sb.id ? Object.assign({}, x, P, { updatedAt: now }) : x; }); });
+      try { if (W._gcApplySync) W._gcApplySync('subs', crm().subs); } catch (e) {}
+      afterTerms(nm, P.payTerms); return { ok: true };
+    }
+    V.push(Object.assign({ id: 'V' + Date.now().toString(36), name: nm, addedFrom: 'Vendor account', createdAt: now, updatedAt: now }, P));
+  }
+  if (typeof W._setVendors === 'function') W._setVendors(V); else if (W._crm) W._crm.vendors = V;
+  try { if (W._gcApplySync) W._gcApplySync('vendors', V); } catch (e) {}
+  afterTerms(nm, P.payTerms);
+  return { ok: true };
+}
+function afterTerms(nm, t){
+  if (t === undefined) return;
+  try { if (t && typeof W._gcSetSubDefaultTerms === 'function') W._gcSetSubDefaultTerms(nm, t); } catch (e) {}
+  restamp();
+}
+
+/* ═════════ NET 30 on the existing sub pay terms ═════════ */
+function isSupplier(iv){ try { if (typeof W._gcIsSupplierInv === 'function') return !!W._gcIsSupplierInv(iv); } catch (e) {} return low(iv && iv.type) === 'supplier'; }
+function explicitDefault(name){ try { var d = JSON.parse(localStorage.getItem('gc_sub_pay_terms') || '{}') || {}; return d[low(name)] || ''; } catch (e) { return ''; } }
+/* the terms one bill is on: its own (set by a person) → the vendor's (vendor record, then this computer's remembered default) → a
+   supplier is Net 30 → null (the existing sub rule decides) */
+function termsFor(iv){
+  if (!iv) return null;
+  if (iv.termsSetBy && TERMS[low(iv.payTerms)]) return low(iv.payTerms);
+  var name = iv.sub || iv.vendor || iv.payee, v = vendorRec(name);
+  if (v && TERMS[low(v.payTerms)]) return low(v.payTerms);
+  var d = explicitDefault(name); if (TERMS[d]) return d;
+  if (isSupplier(iv)) return 'net30';
+  return null;
+}
+function payDay(){ try { var x = W._gcCheckRunSettings && W._gcCheckRunSettings(); if (x && x.payDay != null) return +x.payDay; } catch (e) {} return 5; }
+/* the pay day (Friday) of the Monday-Sunday week the due date falls in */
+function weekPayDay(due){ var d = dt(due); if (!d) return ''; var mon = new Date(d); mon.setDate(d.getDate() - ((d.getDay() + 6) % 7)); var p = new Date(mon); p.setDate(mon.getDate() + ((payDay() + 6) % 7)); return ymd(p); }
+function recvOf(iv){ return s(iv.recvDate || iv.receivedDate || iv.date || iv.billDate).slice(0, 10) || today(); }
+function netDue(iv, t){ var m = /^net(\d+)$/.exec(t || ''); return m ? plus(recvOf(iv), +m[1]) : ''; }
+function netPayDate(iv){ var t = termsFor(iv); var due = netDue(iv, t); return due ? weekPayDay(due) : ''; }
+function hookTerms(){
+  var fT = W._gcSubTerms, fP = W._gcSubPayDate;
+  if (typeof fT === 'function' && !fT.__lumpnet) { var wT = function(iv){ var t = termsFor(iv); return t || fT.apply(this, arguments); }; wT.__lumpnet = true; W._gcSubTerms = wT; }
+  if (typeof fP === 'function' && !fP.__lumpnet) {
+    var wP = function(iv){ if (iv && !iv.payDateOverride) { var t = termsFor(iv); if (t && /^net\d+$/.test(t)) return netPayDate(iv); } return fP.apply(this, arguments); };
+    wP.__lumpnet = true; wP.__subfri = fP.__subfri; W._gcSubPayDate = wP;
+  }
+}
+var RS = 0;
+function restamp(){ if (RS) return; RS = ST(function(){ RS = 0; try { if (typeof W._gcStampSubTerms === 'function') W._gcStampSubTerms(true); } catch (e) {} stampNet(); }, 400); }
+/* the CRM's own list too (the stamper above reads this computer's saved copy): a supplier bill's payDate follows its terms */
+function stampNet(){
+  if (typeof W._setInvoices !== 'function') return 0;
+  var ch = {};
+  invoices().forEach(function(iv){
+    if (!L() || !L().isBill(iv) || !L().isOpen(iv) || iv.payDateOverride) return;
+    var t = termsFor(iv); if (!t || !/^net\d+$/.test(t)) return;
+    var pd = netPayDate(iv), due = netDue(iv, t);
+    if (iv.payDate !== pd || iv.payTerms !== t || iv.netDue !== due) ch[iv.id] = { payDate: pd, payDateAuto: pd, payTerms: t, payTermsLabel: TERMS[t], netDue: due, payDateRule: TERMS[t] + ' — received ' + recvOf(iv).slice(5) + ', due ' + due.slice(5) + ', paid Friday ' + pd.slice(5) };
+  });
+  var ids = Object.keys(ch); if (!ids.length) return 0;
+  W._setInvoices(function(l){ return (Array.isArray(l) ? l : []).map(function(x){ return x && ch[x.id] && !x.payDateOverride ? Object.assign({}, x, ch[x.id]) : x; }); });
+  return ids.length;
+}
+SI(hookTerms, 1500); hookTerms(); ST(restamp, 3000); SI(function(){ if (!D.hidden) stampNet(); }, 120000);
+
+/* ⏸ hold one bill off the pay lists (the existing ⚡ ASAP / 📅 pay date tools move it earlier / later) */
+function hold(invId, on){
+  if (!canUse()) return { ok: false, error: 'Only admins and the office can hold a bill.' };
+  if (typeof W._setInvoices !== 'function') return { ok: false, error: 'Invoices are not ready.' };
+  var by = (W._gcLumpSum && s(localStorage.getItem('grayco_user'))) || 'office';
+  W._setInvoices(function(l){ return (Array.isArray(l) ? l : []).map(function(x){ if (!x || x.id !== invId) return x; var y = Object.assign({}, x, { updatedAt: new Date().toISOString() }); if (on) { y.payHold = true; y.payHoldBy = by; y.payHoldAt = y.updatedAt; } else { delete y.payHold; delete y.payHoldBy; delete y.payHoldAt; } return y; }); });
+  return { ok: true };
+}
+function isHeld(id){ var r = invoices().filter(function(x){ return x.id === id; })[0]; return !!(r && r.payHold); }
+function hookLists(){
+  var f = W._gcChecksDue;
+  if (typeof f === 'function' && !f.__lumphold) {
+    var w = async function(){ var out = await f.apply(this, arguments); try { if (out && Array.isArray(out.subs)) { var keep = []; out.subs.forEach(function(r){ if (isHeld(r.id)) { r.why = '⏸ on hold'; (out.blocked = out.blocked || []).push(r); out.total = r2(num(out.total) - num(r.amt)); } else keep.push(r); }); out.subs = keep; } } catch (e) {} return out; };
+    w.__lumphold = true; Object.keys(f).forEach(function(k){ if (!(k in w)) w[k] = f[k]; }); W._gcChecksDue = w;
+  }
+  var g = W._gcEveryoneWeOwe;
+  if (typeof g === 'function' && !g.__lumphold) {
+    var w2 = async function(){ var out = await g.apply(this, arguments); try { if (out) ['due', 'scheduled'].forEach(function(k){ var tk = k === 'due' ? 'dueTotal' : 'schedTotal'; out[k] = arr(out[k]).filter(function(r){ if (r.kind === 'sub' && isHeld(r.id)) { r.why = '⏸ on hold'; (out.held = out.held || []).push(r); out.heldTotal = r2(num(out.heldTotal) + num(r.amt)); out[tk] = r2(num(out[tk]) - num(r.amt)); return false; } return true; }); }); } catch (e) {} return out; };
+    w2.__lumphold = true; Object.keys(g).forEach(function(k){ if (!(k in w2)) w2[k] = g[k]; }); W._gcEveryoneWeOwe = w2;
+  }
+  /* the Friday check run / Everyone we owe: one button to the week's supplier checks */
+  ['_gcOpenCheckRun', '_gcOpenPayEveryone'].forEach(function(nm){
+    var o = W[nm]; if (typeof o !== 'function' || o.__lumpwk) return;
+    var w3 = function(){ var r = o.apply(this, arguments); Promise.resolve(r).then(function(){ ST(addWeekBtn, 80); }); return r; };
+    w3.__lumpwk = true; W[nm] = w3;
+  });
+}
+function addWeekBtn(){
+  if (!canUse()) return;
+  var ovs = [].filter.call(D.body.children, function(e){ return e.style && e.style.position === 'fixed' && e.id !== 'gc-lump' && !e.querySelector('[data-lump="week"]'); });
+  var ov = ovs[ovs.length - 1]; if (!ov) return;
+  var n = weekGroups().length; if (!n) return;
+  var b = D.createElement('div'); b.style.cssText = 'margin:0 0 8px;text-align:right';
+  b.innerHTML = '<button type="button" data-lump="week" style="border:0;background:#D4A017;color:#0F1D2F;border-radius:999px;padding:8px 14px;font-weight:800;cursor:pointer">🧾 One check per supplier this week (' + n + ')</button>';
+  var card = ov.firstElementChild || ov; card.insertBefore(b, card.firstChild);
+}
+SI(hookLists, 2500); hookLists();
+
+/* ═════════ the ledger ═════════ */
+function dueOf(iv){
+  var core = L(); if (!core.isBill(iv)) return { due: s(iv.dueDate || iv.due).slice(0, 10), pays: '' };
+  var t = termsFor(iv), due = netDue(iv, t) || s(iv.netDue);
+  var pays = s(iv.payDateOverride || iv.payDate); if (!pays) { try { pays = W._gcSubPayDate ? s(W._gcSubPayDate(iv)) : ''; } catch (e) {} }
+  return { due: due || pays, pays: pays, terms: t ? TERMS[t] : s(iv.payTermsLabel) };
+}
+function ledger(name, side){
+  var core = L(); if (!core) return null;
+  side = side === 'receive' ? 'receive' : 'pay';
+  var mine = invoices().filter(function(r){ return (side === 'pay' ? core.isBill(r) : core.isClientInv(r)) && core.sameParty(core.partyOf(r), name) && r.deleted !== true && !/^(void|voided|deleted|draft|denied|rejected|cancel+ed|canceled)$/.test(low(r.status)) && !r.isStatement; });
+  var t0 = today();
+  var invRows = mine.map(function(r){
+    var p = proj(r.pid) || {}, d = dueOf(r), open = core.openOf(r);
+    return { id: r.id, date: core.invDay(r), invNum: core.invNo(r), qbNum: core.qbNo(r), job: s(p.name), address: s(p.address), po: s(r.po || p.autoPO), amount: core.amtOf(r), paid: r2(core.amtOf(r) - open), open: open,
+      due: d.due, pays: d.pays, terms: d.terms || '', dueIn: open > 0 && d.due ? days(t0, d.due) : null, status: s(r.status), hold: !!r.payHold, asap: !!r.payAsap, inv: r };
+  }).sort(function(a, b){ return (a.date + a.id).localeCompare(b.date + b.id); });
+  /* payments: the lump-sum records (one line, what it covered), single rows on the invoices, paid ones with no row */
+  var pays = [], seenLump = {};
+  arr(W._gcLumpSum.list()).forEach(function(x){
+    if (x.voided || (x.side || 'pay') !== side) return;
+    var cov = arr(x.applied).filter(function(a){ return mine.some(function(r){ return r.id === a.invId; }); });
+    if (!cov.length && !core.sameParty(x.party, name)) return;
+    seenLump[x.id] = 1;
+    pays.push({ id: x.id, date: s(x.date), amount: r2(x.amount), method: core.methodText(x.method), ref: s(x.checkNo) || s(x.ref), lump: true, credit: r2(x.credit), covers: cov.map(function(a){ return { invId: a.invId, invNum: a.invNum, job: a.job, amount: a.amount }; }) });
+  });
+  mine.forEach(function(r){
+    var rows = arr(r.payments), num1 = core.invNo(r) || r.id, job = s((proj(r.pid) || {}).name);
+    rows.forEach(function(p){ if (p.lumpId && seenLump[p.lumpId]) return; if (p.lumpId) return; var a = core.payAmt(p); if (!(a > 0)) return;
+      pays.push({ id: s(p.id) || r.id, date: s(p.date || r.paidDate).slice(0, 10), amount: a, method: p.source === 'prior' ? 'paid earlier' : core.methodText(p.method), ref: s(p.checkNo || p.ref), covers: [{ invId: r.id, invNum: num1, job: job, amount: a }] }); });
+    if (!rows.length) { var pd = r2(core.amtOf(r) - core.openOf(r)); if (pd > 0) pays.push({ id: 'P_' + r.id, date: s(r.paidDate).slice(0, 10), amount: pd, method: s(r.payMethod) || (r.checkNo ? 'Check' : 'Payment'), ref: s(r.checkNo), covers: [{ invId: r.id, invNum: num1, job: job, amount: pd }] }); }
+  });
+  pays.sort(function(a, b){ return (a.date || '0000').localeCompare(b.date || '0000'); });
+  /* the running balance: invoices up, payments down, by date */
+  var ev = invRows.map(function(r){ return { date: r.date, kind: 'inv', text: 'Invoice ' + (r.invNum || r.id) + (r.job ? ' — ' + r.job : ''), plus: r.amount }; })
+    .concat(pays.map(function(p){ return { date: p.date, kind: 'pay', text: (p.lump ? 'Payment (several invoices) ' : 'Payment ') + p.method + (p.ref ? ' #' + p.ref : ''), minus: p.amount }; }))
+    .sort(function(a, b){ return (a.date || '0000').localeCompare(b.date || '0000') || (a.kind === 'inv' ? -1 : 1); });
+  var bal = 0; ev.forEach(function(e){ bal = (c(bal) + c(e.plus || 0) - c(e.minus || 0)) / 100; e.balance = bal; });
+  var openTotal = invRows.reduce(function(a, r){ return (c(a) + c(r.open)) / 100; }, 0), credit = pays.reduce(function(a, p){ return (c(a) + c(p.credit || 0)) / 100; }, 0);
+  var aging = { current: 0, d31: 0, d61: 0, d91: 0 };
+  invRows.forEach(function(r){ if (!(r.open > 0)) return; var age = days(r.date || t0, t0), k = age <= 30 ? 'current' : age <= 60 ? 'd31' : age <= 90 ? 'd61' : 'd91'; aging[k] = (c(aging[k]) + c(r.open)) / 100; });
+  var v = vendorRec(name) || {};
+  return { name: name, side: side, accountNo: s(v.accountNo), terms: side === 'pay' ? (TERMS[low(v.payTerms)] || (mine[0] && termsFor(mine[0]) ? TERMS[termsFor(mine[0])] : '')) : '', termsKey: low(v.payTerms),
+    invoices: invRows, payments: pays, events: ev, balance: bal, openTotal: openTotal, credit: credit, aging: aging };
+}
+function csv(lg){
+  var q = function(x){ x = s(x); return /[",\n]/.test(x) ? '"' + x.replace(/"/g, '""') + '"' : x; };
+  var out = [['Account', lg.name], ['Account #', lg.accountNo], ['Terms', lg.terms], [], ['Date', 'Type', 'Invoice #', 'QB #', 'Job', 'Address', 'Amount', 'Paid', 'Open', 'Due', 'Pays on', 'Check / ref', 'Covers', 'Balance']];
+  lg.invoices.forEach(function(r){ out.push([r.date, 'Invoice', r.invNum, r.qbNum, r.job, r.address, r.amount.toFixed(2), r.paid.toFixed(2), r.open.toFixed(2), r.due, r.pays, '', '', '']); });
+  lg.payments.forEach(function(p){ out.push([p.date, p.lump ? 'Payment (several)' : 'Payment', '', '', '', '', (-p.amount).toFixed(2), '', '', '', '', p.method + (p.ref ? ' #' + p.ref : ''), p.covers.map(function(x){ return (x.invNum || x.invId) + ' ' + money(x.amount); }).join('; '), '']); });
+  out.push([], ['Open invoices', lg.openTotal.toFixed(2)], ['Balance', lg.balance.toFixed(2)], ['Current', lg.aging.current.toFixed(2)], ['31-60', lg.aging.d31.toFixed(2)], ['61-90', lg.aging.d61.toFixed(2)], ['90+', lg.aging.d91.toFixed(2)]);
+  return out.map(function(r){ return r.map(q).join(','); }).join('\n');
+}
+
+/* ═════════ reconcile with their statement ═════════ */
+var MONEY = /-?\$?\(?\d{1,3}(?:,\d{3})*\.\d{2}\)?|-?\$?\d+\.\d{2}/g, DATE = /\b(\d{1,2}\/\d{1,2}\/\d{2,4}|\d{4}-\d\d-\d\d)\b/;
+function normNo(x){ return low(x).replace(/^0+/, '').replace(/[^a-z0-9]/g, ''); }
+function reconcile(text, name, side){
+  var lg = ledger(name, side || 'pay'); if (!lg) return null;
+  var lines = s(text).split(/\r?\n/).map(function(l){ return l.replace(/\s+/g, ' ').trim(); }).filter(Boolean);
+  var ours = lg.invoices.map(function(r){ return { r: r, keys: [r.invNum, r.qbNum].map(normNo).filter(function(k){ return k.length >= 3; }) }; });
+  var matched = [], theirsOnly = [], hitIds = {}, minD = '', maxD = '';
+  lines.forEach(function(l){
+    var amts = (l.match(MONEY) || []).map(function(m){ var neg = /\(|-/.test(m); return (neg ? -1 : 1) * num(m.replace(/[()]/g, '')); }), dm = DATE.exec(l);
+    var d = ''; if (dm) { var x = dm[1]; if (/\//.test(x)) { var p = x.split('/'); d = (p[2].length === 2 ? '20' + p[2] : p[2]) + '-' + pad(+p[0]) + '-' + pad(+p[1]); } else d = x; if (!minD || d < minD) minD = d; if (!maxD || d > maxD) maxD = d; }   /* a "statement date" line counts for the period */
+    if (!amts.length) return;
+    var toks = l.split(/[\s,;|]+/).map(normNo).filter(function(t){ return t.length >= 3 && /\d/.test(t); });
+    var hit = ours.filter(function(o){ return o.keys.some(function(k){ return toks.indexOf(k) >= 0; }); })[0];
+    if (hit) {
+      if (hitIds[hit.r.id]) return; hitIds[hit.r.id] = 1;
+      var same = amts.some(function(a){ return Math.abs(c(a) - c(hit.r.amount)) <= 1 || Math.abs(c(a) - c(hit.r.open)) <= 1; });
+      matched.push({ id: hit.r.id, invNum: hit.r.invNum, ours: hit.r.amount, theirs: amts[0], same: same, line: l });
+      return;
+    }
+    if (!dm || /\b(total|balance forward|previous balance|payment|thank you|aging|current|over \d+)\b/i.test(l)) return;
+    var ref = (l.replace(DATE, ' ').split(/\s+/).filter(function(t){ return /\d/.test(t) && !/[.$]/.test(t) && t.replace(/\D/g, '').length >= 3; })[0]) || '';
+    theirsOnly.push({ date: d, ref: ref, amount: amts[0], line: l });
+  });
+  var oursOnly = lg.invoices.filter(function(r){ return !hitIds[r.id] && r.open > 0 && (!minD || !r.date || (r.date >= plus(minD, -3) && r.date <= plus(maxD, 3))); })
+    .map(function(r){ return { id: r.id, invNum: r.invNum, date: r.date, job: r.job, amount: r.amount, open: r.open }; });
+  return { matched: matched, differ: matched.filter(function(m){ return !m.same; }), theirsOnly: theirsOnly, oursOnly: oursOnly, from: minD, to: maxD, lines: lines.length };
+}
+function fileText(f){
+  if (!f) return Promise.resolve('');
+  var isPdf = /pdf/i.test(f.type) || /\.pdf$/i.test(f.name);
+  if (!isPdf) return f.text();
+  if (!W.pdfjsLib || !W.pdfjsLib.getDocument) return Promise.resolve('');
+  return f.arrayBuffer().then(function(buf){ return W.pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise; }).then(function(pdf){
+    var out = [], i = 0;
+    function next(){ i++; if (i > pdf.numPages) return Promise.resolve(out.join('\n'));
+      return pdf.getPage(i).then(function(pg){ return pg.getTextContent(); }).then(function(tc){ var rows = {}; tc.items.forEach(function(it){ var y = Math.round((it.transform && it.transform[5]) || 0); (rows[y] = rows[y] || []).push(it.str); }); Object.keys(rows).map(Number).sort(function(a, b){ return b - a; }).forEach(function(y){ out.push(rows[y].join(' ')); }); return next(); }); }
+    return next();
+  }).catch(function(){ return ''; });
+}
+
+/* ═════════ screens ═════════ */
+function sheet(title, body){
+  if (L()) L().css();
+  var old = D.getElementById('gc-lump'); if (old) old.remove();
+  var ov = D.createElement('div'); ov.id = 'gc-lump'; ov.setAttribute('data-gc-keep', '1');
+  ov.innerHTML = '<div class="lp"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><h2 style="flex:1">' + title + '</h2><span data-hd></span><button type="button" class="b" data-va="close">✕</button></div><div data-body>' + body + '</div></div>';
+  ov.addEventListener('click', function(e){ if (e.target === ov || (e.target.getAttribute && e.target.getAttribute('data-va') === 'close')) ov.remove(); });
+  D.body.appendChild(ov); return ov;
+}
+function refused(){ sheet('📒 Vendor accounts', '<p class="msg bad" data-lp="refused">Only admins and the office can see vendor accounts.</p>'); return { refused: true }; }
+function listAccounts(){
+  if (!canUse()) return refused();
+  var core = L(), by = {};
+  invoices().forEach(function(r){ if (!core.isBill(r) || r.deleted === true || r.isStatement) return; var n = core.partyOf(r); if (!n) return; var k = core.normParty(n); var g = by[k] || (by[k] = { name: n, n: 0, open: 0, nOpen: 0, next: '' }); g.n++; if (core.isOpen(r)) { g.nOpen++; g.open = r2(g.open + core.openOf(r)); var d = dueOf(r).pays; if (d && (!g.next || d < g.next)) g.next = d; } });
+  var G = Object.keys(by).map(function(k){ return by[k]; }).sort(function(a, b){ return b.open - a.open || a.name.localeCompare(b.name); });
+  var ov = sheet('📒 Vendor accounts', '<div class="sub">Every supplier / sub with bills in the CRM — account #, terms, what is open, the next pay date.</div><div style="overflow-x:auto"><table><thead><tr><th>Vendor</th><th>Account #</th><th>Terms</th><th class="n">Bills</th><th class="n">Open</th><th>Next pays</th><th></th></tr></thead><tbody>' +
+    G.map(function(g){ var v = vendorRec(g.name) || {}; var probe = invoices().filter(function(r){ return core.isBill(r) && core.sameParty(core.partyOf(r), g.name); })[0]; var t = probe ? termsFor(probe) : null;
+      return '<tr data-party="' + esc(g.name) + '"><td><b>' + esc(g.name) + '</b></td><td>' + esc(v.accountNo || '—') + '</td><td>' + esc(t ? TERMS[t] : 'Sub rule (in by Wed → Friday)') + '</td><td class="n">' + g.nOpen + ' open / ' + g.n + '</td><td class="n">' + money(g.open) + '</td><td>' + esc(g.next || '—') + '</td><td><button type="button" class="b" data-va="open">📒 Open</button></td></tr>'; }).join('') + '</tbody></table></div>');
+  ov.addEventListener('click', function(e){ var t = e.target; if (t.getAttribute && t.getAttribute('data-va') === 'open') openAcct(t.closest('tr').getAttribute('data-party'), 'pay'); });
+  return { ok: true };
+}
+function agingHtml(lg){
+  var cell = function(l, v, warn){ return '<div style="flex:1;min-width:110px;background:' + (warn && v > 0 ? '#fef2f2' : '#f8fafc') + ';border-radius:10px;padding:8px 10px"><div class="sub">' + l + '</div><div style="font-weight:800;font-size:16px">' + money(v) + '</div></div>'; };
+  return '<div class="row" data-va="aging">' + cell('Open invoices', lg.openTotal) + cell('Current (0-30)', lg.aging.current) + cell('31-60 days', lg.aging.d31) + cell('61-90 days', lg.aging.d61, true) + cell('90+ days', lg.aging.d91, true) + cell('Running balance', lg.balance) + '</div>';
+}
+function openAcct(name, side){
+  if (!canUse()) return refused();
+  side = side === 'receive' ? 'receive' : 'pay';
+  var lg = ledger(name, side); if (!lg) return { ok: false };
+  var pay = side === 'pay', t0 = today();
+  var termOpts = Object.keys(TERMS).map(function(k){ return '<option value="' + k + '"' + (lg.termsKey === k ? ' selected' : '') + '>' + TERMS[k] + '</option>'; }).join('');
+  var dueTxt = function(r){ if (!(r.open > 0) || r.dueIn == null) return ''; return r.dueIn > 0 ? 'due in ' + r.dueIn + ' day' + (r.dueIn === 1 ? '' : 's') : (r.dueIn === 0 ? 'due today' : '<b style="color:#b91c1c">' + (-r.dueIn) + ' days past due</b>'); };
+  var body = '<div class="sub">' + (pay ? 'Every bill and every payment with this vendor, the running balance and aging.' : 'Every invoice and payment with this customer.') + '</div>' +
+    (pay ? '<div class="row"><label>Our account # with them<input data-va="acctno" value="' + esc(lg.accountNo) + '" style="width:170px"></label><label>Pay terms<select data-va="terms"><option value="">' + (lg.terms ? 'Default — ' + esc(lg.terms) : 'Default (suppliers Net 30, subs Friday rule)') + '</option>' + termOpts + '</select></label><button type="button" class="b pri" data-va="savev">Save</button><span class="msg" data-va="vmsg"></span></div>' : '') +
+    agingHtml(lg) +
+    '<div class="row"><button type="button" class="b ok" data-va="pay">' + (pay ? '💵 Pay several invoices at once' : '💰 Record one payment') + '</button><button type="button" class="b" data-va="csv">⬇ CSV</button><button type="button" class="b" data-va="print">🖨 Print statement</button>' + (pay ? '<button type="button" class="b" data-va="recon">🔎 Reconcile with their statement</button>' : '') + '</div><div data-va="reconbox"></div>' +
+    '<h3 style="margin:12px 0 4px;font-size:15px">Invoices</h3><div style="overflow-x:auto"><table data-va="invs"><thead><tr><th>Date</th><th>Invoice #</th><th>QB #</th><th>Job</th><th class="n">Amount</th><th class="n">Paid</th><th class="n">Open</th><th>Due</th>' + (pay ? '<th>Pays on</th><th></th>' : '') + '</tr></thead><tbody>' +
+    (lg.invoices.length ? lg.invoices.map(function(r){ return '<tr data-id="' + esc(r.id) + '"' + (r.open > 0 ? '' : ' style="color:#64748b"') + '><td>' + esc(r.date) + '</td><td>' + esc(r.invNum || '—') + '</td><td>' + esc(r.qbNum) + '</td><td>' + esc(r.job || '—') + (r.address ? '<div class="sub">' + esc(r.address) + '</div>' : '') + '</td><td class="n">' + money(r.amount) + '</td><td class="n">' + money(r.paid) + '</td><td class="n">' + (r.open > 0 ? '<b>' + money(r.open) + '</b>' : 'paid') + '</td><td>' + esc(r.due) + (r.open > 0 ? '<div class="sub" data-va="duein">' + dueTxt(r) + '</div>' : '') + '</td>' +
+      (pay ? '<td>' + esc(r.open > 0 ? r.pays : '') + (r.terms && r.open > 0 ? '<div class="sub">' + esc(r.terms) + '</div>' : '') + (r.hold ? ' <span class="pill" style="background:#fee2e2;color:#991b1b">⏸ on hold</span>' : '') + (r.asap ? ' <span class="pill">⚡ ASAP</span>' : '') + '</td><td>' + (r.open > 0 ? '<button type="button" class="b" data-va="hold">' + (r.hold ? '▶ Release' : '⏸ Hold') + '</button> ' + (W._gcAsap ? '<button type="button" class="b" data-va="asap">⚡ ' + (r.asap ? 'Normal' : 'Pay early') + '</button> ' : '') + (W._gcSetPayDate ? '<button type="button" class="b" data-va="date">📅</button>' : '') : '') + '</td>' : '') + '</tr>'; }).join('') : '<tr><td colspan="10" class="sub">No invoices.</td></tr>') + '</tbody></table></div>' +
+    '<h3 style="margin:12px 0 4px;font-size:15px">Payments</h3><div style="overflow-x:auto"><table data-va="pays"><thead><tr><th>Date</th><th class="n">Amount</th><th>Method</th><th>Check / ref</th><th>Covered</th></tr></thead><tbody>' +
+    (lg.payments.length ? lg.payments.map(function(p){ return '<tr><td>' + esc(p.date || '—') + '</td><td class="n">' + money(p.amount) + '</td><td>' + esc(p.method) + '</td><td>' + esc(p.ref) + '</td><td>' + p.covers.map(function(x){ return esc((x.invNum || x.invId) + (x.job ? ' (' + x.job + ')' : '') + ' ' + money(x.amount)); }).join('<br>') + (p.credit > 0 ? '<br><i>credit ' + money(p.credit) + ' not applied</i>' : '') + '</td></tr>'; }).join('') : '<tr><td colspan="5" class="sub">No payments yet.</td></tr>') + '</tbody></table></div>' +
+    '<h3 style="margin:12px 0 4px;font-size:15px">Running balance</h3><div style="overflow-x:auto"><table data-va="ledger"><thead><tr><th>Date</th><th>What</th><th class="n">Charge</th><th class="n">Payment</th><th class="n">Balance</th></tr></thead><tbody>' +
+    lg.events.map(function(e){ return '<tr><td>' + esc(e.date || '—') + '</td><td>' + esc(e.text) + '</td><td class="n">' + (e.plus ? money(e.plus) : '') + '</td><td class="n">' + (e.minus ? money(e.minus) : '') + '</td><td class="n"><b>' + money(e.balance) + '</b></td></tr>'; }).join('') + '</tbody></table></div>';
+  var ov = sheet('📒 ' + esc(name) + (lg.accountNo ? ' <span class="pill">Acct # ' + esc(lg.accountNo) + '</span>' : ''), body);
+  ov.setAttribute('data-acct', name);
+  ov.addEventListener('click', function(e){
+    var t = e.target, a = t.getAttribute && t.getAttribute('data-va'); if (!a) return;
+    var tr = t.closest && t.closest('tr'), id = tr && tr.getAttribute('data-id');
+    if (a === 'savev') { var r = setVendor(name, { accountNo: ov.querySelector('[data-va="acctno"]').value, payTerms: ov.querySelector('[data-va="terms"]').value }); ov.querySelector('[data-va="vmsg"]').textContent = r.ok ? '✓ Saved — pay dates follow the new terms' : r.error; if (r.ok) ST(function(){ openAcct(name, side); }, 700); return; }
+    if (a === 'pay') { ov.remove(); W._gcLumpSum.open({ side: side, party: name }); return; }
+    if (a === 'csv') { download(name.replace(/[^A-Za-z0-9]+/g, '_') + '_account_' + t0 + '.csv', csv(ledger(name, side))); return; }
+    if (a === 'print') { printLedger(ledger(name, side)); return; }
+    if (a === 'recon') { reconUi(ov, name, side); return; }
+    if (a === 'hold') { hold(id, !isHeld(id)); ST(function(){ openAcct(name, side); }, 60); return; }
+    if (a === 'asap') { try { W._gcAsap.mark(id, !(invoices().filter(function(x){ return x.id === id; })[0] || {}).payAsap); } catch (er) {} ST(function(){ openAcct(name, side); }, 300); return; }
+    if (a === 'date') { try { W._gcSetPayDate(id); } catch (er) {} ST(function(){ openAcct(name, side); }, 300); return; }
+  });
+  return { ok: true, ledger: lg };
+}
+function reconUi(ov, name, side){
+  var box = ov.querySelector('[data-va="reconbox"]');
+  box.innerHTML = '<div class="warnbox"><b>🔎 Their statement</b> — upload it (PDF or CSV) or paste its lines. We look for every invoice # on it.<div class="row"><input type="file" data-va="rfile" accept="application/pdf,.csv,text/csv,text/plain"><button type="button" class="b pri" data-va="rgo">Compare</button></div><textarea data-va="rtext" rows="4" style="width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:8px;padding:6px" placeholder="…or paste the statement lines here"></textarea><div data-va="rout"></div></div>';
+  box.querySelector('[data-va="rgo"]').onclick = function(){
+    var f = box.querySelector('[data-va="rfile"]').files[0];
+    fileText(f).then(function(tx){ tx = (tx || '') + '\n' + box.querySelector('[data-va="rtext"]').value; var r = reconcile(tx, name, side); box.querySelector('[data-va="rout"]').innerHTML = reconHtml(r); });
+  };
+}
+function reconHtml(r){
+  if (!r || !r.lines) return '<p class="sub">Nothing read from that statement.</p>';
+  var li = function(x){ return '<li>' + x + '</li>'; };
+  return '<div data-va="recon-result"><p><b>' + r.matched.length + '</b> of their lines match our invoices' + (r.from ? ' (' + esc(r.from) + ' to ' + esc(r.to) + ')' : '') + '.</p>' +
+    (r.theirsOnly.length ? '<p><b style="color:#b91c1c">On their statement, not in the CRM (' + r.theirsOnly.length + '):</b></p><ul data-va="theirs">' + r.theirsOnly.map(function(x){ return li(esc(x.date) + ' ' + esc(x.ref || '?') + ' — ' + money(x.amount) + ' <span class="sub">' + esc(x.line.slice(0, 90)) + '</span>'); }).join('') + '</ul>' : '<p>✓ Every invoice on their statement is in the CRM.</p>') +
+    (r.oursOnly.length ? '<p><b style="color:#b45309">Open in the CRM, not on their statement (' + r.oursOnly.length + '):</b></p><ul data-va="ours">' + r.oursOnly.map(function(x){ return li(esc(x.date) + ' ' + esc(x.invNum || x.id) + ' — ' + money(x.open) + (x.job ? ' (' + esc(x.job) + ')' : '')); }).join('') + '</ul>' : '<p>✓ Every open CRM invoice in that period is on their statement.</p>') +
+    (r.differ.length ? '<p><b>Amounts that differ:</b></p><ul data-va="differ">' + r.differ.map(function(x){ return li(esc(x.invNum) + ': ours ' + money(x.ours) + ', theirs ' + money(x.theirs)); }).join('') + '</ul>' : '') + '</div>';
+}
+function download(fn, text){ try { var b = new Blob([text], { type: 'text/csv' }), a = D.createElement('a'); a.href = URL.createObjectURL(b); a.download = fn; D.body.appendChild(a); a.click(); ST(function(){ a.remove(); }, 500); W.__gcLastCsv = text; } catch (e) {} }
+function printLedger(lg){
+  var rows = lg.events.map(function(e){ return '<tr><td>' + esc(e.date) + '</td><td>' + esc(e.text) + '</td><td style="text-align:right">' + (e.plus ? money(e.plus) : '') + '</td><td style="text-align:right">' + (e.minus ? money(e.minus) : '') + '</td><td style="text-align:right">' + money(e.balance) + '</td></tr>'; }).join('');
+  var h = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Account — ' + esc(lg.name) + '</title><style>body{font-family:Arial;margin:0;padding:28px;color:#111}table{width:100%;border-collapse:collapse;font-size:12.5px}th,td{padding:6px 8px;border-bottom:1px solid #ddd;text-align:left}@media print{.np{display:none}}</style></head><body>' +
+    '<h1 style="font-size:20px;margin:0">GrayCo — account with ' + esc(lg.name) + '</h1><div style="font-size:12px;color:#555;margin:4px 0 12px">' + (lg.accountNo ? 'Account # ' + esc(lg.accountNo) + ' · ' : '') + (lg.terms ? esc(lg.terms) + ' · ' : '') + 'as of ' + today() + '</div>' +
+    '<p>Open invoices <b>' + money(lg.openTotal) + '</b> · Current ' + money(lg.aging.current) + ' · 31-60 ' + money(lg.aging.d31) + ' · 61-90 ' + money(lg.aging.d61) + ' · 90+ ' + money(lg.aging.d91) + '</p>' +
+    '<table><thead><tr><th>Date</th><th>What</th><th style="text-align:right">Charge</th><th style="text-align:right">Payment</th><th style="text-align:right">Balance</th></tr></thead><tbody>' + rows + '</tbody></table>' +
+    '<div class="np" style="text-align:center;margin-top:18px"><button onclick="window.print()">Print</button></div></body></html>';
+  W.__gcLastPrint = h;
+  if (W._gcOpenDocHTML) W._gcOpenDocHTML(h); else { var w = W.open('', '_blank'); if (w) { w.document.write(h); w.document.close(); } }
+}
+/* 🧾 this week's supplier checks: bills due by this week's pay day, approved, not held — one check per vendor */
+function weekGroups(day){
+  var core = L(); if (!core) return [];
+  var t = day || today(), d = dt(t), fri = new Date(d); fri.setDate(d.getDate() + ((payDay() - d.getDay() + 7) % 7)); var pd = ymd(fri), by = {};
+  invoices().forEach(function(r){
+    if (!core.isBill(r) || !core.isOpen(r) || r.payHold) return;
+    var t2 = termsFor(r); if (!(isSupplier(r) || (t2 && /^net/.test(t2)))) return;
+    var p = dueOf(r).pays; if (!p || p > pd) return;
+    var n = core.partyOf(r), k = core.normParty(n), g = by[k] || (by[k] = { name: n, payDay: pd, ids: [], total: 0, waiting: 0 });
+    var ok = typeof W._gcInvoiceApproved === 'function' ? !!W._gcInvoiceApproved(r) : /approved|partial/.test(low(r.status));
+    if (!ok) { g.waiting++; return; }
+    g.ids.push(r.id); g.total = r2(g.total + core.openOf(r));
+  });
+  return Object.keys(by).map(function(k){ return by[k]; }).filter(function(g){ return g.ids.length; }).sort(function(a, b){ return a.name.localeCompare(b.name); });
+}
+function week(){
+  if (!canUse()) return refused();
+  var G = weekGroups(), pd = G[0] ? G[0].payDay : '';
+  var ov = sheet('🧾 This week\'s supplier checks', '<div class="sub">Supplier bills due by this week\'s pay day' + (pd ? ' (' + esc(pd) + ')' : '') + ', approved and not on hold — one check per vendor. "💵 Write one check" opens the payment screen with them ticked, so the check is written down against each job.</div>' +
+    (G.length ? '<table><thead><tr><th>Vendor</th><th class="n">Bills</th><th class="n">Check</th><th></th></tr></thead><tbody>' + G.map(function(g){ return '<tr data-party="' + esc(g.name) + '"><td><b>' + esc(g.name) + '</b>' + (g.waiting ? ' <span class="sub">(' + g.waiting + ' more waiting on approval)</span>' : '') + '</td><td class="n">' + g.ids.length + '</td><td class="n"><b>' + money(g.total) + '</b></td><td><button type="button" class="b ok" data-va="one">💵 Write one check</button> <button type="button" class="b" data-va="acct">📒</button></td></tr>'; }).join('') + '</tbody></table>' : '<p class="sub">Nothing due this week.</p>'));
+  ov.addEventListener('click', function(e){ var t = e.target, a = t.getAttribute && t.getAttribute('data-va'); if (!a) return; var nm = t.closest('tr').getAttribute('data-party'), g = G.filter(function(x){ return x.name === nm; })[0];
+    if (a === 'one') { ov.remove(); W._gcLumpSum.open({ side: 'pay', party: nm, preselect: g.ids, amount: g.total, ref: 'Week of ' + g.payDay }); }
+    if (a === 'acct') openAcct(nm, 'pay'); });
+  return { ok: true, groups: G };
+}
+
+W._gcVendorAcct = { open: openAcct, list: listAccounts, week: week, weekGroups: weekGroups, ledger: ledger, reconcile: reconcile, setVendor: setVendor, hold: hold, termsFor: termsFor, netPayDate: netPayDate, weekPayDay: weekPayDay, stampNet: stampNet, csv: csv, TERMS: TERMS };
+try { console.log('[GC] patch LUMPACCT: 📒 vendor accounts (running balance, aging, statement reconcile) + supplier Net 30 pay dates — _gcVendorAcct.open(name)'); } catch (e) {}
+})(window, document);
 </script>
