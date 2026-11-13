@@ -228792,7 +228792,7 @@ function sheet(title){
   var ov = D.createElement('div'); ov.id = 'gcss-sheet'; ov.className = '_gcSheetOv gcsub-sheet'; ov.setAttribute('data-gc-keep', '');
   ov.innerHTML = '<div class="gcsub-head"><button type="button" class="gcsub-back" data-x="back">‹ Back</button><b class="gcsub-title">' + esc(title) + '</b><button type="button" class="gcsub-x" data-x="close" aria-label="Close">✕</button></div><div class="gcsub-body"></div>';
   D.body.appendChild(ov);
-  if (!D.querySelector('style[data-gcsub-css]') && !D.getElementById('gcss-css')) { var st = D.createElement('style'); st.id = 'gcss-css'; st.textContent = '#gcss-sheet{position:fixed;inset:0;z-index:2147483000;background:#fff;overflow:auto;font:14px Inter,-apple-system,sans-serif;color:#0F1D2F}#gcss-sheet .gcsub-head{display:flex;gap:10px;align-items:center;padding:12px 16px;border-bottom:1px solid #e5e7eb;position:sticky;top:0;background:#fff}#gcss-sheet .gcsub-body{padding:14px 16px 90px;max-width:860px;margin:0 auto}'; D.head.appendChild(st); }
+  if (!D.getElementById('gcss-css')) { var st = D.createElement('style'); st.id = 'gcss-css'; st.textContent = '#gcss-sheet{z-index:2147483000}#gcss-sheet .gcsub-card{background:#fff}'; D.head.appendChild(st); }   /* the look is the sub module\'s sheet (gcsub-*); above the desk home */
   ov.querySelector('[data-x=back]').onclick = function(){ ov.remove(); }; ov.querySelector('[data-x=close]').onclick = function(){ ov.remove(); };
   function key(e){ if (e.key === 'Escape' && D.body.contains(ov)) { ov.remove(); D.removeEventListener('keydown', key); } } D.addEventListener('keydown', key);
   return { el: ov, body: ov.querySelector('.gcsub-body'), close: function(){ ov.remove(); } };
