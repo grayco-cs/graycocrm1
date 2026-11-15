@@ -97,7 +97,8 @@ exports.handler = async function(event){
     if (m === 'GET' && qs.status) {
       const set = await getSettings(); let paused = true; try { paused = await require('./_lib/pause').isPaused(); } catch (e) {}
       if (who.admin) await publishNumbers(set);   /* patch SMSROUTE: Netlify numbers show up without a save */
-      return J(200, { ok: true, ready: MC().ready(), number: number(), numbers: require('./_lib/smsroute.js').numbers(set, env), autoOn: set.autoOn, paused, webhook: (env('CRM_URL') || 'https://crm.grayco-cs.com').replace(/\/$/, '') + '/.netlify/functions/missed-call?event=sms' }, C);
+      let live; if (qs.live && who.admin) { try { live = await require('./_lib/twstatus.js').check({ env, numbers: require('./_lib/smsroute.js').numbers(set, env).map(x => ({ number: x.number, label: s(x.label || x.purpose) })) }); } catch (e) { live = { ready: MC().ready(), error: 'check failed' }; } }   /* patch TWLIVE: read-only */
+      return J(200, { ok: true, ready: MC().ready(), number: number(), numbers: require('./_lib/smsroute.js').numbers(set, env), autoOn: set.autoOn, paused, live, webhook: (env('CRM_URL') || 'https://crm.grayco-cs.com').replace(/\/$/, '') + '/.netlify/functions/missed-call?event=sms' }, C);
     }
     if (m === 'POST' && qs.send) {
       let b = {}; try { b = JSON.parse(event.body || '{}') || {}; } catch (e) { return J(400, { ok: false, error: 'Not JSON.' }, C); }

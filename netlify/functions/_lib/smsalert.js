@@ -226,7 +226,7 @@ function resolve(set, pp){
     if (k === ROLE_MIT) return;
     const p = set.people[k], x = by[k]; if (!x) return;
     const phone = p.phone || x.phone; if (!p.on || phone.length !== 10) return;
-    out[k] = { key: k, email: k, phone, p };
+    out[k] = { key: k, email: k, phone, p: p.name ? p : Object.assign({}, p, { name: x.name }) };   /* TEXTEDPM: the text log names the person */
   });
   const rp = set.people[ROLE_MIT];
   if (rp && rp.on) mitigationHolders(pp).forEach(x => {
@@ -366,7 +366,7 @@ async function notify(o){
   Object.keys(skip).forEach(k => { if (skip[k].length) out.skipped[k] = skip[k].slice(); });
   for (const g of go) {
     const body = typeof o.body === 'function' ? o.body(g.more, g) : compose(g.more, o.text, o.link);
-    let r = { ok: false }; try { r = await sendL(g.phone, body, (o.type === 'lead' || o.lsa) ? leadNum() : fromNum(), undefined, { who: g.name, leadId: s((o.lsa && o.lsa.leadId) || (o.replyTo && o.replyTo.leadId)), code: s(o.lsa && o.lsa.code), type: s(o.type) }); } catch (e) { r = { ok: false, why: s(e && e.message) }; }
+    let r = { ok: false }; try { r = await sendL(g.phone, body, (o.type === 'lead' || o.lsa) ? leadNum() : fromNum(), undefined, { who: g.name, leadId: s((o.lsa && o.lsa.leadId) || (o.replyTo && o.replyTo.leadId) || o.leadId), code: s(o.lsa && o.lsa.code), type: s(o.type) }); } catch (e) { r = { ok: false, why: s(e && e.message) }; }
     if (r && r.ok) { out.sent++; out.to.push(g.email); }
     else { out.failed = (out.failed || 0) + 1; }
   }
@@ -871,7 +871,7 @@ async function lsaVetted(o){
 }
 /* a lead assigned later (bid-alerts.js notifyAssigned) */
 async function assigned(x){
-  return notify({ type: 'assigned', text: 'lead assigned to you: ' + clip(x.title, 60) + (x.assignedBy ? ' (by ' + clip(x.assignedBy, 24) + ')' : ''), link: site() + '/#leads', thread: 'lead:' + s(x.key || x.id), mine: [x.assigneeEmail] });
+  return notify({ type: 'assigned', text: 'lead assigned to you: ' + clip(x.title, 60) + (x.assignedBy ? ' (by ' + clip(x.assignedBy, 24) + ')' : ''), link: site() + '/#leads', thread: 'lead:' + s(x.key || x.id), mine: [x.assigneeEmail], leadId: s(x.key || x.id) });   /* TEXTEDPM: on the lead's timeline */
 }
 /* the morning approvals digest (auto-digest.js) — at most one text a day per person */
 async function approvals(email, n){
