@@ -147,7 +147,9 @@ exports.handler = async function(event) {
   const weekInvs = invoices.filter(function(i){return (i.date||'') >= weekAgoStr && i.type==='client';});
   const weekCollected = invoices.filter(function(i){return i.status==='paid' && (i.paidDate||i.date||'') >= weekAgoStr;});
   const overdueInvs = invoices.filter(function(i){return i.status!=='paid' && i.due && i.due < today && i.type==='client';});
-  const newLeads = leads.filter(function(l){return (l.date||l.created||'') >= weekAgoStr;});
+  /* patch LSA2: a Google LSA lead counts once it is good (pending / bad ones are left out) */
+  const lsaPend = function(l){ const ex = (l && l.leadExtra) || {}, c = String(l.lsaCheck || ex.lsaCheck || ''); const lsa = !!c || /google\s*lsa|local\s*services/i.test([l.source, l.leadSource, ex.leadSource].join(' ')); return lsa && c !== 'good' && !/won|convert|job/i.test(String(l.stage || '') + ' ' + String(l.status || '')) && !l.projectId; };
+  const newLeads = leads.filter(function(l){return (l.date||l.created||'') >= weekAgoStr && !lsaPend(l);});
   const bidsOut = leads.filter(function(l){return l.status==='Estimate Sent';});
 
   const totalBilled = weekInvs.reduce(function(s,i){return s+(parseFloat(i.amt)||0);},0);
