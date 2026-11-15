@@ -467,6 +467,7 @@ async function award(who, b){
   const on = b.on !== false, id = s(b.id), at = nowIso(), src = s(b.source);
   const found = await jobRow(b.jobId).catch(() => null), job = found || { id: s(b.jobId), title: '' };
   const pm = pmOf(b, who), exclusions = cleanList(b.exclusions), wantMail = on && b.mail !== false;
+  const awardPo = on ? s(b.po).toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 30) : '';   /* patch BIDMULTI: the job's PO for the awarded sub */
   const us = on ? await users() : [], uByEmail = {}; us.forEach(u => { if (u && u.email) uByEmail[low(u.email)] = u; });
   let crmByEmail = null; const langFor = async e => { if (!crmByEmail) { crmByEmail = {}; (await crmSubsRaw()).forEach(r => { if (r && r.email) crmByEmail[low(r.email)] = r; }); } return langOf(uByEmail[low(e)], crmByEmail[low(e)]); };
   const out = { ok: true, awarded: on, notSelected: 0, mail: { sent: false } };
@@ -489,7 +490,7 @@ async function award(who, b){
     if (on) out.mail = await mailTo(email, trade, amount, s(cur.awardMailedAt));
     let hit = null;
     await L.kvCas(T.KV_SUBBIDS, v => { const l = arr(v); const x = l.find(y => y && y.id === id); if (!x) return undefined; x.awarded = on; x.awardedAt = on ? at : ''; x.awardedBy = who.email;
-      if (on) { x.awardPm = pm; x.awardExclusions = exclusions; } if (out.mail.sent) x.awardMailedAt = at; hit = x; return l; });
+      if (on) { x.awardPm = pm; x.awardExclusions = exclusions; x.awardPo = awardPo; } if (out.mail.sent) x.awardMailedAt = at; hit = x; return l; });
     if (!hit) return { code: 404, error: 'No such sub bid.' };
     /* the sub's own bid-site profile (same e-mail): a copy of the bid in the bids collection, so their portal shows the award */
     try {
@@ -499,7 +500,7 @@ async function award(who, b){
         if (on || pd) {
           const copy = Object.assign({}, pd || { id: 'b_em_' + id, jobId: s(cur.jobId) || s(b.jobId), userId: s(u.id), userEmail: email, userName: s(u.name || (cur.sub && cur.sub.name)), userCompany: s(u.company || (cur.sub && cur.sub.company)),
             amount: amount, trade: trade, notes: 'Bid e-mailed to bids@grayco-cs.com', scope: '', docs: [], via: 'email', fromEmailBid: id, submittedAt: s(cur.at) || at },
-            on ? { accepted: true, rejected: false, acceptedAt: at, acceptedBy: who.email, awardPm: pm, awardExclusions: exclusions } : { accepted: false, acceptedAt: '' }, { updatedAt: at });
+            on ? { accepted: true, rejected: false, acceptedAt: at, acceptedBy: who.email, awardPm: pm, awardExclusions: exclusions, awardPo: awardPo } : { accepted: false, acceptedAt: '' }, { updatedAt: at });
           await SP.upsertRows([SP.rowFor('bids', copy)], who.email);
           out.portal = { copied: true, userId: s(u.id) };
         }
@@ -510,7 +511,7 @@ async function award(who, b){
     const d = row.data || {}, email = low(d.userEmail) || low((us.find(u => s(u.id) === s(d.userId)) || {}).email);
     awardedTrade = s(d.trade); awardedEmail = email;
     if (on) out.mail = await mailTo(email, s(d.trade) || s(b.trade), d.amount, s(d.awardMailedAt));
-    const bid = Object.assign({}, d, on ? { accepted: true, rejected: false, acceptedAt: at, acceptedBy: who.email, awardPm: pm, awardExclusions: exclusions } : { accepted: false, acceptedAt: '' }, out.mail.sent ? { awardMailedAt: at } : {});
+    const bid = Object.assign({}, d, on ? { accepted: true, rejected: false, acceptedAt: at, acceptedBy: who.email, awardPm: pm, awardExclusions: exclusions, awardPo: awardPo } : { accepted: false, acceptedAt: '', awardPo: '' }, out.mail.sent ? { awardMailedAt: at } : {});
     /*AWARDFLOW: the other portal bids on this job in the same trade → Not selected (Undo puts them back) */
     const others = [];
     try {

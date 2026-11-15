@@ -1614,12 +1614,12 @@ async function bidPapers(profileId){
   return out;
 }
 function bidStatus(b){ return b.accepted ? 'accepted' : b.rejected ? 'rejected' : 'pending'; }
-function myBidOut(b){ return b ? { lines: arr(b.lines).map(function(l){ return { id: s(l.id), amount: l.amount, note: clip(l.note, 300) }; }), id: s(b.id), amount: money(b.amount), notes: clip(b.notes, 4000), submittedAt: s(b.submittedAt), updatedAt: s(b.updatedAt), status: bidStatus(b), award: awardOut(b) } : null; }
+function myBidOut(b){ return b ? { trade: clip(b.trade, 80), inclusions: clip(b.inclusions, 4000), exclusions: clip(b.exclusions, 4000), notesOwn: clip(b.notesOwn != null ? b.notesOwn : b.notes, 4000), files: arr(b.docs).filter(function(f){ return f && f.name; }).map(function(f){ return { name: clip(f.name, 160) }; }).slice(0, 10), lines: arr(b.lines).map(function(l){ return { id: s(l.id), amount: l.amount, note: clip(l.note, 300) }; }), id: s(b.id), amount: money(b.amount), notes: clip(b.notes, 4000), submittedAt: s(b.submittedAt), updatedAt: s(b.updatedAt), status: bidStatus(b), award: awardOut(b) } : null; }
 /* patch BIDSCOPE: an awarded bid — when, the GrayCo PM to call, what GrayCo asks them to confirm (the CRM's award confirm sheet) */
 function awardOut(b){
   if (!b || !b.accepted) return null;
   const pm = b.awardPm && typeof b.awardPm === 'object' ? b.awardPm : {};
-  return { at: s(b.acceptedAt).slice(0, 25), pm: { name: clip(pm.name, 120), phone: clip(pm.phone, 40), email: okEmail(low(pm.email)) ? low(pm.email) : '' },
+  return { po: clip(b.awardPo, 30), at: s(b.acceptedAt).slice(0, 25), pm: { name: clip(pm.name, 120), phone: clip(pm.phone, 40), email: okEmail(low(pm.email)) ? low(pm.email) : '' },
     confirm: (Array.isArray(b.awardExclusions) ? b.awardExclusions : []).map(function(x){ return clip(x, 200); }).filter(Boolean).slice(0, 25), byEmail: !!b.fromEmailBid };
 }
 function linkList(v){ return arr(v).map(function(l){ const u = s(l.url); return /^https:\/\/[^\s"<>]{4,1500}$/i.test(u) ? { url: u, label: clip(l.label, 120) || u.replace(/^https:\/\//, '').split('/')[0] } : null; }).filter(Boolean).slice(0, 20); }
@@ -1725,6 +1725,16 @@ async function pBidSave(sub, body){
   if (!docs.ok) throw papersFail(docs);
   const rec = prev ? { id: s(prev.id), jobId: jobId, amount: amount, notes: clip(body.notes, 4000), scope: s(prev.scope), docs: arr(prev.docs), submittedAt: prev.submittedAt }
                    : { id: 'b_' + Date.now().toString(36) + crypto.randomBytes(6).toString('hex'), jobId: jobId, amount: amount, notes: clip(body.notes, 4000), scope: '', docs: [] };
+  /* patch BIDMULTI: the trade they bid (one of the job's trades, else theirs), what is included / not included, their files */
+  { const job = sc.jobs[jobId] && sc.jobs[jobId].data || {}, sought = (Array.isArray(job.tradesSought) ? job.tradesSought : s(job.tradesSought).split(/\s*,\s*/)).map(function(x){ return s(x && typeof x === 'object' ? x.trade : x); }).filter(Boolean), mineT = Array.isArray(c.profile.trades) ? c.profile.trades.map(s) : [];
+    const want = clip(body.trade, 80), pick = sought.concat(mineT).find(function(x){ return low(x) === low(want); });
+    if (want && !pick) throw Fail(400, 'Pick one of the trades GrayCo asked for on this job.');
+    rec.trade = pick || s(prev && prev.trade) || (sought.find(function(x){ return mineT.some(function(m){ return low(m) === low(x); }); }) || '');
+    rec.inclusions = clip(body.inclusions, 4000); rec.exclusions = clip(body.exclusions, 4000); rec.notesOwn = clip(body.notes, 4000);
+    if (rec.inclusions) rec.scope = rec.inclusions;
+    rec.notes = clip([rec.notesOwn, rec.exclusions ? 'Not included: ' + rec.exclusions : ''].filter(Boolean).join('\n'), 4000);
+    const up = await uploadsOf(sub, body.uploadIds, null);
+    if (up.length) rec.docs = arr(rec.docs).concat(up.map(function(f){ return { name: clip(f.name, 160), ref: s(f.ref), type: s(f.type), size: f.size }; })).slice(-10); }
   if (Array.isArray(body.lines)) rec.lines = body.lines.slice(0, 80).map(function(l){ return { id: clip(l && l.id, 60), amount: l && l.amount, note: clip(l && l.note, 300) }; });   /* patch PLANREQ-E: the bid form */
   await HUB().saveCollection(c.who, 'bids', [rec], [], { scope: sc });
   const after = await HUB().getRow('bids', rec.id);

@@ -158,7 +158,8 @@ await t('p-bid-save: a new bid = the bid site\'s record (same shape), then an up
   eq([r.j.created, r.j.bid.amount, r.j.bid.status], [true, 18450.5, 'pending']);
   const rows = bidsOf('j_open', 'u_a1'); eq(rows.length, 1);
   const b = rows[0].data;
-  eq(Object.keys(b).sort(), ['amount', 'docs', 'id', 'jobId', 'notes', 'scope', 'submittedAt', 'updatedAt', 'userCompany', 'userEmail', 'userId', 'userName', 'userPhone'].sort());
+  eq(Object.keys(b).sort(), ['amount', 'docs', 'exclusions', 'id', 'inclusions', 'jobId', 'notes', 'notesOwn', 'scope', 'submittedAt', 'trade', 'updatedAt', 'userCompany', 'userEmail', 'userId', 'userName', 'userPhone'].sort());   /* patch BIDMULTI: + trade / inclusions / exclusions / notesOwn */
+  eq(b.trade, 'Drywall', 'BIDMULTI: the job trade that is theirs');
   eq([b.jobId, b.userId, b.userName, b.userCompany, b.userEmail, b.userPhone, b.amount], ['j_open', 'u_a1', 'Sam Sample', 'Sample Drywall LLC', SUBS.A.email, '901-555-0141', 18450.5]);
   yes(/^b_[a-z0-9]+$/.test(b.id), b.id); eq([rows[0].key, rows[0].job_id, rows[0].user_id], ['bids/' + b.id, 'j_open', 'u_a1']);
   eq(MAIL.length, 0, 'no mail while PORTAL_MAIL_OFF');
@@ -289,6 +290,30 @@ await t('PLANREQ-C p-bidjobs: their trade\'s scope files as signed links (Drywal
   const r = await call('A', 'p-bidjobs'), j = r.j.jobs.find(x => x.id === 'j_open');
   eq(j.tradeScopes.map(x => [x.trade, x.files.map(f => f.name + '|' + f.url)]), [['Drywall', ['Drywall scope.docx|https://sb.test/storage/v1/object/sign/subportal-files/staff/plans/j_open/dw-scope.docx?token=signed']]]);
   yes(!/PAINT-SCOPE-FILE|fileRef/.test(r.raw), 'another trade / a ref leaked');
+});
+/* ── patch BIDMULTI (11/15 list 5.2): trade, included / not included, files on the bid; the PO on the award; polite Not selected ── */
+await t('BIDMULTI p-bid-save: the trade they bid, what is included / not included, their files; the CRM compare reads scope (included) + "Not included:" in the notes', async () => {
+  T.gc_sub_event.push({ id: 'Eupl0bid01', kind: 'upload', sub_id: 'SA', project_id: null, data: { ref: 'sb:crm-files/' + 'a'.repeat(64) + '.pdf', name: 'Sample bid.pdf', type: 'application/pdf', size: 1200 }, created_at: now });
+  T.gc_sub_event.push({ id: 'Eupl0bid02', kind: 'upload', sub_id: 'SB', project_id: null, data: { ref: 'sb:crm-files/' + 'b'.repeat(64) + '.pdf', name: 'OTHER-SUBS-FILE.pdf', type: 'application/pdf' }, created_at: now });
+  const r = await call('A', 'p-bid-save', { jobId: 'j_open', amount: 17900, trade: 'drywall', inclusions: 'Hang, tape, Level 4', exclusions: 'Paint, patching', notes: 'Can start Monday', uploadIds: ['Eupl0bid01', 'Eupl0bid02'] }); eq(r.code, 200, r.raw);
+  const b = bidsOf('j_open', 'u_a1')[0].data;
+  eq([b.trade, b.inclusions, b.exclusions, b.scope, b.notesOwn, b.notes], ['Drywall', 'Hang, tape, Level 4', 'Paint, patching', 'Hang, tape, Level 4', 'Can start Monday', 'Can start Monday\nNot included: Paint, patching']);
+  eq(b.docs.map(d => d.name), ['Sample bid.pdf'], 'only their own upload (not another sub\'s)');
+  yes(/^sb:crm-files\//.test(b.docs[0].ref));
+  const mb = r.j.bid; eq([mb.trade, mb.inclusions, mb.exclusions, mb.notesOwn, mb.files.map(f => f.name)], ['Drywall', 'Hang, tape, Level 4', 'Paint, patching', 'Can start Monday', ['Sample bid.pdf']]);
+  yes(!/sb:crm-files/.test(r.raw), 'the file ref never goes back to the sub');
+  const bad = await call('A', 'p-bid-save', { jobId: 'j_open', amount: 17900, trade: 'Roofing' }); eq(bad.code, 400); yes(/trades GrayCo asked for/.test(bad.j.error), bad.j.error);
+});
+await t('BIDMULTI award: the awarded sub sees the job\'s PO; another sub never sees it', async () => {
+  const row = T.sp_rows.find(x => x.key === 'bids/b_dec'); row.data.awardPo = 'T801';
+  const r = await call('A', 'p-bidjobs'); eq(r.j.jobs.find(j => j.id === 'j_dec').myBid.award.po, 'T801');
+  const o = await call('B', 'p-bidjobs'); yes(!/T801/.test(o.raw), 'the PO leaked to another sub');
+});
+await t('BIDMULTI bid-hub: award stores the PO on the bid (awardPo), Undo clears it; the portal shows it and a polite "Not selected" with no prices (EN + ES)', () => {
+  const H = fs.readFileSync(path.join(FN, 'bid-hub.js'), 'utf8'), A = fs.readFileSync(path.join(ROOT, 'portal-app.js'), 'utf8');
+  yes(/const awardPo = on \? s\(b\.po\)/.test(H) && /awardExclusions: exclusions, awardPo: awardPo \} : \{ accepted: false, acceptedAt: '', awardPo: '' \}/.test(H));
+  yes(/data-bidpo/.test(A) && /bidThanks: 'Thank you for bidding\. GrayCo went with another bid for this trade this time\./.test(A) && /bidThanks: 'Gracias por su oferta/.test(A) && /data-bidthanks/.test(A));
+  yes(/trade: trSel\.value \|\| '', inclusions: inc\.value, exclusions: exc\.value, uploadIds: ids/.test(A));
 });
 if (!NO_BROWSER) { try { ({ chromium } = await import(SPD + '/node_modules/playwright/index.mjs')); } catch (e) { console.log('  (no Playwright here — browser checks skipped)'); } }
 if (chromium) {

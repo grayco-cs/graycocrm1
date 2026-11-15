@@ -81,6 +81,9 @@ await A.ev(() => { const l = JSON.parse(localStorage.getItem('gc_office_tasks') 
 await A.ev(() => window._gcScopeVer.sweep()); await sleep(200);
 T = await A.ev(() => JSON.parse(localStorage.getItem('gc_office_tasks') || '[]').filter(t => /^SCOPEREVIEW_/.test(t.id)).map(t => t.done));
 ok('B5 ticked → settled (stays done until the estimate changes again)', JSON.stringify(T) === '[true]', T);
+/* BIDMULTI: 🏆 Award on the bid portal (with the job picked) puts that sub on the job */
+const ab = await A.ev(() => Promise.all([window._gcSubConfirm.addBid('P2', { company: 'Demo Paint Co', email: '', trade: 'Paint' }), window._gcSubConfirm.addBid('P2', { company: 'Nobody Bidder LLC', email: 'nobody@bidder.test' })]).then(r => ({ r, subs: window._crm.projects.find(p => p.id === 'P2').subs })));
+ok('B7 an awarded bid puts the sub on the job (Awarded, "bid awarded"); a bidder who is not a CRM sub is not made one', ab.r[0] === 1 && ab.r[1] === 0 && ab.subs.length === 1 && ab.subs[0].subId === 'S2' && ab.subs[0].status === 'Awarded' && /bid awarded/.test(ab.subs[0].via), ab);
 ok('B6 no page errors', A.errs.length === 0, A.errs);
 await A.close();
 const pass = R.filter(Boolean).length; console.log(`\n${pass}/${R.length} passed`); process.exit(pass === R.length ? 0 : 1);

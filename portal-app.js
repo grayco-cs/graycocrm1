@@ -332,7 +332,7 @@ Object.assign(L.en, { jobsToBid: '📋 Jobs to bid', bidsJoin: 'Join GrayCo bids
   daysLeft: '{n} days left', dayLeft: '1 day left', dueToday: 'Due today', pastDue: 'Past due', bidInvited: '📨 Invited', bidOpen: 'Open to bid', bidPending: '✓ Bid sent', bidAccepted: '🏆 Awarded', qaTitle: 'Questions about this job', qaYou: 'You asked', qaOther: 'A bidder asked', qaShared: 'answer to all bidders', qaWaiting: 'Waiting for GrayCo’s answer.', qaNone: 'No questions yet. Ask GrayCo anything about the job before you bid.', qaPh: 'e.g. Is the 2nd floor in this bid? Who supplies the paint?', qaAsk: 'Ask a question', qaNeed: 'Type your question.', qaSent: 'Question sent — GrayCo answers here.', qaLbl: 'Your question', bidAwardPm: 'Your GrayCo project manager', bidAwardNext: 'Next: GrayCo will send your sub agreement / scope to sign here in your GrayCo Portal.', bidAwardConfirm: 'Please confirm these before we finalize', bidRejected: 'Not selected', bidClosed: 'Closed',
   bidOpenBtn: 'Open & bid ›', bidSeeBtn: 'See my bid ›', plansLbl: 'Plans', planFiles: 'Plan files', scopeLbl: 'Scope of work', specsLbl: 'Specifications', notesLbl: 'Notes', tradesLbl: 'Trades', yourTradeScope: 'Scope for your trade',
   yourBid: 'Your bid', bidAmount: 'Bid amount ($)', bidNotes: 'Notes for GrayCo (what is included / not included, timing)', bidSubmit: 'Submit bid', bidUpdate: 'Update bid', bidSent: 'Bid sent to GrayCo', bidUpdated: 'Bid updated',
-  bidDecided: 'GrayCo has decided on this bid — it can no longer be changed.', bidClosedNote: 'Bids are closed on this job.', bidSentOn: 'Sent {d}', bidUpdOn: 'updated {d}', amountNeed: 'Enter your bid amount.',
+  bidDecided: 'GrayCo has decided on this bid — it can no longer be changed.', bidThanks: 'Thank you for bidding. GrayCo went with another bid for this trade this time. We hope you will bid on the next one.', bidTrade: 'Trade you are bidding', bidIncl: 'What is included', bidExcl: 'Not included', bidFiles: 'Your bid files (PDF or photos)', bidPo: 'Your PO for this job', bidPoHow: 'Use it at the supply house and on every receipt and invoice.', bidClosedNote: 'Bids are closed on this job.', bidSentOn: 'Sent {d}', bidUpdOn: 'updated {d}', amountNeed: 'Enter your bid amount.',
   papersOk: 'Papers on file: W-9, GL, WC', papersNeed: 'Before you can bid, GrayCo needs these papers on file:', papersMissing: 'missing', papersExpired: 'expired', papersHow: 'Upload them in My Documents on the bid site, or send them to GrayCo from Papers here.',
   papersOpen: 'Open My Documents', papersBlocked: 'The bid form opens once your papers are on file.', pW9: 'W-9', pGL: 'General liability (GL)', pWC: 'Workers’ comp (WC)', bidsSite: 'Open bids.grayco-cs.com' });
 Object.assign(L.es, { jobsToBid: '📋 Trabajos para licitar', bidsJoin: 'Unirse a licitaciones GrayCo', bidsJoinWhy: 'Vea los trabajos abiertos de GrayCo y envíe sus ofertas aquí mismo en su portal. Únase una vez — GrayCo aprueba su compañía y los trabajos aparecen aquí.',
@@ -340,7 +340,7 @@ Object.assign(L.es, { jobsToBid: '📋 Trabajos para licitar', bidsJoin: 'Unirse
   daysLeft: 'Quedan {n} días', dayLeft: 'Queda 1 día', dueToday: 'Vence hoy', pastDue: 'Ya venció', bidInvited: '📨 Invitado', bidOpen: 'Abierto para licitar', bidPending: '✓ Oferta enviada', bidAccepted: '🏆 Adjudicada', qaTitle: 'Preguntas sobre este trabajo', qaYou: 'Usted preguntó', qaOther: 'Un licitante preguntó', qaShared: 'respuesta para todos', qaWaiting: 'Esperando la respuesta de GrayCo.', qaNone: 'Aún no hay preguntas. Pregunte a GrayCo lo que necesite antes de licitar.', qaPh: 'p. ej. ¿El 2.º piso está en esta oferta? ¿Quién pone la pintura?', qaAsk: 'Hacer una pregunta', qaNeed: 'Escriba su pregunta.', qaSent: 'Pregunta enviada — GrayCo contesta aquí.', qaLbl: 'Su pregunta', bidAwardPm: 'Su gerente de proyecto en GrayCo', bidAwardNext: 'Siguiente: GrayCo le enviará su contrato de subcontratista / el alcance para firmar aquí en su Portal GrayCo.', bidAwardConfirm: 'Por favor confirme esto antes de finalizar', bidRejected: 'No seleccionada', bidClosed: 'Cerrado',
   bidOpenBtn: 'Abrir y licitar ›', bidSeeBtn: 'Ver mi oferta ›', plansLbl: 'Planos', planFiles: 'Archivos de planos', scopeLbl: 'Alcance del trabajo', specsLbl: 'Especificaciones', notesLbl: 'Notas', tradesLbl: 'Oficios', yourTradeScope: 'Alcance para su oficio',
   yourBid: 'Su oferta', bidAmount: 'Monto de la oferta ($)', bidNotes: 'Notas para GrayCo (qué incluye / qué no, tiempos)', bidSubmit: 'Enviar oferta', bidUpdate: 'Actualizar oferta', bidSent: 'Oferta enviada a GrayCo', bidUpdated: 'Oferta actualizada',
-  bidDecided: 'GrayCo ya decidió sobre esta oferta — ya no se puede cambiar.', bidClosedNote: 'Las ofertas están cerradas en este trabajo.', bidSentOn: 'Enviada {d}', bidUpdOn: 'actualizada {d}', amountNeed: 'Escriba el monto de su oferta.',
+  bidDecided: 'GrayCo ya decidió sobre esta oferta — ya no se puede cambiar.', bidThanks: 'Gracias por su oferta. Esta vez GrayCo escogió otra oferta para este oficio. Esperamos que oferte en el próximo.', bidTrade: 'Oficio que oferta', bidIncl: 'Qué incluye', bidExcl: 'Qué no incluye', bidFiles: 'Archivos de su oferta (PDF o fotos)', bidPo: 'Su PO para este trabajo', bidPoHow: 'Úselo en el proveedor y en cada recibo y factura.', bidClosedNote: 'Las ofertas están cerradas en este trabajo.', bidSentOn: 'Enviada {d}', bidUpdOn: 'actualizada {d}', amountNeed: 'Escriba el monto de su oferta.',
   papersOk: 'Papeles en archivo: W-9, GL, WC', papersNeed: 'Antes de licitar, GrayCo necesita estos papeles en archivo:', papersMissing: 'falta', papersExpired: 'vencido', papersHow: 'Súbalos en Mis Documentos del sitio de licitaciones, o envíelos a GrayCo desde Papeles aquí.',
   papersOpen: 'Abrir Mis Documentos', papersBlocked: 'El formulario de oferta se abre cuando sus papeles estén en archivo.', pW9: 'W-9', pGL: 'Responsabilidad general (GL)', pWC: 'Compensación al trabajador (WC)', bidsSite: 'Abrir bids.grayco-cs.com' });
 /* patch PLANREQ (owner 11/12): 📩 Request plans / more info on a job — what they need + a note; the job's PM + estimator get an e-mail,
@@ -503,10 +503,12 @@ function bidSheet(j){
     sec.push(h('div', { class: 'box', 'data-bidaward': '1' }, [h('b', { text: t('bidAccepted') }),
       pmL ? h('p', { class: 'muted', text: t('bidAwardPm') + ': ' + pmL }) : null,
       aw.pm && aw.pm.phone ? h('a', { class: 'btn', href: 'tel:' + String(aw.pm.phone).replace(/[^\d+]/g, ''), text: '📞 ' + aw.pm.phone }) : null,
+      aw.po ? h('div', { class: 'box', 'data-bidpo': '1' }, [h('b', { text: t('bidPo') + ': ' + aw.po }), h('div', { class: 'muted', text: t('bidPoHow') })]) : null,   /* patch BIDMULTI */
       h('p', { text: t('bidAwardNext') }),
       (aw.confirm || []).length ? h('div', null, [h('b', { text: t('bidAwardConfirm') + ':' }), h('ul', null, aw.confirm.map(function(x){ return h('li', { text: x }); }))]) : null]));
   }
-  if (decided) sec.push(h('div', { class: 'how', text: t('bidDecided') }));
+  if (b && b.status === 'rejected') sec.push(h('div', { class: 'how', 'data-bidthanks': '1', text: t('bidThanks') }));   /* patch BIDMULTI: polite, no prices */
+  else if (decided) sec.push(h('div', { class: 'how', text: t('bidDecided') }));
   else if (!j.canBid) sec.push(h('div', { class: 'how', text: t('bidClosedNote') }));
   else {
     sec.push(papersBox(docs, D.url));
@@ -515,17 +517,25 @@ function bidSheet(j){
     var nt = h('textarea', { class: 'inp', id: 'bidNotes', rows: '4', maxlength: '4000', disabled: blocked });
     var bf = ((j.details || {}).bidForm || []), have = {}; ((b && b.lines) || []).forEach(function(l){ have[l.id] = l; });   /* patch PLANREQ-E: the bid form's line items */
     var lineIn = bf.map(function(x){ var i = h('input', { class: 'inp', type: 'number', inputmode: 'decimal', step: '0.01', 'data-bidline': x.id, disabled: blocked, placeholder: '$' }); if (have[x.id] && have[x.id].amount != null) i.value = String(have[x.id].amount); return { x: x, i: i }; });
-    if (b) { amt.value = String(b.amount); nt.value = b.notes || ''; }
+    /* patch BIDMULTI: the trade, what is included / not included, files */
+    var trs = String(j.tradesSought || '').split(/\s*,\s*/).filter(Boolean), myT = ((D.me || {}).trades || []);
+    var trSel = h('select', { class: 'inp', id: 'bidTrade', disabled: blocked }, trs.map(function(x){ return h('option', { value: x, text: x }); }));
+    var defT = (b && b.trade) || trs.filter(function(x){ return myT.some(function(m){ return String(m).toLowerCase() === x.toLowerCase(); }); })[0] || trs[0] || ''; if (defT) trSel.value = defT;
+    var inc = h('textarea', { class: 'inp', id: 'bidIncl', rows: '3', maxlength: '4000', disabled: blocked }), exc = h('textarea', { class: 'inp', id: 'bidExcl', rows: '3', maxlength: '4000', disabled: blocked });
+    var bfiles = h('input', { class: 'inp', id: 'bidFiles', type: 'file', multiple: 'multiple', accept: 'application/pdf,image/*', disabled: blocked });
+    if (b) { amt.value = String(b.amount); nt.value = (b.notesOwn != null ? b.notesOwn : b.notes) || ''; inc.value = b.inclusions || ''; exc.value = b.exclusions || ''; }
     var err = h('div', { class: 'err', role: 'alert' });
     var go = h('button', { type: 'button', class: 'btn gold', id: 'bidSend', disabled: blocked, text: b ? t('bidUpdate') : t('bidSubmit') });
     sec.push(h('div', { class: 'bidform', 'aria-disabled': blocked ? 'true' : 'false' }, [blocked ? h('div', { class: 'muted', text: t('papersBlocked') }) : null, field(t('bidAmount'), amt)]
       .concat(lineIn.length ? [h('b', { text: t('dLines') })].concat(lineIn.map(function(l){ return field(l.x.item + (l.x.trade ? ' · ' + l.x.trade : '') + (l.x.unit ? ' (' + l.x.unit + ')' : ''), l.i); })) : [])
+      .concat((trs.length > 1 ? [field(t('bidTrade'), trSel)] : []).concat([field(t('bidIncl'), inc), field(t('bidExcl'), exc), field(t('bidFiles') + (b && (b.files || []).length ? ' — ' + b.files.map(function(f){ return f.name; }).join(', ') : ''), bfiles)]))   /* patch BIDMULTI */
       .concat([field(t('bidNotes'), nt), err, go])));
     go.addEventListener('click', function(){
       err.textContent = '';
       if (!(Number(amt.value) > 0)) { err.textContent = t('amountNeed'); amt.focus(); return; }
       busy(go, true);
-      api('p-bid-save', { jobId: j.id, amount: amt.value, notes: nt.value, lines: lineIn.map(function(l){ return { id: l.x.id, amount: l.i.value === '' ? null : l.i.value }; }) }).then(function(r){
+      [].slice.call(bfiles.files || []).slice(0, 5).reduce(function(p, f){ return p.then(function(ids){ return upload(f, 'bid').then(function(u){ ids.push(u.id); return ids; }); }); }, Promise.resolve([]))   /* patch BIDMULTI */
+      .then(function(ids){ return api('p-bid-save', { jobId: j.id, amount: amt.value, notes: nt.value, trade: trSel.value || '', inclusions: inc.value, exclusions: exc.value, uploadIds: ids, lines: lineIn.map(function(l){ return { id: l.x.id, amount: l.i.value === '' ? null : l.i.value }; }) }); }).then(function(r){
         sh.close(); toast(r.created ? t('bidSent') : t('bidUpdated'));
         return loadBids(true).then(paintBids);
       }, function(e){ busy(go, false); err.textContent = e.message; toast(e.message, true); });
