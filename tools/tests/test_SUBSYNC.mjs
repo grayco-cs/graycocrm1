@@ -208,7 +208,7 @@ const row = await waitOn(A, () => !!document.querySelector('.apx-row[data-k="bp:
 ok('2 Zedd\'s sign-up is a row in ✅ Approvals', !!row);
 const tA = Date.now();
 await A.ev(() => [...document.querySelectorAll('.apx-row[data-k="bp:su:u_z"] button')].find(b => /Approve/.test(b.textContent)).click());
-const z1 = await waitOn(A, () => (window._crm.vendors || []).find(v => v.email === 'zedd@zeddearth.test' && v.files && v.files.length >= 4), null, 40000);
+const z1 = await waitOn(A, () => (window._crm.vendors || []).find(v => v.email === 'zedd@zeddearth.test' && v.files && v.files.length >= 4 && v.name === 'ZEDD EARTHWORKS' && v.license === 'MS 55-123' && v.insExp), null, 40000);   /* robust: the whole record */
 V = await vend(A); const z = V.find(v => v.email === 'zedd@zeddearth.test') || {};
 ok('2b ✅ Approve → s-bids-approve, and Zedd is on the Subs list within seconds (' + Math.round((Date.now() - tA) / 100) / 10 + ' s): company, contact, phone, trades, street address, license, "Bid portal"',
   CALLS.some(c => c.action === 's-bids-approve' && c.id === 'u_z' && c.approve === true) && !!z1 && z.name === 'ZEDD EARTHWORKS' && z.contact === 'Zedd Demo' && z.phone === '901-555-0301' && z.trade === 'Earthwork, Excavation' && /300 Sample Hwy/.test(z.address) && /Olive Branch/.test(z.address) && z.license === 'MS 55-123' && z.source === 'Bid portal' && z.bidPortalUserId === 'u_z', z);
@@ -221,7 +221,7 @@ await A.ev(() => window._setView('subs'));
 const btn = await waitOn(A, () => !!document.querySelector('.gcsub-panel [data-p="bids-ok"][data-id="u_y"]'), null, 30000);
 ok('3 Yara\'s request is in Subs → 🔨 Bid site requests', !!btn);
 await A.ev(() => document.querySelector('.gcsub-panel [data-p="bids-ok"][data-id="u_y"]').click());
-const y1 = await waitOn(A, () => (window._crm.vendors || []).find(v => v.email === 'yara@demotile.test' && (v.files || []).length === 1), null, 40000);
+const y1 = await waitOn(A, () => (window._crm.vendors || []).find(v => v.email === 'yara@demotile.test' && (v.files || []).length === 1 && v.name === 'Demo Tile Co' && v.trade === 'Tile' && /400 Sample St/.test(v.address || '') && v.w9 && v.source === 'Bid portal'), null, 45000);   /* robust (11/15): wait for the whole record, not its first write */
 V = await vend(A); const y = V.find(v => v.email === 'yara@demotile.test') || {};
 ok('3b Approve there → Yara on the Subs list (Demo Tile Co, Tile, 400 Sample St, W-9 on the record)', !!y1 && y.name === 'Demo Tile Co' && y.trade === 'Tile' && /400 Sample St/.test(y.address) && y.w9 && !y.coi && y.source === 'Bid portal', y);
 await sleep(2500);
