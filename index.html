@@ -144798,6 +144798,8 @@ function srcStored(out){
       /* the one thing to tap */
       if (t.kind === 'job_done') o.act = { l: '🏁 Mark complete', f: function(){ call('_gcJobDoneApprove', id); } };   /* JOBDONE */
       else if (t.kind === 'job_contact') o.act = { l: '📇 Fill them in', f: function(){ call('_gcJobContactSheet'); } };   /* JOBCONTACT */
+      else if (t.kind === 'sub_confirm') o.act = { l: '👷 Confirm them', f: function(){ call('_gcSubConfirmSheet'); } };   /* SUBCONFIRM */
+      else if (t.kind === 'scope_review') o.act = { l: '📋 Open the scope', f: function(){ call('_gcScopeReviewOpen', id); } };   /* SCOPEVER */
       else if (t.kind === 'paid_before') o.act = { l: '✓ Review & mark paid', f: function(){ call('_gcPaidBeforeSheet'); } };   /* PAIDBEFORE */
       else if (t.kind === 'lsa_check') o.act = { l: '🔎 Decide', f: function(){ call('_gcLsaDecide', id); } };   /* LSACHECK */
       else if (t.kind === 'qb_home') o.act = { l: 'Find its job', f: function(){ call('_gcOpenQbHome', id); } };
@@ -230279,7 +230281,7 @@ function deliver(d, who, how, subject, message){
   if (!d || d.kind !== 'sub' || d.internal) return Promise.reject(new Error('Only a sub scope (no prices) can be sent.'));
   var pid = s(d.pid), rows = [], pdfP = how.pdf ? makePdf(d) : Promise.resolve(null), refP = null;
   var html = '<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#14202E;white-space:pre-wrap">' + esc(strip(message)) + '</div><div style="margin-top:16px">' + scopeHtml(d, { fragment: true }) + '</div>';
-  function rec(c, via, ok, status, detail, extra){ var r = Object.assign({ id: uid('SND_'), at: nowIso(), by: myName(), byEmail: myEmail(), version: num(d.version), via: via, subId: s(c.id), subName: s(c.name), email: low(c.email), ok: !!ok, status: status, detail: s(detail).slice(0, 300) }, extra || {}); rows.push(r); return r; }
+  function rec(c, via, ok, status, detail, extra){ var r = Object.assign({ id: uid('SND_'), at: nowIso(), by: myName(), byEmail: myEmail(), version: num(d.version), via: via, subId: s(c.id), subName: s(c.name), email: low(c.email), ok: !!ok, status: status, detail: s(detail).slice(0, 300) }, ok && W._gcScopeDiff && W._gcScopeDiff.compact ? { ls: W._gcScopeDiff.compact(d) } : {}, extra || {});   /* patch SCOPEVER: what was sent */ rows.push(r); return r; }
   function pdfRef(pdf){
     if (refP) return refP;
     refP = (pdf && pdf.blob && typeof W._gcStoreFile === 'function') ? Promise.resolve(W._gcStoreFile(new File([pdf.blob], pdf.name, { type: 'application/pdf' }), { kind: 'doc', pid: pid, name: pdf.name })).then(function(m){ return m && m.ref ? { ref: m.ref, name: m.name || pdf.name, type: 'application/pdf' } : null; }, function(){ return null; }) : Promise.resolve(null);
@@ -230290,7 +230292,8 @@ function deliver(d, who, how, subject, message){
     who.forEach(function(c){
       if (how.email) chain = chain.then(function(){
         if (!/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(s(c.email))) { rec(c, 'email', false, 'not sent', 'no e-mail on file'); return; }
-        return fn('send-email', { mode: 'personal', to: c.email, subject: subject, html: html, fromName: myName(), attachments: pdf ? [{ filename: pdf.name, content: pdf.base64 }] : [], pid: pid, customer: '', about: 'scope' })
+        var chg = (W._gcScopeDiff && W._gcScopeDiff.forSub ? W._gcScopeDiff.forSub(d, c.id) : '');   /* patch SCOPEVER */
+        return fn('send-email', { mode: 'personal', to: c.email, subject: subject, html: (chg ? '<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;color:#14202E;white-space:pre-wrap;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px;margin-bottom:12px">' + esc(chg) + '</div>' : '') + html, fromName: myName(), attachments: pdf ? [{ filename: pdf.name, content: pdf.base64 }] : [], pid: pid, customer: '', about: 'scope' })
           .then(function(r){ rec(c, 'email', r.ok, r.ok ? (r.data.paused ? 'held — ⏸ data-entry mode' : 'sent') : 'not sent', r.ok ? (pdf ? 'PDF attached' : (how.pdf ? 'no PDF could be made — the scope is in the e-mail' : '')) : (r.data.error || ('error ' + r.status)), { emailId: s(r.data.entry && r.data.entry.id) }); });
       });
       if (how.portal) chain = chain.then(function(){
@@ -230307,7 +230310,7 @@ function deliver(d, who, how, subject, message){
           .then(function(yes){ return yes ? addToJob(pid, { pid: pid, id: c.id, name: c.name, trade: c.trade }) : false; });
         return step.then(function(okOn){
           if (!okOn) { rec(c, 'portal', false, 'not sent', 'not on the job — not added'); return; }
-          return pdfRef(pdf).then(function(f){ return fn('portal-access', { action: 's-send', projectId: pid, party: 's:' + c.id, text: strip(message).slice(0, 1500) + '\n\n' + scopeText(d), files: f ? [f] : [] }); })
+          return pdfRef(pdf).then(function(f){ var chg = (W._gcScopeDiff && W._gcScopeDiff.forSub ? W._gcScopeDiff.forSub(d, c.id) : ''); return fn('portal-access', { action: 's-send', projectId: pid, party: 's:' + c.id, text: (chg ? chg + '\n\n' : '') + strip(message).slice(0, 1500) + '\n\n' + scopeText(d), files: f ? [f] : [] }); })   /* patch SCOPEVER */
             .then(function(r){ rec(c, 'portal', r.ok, r.ok ? 'in their portal (job messages)' : 'not sent', r.ok ? (on ? '' : 'added to the job as Bidding') : (r.data.error || ('error ' + r.status)), { msgId: s(r.data.id) }); });
         });
       });
@@ -234665,5 +234668,249 @@ function panelBtn(){
 D.addEventListener('click', function(e){ var t = e.target && e.target.closest ? e.target.closest('#gc-lsa2-btn') : null; if (!t) return; e.preventDefault(); e.stopPropagation(); panel(); }, true);
 SI.call(W, function(){ if (D.hidden) return; bar(); panelBtn(); }, 900); ST.call(W, sweep, 40000); SI.call(W, sweep, 300000);
 W._gcLsa2 = { pend: pend, sweep: sweep, panel: panel, months: months, disputed: disputed };
+})(window);
+</script>
+<script id="gc-patch-subconfirm">
+/* __GC_PATCH_SUBCONFIRM__ — 👷 CONFIRM SUBS ON JOBS (owner's sub portal plan, 11/15 list item 5.1: "a one-tap 'confirm these subs on
+   these jobs' list — existing links are offered once, never auto-added; adding a sub to a job / bid is the only thing that decides which
+   jobs a sub sees").
+   • The links the CRM already has between a sub (a CRM sub record) and a job they are NOT on yet (job.subs):
+       🧾 a sub invoice on the job (Sub Invoices) · 📝 a sub agreement stored on the job · 📅 a company-schedule item for the job with
+       that sub as the vendor.
+   • ✅ admins + the office get ONE To-Do "👷 N subs to confirm on their jobs" → 👷 Confirm them: the list by job, each sub with why,
+     ticked; "✓ Put the ticked subs on their jobs" adds them to the job as Awarded (the CRM's own job save; via "confirmed — invoice /
+     agreement / schedule"); "Not on this job" is remembered (gc_kv gc_subconfirm_no) and never offered again. Nothing is added by
+     itself. A sub on the job sees it in their portal (portal-access: job.subs) — that is the only door.
+   API: window._gcSubConfirmSheet() · window._gcSubConfirm = { list(), add(pairs), no(pid, subId), sweep() } */
+(function(W){
+'use strict';
+if (W.__GC_PATCH_SUBCONFIRM__) return; W.__GC_PATCH_SUBCONFIRM__ = true;
+var D = W.document, ST = W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout, SI = W.__GC_NATIVE_SETINTERVAL__ || W.setInterval;
+var NOKEY = 'gc_subconfirm_no';
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v.filter(function(x){ return x && typeof x === 'object'; }) : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function norm(v){ return low(v).replace(/\b(llc|inc|co|corp|company|the|ltd)\b/g, '').replace(/[^a-z0-9]+/g, ''); }
+function crm(){ return W._crm || {}; }
+function me(){ try { var u = JSON.parse(localStorage.getItem('grayco_user') || '{}'); return s(u.name) || s(u.email); } catch (e) { return ''; } }
+function office(){ try { if (W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()) return true; } catch (e) {} try { if (W._gcIsOfficeFull && W._gcIsOfficeFull()) return true; var u = JSON.parse(localStorage.getItem('grayco_user') || '{}'); return /admin|office/i.test(s(u.role) + ' ' + s(u.profile)) || /owner/i.test(s(u.payType)); } catch (e) { return false; } }
+function subs(){ var seen = {}, out = []; arr(crm().subs).concat(arr(crm().vendors)).forEach(function(r){ if (!r.id || seen[r.id]) return; if (!(r.isSub === true || (r.isSub === undefined && (r.trade || r.cat === 'Sub')))) return; seen[r.id] = 1; out.push(r); }); return out; }
+function subOf(id, name){ var L = subs(), n = norm(name); return (s(id) && L.find(function(r){ return s(r.id) === s(id); })) || (n && L.find(function(r){ return norm(r.name) === n || norm(r.company) === n; })) || null; }
+function onJob(p, sub){ return arr(p.subs).some(function(r){ return (s(r.subId) && s(r.subId) === s(sub.id)) || (norm(r.name) && (norm(r.name) === norm(sub.name) || norm(r.name) === norm(sub.company))); }); }
+/* the "Not on this job" answers */
+var NO = null, PULLED = false;
+function noMap(){ if (NO) return NO; try { NO = JSON.parse(localStorage.getItem(NOKEY) || '{}') || {}; } catch (e) { NO = {}; } return NO; }
+function pull(){
+  if (PULLED) return; PULLED = true;
+  try { var u = (localStorage.getItem('grayco_sb_url') || '').replace(/\/$/, ''), k = localStorage.getItem('grayco_sb_key') || ''; if (!u || !k) return;
+    W.fetch(u + '/rest/v1/gc_kv?key=eq.' + NOKEY + '&select=value', { headers: { apikey: k, Authorization: 'Bearer ' + k }, cache: 'no-store' }).then(function(r){ return r.ok ? r.json() : null; }, function(){ return null; }).then(function(rows){
+      if (!Array.isArray(rows) || !rows[0]) return; var v = rows[0].value; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = {}; } }
+      var m = noMap(); Object.keys(v || {}).forEach(function(k2){ if (!m[k2]) m[k2] = v[k2]; }); try { localStorage.setItem(NOKEY, JSON.stringify(m)); } catch (e) {} });
+  } catch (e) {}
+}
+function no(pid, subId){ var m = noMap(); m[s(pid) + '|' + s(subId)] = { at: new Date().toISOString(), by: me() }; try { localStorage.setItem(NOKEY, JSON.stringify(m)); } catch (e) {} try { var u = W._supaUpsertNow || W._supaUpsert; if (u) u(NOKEY, m); } catch (e) {} }
+/* the list: [{ pid, job, subId, sub, trade, why: [..] }] */
+function list(){
+  pull();
+  var P = arr(crm().projects).filter(function(p){ return p.id && !p.deleted && !p.mergedInto; }), byId = {}; P.forEach(function(p){ byId[s(p.id)] = p; });
+  var out = {}, m = noMap();
+  function add(pid, sub, why){
+    var p = byId[s(pid)]; if (!p || !sub || onJob(p, sub) || m[s(pid) + '|' + s(sub.id)]) return;
+    var k = s(pid) + '|' + s(sub.id); var x = out[k] || (out[k] = { pid: s(pid), job: p, subId: s(sub.id), sub: sub, trade: s(sub.trade), why: [] });
+    if (x.why.indexOf(why) < 0 && x.why.length < 4) x.why.push(why);
+  }
+  var seenInv = {};
+  arr(crm().invoices).concat(arr(crm().invs)).forEach(function(i){ if (seenInv[i.id] || !s(i.pid) || i.deleted || /void/i.test(s(i.status))) return; seenInv[i.id] = 1; if (!(s(i.type) === 'sub' || s(i.sub) || s(i.subId))) return; var sb = subOf(i.subId, i.sub || i.vendor); if (sb) add(i.pid, sb, '🧾 sub invoice' + (s(i.invNum) ? ' #' + s(i.invNum) : '')); });
+  P.forEach(function(p){ arr(p.subAgreements).forEach(function(a){ if (a.deleted) return; var sb = subOf(a.subId, a.sub || a.subName); if (sb) add(p.id, sb, '📝 sub agreement'); }); });
+  arr(crm().schedule).forEach(function(x){ if (!s(x.pid) || x.deleted || /^sub portal$/i.test(s(x.source))) return; var sb = subOf(x.subId, x.vendor); if (sb) add(x.pid, sb, '📅 on the schedule' + (s(x.date) ? ' ' + s(x.date).slice(5).replace('-', '/') : '')); });
+  return Object.keys(out).map(function(k){ return out[k]; }).sort(function(a, b){ return s(a.job.name).localeCompare(s(b.job.name)) || s(a.sub.name).localeCompare(s(b.sub.name)); });
+}
+/* put them on their jobs (the CRM's own job save: idb → screen → cloud, a person's edit) */
+function add(pairs){
+  pairs = arr(pairs); if (!pairs.length) return Promise.resolve(0);
+  return Promise.resolve(W.idbGet ? W.idbGet('projects') : null).then(function(L){
+    L = arr(L).length ? arr(L) : arr(crm().projects);
+    var at = new Date().toISOString(), n = 0, by = me();
+    var outL = L.map(function(p){
+      var mine = pairs.filter(function(x){ return s(x.pid) === s(p.id); }); if (!mine.length) return p;
+      var q = Object.assign({}, p), rows = arr(p.subs).slice();
+      mine.forEach(function(x){ var sb = subOf(x.subId); if (!sb || onJob({ subs: rows }, sb)) return; rows.push({ id: 'SR' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: s(sb.company || sb.name), trade: s(x.trade || sb.trade), status: 'Awarded', subId: s(sb.id), addedAt: at, addedBy: by, via: 'confirmed — ' + (Array.isArray(x.why) ? x.why : []).map(function(w){ return s(w).replace(/^\S+\s/, ''); }).join(', ') }); n++; });
+      q.subs = rows; q.updatedAt = at; return q;
+    });
+    if (!n) return 0;
+    try { W.__GC_MANUAL_SAVE__ = true; if (W._gcManualNow) W._gcManualNow('subs confirmed on jobs'); } catch (e) {}
+    return Promise.resolve(W.idbSet ? W.idbSet('projects', outL) : null).then(function(){
+      try { if (W._setProjects) W._setProjects(outL.slice()); } catch (e) {}
+      try { if (W._crm) W._crm.projects = outL; } catch (e) {}
+      try { var f = W._supaUpsertNow || W._supaUpsert; if (f) f('projects', outL); } catch (e) {}
+      ST.call(W, function(){ try { W.__GC_MANUAL_SAVE__ = false; } catch (e) {} sweep(); }, 2000);
+      return n;
+    });
+  });
+}
+function tasks(){ try { var l = JSON.parse(localStorage.getItem('gc_office_tasks') || '[]'); return Array.isArray(l) ? l : []; } catch (e) { return []; } }
+function saveTasks(l){ try { localStorage.setItem('gc_office_tasks', JSON.stringify(l)); } catch (e) {} try { if (W._gcOfficeTasksPush) W._gcOfficeTasksPush(); } catch (e) {} try { var u = W._supaUpsertNow || W._supaUpsert; if (u) u('gc_office_tasks', l); } catch (e) {} }
+function sweep(){
+  try {
+    if (!office() || !arr(crm().projects).length) return -1;
+    var n = list().length, l = tasks(), t = l.find(function(x){ return x && x.id === 'SUBCONFIRM'; }), now = new Date().toISOString(), lab = '👷 ' + n + ' sub' + (n === 1 ? '' : 's') + ' to confirm on their jobs', ch = false;
+    if (n && !t) { l.push({ id: 'SUBCONFIRM', kind: 'sub_confirm', label: lab, note: 'The CRM sees these subs on jobs (a sub invoice, an agreement or the schedule) but they are not on the job yet. A sub only sees a job in their portal once they are on it. One tap to confirm, or "Not on this job".', addedBy: 'CRM', addedAt: now, updatedAt: now, done: false }); ch = true; }
+    else if (t && n && (t.done || t.label !== lab)) { t.label = lab; t.done = false; t.updatedAt = now; ch = true; }
+    else if (t && !n && !t.done) { t.done = true; t.doneAt = t.updatedAt = now; t.resolution = 'all confirmed'; ch = true; }
+    if (ch) saveTasks(l);
+    return n;
+  } catch (e) { return -1; }
+}
+W._gcSubConfirmSheet = function(){
+  var old = D.getElementById('gc-sc-ov'); if (old) old.remove();
+  var L = list(), by = {}; L.forEach(function(x){ (by[x.pid] = by[x.pid] || []).push(x); });
+  var ov = D.createElement('div'); ov.id = 'gc-sc-ov'; ov.setAttribute('data-gc-keep', '1');
+  ov.style.cssText = 'position:fixed;inset:0;z-index:2147483400;background:rgba(15,23,42,.6);display:flex;align-items:center;justify-content:center;padding:12px;font:14px Inter,Arial,sans-serif';
+  var h = '<div role="dialog" aria-label="Confirm subs on jobs" style="background:#fff;color:#0f172a;border-radius:14px;width:min(820px,100%);max-height:90vh;overflow:auto;padding:16px">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b style="font-size:17px">👷 Confirm subs on jobs (' + L.length + ')</b><button type="button" data-sc="x" style="border:1px solid #cbd5e1;background:#fff;border-radius:8px;padding:6px 12px;cursor:pointer">Close</button></div>'
+    + '<div style="color:#64748b;margin:4px 0 10px">The CRM sees these subs on these jobs, but they are not on the job yet. Nothing is added by itself. A sub sees a job in their portal only once they are on it.</div>';
+  if (!L.length) h += '<div>✓ Nothing to confirm.</div>';
+  Object.keys(by).forEach(function(pid){
+    var p = by[pid][0].job;
+    h += '<div data-pid="' + esc(pid) + '" style="border-top:1px solid #e2e8f0;padding:8px 0"><b>' + esc(p.name || pid) + '</b> <span style="color:#64748b;font-size:12.5px">' + esc([p.autoPO ? 'PO ' + p.autoPO : '', p.address, p.status].filter(Boolean).join(' · ')) + '</span>';
+    by[pid].forEach(function(x){
+      h += '<div data-sc-row data-pid="' + esc(pid) + '" data-sub="' + esc(x.subId) + '" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:6px 0 0 6px">'
+        + '<label style="display:flex;gap:6px;align-items:center;flex:1 1 260px;cursor:pointer"><input type="checkbox" data-sc-tick checked style="width:18px;height:18px"><span><b>' + esc(x.sub.company || x.sub.name) + '</b>' + (x.trade ? ' · ' + esc(x.trade) : '') + '<br><span style="color:#64748b;font-size:12px">' + esc(x.why.join(' · ')) + '</span></span></label>'
+        + '<button type="button" data-sc="no" style="border:1px solid #cbd5e1;background:#fff;border-radius:8px;padding:5px 10px;cursor:pointer;font-size:12.5px">Not on this job</button></div>';
+    });
+    h += '</div>';
+  });
+  if (L.length) h += '<div style="position:sticky;bottom:-16px;background:#fff;padding:10px 0 0;margin-top:8px;border-top:1px solid #e2e8f0"><button type="button" data-sc="ok" style="width:100%;min-height:46px;border:0;border-radius:10px;background:#166534;color:#fff;font:700 15px Inter,Arial,sans-serif;cursor:pointer">✓ Put the ticked subs on their jobs</button><div data-sc="msg" style="font-size:12.5px;color:#166534;margin-top:4px"></div></div>';
+  ov.innerHTML = h + '</div>'; D.body.appendChild(ov);
+  ov.addEventListener('click', function(e){
+    var b = e.target.closest && e.target.closest('[data-sc]'); if (e.target === ov || (b && b.getAttribute('data-sc') === 'x')) { ov.remove(); return; } if (!b) return;
+    var a = b.getAttribute('data-sc');
+    if (a === 'no') { var r = b.closest('[data-sc-row]'); no(r.getAttribute('data-pid'), r.getAttribute('data-sub')); r.remove(); ST.call(W, sweep, 300); return; }
+    if (a === 'ok') {
+      var pairs = [].map.call(ov.querySelectorAll('[data-sc-row]'), function(r){ if (!r.querySelector('[data-sc-tick]').checked) return null; var x = L.find(function(y){ return y.pid === r.getAttribute('data-pid') && y.subId === r.getAttribute('data-sub'); }); return x ? { pid: x.pid, subId: x.subId, trade: x.trade, why: x.why } : null; }).filter(Boolean);
+      if (!pairs.length) { ov.querySelector('[data-sc="msg"]').textContent = 'Tick at least one.'; return; }
+      b.disabled = true; b.textContent = 'Saving…';
+      add(pairs).then(function(n){ ov.remove(); try { if (W._gcToast) W._gcToast('✓ ' + n + ' sub' + (n === 1 ? '' : 's') + ' put on their jobs.'); } catch (x) {} });
+    }
+  });
+  return L;
+};
+ST.call(W, sweep, 45000); SI.call(W, sweep, 300000);
+W._gcSubConfirm = { list: list, add: add, no: no, sweep: sweep };
+})(window);
+</script>
+<script id="gc-patch-scopever">
+/* __GC_PATCH_SCOPEVER__ — 🔄 SCOPE VERSIONS (owner's sub portal plan, 11/15 list item 5.1b: "scope version history; 'Scope updated'
+   shown to the sub with what changed; 'Proposal changed — review <sub>'s scope?' when the job's proposal / estimate changes after
+   sharing. Never auto-push.")
+   • A sub scope already keeps every version (SCOPESEND: version + 🕘 hist). Each send now also keeps a small copy of what was sent
+     (sends[].ls: the lines, included / not included / notes), so the next send to that sub says what changed:
+     "🔄 Scope updated (v1 → v2) — what changed: + Added … − Taken out … ~ Changed …" on top of the portal message / e-mail.
+     Words only — a sub scope never has prices. A scope signed in the portal (gc_sub_scope) shows the same box in the portal
+     (server: _lib/scopediff.js, scopeOut().changes).
+   • 📝 "Proposal changed — review <sub>'s scope?": when the job's estimate / proposal is saved AFTER the scope was sent to a sub, the
+     job's PM gets a To-Do (office + admins see it) with 📋 Open the scope. Nothing is sent again by itself. Ticking the To-Do (or
+     sending the scope again) settles it until the estimate changes again.
+   API: window._gcScopeDiff(prev, cur) → { added, removed, changed, other, any } · _gcScopeDiff.text(c, from, to) · window._gcScopeVer = { sweep(), flags() } */
+(function(W){
+'use strict';
+if (W.__GC_PATCH_SCOPEVER__) return; W.__GC_PATCH_SCOPEVER__ = true;
+var D = W.document, ST = W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout, SI = W.__GC_NATIVE_SETINTERVAL__ || W.setInterval;
+var RKEY = 'gc_scope_reviewed';
+function s(v){ return v == null ? '' : String(v).replace(/\s+/g, ' ').trim(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function crm(){ return W._crm || {}; }
+function key(l){ return s(l.desc || l.description).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); }
+function q(l){ var v = l.qty; return v === '' || v == null ? '' : String(+v === +v ? +v : v); }
+function clip(t, n){ t = s(t); return t.length > n ? t.slice(0, n - 1) + '…' : t; }
+/* the same rule as netlify/functions/_lib/scopediff.js */
+function diff(prev, cur){
+  prev = prev || {}; cur = cur || {};
+  var A = {}, B = {}, out = { added: [], removed: [], changed: [], other: [] };
+  arr(prev.lines).forEach(function(l){ var k = key(l); if (k && !A[k]) A[k] = l; });
+  arr(cur.lines).forEach(function(l){ var k = key(l); if (k && !B[k]) B[k] = l; });
+  Object.keys(B).forEach(function(k){
+    var b = B[k], a = A[k], d = clip(b.desc || b.description, 120);
+    if (!a) { out.added.push(d + (q(b) ? ' — ' + q(b) + (s(b.unit) ? ' ' + s(b.unit) : '') : '')); return; }
+    var ch = [];
+    if (q(a) !== q(b) || s(a.unit) !== s(b.unit)) ch.push('qty ' + (q(a) || '—') + (s(a.unit) ? ' ' + s(a.unit) : '') + ' → ' + (q(b) || '—') + (s(b.unit) ? ' ' + s(b.unit) : ''));
+    var ar = s(a.room || a.area || a.sec), br = s(b.room || b.area || b.sec); if (ar !== br) ch.push('area ' + (ar || '—') + ' → ' + (br || '—'));
+    var an = s(a.meas || a.note || a.measurement), bn = s(b.meas || b.note || b.measurement); if (an !== bn) ch.push('note changed');
+    if (ch.length) out.changed.push(d + ': ' + ch.join(', '));
+  });
+  Object.keys(A).forEach(function(k){ if (!B[k]) out.removed.push(clip(A[k].desc || A[k].description, 120)); });
+  [['included', 'What is included'], ['excluded', 'What is not included'], ['notes', 'Notes']].forEach(function(f){ if (s(prev[f[0]]) !== s(cur[f[0]])) out.other.push(f[1] + ' changed'); });
+  out.any = !!(out.added.length || out.removed.length || out.changed.length || out.other.length);
+  return out;
+}
+function text(c, from, to){
+  if (!c || !c.any) return '';
+  var L = ['🔄 Scope updated' + (from && to ? ' (v' + from + ' → v' + to + ')' : '') + ' — what changed:'];
+  c.added.forEach(function(x){ L.push('+ Added: ' + x); }); c.removed.forEach(function(x){ L.push('− Taken out: ' + x); }); c.changed.forEach(function(x){ L.push('~ Changed: ' + x); }); c.other.forEach(function(x){ L.push('~ ' + x); });
+  return L.join('\n');
+}
+diff.text = text;
+/* the small copy of what was sent (sends[].ls) */
+function compact(d){ return { lines: arr(d.lines).slice(0, 150).map(function(l){ return { sec: s(l.sec), desc: s(l.desc), qty: l.qty, unit: s(l.unit), note: s(l.note) }; }), included: s(d.included), excluded: s(d.excluded), notes: s(d.notes) }; }
+diff.compact = compact;
+/* what this sub got last time (a send with its copy, else the scope's own history snapshot of that version) → the change text */
+diff.forSub = function(d, subId){
+  var last = arr(d.sends).filter(function(x){ return x && x.ok && s(x.subId) === s(subId); }).slice(-1)[0]; if (!last) return '';
+  if (+last.version >= +d.version) return '';
+  var prev = last.ls || arr(d.hist).filter(function(h){ return +h.v === +last.version; })[0] || null;
+  if (!prev) return '🔄 Scope updated (v' + last.version + ' → v' + d.version + ').';
+  return text(diff(prev, d), last.version, d.version) || '';
+};
+W._gcScopeDiff = diff;
+
+/* 📝 Proposal changed — review the scope? */
+function scopes(L){ return arr(L).filter(function(d){ return d && d.kind === 'sub' && !d.internal && !d.deleted && s(d.pid) && arr(d.sends).some(function(x){ return x && x.ok; }); }); }
+function ests(){ var E = []; try { E = (W._gcEST && W._gcEST.all) ? W._gcEST.all() : (W._gcEstimatesState || crm().estimates || []); } catch (e) { E = crm().estimates || []; } return arr(E); }
+function estAt(pid, p){ var codes = [p && p.po, p && p.autoPO].filter(Boolean).map(function(c){ return s(c).toLowerCase(); }), t = 0;
+  ests().forEach(function(e){ if (!e || e._isDraft || e.deleted) return; if (!(s(e.pid || e.projectId) === s(pid) || (e.po && codes.indexOf(s(e.po).toLowerCase()) > -1))) return; var x = Date.parse(e.savedAt || e.updatedAt || ''); if (isFinite(x) && x > t) t = x; });
+  return t; }
+function reviewed(){ try { return JSON.parse(localStorage.getItem(RKEY) || '{}') || {}; } catch (e) { return {}; } }
+function setReviewed(id, at){ var m = reviewed(); m[id] = at; try { localStorage.setItem(RKEY, JSON.stringify(m)); } catch (e) {} try { var u = W._supaUpsertNow || W._supaUpsert; if (u) u(RKEY, m); } catch (e) {} }
+function flags(L){
+  var P = {}; arr(crm().projects).forEach(function(p){ if (p && p.id) P[s(p.id)] = p; });
+  var R = reviewed(), out = [];
+  scopes(L).forEach(function(d){
+    var p = P[s(d.pid)]; if (!p || p.deleted) return;
+    var sent = 0; arr(d.sends).forEach(function(x){ if (x && x.ok) { var t = Date.parse(x.at); if (t > sent) sent = t; } });
+    var base = Math.max(sent, Date.parse(R[d.id] || 0) || 0), e = estAt(d.pid, p);
+    if (e && e > base + 1000) { var who = []; arr(d.sends).forEach(function(x){ if (x && x.ok && who.indexOf(s(x.subName)) < 0) who.push(s(x.subName)); }); out.push({ d: d, p: p, subs: who, estAt: e }); }
+  });
+  return out;
+}
+function tasks(){ try { var l = JSON.parse(localStorage.getItem('gc_office_tasks') || '[]'); return Array.isArray(l) ? l : []; } catch (e) { return []; } }
+function saveTasks(l){ try { localStorage.setItem('gc_office_tasks', JSON.stringify(l)); } catch (e) {} try { if (W._gcOfficeTasksPush) W._gcOfficeTasksPush(); } catch (e) {} try { var u = W._supaUpsertNow || W._supaUpsert; if (u) u('gc_office_tasks', l); } catch (e) {} }
+function office(){ try { if (W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()) return true; } catch (e) {} try { if (W._gcIsOfficeFull && W._gcIsOfficeFull()) return true; var u = JSON.parse(localStorage.getItem('grayco_user') || '{}'); return /admin|office/i.test(s(u.role) + ' ' + s(u.profile)) || /owner/i.test(s(u.payType)); } catch (e) { return false; } }
+function sweep(){
+  if (!office()) return Promise.resolve(-1);
+  return Promise.resolve(typeof W.idbGet === 'function' ? W.idbGet('scopes') : crm().scopes).then(function(SL){ return sweep0(arr(SL).length ? SL : arr(crm().scopes)); }, function(){ return sweep0(arr(crm().scopes)); });
+}
+function sweep0(SL){
+  try {
+    var l = tasks(), now = new Date().toISOString(), ch = 0;
+    /* a ticked To-Do = reviewed (until the estimate changes again) */
+    l.forEach(function(t){ if (t && t.done && /^SCOPEREVIEW_/.test(s(t.id)) && t.doneAt) { var id = s(t.id).slice(12), r = reviewed()[id]; if (!r || r < t.doneAt) setReviewed(id, t.doneAt); } });
+    var F = flags(SL), want = {};
+    F.forEach(function(f){
+      var id = 'SCOPEREVIEW_' + f.d.id, who = f.subs.join(', ') || 'the sub';
+      want[id] = 1;
+      var lab = "📝 Proposal changed — review " + who + "'s scope? (" + clip(f.d.title || 'scope', 50) + ' — ' + clip(f.p.name, 40) + ')';
+      var t = l.find(function(x){ return x && x.id === id; });
+      if (!t) { l.push({ id: id, kind: 'scope_review', pid: s(f.p.id), scopeId: s(f.d.id), label: lab, note: "The job's estimate / proposal was saved after this scope went to " + who + '. Open the scope, change it if needed, and send it again — nothing is sent by itself. Tick this when it is fine as it is.', assignee: s(f.p.pm), prio: 'med', addedBy: 'CRM', addedAt: now, updatedAt: now, done: false }); ch++; }
+      else if (t.done || t.label !== lab) { t.label = lab; t.done = false; t.updatedAt = now; ch++; }
+    });
+    l.forEach(function(t){ if (t && !t.done && /^SCOPEREVIEW_/.test(s(t.id)) && !want[t.id]) { t.done = true; t.doneAt = t.updatedAt = now; t.resolution = 'scope sent again / reviewed'; ch++; } });
+    if (ch) saveTasks(l);
+    return F.length;
+  } catch (e) { return -1; }
+}
+W._gcScopeReviewOpen = function(taskId){ var t = tasks().find(function(x){ return x && x.id === taskId; }); var id = t ? s(t.scopeId) : s(taskId).replace(/^SCOPEREVIEW_/, ''); try { if (W._gcScopeSend && W._gcScopeSend.edit) W._gcScopeSend.edit(id); } catch (e) {} };
+ST.call(W, sweep, 50000); SI.call(W, sweep, 300000);
+W._gcScopeVer = { sweep: sweep, flags: flags, reviewed: reviewed };
 })(window);
 </script>
