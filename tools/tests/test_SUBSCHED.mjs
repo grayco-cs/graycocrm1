@@ -159,7 +159,8 @@ let E1, E2;
   r = await staff({ op: 'confirm', id: E2.id });
   ok('A8 ✅ Confirm → the entry is confirmed by the staff member', r.st === 200 && store()[E2.id].confirmed && store()[E2.id].confirmed.by === 'Wesley Johnson', store()[E2.id]);
   r = await staff({ op: 'move', id: E1.id, text: 'Can you start Wednesday instead? The cabinets come Tuesday.' });
-  const msg = T.gc_portal_msg.find(m => m.party === 's:' + SUB.id && m.side === 'gc');
+  const msg = T.gc_portal_msg.find(m => m.party === 's:' + SUB.id && m.side === 'gc' && /asks you to move/.test(m.text));   /* patch SUBTHREAD: ✅ Confirm posts a line first */
+  ok('A8 ✅ Confirm → "📅 GrayCo confirmed your schedule" in the sub\'s thread (patch SUBTHREAD)', T.gc_portal_msg.some(m => m.party === 's:' + SUB.id && m.side === 'gc' && /^📅 GrayCo confirmed your schedule: "/.test(m.text)));
   ok('A8 📨 Ask to move → a message in the sub\'s portal thread on that job, and the entry shows the request', r.st === 200 && msg && msg.project_id === JOB.id && /asks you to move "Hang drywall — kitchen"/.test(msg.text) && /start Wednesday/.test(msg.text) && store()[E1.id].moveAsk.text.includes('Wednesday'), msg);
   const sv = await staff({ op: 'move', id: E1.id, text: '' });
   ok('A8 an empty "ask to move" is refused', sv.st === 400, sv);

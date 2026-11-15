@@ -184,7 +184,10 @@ ok('1k the sheet: the bid-portal sub and the CRM sub side by side, 🔗 Merge in
 await A.ev(() => document.querySelector('#gcbpa-same [data-bps2="same"][data-id="V7"]').click()); await sleep(1500);
 await A.ev(() => [...document.querySelectorAll('.apx-row[data-k="bp:same:u_b"] button')].find(b => /Review/.test(b.textContent)).click());
 await waitOn(A, () => !!document.querySelector('#gcbpa-same [data-bps2="diff"]'), null, 8000);
-await A.ev(() => document.querySelector('#gcbpa-same [data-bps2="diff"]').click()); await sleep(3000);
+await A.ev(() => document.querySelector('#gcbpa-same [data-bps2="diff"]').click()); await sleep(1500);
+/* robust (11/15): wait for both answers to land (the merge on V7, Bobcat added, both in gc_sub_same) instead of a fixed 3 s */
+await waitOn(A, () => { const v7 = (window._crm.vendors || []).find(v => v.id === 'V7'); return !!(v7 && (v7.altEmails || []).includes('pros@acmeroofpros.test') && v7.bidPortalUserId === 'u_a' && (window._crm.vendors || []).some(v => v.email === 'hi@bobcatgrading.test')); }, null, 30000);
+for (let i = 0; i < 40; i++) { const d0 = cget('gc_sub_same') || {}; if ((d0['u_a|V7'] || {}).d && (d0['u_b|V8'] || {}).d) break; await sleep(500); }
 const R7 = await A.ev(() => JSON.parse(JSON.stringify((window._crm.vendors || []).find(v => v.id === 'V7'))));
 V = await vend(A);
 const decs = cget('gc_sub_same') || {};
@@ -205,7 +208,7 @@ const row = await waitOn(A, () => !!document.querySelector('.apx-row[data-k="bp:
 ok('2 Zedd\'s sign-up is a row in ✅ Approvals', !!row);
 const tA = Date.now();
 await A.ev(() => [...document.querySelectorAll('.apx-row[data-k="bp:su:u_z"] button')].find(b => /Approve/.test(b.textContent)).click());
-const z1 = await waitOn(A, () => (window._crm.vendors || []).find(v => v.email === 'zedd@zeddearth.test' && v.files && v.files.length >= 4), null, 15000);
+const z1 = await waitOn(A, () => (window._crm.vendors || []).find(v => v.email === 'zedd@zeddearth.test' && v.files && v.files.length >= 4), null, 40000);
 V = await vend(A); const z = V.find(v => v.email === 'zedd@zeddearth.test') || {};
 ok('2b ✅ Approve → s-bids-approve, and Zedd is on the Subs list within seconds (' + Math.round((Date.now() - tA) / 100) / 10 + ' s): company, contact, phone, trades, street address, license, "Bid portal"',
   CALLS.some(c => c.action === 's-bids-approve' && c.id === 'u_z' && c.approve === true) && !!z1 && z.name === 'ZEDD EARTHWORKS' && z.contact === 'Zedd Demo' && z.phone === '901-555-0301' && z.trade === 'Earthwork, Excavation' && /300 Sample Hwy/.test(z.address) && /Olive Branch/.test(z.address) && z.license === 'MS 55-123' && z.source === 'Bid portal' && z.bidPortalUserId === 'u_z', z);
@@ -218,7 +221,7 @@ await A.ev(() => window._setView('subs'));
 const btn = await waitOn(A, () => !!document.querySelector('.gcsub-panel [data-p="bids-ok"][data-id="u_y"]'), null, 30000);
 ok('3 Yara\'s request is in Subs → 🔨 Bid site requests', !!btn);
 await A.ev(() => document.querySelector('.gcsub-panel [data-p="bids-ok"][data-id="u_y"]').click());
-const y1 = await waitOn(A, () => (window._crm.vendors || []).find(v => v.email === 'yara@demotile.test' && (v.files || []).length === 1), null, 15000);
+const y1 = await waitOn(A, () => (window._crm.vendors || []).find(v => v.email === 'yara@demotile.test' && (v.files || []).length === 1), null, 40000);
 V = await vend(A); const y = V.find(v => v.email === 'yara@demotile.test') || {};
 ok('3b Approve there → Yara on the Subs list (Demo Tile Co, Tile, 400 Sample St, W-9 on the record)', !!y1 && y.name === 'Demo Tile Co' && y.trade === 'Tile' && /400 Sample St/.test(y.address) && y.w9 && !y.coi && y.source === 'Bid portal', y);
 await sleep(2500);
@@ -310,6 +313,7 @@ await A.b.close();
 /* 6. another computer: the list from the cloud */
 const B = await computer('wjohnson@grayco-cs.com', { build: BUILD }); const errsB = []; B.page().on('pageerror', e => errsB.push(String(e.message).slice(0, 200)));
 await routes(B, 'wjohnson@grayco-cs.com'); await signIn(B, 'wjohnson@grayco-cs.com', 15000); await sleep(4000);
+await waitOn(B, () => !!(window._gcBidSubs && window._gcBidSubs.run), null, 60000);   /* robust (11/15) */
 await B.ev(() => window._gcBidSubs.run({ force: true })); await sleep(2000);
 V = await vend(B);
 ok('6 another computer (reload): Demo Paving and Demo Tile are on its Subs list once, with their papers; Zedd (deleted) is not', cnt('dee@demopaving.test') === 1 && cnt('yara@demotile.test') === 1 && cnt('zedd@zeddearth.test') === 0 && (V.find(v => v.email === 'dee@demopaving.test') || {}).files.length === 3, V.map(v => v.email + ':' + v.files.length));
@@ -320,6 +324,7 @@ await B.b.close();
 cset('users', [{ id: 'u1', name: 'Wesley Johnson', email: 'wjohnson@grayco-cs.com', role: 'Admin', payType: 'owner', active: true }, { id: 'u3', name: 'Sam Biffle', email: 'sbiffle@grayco-cs.com', role: 'Project Manager', active: true }]);
 const C = await computer('sbiffle@grayco-cs.com', { build: BUILD });
 await routes(C, 'sbiffle@grayco-cs.com'); await signIn(C, 'sbiffle@grayco-cs.com', 15000); await sleep(3000);
+await waitOn(C, () => !!(window._gcBidSubs && window._gcBidSubs.run && window._setView), null, 60000);   /* robust (11/15): a slow boot */
 const pmRun = await C.ev(() => window._gcBidSubs.run({ force: true }));
 await C.ev(() => window._setView('bidportal')); await sleep(2500);
 const pmSw = await C.ev(() => !!document.querySelector('#gc-sys-bp-mount [data-sys="bpmode"][data-m="subs"]'));

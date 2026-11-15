@@ -200,6 +200,10 @@ async function staff(body, who, me, deps){
     e.staffAt = now; hit = Object.assign({}, e); return v;
   });
   if (!hit) throw deps.Fail(404, 'That sub schedule entry is gone (cancelled by the sub?).');
+  if (op === 'confirm') {   /* patch SUBTHREAD: ✅ confirmed → a line in the sub's thread on the job */
+    const es = hit.lang === 'es';
+    try { await deps.msgInsert(hit.pid, 's:' + hit.subId, 'gc', me, (es ? '📅 GrayCo confirmó su horario: "' : '📅 GrayCo confirmed your schedule: "') + hit.task + '" (' + datesLine(hit) + ').', []); } catch (e) {}
+  }
   if (op === 'move') {
     const es = hit.lang === 'es';
     const words = (es ? '📅 GrayCo le pide mover "' : '📅 GrayCo asks you to move "') + hit.task + '" (' + datesLine(hit) + '): ' + text + (es ? ' — cámbielo en Mi horario para este trabajo.' : ' — change it under "My schedule for this job".');
