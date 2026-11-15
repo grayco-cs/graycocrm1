@@ -147,7 +147,7 @@ await A.ev(() => { const x = document.querySelector('#gcss-edit [data-x]'); if (
 A.dialogs.length = 0; A.acceptConfirm = false;
 await A.ev(id => window._gcScopeSend.regen(id), sub.id); await sleep(800);
 const rg = await A.ev(id => window._gcScopeSend.all().find(x => x.id === id), sub.id);
-ok('B5 ↻ Regenerate on an edited scope asks first ("edited by hand"); Cancel keeps the edits (and adds only new lines)', A.dialogs.some(d => /edited by hand/.test(d)) && rg.lines.length === 4 && /Tape, mud/.test(rg.lines[1].desc), { d: A.dialogs, l: rg.lines.map(l => l.desc) });
+ok('B5 ↻ Regenerate on an edited scope asks first ("edited by hand"); Cancel keeps the edits (and adds only new lines)', A.dialogs.map(d => (d && d.message) || String(d)).some(d => /edited by hand/.test(d)) && rg.lines.length === 4 && /Tape, mud/.test(rg.lines[1].desc), { d: A.dialogs, l: rg.lines.map(l => l.desc) });
 A.acceptConfirm = true;
 
 /* B6 📤 send: who — the job's subs first */
@@ -184,7 +184,7 @@ await A.ev(() => { const c = document.querySelector('#gcss-send [data-pick="i:S2
   document.querySelector('#gcss-send [data-s=email]').checked = false; document.querySelector('#gcss-send [data-s=portal]').checked = true; document.querySelector('#gcss-send [data-s=pdf]').checked = false; document.querySelector('#gcss-send [data-s=go]').click(); });
 await wait(() => document.querySelector('#gcss-send [data-sent]'), null, 20000);
 const sendCalls = PORTAL.filter(x => x.action === 's-send');
-ok('B9 🔨 a sub not on the job → asked first, then added to the job as Bidding', A.dialogs.some(d => /not on this job yet/.test(d)) && await A.ev(() => (window._crm.projects.find(p => p.id === 'P1').subs || []).some(r => r.subId === 'S2' && r.status === 'Bidding')), A.dialogs);
+ok('B9 🔨 a sub not on the job → asked first, then added to the job as Bidding', A.dialogs.map(d => (d && d.message) || String(d)).some(d => /not on this job yet/.test(d)) && await A.ev(() => (window._crm.projects.find(p => p.id === 'P1').subs || []).some(r => r.subId === 'S2' && r.status === 'Bidding')), A.dialogs);
 ok('B9 …and the scope is posted to THAT sub\'s job thread only (s-send, party s:S2, job P1), no budget numbers', sendCalls.length === 1 && sendCalls[0].party === 's:S2' && sendCalls[0].projectId === 'P1' && /Tape, mud and finish/.test(sendCalls[0].text) && !/1,?740|4,?200|\b360\b|\$/.test(sendCalls[0].text) && !MAILS.slice(2).length, sendCalls);
 /* 🔨 with the sub's total → a sub agreement to sign, waiting for the PM */
 PORTAL.length = 0;
@@ -238,7 +238,7 @@ const gone = await wait(() => { const P = (window._crm.projects || []).map(p => 
 await sleep(1500);
 const st = await A.ev(() => ({ P: (window._crm.projects || []).map(p => p.id), L: (window.__gcLeadsLive || window._crm.leads || []).map(l => l.id), C: (window._graycoCustomers || []).map(c => c.id),
   deadP: !!(window._gcxDead && window._gcxDead('projects', 'P2')), trash: (window._gcLDEL && window._gcLDEL.trash ? (window._gcLDEL.trash() || []) : []).map(x => x.id || (x.rec && x.rec.id)) }));
-ok('C3 one confirm listing what goes', A.dialogs.some(d => /Delete 3 Roof Ignite record/.test(d) && /Job: Zedd Ignite Roof/.test(d) && /Lead: Zedd Ignite Lead/.test(d)), A.dialogs);
+ok('C3 one confirm listing what goes', A.dialogs.map(d => (d && d.message) || String(d)).some(d => /Delete 3 Roof Ignite record/.test(d) && /Job: Zedd Ignite Roof/.test(d) && /Lead: Zedd Ignite Lead/.test(d)), A.dialogs);
 ok('C3 the Roof Ignite job is deleted through the job delete (on the delete list); P1 / P3 / P4 stay', gone && !st.P.includes('P2') && ['P1', 'P3', 'P4'].every(x => st.P.includes(x)) && st.deadP, st);
 ok('C3 the Roof Ignite lead is deleted the leads\' way (🗑 Recently deleted); the other lead stays', !st.L.includes('L1') && st.L.includes('L2') && JSON.stringify(st.trash).indexOf('L1') > -1, st);
 ok('C3 the Roof Ignite customer is gone, the other customer stays', !st.C.includes('C1') && st.C.includes('C2'), st.C);
