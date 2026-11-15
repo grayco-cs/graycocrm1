@@ -206,7 +206,7 @@ C(602, 'Garcia', '77 Pine Lane');                         /* the address */
 C(603, 'Twin Oaks', '');                                  /* the name of two jobs */
 C(604, 'Finish', '5 Finish Street', { status: 'archived', created_at: T('2026-03-01T00:00:00Z') });   /* archived 2026 */
 C(605, 'Elder', '9 Elder Avenue', { created_at: T('2025-09-01T00:00:00Z') });                         /* before 2026 */
-C(606, 'Brand New', '400 New Rd');                        /* nobody's: a new job */
+C(606, 'Brand New', '400 New Rd', { primary_contact: { name: 'Pat New', phone_number: '9015550606' } });   /* CCCONTACT2: a new job needs a phone or e-mail */                        /* nobody's: a new job */
 C(607, 'P976 Main', '2 Other Rd');                        /* PO of a job at another address */
 const SYNC = require(path.join(FN, 'companycam-sync.js'));
 const n0 = KV.projects.length;
