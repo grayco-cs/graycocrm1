@@ -28,7 +28,15 @@ ok(html.includes('"data-gc-sharephotos":j.id') && html.includes("mk('share', 'ðŸ
 const { computer, sleep, waitFor, resetCloud, ACCOUNTS, cset, cget } = await import(pathToFileURL(HARNESS).href);
 const EMAIL = 'wjohnson@grayco-cs.com';
 resetCloud();
-const M = JSON.parse(fs.readFileSync(MIRROR, 'utf8'));
+/* the real-data mirror when it is there; otherwise (a container restart wipes the scratchpad) a small made-up set of the same shape */
+const FAKE = () => { const at = new Date(Date.now() - 20 * 864e5).toISOString();
+  return [{ key: 'users', v: [{ id: 'u1', name: 'Wesley Johnson', email: 'wjohnson@grayco-cs.com', role: 'Admin', payType: 'owner', active: true }, { id: 'u2', name: 'Demo PM', email: 'pm@grayco-cs.com', role: 'Project Manager', active: true }] },
+    { key: 'projects', v: [
+      { id: 'PJT1', name: 'Zedd Demo Kitchen', client: 'Zedd Demo', clientPhone: '9015550101', address: '1 Demo St, Memphis, TN', status: 'active', type: 'Residential Reno', contract: 48250, pm: 'Demo PM', autoPO: 'T901', portalUrl: 'https://crm.grayco-cs.com/portal.html#t=demo', startDate: at.slice(0, 10), createdAt: at, updatedAt: at },
+      { id: 'PJT2', name: 'Demo Clinic Bid', client: 'Demo Health LLC', clientEmail: 'bids@demo.test', address: '2 Demo Ave, Memphis, TN', status: 'bidding', type: 'Commercial Reno', contract: 0, pm: 'Demo PM', autoPO: 'T902', createdAt: at, updatedAt: at },
+      { id: 'PJT3', name: 'Demo Water Loss', client: 'Dee Demo', clientPhone: '9015550103', address: '3 Demo Ct, Memphis, TN', status: 'active', type: 'Insurance', contract: 12000, pm: 'Demo PM', autoPO: 'T903', createdAt: at, updatedAt: at }]
+      .concat(Array.from({ length: 110 }, (x, i) => ({ id: 'PJTF' + i, name: 'Demo Old Job ' + (i + 1), client: 'Demo Client ' + (i + 1), clientPhone: '90155520' + String(i).padStart(2, '0').slice(-2), address: (100 + i) + ' Filler Rd, Memphis, TN', status: 'completed', type: 'Residential Reno', contract: 1000 + i, pm: 'Demo PM', createdAt: at, updatedAt: at }))) }]; };
+const M = fs.existsSync(MIRROR) ? JSON.parse(fs.readFileSync(MIRROR, 'utf8')) : (console.log('  (no mirror at ' + MIRROR + ' â€” using a made-up fixture)'), FAKE());
 for (const r of M) if (r && r.key && !/^_probe/.test(r.key)) cset(r.key, r.v !== undefined ? r.v : r.value);
 let P0 = cget('projects'); if (typeof P0 === 'string') try { P0 = JSON.parse(P0); } catch (e) {}
 P0 = (Array.isArray(P0) ? P0 : []).filter(p => p && p.id && p.name && !p.deleted);
@@ -77,7 +85,7 @@ const c = await computer('JT', { build }); const p = c.page();
 const shots = [];
 try {
   await p.goto('https://app.local/index.html'); await sleep(2500);
-  if (await p.locator('#gc-auth-email').count()) { await p.locator('#gc-auth-email').fill(EMAIL); await p.locator('#gc-auth-password').fill(ACCOUNTS[EMAIL].pw); await sleep(300); const bb = await p.locator('#gc-auth-submit').boundingBox(); await p.mouse.click(bb.x + bb.width / 2, bb.y + bb.height / 2); }
+  if (await p.locator('#gc-auth-email').count()) { await p.locator('#gc-auth-email').fill(EMAIL); await p.locator('#gc-auth-password').fill(ACCOUNTS[EMAIL].pw || 'pw'); await sleep(300); const bb = await p.locator('#gc-auth-submit').boundingBox(); await p.mouse.click(bb.x + bb.width / 2, bb.y + bb.height / 2); }
   await waitFor(c, () => (window._crm && window._crm.projects || []).length > 100 && typeof window._navToJob === 'function' && typeof window._gcJobBox === 'function', null, 180000, 500); await sleep(6000);
   for (const [w, h] of SIZES) {
     await p.setViewportSize({ width: w, height: h });
@@ -159,7 +167,7 @@ await c.b.close();
 const m = await computer('JTF', { build, mobile: true }); const q = m.page();
 try {
   await q.goto('https://app.local/index.html'); await sleep(2500);
-  if (await q.locator('#gc-auth-email').count()) { await q.locator('#gc-auth-email').fill(EMAIL); await q.locator('#gc-auth-password').fill(ACCOUNTS[EMAIL].pw); await sleep(300); await q.locator('#gc-auth-submit').tap().catch(async () => { const bb = await q.locator('#gc-auth-submit').boundingBox(); await q.mouse.click(bb.x + bb.width / 2, bb.y + bb.height / 2); }); }
+  if (await q.locator('#gc-auth-email').count()) { await q.locator('#gc-auth-email').fill(EMAIL); await q.locator('#gc-auth-password').fill(ACCOUNTS[EMAIL].pw || 'pw'); await sleep(300); await q.locator('#gc-auth-submit').tap().catch(async () => { const bb = await q.locator('#gc-auth-submit').boundingBox(); await q.mouse.click(bb.x + bb.width / 2, bb.y + bb.height / 2); }); }
   await waitFor(m, () => (window._crm && window._crm.projects || []).length > 100 && typeof window._gcJobDashboard === 'function', null, 180000, 500); await sleep(6000);
   for (let i = 0; i < pick.length; i++) {
     const job = pick[i];

@@ -180519,7 +180519,7 @@ function runCtl(k){
   if (k === 'docs') { if (I && I.syncDocuments) I.syncDocuments(); return; }
   if (k === 'notes') { if (W._gcAutoReadAllCCNotes) W._gcAutoReadAllCCNotes(function(m){ if (st) st.textContent = m; }); return; }
 }
-var KIND = { match: 'Looks like an existing job', ask: 'Same address as a finished job', pm: 'Given to the Senior PM', link: 'Which job is it? (Link it on 📸 GrayCo Photos)' };   /* patch PHOTOLINK */
+var KIND = { match: 'Looks like an existing job', ask: 'Same address as a finished job', pm: 'Given to the Senior PM', link: 'Which job is it? (Link it on 📸 GrayCo Photos)', contact: '📷 Needs contact info' };   /* patch CCCONTACT2 */   /* patch PHOTOLINK */
 /* patch CCPHOTOS1: the server's photo index (companycam-photos) in one line */
 function pixLine(pi){
   if (!pi) return 'Not run yet — the first run after this release lists every photo of every linked project (within 15 minutes). ⟳ Index all photos now starts it at once.';
@@ -180623,7 +180623,8 @@ function body(){
       + '<div style="font-size:13px;margin-top:4px"><b>' + esc(KIND[x.kind] || 'Check') + ':</b> ' + esc(x.why || '') + '</div>'
       + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">'
       + ''
-      + (x.kind === 'pm' ? '<button type="button" data-ccs-act="done" data-cc="' + esc(x.cc) + '" data-kind="pm" style="padding:6px 10px;border-radius:8px;border:0;background:#16a34a;color:#fff;font-weight:700;cursor:pointer">✓ Done</button>'
+      + (x.kind === 'contact' ? '<input data-ccs-ph type="tel" inputmode="tel" placeholder="Customer phone" style="padding:6px 8px;border:1px solid #cbd5e1;border-radius:8px;width:150px"><input data-ccs-em type="email" placeholder="or e-mail" style="padding:6px 8px;border:1px solid #cbd5e1;border-radius:8px;width:190px"><button type="button" data-ccs-act="contact" data-cc="' + esc(x.cc) + '" data-kind="contact" style="padding:6px 10px;border-radius:8px;border:0;background:#16a34a;color:#fff;font-weight:700;cursor:pointer">＋ Save and make the job</button><button type="button" data-ccs-act="dismiss" data-cc="' + esc(x.cc) + '" data-kind="contact" style="padding:6px 10px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;cursor:pointer">Not a job</button>' : '')   /* patch CCCONTACT2 */
+      + (x.kind === 'contact' ? '' : x.kind === 'pm' ? '<button type="button" data-ccs-act="done" data-cc="' + esc(x.cc) + '" data-kind="pm" style="padding:6px 10px;border-radius:8px;border:0;background:#16a34a;color:#fff;font-weight:700;cursor:pointer">✓ Done</button>'
         : '<button type="button" data-ccs-act="make" data-cc="' + esc(x.cc) + '" data-kind="' + esc(x.kind) + '" style="padding:6px 10px;border-radius:8px;border:0;background:#16a34a;color:#fff;font-weight:700;cursor:pointer">＋ Make it a new job</button>'
           + '<button type="button" data-ccs-act="dismiss" data-cc="' + esc(x.cc) + '" data-kind="' + esc(x.kind) + '" style="padding:6px 10px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;cursor:pointer">Not a new job (it\'s already here)</button>')
       + '</div></div>';
@@ -180672,9 +180673,11 @@ function onClick(e){
   var b = t.closest('[data-ccs-act]');
   if (b) {
     var act = b.getAttribute('data-ccs-act'), cc = b.getAttribute('data-cc'), kind = b.getAttribute('data-kind');
+    var cbox = b.parentElement, cph = cbox && cbox.querySelector('[data-ccs-ph]'), cem = cbox && cbox.querySelector('[data-ccs-em]');   /* patch CCCONTACT2 */
+    if (act === 'contact' && window._gcHasContact && !window._gcHasContact({ clientPhone: cph && cph.value, clientEmail: cem && cem.value })) { S.msg = 'Type the customer\u2019s 10-digit phone or e-mail first.'; paint(); return; }
     b.disabled = true;
-    post('review', { cc: cc, act: act, kind: act === 'make' ? '' : kind }).then(function(r){
-      S.msg = r.ok ? (act === 'make' ? 'It becomes a job on the next sync (within 15 minutes).' : act === 'dismiss' ? 'Marked "not a new job" — it won\'t come back.' : 'Done.') : ('Could not save: ' + s(r.error));
+    post('review', { cc: cc, act: act, kind: act === 'make' ? '' : kind, phone: cph ? cph.value : '', email: cem ? cem.value : '' }).then(function(r){
+      S.msg = r.ok ? (act === 'contact' ? 'Saved — it becomes a job with that contact on the next sync (within 15 minutes).' : act === 'make' ? 'It becomes a job on the next sync (within 15 minutes).' : act === 'dismiss' ? 'Marked "not a new job" — it won\'t come back.' : 'Done.') : ('Could not save: ' + s(r.error));
       return load(true);
     }).then(paint);
   }
@@ -218054,6 +218057,7 @@ function form(pre){
       '<label style="' + L + '">Job name<input data-j="name" style="' + I + '" value="' + esc(pre.name) + '" autocomplete="off"></label>' +
       '<label style="' + L + '">Customer (optional)<input data-j="cust" list="gc-inj-custs" style="' + I + '" placeholder="Search the customers…" value="' + esc(pre.customer) + '" autocomplete="off"><datalist id="gc-inj-custs">' +
         customers().slice(0, 2000).map(function(c){ return '<option value="' + esc(c.name || c.company) + '">'; }).join('') + '</datalist></label>' +
+      '<div style="display:flex;gap:8px"><label style="' + L + ';flex:1">Customer phone<input data-j="ph" type="tel" inputmode="tel" style="' + I + '" autocomplete="off"></label><label style="' + L + ';flex:1">or e-mail<input data-j="em" type="email" style="' + I + '" autocomplete="off"></label></div>' +   /* patch CCCONTACT2: every job needs one */
       '<label style="' + L + '">Type<select data-j="type" style="' + I + '">' + Object.keys(TYPES).map(function(k){ return '<option' + (k === pre.type ? ' selected' : '') + '>' + k + '</option>'; }).join('') + '</select></label>' +
       '<label style="' + L + '">Address (optional)<input data-j="addr" style="' + I + '" value="' + esc(pre.address) + '" autocomplete="off"></label>' +
       '<label style="' + L + '">PO#' + (po ? ' (from the invoice)' : ' (the CRM\'s own)') + '<input data-j="po" style="' + I + '" value="' + esc(po || auto) + '" autocomplete="off"></label>' +
@@ -218072,12 +218076,14 @@ function form(pre){
       if (p && arr(W._crm && W._crm.projects).some(function(x){ return !x.deleted && s(x.autoPO || x.po).toUpperCase() === p; })) { q('err').textContent = 'PO ' + p + ' is already a job — pick that job in the list instead.'; return; }
       if (typeof W._gcSelfAddJob !== 'function') { q('err').textContent = 'The CRM is still loading — try again in a moment.'; return; }
       var c = customers().filter(function(x){ return low(x.name || x.company) === low(cn); })[0];
+      var cph = s(q('ph') && q('ph').value), cem = s(q('em') && q('em').value);   /* patch CCCONTACT2 */
+      if (W._gcHasContact && !W._gcHasContact({ clientPhone: cph || (c && c.phone), clientEmail: cem || (c && c.email) })) { q('err').textContent = 'Add the customer\u2019s phone or e-mail \u2014 every job needs one (a customer from the list with one counts).'; return; }
       var extra = { autoPO: p || '', createdFrom: s(pre.from) || 'money inbox', commercial: type === 'Commercial' || undefined, insurance: type === 'Insurance' || undefined };
       if (pre.po && p === s(pre.po).toUpperCase()) extra.po = p;
       if (c) { extra.customerId = s(c.id); if (!addr) addr = s(c.address); }
       Object.keys(extra).forEach(function(k){ if (extra[k] === undefined || extra[k] === '') delete extra[k]; });
       var j = null;
-      try { j = W._gcSelfAddJob({ name: name, client: c ? s(c.name || c.company) : cn, phone: c ? s(c.phone) : '', email: c ? s(c.email) : '', address: addr, type: TYPES[type] || type, kind: q('status').value === 'active' ? 'active' : '', extra: extra }, 'money inbox'); } catch (e) { q('err').textContent = 'Could not make the job: ' + (e && e.message || e); return; }
+      try { j = W._gcSelfAddJob({ name: name, client: c ? s(c.name || c.company) : cn, phone: cph || (c ? s(c.phone) : ''), email: cem || (c ? s(c.email) : ''), address: addr, type: TYPES[type] || type, kind: q('status').value === 'active' ? 'active' : '', extra: extra }, 'money inbox');   /* patch CCCONTACT2 */ } catch (e) { q('err').textContent = 'Could not make the job: ' + (e && e.message || e); return; }
       done(j);
     };
   });
@@ -232469,6 +232475,7 @@ function form(o){
       '<div style="font-size:12.5px;color:#475569;margin-top:2px">For: ' + esc(ctxLine) + '</div>' +
       '<label style="' + L + '">Customer / client<input data-np="cust" list="gc-np-custs" style="' + I + '" value="' + esc(cust) + '" placeholder="Type or pick a customer" autocomplete="off"><datalist id="gc-np-custs">' +
         customers().slice(0, 3000).map(function(c){ return '<option value="' + esc(c.name || c.company) + '">'; }).join('') + '</datalist></label>' +
+      '<div style="display:flex;gap:8px"><label style="' + L + ';flex:1">Customer phone<input data-np="ph" type="tel" inputmode="tel" style="' + I + '" autocomplete="off"></label><label style="' + L + ';flex:1">or e-mail<input data-np="em" type="email" style="' + I + '" autocomplete="off"></label></div>' +   /* patch CCCONTACT2: every job needs one */
       '<label style="' + L + '">Job name<input data-np="name" style="' + I + '" value="' + esc(name) + '" autocomplete="off"></label>' +
       '<label style="' + L + '">Address <span style="font-weight:400;color:#64748b">(if known)</span><input data-np="addr" style="' + I + '" value="' + esc(o.address) + '" autocomplete="off"></label>' +
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 10px">' +
@@ -232487,7 +232494,7 @@ function form(o){
     D.body.appendChild(ov);
     var q = function(k){ return ov.querySelector('[data-np="' + k + '"]'); };
     var armed = false, M = [];
-    function fields(){ return { customer: s(q('cust').value), name: s(q('name').value), address: s(q('addr').value), co: q('co').value, status: q('status').value, type: q('type').value, pm: q('pm').value, contract: num(q('contract').value), po: q('po') ? s(q('po').value).toUpperCase() : '' }; }
+    function fields(){ return { customer: s(q('cust').value), name: s(q('name').value), address: s(q('addr').value), co: q('co').value, status: q('status').value, type: q('type').value, pm: q('pm').value, contract: num(q('contract').value), po: q('po') ? s(q('po').value).toUpperCase() : '', ph: q('ph') ? s(q('ph').value) : '', em: q('em') ? s(q('em').value) : '' }; }   /* patch CCCONTACT2 */
     function paintDups(){
       M = matches(Object.assign({ po: o.po }, fields())); armed = false; q('ok').textContent = 'Create project & use it'; q('ok').style.background = '#16a34a';
       q('dups').innerHTML = M.length ? '<div style="border:1px solid #f59e0b;background:#fffbeb;border-radius:10px;padding:9px 11px"><b style="font-size:13.5px;color:#92400e">Did you mean one of these?</b>' +
@@ -232506,6 +232513,8 @@ function form(o){
       if (!b || b.getAttribute('data-np') !== 'ok') return;
       var f = fields();
       if (!f.name && !f.customer) { q('err').textContent = 'Type the job name (or the customer).'; return; }
+      var cc0 = customers().filter(function(x){ return low(x.name || x.company) === low(f.customer); })[0];   /* patch CCCONTACT2 */
+      if (W._gcHasContact && !W._gcHasContact({ clientPhone: f.ph || (cc0 && cc0.phone), clientEmail: f.em || (cc0 && cc0.email) })) { q('err').textContent = 'Add the customer\u2019s phone or e-mail \u2014 every job needs one (a customer from the list with one counts).'; return; }
       if (M.length && !armed) { armed = true; b.textContent = 'Create a NEW project anyway'; b.style.background = '#b45309'; q('err').textContent = 'These look like the same job. Pick "Use this job" — or click again to make a new one.'; return; }
       b.disabled = true; b.textContent = 'Creating…';
       make(f, o).then(function(p){ if (!p) { b.disabled = false; b.textContent = 'Create project & use it'; q('err').textContent = q('err').textContent || 'Not created.'; return; } done({ project: p, existing: false }); },
@@ -232532,7 +232541,7 @@ function make(f, o){
     if (f.status === 'completed') { extra.completedAt = at; if (o.date) extra.endDate = o.date; }
     if (c && s(c.id) && !c._fromJob) extra.customerId = s(c.id);
     Object.assign(extra, adPatch);
-    var j = null, base = { name: name, client: c ? s(c.name || c.company) : f.customer, phone: c ? s(c.phone) : '', email: c ? s(c.email) : '', address: f.address || (c ? s(c.address) : ''), type: f.type, kind: f.status === 'active' ? 'active' : '', notes: note, extra: extra };
+    var j = null, base = { name: name, client: c ? s(c.name || c.company) : f.customer, phone: f.ph || (c ? s(c.phone) : ''), email: f.em || (c ? s(c.email) : ''),   /* patch CCCONTACT2 */ address: f.address || (c ? s(c.address) : ''), type: f.type, kind: f.status === 'active' ? 'active' : '', notes: note, extra: extra };
     if (typeof W._gcSelfAddJob === 'function') { try { j = W._gcSelfAddJob(base, 'invoice-entry'); } catch (e) { warn(e); } }
     if (!j) {   /* the same record, straight through the list setter (CC2 not loaded / no signed-in name) */
       if (typeof W._setProjects !== 'function') throw new Error('the CRM is still loading — try again in a moment');
@@ -234449,5 +234458,68 @@ D.addEventListener('click', function(e){
 }, true);
 SI.call(W, gate, 1200); SI.call(W, decorate, 1000); ST.call(W, sweep, 35000); SI.call(W, sweep, 300000);
 W._gcLeadAsb3 = { lead01Given: lead01Given, started: started, sweep: sweep, decorate: decorate, alertsFor: alertsFor, sendPaper: sendPaper, PAPERS: PAPERS };
+})(window);
+</script>
+<script id="gc-patch-cccontact2">
+/* __GC_PATCH_CCCONTACT2__ — 🚀 Convert to job needs a phone or e-mail (owner 11/5: "to enter the job in the crm at all a phone number
+   or email has to be in the crm"; 11/15 list, item 3b). A lead with no 10-digit phone and no e-mail (its own, its contact's, the number
+   that texted / called in, or its linked customer's) stops at 🚀 Convert to job with a small box: Phone / E-mail → saved on the lead,
+   then it goes on to Launch Job as before (Launch Job's own JOBCONTACT check still runs). API: window._gcLeadContact = { has(lead), ask(id) } */
+(function(W){
+'use strict';
+if (W.__GC_PATCH_CCCONTACT2__) return; W.__GC_PATCH_CCCONTACT2__ = true;
+var D = W.document;
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function ph10(v){ var d = s(v).replace(/\D/g, ''); if (d.length === 11 && d[0] === '1') d = d.slice(1); return d.length === 10 ? d : ''; }
+function okEmail(v){ return /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(s(v)); }
+function leads(){ return (W._crm && W._crm.leads) || []; }
+function lead(id){ return leads().find(function(l){ return l && s(l.id) === s(id); }) || null; }
+function has(l){
+  if (!l) return true;
+  var c = l.contact || {}, ex = l.leadExtra || {};
+  if ([l.phone, l.clientPhone, l.mobile, c.phone, ex.smsFrom, l.smsFrom].some(ph10) || [l.email, l.clientEmail, c.email].some(okEmail)) return true;
+  var C = (W._crm && W._crm.customers) || [], cu = C.find(function(x){ return x && ((l.customerId && s(x.id) === s(l.customerId)) || (s(l.client || l.name) && low(x.name) === low(l.client || l.name))); });
+  return !!(cu && (ph10(cu.phone || cu.mobile) || okEmail(cu.email)));
+}
+function save(id, ph, em){
+  var now = new Date().toISOString();
+  var f = function(list){ var out = (list || []).map(function(l){ if (!l || s(l.id) !== s(id)) return l; var o = Object.assign({}, l, { updatedAt: now }); if (ph) o.phone = ph; if (em) o.email = em; if (o.contact && typeof o.contact === 'object') o.contact = Object.assign({}, o.contact, ph ? { phone: ph } : {}, em ? { email: em } : {}); return o; }); try { if (W._gcApplySync) W._gcApplySync('leads', out); } catch (e) {} return out; };
+  if (typeof W._setLeads === 'function') W._setLeads(f); else if (W._crm) W._crm.leads = f(W._crm.leads);
+}
+function ask(id, then){
+  var l = lead(id); if (!l) return;
+  var old = D.getElementById('gc-lc-ov'); if (old) old.remove();
+  var o = D.createElement('div'); o.id = 'gc-lc-ov'; o.setAttribute('data-gc-keep', '1'); o.setAttribute('role', 'dialog'); o.setAttribute('aria-modal', 'true'); o.setAttribute('aria-label', 'Phone or e-mail first');
+  o.style.cssText = 'position:fixed;inset:0;z-index:2147483300;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:16px;font:14px Inter,Arial,sans-serif';
+  var I = 'width:100%;box-sizing:border-box;min-height:42px;padding:8px 10px;border:1px solid #cbd5e1;border-radius:9px;font:15px Inter,Arial,sans-serif;margin-top:4px';
+  o.innerHTML = '<div style="background:#fff;color:#0f172a;border-radius:14px;max-width:420px;width:100%;padding:18px;box-shadow:0 20px 50px rgba(0,0,0,.3)">'
+    + '<div style="font-weight:800;font-size:17px;margin-bottom:4px">📇 Add the customer\'s phone or e-mail first</div>'
+    + '<div style="color:#475569;margin-bottom:8px"><b>' + esc(l.name || l.client || 'This lead') + '</b> has no phone or e-mail. Every job needs one — one is enough.</div>'
+    + '<label style="display:block;font-weight:600">Phone<input data-lc="ph" type="tel" inputmode="tel" style="' + I + '"></label>'
+    + '<label style="display:block;font-weight:600;margin-top:8px">or e-mail<input data-lc="em" type="email" style="' + I + '"></label>'
+    + '<div data-lc="err" role="alert" style="color:#b91c1c;font-size:12.5px;min-height:16px;margin-top:6px"></div>'
+    + '<div style="display:flex;gap:8px;margin-top:6px"><button type="button" data-lc="ok" style="flex:1;min-height:44px;border:0;border-radius:10px;background:#241968;color:#fff;font:700 15px Inter,Arial,sans-serif;cursor:pointer">Save and convert</button>'
+    + '<button type="button" data-lc="x" style="min-height:44px;padding:0 14px;border:1px solid #cbd5e1;border-radius:10px;background:#fff;cursor:pointer">Cancel</button></div></div>';
+  D.body.appendChild(o);
+  try { o.querySelector('[data-lc="ph"]').focus(); } catch (e) {}
+  o.addEventListener('click', function(e){
+    var b = e.target.closest && e.target.closest('[data-lc]');
+    if (e.target === o || (b && b.getAttribute('data-lc') === 'x')) { o.remove(); return; }
+    if (!b || b.getAttribute('data-lc') !== 'ok') return;
+    var ph = s(o.querySelector('[data-lc="ph"]').value), em = s(o.querySelector('[data-lc="em"]').value);
+    if (!ph10(ph) && !okEmail(em)) { o.querySelector('[data-lc="err"]').textContent = 'A 10-digit phone or an e-mail, please.'; return; }
+    save(id, ph10(ph) ? ph : '', okEmail(em) ? em : ''); o.remove();
+    if (then) W.setTimeout(then, 250);
+  });
+}
+D.addEventListener('click', function(e){
+  var t = e.target && e.target.closest ? e.target.closest('#gcl-drawer [data-d="convert"]') : null; if (!t) return;
+  var H = W._gcLeadsHub, id = H && H.ui && H.ui().open, l = id && lead(id); if (!l || has(l)) return;
+  e.preventDefault(); e.stopPropagation(); if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+  ask(id, function(){ var b = D.querySelector('#gcl-drawer [data-d="convert"]'); if (b) b.click(); });
+}, true);
+W._gcLeadContact = { has: has, ask: ask };
 })(window);
 </script>

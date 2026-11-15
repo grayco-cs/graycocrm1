@@ -337,7 +337,10 @@ exports.handler = async function(event, context) {
       }
       let b = {}; try{ b = JSON.parse(event.body || '{}') || {}; }catch(e){ b = {}; }
       const cc = String(b.cc || '').trim(), act = String(b.act || ''), kind = String(b.kind || ''), job = String(b.job || '').trim();
-      if(!/^\d{1,20}$/.test(cc) || !/^(dismiss|make|done|link|notthis)$/.test(act)) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'cc and act (make | dismiss | done | link | notthis) are required' }) };
+      if(!/^\d{1,20}$/.test(cc) || !/^(dismiss|make|done|link|notthis|contact)$/.test(act)) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'cc and act (make | dismiss | done | link | notthis | contact) are required' }) };
+      /* patch CCCONTACT2: "＋ Save and make the job" on a 📷 Needs contact info row — the phone / e-mail is kept for the next sync */
+      let cPh = String(b.phone || '').replace(/\D/g, ''); if (cPh.length === 11 && cPh[0] === '1') cPh = cPh.slice(1); const cEm = String(b.email || '').trim().slice(0, 160);
+      if(act === 'contact' && cPh.length !== 10 && !/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(cEm)) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'A 10-digit phone or an e-mail, please.' }) };
       if((act === 'link' || act === 'notthis') && !/^[A-Za-z0-9_\-:.]{1,80}$/.test(job)) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'job is required' }) };
       const list = Array.isArray(cur.gc_cc_review) ? cur.gc_cc_review : [];
       /* patch PHOTOLINK: "Link" — the project's photos go on that job (the 15-minute sync ties it; the CRM page ties it at once);
@@ -352,6 +355,7 @@ exports.handler = async function(event, context) {
       const rows = [{ key: 'gc_cc_review', value: list.filter(function(x){ return !(x && String(x.cc) === cc && (!kind || x.kind === kind)); }) }];
       if(act === 'dismiss'){ const dis = Object.assign({}, isObj(cur.gc_cc_dismissed) ? cur.gc_cc_dismissed : {}); dis['id:' + cc] = { at: at, by: who.email || '', why: 'CompanyCam review list: not a new job' }; rows.push({ key: 'gc_cc_dismissed', value: dis }); }
       if(act === 'link'){ req.link = Object.assign({}, isObj(req.link) ? req.link : {}); req.link[cc] = job; rows.push({ key: 'gc_cc_sync_request', value: req }); }
+      if(act === 'contact'){ req.contact = Object.assign({}, isObj(req.contact) ? req.contact : {}); req.contact[cc] = { phone: cPh.length === 10 ? cPh : '', email: /@/.test(cEm) ? cEm : '', at: at, by: who.email || '' }; req.make = Object.assign({}, isObj(req.make) ? req.make : {}); req.make[cc] = at; Object.assign(req, { full: true, at: at, by: who.email || '' }); rows.push({ key: 'gc_cc_sync_request', value: req }); }   /* patch CCCONTACT2 */
       if(act === 'make'){ req.make = Object.assign({}, isObj(req.make) ? req.make : {}); req.make[cc] = at; Object.assign(req, { full: true, at: at, by: who.email || '' }); rows.push({ key: 'gc_cc_sync_request', value: req }); }
       const ok = await wr(rows);
       return { statusCode: 200, headers, body: JSON.stringify({ ok: ok }) };

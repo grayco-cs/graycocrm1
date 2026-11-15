@@ -49,6 +49,8 @@ function s(v){ return v == null ? '' : String(v).trim(); }
 function low(v){ return s(v).toLowerCase(); }
 function arr(v){ return Array.isArray(v) ? v : []; }
 function obj(v){ return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; }
+/* patch CCCONTACT2: a 10-digit phone or an e-mail */
+function ccHasContact(c){ c = obj(c); let d = s(c.phone).replace(/\D/g, ''); if (d.length === 11 && d[0] === '1') d = d.slice(1); return d.length === 10 || /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(s(c.email)); }
 function parse(v){ if (typeof v === 'string') { try { return JSON.parse(v); } catch (e) { return v; } } return v; }
 function secOf(v){
   if (v == null || v === '') return 0;
@@ -463,6 +465,10 @@ async function run(opts){
     if (d.kind === 'attach') { R.linked++; attachTo(d.job, p, d.by); continue; }
     if (d.kind === 'ask') { R.ask.push(p.id); R.review.push(revOf(p, 'link', d.why, d.jobs)); continue; }
     if (!newJobsOn && !makeIds[p.id]) { heldNew.push(p); R.review.push(revOf(p, 'new', 'a new CompanyCam project — "Make new jobs" is OFF in ⚙ Admin → ⚡ Automations, so it waits here. ＋ Make it a new job adds it now.')); continue; }   /* patch AUTOPANEL */
+    /* patch CCCONTACT2: no customer phone / e-mail → "📷 Needs contact info" (not a job) until one is typed on the list or added in CompanyCam */
+    { const addC = obj(obj(req.contact)[p.id]);
+      if (!ccHasContact(p.contact) && !ccHasContact(addC)) { R.review.push(revOf(p, 'contact', 'no customer phone or e-mail in CompanyCam. Type one here (or add it in CompanyCam) and it becomes a job on the next sync.')); R.needContact = (R.needContact || 0) + 1; continue; }
+      if (!ccHasContact(p.contact)) p.contact = Object.assign({}, obj(p.contact), { phone: s(addC.phone), email: s(addC.email) }); }
     const j = await srcFix(creatorRule(jobFor(p, await pmOf(p), d.note, nowIso, senior), kv.users));   /* patch DUPJOB */
     if ((!s(j.pm) && !j.ccOwnerMade && !s(j.estimator)) || j.pmBy === 'senior-pm') { R.senior.push(p.id);   /* patch DUPJOB: an owner's / estimator's project is not "nobody mapped" */ R.review.push(revOf(p, 'pm', 'nobody at GrayCo is set up as CompanyCam user "' + (p.creator || p.creatorId || '?') + '"' + (s(j.pm) ? ' — ' + j.pm + ' (Senior PM) has the job' : ' and no Senior PM is set') + '. Set that person\'s GrayCo Photos name in Admin → Employees.')); }
     jobs.push(j); idx.id[p.id] = { kind: 'job', id: j.id };
