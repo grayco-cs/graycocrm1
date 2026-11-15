@@ -124,5 +124,14 @@ W._gcSubConfirmSheet = function(){
   return L;
 };
 ST.call(W, sweep, 45000); SI.call(W, sweep, 300000);
-W._gcSubConfirm = { list: list, add: add, no: no, sweep: sweep };
+/* patch BIDMULTI: a bid the PM awarded (🏗 Bids → 🏆 Award, with the job picked) puts that sub on the job as Awarded — the award is the
+   person's decision; a bidder who is not a CRM sub yet is not made one here (the toast says to add them in Subs) */
+function addBid(pid, b){
+  b = b || {}; var L = subs(), e = low(b.email), n = norm(b.company || b.sub);
+  var sb = (e && L.find(function(r){ return low(r.email) === e; })) || (n && L.find(function(r){ return norm(r.name) === n || norm(r.company) === n; })) || null;
+  if (!sb) { try { if (W._gcToast) W._gcToast('ℹ️ ' + s(b.company || b.sub || 'This bidder') + ' is not in the Subs list yet — add them there so the job shows in their portal.'); } catch (x) {} return Promise.resolve(0); }
+  var p = arr(crm().projects).find(function(x){ return s(x.id) === s(pid); }); if (!p || onJob(p, sb)) return Promise.resolve(0);
+  return add([{ pid: s(pid), subId: s(sb.id), trade: s(b.trade || sb.trade), why: ['🏆 bid awarded'] }]);
+}
+W._gcSubConfirm = { list: list, add: add, no: no, sweep: sweep, addBid: addBid };
 })(window);

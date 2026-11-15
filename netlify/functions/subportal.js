@@ -566,6 +566,7 @@ async function saveCollection(who, key, upsert, del, ctx){
           amount: num(x.amount), scope: s(x.scope).slice(0, 20000), notes: s(x.notes).slice(0, 20000),
           docs: arr(x.docs), submittedAt: x.submittedAt || new Date().toISOString(), updatedAt: new Date().toISOString()
         });
+        ['trade', 'inclusions', 'exclusions', 'notesOwn'].forEach(function(k){ if (x[k] !== undefined) b[k] = s(x[k]).slice(0, k === 'trade' ? 80 : 4000); });   /* patch BIDMULTI: the sub portal's bid form (the bid site's own page leaves them as they are) */
         if (Array.isArray(x.lines)) b.lines = bidLines(x.lines, sc.jobs[jobId] && sc.jobs[jobId].data);   /* patch PLANREQ-E: the bid form's line items, filled in by the sub */
         ['_rank', '_total', '_amounts'].forEach(function(k){ delete b[k]; });
         if (!prev) notes.push({ kind: 'new-bid', bid: b, job: sc.jobs[jobId] && sc.jobs[jobId].data });
