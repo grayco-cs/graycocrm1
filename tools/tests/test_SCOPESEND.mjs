@@ -236,6 +236,9 @@ A.dialogs.length = 0;
 await A.ev(() => document.querySelector('[data-ri-del]').click());
 const gone = await wait(() => { const P = (window._crm.projects || []).map(p => p.id); return !P.includes('P2') ? P : null; }, null, 20000);
 await sleep(1500);
+/* robust (11/15): the customers list is read once it is loaded, and the cloud copy once the (debounced) save has gone out */
+await wait(() => (window._graycoCustomers || []).length > 0 && !(window._graycoCustomers || []).some(c => c.id === 'C1'), null, 20000);
+for (let i = 0; i < 50; i++) { const cp = (cget('projects') || []).map(p => p.id); if (cp.includes('P3') && !cp.includes('P2')) break; await sleep(400); }
 const st = await A.ev(() => ({ P: (window._crm.projects || []).map(p => p.id), L: (window.__gcLeadsLive || window._crm.leads || []).map(l => l.id), C: (window._graycoCustomers || []).map(c => c.id),
   deadP: !!(window._gcxDead && window._gcxDead('projects', 'P2')), trash: (window._gcLDEL && window._gcLDEL.trash ? (window._gcLDEL.trash() || []) : []).map(x => x.id || (x.rec && x.rec.id)) }));
 ok('C3 one confirm listing what goes', A.dialogs.map(d => (d && d.message) || String(d)).some(d => /Delete 3 Roof Ignite record/.test(d) && /Job: Zedd Ignite Roof/.test(d) && /Lead: Zedd Ignite Lead/.test(d)), A.dialogs);
@@ -246,6 +249,10 @@ const cloudP = (cget('projects') || []).map(p => p.id);
 ok('C3 the cloud copy of the jobs no longer has it (the normal save path)', !cloudP.includes('P2') && cloudP.includes('P3'), cloudP);
 const after = await A.ev(() => window._gcRoofIgniteClean.find().then(f => f.projects.length + f.leads.length + f.customers.length));
 ok('C4 nothing Roof Ignite left', after === 0, after);
+/* the deletes stay deleted: a pull from the cloud after the delete (another computer's older copy) does not bring them back */
+await sleep(4000); await A.ev(() => { try { if (window._gcPullNow) return window._gcPullNow(); } catch (e) {} }); await sleep(3000);
+const st2 = await A.ev(() => ({ P: (window._crm.projects || []).map(p => p.id), C: (window._graycoCustomers || []).map(c => c.id), L: (window.__gcLeadsLive || window._crm.leads || []).map(l => l.id) }));
+ok('C5 still deleted a few seconds later (after a pull): no P2, no L1, no C1', !st2.P.includes('P2') && !st2.L.includes('L1') && !st2.C.includes('C1') && (cget('projects') || []).every(p => p.id !== 'P2'), st2);
 
 const bad = errs.filter(e => !/ResizeObserver|Failed to fetch|NetworkError|Load failed/.test(e));
 ok('no page errors', !bad.length, bad);

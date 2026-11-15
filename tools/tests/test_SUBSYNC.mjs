@@ -158,6 +158,8 @@ ok('1d the bid-hub sub list was read with the sign-in (Authorization) — and th
 
 /* 1e–1j. no duplicates (patch SUBSYNC): the approved accounts already in the CRM are merged, look-alikes wait for an owner */
 await sleep(1500);
+/* robust (11/15): wait until the merge landed on the three CRM subs (it is the same sync, but the screen list can lag) */
+await waitOn(A, () => { const L = window._crm.vendors || [], g = id => L.find(v => v.id === id) || {}; return !!(g('V1').bidPortalUserId && g('V2').bidPortalUserId && g('V6').bidPortalUserId && g('V6').email); }, null, 30000);
 V = await vend(A);
 const full = await A.ev(() => (window._crm.vendors || []).filter(v => /^V[1-8]$/.test(v.id)).map(v => JSON.parse(JSON.stringify(v))));
 const R1 = full.find(v => v.id === 'V1') || {}, R2 = full.find(v => v.id === 'V2') || {}, R6 = full.find(v => v.id === 'V6') || {};
@@ -169,7 +171,9 @@ ok('1g matched by COMPANY NAME ("ELITE EARTHWORKS,LLC" = "Elite Earthworks LLC")
 const same1 = await A.ev(() => window._gcBidSubs.same().map(i => i.key + ':' + i.cands.map(c => c.id + '/' + c.why).join(',')));
 ok('1h look-alikes ("Acme Roofing Pros" ~ "Acme Roofing", "Bobcat Grading" ~ "Bob Cat Grading LLC"): NOT added, NOT merged — two "🔗 Same sub?" items', !emails.includes('pros@acmeroofpros.test') && !emails.includes('hi@bobcatgrading.test') && same1.some(x => /^u_a:V7\//.test(x)) && same1.some(x => /^u_b:V8\//.test(x)) && same1.length === 2, { same1, emails });
 const filesV1 = (R1.files || []).length;
+const ok0 = await A.ev(() => (window._gcBidSubs.last() || {}).okAt || 0);
 await A.ev(() => window._gcBidSubs.run({ force: true })); await sleep(1500);
+await waitOn(A, t0 => ((window._gcBidSubs.last() || {}).okAt || 0) > t0, ok0, 30000); await sleep(800);   /* robust: that sync finished */
 const R1b = await A.ev(() => JSON.parse(JSON.stringify((window._crm.vendors || []).find(v => v.id === 'V1'))));
 ok('1i the next sync: the same papers are not added again, the extra e-mail not twice', (R1b.files || []).length === filesV1 && (R1b.altEmails || []).length === 1, R1b.files);
 
