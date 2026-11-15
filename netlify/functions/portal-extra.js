@@ -116,7 +116,8 @@ async function customer(event, headers, body, action){
     const materials = arr(o && o.list).filter(function(x){ return s(x.pid) === pid && !x.deleted && x.deliveryDate && x.deliveryDate >= today && x.status !== 'cancelled'; })
       .sort(function(a, b){ return a.deliveryDate < b.deliveryDate ? -1 : 1; }).slice(0, 4).map(function(x){ return { day: x.deliveryDate }; });
     const tickets = arr(t && t.list).filter(function(x){ return s(x.pid) === pid && !x.deleted; }).sort(function(a, b){ return s(a.createdAt) < s(b.createdAt) ? 1 : -1; }).slice(0, 10).map(custTicket);
-    return reply(200, headers, { ok: true, warranty: { label: w.label, years: w.years, start: w.start, end: w.end, inWarranty: w.inWarranty }, materials: materials, tickets: tickets, canReport: true });
+    let gcv = false; try { gcv = !!(C.portalStyle && C.portalStyle(data, p).gc); } catch (e) {}   /* patch GCPORTAL: no residential warranty block when we are the GC's sub */
+    return reply(200, headers, { ok: true, warranty: gcv ? null : { label: w.label, years: w.years, start: w.start, end: w.end, inWarranty: w.inWarranty }, materials: materials, tickets: tickets, canReport: true });
   }
   /* issue */
   if (body.preview === true) return reply(403, headers, { ok: false, error: 'Preview — only the customer can report an issue.' });
