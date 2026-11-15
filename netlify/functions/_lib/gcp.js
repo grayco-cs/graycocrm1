@@ -534,7 +534,7 @@ async function complianceRun(data){
   const due = [];
   docs.forEach(function(d){
     const days = Math.round((Date.parse(ymd(d.expires) + 'T12:00:00Z') - Date.parse(today + 'T12:00:00Z')) / 864e5);
-    const step = days < 0 ? 'expired' : days <= 7 ? '7d' : days <= 30 ? '30d' : '';   /* owner 11/10: COIs and licenses only need the 30-day warning */
+    const step = days < 0 ? 'expired' : days <= 7 ? '7d' : days <= 30 ? '30d' : (days <= 90 && /^(epa_rrp_firm|rrp_renovator_\d+)$/.test(s(d.slot))) ? '90d' : '';   /* owner 11/10: COIs and licenses only need the 30-day warning; LEADCERT90 (11/15): the EPA firm + renovators from 90 days */
     if (!step || rem[d.id + '|' + step]) return;
     due.push({ d: d, step: step, days: days });
   });

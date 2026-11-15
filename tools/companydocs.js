@@ -108,6 +108,10 @@ function entries(){
   slot({ id: 'w9', folder: 'tax', title: 'GrayCo\'s W-9 (signed)', desc: 'GrayCo\'s own signed IRS Form W-9 for GCs and customers who pay us. Carries the tax ID — admins and the office only unless the owner opens it.', kind: 'w9', expiry: false, access: 'office', shareGc: true, required: true });
   E.push({ id: 'w9_blank', type: 'link', folder: 'tax', title: 'Blank IRS Form W-9 (to send to subs)', desc: 'The official form (Rev. March 2024) every sub completes before their first payment. irs.gov always has the newest revision.', url: '/w9/GrayCo-W-9-4ad8a7807c2d45df.pdf', more: [['Check irs.gov ↗', 'https://www.irs.gov/pub/irs-pdf/fw9.pdf']], sendW9: true, access: 'all' });
   LICS.forEach(function(l){ slot({ id: l[0], folder: 'licenses', title: l[1], desc: l[2] + '. Upload the current license card / certificate with its expiry date.', kind: 'license', expiry: true, access: 'all', shareGc: true, required: true }); });
+  /* LEADCERT90 (owner 11/15): the EPA lead-safe firm certificate and the certified renovators — reminders from 90 days out */
+  slot({ id: 'epa_rrp_firm', folder: 'licenses', title: 'EPA RRP Lead-Safe Certified Firm', desc: 'EPA lead-safe firm certificate (TN & AR). Upload it with its expiry date — reminders start 90 days before (EPA asks for the renewal about 90 days ahead).', kind: 'license', expiry: true, warn: 90, access: 'all', shareGc: true });
+  slot({ id: 'rrp_renovator_1', folder: 'licenses', title: 'EPA RRP Certified Renovator — 1', desc: 'A certified renovator\'s course certificate (the name is on it). Every lead-safe job needs one on the job. Reminders start 90 days before it runs out.', kind: 'license', expiry: true, warn: 90, access: 'all', shareGc: false });
+  slot({ id: 'rrp_renovator_2', folder: 'licenses', title: 'EPA RRP Certified Renovator — 2', desc: 'A second certified renovator, if you have one. Reminders start 90 days before it runs out.', kind: 'license', expiry: true, warn: 90, access: 'all', shareGc: false });
   gen({ id: 'safety_program', folder: 'safety', title: 'Construction Safety Program (written)', desc: 'OSHA 29 CFR 1926-based program for residential, commercial and restoration work in TN · MS · AR. DRAFT until adopted.', access: 'all', shareGc: true, kind: 'safety', draft: function(){ return !CL.cfg.safety.adopted; } });
   gen({ id: 'toolbox_all', folder: 'safety', title: 'Toolbox talks — the 12 starter talks (one page each)', desc: 'Print the set or one talk; each page has a sign-in table. The daily safety sign-in in the field app records attendance too.', access: 'all', shareGc: true, kind: 'safety' });
   TALKS.forEach(function(t, i){ gen({ id: 'talk_' + t.id, folder: 'safety', title: 'Toolbox talk ' + (i + 1) + ' — ' + t.title, desc: '', access: 'all', shareGc: false, kind: 'safety', sub: true }); });
@@ -144,7 +148,7 @@ function status(e){
   if (e.expiry && !d.expires) return { k: 'warn', t: 'No expiry date' };
   var n = days(d.expires); if (n == null) return { k: 'ok', t: 'On file' };
   if (n < 0) return { k: 'bad', t: 'Expired ' + day(d.expires) };
-  if (n <= 30) return { k: 'warn', t: 'Expires in ' + n + ' day' + (n === 1 ? '' : 's') };
+  if (n <= (+e.warn || 30)) return { k: 'warn', t: 'Expires in ' + n + ' day' + (n === 1 ? '' : 's') };   /* LEADCERT90 */
   return { k: 'ok', t: 'Valid through ' + day(d.expires) };
 }
 
@@ -345,7 +349,7 @@ function rowLink(e){
 }
 function rowExtra(d){
   var ed = canEdit();
-  var h = '<div class="row" data-up="' + esc(d.id) + '"><div class="t">' + esc(d.title) + (d.expires ? (days(d.expires) < 0 ? bd('bad', 'Expired ' + day(d.expires)) : days(d.expires) <= 30 ? bd('warn', 'Expires in ' + days(d.expires) + ' days') : bd('ok', 'Valid through ' + day(d.expires))) : '') + (d.access === 'office' ? bd('off', 'Admin + office only') : '') + (d.shareGc ? bd('gc', 'Shared with GCs') : '') + '</div>'
+  var h = '<div class="row" data-up="' + esc(d.id) + '"><div class="t">' + esc(d.title) + (d.expires ? (days(d.expires) < 0 ? bd('bad', 'Expired ' + day(d.expires)) : days(d.expires) <= ((entry(d.slot) || {}).warn || 30) ? bd('warn', 'Expires in ' + days(d.expires) + ' days') : bd('ok', 'Valid through ' + day(d.expires))) : '') + (d.access === 'office' ? bd('off', 'Admin + office only') : '') + (d.shareGc ? bd('gc', 'Shared with GCs') : '') + '</div>'
     + '<div class="w">Uploaded ' + day(d.at) + (d.name ? ' · ' + esc(d.name) : '') + '</div><div class="acts">' + btn('open-up', d.id, '👁 View / download') + (ed ? btn('gear', 'x:' + d.id, '⚙ Settings', 'g') : '') + '</div>';
   if (ed && CL.gear === 'x:' + d.id) h += gearForm({ id: 'x:' + d.id }, d);
   return h + '</div>';
