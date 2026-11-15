@@ -65,7 +65,7 @@ edit('index.html', [
      "      var extra = { autoPO: p || '', createdFrom: s(pre.from) || 'money inbox',"),
     ("phone: c ? s(c.phone) : '', email: c ? s(c.email) : '', address: addr, type: TYPES[type] || type, kind: q('status').value === 'active' ? 'active' : '', extra: extra }, 'money inbox');",
      "phone: cph || (c ? s(c.phone) : ''), email: cem || (c ? s(c.email) : ''), address: addr, type: TYPES[type] || type, kind: q('status').value === 'active' ? 'active' : '', extra: extra }, 'money inbox');   /* patch CCCONTACT2 */"),
-    # NEWPROJ's ➕ New project form (it is what the money-inbox "＋ New job…" pickers open now)
+    # NEWPROJ's ➕ New project form (invoice / QuickBooks / upload / money-inbox data entry): a skippable note, not a block
     ("        customers().slice(0, 3000).map(function(c){ return '<option value=\"' + esc(c.name || c.company) + '\">'; }).join('') + '</datalist></label>' +",
      "        customers().slice(0, 3000).map(function(c){ return '<option value=\"' + esc(c.name || c.company) + '\">'; }).join('') + '</datalist></label>' +\n"
      "      '<div style=\"display:flex;gap:8px\"><label style=\"' + L + ';flex:1\">Customer phone<input data-np=\"ph\" type=\"tel\" inputmode=\"tel\" style=\"' + I + '\" autocomplete=\"off\"></label><label style=\"' + L + ';flex:1\">or e-mail<input data-np=\"em\" type=\"email\" style=\"' + I + '\" autocomplete=\"off\"></label></div>' +   /* patch CCCONTACT2: every job needs one */"),
@@ -74,7 +74,7 @@ edit('index.html', [
     ("      if (!f.name && !f.customer) { q('err').textContent = 'Type the job name (or the customer).'; return; }\n",
      "      if (!f.name && !f.customer) { q('err').textContent = 'Type the job name (or the customer).'; return; }\n"
      "      var cc0 = customers().filter(function(x){ return low(x.name || x.company) === low(f.customer); })[0];   /* patch CCCONTACT2 */\n"
-     "      if (W._gcHasContact && !W._gcHasContact({ clientPhone: f.ph || (cc0 && cc0.phone), clientEmail: f.em || (cc0 && cc0.email) })) { q('err').textContent = 'Add the customer\\u2019s phone or e-mail \\u2014 every job needs one (a customer from the list with one counts).'; return; }\n"),
+     "      if (W._gcHasContact && !W._gcHasContact({ clientPhone: f.ph || (cc0 && cc0.phone), clientEmail: f.em || (cc0 && cc0.email) }) && !b.__gcNoContactOk) { b.__gcNoContactOk = true; b.textContent = 'Save without'; b.style.background = '#b45309'; q('err').style.color = '#92400e'; q('err').textContent = 'No phone or e-mail \\u2014 add one if you have it, or press Save without (data entry).'; return; }   /* invoice / QuickBooks / upload data entry: a note, never a block (owner 11/15) */\n"),
     ("base = { name: name, client: c ? s(c.name || c.company) : f.customer, phone: c ? s(c.phone) : '', email: c ? s(c.email) : '',",
      "base = { name: name, client: c ? s(c.name || c.company) : f.customer, phone: f.ph || (c ? s(c.phone) : ''), email: f.em || (c ? s(c.email) : ''),   /* patch CCCONTACT2 */"),
 ])

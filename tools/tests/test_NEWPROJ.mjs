@@ -91,6 +91,8 @@ async function page(role){
   await sleep(1800);
   return { P, C, errs };
 }
+/* CCCONTACT2 (owner 11/15): no phone / e-mail → a note + "Save without" on the first click (never a block in data entry) — press it */
+const npOk = async P => { await P.click('#gc-np-ov [data-np="ok"]').catch(() => {}); await sleep(20); const t = await P.evaluate(() => { const b = document.querySelector('#gc-np-ov [data-np="ok"]'); return b ? b.textContent : ''; }); if (t === 'Save without') await P.click('#gc-np-ov [data-np="ok"]').catch(() => {}); };
 const opts = (P, css) => P.evaluate(c => { const s = document.querySelector(c); return s ? [...s.options].map(o => o.value + '|' + o.textContent) : null; }, css);
 const has = o => !!o && o.some(x => x.startsWith('__newjob|➕ New project…'));
 async function pick(P, css){ await P.evaluate(c => { const s = document.querySelector(c); s.dispatchEvent(new Event('focusin', { bubbles: true })); }, css); await P.selectOption(css, '__newjob'); await P.waitForSelector('#gc-np-ov', { timeout: 5000 }); }
@@ -116,7 +118,7 @@ const setF = (P, k, v) => P.evaluate(([k, v]) => { const el = document.querySele
   ok('2c the form says what it is for (Customer invoice · Riverside Test Church · $18,450.00)', /Customer invoice/.test(f1.ctx) && /18,450\.00/.test(f1.ctx), f1.ctx);
   if (SHOTS) await P.screenshot({ path: path.join(SHOTS, 'newproj_form.png') });
   await setF(P, 'addr', '400 Riverside Test Dr, Memphis, TN');
-  await P.click('#gc-np-ov [data-np="ok"]'); await sleep(2200);
+  await npOk(P); await sleep(2200);
   const made = await P.evaluate(() => { const p = window._crm.projects.find(x => x.createdVia === 'invoice-entry'); return p ? JSON.parse(JSON.stringify(p)) : null; });
   ok('3a created through the normal path (_gcSelfAddJob): PRJ id, name, client, address, status completed, contract, auto-PO, stamped createdBy, office → needs a PM',
     made && /^PRJ/.test(made.id) && made.name === 'Fellowship hall roof' && made.client === 'Riverside Test Church' && made.address === '400 Riverside Test Dr, Memphis, TN' && made.status === 'completed' && made.contract === 18450 && /^[A-Z]\d{3}$/.test(made.autoPO) && made.createdBy === 'Brittany Office' && made.needsPm === true, made);
@@ -134,7 +136,7 @@ const setF = (P, k, v) => P.evaluate(([k, v]) => { const el = document.querySele
   const f2 = await formVals(P);
   ok('4a "Did you mean …?": Demo Kitchen (same address · same customer) is listed with "Use this job"', /Did you mean/.test(f2.dups) && /Demo Kitchen/.test(f2.dups) && /same address/.test(f2.dups) && /same customer/.test(f2.dups), f2.dups);
   ok('4b a sub invoice: contract left empty (not a customer invoice), Completed', f2.contract === '' && f2.status === 'completed', f2);
-  await P.click('#gc-np-ov [data-np="ok"]'); await sleep(300);
+  await npOk(P); await sleep(300);
   const armed = await P.evaluate(() => ({ open: !!document.getElementById('gc-np-ov'), btn: document.querySelector('#gc-np-ov [data-np="ok"]').textContent, n: window._crm.projects.length }));
   ok('4c Create with a close match does NOT create: the button turns into "Create a NEW project anyway" (an extra click)', armed.open && /NEW project anyway/.test(armed.btn) && armed.n === 4, armed);
   await P.click('#gc-np-ov [data-np-use="PRJA1"]'); await sleep(1500);
@@ -143,7 +145,7 @@ const setF = (P, k, v) => P.evaluate(([k, v]) => { const el = document.querySele
   /* a duplicate on purpose: two clicks */
   await P.evaluate(() => { window._crm.invoices = window._crm.invoices.map(i => i.id === 'INVs1' ? Object.assign({}, i, { pid: '' }) : i); document.getElementById('subAssign').value = ''; });
   await pick(P, '#subAssign'); await setF(P, 'name', 'Pat Demo garage'); await setF(P, 'status', 'active');
-  await P.click('#gc-np-ov [data-np="ok"]'); await sleep(150); await P.click('#gc-np-ov [data-np="ok"]'); await sleep(2200);
+  await npOk(P); await sleep(150); await npOk(P); await sleep(2200);
   const dup = await P.evaluate(() => { const p = window._crm.projects.find(x => x.name === 'Pat Demo garage'); return { p: p && { status: p.status, client: p.client, cid: p.customerId, via: p.createdVia, kind: p.dataEntry && p.dataEntry.kind }, pid: (window._crm.invoices.find(i => i.id === 'INVs1') || {}).pid, id: p && p.id }; });
   ok('4e second click makes it (Active, customer Pat Demo → C_demo1, dataEntry kind sub) and the sub invoice is on it', dup.p && dup.p.status === 'active' && dup.p.cid === 'C_demo1' && dup.p.via === 'invoice-entry' && dup.p.kind === 'sub' && dup.pid === dup.id, dup);
 
@@ -159,7 +161,7 @@ const setF = (P, k, v) => P.evaluate(([k, v]) => { const el = document.querySele
     await pick(P, css);
     const f3 = await formVals(P);
     ok('5b prefilled from the bill: job "Hollis Duplex", address 88 Hollis Rd, Supplier bill · Demo Paint Co · $93.11, Completed (May 2025)', f3.name === 'Hollis Duplex' && /^88 Hollis Rd/.test(f3.addr) && /Supplier bill/.test(f3.ctx) && /Demo Paint Co/.test(f3.ctx) && /93\.11/.test(f3.ctx) && f3.status === 'completed', f3);
-    await P.click('#gc-np-ov [data-np="ok"]'); await sleep(2500);
+    await npOk(P); await sleep(2500);
     const r3 = await P.evaluate(() => { const p = window._crm.projects.find(x => x.name === 'Hollis Duplex'); const e = (window._crm.expenses || []).find(x => x.mailId === 'MM-np01'); const row = document.querySelector('.gc-money-ov [data-i]'); return { p: p && p.id, via: p && p.createdVia, e: e && e.pid, row: row && row.innerText }; });
     ok('5c made + booked right away (📥 Save): the bill is an expense on the new job, the row says ✓ Saved', r3.p && r3.via === 'invoice-entry' && r3.e === r3.p && /Saved/.test(r3.row || ''), r3);
     await P.evaluate(() => { const o = document.querySelector('.gc-money-ov'); if (o) o.remove(); });
@@ -172,7 +174,7 @@ const setF = (P, k, v) => P.evaluate(([k, v]) => { const el = document.querySele
   ok('6a Assign Sub to Job (the _jobGuess window): "➕ New project…"', has(o4), o4 && o4.slice(0, 3));
   await pick(P, '#_smJob'); const f4 = await formVals(P);
   ok('6b prefilled from the sub invoice: Sub invoice · Zedd Drywall LLC · $2,400.00, job "Hang + finish — 77 Oak Hollow Cv"', /Sub invoice/.test(f4.ctx) && /Zedd Drywall/.test(f4.ctx) && f4.name === 'Hang + finish — 77 Oak Hollow Cv', f4);
-  await P.click('#gc-np-ov [data-np="ok"]'); await sleep(2200);
+  await npOk(P); await sleep(2200);
   const r4 = await P.evaluate(() => { const p = window._crm.projects.find(x => x.name === 'Hang + finish — 77 Oak Hollow Cv'); return { p: p && p.id, sel: (document.getElementById('_smJob') || {}).value }; });
   ok('6c made and chosen in the window (Confirm sends it to the PM)', r4.p && r4.sel === r4.p, r4);
   await P.evaluate(() => { const b = document.getElementById('_smCancel'); if (b) b.click(); });
@@ -193,7 +195,7 @@ const setF = (P, k, v) => P.evaluate(([k, v]) => { const el = document.querySele
   await P.waitForSelector('#gc-np-ov'); const f5 = await formVals(P);
   ok('8b prefilled from the expense: Expense / receipt · Demo Lumber · $512.40', /Expense/.test(f5.ctx) && /Demo Lumber/.test(f5.ctx) && /512\.40/.test(f5.ctx), f5.ctx);
   await setF(P, 'name', 'Lumber yard job'); await P.evaluate(() => document.querySelector('.apx-jpl').remove());
-  await P.click('#gc-np-ov [data-np="ok"]'); await sleep(1500);
+  await npOk(P); await sleep(1500);
   const r5 = await P.evaluate(() => { const p = window._crm.projects.find(x => x.name === 'Lumber yard job'); return { p: p && p.id, e: (window._crm.expenses.find(x => x.id === 'EXP1') || {}).pid }; });
   ok('8c the expense is charged to the new project', r5.p && r5.e === r5.p, r5);
 
@@ -220,7 +222,7 @@ const setF = (P, k, v) => P.evaluate(([k, v]) => { const el = document.querySele
   const { P, C, errs } = await page('Admin');
   const o1 = await opts(P, '#invProj');
   ok('12a admin: "➕ New project…" in the invoice picker', has(o1), o1 && o1.slice(0, 3));
-  await pick(P, '#invProj'); await P.click('#gc-np-ov [data-np="ok"]'); await sleep(2000);
+  await pick(P, '#invProj'); await npOk(P); await sleep(2000);
   const p = await P.evaluate(() => { const p = window._crm.projects.find(x => x.createdVia === 'invoice-entry'); return p && { by: p.createdBy, id: p.id, sel: document.getElementById('invProj').value }; });
   ok('12b admin creates + assigns the same way', p && p.by === 'Wes Admin' && p.sel === p.id, p);
   ok('12c no page errors (admin)', !errs.length, errs);

@@ -5,7 +5,7 @@
 //      a bad contact is refused.
 //   B. the CRM: the GrayCo Photos review row has Phone / E-mail and "＋ Save and make the job" (posts act contact with the phone);
 //      🚀 Convert to job on a lead with no phone / e-mail stops with the box, saves it on the lead and goes on to Launch Job; a lead
-//      with a phone goes straight on; the money-inbox ＋ New job needs a phone / e-mail (a customer's counts).
+//      with a phone goes straight on; the money-inbox ＋ New job (NEWPROJ's ➕ New project, a data-entry form) only notes a missing phone / e-mail — "Save without" goes on (owner 11/15).
 import { createRequire } from 'module';
 import path from 'path'; import fs from 'fs';
 const require = createRequire(import.meta.url);
@@ -102,14 +102,20 @@ ok('B3 a lead with a phone converts with no box', !await A.ev(() => !!document.g
 /* B4 the money inbox ＋ New job */
 const nj = await A.ev(() => { const sel = document.createElement('select'); sel.setAttribute('data-gcnj-name', 'Enterprise Demo'); document.body.appendChild(sel); window.__zzNJ = window._gcNewJobFor(sel); return true; });
 await wait(() => document.querySelector('[data-np="ph"]'));
-await A.page().fill('[data-np="name"]', 'Zedd Enterprise Demo');
+await A.page().fill('[data-np="name"]', 'Zedd Enterprise Demo'); await A.page().selectOption('[data-np="status"]', 'completed').catch(() => {}); await sleep(400);
 await A.ev(() => document.querySelector('[data-np="ok"]').click());
-const err = await A.ev(() => (document.querySelector('[data-np="err"]') || {}).textContent);
-ok('B4 ＋ New job (➕ New project form) with no phone / e-mail → "Add the customer\'s phone or e-mail"', /phone or e-mail/.test(err || ''), err);
+const note = await A.ev(() => ({ err: (document.querySelector('[data-np="err"]') || {}).textContent, btn: (document.querySelector('[data-np="ok"]') || {}).textContent }));
+ok('B4 ➕ New project (invoice / money data entry) with no phone / e-mail → a note "No phone or e-mail — add one if you have it" + "Save without" (not a block)', /No phone or e-mail — add one if you have it/.test(note.err || '') && note.btn === 'Save without', note);
+for (let i = 0; i < 2; i++) { await A.ev(() => { const b = document.querySelector('[data-np="ok"]'); if (b) b.click(); }); await sleep(900); }   /* Save without (and past "Did you mean…?" if it shows) */
+const made0 = await wait(() => { const p = window._crm.projects.find(x => x.name === 'Zedd Enterprise Demo'); return p ? { ph: p.clientPhone || '', em: p.clientEmail || '' } : null; });
+ok('B4 Save without → the job is made with no contact (data entry never blocked)', made0 && !made0.ph && !made0.em, made0);
+await A.ev(() => { const sel = document.createElement('select'); sel.setAttribute('data-gcnj-name', 'Demo Church Roof'); document.body.appendChild(sel); window._gcNewJobFor(sel); });
+await wait(() => document.querySelector('[data-np="ph"]'));
+await A.page().fill('[data-np="name"]', 'Zedd Church Roof Demo');
 await A.page().fill('[data-np="cust"]', 'Demo Customer LLC'); await A.page().selectOption('[data-np="status"]', 'completed').catch(() => {}); await sleep(600);
-for (let i = 0; i < 2; i++) { await A.ev(() => { const b = document.querySelector('[data-np="ok"]'); if (b) b.click(); }); await sleep(900); }   /* a second click past "Did you mean…?" */
-const made = await wait(() => { const p = window._crm.projects.find(x => x.name === 'Zedd Enterprise Demo'); return p ? { ph: p.clientPhone || p.phone } : null; });
-ok('B4 a customer with a phone counts → the job is made with it', made && String(made.ph).replace(/\D/g, '') === '9015550170', made || await A.ev(() => ({ err: (document.querySelector('[data-np="err"]') || {}).textContent, open: !!document.querySelector('[data-np="ok"]'), ad: document.body.innerText.slice(-300) }))); 
+for (let i = 0; i < 2; i++) { await A.ev(() => { const b = document.querySelector('[data-np="ok"]'); if (b) b.click(); }); await sleep(900); }
+const made = await wait(() => { const p = window._crm.projects.find(x => x.name === 'Zedd Church Roof Demo'); return p ? { ph: p.clientPhone || p.phone } : null; });
+ok('B4 a customer from the list with a phone → no note, the job carries that phone', made && String(made.ph).replace(/\D/g, '') === '9015550170', made);
 ok('B5 no page errors', A.errs.length === 0, A.errs);
 await A.close();
 const pass = R.filter(Boolean).length; console.log(`\n${pass}/${R.length} passed`); process.exit(pass === R.length ? 0 : 1);

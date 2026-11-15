@@ -232514,7 +232514,7 @@ function form(o){
       var f = fields();
       if (!f.name && !f.customer) { q('err').textContent = 'Type the job name (or the customer).'; return; }
       var cc0 = customers().filter(function(x){ return low(x.name || x.company) === low(f.customer); })[0];   /* patch CCCONTACT2 */
-      if (W._gcHasContact && !W._gcHasContact({ clientPhone: f.ph || (cc0 && cc0.phone), clientEmail: f.em || (cc0 && cc0.email) })) { q('err').textContent = 'Add the customer\u2019s phone or e-mail \u2014 every job needs one (a customer from the list with one counts).'; return; }
+      if (W._gcHasContact && !W._gcHasContact({ clientPhone: f.ph || (cc0 && cc0.phone), clientEmail: f.em || (cc0 && cc0.email) }) && !b.__gcNoContactOk) { b.__gcNoContactOk = true; b.textContent = 'Save without'; b.style.background = '#b45309'; q('err').style.color = '#92400e'; q('err').textContent = 'No phone or e-mail \u2014 add one if you have it, or press Save without (data entry).'; return; }   /* invoice / QuickBooks / upload data entry: a note, never a block (owner 11/15) */
       if (M.length && !armed) { armed = true; b.textContent = 'Create a NEW project anyway'; b.style.background = '#b45309'; q('err').textContent = 'These look like the same job. Pick "Use this job" — or click again to make a new one.'; return; }
       b.disabled = true; b.textContent = 'Creating…';
       make(f, o).then(function(p){ if (!p) { b.disabled = false; b.textContent = 'Create project & use it'; q('err').textContent = q('err').textContent || 'Not created.'; return; } done({ project: p, existing: false }); },
