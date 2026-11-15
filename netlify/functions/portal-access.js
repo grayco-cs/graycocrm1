@@ -1009,7 +1009,16 @@ function scopeOut(x, signed){
     start: ymd(d.start), end: ymd(d.end), total: money(x.total), files: files, photos: photos,
     status: x.status === 'accepted' && Number(x.accepted_version) === Number(x.version) ? 'accepted' : (x.status === 'question' ? 'question' : 'new'),
     acceptedAt: x.status === 'accepted' ? ymd(x.accepted_at) : '', question: x.status === 'question' ? clip(x.question, 2000) : '',
-    signedName: x.status === 'accepted' && d.signature && Number(d.signature.version) === Number(x.version) ? clip(d.signature.name, 80) : '' };
+    signedName: x.status === 'accepted' && d.signature && Number(d.signature.version) === Number(x.version) ? clip(d.signature.name, 80) : '',
+    changes: scopeChanges(x) };   /* patch SCOPEVER */
+}
+/* patch SCOPEVER: what changed since the version the sub saw before (words only — a scope line has no price) */
+function scopeChanges(x){
+  try { const H = (Array.isArray(x.history) ? x.history : []).filter(function(h){ return h && Number(h.version) < Number(x.version) && h.data; }); const prev = H[H.length - 1]; if (!prev) return null;
+    const c = require('./_lib/scopediff.js').diff(prev.data, x.data || {}); if (!c.any) return null;
+    const cl = function(v){ return clip(SS().clean(v), 200); };
+    return { from: Number(prev.version), to: Number(x.version), added: c.added.map(cl), removed: c.removed.map(cl), changed: c.changed.map(cl), other: c.other.map(cl) };
+  } catch (e) { return null; }
 }
 function papersOf(sub, events){
   const exp = ymd(sub.insExp || sub.insuranceExp || sub.coiExpiration);

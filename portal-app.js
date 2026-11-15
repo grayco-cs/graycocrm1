@@ -17,6 +17,7 @@ var L = {
     overview: 'Overview', scope: 'Scope', cos: 'Change orders', photos: 'Photos', progress: 'Progress', punch: 'Punch list', invoices: 'Invoices', messages: 'Messages',
     address: 'Address', maps: 'Open in Maps', po: 'PO#', dates: 'Dates', schedule: 'Your days on the schedule', site: 'Site notes', gate: 'Gate code', parking: 'Parking', hours: 'Work hours', dumpster: 'Dumpster', power: 'Power', water: 'Water', notes: 'Notes', none: '—',
     pm: 'Your Project Manager', call: 'Call', text: 'Text', email: 'E-mail', office: 'GrayCo office', customer: 'Customer',
+    scopeUpd: '🔄 Scope updated — what changed', chAdded: 'Added', chRemoved: 'Taken out', chChanged: 'Changed',
     version: 'Version', date: 'Date', area: 'Area', desc: 'Work', qty: 'Qty', unit: 'Unit', meas: 'Measurement', included: 'Included', excluded: 'Not included', matGc: 'Material GrayCo provides', matSub: 'Material you provide',
     files: 'Plans, drawings and specs', open: 'Open', yourTotal: 'Your total for this scope', coTotal: 'Amount of this change order', accept: '✍️ Review & sign', acceptScope: '✍️ Review & sign', ask: 'Ask a question', accepted: 'Signed',
     signTitle: 'Sign', signAgreeScope: 'I agree to do this scope of work for {amt} as written above (sub agreement with GrayCo Construction Services, version {v}).', signAgreeCo: 'I agree to this change order for {amt} as written above (version {v}).',
@@ -45,7 +46,7 @@ var L = {
     overview: 'Resumen', scope: 'Alcance', cos: 'Órdenes de cambio', photos: 'Fotos', progress: 'Avance', punch: 'Lista final', invoices: 'Facturas', messages: 'Mensajes',
     address: 'Dirección', maps: 'Abrir en Mapas', po: 'PO#', dates: 'Fechas', schedule: 'Sus días en el calendario', site: 'Notas del sitio', gate: 'Código del portón', parking: 'Estacionamiento', hours: 'Horario de trabajo', dumpster: 'Contenedor de basura', power: 'Electricidad', water: 'Agua', notes: 'Notas', none: '—',
     pm: 'Su Gerente de Proyecto', call: 'Llamar', text: 'Mensaje de texto', email: 'Correo', office: 'Oficina de GrayCo', customer: 'Cliente',
-    version: 'Versión', date: 'Fecha', area: 'Área', desc: 'Trabajo', qty: 'Cant.', unit: 'Unidad', meas: 'Medida', included: 'Incluido', excluded: 'No incluido', matGc: 'Material que pone GrayCo', matSub: 'Material que pone usted',
+    scopeUpd: '🔄 Alcance actualizado — qué cambió', chAdded: 'Agregado', chRemoved: 'Quitado', chChanged: 'Cambiado', version: 'Versión', date: 'Fecha', area: 'Área', desc: 'Trabajo', qty: 'Cant.', unit: 'Unidad', meas: 'Medida', included: 'Incluido', excluded: 'No incluido', matGc: 'Material que pone GrayCo', matSub: 'Material que pone usted',
     files: 'Planos, dibujos y especificaciones', open: 'Abrir', yourTotal: 'Su total por este alcance', coTotal: 'Monto de esta orden de cambio', accept: '✍️ Revisar y firmar', acceptScope: '✍️ Revisar y firmar', ask: 'Hacer una pregunta', accepted: 'Firmado',
     signTitle: 'Firmar', signAgreeScope: 'Acepto hacer este alcance de trabajo por {amt} como está escrito arriba (acuerdo de subcontrato con GrayCo Construction Services, versión {v}).', signAgreeCo: 'Acepto esta orden de cambio por {amt} como está escrita arriba (versión {v}).',
     signName: 'Su nombre completo', signDraw: 'Dibuje su firma (o déjela en blanco y firme con su nombre escrito):', signClear: 'Borrar firma', signBtn: 'Firmar', signNeedName: 'Por favor escriba su nombre completo.', signNeedAgree: 'Por favor marque la casilla para aceptar.', signedBy: 'Firmado por {n}', signing: 'Firmando…', asked: 'Pregunta enviada — su gerente contestará en Mensajes',
@@ -945,6 +946,10 @@ function overview(){
 function scopeCard(x){
   var kids = [h('div', { class: 'row' }, [h('h2', { text: x.title || t(x.kind === 'co' ? 'cos' : 'scope') }), pill(x.status === 'accepted' ? t('accepted') : x.status === 'question' ? t('ask') : t('newScope'), x.status === 'accepted' ? 'ok' : 'now')]),
     h('div', { class: 'muted', text: t('version') + ' ' + x.version + ' · ' + dt(x.date) + (x.start ? ' · ' + t('starts') + ' ' + dt(x.start) : '') })];
+  var xc = x.changes;   /* patch SCOPEVER: what changed since the version before */
+  if (xc && x.status !== 'accepted') kids.push(h('div', { class: 'box', 'data-scope-upd': '1' }, [h('b', { text: t('scopeUpd') + ' (v' + xc.from + ' → v' + xc.to + ')' })].concat(
+    (xc.added || []).map(function(v){ return h('div', { text: '+ ' + t('chAdded') + ': ' + v }); }), (xc.removed || []).map(function(v){ return h('div', { text: '− ' + t('chRemoved') + ': ' + v }); }),
+    (xc.changed || []).map(function(v){ return h('div', { text: '~ ' + t('chChanged') + ': ' + v }); }), (xc.other || []).map(function(v){ return h('div', { text: '~ ' + v }); }))));
   if (x.lines.length) kids.push(h('div', { class: 'tblw' }, [h('table', { class: 'tbl' }, [h('thead', null, [h('tr', null, [t('area'), t('desc'), t('meas'), t('qty'), t('unit')].map(function(c){ return h('th', { text: c }); }))]),
     h('tbody', null, x.lines.map(function(l){ return h('tr', null, [h('td', { text: l.area }), h('td', { text: l.desc }), h('td', { text: l.meas }), h('td', { text: l.qty === '' ? '' : String(l.qty) }), h('td', { text: l.unit })]); }))])]));
   [['included', x.included], ['excluded', x.excluded], ['matGc', x.matGc], ['matSub', x.matSub], ['notes', x.notes]].forEach(function(r){ if (r[1]) kids.push(h('div', { class: 'box' }, [h('b', { text: t(r[0]) }), h('p', { class: 'pre', text: r[1] })])); });
