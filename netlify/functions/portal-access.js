@@ -1743,12 +1743,15 @@ async function pBidSave(sub, body){
 }
 
 /* ── messages (customer per job; sub per job + sub) ─────────────────────────── */
-async function msgInsert(pid, party, side, author, text, files){
+async function msgInsert(pid, party, side, author, text, files, opt){
   const id = newId('M');
   await dbPost('gc_portal_msg', { id: id, project_id: s(pid), party: party, side: side, author: clip(author, 80), text: clip(text, 4000),
     files: (files || []).map(function(f){ return { ref: s(f.ref), name: clip(f.name, 120), type: s(f.type) }; }).filter(function(f){ return refPath(f.ref); }) });
+  /* patch SUBTHREAD: a sub's thread → the job's 💬 Messages (tagged with the sub) + a notice to the sub when GrayCo wrote */
+  if (/^s:/.test(s(party))) { try { await require('./_lib/subthread.js').after(subThreadDeps(), { id: id, pid: s(pid), subId: s(party).slice(2), side: side, author: author, text: text, files: (files || []).map(function(f){ return { name: clip(f && f.name, 120) }; }), notify: !(opt && opt.notify === false) }); } catch (e) {} }
   return id;
 }
+function subThreadDeps(){ return { core: function(){ return require('./portal.js')._core; }, crmData: crmData, subById: subById, jobTagOf: jobTagOf, subLinkCreate: subLinkCreate, linkFor: linkFor, sendMail: sendMail, sendText: sendText, textReady: textReady, mailHtml: mailHtml, dbGet: dbGet, okEmail: okEmail, phone10: phone10 }; }
 /* reader = 'them' (customer / sub reading GrayCo's messages) or 'gc' (GrayCo reading theirs) */
 async function threadOut(pid, party, reader, noMark){
   const rows = await dbGet('gc_portal_msg', 'select=*&project_id=' + eq(pid) + '&party=eq.' + encodeURIComponent(party) + '&order=created_at.asc&limit=500');
@@ -1876,6 +1879,8 @@ async function staffAction(action, body, who){
     if (!Array.isArray(done) || done.length !== 1) throw Fail(409, 'Someone else just approved it.');
     const sub = subById(data, x.sub_id) || {};
     await dbPost('gc_sub_event', { id: newId('E'), kind: 'scope', project_id: x.project_id, sub_id: x.sub_id, data: { subName: s(sub.name), scopeId: x.id, kind: x.kind, op: 'published', version: x.version, title: x.title, total: money(x.total), by: me } });
+    try { let chg = ''; try { const H = (Array.isArray(x.history) ? x.history : []).filter(function(h){ return h && Number(h.version) < Number(x.version) && h.data; }); const pv = H[H.length - 1]; if (pv) { const SDF = require('./_lib/scopediff.js'); chg = SDF.text(SDF.diff(pv.data, x.data || {}), pv.version, x.version); } } catch (e2) {}
+      await msgInsert(x.project_id, 's:' + x.sub_id, 'gc', me, (x.kind === 'co' ? '📋 GrayCo sent you a change order to review and sign: ' : '📋 GrayCo sent you a scope to review and sign: ') + clip(x.title, 160) + ' (v' + x.version + '). Open it under Scope.' + (chg ? '\n\n' + chg : ''), [], { notify: false }); } catch (e) {}   /* patch SUBTHREAD: in the thread too (the e-mail below is the notice) */
     /* the e-mail to the sub is part of this approval (the PM's click); a sub link is made if there is none */
     let mailed = false;
     if (okEmail(sub.email)) {
