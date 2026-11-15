@@ -263,6 +263,27 @@ function details(f){
   add('Buildings / size', f.buildings); add('Plan', f.plan); add('Urgency', f.urgency);
   return out;
 }
+/* patch LSA2 — LSADEDUPE (owner 11/15): the same Google LSA lead again (Google sends a new-lead e-mail, then a message / call e-mail
+   for the same person) is ONE lead: the same LSA lead id (from Google's link) or the same phone within 30 days, still open → the
+   new e-mail's words are added to the first one as a 🔁 note (leadExtra.lsaRepeats counts them) and no second lead is made. */
+function lsaOf(r){ const ex = (r && r.leadExtra) || {}; return /google\s*lsa|local\s*services/i.test([r && r.source, ex.leadSource, ex.mkSource === 'Google LSA' ? 'google lsa' : ''].join(' ')) || !!ex.lsaCheck; }
+function lsaIdOf(u){ u = s(u); const m = /\/(?:lead|leads|message)s?\/([A-Za-z0-9_-]{6,})/.exec(u) || /[?&](?:lead_?id|leadId|lid)=([A-Za-z0-9_-]{6,})/.exec(u); return m ? m[1] : ''; }
+function lsaDupOf(list, rec, id){
+  if (!lsaOf(rec)) return null;
+  const ph = phone10((rec.contact || {}).phone), lid = lsaIdOf((rec.leadExtra || {}).lsaLink), now = Date.now();
+  if (ph.length !== 10 && !lid) return null;
+  return list.find(x => { if (!x || String(x.id) === String(id) || !lsaOf(x) || x.deleted || x.dismissed || x.mergedInto) return false;
+    const t = Date.parse((x.leadExtra || {}).receivedAt || x.receivedAt || x.created || x.createdAt || ''); if (isFinite(t) && now - t > 30 * 864e5) return false;
+    const xl = lsaIdOf((x.leadExtra || {}).lsaLink); if (lid && xl) return xl === lid;
+    return ph.length === 10 && phone10((x.contact || {}).phone) === ph; }) || null;
+}
+function lsaFold(x, rec, at){
+  const ex = Object.assign({}, x.leadExtra || {}), rx = rec.leadExtra || {};
+  ex.lsaRepeats = (+ex.lsaRepeats || 0) + 1; if (!s(ex.lsaLink) && s(rx.lsaLink)) ex.lsaLink = rx.lsaLink; if (rx.lsaCall && !ex.lsaCall) ex.lsaCall = true; x.leadExtra = ex;
+  const said = clip(s(rec.scope), 300); x.notes = arr(x.notes).concat(['🔁 Same Google LSA lead again, ' + at.slice(0, 16).replace('T', ' ') + ' UTC' + (said ? ': ' + said : '') + '.']).slice(-60);
+  if (!s((x.contact || {}).phone) && s((rec.contact || {}).phone)) x.contact = Object.assign({}, x.contact || {}, { phone: rec.contact.phone });
+  x.updatedAt = at;
+}
 async function fileLead(f, extra){
   extra = extra || {};
   const T = TYPES[f.type] || TYPES.estimate, at = nowIso();
@@ -311,8 +332,9 @@ async function fileLead(f, extra){
      "water pouring through the ceiling") — the same emergency check the customer's first reply uses */
   let emWords = false; try { emWords = require('./_lib/emergency.js').isEmergency({ title: String(f.message || ''), detail: [f.service, f.message].map(x => String(x || '')).join(' ') }); } catch (e) {}
   const toMit = !rec.companyId && (rec.emergency === true || ex0.emergency === true || /emergency/i.test(String(rec.urgency || ex0.urgency || f.urgency || '')) || /emergency/i.test(String(f.service || '')) || emWords || /board[- ]?up|\btarp/i.test(emTxt));
-  let action = '';
-  await L().kvCas(L().KV, v => { const have = arr(v).some(x => x && String(x.id) === String(id)); const r2 = (toMit && !have) ? Object.assign({}, rec, { companyId: 'mitigation' }) : rec; if (r2 !== rec) rec.companyId = 'mitigation'; const o = L().upsert(arr(v), r2); action = o.action; return o.items; });
+  let action = '', dupOf = null;   /* patch LSA2 */
+  await L().kvCas(L().KV, v => { const have = arr(v).some(x => x && String(x.id) === String(id)); const r2 = (toMit && !have) ? Object.assign({}, rec, { companyId: 'mitigation' }) : rec; if (r2 !== rec) rec.companyId = 'mitigation'; if (!have) { const dup = lsaDupOf(arr(v), rec, id); if (dup) { lsaFold(dup, rec, at); action = 'merged'; dupOf = dup; return arr(v); } }   /* patch LSA2: LSADEDUPE */ const o = L().upsert(arr(v), r2); action = o.action; return o.items; });
+  if (dupOf) return { id: dupOf.id, rec: dupOf, action, customer: cust, mergedFrom: id };   /* patch LSA2 */
   if (action === 'added') { try { const p = await L().routeLead(id); if (p) Object.assign(rec, p); } catch (e) {} }   /* patch HOT2: routed by its type (lead roles) */
   return { id, rec, action, customer: cust };
 }
