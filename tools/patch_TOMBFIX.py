@@ -213,7 +213,7 @@ A9 = ("        var _t = JSON.stringify(snaps); while(_t.length > 1000000 && snap
       "  window._gcRestoreBackup = function(k, idx){\n"
       "    try{\n"
       "      var snaps = JSON.parse(localStorage.getItem(snapKey(k))||'[]');\n")
-B9 = ("        /* TOMBFIX: IndexedDB has room -- 10 versions are kept; a single version is still capped at 4 M characters */\n"
+B9 = ("        /* TOMBFIX: IndexedDB has room -- up to 10 versions, all of them together at most 4 M characters per list */\n"
       "        var _t = JSON.stringify(snaps); while(_t.length > 4000000 && snaps.length > 1){ snaps.shift(); _t = JSON.stringify(snaps); }\n"
       "        if(_t.length > 4000000) return;\n"
       "        return saveSnaps(k, JSON.parse(_t));\n"

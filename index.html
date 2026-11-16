@@ -5824,7 +5824,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.258-2026-11-15-r35v -->
+<!-- GrayCo CRM Build: 33.259-2026-11-16-r35w -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6773,7 +6773,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.258-2026-11-15-r35v");
+  console.log("[GC] Build 33.259-2026-11-16-r35w");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6821,7 +6821,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.258-2026-11-15-r35v"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.259-2026-11-16-r35w"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -69666,7 +69666,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
         if(last && last.count === data.length) return; // no change in count, skip
         snaps.push({ at: stamp, count: data.length, data: data });
         while(snaps.length > MAX_SNAPS) snaps.shift();
-        /* TOMBFIX: IndexedDB has room -- 10 versions are kept; a single version is still capped at 4 M characters */
+        /* TOMBFIX: IndexedDB has room -- up to 10 versions, all of them together at most 4 M characters per list */
         var _t = JSON.stringify(snaps); while(_t.length > 4000000 && snaps.length > 1){ snaps.shift(); _t = JSON.stringify(snaps); }
         if(_t.length > 4000000) return;
         return saveSnaps(k, JSON.parse(_t));
