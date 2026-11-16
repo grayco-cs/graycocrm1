@@ -50848,6 +50848,16 @@ window._gcsv3way = function(key, x, y){
   if(!out.updatedAt) delete out.updatedAt;
   return out;
 };
+/* SAVES: this computer has what the cloud lacks — a record the cloud does not have, or a newer save of one (not merely a
+   different spelling of the same record: that made a list bounce up and down every sync) */
+function _gcsvAhead(mine, cloud){
+  try{
+    var c = {}, i, r;
+    for(i = 0; i < cloud.length; i++){ r = cloud[i]; if(r && typeof r === 'object' && r.id != null) c[String(r.id)] = String(r.updatedAt || r.updated_at || r.savedAt || ''); }
+    for(i = 0; i < mine.length; i++){ r = mine[i]; if(!r || typeof r !== 'object' || r.id == null) continue; var k = String(r.id); if(!(k in c)) return true; if(String(r.updatedAt || r.updated_at || r.savedAt || '') > c[k]) return true; }
+    return false;
+  }catch(e){ return false; }
+}
 /* SAVES: the same records (by id, any order) — a merged list that only re-orders the cloud's is not a change to send */
 function _gcsvSameList(a, b){
   try{
@@ -51798,7 +51808,7 @@ async function pullAll(force){
          this one computer for good (a reload marks everything known too). Now the next push sends it. */
       try{ if(Array.isArray(_cloudRaw)) window._gcsvSeeCloud(row.key, _cloudRaw); }catch(_sc){}   /* SAVES: AFTER the merge — the base of the NEXT one */
       if(_rem !== null){
-        if(Array.isArray(_val) && Array.isArray(_cloudRaw) && !_gcsvSameList(_val, _cloudRaw)){ _idbSnapshot[row.key] = '__gc_local_differs__'; try{ if(_spWritten) _spWritten[row.key] = 1; }catch(e){} _gcsvSoon(); }
+        if(Array.isArray(_val) && Array.isArray(_cloudRaw) && _gcsvAhead(_val, _cloudRaw)){ _idbSnapshot[row.key] = '__gc_local_differs__'; try{ if(_spWritten) _spWritten[row.key] = 1; }catch(e){} _gcsvSoon(); }
         else _idbSnapshot[row.key] = _rem;
       }
       // Push the freshly-pulled value into the running app's state.
