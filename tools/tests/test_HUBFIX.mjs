@@ -86,7 +86,9 @@ const PAGE_LIB = () => {
       const rx = /^(✕|✖|×|⨯|x)$|^(✕|×)?\s*close\s*(✕|×)?$|^done$|^cancel$|^(‹|←|❮)\s*back$|^back$|^turn off$/i;
       const c = [...e.querySelectorAll('button,[role=button],a,span,div,[data-x],[data-cp="close"],[data-gd-x],[data-ra-close]')].filter(b => vis(b) && (b.children.length <= 2) &&
         (rx.test((b.textContent || '').replace(/\s+/g, ' ').trim()) || /^(close|back)/i.test(b.getAttribute('aria-label') || '') || b.matches('[data-x],[data-cp="close"],[data-gd-x],[data-ra-close]')));
-      c.sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
+      /* a real control first (a wrapper div whose only text is "Close" is not the button), then the top-most */
+      const real = b => b.matches('button,[role=button],a,[data-x],[data-cp="close"],[data-gd-x],[data-ra-close]') ? 0 : 1;
+      c.sort((a, b) => real(a) - real(b) || a.getBoundingClientRect().top - b.getBoundingClientRect().top);
       const b = c[0]; if (!b) return null; b.scrollIntoView({ block: 'nearest' }); const r = b.getBoundingClientRect();
       return { x: r.left + r.width / 2, y: r.top + r.height / 2, t: (b.textContent || '').trim().slice(0, 12) || b.getAttribute('aria-label'), top: (() => { const h = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return !!h && (h === b || b.contains(h) || h.contains(b)); })() };
     }

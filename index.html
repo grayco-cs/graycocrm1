@@ -39924,6 +39924,7 @@ document.addEventListener('mousemove',function(e){
 document.addEventListener('mouseup',function(){_ds.on=false;});
 
 function closeSettings(){ overlay.classList.remove('visible'); }
+document.addEventListener('keydown', function(e){ if (e.key === 'Escape' && overlay.classList.contains('visible')) closeSettings(); });   /* HUBFIX: Esc closes ⚙ CRM Settings (💎 Contract & Doc Templates) like the other screens */
 
 // ── Setting helpers ───────────────────────────────────────────────────────
 function getLS(k, def){ try { var v=localStorage.getItem(k); return v===null?def:JSON.parse(v); } catch(e){ return def; } }
