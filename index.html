@@ -236716,7 +236716,7 @@ function go(key){
   }
   if (W._gcAPX && W._gcAPX.rows) {
     var rows = W._gcAPX.rows(), r = rows.filter(function(x){ return s(x.key).replace(/#\d+$/, '') === key; })[0];
-    if (r) { W._gcAPX.open(''); flash(r.key); return true; }
+    if (r) { W._gcAPX.open(r.mine ? '' : 'all'); flash(r.key);   /* a row that waits on someone else: the All list */ return true; }
   }
   return false;
 }

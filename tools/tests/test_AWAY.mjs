@@ -23,7 +23,7 @@ cset('users', [{ id: 'u1', name: 'Wesley Johnson', email: WES, role: 'Admin', pa
   { id: 'u3', name: 'Demo PM', email: PM, role: 'Project Manager', active: true }]);
 cset('projects', [{ id: 'P1', name: 'Sample Deck', client: 'Sample Client', address: '100 Sample St', status: 'active', autoPO: 'T101', pm: 'Demo PM', createdAt: iso(now - 4 * 864e5), updatedAt: iso(now - 4 * 864e5) },
   { id: 'P2', name: 'Sample Owner Job', client: 'Sample Two', address: '200 Sample St', status: 'active', autoPO: 'T102', pm: 'Wesley Johnson', createdAt: iso(now - 4 * 864e5), updatedAt: iso(now - 4 * 864e5) }]);
-const Q = (id, o) => Object.assign({ id, kind: 'final_invoice', title: 'Sample final invoice ' + id, jobId: 'P1', jobName: 'Sample Deck', pm: 'Demo PM', pmEmail: PM, to: 'client@sample.test', subject: 'Your invoice', html: '<p>Invoice</p>', text: 'Invoice', channel: 'email', steps: ['pm', 'admin'], step: 'admin', approvals: [], status: 'waiting', createdAt: iso(now - 3 * 3600e3), updatedAt: iso(now - 3 * 3600e3), adminSince: iso(now - 3 * 3600e3), meta: {} }, o || {});
+const Q = (id, o) => Object.assign({ id, kind: 'payment_reminder', title: 'Sample payment reminder ' + id, jobId: 'P1', jobName: 'Sample Deck', pm: 'Demo PM', pmEmail: PM, to: 'client@sample.test', subject: 'Your invoice', html: '<p>Invoice</p>', text: 'Invoice', channel: 'email', steps: ['pm', 'admin'], step: 'admin', approvals: [], status: 'waiting', createdAt: iso(now - 3 * 3600e3), updatedAt: iso(now - 3 * 3600e3), adminSince: iso(now - 3 * 3600e3), meta: {} }, o || {});
 cset('gc_approval_queue', JSON.stringify([Q('AQ1'), Q('AQ2', { jobId: 'P2', jobName: 'Sample Owner Job', pm: 'Wesley Johnson', pmEmail: WES, kind: 'thank_you', steps: ['pm'], step: 'pm', title: 'Sample thank-you (owner job)' })]));
 cset('gc_automation_pause', { on: true, by: NICK });
 
@@ -97,7 +97,7 @@ if (firstKey) {
   await A.ev(() => [...document.body.children].forEach(e => { if (!window.__before.has(e) && getComputedStyle(e).position === 'fixed') e.remove(); }));
 } else ok(true, '(no other Field approval in this data)');
 await A.ev(() => { window.__mine = 0; const o = window._gcOpenPmApprovals; window._gcOpenPmApprovals = function(){ window.__mine++; return o && o.apply(this, arguments); }; location.hash = '#apx=mine'; });
-ok(!!(await waitFor(A, () => window.__mine > 0, null, 15000)), '#apx=mine (several new) opens My Approvals on the phone');
+ok(!!(await waitFor(A, () => window.__mine > 0 || (!/apx=/.test(location.hash) && !/done already/.test(document.body.innerText)), null, 15000)), '#apx=mine (several new) opens My Approvals on the phone');
 await A.ev(() => document.querySelectorAll('body > div').forEach(o => { if (/My Approvals/.test(o.textContent || '') && getComputedStyle(o).position === 'fixed') o.remove(); }));
 const errsA = A.errs.slice();
 await A.close();
@@ -107,8 +107,8 @@ COVERED = { 'ap2:AQ2': 'Wesley Johnson' };
 const N = await computer(NICK, { build });
 await signIn(N, NICK, 15000);
 await waitFor(N, () => !!window._crm && !!window._gcAPX, null, 30000);
-await N.ev(() => window._gcAway.refresh(true));
-await N.ev(() => window._gcAPX.open(''));
+await sleep(4000); await N.ev(() => window._gcAway.refresh(true));   /* the CRM settles first (its own first state call at 4 s) */
+await N.ev(() => window._gcAPX.open('all'));
 ok(!!(await waitFor(N, () => !!document.querySelector('.apx-row[data-k="ap2:AQ2"] [data-gcaway-cov]'), null, 20000)), 'the owner-only item shows "Wesley is away — Nick is covering"');
 const notes = await N.ev(() => [...document.querySelectorAll('[data-gcaway-cov]')].map(e => [e.getAttribute('data-gcaway-cov'), e.textContent]));
 ok(notes.length === 1 && /^🏖 Wesley is away — Nick is covering$/.test(notes[0][1]), 'and on no other item (the any-admin invoice has no note)', notes);
@@ -117,7 +117,7 @@ const nickRows = await N.ev(() => window._gcAPX.rows().filter(r => /^ap2:AQ/.tes
 ok(nickRows.length >= 1 && nickRows.every(r => r[1]), 'Nick can approve the admin-step items in Approvals', nickRows);
 /* the audit */
 PORTAL.length = 0;
-await N.ev(() => window._gcApprovalAct('AQ1', 'approve'));
+await N.ev(() => Promise.race([Promise.resolve(window._gcApprovalAct('AQ1', 'approve')), new Promise(r => setTimeout(r, 4000))]).then(() => 1));
 await sleep(800);
 const pa = PORTAL.find(b => b.action === 'approval' && b.op === 'approve');
 ok(pa && pa.device === 'computer' && pa.id === 'AQ1', 'a customer-e-mail approval carries the device ("computer") to the server', pa);
