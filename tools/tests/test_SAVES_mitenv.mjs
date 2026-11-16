@@ -75,35 +75,56 @@ async function equip(){
 async function readings(){
   seed();
   const P = await device('phone', 'mit@grayco-cs.com'); W.push(P);
-  const opened = await tapText(P, /Moisture reading|➕ Moisture/);
-  await sleep(2500);
-  console.log('  (drying screen)', JSON.stringify(await screenSays(P)));
-  const add = await tapText(P, /Add (a )?reading|＋ Reading|New reading|Add point|＋ Add/);
-  const inp = P.page().locator('input[type=number]:visible, input[inputmode=decimal]:visible').first();
-  let typed = false;
-  if (await inp.count()) { await inp.fill('18'); typed = true; }
-  const saved = typed && await tapText(P, /^Save|Add$|Log it|Record/);
-  R('mitigation moisture reading', 'phone', 'screen (button → reading → save)', !!(opened && typed && saved), { opened, add, typed, saved });
-  const db = await cloudWait(() => arr(H.cget('gc_claims')).some(c => JSON.stringify(c).indexOf('18') >= 0 && JSON.stringify(c).length > 400), 30000);
-  R('mitigation moisture reading', 'phone', 'db', !!db);
+  const pg = P.page();
+  const opened = await tapText(P, /Moisture reading/);
+  await pickJob(P, 'P3'); await sleep(2500);
+  const f = pg.locator('.gcbb-moistform:visible').first();
+  const has = await f.count();
+  R('mitigation moisture reading', 'phone', 'form opens', !!has, has ? undefined : await screenSays(P));
+  if (has) {
+    await f.locator('input[name="room"]').fill('Kitchen'); await f.locator('input[name="material"]').fill('Drywall');
+    await f.locator('input[name="point"]').fill('N wall 1'); await f.locator('input[name="reading"]').fill('27'); await f.locator('input[name="goal"]').fill('12').catch(() => {});
+    await f.locator('button[data-a="moist"]').tap().catch(() => f.locator('button[data-a="moist"]').click());
+    await sleep(1500);
+    const cl = () => arr(H.cget('gc_claims')).find(c => c.id === 'CLM1') || {};
+    const db = await cloudWait(() => arr(cl().moisture).find(m => m.room === 'Kitchen' && +m.reading === 27), 40000);
+    R('mitigation moisture reading', 'phone', 'db', !!db, { moisture: cl().moisture, claims: arr(H.cget('gc_claims')).map(c => c.id) });
+    // equipment on the same drying screen: + Add equipment (an air mover in the kitchen)
+    const ef = pg.locator('.gcbb-eqform:visible').first();
+    if (await ef.count()) {
+      await ef.locator('input[name="eroom"]').fill('Kitchen').catch(() => {}); await ef.locator('input[name="qty"]').fill('3').catch(() => {});
+      await ef.locator('button[data-a="eqadd"]').tap().catch(() => ef.locator('button[data-a="eqadd"]').click().catch(() => {}));
+      const eq = await cloudWait(() => arr(cl().equipment).find(e => e.room === 'Kitchen' && +e.qty === 3), 40000);
+      R('mitigation equipment (drying screen)', 'phone', 'db', !!eq, { equipment: cl().equipment });
+    } else R('mitigation equipment (drying screen)', 'phone', 'form opens', false, await screenSays(P));
+    if (db) {
+      const D = await device('desk', 'office@grayco-cs.com'); W.push(D);
+      const seen = await H.waitFor(D, () => { try { const c = window._gcClaims.get('CLM1'); return !!(c && (c.moisture || []).some(m => m.room === 'Kitchen' && +m.reading === 27)); } catch (e) { return false; } }, null, 40000);
+      R('mitigation moisture reading', 'phone', 'other', !!seen);
+      await reload(P);
+      const kept = await H.waitFor(P, () => { try { const c = window._gcClaims.get('CLM1'); return !!(c && (c.moisture || []).some(m => +m.reading === 27)); } catch (e) { return false; } }, null, 30000);
+      R('mitigation moisture reading', 'phone', 'reload', !!kept);
+      await D.close();
+    }
+  }
   await P.close(); W.length = 0;
 }
 async function receipt(){
   seed();
-  const P = await device('phone'); W.push(P);
-  let opened = await P.page().locator('[data-fa="tile"][data-tile="receipt"]').first().tap({ timeout: 5000 }).then(() => true, () => false);
-  if (!opened) opened = await tapText(P, /Snap a receipt|🧾/);
+  const P = await device('phone', 'pm@grayco-cs.com'); W.push(P);   /* a PM: 🧾 Snap a receipt is one of the job's tools */
+  await P.page().locator('#_gcJobPick.gc-fh .fh-job[data-job="P2"] .fh-n').first().tap({ timeout: 8000 }).catch(() => {}); await sleep(2000);
+  let opened = await tapText(P, /^\s*🧾\s*Snap a receipt\s*$/);
   await sleep(1500);
   const has = await P.page().locator('#_lePrice').count();
   R('field receipt', 'phone', 'form opens', !!has, has ? undefined : await screenSays(P));
   if (has) {
-    await P.ev(() => { const s = document.getElementById('_leJob'); if (s && s.tagName === 'SELECT') { s.value = 'P1'; s.dispatchEvent(new Event('change', { bubbles: true })); } });
+    await P.ev(() => { const s = document.getElementById('_leJob'); if (s && s.tagName === 'SELECT') { s.value = 'P2'; s.dispatchEvent(new Event('change', { bubbles: true })); } });
     await P.page().fill('#_leStore', 'Demo Hardware'); await P.page().fill('#_lePrice', '42.50');
     try { await P.page().setInputFiles('#_lePhoto', { name: 'receipt.png', mimeType: 'image/png', buffer: PNG }); } catch (e) {}
     await sleep(800);
     await P.page().locator('#_leSave').tap().catch(() => P.page().click('#_leSave'));
     await sleep(2000);
-    const db = await cloudWait(() => arr(H.cget('expenses')).find(x => +x.amt === 42.5 && x.pid === 'P1'), 30000);
+    const db = await cloudWait(() => arr(H.cget('expenses')).find(x => +x.amt === 42.5 && x.pid === 'P2'), 30000);
     R('field receipt', 'phone', 'db', !!db, { expenses: arr(H.cget('expenses')).map(x => [x.amt, x.pid]) });
     const photo = await cloudWait(() => [...H.cloud.keys()].some(k => /^doc:/.test(k)) || H.storage.size > 0, 20000);
     R('field receipt photo', 'phone', 'db', !!photo, { docs: [...H.cloud.keys()].filter(k => /^doc:/.test(k)), files: H.storage.size });
@@ -117,7 +138,7 @@ async function receipt(){
   }
   await P.close(); W.length = 0;
 }
-for (const [k, f] of [['env', env], ['equip', equip], ['read', readings], ['receipt', receipt]]) {
+for (const [k, f] of [['env', env], ['read', readings], ['receipt', receipt]].concat(only.includes('equip') ? [['equip', equip]] : [])) {   /* equip = a rental on the job (the Desk's equipment sheet); the field's 🌬 is the drying screen, in 'read' */
   if (!want(k)) continue;
   try { await f(); } catch (e) { console.log('  ✗ FAIL ' + k + ' crashed: ' + String(e && e.stack || e).slice(0, 600)); await closeAll(W); W.length = 0; }
 }

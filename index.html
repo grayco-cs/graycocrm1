@@ -7431,7 +7431,7 @@ function defer(name, keyOf){
          something that can be awaited without waiting for real work */
       try{ return Promise.resolve(); }catch(e){ return undefined; }
     };
-    wrapped.__deferred = true;
+    wrapped.__deferred = true; wrapped.__orig = f;   /* SAVES: the real one, for a caller that must know whether the save landed */
     try{ window[name] = wrapped; }catch(e){}
   }, 500);
 }
@@ -50471,7 +50471,7 @@ function _gcsvFail(k, why){
   try{ if(_spWritten) _spWritten[k] = 1; }catch(e){}
   if(!_gcsvT){
     var n = 0; try{ Object.keys(_gcsvBad).forEach(function(x){ n = Math.max(n, _gcsvBad[x].tries); }); }catch(e){}
-    var ms = Math.min(120000, 8000 * Math.pow(2, Math.max(0, n - 1)));
+    var ms = Math.min(30000, 8000 * Math.pow(2, Math.max(0, n - 1)));   /* 8 s, 16 s, then every 30 s */
     _gcsvT = (window.__GC_NATIVE_SETTIMEOUT__ || setTimeout).call(window, function(){ _gcsvT = null; try{ if(Object.keys(_gcsvBad).length && window._gcPushAll) window._gcPushAll(); }catch(e){} }, ms);
   }
 }
@@ -68610,6 +68610,10 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
     function isMap(x){ return x && typeof x === 'object' && !Array.isArray(x); }
     function toCloud(key, item){
       var now = window._supaUpsertNow;
+      /* SAVES: when the "run it later" wrapper (DEFERWORK) got here first, _supaUpsertNow answered at once without sending —
+         the queue then dropped the save as sent, and a send that failed afterwards was never tried again (measured: a job
+         message sent from a phone with a full localStorage reached the office only after the app was reopened) */
+      try{ while(now && now.__deferred && typeof now.__orig === 'function') now = now.__orig; }catch(e){}
       if(typeof now !== 'function') return Promise.reject(new Error('no direct save'));
       var v = item.v, lv = asList(v);
       var prep = Promise.resolve(v);

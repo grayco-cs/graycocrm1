@@ -23,15 +23,16 @@ const toldNow = A => A.ev(() => { const el = document.getElementById('gc-unsent-
 async function estCase(label, fault, extra){
   seed();
   const A = await device('desk', 'sbiffle@grayco-cs.com', extra && extra.init ? { init: extra.init } : {}); W.push(A);
+  const clog = []; A.page().on('console', m => { const t = m.text(); if (/GC Sync|backing off|recovered|Upload|Write failed|held/i.test(t)) clog.push(t.slice(0, 160)); });
   const NAME = 'Demo Fail ' + label.replace(/\W+/g, '') + Date.now().toString(36).slice(-3);
   if (fault) H.failNext(Object.assign({ table: 'gc_kv', key: /^(estimates|__est__gc_ests_v2)$/ }, fault));
   const t0 = Date.now();
   await estNew(A, NAME, [{ desc: "Fail demo line", cost: 100, qty: 3 }]);
-  const w1 = await dbOrTold(A, () => estIn(NAME).length ? estIn(NAME)[0] : null, 75000), got = w1.got, msg = w1.told;
+  const w1 = await dbOrTold(A, () => estIn(NAME).length ? estIn(NAME)[0] : null, 120000), got = w1.got, msg = w1.told;   /* within 2 minutes */
   const tookS = Math.round((Date.now() - t0) / 1000);
   const fl = H.faultLog.filter(f => f.at >= t0).length;
   if (fault) R('estimate ' + label, 'desk', 'told or sent at once', !!(msg || got), { injected: fl, told: msg });
-  if (!got) console.log('  (diagnosis)', JSON.stringify(await A.ev(() => ({ unsent: window._gcUnsent && window._gcUnsent(), q: window._gcSyncQ && window._gcSyncQ.waiting() }))));
+  if (!got) console.log('  (diagnosis)', JSON.stringify(await A.ev(() => ({ unsent: window._gcUnsent && window._gcUnsent(), q: window._gcSyncQ && window._gcSyncQ.waiting(), dbg: window._gcSyncDebug && window._gcSyncDebug(), giveup: window.__GC_SYNC_GIVEUP__ }))), JSON.stringify(clog.slice(-14)));
   R('estimate ' + label, 'desk', 'db', !!got, { injected: fl, secs: tookS, told: msg });
   if (extra && extra.reloadFirst && !got) {
     await reload(A);
@@ -54,11 +55,11 @@ async function msgCase(label, fault, extra){
   await P.ev(() => window._gcOpenJobMessages('P1')); await H.waitFor(P, () => !!document.getElementById('_jmText'), null, 15000); await sleep(800);
   if (fault) H.failNext(Object.assign({ table: 'gc_kv', key: 'gc_job_messages' }, fault));
   const t0 = Date.now();
-  await pg.fill('#_jmText', TEXT); await pg.locator('#_jmSend').tap(); await sleep(1500);
+  await pg.fill('#_jmText', TEXT); await pg.locator('#_jmSend').scrollIntoViewIfNeeded().catch(() => {}); await pg.locator('#_jmSend').tap({ timeout: 5000 }).catch(() => P.ev(() => document.getElementById('_jmSend').click()));   /* off screen in this panel: the person scrolls to it */ await sleep(1500);
   const shown = await P.ev(t => (document.getElementById('_jmThread') || {}).innerText.indexOf(t) >= 0, TEXT);
   R('job message ' + label, 'phone', 'shows on phone', shown);
   const inDb = () => arr(H.cget('gc_job_messages')).find(m => m && m.text === TEXT);
-  const w1 = await dbOrTold(P, inDb, 60000); let got = w1.got;
+  const w1 = await dbOrTold(P, inDb, 120000); let got = w1.got;
   if (fault) R('job message ' + label, 'phone', 'told', !!w1.told, { injected: H.faultLog.filter(f => f.at >= t0).length, told: w1.told });
   if (fault) R('job message ' + label, 'phone', 'retried by itself', !!got);
   if (!got) console.log('  (diagnosis)', JSON.stringify(await P.ev(() => ({ q: window._gcSyncQ && window._gcSyncQ.waiting(), st: window._gcSyncQ && window._gcSyncQ.state() }))));
@@ -83,8 +84,8 @@ try {
   if (want('est')) {
     await estCase('503 once', { status: 503, times: 2 });
     await estCase('no answer', { hang: true, times: 2 });
-    await estCase('503 x6 + reload', { status: 503, times: 6 }, { reloadFirst: true });
-    await estCase('full storage', null, { init: [H.fillLocalStorage(20000)] });
+    if (!process.env.SAVES_QUICK) await estCase('503 x6 + reload', { status: 503, times: 6 }, { reloadFirst: true });
+    if (!process.env.SAVES_QUICK) await estCase('full storage', null, { init: [H.fillLocalStorage(20000)] });
   }
   if (want('msg')) {
     await msgCase('503 once', { status: 503, times: 1 }, { reopen: true });

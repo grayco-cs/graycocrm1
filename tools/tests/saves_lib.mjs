@@ -53,14 +53,14 @@ export function seed(extra){
   H.cset('users', PEOPLE);
   H.cset('projects', [
     { id: 'P1', name: 'Demo Kitchen', client: 'Pat Demo', address: '123 Demo St, Memphis, TN', pm: 'Wesley Johnson', status: 'active', type: 'Remodel', contract: 20000, contractSigned: true, autoPO: 'K101', company: 'GrayCo', customerId: 'C1', createdAt: ago(20), updatedAt: ago(2), savedAt: ago(2) },
-    { id: 'P3', name: 'Demo Water Loss', client: 'Sam Sample', address: '41 Flood Ct, Memphis, TN', pm: 'Demo Mit Tech', status: 'active', type: 'Water Damage', company: 'GrayCo Mitigation', isInsurance: true, claimNumber: 'DEMO-CLM-1', contract: 7000, contractSigned: true, autoPO: 'W303', createdAt: ago(4), updatedAt: ago(1), savedAt: ago(1) },
-    { id: 'P4', name: 'Demo Tile Abatement', client: 'Ash Sample', address: '8 Fiber Ln, Memphis, TN', pm: 'Demo Env Tech', status: 'active', type: 'Asbestos Abatement', company: 'GrayCo Environmental', contract: 5000, contractSigned: true, autoPO: 'E404', createdAt: ago(6), updatedAt: ago(1), savedAt: ago(1) },
+    { id: 'P3', name: 'Demo Water Loss', client: 'Sam Sample', address: '41 Flood Ct, Memphis, TN', pm: 'Demo Mit Tech', status: 'active', type: 'Water Damage', company: 'GrayCo Mitigation', companyId: 'mitigation', isInsurance: true, claimNumber: 'DEMO-CLM-1', contract: 7000, contractSigned: true, autoPO: 'W303', createdAt: ago(4), updatedAt: ago(1), savedAt: ago(1) },
+    { id: 'P4', name: 'Demo Tile Abatement', client: 'Ash Sample', address: '8 Fiber Ln, Memphis, TN', pm: 'Demo Env Tech', status: 'active', type: 'Asbestos Abatement', company: 'GrayCo Environmental', companyId: 'environmental', contract: 5000, contractSigned: true, autoPO: 'E404', createdAt: ago(6), updatedAt: ago(1), savedAt: ago(1) },
     { id: 'P2', name: 'Lee Bath', client: 'Lee Sample', address: '9 Sample Ave, Memphis, TN', pm: 'Demo PM', status: 'active', type: 'Bath', contract: 9000, contractSigned: true, autoPO: 'B202', createdAt: ago(30), updatedAt: ago(3), savedAt: ago(3) }]);
   H.cset('customers', [{ id: 'C1', name: 'Pat Demo', phone: '9015550111', email: 'pat@demo.test', address: '123 Demo St, Memphis, TN', updatedAt: ago(5) }]);
   H.cset('leads', [{ id: 'L1', name: 'Robin Sample', phone: '9015550122', address: '77 Test Rd, Memphis, TN', stage: 'new', source: 'Website', createdAt: ago(1), updatedAt: ago(1) }]);
   H.cset('schedule', [{ id: 'S1', pid: 'P1', date: TODAY, title: 'Demo day', assignee: 'Wesley Johnson', type: 'work', updatedAt: ago(1) }]);
   H.cset('schedule', arr(H.cget('schedule')).concat([{ id: 'S3', pid: 'P3', date: TODAY, title: 'Drying check', assignee: 'Demo Mit Tech', type: 'work' }, { id: 'S4', pid: 'P4', date: TODAY, title: 'Abatement day', assignee: 'Demo Env Tech', type: 'work' }]));
-  H.cset('gc_claims', [{ id: 'CLM1', projectId: 'P3', pid: 'P3', title: 'Demo Water Loss', phase: 'mitigation', kind: 'water', lossType: 'Water', claimNumber: 'DEMO-CLM-1', lossDate: ago(4).slice(0, 10), createdAt: ago(4), updatedAt: ago(1) }]);
+  H.cset('gc_claims', [{ id: 'CLM1', projectId: 'P3', pid: 'P3', companyId: 'mitigation', title: 'Demo Water Loss', phase: 'mitigation', kind: 'water', jobType: 'water', mitigation: true, lossType: 'Water', claimNumber: 'DEMO-CLM-1', lossDate: ago(4).slice(0, 10), createdAt: ago(4), updatedAt: ago(1) }]);
   H.cset('estimates', []);
   H.cset('invs', []); H.cset('expenses', []);
   H.cset('gc_office_tasks', JSON.stringify([]));
