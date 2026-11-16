@@ -12,6 +12,10 @@
 //   callout {kind: sick | late | cant, day, minutes, note, jobs: [job ids]}   an employee calling out (patch TIMEOFF's 🤒 / ⏰):
 //                             the admins + the PM of each job that day (the superintendent on a commercial job), at once
 //                             (urgent — passes the quiet hours): phone push, else a staff text (_lib/callout.js)
+//   notify {to, kind, link, title, body, quiet}   one staff notice from the CRM page (window._gcNotify — TODOMGR, lead assign,
+//                             "sent back to you" …): to = a staff name or e-mail (or a list); the phone push, else one staff text;
+//                             inside the 9 PM – 7 AM quiet hours it waits for the 7 AM bundle (kind callout / emergency goes now);
+//                             quiet: true = push only, never a text
 //   quiet {from, to, on}      (admin) 🌙 staff quiet hours (default 9 PM → 7 AM: only emergencies / call-outs; the rest at 7 AM)
 require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const portal = require('./portal.js');
@@ -105,6 +109,23 @@ async function act(body, who){
     const none = arr(p.none).filter(function(e){ return arr(p.to).indexOf(e) < 0; });
     if (none.length) { try { const r = await require('./_lib/smsalert.js').notify({ type: 'system', emergency: true, only: none, text: title.replace(/^📣 /, '') + ': ' + text, link: url, thread: 'callout:' + low(who.email) }); texted = arr(r && r.to); } catch (e) {} }
     return { status: 200, out: { ok: true, to: to, pushed: arr(p.to), texted: texted, title: title } };
+  }
+  if (op === 'notify') {
+    const C = portal._core; let data = {}; try { data = await C.crmData(false); } catch (e) {}
+    const users = arr(data.users).filter(function(u){ return u && u.active !== false && /@/.test(s(u.email)); });
+    const P = require('./_lib/people.js');
+    const want = (Array.isArray(body.to) ? body.to : [body.to]).slice(0, 12).map(function(x){ const u = P.findUser(users, s(x)); return u ? low(u.email) : (/@(in\.)?grayco-cs\.com$/i.test(s(x)) ? low(x) : ''); })
+      .filter(function(e, i, a){ return e && /@(in\.)?grayco-cs\.com$/.test(e) && a.indexOf(e) === i; });
+    if (!want.length) return { status: 200, out: { ok: false, error: 'Nobody on the staff list by that name.' } };
+    const title = s(body.title).slice(0, 120) || 'GrayCo CRM', text = s(body.body).slice(0, 240), kind = s(body.kind).slice(0, 30);
+    const base = (s(process.env.CRM_URL) || 'https://crm.grayco-cs.com').replace(/\/$/, ''), link = s(body.link);
+    const url = /^#[A-Za-z0-9_=&%:.\-]{0,300}$/.test(link) ? base + '/' + link : base + '/#todo';
+    const emergency = /^(callout|call-out|emergency)$/i.test(kind);
+    const p = await SP().send(want, { title: title, body: text, url: url, tag: 'gc-' + (kind || 'notice') }, { emergency: emergency });
+    let texted = [];
+    const none = arr(p.none).filter(function(e){ return arr(p.to).indexOf(e) < 0; });
+    if (!p.held && none.length && body.quiet !== true) { try { const r = await require('./_lib/smsalert.js').notify({ type: 'system', emergency: emergency, only: none, text: title + (text ? ': ' + text : ''), link: url, thread: 'notice:' + (kind || 'x') }); texted = arr(r && r.to); } catch (e) {} }
+    return { status: 200, out: { ok: true, to: want, pushed: arr(p.to), held: arr(p.held), texted: texted } };
   }
   if (op === 'quiet') {
     if (!admin) return { status: 403, out: { ok: false, error: 'Admins only.' } };

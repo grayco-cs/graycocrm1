@@ -413,5 +413,22 @@ await t('a customer-portal approval waiting on an admin → the office after 48 
   assert.strictEqual(C.escalatedOrDue(by('PP1'), NOW + 19 * 3600e3), true, '30 + 19 h → due');
 });
 
+console.log('window._gcNotify → op notify (TODOMGR and the other page callers)');
+await t('a notice to a staff NAME reaches that phone with its deep link; at 11 PM it waits for the 7 AM bundle; a call-out kind goes; quiet: true never texts', async () => {
+  reset(); NOW = at(TODAY, '13:00');
+  let r = await act(N, { op: 'notify', to: 'Pat Mason', kind: 'lead', link: '#leads', title: '📥 New lead assigned to you: QA Smith', body: 'Roof leak' });
+  assert.deepStrictEqual(r.out.to, [P]); assert.strictEqual(pushesTo(P).length, 1); assert.strictEqual(pushesTo(P)[0].msg.url, 'https://crm.test/#leads');
+  r = await act(N, { op: 'notify', to: 'Nobody Here', title: 'x' }); assert.strictEqual(r.out.ok, false);
+  r = await act(N, { op: 'notify', to: 'someone@example.test', title: 'x' }); assert.strictEqual(r.out.ok, false, 'staff only');
+  reset(); NOW = at(TODAY, '23:00');
+  r = await act(N, { op: 'notify', to: 'Pat Mason', kind: 'todo', link: '#todo', title: 'QA To-Do from Nick', body: 'Call the supplier' });
+  assert.deepStrictEqual(r.out.held, [P]); assert.strictEqual(SENT.push.length, 0); assert.strictEqual(TEXTS.length, 0);
+  r = await act(N, { op: 'notify', to: 'Pat Mason', kind: 'callout', title: '📣 QA crew short', body: 'x' }); assert.strictEqual(pushesTo(P).length, 1, 'a call-out goes at 11 PM');
+  NOW = at(addDays(TODAY, 1), '07:00'); reset(); await PG.run({}); assert.ok(pushesTo(P).some(x => /QA To-Do from Nick/.test(x.msg.body) || /QA To-Do from Nick/.test(x.msg.title)), 'the held notice is in the 7 AM bundle');
+  reset(); NOW = at(TODAY, '13:00'); await act(TECH, { op: 'unsubscribe', endpoint: 'none' });
+  r = await act(N, { op: 'notify', to: 'Tom Tech', title: 'QA quiet one', quiet: true }); assert.strictEqual(TEXTS.length, 0, 'quiet: push only'); assert.deepStrictEqual(r.out.texted, []);
+  NOW = at(TODAY, '13:00');
+});
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

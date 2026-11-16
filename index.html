@@ -236844,6 +236844,15 @@ every(function(){ try { feed(); } catch (e) { warn(e); } }, 180e3);
 later(function(){ refresh(true); }, 4000);
 later(function(){ try { feed(); } catch (e) {} }, 25000);
 D.addEventListener('visibilitychange', function(){ if (!D.hidden) { refresh(false); tryOpen(); } });
+/* window._gcNotify(name | e-mail | [..], { kind, to, link: '#…', title, body, quiet }) — a staff notice to their phone (push, else a
+   staff text), through the quiet hours' 7 AM bundle (kind 'callout' / 'emergency' goes at once); quiet: true = push only.
+   Other modules (lead assign, "sent back to you", TODOMGR) call it when it is present. → Promise<{ ok, to, pushed, held, texted }> */
+if (typeof W._gcNotify !== 'function') W._gcNotify = function(name, o){
+  o = o || {};
+  var to = o.to != null ? o.to : name;
+  if (!signedIn() || !to || (Array.isArray(to) && !to.length)) return Promise.resolve({ ok: false });
+  return call({ op: 'notify', to: to, kind: s(o.kind), link: s(o.link), title: s(o.title).slice(0, 120), body: s(o.body).slice(0, 240), quiet: o.quiet === true }).catch(function(){ return { ok: false }; });
+};
 W._gcAway = { state: function(){ return STATE; }, refresh: refresh, open: open, week: week, pushOn: pushOn, pushOff: pushOff, howTo: howTo, go: go, device: device, feed: function(){ FEED_SIG = ''; feed(); }, audit: audit };
 try { console.log('[GC] 🏖 Away + 🔔 approvals on the phone (patch AWAY): _gcAway.state()'); } catch (e) {}
 })();
