@@ -1531,6 +1531,14 @@ try { console.log('[GC] STORECUT: one estimates store; reads shared; a hidden ta
    3. when a read from the cloud carried entries the rule drops, this tab writes the clean list back ONCE (at most every
       10 minutes) through the app's normal upload, as the union of the cloud's cleaned list and this computer's — nothing
       real is ever left out, and two computers doing it at once both send a superset of what the cloud had.
+   TOMBFIX2 (r36c, owner's PC: 7.6 s / 6.5 s freezes on Leads, one 32 s freeze after load): every delete-list write ran the
+   compaction on a 21 MB string, because a tombstone module's own memory still held the runaway entries (it unions every
+   write BEFORE this door cleans it) and its repair wrote them back each time -> clean -> missing -> write again (every
+   1.5 s and on every delete). Now: the runaway rule is exposed (window._gcTombGarbage) and every in-memory delete list
+   refuses those entries when it takes anything in; this door cleans a localStorage write only when the text carries a
+   runaway entry (a cheap text search), remembers the last answer, never trims a write that fits (the 1 M quick-start cap
+   applies only when the browser refuses the write), and a big old IndexedDB copy is written back clean once, in the
+   background, so it is read big at most once.
    Console: _gcTombFix.state()   _gcTombFix.compact(map)   Off: localStorage gc_tombfix_off = '1'. */
 (function(){
 'use strict';
@@ -1604,10 +1612,27 @@ try {
 
   /* ── 1. localStorage ─────────────────────────────────────────────────────── */
   if (SP && LS) {
+    /* TOMBFIX2: clean only a text that carries a runaway entry (one text search), remember the last answer; a write that
+       fits is never trimmed (the quick-start cap applies only when the browser refuses the write) */
+    var memoIn = null, memoOut = null;
+    var cleanLS = function(v){
+      if (v.indexOf('"' + PFX + 'gid') < 0) return v;
+      if (v === memoIn) return memoOut;
+      var o; try { o = JSON.parse(v); } catch (e) { return v; }
+      var c = compact(o), out = c.map === o ? v : JSON.stringify(c.map);
+      memoIn = v; memoOut = out; S.lsCleaned = (S.lsCleaned || 0) + 1;
+      return out;
+    };
     SP.setItem = function(k, v){
-      if (this === LS && k === TK && typeof v === 'string' && (v.length > LS_CAP || v.indexOf('"' + PFX + 'gid') >= 0)) {
-        try { v = lsText(v); } catch (e) {}
-        return pSet.call(this, k, v);
+      if (this === LS && k === TK && typeof v === 'string') {
+        try { v = cleanLS(v); } catch (e) {}
+        try { return pSet.call(this, k, v); }
+        catch (e) {
+          if (!(e && (e.name === 'QuotaExceededError' || e.code === 22 || /quota/i.test(String(e.name) + String(e.message))))) throw e;
+          var t = v; try { t = lsText(v); } catch (x) {}
+          if (t === v) throw e;
+          return pSet.call(this, k, t);
+        }
       }
       return pSet.apply(this, arguments);
     };
@@ -1616,7 +1641,7 @@ try {
       var raw = pGet.call(LS, TK);
       if (raw && raw.length > 2) {
         S.lsBefore = raw.length;
-        var nt = lsText(raw);
+        var nt = compactText(raw);   /* TOMBFIX2: cleaned, not trimmed (the page's own delete lists would only write it back) */
         if (nt !== raw) pSet.call(LS, TK, nt);
         S.lsAfter = nt.length;
       }
@@ -1624,6 +1649,23 @@ try {
   }
 
   /* ── 2. IndexedDB (gc_tombstones / gc_tombstones_all) ───────────────────── */
+  /* TOMBFIX2: a big old copy read here is written back clean once, in the background, so no later load reads it big */
+  var idbDirty = {}, idbCleanT = 0;
+  function scheduleIdbClean(){
+    if (idbCleanT) return;
+    idbCleanT = NST.call(W, function(){
+      var run = function(){
+        var g = W._gcIdbRead || W.idbGet, w = W._gcIdbWrite || W.idbSet;
+        if (typeof g !== 'function' || typeof w !== 'function') { idbCleanT = 0; return; }
+        Object.keys(idbDirty).forEach(function(k){
+          delete idbDirty[k];
+          Promise.resolve(g(k)).then(function(v){ if (v && typeof v === 'object') { S.idbCleaned = (S.idbCleaned || 0) + 1; return w(k, v); } }).catch(function(){});
+        });
+        idbCleanT = 0;
+      };
+      if (typeof W.requestIdleCallback === 'function') W.requestIdleCallback(run, { timeout: 15000 }); else run();
+    }, 20000);
+  }
   try {
     var OS = W.IDBObjectStore && W.IDBObjectStore.prototype, RQ = W.IDBRequest && W.IDBRequest.prototype;
     var rDesc = RQ && Object.getOwnPropertyDescriptor(RQ, 'result');
@@ -1643,7 +1685,7 @@ try {
             var done = false, memo;
             Object.defineProperty(rq, 'result', { configurable: true, enumerable: true, get: function(){
               var r = rDesc.get.call(rq);              /* throws until the request is done, as before */
-              if (!done) { done = true; memo = compactAny(r); }
+              if (!done) { done = true; memo = compactAny(r); if (memo !== r) { idbDirty[key] = 1; scheduleIdbClean(); } }
               return memo;
             } });
           } catch (e) {}
@@ -1700,8 +1742,9 @@ try {
       var U = urlOf(input);
       if (!U || !/^\/rest\/v1\/(gc_kv|app_data)$/.test(U.pathname)) return pf.apply(this, arguments);
       var m = String((init && init.method) || (input && typeof input !== 'string' && !(input instanceof URL) && input.method) || 'GET').toUpperCase();
-      var keyF = U.searchParams.getAll('key'), named = false, other = false;
+      var keyF = U.searchParams.getAll('key'), named = false, other = false, eqTomb = false;
       keyF.forEach(function(v){
+        if (/^eq\./.test(v) && decodeURIComponent(v.slice(3)).replace(/^"|"$/g, '') === TK && keyF.length === 1) eqTomb = true;
         if (/^eq\./.test(v)) { if (decodeURIComponent(v.slice(3)).replace(/^"|"$/g, '') === TK) named = true; else other = true; }
         else if (/^in\.\(/.test(v)) { if (decodeURIComponent(v).indexOf(TK) >= 0) named = true; else other = true; }
       });
@@ -1710,7 +1753,7 @@ try {
         if (typeof body !== 'string' || (body.indexOf('"' + TK + '"') < 0 && !named)) return pf.apply(this, arguments);
         if (other && !named) return pf.apply(this, arguments);
         try {
-          var data = JSON.parse(body), fx = fixRows(data, named && m !== 'POST');
+          var data = JSON.parse(body), fx = fixRows(data, eqTomb && m !== 'POST');   /* TOMBFIX2 */
           (Array.isArray(data) ? data : [data]).forEach(function(r){ if (r && r.__gcTF) delete r.__gcTF; });
           if (fx.changed) { S.cloudOut++; return pf.call(this, input, Object.assign({}, init, { body: JSON.stringify(data) })); }
         } catch (e) {}
@@ -1726,7 +1769,7 @@ try {
           var out = txt, hs = r.headers;
           if (txt && txt.length > 2 && (named || txt.indexOf('"key":"' + TK + '"') >= 0)) {
             try {
-              var rows = JSON.parse(txt), fx = fixRows(rows, named && !other && keyF.length === 1);
+              var rows = JSON.parse(txt), fx = fixRows(rows, eqTomb);   /* TOMBFIX2: every row is the list only for key=eq.gc_tombstones */
               (Array.isArray(rows) ? rows : [rows]).forEach(function(x){ if (x && x.__gcTF) { absorbCloud(x.__gcTF); delete x.__gcTF; } });
               if (fx.changed) {
                 out = JSON.stringify(rows); S.cloudIn++; S.cloudDirty++;
@@ -1742,6 +1785,7 @@ try {
     W.fetch = tfFetch;
   }
 
+  W._gcTombGarbage = garbage;   /* TOMBFIX2: every in-memory delete list refuses these when it takes anything in */
   W._gcTombFix = {
     state: function(){ var o = {}; for (var k in S) if (k !== 'pushT') o[k] = S[k]; o.retainDays = RETAIN_DAYS; o.lsCap = LS_CAP; return o; },
     compact: function(m, now){ return compact(m, now).map; },
@@ -56019,7 +56063,7 @@ console.log("[GC] Business Brain components loaded:", !!window.GrayCoBrain, !!wi
   function absorb(src){
     if(!src || typeof src!=='object') return 0;
     var m = MEM || (MEM = {}), added = 0;
-    Object.keys(src).forEach(function(k){ if(!(k in m)){ m[k]=src[k]; added++; } });
+    Object.keys(src).forEach(function(k){ if((window._gcTombGarbage && window._gcTombGarbage(k))) return; if(!(k in m)){ m[k]=src[k]; added++; } });   /* TOMBFIX2 */
     return added;
   }
   /* THERE ARE TWO TOMBSTONE WRITERS IN THIS FILE.
@@ -56064,9 +56108,16 @@ console.log("[GC] Business Brain components loaded:", !!window.GrayCoBrain, !!wi
     }, 250);
   })();
 
+  /* TOMBFIX2: one write (localStorage, IndexedDB, the cloud) per burst of deletes -- memory has them at once */
+  var saveT = null;
   function save(v){
     absorb(v);
-    v = load();
+    if(saveT) return;
+    saveT = setTimeout(function(){ saveT = null; saveNow(); }, 60);
+  }
+  try{ window.addEventListener('beforeunload', function(){ if(saveT){ clearTimeout(saveT); saveT = null; saveNow(); } }); }catch(e){}
+  function saveNow(){
+    var v = load();
     /* the store with room, first */
     try{ if(window.idbSet) window.idbSet(IDBK, v); }catch(e){}
     try{ localStorage.setItem(TK, JSON.stringify(v)); }catch(e){
@@ -85049,7 +85100,7 @@ function tload0(){
     window.idbGet(IDB_TK).then(function(saved){
       if(!saved || typeof saved !== 'object') return;
       var t = tload(), added = 0;
-      Object.keys(saved).forEach(function(k){ if(!(k in t)){ t[k] = saved[k]; added++; } });
+      Object.keys(saved).forEach(function(k){ if((window._gcTombGarbage && window._gcTombGarbage(k))) return; if(!(k in t)){ t[k] = saved[k]; added++; } });   /* TOMBFIX2 */
       if(added){
         console.log('[GC] '+added+' earlier deletion(s) read back from the full list — they stay deleted.');
         try{ if(window._gcApplySyncRaw) window._gcApplySyncRaw(TK, t); }catch(e){}
@@ -85135,6 +85186,7 @@ window._gcTombstoneMany = function(type, ids){
   var t = tload(), now = new Date().toISOString(), n = 0;
   for(var i=0;i<ids.length;i++){
     var id = ids[i]; if(!id) continue;
+    if((window._gcTombGarbage && window._gcTombGarbage(type+':'+id))) continue;   /* TOMBFIX2 */
     if(window._gcIsProtected(type, id)) continue;
     var k = type+':'+id;
     if(!t[k]){ t[k] = now; n++; }
@@ -118199,7 +118251,7 @@ async function cloudAll(){
 function absorb(map){
   var have = localAll(), fresh = [];
   var _ck = {}; try{ ((window._gcxClearedKeys && window._gcxClearedKeys()) || []).forEach(function(k){ _ck[k] = 1; }); }catch(e){}   /* LDEL: lifted on purpose */
-  Object.keys(map||{}).forEach(function(k){ if(!(k in have) && !_ck[k]) fresh.push(k); });
+  Object.keys(map||{}).forEach(function(k){ if(!(k in have) && !_ck[k] && !(window._gcTombGarbage && window._gcTombGarbage(k))) fresh.push(k); });   /* TOMBFIX2 */
   if(!fresh.length) return fresh;
   try{ var ls = asMap(localStorage.getItem(KEY)); fresh.forEach(function(k){ ls[k]=map[k]; }); localStorage.setItem(KEY, JSON.stringify(ls)); }catch(e){}
   var byType = {};
@@ -124609,6 +124661,7 @@ function absorbMap(src, into){
   Object.keys(src).forEach(function(k0){
     if(!k0 || k0.indexOf(':')<1) return;
     var k = normKey(k0), v = src[k0] || 1;
+    if((window._gcTombGarbage && window._gcTombGarbage(k))) return;   /* TOMBFIX2: a runaway payroll-profile mark never enters memory */
     if(!(k in into)){ into[k] = v; added++; }
     else if(ts(v) > ts(into[k])){ into[k] = v; added++; }       /* the later of two dates: a delete after a "bring back" wins */
   });
@@ -124684,8 +124737,10 @@ function repairLS(){
   }
 }
 var dbT = null, cloudT = null;
+var repT = null;
 function changed(){
-  repairLS();
+  /* TOMBFIX2: the browser copy is repaired once per burst (a sweep deletes many rows in one go), not once per id */
+  if(!repT) repT = ST.call(window, function(){ repT = null; try{ repairLS(); }catch(e){} }, 120);
   if(!dbT) dbT = ST.call(window, function(){ dbT = null; try{ if(window.idbSet) window.idbSet(IDBK, Object.assign({}, M)); }catch(e){} }, 300);
   if(!cloudT) cloudT = ST.call(window, function(){ cloudT = null; pushTombs(); }, 400);
 }

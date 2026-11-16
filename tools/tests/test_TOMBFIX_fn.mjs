@@ -145,8 +145,10 @@ function snapshot(){
   const small = JSON.stringify({ 'leads:L1': iso(NOW) }); t.LS.setItem('gc_tombstones', small); ok(t.data.get('gc_tombstones') === small, 'a small clean list is stored as it is');
   t.LS.setItem('projects_x', 'y'); ok(t.data.get('projects_x') === 'y', 'other keys untouched');
   const huge = {}; for (let i = 0; i < 40000; i++) huge['schedule:S' + i] = iso(NOW - i * 1000); for (let i = 0; i < 1000; i++) huge['leads:L' + i] = iso(NOW - 9 * DAY);
-  t.LS.setItem('gc_tombstones', JSON.stringify(huge)); const v3 = JSON.parse(t.data.get('gc_tombstones'));
-  ok(t.data.get('gc_tombstones').length <= 1000000 && Object.keys(v3).filter(k => k.startsWith('leads:')).length === 1000, 'a real list over 1 M characters: the quick-start copy is capped, every non-schedule entry kept first', t.data.get('gc_tombstones').length);
+  t.LS.setItem('gc_tombstones', JSON.stringify(huge));
+  ok(t.data.get('gc_tombstones') === JSON.stringify(huge), 'TOMBFIX2: a real list over 1 M characters that fits is stored as it is (never trimmed, so no delete list writes it back again and again)');
+  const tq = early({ cap: 1200000 }); tq.LS.setItem('gc_tombstones', JSON.stringify(huge)); const v3 = JSON.parse(tq.data.get('gc_tombstones'));
+  ok(tq.data.get('gc_tombstones').length <= 1000000 && Object.keys(v3).filter(k => k.startsWith('leads:')).length === 1000, 'the browser refuses it (storage full): the quick-start copy is capped, every non-schedule entry kept first', tq.data.get('gc_tombstones').length);
 }
 /* IndexedDB door */
 {
