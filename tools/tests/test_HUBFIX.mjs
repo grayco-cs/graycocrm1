@@ -239,7 +239,7 @@ async function profileRun(who, acct, opts){
 }
 
 const OWNER_ONLY = ['Cash Position', 'P&L (auto)', 'Team Status'];
-const WESLEY_NICK = ['Cash Position', 'Team Status', 'PM Commission Setup', 'Cash Flow'];   /* their screens open for the owners only */
+const ADMIN_ROLE_ONLY = ['Cash Position', 'Team Status', 'PM Commission Setup', 'Cash Flow'];   /* their screens open for the admin role only */
 try {
   const RUN = (process.env.HUB_PROFILES || 'admin,office,office-nogrant,office-manager,pm').split(',');
   if (RUN.indexOf('admin') >= 0) { world('Office');
@@ -247,13 +247,13 @@ try {
   {
     /* office@ as it really is: role Office Admin, and the database's payroll grant (gc_staff.payroll) — every item clicked */
     if (RUN.indexOf('office') >= 0) { world('Office Admin');
-    await profileRun('office', 'u-office', { access: { payroll: true, office: true }, notThere: WESLEY_NICK, click: true, panelChecks: true, desk: true, payroll: true, min: 60 }); }
+    await profileRun('office', 'u-office', { access: { payroll: true, office: true }, notThere: ADMIN_ROLE_ONLY, click: true, panelChecks: true, desk: true, payroll: true, min: 60 }); }
     /* an office / data-entry person WITHOUT the payroll grant: no payroll items */
     if (RUN.indexOf('office-nogrant') >= 0 && !ONLY) { world('Office');
-    await profileRun('office-nogrant', 'u-office', { access: { payroll: false }, notThere: WESLEY_NICK, payroll: false, min: 60 }); }
+    await profileRun('office-nogrant', 'u-office', { access: { payroll: false }, notThere: ADMIN_ROLE_ONLY, payroll: false, min: 60 }); }
     /* the Office Manager role (no grant needed) */
     if (RUN.indexOf('office-manager') >= 0 && !ONLY) { world('Office Manager');
-    await profileRun('office-manager', 'u-office', { access: { payroll: false }, notThere: WESLEY_NICK, payroll: true, min: 60 }); }
+    await profileRun('office-manager', 'u-office', { access: { payroll: false }, notThere: ADMIN_ROLE_ONLY, payroll: true, min: 60 }); }
     if (RUN.indexOf('pm') >= 0 && !ONLY) { world('Office');
     await profileRun('pm', 'u-pm', { click: true, payroll: false, notThere: OWNER_ONLY.concat(['Test the CRM', 'Send Alert to All PMs']), min: 20, mustHave: ['Job Messages', 'Help Center'] }); }
   }

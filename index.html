@@ -22461,11 +22461,12 @@ if (!localStorage.getItem("_helpShown")) {
         var _u=null; try{ _u=(window._gcMeUserJSON?window._gcMeUserJSON('null'):JSON.parse(localStorage.getItem('grayco_user')||'null')); }catch(e){}
         var _isOwner = !!(_u && (String(_u.payType||'').toLowerCase()==='owner' || _u.role==='Admin' || /office/i.test(_u.role||'')));
         if(!_isOwner){ items = items.filter(function(it){ return !it.adminOnly; }); }
-        /* HUBFIX: Cash Position, Team Status, PM Commission Setup and Cash Flow open only for Wesley / Nick (their screens say
-           "is for owners" to anyone else) — the office no longer gets a button that only says no */
+        /* HUBFIX: Cash Position, Team Status, PM Commission Setup and Cash Flow open only for the ADMIN role (or payType owner —
+           the same check those screens make; their texts say "is for owners") — the office no longer gets a button that only says no.
+           By role, never by name or e-mail. */
         var _realOwner = !!(_u && (String(_u.payType||'').toLowerCase()==='owner' || _u.role==='Admin'));
         if(!_realOwner){ items = items.filter(function(it){ return !it.ownerOnly; }); }
-        /* HUBFIX (owner rule): payroll items only for the admins (Wesley, Nick), the Office Manager role, and a person the
+        /* HUBFIX (owner rule): payroll items only for the admin role, the Office Manager role, and a person the
            database grants payroll (gc_staff.payroll — e.g. the office manager on office@) — not Office / data entry without the
            grant, estimators, PMs, field or marketing. window._gcPayAccess (patch PAYACCESS) decides when it is there. */
         var _PA = window._gcPayAccess, _vas = false; try { _vas = !!(window._gcVAS && window._gcVAS.active && window._gcVAS.active()); } catch (e) {}
