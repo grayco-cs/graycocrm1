@@ -26,7 +26,14 @@ function pdf(lines){
 const H = await import(pathToFileURL(HARNESS).href);
 const { sleep, waitFor } = H;
 H.resetCloud();
-const M = JSON.parse(fs.readFileSync(MIRROR, 'utf8'));
+/* DEVMODE: the real-data mirror when it is there; else a made-up fixture (the test crashed when the mirror file was gone) */
+const OWNER = Object.keys(H.ACCOUNTS).find(e => H.ACCOUNTS[e].id === 'u-wesley');
+const M = fs.existsSync(MIRROR) ? JSON.parse(fs.readFileSync(MIRROR, 'utf8')) : [
+  { key: 'users', value: [{ id: 'u1', name: 'Wesley Johnson', email: OWNER, role: 'Admin', payType: 'owner', active: true }] },
+  { key: 'projects', value: [{ id: 'PF1', po: 'PO-3001', name: 'Demo Bathroom Bid', client: 'Sample Homeowner', address: '300 Demo Ln', pm: 'Wesley Johnson', status: 'Bidding', contract: 0 },
+    { id: 'PF2', po: 'PO-3002', name: 'Demo Deck', client: 'Second Homeowner', address: '400 Demo Rd', pm: 'Wesley Johnson', status: 'Active', contract: 9000, contractSigned: true }] },
+  { key: 'projectDocs', value: [] }, { key: 'leads', value: [] }];
+if (!fs.existsSync(MIRROR)) console.log('  (no mirror at ' + MIRROR + ' — a made-up fixture)');
 for (const r of M) if (r && r.key && !/^_probe/.test(r.key)) H.cset(r.key, r.v !== undefined ? r.v : r.value);
 let P0 = H.cget('projects'); if (typeof P0 === 'string') try { P0 = JSON.parse(P0); } catch (e) {}
 P0 = (Array.isArray(P0) ? P0 : []).filter(p => p && p.id && p.name && !p.deleted && !p.tombstoned);
@@ -51,8 +58,9 @@ async function openJob(c){
   return waitFor(c, () => !!document.querySelector('#_gcJobDash .gcfp-grid ._jdAct[data-fn="photo"]'), null, 15000);
 }
 try {
-  const O = await H.computer('OWN', { build, mobile: true }); W.push(O); await fakeFiles(O);
-  await H.signIn(O, 'wjohnson@grayco-cs.com', 9000);
+  const IPHONE = `(() => { const d = (o, k, v) => { try { Object.defineProperty(o, k, { get: () => v, configurable: true }); } catch (e) {} }; d(Navigator.prototype, 'userAgent', 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Mobile/15E148 Safari/604.1'); d(Navigator.prototype, 'maxTouchPoints', 5); })()`;
+  const O = await H.computer('OWN', { build, mobile: true, init: [IPHONE] }); W.push(O); await fakeFiles(O);   /* DEVMODE: a real iPhone user agent */
+  await H.signIn(O, OWNER, 9000);
   ok(!!(await waitFor(O, () => !!document.querySelector('#_gcJobPick.gc-fh'), null, 60000)), 'the phone opens in GrayCo Field');
   await waitFor(O, () => typeof window._gcStoreFile === 'function' && !!(window._gcPhotos && window._gcPhotos.capture) && ((window._crm && window._crm.projects) || []).length > 0, null, 90000);
   await sleep(2500);
