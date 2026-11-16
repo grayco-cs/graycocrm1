@@ -45,7 +45,7 @@ const LEGACY_SEED = { id: 'PPu-pat', userId: 'u-pat', name: 'Pat Example', payTy
 const w4 = p => ({ filing: p.filing, dep: p.dependentsCredit, extra: p.extra, ssn4: p.ssn4, hire: p.hireDate, ded: (p.otherDeductions || []).length, rate: p.hourlyRate });
 
 /* ── A. the merge rule ── */
-{
+try {
   const { W } = world(); const M = (a, b) => W._gcPayProfileMerge(JSON.parse(JSON.stringify(a)), JSON.parse(JSON.stringify(b)));
   ok(typeof W._gcPayProfileMerge === 'function', '_gcPayProfileMerge is there');
   let m = M(REAL, LEGACY_SEED);
@@ -82,7 +82,7 @@ const w4 = p => ({ filing: p.filing, dep: p.dependentsCredit, extra: p.extra, ss
   ok(fl.length === 1 && fl[0].filing === 'married', 'the stable-id fold of two copies in one list keeps the W-4', fl.map(w4));
   const ex = W._gcUnionMerge('expenses', [{ id: 'E1', amt: 5, note: 'x', updatedAt: old }], [{ id: 'E1', amt: 6, note: '', updatedAt: NOWISO }]);
   ok(ex[0].amt === 6 && ex[0].note === '', 'other lists: unchanged (newer wins, empty included)', ex);
-}
+} catch (e) { ok(false, 'the merge rule section ran', String(e).slice(0, 120)); }
 
 /* ── B. profiles() on a fresh computer ── */
 const USERS = [{ id: 'u-pat', name: 'Pat Example', email: 'pat@example.test', hourlyRate: 24, payType: 'hourly', active: true }, { id: 'u-new', name: 'New Hire', hourlyRate: 18, payType: 'hourly', active: true }];

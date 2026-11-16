@@ -25,6 +25,19 @@ const PROFILES = [PROF(USERS[0], { payType: 'owner_draw' }), PROF(USERS[1], { ho
 H.resetCloud();
 H.cset('users', USERS); H.cset('payrollProfiles', PROFILES);
 H.cset('projects', [{ id: 'P1', name: 'Zedd Job', status: 'Active', updatedAt: old }]);
+/* the payroll list arrives LATE on the fresh computer (the way the office computers have it: the sign-in must say who this
+   is before payroll keys are asked for, and the first pull is slow): for the first SLOWPAY_MS of a page, a read naming
+   payrollProfiles waits that long and a bulk read comes back without that row. The people list is there at once. */
+const SLOWPAY = `(function(){ var T0 = Date.now(), MS = ${Number(process.env.SLOWPAY_MS || 20000)}, nf = window.fetch;
+  function slow(input, init){
+    var u = String(typeof input === 'string' ? input : (input && input.url) || input), m = String((init && init.method) || 'GET').toUpperCase();
+    if (!/\\/rest\\/v1\\/gc_kv/.test(u) || m !== 'GET' || Date.now() - T0 > MS) return nf.apply(this, arguments);
+    var self = this, args = arguments;
+    if (/payrollProfiles/.test(decodeURIComponent(u))) return new Promise(function(r){ setTimeout(r, Math.max(0, MS - (Date.now() - T0))); }).then(function(){ return nf.apply(self, args); });
+    return nf.apply(this, arguments).then(function(r){ return r.text().then(function(t){ var o = t; try { var j = JSON.parse(t); if (Array.isArray(j) && j.some(function(x){ return x && x.key === 'payrollProfiles'; })) o = JSON.stringify(j.filter(function(x){ return !(x && x.key === 'payrollProfiles'); })); } catch (e) {}
+      return new Response(o, { status: r.status, statusText: r.statusText, headers: r.headers }); }); });
+  }
+  window.fetch = slow; })();`;
 const cPat = () => (H.cget('payrollProfiles') || []).filter(p => p && (p.userId === 'u-pat' || p.name === PAT));
 const w4 = p => p ? { id: p.id, filing: p.filing, dep: p.dependentsCredit, extra: p.extra, rate: p.hourlyRate, ssn4: p.ssn4 } : null;
 const localPat = A => A.ev(async () => { const l = await window._gcPayrollProfiles(); return l.filter(p => p && p.name === 'Pat Example').map(p => ({ id: p.id, filing: p.filing, dep: p.dependentsCredit, extra: p.extra, rate: p.hourlyRate, ssn4: p.ssn4 })); });
@@ -34,13 +47,13 @@ async function openPat(A){
   return H.waitFor(A, () => { const s = document.querySelector('[data-p="filing"]'), e = document.querySelector('[data-p="extra"]'), d = document.querySelector('[data-p="dependentsCredit"]');
     return s && e ? { filing: s.value, extra: e.value, dep: d ? d.value : null } : null; }, null, 30000);
 }
-const A = await H.computer('A', { build }); let B = null, C = null;
+const A = await H.computer('A', { build, init: SLOWPAY }); let B = null, C = null;
 try {
   await H.signIn(A, EMAIL, 20000); await ready(A);
   const early = await localPat(A);   /* the very first call on a fresh computer */
-  await H.sleep(15000);
+  await H.sleep(25000);
   const l1 = await localPat(A), c1 = cPat();
-  console.log('    first call: ' + JSON.stringify(early) + '  after 15 s: ' + JSON.stringify(l1) + '  cloud: ' + JSON.stringify(c1.map(w4)));
+  console.log('    first call: ' + JSON.stringify(early) + '  after 25 s: ' + JSON.stringify(l1) + '  cloud: ' + JSON.stringify(c1.map(w4)));
   ok(l1.length === 1 && l1[0].filing === 'married' && l1[0].dep === 2000 && l1[0].extra === 15 && l1[0].ssn4 === '1234', '1. fresh computer after load: the W-4 is intact here (married / 2000 / +15)', l1);
   ok(c1.length === 1 && c1[0].filing === 'married' && c1[0].dependentsCredit === 2000 && c1[0].extra === 15, '1. …and in the cloud', c1.map(w4));
   ok(!early.length || (early[0].filing === 'married' && early[0].extra === 15), '1. even the first answer on the fresh computer is never a default W-4', early);
@@ -54,8 +67,8 @@ try {
   ok(c3.length === 1 && c3[0].extra === 20 && c3[0].filing === 'married' && c3[0].dependentsCredit === 2000 && c3[0].ssn4 === '1234', '3. a save (extra → 20) reaches the cloud with the rest of the W-4', c3.map(w4));
   await A.page().reload({ waitUntil: 'domcontentloaded' }); await ready(A); await H.sleep(8000);
   const l3 = await localPat(A); ok(l3.length === 1 && l3[0].extra === 20 && l3[0].filing === 'married', '3. …after a reload', l3);
-  B = await H.computer('B', { build }); await H.signIn(B, EMAIL, 20000); await ready(B);
-  const bEarly = await localPat(B); await H.sleep(12000);
+  B = await H.computer('B', { build, init: SLOWPAY }); await H.signIn(B, EMAIL, 20000); await ready(B);
+  const bEarly = await localPat(B); await H.sleep(25000);
   const lb = await localPat(B), cb = cPat();
   ok(lb.length === 1 && lb[0].extra === 20 && lb[0].filing === 'married' && (!bEarly.length || bEarly[0].filing === 'married'), '3. …on a second fresh computer', { bEarly, lb });
   ok(cb.length === 1 && cb[0].extra === 20 && cb[0].filing === 'married', '3. …and the cloud after computer B loaded', cb.map(w4));

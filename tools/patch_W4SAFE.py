@@ -127,7 +127,7 @@ B3 = ("/* W4SAFE: the cloud's payroll profile list, read once per page (concurre
       "  var list=await get(K_PROF);\n"
       "  if(!Array.isArray(list)) list=[];\n"
       "  var _w4c = { ok:false, list:[] }, _w4changed=false;   /* W4SAFE */\n"
-      "  try{ _w4c = await w4Cloud(); }catch(_w4e){}\n"
+      "  try{ _w4c = await Promise.race([w4Cloud(), new Promise(function(r){ setTimeout(function(){ r({ ok:false, list:[] }); }, 8000); })]); }catch(_w4e){}   /* a slow read: answer from this computer, create nothing */\n"
       "  if(_w4c.ok && _w4c.list.length && window._gcUnionMerge){\n"
       "    try{ var _w4b = JSON.stringify(list); var _w4m = window._gcUnionMerge(K_PROF, JSON.parse(_w4b), JSON.parse(JSON.stringify(_w4c.list)));\n"
       "      if(Array.isArray(_w4m) && JSON.stringify(_w4m) !== _w4b){ list = _w4m; _w4changed = true; } }catch(_w4me){}\n"
