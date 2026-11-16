@@ -210930,7 +210930,7 @@ W._gcRaMoreHook = function(a, o, pk){
   pk.insertBefore(box, pk.firstChild);
   var anchor = off0 ? off0.nextSibling : null;
   moved.forEach(function(b){ if (off0) pk.insertBefore(b, anchor); else pk.appendChild(b); });
-  if (!pk.querySelector('[data-m="search"],[data-ra-a="search"]') && K() && K().shown('search')) { var sr = D.createElement('button'); sr.type = 'button'; sr.className = 'gc-fm-r'; sr.setAttribute('data-ra-a', 'search'); sr.setAttribute('data-ra-close', ''); sr.innerHTML = '<span class="e">🔍</span><span>Search</span>'; pk.insertBefore(sr, pk.querySelector('[data-m="tools"]') || null); }
+  if (!pk.querySelector('[data-m="search"],[data-ra-a="search"]') && K() && K().shown('search')) { var sr = D.createElement('button'); sr.type = 'button'; sr.className = 'gc-fm-r'; sr.setAttribute('data-ra-a', 'search'); sr.setAttribute('data-m', 'search'); sr.setAttribute('data-ra-close', ''); sr.innerHTML = '<span class="e">🔍</span><span>Search</span>'; pk.insertBefore(sr, pk.querySelector('[data-m="tools"]') || null); }
 };
 function lessTap(a){
   closeSheets(); Array.prototype.forEach.call(D.querySelectorAll('.gc-fh-sheet'), function(o){ o.remove(); });
@@ -211213,6 +211213,8 @@ function css(){
     '.gc-pmf .gc-pmf-x{margin-bottom:6px}.gc-pmf .gc-pmf-role{margin-top:4px}',
     /* owner 11/16: the ⏸ Data-entry mode pill is off the phone (admins: ☰ More → ⏸ Data-entry mode, and ⚡ Needs you while it is ON) */
     'html.gc-fh-on #gcp-banner{display:none!important}',
+    /* the Home is longer now: anything scrolled into view (a focused box, a job card's button) stops above the bottom bar */
+    '#_gcJobPick.gc-fh,#_gcJobPick.gc-fh .fh-wrap{scroll-padding-bottom:calc(110px + env(safe-area-inset-bottom,0px))}',
     '.gc-fh-sheet .gc-pmf-less .gc-fm-k{margin-top:2px}.gc-fh-sheet .gc-fm-r small{display:block;font-weight:500;color:#6b7280;font-size:12px}',
     /* the home dashboard */
     '.gc-pmf .gc-pmf-today{display:flex;flex-direction:column;gap:6px}',
