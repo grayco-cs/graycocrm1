@@ -6884,7 +6884,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   setTimeout(checkVersion, 8000);             // and shortly after load
 })();
 </script>
-<style>html._fieldmode #gc-hub-btn{display:none !important;}</style><style id="_gcHideFabs">/* Only the diamond hub + voice stay out; everything else lives in the diamond menu. */#_cashPos,#_ctrRevWrap,#_gc1099Btn,#_gcAlertsBtn,#_gcContractBtn,#_gcDeskProfileBtn,#_gcFinBtn,#_gcHelpBtn,#_gcInvPill,#_gcMergeBtn,#_gcMergeProjBtn,#_gcMoveSchedBtn,#_gcMyFinBtn,#_gcPmApprovalPill,#_gcPmBell,#_gcPrintSchedBtn,#_gcProgPill,#_gcQAFab,#_gcRunOfficeBtn,#_gcSubPill,#_gcSubSearchBtn,#_officeHomeBtn,#_officeHomeWrap,#_pmComm,#_subXtra,#_teamStat{display:none !important;}</style>
+<style>html._fieldmode #gc-hub-btn{display:none !important;}</style><style id="_gcHideFabs">/* Only the diamond hub + voice stay out; everything else lives in the diamond menu. *//* HUBFIX: #_cashPos, #_ctrRevWrap, #_pmComm, #_subXtra, #_teamStat are the SCREENS 💎 Cash Position / contract review / PM Commission Setup / Sub Details / Team Status open, not floating buttons — hiding them made those items do nothing */#_gc1099Btn,#_gcAlertsBtn,#_gcContractBtn,#_gcDeskProfileBtn,#_gcFinBtn,#_gcHelpBtn,#_gcInvPill,#_gcMergeBtn,#_gcMergeProjBtn,#_gcMoveSchedBtn,#_gcMyFinBtn,#_gcPmApprovalPill,#_gcPmBell,#_gcPrintSchedBtn,#_gcProgPill,#_gcQAFab,#_gcRunOfficeBtn,#_gcSubPill,#_gcSubSearchBtn,#_officeHomeBtn,#_officeHomeWrap{display:none !important;}</style>
 </head>
   <body>
 <script>
@@ -17417,7 +17417,7 @@ alertBadge.style.cssText="position:absolute;top:-4px;right:-4px;background:#ef44
 alertBell.appendChild(alertBadge);
 
 var alertPanel=document.createElement("div");
-alertPanel.id="_alertPanel";
+alertPanel.id="_alertPanel"; alertPanel.setAttribute("data-gc-keep","1");   /* HUBFIX: the 2-second notice sweeper removed this (empty) panel, so 💎 Notifications showed nothing */
 alertPanel.style.cssText="position:fixed;bottom:80px;right:90px;z-index:9999;width:380px;max-height:75vh;overflow-y:auto;background:#0f1d2f;border:1px solid #1e3a5f;border-radius:12px;box-shadow:0 8px 40px rgba(0,0,0,0.6);display:none;font-family:Inter,-apple-system,sans-serif;";
 document.body.appendChild(alertPanel);
 
@@ -17428,9 +17428,10 @@ alertBell.onclick=function(){
   _showSettings=false;
   if(alertPanel.style.display==="block"){try{buildAlerts();}catch(e){alertPanel.innerHTML='<div style="padding:16px 18px;color:#e8eef5;font-family:Inter,-apple-system,sans-serif;font-size:13px;">Alerts panel loaded. (No alerts to show right now.)</div>';}}
 };
-window._gcOpenNotifications=function(){ alertPanel.style.display="block"; _showSettings=false; try{buildAlerts();}catch(e){} };
+window._gcOpenNotifications=function(){ if(!alertPanel.isConnected) document.body.appendChild(alertPanel); alertPanel.__gcOpenT=Date.now(); alertPanel.style.display="block"; alertPanel.style.zIndex="100030"; _showSettings=false; try{buildAlerts();}catch(e){} };   /* HUBFIX: shown above the screen, and not closed by the click that opened it */
 try{ alertBell.style.display="none"; }catch(e){}
 document.addEventListener("click",function(ev){
+  if(alertPanel.__gcOpenT && Date.now()-alertPanel.__gcOpenT<400) return;   /* HUBFIX: the 💎 tap that just opened it */
   if(!alertBell.contains(ev.target)&&!alertPanel.contains(ev.target))alertPanel.style.display="none";
 });
 
@@ -22250,18 +22251,34 @@ if (!localStorage.getItem("_helpShown")) {
       }
     }catch(_e){}
 
+    /* HUBFIX: one close path for the 💎 panel — its own ✕ (it called window.hubPanel, which never existed), an outside click,
+       Esc, and ANY item (the items other patches add had no close, so the panel stayed on top of the screen they opened).
+       A panel removed by other code no longer leaves a stale reference (the next 💎 tap used to "close" it and show nothing). */
+    var _hubOutside = null, _hubKey = null;
+    function closeHub(){
+      if (hubPanel) { try { hubPanel.remove(); } catch (e) {} }
+      hubPanel = null;
+      if (_hubOutside) { document.removeEventListener("click", _hubOutside, true); _hubOutside = null; }
+      if (_hubKey) { document.removeEventListener("keydown", _hubKey, true); _hubKey = null; }
+    }
+    window._gcCloseHub = closeHub;
+    function _hubOpener(t){ try { return !!(t && t.closest && (t === hubBtn || t.closest('#gc-hub-btn,#_gcFieldHubBtn,#gc-topbar [data-tb="hub"],#gc-tb-pop [data-tb="hub"],[data-ra-a="hub"]'))); } catch (e) { return false; } }
     function toggleHub(){
-      if (hubPanel) {
-        hubPanel.remove();
-        hubPanel = null;
-        return;
-      }
+      if (hubPanel && hubPanel.isConnected) { closeHub(); return; }
+      closeHub();
       hubPanel = document.createElement("div");
       hubPanel.className = "gc-hub-panel";
 
       // Position panel RELATIVE to the current hub button position (it may have been dragged)
       try {
         var rect = hubBtn.getBoundingClientRect();
+        /* HUBFIX: the round 💎 is hidden when the top toolbar (or the desk) shows the menu — its rect is 0×0 and the panel
+           was placed off the left edge of the screen. Anchor to the toolbar's 💎, else the usual bottom-right spot. */
+        if (!rect || (!rect.width && !rect.height)) {
+          var _tb = document.querySelector('#gc-topbar [data-tb="hub"]');
+          var _tr = _tb && _tb.getClientRects().length ? _tb.getBoundingClientRect() : null;
+          rect = (_tr && _tr.width) ? _tr : { top: window.innerHeight - 152 - 54, bottom: window.innerHeight - 152, right: window.innerWidth - 18, left: window.innerWidth - 72, width: 54, height: 54 };
+        }
         var vh = window.innerHeight, vw = window.innerWidth;
         // Prefer opening above the button; fall back to below if no room
         var openAbove = rect.top > 320;
@@ -22284,7 +22301,9 @@ if (!localStorage.getItem("_helpShown")) {
         // Fall back to default CSS positioning
       }
 
-      hubPanel.innerHTML = "<div style='display:flex;justify-content:space-between;align-items:center;padding:6px 10px 10px'><span style='font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;'>Master CRM Hub</span><button onclick='if(window.hubPanel){window.hubPanel.remove();window.hubPanel=null;}' style='background:none;border:none;color:#94a3b8;font-size:16px;cursor:pointer;line-height:1;padding:0;'>✕</button></div>";
+      hubPanel.innerHTML = "<div style='display:flex;justify-content:space-between;align-items:center;padding:6px 10px 10px'><span style='font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;'>Master CRM Hub</span><button type='button' class='gc-hub-x' aria-label='Close menu' style='background:none;border:none;color:#94a3b8;font-size:16px;cursor:pointer;line-height:1;padding:0;'>✕</button></div>";   /* HUBFIX: wired below */
+      /* HUBFIX: one entry per label (Credit Cards, PM Commission Setup and Pay Structures were listed twice — the saved order kept one,
+         both opened the same screen); payroll items carry payroll:true (owner rule: admins + Office Manager only) */
       var items = [
         { icon: "🧠", label: "Business Brain", fn: function(){ if(window._gcOpenBrain) window._gcOpenBrain(); } },   /* patch FIELDPORTAL */
         { icon: "📋", label: "Job Profile", fn: function(){ if(window._gcOpenJobProfile) window._gcOpenJobProfile(); } },
@@ -22301,7 +22320,7 @@ if (!localStorage.getItem("_helpShown")) {
         { icon: "💰", label: "Project Payments", fn: function(){ if(window._gcIsPM && window._gcIsPM()){ if(window._gcMyFinancials) window._gcMyFinancials(); } else { openPaymentsDashboard(); } } },
         { icon: "📄", label: "All Company Invoices", fn: function(){ window._gcOpenAllInvoices && window._gcOpenAllInvoices(); } },
         { icon: "📊", label: "Financials", fn: function(){ if(window._gcIsPM && window._gcIsPM()){ if(window._gcMyFinancials) window._gcMyFinancials(); } else if(window._gcOpenOwnerFinancials){ window._gcOpenOwnerFinancials(); } } },
-        { icon: "💵", label: "Employee Pay", fn: function(){ if(window._gcIsPM && window._gcIsPM()){ alert("Employee pay settings are for owners/office."); return; } if(window._gcEditEmployeePay) window._gcEditEmployeePay(); } },
+        { icon: "💵", label: "Employee Pay", payroll: true, fn: function(){ if(window._gcIsPM && window._gcIsPM()){ alert("Employee pay settings are for owners/office."); return; } if(window._gcEditEmployeePay) window._gcEditEmployeePay(); } },
         { icon: "📄", label: "1099 Reports", fn: function(){ if(window._gcOpen1099) window._gcOpen1099("out", (window._gcIsPM&&window._gcIsPM())?"mine":null); } },
         { icon: "🔀", label: "Merge Records", fn: function(){ window._gcOpenMerge && window._gcOpenMerge("subs"); } },
         { icon: "🔗", label: "Merge Projects", fn: function(){ window._gcOpenMergeProjects && window._gcOpenMergeProjects(); } },
@@ -22328,9 +22347,9 @@ if (!localStorage.getItem("_helpShown")) {
         { icon: "\uD83D\uDCCE", label: "Sub Invoice PDFs", fn: function(){ if(window._gcOpenSubPDFManager) window._gcOpenSubPDFManager(); else alert("Not loaded \u2014 hard-refresh and try again."); } },
         { icon: "\uD83D\uDCA1", label: "Monthly Overhead", adminOnly: true, fn: function(){ if(window._gcOpenOverhead) window._gcOpenOverhead(); else alert("Overhead tracker not loaded \u2014 hard-refresh and try again."); } },
         { icon: "\uD83C\uDF96", label: "Required certs, raises & promotion", adminOnly: true, fn: function(){ if(window._gcCertPlan) window._gcCertPlan.open(); else alert("Not loaded \u2014 hard-refresh and try again."); } },   /* patch CERTPLAN */
-        { icon: "\u2699", label: "Pay Structure Templates", adminOnly: true, fn: function(){ if(window._gcPayTemplatesOpen) window._gcPayTemplatesOpen(); else alert("Not loaded \u2014 hard-refresh and try again."); } },   /* patch PMG */
+        { icon: "\u2699", label: "Pay Structure Templates", payroll: true, adminOnly: true, fn: function(){ if(window._gcPayTemplatesOpen) window._gcPayTemplatesOpen(); else alert("Not loaded \u2014 hard-refresh and try again."); } },   /* patch PMG */
         { icon: "\uD83E\uDDEE", label: "PM Commission + Calculator", fn: function(){ if(window._gcPickPMForCommission) window._gcPickPMForCommission(); else alert("Commission screen not loaded \u2014 hard-refresh and try again."); } },
-        { icon: "\uD83D\uDCB0", label: "PM Pay (type & source)", adminOnly: true, fn: function(){ if(window._gcPickPMForMatrixPay) window._gcPickPMForMatrixPay(); else if(window._gcPickPMForPay) window._gcPickPMForPay(); else alert("Pay editor not loaded \u2014 hard-refresh and try again."); } },
+        { icon: "\uD83D\uDCB0", label: "PM Pay (type & source)", payroll: true, adminOnly: true, fn: function(){ if(window._gcPickPMForMatrixPay) window._gcPickPMForMatrixPay(); else if(window._gcPickPMForPay) window._gcPickPMForPay(); else alert("Pay editor not loaded \u2014 hard-refresh and try again."); } },
         { icon: "\uD83D\uDCF7", label: "Map CompanyCam \u2192 PM (lead credit)", fn: function(){ if(window._gcSetCCCreatorMap) window._gcSetCCCreatorMap(); else alert("Not loaded \u2014 hard-refresh and try again."); } },
         { icon: "\uD83D\uDD04", label: "Re-import ALL CompanyCam jobs", fn: function(){ if(window._gcReimportAllCompanyCam) window._gcReimportAllCompanyCam(); else alert("Not loaded \u2014 hard-refresh and try again."); } },
         { icon: "\uD83D\uDC64", label: "Set Job Lead Source", fn: function(){ if(window._gcPickJobForLeadSource) window._gcPickJobForLeadSource(); else alert("Lead source picker not loaded \u2014 hard-refresh and try again."); } },
@@ -22354,7 +22373,6 @@ if (!localStorage.getItem("_helpShown")) {
         { icon: "\uD83D\uDCB5", label: "Set Flat Commission", adminOnly: true, fn: function(){ window._gcOpenFlatCommission && window._gcOpenFlatCommission(); } },
         { icon: "\uD83C\uDFF7", label: "Job Source (commission)", adminOnly: true, fn: function(){ window._gcOpenJobSourceMgr && window._gcOpenJobSourceMgr(); } },
         { icon: "🔗", label: "Merge Customers", fn: function(){ window._gcOpenCustomerMerge && window._gcOpenCustomerMerge(); } },
-        { icon: "💵", label: "PM Commission Setup", adminOnly: true, fn: function(){ window._gcOpenPMCommission && window._gcOpenPMCommission(); } },
         { icon: "🧾", label: "Statement Reconcile", adminOnly: true, fn: function(){ window._gcOpenStatementReconcile && window._gcOpenStatementReconcile(); } },
         { icon: "🔍", label: "Rate Category Check", fn: function(){ window._gcOpenCategoryCheck && window._gcOpenCategoryCheck(); } },
         { icon: "✉️", label: "Overdue Reminders", fn: function(){ window._gcOpenOverdueEmails && window._gcOpenOverdueEmails(); } },
@@ -22375,7 +22393,7 @@ if (!localStorage.getItem("_helpShown")) {
         { icon: "\uD83E\uDDFE", label: "Monthly Bank Check", adminOnly: true, fn: function(){ if (window._gcStmtBankDoor && window._gcStmtBankDoor("recon")) return; window._gcOpenBankReconcile && window._gcOpenBankReconcile(); } },
         { icon: "⚖️", label: "Contract Overrides", fn: function(){ window._gcOpenOverrideApprovals && window._gcOpenOverrideApprovals(); } },
         { icon: "🧠", label: "Business Brain (issues)", fn: function(){ window._gcOpenBusinessBrain && window._gcOpenBusinessBrain(); } },
-        { icon: "💰", label: "Pay Structures", fn: function(){ window._gcOpenPayStructures && window._gcOpenPayStructures(); } },
+        { icon: "💰", label: "Pay Structures", payroll: true, fn: function(){ window._gcOpenPayStructures && window._gcOpenPayStructures(); } },
         { icon: "📄", label: "Import Google Docs", fn: function(){
             if (window.GC && window.GC.openGDocsImporter) window.GC.openGDocsImporter();
             else GC.toast("Importer not loaded yet, try again in a moment", "warn");
@@ -22383,12 +22401,10 @@ if (!localStorage.getItem("_helpShown")) {
         { icon: "📈", label: "P&L by Job", fn: function(){ if(window._gcOpenPnL) window._gcOpenPnL(); } },
         { icon: "\uD83D\uDCD8", label: "The Books", fn: function(){ if(window._gcOpenBooks) window._gcOpenBooks(); } },
         { icon: "\uD83D\uDCB5", label: "My Pay", fn: function(){ if(window._gcOpenMyPay) window._gcOpenMyPay(); } },
-        { icon: "\u2705", label: "Payroll Check", fn: function(){ if(window._gcOpenPayrollCheck) window._gcOpenPayrollCheck(); } },
-        { icon: "\uD83C\uDFDB", label: "State Tax", fn: function(){ if(window._gcOpenStateTax) window._gcOpenStateTax(); } },
-        { icon: "\uD83E\uDDEE", label: "Pay Structures", fn: function(){ if(window._gcOpenPayRules) window._gcOpenPayRules(); } },
+        { icon: "\u2705", label: "Payroll Check", payroll: true, fn: function(){ if(window._gcOpenPayrollCheck) window._gcOpenPayrollCheck(); } },
+        { icon: "\uD83C\uDFDB", label: "State Tax", payroll: true, fn: function(){ if(window._gcOpenStateTax) window._gcOpenStateTax(); } },
         { icon: "\uD83D\uDD0E", label: "Check My Books", fn: function(){ if(window._gcOpenAccountingCheck) window._gcOpenAccountingCheck(); } },
         { icon: "\uD83E\uDDFE", label: "Commission Audit", fn: function(){ if(window._gcOpenCommissionAudit) window._gcOpenCommissionAudit(); } },
-        { icon: "\uD83D\uDCB3", label: "Credit Cards", fn: function(){ if(window._gcOpenCards) window._gcOpenCards(); } },
         { icon: "\uD83D\uDCF7", label: "CompanyCam", fn: function(){ if(window._gcOpenCompanyCamTab) window._gcOpenCompanyCamTab(); } },
         { icon: "\u2601", label: "Check the cloud", fn: function(){ if(window._gcOpenCloudCheck) window._gcOpenCloudCheck(); } },
         { icon: "\uD83E\uDDF9", label: "Duplicates", fn: function(){ if(window._gcOpenDupeReview) window._gcOpenDupeReview(); } },
@@ -22401,10 +22417,10 @@ if (!localStorage.getItem("_helpShown")) {
         { icon: "🔁", label: "Restore from Backup", fn: openRestoreTool },
         { icon: "⬇️", label: "Download Backup", fn: function(){ window._gcDownloadBackup && window._gcDownloadBackup(); } },
         { icon: "🔄", label: "Recover My Data", adminOnly: true, fn: function(){ if(window._gcRecoverEverything) window._gcRecoverEverything(); else alert("Recovery is still loading, try again in a moment."); } },
-        { icon: "🧹", label: "Remove Duplicates", adminOnly: true, fn: function(){ if(window._gcRemoveDuplicates) window._gcRemoveDuplicates(); else alert("Still loading, try again in a moment."); } },
+        { icon: "🧹", label: "Remove Duplicates", adminOnly: true, fn: function(){ if(window._gcCleanup) window._gcCleanup(); else if(window._gcOpenDupeReview) window._gcOpenDupeReview(); else alert("Still loading, try again in a moment."); } },   /* HUBFIX: _gcRemoveDuplicates() only writes to the console — open the copies-grouped screen instead */
         { icon: "🗓️", label: "Fix Duplicate Schedule", adminOnly: true, fn: function(){ if(window._gcForceFixSchedule) window._gcForceFixSchedule(); else alert("Still loading, try again in a moment."); } },
         { icon: "🕐", label: "Timesheets", fn: function(){ if(window._gcOpenTimesheets) window._gcOpenTimesheets(); else alert("Still loading, try again in a moment."); } },
-        { icon: "💵", label: "Payroll", adminOnly: true, fn: function(){ if(window._gcOpenPayroll) window._gcOpenPayroll(); else alert("Still loading, try again in a moment."); } },
+        { icon: "💵", label: "Payroll", payroll: true, adminOnly: true, fn: function(){ if(window._gcOpenPayroll) window._gcOpenPayroll(); else alert("Still loading, try again in a moment."); } },
         { icon: "🔎", label: "Deep Scan Recovery", adminOnly: true, fn: function(){ if(window._gcDeepScanRecover) window._gcDeepScanRecover(); else alert("Still loading, try again in a moment."); } },
         { icon: "🗑️", label: "Delete Job by PO/Title", adminOnly: true, fn: function(){ if(window._gcDeleteJobPrompt) window._gcDeleteJobPrompt(); else alert("Still loading, try again in a moment."); } },
         { icon: "📅", label: "Daily Backups", fn: function(){ window._gcOpenDailyBackups && window._gcOpenDailyBackups(); } },
@@ -22445,6 +22461,10 @@ if (!localStorage.getItem("_helpShown")) {
         var _u=null; try{ _u=(window._gcMeUserJSON?window._gcMeUserJSON('null'):JSON.parse(localStorage.getItem('grayco_user')||'null')); }catch(e){}
         var _isOwner = !!(_u && (String(_u.payType||'').toLowerCase()==='owner' || _u.role==='Admin' || /office/i.test(_u.role||'')));
         if(!_isOwner){ items = items.filter(function(it){ return !it.adminOnly; }); }
+        /* HUBFIX (owner rule): payroll is for the admins (Wesley, Nick) and the Office Manager role only — not Office / data entry,
+           estimators, PMs, field or marketing */
+        var _canPay = !!(_u && (String(_u.payType||'').toLowerCase()==='owner' || /^(admin|owner)$/i.test(String(_u.role||'')) || /^office manager$/i.test(String(_u.role||'').trim())));
+        if(!_canPay){ items = items.filter(function(it){ return !it.payroll; }); }
       })();
       var _hubGroups = {"Business Brain": "Daily Work", "Print pack": "Help & Tools", "Job Profile": "Daily Work", "Upload Documents": "Daily Work", "Search Everything": "Daily Work", "Find a Sub": "Daily Work", "Sub Sign-Up": "Daily Work", "Sub Details": "Daily Work", "Contract & Doc Templates": "Daily Work", "Approvals": "Daily Work", "Review Queue": "Daily Work", "Alerts": "Daily Work", "Notifications": "Daily Work", "Recover Approvals": "Daily Work", "Import CompanyCam Jobs": "Daily Work", "Owner Inbox": "Daily Work", "My Daily Digest": "Daily Work", "Project Payments": "Money & Invoices", "All Company Invoices": "Money & Invoices", "Financials": "Money & Invoices", "Cash Position": "Money & Invoices", "Cash Flow": "Money & Invoices", "P&L (auto)": "Money & Invoices", "Overdue Reminders": "Money & Invoices", "Merge Draw Invoices": "Money & Invoices", "Statement Reconcile": "Money & Invoices", "Credit Cards": "Money & Invoices", "Match to Jobs": "Money & Invoices", "Import card statement": "Money & Invoices", "Import bank statement": "Money & Invoices", "Import from QuickBooks (CSV)": "Money & Invoices", "QuickBooks ↔ CRM": "Money & Invoices", "Card holders": "Money & Invoices", "Needs a job": "Money & Invoices", "Bank Accounts": "Money & Invoices", "Monthly Bank Check": "Money & Invoices", "Bank / ACH details": "Money & Invoices", "Employee Pay": "Pay & Commissions", "1099 Reports": "Pay & Commissions", "PM Commission Setup": "Pay & Commissions", "Set Flat Commission": "Pay & Commissions", "Job Source (commission)": "Pay & Commissions", "Pay Structures": "Pay & Commissions", "Move Job Schedule": "Schedule", "Print Schedule": "Schedule", "Add to iPhone Calendar": "Schedule", "Edit Schedule": "Schedule", "Fix Schedule Items (no job)": "Schedule", "Recover Schedule": "Schedule", "Download Schedule PDF": "Schedule", "Run the Office (Automation)": "Automation", "Automation Inbox": "Automation", "Business Brain (issues)": "Automation", "Rate Category Check": "Automation", "Team Status": "Data & Setup", "Sync my Google Docs": "Data & Setup", "Import Google Docs": "Data & Setup", "Merge Records": "Data & Setup", "Merge Projects": "Data & Setup", "Merge Customers": "Data & Setup", "Contract Overrides": "Data & Setup", "Project CRMs": "Data & Setup", "Cloud Backups": "Data & Setup", "Restore from Backup": "Data & Setup", "Download Backup": "Data & Setup", "Import / Export Data": "Data & Setup", "Explain Mode (help)": "Help & Tools", "Guided Tour": "Help & Tools", "Help Center": "Help & Tools", "Training": "Help & Tools", "Test the CRM": "Help & Tools", "System Health Check": "Help & Tools", "Reset Button Positions": "Help & Tools", "Purge Test Data": "Help & Tools", "Force-Clean Cloud": "Help & Tools"};
       var _hubOrder = ['Daily Work','Money & Invoices','Pay & Commissions','Schedule','Automation','Data & Setup','Help & Tools'];
@@ -22464,8 +22484,7 @@ if (!localStorage.getItem("_helpShown")) {
         el.innerHTML = "<span class='gc-hub-drag' style='cursor:grab;opacity:.4;margin-right:6px;font-size:13px;'>\u2261</span><span class='gc-hub-icon'>" + it.icon + "</span><span>" + it.label + "</span>";
         el.addEventListener("click", function(e){
           if(el.getAttribute('data-dragging')==='1') return;   // ignore click right after a drag
-          hubPanel.remove();
-          hubPanel = null;
+          closeHub();   /* HUBFIX: the one close path */
           it.fn();
         });
         // Drag to reorder up/down
@@ -22490,16 +22509,24 @@ if (!localStorage.getItem("_helpShown")) {
       footer.textContent = "GrayCo Master CRM · v1.0";
       hubPanel.appendChild(footer);
       document.body.appendChild(hubPanel);
-      // Close on outside click
+      /* HUBFIX: tell the patches that add items "the 💎 menu is open" right away — Project Hubs and Email Queue waited for a
+         page-watcher that the performance governor holds back while the mouse moves, so they popped in at the TOP of the
+         list seconds later (or never), shifting every item under the pointer */
+      try { document.dispatchEvent(new CustomEvent("gc-hub-open", { detail: { panel: hubPanel } })); } catch (e) {}
+      /* HUBFIX: ✕, any item (ours or one another patch added — it runs first, the panel closes after), outside click, Esc */
+      var _me = hubPanel;
+      _me.addEventListener("click", function(ev){
+        var t = ev.target;
+        if (t && t.closest && t.closest('.gc-hub-x')) { closeHub(); return; }
+        var itm = t && t.closest && t.closest('.gc-hub-item');
+        if (itm && itm.getAttribute('data-dragging') !== '1') setTimeout(function(){ if (hubPanel === _me) closeHub(); }, 0);
+      });
       setTimeout(function(){
-        function closeOnOutside(ev){
-          if (hubPanel && !hubPanel.contains(ev.target) && ev.target !== hubBtn) {
-            hubPanel.remove();
-            hubPanel = null;
-            document.removeEventListener("click", closeOnOutside);
-          }
-        }
-        document.addEventListener("click", closeOnOutside);
+        if (hubPanel !== _me) return;
+        _hubOutside = function(ev){ if (hubPanel && !hubPanel.contains(ev.target) && !_hubOpener(ev.target)) closeHub(); };
+        _hubKey = function(ev){ if (ev.key === "Escape" && hubPanel) closeHub(); };
+        document.addEventListener("click", _hubOutside, true);
+        document.addEventListener("keydown", _hubKey, true);
       }, 10);
     }
 
@@ -45257,6 +45284,7 @@ function injectHubLink(){
 }
 
 var _hObs = new MutationObserver(injectHubLink);
+document.addEventListener('gc-hub-open', function(){ try { injectHubLink(); } catch (e) {} });   /* HUBFIX: in the menu the moment it opens */
 setTimeout(function(){ _hObs.observe(document.body,{childList:true,subtree:false}); }, 2000);
 
 // ── Auto-flag on project save ─────────────────────────────────────────────
@@ -48002,6 +48030,7 @@ if(typeof window.getAlerts === 'function'){
 }
 
 var _eqObs = new MutationObserver(injectEmailQueueBtn);
+document.addEventListener('gc-hub-open', function(){ try { injectEmailQueueBtn(); } catch (e) {} });   /* HUBFIX: in the menu the moment it opens */
 setTimeout(function(){ _eqObs.observe(document.body,{childList:true,subtree:false}); }, 2000);
 setInterval(injectEmailQueueBtn,15000);
 
@@ -62776,8 +62805,8 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
   'use strict';
   function crm(){ return window._crm||{}; }
   function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
-  function me(){ try{ return (window.meUser&&window.meUser())||{}; }catch(e){ return {}; } }
-  function role(){ var u=me(); return String(u.role||'').toLowerCase(); }
+  function me(){ try{ if(typeof window._gcMeUser==='function'){ var _u=window._gcMeUser(); if(_u&&(_u.name||_u.email)) return _u; } }catch(e){} try{ return (window.meUser&&window.meUser())||{}; }catch(e){ return {}; } }   /* HUBFIX: window.meUser never existed — 💎 Send Alert to All PMs refused even the owners */
+  function role(){ var u=me(); var r=String(u.role||'').toLowerCase(); if(!r && String(u.payType||'').toLowerCase()==='owner') r='owner'; return r; }
   function canSend(){ var r=role(); return r==='admin'||r==='owner'||r.indexOf('office')>=0||r==='project manager'||r==='pm'? (r==='admin'||r==='owner'||r.indexOf('office')>=0) : (r==='admin'); }
 
   function load(){ try{ return JSON.parse(localStorage.getItem('gc_pm_broadcasts')||'[]'); }catch(e){ return []; } }
@@ -62795,7 +62824,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
     var now=Date.now();
     // Who am I? Used to filter targeted alerts so a PM only sees alerts meant for them (or ALL).
     var myName=''; var myRole='';
-    try{ var _me=(window.meUser&&window.meUser())||(window._crm&&window._crm.currentUser)||{}; myName=String(_me.name||'').toLowerCase().trim(); myRole=String(_me.role||'').toLowerCase(); }catch(e){}
+    try{ var _me=me(); if(!_me||!_me.name) _me=(window._crm&&window._crm.currentUser)||_me||{}; myName=String(_me.name||'').toLowerCase().trim(); myRole=String(_me.role||'').toLowerCase(); }catch(e){}   /* HUBFIX: same — a PM never matched an alert sent to them by name */
     var iAmAdmin = /admin|owner|office/.test(myRole);
     return load().filter(function(b){
       if(!b||!b.id) return false;
@@ -91349,6 +91378,10 @@ console.log('[GC] Approve sticks — one click, saved to device + cloud, invoice
 
   function throttle(name, fn){
     return function(){
+      /* HUBFIX: a person's own run (💎 Fix Duplicate Schedule → _gcForceFixSchedule() / _gcSchedSweep({loud:true})) is never throttled —
+         "paused while you work" swallowed it, because the person had just clicked */
+      var a0=arguments[0];
+      if((name==='_gcForceFixSchedule' && !a0) || (name==='_gcSchedSweep' && a0 && a0.loud)){ return fn.apply(this, arguments); }
       var now=Date.now();
       if(last[name] && (now-last[name]) < MIN_GAP) return;
       // never run a sweep while the person is doing something
@@ -115287,6 +115320,7 @@ window._gcCleanup = function(){
     }catch(e){}
   }
   try{ if(window.__GC_BEAT) window.__GC_BEAT('cleanup menu', add); }catch(e){}
+  document.addEventListener('gc-hub-open', add);   /* HUBFIX: it goes at the top — there the moment the menu opens, not 150 ms later under the pointer */
   document.addEventListener('click', function(){ setTimeout(add, 150); }, true);
 })();
 
@@ -150302,6 +150336,8 @@ function go(sec, form){
    screen off when it is still there after its own ‹ Back ran) sees the old one gone and leaves the new one alone */
 function freshSheet(){ var old = D.getElementById('_gcMktOv'); if (!old || !UI.overlay) return; var nw = old.cloneNode(false); while (old.firstChild) nw.appendChild(old.firstChild); old.replaceWith(nw); nw.scrollTop = 0; }
 function back(){
+  /* HUBFIX: a sheet opened straight to one section (💎 Print pack) closes on ‹ Back — it does not land on the marketing home */
+  if (UI.overlay && !UI.form && UI.entry && UI.entry !== 'home' && UI.sec === UI.entry) { close(); return; }
   if (UI.overlay && (UI.form || UI.sec !== 'home')) freshSheet();
   if (UI.form) { UI.form = null; UI.editing = false; draw(); return; }
   if (UI.sec !== 'home') { go('home'); return; }
@@ -150329,7 +150365,7 @@ function open(sec){
   UI.root = inner; UI.overlay = true;
   inner.addEventListener('click', onClick); inner.addEventListener('input', onInput); inner.addEventListener('change', onChange);
   MK.pull(true); loadData();
-  UI.sec = 'home'; UI.form = null; UI.editing = false;
+  UI.sec = 'home'; UI.form = null; UI.editing = false; UI.entry = sec || 'home';   /* HUBFIX */
   if (sec && sec !== 'home') go(sec); else draw();
   return ov;
 }
@@ -192318,7 +192354,7 @@ function paint(msg){
     h += '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><button type="button" data-gd-sync style="background:#0f172a;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-weight:700;cursor:pointer">⟳ Sync now</button>'
       + (adm ? '<button type="button" data-gd-back style="background:#fff;border:1px solid #cbd5e1;border-radius:8px;padding:8px 12px;cursor:pointer">Bring in older docs (review first)</button>' : '')
       + '<button type="button" data-gd-own style="background:#fff;border:1px solid #cbd5e1;border-radius:8px;padding:8px 12px;cursor:pointer" title="Only needed when the company connection (Google Admin) is not set up, or does not reach you">🔗 Connect my Google Drive</button>'
-      + '<span style="color:#64748b;align-self:center">Waiting ' + (st.counts.waiting || 0) + ' · Needs a person ' + (st.counts.review || 0) + ' · Placed ' + (st.counts.done || 0) + '</span></div>';
+      + '<span style="color:#64748b;align-self:center">Waiting ' + ((st.counts || {}).waiting || 0) + ' · Needs a person ' + ((st.counts || {}).review || 0) + ' · Placed ' + ((st.counts || {}).done || 0) + '</span></div>';   /* HUBFIX: no counts in the answer → no page error */
     h += '<div style="margin-top:12px"><b>Switches</b>' + (adm ? '' : ' <span style="color:#64748b">(an admin changes these)</span>') + '<div>'
       + sw('autoBid', set.autoBid !== false, 'New proposals with no match → new lead', !adm) + sw('autoInv', set.autoInv !== false, 'Invoices → a matching CRM invoice', !adm)
       + sw('portal', set.portal !== false, 'Proposals in the customer portal', !adm) + sw('notify', !!set.notify, 'E-mail the customer when one is added (off = never)', !adm) + sw('off', !!set.off, 'Pause reading Google Docs', !adm) + '</div>'
