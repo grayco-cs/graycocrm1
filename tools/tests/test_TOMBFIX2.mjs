@@ -39,7 +39,10 @@ H.cset('leads', LEADS); H.cset('gcAcctRegister', REG);
 H.cset('projects', [{ id: 'P1', name: 'Zedd Job', status: 'Active', updatedAt: at }]);
 H.cset('gc_tombstones', CLEAN);
 
-const LT = `(function(){ window.__lt = []; try { new PerformanceObserver(function(l){ l.getEntries().forEach(function(e){ window.__lt.push({ d: Math.round(e.duration), t: Math.round(e.startTime) }); }); }).observe({ type: 'longtask', buffered: true }); } catch (e) {} })();`;
+/* how long the page was blocked: a 50 ms timer chain started before the page's own scripts (native timers); a gap over
+   100 ms is a task that held the page that long */
+const LT = `(function(){ window.__lt = []; var st = window.setTimeout, last = performance.now();
+  (function tick(){ var n = performance.now(), g = n - last - 50; if (g > 100) window.__lt.push({ d: Math.round(g), t: Math.round(last) }); last = n; st(tick, 50); })(); })();`;
 const lt = (A, from) => A.ev(f => (window.__lt || []).filter(e => e.t >= f), from || 0);
 const now = A => A.ev(() => Math.round(performance.now()));
 const maxOf = l => l.reduce((m, e) => Math.max(m, e.d), 0);
@@ -64,23 +67,25 @@ try {
   console.log('    first load: longest task ' + maxOf(load) + ' ms (' + load.length + ' long tasks; > 500 ms: ' + load.filter(e => e.d > 500).length + ')');
   /* an older script writes the 21 MB list into localStorage once (what the old cloud pulls did) */
   const t0 = await now(A);
-  await A.ev(big => { try { localStorage.setItem('gc_tombstones', JSON.stringify(big)); } catch (e) {} }, legacy());
+  await A.ev(big => { window.__big = big; }, legacy());
+  await A.ev(() => new Promise(r => setTimeout(() => { try { localStorage.setItem('gc_tombstones', JSON.stringify(window.__big)); } catch (e) {}
+    try { window.idbSet('gc_tombstones_all', window.__big); } catch (e) {} window.__big = null; r(); }, 0)));
   await H.sleep(8000);
   const inj = await lt(A, t0);
-  console.log('    the old 21 MB write and the 8 s after it: longest task ' + maxOf(inj) + ' ms (' + inj.length + ' long tasks)');
+  console.log('    an older script writes the 21 MB list (localStorage + IndexedDB) and the 8 s after it: longest task ' + maxOf(inj) + ' ms (' + inj.length + ' long tasks)');
   /* the person deletes leads; the money sweep deletes 20 register rows */
   const t1 = await now(A);
   const DEL = ['L3', 'L7', 'L11', 'L15', 'L19'];
-  for (const id of DEL) {
-    await A.ev(id => { window.__GC_MANUAL_SAVE__ = true; if (window._gcTombstone) window._gcTombstone('leads', id); if (window._setLeads) window._setLeads(l => (l || []).filter(x => x && x.id !== id)); }, id);
+  for (const id of DEL) {   /* each delete as its own task, the way a click is */
+    await A.ev(id => new Promise(r => setTimeout(() => { window.__GC_MANUAL_SAVE__ = true; if (window._gcTombstone) window._gcTombstone('leads', id); if (window._setLeads) window._setLeads(l => (l || []).filter(x => x && x.id !== id)); r(); }, 0)), id);
     await H.sleep(300);
   }
-  await A.ev(rows => window._gcRegDeleteRows ? window._gcRegDeleteRows(rows) : null, REG.slice(0, 20));
+  await A.ev(rows => new Promise(r => setTimeout(() => { Promise.resolve(window._gcRegDeleteRows ? window._gcRegDeleteRows(rows) : null).then(r, r); }, 0)), REG.slice(0, 20));
   await H.sleep(10000);
   const del = await lt(A, t1);
   console.log('    deleting 5 leads + sweeping 20 register rows, and the 10 s after: longest task ' + maxOf(del) + ' ms (' + del.length + ' long tasks: ' + JSON.stringify(del.map(e => e.d)).slice(0, 200) + ')');
   ok(maxOf(del) <= 500, '1. deleting on Leads + the sweep: no long task over 500 ms (longest ' + maxOf(del) + ' ms)', del);
-  ok(maxOf(inj) <= 1500, '1. the old script\'s 21 MB write costs at most one short stall, not a loop (longest ' + maxOf(inj) + ' ms, ' + inj.filter(e => e.d > 500).length + ' over 500 ms)', inj);
+  ok(inj.filter(e => e.d > 500).length <= 1, '1. the older script\'s 21 MB write costs one stall (that write itself), not a loop (' + inj.filter(e => e.d > 500).length + ' over 500 ms, longest ' + maxOf(inj) + ' ms)', inj);
   /* 2. the deletes stay deleted */
   const ids = await leadIds(A);
   ok(DEL.every(id => !ids.includes(id)) && !ids.includes('LDEL1') && !ids.includes('LDEL2') && ids.includes('L1'), '2. the deleted leads (and the two deleted earlier) are off the list; the others are there', ids.length);
