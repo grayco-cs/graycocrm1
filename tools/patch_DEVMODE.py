@@ -7,11 +7,10 @@ Root cause: patch ROLEAPPS sent every crew role (Superintendent / Foreman / Crew
 (mode(): crew → 'field'; crewDesk() put a computer in Field mode) and patch FIELDDESK refused the Desk for them.
 1. tools/devmode_early.js → <script id="gc-patch-devmode-early"> right before FIELDBOOT: window._gcDevice (phone / tablet /
    computer from the user agent, iPadOS-as-Mac, touch-only + screen size; this sign-in's Field / Desk pick).
-2. FIELDDESK asks _gcDevice; its per-open view starts from this sign-in's pick; a switch updates the pick when there is one;
-   crews are refused the Desk only on a phone.
+2. FIELDDESK asks _gcDevice; a Desk / Field switch lasts for this open only; crews are refused the Desk only on a phone.
 3. ROLEAPPS: crews get Field on a phone (or in 👁 View as…), the Desk on a computer.
-4. tools/devmode_tail.js → <script id="gc-patch-devmode"> after ROLEAPPS: "Ask me Field or Desk when I sign in"
-   (gc_kv gc_view_prefs; My Profile + 💎 Team access), the question once per sign-in on a computer.
+4. tools/devmode_tail.js → <script id="gc-patch-devmode"> after ROLEAPPS: signing out and in again in the same page
+   does not keep a Desk / Field switch. (The owner, 11/16: no "Ask me Field or Desk" question — the device decides.)
 Usage: python3 tools/patch_DEVMODE.py [index.html]"""
 import os, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -37,21 +36,28 @@ def block(tag, fname, anchor_before=None, after_script=None):
 block('gc-patch-devmode-early', 'devmode_early.js', anchor_before='<script id="gc-patch-fieldboot">')
 block('gc-patch-devmode', 'devmode_tail.js', after_script='<script id="gc-patch-roleapps">')
 
-def sub(name, old, new):
+def sub(name, olds, new):
+    """olds: the text before (main), and what the first DEVMODE commit (with the ask setting) put there"""
     global t
+    if isinstance(olds, str): olds = [olds]
+    for old in olds:
+        if old not in new and t.count(old) == 1:
+            t = t.replace(old, new); print('DEVMODE:', name); return
     if new in t:
         assert t.count(new) == 1, ('DEVMODE twice', name); return
-    assert t.count(old) == 1, ('DEVMODE anchor', name, t.count(old))
-    t = t.replace(old, new); print('DEVMODE:', name)
+    raise AssertionError(('DEVMODE anchor', name, [t.count(o) for o in olds]))
 sub('FIELDDESK phone() asks _gcDevice',
-    "function phone(){\n  if (uaMobile()) return true;\n  if (computerOS() || deskPointer()) return false;",
-    "function phone(){\n  try { if (W._gcDevice) return !!W._gcDevice.fieldDevice(); } catch (e) {}   /* DEVMODE: the device decides (patch DEVMODE's _gcDevice: a phone / a tablet without a mouse) */\n  if (uaMobile()) return true;\n  if (computerOS() || deskPointer()) return false;")
-sub('FIELDDESK starts from this sign-in\'s pick',
-    "var CUR = '';\nfunction pref(){ return CUR; }",
-    "var CUR = ''; try { if (W._gcDevice && W._gcDevice.kind() !== 'phone') CUR = W._gcDevice.choice() || ''; } catch (e) {}   /* DEVMODE: this sign-in's \"Ask me Field or Desk\" pick (a computer / tablet) */\nfunction pref(){ return CUR; }")
-sub('FIELDDESK crews: Desk on a computer; a switch updates the pick',
-    "  if (v === 'desk' && crewApp()) { toast('Crews use GrayCo Field.'); return 'crew'; }\n  set(v);",
-    "  if (v === 'desk' && crewApp() && phone()) { toast('Crews use GrayCo Field.'); return 'crew'; }   /* DEVMODE: only on a phone — on a computer a crew member has the Desk too */\n  set(v);\n  try { if (W._gcDevice && W._gcDevice.choice()) W._gcDevice.setChoice(v); } catch (e) {}   /* DEVMODE: with the ask setting on, a switch changes this sign-in's pick; without it, this open only */")
+    ["function phone(){\n  if (uaMobile()) return true;\n  if (computerOS() || deskPointer()) return false;",
+     "function phone(){\n  try { if (W._gcDevice) return !!W._gcDevice.fieldDevice(); } catch (e) {}   /* DEVMODE: the device decides (patch DEVMODE's _gcDevice: a phone / a tablet without a mouse) */\n  if (uaMobile()) return true;\n  if (computerOS() || deskPointer()) return false;"],
+    "function phone(){\n  try { if (W._gcDevice) return !!W._gcDevice.fieldDevice(); } catch (e) {}   /* DEVMODE: the device decides (patch DEVMODE's _gcDevice: a phone or a tablet → Field) */\n  if (uaMobile()) return true;\n  if (computerOS() || deskPointer()) return false;")
+sub('FIELDDESK: a switch is for this open only (no sign-in pick)',
+    ["var CUR = ''; try { if (W._gcDevice && W._gcDevice.kind() !== 'phone') CUR = W._gcDevice.choice() || ''; } catch (e) {}   /* DEVMODE: this sign-in's \"Ask me Field or Desk\" pick (a computer / tablet) */\nfunction pref(){ return CUR; }",
+     "var CUR = '';\nfunction pref(){ return CUR; }"],
+    "var CUR = '';   /* DEVMODE: the owner (11/16): no question at sign-in — the device decides; a switch lasts for this open */\nfunction pref(){ return CUR; }")
+sub('FIELDDESK crews: Desk on a computer',
+    ["  if (v === 'desk' && crewApp()) { toast('Crews use GrayCo Field.'); return 'crew'; }\n  set(v);",
+     "  if (v === 'desk' && crewApp() && phone()) { toast('Crews use GrayCo Field.'); return 'crew'; }   /* DEVMODE: only on a phone — on a computer a crew member has the Desk too */\n  set(v);\n  try { if (W._gcDevice && W._gcDevice.choice()) W._gcDevice.setChoice(v); } catch (e) {}   /* DEVMODE: with the ask setting on, a switch changes this sign-in's pick; without it, this open only */"],
+    "  if (v === 'desk' && crewApp() && phone()) { toast('Crews use GrayCo Field.'); return 'crew'; }   /* DEVMODE: only on a phone — on a computer a crew member has the Desk too */\n  set(v);")
 sub('FIELDDESK re-check',
     "if (v === 'desk' && inField() && !crewApp()) toDesk(); paint();",
     "if (v === 'desk' && inField() && !(crewApp() && phone())) toDesk(); paint();")

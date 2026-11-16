@@ -201,6 +201,46 @@ try {
 } catch (e) { try { console.warn('[GC] LSGUARD not installed:', e && e.message || e); } catch (x) {} }
 })();
 </script>
+<script id="gc-patch-saves-lsheld">
+/* SAVES: a write this computer's full localStorage refuses is still what THIS page reads back.
+   Measured (test_SAVES_fail.mjs, localStorage filled the way a real office PC is: gc_tombstones alone is bigger than the
+   browser allows): every list the CRM keeps in localStorage (job messages, the office To-Do, approvals, the time clock's own
+   entries …) was written, refused, and read back OLD — a job message sent from a full computer never showed in the
+   thread, and the next send / sync merged from the old copy. LSGUARD (above) already frees cached copies first and holds
+   the screen name; this holds any other refused value (up to 2 M characters) in this page's memory: getItem returns it,
+   a later successful write (or removeItem / clear) drops it. The write still throws as before, so a caller with its own
+   fallback still takes it. The value is NOT kept across a reload — the cloud copy (and each list's own outbox) is what
+   carries it there. Console: _gcLsHeld.state()   Off: localStorage gc_lsheld_off = '1'. */
+(function(){
+'use strict';
+var W = window;
+try {
+  if (W._gcLsHeld) return;
+  var SP = W.Storage && W.Storage.prototype, LS = null; try { LS = W.localStorage; } catch (e) {}
+  if (!SP || !LS) return;
+  var pSet = SP.setItem, pGet = SP.getItem, pRem = SP.removeItem, pClr = SP.clear;
+  try { if (pGet.call(LS, 'gc_lsheld_off') === '1') return; } catch (e) {}
+  var HELD = Object.create(null), n = 0, MAXC = 2000000;
+  function quota(e){ var nm = String(e && e.name || ''); return nm === 'QuotaExceededError' || nm === 'NS_ERROR_DOM_QUOTA_REACHED' || (e && (e.code === 22 || e.code === 1014)) || /quota/i.test(nm + ' ' + String(e && e.message || '')); }
+  SP.setItem = function(k, v){
+    if (this !== LS) return pSet.apply(this, arguments);
+    var key = String(k);
+    try { var r = pSet.apply(this, arguments); if (key in HELD) delete HELD[key]; return r; }
+    catch (e) {
+      if (quota(e)) { var s = String(v); if (s.length <= MAXC) { if (!(key in HELD)) n++; HELD[key] = s; } else if (key in HELD) delete HELD[key]; }
+      throw e;
+    }
+  };
+  SP.getItem = function(k){
+    if (this === LS) { var key = String(k); if (key in HELD) return HELD[key]; }
+    return pGet.apply(this, arguments);
+  };
+  SP.removeItem = function(k){ if (this === LS) delete HELD[String(k)]; return pRem.apply(this, arguments); };
+  SP.clear = function(){ if (this === LS) HELD = Object.create(null); return pClr.apply(this, arguments); };
+  W._gcLsHeld = { state: function(){ var o = {}; Object.keys(HELD).forEach(function(k){ o[k] = HELD[k].length; }); return { held: o, total: n }; }, has: function(k){ return String(k) in HELD; } };
+} catch (e) {}
+})();
+</script>
 <script id="gc-patch-lsslim2">
 /* __GC_PATCH_LSSLIM2__ — the estimate builder's rate book, material log and estimate list are not copied into
    localStorage when IndexedDB already holds them (tools/patch_LSSLIM2.py).
@@ -515,8 +555,8 @@ try {
 /* __GC_PATCH_DEVMODE_EARLY__ — DEVMODE: which device is this, and which view opens: the Desk or GrayCo Field.   (patch DEVMODE)
    Owner 11/16: "The field view app is pulling up as the first screen in Glenn's screen and everyone else's too and it should
    open desk cuz they are using computer. The desk view should always pull up unless it's opened from an iPhone then it
-   should be field opening. … From the phone and app always do field view app mode." And for a PM who works both ways on one
-   computer (Biffle): "have the option for it to ask on sign in if I want field or desk on my profile".
+   should be field opening. … From the phone and app always do field view app mode." Then: "Don't ask for field or desk when
+   sign in — just do it by computer or iPhone/Android etc; iPad opens Field."
    The device only — never the role, the window's size or a view saved from before:
      • phone  — an iPhone / iPod, an Android phone ("Android … Mobile", userAgentData.mobile), other phone browsers; the
                 installed Home Screen app on a phone is the same phone. A phone set to "Request Desktop Website" (it then
@@ -525,26 +565,19 @@ try {
                 ("Android" without "Mobile").
      • computer — Windows (touch-screen laptops too, any scaling, any window size), a Mac, ChromeOS, desktop Linux;
                 an unknown system with a mouse / touchpad.
-   Which view opens:
-     • a phone: GrayCo Field, always (it never asks);
-     • a tablet: GrayCo Field, unless a mouse / trackpad is its main pointer (then the Desk);
-     • a computer: the Desk — unless the person has "Ask me Field or Desk when I sign in" on (My Profile, or an admin in
-       💎 → Team access; gc_kv "gc_view_prefs") and picked Field for THIS sign-in. The pick lasts until they sign out
-       (every tab, every reload of that sign-in); the next sign-in asks again. A Desk / Field switch without the ask setting
-       lasts for this open only (patch FIELDDESK).
-   API: window._gcDevice = { kind(), phone(), fieldDevice(), standalone(), choice(), setChoice(v), clearChoice(why),
-        askCached(email), wantField(), state() }
+   Which view opens: a phone or a tablet → GrayCo Field; a computer → the Desk. A Desk / Field switch lasts for that open
+   only (patch FIELDDESK). Nothing is asked and nothing is saved.
+   API: window._gcDevice = { kind(), why(), phone(), fieldDevice(), standalone(), wantField(), signedEmail(), state() }
    Kill switch (this device): localStorage gc_devmode_off = "1" → patch FIELDDESK's own device rule as before. */
 (function(){
 'use strict';
-var W = window, D = document;
+var W = window;
 try {
   if (W._gcDevice) return;
   var lsGet = function(k){ try { return W.localStorage.getItem(k); } catch (e) { return null; } };
-  var lsSet = function(k, v){ try { if (v == null) W.localStorage.removeItem(k); else W.localStorage.setItem(k, v); } catch (e) {} };
+  var lsDel = function(k){ try { if (W.localStorage.getItem(k) != null) W.localStorage.removeItem(k); } catch (e) {} };
   if (lsGet('gc_devmode_off') === '1') return;
   var mq = function(q){ try { return !!(W.matchMedia && W.matchMedia(q).matches); } catch (e) { return false; } };
-  var CH = 'gc_dm_choice', ASK = 'gc_dm_ask';
   var ua = function(){ try { return String(navigator.userAgent || ''); } catch (e) { return ''; } };
   var tp = function(){ try { return +navigator.maxTouchPoints || 0; } catch (e) { return 0; } };
   var short = function(){ var sc = W.screen || {}; var a = +sc.width || 0, b = +sc.height || 0; return a && b ? Math.min(a, b) : 0; };
@@ -571,29 +604,46 @@ try {
   }
   var K = kind(), WHY = why;
   function standalone(){ return mq('(display-mode: standalone)') || mq('(display-mode: fullscreen)') || (function(){ try { return navigator.standalone === true; } catch (e) { return false; } })(); }
-  /* the view this device opens by itself */
-  function fieldDevice(){ return K === 'phone' || (K === 'tablet' && !mouseMain()); }
-  /* who is signed in on this browser (the sign-in's own record) */
+  /* GrayCo Field opens by itself on a phone or a tablet (the owner: "iPad opens Field"); a computer opens the Desk */
+  function fieldDevice(){ return K !== 'computer'; }
   function signedEmail(){ try { var j = JSON.parse(lsGet('gc_auth_v1') || 'null'); return j && j.access_token && j.email ? String(j.email).toLowerCase() : ''; } catch (e) { return ''; } }
-  /* this sign-in's pick (Ask me Field or Desk) — gone when nobody is signed in */
-  function choice(){
-    try { var c = JSON.parse(lsGet(CH) || 'null'), em = signedEmail(); if (c && em && c.email === em && (c.v === 'desk' || c.v === 'field')) return c.v; } catch (e) {}
-    return '';
-  }
-  function setChoice(v){ var em = signedEmail(); if (!em || (v !== 'desk' && v !== 'field')) return false; lsSet(CH, JSON.stringify({ email: em, v: v, at: new Date().toISOString() })); return true; }
-  function clearChoice(why){ if (lsGet(CH) != null) { lsSet(CH, null); try { console.log('[GC] DEVMODE: the Field / Desk pick of the last sign-in is cleared (' + (why || '') + ')'); } catch (e) {} } }
-  /* signed out (or someone else signed in): the last sign-in's pick does not carry over */
-  (function(){ var em = signedEmail(); if (!em) clearChoice('nobody signed in'); else { try { var c = JSON.parse(lsGet(CH) || 'null'); if (c && c.email !== em) clearChoice('another person signed in'); } catch (e) { clearChoice('unreadable'); } } })();
-  function askCached(email){ try { var m = JSON.parse(lsGet(ASK) || '{}') || {}; return m[String(email || signedEmail()).toLowerCase()] === true; } catch (e) { return false; } }
-  /* GrayCo Field opens by itself: a phone (always), a tablet without a mouse, a computer whose person picked Field for this sign-in */
-  function wantField(){ if (K === 'phone') return true; var c = choice(); if (c) return c === 'field'; return fieldDevice(); }
-  /* the old views that were saved on this device never decide anything again */
-  lsSet('gc_view_pref', null); lsSet('gc_phone_desk', null); lsSet('_fieldMode', null);
+  /* the old views saved on this device never decide anything again (also the first DEVMODE's sign-in pick) */
+  ['gc_view_pref', 'gc_phone_desk', '_fieldMode', 'gc_dm_choice', 'gc_dm_ask'].forEach(lsDel);
   W._gcDevice = { kind: function(){ return K; }, why: function(){ return WHY; }, phone: function(){ return K === 'phone'; }, fieldDevice: fieldDevice, standalone: standalone,
-    choice: choice, setChoice: setChoice, clearChoice: clearChoice, askCached: askCached, signedEmail: signedEmail, wantField: wantField,
-    canAsk: function(){ return K !== 'phone'; },
-    state: function(){ return { kind: K, why: WHY, standalone: standalone(), fieldDevice: fieldDevice(), choice: choice(), wantField: wantField(), email: signedEmail(), askCached: askCached(), ua: ua().slice(0, 140), touchPoints: tp(), screenShort: short(), touchOnly: touchOnly(), mouse: mouseMain() }; } };
+    wantField: fieldDevice, signedEmail: signedEmail,
+    state: function(){ return { kind: K, why: WHY, standalone: standalone(), fieldDevice: fieldDevice(), ua: ua().slice(0, 140), touchPoints: tp(), screenShort: short(), touchOnly: touchOnly(), mouse: mouseMain() }; } };
 } catch (e) { try { console.warn('[GC] DEVMODE early not installed:', e && e.message || e); } catch (x) {} }
+})();
+</script>
+<script id="gc-patch-fieldperf-early">
+/* __GC_PATCH_FIELDPERF_EARLY__ — FIELDPERF: GrayCo Field answers a tap at once on a phone.   (patch FIELDPERF)
+   Owner 11/16: "It's lagging very bad we're testing field view this week it needs to be tested heavy."
+   Measured (an emulated iPhone, CPU ×4, a company-sized data set: 550 jobs, 400 leads, 400 expense approvals…): sitting on
+   the Field home kept the phone busy 4.5 s of every 10 s and a tap took 0.5–2.5 s. The biggest costs were background loops
+   that looked a record up by id with a full scan of the list, once per row of another list (550 × 550 every 1–2 s), and
+   a loop that never remembered a row it had already looked at.
+   window.__gcById(list, id): the record with that id (the FIRST one, as list.filter(...)[0] gave), from an index kept per
+   list (a WeakMap; rebuilt when the list changed: the row at the remembered place must still have that id, else the index
+   is made again). The same answer as the scan, without the scan. */
+(function(){
+'use strict';
+var W = window;
+if (W.__gcById) return;
+var IX = typeof WeakMap === 'function' ? new WeakMap() : null;
+function build(list){ var m = new Map(); for (var i = 0; i < list.length; i++) { var r = list[i]; if (r && typeof r === 'object' && r.id != null) { var k = String(r.id).trim(); if (!m.has(k)) m.set(k, i); } } var o = { m: m, n: list.length }; IX.set(list, o); return o; }
+W.__gcById = function(list, id){
+  if (!Array.isArray(list) || id == null) return null;
+  var k = String(id).trim(); if (!k) return null;
+  if (!IX || typeof Map !== 'function') { for (var j = 0; j < list.length; j++) { var x = list[j]; if (x && typeof x === 'object' && String(x.id == null ? '' : x.id).trim() === k) return x; } return null; }
+  var o = IX.get(list) || build(list), i = o.m.get(k), r;
+  if (i != null) { r = list[i]; if (r && typeof r === 'object' && String(r.id == null ? '' : r.id).trim() === k && o.n === list.length) return r; }
+  o = build(list);   /* a miss or a moved row: index again (a miss costs one scan, as before) */ i = o.m.get(k); return i != null ? list[i] : null;
+};
+/* window.__gcFpTouch(): when a finger / the mouse last went down or came up (GrayCo Field holds a re-render until it is off) */
+var touchAt = 0;
+var mark = function(e){ if (e && e.isTrusted === false) return; touchAt = Date.now(); };
+try { ['pointerdown', 'pointerup', 'touchstart', 'touchend'].forEach(function(ev){ document.addEventListener(ev, mark, { capture: true, passive: true }); }); } catch (e) {}
+W.__gcFpTouch = function(){ return touchAt; };
 })();
 </script>
 <script id="gc-patch-fieldboot">
@@ -980,7 +1030,9 @@ var lastHeld = {}, lastRan = {}, pendHeld = {}, pendRan = {}, flushT = 0;
 function flushSoon(){ if (flushT) return; flushT = T(flush, 4000); }
 /* __GC_PATCH_AUTOPANEL2__ */ /* this computer's "held" records and the batch not sent yet are kept across a page reload */
 var HK = 'gc_auto_held_local';
-function saveHeld(){ try { localStorage.setItem(HK, JSON.stringify({ held: S.held, pend: pendHeld, last: lastHeld })); } catch (e) {} }
+function saveHeld0(){ saveT = 0; try { localStorage.setItem(HK, JSON.stringify({ held: S.held, pend: pendHeld, last: lastHeld })); } catch (e) {} }
+var saveT = 0; function saveHeld(){ if (!saveT) saveT = T(saveHeld0, 5000); }   /* FIELDPERF: one write per burst (was a ~60 K write on every held tick) */
+try { W.addEventListener('pagehide', function(){ if (saveT) saveHeld0(); }); document.addEventListener('visibilitychange', function(){ if (document.hidden && saveT) saveHeld0(); }); } catch (e) {}
 (function(){
   try {
     var o = JSON.parse(localStorage.getItem(HK) || 'null'); if (!o || typeof o !== 'object') return;
@@ -1146,7 +1198,7 @@ function rewrite(u){
   H.filtered++;
   return u + add;
 }
-function fake(status){ return Promise.resolve(new Response(status === 204 ? null : '[]', { status: status, headers: { 'content-type': 'application/json' } })); }
+function fake(status){ return Promise.resolve(new Response(status === 204 ? null : '[]', { status: status, headers: { 'content-type': 'application/json', 'x-gc-held': '1' } })); }   /* SAVES: x-gc-held — not sent, so nobody may take it as "the cloud has it" */
 function keyOfUrl(q){ var m = /(?:^|&)key=eq\.([^&]*)/.exec(q); try { return m ? decodeURIComponent(m[1]).replace(/^"|"$/g, '') : ''; } catch (e) { return ''; } }
 W.fetch = function(input, init){
   try {
@@ -1202,7 +1254,10 @@ function load(why){
     for (var i = 0; i < HEAVY.length; i++) { H.allowed[HEAVY[i]] = true; await pullFor(HEAVY[i]); await sleep(600); }
     H.loaded = true; H.phase = 'loaded'; H.at.done = Date.now() - H.t0;
     try { W.dispatchEvent(new CustomEvent('gc-heavy-loaded')); } catch (e) {}
-    if (H.held.length) { await sleep(1500); try { if (typeof W._gcPushAll === 'function') W._gcPushAll(); } catch (e) {} }
+    /* SAVES: those early writes were answered "201" here without being sent, so the sync marked them as sent and this push
+       skipped them — an estimate the builder autosaved in the first ~20 s never reached the database until it changed again
+       (measured: test_SAVES_est.mjs). The held lists are now marked "not sent" first. */
+    if (H.held.length) { await sleep(1500); try { var hk = {}; H.held.forEach(function(x){ hk[String(x[2]).replace(/__(chunk\d+|manifest)$/, '')] = 1; }); if (typeof W._gcSyncDirty === 'function') W._gcSyncDirty(Object.keys(hk)); } catch (e) {} try { if (typeof W._gcPushAll === 'function') W._gcPushAll(); } catch (e) {} }
     try { console.log('[GC] STUCKFIX: estimates / folded invoices loaded (' + Math.round(H.at.done / 1000) + ' s after start, ' + H.held.length + ' early write(s) pushed again)'); } catch (e) {}
   })();
   return H.p;
@@ -2412,7 +2467,10 @@ function spSend(input, init){
   if (rows) {
     /* what the live feed says arrived while this was on its way is newer than this answer */
     rows.forEach(function(r){ r.ev = SP_EV[r.key] || 0; });
-    p.then(function(res){ rows.forEach(function(r){ if ((SP_EV[r.key] || 0) === r.ev || !(res && res.ok)) spKnown(r.key, res && res.ok ? r.sig : null); }); }, function(){ rows.forEach(function(r){ spKnown(r.key, null); }); });
+    /* SAVES: an answer the page made itself for a write it held back (STUCKFIX, x-gc-held) is not the cloud's: taking it as
+       "the cloud holds this" skipped every identical write for 10 minutes — an estimate autosaved in the first ~20 s after
+       opening never reached the database (test_SAVES_est.mjs) */
+    p.then(function(res){ var held = false; try { held = !!(res && res.headers && res.headers.get && res.headers.get('x-gc-held')); } catch (e) {} rows.forEach(function(r){ if (held) { spKnown(r.key, null); return; } if ((SP_EV[r.key] || 0) === r.ev || !(res && res.ok)) spKnown(r.key, res && res.ok ? r.sig : null); }); }, function(){ rows.forEach(function(r){ spKnown(r.key, null); }); });
   }
   else spForget(u, init);
   return p;
@@ -5824,7 +5882,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.261-2026-11-16-r35y -->
+<!-- GrayCo CRM Build: 33.264-2026-11-16-r36c -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6773,7 +6831,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.261-2026-11-16-r35y");
+  console.log("[GC] Build 33.264-2026-11-16-r36c");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6821,7 +6879,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.261-2026-11-16-r35y"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.264-2026-11-16-r36c"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -7713,7 +7771,7 @@ function defer(name, keyOf){
          something that can be awaited without waiting for real work */
       try{ return Promise.resolve(); }catch(e){ return undefined; }
     };
-    wrapped.__deferred = true;
+    wrapped.__deferred = true; wrapped.__orig = f;   /* SAVES: the real one, for a caller that must know whether the save landed */
     try{ window[name] = wrapped; }catch(e){}
   }, 500);
 }
@@ -7732,10 +7790,14 @@ defer('_supaUpsert',  function(a){ return String(a[0]||''); });
     var f = window._gcPushAll;
     if(typeof f !== 'function' || f.__deferred) return;
     try{ clearInterval(iv); }catch(e){}
+    var trail = null;
     var wrapped = function(force){
       if(force) return f.apply(window, arguments);      // he asked for it
       var now = Date.now();
-      if(now - last < 15000) return Promise.resolve();
+      /* SAVES: a call inside the 15 s was DROPPED, not delayed — a save that asked for its upload right after another
+         push (the estimate builder's autosave, a Field receipt) then waited for whatever push came next. It now runs once
+         when the 15 s are up. */
+      if(now - last < 15000){ if(!trail) trail = (window.__GC_NATIVE_SETTIMEOUT__ || setTimeout).call(window, function(){ trail = null; last = Date.now(); queue('_gcPushAll', f, []); }, 15000 - (now - last) + 50); return Promise.resolve(); }
       last = now;
       queue('_gcPushAll', f, arguments);
       return Promise.resolve();
@@ -20080,7 +20142,7 @@ function computerOS(){
   return false;
 }
 function phone(){
-  try { if (W._gcDevice) return !!W._gcDevice.fieldDevice(); } catch (e) {}   /* DEVMODE: the device decides (patch DEVMODE's _gcDevice: a phone / a tablet without a mouse) */
+  try { if (W._gcDevice) return !!W._gcDevice.fieldDevice(); } catch (e) {}   /* DEVMODE: the device decides (patch DEVMODE's _gcDevice: a phone or a tablet → Field) */
   if (uaMobile()) return true;
   if (computerOS() || deskPointer()) return false;
   var sc = W.screen || {}, sw = Math.min(+sc.width || 9999, +sc.height || 9999);
@@ -20088,7 +20150,7 @@ function phone(){
   return mq('(pointer: coarse)') && !mq('(any-pointer: fine)');
 }
 /* ── a switch for THIS open only (in memory; a reload or the next open picks by the device again) ── */
-var CUR = ''; try { if (W._gcDevice && W._gcDevice.kind() !== 'phone') CUR = W._gcDevice.choice() || ''; } catch (e) {}   /* DEVMODE: this sign-in's "Ask me Field or Desk" pick (a computer / tablet) */
+var CUR = '';   /* DEVMODE: the owner (11/16): no question at sign-in — the device decides; a switch lasts for this open */
 function pref(){ return CUR; }
 function set(v){ CUR = v === 'field' || v === 'desk' ? v : ''; }
 /* no view is ever carried over from before: GrayCo Field's "desk view on this phone", the old sticky Field key */
@@ -20127,7 +20189,6 @@ function choose(v){
   v = v === 'field' ? 'field' : 'desk';
   if (v === 'desk' && crewApp() && phone()) { toast('Crews use GrayCo Field.'); return 'crew'; }   /* DEVMODE: only on a phone — on a computer a crew member has the Desk too */
   set(v);
-  try { if (W._gcDevice && W._gcDevice.choice()) W._gcDevice.setChoice(v); } catch (e) {}   /* DEVMODE: with the ask setting on, a switch changes this sign-in's pick; without it, this open only */
   var r = v === 'desk' ? toDesk() : toField();
   last = { v: v, r: r, at: Date.now() };
   paint();
@@ -50710,7 +50771,8 @@ async function pushDocs(){
       continue;
     }
     var ok = await sbWrite(_DOC_PREFIX + d.id, d);
-    if(ok){ _docSnap[d.id] = fp; _saveDocSnap(); }
+    if(ok){ _docSnap[d.id] = fp; _saveDocSnap(); _gcsvOk(_DOC_PREFIX + d.id); }
+    else _gcsvFail(_DOC_PREFIX + d.id, 'document upload refused');   /* SAVES: a receipt / document that did not go up is retried and shown */
   }
 }
 
@@ -50778,6 +50840,7 @@ var _spWritten = null;   /* null = look at every list */
           if(_spWritten && this.name === 'kv' && this.transaction && this.transaction.db && this.transaction.db.name === 'grayco_crm'){
             var kk = (n === 'put' || n === 'add') ? b : a;
             if(n === 'clear' || typeof kk !== 'string') _spWritten = null; else _spWritten[kk] = 1;
+            if((n === 'put' || n === 'add') && typeof kk === 'string' && !_syncing && SYNC_KEYS.indexOf(kk) >= 0) _gcsvSoon();   /* SAVES (a pull's own writes are not news) */
           }
         }catch(e){ _spWritten = null; }
         return o.apply(this, arguments);
@@ -50787,6 +50850,118 @@ var _spWritten = null;   /* null = look at every list */
     });
   }catch(e){}
 })();
+/* SAVES: lists whose upload failed — kept for the next pass, tried again soon, shown as "not sent yet" (window._gcUnsent) */
+var _gcsvBad = {}, _gcsvT = null;
+function _gcsvOk(k){ if(_gcsvBad[k]){ delete _gcsvBad[k]; try{ console.log('[GC Sync] "'+k+'" reached the cloud after '+'a failed try.'); }catch(e){} } }
+function _gcsvFail(k, why){
+  var st = 0; try{ st = sbWrite.lastStatus || 0; }catch(e){}
+  if(st === 401 || st === 403 || st === 404 || st === 413){ return; }     /* refused for good (not allowed / too big): retrying cannot help */
+  _gcsvBad[k] = { at: Date.now(), why: String(why || ''), status: st, tries: ((_gcsvBad[k] || {}).tries || 0) + 1 };
+  try{ if(_spWritten) _spWritten[k] = 1; }catch(e){}
+  if(!_gcsvT){
+    var n = 0; try{ Object.keys(_gcsvBad).forEach(function(x){ n = Math.max(n, _gcsvBad[x].tries); }); }catch(e){}
+    var ms = Math.min(30000, 8000 * Math.pow(2, Math.max(0, n - 1)));   /* 8 s, 16 s, then every 30 s */
+    _gcsvT = (window.__GC_NATIVE_SETTIMEOUT__ || setTimeout).call(window, function(){ _gcsvT = null; try{ if(Object.keys(_gcsvBad).length && window._gcPushAll) window._gcPushAll(); }catch(e){} }, ms);
+  }
+}
+/* SAVES: TWO DEVICES, ONE RECORD, DIFFERENT FIELDS. A lead / customer / schedule item / sub / vendor edited on two devices
+   went to whichever whole copy was newer: Nick logs a call on the lead from his phone, the office changes its stage on Desk —
+   one of the two was gone. The cloud's own copy of each record, as this page last saw it at its last
+   pull (where this computer's own copy becomes the merged one — never a push's read, after which this computer's copy is
+   still the old one), is the common base: a field only one side changed since then takes that side's value; a field both changed
+   takes the newer copy's (as before). Nothing is decided this way without a base (the first pull after a load). */
+var _gcsvBase = {}, _gcsv3Keys = { leads: 1, customers: 1, schedule: 1, subs: 1, vendors: 1 };
+window._gcsvSeeCloud = function(key, list){
+  if(!_gcsv3Keys[key] || !Array.isArray(list)) return;
+  var m = {}; for(var i = 0; i < list.length; i++){ var r = list[i]; if(r && typeof r === 'object' && r.id != null){ try{ m[String(r.id)] = JSON.stringify(r); }catch(e){} } }
+  _gcsvBase[key] = m;
+};
+var _GCSV_META = { updatedAt: 1, savedAt: 1, updatedBy: 1, modified: 1, updated_at: 1, _fe: 1 };
+window._gcsv3way = function(key, x, y){
+  if(!_gcsv3Keys[key] || !x || !y || x === y) return null;
+  var bm = _gcsvBase[key], raw = bm && bm[String(x.id)]; if(!raw) return null;
+  var o; try{ o = JSON.parse(raw); }catch(e){ return null; }
+  var J = function(v){ try{ return v === undefined ? '\u0000' : JSON.stringify(v); }catch(e){ return String(v); } };
+  var xs = String(x.updatedAt || x.updated_at || x.savedAt || ''), ys = String(y.updatedAt || y.updated_at || y.savedAt || '');
+  var yNewer = ys >= xs, out = {}, ks = {}, k, both = 0, took = 0;
+  [x, y, o].forEach(function(r){ Object.keys(r).forEach(function(f){ ks[f] = 1; }); });
+  for(k in ks){
+    if(_GCSV_META[k]) continue;
+    var a = J(x[k]), b = J(y[k]), c = J(o[k]), v;
+    if(a === b) v = x[k];
+    else if(a === c) { v = y[k]; took++; }
+    else if(b === c) { v = x[k]; took++; }
+    else if(Array.isArray(x[k]) && Array.isArray(y[k]) && Array.isArray(o[k])){
+      /* a list both sides added to (a lead's activity / call log): the newer side's list + what the other side ADDED */
+      var IK = function(it){ return it && typeof it === 'object' && it.id != null ? 'i:' + it.id : 'j:' + J(it); };
+      var bs = {}, ps = {}; o[k].forEach(function(it){ bs[IK(it)] = 1; });
+      var pri = yNewer ? y[k] : x[k], oth = yNewer ? x[k] : y[k]; pri.forEach(function(it){ ps[IK(it)] = 1; });
+      v = pri.concat(oth.filter(function(it){ var q = IK(it); return !bs[q] && !ps[q]; })); both++;
+    }
+    else { v = yNewer ? y[k] : x[k]; both++; }
+    if(v !== undefined) out[k] = v;
+  }
+  out.updatedAt = xs > ys ? (x.updatedAt || x.savedAt) : (y.updatedAt || y.savedAt);
+  if(x.savedAt || y.savedAt) out.savedAt = String(x.savedAt || '') > String(y.savedAt || '') ? x.savedAt : y.savedAt;
+  if(x.updatedBy || y.updatedBy) out.updatedBy = yNewer ? (y.updatedBy || x.updatedBy) : (x.updatedBy || y.updatedBy);
+  if(x._fe || y._fe) out._fe = Object.assign({}, x._fe || {}, y._fe || {});
+  if(!out.updatedAt) delete out.updatedAt;
+  return out;
+};
+/* SAVES: this computer has what the cloud lacks — a record the cloud does not have, or a newer save of one (not merely a
+   different spelling of the same record: that made a list bounce up and down every sync) */
+function _gcsvAhead(mine, cloud){
+  try{
+    var c = {}, i, r;
+    for(i = 0; i < cloud.length; i++){ r = cloud[i]; if(r && typeof r === 'object' && r.id != null) c[String(r.id)] = String(r.updatedAt || r.updated_at || r.savedAt || ''); }
+    for(i = 0; i < mine.length; i++){ r = mine[i]; if(!r || typeof r !== 'object' || r.id == null) continue; var k = String(r.id); if(!(k in c)) return true; if(String(r.updatedAt || r.updated_at || r.savedAt || '') > c[k]) return true; }
+    return false;
+  }catch(e){ return false; }
+}
+/* SAVES: the same records (by id, any order) — a merged list that only re-orders the cloud's is not a change to send */
+function _gcsvSameList(a, b){
+  try{
+    if(a.length !== b.length) return false;
+    var m = {}, i, r, id;
+    for(i = 0; i < b.length; i++){ r = b[i]; id = r && typeof r === 'object' && r.id != null ? String(r.id) : '#' + i; m[id] = JSON.stringify(r); }
+    for(i = 0; i < a.length; i++){ r = a[i]; id = r && typeof r === 'object' && r.id != null ? String(r.id) : '#' + i; if(m[id] !== JSON.stringify(r)) return false; }
+    return true;
+  }catch(e){ return true; }
+}
+/* SAVES: a synced list written on this computer goes up within seconds — not at the next tab change. The estimate builder saves
+   by itself while Glenn types (no tab change for an hour), the Field job page writes the job list directly: measured, a new
+   estimate said "Saved ✓ in the CRM" and was still not in the database 45 s later. One push a few seconds after the last
+   write, at most one every 20 s (only the lists that changed go up — the same upload the tab change would have made). */
+var _gcsvSoonT = null, _gcsvLastAuto = 0;
+function _gcsvSoon(){
+  if(_gcsvSoonT) return;
+  var wait = Math.max(4000, 20000 - (Date.now() - _gcsvLastAuto));
+  _gcsvSoonT = (window.__GC_NATIVE_SETTIMEOUT__ || setTimeout).call(window, function(){
+    _gcsvSoonT = null;
+    try{ if(window.__GC_SYNC_NOW__ || _syncing){ _gcsvSoon(); return; } }catch(e){}
+    _gcsvLastAuto = Date.now();
+    try{ if(window._gcPushAll) window._gcPushAll(); }catch(e){}
+  }, wait);
+}
+window._gcSyncDirty = function(keys){ try{ (Array.isArray(keys) ? keys : [keys]).forEach(function(k){ if(SYNC_KEYS.indexOf(k) < 0) return; _idbSnapshot[k] = '__gc_local_differs__'; if(_spWritten) _spWritten[k] = 1; }); _gcsvSoon(); }catch(e){} };   /* SAVES: "this list was not really sent" */
+window._gcSyncDebug = function(){ var o = {}; try{ o.written = _spWritten ? Object.keys(_spWritten) : null; o.soon = !!_gcsvSoonT; o.lastAuto = _gcsvLastAuto; o.syncing = _syncing; o.bad = _gcsvBad; o.snap = {}; ['estimates','__est__gc_ests_v2','projects','leads'].forEach(function(k){ o.snap[k] = typeof _idbSnapshot[k] === 'string' ? _idbSnapshot[k].length : null; }); }catch(e){ o.err = String(e); } return o; };   /* SAVES: console */
+window._gcUnsent = function(){ return Object.keys(_gcsvBad).map(function(k){ return Object.assign({ key: k }, _gcsvBad[k]); }); };
+/* SAVES: say it on screen — a change that could not be sent for 20 s shows a small amber note until it is sent */
+(window.__GC_NATIVE_SETINTERVAL__ || setInterval).call(window, function(){
+  try{
+    var keys = Object.keys(_gcsvBad).filter(function(k){ return Date.now() - _gcsvBad[k].at > 20000 || _gcsvBad[k].tries > 1; });
+    try{ if(window._gcSyncQ && window._gcSyncQ.waiting) window._gcSyncQ.waiting().forEach(function(x){ if(x && x.tries > 0 && keys.indexOf(x.key) < 0) keys.push(x.key); }); }catch(e){}
+    try{ var _cs = window._gcClaims && window._gcClaims.status && window._gcClaims.status(); if(_cs && _cs.dirty && _cs.errors && ((_cs.dirty.claims && _cs.errors.claims) || (_cs.dirty.outbox && _cs.errors.outbox))) keys.push('gc_claims'); }catch(e){}   /* drying readings, equipment, claim notes */
+    var el = document.getElementById('gc-unsent-note');
+    if(!keys.length){ if(el) el.remove(); return; }
+    if(!el){ el = document.createElement('div'); el.id = 'gc-unsent-note'; el.setAttribute('role', 'status'); el.setAttribute('data-gcnav-ignore', '1');
+      el.style.cssText = 'position:fixed;left:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));z-index:2147482000;background:#92400e;color:#fff;padding:8px 12px;border-radius:10px;font:600 12.5px Arial,sans-serif;box-shadow:0 4px 14px rgba(0,0,0,.25);max-width:80vw;pointer-events:none;opacity:.94';   /* never in the way of a button under it (it retries by itself) */
+      (document.body || document.documentElement).appendChild(el); }
+    var t = '\u23F3 Saved on this ' + (/iPhone|iPad|Android/i.test(navigator.userAgent || '') || (window.innerWidth || 999) < 600 ? 'phone' : 'computer') + ' — not sent to the office yet (' + (navigator.onLine === false ? 'no connection' : 'the database did not answer') + '). It keeps trying by itself.';
+    if(el.textContent !== t) el.textContent = t;
+  }catch(e){}
+}, 5000);
+try{ window.addEventListener('online', function(){ if(Object.keys(_gcsvBad).length && window._gcPushAll) (window.__GC_NATIVE_SETTIMEOUT__ || setTimeout).call(window, function(){ window._gcPushAll(); }, 1500); }); }catch(e){}
 window._gcPushAll = async function(force){
   var _n = 0, _skipped = [];
   var _look = force ? null : _spWritten; _spWritten = {};
@@ -50794,9 +50969,14 @@ window._gcPushAll = async function(force){
     var _k = SYNC_KEYS[_i];
     try{
       // Back off the moment the database signals it's struggling.
-      if(!force && window._gcShouldHoldSync && window._gcShouldHoldSync()){
+      /* SAVES: only the database's own brake holds an upload. _gcShouldHoldSync is also on for 12 s after ANY click or key
+         (NO-JUMP, which is about redraws — an upload redraws nothing), so a person who kept working never had their saves
+         uploaded by this push at all; it waited for a pause of 12 s with a tab change in it. */
+      var _hold = typeof window._gcSyncBackoffHold === 'function' ? window._gcSyncBackoffHold() : (window._gcShouldHoldSync && window._gcShouldHoldSync());
+      if(!force && _hold){
         for(var _r = _i; _r < SYNC_KEYS.length; _r++){ if(_spWritten && (!_look || _look[SYNC_KEYS[_r]])) _spWritten[SYNC_KEYS[_r]] = 1; }   /* not looked at yet: next time */
         if(!_look) _spWritten = null;
+        _gcsvSoon();   /* SAVES: and that next time is soon */
         break;
       }
       if(_look && !_look[_k]) continue;
@@ -50804,21 +50984,23 @@ window._gcPushAll = async function(force){
       if(_v === null || _v === undefined) continue;
       if(Array.isArray(_v) && _v.length === 0) continue;
       // Skip anything byte-identical to what we last sent up.
+      var _sig = null;
       if(!force){
         try{
-          var _sig = JSON.stringify(_v);
+          _sig = JSON.stringify(_v);
           if(_idbSnapshot[_k] === _sig) continue;
-          _idbSnapshot[_k] = _sig;
         }catch(e){}
       }
-      var _s = JSON.stringify(_v);
+      var _s = _sig || JSON.stringify(_v);
       if(_s.length > _MAX_SYNC_BYTES){
-        if(Array.isArray(_v)){ try{ await sbWriteChunked(_k, _v); _n++; }catch(e){} continue; }
+        if(Array.isArray(_v)){ try{ await sbWriteChunked(_k, _v); _n++; if(_sig) _idbSnapshot[_k] = _sig; }catch(e){ _gcsvFail(_k, 'chunked: '+(e && e.message || e)); } continue; }
         _skipped.push(_k + ' (' + (_s.length/1048576).toFixed(1) + 'MB, not a list)');
         continue;
       }
-      await sbWrite(_k, _v);
-      _n++;
+      /* SAVES: "sent" is recorded only once the database took it. It was recorded BEFORE the upload, so a 503 / no signal
+         left the list marked as sent: the change stayed on this one computer until the same list changed again here. */
+      if(await sbWrite(_k, _v)){ if(_sig) _idbSnapshot[_k] = _sig; else { try{ _idbSnapshot[_k] = _s; }catch(e){} } _gcsvOk(_k); _n++; }
+      else _gcsvFail(_k, 'upload refused');
     }catch(e){}
   }
   try{ await pushDocs(); console.log('[GC Sync] Documents uploaded.'); }catch(e){}
@@ -51073,17 +51255,22 @@ async function sbWrite(key, value){
     if(_body.length > 4000000){
       console.warn('[GC Sync] "'+key+'" is '+(_body.length/1048576).toFixed(1)+'MB — too large to sync reliably.');
     }
-    var res = await fetch(SB_URL+'/rest/v1/gc_kv', {
+    /* SAVES: an upload that never gets an answer (no signal) used to hold this whole sync forever — every later save
+       on this computer waited behind it. It now counts as failed after a while (the list is tried again). */
+    var _tmo = Math.min(120000, 30000 + Math.round(_body.length / 100000) * 1000);
+    var res = await Promise.race([fetch(SB_URL+'/rest/v1/gc_kv', {
       method: 'POST',
       headers: Object.assign({}, sbHeaders(), {'Prefer':'return=minimal,resolution=merge-duplicates'}),
       body: _body
-    });
+    }), new Promise(function(_r, rej){ (window.__GC_NATIVE_SETTIMEOUT__ || setTimeout).call(window, function(){ rej(new Error('no answer in ' + Math.round(_tmo / 1000) + ' s')); }, _tmo); })]);
+    sbWrite.lastStatus = res.status;   /* SAVES */
     if(!res.ok){
       console.warn('[GC Sync] Upload rejected for "'+key+'" (HTTP '+res.status+'). Will retry.');
       return false;
     }
     return true;
   }catch(e){
+    sbWrite.lastStatus = 0;   /* SAVES: no answer */
     console.warn('[GC Sync] Write failed:', key, e.message);
     return false;
   }
@@ -51488,7 +51675,7 @@ async function pullAll(force){
       if(lastSeen && lastSeen >= row.updated_at) continue; // no change
       _lastPull[row.key] = row.updated_at;
 
-      var _val = row.value;
+      var _val = row.value, _cloudRaw = row.value;   /* SAVES: what the cloud has, before this computer's copy is merged in */
       try{ if(window._gcCloudSeen) window._gcCloudSeen(row.key, _val); }catch(_cs){}   /* patch CUSTSYNC */
       if(window._gcPullSkip && window._gcPullSkip(row.key)) continue;   /* patch D: per-computer key */
       // STRIP test entries + tombstoned records coming down from the cloud.
@@ -51676,7 +51863,14 @@ async function pullAll(force){
       // Mark this value as "already known" for the diff-pusher. Without this,
       // checkAndPushDiffs() sees the freshly-pulled value as a local change and
       // uploads it again — two machines then bounce values back and forth.
-      if(_rem !== null) _idbSnapshot[row.key] = _rem;
+      /* SAVES: …but only when it IS what the cloud has. When this computer's copy added to it (a save whose upload failed
+         or had not gone yet), the merged list was marked "already known" here and never uploaded: the change stayed on
+         this one computer for good (a reload marks everything known too). Now the next push sends it. */
+      try{ if(Array.isArray(_cloudRaw)) window._gcsvSeeCloud(row.key, _cloudRaw); }catch(_sc){}   /* SAVES: AFTER the merge — the base of the NEXT one */
+      if(_rem !== null){
+        if(Array.isArray(_val) && Array.isArray(_cloudRaw) && _gcsvAhead(_val, _cloudRaw)){ _idbSnapshot[row.key] = '__gc_local_differs__'; try{ if(_spWritten) _spWritten[row.key] = 1; }catch(e){} _gcsvSoon(); }
+        else _idbSnapshot[row.key] = _rem;
+      }
       // Push the freshly-pulled value into the running app's state.
       // Without this the UI keeps its stale in-memory copy and then writes
       // it back over the newer cloud data (why two admins saw different totals).
@@ -51887,6 +52081,7 @@ async function initialSync(){
   }catch(e){}
   // Then snapshot local state
   for(var i=0; i<SYNC_KEYS.length; i++){
+    if(_idbSnapshot[SYNC_KEYS[i]] === '__gc_local_differs__') continue;   /* SAVES: this computer has what the cloud lacks: keep it to send */
     var val = await idbGet(SYNC_KEYS[i]);
     if(val !== null && val !== undefined){
       _idbSnapshot[SYNC_KEYS[i]] = JSON.stringify(val);
@@ -61865,11 +62060,23 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
   function pushMsgs(){
     var payload=JSON.stringify(getMsgs());
     var cr=sbCreds(); if(!cr.k) return;
+    /* SAVES: the send was fire-and-forget — a 503 / no signal dropped it with nothing on screen (the message sat on this
+       one phone until somebody happened to open Messages there again). A refused send now goes to the save queue
+       (window._gcSyncQ: kept in IndexedDB, merged with the cloud copy, tried again until it lands, across reloads). */
+    var _failed=function(why){
+      try{ console.warn('[GC] job message not sent yet ('+why+') — queued to send again.'); }catch(e){}
+      try{ if(window._gcSyncQ && window._gcSyncQ.add) window._gcSyncQ.add(MSG_KEY, JSON.stringify(getMsgs())); }catch(e){}
+      try{ var _t=document.getElementById('_jmNotSent')||document.createElement('div'); _t.id='_jmNotSent'; _t.setAttribute('role','status');
+        _t.textContent='\u23F3 Message saved on this device \u2014 not sent yet (no connection to the office). It sends by itself.';
+        _t.style.cssText='position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:2147483000;background:#92400e;color:#fff;padding:10px 14px;border-radius:10px;font:600 13px Arial,sans-serif;max-width:92vw;box-shadow:0 4px 16px rgba(0,0,0,.3);pointer-events:none';
+        document.body.appendChild(_t); setTimeout(function(){ try{ _t.remove(); }catch(e){} }, 9000); }catch(e){}
+    };
     try{
       fetch(cr.u.replace(/\/$/,'')+'/rest/v1/gc_kv?on_conflict=key',{ method:'POST',
         headers:{'apikey':cr.k,'Authorization':'Bearer '+cr.k,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'},
-        body:JSON.stringify({key:MSG_KEY, value:payload, updated_at:new Date().toISOString()}) }).catch(function(){});
-    }catch(e){}
+        body:JSON.stringify({key:MSG_KEY, value:payload, updated_at:new Date().toISOString()}) })
+        .then(function(r){ if(!r || !r.ok) _failed('HTTP '+(r && r.status)); }, function(e){ _failed(String(e && e.message || e)); });
+    }catch(e){ _failed(String(e && e.message || e)); }
   }
   function pullMsgs(cb){
     var cr=sbCreds(); if(!cr.k){ if(cb)cb(); return; }
@@ -68160,10 +68367,47 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
   function bodySig(rec){ try{ var o={}; Object.keys(rec).sort().forEach(function(k){ if(!STAMP_RE.test(k)) o[k]=rec[k]; }); return JSON.stringify(o); }catch(e){ return null; } }
   function stampOf(r){ return String((r && (r.updatedAt||r.updated_at||r.savedAt||r.modified)) || ''); }
   /* TOMBFIX: copies of one payroll profile -> one record (oldest first, newer values win; nothing else is lost) */
+  /* W4SAFE: one merge rule for payroll profiles, whatever the stamps -- a seed (a profile this computer created, never edited
+     by a person) never outranks a real one; for the W-4 / pay fields the newest PERSON edit (editedAt) decides, and with no
+     person edit in between a filled value beats an empty / default one (a fresh computer's default profile, stamped "now",
+     turned a married / +$15 W-4 into single / $0 on that computer and in the cloud). */
+  var W4F = { filing:'single', dependentsCredit:0, otherIncome:0, deductions:0, extra:0, multipleJobs:false, exemptFed:false, w4Form:'',
+              allowances:0, msFiling:'', msExemption:'', annualSalary:0, hourlyRate:0, payType:'', ssn4:'', hireDate:'', address:'',
+              stateExtra:0, otherDeductions:null, taxDocs:null };
+  function w4Blank(k, v){
+    if(v===undefined || v===null || v==='') return true;
+    if(Array.isArray(v)) return !v.length;
+    if(!Object.prototype.hasOwnProperty.call(W4F, k)) return false;
+    var d = W4F[k]; if(d===null) return false;
+    if(typeof d==='number') return Number(v)===d;
+    return v===d;
+  }
+  function editOf(r){ return String((r && r.editedAt) || ''); }
+  function isSeed(r){ return !!(r && r._seed===true && !editOf(r)); }
+  function ppMerge(a, b){
+    if(!a || typeof a!=='object') return b; if(!b || typeof b!=='object') return a;
+    var hi = b, lo = a;                                     /* the newer stamp; a tie keeps the incoming copy (as before) */
+    if(stampOf(a) > stampOf(b)){ hi = a; lo = b; }
+    var sa = isSeed(a), sb = isSeed(b);
+    if(isSeed(hi) && !isSeed(lo)){ var t = hi; hi = lo; lo = t; }   /* a seed never outranks a real profile */
+    var m = Object.assign({}, lo, hi), eh = editOf(hi), el = editOf(lo);
+    var personHi = !!eh && eh >= el;                          /* the newer copy carries the newest person edit */
+    Object.keys(W4F).forEach(function(k){
+      if(el && el > eh){ if(Object.prototype.hasOwnProperty.call(lo, k)) m[k] = lo[k]; return; }   /* the older copy has the newer person edit */
+      if(personHi) return;
+      if(w4Blank(k, hi[k]) && !w4Blank(k, lo[k])) m[k] = lo[k];   /* no person edit in between: filled beats empty / default */
+    });
+    if(!personHi) Object.keys(lo).forEach(function(k){
+      if(Object.prototype.hasOwnProperty.call(W4F, k)) return;
+      var v = hi[k]; if((v===undefined || v===null || v==='') && lo[k]!==undefined && lo[k]!==null && lo[k]!=='') m[k] = lo[k];
+    });
+    if(!(sa && sb)) delete m._seed;
+    var e = eh > el ? eh : el; if(e) m.editedAt = e;
+    return m;
+  }
+  window._gcPayProfileMerge = ppMerge;
   function foldProfile(a, b){
-    var o = stampOf(a) <= stampOf(b) ? [a, b] : [b, a];
-    var m = Object.assign({}, o[0], o[1]);
-    Object.keys(o[0]).forEach(function(k){ var v=m[k]; if((v===undefined || v===null || v==='') && o[0][k]!==undefined && o[0][k]!==null && o[0][k]!=='') m[k]=o[0][k]; });
+    var m = ppMerge(a, b);   /* W4SAFE */
     m.id = a.id; return m;
   }
   window._gcEnsureRecordIds = function(list, key){
@@ -68257,7 +68501,9 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
         for(var k in rec){ try{ if(typeof rec[k]==='string' && rec[k].indexOf('__TEST__')>=0) return; }catch(e){} }
         if(!(id in byId)){ byId[id]=rec; order.push(id); }
         else if(QALT[key] && qRank(rec)!==qRank(byId[id])){ if(qRank(rec)>qRank(byId[id])) byId[id]=Object.assign({}, byId[id], rec); }   /* patch SYNCFIX: a decided approval stays decided */
-        else if(newer(rec, byId[id])){ byId[id]=Object.assign({}, byId[id], rec); }
+        else if(key==='payrollProfiles'){ byId[id]=ppMerge(byId[id], rec); }   /* W4SAFE */
+        else { var _m3 = null; try{ if(window._gcsv3way) _m3 = window._gcsv3way(key, byId[id], rec); }catch(_e3){ _m3 = null; }   /* SAVES: field by field when the cloud's last copy is known (leads, customers, schedule, subs, vendors only — never payroll) */
+               if(_m3) byId[id] = _m3; else if(newer(rec, byId[id])){ byId[id]=Object.assign({}, byId[id], rec); } }
       });
     });
     var __out = order.map(function(id){ return byId[id]; });
@@ -68769,7 +69015,8 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
     function creds(){ try{ return { u:(localStorage.getItem('grayco_sb_url')||'').replace(/\/$/,''), k:localStorage.getItem('grayco_sb_key') }; }catch(e){ return {}; } }
     function cloudGet(key){
       var c = creds(); if(!c.u || !c.k) return Promise.reject(new Error('not signed in to the cloud'));
-      return fetch(c.u+'/rest/v1/gc_kv?key=eq.'+encodeURIComponent(key)+'&select=value', { headers:{ apikey:c.k, Authorization:'Bearer '+c.k } })
+      return Promise.race([fetch(c.u+'/rest/v1/gc_kv?key=eq.'+encodeURIComponent(key)+'&select=value', { headers:{ apikey:c.k, Authorization:'Bearer '+c.k } }),
+                           new Promise(function(_r, rej){ ST.call(window, function(){ rej(new Error('cloud read: no answer')); }, 30000); })])   /* SAVES */
         .then(function(r){ if(!r || !r.ok) throw new Error('cloud read answered '+(r && r.status)); return r.json(); })
         .then(function(rows){ return (Array.isArray(rows) && rows.length) ? rows[0].value : undefined; });
     }
@@ -68802,7 +69049,14 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
     }
 
     /* a SYNC_KEYS list: merge into IndexedDB + the screen (adds / newer only); the regular upload carries it */
+    /* SAVES: a save of a synced list was only written here; when the caller had already written the same list to IndexedDB
+       (the Field job page, most of the CRM's own save paths) nothing asked for the upload — it waited for the next tab
+       change or the 3-minute idle sync (on a phone in GrayCo Field: until the app was opened again). Measured: a job
+       change on the phone reached the office minutes later. Now every such save asks for the after-a-save sync. */
+    var upT = null;
+    function upSoon(ms){ if(upT) return; upT = ST.call(window, function(){ upT = null; try{ if(isTyping()){ upSoon(2500); return; } if(typeof window._gcTabChangeSync === 'function') window._gcTabChangeSync('after a save'); }catch(e){} }, ms || 2500); }
     function intoLocal(key, v){
+      upSoon();
       if(!Array.isArray(v)) return idSet(key, v).then(function(){ return true; });
       return idGet(key).then(function(cur){
         cur = Array.isArray(cur) ? cur : [];
@@ -68827,6 +69081,10 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
     function isMap(x){ return x && typeof x === 'object' && !Array.isArray(x); }
     function toCloud(key, item){
       var now = window._supaUpsertNow;
+      /* SAVES: when the "run it later" wrapper (DEFERWORK) got here first, _supaUpsertNow answered at once without sending —
+         the queue then dropped the save as sent, and a send that failed afterwards was never tried again (measured: a job
+         message sent from a phone with a full localStorage reached the office only after the app was reopened) */
+      try{ while(now && now.__deferred && typeof now.__orig === 'function') now = now.__orig; }catch(e){}
       if(typeof now !== 'function') return Promise.reject(new Error('no direct save'));
       var v = item.v, lv = asList(v);
       var prep = Promise.resolve(v);
@@ -68846,7 +69104,9 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
         prep = cloudGet(key).then(function(cloud){ return isMap(cloud) ? Object.assign({}, cloud, v) : v; });
       }
       return prep.then(function(val){
-        return Promise.resolve(now(key, val)).then(function(res){
+        /* SAVES: a send with no answer (no signal) froze the queue — flushing stayed on, every later save waited forever */
+        var _tq = new Promise(function(_r, rej){ ST.call(window, function(){ rej(new Error('no answer')); }, 45000); });
+        return Promise.race([Promise.resolve(now(key, val)), _tq]).then(function(res){
           if(res && res.blocked) return true;                          /* the shrink guard kept the cloud copy */
           if(res && typeof res.ok === 'boolean' && !res.ok) throw new Error('cloud answered '+res.status);
           if(lv && isIdList(lv.list) && !item.recover) BASE[key] = idsOf(lv.list);
@@ -68952,8 +69212,9 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
 
   // ---- The ONE sync: push up + pull down, union-merged, once. -------------
   var _syncing = false, _lastSync = 0, _pendingT = null;
+  var _againWhy = null;   /* SAVES: a save made while a sync was running waited for the next tab change */
   async function tabChangeSync(reason){
-    if(_syncing) return;
+    if(_syncing){ if(/save/i.test(String(reason || ''))) _againWhy = reason; return; }
     if(isTyping()) return;                 // never sync mid-typing
     var now = Date.now();
     // DISK IO: every tab change used to fire a full push+pull, so simply
@@ -68986,6 +69247,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
     }catch(e){ try{ window.__GC_LAST_TABSYNC__ = { at:Date.now(), reason:reason||'', ok:false, error:String(e&&e.message||e) }; }catch(_e){} }
     window.__GC_SYNC_NOW__ = false;
     _syncing = false;
+    if(_againWhy){ var _aw = _againWhy; _againWhy = null; (window.__GC_NATIVE_SETTIMEOUT__||setTimeout).call(window, function(){ _lastSync = 0; tabChangeSync('again: ' + _aw); }, 1500); }
   }
   window._gcTabChangeSync = tabChangeSync;
   /* 33.138: AND EVERY THREE MINUTES WHEN NOBODY IS IN THE MIDDLE OF SOMETHING. "We have to make sure my
@@ -84158,9 +84420,29 @@ window._gcForceFixSchedule = async function(silent){
   function tcAcc(){ try{ var S=window.__GC_SEC2; return S && S.access ? S.access() : null; }catch(e){ return null; } }
   function tcOwn(){ try{ var S=window.__GC_SEC2, a=tcAcc(); return !!(S && S.can && a && a.known && a.email && !S.can(KEY,'write',a)); }catch(e){ return false; } }
   function tcKey(){ var a=tcAcc(); return TC_PFX+String(a&&a.email||'').toLowerCase().replace(/[^a-z0-9]/g,'_'); }
-  function tcMine(){ try{ var o=JSON.parse(localStorage.getItem(TC_LS)||'null'); var a=tcAcc(); if(o && a && o.email===a.email && Array.isArray(o.list)) return o.list; }catch(e){} return []; }
+  function tcMineLs(){ try{ var o=JSON.parse(localStorage.getItem(TC_LS)||'null'); var a=tcAcc(); if(o && a && o.email===a.email && Array.isArray(o.list)) return o.list; }catch(e){} return []; }
+  /* SAVES: a crew member's own clock entries lived ONLY in this phone's localStorage (+ an upload nobody read back): a new
+     phone, cleared site data or a full localStorage showed "not clocked in" with no hours — clock in on one phone, clock out
+     on another was impossible. The cloud copy (gc_timeclock_<email>) is now read back and merged in (by id, newest wins). */
+  var TCMEM=null, tcHyd=0;
+  function tcUnion(a, b){ var by={}, out=[]; (a||[]).concat(b||[]).forEach(function(r){ if(!r||!r.id) return; var k=String(r.id), o=by[k]; if(!o){ by[k]=r; out.push(k); } else if(String(r.updatedAt||r.clockOut||'')>String(o.updatedAt||o.clockOut||'')) by[k]=r; }); return out.map(function(k){ return by[k]; }); }
+  function tcMine(){ var l=tcMineLs(); return TCMEM ? tcUnion(l, TCMEM) : l; }
+  function tcHydrate(){
+    if(tcHyd>40) return; tcHyd++;
+    var a=tcAcc(); if(!tcOwn() || !a || !a.email){ (window.__GC_NATIVE_SETTIMEOUT__||setTimeout).call(window, tcHydrate, 3000); return; }
+    var u=(localStorage.getItem('grayco_sb_url')||'').replace(/\/$/,''), k=localStorage.getItem('grayco_sb_key')||'';
+    if(!u||!k){ (window.__GC_NATIVE_SETTIMEOUT__||setTimeout).call(window, tcHydrate, 5000); return; }
+    fetch(u+'/rest/v1/gc_kv?key=eq.'+encodeURIComponent(tcKey())+'&select=value', { headers:{ apikey:k, Authorization:'Bearer '+k }, cache:'no-store' })
+      .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+      .then(function(rows){ var v=rows&&rows[0]&&rows[0].value; if(typeof v==='string'){ try{ v=JSON.parse(v); }catch(e){ v=null; } }
+        if(!Array.isArray(v)||!v.length) return; var cur=tcMineLs(), m=tcUnion(cur, v); TCMEM=m; tcHyd=99;
+        if(m.length!==cur.length || JSON.stringify(m)!==JSON.stringify(cur)){ try{ localStorage.setItem(TC_LS, JSON.stringify({ email:a.email, list:m })); }catch(e){} try{ if(typeof window._gcTimeclockRefresh==='function') window._gcTimeclockRefresh(); }catch(e){} } })
+      .catch(function(){ (window.__GC_NATIVE_SETTIMEOUT__||setTimeout).call(window, tcHydrate, 15000); });
+  }
+  (window.__GC_NATIVE_SETTIMEOUT__||setTimeout).call(window, tcHydrate, 2500);
   function tcSaveMine(v){
     var me=user(), a=tcAcc(); var mine=(Array.isArray(v)?v:[]).filter(function(r){ return r && r.user===me; });
+    TCMEM=mine;   /* SAVES: what this page reads back, even when localStorage refuses it */
     try{ localStorage.setItem(TC_LS, JSON.stringify({ email:a&&a.email, list:mine })); }catch(e){}
     try{ if(window._supaUpsert) window._supaUpsert(tcKey(), mine); }catch(e){}
   }
@@ -85396,9 +85678,40 @@ function dedupeProfiles(list){
   deadIds=deadIds.filter(function(id, k, a){ return !keptIds[id] && a.indexOf(id)===k; });
   return { list:out, removed:removed, names:names, deadIds:deadIds };
 }
+/* W4SAFE: the cloud's payroll profile list, read once per page (concurrent calls share the read; kept in memory and merged
+   into every call, so a call that reads this computer's copy before the first merged list was written still has it).
+   Until a read succeeds, profiles() creates nothing: no seed may ever be saved over a real cloud profile. */
+var _w4 = { ok:false, list:[], p:null, at:0 };
+function w4Cloud(){
+  if(_w4.ok) return Promise.resolve(_w4);
+  if(_w4.p && Date.now()-_w4.at < 30000) return _w4.p;
+  _w4.at = Date.now();
+  _w4.p = (async function(){
+    try{
+      var u = String(localStorage.getItem('grayco_sb_url') || 'https://ieeonhpfahmwwecizdut.supabase.co').replace(/\/+$/, ''), k = localStorage.getItem('grayco_sb_key') || '';
+      var r = await fetch(u+'/rest/v1/gc_kv?key=eq.'+K_PROF+'&select=value', { headers: k ? { apikey:k, Authorization:'Bearer '+k } : {}, cache:'no-store' });
+      if(!r || !r.ok) return _w4;
+      var rows = await r.json(); if(!Array.isArray(rows)) return _w4;
+      var v = rows.length ? rows[0].value : [];
+      if(typeof v==='string'){ try{ v = JSON.parse(v); }catch(_je){ return _w4; } }
+      var out = Array.isArray(v) ? v : [];
+      try{ if(window._gcSbReadChunked){ var ch = await window._gcSbReadChunked(K_PROF); if(Array.isArray(ch) && ch.length) out = window._gcUnionMerge ? window._gcUnionMerge(K_PROF, out, ch) : out.concat(ch); } }catch(_ce){}
+      _w4.list = out.filter(function(p){ return p && typeof p==='object'; }); _w4.ok = true;
+      return _w4;
+    }catch(e){ return _w4; }
+  })();
+  return _w4.p;
+}
+window._gcPayW4Safe = function(){ return { cloudRead:_w4.ok, cloudCount:_w4.list.length, lastTry:_w4.at ? new Date(_w4.at).toISOString() : '' }; };
 async function profiles(){
   var list=await get(K_PROF);
   if(!Array.isArray(list)) list=[];
+  var _w4c = { ok:false, list:[] }, _w4changed=false;   /* W4SAFE */
+  try{ _w4c = await Promise.race([w4Cloud(), new Promise(function(r){ setTimeout(function(){ r({ ok:false, list:[] }); }, 8000); })]); }catch(_w4e){}   /* a slow read: answer from this computer, create nothing */
+  if(_w4c.ok && _w4c.list.length && window._gcUnionMerge){
+    try{ var _w4b = JSON.stringify(list); var _w4m = window._gcUnionMerge(K_PROF, JSON.parse(_w4b), JSON.parse(JSON.stringify(_w4c.list)));
+      if(Array.isArray(_w4m) && JSON.stringify(_w4m) !== _w4b){ list = _w4m; _w4changed = true; } }catch(_w4me){}
+  }
   var _tfIds=false; try{ if(window._gcPayProfileId && window._gcEnsureRecordIds){ var _tfN=list.length; _tfIds=window._gcEnsureRecordIds(list, K_PROF); if(_tfIds && list.length<_tfN) console.log('[GC Payroll] TOMBFIX: '+(_tfN-list.length)+' copies of payroll profiles folded (stable ids)'); } }catch(_tfe){}   /* TOMBFIX */
   var _pdRemoved=0;   /* patch PROFDUP: one profile per person — condition-gated, a no-op once there are no copies */
   try{ var _pd=dedupeProfiles(list); if(_pd.removed){ list=_pd.list; _pdRemoved=_pd.removed;
@@ -85441,7 +85754,7 @@ async function profiles(){
   try{ var _fu = JSON.parse(localStorage.getItem('gc_fired_users') || '{}') || {};
     list.forEach(function(p){ if(!p || p.active === false) return; var nm = String(p.name || '').trim().toLowerCase(), em = String(p.email || '').trim().toLowerCase();
       if(_fu[nm] || (em && _fu[em])){ p.active = false; p.firedOff = true; p.updatedAt = new Date().toISOString(); _migChanged = true; } }); }catch(_fe){}
-  if(_migChanged || _pdRemoved || _tfIds){ try{ await put(K_PROF, list); }catch(_pe){} }   /* patch PROFDUP: once */ /* TOMBFIX: + stable ids */
+  if(_migChanged || _pdRemoved || _tfIds || _w4changed){ try{ await put(K_PROF, list); }catch(_pe){} }   /* patch PROFDUP: once */ /* TOMBFIX: + stable ids */ /* W4SAFE: + the cloud's list */
 
   // migrate the old name-keyed payrollW4 object once
   var old=await get(K_OLDW4);
@@ -85451,8 +85764,10 @@ async function profiles(){
       var o=old[nm]||{}, p=byName[nameKey(nm)];   /* patch PROFDUP: by trimmed lower-case name */
       if(!nameKey(nm)) return;
       if(!p){
+        if(!_w4c.ok) return;   /* W4SAFE: nothing is created before the cloud's list was read */
         var u=users().find(function(x){ return nameKey(x.name)===nameKey(nm); });
         p = u ? seedFromUser(u) : blankProfile({name:nm});
+        p._seed=true; p.updatedAt='';   /* W4SAFE: a seed is never newer than a cloud copy */
         if(!p.userId) p.id=nameId(nm);
         p.name=nm; list.push(p); byName[nameKey(nm)]=p; if(p.userId) byUser[p.userId]=p; changed=true;
       }
@@ -85466,7 +85781,9 @@ async function profiles(){
   users().forEach(function(u){
     if(u.active===false) return;
     var p = (u.id && byUser[u.id]) || byName[nameKey(u.name)];   /* patch PROFDUP: userId, then trimmed lower-case name — never the shared e-mail */
-    if(!p){ p=seedFromUser(u); if(!u.id) p.id=nameId(u.name); list.push(p); if(u.id) byUser[u.id]=p; byName[nameKey(u.name)]=p; changed=true; }
+    if(!p){ if(!_w4c.ok) return;   /* W4SAFE: nothing is created before the cloud's list was read */
+      p=seedFromUser(u); if(!u.id) p.id=nameId(u.name); p._seed=true; p.updatedAt='';   /* W4SAFE: a seed is never newer than a cloud copy */
+      list.push(p); if(u.id) byUser[u.id]=p; byName[nameKey(u.name)]=p; changed=true; }
     else if(!p.userId && u.id){ p.userId=u.id; changed=true; }
   });
   if(changed) await put(K_PROF, list);
@@ -86965,6 +87282,7 @@ window._gcRenderEmployeeProfile = async function(body, S, render){
     p.otherDeductions=readDed(body);
     if(body._gcW4Doc){ var _wd=body._gcW4Doc; p.taxDocs=(p.taxDocs||[]).filter(function(d){ return d.ref!==_wd.ref; }).concat([_wd]); body._gcW4Doc=null; }   /* patch W4UPLOAD */
     p.updatedAt=new Date().toISOString();
+    p.editedAt=p.updatedAt; delete p._seed;   /* W4SAFE: a person's edit -- it decides the W-4 everywhere, even a default value */
     await P.saveProfiles(profs);
     alert('Saved. '+p.name+'’s payroll setup is updated on every device.');
     render();
@@ -127610,7 +127928,10 @@ if(window.__GC_SYNC_A__) return; window.__GC_SYNC_A__ = true;
 var ST = window.__GC_NATIVE_SETTIMEOUT__ || setTimeout;
 var RI = window.__GC_NATIVE_SETINTERVAL__ || window.__GC_RAW_SETINTERVAL__ || setInterval;
 var KEY = 'projects';
-var PF = ['status','pct','pm','contract','name','client','address','type','startDate','endDate','completionDate','autoPO'];
+var PF = ['status','pct','pm','contract','name','client','address','type','startDate','endDate','completionDate','autoPO',
+          /* SAVES: the other short fields people edit on a job — the office changes the company on Desk while the phone adds a
+             note: each is the newest PERSON edit of that field, so neither is lost to the other's whole-job copy */
+          'company','notes','customerNotes','clientPhone','clientEmail','phone','email','jobStage','leadSource','apm','estimator'];
 var PFS = {}; PF.forEach(function(f){ PFS[f] = 1; });
 var LSK = 'gc_field_edits';
 
@@ -127713,8 +128034,44 @@ window._gcxFieldMerge = function(key, out, a, b){
   if(String(key) !== KEY && String(key) !== 'projects') return out;
   learnAll(a); learnAll(b);
   var g = guard(out); if(g !== out) stats.merges++;
+  try{ g = subUnion(g, a, b); }catch(e){}   /* SAVES */
   return g;
 };
+/* SAVES: the lists INSIDE a job that the field adds to (environmental logs, equipment placed / picked up, site measurements,
+   visit notes, inspections, incidents, signatures, plan markups, material requests, permits, portal posts, updates). Two
+   devices adding to the same job each sent their whole job: the newer copy won and the other device's entry was gone
+   (measured: an air sample logged on the phone and an equipment pickup on the Desk — one of them lost). Here every entry
+   (by its id) from either copy is kept; the same entry on both sides keeps its newest version. These entries are removed by
+   marking them (deleted / removed / pickedUp / status), never by leaving them out, so nothing comes back that someone removed. */
+var SUBL = ['envLog','equipment','measurements','visitNotes','fieldInspections','incidents','onsiteSignatures','planMarkups','materialRequests','portalPosts','updates'];   /* not permits: those are removed by leaving them out */
+function itemTs(x){ var t = ''; if(x) ['updatedAt','decidedAt','deletedAt','removedAt','pickedUpAt','doneAt','at','createdAt'].forEach(function(k){ var v = x[k] == null ? '' : String(x[k]); if(v > t) t = v; }); return t; }
+function subUnion(list, a, b){
+  if(!Array.isArray(list) || !list.length) return list;
+  var A = {}, B = {};
+  (Array.isArray(a) ? a : []).forEach(function(r){ var id = idOf(r); if(id) A[id] = r; });
+  (Array.isArray(b) ? b : []).forEach(function(r){ var id = idOf(r); if(id) B[id] = r; });
+  var out = null;
+  for(var i = 0; i < list.length; i++){
+    var r = list[i], id = idOf(r); if(!id) continue;
+    var others = [A[id], B[id]].filter(function(x){ return x && x !== r; }); if(!others.length) continue;
+    var o = null;
+    SUBL.forEach(function(f){
+      var mine = r[f]; if(mine != null && !Array.isArray(mine)) return;
+      var have = {}, add = [], repl = {}, ch = false;
+      (mine || []).forEach(function(x, j){ if(x && typeof x === 'object' && x.id != null) have[String(x.id)] = j; });
+      others.forEach(function(oc){ var l = oc[f]; if(!Array.isArray(l)) return; l.forEach(function(x){
+        if(!x || typeof x !== 'object' || x.id == null) return; var k = String(x.id);
+        if(!(k in have)){ if(!add.some(function(y){ return String(y.id) === k; })){ add.push(x); ch = true; } }
+        else { var cur = repl[k] || (mine || [])[have[k]]; if(itemTs(x) > itemTs(cur) && JSON.stringify(x) !== JSON.stringify(cur)){ repl[k] = x; ch = true; } }
+      }); });
+      if(!ch) return;
+      o = o || Object.assign({}, r);
+      o[f] = (mine || []).map(function(x){ return x && x.id != null && repl[String(x.id)] ? repl[String(x.id)] : x; }).concat(add);
+    });
+    if(o){ out = out || list.slice(); out[i] = o; stats.subUnion = (stats.subUnion || 0) + 1; }
+  }
+  return out || list;
+}
 
 /* ── a person's edit: stamped where every edit lands, the disk ─────────────────────────────────────────── */
 var inputs = [], lastManual = 0, lastInput = 0;
@@ -128440,8 +128797,7 @@ function wrapSetView(){
 var lastTop = null;
 function sync(){
   wrapSetView();
-  var t = topLayer(), html = D.documentElement;
-  var l = layers();
+  var l = layers(), t = l.length ? l[l.length - 1] : null, html = D.documentElement;   /* FIELDPERF: one pass (topLayer() measured them all again) */
   l.forEach(function(e){
     if (!e.__gcNavSeen) {
       e.__gcNavSeen = true;
@@ -140635,7 +140991,8 @@ function start(){
   if (!document.body) return later(start, 200);
   ensureCss();
   every(function(){ try { viewTick(); } catch (e) {} }, 1000);
-  every(function(){ try { if (view() === 'leads') mountSettings(); } catch (e) { warn(e); } try { mountDash(); } catch (e) { warn(e); } }, 1500);
+  every(function(){ if (window.__gcFL && window.__gcFL.desk('LA-dash')) return;   /* FIELDPERF: not under GrayCo Field */
+    try { if (view() === 'leads') mountSettings(); } catch (e) { warn(e); } try { mountDash(); } catch (e) { warn(e); } }, 1500);
   every(function(){ try { peekLeads(); track(); } catch (e) {} }, 5000);
   document.addEventListener('visibilitychange', function(){ later(viewTick, 50); });
   document.addEventListener('click', function(){ later(viewTick, 300); later(badge, 900); }, true);
@@ -140757,9 +141114,9 @@ function deskJob(){
 function fieldCards(){
   var items = document.querySelectorAll('#_gcJobPick ._jpItem');
   for(var i = 0; i < items.length; i++){
-    var it = items[i]; if(it.querySelector('._gcMailIco')) continue;
-    var id = it.getAttribute('data-id'), job = projects().filter(function(p){ return p && String(p.id) === String(id); })[0];
-    var to = job && (job.clientEmail || job.customerEmail); if(!to) continue;
+    var it = items[i]; if(it.getAttribute('data-gc-ap3') === (it.getAttribute('data-id') || '') || it.querySelector('._gcMailIco')) continue;   /* FIELDPERF: a row already looked at */
+    var id = it.getAttribute('data-id'), job = window.__gcById ? window.__gcById(projects(), id) : projects().filter(function(p){ return p && String(p.id) === String(id); })[0];   /* FIELDPERF: by id, not a scan per row */
+    var to = job && (job.clientEmail || job.customerEmail); if(!to) { if(job) it.setAttribute('data-gc-ap3', id || ''); continue; }
     if(getComputedStyle(it).position === 'static') it.style.position = 'relative';
     it.appendChild(ico(to, { pid: job.id, customer: job.client, about: 'job' }, 'position:absolute;right:14px;bottom:10px;font-size:20px;line-height:1;padding:6px;border-radius:10px;background:rgba(37,99,235,.18);cursor:pointer'));
   }
@@ -158352,7 +158709,7 @@ function Synced(key, kind){
   L.schedule = function(ms){ if (L.pushT) clearTimeout(L.pushT); L.pushT = later(L.push, ms); };
   L.cloud = function(){
     var c = creds(); if (!c.u || !c.k) return Promise.resolve(null);
-    return window.fetch(c.u + '/rest/v1/gc_kv?key=eq.' + key + '&select=value,updated_at', { headers: hdr(c), cache: 'no-store' }).then(function(r){
+    return Promise.race([window.fetch(c.u + '/rest/v1/gc_kv?key=eq.' + key + '&select=value,updated_at', { headers: hdr(c), cache: 'no-store' }), new Promise(function(_r, rej){ later(function(){ rej(new Error('no answer')); }, 30000); })]).then(function(r){   /* SAVES: no answer = not read */
       if (!r.ok) return null;
       return r.json().then(function(rows){
         if (!Array.isArray(rows)) return null;
@@ -158392,8 +158749,10 @@ function Synced(key, kind){
       if (!cl) throw new Error('could not read the cloud copy');
       L.absorb(cl.v);
       var value = kind === 'obj' ? L.obj : mergeList(cl.v, L.all());
-      return window.fetch(c.u + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: hdr(c, { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }),
-        body: JSON.stringify({ key: key, value: value, updated_at: nowIso() }) }).then(function(r){
+      /* SAVES: a send with no answer (no signal on a job site) kept "pushing" on for good — every later claim / drying reading
+         change waited behind it. It now fails after 45 s and is tried again with the back-off below. */
+      return Promise.race([window.fetch(c.u + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: hdr(c, { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }),
+        body: JSON.stringify({ key: key, value: value, updated_at: nowIso() }) }), new Promise(function(_r, rej){ later(function(){ rej(new Error('no answer')); }, 45000); })]).then(function(r){
         if (!r.ok) throw new Error('HTTP ' + r.status);
         L.fails = 0; L.lastPush = Date.now(); L.err = '';
         if (gen === L.gen) { L.dirty = false; iput('dirty:' + key, false); } else L.schedule(600);
@@ -161150,6 +161509,8 @@ function paintSaved(){
   if (EB.savedAt && EB.savedAt >= EB.draftAt) h = 'Saved ✓ ' + ago(EB.savedAt) + '<small>in the CRM' + (EB.savedName ? ' · ' + esc(EB.savedName) : '') + '</small>';
   else if (EB.draftAt) h = 'Saved ✓ ' + ago(EB.draftAt) + '<small>saving to the CRM…</small>';
   else { h = 'Autosave on<small>every few seconds while you work</small>'; cls = 'wait'; }
+  /* SAVES: "in the CRM" is this computer — when the upload of the estimates failed, say so (it keeps trying) */
+  try { if (typeof W._gcUnsent === 'function' && W._gcUnsent().some(function(x){ return x && /estimates|__est__gc_ests_v2/.test(x.key); })) { h = 'Saved on this computer<small>not sent to the office yet — it keeps trying</small>'; cls = 'wait'; } } catch (e) {}
   if (el.innerHTML !== h) el.innerHTML = h;
   if (el.className !== cls) el.className = cls;   /* patch SWEEP2 */
 }
@@ -161461,8 +161822,9 @@ var SB = (function(){
   }
   function mergeList(x, y){ var by = {}, order = []; arr(x).concat(arr(y)).forEach(function(it){ if (!it || !it.id) return; if (!by[it.id]) { order.push(it.id); by[it.id] = it; } else by[it.id] = mergeRec(by[it.id], it); }); return order.map(function(id){ return by[id]; }); }
   function saveLocal(){ lsSet(LK, map); }
-  function cloudGet(){ var c = creds(); if (!c.k) return Promise.resolve(undefined); return W.fetch(c.u + '/rest/v1/gc_kv?key=eq.' + KEY + '&select=value,updated_at', { headers: { apikey: c.k, Authorization: 'Bearer ' + c.k }, cache: 'no-store' }).then(function(r){ if (!r.ok) throw new Error('read ' + r.status); return r.json(); }).then(function(rows){ var v = rows && rows[0] ? rows[0].value : undefined; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) {} } return { v: v, at: rows && rows[0] ? rows[0].updated_at : '' }; }); }
-  function cloudPut(list){ var c = creds(); if (!c.k) return Promise.resolve(); return W.fetch(c.u + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: { apikey: c.k, Authorization: 'Bearer ' + c.k, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ key: KEY, value: list, updated_at: nowIso() }) }).then(function(r){ if (!r.ok) throw new Error('write ' + r.status); }); }
+  function tmo(p, ms){ return Promise.race([p, new Promise(function(_r, rej){ later(function(){ rej(new Error('no answer')); }, ms); })]); }   /* SAVES: a request with no answer (no signal on site) left "pushing" on for good — no daily log went up again until a reload */
+  function cloudGet(){ var c = creds(); if (!c.k) return Promise.resolve(undefined); return tmo(W.fetch(c.u + '/rest/v1/gc_kv?key=eq.' + KEY + '&select=value,updated_at', { headers: { apikey: c.k, Authorization: 'Bearer ' + c.k }, cache: 'no-store' }), 30000).then(function(r){ if (!r.ok) throw new Error('read ' + r.status); return r.json(); }).then(function(rows){ var v = rows && rows[0] ? rows[0].value : undefined; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) {} } return { v: v, at: rows && rows[0] ? rows[0].updated_at : '' }; }); }
+  function cloudPut(list){ var c = creds(); if (!c.k) return Promise.resolve(); return tmo(W.fetch(c.u + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: { apikey: c.k, Authorization: 'Bearer ' + c.k, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ key: KEY, value: list, updated_at: nowIso() }) }), 45000).then(function(r){ if (!r.ok) throw new Error('write ' + r.status); }); }
   function mergeIn(list){ var ch = false; arr(list).forEach(function(r){ if (!r || !r.id) return; var m = mergeRec(map[r.id], r); if (JSON.stringify(m) !== JSON.stringify(map[r.id])) { map[r.id] = m; ch = true; } }); return ch; }
   function pull(){ lastPull = Date.now(); return cloudGet().then(function(x){ if (!x) return; stampSeen = s(x.at); var ch = mergeIn(x.v); var ahead = Object.keys(map).some(function(id){ var r = arr(x.v).filter(function(y){ return y && y.id === id; })[0]; return !r || JSON.stringify(mergeRec(r, map[id])) !== JSON.stringify(r); }); if (ch) { saveLocal(); draw(true); } if (ahead) { dirty = true; } err = ''; }).catch(function(e){ err = e.message; lastPull = 0; /* FIELDFIX5 */ }); }
   function push(){ if (pushing) return Promise.resolve(); pushing = true; return cloudGet().then(function(x){ if (x) mergeIn(x.v); var list = Object.keys(map).map(function(k){ return map[k]; }); return cloudPut(list); }).then(function(){ dirty = false; saveLocal(); err = ''; }).catch(function(e){ err = e.message; }).then(function(){ pushing = false; }); }
@@ -165761,7 +166123,7 @@ function openEquipment(pid){
       '<label>Swap on<br><input name="swap" type="date"></label><label>Pick up on<br><input name="pickup" type="date"></label><button class="gc-a8-btn pri">Add</button></form>' +
       '<div class="gc-a8-act"><button type="button" data-eqa="close">Close</button></div>';
   }
-  function upd(id, f){ return save(pid, function(q){ q.equipment = arr(q.equipment).map(function(x){ return x && x.id === id ? f(Object.assign({}, x)) : x; }); q.equipmentCost = r2(eqOf(q).reduce(function(t, x){ return t + eqCost(x); }, 0)); }).then(function(){ paint(); }); }
+  function upd(id, f){ return save(pid, function(q){ q.equipment = arr(q.equipment).map(function(x){ return x && x.id === id ? f(Object.assign({}, x, { updatedAt: nowIso() })) : x; });   /* SAVES: the entry's own stamp (pickup / swap / remove) so the newest wins when two devices meet */ q.equipmentCost = r2(eqOf(q).reduce(function(t, x){ return t + eqCost(x); }, 0)); }).then(function(){ paint(); }); }
   O.sh.addEventListener('submit', function(e){
     e.preventDefault(); var f = e.target, v = {}; Array.prototype.forEach.call(f.elements, function(el){ if (el.name) v[el.name] = s(el.value); });
     if (!v.vendor) return;
@@ -166657,7 +167019,12 @@ W._gcA8 = {
   payApp: { calc: calcApp, sov: sovOf, open: openPayApps, held: retainageHeld, billRetainage: billRetainage, sweep: retainageSweep },
   wt: { open: openWalkthrough, pull: pullWt, apply: applyWt, signed: wtSigned, set: function(l){ WT.resps = arr(l); WT.made = {}; applyWt(); } },
   crew: crew, askCrew: askCrew, safety: openSafety, safetyPdf: safetyPdf, topicToday: topicToday, equipment: openEquipment, eqCost: eqCost, eqSweep: equipmentSweep,
-  tv: tv, tvNumbers: tvNumbers, gc: { rows: gcRows, answers: answers, pull: pullResults, set: function(l){ BR.list = arr(l); BR.at = Date.now(); mountGc(); }, mark: markAnswer },
+  tv: tv, tvNumbers: (function(){ var M = null; return function(sc){   /* FIELDPERF */
+    if (sc) return tvNumbers(sc);
+    var c = crm(), k = [c.projects, c.leads, c.invoices, c.invs, W._gcLeadsState], n = Date.now(), d = today();
+    if (!(M && n - M.at < 15000 && n >= M.at && M.d === d && k.every(function(x, i){ return x === M.k[i]; }))) M = { k: k, at: n, d: d, v: tvNumbers() };
+    var v = Object.assign({}, M.v); try { v.appr = typeof W._gcApprovalCount === 'function' ? num(W._gcApprovalCount()) : 0; } catch (e) {} return v;
+  }; })(), gc: { rows: gcRows, answers: answers, pull: pullResults, set: function(l){ BR.list = arr(l); BR.at = Date.now(); mountGc(); }, mark: markAnswer },
   hire: { run: hireRun, profile: hireProfile }, superBtns: superBtns, safetyCard: safetyCard, paint: paintBars,
   state: function(){ return { log: LOG.slice(-40), results: BR.list.length, wtResps: WT.resps.length, topics: topics().length }; }
 };
@@ -192637,7 +193004,7 @@ function open(id){
 /* ── JOB-COST APPROVAL ROUTING: PM → office after 24 h (or no PM) (an admin only as the job's PM); before that the office may take them from "👷 PM approvals" (patch APOFFICE2) ── */
 function since(v){ var n = +v; if (n) return n; var t = Date.parse(v || ''); return isNaN(t) ? 0 : t; }
 function lsList(k){ return arr(lsGet(k)); }
-function subCostExp(id){ var e = arr(crm().expenses).filter(function(x){ return s(x.id) === s(id); })[0]; return !!(e && (e._fromSub === true || e.subInvId)); }
+function subCostExp(id){ var e = W.__gcById && Array.isArray(crm().expenses) ? W.__gcById(crm().expenses, id) : arr(crm().expenses).filter(function(x){ return s(x.id) === s(id); })[0];   /* FIELDPERF: by id */ return !!(e && (e._fromSub === true || e.subInvId)); }
 function routeGroups(g){
   var mn = low(myName()), off = isOffice(), now = Date.now();
   g.subinv = lsList('gc_sub_approvals').filter(function(a){
@@ -200097,13 +200464,19 @@ function mine(p){
   if (k === 'clean') { try { if (W._gcMitWS && W._gcMitWS.fieldJobs) return W._gcMitWS.fieldJobs('clean').some(function(x){ return x && x.id === p.id; }); } catch (e) {} return [p.cleanTech, p.finalCleanBy].some(function(x){ return low(x) === n; }); }
   return [p.pm, p.apm, p.assistantPm].some(function(x){ return low(x) === n; });
 }
+var _fpST = { L: null, t: '', m: null };   /* FIELDPERF */
 function schedToday(p){
-  var t = today();
-  return arr(window._gcSchedVisible(C().schedule)).filter(function(x){
-    if (!x || x.deleted || s(x.pid || x.projectId || x.jobId) !== s(p.id)) return false;
-    var d = s(x.date), a = s(x.start || x.startDate) || d, b = s(x.end || x.endDate) || a;
-    return d ? d === t : (a && a <= t && t <= b);
-  });
+  var t = today(), L = arr(window._gcSchedVisible(C().schedule));
+  if (_fpST.L !== L || _fpST.t !== t || !_fpST.m) {   /* FIELDPERF: job → today's rows, once per schedule list and day */
+    var m = {}; L.forEach(function(x){
+      if (!x || x.deleted) return;
+      var d = s(x.date), a = s(x.start || x.startDate) || d, b = s(x.end || x.endDate) || a;
+      if (!(d ? d === t : (a && a <= t && t <= b))) return;
+      var k = s(x.pid || x.projectId || x.jobId); (m[k] || (m[k] = [])).push(x);
+    });
+    _fpST = { L: L, t: t, m: m };
+  }
+  return (_fpST.m[s(p.id)] || []).slice();
 }
 function myJobs(){
   var k = rk(), all = arr(C().projects).filter(active);
@@ -200203,7 +200576,9 @@ function hookApprovals(){
 
 /* ── the sync pill: only this app's own saves (projects, the Site Book, office to-dos) ── */
 function syncState(){
-  var waiting = 0; try { waiting = W._gcSyncQ ? arr(W._gcSyncQ.waiting()).filter(function(x){ return x && /^(projects|gc_sitebook|gc_office_tasks)$/.test(x.key); }).length : 0; } catch (e) {}
+  var waiting = 0; try { waiting = W._gcSyncQ ? arr(W._gcSyncQ.waiting()).filter(function(x){ return x && /^(projects|gc_sitebook|gc_office_tasks|gc_job_messages|gc_timeclock_.*|leads|customers|schedule|invs|expenses|estimates|projectDocs)$/.test(x.key); }).length : 0; } catch (e) {}
+  try { if (typeof W._gcUnsent === 'function') waiting += arr(W._gcUnsent()).length; } catch (e) {}   /* SAVES: an upload that failed is not "All sent" */
+  try { var cs = W._gcClaims && W._gcClaims.status && W._gcClaims.status(); if (cs && cs.dirty && cs.dirty.claims) waiting++; } catch (e) {}   /* SAVES: a drying reading not sent yet */
   var sbDirty = false; try { sbDirty = !!(W._gcRP && W._gcRP.site && W._gcRP.site().state().dirty); } catch (e) {}
   if (!navigator.onLine) return { k: 'off', t: '📴 Saved on phone, will send' };
   if (waiting || sbDirty) return { k: 'wait', t: '⏳ Saved on phone, sending…' };
@@ -200765,6 +201140,7 @@ function runTile(k){
 }
 function render(force){
   var el = D.getElementById('_gcJobPick'); if (!el || !el.classList.contains('gc-fh')) return;
+  if (el.firstChild && W.__gcFpTouch && Date.now() - W.__gcFpTouch() < 800) { render.__fpF = render.__fpF || !!force; if (!render.__fpQ) render.__fpQ = later(function(){ var f = render.__fpF; render.__fpQ = 0; render.__fpF = false; if (f) lastSig = ''; render(f); }, 850); return; }   /* FIELDPERF: not under the finger */
   loadPlanDocs();
   var m = model(); progressLines(m);
   var sig = sigOf(m); if (!force && sig === lastSig) { paintSync(); paintTabs(m.n); return; }
@@ -200805,7 +201181,10 @@ function render(force){
     }
   });
   h += '</div>';
-  el.innerHTML = h; paintSync(); paintTabs(m.n);
+  var _fpTop = el.querySelector('.fh-wrap > .gc-ra-top'), _fpBot = el.querySelector('.fh-wrap > .gc-ra-bot'), _fpSt = el.scrollTop;   /* FIELDPERF */
+  el.innerHTML = h;
+  try { var _fpW = el.querySelector('.fh-wrap'); if (_fpW) { if (_fpTop) { _fpW.insertBefore(_fpTop, _fpW.firstChild); var _fpTl = _fpW.querySelector('.fh-tiles'); if (_fpTl && !_fpTl.children.length) _fpTl.style.display = 'none'; } if (_fpBot) _fpW.appendChild(_fpBot); } if (_fpSt) el.scrollTop = _fpSt; } catch (e) {}   /* FIELDPERF: no flash, no jump */
+  paintSync(); paintTabs(m.n);
 }
 var orig = null;
 function openHome(){
@@ -209191,7 +209570,7 @@ function allMine(){ var l = []; try { l = typeof W._gcFPJobs === 'function' ? ar
 function proj(pid){ var x = arr(C().projects).filter(function(p){ return p && s(p.id) === s(pid); })[0]; if (x) return x; return allMine().filter(function(p){ return p && s(p.id) === s(pid); })[0] || null; }
 /* the role's jobs: PM / crew — GrayCo Field's own list (today's, else their active ones); everyone else — every job they may open */
 function jobsOf(a){
-  var J = null; try { J = F() && F().jobs ? F().jobs() : null; } catch (e) {}
+  var J = null; if (a === 'pm' || a === 'crew') try { J = F() && F().jobs ? F().jobs() : null; } catch (e) {}   /* FIELDPERF: only where it is used */
   if ((a === 'mit' || a === 'env' || a === 'dual' || a === 'clean') && W._gcMitWS && W._gcMitWS.fieldJobs) { try { return { today: false, list: fpSort(arr(W._gcMitWS.fieldJobs(a))) }; } catch (e) { warn(e); } }   /* patch MITWS: that company's jobs */
   if ((a === 'pm' || a === 'crew') && J) return { today: !!J.today, list: fpSort(coJobs(arr(J.list))) };
   return { today: false, list: fpSort(coJobs(allMine().filter(activeJob))) };
@@ -209510,15 +209889,18 @@ function fieldTop(a){
   if (a === 'office') { var N = needs(); if (N.length) h += '<div class="fh-sec"><span>🧾 Invoices to match (' + N.length + ')</span><button type="button" data-ra-a="match">Open ›</button></div>'; }
   return h;
 }
-function fieldBottom(a){
+var _fpFB = { a: '', P: null, at: 0, h: '' };   /* FIELDPERF */
+function fieldBottom(a){ var P0 = C().projects, n0 = Date.now(); if (_fpFB.h && _fpFB.a === a && _fpFB.P === P0 && n0 - _fpFB.at < 3000 && n0 >= _fpFB.at) return _fpFB.h; var h0 = fieldBottom0(a); if (h0) _fpFB = { a: a, P: P0, at: n0, h: h0 }; return h0; }   /* FIELDPERF: the same jobs → the same rows for 3 s */
+function fieldBottom0(a){
   if (a !== 'admin') return '';
   /* Admin: every job, each with 👤 Customer portal · 🔧 Sub portal · 📸 Photos · 💬 Message (patch FIELDPORTAL's row) */
   var L = jobsOf('admin').list, CAP = 30;
+  if (!L.length && !arr(C().projects).length && LASTBOT) return LASTBOT;   /* FIELDPERF: the jobs are not there for a moment (a reload): keep the list shown */
   return '<div class="fh-sec"><span>All jobs (' + L.length + ')</span><button type="button" data-fa="alljobs">Find a job ›</button></div>' +
     (L.length ? L.slice(0, CAP).map(function(p){ var r = ''; try { r = FP() && FP().row ? FP().row(p) : ''; } catch (e) {} return '<div class="fh-job" data-job="' + esc(p.id) + '"><button type="button" class="fh-n" data-fa="open" data-pid="' + esc(p.id) + '">' + esc(p.name) + '</button><div class="fh-a">' + esc([p.address, p.client, p.status].filter(Boolean).join(' · ')) + '</div>' + r + '</div>'; }).join('') +
       (L.length > CAP ? '<button type="button" class="gc-ra-allbtn" data-fa="alljobs">All ' + L.length + ' jobs ›</button>' : '') : '<div class="fh-empty">No open jobs.</div>');
 }
-var homeObs = null, homeEl = null, injecting = false;
+var homeObs = null, homeEl = null, injecting = false, LASTBOT = '';   /* FIELDPERF */
 function fieldInject(){
   var el = D.querySelector('#_gcJobPick.gc-fh'); if (!el) return;
   if (el !== homeEl) { homeEl = el; try { if (homeObs) homeObs.disconnect(); homeObs = new MutationObserver(function(){ if (!injecting) fieldInject(); }); homeObs.observe(el, { childList: true }); } catch (e) {} }
@@ -209535,7 +209917,7 @@ function fieldInject(){
     if (!top) { top = D.createElement('div'); top.className = 'gc-ra-top'; wrap.insertBefore(top, wrap.firstChild); }
     if (top.__h !== th) { top.innerHTML = th; top.__h = th; }
     var tiles = wrap.querySelector('.fh-tiles'); if (tiles && !tiles.children.length && tiles.style.display !== 'none') tiles.style.display = 'none';
-    if (bh) { if (!bot) { bot = D.createElement('div'); bot.className = 'gc-ra-bot'; wrap.appendChild(bot); } if (bot.__h !== bh) { bot.innerHTML = bh; bot.__h = bh; } }
+    if (bh) { LASTBOT = bh; if (!bot) { bot = D.createElement('div'); bot.className = 'gc-ra-bot'; wrap.appendChild(bot); } if (bot.__h !== bh) { bot.innerHTML = bh; bot.__h = bh; } }   /* FIELDPERF: LASTBOT */
     else if (bot) bot.remove();
   } finally { injecting = false; }
 }
@@ -209905,182 +210287,36 @@ try { console.log('[GC] 📱🖥 Role apps: each role opens on its own home — 
 })();
 </script>
 <script id="gc-patch-devmode">
-/* __GC_PATCH_DEVMODE__ — DEVMODE: "Ask me Field or Desk when I sign in" (a per-person setting, default OFF).   (patch DEVMODE)
-   Owner 11/16: "Biffle has a computer that he will use both for … his can say do you want field or desk view when he signs
-   in. I kinda like to have the option for it to ask on sign in if I want field or desk on my profile cuz sometimes it may get
-   annoying it asking so much. From the phone and app always do field view app mode."
-   • The setting: gc_kv "gc_view_prefs" = { "<e-mail>": { ask: true|false, at, by } } — the same kind of per-person profile
-     setting as "E-mail me my plan" (gc_plan_prefs), so it follows the person to every computer. Each person turns it on / off
-     in My Profile; an admin sets it for anyone in 💎 → Team access (the "Ask Field / Desk" box on the person's row).
-     This browser keeps a copy (localStorage gc_dm_ask) so the question comes at once after a sign-in.
-   • On a computer (or a tablet), with the setting on: once per sign-in, right after it, a two-button choice — 🖥 Desk or
-     📱 GrayCo Field. The pick lasts for that sign-in (every tab and reload; localStorage gc_dm_choice, tied to the signed-in
-     e-mail); signing out clears it, the next sign-in asks again. "Stop asking me" turns the setting off (Desk).
-   • A phone never asks: GrayCo Field. The setting off: a computer opens the Desk every time (patch DEVMODE early / FIELDDESK).
-   API: window._gcDevMode = { prefs(), setAsk(email, on), ask(force), state() } */
+/* __GC_PATCH_DEVMODE__ — DEVMODE: a sign-in opens the device's own view.   (patch DEVMODE)
+   Owner 11/16: "Don't ask for field or desk when sign in — just do it by computer or iPhone/Android etc; iPad opens Field."
+   A Desk / Field switch lasts for that open only (patch FIELDDESK keeps it in memory). Signing out and in again in the
+   same page (no reload) used to keep that switch: the next sign-in now opens the device's own view — the Desk on a
+   computer, GrayCo Field on a phone or a tablet. (The first DEVMODE's "Ask me Field or Desk" setting is gone.)
+   API: window._gcDevMode = { state() } */
 (function(){
 'use strict';
 var W = window, D = document;
 if (W.__GC_PATCH_DEVMODE__) return; W.__GC_PATCH_DEVMODE__ = true;
 var DV = W._gcDevice; if (!DV) return;   /* the early script is off on this device */
-var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
 var RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
-function later(f, ms){ return ST.call(W, f, ms || 0); }
-var PREFS = 'gc_view_prefs', ASK = 'gc_dm_ask';
-function s(v){ return v == null ? '' : String(v).trim(); }
-function low(v){ return s(v).toLowerCase(); }
-function obj(v){ if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } } return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; }
-function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
-function lsGet(k){ try { return localStorage.getItem(k); } catch (e) { return null; } }
-function lsSet(k, v){ try { localStorage.setItem(k, v); } catch (e) {} }
 function warn(e){ try { console.warn('[GC DEVMODE]', e && e.message || e); } catch (x) {} }
-function me(){ try { return low(W.__GC_AUTH__ && W.__GC_AUTH__.email && W.__GC_AUTH__.email()) || DV.signedEmail(); } catch (e) { return DV.signedEmail(); } }
-function isAdmin(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()); } catch (e) { return false; } }
 function vas(){ try { return !!(W._gcVAS && W._gcVAS.active && W._gcVAS.active()); } catch (e) { return false; } }
 function gateUp(){ var g = D.getElementById('gc-auth-email'); return !!(g && g.getClientRects().length); }
-function toast(t, bad){
-  var el = D.getElementById('gc-dm-toast'); if (!el) { el = D.createElement('div'); el.id = 'gc-dm-toast'; el.setAttribute('data-gc-keep', '1'); el.setAttribute('data-gcnav-ignore', '1'); D.body.appendChild(el); }
-  el.textContent = t; el.style.background = bad ? '#991b1b' : '#111827'; el.style.display = 'block'; clearTimeout(el.__t); el.__t = later(function(){ el.style.display = 'none'; }, 3500);
-}
-
-/* ── the setting in the cloud (gc_kv gc_view_prefs), a copy on this browser ── */
-function sb(){ return { u: s(lsGet('grayco_sb_url')).replace(/\/$/, ''), k: s(lsGet('grayco_sb_key')) }; }
-function kvGet(key){
-  var c = sb(); if (!c.u || !c.k) return Promise.resolve(undefined);
-  return W.fetch(c.u + '/rest/v1/gc_kv?key=eq.' + encodeURIComponent(key) + '&select=value', { headers: { apikey: c.k }, cache: 'no-store' })
-    .then(function(r){ return r && r.ok ? r.json() : undefined; }).then(function(rows){ return Array.isArray(rows) ? (rows[0] ? rows[0].value : null) : undefined; }, function(){ return undefined; });
-}
-function kvPut(key, value){
-  var c = sb(); if (!c.u || !c.k) return Promise.resolve(false);
-  return W.fetch(c.u + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: { apikey: c.k, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
-    body: JSON.stringify({ key: key, value: value, updated_at: new Date().toISOString() }) }).then(function(r){ return !!(r && r.ok); }, function(){ return false; });
-}
-var CACHE = null;   /* the last cloud copy read on this open */
-function cacheAll(p){ var m = {}; Object.keys(p).forEach(function(e){ if (obj(p[e]).ask === true) m[low(e)] = true; }); lsSet(ASK, JSON.stringify(m)); }
-function prefs(){ return kvGet(PREFS).then(function(v){ if (v === undefined) return CACHE || null; CACHE = obj(v); cacheAll(CACHE); return CACHE; }); }
-function askOf(p, em){ return obj(p && p[low(em)]).ask === true; }
-function setAsk(email, on){
-  var em = low(email); if (!em) return Promise.resolve(false);
-  if (em !== me() && !isAdmin()) return Promise.resolve(false);   /* your own; an admin anyone's */
-  return kvGet(PREFS).then(function(v){
-    if (v === undefined) return false;
-    var p = obj(v); p[em] = Object.assign({}, obj(p[em]), { ask: !!on, at: new Date().toISOString(), by: me() });
-    return kvPut(PREFS, p).then(function(ok){ if (ok) { CACHE = p; cacheAll(p); } return ok; });
-  });
-}
-
-/* ── the question, once per sign-in, on a computer / tablet ── */
-var asked = false, cloudRead = false;
-function ready(){ return !!me() && !gateUp() && !!W._crm && !vas(); }
-function css(){
-  if (D.getElementById('gc-dm-css')) return;
-  var st = D.createElement('style'); st.id = 'gc-dm-css';
-  st.textContent = '#gc-dm-ask{position:fixed;inset:0;z-index:2147483600;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;font:15px/1.4 Inter,-apple-system,Segoe UI,Roboto,sans-serif}' +
-    '#gc-dm-ask .bx{background:#fff;color:#111827;border-radius:18px;max-width:520px;width:100%;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.35);box-sizing:border-box}' +
-    '#gc-dm-ask h2{margin:0 0 4px;font-size:20px;font-weight:800}#gc-dm-ask .mu{color:#6b7280;font-size:13px;margin:0 0 16px}' +
-    '#gc-dm-ask .ch{display:flex;gap:12px;flex-wrap:wrap}#gc-dm-ask .ch button{flex:1 1 200px;min-height:96px;border:2px solid #e5e7eb;border-radius:14px;background:#f9fafb;cursor:pointer;font:800 18px Inter,sans-serif;color:#111827;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:12px}' +
-    '#gc-dm-ask .ch button small{font:500 12.5px Inter,sans-serif;color:#6b7280}#gc-dm-ask .ch button:hover,#gc-dm-ask .ch button:focus{border-color:#2563eb;background:#eff6ff;outline:none}' +
-    '#gc-dm-ask .ft{margin-top:14px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px;color:#6b7280}#gc-dm-ask .ft button{border:none;background:none;color:#2563eb;font:700 12.5px Inter,sans-serif;cursor:pointer;padding:4px 0}' +
-    '#gc-dm-toast{display:none;position:fixed;left:50%;transform:translateX(-50%);bottom:40px;z-index:2147483601;color:#fff;border-radius:12px;padding:12px 16px;font:600 14px Inter,sans-serif;max-width:calc(100% - 32px);text-align:center}' +
-    '.gc-dm-card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:12px 14px;margin:10px 0;color:#111827;font:14px/1.4 Inter,sans-serif;max-width:720px}.gc-dm-card .mu{color:#6b7280;font-size:12.5px;margin:4px 0 0 24px}';
-  (D.head || D.documentElement).appendChild(st);
-}
-function pick(v, why){
-  var ov = D.getElementById('gc-dm-ask'); if (ov) ov.remove();
-  DV.setChoice(v);
-  try { if (typeof W._gcChooseView === 'function') W._gcChooseView(v); } catch (e) { warn(e); }
-  try { console.log('[GC] DEVMODE: ' + v + ' for this sign-in (' + (why || 'picked') + ')'); } catch (e) {}
-}
-function ask(force){
-  if (D.getElementById('gc-dm-ask')) return true;
-  if (!force && (asked || !DV.canAsk() || DV.choice())) return false;
-  asked = true; css();
-  var nm = ''; try { var u = (W._crm.users || []).filter(function(x){ return x && low(x.email) === me(); })[0]; nm = s(u && u.name).split(/\s+/)[0]; } catch (e) {}
-  var ov = D.createElement('div'); ov.id = 'gc-dm-ask'; ov.setAttribute('data-gc-keep', '1'); ov.setAttribute('data-gcnav-ignore', '1'); ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-modal', 'true'); ov.setAttribute('aria-label', 'Desk or GrayCo Field');
-  ov.innerHTML = '<div class="bx"><h2>' + (nm ? 'Hi ' + esc(nm) + ' — how' : 'How') + ' are you working right now?</h2><p class="mu">This lasts until you sign out. You can switch any time with the 🖥 Desk / 📱 Field button.</p>' +
-    '<div class="ch"><button type="button" data-dm="desk">🖥 Desk<small>The full CRM on this computer</small></button><button type="button" data-dm="field">📱 GrayCo Field<small>The field app — jobs, photos, clock-in</small></button></div>' +
-    '<div class="ft"><span>“Ask me Field or Desk” is on in your My Profile.</span><button type="button" data-dm="stop">Stop asking me</button></div></div>';
-  ov.addEventListener('click', function(ev){
-    var b = ev.target.closest && ev.target.closest('[data-dm]');
-    if (!b) { if (ev.target === ov) pick('desk', 'closed'); return; }
-    ev.preventDefault(); ev.stopPropagation();
-    var v = b.getAttribute('data-dm');
-    if (v === 'stop') { pick('desk', 'stop asking'); setAsk(me(), false).then(function(ok){ toast(ok ? 'OK — the Desk opens on a computer from now on. Turn it back on in My Profile.' : 'Could not save — check the connection.', !ok); }); return; }
-    pick(v);
-  });
-  D.addEventListener('keydown', function esc0(e){ if (e.key === 'Escape' && D.getElementById('gc-dm-ask')) { pick('desk', 'Esc'); D.removeEventListener('keydown', esc0, true); } }, true);
-  D.body.appendChild(ov);
-  try { var f = ov.querySelector('[data-dm="desk"]'); if (f) f.focus(); } catch (e) {}
-  return true;
-}
-var wasOut = false;
-function askTick(){
-  if (!DV.signedEmail()) { DV.clearChoice('signed out'); asked = false; cloudRead = false; wasOut = true; return; }   /* signed out: the next sign-in asks again */
-  if (wasOut && ready()) {
-    /* signed in again in this same page (no reload): a Desk / Field switch from before the sign-out does not carry over —
-       the device's own view (or this sign-in's pick, asked below) */
-    wasOut = false;
-    try { var v = DV.wantField() ? 'field' : 'desk', inF = D.documentElement.classList.contains('_fieldmode');
-      if (typeof W._gcChooseView === 'function' && (v === 'field') !== inF) W._gcChooseView(v);
-      if (W._gcView && W._gcView.set) W._gcView.set(DV.choice() || ''); } catch (e) { warn(e); }
-  }
-  if (DV.kind() === 'phone' || asked || DV.choice() || !ready()) return;
-  if (DV.askCached(me())) { ask(); return; }
-  if (!cloudRead) { cloudRead = true; prefs().then(function(p){ if (askOf(p, me()) && !DV.choice() && ready()) ask(); }); }
-}
+var wasOut = false, resets = 0;
 function tick(){
-  try { askTick(); } catch (e) { warn(e); }
-  try { if (DV.signedEmail()) { profileCard(); teamAccess(); } } catch (e) { warn(e); }
+  try {
+    if (!DV.signedEmail()) { wasOut = true; return; }
+    if (!wasOut || gateUp() || !W._crm || vas()) return;
+    wasOut = false;
+    var v = DV.fieldDevice() ? 'field' : 'desk', inF = D.documentElement.classList.contains('_fieldmode');
+    if (typeof W._gcChooseView === 'function' && (v === 'field') !== inF) W._gcChooseView(v);
+    if (W._gcView && W._gcView.set) W._gcView.set('');
+    resets++;
+  } catch (e) { warn(e); }
 }
-
-/* ── My Profile: the person's own switch ── */
-function profileH1(){ var hs = D.querySelectorAll('main h1'); for (var i = 0; i < hs.length; i++) if (s(hs[i].textContent) === 'My Profile') return hs[i]; return null; }
-function profileCard(){
-  var h1 = profileH1(), have = D.getElementById('gc-dm-prof');
-  if (!h1) { if (have) have.remove(); return; }
-  if (have && have.isConnected) return;
-  css(); var c = D.createElement('div'); c.id = 'gc-dm-prof'; c.className = 'gc-dm-card';
-  c.innerHTML = '<label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="checkbox" data-dm-ask="me" disabled> <b>🖥📱 Ask me Field or Desk when I sign in</b></label><div class="mu">On a computer the Desk opens every time. Turn this on if you use one computer both ways: after each sign-in it asks 🖥 Desk or 📱 GrayCo Field. Your phone always opens GrayCo Field.</div>';
-  h1.parentNode.insertBefore(c, h1.nextSibling);
-  var cb = c.querySelector('input'), em = me();
-  cb.checked = DV.askCached(em);
-  prefs().then(function(p){ if (p) cb.checked = askOf(p, em); cb.disabled = !em; });
-  cb.addEventListener('change', function(){
-    var on = cb.checked; cb.disabled = true;
-    setAsk(em, on).then(function(ok){ cb.disabled = false; if (!ok) { cb.checked = !on; toast('Could not save — check the connection.', true); return; }
-      if (on) DV.setChoice(D.documentElement.classList.contains('_fieldmode') ? 'field' : 'desk');   /* this sign-in: what is on screen now; the next sign-in asks */
-      toast(on ? 'The CRM will ask Field or Desk each time you sign in on a computer.' : 'Off — a computer opens the Desk every time.'); });
-  });
-}
-
-/* ── 💎 Team access: an admin sets it for anyone (a box on each person's row) ── */
-function teamAccess(){
-  if (!isAdmin()) return;
-  var picks = D.querySelectorAll('input[data-pick]'); if (!picks.length) return;
-  var tbl = picks[0].closest('table'); if (!tbl) return;
-  var need = []; Array.prototype.forEach.call(picks, function(pk){ var tr = pk.closest('tr'); if (tr && !tr.querySelector('[data-dm-ask]')) need.push([tr, low(pk.getAttribute('data-pick'))]); });
-  if (!need.length) return;
-  var head = tbl.querySelector('tr'); if (head && !head.querySelector('[data-dm-h]')) { var th = D.createElement('th'); th.setAttribute('data-dm-h', '1'); th.title = 'Ask Field or Desk at sign-in on a computer (phones always open GrayCo Field)'; th.textContent = 'Ask Field/Desk'; head.appendChild(th); }
-  var cached = {}; try { cached = JSON.parse(lsGet(ASK) || '{}') || {}; } catch (e) {}
-  need.forEach(function(x){
-    var td = D.createElement('td'); td.style.textAlign = 'center';
-    td.innerHTML = '<input type="checkbox" data-dm-ask="' + esc(x[1]) + '" aria-label="Ask ' + esc(x[1]) + ' Field or Desk at sign-in" title="Ask Field or Desk at sign-in (on a computer)"' + (cached[x[1]] ? ' checked' : '') + '>';
-    x[0].appendChild(td);
-  });
-  if (!tbl.__dmPrefs) { tbl.__dmPrefs = true; prefs().then(function(p){ if (!p) return; Array.prototype.forEach.call(tbl.querySelectorAll('input[data-dm-ask]'), function(cb){ cb.checked = askOf(p, cb.getAttribute('data-dm-ask')); }); }); }
-}
-D.addEventListener('change', function(ev){
-  var cb = ev.target; if (!cb || !cb.matches || !cb.matches('table input[data-dm-ask]')) return;
-  ev.stopPropagation();
-  var em = cb.getAttribute('data-dm-ask'), on = cb.checked; cb.disabled = true;
-  setAsk(em, on).then(function(ok){ cb.disabled = false; if (!ok) { cb.checked = !on; toast('Could not save — check the connection.', true); } else toast(em + ': ' + (on ? 'asked Field or Desk at each sign-in on a computer' : 'the Desk on a computer, no question')); });
-}, true);
-
-W.addEventListener('storage', function(e){ if (e && e.key === 'gc_auth_v1' && !DV.signedEmail()) { DV.clearChoice('signed out in another window'); asked = false; cloudRead = false; } });
-RI.call(W, function(){ if (!D.hidden) tick(); }, 800);
-later(tick, 300);
-W._gcDevMode = { prefs: prefs, setAsk: setAsk, ask: ask, state: function(){ return { device: DV.state(), asked: asked, cloudRead: cloudRead, prefs: CACHE }; } };
-try { console.log('[GC] 🖥📱 DEVMODE: ' + DV.kind() + ' (' + DV.why() + ') → ' + (DV.wantField() ? 'GrayCo Field' : 'the Desk') + ' — _gcDevice.state(), _gcDevMode.state()'); } catch (e) {}
+RI.call(W, function(){ if (!D.hidden) tick(); }, 1000);
+W._gcDevMode = { state: function(){ return { device: DV.state(), resets: resets }; } };
+try { console.log('[GC] 🖥📱 DEVMODE: ' + DV.kind() + ' (' + DV.why() + ') → ' + (DV.fieldDevice() ? 'GrayCo Field' : 'the Desk') + ' — _gcDevice.state()'); } catch (e) {}
 })();
 </script>
 <script id="gc-patch-tvfix-pre">
@@ -214590,7 +214826,7 @@ function all(force){
   CACHE.res = res; CACHE.sig = sg; CACHE.at = Date.now(); CACHE.projects = d.projects;
   return res;
 }
-function proj(pid){ return arr(C().projects).filter(function(p){ return s(p.id) === s(pid); })[0] || null; }
+function proj(pid){ if (W.__gcById && Array.isArray(C().projects)) return W.__gcById(C().projects, pid);   /* FIELDPERF: by id (was a copy + scan of every job per job) */ return arr(C().projects).filter(function(p){ return s(p.id) === s(pid); })[0] || null; }
 function checkOne(pid){ var p = proj(pid); if (!p) return null; all(); try { return J.check(p, CACHE.ix || J.index(dataNow(), {})); } catch (e) { warn(e); return null; } }
 function itemOf(key){ return J.BY_KEY[key] || J.LEAD_ITEMS.filter(function(x){ return x.key === key; })[0] || null; }
 
@@ -229294,6 +229530,7 @@ async function applyRaise(o){
   pr[field] = to;
   pr.rateHistory.push({ id: 'RH' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), field: field, from: from, to: to, change: amt, effective: s(o.effective).slice(0, 10), at: at, by: s(o.by), why: 'Certification raise — ' + s(o.cert), source: 'certplan', doneId: s(o.doneId) });
   pr.updatedAt = at;
+  pr.editedAt = at; delete pr._seed;   /* W4SAFE: a person's raise */
   await P.saveProfiles(profs);
   return { ok: true, field: field, from: from, to: to };
 }
