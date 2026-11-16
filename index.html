@@ -50885,10 +50885,9 @@ window._gcUnsent = function(){ return Object.keys(_gcsvBad).map(function(k){ ret
     var el = document.getElementById('gc-unsent-note');
     if(!keys.length){ if(el) el.remove(); return; }
     if(!el){ el = document.createElement('div'); el.id = 'gc-unsent-note'; el.setAttribute('role', 'status'); el.setAttribute('data-gcnav-ignore', '1');
-      el.style.cssText = 'position:fixed;left:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));z-index:2147482000;background:#92400e;color:#fff;padding:8px 12px;border-radius:10px;font:600 12.5px Arial,sans-serif;box-shadow:0 4px 14px rgba(0,0,0,.25);max-width:80vw;cursor:pointer';
-      el.onclick = function(){ try{ window._gcPushAll && window._gcPushAll(); window._gcSyncQ && window._gcSyncQ.flush && window._gcSyncQ.flush(); el.textContent = '\u23F3 Sending…'; }catch(e){} };
+      el.style.cssText = 'position:fixed;left:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));z-index:2147482000;background:#92400e;color:#fff;padding:8px 12px;border-radius:10px;font:600 12.5px Arial,sans-serif;box-shadow:0 4px 14px rgba(0,0,0,.25);max-width:80vw;pointer-events:none;opacity:.94';   /* never in the way of a button under it (it retries by itself) */
       (document.body || document.documentElement).appendChild(el); }
-    var t = '\u23F3 Saved on this ' + (/iPhone|iPad|Android/i.test(navigator.userAgent || '') || (window.innerWidth || 999) < 600 ? 'phone' : 'computer') + ' — not sent to the office yet (' + (navigator.onLine === false ? 'no connection' : 'the database did not answer') + '). It keeps trying — tap to try now.';
+    var t = '\u23F3 Saved on this ' + (/iPhone|iPad|Android/i.test(navigator.userAgent || '') || (window.innerWidth || 999) < 600 ? 'phone' : 'computer') + ' — not sent to the office yet (' + (navigator.onLine === false ? 'no connection' : 'the database did not answer') + '). It keeps trying by itself.';
     if(el.textContent !== t) el.textContent = t;
   }catch(e){}
 }, 5000);
@@ -61999,7 +61998,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
       try{ if(window._gcSyncQ && window._gcSyncQ.add) window._gcSyncQ.add(MSG_KEY, JSON.stringify(getMsgs())); }catch(e){}
       try{ var _t=document.getElementById('_jmNotSent')||document.createElement('div'); _t.id='_jmNotSent'; _t.setAttribute('role','status');
         _t.textContent='\u23F3 Message saved on this device \u2014 not sent yet (no connection to the office). It sends by itself.';
-        _t.style.cssText='position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:2147483000;background:#92400e;color:#fff;padding:10px 14px;border-radius:10px;font:600 13px Arial,sans-serif;max-width:92vw;box-shadow:0 4px 16px rgba(0,0,0,.3)';
+        _t.style.cssText='position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:2147483000;background:#92400e;color:#fff;padding:10px 14px;border-radius:10px;font:600 13px Arial,sans-serif;max-width:92vw;box-shadow:0 4px 16px rgba(0,0,0,.3);pointer-events:none';
         document.body.appendChild(_t); setTimeout(function(){ try{ _t.remove(); }catch(e){} }, 9000); }catch(e){}
     };
     try{
