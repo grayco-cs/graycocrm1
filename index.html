@@ -211091,7 +211091,7 @@ function jobKind(p, k0){
   var co = ''; try { co = W._gcCo ? s(W._gcCo.ofJob(p)) : s(p.companyId); } catch (e) {}
   if (co === 'mitigation') return 'mit';
   if (co === 'environmental') return 'env';
-  var txt = [p.type, p.jobType, p.service, p.category, p.name, p.scope].concat(arr(p.tags)).map(s).join(' ');
+  var txt = [p.type, p.jobType, p.service, p.services, p.category].concat(arr(p.tags)).map(function(v){ return s(Array.isArray(v) ? v.join(' ') : v); }).join(' ');   /* the job's type / services / tags — not its name ("Water heater swap" is not a water loss) */
   if (ENV_WORDS.test(txt) || arr(p.envTypes).length) return 'env';
   if (k0 === 'ins') return 'ins';
   if (MIT_WORDS.test(txt)) return 'mit';
