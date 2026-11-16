@@ -236522,13 +236522,14 @@ function call(body){
 }
 /* which device: phone / tablet / computer (the audit) */
 function device(){
+  try { var dk = W._gcDevice && W._gcDevice.kind ? s(W._gcDevice.kind()) : ''; if (/^(phone|tablet)$/.test(dk)) return dk; if (dk) return 'computer'; } catch (e) {}   /* DEVMODE's own answer first */
   var ua = s(navigator.userAgent), touch = (navigator.maxTouchPoints || 0) > 1;
   if (/iPad|Tablet/i.test(ua) || (/Macintosh/.test(ua) && touch) || (/Android/i.test(ua) && !/Mobile/i.test(ua))) return 'tablet';
   if (/iPhone|iPod|Android.+Mobile|Mobile Safari|Windows Phone/i.test(ua)) return 'phone';
   try { if (W._gcField && W._gcField.phone && W._gcField.phone()) return 'phone'; } catch (e) {}
   return 'computer';
 }
-W._gcDevice = device;
+W._gcAwayDevice = device;   /* (window._gcDevice is DEVMODE's) */
 
 /* ── the server state ── */
 var STATE = null, stAt = 0, stBusy = null;
