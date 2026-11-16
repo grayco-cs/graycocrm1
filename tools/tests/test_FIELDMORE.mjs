@@ -42,7 +42,7 @@ const readMore = c => c.ev(() => {
     tileH: Math.min(...[...pk.querySelectorAll('.gc-fm-g button')].map(b => b.getBoundingClientRect().height)),
     office: kids.slice(iOff + 1).map(b => b.getAttribute('data-ra-a') || b.getAttribute('data-m') || (b.hasAttribute('data-gc-view') ? 'desk' : b.className)),
     labels: [...pk.querySelectorAll('.gc-fm-g [data-ra-a] .l')].map(x => x.textContent),
-    bar: [...document.querySelectorAll('#gc-fh-tabs [data-t]')].map(b => b.getAttribute('data-t')) };
+    bar: [...document.querySelectorAll('#gc-fh-tabs [data-t]')].map(b => b.getAttribute('data-t')), less: pk.querySelectorAll('[data-pmf-a^="m-"]').length };
 });
 /* tap one button; evidence it opened something; then put the Field home back */
 async function tryTap(c, sel, home){
@@ -81,8 +81,11 @@ async function account(email, who){
   ok(!!(await openMore(c)), `${who}: ☰ More opens (At the job · Office)`);
   const m = await readMore(c);
   console.log(`    ${who} More (no job): AT THE JOB ${m.tiles.join(', ')} | OFFICE ${m.office.join(', ')}`);
-  ok(m.tiles.slice(0, 4).join() === 'camera,receipt,sched,log', `${who}: At the job starts 📷 Camera · 🧾 Snap a receipt · 📅 Schedule · 📒 Daily log`, m.tiles);
-  ok(m.tiles.includes('msgs') && m.tiles.includes('todo') && m.tiles.includes('search'), `${who}: At the job has 💬 Messages · ☑ To-dos · 🔍 Search`, m.tiles);
+  /* patch PMFIELD (owner 11/16): for the PM / admin, ☰ More opened from Home holds only the less-than-daily things ("Less often");
+     the daily At the job tiles are on 🏠 Home now — on a job page (below) More keeps At the job for that job */
+  const pmf = !m.tiles.length && m.less > 0;
+  ok(pmf || m.tiles.slice(0, 4).join() === 'camera,receipt,sched,log', `${who}: At the job starts 📷 Camera · 🧾 Snap a receipt · 📅 Schedule · 📒 Daily log (PMFIELD: those are on Home; More = Less often)`, m);
+  ok(pmf || (m.tiles.includes('msgs') && m.tiles.includes('todo') && m.tiles.includes('search')), `${who}: At the job has 💬 Messages · ☑ To-dos · 🔍 Search (PMFIELD: on Home / the job page)`, m.tiles);
   ok(!m.tiles.concat(m.office).some(k => ['photos', 'appr', 'home', 'jobs'].includes(k)), `${who}: nothing the bottom bar has (Photos, Approvals, Home, Jobs)`, m);
   ok(m.tileH >= 70, `${who}: the At the job buttons are big tiles (≥ 70 px)`, m.tileH);
   const offOrder = m.office.filter(k => ['tools', 'settings', 'desk'].includes(k));

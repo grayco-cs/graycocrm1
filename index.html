@@ -165450,24 +165450,37 @@ function wrapHire(){
    ════════════════════════════════════════════════════════════════════════════ */
 function invs(){ var c = crm(); var a = arr(c.invoices); return a.length ? a : arr(c.invs); }
 function paidOf(iv){ var got = num(iv.paidAmt || iv.amountPaid || iv.received); arr(iv.payments).forEach(function(p){ got += num(p && (p.amt || p.amount)); }); if (!got && (iv.paid === true || /^paid$/i.test(s(iv.status)) || s(iv.paidDate))) got = num(iv.amt || iv.amount || iv.total); return got; }
-function tvNumbers(sc){
+/* patch PMFIELD (owner 11/16: "CLOSE RATE 0% with 54 new leads and 13 jobs going"): a lead that became a job is a WIN (converted / a job
+   made from it / stage Won or Sold — the lead list keeps them as "converted", never "Won"), and a lead the clean-up closed as old / stale /
+   duplicate / spam / test is not a LOSS (those are archive marks, made all at once — they were counted as 90 days of lost bids).
+   The close rate is residential / insurance work only — commercial / government bid leads are left out (owner 11/16).
+   tvNumbers(sc, true) also returns .lists — the records behind each number (the Field home's This week tiles open them). */
+function tvWon(l){ return bidSt(l) === 'Won' || l.converted === true || /^converted$/i.test(s(l.status)) || /^(won|sold)\b/i.test(s(l.stage)) || !!s(l.convertedAt) || !!s(l.jobId || l.convertedTo); }
+function tvBidWork(l){ try { if (typeof W._gcIsBidLead === 'function' && W._gcIsBidLead(l)) return true; } catch (e) {} return /commerc|gov|public bid|municipal/i.test(s(l.type || l.leadKind || l.category || l.jobType)); }   /* owner 11/16: "I don't care about close rate for commercial bid work" */
+function tvLost(l){ return !tvWon(l) && bidSt(l) === 'Lost' && !/stale|\bold\b|duplicate|dupe|spam|junk|\btest\b|merged/i.test(s(l.lostReason || l.lostWhy)); }
+function tvNumbers(sc, withLists){
   var now = Date.now(), wk = now - 7 * 864e5, q = now - 90 * 864e5, mo = today().slice(0, 7), all = !sc || sc.adm, MP = {};
+  var LS = withLists ? { newWeek: [], won: [], lost: [], jobs: [], collected: [], ar: [], bids: [] } : null;
   if (!all) projects().forEach(function(p){ if (p && p.id && tvMineJob(p, sc)) MP[p.id] = 1; });
   var L = leads().filter(function(l){ return l && l.id && !l.deleted && !(window._gcLsaPend && window._gcLsaPend(l)) && (all || tvMineLead(l, sc)); });   /* patch LSA2 */
-  var newWeek = L.filter(function(l){ var t = Date.parse(l.createdAt || l.receivedAt || l.created || (s(l.date) ? s(l.date) + 'T12:00:00' : '')); return isFinite(t) && t >= wk; }).length;
+  var NW = L.filter(function(l){ var t = Date.parse(l.createdAt || l.receivedAt || l.created || (s(l.date) ? s(l.date) + 'T12:00:00' : '')); return isFinite(t) && t >= wk; }), newWeek = NW.length;
   var won = 0, lost = 0;
-  L.forEach(function(l){ var st = bidSt(l), at = Date.parse(l.wonAt || l.lostAt || l.updatedAt || ''); if (isFinite(at) && at < q) return; if (st === 'Won') won++; else if (st === 'Lost') lost++; });
-  var jobs = projects().filter(function(p){ return activeJob(p) && !/bid|estimat|lead|pending/i.test(s(p.status)) && (all || MP[p.id]); }).length;
+  L.forEach(function(l){ if (tvBidWork(l)) return; var w = tvWon(l), at = Date.parse((w ? l.wonAt || l.convertedAt : l.lostAt) || l.updatedAt || ''); if (isFinite(at) && at < q) return;   /* the close rate: residential / insurance leads only */ if (w) { won++; if (LS) LS.won.push(l); } else if (tvLost(l)) { lost++; if (LS) LS.lost.push(l); } });   /* patch PMFIELD */
+  var JB = projects().filter(function(p){ return activeJob(p) && !/bid|estimat|lead|pending/i.test(s(p.status)) && (all || MP[p.id]); }), jobs = JB.length;
   var collected = 0, ar = 0, ar60 = 0;
   invs().forEach(function(iv){
     if (!iv || iv.deleted || iv.type === 'sub' || iv.sub || /void|draft|cancel/i.test(s(iv.status)) || !(all || MP[iv.pid])) return;
-    arr(iv.payments).forEach(function(p){ if (s(p && (p.date || p.paidDate)).slice(0, 7) === mo) collected += num(p.amt || p.amount); });
-    if (!arr(iv.payments).length && s(iv.paidDate).slice(0, 7) === mo) collected += paidOf(iv);
-    var bal = num(iv.amt || iv.amount || iv.total) - paidOf(iv); if (bal > 0.01) { ar += bal; var idt = Date.parse(s(iv.date || iv.sentDate || iv.issueDate || iv.created).slice(0, 10) + 'T12:00:00'); if (isFinite(idt) && now - idt > 60 * 864e5) ar60 += bal; }
+    var got = 0;
+    arr(iv.payments).forEach(function(p){ if (s(p && (p.date || p.paidDate)).slice(0, 7) === mo) got += num(p.amt || p.amount); });
+    if (!arr(iv.payments).length && s(iv.paidDate).slice(0, 7) === mo) got += paidOf(iv);
+    collected += got; if (LS && got) LS.collected.push({ iv: iv, amt: got });
+    var bal = num(iv.amt || iv.amount || iv.total) - paidOf(iv); if (bal > 0.01) { ar += bal; if (LS) LS.ar.push({ iv: iv, amt: bal }); var idt = Date.parse(s(iv.date || iv.sentDate || iv.issueDate || iv.created).slice(0, 10) + 'T12:00:00'); if (isFinite(idt) && now - idt > 60 * 864e5) ar60 += bal; }
   });
-  var bidsWeek = L.filter(function(l){ var d = s(l.bidDue).slice(0, 10); return d && d >= today() && d <= addDays(today(), 7) && bidSt(l) !== 'Won' && bidSt(l) !== 'Lost'; }).length;
+  var BW = L.filter(function(l){ var d = s(l.bidDue).slice(0, 10); return d && d >= today() && d <= addDays(today(), 7) && bidSt(l) !== 'Won' && bidSt(l) !== 'Lost' && !tvWon(l); }), bidsWeek = BW.length;
   var appr = 0; try { appr = all && typeof W._gcApprovalCount === 'function' ? num(W._gcApprovalCount()) : 0; } catch (e) {}
-  return { newWeek: newWeek, close: won + lost ? Math.round(won / (won + lost) * 100) : null, won: won, lost: lost, jobs: jobs, collected: collected, ar: ar, ar60: ar60, bidsWeek: bidsWeek, appr: appr };
+  var out = { newWeek: newWeek, close: won + lost ? Math.round(won / (won + lost) * 100) : null, won: won, lost: lost, jobs: jobs, collected: collected, ar: ar, ar60: ar60, bidsWeek: bidsWeek, appr: appr };
+  if (LS) { LS.newWeek = NW; LS.jobs = JB; LS.bids = BW; out.lists = LS; }
+  return out;
 }
 /* patch TVSCORE: the 📺 brand screen — navy gradient, logo, big count-up numbers, goal ring, clock, ticker. Animation is CSS + one
    rAF burst per change, a 1-s clock and a 6.5-s ticker timer — all stopped (and verified) by close(). */
@@ -200770,6 +200783,7 @@ W._gcFieldTools = Tools;
 W._gcField = { open: openHome, render: function(){ lastSig = ''; render(true); }, eligible: eligible, phone: phoneDevice, jobs: function(){ return myJobs(); }, approvals: apprItems, sync: syncState, signed: function(pid){ var p = proj(pid); return p ? signed(p) : null; }, day: dayState,
   mat: { pending: matPending, open: matSheet }, addJob: addJobSheet, measure: measure, measurements: measurementsOf, roleTools: function(k){ return toolIds(k || rk()); }, layout: function(k){ return LAYOUT[k || rk()] || LAYOUT.pm; }, roleEditor: roleEditor, estimate: estPicker, settings: settingsSheet, more: moreSheet, createJob: fieldCreate, ccCreate: ccCreate,
   state: function(){ return { eligible: eligible(), phone: phoneDevice(), desk: deskPref(), role: role(), rk: rk(), me: myName(), home: !!D.querySelector('#_gcJobPick.gc-fh'), tools: TOOLS.length, sig: lastSig.length }; } };
+W._gcField.saveProject = saveProject;   /* patch PMFIELD: the Field's own job save (SYNCQ path) for ✏️ Update job */
 try { console.log('[GC] 📱 GrayCo Field — the phone app (patch FIELD) — _gcField.state(), _gcFieldTools.register()'); } catch (e) {}
 })();
 </script>
@@ -205875,7 +205889,8 @@ function sheet(title, html){
 function custSheet(p){
   var url = previewUrl(p), P = W._gcPortal || {}, h = '';
   if (typeof P.post === 'function') h += '<button type="button" class="gcfp-big pri" data-c="post">📣 Post to the customer portal<small>An update or photos — the same as the Portal card\'s 📣 Post</small></button>';
-  if (url) h += '<a class="gcfp-big" data-c="see" href="' + esc(url) + '" target="_blank" rel="noopener">👁 See what the customer sees<small>Preview — not counted as the customer opening it; nothing is sent</small></a>';
+  if (url) h += '<a class="gcfp-big" data-c="see" href="' + esc(url) + '" target="_blank" rel="noopener">👁 See what the customer sees<small>Preview — not counted as the customer opening it; nothing is sent</small></a>' +
+    '<button type="button" class="gcfp-big" data-c="copy">📋 Copy portal link<small>The customer\'s own link, to paste in a text or e-mail — nothing is sent from here</small></button>';   /* patch PMFIELD */
   else if (p.portalOff) h += '<div class="gcfp-note">The portal link is turned off for this job (desk: the job\'s 🏠 Portal card → ⋯).</div>';
   else if (typeof P.link === 'function') h += '<button type="button" class="gcfp-big" data-c="make">🏠 Make portal<small>Makes the customer\'s link — nothing is sent to the customer</small></button>';
   else h += '<div class="gcfp-note">No portal yet.</div>';
@@ -205883,6 +205898,8 @@ function custSheet(p){
   sh.body.addEventListener('click', function(e){
     var b = e.target.closest('[data-c]'); if (!b) return; var c = b.getAttribute('data-c');
     if (c === 'see') { sh.o.remove(); return; }   /* the link opens the tab itself (iPhone: in the tap) */
+    if (c === 'copy') { var lk = linkOf(proj(p.id) || p); var done = function(ok){ toast(ok ? '📋 Portal link copied — paste it in a text or e-mail.' : '📋 ' + lk); };   /* patch PMFIELD */
+      try { if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(lk).then(function(){ done(true); }, function(){ done(false); }); return; } } catch (e2) {} done(false); return; }
     if (c === 'post') { sh.o.remove(); P.post(p.id); return; }
     if (c === 'make') {
       b.disabled = true; b.firstChild.textContent = 'Making the portal link…';
@@ -206132,7 +206149,7 @@ function run(a, p){
 function row(p){
   if (!p) return '';
   var pm = perms(p), b = function(k, ic, l, cls){ return '<button type="button" class="fp-b ' + (cls || '') + '" data-fa="fp-' + k + '" data-pid="' + esc(p.id) + '"><span class="e">' + ic + '</span>' + esc(l) + '</button>'; };
-  var h = (pm.cust ? b('cust', '👤', linkOf(p) ? 'Customer portal' : (p.portalOff ? 'Portal off' : (W._gcPortal && W._gcPortal.link ? 'Make portal' : 'No portal yet')), 'c') : '') +
+  var h = (pm.cust ? b('cust', '👤', p.portalOff ? 'Portal off' : 'Customer portal', 'c') : '') +   /* patch PMFIELD (owner 11/16): one clear label — the sheet makes the link when the job has none */
     (pm.sub ? b('sub', '🔧', 'Sub portal', 's') : '') + (pm.photos ? b('photos', '📸', 'Photos', 'p') : '') + (pm.msg ? b('msg', '💬', 'Message', 'm') : '');
   return h ? '<div class="fp-row">' + h + '</div>' : '';
 }
@@ -208785,9 +208802,10 @@ function fmJob(){
   return p;
 }
 function fmIds(a, kind, p){
-  var bar = arr(BAR[a]).map(function(b){ return FM_BAR[b[0]] || b[0]; });
+  var bar = barOf(a, 'field').map(function(b){ return FM_BAR[b[0]] || b[0]; });   /* patch PMFIELD */
   var set = arr(FM_JOB[a]).slice(), off = arr(FM_OFF[a]).slice();
   var add = function(id){ if (set.indexOf(id) < 0) set.push(id); };
+  try { if (a === 'admin' && W._gcPmField && W._gcPmField.alsoPm()) { FM_JOB.pm.forEach(add); FM_OFF.pm.forEach(function(id){ if (off.indexOf(id) < 0) off.push(id); }); } } catch (e) {}   /* patch PMFIELD (owner 11/16): an admin who runs jobs gets every PM button too */
   if (kind === 'ins' && p && FM_CLAIM.indexOf(rk()) >= 0) { add('claims'); add('drying'); off = off.filter(function(x){ return x !== 'claims'; }); }
   if (p && a === 'admin') { add('cust'); add('sub'); }
   var first = FM_FIRST[kind] || FM_FIRST[''];
@@ -208804,7 +208822,7 @@ function fieldMore(a, o, pk){
   Array.prototype.slice.call(pk.children).forEach(function(b){ var k = b.getAttribute('data-m') || (b.hasAttribute('data-gc-view') ? 'desk' : ''); if (k && !own[k]) own[k] = b; else other.push(b); pk.removeChild(b); });
   var keep = [];
   if (own.search && L.job.indexOf('search') < 0) keep.push(own.search);
-  if (own.photos && arr(BAR[a]).every(function(b){ return b[0] !== 'photos'; }) && L.job.indexOf('photos') < 0) keep.push(own.photos);
+  if (own.photos && barOf(a, 'field').every(function(b){ return b[0] !== 'photos'; }) && L.job.indexOf('photos') < 0) keep.push(own.photos);
   ['tools', 'settings', 'desk'].forEach(function(k){ if (own[k]) keep.push(own[k]); });
   pk.innerHTML = '<div class="gc-fm-k" data-fm="job">At the job' + (p ? ' <span>· ' + esc(s(p.name).slice(0, 40)) + (kind ? ' · ' + FM_KIND[kind] : '') + '</span>' : '') + '</div>' +
     '<div class="gc-fm-g">' + L.job.map(tile).join('') + '</div><div class="gc-fm-k" data-fm="office">Office</div>' + L.off.map(row).join('');
@@ -208940,6 +208958,7 @@ function moreSheet(){
     try { F().more(); } catch (e) { warn(e); }
     var o = D.querySelectorAll('.gc-fh-sheet'); o = o[o.length - 1]; var pk = o && o.querySelector('.pick');
     if (pk) { try { css(); fieldMore(a, o, pk); } catch (e) { warn(e); } }   /* patch FIELDMORE: At the job · Office */
+    if (pk) { try { if (typeof W._gcRaMoreHook === 'function') W._gcRaMoreHook(a, o, pk); } catch (e) { warn(e); } }   /* patch PMFIELD: ☰ More = the less-than-daily things */
     return o;
   }
   var nav = navItems();
@@ -208956,6 +208975,7 @@ function fieldLayout(on){
   var k = rk(), L = f.layout(k); if (!L) return false;
   if (!LAY0[k] && on) LAY0[k] = { tiles: arr(L.tiles).slice(), sections: arr(L.sections).slice() };
   var want = on ? { tiles: [], sections: FIELD_SECTIONS[k] || LAY0[k].sections } : LAY0[k];
+  try { if (on && want && typeof W._gcRaSections === 'function') { var sx = W._gcRaSections(k, want.sections.slice()); if (Array.isArray(sx)) want = { tiles: want.tiles, sections: sx }; } } catch (e) { warn(e); }   /* patch PMFIELD */
   if (!want) return false;
   if (arr(L.tiles).join() === want.tiles.join() && arr(L.sections).join() === want.sections.join()) return false;
   L.tiles = want.tiles.slice(); L.sections = want.sections.slice();
@@ -208970,6 +208990,7 @@ function fieldTop(a){
     var T = a === 'ins' ? tpaDates() : [];   /* patch MITWS: the TPA dates stay the insurance PM's */ if (T.length) h += '<div class="fh-sec"><span>📆 TPA dates (' + T.length + ')</span><button type="button" data-ra-a="tpa">All ›</button></div>' + tpaHtml(T.slice(0, 3));
   }
   if (a === 'office') { var N = needs(); if (N.length) h += '<div class="fh-sec"><span>🧾 Invoices to match (' + N.length + ')</span><button type="button" data-ra-a="match">Open ›</button></div>'; }
+  try { if (typeof W._gcRaFieldTop === 'function') { var hx = W._gcRaFieldTop(a, h, RAKIT); if (typeof hx === 'string') h = hx; } } catch (e) { warn(e); }   /* patch PMFIELD: the PM / admin home dashboard */
   return h;
 }
 function fieldBottom(a){
@@ -209002,8 +209023,10 @@ function fieldInject(){
   } finally { injecting = false; }
 }
 var BAR0 = null;
+/* patch PMFIELD: the bar's buttons, after window._gcRaBarHook (patch PMFIELD: ✅ Approvals bottom-left, 🏠 Home in the middle) */
+function barOf(a, where){ var L = arr(BAR[a]); try { if (typeof W._gcRaBarHook === 'function') { var r = W._gcRaBarHook(a, L.slice(), where); if (Array.isArray(r) && r.length) L = r; } } catch (e) { warn(e); } return L; }
 function barHtml(a, where){
-  return arr(BAR[a]).map(function(b){
+  return barOf(a, where).map(function(b){
     var k = b[0], cls = '';
     if (k === 'appr') return '<button type="button" data-t="appr" class="ap" aria-label="Approvals"><span class="c">✅<span class="gc-fh-badge" id="' + (where === 'desk' ? 'gc-ra-badge' : 'gc-fh-badge') + '" style="display:none"></span></span>' + esc(b[2]) + '</button>';
     if (k === 'home') cls = ' class="on"';
@@ -209015,7 +209038,7 @@ function fieldBar(a){
   if (BAR0 === null && !t.hasAttribute('data-ra-bar')) BAR0 = t.innerHTML;
   var want = a && mode(a) === 'field' ? a : '';
   if ((t.getAttribute('data-ra-bar') || '') === want) return;
-  if (want) { t.innerHTML = barHtml(want, 'field'); t.setAttribute('data-ra-bar', want); t.setAttribute('data-n', String(arr(BAR[want]).length)); }
+  if (want) { t.innerHTML = barHtml(want, 'field'); t.setAttribute('data-ra-bar', want); t.setAttribute('data-n', String(barOf(want, 'field').length)); }
   else if (BAR0 !== null) { t.innerHTML = BAR0; t.removeAttribute('data-ra-bar'); t.removeAttribute('data-n'); }
   paintBadge();
 }
@@ -209059,8 +209082,8 @@ function jobBtns(p, list){
   return list.filter(function(k){ return B[k] && B[k][2]; }).map(function(k){ return '<button type="button" class="gc-ra-sm' + (k === 'cust' ? ' c' : k === 'sub' ? ' s' : '') + '" data-ra-a="j-' + k + '" data-pid="' + esc(p.id) + '">' + B[k][0] + ' ' + B[k][1] + '</button>'; }).join('');
 }
 function jobRow(p, btns){ return '<div class="gc-ra-item job"><div class="t"><button type="button" class="gc-ra-jn" data-ra-a="openjob" data-pid="' + esc(p.id) + '">' + esc(p.name || p.address) + '</button><small>' + esc([p.address, p.client, p.status].filter(Boolean).join(' · ')) + '</small></div><div class="b">' + btns + '</div></div>'; }
-function apprHtml(){
-  var L = apprItems();
+function apprHtml(L0){
+  var L = Array.isArray(L0) ? L0 : apprItems();   /* patch PMFIELD: a given list (Needs you) */
   return L.length ? L.slice(0, 8).map(function(x){ var t = x.tier === 0 ? '<span class="gc-ra-chip r">ASAP</span>' : x.tier === 1 ? '<span class="gc-ra-chip o">Soon</span>' : '<span class="gc-ra-chip w">Routine</span>';
     var inPlace = false; try { inPlace = !!(W._gcCanApproveInPlace && W._gcCanApproveInPlace(x.id)); } catch (e) {}
     return '<div class="gc-ra-item"><div class="t">' + t + ' <b>' + esc(x.title) + '</b>' + (x.sub ? '<small>' + esc(x.sub) + '</small>' : '') + '</div><div class="b">' + (inPlace ? '<button type="button" class="gc-ra-sm ok" data-ra-a="apprnow" data-id="' + esc(x.id) + '">✅ Approve</button>' : '') + '<button type="button" class="gc-ra-sm" data-ra-a="approne" data-id="' + esc(x.id) + '">Review</button></div></div>'; }).join('')
@@ -209356,6 +209379,9 @@ function css(){
   (D.head || D.documentElement).appendChild(st);
 }
 
+/* patch PMFIELD: what the home dashboard (window._gcRaFieldTop) borrows — the same buttons, counts and lists, no copies */
+var RAKIT = { A: A, actions: actions, shown: shown, label: label, count: count, tileHtml: tileHtml, apprHtml: apprHtml, apprItems: apprItems, apprCount: apprCount, jobsOf: jobsOf, myLeads: myLeads,
+  moneyNums: moneyNums, bidsDue: bidsDue, dueOf: dueOf, realAdmin: realAdmin, viewOk: viewOk, run: run, sheet: sheet, pickJob: pickJob, leadRow: leadRow, jobRow: jobRow, rk: rk, mode: mode, go: go, openJob: openJob };
 W._gcRA = {
   state: function(){ return { app: app(), mode: mode(), rk: rk(), ready: ready(), phone: phone(), desk: DESK.shown, deskApp: DESK.app, vas: vas(), off: off(),
     fieldBar: (D.getElementById('gc-fh-tabs') || { getAttribute: function(){ return null; } }).getAttribute('data-ra-bar') }; },
@@ -209365,6 +209391,715 @@ W._gcRA = {
 };
 try { console.log('[GC] 📱🖥 Role apps: each role opens on its own home — Field on a phone, Desk on a computer (patch ROLEAPPS) — _gcRA.state()'); } catch (e) {}
 })();
+</script>
+<script id="gc-patch-pmfield">
+/* __GC_PATCH_PMFIELD__ — GrayCo Field for PMs and the admin: 🏠 Home in the middle, ✅ Approvals bottom-left, the home dashboard,
+   📅 My Schedule (one place to see and add to my schedule), ✏️ Update job in one screen.   (patch PMFIELD)
+   Owner 11/16: "Make sure CRM field view app is easy for pms so they can schedule their own appointments, schedule work, update jobs
+   easy … I also want the home button to be that middle button so it's our home dashboard and has all the buttons we need, and
+   approvals to be where home button is in bottom left." · "My schedule should be where I add to schedule, see schedule etc. Don't have
+   call in sick button for PMs/admin — they are commission … They can log in schedule if they want, the PMs."
+   • The bottom bar (patch ROLEAPPS' bar, through window._gcRaBarHook — the bar config itself is not changed): a 5-button bar puts 🏠 Home
+     in the middle (big), ✅ Approvals (its red count) bottom-left and 📅 My Schedule where 📸 Photos was (owner 11/16 — Photos is a big
+     Home tile and on every job): Admin / PM / Environmental ✅ Approvals · Jobs · 🏠 Home · 📅 My Schedule · ☰ More; Office ✅ Approvals ·
+     Messages · 🏠 Home · 📅 My Schedule · ☰ More (its 4-button bar had no middle); roles with no Approvals keep their buttons in order
+     around the middle Home (Estimator 📥 Leads · 🧮 Estimates · 🏠 · 📅 · More; Insurance 🛡 Claims · 📥 Leads · 🏠 …; Mitigation
+     💧 Drying · Jobs · 🏠 …); the crew / cleaning 4-button bars (no middle) are unchanged. The ⏸ Data-entry mode pill is off the phone.
+   • ☰ More (PM / admin, from Home) holds the less-than-daily things: 📘 Training · 📄 Paperwork library · 👥 Team access · 📊 Reports ·
+     ⏸ Data-entry mode · ❓ Help, the Office rows, Search, Other tools, Settings, Desk view (window._gcRaMoreHook); on a job page it keeps
+     patch FIELDMORE's "At the job" for that job.
+   • 🏠 Home for the PM-type roles — Construction PM, Insurance PM, Mitigation, Environmental (and dual) — and the admin (patch ROLEAPPS'
+     quick-button strip, through window._gcRaFieldTop): 📅 TODAY (my appointments + the crews / subs on my jobs today; the admin: the
+     company's day) — tap = open it · the quick actions (📅 New appointment · 🛠 Schedule work · ✏️ Update job · 📸 Photo to a job ·
+     ⏱ Clock in/out (optional for commission people) · ➕ New lead · 📅 My Schedule) · the role's own tiles (PM: 📒 Daily log · 🧾 Receipt ·
+     ☑ To-dos · 📤 Send estimate; admin: Leads · View as… · All systems · Add job …, + the PM tiles when he runs jobs; Mitigation:
+     💧 Drying logs due · 🌀 Equipment out · 🚨 Emergency leads + its tools; Environmental: 🚨 Emergency leads · 📄 Paperwork due (the
+     lead / asbestos / mold papers of patch DOCAUTO2's Start-job gate) + its tools; insurance jobs: 📆 TPA dates · 🛡 Claim info) ·
+     ⚡ NEEDS YOU (✅ approvals — payroll / commission items only for the admin and the Office Manager — ⏰ bids due (PMs), overdue lead
+     follow-ups, ⏸ Data-entry mode while it is ON (admin), the role's emergency / TPA lists) · 📊 THIS WEEK (admin: the company numbers,
+     the close rate for residential + insurance only; PM: his own) — every number opens the list behind it. The Field's own approvals /
+     scorecard sections move into it (window._gcRaSections); My jobs, estimates, commission stay below. 💬 Messages and ☐ Punch list
+     are on each job page (owner 11/16), 💵 Money in ☰ More. Only the person's company's jobs, leads and schedule (patch COLEAK2's
+     _gcCo: one company picked, or a person limited to one).
+   • 📅 My Schedule: Day / Week, ‹ ›; my appointments, the work on my jobs (the admin: Mine / Everyone); tap one → edit, move (date / time),
+     cancel. ＋ New appointment (estimate / 📍 site visit / inspection / walkthrough / meeting with a job, a lead or a new customer — patch CC2 makes the
+     new customer's lead) and ＋ Schedule work (a job, a sub or crew, the task, from – to: one item a work day Mon–Sat, like the desk's
+     Schedule form; a sub on a job they are not on yet goes to patch SUBCONFIRM's 👷 Confirm list by itself). Saved where every
+     schedule save goes (the company schedule: this phone's disk, the cloud, the screen's list) — the Desk's 📅 Schedule shows it.
+     A PM schedules only on his own jobs and leads, and changes only his own items and the items on his jobs (the admin / office: all);
+     a sub's own portal days are the sub's (read only here). 🏖 Time off · 📅 Availability (patch TIMEOFF) for everyone; 🤒 Call in sick
+     and ⏰ Running late only for hourly people and salaried people without commission (the person's pay TYPE on the people list —
+     window._gcPayKind(u): owner / admin role / any commission pay type / a PM or estimator (unless hourly, or noCommission) → commission). ⏱ Log my day is there
+     for commission people too — never required, no reminder.
+   • ✏️ Update job: pick the job (one of mine; skipped when I have one) → one screen: stage, % done (the Field's own progress save,
+     which drafts the next bill), a note (the job's 💬 Job updates), a photo (GrayCo Photos), the next step + its date (and, ticked,
+     onto my schedule) → Save (the Field's own job save).
+   Kill switch: localStorage gc_pmfield_off = "1" (this device: the bar and the home as before).
+   API: window._gcPmField = { state(), open(opts), appt(preset), work(preset), update(pid), item(id), payKind(u), hourly(), mine(day) } */
+(function(W){
+'use strict';
+if (W.__GC_PATCH_PMFIELD__) return; W.__GC_PATCH_PMFIELD__ = true;
+var D = W.document, ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout, RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+function later(f, ms){ return ST.call(W, f, ms || 0); }
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v.filter(function(x){ return x != null; }) : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function num(v){ var n = parseFloat(s(v).replace(/[$,\s]/g, '')); return isFinite(n) ? n : 0; }
+function usd(n){ return (n < 0 ? '-$' : '$') + Math.abs(Math.round(num(n))).toLocaleString('en-US'); }
+function warn(e){ try { console.warn('[GC PMFIELD]', e && e.message || e); } catch (x) {} }
+function lsGet(k){ try { return localStorage.getItem(k); } catch (e) { return null; } }
+function off(){ return lsGet('gc_pmfield_off') === '1'; }
+function pad(n){ return (n < 10 ? '0' : '') + n; }
+function ymdOf(d){ return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+function today(){ return ymdOf(new Date()); }
+function ymd(v){ var t = s(v); return /^\d{4}-\d{2}-\d{2}/.test(t) ? t.slice(0, 10) : ''; }
+function addDays(y, n){ var d = new Date((ymd(y) || today()) + 'T12:00:00'); d.setDate(d.getDate() + n); return ymdOf(d); }
+function dow(y){ return new Date(ymd(y) + 'T12:00:00').getDay(); }
+function dayLbl(y){ var t = today(); var d = new Date(y + 'T12:00:00'), w = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }); return y === t ? 'Today · ' + w : y === addDays(t, 1) ? 'Tomorrow · ' + w : w; }
+function nowIso(){ return new Date().toISOString(); }
+function uid(p){ return p + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+function C(){ return W._crm || {}; }
+function F(){ return W._gcField || null; }
+function RA(){ return W._gcRA || null; }
+function K(){ return KIT; }
+var KIT = null;   /* patch ROLEAPPS' kit (the same buttons, counts, sheets), handed over on its first home paint */
+function toast(t){
+  var el = D.getElementById('gc-ra-toast'); if (!el) { el = D.createElement('div'); el.id = 'gc-ra-toast'; el.setAttribute('data-gc-keep', '1'); el.setAttribute('data-gcnav-ignore', '1'); D.body.appendChild(el); }
+  el.textContent = t; el.style.display = 'block'; clearTimeout(el.__t); el.__t = later(function(){ el.style.display = 'none'; }, 3800);
+}
+
+/* ── who ── */
+function vasOn(){ try { return !!(W._gcVAS && W._gcVAS.active()); } catch (e) { return false; } }
+function myName(){ try { var n = s(F() && F().state().me); if (n) return n; } catch (e) {} try { var m = W._gcMeNow; if (m && m.name) return s(m.name); } catch (e) {} return s(lsGet('grayco_user')); }
+function users(){ return arr(C().users); }
+function meUser(){
+  try { if (vasOn()) { var p = W._gcVAS.person(); if (p) return p; } } catch (e) {}
+  var em = ''; try { em = low(W.__GC_AUTH__ && W.__GC_AUTH__.email && W.__GC_AUTH__.email()); } catch (e) {}
+  var n = low(myName());
+  return users().filter(function(u){ return u && ((em && low(u.email) === em) || (n && low(u.name) === n)); })[0] || null;
+}
+function realAdmin(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()); } catch (e) { return false; } }
+function seesAll(){ try { if (typeof W._gcProjSeesAll === 'function') return !!W._gcProjSeesAll(); } catch (e) {} return realAdmin(); }
+/* payroll / commission content: the admin (not while viewing as someone) and the Office Manager */
+function payrollOk(){ if (realAdmin() && !vasOn()) return true; if (vasOn()) return false; try { return typeof W._gcIsOfficeFull === 'function' && !!W._gcIsOfficeFull(); } catch (e) { return false; } }
+/* the pay TYPE only (never an amount): hourly · salary (no commission) · commission (owner, admin role, any commission plan, a PM with none set) */
+function payKind(u){
+  if (!u) return 'commission';
+  var pt = low(u.payType || u.payKind || u.workerType), r = low(u.role);
+  if (pt === 'owner' || r === 'admin') return 'commission';
+  if (/commission|overhead_split|revenue_pct|split|custom|draw/.test(pt)) return 'commission';
+  if (pt === 'hourly') return 'hourly';
+  if (/project manager|\bapm\b|assistant p|estimat|sales/.test(r) && u.noCommission !== true && u.commission !== false) return 'commission';   /* a PM is a commission person (owner 11/16) */
+  if (pt === 'salary') return 'salary';
+  return 'hourly';
+}
+function hourly(){ var k = payKind(meUser()); return k === 'hourly' || k === 'salary'; }
+
+/* ── jobs, leads, the schedule ── */
+function proj(pid){ return arr(C().projects).filter(function(p){ return s(p.id) === s(pid); })[0] || null; }
+function openJob(p){ return !!p && !p.deleted && !p.history && !p.recordOnly && !/(complete|closed|lost|cancel|archiv|history|dead|void)/i.test(s(p.status)); }
+function appNow(){ try { return RA() ? s(RA().app()) : ''; } catch (e) { return ''; } }
+/* one company picked / a person limited to one company (patch COLEAK2's _gcCo): only that company's jobs, leads and schedule */
+function coJob(p){ try { return !W._gcCo || !W._gcCo.passJob || !!W._gcCo.passJob(p); } catch (e) { return true; } }
+function coItem(x){ try { return !W._gcCo || !W._gcCo.pass || !!W._gcCo.pass(x); } catch (e) { return true; } }
+function coLead(l){ try { return !W._gcCo || !W._gcCo.pass || !!W._gcCo.pass(l, 'lead'); } catch (e) { return true; } }
+function myJobs(){
+  var l = []; try { l = typeof W._gcFPJobs === 'function' ? arr(W._gcFPJobs()) : arr(C().projects); } catch (e) { l = []; }
+  var a = appNow();
+  if (/^(mit|env|dual)$/.test(a) && W._gcMitWS && W._gcMitWS.fieldJobs) { try { var seen = {}; l.forEach(function(p){ seen[s(p.id)] = 1; }); arr(W._gcMitWS.fieldJobs(a)).forEach(function(p){ if (p && !seen[s(p.id)]) { seen[s(p.id)] = 1; l.push(p); } }); } catch (e) {} }   /* patch MITWS: the mitigation / environmental tech's own jobs */
+  l = l.filter(function(p){ return openJob(p) && coJob(p); }); try { if (W._gcFPSort) l = arr(W._gcFPSort(l)); } catch (e) {}
+  return l;
+}
+function myJobIds(){ var m = {}; myJobs().forEach(function(p){ m[s(p.id)] = 1; }); return m; }
+function myLeads(){ try { if (K() && K().myLeads) return arr(K().myLeads()).filter(coLead); } catch (e) {} return []; }
+function leadById(id){ var l = []; try { l = typeof W._gcLaLeads === 'function' ? arr(W._gcLaLeads()) : []; } catch (e) {} if (!l.length) l = arr(C().leads); return l.filter(function(x){ return s(x.id) === s(id); })[0] || null; }
+function tomb(id){ try { return !!(W._gcIsTombstoned && W._gcIsTombstoned('schedule', id)); } catch (e) { return false; } }
+function sched(){ var L = arr(C().schedule); try { if (W._gcSchedVisible) L = arr(W._gcSchedVisible(L)); } catch (e) {} return L.filter(function(x){ return x && x.id != null && x.deleted !== true && !tomb(x.id) && coItem(x); }); }
+function namesIn(v){ var out = []; (Array.isArray(v) ? v : [v]).forEach(function(x){ var n = s(typeof x === 'object' && x ? (x.name || x.email) : x); if (n) n.split(/\s*[,;&\/]\s*|\s+and\s+/i).forEach(function(y){ y = low(y); if (y) out.push(y); }); }); return out; }
+function people(x){ return namesIn([x.assignee, x.who, x.schedFor, x.people, x.crew && typeof x.crew !== 'number' ? x.crew : '']); }
+function byMe(x){ var n = low(myName()); return !!n && [x.by, x.createdBy, x.ownerName].some(function(v){ return low(v) === n; }); }
+function forMe(x){ var n = low(myName()), u = meUser(), e = low(u && u.email); return (!!n && people(x).indexOf(n) >= 0) || (!!e && people(x).indexOf(e) >= 0); }
+function dayOf(x){ return ymd(x.date || x.start || x.startDate); }
+function isPersonal(x){ return x.scope === 'personal' || x.personal === true; }
+/* mine: assigned to me, made by me, or (a PM) on one of my jobs; the admin's "Everyone": the company schedule */
+function mineItem(x, ids, all){
+  if (isPersonal(x) && !byMe(x) && !forMe(x)) return false;
+  if (all) return true;
+  return forMe(x) || byMe(x) || (!!s(x.pid) && !!ids[s(x.pid)] && !seesAll());
+}
+function itemsOn(a, b, all){ var ids = myJobIds(); return sched().filter(function(x){ var d = dayOf(x); return d && d >= a && d <= b && mineItem(x, ids, all); }).sort(function(x, y){ var dx = dayOf(x), dy = dayOf(y); return dx < dy ? -1 : dx > dy ? 1 : tmin(x.time) - tmin(y.time); }); }
+function tmin(t){ var m = /^(\d{1,2})(?::(\d{2}))?\s*([ap])?/i.exec(s(t)); if (!m) return 9999; var h = +m[1], mi = +(m[2] || 0); if (m[3]) { var pm = /p/i.test(m[3]); if (h === 12) h = pm ? 12 : 0; else if (pm) h += 12; } return h * 60 + mi; }
+function t12(t){ var v = s(t); var m = /^(\d{2}):(\d{2})$/.exec(v); if (!m) return v; var h = +m[1], ap = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12; return h + ':' + m[2] + ' ' + ap; }
+function t24(t){ var n = tmin(t); return n >= 9999 ? '' : pad(Math.floor(n / 60)) + ':' + pad(n % 60); }
+function kindIc(x){ if (x.subEntryId || x.fromSubPortal) return '🔨'; if (/appoint|inspect|meeting|walk|estimate/i.test(s(x.type) + ' ' + s(x.apptKind))) return '📅'; if (x.pmfKind === 'next') return '➡️'; return '🛠'; }
+function whoOf(x){ return s(x.vendor || x.sub || x.subName || x.assignee || x.who); }
+/* who may change it: the admin / office — everything; a PM — his own items and the items on his jobs; nobody — a sub's own portal days */
+function canEdit(x){
+  if (!x) return false;
+  if (x.subEntryId || x.fromSubPortal) return false;
+  if (seesAll()) return true;
+  if (byMe(x) || forMe(x)) return !s(x.pid) || !!myJobIds()[s(x.pid)] || !proj(x.pid);
+  return !!s(x.pid) && !!myJobIds()[s(x.pid)];
+}
+
+/* ── the one save: this phone's disk + the cloud at once, the screen through its own setter (like every schedule filing) ── */
+function baseList(){
+  return Promise.resolve(W.idbGet ? W.idbGet('schedule') : null).catch(function(){ return null; }).then(function(disk){
+    var scr = arr(C().schedule); if (!Array.isArray(disk)) return scr.slice();
+    var at = {}; disk.forEach(function(x, i){ if (x && x.id != null) at[x.id] = i; });
+    var out = disk.slice();
+    scr.forEach(function(x){ if (!x || x.id == null) return; var i = at[x.id]; if (i == null) { if (!tomb(x.id)) out.push(x); } else if (s(x.updatedAt) > s(out[i] && out[i].updatedAt)) out[i] = x; });
+    return out;
+  });
+}
+function applyTo(list, up, rm){
+  var by = {}, seen = {}; up.forEach(function(x){ by[x.id] = x; });
+  var out = arr(list).filter(function(x){ return !(x && rm[x.id]); }).map(function(x){ if (x && by[x.id]) { seen[x.id] = 1; return Object.assign({}, x, by[x.id]); } return x; });
+  up.forEach(function(x){ if (!seen[x.id]) out.push(x); });
+  return out;
+}
+var SAVES = 0;
+function saveSched(up, rmIds){
+  up = arr(up); var rm = {}; arr(rmIds).forEach(function(id){ rm[id] = 1; try { if (W._gcTombstone) W._gcTombstone('schedule', id); } catch (e) {} });
+  try { W.__GC_MANUAL_SAVE__ = true; } catch (e) {}
+  return baseList().then(function(base){
+    var out = applyTo(base, up, rm);
+    try { if (typeof W._setSchedule === 'function') W._setSchedule(function(prev){ return Array.isArray(prev) ? applyTo(prev, up, rm) : out; }); } catch (e) { warn(e); }
+    return Promise.resolve(W.idbSet ? W.idbSet('schedule', out) : null).catch(function(){}).then(function(){
+      try { var f = W._supaUpsertNow || W._supaUpsert; if (f) f('schedule', out); } catch (e) { warn(e); }
+      SAVES++; HC.k = null; later(repaint, 300);
+      return true;
+    });
+  }).catch(function(e){ warn(e); toast('Not saved — try again.'); return false; });
+}
+function repaint(){ try { if (D.querySelector('#_gcJobPick.gc-fh') && F() && F().render) F().render(); } catch (e) {} try { if (RA() && RA().sync) RA().sync(); } catch (e) {} }
+function coOf(p){ try { if (W._gcCo) return p ? s(W._gcCo.ofJob(p)) : (W._gcCo.filter() !== 'all' ? s(W._gcCo.filter()) : ''); } catch (e) {} return ''; }
+
+/* ═════ the bottom bar: 🏠 Home in the middle, ✅ Approvals bottom-left, 📅 My Schedule ═════ */
+var SCHED_BTN = ['ra-sched', '📅', 'My Schedule'];
+W._gcRaBarHook = function(a, L, where){
+  if (off() || where !== 'field') return L;
+  var keys = function(){ return L.map(function(b){ return b[0]; }); };
+  if (keys().indexOf('home') < 0) return L;
+  var pi = keys().indexOf('photos');
+  if (pi >= 0 && L.length >= 5) L.splice(pi, 1, SCHED_BTN.slice());   /* owner 11/16: 📅 My Schedule takes Photos' place (📸 Photos is a big Home tile and on every job) */
+  else if (a === 'office' && keys().indexOf('ra-sched') < 0) { var mi = keys().indexOf('more'); L.splice(mi < 0 ? L.length : mi, 0, SCHED_BTN.slice()); }
+  if (L.length < 5) return L;   /* the crew / cleaning bars: no middle — Home stays on the left */
+  var home = L.splice(keys().indexOf('home'), 1)[0];
+  var ai = keys().indexOf('appr'); if (ai > 0) L.unshift(L.splice(ai, 1)[0]);
+  L.splice(2, 0, [home[0], '🏠', 'Home']);
+  return L;
+};
+
+/* ═════ 🏠 Home: the dashboard (PM · admin) ═════ */
+var DASH = { pm: 1, admin: 1, ins: 1, mit: 1, env: 1, dual: 1 };   /* the PM / admin home — Construction, Insurance, Mitigation, Environmental (owner 11/16: "they must") */
+function dashApp(a){ return !off() && !!DASH[a]; }
+W._gcRaSections = function(k, L){
+  if (off()) return L;
+  var a = k === 'roof' ? 'pm' : k === 'super' ? 'crew' : k; if (!dashApp(a)) return L;
+  return L.filter(function(x){ return x !== 'approvals' && x !== 'scorecard'; });   /* both live in Needs you / This week now */
+};
+var PAYRE = /\b(payroll|commissions?|pay ?stubs?|wages?|941|w-?2|w-?4|bonus(es)?|pm pay|salary|salaries|pay ?period|pay ?run)\b/i;
+function payItem(x){ return PAYRE.test(s(x.g) + ' ' + s(x.kind) + ' ' + s(x.title) + ' ' + s(x.sub)) || /^(payroll|pmpay|commission|f941|form941)/i.test(s(x.g) || s(x.id).replace(/:.*$/, '')); }
+function pausedOn(){ try { var st = W._gcPause && W._gcPause.state ? W._gcPause.state() : null; return !!(st && st.paused); } catch (e) { return false; } }
+function apprList(){ var L = []; try { L = arr(K().apprItems()); } catch (e) {} return payrollOk() ? L : L.filter(function(x){ return !payItem(x); }); }
+function fuDate(l){ return ymd(l.nextAt || l.followUpDate || l.followUpAt || l.followUp || l.nextStepDate || l.nextActionDate); }
+function followUps(){ var t = today(); return myLeads().filter(function(l){ var d = fuDate(l); return d && d < t; }).sort(function(a, b){ return fuDate(a) < fuDate(b) ? -1 : 1; }); }
+function weekEnd(){ return addDays(today(), 6); }
+var HC = { k: null, h: '' };
+function same(a, b){ if (!a || !b || a.length !== b.length) return false; for (var i = 0; i < a.length; i++) if (a[i] !== b[i]) return false; return true; }
+function nums(a){
+  if (a === 'admin') { try { return W._gcA8 && W._gcA8.tvNumbers ? W._gcA8.tvNumbers(undefined, true) : null; } catch (e) { warn(e); return null; } }
+  var t = today(), wk = itemsOn(t, weekEnd(), false);
+  return { appts: wk.filter(function(x){ return kindIc(x) === '📅'; }).length, work: wk.filter(function(x){ return kindIc(x) !== '📅'; }).length, jobs: myJobs().length, leads: myLeads().length, fu: followUps().length };
+}
+function coF(){ try { return W._gcCo && W._gcCo.filter ? s(W._gcCo.filter()) : ''; } catch (e) { return ''; } }
+/* the role's own tiles under the quick actions (the role app's home buttons that are not already a quick action) + the job-type tiles:
+   mitigation 💧 Drying logs due · 🌀 Equipment out (their counts) · insurance 📆 TPA dates · environmental 📄 Paperwork due */
+var DUPE = { photos: 1, msgs: 1, clock: 1, appr: 1, sched: 1, punch: 1, visit: 1, money: 1 };
+/* an admin who is the PM on a job gets the PM buttons too (owner 11/16) */
+function alsoPm(){ var n = low(myName()); if (!n) return false; return arr(C().projects).some(function(p){ return p && openJob(p) && [p.pm, p.apm, p.assistantPm].some(function(v){ return low(v) === n; }); }); }
+function kindOf(p){ try { return W._gcFieldMore && W._gcFieldMore.kind ? s(W._gcFieldMore.kind(p)) : ''; } catch (e) { return ''; } }
+function insJobs(){ return myJobs().some(function(p){ return kindOf(p) === 'ins'; }); }
+function mitJobsMine(){ return myJobs().some(function(p){ try { return W._gcCo && W._gcCo.ofJob(p) === 'mitigation'; } catch (e) { return false; } }); }
+function extrasOf(a, k){
+  var L = [];
+  if (a === 'admin') L = ['leads', 'viewas', 'systems', 'addjob', 'receipt', 'todo'].concat(alsoPm() ? ['log', 'sendest'] : []);   /* 💵 Money: ☰ More (owner 11/16) */
+  else if (a === 'pm') L = ['log', 'receipt', 'todo', 'sendest'];   /* ☐ Punch list: on each job page; 💬 Messages: on each job page */
+  else { try { L = arr(k.actions(a, 'home')).filter(function(id){ return !DUPE[id]; }); } catch (e) { L = []; }
+    if (a === 'mit' || a === 'dual') ['emerg', 'equip', 'drying'].forEach(function(id){ if (L.indexOf(id) < 0) L.unshift(id); });   /* 💧 Drying logs due · 🌀 Equipment out · 🚨 Emergency leads first */
+    if (a === 'env' && L.indexOf('emerg') < 0) L.unshift('emerg');
+    if (a === 'ins') ['claims', 'tpa'].forEach(function(id){ if (L.indexOf(id) < 0) L.push(id); });
+    if (a !== 'env') L.push('receipt'); L.push('todo'); }
+  if ((a === 'pm' || a === 'admin') && insJobs()) ['claims', 'tpa'].forEach(function(id){ if (L.indexOf(id) < 0) L.push(id); });   /* insurance jobs: 📆 TPA dates · 🛡 Claim info */
+  if (a === 'pm' || a === 'admin') ['equip', 'drying'].forEach(function(id){ if (mitJobsMine() && L.indexOf(id) < 0) L.push(id); });
+  var seen = {}; return L.filter(function(id){ if (seen[id]) return false; seen[id] = 1; return k.shown(id); });
+}
+/* environmental: the jobs whose hazard papers (lead / asbestos / mold) are not in the customer's hands yet — patch DOCAUTO2's Start-job gate */
+function papersDue(){ var G = W._gcHazGate; if (!G || !G.missing) return []; return myJobs().filter(function(p){ try { return (W._gcCo ? W._gcCo.ofJob(p) === 'environmental' : true) && arr(G.missing(p)).length > 0; } catch (e) { return false; } }); }
+var QUICK = [
+  ['appt', '📅', 'New appointment', 'Estimate · inspection · walkthrough'],
+  ['work', '🛠', 'Schedule work', 'A crew or sub on a job'],
+  ['update', '✏️', 'Update job', 'Stage · note · photo · next step'],
+  ['photo', '📸', 'Photo to a job', 'The camera — pick the job'],
+  ['clock', '⏱', 'Clock in/out', ''],
+  ['lead', '➕', 'New lead', 'Into Leads'],
+  ['sched', '📅', 'My Schedule', 'Day · week · time off']
+];
+function itemRow(x, showDay){
+  var p = proj(x.pid), who = whoOf(x), ed = canEdit(x);
+  return '<button type="button" class="gc-pmf-it" data-pmf-a="item" data-id="' + esc(x.id) + '"><span class="tm">' + esc(showDay ? dayLbl(dayOf(x)).replace(/^(Today|Tomorrow) · .*/, '$1') + (x.time ? ' ' + t12(x.time) : '') : (x.time ? t12(x.time) : 'All day')) + '</span>' +
+    '<span class="tx"><b>' + kindIc(x) + ' ' + esc(s(x.title) || 'Work') + '</b><small>' + esc([p ? s(p.name) : s(x.customer || x.address), who].filter(Boolean).join(' · ')) + '</small></span>' + (ed ? '<span class="go">›</span>' : '') + '</button>';
+}
+function dashHtml(a, h0){
+  var k = K(), t = today(), all = a === 'admin' && seesAll();
+  var qi = s(h0).indexOf('</div>'), rest = /^<div class="gc-ra-q"/.test(s(h0)) && qi > 0 ? s(h0).slice(qi + 6) : '';
+  var key = [a, t, C().schedule, C().projects, C().leads, C().users, k.apprCount(), vasOn(), myName(), SAVES, pausedOn(), rest, coF(), Math.floor(Date.now() / 30000)];
+  if (HC.k && same(HC.k, key)) return HC.h;
+  var T = itemsOn(t, t, all), h = '<div class="gc-pmf" data-pmf-app="' + a + '">';
+  /* 1. Today */
+  h += '<div class="fh-sec"><span>📅 Today' + (all ? ' on the schedule' : '') + ' (' + T.length + ')</span><button type="button" data-pmf-a="sched">My Schedule ›</button></div>';
+  h += T.length ? '<div class="gc-pmf-today">' + T.slice(0, 8).map(function(x){ return itemRow(x, false); }).join('') + (T.length > 8 ? '<button type="button" class="gc-pmf-more" data-pmf-a="sched">All ' + T.length + ' today ›</button>' : '') + '</div>'
+    : '<div class="fh-empty">Nothing on your schedule today. Tap <b>📅 New appointment</b> or <b>🛠 Schedule work</b>.</div>';
+  /* 2. the quick actions — big tiles */
+  var com = !hourly();
+  h += '<div class="gc-pmf-q">' + QUICK.map(function(q){
+    var l = q[2], sm = q[3];
+    if (q[0] === 'clock') { try { l = RA() && RA().label ? RA().label('clock') || l : l; } catch (e) {} sm = com ? 'Optional — only if you want to log it' : 'Start / end my day'; }
+    return '<button type="button" class="gc-pmf-t" data-pmf-a="' + q[0] + '"><span class="e">' + q[1] + '</span><span class="l">' + esc(l) + '</span>' + (sm ? '<small>' + esc(sm) + '</small>' : '') + '</button>';
+  }).join('') + '</div>';
+  var extra = extrasOf(a, k), papers = a === 'env' || a === 'dual' ? papersDue() : null;
+  if (extra.length || papers) h += '<div class="gc-ra-q gc-pmf-x" data-app="' + a + '" data-n="' + (extra.length + (papers ? 1 : 0)) + '">' + extra.map(function(id){ return k.tileHtml(id, 'gc-ra-qb'); }).join('') +
+    (papers ? '<button type="button" class="gc-ra-qb" data-pmf-a="papers"><span class="e">📄</span><span class="l">Paperwork due</span>' + (papers.length ? '<b class="gc-ra-n">' + papers.length + '</b>' : '') + '</button>' : '') + '</div>';
+  /* 3. Needs you */
+  var AP = apprList(), FU = followUps(), n = AP.length;
+  h += '<div class="fh-sec"><span>⚡ Needs you</span></div><div class="gc-pmf-need">' +
+    '<button type="button" class="gc-pmf-nd' + (n ? ' hot' : '') + '" data-ra-a="appr"><span class="e">✅</span><span class="tx"><b>' + (n ? n + ' approval' + (n === 1 ? '' : 's') + ' waiting on you' : 'Approvals — all caught up') + '</b><small>Tap to open ✅ Approvals</small></span><span class="go">›</span></button>' +
+    ((a === 'pm' || (a === 'admin' && alsoPm())) && k.shown('bids') ? (function(){ var bn = k.count('bids') || 0; return '<button type="button" class="gc-pmf-nd' + (bn ? ' hot' : '') + '" data-ra-a="bids"><span class="e">⏰</span><span class="tx"><b>' + (bn ? bn + ' bid' + (bn === 1 ? '' : 's') + ' due in 3 days' : 'Bids due') + '</b><small>My bids and their due dates</small></span><span class="go">›</span></button>'; })() : '') +
+    (pausedOn() && a === 'admin' ? '<button type="button" class="gc-pmf-nd hot" data-pmf-a="m-pause"><span class="e">⏸</span><span class="tx"><b>Data-entry mode is ON</b><small>Nothing goes to customers, subs or GCs — tap to see or turn off</small></span><span class="go">›</span></button>' : '') +
+    '<button type="button" class="gc-pmf-nd' + (FU.length ? ' hot' : '') + '" data-pmf-a="fu"><span class="e">📞</span><span class="tx"><b>' + (FU.length ? FU.length + ' overdue follow-up' + (FU.length === 1 ? '' : 's') : 'No overdue follow-ups') + '</b><small>Leads past their follow-up date</small></span><span class="go">›</span></button></div>';
+  if (n) h += '<div class="gc-pmf-ap">' + k.apprHtml(AP.slice(0, 4)) + (n > 4 ? '<button type="button" class="gc-pmf-more" data-ra-a="appr">All ' + n + ' approvals ›</button>' : '') + '</div>';
+  if (rest) h += '<div class="gc-pmf-role">' + rest + '</div>';   /* the role's own lists (🚨 Emergency leads, 📆 TPA dates, 🧾 Invoices to match) */
+  /* 4. This week */
+  var N = nums(a);
+  if (N) {
+    var cell = function(id, l, v){ return '<button type="button" class="gc-pmf-n" data-pmf-a="num" data-k="' + id + '"><span>' + esc(l) + '</span><b>' + esc(v) + '</b></button>'; };
+    h += '<div class="fh-sec"><span>📊 This week</span></div><div class="gc-pmf-nums">' + (a === 'admin'
+      ? cell('newWeek', 'New leads', N.newWeek) + cell('close', 'Close rate (res + ins)', N.close == null ? '—' : N.close + '%') + cell('jobs', 'Jobs going', N.jobs) +
+        cell('collected', 'Collected (month)', usd(N.collected || 0)) + cell('ar', 'Owed to us', usd(N.ar || 0)) + cell('bids', 'Bids due 7d', N.bidsWeek)
+      : cell('appts', 'My appointments', N.appts) + cell('work', 'Work on my jobs', N.work) + cell('jobs', 'My active jobs', N.jobs) +
+        cell('leads', 'My open leads', N.leads) + cell('fu', 'Follow-ups due', N.fu) + cell('sched', 'My week', '📅 ›')) + '</div>';
+  }
+  h += '</div>';
+  HC.k = key; HC.h = h;
+  return h;
+}
+W._gcRaFieldTop = function(a, h0, kit){
+  if (kit) KIT = kit;
+  if (!dashApp(a) || !KIT) return h0;
+  css(); flags();
+  try { return dashHtml(a, h0); } catch (e) { warn(e); return h0; }
+};
+
+/* ═════ sheets ═════ */
+function sheet(title, html, cls){
+  var o = K() ? K().sheet(title, html, 'gc-pmf-sheet' + (cls ? ' ' + cls : '')) : null;
+  if (!o) return null;
+  o.setAttribute('data-pmf-sheet', cls || 'x');
+  return o;
+}
+function closeSheets(){ Array.prototype.forEach.call(D.querySelectorAll('.gc-ra-sheet'), function(o){ o.remove(); }); }
+function leaveHome(){ try { var h = D.querySelector('#_gcJobPick.gc-fh'); if (h) h.remove(); } catch (e) {} }
+function openLead(id){ closeSheets(); leaveHome(); try { if (typeof W._gcOpenLead === 'function') { W._gcOpenLead(id); return; } } catch (e) { warn(e); } try { W._setView('leads'); } catch (e) {} }
+function leadLine(l, extra){ return '<div class="gc-ra-item"><div class="t"><b>' + esc(l.client || l.contactName || l.name || 'Lead') + '</b><small>' + esc([l.name !== l.client ? l.name : '', l.type || l.leadKind, l.address].filter(Boolean).join(' · ')) + '</small></div><div class="b">' + (extra || '') + '<button type="button" class="gc-ra-sm pri" data-pmf-a="lead1" data-id="' + esc(l.id) + '">Open</button></div></div>'; }
+function invLine(x){ var iv = x.iv || {}, p = proj(iv.pid); return '<div class="gc-ra-item"><div class="t"><b>' + esc(s(iv.client) || (p && p.client) || 'Invoice') + ' · ' + esc(usd(x.amt)) + '</b><small>' + esc(['#' + s(iv.num || iv.number || iv.id).slice(0, 12), p ? p.name : '', s(iv.date).slice(0, 10)].filter(Boolean).join(' · ')) + '</small></div><div class="b"><button type="button" class="gc-ra-sm pri" data-pmf-a="inv" data-id="' + esc(iv.id) + '">Open</button></div></div>'; }
+function jobLine(p){ return '<div class="gc-ra-item"><div class="t"><b>' + esc(p.name) + '</b><small>' + esc([p.address, p.client, p.status, p.pm].filter(Boolean).join(' · ')) + '</small></div><div class="b"><button type="button" class="gc-ra-sm pri" data-ra-a="openjob" data-pid="' + esc(p.id) + '">Open</button></div></div>'; }
+function listSheet(title, rows, empty){ return sheet(title, rows.length ? rows.slice(0, 80).join('') + (rows.length > 80 ? '<div class="gc-ra-empty">' + (rows.length - 80) + ' more — open the full list on the Desk.</div>' : '') : '<div class="gc-ra-empty">' + esc(empty) + '</div>', 'list'); }
+function numSheet(key){
+  var a = RA() ? RA().app() : '';
+  if (a !== 'admin') {
+    if (key === 'appts' || key === 'work' || key === 'sched') return openSched({ view: 'week' });
+    if (key === 'jobs') { closeSheets(); W.__gcFhAll = true; if (W._gcJobPicker) W._gcJobPicker(); return; }
+    if (key === 'leads') { closeSheets(); if (K()) K().go('leads'); return; }
+    if (key === 'fu') return fuSheet();
+    return;
+  }
+  var N = nums('admin'), L = N && N.lists; if (!L) { toast('The numbers are not loaded yet.'); return; }
+  if (key === 'newWeek') return listSheet('📥 New leads this week (' + L.newWeek.length + ')', L.newWeek.map(function(l){ return leadLine(l); }), 'No new leads this week.');
+  if (key === 'close') return listSheet('🏆 Close rate (residential + insurance) — ' + (N.close == null ? '—' : N.close + '%') + ' (90 days: ' + N.won + ' won · ' + N.lost + ' lost; commercial bids left out)',
+    ['<div class="gc-ra-k">Won (' + L.won.length + ') — sold or made into a job</div>'].concat(L.won.map(function(l){ return leadLine(l, '<span class="gc-ra-chip w">Won</span>'); }), ['<div class="gc-ra-k">Lost (' + L.lost.length + ')</div>'], L.lost.map(function(l){ return leadLine(l, '<span class="gc-ra-chip r">Lost</span>'); })), '');
+  if (key === 'jobs') return listSheet('◫ Jobs going (' + L.jobs.length + ')', L.jobs.map(jobLine), 'No jobs going.');
+  if (key === 'collected') return listSheet('💵 Collected this month — ' + usd(N.collected), L.collected.map(invLine), 'Nothing collected yet this month.');
+  if (key === 'ar') return listSheet('🧾 Owed to us — ' + usd(N.ar), L.ar.sort(function(x, y){ return y.amt - x.amt; }).map(invLine), 'Nothing is owed.');
+  if (key === 'bids') return listSheet('⏰ Bids due in 7 days (' + L.bids.length + ')', L.bids.map(function(l){ return leadLine(l, '<span class="gc-ra-chip o">Due ' + esc(s(l.bidDue).slice(5, 10)) + '</span>'); }), 'No bids due in the next 7 days.');
+}
+function fuSheet(){ var L = followUps(); return listSheet('📞 Overdue follow-ups (' + L.length + ')', L.map(function(l){ return leadLine(l, '<span class="gc-ra-chip r">Due ' + esc(fuDate(l).slice(5)) + '</span>'); }), 'No overdue follow-ups. 👍'); }
+
+/* ═════ 📅 My Schedule ═════ */
+var SV = { view: 'day', day: '', who: 'mine' };
+function openSched(o){
+  o = o || {}; if (o.view) SV.view = o.view; if (o.day) SV.day = o.day; if (!SV.day || o.reset) SV.day = today();
+  var all = seesAll() && SV.who === 'all', a = SV.day, b = SV.view === 'week' ? addDays(a, 6) : a;
+  var L = itemsOn(a, b, all), h = '';
+  h += '<div class="gc-pmf-add"><button type="button" class="gc-pmf-big pri" data-pmf-a="appt"><span>📅</span>New appointment</button><button type="button" class="gc-pmf-big" data-pmf-a="work"><span>🛠</span>Schedule work</button></div>';
+  h += '<div class="gc-pmf-bar"><div class="gc-pmf-seg"><button type="button" data-pmf-a="v" data-v="day"' + (SV.view === 'day' ? ' class="on"' : '') + '>Day</button><button type="button" data-pmf-a="v" data-v="week"' + (SV.view === 'week' ? ' class="on"' : '') + '>Week</button></div>' +
+    (seesAll() ? '<div class="gc-pmf-seg"><button type="button" data-pmf-a="w" data-v="mine"' + (SV.who !== 'all' ? ' class="on"' : '') + '>Mine</button><button type="button" data-pmf-a="w" data-v="all"' + (SV.who === 'all' ? ' class="on"' : '') + '>Everyone</button></div>' : '') +
+    '<div class="gc-pmf-nav"><button type="button" data-pmf-a="prev" aria-label="Earlier">‹</button><button type="button" data-pmf-a="today">Today</button><button type="button" data-pmf-a="next" aria-label="Later">›</button></div></div>';
+  var days = SV.view === 'week' ? [0, 1, 2, 3, 4, 5, 6].map(function(i){ return addDays(a, i); }) : [a];
+  days.forEach(function(d){
+    var I = L.filter(function(x){ return dayOf(x) === d; });
+    if (SV.view === 'week' && dow(d) === 0 && !I.length) return;
+    h += '<div class="gc-pmf-day" data-day="' + d + '"><h4>' + esc(dayLbl(d)) + '</h4>' + (I.length ? I.map(function(x){ return itemRow(x, false); }).join('') : '<div class="none">Nothing scheduled</div>') + '</div>';
+  });
+  /* time off for everyone; sick / late only for hourly and salary-without-commission people; logging the day optional */
+  var TO = W._gcTimeOff, hr = hourly();
+  h += '<div class="gc-ra-k">Time off & my day</div><div class="gc-pmf-to">' +
+    (TO && TO.openOff ? '<button type="button" data-pmf-a="to" data-v="off">🏖 Time off</button>' : '') +
+    (TO && TO.openAvail ? '<button type="button" data-pmf-a="to" data-v="avail">📅 Availability</button>' : '') +
+    (TO && hr && TO.openSick ? '<button type="button" data-pmf-a="to" data-v="sick">🤒 Call in sick</button>' : '') +
+    (TO && hr && TO.openLate ? '<button type="button" data-pmf-a="to" data-v="late">⏰ Running late</button>' : '') +
+    (TO && TO.open ? '<button type="button" data-pmf-a="to" data-v="mine">🗂 My requests</button>' : '') +
+    '<button type="button" data-pmf-a="clock">⏱ ' + (hr ? 'Clock in / out' : 'Log my day (optional)') + '</button></div>';
+  var o = sheet('📅 My Schedule — ' + (SV.view === 'week' ? 'week of ' + dayLbl(a).replace(/^(Today|Tomorrow) · /, '') : dayLbl(a)), h, 'sched');
+  if (o) o.setAttribute('data-view', SV.view);
+  return o;
+}
+
+/* ── the form: a new appointment / work, or one item (edit · move · cancel) ── */
+var APPT_KINDS = ['Estimate', 'Site visit', 'Inspection', 'Walkthrough', 'Meeting'];   /* 📍 Site visit lives here (owner 11/16) */
+function subsAll(){ var seen = {}, out = []; arr(C().subs).forEach(function(r){ if (r && r.id && !seen[r.id] && !r.deleted && !/inactive|archiv/i.test(s(r.status))) { seen[r.id] = 1; out.push(r); } }); return out.sort(function(a, b){ return s(a.name || a.company) < s(b.name || b.company) ? -1 : 1; }); }
+function crewAll(){ return users().filter(function(u){ return u && u.active !== false && s(u.name); }).sort(function(a, b){ return s(a.name) < s(b.name) ? -1 : 1; }); }
+function opt(v, l, sel){ return '<option value="' + esc(v) + '"' + (sel ? ' selected' : '') + '>' + esc(l) + '</option>'; }
+function jobOpts(sel, list){ return list.map(function(p){ return opt('j:' + p.id, s(p.name) + (p.address ? ' — ' + s(p.address).slice(0, 28) : ''), sel === 'j:' + p.id); }).join(''); }
+function formSheet(kind, x, preset){
+  preset = preset || {};
+  var isNew = !x, it = x ? Object.assign({}, x) : {}, J = myJobs(), all = seesAll();
+  if (x && s(x.pid) && !J.some(function(p){ return s(p.id) === s(x.pid); }) && proj(x.pid)) J = J.concat([proj(x.pid)]);
+  var grp = x && x.groupId ? sched().filter(function(y){ return y.groupId === x.groupId; }).sort(function(a, b){ return dayOf(a) < dayOf(b) ? -1 : 1; }) : [];
+  var h = '<div class="gc-pmf-f" data-kind="' + kind + '">';
+  if (kind === 'appt') {
+    var ak = s(it.apptKind) || (APPT_KINDS.filter(function(k){ return new RegExp('^' + k, 'i').test(s(it.title)); })[0]) || 'Estimate';
+    var sel = preset.pid ? 'j:' + preset.pid : preset.leadId ? 'l:' + preset.leadId : it.pid ? 'j:' + it.pid : it.leadId ? 'l:' + it.leadId : '';
+    var LL = myLeads(); if (it.leadId && !LL.some(function(l){ return s(l.id) === s(it.leadId); })) { var l0 = leadById(it.leadId); if (l0) LL = [l0].concat(LL); }
+    h += '<label>What</label><div class="gc-pmf-seg wide" data-seg="ak">' + APPT_KINDS.map(function(k){ return '<button type="button" data-v="' + k + '"' + (k === ak ? ' class="on"' : '') + '>' + k + '</button>'; }).join('') + '</div>' +
+      '<label>With</label><select data-f="with"><option value="">— pick a job or lead —</option>' + (J.length ? '<optgroup label="My jobs">' + jobOpts(sel, J) + '</optgroup>' : '') +
+      (LL.length ? '<optgroup label="My leads">' + LL.slice(0, 150).map(function(l){ return opt('l:' + l.id, s(l.client || l.contactName || l.name) + (l.address ? ' — ' + s(l.address).slice(0, 28) : ''), sel === 'l:' + l.id); }).join('') + '</optgroup>' : '') +
+      '<option value="new"' + (!sel && it.customer ? ' selected' : '') + '>＋ A new customer…</option></select>' +
+      '<div data-f="newc"' + (!sel && it.customer ? '' : ' hidden') + '><input data-f="cname" placeholder="Customer name" value="' + esc(it.customer) + '"><input data-f="cphone" type="tel" placeholder="Phone" value="' + esc(it.phone) + '"><input data-f="caddr" placeholder="Address" value="' + esc(it.address) + '"><div class="gc-pmf-hint">A new customer becomes your lead (the same as the Schedule screen).</div></div>';
+    if (all) { var me = myName(), cur = s(it.assignee) || me; h += '<label>For</label><select data-f="for">' + crewAll().map(function(u){ return opt(u.name, u.name + (low(u.name) === low(me) ? ' (me)' : ''), low(u.name) === low(cur)); }).join('') + (crewAll().some(function(u){ return low(u.name) === low(cur); }) ? '' : opt(cur, cur, true)) + '</select>'; }
+  } else {
+    var selJ = preset.pid ? 'j:' + preset.pid : it.pid ? 'j:' + it.pid : (J.length === 1 ? 'j:' + J[0].id : '');
+    var subSel = s(it.subId) || '', crewSel = !it.subId ? s(it.assignee || it.vendor) : '', mode = it.subId || (isNew && !crewSel) ? 'sub' : 'crew';
+    if (!it.subId && it.vendor && subsAll().some(function(r){ return low(r.name || r.company) === low(it.vendor); })) { mode = 'sub'; subSel = subsAll().filter(function(r){ return low(r.name || r.company) === low(it.vendor); })[0].id; }
+    h += '<label>Job</label><select data-f="with"><option value="">— pick a job —</option>' + jobOpts(selJ, J) + '</select>' +
+      '<label>Who</label><div class="gc-pmf-seg wide" data-seg="who"><button type="button" data-v="sub"' + (mode === 'sub' ? ' class="on"' : '') + '>🔧 A sub</button><button type="button" data-v="crew"' + (mode === 'crew' ? ' class="on"' : '') + '>👷 Our crew</button></div>' +
+      '<select data-f="sub"' + (mode === 'sub' ? '' : ' hidden') + '><option value="">— pick the sub —</option>' + subsAll().map(function(r){ return opt(r.id, s(r.name || r.company) + (r.trade ? ' · ' + s(r.trade) : ''), s(r.id) === subSel); }).join('') + '</select>' +
+      '<select data-f="crew"' + (mode === 'crew' ? '' : ' hidden') + '><option value="">— pick the person —</option>' + crewAll().map(function(u){ return opt(u.name, u.name + (u.role ? ' · ' + s(u.role) : ''), low(u.name) === low(crewSel)); }).join('') + '</select>' +
+      '<input data-f="whotx" placeholder="…or type a name" value="' + esc(mode === 'crew' && crewSel && !crewAll().some(function(u){ return low(u.name) === low(crewSel); }) ? crewSel : '') + '">' +
+      '<label>Trade / task</label><input data-f="title" placeholder="e.g. Hang drywall, roof tear-off, punch list" value="' + esc(s(it.title).replace(/^⚠\s*/, '')) + '">';
+  }
+  var d0 = ymd(it.date) || preset.date || SV.day || today();
+  h += '<div class="gc-pmf-two"><div><label>' + (kind === 'work' ? 'From' : 'Date') + '</label><input data-f="date" type="date" value="' + esc(d0) + '"></div>' +
+    (kind === 'work' ? (isNew ? '<div><label>To (optional)</label><input data-f="end" type="date" value=""></div>' : '') : '<div><label>Time</label><input data-f="time" type="time" value="' + esc(t24(it.time) || (isNew ? '09:00' : '')) + '"></div>') + '</div>' +
+    (kind === 'work' ? '<label>Start time (optional)</label><input data-f="time" type="time" value="' + esc(t24(it.time)) + '">' : '<label>Ends (optional)</label><input data-f="etime" type="time" value="' + esc(t24(it.endTime)) + '">') +
+    '<label>Notes (optional)</label><textarea data-f="notes" rows="2" placeholder="Gate code, what to bring…">' + esc(it.notes) + '</textarea>';
+  if (grp.length > 1) h += '<label class="chk"><input type="checkbox" data-f="allg" checked> All ' + grp.length + ' days of this work (' + esc(dayOf(grp[0]).slice(5)) + ' – ' + esc(dayOf(grp[grp.length - 1]).slice(5)) + ') — a new date moves them all</label>';
+  h += '<div class="gc-pmf-err" data-f="err"></div><button type="button" class="gc-pmf-go" data-pmf-a="save">' + (isNew ? (kind === 'work' ? '🛠 Put it on the schedule' : '📅 Add to my schedule') : '✓ Save changes') + '</button>';
+  if (!isNew) h += '<button type="button" class="gc-pmf-del" data-pmf-a="cancel">🗑 Cancel ' + (kind === 'work' ? 'this work' : 'this appointment') + '</button>';
+  h += '<button type="button" class="gc-pmf-back" data-pmf-a="sched">‹ My Schedule</button></div>';
+  var o = sheet(isNew ? (kind === 'work' ? '🛠 Schedule work' : '📅 New appointment') : (kind === 'work' ? '🛠 ' : '📅 ') + (s(it.title) || 'Edit'), h, 'form');
+  if (!o) return null;
+  o.__pmf = { kind: kind, x: x, grp: grp };
+  o.addEventListener('change', function(e){
+    var f = e.target && e.target.getAttribute && e.target.getAttribute('data-f');
+    if (f === 'with') { var nc = o.querySelector('[data-f="newc"]'); if (nc) nc.hidden = e.target.value !== 'new'; }
+    if (f === 'sub' && kind === 'work') { var r = subsAll().filter(function(y){ return s(y.id) === e.target.value; })[0], ti = o.querySelector('[data-f="title"]'); if (r && ti && !ti.value && r.trade) ti.value = s(r.trade); }
+  });
+  o.addEventListener('click', function(e){
+    var b = e.target.closest && e.target.closest('[data-seg] button'); if (!b) return;
+    var g = b.parentNode; Array.prototype.forEach.call(g.children, function(c){ c.classList.toggle('on', c === b); });
+    if (g.getAttribute('data-seg') === 'who') { o.querySelector('[data-f="sub"]').hidden = b.getAttribute('data-v') !== 'sub'; o.querySelector('[data-f="crew"]').hidden = b.getAttribute('data-v') !== 'crew'; }
+  });
+  return o;
+}
+function val(o, f){ var el = o.querySelector('[data-f="' + f + '"]'); return el ? (el.type === 'checkbox' ? el.checked : s(el.value)) : ''; }
+function segv(o, g){ var b = o.querySelector('[data-seg="' + g + '"] button.on'); return b ? b.getAttribute('data-v') : ''; }
+function workDays(a, b){ var out = [], d = a; if (!b || b < a) return [a]; while (d <= b && out.length < 90) { if (dow(d) !== 0) out.push(d); d = addDays(d, 1); } return out.length ? out : [a]; }
+function err(o, t){ var e = o.querySelector('[data-f="err"]'); if (e) e.textContent = t; if (t) toast(t); return false; }
+function withTimeout(p, ms, v){ return new Promise(function(res){ var done = false; later(function(){ if (!done) { done = true; res(v); } }, ms); Promise.resolve(p).then(function(x){ if (!done) { done = true; res(x); } }, function(){ if (!done) { done = true; res(v); } }); }); }
+function saveForm(o, btn){
+  var P = o.__pmf || {}, kind = P.kind, x = P.x, me = myName(), at = nowIso(), all = seesAll(), ids = myJobIds();
+  if (!me) return err(o, 'Your name is not on the people list yet — ask the office.');
+  var w = val(o, 'with'), date = val(o, 'date'), time = val(o, 'time'), notes = val(o, 'notes');
+  if (!date) return err(o, 'Pick a date.');
+  var pid = /^j:/.test(w) ? w.slice(2) : '', leadId = /^l:/.test(w) ? w.slice(2) : '', p = pid ? proj(pid) : null, l = leadId ? leadById(leadId) : null;
+  if (pid && !all && !ids[pid] && !(x && s(x.pid) === pid)) return err(o, 'That job is not one of yours — ask the office to schedule it.');
+  if (leadId && !all && !myLeads().some(function(y){ return s(y.id) === leadId; }) && !(x && s(x.leadId) === leadId)) return err(o, 'That lead is not one of yours.');
+  if (x && !canEdit(x)) return err(o, 'Only the office can change this one.');
+  var base = { notes: notes, updatedAt: at, updatedBy: me, source: (x && x.source) || 'GrayCo Field', scope: (x && x.scope) || 'company' };
+  var up = [], rm = [], cust = null;
+  if (kind === 'appt') {
+    var ak = segv(o, 'ak') || 'Estimate', who = l ? s(l.client || l.contactName || l.name) : p ? s(p.client || p.name) : val(o, 'cname');
+    if (w === 'new' && !val(o, 'cname') && !val(o, 'caddr')) return err(o, 'Type the customer\'s name or address.');
+    if (!w) return err(o, 'Pick a job or a lead (or ＋ A new customer).');
+    var rec = Object.assign({}, x || {}, base, { id: x ? x.id : uid('SCHpm'), type: 'appointment', apptKind: ak, title: ak + ' — ' + (who || 'customer'), date: date, time: t12(time), endTime: t12(val(o, 'etime')),
+      assignee: all && val(o, 'for') ? val(o, 'for') : (x ? s(x.assignee) || me : me), pid: pid, leadId: leadId, address: s(p ? p.address : l ? (l.address || l.jobAddress) : val(o, 'caddr')), companyId: coOf(p) || (x && x.companyId) || '' });
+    if (w === 'new') { rec.customer = val(o, 'cname'); rec.phone = val(o, 'cphone'); rec.pid = ''; rec.leadId = ''; cust = rec; } else { delete rec.customer; }
+    if (!x) { rec.by = me; rec.createdBy = me; rec.createdAt = at; }
+    up.push(rec);
+  } else {
+    if (!pid) return err(o, 'Pick the job.');
+    var mode = segv(o, 'who'), sub = mode === 'sub' ? subsAll().filter(function(r){ return s(r.id) === val(o, 'sub'); })[0] : null, crew = mode === 'crew' ? (val(o, 'whotx') || val(o, 'crew')) : '';
+    if (mode === 'sub' && !sub && val(o, 'whotx')) crew = val(o, 'whotx');
+    if (!sub && !crew) return err(o, 'Pick the sub or the crew.');
+    var task = val(o, 'title') || (sub && s(sub.trade)) || 'Work', vend = sub ? s(sub.name || sub.company) : crew;
+    var common = Object.assign({}, base, { pid: pid, type: 'work', title: task, time: t12(time), vendor: vend, assignee: vend, subId: sub ? s(sub.id) : '', address: s(p && p.address), po: s(p && (p.autoPO || p.po)), companyId: coOf(p) });
+    if (!x) {
+      var days = workDays(date, val(o, 'end')), g = days.length > 1 ? uid('PMF_') : '';
+      days.forEach(function(d, i){ up.push(Object.assign({}, common, { id: uid('SCHpm'), date: d, by: me, createdBy: me, createdAt: at }, g ? { groupId: g, dayNum: i + 1, totalDays: days.length } : {})); });
+    } else if (P.grp && P.grp.length > 1 && val(o, 'allg')) {
+      var delta = Math.round((new Date(date + 'T12:00:00') - new Date(dayOf(x) + 'T12:00:00')) / 864e5);
+      P.grp.forEach(function(y){ up.push(Object.assign({}, y, common, { id: y.id, date: addDays(dayOf(y), delta) })); });
+    } else up.push(Object.assign({}, x, common, { id: x.id, date: date }));
+  }
+  btn.disabled = true; btn.textContent = 'Saving…';
+  var pre = cust && typeof W._gcSelfApptLink === 'function' ? withTimeout(W._gcSelfApptLink(cust), 4000, cust).then(function(r){ if (r && r.id === cust.id) up[0] = r; return true; }) : Promise.resolve(true);
+  return pre.then(function(){ return saveSched(up, rm); }).then(function(ok){
+    if (!ok) { btn.disabled = false; btn.textContent = 'Try again'; return false; }
+    toast(kind === 'work' ? '🛠 On the schedule' + (up.length > 1 ? ' — ' + up.length + ' work days' : '') + ' · the office sees it on the Desk.' : '📅 ' + (x ? 'Saved' : 'Added to your schedule') + ' · the office sees it on the Desk.');
+    SV.day = up[0].date; openSched({ day: up[0].date });
+    return true;
+  });
+}
+function cancelItem(o){
+  var P = o.__pmf || {}, x = P.x; if (!x) return;
+  if (!canEdit(x)) { err(o, 'Only the office can cancel this one.'); return; }
+  var allg = P.grp && P.grp.length > 1 && val(o, 'allg'), ids = allg ? P.grp.map(function(y){ return y.id; }) : [x.id];
+  if (!W.confirm('Cancel ' + (allg ? 'all ' + ids.length + ' days of ' : '') + '“' + s(x.title) + '”? It comes off the schedule for everyone.')) return;
+  saveSched([], ids).then(function(ok){ if (ok) { toast('🗑 Cancelled — off the schedule.'); openSched({}); } });
+}
+function openItem(id){
+  var x = sched().filter(function(y){ return s(y.id) === s(id); })[0]; if (!x) { toast('That item is not on the schedule any more.'); return openSched({}); }
+  if (canEdit(x)) return formSheet(kindIc(x) === '📅' ? 'appt' : 'work', x);
+  var p = proj(x.pid);
+  return sheet(kindIc(x) + ' ' + (s(x.title) || 'Schedule'), '<div class="gc-ra-note">' + esc([dayLbl(dayOf(x)), x.time ? t12(x.time) : '', whoOf(x)].filter(Boolean).join(' · ')) + '</div>' +
+    (p ? '<div class="gc-ra-note">' + esc(p.name + (p.address ? ' · ' + p.address : '')) + '</div>' : '') + (x.notes ? '<div class="gc-ra-note">' + esc(x.notes).replace(/\n/g, '<br>') + '</div>' : '') +
+    '<div class="gc-ra-empty">' + (x.subEntryId || x.fromSubPortal ? 'The sub put this on from their portal — they change it there (📅 Sub schedules → ✅ Confirm / 📨 Ask to move).' : 'This one is not yours to change — ask the office or the job\'s PM.') + '</div>' +
+    (p ? '<button type="button" class="gc-pmf-go" data-ra-a="openjob" data-pid="' + esc(p.id) + '">Open the job</button>' : '') + '<button type="button" class="gc-pmf-back" data-pmf-a="sched">‹ My Schedule</button>', 'view');
+}
+
+/* ═════ ✏️ Update job — one screen ═════ */
+function pickMyJob(title, cb){
+  var J = myJobs(); if (!J.length) { toast('No open job for you yet.'); return; }
+  var cur = null; try { if (D.getElementById('_gcJobDash') && W._gcCurrentJob) cur = J.filter(function(p){ return s(p.id) === s(W._gcCurrentJob.id); })[0]; } catch (e) {}
+  if (cur || J.length === 1) { cb(cur || J[0]); return; }
+  if (K()) K().pickJob(title, J, cb);
+}
+var STAGES = ['Active', 'In Progress', 'Waiting on materials', 'On Hold', 'Punch List'];
+function updateSheet(p){
+  if (!p) return null;
+  var pct = 0; try { pct = Math.round(parseFloat(p.pct || p.ccProgressPct || p.progress) || 0); } catch (e) {}
+  var st = s(p.status), opts = STAGES.slice(); arr(C().projects).forEach(function(q){ var v = s(q && q.status); if (v && openJob(q) && opts.indexOf(v) < 0 && opts.length < 14) opts.push(v); }); if (st && opts.indexOf(st) < 0) opts.unshift(st);
+  var h = '<div class="gc-pmf-f" data-kind="update"><div class="gc-ra-note">' + esc([p.address, p.client].filter(Boolean).join(' · ')) + '</div>' +
+    '<label>Stage</label><select data-f="stage">' + opts.map(function(v){ return opt(v, v, v === st); }).join('') + '</select>' +
+    '<label>How far along</label><div class="gc-pmf-seg wide" data-seg="pct">' + [0, 25, 50, 75, 100].map(function(v){ return '<button type="button" data-v="' + v + '"' + (v === Math.round(pct / 25) * 25 ? ' class="on"' : '') + '>' + v + '%</button>'; }).join('') + '</div>' +
+    '<label>Note (the job\'s updates)</label><textarea data-f="note" rows="3" placeholder="What happened today, what\'s next…"></textarea>' +
+    '<label>Photo (optional)</label><input data-f="photo" type="file" accept="image/*" capture="environment">' +
+    '<div class="gc-pmf-two"><div><label>Next step</label><input data-f="next" placeholder="e.g. Final inspection" value="' + esc(p.nextStep) + '"></div><div><label>By</label><input data-f="nextd" type="date" value="' + esc(ymd(p.nextStepDate)) + '"></div></div>' +
+    '<label class="chk"><input type="checkbox" data-f="nexts"> Put the next step on my schedule</label>' +
+    '<div class="gc-pmf-err" data-f="err"></div><button type="button" class="gc-pmf-go" data-pmf-a="usave" data-pid="' + esc(p.id) + '">✓ Save the update</button>' +
+    '<button type="button" class="gc-pmf-back" data-ra-a="openjob" data-pid="' + esc(p.id) + '">Open the job page ›</button></div>';
+  var o = sheet('✏️ ' + s(p.name), h, 'update'); if (o) { o.__pmf = { kind: 'update', p: p, pct: pct };
+    o.addEventListener('click', function(e){ var b = e.target.closest && e.target.closest('[data-seg] button'); if (!b) return; Array.prototype.forEach.call(b.parentNode.children, function(c){ c.classList.toggle('on', c === b); }); }); }
+  return o;
+}
+function saveUpdate(o, btn){
+  var P = o.__pmf || {}, p = proj(P.p && P.p.id) || P.p, me = myName(), at = nowIso();
+  if (!p) return false;
+  if (!seesAll() && !myJobIds()[s(p.id)]) return err(o, 'That job is not one of yours.');
+  var stage = val(o, 'stage'), pv = segv(o, 'pct'), note = val(o, 'note'), next = val(o, 'next'), nd = val(o, 'nextd'), fileEl = o.querySelector('[data-f="photo"]'), file = fileEl && fileEl.files && fileEl.files[0];
+  var pctNew = pv === '' ? null : +pv, pctCh = pctNew != null && pctNew !== Math.round(P.pct / 25) * 25 && pctNew !== P.pct;
+  var ch = stage !== s(p.status) || !!note || next !== s(p.nextStep) || nd !== ymd(p.nextStepDate);
+  if (!ch && !pctCh && !file) return err(o, 'Nothing changed yet — pick a stage, add a note or a photo.');
+  try { var hz = W._gcHazGate && W._gcHazGate.missing ? arr(W._gcHazGate.missing(p)) : []; if (hz.length && stage !== s(p.status) && /active|progress|start|complete|work/i.test(stage)) return err(o, '⛔ The lead / asbestos / mold papers must be in the customer\'s hands first (' + hz.length + ' missing) — open the job → ✍️ Customer papers.'); } catch (e) {}   /* patch DOCAUTO2's Start-job gate */
+  btn.disabled = true; btn.textContent = 'Saving…';
+  var jobs = [], first = Promise.resolve();
+  if (ch && F() && F().saveProject) first = Promise.resolve(F().saveProject(p.id, function(q){
+    if (stage && stage !== s(q.status)) { q.statusHistory = arr(q.statusHistory).concat([{ from: s(q.status), to: stage, at: at, by: me, via: 'GrayCo Field' }]).slice(-40); q.status = stage; }
+    if (note) q.updates = [{ text: note, by: me, at: at, via: 'GrayCo Field' }].concat(arr(q.updates));
+    if (next !== s(q.nextStep) || nd !== ymd(q.nextStepDate)) { q.nextStep = next; q.nextStepDate = nd; q.nextStepBy = me; q.nextStepAt = at; }
+    q.updatedBy = me;
+  })).catch(function(e){ warn(e); });
+  /* the % goes through the Field's own progress save AFTER the job save (both write the job list — one after the other, never racing) */
+  if (pctCh) jobs.push(first.then(function(){ try { if (typeof W._gcSetProjectPct === 'function') return W._gcSetProjectPct(p.id, pctNew); } catch (e) { warn(e); } }));
+  else jobs.push(first);
+  if (file) { try { if (W._gcPhotos && W._gcPhotos.capture) jobs.push(Promise.resolve(W._gcPhotos.capture(p.id, [file], 'During')).catch(function(){ return null; })); } catch (e) { warn(e); } }
+  if (val(o, 'nexts') && next && nd) jobs.push(saveSched([{ id: uid('SCHpm'), pid: p.id, type: 'task', pmfKind: 'next', title: 'Next step — ' + next, date: nd, time: '', assignee: me, by: me, createdBy: me, createdAt: at, updatedAt: at, address: s(p.address), companyId: coOf(p), source: 'GrayCo Field', scope: 'company' }], []));
+  return Promise.all(jobs.map(function(j){ return Promise.resolve(j).catch(function(e){ warn(e); return null; }); })).then(function(){
+    closeSheets(); toast('✓ ' + s(p.name) + ' updated' + (pctCh ? ' · ' + pctNew + '% done' : '') + (file ? ' · photo added' : '') + '.'); HC.k = null; later(repaint, 300); return true;
+  });
+}
+
+/* ═════ the taps ═════ */
+function newLead(){
+  closeSheets(); if (K()) K().go('leads');
+  var n = 0; (function tryIt(){ var b = D.querySelector('[data-gcl-new]'); if (b && b.getClientRects().length) { b.click(); return; } if (++n < 25) later(tryIt, 200); else toast('Leads is open — tap ＋ New lead.'); })();
+}
+function quick(a, b){
+  var k = K();
+  if (a === 'appt') return formSheet('appt', null, {});
+  if (a === 'work') return formSheet('work', null, {});
+  if (a === 'sched') return openSched({ reset: !D.querySelector('.gc-pmf-sheet[data-pmf-sheet="sched"],.gc-pmf-sheet[data-pmf-sheet="form"],.gc-pmf-sheet[data-pmf-sheet="view"]') });
+  if (a === 'update') return pickMyJob('✏️ Update job', updateSheet);
+  if (a === 'photo') { closeSheets(); return k && k.run('camera'); }
+  if (a === 'clock') { closeSheets(); return k && k.run('clock'); }
+  if (a === 'msgs') { closeSheets(); return k && k.run('msgs'); }
+  if (a === 'lead') return newLead();
+}
+function onClick(ev){
+  var t = ev.target; if (!t || !t.closest) return;
+  var sb = t.closest('#gc-fh-tabs [data-t="ra-sched"]');
+  if (sb) { ev.preventDefault(); ev.stopPropagation(); if (ev.stopImmediatePropagation) ev.stopImmediatePropagation(); try { openSched({ reset: true }); } catch (e) { warn(e); } return; }
+  var b = t.closest('[data-pmf-a]'); if (!b) return;
+  if (!b.closest('.gc-pmf,.gc-pmf-sheet,[data-pmf-more]')) return;
+  ev.preventDefault(); ev.stopPropagation(); if (ev.stopImmediatePropagation) ev.stopImmediatePropagation();
+  var a = b.getAttribute('data-pmf-a'), o = b.closest('.gc-pmf-sheet');
+  try {
+    if (QUICK.some(function(q){ return q[0] === a; })) return quick(a, b);
+    if (/^m-/.test(a)) return lessTap(a);
+    if (a === 'item') return openItem(b.getAttribute('data-id'));
+    if (a === 'fu') return fuSheet();
+    if (a === 'papers') { var PD = papersDue(); return listSheet('📄 Paperwork due before the job can start (' + PD.length + ')', PD.map(function(p){ var m = []; try { m = arr(W._gcHazGate.missing(p)); } catch (e) {} return '<div class="gc-ra-item"><div class="t"><b>' + esc(p.name) + '</b><small>' + esc(m.length + ' paper' + (m.length === 1 ? '' : 's') + ' not in the customer\'s hands yet (' + m.join(', ') + ')') + '</small></div><div class="b"><button type="button" class="gc-ra-sm pri" data-ra-a="openjob" data-pid="' + esc(p.id) + '">Open</button></div></div>'; }), 'Every hazard paper is in the customer\'s hands. ✓'); }
+    if (a === 'num') return numSheet(b.getAttribute('data-k'));
+    if (a === 'lead1') return openLead(b.getAttribute('data-id'));
+    if (a === 'inv') { closeSheets(); leaveHome(); if (typeof W._gcInvoiceEditor === 'function') W._gcInvoiceEditor(b.getAttribute('data-id')); return; }
+    if (a === 'v') { SV.view = b.getAttribute('data-v'); return openSched({}); }
+    if (a === 'w') { SV.who = b.getAttribute('data-v'); return openSched({}); }
+    if (a === 'prev' || a === 'next') { SV.day = addDays(SV.day || today(), (a === 'prev' ? -1 : 1) * (SV.view === 'week' ? 7 : 1)); return openSched({}); }
+    if (a === 'today') { SV.day = today(); return openSched({}); }
+    if (a === 'to') { var TO = W._gcTimeOff, v = b.getAttribute('data-v'); closeSheets(); if (!TO) return; if (v === 'off') TO.openOff(); else if (v === 'avail') TO.openAvail(); else if (v === 'sick' && hourly()) TO.openSick(); else if (v === 'late' && hourly()) TO.openLate(); else if (v === 'mine') TO.open(); return; }
+    if (a === 'save' && o) return saveForm(o, b);
+    if (a === 'cancel' && o) return cancelItem(o);
+    if (a === 'usave' && o) return saveUpdate(o, b);
+  } catch (e) { warn(e); toast('That did not open: ' + (e && e.message || e)); }
+}
+D.addEventListener('click', onClick, true);
+
+/* ═════ ☰ More = the less-than-daily things (owner 11/16) — for the PM / admin, opened from Home ═════
+   The daily ones are on 🏠 Home now (Photo, Schedule, Daily log, Punch, Messages, Receipt, To-dos, Add job); on a job page ☰ More keeps
+   "At the job" for that job (patch FIELDMORE). Here: 📘 Training · 📄 Paperwork library · 👥 Team access (admin) · 📊 Reports (admin) ·
+   ⏸ Data-entry mode (admin — its pill is off the phone) · ❓ Help, then the Office rows, Search, Other tools, Settings, Desk view. */
+var ON_HOME = { camera: 1, photos: 1, sched: 1, log: 1, punch: 1, msgs: 1, receipt: 1, todo: 1, addjob: 1, appr: 1, jobs: 1, home: 1, money: 1 };   /* on Home, or on each job page (☐ Punch, 💬 Messages) */
+var JOB_ONLY = { cust: 1, sub: 1, claims: 1, drying: 1 };
+function lessRows(a){
+  var R = [], vok = function(v){ try { return typeof W._gcViewAllowed !== 'function' || !!W._gcViewAllowed(v); } catch (e) { return true; } };
+  if (W._gcTrain && W._gcTrain.open) R.push(['m-train', '📘', 'Training', 'My CRM training and certificates']);
+  if (vok('forms')) R.push(['m-forms', '📄', 'Paperwork library', 'Forms, contracts and templates']);
+  if (a === 'admin' && typeof W._gcTeamAccess === 'function') R.push(['m-team', '👥', 'Team access', 'Who sees what']);
+  if (a === 'admin' && vok('taxcenter')) R.push(['m-reports', '📊', 'Reports', 'P&L, transactions, reports']);
+  if (a === 'admin' && K() && K().shown('money')) R.push(['m-money', '💵', 'Money', 'Collected, owed to us, close rate']);
+  if (a === 'admin' && W._gcPause && W._gcPause.open) R.push(['m-pause', '⏸', 'Data-entry mode — ' + (pausedOn() ? 'ON' : 'off'), 'Hold everything that goes out']);
+  R.push(['m-help', '❓', 'Help', 'How-tos, send a screenshot']);
+  return R;
+}
+W._gcRaMoreHook = function(a, o, pk){
+  if (off() || !dashApp(a) || D.getElementById('_gcJobDash')) return;
+  o.setAttribute('data-pmf-more', '1');
+  var head = pk.querySelector('[data-fm="job"]'), grid = pk.querySelector('.gc-fm-g'), off0 = pk.querySelector('[data-fm="office"]'), moved = [];
+  if (grid) Array.prototype.forEach.call(grid.querySelectorAll('[data-ra-a]'), function(b){ var id = b.getAttribute('data-ra-a'); if (ON_HOME[id] || JOB_ONLY[id]) return; b.className = 'gc-fm-r'; b.removeAttribute('data-pid'); moved.push(b); });
+  if (head) head.remove(); if (grid) grid.remove();
+  Array.prototype.forEach.call(pk.querySelectorAll(':scope > [data-m="photos"]'), function(b){ b.remove(); });   /* 📸 Photos: a big Home tile */
+  var box = D.createElement('div'); box.className = 'gc-pmf-less';
+  box.innerHTML = '<div class="gc-fm-k" data-fm="less">Less often</div>' + lessRows(a).map(function(r){ return '<button type="button" class="gc-fm-r" data-pmf-a="' + r[0] + '"><span class="e">' + r[1] + '</span><span>' + esc(r[2]) + '<small>' + esc(r[3]) + '</small></span></button>'; }).join('');
+  pk.insertBefore(box, pk.firstChild);
+  var anchor = off0 ? off0.nextSibling : null;
+  moved.forEach(function(b){ if (off0) pk.insertBefore(b, anchor); else pk.appendChild(b); });
+  if (!pk.querySelector('[data-m="search"],[data-ra-a="search"]') && K() && K().shown('search')) { var sr = D.createElement('button'); sr.type = 'button'; sr.className = 'gc-fm-r'; sr.setAttribute('data-ra-a', 'search'); sr.setAttribute('data-ra-close', ''); sr.innerHTML = '<span class="e">🔍</span><span>Search</span>'; pk.insertBefore(sr, pk.querySelector('[data-m="tools"]') || null); }
+};
+function lessTap(a){
+  closeSheets(); Array.prototype.forEach.call(D.querySelectorAll('.gc-fh-sheet'), function(o){ o.remove(); });
+  if (a === 'm-train') { try { W._gcTrain.open(); } catch (e) { warn(e); toast('Training did not open.'); } return; }
+  if (a === 'm-forms') { if (K()) K().go('forms'); return; }
+  if (a === 'm-team') { try { W._gcTeamAccess(); } catch (e) { warn(e); } return; }
+  if (a === 'm-reports') { if (K()) K().go('taxcenter'); return; }
+  if (a === 'm-pause') { try { W._gcPause.open(); } catch (e) { warn(e); } return; }
+  if (a === 'm-money') { if (K()) K().run('money'); return; }
+  if (a === 'm-help') { try { if (F() && F().settings) { F().settings(); later(function(){ var h = Array.prototype.filter.call(D.querySelectorAll('.gcfp-sheet *,.gc-fh-sheet *'), function(e){ return e.children.length === 0 && /❓ Help/.test(e.textContent); })[0]; if (h && h.scrollIntoView) h.scrollIntoView({ block: 'start' }); }, 300); } } catch (e) { warn(e); } return; }
+}
+
+/* ═════ flags on <html>: commission people never see 🤒 Call in sick / ⏰ Running late ═════ */
+function flags(){
+  var on = !off() && !hourly() && !!meUser();
+  if (D.documentElement.classList.contains('gc-pmf-comm') !== on) D.documentElement.classList.toggle('gc-pmf-comm', on);
+}
+RI.call(W, function(){ if (!D.hidden) flags(); }, 2000);
+function css(){
+  if (D.getElementById('gc-pmf-css')) return;
+  var st = D.createElement('style'); st.id = 'gc-pmf-css';
+  st.textContent = [
+    /* the bar: 🏠 Home big in the middle, ✅ Approvals a plain button bottom-left with its red count */
+    '#gc-fh-tabs[data-ra-bar]>button[data-t="home"]:nth-child(3){position:relative;top:-14px;width:86px;color:#1d4ed8}',
+    '#gc-fh-tabs[data-ra-bar]>button[data-t="home"]:nth-child(3)>.e{width:60px;height:60px;border-radius:50%;background:#2563eb;color:#fff;display:flex;align-items:center;justify-content:center;font-size:28px;box-shadow:0 4px 14px rgba(37,99,235,.35);border:4px solid #fff;position:relative}',
+    '#gc-fh-tabs[data-ra-bar]>button.ap:first-child{top:0;width:68px;color:#6b7280}',
+    '#gc-fh-tabs[data-ra-bar]>button.ap:first-child .c{width:auto;height:auto;background:none;color:inherit;box-shadow:none;border:0;font-size:21px;line-height:1;display:inline-block;position:relative}',
+    '#gc-fh-tabs[data-ra-bar]>button.ap:first-child .gc-fh-badge{top:-8px;right:-14px;background:#dc2626}',
+    /* commission people: no sick / late buttons (patch TIMEOFF's strip, card and sheet) */
+    'html.gc-pmf-comm [data-to-a="sick"],html.gc-pmf-comm [data-to-a="late"]{display:none!important}',
+    '#_gcJobPick.gc-fh[data-ra="pm"] #gc-to-strip,#_gcJobPick.gc-fh[data-ra="admin"] #gc-to-strip,#_gcJobPick.gc-fh[data-ra="ins"] #gc-to-strip,#_gcJobPick.gc-fh[data-ra="mit"] #gc-to-strip,#_gcJobPick.gc-fh[data-ra="env"] #gc-to-strip,#_gcJobPick.gc-fh[data-ra="dual"] #gc-to-strip{display:none!important}',
+    '.gc-pmf .gc-pmf-x{margin-bottom:6px}.gc-pmf .gc-pmf-role{margin-top:4px}',
+    /* owner 11/16: the ⏸ Data-entry mode pill is off the phone (admins: ☰ More → ⏸ Data-entry mode, and ⚡ Needs you while it is ON) */
+    'html.gc-fh-on #gcp-banner{display:none!important}',
+    '.gc-fh-sheet .gc-pmf-less .gc-fm-k{margin-top:2px}.gc-fh-sheet .gc-fm-r small{display:block;font-weight:500;color:#6b7280;font-size:12px}',
+    /* the home dashboard */
+    '.gc-pmf .gc-pmf-today{display:flex;flex-direction:column;gap:6px}',
+    '.gc-pmf-it{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:10px 12px;min-height:54px;font:14px Inter,-apple-system,sans-serif;color:#111827;cursor:pointer}',
+    '.gc-pmf-it .tm{flex:0 0 66px;font-weight:800;font-size:12.5px;color:#1d4ed8}.gc-pmf-it .tx{flex:1;min-width:0}.gc-pmf-it .tx b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.gc-pmf-it .tx small{display:block;color:#6b7280;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.gc-pmf-it .go{color:#9ca3af;font-size:20px}',
+    '.gc-pmf-q{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0 8px}',
+    '.gc-pmf-t{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:3px;min-height:84px;background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:10px 12px;font:800 15px Inter,-apple-system,sans-serif;color:#111827;text-align:left;cursor:pointer;box-shadow:0 1px 2px rgba(16,24,40,.05)}',
+    '.gc-pmf-q>button:last-child:nth-child(odd){grid-column:span 2}',
+    '.gc-pmf-t .e{font-size:26px;line-height:1}.gc-pmf-t small{font-weight:600;font-size:11.5px;color:#6b7280;line-height:1.25}',
+    '.gc-pmf-t[data-pmf-a="appt"],.gc-pmf-t[data-pmf-a="work"],.gc-pmf-t[data-pmf-a="update"]{border-color:#bfdbfe;background:#f8fbff}',
+    '.gc-pmf-need{display:flex;flex-direction:column;gap:6px}',
+    '.gc-pmf-nd{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:10px 12px;min-height:56px;font:14px Inter,-apple-system,sans-serif;color:#111827;cursor:pointer}.gc-pmf-nd .e{font-size:22px}.gc-pmf-nd .tx{flex:1}.gc-pmf-nd small{display:block;color:#6b7280;font-size:12px}.gc-pmf-nd.hot{border-color:#fecaca;background:#fff7f7}.gc-pmf-nd .go{color:#9ca3af;font-size:20px}',
+    '.gc-pmf-ap{margin-top:6px}.gc-pmf-ap .gc-ra-item{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:10px 12px;margin-bottom:6px}',
+    '.gc-pmf-more{display:block;width:100%;background:#fff;border:1px solid #bfdbfe;color:#1d4ed8;border-radius:12px;padding:11px;font:800 13.5px Inter,sans-serif;cursor:pointer}',
+    '.gc-pmf-nums{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}',
+    '.gc-pmf-n{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:10px;text-align:left;cursor:pointer;min-height:64px;font-family:Inter,-apple-system,sans-serif}.gc-pmf-n span{display:block;font-size:10.5px;color:#6b7280;font-weight:700;text-transform:uppercase;letter-spacing:.04em}.gc-pmf-n b{font-size:18px;color:#111827}',
+    /* sheets: My Schedule, the forms */
+    '.gc-pmf-add{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:2px 0 10px}',
+    '.gc-pmf-big{display:flex;align-items:center;justify-content:center;gap:6px;min-height:54px;border:1px solid #2563eb;background:#fff;color:#1d4ed8;border-radius:12px;font:800 14.5px Inter,sans-serif;cursor:pointer}.gc-pmf-big.pri{background:#2563eb;color:#fff}.gc-pmf-big span{font-size:20px}',
+    '.gc-pmf-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;margin-bottom:6px}',
+    '.gc-pmf-seg{display:inline-flex;background:#f3f4f6;border-radius:10px;padding:3px}.gc-pmf-seg button{border:none;background:none;padding:8px 12px;border-radius:8px;font:700 13.5px Inter,sans-serif;color:#374151;cursor:pointer;min-height:38px}.gc-pmf-seg button.on{background:#fff;color:#1d4ed8;box-shadow:0 1px 2px rgba(0,0,0,.12)}',
+    '.gc-pmf-seg.wide{display:flex}.gc-pmf-seg.wide button{flex:1;padding:10px 4px}',
+    '.gc-pmf-nav{display:inline-flex;gap:4px}.gc-pmf-nav button{border:1px solid #d1d5db;background:#fff;border-radius:9px;min-width:42px;min-height:38px;font:800 15px Inter,sans-serif;cursor:pointer}',
+    '.gc-pmf-day h4{margin:12px 2px 6px;font:800 12.5px Inter,sans-serif;color:#374151;text-transform:uppercase;letter-spacing:.04em}.gc-pmf-day .none{color:#9ca3af;font-size:13px;padding:4px 2px}.gc-pmf-day .gc-pmf-it{margin-bottom:6px}',
+    '.gc-pmf-to{display:grid;grid-template-columns:1fr 1fr;gap:8px}.gc-pmf-to button{min-height:48px;border:1px solid #e5e7eb;background:#fff;border-radius:12px;font:700 13.5px Inter,sans-serif;color:#1f2937;cursor:pointer}',
+    '.gc-pmf-f label{display:block;font:700 12.5px Inter,sans-serif;color:#374151;margin:10px 2px 4px}.gc-pmf-f label.chk{display:flex;gap:8px;align-items:center;font-weight:600}',
+    '.gc-pmf-f input:not([type=checkbox]),.gc-pmf-f select,.gc-pmf-f textarea{width:100%;box-sizing:border-box;font:16px Inter,-apple-system,sans-serif;padding:11px 12px;border:1px solid #d1d5db;border-radius:10px;background:#fff;color:#111827;margin-bottom:6px;min-height:46px}',
+    '.gc-pmf-two{display:grid;grid-template-columns:1fr 1fr;gap:8px}.gc-pmf-hint{font-size:12px;color:#6b7280;margin:-2px 2px 6px}',
+    '.gc-pmf-go{display:block;width:100%;margin-top:12px;min-height:52px;border:none;border-radius:12px;background:#16a34a;color:#fff;font:800 16px Inter,sans-serif;cursor:pointer}.gc-pmf-go:disabled{opacity:.6}',
+    '.gc-pmf-del{display:block;width:100%;margin-top:8px;min-height:46px;border:1px solid #fecaca;border-radius:12px;background:#fff;color:#b91c1c;font:700 14px Inter,sans-serif;cursor:pointer}',
+    '.gc-pmf-back{display:block;width:100%;margin-top:8px;min-height:44px;border:1px solid #e5e7eb;border-radius:12px;background:#fff;color:#1d4ed8;font:700 14px Inter,sans-serif;cursor:pointer}',
+    '.gc-pmf-err{color:#b91c1c;font-weight:700;font-size:13px;min-height:0;margin-top:4px}'
+  ].join('\n');
+  (D.head || D.documentElement).appendChild(st);
+}
+css();
+/* the bar was drawn before this script (a re-run): draw it again through the hook */
+try { var t0 = D.getElementById('gc-fh-tabs'); if (t0 && t0.hasAttribute('data-ra-bar')) { t0.removeAttribute('data-ra-bar'); later(function(){ try { W._gcRA && W._gcRA.sync(); } catch (e) {} }, 0); } } catch (e) {}
+
+W._gcPayKind = function(u){ return payKind(u || meUser()); };
+W._gcPmField = {
+  state: function(){ var tb = D.getElementById('gc-fh-tabs'); return { off: off(), me: myName(), payKind: payKind(meUser()), hourly: hourly(), seesAll: seesAll(), payroll: payrollOk(), kit: !!KIT, saves: SAVES,
+    bar: tb ? Array.prototype.map.call(tb.querySelectorAll('[data-t]'), function(b){ return b.getAttribute('data-t'); }) : [], dash: !!D.querySelector('#_gcJobPick .gc-pmf') }; },
+  open: openSched, appt: function(p){ return formSheet('appt', null, p || {}); }, work: function(p){ return formSheet('work', null, p || {}); },
+  update: function(pid){ var p = proj(pid); return p ? updateSheet(p) : pickMyJob('✏️ Update job', updateSheet); }, item: openItem,
+  payKind: payKind, hourly: hourly, mine: function(a, b, all){ return itemsOn(a || today(), b || a || today(), !!all).map(function(x){ return x.id; }); }, canEdit: function(id){ return canEdit(sched().filter(function(y){ return s(y.id) === s(id); })[0]); },
+  alsoPm: alsoPm, save: saveSched, followUps: function(){ return followUps().map(function(l){ return l.id; }); }
+};
+try { console.log('[GC] 📱 PM field: 🏠 Home in the middle, the home dashboard, 📅 My Schedule, ✏️ Update job (patch PMFIELD) — _gcPmField.state()'); } catch (e) {}
+})(window);
 </script>
 <script id="gc-patch-tvfix-pre">
 /* patch TVFIX (pre): an error thrown while the OFFICETV script just below runs is kept here (window._gcOTV would be missing;
