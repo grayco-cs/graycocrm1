@@ -68112,10 +68112,47 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
   function bodySig(rec){ try{ var o={}; Object.keys(rec).sort().forEach(function(k){ if(!STAMP_RE.test(k)) o[k]=rec[k]; }); return JSON.stringify(o); }catch(e){ return null; } }
   function stampOf(r){ return String((r && (r.updatedAt||r.updated_at||r.savedAt||r.modified)) || ''); }
   /* TOMBFIX: copies of one payroll profile -> one record (oldest first, newer values win; nothing else is lost) */
+  /* W4SAFE: one merge rule for payroll profiles, whatever the stamps -- a seed (a profile this computer created, never edited
+     by a person) never outranks a real one; for the W-4 / pay fields the newest PERSON edit (editedAt) decides, and with no
+     person edit in between a filled value beats an empty / default one (a fresh computer's default profile, stamped "now",
+     turned a married / +$15 W-4 into single / $0 on that computer and in the cloud). */
+  var W4F = { filing:'single', dependentsCredit:0, otherIncome:0, deductions:0, extra:0, multipleJobs:false, exemptFed:false, w4Form:'',
+              allowances:0, msFiling:'', msExemption:'', annualSalary:0, hourlyRate:0, payType:'', ssn4:'', hireDate:'', address:'',
+              stateExtra:0, otherDeductions:null, taxDocs:null };
+  function w4Blank(k, v){
+    if(v===undefined || v===null || v==='') return true;
+    if(Array.isArray(v)) return !v.length;
+    if(!Object.prototype.hasOwnProperty.call(W4F, k)) return false;
+    var d = W4F[k]; if(d===null) return false;
+    if(typeof d==='number') return Number(v)===d;
+    return v===d;
+  }
+  function editOf(r){ return String((r && r.editedAt) || ''); }
+  function isSeed(r){ return !!(r && r._seed===true && !editOf(r)); }
+  function ppMerge(a, b){
+    if(!a || typeof a!=='object') return b; if(!b || typeof b!=='object') return a;
+    var hi = b, lo = a;                                     /* the newer stamp; a tie keeps the incoming copy (as before) */
+    if(stampOf(a) > stampOf(b)){ hi = a; lo = b; }
+    var sa = isSeed(a), sb = isSeed(b);
+    if(isSeed(hi) && !isSeed(lo)){ var t = hi; hi = lo; lo = t; }   /* a seed never outranks a real profile */
+    var m = Object.assign({}, lo, hi), eh = editOf(hi), el = editOf(lo);
+    var personHi = !!eh && eh >= el;                          /* the newer copy carries the newest person edit */
+    Object.keys(W4F).forEach(function(k){
+      if(el && el > eh){ if(Object.prototype.hasOwnProperty.call(lo, k)) m[k] = lo[k]; return; }   /* the older copy has the newer person edit */
+      if(personHi) return;
+      if(w4Blank(k, hi[k]) && !w4Blank(k, lo[k])) m[k] = lo[k];   /* no person edit in between: filled beats empty / default */
+    });
+    if(!personHi) Object.keys(lo).forEach(function(k){
+      if(Object.prototype.hasOwnProperty.call(W4F, k)) return;
+      var v = hi[k]; if((v===undefined || v===null || v==='') && lo[k]!==undefined && lo[k]!==null && lo[k]!=='') m[k] = lo[k];
+    });
+    if(!(sa && sb)) delete m._seed;
+    var e = eh > el ? eh : el; if(e) m.editedAt = e;
+    return m;
+  }
+  window._gcPayProfileMerge = ppMerge;
   function foldProfile(a, b){
-    var o = stampOf(a) <= stampOf(b) ? [a, b] : [b, a];
-    var m = Object.assign({}, o[0], o[1]);
-    Object.keys(o[0]).forEach(function(k){ var v=m[k]; if((v===undefined || v===null || v==='') && o[0][k]!==undefined && o[0][k]!==null && o[0][k]!=='') m[k]=o[0][k]; });
+    var m = ppMerge(a, b);   /* W4SAFE */
     m.id = a.id; return m;
   }
   window._gcEnsureRecordIds = function(list, key){
@@ -68209,6 +68246,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
         for(var k in rec){ try{ if(typeof rec[k]==='string' && rec[k].indexOf('__TEST__')>=0) return; }catch(e){} }
         if(!(id in byId)){ byId[id]=rec; order.push(id); }
         else if(QALT[key] && qRank(rec)!==qRank(byId[id])){ if(qRank(rec)>qRank(byId[id])) byId[id]=Object.assign({}, byId[id], rec); }   /* patch SYNCFIX: a decided approval stays decided */
+        else if(key==='payrollProfiles'){ byId[id]=ppMerge(byId[id], rec); }   /* W4SAFE */
         else if(newer(rec, byId[id])){ byId[id]=Object.assign({}, byId[id], rec); }
       });
     });
@@ -85331,9 +85369,40 @@ function dedupeProfiles(list){
   deadIds=deadIds.filter(function(id, k, a){ return !keptIds[id] && a.indexOf(id)===k; });
   return { list:out, removed:removed, names:names, deadIds:deadIds };
 }
+/* W4SAFE: the cloud's payroll profile list, read once per page (concurrent calls share the read; kept in memory and merged
+   into every call, so a call that reads this computer's copy before the first merged list was written still has it).
+   Until a read succeeds, profiles() creates nothing: no seed may ever be saved over a real cloud profile. */
+var _w4 = { ok:false, list:[], p:null, at:0 };
+function w4Cloud(){
+  if(_w4.ok) return Promise.resolve(_w4);
+  if(_w4.p && Date.now()-_w4.at < 30000) return _w4.p;
+  _w4.at = Date.now();
+  _w4.p = (async function(){
+    try{
+      var u = String(localStorage.getItem('grayco_sb_url') || 'https://ieeonhpfahmwwecizdut.supabase.co').replace(/\/+$/, ''), k = localStorage.getItem('grayco_sb_key') || '';
+      var r = await fetch(u+'/rest/v1/gc_kv?key=eq.'+K_PROF+'&select=value', { headers: k ? { apikey:k, Authorization:'Bearer '+k } : {}, cache:'no-store' });
+      if(!r || !r.ok) return _w4;
+      var rows = await r.json(); if(!Array.isArray(rows)) return _w4;
+      var v = rows.length ? rows[0].value : [];
+      if(typeof v==='string'){ try{ v = JSON.parse(v); }catch(_je){ return _w4; } }
+      var out = Array.isArray(v) ? v : [];
+      try{ if(window._gcSbReadChunked){ var ch = await window._gcSbReadChunked(K_PROF); if(Array.isArray(ch) && ch.length) out = window._gcUnionMerge ? window._gcUnionMerge(K_PROF, out, ch) : out.concat(ch); } }catch(_ce){}
+      _w4.list = out.filter(function(p){ return p && typeof p==='object'; }); _w4.ok = true;
+      return _w4;
+    }catch(e){ return _w4; }
+  })();
+  return _w4.p;
+}
+window._gcPayW4Safe = function(){ return { cloudRead:_w4.ok, cloudCount:_w4.list.length, lastTry:_w4.at ? new Date(_w4.at).toISOString() : '' }; };
 async function profiles(){
   var list=await get(K_PROF);
   if(!Array.isArray(list)) list=[];
+  var _w4c = { ok:false, list:[] }, _w4changed=false;   /* W4SAFE */
+  try{ _w4c = await w4Cloud(); }catch(_w4e){}
+  if(_w4c.ok && _w4c.list.length && window._gcUnionMerge){
+    try{ var _w4b = JSON.stringify(list); var _w4m = window._gcUnionMerge(K_PROF, JSON.parse(_w4b), JSON.parse(JSON.stringify(_w4c.list)));
+      if(Array.isArray(_w4m) && JSON.stringify(_w4m) !== _w4b){ list = _w4m; _w4changed = true; } }catch(_w4me){}
+  }
   var _tfIds=false; try{ if(window._gcPayProfileId && window._gcEnsureRecordIds){ var _tfN=list.length; _tfIds=window._gcEnsureRecordIds(list, K_PROF); if(_tfIds && list.length<_tfN) console.log('[GC Payroll] TOMBFIX: '+(_tfN-list.length)+' copies of payroll profiles folded (stable ids)'); } }catch(_tfe){}   /* TOMBFIX */
   var _pdRemoved=0;   /* patch PROFDUP: one profile per person — condition-gated, a no-op once there are no copies */
   try{ var _pd=dedupeProfiles(list); if(_pd.removed){ list=_pd.list; _pdRemoved=_pd.removed;
@@ -85376,7 +85445,7 @@ async function profiles(){
   try{ var _fu = JSON.parse(localStorage.getItem('gc_fired_users') || '{}') || {};
     list.forEach(function(p){ if(!p || p.active === false) return; var nm = String(p.name || '').trim().toLowerCase(), em = String(p.email || '').trim().toLowerCase();
       if(_fu[nm] || (em && _fu[em])){ p.active = false; p.firedOff = true; p.updatedAt = new Date().toISOString(); _migChanged = true; } }); }catch(_fe){}
-  if(_migChanged || _pdRemoved || _tfIds){ try{ await put(K_PROF, list); }catch(_pe){} }   /* patch PROFDUP: once */ /* TOMBFIX: + stable ids */
+  if(_migChanged || _pdRemoved || _tfIds || _w4changed){ try{ await put(K_PROF, list); }catch(_pe){} }   /* patch PROFDUP: once */ /* TOMBFIX: + stable ids */ /* W4SAFE: + the cloud's list */
 
   // migrate the old name-keyed payrollW4 object once
   var old=await get(K_OLDW4);
@@ -85386,8 +85455,10 @@ async function profiles(){
       var o=old[nm]||{}, p=byName[nameKey(nm)];   /* patch PROFDUP: by trimmed lower-case name */
       if(!nameKey(nm)) return;
       if(!p){
+        if(!_w4c.ok) return;   /* W4SAFE: nothing is created before the cloud's list was read */
         var u=users().find(function(x){ return nameKey(x.name)===nameKey(nm); });
         p = u ? seedFromUser(u) : blankProfile({name:nm});
+        p._seed=true; p.updatedAt='';   /* W4SAFE: a seed is never newer than a cloud copy */
         if(!p.userId) p.id=nameId(nm);
         p.name=nm; list.push(p); byName[nameKey(nm)]=p; if(p.userId) byUser[p.userId]=p; changed=true;
       }
@@ -85401,7 +85472,9 @@ async function profiles(){
   users().forEach(function(u){
     if(u.active===false) return;
     var p = (u.id && byUser[u.id]) || byName[nameKey(u.name)];   /* patch PROFDUP: userId, then trimmed lower-case name — never the shared e-mail */
-    if(!p){ p=seedFromUser(u); if(!u.id) p.id=nameId(u.name); list.push(p); if(u.id) byUser[u.id]=p; byName[nameKey(u.name)]=p; changed=true; }
+    if(!p){ if(!_w4c.ok) return;   /* W4SAFE: nothing is created before the cloud's list was read */
+      p=seedFromUser(u); if(!u.id) p.id=nameId(u.name); p._seed=true; p.updatedAt='';   /* W4SAFE: a seed is never newer than a cloud copy */
+      list.push(p); if(u.id) byUser[u.id]=p; byName[nameKey(u.name)]=p; changed=true; }
     else if(!p.userId && u.id){ p.userId=u.id; changed=true; }
   });
   if(changed) await put(K_PROF, list);
@@ -86900,6 +86973,7 @@ window._gcRenderEmployeeProfile = async function(body, S, render){
     p.otherDeductions=readDed(body);
     if(body._gcW4Doc){ var _wd=body._gcW4Doc; p.taxDocs=(p.taxDocs||[]).filter(function(d){ return d.ref!==_wd.ref; }).concat([_wd]); body._gcW4Doc=null; }   /* patch W4UPLOAD */
     p.updatedAt=new Date().toISOString();
+    p.editedAt=p.updatedAt; delete p._seed;   /* W4SAFE: a person's edit -- it decides the W-4 everywhere, even a default value */
     await P.saveProfiles(profs);
     alert('Saved. '+p.name+'’s payroll setup is updated on every device.');
     render();
@@ -229160,6 +229234,7 @@ async function applyRaise(o){
   pr[field] = to;
   pr.rateHistory.push({ id: 'RH' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), field: field, from: from, to: to, change: amt, effective: s(o.effective).slice(0, 10), at: at, by: s(o.by), why: 'Certification raise — ' + s(o.cert), source: 'certplan', doneId: s(o.doneId) });
   pr.updatedAt = at;
+  pr.editedAt = at; delete pr._seed;   /* W4SAFE: a person's raise */
   await P.saveProfiles(profs);
   return { ok: true, field: field, from: from, to: to };
 }
