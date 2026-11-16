@@ -210924,7 +210924,7 @@ W._gcRaMoreHook = function(a, o, pk){
   if (off() || !dashApp(a) || (D.getElementById('_gcJobDash') && !D.querySelector('#_gcJobPick.gc-fh'))) return;   /* from Home (a job page left under it does not count) */
   o.setAttribute('data-pmf-more', '1');
   var head = pk.querySelector('[data-fm="job"]'), grid = pk.querySelector('.gc-fm-g'), off0 = pk.querySelector('[data-fm="office"]'), moved = [];
-  if (grid) Array.prototype.forEach.call(grid.querySelectorAll('[data-ra-a]'), function(b){ var id = b.getAttribute('data-ra-a'); if (ON_HOME[id] || JOB_ONLY[id]) return; b.className = 'gc-fm-r'; b.removeAttribute('data-pid'); moved.push(b); });
+  if (grid) Array.prototype.forEach.call(grid.querySelectorAll('[data-ra-a]'), function(b){ var id = b.getAttribute('data-ra-a'); if (ON_HOME[id] || JOB_ONLY[id]) return; b.className = 'gc-fm-r'; b.removeAttribute('data-pid'); if (id === 'search') b.setAttribute('data-m', 'search'); moved.push(b); });
   if (head) head.remove(); if (grid) grid.remove();
   Array.prototype.forEach.call(pk.querySelectorAll(':scope > [data-m="photos"]'), function(b){ b.remove(); });   /* 📸 Photos: a big Home tile */
   var box = D.createElement('div'); box.className = 'gc-pmf-less';
