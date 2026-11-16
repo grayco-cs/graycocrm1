@@ -168716,6 +168716,7 @@ function recent(sc, now){
     var p = proj(x.jobId || x.pid);
     var chain = aps.map(function(a){ return '✓ ' + (a.role === 'office' ? 'Office · ' : (a.role === 'pm' || a.step === 'pm') ? 'PM · ' : 'Admin · ') + s(a.by) + ' ' + when(a.at); });
     if (x.status === 'sent') chain.push('📤 sent ' + when(x.sentAt));
+    if (x.status === 'recorded') chain.push('🔕 ' + (s(x.sentNote) || 'approved — nothing sent'));   /* APPRNOSEND: */
     if (x.status === 'rejected') chain.push('✖ not approved by ' + s(x.rejectedBy) + ' ' + when(x.rejectedAt) + (x.reason ? ' — “' + s(x.reason).slice(0, 80) + '”' : ''));
     if (x.status === 'waiting' && aps.length) chain.push('⏳ now waiting on ' + (x.step === 'pm' ? 'the PM' : 'Wesley or Nick'));
     out.push({ t: t, icon: x.status === 'rejected' ? '✖' : '✅', title: s(x.title) || kindLabel(x.kind), job: jobLine(p, x.jobName), pid: s(x.jobId || x.pid), chain: chain.join(' → ') });
@@ -230520,12 +230521,16 @@ function arr(v){ return Array.isArray(v) ? v : []; }
 function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
 function warn(e){ try { console.warn('[GC BPAPPR]', e && e.message || e); } catch (x) {} }
 function admin(){ try { if (W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin) return !!W.__GC_AUTH__.isAdmin(); } catch (e) {} return false; }
+/* SUBSIGNUP: the office gets the new-sub sign-up cards too (owner 11/16: "I saw 2 new subs signed in to portal, I should have an approval for it") */
+function office(){ try { if (W._gcApOfficeMe && W._gcApOfficeMe()) return true; } catch (e) {} try { return !!(W._gcIsOfficeFull && W._gcIsOfficeFull()); } catch (e) { return false; } }
+function staffOk(){ return admin() || office(); }
 var JOBS = [], JAT = 0, SAT = 0;
 function bizDaysSince(t){ var d = new Date(t), n = 0, now = new Date(); if (isNaN(d)) return 0; d.setHours(0, 0, 0, 0); while (d < now) { d.setDate(d.getDate() + 1); if (d.getDay() !== 0 && d.getDay() !== 6 && d <= now) n++; } return n; }
 function refresh(force){
-  if (!admin()) return;
+  if (!staffOk()) return;   /* SUBSIGNUP: */
   var SB = W._gcSubsBids;
   if (SB && (force || Date.now() - SB.at() > 120000) && Date.now() - SAT > 60000) { SAT = Date.now(); try { SB.sync(); } catch (e) { warn(e); } }
+  if (!admin()) return;
   if (force || Date.now() - JAT > 120000) { JAT = Date.now(); W.fetch('/.netlify/functions/bid-hub?jobs=1', { cache: 'no-store' }).then(function(r){ return r.ok ? r.json() : null; }).then(function(j){ if (j && Array.isArray(j.jobs)) JOBS = j.jobs; }, function(){}); }
 }
 function sheet(b){
@@ -230537,8 +230542,8 @@ function sheet(b){
     + '<div style="display:flex;justify-content:space-between;gap:8px"><b style="font-size:17px">🔨 ' + esc(b.company || b.name || b.email) + '</b><button type="button" data-bpa="x" aria-label="Close" style="border:0;background:none;font-size:20px;cursor:pointer">✕</button></div>'
     + '<div>' + esc([b.name, b.email, b.phone].filter(Boolean).join(' · ')) + '</div>'
     + '<div class="mut" style="color:#64748b">' + esc([arr(b.trades).join(', '), [b.city, b.state].filter(Boolean).join(', '), b.crew ? 'crew ' + b.crew : '', b.area].filter(Boolean).join(' · ')) + '</div>'
-    + (b.selfSignup ? '<div style="margin-top:4px">🆕 Signed up on their own</div>' : '') + matchLine(b) + P
-    + '<p style="color:#64748b;font-size:13px">Approve = they can see public bid jobs and bid (they get the approval e-mail). The same as Subs → 🔨 Bid site requests.</p>'
+    + (b.vet ? '<div style="margin-top:4px">📨 Joined from a job invite — they already see that job. GrayCo has not checked them yet.</div>' : b.selfSignup ? '<div style="margin-top:4px">🆕 Signed up on their own</div>' : '') + matchLine(b) + P   /* SUBSIGNUP: */
+    + '<p style="color:#64748b;font-size:13px">' + (b.vet ? 'Approve = checked: they stay on the bid site and go on the Subs list (no e-mail — they are already in). Deny = they lose access.' : 'Approve = they can see public bid jobs and bid (they get the approval e-mail). The same as Subs → 🔨 Bid site requests.') + '</p>'
     + '<div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" data-bpa="ok" style="background:#15803d;color:#fff;border:0;border-radius:8px;padding:9px 14px;font-weight:700;cursor:pointer">✅ Approve for the bid site</button>'
     + '<button type="button" data-bpa="no" style="background:#fff;color:#b91c1c;border:1px solid #fca5a5;border-radius:8px;padding:9px 14px;font-weight:700;cursor:pointer">✕ Deny</button></div></div>';
   m.addEventListener('click', function(ev){ var t = ev.target.closest && ev.target.closest('[data-bpa]'); if (ev.target === m || (t && t.getAttribute('data-bpa') === 'x')) return m.remove(); if (!t) return;
@@ -230576,18 +230581,19 @@ var BUSY = {};   /* patch BPFAST: the click shows at once (the server copies the
 function decide(b, ok){
   if (BUSY[b.id]) { toast('⏳ Still working on ' + (b.company || b.email) + '…'); return BUSY[b.id]; }
   toast(ok ? '⏳ Approving ' + (b.company || b.email) + '…' : '⏳ Denying…');
-  return (BUSY[b.id] = W._gcSubsBids.decide(b.id, ok).then(function(r){ delete BUSY[b.id]; toast(r && r.ok ? (ok ? '✅ ' + (b.company || b.email) + ' approved — they got the e-mail' : '✕ Denied') : ((r && r.data && r.data.error) || 'Not saved'), !(r && r.ok)); return r; }, function(e){ delete BUSY[b.id]; toast('Not saved — check the connection and try again', true); return { ok: false }; }));
+  return (BUSY[b.id] = W._gcSubsBids.decide(b.id, ok).then(function(r){ delete BUSY[b.id]; toast(r && r.ok ? (ok ? '✅ ' + (b.company || b.email) + (b.vet ? ' checked and approved' : ' approved — they got the e-mail') : '✕ Denied') : ((r && r.data && r.data.error) || 'Not saved'), !(r && r.ok)); try { if (W._gcApprovalSetFresh) W._gcApprovalSetFresh(); } catch (e) {} return r; }, function(e){ delete BUSY[b.id]; toast('Not saved — check the connection and try again', true); return { ok: false }; }));
 }
 function rows(sc, now){
-  if (!admin() || (sc && sc.kind && sc.kind !== 'admin')) return [];
+  if (!staffOk() || (sc && sc.kind && sc.kind !== 'admin' && sc.kind !== 'office')) return [];   /* SUBSIGNUP: the office sees the sign-ups */
   refresh(false);
   var out = [];
   arr(W._gcSubsBids && W._gcSubsBids.list()).forEach(function(b){
     var ready = !!(b.papers && b.papers.ready), mt = matchOf(b);
-    out.push({ key: 'bp:su:' + s(b.id), id: s(b.id), src: 'bp', group: 'bp', kind: 'bid_signup', kindL: 'Bid site sign-up', icon: '🔨', title: (b.selfSignup ? '🆕 New sub sign-up — ' : 'Bid site request — ') + s(b.company || b.name || b.email) + (ready ? ' · ⚡ ready for quick approval' : '') + (mt && mt.kind === 'strong' ? ' · 🔗 already in CRM: ' + s(mt.rec.name || mt.rec.company) + ' (' + mt.why + ')' : mt && mt.kind === 'weak' ? ' · 🔗 same sub as ' + arr(mt.cands).map(function(c){ return s(c.rec.name || c.rec.company); }).join(' / ') + '?' : ''),
-      pid: '', job: [arr(b.trades).join(', '), [b.city, b.state].filter(Boolean).join(', ')].filter(Boolean).join(' · '), pm: '', step: 'admin', waits: 'Wesley or Nick', since: Date.parse(b.at || b.createdAt || 0) || 0, clock: '', amount: 0, mine: true, escalated: false, chain: '',
-      approve: { l: '✅ Approve', f: function(){ return decide(b, true); } }, open: null, doc: null, edit: { l: '📋 Review', f: function(){ sheet(b); } } });
+    out.push({ key: 'bp:su:' + s(b.id), id: s(b.id), src: 'bp', group: 'bp', kind: 'bid_signup', kindL: 'New sub sign-up', icon: '🔨', title: signupTitle(b) + (ready ? ' · ⚡ ready for quick approval' : '') + (mt && mt.kind === 'strong' ? ' · 🔗 already in CRM: ' + s(mt.rec.name || mt.rec.company) + ' (' + mt.why + ')' : mt && mt.kind === 'weak' ? ' · 🔗 same sub as ' + arr(mt.cands).map(function(c){ return s(c.rec.name || c.rec.company); }).join(' / ') + '?' : ''),
+      pid: '', job: [arr(b.trades).join(', '), [b.city, b.state].filter(Boolean).join(', ')].filter(Boolean).join(' · '), pm: '', step: 'admin', waits: 'Wesley, Nick or the office', since: Date.parse(b.at || b.createdAt || 0) || 0, clock: '', amount: 0, mine: true, escalated: false, chain: b.vet ? '📨 joined from a job invite — not checked yet' : '',
+      approve: { l: '✅ Approve', f: function(){ return decide(b, true); } }, open: null, doc: { l: '✕ Deny sign-up', f: function(){ if (W.confirm('Deny ' + (b.company || b.email) + '? They will not see GrayCo\'s bid jobs.')) decide(b, false); } }, edit: { l: '📋 Open / Review', f: function(){ sheet(b); } } });
   });
+  if (!admin()) return out;   /* SUBSIGNUP: "Same sub?" and old plan requests stay the admins' */
   arr(W._gcBidSubs && W._gcBidSubs.same && W._gcBidSubs.same()).forEach(function(it){   /* patch SUBSYNC: 🔗 Same sub? */
     var x = it.x || {};
     out.push({ key: 'bp:same:' + it.key, id: it.key, src: 'bp', group: 'bp', kind: 'bid_samesub', kindL: 'Same sub?', icon: '🔗', title: '🔗 Same sub? ' + s(x.company || x.name || x.email) + ' (bid portal) ↔ ' + it.cands.map(function(c){ return c.name; }).join(' / ') + ' (CRM)',
@@ -230602,11 +230608,145 @@ function rows(sc, now){
   });
   return out;
 }
+/* SUBSIGNUP: "New sub signed up: <company> · trades · contact" (an invited one: "joined from a job invite — please check") */
+function signupTitle(b){ return 'New sub signed up: ' + s(b.company || b.name || b.email) + (arr(b.trades).length ? ' · ' + arr(b.trades).slice(0, 3).join(', ') : '') + (b.name && b.company ? ' · ' + s(b.name) : '') + (b.vet ? ' · 📨 from a job invite — please check' : ''); }
+/* SUBSIGNUP: the sign-ups count in the ONE approval set too (the green APPROVE badge, the To-Do chip, the field My Approvals' "Other approvals"
+   with Open → the Approve / Deny sheet). Id "bidsite_<id>": the ✅ Approvals tab shows its own richer row for it (patch APX drops "bidsite_" rows
+   when these rows are there). */
+function setAdd(r){
+  try {
+    if (!r || !r.groups || !staffOk()) return r;
+    try { if (W._gcCo && W._gcCo.filter && W._gcCo.filter() !== 'all' && W._gcCo.filter() !== 'construction') return r; } catch (e) {}
+    var g = r.groups.other = arr(r.groups.other), have = {}; g.forEach(function(x){ have[s(x && x.id)] = 1; });
+    var n = 0;
+    arr(W._gcSubsBids && W._gcSubsBids.list()).forEach(function(b){ var id = 'bidsite_' + s(b.id); if (!s(b.id) || have[id] || have['td:' + id]) return; have[id] = 1; n++;
+      g.push({ id: id, title: signupTitle(b), sub: [s(b.email), s(b.phone)].filter(Boolean).join(' · '), act: { l: '📋 Open', f: function(){ sheet(b); } } }); });
+    if (n) { r.total = (r.total || 0) + n; r.tip = (s(r.tip) ? s(r.tip) + ' · ' : '') + n + ' new sub sign-up' + (n === 1 ? '' : 's'); }
+  } catch (e) { warn(e); }
+  return r;
+}
+function wrapSet(){
+  var f = W._gcApprovalSet; if (typeof f !== 'function' || f.__gcSubSignup) return;
+  var w = function(){ return setAdd(f.apply(this, arguments)); };
+  try { Object.keys(f).forEach(function(k){ w[k] = f[k]; }); } catch (e) {}
+  w.__gcSubSignup = true; W._gcApprovalSet = w;
+  try { if (W._gcApprovalSetFresh) W._gcApprovalSetFresh(); } catch (e) {}
+}
+wrapSet(); (W.__GC_NATIVE_SETINTERVAL__ || W.setInterval).call(W, wrapSet, 3000);
 W._gcApxExtra = arr(W._gcApxExtra); W._gcApxExtra.push(rows);
 (W.__GC_NATIVE_SETINTERVAL__ || W.setInterval).call(W, function(){ if (!D.hidden) refresh(false); }, 60000);
 (W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout).call(W, function(){ refresh(true); }, 4000);
 W._gcBpAppr = { rows: function(){ return rows({ kind: 'admin' }, Date.now()); }, refresh: function(){ refresh(true); }, sheet: sheet, sameSheet: sameSheet, jobs: function(){ return JOBS.slice(); } };
 try { console.log('[GC] patch BPAPPR: 🏗 Bid portal items in ✅ Approvals — _gcBpAppr.rows()'); } catch (e) {}
+})(window, document);
+</script>
+<script id="gc-patch-apprnosend">
+/* APPRNOSEND: (owner 11/16: "would like to approve here AND NOT SEND TOO") — a second button, "✅ Approve — don't send", next to
+   the approve button of every approval that would send something to a customer / sub / GC: the desk ✅ Approvals tab (and its
+   "Yes, approve" confirm), the green APPROVE cards / To-Do / field My Approvals cards (patch AP2), the e-mail preview ("✏️ Edit
+   before sending") and the old ✅ Approvals list (patch APPR). It goes through the ONE approval door (window._gcApprovalAct → the
+   portal function, op 'approve' + noSend: true), so the same people may use it as ✅ Approve and every device sees the same answer.
+   The server closes the item as approved WITHOUT sending (status 'recorded', "approved without sending — <who>, <when>"); nothing
+   is sent, now or later (also not when data-entry mode ends). An invoice the e-mail carried is marked issued here ("sent" =
+   approved without sending, apprNoSend { by, at, note }) and gets no reminders. Before the last step (a money paper the PM approves
+   first) the item goes on to Wesley / Nick with "don't send" noted; they decide. Audit: the approval keeps who / role / when /
+   device; window._gcApprAudit(rec) is called when present.
+   Console: _gcApprNoSend.go(id), .ok(item), .scan() */
+(function(W, D){
+'use strict';
+if (W.__GC_PATCH_APPRNOSEND__) return; W.__GC_PATCH_APPRNOSEND__ = true;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout, RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+function later(f, ms){ return ST.call(W, f, ms || 0); }
+function s(v){ return v == null ? '' : String(v).trim(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function warn(e){ try { console.warn('[GC APPRNOSEND]', e && e.message || e); } catch (x) {} }
+var LABEL = '✅ Approve — don’t send', NO = /^(portal_publish|sub_contact|announcement|refcredit|refgift)$|^preq_|^mkt|social/;   /* the server's list (portal.js noSendOk) */
+function all(){ try { var c = W._gcCustApprovals ? W._gcCustApprovals() : null; return arr(c && c.all); } catch (e) { return []; } }
+function itemOf(id){ id = s(id); return all().filter(function(x){ return x && s(x.id) === id; })[0] || null; }
+function ok(x){ return !!(x && x.status === 'waiting' && s(x.kind) && !NO.test(s(x.kind))); }
+function lastStep(x){ var st = arr(x.steps); return st.indexOf(x.step) >= st.length - 1; }
+function who(x){ var t = s(x.to); return t ? t : (/^gcp_/.test(s(x.kind)) ? 'the GC' : /^(bp_|sub_)/.test(s(x.kind)) ? 'the sub' : 'the customer'); }
+function device(){ var v = ''; try { v = s(localStorage.getItem('grayco_view')); } catch (e) {} var m = /iPhone|iPad|Android|Mobile/i.test(navigator.userAgent || '') ? 'phone' : 'computer'; return (/^field/i.test(v) || D.documentElement.classList.contains('gc-field') ? 'field' : 'desk') + ' · ' + m + ' · ' + s(navigator.platform).slice(0, 20); }
+function toast(t, bad){
+  try { if (W._gcSys && W._gcSys.toast) return W._gcSys.toast(t, bad); } catch (e) {}
+  try { var n = D.createElement('div'); n.setAttribute('data-gc-keep', '1'); n.textContent = t; n.style.cssText = 'position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:100400;background:' + (bad ? '#7f1d1d' : '#14532d') + ';color:#fff;padding:10px 16px;border-radius:10px;font:600 13px Inter,sans-serif;max-width:90vw'; D.body.appendChild(n); later(function(){ n.remove(); }, 4500); } catch (e) {}
+}
+/* the invoice the e-mail carried: issued ("sent" = approved without sending), never e-mailed */
+function markInvoice(invId, note, at, by){
+  if (!invId || typeof W._setInvoices !== 'function') return;
+  try {
+    W._setInvoices(function(prev){ return (prev || []).map(function(r){
+      if (!r || String(r.id) !== String(invId)) return r;
+      var st = s(r.status).toLowerCase();
+      return Object.assign({}, r, { status: (!st || /^(draft|ready|unsent|pending|new|created|open|pm_review|approved)$/.test(st)) ? 'sent' : r.status, sentAt: r.sentAt || at, sentHow: 'approved without sending', sentNote: note,
+        apprNoSend: { by: by, at: at, note: note }, updatedAt: at });
+    }); });
+  } catch (e) { warn(e); }
+}
+var BUSY = {};
+function go(id, el){
+  var x = itemOf(id);
+  if (!ok(x)) { toast('This one is not waiting any more — look again.', true); return Promise.resolve(null); }
+  if (BUSY[id] || typeof W._gcApprovalAct !== 'function') return Promise.resolve(null);
+  var fin = lastStep(x) || (W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()) || (W._gcApOfficeTakes && W._gcApOfficeTakes(x));
+  var msg = 'Approve WITHOUT sending?\n\n' + (s(x.title) || s(x.subject) || s(x.kind)) + '\nTo: ' + who(x) + '\n\n' +
+    (fin ? 'It is marked approved (by you, now) and NOTHING is sent to ' + who(x) + ' — not now, and not later (also not when data-entry mode ends).' + (/invoice|final/.test(s(x.kind)) ? ' The invoice counts as issued; no reminders follow.' : '')
+         : 'Your approval is recorded with "don’t send", and it goes on to Wesley / Nick for the last approval.');
+  if (!W.confirm(msg)) return Promise.resolve(null);
+  BUSY[id] = 1; if (el) { el.disabled = true; el.textContent = 'Working…'; }
+  try { var A7 = W._gcApprovalAct.ok; if (A7 && typeof A7 === 'object') A7[id] = true; } catch (e) {}   /* nothing goes to the customer: no "final photos?" stop (patch A7) */
+  return Promise.resolve(W._gcApprovalAct(id, 'approve', { noSend: true, device: device() })).then(function(j){
+    delete BUSY[id]; j = j || {};
+    if (!j.ok) { if (el) { el.disabled = false; el.textContent = LABEL; } toast('⚠ ' + (j.error || 'Not saved — try again.'), true); return j; }
+    var it = j.item || x, at = s(it.noSendAt || it.recordedAt) || new Date().toISOString(), by = s(it.noSendBy || it.recordedBy);
+    if (j.noSend) markInvoice(s(j.invoiceId), s(j.note) || ('approved without sending — ' + by), at, by);
+    try { if (typeof W._gcApprAudit === 'function') W._gcApprAudit({ op: 'approve_nosend', id: s(id), kind: s(x.kind), jobId: s(x.jobId), to: s(x.to), by: by, at: at, device: device(), final: !!j.noSend, next: s(j.next), invoiceId: s(j.invoiceId) }); } catch (e) { warn(e); }
+    toast(j.noSend ? '✅ Approved — nothing was sent' + (j.invoiceId ? ' (invoice marked issued)' : '') + '.' : '✅ Approved (don’t send) — now waiting on Wesley or Nick.');
+    var pv = D.getElementById('_gcAp2Prev'); if (pv && pv.__id === id) later(function(){ try { pv.remove(); } catch (e) {} }, 900);
+    try { if (W._gcApprovalSetFresh) W._gcApprovalSetFresh(); } catch (e) {}
+    try { if (W._gcAp2Refresh) W._gcAp2Refresh(); else if (W._gcApprovalsRefresh) W._gcApprovalsRefresh(); } catch (e) {}
+    return j;
+  }, function(e){ delete BUSY[id]; if (el) { el.disabled = false; el.textContent = LABEL; } toast('⚠ Not saved — check the connection.', true); return null; });
+}
+/* the button, next to each approve button whose item it can find */
+var CSS = '.gc-nosend{border:2px solid #16a34a;background:#f0fdf4;color:#166534;font-weight:800;border-radius:10px;padding:8px 12px;cursor:pointer;font-size:14px;min-height:40px}.gc-nosend:disabled{opacity:.6}.gc-nosend-ask{display:block;width:100%;font-size:12px;color:#92400e;margin:4px 0}';
+function css(){ if (D.getElementById('gc-nosend-css')) return; var st = D.createElement('style'); st.id = 'gc-nosend-css'; st.textContent = CSS; (D.head || D.documentElement).appendChild(st); }
+function idFor(b){
+  var a = b.getAttribute('data-apx-act'), m;
+  if (a && (m = /\|ap2:(.+?)(?:#\d+)?\|approve$/.exec(a))) return m[1];
+  if (b.getAttribute('data-apx-conf') === 'yes' && (m = /^ap2:(.+?)(?:#\d+)?$/.exec(s(b.getAttribute('data-k'))))) return m[1];
+  var c = b.closest && b.closest('._ap2Card[data-id], ._apCard[data-id]'); if (c) return c.getAttribute('data-id');
+  var pv = b.closest && b.closest('#_gcAp2Prev'); if (pv) return pv.__id;
+  return '';
+}
+var SEL = 'button[data-apx-act$="|approve"], button[data-apx-conf="yes"], ._ap2Card[data-id] ._ap2Yes, ._apCard[data-id] ._apApprove, #_gcAp2Prev ._ap2PvYes';
+function scan(){
+  var n = 0;
+  try {
+    var bs = D.querySelectorAll(SEL); if (!bs.length) return 0; css();
+    for (var i = 0; i < bs.length; i++) {
+      var b = bs[i], id = idFor(b); if (!id) continue;
+      var x = itemOf(id), par = b.parentNode; if (!par) continue;
+      var have = par.querySelector('.gc-nosend[data-nosend-id]');
+      if (!ok(x)) { if (have) have.remove(); continue; }
+      if (have && have.getAttribute('data-nosend-id') === id) continue;
+      if (have) have.remove();
+      var nb = D.createElement('button'); nb.type = 'button'; nb.className = 'gc-nosend'; nb.setAttribute('data-nosend-id', id); nb.setAttribute('data-gc-keep', '1');
+      nb.title = 'Mark it approved and send nothing — not now, not later'; nb.textContent = LABEL; nb.addEventListener('click', onBtn);
+      if (b.style && b.style.flex) nb.style.flex = '1';
+      b.insertAdjacentElement('afterend', nb); n++;
+      if (x.noSendAsk && !par.querySelector('.gc-nosend-ask')) { var nt = D.createElement('span'); nt.className = 'gc-nosend-ask'; nt.setAttribute('data-gc-keep', '1'); nt.textContent = '🔕 ' + s(x.noSendAsk.by) + ' approved it as “don’t send”.'; par.insertBefore(nt, par.firstChild); }
+    }
+  } catch (e) { warn(e); }
+  return n;
+}
+function onBtn(ev){ var t = ev.currentTarget; ev.preventDefault(); ev.stopPropagation(); go(t.getAttribute('data-nosend-id'), t); }
+var pend = false;
+function soon(){ if (pend) return; pend = true; later(function(){ pend = false; scan(); }, 120); }
+try { new MutationObserver(soon).observe(D.documentElement, { childList: true, subtree: true }); } catch (e) {}
+RI.call(W, scan, 1500);
+W._gcApprNoSend = { go: go, ok: ok, scan: scan, label: LABEL };
+try { console.log('[GC] patch APPRNOSEND: ✅ Approve — don’t send (one door, the server records it, nothing is sent)'); } catch (e) {}
 })(window, document);
 </script>
 <script id="gc-patch-subsched">

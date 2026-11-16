@@ -1968,6 +1968,43 @@ async function supplierPoQueue(body, who){
     meta: { by: who.email, poId: poId, supplier: clip(body.supplier, 80), fromPm: true } });
   return { status: ok ? 200 : 502, out: { ok: !!ok, id: qid, queued: !!ok } };
 }
+/* APPRNOSEND: (owner 11/16: "would like to approve here AND NOT SEND TOO") — "✅ Approve — don't send" on every approval that
+   would send something to a customer / sub / GC. The same door as ✅ Approve (op 'approve' + noSend: true), so the same people may
+   use it (the checks above already ran). At the LAST step: the item is closed as approved — status 'recorded', noSend: true,
+   sentNote "approved without sending — <who>, <when>", the approval (who / role / when / device) kept on it — and aqSend is NEVER
+   called, now or later: a recorded item is final (nothing re-queues it, the 7 AM release and data-entry mode never touch it; when
+   data-entry mode ends nothing is sent afterwards). A final invoice's mail row is stamped 'approved without sending' (first_sent_at
+   = now): it counts as issued and the 15-day reminders never start (runReminders skips it). Before the last step (a money paper
+   the PM approves first): it goes on to the next approver like ✅ Approve, with the PM's "don't send" noted (noSendAsk); the last
+   approver decides. Not offered where approving IS the action, not a message (put in portal, "Your crew" card, portal replies,
+   marketing posts, staff announcements, referral credits). */
+const NOSEND_NO = /^(portal_publish|sub_contact|announcement|refcredit|refgift)$|^preq_/;
+function noSendOk(it){ const k = s(it && it.kind); return !!k && !NOSEND_NO.test(k) && !mktLib().isMktKind(k); }
+function nsWhen(iso){ try { return new Date(iso).toLocaleString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }); } catch (e) { return s(iso); } }
+async function approveNoSend(it0, body, me, o){
+  if (!noSendOk(it0)) return { status: 400, out: { ok: false, error: 'Nothing is sent when this one is approved — use ✅ Approve.' } };
+  const now = o.now, st0 = Array.isArray(it0.steps) ? it0.steps : [], last = o.admin || o.office || st0.indexOf(it0.step) >= st0.length - 1;
+  const ap = Object.assign({ step: it0.step, noSend: true }, me, body.device ? { device: clip(body.device, 80) } : {});
+  const note = 'approved without sending — ' + me.by + ', ' + nsWhen(now);
+  const r = await o.upd(function(x){
+    if (x.status !== 'waiting' && !(x.status === 'sending' && o.stale)) return false;
+    x.approvals = (x.approvals || []).concat([Object.assign({}, ap, { step: x.step })]);
+    if (last) { x.status = 'recorded'; x.noSend = true; x.recordOnly = true; x.recordedBy = me.by; x.recordedEmail = me.email; x.recordedAt = now; x.noSendBy = me.by; x.noSendAt = now; x.sentNote = note; x.claim = ''; x.lastError = ''; }
+    else { x.noSendAsk = { by: me.by, email: me.email, role: me.role, at: now }; x.step = x.steps[x.steps.indexOf(x.step) + 1]; if (x.step === 'admin') x.adminSince = now; }
+  }, function(z){ return last ? z.status === 'recorded' && z.noSendAt === now : z.step !== it0.step; });
+  if (!r.ok || !r.result || (last && r.result.noSendAt !== now)) return { status: 409, out: { ok: false, error: 'Someone else is on this one — look again.', item: r.result } };
+  if (!last) return { status: 200, out: { ok: true, item: r.result, next: r.result.step, noSendAsked: true, sent: false } };
+  const m = it0.meta || {}, inv = s(m.invoiceId);
+  try {   /* the record follows: the invoice counts as issued, and nothing goes after it */
+    if (it0.kind === 'final_invoice' && inv) await patchMail(inv, { first_sent_at: now, last_reminder_at: now, last_result: 'approved without sending' });
+    if (it0.kind === 'invoice' && m.isFinal && inv) await fetch(sbUrl() + '/rest/v1/gc_portal_mail?on_conflict=invoice_id', { method: 'POST', headers: H({ Prefer: 'resolution=merge-duplicates,return=minimal' }),
+      body: JSON.stringify({ invoice_id: inv, project_id: s(it0.jobId), first_sent_at: now, last_reminder_at: now, last_result: 'approved without sending' }) });
+    if (it0.kind === 'final_reminder' && inv) await patchMail(inv, { last_reminder_at: now, last_result: 'approved without sending' });
+    if (it0.kind === 'portal_docs' && m.batch) await fetch(sbUrl() + '/rest/v1/gc_portal_notice?batch_id=eq.' + encodeURIComponent(m.batch), { method: 'PATCH', headers: H({ Prefer: 'return=minimal' }), body: JSON.stringify({ result: 'approved without sending' }) });
+  } catch (e) {}
+  try { console.log('[portal] approved without sending: ' + s(it0.id) + ' (' + s(it0.kind) + ') by ' + me.email); } catch (e) {}
+  return { status: 200, out: { ok: true, noSend: true, recorded: true, sent: false, item: r.result, invoiceId: inv || s(((it0.attachments || []).find(function(a){ return a && a.invoiceId; }) || {}).invoiceId), note: note } };
+}
 /* approve / reject / edit-then-approve, from the CRM. who = the signed-in person (gcStaffAuth). */
 async function approvalAction(body, who){
   const op = s(body.op), id = s(body.id);
@@ -2099,6 +2136,7 @@ async function approvalAction(body, who){
     return { status: 200, out: { ok: true, saved: true, item: re.result } };
   }
   if (op !== 'approve') return { status: 400, out: { ok: false, error: 'Bad request' } };
+  if (body.noSend === true) return approveNoSend(it0, body, me, { admin: admin, office: office, stale: stale, now: now, upd: upd });   /* APPRNOSEND: */
   const subcSel = s(it0.kind) === 'sub_contact' ? subcLib().sanitizeSel(body.share) : null;   /* patch SUBCONTACT: approving = the picker's selection */
   if (s(it0.kind) === 'sub_contact' && subcLib().selectionProblem(body.share)) return { status: 400, out: { ok: false, pick: true, error: subcLib().selectionProblem(body.share) } };
   const last = admin || office || it0.steps.indexOf(it0.step) >= it0.steps.length - 1;
@@ -2291,6 +2329,7 @@ async function runReminders(opts){
     for (const inv of finals) {
       const invId = s(inv.id); if (!invId) continue;
       const prev = rows[invId] || null;
+      if ((prev && /approved without sending/.test(s(prev.last_result))) || (inv.apprNoSend && typeof inv.apprNoSend === 'object')) { report.skipped++; continue; }   /* APPRNOSEND: approved without sending — no e-mail, no reminders, ever */
       const first = !prev || !prev.first_sent_at;
       if (!first && prev.last_reminder_at && now - new Date(prev.last_reminder_at) < REMIND_EVERY) { report.skipped++; continue; }
       if (first && prev && prev.last_reminder_at && now - new Date(prev.last_reminder_at) < DAY) { report.skipped++; continue; }   /* a try today already */
