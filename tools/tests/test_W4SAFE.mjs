@@ -78,7 +78,7 @@ try {
   const c4 = await (async () => { const t = Date.now(); let v; while (Date.now() - t < 30000) { v = cPat(); if (v.length && v[0].filing === 'single') return v; await H.sleep(800); } return v; })();
   ok(fb && c4.length === 1 && c4[0].filing === 'single' && c4[0].extra === 0 && c4[0].dependentsCredit === 2000, '4. a person setting single / +0 (the defaults) is saved to the cloud', c4.map(w4));
   await H.sleep(8000);
-  await A.page().reload({ waitUntil: 'domcontentloaded' }); await ready(A); await H.sleep(10000);
+  await A.page().reload({ waitUntil: 'domcontentloaded' }); await ready(A); await H.sleep(28000);   /* past the late payroll pull */
   const l4 = await localPat(A), c5 = cPat();
   ok(l4.length === 1 && l4[0].filing === 'single' && l4[0].extra === 0 && c5[0].filing === 'single', '4. …and computer A (which had married / 20) takes it, the cloud keeps it', { l4, c5: c5.map(w4) });
   const errs = A.errs.concat(B.errs).filter(e => !/ResizeObserver|Script error/.test(e));
