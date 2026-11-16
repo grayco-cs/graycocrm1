@@ -213,6 +213,8 @@ async function profileRun(who, acct, opts){
         if (/^🚪?\s*Sign out/.test(it.label)) { ok(true, who + ' 💎 ' + it.label + ' (present; not clicked — it signs out)'); continue; }
         await tryItem(A, it, who);
       }
+      /* the screens that live on the page all the time (shown / hidden): they work a SECOND time too, after a close */
+      if (!ONLY) for (const k of ['#gc-emailq-hub-link', '#gc-hub-projhub-link', 'L:Contract & Doc Templates']) { const it = items.find(i => i.key === k); if (it) await tryItem(A, Object.assign({}, it, { label: it.label + ' (again)' }), who); }
     }
     if (opts.desk) {
       console.log('== ' + who + ': the toolbar and the desk');
