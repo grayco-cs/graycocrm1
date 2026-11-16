@@ -5,7 +5,8 @@
 //   own ✕ / Close / ‹ Back); after that nothing is left on the screen and nothing invisible blocks clicks
 //   (document.elementFromPoint at five points is what it was before); the 💎 menu opens again, on screen.
 //   Also: the menu's own ✕, Esc, outside click and a second 💎 tap close it; it opens on screen from the top toolbar and from
-//   the desk ("💎 The 💎 menu"); payroll items only for admins and the Office Manager (owner rule), not Office / PM.
+//   the desk (☰ More → "💎 The 💎 menu"); payroll items only for admins, the Office Manager role and a person the database
+//   grants payroll (gc_staff.payroll — office@), not an Office / data-entry person without the grant, not a PM (owner rule).
 // Usage: node test_HUBFIX.mjs <dir with index.html>   (GC_HARNESS = the offline harness_N.mjs)  HUB_ONLY=<label part> narrows.
 import { pathToFileURL } from 'url';
 const HARNESS = process.env.GC_HARNESS || '/tmp/claude-0/-home-user-graycocrm1/6a5b2b6b-8a4d-5505-9f82-62521adb6674/scratchpad/wN/harness_N.mjs';
@@ -20,7 +21,7 @@ const ago = d => new Date(Date.now() - d * 864e5).toISOString();
 const PAYROLL = ['Payroll', 'Payroll Check', 'Employee Pay', 'State Tax', 'PM Pay (type & source)', 'Pay Structures', 'Pay Structure Templates'];
 const BAD_DIALOG = /not loaded|hard-refresh|still loading|not ready|try again in a moment|only admins and the office manager can/i;
 /* a button the menu shows you, that then says it is not for you, is a dead button */
-const REFUSED = /is for owners|for owners only|owners only|only (the )?owners|admins only|only admins|is for admins|not for your (role|profile)|you do not have access|no permission/i;
+const REFUSED = /is for owners|limited to owners|for owners only|owners only|only (the )?owners|admins only|only admins|is for admins|not for your (role|profile)|you do not have access|no permission/i;
 
 function world(officeRole){
   H.resetCloud();
@@ -41,8 +42,10 @@ function world(officeRole){
   H.cset('customers', [{ id: 'C1', name: 'Demo Client A', phone: '9015550111' }]);
 }
 
-async function boot(who, acct){
+async function boot(who, acct, access){
   const A = await H.computer(who, { build, viewport: { width: 1440, height: 900 } });
+  /* what the database says about this person (gc_my_access: admin / payroll grant from gc_staff.payroll / office) */
+  if (access) await A.ctx.route(u => /\/rest\/v1\/rpc\/gc_my_access/.test(String(u.href || u)), r => r.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*' }, body: JSON.stringify(Object.assign({ sec2: true, admin: false, payroll: false, office: false }, access)) }));
   A.acceptConfirm = false;                                     /* every "are you sure?" is answered Cancel — nothing destructive runs */
   A.downloads = []; A.page().on('download', d => A.downloads.push(d.suggestedFilename()));
   A.choosers = 0; A.page().on('filechooser', () => { A.choosers++; });
@@ -166,7 +169,7 @@ async function tryItem(A, it, who){
 
 async function profileRun(who, acct, opts){
   console.log('== ' + who);
-  const A = await boot(who, acct);
+  const A = await boot(who, acct, opts.access);
   try {
     await A.ev(PAGE_LIB);
     const cover = await A.ev(() => (window._gcNavLayers ? window._gcNavLayers() : []).map(e => (e.id || String(e.className).slice(0, 30)) + ' “' + (e.innerText || '').replace(/\s+/g, ' ').slice(0, 60) + '”'));
@@ -234,17 +237,23 @@ async function profileRun(who, acct, opts){
 }
 
 const OWNER_ONLY = ['Cash Position', 'P&L (auto)', 'Team Status'];
+const WESLEY_NICK = ['Cash Position', 'Team Status', 'PM Commission Setup', 'Cash Flow'];   /* their screens open for the owners only */
 try {
-  const RUN = (process.env.HUB_PROFILES || 'admin,office,office-manager,pm').split(',');
+  const RUN = (process.env.HUB_PROFILES || 'admin,office,office-nogrant,office-manager,pm').split(',');
   if (RUN.indexOf('admin') >= 0) { world('Office');
   await profileRun('admin', 'u-wesley', { click: true, panelChecks: true, desk: true, payroll: true, min: 100, mustHave: ['Team access', 'View as', 'Data-entry mode', 'Cash Position', 'Payroll'] }); }
   {
-    if (RUN.indexOf('office') >= 0) { world('Office');
-    await profileRun('office', 'u-office', { click: true, panelChecks: true, desk: true, payroll: false, min: 60 }); }
+    /* office@ as it really is: role Office Admin, and the database's payroll grant (gc_staff.payroll) — every item clicked */
+    if (RUN.indexOf('office') >= 0) { world('Office Admin');
+    await profileRun('office', 'u-office', { access: { payroll: true, office: true }, notThere: WESLEY_NICK, click: true, panelChecks: true, desk: true, payroll: true, min: 60 }); }
+    /* an office / data-entry person WITHOUT the payroll grant: no payroll items */
+    if (RUN.indexOf('office-nogrant') >= 0 && !ONLY) { world('Office');
+    await profileRun('office-nogrant', 'u-office', { access: { payroll: false }, notThere: WESLEY_NICK, payroll: false, min: 60 }); }
+    /* the Office Manager role (no grant needed) */
     if (RUN.indexOf('office-manager') >= 0 && !ONLY) { world('Office Manager');
-    await profileRun('office-manager', 'u-office', { payroll: true, min: 60 }); }
+    await profileRun('office-manager', 'u-office', { access: { payroll: false }, notThere: WESLEY_NICK, payroll: true, min: 60 }); }
     if (RUN.indexOf('pm') >= 0 && !ONLY) { world('Office');
-    await profileRun('pm', 'u-pm', { payroll: false, notThere: OWNER_ONLY, min: 20, mustHave: ['Job Messages', 'Help Center'] }); }
+    await profileRun('pm', 'u-pm', { click: true, payroll: false, notThere: OWNER_ONLY.concat(['Test the CRM', 'Send Alert to All PMs']), min: 20, mustHave: ['Job Messages', 'Help Center'] }); }
   }
 } catch (e) { fail++; console.log('  ✗ FAIL the run stopped: ' + (e && e.stack || e)); }
 console.log((fail ? 'FAILED ' : 'ALL PASS ') + pass + ' passed, ' + fail + ' failed'); process.exit(fail ? 1 : 0);

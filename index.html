@@ -22329,7 +22329,7 @@ if (!localStorage.getItem("_helpShown")) {
         { icon: "📅", label: "Add to iPhone Calendar", fn: function(){ window._gcOpenPhoneCalPicker && window._gcOpenPhoneCalPicker(); } },
         { icon: "📅", label: "Edit Schedule", fn: function(){ window._gcOpenFieldSchedule && window._gcOpenFieldSchedule(); } },
         { icon: "🔧", label: "Fix Schedule Items (no job)", fn: function(){ window._gcOpenFixSchedule && window._gcOpenFixSchedule(); } },
-        { icon: "🧪", label: "Test the CRM", fn: function(){ if(window._gcIsPM && window._gcIsPM()){ alert("Testing is for owners/office."); return; } if(window._gcRunTests) window._gcRunTests(120); } },
+        { icon: "🧪", label: "Test the CRM", adminOnly: true, fn: function(){ if(window._gcIsPM && window._gcIsPM()){ alert("Testing is for owners/office."); return; } if(window._gcRunTests) window._gcRunTests(120); } },   /* HUBFIX: owners / office only — a PM got a button that only said no */
         { icon: "\uD83E\uDDF9", label: "Clean Empty Drafts", adminOnly:true, fn: function(){ if(window._gcCleanEmptyDrafts) window._gcCleanEmptyDrafts(); else alert("Cleanup not loaded — hard-refresh and try again."); } },
         { icon: "\uD83D\uDCAC", label: "Job Messages", fn: function(){ if(window._gcPickJobForMessages) window._gcPickJobForMessages(); else alert("Job Messages not loaded — hard-refresh and try again."); } },
         { icon: "\uD83D\uDCB0", label: "Collections Desk", fn: function(){ if(window._gcOpenCollectionsDesk) window._gcOpenCollectionsDesk(); else alert("Collections Desk not loaded — hard-refresh and try again."); } },
@@ -22337,13 +22337,13 @@ if (!localStorage.getItem("_helpShown")) {
         { icon: "🧹", label: "Purge Test Data", fn: function(){ if(window._gcPurgeTestDataUI) window._gcPurgeTestDataUI(); } },
         { icon: "☁️", label: "Force-Clean Cloud", fn: function(){ if(window._gcForceCleanCloudUI) window._gcForceCleanCloudUI(); } },
         { icon: "☁", label: "Cloud Backups", fn: function(){ if(window._gcOpenBackupManager) window._gcOpenBackupManager(); } },
-        { icon: "💰", label: "Cash Position", adminOnly: true, fn: function(){ window._gcOpenCashPosition && window._gcOpenCashPosition(); } },
+        { icon: "💰", label: "Cash Position", adminOnly: true, ownerOnly: true, fn: function(){ window._gcOpenCashPosition && window._gcOpenCashPosition(); } },
         { icon: "📊", label: "P&L (auto)", adminOnly: true, fn: function(){ window._gcOpenPnL && window._gcOpenPnL(); } },
-        { icon: "👥", label: "Team Status", adminOnly: true, fn: function(){ window._gcOpenTeamStatus && window._gcOpenTeamStatus(); } },
+        { icon: "👥", label: "Team Status", adminOnly: true, ownerOnly: true, fn: function(){ window._gcOpenTeamStatus && window._gcOpenTeamStatus(); } },
         { icon: "\uD83D\uDCF7", label: "Import CompanyCam Jobs", fn: function(){ if(window._gcPullCompanyCamJobs){ window._gcPullCompanyCamJobs(true); } else { alert("CompanyCam import not ready."); } } },
         { icon: "\uD83D\uDCC4", label: "Sync my Google Docs", fn: function(){ window._gcPullGoogleQuotes && window._gcPullGoogleQuotes(true); } },
         
-        { icon: "\uD83D\uDCE2", label: "Send Alert to All PMs", fn: function(){ if(window._gcOpenBroadcast) window._gcOpenBroadcast(); else alert("Broadcast not loaded \u2014 hard-refresh and try again."); } },
+        { icon: "\uD83D\uDCE2", label: "Send Alert to All PMs", adminOnly: true, fn: function(){ if(window._gcOpenBroadcast) window._gcOpenBroadcast(); else alert("Broadcast not loaded \u2014 hard-refresh and try again."); } },   /* HUBFIX: owners / office only — a PM got a button that only said no */
         { icon: "\uD83D\uDCCE", label: "Sub Invoice PDFs", fn: function(){ if(window._gcOpenSubPDFManager) window._gcOpenSubPDFManager(); else alert("Not loaded \u2014 hard-refresh and try again."); } },
         { icon: "\uD83D\uDCA1", label: "Monthly Overhead", adminOnly: true, fn: function(){ if(window._gcOpenOverhead) window._gcOpenOverhead(); else alert("Overhead tracker not loaded \u2014 hard-refresh and try again."); } },
         { icon: "\uD83C\uDF96", label: "Required certs, raises & promotion", adminOnly: true, fn: function(){ if(window._gcCertPlan) window._gcCertPlan.open(); else alert("Not loaded \u2014 hard-refresh and try again."); } },   /* patch CERTPLAN */
@@ -22369,7 +22369,7 @@ if (!localStorage.getItem("_helpShown")) {
         { icon: "\uD83D\uDD17", label: "Merge Duplicate Jobs", adminOnly: true, fn: function(){ if(window._gcMergeDuplicateJobs) window._gcMergeDuplicateJobs(); else alert("Merge jobs tool not loaded — hard-refresh and try again."); } },
         
         
-        { icon: "💵", label: "PM Commission Setup", adminOnly: true, fn: function(){ window._gcOpenCustomCommission && window._gcOpenCustomCommission(); } },
+        { icon: "💵", label: "PM Commission Setup", adminOnly: true, ownerOnly: true, fn: function(){ window._gcOpenCustomCommission && window._gcOpenCustomCommission(); } },
         { icon: "\uD83D\uDCB5", label: "Set Flat Commission", adminOnly: true, fn: function(){ window._gcOpenFlatCommission && window._gcOpenFlatCommission(); } },
         { icon: "\uD83C\uDFF7", label: "Job Source (commission)", adminOnly: true, fn: function(){ window._gcOpenJobSourceMgr && window._gcOpenJobSourceMgr(); } },
         { icon: "🔗", label: "Merge Customers", fn: function(){ window._gcOpenCustomerMerge && window._gcOpenCustomerMerge(); } },
@@ -22388,7 +22388,7 @@ if (!localStorage.getItem("_helpShown")) {
         { icon: "💳", label: "Import card statement", fn: function(){ window._gcOpenCardImport && window._gcOpenCardImport(); } },
         { icon: "🏦", label: "Import bank statement", fn: function(){ window._gcOpenBankImport && window._gcOpenBankImport(); } },   /* patch STMTPDF */
         { icon: "📥", label: "Needs a job", fn: function(){ window._gcOpenNeedsJob && window._gcOpenNeedsJob(); } },
-        { icon: "💰", label: "Cash Flow", adminOnly: true, fn: function(){ window._gcOpenCashFlow && window._gcOpenCashFlow(); } },
+        { icon: "💰", label: "Cash Flow", adminOnly: true, ownerOnly: true, fn: function(){ window._gcOpenCashFlow && window._gcOpenCashFlow(); } },
         { icon: "\uD83C\uDFE6", label: "Bank Accounts", adminOnly: true, fn: function(){ if (window._gcStmtBankDoor && window._gcStmtBankDoor("accounts")) return; window._gcOpenAccounts && window._gcOpenAccounts(); } },
         { icon: "\uD83E\uDDFE", label: "Monthly Bank Check", adminOnly: true, fn: function(){ if (window._gcStmtBankDoor && window._gcStmtBankDoor("recon")) return; window._gcOpenBankReconcile && window._gcOpenBankReconcile(); } },
         { icon: "⚖️", label: "Contract Overrides", fn: function(){ window._gcOpenOverrideApprovals && window._gcOpenOverrideApprovals(); } },
@@ -22461,10 +22461,28 @@ if (!localStorage.getItem("_helpShown")) {
         var _u=null; try{ _u=(window._gcMeUserJSON?window._gcMeUserJSON('null'):JSON.parse(localStorage.getItem('grayco_user')||'null')); }catch(e){}
         var _isOwner = !!(_u && (String(_u.payType||'').toLowerCase()==='owner' || _u.role==='Admin' || /office/i.test(_u.role||'')));
         if(!_isOwner){ items = items.filter(function(it){ return !it.adminOnly; }); }
-        /* HUBFIX (owner rule): payroll is for the admins (Wesley, Nick) and the Office Manager role only — not Office / data entry,
-           estimators, PMs, field or marketing */
-        var _canPay = !!(_u && (String(_u.payType||'').toLowerCase()==='owner' || /^(admin|owner)$/i.test(String(_u.role||'')) || /^office manager$/i.test(String(_u.role||'').trim())));
-        if(!_canPay){ items = items.filter(function(it){ return !it.payroll; }); }
+        /* HUBFIX: Cash Position, Team Status, PM Commission Setup and Cash Flow open only for Wesley / Nick (their screens say
+           "is for owners" to anyone else) — the office no longer gets a button that only says no */
+        var _realOwner = !!(_u && (String(_u.payType||'').toLowerCase()==='owner' || _u.role==='Admin'));
+        if(!_realOwner){ items = items.filter(function(it){ return !it.ownerOnly; }); }
+        /* HUBFIX (owner rule): payroll items only for the admins (Wesley, Nick), the Office Manager role, and a person the
+           database grants payroll (gc_staff.payroll — e.g. the office manager on office@) — not Office / data entry without the
+           grant, estimators, PMs, field or marketing. window._gcPayAccess (patch PAYACCESS) decides when it is there. */
+        var _PA = window._gcPayAccess, _vas = false; try { _vas = !!(window._gcVAS && window._gcVAS.active && window._gcVAS.active()); } catch (e) {}
+        function _staffPayFlag(){
+          if (_vas) return false;   /* 👁 View as… shows the profile being viewed, not the admin's own grant */
+          try { var a = window.__GC_SEC2 && window.__GC_SEC2.access && window.__GC_SEC2.access(); if (a && a.known && a.admin) return true; } catch (e) {}
+          try { var s = JSON.parse(localStorage.getItem('gc_auth_v1') || 'null'), c = JSON.parse(localStorage.getItem('gc_sec2_access') || 'null');
+            var em = String((s && s.email) || '').trim().toLowerCase(); return !!(em && c && String(c.email || '').toLowerCase() === em && c.payroll === true); } catch (e) { return false; }
+        }
+        var _canPay = !!(_u && (String(_u.payType||'').toLowerCase()==='owner' || /^(admin|owner)$/i.test(String(_u.role||'')) || /^office manager$/i.test(String(_u.role||'').trim()))) || _staffPayFlag();
+        items = items.filter(function(it){
+          if (_PA && !_vas) {
+            try { if (typeof _PA.hides === 'function') return !_PA.hides(it.label); } catch (e) {}
+            if (it.payroll) { try { if (typeof _PA.can === 'function') return !!_PA.can(); } catch (e) {} }
+          }
+          return !it.payroll || _canPay;
+        });
       })();
       var _hubGroups = {"Business Brain": "Daily Work", "Print pack": "Help & Tools", "Job Profile": "Daily Work", "Upload Documents": "Daily Work", "Search Everything": "Daily Work", "Find a Sub": "Daily Work", "Sub Sign-Up": "Daily Work", "Sub Details": "Daily Work", "Contract & Doc Templates": "Daily Work", "Approvals": "Daily Work", "Review Queue": "Daily Work", "Alerts": "Daily Work", "Notifications": "Daily Work", "Recover Approvals": "Daily Work", "Import CompanyCam Jobs": "Daily Work", "Owner Inbox": "Daily Work", "My Daily Digest": "Daily Work", "Project Payments": "Money & Invoices", "All Company Invoices": "Money & Invoices", "Financials": "Money & Invoices", "Cash Position": "Money & Invoices", "Cash Flow": "Money & Invoices", "P&L (auto)": "Money & Invoices", "Overdue Reminders": "Money & Invoices", "Merge Draw Invoices": "Money & Invoices", "Statement Reconcile": "Money & Invoices", "Credit Cards": "Money & Invoices", "Match to Jobs": "Money & Invoices", "Import card statement": "Money & Invoices", "Import bank statement": "Money & Invoices", "Import from QuickBooks (CSV)": "Money & Invoices", "QuickBooks ↔ CRM": "Money & Invoices", "Card holders": "Money & Invoices", "Needs a job": "Money & Invoices", "Bank Accounts": "Money & Invoices", "Monthly Bank Check": "Money & Invoices", "Bank / ACH details": "Money & Invoices", "Employee Pay": "Pay & Commissions", "1099 Reports": "Pay & Commissions", "PM Commission Setup": "Pay & Commissions", "Set Flat Commission": "Pay & Commissions", "Job Source (commission)": "Pay & Commissions", "Pay Structures": "Pay & Commissions", "Move Job Schedule": "Schedule", "Print Schedule": "Schedule", "Add to iPhone Calendar": "Schedule", "Edit Schedule": "Schedule", "Fix Schedule Items (no job)": "Schedule", "Recover Schedule": "Schedule", "Download Schedule PDF": "Schedule", "Run the Office (Automation)": "Automation", "Automation Inbox": "Automation", "Business Brain (issues)": "Automation", "Rate Category Check": "Automation", "Team Status": "Data & Setup", "Sync my Google Docs": "Data & Setup", "Import Google Docs": "Data & Setup", "Merge Records": "Data & Setup", "Merge Projects": "Data & Setup", "Merge Customers": "Data & Setup", "Contract Overrides": "Data & Setup", "Project CRMs": "Data & Setup", "Cloud Backups": "Data & Setup", "Restore from Backup": "Data & Setup", "Download Backup": "Data & Setup", "Import / Export Data": "Data & Setup", "Explain Mode (help)": "Help & Tools", "Guided Tour": "Help & Tools", "Help Center": "Help & Tools", "Training": "Help & Tools", "Test the CRM": "Help & Tools", "System Health Check": "Help & Tools", "Reset Button Positions": "Help & Tools", "Purge Test Data": "Help & Tools", "Force-Clean Cloud": "Help & Tools"};
       var _hubOrder = ['Daily Work','Money & Invoices','Pay & Commissions','Schedule','Automation','Data & Setup','Help & Tools'];
