@@ -1101,7 +1101,7 @@ function rewrite(u){
   H.filtered++;
   return u + add;
 }
-function fake(status){ return Promise.resolve(new Response(status === 204 ? null : '[]', { status: status, headers: { 'content-type': 'application/json' } })); }
+function fake(status){ return Promise.resolve(new Response(status === 204 ? null : '[]', { status: status, headers: { 'content-type': 'application/json', 'x-gc-held': '1' } })); }   /* SAVES: x-gc-held — not sent, so nobody may take it as "the cloud has it" */
 function keyOfUrl(q){ var m = /(?:^|&)key=eq\.([^&]*)/.exec(q); try { return m ? decodeURIComponent(m[1]).replace(/^"|"$/g, '') : ''; } catch (e) { return ''; } }
 W.fetch = function(input, init){
   try {
@@ -1157,7 +1157,10 @@ function load(why){
     for (var i = 0; i < HEAVY.length; i++) { H.allowed[HEAVY[i]] = true; await pullFor(HEAVY[i]); await sleep(600); }
     H.loaded = true; H.phase = 'loaded'; H.at.done = Date.now() - H.t0;
     try { W.dispatchEvent(new CustomEvent('gc-heavy-loaded')); } catch (e) {}
-    if (H.held.length) { await sleep(1500); try { if (typeof W._gcPushAll === 'function') W._gcPushAll(); } catch (e) {} }
+    /* SAVES: those early writes were answered "201" here without being sent, so the sync marked them as sent and this push
+       skipped them — an estimate the builder autosaved in the first ~20 s never reached the database until it changed again
+       (measured: test_SAVES_est.mjs). The held lists are now marked "not sent" first. */
+    if (H.held.length) { await sleep(1500); try { var hk = {}; H.held.forEach(function(x){ hk[String(x[2]).replace(/__(chunk\d+|manifest)$/, '')] = 1; }); if (typeof W._gcSyncDirty === 'function') W._gcSyncDirty(Object.keys(hk)); } catch (e) {} try { if (typeof W._gcPushAll === 'function') W._gcPushAll(); } catch (e) {} }
     try { console.log('[GC] STUCKFIX: estimates / folded invoices loaded (' + Math.round(H.at.done / 1000) + ' s after start, ' + H.held.length + ' early write(s) pushed again)'); } catch (e) {}
   })();
   return H.p;
@@ -2124,7 +2127,10 @@ function spSend(input, init){
   if (rows) {
     /* what the live feed says arrived while this was on its way is newer than this answer */
     rows.forEach(function(r){ r.ev = SP_EV[r.key] || 0; });
-    p.then(function(res){ rows.forEach(function(r){ if ((SP_EV[r.key] || 0) === r.ev || !(res && res.ok)) spKnown(r.key, res && res.ok ? r.sig : null); }); }, function(){ rows.forEach(function(r){ spKnown(r.key, null); }); });
+    /* SAVES: an answer the page made itself for a write it held back (STUCKFIX, x-gc-held) is not the cloud's: taking it as
+       "the cloud holds this" skipped every identical write for 10 minutes — an estimate autosaved in the first ~20 s after
+       opening never reached the database (test_SAVES_est.mjs) */
+    p.then(function(res){ var held = false; try { held = !!(res && res.headers && res.headers.get && res.headers.get('x-gc-held')); } catch (e) {} rows.forEach(function(r){ if (held) { spKnown(r.key, null); return; } if ((SP_EV[r.key] || 0) === r.ev || !(res && res.ok)) spKnown(r.key, res && res.ok ? r.sig : null); }); }, function(){ rows.forEach(function(r){ spKnown(r.key, null); }); });
   }
   else spForget(u, init);
   return p;
@@ -7444,10 +7450,14 @@ defer('_supaUpsert',  function(a){ return String(a[0]||''); });
     var f = window._gcPushAll;
     if(typeof f !== 'function' || f.__deferred) return;
     try{ clearInterval(iv); }catch(e){}
+    var trail = null;
     var wrapped = function(force){
       if(force) return f.apply(window, arguments);      // he asked for it
       var now = Date.now();
-      if(now - last < 15000) return Promise.resolve();
+      /* SAVES: a call inside the 15 s was DROPPED, not delayed — a save that asked for its upload right after another
+         push (the estimate builder's autosave, a Field receipt) then waited for whatever push came next. It now runs once
+         when the 15 s are up. */
+      if(now - last < 15000){ if(!trail) trail = (window.__GC_NATIVE_SETTIMEOUT__ || setTimeout).call(window, function(){ trail = null; last = Date.now(); queue('_gcPushAll', f, []); }, 15000 - (now - last) + 50); return Promise.resolve(); }
       last = now;
       queue('_gcPushAll', f, arguments);
       return Promise.resolve();
@@ -50533,6 +50543,8 @@ function _gcsvSoon(){
     try{ if(window._gcPushAll) window._gcPushAll(); }catch(e){}
   }, wait);
 }
+window._gcSyncDirty = function(keys){ try{ (Array.isArray(keys) ? keys : [keys]).forEach(function(k){ if(SYNC_KEYS.indexOf(k) < 0) return; _idbSnapshot[k] = '__gc_local_differs__'; if(_spWritten) _spWritten[k] = 1; }); _gcsvSoon(); }catch(e){} };   /* SAVES: "this list was not really sent" */
+window._gcSyncDebug = function(){ var o = {}; try{ o.written = _spWritten ? Object.keys(_spWritten) : null; o.soon = !!_gcsvSoonT; o.lastAuto = _gcsvLastAuto; o.syncing = _syncing; o.bad = _gcsvBad; o.snap = {}; ['estimates','__est__gc_ests_v2','projects','leads'].forEach(function(k){ o.snap[k] = typeof _idbSnapshot[k] === 'string' ? _idbSnapshot[k].length : null; }); }catch(e){ o.err = String(e); } return o; };   /* SAVES: console */
 window._gcUnsent = function(){ return Object.keys(_gcsvBad).map(function(k){ return Object.assign({ key: k }, _gcsvBad[k]); }); };
 /* SAVES: say it on screen — a change that could not be sent for 20 s shows a small amber note until it is sent */
 (window.__GC_NATIVE_SETINTERVAL__ || setInterval).call(window, function(){
