@@ -228992,8 +228992,9 @@ function jobNames(J){ var out = []; J.forEach(function(j){ var t = j.job ? j.job
 function todayJobs(u, day){ var J = jobsOn(u, day); if (J.length || day !== today()) return J; var n = low(u.name), e = low(u.email); return projects().filter(function(p){ return openJob(p) && CREW.slice(2).some(function(f){ var L = namesIn(p[f]); return L.indexOf(n) >= 0 || L.indexOf(e) >= 0; }); }).slice(0, 8).map(function(p){ return { id: '', pid: s(p.id), job: s(p.name || p.address), title: '', p: p }; }); }
 function leadsOf(J, u){ var out = []; J.forEach(function(j){ var p = j.p || proj(j.pid); if (!p) return; LEADS.forEach(function(f){ namesIn(p[f]).forEach(function(n){ var m = userBy(n); if (m && active(m) && low(m.email) !== low(u && u.email) && out.indexOf(m) < 0) out.push(m); }); }); }); return out; }
 
-/* CALLOUT (owner 11/16, patch AWAY): an employee calling out (🤒 sick, ⏰ late) → the admins, AND the PM of each job they were
-   scheduled on that day — on a COMMERCIAL job its superintendent instead of the PM (netlify/functions/_lib/callout.js, same rule) */
+/* CALLOUT (owner 11/16, patch AWAY): an employee calling out (🤒 sick, ⏰ late) → their own manager, the PM of each job they were
+   scheduled on that day — on a COMMERCIAL job its superintendent instead of the PM — and the admins (the office only when the
+   manager IS the office manager). netlify/functions/_lib/callout.js has the same rule. */
 function commercialJob(p){ var t = [p && p.type, p && p.jobType, p && p.jobTypeLabel, p && p.category].map(low).join(' '); return !!p && (p.isCommercial === true || /commercial|tenant|\bti\b|government|municipal|industrial|retail|office build/.test(t)); }
 function calloutLeads(J, u){
   var out = [];
@@ -229124,14 +229125,14 @@ function build(o, u){
   } else if (o.kind === 'sick') {
     r.from = r.to = ymd(o.from); r.note = s(o.note).slice(0, 500);
     var JS = todayJobs(u, r.from); r.jobs = JS.map(function(j){ return { date: r.from, pid: j.pid, job: j.job, title: j.title }; });
-    var leads = calloutLeads(JS, u); r.notify = notMe(adm.concat(leads));   /* CALLOUT: the admins + the PM (super on commercial) of that day's jobs */
-    var cov = notMe(leads); if (!cov.length) cov = notMe(adm);
+    var leads = calloutLeads(JS, u); r.notify = notMe(mgr.concat(leads, adm));   /* CALLOUT: their manager + the PM (super on commercial) of that day's jobs + the admins */
+    var cov = notMe(mgr.concat(leads)); if (!cov.length) cov = notMe(adm);
     var names = jobNames(JS), when = r.from === today() ? 'today' : 'tomorrow (' + short(r.from) + ')';
     r.todo = { id: 'TOCOVER_' + r.id, assignees: cov, label: '🤒 Cover ' + r.name + '’s jobs ' + when + ': ' + (names.length ? names.join(', ') : 'nothing on the schedule — check the crew'), due: r.from, pid: JS[0] ? JS[0].pid : '' };
   } else if (o.kind === 'late') {
     r.from = r.to = today(); r.minutes = Math.round(num(o.minutes)); r.note = s(o.note).slice(0, 300);
     var JL = todayJobs(u, r.from); r.jobs = JL.map(function(j){ return { date: r.from, pid: j.pid, job: j.job, title: j.title }; });
-    r.notify = notMe(adm.concat(calloutLeads(JL, u)));   /* CALLOUT: the admins + the PM (super on commercial) of today's jobs */
+    r.notify = notMe(mgr.concat(calloutLeads(JL, u), adm));   /* CALLOUT: their manager + the PM (super on commercial) of today's jobs + the admins */
   } else if (o.kind === 'avail') {
     r.days = arr(o.days).map(function(x){ return parseInt(x, 10); }).filter(function(x){ return x >= 0 && x <= 6; }).sort();
     r.hours = s(o.hours).slice(0, 200); r.from = today(); r.to = ''; r.notify = notMe(mgr.concat(ofc));

@@ -36,7 +36,9 @@ const DOM = '@grayco-cs.com';
 const W = 'wes.admin' + DOM, N = 'nick.admin' + DOM, O = 'office' + DOM, P = 'pat.pm' + DOM;
 const USERS = [{ id: 'U2', name: 'Wes Admin', email: W, role: 'Admin', payType: 'owner', active: true }, { id: 'U1', name: 'Nick Admin', email: N, role: 'Admin', payType: 'owner', active: true },
   { id: 'UO', name: 'Bree Office', email: O, role: 'Office Admin', active: true }, { id: 'UP', name: 'Pat Mason', email: P, role: 'Project Manager', active: true },
-  { id: 'US', name: 'Sam Super', email: 'sam.super' + DOM, role: 'Superintendent', active: true }, { id: 'UT', name: 'Tom Tech', email: 'tom.tech' + DOM, role: 'Technician', payType: 'hourly', active: true }];
+  { id: 'US', name: 'Sam Super', email: 'sam.super' + DOM, role: 'Superintendent', active: true }, { id: 'UT', name: 'Tom Tech', email: 'tom.tech' + DOM, role: 'Technician', payType: 'hourly', active: true },
+  { id: 'UM', name: 'Mo Manager', email: 'mo.mgr' + DOM, role: 'Operations Manager', active: true }, { id: 'UL', name: 'Lee Laborer', email: 'lee.lab' + DOM, role: 'Laborer', payType: 'hourly', active: true, manager: 'Mo Manager' }];
+const MGR = 'mo.mgr' + DOM, LAB = 'lee.lab' + DOM;
 const SUP = 'sam.super' + DOM, TECH = 'tom.tech' + DOM;
 const PHONES = {};
 function phone(email){ let c; do { c = crypto.createECDH('prime256v1'); c.generateKeys(); } while (c.getPublicKey().length !== 65); const auth = crypto.randomBytes(16); PHONES[email] = { c, auth, endpoint: 'https://web.push.apple.com/QA' + email.split('@')[0] + crypto.randomBytes(3).toString('hex') }; return { endpoint: PHONES[email].endpoint, keys: { p256dh: b64u(c.getPublicKey()), auth: b64u(auth) } }; }
@@ -378,6 +380,9 @@ await t('an hourly EMPLOYEE calling out (🤒 sick / ⏰ late) → the admins AN
   reset(); NOW = at(addDays(TODAY, 1), '05:30');
   const r3 = await act(TECH, { op: 'callout', kind: 'sick', day: addDays(TODAY, 1), jobs: [JOB.id] });
   assert.ok(pushesTo(P).length === 1 && pushesTo(N).length === 1, 'a 5:30 AM sick call reaches them in the quiet hours'); assert.deepStrictEqual(kget(SQ.HELD).filter(x => /Call-out/.test(x.title)), []);
+  reset();
+  const r4 = await act(LAB, { op: 'callout', kind: 'sick', day: TODAY, jobs: [JOB.id] });
+  assert.deepStrictEqual(r4.out.to.slice().sort(), [MGR, N, P, W].sort(), 'their own manager too (owner 11/16), not the office');
   NOW = at(TODAY, '13:00');
 });
 await t('pure: the call-out rule (callout.js) — sub: PM / super, the office only when nobody is set, never admins; employee: + admins', async () => {
@@ -387,6 +392,8 @@ await t('pure: the call-out rule (callout.js) — sub: PM / super, the office on
   assert.deepStrictEqual(CO.route({ who: 'sub', jobs: [{ id: 'X', name: 'no PM' }], users: USERS, admins: [W, N], office: [O] }), [O]);
   assert.deepStrictEqual(CO.route({ who: 'sub', jobs: [Object.assign({}, CJOB, { superintendent: '' })], users: USERS, office: [O] }), [P], 'commercial without a super: its PM');
   assert.deepStrictEqual(CO.route({ who: 'employee', jobs: [], users: USERS, admins: [W, N], self: TECH }), [W, N]);
+  assert.deepStrictEqual(CO.route({ who: 'employee', jobs: [CJOB], users: USERS, admins: [W, N], self: LAB }), [MGR, SUP, W, N], 'manager, then the commercial job\'s super, then the admins');
+  assert.deepStrictEqual(CO.route({ who: 'sub', jobs: [JOB], users: USERS, admins: [W, N], office: [O], self: LAB }), [P], 'a sub: no manager rule');
 });
 await t('a customer-portal approval waiting on an admin → the office after 48 h ("waited 48 h for an admin"); other admin items keep 24 h; the PM step keeps 24 h', async () => {
   reset(); NOW = at(TODAY, '13:00');
