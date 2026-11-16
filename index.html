@@ -59462,7 +59462,10 @@ async function poll(silent){
   function isOverhead(e){
     if(!e || typeof e!=='object') return false;
     if(e.pid==='__overhead__') return true;
-    if(pidOf(e)) return false;
+    if(pidOf(e)){   /* INVMATCH 3: a cost on a job marked GrayCo overhead (owner 11/16: "New Office", "Office Shirts") is overhead */
+      try{ var _ohp=pidOf(e), _ohj=((window._crm&&window._crm.projects)||[]).filter(function(q){ return q&&String(q.id)===_ohp; })[0]; if(_ohj&&_ohj.overhead===true) return true; }catch(_ohx){}
+      return false;
+    }
     return e.overhead===true || low(e.category)==='overhead' || low(e.cat)==='overhead' || e._pidWas==='__overhead__';
   }
   window._gcIsOverheadExpense = isOverhead;
@@ -72266,7 +72269,7 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
     var spaced=' '+String((inv.desc||'')+' '+(inv.client||'')+' '+(inv.address||'')).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim()+' ';
     var sp=function(v){ return String(v||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim(); };
     projects.forEach(function(p){
-      if(!p || p.deleted || p._deleted || /^(lost|cancell?ed|dead|declined|rejected|deleted)$/i.test(String(p.status||'').trim())) return;
+      if(!p || p.deleted || p._deleted || p.overhead===true || /^(lost|cancell?ed|dead|declined|rejected|deleted)$/i.test(String(p.status||'').trim())) return;
       var pn=norm(p.name), pc=norm(p.client||''), pa=norm(p.address||''), pp=norm(p.autoPO||p.po||'');
       var conf=0, signals=0;
       // Strong single signals (each near-certain on its own)
@@ -101357,7 +101360,7 @@ function imAddrKey(a){   /* "4964 Givens Ave, Memphis" → "4964 givens" (house 
 function imAddrIn(text, key){ if(!key) return false; var t=' '+imWords(text).trim().split(' ').filter(function(x){ return !IM_SUFX.test(x); }).join(' ')+' '; return t.indexOf(' '+key+' ')>=0; }
 function imName(v){ return imWords(String(v||'').toLowerCase().replace(IM_CORP,' ')).trim(); }
 function imPhraseIn(text, phrase){ return !!phrase && imWords(text).indexOf(' '+phrase+' ')>=0; }
-function imLive(p){ return !!p && !p.deleted && !p._deleted && !/^(lost|cancell?ed|dead|declined|rejected|deleted|void)$/i.test(String(p.status||'').trim()); }
+function imLive(p){ return !!p && !p.deleted && !p._deleted && p.overhead!==true && !/^(lost|cancell?ed|dead|declined|rejected|deleted|void)$/i.test(String(p.status||'').trim()); }   /* INVMATCH 3: nor an overhead job */
 function imPOs(p){ var a=[p.autoPO, p.po, p.poNumber]; if(Array.isArray(p.pos)) a=a.concat(p.pos); return a.map(poNorm).filter(Boolean); }
 window._gcJobsForPO = function(po, projList){
   var want=poNorm(po); if(!want) return [];
@@ -149556,7 +149559,7 @@ function build(D){
   D = D || {};
   var now = s(D.now) || new Date().toISOString().slice(0, 10);
   var leads = arr(D.leads).filter(function(x){ return !deleted(x) && x.id; });
-  var projects = arr(D.projects).filter(function(x){ return !deleted(x) && x.id; });
+  var projects = arr(D.projects).filter(function(x){ return !deleted(x) && x.id && x.overhead !== true; });
   var fix = D.srcfix || {};
   var leadById = {}, projById = {}, byPhone = {}, byEmail = {}, byName = {};
   leads.forEach(function(l){
@@ -233633,7 +233636,7 @@ function street(k){ var w = s(k).split(' ').filter(function(x){ return x && !/^(
 function addrNear(a, b){ var A = street(a), B = street(b); if (!A || !B || A.n !== B.n) return false; if (A.w === B.w) return true; var L = Math.min(A.w.length, B.w.length); if (L < 4) return false;
   return lev(A.w, B.w) <= (L >= 6 ? 2 : 1) || A.w.indexOf(B.w) === 0 || B.w.indexOf(A.w) === 0; }
 function memoAddrs(t){ var out = [], re = /\b(\d{2,6}[a-z]?)\s+([a-z][a-z.'-]{2,}(?:\s+[a-z][a-z.'-]{1,}){0,3})/ig, m; t = s(t); while ((m = re.exec(t)) && out.length < 6) out.push(addrKey(m[1] + ' ' + m[2])); return out.filter(Boolean); }
-function liveP(p){ return !p.deleted && !p._deleted && !/^(deleted|void)$/i.test(s(p.status)); }
+function liveP(p){ return !p.deleted && !p._deleted && p.overhead !== true && !/^(deleted|void)$/i.test(s(p.status)); }   /* INVMATCH 3: not GrayCo overhead */
 function matches(f, ctx){
   var out = [], ak = addrKey(f.address), ck = nameKey(f.customer), po = s(f.po).toUpperCase();
   ctx = ctx || {}; var memo = [ctx.memo, ctx.jobName, ctx.address].filter(Boolean).join(' \n '), mAddrs = memoAddrs(memo), memoN = ' ' + nameKey(memo) + ' ';
@@ -234448,7 +234451,7 @@ function keyOf(p){
 /* ── pure: the groups of jobs that truly match ── */
 function groups(projects, ctx){
   ctx = ctx || {}; var by = {}, ns = ctx.notSame || {};
-  arr(projects).forEach(function(p){ if (dead(p, ctx)) return; var k = keyOf(p); if (k) (by[k] = by[k] || []).push(p); });
+  arr(projects).forEach(function(p){ if (dead(p, ctx) || p.overhead === true) return; var k = keyOf(p); if (k) (by[k] = by[k] || []).push(p); });
   var invs = arr(ctx.invs), exps = arr(ctx.expenses), docs = arr(ctx.docs), sched = arr(ctx.schedule);
   function count(pid){
     var c = { invoices: 0, bills: 0, expenses: 0, files: 0, photos: 0, schedule: 0 };
@@ -234474,6 +234477,7 @@ function recheck(invs, projects, jobFor, ctx){
     if (!v || v.deleted || !s(v.pid) || v.autoLinkOk) return;
     var pid = s(v.pid), p = live[pid];
     if (!p) { out.push({ inv: v, pid: pid, job: any[pid] || null, why: any[pid] ? 'its job was deleted' : 'its job is not in the CRM', sure: '' }); return; }
+    if (p.overhead === true && !/^(sub|supplier)$/i.test(s(v.type))) { out.push({ inv: v, pid: pid, job: p, why: 'a customer invoice on a GrayCo overhead job', sure: '' }); return; }
     if (!v.autoLinked || s(v.autoLinkWhy) || v.pidManual) return;   /* put there by a person, or by the new check (it says why) */
     var probe = Object.assign({}, v, { pid: '' });
     if (poN(v.po) && poN(v.po) === poN(p.autoPO || p.po)) probe.po = '';   /* the old finder copied the job's PO onto it */
@@ -234483,7 +234487,38 @@ function recheck(invs, projects, jobFor, ctx){
   });
   return out;
 }
-var API = W._gcJobMerge = { groups: groups, recheck: recheck, keyOf: keyOf, qbIdOf: qbIdOf };
+/* ── pure: jobs that look like GrayCo OVERHEAD (owner 11/16: "New Office" and "Office Shirts" "and etc" are overhead, not customer
+   jobs) — the job's name or customer is GrayCo-internal (office, shirts, uniforms, shop, tools, vehicles, fuel, rent …) AND the
+   customer is none, GrayCo itself, a GrayCo staff member, or an internal word. A customer's "Front office repairs" is not listed:
+   its customer is someone else. ctx.staff = staff names. */
+var OH_WORDS = /\b(office|offices|shirts?|t-?shirts|uniforms?|hats?|shop|tools?|vehicles?|trucks?|fuel|gas card|rent|warehouse|yard|storage unit|overhead|internal|marketing|signs?|swag|trailers?|equipment|insurance policy|payroll|software|phones?|computers?)\b/i;
+var OH_STRONG = /\b(shirts?|t-?shirts|uniforms?|hats?|fuel|gas card|rent|tools?|vehicles?|trucks?|swag|overhead|internal|payroll|software|storage unit|gray ?co)\b/i;
+function isInternalCust(c, staff){ var n = nk(c); if (!n) return true; if (/\bgray ?co\b/.test(n)) return true; if (OH_WORDS.test(n) && n.split(' ').length <= 2) return true; return arr(staff).some(function(x){ return nk(x) === n; }); }
+function overheadCands(projects, ctx){
+  ctx = ctx || {};
+  return arr(projects).filter(function(p){
+    if (dead(p, ctx) || p.overhead === true || p.notOverhead === true) return false;
+    var c = s(p.client || p.customer);
+    if (!isInternalCust(c, ctx.staff)) return false;
+    /* no customer at all: only words that are never a customer's job ("Veritiv Office Repair", "Pediatric Office" are customers' offices) */
+    if (!nk(c)) return OH_STRONG.test(s(p.name));
+    return OH_WORDS.test(s(p.name)) || OH_WORDS.test(c);
+  }).map(function(p){ return { p: p, id: s(p.id), why: (OH_WORDS.exec(s(p.name) + ' ' + s(p.client)) || [''])[0] }; });
+}
+/* ── pure: a job made during invoice entry at (nearly) the address of a job that was already there — shown, never acted on.
+   Owner: Givens Ave was NOT won; PRJmwfd4tq7he (made 11/13) sits on the same street as the earlier one — look, decide. */
+function lev(a, b){ if (a === b) return 0; var m = a.length, n = b.length; if (Math.abs(m - n) > 2) return 9; var d = []; for (var i = 0; i <= m; i++) d[i] = [i]; for (var j = 0; j <= n; j++) d[0][j] = j;
+  for (i = 1; i <= m; i++) for (j = 1; j <= n; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); return d[m][n]; }
+function street(a){ var w = addrN(a).split(' ').filter(function(x){ return x && !SUFV[x] && !/^(n|s|e|w)$/.test(x); }); return /^\d+[a-z]?$/.test(w[0] || '') && w[1] && w[1].length >= 3 ? { n: w[0].replace(/[a-z]$/, ''), w: w[1] } : null; }
+function sameStreet(a, b){ var A = street(a), B = street(b); if (!A || !B || A.n !== B.n) return false; if (A.w === B.w) return true; var L = Math.min(A.w.length, B.w.length); return L >= 4 && (lev(A.w, B.w) <= (L >= 6 ? 2 : 1) || A.w.indexOf(B.w) === 0 || B.w.indexOf(A.w) === 0); }
+function pairs(projects, ctx){
+  ctx = ctx || {}; var ok = ctx.pairOk || {}, live = arr(projects).filter(function(p){ return !dead(p, ctx) && p.overhead !== true; });
+  return live.filter(function(p){ return (p.createdVia === 'invoice-entry' || (p.dataEntry && p.dataEntry.via === 'invoice-entry')) && street(p.address) && !ok['pair:' + s(p.id)]; }).map(function(p){
+    var others = live.filter(function(q){ return q !== p && s(q.id) !== s(p.id) && sameStreet(p.address, q.address) && s(q.createdAt || q.created) <= s(p.createdAt || p.created); });
+    return others.length ? { job: p, id: s(p.id), others: others } : null;
+  }).filter(Boolean);
+}
+var API = W._gcJobMerge = { groups: groups, recheck: recheck, keyOf: keyOf, qbIdOf: qbIdOf, overheadCands: overheadCands, pairs: pairs, sameStreet: sameStreet };
 if (!W.document || !W.document.createElement) return;
 
 /* ════════ the CRM side ════════ */
@@ -234510,7 +234545,10 @@ function ctxNow(){ return { invs: invList(), expenses: arr(crm().expenses), docs
 function jobFor(inv){ try { return typeof W._gcJobForInvoice === 'function' ? W._gcJobForInvoice(inv, projects()) : null; } catch (e) { return null; } }
 function curGroups(){ return groups(projects(), ctxNow()); }
 function curRecheck(){ return recheck(invList(), projects(), jobFor, { isDeleted: isDel }); }
-API.current = function(){ return { groups: curGroups(), recheck: curRecheck() }; };
+function staffNames(){ return arr(crm().users).map(function(u){ return s(u && u.name); }).filter(Boolean); }
+function curOverhead(){ return overheadCands(projects(), { isDeleted: isDel, staff: staffNames() }); }
+function curPairs(){ return pairs(projects(), { isDeleted: isDel, pairOk: notSameMap() }); }
+API.current = function(){ return { groups: curGroups(), recheck: curRecheck(), overhead: curOverhead(), pairs: curPairs() }; };
 
 /* ── saving an invoice change (the app's own setter, disk, cloud) ── */
 function saveInv(id, patch, fnOld){
@@ -234549,6 +234587,43 @@ API.notSame = function(gid){
   try { if (W._gcOT_kv && W._gcOT_kv.put) W._gcOT_kv.put(NS_KEY, m); else if (W._supaUpsert) W._supaUpsert(NS_KEY, m); } catch (e) {}
   return true;
 };
+/* ── GrayCo overhead (INVMATCH 3): the CRM's overhead is a COST with no job and overhead:true (_gcIsOverheadExpense). A job marked
+   overhead keeps its costs where they are; _gcIsOverheadExpense counts every cost on it as overhead (the P&L's overhead, not a job's),
+   and the job leaves the job lists (status 'archived', archivedWhy 'overhead' — the Active list, contract totals and close rate skip
+   archived jobs), the customer portal (portalOff) and the job finders / job pickers' guesses. Undo: "Make it a job again". ── */
+function saveProj(id, f){
+  var at = nowIso(), upd = function(x){ if (!x || s(x.id) !== s(id)) return x; var n = Object.assign({}, x); f(n); n.updatedAt = at; Object.keys(n).forEach(function(k){ if (n[k] === undefined) delete n[k]; }); return n; };
+  var list = projects().map(upd);
+  try { if (W._gcManualNow) W._gcManualNow('job marked overhead'); } catch (e) {}
+  W.__GC_MANUAL_SAVE__ = true;
+  try { if (W._crm) W._crm.projects = list; } catch (e) {}
+  try { if (typeof W._setProjects === 'function') W._setProjects(function(l){ return arr(l).map(upd); }); } catch (e) {}
+  try { if (W.idbSet) W.idbSet('projects', list); } catch (e) {}
+  try { if (W._supaUpsert) W._supaUpsert('projects', list); } catch (e) {}
+  later(function(){ W.__GC_MANUAL_SAVE__ = false; }, 1500);
+  return true;
+}
+API.markOverhead = function(pid){
+  if (!can()) return false;
+  var p = projects().filter(function(x){ return s(x.id) === s(pid); })[0]; if (!p || p.overhead === true) return false;
+  var me = meName(), at = nowIso();
+  return saveProj(pid, function(n){
+    n.overhead = true; n.overheadAt = at; n.overheadBy = me;
+    n.statusBeforeOverhead = s(p.status); n.status = 'archived'; n.archived = true; n.archivedAt = at; n.archivedBy = me; n.archivedWhy = 'overhead';
+    n.portalOffBeforeOverhead = !!p.portalOff; n.portalOff = true; n.needsPm = false; n.commissionSource = 'none';
+  });
+};
+API.unOverhead = function(pid){
+  if (!can()) return false;
+  var p = projects().filter(function(x){ return s(x.id) === s(pid); })[0]; if (!p || p.overhead !== true) return false;
+  return saveProj(pid, function(n){
+    n.status = s(p.statusBeforeOverhead) || 'completed'; n.portalOff = !!p.portalOffBeforeOverhead;
+    ['overhead', 'overheadAt', 'overheadBy', 'statusBeforeOverhead', 'portalOffBeforeOverhead', 'archived', 'archivedAt', 'archivedBy', 'archivedWhy'].forEach(function(k){ n[k] = undefined; });
+    n.notOverhead = true;
+  });
+};
+API.notOverhead = function(pid){ return can() && saveProj(pid, function(n){ n.notOverhead = true; }); };
+API.pairOk = function(pid){ return API.notSame('pair:' + s(pid)); };
 /* ── merge: the kept job gets the others' notes / photos / files, then patch DEDUP's merge moves everything that points at them ── */
 function joinText(a, b){ a = s(a); b = s(b); if (!b || a.indexOf(b) > -1) return a; return a ? a + '\n— merged from a duplicate —\n' + b : b; }
 function joinArr(a, b){ var out = arr(a).slice(), seen = {}; out.forEach(function(x){ seen[typeof x === 'object' ? JSON.stringify(x) : s(x)] = 1; }); arr(b).forEach(function(x){ var k = typeof x === 'object' ? JSON.stringify(x) : s(x); if (!seen[k]) { seen[k] = 1; out.push(x); } }); return out; }
@@ -234584,8 +234659,8 @@ function counts(c){ return [c.invoices + ' invoice' + (c.invoices === 1 ? '' : '
 var BTN = 'padding:5px 10px;border-radius:7px;cursor:pointer;font-size:12.5px;font-weight:700;font-family:inherit;';
 function jobOpts(sel){ return '<option value="">Move to job…</option>' + projects().filter(function(p){ return !dead(p, { isDeleted: isDel }); }).slice().sort(function(a, b){ return s(a.name).localeCompare(s(b.name)); }).map(function(p){ return '<option value="' + esc(p.id) + '"' + (s(p.id) === sel ? ' selected' : '') + '>' + esc(s(p.name) + (p.autoPO ? ' (' + s(p.autoPO) + ')' : '') + (p.address ? ' — ' + s(p.address).split(',')[0] : '') + (p.status ? ' [' + s(p.status) + ']' : '')) + '</option>'; }).join(''); }
 function paint(ov){
-  var G = curGroups(), R = curRecheck(), card = ov.querySelector('[data-jm-card]');
-  card.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:17px">🧹 Duplicate jobs to merge (' + G.length + ') · Invoices to re-check (' + R.length + ')</b><button type="button" data-jm="x" aria-label="Close" style="border:none;background:none;font-size:20px;cursor:pointer;color:#475569">✕</button></div>' +
+  var G = curGroups(), R = curRecheck(), O = curOverhead(), PR = curPairs(), card = ov.querySelector('[data-jm-card]');
+  card.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:17px">🧹 Duplicate jobs to merge (' + G.length + ') · Invoices to re-check (' + (R.length + PR.length) + ') · Looks like GrayCo overhead (' + O.length + ')</b><button type="button" data-jm="x" aria-label="Close" style="border:none;background:none;font-size:20px;cursor:pointer;color:#475569">✕</button></div>' +
     '<div style="font-size:12.5px;color:#475569;margin:4px 0 10px">Jobs listed together have the same QuickBooks customer:job, the same PO and the same address — never just a similar name. Merging keeps the job you pick and moves everything onto it (Undo for 7 days in 🧹 Duplicates).</div>' +
     (R.length ? '<h3 style="font-size:14.5px;margin:12px 0 6px">🔎 Invoices to re-check (' + R.length + ')</h3>' + R.map(function(r){ var v = r.inv, isBill = /^(sub|supplier)$/i.test(s(v.type));
       return '<div data-jm-inv="' + esc(v.id) + '" style="border:1px solid #fde68a;background:#fffbeb;border-radius:9px;padding:8px 10px;margin-bottom:6px;font-size:13px"><b>' + (isBill ? 'Bill' : 'Invoice') + (s(v.invNum || v.qbNum) ? ' #' + esc(v.invNum || v.qbNum) : '') + '</b> · ' + esc(isBill ? v.sub || v.vendor : v.client || v.customer) + ' · ' + money(v.amt != null ? v.amt : v.amount) + '<br><span style="color:#475569">' + esc(s(v.desc).replace(/\s+/g, ' ').slice(0, 140)) + '</span><br>' +
@@ -234593,12 +234668,21 @@ function paint(ov){
         '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"><button type="button" data-jm="unlink" style="' + BTN + 'border:1px solid #b91c1c;background:#fff;color:#b91c1c">Unlink</button>' +
         '<select data-jm="move" style="padding:5px;border-radius:7px;border:1px solid #cbd5e1;max-width:320px;font-size:12.5px">' + jobOpts(r.sure) + '</select>' + (r.sure ? '<button type="button" data-jm="movesure" data-pid="' + esc(r.sure) + '" style="' + BTN + 'border:1px solid #2563eb;background:#eff6ff;color:#1d4ed8">Move to the suggested job</button>' : '') +
         (r.job ? '<button type="button" data-jm="right" style="' + BTN + 'border:1px solid #16a34a;background:#f0fdf4;color:#15803d">It\'s right</button>' : '') + '</div></div>'; }).join('') : '') +
+    (PR.length ? '<h3 style="font-size:14.5px;margin:14px 0 6px">🔁 Jobs made during invoice entry next to an existing one (' + PR.length + ')</h3>' + PR.map(function(x){
+      var line = function(p, tag){ return '<div style="border-top:1px solid #e2e8f0;padding:4px 0">' + tag + ' <b>' + esc(p.name) + '</b> · ' + esc(s(p.address).split(',')[0]) + ' · ' + esc(s(p.status) || '—') + (p.autoPO ? ' · PO ' + esc(p.autoPO) : '') + ' <span style="color:#94a3b8;font-size:11.5px">' + esc(p.id) + ' · made ' + esc(s(p.createdAt || p.created).slice(0, 10)) + '</span></div>'; };
+      return '<div data-jm-pair="' + esc(x.id) + '" style="border:1px solid #bfdbfe;background:#eff6ff;border-radius:9px;padding:8px 10px;margin-bottom:6px;font-size:13px"><span style="color:#1e3a8a">Made from an invoice on the same street as a job that was already there — check which is the real job (a bid that was not won is not the job). Nothing is changed for you.</span>' +
+        line(x.job, '🆕') + x.others.map(function(o){ return line(o, '📁'); }).join('') +
+        '<div style="margin-top:6px"><button type="button" data-jm="pairok" style="' + BTN + 'border:1px solid #cbd5e1;background:#fff;color:#334155">Checked — keep as is</button></div></div>'; }).join('') : '') +
+    (O.length ? '<h3 style="font-size:14.5px;margin:14px 0 6px">🏢 Looks like GrayCo overhead (' + O.length + ')</h3><div style="font-size:12px;color:#475569;margin-bottom:6px">A GrayCo cost, not a customer\'s job. "Mark as overhead": its costs count as overhead in the P&L, and it leaves the job lists, the close rate and the customer portal (it can be made a job again).</div>' + O.map(function(x){ var p = x.p;
+      return '<div data-jm-oh="' + esc(x.id) + '" style="border:1px solid #e9d5ff;background:#faf5ff;border-radius:9px;padding:8px 10px;margin-bottom:6px;font-size:13px;display:flex;justify-content:space-between;gap:8px;align-items:center"><span><b>' + esc(p.name) + '</b>' + (p.client ? ' · ' + esc(p.client) : '') + ' · ' + esc(s(p.status) || '—') + '<br><span style="color:#6b21a8;font-size:12px">"' + esc(x.why) + '"' + (p.createdVia === 'invoice-entry' ? ' · made during invoice entry' : '') + '</span></span>' +
+        '<span style="display:flex;gap:6px;flex-wrap:wrap"><button type="button" data-jm="overhead" style="' + BTN + 'border:1px solid #7c3aed;background:#7c3aed;color:#fff">Mark as overhead</button><button type="button" data-jm="notoh" style="' + BTN + 'border:1px solid #cbd5e1;background:#fff;color:#334155">It\'s a customer job</button></span></div>'; }).join('') : '') +
     (G.length ? '<h3 style="font-size:14.5px;margin:14px 0 6px">🧹 Duplicate jobs to merge (' + G.length + ')</h3>' + G.map(function(g){
       return '<div data-jm-g="' + esc(g.gid) + '" style="border:1px solid #cbd5e1;border-radius:9px;padding:8px 10px;margin-bottom:8px;font-size:13px"><b>' + esc(g.name || g.client) + '</b> · PO ' + esc(g.po) + (g.address ? ' · ' + esc(g.address.split(',')[0]) : ' · no address') + ' · ' + g.jobs.length + ' copies' +
         (g.companyCam.length > 1 ? '<div style="color:#92400e;font-size:12px">⚠ ' + g.companyCam.length + ' different CompanyCam projects — the kept job keeps its own link; the others are noted on it (ccAltIds).</div>' : '') +
         g.jobs.map(function(j){ return '<div data-jm-job="' + esc(j.id) + '" style="display:flex;justify-content:space-between;gap:8px;align-items:center;border-top:1px solid #e2e8f0;padding:5px 0;margin-top:4px"><span>' + esc(s(j.p.status) || '—') + ' · ' + esc(counts(j.counts)) + (j.p.ccamId ? ' · CompanyCam ' + esc(j.p.ccamId) : '') + '<br><span style="color:#94a3b8;font-size:11.5px">' + esc(j.id) + (j.p.created ? ' · made ' + esc(s(j.p.created).slice(0, 10)) : '') + '</span></span><button type="button" data-jm="merge" style="' + BTN + 'border:1px solid #2563eb;background:#eff6ff;color:#1d4ed8;white-space:nowrap">Merge into this one</button></div>'; }).join('') +
         '<div style="margin-top:6px"><button type="button" data-jm="notsame" style="' + BTN + 'border:1px solid #cbd5e1;background:#fff;color:#334155">Not the same</button></div></div>'; }).join('') : '') +
-    (!G.length && !R.length ? '<div style="padding:16px;text-align:center;color:#15803d">Nothing to merge or re-check.</div>' : '') +
+    (function(){ var M = projects().filter(function(p){ return p && p.overhead === true && !p.deleted; }); return M.length ? '<details style="margin-top:10px;font-size:12.5px"><summary style="cursor:pointer;color:#475569">Marked as GrayCo overhead (' + M.length + ')</summary>' + M.map(function(p){ return '<div data-jm-ohm="' + esc(p.id) + '" style="display:flex;justify-content:space-between;gap:8px;align-items:center;border-top:1px solid #e2e8f0;padding:4px 0"><span>' + esc(p.name) + ' · ' + esc(s(p.overheadBy)) + ' ' + esc(s(p.overheadAt).slice(0, 10)) + '</span><button type="button" data-jm="unoh" style="' + BTN + 'border:1px solid #cbd5e1;background:#fff;color:#334155">Make it a job again</button></div>'; }).join('') + '</details>' : ''; })() +
+    (!G.length && !R.length && !O.length && !PR.length ? '<div style="padding:16px;text-align:center;color:#15803d">Nothing to merge or re-check.</div>' : '') +
     '<div data-jm="msg" role="status" style="font-size:12.5px;color:#334155;margin-top:8px"></div>';
 }
 function open(){
@@ -234616,6 +234700,13 @@ function open(){
     if (a === 'unlink' && id) { API.unlink(id); later(function(){ paint(ov); msg('Unlinked — it waits for a job in 📥 Needs a job / 🔗 QuickBooks ↔ CRM.'); }, 60); return; }
     if (a === 'movesure' && id) { API.moveTo(id, b.getAttribute('data-pid')); later(function(){ paint(ov); msg('Moved.'); }, 60); return; }
     if (a === 'right' && id) { API.itsRight(id); later(function(){ paint(ov); msg('Kept on its job.'); }, 60); return; }
+    var oh = b && b.closest('[data-jm-oh]'), ohId = oh ? oh.getAttribute('data-jm-oh') : '';
+    if (a === 'overhead' && ohId) { API.markOverhead(ohId); later(function(){ paint(ov); msg('Marked as GrayCo overhead — its costs count as overhead; it is off the job lists.'); }, 60); return; }
+    if (a === 'notoh' && ohId) { API.notOverhead(ohId); later(function(){ paint(ov); msg('Kept as a customer job.'); }, 60); return; }
+    var ohm = b && b.closest('[data-jm-ohm]');
+    if (a === 'unoh' && ohm) { API.unOverhead(ohm.getAttribute('data-jm-ohm')); later(function(){ paint(ov); msg('It is a job again.'); }, 60); return; }
+    var pr = b && b.closest('[data-jm-pair]');
+    if (a === 'pairok' && pr) { API.pairOk(pr.getAttribute('data-jm-pair')); paint(ov); msg('Off the list.'); return; }
     var g = b && b.closest('[data-jm-g]'), gid = g ? g.getAttribute('data-jm-g') : '';
     if (a === 'notsame' && gid) { API.notSame(gid); paint(ov); msg('Hidden — those stay separate jobs.'); return; }
     if (a === 'merge' && gid) {
@@ -234638,10 +234729,10 @@ function btn(){
   var nb = [].filter.call(D.querySelectorAll('main button'), function(x){ return s(x.textContent) === '+ New Project'; })[0];
   if (!nb) { if (b) b.remove(); return; }
   var L = projects(), I = invList(), sig = L.length + '|' + I.length + '|' + (L[0] && L[0].updatedAt) + '|' + (I[0] && I[0].updatedAt);
-  if (sig !== lastSig || Date.now() - lastAt > 60000) { lastSig = sig; lastAt = Date.now(); try { lastCount = { g: curGroups().length, r: curRecheck().length }; } catch (e) {} }
-  if (!lastCount.g && !lastCount.r) { if (b) b.remove(); return; }
+  if (sig !== lastSig || Date.now() - lastAt > 60000) { lastSig = sig; lastAt = Date.now(); try { lastCount = { g: curGroups().length, r: curRecheck().length + curPairs().length, o: curOverhead().length }; } catch (e) {} }
+  if (!lastCount.g && !lastCount.r && !lastCount.o) { if (b) b.remove(); return; }
   if (!b) { b = D.createElement('button'); b.id = 'gc-jm-btn'; b.type = 'button'; b.setAttribute('data-gc-keep', '1'); b.style.cssText = 'margin-left:6px;padding:7px 12px;border:1px solid #64748b;border-radius:6px;background:#f8fafc;color:#334155;font-weight:700;font-size:12px;cursor:pointer;font-family:inherit'; b.onclick = function(){ open(); }; }
-  var t = (lastCount.g ? '🧹 Duplicate jobs to merge (' + lastCount.g + ')' : '🧹') + (lastCount.r ? ' · Invoices to re-check (' + lastCount.r + ')' : '');
+  var t = (lastCount.g ? '🧹 Duplicate jobs to merge (' + lastCount.g + ')' : '🧹') + (lastCount.r ? ' · Invoices to re-check (' + lastCount.r + ')' : '') + (lastCount.o ? ' · Looks like GrayCo overhead (' + lastCount.o + ')' : '');
   if (b.textContent !== t) b.textContent = t;
   if (b.previousSibling !== nb && !(b.previousSibling && b.previousSibling.id === 'gcnp-listbtn')) { var after = nb.nextSibling && nb.nextSibling.id === 'gcnp-listbtn' ? nb.nextSibling : nb; after.parentNode.insertBefore(b, after.nextSibling); }
 }

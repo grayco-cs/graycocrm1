@@ -83,6 +83,39 @@ ok(r1115 && r1115.sure === 'PJ_LH', 'a customer-name link whose memo names anoth
 ok(!rid.includes('IV_OKAD') && !rid.includes('IV_NEW') && !rid.includes('IV_MAN') && !rid.includes('IV_OK'), 'not listed: an old link the new check agrees with, a link the new check made, one a person made, one marked "It\'s right"', rid);
 ok(rid.includes('IV_MISS') && rid.includes('IV_DEL'), 'invoices whose job is gone (not in the CRM / deleted) are listed', rid);
 
+/* GrayCo overhead (owner: "New Office" and "Office Shirts" are overhead) */
+const P3 = [
+  { id: 'PJ_NO', name: 'New Office', client: 'Office', address: '6382 Stage Rd', status: 'completed', createdVia: 'invoice-entry' },
+  { id: 'PJ_SH', name: 'Office Shirts', client: 'Sam Staffer', status: 'completed', createdVia: 'invoice-entry' },
+  { id: 'PJ_TR', name: 'Truck fuel', client: '', status: 'active' },
+  { id: 'PJ_GC', name: 'Shop tools', client: 'GrayCo Construction', status: 'active' },
+  { id: 'PJ_CU', name: 'Front office repairs', client: 'Vertex Demo Operating Company', status: 'completed' },        // a customer's office
+  { id: 'PJ_TC', name: 'Showroom', client: 'Southland Demo Truck Center dba Demo', status: 'completed' },           // a customer named "Truck"
+  { id: 'PJ_DONE', name: 'Office Chairs', client: '', status: 'completed', overhead: true },
+  { id: 'PJ_NOT', name: 'Office remodel', client: '', status: 'active', notOverhead: true },
+  { id: 'PJ_VO', name: 'Vertex Office Repair', client: '', status: 'bidding' }];   // a customer's office, no customer typed
+const OH = J.overheadCands(P3, { staff: ['Sam Staffer', 'Wes Demo'] }).map(x => x.id).sort();
+ok(OH.join() === 'PJ_GC,PJ_NO,PJ_SH,PJ_TR', '"Looks like GrayCo overhead": New Office (customer "Office"), Office Shirts (customer = staff), truck fuel, shop tools (GrayCo) — not a customer\'s office (with or without its customer typed), a customer named "Truck", one already marked or kept as a job', OH);
+const R3 = J.recheck([{ id: 'IV_C', type: 'client', client: 'Vertex Demo Operating Company', pid: 'PJ_DONE', pidManual: true }, { id: 'IV_S', type: 'sub', sub: 'Demo Supply', pid: 'PJ_DONE', pidManual: true }], P3, () => null);
+ok(R3.map(r => r.inv.id).join() === 'IV_C' && /overhead/.test(R3[0].why), 'a customer invoice on an overhead job is listed for re-check; a bill on it is not', R3.map(r => [r.inv.id, r.why]));
+/* Givens: shown side by side, nothing done */
+const P4 = [
+  { id: 'PJ_GIV_OLD', name: 'Gina Demo reroof', address: '4964 Givens Ave, Memphis, TN', status: 'completed', created: '2026-06-01' },
+  { id: 'PJ_GIV_BID', name: 'Gina Demo Rental', address: '4964 Given Ave', status: 'bidding', created: '2026-07-01' },
+  { id: 'PJ_GIV_NEW', name: '4964 Given Ave', address: '4964 Given Ave', status: 'completed', created: '2026-11-13', createdAt: '2026-11-13T19:21:37.662Z', createdVia: 'invoice-entry' },
+  { id: 'PJ_ELSE', name: 'Other', address: '4965 Givens Ave', status: 'completed', created: '2026-01-01' },
+  { id: 'PJ_NEW2', name: 'Lone new', address: '77 Nowhere Demo Rd', status: 'completed', created: '2026-11-13', createdVia: 'invoice-entry' }];
+const PR = J.pairs(P4, {});
+ok(PR.length === 1 && PR[0].id === 'PJ_GIV_NEW' && PR[0].others.map(o => o.id).sort().join() === 'PJ_GIV_BID,PJ_GIV_OLD', 'a job made during invoice entry on the same street as earlier jobs ("Given" / "Givens") is listed with them (not 4965)', PR.map(x => [x.id, x.others.map(o => o.id)]));
+ok(J.pairs(P4, { pairOk: { 'pair:PJ_GIV_NEW': { at: 'x' } } }).length === 0, '"Checked — keep as is" takes it off the list');
+ok(!/markOverhead|mergeInto|unlink/.test(JM.slice(JM.indexOf('function pairs('), JM.indexOf('var API = W._gcJobMerge'))), 'the pair list only shows — no automatic action');
+const oe = /if\(pidOf\(e\)\)\{\s*\/\* INVMATCH 3[^]*?_ohj\.overhead===true\) return true;/.test(html);
+ok(oe, '_gcIsOverheadExpense: a cost on a job marked overhead counts as overhead in the P&L');
+const mk = fs.readFileSync(path.join(path.dirname(FILE), 'netlify/functions/_lib/mkcalc.js'), 'utf8');
+ok(/x\.overhead !== true; \}\)/.test(html) && /x\.overhead !== true; \}\)/.test(mk), 'the close-rate / lead-source numbers (browser and server) skip overhead jobs');
+ok(/function imLive\(p\)\{ return !!p && !p\.deleted && !p\._deleted && p\.overhead!==true/.test(html) && /function liveP\(p\)\{ return !p\.deleted && !p\._deleted && p\.overhead !== true/.test(html), 'the job finder and "Did you mean …?" never offer an overhead job');
+ok(/n\.status = 'archived'; n\.archived = true;[^\n]*archivedWhy = 'overhead'/.test(JM) && /n\.portalOff = true/.test(JM), '"Mark as overhead" takes the job off the job lists (archived) and the customer portal');
+
 /* the finders leave an unlinked invoice alone */
 ok(/if\(!v \|\| v\.pid \|\| v\.deleted \|\| v\.noAutoLink\) return v;/.test(FJ), 'FINDJOB skips an invoice a person unlinked (noAutoLink)');
 ok(/if\(!inv\.pid && inv\.po && !inv\.noAutoLink\)/.test(html) && /if\(iv\.noAutoLink && !iv\.pid\) return;/.test(html), 'the PO linker and the sub-invoice router skip it too');
