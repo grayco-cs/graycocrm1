@@ -8,7 +8,7 @@
 //    view", the old field app's Desk View pill, job list and More) leaves Field at once and shows the Desk home;
 //    a Field switch lasts for this open only — a reload is back on the Desk;
 //  • a phone opens GrayCo Field; Desk there lasts for this open only ("Back to GrayCo Field" returns; a reload is Field);
-//  • crews always Field (also on a computer); 👁 View as a crew member previews Field and coming back restores the
+//  • crews: GrayCo Field on a phone, the Desk on a computer (DEVMODE 11/16); 👁 View as a crew member previews Field and coming back restores the
 //    view the owner had (Desk or Field).
 // Offline harness, made-up data. A laptop is emulated in the page (screen size, devicePixelRatio, mouse / touch pointer
 // media, touch points), since the headless browser's own screen is its window. Screenshots: SHOTS.
@@ -25,14 +25,16 @@ let pass = 0, fail = 0; const ok = (c, m, info) => { if (c) { pass++; console.lo
 const sleep = H.sleep;
 const ONLY = process.env.ONLY ? process.env.ONLY.split(',') : null;
 const want = k => !ONLY || ONLY.includes(k);
-const OWNER = 'wjohnson@grayco-cs.com', CREW = 'crew.demo@grayco-cs.com';
-if (!H.ACCOUNTS[CREW]) H.ACCOUNTS[CREW] = { pw: 'Correct-Horse-44', id: 'u-crew', role: 'staff' };
+/* the harness's own made-up sign-ins (by id): the owner (admin), a PM, and a staff sign-in used as the Superintendent */
+const acct = id => Object.keys(H.ACCOUNTS).find(e => H.ACCOUNTS[e].id === id);
+const OWNER = acct('u-wesley'), PMEM = acct('u-sbiffle'), CREW = acct('u-pm');
+const IPHONE = `(() => { const d = (o, k, v) => { try { Object.defineProperty(o, k, { get: () => v, configurable: true }); } catch (e) {} }; d(Navigator.prototype, 'userAgent', 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Mobile/15E148 Safari/604.1'); d(Navigator.prototype, 'maxTouchPoints', 5); })()`;
 const ymd = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 function seed(){
   H.resetCloud();
   H.cset('users', [
     { id: 'u1', name: 'Demo Owner', email: OWNER, role: 'Admin', payType: 'owner', active: true },
-    { id: 'u3', name: 'Sample PM', email: 'sbiffle@grayco-cs.com', role: 'Project Manager', active: true },
+    { id: 'u3', name: 'Sample PM', email: PMEM, role: 'Project Manager', active: true },
     { id: 'u9', name: 'Demo Super', email: CREW, role: 'Superintendent', active: true }]);
   H.cset('projects', [
     { id: 'P1', po: 'PO-2001', name: 'Demo Kitchen Remodel', client: 'Sample Homeowner', address: '100 Demo St', pm: 'Sample PM', superintendent: 'Demo Super', status: 'Active', contract: 25000, contractSigned: true, pct: 40 },
@@ -75,7 +77,8 @@ const S = c => c.ev(() => {
   return { field: document.documentElement.classList.contains('_fieldmode'), fh: vis('#_gcJobPick.gc-fh'), pick: !!document.getElementById('_gcJobPick'), desk: vis('#gc-ra-desk'), deskApp: (document.getElementById('gc-ra-desk') || { getAttribute: () => '' }).getAttribute('data-app'),
     app: ra.app, mode: ra.mode, pref: window._gcView ? window._gcView.pref() : null, saved: localStorage.getItem('gc_view_pref') || localStorage.getItem('gc_phone_desk') || '', phone: window._gcView ? window._gcView.phone() : null, fm: (document.getElementById('_fmToggle') || {}).textContent, inner: [innerWidth, innerHeight] };
 });
-const isDesk = s => !!s && !s.field && s.desk && s.deskApp === 'admin' && !s.fh && s.mode === 'desk';
+/* DEVMODE: since DESKALL (11/13) the Desk on a computer is the regular CRM (no role-app home card screen) */
+const isDesk = s => !!s && !s.field && !s.desk && !s.fh && s.mode === 'desk';
 const isField = s => !!s && s.field && s.fh;
 async function waitState(c, test, ms = 30000){ const t0 = Date.now(); let s; while (Date.now() - t0 < ms) { s = await S(c).catch(() => null); if (test(s)) return s; await sleep(300); } return s; }
 /* stays that way (nothing puts it back a moment later) */
@@ -231,15 +234,15 @@ async function controls(label, cf){
 /* ── 3. a phone: GrayCo Field; Desk for this open only; Back to GrayCo Field returns ── */
 async function phone(){
   console.log('── phone 390×844 (touch)');
-  seed(); const c = await H.computer('P', { build, mobile: true }); W.push(c); await mocks(c);
+  seed(); const c = await H.computer('P', { build, mobile: true, init: [IPHONE] }); W.push(c); await mocks(c);   /* DEVMODE: a real iPhone's user agent (the harness's own says Linux) */
   await H.signIn(c, OWNER, 6000);
   let s = await waitState(c, s => isField(s) && s.phone === true, 30000);
   ok(isField(s) && s.phone === true && !s.pref, 'phone: the owner opens in GrayCo Field (no choice made)', s);
   ok(!(await c.ev(() => { const b = document.querySelector('#_gcJobPick .fh-desk'); return b && b.getClientRects().length; })), 'phone: no header Desk button (☰ More has it)');
   await c.page().locator('#gc-fh-tabs [data-t="more"]').first().tap({ timeout: 4000 }).catch(() => {}); await sleep(700);
   const t0 = Date.now(); await c.page().locator('.gc-fh-sheet [data-gc-view="desk"]').first().tap({ timeout: 4000 }).catch(() => {});
-  s = await waitState(c, s => !!s && !s.field && s.desk && s.pref === 'desk', 6000);
-  ok(!!s && !s.field && s.desk && s.pref === 'desk', `phone: ☰ More → Desk view shows the Desk home (${Date.now() - t0} ms)`, s);
+  s = await waitState(c, s => !!s && !s.field && !s.fh && s.pref === 'desk', 6000);
+  ok(!!s && !s.field && !s.fh && s.pref === 'desk', `phone: ☰ More → Desk view shows the Desk home (${Date.now() - t0} ms)`, s);
   const br = await holds(c, s => !!s && !s.field, 5000);
   ok(!br, 'phone: the Desk holds for this open (GrayCo Field does not come back by itself)', br);
   const back = await H.waitFor(c, () => !!document.getElementById('gc-fh-backfield'), null, 8000, 300);
@@ -256,21 +259,32 @@ async function phone(){
   await closeAll();
 }
 
-/* ── 4. crews: always Field, also on a computer ── */
+/* ── 4. crews (DEVMODE, owner 11/16: "it should open desk cuz they are using computer"): the Desk on a computer, Field on a phone ── */
 async function crew(){
   console.log('── crew on a computer (1366×768)');
   seed(); const c = await laptop('K', LAPTOPS[0][1]);
   await H.signIn(c, CREW, 6000);
-  let s = await waitState(c, s => isField(s) && s.app === 'crew', 30000);
-  ok(isField(s) && s.app === 'crew', 'crew on a computer: GrayCo Field', s);
-  ok(!(await c.ev(() => [...document.querySelectorAll('.fh-desk,[data-gc-view="desk"],#_fmToggle')].some(b => b.getClientRects().length && getComputedStyle(b).display !== 'none'))), 'crew: no Desk button shown');
-  const r = await c.ev(() => window._gcChooseView('desk')); await sleep(2500);
-  s = await S(c);
-  ok(r === 'crew' && s.field && s.pref !== 'desk', 'crew: a Desk request is turned down — crews stay in Field', { r, s });
+  let s = await waitState(c, s => isDesk(s) && s.app === 'crew', 30000);
+  ok(isDesk(s) && s.app === 'crew', 'crew on a computer: the Desk (not GrayCo Field)', s);
+  ok(!(await holds(c, isDesk, 5000)), 'crew on a computer: it stays on the Desk');
+  s = await toField(c);
+  ok(isField(s) && s.app === 'crew', 'crew on a computer: 📱 Field opens the crew\'s GrayCo Field', s);
+  const r = await c.ev(() => window._gcChooseView('desk'));
+  s = await waitState(c, isDesk, 8000);
+  ok(r !== 'crew' && isDesk(s), 'crew on a computer: 🖥 Desk is allowed', { r, s });
   await reload(c);
-  s = await waitState(c, s => isField(s) && s.app === 'crew', 30000);
-  ok(isField(s), 'crew: after a reload, GrayCo Field', s);
+  s = await waitState(c, s => isDesk(s) && s.app === 'crew', 30000);
+  ok(isDesk(s), 'crew: after a reload, the Desk (a computer)', s);
   ok(!pe(c).length, 'crew: no page errors', pe(c).slice(0, 3));
+  await closeAll();
+  console.log('── crew on a phone');
+  seed(); const p = await H.computer('KP', { build, mobile: true, init: [IPHONE] }); W.push(p); await mocks(p);
+  await H.signIn(p, CREW, 6000);
+  s = await waitState(p, s => isField(s) && s.app === 'crew', 30000);
+  ok(isField(s) && s.app === 'crew', 'crew on a phone: GrayCo Field', s);
+  const r2 = await p.ev(() => window._gcChooseView('desk')); await sleep(2000);
+  s = await S(p);
+  ok(r2 === 'crew' && s.field, 'crew on a phone: a Desk request is turned down — crews stay in Field on the phone', { r2, s });
   await closeAll();
 }
 

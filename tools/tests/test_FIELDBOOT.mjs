@@ -19,6 +19,7 @@ const build = process.argv[2];
 if (!build) { console.error('usage: node test_FIELDBOOT.mjs <dir with index.html>'); process.exit(2); }
 const SHOTS = process.env.SHOTS || '/tmp/claude-0/-home-user/6a5b2b6b-8a4d-5505-9f82-62521adb6674/scratchpad/fieldboot_shots/';
 const N_SEC = +(process.env.N_SEC || 10);
+const IPHONE = `(() => { const d = (o, k, v) => { try { Object.defineProperty(o, k, { get: () => v, configurable: true }); } catch (e) {} }; d(Navigator.prototype, 'userAgent', 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Mobile/15E148 Safari/604.1'); d(Navigator.prototype, 'maxTouchPoints', 5); })()`;
 fs.mkdirSync(SHOTS, { recursive: true });
 let pass = 0, fail = 0; const ok = (c, m, info) => { if (c) { pass++; console.log('  ✓ ' + m); } else { fail++; console.log('  ✗ FAIL ' + m + (info !== undefined ? '  ' + JSON.stringify(info).slice(0, 700) : '')); } };
 const sleep = H.sleep;
@@ -80,13 +81,15 @@ const HOOKS = () => {
   if (h === 'nofield') { try { Object.defineProperty(window, '_gcSetFieldMode', { configurable: true, get: () => undefined, set: () => {} }); } catch (e) {} }
 };
 async function phoneDevice(name){
-  const c = await H.computer(name, { build, mobile: true }); W.push(c); await mocks(c);
+  const c = await H.computer(name, { build, mobile: true, init: [IPHONE] }); W.push(c); await mocks(c);   /* DEVMODE: a real iPhone user agent (the harness's own says Linux = a computer) */
   await c.ctx.addInitScript(STANDALONE); await c.ctx.addInitScript(HOOKS); await c.ctx.addInitScript(PROBE);
   return c;
 }
 const S = c => c.ev(() => {
   const vis = s => { const e = document.querySelector(s); if (!e) return false; const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(e).display !== 'none' && getComputedStyle(e).visibility !== 'hidden'; };
-  return { field: document.documentElement.classList.contains('_fieldmode'), fh: vis('#_gcJobPick.gc-fh'), desk: vis('#gc-ra-desk'), boot: document.documentElement.classList.contains('gc-boot-field'),
+  /* DEVMODE: since DESKALL (11/13) the Desk is the regular CRM (#root drawn, not GrayCo Field), not the role-app home #gc-ra-desk */
+  const root = document.getElementById('root');
+  return { field: document.documentElement.classList.contains('_fieldmode'), fh: vis('#_gcJobPick.gc-fh'), desk: !document.documentElement.classList.contains('_fieldmode') && !vis('#_gcJobPick.gc-fh') && !!(root && root.children.length && root.getBoundingClientRect().height > 100), boot: document.documentElement.classList.contains('gc-boot-field'),
     splash: !!document.getElementById('gc-fb-splash'), pref: window._gcView ? window._gcView.pref() : null, fb: window._gcFieldBoot ? window._gcFieldBoot.state() : null,
     phone: window._gcView ? window._gcView.phone() : null };
 });

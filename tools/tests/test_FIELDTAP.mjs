@@ -20,7 +20,8 @@ H.cset('projectDocs', [{ id: 'D1', pid: 'P1', name: 'Signed contract.pdf', cat: 
 H.cset('gc_office_tasks', [{ id: 'T1', text: 'Call the inspector about ROTC', done: false, createdAt: ago(1), assignee: 'Demo Owner', pid: 'P1' }]);
 const W = [];
 try {
-  const O = await H.computer('OWN', { build, mobile: true }); W.push(O);
+  const IPHONE = `(() => { const d = (o, k, v) => { try { Object.defineProperty(o, k, { get: () => v, configurable: true }); } catch (e) {} }; d(Navigator.prototype, 'userAgent', 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Mobile/15E148 Safari/604.1'); d(Navigator.prototype, 'maxTouchPoints', 5); })()`;
+  const O = await H.computer('OWN', { build, mobile: true, init: [IPHONE] }); W.push(O);   /* DEVMODE: a real iPhone user agent (the harness's own says Linux = a computer) */
   await H.signIn(O, 'wjohnson@grayco-cs.com', 9000);
   ok(!!(await H.waitFor(O, () => !!document.querySelector('#_gcJobPick.gc-fh .fh-job[data-job="P1"]'), null, 40000)), 'the phone opens GrayCo Field with the job cards');
   const pg = O.page();
