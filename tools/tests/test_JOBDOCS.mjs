@@ -1,4 +1,4 @@
-// test_JOBDOCS.mjs <build-dir> [shot-dir] — patch JOBDOCS (owner 11/16: "Yes they should come for asbestos and mold water damage fire
+// test_JOBDOCS.mjs <build-dir> [shot-dir] — patch JOBDOCS (node-only twin: test_JOBDOCS_fn.mjs) (owner 11/16: "Yes they should come for asbestos and mold water damage fire
 // everything should have different paperwork automatic"). Made-up data only, offline harness, fake functions.
 //   A. each job type gets its own paperwork by itself (asbestos, lead, lead + asbestos, mold, water, fire, construction) — the forms the CRM
 //      has, "needs a form" where there is none; an older job is left alone until someone taps ＋ Add.
@@ -22,7 +22,8 @@ cset('projects', [
   J('PA', { name: 'Demo asbestos abatement', type: 'Environmental', companyId: 'environmental', description: 'Asbestos floor tile removal' }),
   J('PW', { name: 'Demo water job', type: 'Water Damage', companyId: 'mitigation' }),
   J('PF', { name: 'Demo fire job', type: 'Fire Damage', companyId: 'mitigation' }),
-  J('PM', { name: 'Demo mold job', type: 'Mold Remediation', companyId: 'environmental' }),
+  J('PM', { name: 'Demo mold job', type: 'Mold Remediation', companyId: 'mitigation' }),
+  J('PME', { name: 'Demo mold remediation', type: 'Mold Remediation', companyId: 'environmental' }),
   J('PL', { name: 'Demo paint job', type: 'Residential Reno', leadAsb: { yearBuilt: 1962, disturbsPaint: true } }),
   J('PLA', { name: 'Demo school abatement', type: 'Environmental', companyId: 'environmental', description: 'Lead paint and asbestos abatement in the gym' }),
   J('PC', { name: 'Demo kitchen', type: 'Kitchen' }),
@@ -36,7 +37,7 @@ onFn('portal-sign', ({ body }) => { if (body && body.action === 'list') return {
 const A = await computer('wjohnson@grayco-cs.com', { build: BUILD });
 await signIn(A, 'wjohnson@grayco-cs.com', 20000);
 const wait = async (f, arg, ms = 20000) => { const t0 = Date.now(); let v; while (Date.now() - t0 < ms) { v = await A.ev(f, arg).catch(() => null); if (v) return v; await sleep(300); } return v; };
-ok('0 the CRM is up with 📑 JOBDOCS', !!await wait(() => window._gcJobDocs && window._gcLeadAsb3 && (window._crm.projects || []).length >= 11 && typeof window._setProjects === 'function', null, 60000));
+ok('0 the CRM is up with 📑 JOBDOCS', !!await wait(() => window._gcJobDocs && window._gcLeadAsb3 && (window._crm.projects || []).length >= 12 && typeof window._setProjects === 'function', null, 60000));
 const jd = pid => A.ev(pid => { const p = window._crm.projects.find(x => x.id === pid); return p && p.jobDocs ? JSON.parse(JSON.stringify(p.jobDocs)) : null; }, pid);
 await wait(() => ['PA', 'PW', 'PF', 'PM', 'PL', 'PLA', 'PC', 'PWA'].every(id => { const p = window._crm.projects.find(x => x.id === id); return p && p.jobDocs && p.jobDocs.items; }), null, 20000);
 const K = j => (j && j.items || []).map(x => x.k);
@@ -109,6 +110,9 @@ ok('C5 …and DOCAUTO2\'s lead / asbestos / mold hold skips emergency jobs (miss
 const P5 = await A.ev(() => window._crm.projects.find(x => x.id === 'PA2') && 1);
 
 await sleep(3500); await start('PPLAIN'); await sleep(2600);
+await start('PME'); g = await gateTxt(); await sleep(1200);
+ok('C7 owner 11/16: a planned Environmental mold job waits for the mold disclosure (the Mitigation mold job did not)', /Give the customer Mold disclosure & disclaimer first/.test(g || '') && await pct('PME') === 0, g);
+await closeGate();
 ok('C6 a construction job is never stopped (its papers are not gates)', P5 && await pct('PPLAIN') === 10 && !await A.ev(() => !!document.getElementById('gc-la3-gate')));
 /* ═══ D ═══ */
 await A.ev(() => { if (window._navToJob) window._navToJob('PF'); else if (window._openJobDetail) window._openJobDetail(window._crm.projects.find(p => p.id === 'PF')); });

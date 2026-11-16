@@ -234806,12 +234806,17 @@ W._gcLeadAsb3 = { lead01Given: lead01Given, gateMiss: gateMiss, started: started
      Jobs made before 11/16 get it when their type changes, or with one tap (＋ Add this paperwork) on the job's card.
    • Nothing is sent by itself: 📤 Send on a paper is the person's click (✍️ portal e-sign when the job is active, else ✅ Approvals),
      and ⏸ data-entry mode (gc_automation_pause) holds every send.
-   • 🔒 Start job: a paper marked "Start waits for it" (built-in: Lead 01 and Asbestos 01) must be signed / given before a job
-     starts — the Lead 01 gate (LEADSTART) asks for both, same wording and the same admin "Start anyway". Emergency water / fire /
-     mold mitigation jobs are never stopped: their papers show as due (the DOCAUTO2 hazard hold skips them too).
+   • 🔒 Start job: a paper marked "Start waits for it" (built-in: Lead 01, Asbestos 01, and the mold disclosure on GrayCo
+     Environmental mold jobs) must be signed / given before a job starts — the Lead 01 gate (LEADSTART) asks for all of them, same
+     wording and the same admin "Start anyway". Emergency jobs (GrayCo Mitigation's water / fire / mold, or a water / fire job type
+     outside Construction) are never stopped: their papers show as due (the DOCAUTO2 hazard hold skips them too).
+   • Owner 11/16 answers: a Construction-company "Water Damage" / "Fire Damage" job is a construction job (rebuild papers only);
+     planned Environmental mold remediation keeps the hard stop ("mold documents are a must", 11/9); asbestos / lead found on an
+     emergency job never blocks — it puts a To-Do on the office list for GrayCo Environmental ("… Environmental needs to get
+     involved", linked to the job; the Environmental PM / office person when one is set). No one-time add to older jobs.
    • Admins edit the table: 📚 Company Documents → 📑 Paperwork by job type (or ✏️ on the job's card) → gc_kv gc_jobdocs_table.
    Job card "📑 Paperwork" (desk job page): each paper — 👁 Open (filled in) · 📤 Send · ✓ Done · N/A, grouped before / during / after.
-   API: window._gcJobDocs = { table(), types(p), emergency(p), want(p), assign(pid, force), sweep(), gateMissing(p, base), nameOf(k),
+   API: window._gcJobDocs = { table(), types(p), emergency(p), want(p), assign(pid, force), sweep(), envSweep(), gateMissing(p, base), nameOf(k),
         markDone(pid, k, how), send(pid, k), openEditor(), saveTable(t), DEFAULT, paint() } */
 (function(W){
 'use strict';
@@ -234879,13 +234884,13 @@ var DEFAULT = { v: 1, types: [
     ABATE, RESP,
     it('gcb_hr_lead_asbestos', 'Lead & asbestos worker acknowledgment (crew on both)', 'before', { who: 'file' })] },
   { key: 'mold', label: '🍄 Mold', words: 'mold, mould, microbial, mildew', notes: true, emergency: true, items: [
-    it('gcb_mold', 'Mold disclosure & disclaimer', 'before', { who: 'customer' }),
+    it('gcb_mold', 'Mold disclosure & disclaimer (signed before day 1 on Environmental mold jobs)', 'before', { gate: true, gateOnly: ['environmental'], who: 'customer' }),
     it('gcb_mold_assessment_auth', 'Mold assessment / testing authorization (independent assessor)', 'before', { who: 'customer' }),
     it('', 'Mold remediation protocol / work plan (from the assessor)', 'before', { who: 'file' }),
     it('gcb_mold_contract', 'Mold remediation agreement', 'before', { who: 'customer' }),
     it('gcb_mold_containment_notice', 'Containment & work-area notice', 'during', { who: 'customer' }),
     it('gcb_mold_clearance_cert', 'Post-remediation verification (+ clearance report)', 'after', { who: 'customer' })] },
-  { key: 'water', label: '💧 Water damage', words: 'water, water damage, water mitigation, flood, sewage, sewer, mitigation, dry out, dry-out, extraction', emergency: true, items: [
+  { key: 'water', label: '💧 Water damage', notUnder: 'construction', words: 'water, water damage, water mitigation, flood, sewage, sewer, mitigation, dry out, dry-out, extraction', emergency: true, items: [
     it('gcb_mit_first_call', 'Water loss — first call intake sheet', 'before', { who: 'file' }),
     it('gcb_water_emergency_auth', 'Emergency services authorization (signed)', 'before', { who: 'customer' }),
     DTP,
@@ -234898,7 +234903,7 @@ var DEFAULT = { v: 1, types: [
     it('gcb_water_dry_cert', 'Certificate of drying (dry standard reached)', 'after', { who: 'customer' }),
     it('gcb_equipment_removal_signoff', 'Equipment removal & job walk sign-off', 'after', { who: 'customer' }),
     it('gcb_mit_closeout', 'Mitigation job closeout checklist', 'after', { who: 'file' })] },
-  { key: 'fire', label: '🔥 Fire & smoke', words: 'fire, fire damage, smoke, soot', emergency: true, items: [
+  { key: 'fire', label: '🔥 Fire & smoke', notUnder: 'construction', words: 'fire, fire damage, smoke, soot', emergency: true, items: [
     it('gcb_board_up_auth', 'Emergency board-up / tarp authorization', 'before', { who: 'customer' }),
     it('gcb_fire_work_auth', 'Fire & smoke work authorization', 'before', { who: 'customer' }),
     DTP,
@@ -234925,7 +234930,7 @@ var DEFAULT = { v: 1, types: [
     it('gcb_completion', 'Certificate of completion', 'after', { who: 'customer' }),
     it('gcb_warranty', 'Warranty certificate', 'after', { who: 'customer' })] }
 ] };
-var CONDS = { childOccupied: 'child-occupied', testKit: 'test kit used', abatement: 'lead abatement', hud: 'HUD-assisted', units5: 'commercial / 5+ units', insurance: 'insurance job', sewage: 'sewage / Cat 3', residential: 'residential', commercial: 'commercial', TN: 'TN', AR: 'AR', MS: 'MS' };
+var CONDS = { construction: 'Construction company', mitigation: 'Mitigation company', environmental: 'Environmental company', childOccupied: 'child-occupied', testKit: 'test kit used', abatement: 'lead abatement', hud: 'HUD-assisted', units5: 'commercial / 5+ units', insurance: 'insurance job', sewage: 'sewage / Cat 3', residential: 'residential', commercial: 'commercial', TN: 'TN', AR: 'AR', MS: 'MS' };
 
 /* ── the table in use: the admin's (gc_kv gc_jobdocs_table, kept on this computer too), else the built-in ── */
 var TABLE = null;
@@ -234961,6 +234966,7 @@ function cond(p, c){
   if (c === 'commercial') return commercial(p);
   if (c === 'residential') return !commercial(p);
   if (c === 'TN' || c === 'AR' || c === 'MS') return stateOf(p) === c;
+  if (c === 'construction' || c === 'mitigation' || c === 'environmental') return company(p) === c;
   return true;   /* a condition this computer does not know: the paper shows */
 }
 /* → { types: [keys], byType: { key: true } (matched on the job type / tags, not the notes), emergency } */
@@ -234968,6 +234974,7 @@ function detect(p){
   var T = typeText(p), co = company(p), hz = hazOf(p), out = [], byType = {}, rows = table().types;
   rows.forEach(function(r){
     if (arr(r.all).length) return;
+    if (r.notUnder && s(r.notUnder) === co) return;   /* owner 11/16: a Construction "Water Damage" / "Fire Damage" job is a construction job */
     var k = s(r.key), m = !!s(r.words) && rxw(r.words).test(T);
     if (m) byType[k] = true;
     if (!m && r.notes) {
@@ -234982,7 +234989,9 @@ function detect(p){
   var em = rows.filter(function(r){ return r.emergency; }).map(function(r){ return s(r.key); });
   if (co === 'mitigation' && !out.some(function(k){ return em.indexOf(k) > -1; })) { var w = rows.find(function(r){ return r.key === 'water'; }); if (w) { out.push('water'); byType.water = true; } }   /* a Mitigation job that does not say which → water */
   rows.forEach(function(r){ var all = arr(r.all); if (all.length && all.every(function(k){ return out.indexOf(k) > -1; })) out.push(s(r.key)); });
-  return { types: out, byType: byType, emergency: co === 'mitigation' || em.some(function(k){ return byType[k]; }) };
+  /* emergency = GrayCo Mitigation's jobs, or a water / fire job type; mold is emergency only on a Mitigation job (Environmental mold
+     remediation is planned work — owner 11/16) */
+  return { types: out, byType: byType, emergency: co === 'mitigation' || em.some(function(k){ return byType[k] && k !== 'mold'; }) };
 }
 function types(p){ return p ? detect(p).types : []; }
 function emergency(p){ return !!p && detect(p).emergency; }
@@ -234996,11 +235005,12 @@ function want(p){
     arr(r.items).forEach(function(x){
       if (!x || !s(x.label) || !arr(x.only).every(function(c){ return cond(p, c); })) return;
       var kk = keyOf(x);
-      if (at[kk] != null) { var o = out[at[kk]]; if (o.for.indexOf(k) < 0) o.for.push(k); if (x.gate) o.gate = true; return; }
+      var gt = !!x.gate && arr(x.gateOnly).every(function(c){ return cond(p, c); });
+      if (at[kk] != null) { var o = out[at[kk]]; if (o.for.indexOf(k) < 0) o.for.push(k); if (gt) o.gate = true; return; }
       at[kk] = out.length;
       var y = { k: kk, label: s(x.label), when: WHEN[x.when] ? x.when : 'before', for: [k], who: s(x.who) || 'customer' };
       if (x.doc) y.doc = s(x.doc); if (x.file) y.file = s(x.file); if (!x.doc && !x.file) y.needsForm = true;
-      if (x.gate) y.gate = true; if (x.la) y.la = s(x.la);
+      if (gt) y.gate = true; if (x.la) y.la = s(x.la);
       out.push(y);
     });
   });
@@ -235018,7 +235028,7 @@ function signedRefresh(pid){
   }).catch(function(){}); } catch (e) {}
 }
 function portalSigned(pid, doc){ var c = SIGNED[pid]; return !!(c && doc && c.ids[doc]); }
-var FILE_RX = { L01: /lead[\s_-]*0?1\b|renovate[\s_-]*right|pre[\s_-]*renovation/i, A01: /asbestos[\s_-]*0?1\b|asbestos[\s_-]*disclosure/i };
+var FILE_RX = { L01: /lead[\s_-]*0?1\b|renovate[\s_-]*right|pre[\s_-]*renovation/i, A01: /asbestos[\s_-]*0?1\b|asbestos[\s_-]*disclosure/i, gcb_mold: /mold[\s_-]*disclosure/i };
 function signedFile(pid, re){
   if (!re) return false;
   var L = arr(W._gcProjectDocs).length ? W._gcProjectDocs : arr(W._crm && W._crm.projectDocs);
@@ -235027,7 +235037,7 @@ function signedFile(pid, re){
 function jd(p){ return isObj(p && p.jobDocs) ? p.jobDocs : {}; }
 function given(p, x){   /* signed / given (what the 🔒 start gate needs) */
   var J = jd(p), a = la(p);
-  return !!((J.done || {})[x.k] || (x.la && (a.given || {})[x.la]) || (x.doc && ((p.docAuto || {}).given || {})[x.doc]) || portalSigned(p.id, x.doc) || (x.la && signedFile(p.id, FILE_RX[x.la])));
+  return !!((J.done || {})[x.k] || (x.la && (a.given || {})[x.la]) || (x.doc && ((p.docAuto || {}).given || {})[x.doc]) || portalSigned(p.id, x.doc) || signedFile(p.id, FILE_RX[x.la || x.doc]));
 }
 function stateOfItem(p, x){
   var J = jd(p), a = la(p), dn = (J.done || {})[x.k], g = x.la && (a.given || {})[x.la];
@@ -235126,6 +235136,35 @@ function gateMissing(p, base){
   return out;
 }
 
+/* ── (owner 11/16) asbestos / lead found on an emergency job: never a block — GrayCo Environmental gets a To-Do ── */
+var DONE_ST = /complete|closed|lost|cancel|dead|archiv|paid in full|warrant/i;
+function tasks(){ try { var l = JSON.parse(localStorage.getItem('gc_office_tasks') || '[]'); return Array.isArray(l) ? l : []; } catch (e) { return []; } }
+function saveTasks(l){ try { localStorage.setItem('gc_office_tasks', JSON.stringify(l)); } catch (e) {} try { if (W._gcOfficeTasksPush) W._gcOfficeTasksPush(); } catch (e) {} try { var u = W._supaUpsertNow || W._supaUpsert; if (u) u('gc_office_tasks', l); } catch (e) {} }
+/* the Environmental PM / office person: a user whose own companies name Environmental (not the owners, who are in all three) */
+function envPerson(){
+  var U = arr(W._crm && W._crm.users), pick = function(re){ return U.find(function(u){ return u && u.active !== false && arr(u.companies).indexOf('environmental') > -1 && arr(u.companies).length < 3 && re.test(s(u.role) + ' ' + s(u.title)); }); };
+  var u = pick(/project\s*manager|\bpm\b|manager/i) || pick(/office/i);
+  return u ? s(u.name) : '';
+}
+function envFound(p){ var t = detect(p).types; return ['asbestos', 'lead'].filter(function(k){ return t.indexOf(k) > -1; }); }
+function envSweep(){
+  try {
+    if (!office() || !signedIn()) return 0;
+    var l = tasks(), now = new Date().toISOString(), ch = 0, who = null;
+    projects().forEach(function(p){
+      if (!p || !p.id || p.deleted || p.importedHistory || DONE_ST.test(s(p.status)) || company(p) === 'environmental' || !emergency(p)) return;
+      var f = envFound(p); if (!f.length) return;
+      var id = 'JOBDOCS_ENV_' + p.id; if (l.some(function(t){ return t && t.id === id; })) return;   /* once per job; a ticked one stays ticked */
+      if (who == null) who = envPerson();
+      var what = f.map(function(k){ return k === 'asbestos' ? 'Asbestos' : 'Lead'; }).join(' / '), job = s(p.name || p.client || p.address || p.id);
+      l.push({ id: id, kind: 'jobdocs_env', pid: p.id, companyId: 'environmental', label: '☣️ ' + what + ' found on ' + job + ' — GrayCo Environmental needs to get involved', note: 'Emergency job ' + job + (s(p.address) ? ' (' + s(p.address) + ')' : '') + ': ' + what.toLowerCase() + ' found or suspected. The emergency work is not held back. Environmental: look at it (testing / abatement scope) and talk to the PM' + (s(p.pm) ? ' (' + s(p.pm) + ')' : '') + '. Job → 📑 Paperwork / ☣️ Lead & asbestos.', assignee: who, prio: 'high', addedBy: 'CRM', addedAt: now, updatedAt: now, done: false });
+      ch++;
+    });
+    if (ch) saveTasks(l);
+    return ch;
+  } catch (e) { W.__gcJdErr = String(e && e.stack || e); return 0; }
+}
+
 /* ── the sweep: new jobs and type changes get their checklist ── */
 var SEEN = null, CHK = {}, LAST_INPUT = 0, NEWOK = /complete|closed|lost|cancel|dead|archiv|paid in full|warrant/i;
 ['pointerdown', 'keydown', 'input', 'change'].forEach(function(ev){ D.addEventListener(ev, function(){ LAST_INPUT = Date.now(); }, true); });
@@ -235172,6 +235211,7 @@ function html(p){
   var h = '<h4>📑 Paperwork for this job' + (ty.length ? ' · ' + esc(rowsLabel(ty)) : '') + ' <span class="m">· ' + done + ' of ' + items.length + ' done</span></h4>'
     + '<div class="m">Picked by the job type. Nothing goes out by itself — 📤 Send is your click (⏸ data-entry mode holds it).' + (admin() ? ' <button type="button" data-jd="edit" style="min-height:28px;padding:2px 8px">✏️ Edit the table</button>' : '') + '</div>';
   if (em) h += '<div class="em">🚨 Emergency mitigation job — these papers are due, but they never hold the job back.</div>';
+  var ef = em && company(p) !== 'environmental' ? envFound(p) : []; if (ef.length) h += '<div class="em" style="background:#fff7ed;border-color:#fed7aa;color:#9a3412">☣️ ' + esc(ef.join(' / ')) + ' found on this emergency job — GrayCo Environmental needs to get involved (a To-Do is on the office list). The work here is not held back.</div>';
   if (!saved) h += '<div class="em" style="background:#f8fafc;border-color:#e2e8f0;color:#334155">This job does not have its paperwork list yet. <button type="button" data-jd="add" class="g">＋ Add this paperwork to the job</button></div>';
   if (!items.length) h += '<div class="m" style="margin-top:6px">No paperwork for this job type yet — set the job type (water, fire, mold, asbestos, lead, construction …).</div>';
   ['before', 'during', 'after'].forEach(function(w){
@@ -235260,6 +235300,7 @@ function itemRow(x){
     + '<select data-e="when" style="' + I + '">' + Object.keys(WHEN).map(function(w){ return '<option value="' + w + '"' + (x.when === w ? ' selected' : '') + '>' + WHEN[w] + '</option>'; }).join('') + '</select>'
     + '<select data-e="who" style="' + I + '"><option value="customer"' + (x.who !== 'file' ? ' selected' : '') + '>for the customer</option><option value="file"' + (x.who === 'file' ? ' selected' : '') + '>job file / crew</option></select>'
     + '<label><input type="checkbox" data-e="gate"' + (x.gate ? ' checked' : '') + '> 🔒 Start job waits for it</label>'
+    + '<label>🔒 only on <input data-e="gateOnly" value="' + esc(arr(x.gateOnly).join(', ')) + '" placeholder="any job" title="e.g. environmental" style="' + I + ';width:110px"></label>'
     + '<label>Only if <input data-e="only" value="' + esc(arr(x.only).join(', ')) + '" placeholder="e.g. TN, residential" style="' + I + ';width:150px"></label>'
     + '<input type="hidden" data-e="la" value="' + esc(x.la || '') + '"></div></div>';
 }
@@ -235288,6 +235329,7 @@ function readEditor(ov){
       var src = s(g('src').value), x = { label: label, when: g('when').value, who: g('who').value };
       if (/^file:/.test(src)) x.file = src.slice(5); else if (src) x.doc = src; else x.needsForm = true;
       if (g('gate').checked) x.gate = true; if (s(g('la').value)) x.la = s(g('la').value);
+      var go = s(g('gateOnly').value).split(/\s*,\s*/).filter(Boolean); if (x.gate && go.length) x.gateOnly = go;
       var only = s(g('only').value).split(/\s*,\s*/).filter(Boolean); if (only.length) x.only = only;
       r.items.push(x);
     });
@@ -235335,8 +235377,8 @@ function libBtn(){
 }
 
 ST.call(W, pull, 6000); SI.call(W, pull, 300000);
-SI.call(W, sweep, 3000); SI.call(W, paint, 1500); SI.call(W, libBtn, 1500);
-W._gcJobDocs = { table: table, types: types, detect: detect, emergency: emergency, want: want, merged: merged, assign: assign, sweep: sweep, gateMissing: gateMissing, nameOf: nameOf,
+SI.call(W, sweep, 3000); SI.call(W, paint, 1500); SI.call(W, libBtn, 1500); ST.call(W, envSweep, 40000); SI.call(W, envSweep, 300000);
+W._gcJobDocs = { table: table, types: types, detect: detect, emergency: emergency, want: want, merged: merged, assign: assign, sweep: sweep, envSweep: envSweep, gateMissing: gateMissing, nameOf: nameOf,
   markDone: markDone, undo: undo, notNeeded: notNeeded, send: send, open: open, openEditor: openEditor, saveTable: saveTable, pull: pull, paint: paint, html: html, signed: SIGNED, DEFAULT: DEFAULT, CONDS: CONDS,
   _reset: function(){ TABLE = null; RX = {}; } };
 })(window);
