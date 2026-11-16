@@ -101,6 +101,7 @@ H.cset('leads', [
   { id: 'L3', name: 'Siding', client: 'Lead Person C', stage: 'Lost', lostAt: ago(3), createdAt: ago(30) },
   { id: 'L4', name: 'Old one', client: 'Lead Person D', stage: 'Lost', lostReason: 'old / stale', lostAt: ago(1), createdAt: ago(300) },
   { id: 'L5', name: 'Porch', client: 'Lead Person E', status: 'converted', converted: true, convertedAt: ago(10), jobId: 'P1', createdAt: ago(40) },
+  { id: 'L7', name: 'Biohazard clean-up', client: 'Lead Person G', type: 'Trauma / biohazard', companyId: 'environmental', pm: 'Sam Mitig', stage: 'New Lead', createdAt: ago(0) },
   { id: 'L6', name: 'Warehouse TI bid', client: 'Sample GC Inc.', type: 'Commercial', stage: 'Lost', lostAt: ago(2), createdAt: ago(25) }]);
 H.cset('invoices', [{ id: 'INV1', num: '1001', pid: 'P1', client: 'Sample Homeowner A', amt: 10000, date: ymd(-20), status: 'sent', payments: [{ date: ymd(0), amt: 4000 }] }]);
 H.cset('projectDocs', []); H.cset('punch', []); H.cset('timesheets', []);
@@ -335,7 +336,7 @@ try {
   console.log('    Nick This week lists: ' + JSON.stringify(nl));
   const nv = Object.fromEntries(nl);
   ok(nv.close && /commercial bids left out/.test(nv.close.t), 'the close-rate list says commercial bids are left out', nv.close);
-  ok(nl.every(x => x[1]) && nv.newWeek.n === 1 && nv.close.n === 3 && nv.jobs.n === 5 && nv.collected.n === 1 && nv.ar.n === 1, 'Nick: every This week number opens the list behind it (counts match)', nl);
+  ok(nl.every(x => x[1]) && nv.newWeek.n === 2 && nv.close.n === 3 && nv.jobs.n === 5 && nv.collected.n === 1 && nv.ar.n === 1, 'Nick: every This week number opens the list behind it (counts match)', nl);
   // a payroll / commission approval: under Needs you, admin only
   const PAYSET = () => { window.__gcPmfSet0 = window._gcApprovalSet; window._gcApprovalSet = function(){ var r = window.__gcPmfSet0 ? window.__gcPmfSet0() : null; r = r && typeof r === 'object' ? Object.assign({}, r) : {}; r.groups = Object.assign({}, r.groups || {}, { payroll: [{ id: 'pay:09', title: '09 — commission paid, not earned', sub: 'Demo · $4.00', urgency: 'asap' }] }); return r; }; };
   await nk.ev(PAYSET); await nk.ev(() => { window._gcRA.sync(); }); await home(nk); await sleep(1200);
@@ -439,6 +440,9 @@ try {
   console.log('    Environmental home: ' + JSON.stringify({ secs: d6 && d6.secs, today: d6 && d6.today, extra: d6 && d6.extra }));
   const et = await ep.ev(() => [...document.querySelectorAll('.gc-pmf-x [data-pmf-a]')].map(b => b.getAttribute('data-pmf-a')));
   ok(d6 && d6.app === 'env' && d6.extra.includes('emerg') && ['labs', 'papers', 'blocked'].every(k => et.includes(k)) && !d6.extra.some(k => /^ews_/.test(k)), 'Environmental Home: 🚨 Emergency leads · 🧪 Lab results pending · 📋 Paperwork waiting · 🚧 Blocked from starting (the env tools are on each job page)', { x: d6 && d6.extra, et });
+  ok(d6 && !/trauma/i.test(d6.text) && /Emergency leads/.test(d6.text), 'Environmental Home: one "🚨 Emergency leads" tile (trauma calls inside it) — no "trauma" button', d6 && d6.text.slice(0, 300));
+  const emN = await ep.ev(() => { const b = document.querySelector('.gc-pmf-x [data-ra-a="emerg"] .gc-ra-n'); return b ? +b.textContent : 0; });
+  ok(emN >= 1, '🚨 Emergency leads counts the biohazard call', emN);
   for (const k of ['labs', 'papers', 'blocked']) { await home(ep); await tap(ep, '.gc-pmf-x [data-pmf-a="' + k + '"]'); ok(await ep.ev(() => !!document.querySelector('.gc-pmf-sheet[data-pmf-sheet="list"]')), 'Environmental Home: ' + k + ' opens its list'); }
   // the environmental job page: its top 10 + the buttons of its type (lead, from the job's notes)
   const je = await jobPage(ep, 'E1');

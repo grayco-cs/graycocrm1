@@ -208689,7 +208689,8 @@ function leadAt(l){ return Date.parse(s(l.createdAt || l.date || l.updatedAt)) |
 function myLeads(){ return allLeads().filter(function(l){ return openLead(l) && leadSeen(l); }).sort(function(a, b){ return leadAt(b) - leadAt(a); }); }
 function dueOf(l){ var d = s(l.bidDue); if (!d) return NaN; return Date.parse(d.length === 10 ? d + 'T17:00:00' : d); }
 function bidsDue(){ return myLeads().filter(function(l){ return isFinite(dueOf(l)) || /bid|commercial|government/i.test(s(l.type || l.leadKind)); }).sort(function(a, b){ var x = dueOf(a), y = dueOf(b); return (isFinite(x) ? x : 9e15) - (isFinite(y) ? y : 9e15); }); }
-function isEmerg(l){ try { if (W._gcLeadHoldCore && W._gcLeadHoldCore.isEmergency) return !!W._gcLeadHoldCore.isEmergency(l); } catch (e) {} return !!(l && (l.emergency === true || /^emergency$/i.test(s(l.urgency)))); }
+function isEmerg(l){ if (l && /trauma|biohazard|unattended death|crime scene/i.test([l.type, l.leadKind, l.service, l.name].map(s).join(' '))) return true;   /* patch PMFIELD (owner 11/16): 🚨 Emergency leads include trauma / biohazard calls — no separate "trauma" button */
+  try { if (W._gcLeadHoldCore && W._gcLeadHoldCore.isEmergency) return !!W._gcLeadHoldCore.isEmergency(l); } catch (e) {} return !!(l && (l.emergency === true || /^emergency$/i.test(s(l.urgency)))); }
 function emergLeads(){ return myLeads().filter(isEmerg); }
 function claimsApi(){ return W._gcClaims && typeof W._gcClaims.list === 'function' ? W._gcClaims : null; }
 function claimsVis(){ var A = claimsApi(); if (!A) return []; try { return arr(A.visible ? A.visible() : A.list()).filter(function(c){ return c && !/closed/i.test(s(c.phase)); }); } catch (e) { return []; } }
@@ -209643,7 +209644,7 @@ function extrasOf(a, k){
   if (a === 'admin') L = ['leads', 'viewas', 'systems', 'addjob', 'receipt', 'todo'].concat(alsoPm() ? ['log', 'sendest'] : []);   /* 💵 Money: ☰ More (owner 11/16) */
   else if (a === 'pm') L = ['log', 'receipt', 'todo', 'sendest'];   /* ☐ Punch list: on each job page; 💬 Messages: on each job page */
   else if (a === 'mit' || a === 'dual') L = ['emerg', 'drying', 'equip'].concat(insJobs() ? ['tpa'] : []);   /* owner 11/16: 🚨 new losses · 💧 readings due · 🌀 equipment out · 📆 TPA (insurance) — the drying / env tools are on each job page */
-  else if (a === 'env') L = ['emerg'];   /* + 🧪 lab results · 📋 paperwork · 🚧 blocked (below) */
+  else if (a === 'env') L = ['emerg'];   /* 🚨 Emergency leads (trauma / biohazard calls included — no "trauma" button, owner 11/16) + 🧪 lab results · 📋 paperwork · 🚧 blocked (below) */
   else { try { L = arr(k.actions(a, 'home')).filter(function(id){ return !DUPE[id]; }); } catch (e) { L = []; }
     if (a === 'ins') ['claims', 'tpa'].forEach(function(id){ if (L.indexOf(id) < 0) L.push(id); });
     L.push('receipt'); L.push('todo'); }
@@ -210031,7 +210032,7 @@ function lessRows(a){
   if (a === 'admin' && vok('taxcenter')) R.push(['m-reports', '📊', 'Reports', 'P&L, transactions, reports']);
   if (a === 'admin' && K() && K().shown('money')) R.push(['m-money', '💵', 'Money', 'Collected, owed to us, close rate']);
   if (a === 'admin' && W._gcPause && W._gcPause.open) R.push(['m-pause', '⏸', 'Data-entry mode — ' + (pausedOn() ? 'ON' : 'off'), 'Hold everything that goes out']);
-  if (a === 'admin' && realAdmin() && !vasOn()) { R.push(['m-jl', '🧩', 'Job page buttons', 'Each kind of job page\'s top buttons']); R.push(['m-tk', '🧪', 'Environmental job types & buttons', 'Lead · asbestos · mold · trauma — their checklists']); }
+  if (a === 'admin' && realAdmin() && !vasOn()) { R.push(['m-jl', '🧩', 'Job page buttons', 'Each kind of job page\'s top buttons']); R.push(['m-tk', '🧪', 'Environmental job types & buttons', 'Each job type\'s buttons and checklists']); }
   R.push(['m-help', '❓', 'Help', 'How-tos, send a screenshot']);
   return R;
 }
