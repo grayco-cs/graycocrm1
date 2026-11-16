@@ -76,6 +76,8 @@ async function send(emails, payload, opts){
   if (!opts.noAway) { try { to = AW().redirect(to, await AW().activeNow()); } catch (e) {} }
   to = to.filter(function(e, i, a){ return a.indexOf(e) === i; });
   const out = { sent: 0, to: [], none: [], failed: 0 };
+  /* QUIET (owner: 9 PM – 7 AM only call-outs / emergencies): anything else is held for the 7 AM bundle (_lib/staffquiet.js) */
+  if (!opts.noQuiet && !opts.emergency && to.length) { const SQ = require('./staffquiet.js'); if (!SQ.emergency(payload) && await SQ.isQuiet()) { await SQ.hold(to, { kind: 'push', title: payload && payload.title, body: payload && payload.body, url: payload && (payload.url || payload.link) }); return Object.assign(out, { held: to.slice(), why: 'quiet hours — held until ' + require('./staffquiet.js').DEF.to + ' AM' }); } }
   const K = keys(); if (!K) return Object.assign(out, { none: to.slice(), why: 'phone push is not set up (VAPID keys missing in Netlify)' });
   const obj = { title: s(payload && payload.title).slice(0, 120) || 'GrayCo CRM', body: s(payload && payload.body).slice(0, 240), url: s(payload && (payload.url || payload.link)).slice(0, 600), tag: s(payload && payload.tag).slice(0, 60) || 'gc-staff' };
   if (payload && typeof payload.count === 'number') obj.count = payload.count;
@@ -111,11 +113,23 @@ function compat(){
       if ((await awayEndpoints())[sub.endpoint]) return { statusCode: 204, skipped: 'away' };
       let obj = {}; try { obj = typeof payload === 'string' ? JSON.parse(payload) : (payload || {}); } catch (e) { obj = { body: s(payload) }; }
       if (!obj.url && obj.link) obj.url = obj.link;
+      const SQ = require('./staffquiet.js');   /* QUIET: held for the 7 AM bundle unless it is an emergency / call-out */
+      if (!SQ.emergency(obj) && await SQ.isQuiet()) { const e = await emailOfEndpoint(sub.endpoint); if (e) { await SQ.hold([e], { kind: 'push', title: obj.title, body: obj.body, url: obj.url }); return { statusCode: 202, held: true }; } }
       const r = await sendOne(sub, obj, K);
       if (!r.ok || r.paused) { const er = new Error('push failed ' + r.status); er.statusCode = r.status; throw er; }
       return { statusCode: r.status };
     }
   };
+}
+/* whose phone is this (the older callers hand over a subscription, not a person) */
+async function emailOfEndpoint(ep){
+  try {
+    const C = core();
+    const r = await D.fetch(C.sbUrl() + '/rest/v1/gc_kv?select=key,value&key=like.' + encodeURIComponent(PRE + '*'), { headers: C.H() });
+    const rows = r && r.ok ? await r.json() : [];
+    const hit = (Array.isArray(rows) ? rows : []).filter(function(x){ return arr(x && x.value).some(function(y){ return y.endpoint === ep; }); })[0];
+    return hit ? low(s(hit.key).slice(PRE.length)) : '';
+  } catch (e) { return ''; }
 }
 function _reset(){ AWAYEP = null; }
 module.exports = { PRE, D, keys, subsOf, devices, subscribe, unsubscribe, hasOn, send, compat, awayEndpoints, _reset };

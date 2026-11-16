@@ -9,6 +9,7 @@
 //   audit {rec}               one approval decision, from this device (who = the sign-in, never the page)
 //   week                      (admin) 📊 Approvals this week
 //   ping                      (admin) run the approval pings now
+//   quiet {from, to, on}      (admin) 🌙 staff quiet hours (default 9 PM → 7 AM: only emergencies / call-outs; the rest at 7 AM)
 require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const portal = require('./portal.js');
 function s(v){ return v == null ? '' : String(v).trim(); }
@@ -41,6 +42,7 @@ async function act(body, who){
     try { const v = await portal._core.kvRead([PG().STATE]); const st = v[PG().STATE] || {}; cov = (st.covered && st.covered[low(who.email)]) || {}; } catch (e) {}
     return { status: 200, out: { ok: true, me: { email: low(who.email), admin: admin }, today: AW().ymdC(now), mine: pub(up.filter(function(r){ return low(r.email) === low(who.email); }).sort(function(a, b){ return s(b.setAt).localeCompare(s(a.setAt)); })[0] || null),
       activeMine: !!AW().activeMap(list, now)[low(who.email)], away: up.map(pub), admins: P ? P.list : [],
+      quiet: await require('./_lib/staffquiet.js').settings(true),
       push: { ready: !!K, key: K ? K.pub : '', devices: subs.length, on: SP().hasOn(subs, body.endpoint), list: subs.map(function(x){ return { device: s(x.device) || 'phone', at: s(x.at) }; }) }, covered: cov,
       defaultText: P ? VAC().defaultText({ to: s(body.to) }, otherFor({ email: low(body.email) || low(who.email), cover: low(body.cover) }, P)) : '' } };
   }
@@ -79,6 +81,12 @@ async function act(body, who){
     return { status: 200, out: await PG().audit(rec) };
   }
   if (op === 'week') { if (!admin) return { status: 403, out: { ok: false, error: 'Admins only.' } }; return { status: 200, out: await PG().week() }; }
+  if (op === 'quiet') {
+    if (!admin) return { status: 403, out: { ok: false, error: 'Admins only.' } };
+    const f = parseInt(body.from, 10), t = parseInt(body.to, 10);
+    if (!(f >= 0 && f <= 23) || !(t >= 0 && t <= 23)) return { status: 400, out: { ok: false, error: 'Pick the hours (0–23).' } };
+    return { status: 200, out: { ok: true, quiet: await require('./_lib/staffquiet.js').save({ on: body.on !== false, from: f, to: t }, who.email) } };
+  }
   if (op === 'ping') { if (!admin) return { status: 403, out: { ok: false, error: 'Admins only.' } }; return { status: 200, out: await PG().run({ force: true }) }; }
   return { status: 400, out: { ok: false, error: 'Bad request' } };
 }

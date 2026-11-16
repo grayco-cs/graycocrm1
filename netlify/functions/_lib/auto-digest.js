@@ -94,7 +94,7 @@ async function run(opts){
       '<p><a href="' + esc(base + '/#todo') + '">Open my approvals</a></p>');
     let tx = 0; try { const c = await require('./smsalert.js').approvals(email, list.length); tx = c.sent || 0; rep.texted = (rep.texted || 0) + tx; } catch (e) {}   /* patch SMSALERT: one text a day at most */
     if (tx) continue;   /* TEXTFIRST (owner 11/10: "one or the other … text, not e-mails"): texted → no e-mail / push too */
-    const m = await A.staffMail(email, subject, html); if (m.ok) rep.mailed++;
+    const m = await A.staffMail(email, subject, html, { now: now }); if (m.ok) rep.mailed++;   /* QUIET: the run's clock */
     try { const p = await C.pushTo([email], { title: subject.replace(' — GrayCo CRM', ''), body: list.slice(0, 3).map(function(x){ return clip(x.title, 60); }).join(' · '), tag: 'gc-digest' }); rep.pushed += p.sent || 0; } catch (e) {}
   }
   return rep;

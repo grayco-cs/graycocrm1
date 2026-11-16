@@ -94,7 +94,8 @@ const TEXTS = [];
 let TEXT_OK = true, NOW = at(TODAY, '10:00');
 PG.D.text = async (email, text, link) => { TEXTS.push({ email, text, link }); return { sent: TEXT_OK ? 1 : 0 }; };
 PG.D.now = () => NOW;
-const reset = () => { SENT.push.length = 0; SENT.mail.length = 0; SENT.google.length = 0; TEXTS.length = 0; try { C._reset(); } catch (e) {} AW.reset(); SP._reset(); };
+const SQ = require(path.join(FN, '_lib/staffquiet.js')); SQ.D.now = () => NOW;   /* QUIET: the staff quiet window follows the test clock */
+const reset = () => { SENT.push.length = 0; SENT.mail.length = 0; SENT.google.length = 0; TEXTS.length = 0; try { C._reset(); } catch (e) {} AW.reset(); SP._reset(); SQ._reset(); };
 const qItem = (id, o) => Object.assign({ id, kind: 'final_invoice', title: 'QA invoice ' + id, jobId: JOB.id, jobName: JOB.name, pm: 'Pat Mason', pmEmail: P, to: 'cust@example.test', steps: ['pm', 'admin'], step: 'admin', approvals: [], status: 'waiting', createdAt: iso(NOW - 3600e3), updatedAt: iso(NOW - 3600e3), adminSince: iso(NOW - 3600e3), meta: {} }, o || {});
 const pushesTo = e => SENT.push.filter(x => x.email === e);
 const GT = (list) => () => ({ list: async () => list, get: async () => null, set: async () => true });
@@ -163,15 +164,47 @@ await t('bundling: another item 3 minutes later waits (10-minute gap), then goes
   assert.strictEqual(pushesTo(W).length, 1); assert.strictEqual(pushesTo(W)[0].msg.count, 2); assert.match(pushesTo(W)[0].msg.title, /2 new approvals/);
   NOW += 6 * 60e3; reset(); r = await PG.run({ force: true }); assert.strictEqual(SENT.push.length, 0);
 });
-await t('quiet 9 PM – 6 AM Central: held; an urgent one goes (with the held one); a 3 AM one waits for 6 AM', async () => {
-  reset(); NOW = at(TODAY, '22:30');
-  const q = kget('gc_approval_queue'); q.push(qItem('Q5', { title: 'QA night item' })); lists('gc_approval_queue', q);
-  let r = await PG.run({}); assert.strictEqual(SENT.push.length, 0); assert.ok(r.held.some(h => h.why === 'quiet hours'));
-  q.push(qItem('Q6', { title: 'QA urgent leak invoice', priority: 'urgent' })); lists('gc_approval_queue', q);
-  NOW += 20 * 60e3; r = await PG.run({}); assert.strictEqual(pushesTo(W).length, 1); assert.match(pushesTo(W)[0].msg.title, /2 new approvals/);
-  NOW = at(addDays(TODAY, 1), '03:00'); reset(); q.push(qItem('Q7', { title: 'QA 3 AM item' })); lists('gc_approval_queue', q);
-  r = await PG.run({}); assert.strictEqual(SENT.push.length, 0);
-  NOW = at(addDays(TODAY, 1), '06:05'); r = await PG.run({}); assert.strictEqual(pushesTo(W).length, 1); assert.match(pushesTo(W)[0].msg.body, /QA 3 AM item/);
+console.log('🌙 quiet hours (owner: 9 PM – 7 AM only call-outs and emergencies; all else waits until 7 AM)');
+await t('the default is 9 PM → 7 AM Central, an admin setting (admins only); 8:59 PM not quiet, 9:00 PM quiet, 6:59 AM quiet, 7:00 AM not', async () => {
+  reset(); const st = await act(N, { op: 'state' }); assert.deepStrictEqual([st.out.quiet.on, st.out.quiet.from, st.out.quiet.to], [true, 21, 7]);
+  const set = SQ.DEF;
+  assert.strictEqual(SQ.quiet(at(TODAY, '20:59'), set), false); assert.strictEqual(SQ.quiet(at(TODAY, '21:00'), set), true);
+  assert.strictEqual(SQ.quiet(at(addDays(TODAY, 1), '06:59'), set), true); assert.strictEqual(SQ.quiet(at(addDays(TODAY, 1), '07:00'), set), false);
+  assert.strictEqual((await act(P, { op: 'quiet', from: 22, to: 6 })).status, 403);
+  const r = await act(N, { op: 'quiet', from: 22, to: 6 }); assert.strictEqual(r.out.ok, true); assert.deepStrictEqual([r.out.quiet.from, r.out.quiet.to], [22, 6]);
+  SQ._reset(); assert.strictEqual(await SQ.isQuiet(at(TODAY, '21:30')), false, 'the admin setting is used');
+  await act(N, { op: 'quiet', from: 21, to: 7 }); SQ._reset();
+});
+await t('an approval at 10 PM is held — even one marked urgent — and nothing reaches a phone before 7:00 AM', async () => {
+  reset(); NOW = at(TODAY, '22:00');
+  const q = kget('gc_approval_queue'); q.push(qItem('Q5', { title: 'QA 10 PM invoice' })); q.push(qItem('Q6', { title: 'QA urgent invoice', priority: 'urgent' })); lists('gc_approval_queue', q);
+  let r = await PG.run({}); assert.strictEqual(SENT.push.length + TEXTS.length + SENT.mail.length, 0); assert.ok(r.held.some(h => h.email === W && h.why === 'quiet hours'));
+  NOW = at(addDays(TODAY, 1), '03:00'); r = await PG.run({ force: true }); assert.strictEqual(SENT.push.length, 0);
+  NOW = at(addDays(TODAY, 1), '06:55'); r = await PG.run({ force: true }); assert.strictEqual(SENT.push.length, 0, 'not at 6 AM any more');
+});
+await t('an emergency at 2 AM goes at once (a 🚨 emergency lead / on-call call-out push, an emergency text) — the rest is held', async () => {
+  reset(); NOW = at(addDays(TODAY, 1), '02:00');
+  const e1 = await SP.send([N], { title: '🚨 Emergency: water in the basement — 12 Elm', body: 'Call now', url: 'https://crm.test/#leads' }); assert.strictEqual(e1.sent, 1);
+  const c = SP.compat(); await c.sendNotification({ endpoint: PHONES[W].endpoint, keys: { p256dh: b64u(PHONES[W].c.getPublicKey()), auth: b64u(PHONES[W].auth) } }, JSON.stringify({ title: '🚨 On call: QA leak', link: 'https://crm.test/#leads' }));
+  assert.ok(pushesTo(N).some(x => /Emergency/.test(x.msg.title)) && pushesTo(W).some(x => /On call/.test(x.msg.title)), 'both emergencies delivered at 2 AM');
+  const n0 = SENT.push.length;
+  const h1 = await C.pushTo([W, N], { title: 'QA escalated after 24h', body: 'x', tag: 'appr-esc-1' });   /* the 24-hour escalation */
+  const h2 = await require(path.join(FN, '_lib/auto-common.js')).staffMail([N], 'QA weekly scorecard', '<p>QA scorecard body</p>');
+  const h3 = await SP.send([N], { title: 'New lead: QA kitchen remodel', body: 'x' });
+  assert.strictEqual(SENT.push.length, n0, 'nothing else reached a phone'); assert.strictEqual(SENT.mail.length, 0); assert.ok(h2.held && h3.held);
+  const held = kget(SQ.HELD); assert.ok(held.filter(x => x.email === N).length >= 3, JSON.stringify(held.map(x => [x.email, x.title])));
+});
+await t('7:00 AM: ONE bundled notification per person — the held approvals + everything else held overnight; the held e-mail in one e-mail', async () => {
+  reset(); NOW = at(addDays(TODAY, 1), '07:00');
+  const r = await PG.run({});
+  const w = pushesTo(W), n = pushesTo(N);
+  assert.strictEqual(w.length, 1, JSON.stringify(w.map(x => x.msg))); assert.strictEqual(n.length, 1, JSON.stringify(n.map(x => x.msg)));
+  assert.match(w[0].msg.title, /🌙 \d+ waiting from overnight/); assert.match(w[0].msg.body, /QA 10 PM invoice/); assert.match(w[0].msg.body, /QA escalated after 24h/);
+  assert.ok(n[0].msg.count >= 4, String(n[0].msg.count)); assert.match(n[0].msg.body, /QA 10 PM invoice|QA escalated|New lead|QA weekly/);
+  assert.strictEqual(n[0].msg.url, 'https://crm.test/#apx=mine');
+  const m = SENT.mail.filter(x => x.to.includes(N)); assert.strictEqual(m.length, 1); assert.match(m[0].html, /QA scorecard body/);
+  assert.strictEqual(kget(SQ.HELD).length, 0, 'nothing left held');
+  reset(); NOW += 6 * 60e3; await PG.run({ force: true }); assert.strictEqual(SENT.push.length, 0, 'nothing twice');
   NOW = at(TODAY, '13:00');
 });
 await t('no phone saved → one staff text; no text → a staff e-mail (@grayco-cs.com, passes data-entry mode)', async () => {

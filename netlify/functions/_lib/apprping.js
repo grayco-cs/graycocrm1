@@ -9,8 +9,10 @@
      op feed in appr-away.js — admins only; these go to the admins).
      Away (_lib/away.js): an away admin gets nothing; what waited on them alone goes to their cover (marked).
      Quiet bundling: what arrives together is ONE notification ("3 new approvals: …"); at most one per person every
-     10 minutes (the rest wait for the next run, bundled); 9 PM – 6 AM Central they wait for 6 AM (one bundle) unless an
-     item is marked urgent. The first run ever only takes note of what is already waiting (no flood of old items).
+     10 minutes (the rest wait for the next run, bundled). QUIET (owner 11/16: "From 9 [PM] – 6 [AM] only call-outs and
+     emergency notifications go through; all else wait until 7 AM"): inside the staff quiet window (_lib/staffquiet.js — default
+     9 PM → 7 AM Central, an admin setting) approvals wait; at 7:00 each person gets ONE notification with their new approvals
+     AND whatever else was held overnight for them (escalations, lead / bid alerts, staff e-mails). The first run ever only takes note of what is already waiting (no flood of old items).
      Channel: the phone push when that person turned it on (GrayCo Field → 🔔 card / ⚙ Settings); otherwise one staff text (the 📱 text
      alerts number, staff tag — passes data-entry mode; business hours only); otherwise one staff e-mail (@grayco-cs.com —
      passes data-entry mode).
@@ -27,7 +29,7 @@ const GAP_MS = 10 * 60e3, FULL_MS = 30 * 60e3, FEED_MS = 30 * 60e3, CAME_MS = 14
 const SIG_KEYS = ['gc_approval_queue', 'gc_sub_approvals', 'gc_expense_approvals', 'payrollRuns', 'gc_payroll_approvals', FEED, 'gc_away'];
 const FEED_PREFIX = /^(f941:|td:|pay:|inv:|bp:|to:|mat:)/;   /* the CRM-only kinds an admin's page reports (ap2 / sub / exp come from the server lists) */
 const D = { now: function(){ return Date.now(); }, collect: function(now){ return require('./auto-digest.js').collect(now); },
-  push: function(to, p){ return require('./staffpush.js').send(to, p, { noAway: true }); },
+  push: function(to, p){ return require('./staffpush.js').send(to, p, { noAway: true, noQuiet: true }); },
   text: function(email, text, link){ return require('./smsalert.js').notify({ type: 'approvals', text: text, link: link, thread: 'apprnew', mine: [email], only: [email] }); },
   mail: function(to, subject, html, o){ return A.staffMail(to, subject, html, o); } };   /* tests swap these */
 function AW(){ return require('./away.js'); }
@@ -50,8 +52,10 @@ async function sig(){
   return rows.map(function(x){ return s(x && x.key) + '=' + s(x && x.updated_at); }).sort().join('|');
 }
 function central(now){ return A.central(now); }
-function quiet(now){ const h = central(now).hour; return h >= 21 || h < 6; }
-function urgent(it){ const r = (it && it.raw) || {}; return /^urgent$/i.test(s(r.priority)) || /^urgent$/i.test(s(r.urgency)); }
+function SQ(){ return require('./staffquiet.js'); }
+function quiet(now, set){ return SQ().quiet(now, set || SQ().DEF); }
+/* an approval is never a call-out; only one marked emergency goes inside the quiet window */
+function urgent(it){ const r = (it && it.raw) || {}; return r.emergency === true || !!(r.meta && r.meta.emergency === true); }
 function keyOf(it){ if (it.key) return s(it.key); const r = it.raw || {}; return r.id ? 'ap2:' + s(r.id) : 'x:' + s(it.title); }
 function linkOf(it, base){ return s(it.link) || base + '/#apx=' + encodeURIComponent(keyOf(it)); }
 
@@ -87,6 +91,9 @@ function compose(list, base){
 }
 async function deliver(email, list, base){
   const m = compose(list, base);
+  /* QUIET: what was held overnight for this person goes in the same ONE notification */
+  let held = []; try { held = (await SQ().take([email]))[email] || []; } catch (e) { held = []; }
+  if (held.length) { const d = await SQ().deliver(email, held, list.map(function(x){ return { title: x.title + (x.coverFor ? ' (for ' + s(x.coverFor).split(/\s+/)[0] + ')' : ''), url: linkOf(x, base) }; }), base); return { how: d.how, m: m, held: held.length }; }
   const p = await D.push([email], { title: m.title, body: m.body, url: m.url, tag: 'gc-appr', count: m.count });
   if (p && Array.isArray(p.to) && p.to.map(low).indexOf(email) >= 0) return { how: 'push', m: m };
   let t = null; try { t = await D.text(email, m.title.replace(/^✅ /, '') + ': ' + m.body, m.url); } catch (e) { t = null; }
@@ -124,7 +131,8 @@ async function run(opts){
   const anyPending = Object.keys(st.seen).some(function(e){ return Object.keys(obj(st.seen[e])).some(function(k){ return !obj(st.seen[e][k]).n; }); });
   let mapQuick = {}; try { mapQuick = await AW().activeNow(now); } catch (e) {}
   const sumDue = central(now).hour >= 18 && Object.keys(mapQuick).some(function(e){ return mapQuick[e].summary === true && st.daily[e] !== central(now).ymd; });
-  if (!opts.force && sg && st.sig === sg && !anyPending && !sumDue && now - (Date.parse(st.at) || 0) < FULL_MS) return { ok: true, unchanged: true };
+  const QS = await SQ().settings(), quietNow = quiet(now, QS);
+  if (!opts.force && sg && st.sig === sg && !anyPending && !sumDue && now - (Date.parse(st.at) || 0) < FULL_MS) { let mo = null; if (!quietNow) { try { mo = await SQ().flush({ now: now }); } catch (e) {} } return { ok: true, unchanged: true, morning: mo }; }
   const g = await gather(now), first = !st.at, iso = new Date(now).toISOString();
   const rep = { ok: true, first: first, people: 0, sent: [], held: [] };
   const live = {};
@@ -135,7 +143,7 @@ async function run(opts){
     items.forEach(function(it){ live[it.key] = it; const was = seen[it.key]; nextSeen[it.key] = was ? was : { at: iso, n: first ? 1 : 0 }; });
     const fresh = items.filter(function(it){ return !nextSeen[it.key].n; });
     if (fresh.length) {
-      const hold = (quiet(now) && !fresh.some(urgent)) ? 'quiet hours' : ((function(l){ return l <= now && now - l < GAP_MS; })(Date.parse(st.last[e]) || 0) ? 'bundling' : '');
+      const hold = (quietNow && !fresh.some(urgent)) ? 'quiet hours' : ((function(l){ return l <= now && now - l < GAP_MS; })(Date.parse(st.last[e]) || 0) ? 'bundling' : '');
       if (hold) rep.held.push({ email: e, n: fresh.length, why: hold });
       else {
         const d = await deliver(e, fresh, g.base);
@@ -156,6 +164,7 @@ async function run(opts){
   });
   Object.keys(st.came).forEach(function(k){ const c = st.came[k]; if (!live[k] && !c.goneAt) c.goneAt = iso; if (now - (Date.parse(c.goneAt || c.at) || now) > CAME_MS) delete st.came[k]; });
   try { rep.summaries = await summaries(st, g.map, now, g.base); } catch (e) { rep.summaries = { error: s(e && e.message) }; }
+  if (!quietNow) { try { rep.morning = await SQ().flush({ now: now, base: g.base }); } catch (e) { rep.morning = { error: s(e && e.message) }; } }   /* QUIET: the 7 AM bundle for everyone else held overnight */
   st.sig = sg; st.at = iso;
   try { await kvSet(STATE, st); } catch (e) { rep.ok = false; rep.error = 'state not saved'; }
   return rep;

@@ -74,7 +74,7 @@ async function run(opts){
   const extra = await C.kvRead(['expenses', 'payrollRuns', 'gc_sub_approvals', C.AQ_KEY]);
   const sc = build(data, extra, c.ymd);
   const admins = C.adminEmails(data).filter(A.staffEmail);
-  const m = await A.staffMail(admins, '📊 GrayCo weekly scorecard — ' + sc.from + ' → ' + sc.to + ' · collected ' + usd0(sc.collected), A.shell('📊 Weekly scorecard', html(sc)));
+  const m = await A.staffMail(admins, '📊 GrayCo weekly scorecard — ' + sc.from + ' → ' + sc.to + ' · collected ' + usd0(sc.collected), A.shell('📊 Weekly scorecard', html(sc)), { now: now });   /* QUIET: the run's clock */
   return { ok: true, to: admins, mailed: !!m.ok, score: { newLeads: sc.newLeads, bids: sc.bids, wins: sc.wins, collected: sc.collected, arTotal: sc.arTotal, risk: sc.risk.length, approvals: sc.approvals } };
 }
 module.exports = { run, build, html };

@@ -235675,6 +235675,11 @@ function draw(box, st, who){
       '<label style="display:block;margin:6px 0 2px;font-weight:700">Gmail auto-reply to people who e-mail me</label><textarea data-gcaway-f="reply" rows="4" style="' + IN + '">' + esc((r && r.replyText) || st.defaultText || '') + '</textarea>' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button type="button" data-gcaway="on" style="' + BTN + 'background:#f59e0b;color:#111">🏖 ' + (r ? 'Save' : 'Turn Away on') + '</button>' + (r ? '<button type="button" data-gcaway="off" style="' + BTN + 'background:#16a34a;color:#fff">✓ I\'m back — turn Away off</button>' : '') +
       '<button type="button" data-gcaway="week" style="' + BTN + 'background:#e2e8f0;color:#0f172a">📊 Approvals this week</button></div><div data-gcaway-msg style="margin-top:8px;font-weight:700"></div></div>';
+    /* QUIET (owner 11/16: 9 PM – 7 AM only call-outs / emergencies; everything else in ONE notification at 7 AM) */
+    var qs = st.quiet || { on: true, from: 21, to: 7 }, hr = function(sel, v){ var o = ''; for (var i = 0; i < 24; i++) o += '<option value="' + i + '"' + (i === +v ? ' selected' : '') + '>' + ((i % 12) || 12) + ':00 ' + (i < 12 ? 'AM' : 'PM') + '</option>'; return '<select data-gcaway-q="' + sel + '" style="' + IN + ';width:auto">' + o + '</select>'; };
+    h += '<div data-gcaway-quiet style="border:1px solid #e2e8f0;border-radius:10px;padding:12px;margin-top:12px"><b>🌙 Quiet hours — everyone\'s notifications</b><div style="font-size:12.5px;color:#475569;margin:4px 0 8px">Inside these hours only emergencies and call-outs reach a phone. Everything else (approvals, reminders, lead / bid alerts, staff e-mails) waits and comes as ONE notification when they end.</div>' +
+      '<label style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><input type="checkbox" data-gcaway-q="on"' + (qs.on !== false ? ' checked' : '') + '> From ' + hr('from', qs.from) + ' to ' + hr('to', qs.to) + ' Central</label>' +
+      '<button type="button" data-gcaway="quiet" style="' + BTN + 'background:#0f2440;color:#fff;margin-top:8px">Save quiet hours</button></div>';
     var others = arr(st.away).filter(function(x){ return low(x.email) !== low(who); });
     if (others.length) h += '<div style="font-size:12.5px;color:#475569;margin-top:8px">' + others.map(function(x){ return '🏖 ' + esc(x.sentence); }).join('<br>') + '</div>';
   }
@@ -235692,6 +235697,7 @@ function draw(box, st, who){
     else if (a === 'howto') howTo();
     else if (a === 'week') week();
     else if (a === 'google') google();
+    else if (a === 'quiet') { var qv = function(f){ return box.querySelector('[data-gcaway-q="' + f + '"]'); }; call({ op: 'quiet', on: qv('on').checked, from: qv('from').value, to: qv('to').value }).then(function(j){ msg(j && j.ok ? '🌙 Quiet hours saved.' : '⚠ ' + ((j && j.error) || 'Could not save them.'), !(j && j.ok)); }); }
     else if (a === 'on') {
       b.disabled = true; msg('Saving…');
       call({ op: 'set', email: q('email') ? q('email').value : who, from: q('from').value, to: q('to').value, cover: q('cover') ? q('cover').value : '', summary: !!(q('summary') && q('summary').checked), replyText: q('reply') ? q('reply').value : '' }).then(function(j){

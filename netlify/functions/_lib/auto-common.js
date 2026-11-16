@@ -64,6 +64,7 @@ async function staffMail(to, subject, html, opts){
   to = (Array.isArray(to) ? to : [to]).map(low).filter(staffEmail);
   if (!(opts && opts.noAway)) try { const AW = require('./away.js'); to = AW.redirect(to, await AW.activeNow()); } catch (e) {}   /* AWAY: an admin on 🏖 Away gets no automatic staff e-mail (their cover does) */
   if (!to.length) return { ok: false, skipped: 'no staff address' };
+  if (!(opts && (opts.noQuiet || opts.emergency))) { try { const SQ = require('./staffquiet.js'); if (!SQ.emergency({ subject: subject }) && await SQ.isQuiet(opts && opts.now != null ? opts.now : null)) { await SQ.hold(to, { kind: 'mail', title: subject, subject: subject, html: html }); return { ok: true, held: true, skipped: 'quiet hours — held until 7 AM' }; } } catch (e) {} }   /* QUIET: 9 PM – 7 AM, the 7 AM bundle */
   const key = s(process.env.RESEND_API_KEY);
   if (!key || s(process.env.PORTAL_MAIL_OFF) === '1') return { ok: false, skipped: 'e-mail is not set up' };
   try {

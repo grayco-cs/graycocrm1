@@ -91,7 +91,7 @@ async function run(opts){
       const t = await require('./smsalert.js').notify({ type: 'approvals', text: l.length === 1 ? l[0].title.replace(/^🧾\s*/, '') : l.length + ' tax deadlines need you' + (over ? ' (' + over + ' overdue)' : '') + '.', link: base + '/#taxes', thread: 'tax', mine: [email], daily: true });
       rep.texted += (t && t.sent) || 0; if (t && t.sent) continue;   /* TEXTFIRST: texted → no e-mail / push too */
     } catch (e) {}
-    const m = await A.staffMail(email, subject, html); if (m && m.ok) rep.mailed++;
+    const m = await A.staffMail(email, subject, html, { now: now }); if (m && m.ok) rep.mailed++;   /* QUIET: the run's clock */
     try { const p = await C.pushTo([email], { title: clip(subject.replace(' — GrayCo CRM', ''), 110), body: l.slice(0, 3).map(function(a){ return clip(a.title.replace(/^🧾\s*/, ''), 70); }).join(' · '), tag: 'gc-tax' }); rep.pushed += (p && p.sent) || 0; } catch (e) {}
   }
   return rep;
