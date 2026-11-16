@@ -332,7 +332,6 @@ try {
   FL.scrolling = function(){ return now() - lastScroll < 500; };
   /* the paced-loop governor: true = skip this tick */
   FL.pace = function(since, ms){
-    try { if ((ms || 0) < 10000 && since < 5000 && W._gcDevice && W._gcDevice.fieldDevice() && FL.fieldUp()) { FL.fieldPaced = (FL.fieldPaced || 0) + 1; return true; } } catch (e) {}   /* FIELDPERF */
     if (now() - lastScroll >= 500) return false;
     if (since >= Math.max(5000, 3 * (ms || 0))) return false;
     FL.skippedTicks++; return true;
@@ -67872,12 +67871,8 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
   function idFor(x){ return x && (x.id||x.num||x.name); }
 
   // Read/write the stored snapshot for one list.
-  var _fpPhone = !!(window._gcDevice && window._gcDevice.fieldDevice && window._gcDevice.fieldDevice()), _fpMem = {}, _fpAt = {}, _fpDue = {};   /* FIELDPERF */
-  function _fpFlush(){ Object.keys(_fpDue).forEach(function(k){ var a = _fpDue[k]; delete _fpDue[k]; _fpAt[k] = Date.now(); _writeSnap0(k, a); }); }
-  if(_fpPhone){ try{ document.addEventListener('visibilitychange', function(){ if(document.hidden) _fpFlush(); }); window.addEventListener('pagehide', _fpFlush); }catch(e){} }
-  function readSnap(k){ if(_fpPhone && _fpMem[k]) return _fpMem[k]; var r; try{ r = JSON.parse(localStorage.getItem(SNAP_PREFIX+k)||'[]'); }catch(e){ r = []; } if(_fpPhone && Array.isArray(r)) _fpMem[k] = r; return r; }   /* FIELDPERF: a phone reads it once */
-  function writeSnap(k, arr){ if(_fpPhone){ _fpMem[k] = arr; if(Date.now() - (_fpAt[k] || 0) < 600000){ _fpDue[k] = arr; return; } _fpAt[k] = Date.now(); delete _fpDue[k]; } _writeSnap0(k, arr); }   /* FIELDPERF: a phone writes it at most every 10 min (and when put away) */
-  function _writeSnap0(k, arr){ try{ var _t = JSON.stringify(arr); if(_t.length > 1000000){ if(localStorage.getItem(SNAP_PREFIX+k) != null) localStorage.removeItem(SNAP_PREFIX+k); return; } localStorage.setItem(SNAP_PREFIX+k, _t); }catch(e){} }   /* patch DENYKEEP: no list bigger than 1 M characters in browser storage */
+  function readSnap(k){ try{ return JSON.parse(localStorage.getItem(SNAP_PREFIX+k)||'[]'); }catch(e){ return []; } }
+  function writeSnap(k, arr){ try{ var _t = JSON.stringify(arr); if(_t.length > 1000000){ if(localStorage.getItem(SNAP_PREFIX+k) != null) localStorage.removeItem(SNAP_PREFIX+k); return; } localStorage.setItem(SNAP_PREFIX+k, _t); }catch(e){} }   /* patch DENYKEEP: no list bigger than 1 M characters in browser storage */
 
   // Merge helper: union of two lists by id (keeps live version of a record when both have it).
   function unionById(live, snap){

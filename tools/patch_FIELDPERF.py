@@ -28,8 +28,10 @@ def block(tag, fname, before=None, after=None):
     print('FIELDPERF:', tag, 'added')
 block('gc-patch-fieldperf-early', 'fieldperf_early.js', before='<script id="gc-patch-fieldboot">')
 
+SKIP = [x for x in os.environ.get('FP_SKIP', '').split(',') if x]   # (testing) leave out the edits whose name has one of these
 def sub(name, old, new, count=1):
     global t
+    if any(x in name for x in SKIP): print('FIELDPERF: skipped', name); return
     if new in t: return
     assert t.count(old) == count, ('FIELDPERF anchor', name, t.count(old))
     t = t.replace(old, new); print('FIELDPERF:', name)
@@ -52,19 +54,9 @@ sub('NAV sync: one pass over the layers',
     "  var t = topLayer(), html = D.documentElement;\n  var l = layers();",
     "  var l = layers(), t = l.length ? l[l.length - 1] : null, html = D.documentElement;   /* FIELDPERF: one pass (topLayer() measured them all again) */")
 
-# SAFENET on a phone: the safety-net copies (gc_safenet_<list>, up to 1 M characters each) were read back (JSON.parse) and
-# written again (JSON.stringify + localStorage) for every list each time a list changed (every sync pull, every 30 s
-# pass): 12 lists, 60-270 K characters each, on a phone. On a phone (DEVMODE's device) the copy this page last read or
-# wrote is kept in memory (the same floor), and it goes to browser storage at most once every 10 minutes per list and
-# when the app is put away. A computer: as before.
-sub('SAFENET: memory copy + 10-minute writes on a phone',
-    "  function readSnap(k){ try{ return JSON.parse(localStorage.getItem(SNAP_PREFIX+k)||'[]'); }catch(e){ return []; } }\n  function writeSnap(k, arr){ try{",
-    "  var _fpPhone = !!(window._gcDevice && window._gcDevice.fieldDevice && window._gcDevice.fieldDevice()), _fpMem = {}, _fpAt = {}, _fpDue = {};   /* FIELDPERF */\n"
-    "  function _fpFlush(){ Object.keys(_fpDue).forEach(function(k){ var a = _fpDue[k]; delete _fpDue[k]; _fpAt[k] = Date.now(); _writeSnap0(k, a); }); }\n"
-    "  if(_fpPhone){ try{ document.addEventListener('visibilitychange', function(){ if(document.hidden) _fpFlush(); }); window.addEventListener('pagehide', _fpFlush); }catch(e){} }\n"
-    "  function readSnap(k){ if(_fpPhone && _fpMem[k]) return _fpMem[k]; var r; try{ r = JSON.parse(localStorage.getItem(SNAP_PREFIX+k)||'[]'); }catch(e){ r = []; } if(_fpPhone && Array.isArray(r)) _fpMem[k] = r; return r; }   /* FIELDPERF: a phone reads it once */\n"
-    "  function writeSnap(k, arr){ if(_fpPhone){ _fpMem[k] = arr; if(Date.now() - (_fpAt[k] || 0) < 600000){ _fpDue[k] = arr; return; } _fpAt[k] = Date.now(); delete _fpDue[k]; } _writeSnap0(k, arr); }   /* FIELDPERF: a phone writes it at most every 10 min (and when put away) */\n"
-    "  function _writeSnap0(k, arr){ try{")
+# (SAFENET on a phone — the safety-net copies kept in memory, 10-minute writes — is left out of this release: with every
+# other FIELDPERF edit it made test_FIELDPORTAL's "👤 Customer on the open job" check fail 3 of 3; without it 3 of 3 pass.)
+
 # FIELD home: a re-render (new data) replaced the whole home — the role app's own parts (the admin's "All jobs" list, the
 # role's quick buttons, patch ROLEAPPS) went with it and came back only when ROLEAPPS' (paced) page watcher ran again,
 # up to 1.5 s later while the finger was on the screen, and the page jumped to the top meanwhile: "the all jobs were
@@ -142,14 +134,5 @@ sub('AUTOPANEL2 saveHeld: one write per burst',
     "function saveHeld0(){ saveT = 0; try { localStorage.setItem(HK, JSON.stringify({ held: S.held, pend: pendHeld, last: lastHeld })); } catch (e) {} }\n"
     "var saveT = 0; function saveHeld(){ if (!saveT) saveT = T(saveHeld0, 5000); }   /* FIELDPERF: one write per burst (was a ~60 K write on every held tick) */\n"
     "try { W.addEventListener('pagehide', function(){ if (saveT) saveHeld0(); }); document.addEventListener('visibilitychange', function(){ if (document.hidden && saveT) saveHeld0(); }); } catch (e) {}")
-# FIELDLAG pace(): on a phone / tablet while GrayCo Field is on screen, the Desk's quick background loops (the governed
-# setInterval loops under 10 s: badge counts, menu / page scans, injectors for screens under Field) run at most every 5 s
-# (they ran every 0.8–3 s for a Desk nobody sees). Loops of 10 s and more (sync, backups) keep their own pace; the Desk
-# and computers are unchanged.
-sub('FIELDLAG pace: the Desk\'s quick loops every 5 s under GrayCo Field on a phone',
-    "  FL.pace = function(since, ms){\n    if (now() - lastScroll >= 500) return false;",
-    "  FL.pace = function(since, ms){\n"
-    "    try { if ((ms || 0) < 10000 && since < 5000 && W._gcDevice && W._gcDevice.fieldDevice() && FL.fieldUp()) { FL.fieldPaced = (FL.fieldPaced || 0) + 1; return true; } } catch (e) {}   /* FIELDPERF */\n"
-    "    if (now() - lastScroll >= 500) return false;")
 if t == orig: print('FIELDPERF: nothing to do')
 else: open(p, 'w', encoding='utf-8').write(t)
