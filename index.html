@@ -71604,9 +71604,14 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
     var jobText = norm((inv.desc||'')+' '+(inv.client||'')+' '+(inv.address||''));
     var poText = norm(inv.po||inv.num||'');
     var invAddr = norm(inv.address||'');
-    var bestJob=null, bestJobConf=0, bestSignals=0;
+    var bestJob=null, bestJobConf=0, bestSignals=0, runnerUp=0, bestStrong=false;
+    /* INVMATCH: names must sit on whole words ("newoffice" was found inside any text with "new office…" glued to other letters),
+       deleted / lost jobs are not candidates, and a match is CERTAIN only when no other job comes close (a customer with several
+       jobs, the same job entered twice, one address on two jobs → a guess for the office, never the first one silently). */
+    var spaced=' '+String((inv.desc||'')+' '+(inv.client||'')+' '+(inv.address||'')).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim()+' ';
+    var sp=function(v){ return String(v||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim(); };
     projects.forEach(function(p){
-      if(!p) return;
+      if(!p || p.deleted || p._deleted || /^(lost|cancell?ed|dead|declined|rejected|deleted)$/i.test(String(p.status||'').trim())) return;
       var pn=norm(p.name), pc=norm(p.client||''), pa=norm(p.address||''), pp=norm(p.autoPO||p.po||'');
       var conf=0, signals=0;
       // Strong single signals (each near-certain on its own)
@@ -71615,25 +71620,37 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
       // Full job-name match: certain if the name is distinctive (long enough / multi-word)
       var nameWords = pn.split(' ').filter(function(w){return w.length>2;}).length;
       var distinctiveName = pn.length>=8 || nameWords>=2; // e.g. "Cordova Club Apartments", "Smith Kitchen"
-      var exactName = pn && jobText.indexOf(pn)>-1 && pn.length>4;
+      var exactName = pn && pn.length>4 && spaced.indexOf(' '+sp(p.name)+' ')>-1;   /* INVMATCH: whole words */
       if(exactPO){ conf+=95; signals++; }
       if(exactAddr){ conf+=90; signals++; }
       if(exactName && distinctiveName){ conf+=95; signals++; }   // distinctive job name in the invoice = certain
       else if(exactName){ conf+=55; signals++; }                  // short/generic name = supporting only
+      var strong = exactPO || exactAddr || (exactName && distinctiveName);
       // Supporting signals
-      if(pc && jobText.indexOf(pc)>-1){ conf+=40; signals++; }
+      if(pc && pc.length>=4 && spaced.indexOf(' '+sp(p.client)+' ')>-1){ conf+=40; signals++; }   /* INVMATCH: whole words */
       if(pa && !exactAddr && jobText.indexOf(pa)>-1 && pa.length>6){ conf+=35; signals++; }
       // amount sanity (sub invoice amount within a job's contract range = weak support)
       var amt=parseFloat(inv.amt||inv.amount)||0, contract=parseFloat(p.contract||p.contractAmt||0)||0;
       if(amt>0 && contract>0 && amt<=contract){ conf+=10; }
       // word overlap on name (weak)
       words(p.name).forEach(function(w){ if(w.length>3 && jobText.indexOf(norm(w))>-1) conf+=8; });
-      if(conf>bestJobConf){ bestJobConf=conf; bestJob=p; bestSignals=signals; }
+      if(conf>bestJobConf){ runnerUp=bestJobConf; bestJobConf=conf; bestJob=p; bestSignals=signals; bestStrong=strong; }
+      else if(conf>runnerUp){ runnerUp=conf; }
     });
     // Cap confidence at 100 for display
     var jobConfPct=Math.min(100, bestJobConf);
     // CERTAIN when ~95%+ : any exact signal, OR a strong combo of 2+ signals reaching 95
     var jobCertain = bestJob && (bestJobConf>=95 || (bestSignals>=2 && bestJobConf>=90));
+    /* INVMATCH: …and only when it is the one job — no other within 25 points — and a strong signal (PO / address / distinctive name)
+       is part of it (word overlaps + the amount fitting the contract are support, never proof). */
+    if(jobCertain && (runnerUp>=bestJobConf-25 || !bestStrong)){ jobCertain=false; result.jobAmbiguous=runnerUp>=bestJobConf-25; }
+    /* INVMATCH: the invoice names a street that two live jobs share (a bid and its job, a job entered twice) → the office picks */
+    if(jobCertain && bestJob){
+      var akey=function(a){ var w=sp(String(a||'').split(',')[0]).split(' ').filter(function(x){ return x && !/^(st|street|rd|road|dr|drive|ln|lane|cv|cove|ave|avenue|blvd|ct|court|cir|pl|pkwy|way|trl|hwy|n|s|e|w)$/.test(x); }); return /^\d+$/.test(w[0]||'') && w[1] ? w[0]+' '+w[1] : ''; };
+      var bk=akey(bestJob.address);
+      if(bk && (' '+spaced.trim().split(' ').filter(function(x){ return !/^(st|street|rd|road|dr|drive|ln|lane|cv|cove|ave|avenue|blvd|ct|court|cir|pl|pkwy|way|trl|hwy|n|s|e|w)$/.test(x); }).join(' ')+' ').indexOf(' '+bk+' ')>-1 &&
+         projects.some(function(q){ return q && q!==bestJob && !q.deleted && !q._deleted && !/^(lost|cancell?ed|dead|declined|rejected|deleted)$/i.test(String(q.status||'').trim()) && akey(q.address)===bk; })){ jobCertain=false; result.jobAmbiguous=true; }
+    }
     if(jobCertain){ result.pid=bestJob.id; result.jobCertain=true; result.jobConf=jobConfPct; }
     else if(bestJob && bestJobConf>=45){ result.jobGuess=bestJob.id; result.jobGuessName=bestJob.name; result.jobConf=jobConfPct; }
 
@@ -71656,10 +71673,10 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
       if((m.pid && !iv.pid) || (m.subId && !iv.subId)){
         // certain match -> auto-apply. carry confidence + guess for office if not certain.
         changed.push({id:iv.id, pid:m.pid||iv.pid, subId:m.subId||iv.subId, subName:m.subName||iv.sub,
-          _jobCertain:!!m.jobCertain, _jobGuess:m.jobGuess||'', _jobGuessName:m.jobGuessName||'', _jobConf:m.jobConf||m.confidence||0});
+          _jobCertain:!!m.jobCertain, _jobGuess:m.jobGuess||'', _jobGuessName:m.jobGuessName||'', _jobConf:m.jobConf||0})   /* INVMATCH: the JOB confidence (it showed the sub-name score, 205) */;
       } else if(m.jobGuess || m.jobConf){
         // no certain match but we have a guess -> stamp it so office sees the suggestion + confidence
-        changed.push({id:iv.id, _jobGuess:m.jobGuess||'', _jobGuessName:m.jobGuessName||'', _jobConf:m.jobConf||m.confidence||0, _guessOnly:true});
+        changed.push({id:iv.id, _jobGuess:m.jobGuess||'', _jobGuessName:m.jobGuessName||'', _jobConf:m.jobConf||0, _guessOnly:true});
       }
     });
     if(changed.length && window._setInvoices){
@@ -94602,14 +94619,22 @@ function subs(){
 }
 
 /* ── PO → project ───────────────────────────────────────────────────────── */
+window._gcProjectsForPO = function(po, projList){   /* INVMATCH: every (not deleted) job carrying this PO */
+  var want=norm(po); if(!want) return [];
+  return (projList||projects()).filter(function(p){ return p && !p.deleted && !p._deleted && (norm(p.autoPO)===want || norm(p.po)===want || norm(p.poNumber)===want || (Array.isArray(p.pos) && p.pos.some(function(x){ return norm(x)===want; }))); });
+};
 window._gcProjectForPO = function(po, projList){
   var want=norm(po);
   if(!want) return null;
   var list=projList||projects();
   var i, p;
+  /* INVMATCH: one PO on two or more jobs (the QuickBooks customer import made some jobs 3 times, each with the same PO) → no job: the
+     first of them is not "the" job — the office picks. window._gcProjectsForPO(po) lists them. */
+  var all=window._gcProjectsForPO(po, list);
+  if(all.length>1) return null;
   // exact PO match first
   for(i=0;i<list.length;i++){
-    p=list[i]; if(!p) continue;
+    p=list[i]; if(!p || p.deleted || p._deleted) continue;
     if(norm(p.autoPO)===want) return p;
   }
   // then any other PO the job carries
@@ -94669,7 +94694,8 @@ window._gcLinkSubInvoices = async function(quiet){
     // a PO but no job — the PO decides
     if(!inv.pid && inv.po){
       var p=window._gcProjectForPO(inv.po, pj);
-      if(p){ inv.pid=p.id; inv.autoLinked=true; report.jobFromPO++; changed=true; }
+      if(p){ inv.pid=p.id; inv.autoLinked=true; inv.autoLinkWhy='PO '+String(inv.po).toUpperCase(); report.jobFromPO++; changed=true; }
+      else if(window._gcProjectsForPO(inv.po, pj).length>1){ (report.ambiguous=report.ambiguous||[]).push(String(inv.po)); }   /* INVMATCH: two jobs carry it — the office picks */
       else if(t==='sub' && report.stuck.indexOf(String(inv.po))<0){ report.stuck.push(String(inv.po)); }
     }
     // a job but no PO — fill it in the other direction
@@ -100597,35 +100623,68 @@ function poNorm(v){
 window._gcEveryJob = function(){ return projects(); };
 
 /* ── the PO, then the words on the invoice ──────────────────────────────── */
+/* INVMATCH: (owner 11/16 — "she had issues Friday entering invoices still and matching jobs. It was not matching or putting jobs in
+   the right spot correctly".) This sweep runs every 60 s over EVERY invoice with no job. It attached each one to the first job whose
+   name, street or CUSTOMER NAME appeared anywhere in its text — plain substrings, the first / longest hit, deleted and lost jobs too.
+   Friday a job the office made for the customer "Office" took two OTHER customers' invoices ("Front office repairs…", "…engineering
+   office…") and a bill for another site; a job for the customer "Enterprise" took a bill for a different Enterprise location; and a
+   customer's invoice always went to that customer's FIRST job when it had several. Now it attaches only what is SURE: the PO / job #
+   carried by exactly one job, else the job's street address (house # + street name, whole words), its full job name or its customer's
+   full name (whole words, two words or more) pointing at exactly ONE live job. A client invoice whose own customer differs from the
+   job's is never put there by a customer name. Two or more jobs fit → nothing is attached: the office picks (📥 Needs a job, 🔗
+   QuickBooks ↔ CRM, the ▥ Invoices job picker). window._gcJobMatchesForInvoice(inv) says what fits and why. */
+var IM_SUFX=/^(st|street|rd|road|dr|drive|ln|lane|cv|cove|ave|av|avenue|blvd|boulevard|ct|court|cir|circle|pl|place|pkwy|parkway|way|trl|trail|loop|pike|hwy|highway|n|s|e|w|ne|nw|se|sw|north|south|east|west)$/;
+var IM_CORP=/\b(llc|inc|co|corp|company|the|ltd|pllc|lp)\b/g;
+function imWords(t){ return ' '+String(t==null?'':t).toLowerCase().replace(/&amp;/g,'&').replace(/[^a-z0-9]+/g,' ').trim()+' '; }
+function imAddrKey(a){   /* "4964 Givens Ave, Memphis" → "4964 givens" (house # + the first street word, suffixes dropped) */
+  var w=imWords(String(a||'').split(',')[0]).trim().split(' ').filter(function(x){ return x && !IM_SUFX.test(x); });
+  if(w.length<2 || !/^\d{1,6}[a-z]?$/.test(w[0]) || w[1].length<3) return '';
+  return w[0]+' '+w[1];
+}
+function imAddrIn(text, key){ if(!key) return false; var t=' '+imWords(text).trim().split(' ').filter(function(x){ return !IM_SUFX.test(x); }).join(' ')+' '; return t.indexOf(' '+key+' ')>=0; }
+function imName(v){ return imWords(String(v||'').toLowerCase().replace(IM_CORP,' ')).trim(); }
+function imPhraseIn(text, phrase){ return !!phrase && imWords(text).indexOf(' '+phrase+' ')>=0; }
+function imLive(p){ return !!p && !p.deleted && !p._deleted && !/^(lost|cancell?ed|dead|declined|rejected|deleted|void)$/i.test(String(p.status||'').trim()); }
+function imPOs(p){ var a=[p.autoPO, p.po, p.poNumber]; if(Array.isArray(p.pos)) a=a.concat(p.pos); return a.map(poNorm).filter(Boolean); }
+window._gcJobsForPO = function(po, projList){
+  var want=poNorm(po); if(!want) return [];
+  return (projList||projects()).filter(function(p){ return p && !p.deleted && !p._deleted && imPOs(p).indexOf(want)>=0; });
+};
+window._gcJobMatchesForInvoice = function(inv, projList){
+  var out={ po:[], text:[] }; if(!inv) return out;
+  var list=projList||projects();
+  if(inv.po) out.po=window._gcJobsForPO(inv.po, list);
+  var text=[inv.desc, inv.fileName, inv.notes, inv.memo, inv.qbMemo, inv.title, inv.address, inv.jobAddress,
+            inv.readText, inv.job, inv.jobName].filter(Boolean).join(' \n ');
+  var invClient=imName(inv.client||inv.customer||'');
+  list.forEach(function(p){
+    if(!imLive(p)) return;
+    var how='', st=0;
+    var ak=imAddrKey(p.address||p.addr||p.jobAddress);
+    if(ak && text && imAddrIn(text, ak)){ how='the address '+String(p.address||'').split(',')[0]; st=3; }
+    var nm=imName(nameOf(p));
+    if(!st && nm.length>=8 && nm.split(' ').length>=2 && imPhraseIn(text, nm)){ how='the job name'; st=2; }
+    var cl=imName(p.client||p.customer||'');
+    if(!st && cl.length>=6 && cl.split(' ').length>=2){
+      if(invClient){ if(invClient===cl){ how='the customer'; st=1; } }
+      else if(imPhraseIn(text, cl)){ how='the customer named in the text'; st=1; }
+    }
+    if(st) out.text.push({ p:p, how:how, strength:st });
+  });
+  out.text.sort(function(a,b){ return b.strength-a.strength; });
+  return out;
+};
+/* the ONE job the invoice is surely for, else null (nothing fits / more than one fits → the office picks) */
 window._gcJobForInvoice = function(inv, projList){
   if(!inv) return null;
-  var list=projList||projects(), i, p;
-
-  // 1. the PO, exactly
-  if(inv.po){
-    var want=poNorm(inv.po);
-    for(i=0;i<list.length;i++){
-      p=list[i]; if(!p) continue;
-      if(poNorm(p.autoPO)===want || poNorm(p.po)===want || poNorm(p.poNumber)===want) return p;
-      if(Array.isArray(p.pos) && p.pos.some(function(x){ return poNorm(x)===want; })) return p;
-    }
-  }
-
-  // 2. what the invoice says — the job name, the site, the customer
-  var text=[inv.desc, inv.fileName, inv.notes, inv.memo, inv.title, inv.address,
-            inv.readText, inv.job, inv.client].filter(Boolean).join(' ').toLowerCase();
-  if(!text) return null;
-  var best=null, bestLen=0;
-  for(i=0;i<list.length;i++){
-    p=list[i]; if(!p) continue;
-    var nm=low(nameOf(p));
-    if(nm.length>=6 && text.indexOf(nm)>=0 && nm.length>bestLen){ best=p; bestLen=nm.length; }
-    var ad=low(String(p.address||p.addr||'').split(',')[0]);
-    if(ad.length>=8 && text.indexOf(ad)>=0 && ad.length>bestLen){ best=p; bestLen=ad.length; }
-    var cl=low(p.client||p.customer||'');
-    if(cl.length>=6 && text.indexOf(cl)>=0 && cl.length>bestLen){ best=p; bestLen=cl.length; }
-  }
-  return best;
+  var m=window._gcJobMatchesForInvoice(inv, projList);
+  if(m.po.length===1) return m.po[0];
+  if(m.po.length>1) return null;                       /* the same PO on two jobs — ask */
+  if(!m.text.length) return null;
+  var top=m.text[0].strength, best=m.text.filter(function(x){ return x.strength===top; });
+  if(best.length!==1) return null;                     /* a customer with several jobs, two jobs at one address — ask */
+  if(top===1 && m.text.length>1) return null;
+  return best[0].p;
 };
 
 /* ── POs with nothing behind them ───────────────────────────────────────── */
@@ -100634,6 +100693,7 @@ window._gcOrphanPOs = function(){
   var out=[];
   invoices().forEach(function(v){
     if(!v || !v.po || v.pid) return;
+    if(window._gcJobsForPO(v.po, list).length) return;   /* INVMATCH: a PO that two jobs carry is not "missing" — it needs a pick */
     if(window._gcJobForInvoice(v, list)) return;
     out.push({ id:v.id, po:v.po, sub:v.sub||'', amt:v.amt||0,
                desc:v.desc||'', when:v.recvDate||v.date||'' });
@@ -100647,10 +100707,12 @@ window._gcAssignByPO = async function(){
   var invs=invoices();
   if(!invs.length) return {changed:0, orphan:[]};
   var next=invs.map(function(v){
-    if(!v || v.pid) return v;
-    var p=window._gcJobForInvoice(v, list);
-    if(p){ changed++; return Object.assign({}, v, {pid:p.id, po:v.po||p.autoPO||'', autoLinked:true}); }
-    if(v.po) orphan.push(v.po);
+    if(!v || v.pid || v.deleted) return v;
+    var m=window._gcJobMatchesForInvoice(v, list), p=window._gcJobForInvoice(v, list);
+    if(p){ changed++;   /* INVMATCH: only a sure job; say why on the record */
+      var why=m.po.length===1 ? 'PO '+String(v.po).toUpperCase() : ((m.text.filter(function(x){ return x.p===p; })[0]||{}).how||'');
+      return Object.assign({}, v, {pid:p.id, po:v.po||p.autoPO||'', autoLinked:true, autoLinkWhy:why}); }
+    if(v.po && !m.po.length) orphan.push(v.po);
     return v;
   });
   if(changed){
@@ -100678,6 +100740,22 @@ function guessJobName(inv){
 window._gcCreateJobForPO = async function(invId, nameOverride){
   var inv=invoices().filter(function(v){ return v && String(v.id)===String(invId); })[0];
   if(!inv) return null;
+  /* INVMATCH: the office / admins get the ➕ New project form (patch NEWPROJ) — company, status, type, "Did you mean …?" — instead of
+     a bare job typed 'Construction' (not a job type: it landed in no list) with no company. The invoice gets the job it picks / makes. */
+  if(!nameOverride && typeof window._gcNewProjectFor==='function' && typeof window._gcNewProjectCan==='function' && window._gcNewProjectCan()){
+    var r0=await window._gcNewProjectFor(inv);
+    if(!r0 || !r0.project) return null;
+    var pj0=r0.project;
+    window.__GC_MANUAL_SAVE__=true;
+    var invs0=invoices().map(function(v){ return (v && String(v.id)===String(invId)) ? Object.assign({}, v, {pid:pj0.id, po:v.po||pj0.autoPO||'', pidManual:true}) : v; });
+    try{ if(window._crm){ if(listOf('invs').length) window._crm.invs=invs0; else window._crm.invoices=invs0; } }catch(e){}
+    try{ if(window._setInvoices) window._setInvoices(invs0); }catch(e){}
+    try{ if(window.idbSet) await window.idbSet(listOf('invs').length?'invs':'invoices', invs0); }catch(e){}
+    try{ if(window._supaUpsert) window._supaUpsert('invs', invs0); }catch(e){}
+    setTimeout(function(){ window.__GC_MANUAL_SAVE__=false; }, 1500);
+    try{ if(window._gcClearApprovalItem) window._gcClearApprovalItem('orphan-po:'+inv.po); }catch(e){}
+    return pj0;
+  }
   var name=String(nameOverride||guessJobName(inv)||('PO '+inv.po)).trim();
   var today=new Date().toISOString().slice(0,10);
   /* patch ACTIVEDATES: the new job is Active — the box first */
@@ -100913,7 +100991,8 @@ function paint(){
         ev.preventDefault(); ev.stopPropagation();
         var invId=this.getAttribute('data-inv');
         var suggested='';
-        try{ suggested=(window.prompt('Name this job','')||'').trim(); }catch(e){}
+        var _npForm=typeof window._gcNewProjectFor==='function' && typeof window._gcNewProjectCan==='function' && window._gcNewProjectCan();   /* INVMATCH: the form asks */
+        if(!_npForm){ try{ suggested=(window.prompt('Name this job','')||'').trim(); }catch(e){} }
         this.textContent='…';
         var p=await window._gcCreateJobForPO(invId, suggested);
         orph.setAttribute('data-sig','');   // force a repaint
@@ -218337,7 +218416,7 @@ W._gcCanCreateProject = function(){
 };
 W._gcNewJobOpt = function(){ try { return W._gcCanCreateProject() ? '<option value="__newjob">＋ New job…</option>' : ''; } catch (e) { return ''; } };
 
-var TYPES = { Residential: 'Residential Reno', Commercial: 'Commercial Reno', Insurance: 'Insurance' };
+var TYPES = { Residential: 'Residential Reno', Commercial: 'Commercial Reno', Insurance: 'Insurance Claim' };   /* INVMATCH: the CRM's type is 'Insurance Claim' ('Insurance' fell in no type list) */
 /* the customers (Customers list first, then the jobs' customers not on it) */
 function customers(){
   var seen = {}, out = [];
@@ -232200,7 +232279,8 @@ function openCheck(){
       if (e.target.hasAttribute('data-inc')) { it.include = !!e.target.checked; paint(); return; }
       var v = s(e.target.value);
       if (v === NEWP && typeof W._gcNewProjectFor === 'function') {
-        var x = it.x; try { W._gcNewProjectFor({ client: x.client || x.qbCust || '', name: s(x.qbCust).split(':').pop() || descTail(x), address: '', amount: x.amt, amt: x.amt, invNum: it.q.num, date: x.date, source: 'QuickBooks ↔ CRM' }, function(p){ if (!p || !p.id) return; JL.at = 0; jobDatalist(card); it.pid = s(p.id); it.picked = true; it.include = true; it.changed = true; paint(); }); } catch (er) {}
+        /* INVMATCH: the form gets the whole record (its id, kind, vendor, memo, PO), so "Did you mean …?" can find the job by the memo's address / PO */
+        var x = it.x; try { W._gcNewProjectFor({ id: s(x.id), kind: isClientRec(x) ? 'client' : 'sub', client: x.client || (s(x.qbCust).indexOf(':') > 0 ? s(x.qbCust).split(':')[0] : x.qbCust) || '', vendor: isClientRec(x) ? '' : s(x.sub || x.vendor), memo: s(x.qbMemo) || descTail(x), po: s(x.po), name: s(x.qbCust).indexOf(':') > 0 ? s(x.qbCust).split(':').pop() : '', address: s(x.address || x.jobAddress), amount: x.amt, amt: x.amt, invNum: it.q.num, date: x.date || x.recvDate, status: s(x.status), source: 'QuickBooks ↔ CRM' }, function(p){ if (!p || !p.id) return; JL.at = 0; jobDatalist(card); it.pid = s(p.id); it.picked = true; it.include = true; it.changed = true; paint(); }); } catch (er) {}
         return;
       }
       var pid = jobList().byLabel[v];
@@ -232722,17 +232802,34 @@ function nameKey(n){ return low(n).replace(/&/g, ' and ').replace(/\b(llc|inc|co
 function toks(n){ return nameKey(n).split(' ').filter(function(w){ return w.length >= 3 && !/^(job|project|and|for|reno|remodel|repair)$/.test(w); }); }
 function close(a, b){ var A = toks(a), B = toks(b); if (!A.length || !B.length) return false; var na = nameKey(a), nb = nameKey(b); if (na.length >= 5 && nb.length >= 5 && (na.indexOf(nb) > -1 || nb.indexOf(na) > -1)) return true;
   var hit = A.filter(function(w){ return B.indexOf(w) > -1; }).length; return hit / Math.min(A.length, B.length) >= 0.6 && (hit >= 2 || (A.length === 1 && B.length === 1 && hit === 1)); }   /* one shared word of several is not enough */
-function matches(f){
+/* INVMATCH: Friday's "new" jobs already existed — "4964 Given Ave" for the job at 4964 GivenS Ave, "8901 Clair Doowie Cv" for 8901 Clair
+   DOUWIE Cove — and the form only knew what she typed (opened from 🔗 QuickBooks ↔ CRM it got no memo, no vendor, no PO). Now a typo in the
+   street (same house #, a street name 1-2 letters off) is a "similar address", and the invoice's own memo / description is searched too:
+   a street address written in it ("address job. 6382 Stage rd …"), the PO, the job name. */
+function lev(a, b){ if (a === b) return 0; var m = a.length, n = b.length; if (Math.abs(m - n) > 2) return 9; var d = []; for (var i = 0; i <= m; i++) d[i] = [i]; for (var j = 0; j <= n; j++) d[0][j] = j;
+  for (i = 1; i <= m; i++) for (j = 1; j <= n; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); return d[m][n]; }
+function street(k){ var w = s(k).split(' ').filter(function(x){ return x && !/^(st|rd|ave|dr|ln|ct|blvd|hwy|pl|cir|pkwy|cv|ter|trl|way|loop|pike|n|s|e|w)$/.test(x); }); return /^\d+[a-z]?$/.test(w[0] || '') && w[1] ? { n: w[0].replace(/[a-z]$/, ''), w: w[1] } : null; }
+function addrNear(a, b){ var A = street(a), B = street(b); if (!A || !B || A.n !== B.n) return false; if (A.w === B.w) return true; var L = Math.min(A.w.length, B.w.length); if (L < 4) return false;
+  return lev(A.w, B.w) <= (L >= 6 ? 2 : 1) || A.w.indexOf(B.w) === 0 || B.w.indexOf(A.w) === 0; }
+function memoAddrs(t){ var out = [], re = /\b(\d{2,6}[a-z]?)\s+([a-z][a-z.'-]{2,}(?:\s+[a-z][a-z.'-]{1,}){0,3})/ig, m; t = s(t); while ((m = re.exec(t)) && out.length < 6) out.push(addrKey(m[1] + ' ' + m[2])); return out.filter(Boolean); }
+function liveP(p){ return !p.deleted && !p._deleted && !/^(deleted|void)$/i.test(s(p.status)); }
+function matches(f, ctx){
   var out = [], ak = addrKey(f.address), ck = nameKey(f.customer), po = s(f.po).toUpperCase();
+  ctx = ctx || {}; var memo = [ctx.memo, ctx.jobName, ctx.address].filter(Boolean).join(' \n '), mAddrs = memoAddrs(memo), memoN = ' ' + nameKey(memo) + ' ';
+  var mPOs = (s(memo).toUpperCase().match(/\b[A-Z]\d{3}\b/g) || []);
   projects().forEach(function(p){
+    if (!liveP(p)) return;
     var why = [], sc = 0;
     if (po && (s(p.autoPO).toUpperCase() === po || s(p.po).toUpperCase() === po)) { why.push('same PO ' + po); sc += 100; }
+    else if (p.autoPO && mPOs.indexOf(s(p.autoPO).toUpperCase()) > -1) { why.push('its PO ' + s(p.autoPO).toUpperCase() + ' is in the memo'); sc += 90; }
     var pa = addrKey(p.address || p.jobAddress);
-    if (ak && pa) { if (pa === ak) { why.push('same address'); sc += 60; } else if (pa.split(' ')[0] === ak.split(' ')[0] && pa.split(' ')[1] === ak.split(' ')[1]) { why.push('similar address'); sc += 35; } }
+    if (ak && pa) { if (pa === ak) { why.push('same address'); sc += 60; } else if ((pa.split(' ')[0] === ak.split(' ')[0] && pa.split(' ')[1] === ak.split(' ')[1]) || addrNear(pa, ak)) { why.push('similar address'); sc += 45; } }
+    if (pa && !(ak && (pa === ak || addrNear(pa, ak))) && mAddrs.some(function(x){ return x === pa || addrNear(x, pa); })) { why.push('its address is in the memo'); sc += 55; }
+    var pnk = nameKey(p.name); if (pnk.length >= 8 && pnk.split(' ').length >= 2 && memoN.indexOf(' ' + pnk + ' ') > -1) { why.push('its name is in the memo'); sc += 40; }
     var pc = nameKey(p.client || p.customer);
     if (ck && pc && (pc === ck || (ck.length >= 6 && close(pc, ck)))) { why.push('same customer'); sc += 30; }
     if (f.name && close(p.name, f.name)) { why.push('similar name'); sc += 25; }
-    if (sc) out.push({ p: p, why: why.join(' · '), sc: sc });
+    if (sc) out.push({ p: p, why: why.join(' · '), sc: sc - (/^(lost|cancell?ed|dead|declined)$/i.test(s(p.status)) ? 5 : 0) + (/^(active|completed?|on_hold)$/i.test(s(p.status)) ? 2 : 0) });   /* INVMATCH: real jobs before bids, lost ones last */
   });
   return out.sort(function(a, b){ return b.sc - a.sc; }).slice(0, 6);
 }
@@ -232768,6 +232865,16 @@ function autoPO(want){
 
 /* ── the form ── */
 var KIND_L = { client: 'Customer invoice', sub: 'Sub invoice', expense: 'Expense / receipt', supplier: 'Supplier bill', qb: 'QuickBooks record', doc: 'Document' };
+/* INVMATCH: the CRM's job types (the same list as the job editor), the default from the company and the customer: a Mitigation job is
+   'Mitigation', an Environmental one 'Environmental', a business customer (LLC, Inc, a city, a bank, a church…) 'Commercial Reno'. */
+var JOB_TYPES = [['Residential Reno', 'Residential'], ['Commercial Reno', 'Commercial'], ['Commercial TI', 'Commercial TI'], ['New Construction', 'New Construction'], ['Roofing', 'Roofing'],
+  ['Insurance Claim', 'Insurance claim'], ['Water Damage', 'Water damage'], ['Fire Damage', 'Fire damage'], ['Mitigation', 'Mitigation'], ['Environmental', 'Environmental'], ['Program Work', 'Program work'], ['Other', 'Other']];
+function typeFor(co, cust, o){
+  if (co === 'mitigation') return 'Mitigation';
+  if (co === 'environmental') return 'Environmental';
+  if (/\b(llc|inc|corp|company|co\.|ltd|city of|county|bank|church|school|schools|holdings|management|construction|group|hospital|clinic|medical|apartments|properties|services|enterprise|university)\b/i.test(s(cust))) return 'Commercial Reno';
+  return 'Residential Reno';
+}
 function form(o){
   return new Promise(function(res){
     var old = D.getElementById('gc-np-ov'); if (old) old.remove();
@@ -232775,6 +232882,7 @@ function form(o){
     var cust = o.customer || (cj && cj.customer) || '';
     var name = o.jobName || (cj && cj.job) || cleanMemo(o.memo) || (cust && o.address ? cust + ' — ' + s(o.address).split(',')[0] : '') || '';
     var status = isHistory(o) ? 'completed' : 'active', co = defaultCo(o), contract = o.kind === 'client' && o.amount ? String(o.amount) : '';
+    var type0 = typeFor(co, cust, o);
     var ov = D.createElement('div'); ov.id = 'gc-np-ov'; ov.setAttribute('data-gc-keep', '1'); ov.setAttribute('data-gc-linked', '1'); ov.setAttribute('data-gcnp-skip', '1');
     ov.style.cssText = 'position:fixed;inset:0;z-index:2147483600;background:rgba(15,23,42,.55);display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow:auto;font-family:Inter,-apple-system,Segoe UI,Arial,sans-serif';
     var I = 'display:block;width:100%;box-sizing:border-box;padding:8px 9px;margin-top:3px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px;background:#fff;color:#0f172a;font-family:inherit',
@@ -232791,7 +232899,7 @@ function form(o){
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 10px">' +
         '<label style="' + L + '">Company<select data-np="co" style="' + I + '">' + companies().map(function(c){ return '<option value="' + esc(c.id) + '"' + (c.id === co ? ' selected' : '') + '>' + esc(c.l) + '</option>'; }).join('') + '</select></label>' +
         '<label style="' + L + '">Status<select data-np="status" style="' + I + '"><option value="completed"' + (status === 'completed' ? ' selected' : '') + '>Completed (past job)</option><option value="active"' + (status === 'active' ? ' selected' : '') + '>Active</option></select></label>' +
-        '<label style="' + L + '">Type<select data-np="type" style="' + I + '"><option value="Residential Reno">Residential</option><option value="Commercial Reno">Commercial</option><option value="Insurance">Insurance</option></select></label>' +
+        '<label style="' + L + '">Type<select data-np="type" style="' + I + '">' + JOB_TYPES.map(function(t){ return '<option value="' + esc(t[0]) + '"' + (t[0] === type0 ? ' selected' : '') + '>' + esc(t[1]) + '</option>'; }).join('') + '</select></label>' +   /* INVMATCH: the CRM's own job types ("Insurance" was not one — the job fell in no type list) */
         '<label style="' + L + '">PM <span style="font-weight:400;color:#64748b">(optional)</span><select data-np="pm" style="' + I + '"><option value="">— none —</option>' + pms().map(function(n){ return '<option>' + esc(n) + '</option>'; }).join('') + '</select></label>' +
         '<label style="' + L + '">Contract $ <span style="font-weight:400;color:#64748b">(optional)</span><input data-np="contract" type="number" step="0.01" min="0" style="' + I + '" value="' + esc(contract) + '"></label>' +
         (o.po ? '<label style="' + L + '">PO #<input data-np="po" style="' + I + '" value="' + esc(o.po) + '" autocomplete="off"></label>' : '<div></div>') +
@@ -232806,12 +232914,16 @@ function form(o){
     var armed = false, M = [];
     function fields(){ return { customer: s(q('cust').value), name: s(q('name').value), address: s(q('addr').value), co: q('co').value, status: q('status').value, type: q('type').value, pm: q('pm').value, contract: num(q('contract').value), po: q('po') ? s(q('po').value).toUpperCase() : '', ph: q('ph') ? s(q('ph').value) : '', em: q('em') ? s(q('em').value) : '' }; }   /* patch CCCONTACT2 */
     function paintDups(){
-      M = matches(Object.assign({ po: o.po }, fields())); armed = false; q('ok').textContent = 'Create project & use it'; q('ok').style.background = '#16a34a';
+      M = matches(Object.assign({ po: o.po }, fields()), o);   /* INVMATCH: the invoice's memo too */ armed = false; q('ok').textContent = 'Create project & use it'; q('ok').style.background = '#16a34a';
       q('dups').innerHTML = M.length ? '<div style="border:1px solid #f59e0b;background:#fffbeb;border-radius:10px;padding:9px 11px"><b style="font-size:13.5px;color:#92400e">Did you mean one of these?</b>' +
         M.map(function(m){ var p = m.p; return '<div style="display:flex;gap:8px;align-items:center;justify-content:space-between;margin-top:6px;font-size:13px"><span><b>' + esc(p.name || 'Job') + '</b>' + (p.autoPO ? ' · PO ' + esc(p.autoPO) : '') + (p.address ? '<br><span style="color:#475569">' + esc(p.address) + '</span>' : '') +
           '<br><span style="color:#92400e;font-size:12px">' + esc(m.why) + (p.status ? ' · ' + esc(p.status) : '') + '</span></span><button type="button" data-np-use="' + esc(p.id) + '" style="white-space:nowrap;padding:6px 10px;border:1px solid #2563eb;border-radius:7px;background:#eff6ff;color:#1d4ed8;font-weight:700;cursor:pointer">Use this job</button></div>'; }).join('') + '</div>' : '';
     }
     var tmr = 0; ['cust', 'name', 'addr', 'po'].forEach(function(k){ var el = q(k); if (el) el.addEventListener('input', function(){ clearTimeout(tmr); tmr = later(paintDups, 250); }); });
+    /* INVMATCH: the type follows the company / customer until she picks one herself */
+    var typeTouched = false; q('type').addEventListener('change', function(){ typeTouched = true; });
+    var retype = function(){ if (!typeTouched) q('type').value = typeFor(q('co').value, q('cust').value, o); };
+    q('co').addEventListener('change', retype); q('cust').addEventListener('change', retype);
     paintDups();
     later(function(){ try { (q('name').value ? q('cust') : q('name')).focus(); } catch (e) {} }, 30);
     var done = function(v){ ov.remove(); res(v); };
@@ -232834,6 +232946,7 @@ function form(o){
 }
 
 /* ── make it the CRM's way ── */
+function custHasJobs(c){ var n = nameKey(c && (c.name || c.company)), id = s(c && c.id); if (!n && !id) return false; return projects().some(function(p){ return liveP(p) && ((id && s(p.customerId) === id) || (n && nameKey(p.client || p.customer) === n) || (n && nameKey(p.company) === n)); }); }
 function make(f, o){
   var name = f.name || f.customer, adPatch = {}, adSkip = false;
   var step = Promise.resolve(true);
@@ -232851,7 +232964,7 @@ function make(f, o){
     if (f.status === 'completed') { extra.completedAt = at; if (o.date) extra.endDate = o.date; }
     if (c && s(c.id) && !c._fromJob) extra.customerId = s(c.id);
     Object.assign(extra, adPatch);
-    var j = null, base = { name: name, client: c ? s(c.name || c.company) : f.customer, phone: f.ph || (c ? s(c.phone) : ''), email: f.em || (c ? s(c.email) : ''),   /* patch CCCONTACT2 */ address: f.address || (c ? s(c.address) : ''), type: f.type, kind: f.status === 'active' ? 'active' : '', notes: note, extra: extra };
+    var j = null, base = { name: name, client: c ? s(c.name || c.company) : f.customer, phone: f.ph || (c ? s(c.phone) : ''), email: f.em || (c ? s(c.email) : ''),   /* patch CCCONTACT2 */ address: f.address || (c && !custHasJobs(c) ? s(c.address) : ''), type: f.type,   /* INVMATCH: a customer's billing address is not the site of a 2nd job (a QuickBooks customer "Enterprise" put its billing address — another customer's street — on a new Enterprise job) */ kind: f.status === 'active' ? 'active' : '', notes: note, extra: extra };
     if (typeof W._gcSelfAddJob === 'function') { try { j = W._gcSelfAddJob(base, 'invoice-entry'); } catch (e) { warn(e); } }
     if (!j) {   /* the same record, straight through the list setter (CC2 not loaded / no signed-in name) */
       if (typeof W._setProjects !== 'function') throw new Error('the CRM is still loading — try again in a moment');
