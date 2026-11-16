@@ -2187,12 +2187,18 @@ async function releaseScheduled(opts){
    (approval-escalate.js) and whenever the CRM shows a list (op "escalate"). On escalation: once, an office to-do,
    a CRM notice for the office and for the admins (gc_kv "gc_appr_notices"), and a phone push to both. ── */
 const ESC_MS = 24 * 3600e3;
+/* PORTAL48 (owner 11/16): an approval from the customer-portal side (portal posts / messages / shares / documents / links, the
+   replies to portal requests, the weekly update) that no admin approved within 48 hours → the office, "waited 48 h for an admin".
+   Every other admin-step item keeps the 24 hours; the PM step's 24 hours (pmEsc) stays. */
+const PORTAL_ESC_MS = 48 * 3600e3;
+function portalSide(x){ const k = low(x && x.kind); return /^(portal_|preq_|gcp_)/.test(k) || /^(portal|weekly_update|announcement|cust_message|customer_message)$/.test(k) || !!(x && x.meta && x.meta.portal === true); }
+function escMsOf(x){ return portalSide(x) ? PORTAL_ESC_MS : ESC_MS; }
 function adminSinceMs(x){
   if (x.adminSince) return Date.parse(x.adminSince);
   const ap = (x.approvals || []).filter(function(a){ return a && a.step === 'pm'; }).slice(-1)[0];   /* older items: when the PM approved */
   return Date.parse((ap && ap.at) || x.createdAt || 0);
 }
-function escalatedOrDue(x, nowMs){ return !!(x && x.status === 'waiting' && x.step === 'admin' && (x.escalated || nowMs - adminSinceMs(x) >= ESC_MS)); }
+function escalatedOrDue(x, nowMs){ return !!(x && x.status === 'waiting' && x.step === 'admin' && (x.escalated || nowMs - adminSinceMs(x) >= escMsOf(x))); }   /* PORTAL48: 48 h for portal-side items */
 async function isOffice(who){
   if (/office/.test(low(who.role))) return true;
   try { const d = await crmData(false); const u = arr(d.users).find(function(x){ return low(x.email) === low(who.email); }); return !!(u && u.active !== false && /office/i.test(s(u.role))); } catch (e) { return false; }
@@ -2207,7 +2213,7 @@ async function pushTo(emails, p){
   if (!wp || ((!pub || !priv) && !(exports._core && exports._core._webPush))) return { sent: 0, why: 'phone push is not set up' };
   try { emails = require('./_lib/away.js').redirect(emails, await require('./_lib/away.js').activeNow()); } catch (e) {}   /* AWAY: an admin on 🏖 Away gets no push */
   try { if (pub && priv) wp.setVapidDetails(s(process.env.VAPID_SUBJECT) || 'mailto:office@grayco-cs.com', pub, priv); } catch (e) { return { sent: 0, why: 'bad VAPID keys' }; }
-  const payload = JSON.stringify({ title: p.title, body: p.body, link: baseUrl({}) + '/#todo', tag: p.tag });
+  const payload = JSON.stringify({ title: p.title, body: p.body, link: (/^https:\/\//.test(s(p.url)) ? s(p.url) : '') || baseUrl({}) + '/#todo', tag: p.tag });   /* AWAY: the caller's deep link when it gives one */
   let sent = 0;
   for (const email of emails) {
     let subs = []; try { subs = arr((await kvRead(['gc_push_subs__' + email]))['gc_push_subs__' + email]).filter(function(x){ return x && x.endpoint && x.keys; }); } catch (e) {}
@@ -2227,7 +2233,7 @@ async function escalateDue(opts){
       const pmDue = x.pmEsc === true && x.status === 'waiting' && x.step === 'pm' && nowMs - Date.parse(x.createdAt || 0) >= ESC_MS;   /* patch SUBCONTACT: the PM did not answer → the office */
       if (!pmDue && !escalatedOrDue(x, nowMs)) return;
       if (pmDue) { x.step = 'admin'; x.adminSince = at; }
-      x.escalated = { at: at, why: pmDue ? 'The PM did not answer in 24 hours' : 'Wesley and Nick did not answer in 24 hours' }; x.updatedAt = at; fresh.push(x);
+      x.escalated = { at: at, why: pmDue ? 'The PM did not answer in 24 hours' : portalSide(x) ? 'Waited 48 h for an admin' : 'Wesley and Nick did not answer in 24 hours' };   /* PORTAL48 */ x.updatedAt = at; fresh.push(x);
     });
     if (!fresh.length) return null;
     const ids = fresh.map(function(x){ return s(x.id); });
@@ -2243,9 +2249,10 @@ async function escalateDue(opts){
     const why = s(x.escalated && x.escalated.why) || 'Wesley and Nick did not answer in 24 hours';   /* patch SUBCONTACT */
     await officeTodo('appr_esc_' + s(x.id), '⏫ Approve: ' + clip(title, 120), why + '. You can approve, edit or not approve it now: ✅ Approvals in To-Do, or the green APPROVE button.');
     notices.push({ id: 'esc_office_' + s(x.id), to: 'office', itemId: s(x.id), at: at, text: '⏫ For you to approve: ' + clip(title, 120) + ' — ' + why + '.' });
-    notices.push({ id: 'esc_admins_' + s(x.id), to: 'admins', itemId: s(x.id), at: at, text: '⏫ Sent to the office after 24h: ' + clip(title, 120) + '. You can still approve it.' });
-    await pushTo(office, { title: '⏫ Approval for the office', body: clip(title, 120) + ' — admins didn\'t answer in 24h', tag: 'appr-esc-' + s(x.id) });
-    await pushTo(admins, { title: 'Sent to the office after 24h', body: clip(title, 120), tag: 'appr-esc-admin-' + s(x.id) });
+    const hrs = /48 h/.test(why) ? '48h' : '24h';   /* PORTAL48 */
+    notices.push({ id: 'esc_admins_' + s(x.id), to: 'admins', itemId: s(x.id), at: at, text: '⏫ Sent to the office after ' + hrs + ': ' + clip(title, 120) + '. You can still approve it.' });
+    await pushTo(office, { title: '⏫ Approval for the office', body: clip(title, 120) + ' — ' + (hrs === '48h' ? 'waited 48 h for an admin' : 'admins didn\'t answer in 24h'), tag: 'appr-esc-' + s(x.id), url: baseUrl({}) + '/#appr=' + encodeURIComponent(s(x.id)) });
+    await pushTo(admins, { title: 'Sent to the office after ' + hrs, body: clip(title, 120), tag: 'appr-esc-admin-' + s(x.id), url: baseUrl({}) + '/#appr=' + encodeURIComponent(s(x.id)) });
   }
   await kvListUpdate('gc_appr_notices', function(l){
     const have = {}; l.forEach(function(n){ have[s(n && n.id)] = 1; });
@@ -2972,7 +2979,7 @@ exports.handler = async function (event) {
 
 /* for portal-reminders.js and the tests */
 exports._core = { starterFirst: starterFirst, pwSentence: pwSentence, withPwLine: withPwLine, firstForPid: firstForPid, seniorPm: async function(){ let d = {}; try { d = await crmData(true); } catch (e) {} return PEOPLE().seniorPm(d.users, d.gc_senior_pm); }, people: PEOPLE, JA: JA, jaAllows: jaAllows, pmByName: async function(name){ const n = s(name); if (!n) return null; let d = {}; try { d = await crmData(true); } catch (e) {} return pmOf(d, { pm: n }); }, officeTodo: officeTodo, taskListOf: taskListOf, kvListUpdate: kvListUpdate, queueApproval: queueApproval, gateScan: gateScan, gateState: gateState, gateGet: gateGet, gateAllows: gateAllows, gateKeyOf: gateKeyOf, gateSet: gateSet, GATE_KEY: GATE_KEY, _gateReset: function(){ GATE_LAST = null; GATE_AT = 0; }, approvalAction: approvalAction, aqMerge: aqMerge, AQ_KEY: AQ_KEY, LINK_PH: LINK_PH, notifyDocs: notifyDocs, notifyAll: notifyAll, noticeItems: noticeItems, sendLink: sendLink, settingsGet: settingsGet, warrantyOf: warrantyOf, buildView: buildView, runReminders: runReminders, stageOf: stageOf, gdocInfo: gdocInfo, ccIdOf: ccIdOf,
-  newToken: newToken, grayCoPhotos: grayCoPhotos, escalateDue: escalateDue, escalatedOrDue: escalatedOrDue, ESC_MS: ESC_MS, approvedReminder: approvedReminder, aqSend: aqSend, replyToFor: replyToFor, invoiceDoc: invoiceDoc, invoicePdf: invoicePdf, invNumber: invNumber, invCustStatus: invCustStatus,
+  newToken: newToken, grayCoPhotos: grayCoPhotos, escalateDue: escalateDue, escalatedOrDue: escalatedOrDue, ESC_MS: ESC_MS, PORTAL_ESC_MS: PORTAL_ESC_MS, portalSide: portalSide, approvedReminder: approvedReminder, aqSend: aqSend, replyToFor: replyToFor, invoiceDoc: invoiceDoc, invoicePdf: invoicePdf, invNumber: invNumber, invCustStatus: invCustStatus,
   queueInvoiceMail: queueInvoiceMail, queueNewInvoices: queueNewInvoices, invMailWanted: invMailWanted, news: function(){ return newsLib(); }, STAGES: STAGES, NOT_ACTIVE: NOT_ACTIVE, _reset: function(){ kvCache = null; photoCache.clear(); hits.clear(); GATE_LAST = null; GATE_AT = 0; } };
 /* patch AUTAI */
 Object.assign(exports._core, { crmData: crmData, kvRead: kvRead, activeFor: activeFor, sendText: sendText, LINK_PH_: LINK_PH, pmOf: pmOf, findProject: findProject, textHtml: textHtml, kvListRead: kvListRead, autaiReceipt: autaiReceipt, autaiQueue: autaiQueue, AUTAI_POST: AUTAI_POST });

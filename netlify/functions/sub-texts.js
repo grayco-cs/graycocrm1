@@ -38,15 +38,20 @@ async function alertPm(rec, words, how, data){
   let pm = null; try { pm = core().pmOf(data, p); } catch (e) {}
   let office = []; try { office = core().officeEmails(data) || []; } catch (e) {}
   const noReply = how === 'noreply';
-  const head = noReply ? '⏰ ' + rec.sub + ' hasn\'t confirmed' : '⚠️ ' + rec.sub + ': "' + clip(words, 120) + '"';
+  /* CALLOUT (owner 11/16): a sub calling out → that job's PM only (the superintendent instead on a commercial job; the office when
+     nobody is set) — never the admins, no office copy; it is urgent: "📣 Call-out" passes the 9 PM – 7 AM quiet hours */
+  let callTo = []; if (!noReply) { try { callTo = require('./_lib/callout.js').route({ who: 'sub', jobs: [p], users: arr(data.users), office: office }); } catch (e) { callTo = pm && pm.email ? [low(pm.email)] : []; } }
+  const head = noReply ? '⏰ ' + rec.sub + ' hasn\'t confirmed' : '📣 Call-out — ' + rec.sub + ': "' + clip(words, 120) + '"';
   const line = (noReply ? rec.sub + ' has not answered the schedule text for ' : rec.sub + (how === 'portal' ? ' (sub portal)' : ' (text)') + ' about ') + (rec.job || 'the job') + ' — ' + U.dayWord(rec.day) + ' ' + U.hhmm(rec.start) + (rec.title ? ' (' + rec.title + ')' : '') + '.';
   const out = {};
   const id = 'subalert_' + crypto.createHash('sha1').update(rec.key + '|' + how + '|' + (noReply ? '' : clip(words, 200))).digest('hex').slice(0, 20);
   const task = { id, kind: 'sub_alert', label: head + ' — ' + (rec.job || ''), note: line + (noReply ? '' : '\n\nThey said: ' + clip(words, 1200)) + (rec.phone ? '\n📞 ' + U.tidy(rec.phone) : ''),
-    assignees: pm && pm.email ? [low(pm.email)] : [], urgency: 'asap', priority: 'asap', pid: s(rec.pid), addedBy: 'Sub schedule texts', addedAt: at, createdAt: at, updatedAt: at, done: false };
+    assignees: noReply ? (pm && pm.email ? [low(pm.email)] : []) : callTo.slice(0, 6), urgency: 'asap', priority: 'asap', pid: s(rec.pid), addedBy: 'Sub schedule texts', addedAt: at, createdAt: at, updatedAt: at, done: false };
   const has = l => l.some(t => t && s(t.id) === id);
   try { out.todo = (await core().kvListUpdate('gc_office_tasks', l => has(l) ? null : { list: l.concat([task]), check: has })).ok; } catch (e) { out.todo = false; }
-  if (pm && pm.email) { try { out.push = await core().pushTo([low(pm.email)], { title: head, body: line, tag: id }); } catch (e) {} }
+  const pushTo0 = noReply ? (pm && pm.email ? [low(pm.email)] : []) : callTo;   /* CALLOUT */
+  if (pushTo0.length) { try { out.push = await core().pushTo(pushTo0, { title: head, body: line, tag: id, url: site() + '/?jobmsg=' + encodeURIComponent(s(rec.pid)) }); } catch (e) {} }
+  out.to = pushTo0;
   if (!noReply) {
     const mid = 'SUBT_' + id;
     const msg = { id: mid, pid: s(rec.pid), authorId: 'sub:' + s(rec.subId), authorName: (how === 'portal' ? '🧰 ' : '📱 ') + rec.sub + (how === 'portal' ? ' (sub portal)' : ' (text)'), text: clip(words, 1600), tags: [], at, source: how === 'portal' ? 'subportal' : 'sms', channel: how === 'portal' ? 'subportal' : 'sms', dir: 'in' };
@@ -56,7 +61,7 @@ async function alertPm(rec, words, how, data){
       try { await require('./portal-access.js')._core.msgInsert(s(rec.pid), 's:' + s(rec.subId), 'them', rec.sub + ' (text)', '📱 ' + clip(words, 3900), []); out.thread = true; } catch (e) { out.thread = false; }
     }
   }
-  const key = env('RESEND_API_KEY'), to = Array.from(new Set([pm && pm.email].concat(office).map(low).filter(x => /@grayco-cs\.com$/.test(x))));
+  const key = env('RESEND_API_KEY'), to = Array.from(new Set((noReply ? [pm && pm.email].concat(office) : callTo).map(low).filter(x => /@grayco-cs\.com$/.test(x))));   /* CALLOUT: a call-out → only who it is for */
   if (key && to.length) {
     const link = site() + '/?jobmsg=' + encodeURIComponent(s(rec.pid));
     const html = '<div style="font:14px Arial;color:#1b1640;max-width:640px"><div style="background:' + (noReply ? '#b45309' : '#b91c1c') + ';color:#fff;padding:14px 18px;font-weight:700;font-size:16px">' + U.esc(head) + '</div><div style="padding:6px 18px 18px">'

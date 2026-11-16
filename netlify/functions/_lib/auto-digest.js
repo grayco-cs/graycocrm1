@@ -39,7 +39,7 @@ async function collect(now){
     if (offK) office.forEach(function(e){ add(e, it); });
     if (x.step === 'pm') { if (staffEmail(x.pmEmail)) add(x.pmEmail, it); else admins.forEach(function(e){ add(e, it); }); if (!offK && !adminOnly) optional(); return; }   /* patch APOFFICE2: the office may take the PM step at once — one count line, not in her list */
     admins.forEach(function(e){ add(e, it); });
-    const esc24 = x.escalated || (Date.parse(x.adminSince || x.createdAt || 0) && now - Date.parse(x.adminSince || x.createdAt) >= 24 * 3600e3);
+    const esc24 = x.escalated || (Date.parse(x.adminSince || x.createdAt || 0) && now - Date.parse(x.adminSince || x.createdAt) >= (C.portalSide && C.portalSide(x) ? 48 : 24) * 3600e3);   /* PORTAL48: portal-side items wait 48 h for an admin */
     if (!adminOnly && (x.officeOk === true || esc24)) office.forEach(function(e){ add(e, it); });
   });
   /* patch SUBINV (owner 10/27): JOB COSTS (sub invoices, job expenses / receipts) go to the job's PM; after 24 hours without

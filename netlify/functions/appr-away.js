@@ -9,6 +9,9 @@
 //   audit {rec}               one approval decision, from this device (who = the sign-in, never the page)
 //   week                      (admin) 📊 Approvals this week
 //   ping                      (admin) run the approval pings now
+//   callout {kind: sick | late | cant, day, minutes, note, jobs: [job ids]}   an employee calling out (patch TIMEOFF's 🤒 / ⏰):
+//                             the admins + the PM of each job that day (the superintendent on a commercial job), at once
+//                             (urgent — passes the quiet hours): phone push, else a staff text (_lib/callout.js)
 //   quiet {from, to, on}      (admin) 🌙 staff quiet hours (default 9 PM → 7 AM: only emergencies / call-outs; the rest at 7 AM)
 require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const portal = require('./portal.js');
@@ -81,6 +84,28 @@ async function act(body, who){
     return { status: 200, out: await PG().audit(rec) };
   }
   if (op === 'week') { if (!admin) return { status: 403, out: { ok: false, error: 'Admins only.' } }; return { status: 200, out: await PG().week() }; }
+  if (op === 'callout') {
+    const kind = /^(sick|late|cant)$/.test(s(body.kind)) ? s(body.kind) : '';
+    if (!kind) return { status: 400, out: { ok: false, error: 'Bad request' } };
+    const C = portal._core; let data = {}; try { data = await C.crmData(true); } catch (e) {}
+    const users = arr(data.users), me = users.filter(function(u){ return low(u && u.email) === low(who.email); })[0] || {};
+    const name = s(me.name) || s(who.name) || low(who.email).split('@')[0], fn = name.split(/\s+/)[0];
+    const projects = C.listOf ? C.listOf(data, ['projects']) : arr(data.projects);
+    const jobs = arr(body.jobs).slice(0, 20).map(function(id){ return projects.filter(function(p){ return p && s(p.id) === s(id); })[0]; }).filter(Boolean);
+    const CO = require('./_lib/callout.js');
+    const to = CO.route({ who: 'employee', jobs: jobs, users: users, admins: C.adminEmails(data), self: who.email });
+    const today = AW().ymdC(now), day = /^\d{4}-\d{2}-\d{2}$/.test(s(body.day)) ? s(body.day) : today;
+    const when = day === today ? 'today' : day === AW().addDays(today, 1) ? 'tomorrow' : AW().dayName(day);
+    const title = '📣 Call-out — ' + fn + (kind === 'sick' ? ' is out sick ' + when : kind === 'late' ? ' is running ' + Math.max(1, Math.round(+body.minutes || 0)) + ' min late' : ' can\'t make it ' + when);
+    const jobsTxt = jobs.map(function(p){ return s(p.name || p.address); }).filter(Boolean).slice(0, 4).join(', ');
+    const text = (jobsTxt ? jobsTxt : 'Nothing on the schedule') + (s(body.note) ? ' — ' + s(body.note).slice(0, 160) : '');
+    const url = (s(process.env.CRM_URL) || 'https://crm.grayco-cs.com').replace(/\/$/, '') + '/#schedule';
+    const p = await SP().send(to, { title: title, body: text, url: url, tag: 'callout-' + low(who.email) + '-' + day }, { emergency: true });
+    let texted = [];
+    const none = arr(p.none).filter(function(e){ return arr(p.to).indexOf(e) < 0; });
+    if (none.length) { try { const r = await require('./_lib/smsalert.js').notify({ type: 'system', emergency: true, only: none, text: title.replace(/^📣 /, '') + ': ' + text, link: url, thread: 'callout:' + low(who.email) }); texted = arr(r && r.to); } catch (e) {} }
+    return { status: 200, out: { ok: true, to: to, pushed: arr(p.to), texted: texted, title: title } };
+  }
   if (op === 'quiet') {
     if (!admin) return { status: 403, out: { ok: false, error: 'Admins only.' } };
     const f = parseInt(body.from, 10), t = parseInt(body.to, 10);

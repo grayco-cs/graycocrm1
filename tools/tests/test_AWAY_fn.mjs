@@ -35,7 +35,9 @@ async function t(name, fn){ try { await fn(); pass++; console.log('  ✓', name)
 const DOM = '@grayco-cs.com';
 const W = 'wes.admin' + DOM, N = 'nick.admin' + DOM, O = 'office' + DOM, P = 'pat.pm' + DOM;
 const USERS = [{ id: 'U2', name: 'Wes Admin', email: W, role: 'Admin', payType: 'owner', active: true }, { id: 'U1', name: 'Nick Admin', email: N, role: 'Admin', payType: 'owner', active: true },
-  { id: 'UO', name: 'Bree Office', email: O, role: 'Office Admin', active: true }, { id: 'UP', name: 'Pat Mason', email: P, role: 'Project Manager', active: true }];
+  { id: 'UO', name: 'Bree Office', email: O, role: 'Office Admin', active: true }, { id: 'UP', name: 'Pat Mason', email: P, role: 'Project Manager', active: true },
+  { id: 'US', name: 'Sam Super', email: 'sam.super' + DOM, role: 'Superintendent', active: true }, { id: 'UT', name: 'Tom Tech', email: 'tom.tech' + DOM, role: 'Technician', payType: 'hourly', active: true }];
+const SUP = 'sam.super' + DOM, TECH = 'tom.tech' + DOM;
 const PHONES = {};
 function phone(email){ let c; do { c = crypto.createECDH('prime256v1'); c.generateKeys(); } while (c.getPublicKey().length !== 65); const auth = crypto.randomBytes(16); PHONES[email] = { c, auth, endpoint: 'https://web.push.apple.com/QA' + email.split('@')[0] + crypto.randomBytes(3).toString('hex') }; return { endpoint: PHONES[email].endpoint, keys: { p256dh: b64u(c.getPublicKey()), auth: b64u(auth) } }; }
 function decrypt(email, body){
@@ -81,7 +83,8 @@ const iso = ms => new Date(ms).toISOString();
 const JOB = { id: 'PJ1', name: 'QA Maple Deck', address: '77 Maple Ct', pm: 'Pat Mason', status: 'Active' }, WJOB = { id: 'PJ2', name: 'QA Owner Job', pm: 'Wes Admin', status: 'Active' };
 const lists = (k, v) => kput(k, JSON.stringify(v));
 Object.keys(KV).forEach(k => delete KV[k]);
-kput('users', USERS); kput('projects', [JOB, WJOB]);
+const CJOB = { id: 'PJ3', name: 'QA Clinic TI', type: 'Commercial TI', pm: 'Pat Mason', superintendent: 'Sam Super', status: 'Active' };
+kput('users', USERS); kput('projects', [JOB, WJOB, CJOB]);
 kput('gc_automation_pause', { on: true, by: N });   /* ⏸ data-entry mode ON for every test */
 ['gc_approval_queue', 'gc_sub_approvals', 'gc_expense_approvals', 'payrollRuns', 'gc_payroll_approvals', 'gc_away', 'gc_appr_audit', 'gc_office_tasks', 'gc_appr_notices'].forEach(k => lists(k, []));
 require(path.join(FN, '_lib/pause.js')).install();
@@ -341,6 +344,66 @@ await t('pure: routeBox drops the duplicate (no note) and moves the alone one (n
   assert.deepStrictEqual(AW.redirect([W, N], map), [N]); assert.deepStrictEqual(AW.redirect([W], map), [N]);
   assert.strictEqual(AW.coverOf({ [W]: { email: W, cover: N }, [N]: { email: N, cover: O } }, W), O); assert.strictEqual(AW.coverOf({ [W]: { cover: N }, [N]: { cover: W } }, W), '');
   assert.deepStrictEqual(AW.redirect([W], { [W]: { email: W, cover: '' } }), [], 'no cover: silenced');
+});
+
+console.log('📣 call-outs (owner 11/16) and portal approvals → the office after 48 h');
+await t('a SUB calling out → that job\'s PM only (no admins, no office copy); on a COMMERCIAL job the superintendent instead of the PM', async () => {
+  reset(); await act(SUP, { op: 'subscribe', sub: phone(SUP), device: 'phone' }); NOW = at(TODAY, '13:00');
+  const ST = require(path.join(FN, 'sub-texts.js'))._lib, data = { users: USERS, projects: [JOB, WJOB, CJOB] };
+  const r1 = await ST.alertPm({ key: 'k1', sub: 'QA Framing', subId: 'S1', pid: JOB.id, job: JOB.name, day: TODAY, start: 480 }, "can't make it, truck broke down", 'portal', data);
+  assert.deepStrictEqual(r1.to, [P]); assert.strictEqual(pushesTo(P).length, 1); assert.match(pushesTo(P)[0].msg.title, /^📣 Call-out — QA Framing/);
+  assert.ok(!pushesTo(W).length && !pushesTo(N).length && !pushesTo(SUP).length, 'admins / the super do not get it');
+  const mails = SENT.mail.filter(m => /Call-out/.test(m.subject)); assert.ok(mails.every(m => m.to.join() === P), JSON.stringify(mails.map(m => m.to)));
+  const task = kget('gc_office_tasks').find(x => x.kind === 'sub_alert' && x.pid === JOB.id); assert.deepStrictEqual(task.assignees, [P]);
+  reset();
+  const r2 = await ST.alertPm({ key: 'k2', sub: 'QA Drywall', subId: 'S2', pid: CJOB.id, job: CJOB.name, day: TODAY, start: 480 }, 'running late 30 min', 'sms', data);
+  assert.deepStrictEqual(r2.to, [SUP]); assert.strictEqual(pushesTo(SUP).length, 1); assert.strictEqual(pushesTo(P).length, 0, 'the PM does not get commercial call-outs');
+});
+await t('a sub call-out at 2 AM is urgent: it goes through the quiet hours', async () => {
+  reset(); NOW = at(addDays(TODAY, 1), '02:00');
+  const ST = require(path.join(FN, 'sub-texts.js'))._lib;
+  await ST.alertPm({ key: 'k3', sub: 'QA Roofing', subId: 'S3', pid: JOB.id, job: JOB.name, day: addDays(TODAY, 1), start: 420 }, "can't make it — sick", 'portal', { users: USERS, projects: [JOB] });
+  assert.strictEqual(pushesTo(P).length, 1, 'delivered at 2 AM');
+  NOW = at(TODAY, '13:00');
+});
+await t('an hourly EMPLOYEE calling out (🤒 sick / ⏰ late) → the admins AND the PM of the job they were on (super on commercial), at once', async () => {
+  reset(); NOW = at(TODAY, '13:00');
+  const r = await act(TECH, { op: 'callout', kind: 'sick', day: TODAY, note: 'fever', jobs: [JOB.id] });
+  assert.strictEqual(r.out.ok, true); assert.deepStrictEqual(r.out.to.slice().sort(), [N, P, W].sort());
+  assert.match(pushesTo(P)[0].msg.title, /^📣 Call-out — Tom is out sick today$/); assert.match(pushesTo(W)[0].msg.body, /QA Maple Deck — fever/);
+  assert.ok(!pushesTo(O).length && !pushesTo(SUP).length);
+  reset();
+  const r2 = await act(TECH, { op: 'callout', kind: 'late', minutes: 20, jobs: [CJOB.id] });
+  assert.deepStrictEqual(r2.out.to.slice().sort(), [N, SUP, W].sort(), 'commercial: the superintendent, not the PM'); assert.match(pushesTo(SUP)[0].msg.title, /running 20 min late/);
+  reset(); NOW = at(addDays(TODAY, 1), '05:30');
+  const r3 = await act(TECH, { op: 'callout', kind: 'sick', day: addDays(TODAY, 1), jobs: [JOB.id] });
+  assert.ok(pushesTo(P).length === 1 && pushesTo(N).length === 1, 'a 5:30 AM sick call reaches them in the quiet hours'); assert.deepStrictEqual(kget(SQ.HELD).filter(x => /Call-out/.test(x.title)), []);
+  NOW = at(TODAY, '13:00');
+});
+await t('pure: the call-out rule (callout.js) — sub: PM / super, the office only when nobody is set, never admins; employee: + admins', async () => {
+  const CO = require(path.join(FN, '_lib/callout.js'));
+  assert.strictEqual(CO.commercial(CJOB), true); assert.strictEqual(CO.commercial(JOB), false);
+  assert.deepStrictEqual(CO.route({ who: 'sub', jobs: [JOB], users: USERS, admins: [W, N], office: [O] }), [P]);
+  assert.deepStrictEqual(CO.route({ who: 'sub', jobs: [{ id: 'X', name: 'no PM' }], users: USERS, admins: [W, N], office: [O] }), [O]);
+  assert.deepStrictEqual(CO.route({ who: 'sub', jobs: [Object.assign({}, CJOB, { superintendent: '' })], users: USERS, office: [O] }), [P], 'commercial without a super: its PM');
+  assert.deepStrictEqual(CO.route({ who: 'employee', jobs: [], users: USERS, admins: [W, N], self: TECH }), [W, N]);
+});
+await t('a customer-portal approval waiting on an admin → the office after 48 h ("waited 48 h for an admin"); other admin items keep 24 h; the PM step keeps 24 h', async () => {
+  reset(); NOW = at(TODAY, '13:00');
+  const h = n => iso(NOW - n * 3600e3);
+  lists('gc_approval_queue', [
+    qItem('PP1', { kind: 'portal_post', title: 'QA portal post', steps: ['admin'], step: 'admin', adminSince: h(30), createdAt: h(30) }),
+    qItem('PP2', { kind: 'portal_publish', title: 'QA portal share', steps: ['admin'], step: 'admin', adminSince: h(49), createdAt: h(49) }),
+    qItem('AD1', { kind: 'supplier_po', title: 'QA supplier PO', steps: ['admin'], step: 'admin', adminSince: h(25), createdAt: h(25) }),
+    qItem('PM1', { kind: 'sub_contact', title: 'QA sub contact', steps: ['pm', 'admin'], step: 'pm', pmEsc: true, createdAt: h(25), adminSince: '' })]);
+  const r = await C.escalateDue({ now: NOW });
+  assert.deepStrictEqual(r.ids.slice().sort(), ['AD1', 'PM1', 'PP2']);
+  const q = kget('gc_approval_queue'), by = id => q.find(x => x.id === id);
+  assert.ok(!by('PP1').escalated, '30 h: still the admins\'');
+  assert.strictEqual(by('PP2').escalated.why, 'Waited 48 h for an admin'); assert.match(by('AD1').escalated.why, /24 hours/); assert.match(by('PM1').escalated.why, /PM did not answer in 24 hours/);
+  const todo = kget('gc_office_tasks').find(x => x.id === 'appr_esc_PP2'); assert.match(todo.note, /^Waited 48 h for an admin\./);
+  const notes = kget('gc_appr_notices'); assert.ok(notes.some(n => n.id === 'esc_office_PP2' && /waited 48 h|Waited 48 h/i.test(n.text))); assert.ok(notes.some(n => n.id === 'esc_admins_PP2' && /after 48h/.test(n.text)));
+  assert.strictEqual(C.escalatedOrDue(by('PP1'), NOW + 19 * 3600e3), true, '30 + 19 h → due');
 });
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');

@@ -228992,6 +228992,19 @@ function jobNames(J){ var out = []; J.forEach(function(j){ var t = j.job ? j.job
 function todayJobs(u, day){ var J = jobsOn(u, day); if (J.length || day !== today()) return J; var n = low(u.name), e = low(u.email); return projects().filter(function(p){ return openJob(p) && CREW.slice(2).some(function(f){ var L = namesIn(p[f]); return L.indexOf(n) >= 0 || L.indexOf(e) >= 0; }); }).slice(0, 8).map(function(p){ return { id: '', pid: s(p.id), job: s(p.name || p.address), title: '', p: p }; }); }
 function leadsOf(J, u){ var out = []; J.forEach(function(j){ var p = j.p || proj(j.pid); if (!p) return; LEADS.forEach(function(f){ namesIn(p[f]).forEach(function(n){ var m = userBy(n); if (m && active(m) && low(m.email) !== low(u && u.email) && out.indexOf(m) < 0) out.push(m); }); }); }); return out; }
 
+/* CALLOUT (owner 11/16, patch AWAY): an employee calling out (🤒 sick, ⏰ late) → the admins, AND the PM of each job they were
+   scheduled on that day — on a COMMERCIAL job its superintendent instead of the PM (netlify/functions/_lib/callout.js, same rule) */
+function commercialJob(p){ var t = [p && p.type, p && p.jobType, p && p.jobTypeLabel, p && p.category].map(low).join(' '); return !!p && (p.isCommercial === true || /commercial|tenant|\bti\b|government|municipal|industrial|retail|office build/.test(t)); }
+function calloutLeads(J, u){
+  var out = [];
+  J.forEach(function(j){
+    var p = j.p || proj(j.pid); if (!p) return;
+    var sup = namesIn(p.superintendent).map(userBy).filter(function(m){ return m && active(m); });
+    var pick = commercialJob(p) && sup.length ? sup : namesIn(p.pm || p.projectManager).map(userBy).filter(function(m){ return m && active(m); });
+    pick.forEach(function(m){ if (low(m.email) !== low(u && u.email) && out.indexOf(m) < 0) out.push(m); });
+  });
+  return out;
+}
 /* ── the store ── */
 var STORE = { list: null, loaded: false, owe: false, pulling: null, at: 0 };
 function parse(v){ if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } } if (Array.isArray(v)) return v; return v && typeof v === 'object' ? arr(v.list) : []; }
@@ -229111,15 +229124,14 @@ function build(o, u){
   } else if (o.kind === 'sick') {
     r.from = r.to = ymd(o.from); r.note = s(o.note).slice(0, 500);
     var JS = todayJobs(u, r.from); r.jobs = JS.map(function(j){ return { date: r.from, pid: j.pid, job: j.job, title: j.title }; });
-    var leads = leadsOf(JS, u); r.notify = notMe(mgr.concat(leads, ofc, adm));
-    var cov = notMe(mgr.concat(leads)); if (!cov.length) cov = notMe(ofc); if (!cov.length) cov = notMe(adm);
+    var leads = calloutLeads(JS, u); r.notify = notMe(adm.concat(leads));   /* CALLOUT: the admins + the PM (super on commercial) of that day's jobs */
+    var cov = notMe(leads); if (!cov.length) cov = notMe(adm);
     var names = jobNames(JS), when = r.from === today() ? 'today' : 'tomorrow (' + short(r.from) + ')';
     r.todo = { id: 'TOCOVER_' + r.id, assignees: cov, label: '🤒 Cover ' + r.name + '’s jobs ' + when + ': ' + (names.length ? names.join(', ') : 'nothing on the schedule — check the crew'), due: r.from, pid: JS[0] ? JS[0].pid : '' };
   } else if (o.kind === 'late') {
     r.from = r.to = today(); r.minutes = Math.round(num(o.minutes)); r.note = s(o.note).slice(0, 300);
     var JL = todayJobs(u, r.from); r.jobs = JL.map(function(j){ return { date: r.from, pid: j.pid, job: j.job, title: j.title }; });
-    var ld = notMe(mgr.concat(leadsOf(JL, u))); if (!ld.length) ld = notMe(ofc); if (!ld.length) ld = notMe(adm);
-    r.notify = ld;
+    r.notify = notMe(adm.concat(calloutLeads(JL, u)));   /* CALLOUT: the admins + the PM (super on commercial) of today's jobs */
   } else if (o.kind === 'avail') {
     r.days = arr(o.days).map(function(x){ return parseInt(x, 10); }).filter(function(x){ return x >= 0 && x <= 6; }).sort();
     r.hours = s(o.hours).slice(0, 200); r.from = today(); r.to = ''; r.notify = notMe(mgr.concat(ofc));
@@ -229153,6 +229165,8 @@ function submit(o){
   return put([r]).then(function(ok){
     if (!ok) return { ok: false };
     if (t) addTodo(todoRec(r, t));
+    /* CALLOUT: a sick / late call-out reaches their phones at once (urgent: through the quiet hours) — appr-away.js op callout */
+    if ((r.kind === 'sick' || r.kind === 'late') && !vas()) { try { W.fetch('/.netlify/functions/appr-away', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ op: 'callout', kind: r.kind, day: r.from, minutes: r.minutes || 0, note: r.note || '', jobs: arr(r.jobs).map(function(j){ return j.pid; }).filter(Boolean) }), cache: 'no-store' }).catch(function(){}); } catch (e) { warn(e); } }
     var who = arr(r.notify).map(function(e){ var u = userBy(e); return first(u ? u.name : e); });
     toast(r.kind === 'off' ? '🏖 Asked — it is on ✅ Approvals for ' + (who.length ? who.slice(0, 3).join(', ') + (who.length > 3 ? '…' : '') : 'the office') + '. You will see the answer here.'
       : r.kind === 'sick' ? '🤒 Feel better — ' + (who.length ? who.slice(0, 4).join(', ') + (who.length > 4 ? '…' : '') + ' told now' : 'the office was told') + (t ? '; your jobs are on a To-Do to cover.' : '.')
