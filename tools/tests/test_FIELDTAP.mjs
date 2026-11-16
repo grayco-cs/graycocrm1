@@ -20,29 +20,32 @@ H.cset('projectDocs', [{ id: 'D1', pid: 'P1', name: 'Signed contract.pdf', cat: 
 H.cset('gc_office_tasks', [{ id: 'T1', text: 'Call the inspector about ROTC', done: false, createdAt: ago(1), assignee: 'Demo Owner', pid: 'P1' }]);
 const W = [];
 try {
-  const O = await H.computer('OWN', { build, mobile: true }); W.push(O);
+  const IPHONE = `(() => { const d = (o, k, v) => { try { Object.defineProperty(o, k, { get: () => v, configurable: true }); } catch (e) {} }; d(Navigator.prototype, 'userAgent', 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Mobile/15E148 Safari/604.1'); d(Navigator.prototype, 'maxTouchPoints', 5); })()`;
+  const O = await H.computer('OWN', { build, mobile: true, init: [IPHONE] }); W.push(O);   /* DEVMODE: a real iPhone user agent (the harness's own says Linux = a computer) */
   await H.signIn(O, 'wjohnson@grayco-cs.com', 9000);
   ok(!!(await H.waitFor(O, () => !!document.querySelector('#_gcJobPick.gc-fh .fh-job[data-job="P1"]'), null, 40000)), 'the phone opens GrayCo Field with the job cards');
   const pg = O.page();
   const reset = async () => { await O.ev(() => { document.querySelectorAll('#_gcJobDash,._gcSheetOv,.gcfp-sheet,#gcuOv').forEach(o => o.remove()); try { window._gcPhotos && window._gcPhotos.close && window._gcPhotos.close(); } catch (e) {} if (!document.querySelector('#_gcJobPick.gc-fh')) window._gcField.open(); }); await H.waitFor(O, () => !!document.querySelector('#_gcJobPick.gc-fh .fh-job[data-job="P1"]'), null, 15000); await sleep(400); };
   const card = () => pg.locator('#_gcJobPick.gc-fh .fh-job[data-job="P1"]').first();
   const opened = () => O.ev(() => !!document.getElementById('_gcJobDash') && (window._gcCurrentJob || {}).id === 'P1');
+  /* DEVMODE: the job page may take a moment on the first open of a loaded phone — wait for it (up to 6 s) instead of a fixed 1.2 s */
+  const openedSoon = async () => !!(await H.waitFor(O, () => !!document.getElementById('_gcJobDash') && (window._gcCurrentJob || {}).id === 'P1', null, 6000));
   // the card's look
   const cs = await O.ev(() => { const c = document.querySelector('#_gcJobPick.gc-fh .fh-job[data-job="P1"]'); const r = c.getBoundingClientRect(); return { cur: getComputedStyle(c).cursor, h: r.height }; });
   ok(cs.cur === 'pointer' && cs.h >= 44, 'the job card: cursor pointer, at least 44 px tall', cs);
   await pg.screenshot({ path: SHOTS + 'fieldtap_home.png' });
   // 1. the sub-line
   await card().locator('.fh-a').tap(); await sleep(1200);
-  ok(await opened(), 'tap the card\'s sub-line ("Somerville TN · A & B …") → the job opens');
+  ok(await openedSoon(), 'tap the card\'s sub-line ("Somerville TN · A & B …") → the job opens');
   await reset();
   // 2. the empty right edge (next to the title)
   const bb = await card().boundingBox();
   await pg.touchscreen.tap(bb.x + bb.width - 10, bb.y + 22); await sleep(1200);
-  ok(await opened(), 'tap the card\'s empty right edge → the job opens');
+  ok(await openedSoon(), 'tap the card\'s empty right edge → the job opens');
   await reset();
   // 3. the title still opens it
   await card().locator('.fh-n').tap(); await sleep(1200);
-  ok(await opened(), 'tap the bold title → the job opens (as before)');
+  ok(await openedSoon(), 'tap the bold title → the job opens (as before)');
   await reset();
   // 4. 📸 Photos: GrayCo Photos, not the job page
   await card().locator('[data-fa="fp-photos"]').tap(); await sleep(1500);

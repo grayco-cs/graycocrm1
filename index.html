@@ -201,6 +201,46 @@ try {
 } catch (e) { try { console.warn('[GC] LSGUARD not installed:', e && e.message || e); } catch (x) {} }
 })();
 </script>
+<script id="gc-patch-saves-lsheld">
+/* SAVES: a write this computer's full localStorage refuses is still what THIS page reads back.
+   Measured (test_SAVES_fail.mjs, localStorage filled the way a real office PC is: gc_tombstones alone is bigger than the
+   browser allows): every list the CRM keeps in localStorage (job messages, the office To-Do, approvals, the time clock's own
+   entries …) was written, refused, and read back OLD — a job message sent from a full computer never showed in the
+   thread, and the next send / sync merged from the old copy. LSGUARD (above) already frees cached copies first and holds
+   the screen name; this holds any other refused value (up to 2 M characters) in this page's memory: getItem returns it,
+   a later successful write (or removeItem / clear) drops it. The write still throws as before, so a caller with its own
+   fallback still takes it. The value is NOT kept across a reload — the cloud copy (and each list's own outbox) is what
+   carries it there. Console: _gcLsHeld.state()   Off: localStorage gc_lsheld_off = '1'. */
+(function(){
+'use strict';
+var W = window;
+try {
+  if (W._gcLsHeld) return;
+  var SP = W.Storage && W.Storage.prototype, LS = null; try { LS = W.localStorage; } catch (e) {}
+  if (!SP || !LS) return;
+  var pSet = SP.setItem, pGet = SP.getItem, pRem = SP.removeItem, pClr = SP.clear;
+  try { if (pGet.call(LS, 'gc_lsheld_off') === '1') return; } catch (e) {}
+  var HELD = Object.create(null), n = 0, MAXC = 2000000;
+  function quota(e){ var nm = String(e && e.name || ''); return nm === 'QuotaExceededError' || nm === 'NS_ERROR_DOM_QUOTA_REACHED' || (e && (e.code === 22 || e.code === 1014)) || /quota/i.test(nm + ' ' + String(e && e.message || '')); }
+  SP.setItem = function(k, v){
+    if (this !== LS) return pSet.apply(this, arguments);
+    var key = String(k);
+    try { var r = pSet.apply(this, arguments); if (key in HELD) delete HELD[key]; return r; }
+    catch (e) {
+      if (quota(e)) { var s = String(v); if (s.length <= MAXC) { if (!(key in HELD)) n++; HELD[key] = s; } else if (key in HELD) delete HELD[key]; }
+      throw e;
+    }
+  };
+  SP.getItem = function(k){
+    if (this === LS) { var key = String(k); if (key in HELD) return HELD[key]; }
+    return pGet.apply(this, arguments);
+  };
+  SP.removeItem = function(k){ if (this === LS) delete HELD[String(k)]; return pRem.apply(this, arguments); };
+  SP.clear = function(){ if (this === LS) HELD = Object.create(null); return pClr.apply(this, arguments); };
+  W._gcLsHeld = { state: function(){ var o = {}; Object.keys(HELD).forEach(function(k){ o[k] = HELD[k].length; }); return { held: o, total: n }; }, has: function(k){ return String(k) in HELD; } };
+} catch (e) {}
+})();
+</script>
 <script id="gc-patch-lsslim2">
 /* __GC_PATCH_LSSLIM2__ — the estimate builder's rate book, material log and estimate list are not copied into
    localStorage when IndexedDB already holds them (tools/patch_LSSLIM2.py).
@@ -509,6 +549,101 @@ try {
     off: function(){ del(LS, SAFEK); del(SS, SAFEK); return 'safe mode off from the next open'; }
   };
 } catch (e) { try { console.warn('[GC] BOOTSAFE not installed:', e && e.message || e); } catch (x) {} }
+})();
+</script>
+<script id="gc-patch-devmode-early">
+/* __GC_PATCH_DEVMODE_EARLY__ — DEVMODE: which device is this, and which view opens: the Desk or GrayCo Field.   (patch DEVMODE)
+   Owner 11/16: "The field view app is pulling up as the first screen in Glenn's screen and everyone else's too and it should
+   open desk cuz they are using computer. The desk view should always pull up unless it's opened from an iPhone then it
+   should be field opening. … From the phone and app always do field view app mode." Then: "Don't ask for field or desk when
+   sign in — just do it by computer or iPhone/Android etc; iPad opens Field."
+   The device only — never the role, the window's size or a view saved from before:
+     • phone  — an iPhone / iPod, an Android phone ("Android … Mobile", userAgentData.mobile), other phone browsers; the
+                installed Home Screen app on a phone is the same phone. A phone set to "Request Desktop Website" (it then
+                says Mac / Linux) is still a phone: a touch screen only and a short side ≤ 500 CSS px.
+     • tablet — an iPad (also iPadOS Safari, which says "Macintosh" but has a touch screen), an Android tablet
+                ("Android" without "Mobile").
+     • computer — Windows (touch-screen laptops too, any scaling, any window size), a Mac, ChromeOS, desktop Linux;
+                an unknown system with a mouse / touchpad.
+   Which view opens: a phone or a tablet → GrayCo Field; a computer → the Desk. A Desk / Field switch lasts for that open
+   only (patch FIELDDESK). Nothing is asked and nothing is saved.
+   API: window._gcDevice = { kind(), why(), phone(), fieldDevice(), standalone(), wantField(), signedEmail(), state() }
+   Kill switch (this device): localStorage gc_devmode_off = "1" → patch FIELDDESK's own device rule as before. */
+(function(){
+'use strict';
+var W = window;
+try {
+  if (W._gcDevice) return;
+  var lsGet = function(k){ try { return W.localStorage.getItem(k); } catch (e) { return null; } };
+  var lsDel = function(k){ try { if (W.localStorage.getItem(k) != null) W.localStorage.removeItem(k); } catch (e) {} };
+  if (lsGet('gc_devmode_off') === '1') return;
+  var mq = function(q){ try { return !!(W.matchMedia && W.matchMedia(q).matches); } catch (e) { return false; } };
+  var ua = function(){ try { return String(navigator.userAgent || ''); } catch (e) { return ''; } };
+  var tp = function(){ try { return +navigator.maxTouchPoints || 0; } catch (e) { return 0; } };
+  var short = function(){ var sc = W.screen || {}; var a = +sc.width || 0, b = +sc.height || 0; return a && b ? Math.min(a, b) : 0; };
+  var touchOnly = function(){ return mq('(pointer: coarse)') && !mq('(any-pointer: fine)'); };
+  var mouseMain = function(){ return mq('(pointer: fine)') && mq('(hover: hover)'); };
+  var why = '';
+  function kind(){
+    var u = ua(), d = null; try { d = navigator.userAgentData || null; } catch (e) {}
+    var small = short() > 0 && short() <= 500;
+    if (/iPhone|iPod/i.test(u)) { why = 'iPhone'; return 'phone'; }
+    if (/Android/i.test(u) && /Mobile/i.test(u)) { why = 'Android phone'; return 'phone'; }
+    if (d && d.mobile === true) { why = 'userAgentData.mobile'; return 'phone'; }
+    if (/Windows Phone|IEMobile|BlackBerry|BB10|Opera Mini|webOS/i.test(u)) { why = 'phone browser'; return 'phone'; }
+    if (/iPad/i.test(u)) { why = 'iPad'; return 'tablet'; }
+    if (/Macintosh|Mac OS X/i.test(u) && tp() > 1) { why = small ? 'iPhone asking for the desktop site' : 'iPad (iPadOS Safari says Macintosh)'; return small ? 'phone' : 'tablet'; }
+    if (/Android/i.test(u)) { why = small && touchOnly() ? 'Android phone' : 'Android tablet'; return small && touchOnly() ? 'phone' : 'tablet'; }
+    if (/Windows NT|CrOS/i.test(u)) { why = 'Windows / ChromeOS'; return 'computer'; }
+    if (/Macintosh|Mac OS X/i.test(u)) { why = 'Mac'; return 'computer'; }
+    if (/X11|Linux/i.test(u)) { if (small && touchOnly()) { why = 'phone asking for the desktop site (Linux, touch only, small screen)'; return 'phone'; } why = 'desktop Linux'; return 'computer'; }
+    try { if (d && d.mobile === false && /^(Windows|Chrome OS|ChromeOS|macOS|Linux)$/i.test(String(d.platform || ''))) { why = 'userAgentData ' + d.platform; return 'computer'; } } catch (e) {}
+    if (mouseMain()) { why = 'a mouse / touchpad'; return 'computer'; }
+    if (touchOnly()) { why = 'touch only'; return small ? 'phone' : 'tablet'; }
+    why = 'unknown: computer'; return 'computer';
+  }
+  var K = kind(), WHY = why;
+  function standalone(){ return mq('(display-mode: standalone)') || mq('(display-mode: fullscreen)') || (function(){ try { return navigator.standalone === true; } catch (e) { return false; } })(); }
+  /* GrayCo Field opens by itself on a phone or a tablet (the owner: "iPad opens Field"); a computer opens the Desk */
+  function fieldDevice(){ return K !== 'computer'; }
+  function signedEmail(){ try { var j = JSON.parse(lsGet('gc_auth_v1') || 'null'); return j && j.access_token && j.email ? String(j.email).toLowerCase() : ''; } catch (e) { return ''; } }
+  /* the old views saved on this device never decide anything again (also the first DEVMODE's sign-in pick) */
+  ['gc_view_pref', 'gc_phone_desk', '_fieldMode', 'gc_dm_choice', 'gc_dm_ask'].forEach(lsDel);
+  W._gcDevice = { kind: function(){ return K; }, why: function(){ return WHY; }, phone: function(){ return K === 'phone'; }, fieldDevice: fieldDevice, standalone: standalone,
+    wantField: fieldDevice, signedEmail: signedEmail,
+    state: function(){ return { kind: K, why: WHY, standalone: standalone(), fieldDevice: fieldDevice(), ua: ua().slice(0, 140), touchPoints: tp(), screenShort: short(), touchOnly: touchOnly(), mouse: mouseMain() }; } };
+} catch (e) { try { console.warn('[GC] DEVMODE early not installed:', e && e.message || e); } catch (x) {} }
+})();
+</script>
+<script id="gc-patch-fieldperf-early">
+/* __GC_PATCH_FIELDPERF_EARLY__ — FIELDPERF: GrayCo Field answers a tap at once on a phone.   (patch FIELDPERF)
+   Owner 11/16: "It's lagging very bad we're testing field view this week it needs to be tested heavy."
+   Measured (an emulated iPhone, CPU ×4, a company-sized data set: 550 jobs, 400 leads, 400 expense approvals…): sitting on
+   the Field home kept the phone busy 4.5 s of every 10 s and a tap took 0.5–2.5 s. The biggest costs were background loops
+   that looked a record up by id with a full scan of the list, once per row of another list (550 × 550 every 1–2 s), and
+   a loop that never remembered a row it had already looked at.
+   window.__gcById(list, id): the record with that id (the FIRST one, as list.filter(...)[0] gave), from an index kept per
+   list (a WeakMap; rebuilt when the list changed: the row at the remembered place must still have that id, else the index
+   is made again). The same answer as the scan, without the scan. */
+(function(){
+'use strict';
+var W = window;
+if (W.__gcById) return;
+var IX = typeof WeakMap === 'function' ? new WeakMap() : null;
+function build(list){ var m = new Map(); for (var i = 0; i < list.length; i++) { var r = list[i]; if (r && typeof r === 'object' && r.id != null) { var k = String(r.id).trim(); if (!m.has(k)) m.set(k, i); } } var o = { m: m, n: list.length }; IX.set(list, o); return o; }
+W.__gcById = function(list, id){
+  if (!Array.isArray(list) || id == null) return null;
+  var k = String(id).trim(); if (!k) return null;
+  if (!IX || typeof Map !== 'function') { for (var j = 0; j < list.length; j++) { var x = list[j]; if (x && typeof x === 'object' && String(x.id == null ? '' : x.id).trim() === k) return x; } return null; }
+  var o = IX.get(list) || build(list), i = o.m.get(k), r;
+  if (i != null) { r = list[i]; if (r && typeof r === 'object' && String(r.id == null ? '' : r.id).trim() === k && o.n === list.length) return r; }
+  o = build(list);   /* a miss or a moved row: index again (a miss costs one scan, as before) */ i = o.m.get(k); return i != null ? list[i] : null;
+};
+/* window.__gcFpTouch(): when a finger / the mouse last went down or came up (GrayCo Field holds a re-render until it is off) */
+var touchAt = 0;
+var mark = function(e){ if (e && e.isTrusted === false) return; touchAt = Date.now(); };
+try { ['pointerdown', 'pointerup', 'touchstart', 'touchend'].forEach(function(ev){ document.addEventListener(ev, mark, { capture: true, passive: true }); }); } catch (e) {}
+W.__gcFpTouch = function(){ return touchAt; };
 })();
 </script>
 <script id="gc-patch-fieldboot">
@@ -895,7 +1030,9 @@ var lastHeld = {}, lastRan = {}, pendHeld = {}, pendRan = {}, flushT = 0;
 function flushSoon(){ if (flushT) return; flushT = T(flush, 4000); }
 /* __GC_PATCH_AUTOPANEL2__ */ /* this computer's "held" records and the batch not sent yet are kept across a page reload */
 var HK = 'gc_auto_held_local';
-function saveHeld(){ try { localStorage.setItem(HK, JSON.stringify({ held: S.held, pend: pendHeld, last: lastHeld })); } catch (e) {} }
+function saveHeld0(){ saveT = 0; try { localStorage.setItem(HK, JSON.stringify({ held: S.held, pend: pendHeld, last: lastHeld })); } catch (e) {} }
+var saveT = 0; function saveHeld(){ if (!saveT) saveT = T(saveHeld0, 5000); }   /* FIELDPERF: one write per burst (was a ~60 K write on every held tick) */
+try { W.addEventListener('pagehide', function(){ if (saveT) saveHeld0(); }); document.addEventListener('visibilitychange', function(){ if (document.hidden && saveT) saveHeld0(); }); } catch (e) {}
 (function(){
   try {
     var o = JSON.parse(localStorage.getItem(HK) || 'null'); if (!o || typeof o !== 'object') return;
@@ -1061,7 +1198,7 @@ function rewrite(u){
   H.filtered++;
   return u + add;
 }
-function fake(status){ return Promise.resolve(new Response(status === 204 ? null : '[]', { status: status, headers: { 'content-type': 'application/json' } })); }
+function fake(status){ return Promise.resolve(new Response(status === 204 ? null : '[]', { status: status, headers: { 'content-type': 'application/json', 'x-gc-held': '1' } })); }   /* SAVES: x-gc-held — not sent, so nobody may take it as "the cloud has it" */
 function keyOfUrl(q){ var m = /(?:^|&)key=eq\.([^&]*)/.exec(q); try { return m ? decodeURIComponent(m[1]).replace(/^"|"$/g, '') : ''; } catch (e) { return ''; } }
 W.fetch = function(input, init){
   try {
@@ -1117,7 +1254,10 @@ function load(why){
     for (var i = 0; i < HEAVY.length; i++) { H.allowed[HEAVY[i]] = true; await pullFor(HEAVY[i]); await sleep(600); }
     H.loaded = true; H.phase = 'loaded'; H.at.done = Date.now() - H.t0;
     try { W.dispatchEvent(new CustomEvent('gc-heavy-loaded')); } catch (e) {}
-    if (H.held.length) { await sleep(1500); try { if (typeof W._gcPushAll === 'function') W._gcPushAll(); } catch (e) {} }
+    /* SAVES: those early writes were answered "201" here without being sent, so the sync marked them as sent and this push
+       skipped them — an estimate the builder autosaved in the first ~20 s never reached the database until it changed again
+       (measured: test_SAVES_est.mjs). The held lists are now marked "not sent" first. */
+    if (H.held.length) { await sleep(1500); try { var hk = {}; H.held.forEach(function(x){ hk[String(x[2]).replace(/__(chunk\d+|manifest)$/, '')] = 1; }); if (typeof W._gcSyncDirty === 'function') W._gcSyncDirty(Object.keys(hk)); } catch (e) {} try { if (typeof W._gcPushAll === 'function') W._gcPushAll(); } catch (e) {} }
     try { console.log('[GC] STUCKFIX: estimates / folded invoices loaded (' + Math.round(H.at.done / 1000) + ' s after start, ' + H.held.length + ' early write(s) pushed again)'); } catch (e) {}
   })();
   return H.p;
@@ -1366,6 +1506,249 @@ try { console.log('[GC] STORECUT: one estimates store; reads shared; a hidden ta
   /* a backup copy too big for browser storage, left by an earlier visit, is removed */
   try { var big = []; for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); if (k && BAK.test(k) && len(k) > 1000000) big.push(k); } big.forEach(function(k){ try { localStorage.removeItem(k); } catch (e) {} });
     if (big.length) console.warn('[GC] Removed ' + big.length + ' oversized backup cop' + (big.length === 1 ? 'y' : 'ies') + ' from browser storage: ' + big.join(', ')); } catch (e) {}
+})();
+</script>
+<script id="gc-patch-tombfix">
+/* __GC_PATCH_TOMBFIX__ — the delete list (gc_tombstones) stays small and never fills browser storage (tools/patch_TOMBFIX.py).
+   11/12 the cloud row gc_tombstones grew to 21 MB: 29,755 entries, 26,825 of them "payrollProfiles:gid…" ids such as
+   giduf2g3e-gidwtg9hh-52-giduf2g3e-gidwtg9hh-… (up to 2,158 characters). They were the ids of copies of ONE id-less payroll
+   profile stub that the sync's stable-id step kept giving new, longer ids (fixed at the source in _gcEnsureRecordIds: a
+   payroll profile's id is now its person's, and copies are folded). PROFDUP then folded all the copies by name and marked
+   every one of those ids deleted at the same moment. Every computer then tried to write the 21 MB list into localStorage
+   (~5 M limit): "browser storage full: gc_tombstones (not saved)", dozens of times a day, and pulled 21 MB a minute.
+   This script (early in the page, before every tombstone module and every fetch wrapper that captures window.fetch):
+   1. compact(map) — the one rule, the same on every computer (idempotent; a union of compacted lists is compacted):
+        • a "payrollProfiles:<auto id>" entry (gid…, gid…-gid…, gid…-gid…-N…) is dropped: no payroll profile can carry an
+          auto id any more (the stable-id step re-keys it to PP<userId> / PPN-<name> before any delete check), so such a
+          mark can never match a record again;
+        • any other entry is kept for RETAIN_DAYS (400) days after its own time — well past the 180 days the owner asked
+          for, the 30 nightly server backups and any computer that was away for months. An entry whose time cannot be read
+          is kept for good. Nothing younger than 400 days is ever dropped.
+   2. every door the list comes in or goes out of applies it: localStorage.setItem('gc_tombstones') (also trimmed to a
+      1 M-character quick-start copy if it were ever still bigger — non-schedule entries and the newest first; the whole
+      list stays in IndexedDB and the cloud), IndexedDB "gc_tombstones" / "gc_tombstones_all" (put and get), and the cloud
+      (gc_kv / app_data uploads of the row, and every read that can carry it).
+   3. when a read from the cloud carried entries the rule drops, this tab writes the clean list back ONCE (at most every
+      10 minutes) through the app's normal upload, as the union of the cloud's cleaned list and this computer's — nothing
+      real is ever left out, and two computers doing it at once both send a superset of what the cloud had.
+   Console: _gcTombFix.state()   _gcTombFix.compact(map)   Off: localStorage gc_tombfix_off = '1'. */
+(function(){
+'use strict';
+var W = window;
+try {
+  if (W.__GC_PATCH_TOMBFIX__) return; W.__GC_PATCH_TOMBFIX__ = true;
+  var LS = null; try { LS = W.localStorage; } catch (e) {}
+  var SP = W.Storage && W.Storage.prototype;
+  var pGet = SP && SP.getItem, pSet = SP && SP.setItem;
+  try { if (LS && pGet.call(LS, 'gc_tombfix_off') === '1') return; } catch (e) {}
+  var NST = W.setTimeout;
+  var TK = 'gc_tombstones', IDBK = { gc_tombstones: 1, gc_tombstones_all: 1 };
+  var DAY = 864e5, RETAIN_DAYS = 400, LS_CAP = 1000000, PFX = 'payrollProfiles:';
+  var PP_AUTO = /^gid[0-9a-z]+(?:-(?:gid[0-9a-z]+|\d+))*$/;
+  var S = { runs: 0, runaway: 0, aged: 0, lsTrim: 0, lsBefore: 0, lsAfter: 0, cloudDirty: 0, cloudIn: 0, cloudOut: 0, pushed: 0, pushedAt: 0, pushT: 0, last: null };
+  var cloudMap = null;   /* the last cleaned copy of the cloud's list (for the one write-back) */
+
+  function when(v){
+    if (typeof v === 'number') return v;
+    var n = Date.parse(v); if (isFinite(n)) return n;
+    n = +v; return isFinite(n) ? n : NaN;
+  }
+  function garbage(k){ return k.lastIndexOf(PFX, 0) === 0 && PP_AUTO.test(k.slice(PFX.length)); }
+  /* { map, runaway, aged, n } — map is the same object when nothing is dropped */
+  function compact(m, now){
+    if (!m || typeof m !== 'object' || Array.isArray(m)) return { map: m, runaway: 0, aged: 0, n: 0 };
+    var lim = (now || Date.now()) - RETAIN_DAYS * DAY;
+    var ks = Object.keys(m), out = null, run = 0, aged = 0;
+    for (var i = 0; i < ks.length; i++) {
+      var k = ks[i], drop = false;
+      if (garbage(k)) { drop = true; run++; }
+      else { var t = when(m[k]); if (t > 1e12 && t < lim) { drop = true; aged++; } }   /* a real time (ms after 2001), older than the window */
+      if (drop) { if (!out) { out = {}; for (var j = 0; j < i; j++) out[ks[j]] = m[ks[j]]; } }
+      else if (out) out[k] = m[k];
+    }
+    if (out) { S.runs++; S.runaway += run; S.aged += aged; S.last = { at: new Date().toISOString(), n: ks.length, runaway: run, aged: aged }; }
+    return { map: out || m, runaway: run, aged: aged, n: ks.length };
+  }
+  function compactText(s){
+    if (typeof s !== 'string' || s.length < 2 || s.charAt(0) !== '{') return s;
+    var o; try { o = JSON.parse(s); } catch (e) { return s; }
+    var c = compact(o); return c.map === o ? s : JSON.stringify(c.map);
+  }
+  /* a stored value in any of the shapes the CRM has used (map, JSON text, {k, v:text}, {key, value}) */
+  function compactAny(v){
+    try {
+      if (typeof v === 'string') return compactText(v);
+      if (!v || typeof v !== 'object' || Array.isArray(v)) return v;
+      if (typeof v.v === 'string' && ('k' in v)) { var t = compactText(v.v); return t === v.v ? v : Object.assign({}, v, { v: t }); }
+      if (('value' in v) && (('key' in v) || ('updated' in v))) { var x = compactAny(v.value); return x === v.value ? v : Object.assign({}, v, { value: x }); }
+      return compact(v).map;
+    } catch (e) { return v; }
+  }
+  /* the quick-start copy in localStorage: cleaned, and never bigger than LS_CAP characters */
+  function lsText(s){
+    var o; try { o = JSON.parse(s); } catch (e) { return s; }
+    if (!o || typeof o !== 'object' || Array.isArray(o)) return s;
+    var m = compact(o).map, txt = m === o ? s : JSON.stringify(m);
+    if (txt.length <= LS_CAP) return txt;
+    var ks = Object.keys(m).map(function(k){ var t = when(m[k]); return { k: k, s: k.indexOf('schedule:') === 0 ? 1 : 0, t: isFinite(t) ? t : 0 }; });
+    ks.sort(function(a, b){ return a.s - b.s || b.t - a.t; });
+    var keep = {}, size = 2;
+    for (var i = 0; i < ks.length; i++) {
+      var add = ks[i].k.length + JSON.stringify(m[ks[i].k]).length + 4;
+      if (size + add > LS_CAP) break;
+      keep[ks[i].k] = m[ks[i].k]; size += add;
+    }
+    S.lsTrim++;
+    return JSON.stringify(keep);
+  }
+
+  /* ── 1. localStorage ─────────────────────────────────────────────────────── */
+  if (SP && LS) {
+    SP.setItem = function(k, v){
+      if (this === LS && k === TK && typeof v === 'string' && (v.length > LS_CAP || v.indexOf('"' + PFX + 'gid') >= 0)) {
+        try { v = lsText(v); } catch (e) {}
+        return pSet.call(this, k, v);
+      }
+      return pSet.apply(this, arguments);
+    };
+    /* the copy an earlier visit left: cleaned now, before any tombstone module reads it */
+    try {
+      var raw = pGet.call(LS, TK);
+      if (raw && raw.length > 2) {
+        S.lsBefore = raw.length;
+        var nt = lsText(raw);
+        if (nt !== raw) pSet.call(LS, TK, nt);
+        S.lsAfter = nt.length;
+      }
+    } catch (e) {}
+  }
+
+  /* ── 2. IndexedDB (gc_tombstones / gc_tombstones_all) ───────────────────── */
+  try {
+    var OS = W.IDBObjectStore && W.IDBObjectStore.prototype, RQ = W.IDBRequest && W.IDBRequest.prototype;
+    var rDesc = RQ && Object.getOwnPropertyDescriptor(RQ, 'result');
+    if (OS && typeof OS.put === 'function' && typeof OS.get === 'function') {
+      var pPut = OS.put, pIGet = OS.get;
+      OS.put = function(value, key){
+        if (arguments.length >= 2 && typeof key === 'string' && IDBK[key]) {
+          var c = compactAny(value);
+          if (c !== value) return pPut.call(this, c, key);
+        }
+        return pPut.apply(this, arguments);
+      };
+      OS.get = function(key){
+        var rq = pIGet.apply(this, arguments);
+        if (typeof key === 'string' && IDBK[key] && rDesc && rDesc.get) {
+          try {
+            var done = false, memo;
+            Object.defineProperty(rq, 'result', { configurable: true, enumerable: true, get: function(){
+              var r = rDesc.get.call(rq);              /* throws until the request is done, as before */
+              if (!done) { done = true; memo = compactAny(r); }
+              return memo;
+            } });
+          } catch (e) {}
+        }
+        return rq;
+      };
+    }
+  } catch (e) {}
+
+  /* ── 3. the cloud ────────────────────────────────────────────────────────── */
+  function absorbCloud(m){
+    if (!m || typeof m !== 'object' || Array.isArray(m)) return;
+    cloudMap = m;
+  }
+  function schedulePush(){
+    if (S.pushT || (S.pushedAt && Date.now() - S.pushedAt < 600000)) return;
+    S.pushT = NST.call(W, function(){ S.pushT = 0; pushClean(); }, 25000);
+  }
+  /* the clean list goes back up once, through the app's own upload: the cloud's cleaned list + this computer's */
+  function pushClean(){
+    try {
+      var m = {}, k;
+      if (cloudMap) for (k in cloudMap) m[k] = cloudMap[k];
+      try { var a = typeof W._gcTombstones === 'function' ? W._gcTombstones() : null; if (a && typeof a === 'object') for (k in a) if (!(k in m)) m[k] = a[k]; } catch (e) {}
+      try { var l = JSON.parse(pGet.call(LS, TK) || '{}') || {}; for (k in l) if (!(k in m)) m[k] = l[k]; } catch (e) {}
+      m = compact(m).map;
+      if (!Object.keys(m).length) return;                         /* never an empty list */
+      var f = typeof W._supaUpsertNow === 'function' ? W._supaUpsertNow : (typeof W._supaUpsert === 'function' ? W._supaUpsert : null);
+      if (!f) return;
+      S.pushedAt = Date.now(); S.pushed++;
+      f(TK, m);
+      try { console.log('[GC] TOMBFIX: the delete list in the cloud is written back clean (' + Object.keys(m).length + ' entries).'); } catch (e) {}
+    } catch (e) {}
+  }
+  /* rows of a gc_kv answer / upload: the gc_tombstones value cleaned (rowsAll: every row is that key) */
+  function fixRows(rows, rowsAll){
+    var list = Array.isArray(rows) ? rows : [rows], changed = false, dropped = 0;
+    for (var i = 0; i < list.length; i++) {
+      var r = list[i]; if (!r || typeof r !== 'object' || !('value' in r)) continue;
+      if (!(rowsAll || r.key === TK)) continue;
+      var v = r.value, o = typeof v === 'string' ? (function(){ try { return JSON.parse(v); } catch (e) { return null; } })() : v;
+      if (!o || typeof o !== 'object' || Array.isArray(o)) continue;
+      var c = compact(o);
+      dropped += c.runaway + c.aged;
+      if (c.map !== o) { r.value = typeof v === 'string' ? JSON.stringify(c.map) : c.map; changed = true; }
+      list[i].__gcTF = c.map;
+    }
+    return { changed: changed, dropped: dropped, list: list };
+  }
+  function urlOf(input){ try { return new URL(typeof input === 'string' ? input : (input && input.url) || String(input), W.location && W.location.href); } catch (e) { return null; } }
+  var pf = W.fetch;
+  if (typeof pf === 'function') {
+    var tfFetch = function(input, init){
+      var U = urlOf(input);
+      if (!U || !/^\/rest\/v1\/(gc_kv|app_data)$/.test(U.pathname)) return pf.apply(this, arguments);
+      var m = String((init && init.method) || (input && typeof input !== 'string' && !(input instanceof URL) && input.method) || 'GET').toUpperCase();
+      var keyF = U.searchParams.getAll('key'), named = false, other = false;
+      keyF.forEach(function(v){
+        if (/^eq\./.test(v)) { if (decodeURIComponent(v.slice(3)).replace(/^"|"$/g, '') === TK) named = true; else other = true; }
+        else if (/^in\.\(/.test(v)) { if (decodeURIComponent(v).indexOf(TK) >= 0) named = true; else other = true; }
+      });
+      if (m === 'POST' || m === 'PATCH' || m === 'PUT') {
+        var body = init && init.body;
+        if (typeof body !== 'string' || (body.indexOf('"' + TK + '"') < 0 && !named)) return pf.apply(this, arguments);
+        if (other && !named) return pf.apply(this, arguments);
+        try {
+          var data = JSON.parse(body), fx = fixRows(data, named && m !== 'POST');
+          (Array.isArray(data) ? data : [data]).forEach(function(r){ if (r && r.__gcTF) delete r.__gcTF; });
+          if (fx.changed) { S.cloudOut++; return pf.call(this, input, Object.assign({}, init, { body: JSON.stringify(data) })); }
+        } catch (e) {}
+        return pf.apply(this, arguments);
+      }
+      if (m !== 'GET') return pf.apply(this, arguments);
+      if (other && !named) return pf.apply(this, arguments);                   /* a read of other keys only */
+      var sel = U.searchParams.get('select');
+      if (sel && !/(^|,)\s*(value|\*)\s*(,|$)/.test(sel)) return pf.apply(this, arguments);   /* no values in the answer */
+      return pf.apply(this, arguments).then(function(r){
+        if (!r || !r.ok || r.status === 204 || typeof r.text !== 'function') return r;
+        return r.text().then(function(txt){
+          var out = txt, hs = r.headers;
+          if (txt && txt.length > 2 && (named || txt.indexOf('"key":"' + TK + '"') >= 0)) {
+            try {
+              var rows = JSON.parse(txt), fx = fixRows(rows, named && !other && keyF.length === 1);
+              (Array.isArray(rows) ? rows : [rows]).forEach(function(x){ if (x && x.__gcTF) { absorbCloud(x.__gcTF); delete x.__gcTF; } });
+              if (fx.changed) {
+                out = JSON.stringify(rows); S.cloudIn++; S.cloudDirty++;
+                try { hs = new Headers(r.headers); hs.delete('content-length'); hs.delete('content-encoding'); } catch (e) {}
+                schedulePush();
+              }
+            } catch (e) {}
+          }
+          return new Response(out, { status: r.status, statusText: r.statusText, headers: hs });
+        });
+      });
+    };
+    W.fetch = tfFetch;
+  }
+
+  W._gcTombFix = {
+    state: function(){ var o = {}; for (var k in S) if (k !== 'pushT') o[k] = S[k]; o.retainDays = RETAIN_DAYS; o.lsCap = LS_CAP; return o; },
+    compact: function(m, now){ return compact(m, now).map; },
+    garbage: garbage, compactAny: compactAny, pushClean: pushClean
+  };
+  try { console.log('[GC] TOMBFIX: the delete list is kept small (no auto payroll-profile ids; ' + RETAIN_DAYS + ' days) — _gcTombFix.state()'); } catch (e) {}
+} catch (e) { try { console.warn('[GC] TOMBFIX not installed:', e && e.message || e); } catch (x) {} }
 })();
 </script>
 
@@ -2084,7 +2467,10 @@ function spSend(input, init){
   if (rows) {
     /* what the live feed says arrived while this was on its way is newer than this answer */
     rows.forEach(function(r){ r.ev = SP_EV[r.key] || 0; });
-    p.then(function(res){ rows.forEach(function(r){ if ((SP_EV[r.key] || 0) === r.ev || !(res && res.ok)) spKnown(r.key, res && res.ok ? r.sig : null); }); }, function(){ rows.forEach(function(r){ spKnown(r.key, null); }); });
+    /* SAVES: an answer the page made itself for a write it held back (STUCKFIX, x-gc-held) is not the cloud's: taking it as
+       "the cloud holds this" skipped every identical write for 10 minutes — an estimate autosaved in the first ~20 s after
+       opening never reached the database (test_SAVES_est.mjs) */
+    p.then(function(res){ var held = false; try { held = !!(res && res.headers && res.headers.get && res.headers.get('x-gc-held')); } catch (e) {} rows.forEach(function(r){ if (held) { spKnown(r.key, null); return; } if ((SP_EV[r.key] || 0) === r.ev || !(res && res.ok)) spKnown(r.key, res && res.ok ? r.sig : null); }); }, function(){ rows.forEach(function(r){ spKnown(r.key, null); }); });
   }
   else spForget(u, init);
   return p;
@@ -5496,7 +5882,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.258-2026-11-15-r35v -->
+<!-- GrayCo CRM Build: 33.264-2026-11-16-r36c -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -6445,7 +6831,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.258-2026-11-15-r35v");
+  console.log("[GC] Build 33.264-2026-11-16-r36c");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -6493,7 +6879,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.258-2026-11-15-r35v"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.264-2026-11-16-r36c"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -7385,7 +7771,7 @@ function defer(name, keyOf){
          something that can be awaited without waiting for real work */
       try{ return Promise.resolve(); }catch(e){ return undefined; }
     };
-    wrapped.__deferred = true;
+    wrapped.__deferred = true; wrapped.__orig = f;   /* SAVES: the real one, for a caller that must know whether the save landed */
     try{ window[name] = wrapped; }catch(e){}
   }, 500);
 }
@@ -7404,10 +7790,14 @@ defer('_supaUpsert',  function(a){ return String(a[0]||''); });
     var f = window._gcPushAll;
     if(typeof f !== 'function' || f.__deferred) return;
     try{ clearInterval(iv); }catch(e){}
+    var trail = null;
     var wrapped = function(force){
       if(force) return f.apply(window, arguments);      // he asked for it
       var now = Date.now();
-      if(now - last < 15000) return Promise.resolve();
+      /* SAVES: a call inside the 15 s was DROPPED, not delayed — a save that asked for its upload right after another
+         push (the estimate builder's autosave, a Field receipt) then waited for whatever push came next. It now runs once
+         when the 15 s are up. */
+      if(now - last < 15000){ if(!trail) trail = (window.__GC_NATIVE_SETTIMEOUT__ || setTimeout).call(window, function(){ trail = null; last = Date.now(); queue('_gcPushAll', f, []); }, 15000 - (now - last) + 50); return Promise.resolve(); }
       last = now;
       queue('_gcPushAll', f, arguments);
       return Promise.resolve();
@@ -19751,6 +20141,7 @@ function computerOS(){
   return false;
 }
 function phone(){
+  try { if (W._gcDevice) return !!W._gcDevice.fieldDevice(); } catch (e) {}   /* DEVMODE: the device decides (patch DEVMODE's _gcDevice: a phone or a tablet → Field) */
   if (uaMobile()) return true;
   if (computerOS() || deskPointer()) return false;
   var sc = W.screen || {}, sw = Math.min(+sc.width || 9999, +sc.height || 9999);
@@ -19758,7 +20149,7 @@ function phone(){
   return mq('(pointer: coarse)') && !mq('(any-pointer: fine)');
 }
 /* ── a switch for THIS open only (in memory; a reload or the next open picks by the device again) ── */
-var CUR = '';
+var CUR = '';   /* DEVMODE: the owner (11/16): no question at sign-in — the device decides; a switch lasts for this open */
 function pref(){ return CUR; }
 function set(v){ CUR = v === 'field' || v === 'desk' ? v : ''; }
 /* no view is ever carried over from before: GrayCo Field's "desk view on this phone", the old sticky Field key */
@@ -19795,13 +20186,13 @@ function toField(){
 var last = null;
 function choose(v){
   v = v === 'field' ? 'field' : 'desk';
-  if (v === 'desk' && crewApp()) { toast('Crews use GrayCo Field.'); return 'crew'; }
+  if (v === 'desk' && crewApp() && phone()) { toast('Crews use GrayCo Field.'); return 'crew'; }   /* DEVMODE: only on a phone — on a computer a crew member has the Desk too */
   set(v);
   var r = v === 'desk' ? toDesk() : toField();
   last = { v: v, r: r, at: Date.now() };
   paint();
   /* GrayCo Field / the role apps look again a moment later (their own timers): make sure the choice holds */
-  [400, 1500].forEach(function(ms){ later(function(){ try { if (pref() !== v) return; if (v === 'desk' && inField() && !crewApp()) toDesk(); paint(); } catch (e) {} }, ms); });
+  [400, 1500].forEach(function(ms){ later(function(){ try { if (pref() !== v) return; if (v === 'desk' && inField() && !(crewApp() && phone())) toDesk(); paint(); } catch (e) {} }, ms); });
   return r;
 }
 
@@ -50332,7 +50723,8 @@ async function pushDocs(){
       continue;
     }
     var ok = await sbWrite(_DOC_PREFIX + d.id, d);
-    if(ok){ _docSnap[d.id] = fp; _saveDocSnap(); }
+    if(ok){ _docSnap[d.id] = fp; _saveDocSnap(); _gcsvOk(_DOC_PREFIX + d.id); }
+    else _gcsvFail(_DOC_PREFIX + d.id, 'document upload refused');   /* SAVES: a receipt / document that did not go up is retried and shown */
   }
 }
 
@@ -50400,6 +50792,7 @@ var _spWritten = null;   /* null = look at every list */
           if(_spWritten && this.name === 'kv' && this.transaction && this.transaction.db && this.transaction.db.name === 'grayco_crm'){
             var kk = (n === 'put' || n === 'add') ? b : a;
             if(n === 'clear' || typeof kk !== 'string') _spWritten = null; else _spWritten[kk] = 1;
+            if((n === 'put' || n === 'add') && typeof kk === 'string' && !_syncing && SYNC_KEYS.indexOf(kk) >= 0) _gcsvSoon();   /* SAVES (a pull's own writes are not news) */
           }
         }catch(e){ _spWritten = null; }
         return o.apply(this, arguments);
@@ -50409,6 +50802,118 @@ var _spWritten = null;   /* null = look at every list */
     });
   }catch(e){}
 })();
+/* SAVES: lists whose upload failed — kept for the next pass, tried again soon, shown as "not sent yet" (window._gcUnsent) */
+var _gcsvBad = {}, _gcsvT = null;
+function _gcsvOk(k){ if(_gcsvBad[k]){ delete _gcsvBad[k]; try{ console.log('[GC Sync] "'+k+'" reached the cloud after '+'a failed try.'); }catch(e){} } }
+function _gcsvFail(k, why){
+  var st = 0; try{ st = sbWrite.lastStatus || 0; }catch(e){}
+  if(st === 401 || st === 403 || st === 404 || st === 413){ return; }     /* refused for good (not allowed / too big): retrying cannot help */
+  _gcsvBad[k] = { at: Date.now(), why: String(why || ''), status: st, tries: ((_gcsvBad[k] || {}).tries || 0) + 1 };
+  try{ if(_spWritten) _spWritten[k] = 1; }catch(e){}
+  if(!_gcsvT){
+    var n = 0; try{ Object.keys(_gcsvBad).forEach(function(x){ n = Math.max(n, _gcsvBad[x].tries); }); }catch(e){}
+    var ms = Math.min(30000, 8000 * Math.pow(2, Math.max(0, n - 1)));   /* 8 s, 16 s, then every 30 s */
+    _gcsvT = (window.__GC_NATIVE_SETTIMEOUT__ || setTimeout).call(window, function(){ _gcsvT = null; try{ if(Object.keys(_gcsvBad).length && window._gcPushAll) window._gcPushAll(); }catch(e){} }, ms);
+  }
+}
+/* SAVES: TWO DEVICES, ONE RECORD, DIFFERENT FIELDS. A lead / customer / schedule item / sub / vendor edited on two devices
+   went to whichever whole copy was newer: Nick logs a call on the lead from his phone, the office changes its stage on Desk —
+   one of the two was gone. The cloud's own copy of each record, as this page last saw it at its last
+   pull (where this computer's own copy becomes the merged one — never a push's read, after which this computer's copy is
+   still the old one), is the common base: a field only one side changed since then takes that side's value; a field both changed
+   takes the newer copy's (as before). Nothing is decided this way without a base (the first pull after a load). */
+var _gcsvBase = {}, _gcsv3Keys = { leads: 1, customers: 1, schedule: 1, subs: 1, vendors: 1 };
+window._gcsvSeeCloud = function(key, list){
+  if(!_gcsv3Keys[key] || !Array.isArray(list)) return;
+  var m = {}; for(var i = 0; i < list.length; i++){ var r = list[i]; if(r && typeof r === 'object' && r.id != null){ try{ m[String(r.id)] = JSON.stringify(r); }catch(e){} } }
+  _gcsvBase[key] = m;
+};
+var _GCSV_META = { updatedAt: 1, savedAt: 1, updatedBy: 1, modified: 1, updated_at: 1, _fe: 1 };
+window._gcsv3way = function(key, x, y){
+  if(!_gcsv3Keys[key] || !x || !y || x === y) return null;
+  var bm = _gcsvBase[key], raw = bm && bm[String(x.id)]; if(!raw) return null;
+  var o; try{ o = JSON.parse(raw); }catch(e){ return null; }
+  var J = function(v){ try{ return v === undefined ? '\u0000' : JSON.stringify(v); }catch(e){ return String(v); } };
+  var xs = String(x.updatedAt || x.updated_at || x.savedAt || ''), ys = String(y.updatedAt || y.updated_at || y.savedAt || '');
+  var yNewer = ys >= xs, out = {}, ks = {}, k, both = 0, took = 0;
+  [x, y, o].forEach(function(r){ Object.keys(r).forEach(function(f){ ks[f] = 1; }); });
+  for(k in ks){
+    if(_GCSV_META[k]) continue;
+    var a = J(x[k]), b = J(y[k]), c = J(o[k]), v;
+    if(a === b) v = x[k];
+    else if(a === c) { v = y[k]; took++; }
+    else if(b === c) { v = x[k]; took++; }
+    else if(Array.isArray(x[k]) && Array.isArray(y[k]) && Array.isArray(o[k])){
+      /* a list both sides added to (a lead's activity / call log): the newer side's list + what the other side ADDED */
+      var IK = function(it){ return it && typeof it === 'object' && it.id != null ? 'i:' + it.id : 'j:' + J(it); };
+      var bs = {}, ps = {}; o[k].forEach(function(it){ bs[IK(it)] = 1; });
+      var pri = yNewer ? y[k] : x[k], oth = yNewer ? x[k] : y[k]; pri.forEach(function(it){ ps[IK(it)] = 1; });
+      v = pri.concat(oth.filter(function(it){ var q = IK(it); return !bs[q] && !ps[q]; })); both++;
+    }
+    else { v = yNewer ? y[k] : x[k]; both++; }
+    if(v !== undefined) out[k] = v;
+  }
+  out.updatedAt = xs > ys ? (x.updatedAt || x.savedAt) : (y.updatedAt || y.savedAt);
+  if(x.savedAt || y.savedAt) out.savedAt = String(x.savedAt || '') > String(y.savedAt || '') ? x.savedAt : y.savedAt;
+  if(x.updatedBy || y.updatedBy) out.updatedBy = yNewer ? (y.updatedBy || x.updatedBy) : (x.updatedBy || y.updatedBy);
+  if(x._fe || y._fe) out._fe = Object.assign({}, x._fe || {}, y._fe || {});
+  if(!out.updatedAt) delete out.updatedAt;
+  return out;
+};
+/* SAVES: this computer has what the cloud lacks — a record the cloud does not have, or a newer save of one (not merely a
+   different spelling of the same record: that made a list bounce up and down every sync) */
+function _gcsvAhead(mine, cloud){
+  try{
+    var c = {}, i, r;
+    for(i = 0; i < cloud.length; i++){ r = cloud[i]; if(r && typeof r === 'object' && r.id != null) c[String(r.id)] = String(r.updatedAt || r.updated_at || r.savedAt || ''); }
+    for(i = 0; i < mine.length; i++){ r = mine[i]; if(!r || typeof r !== 'object' || r.id == null) continue; var k = String(r.id); if(!(k in c)) return true; if(String(r.updatedAt || r.updated_at || r.savedAt || '') > c[k]) return true; }
+    return false;
+  }catch(e){ return false; }
+}
+/* SAVES: the same records (by id, any order) — a merged list that only re-orders the cloud's is not a change to send */
+function _gcsvSameList(a, b){
+  try{
+    if(a.length !== b.length) return false;
+    var m = {}, i, r, id;
+    for(i = 0; i < b.length; i++){ r = b[i]; id = r && typeof r === 'object' && r.id != null ? String(r.id) : '#' + i; m[id] = JSON.stringify(r); }
+    for(i = 0; i < a.length; i++){ r = a[i]; id = r && typeof r === 'object' && r.id != null ? String(r.id) : '#' + i; if(m[id] !== JSON.stringify(r)) return false; }
+    return true;
+  }catch(e){ return true; }
+}
+/* SAVES: a synced list written on this computer goes up within seconds — not at the next tab change. The estimate builder saves
+   by itself while Glenn types (no tab change for an hour), the Field job page writes the job list directly: measured, a new
+   estimate said "Saved ✓ in the CRM" and was still not in the database 45 s later. One push a few seconds after the last
+   write, at most one every 20 s (only the lists that changed go up — the same upload the tab change would have made). */
+var _gcsvSoonT = null, _gcsvLastAuto = 0;
+function _gcsvSoon(){
+  if(_gcsvSoonT) return;
+  var wait = Math.max(4000, 20000 - (Date.now() - _gcsvLastAuto));
+  _gcsvSoonT = (window.__GC_NATIVE_SETTIMEOUT__ || setTimeout).call(window, function(){
+    _gcsvSoonT = null;
+    try{ if(window.__GC_SYNC_NOW__ || _syncing){ _gcsvSoon(); return; } }catch(e){}
+    _gcsvLastAuto = Date.now();
+    try{ if(window._gcPushAll) window._gcPushAll(); }catch(e){}
+  }, wait);
+}
+window._gcSyncDirty = function(keys){ try{ (Array.isArray(keys) ? keys : [keys]).forEach(function(k){ if(SYNC_KEYS.indexOf(k) < 0) return; _idbSnapshot[k] = '__gc_local_differs__'; if(_spWritten) _spWritten[k] = 1; }); _gcsvSoon(); }catch(e){} };   /* SAVES: "this list was not really sent" */
+window._gcSyncDebug = function(){ var o = {}; try{ o.written = _spWritten ? Object.keys(_spWritten) : null; o.soon = !!_gcsvSoonT; o.lastAuto = _gcsvLastAuto; o.syncing = _syncing; o.bad = _gcsvBad; o.snap = {}; ['estimates','__est__gc_ests_v2','projects','leads'].forEach(function(k){ o.snap[k] = typeof _idbSnapshot[k] === 'string' ? _idbSnapshot[k].length : null; }); }catch(e){ o.err = String(e); } return o; };   /* SAVES: console */
+window._gcUnsent = function(){ return Object.keys(_gcsvBad).map(function(k){ return Object.assign({ key: k }, _gcsvBad[k]); }); };
+/* SAVES: say it on screen — a change that could not be sent for 20 s shows a small amber note until it is sent */
+(window.__GC_NATIVE_SETINTERVAL__ || setInterval).call(window, function(){
+  try{
+    var keys = Object.keys(_gcsvBad).filter(function(k){ return Date.now() - _gcsvBad[k].at > 20000 || _gcsvBad[k].tries > 1; });
+    try{ if(window._gcSyncQ && window._gcSyncQ.waiting) window._gcSyncQ.waiting().forEach(function(x){ if(x && x.tries > 0 && keys.indexOf(x.key) < 0) keys.push(x.key); }); }catch(e){}
+    try{ var _cs = window._gcClaims && window._gcClaims.status && window._gcClaims.status(); if(_cs && _cs.dirty && _cs.errors && ((_cs.dirty.claims && _cs.errors.claims) || (_cs.dirty.outbox && _cs.errors.outbox))) keys.push('gc_claims'); }catch(e){}   /* drying readings, equipment, claim notes */
+    var el = document.getElementById('gc-unsent-note');
+    if(!keys.length){ if(el) el.remove(); return; }
+    if(!el){ el = document.createElement('div'); el.id = 'gc-unsent-note'; el.setAttribute('role', 'status'); el.setAttribute('data-gcnav-ignore', '1');
+      el.style.cssText = 'position:fixed;left:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));z-index:2147482000;background:#92400e;color:#fff;padding:8px 12px;border-radius:10px;font:600 12.5px Arial,sans-serif;box-shadow:0 4px 14px rgba(0,0,0,.25);max-width:80vw;pointer-events:none;opacity:.94';   /* never in the way of a button under it (it retries by itself) */
+      (document.body || document.documentElement).appendChild(el); }
+    var t = '\u23F3 Saved on this ' + (/iPhone|iPad|Android/i.test(navigator.userAgent || '') || (window.innerWidth || 999) < 600 ? 'phone' : 'computer') + ' — not sent to the office yet (' + (navigator.onLine === false ? 'no connection' : 'the database did not answer') + '). It keeps trying by itself.';
+    if(el.textContent !== t) el.textContent = t;
+  }catch(e){}
+}, 5000);
+try{ window.addEventListener('online', function(){ if(Object.keys(_gcsvBad).length && window._gcPushAll) (window.__GC_NATIVE_SETTIMEOUT__ || setTimeout).call(window, function(){ window._gcPushAll(); }, 1500); }); }catch(e){}
 window._gcPushAll = async function(force){
   var _n = 0, _skipped = [];
   var _look = force ? null : _spWritten; _spWritten = {};
@@ -50416,9 +50921,14 @@ window._gcPushAll = async function(force){
     var _k = SYNC_KEYS[_i];
     try{
       // Back off the moment the database signals it's struggling.
-      if(!force && window._gcShouldHoldSync && window._gcShouldHoldSync()){
+      /* SAVES: only the database's own brake holds an upload. _gcShouldHoldSync is also on for 12 s after ANY click or key
+         (NO-JUMP, which is about redraws — an upload redraws nothing), so a person who kept working never had their saves
+         uploaded by this push at all; it waited for a pause of 12 s with a tab change in it. */
+      var _hold = typeof window._gcSyncBackoffHold === 'function' ? window._gcSyncBackoffHold() : (window._gcShouldHoldSync && window._gcShouldHoldSync());
+      if(!force && _hold){
         for(var _r = _i; _r < SYNC_KEYS.length; _r++){ if(_spWritten && (!_look || _look[SYNC_KEYS[_r]])) _spWritten[SYNC_KEYS[_r]] = 1; }   /* not looked at yet: next time */
         if(!_look) _spWritten = null;
+        _gcsvSoon();   /* SAVES: and that next time is soon */
         break;
       }
       if(_look && !_look[_k]) continue;
@@ -50426,21 +50936,23 @@ window._gcPushAll = async function(force){
       if(_v === null || _v === undefined) continue;
       if(Array.isArray(_v) && _v.length === 0) continue;
       // Skip anything byte-identical to what we last sent up.
+      var _sig = null;
       if(!force){
         try{
-          var _sig = JSON.stringify(_v);
+          _sig = JSON.stringify(_v);
           if(_idbSnapshot[_k] === _sig) continue;
-          _idbSnapshot[_k] = _sig;
         }catch(e){}
       }
-      var _s = JSON.stringify(_v);
+      var _s = _sig || JSON.stringify(_v);
       if(_s.length > _MAX_SYNC_BYTES){
-        if(Array.isArray(_v)){ try{ await sbWriteChunked(_k, _v); _n++; }catch(e){} continue; }
+        if(Array.isArray(_v)){ try{ await sbWriteChunked(_k, _v); _n++; if(_sig) _idbSnapshot[_k] = _sig; }catch(e){ _gcsvFail(_k, 'chunked: '+(e && e.message || e)); } continue; }
         _skipped.push(_k + ' (' + (_s.length/1048576).toFixed(1) + 'MB, not a list)');
         continue;
       }
-      await sbWrite(_k, _v);
-      _n++;
+      /* SAVES: "sent" is recorded only once the database took it. It was recorded BEFORE the upload, so a 503 / no signal
+         left the list marked as sent: the change stayed on this one computer until the same list changed again here. */
+      if(await sbWrite(_k, _v)){ if(_sig) _idbSnapshot[_k] = _sig; else { try{ _idbSnapshot[_k] = _s; }catch(e){} } _gcsvOk(_k); _n++; }
+      else _gcsvFail(_k, 'upload refused');
     }catch(e){}
   }
   try{ await pushDocs(); console.log('[GC Sync] Documents uploaded.'); }catch(e){}
@@ -50695,17 +51207,22 @@ async function sbWrite(key, value){
     if(_body.length > 4000000){
       console.warn('[GC Sync] "'+key+'" is '+(_body.length/1048576).toFixed(1)+'MB — too large to sync reliably.');
     }
-    var res = await fetch(SB_URL+'/rest/v1/gc_kv', {
+    /* SAVES: an upload that never gets an answer (no signal) used to hold this whole sync forever — every later save
+       on this computer waited behind it. It now counts as failed after a while (the list is tried again). */
+    var _tmo = Math.min(120000, 30000 + Math.round(_body.length / 100000) * 1000);
+    var res = await Promise.race([fetch(SB_URL+'/rest/v1/gc_kv', {
       method: 'POST',
       headers: Object.assign({}, sbHeaders(), {'Prefer':'return=minimal,resolution=merge-duplicates'}),
       body: _body
-    });
+    }), new Promise(function(_r, rej){ (window.__GC_NATIVE_SETTIMEOUT__ || setTimeout).call(window, function(){ rej(new Error('no answer in ' + Math.round(_tmo / 1000) + ' s')); }, _tmo); })]);
+    sbWrite.lastStatus = res.status;   /* SAVES */
     if(!res.ok){
       console.warn('[GC Sync] Upload rejected for "'+key+'" (HTTP '+res.status+'). Will retry.');
       return false;
     }
     return true;
   }catch(e){
+    sbWrite.lastStatus = 0;   /* SAVES: no answer */
     console.warn('[GC Sync] Write failed:', key, e.message);
     return false;
   }
@@ -51110,7 +51627,7 @@ async function pullAll(force){
       if(lastSeen && lastSeen >= row.updated_at) continue; // no change
       _lastPull[row.key] = row.updated_at;
 
-      var _val = row.value;
+      var _val = row.value, _cloudRaw = row.value;   /* SAVES: what the cloud has, before this computer's copy is merged in */
       try{ if(window._gcCloudSeen) window._gcCloudSeen(row.key, _val); }catch(_cs){}   /* patch CUSTSYNC */
       if(window._gcPullSkip && window._gcPullSkip(row.key)) continue;   /* patch D: per-computer key */
       // STRIP test entries + tombstoned records coming down from the cloud.
@@ -51298,7 +51815,14 @@ async function pullAll(force){
       // Mark this value as "already known" for the diff-pusher. Without this,
       // checkAndPushDiffs() sees the freshly-pulled value as a local change and
       // uploads it again — two machines then bounce values back and forth.
-      if(_rem !== null) _idbSnapshot[row.key] = _rem;
+      /* SAVES: …but only when it IS what the cloud has. When this computer's copy added to it (a save whose upload failed
+         or had not gone yet), the merged list was marked "already known" here and never uploaded: the change stayed on
+         this one computer for good (a reload marks everything known too). Now the next push sends it. */
+      try{ if(Array.isArray(_cloudRaw)) window._gcsvSeeCloud(row.key, _cloudRaw); }catch(_sc){}   /* SAVES: AFTER the merge — the base of the NEXT one */
+      if(_rem !== null){
+        if(Array.isArray(_val) && Array.isArray(_cloudRaw) && _gcsvAhead(_val, _cloudRaw)){ _idbSnapshot[row.key] = '__gc_local_differs__'; try{ if(_spWritten) _spWritten[row.key] = 1; }catch(e){} _gcsvSoon(); }
+        else _idbSnapshot[row.key] = _rem;
+      }
       // Push the freshly-pulled value into the running app's state.
       // Without this the UI keeps its stale in-memory copy and then writes
       // it back over the newer cloud data (why two admins saw different totals).
@@ -51509,6 +52033,7 @@ async function initialSync(){
   }catch(e){}
   // Then snapshot local state
   for(var i=0; i<SYNC_KEYS.length; i++){
+    if(_idbSnapshot[SYNC_KEYS[i]] === '__gc_local_differs__') continue;   /* SAVES: this computer has what the cloud lacks: keep it to send */
     var val = await idbGet(SYNC_KEYS[i]);
     if(val !== null && val !== undefined){
       _idbSnapshot[SYNC_KEYS[i]] = JSON.stringify(val);
@@ -54957,6 +55482,7 @@ console.log("[GC] Business Brain components loaded:", !!window.GrayCoBrain, !!wi
     try{
       var shown=localStorage.getItem('gc_digest_shown')||'';
       if(shown===todayKey() || !(crm().projects||[]).length) return;
+      if(document.documentElement.classList.contains('_fieldmode') || (window._gcDevice && window._gcDevice.wantField())) return;   /* DEVMODE: not over GrayCo Field (a phone): it covered the job page and its buttons; the Desk shows it */
       // Build today's items and check if any are real (not just the "nothing" filler).
       var data=lines();
       var hasReal=(data && data.out || []).some(function(l){
@@ -61486,11 +62012,23 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
   function pushMsgs(){
     var payload=JSON.stringify(getMsgs());
     var cr=sbCreds(); if(!cr.k) return;
+    /* SAVES: the send was fire-and-forget — a 503 / no signal dropped it with nothing on screen (the message sat on this
+       one phone until somebody happened to open Messages there again). A refused send now goes to the save queue
+       (window._gcSyncQ: kept in IndexedDB, merged with the cloud copy, tried again until it lands, across reloads). */
+    var _failed=function(why){
+      try{ console.warn('[GC] job message not sent yet ('+why+') — queued to send again.'); }catch(e){}
+      try{ if(window._gcSyncQ && window._gcSyncQ.add) window._gcSyncQ.add(MSG_KEY, JSON.stringify(getMsgs())); }catch(e){}
+      try{ var _t=document.getElementById('_jmNotSent')||document.createElement('div'); _t.id='_jmNotSent'; _t.setAttribute('role','status');
+        _t.textContent='\u23F3 Message saved on this device \u2014 not sent yet (no connection to the office). It sends by itself.';
+        _t.style.cssText='position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:2147483000;background:#92400e;color:#fff;padding:10px 14px;border-radius:10px;font:600 13px Arial,sans-serif;max-width:92vw;box-shadow:0 4px 16px rgba(0,0,0,.3);pointer-events:none';
+        document.body.appendChild(_t); setTimeout(function(){ try{ _t.remove(); }catch(e){} }, 9000); }catch(e){}
+    };
     try{
       fetch(cr.u.replace(/\/$/,'')+'/rest/v1/gc_kv?on_conflict=key',{ method:'POST',
         headers:{'apikey':cr.k,'Authorization':'Bearer '+cr.k,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'},
-        body:JSON.stringify({key:MSG_KEY, value:payload, updated_at:new Date().toISOString()}) }).catch(function(){});
-    }catch(e){}
+        body:JSON.stringify({key:MSG_KEY, value:payload, updated_at:new Date().toISOString()}) })
+        .then(function(r){ if(!r || !r.ok) _failed('HTTP '+(r && r.status)); }, function(e){ _failed(String(e && e.message || e)); });
+    }catch(e){ _failed(String(e && e.message || e)); }
   }
   function pullMsgs(cb){
     var cr=sbCreds(); if(!cr.k){ if(cb)cb(); return; }
@@ -67763,12 +68301,74 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
   function qRank(r){ var st=String(r && r.status || '').toLowerCase(); if((r && r.pmDecidedAt) || /approved|rejected|denied|posted|paid|void|recorded|done/.test(st)) return 3; if(st==='escalated') return 2; return st ? 1 : 0; }
   function qWhen(r){ var w=r && (r.pmDecidedAt || r.decidedAt || r.updatedAt || r.matchedAt || r.createdAt); var n=+w; if(!isNaN(n) && n) return n; var t=Date.parse(w||''); return isNaN(t)?0:t; }
   // Ensure every record in a list has a stable unique id. Returns true if any changed.
+  /* TOMBFIX: a payroll profile is its person's: an id-less or auto (content-hash gid...) id becomes the person's stable id
+     ('PP'+userId, else 'PPN-'+name -- the ids PROFDUP and profiles() use). The auto ids of one person's id-less stubs were
+     de-collided on every merge (gid-gid-2 ... gid-gid-9016, gid-gid-N-gid-gid-gid-...) and the union kept every copy. */
+  var PP_AUTO = /^gid[0-9a-z]+(?:-(?:gid[0-9a-z]+|\d+))*$/;
+  function ppStableId(rec){
+    if(!rec || typeof rec!=='object') return '';
+    var id = rec.id==null ? '' : String(rec.id);
+    if(id && !PP_AUTO.test(id)) return id;
+    if(rec.userId!=null && rec.userId!=='') return 'PP'+String(rec.userId);
+    var nk = String(rec.name==null?'':rec.name).trim().toLowerCase().replace(/\s+/g,' ');
+    var slug = nk.replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+    return slug ? 'PPN-'+slug : id;
+  }
+  window._gcPayProfileId = ppStableId;
+  var STAMP_RE = /^(id|updatedAt|updated_at|savedAt|modified)$/;
+  function bodySig(rec){ try{ var o={}; Object.keys(rec).sort().forEach(function(k){ if(!STAMP_RE.test(k)) o[k]=rec[k]; }); return JSON.stringify(o); }catch(e){ return null; } }
+  function stampOf(r){ return String((r && (r.updatedAt||r.updated_at||r.savedAt||r.modified)) || ''); }
+  /* TOMBFIX: copies of one payroll profile -> one record (oldest first, newer values win; nothing else is lost) */
+  /* W4SAFE: one merge rule for payroll profiles, whatever the stamps -- a seed (a profile this computer created, never edited
+     by a person) never outranks a real one; for the W-4 / pay fields the newest PERSON edit (editedAt) decides, and with no
+     person edit in between a filled value beats an empty / default one (a fresh computer's default profile, stamped "now",
+     turned a married / +$15 W-4 into single / $0 on that computer and in the cloud). */
+  var W4F = { filing:'single', dependentsCredit:0, otherIncome:0, deductions:0, extra:0, multipleJobs:false, exemptFed:false, w4Form:'',
+              allowances:0, msFiling:'', msExemption:'', annualSalary:0, hourlyRate:0, payType:'', ssn4:'', hireDate:'', address:'',
+              stateExtra:0, otherDeductions:null, taxDocs:null };
+  function w4Blank(k, v){
+    if(v===undefined || v===null || v==='') return true;
+    if(Array.isArray(v)) return !v.length;
+    if(!Object.prototype.hasOwnProperty.call(W4F, k)) return false;
+    var d = W4F[k]; if(d===null) return false;
+    if(typeof d==='number') return Number(v)===d;
+    return v===d;
+  }
+  function editOf(r){ return String((r && r.editedAt) || ''); }
+  function isSeed(r){ return !!(r && r._seed===true && !editOf(r)); }
+  function ppMerge(a, b){
+    if(!a || typeof a!=='object') return b; if(!b || typeof b!=='object') return a;
+    var hi = b, lo = a;                                     /* the newer stamp; a tie keeps the incoming copy (as before) */
+    if(stampOf(a) > stampOf(b)){ hi = a; lo = b; }
+    var sa = isSeed(a), sb = isSeed(b);
+    if(isSeed(hi) && !isSeed(lo)){ var t = hi; hi = lo; lo = t; }   /* a seed never outranks a real profile */
+    var m = Object.assign({}, lo, hi), eh = editOf(hi), el = editOf(lo);
+    var personHi = !!eh && eh >= el;                          /* the newer copy carries the newest person edit */
+    Object.keys(W4F).forEach(function(k){
+      if(el && el > eh){ if(Object.prototype.hasOwnProperty.call(lo, k)) m[k] = lo[k]; return; }   /* the older copy has the newer person edit */
+      if(personHi) return;
+      if(w4Blank(k, hi[k]) && !w4Blank(k, lo[k])) m[k] = lo[k];   /* no person edit in between: filled beats empty / default */
+    });
+    if(!personHi) Object.keys(lo).forEach(function(k){
+      if(Object.prototype.hasOwnProperty.call(W4F, k)) return;
+      var v = hi[k]; if((v===undefined || v===null || v==='') && lo[k]!==undefined && lo[k]!==null && lo[k]!=='') m[k] = lo[k];
+    });
+    if(!(sa && sb)) delete m._seed;
+    var e = eh > el ? eh : el; if(e) m.editedAt = e;
+    return m;
+  }
+  window._gcPayProfileMerge = ppMerge;
+  function foldProfile(a, b){
+    var m = ppMerge(a, b);   /* W4SAFE */
+    m.id = a.id; return m;
+  }
   window._gcEnsureRecordIds = function(list, key){
     if(!Array.isArray(list)) return false;
-    var seen={}, changed=false, alt=key && QALT[key], firstAt={}, drop=[];
+    var seen={}, changed=false, alt=key && QALT[key], firstAt={}, drop=[], isPP = key==='payrollProfiles';
     list.forEach(function(rec, ix){
       if(!rec || typeof rec!=='object') return;
       var id = rec.id;
+      if(isPP){ var sid = ppStableId(rec); if(sid && sid!==String(id==null?'':id)){ rec.id = sid; changed=true; id=sid; } }   /* TOMBFIX */
       if(id!==undefined && id!==null && id!==''){ var cid = collapse(id); if(cid!==String(id)){ rec.id = cid; changed=true; id=cid; } }   /* patch SYNCFIX: repair */
       var qid = (alt && rec[alt]!=null && rec[alt]!=='') ? alt+':'+String(rec[alt]) : null;
       if(qid && (id===undefined || id===null || id==='' || AUTO.test(String(id)) || String(id)===qid || String(id).indexOf(qid+'-gid')===0)){
@@ -67789,6 +68389,14 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
       // Duplicate id in the same list (e.g. two Date.now() collisions) -> de-collide
       // deterministically by mixing in the fingerprint, so both survive and both
       // machines compute the same second id.
+      if(seen[id] && firstAt[id]!==undefined && list[firstAt[id]]){
+        /* TOMBFIX: the same record twice is ONE record -- folded, never given a new id (a new id for a copy is a new
+           record to the union merge, and that is how one payroll stub became 26,826 copies) */
+        var _j = firstAt[id], _cur = list[_j];
+        if(isPP){ list[_j] = foldProfile(_cur, rec); drop.push(ix); changed=true; return; }
+        var _sa = bodySig(rec);
+        if(_sa!==null && _sa===bodySig(_cur)){ if(stampOf(rec) > stampOf(_cur)) list[_j] = rec; drop.push(ix); changed=true; return; }
+      }
       if(seen[id]){
         /* patch SYNCFIX: the second id is new and different from the first (the old suffix could be the base itself) */
         var fp=fingerprint(rec), nid=String(id)+'-'+fp;
@@ -67796,7 +68404,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
         var cand=nid, n=2; while(seen[cand]) cand=nid+'-'+(n++);
         rec.id = cand; changed=true; id=rec.id;
       }
-      seen[id]=1;
+      seen[id]=1; if(firstAt[id]===undefined) firstAt[id]=ix;   /* TOMBFIX */
     });
     if(drop.length){ drop.sort(function(a,b){ return b-a; }).forEach(function(i){ list.splice(i,1); }); }
     return changed;
@@ -67845,7 +68453,9 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
         for(var k in rec){ try{ if(typeof rec[k]==='string' && rec[k].indexOf('__TEST__')>=0) return; }catch(e){} }
         if(!(id in byId)){ byId[id]=rec; order.push(id); }
         else if(QALT[key] && qRank(rec)!==qRank(byId[id])){ if(qRank(rec)>qRank(byId[id])) byId[id]=Object.assign({}, byId[id], rec); }   /* patch SYNCFIX: a decided approval stays decided */
-        else if(newer(rec, byId[id])){ byId[id]=Object.assign({}, byId[id], rec); }
+        else if(key==='payrollProfiles'){ byId[id]=ppMerge(byId[id], rec); }   /* W4SAFE */
+        else { var _m3 = null; try{ if(window._gcsv3way) _m3 = window._gcsv3way(key, byId[id], rec); }catch(_e3){ _m3 = null; }   /* SAVES: field by field when the cloud's last copy is known (leads, customers, schedule, subs, vendors only — never payroll) */
+               if(_m3) byId[id] = _m3; else if(newer(rec, byId[id])){ byId[id]=Object.assign({}, byId[id], rec); } }
       });
     });
     var __out = order.map(function(id){ return byId[id]; });
@@ -68357,7 +68967,8 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
     function creds(){ try{ return { u:(localStorage.getItem('grayco_sb_url')||'').replace(/\/$/,''), k:localStorage.getItem('grayco_sb_key') }; }catch(e){ return {}; } }
     function cloudGet(key){
       var c = creds(); if(!c.u || !c.k) return Promise.reject(new Error('not signed in to the cloud'));
-      return fetch(c.u+'/rest/v1/gc_kv?key=eq.'+encodeURIComponent(key)+'&select=value', { headers:{ apikey:c.k, Authorization:'Bearer '+c.k } })
+      return Promise.race([fetch(c.u+'/rest/v1/gc_kv?key=eq.'+encodeURIComponent(key)+'&select=value', { headers:{ apikey:c.k, Authorization:'Bearer '+c.k } }),
+                           new Promise(function(_r, rej){ ST.call(window, function(){ rej(new Error('cloud read: no answer')); }, 30000); })])   /* SAVES */
         .then(function(r){ if(!r || !r.ok) throw new Error('cloud read answered '+(r && r.status)); return r.json(); })
         .then(function(rows){ return (Array.isArray(rows) && rows.length) ? rows[0].value : undefined; });
     }
@@ -68390,7 +69001,14 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
     }
 
     /* a SYNC_KEYS list: merge into IndexedDB + the screen (adds / newer only); the regular upload carries it */
+    /* SAVES: a save of a synced list was only written here; when the caller had already written the same list to IndexedDB
+       (the Field job page, most of the CRM's own save paths) nothing asked for the upload — it waited for the next tab
+       change or the 3-minute idle sync (on a phone in GrayCo Field: until the app was opened again). Measured: a job
+       change on the phone reached the office minutes later. Now every such save asks for the after-a-save sync. */
+    var upT = null;
+    function upSoon(ms){ if(upT) return; upT = ST.call(window, function(){ upT = null; try{ if(isTyping()){ upSoon(2500); return; } if(typeof window._gcTabChangeSync === 'function') window._gcTabChangeSync('after a save'); }catch(e){} }, ms || 2500); }
     function intoLocal(key, v){
+      upSoon();
       if(!Array.isArray(v)) return idSet(key, v).then(function(){ return true; });
       return idGet(key).then(function(cur){
         cur = Array.isArray(cur) ? cur : [];
@@ -68415,6 +69033,10 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
     function isMap(x){ return x && typeof x === 'object' && !Array.isArray(x); }
     function toCloud(key, item){
       var now = window._supaUpsertNow;
+      /* SAVES: when the "run it later" wrapper (DEFERWORK) got here first, _supaUpsertNow answered at once without sending —
+         the queue then dropped the save as sent, and a send that failed afterwards was never tried again (measured: a job
+         message sent from a phone with a full localStorage reached the office only after the app was reopened) */
+      try{ while(now && now.__deferred && typeof now.__orig === 'function') now = now.__orig; }catch(e){}
       if(typeof now !== 'function') return Promise.reject(new Error('no direct save'));
       var v = item.v, lv = asList(v);
       var prep = Promise.resolve(v);
@@ -68434,7 +69056,9 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
         prep = cloudGet(key).then(function(cloud){ return isMap(cloud) ? Object.assign({}, cloud, v) : v; });
       }
       return prep.then(function(val){
-        return Promise.resolve(now(key, val)).then(function(res){
+        /* SAVES: a send with no answer (no signal) froze the queue — flushing stayed on, every later save waited forever */
+        var _tq = new Promise(function(_r, rej){ ST.call(window, function(){ rej(new Error('no answer')); }, 45000); });
+        return Promise.race([Promise.resolve(now(key, val)), _tq]).then(function(res){
           if(res && res.blocked) return true;                          /* the shrink guard kept the cloud copy */
           if(res && typeof res.ok === 'boolean' && !res.ok) throw new Error('cloud answered '+res.status);
           if(lv && isIdList(lv.list) && !item.recover) BASE[key] = idsOf(lv.list);
@@ -68540,8 +69164,9 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
 
   // ---- The ONE sync: push up + pull down, union-merged, once. -------------
   var _syncing = false, _lastSync = 0, _pendingT = null;
+  var _againWhy = null;   /* SAVES: a save made while a sync was running waited for the next tab change */
   async function tabChangeSync(reason){
-    if(_syncing) return;
+    if(_syncing){ if(/save/i.test(String(reason || ''))) _againWhy = reason; return; }
     if(isTyping()) return;                 // never sync mid-typing
     var now = Date.now();
     // DISK IO: every tab change used to fire a full push+pull, so simply
@@ -68574,6 +69199,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
     }catch(e){ try{ window.__GC_LAST_TABSYNC__ = { at:Date.now(), reason:reason||'', ok:false, error:String(e&&e.message||e) }; }catch(_e){} }
     window.__GC_SYNC_NOW__ = false;
     _syncing = false;
+    if(_againWhy){ var _aw = _againWhy; _againWhy = null; (window.__GC_NATIVE_SETTIMEOUT__||setTimeout).call(window, function(){ _lastSync = 0; tabChangeSync('again: ' + _aw); }, 1500); }
   }
   window._gcTabChangeSync = tabChangeSync;
   /* 33.138: AND EVERY THREE MINUTES WHEN NOBODY IS IN THE MIDDLE OF SOMETHING. "We have to make sure my
@@ -69258,6 +69884,33 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
   var MAX_SNAPS = 10;
 
   function snapKey(k){ return 'gc_bak_'+k; }
+  /* TOMBFIX: the versions live in IndexedDB (same key names): up to 10 x 1 M characters per list did not fit in the
+     ~5 M of localStorage next to everything else ("storage full: gc_bak_projects (not saved)"). A copy an earlier visit
+     left in localStorage is moved over (versions merged by time) and then removed from localStorage. */
+  var BAKMEM = {};
+  function idbW(){ return window._gcIdbWrite || window.idbSet; }
+  function idbR(){ return window._gcIdbRead || window.idbGet; }
+  function lsSnaps(k){ try{ var a=JSON.parse(localStorage.getItem(snapKey(k))||'[]'); return Array.isArray(a)?a:[]; }catch(e){ return []; } }
+  function mergeSnaps(a, b){ var by={}, out=[]; [].concat(a||[], b||[]).forEach(function(s){ if(s && s.at && !by[s.at]){ by[s.at]=1; out.push(s); } }); out.sort(function(x, y){ return String(x.at)<String(y.at)?-1:1; }); while(out.length > MAX_SNAPS) out.shift(); return out; }
+  async function loadSnaps(k){
+    if(BAKMEM[k]) return BAKMEM[k];
+    var v=null; try{ var r=idbR(); if(r) v=await r(snapKey(k)); }catch(e){}
+    var s = mergeSnaps(Array.isArray(v)?v:[], lsSnaps(k));
+    BAKMEM[k]=s; return s;
+  }
+  async function saveSnaps(k, snaps){
+    BAKMEM[k]=snaps;
+    var ok=false; try{ var w=idbW(); if(w) ok = (await w(snapKey(k), snaps))!==false; }catch(e){ ok=false; }
+    if(ok){ try{ if(localStorage.getItem(snapKey(k))!=null) localStorage.removeItem(snapKey(k)); }catch(e){} }
+    return ok;
+  }
+  (function moveOld(){   /* the localStorage copies of an earlier visit, moved as soon as IndexedDB is there */
+    var n=0, iv=setInterval(function(){
+      if(!idbW() || !idbR()){ if(n++>120) clearInterval(iv); return; }
+      clearInterval(iv);
+      KEYS.forEach(function(k){ try{ if(localStorage.getItem(snapKey(k))==null) return; }catch(e){ return; } loadSnaps(k).then(function(s){ return saveSnaps(k, s); }).catch(function(){}); });
+    }, 500);
+  })();
 
   // Take a snapshot of a key's current data if it looks healthy (non-empty).
   window._gcBackupNow = function(){
@@ -69268,31 +69921,33 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
         var data = map[k];
         if(!Array.isArray(data)) return;
         if(data.length === 0) return;           // never snapshot an empty list
-        var snaps = [];
-        try{ snaps = JSON.parse(localStorage.getItem(snapKey(k))||'[]'); }catch(e){}
+        loadSnaps(k).then(function(snaps){ snaps = snaps.slice();   /* TOMBFIX: IndexedDB */
         var last = snaps[snaps.length-1];
         // only snapshot if it changed and is not smaller-without-reason
         var stamp = new Date().toISOString();
         if(last && last.count === data.length) return; // no change in count, skip
         snaps.push({ at: stamp, count: data.length, data: data });
         while(snaps.length > MAX_SNAPS) snaps.shift();
-        var _t = JSON.stringify(snaps); while(_t.length > 1000000 && snaps.length > 1){ snaps.shift(); _t = JSON.stringify(snaps); }   /* patch DENYKEEP: at most 1 M characters per list */
-        if(_t.length > 1000000){ try{ localStorage.removeItem(snapKey(k)); }catch(e){} return; }
-        try{ localStorage.setItem(snapKey(k), _t); }catch(e){}
+        /* TOMBFIX: IndexedDB has room -- up to 10 versions, all of them together at most 4 M characters per list */
+        var _t = JSON.stringify(snaps); while(_t.length > 4000000 && snaps.length > 1){ snaps.shift(); _t = JSON.stringify(snaps); }
+        if(_t.length > 4000000) return;
+        return saveSnaps(k, JSON.parse(_t));
+        }).catch(function(){});
       });
     }catch(e){}
   };
 
-  // List available snapshots for a key
+  // List available snapshots for a key (TOMBFIX: what this page has read from IndexedDB, + an old localStorage copy)
   window._gcListBackups = function(k){
-    try{ return JSON.parse(localStorage.getItem(snapKey(k))||'[]').map(function(s){ return {at:s.at, count:s.count}; }); }
+    try{ return mergeSnaps(BAKMEM[k]||[], lsSnaps(k)).map(function(s){ return {at:s.at, count:s.count}; }); }
     catch(e){ return []; }
   };
+  window._gcLoadRollingBackups = function(){ return Promise.all(KEYS.map(loadSnaps)).then(function(){ return KEYS.reduce(function(o, k){ o[k]=window._gcListBackups(k); return o; }, {}); }); };   /* TOMBFIX */
 
   // Restore a key from a snapshot (by index; default = most recent healthy one)
   window._gcRestoreBackup = function(k, idx){
     try{
-      var snaps = JSON.parse(localStorage.getItem(snapKey(k))||'[]');
+      var snaps = mergeSnaps(BAKMEM[k]||[], lsSnaps(k));   /* TOMBFIX: IndexedDB (read at start-up / by _gcLoadRollingBackups) */
       if(!snaps.length){ alert('No backup available for '+k+' yet.'); return false; }
       var snap = (typeof idx === 'number') ? snaps[idx] : snaps[snaps.length-1];
       if(!snap || !Array.isArray(snap.data)){ alert('That backup is not usable.'); return false; }
@@ -71604,9 +72259,14 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
     var jobText = norm((inv.desc||'')+' '+(inv.client||'')+' '+(inv.address||''));
     var poText = norm(inv.po||inv.num||'');
     var invAddr = norm(inv.address||'');
-    var bestJob=null, bestJobConf=0, bestSignals=0;
+    var bestJob=null, bestJobConf=0, bestSignals=0, runnerUp=0, bestStrong=false;
+    /* INVMATCH: names must sit on whole words ("newoffice" was found inside any text with "new office…" glued to other letters),
+       deleted / lost jobs are not candidates, and a match is CERTAIN only when no other job comes close (a customer with several
+       jobs, the same job entered twice, one address on two jobs → a guess for the office, never the first one silently). */
+    var spaced=' '+String((inv.desc||'')+' '+(inv.client||'')+' '+(inv.address||'')).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim()+' ';
+    var sp=function(v){ return String(v||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim(); };
     projects.forEach(function(p){
-      if(!p) return;
+      if(!p || p.deleted || p._deleted || /^(lost|cancell?ed|dead|declined|rejected|deleted)$/i.test(String(p.status||'').trim())) return;
       var pn=norm(p.name), pc=norm(p.client||''), pa=norm(p.address||''), pp=norm(p.autoPO||p.po||'');
       var conf=0, signals=0;
       // Strong single signals (each near-certain on its own)
@@ -71615,25 +72275,37 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
       // Full job-name match: certain if the name is distinctive (long enough / multi-word)
       var nameWords = pn.split(' ').filter(function(w){return w.length>2;}).length;
       var distinctiveName = pn.length>=8 || nameWords>=2; // e.g. "Cordova Club Apartments", "Smith Kitchen"
-      var exactName = pn && jobText.indexOf(pn)>-1 && pn.length>4;
+      var exactName = pn && pn.length>4 && spaced.indexOf(' '+sp(p.name)+' ')>-1;   /* INVMATCH: whole words */
       if(exactPO){ conf+=95; signals++; }
       if(exactAddr){ conf+=90; signals++; }
       if(exactName && distinctiveName){ conf+=95; signals++; }   // distinctive job name in the invoice = certain
       else if(exactName){ conf+=55; signals++; }                  // short/generic name = supporting only
+      var strong = exactPO || exactAddr || (exactName && distinctiveName);
       // Supporting signals
-      if(pc && jobText.indexOf(pc)>-1){ conf+=40; signals++; }
+      if(pc && pc.length>=4 && spaced.indexOf(' '+sp(p.client)+' ')>-1){ conf+=40; signals++; }   /* INVMATCH: whole words */
       if(pa && !exactAddr && jobText.indexOf(pa)>-1 && pa.length>6){ conf+=35; signals++; }
       // amount sanity (sub invoice amount within a job's contract range = weak support)
       var amt=parseFloat(inv.amt||inv.amount)||0, contract=parseFloat(p.contract||p.contractAmt||0)||0;
       if(amt>0 && contract>0 && amt<=contract){ conf+=10; }
       // word overlap on name (weak)
       words(p.name).forEach(function(w){ if(w.length>3 && jobText.indexOf(norm(w))>-1) conf+=8; });
-      if(conf>bestJobConf){ bestJobConf=conf; bestJob=p; bestSignals=signals; }
+      if(conf>bestJobConf){ runnerUp=bestJobConf; bestJobConf=conf; bestJob=p; bestSignals=signals; bestStrong=strong; }
+      else if(conf>runnerUp){ runnerUp=conf; }
     });
     // Cap confidence at 100 for display
     var jobConfPct=Math.min(100, bestJobConf);
     // CERTAIN when ~95%+ : any exact signal, OR a strong combo of 2+ signals reaching 95
     var jobCertain = bestJob && (bestJobConf>=95 || (bestSignals>=2 && bestJobConf>=90));
+    /* INVMATCH: …and only when it is the one job — no other within 25 points — and a strong signal (PO / address / distinctive name)
+       is part of it (word overlaps + the amount fitting the contract are support, never proof). */
+    if(jobCertain && (runnerUp>=bestJobConf-25 || !bestStrong)){ jobCertain=false; result.jobAmbiguous=runnerUp>=bestJobConf-25; }
+    /* INVMATCH: the invoice names a street that two live jobs share (a bid and its job, a job entered twice) → the office picks */
+    if(jobCertain && bestJob){
+      var akey=function(a){ var w=sp(String(a||'').split(',')[0]).split(' ').filter(function(x){ return x && !/^(st|street|rd|road|dr|drive|ln|lane|cv|cove|ave|avenue|blvd|ct|court|cir|pl|pkwy|way|trl|hwy|n|s|e|w)$/.test(x); }); return /^\d+$/.test(w[0]||'') && w[1] ? w[0]+' '+w[1] : ''; };
+      var bk=akey(bestJob.address);
+      if(bk && (' '+spaced.trim().split(' ').filter(function(x){ return !/^(st|street|rd|road|dr|drive|ln|lane|cv|cove|ave|avenue|blvd|ct|court|cir|pl|pkwy|way|trl|hwy|n|s|e|w)$/.test(x); }).join(' ')+' ').indexOf(' '+bk+' ')>-1 &&
+         projects.some(function(q){ return q && q!==bestJob && !q.deleted && !q._deleted && !/^(lost|cancell?ed|dead|declined|rejected|deleted)$/i.test(String(q.status||'').trim()) && akey(q.address)===bk; })){ jobCertain=false; result.jobAmbiguous=true; }
+    }
     if(jobCertain){ result.pid=bestJob.id; result.jobCertain=true; result.jobConf=jobConfPct; }
     else if(bestJob && bestJobConf>=45){ result.jobGuess=bestJob.id; result.jobGuessName=bestJob.name; result.jobConf=jobConfPct; }
 
@@ -71656,10 +72328,10 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
       if((m.pid && !iv.pid) || (m.subId && !iv.subId)){
         // certain match -> auto-apply. carry confidence + guess for office if not certain.
         changed.push({id:iv.id, pid:m.pid||iv.pid, subId:m.subId||iv.subId, subName:m.subName||iv.sub,
-          _jobCertain:!!m.jobCertain, _jobGuess:m.jobGuess||'', _jobGuessName:m.jobGuessName||'', _jobConf:m.jobConf||m.confidence||0});
+          _jobCertain:!!m.jobCertain, _jobGuess:m.jobGuess||'', _jobGuessName:m.jobGuessName||'', _jobConf:m.jobConf||0})   /* INVMATCH: the JOB confidence (it showed the sub-name score, 205) */;
       } else if(m.jobGuess || m.jobConf){
         // no certain match but we have a guess -> stamp it so office sees the suggestion + confidence
-        changed.push({id:iv.id, _jobGuess:m.jobGuess||'', _jobGuessName:m.jobGuessName||'', _jobConf:m.jobConf||m.confidence||0, _guessOnly:true});
+        changed.push({id:iv.id, _jobGuess:m.jobGuess||'', _jobGuessName:m.jobGuessName||'', _jobConf:m.jobConf||0, _guessOnly:true});
       }
     });
     if(changed.length && window._setInvoices){
@@ -83700,9 +84372,29 @@ window._gcForceFixSchedule = async function(silent){
   function tcAcc(){ try{ var S=window.__GC_SEC2; return S && S.access ? S.access() : null; }catch(e){ return null; } }
   function tcOwn(){ try{ var S=window.__GC_SEC2, a=tcAcc(); return !!(S && S.can && a && a.known && a.email && !S.can(KEY,'write',a)); }catch(e){ return false; } }
   function tcKey(){ var a=tcAcc(); return TC_PFX+String(a&&a.email||'').toLowerCase().replace(/[^a-z0-9]/g,'_'); }
-  function tcMine(){ try{ var o=JSON.parse(localStorage.getItem(TC_LS)||'null'); var a=tcAcc(); if(o && a && o.email===a.email && Array.isArray(o.list)) return o.list; }catch(e){} return []; }
+  function tcMineLs(){ try{ var o=JSON.parse(localStorage.getItem(TC_LS)||'null'); var a=tcAcc(); if(o && a && o.email===a.email && Array.isArray(o.list)) return o.list; }catch(e){} return []; }
+  /* SAVES: a crew member's own clock entries lived ONLY in this phone's localStorage (+ an upload nobody read back): a new
+     phone, cleared site data or a full localStorage showed "not clocked in" with no hours — clock in on one phone, clock out
+     on another was impossible. The cloud copy (gc_timeclock_<email>) is now read back and merged in (by id, newest wins). */
+  var TCMEM=null, tcHyd=0;
+  function tcUnion(a, b){ var by={}, out=[]; (a||[]).concat(b||[]).forEach(function(r){ if(!r||!r.id) return; var k=String(r.id), o=by[k]; if(!o){ by[k]=r; out.push(k); } else if(String(r.updatedAt||r.clockOut||'')>String(o.updatedAt||o.clockOut||'')) by[k]=r; }); return out.map(function(k){ return by[k]; }); }
+  function tcMine(){ var l=tcMineLs(); return TCMEM ? tcUnion(l, TCMEM) : l; }
+  function tcHydrate(){
+    if(tcHyd>40) return; tcHyd++;
+    var a=tcAcc(); if(!tcOwn() || !a || !a.email){ (window.__GC_NATIVE_SETTIMEOUT__||setTimeout).call(window, tcHydrate, 3000); return; }
+    var u=(localStorage.getItem('grayco_sb_url')||'').replace(/\/$/,''), k=localStorage.getItem('grayco_sb_key')||'';
+    if(!u||!k){ (window.__GC_NATIVE_SETTIMEOUT__||setTimeout).call(window, tcHydrate, 5000); return; }
+    fetch(u+'/rest/v1/gc_kv?key=eq.'+encodeURIComponent(tcKey())+'&select=value', { headers:{ apikey:k, Authorization:'Bearer '+k }, cache:'no-store' })
+      .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+      .then(function(rows){ var v=rows&&rows[0]&&rows[0].value; if(typeof v==='string'){ try{ v=JSON.parse(v); }catch(e){ v=null; } }
+        if(!Array.isArray(v)||!v.length) return; var cur=tcMineLs(), m=tcUnion(cur, v); TCMEM=m; tcHyd=99;
+        if(m.length!==cur.length || JSON.stringify(m)!==JSON.stringify(cur)){ try{ localStorage.setItem(TC_LS, JSON.stringify({ email:a.email, list:m })); }catch(e){} try{ if(typeof window._gcTimeclockRefresh==='function') window._gcTimeclockRefresh(); }catch(e){} } })
+      .catch(function(){ (window.__GC_NATIVE_SETTIMEOUT__||setTimeout).call(window, tcHydrate, 15000); });
+  }
+  (window.__GC_NATIVE_SETTIMEOUT__||setTimeout).call(window, tcHydrate, 2500);
   function tcSaveMine(v){
     var me=user(), a=tcAcc(); var mine=(Array.isArray(v)?v:[]).filter(function(r){ return r && r.user===me; });
+    TCMEM=mine;   /* SAVES: what this page reads back, even when localStorage refuses it */
     try{ localStorage.setItem(TC_LS, JSON.stringify({ email:a&&a.email, list:mine })); }catch(e){}
     try{ if(window._supaUpsert) window._supaUpsert(tcKey(), mine); }catch(e){}
   }
@@ -84938,9 +85630,41 @@ function dedupeProfiles(list){
   deadIds=deadIds.filter(function(id, k, a){ return !keptIds[id] && a.indexOf(id)===k; });
   return { list:out, removed:removed, names:names, deadIds:deadIds };
 }
+/* W4SAFE: the cloud's payroll profile list, read once per page (concurrent calls share the read; kept in memory and merged
+   into every call, so a call that reads this computer's copy before the first merged list was written still has it).
+   Until a read succeeds, profiles() creates nothing: no seed may ever be saved over a real cloud profile. */
+var _w4 = { ok:false, list:[], p:null, at:0 };
+function w4Cloud(){
+  if(_w4.ok) return Promise.resolve(_w4);
+  if(_w4.p && Date.now()-_w4.at < 30000) return _w4.p;
+  _w4.at = Date.now();
+  _w4.p = (async function(){
+    try{
+      var u = String(localStorage.getItem('grayco_sb_url') || 'https://ieeonhpfahmwwecizdut.supabase.co').replace(/\/+$/, ''), k = localStorage.getItem('grayco_sb_key') || '';
+      var r = await fetch(u+'/rest/v1/gc_kv?key=eq.'+K_PROF+'&select=value', { headers: k ? { apikey:k, Authorization:'Bearer '+k } : {}, cache:'no-store' });
+      if(!r || !r.ok) return _w4;
+      var rows = await r.json(); if(!Array.isArray(rows)) return _w4;
+      var v = rows.length ? rows[0].value : [];
+      if(typeof v==='string'){ try{ v = JSON.parse(v); }catch(_je){ return _w4; } }
+      var out = Array.isArray(v) ? v : [];
+      try{ if(window._gcSbReadChunked){ var ch = await window._gcSbReadChunked(K_PROF); if(Array.isArray(ch) && ch.length) out = window._gcUnionMerge ? window._gcUnionMerge(K_PROF, out, ch) : out.concat(ch); } }catch(_ce){}
+      _w4.list = out.filter(function(p){ return p && typeof p==='object'; }); _w4.ok = true;
+      return _w4;
+    }catch(e){ return _w4; }
+  })();
+  return _w4.p;
+}
+window._gcPayW4Safe = function(){ return { cloudRead:_w4.ok, cloudCount:_w4.list.length, lastTry:_w4.at ? new Date(_w4.at).toISOString() : '' }; };
 async function profiles(){
   var list=await get(K_PROF);
   if(!Array.isArray(list)) list=[];
+  var _w4c = { ok:false, list:[] }, _w4changed=false;   /* W4SAFE */
+  try{ _w4c = await Promise.race([w4Cloud(), new Promise(function(r){ setTimeout(function(){ r({ ok:false, list:[] }); }, 8000); })]); }catch(_w4e){}   /* a slow read: answer from this computer, create nothing */
+  if(_w4c.ok && _w4c.list.length && window._gcUnionMerge){
+    try{ var _w4b = JSON.stringify(list); var _w4m = window._gcUnionMerge(K_PROF, JSON.parse(_w4b), JSON.parse(JSON.stringify(_w4c.list)));
+      if(Array.isArray(_w4m) && JSON.stringify(_w4m) !== _w4b){ list = _w4m; _w4changed = true; } }catch(_w4me){}
+  }
+  var _tfIds=false; try{ if(window._gcPayProfileId && window._gcEnsureRecordIds){ var _tfN=list.length; _tfIds=window._gcEnsureRecordIds(list, K_PROF); if(_tfIds && list.length<_tfN) console.log('[GC Payroll] TOMBFIX: '+(_tfN-list.length)+' copies of payroll profiles folded (stable ids)'); } }catch(_tfe){}   /* TOMBFIX */
   var _pdRemoved=0;   /* patch PROFDUP: one profile per person — condition-gated, a no-op once there are no copies */
   try{ var _pd=dedupeProfiles(list); if(_pd.removed){ list=_pd.list; _pdRemoved=_pd.removed;
     try{ if(window._gcTombstoneMany && _pd.deadIds.length) window._gcTombstoneMany(K_PROF, _pd.deadIds); }catch(_te){}
@@ -84982,7 +85706,7 @@ async function profiles(){
   try{ var _fu = JSON.parse(localStorage.getItem('gc_fired_users') || '{}') || {};
     list.forEach(function(p){ if(!p || p.active === false) return; var nm = String(p.name || '').trim().toLowerCase(), em = String(p.email || '').trim().toLowerCase();
       if(_fu[nm] || (em && _fu[em])){ p.active = false; p.firedOff = true; p.updatedAt = new Date().toISOString(); _migChanged = true; } }); }catch(_fe){}
-  if(_migChanged || _pdRemoved){ try{ await put(K_PROF, list); }catch(_pe){} }   /* patch PROFDUP: once */
+  if(_migChanged || _pdRemoved || _tfIds || _w4changed){ try{ await put(K_PROF, list); }catch(_pe){} }   /* patch PROFDUP: once */ /* TOMBFIX: + stable ids */ /* W4SAFE: + the cloud's list */
 
   // migrate the old name-keyed payrollW4 object once
   var old=await get(K_OLDW4);
@@ -84992,8 +85716,10 @@ async function profiles(){
       var o=old[nm]||{}, p=byName[nameKey(nm)];   /* patch PROFDUP: by trimmed lower-case name */
       if(!nameKey(nm)) return;
       if(!p){
+        if(!_w4c.ok) return;   /* W4SAFE: nothing is created before the cloud's list was read */
         var u=users().find(function(x){ return nameKey(x.name)===nameKey(nm); });
         p = u ? seedFromUser(u) : blankProfile({name:nm});
+        p._seed=true; p.updatedAt='';   /* W4SAFE: a seed is never newer than a cloud copy */
         if(!p.userId) p.id=nameId(nm);
         p.name=nm; list.push(p); byName[nameKey(nm)]=p; if(p.userId) byUser[p.userId]=p; changed=true;
       }
@@ -85007,7 +85733,9 @@ async function profiles(){
   users().forEach(function(u){
     if(u.active===false) return;
     var p = (u.id && byUser[u.id]) || byName[nameKey(u.name)];   /* patch PROFDUP: userId, then trimmed lower-case name — never the shared e-mail */
-    if(!p){ p=seedFromUser(u); if(!u.id) p.id=nameId(u.name); list.push(p); if(u.id) byUser[u.id]=p; byName[nameKey(u.name)]=p; changed=true; }
+    if(!p){ if(!_w4c.ok) return;   /* W4SAFE: nothing is created before the cloud's list was read */
+      p=seedFromUser(u); if(!u.id) p.id=nameId(u.name); p._seed=true; p.updatedAt='';   /* W4SAFE: a seed is never newer than a cloud copy */
+      list.push(p); if(u.id) byUser[u.id]=p; byName[nameKey(u.name)]=p; changed=true; }
     else if(!p.userId && u.id){ p.userId=u.id; changed=true; }
   });
   if(changed) await put(K_PROF, list);
@@ -86506,6 +87234,7 @@ window._gcRenderEmployeeProfile = async function(body, S, render){
     p.otherDeductions=readDed(body);
     if(body._gcW4Doc){ var _wd=body._gcW4Doc; p.taxDocs=(p.taxDocs||[]).filter(function(d){ return d.ref!==_wd.ref; }).concat([_wd]); body._gcW4Doc=null; }   /* patch W4UPLOAD */
     p.updatedAt=new Date().toISOString();
+    p.editedAt=p.updatedAt; delete p._seed;   /* W4SAFE: a person's edit -- it decides the W-4 everywhere, even a default value */
     await P.saveProfiles(profs);
     alert('Saved. '+p.name+'’s payroll setup is updated on every device.');
     render();
@@ -94602,14 +95331,22 @@ function subs(){
 }
 
 /* ── PO → project ───────────────────────────────────────────────────────── */
+window._gcProjectsForPO = function(po, projList){   /* INVMATCH: every (not deleted) job carrying this PO */
+  var want=norm(po); if(!want) return [];
+  return (projList||projects()).filter(function(p){ return p && !p.deleted && !p._deleted && (norm(p.autoPO)===want || norm(p.po)===want || norm(p.poNumber)===want || (Array.isArray(p.pos) && p.pos.some(function(x){ return norm(x)===want; }))); });
+};
 window._gcProjectForPO = function(po, projList){
   var want=norm(po);
   if(!want) return null;
   var list=projList||projects();
   var i, p;
+  /* INVMATCH: one PO on two or more jobs (the QuickBooks customer import made some jobs 3 times, each with the same PO) → no job: the
+     first of them is not "the" job — the office picks. window._gcProjectsForPO(po) lists them. */
+  var all=window._gcProjectsForPO(po, list);
+  if(all.length>1) return null;
   // exact PO match first
   for(i=0;i<list.length;i++){
-    p=list[i]; if(!p) continue;
+    p=list[i]; if(!p || p.deleted || p._deleted) continue;
     if(norm(p.autoPO)===want) return p;
   }
   // then any other PO the job carries
@@ -94669,7 +95406,8 @@ window._gcLinkSubInvoices = async function(quiet){
     // a PO but no job — the PO decides
     if(!inv.pid && inv.po){
       var p=window._gcProjectForPO(inv.po, pj);
-      if(p){ inv.pid=p.id; inv.autoLinked=true; report.jobFromPO++; changed=true; }
+      if(p){ inv.pid=p.id; inv.autoLinked=true; inv.autoLinkWhy='PO '+String(inv.po).toUpperCase(); report.jobFromPO++; changed=true; }
+      else if(window._gcProjectsForPO(inv.po, pj).length>1){ (report.ambiguous=report.ambiguous||[]).push(String(inv.po)); }   /* INVMATCH: two jobs carry it — the office picks */
       else if(t==='sub' && report.stuck.indexOf(String(inv.po))<0){ report.stuck.push(String(inv.po)); }
     }
     // a job but no PO — fill it in the other direction
@@ -100597,35 +101335,68 @@ function poNorm(v){
 window._gcEveryJob = function(){ return projects(); };
 
 /* ── the PO, then the words on the invoice ──────────────────────────────── */
+/* INVMATCH: (owner 11/16 — "she had issues Friday entering invoices still and matching jobs. It was not matching or putting jobs in
+   the right spot correctly".) This sweep runs every 60 s over EVERY invoice with no job. It attached each one to the first job whose
+   name, street or CUSTOMER NAME appeared anywhere in its text — plain substrings, the first / longest hit, deleted and lost jobs too.
+   Friday a job the office made for the customer "Office" took two OTHER customers' invoices ("Front office repairs…", "…engineering
+   office…") and a bill for another site; a job for the customer "Enterprise" took a bill for a different Enterprise location; and a
+   customer's invoice always went to that customer's FIRST job when it had several. Now it attaches only what is SURE: the PO / job #
+   carried by exactly one job, else the job's street address (house # + street name, whole words), its full job name or its customer's
+   full name (whole words, two words or more) pointing at exactly ONE live job. A client invoice whose own customer differs from the
+   job's is never put there by a customer name. Two or more jobs fit → nothing is attached: the office picks (📥 Needs a job, 🔗
+   QuickBooks ↔ CRM, the ▥ Invoices job picker). window._gcJobMatchesForInvoice(inv) says what fits and why. */
+var IM_SUFX=/^(st|street|rd|road|dr|drive|ln|lane|cv|cove|ave|av|avenue|blvd|boulevard|ct|court|cir|circle|pl|place|pkwy|parkway|way|trl|trail|loop|pike|hwy|highway|n|s|e|w|ne|nw|se|sw|north|south|east|west)$/;
+var IM_CORP=/\b(llc|inc|co|corp|company|the|ltd|pllc|lp)\b/g;
+function imWords(t){ return ' '+String(t==null?'':t).toLowerCase().replace(/&amp;/g,'&').replace(/[^a-z0-9]+/g,' ').trim()+' '; }
+function imAddrKey(a){   /* "4964 Givens Ave, Memphis" → "4964 givens" (house # + the first street word, suffixes dropped) */
+  var w=imWords(String(a||'').split(',')[0]).trim().split(' ').filter(function(x){ return x && !IM_SUFX.test(x); });
+  if(w.length<2 || !/^\d{1,6}[a-z]?$/.test(w[0]) || w[1].length<3) return '';
+  return w[0]+' '+w[1];
+}
+function imAddrIn(text, key){ if(!key) return false; var t=' '+imWords(text).trim().split(' ').filter(function(x){ return !IM_SUFX.test(x); }).join(' ')+' '; return t.indexOf(' '+key+' ')>=0; }
+function imName(v){ return imWords(String(v||'').toLowerCase().replace(IM_CORP,' ')).trim(); }
+function imPhraseIn(text, phrase){ return !!phrase && imWords(text).indexOf(' '+phrase+' ')>=0; }
+function imLive(p){ return !!p && !p.deleted && !p._deleted && !/^(lost|cancell?ed|dead|declined|rejected|deleted|void)$/i.test(String(p.status||'').trim()); }
+function imPOs(p){ var a=[p.autoPO, p.po, p.poNumber]; if(Array.isArray(p.pos)) a=a.concat(p.pos); return a.map(poNorm).filter(Boolean); }
+window._gcJobsForPO = function(po, projList){
+  var want=poNorm(po); if(!want) return [];
+  return (projList||projects()).filter(function(p){ return p && !p.deleted && !p._deleted && imPOs(p).indexOf(want)>=0; });
+};
+window._gcJobMatchesForInvoice = function(inv, projList){
+  var out={ po:[], text:[] }; if(!inv) return out;
+  var list=projList||projects();
+  if(inv.po) out.po=window._gcJobsForPO(inv.po, list);
+  var text=[inv.desc, inv.fileName, inv.notes, inv.memo, inv.qbMemo, inv.title, inv.address, inv.jobAddress,
+            inv.readText, inv.job, inv.jobName].filter(Boolean).join(' \n ');
+  var invClient=imName(inv.client||inv.customer||'');
+  list.forEach(function(p){
+    if(!imLive(p)) return;
+    var how='', st=0;
+    var ak=imAddrKey(p.address||p.addr||p.jobAddress);
+    if(ak && text && imAddrIn(text, ak)){ how='the address '+String(p.address||'').split(',')[0]; st=3; }
+    var nm=imName(nameOf(p));
+    if(!st && nm.length>=8 && nm.split(' ').length>=2 && imPhraseIn(text, nm)){ how='the job name'; st=2; }
+    var cl=imName(p.client||p.customer||'');
+    if(!st && cl.length>=6 && cl.split(' ').length>=2){
+      if(invClient){ if(invClient===cl){ how='the customer'; st=1; } }
+      else if(imPhraseIn(text, cl)){ how='the customer named in the text'; st=1; }
+    }
+    if(st) out.text.push({ p:p, how:how, strength:st });
+  });
+  out.text.sort(function(a,b){ return b.strength-a.strength; });
+  return out;
+};
+/* the ONE job the invoice is surely for, else null (nothing fits / more than one fits → the office picks) */
 window._gcJobForInvoice = function(inv, projList){
   if(!inv) return null;
-  var list=projList||projects(), i, p;
-
-  // 1. the PO, exactly
-  if(inv.po){
-    var want=poNorm(inv.po);
-    for(i=0;i<list.length;i++){
-      p=list[i]; if(!p) continue;
-      if(poNorm(p.autoPO)===want || poNorm(p.po)===want || poNorm(p.poNumber)===want) return p;
-      if(Array.isArray(p.pos) && p.pos.some(function(x){ return poNorm(x)===want; })) return p;
-    }
-  }
-
-  // 2. what the invoice says — the job name, the site, the customer
-  var text=[inv.desc, inv.fileName, inv.notes, inv.memo, inv.title, inv.address,
-            inv.readText, inv.job, inv.client].filter(Boolean).join(' ').toLowerCase();
-  if(!text) return null;
-  var best=null, bestLen=0;
-  for(i=0;i<list.length;i++){
-    p=list[i]; if(!p) continue;
-    var nm=low(nameOf(p));
-    if(nm.length>=6 && text.indexOf(nm)>=0 && nm.length>bestLen){ best=p; bestLen=nm.length; }
-    var ad=low(String(p.address||p.addr||'').split(',')[0]);
-    if(ad.length>=8 && text.indexOf(ad)>=0 && ad.length>bestLen){ best=p; bestLen=ad.length; }
-    var cl=low(p.client||p.customer||'');
-    if(cl.length>=6 && text.indexOf(cl)>=0 && cl.length>bestLen){ best=p; bestLen=cl.length; }
-  }
-  return best;
+  var m=window._gcJobMatchesForInvoice(inv, projList);
+  if(m.po.length===1) return m.po[0];
+  if(m.po.length>1) return null;                       /* the same PO on two jobs — ask */
+  if(!m.text.length) return null;
+  var top=m.text[0].strength, best=m.text.filter(function(x){ return x.strength===top; });
+  if(best.length!==1) return null;                     /* a customer with several jobs, two jobs at one address — ask */
+  if(top===1 && m.text.length>1) return null;
+  return best[0].p;
 };
 
 /* ── POs with nothing behind them ───────────────────────────────────────── */
@@ -100634,6 +101405,7 @@ window._gcOrphanPOs = function(){
   var out=[];
   invoices().forEach(function(v){
     if(!v || !v.po || v.pid) return;
+    if(window._gcJobsForPO(v.po, list).length) return;   /* INVMATCH: a PO that two jobs carry is not "missing" — it needs a pick */
     if(window._gcJobForInvoice(v, list)) return;
     out.push({ id:v.id, po:v.po, sub:v.sub||'', amt:v.amt||0,
                desc:v.desc||'', when:v.recvDate||v.date||'' });
@@ -100647,10 +101419,12 @@ window._gcAssignByPO = async function(){
   var invs=invoices();
   if(!invs.length) return {changed:0, orphan:[]};
   var next=invs.map(function(v){
-    if(!v || v.pid) return v;
-    var p=window._gcJobForInvoice(v, list);
-    if(p){ changed++; return Object.assign({}, v, {pid:p.id, po:v.po||p.autoPO||'', autoLinked:true}); }
-    if(v.po) orphan.push(v.po);
+    if(!v || v.pid || v.deleted) return v;
+    var m=window._gcJobMatchesForInvoice(v, list), p=window._gcJobForInvoice(v, list);
+    if(p){ changed++;   /* INVMATCH: only a sure job; say why on the record */
+      var why=m.po.length===1 ? 'PO '+String(v.po).toUpperCase() : ((m.text.filter(function(x){ return x.p===p; })[0]||{}).how||'');
+      return Object.assign({}, v, {pid:p.id, po:v.po||p.autoPO||'', autoLinked:true, autoLinkWhy:why}); }
+    if(v.po && !m.po.length) orphan.push(v.po);
     return v;
   });
   if(changed){
@@ -100678,6 +101452,22 @@ function guessJobName(inv){
 window._gcCreateJobForPO = async function(invId, nameOverride){
   var inv=invoices().filter(function(v){ return v && String(v.id)===String(invId); })[0];
   if(!inv) return null;
+  /* INVMATCH: the office / admins get the ➕ New project form (patch NEWPROJ) — company, status, type, "Did you mean …?" — instead of
+     a bare job typed 'Construction' (not a job type: it landed in no list) with no company. The invoice gets the job it picks / makes. */
+  if(!nameOverride && typeof window._gcNewProjectFor==='function' && typeof window._gcNewProjectCan==='function' && window._gcNewProjectCan()){
+    var r0=await window._gcNewProjectFor(inv);
+    if(!r0 || !r0.project) return null;
+    var pj0=r0.project;
+    window.__GC_MANUAL_SAVE__=true;
+    var invs0=invoices().map(function(v){ return (v && String(v.id)===String(invId)) ? Object.assign({}, v, {pid:pj0.id, po:v.po||pj0.autoPO||'', pidManual:true}) : v; });
+    try{ if(window._crm){ if(listOf('invs').length) window._crm.invs=invs0; else window._crm.invoices=invs0; } }catch(e){}
+    try{ if(window._setInvoices) window._setInvoices(invs0); }catch(e){}
+    try{ if(window.idbSet) await window.idbSet(listOf('invs').length?'invs':'invoices', invs0); }catch(e){}
+    try{ if(window._supaUpsert) window._supaUpsert('invs', invs0); }catch(e){}
+    setTimeout(function(){ window.__GC_MANUAL_SAVE__=false; }, 1500);
+    try{ if(window._gcClearApprovalItem) window._gcClearApprovalItem('orphan-po:'+inv.po); }catch(e){}
+    return pj0;
+  }
   var name=String(nameOverride||guessJobName(inv)||('PO '+inv.po)).trim();
   var today=new Date().toISOString().slice(0,10);
   /* patch ACTIVEDATES: the new job is Active — the box first */
@@ -100913,7 +101703,8 @@ function paint(){
         ev.preventDefault(); ev.stopPropagation();
         var invId=this.getAttribute('data-inv');
         var suggested='';
-        try{ suggested=(window.prompt('Name this job','')||'').trim(); }catch(e){}
+        var _npForm=typeof window._gcNewProjectFor==='function' && typeof window._gcNewProjectCan==='function' && window._gcNewProjectCan();   /* INVMATCH: the form asks */
+        if(!_npForm){ try{ suggested=(window.prompt('Name this job','')||'').trim(); }catch(e){} }
         this.textContent='…';
         var p=await window._gcCreateJobForPO(invId, suggested);
         orph.setAttribute('data-sig','');   // force a repaint
@@ -101166,7 +101957,12 @@ window._gcSetEmployeeState = async function(name, stateCode){
     found=true;
     return Object.assign({}, p, {homeState:st, state:st, stateAuto:false, stateSetAt:new Date().toISOString()});
   });
-  if(!found) profs.push({name:name, homeState:st, state:st, stateSetAt:new Date().toISOString()});
+  if(!found){   /* TOMBFIX: the stub is the person's profile (stable id), not an id-less copy the sync re-ids on every merge */
+    var _tfU=users.find(function(u){ return u && low(u.name)===low(name); }), _tfS={name:name, homeState:st, state:st, stateSetAt:new Date().toISOString(), updatedAt:new Date().toISOString()};
+    if(_tfU && _tfU.id) _tfS.userId=_tfU.id;
+    if(window._gcPayProfileId) _tfS.id=window._gcPayProfileId(_tfS);
+    profs.push(_tfS);
+  }
 
   window.__GC_MANUAL_SAVE__=true;
   try{ if(window._crm) window._crm.users=users; }catch(e){}
@@ -103379,7 +104175,12 @@ window._gcSetPayFrequency = async function(name, freq){
       found=true;
       return Object.assign({}, p, {frequency:freq});
     });
-    if(!found) profs.push({name:name, frequency:freq});
+    if(!found){   /* TOMBFIX: a stable id, not an id-less stub */
+      var _tfU=(window._crm&&Array.isArray(window._crm.users)?window._crm.users:[]).find(function(u){ return u && low(u.name)===low(name); }), _tfS={name:name, frequency:freq, updatedAt:new Date().toISOString()};
+      if(_tfU && _tfU.id) _tfS.userId=_tfU.id;
+      if(window._gcPayProfileId) _tfS.id=window._gcPayProfileId(_tfS);
+      profs.push(_tfS);
+    }
     window.__GC_MANUAL_SAVE__=true;
     await put('payrollProfiles', profs);
     setTimeout(function(){ window.__GC_MANUAL_SAVE__=false; }, 1500);
@@ -127074,7 +127875,10 @@ if(window.__GC_SYNC_A__) return; window.__GC_SYNC_A__ = true;
 var ST = window.__GC_NATIVE_SETTIMEOUT__ || setTimeout;
 var RI = window.__GC_NATIVE_SETINTERVAL__ || window.__GC_RAW_SETINTERVAL__ || setInterval;
 var KEY = 'projects';
-var PF = ['status','pct','pm','contract','name','client','address','type','startDate','endDate','completionDate','autoPO'];
+var PF = ['status','pct','pm','contract','name','client','address','type','startDate','endDate','completionDate','autoPO',
+          /* SAVES: the other short fields people edit on a job — the office changes the company on Desk while the phone adds a
+             note: each is the newest PERSON edit of that field, so neither is lost to the other's whole-job copy */
+          'company','notes','customerNotes','clientPhone','clientEmail','phone','email','jobStage','leadSource','apm','estimator'];
 var PFS = {}; PF.forEach(function(f){ PFS[f] = 1; });
 var LSK = 'gc_field_edits';
 
@@ -127177,8 +127981,44 @@ window._gcxFieldMerge = function(key, out, a, b){
   if(String(key) !== KEY && String(key) !== 'projects') return out;
   learnAll(a); learnAll(b);
   var g = guard(out); if(g !== out) stats.merges++;
+  try{ g = subUnion(g, a, b); }catch(e){}   /* SAVES */
   return g;
 };
+/* SAVES: the lists INSIDE a job that the field adds to (environmental logs, equipment placed / picked up, site measurements,
+   visit notes, inspections, incidents, signatures, plan markups, material requests, permits, portal posts, updates). Two
+   devices adding to the same job each sent their whole job: the newer copy won and the other device's entry was gone
+   (measured: an air sample logged on the phone and an equipment pickup on the Desk — one of them lost). Here every entry
+   (by its id) from either copy is kept; the same entry on both sides keeps its newest version. These entries are removed by
+   marking them (deleted / removed / pickedUp / status), never by leaving them out, so nothing comes back that someone removed. */
+var SUBL = ['envLog','equipment','measurements','visitNotes','fieldInspections','incidents','onsiteSignatures','planMarkups','materialRequests','portalPosts','updates'];   /* not permits: those are removed by leaving them out */
+function itemTs(x){ var t = ''; if(x) ['updatedAt','decidedAt','deletedAt','removedAt','pickedUpAt','doneAt','at','createdAt'].forEach(function(k){ var v = x[k] == null ? '' : String(x[k]); if(v > t) t = v; }); return t; }
+function subUnion(list, a, b){
+  if(!Array.isArray(list) || !list.length) return list;
+  var A = {}, B = {};
+  (Array.isArray(a) ? a : []).forEach(function(r){ var id = idOf(r); if(id) A[id] = r; });
+  (Array.isArray(b) ? b : []).forEach(function(r){ var id = idOf(r); if(id) B[id] = r; });
+  var out = null;
+  for(var i = 0; i < list.length; i++){
+    var r = list[i], id = idOf(r); if(!id) continue;
+    var others = [A[id], B[id]].filter(function(x){ return x && x !== r; }); if(!others.length) continue;
+    var o = null;
+    SUBL.forEach(function(f){
+      var mine = r[f]; if(mine != null && !Array.isArray(mine)) return;
+      var have = {}, add = [], repl = {}, ch = false;
+      (mine || []).forEach(function(x, j){ if(x && typeof x === 'object' && x.id != null) have[String(x.id)] = j; });
+      others.forEach(function(oc){ var l = oc[f]; if(!Array.isArray(l)) return; l.forEach(function(x){
+        if(!x || typeof x !== 'object' || x.id == null) return; var k = String(x.id);
+        if(!(k in have)){ if(!add.some(function(y){ return String(y.id) === k; })){ add.push(x); ch = true; } }
+        else { var cur = repl[k] || (mine || [])[have[k]]; if(itemTs(x) > itemTs(cur) && JSON.stringify(x) !== JSON.stringify(cur)){ repl[k] = x; ch = true; } }
+      }); });
+      if(!ch) return;
+      o = o || Object.assign({}, r);
+      o[f] = (mine || []).map(function(x){ return x && x.id != null && repl[String(x.id)] ? repl[String(x.id)] : x; }).concat(add);
+    });
+    if(o){ out = out || list.slice(); out[i] = o; stats.subUnion = (stats.subUnion || 0) + 1; }
+  }
+  return out || list;
+}
 
 /* ── a person's edit: stamped where every edit lands, the disk ─────────────────────────────────────────── */
 var inputs = [], lastManual = 0, lastInput = 0;
@@ -127904,8 +128744,7 @@ function wrapSetView(){
 var lastTop = null;
 function sync(){
   wrapSetView();
-  var t = topLayer(), html = D.documentElement;
-  var l = layers();
+  var l = layers(), t = l.length ? l[l.length - 1] : null, html = D.documentElement;   /* FIELDPERF: one pass (topLayer() measured them all again) */
   l.forEach(function(e){
     if (!e.__gcNavSeen) {
       e.__gcNavSeen = true;
@@ -140099,7 +140938,8 @@ function start(){
   if (!document.body) return later(start, 200);
   ensureCss();
   every(function(){ try { viewTick(); } catch (e) {} }, 1000);
-  every(function(){ try { if (view() === 'leads') mountSettings(); } catch (e) { warn(e); } try { mountDash(); } catch (e) { warn(e); } }, 1500);
+  every(function(){ if (window.__gcFL && window.__gcFL.desk('LA-dash')) return;   /* FIELDPERF: not under GrayCo Field */
+    try { if (view() === 'leads') mountSettings(); } catch (e) { warn(e); } try { mountDash(); } catch (e) { warn(e); } }, 1500);
   every(function(){ try { peekLeads(); track(); } catch (e) {} }, 5000);
   document.addEventListener('visibilitychange', function(){ later(viewTick, 50); });
   document.addEventListener('click', function(){ later(viewTick, 300); later(badge, 900); }, true);
@@ -140221,9 +141061,9 @@ function deskJob(){
 function fieldCards(){
   var items = document.querySelectorAll('#_gcJobPick ._jpItem');
   for(var i = 0; i < items.length; i++){
-    var it = items[i]; if(it.querySelector('._gcMailIco')) continue;
-    var id = it.getAttribute('data-id'), job = projects().filter(function(p){ return p && String(p.id) === String(id); })[0];
-    var to = job && (job.clientEmail || job.customerEmail); if(!to) continue;
+    var it = items[i]; if(it.getAttribute('data-gc-ap3') === (it.getAttribute('data-id') || '') || it.querySelector('._gcMailIco')) continue;   /* FIELDPERF: a row already looked at */
+    var id = it.getAttribute('data-id'), job = window.__gcById ? window.__gcById(projects(), id) : projects().filter(function(p){ return p && String(p.id) === String(id); })[0];   /* FIELDPERF: by id, not a scan per row */
+    var to = job && (job.clientEmail || job.customerEmail); if(!to) { if(job) it.setAttribute('data-gc-ap3', id || ''); continue; }
     if(getComputedStyle(it).position === 'static') it.style.position = 'relative';
     it.appendChild(ico(to, { pid: job.id, customer: job.client, about: 'job' }, 'position:absolute;right:14px;bottom:10px;font-size:20px;line-height:1;padding:6px;border-radius:10px;background:rgba(37,99,235,.18);cursor:pointer'));
   }
@@ -157814,7 +158654,7 @@ function Synced(key, kind){
   L.schedule = function(ms){ if (L.pushT) clearTimeout(L.pushT); L.pushT = later(L.push, ms); };
   L.cloud = function(){
     var c = creds(); if (!c.u || !c.k) return Promise.resolve(null);
-    return window.fetch(c.u + '/rest/v1/gc_kv?key=eq.' + key + '&select=value,updated_at', { headers: hdr(c), cache: 'no-store' }).then(function(r){
+    return Promise.race([window.fetch(c.u + '/rest/v1/gc_kv?key=eq.' + key + '&select=value,updated_at', { headers: hdr(c), cache: 'no-store' }), new Promise(function(_r, rej){ later(function(){ rej(new Error('no answer')); }, 30000); })]).then(function(r){   /* SAVES: no answer = not read */
       if (!r.ok) return null;
       return r.json().then(function(rows){
         if (!Array.isArray(rows)) return null;
@@ -157854,8 +158694,10 @@ function Synced(key, kind){
       if (!cl) throw new Error('could not read the cloud copy');
       L.absorb(cl.v);
       var value = kind === 'obj' ? L.obj : mergeList(cl.v, L.all());
-      return window.fetch(c.u + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: hdr(c, { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }),
-        body: JSON.stringify({ key: key, value: value, updated_at: nowIso() }) }).then(function(r){
+      /* SAVES: a send with no answer (no signal on a job site) kept "pushing" on for good — every later claim / drying reading
+         change waited behind it. It now fails after 45 s and is tried again with the back-off below. */
+      return Promise.race([window.fetch(c.u + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: hdr(c, { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }),
+        body: JSON.stringify({ key: key, value: value, updated_at: nowIso() }) }), new Promise(function(_r, rej){ later(function(){ rej(new Error('no answer')); }, 45000); })]).then(function(r){
         if (!r.ok) throw new Error('HTTP ' + r.status);
         L.fails = 0; L.lastPush = Date.now(); L.err = '';
         if (gen === L.gen) { L.dirty = false; iput('dirty:' + key, false); } else L.schedule(600);
@@ -160612,6 +161454,8 @@ function paintSaved(){
   if (EB.savedAt && EB.savedAt >= EB.draftAt) h = 'Saved ✓ ' + ago(EB.savedAt) + '<small>in the CRM' + (EB.savedName ? ' · ' + esc(EB.savedName) : '') + '</small>';
   else if (EB.draftAt) h = 'Saved ✓ ' + ago(EB.draftAt) + '<small>saving to the CRM…</small>';
   else { h = 'Autosave on<small>every few seconds while you work</small>'; cls = 'wait'; }
+  /* SAVES: "in the CRM" is this computer — when the upload of the estimates failed, say so (it keeps trying) */
+  try { if (typeof W._gcUnsent === 'function' && W._gcUnsent().some(function(x){ return x && /estimates|__est__gc_ests_v2/.test(x.key); })) { h = 'Saved on this computer<small>not sent to the office yet — it keeps trying</small>'; cls = 'wait'; } } catch (e) {}
   if (el.innerHTML !== h) el.innerHTML = h;
   if (el.className !== cls) el.className = cls;   /* patch SWEEP2 */
 }
@@ -160923,8 +161767,9 @@ var SB = (function(){
   }
   function mergeList(x, y){ var by = {}, order = []; arr(x).concat(arr(y)).forEach(function(it){ if (!it || !it.id) return; if (!by[it.id]) { order.push(it.id); by[it.id] = it; } else by[it.id] = mergeRec(by[it.id], it); }); return order.map(function(id){ return by[id]; }); }
   function saveLocal(){ lsSet(LK, map); }
-  function cloudGet(){ var c = creds(); if (!c.k) return Promise.resolve(undefined); return W.fetch(c.u + '/rest/v1/gc_kv?key=eq.' + KEY + '&select=value,updated_at', { headers: { apikey: c.k, Authorization: 'Bearer ' + c.k }, cache: 'no-store' }).then(function(r){ if (!r.ok) throw new Error('read ' + r.status); return r.json(); }).then(function(rows){ var v = rows && rows[0] ? rows[0].value : undefined; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) {} } return { v: v, at: rows && rows[0] ? rows[0].updated_at : '' }; }); }
-  function cloudPut(list){ var c = creds(); if (!c.k) return Promise.resolve(); return W.fetch(c.u + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: { apikey: c.k, Authorization: 'Bearer ' + c.k, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ key: KEY, value: list, updated_at: nowIso() }) }).then(function(r){ if (!r.ok) throw new Error('write ' + r.status); }); }
+  function tmo(p, ms){ return Promise.race([p, new Promise(function(_r, rej){ later(function(){ rej(new Error('no answer')); }, ms); })]); }   /* SAVES: a request with no answer (no signal on site) left "pushing" on for good — no daily log went up again until a reload */
+  function cloudGet(){ var c = creds(); if (!c.k) return Promise.resolve(undefined); return tmo(W.fetch(c.u + '/rest/v1/gc_kv?key=eq.' + KEY + '&select=value,updated_at', { headers: { apikey: c.k, Authorization: 'Bearer ' + c.k }, cache: 'no-store' }), 30000).then(function(r){ if (!r.ok) throw new Error('read ' + r.status); return r.json(); }).then(function(rows){ var v = rows && rows[0] ? rows[0].value : undefined; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) {} } return { v: v, at: rows && rows[0] ? rows[0].updated_at : '' }; }); }
+  function cloudPut(list){ var c = creds(); if (!c.k) return Promise.resolve(); return tmo(W.fetch(c.u + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: { apikey: c.k, Authorization: 'Bearer ' + c.k, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ key: KEY, value: list, updated_at: nowIso() }) }), 45000).then(function(r){ if (!r.ok) throw new Error('write ' + r.status); }); }
   function mergeIn(list){ var ch = false; arr(list).forEach(function(r){ if (!r || !r.id) return; var m = mergeRec(map[r.id], r); if (JSON.stringify(m) !== JSON.stringify(map[r.id])) { map[r.id] = m; ch = true; } }); return ch; }
   function pull(){ lastPull = Date.now(); return cloudGet().then(function(x){ if (!x) return; stampSeen = s(x.at); var ch = mergeIn(x.v); var ahead = Object.keys(map).some(function(id){ var r = arr(x.v).filter(function(y){ return y && y.id === id; })[0]; return !r || JSON.stringify(mergeRec(r, map[id])) !== JSON.stringify(r); }); if (ch) { saveLocal(); draw(true); } if (ahead) { dirty = true; } err = ''; }).catch(function(e){ err = e.message; lastPull = 0; /* FIELDFIX5 */ }); }
   function push(){ if (pushing) return Promise.resolve(); pushing = true; return cloudGet().then(function(x){ if (x) mergeIn(x.v); var list = Object.keys(map).map(function(k){ return map[k]; }); return cloudPut(list); }).then(function(){ dirty = false; saveLocal(); err = ''; }).catch(function(e){ err = e.message; }).then(function(){ pushing = false; }); }
@@ -165223,7 +166068,7 @@ function openEquipment(pid){
       '<label>Swap on<br><input name="swap" type="date"></label><label>Pick up on<br><input name="pickup" type="date"></label><button class="gc-a8-btn pri">Add</button></form>' +
       '<div class="gc-a8-act"><button type="button" data-eqa="close">Close</button></div>';
   }
-  function upd(id, f){ return save(pid, function(q){ q.equipment = arr(q.equipment).map(function(x){ return x && x.id === id ? f(Object.assign({}, x)) : x; }); q.equipmentCost = r2(eqOf(q).reduce(function(t, x){ return t + eqCost(x); }, 0)); }).then(function(){ paint(); }); }
+  function upd(id, f){ return save(pid, function(q){ q.equipment = arr(q.equipment).map(function(x){ return x && x.id === id ? f(Object.assign({}, x, { updatedAt: nowIso() })) : x; });   /* SAVES: the entry's own stamp (pickup / swap / remove) so the newest wins when two devices meet */ q.equipmentCost = r2(eqOf(q).reduce(function(t, x){ return t + eqCost(x); }, 0)); }).then(function(){ paint(); }); }
   O.sh.addEventListener('submit', function(e){
     e.preventDefault(); var f = e.target, v = {}; Array.prototype.forEach.call(f.elements, function(el){ if (el.name) v[el.name] = s(el.value); });
     if (!v.vendor) return;
@@ -166119,7 +166964,12 @@ W._gcA8 = {
   payApp: { calc: calcApp, sov: sovOf, open: openPayApps, held: retainageHeld, billRetainage: billRetainage, sweep: retainageSweep },
   wt: { open: openWalkthrough, pull: pullWt, apply: applyWt, signed: wtSigned, set: function(l){ WT.resps = arr(l); WT.made = {}; applyWt(); } },
   crew: crew, askCrew: askCrew, safety: openSafety, safetyPdf: safetyPdf, topicToday: topicToday, equipment: openEquipment, eqCost: eqCost, eqSweep: equipmentSweep,
-  tv: tv, tvNumbers: tvNumbers, gc: { rows: gcRows, answers: answers, pull: pullResults, set: function(l){ BR.list = arr(l); BR.at = Date.now(); mountGc(); }, mark: markAnswer },
+  tv: tv, tvNumbers: (function(){ var M = null; return function(sc){   /* FIELDPERF */
+    if (sc) return tvNumbers(sc);
+    var c = crm(), k = [c.projects, c.leads, c.invoices, c.invs, W._gcLeadsState], n = Date.now(), d = today();
+    if (!(M && n - M.at < 15000 && n >= M.at && M.d === d && k.every(function(x, i){ return x === M.k[i]; }))) M = { k: k, at: n, d: d, v: tvNumbers() };
+    var v = Object.assign({}, M.v); try { v.appr = typeof W._gcApprovalCount === 'function' ? num(W._gcApprovalCount()) : 0; } catch (e) {} return v;
+  }; })(), gc: { rows: gcRows, answers: answers, pull: pullResults, set: function(l){ BR.list = arr(l); BR.at = Date.now(); mountGc(); }, mark: markAnswer },
   hire: { run: hireRun, profile: hireProfile }, superBtns: superBtns, safetyCard: safetyCard, paint: paintBars,
   state: function(){ return { log: LOG.slice(-40), results: BR.list.length, wtResps: WT.resps.length, topics: topics().length }; }
 };
@@ -192101,7 +192951,7 @@ function open(id){
 /* ── JOB-COST APPROVAL ROUTING: PM → office after 24 h (or no PM) (an admin only as the job's PM); before that the office may take them from "👷 PM approvals" (patch APOFFICE2) ── */
 function since(v){ var n = +v; if (n) return n; var t = Date.parse(v || ''); return isNaN(t) ? 0 : t; }
 function lsList(k){ return arr(lsGet(k)); }
-function subCostExp(id){ var e = arr(crm().expenses).filter(function(x){ return s(x.id) === s(id); })[0]; return !!(e && (e._fromSub === true || e.subInvId)); }
+function subCostExp(id){ var e = W.__gcById && Array.isArray(crm().expenses) ? W.__gcById(crm().expenses, id) : arr(crm().expenses).filter(function(x){ return s(x.id) === s(id); })[0];   /* FIELDPERF: by id */ return !!(e && (e._fromSub === true || e.subInvId)); }
 function routeGroups(g){
   var mn = low(myName()), off = isOffice(), now = Date.now();
   g.subinv = lsList('gc_sub_approvals').filter(function(a){
@@ -199561,13 +200411,19 @@ function mine(p){
   if (k === 'clean') { try { if (W._gcMitWS && W._gcMitWS.fieldJobs) return W._gcMitWS.fieldJobs('clean').some(function(x){ return x && x.id === p.id; }); } catch (e) {} return [p.cleanTech, p.finalCleanBy].some(function(x){ return low(x) === n; }); }
   return [p.pm, p.apm, p.assistantPm].some(function(x){ return low(x) === n; });
 }
+var _fpST = { L: null, t: '', m: null };   /* FIELDPERF */
 function schedToday(p){
-  var t = today();
-  return arr(window._gcSchedVisible(C().schedule)).filter(function(x){
-    if (!x || x.deleted || s(x.pid || x.projectId || x.jobId) !== s(p.id)) return false;
-    var d = s(x.date), a = s(x.start || x.startDate) || d, b = s(x.end || x.endDate) || a;
-    return d ? d === t : (a && a <= t && t <= b);
-  });
+  var t = today(), L = arr(window._gcSchedVisible(C().schedule));
+  if (_fpST.L !== L || _fpST.t !== t || !_fpST.m) {   /* FIELDPERF: job → today's rows, once per schedule list and day */
+    var m = {}; L.forEach(function(x){
+      if (!x || x.deleted) return;
+      var d = s(x.date), a = s(x.start || x.startDate) || d, b = s(x.end || x.endDate) || a;
+      if (!(d ? d === t : (a && a <= t && t <= b))) return;
+      var k = s(x.pid || x.projectId || x.jobId); (m[k] || (m[k] = [])).push(x);
+    });
+    _fpST = { L: L, t: t, m: m };
+  }
+  return (_fpST.m[s(p.id)] || []).slice();
 }
 function myJobs(){
   var k = rk(), all = arr(C().projects).filter(active);
@@ -199667,7 +200523,9 @@ function hookApprovals(){
 
 /* ── the sync pill: only this app's own saves (projects, the Site Book, office to-dos) ── */
 function syncState(){
-  var waiting = 0; try { waiting = W._gcSyncQ ? arr(W._gcSyncQ.waiting()).filter(function(x){ return x && /^(projects|gc_sitebook|gc_office_tasks)$/.test(x.key); }).length : 0; } catch (e) {}
+  var waiting = 0; try { waiting = W._gcSyncQ ? arr(W._gcSyncQ.waiting()).filter(function(x){ return x && /^(projects|gc_sitebook|gc_office_tasks|gc_job_messages|gc_timeclock_.*|leads|customers|schedule|invs|expenses|estimates|projectDocs)$/.test(x.key); }).length : 0; } catch (e) {}
+  try { if (typeof W._gcUnsent === 'function') waiting += arr(W._gcUnsent()).length; } catch (e) {}   /* SAVES: an upload that failed is not "All sent" */
+  try { var cs = W._gcClaims && W._gcClaims.status && W._gcClaims.status(); if (cs && cs.dirty && cs.dirty.claims) waiting++; } catch (e) {}   /* SAVES: a drying reading not sent yet */
   var sbDirty = false; try { sbDirty = !!(W._gcRP && W._gcRP.site && W._gcRP.site().state().dirty); } catch (e) {}
   if (!navigator.onLine) return { k: 'off', t: '📴 Saved on phone, will send' };
   if (waiting || sbDirty) return { k: 'wait', t: '⏳ Saved on phone, sending…' };
@@ -200229,6 +201087,7 @@ function runTile(k){
 }
 function render(force){
   var el = D.getElementById('_gcJobPick'); if (!el || !el.classList.contains('gc-fh')) return;
+  if (el.firstChild && W.__gcFpTouch && Date.now() - W.__gcFpTouch() < 800) { render.__fpF = render.__fpF || !!force; if (!render.__fpQ) render.__fpQ = later(function(){ var f = render.__fpF; render.__fpQ = 0; render.__fpF = false; if (f) lastSig = ''; render(f); }, 850); return; }   /* FIELDPERF: not under the finger */
   loadPlanDocs();
   var m = model(); progressLines(m);
   var sig = sigOf(m); if (!force && sig === lastSig) { paintSync(); paintTabs(m.n); return; }
@@ -200269,7 +201128,10 @@ function render(force){
     }
   });
   h += '</div>';
-  el.innerHTML = h; paintSync(); paintTabs(m.n);
+  var _fpTop = el.querySelector('.fh-wrap > .gc-ra-top'), _fpBot = el.querySelector('.fh-wrap > .gc-ra-bot'), _fpSt = el.scrollTop;   /* FIELDPERF */
+  el.innerHTML = h;
+  try { var _fpW = el.querySelector('.fh-wrap'); if (_fpW) { if (_fpTop) { _fpW.insertBefore(_fpTop, _fpW.firstChild); var _fpTl = _fpW.querySelector('.fh-tiles'); if (_fpTl && !_fpTl.children.length) _fpTl.style.display = 'none'; } if (_fpBot) _fpW.appendChild(_fpBot); } if (_fpSt) el.scrollTop = _fpSt; } catch (e) {}   /* FIELDPERF: no flash, no jump */
+  paintSync(); paintTabs(m.n);
 }
 var orig = null;
 function openHome(){
@@ -208643,7 +209505,7 @@ function rk(){ try { return s(F().state().rk); } catch (e) { return ''; } }
 var APPOF = { admin: 'admin', pm: 'pm', roof: 'pm', est: 'est', ins: 'ins', mit: 'mit', super: 'crew', office: 'office', env: 'env', dual: 'dual', clean: 'clean' };   /* patch CERTROLE: dual, clean */   /* patch MITWS: mitigation / environmental have their own app */
 var APPNAME = { admin: 'Admin', pm: 'Project Manager', est: 'Estimator', ins: 'Insurance & Mitigation', crew: 'Crew', office: 'Office', mit: 'Mitigation', env: 'Environmental', dual: 'Mitigation + Environmental', clean: 'Contents & Cleaning' };
 function app(){ if (off() || !ready()) return ''; return APPOF[rk()] || ''; }
-function mode(a){ a = a === undefined ? app() : a; if (!a) return ''; if (a === 'crew') return 'field'; try { var vp = W._gcView ? W._gcView.pref() : ''; if (vp) return vp; } catch (e) {} /* patch FIELDDESK */ return phone() ? 'field' : 'desk'; }
+function mode(a){ a = a === undefined ? app() : a; if (!a) return ''; if (a === 'crew' && (phone() || vas())) return 'field';   /* DEVMODE: a crew member on a computer gets the Desk (owner 11/16); 👁 View as a crew member still previews Field */ try { var vp = W._gcView ? W._gcView.pref() : ''; if (vp) return vp; } catch (e) {} /* patch FIELDDESK */ return phone() ? 'field' : 'desk'; }
 function myName(){ try { return s(F().state().me); } catch (e) { return ''; } }
 function vas(){ try { return W._gcVAS && W._gcVAS.active() ? s(W._gcVAS.label()) : ''; } catch (e) { return ''; } }
 function viewOk(v){ try { return typeof W._gcViewAllowed !== 'function' || !!W._gcViewAllowed(v); } catch (e) { return true; } }
@@ -208655,7 +209517,7 @@ function allMine(){ var l = []; try { l = typeof W._gcFPJobs === 'function' ? ar
 function proj(pid){ var x = arr(C().projects).filter(function(p){ return p && s(p.id) === s(pid); })[0]; if (x) return x; return allMine().filter(function(p){ return p && s(p.id) === s(pid); })[0] || null; }
 /* the role's jobs: PM / crew — GrayCo Field's own list (today's, else their active ones); everyone else — every job they may open */
 function jobsOf(a){
-  var J = null; try { J = F() && F().jobs ? F().jobs() : null; } catch (e) {}
+  var J = null; if (a === 'pm' || a === 'crew') try { J = F() && F().jobs ? F().jobs() : null; } catch (e) {}   /* FIELDPERF: only where it is used */
   if ((a === 'mit' || a === 'env' || a === 'dual' || a === 'clean') && W._gcMitWS && W._gcMitWS.fieldJobs) { try { return { today: false, list: fpSort(arr(W._gcMitWS.fieldJobs(a))) }; } catch (e) { warn(e); } }   /* patch MITWS: that company's jobs */
   if ((a === 'pm' || a === 'crew') && J) return { today: !!J.today, list: fpSort(coJobs(arr(J.list))) };
   return { today: false, list: fpSort(coJobs(allMine().filter(activeJob))) };
@@ -208974,15 +209836,18 @@ function fieldTop(a){
   if (a === 'office') { var N = needs(); if (N.length) h += '<div class="fh-sec"><span>🧾 Invoices to match (' + N.length + ')</span><button type="button" data-ra-a="match">Open ›</button></div>'; }
   return h;
 }
-function fieldBottom(a){
+var _fpFB = { a: '', P: null, at: 0, h: '' };   /* FIELDPERF */
+function fieldBottom(a){ var P0 = C().projects, n0 = Date.now(); if (_fpFB.h && _fpFB.a === a && _fpFB.P === P0 && n0 - _fpFB.at < 3000 && n0 >= _fpFB.at) return _fpFB.h; var h0 = fieldBottom0(a); if (h0) _fpFB = { a: a, P: P0, at: n0, h: h0 }; return h0; }   /* FIELDPERF: the same jobs → the same rows for 3 s */
+function fieldBottom0(a){
   if (a !== 'admin') return '';
   /* Admin: every job, each with 👤 Customer portal · 🔧 Sub portal · 📸 Photos · 💬 Message (patch FIELDPORTAL's row) */
   var L = jobsOf('admin').list, CAP = 30;
+  if (!L.length && !arr(C().projects).length && LASTBOT) return LASTBOT;   /* FIELDPERF: the jobs are not there for a moment (a reload): keep the list shown */
   return '<div class="fh-sec"><span>All jobs (' + L.length + ')</span><button type="button" data-fa="alljobs">Find a job ›</button></div>' +
     (L.length ? L.slice(0, CAP).map(function(p){ var r = ''; try { r = FP() && FP().row ? FP().row(p) : ''; } catch (e) {} return '<div class="fh-job" data-job="' + esc(p.id) + '"><button type="button" class="fh-n" data-fa="open" data-pid="' + esc(p.id) + '">' + esc(p.name) + '</button><div class="fh-a">' + esc([p.address, p.client, p.status].filter(Boolean).join(' · ')) + '</div>' + r + '</div>'; }).join('') +
       (L.length > CAP ? '<button type="button" class="gc-ra-allbtn" data-fa="alljobs">All ' + L.length + ' jobs ›</button>' : '') : '<div class="fh-empty">No open jobs.</div>');
 }
-var homeObs = null, homeEl = null, injecting = false;
+var homeObs = null, homeEl = null, injecting = false, LASTBOT = '';   /* FIELDPERF */
 function fieldInject(){
   var el = D.querySelector('#_gcJobPick.gc-fh'); if (!el) return;
   if (el !== homeEl) { homeEl = el; try { if (homeObs) homeObs.disconnect(); homeObs = new MutationObserver(function(){ if (!injecting) fieldInject(); }); homeObs.observe(el, { childList: true }); } catch (e) {} }
@@ -208999,7 +209864,7 @@ function fieldInject(){
     if (!top) { top = D.createElement('div'); top.className = 'gc-ra-top'; wrap.insertBefore(top, wrap.firstChild); }
     if (top.__h !== th) { top.innerHTML = th; top.__h = th; }
     var tiles = wrap.querySelector('.fh-tiles'); if (tiles && !tiles.children.length && tiles.style.display !== 'none') tiles.style.display = 'none';
-    if (bh) { if (!bot) { bot = D.createElement('div'); bot.className = 'gc-ra-bot'; wrap.appendChild(bot); } if (bot.__h !== bh) { bot.innerHTML = bh; bot.__h = bh; } }
+    if (bh) { LASTBOT = bh; if (!bot) { bot = D.createElement('div'); bot.className = 'gc-ra-bot'; wrap.appendChild(bot); } if (bot.__h !== bh) { bot.innerHTML = bh; bot.__h = bh; } }   /* FIELDPERF: LASTBOT */
     else if (bot) bot.remove();
   } finally { injecting = false; }
 }
@@ -209036,7 +209901,7 @@ function wrapPicker(){
 }
 var crewOpened = false, crewSetField = false;
 function crewDesk(a){
-  var want = a === 'crew' && !phone();
+  var want = a === 'crew' && !phone() && !!vas();   /* DEVMODE: only 👁 View as… puts a computer in the crew's Field */
   if (D.documentElement.classList.contains('gc-ra-field') !== want) D.documentElement.classList.toggle('gc-ra-field', want);
   if (!want) {
     crewOpened = false;
@@ -209366,6 +210231,39 @@ W._gcRA = {
   run: run, open: deskOpen, hide: deskHide, sync: sync, more: moreSheet, label: function(id){ return A[id] ? label(id) : ''; }
 };
 try { console.log('[GC] 📱🖥 Role apps: each role opens on its own home — Field on a phone, Desk on a computer (patch ROLEAPPS) — _gcRA.state()'); } catch (e) {}
+})();
+</script>
+<script id="gc-patch-devmode">
+/* __GC_PATCH_DEVMODE__ — DEVMODE: a sign-in opens the device's own view.   (patch DEVMODE)
+   Owner 11/16: "Don't ask for field or desk when sign in — just do it by computer or iPhone/Android etc; iPad opens Field."
+   A Desk / Field switch lasts for that open only (patch FIELDDESK keeps it in memory). Signing out and in again in the
+   same page (no reload) used to keep that switch: the next sign-in now opens the device's own view — the Desk on a
+   computer, GrayCo Field on a phone or a tablet. (The first DEVMODE's "Ask me Field or Desk" setting is gone.)
+   API: window._gcDevMode = { state() } */
+(function(){
+'use strict';
+var W = window, D = document;
+if (W.__GC_PATCH_DEVMODE__) return; W.__GC_PATCH_DEVMODE__ = true;
+var DV = W._gcDevice; if (!DV) return;   /* the early script is off on this device */
+var RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+function warn(e){ try { console.warn('[GC DEVMODE]', e && e.message || e); } catch (x) {} }
+function vas(){ try { return !!(W._gcVAS && W._gcVAS.active && W._gcVAS.active()); } catch (e) { return false; } }
+function gateUp(){ var g = D.getElementById('gc-auth-email'); return !!(g && g.getClientRects().length); }
+var wasOut = false, resets = 0;
+function tick(){
+  try {
+    if (!DV.signedEmail()) { wasOut = true; return; }
+    if (!wasOut || gateUp() || !W._crm || vas()) return;
+    wasOut = false;
+    var v = DV.fieldDevice() ? 'field' : 'desk', inF = D.documentElement.classList.contains('_fieldmode');
+    if (typeof W._gcChooseView === 'function' && (v === 'field') !== inF) W._gcChooseView(v);
+    if (W._gcView && W._gcView.set) W._gcView.set('');
+    resets++;
+  } catch (e) { warn(e); }
+}
+RI.call(W, function(){ if (!D.hidden) tick(); }, 1000);
+W._gcDevMode = { state: function(){ return { device: DV.state(), resets: resets }; } };
+try { console.log('[GC] 🖥📱 DEVMODE: ' + DV.kind() + ' (' + DV.why() + ') → ' + (DV.fieldDevice() ? 'GrayCo Field' : 'the Desk') + ' — _gcDevice.state()'); } catch (e) {}
 })();
 </script>
 <script id="gc-patch-tvfix-pre">
@@ -213875,7 +214773,7 @@ function all(force){
   CACHE.res = res; CACHE.sig = sg; CACHE.at = Date.now(); CACHE.projects = d.projects;
   return res;
 }
-function proj(pid){ return arr(C().projects).filter(function(p){ return s(p.id) === s(pid); })[0] || null; }
+function proj(pid){ if (W.__gcById && Array.isArray(C().projects)) return W.__gcById(C().projects, pid);   /* FIELDPERF: by id (was a copy + scan of every job per job) */ return arr(C().projects).filter(function(p){ return s(p.id) === s(pid); })[0] || null; }
 function checkOne(pid){ var p = proj(pid); if (!p) return null; all(); try { return J.check(p, CACHE.ix || J.index(dataNow(), {})); } catch (e) { warn(e); return null; } }
 function itemOf(key){ return J.BY_KEY[key] || J.LEAD_ITEMS.filter(function(x){ return x.key === key; })[0] || null; }
 
@@ -218339,7 +219237,7 @@ W._gcCanCreateProject = function(){
 };
 W._gcNewJobOpt = function(){ try { return W._gcCanCreateProject() ? '<option value="__newjob">＋ New job…</option>' : ''; } catch (e) { return ''; } };
 
-var TYPES = { Residential: 'Residential Reno', Commercial: 'Commercial Reno', Insurance: 'Insurance' };
+var TYPES = { Residential: 'Residential Reno', Commercial: 'Commercial Reno', Insurance: 'Insurance Claim' };   /* INVMATCH: the CRM's type is 'Insurance Claim' ('Insurance' fell in no type list) */
 /* the customers (Customers list first, then the jobs' customers not on it) */
 function customers(){
   var seen = {}, out = [];
@@ -228579,6 +229477,7 @@ async function applyRaise(o){
   pr[field] = to;
   pr.rateHistory.push({ id: 'RH' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), field: field, from: from, to: to, change: amt, effective: s(o.effective).slice(0, 10), at: at, by: s(o.by), why: 'Certification raise — ' + s(o.cert), source: 'certplan', doneId: s(o.doneId) });
   pr.updatedAt = at;
+  pr.editedAt = at; delete pr._seed;   /* W4SAFE: a person's raise */
   await P.saveProfiles(profs);
   return { ok: true, field: field, from: from, to: to };
 }
@@ -232217,7 +233116,8 @@ function openCheck(){
       if (e.target.hasAttribute('data-inc')) { it.include = !!e.target.checked; paint(); return; }
       var v = s(e.target.value);
       if (v === NEWP && typeof W._gcNewProjectFor === 'function') {
-        var x = it.x; try { W._gcNewProjectFor({ client: x.client || x.qbCust || '', name: s(x.qbCust).split(':').pop() || descTail(x), address: '', amount: x.amt, amt: x.amt, invNum: it.q.num, date: x.date, source: 'QuickBooks ↔ CRM' }, function(p){ if (!p || !p.id) return; JL.at = 0; jobDatalist(card); it.pid = s(p.id); it.picked = true; it.include = true; it.changed = true; paint(); }); } catch (er) {}
+        /* INVMATCH: the form gets the whole record (its id, kind, vendor, memo, PO), so "Did you mean …?" can find the job by the memo's address / PO */
+        var x = it.x; try { W._gcNewProjectFor({ id: s(x.id), kind: isClientRec(x) ? 'client' : 'sub', client: x.client || (s(x.qbCust).indexOf(':') > 0 ? s(x.qbCust).split(':')[0] : x.qbCust) || '', vendor: isClientRec(x) ? '' : s(x.sub || x.vendor), memo: s(x.qbMemo) || descTail(x), po: s(x.po), name: s(x.qbCust).indexOf(':') > 0 ? s(x.qbCust).split(':').pop() : '', address: s(x.address || x.jobAddress), amount: x.amt, amt: x.amt, invNum: it.q.num, date: x.date || x.recvDate, status: s(x.status), source: 'QuickBooks ↔ CRM' }, function(p){ if (!p || !p.id) return; JL.at = 0; jobDatalist(card); it.pid = s(p.id); it.picked = true; it.include = true; it.changed = true; paint(); }); } catch (er) {}
         return;
       }
       var pid = jobList().byLabel[v];
@@ -232739,17 +233639,34 @@ function nameKey(n){ return low(n).replace(/&/g, ' and ').replace(/\b(llc|inc|co
 function toks(n){ return nameKey(n).split(' ').filter(function(w){ return w.length >= 3 && !/^(job|project|and|for|reno|remodel|repair)$/.test(w); }); }
 function close(a, b){ var A = toks(a), B = toks(b); if (!A.length || !B.length) return false; var na = nameKey(a), nb = nameKey(b); if (na.length >= 5 && nb.length >= 5 && (na.indexOf(nb) > -1 || nb.indexOf(na) > -1)) return true;
   var hit = A.filter(function(w){ return B.indexOf(w) > -1; }).length; return hit / Math.min(A.length, B.length) >= 0.6 && (hit >= 2 || (A.length === 1 && B.length === 1 && hit === 1)); }   /* one shared word of several is not enough */
-function matches(f){
+/* INVMATCH: Friday's "new" jobs already existed — "4964 Given Ave" for the job at 4964 GivenS Ave, "8901 Clair Doowie Cv" for 8901 Clair
+   DOUWIE Cove — and the form only knew what she typed (opened from 🔗 QuickBooks ↔ CRM it got no memo, no vendor, no PO). Now a typo in the
+   street (same house #, a street name 1-2 letters off) is a "similar address", and the invoice's own memo / description is searched too:
+   a street address written in it ("address job. 6382 Stage rd …"), the PO, the job name. */
+function lev(a, b){ if (a === b) return 0; var m = a.length, n = b.length; if (Math.abs(m - n) > 2) return 9; var d = []; for (var i = 0; i <= m; i++) d[i] = [i]; for (var j = 0; j <= n; j++) d[0][j] = j;
+  for (i = 1; i <= m; i++) for (j = 1; j <= n; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); return d[m][n]; }
+function street(k){ var w = s(k).split(' ').filter(function(x){ return x && !/^(st|rd|ave|dr|ln|ct|blvd|hwy|pl|cir|pkwy|cv|ter|trl|way|loop|pike|n|s|e|w)$/.test(x); }); return /^\d+[a-z]?$/.test(w[0] || '') && w[1] ? { n: w[0].replace(/[a-z]$/, ''), w: w[1] } : null; }
+function addrNear(a, b){ var A = street(a), B = street(b); if (!A || !B || A.n !== B.n) return false; if (A.w === B.w) return true; var L = Math.min(A.w.length, B.w.length); if (L < 4) return false;
+  return lev(A.w, B.w) <= (L >= 6 ? 2 : 1) || A.w.indexOf(B.w) === 0 || B.w.indexOf(A.w) === 0; }
+function memoAddrs(t){ var out = [], re = /\b(\d{2,6}[a-z]?)\s+([a-z][a-z.'-]{2,}(?:\s+[a-z][a-z.'-]{1,}){0,3})/ig, m; t = s(t); while ((m = re.exec(t)) && out.length < 6) out.push(addrKey(m[1] + ' ' + m[2])); return out.filter(Boolean); }
+function liveP(p){ return !p.deleted && !p._deleted && !/^(deleted|void)$/i.test(s(p.status)); }
+function matches(f, ctx){
   var out = [], ak = addrKey(f.address), ck = nameKey(f.customer), po = s(f.po).toUpperCase();
+  ctx = ctx || {}; var memo = [ctx.memo, ctx.jobName, ctx.address].filter(Boolean).join(' \n '), mAddrs = memoAddrs(memo), memoN = ' ' + nameKey(memo) + ' ';
+  var mPOs = (s(memo).toUpperCase().match(/\b[A-Z]\d{3}\b/g) || []);
   projects().forEach(function(p){
+    if (!liveP(p)) return;
     var why = [], sc = 0;
     if (po && (s(p.autoPO).toUpperCase() === po || s(p.po).toUpperCase() === po)) { why.push('same PO ' + po); sc += 100; }
+    else if (p.autoPO && mPOs.indexOf(s(p.autoPO).toUpperCase()) > -1) { why.push('its PO ' + s(p.autoPO).toUpperCase() + ' is in the memo'); sc += 90; }
     var pa = addrKey(p.address || p.jobAddress);
-    if (ak && pa) { if (pa === ak) { why.push('same address'); sc += 60; } else if (pa.split(' ')[0] === ak.split(' ')[0] && pa.split(' ')[1] === ak.split(' ')[1]) { why.push('similar address'); sc += 35; } }
+    if (ak && pa) { if (pa === ak) { why.push('same address'); sc += 60; } else if ((pa.split(' ')[0] === ak.split(' ')[0] && pa.split(' ')[1] === ak.split(' ')[1]) || addrNear(pa, ak)) { why.push('similar address'); sc += 45; } }
+    if (pa && !(ak && (pa === ak || addrNear(pa, ak))) && mAddrs.some(function(x){ return x === pa || addrNear(x, pa); })) { why.push('its address is in the memo'); sc += 55; }
+    var pnk = nameKey(p.name); if (pnk.length >= 8 && pnk.split(' ').length >= 2 && memoN.indexOf(' ' + pnk + ' ') > -1) { why.push('its name is in the memo'); sc += 40; }
     var pc = nameKey(p.client || p.customer);
     if (ck && pc && (pc === ck || (ck.length >= 6 && close(pc, ck)))) { why.push('same customer'); sc += 30; }
     if (f.name && close(p.name, f.name)) { why.push('similar name'); sc += 25; }
-    if (sc) out.push({ p: p, why: why.join(' · '), sc: sc });
+    if (sc) out.push({ p: p, why: why.join(' · '), sc: sc - (/^(lost|cancell?ed|dead|declined)$/i.test(s(p.status)) ? 5 : 0) + (/^(active|completed?|on_hold)$/i.test(s(p.status)) ? 2 : 0) });   /* INVMATCH: real jobs before bids, lost ones last */
   });
   return out.sort(function(a, b){ return b.sc - a.sc; }).slice(0, 6);
 }
@@ -232785,6 +233702,16 @@ function autoPO(want){
 
 /* ── the form ── */
 var KIND_L = { client: 'Customer invoice', sub: 'Sub invoice', expense: 'Expense / receipt', supplier: 'Supplier bill', qb: 'QuickBooks record', doc: 'Document' };
+/* INVMATCH: the CRM's job types (the same list as the job editor), the default from the company and the customer: a Mitigation job is
+   'Mitigation', an Environmental one 'Environmental', a business customer (LLC, Inc, a city, a bank, a church…) 'Commercial Reno'. */
+var JOB_TYPES = [['Residential Reno', 'Residential'], ['Commercial Reno', 'Commercial'], ['Commercial TI', 'Commercial TI'], ['New Construction', 'New Construction'], ['Roofing', 'Roofing'],
+  ['Insurance Claim', 'Insurance claim'], ['Water Damage', 'Water damage'], ['Fire Damage', 'Fire damage'], ['Mitigation', 'Mitigation'], ['Environmental', 'Environmental'], ['Program Work', 'Program work'], ['Other', 'Other']];
+function typeFor(co, cust, o){
+  if (co === 'mitigation') return 'Mitigation';
+  if (co === 'environmental') return 'Environmental';
+  if (/\b(llc|inc|corp|company|co\.|ltd|city of|county|bank|church|school|schools|holdings|management|construction|group|hospital|clinic|medical|apartments|properties|services|enterprise|university)\b/i.test(s(cust))) return 'Commercial Reno';
+  return 'Residential Reno';
+}
 function form(o){
   return new Promise(function(res){
     var old = D.getElementById('gc-np-ov'); if (old) old.remove();
@@ -232792,6 +233719,7 @@ function form(o){
     var cust = o.customer || (cj && cj.customer) || '';
     var name = o.jobName || (cj && cj.job) || cleanMemo(o.memo) || (cust && o.address ? cust + ' — ' + s(o.address).split(',')[0] : '') || '';
     var status = isHistory(o) ? 'completed' : 'active', co = defaultCo(o), contract = o.kind === 'client' && o.amount ? String(o.amount) : '';
+    var type0 = typeFor(co, cust, o);
     var ov = D.createElement('div'); ov.id = 'gc-np-ov'; ov.setAttribute('data-gc-keep', '1'); ov.setAttribute('data-gc-linked', '1'); ov.setAttribute('data-gcnp-skip', '1');
     ov.style.cssText = 'position:fixed;inset:0;z-index:2147483600;background:rgba(15,23,42,.55);display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow:auto;font-family:Inter,-apple-system,Segoe UI,Arial,sans-serif';
     var I = 'display:block;width:100%;box-sizing:border-box;padding:8px 9px;margin-top:3px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px;background:#fff;color:#0f172a;font-family:inherit',
@@ -232808,7 +233736,7 @@ function form(o){
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 10px">' +
         '<label style="' + L + '">Company<select data-np="co" style="' + I + '">' + companies().map(function(c){ return '<option value="' + esc(c.id) + '"' + (c.id === co ? ' selected' : '') + '>' + esc(c.l) + '</option>'; }).join('') + '</select></label>' +
         '<label style="' + L + '">Status<select data-np="status" style="' + I + '"><option value="completed"' + (status === 'completed' ? ' selected' : '') + '>Completed (past job)</option><option value="active"' + (status === 'active' ? ' selected' : '') + '>Active</option></select></label>' +
-        '<label style="' + L + '">Type<select data-np="type" style="' + I + '"><option value="Residential Reno">Residential</option><option value="Commercial Reno">Commercial</option><option value="Insurance">Insurance</option></select></label>' +
+        '<label style="' + L + '">Type<select data-np="type" style="' + I + '">' + JOB_TYPES.map(function(t){ return '<option value="' + esc(t[0]) + '"' + (t[0] === type0 ? ' selected' : '') + '>' + esc(t[1]) + '</option>'; }).join('') + '</select></label>' +   /* INVMATCH: the CRM's own job types ("Insurance" was not one — the job fell in no type list) */
         '<label style="' + L + '">PM <span style="font-weight:400;color:#64748b">(optional)</span><select data-np="pm" style="' + I + '"><option value="">— none —</option>' + pms().map(function(n){ return '<option>' + esc(n) + '</option>'; }).join('') + '</select></label>' +
         '<label style="' + L + '">Contract $ <span style="font-weight:400;color:#64748b">(optional)</span><input data-np="contract" type="number" step="0.01" min="0" style="' + I + '" value="' + esc(contract) + '"></label>' +
         (o.po ? '<label style="' + L + '">PO #<input data-np="po" style="' + I + '" value="' + esc(o.po) + '" autocomplete="off"></label>' : '<div></div>') +
@@ -232823,12 +233751,16 @@ function form(o){
     var armed = false, M = [];
     function fields(){ return { customer: s(q('cust').value), name: s(q('name').value), address: s(q('addr').value), co: q('co').value, status: q('status').value, type: q('type').value, pm: q('pm').value, contract: num(q('contract').value), po: q('po') ? s(q('po').value).toUpperCase() : '', ph: q('ph') ? s(q('ph').value) : '', em: q('em') ? s(q('em').value) : '' }; }   /* patch CCCONTACT2 */
     function paintDups(){
-      M = matches(Object.assign({ po: o.po }, fields())); armed = false; q('ok').textContent = 'Create project & use it'; q('ok').style.background = '#16a34a';
+      M = matches(Object.assign({ po: o.po }, fields()), o);   /* INVMATCH: the invoice's memo too */ armed = false; q('ok').textContent = 'Create project & use it'; q('ok').style.background = '#16a34a';
       q('dups').innerHTML = M.length ? '<div style="border:1px solid #f59e0b;background:#fffbeb;border-radius:10px;padding:9px 11px"><b style="font-size:13.5px;color:#92400e">Did you mean one of these?</b>' +
         M.map(function(m){ var p = m.p; return '<div style="display:flex;gap:8px;align-items:center;justify-content:space-between;margin-top:6px;font-size:13px"><span><b>' + esc(p.name || 'Job') + '</b>' + (p.autoPO ? ' · PO ' + esc(p.autoPO) : '') + (p.address ? '<br><span style="color:#475569">' + esc(p.address) + '</span>' : '') +
           '<br><span style="color:#92400e;font-size:12px">' + esc(m.why) + (p.status ? ' · ' + esc(p.status) : '') + '</span></span><button type="button" data-np-use="' + esc(p.id) + '" style="white-space:nowrap;padding:6px 10px;border:1px solid #2563eb;border-radius:7px;background:#eff6ff;color:#1d4ed8;font-weight:700;cursor:pointer">Use this job</button></div>'; }).join('') + '</div>' : '';
     }
     var tmr = 0; ['cust', 'name', 'addr', 'po'].forEach(function(k){ var el = q(k); if (el) el.addEventListener('input', function(){ clearTimeout(tmr); tmr = later(paintDups, 250); }); });
+    /* INVMATCH: the type follows the company / customer until she picks one herself */
+    var typeTouched = false; q('type').addEventListener('change', function(){ typeTouched = true; });
+    var retype = function(){ if (!typeTouched) q('type').value = typeFor(q('co').value, q('cust').value, o); };
+    q('co').addEventListener('change', retype); q('cust').addEventListener('change', retype);
     paintDups();
     later(function(){ try { (q('name').value ? q('cust') : q('name')).focus(); } catch (e) {} }, 30);
     var done = function(v){ ov.remove(); res(v); };
@@ -232851,6 +233783,7 @@ function form(o){
 }
 
 /* ── make it the CRM's way ── */
+function custHasJobs(c){ var n = nameKey(c && (c.name || c.company)), id = s(c && c.id); if (!n && !id) return false; return projects().some(function(p){ return liveP(p) && ((id && s(p.customerId) === id) || (n && nameKey(p.client || p.customer) === n) || (n && nameKey(p.company) === n)); }); }
 function make(f, o){
   var name = f.name || f.customer, adPatch = {}, adSkip = false;
   var step = Promise.resolve(true);
@@ -232868,7 +233801,7 @@ function make(f, o){
     if (f.status === 'completed') { extra.completedAt = at; if (o.date) extra.endDate = o.date; }
     if (c && s(c.id) && !c._fromJob) extra.customerId = s(c.id);
     Object.assign(extra, adPatch);
-    var j = null, base = { name: name, client: c ? s(c.name || c.company) : f.customer, phone: f.ph || (c ? s(c.phone) : ''), email: f.em || (c ? s(c.email) : ''),   /* patch CCCONTACT2 */ address: f.address || (c ? s(c.address) : ''), type: f.type, kind: f.status === 'active' ? 'active' : '', notes: note, extra: extra };
+    var j = null, base = { name: name, client: c ? s(c.name || c.company) : f.customer, phone: f.ph || (c ? s(c.phone) : ''), email: f.em || (c ? s(c.email) : ''),   /* patch CCCONTACT2 */ address: f.address || (c && !custHasJobs(c) ? s(c.address) : ''), type: f.type,   /* INVMATCH: a customer's billing address is not the site of a 2nd job (a QuickBooks customer "Enterprise" put its billing address — another customer's street — on a new Enterprise job) */ kind: f.status === 'active' ? 'active' : '', notes: note, extra: extra };
     if (typeof W._gcSelfAddJob === 'function') { try { j = W._gcSelfAddJob(base, 'invoice-entry'); } catch (e) { warn(e); } }
     if (!j) {   /* the same record, straight through the list setter (CC2 not loaded / no signed-in name) */
       if (typeof W._setProjects !== 'function') throw new Error('the CRM is still loading — try again in a moment');

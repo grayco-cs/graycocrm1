@@ -14,6 +14,7 @@ function load(store, users) {
   const win = { addEventListener: noop, removeEventListener: noop,
     document: { addEventListener: noop, querySelector: () => null, querySelectorAll: () => [], getElementById: () => null, createElement: () => ({ style: {}, setAttribute: noop, appendChild: noop }), head: { appendChild: noop }, body: { appendChild: noop } },
     localStorage: { getItem: () => null, setItem: noop }, _crm: { users },
+    fetch: async () => ({ ok: true, json: async () => [] }),   /* W4SAFE: profiles() reads the cloud list before it creates any profile -- here the cloud has none */
     console: { log: (...a) => logs.push(a.join(' ')), warn: noop, error: noop, info: noop },
     idbGet: async k => (k in db.data ? JSON.parse(JSON.stringify(db.data[k])) : null),
     idbSet: async (k, v) => { db.puts++; db.data[k] = JSON.parse(JSON.stringify(v)); return true; },
