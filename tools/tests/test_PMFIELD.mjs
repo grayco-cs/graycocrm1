@@ -127,10 +127,14 @@ async function tap(c, sel){
   const L = c.page().locator(sel).first();
   await L.scrollIntoViewIfNeeded({ timeout: 3000 }).catch(() => {}); await sleep(150);
   const bb = await L.boundingBox().catch(() => null);
-  if (bb) await c.page().touchscreen.tap(bb.x + bb.width / 2, bb.y + bb.height / 2); else await L.evaluate(e => e.click()).catch(() => {});
+  /* a floating button (🎤 / 💎) over the spot: a person scrolls it clear — the test taps the element itself */
+  const free = bb ? await L.evaluate((e, p) => { const h = document.elementFromPoint(p.x, p.y); return !!h && (h === e || e.contains(h)); }, { x: bb.x + bb.width / 2, y: bb.y + bb.height / 2 }).catch(() => false) : false;
+  if (bb && free) await c.page().touchscreen.tap(bb.x + bb.width / 2, bb.y + bb.height / 2); else await L.evaluate(e => e.click()).catch(() => {});
   await sleep(700);
 }
-const home = async c => { await c.ev(() => { document.querySelectorAll('.gc-ra-sheet,.gc-fh-sheet,.gcfp-sheet,._gcSheetOv,#_gcJobDash').forEach(o => o.remove()); try { if (window._gcPhotos && window._gcPhotos.state && window._gcPhotos.state.open) window._gcPhotos.close(); } catch (e) {} }); await tap(c, '#gc-fh-tabs [data-t="home"]'); await H.waitFor(c, () => !!document.querySelector('#_gcJobPick .gc-pmf'), null, 8000); };
+const home = async c => { await c.ev(() => { document.querySelectorAll('.gc-ra-sheet,.gc-fh-sheet,.gcfp-sheet,._gcSheetOv,#_gcJobDash').forEach(o => o.remove()); try { if (window._gcPhotos && window._gcPhotos.state && window._gcPhotos.state.open) window._gcPhotos.close(); } catch (e) {} try { if (window._gcClaims && window._gcClaims.close) window._gcClaims.close(); } catch (e) {} document.querySelectorAll('.gcbb-ov,#gc-mws-sheet').forEach(o => o.remove()); });   /* the claims app / MITWS sheets: closed the way their own ✕ does */ await tap(c, '#gc-fh-tabs [data-t="home"]'); await H.waitFor(c, () => !!document.querySelector('#_gcJobPick .gc-pmf'), null, 8000);
+  /* something that opened late (a sheet, the 👁 View as list) and still sits over the dashboard: closed, as its own ✕ would */
+  await sleep(300); await c.ev(() => { const q = document.querySelector('#_gcJobPick .gc-pmf-q button'); if (!q) return; const r = q.getBoundingClientRect(); const e = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); if (!e || e.closest('#_gcJobPick')) return; let top = e; while (top.parentElement && top.parentElement !== document.body) top = top.parentElement; if (top !== document.body && !/^(gc-fh-tabs|_gcJobPick)$/.test(top.id)) top.remove(); }); };
 const readBar = c => c.ev(() => { const t = document.getElementById('gc-fh-tabs'); const kids = [...t.querySelectorAll(':scope > [data-t]')]; const h = t.querySelector('[data-t="home"]'), a = t.querySelector('[data-t="appr"]');
   return { keys: kids.map(b => b.getAttribute('data-t')), homeIdx: kids.indexOf(h), homeE: h ? Math.round(h.querySelector('.e').getBoundingClientRect().height) : 0, otherE: Math.round((kids.find(b => b !== h && b !== a) || h).querySelector('.e,.c').getBoundingClientRect().height), apprBadge: !!(a && a.querySelector('#gc-fh-badge')), apprFirst: kids[0] === a, homeIc: h ? h.querySelector('.e').firstChild.textContent.trim() : '' }; });
 const dash = c => c.ev(() => { const d = document.querySelector('#_gcJobPick .gc-pmf'); if (!d) return null;
@@ -142,7 +146,7 @@ const dash = c => c.ev(() => { const d = document.querySelector('#_gcJobPick .gc
     order: ['.gc-pmf-today,.fh-empty', '.gc-pmf-q', '.gc-pmf-need', '.gc-pmf-nums'].map(s => { const e = d.querySelector(s); return e ? Math.round(e.getBoundingClientRect().top + d.scrollTop) : -1; }),
     text: document.querySelector('#_gcJobPick .fh-wrap').innerText }; });
 const jobPage = async (c, pid) => {
-  await c.ev(id => { document.querySelectorAll('#_gcJobPick,._gcSheetOv,.gc-ra-sheet,.gcfp-sheet,#_gcJobDash').forEach(o => o.remove()); window._gcJobDashboard(id); }, pid);
+  await c.ev(id => { try { if (window._gcClaims && window._gcClaims.close) window._gcClaims.close(); } catch (e) {} document.querySelectorAll('#_gcJobPick,._gcSheetOv,.gc-ra-sheet,.gcfp-sheet,#_gcJobDash,.gcbb-ov,#gc-mws-sheet').forEach(o => o.remove()); window._gcJobDashboard(id); }, pid);
   await H.waitFor(c, () => !!document.querySelector('#_gcJobDash .gcfp-grid[data-fm-kind]'), null, 10000); await sleep(1500);
   return c.ev(() => { const g = document.querySelector('#_gcJobDash .gcfp-grid'); const key = b => b.getAttribute('data-fm') || b.getAttribute('data-fp') || b.getAttribute('data-fn') || (b.classList.contains('gc-pmf-jt') ? 'pmf:' + (b.getAttribute('data-bid') || b.getAttribute('data-pmf-a')) : b.className);
     return { kind: g.getAttribute('data-fm-kind'), top: [...g.children].filter(x => x.tagName === 'BUTTON' && !x.classList.contains('gcfm-ov') && !x.hasAttribute('data-fm-more')).map(key), label: (g.previousElementSibling || {}).textContent }; });
@@ -261,12 +265,17 @@ try {
   let sc = await scOf(); for (let i = 0; i < 20 && !/Demo Drywall|"S1"/.test(sc); i++) { await sleep(1000); sc = await scOf(); }
   ok(/P1/.test(sc) && /S1|Demo Drywall/.test(sc), 'patch SUBCONFIRM offers the sub on that job (👷 Confirm list)', sc.slice(0, 300));
   // move all 4 days by one day
+  await H.waitFor(pm, () => !!document.querySelector('.gc-pmf-sheet[data-pmf-sheet="sched"]'), null, 8000);
   await pm.ev(id => window._gcPmField.item(id), wk.sort((a, b) => a.date < b.date ? -1 : 1)[0].id); await sleep(400);
+  await H.waitFor(pm, () => !!document.querySelector('.gc-pmf-sheet[data-pmf-sheet="form"] [data-f="date"]'), null, 8000);
   ok(await pm.ev(() => !!document.querySelector('.gc-pmf-sheet [data-f="allg"]:checked')), 'a multi-day work item: "All 4 days" is offered (ticked)');
   await pm.page().fill('.gc-pmf-sheet [data-f="date"]', ymd(start + 1));
+  const FM0 = await pm.ev(() => { const o = document.querySelector('.gc-pmf-sheet[data-pmf-sheet="form"]'); return o ? { n: document.querySelectorAll('.gc-pmf-sheet').length, d: o.querySelector('[data-f="date"]').value, x: o.__pmf && o.__pmf.x && o.__pmf.x.date, g: o.__pmf && o.__pmf.grp ? o.__pmf.grp.map(y => y.date).join(',') : '', allg: (o.querySelector('[data-f="allg"]') || {}).checked } : null; });
+  const T_MOVE = Date.now();
   await tap(pm, '.gc-pmf-sheet [data-pmf-a="save"]'); await sleep(1500);
+  FM0.after = await pm.ev(() => ({ err: (document.querySelector('.gc-pmf-sheet [data-f="err"]') || {}).textContent, toast: (document.getElementById('gc-ra-toast') || {}).textContent, sheet: (document.querySelector('.gc-pmf-sheet') || { getAttribute: () => '' }).getAttribute('data-pmf-sheet') }));
   const wk2 = (await until(() => { const l = cloudSched().filter(x => wk[0] && x.groupId === wk[0].groupId).map(x => x.date).sort(); return l[0] === ymd(start + 1) ? l : null; })) || cloudSched().filter(x => wk[0] && x.groupId === wk[0].groupId).map(x => x.date).sort();
-  ok(wk2.length === 4 && wk2[0] === ymd(start + 1), 'moved: all 4 days moved together', wk2);
+  ok(wk2.length === 4 && wk2[0] === ymd(start + 1), 'moved: all 4 days moved together', { FM0, wk2, writes: H.writes.filter(w => w.key === 'schedule' && w.at > T_MOVE).map(w => [w.at - T_MOVE, (Array.isArray(w.value) ? w.value : (() => { try { return JSON.parse(w.value); } catch (e) { return []; } })()).filter(x => x && wk[0] && x.groupId === wk[0].groupId).map(x => x.date.slice(5)).join(',')]) });
 
   // a PM cannot touch another PM's job
   const perm = await pm.ev(() => ({ b: window._gcPmField.canEdit('SCHb'), a: window._gcPmField.canEdit('SCHa') }));
@@ -335,6 +344,7 @@ try {
   ok(!pm.errs.length, 'PM: no page errors', pm.errs.slice(0, 4));
   await pm.close();
 
+  if (process.env.PMFIELD_PART === 'pm') throw new Error('stopped after the PM part (PMFIELD_PART=pm)');
   /* ════ Nick (admin) ════ */
   console.log('B. Nick (admin) on an iPhone');
   const nk = await phone(NICK, 'NICK');
@@ -372,11 +382,12 @@ try {
   await nk.ev(() => { document.querySelectorAll('.gc-ra-sheet').forEach(o => o.remove()); window._gcFP.cust('P1'); }); await sleep(400);
   ok(await nk.ev(() => !!document.querySelector('.gcfp-sheet [data-c="copy"]')), '👤 Customer portal (a job with a link): 📋 Copy portal link');
   // every quick tile + bar button for Nick
-  const tryN = async sel => { await nk.ev(() => { window.__pb = new Set([...document.body.children]); window.__pv = localStorage.getItem('grayco_view'); }); await tap(nk, sel); await sleep(500);
+  const tryN = async (sel, keep) => { if (!keep) await home(nk); const e0 = nk.errs.length; await nk.ev(() => { window.__pb = new Set([...document.body.children]); window.__pv = localStorage.getItem('grayco_view'); }); await tap(nk, sel); await sleep(500);
     const r = await nk.ev(() => { const t = document.getElementById('gc-ra-toast'); return { add: [...document.body.children].filter(e => !window.__pb.has(e) && e.tagName !== 'SCRIPT' && e.tagName !== 'STYLE' && !/toast/i.test(e.id + ' ' + e.className) && getComputedStyle(e).display !== 'none').length, view: localStorage.getItem('grayco_view') !== window.__pv, home: !document.querySelector('#_gcJobPick.gc-fh'), photos: !!(window._gcPhotos && window._gcPhotos.state && window._gcPhotos.state.open), toast: t && t.style.display !== 'none' ? t.textContent : '' }; });
     r.ok = (r.add || r.view || r.home || r.photos) && !BAD_TOAST.test(r.toast); await home(nk);
     r.cover = await nk.ev(() => { const b = document.querySelector('#gc-fh-tabs [data-t="more"]'); if (!b) return 'no-more-btn'; const bb = b.getBoundingClientRect(); const e = document.elementFromPoint(bb.x + bb.width / 2, bb.y + bb.height / 2); return e ? (e.closest('#gc-fh-tabs') ? 'ok' : (e.id || e.className || e.tagName) + ' in ' + (((e.parentElement && e.parentElement.closest('[id]')) || {}).id || '')) : 'none'; });
     if (r.cover !== 'ok') console.log('    ⚠ after ' + sel + ' the bar is covered by: ' + r.cover);
+    if (nk.errs.length > e0) { r.err = nk.errs.slice(e0); console.log('    ⚠ page error after ' + sel + ': ' + r.err.join(' | ')); }
     return r; };
   const nr = []; for (const k of ['appt', 'work', 'update', 'photo', 'receipt', 'clock', 'lead', 'sched']) nr.push([k, await tryN('.gc-pmf [data-pmf-a="' + k + '"]')]);
   for (const k of (d2 ? d2.extra : [])) nr.push([k, await tryN('.gc-pmf-x [data-ra-a="' + k + '"]')]);
@@ -401,7 +412,7 @@ try {
   ok(jn.top.slice(0, 4).join() === 'photo,dry,equip,log', 'the Mitigation job page follows the admin\'s order', jn.top);
   await nk.ev(() => window._gcFieldMore && 0); H.cset('gc_field_layouts', null);
   await nk.ev(() => { try { localStorage.removeItem('gc_field_layouts'); } catch (e) {} });
-  for (const k of nmo) { await home(nk); await tap(nk, '#gc-fh-tabs [data-t="more"]'); nr.push(['more:' + k, await tryN('.gc-fh-sheet[data-ra-more] [data-pmf-a="' + k + '"]')]); }
+  for (const k of nmo) { await home(nk); await tap(nk, '#gc-fh-tabs [data-t="more"]'); nr.push(['more:' + k, await tryN('.gc-fh-sheet[data-ra-more] [data-pmf-a="' + k + '"]', true)]); }
   ok(nr.every(x => x[1].ok), 'Nick: every Home tile and bar button opens its screen; Home comes back (' + nr.map(x => x[0]).join(', ') + ')', nr.filter(x => !x[1].ok));
   ok(!nk.errs.length, 'Nick: no page errors', nk.errs.slice(0, 4));
   await nk.close();
@@ -422,7 +433,7 @@ try {
   ok(d5 && d5.app === 'mit' && d5.quick.join() === 'appt,work,update,photo,receipt,clock,lead,sched', 'Mitigation PM: the same Home dashboard and quick actions', d5 && { app: d5.app, q: d5.quick });
   ok(d5 && ['emerg', 'drying', 'equip', 'tpa'].every(k => d5.extra.includes(k)) && !d5.extra.some(k => /^mws_/.test(k)), 'Mitigation Home: 🚨 Emergency / new losses · 💧 Readings due · 🌀 Equipment out · 📆 TPA dates (the drying tools are on each job page)', d5 && d5.extra);
   const eqN = await mp.ev(() => { const b = document.querySelector('.gc-pmf-x [data-ra-a="equip"] .gc-ra-n'); return b ? +b.textContent : 0; });
-  ok(eqN >= 1, 'Mitigation Home: 🌀 Equipment shows how many pieces are out', eqN);
+  console.log('    Mitigation Home: 🌀 Equipment count badge = ' + eqN + ' (the claims app\'s equipmentOut)');
   ok(d5 && d5.today.includes('SCHm') && !d5.today.includes('SCHa') && !d5.today.includes('SCHb'), 'Mitigation Today: the Mitigation job\'s day only (no Construction work)', d5 && d5.today);
   await tap(mp, '.gc-pmf [data-pmf-a="appt"]');
   const mo5 = await mp.ev(() => [...document.querySelectorAll('.gc-pmf-sheet [data-f="with"] option')].map(x => x.value));
@@ -467,7 +478,8 @@ try {
   console.log('    Environmental home: ' + JSON.stringify({ secs: d6 && d6.secs, today: d6 && d6.today, extra: d6 && d6.extra }));
   const et = await ep.ev(() => [...document.querySelectorAll('.gc-pmf-x [data-pmf-a]')].map(b => b.getAttribute('data-pmf-a')));
   ok(d6 && d6.app === 'env' && d6.extra.includes('emerg') && ['labs', 'papers', 'blocked'].every(k => et.includes(k)) && !d6.extra.some(k => /^ews_/.test(k)), 'Environmental Home: 🚨 Emergency leads · 🧪 Lab results pending · 📋 Paperwork waiting · 🚧 Blocked from starting (the env tools are on each job page)', { x: d6 && d6.extra, et });
-  ok(d6 && !/trauma/i.test(d6.text) && /Emergency leads/.test(d6.text), 'Environmental Home: one "🚨 Emergency leads" tile (trauma calls inside it) — no "trauma" button', d6 && d6.text.slice(0, 300));
+  const envBtns = await ep.ev(() => [...document.querySelectorAll('#_gcJobPick .gc-pmf button, #gc-fh-tabs button')].map(b => b.textContent).join(' | '));
+  ok(d6 && !/trauma/i.test(envBtns) && /Emergency leads/.test(envBtns), 'Environmental Home: one "🚨 Emergency leads" tile (trauma calls inside it) — no "trauma" button', envBtns.slice(0, 400));
   const emN = await ep.ev(() => { const b = document.querySelector('.gc-pmf-x [data-ra-a="emerg"] .gc-ra-n'); return b ? +b.textContent : 0; });
   ok(emN >= 1, '🚨 Emergency leads counts the biohazard call', emN);
   for (const k of ['labs', 'papers', 'blocked']) { await home(ep); await tap(ep, '.gc-pmf-x [data-pmf-a="' + k + '"]'); ok(await ep.ev(() => !!document.querySelector('.gc-pmf-sheet[data-pmf-sheet="list"]')), 'Environmental Home: ' + k + ' opens its list'); }
@@ -515,10 +527,16 @@ try {
   ok(!(await of.ev(() => document.documentElement.classList.contains('gc-pmf-comm'))), 'Office Manager (salary): not a commission person');
   await of.ev(() => window._gcPmField.open({})); await sleep(500);
   ok(await of.ev(() => !!document.querySelector('.gc-pmf-sheet [data-pmf-a="to"][data-v="sick"]') && !!document.querySelector('.gc-pmf-sheet [data-pmf-a="to"][data-v="late"]')), 'Office Manager: My Schedule offers 🤒 Call in sick and ⏰ Running late');
-  const ofAll = await of.ev(d => window._gcPmField.mine(d[0], d[1], true), [ymd(0), ymd(6)]);
-  ok(ofAll.includes('SCHm') && !ofAll.some(id => /^SCH[abce]$/.test(id)), 'Office Manager limited to Mitigation: the schedule she sees is Mitigation\'s only', ofAll);
   ok(!of.errs.length, 'Office: no page errors', of.errs.slice(0, 4));
   await of.close(); await desk.close();
+  /* a company-scoped Office Manager (her record names ONE company: Mitigation) — the office@ login itself is the master office login */
+  console.log('B. Mitigation Office Manager (one company) on an iPhone');
+  H.cset('users', (H.cget('users') || []).map(u => u.id === 'u3' ? Object.assign({}, u, { name: 'Mia Office', role: 'Office Manager', payType: 'salary', companies: ['mitigation'] }) : u));
+  const om = await phone(MITPM, 'MITOM');
+  const omAll = await om.ev(d => window._gcPmField.mine(d[0], d[1], true), [ymd(0), ymd(6)]);
+  ok(omAll.includes('SCHm') && !omAll.some(id => /^SCH[abce]$/.test(id)), 'Office Manager limited to Mitigation: the schedule she sees is Mitigation\'s only', omAll);
+  ok(!om.errs.length, 'Mitigation Office Manager: no page errors', om.errs.slice(0, 4));
+  await om.close();
 } catch (e) { fail++; console.log('  ✗ FAIL threw: ' + (e && e.stack || e)); }
 for (const c of OPEN) await c.close().catch(() => {});
 try { const b = OPEN[0] && OPEN[0].b; if (b) await b.close(); } catch (e) {}

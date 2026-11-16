@@ -210766,7 +210766,7 @@ function saveForm(o, btn){
   return pre.then(function(){ return saveSched(up, rm); }).then(function(ok){
     if (!ok) { btn.disabled = false; btn.textContent = 'Try again'; return false; }
     toast(kind === 'work' ? '🛠 On the schedule' + (up.length > 1 ? ' — ' + up.length + ' work days' : '') + ' · the office sees it on the Desk.' : '📅 ' + (x ? 'Saved' : 'Added to your schedule') + ' · the office sees it on the Desk.');
-    SV.day = up[0].date; openSched({ day: up[0].date });
+    SV.day = up[0].date; if (D.body.contains(o)) openSched({ day: up[0].date });   /* only when the person is still on this form */
     return true;
   });
 }
@@ -210911,7 +210911,7 @@ function lessRows(a){
   if (W._gcTrain && W._gcTrain.open) R.push(['m-train', '📘', 'Training', 'My CRM training and certificates']);
   if (vok('forms')) R.push(['m-forms', '📄', 'Paperwork library', 'Forms, contracts and templates']);
   if (a === 'admin' && typeof W._gcTeamAccess === 'function') R.push(['m-team', '👥', 'Team access', 'Who sees what']);
-  if (a === 'admin' && vok('taxcenter')) R.push(['m-reports', '📊', 'Reports', 'P&L, transactions, reports']);
+  if (a === 'admin' && vok('pnl')) R.push(['m-reports', '📊', 'Reports', 'P&L and the money reports']);
   if (a === 'admin' && K() && K().shown('money')) R.push(['m-money', '💵', 'Money', 'Collected, owed to us, close rate']);
   if (a === 'admin' && W._gcPause && W._gcPause.open) R.push(['m-pause', '⏸', 'Data-entry mode — ' + (pausedOn() ? 'ON' : 'off'), 'Hold everything that goes out']);
   if (a === 'admin' && realAdmin() && !vasOn()) { R.push(['m-jl', '🧩', 'Job page buttons', 'Each kind of job page\'s top buttons']); R.push(['m-tk', '🧪', 'Environmental job types & buttons', 'Each job type\'s buttons and checklists']); }
@@ -210937,7 +210937,7 @@ function lessTap(a){
   if (a === 'm-train') { try { W._gcTrain.open(); } catch (e) { warn(e); toast('Training did not open.'); } return; }
   if (a === 'm-forms') { if (K()) K().go('forms'); return; }
   if (a === 'm-team') { try { W._gcTeamAccess(); } catch (e) { warn(e); } return; }
-  if (a === 'm-reports') { if (K()) K().go('taxcenter'); return; }
+  if (a === 'm-reports') { if (K()) K().go('pnl'); return; }   /* the P&L (the Accounting screen threw on a phone: "React is not defined") */
   if (a === 'm-pause') { try { W._gcPause.open(); } catch (e) { warn(e); } return; }
   if (a === 'm-money') { if (K()) K().run('money'); return; }
   if (a === 'm-jl') return jlEdit();
