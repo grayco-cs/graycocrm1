@@ -33681,7 +33681,7 @@ var _ibBids = [], _ibProjects = [];
 window.gcInboundBids = {
 
   open: async function(){
-    ibOverlay.classList.add('visible');
+    if(!ibOverlay.isConnected) document.body.appendChild(ibOverlay); ibOverlay.classList.add('visible');   /* HUBFIX: the ‹ Back helper takes a screen off the page when its own close did not hide it — put it back, or this button shows nothing until a reload */
     await this.load();
   },
   close: function(){
@@ -34874,7 +34874,7 @@ setTimeout(function(){ window._gcWhenIdle ? window._gcWhenIdle(gcReconcileExpens
 
 window.gcExpCenter = {
   open: async function(){
-    overlay.classList.add('visible');
+    if(!overlay.isConnected) document.body.appendChild(overlay); overlay.classList.add('visible');   /* HUBFIX: the ‹ Back helper takes a screen off the page when its own close did not hide it — put it back, or this button shows nothing until a reload */
     await loadProjs();
     try{ if(window.gcReconcileExpenses) await window.gcReconcileExpenses(); }catch(e){}
     this.renderStats();
@@ -36692,7 +36692,7 @@ function renderTax(){
 
 window.gcDarkAcct = {
   open: async function(){
-    overlay.classList.add('visible');
+    if(!overlay.isConnected) document.body.appendChild(overlay); overlay.classList.add('visible');   /* HUBFIX: the ‹ Back helper takes a screen off the page when its own close did not hide it — put it back, or this button shows nothing until a reload */
     await loadAll();
     this.tab('overview');
   },
@@ -37309,7 +37309,7 @@ window.gcNavSettings = {
     }
 
     renderList();
-    overlay.classList.add('visible');
+    if(!overlay.isConnected) document.body.appendChild(overlay); overlay.classList.add('visible');   /* HUBFIX: the ‹ Back helper takes a screen off the page when its own close did not hide it — put it back, or this button shows nothing until a reload */
   },
   close: async function(){
     overlay.classList.remove('visible');
@@ -39408,7 +39408,7 @@ window.gcPaymentLedger = {
     // Get invoice data from React's live state via window._crm or IDB
     var invs = (window._crm && window._crm.invoices) ? window._crm.invoices : await _gcPLIDB('invs') || [];
     _currentInv = invs.find(function(i){return i.id===invId;}) || {id:invId, amt:0, po:'', pid:''};
-    overlay.classList.add('visible');
+    if(!overlay.isConnected) document.body.appendChild(overlay); overlay.classList.add('visible');   /* HUBFIX: the ‹ Back helper takes a screen off the page when its own close did not hide it — put it back, or this button shows nothing until a reload */
     renderPL();
   },
   close: closePL,
@@ -39984,7 +39984,7 @@ window.closeSettings = closeSettings;
 window.gcSettings = {
   open: function(){
     renderSettings();
-    overlay.classList.add('visible');
+    if(!overlay.isConnected) document.body.appendChild(overlay); overlay.classList.add('visible');   /* HUBFIX: the ‹ Back helper takes a screen off the page when its own close did not hide it — put it back, or this button shows nothing until a reload */
   },
 
   uploadContractTemplate: function(input){
@@ -40325,7 +40325,7 @@ async function open(){
   _keepId = null;
   _dropId = null;
   render();
-  overlay.classList.add('visible');
+  if(!overlay.isConnected) document.body.appendChild(overlay); overlay.classList.add('visible');   /* HUBFIX: the ‹ Back helper takes a screen off the page when its own close did not hide it — put it back, or this button shows nothing until a reload */
 }
 
 function render(){
@@ -40642,7 +40642,7 @@ async function open(){
   });
   _files = [];
   renderBox();
-  overlay.classList.add('visible');
+  if(!overlay.isConnected) document.body.appendChild(overlay); overlay.classList.add('visible');   /* HUBFIX: the ‹ Back helper takes a screen off the page when its own close did not hide it — put it back, or this button shows nothing until a reload */
 }
 
 function renderBox(){
@@ -41155,7 +41155,7 @@ window.gcScopeBid = {
     // Also check fa (the live React estimates state via window._crm)
     var liveEsts = (window._crm && window._crm.estimates) || allEsts;
     var projEsts = liveEsts.filter(function(e){ return e.pid === projId; });
-    overlay.classList.add('visible');
+    if(!overlay.isConnected) document.body.appendChild(overlay); overlay.classList.add('visible');   /* HUBFIX: the ‹ Back helper takes a screen off the page when its own close did not hide it — put it back, or this button shows nothing until a reload */
     generateDoc(proj, projEsts);
   },
   close: closeScope,
@@ -41799,7 +41799,7 @@ async function openPM(projId){
     };
   }
   renderPM();
-  overlay.classList.add('visible');
+  if(!overlay.isConnected) document.body.appendChild(overlay); overlay.classList.add('visible');   /* HUBFIX: the ‹ Back helper takes a screen off the page when its own close did not hide it — put it back, or this button shows nothing until a reload */
 }
 
 function renderPM(){
@@ -42645,7 +42645,7 @@ function openEdit(proj){
     '</div>',
   ].join('');
 
-  overlay.classList.add('visible');
+  if(!overlay.isConnected) document.body.appendChild(overlay); overlay.classList.add('visible');   /* HUBFIX: the ‹ Back helper takes a screen off the page when its own close did not hide it — put it back, or this button shows nothing until a reload */
 }
 
 function fld(lbl, id, type, val){
@@ -44618,7 +44618,7 @@ window.gcDocLib = {
       target.appendChild(box);
     }
     renderLib();
-    if(!navMount){ overlay.classList.add('visible'); }
+    if(!navMount){ if(!overlay.isConnected) document.body.appendChild(overlay); overlay.classList.add('visible');   /* HUBFIX: the ‹ Back helper takes a screen off the page when its own close did not hide it — put it back, or this button shows nothing until a reload */ }
    }catch(_e){
     console.warn('[GC DocLib] open failed', _e);
     var nm=document.getElementById('gc-forms-nav-mount');
@@ -44847,7 +44847,7 @@ async function openPicker(){
       }).join('') : '<div style="font-size:11px;color:#555;">All active jobs already have hubs.</div>',
     '</div>',
   ].join('');
-  pickerOverlay.classList.add('visible');
+  if(!pickerOverlay.isConnected) document.body.appendChild(pickerOverlay); pickerOverlay.classList.add('visible');   /* HUBFIX: the ‹ Back helper takes a screen off the page when its own close did not hide it — put it back, or this button shows nothing until a reload */
 }
 
 // ── Hub Mount ─────────────────────────────────────────────────────────────
@@ -45748,7 +45748,7 @@ function qbStat(val, lbl){
 window.gcQB = Object.assign(window.gcQB || {}, {
   open: function(){
     renderMain(null);
-    overlay.classList.add('visible');
+    if(!overlay.isConnected) document.body.appendChild(overlay); overlay.classList.add('visible');   /* HUBFIX: the ‹ Back helper takes a screen off the page when its own close did not hide it — put it back, or this button shows nothing until a reload */
   },
   close: closeQB,
   connect: connect,
@@ -45820,7 +45820,7 @@ setTimeout(function(){ _qbObs.observe(document.body,{childList:true,subtree:fals
     + 'Since then the CRM is the money record: invoices, payments and costs are entered here, not pulled from QuickBooks.'
     + '<div style="margin-top:10px;color:#334155">Still available, by hand: <b style="color:#14202e">💎 → Import from QuickBooks (CSV)</b> (shows what it found; nothing is written until you press OK) '
     + 'and Admin → 💾 Storage → 📥 Export Backup.</div></div>';
-  function off(){ var box = document.getElementById('gc-qb-box'); if (box) box.innerHTML = NOTE; overlay.classList.add('visible'); }
+  function off(){ var box = document.getElementById('gc-qb-box'); if (box) box.innerHTML = NOTE; if(!overlay.isConnected) document.body.appendChild(overlay); overlay.classList.add('visible');   /* HUBFIX: the ‹ Back helper takes a screen off the page when its own close did not hide it — put it back, or this button shows nothing until a reload */ }
   window.gcQB.open = off;
   window.gcQB.connect = off;
   window.gcQB.startSync = async function(){ off(); };
@@ -46494,7 +46494,7 @@ function open(pid, projName, po, client, pm){
       '<button class="gc-co-btn gc-co-btn-p" onclick="window.gcAddCO.save()">💾 Save Change Order</button>',
     '</div>',
   ].join('');
-  overlay.classList.add('visible');
+  if(!overlay.isConnected) document.body.appendChild(overlay); overlay.classList.add('visible');   /* HUBFIX: the ‹ Back helper takes a screen off the page when its own close did not hide it — put it back, or this button shows nothing until a reload */
   setTimeout(function(){ var d=document.getElementById('gc-co-desc'); if(d) d.focus(); },100);
 }
 
@@ -47570,7 +47570,7 @@ function closeQueue(){ qOverlay.classList.remove('visible'); }
 
 function openQueue(){
   renderQueue();
-  qOverlay.classList.add('visible');
+  if(!qOverlay.isConnected) document.body.appendChild(qOverlay); qOverlay.classList.add('visible');   /* HUBFIX: the ‹ Back helper takes a screen off the page when its own close did not hide it — put it back, or this button shows nothing until a reload */
 }
 
 function renderQueue(){
@@ -47860,7 +47860,7 @@ window.gcSubEmail = {
       '</div>',
     ].join('');
 
-    seOverlay.classList.add('visible');
+    if(!seOverlay.isConnected) document.body.appendChild(seOverlay); seOverlay.classList.add('visible');   /* HUBFIX: the ‹ Back helper takes a screen off the page when its own close did not hide it — put it back, or this button shows nothing until a reload */
   },
 
   close: closeSE,
