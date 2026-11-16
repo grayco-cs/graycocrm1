@@ -22383,7 +22383,7 @@ if (!localStorage.getItem("_helpShown")) {
         { icon: "📊", label: "Financials", fn: function(){ if(window._gcIsPM && window._gcIsPM()){ if(window._gcMyFinancials) window._gcMyFinancials(); } else if(window._gcOpenOwnerFinancials){ window._gcOpenOwnerFinancials(); } } },
         { icon: "💵", label: "Employee Pay", payroll: true, fn: function(){ if(window._gcIsPM && window._gcIsPM()){ alert("Employee pay settings are for owners/office."); return; } if(window._gcEditEmployeePay) window._gcEditEmployeePay(); } },
         { icon: "📄", label: "1099 Reports", fn: function(){ if(window._gcOpen1099) window._gcOpen1099("out", (window._gcIsPM&&window._gcIsPM())?"mine":null); } },
-        { icon: "🔀", label: "Merge Records", fn: function(){ window._gcOpenMerge && window._gcOpenMerge("subs"); } },
+        { icon: "🔀", label: "Merge Records", adminOnly: true, fn: function(){ window._gcOpenMerge && window._gcOpenMerge("subs"); } },
         { icon: "🔗", label: "Merge Projects", fn: function(){ window._gcOpenMergeProjects && window._gcOpenMergeProjects(); } },
         { icon: "📅", label: "Move Job Schedule", fn: function(){ window._gcMoveJobSchedule && window._gcMoveJobSchedule(); } },
         { icon: "🖨", label: "Print Schedule", fn: function(){ window._gcOpenSchedulePrint && window._gcOpenSchedulePrint(); } },
@@ -22395,8 +22395,8 @@ if (!localStorage.getItem("_helpShown")) {
         { icon: "\uD83D\uDCAC", label: "Job Messages", fn: function(){ if(window._gcPickJobForMessages) window._gcPickJobForMessages(); else alert("Job Messages not loaded — hard-refresh and try again."); } },
         { icon: "\uD83D\uDCB0", label: "Collections Desk", fn: function(){ if(window._gcOpenCollectionsDesk) window._gcOpenCollectionsDesk(); else alert("Collections Desk not loaded — hard-refresh and try again."); } },
         { icon: "\uD83D\uDD18", label: "Test Buttons On This Screen", adminOnly: true, fn: function(){ if(window._gcButtonSelfTest) window._gcButtonSelfTest(); else alert("Button test not loaded — hard-refresh and try again."); } },
-        { icon: "🧹", label: "Purge Test Data", fn: function(){ if(window._gcPurgeTestDataUI) window._gcPurgeTestDataUI(); } },
-        { icon: "☁️", label: "Force-Clean Cloud", fn: function(){ if(window._gcForceCleanCloudUI) window._gcForceCleanCloudUI(); } },
+        { icon: "🧹", label: "Purge Test Data", adminOnly: true, fn: function(){ if(window._gcPurgeTestDataUI) window._gcPurgeTestDataUI(); } },
+        { icon: "☁️", label: "Force-Clean Cloud", adminOnly: true, fn: function(){ if(window._gcForceCleanCloudUI) window._gcForceCleanCloudUI(); } },
         { icon: "☁", label: "Cloud Backups", fn: function(){ if(window._gcOpenBackupManager) window._gcOpenBackupManager(); } },
         { icon: "💰", label: "Cash Position", adminOnly: true, ownerOnly: true, fn: function(){ window._gcOpenCashPosition && window._gcOpenCashPosition(); } },
         { icon: "📊", label: "P&L (auto)", adminOnly: true, fn: function(){ window._gcOpenPnL && window._gcOpenPnL(); } },
@@ -22411,7 +22411,7 @@ if (!localStorage.getItem("_helpShown")) {
         { icon: "\u2699", label: "Pay Structure Templates", payroll: true, adminOnly: true, fn: function(){ if(window._gcPayTemplatesOpen) window._gcPayTemplatesOpen(); else alert("Not loaded \u2014 hard-refresh and try again."); } },   /* patch PMG */
         { icon: "\uD83E\uDDEE", label: "PM Commission + Calculator", fn: function(){ if(window._gcPickPMForCommission) window._gcPickPMForCommission(); else alert("Commission screen not loaded \u2014 hard-refresh and try again."); } },
         { icon: "\uD83D\uDCB0", label: "PM Pay (type & source)", payroll: true, adminOnly: true, fn: function(){ if(window._gcPickPMForMatrixPay) window._gcPickPMForMatrixPay(); else if(window._gcPickPMForPay) window._gcPickPMForPay(); else alert("Pay editor not loaded \u2014 hard-refresh and try again."); } },
-        { icon: "\uD83D\uDCF7", label: "Map CompanyCam \u2192 PM (lead credit)", fn: function(){ if(window._gcSetCCCreatorMap) window._gcSetCCCreatorMap(); else alert("Not loaded \u2014 hard-refresh and try again."); } },
+        { icon: "\uD83D\uDCF7", label: "Map CompanyCam \u2192 PM (lead credit)", adminOnly: true, fn: function(){ if(window._gcSetCCCreatorMap) window._gcSetCCCreatorMap(); else alert("Not loaded \u2014 hard-refresh and try again."); } },
         { icon: "\uD83D\uDD04", label: "Re-import ALL CompanyCam jobs", fn: function(){ if(window._gcReimportAllCompanyCam) window._gcReimportAllCompanyCam(); else alert("Not loaded \u2014 hard-refresh and try again."); } },
         { icon: "\uD83D\uDC64", label: "Set Job Lead Source", fn: function(){ if(window._gcPickJobForLeadSource) window._gcPickJobForLeadSource(); else alert("Lead source picker not loaded \u2014 hard-refresh and try again."); } },
         { icon: "\uD83D\uDCBE", label: "Restore Schedule (this device)", adminOnly: true, fn: function(){ if(window._gcRestoreSchedFromLocalBackup) window._gcRestoreSchedFromLocalBackup(); else alert("Not loaded \u2014 hard-refresh and try again."); } },
@@ -22442,7 +22442,7 @@ if (!localStorage.getItem("_helpShown")) {
         { icon: "👷", label: "Sub Details", fn: function(){ window._gcOpenSubExtra && window._gcOpenSubExtra(); } },
         { icon: "🌅", label: "My Daily Digest", fn: function(){ window._gcOpenDailyDigest && window._gcOpenDailyDigest(true); } },
         { icon: "📥", label: "Owner Inbox", fn: function(){ window._gcOpenOwnerInbox && window._gcOpenOwnerInbox(); } },
-        { icon: "🏢", label: "Run the Office (Automation)", fn: function(){ window._gcRunTheOffice && window._gcRunTheOffice(); } },
+        { icon: "🏢", label: "Run the Office (Automation)", adminOnly: true, fn: function(){ window._gcRunTheOffice && window._gcRunTheOffice(); } },
         { icon: "⚙️", label: "Automation Inbox", fn: function(){ window._gcOpenAutoInbox && window._gcOpenAutoInbox(); } },
         { icon: "💳", label: "Credit Cards", fn: function(){ window._gcOpenCCManager && window._gcOpenCCManager(); } },
         { icon: "🔗", label: "Match to Jobs", fn: function(){ window._gcOpenMatchToJobs && window._gcOpenMatchToJobs(); } },
@@ -22471,8 +22471,8 @@ if (!localStorage.getItem("_helpShown")) {
         { icon: "\uD83E\uDDF9", label: "Duplicates", fn: function(){ if(window._gcOpenDupeReview) window._gcOpenDupeReview(); } },
         { icon: "\uD83D\uDD0D", label: "Duplicate check", fn: function(){ if(window._gcOpenDupCheck) window._gcOpenDupCheck(); } },
         { icon: "\uD83D\uDCE5", label: "Import from QuickBooks (CSV)", fn: function(){ if(window._gcOpenQbCsvImport) window._gcOpenQbCsvImport(); } },
-        { icon: "👤", label: "Card holders", fn: function(){ if(window._gcCardHolders) window._gcCardHolders.open(); else alert("Still loading, try again in a moment."); } },   /* patch QBCSV */
-        { icon: "🔗", label: "QuickBooks ↔ CRM", fn: function(){ if(window._gcQbCheck) window._gcQbCheck.open(); else alert("Still loading, try again in a moment."); } },   /* patch QBCSV */
+        { icon: "👤", label: "Card holders", adminOnly: true, fn: function(){ if(window._gcCardHolders) window._gcCardHolders.open(); else alert("Still loading, try again in a moment."); } },   /* patch QBCSV */
+        { icon: "🔗", label: "QuickBooks ↔ CRM", adminOnly: true, fn: function(){ if(window._gcQbCheck) window._gcQbCheck.open(); else alert("Still loading, try again in a moment."); } },   /* patch QBCSV */
         { icon: "💎", label: "Project CRMs", fn: openBigJobPicker },
         { icon: "🚨", label: "Review Queue", fn: openReviewQueue },
         { icon: "🔁", label: "Restore from Backup", fn: openRestoreTool },
@@ -22480,12 +22480,12 @@ if (!localStorage.getItem("_helpShown")) {
         { icon: "🔄", label: "Recover My Data", adminOnly: true, fn: function(){ if(window._gcRecoverEverything) window._gcRecoverEverything(); else alert("Recovery is still loading, try again in a moment."); } },
         { icon: "🧹", label: "Remove Duplicates", adminOnly: true, fn: function(){ if(window._gcCleanup) window._gcCleanup(); else if(window._gcOpenDupeReview) window._gcOpenDupeReview(); else alert("Still loading, try again in a moment."); } },   /* HUBFIX: _gcRemoveDuplicates() only writes to the console — open the copies-grouped screen instead */
         { icon: "🗓️", label: "Fix Duplicate Schedule", adminOnly: true, fn: function(){ if(window._gcForceFixSchedule) window._gcForceFixSchedule(); else alert("Still loading, try again in a moment."); } },
-        { icon: "🕐", label: "Timesheets", fn: function(){ if(window._gcOpenTimesheets) window._gcOpenTimesheets(); else alert("Still loading, try again in a moment."); } },
+        { icon: "🕐", label: "Timesheets", notPM: true, fn: function(){ if(window._gcOpenTimesheets) window._gcOpenTimesheets(); else alert("Still loading, try again in a moment."); } },
         { icon: "💵", label: "Payroll", payroll: true, adminOnly: true, fn: function(){ if(window._gcOpenPayroll) window._gcOpenPayroll(); else alert("Still loading, try again in a moment."); } },
         { icon: "🔎", label: "Deep Scan Recovery", adminOnly: true, fn: function(){ if(window._gcDeepScanRecover) window._gcDeepScanRecover(); else alert("Still loading, try again in a moment."); } },
         { icon: "🗑️", label: "Delete Job by PO/Title", adminOnly: true, fn: function(){ if(window._gcDeleteJobPrompt) window._gcDeleteJobPrompt(); else alert("Still loading, try again in a moment."); } },
         { icon: "📅", label: "Daily Backups", fn: function(){ window._gcOpenDailyBackups && window._gcOpenDailyBackups(); } },
-        { icon: "🏦", label: "Bank / ACH details", fn: function(){ window._gcEditACHDetails && window._gcEditACHDetails(); } },
+        { icon: "🏦", label: "Bank / ACH details", adminOnly: true, fn: function(){ window._gcEditACHDetails && window._gcEditACHDetails(); } },
         { icon: "💾", label: "Import / Export Data", fn: function(){ window.gcImportExport && window.gcImportExport(); } },
         { icon: "🎓", label: "Guided Tour", fn: function(){ window.gcGuidedTour && window.gcGuidedTour(); } },
         { icon: "🖨", label: "Print pack", fn: function(){ if (window._gcOpenPrintPack) window._gcOpenPrintPack(); else alert("Still loading, try again in a moment."); } },   /* patch PRINTPACK */
@@ -22525,6 +22525,10 @@ if (!localStorage.getItem("_helpShown")) {
         /* HUBFIX: Cash Position, Team Status, PM Commission Setup and Cash Flow open only for the ADMIN role (or payType owner —
            the same check those screens make; their texts say "is for owners") — the office no longer gets a button that only says no.
            By role, never by name or e-mail. */
+        /* HUBFIX: QuickBooks ↔ CRM, Merge Records, Card holders, Bank / ACH details, Run the Office, Purge Test Data, Force-Clean
+           Cloud and Map CompanyCam → PM are admin / office tools (adminOnly) — a PM got a button that only said no (or a cloud
+           purge); Timesheets tells a PM "PMs are paid on commission", so it is not offered to the Project Manager role */
+        if (_u && String(_u.role||'') === 'Project Manager') items = items.filter(function(it){ return !it.notPM; });
         var _realOwner = !!(_u && (String(_u.payType||'').toLowerCase()==='owner' || _u.role==='Admin'));
         if(!_realOwner){ items = items.filter(function(it){ return !it.ownerOnly; }); }
         /* HUBFIX (owner rule): payroll items only for the admin role, the Office Manager role, and a person the
@@ -118181,6 +118185,7 @@ window._gcRestoreExact = async function(data, opts){
     try{
       var panel=document.querySelector('.gc-hub-panel');
       if(!panel || panel.querySelector('#gc-backup-hub-link')) return;
+      try{ var _bu=(window._gcMeUserJSON?window._gcMeUserJSON('{}'):{})||{}; if(!(String(_bu.payType||'').toLowerCase()==='owner' || _bu.role==='Admin' || /office/i.test(String(_bu.role||'')))) return; }catch(_e){}   /* HUBFIX: a restore is an admin / office tool — not on a PM's menu */
       var item=document.createElement('div'); item.id='gc-backup-hub-link'; item.className='gc-hub-item';
       item.style.cssText='display:flex;align-items:center;gap:10px;padding:10px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;color:#0f172a;border-bottom:1px solid #f1f5f9';
       item.onclick=function(){ var c=confirm('OK = download a verified backup now.\n\nCancel = restore the CRM exactly from a backup file (you will see the plan in the console first; nothing changes until you confirm).'); if(c) window._gcBackupNow(); else window._gcRestoreExact(); };

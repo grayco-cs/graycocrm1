@@ -21,7 +21,7 @@ const ago = d => new Date(Date.now() - d * 864e5).toISOString();
 const PAYROLL = ['Payroll', 'Payroll Check', 'Employee Pay', 'State Tax', 'PM Pay (type & source)', 'Pay Structures', 'Pay Structure Templates'];
 const BAD_DIALOG = /not loaded|hard-refresh|still loading|not ready|try again in a moment|only admins and the office manager can/i;
 /* a button the menu shows you, that then says it is not for you, is a dead button */
-const REFUSED = /is for owners|limited to owners|for owners only|owners only|only (the )?owners|admins only|only admins|is for admins|not for your (role|profile)|you do not have access|no permission/i;
+const REFUSED = /is for owners|limited to owners|are for admins|is for admins and the office|for owners\/office|is for office\/admin|for hourly staff|are changed by|for owners only|owners only|only (the )?owners|admins only|only admins|is for admins|not for your (role|profile)|you do not have access|no permission/i;
 
 function world(officeRole){
   H.resetCloud();
@@ -257,7 +257,7 @@ try {
     if (RUN.indexOf('office-manager') >= 0 && !ONLY) { world('Office Manager');
     await profileRun('office-manager', 'u-office', { access: { payroll: false }, notThere: ADMIN_ROLE_ONLY, payroll: true, min: 60 }); }
     if (RUN.indexOf('pm') >= 0 && !ONLY) { world('Office');
-    await profileRun('pm', 'u-pm', { click: true, payroll: false, notThere: OWNER_ONLY.concat(['Test the CRM', 'Send Alert to All PMs']), min: 20, mustHave: ['Job Messages', 'Help Center'] }); }
+    await profileRun('pm', 'u-pm', { click: true, payroll: false, notThere: OWNER_ONLY.concat(['Test the CRM', 'Send Alert to All PMs', 'QuickBooks ↔ CRM', 'Merge Records', 'Card holders', 'Bank / ACH details', 'Run the Office (Automation)', 'Purge Test Data', 'Force-Clean Cloud', 'Timesheets', '💾Backup & Restore (exact)']), min: 20, mustHave: ['Job Messages', 'Help Center'] }); }
   }
 } catch (e) { fail++; console.log('  ✗ FAIL the run stopped: ' + (e && e.stack || e)); }
 console.log((fail ? 'FAILED ' : 'ALL PASS ') + pass + ' passed, ' + fail + ' failed'); process.exit(fail ? 1 : 0);
