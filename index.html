@@ -1368,6 +1368,249 @@ try { console.log('[GC] STORECUT: one estimates store; reads shared; a hidden ta
     if (big.length) console.warn('[GC] Removed ' + big.length + ' oversized backup cop' + (big.length === 1 ? 'y' : 'ies') + ' from browser storage: ' + big.join(', ')); } catch (e) {}
 })();
 </script>
+<script id="gc-patch-tombfix">
+/* __GC_PATCH_TOMBFIX__ — the delete list (gc_tombstones) stays small and never fills browser storage (tools/patch_TOMBFIX.py).
+   11/12 the cloud row gc_tombstones grew to 21 MB: 29,755 entries, 26,825 of them "payrollProfiles:gid…" ids such as
+   giduf2g3e-gidwtg9hh-52-giduf2g3e-gidwtg9hh-… (up to 2,158 characters). They were the ids of copies of ONE id-less payroll
+   profile stub that the sync's stable-id step kept giving new, longer ids (fixed at the source in _gcEnsureRecordIds: a
+   payroll profile's id is now its person's, and copies are folded). PROFDUP then folded all the copies by name and marked
+   every one of those ids deleted at the same moment. Every computer then tried to write the 21 MB list into localStorage
+   (~5 M limit): "browser storage full: gc_tombstones (not saved)", dozens of times a day, and pulled 21 MB a minute.
+   This script (early in the page, before every tombstone module and every fetch wrapper that captures window.fetch):
+   1. compact(map) — the one rule, the same on every computer (idempotent; a union of compacted lists is compacted):
+        • a "payrollProfiles:<auto id>" entry (gid…, gid…-gid…, gid…-gid…-N…) is dropped: no payroll profile can carry an
+          auto id any more (the stable-id step re-keys it to PP<userId> / PPN-<name> before any delete check), so such a
+          mark can never match a record again;
+        • any other entry is kept for RETAIN_DAYS (400) days after its own time — well past the 180 days the owner asked
+          for, the 30 nightly server backups and any computer that was away for months. An entry whose time cannot be read
+          is kept for good. Nothing younger than 400 days is ever dropped.
+   2. every door the list comes in or goes out of applies it: localStorage.setItem('gc_tombstones') (also trimmed to a
+      1 M-character quick-start copy if it were ever still bigger — non-schedule entries and the newest first; the whole
+      list stays in IndexedDB and the cloud), IndexedDB "gc_tombstones" / "gc_tombstones_all" (put and get), and the cloud
+      (gc_kv / app_data uploads of the row, and every read that can carry it).
+   3. when a read from the cloud carried entries the rule drops, this tab writes the clean list back ONCE (at most every
+      10 minutes) through the app's normal upload, as the union of the cloud's cleaned list and this computer's — nothing
+      real is ever left out, and two computers doing it at once both send a superset of what the cloud had.
+   Console: _gcTombFix.state()   _gcTombFix.compact(map)   Off: localStorage gc_tombfix_off = '1'. */
+(function(){
+'use strict';
+var W = window;
+try {
+  if (W.__GC_PATCH_TOMBFIX__) return; W.__GC_PATCH_TOMBFIX__ = true;
+  var LS = null; try { LS = W.localStorage; } catch (e) {}
+  var SP = W.Storage && W.Storage.prototype;
+  var pGet = SP && SP.getItem, pSet = SP && SP.setItem;
+  try { if (LS && pGet.call(LS, 'gc_tombfix_off') === '1') return; } catch (e) {}
+  var NST = W.setTimeout;
+  var TK = 'gc_tombstones', IDBK = { gc_tombstones: 1, gc_tombstones_all: 1 };
+  var DAY = 864e5, RETAIN_DAYS = 400, LS_CAP = 1000000, PFX = 'payrollProfiles:';
+  var PP_AUTO = /^gid[0-9a-z]+(?:-(?:gid[0-9a-z]+|\d+))*$/;
+  var S = { runs: 0, runaway: 0, aged: 0, lsTrim: 0, lsBefore: 0, lsAfter: 0, cloudDirty: 0, cloudIn: 0, cloudOut: 0, pushed: 0, pushedAt: 0, pushT: 0, last: null };
+  var cloudMap = null;   /* the last cleaned copy of the cloud's list (for the one write-back) */
+
+  function when(v){
+    if (typeof v === 'number') return v;
+    var n = Date.parse(v); if (isFinite(n)) return n;
+    n = +v; return isFinite(n) ? n : NaN;
+  }
+  function garbage(k){ return k.lastIndexOf(PFX, 0) === 0 && PP_AUTO.test(k.slice(PFX.length)); }
+  /* { map, runaway, aged, n } — map is the same object when nothing is dropped */
+  function compact(m, now){
+    if (!m || typeof m !== 'object' || Array.isArray(m)) return { map: m, runaway: 0, aged: 0, n: 0 };
+    var lim = (now || Date.now()) - RETAIN_DAYS * DAY;
+    var ks = Object.keys(m), out = null, run = 0, aged = 0;
+    for (var i = 0; i < ks.length; i++) {
+      var k = ks[i], drop = false;
+      if (garbage(k)) { drop = true; run++; }
+      else { var t = when(m[k]); if (t > 1e12 && t < lim) { drop = true; aged++; } }   /* a real time (ms after 2001), older than the window */
+      if (drop) { if (!out) { out = {}; for (var j = 0; j < i; j++) out[ks[j]] = m[ks[j]]; } }
+      else if (out) out[k] = m[k];
+    }
+    if (out) { S.runs++; S.runaway += run; S.aged += aged; S.last = { at: new Date().toISOString(), n: ks.length, runaway: run, aged: aged }; }
+    return { map: out || m, runaway: run, aged: aged, n: ks.length };
+  }
+  function compactText(s){
+    if (typeof s !== 'string' || s.length < 2 || s.charAt(0) !== '{') return s;
+    var o; try { o = JSON.parse(s); } catch (e) { return s; }
+    var c = compact(o); return c.map === o ? s : JSON.stringify(c.map);
+  }
+  /* a stored value in any of the shapes the CRM has used (map, JSON text, {k, v:text}, {key, value}) */
+  function compactAny(v){
+    try {
+      if (typeof v === 'string') return compactText(v);
+      if (!v || typeof v !== 'object' || Array.isArray(v)) return v;
+      if (typeof v.v === 'string' && ('k' in v)) { var t = compactText(v.v); return t === v.v ? v : Object.assign({}, v, { v: t }); }
+      if (('value' in v) && (('key' in v) || ('updated' in v))) { var x = compactAny(v.value); return x === v.value ? v : Object.assign({}, v, { value: x }); }
+      return compact(v).map;
+    } catch (e) { return v; }
+  }
+  /* the quick-start copy in localStorage: cleaned, and never bigger than LS_CAP characters */
+  function lsText(s){
+    var o; try { o = JSON.parse(s); } catch (e) { return s; }
+    if (!o || typeof o !== 'object' || Array.isArray(o)) return s;
+    var m = compact(o).map, txt = m === o ? s : JSON.stringify(m);
+    if (txt.length <= LS_CAP) return txt;
+    var ks = Object.keys(m).map(function(k){ var t = when(m[k]); return { k: k, s: k.indexOf('schedule:') === 0 ? 1 : 0, t: isFinite(t) ? t : 0 }; });
+    ks.sort(function(a, b){ return a.s - b.s || b.t - a.t; });
+    var keep = {}, size = 2;
+    for (var i = 0; i < ks.length; i++) {
+      var add = ks[i].k.length + JSON.stringify(m[ks[i].k]).length + 4;
+      if (size + add > LS_CAP) break;
+      keep[ks[i].k] = m[ks[i].k]; size += add;
+    }
+    S.lsTrim++;
+    return JSON.stringify(keep);
+  }
+
+  /* ── 1. localStorage ─────────────────────────────────────────────────────── */
+  if (SP && LS) {
+    SP.setItem = function(k, v){
+      if (this === LS && k === TK && typeof v === 'string' && (v.length > LS_CAP || v.indexOf('"' + PFX + 'gid') >= 0)) {
+        try { v = lsText(v); } catch (e) {}
+        return pSet.call(this, k, v);
+      }
+      return pSet.apply(this, arguments);
+    };
+    /* the copy an earlier visit left: cleaned now, before any tombstone module reads it */
+    try {
+      var raw = pGet.call(LS, TK);
+      if (raw && raw.length > 2) {
+        S.lsBefore = raw.length;
+        var nt = lsText(raw);
+        if (nt !== raw) pSet.call(LS, TK, nt);
+        S.lsAfter = nt.length;
+      }
+    } catch (e) {}
+  }
+
+  /* ── 2. IndexedDB (gc_tombstones / gc_tombstones_all) ───────────────────── */
+  try {
+    var OS = W.IDBObjectStore && W.IDBObjectStore.prototype, RQ = W.IDBRequest && W.IDBRequest.prototype;
+    var rDesc = RQ && Object.getOwnPropertyDescriptor(RQ, 'result');
+    if (OS && typeof OS.put === 'function' && typeof OS.get === 'function') {
+      var pPut = OS.put, pIGet = OS.get;
+      OS.put = function(value, key){
+        if (arguments.length >= 2 && typeof key === 'string' && IDBK[key]) {
+          var c = compactAny(value);
+          if (c !== value) return pPut.call(this, c, key);
+        }
+        return pPut.apply(this, arguments);
+      };
+      OS.get = function(key){
+        var rq = pIGet.apply(this, arguments);
+        if (typeof key === 'string' && IDBK[key] && rDesc && rDesc.get) {
+          try {
+            var done = false, memo;
+            Object.defineProperty(rq, 'result', { configurable: true, enumerable: true, get: function(){
+              var r = rDesc.get.call(rq);              /* throws until the request is done, as before */
+              if (!done) { done = true; memo = compactAny(r); }
+              return memo;
+            } });
+          } catch (e) {}
+        }
+        return rq;
+      };
+    }
+  } catch (e) {}
+
+  /* ── 3. the cloud ────────────────────────────────────────────────────────── */
+  function absorbCloud(m){
+    if (!m || typeof m !== 'object' || Array.isArray(m)) return;
+    cloudMap = m;
+  }
+  function schedulePush(){
+    if (S.pushT || (S.pushedAt && Date.now() - S.pushedAt < 600000)) return;
+    S.pushT = NST.call(W, function(){ S.pushT = 0; pushClean(); }, 25000);
+  }
+  /* the clean list goes back up once, through the app's own upload: the cloud's cleaned list + this computer's */
+  function pushClean(){
+    try {
+      var m = {}, k;
+      if (cloudMap) for (k in cloudMap) m[k] = cloudMap[k];
+      try { var a = typeof W._gcTombstones === 'function' ? W._gcTombstones() : null; if (a && typeof a === 'object') for (k in a) if (!(k in m)) m[k] = a[k]; } catch (e) {}
+      try { var l = JSON.parse(pGet.call(LS, TK) || '{}') || {}; for (k in l) if (!(k in m)) m[k] = l[k]; } catch (e) {}
+      m = compact(m).map;
+      if (!Object.keys(m).length) return;                         /* never an empty list */
+      var f = typeof W._supaUpsertNow === 'function' ? W._supaUpsertNow : (typeof W._supaUpsert === 'function' ? W._supaUpsert : null);
+      if (!f) return;
+      S.pushedAt = Date.now(); S.pushed++;
+      f(TK, m);
+      try { console.log('[GC] TOMBFIX: the delete list in the cloud is written back clean (' + Object.keys(m).length + ' entries).'); } catch (e) {}
+    } catch (e) {}
+  }
+  /* rows of a gc_kv answer / upload: the gc_tombstones value cleaned (rowsAll: every row is that key) */
+  function fixRows(rows, rowsAll){
+    var list = Array.isArray(rows) ? rows : [rows], changed = false, dropped = 0;
+    for (var i = 0; i < list.length; i++) {
+      var r = list[i]; if (!r || typeof r !== 'object' || !('value' in r)) continue;
+      if (!(rowsAll || r.key === TK)) continue;
+      var v = r.value, o = typeof v === 'string' ? (function(){ try { return JSON.parse(v); } catch (e) { return null; } })() : v;
+      if (!o || typeof o !== 'object' || Array.isArray(o)) continue;
+      var c = compact(o);
+      dropped += c.runaway + c.aged;
+      if (c.map !== o) { r.value = typeof v === 'string' ? JSON.stringify(c.map) : c.map; changed = true; }
+      list[i].__gcTF = c.map;
+    }
+    return { changed: changed, dropped: dropped, list: list };
+  }
+  function urlOf(input){ try { return new URL(typeof input === 'string' ? input : (input && input.url) || String(input), W.location && W.location.href); } catch (e) { return null; } }
+  var pf = W.fetch;
+  if (typeof pf === 'function') {
+    var tfFetch = function(input, init){
+      var U = urlOf(input);
+      if (!U || !/^\/rest\/v1\/(gc_kv|app_data)$/.test(U.pathname)) return pf.apply(this, arguments);
+      var m = String((init && init.method) || (input && typeof input !== 'string' && !(input instanceof URL) && input.method) || 'GET').toUpperCase();
+      var keyF = U.searchParams.getAll('key'), named = false, other = false;
+      keyF.forEach(function(v){
+        if (/^eq\./.test(v)) { if (decodeURIComponent(v.slice(3)).replace(/^"|"$/g, '') === TK) named = true; else other = true; }
+        else if (/^in\.\(/.test(v)) { if (decodeURIComponent(v).indexOf(TK) >= 0) named = true; else other = true; }
+      });
+      if (m === 'POST' || m === 'PATCH' || m === 'PUT') {
+        var body = init && init.body;
+        if (typeof body !== 'string' || (body.indexOf('"' + TK + '"') < 0 && !named)) return pf.apply(this, arguments);
+        if (other && !named) return pf.apply(this, arguments);
+        try {
+          var data = JSON.parse(body), fx = fixRows(data, named && m !== 'POST');
+          (Array.isArray(data) ? data : [data]).forEach(function(r){ if (r && r.__gcTF) delete r.__gcTF; });
+          if (fx.changed) { S.cloudOut++; return pf.call(this, input, Object.assign({}, init, { body: JSON.stringify(data) })); }
+        } catch (e) {}
+        return pf.apply(this, arguments);
+      }
+      if (m !== 'GET') return pf.apply(this, arguments);
+      if (other && !named) return pf.apply(this, arguments);                   /* a read of other keys only */
+      var sel = U.searchParams.get('select');
+      if (sel && !/(^|,)\s*(value|\*)\s*(,|$)/.test(sel)) return pf.apply(this, arguments);   /* no values in the answer */
+      return pf.apply(this, arguments).then(function(r){
+        if (!r || !r.ok || r.status === 204 || typeof r.text !== 'function') return r;
+        return r.text().then(function(txt){
+          var out = txt, hs = r.headers;
+          if (txt && txt.length > 2 && (named || txt.indexOf('"key":"' + TK + '"') >= 0)) {
+            try {
+              var rows = JSON.parse(txt), fx = fixRows(rows, named && !other && keyF.length === 1);
+              (Array.isArray(rows) ? rows : [rows]).forEach(function(x){ if (x && x.__gcTF) { absorbCloud(x.__gcTF); delete x.__gcTF; } });
+              if (fx.changed) {
+                out = JSON.stringify(rows); S.cloudIn++; S.cloudDirty++;
+                try { hs = new Headers(r.headers); hs.delete('content-length'); hs.delete('content-encoding'); } catch (e) {}
+                schedulePush();
+              }
+            } catch (e) {}
+          }
+          return new Response(out, { status: r.status, statusText: r.statusText, headers: hs });
+        });
+      });
+    };
+    W.fetch = tfFetch;
+  }
+
+  W._gcTombFix = {
+    state: function(){ var o = {}; for (var k in S) if (k !== 'pushT') o[k] = S[k]; o.retainDays = RETAIN_DAYS; o.lsCap = LS_CAP; return o; },
+    compact: function(m, now){ return compact(m, now).map; },
+    garbage: garbage, compactAny: compactAny, pushClean: pushClean
+  };
+  try { console.log('[GC] TOMBFIX: the delete list is kept small (no auto payroll-profile ids; ' + RETAIN_DAYS + ' days) — _gcTombFix.state()'); } catch (e) {}
+} catch (e) { try { console.warn('[GC] TOMBFIX not installed:', e && e.message || e); } catch (x) {} }
+})();
+</script>
 
 <script id="gc-patch-boot-cover">
 /* patch BOOT: while the page is still arriving / being read (the first open after an update takes longest) nothing can
@@ -67763,12 +68006,37 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
   function qRank(r){ var st=String(r && r.status || '').toLowerCase(); if((r && r.pmDecidedAt) || /approved|rejected|denied|posted|paid|void|recorded|done/.test(st)) return 3; if(st==='escalated') return 2; return st ? 1 : 0; }
   function qWhen(r){ var w=r && (r.pmDecidedAt || r.decidedAt || r.updatedAt || r.matchedAt || r.createdAt); var n=+w; if(!isNaN(n) && n) return n; var t=Date.parse(w||''); return isNaN(t)?0:t; }
   // Ensure every record in a list has a stable unique id. Returns true if any changed.
+  /* TOMBFIX: a payroll profile is its person's: an id-less or auto (content-hash gid...) id becomes the person's stable id
+     ('PP'+userId, else 'PPN-'+name -- the ids PROFDUP and profiles() use). The auto ids of one person's id-less stubs were
+     de-collided on every merge (gid-gid-2 ... gid-gid-9016, gid-gid-N-gid-gid-gid-...) and the union kept every copy. */
+  var PP_AUTO = /^gid[0-9a-z]+(?:-(?:gid[0-9a-z]+|\d+))*$/;
+  function ppStableId(rec){
+    if(!rec || typeof rec!=='object') return '';
+    var id = rec.id==null ? '' : String(rec.id);
+    if(id && !PP_AUTO.test(id)) return id;
+    if(rec.userId!=null && rec.userId!=='') return 'PP'+String(rec.userId);
+    var nk = String(rec.name==null?'':rec.name).trim().toLowerCase().replace(/\s+/g,' ');
+    var slug = nk.replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+    return slug ? 'PPN-'+slug : id;
+  }
+  window._gcPayProfileId = ppStableId;
+  var STAMP_RE = /^(id|updatedAt|updated_at|savedAt|modified)$/;
+  function bodySig(rec){ try{ var o={}; Object.keys(rec).sort().forEach(function(k){ if(!STAMP_RE.test(k)) o[k]=rec[k]; }); return JSON.stringify(o); }catch(e){ return null; } }
+  function stampOf(r){ return String((r && (r.updatedAt||r.updated_at||r.savedAt||r.modified)) || ''); }
+  /* TOMBFIX: copies of one payroll profile -> one record (oldest first, newer values win; nothing else is lost) */
+  function foldProfile(a, b){
+    var o = stampOf(a) <= stampOf(b) ? [a, b] : [b, a];
+    var m = Object.assign({}, o[0], o[1]);
+    Object.keys(o[0]).forEach(function(k){ var v=m[k]; if((v===undefined || v===null || v==='') && o[0][k]!==undefined && o[0][k]!==null && o[0][k]!=='') m[k]=o[0][k]; });
+    m.id = a.id; return m;
+  }
   window._gcEnsureRecordIds = function(list, key){
     if(!Array.isArray(list)) return false;
-    var seen={}, changed=false, alt=key && QALT[key], firstAt={}, drop=[];
+    var seen={}, changed=false, alt=key && QALT[key], firstAt={}, drop=[], isPP = key==='payrollProfiles';
     list.forEach(function(rec, ix){
       if(!rec || typeof rec!=='object') return;
       var id = rec.id;
+      if(isPP){ var sid = ppStableId(rec); if(sid && sid!==String(id==null?'':id)){ rec.id = sid; changed=true; id=sid; } }   /* TOMBFIX */
       if(id!==undefined && id!==null && id!==''){ var cid = collapse(id); if(cid!==String(id)){ rec.id = cid; changed=true; id=cid; } }   /* patch SYNCFIX: repair */
       var qid = (alt && rec[alt]!=null && rec[alt]!=='') ? alt+':'+String(rec[alt]) : null;
       if(qid && (id===undefined || id===null || id==='' || AUTO.test(String(id)) || String(id)===qid || String(id).indexOf(qid+'-gid')===0)){
@@ -67789,6 +68057,14 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
       // Duplicate id in the same list (e.g. two Date.now() collisions) -> de-collide
       // deterministically by mixing in the fingerprint, so both survive and both
       // machines compute the same second id.
+      if(seen[id] && firstAt[id]!==undefined && list[firstAt[id]]){
+        /* TOMBFIX: the same record twice is ONE record -- folded, never given a new id (a new id for a copy is a new
+           record to the union merge, and that is how one payroll stub became 26,826 copies) */
+        var _j = firstAt[id], _cur = list[_j];
+        if(isPP){ list[_j] = foldProfile(_cur, rec); drop.push(ix); changed=true; return; }
+        var _sa = bodySig(rec);
+        if(_sa!==null && _sa===bodySig(_cur)){ if(stampOf(rec) > stampOf(_cur)) list[_j] = rec; drop.push(ix); changed=true; return; }
+      }
       if(seen[id]){
         /* patch SYNCFIX: the second id is new and different from the first (the old suffix could be the base itself) */
         var fp=fingerprint(rec), nid=String(id)+'-'+fp;
@@ -67796,7 +68072,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
         var cand=nid, n=2; while(seen[cand]) cand=nid+'-'+(n++);
         rec.id = cand; changed=true; id=rec.id;
       }
-      seen[id]=1;
+      seen[id]=1; if(firstAt[id]===undefined) firstAt[id]=ix;   /* TOMBFIX */
     });
     if(drop.length){ drop.sort(function(a,b){ return b-a; }).forEach(function(i){ list.splice(i,1); }); }
     return changed;
@@ -69258,6 +69534,33 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
   var MAX_SNAPS = 10;
 
   function snapKey(k){ return 'gc_bak_'+k; }
+  /* TOMBFIX: the versions live in IndexedDB (same key names): up to 10 x 1 M characters per list did not fit in the
+     ~5 M of localStorage next to everything else ("storage full: gc_bak_projects (not saved)"). A copy an earlier visit
+     left in localStorage is moved over (versions merged by time) and then removed from localStorage. */
+  var BAKMEM = {};
+  function idbW(){ return window._gcIdbWrite || window.idbSet; }
+  function idbR(){ return window._gcIdbRead || window.idbGet; }
+  function lsSnaps(k){ try{ var a=JSON.parse(localStorage.getItem(snapKey(k))||'[]'); return Array.isArray(a)?a:[]; }catch(e){ return []; } }
+  function mergeSnaps(a, b){ var by={}, out=[]; [].concat(a||[], b||[]).forEach(function(s){ if(s && s.at && !by[s.at]){ by[s.at]=1; out.push(s); } }); out.sort(function(x, y){ return String(x.at)<String(y.at)?-1:1; }); while(out.length > MAX_SNAPS) out.shift(); return out; }
+  async function loadSnaps(k){
+    if(BAKMEM[k]) return BAKMEM[k];
+    var v=null; try{ var r=idbR(); if(r) v=await r(snapKey(k)); }catch(e){}
+    var s = mergeSnaps(Array.isArray(v)?v:[], lsSnaps(k));
+    BAKMEM[k]=s; return s;
+  }
+  async function saveSnaps(k, snaps){
+    BAKMEM[k]=snaps;
+    var ok=false; try{ var w=idbW(); if(w) ok = (await w(snapKey(k), snaps))!==false; }catch(e){ ok=false; }
+    if(ok){ try{ if(localStorage.getItem(snapKey(k))!=null) localStorage.removeItem(snapKey(k)); }catch(e){} }
+    return ok;
+  }
+  (function moveOld(){   /* the localStorage copies of an earlier visit, moved as soon as IndexedDB is there */
+    var n=0, iv=setInterval(function(){
+      if(!idbW() || !idbR()){ if(n++>120) clearInterval(iv); return; }
+      clearInterval(iv);
+      KEYS.forEach(function(k){ try{ if(localStorage.getItem(snapKey(k))==null) return; }catch(e){ return; } loadSnaps(k).then(function(s){ return saveSnaps(k, s); }).catch(function(){}); });
+    }, 500);
+  })();
 
   // Take a snapshot of a key's current data if it looks healthy (non-empty).
   window._gcBackupNow = function(){
@@ -69268,31 +69571,33 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
         var data = map[k];
         if(!Array.isArray(data)) return;
         if(data.length === 0) return;           // never snapshot an empty list
-        var snaps = [];
-        try{ snaps = JSON.parse(localStorage.getItem(snapKey(k))||'[]'); }catch(e){}
+        loadSnaps(k).then(function(snaps){ snaps = snaps.slice();   /* TOMBFIX: IndexedDB */
         var last = snaps[snaps.length-1];
         // only snapshot if it changed and is not smaller-without-reason
         var stamp = new Date().toISOString();
         if(last && last.count === data.length) return; // no change in count, skip
         snaps.push({ at: stamp, count: data.length, data: data });
         while(snaps.length > MAX_SNAPS) snaps.shift();
-        var _t = JSON.stringify(snaps); while(_t.length > 1000000 && snaps.length > 1){ snaps.shift(); _t = JSON.stringify(snaps); }   /* patch DENYKEEP: at most 1 M characters per list */
-        if(_t.length > 1000000){ try{ localStorage.removeItem(snapKey(k)); }catch(e){} return; }
-        try{ localStorage.setItem(snapKey(k), _t); }catch(e){}
+        /* TOMBFIX: IndexedDB has room -- 10 versions are kept; a single version is still capped at 4 M characters */
+        var _t = JSON.stringify(snaps); while(_t.length > 4000000 && snaps.length > 1){ snaps.shift(); _t = JSON.stringify(snaps); }
+        if(_t.length > 4000000) return;
+        return saveSnaps(k, JSON.parse(_t));
+        }).catch(function(){});
       });
     }catch(e){}
   };
 
-  // List available snapshots for a key
+  // List available snapshots for a key (TOMBFIX: what this page has read from IndexedDB, + an old localStorage copy)
   window._gcListBackups = function(k){
-    try{ return JSON.parse(localStorage.getItem(snapKey(k))||'[]').map(function(s){ return {at:s.at, count:s.count}; }); }
+    try{ return mergeSnaps(BAKMEM[k]||[], lsSnaps(k)).map(function(s){ return {at:s.at, count:s.count}; }); }
     catch(e){ return []; }
   };
+  window._gcLoadRollingBackups = function(){ return Promise.all(KEYS.map(loadSnaps)).then(function(){ return KEYS.reduce(function(o, k){ o[k]=window._gcListBackups(k); return o; }, {}); }); };   /* TOMBFIX */
 
   // Restore a key from a snapshot (by index; default = most recent healthy one)
   window._gcRestoreBackup = function(k, idx){
     try{
-      var snaps = JSON.parse(localStorage.getItem(snapKey(k))||'[]');
+      var snaps = mergeSnaps(BAKMEM[k]||[], lsSnaps(k));   /* TOMBFIX: IndexedDB (read at start-up / by _gcLoadRollingBackups) */
       if(!snaps.length){ alert('No backup available for '+k+' yet.'); return false; }
       var snap = (typeof idx === 'number') ? snaps[idx] : snaps[snaps.length-1];
       if(!snap || !Array.isArray(snap.data)){ alert('That backup is not usable.'); return false; }
@@ -84941,6 +85246,7 @@ function dedupeProfiles(list){
 async function profiles(){
   var list=await get(K_PROF);
   if(!Array.isArray(list)) list=[];
+  var _tfIds=false; try{ if(window._gcPayProfileId && window._gcEnsureRecordIds){ var _tfN=list.length; _tfIds=window._gcEnsureRecordIds(list, K_PROF); if(_tfIds && list.length<_tfN) console.log('[GC Payroll] TOMBFIX: '+(_tfN-list.length)+' copies of payroll profiles folded (stable ids)'); } }catch(_tfe){}   /* TOMBFIX */
   var _pdRemoved=0;   /* patch PROFDUP: one profile per person — condition-gated, a no-op once there are no copies */
   try{ var _pd=dedupeProfiles(list); if(_pd.removed){ list=_pd.list; _pdRemoved=_pd.removed;
     try{ if(window._gcTombstoneMany && _pd.deadIds.length) window._gcTombstoneMany(K_PROF, _pd.deadIds); }catch(_te){}
@@ -84982,7 +85288,7 @@ async function profiles(){
   try{ var _fu = JSON.parse(localStorage.getItem('gc_fired_users') || '{}') || {};
     list.forEach(function(p){ if(!p || p.active === false) return; var nm = String(p.name || '').trim().toLowerCase(), em = String(p.email || '').trim().toLowerCase();
       if(_fu[nm] || (em && _fu[em])){ p.active = false; p.firedOff = true; p.updatedAt = new Date().toISOString(); _migChanged = true; } }); }catch(_fe){}
-  if(_migChanged || _pdRemoved){ try{ await put(K_PROF, list); }catch(_pe){} }   /* patch PROFDUP: once */
+  if(_migChanged || _pdRemoved || _tfIds){ try{ await put(K_PROF, list); }catch(_pe){} }   /* patch PROFDUP: once */ /* TOMBFIX: + stable ids */
 
   // migrate the old name-keyed payrollW4 object once
   var old=await get(K_OLDW4);
@@ -101166,7 +101472,12 @@ window._gcSetEmployeeState = async function(name, stateCode){
     found=true;
     return Object.assign({}, p, {homeState:st, state:st, stateAuto:false, stateSetAt:new Date().toISOString()});
   });
-  if(!found) profs.push({name:name, homeState:st, state:st, stateSetAt:new Date().toISOString()});
+  if(!found){   /* TOMBFIX: the stub is the person's profile (stable id), not an id-less copy the sync re-ids on every merge */
+    var _tfU=users.find(function(u){ return u && low(u.name)===low(name); }), _tfS={name:name, homeState:st, state:st, stateSetAt:new Date().toISOString(), updatedAt:new Date().toISOString()};
+    if(_tfU && _tfU.id) _tfS.userId=_tfU.id;
+    if(window._gcPayProfileId) _tfS.id=window._gcPayProfileId(_tfS);
+    profs.push(_tfS);
+  }
 
   window.__GC_MANUAL_SAVE__=true;
   try{ if(window._crm) window._crm.users=users; }catch(e){}
@@ -103379,7 +103690,12 @@ window._gcSetPayFrequency = async function(name, freq){
       found=true;
       return Object.assign({}, p, {frequency:freq});
     });
-    if(!found) profs.push({name:name, frequency:freq});
+    if(!found){   /* TOMBFIX: a stable id, not an id-less stub */
+      var _tfU=(window._crm&&Array.isArray(window._crm.users)?window._crm.users:[]).find(function(u){ return u && low(u.name)===low(name); }), _tfS={name:name, frequency:freq, updatedAt:new Date().toISOString()};
+      if(_tfU && _tfU.id) _tfS.userId=_tfU.id;
+      if(window._gcPayProfileId) _tfS.id=window._gcPayProfileId(_tfS);
+      profs.push(_tfS);
+    }
     window.__GC_MANUAL_SAVE__=true;
     await put('payrollProfiles', profs);
     setTimeout(function(){ window.__GC_MANUAL_SAVE__=false; }, 1500);
