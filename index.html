@@ -210391,7 +210391,15 @@ function myJobIds(){ var m = {}; myJobs().forEach(function(p){ m[s(p.id)] = 1; }
 function myLeads(){ try { if (K() && K().myLeads) return arr(K().myLeads()).filter(coLead); } catch (e) {} return []; }
 function leadById(id){ var l = []; try { l = typeof W._gcLaLeads === 'function' ? arr(W._gcLaLeads()) : []; } catch (e) {} if (!l.length) l = arr(C().leads); return l.filter(function(x){ return s(x.id) === s(id); })[0] || null; }
 function tomb(id){ try { return !!(W._gcIsTombstoned && W._gcIsTombstoned('schedule', id)); } catch (e) { return false; } }
-function sched(){ var L = arr(C().schedule); try { if (W._gcSchedVisible) L = arr(W._gcSchedVisible(L)); } catch (e) {} return L.filter(function(x){ return x && x.id != null && x.deleted !== true && !tomb(x.id) && coItem(x); }); }
+/* what this phone just saved shows at once (the screen's list catches up a moment later) */
+var PEND = { up: {}, rm: {}, at: 0 };
+function withPend(L){
+  if (!PEND.at || Date.now() - PEND.at > 90000) return L;
+  var seen = {}, out = L.filter(function(x){ return !(x && PEND.rm[x.id]); }).map(function(x){ if (x && PEND.up[x.id]) { seen[x.id] = 1; return s(x.updatedAt) >= s(PEND.up[x.id].updatedAt) ? x : Object.assign({}, x, PEND.up[x.id]); } return x; });
+  Object.keys(PEND.up).forEach(function(id){ if (!seen[id]) out.push(PEND.up[id]); });
+  return out;
+}
+function sched(){ var L = withPend(arr(C().schedule)); try { if (W._gcSchedVisible) L = arr(W._gcSchedVisible(L)); } catch (e) {} return L.filter(function(x){ return x && x.id != null && x.deleted !== true && !tomb(x.id) && coItem(x); }); }
 function namesIn(v){ var out = []; (Array.isArray(v) ? v : [v]).forEach(function(x){ var n = s(typeof x === 'object' && x ? (x.name || x.email) : x); if (n) n.split(/\s*[,;&\/]\s*|\s+and\s+/i).forEach(function(y){ y = low(y); if (y) out.push(y); }); }); return out; }
 function people(x){ return namesIn([x.assignee, x.who, x.schedFor, x.people, x.crew && typeof x.crew !== 'number' ? x.crew : '']); }
 function byMe(x){ var n = low(myName()); return !!n && [x.by, x.createdBy, x.ownerName].some(function(v){ return low(v) === n; }); }
@@ -210438,12 +210446,18 @@ function applyTo(list, up, rm){
 var SAVES = 0;
 function saveSched(up, rmIds){
   up = arr(up); var rm = {}; arr(rmIds).forEach(function(id){ rm[id] = 1; try { if (W._gcTombstone) W._gcTombstone('schedule', id); } catch (e) {} });
+  if (!PEND.at || Date.now() - PEND.at > 90000) PEND = { up: {}, rm: {}, at: 0 };
+  up.forEach(function(x){ PEND.up[x.id] = x; delete PEND.rm[x.id]; }); Object.keys(rm).forEach(function(id){ PEND.rm[id] = 1; delete PEND.up[id]; }); PEND.at = Date.now();
   try { W.__GC_MANUAL_SAVE__ = true; } catch (e) {}
   return baseList().then(function(base){
     var out = applyTo(base, up, rm);
     try { if (typeof W._setSchedule === 'function') W._setSchedule(function(prev){ return Array.isArray(prev) ? applyTo(prev, up, rm) : out; }); } catch (e) { warn(e); }
+    /* this IS the person's own save (patch ONLYYOU holds a setter while a form is open): the screen's list takes it now, so the CRM's
+       own save of the screen's list can never write an older copy over it */
+    try { if (typeof W._gcReleaseUpdates === 'function') W._gcReleaseUpdates('your schedule save (GrayCo Field)'); } catch (e) {}
     return Promise.resolve(W.idbSet ? W.idbSet('schedule', out) : null).catch(function(){}).then(function(){
       try { var f = W._supaUpsertNow || W._supaUpsert; if (f) f('schedule', out); } catch (e) { warn(e); }
+      try { if (typeof W._gcSyncDirty === 'function') W._gcSyncDirty(['schedule']); } catch (e) {}   /* patch SAVES: up within seconds, retried if it fails */
       SAVES++; HC.k = null; later(repaint, 300);
       return true;
     });
@@ -210506,13 +210520,13 @@ function insJobs(){ return myJobs().some(function(p){ return kindOf(p) === 'ins'
 function mitJobsMine(){ return myJobs().some(function(p){ try { return W._gcCo && W._gcCo.ofJob(p) === 'mitigation'; } catch (e) { return false; } }); }
 function extrasOf(a, k){
   var L = [];
-  if (a === 'admin') L = ['leads', 'viewas', 'systems', 'addjob', 'receipt', 'todo'].concat(alsoPm() ? ['log', 'sendest'] : []);   /* 💵 Money: ☰ More (owner 11/16) */
-  else if (a === 'pm') L = ['log', 'receipt', 'todo', 'sendest'];   /* ☐ Punch list: on each job page; 💬 Messages: on each job page */
+  if (a === 'admin') L = ['leads', 'viewas', 'systems', 'addjob', 'todo'].concat(alsoPm() ? ['log', 'sendest'] : []);   /* 🧾 Snap a receipt: a quick action */   /* 💵 Money: ☰ More (owner 11/16) */
+  else if (a === 'pm') L = ['log', 'todo', 'sendest'];   /* ☐ Punch list: on each job page; 💬 Messages: on each job page */
   else if (a === 'mit' || a === 'dual') L = ['emerg', 'drying', 'equip'].concat(insJobs() ? ['tpa'] : []);   /* owner 11/16: 🚨 new losses · 💧 readings due · 🌀 equipment out · 📆 TPA (insurance) — the drying / env tools are on each job page */
   else if (a === 'env') L = ['emerg'];   /* 🚨 Emergency leads (trauma / biohazard calls included — no "trauma" button, owner 11/16) + 🧪 lab results · 📋 paperwork · 🚧 blocked (below) */
   else { try { L = arr(k.actions(a, 'home')).filter(function(id){ return !DUPE[id]; }); } catch (e) { L = []; }
     if (a === 'ins') ['claims', 'tpa'].forEach(function(id){ if (L.indexOf(id) < 0) L.push(id); });
-    L.push('receipt'); L.push('todo'); }
+    L.push('todo'); }
   if ((a === 'pm' || a === 'admin') && insJobs()) ['claims', 'tpa'].forEach(function(id){ if (L.indexOf(id) < 0) L.push(id); });   /* insurance jobs: 📆 TPA dates · 🛡 Claim info */
   if (a === 'pm' || a === 'admin') ['equip', 'drying'].forEach(function(id){ if (mitJobsMine() && L.indexOf(id) < 0) L.push(id); });
   var seen = {}; return L.filter(function(id){ if (seen[id]) return false; seen[id] = 1; return k.shown(id); });
@@ -210525,6 +210539,7 @@ var QUICK = [
   ['work', '🛠', 'Schedule work', 'A crew or sub on a job'],
   ['update', '✏️', 'Update job', 'Stage · note · photo · next step'],
   ['photo', '📸', 'Photo to a job', 'The camera — pick the job'],
+  ['receipt', '🧾', 'Snap a receipt', 'Expense + photo on a job'],
   ['clock', '⏱', 'Clock in/out', ''],
   ['lead', '➕', 'New lead', 'Into Leads'],
   ['sched', '📅', 'My Schedule', 'Day · week · time off']
@@ -210820,6 +210835,7 @@ function saveUpdate(o, btn){
   if (file) { try { if (W._gcPhotos && W._gcPhotos.capture) jobs.push(Promise.resolve(W._gcPhotos.capture(p.id, [file], 'During')).catch(function(){ return null; })); } catch (e) { warn(e); } }
   if (val(o, 'nexts') && next && nd) jobs.push(saveSched([{ id: uid('SCHpm'), pid: p.id, type: 'task', pmfKind: 'next', title: 'Next step — ' + next, date: nd, time: '', assignee: me, by: me, createdBy: me, createdAt: at, updatedAt: at, address: s(p.address), companyId: coOf(p), source: 'GrayCo Field', scope: 'company' }], []));
   return Promise.all(jobs.map(function(j){ return Promise.resolve(j).catch(function(e){ warn(e); return null; }); })).then(function(){
+    try { if (typeof W._gcReleaseUpdates === 'function') W._gcReleaseUpdates('your job update (GrayCo Field)'); } catch (e) {}
     closeSheets(); toast('✓ ' + s(p.name) + ' updated' + (pctCh ? ' · ' + pctNew + '% done' : '') + (file ? ' · photo added' : '') + '.'); HC.k = null; later(repaint, 300); return true;
   });
 }
@@ -210836,6 +210852,7 @@ function quick(a, b){
   if (a === 'sched') return openSched({ reset: !D.querySelector('.gc-pmf-sheet[data-pmf-sheet="sched"],.gc-pmf-sheet[data-pmf-sheet="form"],.gc-pmf-sheet[data-pmf-sheet="view"]') });
   if (a === 'update') return pickMyJob('✏️ Update job', updateSheet);
   if (a === 'photo') { closeSheets(); return k && k.run('camera'); }
+  if (a === 'receipt') { closeSheets(); if (typeof W._gcFieldLogExpense === 'function') { var cj = null; try { if (D.getElementById('_gcJobDash') && W._gcCurrentJob) cj = proj(W._gcCurrentJob.id); } catch (e) {} W._gcFieldLogExpense(cj || undefined); } else toast('The receipt reader is not on this phone yet.'); return; }
   if (a === 'clock') { closeSheets(); return k && k.run('clock'); }
   if (a === 'msgs') { closeSheets(); return k && k.run('msgs'); }
   if (a === 'lead') return newLead();
@@ -210902,7 +210919,7 @@ function lessRows(a){
   return R;
 }
 W._gcRaMoreHook = function(a, o, pk){
-  if (off() || !dashApp(a) || D.getElementById('_gcJobDash')) return;
+  if (off() || !dashApp(a) || (D.getElementById('_gcJobDash') && !D.querySelector('#_gcJobPick.gc-fh'))) return;   /* from Home (a job page left under it does not count) */
   o.setAttribute('data-pmf-more', '1');
   var head = pk.querySelector('[data-fm="job"]'), grid = pk.querySelector('.gc-fm-g'), off0 = pk.querySelector('[data-fm="office"]'), moved = [];
   if (grid) Array.prototype.forEach.call(grid.querySelectorAll('[data-ra-a]'), function(b){ var id = b.getAttribute('data-ra-a'); if (ON_HOME[id] || JOB_ONLY[id]) return; b.className = 'gc-fm-r'; b.removeAttribute('data-pid'); moved.push(b); });
@@ -210999,7 +211016,7 @@ function tkSaveJob(o, btn){
   var me = myName(), at = nowIso(), prev = (p.envTestKit && p.envTestKit.checked) || {}, next = Object.assign({}, prev);
   Array.prototype.forEach.call(o.querySelectorAll('[data-tk]'), function(cb){ var id = cb.getAttribute('data-tk'); if (cb.checked) next[id] = prev[id] || { at: at, by: me }; else delete next[id]; });
   btn.disabled = true; btn.textContent = 'Saving…';
-  Promise.resolve(F() && F().saveProject ? F().saveProject(p.id, function(q){ q.envTestKit = { checked: next, updatedAt: at, by: me }; q.updatedBy = me; }) : null).then(function(){ closeSheets(); toast('🧪 Saved on ' + s(p.name) + '.'); }, function(e){ warn(e); btn.disabled = false; btn.textContent = 'Try again'; });
+  Promise.resolve(F() && F().saveProject ? F().saveProject(p.id, function(q){ q.envTestKit = { checked: next, updatedAt: at, by: me }; q.updatedBy = me; }) : null).then(function(){ try { if (W._gcReleaseUpdates) W._gcReleaseUpdates('your checklist (GrayCo Field)'); } catch (e) {} closeSheets(); toast('🧪 Saved on ' + s(p.name) + '.'); }, function(e){ warn(e); btn.disabled = false; btn.textContent = 'Try again'; });
 }
 /* 🏷 Job type: the job's own environmental types (any of the list) */
 function tkTypeSheet(p){
@@ -211012,7 +211029,7 @@ function tkTypeSave(o, btn){
   var p = o.__pmf && o.__pmf.p; if (!p) return; if (!seesAll() && !myJobIds()[s(p.id)]) return err(o, 'That job is not one of yours.');
   var L = Array.prototype.filter.call(o.querySelectorAll('[data-tt]'), function(c){ return c.checked; }).map(function(c){ return c.getAttribute('data-tt'); });
   btn.disabled = true;
-  Promise.resolve(F() && F().saveProject ? F().saveProject(p.id, function(q){ q.envTypes = L; }) : null).then(function(){ closeSheets(); toast('🏷 ' + s(p.name) + ': ' + (L.length ? L.length + ' type' + (L.length === 1 ? '' : 's') : 'found from the job') + '.'); later(function(){ var ov = D.getElementById('_gcJobDash'); if (ov) Array.prototype.forEach.call(ov.querySelectorAll('.gc-pmf-jt'), function(b){ b.remove(); }); tkTile(); }, 400); });
+  Promise.resolve(F() && F().saveProject ? F().saveProject(p.id, function(q){ q.envTypes = L; }) : null).then(function(){ try { if (W._gcReleaseUpdates) W._gcReleaseUpdates('your job type (GrayCo Field)'); } catch (e) {} closeSheets(); toast('🏷 ' + s(p.name) + ': ' + (L.length ? L.length + ' type' + (L.length === 1 ? '' : 's') : 'found from the job') + '.'); later(function(){ var ov = D.getElementById('_gcJobDash'); if (ov) Array.prototype.forEach.call(ov.querySelectorAll('.gc-pmf-jt'), function(b){ b.remove(); }); tkTile(); }, 400); });
 }
 /* ✏️ the admin's editor: each type — name, the words that find it, its buttons (title + items, one a line); ＋ a button, ＋ a type */
 function tkEdit(L0){
@@ -211095,6 +211112,7 @@ var JX = {   /* [icon, label, may it show (kind, role, tools, job), run(job)] �
   air:     ['🌬', 'Air / negative-pressure log', function(k){ return k === 'env'; }, function(p){ envTool('air', p); }],
   clear:   ['✅', 'Clearance / verification', function(k){ return k === 'env'; }, function(p){ envTool('air', p); later(function(){ try { var sel = Array.prototype.filter.call(D.querySelectorAll('select'), function(x){ return Array.prototype.some.call(x.options, function(o){ return o.value === 'Clearance'; }); }).pop(); if (sel) { sel.value = 'Clearance'; sel.dispatchEvent(new Event('change', { bubbles: true })); } } catch (e) {} }, 120); }],
   waste:   ['🗑', 'Waste manifest / disposal', function(k){ return k === 'env'; }, function(p){ envTool('waste', p); }],
+  receipt: ['🧾', 'Snap a receipt', function(){ return typeof W._gcFieldLogExpense === 'function'; }, function(p){ W._gcFieldLogExpense(proj(p.id) || p); }],   /* owner 11/16 (live r36b): a receipt on every job page */
   ppe:     ['😷', 'Safety / PPE log', function(k){ return k === 'env'; }, function(p){ envTool('ppe', p); }]
 };
 var JLK = 'gc_field_layouts';
@@ -211107,15 +211125,17 @@ function jlApply(over){
   if (FM.extra && FM.extra.claim && !FM.extra.claim.__pmf) { var c0 = FM.extra.claim[2]; FM.extra.claim = FM.extra.claim.slice(); FM.extra.claim[2] = function(k, r, T, p){ return k === 'mit' ? !!p && insFlag(p) && !!W._gcClaims : c0(k, r, T, p); }; FM.extra.claim.__pmf = 1; }   /* 🛡 only on an insurance job */
   over = over || jlOver();
   Object.keys(over || {}).forEach(function(k){ var o = over[k]; if (FM.layout[k] && o && Array.isArray(o.top) && o.top.length) FM.layout[k].top = o.top.map(s).filter(Boolean); });
+  Object.keys(FM.layout).forEach(function(k){ var L0 = FM.layout[k]; if (!L0 || !Array.isArray(L0.top)) return; if (Array.isArray(L0.hide)) L0.hide = L0.hide.filter(function(x){ return x !== 'receipt'; }); if (!listedIn(L0, 'receipt')) { if (over && over[k] && arr(L0.more).length) L0.more[0][1].push('receipt'); else L0.top.push('receipt'); } });   /* 🧾 on every kind of job page */
   return true;
 }
+function listedIn(L0, k){ return arr(L0.top).indexOf(k) >= 0 || arr(L0.more).some(function(g){ return arr(g[1]).indexOf(k) >= 0; }); }
 function jlOver(){ try { var v = JSON.parse(lsGet(JLK) || 'null'); return v && v.kinds ? v.kinds : null; } catch (e) { return null; } }
 var JLP = false;
 function jlPull(){ if (JLP || typeof W._gcCloudGet !== 'function') return; JLP = true; try { Promise.resolve(W._gcCloudGet(JLK)).then(function(v){ if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } } if (v && v.kinds) { try { localStorage.setItem(JLK, JSON.stringify(v)); } catch (e) {} jlApply(v.kinds); } }, function(){}); } catch (e) {} }
 W._gcPmKind = jobKind;
 /* 🧩 the admin's editor: each kind's top buttons, in order (the rest stay under ➕ More for this job) */
 var JL_NAMES = { dry: '💧 Moisture / drying log', equip: '🌀 Equipment', photo: '📸 Photos', log: '📒 Daily log', claim: '🛡 Claim info', papers: '📋 Paperwork', sched: '📅 Schedule', cust: '👤 Customer portal', punch: '☐ Punch / final', tpa: '📆 TPA dates',
-  samples: '🧪 Samples & results', contain: '🚧 Containment', air: '🌬 Air log', clear: '✅ Clearance', waste: '🗑 Waste manifest', ppe: '😷 PPE', co: '🔁 Change order', est: '📐 Estimate', money: '💰 Money', sub: '🔧 Sub portal', msg: '💬 Message', info: '📋 Job info', progress: '📈 Progress', update: '💬 Post update', safety: '🦺 Safety', docs: '📄 Documents', share: '🔗 Share photos', invoice: '🧾 Invoice', create: '📝 Create document', upest: '⬆ Upload estimate', payapp: '🏗 Pay apps', jobfin: '💰 Job financials' };
+  receipt: '🧾 Snap a receipt', samples: '🧪 Samples & results', contain: '🚧 Containment', air: '🌬 Air log', clear: '✅ Clearance', waste: '🗑 Waste manifest', ppe: '😷 PPE', co: '🔁 Change order', est: '📐 Estimate', money: '💰 Money', sub: '🔧 Sub portal', msg: '💬 Message', info: '📋 Job info', progress: '📈 Progress', update: '💬 Post update', safety: '🦺 Safety', docs: '📄 Documents', share: '🔗 Share photos', invoice: '🧾 Invoice', create: '📝 Create document', upest: '⬆ Upload estimate', payapp: '🏗 Pay apps', jobfin: '💰 Job financials' };
 function jlEdit(){
   if (!realAdmin() || vasOn()) { toast('Only an admin changes the job page buttons.'); return; }
   var FM = W._gcFieldMore; if (!FM || !FM.layout) return;

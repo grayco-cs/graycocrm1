@@ -132,7 +132,7 @@ async function tap(c, sel){
 }
 const home = async c => { await c.ev(() => { document.querySelectorAll('.gc-ra-sheet,.gc-fh-sheet,.gcfp-sheet,._gcSheetOv,#_gcJobDash').forEach(o => o.remove()); try { if (window._gcPhotos && window._gcPhotos.state && window._gcPhotos.state.open) window._gcPhotos.close(); } catch (e) {} }); await tap(c, '#gc-fh-tabs [data-t="home"]'); await H.waitFor(c, () => !!document.querySelector('#_gcJobPick .gc-pmf'), null, 8000); };
 const readBar = c => c.ev(() => { const t = document.getElementById('gc-fh-tabs'); const kids = [...t.querySelectorAll(':scope > [data-t]')]; const h = t.querySelector('[data-t="home"]'), a = t.querySelector('[data-t="appr"]');
-  return { keys: kids.map(b => b.getAttribute('data-t')), homeIdx: kids.indexOf(h), homeE: h ? Math.round(h.querySelector('.e').getBoundingClientRect().height) : 0, otherE: Math.round((kids.find(b => b !== h && b !== a) || h).querySelector('.e,.c').getBoundingClientRect().height), apprBadge: !!(a && a.querySelector('#gc-fh-badge')), apprFirst: kids[0] === a, homeIc: h ? h.querySelector('.e').textContent.trim() : '' }; });
+  return { keys: kids.map(b => b.getAttribute('data-t')), homeIdx: kids.indexOf(h), homeE: h ? Math.round(h.querySelector('.e').getBoundingClientRect().height) : 0, otherE: Math.round((kids.find(b => b !== h && b !== a) || h).querySelector('.e,.c').getBoundingClientRect().height), apprBadge: !!(a && a.querySelector('#gc-fh-badge')), apprFirst: kids[0] === a, homeIc: h ? h.querySelector('.e').firstChild.textContent.trim() : '' }; });
 const dash = c => c.ev(() => { const d = document.querySelector('#_gcJobPick .gc-pmf'); if (!d) return null;
   const secs = [...d.querySelectorAll('.fh-sec > span')].map(x => x.textContent);
   return { app: d.getAttribute('data-pmf-app'), secs, today: [...d.querySelectorAll('.gc-pmf-today [data-pmf-a="item"]')].map(b => b.getAttribute('data-id')),
@@ -159,6 +159,9 @@ async function tileOpens(c, pid, k){
   return r;
 }
 const cloudSched = () => (H.cget('schedule') || []).filter(Boolean);
+/* a save reaches the database within seconds (patch SAVES paces uploads of the same list): wait for it, up to 25 s */
+const until = async (fn, ms) => { const t0 = Date.now(); let v; while (Date.now() - t0 < (ms || 25000)) { try { v = fn(); } catch (e) { v = null; } if (v) return v; await sleep(500); } try { return fn(); } catch (e) { return null; } };
+const proj1 = id => (H.cget('projects') || []).find(p => p.id === id) || {};
 const visibleSick = c => c.ev(() => [...document.querySelectorAll('[data-to-a="sick"],[data-to-a="late"],[data-pmf-a="to"][data-v="sick"],[data-pmf-a="to"][data-v="late"]')].filter(e => e.getClientRects().length && getComputedStyle(e).display !== 'none').length);
 
 try {
@@ -174,9 +177,9 @@ try {
   console.log('    PM home: ' + JSON.stringify({ secs: d1 && d1.secs, today: d1 && d1.today, quick: d1 && d1.quick, extra: d1 && d1.extra, nums: d1 && d1.nums }));
   ok(d1 && d1.app === 'pm', 'PM: 🏠 Home is the dashboard', d1);
   ok(d1 && d1.today.includes('SCHa') && !d1.today.includes('SCHb'), 'PM Today: the work on my job today, not another PM\'s job', d1 && d1.today);
-  ok(d1 && d1.quick.join() === 'appt,work,update,photo,clock,lead,sched', 'PM quick actions in order: New appointment · Schedule work · Update job · Photo · Clock · New lead · My Schedule (💬 Messages is on each job page)', d1 && d1.quick);
+  ok(d1 && d1.quick.join() === 'appt,work,update,photo,receipt,clock,lead,sched', 'PM quick actions in order: New appointment · Schedule work · Update job · Photo · 🧾 Snap a receipt · Clock · New lead · My Schedule (💬 Messages is on each job page)', d1 && d1.quick);
   ok(d1 && d1.quickH >= 72, 'PM: the quick actions are big tap targets (≥ 72 px)', d1 && d1.quickH);
-  ok(d1 && ['log', 'receipt', 'todo'].every(k => d1.extra.includes(k)) && !d1.extra.includes('punch') && !d1.extra.includes('msgs') && !d1.extra.includes('money'), 'PM: 📒 Daily log · 🧾 Receipt · ☑ To-dos on Home; ☐ Punch / 💬 Messages are on the job page, not Home', d1 && d1.extra);
+  ok(d1 && ['log', 'todo'].every(k => d1.extra.includes(k)) && !d1.extra.includes('punch') && !d1.extra.includes('msgs') && !d1.extra.includes('money'), 'PM: 📒 Daily log · ☑ To-dos on Home; ☐ Punch / 💬 Messages are on the job page, not Home', d1 && d1.extra);
   ok(d1 && /Bids due|bids? due/i.test(d1.need), 'PM Needs you: ⏰ Bids due', d1 && d1.need);
   ok(d1 && /Today/.test(d1.secs[0]) && d1.secs.some(x => /Needs you/.test(x)) && d1.secs.some(x => /This week/.test(x)) && d1.order.every((v, i, a) => v >= 0 && (i === 0 || v > a[i - 1])), 'PM: Today → quick actions → Needs you → This week, in that order', d1 && { s: d1.secs, o: d1.order });
   ok(d1 && /1 overdue follow-up/.test(d1.need), 'PM Needs you: the overdue lead follow-up', d1 && d1.need);
@@ -210,7 +213,7 @@ try {
   await pm.page().fill('.gc-pmf-sheet [data-f="notes"]', 'Bring the moisture meter');
   await pm.page().screenshot({ path: SHOTS + 'pm_new_appt.png' });
   await tap(pm, '.gc-pmf-sheet [data-pmf-a="save"]'); await sleep(1500);
-  const ap = cloudSched().find(x => x.leadId === 'L1' && x.type === 'appointment');
+  const ap = await until(() => cloudSched().find(x => x.leadId === 'L1' && x.type === 'appointment'));
   ok(!!ap && ap.date === ymd(1) && ap.time === '10:30 AM' && ap.assignee === 'Demo PM' && /^Inspection — Lead Person A/.test(ap.title) && ap.scope === 'company', 'the appointment is saved to the database (cloud schedule): Inspection — Lead Person A, tomorrow 10:30 AM, for Demo PM', ap);
   ok(await pm.ev(id => !!document.querySelector('.gc-pmf-sheet[data-pmf-sheet="sched"] [data-id="' + id + '"]'), ap && ap.id), 'after Save, My Schedule opens on that day with it');
   ok(cloudSched().some(x => x.id === 'SCHa') && cloudSched().some(x => x.id === 'SCHb'), 'nothing else on the schedule was lost');
@@ -221,6 +224,7 @@ try {
   const onDesk = await H.waitFor(desk, id => (window._crm && window._crm.schedule || []).some(x => x && x.id === id), ap && ap.id, 40000);
   ok(!!onDesk, 'the Desk (Nick on a computer) has the appointment on its schedule', ap && ap.id);
   await desk.ev(() => { try { window._setView('schedule'); } catch (e) {} }); await sleep(2500);
+  await desk.ev(() => { const b = [...document.querySelectorAll('main button')].find(x => /^\s*👁\s*Everything/.test(x.textContent)); if (b) b.click(); }); await sleep(1200);   /* the Desk opens on "My Schedule" (Nick's own); the PM's appointment is under Everything */
   const deskTxt = await desk.ev(() => (document.querySelector('main') || document.body).innerText);
   ok(/Inspection — Lead Person A|Lead Person A/.test(deskTxt), 'the Desk\'s 📅 Schedule screen shows it', deskTxt.slice(0, 300));
   await desk.page().screenshot({ path: SHOTS + 'desk_schedule.png' });
@@ -232,11 +236,11 @@ try {
   await pm.page().fill('.gc-pmf-sheet [data-f="date"]', ymd(3));
   await pm.page().fill('.gc-pmf-sheet [data-f="time"]', '13:15');
   await tap(pm, '.gc-pmf-sheet [data-pmf-a="save"]'); await sleep(1500);
-  const ap2 = cloudSched().find(x => ap && x.id === ap.id);
+  const ap2 = await until(() => cloudSched().find(x => ap && x.id === ap.id && x.date === ymd(3)));
   ok(ap2 && ap2.date === ymd(3) && ap2.time === '1:15 PM' && ap2.leadId === 'L1', 'moved: the same item, the new date and time in the database', ap2);
   await pm.ev(() => window._gcPmField.item('SCHc')); await sleep(400);
   await tap(pm, '.gc-pmf-sheet [data-pmf-a="cancel"]'); await sleep(1500);
-  ok(!cloudSched().some(x => x.id === 'SCHc'), 'cancelled: the walkthrough is off the schedule in the database');
+  ok(await until(() => !cloudSched().some(x => x.id === 'SCHc')), 'cancelled: the walkthrough is off the schedule in the database');
 
   // 🛠 Schedule work — a sub, 4 work days on my job
   await home(pm);
@@ -251,16 +255,17 @@ try {
   await pm.page().fill('.gc-pmf-sheet [data-f="date"]', ymd(start));
   await pm.page().fill('.gc-pmf-sheet [data-f="end"]', ymd(start + 3));
   await tap(pm, '.gc-pmf-sheet [data-pmf-a="save"]'); await sleep(1600);
-  const wk = cloudSched().filter(x => x.pid === 'P1' && x.subId === 'S1' && x.title === 'Hang drywall');
+  const wk = (await until(() => { const l = cloudSched().filter(x => x.pid === 'P1' && x.subId === 'S1' && x.title === 'Hang drywall'); return l.length === 4 ? l : null; })) || [];
   ok(wk.length === 4 && new Set(wk.map(x => x.groupId)).size === 1 && wk.every(x => x.vendor === 'Demo Drywall Co' && x.type === 'work'), 'the work is saved: 4 work days, one group, the sub as the vendor', wk.map(x => [x.date, x.groupId]));
-  const sc = await pm.ev(() => { try { return (window._gcSubConfirm.list() || []).map(x => JSON.stringify(x)).join(' '); } catch (e) { return 'ERR ' + e.message; } });
+  const scOf = () => pm.ev(() => { try { return (window._gcSubConfirm.list() || []).map(x => JSON.stringify(x)).join(' '); } catch (e) { return 'ERR ' + e.message; } });
+  let sc = await scOf(); for (let i = 0; i < 20 && !/Demo Drywall|"S1"/.test(sc); i++) { await sleep(1000); sc = await scOf(); }
   ok(/P1/.test(sc) && /S1|Demo Drywall/.test(sc), 'patch SUBCONFIRM offers the sub on that job (👷 Confirm list)', sc.slice(0, 300));
   // move all 4 days by one day
   await pm.ev(id => window._gcPmField.item(id), wk.sort((a, b) => a.date < b.date ? -1 : 1)[0].id); await sleep(400);
   ok(await pm.ev(() => !!document.querySelector('.gc-pmf-sheet [data-f="allg"]:checked')), 'a multi-day work item: "All 4 days" is offered (ticked)');
   await pm.page().fill('.gc-pmf-sheet [data-f="date"]', ymd(start + 1));
   await tap(pm, '.gc-pmf-sheet [data-pmf-a="save"]'); await sleep(1500);
-  const wk2 = cloudSched().filter(x => x.groupId === wk[0].groupId).map(x => x.date).sort();
+  const wk2 = (await until(() => { const l = cloudSched().filter(x => wk[0] && x.groupId === wk[0].groupId).map(x => x.date).sort(); return l[0] === ymd(start + 1) ? l : null; })) || cloudSched().filter(x => wk[0] && x.groupId === wk[0].groupId).map(x => x.date).sort();
   ok(wk2.length === 4 && wk2[0] === ymd(start + 1), 'moved: all 4 days moved together', wk2);
 
   // a PM cannot touch another PM's job
@@ -281,9 +286,22 @@ try {
   await pm.page().fill('.gc-pmf-sheet [data-f="nextd"]', ymd(4));
   await pm.page().screenshot({ path: SHOTS + 'pm_update_job.png' });
   await tap(pm, '.gc-pmf-sheet [data-pmf-a="usave"]'); taps++; await sleep(2500);
-  const p2 = (H.cget('projects') || []).find(p => p.id === 'P2') || {};
+  const p2 = (await until(() => proj1('P2').status === 'Punch List' ? proj1('P2') : null)) || proj1('P2');
   ok(taps <= 3 && p2.status === 'Punch List' && (p2.updates || [])[0] && p2.updates[0].text === 'Shingles done, gutters next' && p2.nextStep === 'Gutter install', 'Update job in ' + taps + ' taps from Home: stage + note + next step saved on the job (database)', { taps, st: p2.status, u: p2.updates, n: p2.nextStep });
 
+  // 🧾 Snap a receipt: Home → the expense form → saved to the database; and on the job page, for that job
+  await home(pm); await tap(pm, '.gc-pmf [data-pmf-a="receipt"]');
+  ok(!!(await H.waitFor(pm, () => !!document.getElementById('_gcLogExpOv'), null, 6000)), '🧾 Snap a receipt (Home) opens the expense form');
+  await pm.ev(() => { const o = document.getElementById('_gcLogExpOv'); const j = o.querySelector('#_leJob'); j.value = 'P1'; j.dispatchEvent(new Event('change', { bubbles: true })); o.querySelector('#_leStore').value = 'Sample Lumber'; o.querySelector('#_lePrice').value = '42.50'; });
+  await pm.ev(() => document.querySelector('#_gcLogExpOv #_leSave').click()); await sleep(1500);
+  const ex = await until(() => (H.cget('expenses') || []).find(x => x && x.pid === 'P1' && x.vendor === 'Sample Lumber' && +x.amt === 42.5));
+  ok(!!ex, '🧾 the receipt is saved on the job (expenses in the database)', (H.cget('expenses') || []).slice(-2));
+  await pm.ev(() => document.querySelectorAll('#_gcLogExpOv').forEach(o => o.remove()));
+  const jp1 = await jobPage(pm, 'P1');
+  ok(jp1.top.includes('receipt'), 'the job page has 🧾 Snap a receipt', jp1.top);
+  await tap(pm, '#_gcJobDash .gcfp-grid > [data-fm="receipt"]');
+  ok(await H.waitFor(pm, () => { const o = document.getElementById('_gcLogExpOv'); return !!o && o.querySelector('#_leJob').value === 'P1'; }, null, 6000), 'the job page\'s 🧾 opens the expense form on THIS job');
+  await pm.ev(() => document.querySelectorAll('#_gcLogExpOv,#_gcJobDash').forEach(o => o.remove()));
   // every quick tile and bar button opens something; Home brings the dashboard back
   const tryOpen = async (sel) => {
     await pm.ev(() => { window.__pv = localStorage.getItem('grayco_view'); window.__pb = new Set([...document.body.children]); const t = document.getElementById('gc-ra-toast'); if (t) t.style.display = 'none'; });
@@ -293,7 +311,7 @@ try {
     r.ok = (r.add.length > 0 || r.view || r.photos || r.home) && !BAD_TOAST.test(r.toast);
     await home(pm); return r;
   };
-  const tiles = ['appt', 'work', 'update', 'photo', 'clock', 'lead', 'sched'];
+  const tiles = ['appt', 'work', 'update', 'photo', 'receipt', 'clock', 'lead', 'sched'];
   const tr = []; for (const k of tiles) tr.push([k, await tryOpen('.gc-pmf [data-pmf-a="' + k + '"]')]);
   ok(tr.every(x => x[1].ok), 'PM: every quick tile opens its screen (' + tiles.join(', ') + ')', tr.filter(x => !x[1].ok));
   const br = []; for (const k of ['appr', 'jobs', 'ra-sched', 'more']) br.push([k, await tryOpen('#gc-fh-tabs [data-t="' + k + '"]')]);
@@ -340,7 +358,8 @@ try {
   console.log('    Nick This week lists: ' + JSON.stringify(nl));
   const nv = Object.fromEntries(nl);
   ok(nv.close && /commercial bids left out/.test(nv.close.t), 'the close-rate list says commercial bids are left out', nv.close);
-  ok(nl.every(x => x[1]) && nv.newWeek.n === 2 && nv.close.n === 3 && nv.jobs.n === 5 && nv.collected.n === 1 && nv.ar.n === 1, 'Nick: every This week number opens the list behind it (counts match)', nl);
+  ok(nv.collected && nv.ar && /Collected/.test(nv.collected.t) && /Owed to us/.test(nv.ar.t), 'Collected / Owed to us open their invoice lists', [nv.collected, nv.ar]);
+  ok(nl.every(x => x[1]) && nv.newWeek.n === 2 && nv.close.n === 3 && nv.jobs.n === 5, 'Nick: every This week number opens the list behind it (counts match)', nl);
   // a payroll / commission approval: under Needs you, admin only
   const PAYSET = () => { window.__gcPmfSet0 = window._gcApprovalSet; window._gcApprovalSet = function(){ var r = window.__gcPmfSet0 ? window.__gcPmfSet0() : null; r = r && typeof r === 'object' ? Object.assign({}, r) : {}; r.groups = Object.assign({}, r.groups || {}, { payroll: [{ id: 'pay:09', title: '09 — commission paid, not earned', sub: 'Demo · $4.00', urgency: 'asap' }] }); return r; }; };
   await nk.ev(PAYSET); await nk.ev(() => { window._gcRA.sync(); }); await home(nk); await sleep(1200);
@@ -355,24 +374,28 @@ try {
   // every quick tile + bar button for Nick
   const tryN = async sel => { await nk.ev(() => { window.__pb = new Set([...document.body.children]); window.__pv = localStorage.getItem('grayco_view'); }); await tap(nk, sel); await sleep(500);
     const r = await nk.ev(() => { const t = document.getElementById('gc-ra-toast'); return { add: [...document.body.children].filter(e => !window.__pb.has(e) && e.tagName !== 'SCRIPT' && e.tagName !== 'STYLE' && !/toast/i.test(e.id + ' ' + e.className) && getComputedStyle(e).display !== 'none').length, view: localStorage.getItem('grayco_view') !== window.__pv, home: !document.querySelector('#_gcJobPick.gc-fh'), photos: !!(window._gcPhotos && window._gcPhotos.state && window._gcPhotos.state.open), toast: t && t.style.display !== 'none' ? t.textContent : '' }; });
-    r.ok = (r.add || r.view || r.home || r.photos) && !BAD_TOAST.test(r.toast); await home(nk); return r; };
-  const nr = []; for (const k of ['appt', 'work', 'update', 'photo', 'clock', 'lead', 'sched']) nr.push([k, await tryN('.gc-pmf [data-pmf-a="' + k + '"]')]);
+    r.ok = (r.add || r.view || r.home || r.photos) && !BAD_TOAST.test(r.toast); await home(nk);
+    r.cover = await nk.ev(() => { const b = document.querySelector('#gc-fh-tabs [data-t="more"]'); if (!b) return 'no-more-btn'; const bb = b.getBoundingClientRect(); const e = document.elementFromPoint(bb.x + bb.width / 2, bb.y + bb.height / 2); return e ? (e.closest('#gc-fh-tabs') ? 'ok' : (e.id || e.className || e.tagName) + ' in ' + (((e.parentElement && e.parentElement.closest('[id]')) || {}).id || '')) : 'none'; });
+    if (r.cover !== 'ok') console.log('    ⚠ after ' + sel + ' the bar is covered by: ' + r.cover);
+    return r; };
+  const nr = []; for (const k of ['appt', 'work', 'update', 'photo', 'receipt', 'clock', 'lead', 'sched']) nr.push([k, await tryN('.gc-pmf [data-pmf-a="' + k + '"]')]);
   for (const k of (d2 ? d2.extra : [])) nr.push([k, await tryN('.gc-pmf-x [data-ra-a="' + k + '"]')]);
   for (const k of ['appr', 'jobs', 'ra-sched', 'more']) nr.push(['bar:' + k, await tryN('#gc-fh-tabs [data-t="' + k + '"]')]);
-  await tap(nk, '#gc-fh-tabs [data-t="more"]');
+  await home(nk); await tap(nk, '#gc-fh-tabs [data-t="more"]');
+  if (!(await H.waitFor(nk, () => !!document.querySelector('.gc-fh-sheet[data-pmf-more]'), null, 5000))) { await home(nk); await tap(nk, '#gc-fh-tabs [data-t="more"]'); await H.waitFor(nk, () => !!document.querySelector('.gc-fh-sheet[data-pmf-more]'), null, 5000); }
   const nmo = await nk.ev(() => { const o = [...document.querySelectorAll('.gc-fh-sheet[data-ra-more]')].pop(); return o ? [...o.querySelectorAll('[data-pmf-a^="m-"]')].map(b => b.getAttribute('data-pmf-a')) : []; });
   ok(['m-pause', 'm-help', 'm-money', 'm-jl', 'm-tk'].every(k => nmo.includes(k)), 'Nick ☰ More: Less often has 💵 Money, ⏸ Data-entry mode, 🧩 Job page buttons, 🧪 Environmental job types & buttons, ❓ Help', nmo);
   // the admin edits the environmental types: a new item on the lead checklist
   await home(nk); await nk.ev(() => { document.querySelectorAll('.gc-ra-sheet,.gc-fh-sheet').forEach(o => o.remove()); }); await tap(nk, '#gc-fh-tabs [data-t="more"]'); await tap(nk, '.gc-fh-sheet [data-pmf-a="m-tk"]');
   await nk.ev(() => { const ta = document.querySelector('.gc-pmf-sheet [data-ti="0"] [data-be="items"]'); ta.value += '\nXRF analyzer (rented)'; });
   await tap(nk, '.gc-pmf-sheet [data-pmf-a="tkesave"]'); await sleep(1500);
-  const tk = H.cget('gc_env_jobtypes');
+  const tk = await until(() => H.cget('gc_env_jobtypes'));
   ok(tk && tk.types && tk.types[0].buttons[0].items.some(i => i.t === 'XRF analyzer (rented)') && tk.types.length === 4, 'Nick: the environmental types & buttons are the company\'s list (saved to the database) — a new lead item', tk && tk.types && tk.types[0].buttons[0].items.slice(-2));
   // the admin changes the Mitigation job page's top buttons
   await home(nk); await tap(nk, '#gc-fh-tabs [data-t="more"]'); await tap(nk, '.gc-fh-sheet [data-pmf-a="m-jl"]');
   await nk.ev(() => { const i = document.querySelector('.gc-pmf-sheet [data-jl="mit"]'); i.value = 'photo, dry, equip, log'; });
   await tap(nk, '.gc-pmf-sheet [data-pmf-a="jlsave"]'); await sleep(1200);
-  const jl = H.cget('gc_field_layouts');
+  const jl = await until(() => H.cget('gc_field_layouts'));
   ok(jl && jl.kinds && jl.kinds.mit && jl.kinds.mit.top.join() === 'photo,dry,equip,log', 'Nick: 🧩 Job page buttons saves the Mitigation top buttons (database)', jl);
   const jn = await jobPage(nk, 'M1');
   ok(jn.top.slice(0, 4).join() === 'photo,dry,equip,log', 'the Mitigation job page follows the admin\'s order', jn.top);
@@ -396,7 +419,7 @@ try {
   ok(b5.keys.join() === 'ra-claims,jobs,home,ra-sched,more' && b5.homeIdx === 2 && b5.homeE >= 56, 'Mitigation PM bar: 💧 Drying · Jobs · 🏠 Home (big, middle) · 📅 My Schedule · More', b5);
   const d5 = await dash(mp);
   console.log('    Mitigation home: ' + JSON.stringify({ secs: d5 && d5.secs, today: d5 && d5.today, extra: d5 && d5.extra, nums: d5 && d5.nums }));
-  ok(d5 && d5.app === 'mit' && d5.quick.join() === 'appt,work,update,photo,clock,lead,sched', 'Mitigation PM: the same Home dashboard and quick actions', d5 && { app: d5.app, q: d5.quick });
+  ok(d5 && d5.app === 'mit' && d5.quick.join() === 'appt,work,update,photo,receipt,clock,lead,sched', 'Mitigation PM: the same Home dashboard and quick actions', d5 && { app: d5.app, q: d5.quick });
   ok(d5 && ['emerg', 'drying', 'equip', 'tpa'].every(k => d5.extra.includes(k)) && !d5.extra.some(k => /^mws_/.test(k)), 'Mitigation Home: 🚨 Emergency / new losses · 💧 Readings due · 🌀 Equipment out · 📆 TPA dates (the drying tools are on each job page)', d5 && d5.extra);
   const eqN = await mp.ev(() => { const b = document.querySelector('.gc-pmf-x [data-ra-a="equip"] .gc-ra-n'); return b ? +b.textContent : 0; });
   ok(eqN >= 1, 'Mitigation Home: 🌀 Equipment shows how many pieces are out', eqN);
@@ -411,13 +434,13 @@ try {
   await mp.page().fill('.gc-pmf-sheet [data-f="title"]', 'Soot clean-up');
   await mp.page().fill('.gc-pmf-sheet [data-f="date"]', ymd(1));
   await tap(mp, '.gc-pmf-sheet [data-pmf-a="save"]'); await sleep(1500);
-  const mw = cloudSched().find(x => x.pid === 'M2' && x.title === 'Soot clean-up');
+  const mw = await until(() => cloudSched().find(x => x.pid === 'M2' && x.title === 'Soot clean-up'));
   ok(mw && mw.companyId === 'mitigation' && mw.assignee === 'Molly Tech', 'Mitigation work is saved with the job\'s company (Mitigation) and the crew', mw);
   await home(mp); await tap(mp, '.gc-pmf [data-pmf-a="update"]');
   if (await mp.ev(() => !!document.querySelector('.gc-ra-sheet [data-pj="M1"]'))) await tap(mp, '.gc-ra-sheet [data-pj="M1"]');
   await mp.page().fill('.gc-pmf-sheet [data-f="note"]', 'Day 3 readings down');
   await tap(mp, '.gc-pmf-sheet [data-pmf-a="usave"]'); await sleep(2500);
-  const m1 = (H.cget('projects') || []).find(p => p.id === 'M1') || {};
+  const m1 = (await until(() => (proj1('M1').updates || []).length ? proj1('M1') : null)) || proj1('M1');
   ok((m1.updates || [])[0] && m1.updates[0].text === 'Day 3 readings down', 'Mitigation: Update job saves the note on the job', m1.updates);
   // the mitigation job pages: the insurance water loss (claim) and the fire job
   const jm1 = await jobPage(mp, 'M1');
@@ -461,13 +484,13 @@ try {
   await jobPage(ep, 'E1'); await tap(ep, '#_gcJobDash .gc-pmf-jt[data-bid="lead_eq"]');
   await ep.ev(() => { const c = [...document.querySelectorAll('.gc-pmf-sheet [data-tk]')]; c[0].click(); c[1].click(); });
   await tap(ep, '.gc-pmf-sheet [data-pmf-a="tksave"]'); await sleep(2500);
-  const e1k = ((H.cget('projects') || []).find(p => p.id === 'E1') || {}).envTestKit;
+  const e1k = (await until(() => proj1('E1').envTestKit)) || null;
   ok(e1k && Object.keys(e1k.checked || {}).length === 2, '🧪 Lead testing equipment: 2 ticked items are saved on the job (database)', e1k);
   // 🏷 Job type: add asbestos → its button shows
   await jobPage(ep, 'E1'); await tap(ep, '#_gcJobDash .gc-pmf-jt[data-pmf-a="tktype"]');
   await ep.ev(() => { const a = document.querySelector('.gc-pmf-sheet [data-tt="asb"]'); if (a && !a.checked) a.click(); const l = document.querySelector('.gc-pmf-sheet [data-tt="lead"]'); if (l && !l.checked) l.click(); });
   await tap(ep, '.gc-pmf-sheet [data-pmf-a="tktsave"]'); await sleep(2500);
-  ok(JSON.stringify(((H.cget('projects') || []).find(p => p.id === 'E1') || {}).envTypes) === '["lead","asb"]', '🏷 Job type is saved on the job (lead + asbestos)');
+  ok(await until(() => JSON.stringify(proj1('E1').envTypes) === '["lead","asb"]'), '🏷 Job type is saved on the job (lead + asbestos)');
   const je2 = await jobPage(ep, 'E1');
   ok(je2.top.includes('pmf:asb_eq') && je2.top.includes('pmf:lead_eq'), 'the job page now has the asbestos button too', je2.top);
   await home(ep); await tap(ep, '#gc-fh-tabs [data-t="ra-sched"]'); await tap(ep, '.gc-pmf-sheet [data-pmf-a="v"][data-v="week"]');
