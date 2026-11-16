@@ -59,9 +59,10 @@ async function todo(id, label, opts){
   return !!(r && r.ok && !r.unchanged);
 }
 /* a staff-only e-mail (every address @grayco-cs.com or a gc_staff staff e-mail — data-entry mode lets it through) */
-async function staffMail(to, subject, html){
+async function staffMail(to, subject, html, opts){
   await loadStaff();   /* patch OFFICEFIX */
   to = (Array.isArray(to) ? to : [to]).map(low).filter(staffEmail);
+  if (!(opts && opts.noAway)) try { const AW = require('./away.js'); to = AW.redirect(to, await AW.activeNow()); } catch (e) {}   /* AWAY: an admin on 🏖 Away gets no automatic staff e-mail (their cover does) */
   if (!to.length) return { ok: false, skipped: 'no staff address' };
   const key = s(process.env.RESEND_API_KEY);
   if (!key || s(process.env.PORTAL_MAIL_OFF) === '1') return { ok: false, skipped: 'e-mail is not set up' };

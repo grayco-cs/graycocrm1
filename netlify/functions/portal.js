@@ -2052,6 +2052,8 @@ async function approvalAction(body, who){
   const officePm = !admin && !office && !isPm && it0.step === 'pm' && await isOffice(who);
   if (!admin && !office && !(it0.step === 'pm' && (isPm || officePm))) return { status: 403, out: { ok: false, error: it0.step === 'admin' ? 'This one needs Wesley or Nick now (the office can take it after 24 hours).' : 'Only the job\'s PM (' + (it0.pm || 'none') + '), the office or an admin can approve this.' } };
   const now = new Date().toISOString(), me = { by: myName || who.email, email: low(who.email), role: admin ? 'admin' : mmOk ? 'marketing' : ((office || officePm) ? 'office' : (isApmStep ? 'apm' : 'pm')), at: now };
+  if (/^(phone|tablet|computer)$/.test(low(body.device))) me.device = low(body.device);   /* AWAY: which device approved (the approval audit) */
+  const auditIt = async function(decision, item){ if (op !== 'approve' && op !== 'reject' && op !== 'record') return; try { await require('./_lib/apprping.js').audit({ key: 'ap2:' + id, src: 'queue', kind: s(it0.kind), title: s(it0.title) || s(it0.subject) || s(it0.kind), job: s(it0.jobName), decision: decision, by: me.by, email: me.email, role: me.role, device: me.device || '', since: s(it0.adminSince || it0.createdAt) }); } catch (e) {} };   /* AWAY */
   if (office && !officeAll && !it0.escalated && !it0.officeOk) { try { await escalateDue({ only: id }); } catch (e) {} }   /* patch APOFFICE4: not for her own kinds */
   const upd = async function(fn, check){ return kvListUpdate(AQ_KEY, function(l){ const x = l.find(function(y){ return s(y.id) === id; }); if (!x) return null; const ok = fn(x); if (ok === false) return { list: null, result: x }; x.updatedAt = new Date().toISOString(); return { list: l, check: function(l2){ const z = l2.find(function(y){ return s(y.id) === id; }); return !!(z && check(z)); }, result: x }; }); };
   if (op === 'reject') {
@@ -2061,7 +2063,8 @@ async function approvalAction(body, who){
     if (mktLib().isMktKind(it0.kind)) { try { await mktLib().onRejected(r.result, me); } catch (e) {} }   /* patch MKT */
     if (s(it0.kind) === 'portal_publish' && (it0.meta || {}).gateKey) { try { await gateSet(it0.meta.gateKey, 'rejected', me, clip(body.reason, 100)); } catch (e) {} }
     if (s(it0.kind) === 'sub_contact') { try { await subcLib().onRejected(exports._core, it0, me); } catch (e) {} }
-    if (/^preq_/.test(s(it0.kind))) { try { await require('./_lib/portalreq.js').onRejected(it0, me); } catch (e) {} }   /* patch PORTALREQ: a reply not approved never shows */   /* patch SUBCONTACT: nothing is shared */   /* patch PORTALGATE: not approved → never in the portal */
+    if (/^preq_/.test(s(it0.kind))) { try { await require('./_lib/portalreq.js').onRejected(it0, me); } catch (e) {} }
+    await auditIt('denied');   /* AWAY */   /* patch PORTALREQ: a reply not approved never shows */   /* patch SUBCONTACT: nothing is shared */   /* patch PORTALGATE: not approved → never in the portal */
     try {
       if (/final/.test(it0.kind) && m.invoiceId) await patchMail(m.invoiceId, { last_reminder_at: now, last_result: 'rejected' });
       if (it0.kind === 'portal_docs' && m.batch) await fetch(sbUrl() + '/rest/v1/gc_portal_notice?batch_id=eq.' + encodeURIComponent(m.batch), { method: 'PATCH', headers: H({ Prefer: 'return=minimal' }), body: JSON.stringify({ result: 'rejected' }) });
@@ -2085,6 +2088,7 @@ async function approvalAction(body, who){
       if (s(it0.kind) === 'portal_publish' && m.gateKey) await gateSet(m.gateKey, 'recorded', me, 'record-only');   /* patch PORTALGATE: recorded, never shown */
       if (it0.kind === 'portal_docs' && m.batch) await fetch(sbUrl() + '/rest/v1/gc_portal_notice?batch_id=eq.' + encodeURIComponent(m.batch), { method: 'PATCH', headers: H({ Prefer: 'return=minimal' }), body: JSON.stringify({ result: 'recorded' }) });
     } catch (e) {}
+    await auditIt('recorded');   /* AWAY */
     return { status: 200, out: { ok: true, recorded: true, sent: false, item: r.result } };
   }
   const edit = body.edit && typeof body.edit === 'object' ? body.edit : null;
@@ -2117,6 +2121,7 @@ async function approvalAction(body, who){
     else { x.step = x.steps[x.steps.indexOf(x.step) + 1]; if (x.step === 'admin') x.adminSince = now; }   /* patch AP4: the 24 hours start */
   }, function(z){ return last ? z.claim === claim : z.step !== it0.step; });
   if (!r.ok || !r.result || (last && r.result.claim !== claim)) return { status: 409, out: { ok: false, error: 'Someone else is on this one — look again.', item: r.result } };
+  await auditIt('approved');   /* AWAY: the approval is recorded on the item; the audit keeps who / when / which device */
   if (!last) return { status: 200, out: { ok: true, item: r.result, next: r.result.step } };
   if (cqHold) return { status: 200, out: { ok: true, item: r.result, sent: false, scheduled: true, releaseAt: r.result.releaseAt, say: CQ().SAY, overrideRefused: body.sendNow === true && !admin } };   /* patch CUSTQUIET */
   const sent = await CQ().run(cqOverride ? 'override' : null, function(){ return aqSend(r.result, now); });   /* patch CUSTQUIET: an admin's emergency send goes now */
@@ -2198,8 +2203,9 @@ function adminEmails(data){ return peopleOf(data, function(u){ return /^admin$/i
 let webPushLib;
 async function pushTo(emails, p){
   const pub = s(process.env.VAPID_PUBLIC_KEY), priv = s(process.env.VAPID_PRIVATE_KEY);
-  const wp = exports._core && exports._core._webPush || (webPushLib !== undefined ? webPushLib : (webPushLib = (function(){ try { return require('web-push'); } catch (e) { return null; } })()));
+  const wp = exports._core && exports._core._webPush || (webPushLib !== undefined ? webPushLib : (webPushLib = (function(){ try { return require('web-push'); } catch (e) { return require('./_lib/staffpush.js').compat(); } })()));   /* AWAY: web-push is not installed — Node's own crypto (_lib/staffpush.js) */
   if (!wp || ((!pub || !priv) && !(exports._core && exports._core._webPush))) return { sent: 0, why: 'phone push is not set up' };
+  try { emails = require('./_lib/away.js').redirect(emails, await require('./_lib/away.js').activeNow()); } catch (e) {}   /* AWAY: an admin on 🏖 Away gets no push */
   try { if (pub && priv) wp.setVapidDetails(s(process.env.VAPID_SUBJECT) || 'mailto:office@grayco-cs.com', pub, priv); } catch (e) { return { sent: 0, why: 'bad VAPID keys' }; }
   const payload = JSON.stringify({ title: p.title, body: p.body, link: baseUrl({}) + '/#todo', tag: p.tag });
   let sent = 0;

@@ -6058,7 +6058,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<script>if('serviceWorker' in navigator){navigator.serviceWorker.getRegistrations().then(function(r){r.forEach(function(w){w.unregister()})})};if(typeof caches!=='undefined'){caches.keys().then(function(k){k.forEach(function(n){caches.delete(n)})})}</script>
+<script>/* AWAY: every old service worker goes, except the CRM's phone-notifications one (/crm-push-sw.js: no cache, no fetch handler) */if('serviceWorker' in navigator){navigator.serviceWorker.getRegistrations().then(function(r){r.forEach(function(w){var u='';try{u=String((w.active||w.waiting||w.installing||{}).scriptURL||'')}catch(e){}if(!/\/crm-push-sw\.js(\?|$)/.test(u))w.unregister()})})};if(typeof caches!=='undefined'){caches.keys().then(function(k){k.forEach(function(n){caches.delete(n)})})}</script>
 
 <script>
 // === PRE-INIT: Ensure IndexedDB stores exist before React boots ===
@@ -167793,6 +167793,7 @@ function denyTo(r){
 }
 function doDeny(r){
   var inp = D.querySelector('[data-apx-deny-in="' + cssq(r.key) + '"]'), why = s((inp && inp.value) || DREASON[r.key]);
+  try { if (W._gcAwayAudit) W._gcAwayAudit(r, 'denied'); } catch (e) {}   /* patch AWAY: the approval audit */
   /* patch APPRCOUNT: a reason is optional */
   var _to = /^(?:td:)?to:(.+?)(?:#\d+)?$/.exec(s(r.key)); if (_to && W._gcTimeOff && W._gcTimeOff.decide) { delete DENYBOX[r.key]; delete DREASON[r.key]; Promise.resolve(W._gcTimeOff.decide(_to[1], false, why)).then(function(){ DENYC.at = 0; fresh(); paintSoon(); }); return; }   /* patch TIMEOFF: ✕ Deny on a time-off request denies it (the person sees the note) */
   var to = denyTo(r) || 'the office', me = myName() || myEmail(), at = new Date().toISOString(), title = s(r.title).slice(0, 120);
@@ -167893,6 +167894,7 @@ function finish(r, res){
   var ok = res !== false && !(res && res.ok === false);
   DONE[r.key] = { r: r, ok: ok, at: Date.now() };
   if (ok) goneNow(r.key);   /* patch APPRCOUNT */
+  if (ok) { try { if (W._gcAwayAudit) W._gcAwayAudit(r, 'approved'); } catch (e) {} }   /* patch AWAY: the approval audit (who / when / device) */
   later(function(){ delete DONE[r.key]; paintSoon(); }, 3500);
   fresh(); paintSoon();
   try { if (W.__GC_REFRESH_UI__) later(W.__GC_REFRESH_UI__, 150); } catch (e) {}
@@ -235528,4 +235530,367 @@ function afterSave(){
 SI.call(W, function(){ if (D.getElementById('gcsf')) decorate(); if (W.__gcSf2Pending) afterSave(); }, 700);
 W._gcScopeFiles2 = { save: save, preview: preview, subsFor: subsFor, replaceOld: replaceOld };
 })(window);
+</script>
+<script id="gc-patch-away">
+/* __GC_PATCH_AWAY__ — 🏖 AWAY + 🔔 APPROVALS ON THE PHONE (owner 11/16: "I want approval notifications on my phone. I want to be
+   active but from afar, and then Thursday Friday I want to not be active and let Nick be active on it"; clarified the same day:
+   away = that admin gets NO notifications; most approvals are "any admin" / "PM then admin" and do not change; only what waited
+   on that admin alone goes to the other admin, with a short note on that item; an automatic Gmail reply while away).
+   • 🔔 Phone notifications (the card on the GrayCo Field home, Field → ☰ More → ⚙ Settings, 💎 → 🏖 Away & notifications): turns on web push
+     for THIS phone (/crm-push-sw.js — no cache, no fetch handler; iPhone: only from the home-screen app, iOS 16.4+). The server
+     (_lib/apprping.js, every 5 min) then sends each new approval, bundled; a tap opens it: #apx=<key> (or #apx=mine, #apx=week).
+   • 🏖 Away (admins; 💎 → 🏖 Away & notifications, 💎 → Team access, My Profile): from / until (optional — empty = until turned off),
+     who covers (another admin), the optional 6 PM summary e-mail (default OFF), the Gmail auto-reply words (appr-away.js).
+   • The approval audit: every ✅ / ✖ through the Approvals tab, GrayCo Field, the customer-e-mail cards, a sub invoice or an
+     expense decision records who, when and from which device (phone / tablet / computer) — appr-away.js op audit.
+   • 📊 Approvals this week (admins): what came in, who handled it, from which device, how long it waited, anything waiting 24 h+.
+   • Admins' open CRM reports the CRM-only approvals (To-Do approvals, Form 941, payroll …) so the server can notify about them.
+   Console: _gcAway.state(), _gcAway.open(), _gcAway.week(), _gcAway.pushOn(), _gcAway.go('<key>') */
+(function(){
+'use strict';
+var W = window, D = document;
+if (W.__GC_PATCH_AWAY__) return; W.__GC_PATCH_AWAY__ = true;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+var RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+function later(f, ms){ return ST.call(W, f, ms || 0); }
+function every(f, ms){ return RI.call(W, f, ms); }
+var FN = '/.netlify/functions/appr-away';
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function esc(v){ return String(v == null ? '' : v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function lsGet(k){ try { return localStorage.getItem(k); } catch (e) { return null; } }
+function lsSet(k, v){ try { localStorage.setItem(k, v); } catch (e) {} }
+function warn(e){ try { console.warn('[GC AWAY]', e && e.message || e); } catch (x) {} }
+function toast(t){ try { var d = D.createElement('div'); d.setAttribute('data-gc-keep', '1'); d.className = 'gc-away-toast'; d.textContent = t; d.style.cssText = 'position:fixed;bottom:84px;left:50%;transform:translateX(-50%);background:#0f2440;color:#fff;padding:10px 16px;border-radius:10px;z-index:2147483600;font:600 14px Inter,Arial,sans-serif;max-width:92vw;box-shadow:0 6px 24px rgba(0,0,0,.3)'; D.body.appendChild(d); later(function(){ d.remove(); }, 4500); } catch (e) {} }
+function first(n){ return s(n).split(/\s+/)[0] || s(n); }
+function myEmail(){ try { return low(W.__GC_AUTH__ && W.__GC_AUTH__.email && W.__GC_AUTH__.email()); } catch (e) { return ''; } }
+function signedIn(){ return !!myEmail(); }
+function isAdmin(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()); } catch (e) { return false; } }
+function myName(){ var e = myEmail(), u = arr((W._crm || {}).users).filter(function(x){ return x && low(x.email) === e; })[0]; return s(u && u.name) || e; }
+function call(body){
+  return W.fetch(FN, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), cache: 'no-store' })
+    .then(function(r){ return r.text().then(function(t){ var j = {}; try { j = JSON.parse(t); } catch (e) { j = { error: t.slice(0, 200) }; } j.__status = r.status; return j; }); }, function(e){ return { error: 'No internet (' + s(e && e.message) + ')', __status: 0 }; });
+}
+/* which device: phone / tablet / computer (the audit) */
+function device(){
+  var ua = s(navigator.userAgent), touch = (navigator.maxTouchPoints || 0) > 1;
+  if (/iPad|Tablet/i.test(ua) || (/Macintosh/.test(ua) && touch) || (/Android/i.test(ua) && !/Mobile/i.test(ua))) return 'tablet';
+  if (/iPhone|iPod|Android.+Mobile|Mobile Safari|Windows Phone/i.test(ua)) return 'phone';
+  try { if (W._gcField && W._gcField.phone && W._gcField.phone()) return 'phone'; } catch (e) {}
+  return 'computer';
+}
+W._gcDevice = device;
+
+/* ── the server state ── */
+var STATE = null, stAt = 0, stBusy = null;
+function refresh(force){
+  if (!signedIn()) return Promise.resolve(null);
+  if (!force && STATE && Date.now() - stAt < 120e3) return Promise.resolve(STATE);
+  if (stBusy) return stBusy;
+  stBusy = endpoint().then(function(ep){ return call({ op: 'state', endpoint: ep }); }).then(function(j){ stBusy = null; if (j && j.ok) { STATE = j; stAt = Date.now(); try { paint(); } catch (e) { warn(e); } } return j; }, function(){ stBusy = null; return null; });
+  return stBusy;
+}
+
+/* ── 🔔 web push on this phone ── */
+function pushSupported(){ return 'serviceWorker' in navigator && 'PushManager' in W && 'Notification' in W; }
+function iosDev(){ var ua = s(navigator.userAgent); return /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && (navigator.maxTouchPoints || 0) > 1); }
+function standalone(){ try { return !!(navigator.standalone || (W.matchMedia && W.matchMedia('(display-mode: standalone)').matches)); } catch (e) { return false; } }
+function needsHomeScreen(){ return iosDev() && !standalone(); }
+function swReg(){ return navigator.serviceWorker.register('/crm-push-sw.js', { scope: '/' }).then(function(){ return navigator.serviceWorker.ready; }); }
+function endpoint(){ if (!pushSupported()) return Promise.resolve(''); try { return navigator.serviceWorker.getRegistration('/').then(function(r){ return r && r.pushManager ? r.pushManager.getSubscription() : null; }).then(function(x){ return x ? x.endpoint : ''; }, function(){ return ''; }); } catch (e) { return Promise.resolve(''); } }
+function b64u(str){ var b = atob(s(str).replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s(str).length + 3) % 4)); var u = new Uint8Array(b.length); for (var i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u; }
+function pushOn(){
+  if (!pushSupported() || needsHomeScreen()) { howTo(); return Promise.resolve(false); }
+  var perm;
+  try { perm = Notification.requestPermission(); } catch (e) { perm = Promise.resolve(Notification.permission); }   /* first, straight from the tap (iPhone asks only then) */
+  return Promise.resolve(perm).then(function(p){
+    if (p !== 'granted') { toast(p === 'denied' ? '🔕 Notifications are blocked for GrayCo — iPhone: Settings → Notifications → GrayCo → Allow.' : 'Notifications were not turned on.'); return false; }
+    return refresh(true).then(function(st){
+      if (!st || !st.push || !st.push.ready) { toast('⚠ Phone notifications are not set up on the server yet (Netlify VAPID keys). Texts / e-mails still come.'); return false; }
+      return swReg().then(function(reg){ return reg.pushManager.getSubscription().then(function(x){ return x || reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64u(st.push.key) }); }); })
+        .then(function(sub){ var j = sub.toJSON ? sub.toJSON() : sub; return call({ op: 'subscribe', sub: { endpoint: j.endpoint, keys: j.keys }, device: device(), ua: s(navigator.userAgent).slice(0, 120) }); })
+        .then(function(r){ if (r && r.ok) { toast('🔔 Notifications are on for this phone — a test is on its way.'); call({ op: 'test' }); } else toast('⚠ ' + ((r && r.error) || 'Could not turn them on.')); return refresh(true).then(function(){ return !!(r && r.ok); }); });
+    });
+  }).catch(function(e){ toast('⚠ ' + s(e && e.message).slice(0, 120)); return false; });
+}
+function pushOff(){
+  if (!pushSupported()) return Promise.resolve(false);
+  return navigator.serviceWorker.getRegistration('/').then(function(r){ return r && r.pushManager ? r.pushManager.getSubscription() : null; }).then(function(x){
+    var ep = x ? x.endpoint : ''; if (x) x.unsubscribe().catch(function(){});
+    return call({ op: 'unsubscribe', endpoint: ep }).then(function(){ toast('🔕 Notifications are off for this phone. Approvals still come by text or e-mail.'); return refresh(true); });
+  });
+}
+function pushIsOn(){ return !!(STATE && STATE.push && STATE.push.on); }
+function howTo(){
+  var m = modal('🔔 Approvals on your iPhone');
+  m.card.insertAdjacentHTML('beforeend', '<ol style="margin:4px 0 10px 18px;padding:0;line-height:1.7;font-size:14px">' +
+    '<li>Open <b>crm.grayco-cs.com</b> in <b>Safari</b> (iOS 16.4 or newer).</li>' +
+    '<li>Tap <b>Share</b> (the square with the arrow) → <b>Add to Home Screen</b> → <b>Add</b>.</li>' +
+    '<li>Open <b>GrayCo</b> from the home-screen icon and sign in.</li>' +
+    '<li>Tap <b>Turn on</b> on the green 🔔 card (or ☰ More → ⚙ Settings → <b>🔔 Phone notifications</b>) → <b>Allow</b>.</li></ol>' +
+    '<div style="font-size:12.5px;color:#475569">An iPhone shows notifications only for the home-screen app, not for a Safari tab. Android / Chrome: just tap Turn on. Sounds and banners later: iPhone Settings → Notifications → GrayCo. Until it is on, new approvals come as a text (or a staff e-mail).</div>');
+}
+
+/* ── a small window (same look as the 💎 menu's) ── */
+function modal(title){
+  var ov = D.createElement('div'); ov.setAttribute('data-gc-keep', '1'); ov.className = 'gc-away-modal';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:2147483400;background:rgba(6,12,20,.8);display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow:auto';
+  var card = D.createElement('div'); card.style.cssText = 'background:#fff;color:#0f172a;width:100%;max-width:640px;border-radius:12px;padding:18px;margin-top:20px;font:14px Inter,Arial,sans-serif;box-sizing:border-box';
+  card.innerHTML = '<button type="button" data-gcaway-x style="float:right;border:none;background:#e2e8f0;border-radius:6px;padding:4px 10px;cursor:pointer;font-weight:700">Close</button><div style="font-size:18px;font-weight:800;margin-bottom:10px">' + esc(title) + '</div>';
+  ov.appendChild(card); D.body.appendChild(ov);
+  ov.addEventListener('click', function(e){ if (e.target === ov || (e.target.closest && e.target.closest('[data-gcaway-x]'))) ov.remove(); });
+  return { ov: ov, card: card };
+}
+var IN = 'width:100%;box-sizing:border-box;padding:8px;border:1px solid #cbd5e1;border-radius:6px;font:14px Inter,Arial,sans-serif';
+var BTN = 'padding:10px 14px;border:none;border-radius:8px;font-weight:800;cursor:pointer;';
+
+/* ── 🏖 Away & notifications ── */
+function open(forEmail){
+  var m = modal('🏖 Away & 🔔 phone notifications'), box = D.createElement('div'); box.id = 'gc-away-panel'; box.textContent = 'Loading…'; m.card.appendChild(box);
+  refresh(true).then(function(st){ draw(box, st, low(forEmail) || myEmail()); });
+  return m;
+}
+function recFor(st, email){ return arr(st && st.away).filter(function(r){ return low(r.email) === low(email); })[0] || null; }
+function draw(box, st, who){
+  if (!st || !st.ok) { box.innerHTML = '<div style="color:#b91c1c">' + esc((st && st.error) || 'Could not load it.') + '</div>'; return; }
+  var adm = !!(st.me && st.me.admin), h = '';
+  /* 🔔 this phone */
+  var dev = st.push || {};
+  h += '<div style="border:1px solid #e2e8f0;border-radius:10px;padding:12px;margin-bottom:12px"><b>🔔 Approvals on this phone</b><div style="font-size:12.5px;color:#475569;margin:4px 0 8px">' +
+    (dev.on ? '✅ On for this device. ' : needsHomeScreen() ? 'iPhone: add GrayCo to your Home Screen first, then turn it on from there. ' : !pushSupported() ? 'This browser cannot show notifications. ' : 'Off on this device. ') +
+    (dev.devices ? 'Phones with notifications on: ' + dev.devices + '. ' : 'No phone has notifications on yet — new approvals come as a text (or a staff e-mail) until one does. ') + (dev.ready ? '' : '<b>Server: phone push keys are not set up yet (Netlify VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY).</b>') + '</div>' +
+    (dev.on ? '<button type="button" data-gcaway="pushtest" style="' + BTN + 'background:#e2e8f0;color:#0f172a">Send a test</button> <button type="button" data-gcaway="pushoff" style="' + BTN + 'background:#fff;border:1px solid #cbd5e1;color:#0f172a">Turn off here</button>'
+      : '<button type="button" data-gcaway="pushon" style="' + BTN + 'background:#16a34a;color:#fff">🔔 Turn on for this phone</button>' + (iosDev() || !pushSupported() ? ' <button type="button" data-gcaway="howto" style="' + BTN + 'background:#fff;border:1px solid #cbd5e1;color:#0f172a">iPhone steps</button>' : '')) + '</div>';
+  if (adm) {
+    var admins = arr(st.admins), r = recFor(st, who), on = !!r && r.from <= st.today;
+    h += '<div style="border:1px solid #e2e8f0;border-radius:10px;padding:12px"><b>🏖 Away — no notifications</b><div style="font-size:12.5px;color:#475569;margin:4px 0 8px">While away you get no approval or alert notifications (no pushes, texts or automatic e-mails). Approvals that any admin can do stay as they are — the other admin already gets them. Only what waits on you alone goes to who covers, marked "' + esc(first(myName())) + ' is away". Your Gmail answers outside e-mails with the auto-reply below.</div>' +
+      (admins.length > 1 ? '<label style="display:block;margin:6px 0 2px;font-weight:700">Who is away</label><select data-gcaway-f="email" style="' + IN + '">' + admins.map(function(a){ return '<option value="' + esc(a.email) + '"' + (low(a.email) === low(who) ? ' selected' : '') + '>' + esc(a.name) + (low(a.email) === myEmail() ? ' (me)' : '') + '</option>'; }).join('') + '</select>' : '') +
+      (r ? '<div data-gcaway-now style="background:' + (on ? '#fef3c7' : '#eff6ff') + ';border-radius:8px;padding:8px 10px;margin:8px 0;font-weight:700">' + (on ? '🏖 ' : '🗓 Planned: ') + esc(r.sentence) + (r.from > st.today ? ' (starts ' + esc(r.from) + ')' : '') + (r.summary ? ' · daily summary e-mail on' : '') + '</div>' +
+        (r.vacation && r.vacation.needReconnect ? '<div data-gcaway-reconnect style="background:#fee2e2;border-radius:8px;padding:8px 10px;margin:8px 0">✉ ' + esc(r.vacation.error || 'Reconnect Google to turn on the auto-reply.') + ' <button type="button" data-gcaway="google" style="' + BTN + 'background:#2563eb;color:#fff;padding:6px 10px">Reconnect Google</button></div>' : r.vacation && r.vacation.ok ? '<div style="font-size:12.5px;color:#166534;margin:4px 0">✉ Gmail auto-reply is on.</div>' : r.vacation && r.vacation.error ? '<div style="font-size:12.5px;color:#b91c1c;margin:4px 0">✉ Auto-reply: ' + esc(r.vacation.error) + '</div>' : '') : '') +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap"><label style="flex:1;min-width:140px">From<input type="date" data-gcaway-f="from" value="' + esc((r && r.from) || st.today) + '" style="' + IN + '"></label><label style="flex:1;min-width:140px">Until (optional)<input type="date" data-gcaway-f="to" value="' + esc((r && r.to) || '') + '" style="' + IN + '"></label></div>' +
+      '<div style="font-size:12px;color:#64748b;margin:2px 0 6px">Empty "Until" = until you turn it off. With a date it ends by itself after that day.</div>' +
+      '<label style="display:block;margin:6px 0 2px;font-weight:700">Who covers (gets what waits on the away admin alone)</label><select data-gcaway-f="cover" style="' + IN + '">' + admins.filter(function(a){ return low(a.email) !== low(who); }).map(function(a){ return '<option value="' + esc(a.email) + '"' + (r && low(r.cover) === low(a.email) ? ' selected' : '') + '>' + esc(a.name) + '</option>'; }).join('') + '</select>' +
+      '<label style="display:flex;gap:8px;align-items:center;margin:10px 0"><input type="checkbox" data-gcaway-f="summary"' + (r && r.summary ? ' checked' : '') + '> One summary e-mail at 6 PM of what was approved while I am away (optional)</label>' +
+      '<label style="display:block;margin:6px 0 2px;font-weight:700">Gmail auto-reply to people who e-mail me</label><textarea data-gcaway-f="reply" rows="4" style="' + IN + '">' + esc((r && r.replyText) || st.defaultText || '') + '</textarea>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button type="button" data-gcaway="on" style="' + BTN + 'background:#f59e0b;color:#111">🏖 ' + (r ? 'Save' : 'Turn Away on') + '</button>' + (r ? '<button type="button" data-gcaway="off" style="' + BTN + 'background:#16a34a;color:#fff">✓ I\'m back — turn Away off</button>' : '') +
+      '<button type="button" data-gcaway="week" style="' + BTN + 'background:#e2e8f0;color:#0f172a">📊 Approvals this week</button></div><div data-gcaway-msg style="margin-top:8px;font-weight:700"></div></div>';
+    var others = arr(st.away).filter(function(x){ return low(x.email) !== low(who); });
+    if (others.length) h += '<div style="font-size:12.5px;color:#475569;margin-top:8px">' + others.map(function(x){ return '🏖 ' + esc(x.sentence); }).join('<br>') + '</div>';
+  }
+  box.innerHTML = h;
+  var q = function(f){ return box.querySelector('[data-gcaway-f="' + f + '"]'); }, msg = function(t, bad){ var e = box.querySelector('[data-gcaway-msg]'); if (e) { e.style.color = bad ? '#b91c1c' : '#166534'; e.textContent = t; } };
+  var edited = false; if (q('reply')) q('reply').addEventListener('input', function(){ edited = true; });
+  var regen = function(){ if (edited || !q('reply')) return; call({ op: 'state', email: q('email') ? q('email').value : who, cover: q('cover') ? q('cover').value : '', to: q('to') ? q('to').value : '' }).then(function(j){ if (j && j.ok && !edited && q('reply')) q('reply').value = j.defaultText || q('reply').value; }); };
+  ['to', 'cover'].forEach(function(f){ if (q(f)) q(f).addEventListener('change', regen); });
+  if (q('email')) q('email').addEventListener('change', function(){ draw(box, st, q('email').value); });
+  box.onclick = function(e){
+    var b = e.target.closest && e.target.closest('[data-gcaway]'); if (!b) return; var a = b.getAttribute('data-gcaway');
+    if (a === 'pushon') pushOn().then(function(){ draw(box, STATE, who); });
+    else if (a === 'pushoff') pushOff().then(function(){ draw(box, STATE, who); });
+    else if (a === 'pushtest') call({ op: 'test' }).then(function(j){ toast(j && j.ok ? '🔔 Test sent — look at your phone.' : '⚠ ' + ((j && (j.why || j.error)) || 'No phone answered.')); });
+    else if (a === 'howto') howTo();
+    else if (a === 'week') week();
+    else if (a === 'google') google();
+    else if (a === 'on') {
+      b.disabled = true; msg('Saving…');
+      call({ op: 'set', email: q('email') ? q('email').value : who, from: q('from').value, to: q('to').value, cover: q('cover') ? q('cover').value : '', summary: !!(q('summary') && q('summary').checked), replyText: q('reply') ? q('reply').value : '' }).then(function(j){
+        b.disabled = false;
+        if (!j || !j.ok) { msg('⚠ ' + ((j && j.error) || 'Could not save it.'), true); return; }
+        msg('🏖 Saved — ' + (j.away && j.away.sentence) + '.' + (j.vacation && j.vacation.needReconnect ? ' ✉ Reconnect Google to turn on the auto-reply.' : j.vacation && j.vacation.ok ? ' ✉ Gmail auto-reply is on.' : ''));
+        refresh(true).then(function(st2){ later(function(){ draw(box, st2, who); }, 900); });
+      });
+    } else if (a === 'off') {
+      b.disabled = true; msg('Turning it off…');
+      call({ op: 'off', email: q('email') ? q('email').value : who }).then(function(j){ b.disabled = false; if (!j || !j.ok) { msg('⚠ ' + ((j && j.error) || 'Could not turn it off.'), true); return; } msg('✓ Away is off — notifications are back.' + (j.vacation && j.vacation.ok ? ' ✉ Gmail auto-reply off.' : '')); refresh(true).then(function(st2){ later(function(){ draw(box, st2, who); }, 900); }); });
+    }
+  };
+}
+/* the Google sign-in again (gcal-oauth: + Gmail settings, for the auto-reply) */
+function google(){
+  var w = null; try { w = W.open('', '_blank'); } catch (e) {}
+  W.fetch('/.netlify/functions/gcal-oauth?op=start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then(function(r){ return r.json(); }).then(function(j){
+    if (j && j.url) { if (w) w.location = j.url; else W.location.href = j.url; } else { if (w) w.close(); toast('⚠ ' + ((j && j.error) || 'Google sign-in is not set up.')); }
+  }, function(){ if (w) w.close(); toast('⚠ No internet.'); });
+}
+
+/* ── 📊 Approvals this week (admins) ── */
+function dur(min){ min = +min || 0; if (min < 60) return Math.max(1, Math.round(min)) + ' min'; var h = min / 60; return h < 48 ? Math.round(h) + ' h' : Math.round(h / 24) + ' days'; }
+function when(v){ var t = Date.parse(v || ''); if (!t) return ''; try { return new Date(t).toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' }); } catch (e) { return s(v); } }
+function week(){
+  if (!isAdmin()) { toast('📊 Approvals this week is for admins.'); return null; }
+  var m = modal('📊 Approvals this week'), box = D.createElement('div'); box.id = 'gc-away-week'; box.textContent = 'Loading…'; m.card.appendChild(box);
+  call({ op: 'week' }).then(function(j){
+    if (!j || !j.ok) { box.innerHTML = '<div style="color:#b91c1c">' + esc((j && j.error) || 'Could not load it.') + '</div>'; return; }
+    var hd = arr(j.handled), wt = arr(j.waiting), stuck = arr(j.stuck), byWho = {};
+    hd.forEach(function(a){ var k = s(a.by) || s(a.email); byWho[k] = (byWho[k] || 0) + 1; });
+    var h = '<div data-wk-sum style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">' +
+      [['Came in', j.came], ['Handled', hd.length], ['Waiting', wt.length], ['Waiting 24 h+', stuck.length]].map(function(x, i){ return '<div style="flex:1;min-width:110px;background:' + (i === 3 && x[1] ? '#fee2e2' : '#f1f5f9') + ';border-radius:8px;padding:8px 10px"><div style="font-size:20px;font-weight:800">' + esc(x[1]) + '</div><div style="font-size:12px;color:#475569">' + esc(x[0]) + '</div></div>'; }).join('') + '</div>';
+    if (arr(j.away).length) h += '<div style="background:#fef3c7;border-radius:8px;padding:8px 10px;margin-bottom:10px">' + arr(j.away).map(function(r){ return '🏖 ' + esc(r.sentence || (r.name + ' away')); }).join('<br>') + '</div>';
+    h += '<div style="font-size:12.5px;color:#475569;margin-bottom:6px">Handled by: ' + (Object.keys(byWho).length ? Object.keys(byWho).map(function(k){ return esc(k) + ' ' + byWho[k]; }).join(' · ') : 'nobody yet') + '</div>';
+    if (stuck.length) h += '<b style="color:#b91c1c">⚠ Waiting more than 24 hours</b><ul style="margin:4px 0 10px 18px;padding:0">' + stuck.map(function(c){ return '<li data-wk-stuck>' + esc(c.title || c.key) + ' — <b>' + esc(dur(c.waitH * 60)) + '</b> · waits on ' + esc(arr(c.to).map(function(e){ return e.split('@')[0]; }).join(', ') || '?') + '</li>'; }).join('') + '</ul>';
+    h += '<b>Handled</b>' + (hd.length ? '<table style="width:100%;border-collapse:collapse;font-size:12.5px;margin:4px 0 10px"><tr style="text-align:left;color:#475569"><th>When</th><th>What</th><th>Who</th><th>Device</th><th>Waited</th></tr>' + hd.slice(0, 200).map(function(a){ return '<tr data-wk-row style="border-top:1px solid #e2e8f0"><td>' + esc(when(a.at)) + '</td><td>' + (a.decision === 'denied' ? '✖ ' : a.decision === 'recorded' ? '📝 ' : '✅ ') + esc(a.title || a.key) + (a.coverFor ? ' <i>(covering for ' + esc(first(a.coverFor)) + ')</i>' : '') + '</td><td>' + esc(a.by || a.email) + '</td><td>' + esc(a.device === 'phone' ? '📱 phone' : a.device === 'tablet' ? '📱 tablet' : a.device === 'computer' ? '🖥 computer' : '?') + '</td><td>' + esc(a.waitedMin != null ? dur(a.waitedMin) : '') + '</td></tr>'; }).join('') + '</table>' : '<div style="color:#64748b;margin:4px 0 10px">Nothing handled yet this week.</div>');
+    h += '<b>Still waiting</b>' + (wt.length ? '<ul style="margin:4px 0 0 18px;padding:0">' + wt.slice(0, 80).map(function(c){ return '<li>' + esc(c.title || c.key) + ' — ' + esc(dur((c.waitH || 0) * 60)) + '</li>'; }).join('') + '</ul>' : '<div style="color:#64748b">Nothing.</div>');
+    box.innerHTML = h;
+  });
+  return m;
+}
+
+/* ── the deep link: #apx=<key> | #apx=mine | #apx=week ── */
+var WANT = '', since = 0;
+function readHash(){ var m = /[#&]apx=([^&]+)/.exec(location.hash || ''); if (m) { WANT = decodeURIComponent(m[1]); since = Date.now(); } }
+function clearHash(){ try { history.replaceState(history.state, '', location.pathname + location.search); } catch (e) {} }
+function onField(){ try { return !!(W._gcField && W._gcField.phone && W._gcField.phone() && W._gcField.eligible && W._gcField.eligible()); } catch (e) { return false; } }
+function openList(){ if (onField() && typeof W._gcOpenPmApprovals === 'function') { W._gcOpenPmApprovals(); return; } if (W._gcAPX && W._gcAPX.open) W._gcAPX.open(''); else if (W._gcOpenPmApprovals) W._gcOpenPmApprovals(); }
+function flash(key){ var n = 0; (function find(){ var el = D.querySelector('.apx-row[data-k="' + String(key).replace(/["\\]/g, '\\$&') + '"]'); if (el) { try { el.scrollIntoView({ block: 'center' }); } catch (e) {} el.classList.add('apx-flash'); later(function(){ el.classList.remove('apx-flash'); }, 2500); return; } if (++n < 25) later(find, 200); })(); }
+var KIND_OPEN = { sub: '_gcOpenSubApprovals', inv: '_gcOpenInvoiceApprovals', exp: '_gcOpenExpenseApprovals' };
+function go(key){
+  key = s(key); if (!key) return false;
+  if (key === 'week') { if (!W._crm) return false; week(); return true; }
+  if (key === 'mine') { if (!W._crm || !(W._gcAPX || W._gcOpenPmApprovals)) return false; openList(); return true; }
+  var m = /^ap2:(.+)$/.exec(key);
+  if (m && W._gcAp2Preview && arr(W._gcAp2Items && W._gcAp2Items()).some(function(x){ return s(x.id) === m[1]; })) { W._gcAp2Preview(m[1]); return true; }
+  if (onField()) {
+    var it = arr(W._gcField.approvals && W._gcField.approvals()).filter(function(x){ return x && s(x.id) === key; })[0];
+    if (it) {
+      if (/^mat:/.test(key) && W._gcField.mat) { W._gcField.mat.open(key.slice(4)); return true; }
+      if (typeof it.act === 'function') { it.act(); return true; }
+      if (it.act && typeof it.act.f === 'function') { it.act.f(); return true; }
+      var f = W[KIND_OPEN[key.split(':')[0]]]; if (typeof f === 'function') { f(); return true; }
+      openList(); return true;
+    }
+  }
+  if (W._gcAPX && W._gcAPX.rows) {
+    var rows = W._gcAPX.rows(), r = rows.filter(function(x){ return s(x.key).replace(/#\d+$/, '') === key; })[0];
+    if (r) { W._gcAPX.open(''); flash(r.key); return true; }
+  }
+  return false;
+}
+function tryOpen(){
+  if (!WANT || !signedIn() || !W._crm) return;
+  var k = WANT;
+  var done = false; try { done = go(k); } catch (e) { warn(e); }
+  if (done) { WANT = ''; clearHash(); return; }
+  if (Date.now() - since > 60e3) { WANT = ''; clearHash(); toast('That approval is done already, or it is waiting on someone else.'); try { openList(); } catch (e) {} }
+}
+readHash(); W.addEventListener('hashchange', function(){ readHash(); tryOpen(); });
+try { if (navigator.serviceWorker) navigator.serviceWorker.addEventListener('message', function(e){ var u = e.data && e.data.gcOpen; if (u) { try { var x = new URL(u, location.href); if (x.origin === location.origin && x.hash) { location.hash = x.hash; readHash(); tryOpen(); } } catch (z) {} } }); } catch (e) {}
+
+/* ── the audit: who / when / which device, for every decision ── */
+var LAST = {};
+function bare(k){ return s(k).replace(/#\d+$/, ''); }
+function audit(r, decision, from){
+  try {
+    if (!r || !signedIn()) return;
+    if (r.src === 'queue' || /^ap2:/.test(s(r.key))) return;   /* the server records those itself (portal.js approvalAction, with the device) */
+    var src = s(r.src) || bare(r.key).split(':')[0];
+    if (from === 'apx' && LAST[src] && Date.now() - LAST[src] < 15000) return;   /* the sub-invoice / expense decision a moment ago was this one */
+    if (from !== 'apx') LAST[src] = Date.now();
+    var cov = STATE && STATE.covered ? STATE.covered[bare(r.key)] : '';
+    call({ op: 'audit', rec: { key: bare(r.key), src: src, kind: s(r.kindL || r.kind), title: s(r.title).slice(0, 160), job: s(r.job).slice(0, 120), decision: decision, device: device(), since: r.since > 1e11 ? new Date(r.since).toISOString() : s(r.since), coverFor: s(cov) } });
+  } catch (e) { warn(e); }
+}
+W._gcAwayAudit = function(r, decision){ audit(r, decision, 'apx'); };
+function wrap(name, mk){ var f = W[name]; if (typeof f !== 'function' || f.__gcAway) return; var w = mk(f); Object.keys(f).forEach(function(k){ if (!(k in w)) w[k] = f[k]; }); w.__gcAway = true; W[name] = w; }
+function hooks(){
+  /* a customer e-mail / text decision carries the device (portal.js stores it on the approval and in the audit) */
+  wrap('_gcApprovalAct', function(f){ return function(id, op, extra){ return f.call(this, id, op, Object.assign({ device: device() }, extra || {})); }; });
+  wrap('_gcPmDecideSub', function(f){ return function(invId, approve){ var r = f.apply(this, arguments); audit({ key: 'sub:' + s(invId), src: 'sub', kind: 'Sub invoice', title: 'Sub invoice ' + s(invId) }, approve === false ? 'denied' : 'approved', 'sub'); return r; }; });
+  wrap('_gcApproveExpense', function(f){ return function(expId){ var r = f.apply(this, arguments); audit({ key: 'exp:' + s(expId), src: 'exp', kind: 'Expense', title: 'Expense ' + s(expId) }, 'approved', 'exp'); return r; }; });
+}
+
+/* ── admins' open CRM: the CRM-only approvals, for the server's notifications ── */
+var FEED_SIG = '', feedAt = 0;
+function feed(){
+  if (!signedIn() || !isAdmin() || D.hidden || !W._crm) return;
+  var rows = []; try { rows = W._gcAPX && W._gcAPX.rows ? W._gcAPX.rows().filter(function(r){ return r.mine; }) : []; } catch (e) { rows = []; }
+  if (!rows.length) { try { var set = W._gcApprovalCurrent ? W._gcApprovalCurrent() : null, g = (set && set.groups) || {}; Object.keys(g).forEach(function(k){ arr(g[k]).forEach(function(e){ rows.push({ key: s(e.id), title: s(e.title), job: s(e.sub) }); }); }); } catch (e) {} }
+  var items = rows.map(function(r){ return { key: bare(r.key), title: s(r.title).slice(0, 160), sub: s(r.job).slice(0, 100), kind: s(r.kind || r.src) }; }).filter(function(x){ return /^(f941:|td:|pay:|inv:|bp:|to:|mat:)/.test(x.key); });
+  var sig = items.map(function(x){ return x.key; }).sort().join('|');
+  if (sig === FEED_SIG && Date.now() - feedAt < 9 * 60e3) return;
+  FEED_SIG = sig; feedAt = Date.now();
+  call({ op: 'feed', items: items });
+}
+
+/* ── painting: the Field card, ☰ More, 💎, Team access, My Profile, the "covering" note ── */
+function fieldHome(){ return D.querySelector('#_gcJobPick.gc-fh'); }
+function fieldCard(){
+  var home = fieldHome(), c = D.getElementById('gc-away-pushcard');
+  var want = !!home && signedIn() && live() && !pushIsOn() && !(Date.now() - (+lsGet('gc_away_push_later') || 0) < 3 * 864e5);
+  if (!want) { if (c) c.remove(); return; }
+  if (c && home.contains(c)) return;
+  if (c) c.remove();
+  c = D.createElement('div'); c.id = 'gc-away-pushcard'; c.setAttribute('data-gc-keep', '1');
+  c.style.cssText = 'background:#ecfdf5;border:1px solid #10b981;border-radius:12px;padding:10px 12px;margin:8px 0;display:flex;gap:10px;align-items:center;flex-wrap:wrap;font:13.5px Inter,Arial,sans-serif;color:#064e3b';
+  c.innerHTML = '<span style="font-size:22px">🔔</span><span style="flex:1;min-width:160px"><b>Get your approvals on this phone</b><br><span style="font-size:12px">' + (needsHomeScreen() ? 'iPhone: Share → Add to Home Screen, open GrayCo from there, then tap Turn on.' : 'A notification for each new approval — tap it to open that one.') + '</span></span>' +
+    '<button type="button" data-gcaway-card="on" style="' + BTN + 'background:#16a34a;color:#fff">' + (needsHomeScreen() ? 'How' : 'Turn on') + '</button><button type="button" data-gcaway-card="later" style="border:none;background:none;color:#065f46;cursor:pointer;font-size:12px">Later</button>';
+  c.onclick = function(e){ var b = e.target.closest && e.target.closest('[data-gcaway-card]'); if (!b) return; e.stopPropagation(); if (b.getAttribute('data-gcaway-card') === 'later') { lsSet('gc_away_push_later', String(Date.now())); c.remove(); return; } pushOn(); };
+  home.insertBefore(c, home.firstChild);
+}
+function live(){ return !!(STATE && STATE.me && STATE.push); }   /* the real server answered (nothing is painted before) */
+function moreItems(){
+  if (!live()) return;
+  Array.prototype.forEach.call(D.querySelectorAll('.gc-fh-sheet'), function(o){
+    var h3 = o.querySelector('h3'); if (!h3 || !/⚙\s*Settings/.test(h3.textContent || '') || o.querySelector('[data-gcaway-more]')) return;
+    var pk = o.querySelector('.pick'); if (!pk) return;
+    var b = D.createElement('button'); b.type = 'button'; b.setAttribute('data-gcaway-more', 'push');
+    b.innerHTML = '<span class="e">🔔</span><span>Phone notifications<small>' + (pushIsOn() ? 'On for this phone' : 'Approvals on this phone') + (isAdmin() ? ' · 🏖 Away' : '') + '</small></span>';
+    b.onclick = function(){ o.remove(); open(); };
+    pk.appendChild(b);
+  });
+}
+function hubItem(){
+  var all = D.querySelectorAll('.gc-hub-panel'), panel = null;
+  for (var i = 0; i < all.length; i++) if (all[i].getClientRects().length) { panel = all[i]; break; }
+  if (!panel || panel.querySelector('#gc-away-hub') || !signedIn() || !live()) return;
+  var it = D.createElement('div'); it.id = 'gc-away-hub'; it.className = 'gc-hub-item';
+  it.style.cssText = 'display:flex;align-items:center;gap:10px;padding:10px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;color:#0f172a;border-bottom:1px solid #f1f5f9';
+  it.innerHTML = '<span style="font-size:18px">' + (isAdmin() ? '🏖' : '🔔') + '</span><span>' + (isAdmin() ? 'Away & phone notifications' : 'Phone notifications') + '</span>';
+  it.onclick = function(){ open(); };
+  panel.appendChild(it);
+}
+function teamAccess(){
+  var m = D.getElementById('gc-auth-modal-Dialog'); if (!m || !isAdmin() || !live() || m.querySelector('[data-gcaway-ta]')) return;
+  if (!/Team access/.test(m.textContent || '')) return;
+  var card = m.firstElementChild; if (!card) return;
+  var b = D.createElement('button'); b.type = 'button'; b.setAttribute('data-gcaway-ta', '1'); b.textContent = '🏖 Away (no notifications) — Wesley / Nick';
+  b.style.cssText = 'display:block;width:100%;margin:6px 0 10px;padding:9px;border:1px solid #f59e0b;border-radius:8px;background:#fffbeb;color:#92400e;font-weight:800;cursor:pointer';
+  b.onclick = function(){ open(); };
+  var info = card.children[2]; if (info) card.insertBefore(b, info.nextSibling); else card.appendChild(b);
+}
+function profile(){
+  var h1 = D.querySelector('h1'); if (!h1 || s(h1.textContent) !== 'My Profile' || D.getElementById('gc-away-profile') || !signedIn() || !live()) return;
+  var d = D.createElement('div'); d.id = 'gc-away-profile';
+  d.style.cssText = 'margin:10px 0;padding:10px 12px;border:1px solid #e2e8f0;border-radius:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;font:13.5px Inter,Arial,sans-serif';
+  var r = STATE ? arr(STATE.away).filter(function(x){ return low(x.email) === myEmail(); })[0] : null;
+  d.innerHTML = '<span style="flex:1;min-width:180px"><b>' + (isAdmin() ? '🏖 Away & 🔔 phone notifications' : '🔔 Phone notifications') + '</b><br><span style="font-size:12px;color:#64748b">' + (r ? esc(r.sentence) : pushIsOn() ? 'Notifications are on for this device.' : 'Get each new approval on your phone.') + '</span></span><button type="button" style="' + BTN + 'background:#0f2440;color:#fff">Open</button>';
+  d.querySelector('button').onclick = function(){ open(); };
+  h1.parentNode.insertBefore(d, h1.nextSibling);
+}
+/* "Wesley is away — Nick is covering" — only on the items that waited on the away admin alone (the server says which) */
+function coverNotes(){
+  var cov = (STATE && STATE.covered) || {}, keys = Object.keys(cov);
+  Array.prototype.forEach.call(D.querySelectorAll('[data-gcaway-cov]'), function(el){ if (!cov[el.getAttribute('data-gcaway-cov')]) el.remove(); });
+  if (!keys.length) return;
+  keys.forEach(function(k){
+    var sel = '.apx-row[data-k="' + k.replace(/["\\]/g, '\\$&') + '"], .fh-ap[data-ap="' + k.replace(/["\\]/g, '\\$&') + '"]';
+    Array.prototype.forEach.call(D.querySelectorAll(sel), function(row){
+      if (row.querySelector('[data-gcaway-cov]')) return;
+      var c = D.createElement('div'); c.setAttribute('data-gcaway-cov', k); c.style.cssText = 'font-size:11.5px;font-weight:700;color:#92400e;margin-top:2px';
+      c.textContent = '🏖 ' + first(cov[k]) + ' is away — ' + first(myName()) + ' is covering';
+      (row.querySelector('.t') || row).appendChild(c);
+    });
+  });
+}
+function paint(){ fieldCard(); moreItems(); profile(); coverNotes(); }
+function tick(){ if (!signedIn()) return; try { hooks(); hubItem(); teamAccess(); paint(); tryOpen(); } catch (e) { warn(e); } }
+every(function(){ if (D.hidden) return; tick(); }, 1200);
+every(function(){ if (D.hidden || !signedIn()) return; refresh(false); }, 150e3);
+every(function(){ try { feed(); } catch (e) { warn(e); } }, 180e3);
+later(function(){ refresh(true); }, 4000);
+later(function(){ try { feed(); } catch (e) {} }, 25000);
+D.addEventListener('visibilitychange', function(){ if (!D.hidden) { refresh(false); tryOpen(); } });
+W._gcAway = { state: function(){ return STATE; }, refresh: refresh, open: open, week: week, pushOn: pushOn, pushOff: pushOff, howTo: howTo, go: go, device: device, feed: function(){ FEED_SIG = ''; feed(); }, audit: audit };
+try { console.log('[GC] 🏖 Away + 🔔 approvals on the phone (patch AWAY): _gcAway.state()'); } catch (e) {}
+})();
 </script>

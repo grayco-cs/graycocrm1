@@ -34,7 +34,7 @@ async function collect(now){
   const OK4 = require('./office-kinds.js');
   (cur ? cur.list : []).forEach(function(x){
     if (!x || x.status !== 'waiting') return;
-    const it = { title: s(x.title) || s(x.kind), sub: s(x.jobName), link: base + '/#appr=' + encodeURIComponent(s(x.id)), raw: x };
+    const it = { key: 'ap2:' + s(x.id), title: s(x.title) || s(x.kind), sub: s(x.jobName), link: base + '/#appr=' + encodeURIComponent(s(x.id)), raw: x };   /* AWAY: key = the CRM's approval key */
     const offK = OK4.isOfficeKind(x), adminOnly = OK4.isAdminOnly(x);   /* patch APOFFICE4: a customer-facing kind is the office's own at once, any step; money / permission kinds never */
     if (offK) office.forEach(function(e){ add(e, it); });
     if (x.step === 'pm') { if (staffEmail(x.pmEmail)) add(x.pmEmail, it); else admins.forEach(function(e){ add(e, it); }); if (!offK && !adminOnly) optional(); return; }   /* patch APOFFICE2: the office may take the PM step at once — one count line, not in her list */
@@ -51,21 +51,26 @@ async function collect(now){
   };
   arr(extra.gc_sub_approvals).forEach(function(a){
     if (!a || a.status !== 'pending_pm') return;
-    const it = { title: '👷 Sub invoice ' + usd(a.amt) + ' from ' + (s(a.sub) || 'a sub'), sub: s(a.jobName || a.pmName), link: base + '/#todo', raw: { kind: 'sub_invoice', urgency: a.urgency, createdAt: a.createdAt } };
+    const it = { key: 'sub:' + s(a.id || a.invId), title: '👷 Sub invoice ' + usd(a.amt) + ' from ' + (s(a.sub) || 'a sub'), sub: s(a.jobName || a.pmName), link: base + '/#apx=' + encodeURIComponent('sub:' + s(a.id || a.invId)),   /* AWAY: opens that one */ raw: { kind: 'sub_invoice', urgency: a.urgency, createdAt: a.createdAt } };
     jobCost(a.pmName, +a.createdAt || Date.parse(a.createdAt) || 0, it);
   });
   arr(extra.gc_expense_approvals).forEach(function(a){
     if (!a || (a.status !== 'pending_pm' && a.status !== 'escalated')) return;
-    const it = { title: '🧾 Job expense ' + usd(a.amount) + (a.payee ? ' — ' + s(a.payee) : ''), sub: s(a.desc || a.pm), link: base + '/#todo', raw: { kind: 'expense', createdAt: a.enteredAt } };
+    const it = { key: 'exp:' + s(a.expId || a.id), title: '🧾 Job expense ' + usd(a.amount) + (a.payee ? ' — ' + s(a.payee) : ''), sub: s(a.desc || a.pm), link: base + '/#apx=' + encodeURIComponent('exp:' + s(a.expId || a.id)),   /* AWAY */ raw: { kind: 'expense', createdAt: a.enteredAt } };
     jobCost(a.status === 'escalated' ? '' : a.pm, Date.parse(a.enteredAt) || 0, it);
   });
   arr(extra.payrollRuns).forEach(function(r){
     if (!r || r.status !== 'pending') return;
     const n = arr(r.lines).filter(function(L){ return L && L.status !== 'denied'; }).length;
-    const it = { title: '💵 Payroll for ' + s(r.payDate) + ' — ' + n + ' check' + (n === 1 ? '' : 's') + ', net ' + usd(r.totals && r.totals.net), sub: r.auto ? 'made by itself on Thursday' : '', link: base + '/#todo', raw: { kind: 'payroll_run', meta: { urgency: 'soon' }, createdAt: r.submittedAt || r.createdAt } };
+    const it = { key: 'pay:' + s(r.id), title: '💵 Payroll for ' + s(r.payDate) + ' — ' + n + ' check' + (n === 1 ? '' : 's') + ', net ' + usd(r.totals && r.totals.net), sub: r.auto ? 'made by itself on Thursday' : '', link: base + '/#apx=' + encodeURIComponent('pay:' + s(r.id)),   /* AWAY */ raw: { kind: 'payroll_run', meta: { urgency: 'soon' }, createdAt: r.submittedAt || r.createdAt } };
     admins.forEach(function(e){ add(e, it); });
   });
-  return { box: box, opt: opt, nameOf: nameOf, base: base, data: data };
+  /* AWAY: an admin on 🏖 Away gets nothing (the 7 AM digest, the 12 PM reminder, the 5-minute pings); what waited on them
+     alone goes to their cover — "any admin" items the other admin has already (_lib/away.js routeBox) */
+  let awayMap = {}; try { awayMap = await require('./away.js').activeNow(now); } catch (e) {}
+  const routed = Object.keys(awayMap).length ? require('./away.js').routeBox(box, awayMap) : box;
+  Object.keys(awayMap).forEach(function(e){ delete opt[e]; });
+  return { box: routed, opt: opt, nameOf: nameOf, base: base, data: data, away: awayMap };
 }
 /* patch SUBPHOTOS: the one line at the top of the digest — how many approvals wait and the link to 📋 Approvals */
 function apprLine(n, base){

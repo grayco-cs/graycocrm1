@@ -332,6 +332,14 @@ async function notify(o){
     only.forEach(e => { if (!R[e] && sl[e] && sl[e].phone) { const sp = set.people[e]; if (!sp || sp.on !== false) R[e] = { key: e, email: e, phone: sl[e].phone, p: Object.assign({ on: true, newAll: true, name: sl[e].name }, sp || {}) }; } });
     want = Object.keys(R).filter(e => only.indexOf(e) >= 0);
   }
+  /* AWAY: an admin on 🏖 Away gets no text alerts — an alert meant only for them goes to their cover (an "any admin" one: the
+     other admin is on it already); an emergency still reaches them (safety) */
+  if (!o.emergency) { try { const AW = require('./away.js'), am = await AW.activeNow(now()); if (Object.keys(am).length) {
+    const sl = {}; staffList(pp).forEach(x => { sl[x.email] = x; });
+    want = AW.redirect(want, am);
+    want.forEach(e => { if (!R[e] && sl[e] && sl[e].phone) { const sp = set.people[e]; if (!sp || sp.on !== false) R[e] = { key: e, email: e, phone: sl[e].phone, p: Object.assign({ on: true, name: sl[e].name }, sp || {}) }; } });
+    want = want.filter(e => R[e]);
+  } } catch (e) {} }
   if (!want.length) return out;
   /* patch AUTOPANEL: staff text alerts are a safety switch (default ON); data-entry mode no longer stops them — they go to
      staff cells, tagged 'staff', which _lib/pause.js lets through */
