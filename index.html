@@ -50372,7 +50372,8 @@ async function pushDocs(){
       continue;
     }
     var ok = await sbWrite(_DOC_PREFIX + d.id, d);
-    if(ok){ _docSnap[d.id] = fp; _saveDocSnap(); }
+    if(ok){ _docSnap[d.id] = fp; _saveDocSnap(); _gcsvOk(_DOC_PREFIX + d.id); }
+    else _gcsvFail(_DOC_PREFIX + d.id, 'document upload refused');   /* SAVES: a receipt / document that did not go up is retried and shown */
   }
 }
 
@@ -83886,9 +83887,29 @@ window._gcForceFixSchedule = async function(silent){
   function tcAcc(){ try{ var S=window.__GC_SEC2; return S && S.access ? S.access() : null; }catch(e){ return null; } }
   function tcOwn(){ try{ var S=window.__GC_SEC2, a=tcAcc(); return !!(S && S.can && a && a.known && a.email && !S.can(KEY,'write',a)); }catch(e){ return false; } }
   function tcKey(){ var a=tcAcc(); return TC_PFX+String(a&&a.email||'').toLowerCase().replace(/[^a-z0-9]/g,'_'); }
-  function tcMine(){ try{ var o=JSON.parse(localStorage.getItem(TC_LS)||'null'); var a=tcAcc(); if(o && a && o.email===a.email && Array.isArray(o.list)) return o.list; }catch(e){} return []; }
+  function tcMineLs(){ try{ var o=JSON.parse(localStorage.getItem(TC_LS)||'null'); var a=tcAcc(); if(o && a && o.email===a.email && Array.isArray(o.list)) return o.list; }catch(e){} return []; }
+  /* SAVES: a crew member's own clock entries lived ONLY in this phone's localStorage (+ an upload nobody read back): a new
+     phone, cleared site data or a full localStorage showed "not clocked in" with no hours — clock in on one phone, clock out
+     on another was impossible. The cloud copy (gc_timeclock_<email>) is now read back and merged in (by id, newest wins). */
+  var TCMEM=null, tcHyd=0;
+  function tcUnion(a, b){ var by={}, out=[]; (a||[]).concat(b||[]).forEach(function(r){ if(!r||!r.id) return; var k=String(r.id), o=by[k]; if(!o){ by[k]=r; out.push(k); } else if(String(r.updatedAt||r.clockOut||'')>String(o.updatedAt||o.clockOut||'')) by[k]=r; }); return out.map(function(k){ return by[k]; }); }
+  function tcMine(){ var l=tcMineLs(); return TCMEM ? tcUnion(l, TCMEM) : l; }
+  function tcHydrate(){
+    if(tcHyd>40) return; tcHyd++;
+    var a=tcAcc(); if(!tcOwn() || !a || !a.email){ (window.__GC_NATIVE_SETTIMEOUT__||setTimeout).call(window, tcHydrate, 3000); return; }
+    var u=(localStorage.getItem('grayco_sb_url')||'').replace(/\/$/,''), k=localStorage.getItem('grayco_sb_key')||'';
+    if(!u||!k){ (window.__GC_NATIVE_SETTIMEOUT__||setTimeout).call(window, tcHydrate, 5000); return; }
+    fetch(u+'/rest/v1/gc_kv?key=eq.'+encodeURIComponent(tcKey())+'&select=value', { headers:{ apikey:k, Authorization:'Bearer '+k }, cache:'no-store' })
+      .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+      .then(function(rows){ var v=rows&&rows[0]&&rows[0].value; if(typeof v==='string'){ try{ v=JSON.parse(v); }catch(e){ v=null; } }
+        if(!Array.isArray(v)||!v.length) return; var cur=tcMineLs(), m=tcUnion(cur, v); TCMEM=m; tcHyd=99;
+        if(m.length!==cur.length || JSON.stringify(m)!==JSON.stringify(cur)){ try{ localStorage.setItem(TC_LS, JSON.stringify({ email:a.email, list:m })); }catch(e){} try{ if(typeof window._gcTimeclockRefresh==='function') window._gcTimeclockRefresh(); }catch(e){} } })
+      .catch(function(){ (window.__GC_NATIVE_SETTIMEOUT__||setTimeout).call(window, tcHydrate, 15000); });
+  }
+  (window.__GC_NATIVE_SETTIMEOUT__||setTimeout).call(window, tcHydrate, 2500);
   function tcSaveMine(v){
     var me=user(), a=tcAcc(); var mine=(Array.isArray(v)?v:[]).filter(function(r){ return r && r.user===me; });
+    TCMEM=mine;   /* SAVES: what this page reads back, even when localStorage refuses it */
     try{ localStorage.setItem(TC_LS, JSON.stringify({ email:a&&a.email, list:mine })); }catch(e){}
     try{ if(window._supaUpsert) window._supaUpsert(tcKey(), mine); }catch(e){}
   }
@@ -161153,8 +161174,9 @@ var SB = (function(){
   }
   function mergeList(x, y){ var by = {}, order = []; arr(x).concat(arr(y)).forEach(function(it){ if (!it || !it.id) return; if (!by[it.id]) { order.push(it.id); by[it.id] = it; } else by[it.id] = mergeRec(by[it.id], it); }); return order.map(function(id){ return by[id]; }); }
   function saveLocal(){ lsSet(LK, map); }
-  function cloudGet(){ var c = creds(); if (!c.k) return Promise.resolve(undefined); return W.fetch(c.u + '/rest/v1/gc_kv?key=eq.' + KEY + '&select=value,updated_at', { headers: { apikey: c.k, Authorization: 'Bearer ' + c.k }, cache: 'no-store' }).then(function(r){ if (!r.ok) throw new Error('read ' + r.status); return r.json(); }).then(function(rows){ var v = rows && rows[0] ? rows[0].value : undefined; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) {} } return { v: v, at: rows && rows[0] ? rows[0].updated_at : '' }; }); }
-  function cloudPut(list){ var c = creds(); if (!c.k) return Promise.resolve(); return W.fetch(c.u + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: { apikey: c.k, Authorization: 'Bearer ' + c.k, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ key: KEY, value: list, updated_at: nowIso() }) }).then(function(r){ if (!r.ok) throw new Error('write ' + r.status); }); }
+  function tmo(p, ms){ return Promise.race([p, new Promise(function(_r, rej){ later(function(){ rej(new Error('no answer')); }, ms); })]); }   /* SAVES: a request with no answer (no signal on site) left "pushing" on for good — no daily log went up again until a reload */
+  function cloudGet(){ var c = creds(); if (!c.k) return Promise.resolve(undefined); return tmo(W.fetch(c.u + '/rest/v1/gc_kv?key=eq.' + KEY + '&select=value,updated_at', { headers: { apikey: c.k, Authorization: 'Bearer ' + c.k }, cache: 'no-store' }), 30000).then(function(r){ if (!r.ok) throw new Error('read ' + r.status); return r.json(); }).then(function(rows){ var v = rows && rows[0] ? rows[0].value : undefined; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) {} } return { v: v, at: rows && rows[0] ? rows[0].updated_at : '' }; }); }
+  function cloudPut(list){ var c = creds(); if (!c.k) return Promise.resolve(); return tmo(W.fetch(c.u + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: { apikey: c.k, Authorization: 'Bearer ' + c.k, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ key: KEY, value: list, updated_at: nowIso() }) }), 45000).then(function(r){ if (!r.ok) throw new Error('write ' + r.status); }); }
   function mergeIn(list){ var ch = false; arr(list).forEach(function(r){ if (!r || !r.id) return; var m = mergeRec(map[r.id], r); if (JSON.stringify(m) !== JSON.stringify(map[r.id])) { map[r.id] = m; ch = true; } }); return ch; }
   function pull(){ lastPull = Date.now(); return cloudGet().then(function(x){ if (!x) return; stampSeen = s(x.at); var ch = mergeIn(x.v); var ahead = Object.keys(map).some(function(id){ var r = arr(x.v).filter(function(y){ return y && y.id === id; })[0]; return !r || JSON.stringify(mergeRec(r, map[id])) !== JSON.stringify(r); }); if (ch) { saveLocal(); draw(true); } if (ahead) { dirty = true; } err = ''; }).catch(function(e){ err = e.message; lastPull = 0; /* FIELDFIX5 */ }); }
   function push(){ if (pushing) return Promise.resolve(); pushing = true; return cloudGet().then(function(x){ if (x) mergeIn(x.v); var list = Object.keys(map).map(function(k){ return map[k]; }); return cloudPut(list); }).then(function(){ dirty = false; saveLocal(); err = ''; }).catch(function(e){ err = e.message; }).then(function(){ pushing = false; }); }
