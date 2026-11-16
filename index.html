@@ -50818,8 +50818,9 @@ function _gcsvFail(k, why){
 }
 /* SAVES: TWO DEVICES, ONE RECORD, DIFFERENT FIELDS. A lead / customer / schedule item / sub / vendor edited on two devices
    went to whichever whole copy was newer: Nick logs a call on the lead from his phone, the office changes its stage on Desk —
-   one of the two was gone. The cloud's own copy of each record, as this page last saw it (every pull, and the read before
-   every push), is the common base: a field only one side changed since then takes that side's value; a field both changed
+   one of the two was gone. The cloud's own copy of each record, as this page last saw it at its last
+   pull (where this computer's own copy becomes the merged one — never a push's read, after which this computer's copy is
+   still the old one), is the common base: a field only one side changed since then takes that side's value; a field both changed
    takes the newer copy's (as before). Nothing is decided this way without a base (the first pull after a load). */
 var _gcsvBase = {}, _gcsv3Keys = { leads: 1, customers: 1, schedule: 1, subs: 1, vendors: 1 };
 window._gcsvSeeCloud = function(key, list){
@@ -117874,7 +117875,6 @@ async function unionPost(url, opts){
     if(!Array.isArray(cloud) || !cloud.length) continue;          /* nothing there, or unreadable: push as is */
     var merged = null;
     try{ if(window._gcUnionMerge) merged = window._gcUnionMerge(b.key, b.value, cloud); }catch(e){ merged=null; }
-    try{ if(window._gcsvSeeCloud) window._gcsvSeeCloud(b.key, cloud); }catch(e){}   /* SAVES: AFTER the merge — the copy read now is the base of the NEXT field-by-field merge */
     if(!Array.isArray(merged)) continue;
     /* the board rule / fold rules decide what the SCREEN shows; the cloud keeps every record */
     if(merged.length !== b.value.length){ kept += (merged.length - b.value.length); try{ console.log('[GC Sync] "'+b.key+'" pushed as the union: '+b.value.length+' here + '+cloud.length+' in the cloud -> '+merged.length+'.'); }catch(e){} }
