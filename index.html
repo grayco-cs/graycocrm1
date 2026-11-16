@@ -205687,7 +205687,8 @@ function arr(v){ return Array.isArray(v) ? v : []; }
 function rk(){ try { return s(W._gcField.state().rk); } catch (e) { return ''; } }
 function roleTools(k){ try { return arr(W._gcField.roleTools(k)); } catch (e) { return []; } }
 function claimsApi(){ return W._gcClaims && typeof W._gcClaims.list === 'function' ? W._gcClaims : null; }
-function kind(p){
+function kind(p){ var k = kind0(p); try { if (p && typeof W._gcPmKind === 'function') { var x = W._gcPmKind(p, k); if (x && LAYOUT[x]) k = x; } } catch (e) {} return k; }   /* patch PMFIELD: 💧 mit · ☢️ env */
+function kind0(p){
   if (!p) return '';
   try { if (typeof W._gcIsInsuranceJob === 'function' && W._gcIsInsuranceJob(p)) return 'ins'; } catch (e) {}
   if (p.isInsurance !== false) {
@@ -205733,7 +205734,7 @@ function jobGrid(grid, p, mk){
   });
   Object.keys(EXTRA).forEach(function(key){
     var x = EXTRA[key]; if (tiles[key] || L.hide.indexOf(key) >= 0 || !listed(L, key) || typeof mk !== 'function') return;
-    var ok = false; try { ok = !!x[2](k, r, T); } catch (e) {}
+    var ok = false; try { ok = !!x[2](k, r, T, p); } catch (e) {}
     if (!ok) return;
     var b = mk(key, x[0], x[1]); b.className = 'gcfm-t'; b.removeAttribute('data-fp'); b.setAttribute('data-fm', key); tiles[key] = b;
   });
@@ -205779,7 +205780,7 @@ function css(){
   ].join('\n');
   (D.head || D.documentElement).appendChild(st);
 }
-W._gcFieldMore = { kind: kind, layout: LAYOUT, jobGrid: jobGrid };
+W._gcFieldMore = { kind: kind, layout: LAYOUT, jobGrid: jobGrid, extra: EXTRA, kindL: KIND_L };   /* patch PMFIELD: .extra / .kindL — the mitigation / environmental kinds add theirs */
 })();
 </script>
 <script id="gc-patch-fieldportal">
@@ -208785,7 +208786,7 @@ var FM_FIRST = {
   '':  ['camera', 'receipt', 'sched', 'log']
 };
 var FM_CLAIM = ['admin', 'office', 'pm', 'roof', 'ins', 'mit'];   /* role keys that see a job's claim (staff, never the customer) */
-var FM_KIND = { ins: '🛡 Insurance claim', com: '🏢 Commercial', res: '🏠 Residential' };
+var FM_KIND = { ins: '🛡 Insurance claim', com: '🏢 Commercial', res: '🏠 Residential', mit: '💧 Mitigation', env: '☢️ Environmental' };   /* patch PMFIELD: + mit / env */
 var FM_PID = { camera: 1, receipt: 1, sched: 1, log: 1, cust: 1, sub: 1, claims: 1, drying: 1 };   /* these act on the job in hand */
 var FM_BAR = { 'ra-leads': 'leads', 'ra-estimates': 'estimates', 'ra-claims': 'claims' };
 function fmClaim(p){ var A = claimsApi(); if (!p || !A || !A.forProject) return null; try { return A.forProject(p.id) || null; } catch (e) { return null; } }
@@ -208807,6 +208808,7 @@ function fmIds(a, kind, p){
   var add = function(id){ if (set.indexOf(id) < 0) set.push(id); };
   try { if (a === 'admin' && W._gcPmField && W._gcPmField.alsoPm()) { FM_JOB.pm.forEach(add); FM_OFF.pm.forEach(function(id){ if (off.indexOf(id) < 0) off.push(id); }); } } catch (e) {}   /* patch PMFIELD (owner 11/16): an admin who runs jobs gets every PM button too */
   if (kind === 'ins' && p && FM_CLAIM.indexOf(rk()) >= 0) { add('claims'); add('drying'); off = off.filter(function(x){ return x !== 'claims'; }); }
+  if (kind === 'mit' && p) add('drying');   /* patch PMFIELD */
   if (p && a === 'admin') { add('cust'); add('sub'); }
   var first = FM_FIRST[kind] || FM_FIRST[''];
   var order = first.filter(function(id){ return set.indexOf(id) >= 0; }).concat(set.filter(function(id){ return first.indexOf(id) < 0; }));
@@ -209434,6 +209436,14 @@ try { console.log('[GC] 📱🖥 Role apps: each role opens on its own home — 
    • ✏️ Update job: pick the job (one of mine; skipped when I have one) → one screen: stage, % done (the Field's own progress save,
      which drafts the next bill), a note (the job's 💬 Job updates), a photo (GrayCo Photos), the next step + its date (and, ticked,
      onto my schedule) → Save (the Field's own job save).
+   • The job page by kind (patch FIELDMORE + window._gcPmKind): 💧 MITIGATION (moisture / drying log · equipment · photos · daily log ·
+     🛡 claim + 📆 TPA on insurance jobs · paperwork to sign · schedule · customer portal · punch) and ☢️ ENVIRONMENTAL (required paperwork
+     + the Start-job gate · samples & results · containment · air / negative-pressure log · photos · daily log · clearance · waste
+     manifest · customer portal, then the buttons of the job's environmental TYPES — 🎨 lead · 🧱 asbestos · 🍄 mold · ☣️ trauma, each
+     an equipment checklist saved on the job). Types, buttons and items: gc_kv gc_env_jobtypes; each kind's top buttons: gc_kv
+     gc_field_layouts — both admin-edited from ☰ More. The environmental Home: 🧪 lab results pending · 📋 paperwork waiting · 🚧 blocked
+     from starting · 🚨 emergency leads. 💬 Unread job messages on every dashboard Home (⚡ Needs you) open that job's thread.
+     Nothing here goes to the customer portal (trauma notes and checklists stay staff-only).
    Kill switch: localStorage gc_pmfield_off = "1" (this device: the bar and the home as before).
    API: window._gcPmField = { state(), open(opts), appt(preset), work(preset), update(pid), item(id), payKind(u), hourly(), mine(day) } */
 (function(W){
@@ -209614,6 +209624,11 @@ function nums(a){
   var t = today(), wk = itemsOn(t, weekEnd(), false);
   return { appts: wk.filter(function(x){ return kindIc(x) === '📅'; }).length, work: wk.filter(function(x){ return kindIc(x) !== '📅'; }).length, jobs: myJobs().length, leads: myLeads().length, fu: followUps().length };
 }
+/* unread job messages for me (patch JOBMSG's own list: window._gcJobMsgForMe) — Home lists them, a tap opens that job's thread */
+function jmList(){ try { return typeof W._gcJobMsgForMe === 'function' ? arr(W._gcJobMsgForMe()) : []; } catch (e) { return []; } }
+function jmCount(){ try { return typeof W._gcJobMsgForMeCount === 'function' ? +W._gcJobMsgForMeCount() || 0 : 0; } catch (e) { return 0; } }
+function jmJobs(L){ var by = {}, out = []; arr(L).forEach(function(x){ var pid = s(x && x.m && x.m.pid); if (!pid) return; if (!by[pid]) { by[pid] = { pid: pid, p: proj(pid), n: 0, last: x.m, mention: false }; out.push(by[pid]); } by[pid].n++; if (x.mention) by[pid].mention = true; }); return out; }
+function jmSheet(){ var J = jmJobs(jmList()); return listSheet('💬 Unread job messages (' + J.reduce(function(a, x){ return a + x.n; }, 0) + ')', J.map(function(x){ return '<div class="gc-ra-item"><div class="t"><b>' + esc(x.p ? x.p.name : 'Job') + (x.mention ? ' <span class="gc-ra-chip r">@ you</span>' : '') + '</b><small>' + esc(x.n + ' new · ' + s(x.last && (x.last.text || x.last.body || x.last.msg)).slice(0, 80)) + '</small></div><div class="b"><button type="button" class="gc-ra-sm pri" data-pmf-a="jmsg1" data-pid="' + esc(x.pid) + '">Open</button></div></div>'; }), 'No unread job messages.'); }
 function coF(){ try { return W._gcCo && W._gcCo.filter ? s(W._gcCo.filter()) : ''; } catch (e) { return ''; } }
 /* the role's own tiles under the quick actions (the role app's home buttons that are not already a quick action) + the job-type tiles:
    mitigation 💧 Drying logs due · 🌀 Equipment out (their counts) · insurance 📆 TPA dates · environmental 📄 Paperwork due */
@@ -209621,22 +209636,23 @@ var DUPE = { photos: 1, msgs: 1, clock: 1, appr: 1, sched: 1, punch: 1, visit: 1
 /* an admin who is the PM on a job gets the PM buttons too (owner 11/16) */
 function alsoPm(){ var n = low(myName()); if (!n) return false; return arr(C().projects).some(function(p){ return p && openJob(p) && [p.pm, p.apm, p.assistantPm].some(function(v){ return low(v) === n; }); }); }
 function kindOf(p){ try { return W._gcFieldMore && W._gcFieldMore.kind ? s(W._gcFieldMore.kind(p)) : ''; } catch (e) { return ''; } }
-function insJobs(){ return myJobs().some(function(p){ return kindOf(p) === 'ins'; }); }
+function insJobs(){ return myJobs().some(function(p){ return kindOf(p) === 'ins' || (kindOf(p) === 'mit' && insFlag(p)); }); }
 function mitJobsMine(){ return myJobs().some(function(p){ try { return W._gcCo && W._gcCo.ofJob(p) === 'mitigation'; } catch (e) { return false; } }); }
 function extrasOf(a, k){
   var L = [];
   if (a === 'admin') L = ['leads', 'viewas', 'systems', 'addjob', 'receipt', 'todo'].concat(alsoPm() ? ['log', 'sendest'] : []);   /* 💵 Money: ☰ More (owner 11/16) */
   else if (a === 'pm') L = ['log', 'receipt', 'todo', 'sendest'];   /* ☐ Punch list: on each job page; 💬 Messages: on each job page */
+  else if (a === 'mit' || a === 'dual') L = ['emerg', 'drying', 'equip'].concat(insJobs() ? ['tpa'] : []);   /* owner 11/16: 🚨 new losses · 💧 readings due · 🌀 equipment out · 📆 TPA (insurance) — the drying / env tools are on each job page */
+  else if (a === 'env') L = ['emerg'];   /* + 🧪 lab results · 📋 paperwork · 🚧 blocked (below) */
   else { try { L = arr(k.actions(a, 'home')).filter(function(id){ return !DUPE[id]; }); } catch (e) { L = []; }
-    if (a === 'mit' || a === 'dual') ['emerg', 'equip', 'drying'].forEach(function(id){ if (L.indexOf(id) < 0) L.unshift(id); });   /* 💧 Drying logs due · 🌀 Equipment out · 🚨 Emergency leads first */
-    if (a === 'env' && L.indexOf('emerg') < 0) L.unshift('emerg');
     if (a === 'ins') ['claims', 'tpa'].forEach(function(id){ if (L.indexOf(id) < 0) L.push(id); });
-    if (a !== 'env') L.push('receipt'); L.push('todo'); }
+    L.push('receipt'); L.push('todo'); }
   if ((a === 'pm' || a === 'admin') && insJobs()) ['claims', 'tpa'].forEach(function(id){ if (L.indexOf(id) < 0) L.push(id); });   /* insurance jobs: 📆 TPA dates · 🛡 Claim info */
   if (a === 'pm' || a === 'admin') ['equip', 'drying'].forEach(function(id){ if (mitJobsMine() && L.indexOf(id) < 0) L.push(id); });
   var seen = {}; return L.filter(function(id){ if (seen[id]) return false; seen[id] = 1; return k.shown(id); });
 }
 /* environmental: the jobs whose hazard papers (lead / asbestos / mold) are not in the customer's hands yet — patch DOCAUTO2's Start-job gate */
+function envTile(a, ic, l, n){ return '<button type="button" class="gc-ra-qb" data-pmf-a="' + a + '"><span class="e">' + ic + '</span><span class="l">' + esc(l) + '</span>' + (n ? '<b class="gc-ra-n">' + n + '</b>' : '') + '</button>'; }
 function papersDue(){ var G = W._gcHazGate; if (!G || !G.missing) return []; return myJobs().filter(function(p){ try { return (W._gcCo ? W._gcCo.ofJob(p) === 'environmental' : true) && arr(G.missing(p)).length > 0; } catch (e) { return false; } }); }
 var QUICK = [
   ['appt', '📅', 'New appointment', 'Estimate · inspection · walkthrough'],
@@ -209655,7 +209671,7 @@ function itemRow(x, showDay){
 function dashHtml(a, h0){
   var k = K(), t = today(), all = a === 'admin' && seesAll();
   var qi = s(h0).indexOf('</div>'), rest = /^<div class="gc-ra-q"/.test(s(h0)) && qi > 0 ? s(h0).slice(qi + 6) : '';
-  var key = [a, t, C().schedule, C().projects, C().leads, C().users, k.apprCount(), vasOn(), myName(), SAVES, pausedOn(), rest, coF(), Math.floor(Date.now() / 30000)];
+  var key = [a, t, C().schedule, C().projects, C().leads, C().users, k.apprCount(), vasOn(), myName(), SAVES, pausedOn(), rest, coF(), jmCount(), Math.floor(Date.now() / 30000)];
   if (HC.k && same(HC.k, key)) return HC.h;
   var T = itemsOn(t, t, all), h = '<div class="gc-pmf" data-pmf-app="' + a + '">';
   /* 1. Today */
@@ -209670,14 +209686,15 @@ function dashHtml(a, h0){
     return '<button type="button" class="gc-pmf-t" data-pmf-a="' + q[0] + '"><span class="e">' + q[1] + '</span><span class="l">' + esc(l) + '</span>' + (sm ? '<small>' + esc(sm) + '</small>' : '') + '</button>';
   }).join('') + '</div>';
   var extra = extrasOf(a, k), papers = a === 'env' || a === 'dual' ? papersDue() : null;
-  if (extra.length || papers) h += '<div class="gc-ra-q gc-pmf-x" data-app="' + a + '" data-n="' + (extra.length + (papers ? 1 : 0)) + '">' + extra.map(function(id){ return k.tileHtml(id, 'gc-ra-qb'); }).join('') +
-    (papers ? '<button type="button" class="gc-ra-qb" data-pmf-a="papers"><span class="e">📄</span><span class="l">Paperwork due</span>' + (papers.length ? '<b class="gc-ra-n">' + papers.length + '</b>' : '') + '</button>' : '') + '</div>';
+  if (extra.length || papers) h += '<div class="gc-ra-q gc-pmf-x" data-app="' + a + '" data-n="' + (extra.length + (papers ? 3 : 0)) + '">' + extra.map(function(id){ return k.tileHtml(id, 'gc-ra-qb'); }).join('') +
+    (papers ? envTile('labs', '🧪', 'Lab results pending', labsPending().length) + envTile('papers', '📋', 'Paperwork waiting', papers.length) + envTile('blocked', '🚧', 'Blocked from starting', blockedJobs().length) : '') + '</div>';
   /* 3. Needs you */
-  var AP = apprList(), FU = followUps(), n = AP.length;
+  var AP = apprList(), FU = followUps(), JM = jmList(), n = AP.length;
   h += '<div class="fh-sec"><span>⚡ Needs you</span></div><div class="gc-pmf-need">' +
     '<button type="button" class="gc-pmf-nd' + (n ? ' hot' : '') + '" data-ra-a="appr"><span class="e">✅</span><span class="tx"><b>' + (n ? n + ' approval' + (n === 1 ? '' : 's') + ' waiting on you' : 'Approvals — all caught up') + '</b><small>Tap to open ✅ Approvals</small></span><span class="go">›</span></button>' +
     ((a === 'pm' || (a === 'admin' && alsoPm())) && k.shown('bids') ? (function(){ var bn = k.count('bids') || 0; return '<button type="button" class="gc-pmf-nd' + (bn ? ' hot' : '') + '" data-ra-a="bids"><span class="e">⏰</span><span class="tx"><b>' + (bn ? bn + ' bid' + (bn === 1 ? '' : 's') + ' due in 3 days' : 'Bids due') + '</b><small>My bids and their due dates</small></span><span class="go">›</span></button>'; })() : '') +
     (pausedOn() && a === 'admin' ? '<button type="button" class="gc-pmf-nd hot" data-pmf-a="m-pause"><span class="e">⏸</span><span class="tx"><b>Data-entry mode is ON</b><small>Nothing goes to customers, subs or GCs — tap to see or turn off</small></span><span class="go">›</span></button>' : '') +
+    (JM.length ? '<button type="button" class="gc-pmf-nd hot" data-pmf-a="jmsg"><span class="e">💬</span><span class="tx"><b>' + JM.length + ' unread job message' + (JM.length === 1 ? '' : 's') + '</b><small>' + esc(jmJobs(JM).slice(0, 3).map(function(x){ return x.p ? s(x.p.name) : 'a job'; }).join(' · ')) + ' — tap to read</small></span><span class="go">›</span></button>' : '') +
     '<button type="button" class="gc-pmf-nd' + (FU.length ? ' hot' : '') + '" data-pmf-a="fu"><span class="e">📞</span><span class="tx"><b>' + (FU.length ? FU.length + ' overdue follow-up' + (FU.length === 1 ? '' : 's') : 'No overdue follow-ups') + '</b><small>Leads past their follow-up date</small></span><span class="go">›</span></button></div>';
   if (n) h += '<div class="gc-pmf-ap">' + k.apprHtml(AP.slice(0, 4)) + (n > 4 ? '<button type="button" class="gc-pmf-more" data-ra-a="appr">All ' + n + ' approvals ›</button>' : '') + '</div>';
   if (rest) h += '<div class="gc-pmf-role">' + rest + '</div>';   /* the role's own lists (🚨 Emergency leads, 📆 TPA dates, 🧾 Invoices to match) */
@@ -209962,12 +209979,26 @@ function onClick(ev){
   var sb = t.closest('#gc-fh-tabs [data-t="ra-sched"]');
   if (sb) { ev.preventDefault(); ev.stopPropagation(); if (ev.stopImmediatePropagation) ev.stopImmediatePropagation(); try { openSched({ reset: true }); } catch (e) { warn(e); } return; }
   var b = t.closest('[data-pmf-a]'); if (!b) return;
-  if (!b.closest('.gc-pmf,.gc-pmf-sheet,[data-pmf-more]')) return;
+  if (!b.closest('.gc-pmf,.gc-pmf-sheet,[data-pmf-more],.gc-pmf-jt')) return;
   ev.preventDefault(); ev.stopPropagation(); if (ev.stopImmediatePropagation) ev.stopImmediatePropagation();
   var a = b.getAttribute('data-pmf-a'), o = b.closest('.gc-pmf-sheet');
   try {
     if (QUICK.some(function(q){ return q[0] === a; })) return quick(a, b);
     if (/^m-/.test(a)) return lessTap(a);
+    if (a === 'testkit') { var tp = proj(b.getAttribute('data-pid')); return tp ? tkSheet(tp, b.getAttribute('data-bid')) : null; }
+    if (a === 'tktype') { var tq = proj(b.getAttribute('data-pid')); return tq ? tkTypeSheet(tq) : null; }
+    if (a === 'tksave' && o) return tkSaveJob(o, b);
+    if (a === 'tktsave' && o) return tkTypeSave(o, b);
+    if (a === 'tkedit') return tkEdit();
+    if (/^tk(addb|addt|esave)$/.test(a) && o) return tkEditTap(a, o, b);
+    if (a === 'jlsave' && o) return jlSave(o, false);
+    if (a === 'jlreset' && o) return jlSave(o, true);
+    if ((a === 'pphand' || a === 'ppsend') && o) return papersTap(a, o, b);
+    if (a === 'labs') { var LP = labsPending(); return listSheet('🧪 Lab results pending (' + LP.length + ')', LP.map(function(x){ return '<div class="gc-ra-item"><div class="t"><b>' + esc(x.p.name) + '</b><small>' + esc([x.r.kind === 'air' ? 'Air sample' : 'Survey / test', x.r.test || x.r.type || x.r.method, x.r.loc || x.r.material, s(x.r.date).slice(0, 10)].filter(Boolean).join(' · ')) + '</small></div><div class="b"><button type="button" class="gc-ra-sm pri" data-ra-a="openjob" data-pid="' + esc(x.p.id) + '">Open</button></div></div>'; }), 'No lab results pending. ✓'); }
+    if (a === 'blocked') { var BJ = blockedJobs(); return listSheet('🚧 Blocked from starting (' + BJ.length + ')', BJ.map(function(p){ return '<div class="gc-ra-item"><div class="t"><b>' + esc(p.name) + '</b><small>The hazard papers are not in the customer\'s hands yet</small></div><div class="b"><button type="button" class="gc-ra-sm pri" data-pmf-a="pp1" data-pid="' + esc(p.id) + '">📋 Papers</button></div></div>'; }), 'No job is blocked. ✓'); }
+    if (a === 'pp1') { var pq = proj(b.getAttribute('data-pid')); return pq ? papersSheet(pq) : null; }
+    if (a === 'jmsg') return jmSheet();
+    if (a === 'jmsg1') { closeSheets(); var jp = b.getAttribute('data-pid'); try { if (W._gcOpenJobMessages) W._gcOpenJobMessages(jp); else if (W._gcFP && proj(jp)) W._gcFP.run('fp-msg', proj(jp)); } catch (e) { warn(e); } return; }
     if (a === 'item') return openItem(b.getAttribute('data-id'));
     if (a === 'fu') return fuSheet();
     if (a === 'papers') { var PD = papersDue(); return listSheet('📄 Paperwork due before the job can start (' + PD.length + ')', PD.map(function(p){ var m = []; try { m = arr(W._gcHazGate.missing(p)); } catch (e) {} return '<div class="gc-ra-item"><div class="t"><b>' + esc(p.name) + '</b><small>' + esc(m.length + ' paper' + (m.length === 1 ? '' : 's') + ' not in the customer\'s hands yet (' + m.join(', ') + ')') + '</small></div><div class="b"><button type="button" class="gc-ra-sm pri" data-ra-a="openjob" data-pid="' + esc(p.id) + '">Open</button></div></div>'; }), 'Every hazard paper is in the customer\'s hands. ✓'); }
@@ -210000,6 +210031,7 @@ function lessRows(a){
   if (a === 'admin' && vok('taxcenter')) R.push(['m-reports', '📊', 'Reports', 'P&L, transactions, reports']);
   if (a === 'admin' && K() && K().shown('money')) R.push(['m-money', '💵', 'Money', 'Collected, owed to us, close rate']);
   if (a === 'admin' && W._gcPause && W._gcPause.open) R.push(['m-pause', '⏸', 'Data-entry mode — ' + (pausedOn() ? 'ON' : 'off'), 'Hold everything that goes out']);
+  if (a === 'admin' && realAdmin() && !vasOn()) { R.push(['m-jl', '🧩', 'Job page buttons', 'Each kind of job page\'s top buttons']); R.push(['m-tk', '🧪', 'Environmental job types & buttons', 'Lead · asbestos · mold · trauma — their checklists']); }
   R.push(['m-help', '❓', 'Help', 'How-tos, send a screenshot']);
   return R;
 }
@@ -210025,15 +210057,257 @@ function lessTap(a){
   if (a === 'm-reports') { if (K()) K().go('taxcenter'); return; }
   if (a === 'm-pause') { try { W._gcPause.open(); } catch (e) { warn(e); } return; }
   if (a === 'm-money') { if (K()) K().run('money'); return; }
+  if (a === 'm-jl') return jlEdit();
+  if (a === 'm-tk') return tkEdit();
   if (a === 'm-help') { try { if (F() && F().settings) { F().settings(); later(function(){ var h = Array.prototype.filter.call(D.querySelectorAll('.gcfp-sheet *,.gc-fh-sheet *'), function(e){ return e.children.length === 0 && /❓ Help/.test(e.textContent); })[0]; if (h && h.scrollIntoView) h.scrollIntoView({ block: 'start' }); }, 300); } } catch (e) { warn(e); } return; }
 }
+
+/* ═════ 🧪 Environmental job buttons by job type (owner 11/16: "each job in environmental will have different buttons once we
+   actually click the job") ═════
+   DATA-DRIVEN: a list of environmental TYPES (starter: 🎨 Lead · 🧱 Asbestos · 🍄 Mold · ☣️ Trauma / biohazard), each with the words that
+   find it on a job and its own JOB-PAGE BUTTONS, each button an equipment checklist (lead from company-docs
+   GrayCo_Lead_06_Supply_and_Equipment_Checklist + the EPA test-kit papers). The company's list lives in gc_kv gc_env_jobtypes — the
+   admin adds types, buttons and items (✏️ Edit the types & buttons) and nothing else changes. On an environmental / hazard job page:
+   the buttons of the job's types (the job's own pick — 🏷 Job type — else found from its type / name / notes); each checklist is
+   ticked per job and saved on the job (p.envTestKit, the Field's own job save). No Home tile. */
+var TK_KEY = 'gc_env_jobtypes';
+var TK_SEED = [
+  { id: 'lead', t: '🎨 Lead', match: 'lead|pre-?1978|lead paint|rrp', buttons: [{ id: 'lead_eq', ic: '🧪', t: 'Lead testing equipment', items: [
+    'EPA-recognized lead test kits (e.g. 3M LeadCheck) — enough for every component', 'EPA Test Kit Documentation Form / Lead 05 results report', 'Utility knife — cut through every paint layer at the test spot',
+    'Disposable nitrile gloves — a fresh pair for each test', 'Wet wipes + small bags for each test spot', 'Labels / marker + floor plan for the test locations', 'Phone / camera — a photo of every spot and result',
+    'EPA cleaning verification cards and wipes', 'Certified renovator card + firm certificate in the job binder'] }] },
+  { id: 'asb', t: '🧱 Asbestos', match: 'asbestos|acm|popcorn|vermiculite|transite', buttons: [{ id: 'asb_eq', ic: '🧪', t: 'Asbestos sampling equipment', items: [
+    'Sealable sample containers / bags and labels', 'Spray bottle with amended water', 'Sampling tools (knife, corer, chisel) — cleaned between samples', 'P100 respirator, gloves, eye protection, coveralls',
+    'HEPA vacuum or wet wipes for the sample spot', 'Patch / encapsulant or duct tape to seal each spot', 'Chain-of-custody form + lab submission sheet', 'Accredited inspector card on site', 'Labeled waste bag for used PPE'] }] },
+  { id: 'mold', t: '🍄 Mold', match: 'mold|mould|microbial|fungal', buttons: [{ id: 'mold_eq', ic: '🧪', t: 'Mold testing equipment', items: [
+    'Moisture meter (pin and pinless)', 'Thermo-hygrometer (RH, temperature, dew point)', 'Thermal (IR) camera', 'Air sampling pump — calibrated, with the calibrator', 'Spore-trap cassettes (inside + an outside control)',
+    'Tape-lift / swab sample kits', 'Chain-of-custody form + lab mailer', 'N95 / P100 respirator, gloves, eye protection', 'Flashlight / borescope; ladder'] }] },
+  { id: 'trauma', t: '☣️ Trauma / biohazard', match: 'trauma|biohazard|blood|unattended death|crime scene|hoard', buttons: [{ id: 'trauma_eq', ic: '🧪', t: 'Biohazard equipment', items: [
+    'Bloodborne-pathogen PPE: coveralls, double nitrile gloves, boot covers, face shield, P100 respirator', 'Red biohazard bags + biohazard waste boxes and the waste manifest', 'Sharps container',
+    'EPA-registered hospital-grade disinfectant + enzyme cleaner', 'Absorbent / solidifier', 'ATP meter + swabs for clean verification', 'Plastic sheeting, tape and containment signage', 'Odor control equipment', 'Camera for before / after'] }] }
+];
+function tkHash(t){ var h = 5381; t = s(t); for (var i = 0; i < t.length; i++) h = ((h << 5) + h + t.charCodeAt(i)) | 0; return (h >>> 0).toString(36); }
+function tkNorm(L){ return { v: 1, types: arr(L && L.types).map(function(ty){ return { id: s(ty.id) || 't' + tkHash(ty.t), t: s(ty.t), match: s(ty.match), buttons: arr(ty.buttons).map(function(b){ var bid = s(b.id) || ty.id + '_' + tkHash(b.t); return { id: bid, ic: s(b.ic) || '🧪', t: s(b.t), items: arr(b.items).map(function(it){ var txt = typeof it === 'string' ? it : s(it.t); return { id: (typeof it === 'object' && it.id) || bid + '_' + tkHash(txt), t: txt }; }).filter(function(it){ return it.t; }) }; }).filter(function(b){ return b.t; }) }; }).filter(function(ty){ return ty.t; }) }; }
+function tkSeed(){ var x = tkNorm({ types: TK_SEED }); x.seed = true; return x; }
+var TK = { list: null, pulled: false };
+function tkList(){
+  if (!TK.list) { try { var c = JSON.parse(lsGet(TK_KEY) || 'null'); if (c && Array.isArray(c.types)) TK.list = tkNorm(c); } catch (e) {} }
+  if (!TK.pulled && typeof W._gcCloudGet === 'function') { TK.pulled = true; try { Promise.resolve(W._gcCloudGet(TK_KEY)).then(function(v){ if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } } if (v && Array.isArray(v.types)) { TK.list = tkNorm(v); try { localStorage.setItem(TK_KEY, JSON.stringify(v)); } catch (e) {} } }, function(){}); } catch (e) {} }
+  return TK.list || tkSeed();
+}
+function tkSave(list){
+  list = Object.assign(tkNorm(list), { updatedAt: nowIso(), by: myName() }); TK.list = list;
+  try { localStorage.setItem(TK_KEY, JSON.stringify(list)); } catch (e) {}
+  try { var f = W._supaUpsertNow || W._supaUpsert; if (f) f(TK_KEY, list); } catch (e) { warn(e); }
+  return list;
+}
+function envJob(p){
+  if (!p) return false;
+  try { if (W._gcCo && W._gcCo.ofJob(p) === 'environmental') return true; } catch (e) {}
+  try { if (W._gcEnviro && W._gcEnviro.jobs && arr(W._gcEnviro.jobs()).some(function(x){ return x && x.p && s(x.p.id) === s(p.id); })) return true; } catch (e) {}
+  return arr(p.envTypes).length > 0;
+}
+/* the job's types: its own pick (p.envTypes), else the types whose words are on the job */
+function tkTypes(p){
+  var L = tkList(), own = arr(p && p.envTypes);
+  if (own.length) return L.types.filter(function(ty){ return own.indexOf(ty.id) >= 0; });
+  var txt = [p.type, p.name, p.notes, p.scope, p.envType, p.hazard].map(function(v){ return s(typeof v === 'object' ? JSON.stringify(v) : v); }).join(' ');
+  return L.types.filter(function(ty){ try { return ty.match && new RegExp(ty.match, 'i').test(txt); } catch (e) { return false; } });
+}
+function tkBtn(id){ var hit = null; tkList().types.forEach(function(ty){ ty.buttons.forEach(function(b){ if (b.id === id) hit = { ty: ty, b: b }; }); }); return hit; }
+function tkSheet(p, bid){
+  var x = tkBtn(bid); if (!p || !x) return null;
+  var done = (p.envTestKit && p.envTestKit.checked) || {}, c = 0;
+  var h = '<div class="gc-pmf-f gc-pmf-tk"><div class="gc-ra-note">' + esc(x.ty.t) + ' · ' + esc([p.address, p.client].filter(Boolean).join(' · ')) + '</div><div class="gc-pmf-tks">' +
+    x.b.items.map(function(it){ var on = !!done[it.id]; if (on) c++; return '<label class="chk"><input type="checkbox" data-tk="' + esc(it.id) + '"' + (on ? ' checked' : '') + '> <span>' + esc(it.t) + (on && done[it.id].by ? ' <small>✓ ' + esc(done[it.id].by) + '</small>' : '') + '</span></label>'; }).join('') +
+    '</div><div class="gc-pmf-hint" data-tkn>' + c + ' of ' + x.b.items.length + ' checked</div><div class="gc-pmf-err" data-f="err"></div><button type="button" class="gc-pmf-go" data-pmf-a="tksave">✓ Save the checklist on the job</button>' +
+    (realAdmin() && !vasOn() ? '<button type="button" class="gc-pmf-back" data-pmf-a="tkedit">✏️ Edit the types & buttons (admin)</button>' : '') + '</div>';
+  var o = sheet(x.b.ic + ' ' + x.b.t + ' — ' + s(p.name), h, 'testkit'); if (!o) return null;
+  o.__pmf = { kind: 'testkit', p: p, bid: bid };
+  o.addEventListener('change', function(){ var el = o.querySelector('[data-tkn]'); if (el) el.textContent = o.querySelectorAll('[data-tk]:checked').length + ' of ' + o.querySelectorAll('[data-tk]').length + ' checked'; });
+  return o;
+}
+function tkSaveJob(o, btn){
+  var P = o.__pmf || {}, p = proj(P.p && P.p.id) || P.p; if (!p) return;
+  if (!seesAll() && !myJobIds()[s(p.id)]) return err(o, 'That job is not one of yours.');
+  var me = myName(), at = nowIso(), prev = (p.envTestKit && p.envTestKit.checked) || {}, next = Object.assign({}, prev);
+  Array.prototype.forEach.call(o.querySelectorAll('[data-tk]'), function(cb){ var id = cb.getAttribute('data-tk'); if (cb.checked) next[id] = prev[id] || { at: at, by: me }; else delete next[id]; });
+  btn.disabled = true; btn.textContent = 'Saving…';
+  Promise.resolve(F() && F().saveProject ? F().saveProject(p.id, function(q){ q.envTestKit = { checked: next, updatedAt: at, by: me }; q.updatedBy = me; }) : null).then(function(){ closeSheets(); toast('🧪 Saved on ' + s(p.name) + '.'); }, function(e){ warn(e); btn.disabled = false; btn.textContent = 'Try again'; });
+}
+/* 🏷 Job type: the job's own environmental types (any of the list) */
+function tkTypeSheet(p){
+  var cur = tkTypes(p).map(function(ty){ return ty.id; });
+  var h = '<div class="gc-pmf-f"><div class="gc-pmf-hint">Tick what this job is — its buttons follow.</div>' + tkList().types.map(function(ty){ return '<label class="chk"><input type="checkbox" data-tt="' + esc(ty.id) + '"' + (cur.indexOf(ty.id) >= 0 ? ' checked' : '') + '> ' + esc(ty.t) + '</label>'; }).join('') +
+    '<button type="button" class="gc-pmf-go" data-pmf-a="tktsave">✓ Save the job type</button></div>';
+  var o = sheet('🏷 Job type — ' + s(p.name), h, 'tktype'); if (o) o.__pmf = { kind: 'tktype', p: p };
+}
+function tkTypeSave(o, btn){
+  var p = o.__pmf && o.__pmf.p; if (!p) return; if (!seesAll() && !myJobIds()[s(p.id)]) return err(o, 'That job is not one of yours.');
+  var L = Array.prototype.filter.call(o.querySelectorAll('[data-tt]'), function(c){ return c.checked; }).map(function(c){ return c.getAttribute('data-tt'); });
+  btn.disabled = true;
+  Promise.resolve(F() && F().saveProject ? F().saveProject(p.id, function(q){ q.envTypes = L; }) : null).then(function(){ closeSheets(); toast('🏷 ' + s(p.name) + ': ' + (L.length ? L.length + ' type' + (L.length === 1 ? '' : 's') : 'found from the job') + '.'); later(function(){ var ov = D.getElementById('_gcJobDash'); if (ov) Array.prototype.forEach.call(ov.querySelectorAll('.gc-pmf-jt'), function(b){ b.remove(); }); tkTile(); }, 400); });
+}
+/* ✏️ the admin's editor: each type — name, the words that find it, its buttons (title + items, one a line); ＋ a button, ＋ a type */
+function tkEdit(L0){
+  if (!realAdmin() || vasOn()) { toast('Only an admin changes the list.'); return; }
+  var L = L0 || tkList();
+  var h = '<div class="gc-pmf-f gc-pmf-tke"><div class="gc-pmf-hint">Every environmental job page shows the buttons of its types. One checklist item a line.</div>' + L.types.map(function(ty, i){
+    return '<details class="gc-pmf-tks" data-ti="' + i + '"' + (i === 0 || L0 ? ' open' : '') + '><summary>' + esc(ty.t) + ' <small>(' + ty.buttons.length + ' button' + (ty.buttons.length === 1 ? '' : 's') + ')</small></summary>' +
+      '<label>Type name</label><input data-te="t" value="' + esc(ty.t) + '"><label>Words that find it on a job (a|b|c)</label><input data-te="m" value="' + esc(ty.match) + '">' +
+      ty.buttons.map(function(b, j){ return '<div class="gc-pmf-tkb" data-bi="' + j + '"><label>Button ' + (j + 1) + '</label><input data-be="t" value="' + esc(b.t) + '"><textarea rows="6" data-be="items">' + esc(b.items.map(function(it){ return it.t; }).join('\n')) + '</textarea></div>'; }).join('') +
+      '<button type="button" class="gc-pmf-back" data-pmf-a="tkaddb" data-ti="' + i + '">＋ A button for ' + esc(ty.t) + '</button></details>';
+  }).join('') + '<button type="button" class="gc-pmf-back" data-pmf-a="tkaddt">＋ A new environmental type</button><div class="gc-pmf-err" data-f="err"></div><button type="button" class="gc-pmf-go" data-pmf-a="tkesave">✓ Save the types & buttons</button></div>';
+  var o = sheet('✏️ Environmental job types & buttons', h, 'tkedit'); if (o) o.__pmf = { kind: 'tkedit', L: L };
+}
+function tkRead(o){
+  var L = o.__pmf.L, out = { types: [] };
+  L.types.forEach(function(ty, i){
+    var box = o.querySelector('[data-ti="' + i + '"]'); if (!box) return;
+    var t = s(box.querySelector('[data-te="t"]').value), m = s(box.querySelector('[data-te="m"]').value);
+    var btns = ty.buttons.map(function(b, j){ var bx = box.querySelector('[data-bi="' + j + '"]'); if (!bx) return b; var old = {}; b.items.forEach(function(it){ old[low(it.t)] = it.id; });
+      var bt = s(bx.querySelector('[data-be="t"]').value); return { id: b.id, ic: b.ic, t: bt, items: s(bx.querySelector('[data-be="items"]').value).split(/\n/).map(s).filter(Boolean).map(function(x){ return { id: old[low(x)] || b.id + '_' + tkHash(x), t: x }; }) }; }).filter(function(b){ return b.t; });
+    if (t) out.types.push({ id: ty.id, t: t, match: m, buttons: btns });
+  });
+  return out;
+}
+function tkEditTap(a, o, b){
+  var L = tkRead(o);
+  if (a === 'tkaddb') { var ty = L.types[+b.getAttribute('data-ti')]; if (ty) ty.buttons.push({ id: ty.id + '_b' + Date.now().toString(36), ic: '🧪', t: 'New checklist', items: [] }); return tkEdit(tkNorm(L)); }
+  if (a === 'tkaddt') { L.types.push({ id: 't' + Date.now().toString(36), t: 'New type', match: '', buttons: [{ id: 'b' + Date.now().toString(36), ic: '🧪', t: 'Equipment checklist', items: [] }] }); return tkEdit(tkNorm(L)); }
+  if (a === 'tkesave') { tkSave(L); toast('🧪 Saved — every environmental job page uses the new list.'); closeSheets(); try { var ov = D.getElementById('_gcJobDash'); if (ov) Array.prototype.forEach.call(ov.querySelectorAll('.gc-pmf-jt'), function(x){ x.remove(); }); tkTile(); } catch (e) {} }
+}
+/* the job page: the buttons of the job's types (+ 🏷 Job type) on an environmental / hazard job */
+function tkTile(){
+  var ov = D.getElementById('_gcJobDash'); if (!ov || off()) return;
+  var grid = ov.querySelector('.gcfp-grid'), pid = s(ov.getAttribute('data-gcfp')); if (!grid || !pid || grid.querySelector('.gc-pmf-jt')) return;
+  var p = proj(pid); if (!envJob(p)) return;
+  var tpl = grid.querySelector(':scope > .gcfp-t'); if (!tpl) return;
+  var mk = function(a, ic, t, bid){ var b = tpl.cloneNode(true); b.className = 'gcfp-t gc-pmf-jt'; b.removeAttribute('data-fp'); b.removeAttribute('data-fm'); b.setAttribute('data-pmf-a', a); b.setAttribute('data-pid', pid); if (bid) b.setAttribute('data-bid', bid); var sp = b.querySelectorAll('span'); if (sp[0]) sp[0].textContent = ic; if (sp[1]) sp[1].textContent = t; return b; };
+  var kids = Array.prototype.filter.call(grid.children, function(x){ return x.tagName === 'BUTTON'; }), at = kids[2] || null;
+  var T = tkTypes(p); if (!T.length) T = tkList().types;   /* no type yet: every type's buttons (🏷 Job type narrows them) */
+  T.forEach(function(ty){ ty.buttons.forEach(function(b){ grid.insertBefore(mk('testkit', b.ic, b.t, b.id), at); }); });
+  grid.insertBefore(mk('tktype', '🏷', 'Job type'), at);
+}
+
+/* ═════ the job page by kind: 💧 MITIGATION and ☢️ ENVIRONMENTAL (owner 11/16: "Field must be really good for Mitigation and
+   Environmental jobs") — patch FIELDMORE's job-page layouts get two more kinds (window._gcFieldMore.layout / .extra, here) ═════
+   kind: the job's company (Mitigation → mit, Environmental → env), else its words (lead / asbestos / abatement / trauma / biohazard /
+   mold assessment → env; water / fire / smoke / mold remediation / dry-out → mit unless it is an insurance rebuild — that stays
+   patch FIELDMORE's 🛡 insurance layout). Insurance stays a flag on top of mit: 🛡 Claim info and 📆 TPA dates only on insurance jobs.
+   The tiles run the existing tools: the claims app's drying file (moisture / equipment — patch MITWS' forms), patch MITWS' environmental
+   logs (survey / samples, air, containment, PPE, waste), patch DOCAUTO's customer papers, the claims app's milestones (TPA dates).
+   The layouts are data: the admin changes each kind's top buttons (☰ More → 🧩 Job page buttons; gc_kv gc_field_layouts). */
+var MIT_WORDS = /water|flood|fire|smoke|soot|mold remediation|remediat|dry.?out|drying|sewage|cat ?3|mitigation|storm damage/i;
+var ENV_WORDS = /\blead\b|asbestos|abatement|trauma|biohazard|crime scene|unattended death|mold (assessment|test|inspection|abatement)|environmental|hazmat/i;
+function insFlag(p){ try { if (typeof W._gcIsInsuranceJob === 'function' && W._gcIsInsuranceJob(p)) return true; } catch (e) {} if (p && p.isInsurance === false) return false; if (p && s(p.claimNo || p.claimNumber || p.insCarrier || p.carrier)) return true; try { return !!(W._gcClaims && W._gcClaims.forProject && W._gcClaims.forProject(p.id)); } catch (e) { return false; } }
+function jobKind(p, k0){
+  if (!p || off()) return k0;
+  var co = ''; try { co = W._gcCo ? s(W._gcCo.ofJob(p)) : s(p.companyId); } catch (e) {}
+  if (co === 'mitigation') return 'mit';
+  if (co === 'environmental') return 'env';
+  var txt = [p.type, p.jobType, p.service, p.category, p.name, p.scope].concat(arr(p.tags)).map(s).join(' ');
+  if (ENV_WORDS.test(txt) || arr(p.envTypes).length) return 'env';
+  if (k0 === 'ins') return 'ins';
+  if (MIT_WORDS.test(txt)) return 'mit';
+  return k0;
+}
+var JL0 = {
+  mit: { top: ['dry', 'equip', 'photo', 'log', 'claim', 'papers', 'sched', 'cust', 'punch', 'tpa'],
+         more: [['On site', ['progress', 'update', 'safety', 'share']], ['People', ['msg', 'sub', 'info']], ['Paperwork', ['co', 'est', 'upest', 'docs', 'create']], ['Money', ['money', 'invoice', 'jobfin']]], hide: ['payapp'] },
+  env: { top: ['papers', 'samples', 'contain', 'air', 'photo', 'log', 'clear', 'waste', 'cust'],
+         more: [['On site', ['sched', 'ppe', 'safety', 'progress', 'update', 'punch', 'share']], ['People', ['msg', 'sub', 'info']], ['Paperwork', ['co', 'est', 'upest', 'docs', 'create']], ['Money', ['money', 'invoice', 'jobfin']]], hide: ['claim', 'dry', 'payapp'] }
+};
+function envTool(kind, p){ try { if (W._gcMitWS && W._gcMitWS.envSheet) { W._gcMitWS.envSheet(proj(p.id) || p, kind); return; } } catch (e) { warn(e); } toast('The environmental logs are not on this phone yet.'); }
+function mitAct(id, p){ try { var X = W._gcMitWS && W._gcMitWS.fieldActions ? W._gcMitWS.fieldActions() : null; if (X && X[id]) { X[id].run(proj(p.id) || p); return; } } catch (e) { warn(e); } toast('The drying file is not on this phone yet.'); }
+var JX = {   /* [icon, label, may it show (kind, role, tools, job), run(job)] — added to patch FIELDMORE's tiles */
+  equip:   ['🌀', 'Equipment placed / picked up', function(k){ return k === 'mit'; }, function(p){ mitAct('mws_equip', p); }],
+  papers:  ['📋', 'Paperwork to sign', function(k){ return (k === 'mit' || k === 'env') && !!W._gcDocAuto; }, function(p){ papersSheet(p); }],
+  tpa:     ['📆', 'TPA dates', function(k, r, T, p){ return k === 'mit' && !!p && insFlag(p) && !!(W._gcClaims && W._gcClaims.more); }, function(p){ tpaJob(p); }],
+  samples: ['🧪', 'Samples & results', function(k){ return k === 'env'; }, function(p){ envTool('survey', p); }],
+  contain: ['🚧', 'Containment / set-up check', function(k){ return k === 'env'; }, function(p){ envTool('contain', p); }],
+  air:     ['🌬', 'Air / negative-pressure log', function(k){ return k === 'env'; }, function(p){ envTool('air', p); }],
+  clear:   ['✅', 'Clearance / verification', function(k){ return k === 'env'; }, function(p){ envTool('air', p); later(function(){ try { var sel = Array.prototype.filter.call(D.querySelectorAll('select'), function(x){ return Array.prototype.some.call(x.options, function(o){ return o.value === 'Clearance'; }); }).pop(); if (sel) { sel.value = 'Clearance'; sel.dispatchEvent(new Event('change', { bubbles: true })); } } catch (e) {} }, 120); }],
+  waste:   ['🗑', 'Waste manifest / disposal', function(k){ return k === 'env'; }, function(p){ envTool('waste', p); }],
+  ppe:     ['😷', 'Safety / PPE log', function(k){ return k === 'env'; }, function(p){ envTool('ppe', p); }]
+};
+var JLK = 'gc_field_layouts';
+function jlApply(over){
+  var FM = W._gcFieldMore; if (!FM || !FM.layout) return false;
+  ['mit', 'env'].forEach(function(k){ FM.layout[k] = JSON.parse(JSON.stringify(JL0[k])); });
+  if (FM.kindL) { FM.kindL.mit = '💧 Mitigation'; FM.kindL.env = '☢️ Environmental'; }
+  if (FM.extra) Object.keys(JX).forEach(function(id){ FM.extra[id] = JX[id]; });
+  if (FM.extra && FM.extra.dry && !FM.extra.dry.__pmf) { var d0 = FM.extra.dry[2]; FM.extra.dry = FM.extra.dry.slice(); FM.extra.dry[2] = function(k, r, T, p){ return k === 'mit' ? !!W._gcClaims : d0(k, r, T, p); }; FM.extra.dry.__pmf = 1; }   /* the drying log on every mitigation job */
+  if (FM.extra && FM.extra.claim && !FM.extra.claim.__pmf) { var c0 = FM.extra.claim[2]; FM.extra.claim = FM.extra.claim.slice(); FM.extra.claim[2] = function(k, r, T, p){ return k === 'mit' ? !!p && insFlag(p) && !!W._gcClaims : c0(k, r, T, p); }; FM.extra.claim.__pmf = 1; }   /* 🛡 only on an insurance job */
+  over = over || jlOver();
+  Object.keys(over || {}).forEach(function(k){ var o = over[k]; if (FM.layout[k] && o && Array.isArray(o.top) && o.top.length) FM.layout[k].top = o.top.map(s).filter(Boolean); });
+  return true;
+}
+function jlOver(){ try { var v = JSON.parse(lsGet(JLK) || 'null'); return v && v.kinds ? v.kinds : null; } catch (e) { return null; } }
+var JLP = false;
+function jlPull(){ if (JLP || typeof W._gcCloudGet !== 'function') return; JLP = true; try { Promise.resolve(W._gcCloudGet(JLK)).then(function(v){ if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } } if (v && v.kinds) { try { localStorage.setItem(JLK, JSON.stringify(v)); } catch (e) {} jlApply(v.kinds); } }, function(){}); } catch (e) {} }
+W._gcPmKind = jobKind;
+/* 🧩 the admin's editor: each kind's top buttons, in order (the rest stay under ➕ More for this job) */
+var JL_NAMES = { dry: '💧 Moisture / drying log', equip: '🌀 Equipment', photo: '📸 Photos', log: '📒 Daily log', claim: '🛡 Claim info', papers: '📋 Paperwork', sched: '📅 Schedule', cust: '👤 Customer portal', punch: '☐ Punch / final', tpa: '📆 TPA dates',
+  samples: '🧪 Samples & results', contain: '🚧 Containment', air: '🌬 Air log', clear: '✅ Clearance', waste: '🗑 Waste manifest', ppe: '😷 PPE', co: '🔁 Change order', est: '📐 Estimate', money: '💰 Money', sub: '🔧 Sub portal', msg: '💬 Message', info: '📋 Job info', progress: '📈 Progress', update: '💬 Post update', safety: '🦺 Safety', docs: '📄 Documents', share: '🔗 Share photos', invoice: '🧾 Invoice', create: '📝 Create document', upest: '⬆ Upload estimate', payapp: '🏗 Pay apps', jobfin: '💰 Job financials' };
+function jlEdit(){
+  if (!realAdmin() || vasOn()) { toast('Only an admin changes the job page buttons.'); return; }
+  var FM = W._gcFieldMore; if (!FM || !FM.layout) return;
+  var keys = Object.keys(JL_NAMES).map(function(k){ return k + ' = ' + JL_NAMES[k]; }).join(' · ');
+  var h = '<div class="gc-pmf-f"><div class="gc-pmf-hint">The top buttons of each kind of job page, in order (a comma between). The others stay under ➕ More for this job. Buttons: ' + esc(keys) + '</div>' +
+    ['mit', 'env', 'ins', 'res', 'com'].filter(function(k){ return FM.layout[k]; }).map(function(k){ return '<label>' + esc((FM.kindL && FM.kindL[k]) || k) + '</label><input data-jl="' + k + '" value="' + esc(FM.layout[k].top.join(', ')) + '">'; }).join('') +
+    '<div class="gc-pmf-err" data-f="err"></div><button type="button" class="gc-pmf-go" data-pmf-a="jlsave">✓ Save the job page buttons</button><button type="button" class="gc-pmf-back" data-pmf-a="jlreset">↺ Back to the standard buttons</button></div>';
+  sheet('🧩 Job page buttons', h, 'jledit');
+}
+function jlSave(o, reset){
+  var kinds = {};
+  if (!reset) Array.prototype.forEach.call(o.querySelectorAll('[data-jl]'), function(i){ var L = s(i.value).split(/[,\s]+/).map(s).filter(function(k){ return !!JL_NAMES[k]; }); if (L.length) kinds[i.getAttribute('data-jl')] = { top: L }; });
+  var v = { v: 1, kinds: kinds, updatedAt: nowIso(), by: myName() };
+  try { localStorage.setItem(JLK, JSON.stringify(v)); } catch (e) {}
+  try { var f = W._supaUpsertNow || W._supaUpsert; if (f) f(JLK, v); } catch (e) { warn(e); }
+  var FM = W._gcFieldMore; if (FM && FM.layout) { if (!JL_STD) JL_STD = JSON.parse(JSON.stringify(FM.layout)); Object.keys(JL_STD).forEach(function(k){ FM.layout[k] = JSON.parse(JSON.stringify(JL_STD[k])); }); jlApply(kinds); }
+  closeSheets(); toast('🧩 Saved — the job pages use it the next time they open.');
+}
+var JL_STD = null;
+/* 📋 Paperwork to sign — patch DOCAUTO's papers for this job (in the portal / signed / given by hand) */
+function papersSheet(p){
+  p = proj(p.id) || p; var A = W._gcDocAuto; if (!A) { toast('The papers are not on this phone yet.'); return; }
+  var o = sheet('📋 Paperwork — ' + s(p.name), '<div class="gc-ra-empty">Loading the papers…</div>', 'papers'); if (!o) return;
+  o.__pmf = { kind: 'papers', p: p };
+  Promise.resolve(A.papers ? A.papers(p.id) : []).then(function(L){
+    L = arr(L); var da = p.docAuto || {}, sent = da.sent || {}, given = da.given || {}, miss = []; try { miss = arr(W._gcHazGate && W._gcHazGate.missing(p)); } catch (e) {}
+    var h = (miss.length ? '<div class="gc-pmf-err">⛔ This job cannot start until ' + miss.length + ' hazard paper' + (miss.length === 1 ? ' is' : 's are') + ' in the customer\'s hands.</div>' : '') +
+      (L.length ? L.map(function(b){ var st = given[b.id] ? '✓ Given in person' : sent[b.id] ? '📨 In the portal' : '— not sent yet'; return '<div class="gc-ra-item"><div class="t"><b>' + esc(b.name || b.id) + '</b><small>' + esc(st) + '</small></div><div class="b">' + (!given[b.id] && !sent[b.id] ? '<button type="button" class="gc-ra-sm" data-pmf-a="pphand" data-id="' + esc(b.id) + '">✓ Given in person</button>' : '') + '</div></div>'; }).join('') : '<div class="gc-ra-empty">No papers picked for this job.</div>') +
+      (L.some(function(b){ return !sent[b.id] && !given[b.id]; }) ? '<button type="button" class="gc-pmf-go" data-pmf-a="ppsend">✍️ Put the papers in the customer\'s portal</button>' : '');
+    var bd = o.querySelector('.bd'); if (bd) bd.innerHTML = h;
+  }, function(){ var bd = o.querySelector('.bd'); if (bd) bd.innerHTML = '<div class="gc-ra-empty">The papers could not be read — try again with a signal.</div>'; });
+  return o;
+}
+function papersTap(a, o, b){
+  var p = o.__pmf && o.__pmf.p, A = W._gcDocAuto; if (!p || !A) return;
+  if (a === 'pphand') { var id = b.getAttribute('data-id'); if (!W.confirm('Mark it as given to the customer in person (a signed paper copy)? Keep the signed copy for the job\'s documents.')) return; try { A.giveByHand(p.id, id); } catch (e) { warn(e); } b.disabled = true; b.textContent = '✓ Given'; toast('✓ Marked as given in person.'); return; }
+  if (a === 'ppsend') { if (pausedOn()) { toast('⏸ Data-entry mode is on — nothing is sent.'); return; } b.disabled = true; b.textContent = 'Making the papers…'; Promise.resolve(A.run(p.id, { force: true })).then(function(r){ toast(r && r.ok ? '✍️ ' + (r.made || 0) + ' paper(s) in the customer\'s portal' + (r.mailed ? ' — e-mailed' : '') : 'Not sent: ' + s(r && (r.error || r.why) || 'try again')); closeSheets(); }, function(){ toast('Not sent — try again with a signal.'); b.disabled = false; }); }
+}
+/* 📆 TPA dates — this job's claim milestones (the claims app's own list) */
+function tpaJob(p){
+  var A = W._gcClaims, c = null; try { c = A && A.forProject ? A.forProject(p.id) : null; } catch (e) {}
+  if (!c) { toast('No claim on this job yet.'); return; }
+  var M = []; try { M = arr(A.more && A.more.milestones ? A.more.milestones(c) : []); } catch (e) {}
+  listSheet('📆 TPA dates — ' + s(p.name), M.map(function(m){ return '<div class="gc-ra-item"><div class="t"><b>' + esc(m.l) + '</b><small>' + esc(m.at ? '✓ done ' + s(m.at).slice(0, 10) : m.due ? (m.late ? 'LATE · due ' : 'due ') + s(m.due).slice(0, 10) : '') + '</small></div>' + (m.late && !m.at ? '<span class="gc-ra-chip r">Late</span>' : '') + '</div>'; }).concat(['<button type="button" class="gc-pmf-go" data-ra-a="claim" data-id="' + esc(c.id) + '">🛡 Open the claim</button>']), 'No dates on this claim yet.');
+}
+/* the environmental Home: 🧪 lab results pending · 🚧 blocked from starting (the hazard papers) */
+function labsPending(){ var out = []; myJobs().forEach(function(p){ try { var L = W._gcMitWS && W._gcMitWS.envLog ? arr(W._gcMitWS.envLog(p)) : arr(p.envLog); L.forEach(function(r){ if (r && ((r.kind === 'survey' && !s(r.result)) || (r.kind === 'air' && (/waiting/i.test(s(r.pass)) || !s(r.result))))) out.push({ p: p, r: r }); }); } catch (e) {} }); return out; }
+var STARTED = /active|in progress|progress|started|underway|production|working|complete/i;
+function blockedJobs(){ return papersDue().filter(function(p){ return !STARTED.test(s(p.status)); }); }
 
 /* ═════ flags on <html>: commission people never see 🤒 Call in sick / ⏰ Running late ═════ */
 function flags(){
   var on = !off() && !hourly() && !!meUser();
   if (D.documentElement.classList.contains('gc-pmf-comm') !== on) D.documentElement.classList.toggle('gc-pmf-comm', on);
 }
-RI.call(W, function(){ if (!D.hidden) flags(); }, 2000);
+RI.call(W, function(){ if (!D.hidden) { flags(); if (W.__GC_AUTH__ && W._crm) jlPull(); } }, 2000);
+RI.call(W, function(){ if (!D.hidden && D.getElementById('_gcJobDash')) { try { tkTile(); } catch (e) { warn(e); } } }, 700);
+try { JL_STD = W._gcFieldMore && W._gcFieldMore.layout ? JSON.parse(JSON.stringify(W._gcFieldMore.layout)) : null; jlApply(); } catch (e) { warn(e); }   /* the mitigation / environmental job pages (patch FIELDMORE loaded above) */
 function css(){
   if (D.getElementById('gc-pmf-css')) return;
   var st = D.createElement('style'); st.id = 'gc-pmf-css';
@@ -210081,7 +210355,8 @@ function css(){
     '.gc-pmf-go{display:block;width:100%;margin-top:12px;min-height:52px;border:none;border-radius:12px;background:#16a34a;color:#fff;font:800 16px Inter,sans-serif;cursor:pointer}.gc-pmf-go:disabled{opacity:.6}',
     '.gc-pmf-del{display:block;width:100%;margin-top:8px;min-height:46px;border:1px solid #fecaca;border-radius:12px;background:#fff;color:#b91c1c;font:700 14px Inter,sans-serif;cursor:pointer}',
     '.gc-pmf-back{display:block;width:100%;margin-top:8px;min-height:44px;border:1px solid #e5e7eb;border-radius:12px;background:#fff;color:#1d4ed8;font:700 14px Inter,sans-serif;cursor:pointer}',
-    '.gc-pmf-err{color:#b91c1c;font-weight:700;font-size:13px;min-height:0;margin-top:4px}'
+    '.gc-pmf-err{color:#b91c1c;font-weight:700;font-size:13px;min-height:0;margin-top:4px}',
+    '.gc-pmf-tks{border:1px solid #e5e7eb;border-radius:12px;padding:6px 10px;margin:8px 0;background:#fff}.gc-pmf-tks summary{font:800 14.5px Inter,sans-serif;padding:8px 2px;cursor:pointer}.gc-pmf-tks label.chk{align-items:flex-start;padding:7px 2px;border-top:1px solid #f3f4f6;margin:0;font-size:14px;min-height:40px}.gc-pmf-tks input[type=checkbox]{width:22px;height:22px;flex:0 0 22px}.gc-pmf-tks small{color:#16a34a;font-weight:700}.gc-pmf-tkb{border-top:1px dashed #e5e7eb;margin-top:6px}'
   ].join('\n');
   (D.head || D.documentElement).appendChild(st);
 }
@@ -210096,7 +210371,8 @@ W._gcPmField = {
   open: openSched, appt: function(p){ return formSheet('appt', null, p || {}); }, work: function(p){ return formSheet('work', null, p || {}); },
   update: function(pid){ var p = proj(pid); return p ? updateSheet(p) : pickMyJob('✏️ Update job', updateSheet); }, item: openItem,
   payKind: payKind, hourly: hourly, mine: function(a, b, all){ return itemsOn(a || today(), b || a || today(), !!all).map(function(x){ return x.id; }); }, canEdit: function(id){ return canEdit(sched().filter(function(y){ return s(y.id) === s(id); })[0]); },
-  alsoPm: alsoPm, save: saveSched, followUps: function(){ return followUps().map(function(l){ return l.id; }); }
+  alsoPm: alsoPm, kind: function(pid){ var p = proj(pid); return p && W._gcFieldMore ? W._gcFieldMore.kind(p) : ''; }, envTypes: function(pid){ var p = proj(pid); return p ? tkTypes(p).map(function(x){ return x.id; }) : []; }, jobTypesList: function(){ return JSON.parse(JSON.stringify(tkList())); },
+  testkit: function(pid, bid){ var p = proj(pid); return p ? tkSheet(p, bid) : null; }, papers: function(pid){ var p = proj(pid); return p ? papersSheet(p) : null; }, labs: function(){ return labsPending().length; }, blocked: function(){ return blockedJobs().map(function(p){ return p.id; }); }, save: saveSched, followUps: function(){ return followUps().map(function(l){ return l.id; }); }
 };
 try { console.log('[GC] 📱 PM field: 🏠 Home in the middle, the home dashboard, 📅 My Schedule, ✏️ Update job (patch PMFIELD) — _gcPmField.state()'); } catch (e) {}
 })(window);
