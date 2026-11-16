@@ -90,8 +90,9 @@ try {
   ok(await O.ev(() => /added to this job's Documents/.test((document.getElementById('gcfp-toast') || {}).textContent || '')), 'a toast says it was added to the job\'s Documents', await O.ev(() => (document.getElementById('gcfp-toast') || {}).textContent));
   const docs1 = await O.ev(async pid => ((await window.idbGet('projectDocs')) || []).filter(d => d && d.pid === pid).length, PID);
   ok(docs1 === docs0 + 1, 'exactly one record was added', { docs0, docs1 });
-  const inCloud = await (async () => { for (let i = 0; i < 120; i++) { let v = H.cget('projectDocs'); if (typeof v === 'string') try { v = JSON.parse(v); } catch (e) { v = []; } if (Array.isArray(v) && v.some(d => d && d.pid === PID && d.name === 'Scope and drawings.pdf')) return true; await sleep(500); } return false; })();
-  ok(inCloud, 'the record reaches the cloud (gc_kv projectDocs, through the save queue)');
+  /* DEVMODE: the list may go up whole or in chunks (projectDocs__chunkN) — look in every projectDocs row */
+  const inCloud = await (async () => { for (let i = 0; i < 120; i++) { for (const [k, r] of H.cloud) { if (!/^projectDocs/.test(k)) continue; const js = typeof r.value === 'string' ? r.value : JSON.stringify(r.value); if (js && js.includes('Scope and drawings.pdf') && js.includes(String(PID))) return true; } await sleep(500); } return false; })();
+  ok(inCloud, 'the record reaches the cloud (gc_kv projectDocs, through the save queue)', [...new Set(H.writes.map(w => w.key))].filter(k => /doc/i.test(k)).slice(0, 20));
   const up = await (async () => { for (let i = 0; i < 40; i++) { const hit = STORE.find(x => doc && x.path.endsWith(String(doc.ref).slice(3))); if (hit) return hit; await sleep(500); } return null; })();
   ok(!!up && up.size > 100, 'the file itself is uploaded to the file bucket (crm-files/<hash>.pdf)', { up, store: STORE.slice(-3) });
   const inList = await O.ev(pid => ((window._crm && window._crm.projectDocs) || []).some(d => d && d.pid === pid && d.name === 'Scope and drawings.pdf'), PID);
@@ -114,7 +115,8 @@ try {
 
   /* ── 📋 Job Info: its own (dark) sheet, as designed ── */
   await openJob(O);
-  await pg.locator('#_gcJobDash ._jdAct[data-fn="info"]').first().tap(); await sleep(800);
+  /* DEVMODE: since FIELDMORE the Job Info tile can sit in the job page's overflow (class gcfm-ov, not shown) — tap it when shown, else click it */
+  { const jl = pg.locator('#_gcJobDash ._jdAct[data-fn="info"]').first(); if (await jl.isVisible().catch(() => false)) await jl.tap(); else await jl.evaluate(b => b.click()); } await sleep(800);
   const info = await O.ev(() => { const el = [...document.querySelectorAll('body > div')].reverse().find(d => /PO NUMBER/.test(d.innerText || '')); const card = el && el.firstElementChild; return el ? { bg: getComputedStyle(card).backgroundColor } : null; });
   ok(!!info && info.bg === 'rgb(15, 36, 64)', '📋 Job Info still opens the Job Info sheet (dark navy is its normal look)', info);
   await pg.screenshot({ path: SHOTS + 'fieldfile_jobinfo.png' });
