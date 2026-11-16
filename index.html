@@ -219735,7 +219735,8 @@ var GIVEN_K = { gcb_lead_01: 'L01', gcb_lead_02: 'L02', gcb_asb_01: 'A01' };
 function delivered(p, id){ var da = p.docAuto || {}; if ((da.sent || {})[id] || (da.given || {})[id]) return true; var k = GIVEN_K[id], la = p.leadAsb || {}; return !!(k && la.given && la.given[k]); }
 var HZ = {};   /* pid → { at, ids } — the job's hazard papers (worked out from its document set) */
 function hazNeeded(pid){ return setOf(pid).then(function(ids){ var h = ids.filter(function(id){ return HAZ.indexOf(id) > -1; }); HZ[pid] = { at: Date.now(), ids: h }; return h; }); }
-function missing(p){ var h = HZ[p.id]; return h ? h.ids.filter(function(id){ return !delivered(p, id); }) : []; }
+function missing(p){ try { if (W._gcJobDocs && W._gcJobDocs.emergency(p)) return []; } catch (e) {}   /* JOBDOCS: emergency water / fire / mold mitigation is never held back — the papers show as due on 📑 Paperwork */
+  var h = HZ[p.id]; return h ? h.ids.filter(function(id){ return !delivered(p, id); }) : []; }
 W._gcHazGate = { missing: function(p){ return p ? missing(p) : []; }, needed: hazNeeded, HAZ: HAZ };
 var AUTH = ['gcb_water_emergency_auth', 'gcb_fire_work_auth', 'gcb_board_up_auth', 'gcb_storm_inspection_auth'], GEN = 'gcb_work_auth';
 var AUTO = ['gcb_direction_to_pay', 'gcb_sewage_notice', 'gcb_mold', 'gcb_lead_01', 'gcb_lead_02', 'gcb_asb_01', 'gcb_roof_preinstall'];
@@ -234671,24 +234672,47 @@ var LAST_INPUT = 0; ['pointerdown', 'keydown', 'input', 'change'].forEach(functi
 var SEEN = null;
 function snap(p){ var o = { status: p.status }; PF.forEach(function(k){ o[k] = p[k]; }); return o; }
 function revert(p, was){ if (typeof W._setProjects !== 'function') return; var patch = Object.assign({}, was, { updatedAt: new Date().toISOString() }); W._setProjects(function(prev){ return arr(prev).map(function(x){ return x && s(x.id) === s(p.id) ? Object.assign({}, x, patch) : x; }); }); }
-function gateAsk(p, want){
+/* JOBDOCS: one gate for the papers that must be signed before day 1 — Lead 01 (as before) and, for an asbestos job, Asbestos 01
+   (owner 11/16: "yes" to Asbestos 01 blocking Start job the same way). The list comes from window._gcJobDocs.gateMissing (the
+   paperwork-by-job-type table); emergency water / fire / mold mitigation jobs are never stopped (their papers show as due). */
+function gateMiss(p){
+  var out = lead01Given(p) ? [] : ['L01'];
+  try { if (W._gcJobDocs && typeof W._gcJobDocs.gateMissing === 'function') out = W._gcJobDocs.gateMissing(p, out); } catch (e) {}
+  return out;
+}
+function gName(k){ try { if (NAMES[k]) return NAMES[k]; if (W._gcJobDocs) return W._gcJobDocs.nameOf(k); } catch (e) {} return k; }
+function gateAsk(p, want, miss){
+  miss = arr(miss).length ? miss : ['L01'];
   var old = D.getElementById('gc-la3-gate'); if (old) old.remove();
-  var o = D.createElement('div'); o.id = 'gc-la3-gate'; o.setAttribute('role', 'dialog'); o.setAttribute('aria-modal', 'true'); o.setAttribute('aria-label', 'Lead 01 first'); o.setAttribute('data-gc-keep', '1');
+  var names = miss.map(gName), list = names.length > 1 ? names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1] : names[0], one = miss.length === 1;
+  var o = D.createElement('div'); o.id = 'gc-la3-gate'; o.setAttribute('role', 'dialog'); o.setAttribute('aria-modal', 'true'); o.setAttribute('aria-label', list + ' first'); o.setAttribute('data-gc-keep', '1');
   o.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:16px';
   var B = 'min-height:42px;border-radius:10px;font:700 14px Inter,Arial,sans-serif;cursor:pointer;';
+  var who = '<b>' + esc(p.name || p.client || 'This job') + '</b>';
+  var why = (one && miss[0] === 'L01') ? who + ' is a lead-safe job. EPA says the owner gets the <b>Renovate Right</b> pamphlet and signs Lead 01 <b>before work starts</b>. Mark it given (or upload the signed copy to the job\'s files), then start the job again.'
+    : (one && miss[0] === 'A01') ? who + ' is an asbestos job. The customer signs <b>Asbestos 01</b> (the asbestos disclosure &amp; acknowledgment) <b>before work starts</b>. Mark it given (or upload the signed copy to the job\'s files), then start the job again.'
+    : who + ' needs ' + (one ? 'this' : 'these') + ' signed <b>before work starts</b>: <b>' + esc(list) + '</b>. Mark ' + (one ? 'it' : 'them') + ' given (or upload the signed cop' + (one ? 'y' : 'ies') + ' to the job\'s files), then start the job again.';
   o.innerHTML = '<div style="background:#fff;color:#0f172a;border-radius:14px;max-width:460px;width:100%;padding:18px;font:15px Inter,Arial,sans-serif;box-shadow:0 20px 50px rgba(0,0,0,.3)">'
-    + '<div style="font-weight:800;font-size:18px;margin-bottom:6px">📄 Give the customer Lead 01 first</div>'
-    + '<div style="margin-bottom:12px"><b>' + esc(p.name || p.client || 'This job') + '</b> is a lead-safe job. EPA says the owner gets the <b>Renovate Right</b> pamphlet and signs Lead 01 <b>before work starts</b>. Mark it given (or upload the signed copy to the job\'s files), then start the job again.</div>'
+    + '<div style="font-weight:800;font-size:18px;margin-bottom:6px">📄 Give the customer ' + esc(list) + ' first</div>'
+    + '<div style="margin-bottom:12px">' + why + '</div>'
     + '<div style="display:flex;flex-direction:column;gap:8px">'
-    + '<button type="button" data-g3="send" style="' + B + 'border:0;background:#241968;color:#fff">📤 Send Lead 01 (e-mail + portal)</button>'
-    + '<button type="button" data-g3="given" style="' + B + 'border:1px solid #166534;background:#f0fdf4;color:#166534">✓ It was given</button>'
+    + '<button type="button" data-g3="send" style="' + B + 'border:0;background:#241968;color:#fff">📤 Send ' + esc(list) + ' (e-mail + portal)</button>'
+    + '<button type="button" data-g3="given" style="' + B + 'border:1px solid #166534;background:#f0fdf4;color:#166534">✓ ' + (one ? 'It was' : 'They were') + ' given</button>'
     + (admin() ? '<button type="button" data-g3="waive" style="' + B + 'border:1px solid #cbd5e1;background:#fff;font-weight:600">Start anyway (admin)</button>' : '')
     + '<button type="button" data-g3="close" style="' + B + 'border:1px solid #cbd5e1;background:#fff;font-weight:600">Not now</button></div></div>';
   o.addEventListener('click', function(e){
     var b = e.target.closest && e.target.closest('[data-g3]'); if (!b && e.target !== o) return;
     var a = b ? b.getAttribute('data-g3') : 'close'; o.remove();
-    if (a === 'send') sendPaper('L01', p.id);
-    if (a === 'given') { var how = W.prompt('How was Lead 01 given?\n1 = signed by the customer\n2 = mailed (keep the receipt)\n3 = e-mailed\n4 = customer portal\n5 = handed over', '1'); if (how == null) return; var H = { 1: 'signed', 2: 'mailed', 3: 'e-mailed', 4: 'portal', 5: 'handed over' }[s(how)] || s(how); setLA(p.id, function(x){ x.given = Object.assign({}, x.given || {}); x.given.L01 = { on: today(), how: H, by: me(), at: new Date().toISOString() }; return x; }); try { W._gcToast && W._gcToast('✓ Lead 01 marked given — you can start the job now.'); } catch (x) {} }
+    if (a === 'send') miss.forEach(function(k){ if (PAPERS[k]) sendPaper(k, p.id); else { try { W._gcJobDocs.send(p.id, k); } catch (x) {} } });
+    if (a === 'given') {
+      for (var i = 0; i < miss.length; i++) {
+        var k = miss[i], how = W.prompt('How was ' + gName(k) + ' given?\n1 = signed by the customer\n2 = mailed (keep the receipt)\n3 = e-mailed\n4 = customer portal\n5 = handed over', '1'); if (how == null) return;
+        var H = { 1: 'signed', 2: 'mailed', 3: 'e-mailed', 4: 'portal', 5: 'handed over' }[s(how)] || s(how), G = { on: today(), how: H, by: me(), at: new Date().toISOString() };
+        if (NAMES[k]) setLA(p.id, (function(k, G){ return function(x){ x.given = Object.assign({}, x.given || {}); x.given[k] = G; return x; }; })(k, G));
+        else { try { W._gcJobDocs.markDone(p.id, k, H); } catch (x) {} }
+      }
+      try { W._gcToast && W._gcToast('✓ ' + list + ' marked given — you can start the job now.'); } catch (x) {}
+    }
     if (a === 'waive') { setLA(p.id, function(x){ x.startWaived = { by: me(), at: new Date().toISOString() }; return x; }); if (want) ST.call(W, function(){ W._setProjects(function(prev){ return arr(prev).map(function(x){ return x && s(x.id) === s(p.id) ? Object.assign({}, x, want, { updatedAt: new Date().toISOString() }) : x; }); }); }, 250); }
   });
   D.body.appendChild(o);
@@ -234699,8 +234723,8 @@ function gate(){
     if (!SEEN) { SEEN = {}; list.forEach(function(p){ if (p && p.id) SEEN[p.id] = snap(p); }); return; }
     list.forEach(function(p){
       if (!p || !p.id) return;
-      var was = SEEN[p.id], now = snap(p);
-      if (was && !started(was) && started(p) && Date.now() - LAST_INPUT < 10000 && !p.importedHistory && !(p.leadAsb && p.leadAsb.startWaived) && !lead01Given(p)) { revert(p, was); gateAsk(p, now); return; }
+      var was = SEEN[p.id], now = snap(p), miss;
+      if (was && !started(was) && started(p) && Date.now() - LAST_INPUT < 10000 && !p.importedHistory && !(p.leadAsb && p.leadAsb.startWaived) && (miss = gateMiss(p)).length) { revert(p, was); gateAsk(p, now, miss); return; }   /* JOBDOCS: Lead 01 + Asbestos 01 */
       SEEN[p.id] = now;
     });
   } catch (e) {}
@@ -234767,7 +234791,554 @@ D.addEventListener('click', function(e){
   if (b.getAttribute('data-la3') === 'send') { b.disabled = true; sendPaper(k, pid).then(function(){ b.disabled = false; }); }
 }, true);
 SI.call(W, gate, 1200); SI.call(W, decorate, 1000); ST.call(W, sweep, 35000); SI.call(W, sweep, 300000);
-W._gcLeadAsb3 = { lead01Given: lead01Given, started: started, sweep: sweep, decorate: decorate, alertsFor: alertsFor, sendPaper: sendPaper, PAPERS: PAPERS };
+W._gcLeadAsb3 = { lead01Given: lead01Given, gateMiss: gateMiss, started: started, sweep: sweep, decorate: decorate, alertsFor: alertsFor, sendPaper: sendPaper, PAPERS: PAPERS };
+})(window);
+</script>
+<script id="gc-patch-jobdocs">
+/* __GC_PATCH_JOBDOCS__ — 📑 PAPERWORK BY JOB TYPE (owner 11/16: "Yes they should come for asbestos and mold water damage fire
+   everything should have different paperwork automatic.")
+   JOBDOCS: one table — job type → the papers that job needs (☣️ asbestos, 🧪 lead, 🧪☣️ lead + asbestos, 🍄 mold, 💧 water damage,
+   🔥 fire & smoke, 🏗 construction / reconstruction). Each paper points at a form the CRM already has (📚 library paper, the owner's
+   company-docs file, or an upload); a paper with no form yet says "needs a form — upload yours" (no legal text is made up).
+   • Assignment: when a job is made, or its job type / tags / ☣️ answers change, the job gets its checklist (project.jobDocs) by
+     itself — merged by paper (a paper two types share is listed once), re-saving changes nothing, a type change adds the new
+     type's papers and drops only the untouched papers of a type the job no longer is (anything done / sent / N/A stays).
+     Jobs made before 11/16 get it when their type changes, or with one tap (＋ Add this paperwork) on the job's card.
+   • Nothing is sent by itself: 📤 Send on a paper is the person's click (✍️ portal e-sign when the job is active, else ✅ Approvals),
+     and ⏸ data-entry mode (gc_automation_pause) holds every send.
+   • 🔒 Start job: a paper marked "Start waits for it" (built-in: Lead 01 and Asbestos 01) must be signed / given before a job
+     starts — the Lead 01 gate (LEADSTART) asks for both, same wording and the same admin "Start anyway". Emergency water / fire /
+     mold mitigation jobs are never stopped: their papers show as due (the DOCAUTO2 hazard hold skips them too).
+   • Admins edit the table: 📚 Company Documents → 📑 Paperwork by job type (or ✏️ on the job's card) → gc_kv gc_jobdocs_table.
+   Job card "📑 Paperwork" (desk job page): each paper — 👁 Open (filled in) · 📤 Send · ✓ Done · N/A, grouped before / during / after.
+   API: window._gcJobDocs = { table(), types(p), emergency(p), want(p), assign(pid, force), sweep(), gateMissing(p, base), nameOf(k),
+        markDone(pid, k, how), send(pid, k), openEditor(), saveTable(t), DEFAULT, paint() } */
+(function(W){
+'use strict';
+if (W.__GC_PATCH_JOBDOCS__) return; W.__GC_PATCH_JOBDOCS__ = true;
+var D = W.document, ST = W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout, SI = W.__GC_NATIVE_SETINTERVAL__ || W.setInterval;
+var KV = 'gc_jobdocs_table', LK = 'gc_jobdocs_table_v1', START = '2026-11-16', SIGN_FN = '/.netlify/functions/portal-sign';
+var F1 = '/company-docs/01667c529f454cf1/', F2 = '/company-docs/7c2e9d41b8a05f63/';
+var WHEN = { before: 'Before work starts', during: 'During the job', after: 'At completion' };
+var LA_NAMES = { L01: 'Lead 01', L02: 'Lead 02', L03: 'Lead 03', L05: 'Lead 05', L07: 'Lead 07', A01: 'Asbestos 01', A02: 'Asbestos 02' };
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function isObj(v){ return !!v && typeof v === 'object' && !Array.isArray(v); }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function clone(v){ return JSON.parse(JSON.stringify(v)); }
+function ymd(d){ return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+function today(){ return ymd(new Date()); }
+function plus(day, n){ var d = new Date(s(day).slice(0, 10) + 'T12:00:00'); if (isNaN(d)) return ''; d.setDate(d.getDate() + n); return ymd(d); }
+function nice(day){ var d = new Date(s(day).slice(0, 10) + 'T12:00:00'); return isNaN(d) ? s(day) : (d.getMonth() + 1) + '/' + d.getDate(); }
+function user(){ try { return JSON.parse(localStorage.getItem('grayco_user') || '{}') || {}; } catch (e) { return {}; } }
+function me(){ var u = user(); return s(u.name) || s(u.email) || 'someone'; }
+function admin(){ try { if (W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()) return true; } catch (e) {} var u = user(); return /admin/i.test(s(u.role)) || /owner/i.test(s(u.payType)); }
+function office(){ if (admin()) return true; try { if (W._gcIsOfficeFull && W._gcIsOfficeFull()) return true; } catch (e) {} var u = user(); return /office/i.test(s(u.role) + ' ' + s(u.profile)); }
+function signedIn(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.email && W.__GC_AUTH__.email()); } catch (e) { return false; } }
+function paused(){ try { var st = W._gcPause && W._gcPause.state(); return !!(st && st.paused); } catch (e) { return false; } }
+function projects(){ return arr(W._crm && W._crm.projects); }
+function proj(pid){ return projects().find(function(p){ return p && s(p.id) === s(pid); }) || null; }
+function toast(m, bad){ try { if (W._gcSys && W._gcSys.toast) return W._gcSys.toast(m, bad); } catch (e) {} try { var t = D.createElement('div'); t.setAttribute('data-gc-keep', '1'); t.textContent = m; t.style.cssText = 'position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:2147483100;background:' + (bad ? '#7f1d1d' : '#0f1d2f') + ';color:#fff;padding:10px 16px;border-radius:10px;font:600 13px Inter,Arial,sans-serif;max-width:90vw'; D.body.appendChild(t); ST.call(W, function(){ try { t.remove(); } catch (e) {} }, 4000); } catch (e) {} }
+function sb(k){ try { return Promise.resolve(W._ehSb ? W._ehSb(k) : null).then(function(v){ if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) {} } return v; }, function(){ return null; }); } catch (e) { return Promise.resolve(null); } }
+function put(k, v){ try { var f = W._supaUpsertNow || W._supaUpsert; return Promise.resolve(f ? f(k, v) : null); } catch (e) { return Promise.resolve(null); } }
+
+/* ── the built-in table (forms that exist in the CRM; '' = needs a form) ── */
+function it(src, label, when, o){ var x = Object.assign({ label: label, when: when }, o || {}); if (/^file:/.test(src)) x.file = src.slice(5); else if (src) x.doc = src; else x.needsForm = true; return x; }
+var SIGNS = it('file:' + F1 + 'GrayCo_Lead_Asbestos_Warning_Signs.pdf', 'Warning signs posted at the work area (English / Spanish)', 'before', { who: 'file' });
+var HEALTH = it('file:' + F2 + '03_Health_Effects_Training_Lead_Asbestos_Mold.docx', 'Crew health-effects training sign-off (lead, asbestos, mold)', 'before', { who: 'file' });
+var ABATE = it('gcb_env_abatement_agreement', 'Abatement services agreement (lead / asbestos)', 'before', { who: 'customer' });
+var RESP = it('gcb_env_resp_fit', 'Respirator fit test & medical clearance record (crew)', 'before', { who: 'file' });
+var DTP = it('gcb_direction_to_pay', 'Direction to pay (insurance job)', 'before', { only: ['insurance'], who: 'customer' });
+var DISPOSE = it('gcb_contents_disposal', 'Non-salvageable contents — disposal authorization', 'during', { who: 'customer' });
+var DEFAULT = { v: 1, types: [
+  { key: 'asbestos', label: '☣️ Asbestos', words: 'asbestos, acm, vermiculite, transite', notes: true, items: [
+    it('gcb_asb_testing_auth', 'Asbestos testing / survey authorization', 'before', { who: 'customer' }),
+    it('gcb_asb_01', 'Asbestos 01 — disclosure & acknowledgment (signed before day 1)', 'before', { la: 'A01', gate: true, who: 'customer' }),
+    ABATE,
+    it('gcb_env_asb_notification', 'Asbestos notification worksheet — state notice 10 working days before (commercial / 5+ units; the abatement sub files it)', 'before', { who: 'file' }),
+    SIGNS, HEALTH, RESP,
+    it('gcb_env_exposure', 'Initial exposure assessment & air monitoring record', 'during', { who: 'file' }),
+    it('gcb_env_daily_log', 'Daily abatement log — containment, negative air & entry', 'during', { who: 'file' }),
+    it('gcb_env_waste_log', 'Waste shipment record log (one with every load)', 'during', { who: 'file' }),
+    it('gcb_env_clearance', 'Final visual inspection & clearance record', 'after', { who: 'customer' }),
+    it('gcb_asb_02', 'Asbestos 02 — records transmittal with the abatement records', 'after', { la: 'A02', who: 'customer' })] },
+  { key: 'lead', label: '🧪 Lead (pre-1978 paint)', words: 'lead paint, lead-based, lead based, lead abatement, lead safe, lead-safe, lbp, rrp, renovate right, pre-1978', notes: true, items: [
+    it('gcb_lead_01', 'Lead 01 — Renovate Right pamphlet acknowledgment (signed before day 1)', 'before', { la: 'L01', gate: true, who: 'customer' }),
+    it('gcb_lead_02', 'Lead 02 — child-occupied facility notice', 'before', { la: 'L02', only: ['childOccupied'], who: 'customer' }),
+    it('file:' + F1 + 'GrayCo_Lead_07_Abatement_Occupant_Protection_Plan.pdf', 'Lead 07 — abatement occupant protection plan', 'before', { la: 'L07', only: ['abatement'], who: 'customer' }),
+    it('gcb_env_lead_notification', 'Lead abatement notification worksheet (state)', 'before', { only: ['abatement'], who: 'file' }),
+    it('gcb_lead_04', 'Lead 04 — worker on-the-job training record', 'before', { who: 'file' }),
+    it('gcb_lead_06', 'Lead 06 — supply & equipment checklist', 'before', { who: 'file' }),
+    SIGNS, HEALTH,
+    it('file:' + F2 + '02_RRP_Recordkeeping_Checklist.docx', 'RRP recordkeeping checklist (keep 3 years)', 'during', { who: 'file' }),
+    it('gcb_lead_03', 'Lead 03 — completion record (within 30 days)', 'after', { la: 'L03', who: 'customer' }),
+    it('gcb_lead_05', 'Lead 05 — test kit results (within 30 days)', 'after', { la: 'L05', only: ['testKit'], who: 'customer' }),
+    it('', 'HUD notice of lead hazard reduction activity (within 15 days of completion)', 'after', { only: ['hud'], who: 'customer' })] },
+  { key: 'lead+asbestos', label: '🧪☣️ Lead + asbestos', all: ['lead', 'asbestos'], items: [
+    ABATE, RESP,
+    it('gcb_hr_lead_asbestos', 'Lead & asbestos worker acknowledgment (crew on both)', 'before', { who: 'file' })] },
+  { key: 'mold', label: '🍄 Mold', words: 'mold, mould, microbial, mildew', notes: true, emergency: true, items: [
+    it('gcb_mold', 'Mold disclosure & disclaimer', 'before', { who: 'customer' }),
+    it('gcb_mold_assessment_auth', 'Mold assessment / testing authorization (independent assessor)', 'before', { who: 'customer' }),
+    it('', 'Mold remediation protocol / work plan (from the assessor)', 'before', { who: 'file' }),
+    it('gcb_mold_contract', 'Mold remediation agreement', 'before', { who: 'customer' }),
+    it('gcb_mold_containment_notice', 'Containment & work-area notice', 'during', { who: 'customer' }),
+    it('gcb_mold_clearance_cert', 'Post-remediation verification (+ clearance report)', 'after', { who: 'customer' })] },
+  { key: 'water', label: '💧 Water damage', words: 'water, water damage, water mitigation, flood, sewage, sewer, mitigation, dry out, dry-out, extraction', emergency: true, items: [
+    it('gcb_mit_first_call', 'Water loss — first call intake sheet', 'before', { who: 'file' }),
+    it('gcb_water_emergency_auth', 'Emergency services authorization (signed)', 'before', { who: 'customer' }),
+    DTP,
+    it('gcb_water_category_report', 'Category & class of the loss', 'before', { who: 'file' }),
+    it('gcb_sewage_notice', 'Sewage / Category 3 water — occupant health notice', 'before', { only: ['sewage'], who: 'customer' }),
+    it('gcb_water_equipment_resp', 'Drying equipment — customer responsibility', 'during', { who: 'customer' }),
+    it('gcb_antimicrobial_consent', 'Antimicrobial application consent', 'during', { who: 'customer' }),
+    it('gcb_drying_log', 'Moisture / drying log (every visit)', 'during', { who: 'file' }),
+    DISPOSE,
+    it('gcb_water_dry_cert', 'Certificate of drying (dry standard reached)', 'after', { who: 'customer' }),
+    it('gcb_equipment_removal_signoff', 'Equipment removal & job walk sign-off', 'after', { who: 'customer' }),
+    it('gcb_mit_closeout', 'Mitigation job closeout checklist', 'after', { who: 'file' })] },
+  { key: 'fire', label: '🔥 Fire & smoke', words: 'fire, fire damage, smoke, soot', emergency: true, items: [
+    it('gcb_board_up_auth', 'Emergency board-up / tarp authorization', 'before', { who: 'customer' }),
+    it('gcb_fire_work_auth', 'Fire & smoke work authorization', 'before', { who: 'customer' }),
+    DTP,
+    it('gcb_packout_auth', 'Contents pack-out authorization', 'during', { who: 'customer' }),
+    it('gcb_packout', 'Contents pack-out inventory', 'during', { who: 'customer' }),
+    it('gcb_odor_control_notice', 'Odor control (ozone / hydroxyl / fog) safety notice', 'during', { who: 'customer' }),
+    DISPOSE,
+    it('gcb_contents_storage', 'Contents storage agreement', 'during', { who: 'customer' }),
+    it('', 'Smoke / odor cleaning completion record (post-cleaning sign-off)', 'after', { who: 'customer' }),
+    it('gcb_contents_return', 'Contents return (pack-back) receipt', 'after', { who: 'customer' })] },
+  { key: 'construction', label: '🏗 Construction / reconstruction', words: 'reno, renovation, remodel, construction, new construction, rebuild, reconstruction, roof, roofing, kitchen, bath, bathroom, addition, whole-home, program work, tenant, ti, repair, restoration, insurance claim', company: 'construction', unless: 'environmental, abatement, mitigation, hazmat, asbestos, mold, mould', items: [
+    it('gcb_contract', 'Construction agreement', 'before', { who: 'customer' }),
+    it('gcb_scope', 'Scope of work', 'before', { who: 'customer' }),
+    it('gcb_rider_tn', 'Tennessee home improvement disclosure rider', 'before', { only: ['TN', 'residential'], who: 'customer' }),
+    it('gcb_rider_ar', 'Arkansas home improvement disclosure rider', 'before', { only: ['AR', 'residential'], who: 'customer' }),
+    it('gcb_rider_ms', 'Mississippi home improvement disclosure rider', 'before', { only: ['MS', 'residential'], who: 'customer' }),
+    it('gcb_permit_auth', 'Permit authorization — owner\'s agent', 'before', { who: 'customer' }),
+    it('gcb_selections', 'Material selection sheet', 'before', { only: ['residential'], who: 'customer' }),
+    it('gcb_sov', 'Schedule of values', 'before', { only: ['commercial'], who: 'customer' }),
+    it('gcb_coi_request', 'Certificate of insurance (COI) request', 'before', { only: ['commercial'], who: 'file' }),
+    it('gcb_change_order', 'Change orders (each change signed before the work)', 'during', { who: 'customer' }),
+    it('gcb_pay_app', 'Application for payment', 'during', { only: ['commercial'], who: 'customer' }),
+    it('gcb_walkthrough', 'Final walkthrough / punch list sign-off', 'after', { who: 'customer' }),
+    it('gcb_completion', 'Certificate of completion', 'after', { who: 'customer' }),
+    it('gcb_warranty', 'Warranty certificate', 'after', { who: 'customer' })] }
+] };
+var CONDS = { childOccupied: 'child-occupied', testKit: 'test kit used', abatement: 'lead abatement', hud: 'HUD-assisted', units5: 'commercial / 5+ units', insurance: 'insurance job', sewage: 'sewage / Cat 3', residential: 'residential', commercial: 'commercial', TN: 'TN', AR: 'AR', MS: 'MS' };
+
+/* ── the table in use: the admin's (gc_kv gc_jobdocs_table, kept on this computer too), else the built-in ── */
+var TABLE = null;
+function valid(t){ return isObj(t) && Array.isArray(t.types) && t.types.length > 0 && t.types.every(function(r){ return isObj(r) && s(r.key) && Array.isArray(r.items); }); }
+function table(){ if (TABLE) return TABLE; var v = null; try { v = JSON.parse(localStorage.getItem(LK) || 'null'); } catch (e) {} TABLE = valid(v) ? v : clone(DEFAULT); return TABLE; }
+function tv(){ var t = table(); return s(t.at) || 'builtin'; }
+function pull(){ return sb(KV).then(function(v){ if (valid(v) && s(v.at) !== s(table().at)) { TABLE = v; try { localStorage.setItem(LK, JSON.stringify(v)); } catch (e) {} RX = {}; } return TABLE; }); }
+function saveTable(t){
+  if (!admin()) return Promise.resolve({ ok: false, error: 'Only an admin can change the paperwork table.' });
+  if (!valid(t)) return Promise.resolve({ ok: false, error: 'The table needs at least one job type.' });
+  var out = clone(t); out.v = 1; out.at = new Date().toISOString(); out.by = me();
+  TABLE = out; RX = {}; try { localStorage.setItem(LK, JSON.stringify(out)); } catch (e) {}
+  return put(KV, out).then(function(){ return { ok: true, table: out }; }, function(){ return { ok: true, table: out, cloud: false }; });
+}
+
+/* ── what kind of job this is ── */
+var RX = {};
+function rxw(words){ var k = s(words); if (RX[k]) return RX[k]; var w = k.split(/\s*,\s*/).map(function(x){ return low(x).replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '[\\s_-]+'); }).filter(Boolean); RX[k] = w.length ? new RegExp('(^|[^a-z0-9])(' + w.join('|') + ')(?![a-z0-9])', 'i') : /$^/; return RX[k]; }
+function typeText(p){ return [p.type, p.jobType, p.lossType, p.damageType, p.workType, p.service, p.category, p.division, p.trade].concat(arr(p.tags).map(function(t){ return t && typeof t === 'object' ? (t.name || t.label || t.tag) : t; })).map(s).filter(Boolean).join(' | '); }
+function noteText(p){ var n = p.notes; if (Array.isArray(n)) n = n.map(function(x){ return x && typeof x === 'object' ? (x.text || x.note || '') : x; }).join(' '); return [p.name, p.description, p.desc, p.scope, p.scopeOfWork, p.workDescription, n].map(s).join(' '); }
+function la(p){ return isObj(p && p.leadAsb) ? p.leadAsb : {}; }
+function hazOf(p){ try { if (typeof W._gcHazOf === 'function') return W._gcHazOf(p) || {}; } catch (e) {} return {}; }
+function leadNeed(p){ try { return arr(W._gcLeadAsb && W._gcLeadAsb.need(p)); } catch (e) { return []; } }
+function company(p){ try { if (W._gcCo && W._gcCo.ofJob) return W._gcCo.ofJob(p); } catch (e) {} return s(p.companyId) || 'construction'; }
+function insurance(p){ try { if ((W._gcJobIsInsurance && W._gcJobIsInsurance(p)) || (W._gcIsInsuranceJob && W._gcIsInsuranceJob(p))) return true; } catch (e) {} return !!s(p.claimNo || p.claimNumber) || /insurance|claim/i.test(typeText(p)); }
+function commercial(p){ if (p.isCommercial === true || la(p).units5) return true; if (/commercial|new construction|tenant|(^|[^a-z])ti([^a-z]|$)/i.test(typeText(p))) return true; try { return W._gcJobKind && W._gcJobKind(p) === 'commercial'; } catch (e) { return false; } }
+function stateOf(p){ var a = [p.address, p.jobAddress, p.siteAddress, p.state].map(s).join(' '); var m = a.match(/(^|[\s,])(TN|AR|MS)(?=[\s,.]|\d|$)/) || a.match(/tennessee|arkansas|mississippi/i); if (!m) return ''; var v = (m[2] || m[0]).toUpperCase(); return v.length === 2 ? v : { TENNESSEE: 'TN', ARKANSAS: 'AR', MISSISSIPPI: 'MS' }[v] || ''; }
+function cond(p, c){
+  var a = la(p);
+  if (c === 'childOccupied' || c === 'testKit' || c === 'abatement' || c === 'hud' || c === 'units5') return !!a[c];
+  if (c === 'insurance') return insurance(p);
+  if (c === 'sewage') return !!hazOf(p).sewage;
+  if (c === 'commercial') return commercial(p);
+  if (c === 'residential') return !commercial(p);
+  if (c === 'TN' || c === 'AR' || c === 'MS') return stateOf(p) === c;
+  return true;   /* a condition this computer does not know: the paper shows */
+}
+/* → { types: [keys], byType: { key: true } (matched on the job type / tags, not the notes), emergency } */
+function detect(p){
+  var T = typeText(p), co = company(p), hz = hazOf(p), out = [], byType = {}, rows = table().types;
+  rows.forEach(function(r){
+    if (arr(r.all).length) return;
+    var k = s(r.key), m = !!s(r.words) && rxw(r.words).test(T);
+    if (m) byType[k] = true;
+    if (!m && r.notes) {
+      if (k === 'lead') m = !!hz.lead || leadNeed(p).some(function(x){ return x.k === 'L01'; });
+      else if (k === 'asbestos') m = !!hz.asbestos;
+      else if (k === 'mold') m = !!hz.mold;
+      else m = !!s(r.words) && rxw(r.words).test(noteText(p));
+    }
+    if (!m && r.company && r.company === co && !(s(r.unless) && rxw(r.unless).test(T))) m = true;   /* every job of that company (🏗 Construction), unless its type says environmental / mitigation work */
+    if (m) out.push(k);
+  });
+  var em = rows.filter(function(r){ return r.emergency; }).map(function(r){ return s(r.key); });
+  if (co === 'mitigation' && !out.some(function(k){ return em.indexOf(k) > -1; })) { var w = rows.find(function(r){ return r.key === 'water'; }); if (w) { out.push('water'); byType.water = true; } }   /* a Mitigation job that does not say which → water */
+  rows.forEach(function(r){ var all = arr(r.all); if (all.length && all.every(function(k){ return out.indexOf(k) > -1; })) out.push(s(r.key)); });
+  return { types: out, byType: byType, emergency: co === 'mitigation' || em.some(function(k){ return byType[k]; }) };
+}
+function types(p){ return p ? detect(p).types : []; }
+function emergency(p){ return !!p && detect(p).emergency; }
+function slug(t){ return low(t).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60); }
+function keyOf(x){ return s(x.doc) || (s(x.file) ? 'file:' + s(x.file) : 'form:' + slug(x.label)); }
+/* the job's papers from the table: merged by paper, in table order */
+function want(p){
+  var d = detect(p), rows = table().types, out = [], at = {};
+  d.types.forEach(function(k){
+    var r = rows.find(function(x){ return s(x.key) === k; }); if (!r) return;
+    arr(r.items).forEach(function(x){
+      if (!x || !s(x.label) || !arr(x.only).every(function(c){ return cond(p, c); })) return;
+      var kk = keyOf(x);
+      if (at[kk] != null) { var o = out[at[kk]]; if (o.for.indexOf(k) < 0) o.for.push(k); if (x.gate) o.gate = true; return; }
+      at[kk] = out.length;
+      var y = { k: kk, label: s(x.label), when: WHEN[x.when] ? x.when : 'before', for: [k], who: s(x.who) || 'customer' };
+      if (x.doc) y.doc = s(x.doc); if (x.file) y.file = s(x.file); if (!x.doc && !x.file) y.needsForm = true;
+      if (x.gate) y.gate = true; if (x.la) y.la = s(x.la);
+      out.push(y);
+    });
+  });
+  return { types: d.types, items: out, emergency: d.emergency };
+}
+
+/* ── what staff already did on a paper ── */
+var SIGNED = {};   /* pid → { at, ids: { gcb_x: true } } — e-signed in the customer's portal */
+function signedRefresh(pid){
+  var c = SIGNED[pid]; if (c && Date.now() - c.at < 120000) return;
+  SIGNED[pid] = { at: Date.now(), ids: c ? c.ids : {} };
+  try { W.fetch(SIGN_FN, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'list', projectId: String(pid) }) }).then(function(r){ return r.json(); }).then(function(j){
+    var ids = {}; arr(j && j.items).forEach(function(r){ if (r && r.status === 'signed' && /^dl_/.test(s(r.refId))) ids[s(r.refId).slice(3)] = true; });
+    SIGNED[pid] = { at: Date.now(), ids: ids };
+  }).catch(function(){}); } catch (e) {}
+}
+function portalSigned(pid, doc){ var c = SIGNED[pid]; return !!(c && doc && c.ids[doc]); }
+var FILE_RX = { L01: /lead[\s_-]*0?1\b|renovate[\s_-]*right|pre[\s_-]*renovation/i, A01: /asbestos[\s_-]*0?1\b|asbestos[\s_-]*disclosure/i };
+function signedFile(pid, re){
+  if (!re) return false;
+  var L = arr(W._gcProjectDocs).length ? W._gcProjectDocs : arr(W._crm && W._crm.projectDocs);
+  return arr(L).some(function(d){ return d && [d.pid, d.projectId, d.jobId].some(function(x){ return s(x) === s(pid); }) && !d.deleted && !d.removed && !d.fromTemplate && re.test(s(d.name) + ' ' + s(d.label) + ' ' + s(d.cat)); });
+}
+function jd(p){ return isObj(p && p.jobDocs) ? p.jobDocs : {}; }
+function given(p, x){   /* signed / given (what the 🔒 start gate needs) */
+  var J = jd(p), a = la(p);
+  return !!((J.done || {})[x.k] || (x.la && (a.given || {})[x.la]) || (x.doc && ((p.docAuto || {}).given || {})[x.doc]) || portalSigned(p.id, x.doc) || (x.la && signedFile(p.id, FILE_RX[x.la])));
+}
+function stateOfItem(p, x){
+  var J = jd(p), a = la(p), dn = (J.done || {})[x.k], g = x.la && (a.given || {})[x.la];
+  if (dn) return { done: true, txt: '✓ Done ' + nice(dn.on) + (dn.how ? ' (' + dn.how + ')' : '') + (dn.by ? ' · ' + dn.by : '') };
+  if (g) return { done: true, txt: '✓ Given ' + nice(g.on) + (g.how ? ' (' + g.how + ')' : '') };
+  if (portalSigned(p.id, x.doc)) return { done: true, txt: '✅ E-signed in the portal' };
+  if (x.la && signedFile(p.id, FILE_RX[x.la])) return { done: true, txt: '✓ Signed copy in the job\'s files' };
+  var na = (J.na || {})[x.k]; if (na) return { done: true, na: true, txt: 'N/A · ' + (na.by || '') };
+  var se = (J.sent || {})[x.k] || (x.la && (a.sent || {})[x.la]) || (x.doc && (p.docAuto || {}).sent && p.docAuto.sent[x.doc] && { on: p.docAuto.sent[x.doc] });
+  if (se) return { sent: true, txt: '📤 Sent ' + nice(se.on) + ' — waiting' };
+  return null;
+}
+function handled(p, x){ return !!stateOfItem(p, x); }
+
+/* ── putting the checklist on the job (merge; never drop what staff handled) ── */
+function merged(p){
+  var W2 = want(p), cur = arr(jd(p).items), have = {}, out = [];
+  W2.items.forEach(function(x){ have[x.k] = x; });
+  cur.forEach(function(x){
+    if (!x || !x.k) return;
+    var n = have[x.k];
+    if (n) { out.push(Object.assign({}, n, { addedAt: x.addedAt || new Date().toISOString() })); delete have[x.k]; n.__used = 1; }
+    else if (handled(p, x)) out.push(Object.assign({}, x, { stale: true }));   /* the job is no longer that type, but staff handled it: kept */
+  });
+  W2.items.forEach(function(x){ if (have[x.k]) { var y = Object.assign({}, x); delete y.__used; y.addedAt = new Date().toISOString(); out.push(y); } });
+  out.forEach(function(x){ delete x.__used; });
+  return { types: W2.types, items: out };
+}
+function sameItems(a, b){ var f = function(l){ return JSON.stringify(arr(l).map(function(x){ var y = Object.assign({}, x); delete y.addedAt; return y; })); }; return f(a) === f(b); }
+function needsSync(p){ var J = jd(p); if (!J.items) return true; var m = merged(p); return J.tv !== tv() || JSON.stringify(arr(J.types)) !== JSON.stringify(m.types) || !sameItems(J.items, m.items); }
+function writeJobs(map){   /* map: pid → jobDocs */
+  var ids = Object.keys(map); if (!ids.length) return 0;
+  var now = new Date().toISOString();
+  var f = function(list){ var out = arr(list).map(function(p){ if (!p || !map[s(p.id)]) return p; return Object.assign({}, p, { jobDocs: map[s(p.id)], updatedAt: now }); }); try { if (W._gcApplySync) W._gcApplySync('projects', out); } catch (e) {} return out; };
+  if (typeof W._setProjects === 'function') W._setProjects(f); else if (W._crm) W._crm.projects = f(W._crm.projects);
+  return ids.length;
+}
+function next(p){ var J = jd(p), m = merged(p); return Object.assign({}, J, { v: 1, types: m.types, items: m.items, tv: tv(), at: new Date().toISOString(), by: J.by || me() }); }
+function assign(pid, force){
+  var p = proj(pid); if (!p) return false;
+  if (!force && jd(p).items && !needsSync(p)) return false;
+  var o = {}; o[s(pid)] = next(p); writeJobs(o); return true;
+}
+function patchJD(pid, fn){
+  var p = proj(pid); if (!p) return;
+  var J = jd(p).items ? Object.assign({}, jd(p)) : next(p);
+  var o = {}; o[s(pid)] = fn(J) || J; writeJobs(o);
+}
+function patchLA(pid, fn){
+  var now = new Date().toISOString();
+  var f = function(list){ var out = arr(list).map(function(p){ if (!p || s(p.id) !== s(pid)) return p; return Object.assign({}, p, { leadAsb: fn(Object.assign({}, la(p))), updatedAt: now }); }); try { if (W._gcApplySync) W._gcApplySync('projects', out); } catch (e) {} return out; };
+  if (typeof W._setProjects === 'function') W._setProjects(f); else if (W._crm) W._crm.projects = f(W._crm.projects);
+}
+function findItem(p, k){ var l = arr(jd(p).items).length ? jd(p).items : want(p).items; return l.find(function(x){ return x.k === k || (x.la && x.la === k); }) || null; }
+function markDone(pid, k, how){
+  var p = proj(pid); if (!p) return;
+  var x = findItem(p, k), G = { on: today(), how: s(how), by: me(), at: new Date().toISOString() };
+  if ((x && x.la) || LA_NAMES[k]) { var L = (x && x.la) || k; patchLA(pid, function(a){ a.given = Object.assign({}, a.given || {}); a.given[L] = G; return a; }); if (!x) return; }
+  if (x) ST.call(W, function(){ patchJD(pid, function(J){ J.done = Object.assign({}, J.done || {}); J.done[x.k] = G; if (J.na) { J.na = Object.assign({}, J.na); delete J.na[x.k]; } return J; }); }, 60);
+}
+function undo(pid, k){
+  var p = proj(pid); if (!p) return; var x = findItem(p, k); if (!x) return;
+  if (x.la && (la(p).given || {})[x.la]) patchLA(pid, function(a){ a.given = Object.assign({}, a.given || {}); delete a.given[x.la]; return a; });
+  ST.call(W, function(){ patchJD(pid, function(J){ ['done', 'na', 'sent'].forEach(function(f){ if (J[f]) { J[f] = Object.assign({}, J[f]); delete J[f][x.k]; } }); return J; }); }, 60);
+}
+function notNeeded(pid, k){ patchJD(pid, function(J){ J.na = Object.assign({}, J.na || {}); J.na[k] = { by: me(), at: new Date().toISOString(), on: today() }; return J; }); }
+/* 📤 Send — the person's click only; ⏸ data-entry mode holds it */
+function send(pid, k){
+  var p = proj(pid); if (!p) return Promise.resolve({ ok: false });
+  if (paused()) { toast('⏸ Data-entry mode is on — nothing is sent.', true); return Promise.resolve({ ok: false, paused: true }); }
+  var x = findItem(p, k); if (!x || !x.doc || !/^gcb_/.test(x.doc)) { toast('That one has no paper to send — open it, print it or upload it.', true); return Promise.resolve({ ok: false }); }
+  var mark = function(via){ patchJD(pid, function(J){ J.sent = Object.assign({}, J.sent || {}); J.sent[x.k] = { on: today(), by: me(), at: new Date().toISOString(), via: via }; return J; }); if (x.la) ST.call(W, function(){ patchLA(pid, function(a){ a.sent = Object.assign({}, a.sent || {}); a.sent[x.la] = { on: today(), by: me(), at: new Date().toISOString(), via: via }; return a; }); }, 80); };
+  var viaApprovals = function(){ if (!W._gcDocLib || typeof W._gcDocLib.send !== 'function') { toast('The document library is not loaded yet.', true); return { ok: false }; } return Promise.resolve(W._gcDocLib.send(x.doc, pid)).then(function(j){ if (j && j.ok) mark('approvals → e-mail + portal'); return j || { ok: false }; }); };
+  var A = W._gcDocAuto;
+  if (A && typeof A.run === 'function' && A.active && A.active(p)) return Promise.resolve(A.run(pid, { force: true, ids: [x.doc] })).then(function(r){ if (r && r.ok && r.made) { mark('portal e-sign'); toast('✍️ "' + x.label + '" is in the customer\'s portal to sign.'); return r; } return viaApprovals(); }, viaApprovals);
+  return Promise.resolve(viaApprovals());
+}
+function open(pid, k){
+  var p = proj(pid), x = p && findItem(p, k); if (!x) return;
+  if (x.file) { try { W.open(x.file, '_blank', 'noopener'); } catch (e) {} return; }
+  if (!x.doc) return;
+  if (/^gcb_/.test(x.doc) && W._gcDocLib && W._gcDocLib.open) { try { W._gcDocLib.open(x.doc, pid); } catch (e) {} return; }
+  try { if (W._gcDocs3 && W._gcDocs3.launch) W._gcDocs3.launch(x.doc, pid, true); } catch (e) {}
+}
+function nameOf(k){ if (LA_NAMES[k]) return LA_NAMES[k]; var r = null; table().types.some(function(t){ return arr(t.items).some(function(x){ if (keyOf(x) === k) { r = x; return true; } return false; }); }); return r ? s(r.label).split(' — ')[0].replace(/\s*\(.*$/, '') : k; }
+
+/* ── 🔒 the start gate's list (asked by LEADSTART in patch LEADASB3) ── */
+function gateMissing(p, base){
+  if (!p || emergency(p)) return [];
+  var out = arr(base).slice(), items = arr(jd(p).items).length ? jd(p).items : want(p).items;
+  items.forEach(function(x){ if (!x || !x.gate || x.stale) return; var k = x.la || x.k; if (out.indexOf(k) < 0 && !given(p, x)) out.push(k); });
+  leadNeed(p).forEach(function(n){ if (n.k === 'A01' && !n.given && out.indexOf('A01') < 0 && !signedFile(p.id, FILE_RX.A01) && !portalSigned(p.id, 'gcb_asb_01')) out.push('A01'); });   /* ☣️ card: asbestos found */
+  out = out.filter(function(k){ var d = k === 'L01' ? 'gcb_lead_01' : k === 'A01' ? 'gcb_asb_01' : k; return !portalSigned(p.id, d); });
+  var ORD = ['L01', 'L02', 'L07', 'A01']; out.sort(function(x, y){ var i = ORD.indexOf(x), j = ORD.indexOf(y); return (i < 0 ? 99 : i) - (j < 0 ? 99 : j); });   /* Lead 01 first, as the gate always said */
+  if (out.length) signedRefresh(p.id);
+  return out;
+}
+
+/* ── the sweep: new jobs and type changes get their checklist ── */
+var SEEN = null, CHK = {}, LAST_INPUT = 0, NEWOK = /complete|closed|lost|cancel|dead|archiv|paid in full|warrant/i;
+['pointerdown', 'keydown', 'input', 'change'].forEach(function(ev){ D.addEventListener(ev, function(){ LAST_INPUT = Date.now(); }, true); });
+function inputs(p){ var a = la(p); return JSON.stringify([typeText(p), company(p), s(p.address), ['childOccupied', 'testKit', 'abatement', 'hud', 'units5', 'disturbsPaint', 'yearBuilt', 'leadFound', 'asbFound'].map(function(k){ return a[k] || ''; }), noteText(p).length, s(p.isCommercial)]); }
+function eligibleNew(p){ return !!p && !p.deleted && !p.importedHistory && !p.dataEntry && s(p.createdVia) !== 'invoice-entry' && !NEWOK.test(s(p.status)); }
+function sweep(){
+  try {
+    if (!signedIn() || !W._crm) return 0;
+    var list = projects(); if (!list.length) return 0;
+    var mine = Date.now() - LAST_INPUT < 15000, off = office(), out = {};
+    var first = !SEEN; if (first) SEEN = {};
+    list.forEach(function(p){
+      if (!p || !p.id) return;
+      var id = s(p.id), was = SEEN[id], now = inputs(p); SEEN[id] = now;
+      var has = !!jd(p).items;
+      if (has) { var J = jd(p), ck = now + '|' + tv() + '|' + s(J.at) + '|' + s(J.tv); if (CHK[id] === ck) return; if (off || (was != null && was !== now && mine)) { CHK[id] = ck; if (needsSync(p)) out[id] = next(p); } return; }
+      if (!eligibleNew(p)) return;
+      var made = s(p.createdAt || p.created || p.launchedAt).slice(0, 10);
+      var isNew = first ? made >= START : (was == null && (!made || made >= START)), changed = was != null && was !== now;
+      if ((isNew || changed) && (off || mine)) { var n = next(p); if (n.items.length) out[id] = n; }
+    });
+    return writeJobs(out);
+  } catch (e) { W.__gcJdErr = String(e && e.stack || e); return 0; }
+}
+
+/* ── the job card ── */
+function css(){
+  if (D.getElementById('gc-jd-css')) return;
+  var st = D.createElement('style'); st.id = 'gc-jd-css';
+  st.textContent = '.gc-jd{background:#fff;border:1px solid #e2e8f0;border-left:4px solid #241968;border-radius:12px;padding:12px 14px;margin:0 0 10px;font:14px Inter,Arial,sans-serif;color:#0f172a}'
+    + '.gc-jd h4{margin:0 0 4px;font-size:15px}.gc-jd .m{color:#64748b;font-size:12.5px}.gc-jd .sec{font-weight:800;font-size:12px;color:#241968;margin:10px 0 2px;text-transform:uppercase;letter-spacing:.03em}'
+    + '.gc-jd .r{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;border-top:1px solid #f1f5f9;padding:7px 0}.gc-jd .r .l{flex:1 1 260px;min-width:0}.gc-jd .r .b{display:flex;flex-wrap:wrap;gap:6px;margin-left:auto}'
+    + '.gc-jd button{border:1px solid #cbd5e1;background:#fff;border-radius:7px;padding:5px 10px;font:600 12.5px Inter,Arial,sans-serif;cursor:pointer;color:#0f172a;min-height:34px}.gc-jd button.g{background:#166534;color:#fff;border-color:#166534}'
+    + '.gc-jd .ok{color:#166534;font-weight:700;font-size:12.5px}.gc-jd .due{color:#475569;font-size:12.5px}.gc-jd .bad{color:#b91c1c;font-weight:800;font-size:12.5px}.gc-jd .nf{color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:1px 7px;font-size:12px;font-weight:700}'
+    + '.gc-jd .lock{color:#991b1b;background:#fef2f2;border:1px solid #fca5a5;border-radius:6px;padding:1px 7px;font-size:11.5px;font-weight:700}.gc-jd .em{background:#ecfeff;border:1px solid #a5f3fc;color:#155e75;border-radius:8px;padding:6px 9px;margin:6px 0;font-size:12.5px}'
+    + '.gc-jd .old{opacity:.65}.gc-jd .tag{font-size:11px;color:#64748b}';
+  D.head.appendChild(st);
+}
+function rowsLabel(keys){ var rows = table().types; return keys.map(function(k){ var r = rows.find(function(x){ return s(x.key) === k; }); return r ? s(r.label) : k; }).join(' + '); }
+function html(p){
+  if (!p) return '';
+  var J = jd(p), saved = !!J.items, items = saved ? arr(J.items) : want(p).items, ty = saved ? arr(J.types) : types(p), em = emergency(p), start = s(p.startDate).slice(0, 10);
+  var done = items.filter(function(x){ return handled(p, x) && !(stateOfItem(p, x) || {}).sent; }).length;
+  var h = '<h4>📑 Paperwork for this job' + (ty.length ? ' · ' + esc(rowsLabel(ty)) : '') + ' <span class="m">· ' + done + ' of ' + items.length + ' done</span></h4>'
+    + '<div class="m">Picked by the job type. Nothing goes out by itself — 📤 Send is your click (⏸ data-entry mode holds it).' + (admin() ? ' <button type="button" data-jd="edit" style="min-height:28px;padding:2px 8px">✏️ Edit the table</button>' : '') + '</div>';
+  if (em) h += '<div class="em">🚨 Emergency mitigation job — these papers are due, but they never hold the job back.</div>';
+  if (!saved) h += '<div class="em" style="background:#f8fafc;border-color:#e2e8f0;color:#334155">This job does not have its paperwork list yet. <button type="button" data-jd="add" class="g">＋ Add this paperwork to the job</button></div>';
+  if (!items.length) h += '<div class="m" style="margin-top:6px">No paperwork for this job type yet — set the job type (water, fire, mold, asbestos, lead, construction …).</div>';
+  ['before', 'during', 'after'].forEach(function(w){
+    var L = items.filter(function(x){ return x.when === w; }); if (!L.length) return;
+    h += '<div class="sec">' + WHEN[w] + '</div>';
+    L.forEach(function(x){
+      var st = stateOfItem(p, x), lock = x.gate && !em && !x.stale && !given(p, x);
+      var due = w === 'before' ? (start ? (start < today() ? '<span class="bad">Was due before ' + esc(nice(start)) + '</span>' : '<span class="due">Due before ' + esc(nice(start)) + '</span>') : '<span class="due">Due before work starts</span>') : w === 'during' ? '<span class="due">During the job</span>' : '<span class="due">At completion</span>';
+      h += '<div class="r' + (x.stale ? ' old' : '') + '" data-jk="' + esc(x.k) + '"><div class="l"><b>' + esc(x.label) + '</b>' + (x.needsForm ? ' <span class="nf">needs a form — upload yours</span>' : '') + (lock ? ' <span class="lock">🔒 Start job waits for it</span>' : '')
+        + '<div class="tag">' + (x.who === 'file' ? 'job file / crew' : 'customer') + (x.stale ? ' · no longer this job type — kept because it was handled' : '') + '</div></div>'
+        + '<div class="b">' + (st ? '<span class="' + (st.sent ? 'due' : 'ok') + '">' + esc(st.txt) + '</span>' : due)
+        + (x.needsForm ? (office() ? '<button type="button" data-jd="upload">📁 Upload yours</button>' : '') : '<button type="button" data-jd="open">👁 Open</button>')
+        + (!st && x.doc && /^gcb_/.test(x.doc) && x.who !== 'file' ? '<button type="button" data-jd="send">📤 Send</button>' : '')
+        + (st && !st.sent ? '<button type="button" data-jd="undo">Undo</button>' : '<button type="button" class="g" data-jd="done">✓ Done</button>' + (st ? '' : '<button type="button" data-jd="na" title="Not needed on this job">N/A</button>'))
+        + '</div></div>';
+    });
+  });
+  return h;
+}
+function findBack(){ var m = D.querySelector('main'); if (!m) return null; var bs = m.getElementsByTagName('button'); for (var i = 0; i < bs.length && i < 80; i++) if (/^\s*←\s*All Projects\s*$/.test(bs[i].textContent || '')) return bs[i]; return null; }
+function paint(){
+  try {
+    if (D.hidden || D.documentElement.classList.contains('_fieldmode')) return;
+    var op = W._gcOpenProject, p = op && op.id ? proj(op.id) : null, cur = D.getElementById('gc-jd');
+    if (!p || (!jd(p).items && !types(p).length)) { if (cur) cur.remove(); return; }
+    signedRefresh(p.id); syncSigned(p);
+    var back = findBack(); if (!back || typeof W._gcJobBox !== 'function') return;
+    var box = W._gcJobBox(back); if (!box) return; css();
+    var body = html(p);
+    if (cur && cur.__body === body && cur.parentElement === box && cur.getAttribute('data-pid') === s(p.id)) return;
+    if (!cur) { cur = D.createElement('div'); cur.id = 'gc-jd'; cur.className = 'gc-jd'; cur.setAttribute('data-gc-keep', '1'); }
+    cur.setAttribute('data-pid', p.id); cur.innerHTML = body; cur.__body = body;
+    if (cur.parentElement !== box) { var js = D.getElementById('gc-js'); if (js && js.parentElement === box) box.insertBefore(cur, js.nextSibling); else box.insertBefore(cur, box.firstChild); }
+  } catch (e) { W.__gcJdErr = String(e && e.stack || e); }
+}
+/* a Lead 01 / Asbestos 01 e-signed in the portal → written on the ☣️ card as given (so the alerts and the gate agree) */
+var SYNCED = {};
+function syncSigned(p){
+  var a = la(p), g = a.given || {}, add = {};
+  [['L01', 'gcb_lead_01'], ['L02', 'gcb_lead_02'], ['L03', 'gcb_lead_03'], ['L05', 'gcb_lead_05'], ['A01', 'gcb_asb_01'], ['A02', 'gcb_asb_02']].forEach(function(z){ if (!g[z[0]] && portalSigned(p.id, z[1]) && !SYNCED[p.id + z[0]]) { add[z[0]] = { on: today(), how: 'e-signed in the portal', by: 'CRM', at: new Date().toISOString() }; SYNCED[p.id + z[0]] = 1; } });
+  if (Object.keys(add).length) patchLA(p.id, function(x){ x.given = Object.assign({}, x.given || {}, add); return x; });
+}
+D.addEventListener('click', function(e){
+  var b = e.target && e.target.closest ? e.target.closest('#gc-jd [data-jd]') : null; if (!b) return;
+  e.preventDefault(); e.stopPropagation();
+  var c = D.getElementById('gc-jd'), pid = c && c.getAttribute('data-pid'), r = b.closest('[data-jk]'), k = r && r.getAttribute('data-jk'), a = b.getAttribute('data-jd');
+  if (a === 'edit') return openEditor();
+  if (a === 'add') { assign(pid, true); toast('✓ Paperwork added to the job'); return; }
+  if (!pid || !k) return;
+  if (!jd(proj(pid)).items) assign(pid, true);
+  if (a === 'open') return open(pid, k);
+  if (a === 'upload') { try { if (W._gcDocs3 && W._gcDocs3.open) W._gcDocs3.open(); } catch (x) {} toast('📚 Add your form with ＋ Upload, then an admin picks it for this paper in 📑 Paperwork by job type.'); return; }
+  if (a === 'send') { b.disabled = true; send(pid, k).then(function(){ b.disabled = false; }); return; }
+  if (a === 'na') { notNeeded(pid, k); return; }
+  if (a === 'undo') { undo(pid, k); return; }
+  if (a === 'done') {
+    var x = findItem(proj(pid), k), file = x && x.who === 'file';
+    var how = W.prompt('How was "' + (x ? x.label : k) + '" handled?\n1 = signed by the customer\n2 = mailed (keep the receipt)\n3 = e-mailed\n4 = customer portal\n5 = handed over\n6 = filled in / in the job file', file ? '6' : '1'); if (how == null) return;
+    markDone(pid, k, { 1: 'signed', 2: 'mailed', 3: 'e-mailed', 4: 'portal', 5: 'handed over', 6: 'in the job file' }[s(how)] || s(how));
+  }
+}, true);
+
+/* ── ✏️ the admin's table editor ── */
+var LIBCACHE = null;
+function libOptions(){
+  var out = [];
+  try { arr(W._gcDocLib && W._gcDocLib.builtins && W._gcDocLib.builtins()).forEach(function(b){ if (b && b.id && !/^HR$|Marketing/i.test(s(b.category))) out.push([b.id, s(b.name), s(b.category) || 'Library']); }); } catch (e) {}
+  arr(LIBCACHE).forEach(function(u){ if (u && u.uid && /^up:/.test(u.uid)) out.push([u.uid, s(u.title || u.name), 'My uploads']); });
+  return out;
+}
+function srcSelect(x){
+  var cur = x.doc ? s(x.doc) : x.file ? 'file:' + s(x.file) : '', opts = libOptions(), seen = {}, g = {};
+  var h = '<select data-e="src" style="max-width:100%;padding:5px;border:1px solid #cbd5e1;border-radius:6px;font:12.5px Inter,Arial,sans-serif"><option value=""' + (cur ? '' : ' selected') + '>— needs a form (upload yours) —</option>';
+  if (/^file:/.test(cur)) h += '<option value="' + esc(cur) + '" selected>Company file: ' + esc(cur.replace(/^.*\//, '')) + '</option>';
+  opts.forEach(function(o){ if (seen[o[0]]) return; seen[o[0]] = 1; (g[o[2]] = g[o[2]] || []).push(o); });
+  if (cur && !/^file:/.test(cur) && !seen[cur]) h += '<option value="' + esc(cur) + '" selected>' + esc(cur) + '</option>';
+  Object.keys(g).forEach(function(k){ h += '<optgroup label="' + esc(k) + '">' + g[k].map(function(o){ return '<option value="' + esc(o[0]) + '"' + (o[0] === cur ? ' selected' : '') + '>' + esc(o[1]) + '</option>'; }).join('') + '</optgroup>'; });
+  return h + '</select>';
+}
+function itemRow(x){
+  var I = 'padding:5px 7px;border:1px solid #cbd5e1;border-radius:6px;font:12.5px Inter,Arial,sans-serif;box-sizing:border-box';
+  return '<div data-e="item" style="display:grid;grid-template-columns:minmax(0,2fr) minmax(0,2fr) auto;gap:6px;align-items:center;padding:6px 0;border-top:1px solid #f1f5f9">'
+    + '<input data-e="label" value="' + esc(x.label) + '" placeholder="Paper" style="' + I + ';width:100%">' + srcSelect(x)
+    + '<button type="button" data-e="del" title="Take it off" style="border:1px solid #fca5a5;background:#fff;color:#b91c1c;border-radius:6px;padding:4px 8px;cursor:pointer">✕</button>'
+    + '<div style="grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;font-size:12px;color:#334155">'
+    + '<select data-e="when" style="' + I + '">' + Object.keys(WHEN).map(function(w){ return '<option value="' + w + '"' + (x.when === w ? ' selected' : '') + '>' + WHEN[w] + '</option>'; }).join('') + '</select>'
+    + '<select data-e="who" style="' + I + '"><option value="customer"' + (x.who !== 'file' ? ' selected' : '') + '>for the customer</option><option value="file"' + (x.who === 'file' ? ' selected' : '') + '>job file / crew</option></select>'
+    + '<label><input type="checkbox" data-e="gate"' + (x.gate ? ' checked' : '') + '> 🔒 Start job waits for it</label>'
+    + '<label>Only if <input data-e="only" value="' + esc(arr(x.only).join(', ')) + '" placeholder="e.g. TN, residential" style="' + I + ';width:150px"></label>'
+    + '<input type="hidden" data-e="la" value="' + esc(x.la || '') + '"></div></div>';
+}
+function typeBlock(r, i){
+  var I = 'padding:6px 8px;border:1px solid #cbd5e1;border-radius:7px;font:13px Inter,Arial,sans-serif;box-sizing:border-box';
+  return '<fieldset data-e="type" data-key="' + esc(r.key) + '" data-all="' + esc(arr(r.all).join(',')) + '" data-company="' + esc(r.company || '') + '" data-unless="' + esc(r.unless || '') + '" data-emergency="' + (r.emergency ? 1 : '') + '" style="border:1px solid #e2e8f0;border-radius:10px;padding:10px;margin:0 0 10px">'
+    + '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center"><input data-e="tlabel" value="' + esc(r.label) + '" style="' + I + ';font-weight:800;flex:1 1 200px">'
+    + (arr(r.all).length ? '<span style="font-size:12px;color:#64748b">when a job is all of: ' + esc(arr(r.all).join(' + ')) + '</span>' : '')
+    + '<button type="button" data-e="tdel" style="border:1px solid #fca5a5;background:#fff;color:#b91c1c;border-radius:7px;padding:5px 9px;cursor:pointer;font-size:12px">Remove type</button></div>'
+    + (arr(r.all).length ? '' : '<label style="display:block;font-size:12px;margin-top:6px;color:#334155">Job type words (whole words, comma between) <input data-e="words" value="' + esc(r.words || '') + '" style="' + I + ';width:100%;margin-top:3px"></label>'
+      + '<label style="font-size:12px;color:#334155"><input type="checkbox" data-e="notes"' + (r.notes ? ' checked' : '') + '> also when the job\'s notes / description say it</label>'
+      + (r.company ? '<span style="font-size:12px;color:#64748b"> · every ' + esc(r.company) + ' job</span>' : '') + (r.emergency ? '<span style="font-size:12px;color:#155e75"> · emergency work: never holds the start</span>' : ''))
+    + '<div data-e="items">' + arr(r.items).map(itemRow).join('') + '</div>'
+    + '<button type="button" data-e="iadd" style="margin-top:6px;border:1px dashed #94a3b8;background:#f8fafc;border-radius:7px;padding:6px 10px;cursor:pointer;font:600 12.5px Inter,Arial,sans-serif">＋ Add a paper</button></fieldset>';
+}
+function readEditor(ov){
+  var out = { v: 1, types: [] };
+  [].forEach.call(ov.querySelectorAll('fieldset[data-e="type"]'), function(f){
+    var key = s(f.getAttribute('data-key')), lab = s((f.querySelector('[data-e="tlabel"]') || {}).value) || key;
+    if (!key) key = slug(lab) || ('type' + out.types.length);
+    var r = { key: key, label: lab, items: [] }, all = s(f.getAttribute('data-all')), co = s(f.getAttribute('data-company'));
+    if (all) r.all = all.split(','); else { r.words = s((f.querySelector('[data-e="words"]') || {}).value); r.notes = !!(f.querySelector('[data-e="notes"]') || {}).checked; }
+    if (co) r.company = co; if (s(f.getAttribute('data-unless'))) r.unless = s(f.getAttribute('data-unless')); if (f.getAttribute('data-emergency')) r.emergency = true;
+    [].forEach.call(f.querySelectorAll('[data-e="item"]'), function(row){
+      var g = function(n){ return row.querySelector('[data-e="' + n + '"]'); }, label = s(g('label').value); if (!label) return;
+      var src = s(g('src').value), x = { label: label, when: g('when').value, who: g('who').value };
+      if (/^file:/.test(src)) x.file = src.slice(5); else if (src) x.doc = src; else x.needsForm = true;
+      if (g('gate').checked) x.gate = true; if (s(g('la').value)) x.la = s(g('la').value);
+      var only = s(g('only').value).split(/\s*,\s*/).filter(Boolean); if (only.length) x.only = only;
+      r.items.push(x);
+    });
+    out.types.push(r);
+  });
+  return out;
+}
+function openEditor(){
+  if (!admin()) { toast('Only an admin can change the paperwork table.', true); return null; }
+  var old = D.getElementById('gc-jd-ed'); if (old) old.remove();
+  var ov = D.createElement('div'); ov.id = 'gc-jd-ed'; ov.setAttribute('data-gc-keep', '1'); ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-modal', 'true'); ov.setAttribute('aria-label', 'Paperwork by job type');
+  ov.style.cssText = 'position:fixed;inset:0;z-index:1000020;background:rgba(8,15,28,.75);display:flex;align-items:center;justify-content:center;padding:16px;font:14px Inter,Arial,sans-serif;color:#0f172a';
+  var draw = function(t){
+    ov.innerHTML = '<div style="background:#fff;border-radius:14px;max-width:860px;width:100%;max-height:92vh;overflow:auto;padding:16px;box-sizing:border-box">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b style="font-size:16px">📑 Paperwork by job type</b><button type="button" data-e="x" aria-label="Close" style="background:none;border:none;font-size:22px;cursor:pointer">✕</button></div>'
+      + '<div style="font-size:12.5px;color:#475569;margin:4px 0 10px">Each job type\'s papers go on its jobs by themselves (new jobs, and when a job\'s type changes). Pick the form for each paper from the library; a paper with no form shows <b>needs a form — upload yours</b> on the job. Nothing is sent by itself. Conditions you can use in "Only if": ' + esc(Object.keys(CONDS).join(', ')) + '.' + (t.at ? ' Last saved ' + esc(nice(t.at)) + (t.by ? ' by ' + esc(t.by) : '') + '.' : ' Built-in table.') + '</div>'
+      + '<div data-e="types">' + t.types.map(typeBlock).join('') + '</div>'
+      + '<div style="display:flex;flex-wrap:wrap;gap:8px;position:sticky;bottom:-16px;background:#fff;padding:10px 0">'
+      + '<button type="button" data-e="tadd" style="border:1px solid #cbd5e1;background:#fff;border-radius:8px;padding:9px 12px;font-weight:700;cursor:pointer">＋ Add a job type</button>'
+      + '<button type="button" data-e="reset" style="border:1px solid #cbd5e1;background:#fff;border-radius:8px;padding:9px 12px;font-weight:600;cursor:pointer">↺ Built-in table</button>'
+      + '<button type="button" data-e="save" style="margin-left:auto;border:0;background:#16a34a;color:#fff;border-radius:8px;padding:9px 18px;font-weight:800;cursor:pointer">💾 Save</button></div></div>';
+  };
+  draw(clone(table()));
+  ov.addEventListener('click', function(e){
+    var b = e.target.closest && e.target.closest('[data-e]'), a = b && b.getAttribute('data-e');
+    if (e.target === ov || a === 'x') { ov.remove(); return; }
+    if (a === 'del') { b.closest('[data-e="item"]').remove(); return; }
+    if (a === 'tdel') { if (W.confirm('Remove this job type from the table? Jobs keep the papers they already have.')) b.closest('fieldset').remove(); return; }
+    if (a === 'iadd') { var box = b.parentElement.querySelector('[data-e="items"]'); box.insertAdjacentHTML('beforeend', itemRow({ label: '', when: 'before', who: 'customer' })); try { box.lastElementChild.querySelector('[data-e="label"]').focus(); } catch (x) {} return; }
+    if (a === 'tadd') { var nm = W.prompt('Name of the job type (e.g. 🌪 Storm damage):', ''); if (!nm) return; ov.querySelector('[data-e="types"]').insertAdjacentHTML('beforeend', typeBlock({ key: slug(nm), label: nm, words: nm.replace(/[^\w\s,-]/g, '').trim().toLowerCase(), items: [] })); return; }
+    if (a === 'reset') { if (W.confirm('Go back to the built-in table? (Nothing is saved until 💾 Save.)')) draw(clone(DEFAULT)); return; }
+    if (a === 'save') { var t = readEditor(ov); b.disabled = true; saveTable(t).then(function(r){ b.disabled = false; if (r.ok) { toast('✓ Paperwork table saved — new jobs and type changes use it'); ov.remove(); } else toast(r.error || 'Not saved', true); }); }
+  });
+  D.body.appendChild(ov);
+  try { if (W._gcDocs3 && W._gcDocs3.list) W._gcDocs3.list().then(function(l){ LIBCACHE = l; [].forEach.call(ov.querySelectorAll('select[data-e="src"]'), function(sel){ var row = sel.closest('[data-e="item"]'), v = sel.value, x = v ? (/^file:/.test(v) ? { file: v.slice(5) } : { doc: v }) : {}; var tmp = D.createElement('div'); tmp.innerHTML = srcSelect(x); sel.replaceWith(tmp.firstChild); }); }).catch(function(){}); } catch (e) {}
+  return ov;
+}
+/* 📑 next to ⚙ Defaults in 📚 Company Documents (admins) */
+function libBtn(){
+  var body = D.getElementById('_docLibBody'); if (!body || !admin() || body.querySelector('[data-jd-open]')) return;
+  var sel = body.querySelector('#_tplJobSel'); if (!sel || !sel.parentElement) return;
+  var b = D.createElement('button'); b.type = 'button'; b.setAttribute('data-jd-open', '1'); b.textContent = '📑 Paperwork by job type';
+  b.style.cssText = 'padding:8px 10px;background:#fff;border:1px solid #c4b5fd;color:#241968;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;margin-left:6px';
+  b.onclick = openEditor; sel.parentElement.appendChild(b);
+}
+
+ST.call(W, pull, 6000); SI.call(W, pull, 300000);
+SI.call(W, sweep, 3000); SI.call(W, paint, 1500); SI.call(W, libBtn, 1500);
+W._gcJobDocs = { table: table, types: types, detect: detect, emergency: emergency, want: want, merged: merged, assign: assign, sweep: sweep, gateMissing: gateMissing, nameOf: nameOf,
+  markDone: markDone, undo: undo, notNeeded: notNeeded, send: send, open: open, openEditor: openEditor, saveTable: saveTable, pull: pull, paint: paint, html: html, signed: SIGNED, DEFAULT: DEFAULT, CONDS: CONDS,
+  _reset: function(){ TABLE = null; RX = {}; } };
 })(window);
 </script>
 <script id="gc-patch-cccontact2">
