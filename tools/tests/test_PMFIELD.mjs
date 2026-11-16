@@ -60,6 +60,10 @@ console.log('A. node');
     [{ role: 'Superintendent', payType: 'hourly' }, 'hourly'], [{ role: 'Office Manager', payType: 'salary' }, 'salary']];
   const bad = pk.filter(x => P(x[0]) !== x[1]);
   ok(!bad.length, 'pay kind: owner / admin / PM / any commission plan → commission; hourly → hourly; salary (no commission) → salary', bad);
+  // 🏭 Industrial: a job type in the pickers, treated like Commercial
+  ok(/nd=\["Residential Reno","Commercial Reno","Commercial TI","New Construction","Industrial",/.test(t) && /var CRM_TYPES = \[[^\]]*'Industrial'/.test(t) && /var TYPES = \[[^\]]*'Commercial', 'Industrial'/.test(t), '🏭 Industrial is in the job-type pickers (new project / lead / job edit, the CRM type list, GrayCo Field ＋ Add job)');
+  ok(t.includes("/^(commercial|industrial|new construction)/i.test(ty)") && t.includes('/commerc|industr|gov|public bid|municipal/i') && t.includes("/commerc|industr|gov|public|municipal|federal/"), 'Industrial is treated like Commercial: the job page layout, the close-rate exclusion, the bid / contact rules');
+  ok(!t.includes('/^(residential|commercial|industrial|government|insurance)'), 'the estimate builder\'s raw-kind test is left alone');
   ok(JSON.stringify(Wn._gcRaSections('pm', ['jobs', 'approvals', 'estimates', 'commission'])) === '["jobs","estimates","commission"]' && JSON.stringify(Wn._gcRaSections('admin', ['approvals', 'scorecard'])) === '[]' && Wn._gcRaSections('est', ['bids', 'jobs', 'approvals']).length === 3,
     'sections: the PM / admin approvals + scorecard move into the dashboard; other roles unchanged');
 }
