@@ -3,12 +3,12 @@
 // fields, a second fresh device shows it, a reload keeps it; failed / unanswered writes, a nearly full localStorage and two
 // devices editing one record. Runs each group in its own process (unattended, overnight) and prints one table:
 // entry point × device → PASS / FAIL (and which step failed).
-//   groups: merge (no browser) · est · field · fail · desk     default: all
+//   groups: merge (no browser) · est · field · mitenv · fail · desk     default: all
 //   one browser run per group — wrap the whole call in the shared browser lock (flock …/browser.lock node test_SAVES.mjs …).
 import { spawnSync } from 'child_process'; import fs from 'fs'; import os from 'os'; import path from 'path'; import { fileURLToPath } from 'url';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const BUILD = path.resolve(process.argv[2] || '.');
-const ALL = { merge: ['test_SAVES_merge.mjs'], est: ['test_SAVES_est.mjs', 'full'], field: ['test_SAVES_field.mjs'], fail: ['test_SAVES_fail.mjs'], desk: ['test_SAVES_desk.mjs'] };
+const ALL = { merge: ['test_SAVES_merge.mjs'], est: ['test_SAVES_est.mjs', 'full'], field: ['test_SAVES_field.mjs'], mitenv: ['test_SAVES_mitenv.mjs'], fail: ['test_SAVES_fail.mjs'], desk: ['test_SAVES_desk.mjs'] };
 const groups = process.argv.slice(3).length ? process.argv.slice(3) : Object.keys(ALL);
 const OUT = path.join(os.tmpdir(), 'saves_results_' + process.pid + '.json'); try { fs.unlinkSync(OUT); } catch (e) {}
 const summary = [];

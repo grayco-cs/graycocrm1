@@ -50441,7 +50441,7 @@ var _spWritten = null;   /* null = look at every list */
           if(_spWritten && this.name === 'kv' && this.transaction && this.transaction.db && this.transaction.db.name === 'grayco_crm'){
             var kk = (n === 'put' || n === 'add') ? b : a;
             if(n === 'clear' || typeof kk !== 'string') _spWritten = null; else _spWritten[kk] = 1;
-            if((n === 'put' || n === 'add') && typeof kk === 'string' && SYNC_KEYS.indexOf(kk) >= 0) _gcsvSoon();   /* SAVES */
+            if((n === 'put' || n === 'add') && typeof kk === 'string' && !_syncing && SYNC_KEYS.indexOf(kk) >= 0) _gcsvSoon();   /* SAVES (a pull's own writes are not news) */
           }
         }catch(e){ _spWritten = null; }
         return o.apply(this, arguments);
@@ -51457,7 +51457,7 @@ async function pullAll(force){
          this one computer for good (a reload marks everything known too). Now the next push sends it. */
       try{ if(Array.isArray(_cloudRaw)) window._gcsvSeeCloud(row.key, _cloudRaw); }catch(_sc){}   /* SAVES: AFTER the merge — the base of the NEXT one */
       if(_rem !== null){
-        if(Array.isArray(_val) && Array.isArray(_cloudRaw) && !_gcsvSameList(_val, _cloudRaw)){ _idbSnapshot[row.key] = '__gc_local_differs__'; try{ if(_spWritten) _spWritten[row.key] = 1; }catch(e){} }
+        if(Array.isArray(_val) && Array.isArray(_cloudRaw) && !_gcsvSameList(_val, _cloudRaw)){ _idbSnapshot[row.key] = '__gc_local_differs__'; try{ if(_spWritten) _spWritten[row.key] = 1; }catch(e){} _gcsvSoon(); }
         else _idbSnapshot[row.key] = _rem;
       }
       // Push the freshly-pulled value into the running app's state.
