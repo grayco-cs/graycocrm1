@@ -12,7 +12,8 @@ cset('users', [{ id: 'u1', name: 'Demo Owner', email: 'wjohnson@grayco-cs.com', 
   { id: 'u3', name: 'Sample PM', email: 'sbiffle@grayco-cs.com', role: 'Project Manager', active: true, phone: '901-555-0101' }]);
 cset('projects', [{ id: 'P1', po: 'PO-1001', name: 'Demo Kitchen Remodel', client: 'Sample Homeowner', clientPhone: '901-555-0111', address: '100 Demo St, Bartlett TN', pm: 'Sample PM', status: 'Active', type: 'Residential Reno', contract: 25000, contractSigned: true, startDate: today, pct: 40 }]);
 cset('schedule', [{ id: 'S1', pid: 'P1', projectId: 'P1', date: today, title: 'Cabinet install', start: today, end: today }]);
-const c = await computer('FL', { build, mobile: true }); const p = c.page();
+const IPHONE = `(() => { const d = (o, k, v) => { try { Object.defineProperty(o, k, { get: () => v, configurable: true }); } catch (e) {} }; d(Navigator.prototype, 'userAgent', 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Mobile/15E148 Safari/604.1'); d(Navigator.prototype, 'maxTouchPoints', 5); })()`;
+const c = await computer('FL', { build, mobile: true, init: [IPHONE] }); const p = c.page();   /* DEVMODE: a real iPhone user agent (the harness's own says Linux = a computer) */
 const onTop = sel => p.evaluate(s => { const o = document.querySelector(s); if (!o || getComputedStyle(o).display === 'none') return { open: false }; const b = o.getBoundingClientRect(); const x = b.left + b.width / 2, y = b.top + Math.min(160, b.height / 2); const top = document.elementFromPoint(x, y); return { open: true, onTop: !!(top && top.closest(s)), z: getComputedStyle(o).zIndex, under: top && (top.closest('[id]') || {}).id }; }, sel);
 const tap = async lab => { await p.locator('#_gcJobPick.gc-fh button, #_gcJobPick.gc-fh a').filter({ hasText: lab }).first().click(); await sleep(1200); };
 try {

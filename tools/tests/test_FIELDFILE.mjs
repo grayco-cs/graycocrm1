@@ -26,7 +26,14 @@ function pdf(lines){
 const H = await import(pathToFileURL(HARNESS).href);
 const { sleep, waitFor } = H;
 H.resetCloud();
-const M = JSON.parse(fs.readFileSync(MIRROR, 'utf8'));
+/* DEVMODE: the real-data mirror when it is there; else a made-up fixture (the test crashed when the mirror file was gone) */
+const OWNER = Object.keys(H.ACCOUNTS).find(e => H.ACCOUNTS[e].id === 'u-wesley');
+const M = fs.existsSync(MIRROR) ? JSON.parse(fs.readFileSync(MIRROR, 'utf8')) : [
+  { key: 'users', value: [{ id: 'u1', name: 'Wesley Johnson', email: OWNER, role: 'Admin', payType: 'owner', active: true }] },
+  { key: 'projects', value: [{ id: 'PF1', po: 'PO-3001', name: 'Demo Bathroom Bid', client: 'Sample Homeowner', address: '300 Demo Ln', pm: 'Wesley Johnson', status: 'Bidding', contract: 0 },
+    { id: 'PF2', po: 'PO-3002', name: 'Demo Deck', client: 'Second Homeowner', address: '400 Demo Rd', pm: 'Wesley Johnson', status: 'Active', contract: 9000, contractSigned: true }] },
+  { key: 'projectDocs', value: [] }, { key: 'leads', value: [] }];
+if (!fs.existsSync(MIRROR)) console.log('  (no mirror at ' + MIRROR + ' — a made-up fixture)');
 for (const r of M) if (r && r.key && !/^_probe/.test(r.key)) H.cset(r.key, r.v !== undefined ? r.v : r.value);
 let P0 = H.cget('projects'); if (typeof P0 === 'string') try { P0 = JSON.parse(P0); } catch (e) {}
 P0 = (Array.isArray(P0) ? P0 : []).filter(p => p && p.id && p.name && !p.deleted && !p.tombstoned);
@@ -51,8 +58,9 @@ async function openJob(c){
   return waitFor(c, () => !!document.querySelector('#_gcJobDash .gcfp-grid ._jdAct[data-fn="photo"]'), null, 15000);
 }
 try {
-  const O = await H.computer('OWN', { build, mobile: true }); W.push(O); await fakeFiles(O);
-  await H.signIn(O, 'wjohnson@grayco-cs.com', 9000);
+  const IPHONE = `(() => { const d = (o, k, v) => { try { Object.defineProperty(o, k, { get: () => v, configurable: true }); } catch (e) {} }; d(Navigator.prototype, 'userAgent', 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Mobile/15E148 Safari/604.1'); d(Navigator.prototype, 'maxTouchPoints', 5); })()`;
+  const O = await H.computer('OWN', { build, mobile: true, init: [IPHONE] }); W.push(O); await fakeFiles(O);   /* DEVMODE: a real iPhone user agent */
+  await H.signIn(O, OWNER, 9000);
   ok(!!(await waitFor(O, () => !!document.querySelector('#_gcJobPick.gc-fh'), null, 60000)), 'the phone opens in GrayCo Field');
   await waitFor(O, () => typeof window._gcStoreFile === 'function' && !!(window._gcPhotos && window._gcPhotos.capture) && ((window._crm && window._crm.projects) || []).length > 0, null, 90000);
   await sleep(2500);
@@ -82,8 +90,9 @@ try {
   ok(await O.ev(() => /added to this job's Documents/.test((document.getElementById('gcfp-toast') || {}).textContent || '')), 'a toast says it was added to the job\'s Documents', await O.ev(() => (document.getElementById('gcfp-toast') || {}).textContent));
   const docs1 = await O.ev(async pid => ((await window.idbGet('projectDocs')) || []).filter(d => d && d.pid === pid).length, PID);
   ok(docs1 === docs0 + 1, 'exactly one record was added', { docs0, docs1 });
-  const inCloud = await (async () => { for (let i = 0; i < 120; i++) { let v = H.cget('projectDocs'); if (typeof v === 'string') try { v = JSON.parse(v); } catch (e) { v = []; } if (Array.isArray(v) && v.some(d => d && d.pid === PID && d.name === 'Scope and drawings.pdf')) return true; await sleep(500); } return false; })();
-  ok(inCloud, 'the record reaches the cloud (gc_kv projectDocs, through the save queue)');
+  /* DEVMODE: the list may go up whole or in chunks (projectDocs__chunkN) — look in every projectDocs row */
+  const inCloud = await (async () => { for (let i = 0; i < 120; i++) { for (const [k, r] of H.cloud) { if (!/^projectDocs/.test(k)) continue; const js = typeof r.value === 'string' ? r.value : JSON.stringify(r.value); if (js && js.includes('Scope and drawings.pdf') && js.includes(String(PID))) return true; } await sleep(500); } return false; })();
+  ok(inCloud, 'the record reaches the cloud (gc_kv projectDocs, through the save queue)', [...new Set(H.writes.map(w => w.key))].filter(k => /doc/i.test(k)).slice(0, 20));
   const up = await (async () => { for (let i = 0; i < 40; i++) { const hit = STORE.find(x => doc && x.path.endsWith(String(doc.ref).slice(3))); if (hit) return hit; await sleep(500); } return null; })();
   ok(!!up && up.size > 100, 'the file itself is uploaded to the file bucket (crm-files/<hash>.pdf)', { up, store: STORE.slice(-3) });
   const inList = await O.ev(pid => ((window._crm && window._crm.projectDocs) || []).some(d => d && d.pid === pid && d.name === 'Scope and drawings.pdf'), PID);
@@ -106,7 +115,8 @@ try {
 
   /* ── 📋 Job Info: its own (dark) sheet, as designed ── */
   await openJob(O);
-  await pg.locator('#_gcJobDash ._jdAct[data-fn="info"]').first().tap(); await sleep(800);
+  /* DEVMODE: since FIELDMORE the Job Info tile can sit in the job page's overflow (class gcfm-ov, not shown) — tap it when shown, else click it */
+  { const jl = pg.locator('#_gcJobDash ._jdAct[data-fn="info"]').first(); if (await jl.isVisible().catch(() => false)) await jl.tap(); else await jl.evaluate(b => b.click()); } await sleep(800);
   const info = await O.ev(() => { const el = [...document.querySelectorAll('body > div')].reverse().find(d => /PO NUMBER/.test(d.innerText || '')); const card = el && el.firstElementChild; return el ? { bg: getComputedStyle(card).backgroundColor } : null; });
   ok(!!info && info.bg === 'rgb(15, 36, 64)', '📋 Job Info still opens the Job Info sheet (dark navy is its normal look)', info);
   await pg.screenshot({ path: SHOTS + 'fieldfile_jobinfo.png' });
