@@ -71669,6 +71669,7 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
       if(iv._subRouted) return;
       // only auto-route if missing a job or sub link
       if(iv.pid && iv.subId) { iv._subRouted=true; return; }
+      if(iv.noAutoLink && !iv.pid) return;   /* INVMATCH: unlinked by a person in the re-check */
       var m=window._gcMatchSubInvoice(iv);
       if((m.pid && !iv.pid) || (m.subId && !iv.subId)){
         // certain match -> auto-apply. carry confidence + guess for office if not certain.
@@ -94692,7 +94693,7 @@ window._gcLinkSubInvoices = async function(quiet){
     report.checked++;
 
     // a PO but no job — the PO decides
-    if(!inv.pid && inv.po){
+    if(!inv.pid && inv.po && !inv.noAutoLink){   /* INVMATCH: unlinked by a person → no automatic PO link */
       var p=window._gcProjectForPO(inv.po, pj);
       if(p){ inv.pid=p.id; inv.autoLinked=true; inv.autoLinkWhy='PO '+String(inv.po).toUpperCase(); report.jobFromPO++; changed=true; }
       else if(window._gcProjectsForPO(inv.po, pj).length>1){ (report.ambiguous=report.ambiguous||[]).push(String(inv.po)); }   /* INVMATCH: two jobs carry it — the office picks */
@@ -100707,7 +100708,7 @@ window._gcAssignByPO = async function(){
   var invs=invoices();
   if(!invs.length) return {changed:0, orphan:[]};
   var next=invs.map(function(v){
-    if(!v || v.pid || v.deleted) return v;
+    if(!v || v.pid || v.deleted || v.noAutoLink) return v;   /* INVMATCH: unlinked by a person in the re-check → leave it to her */
     var m=window._gcJobMatchesForInvoice(v, list), p=window._gcJobForInvoice(v, list);
     if(p){ changed++;   /* INVMATCH: only a sure job; say why on the record */
       var why=m.po.length===1 ? 'PO '+String(v.po).toUpperCase() : ((m.text.filter(function(x){ return x.p===p; })[0]||{}).how||'');
@@ -233577,6 +233578,256 @@ SIv(paint, 3000);
 W._gcPoGuard = { state: function(){ return PG; }, load: load, scan: scan, open: open, setPo: setPo, ask: ask, flag: flag, fileSubReceipt: fileSubReceipt, jobByPo: jobByPo, poOf: poOf, myJobs: myJobs, enhanceField: enhanceField, itemOf: itemOf, canEditExp: canEditExp, paint: paint };
 try { console.log('[GC] 🧾 A PO on every receipt + No-PO alerts (patch POGUARD) — _gcPoGuard.state(), _gcOpenPoGuard()'); } catch (e) {}
 })();
+</script>
+<script id="gc-patch-jobmerge">
+/* __GC_PATCH_JOBMERGE__ — INVMATCH 2: 🧹 Duplicate jobs to merge (N) · Invoices to re-check (M)   (owner 11/16)
+   Owner: merge the triplicated QuickBooks customer jobs "if they match"; the invoices Friday's job finder put on the wrong job
+   (#1120 / #1132 / #1250 / #1302 and the other customer-name links) must be easy to fix.
+   • WHERE: one small button on the Projects screen header (next to "+ New Project"), admins and the office only, shown only when
+     there is something in it. No alerts, no nags, no badges elsewhere.
+   • DUPLICATE JOBS: groups of jobs that TRULY match — the same QuickBooks customer:job (its QuickBooks id, else the QuickBooks
+     customer + job name) AND the same PO AND the same street address (no address on both: also the same QuickBooks import
+     date). Never by the name alone. Each job shows its invoices / bills / files / photos counts and its status; "Merge into this
+     one" keeps that job: its notes / customer notes get the others' text, photos / files / subs / follow-ups / QuickBooks invoice #s
+     are added, then the CRM's own duplicate merge (patch DEDUP _gcDedupe.merge) points every invoice, bill, expense, schedule item,
+     document, change order and punch item at it and puts the others on the CRM's delete list (Undo for 7 days in 🧹 Duplicates).
+     "Not the same" hides the group for good (gc_kv gc_jobmerge_notsame).
+   • INVOICES TO RE-CHECK: invoices the OLD background job finder attached by itself (autoLinked, no reason recorded) where the
+     new check (FINDJOB _gcJobForInvoice, INVMATCH) would NOT pick that job — and invoices whose job is gone. Each: "Unlink" (no
+     job; the PO the finder copied from the job is cleared; finders leave it alone: noAutoLink), "Move to job…" (pick; the new
+     check's sure job is offered first) or "It's right" (stays, off the list).
+   API: window._gcJobMerge = { groups(projects, ctx), recheck(invs, projects, jobFor), open(), mergeInto(keepId, ids), notSame(gid),
+        unlink(invId), moveTo(invId, pid), itsRight(invId) } — groups / recheck are pure (tools/tests/test_JOBMERGE_fn.mjs). */
+(function(W){
+'use strict';
+if (W.__GC_PATCH_JOBMERGE__) return; W.__GC_PATCH_JOBMERGE__ = true;
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v.filter(function(x){ return x != null; }) : []; }
+function nk(v){ return low(v).replace(/&amp;/g, '&').replace(/&/g, ' and ').replace(/\b(llc|inc|co|corp|company|the|ltd)\b/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim(); }
+function poN(v){ return s(v).toUpperCase().replace(/[^A-Z0-9]/g, ''); }
+var SUF = { street: 'st', road: 'rd', avenue: 'ave', av: 'ave', drive: 'dr', lane: 'ln', court: 'ct', boulevard: 'blvd', highway: 'hwy', place: 'pl', circle: 'cir', parkway: 'pkwy', cove: 'cv', terrace: 'ter', trail: 'trl', north: 'n', south: 's', east: 'e', west: 'w' };
+var SUFV = { st: 1, rd: 1, ave: 1, dr: 1, ln: 1, ct: 1, blvd: 1, hwy: 1, pl: 1, cir: 1, pkwy: 1, cv: 1, ter: 1, trl: 1, way: 1, loop: 1, pike: 1 };
+function addrN(a){   /* '3565 Demo Light Dr. Bartlett TN' = '3565 Demo Light Drive, Bartlett': the house # up to the street word */
+  var w = nk(s(a).split(',')[0]).split(' ').filter(Boolean).map(function(x){ return SUF[x] || x; });
+  if (/^\d/.test(w[0] || '')) { for (var i = 1; i < w.length && i < 7; i++) if (SUFV[w[i]]) return w.slice(0, i + 1).join(' '); }
+  return w.join(' ');
+}
+function dead(p, ctx){ if (!p || p.deleted || p._deleted) return true; try { if (ctx && typeof ctx.isDeleted === 'function' && ctx.isDeleted(p.id)) return true; } catch (e) {} return false; }
+/* the QuickBooks customer:job a job came from ('' = not a QuickBooks job → never grouped) */
+function qbIdOf(p){
+  var id = s(p.qbId || p.qbCustomerId || p.qbJobId); if (id) return 'id:' + id;
+  if (/quickbooks/i.test(s(p.source)) || /^QB_/.test(s(p.id)) || s(p.qbClient)) { var c = nk(p.qbClient || p.client || p.customer), n = nk(p.name); return c || n ? 'nm:' + c + ':' + n : ''; }
+  return '';
+}
+function keyOf(p){
+  var q = qbIdOf(p), po = poN(p.autoPO || p.po), a = addrN(p.address || p.jobAddress);
+  if (!q || !po) return '';
+  return q + '|' + po + '|' + (a || '(no address) ' + s(p.created).slice(0, 10));
+}
+/* ── pure: the groups of jobs that truly match ── */
+function groups(projects, ctx){
+  ctx = ctx || {}; var by = {}, ns = ctx.notSame || {};
+  arr(projects).forEach(function(p){ if (dead(p, ctx)) return; var k = keyOf(p); if (k) (by[k] = by[k] || []).push(p); });
+  var invs = arr(ctx.invs), exps = arr(ctx.expenses), docs = arr(ctx.docs), sched = arr(ctx.schedule);
+  function count(pid){
+    var c = { invoices: 0, bills: 0, expenses: 0, files: 0, photos: 0, schedule: 0 };
+    invs.forEach(function(x){ if (s(x.pid) !== pid || x.deleted) return; if (/^(sub|supplier)$/i.test(s(x.type))) c.bills++; else c.invoices++; });
+    exps.forEach(function(x){ if (s(x.pid) === pid && !x.deleted) c.expenses++; });
+    docs.forEach(function(x){ if (s(x.pid) === pid && !x.deleted) c.files++; });
+    sched.forEach(function(x){ if (s(x.pid) === pid && !x.deleted) c.schedule++; });
+    return c;
+  }
+  return Object.keys(by).filter(function(k){ return by[k].length > 1 && !ns[k]; }).map(function(k){
+    var jobs = by[k].map(function(p){ var c = count(s(p.id)); c.photos = arr(p.photos).length + arr(p.files).length; return { p: p, id: s(p.id), counts: c, weight: c.invoices + c.bills + c.expenses + c.files + c.photos + c.schedule }; });
+    jobs.sort(function(a, b){ return b.weight - a.weight || (s(b.p.ccamId) ? 1 : 0) - (s(a.p.ccamId) ? 1 : 0) || s(a.p.savedAt || a.p.created).localeCompare(s(b.p.savedAt || b.p.created)); });
+    var ccs = {}; jobs.forEach(function(j){ var c = s(j.p.ccamId || j.p.ccProjectId); if (c) ccs[c] = 1; });
+    return { gid: k, jobs: jobs, keep: jobs[0].id, po: poN(jobs[0].p.autoPO || jobs[0].p.po), name: s(jobs[0].p.name), client: s(jobs[0].p.client || jobs[0].p.customer), address: s(jobs[0].p.address), companyCam: Object.keys(ccs) };
+  });
+}
+/* ── pure: invoices to re-check ── jobFor(inv) = the new sure check (FINDJOB _gcJobForInvoice) */
+function recheck(invs, projects, jobFor, ctx){
+  ctx = ctx || {}; var live = {}, any = {};
+  arr(projects).forEach(function(p){ any[s(p.id)] = p; if (!dead(p, ctx)) live[s(p.id)] = p; });
+  var out = [];
+  arr(invs).forEach(function(v){
+    if (!v || v.deleted || !s(v.pid) || v.autoLinkOk) return;
+    var pid = s(v.pid), p = live[pid];
+    if (!p) { out.push({ inv: v, pid: pid, job: any[pid] || null, why: any[pid] ? 'its job was deleted' : 'its job is not in the CRM', sure: '' }); return; }
+    if (!v.autoLinked || s(v.autoLinkWhy) || v.pidManual) return;   /* put there by a person, or by the new check (it says why) */
+    var probe = Object.assign({}, v, { pid: '' });
+    if (poN(v.po) && poN(v.po) === poN(p.autoPO || p.po)) probe.po = '';   /* the old finder copied the job's PO onto it */
+    var sure = null; try { sure = jobFor ? jobFor(probe) : null; } catch (e) {}
+    if (sure && s(sure.id) === pid) return;
+    out.push({ inv: v, pid: pid, job: p, why: 'put on this job by the old job finder (a name in its text) — the new check ' + (sure ? 'points to ' + s(sure.name) : 'is not sure of any job'), sure: sure ? s(sure.id) : '' });
+  });
+  return out;
+}
+var API = W._gcJobMerge = { groups: groups, recheck: recheck, keyOf: keyOf, qbIdOf: qbIdOf };
+if (!W.document || !W.document.createElement) return;
+
+/* ════════ the CRM side ════════ */
+var D = W.document;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout, SI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+function later(f, ms){ return ST.call(W, f, ms || 0); }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function money(v){ var n = parseFloat(v) || 0; return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function nowIso(){ return new Date().toISOString(); }
+function crm(){ return W._crm || {}; }
+function projects(){ return arr(crm().projects); }
+function invList(){ var a = arr(crm().invs); return a.length ? a : arr(crm().invoices); }
+function meName(){ try { var u = W._gcMeUser && W._gcMeUser(); if (u && u.name) return s(u.name); } catch (e) {} try { return s(localStorage.getItem('grayco_user')) || 'office'; } catch (e) { return 'office'; } }
+function view(){ try { return low(localStorage.getItem('grayco_view')); } catch (e) { return ''; } }
+function can(){
+  try { if (typeof W._gcCanCreateProject === 'function' && W._gcCanCreateProject()) return true; } catch (e) {}
+  try { if (W._gcIsOfficeFull && W._gcIsOfficeFull()) return true; } catch (e) {}
+  try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()); } catch (e) { return false; }
+}
+function isDel(id){ try { return !!(W._gcIsProjectDeleted && W._gcIsProjectDeleted(id)); } catch (e) { return false; } }
+var NS_KEY = 'gc_jobmerge_notsame';
+function notSameMap(){ var m = {}; try { m = JSON.parse(localStorage.getItem(NS_KEY) || '{}') || {}; } catch (e) {} try { var k = W._gcOT_kv && W._gcOT_kv.get && W._gcOT_kv.get(NS_KEY); if (k && typeof k === 'object') Object.keys(k).forEach(function(x){ m[x] = k[x]; }); } catch (e) {} return m; }
+function ctxNow(){ return { invs: invList(), expenses: arr(crm().expenses), docs: arr(W._gcProjectDocs || crm().projectDocs), schedule: arr(crm().schedule), isDeleted: isDel, notSame: notSameMap() }; }
+function jobFor(inv){ try { return typeof W._gcJobForInvoice === 'function' ? W._gcJobForInvoice(inv, projects()) : null; } catch (e) { return null; } }
+function curGroups(){ return groups(projects(), ctxNow()); }
+function curRecheck(){ return recheck(invList(), projects(), jobFor, { isDeleted: isDel }); }
+API.current = function(){ return { groups: curGroups(), recheck: curRecheck() }; };
+
+/* ── saving an invoice change (the app's own setter, disk, cloud) ── */
+function saveInv(id, patch, fnOld){
+  var at = nowIso(), me = meName(), old = invList().filter(function(x){ return s(x.id) === s(id); })[0]; if (!old) return false;
+  var upd = function(x){ if (!x || s(x.id) !== s(id)) return x; var n = Object.assign({}, x, patch, { updatedAt: at }); if (fnOld) fnOld(n, x); Object.keys(n).forEach(function(k){ if (n[k] === undefined) delete n[k]; }); return n; };
+  try { if (W._gcManualNow) W._gcManualNow('invoice re-check'); } catch (e) {}
+  W.__GC_MANUAL_SAVE__ = true;
+  var next = invList().map(upd);
+  try { if (W._crm) { if (arr(W._crm.invs).length) W._crm.invs = next; if (arr(W._crm.invoices).length) W._crm.invoices = arr(W._crm.invoices).map(upd); } } catch (e) {}
+  try { if (typeof W._setInvoices === 'function') W._setInvoices(function(l){ return arr(l).map(upd); }); } catch (e) {}
+  try { if (W.idbSet) W.idbSet('invs', next); } catch (e) {}
+  try { if (W._supaUpsert) W._supaUpsert('invs', next); } catch (e) {}
+  /* a bill's job cost row follows its bill */
+  try { var E = arr(crm().expenses), hit = E.some(function(e){ return s(e.subInvId) === s(id) && s(e.pid) === s(old.pid); });
+    if (hit && typeof W._setExpenses === 'function') W._setExpenses(function(l){ return arr(l).map(function(e){ return s(e.subInvId) === s(id) && s(e.pid) === s(old.pid) ? Object.assign({}, e, { pid: s(patch.pid), updatedAt: at, _jobSetBy: 'invoice re-check' }) : e; }); }); } catch (e) {}
+  later(function(){ W.__GC_MANUAL_SAVE__ = false; }, 1500);
+  return true;
+}
+API.unlink = function(invId){
+  var v = invList().filter(function(x){ return s(x.id) === s(invId); })[0]; if (!v) return false;
+  var p = projects().filter(function(x){ return s(x.id) === s(v.pid); })[0];
+  var po = p && poN(v.po) && poN(v.po) === poN(p.autoPO || p.po) ? '' : v.po;
+  return saveInv(invId, { pid: '', po: po || '', autoLinked: undefined, autoLinkWhy: undefined, noAutoLink: true, unlinkedFrom: s(v.pid), unlinkedAt: nowIso(), unlinkedBy: meName() });
+};
+API.moveTo = function(invId, pid){
+  var p = projects().filter(function(x){ return s(x.id) === s(pid); })[0]; if (!p) return false;
+  var v = invList().filter(function(x){ return s(x.id) === s(invId); })[0]; if (!v) return false;
+  var oldP = projects().filter(function(x){ return s(x.id) === s(v.pid); })[0];
+  var po = oldP && poN(v.po) && poN(v.po) === poN(oldP.autoPO || oldP.po) ? '' : s(v.po);
+  return saveInv(invId, { pid: s(p.id), po: po || s(p.autoPO), pidManual: true, autoLinked: undefined, autoLinkWhy: undefined, noAutoLink: undefined, linkedBy: meName() + ' (invoice re-check)', movedFrom: s(v.pid), movedAt: nowIso() });
+};
+API.itsRight = function(invId){ return saveInv(invId, { autoLinkOk: true, autoLinkOkBy: meName(), autoLinkOkAt: nowIso() }); };
+API.notSame = function(gid){
+  var m = notSameMap(); m[gid] = { at: nowIso(), by: meName() };
+  try { localStorage.setItem(NS_KEY, JSON.stringify(m)); } catch (e) {}
+  try { if (W._gcOT_kv && W._gcOT_kv.put) W._gcOT_kv.put(NS_KEY, m); else if (W._supaUpsert) W._supaUpsert(NS_KEY, m); } catch (e) {}
+  return true;
+};
+/* ── merge: the kept job gets the others' notes / photos / files, then patch DEDUP's merge moves everything that points at them ── */
+function joinText(a, b){ a = s(a); b = s(b); if (!b || a.indexOf(b) > -1) return a; return a ? a + '\n— merged from a duplicate —\n' + b : b; }
+function joinArr(a, b){ var out = arr(a).slice(), seen = {}; out.forEach(function(x){ seen[typeof x === 'object' ? JSON.stringify(x) : s(x)] = 1; }); arr(b).forEach(function(x){ var k = typeof x === 'object' ? JSON.stringify(x) : s(x); if (!seen[k]) { seen[k] = 1; out.push(x); } }); return out; }
+API.mergeInto = function(keepId, ids){
+  if (!can()) return Promise.resolve({ ok: false, error: 'admins and the office only' });
+  var all = projects(), keep = all.filter(function(p){ return s(p.id) === s(keepId); })[0];
+  var others = all.filter(function(p){ return ids.indexOf(s(p.id)) > -1 && s(p.id) !== s(keepId); });
+  if (!keep || !others.length) return Promise.resolve({ ok: false, error: 'not found' });
+  /* only jobs that truly match may be merged here */
+  var k0 = keyOf(keep); if (!k0 || others.some(function(p){ return keyOf(p) !== k0; })) return Promise.resolve({ ok: false, error: 'these jobs do not match (QuickBooks customer:job, PO and address)' });
+  if (!W._gcDedupe || typeof W._gcDedupe.merge !== 'function') return Promise.resolve({ ok: false, error: 'the CRM is still loading — try again in a moment' });
+  var k2 = Object.assign({}, keep);
+  others.forEach(function(o){
+    ['notes', 'customerNotes', 'scope', 'payNotes'].forEach(function(f){ if (s(o[f])) k2[f] = joinText(k2[f], o[f]); });
+    ['photos', 'files', 'subs', 'followUps', 'qbInvoiceNums', 'drawPayments', 'updates', 'permits'].forEach(function(f){ if (arr(o[f]).length) k2[f] = joinArr(k2[f], o[f]); });
+    var cc = s(o.ccamId || o.ccProjectId); if (cc && cc !== s(keep.ccamId || keep.ccProjectId)) k2.ccAltIds = joinArr(k2.ccAltIds, [cc]);
+  });
+  k2.mergedDupes = joinArr(k2.mergedDupes, others.map(function(o){ return { id: s(o.id), at: nowIso(), by: meName(), why: 'same QuickBooks customer:job, PO and address' }; }));
+  k2.updatedAt = nowIso();
+  var list = all.map(function(p){ return s(p.id) === s(keepId) ? k2 : p; });
+  try { if (W._gcManualNow) W._gcManualNow('merge duplicate jobs'); } catch (e) {}
+  try { if (W._crm) W._crm.projects = list; } catch (e) {}
+  try { if (typeof W._setProjects === 'function') W._setProjects(list.slice()); } catch (e) {}
+  var disk = Promise.resolve(); try { if (W.idbSet) disk = Promise.resolve(W.idbSet('projects', list)); } catch (e) {}
+  return disk.then(function(){ return W._gcDedupe.merge('projects', s(keepId), others.map(function(o){ return s(o.id); })); }).then(function(r){
+    try { others.forEach(function(o){ if (W._gcTombstoneProject) W._gcTombstoneProject(s(o.id)); }); } catch (e) {}   /* the CRM's own delete list for jobs, too: the sync never brings them back */
+    return r || { ok: false };
+  });
+};
+
+/* ── the screen ── */
+function counts(c){ return [c.invoices + ' invoice' + (c.invoices === 1 ? '' : 's'), c.bills + ' bill' + (c.bills === 1 ? '' : 's'), c.expenses ? c.expenses + ' cost' + (c.expenses === 1 ? '' : 's') : '', c.files + ' file' + (c.files === 1 ? '' : 's'), c.photos ? c.photos + ' photo' + (c.photos === 1 ? '' : 's') : '', c.schedule ? c.schedule + ' on the schedule' : ''].filter(Boolean).join(' · '); }
+var BTN = 'padding:5px 10px;border-radius:7px;cursor:pointer;font-size:12.5px;font-weight:700;font-family:inherit;';
+function jobOpts(sel){ return '<option value="">Move to job…</option>' + projects().filter(function(p){ return !dead(p, { isDeleted: isDel }); }).slice().sort(function(a, b){ return s(a.name).localeCompare(s(b.name)); }).map(function(p){ return '<option value="' + esc(p.id) + '"' + (s(p.id) === sel ? ' selected' : '') + '>' + esc(s(p.name) + (p.autoPO ? ' (' + s(p.autoPO) + ')' : '') + (p.address ? ' — ' + s(p.address).split(',')[0] : '') + (p.status ? ' [' + s(p.status) + ']' : '')) + '</option>'; }).join(''); }
+function paint(ov){
+  var G = curGroups(), R = curRecheck(), card = ov.querySelector('[data-jm-card]');
+  card.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:17px">🧹 Duplicate jobs to merge (' + G.length + ') · Invoices to re-check (' + R.length + ')</b><button type="button" data-jm="x" aria-label="Close" style="border:none;background:none;font-size:20px;cursor:pointer;color:#475569">✕</button></div>' +
+    '<div style="font-size:12.5px;color:#475569;margin:4px 0 10px">Jobs listed together have the same QuickBooks customer:job, the same PO and the same address — never just a similar name. Merging keeps the job you pick and moves everything onto it (Undo for 7 days in 🧹 Duplicates).</div>' +
+    (R.length ? '<h3 style="font-size:14.5px;margin:12px 0 6px">🔎 Invoices to re-check (' + R.length + ')</h3>' + R.map(function(r){ var v = r.inv, isBill = /^(sub|supplier)$/i.test(s(v.type));
+      return '<div data-jm-inv="' + esc(v.id) + '" style="border:1px solid #fde68a;background:#fffbeb;border-radius:9px;padding:8px 10px;margin-bottom:6px;font-size:13px"><b>' + (isBill ? 'Bill' : 'Invoice') + (s(v.invNum || v.qbNum) ? ' #' + esc(v.invNum || v.qbNum) : '') + '</b> · ' + esc(isBill ? v.sub || v.vendor : v.client || v.customer) + ' · ' + money(v.amt != null ? v.amt : v.amount) + '<br><span style="color:#475569">' + esc(s(v.desc).replace(/\s+/g, ' ').slice(0, 140)) + '</span><br>' +
+        'On: <b>' + esc(r.job ? s(r.job.name) : r.pid) + '</b>' + (r.job && r.job.address ? ' — ' + esc(s(r.job.address).split(',')[0]) : '') + ' <span style="color:#92400e">(' + esc(r.why) + ')</span>' +
+        '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"><button type="button" data-jm="unlink" style="' + BTN + 'border:1px solid #b91c1c;background:#fff;color:#b91c1c">Unlink</button>' +
+        '<select data-jm="move" style="padding:5px;border-radius:7px;border:1px solid #cbd5e1;max-width:320px;font-size:12.5px">' + jobOpts(r.sure) + '</select>' + (r.sure ? '<button type="button" data-jm="movesure" data-pid="' + esc(r.sure) + '" style="' + BTN + 'border:1px solid #2563eb;background:#eff6ff;color:#1d4ed8">Move to the suggested job</button>' : '') +
+        (r.job ? '<button type="button" data-jm="right" style="' + BTN + 'border:1px solid #16a34a;background:#f0fdf4;color:#15803d">It\'s right</button>' : '') + '</div></div>'; }).join('') : '') +
+    (G.length ? '<h3 style="font-size:14.5px;margin:14px 0 6px">🧹 Duplicate jobs to merge (' + G.length + ')</h3>' + G.map(function(g){
+      return '<div data-jm-g="' + esc(g.gid) + '" style="border:1px solid #cbd5e1;border-radius:9px;padding:8px 10px;margin-bottom:8px;font-size:13px"><b>' + esc(g.name || g.client) + '</b> · PO ' + esc(g.po) + (g.address ? ' · ' + esc(g.address.split(',')[0]) : ' · no address') + ' · ' + g.jobs.length + ' copies' +
+        (g.companyCam.length > 1 ? '<div style="color:#92400e;font-size:12px">⚠ ' + g.companyCam.length + ' different CompanyCam projects — the kept job keeps its own link; the others are noted on it (ccAltIds).</div>' : '') +
+        g.jobs.map(function(j){ return '<div data-jm-job="' + esc(j.id) + '" style="display:flex;justify-content:space-between;gap:8px;align-items:center;border-top:1px solid #e2e8f0;padding:5px 0;margin-top:4px"><span>' + esc(s(j.p.status) || '—') + ' · ' + esc(counts(j.counts)) + (j.p.ccamId ? ' · CompanyCam ' + esc(j.p.ccamId) : '') + '<br><span style="color:#94a3b8;font-size:11.5px">' + esc(j.id) + (j.p.created ? ' · made ' + esc(s(j.p.created).slice(0, 10)) : '') + '</span></span><button type="button" data-jm="merge" style="' + BTN + 'border:1px solid #2563eb;background:#eff6ff;color:#1d4ed8;white-space:nowrap">Merge into this one</button></div>'; }).join('') +
+        '<div style="margin-top:6px"><button type="button" data-jm="notsame" style="' + BTN + 'border:1px solid #cbd5e1;background:#fff;color:#334155">Not the same</button></div></div>'; }).join('') : '') +
+    (!G.length && !R.length ? '<div style="padding:16px;text-align:center;color:#15803d">Nothing to merge or re-check.</div>' : '') +
+    '<div data-jm="msg" role="status" style="font-size:12.5px;color:#334155;margin-top:8px"></div>';
+}
+function open(){
+  if (!can()) return null;
+  var old = D.getElementById('gc-jm-ov'); if (old) old.remove();
+  var ov = D.createElement('div'); ov.id = 'gc-jm-ov'; ov.setAttribute('data-gc-keep', '1'); ov.setAttribute('data-gcnp-skip', '1');
+  ov.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:rgba(15,23,42,.55);display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow:auto;font-family:Inter,-apple-system,Segoe UI,Arial,sans-serif';
+  ov.innerHTML = '<div data-jm-card role="dialog" aria-label="Duplicate jobs and invoices to re-check" style="background:#fff;color:#0f172a;border-radius:12px;width:min(860px,100%);padding:18px;margin-top:20px"></div>';
+  D.body.appendChild(ov); paint(ov);
+  var msg = function(t){ var m = ov.querySelector('[data-jm="msg"]'); if (m) m.textContent = t; };
+  ov.addEventListener('click', function(ev){
+    var b = ev.target.closest && ev.target.closest('[data-jm]'), a = b ? b.getAttribute('data-jm') : '';
+    if (ev.target === ov || a === 'x') { ov.remove(); return; }
+    var row = b && b.closest('[data-jm-inv]'), id = row ? row.getAttribute('data-jm-inv') : '';
+    if (a === 'unlink' && id) { API.unlink(id); later(function(){ paint(ov); msg('Unlinked — it waits for a job in 📥 Needs a job / 🔗 QuickBooks ↔ CRM.'); }, 60); return; }
+    if (a === 'movesure' && id) { API.moveTo(id, b.getAttribute('data-pid')); later(function(){ paint(ov); msg('Moved.'); }, 60); return; }
+    if (a === 'right' && id) { API.itsRight(id); later(function(){ paint(ov); msg('Kept on its job.'); }, 60); return; }
+    var g = b && b.closest('[data-jm-g]'), gid = g ? g.getAttribute('data-jm-g') : '';
+    if (a === 'notsame' && gid) { API.notSame(gid); paint(ov); msg('Hidden — those stay separate jobs.'); return; }
+    if (a === 'merge' && gid) {
+      var keepId = b.closest('[data-jm-job]').getAttribute('data-jm-job'), ids = [].map.call(g.querySelectorAll('[data-jm-job]'), function(x){ return x.getAttribute('data-jm-job'); });
+      b.disabled = true; b.textContent = 'Merging…';
+      API.mergeInto(keepId, ids).then(function(r){ paint(ov); msg(r && r.ok ? 'Merged ' + r.removed + ' cop' + (r.removed === 1 ? 'y' : 'ies') + ' into the kept job (' + (r.repointed || 0) + ' records moved). Undo: 🧹 Duplicates.' : 'Not merged: ' + s(r && r.error)); }, function(e){ paint(ov); msg('Not merged: ' + s(e && e.message || e)); });
+    }
+  });
+  ov.addEventListener('change', function(ev){ var el = ev.target; if (!el || el.getAttribute('data-jm') !== 'move' || !el.value) return; var row = el.closest('[data-jm-inv]'); if (!row) return; API.moveTo(row.getAttribute('data-jm-inv'), el.value); later(function(){ paint(ov); msg('Moved.'); }, 60); });
+  return ov;
+}
+API.open = open;
+W._gcOpenJobMerge = open;
+/* ── the one small button on the Projects header ── */
+var lastSig = '', lastCount = { g: 0, r: 0 }, lastAt = 0;
+function btn(){
+  var b = D.getElementById('gc-jm-btn');
+  if (D.hidden) return;
+  if (!can() || view() !== 'projects') { if (b) b.remove(); return; }
+  var nb = [].filter.call(D.querySelectorAll('main button'), function(x){ return s(x.textContent) === '+ New Project'; })[0];
+  if (!nb) { if (b) b.remove(); return; }
+  var L = projects(), I = invList(), sig = L.length + '|' + I.length + '|' + (L[0] && L[0].updatedAt) + '|' + (I[0] && I[0].updatedAt);
+  if (sig !== lastSig || Date.now() - lastAt > 60000) { lastSig = sig; lastAt = Date.now(); try { lastCount = { g: curGroups().length, r: curRecheck().length }; } catch (e) {} }
+  if (!lastCount.g && !lastCount.r) { if (b) b.remove(); return; }
+  if (!b) { b = D.createElement('button'); b.id = 'gc-jm-btn'; b.type = 'button'; b.setAttribute('data-gc-keep', '1'); b.style.cssText = 'margin-left:6px;padding:7px 12px;border:1px solid #64748b;border-radius:6px;background:#f8fafc;color:#334155;font-weight:700;font-size:12px;cursor:pointer;font-family:inherit'; b.onclick = function(){ open(); }; }
+  var t = (lastCount.g ? '🧹 Duplicate jobs to merge (' + lastCount.g + ')' : '🧹') + (lastCount.r ? ' · Invoices to re-check (' + lastCount.r + ')' : '');
+  if (b.textContent !== t) b.textContent = t;
+  if (b.previousSibling !== nb && !(b.previousSibling && b.previousSibling.id === 'gcnp-listbtn')) { var after = nb.nextSibling && nb.nextSibling.id === 'gcnp-listbtn' ? nb.nextSibling : nb; after.parentNode.insertBefore(b, after.nextSibling); }
+}
+SI.call(W, function(){ try { btn(); } catch (e) {} }, 2000);
+try { console.log('[GC] 🧹 Duplicate jobs to merge · Invoices to re-check (patch JOBMERGE) — _gcJobMerge.open()'); } catch (e) {}
+})(typeof window !== 'undefined' ? window : globalThis);
 </script>
 <script id="gc-patch-lumpsum">/*__GC_PATCH_LUMPSUM__ (owner 11/13: "some companies send 1 invoice as a lump sum but we have invoices all month and we need to
   mark off what jobs are paid when we send that 1 huge invoice; we should get invoices in, but when we pay those make sure we are
