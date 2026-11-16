@@ -1,15 +1,13 @@
 // test_DEVMODE.mjs <build-dir> — Desk or GrayCo Field by the DEVICE (patch DEVMODE). Owner 11/16: "The desk view should
 // always pull up unless it's opened from an iPhone then it should be field opening … From the phone and app always do field
-// view app mode", plus a per-person "Ask me Field or Desk when I sign in" (default OFF) for someone who uses one computer
-// both ways (Biffle, a PM).
+// view app mode"; then "Don't ask for field or desk when sign in … iPad opens Field".
 //  1. devices × roles: Windows Chrome, Mac Chrome, Mac Safari, a touch-screen laptop (also one the browser reports as
 //     touch-only, short window), iPhone Safari, the iPhone Home Screen app, an Android phone, an iPad (iPadOS Safari says
 //     "Macintosh") — each opens the right view for admin, office, PM and field (Superintendent) roles, and keeps it;
-//  2. the ask setting: off → a computer opens the Desk, no question; on → one question after sign-in, the pick holds on a
-//     reload and in a new tab, sign out + in asks again; "Stop asking me" turns it off; a phone never asks;
-//  3. a Desk / Field switch without the ask setting lasts for this open only (a reload / the next sign-in is the Desk);
-//  4. My Profile has the person's own switch, 💎 Team access a box per person (admin), both saved in gc_kv gc_view_prefs.
-// Offline harness, made-up data. Usage: node test_DEVMODE.mjs <dir with index.html>   (ONLY=devices,ask,switch,profile)
+//  2. nothing is asked at sign-in (owner 11/16: "Don't ask for field or desk when sign in — just do it by computer or
+//     iPhone/Android etc; iPad opens Field"), no "Ask me" setting in My Profile, no saved pick;
+//  3. a Desk / Field switch lasts for this open only (a reload / the next sign-in, even in the same page, is the device's view).
+// Offline harness, made-up data. Usage: node test_DEVMODE.mjs <dir with index.html>   (ONLY=devices,noask,switch)
 import { pathToFileURL } from 'url';
 const HARNESS = process.env.GC_HARNESS || '/tmp/claude-0/-home-user-graycocrm1/6a5b2b6b-8a4d-5505-9f82-62521adb6674/scratchpad/wN/harness_N.mjs';
 const H = await import(pathToFileURL(HARNESS).href);
@@ -122,84 +120,28 @@ try {
     }
   }
 
-  /* ── 2. the ask setting ── */
-  if (want('ask')) {
-    console.log('── ask: off (default) on a computer');
-    seed(); let c = await device('Windows Chrome');
+  /* ── 2. nothing is asked (owner 11/16: "Don't ask for field or desk when sign in"), even with an old setting in the cloud ── */
+  if (want('noask')) {
+    console.log('── no question at sign-in');
+    seed(); H.cset('gc_view_prefs', { [PM]: { ask: true } });   /* left over from the first DEVMODE: ignored */
+    let c = await device('Windows Chrome');
+    await c.ev(() => { localStorage.setItem('gc_dm_choice', JSON.stringify({ email: 'x', v: 'field' })); localStorage.setItem('gc_dm_ask', '{}'); });
     await H.signIn(c, PM, 9000); await signedReady(c);
-    let s = await waitState(c, isDesk, 20000); await sleep(2500); s = await S(c);
-    ok(isDesk(s) && !s.ask, 'ask off: the PM\'s computer opens the Desk and asks nothing', s);
+    let s = await waitState(c, isDesk, 20000); await sleep(3000); s = await S(c);
+    ok(isDesk(s) && !s.ask, 'a PM on a computer: the Desk, no Field / Desk question', s);
+    ok(!(await c.ev(() => ['gc_dm_choice', 'gc_dm_ask', 'gc_view_pref'].filter(k => localStorage.getItem(k) != null))).length, 'no saved pick on the computer (old keys cleared)');
+    await c.ev(() => window._setView('myprofile')); await sleep(2500);
+    ok(!(await c.ev(() => !!document.getElementById('gc-dm-prof') || /Ask me Field or Desk/i.test(document.body.innerText))), 'My Profile has no "Ask me Field or Desk" setting');
+    ok(!c.errs.length, 'no question: no page errors', c.errs.slice(0, 3));
     await closeAll();
-
-    console.log('── ask: on (Biffle) on a computer');
-    seed(); H.cset('gc_view_prefs', { [PM]: { ask: true, at: new Date().toISOString(), by: ADMIN } });
-    c = await device('Windows Chrome');
+    seed(); c = await device('iPad (iPadOS Safari says Macintosh)');
     await H.signIn(c, PM, 9000); await signedReady(c);
-    s = await waitState(c, x => x && x.ask, 20000);
-    ok(s && s.ask, 'ask on: after sign-in the CRM asks Desk or GrayCo Field', s);
-    const btns = await c.ev(() => [...document.querySelectorAll('#gc-dm-ask [data-dm]')].map(b => b.getAttribute('data-dm')));
-    ok(btns.includes('desk') && btns.includes('field'), 'two buttons: 🖥 Desk and 📱 GrayCo Field (+ Stop asking me)', btns);
-    await c.page().screenshot({ path: '/tmp/claude-0/-home-user/6a5b2b6b-8a4d-5505-9f82-62521adb6674/scratchpad/dm/ask.png' }).catch(() => {});
-    await c.page().click('#gc-dm-ask [data-dm="field"]');
-    s = await waitState(c, isField, 20000);
-    ok(isField(s) && s.choice === 'field', 'Field picked: GrayCo Field opens on the computer', s);
-    ok(!(await holds(c, isField, 3500)), '… and stays');
-    await c.page().reload(); await signedReady(c);
-    s = await waitState(c, isField, 25000); await sleep(1500); s = await S(c);
-    ok(isField(s) && !s.ask, 'a reload of the same sign-in: GrayCo Field again, no second question', s);
-    const p2 = await c.ctx.newPage(); p2.on('pageerror', e => c.errs.push(String(e.message || e)));
-    await p2.goto('http://app.local/', { waitUntil: 'domcontentloaded' });
-    await H.waitFor({ ev: (f, a) => p2.evaluate(f, a) }, () => !!(window._gcRA && window._gcRA.app && window._gcRA.app()), null, 30000);
-    await sleep(3000);
-    const s3 = await p2.evaluate(() => ({ ask: !!document.getElementById('gc-dm-ask'), field: document.documentElement.classList.contains('_fieldmode') }));
-    ok(!s3.ask && s3.field, 'a new tab of the same sign-in: no question, GrayCo Field', s3);
-    await p2.close();
-    /* the switch while the ask setting is on: it changes this sign-in's pick */
-    await c.ev(() => window._gcChooseView('desk'));
-    s = await waitState(c, isDesk, 15000);
-    ok(isDesk(s) && s.choice === 'desk', '🖥 Desk switch: the Desk, and this sign-in\'s pick becomes Desk', s);
-    await c.page().reload(); await signedReady(c);
-    s = await waitState(c, isDesk, 20000); await sleep(1500); s = await S(c);
-    ok(isDesk(s) && !s.ask, '… a reload keeps the Desk (this sign-in), no question', s);
-    /* sign out + in: asked again */
-    await signOutIn(c, PM); await signedReady(c);
-    s = await waitState(c, x => x && x.ask, 20000);
-    ok(s && s.ask && !s.choice, 'sign out + sign in: asked again (the last sign-in\'s pick is gone)', s);
-    await c.page().click('#gc-dm-ask [data-dm="desk"]');
-    s = await waitState(c, isDesk, 15000);
-    ok(isDesk(s) && s.choice === 'desk', 'Desk picked: the Desk', s);
-    /* Stop asking me */
-    await signOutIn(c, PM); await signedReady(c);
-    s = await waitState(c, x => x && x.ask, 20000);
-    ok(s && s.ask, 'asked again at the next sign-in', s);
-    await c.page().click('#gc-dm-ask [data-dm="stop"]');
-    await sleep(1500);
-    s = await S(c);
-    ok(isDesk(s) && H.cget('gc_view_prefs')[PM].ask === false, '"Stop asking me": the Desk, and the setting is off in the cloud', { s, prefs: H.cget('gc_view_prefs') });
-    await signOutIn(c, PM); await signedReady(c);
-    s = await waitState(c, isDesk, 20000); await sleep(2500); s = await S(c);
-    ok(isDesk(s) && !s.ask, 'the next sign-in: the Desk, no question', s);
-    ok(!c.errs.length, 'ask flow: no page errors', c.errs.slice(0, 3));
-    await closeAll();
-
-    console.log('── ask: on, but a phone never asks');
-    seed(); H.cset('gc_view_prefs', { [PM]: { ask: true } });
-    c = await device('iPhone Home Screen app');
-    await H.signIn(c, PM, 9000); await signedReady(c);
-    s = await waitState(c, isField, 25000); await sleep(2500); s = await S(c);
-    ok(isField(s) && !s.ask, 'iPhone Home Screen app with the setting on: GrayCo Field, no question', s);
-    await closeAll();
-
-    console.log('── ask: on, a different person on the same computer is not asked');
-    seed(); H.cset('gc_view_prefs', { [PM]: { ask: true } });
-    c = await device('Windows Chrome');
-    await H.signIn(c, OFFICE, 9000); await signedReady(c);
-    s = await waitState(c, isDesk, 20000); await sleep(2500); s = await S(c);
-    ok(isDesk(s) && !s.ask, 'the office (setting off) on that computer: the Desk, no question', s);
+    s = await waitState(c, isField, 25000); await sleep(2000); s = await S(c);
+    ok(isField(s) && !s.ask, 'the iPad: GrayCo Field, no question (owner: "iPad opens Field")', s);
     await closeAll();
   }
 
-  /* ── 3. a switch without the ask setting: this open only ── */
+  /* ── 3. a Desk / Field switch: this open only ── */
   if (want('switch')) {
     console.log('── switch without the ask setting');
     seed(); const c = await device('Windows Chrome');
@@ -233,43 +175,6 @@ try {
     await closeAll();
   }
 
-  /* ── 4. My Profile and 💎 Team access ── */
-  if (want('profile')) {
-    console.log('── My Profile');
-    seed(); let c = await device('Windows Chrome');
-    await H.signIn(c, PM, 9000); await signedReady(c);
-    await waitState(c, isDesk, 20000);
-    await c.ev(() => window._setView('myprofile'));
-    const cb = await H.waitFor(c, () => { const x = document.querySelector('#gc-dm-prof input[data-dm-ask="me"]'); return !!x && !x.disabled; }, null, 15000);
-    ok(cb, 'My Profile shows "Ask me Field or Desk when I sign in" (off)');
-    if (cb) {
-      ok(!(await c.ev(() => document.querySelector('#gc-dm-prof input').checked)), '… off by default');
-      await c.page().click('#gc-dm-prof input[data-dm-ask="me"]');
-      await sleep(1500);
-      ok((H.cget('gc_view_prefs') || {})[PM] && H.cget('gc_view_prefs')[PM].ask === true, 'turned on: saved in gc_kv gc_view_prefs for this person', H.cget('gc_view_prefs'));
-      let s = await S(c); ok(!s.ask, 'turning it on does not ask right away (this sign-in keeps what is on screen)', s);
-    }
-    await closeAll();
-    console.log('── on another computer, the setting follows the person');
-    c = await device('Mac Safari');
-    await H.signIn(c, PM, 9000); await signedReady(c);
-    let s = await waitState(c, x => x && x.ask, 20000);
-    ok(s && s.ask, 'the PM signs in on another computer: asked (the setting follows him)', s);
-    await closeAll();
-    console.log('── 💎 Team access (admin)');
-    seed(); c = await device('Windows Chrome');
-    await H.signIn(c, ADMIN, 9000); await signedReady(c);
-    await c.ev(() => window._gcTeamAccess());
-    const box = await H.waitFor(c, e => !!document.querySelector('input[data-dm-ask="' + e + '"]'), PM, 15000);
-    ok(box, 'Team access: an "Ask Field/Desk" box on each person\'s row');
-    if (box) {
-      await c.ev(e => document.querySelector('input[data-dm-ask="' + e + '"]').click(), PM);
-      await sleep(1500);
-      ok((H.cget('gc_view_prefs') || {})[PM] && H.cget('gc_view_prefs')[PM].ask === true, 'the admin ticks it for the PM: saved for him', H.cget('gc_view_prefs'));
-    }
-    ok(!c.errs.length, 'profile / Team access: no page errors', c.errs.slice(0, 3));
-    await closeAll();
-  }
 } catch (e) { fail++; console.log('  ✗ FAIL threw: ' + (e && e.stack || e)); }
 await closeAll();
 console.log(`DEVMODE ${pass}/${pass + fail}`);
