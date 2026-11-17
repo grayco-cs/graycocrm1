@@ -85984,6 +85984,11 @@ async function computeLine(prof, from, to, set, ytd, manualGross, extras){
       }
     }
   }
+  /* ENVCOMP: 🩺 medical removal protection — the ONE payroll hook (window._gcMedRemovalPay, patch ENVCOMP): while a worker is medically removed the
+     draft gets a "Medical removal protection" line (their normal / average earnings for the protected days, less workers' comp and pay for other
+     work this period) — shown on the draft with how it was worked out, for the admin / Office Manager to approve like every line */
+  try{ if(typeof window._gcMedRemovalPay==='function'){ var _mrp = await window._gcMedRemovalPay(prof, from, to, { earned:gross, hourlyRate:_rate, annualSalary:(pt==='salary'||pt==='salary_commission')?n2(prof.annualSalary):0, weeklyHours:setHoursOf(prof)||n2(prof.ftHours)||40 });
+    if(_mrp && n2(_mrp.amount)>0){ gross += r2(_mrp.amount); parts.push({label:'Medical removal protection', amount:r2(_mrp.amount), mrp:true}); T('🩺 Medical removal protection', _mrp.detail, _mrp.amount); } } }catch(_mrpE){}
   if(bonus>0){ gross += bonus; parts.push({label:'Bonus', amount:bonus}); T('Bonus', 'Taxed like wages (added to this check)', bonus); }   /* patch PAY */
   if(pmBonus>0){ gross += pmBonus; parts.push({label:'Bonus — PM year-end', amount:pmBonus, supplemental:true}); T('🏆 Bonus — PM year-end', 'Approved in 🎖 Required certs, raises & promotion · taxable supplemental wages (Social Security, Medicare and state as wages; federal at the 22% supplemental rate)', pmBonus); }   /* patch PAYEM */
   gross = r2(gross);
@@ -236462,5 +236467,832 @@ function afterSave(){
 (function hook(n){ var F = SF(); if (F && F.open && !F.open.__sf2) { var o = F.open; var f = function(pid){ var r = o.apply(this, arguments); var ov = D.getElementById('gcsf'); if (ov) ov.__pid = s(pid); SUBS = {}; ST.call(W, decorate, 50); return r; }; f.__sf2 = true; F.open = f; return; } if (n < 120) ST.call(W, function(){ hook(n + 1); }, 1000); })(0);
 SI.call(W, function(){ if (D.getElementById('gcsf')) decorate(); if (W.__gcSf2Pending) afterSave(); }, 700);
 W._gcScopeFiles2 = { save: save, preview: preview, subsFor: subsFor, replaceOld: replaceOld };
+})(window);
+</script>
+<script src="envcomp-core.js"></script>   <!-- ENVCOMP: the one rules / checks file (the server requires the same file) -->
+<script id="gc-patch-envcomp">
+/* __GC_PATCH_ENVCOMP__ — ENVCOMP: 🛡 ENVIRONMENTAL COMPLIANCE (owner 11/16: "Has to have compliance program when all lead, asbestos or
+   environmental job is happening — air testing etc."; + medical surveillance, the worker's own health & exposure records, medical removal
+   with pay protection). The rules and checks: /envcomp-core.js (window._gcEnvCompCore). The private records: netlify/functions/envcomp.js.
+   • Job page (Desk, and the job page in GrayCo Field): "🛡 Compliance" turns on by itself for a lead (RRP / abatement), asbestos, mold or
+     trauma / biohazard job — GrayCo Environmental's jobs, an environmental job type, the ☣️ card's answers or the job's words — with
+     ✅ compliant / ⚠ items due / ⛔ blocking: 1 people (certifications by job type and role from 📜 Certifications, fit test, medical
+     current / due — never a test or a result), 2 air testing (logged with date, sampler, lab, result, pass / fail, the lab report;
+     clearance gates close-out), 3 notices & permits by state (checklist items to confirm with the state program: filed on, confirmation #,
+     upload), 4 the daily compliance log (Field, with photos), 5 the written programs (company review date + gone over for this job),
+     6 records retention (kept from deletion until the date). Admins: ⚙ Compliance rules (every list editable, gc_kv gc_envcomp_rules).
+   • GrayCo Field: 🛡 Compliance and 📋 Compliance log on the job card (env jobs only) + the status chip; 🩺 My health & exposure records on Home.
+   • ☢️ Environmental tab: the "🛡 Environmental compliance" overview of every active env job; admins / Office Manager: results the worker
+     has not seen yet. Payroll employee profile: 📜 Certifications (+ 🩺 Medical for admins / Office Manager).
+   • Close-out: a job whose clearance has not passed cannot be closed (put back with "⛔ Clearance has not passed"; admin may close with a
+     reason when the rules allow it). To-Dos for notices / air / clearance / blocking crew items (office + admins write them).
+   • Medical removal: the worker is ⛔ on exposure jobs (the schedule warns); payroll adds the protection line (window._gcMedRemovalPay).
+   Never shown to customers: none of this is in the portal's job view; uploaded lab reports stay in the records.
+   API: window._gcEnvComp = { evaluate(p), isOn(p), paint(), sweep(), guard(), rules(), saveRules(t), status(), pullStatus(), logAir(pid, o),
+        logDaily(pid, o), fileNotice(pid, id, o), openMine(), openProfile(email, name), overview(), canSchedule(email, pid), closeGate(), fn(body) } */
+(function(W){
+'use strict';
+if (W.__GC_PATCH_ENVCOMP__) return; W.__GC_PATCH_ENVCOMP__ = true;
+var D = W.document, ST = W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout, SI = W.__GC_NATIVE_SETINTERVAL__ || W.setInterval;
+var CORE = W._gcEnvCompCore; if (!CORE) { try { console.warn('[GC ENVCOMP] envcomp-core.js did not load'); } catch (e) {} return; }
+var FN = '/.netlify/functions/envcomp', KR = 'gc_envcomp_rules', KS = 'gc_medical_status', LR = 'gc_envcomp_rules_v1', LS = 'gc_medical_status_v1', KEEP = 'gc_envcomp_keep_v1', KARCH = 'gc_envcomp_archive';
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v.filter(function(x){ return x != null; }) : []; }
+function obj(v){ return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function today(){ return CORE.today(); }
+function nice(d){ d = s(d).slice(0, 10); return /^\d{4}-\d{2}-\d{2}$/.test(d) ? (+d.slice(5, 7)) + '/' + (+d.slice(8, 10)) + '/' + d.slice(0, 4) : ''; }
+function nowIso(){ return new Date().toISOString(); }
+function uid(p){ return (p || 'ec') + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+function lsGet(k, d){ try { var v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } }
+function lsSet(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+function user(){ try { if (typeof W._gcMeUser === 'function') { var u = W._gcMeUser(); if (u && (u.name || u.email)) return u; } } catch (e) {} try { var m = W._gcMeNow; if (m && (m.name || m.email)) return m; } catch (e) {} return {}; }
+function myEmail(){ try { var e = W.__GC_AUTH__ && W.__GC_AUTH__.email && W.__GC_AUTH__.email(); if (e) return low(e); } catch (e) {} try { return low((JSON.parse(localStorage.getItem('gc_auth_v1') || 'null') || {}).email); } catch (e) { return ''; } }
+function me(){ var u = user(); if (s(u.name)) return s(u.name); var e = myEmail(); var x = arr(W._crm && W._crm.users).find(function(z){ return z && low(z.email) === e; }); return x ? s(x.name) : e || 'someone'; }
+function admin(){ try { if (W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()) return true; } catch (e) {} return false; }
+function office(){ if (admin()) return true; try { if (W._gcIsOfficeFull && W._gcIsOfficeFull()) return true; } catch (e) {} var u = user(); return /office/i.test(s(u.role) + ' ' + s(u.profile)); }
+/* the Office Manager = the payroll grant (SEC2 asks the database); the server decides again on every request */
+function priv(){ if (admin()) return true; try { var a = W.__GC_SEC2 && W.__GC_SEC2.access(); return !!(a && a.known && a.payroll); } catch (e) { return false; } }
+function envPerson(){ try { var k = W._gcMitWS && W._gcMitWS.kind ? s(W._gcMitWS.kind()) : ''; return /^env|^dual/.test(k); } catch (e) { return false; } }
+function sb(k){ try { return Promise.resolve(W._ehSb ? W._ehSb(k) : null).then(function(v){ if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) {} } return v; }, function(){ return null; }); } catch (e) { return Promise.resolve(null); } }
+function put(k, v){ try { var f = W._supaUpsertNow || W._supaUpsert; return Promise.resolve(f ? f(k, v) : null); } catch (e) { return Promise.resolve(null); } }
+function toast(m, bad){ try { var t = D.createElement('div'); t.className = 'gc-ec-toast'; t.setAttribute('data-gc-keep', '1'); t.setAttribute('role', 'status'); t.textContent = m; t.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:2147483200;background:' + (bad ? '#7f1d1d' : '#0f1d2f') + ';color:#fff;padding:10px 16px;border-radius:10px;font:600 13.5px Inter,Arial,sans-serif;max-width:92vw;box-shadow:0 6px 20px rgba(0,0,0,.3)'; D.body.appendChild(t); ST.call(W, function(){ try { t.remove(); } catch (e) {} }, 4500); } catch (e) {} }
+function fnCall(body){
+  return W.fetch(FN, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) })
+    .then(function(r){ return r.text().then(function(t){ var o = {}; try { o = JSON.parse(t); } catch (e) { o = { ok: false, error: t.slice(0, 200) }; } if (!r.ok && o.ok !== false) o.ok = false; return o; }); }, function(e){ return { ok: false, error: 'Cannot reach the server (' + (e && e.message) + ').' }; });
+}
+
+/* ── the rules (admin-editable) and the medical status (current / due only) ── */
+var RAW = lsGet(LR, null), MS = lsGet(LS, null) || { people: {} };
+function rules(){ return CORE.rules(RAW); }
+function pullRules(){ return sb(KR).then(function(v){ if (v && typeof v === 'object' && s(v.at) !== s(RAW && RAW.at)) { RAW = v; lsSet(LR, v); } return rules(); }); }
+var HIST = Promise.resolve();   /* the rules' history is written one save after another (nothing lost to a race) */
+function saveRules(t){
+  if (!admin()) return Promise.resolve({ ok: false, error: 'Only an admin can change the compliance rules.' });
+  var out = JSON.parse(JSON.stringify(t || {})); out.v = 1; out.at = nowIso(); out.by = me();
+  /* records are kept forever: shortening any retention needs the admin to say so, in words */
+  var was = rules(), shorter = arr(out.retention).filter(function(r){ return CORE.retainYears(CORE.rules(out), r.cat) < CORE.retainYears(was, r.cat); });
+  if (shorter.length && !(t && t.__confirmShorten)) { var ans = W.prompt('You are SHORTENING how long these records are kept: ' + shorter.map(function(r){ return r.label + ' → ' + r.years + ' years'; }).join('; ') + '.\nThe owner\'s rule is to keep everything forever. Type SHORTEN to do it anyway.', ''); if (s(ans).toUpperCase() !== 'SHORTEN') return Promise.resolve({ ok: false, error: 'Not saved — retention was not shortened.' }); }
+  delete out.__confirmShorten;
+  var prev = RAW;
+  RAW = out; lsSet(LR, out);
+  /* every version of the rules is kept (who, when, the previous table) */
+  var hEnt = { at: nowIso(), by: me(), prev: prev || null }; HIST = HIST.then(function(){ return sb(KR + '_history'); }).then(function(h){ h = obj(h); h.list = arr(h.list).concat([hEnt]); return put(KR + '_history', h); }).catch(function(){});
+  return put(KR, out).then(function(){ return { ok: true }; }, function(){ return { ok: true, cloud: false }; });
+}
+function pullStatus(){ return sb(KS).then(function(v){ if (v && typeof v === 'object' && v.people) { MS = v; lsSet(LS, v); } return MS; }); }
+var CERTS = null;   /* 📜 Certifications as the cloud has it (patch CERTS only loads it on an admin's computer) */
+function pullCerts(){ return sb('gc_certs').then(function(v){ if (v && typeof v === 'object' && Array.isArray(v.list)) CERTS = v.list; return CERTS; }); }
+function certsList(){ var L = []; try { if (W._gcCerts && typeof W._gcCerts.list === 'function') L = arr(W._gcCerts.list()); } catch (e) {} if (!L.length && CERTS) L = arr(CERTS).filter(function(c){ return c && !c.archived; }); return L.length ? L : arr(obj(lsGet('gc_certs_cache', {})).list).filter(function(c){ return c && !c.archived; }); }
+function company(p){ try { if (W._gcCo && W._gcCo.ofJob) return W._gcCo.ofJob(p); } catch (e) {} return s(p.companyId) || 'construction'; }
+function ctx(){ return { rules: rules(), certs: certsList(), users: arr(W._crm && W._crm.users), schedule: schedList(), medStatus: obj(MS.people), today: today(), company: company, haz: function(p){ return typeof W._gcHazOf === 'function' ? W._gcHazOf(p) : {}; } }; }
+function projects(){ return arr(W._crm && W._crm.projects); }
+function proj(pid){ return projects().find(function(p){ return p && s(p.id) === s(pid); }) || null; }
+function evaluate(p){ try { return CORE.evaluate(p, ctx()); } catch (e) { W.__gcEcErr = String(e && e.stack || e); return { on: false, items: [], people: [], closeout: [], status: 'ok', counts: {} }; } }
+function isOn(p){ try { return !!p && !p.deleted && CORE.isOn(p, ctx()); } catch (e) { return false; } }
+function activeJob(p){ return !!p && !p.deleted && !/(complete|closed|lost|cancel|archiv|dead|void|declined)/i.test(s(p.status)) && !p.importedHistory; }
+function envJobs(all){ return projects().filter(function(p){ return p && p.id && (all ? !p.deleted : activeJob(p)) && isOn(p); }); }
+
+/* save a change on a job: the CRM's own way (setProjects + the projects push) */
+function saveJob(pid, mut){
+  var S = W._setProjects, at = nowIso(); if (typeof S !== 'function') return false;
+  try { S(function(prev){ return Array.isArray(prev) ? prev.map(function(x){ if (!x || s(x.id) !== s(pid)) return x; var n = mut(Object.assign({}, x)) || x; n.updatedAt = at; return n; }) : prev; }); } catch (e) { return false; }
+  ST.call(W, function(){ try { if (W._supaUpsertNow && W._crm && Array.isArray(W._crm.projects)) W._supaUpsertNow('projects', W._crm.projects); } catch (e) {} paintSoon(); }, 600);
+  return true;
+}
+function setEC(pid, fn){ return saveJob(pid, function(p){ p.envComp = fn(JSON.parse(JSON.stringify(obj(p.envComp)))) || p.envComp; return p; }); }
+function addLog(pid, rec){ var r = Object.assign({ id: uid('el_'), at: nowIso(), by: me(), date: today() }, rec); var p = proj(pid); r.retainCat = CORE.recCat(r, p ? evaluate(p).kinds || [] : []); saveJob(pid, function(q){ q.envLog = arr(q.envLog).concat([r]); return q; }); return r; }
+
+/* ── files ── */
+function pickFiles(accept, multiple){ return new Promise(function(res){ var i = D.createElement('input'); i.type = 'file'; if (accept) i.accept = accept; if (multiple) i.multiple = true; i.style.display = 'none'; i.onchange = function(){ res(Array.prototype.slice.call(i.files || [])); i.remove(); }; D.body.appendChild(i); i.click(); }); }
+function storeFile(f, pid){ if (!f) return Promise.resolve(null); if (typeof W._gcStoreFile !== 'function') return Promise.resolve(null); return Promise.resolve(W._gcStoreFile(f, { kind: 'envcomp', pid: pid, name: f.name })).then(function(m){ return m && m.ref ? { ref: s(m.ref), name: s(m.name || f.name) } : null; }, function(){ return null; }); }
+function storeAll(list, pid){ return Promise.all(arr(list).map(function(f){ return storeFile(f, pid); })).then(function(l){ return l.filter(Boolean); }); }
+function fileLink(f){ f = obj(f); return s(f.ref) ? '<button type="button" class="lnk" data-ec-file="' + esc(f.ref) + '" data-ec-fname="' + esc(f.name) + '">📎 ' + esc(f.name || 'file') + '</button>' : ''; }
+D.addEventListener('click', function(e){ var b = e.target && e.target.closest ? e.target.closest('[data-ec-file]') : null; if (!b) return; e.preventDefault(); e.stopPropagation(); try { if (W._gcOpenRef) W._gcOpenRef(b.getAttribute('data-ec-file'), b.getAttribute('data-ec-fname')); } catch (x) {} }, true);
+
+/* ── the look ── */
+function css(){
+  if (D.getElementById('gc-ec-css')) return;
+  var st = D.createElement('style'); st.id = 'gc-ec-css';
+  st.textContent = '.gc-ec{background:#fff;border:1px solid #e2e8f0;border-left:5px solid #0f766e;border-radius:12px;padding:12px 14px;margin:0 0 12px;font:14px Inter,Arial,sans-serif;color:#0f172a}'
+    + '.gc-ec h4{margin:0 0 4px;font-size:16px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}.gc-ec .m{color:#64748b;font-size:12.5px}.gc-ec .sec{font-weight:800;font-size:12px;color:#0f766e;margin:12px 0 4px;text-transform:uppercase;letter-spacing:.03em;display:flex;gap:8px;align-items:center;flex-wrap:wrap}'
+    + '.gc-ec .r{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center;border-top:1px solid #f1f5f9;padding:6px 0}.gc-ec .r .l{flex:1 1 260px;min-width:0}.gc-ec .r .b{display:flex;flex-wrap:wrap;gap:6px;margin-left:auto}'
+    + '.gc-ec button,.gc-ec-ov button,.gc-ec-over button{border:1px solid #cbd5e1;background:#fff;border-radius:7px;padding:5px 10px;font:600 12.5px Inter,Arial,sans-serif;cursor:pointer;color:#0f172a;min-height:34px}'
+    + '.gc-ec button.g,.gc-ec-ov button.g{background:#0f766e;color:#fff;border-color:#0f766e}.gc-ec .lnk,.gc-ec-ov .lnk{border:0;background:none;color:#1d4ed8;padding:0 2px;min-height:0;text-decoration:underline}'
+    + '.gc-ec-chip{display:inline-block;border-radius:999px;padding:2px 9px;font:800 12px Inter,Arial,sans-serif;white-space:nowrap}.gc-ec-chip.ok{background:#dcfce7;color:#14532d}.gc-ec-chip.due{background:#fef3c7;color:#92400e}.gc-ec-chip.block{background:#fee2e2;color:#991b1b}.gc-ec-chip.wait,.gc-ec-chip.na{background:#f1f5f9;color:#475569}'
+    + '.gc-ec .ppl{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:8px;margin:4px 0}.gc-ec .pc{border:1px solid #e2e8f0;border-radius:10px;padding:8px}.gc-ec .pc b{font-size:14px}.gc-ec .pc .ck{font-size:12.5px;margin-top:3px}'
+    + '.gc-ec select,.gc-ec-ov select,.gc-ec-ov input,.gc-ec-ov textarea{border:1px solid #cbd5e1;border-radius:7px;padding:5px 7px;font:13.5px Inter,Arial,sans-serif;max-width:100%;box-sizing:border-box}'
+    + '.gc-ec .warn{background:#fef2f2;border:1px solid #fca5a5;color:#991b1b;border-radius:8px;padding:7px 9px;margin:6px 0;font-size:13px}.gc-ec .info{background:#f0fdfa;border:1px solid #99f6e4;color:#115e59;border-radius:8px;padding:6px 9px;margin:6px 0;font-size:12.5px}'
+    + '.gc-ec-ov{position:fixed;inset:0;z-index:2147483000;background:rgba(15,23,42,.55);display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto;font:14px Inter,Arial,sans-serif}'
+    + '.gc-ec-ov .in{background:#fff;color:#0f172a;border-radius:14px;max-width:760px;width:100%;padding:16px;box-shadow:0 20px 50px rgba(0,0,0,.3);margin:auto 0;box-sizing:border-box}.gc-ec-ov h3{margin:0 0 6px;font-size:18px}'
+    + '.gc-ec-ov label{display:block;font-size:13px;font-weight:700;margin:8px 0 3px}.gc-ec-ov input:not([type=checkbox]),.gc-ec-ov select,.gc-ec-ov textarea{width:100%;min-height:38px}.gc-ec-ov .chk{display:flex;gap:8px;align-items:flex-start;font-weight:600;margin:7px 0}.gc-ec-ov .chk input{width:20px;height:20px;flex:0 0 auto}'
+    + '.gc-ec-ov .acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.gc-ec-ov .acts button{flex:1 1 140px;min-height:42px;font-size:14px}.gc-ec-ov .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:0 12px}'
+    + '.gc-ec-ov table,.gc-ec-over table{width:100%;border-collapse:collapse;font-size:13px}.gc-ec-ov th,.gc-ec-ov td,.gc-ec-over th,.gc-ec-over td{border-bottom:1px solid #e2e8f0;padding:5px 6px;text-align:left;vertical-align:top}.gc-ec-ov .tw,.gc-ec-over .tw{overflow-x:auto}'
+    + '.gc-ec-ov .m{color:#64748b;font-size:12.5px}.gc-ec-ov .sec{font-weight:800;color:#0f766e;margin:14px 0 4px;font-size:13px;text-transform:uppercase;letter-spacing:.03em}'
+    + '.gc-ec-over{background:#fff;border:1px solid #e2e8f0;border-left:5px solid #0f766e;border-radius:14px;padding:12px 14px;margin:0 0 12px;color:#0f172a}.gc-ec-over h3{margin:0 0 4px}'
+    + '.gc-ec-fchip{display:block;margin:6px 0 0;font:700 12.5px Inter,Arial,sans-serif;border-radius:8px;padding:5px 8px}.gc-ec-fchip.ok{background:#ecfdf5;color:#065f46}.gc-ec-fchip.due{background:#fffbeb;color:#92400e}.gc-ec-fchip.block{background:#fef2f2;color:#991b1b}'
+    + '#gc-ec-minebtn{display:flex;width:100%;align-items:center;gap:10px;background:#fff;border:1px solid #99f6e4;border-radius:14px;padding:12px;margin:0 0 10px;font:800 14.5px Inter,Arial,sans-serif;color:#115e59;cursor:pointer;text-align:left;min-height:52px}#gc-ec-minebtn .n{margin-left:auto;background:#dc2626;color:#fff;border-radius:999px;padding:1px 8px;font-size:12px}';
+  D.head.appendChild(st);
+}
+var ICON = { ok: '✅ compliant', due: '⚠ items due', block: '⛔ blocking' };
+function chip(st, txt){ return '<span class="gc-ec-chip ' + esc(st) + '">' + esc(txt || ({ ok: '✅', due: '⚠', block: '⛔', wait: '·', na: 'N/A' })[st] || st) + '</span>'; }
+function kindLabel(k){ var r = arr(rules().kinds).find(function(x){ return x.key === k; }); return r ? s(r.label) : k; }
+
+/* ── a simple sheet with fields ── */
+function modal(title, inner, onSave, saveLabel){
+  css(); var old = D.getElementById('gc-ec-modal'); if (old) old.remove();
+  var o = D.createElement('div'); o.id = 'gc-ec-modal'; o.className = 'gc-ec-ov'; o.setAttribute('role', 'dialog'); o.setAttribute('aria-modal', 'true'); o.setAttribute('aria-label', title); o.setAttribute('data-gc-keep', '1');
+  o.innerHTML = '<div class="in"><h3>' + esc(title) + '</h3>' + inner + '<div class="acts">' + (onSave ? '<button type="button" class="g" data-m="save">' + esc(saveLabel || 'Save') + '</button>' : '') + '<button type="button" data-m="close">' + (onSave ? 'Cancel' : 'Close') + '</button></div></div>';
+  o.addEventListener('click', function(e){
+    var b = e.target.closest && e.target.closest('[data-m]'); if (e.target === o) { o.remove(); return; } if (!b) return;
+    if (b.getAttribute('data-m') === 'close') { o.remove(); return; }
+    if (b.getAttribute('data-m') === 'save' && onSave) { var v = read(o); b.disabled = true; Promise.resolve(onSave(v, o)).then(function(r){ if (r !== false) o.remove(); else b.disabled = false; }, function(){ b.disabled = false; }); }
+  });
+  D.body.appendChild(o); return o;
+}
+function read(o){
+  var v = { chk: {}, files: {} };
+  [].forEach.call(o.querySelectorAll('[data-f]'), function(el){ v[el.getAttribute('data-f')] = s(el.value); });
+  [].forEach.call(o.querySelectorAll('[data-c]'), function(el){ if (el.checked) v.chk[el.getAttribute('data-c')] = true; });
+  [].forEach.call(o.querySelectorAll('input[type=file][data-file]'), function(el){ v.files[el.getAttribute('data-file')] = Array.prototype.slice.call(el.files || []); });
+  return v;
+}
+function fld(k, label, type, val, ph){ if (type === 'textarea') return '<label>' + esc(label) + '<textarea data-f="' + k + '" rows="3"' + (ph ? ' placeholder="' + esc(ph) + '"' : '') + '>' + esc(val) + '</textarea></label>'; return '<label>' + esc(label) + '<input data-f="' + k + '" type="' + (type || 'text') + '" value="' + esc(val) + '"' + (ph ? ' placeholder="' + esc(ph) + '"' : '') + '></label>'; }
+function sel(k, label, opts, val){ return '<label>' + esc(label) + '<select data-f="' + k + '">' + opts.map(function(o){ var v = Array.isArray(o) ? o[0] : o, t = Array.isArray(o) ? o[1] : o; return '<option value="' + esc(v) + '"' + (s(v) === s(val) ? ' selected' : '') + '>' + esc(t || '—') + '</option>'; }).join('') + '</select></label>'; }
+function fileIn(k, label, multi, accept){ return '<label>' + esc(label) + '<input type="file" data-file="' + k + '"' + (multi ? ' multiple' : '') + (accept ? ' accept="' + esc(accept) + '"' : '') + '></label>'; }
+
+/* ═════ the job panel ═════ */
+var MITYPE = { personal: 'Personal (worker)', area: 'Area — inside containment', clearance: 'Clearance', baseline: 'Background (before work)' };
+function keptTxt(R, c, base){ var u = CORE.retainUntil(R, c, base); return u ? 'until ' + nice(u) : 'forever'; }
+function retainLine(p, E){
+  var R = rules(), L = arr(p.envLog).filter(function(r){ return r && !r.deleted && /^(air|compday|contain|ppe|waste|notice|survey|hzclean)$/.test(s(r.kind)); });
+  var n = L.length + Object.keys(obj(obj(p.envComp).notices)).length; if (!n) return '<div class="m">No compliance records yet. Every record is kept ' + esc(arr(R.retention).every(function(r){ return CORE.retainYears(R, r.cat) === Infinity; }) ? 'forever' : 'for its retention period') + ' (the owner\'s rule: "Always keep records for everything") — "Delete" is Archive; edits keep the earlier versions.</div>';
+  var base = s(p.completionDate || p.completedAt).slice(0, 10) || today(), byCat = {};
+  L.forEach(function(r){ var c = s(r.retainCat) || CORE.recCat(r, E.kinds); byCat[c] = (byCat[c] || 0) + 1; });
+  return '<div class="m">' + n + ' record(s) kept and protected from deletion: ' + Object.keys(byCat).map(function(c){ var r = arr(R.retention).find(function(x){ return x.cat === c; }) || { label: c }; return byCat[c] + ' × ' + esc(r.label) + ' — ' + esc(keptTxt(R, c, base)); }).join(' · ') + '. "Delete" is 🗄 Archive (hidden, kept); edits keep the earlier versions.</div>';
+}
+function rowH(x, btns){ return '<div class="r" data-ec-item="' + esc(x.id) + '"><div class="l">' + chip(x.st) + ' <b>' + esc(x.label) + '</b><div class="m">' + esc(x.note || '') + '</div></div>' + (btns ? '<div class="b">' + btns + '</div>' : '') + '</div>'; }
+function html(p, E){
+  var R = rules(), off = office(), ad = admin(), EC = obj(p.envComp);
+  var h = '<h4>🛡 Compliance ' + chip(E.status, ICON[E.status]) + '<span class="m">' + esc(E.kinds.map(kindLabel).join(' + ')) + (E.state ? ' · ' + esc(E.state) : '') + ' · ' + (E.counts.block || 0) + ' blocking · ' + (E.counts.due || 0) + ' due</span></h4>'
+    + '<div class="m">Turns on by itself for lead, asbestos, mold and trauma / biohazard work. The lists are the company\'s rules (' + esc(CORE.CONFIRM.toLowerCase()) + ').' + (ad ? ' <button type="button" data-ec="rules">⚙ Compliance rules</button>' : '') + '</div>';
+  if (off) h += '<div class="sec">Settings <select data-ec-set="mode" aria-label="Compliance on this job"><option value="">Auto</option><option value="on"' + (EC.mode === 'on' ? ' selected' : '') + '>Always on</option><option value="off"' + (EC.mode === 'off' ? ' selected' : '') + '>Off for this job</option></select>'
+    + ' State <select data-ec-set="state" aria-label="State"><option value="">' + esc(E.state ? 'auto (' + E.state + ')' : 'not set') + '</option>' + ['TN', 'AR', 'MS'].map(function(x){ return '<option' + (EC.state === x ? ' selected' : '') + '>' + x + '</option>'; }).join('') + '</select>'
+    + ' Kinds ' + arr(R.kinds).filter(function(k){ return k.key !== 'general'; }).map(function(k){ return '<label style="font-weight:600;text-transform:none;letter-spacing:0;color:#0f172a"><input type="checkbox" data-ec-kind="' + esc(k.key) + '"' + (E.kinds.indexOf(k.key) >= 0 ? ' checked' : '') + '> ' + esc(k.label) + '</label>'; }).join(' ') + (arr(EC.kinds).length ? ' <button type="button" data-ec="kindsauto">auto kinds</button>' : '') + '</div>';
+  if (E.closeout.length && !EC.closeOverride) h += '<div class="warn">⛔ This job cannot be closed until it passes: ' + esc(E.closeout.join(' · ')) + '</div>';
+  var blk = E.items.filter(function(x){ return x.st === 'block'; }); if (blk.length) h += '<div class="warn"><b>Blocking:</b> ' + esc(blk.slice(0, 6).map(function(x){ return x.label; }).join(' · ')) + (blk.length > 6 ? ' …' : '') + '</div>';
+  /* 1 people */
+  h += '<div class="sec">1 · People on the job' + (off ? ' <button type="button" data-ec="addperson">＋ Add person</button>' : '') + '</div>';
+  var comp = E.items.filter(function(x){ return x.sec === 'people' && x.who === 'GrayCo (firm)'; });
+  comp.forEach(function(x){ h += rowH(x); });
+  E.items.filter(function(x){ return x.sec === 'people' && (x.id === 'crew' || (x.who !== 'GrayCo (firm)' && !/:/.test(x.id))); }).forEach(function(x){ h += rowH(x); });
+  if (E.people.length) {
+    h += '<div class="ppl">' + E.people.map(function(c){
+      var mine = E.items.filter(function(x){ return x.sec === 'people' && x.who === c.name && /:/.test(x.id); }), w = mine.some(function(x){ return x.st === 'block'; }) ? 'block' : mine.some(function(x){ return x.st === 'due'; }) ? 'due' : 'ok';
+      return '<div class="pc" data-ec-person="' + esc(c.name) + '">' + chip(w) + ' <b>' + esc(c.name) + '</b> ' + (off ? '<select data-ec-role="' + esc(c.name) + '" aria-label="Role of ' + esc(c.name) + '"><option value="supervisor"' + (c.role === 'supervisor' ? ' selected' : '') + '>Supervisor</option><option value="worker"' + (c.role !== 'supervisor' ? ' selected' : '') + '>Worker</option><option value="off">Not on this job</option></select>' : '<span class="m">' + esc(c.role) + '</span>')
+        + mine.map(function(x){ return '<div class="ck">' + chip(x.st) + ' ' + esc(x.label.replace(' — ' + c.name, '')) + ' <span class="m">' + esc(x.note || '') + '</span></div>'; }).join('')
+        + (c.email ? '' : '<div class="ck m">Not on the people list with an e-mail — certifications are matched by name.</div>') + '</div>';
+    }).join('') + '</div>';
+  }
+  /* 2 air */
+  var airItems = E.items.filter(function(x){ return x.sec === 'air'; });
+  if (airItems.length) {
+    h += '<div class="sec">2 · Air testing &amp; monitoring <button type="button" class="g" data-ec="air">🌫 Log a sample</button></div>';
+    airItems.forEach(function(x){ h += rowH(Object.assign({}, x, { label: x.label + (x.gate ? ' 🔒 close-out waits for it' : '') }), '<button type="button" data-ec="air" data-rule="' + esc(x.id) + '">＋ Log</button>'); });
+    var recs = arr(p.envLog).filter(function(r){ return CORE.live(r) && r.kind === 'air'; }).sort(function(a, b){ return s(a.date) < s(b.date) ? 1 : -1; }).slice(0, 12);
+    if (recs.length) h += '<div class="tw" style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px;margin-top:4px"><thead><tr><th style="text-align:left">Date</th><th style="text-align:left">Sample</th><th style="text-align:left">Sampler / lab</th><th style="text-align:left">Result</th><th style="text-align:left">Pass / fail</th><th></th></tr></thead><tbody>' + recs.map(function(r){
+      var pv = r.private; return '<tr data-ec-rec="' + esc(r.id) + '"><td>' + esc(nice(r.date)) + '</td><td>' + esc(s(r.type || r.atype)) + (r.loc ? ' · ' + esc(r.loc) : '') + '</td><td>' + esc([r.sampler, r.lab].filter(Boolean).join(' / ')) + '</td><td>' + (pv ? '<span class="m">in the worker\'s own records</span>' : esc([r.result, r.limit ? '(limit ' + r.limit + ')' : ''].filter(Boolean).join(' '))) + (arr(r.versions).length ? '<div class="m">' + arr(r.versions).length + ' earlier version(s) kept</div>' : '') + '</td><td>' + (pv ? '' : esc(r.pass)) + '</td><td>' + (pv ? '' : fileLink(r.file) + '<button type="button" data-ec="airedit" data-id="' + esc(r.id) + '">✏️</button>') + (off ? '<button type="button" data-ec="arch" data-id="' + esc(r.id) + '">🗄</button>' : '') + '</td></tr>'; }).join('') + '</tbody></table></div>';
+  }
+  /* 3 notices */
+  var nItems = E.items.filter(function(x){ return x.sec === 'notice'; });
+  if (nItems.length) { h += '<div class="sec">3 · Notifications &amp; permits <span class="m" style="text-transform:none;letter-spacing:0;font-weight:600">checklist items — confirm each with the state program</span></div>';
+    nItems.forEach(function(x){ var f = obj(obj(EC.notices)[x.id]); h += rowH(x, (x.st === 'ok' && f.filedOn ? fileLink(f.file) + (off ? '<button type="button" data-ec="nundo" data-id="' + esc(x.id) + '">Undo</button>' : '') : x.st === 'na' ? (off ? '<button type="button" data-ec="nundo" data-id="' + esc(x.id) + '">Undo</button>' : '') : '<button type="button" class="g" data-ec="notice" data-id="' + esc(x.id) + '">✓ Filed…</button>' + (off ? '<button type="button" data-ec="nna" data-id="' + esc(x.id) + '">N/A</button>' : ''))); }); }
+  /* 4 daily */
+  var dItem = E.items.filter(function(x){ return x.sec === 'daily'; })[0];
+  if (dItem) { var tt = dItem.totals || {}; h += '<div class="sec">4 · Daily log <button type="button" class="g" data-ec="daily">📋 Today\'s daily log</button></div>' + rowH(dItem)
+      + '<div class="m" data-ec-totals="1">Totals: ' + (tt.days || 0) + ' day(s) · ' + (tt.signed || 0) + ' signed off · waste ' + ((tt.sums || {})['waste.bags'] || 0) + ' bags / ' + ((tt.sums || {})['waste.drums'] || 0) + ' drums · manifests ' + esc(arr(tt.manifests).join(', ') || '—') + ' · ' + (tt.readings || 0) + ' pressure readings · ' + (tt.samples || 0) + ' pump records · ' + (tt.visitors || 0) + ' visitors · ' + (tt.incidents || 0) + ' day(s) with incidents</div>';
+    var dl = arr(p.envLog).filter(function(r){ return CORE.live(r) && r.kind === 'compday'; }).sort(function(a, b){ return s(a.date) < s(b.date) ? 1 : -1; }).slice(0, 7);
+    dl.forEach(function(r){ var V = obj(r.values); h += '<div class="r" data-ec-rec="' + esc(r.id) + '"><div class="l"><b>' + esc(nice(r.date)) + '</b> ' + (obj(r.signoff).name ? chip('ok', 'signed ' + r.signoff.name) : chip('due', 'not signed off')) + ' <span class="m">' + esc(r.by) + (V.weather ? ' · ' + esc(V.weather) : '') + (V.tasks ? ' · ' + esc(s(V.tasks).slice(0, 80)) : '') + (arr(r.versions).length ? ' · ' + arr(r.versions).length + ' earlier version(s) kept' : '') + '</span></div><div class="b">' + arr(r.photos).slice(0, 3).map(fileLink).join(' ') + '<button type="button" data-ec="dayedit" data-day="' + esc(r.date) + '">✏️ Open / edit</button>' + (off ? '<button type="button" data-ec="arch" data-id="' + esc(r.id) + '">🗄 Archive</button>' : '') + '</div></div>'; }); }
+  /* 5 programs */
+  var pItems = E.items.filter(function(x){ return x.sec === 'program'; });
+  if (pItems.length) { h += '<div class="sec">5 · Written programs</div>'; pItems.forEach(function(x){ h += rowH(x, (x.file ? '<a href="' + esc(x.file) + '" target="_blank" rel="noopener" style="border:1px solid #cbd5e1;border-radius:7px;padding:6px 10px;font:600 12.5px Inter,Arial,sans-serif;color:#0f172a;text-decoration:none">📄 Open</a>' : '') + '<button type="button" data-ec="prog" data-id="' + esc(x.id) + '">✓ Gone over for this job</button>'); }); }
+  /* 6 retention */
+  h += '<div class="sec">6 · Records — kept <button type="button" data-ec="pkg">📦 Record package (PDF)</button></div>' + retainLine(p, E);
+  var arch = arr(p.envLog).filter(function(r){ return r && r.archived && !r.deleted; });
+  if (arch.length && off) h += '<details><summary class="m">🗄 Archived (' + arch.length + ') — kept, hidden from the lists</summary>' + arch.map(function(r){ return '<div class="r" data-ec-rec="' + esc(r.id) + '"><div class="l"><b>' + esc(nice(r.date)) + ' · ' + esc(r.kind === 'compday' ? 'daily log' : s(r.type || r.kind)) + '</b><div class="m">archived ' + esc(new Date(r.archived.at).toLocaleString()) + ' by ' + esc(r.archived.by) + ' — ' + esc(r.archived.why) + '</div></div><div class="b">' + (ad ? '<button type="button" data-ec="restore" data-id="' + esc(r.id) + '">↩ Restore</button><button type="button" data-ec="del" data-id="' + esc(r.id) + '">Delete… (admin)</button>' : '') + '</div></div>'; }).join('') + '</details>';
+  if (arr(p.envAudit).length && ad) h += '<div class="m">Audit: ' + arr(p.envAudit).length + ' record(s) deleted by an admin (kept in the record package: who, when, why).</div>';
+  return h;
+}
+function findBack(){ var m = D.querySelector('main') || D.body; var bs = m.getElementsByTagName('button'); for (var i = 0; i < bs.length && i < 120; i++) if (/^\s*←\s*All Projects\s*$/.test(bs[i].textContent || '')) return bs[i]; return null; }
+var PAINT_T = 0;
+function paintSoon(){ clearTimeout(PAINT_T); PAINT_T = ST.call(W, paint, 250); }
+function paint(){
+  try {
+    if (D.hidden) return;
+    var op = W._gcOpenProject, p = op && op.id ? proj(op.id) : null, cur = D.getElementById('gc-ec');
+    if (!p || !isOn(p)) { if (cur) cur.remove(); return; }
+    var back = findBack(); if (!back || typeof W._gcJobBox !== 'function') return;
+    var box = W._gcJobBox(back); if (!box) return; css();
+    var E = evaluate(p), body = html(p, E); if (E.on && !E.closeout.length) CLEARED[s(p.id)] = 1; else if (E.closeout.length) delete CLEARED[s(p.id)];
+    if (cur && cur.__body === body && cur.getAttribute('data-pid') === s(p.id) && cur.parentElement === box) return;
+    var a = D.activeElement; if (cur && a && cur.contains(a) && /SELECT|INPUT|TEXTAREA/.test(a.tagName)) return;
+    var nu = D.createElement('div'); nu.id = 'gc-ec'; nu.className = 'gc-ec'; nu.setAttribute('data-gc-keep', '1'); nu.setAttribute('data-pid', s(p.id)); nu.setAttribute('data-status', E.status); nu.setAttribute('role', 'region'); nu.setAttribute('aria-label', 'Environmental compliance'); nu.innerHTML = body; nu.__body = body;
+    if (cur && cur.parentElement) cur.parentElement.replaceChild(nu, cur); else box.insertBefore(nu, box.firstChild);
+    if (nu.parentElement !== box) box.insertBefore(nu, box.firstChild);
+  } catch (e) { W.__gcEcErr = String(e && e.stack || e); }
+}
+
+/* ── the forms ── */
+function airForm(pid, ruleId){
+  var p = proj(pid); if (!p) return; var E = evaluate(p), R = rules();
+  var rl = arr(R.air).filter(function(r){ return CORE.hasKind(r, E.kinds); }), r0 = rl.find(function(r){ return r.id === ruleId; }) || rl[0] || { type: 'area' };
+  var crew = E.people.filter(function(c){ return c.email; });
+  var inner = '<div class="m">Personal samples go into that worker\'s OWN records (only they, the admins and the Office Manager see the result); area and clearance results are the job\'s and are also added to the records of everyone on the job that day.</div><div class="grid">'
+    + sel('rule', 'What it is for', rl.map(function(r){ return [r.id, r.label]; }).concat([['', 'Other sample']]), r0.id || '')
+    + sel('atype', 'Sample type', [['personal', 'Personal (worker breathing zone)'], ['area', 'Area (inside / outside containment)'], ['clearance', 'Clearance'], ['baseline', 'Background / baseline (before work)']], r0.type || 'area')
+    + fld('date', 'Date', 'date', today())
+    + sel('worker', 'Worker sampled (personal)', [['', '—']].concat(crew.map(function(c){ return [c.email, c.name]; })), '')
+    + fld('task', 'Task / location', 'text', '', 'e.g. scraping window trim, north bedroom')
+    + fld('sampler', 'Sampler', 'text', me()) + fld('lab', 'Lab', 'text', '')
+    + sel('method', 'Method', ['', 'PCM (fibers/cc)', 'TEM (structures/mm²)', 'Lead air (µg/m³)', 'Lead dust wipe (µg/ft²)', 'Spore trap (spores/m³)', 'ATP (RLU)', 'Visual'], '')
+    + fld('result', 'Result', 'text', '', 'e.g. 0.004 f/cc · 12 µg/ft²') + fld('limit', 'Limit / action level it is compared with', 'text', '', 'from the lab report or your program')
+    + sel('pass', 'Pass / fail', ['', 'Pass', 'Fail', 'Waiting on lab'], '') + fileIn('file', 'Lab report (PDF / photo)', false, 'application/pdf,image/*') + '</div>';
+  modal('🌫 Log an air sample — ' + s(p.name), inner, function(v){ return logAir(pid, v); }, 'Save sample');
+}
+function logAir(pid, v){
+  var p = proj(pid); if (!p) return Promise.resolve(false); v = v || {};
+  var at = s(v.atype) || 'area', rid = s(v.rule);
+  if (at === 'personal' && !s(v.worker)) { toast('Pick the worker who was sampled (they need an e-mail on the people list).', true); return Promise.resolve(false); }
+  var files = v.files && v.files.file ? v.files.file : (v.file instanceof W.File ? [v.file] : []);
+  return storeAll(files, pid).then(function(F){
+    var file = F[0] || null, cmp = s(v.limit) && s(v.result) ? s(v.result) + ' vs ' + s(v.limit) : '';
+    if (at === 'personal') {
+      var w = evaluate(p).people.find(function(c){ return c.email === low(v.worker); }) || { email: low(v.worker), name: '' };
+      return fnCall({ op: 'add', email: w.email, name: w.name, cat: 'exposure', rec: { date: v.date || today(), pid: s(pid), job: s(p.name), task: v.task, atype: 'Personal (worker)', method: v.method, result: v.result, al: v.limit, cmp: cmp, pass: v.pass, lab: v.lab, sampler: v.sampler, file: file } }).then(function(j){
+        if (!j || !j.ok) { toast('Not saved: ' + s(j && j.error || 'the server did not answer'), true); return false; }
+        addLog(pid, { kind: 'air', type: MITYPE.personal, atype: MITYPE.personal, rule: rid, date: v.date || today(), sampler: v.sampler, lab: v.lab, method: v.method, private: true, task: v.task ? 'personal sample' : '' });
+        toast('🌫 Personal sample saved to the worker\'s own records (they are told a new result is there).'); return true;
+      });
+    }
+    var rec = addLog(pid, { kind: 'air', type: MITYPE[at] || at, atype: MITYPE[at] || at, rule: rid, date: v.date || today(), loc: v.task, sampler: v.sampler, lab: v.lab, method: v.method, result: v.result, limit: v.limit, pass: v.pass, file: file });
+    var who = CORE.crewOnDay(p, ctx(), v.date || today()).filter(function(c){ return c.email; }).map(function(c){ return { email: c.email, name: c.name }; });
+    if (who.length && /area|clearance/.test(at)) fnCall({ op: 'jobAir', pid: s(pid), job: s(p.name), sample: { date: rec.date, atype: rec.type, task: v.task, method: v.method, result: v.result, al: v.limit, cmp: cmp, pass: v.pass, lab: v.lab, sampler: v.sampler, sampleId: rec.id, file: file }, workers: who });
+    if (/clearance/.test(at) && /^pass/i.test(s(v.pass))) ST.call(W, function(){ var q = proj(pid); if (q && !CORE.closeoutBlockers(q, ctx()).length) CLEARED[s(pid)] = 1; }, 400);
+    toast('🌫 Sample saved on the job' + (/clearance/.test(at) && /^pass/i.test(s(v.pass)) ? ' — clearance passed' : '') + '.');
+    return true;
+  });
+}
+function noticeForm(pid, id){
+  var p = proj(pid), x = p && evaluate(p).items.find(function(i){ return i.id === id; }); if (!x) return;
+  modal('📨 ' + x.label, '<div class="m">' + esc(x.note) + '</div>' + fld('filedOn', 'Filed on', 'date', today()) + fld('conf', 'Confirmation # / permit #', 'text', '') + fileIn('file', 'The filed notice / receipt (optional)', false, 'application/pdf,image/*'), function(v){ return fileNotice(pid, id, v); }, 'Save');
+}
+function fileNotice(pid, id, v){
+  var p = proj(pid); if (!p) return Promise.resolve(false); v = v || {};
+  var x = evaluate(p).items.find(function(i){ return i.id === id; }) || { label: id, agency: '' };
+  return storeAll(v.files && v.files.file, pid).then(function(F){
+    var rec = { filedOn: s(v.filedOn) || today(), conf: s(v.conf), file: F[0] || null, by: me(), at: nowIso() };
+    setEC(pid, function(E){ E.notices = obj(E.notices); var cur = obj(E.notices[id]), hist = arr(cur.history); if (cur.filedOn || cur.na) { var prev = Object.assign({}, cur); delete prev.history; hist = hist.concat([{ at: nowIso(), by: me(), prev: prev }]); } E.notices[id] = Object.assign(rec, hist.length ? { history: hist } : {}); return E; });
+    ST.call(W, function(){ addLog(pid, { kind: 'notice', rule: id, date: rec.filedOn, agency: x.agency, ntype: x.label, start: s(p.startDate).slice(0, 10), conf: rec.conf, file: rec.file }); }, 80);
+    toast('📨 Marked filed ' + nice(rec.filedOn) + '.'); return true;
+  });
+}
+/* ── the daily log: ONE per job per day, every field from the rules (admin-editable per job kind), edits keep versions ── */
+function colsOf(f){ return CORE.listOf(f.cols).map(function(c){ var q = c.split('|'); return { k: s(q[0]), l: s(q[1] || q[0]) }; }); }
+function dayLog(p, day){ return arr(p && p.envLog).filter(function(r){ return CORE.live(r) && r.kind === 'compday' && s(r.date) === day; })[0] || null; }
+function rowsTable(f, rows, extra){
+  var C0 = colsOf(f), R0 = arr(rows).length ? arr(rows) : [{}];
+  return '<div class="tw" data-rows="' + esc(f.key) + '"><table><thead><tr>' + C0.map(function(c){ return '<th>' + esc(c.l) + '</th>'; }).join('') + '</tr></thead><tbody>' + R0.map(function(r, i){ return '<tr data-ri="' + i + '">' + C0.map(function(c){ return '<td><input data-col="' + esc(c.k) + '" value="' + esc(s(r[c.k])) + '" aria-label="' + esc(c.l) + '" style="min-width:70px"></td>'; }).join('') + '</tr>'; }).join('') + '</tbody></table></div><button type="button" data-addrow="' + esc(f.key) + '" style="margin:2px 0 6px">＋ row</button>' + (extra || '');
+}
+function dailyForm(pid, day){
+  var p = proj(pid); if (!p) return; day = day || today();
+  var E = evaluate(p), L = arr(rules().daily).filter(function(d){ return CORE.hasKind(d, E.kinds); }), cur = dayLog(p, day) || {}, V = obj(cur.values), RW = obj(cur.rows), sec = '';
+  var air = arr(p.envLog).filter(function(r){ return CORE.live(r) && r.kind === 'air' && s(r.date) === day; });
+  var inner = '<div class="m">' + esc(nice(day)) + (cur.id ? ' · started by ' + esc(cur.by) + (arr(cur.versions).length ? ' · ' + arr(cur.versions).length + ' earlier version(s) kept' : '') : ' · new') + '</div>';
+  L.forEach(function(f){
+    if (f.section && f.section !== sec) { sec = f.section; inner += '<div class="sec">' + esc(sec) + '</div>'; }
+    var k = f.key, t = f.type || 'text';
+    if (t === 'check') inner += '<label class="chk"><input type="checkbox" data-c="' + esc(k) + '"' + (V[k] ? ' checked' : '') + '><span>' + esc(f.label) + '</span></label>';
+    else if (t === 'textarea') inner += fld('v_' + k, f.label, 'textarea', s(V[k]));
+    else if (t === 'number' || t === 'text' || t === 'time' || t === 'date') inner += fld('v_' + k, f.label, t, s(V[k]));
+    else if (t === 'rows') inner += '<label>' + esc(f.label) + '</label>' + rowsTable(f, RW[k]);
+    else if (t === 'crew') { var rows = arr(RW[k]).length ? RW[k] : E.people.map(function(c){ return { name: c.name, role: c.role, cert: (E.items.some(function(x){ return x.who === c.name && x.st === 'block'; }) ? '⛔ ' : E.items.some(function(x){ return x.who === c.name && x.st === 'due'; }) ? '⚠ ' : '✅ ') + 'auto-checked' }; });
+      inner += '<label>' + esc(f.label) + '</label>' + rowsTable({ key: k, cols: 'name|Name, role|Role, in|Time in, out|Time out, cert|Certifications' }, rows); }
+    else if (t === 'airlink') inner += '<label>' + esc(f.label) + '</label>' + (air.length ? '<div class="m">Logged today: ' + air.map(function(r){ return esc(s(r.type) + (r.loc ? ' · ' + r.loc : '') + (r.private ? ' (personal — in the worker\'s records)' : r.result ? ' · ' + r.result : '')); }).join(' | ') + '</div>' : '<div class="m">No sample logged today yet (🌫 Log a sample).</div>') + rowsTable(f, RW[k]);
+    else if (t === 'photos') inner += (arr(cur.photos).length ? '<div class="m">' + arr(cur.photos).map(fileLink).join(' ') + '</div>' : '') + fileIn('photos', '📷 ' + f.label, true, 'image/*');
+    else if (t === 'signoff') inner += '<label class="chk"><input type="checkbox" data-c="__signoff"' + (obj(cur.signoff).name ? ' checked' : '') + '><span>' + esc(f.label) + ' — ' + (obj(cur.signoff).name ? 'signed by ' + esc(cur.signoff.name) + ' ' + esc(new Date(cur.signoff.at).toLocaleString()) : 'I am the supervisor and this log is complete (' + esc(me()) + ', now)') + '</span></label>';
+  });
+  var o = modal('📋 Daily log — ' + s(p.name), inner, function(v, el){ return logDaily(pid, Object.assign(v, { rowsIn: readRows(el), day: day })); }, 'Save the daily log');
+  o.addEventListener('click', function(e){ var b = e.target.closest && e.target.closest('[data-addrow]'); if (!b) return; var tb = o.querySelector('[data-rows="' + b.getAttribute('data-addrow') + '"] tbody'), last = tb && tb.lastElementChild; if (!last) return; var n = last.cloneNode(true); [].forEach.call(n.querySelectorAll('input'), function(i){ i.value = ''; }); tb.appendChild(n); });
+  o.setAttribute('data-ec-daily', s(pid));
+}
+function readRows(el){ var out = {}; [].forEach.call(el ? el.querySelectorAll('[data-rows]') : [], function(w){ out[w.getAttribute('data-rows')] = [].map.call(w.querySelectorAll('tbody tr'), function(tr){ var r = {}; [].forEach.call(tr.querySelectorAll('input[data-col]'), function(i){ if (s(i.value)) r[i.getAttribute('data-col')] = s(i.value); }); return r; }).filter(function(r){ return Object.keys(r).length; }); }); return out; }
+/* save (or update) the day's log; an update keeps the previous values as a version (who, when) */
+function logDaily(pid, v){
+  var p = proj(pid); if (!p) return Promise.resolve(false); v = v || {};
+  var day = s(v.day) || today(), values = Object.assign({}, obj(v.values)); Object.keys(v).forEach(function(k){ if (/^v_/.test(k)) values[k.slice(2)] = s(v[k]); });
+  Object.keys(obj(v.chk)).forEach(function(k){ if (k !== '__signoff') values[k] = true; });
+  arr(rules().daily).forEach(function(f){ if (f.type === 'check' && !obj(v.chk)[f.key] && v.chk) values[f.key] = values[f.key] === true; });
+  var rows = Object.assign({}, obj(v.rows), obj(v.rowsIn)), sign = !!(obj(v.chk).__signoff || v.signoff);
+  return storeAll((v.files && v.files.photos) || v.photos, pid).then(function(ph){
+    var cur = dayLog(p, day), now = nowIso();
+    if (!cur) { addLog(pid, { id: 'cd_' + day.replace(/-/g, '') + '_' + Math.random().toString(36).slice(2, 6), kind: 'compday', date: day, values: values, rows: rows, photos: ph, signoff: sign ? { name: me(), at: now } : null, versions: [] }); }
+    else saveJob(pid, function(q){ q.envLog = arr(q.envLog).map(function(r){ if (!r || r.id !== cur.id) return r; var prev = { values: r.values || null, rows: r.rows || null, signoff: r.signoff || null, photos: r.photos || [] }; return Object.assign({}, r, { values: values, rows: rows, photos: arr(r.photos).concat(ph), signoff: sign ? (obj(r.signoff).name ? r.signoff : { name: me(), at: now }) : null, versions: arr(r.versions).concat([{ at: now, by: me(), prev: prev }]), editedAt: now, editedBy: me() }); }); return q; });
+    toast('📋 Daily log saved' + (sign ? ' and signed off' : '') + (ph.length ? ' with ' + ph.length + ' photo(s)' : '') + '.'); return true;
+  });
+}
+/* "Always keep records for everything": Archive (hidden, kept with who / when / why; admins restore); a true delete is admin-only with a reason + an audit entry */
+function archiveRec(pid, id, why){ if (!office()) return false; why = s(why); if (!why) return false; delete CLEARED[s(pid)]; return saveJob(pid, function(q){ q.envLog = arr(q.envLog).map(function(r){ return r && r.id === id ? Object.assign({}, r, { archived: { by: me(), at: nowIso(), why: why } }) : r; }); return q; }); }
+function restoreRec(pid, id){ if (!admin()) return false; return saveJob(pid, function(q){ q.envLog = arr(q.envLog).map(function(r){ if (!r || r.id !== id) return r; var n = Object.assign({}, r, { versions: arr(r.versions).concat([{ at: nowIso(), by: me(), prev: { archived: r.archived || null }, restored: true }]) }); delete n.archived; return n; }); return q; }); }
+var DELETED = {};
+function deleteRec(pid, id, why){ if (!admin() || !s(why)) return false; delete CLEARED[s(pid)]; var p = proj(pid), r0 = p && arr(p.envLog).find(function(r){ return r && r.id === id; }); if (!r0) return false; DELETED[id] = 1; var K = obj(KEPT[s(pid)]); if (K.recs) delete K.recs[id]; lsSet(KEEP, KEPT); return saveJob(pid, function(q){ q.envLog = arr(q.envLog).map(function(r){ return r && r.id === id ? { id: id, kind: s(r0.kind), date: s(r0.date), deleted: true, deletedAt: nowIso(), deletedBy: me(), why: s(why) } : r; });   /* a content-free tombstone: a removed list item could come back through the two-computer merge */ q.envAudit = arr(q.envAudit).concat([{ at: nowIso(), by: me(), op: 'delete', id: id, kind: s(r0.kind), date: s(r0.date), why: s(why) }]); return q; }); }
+/* ✏️ edit a job air record (not a personal one — that is the worker's own record): the previous values are kept */
+function editAir(pid, id, patch){ return saveJob(pid, function(q){ q.envLog = arr(q.envLog).map(function(r){ if (!r || r.id !== id || r.private) return r; var prev = {}; Object.keys(patch).forEach(function(k){ if (s(r[k]) !== s(patch[k])) prev[k] = r[k] === undefined ? null : r[k]; }); return Object.assign({}, r, patch, { versions: arr(r.versions).concat([{ at: nowIso(), by: me(), prev: prev }]), editedAt: nowIso(), editedBy: me() }); }); return q; }); }
+function airEditForm(pid, id){
+  var p = proj(pid), r = p && arr(p.envLog).find(function(x){ return x && x.id === id; }); if (!r || r.private) return;
+  modal('✏️ Air sample ' + nice(r.date), '<div class="grid">' + fld('result', 'Result', 'text', s(r.result)) + fld('limit', 'Limit / action level', 'text', s(r.limit)) + sel('pass', 'Pass / fail', ['', 'Pass', 'Fail', 'Waiting on lab'], s(r.pass)) + fld('lab', 'Lab', 'text', s(r.lab)) + '</div>' + fileIn('file', 'Lab report', false, 'application/pdf,image/*') + (arr(r.versions).length ? '<div class="m">' + arr(r.versions).length + ' earlier version(s) kept.</div>' : ''), function(v){
+    return storeAll(v.files && v.files.file, pid).then(function(F){ var pt = { result: v.result, limit: v.limit, pass: v.pass, lab: v.lab }; if (F[0]) pt.file = F[0]; editAir(pid, id, pt); return true; });
+  }, 'Save (the old values are kept)');
+}
+/* 📦 the end-of-job record package: every daily log + air results + clearance + notices + manifests — one PDF (jsPDF), else a printable page */
+function pkgLines(p){
+  var R = rules(), E = evaluate(p), L = []; var H = function(t){ L.push({ h: t }); }, T = function(t){ L.push({ t: s(t) }); };
+  H('GrayCo — environmental compliance record package'); T((p.name || '') + ' · ' + (p.address || '') + ' · ' + E.kinds.map(kindLabel).join(', ') + (E.state ? ' · ' + E.state : '')); T('Printed ' + new Date().toLocaleString() + ' · status ' + ICON[E.status] + ' · kept forever (owner\'s rule)');
+  H('Notices & permits'); E.items.filter(function(x){ return x.sec === 'notice'; }).forEach(function(x){ T(x.label + ' — ' + x.note); });
+  H('Air testing, monitoring & clearance'); arr(p.envLog).filter(function(r){ return CORE.live(r) && r.kind === 'air'; }).sort(function(a, b){ return s(a.date) < s(b.date) ? -1 : 1; }).forEach(function(r){ T(nice(r.date) + ' · ' + s(r.type) + (r.loc ? ' · ' + r.loc : '') + ' · ' + (r.private ? 'personal sample (result in the worker\'s own records)' : [r.method, r.result, r.limit ? 'limit ' + r.limit : '', r.pass, r.lab].filter(Boolean).join(' · ')) + (r.sampler ? ' · sampler ' + r.sampler : '') + (r.file ? ' · report: ' + s(r.file.name) : '')); });
+  var D0 = arr(R.daily), tot = CORE.dailyTotals(p, R);
+  H('Daily logs (' + tot.days + ' days, ' + tot.signed + ' signed off · waste: ' + (tot.sums['waste.bags'] || 0) + ' bags, ' + (tot.sums['waste.drums'] || 0) + ' drums · manifests: ' + (tot.manifests.join(', ') || '—') + ')');
+  arr(p.envLog).filter(function(r){ return CORE.live(r) && r.kind === 'compday'; }).sort(function(a, b){ return s(a.date) < s(b.date) ? -1 : 1; }).forEach(function(r){
+    L.push({ h2: nice(r.date) + (obj(r.signoff).name ? ' — signed off by ' + r.signoff.name + ' ' + new Date(r.signoff.at).toLocaleString() : ' — NOT signed off') });
+    var V = obj(r.values), RW = obj(r.rows);
+    D0.forEach(function(f){ var k = f.key; if (f.type === 'rows' || f.type === 'crew' || f.type === 'airlink') { var rows = arr(RW[k]); if (rows.length) T(f.label + ': ' + rows.map(function(x){ return Object.keys(x).map(function(c){ return x[c]; }).join(' / '); }).join(' | ')); } else if (f.type === 'check') { if (k in V) T((V[k] ? '☑ ' : '☐ ') + f.label); } else if (s(V[k])) T(f.label + ': ' + s(V[k])); });
+    if (arr(r.photos).length) T('Photos: ' + arr(r.photos).map(function(x){ return x.name; }).join(', '));
+    if (arr(r.versions).length) T('(' + arr(r.versions).length + ' earlier version(s) kept)');
+  });
+  H('Written programs'); E.items.filter(function(x){ return x.sec === 'program'; }).forEach(function(x){ T(x.label + ' — ' + x.note); });
+  if (arr(p.envAudit).length) { H('Audit (deleted records)'); arr(p.envAudit).forEach(function(a){ T(new Date(a.at).toLocaleString() + ' · ' + a.by + ' deleted ' + a.kind + ' ' + a.date + ' — ' + a.why); }); }
+  return L;
+}
+function pkgHtml(p){ return printable('Record package — ' + s(p.name), pkgLines(p).map(function(x){ return x.h ? '<div class="sec">' + esc(x.h) + '</div>' : x.h2 ? '<div style="font-weight:bold;margin-top:8px">' + esc(x.h2) + '</div>' : '<div>' + esc(x.t) + '</div>'; }).join('')); }
+function loadJsPdf(){ if (W.jspdf && W.jspdf.jsPDF) return Promise.resolve(W.jspdf.jsPDF); return new Promise(function(res, rej){ var sc = D.createElement('script'); sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'; sc.onload = function(){ res(W.jspdf && W.jspdf.jsPDF); }; sc.onerror = rej; D.head.appendChild(sc); ST.call(W, function(){ rej(new Error('timeout')); }, 8000); }); }
+function recordPackage(pid){
+  var p = proj(pid); if (!p) return Promise.resolve(null); var L = pkgLines(p), name = 'GrayCo_record_package_' + s(p.name || pid).replace(/[^A-Za-z0-9]+/g, '_') + '_' + today() + '.pdf';
+  W.__gcEcPackage = { pid: s(pid), lines: L.length, html: pkgHtml(p) };
+  return loadJsPdf().then(function(J){
+    var doc = new J({ unit: 'pt', format: 'letter' }), y = 48, M = 44, Wd = 612 - M * 2;
+    L.forEach(function(x){ var sz = x.h ? 13 : x.h2 ? 11 : 9.5, txt = x.h || x.h2 || x.t; doc.setFont('helvetica', x.h || x.h2 ? 'bold' : 'normal'); doc.setFontSize(sz); doc.splitTextToSize(txt, Wd).forEach(function(line){ if (y > 750) { doc.addPage(); y = 48; } doc.text(line, M, y); y += sz + 4; }); if (x.h) y += 4; });
+    doc.save(name); return { ok: true, pdf: true };
+  }).catch(function(){ var w = W.open('', '_blank'); if (w) { w.document.write(W.__gcEcPackage.html); w.document.close(); try { w.print(); } catch (e) {} } return { ok: true, pdf: false }; });
+}
+function personForm(pid){
+  var U = arr(W._crm && W._crm.users).filter(function(u){ return u && u.active !== false && s(u.name); }).sort(function(a, b){ return s(a.name).localeCompare(s(b.name)); });
+  modal('＋ Add a person to this job\'s compliance list', sel('name', 'Person', [['', '—']].concat(U.map(function(u){ return [s(u.name), s(u.name) + (u.role ? ' — ' + u.role : '')]; })), '') + sel('role', 'Role on this job', [['worker', 'Worker'], ['supervisor', 'Supervisor']], 'worker'), function(v){ if (!s(v.name)) return false; setEC(pid, function(E){ E.crew = arr(E.crew).filter(function(c){ return low(c.name) !== low(v.name); }).concat([{ name: v.name, role: v.role || 'worker' }]); E.roles = obj(E.roles); delete E.roles[low(v.name)]; return E; }); return true; }, 'Add');
+}
+D.addEventListener('click', function(e){
+  var b = e.target && e.target.closest ? e.target.closest('#gc-ec [data-ec]') : null; if (!b) return;
+  e.preventDefault(); var c = D.getElementById('gc-ec'), pid = c && c.getAttribute('data-pid'), a = b.getAttribute('data-ec'), id = b.getAttribute('data-id'); if (!pid) return;
+  if (a === 'air') airForm(pid, b.getAttribute('data-rule'));
+  else if (a === 'notice') noticeForm(pid, id);
+  else if (a === 'nna') { var why = W.prompt('Why is this not needed on this job? (e.g. under the threshold — confirmed with the state program on …)', ''); if (why == null || !s(why)) return; setEC(pid, function(E){ E.notices = obj(E.notices); E.notices[id] = { na: { why: s(why), by: me(), at: nowIso() } }; return E; }); }
+  else if (a === 'nundo') setEC(pid, function(E){ E.notices = obj(E.notices); var cur = obj(E.notices[id]), hist = arr(cur.history), prev = Object.assign({}, cur); delete prev.history; E.notices[id] = { history: hist.concat([{ at: nowIso(), by: me(), prev: prev, undone: true }]) }; return E; });
+  else if (a === 'daily') dailyForm(pid);
+  else if (a === 'dayedit') dailyForm(pid, b.getAttribute('data-day'));
+  else if (a === 'airedit') airEditForm(pid, id);
+  else if (a === 'arch') { var w = W.prompt('Archive this record? It is kept (hidden from the lists) with who, when and why. Why?', ''); if (w != null && s(w)) archiveRec(pid, id, w); }
+  else if (a === 'restore') restoreRec(pid, id);
+  else if (a === 'del') { var w2 = W.prompt('DELETE this record for good? (admin) — the reason is kept in the audit:', ''); if (w2 != null && s(w2)) deleteRec(pid, id, w2); }
+  else if (a === 'pkg') recordPackage(pid);
+  else if (a === 'prog') setEC(pid, function(E){ E.programs = obj(E.programs); E.programs[id] = { on: today(), by: me() }; return E; });
+  else if (a === 'addperson') personForm(pid);
+  else if (a === 'rules') rulesEditor();
+  else if (a === 'kindsauto') setEC(pid, function(E){ delete E.kinds; return E; });
+}, true);
+D.addEventListener('change', function(e){
+  var t = e.target, c = D.getElementById('gc-ec'); if (!c || !c.contains(t)) return; var pid = c.getAttribute('data-pid');
+  if (t.hasAttribute('data-ec-role')) { var n = low(t.getAttribute('data-ec-role')), v = t.value; setEC(pid, function(E){ E.roles = obj(E.roles); E.roles[n] = v; return E; }); }
+  else if (t.hasAttribute('data-ec-set')) { var k = t.getAttribute('data-ec-set'), v2 = t.value; setEC(pid, function(E){ if (v2) E[k] = v2; else delete E[k]; return E; }); }
+  else if (t.hasAttribute('data-ec-kind')) { var ks = [].map.call(c.querySelectorAll('[data-ec-kind]:checked'), function(x){ return x.getAttribute('data-ec-kind'); }); setEC(pid, function(E){ E.kinds = ks; if (!ks.length) E.mode = 'off'; return E; }); }
+}, true);
+
+/* ═════ close-out: a job whose clearance has not passed cannot be closed ═════ */
+var SEEN = null, LAST_INPUT = 0, CLEARED = {};   /* CLEARED: jobs seen with every clearance passed on this computer (a copy a moment behind never re-blocks them) */
+['pointerdown', 'keydown', 'input', 'change'].forEach(function(ev){ D.addEventListener(ev, function(){ LAST_INPUT = Date.now(); }, true); });
+var FIN = /complete|closed|close.?out|warrant/i;
+function snap(p){ return { status: p.status, pct: p.pct, completionDate: p.completionDate }; }
+function closeGate(){
+  try {
+    var list = projects(); if (!list.length) return;
+    if (!SEEN) { SEEN = {}; list.forEach(function(p){ if (p && p.id) SEEN[p.id] = { s: snap(p), p: p }; }); return; }
+    list.forEach(function(p){
+      if (!p || !p.id) return; var W0 = SEEN[p.id], was = W0 && W0.s, now = snap(p);
+      if (was && !FIN.test(s(was.status)) && FIN.test(s(p.status)) && Date.now() - LAST_INPUT < 10000 && !obj(p.envComp).closeOverride && isOn(p)) {
+        /* the records known on this screen just before (a copy read back from this computer's disk can be a moment behind) */
+        var seenIds = {}, uni = arr(p.envLog).slice(); uni.forEach(function(r){ if (r && r.id) seenIds[r.id] = 1; }); arr(W0.p && W0.p.envLog).forEach(function(r){ if (r && r.id && !seenIds[r.id]) uni.push(r); });
+        var bl = CLEARED[p.id] ? [] : CORE.closeoutBlockers(Object.assign({}, p, { envLog: uni }), ctx());
+        /* put the whole job back as it was before the close (the close-out steps set more than the status), keeping its newer compliance records */
+        if (bl.length) { putBack(p, W0.p); closeAsk(p, now, bl); return; }
+      }
+      SEEN[p.id] = { s: now, p: p };
+    });
+  } catch (e) { W.__gcEcErr = String(e && e.stack || e); }
+}
+/* put the job back as it was before the close — every field the close changed (the close-out steps set more than the status);
+   marked as a person's status change so the completed-status hold (patch STATUSFIX) lets it leave "complete" */
+var SKIPF = { updatedAt: 1, updatedBy: 1, savedAt: 1, _fe: 1, _lastEdit: 1, envLog: 1, envComp: 1, envAudit: 1 };
+function putBack(cur, prev){
+  var patch = {}; Object.keys(Object.assign({}, prev, cur)).forEach(function(k){ if (SKIPF[k]) return; if (JSON.stringify(prev[k]) !== JSON.stringify(cur[k])) patch[k] = prev[k] === undefined ? null : prev[k]; });
+  if (!Object.keys(patch).length) return;
+  try { W._gcStatusIntent && W._gcStatusIntent(); } catch (e) {}
+  /* through the CRM's own "a person did this" job writer (patch SYNC_A): its edit ledger then keeps the put-back instead of
+     re-applying the close */
+  if (typeof W._gcxPatchJob === 'function') Promise.resolve(W._gcxPatchJob(cur.id, patch, 'compliance: clearance not passed')).then(function(ok){ if (!ok) saveJob(cur.id, function(q){ return Object.assign(q, patch); }); }, function(){ saveJob(cur.id, function(q){ return Object.assign(q, patch); }); });
+  else saveJob(cur.id, function(q){ return Object.assign(q, patch); });
+}
+function closeAsk(p, want, bl){
+  var R = rules(), canOver = admin() && s(obj(R.settings).closeoutOverride) === 'admin';
+  modal('⛔ Clearance has not passed', '<div style="margin:4px 0 8px"><b>' + esc(p.name || 'This job') + '</b> cannot be closed out until it passes: <b>' + esc(bl.join(' · ')) + '</b>.</div><div class="m">Log the clearance result (🌫 Log a sample → Clearance → Pass) with the lab report, then close the job again.</div>'
+    + '<div class="acts"><button type="button" class="g" data-cl="log">🌫 Log the clearance result</button>' + (canOver ? '<button type="button" data-cl="over">Close anyway (admin — give the reason)</button>' : '') + '</div>', null);
+  var o = D.getElementById('gc-ec-modal'); if (o) o.setAttribute('aria-label', 'Clearance has not passed');
+  o && o.addEventListener('click', function(e){
+    var b = e.target.closest && e.target.closest('[data-cl]'); if (!b) return; o.remove();
+    if (b.getAttribute('data-cl') === 'log') { var r = arr(R.air).find(function(x){ return x.gate && CORE.hasKind(x, evaluate(p).kinds); }); airForm(p.id, r && r.id); }
+    if (b.getAttribute('data-cl') === 'over') { var why = W.prompt('Why close it without a passing clearance? (kept on the job)', ''); if (why == null || !s(why)) return; setEC(p.id, function(E){ E.closeOverride = { by: me(), at: nowIso(), why: s(why) }; return E; }); ST.call(W, function(){ if (typeof W._gcxPatchJob === 'function') { try { W._gcStatusIntent && W._gcStatusIntent(); } catch (e) {} W._gcxPatchJob(p.id, want, 'compliance: closed by an admin without clearance'); } else saveJob(p.id, function(q){ return Object.assign(q, want); }); }, 300); }
+  });
+}
+
+/* ═════ To-Dos (office / admins write them; the list is shared) ═════ */
+function tasks(){ try { var l = JSON.parse(localStorage.getItem('gc_office_tasks') || '[]'); return Array.isArray(l) ? l : []; } catch (e) { return []; } }
+function saveTasks(l){ try { localStorage.setItem('gc_office_tasks', JSON.stringify(l)); } catch (e) {} try { if (W._gcOfficeTasksPush) W._gcOfficeTasksPush(); } catch (e) {} try { var u = W._supaUpsertNow || W._supaUpsert; if (u) u('gc_office_tasks', l); } catch (e) {} }
+function wantedTasks(){
+  var want = {};
+  envJobs(false).concat(projects().filter(function(p){ return p && !p.deleted && /complete|closed/i.test(s(p.status)) && isOn(p) && !obj(p.envComp).closeOverride; })).forEach(function(p){
+    var E = evaluate(p), job = s(p.name || p.client || p.id);
+    E.items.forEach(function(x){
+      if (x.sec === 'notice' && (x.st === 'block' || x.st === 'due') && x.due) want['ENVCOMP_N_' + p.id + '_' + x.id] = { p: p, prio: 'high', label: '📨 ' + job + ': ' + x.label + (x.over ? ' — OVERDUE (was due ' + nice(x.due) + ')' : ' — due ' + nice(x.due)), note: 'Job → 🛡 Compliance → ✓ Filed (date, confirmation #, the receipt). A checklist item — confirm the form and the timing with the state program.' };
+      if (x.sec === 'air' && x.gate && x.st === 'block') want['ENVCOMP_C_' + p.id + '_' + x.id] = { p: p, prio: 'high', label: '🌫 ' + job + ': ' + x.label + ' not passed — the job cannot be closed', note: 'Job → 🛡 Compliance → 🌫 Log a sample (Clearance, with the lab report).' };
+      if (x.sec === 'air' && !x.gate && (x.st === 'block' || x.st === 'due')) want['ENVCOMP_A_' + p.id + '_' + x.id] = { p: p, prio: x.st === 'block' ? 'high' : 'med', label: '🌫 ' + job + ': ' + x.label + ' — due', note: x.note + ' · Job → 🛡 Compliance → 🌫 Log a sample.' };
+    });
+    var pb = E.items.filter(function(x){ return x.sec === 'people' && x.st === 'block'; });
+    if (pb.length && activeJob(p)) want['ENVCOMP_P_' + p.id] = { p: p, prio: 'high', label: '⛔ ' + job + ': ' + pb.length + ' crew / certification item' + (pb.length === 1 ? '' : 's') + ' block the work', note: pb.slice(0, 8).map(function(x){ return x.label; }).join('\n') + '\nJob → 🛡 Compliance → 1 · People on the job.' };
+  });
+  return want;
+}
+function sweep(){
+  try {
+    if (!office() || !projects().length) return 0;
+    var l = tasks(), now = nowIso(), ch = 0, want = wantedTasks();
+    Object.keys(want).forEach(function(id){
+      var w = want[id], cur = l.find(function(y){ return y && y.id === id; });
+      if (!cur) { l.push({ id: id, kind: 'envcomp', pid: w.p.id, label: w.label, note: w.note, assignee: s(w.p.pm), prio: w.prio, addedBy: 'CRM', addedAt: now, updatedAt: now, done: false }); ch++; }
+      else if (cur.done || cur.label !== w.label) { cur.label = w.label; cur.note = w.note; cur.done = false; cur.updatedAt = now; ch++; }
+    });
+    l.forEach(function(y){ if (y && !y.done && /^ENVCOMP_[NCAP]_/.test(s(y.id)) && !want[y.id]) { y.done = true; y.doneAt = y.updatedAt = now; y.resolution = 'done in 🛡 Compliance'; ch++; } });
+    if (ch) saveTasks(l);
+    return ch;
+  } catch (e) { W.__gcEcErr = String(e && e.stack || e); return 0; }
+}
+
+/* ═════ records retention: compliance records are kept from deletion until their date ═════ */
+var KEPT = lsGet(KEEP, {}) || {};
+var RK = /^(air|compday|contain|ppe|waste|notice|survey|hzclean)$/;
+function guard(){
+  try {
+    var P = projects(); if (!P.length) return 0; var R = rules(), t = today(), fixes = {}, arch = {}, ch = false;
+    P.forEach(function(p){
+      if (!p || !p.id) return; var k = s(p.id), K = KEPT[k] = obj(KEPT[k]); K.recs = obj(K.recs);
+      if (p.deleted) { if (Object.keys(K.recs).length) arch[k] = { name: s(p.name), address: s(p.address), envComp: p.envComp || null, envLog: Object.keys(K.recs).map(function(id){ return K.recs[id]; }), at: nowIso() }; return; }
+      var kinds = null, base = s(p.completionDate || p.completedAt).slice(0, 10) || t;
+      var have = {}, gone = {}; arr(p.envLog).forEach(function(r){ if (r && r.id) have[r.id] = r; }); arr(p.envAudit).forEach(function(a){ if (a && a.op === 'delete') gone[a.id] = 1; }); Object.keys(DELETED).forEach(function(id){ gone[id] = 1; });
+      Object.keys(K.recs).forEach(function(id){
+        var old = K.recs[id], cur = have[id], cat = s(old.retainCat) || 'project', until = CORE.retainUntil(R, cat, base > s(old.date) ? base : s(old.date));
+        if (gone[id] || (until && until <= t)) { delete K.recs[id]; ch = true; return; }   /* an admin's audited delete, or past an admin-set retention */
+        if (!cur || cur.deleted) { (fixes[k] = fixes[k] || []).push(Object.assign({}, old, { deleted: false, restoredAt: nowIso(), restoredWhy: 'kept until ' + (until || 'its retention date') })); }
+      });
+      arr(p.envLog).forEach(function(r){ if (r && r.id && !r.deleted && !gone[r.id] && RK.test(s(r.kind))) { if (!kinds) kinds = isOn(p) ? evaluate(p).kinds : []; var c = s(r.retainCat) || CORE.recCat(r, kinds); var j = JSON.stringify(Object.assign({}, r, { retainCat: c })); if (JSON.stringify(K.recs[r.id] || null) !== j) { K.recs[r.id] = JSON.parse(j); ch = true; } } });
+      if (!Object.keys(K.recs).length) delete KEPT[k];
+    });
+    Object.keys(KEPT).forEach(function(k){ if (!P.some(function(p){ return p && s(p.id) === k; }) && Object.keys(obj(KEPT[k].recs)).length) arch[k] = { envLog: Object.keys(KEPT[k].recs).map(function(id){ return KEPT[k].recs[id]; }), at: nowIso(), gone: true }; });
+    var n = 0;
+    Object.keys(fixes).forEach(function(pid){ var L = fixes[pid]; n += L.length; saveJob(pid, function(q){ var ids = {}; L.forEach(function(r){ ids[r.id] = r; }); q.envLog = arr(q.envLog).map(function(r){ return r && ids[r.id] ? (delete ids[r.id], Object.assign({}, r, L.find(function(x){ return x.id === r.id; }))) : r; }).concat(Object.keys(ids).map(function(id){ return ids[id]; })); return q; }); });
+    if (n) toast('🗄 ' + n + ' compliance record(s) put back — they are kept until their retention date.', true);
+    if (Object.keys(arch).length && office()) sb(KARCH).then(function(v){ var o = obj(v); Object.keys(arch).forEach(function(k){ o[k] = arch[k]; }); return put(KARCH, o); });
+    if (ch || n) lsSet(KEEP, KEPT);
+    return n;
+  } catch (e) { W.__gcEcErr = String(e && e.stack || e); return 0; }
+}
+
+/* ═════ medical removal: never on exposure work while removed ═════ */
+function canSchedule(email, pid){
+  var p = proj(pid), m = obj(obj(MS.people)[low(email)]); if (!p || !m.removed) return { ok: true };
+  var k = isOn(p) ? evaluate(p).kinds : []; if (!k.some(function(x){ return arr(m.removedKinds).indexOf(x) >= 0; })) return { ok: true };
+  return { ok: false, why: s(m.name || email) + ' is not cleared for exposure work (medical) — schedule them on non-exposure work only until the physician clears them.' };
+}
+var SCHED_SEEN = null, SCHED_LIVE = null, SCHED_CRM = null;
+/* the schedule as it is now: window._crm.schedule is refreshed only with the job list, so the app's own "list saved" hook
+   (window._gcCustAllSaw, called with every list the app persists — patch CUSTALL) hands us each new schedule; it is chained, never replaced */
+function schedList(){ var c = W._crm && W._crm.schedule; if (c !== SCHED_CRM) { SCHED_CRM = c; if (!SCHED_LIVE || (Array.isArray(c) && c.length >= SCHED_LIVE.length)) SCHED_LIVE = null; } return arr(SCHED_LIVE || c); }
+function hookSched(){ var f = W._gcCustAllSaw; if (f && f.__gcEc) return; var w = function(key, value){ try { if (key === 'schedule' && Array.isArray(value)) { SCHED_LIVE = value; ST.call(W, schedWatch, 30); } } catch (e) {} return typeof f === 'function' ? f.apply(this, arguments) : undefined; }; w.__gcEc = true; W._gcCustAllSaw = w; }
+hookSched();
+function schedWatch(){
+  try {
+    hookSched(); var L = schedList(); var cur = {}; L.forEach(function(x){ if (x && x.id) cur[x.id] = JSON.stringify([x.pid || x.projectId, x.assignee, x.who, x.crew, x.people, x.assignees]); });
+    if (!SCHED_SEEN) { SCHED_SEEN = cur; return; }
+    var U = arr(W._crm && W._crm.users), warns = [];
+    L.forEach(function(x){
+      if (!x || !x.id || x.deleted || SCHED_SEEN[x.id] === cur[x.id]) return;
+      var pid = x.pid || x.projectId || x.jobId; if (!pid) return;
+      [x.assignee, x.who, x.crew, x.people].concat(arr(x.assignees)).forEach(function(v){ (Array.isArray(v) ? v : s(v).split(/\s*[,;&]\s*/)).forEach(function(n){ var u = U.find(function(z){ return z && (low(z.name) === low(n) || low(z.email) === low(n)); }); if (!u) return; var c = canSchedule(u.email, pid); if (!c.ok && warns.indexOf(c.why) < 0) warns.push(c.why); }); });
+    });
+    SCHED_SEEN = cur;
+    if (warns.length) { W.__gcEcSchedWarn = warns.slice(); modal('⛔ Not cleared for exposure work', '<div class="warn" style="background:#fef2f2;border:1px solid #fca5a5;color:#991b1b;border-radius:8px;padding:8px">' + warns.map(esc).join('<br>') + '</div><div class="m">The job\'s 🛡 Compliance shows ⛔ until they are moved to non-exposure work. (A warning — the scheduler decides.)</div>', null); var o = D.getElementById('gc-ec-modal'); if (o) o.setAttribute('aria-label', 'Not cleared for exposure work'); }
+  } catch (e) { W.__gcEcErr = String(e && e.stack || e); }
+}
+
+/* ═════ payroll: medical removal protection (the one hook in computeLine) ═════ */
+var RMC = { at: 0, p: null };
+function removals(){ if (Date.now() - RMC.at < 60000 && RMC.p) return RMC.p; RMC.at = Date.now(); RMC.p = fnCall({ op: 'removals' }).then(function(j){ return j && j.ok ? j : { removals: [] }; }); return RMC.p; }
+W._gcMedRemovalPay = function(prof, from, to, c){
+  if (!priv() || !prof) return Promise.resolve(null);
+  return removals().then(function(j){
+    var U = arr(W._crm && W._crm.users), u = U.find(function(x){ return x && ((prof.userId && s(x.id) === s(prof.userId)) || low(x.name) === low(prof.name)); }) || {};
+    var em = low(prof.email || u.email), L = arr(j.removals).filter(function(r){ return (em && low(r.email) === em) || low(r.name) === low(prof.name); });
+    if (!L.length) return null;
+    return sb('payrollRuns').then(function(runs){
+      var tot = null; L.forEach(function(r){ var x = CORE.mrpPay(r, from, to, Object.assign({ runs: arr(runs), empKey: s(prof.userId || prof.name), empKeys: [s(prof.name)] }, c || {}), rules()); if (x && x.amount > 0) { if (!tot) tot = x; else { tot.amount += x.amount; tot.detail += ' + ' + x.detail; } } });
+      return tot;
+    });
+  }).catch(function(){ return null; });
+};
+
+/* ═════ the worker's own 🩺 health & exposure records ═════ */
+function recHtml(rec, own){
+  rec = obj(rec); var VT = {}; arr(rec.visitTypes || rules().visitTypes).forEach(function(v){ VT[v.key] = v.label; });
+  var h = '', EX = arr(rec.exposures).filter(function(x){ return !x.archived; }), VS = arr(rec.visits).filter(function(x){ return !x.archived; });
+  /* admins / Office Manager: 🗄 Archive (kept, hidden) — a record is never just deleted; admins restore */
+  var act = function(cat, x){ return own ? '' : (arr(x.history).length ? ' <span class="m">' + arr(x.history).length + ' earlier version(s)</span>' : '') + ' <button type="button" data-ec-marc="' + cat + '|' + esc(x.id) + '">🗄</button>'; };
+  var ARC = arr(rec.exposures).filter(function(x){ return x.archived; }).map(function(x){ return ['exposure', x]; }).concat(arr(rec.visits).filter(function(x){ return x.archived; }).map(function(x){ return ['visit', x]; }));
+  if (!own && ARC.length) h += '<details><summary class="m">🗄 Archived (' + ARC.length + ') — kept</summary>' + ARC.map(function(a){ return '<div class="m">' + esc(nice(a[1].date)) + ' · ' + esc(a[0]) + ' — archived by ' + esc(a[1].archived.by) + ': ' + esc(a[1].archived.why) + ' <button type="button" data-ec-mres="' + a[0] + '|' + esc(a[1].id) + '">↩ Restore (admin)</button></div>'; }).join('') + '</details>';
+  if (rec.removal) h += '<div class="sec">Medical removal</div><div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:8px;font-size:13px">Removed from exposure work since <b>' + esc(nice(rec.removal.start)) + '</b>' + (rec.removal.reason ? ' — ' + esc(rec.removal.reason) : '') + '. Pay protection through <b>' + esc(nice(rec.removal.protectEnd)) + '</b> (normal earnings kept on payroll' + (rec.removal.wcWeekly ? ', less workers\' comp wage replacement' : '') + ').' + (rec.removal.criteria ? '<br>Return to work: ' + esc(rec.removal.criteria) : '') + (rec.removal.clearance ? '<br>Physician\'s clearance: ' + fileLink(rec.removal.clearance) : '') + '<div class="m">' + esc(rec.removalNote || '') + '</div></div>';
+  h += '<div class="sec">Next due</div>' + (arr(rec.summary).filter(function(x){ return x.next || x.last; }).length ? '<div class="tw"><table><thead><tr><th>Item</th><th>Last</th><th>Next due</th><th></th></tr></thead><tbody>' + arr(rec.summary).filter(function(x){ return x.next || x.last; }).map(function(x){ return '<tr><td>' + esc(x.label) + '</td><td>' + esc(nice(x.last)) + '</td><td>' + chip(x.st === 'over' ? 'block' : x.st === 'due' ? 'due' : 'ok', nice(x.next) || '—') + '</td><td><button type="button" data-ec-appt="' + esc(x.key) + '" data-ec-lbl="' + esc(x.label) + '">📅 Schedule</button></td></tr>'; }).join('') + '</tbody></table></div>' : '<div class="m">Nothing scheduled yet.</div>');
+  if (arr(rec.appts).length) h += '<div class="m">Appointments: ' + arr(rec.appts).slice(-6).map(function(a){ return esc(nice(a.date) + (a.time ? ' ' + a.time : '')); }).join(' · ') + '</div>';
+  h += '<div class="sec">Exposure &amp; air monitoring results</div>' + (EX.length ? '<div class="tw"><table><thead><tr><th>Date</th><th>Job · task</th><th>Sample</th><th>Result</th><th>Compared with</th><th>Pass / fail</th><th>Lab report</th></tr></thead><tbody>' + EX.slice().sort(function(a, b){ return s(a.date) < s(b.date) ? 1 : -1; }).map(function(x){ return '<tr><td>' + esc(nice(x.date)) + '</td><td>' + esc([x.job, x.task].filter(Boolean).join(' · ')) + '</td><td>' + esc(x.scope === 'area' ? 'Job / area: ' + s(x.atype) : 'Personal (you)') + (x.method ? '<br><span class="m">' + esc(x.method) + '</span>' : '') + '</td><td>' + esc([x.result, x.unit].filter(Boolean).join(' ')) + '</td><td>' + esc([x.al ? 'limit / action level ' + x.al : '', x.pel ? 'PEL ' + x.pel : ''].filter(Boolean).join(' · ')) + '</td><td>' + esc(x.pass) + '</td><td>' + fileLink(x.file) + act("exposure", x) + (x.lab ? ' <span class="m">' + esc(x.lab) + '</span>' : '') + '</td></tr>'; }).join('') + '</tbody></table></div>' : '<div class="m">No results yet.</div>');
+  h += '<div class="sec">Medical visits, tests &amp; written opinions</div>' + (VS.length ? '<div class="tw"><table><thead><tr><th>Date</th><th>Type</th><th>Provider</th><th>Result / opinion</th><th>File</th></tr></thead><tbody>' + VS.slice().sort(function(a, b){ return s(a.date) < s(b.date) ? 1 : -1; }).map(function(v){ return '<tr><td>' + esc(nice(v.date)) + '</td><td>' + esc(VT[v.type] || v.type) + '</td><td>' + esc(v.provider) + '</td><td>' + esc([v.result, v.summary || (v.file ? 'on file' : '')].filter(Boolean).join(' — ')) + (v.fit ? '<br>Fit test: ' + esc([v.fit.model, v.fit.size, v.fit.method, v.fit.result].filter(Boolean).join(' · ')) : '') + '</td><td>' + fileLink(v.file) + act("visit", v) + '</td></tr>'; }).join('') + '</tbody></table></div>' : '<div class="m">No visits recorded yet.</div>');
+  if (arr(rec.removals).length > (rec.removal ? 1 : 0)) h += '<div class="sec">Medical removal history</div>' + arr(rec.removals).map(function(r){ return '<div class="m">' + esc(nice(r.start)) + ' → ' + esc(nice(r.end) || 'open') + (r.reason ? ' · ' + esc(r.reason) : '') + ' · protected to ' + esc(nice(r.protectEnd)) + ' ' + fileLink(r.clearance) + '</div>'; }).join('');
+  if (own && arr(rec.opened).length) h += '<div class="m" style="margin-top:8px">Opened (recorded): ' + arr(rec.opened).slice(-3).map(function(o){ return esc(new Date(o.at).toLocaleString()); }).join(' · ') + '</div>';
+  return h;
+}
+function printable(title, inner){ return '<!doctype html><html><head><meta charset="utf-8"><title>' + esc(title) + '</title><style>body{font:13px Arial,sans-serif;color:#111;margin:24px}table{width:100%;border-collapse:collapse;margin:4px 0 10px}th,td{border:1px solid #ccc;padding:4px 6px;text-align:left;vertical-align:top}.sec{font-weight:bold;margin:14px 0 4px;text-transform:uppercase;font-size:12px}.m{color:#555}button{display:none}.gc-ec-chip{font-weight:bold}</style></head><body><h2>' + esc(title) + '</h2><div class="m">Printed ' + esc(new Date().toLocaleString()) + ' · GrayCo — confidential medical / exposure record</div>' + inner + '</body></html>'; }
+var MINE = { unseen: 0, at: 0, has: false };
+function openMine(){
+  css(); var o = modal('🩺 My health & exposure records', '<div class="m">Loading…</div>', null); o.setAttribute('data-ec-mine', '1');
+  return fnCall({ op: 'mine', open: true, via: D.documentElement.classList.contains('_fieldmode') || D.querySelector('#_gcJobPick.gc-fh') ? 'field' : 'desk' }).then(function(j){
+    var box = o.querySelector('.in'); if (!box) return j;
+    if (!j || !j.ok) { box.innerHTML = '<h3>🩺 My health & exposure records</h3><div class="m">' + esc(s(j && j.error) || 'Could not load your records.') + '</div><div class="acts"><button type="button" data-m="close">Close</button></div>'; return j; }
+    MINE.unseen = 0; paintMineBtn();
+    var inner = recHtml(j.rec, true), title = '🩺 My health & exposure records — ' + (s(j.rec.name) || me());
+    box.innerHTML = '<h3>' + esc(title) + '</h3><div class="m">Only you, the admins and the Office Manager can see these. ' + (j.stamped ? '<b>' + j.stamped + ' new result(s) — marked seen ' + esc(new Date(j.seenAt).toLocaleString()) + '.</b>' : '') + '</div>' + inner
+      + '<div class="acts"><button type="button" data-ec-print="1">🖨 Print</button><button type="button" data-ec-dl="1">⬇ Download a copy</button><button type="button" data-m="close">Close</button></div>';
+    box.__print = printable(title, inner); box.__email = myEmail(); box.__name = s(j.rec.name) || me();
+    return j;
+  });
+}
+D.addEventListener('click', function(e){
+  var b = e.target && e.target.closest ? e.target.closest('[data-ec-print],[data-ec-dl],[data-ec-appt]') : null; if (!b) return;
+  var box = b.closest('.in'); if (!box) return; e.preventDefault();
+  if (b.hasAttribute('data-ec-print')) { var w = W.open('', '_blank'); if (w) { w.document.write(box.__print || ''); w.document.close(); try { w.focus(); w.print(); } catch (x) {} } return; }
+  if (b.hasAttribute('data-ec-dl')) { try { var bl = new Blob([box.__print || ''], { type: 'text/html' }), a = D.createElement('a'); a.href = URL.createObjectURL(bl); a.download = 'GrayCo_health_exposure_records_' + today() + '.html'; D.body.appendChild(a); a.click(); a.remove(); W.__gcEcDownloaded = (W.__gcEcDownloaded || 0) + 1; } catch (x) {} return; }
+  if (b.hasAttribute('data-ec-appt')) schedAppt(box.__email || myEmail(), box.__name || me(), b.getAttribute('data-ec-appt'));
+}, true);
+/* 📅 Schedule: the appointment goes on the person's own schedule (a generic title — the schedule is seen by everyone) */
+function schedAppt(email, name, key, when){
+  var go = function(d, tm){
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(s(d))) { toast('Use the date as YYYY-MM-DD.', true); return Promise.resolve(false); }
+    var id = uid('ECAP'), rec = { id: id, title: '🩺 Medical appointment', date: s(d), time: s(tm), assignee: s(name), who: s(name), scope: 'personal', personal: true, private: true, kind: 'envcomp_appt', type: 'appointment', createdBy: me(), createdAt: nowIso(), updatedAt: nowIso() };
+    try { if (typeof W._setSchedule === 'function') W._setSchedule(function(prev){ return arr(prev).concat([rec]); }); } catch (x) {}
+    /* the app saves the schedule itself (its own effect: this computer + the cloud) */
+    return fnCall({ op: 'appt', email: email, name: name, date: s(d), time: s(tm), key: key, scheduleId: id }).then(function(j){ toast(j && j.ok ? '📅 On ' + (low(email) === myEmail() ? 'your' : s(name) + '\'s') + ' schedule ' + nice(d) + (tm ? ' ' + tm : '') + '.' : 'On the schedule; the record was not saved: ' + s(j && j.error), !(j && j.ok)); return rec; });
+  };
+  if (when) return go(when.date, when.time);
+  var d = W.prompt('Appointment date (YYYY-MM-DD):', today()); if (d == null) return Promise.resolve(false);
+  var tm = W.prompt('Time (e.g. 9:30 AM) — optional:', '') || ''; return go(d, tm);
+}
+function refreshMine(){
+  if (!myEmail()) return;
+  var m = obj(obj(MS.people)[myEmail()]); MINE.has = !!(m.med && m.med !== 'none') || !!m.removed || m.fit === 'ok' || m.fit === 'due' || m.fit === 'over' || envPerson();
+  if (Date.now() - MINE.at < 600000 && MINE.at) { paintMineBtn(); return; }
+  MINE.at = Date.now();
+  fnCall({ op: 'mine' }).then(function(j){ if (j && j.ok && j.rec) { MINE.unseen = arr(j.rec.notices).filter(function(n){ return !n.seenAt; }).length; if (arr(j.rec.notices).length || arr(j.rec.visits).length || arr(j.rec.exposures).length) MINE.has = true; } paintMineBtn(); });
+}
+function paintMineBtn(){
+  try {
+    var home = D.querySelector('#_gcJobPick.gc-fh'), wrap = home && home.querySelector('.fh-wrap'), el = D.getElementById('gc-ec-minebtn');
+    if (!wrap || !(MINE.has || MINE.unseen)) { if (el) el.remove(); return; }
+    css(); if (!el) { el = D.createElement('button'); el.type = 'button'; el.id = 'gc-ec-minebtn'; el.addEventListener('click', function(){ openMine(); }); }
+    var h = '<span style="font-size:22px">🩺</span><span>My health &amp; exposure records</span>' + (MINE.unseen ? '<span class="n">' + MINE.unseen + ' new</span>' : '');
+    if (el.__h !== h) { el.innerHTML = h; el.__h = h; }
+    var anchor = D.getElementById('gc-to-strip'); if (anchor && anchor.parentNode === wrap) { if (anchor.nextSibling !== el) wrap.insertBefore(el, anchor.nextSibling); } else if (el.parentNode !== wrap) wrap.insertBefore(el, wrap.firstChild);
+  } catch (e) {}
+}
+/* the full CRM: a button in the 📅 My schedule sheet (patch TIMEOFF) */
+function decorateSchedSheet(){ try { var o = D.querySelector('[data-to-sheet="mine"]'); if (!o || o.querySelector('[data-ec-mine-open]')) return; var b = D.createElement('button'); b.type = 'button'; b.setAttribute('data-ec-mine-open', '1'); b.textContent = '🩺 My health & exposure records' + (MINE.unseen ? ' (' + MINE.unseen + ' new)' : ''); b.style.cssText = 'display:block;width:100%;margin:8px 0;min-height:42px;border-radius:10px;border:1px solid #99f6e4;background:#f0fdfa;color:#115e59;font:800 14px Inter,Arial,sans-serif;cursor:pointer'; b.addEventListener('click', function(){ openMine(); }); var inn = o.querySelector('.in') || o.firstElementChild || o; inn.appendChild(b); } catch (e) {} }
+/* the Desk app (patch ROLEAPPS): a card */
+(W._gcRaCards = Array.isArray(W._gcRaCards) ? W._gcRaCards : []).push(function(a, card){ if (!(MINE.has || MINE.unseen) || typeof card !== 'function') return ''; return card('envcomp_mine', '🩺 My health & exposure records', '<div class="gc-ra-item"><div class="t"><b>' + (MINE.unseen ? MINE.unseen + ' new result(s)' : 'Your medical surveillance, air monitoring results and next due dates') + '</b><small>Only you, the admins and the Office Manager see them.</small></div><div class="b"><button type="button" class="gc-ra-sm pri" data-ec-mine-open="1">Open</button></div></div>'); });
+D.addEventListener('click', function(e){ var b = e.target && e.target.closest ? e.target.closest('[data-ec-mine-open]') : null; if (b && !b.closest('[data-to-sheet="mine"]')) { e.preventDefault(); openMine(); } }, true);
+
+/* ═════ the staff profile: 📜 Certifications (+ 🩺 Medical for admins / the Office Manager) ═════ */
+function certRows(holder){
+  var L = certsList().filter(function(c){ return c && !c.archived && c.holderType !== 'company' && ((holder.email && low(c.holder) === low(holder.email)) || (holder.name && low(c.holderName) === low(holder.name))); });
+  if (!L.length) return '<div class="m">No certifications on file yet.</div>';
+  return '<div class="tw"><table><thead><tr><th>Certification</th><th>Provider</th><th>State accepted</th><th>Issued</th><th>Expires</th><th>Status</th><th>File</th></tr></thead><tbody>' + L.map(function(c){
+    var st = {}; try { st = W._gcCerts && W._gcCerts.status ? W._gcCerts.status(c) : {}; } catch (e) {} var d = c.expires ? CORE.daysBetween(today(), c.expires) : null;
+    var k = d == null ? 'wait' : d < 0 ? 'block' : d <= 90 ? 'due' : 'ok';
+    return '<tr><td><b>' + esc(c.name) + '</b>' + (c.number ? ' #' + esc(c.number) : '') + '</td><td>' + esc(c.issuer) + '</td><td>' + esc(c.state) + '</td><td>' + esc(nice(c.issued)) + '</td><td>' + esc(nice(c.expires)) + '</td><td>' + chip(k, d == null ? 'date needed' : d < 0 ? 'EXPIRED' : d <= 90 ? d + ' days — refresher due' : 'current') + '</td><td>' + (c.fileRef ? fileLink({ ref: c.fileRef, name: c.fileName }) : '') + '</td></tr>'; }).join('') + '</tbody></table></div>';
+}
+function certForm(holder, onDone){
+  var R = rules(), T = arr(R.certTypes).filter(function(t){ return !t.company; });
+  modal('＋ Add a certification — ' + s(holder.name), '<div class="grid">' + sel('ckind', 'Type', T.map(function(t){ return [t.key, t.label]; }).concat([['', 'Other']]), T[0] ? T[0].key : '') + fld('name', 'Name on the certificate', 'text', '', 'e.g. Lead Abatement Supervisor Initial')
+    + fld('issuer', 'Provider', 'text', '', 'e.g. Seagull Environmental Training') + fld('state', 'State(s) accepted', 'text', '', 'e.g. AR or TN/AR') + fld('number', 'Certificate #', 'text', '')
+    + fld('issued', 'Issued', 'date', '') + fld('expires', 'Expires', 'date', '') + fileIn('file', 'Certificate (PDF / photo)', false, 'application/pdf,image/*') + '</div><div class="m">Reminders: the person at 90 / 60 / 30 days and when it expires; the admins through 📜 Certifications.</div>', function(v){
+    return addCert(holder, v).then(function(r){ if (onDone) onDone(r); return true; });
+  }, 'Save certification');
+}
+function addCert(holder, v){
+  v = v || {}; var T = CORE.certType(rules(), s(v.ckind));
+  return storeAll(v.files && v.files.file, '').then(function(F){
+    var c = { id: 'CERT' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), tpl: 'envcomp', ckind: s(v.ckind), holderType: 'person', holder: low(holder.email), holderName: s(holder.name), name: s(v.name) || s(T.label), issuer: s(v.issuer), provider: s(v.issuer), number: s(v.number), state: s(v.state).toUpperCase(), stateAccepted: s(v.state).toUpperCase(),
+      issued: s(v.issued), expires: s(v.expires) || (s(v.issued) && +T.months ? CORE.addMonths(v.issued, +T.months) : ''), leadDays: 0, warnDays: 90, cycleMonths: +T.months || 0, fee: 0, feeNote: '', requirements: 'Take the refresher before it expires.', renewUrl: '', notes: '', fileRef: F[0] ? F[0].ref : '', fileName: F[0] ? F[0].name : '', payments: [], archived: false, updatedAt: nowIso(), by: me() };
+    return sb('gc_certs').then(function(o){ o = obj(o); var l = arr(o.list).concat([c]); var out = { list: l, updatedAt: nowIso() }; lsSet('gc_certs_cache', { list: l }); CERTS = l; return put('gc_certs', out).then(function(){ try { if (W._gcCerts && W._gcCerts.load) W._gcCerts.load(); } catch (e) {} toast('📜 Saved — ' + c.name); return c; }); });
+  });
+}
+function profHtml(holder, med){
+  var h = '<div class="sec">📜 Certifications <button type="button" data-ec-p="cert">＋ Add certification</button></div>' + certRows(holder);
+  var m = obj(obj(MS.people)[low(holder.email)]);
+  h += '<div class="sec">🩺 Medical</div>';
+  if (!med) h += '<div class="m">' + (m.med ? 'Medical: ' + (m.med === 'ok' ? 'current ✅' : m.med === 'none' ? 'not in the program' : 'due ⚠') + (m.removed ? ' · ⛔ not cleared for exposure work' : '') : 'No medical status yet.') + ' Details are visible only to the worker, the admins and the Office Manager.</div>';
+  else h += '<div data-ec-med="1"><div class="m">Loading…</div></div>';
+  return h;
+}
+function medDetail(el, holder){
+  fnCall({ op: 'person', email: holder.email }).then(function(j){
+    if (!el.isConnected) return; if (!j || !j.ok) { el.innerHTML = '<div class="m">' + esc(s(j && j.error) || 'Could not load.') + '</div>'; return; }
+    var r = j.rec, un = arr(r.notices).filter(function(n){ return !n.seenAt; });
+    el.innerHTML = '<div class="m">Admins / Office Manager only.' + (un.length ? ' <b>' + un.length + ' new result(s) not yet seen by ' + esc(holder.name) + '</b>' : ' Every result seen.') + (arr(r.opened).length ? ' Last opened ' + esc(new Date(r.opened[r.opened.length - 1].at).toLocaleString()) + '.' : '') + '</div>'
+      + '<div style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0"><button type="button" data-ec-p="visit">＋ Visit / test result</button><button type="button" data-ec-p="due">Set a next-due date</button><button type="button" data-ec-p="removal">' + (r.removal ? 'Medical removal: end / update' : '＋ Medical removal') + '</button></div>' + recHtml(r, false);
+    el.__rec = r; var box = el.closest('.in') || el.parentElement; if (box) { box.__email = holder.email; box.__name = holder.name; box.__print = printable('Health & exposure records — ' + holder.name, recHtml(r, false)); }
+  });
+}
+function visitForm(holder, done){
+  var VT = arr(rules().visitTypes);
+  modal('＋ Medical visit / test — ' + s(holder.name), '<div class="grid">' + fld('date', 'Date', 'date', today()) + sel('type', 'Type', VT.map(function(v){ return [v.key, v.label]; }), 'bloodLead') + fld('provider', 'Provider / clinic', 'text', '') + fld('result', 'Result (or "on file")', 'text', '', 'e.g. BLL 12 µg/dL · cleared · PASS') + '</div>'
+    + fld('summary', 'Written opinion / summary', 'textarea', '') + '<div class="grid">' + fld('fitModel', 'Fit test: respirator model', 'text', '') + fld('fitResult', 'Fit test: result', 'text', '', 'Pass / fit factor') + '</div>' + fileIn('file', 'Report / written opinion (PDF / photo)', false, 'application/pdf,image/*')
+    + '<div class="m">The worker is told a new result was added (no values in the message) and sees it in their own records.</div>', function(v){
+    return storeAll(v.files && v.files.file, '').then(function(F){ return fnCall({ op: 'add', email: holder.email, name: holder.name, cat: 'visit', rec: { date: v.date, type: v.type, provider: v.provider, result: v.result, summary: v.summary, fit: v.type === 'fit' ? { model: v.fitModel, result: v.fitResult } : undefined, file: F[0] || null } }); }).then(function(j){ if (!j || !j.ok) { toast('Not saved: ' + s(j && j.error), true); return false; } toast('🩺 Saved — ' + s(holder.name) + ' is told a new result was added.'); pullStatus(); if (done) done(); return true; });
+  }, 'Save');
+}
+function removalForm(holder, cur, done){
+  var RM = rules().removal || {};
+  if (cur) return modal('Medical removal — ' + s(holder.name), fld('end', 'Returned to exposure work on (physician cleared)', 'date', '') + fld('wcWeekly', 'Workers\' comp wage replacement per week ($, if any)', 'number', s(cur.wcWeekly || '')) + fileIn('clearance', 'Physician\'s clearance / written opinion', false, 'application/pdf,image/*'), function(v){
+    return storeAll(v.files && v.files.clearance, '').then(function(F){ var pt = { wcWeekly: +v.wcWeekly || 0 }; if (v.end) pt.end = v.end; if (F[0]) pt.clearance = F[0]; return fnCall({ op: 'update', email: holder.email, cat: 'removal', id: cur.id, patch: pt }); }).then(function(j){ if (!j || !j.ok) { toast('Not saved: ' + s(j && j.error), true); return false; } RMC.at = 0; pullStatus(); if (done) done(); return true; });
+  }, 'Save');
+  modal('＋ Medical removal — ' + s(holder.name), '<div class="m">' + esc(RM.note || '') + '</div><div class="grid">' + fld('start', 'Removed from exposure work on', 'date', today()) + fld('reason', 'Reason', 'text', '', 'e.g. elevated blood lead per the physician\'s written opinion')
+    + sel('basis', 'Pay kept at', [['average', 'Average of the last ' + (RM.avgWeeks || 6) + ' weeks before removal'], ['normal', 'Normal hours × rate'], ['set', 'A set weekly amount']], RM.basis || 'average') + fld('weekly', 'Set weekly amount ($) — only for "a set weekly amount"', 'number', '')
+    + fld('wcWeekly', 'Workers\' comp wage replacement per week ($, if any)', 'number', '') + fld('maxMonths', 'Protected for up to (months)', 'number', s(RM.maxMonths || 18)) + '</div>'
+    + fld('criteria', 'Return-to-work criteria', 'textarea', '') + fileIn('file', 'Written medical opinion (PDF / photo)', false, 'application/pdf,image/*'), function(v){
+    return storeAll(v.files && v.files.file, '').then(function(F){ return fnCall({ op: 'add', email: holder.email, name: holder.name, cat: 'removal', rec: { start: v.start, reason: v.reason, basis: v.basis, weekly: v.basis === 'set' ? +v.weekly : undefined, wcWeekly: +v.wcWeekly || 0, maxMonths: +v.maxMonths || undefined, criteria: v.criteria, file: F[0] || null } }); }).then(function(j){ if (!j || !j.ok) { toast('Not saved: ' + s(j && j.error), true); return false; } RMC.at = 0; pullStatus(); toast('🩺 Medical removal saved — payroll keeps their pay (shown on the draft), the schedule warns on exposure jobs.'); if (done) done(); return true; });
+  }, 'Save removal');
+}
+D.addEventListener('click', function(e){
+  var b = e.target && e.target.closest ? e.target.closest('[data-ec-p]') : null; if (!b) return; e.preventDefault();
+  var wrap = b.closest('[data-ec-holder]'); if (!wrap) return; var holder = { email: wrap.getAttribute('data-ec-holder'), name: wrap.getAttribute('data-ec-hname') };
+  var redo = function(){ var el = wrap.querySelector('[data-ec-med]'); if (el) medDetail(el, holder); var c = wrap.querySelector('[data-ec-certs]'); if (c) ST.call(W, function(){ wrap.innerHTML = profHtml(holder, priv()); var el2 = wrap.querySelector('[data-ec-med]'); if (el2) medDetail(el2, holder); }, 400); };
+  var a = b.getAttribute('data-ec-p'), med = wrap.querySelector('[data-ec-med]');
+  if (a === 'cert') certForm(holder, function(){ ST.call(W, function(){ wrap.innerHTML = profHtml(holder, priv()); var el2 = wrap.querySelector('[data-ec-med]'); if (el2) medDetail(el2, holder); }, 300); });
+  if (a === 'visit') visitForm(holder, redo);
+  if (a === 'removal') removalForm(holder, med && med.__rec && med.__rec.removal, redo);
+  if (a === 'due') { var R = rules(), k = W.prompt('Which item? ' + arr(R.medical).map(function(m){ return m.key + ' = ' + m.label; }).join(' · '), 'bloodLead'); if (!k) return; var d = W.prompt('Next due date (YYYY-MM-DD, empty to clear):', ''); if (d == null) return; fnCall({ op: 'due', email: holder.email, name: holder.name, key: s(k), date: s(d) }).then(function(j){ toast(j && j.ok ? 'Saved.' : 'Not saved: ' + s(j && j.error), !(j && j.ok)); redo(); }); }
+}, true);
+D.addEventListener('click', function(e){
+  var b = e.target && e.target.closest ? e.target.closest('[data-ec-marc],[data-ec-mres]') : null; if (!b) return; e.preventDefault();
+  var wrap = b.closest('[data-ec-holder]'); if (!wrap) return; var email = wrap.getAttribute('data-ec-holder'), q = (b.getAttribute('data-ec-marc') || b.getAttribute('data-ec-mres')).split('|');
+  var body = { op: b.hasAttribute('data-ec-marc') ? 'archive' : 'restore', email: email, cat: q[0], id: q[1] };
+  if (body.op === 'archive') { var why = W.prompt('Archive this record? It is kept (hidden from the lists) with who, when and why. Why?', ''); if (why == null || !s(why)) return; body.why = s(why); }
+  fnCall(body).then(function(j){ toast(j && j.ok ? (body.op === 'archive' ? '🗄 Archived — kept.' : '↩ Restored.') : 'Not done: ' + s(j && j.error), !(j && j.ok)); var el = wrap.querySelector('[data-ec-med]'); if (el) medDetail(el, { email: email, name: wrap.getAttribute('data-ec-hname') }); });
+}, true);
+function profBlock(holder){ var d = D.createElement('div'); d.className = 'gc-ec'; d.id = 'gc-ec-prof'; d.setAttribute('data-ec-holder', low(holder.email)); d.setAttribute('data-ec-hname', s(holder.name)); d.innerHTML = '<div data-ec-certs="1"></div>'; d.innerHTML = profHtml(holder, priv()); var el = d.querySelector('[data-ec-med]'); if (el) medDetail(el, holder); return d; }
+function openProfile(email, name){ css(); var o = modal('📜 Certifications & 🩺 medical — ' + s(name || email), '<div class="m" data-ec-wait="1">Loading…</div>', null); var inn = o.querySelector('.in'); return pullCerts().then(function(){ var w = inn.querySelector('[data-ec-wait]'); if (w) w.remove(); inn.insertBefore(profBlock({ email: email, name: name || email }), inn.querySelector('.acts')); return o; }, function(){ return o; }); }
+(function wrapProfile(){
+  var f = W._gcRenderEmployeeProfile; if (typeof f !== 'function' || f.__gcEc) return;
+  var w = async function(body, S, render){
+    var r = await f.apply(this, arguments);
+    try { var U = arr(W._crm && W._crm.users), u = U.find(function(x){ return x && (s(x.id) === s(S.emp) || s(x.name) === s(S.emp)); }); if (u && body && !body.querySelector('#gc-ec-prof')) { css(); body.appendChild(profBlock({ email: u.email, name: u.name })); } } catch (e) {}
+    return r;
+  };
+  w.__gcEc = true; W._gcRenderEmployeeProfile = w;
+})();
+
+/* ═════ ☢️ Environmental tab: the overview of every active env job ═════ */
+function overview(){ return envJobs(false).map(function(p){ var E = evaluate(p); return { p: p, E: E, next: (E.items.filter(function(x){ return x.st === 'block'; })[0] || E.items.filter(function(x){ return x.st === 'due'; })[0] || null) }; }).sort(function(a, b){ var o = { block: 0, due: 1, ok: 2 }; return o[a.E.status] - o[b.E.status]; }); }
+var UNSEEN = { at: 0, h: '' };
+function overHtml(){
+  var L = overview(), n = { block: 0, due: 0, ok: 0 }; L.forEach(function(x){ n[x.E.status]++; });
+  var h = '<h3>🛡 Environmental compliance</h3><div class="m">Every active lead / asbestos / mold / trauma job. ' + chip('block', n.block + ' ⛔ blocking') + ' ' + chip('due', n.due + ' ⚠ items due') + ' ' + chip('ok', n.ok + ' ✅ compliant') + (admin() ? ' <button type="button" data-ec-o="rules">⚙ Compliance rules</button>' : '') + '</div>';
+  h += L.length ? '<div class="tw"><table><thead><tr><th>Job</th><th>Kind</th><th>Status</th><th>Next</th></tr></thead><tbody>' + L.map(function(x){ return '<tr data-ec-job="' + esc(x.p.id) + '"><td><button type="button" class="lnk" data-ec-open="' + esc(x.p.id) + '" style="border:0;background:none;color:#1d4ed8;text-decoration:underline;padding:0;min-height:0">' + esc(x.p.name || x.p.client || 'Job') + '</button><div class="m">' + esc([x.p.address, x.p.pm ? 'PM ' + x.p.pm : ''].filter(Boolean).join(' · ')) + '</div></td><td>' + esc(x.E.kinds.map(kindLabel).join(', ')) + (x.E.state ? ' · ' + esc(x.E.state) : '') + '</td><td>' + chip(x.E.status, ICON[x.E.status]) + '<div class="m">' + (x.E.counts.block || 0) + ' ⛔ · ' + (x.E.counts.due || 0) + ' ⚠</div></td><td>' + (x.next ? esc(x.next.label) + '<div class="m">' + esc(x.next.note) + '</div>' : '—') + '</td></tr>'; }).join('') + '</tbody></table></div>' : '<div class="m">No active environmental jobs.</div>';
+  if (priv()) h += '<div style="margin-top:10px"><b>🩺 New results the worker has not seen yet</b> <span class="m">(admins / Office Manager — proof each worker was shown their results)</span><div data-ec-unseen="1">' + (UNSEEN.h || '<div class="m">Loading…</div>') + '</div></div>';
+  return h;
+}
+function loadUnseen(){
+  if (!priv() || Date.now() - UNSEEN.at < 60000) return; UNSEEN.at = Date.now();
+  fnCall({ op: 'all' }).then(function(j){
+    if (!j || !j.ok) { UNSEEN.h = '<div class="m">' + esc(s(j && j.error) || 'Could not load.') + '</div>'; return; }
+    var rows = []; Object.keys(obj(j.people)).forEach(function(e){ var p = j.people[e]; arr(p.unseen).forEach(function(n){ rows.push('<tr><td><button type="button" data-ec-prof="' + esc(e) + '" data-ec-pname="' + esc(p.name) + '" style="border:0;background:none;color:#1d4ed8;text-decoration:underline;padding:0;min-height:0">' + esc(p.name || e) + '</button></td><td>' + esc(n.what) + '</td><td>' + esc(new Date(n.at).toLocaleString()) + '</td><td>' + esc(p.lastOpened ? new Date(p.lastOpened).toLocaleString() : 'never') + '</td></tr>'); }); });
+    UNSEEN.h = rows.length ? '<div class="tw"><table><thead><tr><th>Worker</th><th>New</th><th>Added</th><th>Last opened their records</th></tr></thead><tbody>' + rows.join('') + '</tbody></table></div>' : '<div class="m">Every worker has seen every result. ✅</div>';
+    var el = D.querySelector('#gc-ec-over [data-ec-unseen]'); if (el) el.innerHTML = UNSEEN.h;
+  });
+}
+function paintOver(){
+  try {
+    var host = D.querySelector('.gcenv'), el = D.getElementById('gc-ec-over');
+    if (!host || !(office() || envPerson() || (W._gcEnviroCanSee && W._gcEnviroCanSee()))) { if (el) el.remove(); return; }
+    css(); loadUnseen();
+    if (!el) { el = D.createElement('div'); el.id = 'gc-ec-over'; el.className = 'gc-ec-over'; el.setAttribute('data-gc-keep', '1'); }
+    var sub = host.querySelector('.sub'); if (el.parentNode !== host) host.insertBefore(el, sub ? sub.nextSibling : host.firstChild);
+    var h = overHtml(); if (el.__h !== h) { el.innerHTML = h; el.__h = h; }
+  } catch (e) { W.__gcEcErr = String(e && e.stack || e); }
+}
+D.addEventListener('click', function(e){
+  var b = e.target && e.target.closest ? e.target.closest('[data-ec-open],[data-ec-o],[data-ec-prof]') : null; if (!b) return; e.preventDefault(); e.stopPropagation();
+  if (b.hasAttribute('data-ec-open')) { var p = proj(b.getAttribute('data-ec-open')); try { if (p && W._gcOpenProject && typeof W._gcOpenProject === 'function') W._gcOpenProject(p); else if (p && W._openJobDetail) W._openJobDetail(p); } catch (x) {} try { if (W._setView) W._setView('projects'); } catch (x) {} return; }
+  if (b.hasAttribute('data-ec-prof')) { openProfile(b.getAttribute('data-ec-prof'), b.getAttribute('data-ec-pname')); return; }
+  if (b.getAttribute('data-ec-o') === 'rules') rulesEditor();
+}, true);
+
+/* ═════ GrayCo Field: the job card ═════ */
+function fieldSheet(p){
+  var E = evaluate(p), bad = E.items.filter(function(x){ return x.st === 'block' || x.st === 'due'; });
+  var o = modal('🛡 Compliance — ' + s(p.name), '<div>' + chip(E.status, ICON[E.status]) + ' <span class="m">' + esc(E.kinds.map(kindLabel).join(' + ')) + '</span></div>'
+    + (E.closeout.length ? '<div class="m" style="color:#991b1b;font-weight:700;margin-top:6px">⛔ Cannot be closed until: ' + esc(E.closeout.join(' · ')) + '</div>' : '')
+    + (bad.length ? bad.slice(0, 14).map(function(x){ return '<div style="padding:6px 0;border-top:1px solid #f1f5f9">' + chip(x.st) + ' <b>' + esc(x.label) + '</b><div class="m">' + esc(x.note) + '</div></div>'; }).join('') : '<div class="m" style="margin-top:8px">Nothing due. ✅</div>')
+    + '<div class="acts"><button type="button" class="g" data-fs="daily">📋 Today\'s daily log</button><button type="button" data-fs="air">🌫 Log an air sample</button></div>', null);
+  o.addEventListener('click', function(e){ var b = e.target.closest && e.target.closest('[data-fs]'); if (!b) return; o.remove(); if (b.getAttribute('data-fs') === 'daily') dailyForm(p.id); else airForm(p.id); });
+}
+var REG = false;
+function regField(){
+  var T = W._gcFieldTools; if (!T || REG) return; REG = true;
+  try {
+    T.register({ id: 'envcomp', icon: '🛡', label: function(p){ var E = evaluate(p); return 'Compliance ' + ({ ok: '✅', due: '⚠', block: '⛔' })[E.status]; }, roles: [], needsSigned: false, order: 44, show: function(p){ return isOn(p); }, run: function(p){ fieldSheet(p); } });
+    T.register({ id: 'envcomp_log', icon: '📋', label: 'Daily log (env)', roles: [], needsSigned: false, order: 45, show: function(p){ return isOn(p); }, run: function(p){ dailyForm(p.id); } });
+  } catch (e) {}
+}
+function fieldChips(){
+  try {
+    [].forEach.call(D.querySelectorAll('#_gcJobPick .fh-job[data-job]'), function(card){
+      var p = proj(card.getAttribute('data-job')), ex = card.querySelector('.gc-ec-fchip');
+      if (!p || !isOn(p)) { if (ex) ex.remove(); return; }
+      var E = evaluate(p), t = '🛡 ' + ICON[E.status] + (E.counts.block ? ' · ' + E.counts.block + ' blocking' : E.counts.due ? ' · ' + E.counts.due + ' due' : '');
+      if (!ex) { css(); ex = D.createElement('div'); var a = card.querySelector('.fh-a'); if (a && a.parentNode === card) card.insertBefore(ex, a.nextSibling); else card.appendChild(ex); }
+      if (ex.textContent !== t) ex.textContent = t; ex.className = 'gc-ec-fchip ' + E.status; ex.setAttribute('data-ec-status', E.status);
+    });
+  } catch (e) {}
+}
+
+/* ═════ ⚙ the rules editor (admins): every list is a table ═════ */
+function rulesEditor(){
+  if (!admin()) { toast('Only an admin can change the compliance rules.', true); return; }
+  var R = rules(), tab = 'people';
+  var LBL = { kinds: 'Job kinds', certTypes: 'Certification types', people: '1 · People', medical: '🩺 Medical surveillance', visitTypes: 'Visit types', air: '2 · Air testing', notices: '3 · Notices', daily: '4 · Daily log', programs: '5 · Programs', retention: '6 · Retention', removal: 'Medical removal', settings: 'Settings' };
+  var o = modal('⚙ Compliance rules', '<div class="m">' + esc(R.note) + '</div><div data-re-tabs style="display:flex;flex-wrap:wrap;gap:4px;margin:8px 0"></div><div data-re-body></div><div class="acts" style="margin-top:6px"><button type="button" data-re="add">＋ Add a row</button><button type="button" data-re="reset">Reset this list to the defaults</button></div>', function(){ collect(); return saveRules(R).then(function(r){ toast(r.ok ? '⚙ Compliance rules saved.' : r.error, !r.ok); paintSoon(); return r.ok; }); }, 'Save rules');
+  var body = o.querySelector('[data-re-body]'), tabs = o.querySelector('[data-re-tabs]');
+  function cols(k){ var c = []; arr(R[k]).concat(arr(CORE.DEFAULT_RULES[k])).forEach(function(r){ Object.keys(obj(r)).forEach(function(x){ if (c.indexOf(x) < 0) c.push(x); }); }); return c; }
+  function cell(v){ if (typeof v === 'boolean') return '<input type="checkbox" data-t="bool"' + (v ? ' checked' : '') + '>'; if (v && typeof v === 'object') return '<input data-t="json" value="' + esc(JSON.stringify(v)) + '">'; return '<input data-t="' + (typeof v === 'number' ? 'num' : 'str') + '" value="' + esc(v == null ? '' : v) + '">'; }
+  function draw(){
+    tabs.innerHTML = Object.keys(LBL).map(function(k){ return '<button type="button" data-re-tab="' + k + '"' + (k === tab ? ' class="g"' : '') + '>' + esc(LBL[k]) + '</button>'; }).join('');
+    if (tab === 'removal' || tab === 'settings') { var ob = obj(R[tab]); body.innerHTML = '<table>' + Object.keys(ob).map(function(k){ return '<tr data-re-kv="' + esc(k) + '"><th>' + esc(k) + '</th><td>' + cell(ob[k]) + '</td></tr>'; }).join('') + '</table>'; return; }
+    var C0 = cols(tab); body.innerHTML = '<div class="tw"><table><thead><tr>' + C0.map(function(c){ return '<th>' + esc(c) + '</th>'; }).join('') + '<th></th></tr></thead><tbody>' + arr(R[tab]).map(function(r, i){ return '<tr data-re-row="' + i + '">' + C0.map(function(c){ var v = r[c]; if (v === undefined) { var d = arr(CORE.DEFAULT_RULES[tab]).find(function(x){ return x[c] !== undefined; }); v = d && typeof d[c] === 'boolean' ? false : ''; } return '<td data-c="' + esc(c) + '">' + cell(v) + '</td>'; }).join('') + '<td><button type="button" data-re-del="' + i + '" aria-label="Remove row">×</button></td></tr>'; }).join('') + '</tbody></table></div>';
+  }
+  function val(inp){ var t = inp.getAttribute('data-t'); if (t === 'bool') return inp.checked; if (t === 'num') { var n = parseFloat(inp.value); return isFinite(n) ? n : inp.value; } if (t === 'json') { try { return JSON.parse(inp.value); } catch (e) { return inp.value; } } return inp.value; }
+  function collect(){
+    if (tab === 'removal' || tab === 'settings') { [].forEach.call(body.querySelectorAll('[data-re-kv]'), function(tr){ R[tab][tr.getAttribute('data-re-kv')] = val(tr.querySelector('input')); }); return; }
+    R[tab] = [].map.call(body.querySelectorAll('[data-re-row]'), function(tr){ var r = {}; [].forEach.call(tr.querySelectorAll('td[data-c]'), function(td){ var v = val(td.querySelector('input')); if (v !== '') r[td.getAttribute('data-c')] = v; }); return r; });
+  }
+  o.addEventListener('click', function(e){
+    var b = e.target.closest && e.target.closest('[data-re-tab],[data-re],[data-re-del]'); if (!b) return;
+    collect();
+    if (b.hasAttribute('data-re-tab')) tab = b.getAttribute('data-re-tab');
+    else if (b.hasAttribute('data-re-del')) R[tab].splice(+b.getAttribute('data-re-del'), 1);
+    else if (b.getAttribute('data-re') === 'add' && Array.isArray(R[tab])) R[tab].push({});
+    else if (b.getAttribute('data-re') === 'reset') R[tab] = JSON.parse(JSON.stringify(CORE.DEFAULT_RULES[tab]));
+    draw();
+  });
+  draw();
+}
+
+/* ── the timers ── */
+function tick(){ paint(); fieldChips(); paintOver(); paintMineBtn(); decorateSchedSheet(); closeGate(); schedWatch(); regField(); }
+SI.call(W, tick, 1200);
+ST.call(W, function(){ pullCerts(); pullStatus(); }, 2500); ST.call(W, function(){ pullRules(); pullStatus(); pullCerts(); refreshMine(); }, 6000); SI.call(W, function(){ pullRules(); pullStatus(); pullCerts(); refreshMine(); }, 120000);
+ST.call(W, function(){ sweep(); guard(); }, 40000); SI.call(W, function(){ sweep(); guard(); }, 300000);
+W._gcEnvComp = { evaluate: evaluate, isOn: isOn, paint: paint, sweep: sweep, guard: guard, rules: rules, saveRules: saveRules, pullRules: pullRules, status: function(){ return MS; }, pullStatus: pullStatus, pullCerts: pullCerts, logAir: logAir, logDaily: logDaily, fileNotice: fileNotice,
+  openMine: openMine, refreshMine: function(){ MINE.at = 0; refreshMine(); }, openProfile: openProfile, addCert: addCert, overview: overview, canSchedule: canSchedule, closeGate: closeGate, schedAppt: schedAppt, rulesEditor: rulesEditor, fn: fnCall, CORE: CORE,
+  schedWatch: schedWatch, _sched: function(){ return { seen: SCHED_SEEN, list: schedList() }; }, dailyForm: dailyForm, airForm: airForm, archive: archiveRec, restore: restoreRec, del: deleteRec, editAir: editAir, recordPackage: recordPackage, pkgLines: pkgLines, _mine: MINE, _kept: function(){ return KEPT; } };
 })(window);
 </script>
