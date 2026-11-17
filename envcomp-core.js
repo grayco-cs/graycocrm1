@@ -139,6 +139,7 @@ var DEFAULT_RULES = {
     { key: 'deconPhotos', section: 'Decon / hygiene', label: 'Photo of the decon unit today', type: 'photos', kinds: 'lead_abate', decon: true },
     { key: 'waste', section: 'Waste', label: 'Waste generated', type: 'rows', cols: 'bags|Bags, drums|Drums, manifest|Manifest #, store|Storage location', sum: 'bags, drums', kinds: '*' },
     { key: 'signs', section: 'Signage', label: 'Warning signs posted at every entrance', type: 'check', kinds: '*' },
+    { key: 'signPhotos', section: 'Signage', label: 'Photo of the posted signs (ENVDOCS: print them from 🛡 Compliance → 🪧 Signs)', type: 'photos', kinds: '*' },
     { key: 'incidents', section: 'Incidents', label: 'Incidents, near-misses, deviations', type: 'textarea', kinds: '*' },
     { key: 'supNotes', section: 'Sign-off', label: 'Supervisor notes', type: 'textarea', kinds: '*' },
     { key: 'photos', section: 'Sign-off', label: 'Photos', type: 'photos', kinds: '*' },
@@ -666,7 +667,7 @@ function programInfo(R, id, ctx){
     reviewDue: !rv || next <= addDays(t, +obj(R.settings).programReviewDays || 30), overdue: !rv || next < t, inUse: r.inUse !== false, by: ruleBy(r), kinds: listOf(r.kinds) };
 }
 /* the programs that apply to a job (the asbestos program by who does the asbestos work) */
-function jobPrograms(R, kinds, by){ return arr(R.programs).filter(function(r){ return r && hasKind(r, kinds) && byOk(r, kinds, by); }); }
+function jobPrograms(R, kinds, by){ var ck = crewKinds(kinds, by); return arr(R.programs).filter(function(r){ if (!r || !hasKind(r, kinds) || !byOk(r, kinds, by)) return false; if (ruleBy(r) || listOf(r.kinds).indexOf("*") >= 0) return true; return hasKind(r, ck); }); }   /* a licensed sub's asbestos work brings no crew program (respirators, lead training) with it */
 
 /* ── the per-job Employee Protection Plan ── */
 function hash(t){ var h = 5381; t = String(t); for (var i = 0; i < t.length; i++) h = ((h << 5) + h + t.charCodeAt(i)) | 0; return (h >>> 0).toString(36); }
@@ -743,7 +744,7 @@ function buildPlan(p, ctx, opt){
   /* 13 training */
   var reqs = arr(R.people).filter(function(r){ return hasKind(r, kinds) && byOk(r, kinds, by) && r.who !== 'company'; });
   sec('13. Training and certifications', reqs.map(function(r){ return [s(r.label) || certType(R, r.cert).label, E.items.filter(function(x){ return x.sec === 'people' && (x.id === r.id || x.id.indexOf(r.id + ':') === 0); }).map(function(x){ return (x.who || '') + ' ' + (x.st === 'ok' ? '✓' : x.st === 'due' ? '(due)' : '(MISSING)'); }).join(', ') || 'checked when the crew is on the job']; }));
-  sec('14. Signs and labels', [], planTexts(R, kinds, by, 'signs'));
+  sec('14. Signs and labels', jobSigns(p, kinds, R).map(function(g){ return ['Sign', s(g.title) + (g.required ? ' (required legend — printed exactly as written)' : '')]; }).concat([['Print', 'Job → 🛡 Compliance → 🪧 Signs (letter, 11 × 17, 18 × 24; English / Spanish) — posted signs photographed on the daily log']]), planTexts(R, kinds, by, 'signs'));
   /* 15 competent person */
   sec('15. Competent person / supervisor on site', [['GrayCo competent person', s(I.competent) || sups.map(function(c){ return c.name + ' (' + c.checks.filter(function(k){ return k.st === 'ok' || k.st === 'soon'; }).map(function(k){ return k.label; }).join(', ') + ')'; }).join('; ') || 'NOT NAMED — mark the supervisor on the panel'],
     asb && by === 'sub' ? ['Asbestos competent person (sub)', s(S.competent) || 'not named'] : null]);
