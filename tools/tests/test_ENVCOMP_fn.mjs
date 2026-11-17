@@ -16,7 +16,7 @@ const certs = [
   { id: 'c1', holderType: 'person', holder: 'sam@example.com', holderName: 'Sam Sup', ckind: 'asb_supervisor', name: 'Asbestos Supervisor', state: 'TN', expires: day(300) },
   { id: 'c2', holderType: 'company', holder: 'company', name: 'TN asbestos contractor license', ckind: 'asb_firm', state: 'TN', expires: day(400) },
   { id: 'c3', holderType: 'person', holder: 'sam@example.com', holderName: 'Sam Sup', name: 'Lead Abatement Supervisor Initial', issuer: 'Seagull Environmental Training', ckind: 'lead_supervisor', state: 'AR', issued: '2026-11-16', expires: day(364) }];
-const asb = { id: 'J1', name: 'Asbestos job', type: 'Asbestos abatement', companyId: 'environmental', address: '1 Demo St, Memphis, TN 38103', status: 'active', pct: 10, startDate: day(-2), abatementSupervisor: 'Sam Sup', crew: ['Wes Work'], pm: 'Pat PM' };
+const asb = { id: 'J1', name: 'Asbestos job', type: 'Asbestos abatement', companyId: 'environmental', address: '1 Demo St, Memphis, TN 38103', status: 'active', pct: 10, startDate: day(-2), abatementSupervisor: 'Sam Sup', crew: ['Wes Work'], pm: 'Pat PM', envComp: { asbBy: 'crew' } };   /* ENVDOCS: GrayCo's own crew does this asbestos work (the default is a licensed sub) */
 const plain = { id: 'J2', name: 'Kitchen', type: 'Kitchen remodel', address: '2 Demo St, Memphis, TN', status: 'active' };
 const ctx = { rules: C.rules(), certs, users, schedule: [], medStatus: {}, today: C.today(), company: p => p.companyId || 'construction' };
 let E = C.evaluate(asb, ctx);

@@ -54,7 +54,9 @@ var DEFAULT_RULES = {
     { key: 'health_effects', label: 'Health-effects training (lead / asbestos / mold)', words: 'health effects, health-effects', months: 12 },
     { key: 'bbp', label: 'Bloodborne pathogens training', words: 'bloodborne, bbp', months: 12 },
     { key: 'hepb', label: 'Hepatitis B vaccination (or signed declination)', words: 'hepatitis b, hep b' },
-    { key: 'mold_tech', label: 'Mold remediation training (e.g. IICRC AMRT)', words: 'amrt, mold remediation, applied microbial' }],
+    { key: 'mold_tech', label: 'Mold remediation training (e.g. IICRC AMRT)', words: 'amrt, mold remediation, applied microbial' },
+    /* ENVDOCS: the GrayCo crew on a job where a licensed sub does the asbestos work */
+    { key: 'asb_awareness', label: 'Asbestos awareness training', words: 'asbestos awareness, awareness training', months: 12 }],
   /* 1 · people on the job: who = company | supervisor (at least one on the crew) | worker (each non-supervisor) | each (everyone) */
   people: [
     { id: 'rrp-firm', kinds: 'lead_rrp', who: 'company', cert: 'rrp_firm', block: true, note: CONFIRM },
@@ -63,9 +65,10 @@ var DEFAULT_RULES = {
     { id: 'la-firm', kinds: 'lead_abate', who: 'company', cert: 'lead_abate_firm', block: true, note: CONFIRM },
     { id: 'la-sup', kinds: 'lead_abate', who: 'supervisor', cert: 'lead_supervisor', block: true, label: 'A certified lead abatement supervisor on site', note: CONFIRM },
     { id: 'la-worker', kinds: 'lead_abate', who: 'each', cert: 'lead_worker', block: true, label: 'Every worker: certified lead abatement worker (or supervisor)', note: CONFIRM },
-    { id: 'asb-firm', kinds: 'asbestos', who: 'company', cert: 'asb_firm', block: true, note: CONFIRM },
-    { id: 'asb-sup', kinds: 'asbestos', who: 'supervisor', cert: 'asb_supervisor', block: true, label: 'A state-licensed asbestos supervisor on site', note: CONFIRM },
-    { id: 'asb-worker', kinds: 'asbestos', who: 'each', cert: 'asb_worker', block: true, label: 'Every worker: state-licensed asbestos worker (or supervisor)', note: CONFIRM },
+    { id: 'asb-firm', kinds: 'asbestos', by: 'crew', who: 'company', cert: 'asb_firm', block: true, note: CONFIRM },
+    { id: 'asb-sup', kinds: 'asbestos', by: 'crew', who: 'supervisor', cert: 'asb_supervisor', block: true, label: 'A state-licensed asbestos supervisor on site', note: CONFIRM },
+    { id: 'asb-worker', kinds: 'asbestos', by: 'crew', who: 'each', cert: 'asb_worker', block: true, label: 'Every worker: state-licensed asbestos worker (or supervisor)', note: CONFIRM },
+    { id: 'asb-aware', kinds: 'asbestos', by: 'sub', who: 'each', cert: 'asb_awareness', block: false, label: 'GrayCo crew: asbestos awareness training (the licensed sub does the asbestos work)', note: CONFIRM },
     { id: 'mold-train', kinds: 'mold', who: 'supervisor', cert: 'mold_tech', block: false, note: CONFIRM },
     { id: 'tr-bbp', kinds: 'trauma', who: 'each', cert: 'bbp', block: true, note: CONFIRM },
     { id: 'tr-hepb', kinds: 'trauma', who: 'each', cert: 'hepb', block: false, note: CONFIRM },
@@ -129,6 +132,11 @@ var DEFAULT_RULES = {
     { key: 'air', section: 'Air monitoring', label: 'Air samples taken today (pump data)', type: 'airlink', cols: 'sample|Sample / location / person, pump|Pump ID, pre|Flow pre (L/min), post|Flow post (L/min), start|Start, stop|Stop, vol|Volume (L)', kinds: 'lead_abate, asbestos, mold, trauma' },
     { key: 'ppe', section: 'PPE & decon', label: 'PPE used', type: 'rows', cols: 'resp|Respirator type, suit|Suits / gloves / boots, who|Who', kinds: '*' },
     { key: 'decon', section: 'PPE & decon', label: 'Decon procedures followed', type: 'textarea', kinds: 'lead_abate, asbestos, mold, trauma' },
+    /* ENVDOCS: the lead decon / hygiene facility, checked every work day (owner: "Set up decon unit for lead.") */
+    { key: 'deconOk', section: 'Decon / hygiene', label: 'Decon unit checked — clean, lit, supplies stocked (soap, clean water, towels, bags, suits, booties)', type: 'check', kinds: 'lead_abate', decon: true },
+    { key: 'deconWater', section: 'Decon / hygiene', label: 'Wash water handled per the plan (collected / filtered / disposed — never dumped on the ground or down a storm drain)', type: 'check', kinds: 'lead_abate', decon: true },
+    { key: 'deconNote', section: 'Decon / hygiene', label: 'Decon notes / repairs / supplies restocked', type: 'text', kinds: 'lead_abate', decon: true },
+    { key: 'deconPhotos', section: 'Decon / hygiene', label: 'Photo of the decon unit today', type: 'photos', kinds: 'lead_abate', decon: true },
     { key: 'waste', section: 'Waste', label: 'Waste generated', type: 'rows', cols: 'bags|Bags, drums|Drums, manifest|Manifest #, store|Storage location', sum: 'bags, drums', kinds: '*' },
     { key: 'signs', section: 'Signage', label: 'Warning signs posted at every entrance', type: 'check', kinds: '*' },
     { key: 'incidents', section: 'Incidents', label: 'Incidents, near-misses, deviations', type: 'textarea', kinds: '*' },
@@ -137,11 +145,14 @@ var DEFAULT_RULES = {
     { key: 'signoff', section: 'Sign-off', label: 'Supervisor sign-off', type: 'signoff', kinds: '*' }],
   dailyBlock: false,
   /* 5 · the company's written programs (company-docs/), with the company review date and the job review */
-  programs: [
-    { id: 'resp', label: 'Respiratory Protection Program', file: '/company-docs/01667c529f454cf1/GrayCo_Respiratory_Protection_Program.docx', kinds: 'lead_abate, asbestos, mold, trauma', reviewEveryMonths: 12, reviewed: '' },
-    { id: 'hazcom', label: 'Hazard Communication Program', file: '/company-docs/01667c529f454cf1/GrayCo_Hazard_Communication_Program.docx', kinds: '*', reviewEveryMonths: 12, reviewed: '' },
-    { id: 'lead', label: 'Lead Safety Program', file: '/company-docs/01667c529f454cf1/GrayCo_Lead_Safety_Program.docx', kinds: 'lead_rrp, lead_abate', reviewEveryMonths: 12, reviewed: '' },
-    { id: 'asb', label: 'Asbestos Awareness and Control Program', file: '/company-docs/01667c529f454cf1/GrayCo_Asbestos_Awareness_and_Control_Program.docx', kinds: 'asbestos', reviewEveryMonths: 12, reviewed: '' },
+  programs: [   /* ENVDOCS: the current versions (the earlier files stay in company-docs/, listed as earlier versions);
+     adminName / adminPhone / approvedBy / approvedOn are filled into the documents and the per-job plans (adminName blank = the default
+     administrator: an admin from the people list — for lead work the admin holding the lead supervisor certification) */
+    { id: 'resp', label: 'Respiratory Protection Program', file: '/company-docs/01667c529f454cf1/GrayCo_Respiratory_Protection_Program_v2.docx', kinds: 'lead_abate, asbestos, mold, trauma', reviewEveryMonths: 12, reviewed: '', adminName: '', adminPhone: '', approvedBy: '', approvedOn: '', adminCert: 'lead_supervisor' },
+    { id: 'hazcom', label: 'Hazard Communication Program', file: '/company-docs/01667c529f454cf1/GrayCo_Hazard_Communication_Program.docx', kinds: '*', reviewEveryMonths: 12, reviewed: '', adminName: '', adminPhone: '', approvedBy: '', approvedOn: '' },
+    { id: 'lead', label: 'Lead Safety Program', file: '/company-docs/01667c529f454cf1/GrayCo_Lead_Safety_Program_v2.docx', kinds: 'lead_rrp, lead_abate', reviewEveryMonths: 12, reviewed: '', adminName: '', adminPhone: '', approvedBy: '', approvedOn: '', adminCert: 'lead_supervisor' },
+    { id: 'asb', label: 'Asbestos Awareness and Control Program (a licensed sub does the asbestos work)', file: '/company-docs/01667c529f454cf1/GrayCo_Asbestos_Awareness_and_Control_Program_v2.docx', kinds: 'asbestos', by: 'sub', reviewEveryMonths: 12, reviewed: '', adminName: '', adminPhone: '', approvedBy: '', approvedOn: '' },
+    { id: 'asbcrew', label: 'GrayCo Asbestos Program (GrayCo crew does the asbestos work)', file: '/company-docs/01667c529f454cf1/GrayCo_Asbestos_Program.docx', kinds: 'asbestos', by: 'crew', inUse: false, reviewEveryMonths: 12, reviewed: '', adminName: '', adminPhone: '', approvedBy: '', approvedOn: '' },
     { id: 'toolbox', label: 'Toolbox Talks & Training Plan', file: '/company-docs/01667c529f454cf1/GrayCo_Lead_Asbestos_Toolbox_Talks_and_Training_Plan.docx', kinds: 'lead_rrp, lead_abate, asbestos', reviewEveryMonths: 12, reviewed: '' },
     { id: 'health', label: 'Health Effects training — lead & asbestos', file: '/company-docs/01667c529f454cf1/GrayCo_Health_Effects_Lead_Asbestos_Training.docx', kinds: 'lead_rrp, lead_abate, asbestos', reviewEveryMonths: 12, reviewed: '' }],
   /* 6 · records retention (years) — what kind of record keeps how long; kept from deletion until then */
@@ -151,14 +162,102 @@ var DEFAULT_RULES = {
     { cat: 'exposure', label: 'Exposure monitoring (air samples)', years: 'forever', note: 'Kept forever (owner\'s rule)' },
     { cat: 'medical', label: 'Medical surveillance & medical removal records', years: 'forever', note: 'Kept forever (owner\'s rule)' },
     { cat: 'training', label: 'Training / certification records', years: 'forever', note: 'Kept forever (owner\'s rule)' }],
-  settings: { reminderDays: 5, closeoutOverride: 'admin', expiringDays: 30 }
+  settings: { reminderDays: 5, closeoutOverride: 'admin', expiringDays: 30,
+    /* ENVDOCS: asbDefault — who does the asbestos work on a job unless the job says otherwise ('sub' = a licensed abatement
+       subcontractor, the owner's 11/17 answer "GrayCo will hire an asbestos contractor for now"; 'crew' = GrayCo's own crew).
+       planBlock: the per-job Employee Protection Plan missing / unsigned → ⛔ instead of ⚠. deconBlock: the same for the decon set-up. */
+    asbDefault: 'sub', planBlock: false, planOwnerSign: true, deconBlock: false, clinic: '', clinicPhone: '', programReviewDays: 30 },
+  /* ENVDOCS: the licensed asbestos abatement sub — what GrayCo collects and keeps (field = the job's sub record field) */
+  subChecks: [
+    { id: 'sub-firm', field: 'license', label: 'Licensed asbestos abatement contractor named — company + state license # (valid)', block: true, note: CONFIRM },
+    { id: 'sub-cp', field: 'competent', label: 'The sub\'s competent person / licensed supervisor on site named', block: true, note: CONFIRM },
+    { id: 'sub-plan', field: 'workPlan', label: 'The sub\'s written work plan received', block: false, note: CONFIRM },
+    { id: 'sub-workers', field: 'workers', label: 'The sub\'s worker license cards / training certificates received', block: false, note: CONFIRM },
+    { id: 'sub-ins', field: 'insurance', label: 'The sub\'s insurance certificate (including pollution liability) received', block: false, note: CONFIRM },
+    { id: 'sub-notice', field: 'notice', label: 'The sub\'s state notification — copy / confirmation # received', block: false, note: CONFIRM },
+    { id: 'sub-release', field: 'release', label: 'Area released to GrayCo in writing (after clearance)', block: false, when: 'clearance', note: CONFIRM }],
+  /* ENVDOCS: the lead decon / hygiene facility (owner: "Set up decon unit for lead.") — when, the set-up checklist, the supplies.
+     Every item is a default — confirm with your state program. */
+  decon: { kinds: 'lead_abate', note: 'Default — a decon / hygiene facility when lead exposure is above the PEL or during interim protection (trigger tasks until the exposure assessment is done). Confirm with your state program.',
+    types: 'Portable decon trailer, Built on site (poly / framed), Wash station (hand & face) + change area',
+    setup: [
+      'Location next to the work area exit — one-way flow: DIRTY / equipment room → WASH (shower or wash station) → CLEAN change room',
+      'Dirty room: bag-out for suits, booties and gloves; labeled 6-mil waste bags; HEPA vacuum',
+      'Wash: clean water supply, soap, towels (shower where feasible); wash water collected / contained',
+      'Clean room: lockers or sealed bags for street clothes, clean towels, mirror, bench',
+      'Flap doors / airlocks between the rooms; tack pad at the dirty-side entrance',
+      'Lighting in every room; GFCI-protected power',
+      'Warning signs at the dirty-side entrance ("DANGER — LEAD WORK AREA"); no eating, drinking or smoking except in the clean area / break area',
+      'Wash-water handling set: collected, filtered / tested as the state program requires, disposed — never on the ground or down a storm drain',
+      'Daily cleaning and inspection assigned (recorded on the daily log)'],
+    supplies: 'HEPA vacuum (+ spare filters / bags), wash station or portable shower with clean water, soap, towels, wash-water collection drum / filter, lockers or bags for street clothes, disposable suits + booties + gloves, 6-mil waste bags + labels + duct tape, mirror, tack pads, warning signs, work lights, GFCI cords, 6-mil poly + framing / zipper doors (built on site)' },
+  /* ENVDOCS: the per-job Employee Protection Plan — the default text of each part by job kind (filled below) */
+  planText: []
 };
-var SECTIONS = ['kinds', 'certTypes', 'people', 'medical', 'visitTypes', 'air', 'notices', 'daily', 'programs', 'retention'];
+/* ENVDOCS: the default text of the per-job Employee Protection Plan — { kinds, by (asbestos: 'crew' | 'sub'), sec, text }.
+   Starting points only, admin-editable (⚙ Compliance rules → Plan text); the plan prints "Default — confirm with your state program / attorney". */
+(function(){
+  var L = 'lead_rrp, lead_abate', P = [];
+  function t(kinds, sec, text, by){ P.push(by ? { kinds: kinds, by: by, sec: sec, text: text } : { kinds: kinds, sec: sec, text: text }); }
+  /* lead (RRP and abatement) — GrayCo's own crew */
+  t(L, 'exposure', 'Trigger tasks (manual scraping, heat gun below 1,100°F, power tools with dust collection, manual demolition, lead soil work) are presumed above the PEL until personal air monitoring or objective data from the last 12 months shows otherwise; interim protection applies until then (Lead Safety Program §4). Action level 30 µg/m³, PEL 50 µg/m³ (8-hour TWA).');
+  t(L, 'engineering', 'Containment: 6-mil plastic floor layers, two-layer entry, critical barriers; HVAC off and returns sealed; HEPA-filtered negative air where set up; power tools only with HEPA dust collection; wet methods (mist and wet-scrape). Lead Safety Program §6.');
+  t(L, 'practices', 'No sanding of any kind, no dry scraping, no open flame, no heat gun at 1,100°F or more, no methylene-chloride strippers; mist and wet-scrape only; clean up before leaving every day; gooseneck-sealed, labeled bags; no eating, drinking, smoking or vaping in the work area; shoe covers off at every exit (Lead Safety Program §5).');
+  t(L, 'respirator', 'Trigger tasks: N100 filtering facepiece or half-face respirator with N100/P100 filters until the exposure assessment shows exposure below the PEL; full-face or PAPR if monitoring shows more than 500 µg/m³. Every wearer medically cleared and fit tested within 12 months (Respiratory Protection Program).');
+  t(L, 'clothing', 'Provided by GrayCo at no cost: disposable coveralls, hoods, shoe covers, gloves, eye protection. Changed at every exit; disposables bagged as lead waste; reusable work clothes cleaned by GrayCo\'s arrangement in labeled bags — never taken home (Lead Safety Program §9).');
+  t(L, 'hygiene', 'Clean change area apart from street clothes; hand and face wash at the work area exit (showers where feasible); break area outside the work area; wash before eating, drinking or smoking and at the end of the shift (Lead Safety Program §10).');
+  t(L, 'housekeeping', 'HEPA vacuum and wet wipe / wet mop only — no dry sweeping, no compressed air, no shop vacs; clean the work area before every break off site and at the end of the day; waste sealed, labeled and secured (Lead Safety Program §7).');
+  t(L, 'inspection', 'Competent person / certified renovator: start of every shift (containment, critical barriers, signs, HEPA equipment, decon / wash station), during the work (work practices, respirators, protective clothing), end of shift (clean-up, waste secured). Recorded on the daily log with photos.');
+  t(L, 'signs', 'DANGER — LEAD WORK AREA signs (English / Spanish) at every entrance, caution tape around the area, labels on every waste bag; signs stay up until cleaning verification / clearance passes.');
+  /* asbestos — a licensed abatement subcontractor does the work (the default) */
+  t('asbestos', 'exposure', 'GrayCo crew: no asbestos exposure is expected — GrayCo does not disturb asbestos-containing material on this job. The licensed abatement subcontractor makes its own exposure assessment under its own program.', 'sub');
+  t('asbestos', 'engineering', 'By the licensed abatement subcontractor: regulated area, critical barriers, HEPA negative air exhausted outside, airlock / decontamination unit, wet methods. GrayCo checks every day that the barriers and signs are intact and keeps other trades out on the sub\'s schedule.', 'sub');
+  t('asbestos', 'practices', 'GrayCo crew (awareness level): never drill, cut, sand, scrape, break or remove asbestos-containing or suspect material; stay out of the regulated area; if suspect material is found — STOP WORK in that area, keep people out, do not clean it up, call the supervisor (Stop Work Form F8); resume only after written release.', 'sub');
+  t('asbestos', 'respirator', 'GrayCo crew: no respirator is required outside the regulated area. The abatement subcontractor provides respirators to its workers under its own respiratory protection program.', 'sub');
+  t('asbestos', 'clothing', 'GrayCo crew: normal work clothing outside the regulated area. The subcontractor provides protective clothing to its own workers.', 'sub');
+  t('asbestos', 'hygiene', 'By the subcontractor: decontamination unit for its workers. GrayCo crew: no eating, drinking or smoking near the regulated area; wash before breaks.', 'sub');
+  t('asbestos', 'housekeeping', 'By the subcontractor inside the regulated area (HEPA, wet methods). GrayCo crew never cleans up suspect debris — report it.', 'sub');
+  t('asbestos', 'inspection', 'GrayCo supervisor: daily check that the regulated area, barriers, negative air and signs are intact and that GrayCo workers stay out; the sub\'s competent person inspects the regulated area under its own program.', 'sub');
+  t('asbestos', 'signs', 'By the subcontractor: DANGER signs at the regulated area and labels on waste. GrayCo shows its crew where ACM is at the start-up meeting and tags ACM left in place "Do not disturb".', 'sub');
+  /* asbestos — GrayCo's own crew (the GrayCo Asbestos Program; not in use at this time) */
+  t('asbestos', 'exposure', 'Initial exposure assessment by the competent person before the work, by work class (I–IV), with personal air monitoring for each class of work until negative exposure data is on file (GrayCo Asbestos Program §5).', 'crew');
+  t('asbestos', 'engineering', 'Regulated area with critical barriers; HEPA-filtered negative pressure enclosure exhausted outside (Class I / II as the program requires); airlock and decontamination unit; HEPA vacuums; wet methods (GrayCo Asbestos Program §6).', 'crew');
+  t('asbestos', 'practices', 'Methods by work class per the GrayCo Asbestos Program §6: wet methods, removal in small sections, no dry sweeping / compressed air / high-speed abrasive tools, waste bagged wet and sealed, glovebag / mini-enclosure where it applies.', 'crew');
+  t('asbestos', 'respirator', 'As set by the work class and exposure assessment (GrayCo Asbestos Program §7): at least a half-face respirator with P100 filters for Class I–III work; full-face / PAPR where required. Medically cleared and fit tested within 12 months.', 'crew');
+  t('asbestos', 'clothing', 'Provided by GrayCo at no cost: disposable full-body coveralls with hoods, foot coverings, gloves; removed in the equipment room; bagged as asbestos waste — never taken home (GrayCo Asbestos Program §8).', 'crew');
+  t('asbestos', 'hygiene', 'Decontamination area: equipment room → shower → clean room, entered and left only through the decon; no eating, drinking or smoking in the regulated area (GrayCo Asbestos Program §9).', 'crew');
+  t('asbestos', 'housekeeping', 'HEPA vacuum and wet clean; no dry sweeping, shoveling or compressed air; waste wetted, double-bagged, labeled and kept in a secured area until disposal (GrayCo Asbestos Program §6).', 'crew');
+  t('asbestos', 'inspection', 'Competent person: at the start of every shift, during the work and at least once per shift — enclosure integrity, negative pressure (manometer log), work practices, PPE, decon (GrayCo Asbestos Program §3).', 'crew');
+  t('asbestos', 'signs', 'DANGER — ASBESTOS signs at every regulated area entrance; labels on every waste container and on ACM left in place (GrayCo Asbestos Program §11).', 'crew');
+  /* mold remediation */
+  t('mold', 'exposure', 'Mold remediation: exposure depends on the size of the affected area and the disturbance; the pre-remediation assessment sets the containment level.');
+  t('mold', 'engineering', 'Containment sized to the job, HEPA air scrubbers / negative air, dehumidification, critical barriers; HVAC isolated.');
+  t('mold', 'practices', 'Remove and bag porous materials, HEPA vacuum, damp wipe, no dry sweeping; bag waste inside containment.');
+  t('mold', 'respirator', 'At least an N95; half-face or full-face with P100 for larger areas or heavy growth, per the Respiratory Protection Program.');
+  t('mold', 'clothing', 'Disposable coveralls with hoods, gloves, goggles, shoe covers — provided at no cost.');
+  t('mold', 'hygiene', 'Change and wash at the containment exit; no eating or drinking in the work area.');
+  t('mold', 'housekeeping', 'HEPA vacuum and damp wipe daily; no dry sweeping or compressed air.');
+  t('mold', 'inspection', 'Supervisor: containment, pressure differential, equipment and PPE at the start of every shift; recorded on the daily log.');
+  t('mold', 'signs', 'Warning signs at the containment entrance; waste bags labeled.');
+  /* trauma / biohazard */
+  t('trauma', 'exposure', 'Bloodborne pathogens and other potentially infectious materials (Exposure Control Plan).');
+  t('trauma', 'engineering', 'Controlled work zones (dirty / decon / clean), sharps containers, sealed biohazard containers.');
+  t('trauma', 'practices', 'Universal precautions; no recapping sharps; disinfect with an EPA-registered disinfectant per label dwell time; biohazard waste in labeled red bags / containers.');
+  t('trauma', 'respirator', 'N95 or half-face with P100 / organic vapor cartridges as the task requires (Respiratory Protection Program).');
+  t('trauma', 'clothing', 'Fluid-resistant coveralls, double gloves, face shield / goggles, boot covers — provided at no cost.');
+  t('trauma', 'hygiene', 'Hand-washing / decon station at the exit; Hepatitis B vaccination offered.');
+  t('trauma', 'housekeeping', 'Clean and disinfect equipment before it leaves the site.');
+  t('trauma', 'inspection', 'Supervisor: zones, PPE and waste containers at the start of every shift.');
+  t('trauma', 'signs', 'BIOHAZARD labels on containers and the work zone entrance.');
+  t('general', 'exposure', 'Set the job kind on the 🛡 Compliance panel to fill this plan with the right controls.');
+  DEFAULT_RULES.planText = P;
+})();
+var SECTIONS = ['kinds', 'certTypes', 'people', 'medical', 'visitTypes', 'air', 'notices', 'daily', 'programs', 'retention', 'subChecks', 'planText'];
 /* the rules in use: the admin's table, each section falling back to the default when missing */
 function rules(r){
   var R = clone(DEFAULT_RULES); r = obj(r);
   SECTIONS.forEach(function(k){ if (Array.isArray(r[k]) && r[k].length) R[k] = clone(r[k]); });
-  ['removal', 'settings'].forEach(function(k){ if (obj(r[k]) && Object.keys(obj(r[k])).length) R[k] = Object.assign({}, R[k], clone(r[k])); });
+  ['removal', 'settings', 'decon'].forEach(function(k){ if (obj(r[k]) && Object.keys(obj(r[k])).length) R[k] = Object.assign({}, R[k], clone(r[k])); });
   if (typeof r.dailyBlock === 'boolean') R.dailyBlock = r.dailyBlock;
   if (r.at) R.at = r.at; if (r.by) R.by = r.by;
   return R;
@@ -329,12 +428,15 @@ function evaluate(p, ctx){
   if (!out.on) return out;
   var st = stateOf(p), E = ec(p), go = started(p, t), done = finished(p), near = nearDone(p), soonN = +(R.settings || {}).reminderDays || 5;
   out.state = st;
+  /* ENVDOCS: who does the asbestos work ('sub' = a licensed abatement subcontractor, the default; 'crew' = GrayCo's crew) — the GrayCo
+     crew is held to the asbestos licenses, medical surveillance and the crew program only when the crew does the asbestos work */
+  var asbW = asbBy(p, R), ck = crewKinds(kinds, asbW); if (kinds.indexOf('asbestos') >= 0) out.asbBy = asbW;
   var item = function(o){ out.items.push(o); if (o.st === 'block' || o.st === 'due' || o.st === 'ok') out.counts[o.st]++; return o; };
   var bad = function(rule, k){ return blocks(rule, kinds) ? 'block' : 'due'; };
   /* 1 · people */
   var crew = crewOf(p, ctx), med = obj(ctx.medStatus);
-  var reqs = arr(R.people).filter(function(r){ return hasKind(r, kinds); });
-  var mreq = arr(R.medical).filter(function(m){ return hasKind(m, kinds); });
+  var reqs = arr(R.people).filter(function(r){ return hasKind(r, kinds) && byOk(r, kinds, asbW); });   /* ENVDOCS: by who does the asbestos work */
+  var mreq = arr(R.medical).filter(function(m){ return hasKind(m, ck); });
   out.people = crew.map(function(c){ return Object.assign({}, c, { checks: [], medical: null }); });
   if (!crew.length && (reqs.some(function(r){ return r.who !== 'company'; }) || mreq.length)) item({ sec: 'people', id: 'crew', label: 'Nobody is on this job yet', st: 'due', note: 'Schedule the crew (or add people here) to check their certifications and medical status.' });
   reqs.forEach(function(r){
@@ -365,11 +467,11 @@ function evaluate(p, ctx){
     }
     if (medReq.length) {
       var w = 'ok', blk = false;
-      kinds.forEach(function(k){ if (!medReq.some(function(m){ return hasKind(m, [k]); })) return; var v = s(obj(ms.byKind)[k]) || 'none'; w = worst(w, v); if ((v === 'over' || v === 'none') && medReq.some(function(m){ return hasKind(m, [k]) && blocks(m, kinds); })) blk = true; });
+      ck.forEach(function(k){ if (!medReq.some(function(m){ return hasKind(m, [k]); })) return; var v = s(obj(ms.byKind)[k]) || 'none'; w = worst(w, v); if ((v === 'over' || v === 'none') && medReq.some(function(m){ return hasKind(m, [k]) && blocks(m, kinds); })) blk = true; });
       c.medical = w;
       item({ sec: 'people', id: 'med:' + low(c.name), label: 'Medical surveillance — ' + c.name, who: c.name, st: w === 'ok' ? 'ok' : w === 'due' ? 'due' : blk ? 'block' : 'due', note: w === 'ok' ? 'medical current ✅' : w === 'due' ? 'medical due ⚠' : w === 'none' ? 'not in the medical program yet ⚠' : 'medical overdue ⚠' });
     }
-    if (ms.removed && kinds.some(function(k){ return listOf(ms.removedKinds).indexOf(k) >= 0; })) {
+    if (ms.removed && ck.some(function(k){ return listOf(ms.removedKinds).indexOf(k) >= 0; })) {
       c.removed = true;
       item({ sec: 'people', id: 'removed:' + low(c.name), label: c.name + ' — not cleared for exposure work (medical)', who: c.name, st: 'block', note: 'Medically removed from exposure work — schedule them on non-exposure work only until the physician clears them.' });
     }
@@ -378,7 +480,7 @@ function evaluate(p, ctx){
   var A = airRecs(p);
   arr(R.air).filter(function(r){ return hasKind(r, kinds); }).forEach(function(r){
     var mine = A.filter(function(x){ return s(x.rule) === r.id || (!s(x.rule) && airType(x) === r.type); }).sort(function(a, b){ return ymd(a.date) < ymd(b.date) ? 1 : -1; });
-    var last = mine[0], o = { sec: 'air', id: r.id, label: r.label, type: r.type, records: mine.length, gate: !!r.gate };
+    var last = mine[0], o = { sec: 'air', id: r.id, label: r.label + (asbW === 'sub' && hasKind(r, ['asbestos']) && !hasKind(r, ck) ? ' — by the abatement sub (log the results here)' : ''), type: r.type, records: mine.length, gate: !!r.gate };
     if (r.when === 'clearance') {
       var ok = last && pass(last);
       o.st = ok ? 'ok' : (near ? 'block' : 'wait');
@@ -403,6 +505,7 @@ function evaluate(p, ctx){
   arr(R.notices).filter(function(r){ var L = listOf(r.states); return hasKind(r, kinds) && (!L.length || !st || L.indexOf(st) >= 0); }).forEach(function(r){
     var rec = obj(obj(E.notices)[r.id]), lg = noticeLogged(p, r), due = noticeDue(r, p), o = { sec: 'notice', id: r.id, label: r.label + (r.agency ? ' — ' + r.agency : ''), due: due, agency: s(r.agency), note: '' };
     if (!st && listOf(r.states).length) o.label += ' (set the job\'s state)';
+    if (asbW === 'sub' && hasKind(r, ['asbestos']) && !hasKind(r, ck)) o.label += ' — filed by the abatement sub (record its confirmation)';   /* ENVDOCS */
     if (rec.na) { o.st = 'na'; o.note = 'N/A — ' + s(rec.na.why) + ' (' + s(rec.na.by) + ')'; }
     else if (rec.filedOn || lg) { o.st = 'ok'; o.note = 'Filed ' + ymd(rec.filedOn || (lg && lg.date)) + ((rec.conf || (lg && lg.conf)) ? ' · conf # ' + s(rec.conf || lg.conf) : ''); o.filed = rec.filedOn ? rec : { filedOn: lg.date, conf: lg.conf }; }
     else if (!due) { o.st = 'due'; o.note = 'Add the start date to see when it is due'; }
@@ -414,17 +517,29 @@ function evaluate(p, ctx){
   });
   /* 4 · daily compliance log */
   var dl = dailyRecs(p), todayLog = dl.filter(function(r){ return ymd(r.date) === t && r.kind === 'compday'; })[0];
-  var dItems = arr(R.daily).filter(function(d){ return hasKind(d, kinds); });
+  var dItems = dailyFields(p, kinds, R);   /* ENVDOCS: the decon fields only where the decon applies */
   if (dItems.length) {
     var tot = dailyTotals(p, R), signed = todayLog && obj(todayLog.signoff).name;
     item({ sec: 'daily', id: 'daily', label: 'Daily log', totals: tot, st: !go || done ? (dl.length || !go ? 'ok' : 'due') : signed ? 'ok' : (dow(t) === 0 || dow(t) === 6) && !todayLog ? 'ok' : R.dailyBlock ? 'block' : 'due',
       note: (todayLog ? 'Today: ' + (signed ? 'signed off by ' + s(todayLog.signoff.name) : 'started by ' + s(todayLog.by) + ' — supervisor sign-off needed') : go && !done ? 'Not done today yet' : '') + (tot.days ? (todayLog || (go && !done) ? ' · ' : '') + tot.days + ' day(s) logged, ' + tot.signed + ' signed' : '') });
   }
   /* 5 · written programs */
-  arr(R.programs).filter(function(r){ return hasKind(r, kinds); }).forEach(function(r){
-    var rv = ymd(r.reviewed), jr = obj(obj(E.programs)[r.id]), stale = !rv || addMonths(rv, +r.reviewEveryMonths || 12) < t;
-    item({ sec: 'program', id: r.id, label: r.label, file: s(r.file), st: stale ? 'due' : 'ok', reviewed: rv, jobReviewed: ymd(jr.on), jobBy: s(jr.by), note: (rv ? 'Program reviewed ' + rv : 'Program review date not set') + (stale && rv ? ' — review due' : '') + ' · ' + (ymd(jr.on) ? 'gone over for this job ' + ymd(jr.on) + (jr.by ? ' (' + s(jr.by) + ')' : '') : 'not yet gone over for this job') });
+  jobPrograms(R, kinds, asbW).forEach(function(r){   /* ENVDOCS: the asbestos program by who does the asbestos work; the administrator + approval */
+    var rv = ymd(r.reviewed), jr = obj(obj(E.programs)[r.id]), stale = !rv || addMonths(rv, +r.reviewEveryMonths || 12) < t, PI = programInfo(R, r.id, ctx), off = r.inUse === false;
+    item({ sec: 'program', id: r.id, label: r.label, file: s(r.file), st: stale || off ? 'due' : 'ok', reviewed: rv, jobReviewed: ymd(jr.on), jobBy: s(jr.by), admin: PI.admin, approvedBy: PI.approvedBy, note: (off ? 'Marked NOT IN USE in ⚙ Written programs — put it in use (or have a licensed sub do the asbestos work) · ' : '') + (rv ? 'Program reviewed ' + rv : 'Program review date not set') + (stale && rv ? ' — review due' : '') + (PI.admin ? ' · administrator ' + PI.admin : '') + (PI.approvedBy ? ' · approved by ' + PI.approvedBy : '') + ' · ' + (ymd(jr.on) ? 'gone over for this job ' + ymd(jr.on) + (jr.by ? ' (' + s(jr.by) + ')' : '') : 'not yet gone over for this job') });
   });
+  /* ENVDOCS · the licensed asbestos sub: its license, competent person, work plan, notices, release — collected and kept */
+  if (kinds.indexOf('asbestos') >= 0 && asbW === 'sub') subItems(p, R, st, t, near).forEach(function(x){ item(x); });
+  /* ENVDOCS · the lead decon / hygiene facility: ⚠ until the set-up checklist is complete and photographed */
+  if (deconApplies(p, kinds, R)) {
+    var DS = deconState(p, R), dbl = !!obj(R.settings).deconBlock;
+    item({ sec: 'decon', id: 'decon', label: 'Decon / hygiene facility set up (checklist + photo)', st: DS.st === 'ok' ? 'ok' : !go && DS.st === 'none' ? 'due' : dbl ? 'block' : 'due', deconSt: DS.st,
+      note: (DS.rec ? s(DS.rec.type) + (DS.rec.location ? ' at ' + s(DS.rec.location) : '') + ' · set up ' + (ymd(DS.rec.setOn) || ymd(DS.rec.date)) + (DS.rec.setBy ? ' by ' + s(DS.rec.setBy) : '') + ' · checklist ' + DS.done + '/' + DS.total + ' · ' + DS.photos + ' photo(s)' + (DS.st === 'ok' ? '' : ' — finish the checklist and add a photo') : 'Not set up yet — 🧼 Decon set-up checklist') + ' · ' + s(obj(R.decon).note) });
+  }
+  /* ENVDOCS · the per-job written Employee Protection Plan: ⚠ (or ⛔ when the rules say so) until generated and signed */
+  var PS = planState(p, out, R);
+  out.plan = PS;
+  item({ sec: 'plan', id: 'epp', label: 'Employee Protection Plan (written, signed)', st: PS.st === 'ok' ? 'ok' : obj(R.settings).planBlock ? 'block' : 'due', note: PS.note });
   out.status = out.counts.block ? 'block' : out.counts.due ? 'due' : 'ok';
   return out;
 }
@@ -484,9 +599,186 @@ function mrpPay(removal, from, to, ctx, R){
     detail: '$' + weekly.toFixed(2) + '/week (' + how + ') × ' + weeks + ' week(s) ' + a + ' → ' + b + (wc ? ' − workers\' comp $' + wc.toFixed(2) : '') + (earned ? ' − pay for other work this period $' + earned.toFixed(2) : '') + ' · protected to ' + protectEnd + ' · ' + s(RM.note || 'confirm with your attorney') };
 }
 
+/* ═════ ENVDOCS: who does the asbestos work, the licensed sub, the lead decon unit, the written programs' administrators,
+   the per-job Employee Protection Plan (owner 11/17: "Employee protection plan: good controls, work practices, medical monitoring
+   and removal provisions, protective clothing & equipment, exposure monitoring, record keeping, hygiene facilities, proper training."
+   "Make sure we have a respirator program." "Always keep records for everything." "Set up decon unit for lead.") ═════ */
+/* who does the asbestos work on a job: 'sub' (a licensed abatement subcontractor — the default for now) | 'crew' (GrayCo's own crew) */
+function asbBy(p, R){ R = R || rules(); var v = low(ec(p).asbBy); if (v === 'crew' || v === 'sub') return v; return low(obj(R.settings).asbDefault) === 'crew' ? 'crew' : 'sub'; }
+var ASB_CREW_CERTS = ['asb_firm', 'asb_supervisor', 'asb_worker'];
+/* a rule's asbestos performer ('crew' | 'sub' | '' = either); the licensed-abatement certifications are the crew's even in an older saved table */
+function ruleBy(r){ var b = low(r && r.by); return b === 'crew' || b === 'sub' ? b : (r && ASB_CREW_CERTS.indexOf(s(r.cert)) >= 0 && listOf(r.kinds).join() === 'asbestos' ? 'crew' : ''); }
+function byOk(r, kinds, by){ var b = ruleBy(r); return !b || kinds.indexOf('asbestos') < 0 || b === by; }
+/* the kinds the GrayCo crew is exposed to (a licensed sub's asbestos work is not theirs) */
+function crewKinds(kinds, by){ return by === 'sub' ? kinds.filter(function(k){ return k !== 'asbestos'; }) : kinds.slice(); }
+
+/* ── the lead decon / hygiene facility ── */
+function deconApplies(p, kinds, R){ R = R || rules(); var D = obj(ec(p).decon); if (D.required === false) return false; if (D.required === true) return true; return hasKind(obj(R.decon), kinds || []); }
+function deconRec(p){ return arr(p && p.envLog).filter(function(r){ return live(r) && r.kind === 'decon'; }).sort(function(a, b){ return s(a.at) < s(b.at) ? 1 : -1; })[0] || null; }
+function deconState(p, R){
+  R = R || rules(); var r = deconRec(p), S = arr(obj(R.decon).setup);
+  if (!r) return { st: 'none', rec: null, done: 0, total: S.length, photos: 0 };
+  var c = obj(r.checks), done = S.filter(function(x, i){ return !!c[i]; }).length, ph = arr(r.photos).length;
+  return { st: done === S.length && ph ? 'ok' : 'part', rec: r, done: done, total: S.length, photos: ph };
+}
+/* the daily-log fields of a job (the decon fields only where the decon applies) */
+function dailyFields(p, kinds, R){ R = R || rules(); var dc = deconApplies(p, kinds, R); return arr(R.daily).filter(function(d){ return d && (d.decon ? dc : hasKind(d, kinds)); }); }
+
+/* ── the licensed asbestos sub (what GrayCo collects and keeps) ── */
+function subOf(p){ return obj(ec(p).asbSub); }
+function subItems(p, R, st, t, near){
+  var S = subOf(p), out = [];
+  arr(R.subChecks).forEach(function(c){
+    var f = s(c.field), v = obj(S[f]), res = 'miss', note = '';
+    if (f === 'license') {
+      var co = s(S.company), lic = s(S.license), exp = ymd(S.licenseExp);
+      if (!co || !lic) note = 'Add the sub: company, state license #, expiry';
+      else if (exp && exp < t) note = co + ' · license #' + lic + ' EXPIRED ' + exp;
+      else { res = exp ? 'ok' : 'due'; note = co + ' · license #' + lic + (s(S.state) ? ' (' + s(S.state) + ')' : '') + (exp ? ' · valid to ' + exp : ' · add the license expiry date'); }
+      if (s(S.state) && st && s(S.state).toUpperCase().split(/[\/,\s]+/).indexOf(st) < 0) { note += ' · license state ' + s(S.state) + ' — the job is in ' + st + ': confirm the license is good there'; if (res === 'ok') res = 'due'; }
+    } else if (f === 'competent') {
+      if (s(S.competent)) { res = 'ok'; note = s(S.competent) + (s(S.competentLic) ? ' · license #' + s(S.competentLic) : '') + (s(S.competentPhone) ? ' · ' + s(S.competentPhone) : ''); }
+      else note = 'Name the sub\'s competent person / licensed supervisor';
+    } else if (v.on) { res = 'ok'; note = 'Received ' + ymd(v.on) + (s(v.conf) ? ' · confirmation # ' + s(v.conf) : '') + (v.file ? ' · copy kept' : ''); }
+    else note = 'Not received yet';
+    var stt = res === 'ok' ? 'ok' : res === 'due' ? 'due' : (c.when === 'clearance' && !near) ? 'wait' : blocks(c, ['asbestos']) ? 'block' : 'due';
+    out.push({ sec: 'sub', id: s(c.id), label: s(c.label), st: stt, note: note + ' · ' + s(c.note || CONFIRM), field: f });
+  });
+  return out;
+}
+
+/* ── the written programs: who runs each one, who approved it, the yearly review ── */
+function isAdminUser(u){ return !!u && u.active !== false && (/admin|owner/i.test(s(u.role)) || /owner/i.test(s(u.payType))); }
+/* the default administrator: an admin from the people list (for lead work the admin holding the lead supervisor certification) —
+   never a name written in the code */
+function defaultAdmin(ctx, R, certKey){
+  ctx = ctx || {}; R = R || rules(); var U = arr(ctx.users).filter(isAdminUser); if (!U.length) return null;
+  var pick = null;
+  if (certKey) pick = U.filter(function(u){ var x = certFor(R, Object.assign({}, ctx, { today: ctx.today || todayLocal() }), { name: s(u.name), email: low(u.email) }, certKey, ''); return x.st === 'ok' || x.st === 'soon' || x.st === 'nodate'; })[0] || null;
+  var u = pick || U[0];
+  return { name: s(u.name), phone: s(u.phone || u.cell || u.mobile), email: low(u.email), why: pick ? 'the admin holding the ' + certType(R, certKey).label : 'an admin on the people list' };
+}
+function programInfo(R, id, ctx){
+  R = R || rules(); var r = arr(R.programs).find(function(x){ return x && x.id === id; }) || {}, t = (ctx && ctx.today) || todayLocal();
+  var d = s(r.adminName) ? null : defaultAdmin(ctx, R, s(r.adminCert)), rv = ymd(r.reviewed), every = +r.reviewEveryMonths || 12, next = rv ? addMonths(rv, every) : '';
+  return { id: s(r.id), label: s(r.label), file: s(r.file), admin: s(r.adminName) || (d ? d.name : ''), phone: s(r.adminPhone) || (!s(r.adminName) && d ? d.phone : ''),
+    adminDefault: !s(r.adminName) && !!d, why: d ? d.why : '', approvedBy: s(r.approvedBy), approvedOn: ymd(r.approvedOn), reviewed: rv, nextReview: next,
+    reviewDue: !rv || next <= addDays(t, +obj(R.settings).programReviewDays || 30), overdue: !rv || next < t, inUse: r.inUse !== false, by: ruleBy(r), kinds: listOf(r.kinds) };
+}
+/* the programs that apply to a job (the asbestos program by who does the asbestos work) */
+function jobPrograms(R, kinds, by){ return arr(R.programs).filter(function(r){ return r && hasKind(r, kinds) && byOk(r, kinds, by); }); }
+
+/* ── the per-job Employee Protection Plan ── */
+function hash(t){ var h = 5381; t = String(t); for (var i = 0; i < t.length; i++) h = ((h << 5) + h + t.charCodeAt(i)) | 0; return (h >>> 0).toString(36); }
+function plans(p){ return arr(p && p.envLog).filter(function(r){ return live(r) && r.kind === 'epp'; }).sort(function(a, b){ return (+a.v || 0) - (+b.v || 0); }); }
+/* what the plan was written for: a new version is needed when it changes (the kinds, who does the asbestos work, the supervisors, the
+   sub, the decon set-up, the plan details typed in) — never the day-to-day statuses */
+function planFp(p, E, R){
+  R = R || rules(); var asb = E.kinds.indexOf('asbestos') >= 0, by = asbBy(p, R), S = subOf(p), D = deconRec(p);
+  return hash(JSON.stringify({ k: E.kinds.slice().sort(), by: asb ? by : '', st: E.state || '', sup: E.people.filter(function(c){ return c.role === 'supervisor'; }).map(function(c){ return low(c.name); }).sort(),
+    sub: asb && by === 'sub' ? [s(S.company), s(S.license), s(S.competent)] : 0, inp: obj(ec(p).planInput), dc: D ? [s(D.type), s(D.location)] : 0 }));
+}
+function planState(p, E, R){
+  R = R || rules(); var L = plans(p), last = L[L.length - 1] || null, fp = planFp(p, E, R), needOwner = obj(R.settings).planOwnerSign !== false;
+  if (!last) return { st: 'none', fp: fp, last: null, n: 0, note: 'Not generated yet — 📝 Generate the plan from this panel' };
+  var sg = obj(last.signed), cp = s(obj(sg.cp).name), ow = s(obj(sg.owner).name), base = { fp: fp, last: last, n: L.length };
+  if (s(last.fp) !== fp) return Object.assign(base, { st: 'stale', note: 'Version ' + last.v + ' (' + ymd(last.date) + ') is out of date — the job changed (kinds, who does the asbestos work, supervisors, the sub, the decon or the plan details): generate a new version (every version is kept)' });
+  if (!cp || (needOwner && !ow)) return Object.assign(base, { st: 'unsigned', note: 'Version ' + last.v + ' (' + ymd(last.date) + ') needs ' + [!cp ? 'the competent person\'s' : '', needOwner && !ow ? 'the owner\'s' : ''].filter(Boolean).join(' and ') + ' signature' });
+  return Object.assign(base, { st: 'ok', note: 'Version ' + last.v + ' (' + ymd(last.date) + ') · signed by ' + cp + ' (competent person)' + (ow ? ' and ' + ow + ' (owner)' : '') });
+}
+function planTexts(R, kinds, by, sec){
+  var out = [];
+  arr(R.planText).forEach(function(e){ if (!e || s(e.sec) !== sec || !hasKind(e, kinds)) return; var b = low(e.by); if (b && (kinds.indexOf('asbestos') < 0 || b !== by)) return; var tx = s(e.text); if (!tx || out.some(function(x){ return x.text === tx; })) return; out.push({ kinds: listOf(e.kinds), text: tx }); });
+  return out.map(function(x){ var k = x.kinds.filter(function(q){ return kinds.indexOf(q) >= 0; }); return (kinds.length > 1 && k.length && k.length < kinds.length ? '[' + k.map(function(q){ var r = arr(R.kinds).find(function(z){ return z.key === q; }); return r ? s(r.label).replace(/^\W+\s*/, '') : q; }).join(', ') + '] ' : '') + x.text; });
+}
+/* the plan's content (structured: the CRM prints it, keeps it with each version, and the record package lists it)
+   opt = { v, by, at, company: { name, address, phone } } */
+function buildPlan(p, ctx, opt){
+  ctx = ctx || {}; opt = opt || {}; var R = ctx.rules || rules(), t = ctx.today || todayLocal(), E = ctx.E || evaluate(p, Object.assign({}, ctx, { rules: R, today: t }));
+  var kinds = E.kinds, by = asbBy(p, R), asb = kinds.indexOf('asbestos') >= 0, ck = crewKinds(kinds, by), EC = ec(p), I = obj(EC.planInput), S = subOf(p), co = obj(opt.company);
+  var KL = function(k){ var r = arr(R.kinds).find(function(z){ return z.key === k; }); return r ? s(r.label) : k; };
+  var SEC = [], sec = function(h, rows, text){ SEC.push({ h: h, rows: arr(rows).filter(function(r){ return r && s(r[1]); }), text: arr(text).map(s).filter(Boolean) }); };
+  var stTxt = function(x){ return x === 'ok' ? 'current' : x === 'due' ? 'due soon' : x === 'over' ? 'OVERDUE' : x === 'block' ? 'MISSING' : 'not on file'; };
+  var sups = E.people.filter(function(c){ return c.role === 'supervisor'; });
+  var item = function(id){ return E.items.find(function(x){ return x.id === id; }); };
+  /* 1 job */
+  sec('1. Job', [['Job', s(p.name)], ['Customer', s(p.client || p.customer)], ['Location', s(p.address || p.jobAddress || p.siteAddress)], ['State', E.state || 'not set'],
+    ['Work', kinds.map(KL).join(' + ')], asb ? ['Asbestos work done by', by === 'sub' ? 'a licensed asbestos abatement subcontractor (GrayCo crew: awareness level only)' : 'GrayCo\'s own crew (GrayCo Asbestos Program)'] : null,
+    ['Start / finish', [ymd(p.startDate), ymd(p.endDate || p.finishDate || p.completionDate)].filter(Boolean).join(' → ') || 'not set'], ['Project manager', s(p.pm)],
+    ['Plan', 'Version ' + (opt.v || 1) + ' · ' + t + (opt.by ? ' · prepared by ' + s(opt.by) : '')], ['Company', [s(co.name) || 'GrayCo', s(co.address), s(co.phone)].filter(Boolean).join(' · ')]]);
+  /* 2 scope */
+  sec('2. Scope of work and tasks', [['Scope', s(I.scope) || s(p.scope || p.scopeOfWork || p.workDescription || p.description) || 'Describe the scope (✏️ Plan details)'], ['Tasks that cause exposure', s(I.tasks)]]);
+  /* 3 who does the work */
+  if (asb && by === 'sub') {
+    var ntc = obj(S.notice), airN = arr(p.envLog).filter(function(r){ return live(r) && r.kind === 'air'; }).length;
+    sec('3. Asbestos work — licensed abatement subcontractor', [['Company', s(S.company) || 'NOT NAMED YET'], ['State license #', [s(S.license), s(S.state), ymd(S.licenseExp) ? 'expires ' + ymd(S.licenseExp) : ''].filter(Boolean).join(' · ') || 'not on file'],
+      ['Sub\'s competent person / supervisor', [s(S.competent), s(S.competentLic) ? 'license #' + s(S.competentLic) : '', s(S.competentPhone)].filter(Boolean).join(' · ') || 'not named'],
+      ['State notification', ntc.on ? 'filed — received ' + ymd(ntc.on) + (s(ntc.conf) ? ' · confirmation # ' + s(ntc.conf) : '') : 'copy / confirmation not received yet'],
+      ['Work plan', obj(S.workPlan).on ? 'received ' + ymd(S.workPlan.on) : 'not received yet'], ['Insurance', obj(S.insurance).on ? 'received ' + ymd(S.insurance.on) : 'not received yet'],
+      ['Air monitoring', 'by the subcontractor (personal, area, final clearance) — GrayCo collects and keeps every result (' + airN + ' on file)'], ['Contact', s(S.phone || S.email)]],
+      ['GrayCo crew duties (awareness level): ' + planTexts(R, kinds, by, 'practices').filter(function(x){ return /awareness|STOP WORK/i.test(x); }).join(' ')]);
+  } else sec('3. Who does the work', [['Crew', E.people.map(function(c){ return c.name + (c.role === 'supervisor' ? ' (supervisor)' : ''); }).join(', ') || 'nobody scheduled yet'], ['Employer', 'GrayCo — every worker on this plan is a GrayCo employee']]);
+  /* 4 exposure */
+  sec('4. Expected exposure and basis', [['Basis on file', s(I.basis) || 'Add the test results / survey this is based on (✏️ Plan details)'], ['Air samples on file', String(arr(p.envLog).filter(function(r){ return live(r) && r.kind === 'air'; }).length)]], planTexts(R, kinds, by, 'exposure'));
+  sec('5. Engineering controls', [], planTexts(R, kinds, by, 'engineering'));
+  sec('6. Work-practice controls', [], planTexts(R, kinds, by, 'practices'));
+  /* 7 respirators — the crew's fit test / clearance status only (never a result) */
+  sec('7. Respiratory protection', [['Program', 'GrayCo Respiratory Protection Program — administrator ' + (programInfo(R, 'resp', Object.assign({}, ctx, { rules: R })).admin || '(set in ⚙ Written programs)')], ['Respirators for this job', s(I.respirators)]].concat(E.people.filter(function(c){ return c.fit; }).map(function(c){ return [c.name, 'fit test ' + stTxt(c.fit)]; })), planTexts(R, kinds, by, 'respirator'));
+  sec('8. Protective clothing and equipment', [['Provided', 'at no cost to the employee']], planTexts(R, kinds, by, 'clothing'));
+  /* 9 hygiene + the decon unit */
+  var dc = deconApplies(p, kinds, R), DS = deconState(p, R), DR = DS.rec || {};
+  sec('9. Hygiene facilities' + (dc ? ' and decon unit' : ''), dc ? [['Decon unit', DR.type ? s(DR.type) : 'NOT SET UP YET'], ['Location', s(DR.location)], ['Set up by / on', [s(DR.setBy), ymd(DR.setOn)].filter(Boolean).join(' · ')],
+    ['Set-up checklist', DS.rec ? DS.done + ' of ' + DS.total + ' items · ' + DS.photos + ' photo(s)' : 'not done yet'], ['Wash water', s(DR.water)], ['When required', s(obj(R.decon).note)]] : [], planTexts(R, kinds, by, 'hygiene'));
+  sec('10. Housekeeping', [], planTexts(R, kinds, by, 'housekeeping'));
+  /* 11 monitoring */
+  var air = arr(R.air).filter(function(r){ return hasKind(r, kinds); });
+  sec('11. Exposure monitoring schedule', air.map(function(r){ var x = item(r.id); return [s(r.label), (r.when === 'clearance' ? 'after the work — close-out waits for a pass' : r.when === 'before' ? 'before the work starts' : 'during the work' + (r.everyDays ? ' (every ' + (+r.everyDays === 1 ? 'work day' : r.everyDays + ' days') + ')' : '')) + (asb && by === 'sub' && hasKind(r, ['asbestos']) && !hasKind(r, ck) ? ' · by the abatement sub — GrayCo keeps the results' : '') + (x ? ' · now: ' + s(x.note) : '')]; }),
+    ['Personal results go to each worker\'s own records; the worker is told within the time the program sets (default: 5 working days — confirm with your state program).']);
+  /* 12 medical surveillance + removal */
+  var med = arr(R.medical).filter(function(m){ return hasKind(m, ck); }), RM = obj(R.removal);
+  sec('12. Medical surveillance and medical removal', med.map(function(m){ return [s(m.label), m.once ? 'once (baseline)' : 'every ' + (+m.everyMonths || 12) + ' months' + (arr(m.phases).length ? ' (more often at first)' : '')]; })
+    .concat(med.length ? [['Medical removal protection', 'per the physician\'s written opinion; earnings, seniority and benefits kept up to ' + (+RM.maxMonths || 18) + ' months; follow-up tests every ' + (+RM.followEveryMonths || 1) + ' month(s) until cleared']] : [])
+    .concat(E.people.filter(function(c){ return c.medical; }).map(function(c){ return [c.name, 'medical ' + stTxt(c.medical) + (c.removed ? ' · NOT CLEARED for exposure work' : '')]; })),
+    med.length ? [s(RM.note)] : ['No medical surveillance applies to the GrayCo crew on this job' + (asb && by === 'sub' ? ' (the abatement sub keeps its own workers\' medical surveillance).' : '.')]);
+  /* 13 training */
+  var reqs = arr(R.people).filter(function(r){ return hasKind(r, kinds) && byOk(r, kinds, by) && r.who !== 'company'; });
+  sec('13. Training and certifications', reqs.map(function(r){ return [s(r.label) || certType(R, r.cert).label, E.items.filter(function(x){ return x.sec === 'people' && (x.id === r.id || x.id.indexOf(r.id + ':') === 0); }).map(function(x){ return (x.who || '') + ' ' + (x.st === 'ok' ? '✓' : x.st === 'due' ? '(due)' : '(MISSING)'); }).join(', ') || 'checked when the crew is on the job']; }));
+  sec('14. Signs and labels', [], planTexts(R, kinds, by, 'signs'));
+  /* 15 competent person */
+  sec('15. Competent person / supervisor on site', [['GrayCo competent person', s(I.competent) || sups.map(function(c){ return c.name + ' (' + c.checks.filter(function(k){ return k.st === 'ok' || k.st === 'soon'; }).map(function(k){ return k.label; }).join(', ') + ')'; }).join('; ') || 'NOT NAMED — mark the supervisor on the panel'],
+    asb && by === 'sub' ? ['Asbestos competent person (sub)', s(S.competent) || 'not named'] : null]);
+  sec('16. Inspection schedule', [['Added for this job', s(I.inspection)]], planTexts(R, kinds, by, 'inspection'));
+  sec('17. Notices and permits', E.items.filter(function(x){ return x.sec === 'notice'; }).map(function(x){ return [s(x.label), s(x.note)]; }));
+  sec('18. Record keeping', arr(R.retention).map(function(r){ var y = retainYears(R, r.cat); return [s(r.label), y === Infinity ? 'kept forever (owner\'s rule)' : y + ' years']; }),
+    ['Every record is kept in the CRM (job → 🛡 Compliance; each worker\'s own health & exposure records) and in the end-of-job record package. Every version of this plan is kept.']);
+  /* 19 emergency */
+  var progs = jobPrograms(R, kinds, by).map(function(r){ return programInfo(R, r.id, Object.assign({}, ctx, { rules: R })); });
+  var admins = []; progs.forEach(function(x){ if (x.admin && !admins.some(function(a){ return a[1].indexOf(x.admin) === 0; })) admins.push(['Program administrator', x.admin + (x.phone ? ' · ' + x.phone : '')]); });
+  sec('19. Emergency contacts', [['Emergency', '911'], ['Nearest hospital', s(I.hospital) || 'add it (✏️ Plan details)'], ['Occupational clinic', [s(obj(R.settings).clinic), s(obj(R.settings).clinicPhone)].filter(Boolean).join(' · ')], ['Project manager', s(p.pm)], ['On-site supervisor', s(I.competent) || sups.map(function(c){ return c.name; }).join(', ')], asb && by === 'sub' ? ['Abatement sub', [s(S.company), s(S.phone)].filter(Boolean).join(' · ')] : null].concat(admins).concat([['Other', s(I.emergency)]]));
+  sec('20. Written programs this plan follows', progs.map(function(x){ return [x.label, 'administrator ' + (x.admin || 'NOT SET') + (x.approvedBy ? ' · approved by ' + x.approvedBy + (x.approvedOn ? ' ' + x.approvedOn : '') : ' · approval not recorded') + (x.reviewed ? ' · reviewed ' + x.reviewed : ' · review date not set') + (x.inUse ? '' : ' · marked NOT IN USE')]; }));
+  return { v: opt.v || 1, fp: planFp(p, E, R), date: t, job: s(p.name), pid: s(p.id), kinds: kinds.slice(), by: asb ? by : '', title: 'Employee Protection Plan — ' + s(p.name), sections: SEC,
+    note: 'Written compliance plan for this job. The lists are GrayCo\'s defaults — confirm with your state program / attorney.', signs: ['Competent person', 'Owner'] };
+}
+/* the plan as lines for a PDF / a printable page */
+function planLines(P){ var L = [{ h: s(P.title) }, { t: s(P.note) }]; arr(P.sections).forEach(function(x){ L.push({ h2: x.h }); arr(x.rows).forEach(function(r){ L.push({ t: s(r[0]) + ': ' + s(r[1]) }); }); arr(x.text).forEach(function(tx){ L.push({ t: '• ' + tx }); }); }); return L; }
+
+/* ── fill a program's Word file (word/document.xml): the administrator, the approval, the current address ── */
+function xmlEsc(t){ return s(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+function fillDocxXml(xml, v){
+  v = obj(v); var out = String(xml || '');
+  var para = function(label, fn){ var i = out.indexOf('>' + label + '</w:t>'); if (i < 0) return; var a = out.lastIndexOf('<w:p>', i), a2 = out.lastIndexOf('<w:p ', i); a = Math.max(a, a2); var b = out.indexOf('</w:p>', i); if (a < 0 || b < 0) return; out = out.slice(0, a) + fn(out.slice(a, b)) + out.slice(b); };
+  var add = function(seg, label, val){ return s(val) ? seg.replace('>' + label + '</w:t>', '>' + label + xmlEsc(val) + ' </w:t>') : seg; };
+  para('Program administrator: ', function(seg){ return add(add(seg, 'Program administrator: ', v.admin), '\t\tPhone: ', v.phone); });
+  para('Approved by (owner): ', function(seg){ return add(add(seg, 'Approved by (owner): ', v.approvedBy), '\t\tDate: ', v.approvedOn); });
+  if (s(v.address)) out = out.replace(/(<w:t[^>]*>)[^<]*?(\s+\|\s+\(\d{3}\) \d{3}-\d{4}<\/w:t>)/, function(m, a, b){ return a + xmlEsc(v.address) + b; });
+  return out;
+}
+
 var API = { DEFAULT_RULES: DEFAULT_RULES, SECTIONS: SECTIONS, CONFIRM: CONFIRM, rules: rules, detectKinds: detectKinds, isOn: isOn, stateOf: stateOf, started: started, finished: finished, nearDone: nearDone,
   crewOf: crewOf, crewOnDay: crewOnDay, certFor: certFor, certType: certType, certIs: certIs, medSummary: medSummary, medNext: medNext, publicStatus: publicStatus, activeRemoval: activeRemoval,
   evaluate: evaluate, closeoutBlockers: closeoutBlockers, noticeDue: noticeDue, workingDaysBefore: workingDaysBefore, retainUntil: retainUntil, retainYears: retainYears, recCat: recCat, live: live, dailyTotals: dailyTotals,
-  airType: airType, mrpPay: mrpPay, hasKind: hasKind, listOf: listOf, addDays: addDays, addMonths: addMonths, daysBetween: daysBetween, today: todayLocal, typeText: typeText };
+  airType: airType, mrpPay: mrpPay, hasKind: hasKind, listOf: listOf, addDays: addDays, addMonths: addMonths, daysBetween: daysBetween, today: todayLocal, typeText: typeText,
+  /* ENVDOCS */ asbBy: asbBy, crewKinds: crewKinds, ruleBy: ruleBy, deconApplies: deconApplies, deconRec: deconRec, deconState: deconState, dailyFields: dailyFields, subOf: subOf, subItems: subItems,
+  defaultAdmin: defaultAdmin, programInfo: programInfo, jobPrograms: jobPrograms, plans: plans, planFp: planFp, planState: planState, buildPlan: buildPlan, planLines: planLines, planTexts: planTexts, fillDocxXml: fillDocxXml, hash: hash };
 if (typeof module === 'object' && module.exports) module.exports = API; else root._gcEnvCompCore = API;
 })(this);

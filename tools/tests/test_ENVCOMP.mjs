@@ -36,7 +36,7 @@ cset('users', [
   { id: 'u6', name: 'Demo Estimator', email: 'sbiffle@grayco-cs.com', role: 'Environmental Tech', active: true },
   { id: 'u7', name: 'Wes Worker', email: 'wworker@example.com', role: 'Abatement Worker', active: true }]);
 cset('projects', [
-  { id: 'P1', name: 'Demo Asbestos Job', client: 'Ann Demo', type: 'Asbestos abatement', companyId: 'environmental', address: '21 Demo St, Memphis, TN 38103', status: 'active', pct: 10, startDate: day(-2), abatementSupervisor: 'Demo Estimator', crew: ['Wes Worker'], pm: 'Demo PM', createdAt: at, updatedAt: at },
+  { id: 'P1', name: 'Demo Asbestos Job', client: 'Ann Demo', type: 'Asbestos abatement', companyId: 'environmental', address: '21 Demo St, Memphis, TN 38103', status: 'active', pct: 10, startDate: day(-2), abatementSupervisor: 'Demo Estimator', crew: ['Wes Worker'], pm: 'Demo PM', envComp: { asbBy: 'crew' }, createdAt: at, updatedAt: at },   /* ENVDOCS: GrayCo's own crew does this asbestos work (the default is a licensed sub) */
   { id: 'P2', name: 'Demo Kitchen Remodel', client: 'Bo Demo', type: 'Kitchen remodel', address: '22 Demo St, Memphis, TN 38103', status: 'active', pct: 10, startDate: day(-2), pm: 'Demo PM', crew: ['Wes Worker'], createdAt: at, updatedAt: at },
   { id: 'P3', name: 'Demo Lead Abatement', client: 'Cy Demo', type: 'Lead abatement', companyId: 'environmental', address: '23 Demo Rd, Little Rock, AR 72201', status: 'active', pct: 95, startDate: day(-20), abatementSupervisor: 'Demo Estimator', pm: 'Demo PM', finishPhotoWaived: { by: 'Wesley Johnson', at: at }, createdAt: at, updatedAt: at }]);   /* (patch FINISHPHOTO's own gate is not what this test is about) */
 cset('gc_certs', { list: [
