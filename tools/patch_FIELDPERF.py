@@ -134,5 +134,13 @@ sub('AUTOPANEL2 saveHeld: one write per burst',
     "function saveHeld0(){ saveT = 0; try { localStorage.setItem(HK, JSON.stringify({ held: S.held, pend: pendHeld, last: lastHeld })); } catch (e) {} }\n"
     "var saveT = 0; function saveHeld(){ if (!saveT) saveT = T(saveHeld0, 5000); }   /* FIELDPERF: one write per burst (was a ~60 K write on every held tick) */\n"
     "try { W.addEventListener('pagehide', function(){ if (saveT) saveHeld0(); }); document.addEventListener('visibilitychange', function(){ if (document.hidden && saveT) saveHeld0(); }); } catch (e) {}")
+# JOBLABEL ambIndex (DEVMODE2 / owner: "speed up the 🛡 Claim info tile"): opening Claim info (the claims app, its job
+# dropdowns) relabels every job dropdown, and the "which jobs look alike" index compared every open job with every other
+# one, cleaning both names with three regular expressions each time (550 jobs: ~300,000 name cleanings, 0.3–1 s at ×4).
+# Each name and customer is cleaned once per pass; the comparisons and the result are the same.
+sub('JOBLABEL ambIndex: each name cleaned once',
+    "  open.forEach(function(p){\n    var c = low(p.client || p.company), nn = nname(p.name);\n    var peers = open.filter(function(q){ if (q === p) return false; if (c && low(q.client || q.company) === c) return true; var qn = nname(q.name); return nn.length >= 4 && qn.length >= 4 && (qn === nn || qn.indexOf(nn) >= 0 || nn.indexOf(qn) >= 0); });",
+    "  var NN = open.map(function(q){ return nname(q.name); }), CL = open.map(function(q){ return low(q.client || q.company); });   /* FIELDPERF: each name / customer cleaned once */\n"
+    "  open.forEach(function(p, i){\n    var c = CL[i], nn = NN[i];\n    var peers = open.filter(function(q, j){ if (q === p) return false; if (c && CL[j] === c) return true; var qn = NN[j]; return nn.length >= 4 && qn.length >= 4 && (qn === nn || qn.indexOf(nn) >= 0 || nn.indexOf(qn) >= 0); });")
 if t == orig: print('FIELDPERF: nothing to do')
 else: open(p, 'w', encoding='utf-8').write(t)

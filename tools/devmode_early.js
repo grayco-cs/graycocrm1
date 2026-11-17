@@ -11,9 +11,15 @@
                 ("Android" without "Mobile").
      • computer — Windows (touch-screen laptops too, any scaling, any window size), a Mac, ChromeOS, desktop Linux;
                 an unknown system with a mouse / touchpad.
-   Which view opens: a phone or a tablet → GrayCo Field; a computer → the Desk. A Desk / Field switch lasts for that open
-   only (patch FIELDDESK). Nothing is asked and nothing is saved.
-   API: window._gcDevice = { kind(), why(), phone(), fieldDevice(), standalone(), wantField(), signedEmail(), state() }
+   Which view opens: a phone → GrayCo Field; a computer → the Desk; a tablet → GrayCo Field, unless it has a hardware
+   keyboard or a trackpad / mouse (DEVMODE2, owner 11/16: "an iPad WITH a hardware keyboard or trackpad opens the DESK; an
+   iPad without one opens Field") → the Desk. A trackpad / mouse shows in the media queries ((any-pointer: fine),
+   (any-hover: hover) / (hover: hover)); a keyboard has no media query, so a hardware key (Tab, an arrow, Esc, a ⌘ / Ctrl /
+   Alt shortcut, or any key while nothing is being typed into — the on-screen keyboard only types into a field) is
+   remembered on the tablet (localStorage gc_dm_hwkbd, 7 days from the last such key). All of it is read when the CRM
+   opens: a keyboard attached (or first used) later counts from the next open.
+   A Desk / Field switch lasts for that open only (patch FIELDDESK). Nothing is asked.
+   API: window._gcDevice = { kind(), why(), phone(), fieldDevice(), tabletDesk(), standalone(), wantField(), signedEmail(), state() }
    Kill switch (this device): localStorage gc_devmode_off = "1" → patch FIELDDESK's own device rule as before. */
 (function(){
 'use strict';
@@ -50,13 +56,36 @@ try {
   }
   var K = kind(), WHY = why;
   function standalone(){ return mq('(display-mode: standalone)') || mq('(display-mode: fullscreen)') || (function(){ try { return navigator.standalone === true; } catch (e) { return false; } })(); }
-  /* GrayCo Field opens by itself on a phone or a tablet (the owner: "iPad opens Field"); a computer opens the Desk */
-  function fieldDevice(){ return K !== 'computer'; }
+  /* DEVMODE2: a tablet with a trackpad / mouse or a hardware keyboard is used like a computer */
+  var KB = 'gc_dm_hwkbd', KB_MS = 7 * 864e5;
+  var kbSeen = function(){ var t = +lsGet(KB) || 0; return t > 0 && Date.now() - t < KB_MS && t <= Date.now() + 6e4; };
+  var pointerFine = function(){ return mq('(any-pointer: fine)') || mq('(pointer: fine)'); };
+  var hoverable = function(){ return mq('(any-hover: hover)') || mq('(hover: hover)'); };
+  var TD = null, TDWHY = '';
+  if (K === 'tablet') {
+    if (pointerFine() || hoverable()) { TD = true; TDWHY = 'a trackpad / mouse'; }
+    else if (kbSeen()) { TD = true; TDWHY = 'a hardware keyboard (used on this tablet)'; }
+    else TD = false;
+    if (TD) WHY += ' + ' + TDWHY;
+    /* a hardware keyboard: keys the on-screen keyboard does not send, or any key while nothing is being typed into */
+    var EDIT = 'input,textarea,select,[contenteditable=""],[contenteditable="true"]';
+    var onKey = function(e){
+      try {
+        if (!e || e.isTrusted === false) return;
+        var k = String(e.key || ''), a = document.activeElement, typing = !!(a && a.closest && a.closest(EDIT));
+        if (/^(Tab|Escape|ArrowUp|ArrowDown|ArrowLeft|ArrowRight|PageUp|PageDown|Home|End|F\d+)$/.test(k) || e.metaKey || e.ctrlKey || e.altKey || (!typing && k.length === 1)) W.localStorage.setItem(KB, String(Date.now()));
+      } catch (x) {}
+    };
+    try { document.addEventListener('keydown', onKey, true); } catch (e) {}
+  }
+  function tabletDesk(){ return TD === true; }
+  /* GrayCo Field opens by itself on a phone, and on a tablet without a keyboard / trackpad; a computer opens the Desk */
+  function fieldDevice(){ return K === 'phone' || (K === 'tablet' && !TD); }
   function signedEmail(){ try { var j = JSON.parse(lsGet('gc_auth_v1') || 'null'); return j && j.access_token && j.email ? String(j.email).toLowerCase() : ''; } catch (e) { return ''; } }
   /* the old views saved on this device never decide anything again (also the first DEVMODE's sign-in pick) */
   ['gc_view_pref', 'gc_phone_desk', '_fieldMode', 'gc_dm_choice', 'gc_dm_ask'].forEach(lsDel);
-  W._gcDevice = { kind: function(){ return K; }, why: function(){ return WHY; }, phone: function(){ return K === 'phone'; }, fieldDevice: fieldDevice, standalone: standalone,
+  W._gcDevice = { kind: function(){ return K; }, why: function(){ return WHY; }, phone: function(){ return K === 'phone'; }, fieldDevice: fieldDevice, tabletDesk: tabletDesk, standalone: standalone,
     wantField: fieldDevice, signedEmail: signedEmail,
-    state: function(){ return { kind: K, why: WHY, standalone: standalone(), fieldDevice: fieldDevice(), ua: ua().slice(0, 140), touchPoints: tp(), screenShort: short(), touchOnly: touchOnly(), mouse: mouseMain() }; } };
+    state: function(){ return { kind: K, why: WHY, standalone: standalone(), fieldDevice: fieldDevice(), ua: ua().slice(0, 140), touchPoints: tp(), screenShort: short(), touchOnly: touchOnly(), mouse: mouseMain(), tabletDesk: TD, pointerFine: pointerFine(), hover: hoverable(), keyboardSeen: kbSeen() }; } };
 } catch (e) { try { console.warn('[GC] DEVMODE early not installed:', e && e.message || e); } catch (x) {} }
 })();

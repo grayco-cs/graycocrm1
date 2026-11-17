@@ -6,8 +6,9 @@
 //     "Macintosh") — each opens the right view for admin, office, PM and field (Superintendent) roles, and keeps it;
 //  2. nothing is asked at sign-in (owner 11/16: "Don't ask for field or desk when sign in — just do it by computer or
 //     iPhone/Android etc; iPad opens Field"), no "Ask me" setting in My Profile, no saved pick;
+//  2b. DEVMODE2: an iPad with a trackpad / mouse or a hardware keyboard opens the Desk, without one GrayCo Field;
 //  3. a Desk / Field switch lasts for this open only (a reload / the next sign-in, even in the same page, is the device's view).
-// Offline harness, made-up data. Usage: node test_DEVMODE.mjs <dir with index.html>   (ONLY=devices,noask,switch)
+// Offline harness, made-up data. Usage: node test_DEVMODE.mjs <dir with index.html>   (ONLY=devices,noask,ipadkbd,switch)
 import { pathToFileURL } from 'url';
 const HARNESS = process.env.GC_HARNESS || '/tmp/claude-0/-home-user-graycocrm1/6a5b2b6b-8a4d-5505-9f82-62521adb6674/scratchpad/wN/harness_N.mjs';
 const H = await import(pathToFileURL(HARNESS).href);
@@ -52,7 +53,8 @@ const DEVICES = {
   'iPhone Safari': { ua: UA.iphone, plat: 'iPhone', uad: null, tp: 5, mq: TOUCHP, sw: 390, sh: 844, vp: { width: 390, height: 844 }, mobile: true, field: true },
   'iPhone Home Screen app': { ua: UA.iphone, plat: 'iPhone', uad: null, tp: 5, mq: TOUCHP, sw: 390, sh: 844, vp: { width: 390, height: 844 }, mobile: true, standalone: true, field: true },
   'Android phone (Chrome)': { ua: UA.android, plat: 'Linux armv81', uad: { mobile: true, platform: 'Android' }, tp: 5, mq: TOUCHP, sw: 412, sh: 915, vp: { width: 412, height: 915 }, mobile: true, field: true },
-  'iPad (iPadOS Safari says Macintosh)': { ua: UA.macSafari, plat: 'MacIntel', uad: null, tp: 5, mq: TOUCHP, sw: 820, sh: 1180, vp: { width: 820, height: 1180 }, mobile: true, field: true }
+  'iPad (iPadOS Safari says Macintosh)': { ua: UA.macSafari, plat: 'MacIntel', uad: null, tp: 5, mq: TOUCHP, sw: 820, sh: 1180, vp: { width: 820, height: 1180 }, mobile: true, field: true },
+  'iPad + Magic Keyboard (trackpad)': { ua: UA.macSafari, plat: 'MacIntel', uad: null, tp: 5, mq: { pointer: ['coarse'], 'any-pointer': ['coarse', 'fine'], hover: ['none'], 'any-hover': ['hover'] }, sw: 820, sh: 1180, vp: { width: 1180, height: 820 }, mobile: true, field: false }
 };
 function deviceInit(cf){
   return `(() => { const cf = ${JSON.stringify(cf)};
@@ -98,7 +100,7 @@ try {
   /* ── 1. every device × role ── */
   if (want('devices')) {
     const ROLES = [['admin', ADMIN], ['office', OFFICE], ['PM', PM], ['field (Superintendent)', CREW]];
-    for (const dn of Object.keys(DEVICES)) {
+    for (const dn of Object.keys(DEVICES).filter(n => !process.env.DEV || new RegExp(process.env.DEV, "i").test(n))) {   /* DEV=<regex>: only those devices */
       const cf = DEVICES[dn];
       for (const [rn, em] of ROLES) {
         seed(); const c = await device(dn);
@@ -138,6 +140,36 @@ try {
     await H.signIn(c, PM, 9000); await signedReady(c);
     s = await waitState(c, isField, 25000); await sleep(2000); s = await S(c);
     ok(isField(s) && !s.ask, 'the iPad: GrayCo Field, no question (owner: "iPad opens Field")', s);
+    await closeAll();
+  }
+
+  /* ── 2b. DEVMODE2 (owner 11/16): an iPad with a hardware keyboard opens the Desk, without one Field; a keyboard counts from the next open ── */
+  if (want('ipadkbd')) {
+    console.log('── iPad + a hardware keyboard (no trackpad)');
+    seed(); let c = await device('iPad (iPadOS Safari says Macintosh)');
+    await H.signIn(c, PM, 9000); await signedReady(c);
+    let s = await waitState(c, isField, 25000);
+    ok(isField(s), 'iPad, no keyboard used yet: GrayCo Field', s);
+    /* on-screen typing into a field does not count as a hardware keyboard */
+    await c.ev(() => { const i = document.createElement('input'); i.id = 'dmk'; document.body.appendChild(i); i.focus(); });
+    await c.page().keyboard.type('ab'); await c.ev(() => { const i = document.getElementById('dmk'); if (i) { i.blur(); i.remove(); } });
+    ok(!(await c.ev(() => localStorage.getItem('gc_dm_hwkbd'))), 'typing letters into a field (the on-screen keyboard does that too) is not taken as a hardware keyboard');
+    await c.page().reload(); await signedReady(c);
+    s = await waitState(c, isField, 25000);
+    ok(isField(s), '… the next open is still GrayCo Field', s);
+    /* a hardware key (Tab) */
+    await c.page().keyboard.press('Tab'); await sleep(300);
+    ok(!!(await c.ev(() => localStorage.getItem('gc_dm_hwkbd'))), 'a hardware key (Tab) on the iPad is remembered');
+    s = await S(c); ok(isField(s), '… this open stays as it is (GrayCo Field)', s);
+    await c.page().reload(); await signedReady(c);
+    s = await waitState(c, isDesk, 25000); await sleep(2000); s = await S(c);
+    ok(isDesk(s) && /keyboard/.test(s.why || ''), 'the next open of the iPad with its keyboard: the Desk', s);
+    /* a week without the keyboard: Field again */
+    await c.ev(() => localStorage.setItem('gc_dm_hwkbd', String(Date.now() - 8 * 864e5)));
+    await c.page().reload(); await signedReady(c);
+    s = await waitState(c, isField, 25000);
+    ok(isField(s), 'no hardware key for over 7 days: GrayCo Field again', s);
+    ok(!c.errs.length, 'iPad keyboard: no page errors', c.errs.slice(0, 3));
     await closeAll();
   }
 
