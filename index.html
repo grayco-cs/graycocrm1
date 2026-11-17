@@ -210486,7 +210486,12 @@ W._gcRaBarHook = function(a, L, where){
 
 /* ═════ 🏠 Home: the dashboard (PM · admin) ═════ */
 var DASH = { pm: 1, admin: 1, ins: 1, mit: 1, env: 1, dual: 1 };   /* the PM / admin home — Construction, Insurance, Mitigation, Environmental (owner 11/16: "they must") */
-function dashApp(a){ return !off() && !!DASH[a]; }
+/* owner: the dashboard is for PMs, Nick and admins acting as PMs — an hourly (or salaried, no-commission) Mitigation / Environmental /
+   dual tech keeps the role's quick job buttons on Home (➕ Moisture reading, photos, equipment, log, clock …); the new bar stays.
+   A person not known yet (no people-list match) counts as a tech here — the tech buttons are the safe default. */
+var TECHAPP = { mit: 1, env: 1, dual: 1 };
+function techHome(a){ if (!TECHAPP[a]) return false; var u = meUser(); return !u || payKind(u) !== 'commission'; }
+function dashApp(a){ return !off() && !!DASH[a] && !techHome(a); }
 W._gcRaSections = function(k, L){
   if (off()) return L;
   var a = k === 'roof' ? 'pm' : k === 'super' ? 'crew' : k; if (!dashApp(a)) return L;

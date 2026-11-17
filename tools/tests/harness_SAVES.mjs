@@ -38,11 +38,14 @@ export function resetCloud(){ cloud.clear(); adminCloud.clear(); storage.clear()
 export const FAULTS = [];
 export const faultLog = [];
 export function failNext(f){ FAULTS.push(Object.assign({ table: 'gc_kv', key: null, status: 503, times: 1, hang: false, method: /^(POST|PATCH|PUT)$/ }, f || {})); }
+/* SAVES: an outage by time — every matching write fails until `ms` from now, then the database answers again */
+export function failFor(ms, f){ failNext(Object.assign({ times: 1e9, until: Date.now() + ms }, f || {})); }
 function takeFault(table, key, method){
   for (let i = 0; i < FAULTS.length; i++) { const f = FAULTS[i];
     if (f.table && !(f.table instanceof RegExp ? f.table.test(table) : f.table === table)) continue;
     if (f.method && !f.method.test(method)) continue;
     if (f.key && !(f.key instanceof RegExp ? f.key.test(key || '') : f.key === key)) continue;
+    if (f.until && Date.now() > f.until) { FAULTS.splice(i, 1); i--; continue; }
     f.times--; if (f.times <= 0) FAULTS.splice(i, 1); faultLog.push({ table, key, method, status: f.status, hang: f.hang, at: Date.now() }); return f; }
   return null;
 }
@@ -152,7 +155,7 @@ export async function computer(name, opt){
   const build = path.resolve(opt.build || process.cwd());
   const b = await browser(opt.headless);
   const vp = opt.viewport || (opt.mobile ? { width: 390, height: 844 } : { width: 1440, height: 900 });
-  const ctx = await b.newContext(Object.assign({ viewport: vp, serviceWorkers: 'block', timezoneId: 'America/Chicago', locale: 'en-US' }, opt.mobile ? { isMobile: true, hasTouch: true, deviceScaleFactor: 3, userAgent: opt.userAgent || 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1' } : {}));   /* SAVES: an iPhone */
+  const ctx = await b.newContext(Object.assign({ viewport: vp, serviceWorkers: 'block', timezoneId: opt.timezoneId || process.env.GC_TZ || 'America/Chicago', locale: 'en-US' }   /* SAVES: GC_TZ=Asia/Tokyo puts the browsers in the 8 PM–8 AM quiet hours by day */, opt.mobile ? { isMobile: true, hasTouch: true, deviceScaleFactor: 3, userAgent: opt.userAgent || 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1' } : {}));   /* SAVES: an iPhone */
   const A = { name, b, ctx, errs: [], dialogs: [], prompts: [], fn: [], acceptConfirm: true, build };
   await ctx.routeWebSocket(/.*/, ws => { /* realtime: never answers (the CRM polls) */ });
   await ctx.route('**/*', async r => {
