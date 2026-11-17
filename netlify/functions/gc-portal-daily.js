@@ -4,6 +4,9 @@
        admins and one Office To-Do (each step once per document);
      • patch CERTS: company and employee certifications (📜 Certifications) 30 / 7 days before their apply-by date (60 / 90
        only where set), on it and once expired → one e-mail to admins + office and one Office To-Do;
+     • ENVCOMP (_lib/envcomp.js run): medical surveillance due 30 / 14 / 3 days and overdue (the worker + admins / Office Manager,
+       never a value), the end of a medical removal's protected pay, each worker's own certifications 90 / 60 / 30 days and expired,
+       environmental job notices due / overdue and clearance not passed on a finished job;
      • from March 15 and from September 15: the spring / fall free roof inspection offer — ONE approval item for the
        admins with every past customer it would go to (nothing is sent until it is approved).
    GET ?ping=1 → alive. Anything that is not Netlify's scheduled call (body { next_run }) is refused. */
@@ -22,6 +25,7 @@ exports.handler = async function(event){
     const AUTO = require('./_lib/automations.js');   /* patch AUTOPANEL */
     try { out.docs = (await AUTO.gate('company_docs_expiry')) || await G.complianceRun(data); } catch (e) { out.docs = { error: String(e && e.message || e) }; }
     try { out.certs = (await AUTO.gate('company_docs_expiry')) || await G.certRun(data); } catch (e) { out.certs = { error: String(e && e.message || e) }; }   /* patch CERTS */
+    try { out.envcomp = (await AUTO.gate('company_docs_expiry')) || await require('./_lib/envcomp.js').run(data); } catch (e) { out.envcomp = { error: String(e && e.message || e) }; }   /* ENVCOMP: medical 30 / 14 / 3 days + overdue, medical removal end, the worker's own certs 90 / 60 / 30, job notices / clearance */
     try { out.inspect = (await AUTO.gate('inspection_offer')) || await G.inspectRun(data); } catch (e) { out.inspect = { error: String(e && e.message || e) }; }
     try { console.log('[gc-portal-daily]', JSON.stringify(out)); } catch (e) {}
     return { statusCode: 200, headers, body: JSON.stringify(Object.assign({ ok: true }, out)) };
