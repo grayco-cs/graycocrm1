@@ -170,6 +170,13 @@ ok('5m the admin changes the levels (v.5, floors 3) → a NEW paper uses them; t
 ok('5n the 📏 Lead levels card is on a lead job\'s paperwork (from the record) and not on an asbestos-only job', /data-ep-levels="2026 v\.5"/.test(H.cardTop(P('PHUD'))) && /floors 3/.test(H.cardTop(P('PHUD'))) && !/data-ep-levels/.test(H.cardTop(P('PASBR'))));
 const rx = await DL.render('gcb_asb_05', 'PASBR');
 ok('5o a paper that cites no level carries no levels stamp', rx && !/data-gc-levels/.test(rx.body));
+{ /* the CRM's list setter applies later (React): two writes in a row must both land */
+  const real = W._setProjects, Q = []; W._setProjects = f => { Q.push(f); };
+  H.log('PHUD', 'gcb_hud_05', { act: 'shared', via: 'test 1', sentVia: 'test share' }); H.log('PHUD', 'gcb_hud_05', { act: 'viewed', via: 'test 2' });
+  W._setProjects = real; Q.forEach(f => real(f));
+  const L5 = LOG('PHUD').filter(e => e.k === 'gcb_hud_05');
+  ok('5p two writes before the list catches up both land (the log line and the Sent mark)', L5.some(e => e.via === 'test 1') && L5.some(e => e.via === 'test 2') && P('PHUD').jobDocs.sent.gcb_hud_05 && P('PHUD').jobDocs.sent.gcb_hud_05.via === 'test share');
+}
 /* ═ 6 · overdue → the PM, then the office / admins ═ */
 store.gc_office_tasks = '[]';
 W._crm.projects = W._crm.projects.map(p => p.id === 'PRRP' ? Object.assign({}, p, { epahud: { events: { completedOn: day(-40) } } }) : p);

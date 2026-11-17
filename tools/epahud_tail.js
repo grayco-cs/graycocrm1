@@ -166,11 +166,12 @@ function toSend(p){
 function log(pid, k, o){
   var e = Object.assign({ k: k, at: nowIso(), by: me() }, o || {});
   if (/^(sent|shared|filed|held)$/.test(s(e.act)) && !e.levels) e.levels = stamp();   /* the levels version this copy was made with */
-  if (JD() && JD().patchJD) JD().patchJD(pid, function(J){ J.log = arr(J.log).concat([e]); return J; });
-  else saveJob(pid, function(q){ q.jobDocs = obj(q.jobDocs); q.jobDocs.log = arr(q.jobDocs.log).concat([e]); return q; });
+  /* written through the list setter's own "previous list" (never a stale copy): two writes in a row both land */
+  saveJob(pid, function(q){ var J = obj(q.jobDocs); J.log = arr(J.log).concat([e]); if (o && o.sentVia) { J.sent = Object.assign({}, J.sent || {}); J.sent[k] = { on: today(), by: e.by, at: e.at, via: o.sentVia }; delete e.sentVia; }
+    if (o && o.doneHow) { J.done = Object.assign({}, J.done || {}); J.done[k] = { on: today(), how: o.doneHow, by: e.by, at: e.at }; delete e.doneHow; } q.jobDocs = J; return q; });
   return e;
 }
-function markSent(pid, k, via){ if (!JD()) return; JD().patchJD(pid, function(J){ J.sent = Object.assign({}, J.sent || {}); J.sent[k] = { on: today(), by: me(), at: nowIso(), via: via }; return J; }); }
+function markSent(){ /* folded into log(…, { sentVia }) */ }
 
 /* ═════ 3 · 📤 Send… — portal / e-mail / text / share, and 🏛 Filed ═════ */
 function render(doc, pid){ return W._gcDocLib && W._gcDocLib.render ? Promise.resolve(W._gcDocLib.render(doc, pid)) : Promise.resolve(null); }
@@ -190,12 +191,12 @@ function share(p, x){
   return render(x.doc, p.id).then(function(r){
     if (!r) { toast('Could not make that paper.', true); return { ok: false }; }
     var name = (r.t.name + ' — ' + s(p.name)).replace(/[\\\/:*?"<>|]+/g, ' ').slice(0, 90);
-    var viaViewer = function(){ try { if (W._gcViewer && W._gcViewer.open) W._gcViewer.open({ html: r.page, name: name }); } catch (e) {} log(p.id, x.k, { act: 'shared', via: 'opened on this device (print / save as PDF)' }); markSent(p.id, x.k, 'shared from this device'); return { ok: true, via: 'viewer' }; };
+    var viaViewer = function(){ try { if (W._gcViewer && W._gcViewer.open) W._gcViewer.open({ html: r.page, name: name }); } catch (e) {} log(p.id, x.k, { act: 'shared', via: 'opened on this device (print / save as PDF)', sentVia: 'shared from this device' }); return { ok: true, via: 'viewer' }; };
     if (!(W.navigator && typeof W.navigator.share === 'function')) return viaViewer();
     return pdfBlob(r.page, name).then(function(b){
       var data = { title: name, text: r.t.name + ' — ' + s(p.name) };
       if (b && typeof W.File === 'function') { try { var f = new W.File([b], name + '.pdf', { type: 'application/pdf' }); if (!W.navigator.canShare || W.navigator.canShare({ files: [f] })) data.files = [f]; } catch (e) {} }
-      return Promise.resolve(W.navigator.share(data)).then(function(){ log(p.id, x.k, { act: 'shared', via: data.files ? 'shared from the phone (PDF)' : 'shared from the phone' }); markSent(p.id, x.k, 'shared from the phone'); toast('📤 Shared — logged on the paper.'); return { ok: true, via: 'share' }; }, function(e){ if (e && e.name === 'AbortError') return { ok: false, cancelled: true }; return viaViewer(); });
+      return Promise.resolve(W.navigator.share(data)).then(function(){ log(p.id, x.k, { act: 'shared', via: data.files ? 'shared from the phone (PDF)' : 'shared from the phone', sentVia: 'shared from the phone' }); toast('📤 Shared — logged on the paper.'); return { ok: true, via: 'share' }; }, function(e){ if (e && e.name === 'AbortError') return { ok: false, cancelled: true }; return viaViewer(); });
     });
   });
 }
@@ -206,14 +207,14 @@ function sendVia(pid, k, ch){
   if (paused()) { log(pid, k, { act: 'held', via: ch === 'portal' ? 'customer portal' : ch === 'sms' ? 'text' : 'e-mail', note: 'data-entry mode' }); toast(pauseNote(), true); return Promise.resolve({ ok: false, held: true }); }
   if (ch === 'portal') {
     var A = W._gcDocAuto;
-    var viaQueue = function(){ return render(x.doc, pid).then(function(r){ if (!r) return { ok: false }; return queue(p, x, 'email', r, recipient).then(function(j){ if (j && j.ok) { markSent(pid, k, 'portal + e-mail (approval)'); log(pid, k, { act: 'sent', via: 'portal + e-mail — waiting in ✅ Approvals', to: recipient || 'customer' }); toast('✓ Waiting in ✅ Approvals — it goes to the ' + (recipient || 'customer') + '\'s portal / e-mail when approved.'); } else toast('Not queued: ' + s(j && j.error || 'try again'), true); return j || { ok: false }; }); }); };
-    if (!recipient && T.sign && A && typeof A.run === 'function' && A.active && A.active(p)) return Promise.resolve(A.run(pid, { force: true, ids: [x.doc] })).then(function(r){ if (r && r.ok && r.made) { markSent(pid, k, 'portal e-sign'); log(pid, k, { act: 'sent', via: 'customer portal — to e-sign', to: 'customer' }); toast('✍️ In the customer\'s portal to sign.'); return r; } return viaQueue(); }, viaQueue);
+    var viaQueue = function(){ return render(x.doc, pid).then(function(r){ if (!r) return { ok: false }; return queue(p, x, 'email', r, recipient).then(function(j){ if (j && j.ok) { log(pid, k, { act: 'sent', via: 'portal + e-mail — waiting in ✅ Approvals', to: recipient || 'customer', sentVia: 'portal + e-mail (approval)' }); toast('✓ Waiting in ✅ Approvals — it goes to the ' + (recipient || 'customer') + '\'s portal / e-mail when approved.'); } else toast('Not queued: ' + s(j && j.error || 'try again'), true); return j || { ok: false }; }); }); };
+    if (!recipient && T.sign && A && typeof A.run === 'function' && A.active && A.active(p)) return Promise.resolve(A.run(pid, { force: true, ids: [x.doc] })).then(function(r){ if (r && r.ok && r.made) { log(pid, k, { act: 'sent', via: 'customer portal — to e-sign', to: 'customer', sentVia: 'portal e-sign' }); toast('✍️ In the customer\'s portal to sign.'); return r; } return viaQueue(); }, viaQueue);
     return viaQueue();
   }
   return render(x.doc, pid).then(function(r){
     if (!r) { toast('Could not make that paper.', true); return { ok: false }; }
     return queue(p, x, ch, r, recipient).then(function(j){
-      if (j && j.ok) { var via = ch === 'sms' ? 'text with the portal link (approval)' : 'e-mail (approval)'; markSent(pid, k, via); log(pid, k, { act: 'sent', via: via + ' — waiting in ✅ Approvals', to: recipient || 'customer' }); toast('✓ ' + (ch === 'sms' ? 'Text' : 'E-mail') + ' waiting in ✅ Approvals — it goes when approved.'); }
+      if (j && j.ok) { var via = ch === 'sms' ? 'text with the portal link (approval)' : 'e-mail (approval)'; log(pid, k, { act: 'sent', via: via + ' — waiting in ✅ Approvals', to: recipient || 'customer', sentVia: via }); toast('✓ ' + (ch === 'sms' ? 'Text' : 'E-mail') + ' waiting in ✅ Approvals — it goes when approved.'); }
       else toast('Not queued: ' + s(j && j.error || 'try again'), true);
       return j || { ok: false };
     });
@@ -223,8 +224,7 @@ function filed(pid, k){
   var p = proj(pid), x = p && JD() && JD().findItem(p, k); if (!x) return;
   var on = W.prompt('🏛 Filed with the agency — date (YYYY-MM-DD)?', today()); if (on == null) return;
   var conf = W.prompt('Confirmation # / how it was filed (online, e-mail, mail)?', ''); if (conf == null) return;
-  log(pid, k, { act: 'filed', via: s(conf) || 'filed', on: s(on) || today() });
-  JD().markDone(pid, k, 'filed ' + (s(on) || today()) + (s(conf) ? ' · ' + s(conf) : ''));
+  log(pid, k, { act: 'filed', via: s(conf) || 'filed', on: s(on) || today(), doneHow: 'filed ' + (s(on) || today()) + (s(conf) ? ' · ' + s(conf) : '') });
   toast('🏛 Filed — logged on the paper.');
 }
 function sheet(title, inner){
