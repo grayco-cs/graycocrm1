@@ -75,7 +75,7 @@ const sleep = H.sleep;
 const acct = name => Object.keys(H.ACCOUNTS).find(e => H.ACCOUNTS[e].name === name);
 const NICK = acct('Nick Gray'), PM = acct('Demo PM'), OFFICE = acct('Office Demo'), MITPM = acct('Demo Estimator');
 const ago = d => new Date(Date.now() - d * 864e5).toISOString();
-const ymd = d => { const x = new Date(Date.now() + d * 864e5); return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0'); };
+const ymd = d => new Date(Date.now() + d * 864e5).toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });   /* the phone's day (the harness browser runs on Chicago time), not the test machine's */
 const TOK = 'A'.repeat(43);
 H.resetCloud();
 H.cset('users', [
