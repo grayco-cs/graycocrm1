@@ -657,7 +657,7 @@ function defaultAdmin(ctx, R, certKey){
   var pick = null;
   if (certKey) pick = U.filter(function(u){ var x = certFor(R, Object.assign({}, ctx, { today: ctx.today || todayLocal() }), { name: s(u.name), email: low(u.email) }, certKey, ''); return x.st === 'ok' || x.st === 'soon' || x.st === 'nodate'; })[0] || null;
   var u = pick || U[0];
-  return { name: s(u.name), phone: s(u.phone || u.cell || u.mobile), email: low(u.email), why: pick ? 'the admin holding the ' + certType(R, certKey).label : 'an admin on the people list' };
+  return { name: s(u.name), phone: s(u.phone || u.cell || u.mobile), email: low(u.email), why: pick ? 'the admin holding the ' + certType(R, certKey).label + ' certification' : 'an admin on the people list' };
 }
 function programInfo(R, id, ctx){
   R = R || rules(); var r = arr(R.programs).find(function(x){ return x && x.id === id; }) || {}, t = (ctx && ctx.today) || todayLocal();
