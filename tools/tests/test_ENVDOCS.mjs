@@ -147,12 +147,29 @@ ok('A8 🖨 Print pack → "Environmental signs" with every sign', card === C.SI
 if (card) { await A.ev(() => { window.__gcEdSigns = null; document.querySelector('[data-ed-sign="decon_wash"] [data-a="ed-sign"]').click(); }); const one = await wait(A, () => window.__gcEdSigns && window.__gcEdSigns.ids); ok('A8 printing one sign from the Print pack', JSON.stringify(one) === '["decon_wash"]', one); }
 await shot(A, 'a8_printpack');
 
+/* 8b · TCLP waste characterization */
+await A.ev(() => window._gcEnvDocs.logTclp('P3', { stream: 'Lead paint chips / debris', date: window._gcEnvCompCore.today(), sampler: 'Demo Estimator', containers: 'B-01 to B-06', lab: 'Demo Lab', coc: 'COC-777', result: '', files: { file: [new File(['pdf'], 'coc.pdf', { type: 'application/pdf' })] } }));
+const wPend = await wait(A, () => { const p = window._crm.projects.find(x => x.id === 'P3'); const e = window._gcEnvComp.evaluate(p); const w = e.items.find(i => i.id === 'waste:lead paint chips / debris'); return w && (p.envLog || []).some(r => r.kind === 'tclp') ? w : null; }, null, 12000);
+ok('A10 a TCLP sample waiting on the lab → the stream is ⚠ "not yet characterized" (sampler, containers, lab, COC kept)', !!wPend && wPend.st === 'due' && /waiting on the lab/.test(wPend.note) && (await job(A, 'P3')).envLog.find(r => r.kind === 'tclp').coc === 'COC-777', wPend);
+const refused = await A.ev(() => window._gcEnvDocs.logShip('P3', { stream: 'Lead paint chips / debris', manifest: 'MAN-9', disposedOn: window._gcEnvCompCore.today() }));
+ok('A10 it cannot be shipped / marked disposed until it is characterized', refused === false && !(await job(A, 'P3')).envLog.some(r => r.kind === 'wship'));
+const tid = (await job(A, 'P3')).envLog.find(r => r.kind === 'tclp').id;
+await A.ev(id => window._gcEnvDocs.tclpResult('P3', id, '7.5'), tid); await sleep(800);
+let wH = (await evalJob(A, 'P3')).items.find(i => i.id === 'waste:lead paint chips / debris');
+ok('A10 the lab result 7.5 mg/L vs 5.0 → HAZARDOUS (the earlier "pending" kept as a version)', /HAZARDOUS/.test(wH.label) && /7\.5 mg\/L lead vs 5/.test(wH.note) && (await job(A, 'P3')).envLog.find(r => r.kind === 'tclp').versions.length === 1, wH);
+await A.ev(() => window._gcEnvDocs.logShip('P3', { stream: 'Lead paint chips / debris', date: window._gcEnvCompCore.today(), containers: 'B-01 to B-06', manifest: 'MAN-9', hauler: 'Demo Hauler', tsd: 'Demo TSD', generatorStatus: 'SQG', disposedOn: window._gcEnvCompCore.today() })); await sleep(800);
+wH = (await evalJob(A, 'P3')).items.find(i => i.id === 'waste:lead paint chips / debris');
+ok('A10 shipped with the manifest, hauler, TSD facility and generator status → ✅', wH.st === 'ok' && /1 shipment/.test(wH.note), wH);
+await open(A, 'P3');
+const wPan = await wait(A, () => { const c = document.getElementById('gc-ec'); return c && c.querySelector('[data-ed-sec="waste"]') ? c.innerText : null; });
+ok('A10 the panel: ♻️ Waste — TCLP with the stream and the threshold', !!wPan && /Waste — TCLP/.test(wPan) && /Lead paint chips \/ debris/.test(wPan) && /5 mg\/L lead/.test(wPan));
+
 /* 9 · To-Dos, the record package, the company documents */
 await A.ev(() => window._gcEnvDocs.sweep());
 const tasks = await A.ev(() => JSON.parse(localStorage.getItem('gc_office_tasks') || '[]'));
 ok('A9 To-Dos: the mold job\'s plan, the yearly program reviews (to the administrator); none for programs just reviewed', tasks.some(t => t.id === 'ENVDOCS_E_P4' && !t.done) && tasks.some(t => t.id === 'ENVDOCS_R_lead' && t.assignee === 'Wesley Johnson') && !tasks.some(t => t.id === 'ENVDOCS_R_resp') && !tasks.some(t => t.pid === 'P2'), tasks.filter(t => /^ENVDOCS/.test(t.id)).map(t => t.id));
 const pkg = await A.ev(() => window._gcEnvComp.pkgLines(window._crm.projects.find(x => x.id === 'P3')).map(x => x.h || x.h2 || x.t).join('\n'));
-ok('A9 the record package lists every plan version with its signatures and the decon set-ups', /Employee Protection Plan — every version/.test(pkg) && /Version 1 .* competent person: Wesley Johnson/.test(pkg) && /Decon set-up/.test(pkg), pkg.slice(-600));
+ok('A9 the record package lists every plan version with its signatures, the decon set-ups and the TCLP samples + shipments', /Waste characterization \(TCLP\)/.test(pkg) && /COC COC-777/.test(pkg) && /manifest MAN-9/.test(pkg) && /Employee Protection Plan — every version/.test(pkg) && /Version 1 .* competent person: Wesley Johnson/.test(pkg) && /Decon set-up/.test(pkg), pkg.slice(-600));
 const files = await A.ev(() => Promise.all(['GrayCo_Lead_Safety_Program_v2.docx', 'GrayCo_Asbestos_Program.docx', 'GrayCo_Lead_Decon_Unit_Setup_Checklist.pdf', 'GrayCo_Lead_Safety_Program.docx'].map(f => fetch('/company-docs/01667c529f454cf1/' + f).then(r => r.status))));
 ok('A9 the new program files are served, the earlier versions still are', files.every(x => x === 200), files);
 ok('A no page errors (admin)', !A.errs.filter(e => !/ResizeObserver|Failed to fetch|NetworkError|Load failed/i.test(e)).length, A.errs.slice(0, 5));

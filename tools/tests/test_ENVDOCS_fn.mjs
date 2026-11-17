@@ -137,4 +137,38 @@ ok(/Program administrator: Demo Lead Admin/.test(ft) && /Phone: \(901\) 555-0102
 ok((fx.match(/<w:p[ >]/g) || []).length === (xml.match(/<w:p[ >]/g) || []).length && /Program administrator: runs this program/.test(ft), 'nothing else changes (same paragraphs; the responsibilities text untouched)');
 ok(C.fillDocxXml(xml, {}) === xml, 'nothing to fill → the file is unchanged');
 
+console.log('8 · TCLP waste characterization (owner: "TCLP")');
+ok(C.tclpThreshold(ctx.rules) === 5 && /confirm with EPA/i.test(C.DEFAULT_RULES.settings.tclpNote) && C.tclpThreshold(C.rules({ settings: { tclpLead: 4.5 } })) === 4.5, 'the threshold is a setting (default 5.0 mg/L lead, labelled "confirm with EPA / state")');
+ok(C.tclpClass('5.0', 5) === 'hazardous' && C.tclpClass('7.2', 5) === 'hazardous' && C.tclpClass('4.99', 5) === 'non-hazardous' && C.tclpClass('<0.5', 5) === 'non-hazardous' && C.tclpClass('ND', 5) === 'non-hazardous' && C.tclpClass('', 5) === 'pending' && C.tclpClass('waiting', 5) === 'pending', 'result ≥ threshold → hazardous; below / non-detect → non-hazardous; blank → pending');
+let WJ = Object.assign({}, lead, { envLog: [] });
+ok(C.evaluate(WJ, ctx).items.some(x => x.id === 'waste-none' && x.st === 'due'), 'a lead abatement job without a waste stream → ⚠ add and characterize them');
+WJ.envLog = [{ id: 'cd1', kind: 'compday', date: C.today(), rows: { waste: [{ stream: 'Lead paint chips / debris', bags: '6' }] } }];
+let wi = C.evaluate(WJ, ctx).items.find(x => x.id === 'waste:lead paint chips / debris');
+ok(wi && wi.st === 'due' && /not yet characterized/.test(wi.label), 'the daily log\'s waste row names the stream → ⚠ "not yet characterized"', wi);
+ok(!C.canDispose(WJ, 'Lead paint chips / debris', ctx.rules), 'it cannot be disposed of yet');
+WJ.envLog.push({ id: 'cd2', kind: 'compday', date: C.today(), rows: { waste: [{ stream: 'Lead paint chips / debris', bags: '2', manifest: 'MAN-1' }] } });
+wi = C.evaluate(WJ, ctx).items.find(x => x.id === 'waste:lead paint chips / debris');
+ok(wi.st === 'block' && /WITHOUT CHARACTERIZATION/.test(wi.note), 'shipped (a manifest # in the daily log) without characterization → ⛔');
+ok(C.evaluate(WJ, Object.assign({}, ctx, { rules: C.rules({ settings: { wasteShipBlock: false } }) })).items.find(x => x.id === 'waste:lead paint chips / debris').st === 'due', 'configurable to ⚠');
+WJ.envLog.push({ id: 't1', kind: 'tclp', stream: 'Lead paint chips / debris', date: C.today(), sampler: 'Sam Sup', containers: 'B-01..B-08', lab: 'Demo Lab', coc: 'COC-42', analyte: 'lead', result: '12.3', threshold: 5, cls: C.tclpClass('12.3', 5), file: { ref: 'r', name: 'lab.pdf' } });
+wi = C.evaluate(WJ, ctx).items.find(x => x.id === 'waste:lead paint chips / debris');
+ok(/HAZARDOUS/.test(wi.label) && /12\.3 mg\/L lead vs 5/.test(wi.note) && /COC-42/.test(wi.note) && /manifest, hauler, TSD facility, generator status/.test(wi.note) && C.canDispose(WJ, 'lead paint chips / debris', ctx.rules), 'TCLP 12.3 mg/L → HAZARDOUS → the hazardous path (manifest, hauler, TSD, generator status); now it may be shipped');
+WJ.envLog.push({ id: 's1', kind: 'wship', stream: 'Lead paint chips / debris', cls: 'hazardous', date: C.today(), manifest: 'MAN-1', hauler: 'Demo Hauler' });
+wi = C.evaluate(WJ, ctx).items.find(x => x.id === 'waste:lead paint chips / debris');
+ok(wi.st === 'due' && /TSD facility, generator status/.test(wi.note), 'a hazardous shipment missing the TSD facility and generator status → ⚠');
+WJ.envLog[WJ.envLog.length - 1] = Object.assign({}, WJ.envLog[WJ.envLog.length - 1], { tsd: 'Demo TSD', generatorStatus: 'SQG' });
+ok(C.evaluate(WJ, ctx).items.find(x => x.id === 'waste:lead paint chips / debris').st === 'ok', 'complete hazardous papers → ✅');
+WJ.envLog.push({ id: 'g1', kind: 'wgk', stream: 'Lead paint chips / debris', date: C.addDays(C.today(), 1), cls: 'non-hazardous', basis: 'looks fine' });
+ok(/HAZARDOUS/.test(C.evaluate(WJ, ctx).items.find(x => x.id === 'waste:lead paint chips / debris').label), 'generator knowledge never overrides a hazardous TCLP result');
+WJ.envLog.push({ id: 'g2', kind: 'wgk', stream: 'Plastic sheeting / PPE / filters', date: C.today(), cls: 'non-hazardous', basis: 'TCLP of the same sheeting on this job 10/2026: 0.3 mg/L' }, { id: 's2', kind: 'wship', stream: 'Plastic sheeting / PPE / filters', cls: 'non-hazardous', date: C.today(), landfill: 'Demo Landfill' });
+let w2 = C.evaluate(WJ, ctx).items.find(x => x.id === 'waste:plastic sheeting / ppe / filters');
+ok(/NON-HAZARDOUS/.test(w2.label) && /generator knowledge: TCLP of the same sheeting/.test(w2.note) && w2.st === 'due' && /landfill acceptance letter/.test(w2.note), 'generator knowledge with its basis → non-hazardous → the landfill acceptance letter is needed');
+WJ.envLog[WJ.envLog.length - 1].acceptanceOn = C.today();
+ok(C.evaluate(WJ, ctx).items.find(x => x.id === 'waste:plastic sheeting / ppe / filters').st === 'ok', 'with the acceptance letter → ✅');
+const WP = JSON.stringify(C.buildPlan(WJ, ctx, { v: 1 }));
+ok(/Waste characterization \(TCLP\) and disposal/.test(WP) && /Lead paint chips \/ debris/.test(WP) && /HAZARDOUS — TCLP 12.3 mg\/L lead \(threshold 5\)/.test(WP) && /TCLP threshold used: 5 mg\/L/.test(WP), 'the plan\'s waste section: each stream, its classification and disposal path, the threshold');
+ok(['tclp', 'wgk', 'wship'].every(k => C.recCat({ kind: k }, ['lead_abate']) === 'project') && C.retainYears(ctx.rules, 'project') === Infinity, 'TCLP samples, generator knowledge and shipments are project records — kept forever');
+const daily = C.DEFAULT_RULES.daily.find(f => f.key === 'waste');
+ok(/stream\|Waste stream/.test(daily.cols), 'the daily log\'s waste rows carry the waste stream');
+
 console.log(pass + ' passed, ' + fail + ' failed'); process.exit(fail ? 1 : 0);
