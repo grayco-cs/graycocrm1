@@ -236775,7 +236775,7 @@ function fileIn(k, label, multi, accept){ return '<label>' + esc(label) + '<inpu
 var MITYPE = { personal: 'Personal (worker)', area: 'Area — inside containment', clearance: 'Clearance', baseline: 'Background (before work)' };
 function keptTxt(R, c, base){ var u = CORE.retainUntil(R, c, base); return u ? 'until ' + nice(u) : 'forever'; }
 function retainLine(p, E){
-  var R = rules(), L = arr(p.envLog).filter(function(r){ return r && !r.deleted && /^(air|compday|contain|ppe|waste|notice|survey|hzclean|epp|decon|asbsub)$/.test(s(r.kind)); });
+  var R = rules(), L = arr(p.envLog).filter(function(r){ return r && !r.deleted && /^(air|compday|contain|ppe|waste|notice|survey|hzclean|epp|decon|asbsub|tclp|wgk|wship)$/.test(s(r.kind)); });
   var n = L.length + Object.keys(obj(obj(p.envComp).notices)).length; if (!n) return '<div class="m">No compliance records yet. Every record is kept ' + esc(arr(R.retention).every(function(r){ return CORE.retainYears(R, r.cat) === Infinity; }) ? 'forever' : 'for its retention period') + ' (the owner\'s rule: "Always keep records for everything") — "Delete" is Archive; edits keep the earlier versions.</div>';
   var base = s(p.completionDate || p.completedAt).slice(0, 10) || today(), byCat = {};
   L.forEach(function(r){ var c = s(r.retainCat) || CORE.recCat(r, E.kinds); byCat[c] = (byCat[c] || 0) + 1; });
@@ -236988,6 +236988,11 @@ function pkgLines(p){
   H('Employee Protection Plan — every version'); CORE.plans(p).forEach(function(r){ var g = obj(r.signed); T('Version ' + r.v + ' · ' + nice(r.date) + ' · prepared by ' + s(r.by) + ' · competent person: ' + (obj(g.cp).name ? g.cp.name + ' ' + new Date(g.cp.at).toLocaleString() : 'NOT SIGNED') + ' · owner: ' + (obj(g.owner).name ? g.owner.name + ' ' + new Date(g.owner.at).toLocaleString() : 'NOT SIGNED')); });
   arr(p.envLog).filter(function(r){ return CORE.live(r) && r.kind === 'decon'; }).forEach(function(r){ T('Decon set-up ' + nice(r.setOn || r.date) + ' · ' + s(r.type) + (r.location ? ' at ' + r.location : '') + ' · by ' + s(r.setBy || r.by) + ' · checklist ' + Object.keys(obj(r.checks)).length + ' item(s) · ' + arr(r.photos).length + ' photo(s)'); });
   E.items.filter(function(x){ return x.sec === 'sub' || x.sec === 'decon' || x.sec === 'plan'; }).forEach(function(x){ T(x.label + ' — ' + x.note); });
+  /* ENVDOCS · TCLP: every waste stream, its characterization, every sample, every shipment */
+  if (CORE.wasteOn(p, E.kinds, R)) { H('Waste characterization (TCLP) and disposal'); CORE.wasteStreams(p, R).forEach(function(w){ T(w.stream + ' — ' + (w.cls ? w.cls.toUpperCase() + ' (' + (w.basis === 'tclp' ? 'TCLP' : 'generator knowledge') + ')' : 'NOT CHARACTERIZED'));
+    w.tclp.forEach(function(r){ T('  TCLP ' + nice(r.date) + ' · sampler ' + s(r.sampler) + ' · containers ' + s(r.containers) + ' · lab ' + s(r.lab) + ' · COC ' + s(r.coc) + ' · lead ' + (s(r.result) || 'pending') + ' mg/L vs ' + s(r.threshold) + ' mg/L → ' + s(r.cls) + (r.file ? ' · lab report kept' : '')); });
+    w.gk.forEach(function(r){ T('  Generator knowledge ' + nice(r.date) + ' · ' + s(r.cls) + ' · basis: ' + s(r.basis) + ' (' + s(r.by) + ')'); });
+    w.ships.forEach(function(r){ T('  Shipment ' + nice(r.date) + ' · ' + s(r.containers) + (r.manifest ? ' · manifest ' + r.manifest : '') + (r.hauler ? ' · hauler ' + r.hauler : '') + (r.tsd ? ' · TSD ' + r.tsd : '') + (r.generatorStatus ? ' · generator ' + r.generatorStatus : '') + (r.landfill ? ' · landfill ' + r.landfill : '') + (r.acceptanceOn ? ' · acceptance letter ' + nice(r.acceptanceOn) : '') + (r.disposedOn ? ' · disposed ' + nice(r.disposedOn) : '')); }); }); }
   if (arr(p.envAudit).length) { H('Audit (deleted records)'); arr(p.envAudit).forEach(function(a){ T(new Date(a.at).toLocaleString() + ' · ' + a.by + ' deleted ' + a.kind + ' ' + a.date + ' — ' + a.why); }); }
   return L;
 }
@@ -237112,7 +237117,7 @@ function sweep(){
 
 /* ═════ records retention: compliance records are kept from deletion until their date ═════ */
 var KEPT = lsGet(KEEP, {}) || {};
-var RK = /^(air|compday|contain|ppe|waste|notice|survey|hzclean|epp|decon|asbsub)$/;   /* ENVDOCS: + plan versions, decon set-ups, the sub's papers */
+var RK = /^(air|compday|contain|ppe|waste|notice|survey|hzclean|epp|decon|asbsub|tclp|wgk|wship)$/;   /* ENVDOCS: + plan versions, decon set-ups, the sub's papers */
 function guard(){
   try {
     var P = projects(); if (!P.length) return 0; var R = rules(), t = today(), fixes = {}, arch = {}, ch = false;
@@ -237521,6 +237526,12 @@ W._gcEnvDocsPanel = function(p, E){
       + (off ? ' <select data-ed-decon="1" aria-label="Decon unit on this job"><option value="">auto' + (CORE.hasKind(obj(Rr.decon), E.kinds) ? ' (required)' : ' (not required)') + '</option><option value="yes"' + (req === true ? ' selected' : '') + '>required on this job</option><option value="no"' + (req === false ? ' selected' : '') + '>not needed on this job</option></select>' : '') + '</div>';
     if (dI) h += X.rowH(dI, DR ? arr(DR.photos).slice(0, 3).map(X.fileLink).join(' ') : '');
   }
+  /* TCLP: the waste streams */
+  if (CORE.wasteOn(p, E.kinds, Rr)) {
+    var WS = E.items.filter(function(x){ return x.sec === 'waste'; });
+    h += '<div class="sec" data-ed-sec="waste">♻️ Waste — TCLP characterization ' + (off ? btn('wstream', '＋ Waste stream') + btn('tclp', '🧪 Log TCLP sample', '', 'g') + btn('wgk', '📄 Generator knowledge') + btn('wship', '🚚 Shipment / disposal') : '') + '</div><div class="m">Threshold: ' + esc(CORE.tclpThreshold(Rr)) + ' mg/L lead (' + esc(s(obj(Rr.settings).tclpNote)) + '). A stream cannot be disposed of until it is characterized.</div>';
+    WS.forEach(function(x){ var w = CORE.wasteStreams(p, Rr).find(function(z){ return z.key === s(x.id).slice(6); }) || { tclp: [] }, pend = w.tclp.filter(function(r){ return r.cls === 'pending'; })[0], rf = w.rec && w.rec.file; h += X.rowH(x, (rf ? X.fileLink(rf) : '') + (pend && off ? btn('tclpres', '🧪 Lab result', ' data-id="' + esc(pend.id) + '"') : '')); });
+  }
   /* the signs */
   var SG = CORE.jobSigns(p, E.kinds, Rr);
   h += '<div class="sec" data-ed-sec="signs">🪧 Signs ' + btn('signs', '🖨 Print this job\'s signs') + ' <select data-ed-size="1" aria-label="Sign size">' + CORE.SIGN_SIZES.map(function(z){ return '<option value="' + z.key + '">' + esc(z.label) + '</option>'; }).join('') + '</select> <label style="text-transform:none;letter-spacing:0;font-weight:600;color:#0f172a"><input type="checkbox" data-ed-bi="1" checked> English + Spanish</label></div>'
@@ -237657,6 +237668,67 @@ function purchaseHtml(){
 }
 function openHtml(html, key){ W['__gcEd' + key] = html; var w = W.open('', '_blank'); if (w) { w.document.write(html); w.document.close(); try { w.focus(); } catch (e) {} } else toast('Allow pop-ups to print.', true); return html; }
 
+/* ═════ ♻️ TCLP waste characterization (owner: "TCLP") ═════ */
+function streamsOf(p){ var Rr = R(), L = CORE.wasteStreams(p, Rr).map(function(w){ return w.stream; }); CORE.listOf(obj(Rr.waste).streams).forEach(function(n){ if (!L.some(function(x){ return CORE.streamKey(x) === CORE.streamKey(n); })) L.push(n); }); return L; }
+function addStream(pid, name){ name = s(name); if (!name) return false; return X.setEC(pid, function(E0){ var L = arr(E0.wasteStreams); if (!L.some(function(x){ return CORE.streamKey(x && typeof x === 'object' ? x.name : x) === CORE.streamKey(name); })) E0.wasteStreams = L.concat([{ name: name, by: me(), at: X.nowIso() }]); return E0; }); }
+function streamSel(p, val){ return X.sel('stream', 'Waste stream', [['', '—']].concat(streamsOf(p).map(function(n){ return [n, n]; })), val || '') + X.fld('streamNew', '…or a new waste stream', 'text', '', 'e.g. Window sash debris'); }
+function pickStream(v){ return s(v.streamNew) || s(v.stream); }
+function tclpForm(pid){
+  var p = proj(pid); if (!p) return; var th = CORE.tclpThreshold(R());
+  X.modal('🧪 TCLP sample — ' + s(p.name), '<div class="m">Toxicity Characteristic Leaching Procedure. The result (lead, mg/L) is compared with ' + esc(th) + ' mg/L — ' + esc(s(obj(R().settings).tclpNote)) + '. At or above it the stream is HAZARDOUS.</div>' + streamSel(p) + '<div class="grid">'
+    + X.fld('date', 'Sample date', 'date', today()) + X.fld('sampler', 'Sampler', 'text', me()) + X.fld('containers', 'Container / bag IDs sampled', 'text', '', 'e.g. B-01 to B-12, drum D-3') + X.fld('lab', 'Lab', 'text', '')
+    + X.fld('coc', 'Chain-of-custody #', 'text', '') + X.fld('result', 'Result — lead (mg/L); blank while waiting on the lab', 'text', '', 'e.g. 0.8 or <0.5') + '</div>' + X.fileIn('file', 'Lab report (PDF / photo)', false, 'application/pdf,image/*'),
+    function(v){ return logTclp(pid, v); }, 'Save the sample');
+}
+function logTclp(pid, v){
+  var p = proj(pid); if (!p) return Promise.resolve(false); v = v || {}; var st = pickStream(v);
+  if (!st) { toast('Pick the waste stream.', true); return Promise.resolve(false); }
+  var th = CORE.tclpThreshold(R()), files = v.files && v.files.file ? v.files.file : (v.file ? [v.file] : []);
+  return X.storeAll(files, pid).then(function(F){
+    var cls = CORE.tclpClass(v.result, th);
+    addStream(pid, st);
+    ST.call(W, function(){ X.addLog(pid, { kind: 'tclp', stream: st, date: s(v.date) || today(), sampler: s(v.sampler) || me(), containers: s(v.containers), lab: s(v.lab), coc: s(v.coc), analyte: 'lead', result: s(v.result), threshold: th, cls: cls, file: F[0] || null, versions: [] }); }, 60);
+    toast(cls === 'pending' ? '🧪 TCLP sample logged — waiting on the lab (the stream stays ⚠ until the result).' : '🧪 TCLP ' + s(v.result) + ' mg/L lead vs ' + th + ' → ' + cls.toUpperCase() + '.', cls === 'hazardous');
+    return true;
+  });
+}
+function tclpResult(pid, id, result, file){
+  var th = CORE.tclpThreshold(R());
+  return X.storeAll(file ? [file] : [], pid).then(function(F){
+    return X.saveJob(pid, function(q){ q.envLog = arr(q.envLog).map(function(r){ if (!r || r.id !== id) return r; var prev = { result: r.result, cls: r.cls, file: r.file || null }; return Object.assign({}, r, { result: s(result), threshold: th, cls: CORE.tclpClass(result, th), file: F[0] || r.file || null, versions: arr(r.versions).concat([{ at: X.nowIso(), by: me(), prev: prev }]) }); }); return q; });
+  });
+}
+function gkForm(pid){
+  var p = proj(pid); if (!p) return;
+  X.modal('📄 Generator knowledge — ' + s(p.name), '<div class="m">Characterize a stream without a TCLP test only with a documented basis (what the material is, the process, prior test data). ' + esc(s(obj(R().settings).tclpNote)) + '.</div>' + streamSel(p)
+    + X.sel('cls', 'Classification', [['non-hazardous', 'Non-hazardous'], ['hazardous', 'Hazardous']], 'non-hazardous') + X.fld('basis', 'Basis (required)', 'textarea', '', 'e.g. TCLP of the same paint system on this building, 10/2026 lab report #123: 0.4 mg/L') + X.fileIn('file', 'Supporting document', false, 'application/pdf,image/*'),
+    function(v){ return logGk(pid, v); }, 'Save');
+}
+function logGk(pid, v){
+  v = v || {}; var st = pickStream(v);
+  if (!st || !s(v.basis)) { toast('The waste stream and the basis are both required.', true); return Promise.resolve(false); }
+  return X.storeAll(v.files && v.files.file, pid).then(function(F){ addStream(pid, st); ST.call(W, function(){ X.addLog(pid, { kind: 'wgk', stream: st, date: today(), cls: s(v.cls) === 'hazardous' ? 'hazardous' : 'non-hazardous', basis: s(v.basis), file: F[0] || null }); }, 60); toast('📄 Generator knowledge saved for "' + st + '".'); return true; });
+}
+function shipForm(pid){
+  var p = proj(pid); if (!p) return;
+  X.modal('🚚 Waste shipment / disposal — ' + s(p.name), '<div class="m">Hazardous: manifest #, hauler, TSD facility, generator status. Non-hazardous: the landfill and its acceptance letter. A stream that is not characterized cannot be disposed of.</div>' + streamSel(p) + '<div class="grid">'
+    + X.fld('date', 'Shipped on', 'date', today()) + X.fld('containers', 'Containers / bags', 'text', '') + X.fld('qty', 'Quantity', 'text', '', 'e.g. 12 bags, 2 drums')
+    + X.fld('manifest', 'Manifest # (hazardous)', 'text', '') + X.fld('hauler', 'Hauler (hazardous)', 'text', '') + X.fld('tsd', 'TSD facility (hazardous)', 'text', '') + X.sel('generatorStatus', 'Generator status (hazardous — confirm)', ['', 'VSQG', 'SQG', 'LQG'], '')
+    + X.fld('landfill', 'Landfill (non-hazardous)', 'text', '') + X.fld('acceptanceOn', 'Acceptance letter date (non-hazardous)', 'date', '') + X.fld('disposedOn', 'Disposed on', 'date', '') + '</div>'
+    + X.fileIn('acc', 'Acceptance letter / manifest copy', false, 'application/pdf,image/*'), function(v){ return logShip(pid, v); }, 'Save');
+}
+function logShip(pid, v){
+  var p = proj(pid); if (!p) return Promise.resolve(false); v = v || {}; var st = pickStream(v);
+  if (!st) { toast('Pick the waste stream.', true); return Promise.resolve(false); }
+  if (!CORE.canDispose(p, st, R())) { toast('⛔ "' + st + '" is not characterized yet — log its TCLP result (or generator knowledge with the basis) before it is shipped or disposed of.', true); return Promise.resolve(false); }
+  var w = CORE.wasteStreams(p, R()).find(function(x){ return x.key === CORE.streamKey(st); });
+  return X.storeAll(v.files && v.files.acc, pid).then(function(F){
+    var rec = { kind: 'wship', stream: st, cls: w.cls, date: s(v.date) || today(), containers: s(v.containers), qty: s(v.qty), manifest: s(v.manifest), hauler: s(v.hauler), tsd: s(v.tsd), generatorStatus: s(v.generatorStatus), landfill: s(v.landfill), acceptanceOn: s(v.acceptanceOn), disposedOn: s(v.disposedOn), acceptance: F[0] || null };
+    var gaps = CORE.shipGaps(rec, w.cls); X.addLog(pid, rec);
+    toast('🚚 Shipment saved (' + w.cls + ')' + (gaps.length ? ' — still missing: ' + gaps.join(', ') : '') + '.', !!gaps.length); return true;
+  });
+}
+
 /* ═════ 🪧 the sign set (the legend exactly as written; the company band at the bottom) ═════ */
 function signsHtml(ids, opt){
   opt = opt || {}; var p = opt.pid ? proj(opt.pid) : null, b = brand(p), list = (ids && ids.length ? ids : CORE.SIGNS.map(function(g){ return g.id; })).map(function(id){ return CORE.SIGNS.find(function(g){ return g.id === id; }); }).filter(Boolean);
@@ -237716,8 +237788,9 @@ function programsSheet(){
     + '<div class="tw"><table><thead><tr><th>Program</th><th>Administrator / phone</th><th>Approved by / on</th><th>Last review / every (months)</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>'
     + '<div class="sec">Settings</div><div class="grid">' + X.sel('asbDefault', 'Asbestos work on a new job is done by', [['sub', 'A licensed abatement sub (owner 11/17)'], ['crew', 'GrayCo crew']], s(S0.asbDefault) || 'sub')
     + X.sel('planBlock', 'A missing / unsigned Employee Protection Plan', [['', '⚠ warns'], ['1', '⛔ blocks']], S0.planBlock ? '1' : '') + X.sel('planOwnerSign', 'The plan needs the owner\'s signature', [['1', 'Yes'], ['', 'No — the competent person signs']], S0.planOwnerSign === false ? '' : '1')
-    + X.sel('deconBlock', 'The decon set-up missing', [['', '⚠ warns'], ['1', '⛔ blocks']], S0.deconBlock ? '1' : '') + X.fld('clinic', 'Occupational clinic (on every plan)', 'text', s(S0.clinic)) + X.fld('clinicPhone', 'Clinic phone', 'tel', s(S0.clinicPhone)) + '</div>';
-  var o = X.modal('⚙ Written programs', inner, ad ? function(v, el){ return savePrograms(readProgs(el), { asbDefault: v.asbDefault, planBlock: v.planBlock === '1', planOwnerSign: v.planOwnerSign === '1', deconBlock: v.deconBlock === '1', clinic: s(v.clinic), clinicPhone: s(v.clinicPhone) }).then(function(r){ toast(r && r.ok ? '⚙ Written programs saved (every version of the rules is kept).' : 'Not saved: ' + s(r && r.error), !(r && r.ok)); return !!(r && r.ok); }); } : null, 'Save');
+    + X.sel('deconBlock', 'The decon set-up missing', [['', '⚠ warns'], ['1', '⛔ blocks']], S0.deconBlock ? '1' : '')
+    + X.fld('tclpLead', 'TCLP lead threshold (mg/L) — confirm with EPA / your state program', 'number', s(CORE.tclpThreshold(Rr))) + X.sel('wasteShipBlock', 'Waste shipped before it is characterized', [['1', '⛔ blocks'], ['', '⚠ warns']], S0.wasteShipBlock === false ? '' : '1') + X.fld('clinic', 'Occupational clinic (on every plan)', 'text', s(S0.clinic)) + X.fld('clinicPhone', 'Clinic phone', 'tel', s(S0.clinicPhone)) + '</div>';
+  var o = X.modal('⚙ Written programs', inner, ad ? function(v, el){ return savePrograms(readProgs(el), { asbDefault: v.asbDefault, planBlock: v.planBlock === '1', planOwnerSign: v.planOwnerSign === '1', deconBlock: v.deconBlock === '1', clinic: s(v.clinic), clinicPhone: s(v.clinicPhone), tclpLead: parseFloat(v.tclpLead) > 0 ? parseFloat(v.tclpLead) : 5.0, wasteShipBlock: v.wasteShipBlock === '1' }).then(function(r){ toast(r && r.ok ? '⚙ Written programs saved (every version of the rules is kept).' : 'Not saved: ' + s(r && r.error), !(r && r.ok)); return !!(r && r.ok); }); } : null, 'Save');
   o.setAttribute('data-ed-programs', '1');
   return o;
 }
@@ -237781,6 +237854,11 @@ D.addEventListener('click', function(e){
   else if (a === 'deconblank') openHtml(deconBlankHtml(), 'Decon');
   else if (a === 'purchase') openHtml(purchaseHtml(), 'Purchase');
   else if (a === 'programs') programsSheet();
+  else if (a === 'wstream') { var nm = W.prompt('New waste stream (e.g. ' + CORE.listOf(obj(R().waste).streams).slice(0, 3).join(', ') + '):', ''); if (nm != null && s(nm)) addStream(pid, nm); }
+  else if (a === 'tclp') tclpForm(pid);
+  else if (a === 'tclpres') { var rv = W.prompt('TCLP lead result (mg/L) from the lab:', ''); if (rv != null && s(rv)) tclpResult(pid, id, rv); }
+  else if (a === 'wgk') gkForm(pid);
+  else if (a === 'wship') shipForm(pid);
   else if (a === 'signs') { var p = proj(pid), E = p ? EC.evaluate(p) : { kinds: [] }, sz = box && box.querySelector('[data-ed-size]'), bi = box && box.querySelector('[data-ed-bi]'), z = sz ? sz.value : 'letter'; printSigns(CORE.jobSigns(p, E.kinds, R()).map(function(g){ return g.id; }), { pid: pid, size: z, bilingual: bi ? bi.checked : true, pdf: z === 'shop' }); }
 }, true);
 D.addEventListener('change', function(e){
@@ -237796,6 +237874,7 @@ function wanted(){
     var E = EC.evaluate(p), job = s(p.name || p.client || p.id);
     var pl = E.items.find(function(x){ return x.id === 'epp'; }); if (pl && pl.st !== 'ok') want['ENVDOCS_E_' + p.id] = { p: p, prio: pl.st === 'block' ? 'high' : 'med', label: '📝 ' + job + ': Employee Protection Plan — ' + (E.plan && E.plan.st === 'none' ? 'generate it' : E.plan && E.plan.st === 'stale' ? 'out of date, generate a new version' : 'needs signatures'), note: s(pl.note) + '\nJob → 🛡 Compliance → 7 · Employee Protection Plan.' };
     var dc = E.items.find(function(x){ return x.sec === 'decon'; }); if (dc && dc.st !== 'ok') want['ENVDOCS_D_' + p.id] = { p: p, prio: dc.st === 'block' ? 'high' : 'med', label: '🧼 ' + job + ': decon unit set-up checklist + photo', note: s(dc.note) + '\nJob → 🛡 Compliance → 🧼 Decon set-up checklist.' };
+    var wb = E.items.filter(function(x){ return x.sec === 'waste' && x.st !== 'ok'; }); if (wb.length) want['ENVDOCS_W_' + p.id] = { p: p, prio: wb.some(function(x){ return x.st === 'block'; }) ? 'high' : 'med', label: '♻️ ' + job + ': waste — ' + wb.length + ' stream item(s) (TCLP / disposal papers)', note: wb.map(function(x){ return x.label + ' — ' + x.note; }).join('\n') + '\nJob → 🛡 Compliance → ♻️ Waste.' };
     var sb = E.items.filter(function(x){ return x.sec === 'sub' && x.st === 'block'; }); if (sb.length) want['ENVDOCS_S_' + p.id] = { p: p, prio: 'high', label: '☣️ ' + job + ': the licensed asbestos sub\'s papers (' + sb.length + ')', note: sb.map(function(x){ return x.label; }).join('\n') + '\nJob → 🛡 Compliance → ✏️ Licensed sub info.' };
   });
   arr(Rr.programs).forEach(function(r){ var PI = CORE.programInfo(Rr, r.id, c0); if (!PI.inUse || !PI.reviewDue) return; want['ENVDOCS_R_' + r.id] = { p: null, prio: PI.overdue ? 'high' : 'med', assignee: PI.admin, label: '📑 Yearly review: ' + PI.label + (PI.reviewed ? ' — due ' + nice(PI.nextReview) : ' — review date not set'), note: 'Go over the program, update it if the work or the rules changed, then set the review date in ⚙ Written programs (🛡 Compliance → ⚙ Written programs).' }; });
@@ -237808,7 +237887,7 @@ function sweep(){
     Object.keys(want).forEach(function(id){ var w = want[id], cur = l.find(function(y){ return y && y.id === id; });
       if (!cur) { l.push({ id: id, kind: 'envdocs', pid: w.p ? w.p.id : '', label: w.label, note: w.note, assignee: s(w.assignee || (w.p && w.p.pm)), prio: w.prio, addedBy: 'CRM', addedAt: now, updatedAt: now, done: false }); ch++; }
       else if (cur.done || cur.label !== w.label) { cur.label = w.label; cur.note = w.note; cur.done = false; cur.updatedAt = now; ch++; } });
-    l.forEach(function(y){ if (y && !y.done && /^ENVDOCS_[EDSR]_/.test(s(y.id)) && !want[y.id]) { y.done = true; y.doneAt = y.updatedAt = now; y.resolution = 'done in 🛡 Compliance'; ch++; } });
+    l.forEach(function(y){ if (y && !y.done && /^ENVDOCS_[EDSRW]_/.test(s(y.id)) && !want[y.id]) { y.done = true; y.doneAt = y.updatedAt = now; y.resolution = 'done in 🛡 Compliance'; ch++; } });
     if (ch) X.saveTasks(l);
     return ch;
   } catch (e) { W.__gcEdErr = String(e && e.stack || e); return 0; }
@@ -237833,6 +237912,6 @@ function signsCard(){
 ST.call(W, hookPrintPack, 1500);
 ST.call(W, sweep, 45000); SI.call(W, sweep, 300000);
 W._gcEnvDocs = { generate: generate, sign: sign, planHtml: planHtml, planPdf: planPdf, planForm: planForm, setAsbBy: setAsbBy, subForm: subForm, saveSub: saveSub, deconForm: deconForm, saveDecon: saveDecon,
-  deconBlankHtml: deconBlankHtml, purchaseHtml: purchaseHtml, programsSheet: programsSheet, savePrograms: savePrograms, fillDocx: fillDocx, zipEdit: zipEdit, signsHtml: signsHtml, printSigns: printSigns, signsCard: signsCard, sweep: sweep, wanted: wanted, hookPrintPack: hookPrintPack };
+  deconBlankHtml: deconBlankHtml, purchaseHtml: purchaseHtml, addStream: addStream, logTclp: logTclp, tclpResult: tclpResult, logGk: logGk, logShip: logShip, tclpForm: tclpForm, shipForm: shipForm, programsSheet: programsSheet, savePrograms: savePrograms, fillDocx: fillDocx, zipEdit: zipEdit, signsHtml: signsHtml, printSigns: printSigns, signsCard: signsCard, sweep: sweep, wanted: wanted, hookPrintPack: hookPrintPack };
 })(window);
 </script>
