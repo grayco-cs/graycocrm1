@@ -116,7 +116,7 @@ function fields(p){
    are used and the paper says so. Keys read (flat "a_b" or nested a.b, at the top or under .levels / .values). */
 var LV = null, LV0 = { 'dlal.floor': 5, 'dlal.sill': 40, 'dlal.trough': 100, 'dlrl.floor': 'any detectable level', 'water.epa': 10, 'water.hud': 15, 'soil.play': 400, 'soil.nonPlay': 1200, 'paint.pct': 0.5, 'paint.mgcm2': 1.0, 'blood.cdcChild': 3.5, 'osha.al': 30, 'osha.pel': 50, 'blood.removal': 50, 'blood.backToWork': 40, 'waste.tclp': 5 };
 /* the version a paper was made with — stamped on every sent / printed copy that cites a level, and on the paper's log */
-function stamp(){ if (!LV) return '2026 v.3 (built-in)'; var y = s(LV.year || LV.yr), v = s(LV.version || LV.v || LV.rev), lab = s(LV.stamp || LV.label); return lab || ([y, v].filter(Boolean).join(' ') || s(LV.name || LV.title) || 'Lead levels') + (s(LV.at || LV.updatedAt) ? '' : ''); }
+function stamp(){ if (!LV) return '2026 v.3 (built-in)'; var y = s(LV.year || LV.yr), v = s(LV.version || LV.v || LV.rev), lab = s(LV.stamp || LV.label); return (lab || [y, v].filter(Boolean).join(' ') || s(LV.name || LV.title) || 'Lead levels').replace(/^\s*levels\s*:\s*/i, ''); }   /* ENVDOCS' record carries stamp "Levels: 2026 v.3" */
 function pullLevels(){ return sb('gc_lead_levels').then(function(v){ if (v && typeof v === 'object' && !Array.isArray(v)) LV = v; return LV; }); }
 function lvl(path){
   var srcs = LV ? [LV, obj(LV.levels), obj(LV.values)] : [], parts = path.split('.');

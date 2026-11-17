@@ -126,7 +126,7 @@ ok('4d no number GrayCo does not have is made up (no supervisor cert on file →
 
 const r4 = await DL.render('gcb_hud_04', 'PHUD');
 ok('4e the clearance levels come from the "Lead levels" record (built-in v.3 until it loads): floors 5 / sills 40 / troughs 100', r4 && /floors 5 µg\/ft², sills 40 µg\/ft², troughs 100 µg\/ft²/.test(r4.body) && /2026 v\.3/.test(r4.body), r4 && (r4.body.match(/Clearance levels[^<]*/) || [''])[0]);
-KV.gc_lead_levels = { name: 'Lead levels 2026', year: 2026, version: 'v.4', levels: { dlal: { floor: 4, sill: 40, trough: 100 }, blood: { cdcChild: 3.5 } }, _history: [] };
+KV.gc_lead_levels = { name: 'Lead levels 2026', year: 2026, version: 'v.4', stamp: 'Levels: 2026 v.4', levels: { dlal: { floor: 4, sill: 40, trough: 100 }, blood: { cdcChild: 3.5 } }, _history: [] };
 await H.pullLevels();
 const r5 = await DL.render('gcb_hud_04', 'PHUD'), r6 = await DL.render('gcb_hud_02', 'PHUD');
 ok('4f an admin edits the record (floors 4, v.4) → the papers follow; the occupant notice shows the CDC child level 3.5', /floors 4 µg\/ft²/.test(r5.body) && /Lead levels 2026 v\.4/.test(r5.body) && /3\.5 µg\/dL/.test(r6.body), (r5.body.match(/Clearance levels[^<]*/) || [''])[0]);
@@ -163,7 +163,7 @@ const chHud = EP.channels(item('PHUD', 'gcb_hud_02')), chNes = EP.channels(item(
 ok('5k channels by recipient: occupant notice → portal / e-mail / text / share; NESHAP → filed only; a crew record → share only', JSON.stringify(chHud) === '["portal","email","text","share"]' && JSON.stringify(chNes) === '["filed"]' && JSON.stringify(chFile) === '["share"]');
 
 ok('5l the sent copy is stamped with the levels version it used ("Levels: 2026 v.4") and so is its log line', /Levels: 2026 v\.4/.test(sent5c) && LOG('PHUD').find(e => e.k === 'gcb_hud_02' && e.act === 'sent').levels === '2026 v.4');
-KV.gc_lead_levels = Object.assign({}, KV.gc_lead_levels, { version: 'v.5', levels: { dlal: { floor: 3, sill: 40, trough: 100 } }, _history: [{ version: 'v.4' }] });
+KV.gc_lead_levels = Object.assign({}, KV.gc_lead_levels, { version: 'v.5', stamp: 'Levels: 2026 v.5', levels: { dlal: { floor: 3, sill: 40, trough: 100 } }, _history: [{ version: 'v.4' }] });
 await H.pullLevels();
 const r7 = await DL.render('gcb_hud_02', 'PHUD');
 ok('5m the admin changes the levels (v.5, floors 3) → a NEW paper uses them; the copy already sent keeps v.4', /Levels: 2026 v\.5/.test(r7.body) && /floors 3 \//.test(r7.body) && /Levels: 2026 v\.4/.test(sent5c) && !/v\.5/.test(sent5c) && /floors 4 \//.test(sent5c));
