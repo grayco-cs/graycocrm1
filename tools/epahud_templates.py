@@ -88,7 +88,7 @@ t("lead_13", "Lead 13 — Lead Abatement Report", "Lead & Asbestos", True, [
     ["h", "3. Post-abatement clearance (certified inspector / risk assessor — not the abatement crew)"],
     ["info", [["Name / address", "&nbsp;"], ["Certification no.", "&nbsp;"], ["Date of sampling (≥ 1 hour after the final cleanup)", "&nbsp;"], ["Laboratory (EPA-recognized / NLLAP)", "&nbsp;"], ["Signature", "&nbsp;"]]],
     ["grid", ["Sample #", "Room / location", "Surface (floor / sill / trough / soil)", "Result (µg/ft² or ppm)", "Action level", "Pass?"], 8],
-    ["small", "EPA action levels from January 12, 2026: floors 5 µg/ft², interior window sills 40 µg/ft², window troughs 100 µg/ft² (40 CFR 745.227(e)(8)(viii)). Use the stricter state level if the state has one. ⚑"],
+    ["small", "Dust-lead action levels ({lvl_source}): floors {lvl_dlal_floor} µg/ft², interior window sills {lvl_dlal_sill} µg/ft², window troughs {lvl_dlal_trough} µg/ft² (40 CFR 745.227(e)(8)(viii)). Reporting level: {lvl_dlrl}. Use the stricter state level if the state has one. ⚑"],
     ["h", "4. Description of the abatement"],
     ["grid", ["Room / component", "Method (replacement / enclosure / encapsulation / removal / soil)", "Why this method", "Monitoring suggested (encapsulants / enclosures)"], 8],
     ["h", "5. Dust-lead hazard statement (only when results are below the action levels but at or above the reportable levels)"],
@@ -121,6 +121,7 @@ t("lead_15", "Lead 15 — Lead Evaluation Request & Results (Certified Inspector
     ["info", [["Date of the evaluation", "&nbsp;"], ["Date the report was received", "{eval_report_date}"], ["HUD notice of evaluation due (15 days)", "{eval_notice_by}"]]],
     ["grid", ["Room / component", "Paint / dust / soil", "Result", "Lead-based paint or hazard?", "Action"], 10],
     ["checks", ["Report saved to the job's files", "Owner given a copy", "HUD 01 notice of evaluation / presumption given to the occupants within 15 days (HUD-assisted)", "Real-estate disclosure: the owner must give this report to buyers / renters (40 CFR 745 Subpart F, 24 CFR 35 Subpart A)"]],
+    ["small", "Reference levels ({lvl_source}): lead-based paint {lvl_paint_mg} mg/cm² or {lvl_paint_pct}% by weight · dust-lead action levels (clearance) floors {lvl_dlal_floor} / window sills {lvl_dlal_sill} / window troughs {lvl_dlal_trough} µg/ft² · dust-lead reporting level: {lvl_dlrl} · soil {lvl_soil_play} µg/g (children's play areas) / {lvl_soil_other} µg/g (other areas) · water: HUD {lvl_water_hud} ppb, EPA action level {lvl_water_epa} ppb · CDC blood lead reference value for a child {lvl_ebll} µg/dL. ⚑"],
     foot("24 CFR 35.110, 35.120, 35.125(a), 35.1320; 40 CFR 745.227(b)–(d), 745.107")])
 
 # ── HUD Lead Safe Housing Rule ──
@@ -135,6 +136,7 @@ t("hud_01", "HUD 01 — Notice of Lead-Based Paint Evaluation or Presumption", "
     ["p", "You may see the full evaluation report by contacting the person above. This notice is available in large type or another accessible format, and in your primary language, on request."],
     ["h", "How it was given"],
     ["checks", ["Given to each occupied unit affected (or served by the common areas)", "Posted in the common areas (never for a child's environmental investigation)", "Primary language of the occupants: __________"]],
+    ["small", "Reference levels ({lvl_source}): lead-based paint {lvl_paint_mg} mg/cm² or {lvl_paint_pct}% by weight · dust-lead action levels (clearance) floors {lvl_dlal_floor} / window sills {lvl_dlal_sill} / window troughs {lvl_dlal_trough} µg/ft² · dust-lead reporting level: {lvl_dlrl} · soil {lvl_soil_play} µg/g (children's play areas) / {lvl_soil_other} µg/g (other areas) · water: HUD {lvl_water_hud} ppb, EPA action level {lvl_water_epa} ppb · CDC blood lead reference value for a child {lvl_ebll} µg/dL. ⚑"],
     foot("24 CFR 35.125(a), (c) and 35.130")])
 
 t("hud_02", "HUD 02 — Notice of Lead Hazard Reduction Activity", "HUD Lead-Safe Housing", True, [
@@ -149,6 +151,7 @@ t("hud_02", "HUD 02 — Notice of Lead Hazard Reduction Activity", "HUD Lead-Saf
     ["h", "More information"],
     ["info", [["Contact name", "&nbsp;"], ["Address", "&nbsp;"], ["Telephone", "{office_phone}"]]],
     ["p", "This notice is updated after any re-evaluation or further hazard reduction. Available in large type or another accessible format and in your primary language on request. Not required when no clearance examination is required."],
+    ["small", "Reference levels ({lvl_source}): lead-based paint {lvl_paint_mg} mg/cm² or {lvl_paint_pct}% by weight · dust-lead action levels (clearance) floors {lvl_dlal_floor} / window sills {lvl_dlal_sill} / window troughs {lvl_dlal_trough} µg/ft² · dust-lead reporting level: {lvl_dlrl} · soil {lvl_soil_play} µg/g (children's play areas) / {lvl_soil_other} µg/g (other areas) · water: HUD {lvl_water_hud} ppb, EPA action level {lvl_water_epa} ppb · CDC blood lead reference value for a child {lvl_ebll} µg/dL. ⚑"],
     foot("24 CFR 35.125(b)–(c), 35.1340")])
 
 t("hud_03", "HUD 03 — Occupant Protection & Temporary Relocation Notice", "HUD Lead-Safe Housing", True, [
@@ -164,6 +167,7 @@ t("hud_03", "HUD 03 — Occupant Protection & Temporary Relocation Notice", "HUD
     ["p", "Young children and pregnant women are most at risk from lead dust. Please tell us about any child under 6 living here or visiting often. Questions: {office_phone}."],
     ["h", "Received"],
     ["info", [["Occupant name", "{occupant}"], ["Signature / date", "&nbsp;"]]],
+    ["small", "Reference levels ({lvl_source}): lead-based paint {lvl_paint_mg} mg/cm² or {lvl_paint_pct}% by weight · dust-lead action levels (clearance) floors {lvl_dlal_floor} / window sills {lvl_dlal_sill} / window troughs {lvl_dlal_trough} µg/ft² · dust-lead reporting level: {lvl_dlrl} · soil {lvl_soil_play} µg/g (children's play areas) / {lvl_soil_other} µg/g (other areas) · water: HUD {lvl_water_hud} ppb, EPA action level {lvl_water_epa} ppb · CDC blood lead reference value for a child {lvl_ebll} µg/dL. ⚑"],
     foot("24 CFR 35.1345(a)–(b); 40 CFR 745.227(e)(5) (occupant protection plan — Lead 07)")])
 
 t("hud_04", "HUD 04 — Clearance Examination Record (Certified Clearance Examiner)", "HUD Lead-Safe Housing", True, [
@@ -175,7 +179,7 @@ t("hud_04", "HUD 04 — Clearance Examination Record (Certified Clearance Examin
     ["checks", ["No deteriorated paint, visible dust, debris or residue in the work area (re-cleaned before sampling if any)", "Exterior: no paint chips on the ground / dripline"]],
     ["h", "3. Dust (and soil) sampling — after the final cleanup"],
     ["grid", ["Sample #", "Room / location", "Floor / sill / trough / soil", "Result", "Clearance level", "Pass?"], 10],
-    ["small", "EPA action levels from January 12, 2026: floors 5 µg/ft², sills 40 µg/ft², troughs 100 µg/ft². HUD clearance follows the levels in 24 CFR 35.1320 / the current HUD notice — the examiner confirms the levels used. ⚑"],
+    ["small", "Clearance levels ({lvl_source}): floors {lvl_dlal_floor} µg/ft², sills {lvl_dlal_sill} µg/ft², troughs {lvl_dlal_trough} µg/ft²; soil {lvl_soil_play} / {lvl_soil_other} µg/g. HUD clearance follows 24 CFR 35.1320 / the current HUD notice — the examiner confirms the levels used. ⚑"],
     ["h", "4. Result"],
     ["checks", ["PASSED — the area may be re-occupied", "FAILED — the contractor re-cleans and the examiner re-tests (no new notice until it passes)", "Clearance report (with the lab results) received and saved to the job; copy to the owner", "HUD 02 notice of hazard reduction to the occupants within 15 days"]],
     ["info", [["Examiner signature", "&nbsp;"], ["Date", "&nbsp;"]]],
@@ -190,6 +194,7 @@ t("hud_05", "HUD 05 — Ongoing Lead-Based Paint Maintenance: Report Deteriorate
     ["p", "The owner responds and stabilizes the deteriorated paint, or repairs the enclosure / encapsulation, within 30 days of your report, using safe work practices and clearance. A visual check is done at every turnover and every 12 months."],
     ["h", "Owner's maintenance log (GrayCo / the designated party)"],
     ["grid", ["Date reported / checked", "Where", "What was found", "Fixed on (≤ 30 days)", "Clearance date"], 6],
+    ["small", "Reference levels ({lvl_source}): lead-based paint {lvl_paint_mg} mg/cm² or {lvl_paint_pct}% by weight · dust-lead action levels (clearance) floors {lvl_dlal_floor} / window sills {lvl_dlal_sill} / window troughs {lvl_dlal_trough} µg/ft² · dust-lead reporting level: {lvl_dlrl} · soil {lvl_soil_play} µg/g (children's play areas) / {lvl_soil_other} µg/g (other areas) · water: HUD {lvl_water_hud} ppb, EPA action level {lvl_water_epa} ppb · CDC blood lead reference value for a child {lvl_ebll} µg/dL. ⚑"],
     foot("24 CFR 35.1355(a)(2)–(7), 35.125(c)(3)")])
 
 t("hud_06", "HUD 06 — Child with an Elevated Blood Lead Level: Response Record", "HUD Lead-Safe Housing", False, [

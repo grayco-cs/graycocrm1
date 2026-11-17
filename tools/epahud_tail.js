@@ -111,11 +111,31 @@ function fields(p){
   ['year_built', 'start_date', 'end_date', 'completion_date', 'state', 'occupant', 'hud_yes', 'rrp_firm_no', 'abate_firm_no', 'renovator', 'renovator_no', 'supervisor', 'supervisor_no', 'mail_by', 'records_due', 'hud_reduction_by', 'eval_notice_by', 'ebll_inv_by', 'ebll_red_by', 'neshap_by', 'abate_notice_by', 'eval_report_date', 'ebll_notice_date', 'env_report_date'].forEach(function(k){ out[k] = s(out[k]); });
   return out;
 }
-W._gcDocFieldsExtra = function(pj){ try { return fields(pj); } catch (e) { return {}; } };
+/* the owner's "IMPORTANT LEVELS — 2026 v.3" sheet is ONE admin-edited record (gc_kv gc_lead_levels, kept with its _history by
+   ENVDOCS) — the EPA / HUD papers read their numbers from it, never their own. Until the record is in the cloud, the sheet's v.3 numbers
+   are used and the paper says so. Keys read (flat "a_b" or nested a.b, at the top or under .levels / .values). */
+var LV = null, LV0 = { 'dlal.floor': 5, 'dlal.sill': 40, 'dlal.trough': 100, 'dlrl.floor': 'any detectable level', 'water.epa': 10, 'water.hud': 15, 'soil.play': 400, 'soil.nonPlay': 1200, 'paint.pct': 0.5, 'paint.mgcm2': 1.0, 'blood.cdcChild': 3.5, 'osha.al': 30, 'osha.pel': 50, 'blood.removal': 50, 'blood.backToWork': 40, 'waste.tclp': 5 };
+/* the version a paper was made with — stamped on every sent / printed copy that cites a level, and on the paper's log */
+function stamp(){ if (!LV) return '2026 v.3 (built-in)'; var y = s(LV.year || LV.yr), v = s(LV.version || LV.v || LV.rev), lab = s(LV.stamp || LV.label); return lab || ([y, v].filter(Boolean).join(' ') || s(LV.name || LV.title) || 'Lead levels') + (s(LV.at || LV.updatedAt) ? '' : ''); }
+function pullLevels(){ return sb('gc_lead_levels').then(function(v){ if (v && typeof v === 'object' && !Array.isArray(v)) LV = v; return LV; }); }
+function lvl(path){
+  var srcs = LV ? [LV, obj(LV.levels), obj(LV.values)] : [], parts = path.split('.');
+  for (var i = 0; i < srcs.length; i++) { var o = srcs[i]; var flat = o[parts.join('_')]; if (flat != null && s(obj(flat).value != null ? flat.value : flat) !== '') return s(obj(flat).value != null ? flat.value : flat); var n = o; for (var j = 0; j < parts.length && n != null; j++) n = n[parts[j]]; if (n != null && typeof n !== 'object' && s(n) !== '') return s(n); if (n && typeof n === 'object' && n.value != null) return s(n.value); }
+  return s(LV0[path]);
+}
+function levelFields(){
+  var src = LV ? (s(LV.name || LV.title) || 'Lead levels') + (s(LV.version || LV.v) ? ' ' + s(LV.version || LV.v) : '') : 'IMPORTANT LEVELS — 2026 v.3 (built-in until the admin record loads)';
+  return { lvl_dlal_floor: lvl('dlal.floor'), lvl_dlal_sill: lvl('dlal.sill'), lvl_dlal_trough: lvl('dlal.trough'), lvl_dlrl: lvl('dlrl.floor'), lvl_water_epa: lvl('water.epa'), lvl_water_hud: lvl('water.hud'),
+    lvl_soil_play: lvl('soil.play'), lvl_soil_other: lvl('soil.nonPlay'), lvl_paint_pct: lvl('paint.pct'), lvl_paint_mg: lvl('paint.mgcm2'), lvl_ebll: lvl('blood.cdcChild'), lvl_osha_al: lvl('osha.al'), lvl_osha_pel: lvl('osha.pel'), lvl_blood_removal: lvl('blood.removal'), lvl_blood_back: lvl('blood.backToWork'), lvl_tclp: lvl('waste.tclp'), lvl_source: src, lvl_stamp: stamp() };
+}
+W._gcDocFieldsExtra = function(pj){ try { return Object.assign(levelFields(), pj ? fields(pj) : {}); } catch (e) { return {}; } };
 var BLANK = '(?:&nbsp;|\\s*|<span style="display:inline-block;min-width:120px;border-bottom:1px solid #999">&nbsp;</span>)';
 var ROW = new RegExp('(<td[^>]*>)\\s*([^<]{2,90}?)\\s*(</td>\\s*<td[^>]*>\\s*(?:<b>)?)' + BLANK + '((?:</b>)?\\s*</td>)', 'g');
-function autofill(html, p, f){
-  if (typeof html !== 'string' || !p) return html;
+function autofill(html, p, f, id, raw){
+  if (typeof html !== 'string') return html;
+  var cites = /\{lvl_/.test(s(raw)) || /data-gc-levels/.test(html);
+  if (cites && !/data-gc-levels/.test(html)) html += '<div data-gc-levels="' + esc(stamp()) + '" style="margin-top:8px;font-size:8pt;color:#555;text-align:right">Levels: ' + esc(stamp()) + ' — from the GrayCo Lead levels record</div>';   /* which version of the levels this copy used */
+  if (!p) return html;
   f = Object.assign({}, fields(p), obj(f));
   return html.replace(ROW, function(m, a, label, b, c){
     var L = s(label).replace(/&amp;/g, '&').replace(/:$/, ''), hit = null;
@@ -123,7 +143,7 @@ function autofill(html, p, f){
     var v = hit && s(f[hit]); return v ? a + label + b + esc(v) + c : m;
   });
 }
-W._gcDocAutoFill = function(body, pj, f){ try { return autofill(body, pj, f); } catch (e) { return body; } };
+W._gcDocAutoFill = function(body, pj, f, id, raw){ try { return autofill(body, pj, f, id, raw); } catch (e) { return body; } };
 
 /* ═════ 2 · the paper on the job: due, who it goes to, the log ═════ */
 function dueOf(p, x){ return EP.due(p, Object.assign({}, x, EP.meta(x))); }
@@ -143,6 +163,7 @@ function toSend(p){
 }
 function log(pid, k, o){
   var e = Object.assign({ k: k, at: nowIso(), by: me() }, o || {});
+  if (/^(sent|shared|filed|held)$/.test(s(e.act)) && !e.levels) e.levels = stamp();   /* the levels version this copy was made with */
   if (JD() && JD().patchJD) JD().patchJD(pid, function(J){ J.log = arr(J.log).concat([e]); return J; });
   else saveJob(pid, function(q){ q.jobDocs = obj(q.jobDocs); q.jobDocs.log = arr(q.jobDocs.log).concat([e]); return q; });
   return e;
@@ -226,6 +247,7 @@ function menu(pid, k){
   if (chs.indexOf('share') > -1) h += opt('share', '📤', 'Share from this phone', 'PDF to text, e-mail, AirDrop or print — works in data-entry mode');
   if (chs.indexOf('filed') > -1) h += opt('filed', '🏛', 'Filed with the agency', 'date + confirmation # — a filing, not a send (the abatement sub files the asbestos notice)');
   h += opt('open', '👁', 'Open (filled in)', 'check it before it goes');
+  if (arr(x.for).indexOf('lead') > -1 || /lead|hud/i.test(s(x.doc))) h += levelsCard(p);   /* 📏 the levels this paper is made with */
   var L = arr(obj(p.jobDocs).log).filter(function(e){ return e && e.k === x.k; });
   if (L.length) h += '<div style="margin-top:12px;font-size:12.5px;color:#334155"><b>Log</b>' + L.slice(-8).reverse().map(function(e){ return '<div data-ep-log="1">' + esc(new Date(e.at).toLocaleString()) + ' · ' + esc(e.act) + ' · ' + esc(e.via || '') + ' · ' + esc(e.by || '') + '</div>'; }).join('') + '</div>';
   var o = sheet('📤 Send — ' + (s(p.name) || 'job'), h);
@@ -294,11 +316,18 @@ function crewLine(p){
   return bl.length ? '<div class="bad" data-ep-crew="bad">✗ Crew certified — ' + bl.length + ' problem' + (bl.length === 1 ? '' : 's') + ': ' + esc(bl.slice(0, 3).map(function(x){ return x.label; }).join(' · ')) + '</div>'
     : '<div class="ok" data-ep-crew="ok">✓ Crew certified' + (du.length ? ' <span class="due">(' + du.length + ' to renew / add soon)</span>' : '') + '</div>';
 }
+/* 📏 Lead levels on a lead job (ENVDOCS' card when it is loaded; else the same numbers from the record) */
+function levelsCard(p){
+  try { if (typeof W._gcLeadLevelsCard === 'function') { var c = W._gcLeadLevelsCard(p); if (c) return c; } } catch (e) {}
+  var L = levelFields();
+  return '<div class="m" data-ep-levels="' + esc(L.lvl_stamp) + '" style="margin:6px 0;padding:6px 8px;border:1px solid #e2e8f0;border-radius:8px;background:#f8fafc">📏 <b>Lead levels</b> (' + esc(L.lvl_stamp) + '): dust clearance floors ' + esc(L.lvl_dlal_floor) + ' · sills ' + esc(L.lvl_dlal_sill) + ' · troughs ' + esc(L.lvl_dlal_trough) + ' µg/ft² · paint ' + esc(L.lvl_paint_mg) + ' mg/cm² or ' + esc(L.lvl_paint_pct) + '% · soil ' + esc(L.lvl_soil_play) + ' / ' + esc(L.lvl_soil_other) + ' µg/g · water HUD ' + esc(L.lvl_water_hud) + ' ppb · child blood ' + esc(L.lvl_ebll) + ' µg/dL · OSHA AL ' + esc(L.lvl_osha_al) + ' / PEL ' + esc(L.lvl_osha_pel) + ' µg/m³</div>';
+}
 function cardTop(p, items){
   var L = toSend(p), over = L.filter(function(z){ return z.d.over; }).length, nx = L.find(function(z){ return z.d.date; });
   var lead = /lead|asbestos/.test(arr(obj(p.jobDocs).types).join(' ') + ' ' + (JD() ? JD().types(p).join(' ') : ''));
   var h = '<div class="m" data-ep-top="1" style="margin:6px 0;font-size:13px">' + (L.length ? '<b' + (over ? ' class="bad"' : '') + '>📑 ' + L.length + ' paper' + (L.length === 1 ? '' : 's') + ' to send</b>' + (over ? ' · <b class="bad">' + over + ' overdue</b>' : '') + (nx ? ' · next due ' + esc(nice(nx.d.date)) : '') : '✓ No papers waiting to be sent') + (lead ? ' <button type="button" data-jd="facts" style="min-height:28px;padding:2px 8px">🏛 EPA / HUD facts</button>' : '') + '</div>';
   try { h += crewLine(p); } catch (e) {}
+  if (/lead/.test(arr(obj(p.jobDocs).types).join(' ') + ' ' + (JD() ? JD().types(p).join(' ') : ''))) h += levelsCard(p);
   return h;
 }
 
@@ -476,15 +505,15 @@ function portalLog(p){
 var started = false;
 function tick(){
   if (!signedIn()) return;
-  if (!started) { started = true; addTemplates(); pullCerts(); ST.call(W, seedDrafts, 8000); }
+  if (!started) { started = true; addTemplates(); pullCerts(); pullLevels(); ST.call(W, seedDrafts, 8000); }
   fieldPaint();
   try { var op = W._gcOpenProject; if (op && op.id && D.getElementById('gc-jd')) portalLog(proj(op.id)); } catch (e) {}
 }
 SI.call(W, tick, 2500); ST.call(W, tick, 1500);
-ST.call(W, sweep, 45000); SI.call(W, sweep, 300000); SI.call(W, pullCerts, 180000); SI.call(W, addTemplates, 10000);
+ST.call(W, sweep, 45000); SI.call(W, sweep, 300000); SI.call(W, pullCerts, 180000); SI.call(W, pullLevels, 300000); SI.call(W, addTemplates, 10000);
 W._gcEpaHud = { fields: fields, autofill: autofill, dueHtml: dueHtml, dueOf: dueOf, toSend: toSend, cardTop: cardTop, sendBtn: sendBtn, action: action, menu: menu, sendVia: sendVia, filed: filed, log: log,
   facts: facts, saveFacts: saveFacts, sweep: sweep, wanted: wanted, fieldPaint: fieldPaint, mine: mine, schedCheck: schedCheck, problems: problems, crewLine: crewLine, seedDrafts: seedDrafts, addTemplates: addTemplates,
-  certOf: certOf, roleOn: roleOn, pullCerts: pullCerts, _reset: function(){ SNAP = null; OVR = {}; FSIG = ''; } };
+  certOf: certOf, roleOn: roleOn, pullCerts: pullCerts, pullLevels: pullLevels, levels: levelFields, stamp: stamp, levelsCard: levelsCard, _reset: function(){ SNAP = null; OVR = {}; FSIG = ''; } };
 try { console.log('[GC] 🏛 EPA / HUD papers to the PM + crew certification check (patch EPAHUD) — _gcEpaHud'); } catch (e) {}
 })(window);
 </script>

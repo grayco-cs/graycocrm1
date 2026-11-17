@@ -124,6 +124,12 @@ ok('4c an OLD paper (Lead 03) gets its blank rows filled too: Year built, Planne
 const r3 = await DL.render('gcb_lead_13', 'PAB');
 ok('4d no number GrayCo does not have is made up (no supervisor cert on file → the row stays blank)', r3 && !/undefined|null/.test(r3.body) && /Supervisor certification no\.<\/td><td[^>]*><b><span style="display:inline-block;min-width:120px/.test(r3.body), r3 && r3.body.slice(0, 800));
 
+const r4 = await DL.render('gcb_hud_04', 'PHUD');
+ok('4e the clearance levels come from the "Lead levels" record (built-in v.3 until it loads): floors 5 / sills 40 / troughs 100', r4 && /floors 5 µg\/ft², sills 40 µg\/ft², troughs 100 µg\/ft²/.test(r4.body) && /2026 v\.3/.test(r4.body), r4 && (r4.body.match(/Clearance levels[^<]*/) || [''])[0]);
+KV.gc_lead_levels = { name: 'Lead levels 2026', year: 2026, version: 'v.4', levels: { dlal: { floor: 4, sill: 40, trough: 100 }, blood: { cdcChild: 3.5 } }, _history: [] };
+await H.pullLevels();
+const r5 = await DL.render('gcb_hud_04', 'PHUD'), r6 = await DL.render('gcb_hud_02', 'PHUD');
+ok('4f an admin edits the record (floors 4, v.4) → the papers follow; the occupant notice shows the CDC child level 3.5', /floors 4 µg\/ft²/.test(r5.body) && /Lead levels 2026 v\.4/.test(r5.body) && /3\.5 µg\/dL/.test(r6.body), (r5.body.match(/Clearance levels[^<]*/) || [''])[0]);
 /* ═ 5 · the PM's papers to send, the channels, the log ═ */
 await flush();
 const L = H.toSend(P('PHUD'));
@@ -132,6 +138,7 @@ ok('5b the card top says how many and how many are late; the due line cites the 
 FETCH.length = 0;
 await H.sendVia('PHUD', 'gcb_hud_02', 'email'); await flush();
 let q = FETCH.find(x => /functions\/portal$/.test(x.u));
+const sent5c = q && q.b.html;
 ok('5c ✉️ e-mail → the approvals queue (kind document, channel email) to the OCCUPANT (HUD notice) with the filled paper', q && q.b.kind === 'document' && q.b.channel === 'email' && q.b.recipient === 'occupant' && /NOTICE OF LEAD HAZARD REDUCTION/.test(q.b.html), q && q.b);
 FETCH.length = 0;
 await H.sendVia('PHUD', 'gcb_hud_01', 'sms'); await flush();
@@ -155,6 +162,14 @@ ok('5j a sent paper leaves the "to send" list (it waits for approval / signature
 const chHud = EP.channels(item('PHUD', 'gcb_hud_02')), chNes = EP.channels(item('PASBC', 'gcb_asb_04')), chFile = EP.channels(item('PRRP', 'gcb_lead_11'));
 ok('5k channels by recipient: occupant notice → portal / e-mail / text / share; NESHAP → filed only; a crew record → share only', JSON.stringify(chHud) === '["portal","email","text","share"]' && JSON.stringify(chNes) === '["filed"]' && JSON.stringify(chFile) === '["share"]');
 
+ok('5l the sent copy is stamped with the levels version it used ("Levels: 2026 v.4") and so is its log line', /Levels: 2026 v\.4/.test(sent5c) && LOG('PHUD').find(e => e.k === 'gcb_hud_02' && e.act === 'sent').levels === '2026 v.4');
+KV.gc_lead_levels = Object.assign({}, KV.gc_lead_levels, { version: 'v.5', levels: { dlal: { floor: 3, sill: 40, trough: 100 } }, _history: [{ version: 'v.4' }] });
+await H.pullLevels();
+const r7 = await DL.render('gcb_hud_02', 'PHUD');
+ok('5m the admin changes the levels (v.5, floors 3) → a NEW paper uses them; the copy already sent keeps v.4', /Levels: 2026 v\.5/.test(r7.body) && /floors 3 \//.test(r7.body) && /Levels: 2026 v\.4/.test(sent5c) && !/v\.5/.test(sent5c) && /floors 4 \//.test(sent5c));
+ok('5n the 📏 Lead levels card is on a lead job\'s paperwork (from the record) and not on an asbestos-only job', /data-ep-levels="2026 v\.5"/.test(H.cardTop(P('PHUD'))) && /floors 3/.test(H.cardTop(P('PHUD'))) && !/data-ep-levels/.test(H.cardTop(P('PASBR'))));
+const rx = await DL.render('gcb_asb_05', 'PASBR');
+ok('5o a paper that cites no level carries no levels stamp', rx && !/data-gc-levels/.test(rx.body));
 /* ═ 6 · overdue → the PM, then the office / admins ═ */
 store.gc_office_tasks = '[]';
 W._crm.projects = W._crm.projects.map(p => p.id === 'PRRP' ? Object.assign({}, p, { epahud: { events: { completedOn: day(-40) } } }) : p);
