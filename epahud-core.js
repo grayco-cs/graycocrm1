@@ -199,8 +199,8 @@ var drafts = [
 var labelMap = [
   [/^year built$/i, 'year_built'], [/^(planned )?start date$|^work start date$/i, 'start_date'], [/^(renovation )?completion date$|^date completed$/i, 'completion_date'],
   [/^(gray ?co )?certified renovator( name| \(trainer\))?$|^certified renovator$/i, 'renovator'], [/^(epa )?(renovator )?certification no\.?( \/ expiration)?$|^epa renovator certification no\. \/ expiration$/i, 'renovator_no'],
-  [/firm certification (no|#)\.?$/i, 'rrp_firm_no'], [/^certified supervisor( \/ #)?$|^supervisor( name)?$|^certified lead abatement supervisor$/i, 'supervisor'],
-  [/^state$/i, 'state'], [/^occupant(s)?( name)?$|^adult occupant$/i, 'occupant'], [/^firm$/i, 'company'], [/^contractor$/i, 'company'], [/^job( no\.?| #)$/i, 'po'], [/^property address$|^job address$|^address$/i, 'job_address']
+  [/firm certification (no|#)\.?$/i, 'rrp_firm_no'], [/^certified supervisor( \/ #)?$|^certified lead abatement supervisor$/i, 'supervisor'],
+  [/^state$/i, 'state'], [/^occupant(s)?( name)?$|^adult occupant$/i, 'occupant'], [/^job( no\.?| #)$/i, 'po'], [/^property address$|^job address$|^address$/i, 'job_address']
 ];
 
 var API = { TO: TO, EVENTS: EVENTS, FACTS: FACTS, DUE: DUE, ITEMS: ITEMS, KNOWN: KNOWN, items: items, meta: meta, channels: channels, cond: cond, due: due, events: events, stateOf: stateOf, finished: finished,
