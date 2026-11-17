@@ -1034,6 +1034,33 @@ function storageClock(start, far, L, t){
   return { start: st0, days: d, limit: lim, alert: al, due: addDays(st0, lim), alertOn: addDays(st0, al), far: !!far, st: d >= lim ? 'over' : d >= al ? 'alert' : 'ok', text: 'Hazardous waste storage: day ' + d + ' of ' + lim + (far ? ' (destination over ' + Wl.farMiles + ' miles)' : '') + ' — ship by ' + addDays(st0, lim) + ' (alert at ' + al + ' days)' };
 }
 
+/* the levels as printed lines (the Word programs carry them; a filled copy refreshes them from the record) — each starts with a fixed
+   "Lead levels – <group>:" so the copy can find it */
+function levelsLines(L){
+  L = L && L.air ? L : levels(L); var A = L.air, B = L.blood, W1 = L.waste;
+  return [['air', 'Lead levels – OSHA personal air: action level ' + A.al + ' ' + A.unit + '; PEL ' + A.pel + ' ' + A.unit + '; sampling cassette ' + A.cassette + '.'],
+    ['blood', 'Lead levels – blood: OSHA additional action level ' + B.action + ' ' + B.unit + '; Removal From Work ' + B.removal + ' ' + B.unit + '; Back To Work below ' + B.back + ' ' + B.unit + '; CDC elevated blood lead for a child ' + B.childEbll + ' ' + B.unit + '.'],
+    ['apf', 'Lead levels – respirator protection factors (exposure inside the mask = exposure ÷ factor, must be under the PEL): ' + arr(L.apf).map(function(a){ return a.label + ' ' + a.apf; }).join('; ') + '.'],
+    ['dlal', 'Lead levels – abatement clearance (DLAL, from ' + s(L.dlal.from).slice(0, 4) + '): floors ' + L.dlal.floors + ', interior window sills ' + L.dlal.sills + ', window troughs ' + L.dlal.troughs + ' ' + L.dlal.unit + '.'],
+    ['dlrl', 'Lead levels – risk assessment (DLRL, from ' + s(L.dlrl.from).slice(0, 4) + '): floors – express concern at ' + L.dlrl.floorsConcern + ', recommend action at ' + L.dlrl.floors + '; window sills ' + L.dlrl.sills + '; window troughs ' + L.dlrl.troughs + ' ' + L.dlrl.unit + '.'],
+    ['waste', 'Lead levels – waste: TCLP ' + W1.tclp + ' ppm = hazardous; waste from a residence = non-toxic (household exemption, still logged); hazardous waste storage ' + W1.storageDays + ' days (' + W1.storageDaysFar + ' days if the destination is over ' + W1.farMiles + ' miles).'],
+    ['paint', 'Lead levels – lead paint: ' + L.paint.chipPct + '% by weight (chip); ' + L.paint.xrf + ' mg/cm² (XRF); ' + L.paint.canPct + '% (paint in the can).'],
+    ['water', 'Lead levels – water: EPA action level ' + L.water.epa + ' ' + L.water.unit + '; HUD hazard level ' + L.water.hud + ' ' + L.water.unit + '.'],
+    ['soil', 'Lead levels – soil: children\'s play areas ' + L.soil.play + ', non-play areas ' + L.soil.nonPlay + ', abatement ' + L.soil.abatement + ', replacement soil ' + L.soil.replacement + ' max ' + L.soil.unit + '; dripline zone ' + L.soil.driplineFt + ' ft.'],
+    ['fall', 'Lead levels – fall protection: OSHA trigger ' + L.fall.triggerFt + ' ft; ladder extends ' + L.fall.ladderFt + ' ft over the platform.']];
+}
+/* a program's Word file with the CURRENT levels: the "Lead levels –" lines, the key-limit phrases, the "Levels: …" stamp */
+function levelsDocxXml(xml, L){
+  L = L && L.air ? L : levels(L); var out = String(xml || ''), A = L.air;
+  levelsLines(L).forEach(function(x){ var pre = x[1].split(':')[0] + ':'; out = out.replace(new RegExp('(<w:t[^>]*>)' + pre.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[^<]*(</w:t>)'), function(m, a, b){ return a + xmlEsc(x[1]) + b; }); });
+  var half = (arr(L.apf).find(function(a){ return a.key === 'halfApr'; }) || { apf: 10 }).apf;
+  out = out.replace(/(Action level \(AL\): )[\d.]+( µg\/m³)/, '$1' + A.al + '$2').replace(/(Permissible exposure limit \(PEL\): )[\d.]+( µg\/m³)/, '$1' + A.pel + '$2')
+    .replace(/(below the action level of )[\d.]+( µg\/m³)/, '$1' + A.al + '$2').replace(/(Soil: )[\d.]+( ppm in play areas)/, '$1' + L.soil.play + '$2')
+    .replace(/(assigned protection factor )[\d.]+(; adequate up to )[\d.]+( µg\/m³)/, '$1' + half + '$2' + (half * A.pel) + '$3').replace(/(Higher exposures \(over )[\d.]+( µg\/m³ lead\))/, '$1' + (half * A.pel) + '$2')
+    .replace(/(both show )[\d.]+( µg\/dL or more)/, '$1' + L.blood.removal + '$2').replace(/(two consecutive blood lead tests below )[\d.]+( µg\/dL)/, '$1' + L.blood.back + '$2');
+  out = out.replace(/(<w:t[^>]*>[^<]*)Levels: [^<|]*?(\s*(?:\||<))/, function(m, a, b){ return a + levelsStamp(L) + b; });
+  return out;
+}
 function levelsStamp(L){ L = L && L.air ? L : levels(L); return 'Levels: ' + s(L.v || L.name); }
 /* {air.al} {air.pel} {air.unit} {blood.removal} {blood.back} {waste.tclp} {fall.triggerFt} … in a text → the record's value */
 function fillTokens(t, L){ L = L && L.air ? L : levels(L); return s(t).replace(/\{([a-z]+)\.([A-Za-z]+)\}/g, function(m, g, k){ var v = obj(L[g])[k]; return v == null ? m : String(v); }); }
@@ -1043,7 +1070,7 @@ var API = { DEFAULT_RULES: DEFAULT_RULES, SECTIONS: SECTIONS, CONFIRM: CONFIRM, 
   crewOf: crewOf, crewOnDay: crewOnDay, certFor: certFor, certType: certType, certIs: certIs, medSummary: medSummary, medNext: medNext, publicStatus: publicStatus, activeRemoval: activeRemoval,
   evaluate: evaluate, closeoutBlockers: closeoutBlockers, noticeDue: noticeDue, workingDaysBefore: workingDaysBefore, retainUntil: retainUntil, retainYears: retainYears, recCat: recCat, live: live, dailyTotals: dailyTotals,
   airType: airType, mrpPay: mrpPay, hasKind: hasKind, listOf: listOf, addDays: addDays, addMonths: addMonths, daysBetween: daysBetween, today: todayLocal, typeText: typeText,
-  /* ENVDOCS */ DEFAULT_LEVELS: DEFAULT_LEVELS, levels: levels, LV: LV, levelsStamp: levelsStamp, fillTokens: fillTokens, compareLevel: compareLevel, bloodAction: bloodAction, minRespirator: minRespirator, storageClock: storageClock, numOf: numOf, ackOf: ackOf, surfaceOf: surfaceOf, tclpNote: tclpNote,
+  /* ENVDOCS */ DEFAULT_LEVELS: DEFAULT_LEVELS, levels: levels, LV: LV, levelsStamp: levelsStamp, levelsLines: levelsLines, levelsDocxXml: levelsDocxXml, fillTokens: fillTokens, compareLevel: compareLevel, bloodAction: bloodAction, minRespirator: minRespirator, storageClock: storageClock, numOf: numOf, ackOf: ackOf, surfaceOf: surfaceOf, tclpNote: tclpNote,
   wasteOn: wasteOn, tclpThreshold: tclpThreshold, tclpClass: tclpClass, wasteStreams: wasteStreams, canDispose: canDispose, shipGaps: shipGaps, wasteItems: wasteItems, streamKey: streamKey,
   asbBy: asbBy, crewKinds: crewKinds, ruleBy: ruleBy, deconApplies: deconApplies, deconRec: deconRec, deconState: deconState, dailyFields: dailyFields, subOf: subOf, subItems: subItems,
   defaultAdmin: defaultAdmin, programInfo: programInfo, jobPrograms: jobPrograms, plans: plans, planFp: planFp, planState: planState, buildPlan: buildPlan, planLines: planLines, planTexts: planTexts, fillDocxXml: fillDocxXml, fillFooterXml: fillFooterXml, fillLine: fillLine, hash: hash,

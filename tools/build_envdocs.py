@@ -29,7 +29,7 @@ m = re.search(r"var DEF = \{ current: '([^']+)'", SRC)
 ADDR = sys.argv[sys.argv.index('--address') + 1] if '--address' in sys.argv else (m.group(1) if m else '')
 assert ADDR, 'no company address'
 REV = 'Revision 2 – November 17, 2026'
-CORE = json.loads(subprocess.check_output(['node', '-e', "const C=require(process.argv[1]);console.log(JSON.stringify({decon:C.DEFAULT_RULES.decon,purchase:C.DECON_PURCHASE}))", os.path.join(ROOT, 'envcomp-core.js')]).decode())
+CORE = json.loads(subprocess.check_output(['node', '-e', "const C=require(process.argv[1]);console.log(JSON.stringify({decon:C.DEFAULT_RULES.decon,purchase:C.DECON_PURCHASE,lines:C.levelsLines(),stamp:C.levelsStamp()}))", os.path.join(ROOT, 'envcomp-core.js')]).decode())
 RED = RGBColor(0xB9, 0x1C, 0x1C)
 
 
@@ -101,7 +101,7 @@ def address(doc):
 
 def revision(doc):
     p = find(doc, 'Effective November 2026')
-    set_text(p, 'Effective November 2026  |  ' + REV)
+    set_text(p, 'Effective November 2026  |  ' + REV + '  |  ' + CORE['stamp'])
 
 
 def bold_red(el):
@@ -193,7 +193,7 @@ x = Ins(find(d, 'Medical records are confidential'))
 x.add(clone(H, '12. MEDICAL REMOVAL PROTECTION'))
 for t in ['Default – follows the medical removal provisions of the federal lead-in-construction standard (29 CFR 1926.62). Confirm every number and step with your attorney / state program.',
           'Removal criteria: an employee is removed from work with lead exposure at or above the action level (a) when a periodic blood lead test and the follow-up test both show 50 µg/dL or more, or (b) whenever the physician\'s written medical opinion finds a medical condition that puts the employee at increased risk from lead exposure. The physician\'s written opinion controls, including any limits it recommends.',
-          'Return to work: blood lead removal ends after two consecutive blood lead tests at or below 40 µg/dL; medical-condition removal ends when the physician\'s final written opinion says the employee no longer has the condition. GrayCo follows the physician\'s written opinion on any limits after return.',
+          'Return to work: blood lead removal ends after two consecutive blood lead tests below 40 µg/dL (Back To Work at <40); medical-condition removal ends when the physician\'s final written opinion says the employee no longer has the condition. GrayCo follows the physician\'s written opinion on any limits after return.',
           'Follow-up testing: while removed, the employee\'s blood lead is tested at least monthly (the CRM schedules the follow-up tests) until the return criteria are met.',
           'Protection benefits: for up to 18 months for each removal, GrayCo keeps the employee\'s earnings, seniority and all other employment rights and benefits as if the employee had not been removed. The CRM\'s payroll adds the "Medical removal protection" line (default: the average of the last 6 weeks before removal). The amount is reduced by workers\' compensation wage replacement and by pay for other work during the removal period.',
           'Other work: the employee may be assigned work without lead exposure; removal never reduces pay. A removed employee is never scheduled on lead exposure work (the CRM warns the scheduler).',
@@ -213,6 +213,11 @@ for t in [CRM_PLAN,
           'A printed copy goes in the job\'s field binder with this program.']:
     x.add(clone(B, t))
 replace_in(d, 'Lead Safety Program | Page', 'Lead Safety Program (Rev. 2) | Page')
+# the lead levels (the CRM's ONE record) at the end of section 2 — a filled copy refreshes them from the record
+x = Ins(find(d, 'Soil: 400 ppm'))
+x.add(clone(find(d, 'Soil: 400 ppm'), 'GrayCo lead levels (' + CORE['stamp'] + ', from the owner\'s reference sheet "IMPORTANT LEVELS - 2026 v.3"): the CRM keeps them in one record and prints the current ones on every copy and every job document – confirm with EPA / HUD / OSHA / your state program.'))
+for k, t in CORE['lines']:
+    x.add(clone(find(d, 'Soil: 400 ppm'), t))
 save(d, 'GrayCo_Lead_Safety_Program_v2.docx')
 
 # ═════════════════ 2 · Respiratory Protection Program v2 ═════════════════
@@ -224,6 +229,11 @@ set_text(find(d, 'Records kept: written program'), 'Records kept: written progra
 x = Ins(find(d, 'Review this program at least once a year'))
 x.add(clone(T, 'Who needs what (default – confirm with your state program): every employee who wears a required respirator – the medical evaluation, a fit test before first use and every 12 months, and training before first use and every year; the program administrator – trained to run this program. The fit tests, clearances and training are tracked in the CRM (Certifications and each worker\'s private medical records) – this program does not store them.'))
 x.add(clone(T, 'The program administrator and the owner\'s approval are filled in by the GrayCo CRM (⚙ Written programs) on every copy it prints; the CRM reminds the administrator when the yearly review is due. Each job\'s Employee Protection Plan names the respirators for that job and shows each wearer\'s fit test and medical clearance status (status only – never a result).'))
+x = Ins(find(d, 'GrayCo identifies respiratory hazards'))
+LN = dict(CORE['lines'])
+x.add(clone(find(d, 'GrayCo identifies respiratory hazards'), 'Minimum respirator: the measured exposure ÷ the respirator\'s protection factor must be under the PEL. Each job\'s Employee Protection Plan shows the math from the measured exposure (' + CORE['stamp'] + ').'))
+x.add(clone(find(d, 'GrayCo identifies respiratory hazards'), LN['apf']))
+x.add(clone(find(d, 'GrayCo identifies respiratory hazards'), LN['air']))
 replace_in(d, 'Respiratory Protection Program | Page', 'Respiratory Protection Program (Rev. 2) | Page')
 save(d, 'GrayCo_Respiratory_Protection_Program_v2.docx')
 
