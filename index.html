@@ -84071,7 +84071,14 @@ window._gcPickZ = window._gcPickZ || function(sel, base){   /* patch PICKZ: abov
                     var _extra=_cur.filter(function(r){ return r && typeof r==='object' && r.id!=null && !_in[r.id]; });
                     if(_extra.length){ _extra=window._gcUnionMerge(key, _extra, []); if(Array.isArray(_extra) && _extra.length){ _out=m.concat(_extra); } }
                   } }catch(_u){}
-                _s(_out); } }catch(e){}
+                /* patch DOCSRACE: the job files have no screen copy in window._crm, so the join above never ran for them — a file added
+                   to a job less than a moment before this pull (not in this computer's saved copy yet) was thrown away. For them the
+                   list on the screen is read where React keeps it (the setter's own "previous list") and joined the same way. */
+                if(key==='projectDocs' && !(Array.isArray(_cur) && _cur.length) && window._gcUnionMerge){
+                  _s(function(prev){ try{ if(!Array.isArray(prev) || !prev.length) return _out; var _in2={}; m.forEach(function(r){ if(r && r.id!=null) _in2[r.id]=1; });
+                    var _ex2=prev.filter(function(r){ return r && typeof r==='object' && r.id!=null && !_in2[r.id]; }); if(!_ex2.length) return _out;
+                    _ex2=window._gcUnionMerge(key, _ex2, []); return Array.isArray(_ex2) && _ex2.length ? m.concat(_ex2) : _out; }catch(_p){ return _out; } });
+                } else _s(_out); } }catch(e){}
           }
         }
       }
