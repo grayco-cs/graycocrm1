@@ -237562,7 +237562,7 @@ function sign(pid, id, role){
   return true;
 }
 function planHtml(r, p){
-  var P = obj(r.plan), g = obj(r.signed), co = obj(obj(P.sections[0]).rows).length ? null : null;
+  var P = obj(r.plan), g = obj(r.signed);
   var sig = function(lbl, x){ return '<td style="width:50%;padding:18px 8px 4px;vertical-align:bottom"><div style="border-bottom:1px solid #111;min-height:22px">' + (obj(x).name ? '<i>✍ ' + esc(x.name) + '</i> — e-signed ' + esc(new Date(x.at).toLocaleString()) : '') + '</div><div style="font-size:11px">' + esc(lbl) + ' — signature / date</div></td>'; };
   var b = brand(p);
   var inner = '<div style="text-align:center">' + (b.logo ? '<img src="' + esc(b.logo) + '" alt="" style="max-height:54px"><br>' : '') + '<b style="font-size:15px">' + esc(b.name) + '</b><div style="font-size:11px">' + esc(company(p).address) + ' · ' + esc(b.phone) + '</div></div>'
