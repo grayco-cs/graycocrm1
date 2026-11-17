@@ -98,13 +98,11 @@ ok('C3 Start anyway (admin) → it starts, stamped startWaived (the Lead 01 gate
 /* a signed copy uploaded counts, like Lead 01 */
 /* PA2 / PPLAIN are seeded (made today) — see the projects list above */
 await wait(() => { const p = window._crm.projects.find(x => x.id === 'PA2'); return p && p.jobDocs && p.jobDocs.items; }, null, 12000);
-/* added to the job's files, then (like a person who sees it in Files & Docs) Start job: the CRM's own first load of the job files can still
-   be running this early in the test and replaces the list it loads — the copy is added again if it is not in the job's files after 8 s */
-let inFiles = null;
-for (let i = 0; i < 3 && !inFiles; i++) {
-  await A.ev(() => { const d = { id: 'DOCA2', pid: 'PA2', name: 'Asbestos 01 signed - Two Demo.pdf', cat: 'Other', type: 'application/pdf', data: 'sb:crm-files/' + 'd'.repeat(64) + '.pdf', size: 42000, by: 'Demo PM', uploaded: '2026-11-16' }; window._setProjectDocs(prev => (prev || []).some(x => x && x.id === 'DOCA2') ? prev : (prev || []).concat([d])); });
-  inFiles = await wait(() => { const p = window._crm.projects.find(x => x.id === 'PA2'); return p && !window._gcJobDocs.gateMissing(p, []).includes('A01'); }, null, 8000);
-}
+/* added to the job's files (like an upload), then Start job. The copy must survive the CRM's cloud pull that follows (patch DOCSRACE:
+   the pull used to rebuild the job-files list from this computer's saved copy, written a moment later, and dropped the new file) */
+await A.ev(() => { const d = { id: 'DOCA2', pid: 'PA2', name: 'Asbestos 01 signed - Two Demo.pdf', cat: 'Other', type: 'application/pdf', data: 'sb:crm-files/' + 'd'.repeat(64) + '.pdf', size: 42000, by: 'Demo PM', uploaded: '2026-11-16' }; window._setProjectDocs(prev => (prev || []).concat([d])); });
+await sleep(3000);
+const inFiles = await wait(() => { const p = window._crm.projects.find(x => x.id === 'PA2'); return p && !window._gcJobDocs.gateMissing(p, []).includes('A01'); }, null, 8000);
 ok('C4 the signed copy is in the job\'s files (Asbestos 01 no longer missing)', !!inFiles);
 await sleep(1000);
 await start('PA2'); await sleep(2600);
