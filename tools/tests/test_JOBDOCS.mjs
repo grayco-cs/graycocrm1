@@ -100,7 +100,9 @@ ok('C3 Start anyway (admin) → it starts, stamped startWaived (the Lead 01 gate
 await wait(() => { const p = window._crm.projects.find(x => x.id === 'PA2'); return p && p.jobDocs && p.jobDocs.items; }, null, 12000);
 /* added to the job's files (like an upload), then Start job. The copy must survive the CRM's cloud pull that follows (patch DOCSRACE:
    the pull used to rebuild the job-files list from this computer's saved copy, written a moment later, and dropped the new file) */
-await A.ev(() => { const d = { id: 'DOCA2', pid: 'PA2', name: 'Asbestos 01 signed - Two Demo.pdf', cat: 'Other', type: 'application/pdf', data: 'sb:crm-files/' + 'd'.repeat(64) + '.pdf', size: 42000, by: 'Demo PM', uploaded: '2026-11-16' }; window._setProjectDocs(prev => (prev || []).concat([d])); });
+/* as a person's upload: a tap first — without one, patch ONLYYOU holds the change as background tidy-up, and a held updater was
+   replaced by a later held whole-list write for the same list (the cloud pull's), so the copy never reached the screen */
+await A.ev(() => { document.body.dispatchEvent(new Event('pointerdown', { bubbles: true })); const d = { id: 'DOCA2', pid: 'PA2', name: 'Asbestos 01 signed - Two Demo.pdf', cat: 'Other', type: 'application/pdf', data: 'sb:crm-files/' + 'd'.repeat(64) + '.pdf', size: 42000, by: 'Demo PM', uploaded: '2026-11-16' }; window._setProjectDocs(prev => (prev || []).concat([d])); });
 await sleep(3000);
 const inFiles = await wait(() => { const p = window._crm.projects.find(x => x.id === 'PA2'); return p && !window._gcJobDocs.gateMissing(p, []).includes('A01'); }, null, 8000);
 ok('C4 the signed copy is in the job\'s files (Asbestos 01 no longer missing)', !!inFiles);
