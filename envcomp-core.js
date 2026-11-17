@@ -837,8 +837,18 @@ function fillDocxXml(xml, v){
   para('Program administrator: ', function(seg){ return add(add(seg, 'Program administrator: ', v.admin), '\t\tPhone: ', v.phone); });
   para('Approved by (owner): ', function(seg){ return add(add(seg, 'Approved by (owner): ', v.approvedBy), '\t\tDate: ', v.approvedOn); });
   if (s(v.address)) out = out.replace(/(<w:t[^>]*>)[^<]*?(\s+\|\s+\(\d{3}\) \d{3}-\d{4}<\/w:t>)/, function(m, a, b){ return a + xmlEsc(v.address) + b; });
+  /* the job's company on the letterhead (owner: every document carries the right company): its name, phone, license line, logo size */
+  if (s(v.companyPhone)) out = out.replace(/(<w:t[^>]*>[^<]*?\s+\|\s+)\(\d{3}\) \d{3}-\d{4}(<\/w:t>)/, function(m, a, b){ return a + xmlEsc(v.companyPhone) + b; });
+  if (s(v.company)) out = out.replace(/(<w:t[^>]*>)GrayCo Construction Services, LLC(<\/w:t>)/, function(m, a, b){ return a + xmlEsc(v.company) + b; });
+  if (v.licenseLine != null) out = out.replace(/(<w:t[^>]*>)TN License #[^<]*(<\/w:t>)/, function(m, a, b){ return a + xmlEsc(v.licenseLine) + b; });
+  if (+v.logoW > 0 && +v.logoH > 0) { var cy = 800100, cx = Math.round(cy * (+v.logoW) / (+v.logoH)); if (cx > 2400000) { cx = 2400000; cy = Math.round(cx * (+v.logoH) / (+v.logoW)); }
+    out = out.replace(/<wp:extent cx="\d+" cy="\d+"\/>/, '<wp:extent cx="' + cx + '" cy="' + cy + '"/>').replace(/<a:ext cx="\d+" cy="\d+"\/>/, '<a:ext cx="' + cx + '" cy="' + cy + '"/>'); }
   return out;
 }
+/* the footer of a program's Word file: the job's company name */
+function fillFooterXml(xml, v){ v = obj(v); return s(v.company) ? String(xml || '').replace(/>GrayCo Construction Services, LLC \|/, '>' + xmlEsc(v.company) + ' |') : String(xml || ''); }
+/* the fill-in lines of a label / sign, filled from the job when the CRM knows the value ("Generator: ____" → "Generator: …") */
+function fillLine(t, vals){ vals = obj(vals); return s(t).replace(/(Generator|Location|Abatement contractor|Date sealed|Bagged by|Material|Date): _{3,}/g, function(m, k){ var key = { 'Generator': 'generator', 'Location': 'location', 'Abatement contractor': 'contractor', 'Date sealed': 'sealed', 'Bagged by': 'bagger', 'Material': 'material', 'Date': 'date' }[k]; return s(vals[key]) ? k + ': ' + s(vals[key]) : m; }); }
 
 /* ── ENVDOCS: a portable lead decon unit — the purchase list (quantities are starting points; no prices — the owner fills them in) ── */
 var DECON_PURCHASE = [
@@ -923,7 +933,8 @@ function signBlocks(sign, opt){
   if (sign.symbol) L.push({ kind: 'symbol', text: sign.symbol, size: Math.round(110 * k) });
   arr(sign.lines).forEach(function(t, i){ L.push({ kind: 'legend', text: t, size: Math.round((i === 0 ? 44 : t.length > 40 ? 22 : 30) * k), bold: true }); });
   if (opt.es !== false && opt.bilingual) arr(sign.es).forEach(function(t, i){ L.push({ kind: 'es', text: t, size: Math.round((i === 0 ? 22 : 15) * k), bold: i === 0 }); });
-  arr(sign.fill).forEach(function(t){ L.push({ kind: 'fill', text: t, size: Math.round(14 * k) }); });
+  arr(sign.fill).forEach(function(t){ L.push({ kind: 'fill', text: fillLine(t, opt.fill), size: Math.round(14 * k) }); });
+  arr(sign.lines).forEach(function(t, i){ if (/_{3,}/.test(t) && opt.fill) { var f = fillLine(t, opt.fill); if (f !== t) L.push({ kind: 'fill', text: f, size: Math.round(14 * k) }); } });   /* a fill-in in the legend (ACM "Material: ___") is printed again filled, the legend itself unchanged */
   if (sign.call) L.push({ kind: 'fill', text: 'Call ' + B.name + ' before any work here: ' + B.phone, size: Math.round(14 * k) });
   L.push({ kind: 'brand', text: B.name + '  |  ' + B.phone, logo: B.logo, size: Math.round(16 * k), band: '#0F2440', ink: '#FFFFFF' });
   return { id: sign.id, size: Z, w: Z.w, h: Z.h, blocks: L, brand: B };
@@ -935,7 +946,7 @@ var API = { DEFAULT_RULES: DEFAULT_RULES, SECTIONS: SECTIONS, CONFIRM: CONFIRM, 
   airType: airType, mrpPay: mrpPay, hasKind: hasKind, listOf: listOf, addDays: addDays, addMonths: addMonths, daysBetween: daysBetween, today: todayLocal, typeText: typeText,
   /* ENVDOCS */ wasteOn: wasteOn, tclpThreshold: tclpThreshold, tclpClass: tclpClass, wasteStreams: wasteStreams, canDispose: canDispose, shipGaps: shipGaps, wasteItems: wasteItems, streamKey: streamKey,
   asbBy: asbBy, crewKinds: crewKinds, ruleBy: ruleBy, deconApplies: deconApplies, deconRec: deconRec, deconState: deconState, dailyFields: dailyFields, subOf: subOf, subItems: subItems,
-  defaultAdmin: defaultAdmin, programInfo: programInfo, jobPrograms: jobPrograms, plans: plans, planFp: planFp, planState: planState, buildPlan: buildPlan, planLines: planLines, planTexts: planTexts, fillDocxXml: fillDocxXml, hash: hash,
+  defaultAdmin: defaultAdmin, programInfo: programInfo, jobPrograms: jobPrograms, plans: plans, planFp: planFp, planState: planState, buildPlan: buildPlan, planLines: planLines, planTexts: planTexts, fillDocxXml: fillDocxXml, fillFooterXml: fillFooterXml, fillLine: fillLine, hash: hash,
   DECON_PURCHASE: DECON_PURCHASE, SIGNS: SIGNS, SIGN_SIZES: SIGN_SIZES, SIGN_NOTE: SIGN_NOTE, TONES: TONES, jobSigns: jobSigns, signBrand: signBrand, signBlocks: signBlocks };
 if (typeof module === 'object' && module.exports) module.exports = API; else root._gcEnvCompCore = API;
 })(this);

@@ -30,7 +30,16 @@ function obj(v){ return v && typeof v === 'object' && !Array.isArray(v) ? v : {}
 function R(){ return EC.rules(); }
 function proj(pid){ return X.proj(pid); }
 function ctx(){ return X.ctx(); }
-function coOf(p){ var id = 'environmental'; try { id = p ? X.company(p) : 'environmental'; } catch (e) {} var g = function(k){ try { return W._gcCo && W._gcCo.get ? W._gcCo.get(k) : null; } catch (e) { return null; } }; return { co: g(id) || {}, fb: g('construction') || {} }; }
+/* the job's company and its logo — picked the way the portal and the e-mails do (the company list gc_companies through window._gcCo;
+   server: _lib/cobrand.js): Mitigation / Environmental use their own logo (the PNG), Construction the GrayCo main logo; the main logo is
+   the fallback only when a company has none. Construction keeps its TN / AR / MS license line. */
+var LOGO = { construction: '/grayco-logo.jpg', mitigation: '/img/grayco-mitigation-logo.png', environmental: '/img/grayco-environmental-logo.png' };
+var LIC_CON = 'TN #85034 BCB · AR #0486990627 · MS #27769';
+function logoFor(id, co){ var l = s(co && co.logo); if (id !== 'construction' && /^\/[\w./-]+\.(png|jpe?g|svg)$/i.test(l)) return l.replace(/\.jpe?g$/i, '.png'); if (id === 'construction' && /^\/[\w./-]+\.(png|jpe?g|svg)$/i.test(l) && l !== '/portal-logo.png') return l; return LOGO[id] || LOGO.construction; }
+function coOf(p){ var id = 'environmental'; try { id = p ? s(X.company(p)) || 'construction' : 'environmental'; } catch (e) {} if (!LOGO[id]) id = 'construction'; var g = function(k){ try { return W._gcCo && W._gcCo.get ? W._gcCo.get(k) : null; } catch (e) { return null; } };
+  var co = Object.assign({}, g(id) || {}, { id: id }), fb = Object.assign({}, g('construction') || {}, { id: 'construction' }); co.logo = logoFor(id, co); fb.logo = logoFor('construction', fb);
+  if (!s(co.legal)) co.legal = { construction: 'GrayCo Construction Services, LLC', mitigation: 'GrayCo Mitigation, LLC', environmental: 'GrayCo Environmental, LLC' }[id];
+  co.licenseLine = id === 'construction' ? LIC_CON : s(co.license); return { id: id, co: co, fb: fb }; }
 function brand(p){ var c = coOf(p); return CORE.signBrand(c.co, c.fb); }
 function addr(){ try { return W._gcCompanyAddress ? W._gcCompanyAddress() : ''; } catch (e) { return ''; } }
 function btn(a, label, extra, cls){ return '<button type="button"' + (cls ? ' class="' + cls + '"' : '') + ' data-ed="' + a + '"' + (extra || '') + '>' + label + '</button>'; }
@@ -42,6 +51,9 @@ W._gcEnvDocsPanel = function(p, E){
   /* 7 · the plan */
   var PS = E.plan || CORE.planState(p, E, Rr), L = CORE.plans(p), it = E.items.find(function(x){ return x.id === 'epp'; }) || { st: 'due', label: 'Employee Protection Plan', note: PS.note };
   h += '<div class="sec" data-ed-sec="plan">7 · Employee Protection Plan ' + (off ? btn('plan', '📝 ' + (L.length ? 'Generate a new version (v' + (L.length + 1) + ')' : 'Generate the plan'), '', 'g') + btn('planin', '✏️ Plan details') : '') + '</div>' + X.rowH(it);
+  /* the job's documents, filled from the CRM in the job's company (logo, name, address) */
+  var JP = CORE.jobPrograms(Rr, E.kinds, E.asbBy || CORE.asbBy(p, Rr)).filter(function(r){ return /\.docx$/.test(s(r.file)); });
+  h += '<div class="m" data-ed-docs="1">📄 Filled for this job: ' + JP.map(function(r){ return '<button type="button" class="lnk" data-ed-fill="' + esc(r.id) + '" data-ed-pid="' + esc(p.id) + '">' + esc(s(r.label).replace(/ \(.*\)$/, '')) + '</button>'; }).join(' · ') + ' · ' + btn('noticeprint', '🖨 Notices & permits') + '</div>';
   L.slice().reverse().slice(0, 6).forEach(function(r){
     var g = obj(r.signed), cur = r === L[L.length - 1];
     h += '<div class="r" data-ed-plan="' + esc(r.id) + '"><div class="l"><b>v' + esc(r.v) + '</b> · ' + esc(nice(r.date)) + ' · ' + esc(r.by) + (cur ? (PS.st === 'stale' ? ' ' + X.chip('due', 'out of date') : '') : ' <span class="m">(earlier version — kept)</span>')
@@ -68,7 +80,7 @@ W._gcEnvDocsPanel = function(p, E){
   /* TCLP: the waste streams */
   if (CORE.wasteOn(p, E.kinds, Rr)) {
     var WS = E.items.filter(function(x){ return x.sec === 'waste'; });
-    h += '<div class="sec" data-ed-sec="waste">♻️ Waste — TCLP characterization ' + (off ? btn('wstream', '＋ Waste stream') + btn('tclp', '🧪 Log TCLP sample', '', 'g') + btn('wgk', '📄 Generator knowledge') + btn('wship', '🚚 Shipment / disposal') : '') + '</div><div class="m">Threshold: ' + esc(CORE.tclpThreshold(Rr)) + ' mg/L lead (' + esc(s(obj(Rr.settings).tclpNote)) + '). A stream cannot be disposed of until it is characterized.</div>';
+    h += '<div class="sec" data-ed-sec="waste">♻️ Waste — TCLP characterization ' + btn('wasteprint', '🖨 Waste record') + (off ? btn('wstream', '＋ Waste stream') + btn('tclp', '🧪 Log TCLP sample', '', 'g') + btn('wgk', '📄 Generator knowledge') + btn('wship', '🚚 Shipment / disposal') : '') + '</div><div class="m">Threshold: ' + esc(CORE.tclpThreshold(Rr)) + ' mg/L lead (' + esc(s(obj(Rr.settings).tclpNote)) + '). A stream cannot be disposed of until it is characterized.</div>';
     WS.forEach(function(x){ var w = CORE.wasteStreams(p, Rr).find(function(z){ return z.key === s(x.id).slice(6); }) || { tclp: [] }, pend = w.tclp.filter(function(r){ return r.cls === 'pending'; })[0], rf = w.rec && w.rec.file; h += X.rowH(x, (rf ? X.fileLink(rf) : '') + (pend && off ? btn('tclpres', '🧪 Lab result', ' data-id="' + esc(pend.id) + '"') : '')); });
   }
   /* the signs */
@@ -100,12 +112,27 @@ function sign(pid, id, role){
   toast('✍ Signed — ' + (role === 'owner' ? 'owner approval' : 'competent person') + ' (' + me() + ').');
   return true;
 }
+/* every document is filled from the CRM and carries the job's company (owner: "auto-fill … the logo of the correct company") */
+function jobFacts(p){
+  if (!p) return null; var E = EC.evaluate(p), Rr = R(), I = obj(obj(p.envComp).planInput), sups = E.people.filter(function(c){ return c.role === 'supervisor'; }).map(function(c){ return c.name; });
+  var progs = CORE.jobPrograms(Rr, E.kinds, E.asbBy || CORE.asbBy(p, Rr)).map(function(r){ return CORE.programInfo(Rr, r.id, ctx()); }), admins = [];
+  progs.forEach(function(x){ if (x.admin && admins.indexOf(x.admin) < 0) admins.push(x.admin); });
+  return { E: E, job: s(p.name), customer: s(p.client || p.customer), address: s(p.address || p.jobAddress || p.siteAddress), pm: s(p.pm), start: s(p.startDate).slice(0, 10), end: s(p.endDate || p.finishDate || p.completionDate).slice(0, 10),
+    crew: E.people.map(function(c){ return c.name + (c.role === 'supervisor' ? ' (supervisor)' : ''); }).join(', '), competent: s(I.competent) || sups.join(', '), admins: admins.join(', '), kinds: E.kinds.map(X.kindLabel).join(' + '), state: E.state, sub: CORE.subOf(p) };
+}
+function jobHead(p, title, sub){
+  var b = brand(p), c = company(p), F = jobFacts(p);
+  var h = '<div data-ed-head="1" style="display:flex;align-items:center;gap:14px;border-bottom:2px solid #0f2440;padding-bottom:8px;margin-bottom:8px">' + (b.logo ? '<img data-ed-logo="1" src="' + esc(b.logo) + '" alt="' + esc(b.name) + ' logo" style="max-height:60px;max-width:180px">' : '')
+    + '<div><b data-ed-co="1" style="font-size:15px">' + esc(b.name) + '</b><div style="font-size:11px">' + esc(c.address) + ' · ' + esc(b.phone) + '</div>' + (coOf(p).co.licenseLine ? '<div style="font-size:10px" data-ed-lic="1">' + esc(coOf(p).co.licenseLine) + '</div>' : '') + '</div></div><h1 style="font-size:19px;text-align:center;margin:6px 0 2px">' + esc(title) + '</h1>' + (sub ? '<div class="m" style="text-align:center;margin:0 0 6px">' + esc(sub) + '</div>' : '');
+  if (F) h += '<table data-ed-job="1"><tr><th>Job</th><td>' + esc(F.job) + '</td><th>Customer</th><td>' + esc(F.customer) + '</td></tr><tr><th>Location</th><td>' + esc(F.address) + (F.state ? ' (' + esc(F.state) + ')' : '') + '</td><th>Project manager</th><td>' + esc(F.pm) + '</td></tr>'
+    + '<tr><th>Start / finish</th><td>' + esc([nice(F.start), nice(F.end)].filter(Boolean).join(' → ')) + '</td><th>Work</th><td>' + esc(F.kinds) + '</td></tr><tr><th>Crew</th><td>' + esc(F.crew) + '</td><th>Competent person</th><td>' + esc(F.competent) + '</td></tr>'
+    + '<tr><th>Program administrator</th><td colspan="3">' + esc(F.admins) + '</td></tr></table>';
+  return h;
+}
 function planHtml(r, p){
   var P = obj(r.plan), g = obj(r.signed);
   var sig = function(lbl, x){ return '<td style="width:50%;padding:18px 8px 4px;vertical-align:bottom"><div style="border-bottom:1px solid #111;min-height:22px">' + (obj(x).name ? '<i>✍ ' + esc(x.name) + '</i> — e-signed ' + esc(new Date(x.at).toLocaleString()) : '') + '</div><div style="font-size:11px">' + esc(lbl) + ' — signature / date</div></td>'; };
-  var b = brand(p);
-  var inner = '<div style="text-align:center">' + (b.logo ? '<img src="' + esc(b.logo) + '" alt="" style="max-height:54px"><br>' : '') + '<b style="font-size:15px">' + esc(b.name) + '</b><div style="font-size:11px">' + esc(company(p).address) + ' · ' + esc(b.phone) + '</div></div>'
-    + '<h1 style="font-size:19px;text-align:center;margin:10px 0 2px">EMPLOYEE PROTECTION PLAN</h1><div style="text-align:center;font-size:12px">' + esc(P.job) + ' · version ' + esc(r.v) + ' · ' + esc(nice(r.date)) + '</div><div class="m" style="text-align:center;margin:4px 0 8px">' + esc(P.note) + '</div>';
+  var inner = jobHead(p, 'EMPLOYEE PROTECTION PLAN', P.job + ' · version ' + r.v + ' · ' + nice(r.date) + ' — ' + s(P.note));
   arr(P.sections).forEach(function(x){
     inner += '<div class="sec">' + esc(x.h) + '</div>';
     if (arr(x.rows).length) inner += '<table>' + x.rows.map(function(rw){ return '<tr><th style="width:32%">' + esc(rw[0]) + '</th><td>' + esc(rw[1]) + '</td></tr>'; }).join('') + '</table>';
@@ -114,14 +141,58 @@ function planHtml(r, p){
   inner += '<div class="sec">Signatures</div><table style="border:0"><tr>' + sig('Competent person', g.cp) + sig('Owner', g.owner) + '</tr></table><div class="m">Kept forever with the job\'s compliance records (every version).</div>';
   return X.printable('Employee Protection Plan v' + r.v + ' — ' + s(P.job), inner);
 }
+/* the decon set-up checklist — filled from the job's latest set-up (blank lines only for what the CRM does not know) */
+function deconSheetHtml(pid){
+  var p = pid ? proj(pid) : null, DC = obj(R().decon), d = p ? (CORE.deconRec(p) || {}) : {}, ck = obj(d.checks), b = brand(p);
+  var box = function(t, sub, col){ return '<div style="flex:1;border:2px solid #111;background:' + col + ';padding:8px;min-height:90px;text-align:center"><b>' + t + '</b><div style="font-size:11px">' + sub + '</div></div>'; };
+  var ar = '<div style="align-self:center;font-size:26px;padding:0 4px">→</div>';
+  var inner = p ? jobHead(p, 'LEAD DECON UNIT SET-UP CHECKLIST', DC.note) : '<div style="text-align:center">' + (b.logo ? '<img data-ed-logo="1" src="' + esc(b.logo) + '" alt="" style="max-height:54px"><br>' : '') + '<b>' + esc(b.name) + '</b><div style="font-size:11px">' + esc(addr()) + ' · ' + esc(b.phone) + '</div></div><h1 style="text-align:center;font-size:19px">LEAD DECON UNIT SET-UP CHECKLIST</h1><div class="m" style="text-align:center">' + esc(DC.note) + '</div>';
+  inner += '<table data-ed-decon="1"><tr><th>Date set up</th><td>' + esc(nice(d.setOn || d.date)) + '</td><th>Set up by</th><td>' + esc(d.setBy) + '</td></tr><tr><th>Type</th><td>' + esc(d.type) + '</td><th>Location</th><td>' + esc(d.location) + '</td></tr><tr><th>Wash water</th><td colspan="3">' + esc(d.water) + '</td></tr></table>'
+    + '<div class="sec">Layout — one-way flow</div><div data-ed-diagram="1" style="display:flex;gap:4px;align-items:stretch">' + box('WORK AREA', 'containment', '#fee2e2') + ar + box('DIRTY ROOM', 'equipment room · suits, booties, gloves off · bag-out · HEPA vac', '#fecaca') + ar + box('WASH', 'shower or hand &amp; face wash · soap · towels · wash water collected', '#dbeafe') + ar + box('CLEAN ROOM', 'street clothes · lockers / bags · mirror', '#dcfce7') + ar + '<div style="align-self:center"><b>EXIT</b></div></div>'
+    + '<div class="sec">Set-up checklist (each item: default — confirm with your state program)</div>' + arr(DC.setup).map(function(t, i){ return '<div>' + (ck[i] ? '☑' : '☐') + ' ' + esc(t) + '</div>'; }).join('') + '<div>' + (arr(d.photos).length ? '☑ Photo(s) of the set-up in the CRM: ' + arr(d.photos).length : '☐ Photo of the set-up taken and added in the CRM') + '</div>'
+    + '<div class="sec">Supplies</div><div>' + esc(DC.supplies) + '</div><table style="margin-top:18px"><tr><th>Competent person signature</th><td style="width:45%">' + esc(p ? jobFacts(p).competent : '') + '</td><th>Date</th><td></td></tr></table>';
+  return X.printable('Lead decon unit set-up checklist' + (p ? ' — ' + s(p.name) : ''), inner);
+}
+function deconBlankHtml(pid){ return deconSheetHtml(pid); }
+function purchaseHtml(pid){
+  var p = pid ? proj(pid) : null, g = '', b = brand(p);
+  var rows = CORE.DECON_PURCHASE.map(function(x){ var head = x.group !== g ? (g = x.group, '<tr><th colspan="5" style="background:#f1f5f9">' + esc(x.group) + '</th></tr>') : ''; return head + '<tr><td>☐</td><td>' + esc(x.item) + (x.note ? '<div class="m">' + esc(x.note) + '</div>' : '') + '</td><td>' + esc(x.qty) + '</td><td style="width:16%"></td><td style="width:12%"></td></tr>'; }).join('');
+  var head = p ? jobHead(p, 'PORTABLE LEAD DECON UNIT — PURCHASE LIST', 'Quantities are starting points; vendors and prices to fill in. Requirements: confirm with your state program.') : '<div style="text-align:center">' + (b.logo ? '<img data-ed-logo="1" src="' + esc(b.logo) + '" alt="" style="max-height:54px"><br>' : '') + '<b>' + esc(b.name) + '</b></div><h1 style="text-align:center;font-size:19px">PORTABLE LEAD DECON UNIT — PURCHASE LIST</h1><div class="m" style="text-align:center">Quantities are starting points; vendors and prices to fill in. Requirements: confirm with your state program.</div>';
+  return X.printable('Portable lead decon unit — purchase list', head + '<table><tr><th>Prepared by</th><td>' + esc(me()) + '</td><th>Date</th><td>' + esc(nice(today())) + '</td></tr></table><table><thead><tr><th></th><th>Item</th><th>Qty</th><th>Vendor</th><th>Price</th></tr></thead><tbody>' + rows + '</tbody></table><table style="margin-top:14px"><tr><th>Total</th><td></td><th>Approved by (owner)</th><td></td></tr></table>');
+}
+/* the waste record (TCLP) and the notices & permits sheet — filled from the job */
+function wasteHtml(pid){
+  var p = proj(pid); if (!p) return ''; var Rr = R(), th = CORE.tclpThreshold(Rr);
+  var inner = jobHead(p, 'WASTE CHARACTERIZATION (TCLP) AND DISPOSAL RECORD', 'TCLP lead threshold used: ' + th + ' mg/L — ' + s(obj(Rr.settings).tclpNote));
+  CORE.wasteStreams(p, Rr).forEach(function(w){
+    inner += '<div class="sec">' + esc(w.stream) + ' — ' + esc(w.cls ? w.cls.toUpperCase() + ' (' + (w.basis === 'tclp' ? 'TCLP' : 'generator knowledge') + ')' : 'NOT CHARACTERIZED — no disposal until it is') + '</div>';
+    if (w.tclp.length) inner += '<table><thead><tr><th>Date</th><th>Sampler</th><th>Containers</th><th>Lab</th><th>COC #</th><th>Lead (mg/L)</th><th>Result</th></tr></thead><tbody>' + w.tclp.map(function(r){ return '<tr><td>' + esc(nice(r.date)) + '</td><td>' + esc(r.sampler) + '</td><td>' + esc(r.containers) + '</td><td>' + esc(r.lab) + '</td><td>' + esc(r.coc) + '</td><td>' + esc(r.result || 'pending') + ' vs ' + esc(r.threshold) + '</td><td>' + esc(r.cls) + '</td></tr>'; }).join('') + '</tbody></table>';
+    w.gk.forEach(function(r){ inner += '<div>Generator knowledge ' + esc(nice(r.date)) + ' — ' + esc(r.cls) + ': ' + esc(r.basis) + '</div>'; });
+    if (w.ships.length) inner += '<table><thead><tr><th>Shipped</th><th>Containers / qty</th><th>Manifest</th><th>Hauler</th><th>TSD / landfill</th><th>Generator status / acceptance</th><th>Disposed</th></tr></thead><tbody>' + w.ships.map(function(r){ return '<tr><td>' + esc(nice(r.date)) + '</td><td>' + esc([r.containers, r.qty].filter(Boolean).join(' · ')) + '</td><td>' + esc(r.manifest) + '</td><td>' + esc(r.hauler) + '</td><td>' + esc(r.tsd || r.landfill) + '</td><td>' + esc(r.generatorStatus || (r.acceptanceOn ? 'letter ' + nice(r.acceptanceOn) : '')) + '</td><td>' + esc(nice(r.disposedOn)) + '</td></tr>'; }).join('') + '</tbody></table>';
+  });
+  return X.printable('Waste characterization record — ' + s(p.name), inner + '<div class="m" style="margin-top:8px">' + esc(s(obj(Rr.waste).note)) + ' Kept forever with the job\'s records.</div>');
+}
+function noticesHtml(pid){
+  var p = proj(pid); if (!p) return ''; var E = EC.evaluate(p), S = CORE.subOf(p), N = E.items.filter(function(x){ return x.sec === 'notice' || x.id === 'sub-notice'; });
+  return X.printable('Notifications & permits — ' + s(p.name), jobHead(p, 'NOTIFICATIONS AND PERMITS', 'Checklist items — confirm each form, threshold and number of days with the state program.')
+    + '<table><thead><tr><th>Notice / permit</th><th>Agency</th><th>Due</th><th>Status</th></tr></thead><tbody>' + N.map(function(x){ return '<tr><td>' + esc(x.label) + '</td><td>' + esc(x.agency) + '</td><td>' + esc(nice(x.due)) + '</td><td>' + esc(x.note) + '</td></tr>'; }).join('') + '</tbody></table>'
+    + (s(S.company) ? '<div class="sec">Licensed asbestos sub</div><table><tr><th>Company</th><td>' + esc(S.company) + '</td><th>License #</th><td>' + esc(S.license) + ' ' + esc(S.state) + '</td></tr><tr><th>Competent person</th><td>' + esc(S.competent) + '</td><th>Notice confirmation #</th><td>' + esc(obj(S.notice).conf) + '</td></tr></table>' : ''));
+}
+/* the job's company logo as PNG bytes + its size (for the Word letterhead) and as a data URL (for the PDFs) */
+function logoOf(url){
+  return new Promise(function(res){ if (!url) return res(null); var im = new Image(); im.onload = function(){ try { var cv = D.createElement('canvas'); cv.width = im.naturalWidth; cv.height = im.naturalHeight; var cx = cv.getContext('2d'); cx.fillStyle = '#fff'; cx.fillRect(0, 0, cv.width, cv.height); cx.drawImage(im, 0, 0); var du = cv.toDataURL('image/png'), bin = atob(du.split(',')[1]), u8 = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); res({ w: im.naturalWidth, h: im.naturalHeight, png: u8, dataUrl: du }); } catch (e) { res(null); } }; im.onerror = function(){ res(null); }; im.src = url; });
+}
 function planPdf(pid, id){
   var p = proj(pid), r = p && CORE.plans(p).find(function(x){ return x.id === id; }); if (!r) return Promise.resolve(null);
   var html = planHtml(r, p), L = CORE.planLines(r.plan), g = obj(r.signed); W.__gcEdPlan = { pid: s(pid), id: id, v: r.v, html: html, lines: L };
   var name = 'GrayCo_Employee_Protection_Plan_' + s(p.name || pid).replace(/[^A-Za-z0-9]+/g, '_') + '_v' + r.v + '.pdf', b = brand(p);
-  return X.loadJsPdf().then(function(J){
+  var LG = null;
+  return logoOf(b.logo).then(function(l){ LG = l; return X.loadJsPdf(); }).then(function(J){
     var doc = new J({ unit: 'pt', format: 'letter' }), y = 46, M = 44, Wd = 612 - M * 2;
     var put = function(txt, sz, bold, center){ doc.setFont('helvetica', bold ? 'bold' : 'normal'); doc.setFontSize(sz); doc.splitTextToSize(s(txt).replace(/[^\x00-\xFF•–—→✍✓]/g, ''), Wd).forEach(function(line){ if (y > 748) { doc.addPage(); y = 46; } if (center) doc.text(line, 306, y, { align: 'center' }); else doc.text(line, M, y); y += sz + 3.5; }); };
+    if (LG) { try { var lh = 40, lw = Math.min(160, lh * LG.w / LG.h); doc.addImage(LG.dataUrl, 'PNG', 306 - lw / 2, y - 10, lw, lh); y += lh + 4; } catch (e) {} }
     put(b.name, 13, true, true); put(company(p).address + ' · ' + b.phone, 8.5, false, true); y += 4;
+    var F = jobFacts(p); [['Job', F.job], ['Customer', F.customer], ['Location', F.address], ['Project manager', F.pm], ['Crew', F.crew], ['Competent person', F.competent], ['Program administrator', F.admins]].forEach(function(z){ if (s(z[1])) put(z[0] + ': ' + z[1], 9, false); }); y += 4;
     L.forEach(function(x){ if (x.h) put(x.h.toUpperCase(), 14, true, true); else if (x.h2) { y += 4; put(x.h2, 11, true); } else put(x.t, 9, false); });
     y += 26; if (y > 700) { doc.addPage(); y = 80; }
     [['Competent person', g.cp], ['Owner', g.owner]].forEach(function(z, i){ var x0 = M + i * (Wd / 2 + 6); doc.setFontSize(9); if (obj(z[1]).name) doc.text('e-signed: ' + z[1].name + ' ' + new Date(z[1].at).toLocaleString(), x0, y - 4); doc.line(x0, y, x0 + Wd / 2 - 12, y); doc.text(z[0] + ' — signature / date', x0, y + 11); });
@@ -188,22 +259,6 @@ function saveDecon(pid, v){
     toast(DS.st === 'ok' ? '🧼 Decon set-up saved — checklist complete with ' + DS.photos + ' photo(s).' : '🧼 Saved — ' + DS.done + '/' + DS.total + ' items, ' + DS.photos + ' photo(s): the panel shows ⚠ until the checklist is complete and photographed.', DS.st !== 'ok');
     return true;
   });
-}
-function deconBlankHtml(){
-  var DC = obj(R().decon), b = brand(null);
-  var box = function(t, sub, col){ return '<div style="flex:1;border:2px solid #111;background:' + col + ';padding:8px;min-height:90px;text-align:center"><b>' + t + '</b><div style="font-size:11px">' + sub + '</div></div>'; };
-  var ar = '<div style="align-self:center;font-size:26px;padding:0 4px">→</div>';
-  var inner = '<div style="text-align:center"><b>' + esc(b.name) + '</b><div style="font-size:11px">' + esc(addr()) + ' · ' + esc(b.phone) + '</div></div><h1 style="text-align:center;font-size:19px">LEAD DECON UNIT SET-UP CHECKLIST</h1><div class="m" style="text-align:center">' + esc(DC.note) + '</div>'
-    + '<table><tr><th>Job</th><td></td><th>Date set up</th><td></td></tr><tr><th>Set up by</th><td></td><th>Type</th><td></td></tr><tr><th>Location</th><td colspan="3"></td></tr></table>'
-    + '<div class="sec">Layout — one-way flow</div><div data-ed-diagram="1" style="display:flex;gap:4px;align-items:stretch">' + box('WORK AREA', 'containment', '#fee2e2') + ar + box('DIRTY ROOM', 'equipment room · suits, booties, gloves off · bag-out · HEPA vac', '#fecaca') + ar + box('WASH', 'shower or hand &amp; face wash · soap · towels · wash water collected', '#dbeafe') + ar + box('CLEAN ROOM', 'street clothes · lockers / bags · mirror', '#dcfce7') + ar + '<div style="align-self:center"><b>EXIT</b></div></div>'
-    + '<div class="sec">Set-up checklist (each item: default — confirm with your state program)</div>' + arr(DC.setup).concat(['Photo of the set-up taken and added in the CRM']).map(function(t){ return '<div>☐ ' + esc(t) + '</div>'; }).join('')
-    + '<div class="sec">Supplies</div><div>' + esc(DC.supplies) + '</div><table style="margin-top:18px"><tr><th>Competent person signature</th><td style="width:45%"></td><th>Date</th><td></td></tr></table>';
-  return X.printable('Lead decon unit set-up checklist', inner);
-}
-function purchaseHtml(){
-  var b = brand(null), g = '';
-  var rows = CORE.DECON_PURCHASE.map(function(x){ var head = x.group !== g ? (g = x.group, '<tr><th colspan="5" style="background:#f1f5f9">' + esc(x.group) + '</th></tr>') : ''; return head + '<tr><td>☐</td><td>' + esc(x.item) + (x.note ? '<div class="m">' + esc(x.note) + '</div>' : '') + '</td><td>' + esc(x.qty) + '</td><td style="width:16%"></td><td style="width:12%"></td></tr>'; }).join('');
-  return X.printable('Portable lead decon unit — purchase list', '<div style="text-align:center"><b>' + esc(b.name) + '</b></div><h1 style="text-align:center;font-size:19px">PORTABLE LEAD DECON UNIT — PURCHASE LIST</h1><div class="m" style="text-align:center">Quantities are starting points; vendors and prices to fill in. Requirements: confirm with your state program.</div><table><thead><tr><th></th><th>Item</th><th>Qty</th><th>Vendor</th><th>Price</th></tr></thead><tbody>' + rows + '</tbody></table><table style="margin-top:14px"><tr><th>Total</th><td></td><th>Approved by (owner)</th><td></td></tr></table>');
 }
 function openHtml(html, key){ W['__gcEd' + key] = html; var w = W.open('', '_blank'); if (w) { w.document.write(html); w.document.close(); try { w.focus(); } catch (e) {} } else toast('Allow pop-ups to print.', true); return html; }
 
@@ -273,7 +328,7 @@ function signsHtml(ids, opt){
   opt = opt || {}; var p = opt.pid ? proj(opt.pid) : null, b = brand(p), list = (ids && ids.length ? ids : CORE.SIGNS.map(function(g){ return g.id; })).map(function(id){ return CORE.SIGNS.find(function(g){ return g.id === id; }); }).filter(Boolean);
   var Z = CORE.SIGN_SIZES.find(function(z){ return z.key === opt.size; }) || CORE.SIGN_SIZES[0], c = coOf(p);
   var pages = list.map(function(g){
-    var B = CORE.signBlocks(g, { size: Z.key, bilingual: opt.bilingual !== false, brand: c.co, fallback: c.fb }), parts = '';
+    var B = CORE.signBlocks(g, { size: Z.key, bilingual: opt.bilingual !== false, brand: c.co, fallback: c.fb, fill: signFill(p) }), parts = '';
     B.blocks.forEach(function(x){
       var fs = 'font-size:' + x.size + 'pt;';
       if (x.kind === 'head') parts += '<div data-sg="head" style="background:' + x.band + ';color:' + x.ink + ';' + fs + 'font-weight:900;text-align:center;padding:.12in 0;letter-spacing:.04em;border-radius:.08in .08in 0 0">' + esc(x.text) + '</div>';
@@ -287,6 +342,8 @@ function signsHtml(ids, opt){
   }).join('');
   return '<!doctype html><html><head><meta charset="utf-8"><title>Environmental signs — ' + esc(b.name) + '</title><style>@page{size:' + Z.w + 'in ' + Z.h + 'in;margin:0}html,body{margin:0;padding:0;font-family:Arial,Helvetica,sans-serif;color:#111}.sg{box-sizing:border-box;padding:.3in;page-break-after:always;break-after:page;overflow:hidden}</style></head><body>' + pages + '</body></html>';
 }
+/* the labels' fill-in lines from the job: generator (the customer / the job), location (the job address), the abatement contractor (the sub) */
+function signFill(p){ if (!p) return null; var S = CORE.subOf(p); return { generator: [s(p.client || p.customer), s(p.name)].filter(Boolean).join(' — '), location: s(p.address || p.jobAddress || p.siteAddress), contractor: s(S.company) }; }
 function printSigns(ids, opt){
   opt = opt || {}; var html = signsHtml(ids, opt); W.__gcEdSigns = { html: html, ids: ids || [], opt: opt };
   var Z = CORE.SIGN_SIZES.find(function(z){ return z.key === opt.size; }) || CORE.SIGN_SIZES[0];
@@ -300,7 +357,7 @@ function signsPdf(ids, opt, Z){
     var doc = new J({ unit: 'pt', format: [Z.w * 72, Z.h * 72] }), Wp = Z.w * 72, Hp = Z.h * 72, M = 0.35 * 72;
     (ids && ids.length ? ids : CORE.SIGNS.map(function(g){ return g.id; })).forEach(function(id, n){
       var g = CORE.SIGNS.find(function(x){ return x.id === id; }); if (!g) return; if (n) doc.addPage([Wp, Hp]);
-      var B = CORE.signBlocks(g, { size: Z.key, bilingual: opt.bilingual !== false, brand: c.co, fallback: c.fb }), y = M;
+      var B = CORE.signBlocks(g, { size: Z.key, bilingual: opt.bilingual !== false, brand: c.co, fallback: c.fb, fill: signFill(p) }), y = M;
       doc.setLineWidth(4); doc.rect(M / 2, M / 2, Wp - M, Hp - M);
       B.blocks.forEach(function(x){
         var hx = function(c0){ var v = parseInt(String(c0).slice(1), 16); return [(v >> 16) & 255, (v >> 8) & 255, v & 255]; };
@@ -343,36 +400,57 @@ function savePrograms(list, settings){
 var CRC = null;
 function crc32(u8){ if (!CRC) { CRC = []; for (var n = 0; n < 256; n++) { var c = n; for (var k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; CRC[n] = c >>> 0; } } var x = 0xFFFFFFFF; for (var i = 0; i < u8.length; i++) x = CRC[(x ^ u8[i]) & 255] ^ (x >>> 8); return (x ^ 0xFFFFFFFF) >>> 0; }
 function inflate(u8){ var ds = new DecompressionStream('deflate-raw'); return new Response(new Blob([u8]).stream().pipeThrough(ds)).arrayBuffer().then(function(b){ return new Uint8Array(b); }); }
-function zipEdit(buf, name, fn){
+/* edit entries of a zip (a .docx): edits[name] = function(text) → text, or a Uint8Array (new bytes); the edited entries are stored */
+function zipEditMany(buf, edits){
   var u = new Uint8Array(buf), dv = new DataView(buf), e = u.length - 22; while (e >= 0 && dv.getUint32(e, true) !== 0x06054b50) e--; if (e < 0) return Promise.reject(new Error('not a zip'));
   var cnt = dv.getUint16(e + 10, true), cd = dv.getUint32(e + 16, true), ents = [], q = cd;
   for (var i = 0; i < cnt; i++) { var nl = dv.getUint16(q + 28, true), el = dv.getUint16(q + 30, true), cl = dv.getUint16(q + 32, true); ents.push({ cdh: u.slice(q, q + 46), name: new TextDecoder().decode(u.slice(q + 46, q + 46 + nl)), nameB: u.slice(q + 46, q + 46 + nl), method: dv.getUint16(q + 10, true), csize: dv.getUint32(q + 20, true), lo: dv.getUint32(q + 42, true) }); q += 46 + nl + el + cl; }
   var dataOf = function(x){ var lo = x.lo, nl = dv.getUint16(lo + 26, true), el = dv.getUint16(lo + 28, true); return u.slice(lo + 30 + nl + el, lo + 30 + nl + el + x.csize); };
-  var tgt = ents.find(function(x){ return x.name === name; }); if (!tgt) return Promise.reject(new Error('no ' + name));
-  var raw = dataOf(tgt);
-  return (tgt.method === 8 ? inflate(raw) : Promise.resolve(raw)).then(function(plain){
-    var text = new TextDecoder().decode(plain), out = fn(text), nb = new TextEncoder().encode(out), crc = crc32(nb);
+  var texts = {};
+  return Promise.all(ents.map(function(x){
+    var ed = edits[x.name]; if (!ed) return null;
+    if (ed instanceof Uint8Array) { x.nb = ed; return null; }
+    var raw = dataOf(x);
+    return (x.method === 8 ? inflate(raw) : Promise.resolve(raw)).then(function(plain){ var out = ed(new TextDecoder().decode(plain)); texts[x.name] = out; x.nb = new TextEncoder().encode(out); });
+  })).then(function(){
     var parts = [], cds = [], off = 0;
     ents.forEach(function(x){
-      var isT = x === tgt, data = isT ? nb : dataOf(x), lh = new Uint8Array(30 + x.nameB.length), lv = new DataView(lh.buffer), cv = new DataView(x.cdh.buffer.slice(0));
+      var isT = !!x.nb, data = isT ? x.nb : dataOf(x), crc = isT ? crc32(x.nb) : 0, lh = new Uint8Array(30 + x.nameB.length), lv = new DataView(lh.buffer), cv = new DataView(x.cdh.buffer.slice(0));
       var cdh = new Uint8Array(cv.buffer);
       lv.setUint32(0, 0x04034b50, true); lv.setUint16(4, 20, true); lv.setUint16(6, 0, true); lv.setUint16(8, isT ? 0 : x.method, true); lv.setUint16(10, cv.getUint16(12, true), true); lv.setUint16(12, cv.getUint16(14, true), true);
-      lv.setUint32(14, isT ? crc : cv.getUint32(16, true), true); lv.setUint32(18, data.length, true); lv.setUint32(22, isT ? nb.length : cv.getUint32(24, true), true); lv.setUint16(26, x.nameB.length, true); lv.setUint16(28, 0, true); lh.set(x.nameB, 30);
-      cv.setUint16(8, 0, true); cv.setUint16(10, isT ? 0 : x.method, true); if (isT) { cv.setUint32(16, crc, true); cv.setUint32(24, nb.length, true); } cv.setUint32(20, data.length, true); cv.setUint16(30, 0, true); cv.setUint16(32, 0, true); cv.setUint32(42, off, true);
+      lv.setUint32(14, isT ? crc : cv.getUint32(16, true), true); lv.setUint32(18, data.length, true); lv.setUint32(22, isT ? data.length : cv.getUint32(24, true), true); lv.setUint16(26, x.nameB.length, true); lv.setUint16(28, 0, true); lh.set(x.nameB, 30);
+      cv.setUint16(8, 0, true); cv.setUint16(10, isT ? 0 : x.method, true); if (isT) { cv.setUint32(16, crc, true); cv.setUint32(24, data.length, true); } cv.setUint32(20, data.length, true); cv.setUint16(30, 0, true); cv.setUint16(32, 0, true); cv.setUint32(42, off, true);
       parts.push(lh, data); var c2 = new Uint8Array(46 + x.nameB.length); c2.set(cdh, 0); c2.set(x.nameB, 46); cds.push(c2); off += lh.length + data.length;
     });
     var cdSize = cds.reduce(function(a, b){ return a + b.length; }, 0), end = new Uint8Array(22), ev = new DataView(end.buffer);
     ev.setUint32(0, 0x06054b50, true); ev.setUint16(8, ents.length, true); ev.setUint16(10, ents.length, true); ev.setUint32(12, cdSize, true); ev.setUint32(16, off, true);
-    return { blob: new Blob(parts.concat(cds).concat([end]), { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }), xml: out };
+    return { blob: new Blob(parts.concat(cds).concat([end]), { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }), texts: texts, names: ents.map(function(x){ return x.name; }) };
   });
 }
-function fillDocx(id, download){
+function zipEdit(buf, name, fn){ var ed = {}; ed[name] = fn; return zipEditMany(buf, ed).then(function(o){ return { blob: o.blob, xml: o.texts[name] }; }); }
+/* a filled copy of a program: the administrator, the approval, the current address — and, for a job, that job's company
+   (name, phone, license line, logo on the letterhead and the footer) */
+function fillDocx(id, download, pid){
   var Rr = R(), r = arr(Rr.programs).find(function(x){ return x.id === id; }); if (!r || !r.file) return Promise.resolve(null);
-  var PI = CORE.programInfo(Rr, id, ctx()), vals = { admin: PI.admin, phone: PI.phone, approvedBy: PI.approvedBy, approvedOn: nice(PI.approvedOn), address: addr() };
-  return W.fetch(r.file).then(function(res){ if (!res.ok) throw new Error('HTTP ' + res.status); return res.arrayBuffer(); }).then(function(buf){ return zipEdit(buf, 'word/document.xml', function(x){ return CORE.fillDocxXml(x, vals); }); }).then(function(o){
-    W.__gcEdFilled = { id: id, xml: o.xml, size: o.blob.size, vals: vals };
-    if (download !== false) { var a = D.createElement('a'); a.href = URL.createObjectURL(o.blob); a.download = r.file.split('/').pop().replace(/\.docx$/, '') + '_filled_' + today() + '.docx'; D.body.appendChild(a); a.click(); ST.call(W, function(){ a.remove(); }, 500); }
-    return o;
+  var p = pid ? proj(pid) : null, cc = coOf(p), co = cc.co || {}, isCon = !p || s(co.id || 'construction') === 'construction';
+  var PI = CORE.programInfo(Rr, id, ctx()), b = brand(p), vals = { admin: PI.admin, phone: PI.phone, approvedBy: PI.approvedBy, approvedOn: nice(PI.approvedOn), address: (p && s(co.address)) || addr() };
+  if (p && !isCon) { vals.company = b.name; if (s(co.phone)) vals.companyPhone = s(co.phone); vals.licenseLine = [s(co.license) ? 'License # ' + s(co.license) : '', s(co.ein) ? 'TIN # ' + s(co.ein) : ''].filter(Boolean).join('  |  '); }
+  var buf0 = null;
+  return W.fetch(r.file).then(function(res){ if (!res.ok) throw new Error('HTTP ' + res.status); return res.arrayBuffer(); }).then(function(buf){ buf0 = buf; return p && !isCon && b.logo ? logoOf(b.logo) : null; }).then(function(L){
+    var edits = {}, media = null;
+    if (L) { vals.logoW = L.w; vals.logoH = L.h; }
+    edits['word/document.xml'] = function(x){ return CORE.fillDocxXml(x, vals); };
+    if (vals.company) edits['word/footer1.xml'] = function(x){ return CORE.fillFooterXml(x, vals); };
+    /* the letterhead image: the first picture in the document (its media file gets the company's logo as PNG) */
+    return zipEditMany(buf0, { 'word/_rels/document.xml.rels': function(x){ var m = x.match(/Target="(media\/[^"]+\.png)"/); media = m ? 'word/' + m[1] : null; return x; } }).then(function(){
+      if (L && media) edits[media] = L.png;
+      return zipEditMany(buf0, edits);
+    });
+  }).then(function(o){
+    var xml = o.texts['word/document.xml'];
+    W.__gcEdFilled = { id: id, pid: s(pid), xml: xml, footer: o.texts['word/footer1.xml'] || '', size: o.blob.size, vals: vals, logo: !!vals.logoW };
+    if (download !== false) { var a = D.createElement('a'); a.href = URL.createObjectURL(o.blob); a.download = r.file.split('/').pop().replace(/\.docx$/, '') + (p ? '_' + s(p.name).replace(/[^A-Za-z0-9]+/g, '_') : '') + '_filled_' + today() + '.docx'; D.body.appendChild(a); a.click(); ST.call(W, function(){ a.remove(); }, 500); }
+    return { blob: o.blob, xml: xml };
   }).catch(function(e){ toast('Could not fill the Word file: ' + (e && e.message), true); return null; });
 }
 
@@ -380,7 +458,7 @@ function fillDocx(id, download){
 function pidOf(b){ var c = b.closest('#gc-ec'); return c ? c.getAttribute('data-pid') : (b.getAttribute('data-pid') || ''); }
 D.addEventListener('click', function(e){
   var b = e.target && e.target.closest ? e.target.closest('[data-ed],[data-ed-fill]') : null; if (!b) return;
-  if (b.hasAttribute('data-ed-fill')) { e.preventDefault(); fillDocx(b.getAttribute('data-ed-fill')); return; }
+  if (b.hasAttribute('data-ed-fill')) { e.preventDefault(); fillDocx(b.getAttribute('data-ed-fill'), true, b.getAttribute('data-ed-pid') || (b.closest('#gc-ec') ? b.closest('#gc-ec').getAttribute('data-pid') : '')); return; }
   var a = b.getAttribute('data-ed'), pid = pidOf(b), id = b.getAttribute('data-id'), box = b.closest('#gc-ec');
   e.preventDefault(); e.stopPropagation();
   if (a === 'plan') { var r = generate(pid); if (r) ST.call(W, function(){ planPdf(pid, r.id); }, 700); }
@@ -390,8 +468,10 @@ D.addEventListener('click', function(e){
   else if (a === 'signown') sign(pid, id, 'owner');
   else if (a === 'sub') subForm(pid);
   else if (a === 'decon') deconForm(pid);
-  else if (a === 'deconblank') openHtml(deconBlankHtml(), 'Decon');
-  else if (a === 'purchase') openHtml(purchaseHtml(), 'Purchase');
+  else if (a === 'deconblank') openHtml(deconSheetHtml(pid), 'Decon');
+  else if (a === 'purchase') openHtml(purchaseHtml(pid), 'Purchase');
+  else if (a === 'wasteprint') openHtml(wasteHtml(pid), 'Waste');
+  else if (a === 'noticeprint') openHtml(noticesHtml(pid), 'Notices');
   else if (a === 'programs') programsSheet();
   else if (a === 'wstream') { var nm = W.prompt('New waste stream (e.g. ' + CORE.listOf(obj(R().waste).streams).slice(0, 3).join(', ') + '):', ''); if (nm != null && s(nm)) addStream(pid, nm); }
   else if (a === 'tclp') tclpForm(pid);
@@ -451,6 +531,6 @@ function signsCard(){
 ST.call(W, hookPrintPack, 1500);
 ST.call(W, sweep, 45000); SI.call(W, sweep, 300000);
 W._gcEnvDocs = { generate: generate, sign: sign, planHtml: planHtml, planPdf: planPdf, planForm: planForm, setAsbBy: setAsbBy, subForm: subForm, saveSub: saveSub, deconForm: deconForm, saveDecon: saveDecon,
-  deconBlankHtml: deconBlankHtml, purchaseHtml: purchaseHtml, addStream: addStream, logTclp: logTclp, tclpResult: tclpResult, logGk: logGk, logShip: logShip, tclpForm: tclpForm, shipForm: shipForm, programsSheet: programsSheet, savePrograms: savePrograms, fillDocx: fillDocx, zipEdit: zipEdit, signsHtml: signsHtml, printSigns: printSigns, signsCard: signsCard, sweep: sweep, wanted: wanted, hookPrintPack: hookPrintPack };
+  deconBlankHtml: deconBlankHtml, deconSheetHtml: deconSheetHtml, purchaseHtml: purchaseHtml, wasteHtml: wasteHtml, noticesHtml: noticesHtml, jobFacts: jobFacts, jobHead: jobHead, signFill: signFill, logoOf: logoOf, zipEditMany: zipEditMany, addStream: addStream, logTclp: logTclp, tclpResult: tclpResult, logGk: logGk, logShip: logShip, tclpForm: tclpForm, shipForm: shipForm, programsSheet: programsSheet, savePrograms: savePrograms, fillDocx: fillDocx, zipEdit: zipEdit, signsHtml: signsHtml, printSigns: printSigns, signsCard: signsCard, sweep: sweep, wanted: wanted, hookPrintPack: hookPrintPack };
 })(window);
 </script>

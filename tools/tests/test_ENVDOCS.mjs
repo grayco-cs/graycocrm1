@@ -4,6 +4,8 @@
 //      default (the sub's papers kept, the plan shows the sub + the crew's awareness duties); ⚙ Written programs (administrator from the
 //      people list, approval, a filled copy of the Word program with the current address); the sign set in the company's branding with
 //      the legend unchanged (job + 🖨 Print pack → Environmental signs); To-Dos; the record package lists every plan version.
+//   A11: every document is filled from the CRM in the job's own company (a Mitigation and an Environmental job: logo, name, facts;
+//      Construction keeps its letterhead + license line; a Word program filled for a Mitigation job).
 //   B (PM): sees the plan; cannot approve it as the owner.
 import { createRequire } from 'module'; import path from 'path'; import fs from 'fs';
 const require = createRequire(import.meta.url);
@@ -28,6 +30,7 @@ cset('projects', [
   { id: 'P1', name: 'Demo Asbestos Job', client: 'Ann Demo', type: 'Asbestos abatement', companyId: 'environmental', address: '21 Demo St, Memphis, TN 38103', status: 'active', pct: 10, startDate: day(-2), abatementSupervisor: 'Demo Estimator', crew: ['Wes Worker'], pm: 'Demo PM', createdAt: at, updatedAt: at },
   { id: 'P2', name: 'Demo Kitchen Remodel', client: 'Bo Demo', type: 'Kitchen remodel', address: '22 Demo St, Memphis, TN 38103', status: 'active', pct: 10, startDate: day(-2), pm: 'Demo PM', createdAt: at, updatedAt: at },
   { id: 'P3', name: 'Demo Lead Abatement', client: 'Cy Demo', type: 'Lead abatement', companyId: 'environmental', address: '23 Demo Rd, Little Rock, AR 72201', status: 'active', pct: 20, startDate: day(-3), abatementSupervisor: 'Demo Estimator', crew: ['Wes Worker'], pm: 'Demo PM', createdAt: at, updatedAt: at },
+  { id: 'P5', name: 'Demo Mitigation Mold Job', client: 'Eve Demo', type: 'Mold remediation', companyId: 'mitigation', address: '25 Demo St, Memphis, TN 38103', status: 'active', pct: 10, startDate: day(-1), supervisor: 'Demo Estimator', pm: 'Demo PM', envComp: { mode: 'on' }, createdAt: at, updatedAt: at },
   { id: 'P4', name: 'Demo Mold Job', client: 'Di Demo', type: 'Mold remediation', companyId: 'environmental', address: '24 Demo St, Memphis, TN 38103', status: 'active', pct: 10, startDate: day(-1), pm: 'Demo PM', createdAt: at, updatedAt: at }]);
 cset('gc_certs', { list: [
   { id: 'CE3', holderType: 'person', holder: 'wjohnson@grayco-cs.com', holderName: 'Wesley Johnson', ckind: 'lead_supervisor', name: 'Lead Abatement Supervisor Initial', issuer: 'Seagull Environmental Training', state: 'AR', issued: '2026-11-16', expires: day(364) },
@@ -38,7 +41,7 @@ cset('schedule', []);
 const A = await computer('wjohnson@grayco-cs.com', { build: BUILD });
 await signIn(A, 'wjohnson@grayco-cs.com', 20000);
 const wait = async (X, f, arg, ms = 20000) => { const t0 = Date.now(); let v; while (Date.now() - t0 < ms) { v = await X.ev(f, arg).catch(() => null); if (v) return v; await sleep(300); } return v; };
-ok('A0 the CRM is up with ENVCOMP + ENVDOCS', !!await wait(A, () => window._gcEnvComp && window._gcEnvDocs && (window._crm.projects || []).length >= 4 && typeof window._navToJob === 'function', null, 60000));
+ok('A0 the CRM is up with ENVCOMP + ENVDOCS', !!await wait(A, () => window._gcEnvComp && window._gcEnvDocs && (window._crm.projects || []).length >= 5 && typeof window._navToJob === 'function', null, 60000));
 await A.ev(() => window._gcEnvComp.pullCerts()); await sleep(800);
 const evalJob = (X, pid) => X.ev(pid => { const p = window._crm.projects.find(x => x.id === pid); const e = window._gcEnvComp.evaluate(p); return { status: e.status, kinds: e.kinds, asbBy: e.asbBy, plan: e.plan, items: e.items.map(i => ({ id: i.id, sec: i.sec, st: i.st, note: i.note, label: i.label })) }; }, pid);
 const open = async (X, pid) => { await X.ev(() => { try { window._setView('projects'); } catch (e) {} }); await sleep(900); await X.ev(id => window._navToJob(id), pid); };
@@ -46,7 +49,7 @@ const job = (X, pid) => X.ev(pid => JSON.parse(JSON.stringify(window._crm.projec
 
 /* 1 · the plan section on the panel, ⚠ until generated */
 await open(A, 'P3');
-const pan = await wait(A, () => { const c = document.getElementById('gc-ec'); return c && c.getAttribute('data-pid') === 'P3' && c.querySelector('[data-ed-sec="plan"]') ? c.innerText : null; });
+const pan = await wait(A, () => { const c = document.getElementById('gc-ec'); return c && c.getAttribute('data-pid') === 'P3' && c.querySelector('[data-ed-sec="plan"]') ? c.textContent : null; });
 ok('A1 a lead abatement job: 7 · Employee Protection Plan, 🧼 Decon unit and 🪧 Signs on the 🛡 Compliance panel', !!pan && /7 · Employee Protection Plan/.test(pan) && /Decon unit/.test(pan) && /Signs/.test(pan), pan && pan.slice(0, 600));
 let E3 = await evalJob(A, 'P3');
 ok('A1 the plan is ⚠ until it is generated', E3.items.find(i => i.id === 'epp').st === 'due' && E3.plan.st === 'none', E3.plan);
@@ -137,7 +140,7 @@ ok('A8 every sign prints with its legend exactly as written', allLegend && (sg.m
 ok('A8 each sign carries the company band (GrayCo Environmental, LLC + phone + logo) and the Spanish lines; 11 × 17 page size', (sg.match(/data-sg="brand"/g) || []).length === C.SIGNS.length && /GrayCo Environmental, LLC  \|  \(/.test(unesc(sg)) && /grayco-environmental-logo/.test(sg) && /PELIGRO – ÁREA DE TRABAJO CON PLOMO/.test(sg) && /@page\{size:11in 17in/.test(sg));
 const shop = await A.ev(() => window._gcEnvDocs.printSigns(['lead_danger'], { pid: 'P3', size: 'shop', bilingual: false, pdf: true }).then(r => ({ r, html: window.__gcEdSigns.html })));
 ok('A8 18 × 24 print-shop size (PDF, or the printable page when the PDF library cannot load)', shop.r && shop.r.ok && /@page\{size:18in 24in/.test(shop.html) && !/PELIGRO/.test(shop.html));
-await open(A, 'P3'); await wait(A, () => document.querySelector('#gc-ec [data-ed="signs"]'));
+await open(A, 'P3'); await wait(A, () => { const c = document.getElementById('gc-ec'); return c && c.getAttribute('data-pid') === 'P3' && c.querySelector('[data-ed="signs"]'); });
 await A.ev(() => { window.__gcEdSigns = null; document.querySelector('#gc-ec [data-ed="signs"]').click(); });
 const js = await wait(A, () => window.__gcEdSigns && window.__gcEdSigns.ids);
 ok('A8 the job\'s 🪧 Print this job\'s signs: the lead + decon signs, no asbestos / mold ones', !!js && js.includes('lead_danger') && js.includes('decon_dirty') && js.includes('lead_waste') && !js.includes('asb_danger') && !js.includes('mold'), js);
@@ -161,7 +164,7 @@ await A.ev(() => window._gcEnvDocs.logShip('P3', { stream: 'Lead paint chips / d
 wH = (await evalJob(A, 'P3')).items.find(i => i.id === 'waste:lead paint chips / debris');
 ok('A10 shipped with the manifest, hauler, TSD facility and generator status → ✅', wH.st === 'ok' && /1 shipment/.test(wH.note), wH);
 await open(A, 'P3');
-const wPan = await wait(A, () => { const c = document.getElementById('gc-ec'); return c && c.querySelector('[data-ed-sec="waste"]') ? c.innerText : null; });
+const wPan = await wait(A, () => { const c = document.getElementById('gc-ec'); return c && c.querySelector('[data-ed-sec="waste"]') ? c.textContent : null; });
 ok('A10 the panel: ♻️ Waste — TCLP with the stream and the threshold', !!wPan && /Waste — TCLP/.test(wPan) && /Lead paint chips \/ debris/.test(wPan) && /5 mg\/L lead/.test(wPan));
 
 /* 9 · To-Dos, the record package, the company documents */
@@ -172,13 +175,29 @@ const pkg = await A.ev(() => window._gcEnvComp.pkgLines(window._crm.projects.fin
 ok('A9 the record package lists every plan version with its signatures, the decon set-ups and the TCLP samples + shipments', /Waste characterization \(TCLP\)/.test(pkg) && /COC COC-777/.test(pkg) && /manifest MAN-9/.test(pkg) && /Employee Protection Plan — every version/.test(pkg) && /Version 1 .* competent person: Wesley Johnson/.test(pkg) && /Decon set-up/.test(pkg), pkg.slice(-600));
 const files = await A.ev(() => Promise.all(['GrayCo_Lead_Safety_Program_v2.docx', 'GrayCo_Asbestos_Program.docx', 'GrayCo_Lead_Decon_Unit_Setup_Checklist.pdf', 'GrayCo_Lead_Safety_Program.docx'].map(f => fetch('/company-docs/01667c529f454cf1/' + f).then(r => r.status))));
 ok('A9 the new program files are served, the earlier versions still are', files.every(x => x === 200), files);
+/* 11 · every document filled from the CRM, in the job's own company (owner: "auto-fill … the logo of the correct company") */
+const docs = await A.ev(() => { const D = window._gcEnvDocs, pj = id => window._crm.projects.find(x => x.id === id);
+  const mk = id => { const p = pj(id), E = window._gcEnvComp.evaluate(p); return D.planHtml({ v: 1, date: window._gcEnvCompCore.today(), plan: window._gcEnvCompCore.buildPlan(p, { rules: window._gcEnvComp.rules(), certs: [], users: window._crm.users, schedule: [], medStatus: {}, today: window._gcEnvCompCore.today(), company: () => 'x', E: E }, { v: 1 }), signed: {} }, p); };
+  return { mitPlan: mk('P5'), envPlan: mk('P3'), mitSigns: D.signsHtml(null, { pid: 'P5', size: 'letter' }), envSigns: D.signsHtml(['lead_waste', 'asb_waste'], { pid: 'P3', size: 'letter' }), decon: D.deconSheetHtml('P3'), waste: D.wasteHtml('P3'), notices: D.noticesHtml('P1'), mitNotices: D.noticesHtml('P5'), conHead: D.jobHead(pj('P2'), 'TEST') }; });
+const txt = h => h.replace(/<[^>]+>/g, ' ').replace(/&amp;/g, '&').replace(/&#39;/g, "'").replace(/\s+/g, ' ');
+const MIT = '/img/grayco-mitigation-logo.png', ENV = '/img/grayco-environmental-logo.png';
+ok('A11 a Mitigation job\'s plan: the Mitigation logo + name, filled (job, customer, address, PM, start, crew, competent person, program administrator)', docs.mitPlan.includes(MIT) && !docs.mitPlan.includes(ENV) && /GrayCo Mitigation, LLC/.test(docs.mitPlan) && ['Demo Mitigation Mold Job', 'Eve Demo', '25 Demo St, Memphis, TN 38103', 'Demo PM', 'Demo Estimator', 'Wesley Johnson'].every(t => txt(docs.mitPlan).includes(t)) && txt(docs.mitPlan).includes(C.addDays(C.today(), -1).slice(5, 7).replace(/^0/, '') + '/'), txt(docs.mitPlan).slice(0, 600));
+ok('A11 an Environmental job\'s plan: the Environmental logo + name, filled', docs.envPlan.includes(ENV) && !docs.envPlan.includes(MIT) && /GrayCo Environmental, LLC/.test(docs.envPlan) && ['Demo Lead Abatement', 'Cy Demo', '23 Demo Rd, Little Rock, AR 72201', 'Demo PM', 'Demo Estimator', 'Wesley Johnson'].every(t => txt(docs.envPlan).includes(t)));
+ok('A11 signs: each job\'s own company logo + name in the band; waste labels filled (generator, location)', docs.mitSigns.includes(MIT) && /GrayCo Mitigation, LLC/.test(docs.mitSigns) && docs.envSigns.includes(ENV) && /Generator: Cy Demo — Demo Lead Abatement/.test(txt(docs.envSigns)) && /Location: 23 Demo Rd, Little Rock, AR 72201/.test(txt(docs.envSigns)) && txt(docs.envSigns).includes('LEAD-CONTAMINATED WASTE'));
+ok('A11 the decon set-up sheet: Environmental logo, filled from the job\'s set-up (type, location, who, the checked items)', docs.decon.includes(ENV) && /Portable decon trailer/.test(docs.decon) && /Driveway, next to the side door/.test(docs.decon) && /Demo Estimator/.test(docs.decon) && (docs.decon.match(/☑/g) || []).length >= C.DEFAULT_RULES.decon.setup.length);
+ok('A11 the TCLP waste record and the notices sheet: the job\'s logo and its filled facts', docs.waste.includes(ENV) && /COC-777/.test(docs.waste) && /Cy Demo/.test(docs.waste) && docs.notices.includes(ENV) && /Demo Abatement LLC/.test(docs.notices) && /21 Demo St/.test(docs.notices) && docs.mitNotices.includes(MIT));
+ok('A11 a Construction job keeps the GrayCo main logo and the TN / AR / MS license line', docs.conHead.includes('/grayco-logo.jpg') && /TN #85034 BCB · AR #0486990627 · MS #27769/.test(docs.conHead) && /GrayCo Construction Services, LLC/.test(docs.conHead));
+const fm = await A.ev(() => window._gcEnvDocs.fillDocx('resp', false, 'P5').then(o => o ? { xml: o.xml.replace(/<[^>]+>/g, ''), f: window.__gcEdFilled } : null));
+ok('A11 the Respiratory Protection Program filled for the Mitigation job: its name, logo (letterhead image), footer — not Construction\'s TIN', !!fm && /GrayCo Mitigation, LLC/.test(fm.xml) && !/TIN # 33-2106808/.test(fm.xml) && fm.f.logo === true && /GrayCo Mitigation, LLC \|/.test(fm.f.footer.replace(/<[^>]+>/g, '')) && /Program administrator: Wesley Johnson/.test(fm.xml), fm && { head: fm.xml.slice(0, 300), logo: fm.f.logo });
+const fc = await A.ev(() => window._gcEnvDocs.fillDocx('resp', false, 'P2').then(o => o ? o.xml.replace(/<[^>]+>/g, '') : ''));
+ok('A11 …and for a Construction job: Construction\'s letterhead and license line stay', /GrayCo Construction Services, LLC/.test(fc) && /TN License # 85034/.test(fc));
 ok('A no page errors (admin)', !A.errs.filter(e => !/ResizeObserver|Failed to fetch|NetworkError|Load failed/i.test(e)).length, A.errs.slice(0, 5));
 await A.close();
 
 /* B · the PM */
 const B = await computer('pm@grayco-cs.com', { build: BUILD });
 await signIn(B, 'pm@grayco-cs.com', 20000); await sleep(6000);
-ok('B0 the CRM is up (PM)', !!await wait(B, () => window._gcEnvDocs && (window._crm.projects || []).length >= 4, null, 60000));
+ok('B0 the CRM is up (PM)', !!await wait(B, () => window._gcEnvDocs && (window._crm.projects || []).length >= 5, null, 60000));
 await open(B, 'P3');
 const bp = await wait(B, () => { const c = document.getElementById('gc-ec'); return c && c.getAttribute('data-pid') === 'P3' && c.querySelector('[data-ed-sec="plan"]') ? { t: c.innerText, own: !!c.querySelector('[data-ed="signown"]'), gen: !!c.querySelector('[data-ed="plan"]') } : null; });
 ok('B1 the PM sees the plan and its versions, without the owner\'s approval button', !!bp && /v1/.test(bp.t) && !bp.own, bp);
