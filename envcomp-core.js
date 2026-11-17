@@ -153,6 +153,48 @@ var DEFAULT_RULES = {
     { cat: 'training', label: 'Training / certification records', years: 'forever', note: 'Kept forever (owner\'s rule)' }],
   settings: { reminderDays: 5, closeoutOverride: 'admin', expiringDays: 30 }
 };
+/* EPAHUD: the EPA / HUD requirements for people, the company and the state notices, added as DATA to the defaults (owner 11/17:
+   "Make sure all requirements for employees, workers and company for EPA and HUD are also in here for lead, asbestos, mold etc.").
+   Sources (docs/EPA_HUD_LEAD_ASBESTOS_MATRIX.md): 40 CFR 745 Subparts E and L, 24 CFR 35, 40 CFR 61 Subpart M, 40 CFR 763 Subpart E
+   (AHERA model accreditation plan), 29 CFR 1926.62 / .1101 / 1910.134 / 1910.1200; TN 0400-13-01, AR ADH Rules Pertaining to Lead-Based
+   Paint Activities, MS MDEQ lead-based paint regulations. Every item is a default — confirm with your state program. Nothing here is
+   added twice: an id / key already in the list is left as it is (ENVDOCS and the admin's own edits win). */
+(function epahud(R){
+  var C = 'Default — confirm with your state program (EPAHUD)';
+  var add = function(list, x, k){ k = k || 'id'; if (!list.some(function(y){ return y && y[k] === x[k]; })) list.push(x); };
+  [ { key: 'dust_tech', label: 'Lead dust sampling technician', words: 'dust sampling technician, dust sampling tech', stateMatch: true, months: 36 },
+    { key: 'lead_inspector', label: 'Lead-based paint inspector', words: 'lead inspector, lead-based paint inspector, lead based paint inspector, lbp inspector', stateMatch: true, months: 36, alsoOk: 'lead_risk' },
+    { key: 'lead_risk', label: 'Lead risk assessor', words: 'risk assessor', stateMatch: true, months: 36 },
+    { key: 'lead_designer', label: 'Lead abatement project designer', words: 'lead project designer, lead abatement project designer', stateMatch: true, months: 36 },
+    { key: 'asb_inspector', label: 'Asbestos inspector (AHERA-accredited, state licensed)', words: 'asbestos inspector, building inspector (asbestos)', stateMatch: true, months: 12 },
+    { key: 'asb_planner', label: 'Asbestos management planner (AHERA)', words: 'management planner', stateMatch: true, months: 12 },
+    { key: 'asb_designer', label: 'Asbestos project designer (AHERA)', words: 'asbestos project designer', stateMatch: true, months: 12 },
+    { key: 'asb_om', label: 'Asbestos O&M awareness (2-hour awareness / 16-hour O&M)', words: '2-hour awareness, 2 hour awareness, 16-hour o&m, 16 hour o&m, asbestos awareness, operations and maintenance' },
+    { key: 'osha10', label: 'OSHA 10 / OSHA 30 construction', words: 'osha 10, osha-10, osha 30, osha-30, osha 10-hour, osha 30-hour' },
+    { key: 'resp_med', label: 'Respirator medical clearance', words: 'respirator medical, medical clearance, medical evaluation (respirator)', months: 12 },
+    { key: 'iicrc_wrt', label: 'IICRC WRT (water damage restoration) — company standard', words: 'wrt, water damage restoration technician' },
+    { key: 'pollution_ins', label: 'Insurance with pollution / contractor\'s environmental liability', company: true, words: 'pollution, contractor\'s pollution, environmental liability, cpl' },
+    { key: 'neshap_acct', label: 'State asbestos notification account (TDEC / Arkansas DEQ / MDEQ)', company: true, words: 'notification account, asbestos notification account, neshap account' }
+  ].forEach(function(t){ add(R.certTypes, t, 'key'); });
+  [ /* lead RRP: Mississippi runs its own RRP program — the firm and the renovator certified by MDEQ (the EPA ones do not cover MS) */
+    { id: 'rrp-firm-ms', kinds: 'lead_rrp', states: 'MS', who: 'company', cert: 'lead_abate_firm', block: true, label: 'MDEQ lead-based paint firm certification (Mississippi runs its own RRP program)', note: C },
+    /* lead abatement: the clearance after it is by a certified inspector / risk assessor (not the abatement crew) — tracked on 🌫 air; the plan by a supervisor / project designer */
+    { id: 'la-designer', kinds: 'lead_abate', who: 'supervisor', cert: 'lead_supervisor', block: false, label: 'Occupant protection plan + abatement report by a certified supervisor or project designer', note: C },
+    /* asbestos: the survey before any renovation / demolition by an accredited inspector (GrayCo hires one) */
+    { id: 'asb-om-aware', kinds: 'asbestos', who: 'each', cert: 'asb_om', block: false, label: 'GrayCo crew near asbestos: 2-hour awareness (16-hour O&M for Class III / IV work)', note: C },
+    /* everyone on exposure work */
+    { id: 'all-osha10', kinds: 'lead_rrp, lead_abate, asbestos, mold, trauma', who: 'each', cert: 'osha10', block: false, label: 'OSHA 10 (supervisors OSHA 30) — company standard', note: C },
+    { id: 'mold-wrt', kinds: 'mold', who: 'supervisor', cert: 'iicrc_wrt', block: false, label: 'IICRC WRT — company standard (TN / AR / MS have no state mold license)', note: C },
+    { id: 'co-pollution', kinds: 'lead_rrp, lead_abate, asbestos, mold', who: 'company', cert: 'pollution_ins', block: false, label: 'Insurance with pollution coverage on file', note: C }
+  ].forEach(function(r){ add(R.people, r); });
+  /* the state notices: the days the state programs publish (the blank ones in ENVCOMP's list), + the ones it did not have */
+  var N = function(id, o){ var x = R.notices.find(function(y){ return y && y.id === id; }); if (x) Object.keys(o).forEach(function(k){ if (x[k] === '' || x[k] == null) x[k] = o[k]; }); };
+  N('la-notice-tn', { daysBefore: 5, workingDays: true, note: 'TN Rule 0400-13-01: received 5 business days before the start (+ the project fee); updated notice for a new start date, location or cancellation — confirm with TDEC' });
+  N('la-notice-ar', { daysBefore: 10, workingDays: true, note: 'ADH Lead-Based Paint Notice of Intent (+ revision form) — the 10 working days are GrayCo\'s 11/2026 index; confirm the days and fee with ADH' });
+  N('la-notice-ms', { daysBefore: 6, workingDays: true, note: 'MDEQ LBP Project Notification (rev. 7/2025): 6 working days before; abatement fee per unit — confirm with MDEQ' });
+  add(R.notices, { id: 'rrp-notice-ms', kinds: 'lead_rrp', states: 'MS', agency: 'MDEQ', label: 'Lead-based paint project notification (renovation)', daysBefore: 6, workingDays: true, block: false, note: 'MDEQ asks for the LBP Project Notification for regulated renovation too (no fee) — confirm with MDEQ' });
+  add(R.notices, { id: 'asb-notice-revise', kinds: 'asbestos', states: '', agency: 'State asbestos program', label: 'NESHAP revised notice — amount changes 20% or more, or a new start date (earlier: 10 working days; later: by the original start date)', daysBefore: '', block: false, note: '40 CFR 61.145(b)(2), (b)(3)(iv) — checklist item; the abatement sub files it' });
+})(DEFAULT_RULES);
 var SECTIONS = ['kinds', 'certTypes', 'people', 'medical', 'visitTypes', 'air', 'notices', 'daily', 'programs', 'retention'];
 /* the rules in use: the admin's table, each section falling back to the default when missing */
 function rules(r){
@@ -333,7 +375,7 @@ function evaluate(p, ctx){
   var bad = function(rule, k){ return blocks(rule, kinds) ? 'block' : 'due'; };
   /* 1 · people */
   var crew = crewOf(p, ctx), med = obj(ctx.medStatus);
-  var reqs = arr(R.people).filter(function(r){ return hasKind(r, kinds); });
+  var reqs = arr(R.people).filter(function(r){ return hasKind(r, kinds) && (!listOf(r.states).length || !st || listOf(r.states).indexOf(st) >= 0); });   /* EPAHUD: a rule for some states only (states: 'MS') */
   var mreq = arr(R.medical).filter(function(m){ return hasKind(m, kinds); });
   out.people = crew.map(function(c){ return Object.assign({}, c, { checks: [], medical: null }); });
   if (!crew.length && (reqs.some(function(r){ return r.who !== 'company'; }) || mreq.length)) item({ sec: 'people', id: 'crew', label: 'Nobody is on this job yet', st: 'due', note: 'Schedule the crew (or add people here) to check their certifications and medical status.' });

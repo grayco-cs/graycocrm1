@@ -50,10 +50,14 @@ async function queue(body, who, I){
   if (!p) return { status: 404, out: { ok: false, retry: true, error: 'The job is not in the cloud yet.' } };
   if (switchOff(p, K.key, data)) return { status: 200, out: { ok: false, off: K.key, error: 'Turned off for this job.' } };
   const sms = s(body.channel) === 'sms';
-  const to = sms ? s(p.clientPhone || p.phone) : s(p.clientEmail || p.customerEmail || p.email);
+  /* EPAHUD: a lead / asbestos paper for the occupants (tenants) goes to the occupant contact saved on the job (🏛 EPA / HUD facts) —
+     still never an address the page sends */
+  const occ = kind === 'document' && s(body.recipient) === 'occupant';
+  const to = occ ? (sms ? s(p.occupantPhone) : s(p.occupantEmail)) : sms ? s(p.clientPhone || p.phone) : s(p.clientEmail || p.customerEmail || p.email);
+  if (occ && !to) return { status: 200, out: { ok: false, noEmail: true, error: sms ? 'No occupant phone on this job (🏛 EPA / HUD facts).' : 'No occupant e-mail on this job (🏛 EPA / HUD facts).' } };
   if (sms ? !/^\+?[0-9 ()-]{7,20}$/.test(to) : !EMAIL_RE.test(to)) return { status: 200, out: { ok: false, noEmail: true, error: sms ? 'No customer phone on this job.' : 'No customer e-mail on this job.' } };
   const ref = clip(body.ref, 80).replace(/[^A-Za-z0-9_.:-]/g, '');
-  const qid = 'appr_' + kind + '_' + pid + (ref ? '_' + ref : '');
+  const qid = 'appr_' + kind + '_' + pid + (ref ? '_' + ref : '') + (occ ? '_occ' : '') + (kind === 'document' && sms ? '_sms' : '');   /* EPAHUD: the occupant copy and the text are their own items */
   const html = String(body.html || '').slice(0, 100000);
   if (!s(html) || !s(body.subject)) return { status: 400, out: { ok: false, error: 'A subject and a message are needed.' } };
   const pm = I.pmOf(data, p);
