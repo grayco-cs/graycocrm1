@@ -413,7 +413,8 @@ function sweep(){
 }
 
 /* ═════ 8 · people: scheduling someone on a lead / asbestos / mold job checks their certifications ═════ */
-var SNAP = null, OVR = {};
+var SNAP = null, OVR = {}, LAST_INPUT = 0;
+['pointerdown', 'keydown', 'input', 'change'].forEach(function(ev){ D.addEventListener(ev, function(){ LAST_INPUT = Date.now(); }, true); });
 function names(x){ var out = []; [x.assignee, x.who, x.crew, x.people, x.lead].concat(arr(x.assignees)).forEach(function(v){ (Array.isArray(v) ? v : s(v).split(/\s*[,;&\/]\s*|\s+and\s+/i)).forEach(function(n){ n = s(n && typeof n === 'object' ? (n.name || n.email) : n); if (n && out.indexOf(n) < 0) out.push(n); }); }); return out; }
 function pidOf(x){ return s(x && (x.pid || x.projectId || x.jobId)); }
 function emergency(p){ try { return !!(JD() && JD().emergency(p)); } catch (e) { return false; } }
@@ -437,12 +438,14 @@ function schedCheck(list){
   try {
     list = arr(list || (W._crm && W._crm.schedule)); var cur = {}; list.forEach(function(x){ if (x && x.id) cur[s(x.id)] = JSON.stringify(x); });
     if (!SNAP) { SNAP = cur; return []; }
-    var hits = [];
+    /* only a change a person made on this computer just now (not the app filling the schedule from the jobs, not another computer's sync) */
+    if (Date.now() - LAST_INPUT > 10000) { SNAP = cur; return []; }
+    var hits = [], seen = {};
     list.forEach(function(x){
       if (!x || !x.id || x.deleted) return; var sid = s(x.id), prev = SNAP[sid]; if (prev === cur[sid]) return;
       var p = proj(pidOf(x)); if (!p || p.deleted) return;
       var was = prev ? names(JSON.parse(prev)) : [], added = names(x).filter(function(n){ return was.indexOf(n) < 0; });
-      added.forEach(function(n){ if (OVR[sid + '|' + low(n)]) return; var pr = problems(p, n); if (pr.length) hits.push({ sid: sid, prev: prev || '', p: p, who: n, why: pr, em: emergency(p) }); });
+      added.forEach(function(n){ if (OVR[sid + '|' + low(n)] || seen[p.id + '|' + low(n)]) return; seen[p.id + '|' + low(n)] = 1; var pr = problems(p, n); if (pr.length) hits.push({ sid: sid, prev: prev || '', p: p, who: n, why: pr, em: emergency(p) }); });
     });
     SNAP = cur;
     if (hits.length) ask(hits);

@@ -184,9 +184,10 @@ ok('6c handled → both To-Dos close', tk.filter(t => /PRRP_gcb_lead_03$/.test(t
 
 /* ═ 7 · scheduling a person checks their certifications ═ */
 W._crm.schedule = [{ id: 'S1', pid: 'PASBR', date: day(2), assignee: 'Wesley Johnson' }];
+const touch = () => (LIS.pointerdown || []).forEach(f => f({ target: D.body }));
 H._reset(); H.schedCheck(W._crm.schedule);   /* first look */
 W._crm.schedule = [{ id: 'S1', pid: 'PASBR', date: day(2), assignee: 'Wesley Johnson, Dan Crew' }];
-const hits = H.schedCheck(W._crm.schedule);
+touch(); const hits = H.schedCheck(W._crm.schedule);
 let dlg = D.getElementById('gc-ep-sheet');
 ok('7a Dan (no asbestos worker license) put on the asbestos job → ⛔ with the reason', hits.length === 1 && hits[0].who === 'Dan Crew' && /asbestos/i.test(hits[0].why.join(' ')) && dlg && /Crew not certified/.test(dlg.attrs['aria-label']) && /data-ep-block="block"/.test(dlg.innerHTML), hits);
 const click = (o, sel) => { const t = { getAttribute: k => (k === 'data-epb' ? sel : null), closest: s => (/data-epb/.test(s) ? t : null) }; (o.listeners.click || []).forEach(fn => fn({ target: t })); };
@@ -195,14 +196,19 @@ ok('7b "Take them off" → Dan is off the schedule entry, Wesley stays', W._crm.
 KV.gc_certs.list.push({ id: 'C3', holderType: 'person', holder: 'dan@grayco-cs.com', holderName: 'Dan Crew', name: 'Asbestos abatement worker', ckind: 'asb_worker', number: 'AW-1', expires: day(-3), state: 'TN' });
 await H.pullCerts();
 W._crm.schedule = [{ id: 'S1', pid: 'PASBR', date: day(2), assignee: 'Wesley Johnson, Dan Crew' }];
-const h2 = H.schedCheck(W._crm.schedule); dlg = D.getElementById('gc-ep-sheet');
+touch(); const h2 = H.schedCheck(W._crm.schedule); dlg = D.getElementById('gc-ep-sheet');
 ok('7c an EXPIRED card still blocks (the reason says expired)', h2.length === 1 && /expired/i.test(h2[0].why.join(' ')), h2);
 PROMPT_ANS.push('State confirmed his renewal is in process — supervisor on site');
 click(dlg, 'over'); await flush();
 ok('7d admin override → stays on, logged with who / why on the job and in gc_epahud_overrides', W._crm.schedule[0].assignee === 'Wesley Johnson, Dan Crew' && (P('PASBR').epahud.overrides || []).some(o => o.who === 'Dan Crew' && /renewal/.test(o.why) && o.by === 'Wesley Johnson' && o.at) && (KV.gc_epahud_overrides.list || []).length === 1);
 W._crm.schedule = W._crm.schedule.concat([{ id: 'S2', pid: 'PWATER', date: day(1), assignee: 'Dan Crew' }]);
-const h3 = H.schedCheck(W._crm.schedule); dlg = D.getElementById('gc-ep-sheet');
+touch(); const h3 = H.schedCheck(W._crm.schedule); dlg = D.getElementById('gc-ep-sheet');
 ok('7e emergency mitigation job (asbestos found) → a warning only, never taken off', h3.length === 1 && h3[0].em === true && /data-ep-block="warn"/.test(dlg.innerHTML) && W._crm.schedule.some(x => x.id === 'S2' && x.assignee === 'Dan Crew'), h3);
+{ const o = D.getElementById('gc-ep-sheet'); if (o) o.remove(); }
+const realNow = Date.now; Date.now = () => realNow() + 60000;   /* a minute with no one touching this computer */
+W._crm.schedule = W._crm.schedule.concat([{ id: 'S3', pid: 'PASBR', date: day(4), assignee: 'Demo PM' }]);
+const h4 = H.schedCheck(W._crm.schedule); Date.now = realNow;
+ok('7g the app (or another computer) filling the schedule by itself → no dialog (only a person\'s change here is checked)', h4.length === 0 && !D.getElementById('gc-ep-sheet'));
 ok('7f the job card shows "✗ Crew certified" with the problem', /✗ Crew certified/.test(H.crewLine(P('PASBR'))));
 
 /* ═ 8 · company / people certificates: the types, the drafts, 60 / 30 / 7 day alerts ═ */
