@@ -228,7 +228,7 @@ var DEFAULT_RULES = {
   t('asbestos', 'hygiene', 'Decontamination area: equipment room → shower → clean room, entered and left only through the decon; no eating, drinking or smoking in the regulated area (GrayCo Asbestos Program §9).', 'crew');
   t('asbestos', 'housekeeping', 'HEPA vacuum and wet clean; no dry sweeping, shoveling or compressed air; waste wetted, double-bagged, labeled and kept in a secured area until disposal (GrayCo Asbestos Program §6).', 'crew');
   t('asbestos', 'inspection', 'Competent person: at the start of every shift, during the work and at least once per shift — enclosure integrity, negative pressure (manometer log), work practices, PPE, decon (GrayCo Asbestos Program §3).', 'crew');
-  t('asbestos', 'signs', 'DANGER — ASBESTOS signs at every regulated area entrance; labels on every waste container and on ACM left in place (GrayCo Asbestos Program §11).', 'crew');
+  t('asbestos', 'signs', 'DANGER — ASBESTOS signs at every regulated area entrance; labels on every waste container and on ACM left in place (GrayCo Asbestos Program §12).', 'crew');
   /* mold remediation */
   t('mold', 'exposure', 'Mold remediation: exposure depends on the size of the affected area and the disturbance; the pre-remediation assessment sets the containment level.');
   t('mold', 'engineering', 'Containment sized to the job, HEPA air scrubbers / negative air, dehumidification, critical barriers; HVAC isolated.');
@@ -774,11 +774,101 @@ function fillDocxXml(xml, v){
   return out;
 }
 
+/* ── ENVDOCS: a portable lead decon unit — the purchase list (quantities are starting points; no prices — the owner fills them in) ── */
+var DECON_PURCHASE = [
+  { group: 'The unit', item: 'Portable decon unit / trailer (3-stage: dirty · wash · clean) — or framing kit + zipper doors to build one', qty: 1 },
+  { group: 'The unit', item: '6-mil poly sheeting roll (20 × 100 ft)', qty: 2, note: 'built on site / repairs' },
+  { group: 'The unit', item: 'Self-adhesive zipper doors', qty: 4 },
+  { group: 'The unit', item: 'Tack pads (sticky mats), 30-sheet', qty: 4 },
+  { group: 'Wash', item: 'Portable hand-and-face wash station or portable shower (with water heater if showering)', qty: 1 },
+  { group: 'Wash', item: 'Fresh-water tank / hose + fittings', qty: 1 },
+  { group: 'Wash', item: 'Wash-water collection drum (55 gal) + lid', qty: 2 },
+  { group: 'Wash', item: 'Wash-water filter (e.g. 5 micron) + spare cartridges', qty: 1, note: 'confirm the filtering / disposal rule with your state program and the local utility' },
+  { group: 'Wash', item: 'Soap (pump), towels (paper or cloth), trash can', qty: 1 },
+  { group: 'Dirty room', item: 'HEPA vacuum (dedicated to the decon) + spare HEPA filters / bags', qty: 1 },
+  { group: 'Dirty room', item: 'Labeled 6-mil waste bags (box) + duct tape + waste labels', qty: 2 },
+  { group: 'Dirty room', item: 'Disposable coveralls with hoods (case) — every size', qty: 2 },
+  { group: 'Dirty room', item: 'Disposable booties / shoe covers (case)', qty: 2 },
+  { group: 'Dirty room', item: 'Nitrile gloves (case)', qty: 2 },
+  { group: 'Clean room', item: 'Lockers or sealable bags for street clothes', qty: 6 },
+  { group: 'Clean room', item: 'Bench + mirror', qty: 1 },
+  { group: 'Power & light', item: 'LED work lights', qty: 3 },
+  { group: 'Power & light', item: 'GFCI cords / portable GFCI', qty: 2 },
+  { group: 'Signs', item: 'Decon signs: DIRTY ROOM · WASH · CLEAN ROOM, HAND WASH STATION, NO EATING, DRINKING OR SMOKING (print from the CRM — 🖨 Environmental signs)', qty: 1 }];
+
+/* ── ENVDOCS: the environmental SIGN SET (owner: "Make sure all signs for env work are designed for GrayCo.")
+   The legend words come from the GrayCo Lead & Asbestos Warning Signs (company-docs) and are printed EXACTLY as written — the
+   company branding goes in its own band at the bottom and never replaces or shrinks the legend. Verify each legend with the current
+   OSHA / state rules before use. head = the signal word band (danger red / warning orange / caution yellow / notice blue / bio).
+   required = the legend is regulatory wording (printed unchanged); kinds = the jobs it is linked to. ── */
+var SIGN_NOTE = 'Verify the legend with the current OSHA / state rules before use — the legend is printed exactly as written; GrayCo\'s name, logo and phone are in their own band.';
+var SIGNS = [
+  { id: 'lead_danger', title: 'Lead work area — DANGER (OSHA)', head: 'DANGER', tone: 'danger', required: true, kinds: 'lead_abate, lead_rrp',
+    lines: ['LEAD WORK AREA', 'MAY DAMAGE FERTILITY OR THE UNBORN CHILD', 'CAUSES DAMAGE TO THE CENTRAL NERVOUS SYSTEM', 'DO NOT EAT, DRINK, SMOKE OR VAPE IN THIS AREA'],
+    es: ['PELIGRO – ÁREA DE TRABAJO CON PLOMO', 'PUEDE DAÑAR LA FERTILIDAD O AL FETO • CAUSA DAÑOS AL SISTEMA NERVIOSO CENTRAL • NO COMA, BEBA, FUME NI VAPEE EN ESTA ÁREA'] },
+  { id: 'lead_warning', title: 'Lead work area — WARNING (poison / no eating or smoking)', head: 'WARNING', tone: 'warning', required: true, kinds: 'lead_abate, lead_rrp',
+    lines: ['LEAD WORK AREA', 'POISON', 'NO EATING, DRINKING, SMOKING OR VAPING', 'DO NOT ENTER – AUTHORIZED WORKERS ONLY'],
+    es: ['ADVERTENCIA – ÁREA DE TRABAJO CON PLOMO – VENENO', 'NO COMER, BEBER, FUMAR NI VAPEAR • NO ENTRAR – SOLO TRABAJADORES AUTORIZADOS'] },
+  { id: 'rrp', title: 'RRP — renovation work area, do not enter', head: 'DO NOT ENTER', tone: 'danger', required: true, kinds: 'lead_rrp, lead_abate',
+    lines: ['RENOVATION WORK AREA', 'Children, staff and visitors keep out.', 'This area will reopen after cleaning is complete', 'and GrayCo removes this sign.', 'NO EATING, DRINKING, SMOKING OR VAPING'],
+    es: ['NO ENTRAR – ÁREA DE RENOVACIÓN', 'Niños, personal y visitantes no deben entrar. No comer, beber, fumar ni vapear.'] },
+  { id: 'asb_danger', title: 'Asbestos — DANGER (perimeter / awareness; the licensed sub posts its own regulated-area signs)', head: 'DANGER', tone: 'danger', required: true, kinds: 'asbestos',
+    lines: ['ASBESTOS', 'MAY CAUSE CANCER', 'CAUSES DAMAGE TO LUNGS', 'AUTHORIZED PERSONNEL ONLY', 'WEAR RESPIRATORY PROTECTION AND PROTECTIVE CLOTHING IN THIS AREA', 'NO EATING, DRINKING, SMOKING OR VAPING'],
+    es: ['PELIGRO – ASBESTO', 'PUEDE CAUSAR CÁNCER • CAUSA DAÑOS A LOS PULMONES • SOLO PERSONAL AUTORIZADO • USE PROTECCIÓN RESPIRATORIA Y ROPA PROTECTORA • NO COMER, BEBER, FUMAR NI VAPEAR'] },
+  { id: 'acm', title: 'Asbestos-containing material left in place — do not disturb', head: 'CAUTION', tone: 'caution', required: true, kinds: 'asbestos',
+    lines: ['ASBESTOS-CONTAINING MATERIAL', 'DO NOT DISTURB – DO NOT DRILL, CUT, SAND OR REMOVE', 'Material: ______________________________________'],
+    es: ['PRECAUCIÓN – MATERIAL CON ASBESTO – NO TOCAR, NO TALADRAR, NO CORTAR, NO LIJAR'], call: true },
+  { id: 'mold', title: 'Mold remediation work area', head: 'CAUTION', tone: 'caution', required: false, kinds: 'mold',
+    lines: ['MOLD REMEDIATION WORK AREA', 'AUTHORIZED PERSONNEL ONLY', 'RESPIRATORS AND PROTECTIVE CLOTHING REQUIRED', 'NO EATING, DRINKING, SMOKING OR VAPING'],
+    es: ['PRECAUCIÓN – ÁREA DE REMEDIACIÓN DE MOHO', 'SOLO PERSONAL AUTORIZADO • SE REQUIERE RESPIRADOR Y ROPA PROTECTORA • NO COMER, BEBER, FUMAR NI VAPEAR'] },
+  { id: 'bio', title: 'Biohazard / trauma — authorized personnel only', head: 'BIOHAZARD', tone: 'bio', required: true, kinds: 'trauma', symbol: '☣',
+    lines: ['AUTHORIZED PERSONNEL ONLY'], es: ['RIESGO BIOLÓGICO – SOLO PERSONAL AUTORIZADO'] },
+  { id: 'resp', title: 'Respirators required beyond this point', head: 'WARNING', tone: 'warning', required: false, kinds: 'lead_abate, asbestos, mold, trauma',
+    lines: ['RESPIRATORS REQUIRED', 'BEYOND THIS POINT'], es: ['SE REQUIERE RESPIRADOR MÁS ALLÁ DE ESTE PUNTO'] },
+  { id: 'negair', title: 'Do not enter — negative air in operation', head: 'DO NOT ENTER', tone: 'danger', required: false, kinds: 'lead_abate, asbestos, mold',
+    lines: ['NEGATIVE AIR IN OPERATION', 'DO NOT OPEN, UNPLUG OR TURN OFF'], es: ['NO ENTRAR – AIRE NEGATIVO EN OPERACIÓN – NO ABRIR, DESCONECTAR NI APAGAR'] },
+  { id: 'decon_dirty', title: 'Decon — DIRTY ROOM (→ wash)', head: 'DIRTY ROOM', tone: 'danger', required: false, kinds: 'lead_abate, asbestos', decon: true,
+    lines: ['EQUIPMENT ROOM', 'TAKE OFF SUITS, BOOTIES AND GLOVES HERE', 'BAG THEM AS WASTE', '→  TO WASH  →'], es: ['CUARTO SUCIO – QUÍTESE EL TRAJE, LAS CUBIERTAS DE ZAPATOS Y LOS GUANTES AQUÍ  →  AL LAVADO'] },
+  { id: 'decon_wash', title: 'Decon — WASH (→ clean room)', head: 'WASH', tone: 'notice', required: false, kinds: 'lead_abate, asbestos', decon: true,
+    lines: ['WASH HANDS AND FACE / SHOWER', 'BEFORE ENTERING THE CLEAN ROOM', '→  TO CLEAN ROOM  →'], es: ['LAVADO – LÁVESE LAS MANOS Y LA CARA ANTES DE ENTRAR AL CUARTO LIMPIO  →'] },
+  { id: 'decon_clean', title: 'Decon — CLEAN ROOM (→ exit)', head: 'CLEAN ROOM', tone: 'safe', required: false, kinds: 'lead_abate, asbestos', decon: true,
+    lines: ['STREET CLOTHES ONLY', 'NO WORK CLOTHES, TOOLS OR EQUIPMENT', '→  EXIT  →'], es: ['CUARTO LIMPIO – SOLO ROPA DE CALLE – SIN ROPA DE TRABAJO NI EQUIPO  →  SALIDA'] },
+  { id: 'handwash', title: 'Hand wash station', head: 'HAND WASH STATION', tone: 'safe', required: false, kinds: 'lead_rrp, lead_abate, asbestos, mold, trauma', decon: true,
+    lines: ['WASH HANDS AND FACE', 'BEFORE EATING, DRINKING OR SMOKING', 'AND BEFORE LEAVING THE SITE'], es: ['ESTACIÓN DE LAVADO DE MANOS – LÁVESE LAS MANOS Y LA CARA ANTES DE COMER, BEBER O FUMAR'] },
+  { id: 'noeat', title: 'No eating, drinking or smoking', head: 'NOTICE', tone: 'notice', required: false, kinds: 'lead_rrp, lead_abate, asbestos, mold, trauma',
+    lines: ['NO EATING, DRINKING', 'OR SMOKING'], es: ['NO COMER, BEBER NI FUMAR'] },
+  { id: 'lead_waste', title: 'Lead waste bag label', head: 'CAUTION', tone: 'caution', required: true, label: true, kinds: 'lead_abate, lead_rrp',
+    lines: ['LEAD-CONTAMINATED WASTE', 'DO NOT OPEN – DO NOT REUSE'], es: ['PRECAUCIÓN – DESECHOS CONTAMINADOS CON PLOMO – NO ABRIR – NO REUTILIZAR'],
+    fill: ['Paint chips, dust, debris and plastic sheeting', 'Generator: ______________________  Location: ______________________', 'Date sealed: ____________  Bagged by: ______________________'] },
+  { id: 'asb_waste', title: 'Asbestos waste bag / container label', head: 'DANGER', tone: 'danger', required: true, label: true, kinds: 'asbestos',
+    lines: ['CONTAINS ASBESTOS FIBERS', 'MAY CAUSE CANCER', 'CAUSES DAMAGE TO LUNGS', 'DO NOT BREATHE DUST', 'AVOID CREATING DUST'], es: ['PELIGRO – CONTIENE FIBRAS DE ASBESTO – PUEDE CAUSAR CÁNCER – NO RESPIRE EL POLVO'],
+    fill: ['Generator: ______________________________', 'Location: ________________________________  Date: ____________', 'Abatement contractor: ______________________________'] }];
+var SIGN_SIZES = [{ key: 'letter', label: 'Letter (8.5 × 11 in)', w: 8.5, h: 11 }, { key: 'tabloid', label: '11 × 17 in', w: 11, h: 17 }, { key: 'shop', label: '18 × 24 in (print shop)', w: 18, h: 24 }];
+var TONES = { danger: { band: '#C8102E', ink: '#FFFFFF' }, warning: { band: '#F47B20', ink: '#000000' }, caution: { band: '#FFD100', ink: '#000000' }, notice: { band: '#0057A8', ink: '#FFFFFF' }, safe: { band: '#00843D', ink: '#FFFFFF' }, bio: { band: '#F47B20', ink: '#000000' } };
+/* the signs for a job (by kind; the decon signs where the decon applies) */
+function jobSigns(p, kinds, R){ R = R || rules(); var dc = p ? deconApplies(p, kinds, R) : true; return SIGNS.filter(function(g){ return hasKind(g, kinds) && (!g.decon || dc || g.id === 'handwash'); }); }
+/* the company band on a sign: the job's company (GrayCo Environmental for environmental work), GrayCo Construction as the fallback */
+function signBrand(co, fallback){ co = obj(co); fallback = obj(fallback); return { name: s(co.legal || co.name) || s(fallback.legal || fallback.name) || 'GrayCo Construction Services, LLC', phone: s(co.phone) || s(fallback.phone) || '(901) 585-0944', logo: s(co.logo) || s(fallback.logo) || '' }; }
+/* one sign as blocks a renderer draws top to bottom (sizes in points for the chosen paper):
+   the signal-word band, the legend (unchanged), the Spanish lines (bilingual), the fill-in lines, then the GrayCo band */
+function signBlocks(sign, opt){
+  opt = opt || {}; var Z = SIGN_SIZES.find(function(z){ return z.key === opt.size; }) || SIGN_SIZES[0], k = Z.w / 8.5, T = TONES[sign.tone] || TONES.notice, B = signBrand(opt.brand, opt.fallback);
+  var L = [{ kind: 'head', text: s(sign.head), size: Math.round((sign.head.length > 10 ? 64 : 92) * k), band: T.band, ink: T.ink }];
+  if (sign.symbol) L.push({ kind: 'symbol', text: sign.symbol, size: Math.round(110 * k) });
+  arr(sign.lines).forEach(function(t, i){ L.push({ kind: 'legend', text: t, size: Math.round((i === 0 ? 44 : t.length > 40 ? 22 : 30) * k), bold: true }); });
+  if (opt.es !== false && opt.bilingual) arr(sign.es).forEach(function(t, i){ L.push({ kind: 'es', text: t, size: Math.round((i === 0 ? 22 : 15) * k), bold: i === 0 }); });
+  arr(sign.fill).forEach(function(t){ L.push({ kind: 'fill', text: t, size: Math.round(14 * k) }); });
+  if (sign.call) L.push({ kind: 'fill', text: 'Call ' + B.name + ' before any work here: ' + B.phone, size: Math.round(14 * k) });
+  L.push({ kind: 'brand', text: B.name + '  |  ' + B.phone, logo: B.logo, size: Math.round(16 * k), band: '#0F2440', ink: '#FFFFFF' });
+  return { id: sign.id, size: Z, w: Z.w, h: Z.h, blocks: L, brand: B };
+}
+
 var API = { DEFAULT_RULES: DEFAULT_RULES, SECTIONS: SECTIONS, CONFIRM: CONFIRM, rules: rules, detectKinds: detectKinds, isOn: isOn, stateOf: stateOf, started: started, finished: finished, nearDone: nearDone,
   crewOf: crewOf, crewOnDay: crewOnDay, certFor: certFor, certType: certType, certIs: certIs, medSummary: medSummary, medNext: medNext, publicStatus: publicStatus, activeRemoval: activeRemoval,
   evaluate: evaluate, closeoutBlockers: closeoutBlockers, noticeDue: noticeDue, workingDaysBefore: workingDaysBefore, retainUntil: retainUntil, retainYears: retainYears, recCat: recCat, live: live, dailyTotals: dailyTotals,
   airType: airType, mrpPay: mrpPay, hasKind: hasKind, listOf: listOf, addDays: addDays, addMonths: addMonths, daysBetween: daysBetween, today: todayLocal, typeText: typeText,
   /* ENVDOCS */ asbBy: asbBy, crewKinds: crewKinds, ruleBy: ruleBy, deconApplies: deconApplies, deconRec: deconRec, deconState: deconState, dailyFields: dailyFields, subOf: subOf, subItems: subItems,
-  defaultAdmin: defaultAdmin, programInfo: programInfo, jobPrograms: jobPrograms, plans: plans, planFp: planFp, planState: planState, buildPlan: buildPlan, planLines: planLines, planTexts: planTexts, fillDocxXml: fillDocxXml, hash: hash };
+  defaultAdmin: defaultAdmin, programInfo: programInfo, jobPrograms: jobPrograms, plans: plans, planFp: planFp, planState: planState, buildPlan: buildPlan, planLines: planLines, planTexts: planTexts, fillDocxXml: fillDocxXml, hash: hash,
+  DECON_PURCHASE: DECON_PURCHASE, SIGNS: SIGNS, SIGN_SIZES: SIGN_SIZES, SIGN_NOTE: SIGN_NOTE, TONES: TONES, jobSigns: jobSigns, signBrand: signBrand, signBlocks: signBlocks };
 if (typeof module === 'object' && module.exports) module.exports = API; else root._gcEnvCompCore = API;
 })(this);
