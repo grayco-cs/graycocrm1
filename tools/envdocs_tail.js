@@ -80,8 +80,14 @@ W._gcEnvDocsPanel = function(p, E){
   /* TCLP: the waste streams */
   if (CORE.wasteOn(p, E.kinds, Rr)) {
     var WS = E.items.filter(function(x){ return x.sec === 'waste'; });
-    h += '<div class="sec" data-ed-sec="waste">♻️ Waste — TCLP characterization ' + btn('wasteprint', '🖨 Waste record') + (off ? btn('wstream', '＋ Waste stream') + btn('tclp', '🧪 Log TCLP sample', '', 'g') + btn('wgk', '📄 Generator knowledge') + btn('wship', '🚚 Shipment / disposal') : '') + '</div><div class="m">Threshold: ' + esc(CORE.tclpThreshold(Rr)) + ' mg/L lead (' + esc(s(obj(Rr.settings).tclpNote)) + '). A stream cannot be disposed of until it is characterized.</div>';
+    h += '<div class="sec" data-ed-sec="waste">♻️ Waste — TCLP characterization ' + btn('wasteprint', '🖨 Waste record') + (off ? btn('wstream', '＋ Waste stream') + btn('tclp', '🧪 Log TCLP sample', '', 'g') + btn('wgk', '📄 Generator knowledge') + btn('wship', '🚚 Shipment / disposal') : '') + '</div><div class="m">Threshold: ' + esc(CORE.tclpThreshold(Rr)) + ' ppm lead (' + esc(CORE.tclpNote(Rr)) + '). A stream cannot be disposed of until it is characterized.</div>';
     WS.forEach(function(x){ var w = CORE.wasteStreams(p, Rr).find(function(z){ return z.key === s(x.id).slice(6); }) || { tclp: [] }, pend = w.tclp.filter(function(r){ return r.cls === 'pending'; })[0], rf = w.rec && w.rec.file; h += X.rowH(x, (rf ? X.fileLink(rf) : '') + (pend && off ? btn('tclpres', '🧪 Lab result', ' data-id="' + esc(pend.id) + '"') : '')); });
+  }
+  /* 📏 the lead levels */
+  if (E.kinds.some(function(k){ return /^lead/.test(k); })) {
+    var LV0 = LVc(), LT = arr(p.envLog).filter(function(r){ return CORE.live(r) && r.kind === 'leadtest'; }).sort(function(a, b){ return s(a.date) < s(b.date) ? 1 : -1; });
+    h += '<div class="sec" data-ed-sec="levels">📏 Lead levels ' + btn('lvcard', '📏 ' + esc(LV0.v) + ' card') + (off ? btn('leadtest', '🧪 Lead test result') : '') + '</div><div class="m">Air AL ' + esc(LV0.air.al) + ' / PEL ' + esc(LV0.air.pel) + ' µg/m³ · blood removal ' + esc(LV0.blood.removal) + ', back to work &lt;' + esc(LV0.blood.back) + ' µg/dL · clearance sills ' + esc(LV0.dlal.sills) + ' µg/ft² · TCLP ' + esc(LV0.waste.tclp) + ' ppm — ' + esc(CORE.levelsStamp(LV0)) + '</div>';
+    LT.slice(0, 8).forEach(function(r){ var c = CORE.compareLevel(r.ttype, r.value, { surface: r.surface, area: r.area }, LV0); h += '<div class="r" data-ed-lt="' + esc(r.id) + '"><div class="l">' + (c.flag === 'red' ? '🔴' : '🟢') + ' <b>' + esc(nice(r.date)) + ' · ' + esc(r.ttype) + (r.location ? ' · ' + esc(r.location) : '') + '</b><div class="m">' + esc(c.text) + (c.action ? ' — ' + esc(c.action) : '') + '</div></div>' + (r.file ? '<div class="b">' + X.fileLink(r.file) + '</div>' : '') + '</div>'; });
   }
   /* the signs */
   var SG = CORE.jobSigns(p, E.kinds, Rr);
@@ -120,10 +126,10 @@ function jobFacts(p){
   return { E: E, job: s(p.name), customer: s(p.client || p.customer), address: s(p.address || p.jobAddress || p.siteAddress), pm: s(p.pm), start: s(p.startDate).slice(0, 10), end: s(p.endDate || p.finishDate || p.completionDate).slice(0, 10),
     crew: E.people.map(function(c){ return c.name + (c.role === 'supervisor' ? ' (supervisor)' : ''); }).join(', '), competent: s(I.competent) || sups.join(', '), admins: admins.join(', '), kinds: E.kinds.map(X.kindLabel).join(' + '), state: E.state, sub: CORE.subOf(p) };
 }
-function jobHead(p, title, sub){
+function jobHead(p, title, sub, stamp){
   var b = brand(p), c = company(p), F = jobFacts(p);
   var h = '<div data-ed-head="1" style="display:flex;align-items:center;gap:14px;border-bottom:2px solid #0f2440;padding-bottom:8px;margin-bottom:8px">' + (b.logo ? '<img data-ed-logo="1" src="' + esc(b.logo) + '" alt="' + esc(b.name) + ' logo" style="max-height:60px;max-width:180px">' : '')
-    + '<div><b data-ed-co="1" style="font-size:15px">' + esc(b.name) + '</b><div style="font-size:11px">' + esc(c.address) + ' · ' + esc(b.phone) + '</div>' + (coOf(p).co.licenseLine ? '<div style="font-size:10px" data-ed-lic="1">' + esc(coOf(p).co.licenseLine) + '</div>' : '') + '</div></div><h1 style="font-size:19px;text-align:center;margin:6px 0 2px">' + esc(title) + '</h1>' + (sub ? '<div class="m" style="text-align:center;margin:0 0 6px">' + esc(sub) + '</div>' : '');
+    + '<div><b data-ed-co="1" style="font-size:15px">' + esc(b.name) + '</b><div style="font-size:11px">' + esc(c.address) + ' · ' + esc(b.phone) + '</div>' + (coOf(p).co.licenseLine ? '<div style="font-size:10px" data-ed-lic="1">' + esc(coOf(p).co.licenseLine) + '</div>' : '') + '</div><div data-ed-lvstamp="1" style="margin-left:auto;font-weight:800;font-size:12px">' + esc(stamp || CORE.levelsStamp(LVc())) + '</div></div><h1 style="font-size:19px;text-align:center;margin:6px 0 2px">' + esc(title) + '</h1>' + (sub ? '<div class="m" style="text-align:center;margin:0 0 6px">' + esc(sub) + '</div>' : '');
   if (F) h += '<table data-ed-job="1"><tr><th>Job</th><td>' + esc(F.job) + '</td><th>Customer</th><td>' + esc(F.customer) + '</td></tr><tr><th>Location</th><td>' + esc(F.address) + (F.state ? ' (' + esc(F.state) + ')' : '') + '</td><th>Project manager</th><td>' + esc(F.pm) + '</td></tr>'
     + '<tr><th>Start / finish</th><td>' + esc([nice(F.start), nice(F.end)].filter(Boolean).join(' → ')) + '</td><th>Work</th><td>' + esc(F.kinds) + '</td></tr><tr><th>Crew</th><td>' + esc(F.crew) + '</td><th>Competent person</th><td>' + esc(F.competent) + '</td></tr>'
     + '<tr><th>Program administrator</th><td colspan="3">' + esc(F.admins) + '</td></tr></table>';
@@ -132,7 +138,7 @@ function jobHead(p, title, sub){
 function planHtml(r, p){
   var P = obj(r.plan), g = obj(r.signed);
   var sig = function(lbl, x){ return '<td style="width:50%;padding:18px 8px 4px;vertical-align:bottom"><div style="border-bottom:1px solid #111;min-height:22px">' + (obj(x).name ? '<i>✍ ' + esc(x.name) + '</i> — e-signed ' + esc(new Date(x.at).toLocaleString()) : '') + '</div><div style="font-size:11px">' + esc(lbl) + ' — signature / date</div></td>'; };
-  var inner = jobHead(p, 'EMPLOYEE PROTECTION PLAN', P.job + ' · version ' + r.v + ' · ' + nice(r.date) + ' — ' + s(P.note));
+  var inner = jobHead(p, 'EMPLOYEE PROTECTION PLAN', P.job + ' · version ' + r.v + ' · ' + nice(r.date) + ' — ' + s(P.note), s(P.stamp) || 'Levels: (before the levels record)');
   arr(P.sections).forEach(function(x){
     inner += '<div class="sec">' + esc(x.h) + '</div>';
     if (arr(x.rows).length) inner += '<table>' + x.rows.map(function(rw){ return '<tr><th style="width:32%">' + esc(rw[0]) + '</th><td>' + esc(rw[1]) + '</td></tr>'; }).join('') + '</table>';
@@ -163,7 +169,7 @@ function purchaseHtml(pid){
 /* the waste record (TCLP) and the notices & permits sheet — filled from the job */
 function wasteHtml(pid){
   var p = proj(pid); if (!p) return ''; var Rr = R(), th = CORE.tclpThreshold(Rr);
-  var inner = jobHead(p, 'WASTE CHARACTERIZATION (TCLP) AND DISPOSAL RECORD', 'TCLP lead threshold used: ' + th + ' mg/L — ' + s(obj(Rr.settings).tclpNote));
+  var inner = jobHead(p, 'WASTE CHARACTERIZATION (TCLP) AND DISPOSAL RECORD', 'TCLP lead threshold used: ' + th + ' mg/L — ' + CORE.tclpNote(Rr));
   CORE.wasteStreams(p, Rr).forEach(function(w){
     inner += '<div class="sec">' + esc(w.stream) + ' — ' + esc(w.cls ? w.cls.toUpperCase() + ' (' + (w.basis === 'tclp' ? 'TCLP' : 'generator knowledge') + ')' : 'NOT CHARACTERIZED — no disposal until it is') + '</div>';
     if (w.tclp.length) inner += '<table><thead><tr><th>Date</th><th>Sampler</th><th>Containers</th><th>Lab</th><th>COC #</th><th>Lead (mg/L)</th><th>Result</th></tr></thead><tbody>' + w.tclp.map(function(r){ return '<tr><td>' + esc(nice(r.date)) + '</td><td>' + esc(r.sampler) + '</td><td>' + esc(r.containers) + '</td><td>' + esc(r.lab) + '</td><td>' + esc(r.coc) + '</td><td>' + esc(r.result || 'pending') + ' vs ' + esc(r.threshold) + '</td><td>' + esc(r.cls) + '</td></tr>'; }).join('') + '</tbody></table>';
@@ -264,14 +270,17 @@ function openHtml(html, key){ W['__gcEd' + key] = html; var w = W.open('', '_bla
 
 /* ═════ ♻️ TCLP waste characterization (owner: "TCLP") ═════ */
 function streamsOf(p){ var Rr = R(), L = CORE.wasteStreams(p, Rr).map(function(w){ return w.stream; }); CORE.listOf(obj(Rr.waste).streams).forEach(function(n){ if (!L.some(function(x){ return CORE.streamKey(x) === CORE.streamKey(n); })) L.push(n); }); return L; }
-function addStream(pid, name){ name = s(name); if (!name) return false; return X.setEC(pid, function(E0){ var L = arr(E0.wasteStreams); if (!L.some(function(x){ return CORE.streamKey(x && typeof x === 'object' ? x.name : x) === CORE.streamKey(name); })) E0.wasteStreams = L.concat([{ name: name, by: me(), at: X.nowIso() }]); return E0; }); }
+function addStream(pid, name, flags){ name = s(name); flags = obj(flags); if (!name) return false; return X.setEC(pid, function(E0){ var L = arr(E0.wasteStreams), k = CORE.streamKey(name), hit = false;
+  L = L.map(function(x){ var o = x && typeof x === 'object' ? Object.assign({}, x) : { name: s(x) }; if (CORE.streamKey(o.name) === k) { hit = true; if (flags.residential) o.residential = true; if (flags.far) o.far = true; } return o; });
+  if (!hit) L.push(Object.assign({ name: name, by: me(), at: X.nowIso() }, flags.residential ? { residential: true } : {}, flags.far ? { far: true } : {})); E0.wasteStreams = L; return E0; }); }
 function streamSel(p, val){ return X.sel('stream', 'Waste stream', [['', '—']].concat(streamsOf(p).map(function(n){ return [n, n]; })), val || '') + X.fld('streamNew', '…or a new waste stream', 'text', '', 'e.g. Window sash debris'); }
 function pickStream(v){ return s(v.streamNew) || s(v.stream); }
 function tclpForm(pid){
   var p = proj(pid); if (!p) return; var th = CORE.tclpThreshold(R());
-  X.modal('🧪 TCLP sample — ' + s(p.name), '<div class="m">Toxicity Characteristic Leaching Procedure. The result (lead, mg/L) is compared with ' + esc(th) + ' mg/L — ' + esc(s(obj(R().settings).tclpNote)) + '. At or above it the stream is HAZARDOUS.</div>' + streamSel(p) + '<div class="grid">'
+  X.modal('🧪 TCLP sample — ' + s(p.name), '<div class="m">Toxicity Characteristic Leaching Procedure. The result (lead, mg/L) is compared with ' + esc(th) + ' mg/L — ' + esc(CORE.tclpNote(R())) + '. At or above it the stream is HAZARDOUS.</div>' + streamSel(p) + '<div class="grid">'
     + X.fld('date', 'Sample date', 'date', today()) + X.fld('sampler', 'Sampler', 'text', me()) + X.fld('containers', 'Container / bag IDs sampled', 'text', '', 'e.g. B-01 to B-12, drum D-3') + X.fld('lab', 'Lab', 'text', '')
-    + X.fld('coc', 'Chain-of-custody #', 'text', '') + X.fld('result', 'Result — lead (mg/L); blank while waiting on the lab', 'text', '', 'e.g. 0.8 or <0.5') + '</div>' + X.fileIn('file', 'Lab report (PDF / photo)', false, 'application/pdf,image/*'),
+    + X.fld('coc', 'Chain-of-custody #', 'text', '') + X.fld('result', 'Result — lead (ppm = mg/L); blank while waiting on the lab', 'text', '', 'e.g. 0.8 or <0.5') + '</div>'
+    + '<label class="chk"><input type="checkbox" data-c="residential"><span>Waste from a residence — non-toxic (household exemption; still logged)</span></label><label class="chk"><input type="checkbox" data-c="far"><span>Disposal destination is over ' + esc(LVc().waste.farMiles) + ' miles (storage limit ' + esc(LVc().waste.storageDaysFar) + ' days instead of ' + esc(LVc().waste.storageDays) + ')</span></label>' + X.fileIn('file', 'Lab report (PDF / photo)', false, 'application/pdf,image/*'),
     function(v){ return logTclp(pid, v); }, 'Save the sample');
 }
 function logTclp(pid, v){
@@ -279,10 +288,11 @@ function logTclp(pid, v){
   if (!st) { toast('Pick the waste stream.', true); return Promise.resolve(false); }
   var th = CORE.tclpThreshold(R()), files = v.files && v.files.file ? v.files.file : (v.file ? [v.file] : []);
   return X.storeAll(files, pid).then(function(F){
-    var cls = CORE.tclpClass(v.result, th);
-    addStream(pid, st);
-    ST.call(W, function(){ X.addLog(pid, { kind: 'tclp', stream: st, date: s(v.date) || today(), sampler: s(v.sampler) || me(), containers: s(v.containers), lab: s(v.lab), coc: s(v.coc), analyte: 'lead', result: s(v.result), threshold: th, cls: cls, file: F[0] || null, versions: [] }); }, 60);
-    toast(cls === 'pending' ? '🧪 TCLP sample logged — waiting on the lab (the stream stays ⚠ until the result).' : '🧪 TCLP ' + s(v.result) + ' mg/L lead vs ' + th + ' → ' + cls.toUpperCase() + '.', cls === 'hazardous');
+    var res = !!(obj(v.chk).residential || v.residential), far = !!(obj(v.chk).far || v.far), cls = CORE.tclpClass(v.result, th, res);
+    addStream(pid, st, { residential: res, far: far });
+    ST.call(W, function(){ X.addLog(pid, { kind: 'tclp', stream: st, date: s(v.date) || today(), sampler: s(v.sampler) || me(), containers: s(v.containers), lab: s(v.lab), coc: s(v.coc), analyte: 'lead', result: s(v.result), threshold: th, cls: cls, residential: res, far: far, levels: CORE.levelsStamp(LVc()), file: F[0] || null, versions: [] }); }, 60);
+    var cmpT = CORE.compareLevel('tclp', v.result, { residential: res }, LVc());
+    toast(cls === 'pending' ? '🧪 TCLP sample logged — waiting on the lab (the stream stays ⚠ until the result).' : (cmpT.flag === 'red' ? '🔴 ' : '🟢 ') + cmpT.text + (cls === 'hazardous' ? ' — the storage clock is running (' + (far ? LVc().waste.storageDaysFar : LVc().waste.storageDays) + ' days)' : '') + '.', cls === 'hazardous');
     return true;
   });
 }
@@ -294,7 +304,7 @@ function tclpResult(pid, id, result, file){
 }
 function gkForm(pid){
   var p = proj(pid); if (!p) return;
-  X.modal('📄 Generator knowledge — ' + s(p.name), '<div class="m">Characterize a stream without a TCLP test only with a documented basis (what the material is, the process, prior test data). ' + esc(s(obj(R().settings).tclpNote)) + '.</div>' + streamSel(p)
+  X.modal('📄 Generator knowledge — ' + s(p.name), '<div class="m">Characterize a stream without a TCLP test only with a documented basis (what the material is, the process, prior test data). ' + esc(CORE.tclpNote(R())) + '.</div>' + streamSel(p)
     + X.sel('cls', 'Classification', [['non-hazardous', 'Non-hazardous'], ['hazardous', 'Hazardous']], 'non-hazardous') + X.fld('basis', 'Basis (required)', 'textarea', '', 'e.g. TCLP of the same paint system on this building, 10/2026 lab report #123: 0.4 mg/L') + X.fileIn('file', 'Supporting document', false, 'application/pdf,image/*'),
     function(v){ return logGk(pid, v); }, 'Save');
 }
@@ -336,7 +346,7 @@ function signsHtml(ids, opt){
       else if (x.kind === 'legend') parts += '<div data-sg="legend" style="' + fs + 'font-weight:800;text-align:center;margin:.06in .2in;line-height:1.15">' + esc(x.text) + '</div>';
       else if (x.kind === 'es') parts += '<div data-sg="es" style="' + fs + (x.bold ? 'font-weight:800;' : '') + 'text-align:center;margin:.04in .3in;line-height:1.2">' + esc(x.text) + '</div>';
       else if (x.kind === 'fill') parts += '<div data-sg="fill" style="' + fs + 'margin:.05in .4in">' + esc(x.text) + '</div>';
-      else if (x.kind === 'brand') parts += '<div data-sg="brand" style="margin-top:auto;background:' + x.band + ';color:' + x.ink + ';' + fs + 'display:flex;align-items:center;justify-content:center;gap:.15in;padding:.1in;border-radius:0 0 .08in .08in">' + (x.logo ? '<img src="' + esc(x.logo) + '" alt="" style="height:' + (x.size * 2.2) + 'pt;background:#fff;border-radius:4px;padding:2px">' : '') + '<b>' + esc(x.text) + '</b></div>';
+      else if (x.kind === 'brand') parts += '<div data-sg="brand" style="margin-top:auto;background:' + x.band + ';color:' + x.ink + ';' + fs + 'display:flex;align-items:center;justify-content:center;gap:.15in;padding:.1in;border-radius:0 0 .08in .08in">' + (x.logo ? '<img src="' + esc(x.logo) + '" alt="" style="height:' + (x.size * 2.2) + 'pt;background:#fff;border-radius:4px;padding:2px">' : '') + '<b>' + esc(x.text) + '</b><span data-ed-lvstamp="1" style="font-size:.55em;opacity:.85">' + esc(CORE.levelsStamp(LVc())) + '</span></div>';
     });
     return '<section class="sg" data-sign="' + esc(g.id) + '" style="width:' + Z.w + 'in;height:' + Z.h + 'in">' + '<div style="border:.06in solid #111;border-radius:.12in;height:100%;box-sizing:border-box;display:flex;flex-direction:column;justify-content:flex-start;gap:.08in">' + parts + '</div></section>';
   }).join('');
@@ -385,8 +395,8 @@ function programsSheet(){
     + '<div class="sec">Settings</div><div class="grid">' + X.sel('asbDefault', 'Asbestos work on a new job is done by', [['sub', 'A licensed abatement sub (owner 11/17)'], ['crew', 'GrayCo crew']], s(S0.asbDefault) || 'sub')
     + X.sel('planBlock', 'A missing / unsigned Employee Protection Plan', [['', '⚠ warns'], ['1', '⛔ blocks']], S0.planBlock ? '1' : '') + X.sel('planOwnerSign', 'The plan needs the owner\'s signature', [['1', 'Yes'], ['', 'No — the competent person signs']], S0.planOwnerSign === false ? '' : '1')
     + X.sel('deconBlock', 'The decon set-up missing', [['', '⚠ warns'], ['1', '⛔ blocks']], S0.deconBlock ? '1' : '')
-    + X.fld('tclpLead', 'TCLP lead threshold (mg/L) — confirm with EPA / your state program', 'number', s(CORE.tclpThreshold(Rr))) + X.sel('wasteShipBlock', 'Waste shipped before it is characterized', [['1', '⛔ blocks'], ['', '⚠ warns']], S0.wasteShipBlock === false ? '' : '1') + X.fld('clinic', 'Occupational clinic (on every plan)', 'text', s(S0.clinic)) + X.fld('clinicPhone', 'Clinic phone', 'tel', s(S0.clinicPhone)) + '</div>';
-  var o = X.modal('⚙ Written programs', inner, ad ? function(v, el){ return savePrograms(readProgs(el), { asbDefault: v.asbDefault, planBlock: v.planBlock === '1', planOwnerSign: v.planOwnerSign === '1', deconBlock: v.deconBlock === '1', clinic: s(v.clinic), clinicPhone: s(v.clinicPhone), tclpLead: parseFloat(v.tclpLead) > 0 ? parseFloat(v.tclpLead) : 5.0, wasteShipBlock: v.wasteShipBlock === '1' }).then(function(r){ toast(r && r.ok ? '⚙ Written programs saved (every version of the rules is kept).' : 'Not saved: ' + s(r && r.error), !(r && r.ok)); return !!(r && r.ok); }); } : null, 'Save');
+    + '<div class="m" style="grid-column:1/-1">TCLP threshold, storage days and every other lead level: <button type="button" data-ed-lvsheet="1">📏 Lead levels (' + esc(CORE.LV(Rr).v) + ')</button></div>' + X.sel('wasteShipBlock', 'Waste shipped before it is characterized', [['1', '⛔ blocks'], ['', '⚠ warns']], S0.wasteShipBlock === false ? '' : '1') + X.fld('clinic', 'Occupational clinic (on every plan)', 'text', s(S0.clinic)) + X.fld('clinicPhone', 'Clinic phone', 'tel', s(S0.clinicPhone)) + '</div>';
+  var o = X.modal('⚙ Written programs', inner, ad ? function(v, el){ return savePrograms(readProgs(el), { asbDefault: v.asbDefault, planBlock: v.planBlock === '1', planOwnerSign: v.planOwnerSign === '1', deconBlock: v.deconBlock === '1', clinic: s(v.clinic), clinicPhone: s(v.clinicPhone), wasteShipBlock: v.wasteShipBlock === '1' }).then(function(r){ toast(r && r.ok ? '⚙ Written programs saved (every version of the rules is kept).' : 'Not saved: ' + s(r && r.error), !(r && r.ok)); return !!(r && r.ok); }); } : null, 'Save');
   o.setAttribute('data-ed-programs', '1');
   return o;
 }
@@ -439,7 +449,7 @@ function fillDocx(id, download, pid){
   return W.fetch(r.file).then(function(res){ if (!res.ok) throw new Error('HTTP ' + res.status); return res.arrayBuffer(); }).then(function(buf){ buf0 = buf; return p && !isCon && b.logo ? logoOf(b.logo) : null; }).then(function(L){
     var edits = {}, media = null;
     if (L) { vals.logoW = L.w; vals.logoH = L.h; }
-    edits['word/document.xml'] = function(x){ return CORE.fillDocxXml(x, vals); };
+    edits['word/document.xml'] = function(x){ return CORE.levelsDocxXml(CORE.fillDocxXml(x, vals), LVc()); };
     if (vals.company) edits['word/footer1.xml'] = function(x){ return CORE.fillFooterXml(x, vals); };
     /* the letterhead image: the first picture in the document (its media file gets the company's logo as PNG) */
     return zipEditMany(buf0, { 'word/_rels/document.xml.rels': function(x){ var m = x.match(/Target="(media\/[^"]+\.png)"/); media = m ? 'word/' + m[1] : null; return x; } }).then(function(){
@@ -454,7 +464,104 @@ function fillDocx(id, download, pid){
   }).catch(function(e){ toast('Could not fill the Word file: ' + (e && e.message), true); return null; });
 }
 
+/* ═════ 📏 LEAD LEVELS — the ONE record "Lead levels 2026 v.3" (gc_kv gc_lead_levels; history gc_lead_levels_history; the workers'
+   acknowledgments gc_lead_levels_ack). Every check and document reads it through CORE.levels(window.__gcLeadLevels). ═════ */
+var KLV = 'gc_lead_levels', KLVH = 'gc_lead_levels_history', KACK = 'gc_lead_levels_ack';
+try { var c0 = JSON.parse(localStorage.getItem('gc_lead_levels_v1') || 'null'); if (c0 && typeof c0 === 'object') W.__gcLeadLevels = c0; var a0 = JSON.parse(localStorage.getItem('gc_lead_levels_ack_v1') || 'null'); if (a0 && typeof a0 === 'object') W.__gcLeadAck = a0; } catch (e) {}
+if (!W.__gcLeadAck) W.__gcLeadAck = {};
+function LVc(){ return CORE.levels(W.__gcLeadLevels); }
+function pullLevels(){
+  return Promise.all([X.sb(KLV), X.sb(KACK)]).then(function(r){
+    var v = r[0], a = r[1], ch = false;
+    if (v && typeof v === 'object' && s(v.at) !== s(obj(W.__gcLeadLevels).at)) { W.__gcLeadLevels = v; try { localStorage.setItem('gc_lead_levels_v1', JSON.stringify(v)); } catch (e) {} ch = true; }
+    if (a && typeof a === 'object' && JSON.stringify(a) !== JSON.stringify(W.__gcLeadAck)) { W.__gcLeadAck = a; try { localStorage.setItem('gc_lead_levels_ack_v1', JSON.stringify(a)); } catch (e) {} ch = true; }
+    if (ch) X.paintSoon(); return LVc();
+  });
+}
+/* an admin saves the record: every earlier version is kept (who, when, the previous record) */
+function saveLevels(v){
+  if (!X.admin()) return Promise.resolve({ ok: false, error: 'Only an admin changes the lead levels.' });
+  var prev = W.__gcLeadLevels || null, rec = CORE.levels(v); rec.at = X.nowIso(); rec.by = me();
+  W.__gcLeadLevels = rec; try { localStorage.setItem('gc_lead_levels_v1', JSON.stringify(rec)); } catch (e) {}
+  X.paintSoon();
+  return X.sb(KLVH).then(function(h){ h = obj(h); h.list = arr(h.list).concat([{ at: rec.at, by: rec.by, v: rec.v, prev: prev }]); return X.put(KLVH, h); }).then(function(){ return X.put(KLV, rec); }).then(function(){ return { ok: true, rec: rec }; }, function(){ return { ok: true, cloud: false, rec: rec }; });
+}
+/* the worker acknowledges the current version of the card (once per version; kept on record) */
+function ackLevels(){
+  var em = X.myEmail(); if (!em) { toast('Sign in first.', true); return Promise.resolve(false); }
+  var L = LVc(), v = s(L.v);
+  return X.sb(KACK).then(function(a){ a = obj(a); a[v] = obj(a[v]); if (!a[v][em]) a[v][em] = { name: me(), at: X.nowIso() }; a.log = arr(a.log).concat([{ v: v, email: em, name: me(), at: X.nowIso() }]); W.__gcLeadAck = a; try { localStorage.setItem('gc_lead_levels_ack_v1', JSON.stringify(a)); } catch (e) {} X.paintSoon(); return X.put(KACK, a).then(function(){ toast('📏 Thank you — you acknowledged the lead levels (' + v + ').'); return true; }); });
+}
+/* the card, laid out like the owner's sheet — with the job's company logo and the version */
+function levelsCardHtml(p){
+  var L = LVc(), b = brand(p || null), A = L.air, B = L.blood, apf = arr(L.apf), Wl = L.waste;
+  var col = function(head, unit, rows){ return '<td style="vertical-align:top;border:1px solid #111;padding:0"><div style="background:#0f2440;color:#fff;font-weight:800;text-align:center;padding:4px;font-size:12px">' + head + '</div><div style="text-align:center;font-size:10px;padding:2px;border-bottom:1px solid #111">' + unit + '</div>' + rows.map(function(r){ return '<div style="border-bottom:1px solid #ccc;padding:4px;text-align:center"><div style="font-size:10px">' + esc(r[0]) + '</div><div style="font-size:17px;font-weight:900" data-lv="' + esc(r[2] || '') + '">' + esc(r[1]) + '</div></div>'; }).join('') + '</td>'; };
+  var t = '<table data-ed-lvtable="1" style="border-collapse:collapse;width:100%;table-layout:fixed"><tr>'
+    + col('OSHA PERSONAL AIR', A.unit, [['Action Level =', A.al, 'air.al'], ['PEL =', A.pel, 'air.pel'], ['Cassette size', A.cassette, 'air.cassette']])
+    + col('BLOOD', B.unit, [['OSHA Action Level (additional)', B.action, 'blood.action'], ['OSHA Removal From Work =', B.removal, 'blood.removal'], ['OSHA Back To Work =', '<' + B.back, 'blood.back'], ['CDC EBLL for a child =', B.childEbll, 'blood.childEbll']])
+    + col('RESPIRATOR PROTECTION FACTORS', 'exposure ÷ factor = inside the mask', apf.map(function(a){ return [a.label, a.apf, 'apf.' + a.key]; }))
+    + col('2026 ABATEMENT CLEARANCE · DLAL', L.dlal.unit + ' (from ' + s(L.dlal.from).slice(0, 7) + ')', [['Floors =', L.dlal.floors, 'dlal.floors'], ['Interior window sills =', L.dlal.sills, 'dlal.sills'], ['Window troughs =', L.dlal.troughs, 'dlal.troughs']])
+    + col('LEAD IN WASTE', 'TCLP ppm', [['Waste =', Wl.tclp, 'waste.tclp'], ['From a residence', 'NON-TOXIC'], ['Hazardous waste storage', Wl.storageDays + ' DAYS'], ['Destination over ' + Wl.farMiles + ' miles', Wl.storageDaysFar + ' DAYS']])
+    + col('LEAD PAINT', '% by weight · mg/cm²', [['Chip (by weight) =', L.paint.chipPct + '%', 'paint.chipPct'], ['XRF =', L.paint.xrf + ' mg/cm²', 'paint.xrf'], ['In the can =', L.paint.canPct + '%', 'paint.canPct'], ['Ladder over the platform', L.fall.ladderFt + ' FT', 'fall.ladderFt']])
+    + col('LEAD IN WATER', L.water.unit, [['EPA action level =', L.water.epa, 'water.epa'], ['HUD hazard level =', L.water.hud, 'water.hud'], ['Dripline', L.soil.driplineFt + ' FT', 'soil.driplineFt'], ['OSHA fall protection', L.fall.triggerFt + ' FT', 'fall.triggerFt']])
+    + col('LEAD IN SOIL', L.soil.unit, [['Children\'s play =', L.soil.play, 'soil.play'], ['Non-play areas =', L.soil.nonPlay, 'soil.nonPlay'], ['Abatement =', L.soil.abatement, 'soil.abatement'], ['Replacement soil =', L.soil.replacement, 'soil.replacement']])
+    + col('2026 RISK ASSESSMENT · DLRL', L.dlrl.unit, [['Floors', 'concern at ' + L.dlrl.floorsConcern], ['Recommend action — floors', L.dlrl.floors, 'dlrl.floors'], ['— window sills', L.dlrl.sills, 'dlrl.sills'], ['— window troughs', L.dlrl.troughs, 'dlrl.troughs']])
+    + '</tr></table>';
+  return '<div data-ed-lvcard-body="1"><div style="display:flex;align-items:center;gap:12px;margin-bottom:6px">' + (b.logo ? '<img data-ed-logo="1" src="' + esc(b.logo) + '" alt="' + esc(b.name) + ' logo" style="max-height:52px;max-width:170px">' : '') + '<div><b style="font-size:16px">IMPORTANT LEVELS — ' + esc(L.v) + '</b><div style="font-size:11px">' + esc(b.name) + ' · ' + esc(b.phone) + (p ? ' · ' + esc(p.name) : '') + '</div></div><div style="margin-left:auto;font-weight:800" data-ed-lvstamp="1">' + esc(CORE.levelsStamp(L)) + '</div></div>' + t
+    + '<div style="font-size:10px;margin-top:4px">* DLAL = dust-lead action level · ** DLRL = dust-lead reporting level · Source: ' + esc(L.source) + (L.at ? ' · updated ' + esc(new Date(L.at).toLocaleDateString()) + (L.by ? ' by ' + esc(L.by) : '') : '') + '</div></div>';
+}
+function levelsCardPage(p){ return '<!doctype html><html><head><meta charset="utf-8"><title>Lead levels — ' + esc(LVc().v) + '</title><style>@page{size:11in 8.5in;margin:.35in}body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:0}</style></head><body>' + levelsCardHtml(p) + '</body></html>'; }
+W._gcLeadLevelsCard = function(p){ return levelsCardHtml(p); };   /* patch EPAHUD uses this card on its job paperwork */
+function openLevelsCard(pid){
+  var p = pid ? proj(pid) : null, L = LVc(), em = X.myEmail(), a = CORE.ackOf(W.__gcLeadAck, L, em);
+  var o = X.modal('📏 Lead levels — ' + s(L.v), '<div style="overflow-x:auto">' + levelsCardHtml(p) + '</div>'
+    + '<div class="acts"><button type="button" class="g" data-lv="ack"' + (a ? ' disabled' : '') + '>' + (a ? '✅ You acknowledged ' + esc(L.v) + ' on ' + esc(nice(s(a.at).slice(0, 10))) : '✍ I have read the current levels (' + esc(L.v) + ')') + '</button><button type="button" data-lv="print">🖨 Print / share</button>' + (X.admin() ? '<button type="button" data-lv="edit">⚙ Edit the levels (admin)</button>' : '') + '<button type="button" data-lv="calc">🧮 Respirator calculator</button></div>', null);
+  o.setAttribute('data-ed-lvcard', '1');
+  o.addEventListener('click', function(e){ var b = e.target.closest && e.target.closest('[data-lv]'); if (!b) return; var k = b.getAttribute('data-lv');
+    if (k === 'ack') ackLevels().then(function(ok){ if (ok) { b.disabled = true; b.textContent = '✅ Acknowledged'; } });
+    if (k === 'print') openHtml(levelsCardPage(p), 'LevelsCard');
+    if (k === 'edit') { o.remove(); levelsSheet(); }
+    if (k === 'calc') { var ex = W.prompt('Measured lead exposure (µg/m³, 8-hour TWA):', ''); if (ex != null && s(ex)) { var m = CORE.minRespirator(ex, LVc()); W.alert(m.text + (m.math ? '\n\n' + m.math.join('\n') : '')); } } });
+  return o;
+}
+/* ⚙ the record (admins edit; others read) — every number on the sheet, the source shown */
+var LVF = [['v', 'Version name', ''], ['source', 'Source', ''], ['air.al', 'Air action level (µg/m³)'], ['air.pel', 'Air PEL (µg/m³)'], ['air.cassette', 'Air sampling cassette'], ['blood.action', 'Blood: OSHA additional action (µg/dL)'], ['blood.removal', 'Blood: Removal From Work (µg/dL)'], ['blood.back', 'Blood: Back To Work below (µg/dL)'], ['blood.childEbll', 'Blood: CDC child EBLL (µg/dL)'],
+  ['dlal.floors', 'Clearance DLAL floors (µg/ft²)'], ['dlal.sills', 'Clearance DLAL interior window sills'], ['dlal.troughs', 'Clearance DLAL window troughs'], ['dlrl.floors', 'Risk assessment DLRL floors (recommend action)'], ['dlrl.sills', 'DLRL window sills'], ['dlrl.troughs', 'DLRL window troughs'],
+  ['waste.tclp', 'Waste TCLP hazardous (ppm)'], ['waste.storageDays', 'Hazardous waste storage (days)'], ['waste.storageDaysFar', 'Storage if the destination is over 200 miles (days)'], ['waste.alertDays', 'Storage alert (days)'], ['waste.alertDaysFar', 'Storage alert, far destination (days)'],
+  ['paint.chipPct', 'Lead paint: chip (% by weight)'], ['paint.xrf', 'Lead paint: XRF (mg/cm²)'], ['paint.canPct', 'Lead paint: in the can (%)'], ['water.epa', 'Water: EPA action level (ppb)'], ['water.hud', 'Water: HUD hazard level (ppb)'],
+  ['soil.play', 'Soil: children\'s play areas (µg/g)'], ['soil.nonPlay', 'Soil: non-play areas'], ['soil.abatement', 'Soil: abatement'], ['soil.replacement', 'Soil: replacement soil max'], ['soil.driplineFt', 'Dripline zone (ft)'], ['fall.triggerFt', 'Fall protection trigger (ft)'], ['fall.ladderFt', 'Ladder over the platform (ft)']];
+function getP(o, k){ var q = k.split('.'); return q.length === 1 ? o[k] : obj(o[q[0]])[q[1]]; }
+function levelsSheet(){
+  var L = LVc(), ad = X.admin();
+  var inner = '<div class="m">ONE record for every lead level in the CRM — the compliance checks, the written programs, the Employee Protection Plans, the clearance, TCLP and waste forms, the decon set-up, the signs and the daily log read it; each copy prints "' + esc(CORE.levelsStamp(L)) + '". Source: <b>' + esc(L.source) + '</b>. Every version is kept.</div><div class="grid">'
+    + LVF.map(function(f){ return X.fld('lv_' + f[0].replace('.', '_'), f[1], f[0] === 'v' || f[0] === 'source' || f[0] === 'air.cassette' ? 'text' : 'number', s(getP(L, f[0]))).replace('<input ', '<input' + (ad ? '' : ' disabled') + ' step="any" '); }).join('') + '</div>'
+    + '<div class="sec">Respirator protection factors</div>' + arr(L.apf).map(function(a){ return X.fld('apf_' + a.key, a.label, 'number', s(a.apf)).replace('<input ', '<input' + (ad ? '' : ' disabled') + ' '); }).join('');
+  var o = X.modal('📏 Lead levels — ' + s(L.v), inner, ad ? function(v){ var n = JSON.parse(JSON.stringify(LVc())); LVF.forEach(function(f){ var raw = v['lv_' + f[0].replace('.', '_')]; if (raw == null || !s(raw)) return; var q = f[0].split('.'), val = /^(v|source|air\.cassette)$/.test(f[0]) ? s(raw) : +raw; if (q.length === 1) n[q[0]] = val; else n[q[0]][q[1]] = val; }); n.apf = arr(n.apf).map(function(a){ var r = v['apf_' + a.key]; return Object.assign({}, a, r != null && s(r) ? { apf: +r } : {}); }); return saveLevels(n).then(function(r){ toast(r.ok ? '📏 Lead levels saved (' + s(r.rec.v) + ') — every earlier version is kept.' : r.error, !r.ok); return r.ok; }); } : null, 'Save the levels');
+  o.setAttribute('data-ed-levels', '1'); return o;
+}
+/* 🧪 a lead test on the job (XRF, paint chip, paint in the can, soil, water, risk-assessment dust wipe) — compared with the record */
+var TT = [['xrf', 'XRF (mg/cm²)'], ['chip', 'Paint chip (% by weight)'], ['can', 'Paint in the can (%)'], ['soil', 'Soil (µg/g)'], ['water', 'Water (ppb)'], ['riskwipe', 'Dust wipe — risk assessment (µg/ft²)'], ['wipe', 'Dust wipe — clearance (µg/ft²)']];
+function leadTestForm(pid){
+  var p = proj(pid); if (!p) return;
+  X.modal('🧪 Lead test result — ' + s(p.name), '<div class="m">Compared with ' + esc(CORE.levelsStamp(LVc())) + ' — 🟢 below / 🔴 at or above the level (a red flag adds its action to the job).</div><div class="grid">' + X.sel('ttype', 'Test', TT, 'xrf') + X.fld('date', 'Date', 'date', today()) + X.fld('location', 'Component / location', 'text', '', 'e.g. kitchen window sill, north dripline')
+    + X.fld('value', 'Result', 'text', '') + X.sel('surface', 'Surface (wipes)', ['', 'Floors', 'Interior window sills', 'Window troughs'], '') + X.sel('area', 'Area (soil)', ['', 'Children\'s play area', 'Non-play area', 'Abatement'], '') + X.fld('by', 'Tested by / lab', 'text', me()) + '</div>' + X.fileIn('file', 'Report (PDF / photo)', false, 'application/pdf,image/*'),
+    function(v){ return logLeadTest(pid, v); }, 'Save');
+}
+function logLeadTest(pid, v){
+  var p = proj(pid); if (!p) return Promise.resolve(false); v = v || {}; var L = LVc(), c = CORE.compareLevel(s(v.ttype), v.value, { surface: v.surface, area: v.area }, L);
+  if (!c.flag) { toast('Enter a number for the result.', true); return Promise.resolve(false); }
+  return X.storeAll(v.files && v.files.file, pid).then(function(F){
+    X.addLog(pid, { kind: 'leadtest', ttype: s(v.ttype), date: s(v.date) || today(), location: s(v.location), value: s(v.value), surface: s(v.surface), area: s(v.area), by: s(v.by) || me(), flag: c.flag, levelText: c.text, action: c.action, levels: CORE.levelsStamp(L), file: F[0] || null });
+    toast((c.flag === 'red' ? '🔴 ' : '🟢 ') + c.text + (c.action ? ' — ' + c.action : ''), c.flag === 'red'); return true;
+  });
+}
+
 /* ═════ the clicks ═════ */
+D.addEventListener('click', function(e){ var b = e.target && e.target.closest ? e.target.closest('[data-ed-lvcard-open],[data-ed-lvcard="1"]:not(.gc-ec-ov),[data-ed-lvsheet]') : null; if (!b) return; e.preventDefault(); e.stopPropagation(); if (b.hasAttribute('data-ed-lvsheet')) { var m0 = D.getElementById('gc-ec-modal'); if (m0) m0.remove(); levelsSheet(); return; } var c = b.closest('#gc-ec'); openLevelsCard(b.getAttribute('data-pid') || (c ? c.getAttribute('data-pid') : '')); }, true);
+/* GrayCo Field: on every lead job's tools and under ☰ More */
+var LVREG = false;
+function regLevels(){ if (LVREG || !W._gcFieldTools) return; LVREG = X.regFieldTool({ id: 'leadlevels', icon: '📏', label: 'Lead levels', roles: [], needsSigned: false, order: 46, show: function(p){ try { return EC.evaluate(p).kinds.some(function(k){ return /^lead/.test(k); }); } catch (e) { return false; } }, run: function(p){ openLevelsCard(p.id); } }); }
+function moreLevels(){ try { [].forEach.call(D.querySelectorAll('h3'), function(h){ if (!/☰ More/.test(h.textContent || '')) return; var pk = h.parentNode && h.parentNode.querySelector('.pick'); if (!pk || pk.querySelector('[data-ed-lvcard-open]')) return; var b = D.createElement('button'); b.type = 'button'; b.setAttribute('data-ed-lvcard-open', '1'); b.innerHTML = '<span class="e">📏</span><span>Lead levels<small>' + esc(LVc().v) + ' — the reference card</small></span>'; pk.appendChild(b); }); } catch (e) {} }
 function pidOf(b){ var c = b.closest('#gc-ec'); return c ? c.getAttribute('data-pid') : (b.getAttribute('data-pid') || ''); }
 D.addEventListener('click', function(e){
   var b = e.target && e.target.closest ? e.target.closest('[data-ed],[data-ed-fill]') : null; if (!b) return;
@@ -473,6 +580,8 @@ D.addEventListener('click', function(e){
   else if (a === 'wasteprint') openHtml(wasteHtml(pid), 'Waste');
   else if (a === 'noticeprint') openHtml(noticesHtml(pid), 'Notices');
   else if (a === 'programs') programsSheet();
+  else if (a === 'lvcard') openLevelsCard(pid);
+  else if (a === 'leadtest') leadTestForm(pid);
   else if (a === 'wstream') { var nm = W.prompt('New waste stream (e.g. ' + CORE.listOf(obj(R().waste).streams).slice(0, 3).join(', ') + '):', ''); if (nm != null && s(nm)) addStream(pid, nm); }
   else if (a === 'tclp') tclpForm(pid);
   else if (a === 'tclpres') { var rv = W.prompt('TCLP lead result (mg/L) from the lab:', ''); if (rv != null && s(rv)) tclpResult(pid, id, rv); }
@@ -518,19 +627,23 @@ function hookPrintPack(){
   var M = W._gcMktExt; if (!M || !M.VIEWS || !M.VIEWS.printpack) { if (PPW++ < 240) ST.call(W, hookPrintPack, 1000); return; }
   if (M.VIEWS.printpack.__gcEd) return;
   var f = M.VIEWS.printpack, w = function(){ return f.apply(this, arguments) + signsCard(); }; w.__gcEd = true; M.VIEWS.printpack = w;
+  M.ACT['ed-lvcard'] = function(){ openHtml(levelsCardPage(null), 'LevelsCard'); };
   M.ACT['ed-sign'] = function(b){ var card = b.closest('[data-ed-signs]'), z = card && card.querySelector('[data-ed-psize]'), bi = card && card.querySelector('[data-ed-pbi]'), id = b.getAttribute('data-s'), size = z ? z.value : 'letter'; printSigns(id ? [id] : null, { size: size, bilingual: bi ? bi.checked : true, pdf: size === 'shop' }); };
 }
 function signsCard(){
   var b = brand(null);
   return '<div class="gmt-card" data-ed-signs="1"><h2>🪧 Environmental signs</h2><div class="gmt-muted">Every sign for lead, asbestos, mold, trauma and the decon unit — in ' + esc(b.name) + '\'s branding (name, logo, phone in the bottom band). ' + esc(CORE.SIGN_NOTE) + '</div>'
     + '<div class="gmt-row" style="margin-top:6px"><select data-ed-psize="1" aria-label="Sign size">' + CORE.SIGN_SIZES.map(function(z){ return '<option value="' + z.key + '">' + esc(z.label) + '</option>'; }).join('') + '</select><label><input type="checkbox" data-ed-pbi="1" checked> English + Spanish</label><button class="gmt-btn" data-a="ed-sign" data-s="">🖨 Print all</button></div>'
+    + '<div class="gmt-row" style="margin-top:6px"><button class="gmt-btn" data-a="ed-lvcard">📏 Lead levels card (' + esc(LVc().v) + ')</button></div>'
     + '<div class="gmt-grid" style="grid-template-columns:repeat(auto-fill,minmax(260px,1fr))">' + CORE.SIGNS.map(function(g){ var T = CORE.TONES[g.tone] || {}; return '<div class="gmt-card" style="margin:0" data-ed-sign="' + esc(g.id) + '"><div style="background:' + T.band + ';color:' + T.ink + ';font-weight:900;text-align:center;padding:4px;border-radius:6px">' + esc(g.head) + '</div><b style="display:block;margin:4px 0">' + esc(g.title) + '</b><div class="gmt-muted">' + esc(g.lines.join(' · ')) + '</div><button class="gmt-btn o" data-a="ed-sign" data-s="' + esc(g.id) + '">🖨 Print</button></div>'; }).join('') + '</div></div>';
 }
 
 /* ── the timers ── */
 ST.call(W, hookPrintPack, 1500);
+ST.call(W, pullLevels, 3000); SI.call(W, pullLevels, 120000); SI.call(W, function(){ regLevels(); moreLevels(); }, 1500);
 ST.call(W, sweep, 45000); SI.call(W, sweep, 300000);
-W._gcEnvDocs = { generate: generate, sign: sign, planHtml: planHtml, planPdf: planPdf, planForm: planForm, setAsbBy: setAsbBy, subForm: subForm, saveSub: saveSub, deconForm: deconForm, saveDecon: saveDecon,
+W._gcLeadLevels = { get: LVc, pull: pullLevels, save: saveLevels, ack: ackLevels, card: levelsCardHtml, cardPage: levelsCardPage, open: openLevelsCard, sheet: levelsSheet, compare: function(kind, v, o){ return CORE.compareLevel(kind, v, o, LVc()); }, stamp: function(){ return CORE.levelsStamp(LVc()); } };
+W._gcEnvDocs = { leadTestForm: leadTestForm, logLeadTest: logLeadTest, generate: generate, sign: sign, planHtml: planHtml, planPdf: planPdf, planForm: planForm, setAsbBy: setAsbBy, subForm: subForm, saveSub: saveSub, deconForm: deconForm, saveDecon: saveDecon,
   deconBlankHtml: deconBlankHtml, deconSheetHtml: deconSheetHtml, purchaseHtml: purchaseHtml, wasteHtml: wasteHtml, noticesHtml: noticesHtml, jobFacts: jobFacts, jobHead: jobHead, signFill: signFill, logoOf: logoOf, zipEditMany: zipEditMany, addStream: addStream, logTclp: logTclp, tclpResult: tclpResult, logGk: logGk, logShip: logShip, tclpForm: tclpForm, shipForm: shipForm, programsSheet: programsSheet, savePrograms: savePrograms, fillDocx: fillDocx, zipEdit: zipEdit, signsHtml: signsHtml, printSigns: printSigns, signsCard: signsCard, sweep: sweep, wanted: wanted, hookPrintPack: hookPrintPack };
 })(window);
 </script>
