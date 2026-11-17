@@ -63,7 +63,7 @@ const heads = P.sections.map(s => s.h).join(' | '), txt = JSON.stringify(P);
   .forEach(h => ok(heads.indexOf(h) >= 0, 'plan part: ' + h));
 ok(/Sam Sup/.test(txt) && /Demo Lead Admin/.test(txt) && /kept forever/.test(txt) && /911/.test(txt) && /up to 18 months/.test(txt) && /confirm with your state program/i.test(P.note), 'the plan names the competent person, the program administrator, records forever, 911, removal protection, the "confirm" label');
 ok(/Decon unit/.test(txt) && /NOT SET UP YET/.test(txt) && /Lead work area — DANGER/.test(txt), 'the plan carries the decon unit and the job\'s signs');
-ok(!/\d+\s*µg\/dL/.test(JSON.stringify(P.sections.find(s => /Medical/.test(s.h)).rows)), 'medical status only — no result on the plan');
+ok(!/\d+\s*µg\/dL/.test(JSON.stringify(P.sections.find(s => /Medical/.test(s.h)).rows.filter(r => r[0] !== 'Medical removal protection'))), 'medical status only — no worker\'s result on the plan');
 const rec = { id: 'e1', kind: 'epp', v: 1, fp: P.fp, date: C.today(), plan: P, signed: {} };
 let L2 = Object.assign({}, lead, { envLog: [rec] });
 ok(C.evaluate(L2, ctx).plan.st === 'unsigned', 'generated, not signed → still ⚠');
@@ -138,7 +138,7 @@ ok((fx.match(/<w:p[ >]/g) || []).length === (xml.match(/<w:p[ >]/g) || []).lengt
 ok(C.fillDocxXml(xml, {}) === xml, 'nothing to fill → the file is unchanged');
 
 console.log('8 · TCLP waste characterization (owner: "TCLP")');
-ok(C.tclpThreshold(ctx.rules) === 5 && /confirm with EPA/i.test(C.DEFAULT_RULES.settings.tclpNote) && C.tclpThreshold(C.rules({ settings: { tclpLead: 4.5 } })) === 4.5, 'the threshold is a setting (default 5.0 mg/L lead, labelled "confirm with EPA / state")');
+ok(C.tclpThreshold(ctx.rules) === 5 && /confirm with EPA/i.test(C.tclpNote(ctx.rules)) && /Levels: 2026 v\.3/.test(C.tclpNote(ctx.rules)) && C.tclpThreshold(C.rules({ levels: { waste: { tclp: 4.5 } } })) === 4.5, 'the threshold comes from the lead levels record (5 ppm, "Levels: 2026 v.3", labelled to confirm with EPA / state)');
 ok(C.tclpClass('5.0', 5) === 'hazardous' && C.tclpClass('7.2', 5) === 'hazardous' && C.tclpClass('4.99', 5) === 'non-hazardous' && C.tclpClass('<0.5', 5) === 'non-hazardous' && C.tclpClass('ND', 5) === 'non-hazardous' && C.tclpClass('', 5) === 'pending' && C.tclpClass('waiting', 5) === 'pending', 'result ≥ threshold → hazardous; below / non-detect → non-hazardous; blank → pending');
 let WJ = Object.assign({}, lead, { envLog: [] });
 ok(C.evaluate(WJ, ctx).items.some(x => x.id === 'waste-none' && x.st === 'due'), 'a lead abatement job without a waste stream → ⚠ add and characterize them');
@@ -166,7 +166,7 @@ ok(/NON-HAZARDOUS/.test(w2.label) && /generator knowledge: TCLP of the same shee
 WJ.envLog[WJ.envLog.length - 1].acceptanceOn = C.today();
 ok(C.evaluate(WJ, ctx).items.find(x => x.id === 'waste:plastic sheeting / ppe / filters').st === 'ok', 'with the acceptance letter → ✅');
 const WP = JSON.stringify(C.buildPlan(WJ, ctx, { v: 1 }));
-ok(/Waste characterization \(TCLP\) and disposal/.test(WP) && /Lead paint chips \/ debris/.test(WP) && /HAZARDOUS — TCLP 12.3 mg\/L lead \(threshold 5\)/.test(WP) && /TCLP threshold used: 5 mg\/L/.test(WP), 'the plan\'s waste section: each stream, its classification and disposal path, the threshold');
+ok(/Waste characterization \(TCLP\) and disposal/.test(WP) && /Lead paint chips \/ debris/.test(WP) && /HAZARDOUS — TCLP 12.3 mg\/L lead \(threshold 5\)/.test(WP) && /TCLP threshold used: 5 ppm/.test(WP), 'the plan\'s waste section: each stream, its classification and disposal path, the threshold');
 ok(['tclp', 'wgk', 'wship'].every(k => C.recCat({ kind: k }, ['lead_abate']) === 'project') && C.retainYears(ctx.rules, 'project') === Infinity, 'TCLP samples, generator knowledge and shipments are project records — kept forever');
 const daily = C.DEFAULT_RULES.daily.find(f => f.key === 'waste');
 ok(/stream\|Waste stream/.test(daily.cols), 'the daily log\'s waste rows carry the waste stream');

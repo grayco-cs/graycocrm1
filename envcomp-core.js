@@ -90,7 +90,7 @@ var DEFAULT_RULES = {
     { key: 'fit', label: 'Respirator fit test' }, { key: 'followup', label: 'Follow-up visit' }, { key: 'opinion', label: 'Written medical opinion' }, { key: 'other', label: 'Other' }],
   /* medical removal protection (pay protection) — defaults to confirm with your attorney / state program */
   removal: { maxMonths: 18, basis: 'average', avgWeeks: 6, followEveryMonths: 1, followVisit: 'bloodLead', kinds: 'lead_abate, lead_rrp, asbestos', warnDays: 30, topUp: true,
-    note: 'Default (pay kept up to 18 months, the average of the last 6 weeks before removal, follow-up blood tests monthly, reduced by workers\' comp wage replacement and by pay for other work in the period) — confirm with your attorney / state program.' },
+    note: 'Default (removal at the blood lead Removal From Work level, back to work below the Back To Work level — both from the lead levels record; pay kept up to 18 months, the average of the last 6 weeks before removal, follow-up blood tests monthly, reduced by workers\' comp wage replacement and by pay for other work in the period) — confirm with your attorney / state program.' },
   /* 2 · air testing / monitoring; type = personal | area | clearance | baseline; when = before | during | clearance;
      gate = the job cannot be closed until a passing record of this type */
   air: [
@@ -138,6 +138,8 @@ var DEFAULT_RULES = {
     { key: 'deconNote', section: 'Decon / hygiene', label: 'Decon notes / repairs / supplies restocked', type: 'text', kinds: 'lead_abate', decon: true },
     { key: 'deconPhotos', section: 'Decon / hygiene', label: 'Photo of the decon unit today', type: 'photos', kinds: 'lead_abate', decon: true },
     { key: 'waste', section: 'Waste', label: 'Waste generated (by waste stream — ENVDOCS: each stream is characterized by TCLP or generator knowledge before disposal)', type: 'rows', cols: 'stream|Waste stream, bags|Bags, drums|Drums, manifest|Manifest #, store|Storage location', sum: 'bags, drums', kinds: '*' },
+    { key: 'fallProt', section: 'Safety', label: 'Fall protection in use for any work at {fall.triggerFt} ft or more (OSHA trigger)', type: 'check', kinds: '*' },
+    { key: 'ladder', section: 'Safety', label: 'Ladders extend {fall.ladderFt} ft over the landing / platform', type: 'check', kinds: '*' },
     { key: 'signs', section: 'Signage', label: 'Warning signs posted at every entrance', type: 'check', kinds: '*' },
     { key: 'signPhotos', section: 'Signage', label: 'Photo of the posted signs (ENVDOCS: print them from 🛡 Compliance → 🪧 Signs)', type: 'photos', kinds: '*' },
     { key: 'incidents', section: 'Incidents', label: 'Incidents, near-misses, deviations', type: 'textarea', kinds: '*' },
@@ -169,8 +171,8 @@ var DEFAULT_RULES = {
        planBlock: the per-job Employee Protection Plan missing / unsigned → ⛔ instead of ⚠. deconBlock: the same for the decon set-up. */
     asbDefault: 'sub', planBlock: false, planOwnerSign: true, deconBlock: false, clinic: '', clinicPhone: '', programReviewDays: 30,
     /* ENVDOCS · TCLP (owner: "TCLP"): the regulatory threshold a TCLP lead result is compared with (mg/L; result ≥ threshold → hazardous)
-       — default 5.0 mg/L, confirm with EPA / your state program; wasteShipBlock: a stream shipped / disposed before it is characterized → ⛔ */
-    tclpLead: 5.0, tclpNote: 'Default 5.0 mg/L lead (TCLP) — confirm with EPA / your state program', wasteShipBlock: true },
+       — the threshold is in the lead levels record (levels.waste.tclp); wasteShipBlock: a stream shipped / disposed before it is characterized → ⛔ */
+    wasteShipBlock: true },
   /* ENVDOCS · the waste streams of a job (TCLP waste characterization): the kinds that characterize their waste, the usual streams */
   waste: { kinds: 'lead_abate, lead_rrp', streams: 'Lead paint chips / debris, Blast media, Sludge / wash water, Demolition debris (painted components), Plastic sheeting / PPE / filters',
     note: 'Each waste stream is characterized (TCLP result, or documented generator knowledge with its basis) before it is disposed of. Hazardous: manifest, hauler, TSD facility, generator status. Non-hazardous: the landfill\'s acceptance letter. Confirm with EPA / your state program.' },
@@ -207,10 +209,10 @@ var DEFAULT_RULES = {
   var L = 'lead_rrp, lead_abate', P = [];
   function t(kinds, sec, text, by){ P.push(by ? { kinds: kinds, by: by, sec: sec, text: text } : { kinds: kinds, sec: sec, text: text }); }
   /* lead (RRP and abatement) — GrayCo's own crew */
-  t(L, 'exposure', 'Trigger tasks (manual scraping, heat gun below 1,100°F, power tools with dust collection, manual demolition, lead soil work) are presumed above the PEL until personal air monitoring or objective data from the last 12 months shows otherwise; interim protection applies until then (Lead Safety Program §4). Action level 30 µg/m³, PEL 50 µg/m³ (8-hour TWA).');
+  t(L, 'exposure', 'Trigger tasks (manual scraping, heat gun below 1,100°F, power tools with dust collection, manual demolition, lead soil work) are presumed above the PEL until personal air monitoring or objective data from the last 12 months shows otherwise; interim protection applies until then (Lead Safety Program §4). Action level {air.al} {air.unit}, PEL {air.pel} {air.unit} (8-hour TWA).');
   t(L, 'engineering', 'Containment: 6-mil plastic floor layers, two-layer entry, critical barriers; HVAC off and returns sealed; HEPA-filtered negative air where set up; power tools only with HEPA dust collection; wet methods (mist and wet-scrape). Lead Safety Program §6.');
   t(L, 'practices', 'No sanding of any kind, no dry scraping, no open flame, no heat gun at 1,100°F or more, no methylene-chloride strippers; mist and wet-scrape only; clean up before leaving every day; gooseneck-sealed, labeled bags; no eating, drinking, smoking or vaping in the work area; shoe covers off at every exit (Lead Safety Program §5).');
-  t(L, 'respirator', 'Trigger tasks: N100 filtering facepiece or half-face respirator with N100/P100 filters until the exposure assessment shows exposure below the PEL; full-face or PAPR if monitoring shows more than 500 µg/m³. Every wearer medically cleared and fit tested within 12 months (Respiratory Protection Program).');
+  t(L, 'respirator', 'Trigger tasks: N100 filtering facepiece or half-face respirator with N100/P100 filters until the exposure assessment shows exposure below the PEL; a higher protection factor when the measured exposure ÷ the respirator\'s protection factor is not under the PEL ({air.pel} {air.unit}) — see the minimum-respirator math below. Every wearer medically cleared and fit tested within 12 months (Respiratory Protection Program).');
   t(L, 'clothing', 'Provided by GrayCo at no cost: disposable coveralls, hoods, shoe covers, gloves, eye protection. Changed at every exit; disposables bagged as lead waste; reusable work clothes cleaned by GrayCo\'s arrangement in labeled bags — never taken home (Lead Safety Program §9).');
   t(L, 'hygiene', 'Clean change area apart from street clothes; hand and face wash at the work area exit (showers where feasible); break area outside the work area; wash before eating, drinking or smoking and at the end of the shift (Lead Safety Program §10).');
   t(L, 'housekeeping', 'HEPA vacuum and wet wipe / wet mop only — no dry sweeping, no compressed air, no shop vacs; clean the work area before every break off site and at the end of the day; waste sealed, labeled and secured (Lead Safety Program §7).');
@@ -267,6 +269,7 @@ function rules(r){
   ['removal', 'settings', 'decon', 'waste'].forEach(function(k){ if (obj(r[k]) && Object.keys(obj(r[k])).length) R[k] = Object.assign({}, R[k], clone(r[k])); });
   if (typeof r.dailyBlock === 'boolean') R.dailyBlock = r.dailyBlock;
   if (r.at) R.at = r.at; if (r.by) R.by = r.by;
+  R.levels = levels(r.levels);   /* ENVDOCS: the ONE lead levels record (gc_lead_levels) — the page passes it in */
   return R;
 }
 
@@ -545,6 +548,10 @@ function evaluate(p, ctx){
   }
   /* ENVDOCS · TCLP: every waste stream characterized before disposal (⛔ when shipped without it — configurable) */
   if (wasteOn(p, kinds, R)) wasteItems(p, kinds, R).forEach(function(x){ item(x); });
+  /* ENVDOCS · lead levels: every test result compared with the record (a red flag → its action); the crew acknowledges the levels card */
+  var LVe = LV(R);
+  arr(p.envLog).filter(function(r){ return live(r) && r.kind === 'leadtest'; }).forEach(function(r){ var c = compareLevel(r.ttype, r.value, { surface: r.surface, area: r.area, residential: r.residential }, LVe); if (c.flag === 'red' && !r.resolved) item({ sec: 'levels', id: 'lt:' + r.id, label: '🔴 ' + s(r.ttype).toUpperCase() + ' ' + (r.location ? s(r.location) + ' — ' : '') + c.text, st: 'due', note: c.action + ' · ' + levelsStamp(LVe) }); });
+  if (kinds.some(function(k){ return /^lead/.test(k); }) && ctx.levelsAck) out.people.forEach(function(c){ if (!c.email) return; var a = ackOf(ctx.levelsAck, LVe, c.email); item({ sec: 'people', id: 'lvack:' + low(c.name), label: '📏 Lead levels card (' + s(LVe.v) + ') acknowledged — ' + c.name, who: c.name, st: a ? 'ok' : 'due', note: a ? 'acknowledged ' + ymd(a.at) : 'not yet acknowledged — 📏 Lead levels → "I have read the current levels"' }); });
   /* ENVDOCS · the per-job written Employee Protection Plan: ⚠ (or ⛔ when the rules say so) until generated and signed */
   var PS = planState(p, out, R);
   out.plan = PS;
@@ -572,7 +579,7 @@ function dailyTotals(p, R){
   });
   return out;
 }
-function recCat(r, kinds){ if (!r) return 'project'; if (/^(tclp|wgk|wship|epp|decon|asbsub)$/.test(s(r.kind))) return 'project';   /* ENVDOCS */ if (r.kind === 'air') return airType(r) === 'personal' ? 'exposure' : (kinds.indexOf('lead_rrp') >= 0 && kinds.length === 1 ? 'rrp' : 'project'); if (r.kind === 'compday' || r.kind === 'contain' || r.kind === 'waste' || r.kind === 'notice' || r.kind === 'ppe') return kinds.indexOf('lead_rrp') >= 0 && kinds.length === 1 ? 'rrp' : 'project'; return 'project'; }
+function recCat(r, kinds){ if (!r) return 'project'; if (/^(tclp|wgk|wship|epp|decon|asbsub|leadtest)$/.test(s(r.kind))) return 'project';   /* ENVDOCS */ if (r.kind === 'air') return airType(r) === 'personal' ? 'exposure' : (kinds.indexOf('lead_rrp') >= 0 && kinds.length === 1 ? 'rrp' : 'project'); if (r.kind === 'compday' || r.kind === 'contain' || r.kind === 'waste' || r.kind === 'notice' || r.kind === 'ppe') return kinds.indexOf('lead_rrp') >= 0 && kinds.length === 1 ? 'rrp' : 'project'; return 'project'; }
 
 /* medical removal protection pay for a pay period → { amount, weekly, weeks, detail, protectEnd } | null
    removal = { start, end, basis, avgWeeks, weekly, wcWeekly, maxMonths }; ctx = { runs, empKey, empKeys, hourlyRate, weeklyHours, annualSalary, earned } */
@@ -631,7 +638,7 @@ function deconState(p, R){
   return { st: done === S.length && ph ? 'ok' : 'part', rec: r, done: done, total: S.length, photos: ph };
 }
 /* the daily-log fields of a job (the decon fields only where the decon applies) */
-function dailyFields(p, kinds, R){ R = R || rules(); var dc = deconApplies(p, kinds, R); return arr(R.daily).filter(function(d){ return d && (d.decon ? dc : hasKind(d, kinds)); }); }
+function dailyFields(p, kinds, R){ R = R || rules(); var dc = deconApplies(p, kinds, R), L = LV(R); return arr(R.daily).filter(function(d){ return d && (d.decon ? dc : hasKind(d, kinds)); }).map(function(d){ return /\{/.test(s(d.label)) ? Object.assign({}, d, { label: fillTokens(d.label, L) }) : d; }); }
 
 /* ── the licensed asbestos sub (what GrayCo collects and keeps) ── */
 function subOf(p){ return obj(ec(p).asbSub); }
@@ -697,7 +704,7 @@ function planState(p, E, R){
 }
 function planTexts(R, kinds, by, sec){
   var out = [];
-  arr(R.planText).forEach(function(e){ if (!e || s(e.sec) !== sec || !hasKind(e, kinds)) return; var b = low(e.by); if (b && (kinds.indexOf('asbestos') < 0 || b !== by)) return; var tx = s(e.text); if (!tx || out.some(function(x){ return x.text === tx; })) return; out.push({ kinds: listOf(e.kinds), text: tx }); });
+  arr(R.planText).forEach(function(e){ if (!e || s(e.sec) !== sec || !hasKind(e, kinds)) return; var b = low(e.by); if (b && (kinds.indexOf('asbestos') < 0 || b !== by)) return; var tx = fillTokens(s(e.text), LV(R)); if (!tx || out.some(function(x){ return x.text === tx; })) return; out.push({ kinds: listOf(e.kinds), text: tx }); });
   return out.map(function(x){ var k = x.kinds.filter(function(q){ return kinds.indexOf(q) >= 0; }); return (kinds.length > 1 && k.length && k.length < kinds.length ? '[' + k.map(function(q){ var r = arr(R.kinds).find(function(z){ return z.key === q; }); return r ? s(r.label).replace(/^\W+\s*/, '') : q; }).join(', ') + '] ' : '') + x.text; });
 }
 /* the plan's content (structured: the CRM prints it, keeps it with each version, and the record package lists it)
@@ -728,11 +735,14 @@ function buildPlan(p, ctx, opt){
       ['GrayCo crew duties (awareness level): ' + planTexts(R, kinds, by, 'practices').filter(function(x){ return /awareness|STOP WORK/i.test(x); }).join(' ')]);
   } else sec('3. Who does the work', [['Crew', E.people.map(function(c){ return c.name + (c.role === 'supervisor' ? ' (supervisor)' : ''); }).join(', ') || 'nobody scheduled yet'], ['Employer', 'GrayCo — every worker on this plan is a GrayCo employee']]);
   /* 4 exposure */
-  sec('4. Expected exposure and basis', [['Basis on file', s(I.basis) || 'Add the test results / survey this is based on (✏️ Plan details)'], ['Air samples on file', String(arr(p.envLog).filter(function(r){ return live(r) && r.kind === 'air'; }).length)]], planTexts(R, kinds, by, 'exposure'));
+  var LVL = LV(R), apMax = arr(p.envLog).filter(function(r){ return live(r) && r.kind === 'air' && /lead air|µg\/m/i.test(s(r.method) + ' ' + s(r.result)) && isFinite(numOf(r.result)); }).map(function(r){ return numOf(r.result); }).concat(isFinite(numOf(I.exposure)) ? [numOf(I.exposure)] : []).sort(function(a, b){ return b - a; })[0];
+  var RESP = minRespirator(apMax, LVL);
+  sec('4. Expected exposure and basis', [['Lead levels used', levelsStamp(LVL) + ' — air: action level ' + LVL.air.al + ' / PEL ' + LVL.air.pel + ' ' + LVL.air.unit + ' · blood: action ' + LVL.blood.action + ', removal ' + LVL.blood.removal + ', back to work <' + LVL.blood.back + ' ' + LVL.blood.unit],
+    ['Highest measured lead exposure', isFinite(apMax) ? apMax + ' ' + LVL.air.unit : 'none yet'], ['Children (CDC blood lead reference value)', LVL.blood.childEbll + ' ' + LVL.blood.unit + ' — used in occupant / parent notices'], ['Basis on file', s(I.basis) || 'Add the test results / survey this is based on (✏️ Plan details)'], ['Air samples on file', String(arr(p.envLog).filter(function(r){ return live(r) && r.kind === 'air'; }).length)]], planTexts(R, kinds, by, 'exposure'));
   sec('5. Engineering controls', [], planTexts(R, kinds, by, 'engineering'));
   sec('6. Work-practice controls', [], planTexts(R, kinds, by, 'practices'));
   /* 7 respirators — the crew's fit test / clearance status only (never a result) */
-  sec('7. Respiratory protection', [['Program', 'GrayCo Respiratory Protection Program — administrator ' + (programInfo(R, 'resp', Object.assign({}, ctx, { rules: R })).admin || '(set in ⚙ Written programs)')], ['Respirators for this job', s(I.respirators)]].concat(E.people.filter(function(c){ return c.fit; }).map(function(c){ return [c.name, 'fit test ' + stTxt(c.fit)]; })), planTexts(R, kinds, by, 'respirator'));
+  sec('7. Respiratory protection', [['Minimum respirator from the measured exposure', RESP.text + (RESP.math ? ' · ' + RESP.math.join(' | ') : '')], ['Protection factors (' + levelsStamp(LVL) + ')', arr(LVL.apf).map(function(a){ return a.label + ' ' + a.apf; }).join(' · ')], ['Program', 'GrayCo Respiratory Protection Program — administrator ' + (programInfo(R, 'resp', Object.assign({}, ctx, { rules: R })).admin || '(set in ⚙ Written programs)')], ['Respirators for this job', s(I.respirators)]].concat(E.people.filter(function(c){ return c.fit; }).map(function(c){ return [c.name, 'fit test ' + stTxt(c.fit)]; })), planTexts(R, kinds, by, 'respirator'));
   sec('8. Protective clothing and equipment', [['Provided', 'at no cost to the employee']], planTexts(R, kinds, by, 'clothing'));
   /* 9 hygiene + the decon unit */
   var dc = deconApplies(p, kinds, R), DS = deconState(p, R), DR = DS.rec || {};
@@ -746,7 +756,7 @@ function buildPlan(p, ctx, opt){
   /* 12 medical surveillance + removal */
   var med = arr(R.medical).filter(function(m){ return hasKind(m, ck); }), RM = obj(R.removal);
   sec('12. Medical surveillance and medical removal', med.map(function(m){ return [s(m.label), m.once ? 'once (baseline)' : 'every ' + (+m.everyMonths || 12) + ' months' + (arr(m.phases).length ? ' (more often at first)' : '')]; })
-    .concat(med.length ? [['Medical removal protection', 'per the physician\'s written opinion; earnings, seniority and benefits kept up to ' + (+RM.maxMonths || 18) + ' months; follow-up tests every ' + (+RM.followEveryMonths || 1) + ' month(s) until cleared']] : [])
+    .concat(med.length ? [['Medical removal protection', 'Removal From Work at a blood lead of ' + LVL.blood.removal + ' ' + LVL.blood.unit + ' or more (or per the physician\'s written opinion) · Back to work at <' + LVL.blood.back + ' · OSHA additional action at ' + LVL.blood.action + ' · earnings, seniority and benefits kept up to ' + (+RM.maxMonths || 18) + ' months; follow-up tests every ' + (+RM.followEveryMonths || 1) + ' month(s) until cleared (' + levelsStamp(LVL) + ')']] : [])
     .concat(E.people.filter(function(c){ return c.medical; }).map(function(c){ return [c.name, 'medical ' + stTxt(c.medical) + (c.removed ? ' · NOT CLEARED for exposure work' : '')]; })),
     med.length ? [s(RM.note)] : ['No medical surveillance applies to the GrayCo crew on this job' + (asb && by === 'sub' ? ' (the abatement sub keeps its own workers\' medical surveillance).' : '.')]);
   /* 13 training */
@@ -765,7 +775,7 @@ function buildPlan(p, ctx, opt){
   /* waste characterization (TCLP) and disposal */
   if (wasteOn(p, kinds, R)) { var th0 = tclpThreshold(R);
     sec('17a. Waste characterization (TCLP) and disposal', wasteStreams(p, R).map(function(x){ return [x.stream, (x.cls ? x.cls.toUpperCase() + ' — ' + (x.basis === 'tclp' ? 'TCLP ' + s(x.rec.result) + ' mg/L lead (threshold ' + s(x.rec.threshold || th0) + ')' : 'generator knowledge: ' + s(x.rec.basis)) + ' → ' + (x.cls === 'hazardous' ? 'manifest, hauler, TSD facility, generator status' : 'landfill with its acceptance letter') : 'NOT YET CHARACTERIZED — no disposal until it is') + (x.ships.length ? ' · ' + x.ships.length + ' shipment(s)' : '')]; }),
-      [s(obj(R.waste).note), 'TCLP threshold used: ' + th0 + ' mg/L lead — ' + s(obj(R.settings).tclpNote)]); }
+      [s(obj(R.waste).note), 'TCLP threshold used: ' + th0 + ' ppm (mg/L) lead — ' + tclpNote(R)]); }
   sec('18. Record keeping', arr(R.retention).map(function(r){ var y = retainYears(R, r.cat); return [s(r.label), y === Infinity ? 'kept forever (owner\'s rule)' : y + ' years']; }),
     ['Every record is kept in the CRM (job → 🛡 Compliance; each worker\'s own health & exposure records) and in the end-of-job record package. Every version of this plan is kept.']);
   /* 19 emergency */
@@ -773,31 +783,32 @@ function buildPlan(p, ctx, opt){
   var admins = []; progs.forEach(function(x){ if (x.admin && !admins.some(function(a){ return a[1].indexOf(x.admin) === 0; })) admins.push(['Program administrator', x.admin + (x.phone ? ' · ' + x.phone : '')]); });
   sec('19. Emergency contacts', [['Emergency', '911'], ['Nearest hospital', s(I.hospital) || 'add it (✏️ Plan details)'], ['Occupational clinic', [s(obj(R.settings).clinic), s(obj(R.settings).clinicPhone)].filter(Boolean).join(' · ')], ['Project manager', s(p.pm)], ['On-site supervisor', s(I.competent) || sups.map(function(c){ return c.name; }).join(', ')], asb && by === 'sub' ? ['Abatement sub', [s(S.company), s(S.phone)].filter(Boolean).join(' · ')] : null].concat(admins).concat([['Other', s(I.emergency)]]));
   sec('20. Written programs this plan follows', progs.map(function(x){ return [x.label, 'administrator ' + (x.admin || 'NOT SET') + (x.approvedBy ? ' · approved by ' + x.approvedBy + (x.approvedOn ? ' ' + x.approvedOn : '') : ' · approval not recorded') + (x.reviewed ? ' · reviewed ' + x.reviewed : ' · review date not set') + (x.inUse ? '' : ' · marked NOT IN USE')]; }));
-  return { v: opt.v || 1, fp: planFp(p, E, R), date: t, job: s(p.name), pid: s(p.id), kinds: kinds.slice(), by: asb ? by : '', title: 'Employee Protection Plan — ' + s(p.name), sections: SEC,
+  return { v: opt.v || 1, fp: planFp(p, E, R), date: t, levels: { v: s(LVL.v), name: s(LVL.name), at: s(LVL.at) }, stamp: levelsStamp(LVL), job: s(p.name), pid: s(p.id), kinds: kinds.slice(), by: asb ? by : '', title: 'Employee Protection Plan — ' + s(p.name), sections: SEC,
     note: 'Written compliance plan for this job. The lists are GrayCo\'s defaults — confirm with your state program / attorney.', signs: ['Competent person', 'Owner'] };
 }
 /* the plan as lines for a PDF / a printable page */
-function planLines(P){ var L = [{ h: s(P.title) }, { t: s(P.note) }]; arr(P.sections).forEach(function(x){ L.push({ h2: x.h }); arr(x.rows).forEach(function(r){ L.push({ t: s(r[0]) + ': ' + s(r[1]) }); }); arr(x.text).forEach(function(tx){ L.push({ t: '• ' + tx }); }); }); return L; }
+function planLines(P){ var L = [{ h: s(P.title) }, { t: s(P.note) + (P.stamp ? ' · ' + P.stamp : '') }]; arr(P.sections).forEach(function(x){ L.push({ h2: x.h }); arr(x.rows).forEach(function(r){ L.push({ t: s(r[0]) + ': ' + s(r[1]) }); }); arr(x.text).forEach(function(tx){ L.push({ t: '• ' + tx }); }); }); return L; }
 
 /* ── ENVDOCS · TCLP waste characterization (owner: "TCLP") — per job and per waste stream ──
    records (envLog, kept forever): tclp { stream, date, sampler, containers, lab, coc, analyte, result (mg/L), threshold, cls, file }
    wgk (generator knowledge) { stream, date, basis, cls, by, file }; wship { stream, date, containers, qty, cls, manifest, hauler, tsd,
    generatorStatus, landfill, acceptance (file / date), disposedOn } */
 function wasteOn(p, kinds, R){ R = R || rules(); return hasKind(obj(R.waste), kinds) || arr(obj(ec(p)).wasteStreams).length > 0 || arr(p && p.envLog).some(function(r){ return live(r) && /^(tclp|wgk|wship)$/.test(s(r.kind)); }); }
-function tclpThreshold(R){ var v = parseFloat(obj(obj(R || rules()).settings).tclpLead); return isFinite(v) && v > 0 ? v : 5.0; }
+function tclpThreshold(R){ var v = parseFloat(LV(R || rules()).waste.tclp); return isFinite(v) && v > 0 ? v : 5; }
+function tclpNote(R){ var L = LV(R || rules()); return 'TCLP ' + L.waste.tclp + ' ppm (mg/L) lead = hazardous; waste from a residence is non-toxic (household exemption, still logged) — ' + levelsStamp(L) + ' · confirm with EPA / your state program'; }
 /* a TCLP lead result against the threshold: ≥ threshold → hazardous; blank / "waiting" → pending */
-function tclpClass(result, threshold){ var t = s(result); if (!t || /wait|pend/i.test(t)) return 'pending'; var lt = /^\s*(<|nd\b|non.?detect)/i.test(t), v = parseFloat(t.replace(/^[<>≤≥\s]+/, '')); if (lt && !isFinite(v)) return 'non-hazardous'; if (!isFinite(v)) return 'pending'; return !lt && v >= +threshold ? 'hazardous' : 'non-hazardous'; }
+function tclpClass(result, threshold, residential){ if (residential) return 'non-hazardous'; var t = s(result); if (!t || /wait|pend/i.test(t)) return 'pending'; var lt = /^\s*(<|nd\b|non.?detect)/i.test(t), v = parseFloat(t.replace(/^[<>≤≥\s]+/, '')); if (lt && !isFinite(v)) return 'non-hazardous'; if (!isFinite(v)) return 'pending'; return !lt && v >= +threshold ? 'hazardous' : 'non-hazardous'; }
 function streamKey(n){ return low(n).replace(/\s+/g, ' '); }
 function wasteStreams(p, R){
   R = R || rules(); var E = obj(ec(p)), M = {}, order = [];
   var add = function(n){ var k = streamKey(n); if (!k) return null; if (!M[k]) { M[k] = { stream: s(n), key: k, tclp: [], gk: [], ships: [], logged: 0 }; order.push(k); } return M[k]; };
-  arr(E.wasteStreams).forEach(function(x){ add(x && typeof x === 'object' ? x.name : x); });
+  arr(E.wasteStreams).forEach(function(x){ var a0 = add(x && typeof x === 'object' ? x.name : x); if (a0 && x && typeof x === 'object') { if (x.residential) a0.residential = true; if (x.far) a0.far = true; if (x.start) a0.start = x.start; } });
   arr(p && p.envLog).forEach(function(r){
     if (!live(r)) return;
     if (r.kind === 'tclp') { var a = add(r.stream); if (a) a.tclp.push(r); }
     else if (r.kind === 'wgk') { var b = add(r.stream); if (b) b.gk.push(r); }
     else if (r.kind === 'wship') { var c = add(r.stream); if (c) c.ships.push(r); }
-    else if (r.kind === 'compday') arr(obj(r.rows).waste).forEach(function(w){ var d = add(w && w.stream); if (d) { d.logged++; if (s(w.manifest)) d.manifested = (d.manifested || 0) + 1; } });
+    else if (r.kind === 'compday') arr(obj(r.rows).waste).forEach(function(w){ var d = add(w && w.stream); if (d) { d.logged++; if (!d.first || s(r.date) < d.first) d.first = s(r.date); if (s(w.manifest)) d.manifested = (d.manifested || 0) + 1; } });
   });
   return order.map(function(k){
     var x = M[k], by = function(a, b){ return s(a.date) + s(a.at) < s(b.date) + s(b.at) ? 1 : -1; };
@@ -806,15 +817,18 @@ function wasteStreams(p, R){
     var cls = '', basis = '', rec = null;
     if (t && (!g || s(t.date) >= s(g.date))) { cls = t.cls; basis = 'tclp'; rec = t; } else if (g && s(g.basis)) { cls = g.cls; basis = 'gk'; rec = g; }
     if (t && t.cls === 'hazardous') { cls = 'hazardous'; basis = 'tclp'; rec = t; }   /* a hazardous TCLP result is never overridden by generator knowledge */
+    if (!t && (x.residential || ec(p).residential === true || x.tclp.some(function(r){ return r.residential; })) && LV(R).waste.residentialNonToxic !== false) { cls = 'non-hazardous'; basis = 'household'; rec = x.tclp.find(function(r){ return r.residential; }) || { date: '', basis: 'waste from a residence' }; x.household = true; }
+    /* the storage clock of a hazardous stream: from the first day it was generated (daily log / sample / the date set on the stream) */
+    if (cls === 'hazardous') { var st0 = [x.start, x.first].concat(x.tclp.map(function(r){ return r.date; })).map(ymd).filter(Boolean).sort()[0], far = !!x.far || x.ships.some(function(r){ return r.far; }) || x.tclp.some(function(r){ return r.far; }); x.clock = x.ships.some(function(r){ return ymd(r.disposedOn) || ymd(r.date); }) ? null : storageClock(st0, far, LV(R)); }
     x.cls = cls; x.basis = basis; x.rec = rec; x.pending = !cls && x.tclp.some(function(r){ return r.cls === 'pending'; });
     x.disposed = x.ships.some(function(r){ return !!ymd(r.disposedOn) || !!ymd(r.date); });
     return x;
   });
 }
 function canDispose(p, stream, R){ var x = wasteStreams(p, R).find(function(w){ return w.key === streamKey(stream); }); return !!(x && x.cls); }
-function shipGaps(r, cls){ var miss = []; if (cls === 'hazardous') { if (!s(r.manifest)) miss.push('manifest #'); if (!s(r.hauler)) miss.push('hauler'); if (!s(r.tsd)) miss.push('TSD facility'); if (!s(r.generatorStatus)) miss.push('generator status'); } else if (cls === 'non-hazardous') { if (!s(r.landfill)) miss.push('landfill'); if (!r.acceptance && !ymd(r.acceptanceOn)) miss.push('landfill acceptance letter'); } return miss; }
+function shipGaps(r, cls, household){ var miss = []; if (household) return s(r.landfill) ? [] : ['landfill / transfer station']; if (cls === 'hazardous') { if (!s(r.manifest)) miss.push('manifest #'); if (!s(r.hauler)) miss.push('hauler'); if (!s(r.tsd)) miss.push('TSD facility'); if (!s(r.generatorStatus)) miss.push('generator status'); } else if (cls === 'non-hazardous') { if (!s(r.landfill)) miss.push('landfill'); if (!r.acceptance && !ymd(r.acceptanceOn)) miss.push('landfill acceptance letter'); } return miss; }
 function wasteItems(p, kinds, R){
-  R = R || rules(); var out = [], W0 = wasteStreams(p, R), th = tclpThreshold(R), blk = obj(R.settings).wasteShipBlock !== false, note = s(obj(R.settings).tclpNote) || 'confirm with EPA / your state program';
+  R = R || rules(); var out = [], W0 = wasteStreams(p, R), th = tclpThreshold(R), blk = obj(R.settings).wasteShipBlock !== false, note = tclpNote(R);
   if (!W0.length && hasKind({ kinds: 'lead_abate' }, kinds)) out.push({ sec: 'waste', id: 'waste-none', label: 'Waste streams — add each one and characterize it (TCLP or generator knowledge)', st: 'due', note: 'No waste stream on this job yet · ' + s(obj(R.waste).note) });
   W0.forEach(function(x){
     var id = 'waste:' + x.key, base = { sec: 'waste', id: id, stream: x.stream, cls: x.cls, basis: x.basis };
@@ -824,10 +838,11 @@ function wasteItems(p, kinds, R){
         note: (gone ? 'SHIPPED / DISPOSED WITHOUT CHARACTERIZATION — ' : '') + (x.pending ? 'TCLP sample sent — waiting on the lab' : 'Log a TCLP sample (or document generator knowledge with its basis)') + ' · threshold ' + th + ' mg/L lead · ' + note }));
       return;
     }
-    var r = x.rec, how = x.basis === 'tclp' ? 'TCLP ' + s(r.result) + ' mg/L lead vs ' + s(r.threshold || th) + ' mg/L (' + ymd(r.date) + (r.lab ? ', ' + s(r.lab) : '') + (r.coc ? ', COC ' + s(r.coc) : '') + ')' : 'generator knowledge: ' + s(r.basis);
-    var gaps = []; x.ships.forEach(function(sh){ var m = shipGaps(sh, x.cls); if (m.length) gaps.push((ymd(sh.date) || 'shipment') + ': ' + m.join(', ')); });
-    var path = x.cls === 'hazardous' ? 'HAZARDOUS — manifest, hauler, TSD facility, generator status' : 'NON-HAZARDOUS — landfill acceptance letter';
-    out.push(Object.assign(base, { label: 'Waste stream "' + x.stream + '" — ' + x.cls.toUpperCase(), st: gaps.length ? 'due' : 'ok', note: how + ' · ' + path + (x.ships.length ? ' · ' + x.ships.length + ' shipment(s)' : ' · not shipped yet') + (gaps.length ? ' · missing: ' + gaps.join('; ') : '') }));
+    var r = x.rec, how = x.basis === 'household' ? 'waste from a residence — NON-TOXIC (household exemption; still logged)' : x.basis === 'tclp' ? 'TCLP ' + s(r.result) + ' mg/L lead vs ' + s(r.threshold || th) + ' mg/L (' + ymd(r.date) + (r.lab ? ', ' + s(r.lab) : '') + (r.coc ? ', COC ' + s(r.coc) : '') + ')' : 'generator knowledge: ' + s(r.basis);
+    var gaps = []; x.ships.forEach(function(sh){ var m = shipGaps(sh, x.cls, x.household); if (m.length) gaps.push((ymd(sh.date) || 'shipment') + ': ' + m.join(', ')); });
+    var path = x.household ? 'NON-TOXIC — household waste' : x.cls === 'hazardous' ? 'HAZARDOUS — manifest, hauler, TSD facility, generator status' : 'NON-HAZARDOUS — landfill acceptance letter';
+    var ck = x.clock, cst = ck ? (ck.st === 'over' ? 'block' : ck.st === 'alert' ? 'due' : '') : '';
+    out.push(Object.assign(base, { clock: ck, label: 'Waste stream "' + x.stream + '" — ' + (x.household ? 'NON-TOXIC (household)' : x.cls.toUpperCase()), st: cst === 'block' ? 'block' : gaps.length || cst === 'due' ? 'due' : 'ok', note: how + ' · ' + path + (x.ships.length ? ' · ' + x.ships.length + ' shipment(s)' : ' · not shipped yet') + (ck ? ' · ' + ck.text + (ck.st === 'over' ? ' — OVER THE STORAGE LIMIT' : ck.st === 'alert' ? ' — ship it soon' : '') : '') + (gaps.length ? ' · missing: ' + gaps.join('; ') : '') }));
   });
   return out;
 }
@@ -944,11 +959,92 @@ function signBlocks(sign, opt){
   return { id: sign.id, size: Z, w: Z.w, h: Z.h, blocks: L, brand: B };
 }
 
+/* ═════ ENVDOCS · LEAD LEVELS — ONE settings record "Lead levels 2026 v.3" (the owner's training reference sheet "IMPORTANT LEVELS -
+   2026 v.3", 11/17/2026). Admins edit it (gc_kv gc_lead_levels, every version kept in gc_lead_levels_history); every compliance check
+   (ENVCOMP, the written programs, the per-job plan, TCLP, the EPA/HUD tracking) reads it — nothing is written twice. ═════ */
+var DEFAULT_LEVELS = {
+  name: 'Lead levels 2026 v.3', v: '2026 v.3', source: 'GrayCo training reference sheet "IMPORTANT LEVELS - 2026 v.3" (owner, 11/17/2026) — confirm with EPA / HUD / OSHA / your state program',
+  air: { al: 30, pel: 50, unit: 'µg/m³', cassette: '37 mm' },                       /* OSHA personal air */
+  blood: { action: 30, removal: 50, back: 40, childEbll: 3.5, unit: 'µg/dL' },     /* OSHA additional action / removal from work / back to work; CDC child EBLL */
+  apf: [{ key: 'halfApr', label: 'Half-face air-purifying respirator', apf: 10 }, { key: 'fullApr', label: 'Full-face air-purifying respirator', apf: 50 },
+    { key: 'halfPapr', label: 'Half-face PAPR', apf: 50 }, { key: 'fullPapr', label: 'Full-face PAPR', apf: 1000 }],
+  dlal: { floors: 5, sills: 40, troughs: 100, unit: 'µg/ft²', from: '2026-01-01' },  /* abatement clearance (dust-lead action level) */
+  dlrl: { floorsConcern: 'detectable', floors: 5, sills: 40, troughs: 100, unit: 'µg/ft²', from: '2026-01-01' },   /* risk assessment (dust-lead reporting level) */
+  waste: { tclp: 5, unit: 'ppm (mg/L)', residentialNonToxic: true, storageDays: 180, storageDaysFar: 270, farMiles: 200, alertDays: 150, alertDaysFar: 240 },
+  paint: { chipPct: 0.5, xrf: 1.0, canPct: 0.06 },
+  water: { epa: 10, hud: 15, unit: 'ppb' },
+  soil: { play: 400, nonPlay: 1200, abatement: 5000, replacement: 200, driplineFt: 3, unit: 'µg/g' },
+  fall: { triggerFt: 6, ladderFt: 3 } };
+/* the record in use: the admin's, each group falling back to the sheet's numbers */
+function levels(v){
+  var D = clone(DEFAULT_LEVELS), x = obj(v);
+  Object.keys(D).forEach(function(k){ if (Array.isArray(D[k])) { if (Array.isArray(x[k]) && x[k].length) D[k] = clone(x[k]); } else if (D[k] && typeof D[k] === 'object') D[k] = Object.assign(D[k], obj(x[k])); else if (x[k] != null && s(x[k])) D[k] = x[k]; });
+  ['at', 'by'].forEach(function(k){ if (x[k]) D[k] = x[k]; });
+  /* the same numbers under the names the EPA/HUD papers read (patch EPAHUD): dlal.floor / sill / trough, dlrl.floor, paint.pct / mgcm2,
+     blood.cdcChild / backToWork, osha.al / pel, stamp / year / version — always derived here, never edited separately */
+  D.dlal.floor = D.dlal.floors; D.dlal.sill = D.dlal.sills; D.dlal.trough = D.dlal.troughs; D.dlrl.floor = D.dlrl.floors; D.dlrl.sill = D.dlrl.sills; D.dlrl.trough = D.dlrl.troughs;
+  D.paint.pct = D.paint.chipPct; D.paint.mgcm2 = D.paint.xrf; D.blood.cdcChild = D.blood.childEbll; D.blood.backToWork = D.blood.back; D.osha = { al: D.air.al, pel: D.air.pel };
+  var vm = s(D.v).match(/^(\d{4})\s+(.*)$/); D.year = vm ? +vm[1] : ''; D.version = vm ? vm[2] : s(D.v); D.label = s(D.v); D.stamp = 'Levels: ' + s(D.v);
+  return D;
+}
+function LV(R){ return obj(R).levels && obj(R.levels).air ? R.levels : levels(obj(R).levels); }
+function numOf(v){ var t = s(v).replace(/,/g, ''); if (/^\s*(nd|non.?detect|bdl|<\s*(rl|mdl))/i.test(t)) return 0; var m = t.match(/-?\d+(\.\d+)?/); return m ? parseFloat(m[0]) : NaN; }
+function surfaceOf(t){ t = low(t); return /trough|well/.test(t) ? 'troughs' : /sill|stool/.test(t) ? 'sills' : /floor/.test(t) ? 'floors' : ''; }
+/* compare a result with the levels → { flag: 'green' | 'red' | '', level, text, action, act }
+   kind: air | blood | wipe (clearance, DLAL) | riskwipe (risk assessment, DLRL) | tclp | xrf | chip | can | water | soil */
+function compareLevel(kind, value, opt, L){
+  opt = obj(opt); L = L && L.air ? L : levels(L); var v = numOf(value), out = { flag: '', level: '', text: '', action: '', act: '' };
+  if (!isFinite(v) && !/detect/i.test(s(value))) return out;
+  var G = function(text, level){ out.flag = 'green'; out.text = text; out.level = level; return out; }, Rd = function(text, level, action, act){ out.flag = 'red'; out.text = text; out.level = level; out.action = action || ''; out.act = act || ''; return out; };
+  if (kind === 'air') { var A = L.air; return v >= A.pel ? Rd(v + ' ' + A.unit + ' ≥ PEL ' + A.pel, 'PEL ' + A.pel + ' ' + A.unit, 'Above the PEL: respirators (pick by the protection factor), the full written program, monitoring every 3 months', 'pel')
+    : v >= A.al ? Rd(v + ' ' + A.unit + ' ≥ action level ' + A.al, 'AL ' + A.al + ' ' + A.unit, 'At / above the action level: medical surveillance, monitoring every 6 months, training', 'al') : G(v + ' ' + A.unit + ' < action level ' + A.al, 'AL ' + A.al + ' · PEL ' + A.pel + ' ' + A.unit); }
+  if (kind === 'blood') { var B = L.blood;
+    if (opt.removed) return v < B.back ? G(v + ' ' + B.unit + ' < ' + B.back + ' — Back to work at <' + B.back + ': cleared to return (with the physician\'s written opinion)', 'Back to work <' + B.back) : Rd(v + ' ' + B.unit + ' — still not below ' + B.back + ' (Back to work at <' + B.back + ')', 'Back to work <' + B.back, 'Stay on medical removal with pay protection; follow-up test', 'stay');
+    return v >= B.removal ? Rd(v + ' ' + B.unit + ' ≥ ' + B.removal + ' — Removal From Work', 'Removal ' + B.removal + ' ' + B.unit, 'Medical removal with pay protection (Back to work at <' + B.back + ')', 'remove')
+      : v >= B.action ? Rd(v + ' ' + B.unit + ' ≥ ' + B.action + ' — OSHA additional action level', 'Action ' + B.action + ' ' + B.unit, 'More frequent blood tests (default monthly), review controls and hygiene', 'action') : G(v + ' ' + B.unit + ' < ' + B.action, 'Action ' + B.action + ' · removal ' + B.removal + ' ' + B.unit); }
+  if (kind === 'wipe' || kind === 'riskwipe') { var W0 = kind === 'wipe' ? L.dlal : L.dlrl, sf = surfaceOf(opt.surface) || 'floors', lim = +W0[sf], nm = kind === 'wipe' ? 'DLAL clearance' : 'DLRL risk assessment', lab = { floors: 'floors', sills: 'interior window sills', troughs: 'window troughs' }[sf];
+    if (kind === 'riskwipe' && sf === 'floors' && v > 0 && v < lim) return Rd(v + ' ' + W0.unit + ' on floors — detectable: express concern', nm + ' floors: concern at detectable, action ' + lim, 'Express concern; recommend cleaning / interim controls', 'concern');
+    return v >= lim ? Rd(v + ' ' + W0.unit + ' ≥ ' + lim + ' (' + lab + ')' + (kind === 'wipe' ? ' — clearance FAILS' : ' — recommend action'), nm + ' ' + lab + ' ' + lim + ' ' + W0.unit, kind === 'wipe' ? 'Clean again and re-test the area' : 'Recommend hazard control / abatement', kind === 'wipe' ? 'fail' : 'recommend')
+      : G(v + ' ' + W0.unit + ' < ' + lim + ' (' + lab + ')' + (kind === 'wipe' ? ' — clearance passes' : ''), nm + ' ' + lab + ' ' + lim + ' ' + W0.unit); }
+  if (kind === 'tclp') { var T = L.waste; if (opt.residential && T.residentialNonToxic !== false) return G('Waste from a residence — NON-TOXIC (household exemption; still logged)', 'household exemption');
+    return v >= T.tclp ? Rd(v + ' ppm ≥ ' + T.tclp + ' — HAZARDOUS waste', 'TCLP ' + T.tclp + ' ppm', 'Hazardous: manifest, hauler, TSD facility, generator status; storage limit ' + T.storageDays + ' days (' + T.storageDaysFar + ' if the destination is over ' + T.farMiles + ' miles)', 'hazardous') : G(v + ' ppm < ' + T.tclp + ' — non-hazardous', 'TCLP ' + T.tclp + ' ppm'); }
+  if (kind === 'xrf') return v >= L.paint.xrf ? Rd(v + ' mg/cm² ≥ ' + L.paint.xrf + ' — LEAD-BASED PAINT', 'XRF ' + L.paint.xrf + ' mg/cm²', 'Lead-safe work practices (RRP / abatement) on this component', 'lbp') : G(v + ' mg/cm² < ' + L.paint.xrf, 'XRF ' + L.paint.xrf + ' mg/cm²');
+  if (kind === 'chip') return v >= L.paint.chipPct ? Rd(v + '% ≥ ' + L.paint.chipPct + '% by weight — LEAD-BASED PAINT', 'chip ' + L.paint.chipPct + '%', 'Lead-safe work practices (RRP / abatement) on this component', 'lbp') : G(v + '% < ' + L.paint.chipPct + '%', 'chip ' + L.paint.chipPct + '%');
+  if (kind === 'can') return v >= L.paint.canPct ? Rd(v + '% ≥ ' + L.paint.canPct + '% — lead paint (in the can)', 'in can ' + L.paint.canPct + '%', 'Do not use this paint', 'can') : G(v + '% < ' + L.paint.canPct + '%', 'in can ' + L.paint.canPct + '%');
+  if (kind === 'water') { var Wt = L.water; return v >= Wt.hud ? Rd(v + ' ppb ≥ HUD hazard level ' + Wt.hud, 'HUD ' + Wt.hud + ' ppb', 'Lead hazard in water: notify the owner / occupants, use bottled water, find the source', 'hud') : v >= Wt.epa ? Rd(v + ' ppb ≥ EPA action level ' + Wt.epa, 'EPA ' + Wt.epa + ' ppb', 'Above the EPA action level: notify, flush / filter, re-test', 'epa') : G(v + ' ppb < ' + Wt.epa, 'EPA ' + Wt.epa + ' · HUD ' + Wt.hud + ' ppb'); }
+  if (kind === 'soil') { var So = L.soil, area = low(opt.area), lim2 = /abate/.test(area) ? So.abatement : /non|bare|yard|drip/.test(area) && !/play/.test(area) ? So.nonPlay : So.play, an = lim2 === So.abatement ? 'abatement' : lim2 === So.nonPlay ? 'non-play areas' : 'children\'s play areas';
+    return v >= lim2 ? Rd(v + ' µg/g ≥ ' + lim2 + ' (' + an + ')', 'soil ' + an + ' ' + lim2 + ' µg/g', lim2 === So.abatement ? 'Soil abatement (remove / replace — replacement soil ≤ ' + So.replacement + ' µg/g)' : 'Soil hazard: interim controls (cover / restrict) — dripline zone ' + So.driplineFt + ' ft', 'soil') : G(v + ' µg/g < ' + lim2 + ' (' + an + ')', 'soil ' + an + ' ' + lim2 + ' µg/g'); }
+  return out;
+}
+/* blood lead → the medical removal step: remove (≥ removal), return (removed and < back to work), stay, action, ok */
+function bloodAction(value, removed, L){ var c = compareLevel('blood', value, { removed: !!removed }, L); return { act: c.act || (removed ? 'return' : 'ok'), flag: c.flag, text: c.text, action: c.action }; }
+/* the minimum respirator for a measured exposure: exposure ÷ APF must be under the PEL — with the math */
+function minRespirator(exposure, L){
+  L = L && L.air ? L : levels(L); var e = numOf(exposure), pel = +L.air.pel, A = arr(L.apf).slice().sort(function(a, b){ return a.apf - b.apf; });
+  if (!isFinite(e)) return { ok: false, text: 'No measured exposure yet' };
+  if (e < pel) return { ok: true, need: false, text: e + ' µg/m³ is below the PEL ' + pel + ' — a respirator is not required by the exposure (the program may still require one for trigger tasks)' };
+  var math = A.map(function(r){ var inside = Math.round(e / r.apf * 100) / 100; return { r: r, inside: inside, ok: inside < pel, line: e + ' ÷ ' + r.apf + ' (' + r.label + ') = ' + inside + ' µg/m³ ' + (inside < pel ? '< ' : '≥ ') + 'PEL ' + pel }; });
+  var pick = math.find(function(m){ return m.ok; });
+  return { ok: !!pick, need: true, pick: pick ? pick.r : null, math: math.map(function(m){ return m.line; }), text: pick ? 'Minimum: ' + pick.r.label + ' (APF ' + pick.r.apf + '): ' + pick.line : 'No air-purifying respirator on the list is enough — ' + e + ' µg/m³ needs supplied air (consult the program administrator)' };
+}
+/* the hazardous waste storage clock: 180 days (270 if the destination is over 200 miles), alert at 150 / 240 */
+function storageClock(start, far, L, t){
+  L = L && L.air ? L : levels(L); var Wl = L.waste, lim = far ? +Wl.storageDaysFar : +Wl.storageDays, al = far ? +Wl.alertDaysFar : +Wl.alertDays, st0 = ymd(start); t = t || todayLocal();
+  if (!st0) return null; var d = daysBetween(st0, t);
+  return { start: st0, days: d, limit: lim, alert: al, due: addDays(st0, lim), alertOn: addDays(st0, al), far: !!far, st: d >= lim ? 'over' : d >= al ? 'alert' : 'ok', text: 'Hazardous waste storage: day ' + d + ' of ' + lim + (far ? ' (destination over ' + Wl.farMiles + ' miles)' : '') + ' — ship by ' + addDays(st0, lim) + ' (alert at ' + al + ' days)' };
+}
+
+function levelsStamp(L){ L = L && L.air ? L : levels(L); return 'Levels: ' + s(L.v || L.name); }
+/* {air.al} {air.pel} {air.unit} {blood.removal} {blood.back} {waste.tclp} {fall.triggerFt} … in a text → the record's value */
+function fillTokens(t, L){ L = L && L.air ? L : levels(L); return s(t).replace(/\{([a-z]+)\.([A-Za-z]+)\}/g, function(m, g, k){ var v = obj(L[g])[k]; return v == null ? m : String(v); }); }
+/* the lead levels card acknowledgments: { '<version>': { '<email>': { name, at } } } */
+function ackOf(acks, L, email){ L = L && L.air ? L : levels(L); return obj(obj(acks)[s(L.v)])[low(email)] || null; }
 var API = { DEFAULT_RULES: DEFAULT_RULES, SECTIONS: SECTIONS, CONFIRM: CONFIRM, rules: rules, detectKinds: detectKinds, isOn: isOn, stateOf: stateOf, started: started, finished: finished, nearDone: nearDone,
   crewOf: crewOf, crewOnDay: crewOnDay, certFor: certFor, certType: certType, certIs: certIs, medSummary: medSummary, medNext: medNext, publicStatus: publicStatus, activeRemoval: activeRemoval,
   evaluate: evaluate, closeoutBlockers: closeoutBlockers, noticeDue: noticeDue, workingDaysBefore: workingDaysBefore, retainUntil: retainUntil, retainYears: retainYears, recCat: recCat, live: live, dailyTotals: dailyTotals,
   airType: airType, mrpPay: mrpPay, hasKind: hasKind, listOf: listOf, addDays: addDays, addMonths: addMonths, daysBetween: daysBetween, today: todayLocal, typeText: typeText,
-  /* ENVDOCS */ wasteOn: wasteOn, tclpThreshold: tclpThreshold, tclpClass: tclpClass, wasteStreams: wasteStreams, canDispose: canDispose, shipGaps: shipGaps, wasteItems: wasteItems, streamKey: streamKey,
+  /* ENVDOCS */ DEFAULT_LEVELS: DEFAULT_LEVELS, levels: levels, LV: LV, levelsStamp: levelsStamp, fillTokens: fillTokens, compareLevel: compareLevel, bloodAction: bloodAction, minRespirator: minRespirator, storageClock: storageClock, numOf: numOf, ackOf: ackOf, surfaceOf: surfaceOf, tclpNote: tclpNote,
+  wasteOn: wasteOn, tclpThreshold: tclpThreshold, tclpClass: tclpClass, wasteStreams: wasteStreams, canDispose: canDispose, shipGaps: shipGaps, wasteItems: wasteItems, streamKey: streamKey,
   asbBy: asbBy, crewKinds: crewKinds, ruleBy: ruleBy, deconApplies: deconApplies, deconRec: deconRec, deconState: deconState, dailyFields: dailyFields, subOf: subOf, subItems: subItems,
   defaultAdmin: defaultAdmin, programInfo: programInfo, jobPrograms: jobPrograms, plans: plans, planFp: planFp, planState: planState, buildPlan: buildPlan, planLines: planLines, planTexts: planTexts, fillDocxXml: fillDocxXml, fillFooterXml: fillFooterXml, fillLine: fillLine, hash: hash,
   DECON_PURCHASE: DECON_PURCHASE, SIGNS: SIGNS, SIGN_SIZES: SIGN_SIZES, SIGN_NOTE: SIGN_NOTE, TONES: TONES, jobSigns: jobSigns, signBrand: signBrand, signBlocks: signBlocks };
