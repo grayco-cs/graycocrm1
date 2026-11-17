@@ -53,7 +53,7 @@ const pan = await wait(A, () => { const c = document.getElementById('gc-ec'); re
 ok('A1 a lead abatement job: 7 · Employee Protection Plan, 🧼 Decon unit and 🪧 Signs on the 🛡 Compliance panel', !!pan && /7 · Employee Protection Plan/.test(pan) && /Decon unit/.test(pan) && /Signs/.test(pan), pan && pan.slice(0, 600));
 let E3 = await evalJob(A, 'P3');
 ok('A1 the plan is ⚠ until it is generated', E3.items.find(i => i.id === 'epp').st === 'due' && E3.plan.st === 'none', E3.plan);
-await shot(A, 'a1_panel');
+await A.ev(() => { const e = document.querySelector('#gc-ec [data-ed-sec="plan"]'); if (e) e.scrollIntoView(); }); await shot(A, 'a1_panel');
 
 /* 2 · generate → a version, printable */
 await A.ev(() => document.querySelector('#gc-ec [data-ed="plan"]').click());
