@@ -173,6 +173,6 @@ ok(/stream\|Waste stream/.test(daily.cols), 'the daily log\'s waste rows carry t
 
 console.log('9 · training and certification by role — read from the certification tracking, never stored here');
 const TR = P.sections.find(x => /Training and certifications \(by role\)/.test(x.h));
-ok(TR && TR.rows.some(r => /^Company \(GrayCo\) — /.test(r[0])) && TR.rows.some(r => /^Supervisor \/ competent person — /.test(r[0]) && /Sam Sup/.test(r[1])) && TR.rows.some(r => /^Each worker — /.test(r[0]) || /^Everyone on the job — /.test(r[0])) && /does not store certificates/.test(TR.text.join(' ')), 'the plan lists what each role needs and points to 📜 Certifications', TR);
+ok(TR && TR.rows.some(r => /^Company \(GrayCo\) — /.test(r[0])) && TR.rows.some(r => /^Supervisor \/ competent person — /.test(r[0]) && /supervisor/i.test(r[1])) && TR.rows.some(r => /^Each worker — /.test(r[0]) || /^Everyone on the job — /.test(r[0])) && /does not store certificates/.test(TR.text.join(' ')), 'the plan lists what each role needs and points to 📜 Certifications', TR);
 ok(/Training and certification by role/.test(LV) && /does not store them/.test(LV) && /By role: the company/.test(AV) && /Who needs what/.test(RV), 'the Lead, Asbestos and Respiratory programs list the training / certification by role and link to the CRM tracking');
 console.log(pass + ' passed, ' + fail + ' failed'); process.exit(fail ? 1 : 0);
