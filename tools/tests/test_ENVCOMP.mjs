@@ -67,7 +67,7 @@ const wItem = E1.items.find(i => i.id === 'asb-worker:wes worker');
 ok('A2 Wes Worker has no state asbestos worker license → ⛔ blocking', wItem && wItem.st === 'block', wItem);
 ok('A2 the supervisor\'s license and the firm license count', E1.items.find(i => i.id === 'asb-sup').st === 'ok' && E1.items.find(i => i.id === 'asb-firm').st === 'ok', E1.items.filter(i => /asb-(sup|firm)/.test(i.id)));
 await A.ev(() => { const C0 = window._gcEnvCompCore, R = JSON.parse(JSON.stringify(window._gcEnvComp.rules())); R.people = R.people.map(r => r.id === 'asb-worker' ? Object.assign({}, r, { block: false }) : r); return window._gcEnvComp.saveRules(R); });
-ok('A2 an admin sets that rule not to block → only ⚠', (await evalJob(A, 'P1')).items.find(i => i.id === 'asb-worker:wes worker').st === 'due');
+ok('A2 an admin sets that rule not to block → only ⚠', !!await wait(A, () => { const p = window._crm.projects.find(x => x.id === 'P1'); const i = window._gcEnvComp.evaluate(p).items.find(x => x.id === 'asb-worker:wes worker'); return i && i.st === 'due'; }, null, 8000));   /* ENVDOCS: polled (the page's own timers run alongside) */
 ok('A2 the rules are saved for every computer (gc_kv gc_envcomp_rules)', !!await wait(A, () => true) && (cget('gc_envcomp_rules') || {}).people && cget('gc_envcomp_rules').people.find(r => r.id === 'asb-worker').block === false);
 await A.ev(() => { const R = JSON.parse(JSON.stringify(window._gcEnvComp.rules())); R.people = R.people.map(r => r.id === 'asb-worker' ? Object.assign({}, r, { block: true }) : r); return window._gcEnvComp.saveRules(R); });
 { let hl = 0; for (let i = 0; i < 30 && !hl; i++) { hl = ((cget('gc_envcomp_rules_history') || {}).list || []).length; if (!hl) await sleep(300); } ok('A2 every version of the rules is kept (gc_envcomp_rules_history)', hl >= 1, hl); }
@@ -182,7 +182,7 @@ await A.ev(() => window._gcEnvComp.addCert({ email: 'wworker@example.com', name:
 await sleep(1500); await A.ev(() => window._gcCerts && window._gcCerts.load && window._gcCerts.load()); await sleep(1200);
 ok('A9 a new certification is saved in 📜 Certifications (90-day reminders) and clears Wes\'s license item', (cget('gc_certs').list || []).some(c => c.holder === 'wworker@example.com' && c.warnDays === 90 && c.ckind === 'asb_worker') && (await evalJob(A, 'P1')).items.find(i => i.id === 'asb-worker:wes worker').st !== 'block');
 await A.ev(() => { try { window._setView('enviro'); } catch (e) {} });
-const over = await wait(A, () => { const el = document.getElementById('gc-ec-over'); return el && /Demo Asbestos Job/.test(el.innerText) && /Demo Estimator/.test(el.innerText) ? el.innerText : null; }, null, 25000);
+const over = await wait(A, () => { const el = document.getElementById('gc-ec-over'); return el && /Demo Asbestos Job/.test(el.innerText) && /Demo Estimator/.test(el.innerText) && !/Loading…/.test(el.innerText) ? el.innerText : null; }, null, 70000);   /* ENVDOCS: wait for the not-seen list to load too */
 ok('A9 ☢️ Environmental: the compliance overview of active env jobs + the results the worker has not seen yet', !!over && !/Demo Kitchen/.test(over) && /air monitoring result/.test(over), over && over.slice(0, 700));
 await shot(A, 'a9_overview');
 ok('A no page errors (admin)', !A.errs.filter(e => !/ResizeObserver|Failed to fetch|NetworkError|Load failed/i.test(e)).length, A.errs.slice(0, 5));
