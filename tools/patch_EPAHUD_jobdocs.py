@@ -21,6 +21,8 @@ rep("var KV = 'gc_jobdocs_table', LK = 'gc_jobdocs_table_v1'",
 rep("""var CONDS = { construction:""",
     """/* EPAHUD: the lead and asbestos types get the EPA / HUD papers GrayCo was missing (the HUD hazard-reduction notice now has its form) */
 if (EP) DEFAULT.types.forEach(function(r){ if (r.key !== 'lead' && r.key !== 'asbestos') return; r.items = r.items.filter(function(x){ return !(x.needsForm && /HUD notice of lead hazard reduction/i.test(x.label)); }).concat(EP.items(r.key)); });
+/* EPAHUD: the state asbestos (NESHAP) notification is for a NESHAP facility (commercial / 5+ units) or a demolition — its own label says so */
+if (EP) DEFAULT.types.forEach(function(r){ arr(r.items).forEach(function(x){ if (x.doc === 'gcb_env_asb_notification' && !arr(x.only).length) x.only = ['neshap']; }); });
 var CONDS = { construction:""", 'EPAHUD: the lead and asbestos types get')
 rep("abatement: 'lead abatement', hud: 'HUD-assisted', units5: 'commercial / 5+ units',",
     "abatement: 'lead abatement', hud: 'HUD-assisted', units5: 'commercial / 5+ units', commonArea: 'common areas (multi-unit)', tenantOccupied: 'owner does not live there', ebll: 'child with elevated blood lead', rrp: 'RRP (not abatement)', notifyStmt: 'common areas or child-occupied', occupantCopy: 'tenant / common area / child-occupied', hudOrAbatement: 'HUD-assisted or abatement', neshap: 'NESHAP facility (commercial / 5+ units / demolition)', demolition: 'demolition',",

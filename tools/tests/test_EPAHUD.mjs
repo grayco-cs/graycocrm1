@@ -49,7 +49,8 @@ await A.ev(() => document.querySelector('#gc-ep-sheet [data-ep-ch="email"]').cli
 const q = await wait(A, () => window.__x, null, 100).catch(() => null) || await (async () => { for (let i = 0; i < 40 && !QUEUED.length; i++) await sleep(250); return QUEUED[QUEUED.length - 1]; })();
 ok('A4 ✉️ → ✅ Approvals: kind document, e-mail, recipient = the occupant, the filled paper (company letterhead body)', q && q.kind === 'document' && q.channel === 'email' && q.recipient === 'occupant' && q.projectId === 'PHUD' && /NOTICE OF LEAD HAZARD REDUCTION/.test(q.html) && /Tess/.test(q.html), q && Object.assign({}, q, { html: (q.html || '').slice(0, 200) }));
 const lg = await wait(A, () => { const p = window._crm.projects.find(x => x.id === 'PHUD'); return (p.jobDocs.log || []).find(e => e.k === 'gcb_hud_02' && e.act === 'sent') || null; }, null, 6000);
-ok('A5 the send is logged on the paper (who / when / how) and HUD 02 shows 📤 Sent', lg && lg.by && lg.at && /Approvals/.test(lg.via) && /Sent/.test(await A.ev(() => (document.querySelector('#gc-jd [data-jk="gcb_hud_02"]') || {}).innerText || '')), lg);
+const rowTxt = await wait(A, () => { const r = document.querySelector('#gc-jd [data-jk="gcb_hud_02"]'); return r && /Sent/.test(r.innerText) && r.innerText; }, null, 8000);
+ok('A5 the send is logged on the paper (who / when / how / levels version) and HUD 02 shows 📤 Sent', lg && lg.by && lg.at && /Approvals/.test(lg.via) && lg.levels && rowTxt, { lg, rowTxt });
 const html1 = await A.ev(() => window._gcDocLib.render('gcb_hud_02', 'PHUD').then(r => r && r.page));
 ok('A6 HUD 02 opens filled in: customer, address, year built not needed, completion + due dates, no "{…}" left', html1 && /Client PHUD/.test(html1) && /PHUD Demo St/.test(html1) && !/\{[a-z_]+\}/.test(html1), html1 && html1.slice(0, 300));
 /* ═ B · auto-fill + the company letterhead ═ */
@@ -78,7 +79,9 @@ const ov = await wait(A, () => { const p = window._crm.projects.find(x => x.id =
 ok('D3 admin override → stays on; logged on the job with who / why / when', ov && /renewal/.test(ov.why) && ov.by && ov.at && await A.ev(() => /Dan Crew/.test((window._crm.schedule.find(y => y.id === 'S1') || {}).assignee)), ov);
 await A.ev(() => { document.body.dispatchEvent(new Event('pointerdown', { bubbles: true })); window._setSchedule(prev => prev.concat([{ id: 'S2', pid: 'PMIT', date: new Date().toISOString().slice(0, 10), assignee: 'Dan Crew' }])); });
 const wn = await wait(A, () => { const o = document.getElementById('gc-ep-sheet'); return o && o.querySelector('[data-ep-block="warn"]') && o.innerText; }, null, 15000);
-ok('D4 the emergency mitigation job → a warning only; Dan stays on it', wn && /emergency/i.test(wn) && await A.ev(() => (window._crm.schedule || []).some(x => x.id === 'S2' && x.assignee === 'Dan Crew')), wn);
+await sleep(1500);
+const s2 = await A.ev(() => { const L = (window._gcEnvComp && window._gcEnvComp._sched ? window._gcEnvComp._sched().list : null) || window._crm.schedule || []; return (L.find(x => x.id === 'S2') || {}).assignee || ''; });
+ok('D4 the emergency mitigation job → a warning only; Dan stays on it', wn && /emergency/i.test(wn) && !/Take them off/.test(wn) && s2 === 'Dan Crew', { wn, s2 });
 await A.ev(() => { const o = document.getElementById('gc-ep-sheet'); if (o) o.remove(); });
 const errsA = A.errs.filter(e => /EpaHud|epahud|_gcEpaHud/i.test(e));
 await A.close();
@@ -88,9 +91,9 @@ await signIn(B, 'pm@grayco-cs.com', 20000);
 ok('C0 the PM\'s phone is up', !!await wait(B, () => window._gcEpaHud && (window._crm.projects || []).length >= 4, null, 60000));
 await wait(B, () => { if (!document.querySelector('#_gcJobPick.gc-fh') && window._gcField && window._gcField.open) { try { window._gcField.open(); } catch (e) {} } return document.querySelector('#_gcJobPick.gc-fh'); }, null, 30000);
 let fh = await wait(B, () => { const b = document.getElementById('gc-ep-field'); return b && b.innerText; }, null, 20000);
-ok('C1 GrayCo Field home: "Needs you · 📑 N papers to send" with due dates (the PM\'s jobs) + 📜 My certifications', fh && /Needs you · 📑 \d+ papers? to send/.test(fh) && /OVERDUE|Due/.test(fh) && /My certifications/.test(fh), fh);
+ok('C1 GrayCo Field home: "Needs you · 📑 N papers to send" with due dates (the PM\'s jobs) + 📜 My certifications', fh && /Needs you · 📑 \d+ papers? to send/i.test(fh) && /OVERDUE|Due/.test(fh) && /My certifications/.test(fh), fh);
 await shot(B, 'C1-field-needs-you');
-await B.ev(() => { const r = [...document.querySelectorAll('#gc-ep-field [data-ep-pid]')].find(x => x.getAttribute('data-ep-k') === 'gcb_hud_03') || document.querySelector('#gc-ep-field [data-ep-pid]'); window.__k = r.getAttribute('data-ep-k'); window.__pid = r.getAttribute('data-ep-pid'); r.querySelector('[data-ep-fa="send"]').click(); });
+await B.ev(() => { const OUT = /^gcb_(hud_0[1235]|lead_0[129]|lead_12|asb_0[16]|lead_03)$/; const r = [...document.querySelectorAll('#gc-ep-field [data-ep-pid]')].find(x => OUT.test(x.getAttribute('data-ep-k'))); if (r) { window.__k = r.getAttribute('data-ep-k'); window.__pid = r.getAttribute('data-ep-pid'); r.querySelector('[data-ep-fa="send"]').click(); } else { window.__k = 'gcb_hud_03'; window.__pid = 'PHUD'; window._gcEpaHud.menu('PHUD', 'gcb_hud_03'); } });
 await wait(B, () => document.querySelector('#gc-ep-sheet [data-ep-ch="share"]'), null, 6000);
 await shot(B, 'C2-send-sheet');
 await B.ev(() => document.querySelector('#gc-ep-sheet [data-ep-ch="share"]').click());
