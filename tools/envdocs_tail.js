@@ -564,7 +564,7 @@ function regLevels(){ if (LVREG || !W._gcFieldTools) return; LVREG = X.regFieldT
 function moreLevels(){ try { [].forEach.call(D.querySelectorAll('h3'), function(h){ if (!/☰ More/.test(h.textContent || '')) return; var pk = h.parentNode && h.parentNode.querySelector('.pick'); if (!pk || pk.querySelector('[data-ed-lvcard-open]')) return; var b = D.createElement('button'); b.type = 'button'; b.setAttribute('data-ed-lvcard-open', '1'); b.innerHTML = '<span class="e">📏</span><span>Lead levels<small>' + esc(LVc().v) + ' — the reference card</small></span>'; pk.appendChild(b); }); } catch (e) {} }
 function pidOf(b){ var c = b.closest('#gc-ec'); return c ? c.getAttribute('data-pid') : (b.getAttribute('data-pid') || ''); }
 D.addEventListener('click', function(e){
-  var b = e.target && e.target.closest ? e.target.closest('[data-ed],[data-ed-fill]') : null; if (!b) return;
+  var b = e.target && e.target.closest ? e.target.closest('[data-ed],[data-ed-fill]') : null; if (!b || !b.closest('#gc-ec, .gc-ec-ov')) return;   /* only ENVDOCS' own buttons (another tab uses data-ed too) */
   if (b.hasAttribute('data-ed-fill')) { e.preventDefault(); fillDocx(b.getAttribute('data-ed-fill'), true, b.getAttribute('data-ed-pid') || (b.closest('#gc-ec') ? b.closest('#gc-ec').getAttribute('data-pid') : '')); return; }
   var a = b.getAttribute('data-ed'), pid = pidOf(b), id = b.getAttribute('data-id'), box = b.closest('#gc-ec');
   e.preventDefault(); e.stopPropagation();
