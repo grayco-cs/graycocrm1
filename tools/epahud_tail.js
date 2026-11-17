@@ -131,10 +131,12 @@ function levelFields(){
 W._gcDocFieldsExtra = function(pj){ try { return Object.assign(levelFields(), pj ? fields(pj) : {}); } catch (e) { return {}; } };
 var BLANK = '(?:&nbsp;|\\s*|<span style="display:inline-block;min-width:120px;border-bottom:1px solid #999">&nbsp;</span>)';
 var ROW = new RegExp('(<td[^>]*>)\\s*([^<]{2,90}?)\\s*(</td>\\s*<td[^>]*>\\s*(?:<b>)?)' + BLANK + '((?:</b>)?\\s*</td>)', 'g');
+var NEWIDS = {}; Object.keys(EP.ITEMS).forEach(function(k){ EP.ITEMS[k].forEach(function(x){ NEWIDS[x.doc] = 1; }); });
 function autofill(html, p, f, id, raw){
   if (typeof html !== 'string') return html;
   var cites = /\{lvl_/.test(s(raw)) || /data-gc-levels/.test(html);
   if (cites && !/data-gc-levels/.test(html)) html += '<div data-gc-levels="' + esc(stamp()) + '" style="margin-top:8px;font-size:8pt;color:#555;text-align:right">Levels: ' + esc(stamp()) + ' — from the GrayCo Lead levels record</div>';   /* which version of the levels this copy used */
+  if (NEWIDS[s(id)]) html = html.replace(/Form rev\. 10\/26\/2026/g, 'Form rev. 11/17/2026 (EPAHUD)');   /* the new papers' own revision date */
   if (!p) return html;
   f = Object.assign({}, fields(p), obj(f));
   return html.replace(ROW, function(m, a, label, b, c){
@@ -351,7 +353,7 @@ function fieldPaint(){
     var h = '';
     if (M.length) {
       h += '<div class="fh-sec"><span>Needs you · 📑 ' + M.length + ' paper' + (M.length === 1 ? '' : 's') + ' to send</span></div>';
-      h += M.slice(0, 6).map(function(z){ return '<div class="fh-ap" data-ep-pid="' + esc(z.p.id) + '" data-ep-k="' + esc(z.x.k) + '" style="display:flex;gap:8px;align-items:center"><div class="t" style="flex:1;min-width:0"><b>' + esc(z.x.label.split(' — ')[0]) + ' · ' + esc(z.p.name) + '</b><span style="display:block;font-size:12.5px;color:' + (z.d.over ? '#b91c1c' : '#475569') + '">' + (z.d.date ? (z.d.over ? 'OVERDUE — was due ' : 'Due ') + esc(nice(z.d.date)) : 'Due ' + esc(z.d.txt)) + (z.esc ? ' · office' : '') + '</span></div><button type="button" data-ep-fa="send" style="min-height:44px;border-radius:10px;border:0;background:#241968;color:#fff;font-weight:800;padding:0 12px">📤 Send</button></div>'; }).join('');
+      h += M.slice(0, 6).map(function(z){ return '<div class="fh-ap" data-ep-pid="' + esc(z.p.id) + '" data-ep-k="' + esc(z.x.k) + '" style="display:flex;gap:8px;align-items:center"><div class="t" style="flex:1;min-width:0"><b>' + esc(z.x.label.split(' — ')[0]) + ' · ' + esc(z.p.name) + '</b><span style="display:block;font-size:12.5px;color:' + (z.d.over ? '#b91c1c' : '#475569') + '">' + (z.d.date ? (z.d.over ? 'OVERDUE — was due ' : 'Due ') + esc(nice(z.d.date)) : 'Due ' + esc(z.d.txt)) + (z.esc ? ' · office' : '') + '</span></div><button type="button" data-ep-fa="send" style="min-height:44px;border-radius:10px;border:0;background:#241968;color:#fff;font-weight:800;padding:0 12px">' + (EP.TO[EP.meta(z.x).to] && EP.TO[EP.meta(z.x).to].filing ? '🏛 File' : '📤 Send') + '</button></div>'; }).join('');
       if (M.length > 6) h += '<div class="fh-empty">+ ' + (M.length - 6) + ' more on the jobs\' 📑 Paperwork</div>';
     }
     h += '<button type="button" data-ep-fa="certs" style="display:flex;align-items:center;gap:8px;width:100%;min-height:46px;margin:8px 0;border:1px solid #e5e7eb;border-radius:12px;background:#fff;padding:8px 12px;font-weight:700;color:#0f172a">📜 My certifications (' + C.length + ')' + (bad ? ' <span style="color:#b91c1c">· ' + bad + ' expired</span>' : '') + '</button>';
