@@ -18,8 +18,10 @@ cset('users', [{ id: 'u1', name: 'Wesley Johnson', email: 'wjohnson@grayco-cs.co
 const J = (id, o) => Object.assign({ id, name: 'Demo ' + id, client: 'Client ' + id, clientEmail: id.toLowerCase() + '@example.com', clientPhone: '9015550100', address: id + ' Demo St, Memphis, TN 38135', status: 'active', pct: 0, startDate: day(8), endDate: day(20), pm: 'Demo PM', createdAt: now, updatedAt: now }, o);
 cset('projects', [
   J('PHUD', { name: 'Demo HUD duplex', type: 'Residential Reno', leadAsb: { yearBuilt: 1955, disturbsPaint: true, hud: true }, epahud: { facts: { tenantOccupied: true }, events: { completedOn: day(-20) }, occupant: { name: 'Tess Tenant', email: 'tess@example.com', phone: '9015550111' } } }),
-  J('PENV', { name: 'Demo env abatement', type: 'Asbestos abatement', companyId: 'environmental', startDate: day(3) }),
-  J('PMIT', { name: 'Demo mit job', type: 'Water Damage', companyId: 'mitigation', description: 'Burst pipe — asbestos found in the ceiling texture' }),
+  /* the GrayCo crew does the asbestos work on these two (envComp.asbBy 'crew'): with patch ENVDOCS the default is a licensed abatement sub and the crew
+     is then held to no asbestos license — D is about the crew doing it (no-op without ENVDOCS) */
+  J('PENV', { name: 'Demo env abatement', type: 'Asbestos abatement', companyId: 'environmental', startDate: day(3), envComp: { asbBy: 'crew' } }),
+  J('PMIT', { name: 'Demo mit job', type: 'Water Damage', companyId: 'mitigation', description: 'Burst pipe — asbestos found in the ceiling texture', envComp: { asbBy: 'crew' } }),
   J('PRRP', { name: 'Demo paint job', type: 'Residential Reno', leadAsb: { yearBuilt: 1962, disturbsPaint: true } })]);
 cset('gc_certs', { list: [{ id: 'C1', holderType: 'company', holder: 'company', tpl: 'epa_rrp_firm', name: 'EPA RRP Lead-Safe Certified Firm (TN & AR)', number: 'NAT-F123456-1', state: 'TN/AR', expires: '2030-05-01' }] });
 cset('gc_epahud_seed_v1', { at: now });   /* the owner's drafts are a node test; keep this cloud quiet */

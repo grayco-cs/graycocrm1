@@ -190,6 +190,9 @@ H.sweep(); tk = TT();
 ok('6c handled → both To-Dos close', tk.filter(t => /PRRP_gcb_lead_03$/.test(t.id)).every(t => t.done));
 
 /* ═ 7 · scheduling a person checks their certifications ═ */
+/* the GrayCo crew does the asbestos work on these two jobs: with patch ENVDOCS merged, asbestos defaults to a licensed abatement sub
+   (envComp.asbBy 'sub') and the crew is then held to no asbestos license — the check below is about the crew doing it (no-op without ENVDOCS) */
+['PASBR', 'PWATER'].forEach(id => { const q = P(id); q.envComp = Object.assign({}, q.envComp || {}, { asbBy: 'crew' }); });
 W._crm.schedule = [{ id: 'S1', pid: 'PASBR', date: day(2), assignee: 'Wesley Johnson' }];
 const touch = () => (LIS.pointerdown || []).forEach(f => f({ target: D.body }));
 H._reset(); H.schedCheck(W._crm.schedule);   /* first look */

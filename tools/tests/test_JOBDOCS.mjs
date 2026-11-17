@@ -98,8 +98,15 @@ ok('C3 Start anyway (admin) → it starts, stamped startWaived (the Lead 01 gate
 /* a signed copy uploaded counts, like Lead 01 */
 /* PA2 / PPLAIN are seeded (made today) — see the projects list above */
 await wait(() => { const p = window._crm.projects.find(x => x.id === 'PA2'); return p && p.jobDocs && p.jobDocs.items; }, null, 12000);
-await A.ev(() => { const d = { id: 'DOCA2', pid: 'PA2', name: 'Asbestos 01 signed - Two Demo.pdf', cat: 'Other', type: 'application/pdf', data: 'sb:crm-files/' + 'd'.repeat(64) + '.pdf', size: 42000, by: 'Demo PM', uploaded: '2026-11-16' }; window._setProjectDocs(prev => (prev || []).concat([d])); });
-await sleep(3000);
+/* added to the job's files, then (like a person who sees it in Files & Docs) Start job: the CRM's own first load of the job files can still
+   be running this early in the test and replaces the list it loads — the copy is added again if it is not in the job's files after 8 s */
+let inFiles = null;
+for (let i = 0; i < 3 && !inFiles; i++) {
+  await A.ev(() => { const d = { id: 'DOCA2', pid: 'PA2', name: 'Asbestos 01 signed - Two Demo.pdf', cat: 'Other', type: 'application/pdf', data: 'sb:crm-files/' + 'd'.repeat(64) + '.pdf', size: 42000, by: 'Demo PM', uploaded: '2026-11-16' }; window._setProjectDocs(prev => (prev || []).some(x => x && x.id === 'DOCA2') ? prev : (prev || []).concat([d])); });
+  inFiles = await wait(() => { const p = window._crm.projects.find(x => x.id === 'PA2'); return p && !window._gcJobDocs.gateMissing(p, []).includes('A01'); }, null, 8000);
+}
+ok('C4 the signed copy is in the job\'s files (Asbestos 01 no longer missing)', !!inFiles);
+await sleep(1000);
 await start('PA2'); await sleep(2600);
 ok('C4 a signed Asbestos 01 in the job\'s files counts → it starts', await pct('PA2') === 10 && !await A.ev(() => !!document.getElementById('gc-la3-gate')), await A.ev(() => { const p = window._crm.projects.find(p => p.id === 'PA2'); return { exists: !!p, pct: p && p.pct, miss: p && window._gcJobDocs.gateMissing(p, []), gate: !!document.getElementById('gc-la3-gate'), txt: (document.getElementById('gc-la3-gate') || {}).textContent, n: window._crm.projects.length, ids: window._crm.projects.map(x => x.id) }; }));
 await closeGate();
@@ -137,8 +144,10 @@ await A.ev(() => { window._gcPause = window.__zzPause; });
 { const f0 = A.fn.length;
   await A.ev(() => { document.body.dispatchEvent(new Event('pointerdown', { bubbles: true })); window._setProjects(prev => prev.map(p => p.id === 'PC' ? Object.assign({}, p, { type: 'Bath', tags: ['hazard check'], updatedAt: new Date().toISOString() }) : p)); });
   await sleep(3500); await A.ev(() => window._gcJobDocs.sweep());
-  const sends = A.fn.slice(f0).filter(x => (x.name === 'portal' && x.body && x.body.action === 'approval') || (x.name === 'portal-sign' && x.body && x.body.action !== 'list'));
-  ok('D4 assignment itself never sends anything (no approvals / portal requests while a job gets its list)', QUEUED.length === 0 && sends.length === 0, { QUEUED: QUEUED.length, sends: sends.map(x => x.name + ':' + (x.body && x.body.action)) }); }
+  /* only what went out for PC, the job getting its list: DOCAUTO2's own timed sweep (45 s after load, then every minute, retried
+     because this test's portal-sign refuses) sends other live hazard jobs' papers whenever its timer lands in this window */
+  const sends = A.fn.slice(f0).filter(x => (x.name === 'portal' && x.body && x.body.action === 'approval') || (x.name === 'portal-sign' && x.body && x.body.action !== 'list' && String(x.body.projectId || '') === 'PC'));
+  ok('D4 assignment itself never sends anything (no approvals / portal requests while a job gets its list)', QUEUED.length === 0 && sends.length === 0, { QUEUED: QUEUED.length, sends: sends.map(x => x.name + ':' + (x.body && x.body.action) + ':' + (x.body && x.body.projectId)) }); }
 const r6 = await A.ev(() => window._gcJobDocs.send('POLD', 'gcb_water_emergency_auth').then(j => j && j.ok)); await sleep(1500);
 ok('D5 📤 Send (a person\'s click) on a job not yet in the portal flow → ✅ Approvals, written as sent', QUEUED.length === 1 && /Emergency Services Authorization/i.test(QUEUED[0].title || '') && await A.ev(() => { const p = window._crm.projects.find(x => x.id === 'POLD'); return !!(p.jobDocs && p.jobDocs.sent && p.jobDocs.sent.gcb_water_emergency_auth); }), { r6, q: QUEUED.map(x => x.title) });
 /* ═══ E ═══ */
