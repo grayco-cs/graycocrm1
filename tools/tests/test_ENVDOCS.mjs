@@ -17,7 +17,7 @@ const C = require(path.join(BUILD, 'envcomp-core.js'));
 const day = n => C.addDays(C.today(), n);
 const shot = async (A, name) => { if (SHOTS) await A.page().screenshot({ path: SHOTS + '/' + name + '.png' }); };
 const at = new Date(Date.now() - 864e5).toISOString();
-onFn('envcomp', async () => ({ ok: true, removals: [], rec: {}, people: {} }));
+onFn('envcomp', async ({ body }) => (body && body.op === 'mine' ? { ok: true, rec: { name: 'Wesley Johnson', summary: [], notices: [], visits: [{ id: 'v1', date: '2026-11-10', type: 'bloodLead', result: '52 µg/dL', provider: 'Demo Clinic' }], exposures: [{ id: 'x1', date: '2026-11-09', job: 'Demo Lead Abatement', method: 'Lead air (µg/m³)', result: '35', scope: 'personal' }] } } : { ok: true, removals: [], rec: {}, people: {} }));
 
 resetCloud();
 cset('users', [
@@ -192,6 +192,52 @@ const fm = await A.ev(() => window._gcEnvDocs.fillDocx('resp', false, 'P5').then
 ok('A11 the Respiratory Protection Program filled for the Mitigation job: its name, logo (letterhead image), footer — not Construction\'s TIN', !!fm && /GrayCo Mitigation, LLC/.test(fm.xml) && !/TIN # 33-2106808/.test(fm.xml) && fm.f.logo === true && /GrayCo Mitigation, LLC \|/.test(fm.f.footer.replace(/<[^>]+>/g, '')) && /Program administrator: Wesley Johnson/.test(fm.xml), fm && { head: fm.xml.slice(0, 300), logo: fm.f.logo });
 const fc = await A.ev(() => window._gcEnvDocs.fillDocx('resp', false, 'P2').then(o => o ? o.xml.replace(/<[^>]+>/g, '') : ''));
 ok('A11 …and for a Construction job: Construction\'s letterhead and license line stay', /GrayCo Construction Services, LLC/.test(fc) && /TN License # 85034/.test(fc));
+/* 12 · 📏 lead levels 2026 v.3 — the card, the acknowledgment, the flags, removal 50 / back <40, a level changed on this test copy */
+await A.ev(() => window._gcLeadLevels.open('P3'));
+const lvCard = await wait(A, () => { const m = document.querySelector("[data-ed-lvcard]"); return m && m.querySelector('[data-ed-lvtable]') ? { t: m.textContent, logo: (m.querySelector('[data-ed-logo]') || {}).getAttribute && m.querySelector('[data-ed-logo]').getAttribute('src'), pel: (m.querySelector('[data-lv="air.pel"]') || {}).textContent, cas: (m.querySelector('[data-lv="air.cassette"]') || {}).textContent, rm: (m.querySelector('[data-lv="blood.removal"]') || {}).textContent, back: (m.querySelector('[data-lv="blood.back"]') || {}).textContent } : null; });
+ok('A12 📏 the Lead levels card, laid out like the sheet, in the job\'s company (Environmental logo), with its version', !!lvCard && lvCard.logo === '/img/grayco-environmental-logo.png' && lvCard.pel === '50' && lvCard.cas === '37 mm' && lvCard.rm === '50' && lvCard.back === '<40' && /IMPORTANT LEVELS — 2026 v\.3/.test(lvCard.t) && /Levels: 2026 v\.3/.test(lvCard.t) && /IMPORTANT LEVELS - 2026 v\.3/.test(lvCard.t), lvCard);
+await A.ev(() => document.querySelector('[data-ed-lvcard] [data-lv="ack"]').click());
+const ack = await wait(A, () => true) && await (async () => { for (let i = 0; i < 30; i++) { const a = cget('gc_lead_levels_ack'); if (a && a['2026 v.3'] && a['2026 v.3']['wjohnson@grayco-cs.com']) return a; await sleep(300); } return null; })();
+ok('A12 the worker acknowledges the current version — kept on record (gc_lead_levels_ack, with a log)', !!ack && ack['2026 v.3']['wjohnson@grayco-cs.com'].name === 'Wesley Johnson' && (ack.log || []).length >= 1);
+await A.ev(() => { const m = document.getElementById('gc-ec-modal'); if (m) m.remove(); });
+const E3a = await evalJob(A, 'P3');
+ok('A12 on the lead job: the acknowledgment shows per person (Wesley ✅ — he is not on the crew; the crew still ⚠)', E3a.items.some(i => /^lvack:/.test(i.id) && i.st === 'due'), E3a.items.filter(i => /^lvack/.test(i.id)));
+await A.ev(() => { try { window._setView('enviro'); } catch (e) {} });
+ok('A12 the Desk Environmental compliance page has the 📏 Lead levels card', !!await wait(A, () => document.querySelector('#gc-ec-over [data-ed-lvcard]'), null, 15000));
+/* blood 52 → removal with pay protection; 38 while removed → back to work */
+await A.ev(() => { window.confirm = () => true; window._gcEnvComp._x.bloodStep({ email: 'wworker@example.com', name: 'Wes Worker' }, '52', null); });
+const rmf = await wait(A, () => { const m = document.getElementById('gc-ec-modal'); const r = m && m.querySelector('[data-f="reason"]'); return r ? { reason: r.value, crit: (m.querySelector('[data-f="criteria"]') || {}).value, title: m.querySelector('h3').textContent } : null; });
+ok('A12 blood lead 52 → 🔴 Removal From Work: the medical removal (pay protection) opens, filled from the levels', !!rmf && /Medical removal/.test(rmf.title) && /Blood lead 52 µg\/dL — Removal From Work at 50 \(Levels: 2026 v\.3\)/.test(rmf.reason) && /Back to work at <40/.test(rmf.crit), rmf);
+await A.ev(() => { const m = document.getElementById('gc-ec-modal'); if (m) m.remove(); });
+const ret = await A.ev(() => { const a = window._gcEnvComp._x.bloodStep({ email: 'wworker@example.com', name: 'Wes Worker' }, '38', { removal: { id: 'rm1', start: '2026-10-01' } }); const m = document.getElementById('gc-ec-modal'); return { act: a.act, text: a.text, form: m ? m.querySelector('h3').textContent + ' ' + m.textContent : '' }; });
+ok('A12 removed + blood lead 38 → 🟢 "Back to work at <40: cleared to return" and the return form opens', ret.act === 'return' && /cleared to return/.test(ret.text) && /Returned to exposure work on/.test(ret.form), ret);
+await A.ev(() => { const m = document.getElementById('gc-ec-modal'); if (m) m.remove(); });
+/* the air form: the cassette pre-filled; a clearance sill wipe 45 fails by the DLAL */
+await A.ev(() => window._gcEnvComp.airForm('P3'));
+ok('A12 the air sample form pre-fills the cassette (37 mm) from the levels', (await wait(A, () => { const i = document.querySelector('#gc-ec-modal [data-f="cassette"]'); return i ? i.value : null; })) === '37 mm');
+await A.ev(() => { const m = document.getElementById('gc-ec-modal'); if (m) m.remove(); });
+await A.ev(() => window._gcEnvComp.logAir('P3', { rule: 'la-clear', atype: 'clearance', date: window._gcEnvCompCore.today(), method: 'Lead dust wipe (µg/ft²)', surface: 'Interior window sills', task: 'kitchen sill', result: '45', sampler: 'Demo Estimator', lab: 'Demo Lab', files: {} }));
+const wipe = await wait(A, () => { const p = window._crm.projects.find(x => x.id === 'P3'); return (p.envLog || []).find(r => r.kind === 'air' && r.result === '45') || null; });
+ok('A12 a clearance sill wipe of 45 µg/ft² → 🔴 clearance FAILS (DLAL 40), stamped with the levels version', !!wipe && wipe.pass === 'Fail' && wipe.flag === 'red' && /clearance FAILS/.test(wipe.levelText) && wipe.levels === 'Levels: 2026 v.3', wipe);
+await A.ev(() => window._gcEnvDocs.logLeadTest('P3', { ttype: 'xrf', value: '1.2', location: 'front door casing', files: {} })); await sleep(900);
+ok('A12 an XRF of 1.2 mg/cm² → 🔴 lead-based paint, its action on the job', (await evalJob(A, 'P3')).items.some(i => i.sec === 'levels' && /LEAD-BASED PAINT/.test(i.label)));
+/* the worker sees their own results next to the level */
+await A.ev(() => window._gcEnvComp.openMine());
+const mine = await wait(A, () => { const d = document.querySelector('[data-ec-mine]'); return d && d.querySelector('[data-ec-flag]') ? { t: d.textContent, red: d.querySelectorAll('[data-ec-flag="red"]').length } : null; });
+ok('A12 🩺 my own records: each result next to its level (blood 52 → Removal From Work; air 35 → action level 30), with the version', !!mine && mine.red >= 2 && /Removal From Work/.test(mine.t) && /action level 30/.test(mine.t) && /Levels: 2026 v\.3/.test(mine.t), mine);
+await A.ev(() => { const m = document.getElementById('gc-ec-modal'); if (m) m.remove(); });
+/* change one level on this test copy → a new document shows it, the earlier one keeps its version */
+const before0 = await A.ev(() => { const p = window._crm.projects.find(x => x.id === 'P3'); const r = window._gcEnvCompCore.plans(p)[0]; return window._gcEnvDocs.planHtml(r, p); });
+const saved = await A.ev(() => { const L = JSON.parse(JSON.stringify(window._gcLeadLevels.get())); L.v = '2026 v.3 (test copy)'; L.air.pel = 45; return window._gcLeadLevels.save(L); });
+await sleep(600);
+await A.ev(() => window._gcEnvDocs.generate('P3')); await sleep(900);
+const after = await A.ev(() => { const p = window._crm.projects.find(x => x.id === 'P3'); const L = window._gcEnvCompCore.plans(p); return { n: L.length, newer: window._gcEnvDocs.planHtml(L[L.length - 1], p), older: window._gcEnvDocs.planHtml(L[0], p) }; });
+ok('A12 a level changed in the record (test copy: PEL 45) → the regenerated plan prints PEL 45 and "Levels: 2026 v.3 (test copy)"', saved.ok && /PEL 45 µg\/m³/.test(after.newer) && /Levels: 2026 v\.3 \(test copy\)/.test(after.newer) && !/PEL 50 µg\/m³/.test(after.newer), txt(after.newer).slice(0, 400));
+ok('A12 …the earlier plan still shows the version it was made with (PEL 50, "Levels: 2026 v.3")', /Levels: 2026 v\.3</.test(after.older) && /PEL 50 µg\/m³/.test(after.older));
+ok('A12 every version of the record is kept (gc_lead_levels_history) and the record is shared (gc_lead_levels)', (cget('gc_lead_levels') || {}).v === '2026 v.3 (test copy)' && ((cget('gc_lead_levels_history') || {}).list || []).length >= 1 && (cget('gc_lead_levels') || {}).air.pel === 45);
+const fl = await A.ev(() => window._gcEnvDocs.fillDocx('lead', false, 'P3').then(o => o ? o.xml.replace(/<[^>]+>/g, '') : ''));
+ok('A12 the Lead Safety Program filled now carries PEL 45 and the test-copy stamp', /\(PEL\): 45 µg\/m³/.test(fl) && /Levels: 2026 v\.3 \(test copy\)/.test(fl) && /Lead levels – OSHA personal air: action level 30 µg\/m³; PEL 45/.test(fl));
+await A.ev(() => window._gcLeadLevels.save(window._gcEnvCompCore.DEFAULT_LEVELS));
 ok('A no page errors (admin)', !A.errs.filter(e => !/ResizeObserver|Failed to fetch|NetworkError|Load failed/i.test(e)).length, A.errs.slice(0, 5));
 await A.close();
 
