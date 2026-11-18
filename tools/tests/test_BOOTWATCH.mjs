@@ -153,18 +153,22 @@ if (want(3)) {
   ok(!!sent && rowOf(d).boots.some(x => x.heal >= 0), 'both opens reach the report (the tap, and "still old after the update")', rowOf(d) && rowOf(d).boots.map(x => ({ old: x.old, heal: x.heal })));
   await A.close();
   /* the CRM's own update bar (signed in, a fresh page from the network) uses the same update */
-  const B = await computer('desk3', { build }); const pb = B.page();
+  /* who reloads: every location.reload() call is written down with its stack (for the report) */
+  const RLOG = `(() => { try { const L = window.location, r = L.reload.bind(L); Object.defineProperty(L, 'reload', { configurable: true, value: function(){ try { const a = JSON.parse(sessionStorage.getItem('__rl') || '[]'); a.push(String(new Error().stack).split('\\n').slice(1, 6).join(' | ').slice(0, 600)); sessionStorage.setItem('__rl', JSON.stringify(a)); } catch (e) {} return r(); } }); } catch (e) {} })()`;
+  const B = await computer('desk3', { build, init: [RLOG] }); const pb = B.page();
   await signIn(B, ADMIN, 30000);
   let nb = 0; pb.on('domcontentloaded', () => { nb++; });
   ok(!!(await waitFor(B, () => !!document.getElementById('gc-update-now'), null, 20000)), 'signed in, fresh page: the CRM\'s own "Yes, update" bar shows');
   ok(await B.ev(() => !document.getElementById('gc-bw-update')), 'only one update bar on screen');
-  const navT = () => B.ev(() => { const a = JSON.parse(sessionStorage.getItem('__navs') || '[]'); a.push((performance.getEntriesByType('navigation')[0] || {}).type + ' @' + location.pathname); sessionStorage.setItem('__navs', JSON.stringify(a)); return a; }).catch(() => []);
+  const navT = () => B.ev(() => { const a = JSON.parse(sessionStorage.getItem('__navs') || '[]'); const k = (performance.getEntriesByType('navigation')[0] || {}).type + ' @' + Math.round(performance.timeOrigin); if (a.indexOf(k) < 0) a.push(k); sessionStorage.setItem('__navs', JSON.stringify(a)); return a; }).catch(() => []);
   await navT(); pb.on('load', () => { navT(); });
   await pb.locator('#gc-update-now').click(); await sleep(9000);
   const heal = await B.ev(() => +localStorage.getItem('gc_bw_heal_at') || 0), again = await B.ev(() => window._gcBootWatch.update());
   const nl = await navT();
+  const rl = await B.ev(() => JSON.parse(sessionStorage.getItem('__rl') || '[]')).catch(() => []);
+  console.log('    reload calls: ' + JSON.stringify(rl).slice(0, 2500));
   ok(nb >= 1 && heal > 0 && again === false, '"Yes, update" goes through the same update (remembered for the 10-minute rule; asking again does nothing)', { nb, nl });
-  ok(nl.filter(x => /^reload/.test(x)).length === 1, 'the update reloads the page once' + (nb > 1 ? ' (then the page opened ' + (nb - 1) + ' more time(s): ' + nl.slice(1).join(', ') + ')' : ''), nl);
+  ok(nl.length === 2 && /^reload/.test(nl[1]), 'the update reloads the page once (one new page after the tap)', { nl, nb });
   await B.close(); VER = '';
 }
 
