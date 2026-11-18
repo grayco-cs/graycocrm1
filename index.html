@@ -210632,10 +210632,10 @@ function leaveHome(){ try { var h = D.querySelector('#_gcJobPick.gc-fh'); if (h)
     if (job) return;
     if (!ov.hasAttribute('data-pmf-job') || !h || tm) return;
     tm = later(function(){ tm = 0; var o = D.getElementById('gcbb-ov'); if (!o || !o.hasAttribute('data-pmf-job') || D.getElementById('_gcJobDash') || !home()) return;
-      closedAt = Date.now(); try { if (W._gcClaims && W._gcClaims.close) W._gcClaims.close(); else o.remove(); } catch (e) { warn(e); } try { if (o.parentNode) o.remove(); } catch (x) {} }, 400);
+      closedAt = Date.now(); try { if (W._gcClaims && W._gcClaims.close) W._gcClaims.close(); else o.remove(); } catch (e) { warn(e); } try { if (o.parentNode) o.remove(); } catch (x) {} }, 100);
   }
   function start(){ if (!D.body) { later(start, 200); return; } try { new MutationObserver(check).observe(D.body, { childList: true }); } catch (e) { warn(e); } }
-  start(); try { RI.call(W, function(){ try { check(); } catch (e) {} }, 1000); } catch (e) {}   /* and once a second (three lookups) — a change the observer did not see */
+  start(); try { RI.call(W, function(){ try { check(); } catch (e) {} }, 300); } catch (e) {}   /* and every 0.3 s (three lookups): the Home can come back without a new element (only its class) */
 })();
 function openLead(id){ closeSheets(); leaveHome(); try { if (typeof W._gcOpenLead === 'function') { W._gcOpenLead(id); return; } } catch (e) { warn(e); } try { W._setView('leads'); } catch (e) {} }
 function leadLine(l, extra){ return '<div class="gc-ra-item"><div class="t"><b>' + esc(l.client || l.contactName || l.name || 'Lead') + '</b><small>' + esc([l.name !== l.client ? l.name : '', l.type || l.leadKind, l.address].filter(Boolean).join(' · ')) + '</small></div><div class="b">' + (extra || '') + '<button type="button" class="gc-ra-sm pri" data-pmf-a="lead1" data-id="' + esc(l.id) + '">Open</button></div></div>'; }
