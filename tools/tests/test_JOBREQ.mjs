@@ -86,7 +86,7 @@ const B = await computer('pm@grayco-cs.com', { build: BUILD, mobile: true, init:
 await signIn(B, 'pm@grayco-cs.com', 20000);
 ok('B0 the PM\'s phone is up', !!await waitOn(B, () => window._gcJobReq && window._gcEpaHud && (window._crm.projects || []).length >= 3 && typeof window._gcJobDashboard === 'function', null, 60000));
 await waitOn(B, () => { if (!document.querySelector('#_gcJobPick.gc-fh') && window._gcField && window._gcField.open) { try { window._gcField.open(); } catch (e) {} } return document.querySelector('#_gcJobPick.gc-fh'); }, null, 30000);
-const fh = await waitOn(B, () => { const b = document.getElementById('gc-ep-field'); return b && /papers? to send/.test(b.innerText) && b.innerText; }, null, 20000);
+const fh = await waitOn(B, k => { const b = document.getElementById('gc-ep-field'); return b && /papers? to send/i.test(b.textContent) && b.querySelector('[data-ep-pid="PJ"][data-ep-k="' + k + '"]') && b.textContent; }, rA.k, 20000);   /* the section header is upper-cased by CSS: textContent, not innerText */
 ok('B1 GrayCo Field home: the office\'s paper is in "Needs you · 📑 N papers to send" for the PM', fh && fh.includes(rA.label.split(' — ')[0].slice(0, 20)), fh);
 await B.ev(() => { document.querySelectorAll('#_gcJobPick,._gcSheetOv').forEach(o => o.remove()); window._gcJobDashboard('PJ'); });
 const fc = await waitOn(B, k => { const c = document.getElementById('gc-jd-f'); return c && c.getAttribute('data-pid') === 'PJ' && c.querySelector('[data-jk="' + k + '"]') && c.innerText; }, rA.k, 20000);
