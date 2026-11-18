@@ -64,6 +64,11 @@
 [functions."approval-escalate"]
   schedule = "*/15 * * * *"
 
+# AWAY: approval notifications on the phone — every 5 minutes each NEW approval reaches the person it waits on (push, else a
+# staff text, else a staff e-mail; bundled, quiet 9 PM–6 AM; an admin on 🏖 Away gets none). _lib/apprping.js
+[functions."appr-ping-scheduled"]
+  schedule = "*/5 * * * *"
+
 # Weekly customer update (patch AUTAI, docs/AUTOMATIONS-AUTAI.md): Friday 2 PM Central. Netlify's clock is UTC, so it
 # runs at 19:00 and 20:00 UTC on Fridays and only the run that is 2 PM in Memphis drafts (daylight saving or not).
 # Each active job with the portal and its weekly-update switch on gets ONE draft on the approvals list for its PM.

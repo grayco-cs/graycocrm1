@@ -2052,6 +2052,8 @@ async function approvalAction(body, who){
   const officePm = !admin && !office && !isPm && it0.step === 'pm' && await isOffice(who);
   if (!admin && !office && !(it0.step === 'pm' && (isPm || officePm))) return { status: 403, out: { ok: false, error: it0.step === 'admin' ? 'This one needs Wesley or Nick now (the office can take it after 24 hours).' : 'Only the job\'s PM (' + (it0.pm || 'none') + '), the office or an admin can approve this.' } };
   const now = new Date().toISOString(), me = { by: myName || who.email, email: low(who.email), role: admin ? 'admin' : mmOk ? 'marketing' : ((office || officePm) ? 'office' : (isApmStep ? 'apm' : 'pm')), at: now };
+  if (/^(phone|tablet|computer)$/.test(low(body.device))) me.device = low(body.device);   /* AWAY: which device approved (the approval audit) */
+  const auditIt = async function(decision, item){ if (op !== 'approve' && op !== 'reject' && op !== 'record') return; try { await require('./_lib/apprping.js').audit({ key: 'ap2:' + id, src: 'queue', kind: s(it0.kind), title: s(it0.title) || s(it0.subject) || s(it0.kind), job: s(it0.jobName), decision: decision, by: me.by, email: me.email, role: me.role, device: me.device || '', since: s(it0.adminSince || it0.createdAt) }); } catch (e) {} };   /* AWAY */
   if (office && !officeAll && !it0.escalated && !it0.officeOk) { try { await escalateDue({ only: id }); } catch (e) {} }   /* patch APOFFICE4: not for her own kinds */
   const upd = async function(fn, check){ return kvListUpdate(AQ_KEY, function(l){ const x = l.find(function(y){ return s(y.id) === id; }); if (!x) return null; const ok = fn(x); if (ok === false) return { list: null, result: x }; x.updatedAt = new Date().toISOString(); return { list: l, check: function(l2){ const z = l2.find(function(y){ return s(y.id) === id; }); return !!(z && check(z)); }, result: x }; }); };
   if (op === 'reject') {
@@ -2061,7 +2063,8 @@ async function approvalAction(body, who){
     if (mktLib().isMktKind(it0.kind)) { try { await mktLib().onRejected(r.result, me); } catch (e) {} }   /* patch MKT */
     if (s(it0.kind) === 'portal_publish' && (it0.meta || {}).gateKey) { try { await gateSet(it0.meta.gateKey, 'rejected', me, clip(body.reason, 100)); } catch (e) {} }
     if (s(it0.kind) === 'sub_contact') { try { await subcLib().onRejected(exports._core, it0, me); } catch (e) {} }
-    if (/^preq_/.test(s(it0.kind))) { try { await require('./_lib/portalreq.js').onRejected(it0, me); } catch (e) {} }   /* patch PORTALREQ: a reply not approved never shows */   /* patch SUBCONTACT: nothing is shared */   /* patch PORTALGATE: not approved → never in the portal */
+    if (/^preq_/.test(s(it0.kind))) { try { await require('./_lib/portalreq.js').onRejected(it0, me); } catch (e) {} }
+    await auditIt('denied');   /* AWAY */   /* patch PORTALREQ: a reply not approved never shows */   /* patch SUBCONTACT: nothing is shared */   /* patch PORTALGATE: not approved → never in the portal */
     try {
       if (/final/.test(it0.kind) && m.invoiceId) await patchMail(m.invoiceId, { last_reminder_at: now, last_result: 'rejected' });
       if (it0.kind === 'portal_docs' && m.batch) await fetch(sbUrl() + '/rest/v1/gc_portal_notice?batch_id=eq.' + encodeURIComponent(m.batch), { method: 'PATCH', headers: H({ Prefer: 'return=minimal' }), body: JSON.stringify({ result: 'rejected' }) });
@@ -2085,6 +2088,7 @@ async function approvalAction(body, who){
       if (s(it0.kind) === 'portal_publish' && m.gateKey) await gateSet(m.gateKey, 'recorded', me, 'record-only');   /* patch PORTALGATE: recorded, never shown */
       if (it0.kind === 'portal_docs' && m.batch) await fetch(sbUrl() + '/rest/v1/gc_portal_notice?batch_id=eq.' + encodeURIComponent(m.batch), { method: 'PATCH', headers: H({ Prefer: 'return=minimal' }), body: JSON.stringify({ result: 'recorded' }) });
     } catch (e) {}
+    await auditIt('recorded');   /* AWAY */
     return { status: 200, out: { ok: true, recorded: true, sent: false, item: r.result } };
   }
   const edit = body.edit && typeof body.edit === 'object' ? body.edit : null;
@@ -2117,6 +2121,7 @@ async function approvalAction(body, who){
     else { x.step = x.steps[x.steps.indexOf(x.step) + 1]; if (x.step === 'admin') x.adminSince = now; }   /* patch AP4: the 24 hours start */
   }, function(z){ return last ? z.claim === claim : z.step !== it0.step; });
   if (!r.ok || !r.result || (last && r.result.claim !== claim)) return { status: 409, out: { ok: false, error: 'Someone else is on this one — look again.', item: r.result } };
+  await auditIt('approved');   /* AWAY: the approval is recorded on the item; the audit keeps who / when / which device */
   if (!last) return { status: 200, out: { ok: true, item: r.result, next: r.result.step } };
   if (cqHold) return { status: 200, out: { ok: true, item: r.result, sent: false, scheduled: true, releaseAt: r.result.releaseAt, say: CQ().SAY, overrideRefused: body.sendNow === true && !admin } };   /* patch CUSTQUIET */
   const sent = await CQ().run(cqOverride ? 'override' : null, function(){ return aqSend(r.result, now); });   /* patch CUSTQUIET: an admin's emergency send goes now */
@@ -2182,12 +2187,18 @@ async function releaseScheduled(opts){
    (approval-escalate.js) and whenever the CRM shows a list (op "escalate"). On escalation: once, an office to-do,
    a CRM notice for the office and for the admins (gc_kv "gc_appr_notices"), and a phone push to both. ── */
 const ESC_MS = 24 * 3600e3;
+/* PORTAL48 (owner 11/16): an approval from the customer-portal side (portal posts / messages / shares / documents / links, the
+   replies to portal requests, the weekly update) that no admin approved within 48 hours → the office, "waited 48 h for an admin".
+   Every other admin-step item keeps the 24 hours; the PM step's 24 hours (pmEsc) stays. */
+const PORTAL_ESC_MS = 48 * 3600e3;
+function portalSide(x){ const k = low(x && x.kind); return /^(portal_|preq_|gcp_)/.test(k) || /^(portal|weekly_update|announcement|cust_message|customer_message)$/.test(k) || !!(x && x.meta && x.meta.portal === true); }
+function escMsOf(x){ return portalSide(x) ? PORTAL_ESC_MS : ESC_MS; }
 function adminSinceMs(x){
   if (x.adminSince) return Date.parse(x.adminSince);
   const ap = (x.approvals || []).filter(function(a){ return a && a.step === 'pm'; }).slice(-1)[0];   /* older items: when the PM approved */
   return Date.parse((ap && ap.at) || x.createdAt || 0);
 }
-function escalatedOrDue(x, nowMs){ return !!(x && x.status === 'waiting' && x.step === 'admin' && (x.escalated || nowMs - adminSinceMs(x) >= ESC_MS)); }
+function escalatedOrDue(x, nowMs){ return !!(x && x.status === 'waiting' && x.step === 'admin' && (x.escalated || nowMs - adminSinceMs(x) >= escMsOf(x))); }   /* PORTAL48: 48 h for portal-side items */
 async function isOffice(who){
   if (/office/.test(low(who.role))) return true;
   try { const d = await crmData(false); const u = arr(d.users).find(function(x){ return low(x.email) === low(who.email); }); return !!(u && u.active !== false && /office/i.test(s(u.role))); } catch (e) { return false; }
@@ -2198,10 +2209,11 @@ function adminEmails(data){ return peopleOf(data, function(u){ return /^admin$/i
 let webPushLib;
 async function pushTo(emails, p){
   const pub = s(process.env.VAPID_PUBLIC_KEY), priv = s(process.env.VAPID_PRIVATE_KEY);
-  const wp = exports._core && exports._core._webPush || (webPushLib !== undefined ? webPushLib : (webPushLib = (function(){ try { return require('web-push'); } catch (e) { return null; } })()));
+  const wp = exports._core && exports._core._webPush || (webPushLib !== undefined ? webPushLib : (webPushLib = (function(){ try { return require('web-push'); } catch (e) { return require('./_lib/staffpush.js').compat(); } })()));   /* AWAY: web-push is not installed — Node's own crypto (_lib/staffpush.js) */
   if (!wp || ((!pub || !priv) && !(exports._core && exports._core._webPush))) return { sent: 0, why: 'phone push is not set up' };
+  try { emails = require('./_lib/away.js').redirect(emails, await require('./_lib/away.js').activeNow()); } catch (e) {}   /* AWAY: an admin on 🏖 Away gets no push */
   try { if (pub && priv) wp.setVapidDetails(s(process.env.VAPID_SUBJECT) || 'mailto:office@grayco-cs.com', pub, priv); } catch (e) { return { sent: 0, why: 'bad VAPID keys' }; }
-  const payload = JSON.stringify({ title: p.title, body: p.body, link: baseUrl({}) + '/#todo', tag: p.tag });
+  const payload = JSON.stringify({ title: p.title, body: p.body, link: (/^https:\/\//.test(s(p.url)) ? s(p.url) : '') || baseUrl({}) + '/#todo', tag: p.tag });   /* AWAY: the caller's deep link when it gives one */
   let sent = 0;
   for (const email of emails) {
     let subs = []; try { subs = arr((await kvRead(['gc_push_subs__' + email]))['gc_push_subs__' + email]).filter(function(x){ return x && x.endpoint && x.keys; }); } catch (e) {}
@@ -2221,7 +2233,7 @@ async function escalateDue(opts){
       const pmDue = x.pmEsc === true && x.status === 'waiting' && x.step === 'pm' && nowMs - Date.parse(x.createdAt || 0) >= ESC_MS;   /* patch SUBCONTACT: the PM did not answer → the office */
       if (!pmDue && !escalatedOrDue(x, nowMs)) return;
       if (pmDue) { x.step = 'admin'; x.adminSince = at; }
-      x.escalated = { at: at, why: pmDue ? 'The PM did not answer in 24 hours' : 'Wesley and Nick did not answer in 24 hours' }; x.updatedAt = at; fresh.push(x);
+      x.escalated = { at: at, why: pmDue ? 'The PM did not answer in 24 hours' : portalSide(x) ? 'Waited 48 h for an admin' : 'Wesley and Nick did not answer in 24 hours' };   /* PORTAL48 */ x.updatedAt = at; fresh.push(x);
     });
     if (!fresh.length) return null;
     const ids = fresh.map(function(x){ return s(x.id); });
@@ -2237,9 +2249,10 @@ async function escalateDue(opts){
     const why = s(x.escalated && x.escalated.why) || 'Wesley and Nick did not answer in 24 hours';   /* patch SUBCONTACT */
     await officeTodo('appr_esc_' + s(x.id), '⏫ Approve: ' + clip(title, 120), why + '. You can approve, edit or not approve it now: ✅ Approvals in To-Do, or the green APPROVE button.');
     notices.push({ id: 'esc_office_' + s(x.id), to: 'office', itemId: s(x.id), at: at, text: '⏫ For you to approve: ' + clip(title, 120) + ' — ' + why + '.' });
-    notices.push({ id: 'esc_admins_' + s(x.id), to: 'admins', itemId: s(x.id), at: at, text: '⏫ Sent to the office after 24h: ' + clip(title, 120) + '. You can still approve it.' });
-    await pushTo(office, { title: '⏫ Approval for the office', body: clip(title, 120) + ' — admins didn\'t answer in 24h', tag: 'appr-esc-' + s(x.id) });
-    await pushTo(admins, { title: 'Sent to the office after 24h', body: clip(title, 120), tag: 'appr-esc-admin-' + s(x.id) });
+    const hrs = /48 h/.test(why) ? '48h' : '24h';   /* PORTAL48 */
+    notices.push({ id: 'esc_admins_' + s(x.id), to: 'admins', itemId: s(x.id), at: at, text: '⏫ Sent to the office after ' + hrs + ': ' + clip(title, 120) + '. You can still approve it.' });
+    await pushTo(office, { title: '⏫ Approval for the office', body: clip(title, 120) + ' — ' + (hrs === '48h' ? 'waited 48 h for an admin' : 'admins didn\'t answer in 24h'), tag: 'appr-esc-' + s(x.id), url: baseUrl({}) + '/#appr=' + encodeURIComponent(s(x.id)) });
+    await pushTo(admins, { title: 'Sent to the office after ' + hrs, body: clip(title, 120), tag: 'appr-esc-admin-' + s(x.id), url: baseUrl({}) + '/#appr=' + encodeURIComponent(s(x.id)) });
   }
   await kvListUpdate('gc_appr_notices', function(l){
     const have = {}; l.forEach(function(n){ have[s(n && n.id)] = 1; });
@@ -2966,7 +2979,7 @@ exports.handler = async function (event) {
 
 /* for portal-reminders.js and the tests */
 exports._core = { starterFirst: starterFirst, pwSentence: pwSentence, withPwLine: withPwLine, firstForPid: firstForPid, seniorPm: async function(){ let d = {}; try { d = await crmData(true); } catch (e) {} return PEOPLE().seniorPm(d.users, d.gc_senior_pm); }, people: PEOPLE, JA: JA, jaAllows: jaAllows, pmByName: async function(name){ const n = s(name); if (!n) return null; let d = {}; try { d = await crmData(true); } catch (e) {} return pmOf(d, { pm: n }); }, officeTodo: officeTodo, taskListOf: taskListOf, kvListUpdate: kvListUpdate, queueApproval: queueApproval, gateScan: gateScan, gateState: gateState, gateGet: gateGet, gateAllows: gateAllows, gateKeyOf: gateKeyOf, gateSet: gateSet, GATE_KEY: GATE_KEY, _gateReset: function(){ GATE_LAST = null; GATE_AT = 0; }, approvalAction: approvalAction, aqMerge: aqMerge, AQ_KEY: AQ_KEY, LINK_PH: LINK_PH, notifyDocs: notifyDocs, notifyAll: notifyAll, noticeItems: noticeItems, sendLink: sendLink, settingsGet: settingsGet, warrantyOf: warrantyOf, buildView: buildView, runReminders: runReminders, stageOf: stageOf, gdocInfo: gdocInfo, ccIdOf: ccIdOf,
-  newToken: newToken, grayCoPhotos: grayCoPhotos, escalateDue: escalateDue, escalatedOrDue: escalatedOrDue, ESC_MS: ESC_MS, approvedReminder: approvedReminder, aqSend: aqSend, replyToFor: replyToFor, invoiceDoc: invoiceDoc, invoicePdf: invoicePdf, invNumber: invNumber, invCustStatus: invCustStatus,
+  newToken: newToken, grayCoPhotos: grayCoPhotos, escalateDue: escalateDue, escalatedOrDue: escalatedOrDue, ESC_MS: ESC_MS, PORTAL_ESC_MS: PORTAL_ESC_MS, portalSide: portalSide, approvedReminder: approvedReminder, aqSend: aqSend, replyToFor: replyToFor, invoiceDoc: invoiceDoc, invoicePdf: invoicePdf, invNumber: invNumber, invCustStatus: invCustStatus,
   queueInvoiceMail: queueInvoiceMail, queueNewInvoices: queueNewInvoices, invMailWanted: invMailWanted, news: function(){ return newsLib(); }, STAGES: STAGES, NOT_ACTIVE: NOT_ACTIVE, _reset: function(){ kvCache = null; photoCache.clear(); hits.clear(); GATE_LAST = null; GATE_AT = 0; } };
 /* patch AUTAI */
 Object.assign(exports._core, { crmData: crmData, kvRead: kvRead, activeFor: activeFor, sendText: sendText, LINK_PH_: LINK_PH, pmOf: pmOf, findProject: findProject, textHtml: textHtml, kvListRead: kvListRead, autaiReceipt: autaiReceipt, autaiQueue: autaiQueue, AUTAI_POST: AUTAI_POST });

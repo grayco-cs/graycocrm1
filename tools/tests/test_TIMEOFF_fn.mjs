@@ -125,21 +125,23 @@ ok(c.ok && TO.isOff('zedd.demo@grayco-cs.com', add(6)).pending !== true, 'a canc
 const before = JSON.parse(ls.get('gc_office_tasks') || '[]').length;
 r = await TO.request({ kind: 'sick', from: T, note: 'Demo fever' });
 ok(r.ok && r.rec.status === 'noted', 'a sick call needs no approval');
-ok(['boss.demo@grayco-cs.com', 'pm.demo@grayco-cs.com', 'office.con@grayco-cs.com', 'wjohnson@grayco-cs.com'].every(e => r.rec.notify.includes(e)) && !r.rec.notify.includes('office.mit@grayco-cs.com'), 'sick: manager, the job\'s PM + super, the Construction office and the admins are told', r.rec.notify);
+ok(['boss.demo@grayco-cs.com', 'pm.demo@grayco-cs.com', USERS[0].email].every(e => r.rec.notify.includes(e)) && !['office.con@grayco-cs.com', 'office.mit@grayco-cs.com'].some(e => r.rec.notify.includes(e)), 'sick (CALLOUT, owner 11/16): their manager + the PM of that day\'s job + the admins are told (not the office)', r.rec.notify);
 const tasks = JSON.parse(ls.get('gc_office_tasks') || '[]'), cover = tasks.find(t => t.timeoffId === r.rec.id);
-ok(tasks.length === before + 1 && cover && cover.kind === 'given' && cover.label === '🤒 Cover Zedd Demo’s jobs today: Demo Kitchen (Drywall hang)' && cover.assignees.includes('boss.demo@grayco-cs.com') && cover.assignees.includes('pm.demo@grayco-cs.com') && cover.prio === 'high' && cover.due === T && cover.companyId === 'construction',
-  'a To-Do "🤒 Cover Zedd Demo’s jobs today: Demo Kitchen (Drywall hang)" for the manager and the PM (NUDGE "given" format)', cover);
+ok(tasks.length === before + 1 && cover && cover.kind === 'given' && cover.label === '🤒 Cover Zedd Demo’s jobs today: Demo Kitchen (Drywall hang)' && cover.assignees.join() === 'boss.demo@grayco-cs.com,pm.demo@grayco-cs.com' && cover.prio === 'high' && cover.due === T && cover.companyId === 'construction',
+  'a To-Do "🤒 Cover Zedd Demo’s jobs today: Demo Kitchen (Drywall hang)" for the manager and the job\'s PM (NUDGE "given" format)', cover);
 o = TO.isOff('zedd.demo@grayco-cs.com', T);
 ok(o.off && o.kind === 'Sick' && /fever/.test(o.note), 'sick today: isOff → Sick', o);
-as('boss.demo@grayco-cs.com'); await reload();
-ok(TO._t.notices().some(n => /Zedd Demo called in sick today/.test(n.hd) && /Demo Kitchen/.test(n.sb)), 'the manager gets the in-app notice "🤒 Zedd Demo called in sick today"', TO._t.notices());
+as('pm.demo@grayco-cs.com'); await reload();
+ok(TO._t.notices().some(n => /Zedd Demo called in sick today/.test(n.hd) && /Demo Kitchen/.test(n.sb)), 'the PM gets the in-app notice "🤒 Zedd Demo called in sick today"', TO._t.notices());
 as('office.mit@grayco-cs.com'); await reload();
 ok(!TO._t.notices().some(n => /Zedd/.test(n.hd)), 'the other company\'s office gets no notice');
 
 // ── running late ──
 as('zedd.demo@grayco-cs.com'); await reload();
 r = await TO.request({ kind: 'late', minutes: 25, note: 'Demo traffic' });
-ok(r.ok && r.rec.minutes === 25 && r.rec.notify.includes('boss.demo@grayco-cs.com') && r.rec.notify.includes('pm.demo@grayco-cs.com') && !r.rec.notify.includes('wjohnson@grayco-cs.com'), 'running late goes to the PM / foreman (and manager), not every admin', r.rec.notify);
+ok(r.ok && r.rec.minutes === 25 && ['boss.demo@grayco-cs.com', 'pm.demo@grayco-cs.com', USERS[0].email].every(e => r.rec.notify.includes(e)) && !r.rec.notify.includes('office.con@grayco-cs.com'), 'running late (CALLOUT): their manager + the PM of today\'s job + the admins', r.rec.notify);
+PROJECTS[0].type = 'Commercial TI'; USERS[4].manager = ''; r = await TO.request({ kind: 'late', minutes: 10, note: 'Demo flat' }); PROJECTS[0].type = ''; USERS[4].manager = 'Crew Boss';   /* no manager: the super is there as the commercial job's superintendent */
+ok(r.ok && r.rec.notify.includes('boss.demo@grayco-cs.com') && !r.rec.notify.includes('pm.demo@grayco-cs.com') && r.rec.notify.includes(USERS[0].email), 'on a COMMERCIAL job the superintendent gets the call-out instead of the PM', r.rec.notify);
 ok(TO.isOff('zedd.demo@grayco-cs.com', T).kind === 'Sick', 'running late is not "off"');
 as('pm.demo@grayco-cs.com'); await reload();
 ok(TO._t.notices().some(n => /running 25 min late/.test(n.hd)), 'the PM gets "⏰ Zedd Demo is running 25 min late"');

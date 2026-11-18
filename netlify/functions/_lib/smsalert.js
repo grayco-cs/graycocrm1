@@ -332,6 +332,14 @@ async function notify(o){
     only.forEach(e => { if (!R[e] && sl[e] && sl[e].phone) { const sp = set.people[e]; if (!sp || sp.on !== false) R[e] = { key: e, email: e, phone: sl[e].phone, p: Object.assign({ on: true, newAll: true, name: sl[e].name }, sp || {}) }; } });
     want = Object.keys(R).filter(e => only.indexOf(e) >= 0);
   }
+  /* AWAY: an admin on 🏖 Away gets no text alerts — an alert meant only for them goes to their cover (an "any admin" one: the
+     other admin is on it already); an emergency still reaches them (safety) */
+  if (!o.emergency) { try { const AW = require('./away.js'), am = await AW.activeNow(now()); if (Object.keys(am).length) {
+    const sl = {}; staffList(pp).forEach(x => { sl[x.email] = x; });
+    want = AW.redirect(want, am);
+    want.forEach(e => { if (!R[e] && sl[e] && sl[e].phone) { const sp = set.people[e]; if (!sp || sp.on !== false) R[e] = { key: e, email: e, phone: sl[e].phone, p: Object.assign({ on: true, name: sl[e].name }, sp || {}) }; } });
+    want = want.filter(e => R[e]);
+  } } catch (e) {} }
   if (!want.length) return out;
   /* patch AUTOPANEL: staff text alerts are a safety switch (default ON); data-entry mode no longer stops them — they go to
      staff cells, tagged 'staff', which _lib/pause.js lets through */
@@ -339,6 +347,10 @@ async function notify(o){
   const opt = await _D.optouts();
   let hours = null; if (!o.emergency) { try { hours = await _D.hours(); } catch (e) { hours = null; } }
   const t = now(), at = new Date(t).toISOString(), day = centralDay(t), thread = s(o.thread) || o.type;
+  /* QUIET (owner 11/16: "From 9 [PM] – 6 [AM] only call-outs and emergency notifications go through; all else wait until 7 AM"):
+     inside the staff quiet window (_lib/staffquiet.js, default 9 PM → 7 AM, an admin setting) every non-emergency text is HELD
+     (sent by flushHeld once the window is over), not dropped */
+  let sqNow = false; if (!o.emergency) { try { const SQ = require('./staffquiet.js'); sqNow = SQ.quiet(t, await SQ.settings()); } catch (e) { sqNow = false; } }
   const go = [], skip = { optout: [], quiet: [], rate: [], daily: [], held: [] };
   /* claim each person (rate limit / daily / burst count) — recomputed on every kvCas retry */
   await _D.kvCas(SKEY, v => {
@@ -348,8 +360,8 @@ async function notify(o){
       if (opt[p.phone]) { skip.optout.push(e); return; }
       /* OVERNIGHT (owner 11/10: "I don't want texts after hours unless emergency … we get the 7 AM texts the next morning for overnight leads"):
          every lead text (LSA too) waits outside business hours / quiet hours and goes out when the office opens; emergencies go now */
-      if (!o.emergency && quietNow(p, t, hours)) {
-        if (o.hold || o.type === 'lead') { const l = Array.isArray(st.held[e]) ? st.held[e] : []; const body0 = typeof o.body === 'function' ? o.body(0, { newbie: true }) : o.text;
+      if (!o.emergency && (sqNow || quietNow(p, t, hours))) {
+        if (o.hold || o.type === 'lead' || sqNow) { const l = Array.isArray(st.held[e]) ? st.held[e] : []; const body0 = typeof o.body === 'function' ? o.body(0, { newbie: true }) : o.text;
           if (l.length < 25 && !l.some(x => x.text === o.text)) l.push({ at, text: clip(o.text, 200), body: clip(body0, 600), link: s(o.link), kind: s(o.type), lsa: o.lsa || null, from: (o.type === 'lead' || o.lsa) ? 'lead' : 'alert' }); st.held[e] = l; skip.held.push(e); }
         else skip.quiet.push(e);
         return;
@@ -390,7 +402,8 @@ async function flushHeld(){
   let held = {};
   let hours = null; try { hours = await _D.hours(); } catch (e) { hours = null; }
   /* OVERNIGHT: held lead texts go when the office opens (business hours) and the person's own quiet window is over */
-  await _D.kvCas(SKEY, v => { const st = loadState(v); held = {}; Object.keys(st.held).forEach(e => { const p = R[e]; if (p && !quietNow(p, t, hours)) { held[e] = st.held[e]; delete st.held[e]; } }); return Object.keys(held).length ? st : undefined; });
+  let sqNow = false; try { const SQ = require('./staffquiet.js'); sqNow = SQ.quiet(t, await SQ.settings()); } catch (e) { sqNow = false; }   /* QUIET: nothing before 7 AM */
+  await _D.kvCas(SKEY, v => { const st = loadState(v); held = {}; Object.keys(st.held).forEach(e => { const p = R[e]; if (p && !sqNow && !quietNow(p, t, hours)) { held[e] = st.held[e]; delete st.held[e]; } }); return Object.keys(held).length ? st : undefined; });
   const out = { sent: 0 };
   if (!Object.keys(held).length) return out;
   if (!(await require('./automations.js').isOn('staff_text_alerts'))) return Object.assign(out, { held: 'staff_text_alerts' });   /* patch AUTOPANEL (staff texts go in data-entry mode) */
@@ -403,8 +416,9 @@ async function flushHeld(){
       let r = null; try { r = await sendL(p.phone, s(x.body || x.text).slice(0, 600), leadNum(), undefined, { who: p.name, leadId: s(x.lsa && x.lsa.leadId), code: s(x.lsa && x.lsa.code), type: 'lead', overnight: true }); } catch (e2) {}
       if (r && r.ok) { out.sent++; if (x.lsa) { const ph = p.phone; await _D.kvCas(SKEY, v => { const st = loadState(v); const l = arr(st.lsa[ph]).filter(y => y.leadId !== x.lsa.leadId); l.push(Object.assign({}, x.lsa, { at: new Date(now()).toISOString() })); st.lsa[ph] = l.slice(-12); return st; }).catch(() => {}); } }
     }
-    if (sys.length && p.system) { const text = sys.length === 1 ? sys[0].text : sys.length + ' overnight alerts: ' + sys.map(x => x.text).join(' · ');
-      try { const r = await sendL(p.phone, compose(0, text, sys[0] && sys[0].link), fromNum()); if (r && r.ok) out.sent++; } catch (e2) {} }
+    const sysOk = sys.filter(x => x.kind !== 'system' || p.system);   /* QUIET: every held alert (a system one only for whoever wants those) */
+    if (sysOk.length) { const sys2 = sysOk; const text = sys2.length === 1 ? sys2[0].text : sys2.length + ' overnight alerts: ' + sys2.map(x => x.text).join(' · ');
+      try { const r = await sendL(p.phone, compose(0, text, sys2[0] && sys2[0].link), fromNum()); if (r && r.ok) out.sent++; } catch (e2) {} }
   }
   return out;
 }

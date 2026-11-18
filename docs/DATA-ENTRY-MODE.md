@@ -51,7 +51,7 @@ sends nothing.
 | api.anthropic.com, api.openai.com, api.deepgram.com | AI | allowed |
 | api.companycam.com, app.companycam.com, developer.api.autodesk.com, tracerfy.com | photos, plans, skip-trace lookups | allowed |
 | challenges.cloudflare.com, oauth2/accounts/www.googleapis.com, solar/tile/maps.googleapis.com, oauth.platform.intuit.com, www.linkedin.com (OAuth), tools.brightlocal.com | form check, sign-ins, maps, calendar/drive reads | allowed |
-| web-push (VAPID) | phone pushes — only ever to **staff** (`gc_push_subs__<staff e-mail>`) | allowed |
+| web-push (VAPID) | phone pushes — only ever to **staff** (`gc_push_subs__<staff e-mail>`, `_lib/staffpush.js`, tagged `staff`) | allowed (AWAY 11/16: before, push hosts were "unknown hosts" and skipped; an untagged push — the customer app — stays skipped) |
 
 ## Record-only approvals
 

@@ -206,7 +206,7 @@ async function morning(core, opts){
   const rep = { ok: true, needInfo: full.needInfo, to: to, mailed: 0, pushed: 0, off: [] };
   for (const email of to) {
     const pf = prefs[email] || {};
-    if (pf.mail === false) rep.off.push(email + ':mail'); else { const m = await A.staffMail(email, text + ' — GrayCo CRM', html); if (m.ok) rep.mailed++; }
+    if (pf.mail === false) rep.off.push(email + ':mail'); else { const m = await A.staffMail(email, text + ' — GrayCo CRM', html, { now: now }); if (m.ok) rep.mailed++; }
     if (pf.push === false) rep.off.push(email + ':push'); else { try { const p = await core.pushTo([email], { title: text, body: full.top.slice(0, 3).map(function(t){ return t.label + ' (' + t.count + ')'; }).join(' · '), tag: 'gc-datafull' }); rep.pushed += (p && p.sent) || 0; } catch (e) {} }
   }
   const alert = { ymd: c.ymd, at: new Date(now).toISOString(), text: text, top: full.top.slice(0, 3).map(function(t){ return t.label; }), to: to.filter(function(e){ return (prefs[e] || {}).app !== false; }) };

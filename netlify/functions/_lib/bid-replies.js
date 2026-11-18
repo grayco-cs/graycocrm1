@@ -207,7 +207,7 @@ function make(d){
     return out;
   }
   function leadLink(id){ return site() + '/#leads&lead=' + encodeURIComponent(s(id)); }
-  function loadWebPush(){ try { return require('web-push'); } catch (e) { return null; } }
+  function loadWebPush(){ try { return require('web-push'); } catch (e) { try { return require('./staffpush.js').compat(); } catch (x) { return null; } } }   /* AWAY: web-push is not installed — Node's own crypto */
   async function push(to, p){
     const pub = env('VAPID_PUBLIC_KEY'), priv = env('VAPID_PRIVATE_KEY');
     if (!pub || !priv) return { sent: 0, why: 'phone push is not set up' };

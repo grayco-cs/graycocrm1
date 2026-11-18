@@ -1040,7 +1040,7 @@ async function defaultEstimatorEmail(noOwner){
   return r.email || (noOwner ? '' : ownerEmails()[0] || '');   /* patch PLANREQ: noOwner — the request falls back to office@ instead */
 }
 function ownerEmails(){ return String(process.env.OWNER_EMAILS || 'wjohnson@grayco-cs.com,nthomas@grayco-cs.com').split(',').map(low).filter(okEmail); }
-function loadWebPush(){ try { return require('web-push'); } catch (e) { return null; } }
+function loadWebPush(){ try { return require('web-push'); } catch (e) { try { return require('./_lib/staffpush.js').compat(); } catch (x) { return null; } } }   /* AWAY: web-push is not installed — Node's own crypto */
 async function pushTo(emails, title, text){
   const pub = process.env.VAPID_PUBLIC_KEY, priv = process.env.VAPID_PRIVATE_KEY, wp = pub && priv ? loadWebPush() : null;
   if (!wp) return 0;

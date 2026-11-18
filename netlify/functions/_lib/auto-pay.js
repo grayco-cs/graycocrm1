@@ -26,7 +26,7 @@ async function run(opts){
   const note = 'Open the CRM on an office or admin computer: it calculates the draft by itself (or press 💵 Payroll → Calculate payroll). Then an admin approves each check.';
   await A.todo('autopay_missing_' + payday, label, { note: note, due: c.ymd, by: 'CRM (Thursday payroll)' });
   let pushed = 0; try { const p = await C.pushTo(admins.concat(office), { title: label, body: note, tag: 'gc-autopay-' + payday }); pushed = p.sent || 0; } catch (e) {}
-  const mail = await A.staffMail(admins.concat(office), label, A.shell(label, '<p>' + A.esc(note) + '</p><p><a href="' + A.crmBase() + '/#payroll">Open the CRM</a></p>'));
+  const mail = await A.staffMail(admins.concat(office), label, A.shell(label, '<p>' + A.esc(note) + '</p><p><a href="' + A.crmBase() + '/#payroll">Open the CRM</a></p>'), { now: now });   /* QUIET: the run's clock */
   return { ok: true, payday: payday, missing: true, pushed: pushed, mailed: !!mail.ok };
 }
 module.exports = { run, isPayday };

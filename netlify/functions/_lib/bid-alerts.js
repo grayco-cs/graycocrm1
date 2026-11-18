@@ -216,7 +216,7 @@ function make(d){
     } catch (e) { return { ok: false, why: 'Resend unreachable' }; }
   }
   /* patch TD's push piece: present when its keys are set and web-push is installed */
-  function loadWebPush(){ try { return require('web-push'); } catch (e) { return null; } }
+  function loadWebPush(){ try { return require('web-push'); } catch (e) { try { return require('./staffpush.js').compat(); } catch (x) { return null; } } }   /* AWAY: web-push is not installed — Node's own crypto */
   async function push(to, p){
     const pub = env('VAPID_PUBLIC_KEY'), priv = env('VAPID_PRIVATE_KEY');
     if (!pub || !priv) return { sent: 0, why: 'phone push is not set up (patch TD)' };
@@ -265,6 +265,9 @@ function make(d){
     const tx = (Array.isArray(texted) ? texted : []).map(low);
     const to = (only ? Array.from(new Set(arr(only).map(low).filter(Boolean))) : (await recipients(extra)).filter(x => x !== 'office@grayco-cs.com')).filter(x => tx.indexOf(x) < 0);   /* LEADROUTE2 (owner 11/9): lead / bid e-mails never go to office@ — the routed estimator / PM gets them */   /* TEXTFIRST */
     if (only && !to.length && tx.length) return { ok: true, why: 'sent by text', to, texted: tx, pushed: 0 };   /* TEXTFIRST: everyone got it by text */
+    /* QUIET (owner 11/16: "From 9 [PM] – 6 [AM] only call-outs and emergency notifications go through; all else wait until 7 AM"): a
+       lead / bid e-mail + push is held for the 7 AM bundle (_lib/staffquiet.js); the 🚨 emergency alert goes now */
+    try { const SQ = require('./staffquiet.js'); if (to.length && !SQ.emergency({ subject: m.subject, title: m.push && m.push.title }) && await SQ.isQuiet(now())) { await SQ.hold(to, { kind: 'mail', title: m.push && m.push.title || m.subject, body: m.push && m.push.body, subject: m.subject, html: m.html, url: m.link || '' }); return { ok: true, why: 'quiet hours — held until 7 AM', to, pushed: 0, held: true }; } } catch (e) {}
     const r = (!only && !to.length && (MAIL_OFF || true)) ? { ok: true, why: 'lead e-mails are off' } : await sendMail(to, m);   /* PMBID */
     const p = await push(to.length ? to : (MAIL_OFF ? ['office@grayco-cs.com'] : to), m.push);   /* the push goes out even when the e-mail could not */
     return { ok: r.ok, why: r.why, to, pushed: p.sent, pushWhy: p.why };

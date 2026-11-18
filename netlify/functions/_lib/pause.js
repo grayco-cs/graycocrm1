@@ -35,6 +35,10 @@ const ALLOW_WRITE_HOSTS = [
 let state = { at: 0, paused: null, why: '' };
 /* patch AUTOPANEL: the custquiet tags that pass data-entry mode for texts / calls (see guardedFetch) */
 const PASS_TAGS = { staff: 1, emergency: 1, reply: 1 };
+/* AWAY: the phone push services. Found 11/16: "staff web-push is allowed" (above) was not true — a push host was an unknown
+   host, so every push was skipped in data-entry mode. Now a push tagged 'staff' (_lib/staffpush.js: only ever staff phones)
+   goes; any other push (the customer app) stays skipped. */
+const PUSH_HOSTS = [/(^|\.)push\.apple\.com$/i, /^fcm\.googleapis\.com$/i, /^android\.googleapis\.com$/i, /(^|\.)push\.services\.mozilla\.com$/i, /(^|\.)notify\.windows\.com$/i];
 function safetyTag(){ try { return String(require('./custquiet.js').tag() || ''); } catch (e) { return ''; } }
 
 function s(v){ return v == null ? '' : String(v); }
@@ -114,6 +118,7 @@ function classify(url, opts){
     if (/\/Calls(\.json)?$/i.test(path)) return { kind: 'phone call', twilio: true, status: 201, fake: { sid: 'CA' + tag, status: 'queued' } };
     return { kind: 'text message', twilio: true, status: 201, fake: { sid: 'SM' + tag, status: 'queued' } };
   }
+  if (PUSH_HOSTS.some(function(re){ return re.test(host); })) return { kind: 'phone push', push: true, status: 503, fake: { error: 'Data-entry mode is on — this push is paused.' } };   /* AWAY: a push service; a staff push (tagged 'staff') goes, see guardedFetch */
   if (host === 'graph.facebook.com') return { kind: 'Facebook / Instagram post', status: 200, fake: { id: tag, post_id: tag } };
   if (host === 'open.tiktokapis.com') {
     if (/\/oauth\//.test(path)) return null;
@@ -173,6 +178,7 @@ async function guardedFetch(raw, url, opts){
   /* patch RESETMAIL (owner 11/13: a sub's "Forgot password" never arrived): a sign-in code or password-reset link the person
      just asked for (tagged custquiet.run('reply', …)) is e-mailed in data-entry mode too — it is not GrayCo reaching out. */
   if (c && c.mail && safetyTag() === 'reply' && await isPaused()) { try { console.log('[pause] let through ' + c.kind + ' (sign-in / reset the person asked for)'); } catch (e) {} c = null; }
+  if (c && c.push && safetyTag() === 'staff') c = null;   /* AWAY: a staff phone push */
   if (c && c.twilio && PASS_TAGS[safetyTag()] && await isPaused()) { try { console.log('[pause] let through ' + c.kind + ' (tagged ' + safetyTag() + ')'); } catch (e) {} c = null; }
   if (c && await isPaused()) {
     let host = ''; try { host = new URL(s(target)).hostname; } catch (e) {}

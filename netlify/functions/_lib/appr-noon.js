@@ -35,7 +35,7 @@ async function run(opts){
     const items = D.order(got.box[p.email], now);
     const html = A.shell(subject, D.apprLine(p.n, got.base) + '<p>You haven\'t opened 📋 Approvals today. Please look at them before the end of the day.</p><ul style="padding-left:18px">' +
       items.slice(0, 15).map(function(it){ return '<li><a href="' + esc(it.link) + '">' + esc(clip(it.title, 140)) + '</a>' + (it.sub ? ' — ' + esc(clip(it.sub, 60)) : '') + '</li>'; }).join('') + '</ul>');
-    try { const m = await A.staffMail(p.email, '⏰ ' + subject + ' — GrayCo CRM', html); if (m && m.ok) rep.mailed++; } catch (e) {}
+    try { const m = await A.staffMail(p.email, '⏰ ' + subject + ' — GrayCo CRM', html, { now: now });   /* QUIET: the run's clock */ if (m && m.ok) rep.mailed++; } catch (e) {}
     try { const r = await C.pushTo([p.email], { title: '⏰ ' + subject, body: 'Open 📋 Approvals in the CRM', tag: 'gc-appr-noon' }); rep.pushed += (r && r.sent) || 0; } catch (e) {}
     try {
       const at = new Date(now).toISOString(), id = 'apprnoon_' + c.ymd + '_' + p.email;

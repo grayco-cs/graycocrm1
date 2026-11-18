@@ -1,0 +1,151 @@
+// netlify/functions/appr-away.js — patch AWAY: 🏖 Away (no notifications while away; the Gmail auto-reply), phone
+// notifications for approvals (staff push subscriptions), the approval audit and 📊 Approvals this week.
+// POST { op } from the CRM with the person's sign-in (the page adds it). Staff only; the admin-only ops are marked.
+//   state                     → my away record, every admin's upcoming away, my phones (never the address), the push key
+//   set {email?, from, to?, cover?, summary?, replyText?}   (admin) turn Away on — for myself, or (admin area) another admin
+//   off {email?}              (admin) turn it off now (the Gmail auto-reply too)
+//   subscribe {sub, device} / unsubscribe {endpoint} / test   my own phone(s)
+//   feed {items}              (admin) the CRM-only approvals waiting on admins (_lib/apprping.js)
+//   audit {rec}               one approval decision, from this device (who = the sign-in, never the page)
+//   week                      (admin) 📊 Approvals this week
+//   ping                      (admin) run the approval pings now
+//   callout {kind: sick | late | cant, day, minutes, note, jobs: [job ids]}   an employee calling out (patch TIMEOFF's 🤒 / ⏰):
+//                             the admins + the PM of each job that day (the superintendent on a commercial job), at once
+//                             (urgent — passes the quiet hours): phone push, else a staff text (_lib/callout.js)
+//   notify {to, kind, link, title, body, quiet}   one staff notice from the CRM page (window._gcNotify — TODOMGR, lead assign,
+//                             "sent back to you" …): to = a staff name or e-mail (or a list); the phone push, else one staff text;
+//                             inside the 9 PM – 7 AM quiet hours it waits for the 7 AM bundle (kind callout / emergency goes now);
+//                             quiet: true = push only, never a text
+//   quiet {from, to, on}      (admin) 🌙 staff quiet hours (default 9 PM → 7 AM: only emergencies / call-outs; the rest at 7 AM)
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
+const portal = require('./portal.js');
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function AW(){ return require('./_lib/away.js'); }
+function SP(){ return require('./_lib/staffpush.js'); }
+function PG(){ return require('./_lib/apprping.js'); }
+function VAC(){ return require('./_lib/vacation.js'); }
+function pub(r){ return r && { id: s(r.id), email: low(r.email), name: s(r.name), from: s(r.from), to: s(r.to), cover: low(r.cover), coverName: s(r.coverName), summary: r.summary === true, replyText: s(r.replyText), setBy: s(r.setBy), setAt: s(r.setAt), vacation: r.vacation || null, sentence: AW().sentence(r) }; }
+
+async function people(){
+  const C = portal._core; let data = {}; try { data = await C.crmData(true); } catch (e) {}
+  const users = arr(data.users).filter(function(u){ return u && u.active !== false && /@/.test(s(u.email)); });
+  const admins = C.adminEmails(data);
+  const nameOf = function(e){ const u = users.filter(function(x){ return low(x.email) === low(e); })[0]; return s(u && u.name) || low(e); };
+  return { admins: admins, list: admins.map(function(e){ return { email: e, name: nameOf(e) }; }), nameOf: nameOf };
+}
+function otherFor(rec, P){
+  const e = low(rec.cover) || P.admins.filter(function(x){ return x !== low(rec.email); })[0] || '';
+  return e ? { email: e, name: P.nameOf(e) } : null;
+}
+async function act(body, who){
+  const op = s(body.op) || 'state', now = Date.now();
+  const admin = !!who.admin;
+  if (op === 'state') {
+    const list = await AW().load(true), up = AW().upcoming(list, now), P = admin ? await people() : null;
+    const K = SP().keys(), subs = await SP().subsOf(who.email);
+    let cov = {};
+    try { const v = await portal._core.kvRead([PG().STATE]); const st = v[PG().STATE] || {}; cov = (st.covered && st.covered[low(who.email)]) || {}; } catch (e) {}
+    return { status: 200, out: { ok: true, me: { email: low(who.email), admin: admin }, today: AW().ymdC(now), mine: pub(up.filter(function(r){ return low(r.email) === low(who.email); }).sort(function(a, b){ return s(b.setAt).localeCompare(s(a.setAt)); })[0] || null),
+      activeMine: !!AW().activeMap(list, now)[low(who.email)], away: up.map(pub), admins: P ? P.list : [],
+      quiet: await require('./_lib/staffquiet.js').settings(true),
+      push: { ready: !!K, key: K ? K.pub : '', devices: subs.length, on: SP().hasOn(subs, body.endpoint), list: subs.map(function(x){ return { device: s(x.device) || 'phone', at: s(x.at) }; }) }, covered: cov,
+      defaultText: P ? VAC().defaultText({ to: s(body.to) }, otherFor({ email: low(body.email) || low(who.email), cover: low(body.cover) }, P)) : '' } };
+  }
+  if (op === 'set' || op === 'off') {
+    if (!admin) return { status: 403, out: { ok: false, error: 'Away is for admins (Wesley, Nick).' } };
+    const P = await people(), email = low(body.email) || low(who.email);
+    if (op === 'off') {
+      let ended = null;
+      const r = await AW().update(function(l){ let ch = false; l.forEach(function(x){ if (x && low(x.email) === email && !x.endedAt) { x.endedAt = new Date(now).toISOString(); x.endedBy = low(who.email); ended = x; ch = true; } }); return ch ? { list: l, check: function(){ return true; }, result: ended } : null; });
+      if (!r.ok) return { status: 502, out: { ok: false, error: 'Could not save it — try again.' } };
+      let vac = null; if (ended) { try { vac = await VAC().set(ended, otherFor(ended, P), false); } catch (e) { vac = { ok: false, error: 'Google could not be reached.' }; } }
+      return { status: 200, out: { ok: true, off: true, was: pub(ended), vacation: vac } };
+    }
+    const today = AW().ymdC(now);
+    const rec = { id: 'AW' + now.toString(36), email: email, name: P.nameOf(email), from: s(body.from) || today, to: s(body.to), cover: low(body.cover) || (P.admins.filter(function(x){ return x !== email; })[0] || ''),
+      summary: body.summary === true, replyText: s(body.replyText).slice(0, 1500), setBy: low(who.email), setAt: new Date(now).toISOString() };
+    rec.coverName = rec.cover ? P.nameOf(rec.cover) : '';
+    const bad = AW().check(rec, P.admins, now);
+    if (bad) return { status: 400, out: { ok: false, error: bad } };
+    if (/insurance|carrier|sub ?portal|subportal/i.test(rec.replyText)) return { status: 400, out: { ok: false, error: 'Keep insurance carriers and the sub portal out of the auto-reply.' } };
+    let vac = null; try { vac = await VAC().set(rec, otherFor(rec, P), true); } catch (e) { vac = { ok: false, error: 'Google could not be reached.' }; }
+    rec.vacation = { ok: !!(vac && vac.ok), needReconnect: !!(vac && vac.needReconnect), error: s(vac && vac.error), at: rec.setAt };
+    const r = await AW().update(function(l){ l.forEach(function(x){ if (x && low(x.email) === email && !x.endedAt) { x.endedAt = rec.setAt; x.endedBy = low(who.email); x.replaced = rec.id; } }); return { list: l.concat([rec]).slice(-60), check: function(l2){ return l2.some(function(x){ return x && x.id === rec.id; }); }, result: rec }; });
+    if (!r.ok) return { status: 502, out: { ok: false, error: 'Could not save it — try again.' } };
+    return { status: 200, out: { ok: true, away: pub(rec), vacation: rec.vacation } };
+  }
+  if (op === 'subscribe') { const r = await SP().subscribe(who.email, body.sub, { device: body.device, ua: body.ua }); return { status: r.ok ? 200 : 400, out: r }; }
+  if (op === 'unsubscribe') return { status: 200, out: await SP().unsubscribe(who.email, body.endpoint) };
+  if (op === 'test') {
+    const r = await SP().send([who.email], { title: '🔔 GrayCo CRM — notifications are on', body: 'New approvals will show here. Tap to open your approvals.', url: (s(process.env.CRM_URL) || 'https://crm.grayco-cs.com').replace(/\/$/, '') + '/#apx=mine', tag: 'gc-test' }, { noAway: true });
+    return { status: 200, out: { ok: r.sent > 0, sent: r.sent, why: r.why || (r.sent ? '' : 'No phone answered — turn notifications on again on that phone.') } };
+  }
+  if (op === 'feed') { if (!admin) return { status: 403, out: { ok: false, error: 'Admins only.' } }; return { status: 200, out: await PG().feed(who.email, body.items) }; }
+  if (op === 'audit') {
+    const rec = Object.assign({}, body.rec || {}, { by: s(who.name) || s(body.rec && body.rec.by) || low(who.email), email: low(who.email), role: admin ? 'admin' : s(who.role) });
+    return { status: 200, out: await PG().audit(rec) };
+  }
+  if (op === 'week') { if (!admin) return { status: 403, out: { ok: false, error: 'Admins only.' } }; return { status: 200, out: await PG().week() }; }
+  if (op === 'callout') {
+    const kind = /^(sick|late|cant)$/.test(s(body.kind)) ? s(body.kind) : '';
+    if (!kind) return { status: 400, out: { ok: false, error: 'Bad request' } };
+    const C = portal._core; let data = {}; try { data = await C.crmData(true); } catch (e) {}
+    const users = arr(data.users), me = users.filter(function(u){ return low(u && u.email) === low(who.email); })[0] || {};
+    const name = s(me.name) || s(who.name) || low(who.email).split('@')[0], fn = name.split(/\s+/)[0];
+    const projects = C.listOf ? C.listOf(data, ['projects']) : arr(data.projects);
+    const jobs = arr(body.jobs).slice(0, 20).map(function(id){ return projects.filter(function(p){ return p && s(p.id) === s(id); })[0]; }).filter(Boolean);
+    const CO = require('./_lib/callout.js');
+    const to = CO.route({ who: 'employee', jobs: jobs, users: users, admins: C.adminEmails(data), self: who.email });
+    const today = AW().ymdC(now), day = /^\d{4}-\d{2}-\d{2}$/.test(s(body.day)) ? s(body.day) : today;
+    const when = day === today ? 'today' : day === AW().addDays(today, 1) ? 'tomorrow' : AW().dayName(day);
+    const title = '📣 Call-out — ' + fn + (kind === 'sick' ? ' is out sick ' + when : kind === 'late' ? ' is running ' + Math.max(1, Math.round(+body.minutes || 0)) + ' min late' : ' can\'t make it ' + when);
+    const jobsTxt = jobs.map(function(p){ return s(p.name || p.address); }).filter(Boolean).slice(0, 4).join(', ');
+    const text = (jobsTxt ? jobsTxt : 'Nothing on the schedule') + (s(body.note) ? ' — ' + s(body.note).slice(0, 160) : '');
+    const url = (s(process.env.CRM_URL) || 'https://crm.grayco-cs.com').replace(/\/$/, '') + '/#schedule';
+    const p = await SP().send(to, { title: title, body: text, url: url, tag: 'callout-' + low(who.email) + '-' + day }, { emergency: true });
+    let texted = [];
+    const none = arr(p.none).filter(function(e){ return arr(p.to).indexOf(e) < 0; });
+    if (none.length) { try { const r = await require('./_lib/smsalert.js').notify({ type: 'system', emergency: true, only: none, text: title.replace(/^📣 /, '') + ': ' + text, link: url, thread: 'callout:' + low(who.email) }); texted = arr(r && r.to); } catch (e) {} }
+    return { status: 200, out: { ok: true, to: to, pushed: arr(p.to), texted: texted, title: title } };
+  }
+  if (op === 'notify') {
+    const C = portal._core; let data = {}; try { data = await C.crmData(false); } catch (e) {}
+    const users = arr(data.users).filter(function(u){ return u && u.active !== false && /@/.test(s(u.email)); });
+    const P = require('./_lib/people.js');
+    const want = (Array.isArray(body.to) ? body.to : [body.to]).slice(0, 12).map(function(x){ const u = P.findUser(users, s(x)); return u ? low(u.email) : (/@(in\.)?grayco-cs\.com$/i.test(s(x)) ? low(x) : ''); })
+      .filter(function(e, i, a){ return e && /@(in\.)?grayco-cs\.com$/.test(e) && a.indexOf(e) === i; });
+    if (!want.length) return { status: 200, out: { ok: false, error: 'Nobody on the staff list by that name.' } };
+    const title = s(body.title).slice(0, 120) || 'GrayCo CRM', text = s(body.body).slice(0, 240), kind = s(body.kind).slice(0, 30);
+    const base = (s(process.env.CRM_URL) || 'https://crm.grayco-cs.com').replace(/\/$/, ''), link = s(body.link);
+    const url = /^#[A-Za-z0-9_=&%:.\-]{0,300}$/.test(link) ? base + '/' + link : base + '/#todo';
+    const emergency = /^(callout|call-out|emergency)$/i.test(kind);
+    const p = await SP().send(want, { title: title, body: text, url: url, tag: 'gc-' + (kind || 'notice') }, { emergency: emergency });
+    let texted = [];
+    const none = arr(p.none).filter(function(e){ return arr(p.to).indexOf(e) < 0; });
+    if (!p.held && none.length && body.quiet !== true) { try { const r = await require('./_lib/smsalert.js').notify({ type: 'system', emergency: emergency, only: none, text: title + (text ? ': ' + text : ''), link: url, thread: 'notice:' + (kind || 'x') }); texted = arr(r && r.to); } catch (e) {} }
+    return { status: 200, out: { ok: true, to: want, pushed: arr(p.to), held: arr(p.held), texted: texted } };
+  }
+  if (op === 'quiet') {
+    if (!admin) return { status: 403, out: { ok: false, error: 'Admins only.' } };
+    const f = parseInt(body.from, 10), t = parseInt(body.to, 10);
+    if (!(f >= 0 && f <= 23) || !(t >= 0 && t <= 23)) return { status: 400, out: { ok: false, error: 'Pick the hours (0–23).' } };
+    return { status: 200, out: { ok: true, quiet: await require('./_lib/staffquiet.js').save({ on: body.on !== false, from: f, to: t }, who.email) } };
+  }
+  if (op === 'ping') { if (!admin) return { status: 403, out: { ok: false, error: 'Admins only.' } }; return { status: 200, out: await PG().run({ force: true }) }; }
+  return { status: 400, out: { ok: false, error: 'Bad request' } };
+}
+exports._act = act;
+exports.handler = async function(event){
+  event = event || {};
+  const C = portal._core, cors = C.gcCors(event, 'POST, OPTIONS');
+  const headers = Object.assign({ 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }, cors);
+  if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers: cors, body: '' };
+  if (event.httpMethod !== 'POST') return { statusCode: 405, headers, body: JSON.stringify({ ok: false, error: 'POST only' }) };
+  const who = await C.gcStaffAuth(event);
+  if (!who.ok) return { statusCode: who.statusCode || 401, headers, body: JSON.stringify({ ok: false, error: who.error }) };
+  let body = {}; try { body = JSON.parse(event.body || '{}'); } catch (e) { return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Bad request' }) }; }
+  try { const a = await act(body, who); return { statusCode: a.status, headers, body: JSON.stringify(a.out) }; }
+  catch (e) { return { statusCode: 502, headers, body: JSON.stringify({ ok: false, error: 'Something went wrong: ' + s(e && e.message).slice(0, 120) }) }; }
+};

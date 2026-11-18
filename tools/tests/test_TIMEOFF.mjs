@@ -124,7 +124,7 @@ try {
   await shot(P, '9_phone_call_in_sick');
   await P.page().locator('.gc-to-ov[data-to-sheet="sick"] [data-go]').tap(); await sleep(3000);
   const sick = (H.cget('gc_timeoff') || { list: [] }).list.find(r => r.kind === 'sick');
-  ok(!!sick && sick.from === T && sick.status === 'noted' && [PM, ADMIN, 'office@grayco-cs.com'].every(e => sick.notify.includes(e)), 'sick call saved, no approval; the manager, the office and the admin are told', sick);
+  ok(!!sick && sick.from === T && sick.status === 'noted' && [PM, ADMIN].every(e => sick.notify.includes(e)) && !sick.notify.includes('office@grayco-cs.com'), 'sick call saved, no approval; the manager (the PM here) and the admins are told — the office only when it is the manager (CALLOUT, owner 11/16)', sick);
   const ot = (H.cget('gc_office_tasks') || []), cov = (typeof ot === 'string' ? JSON.parse(ot) : ot).find(t => /Cover Zedd Demo/.test(t.label || ''));
   ok(!!cov && cov.kind === 'given' && cov.assignees.includes(PM) && /Demo Kitchen Remodel/.test(cov.label) && /today/.test(cov.label), 'the To-Do "🤒 Cover Zedd Demo’s jobs today: Demo Kitchen Remodel …" is in the cloud for Sample PM', cov);
   ok(!pageErrs(P).length, 'phone: no page errors', pageErrs(P).slice(0, 3));
