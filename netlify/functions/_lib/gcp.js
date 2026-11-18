@@ -202,7 +202,8 @@ async function gcView(data, p, opts){
     payapps: arr(st.payapps).filter(function(x){ return x.status !== 'void' && x.status !== 'draft' && x.status !== 'waiting'; }).map(payOut),
     cos: arr(st.cos).filter(function(x){ return x.status !== 'void' && x.status !== 'pricing' && !(x.preqId && x.status === 'requested' && !opts.staff); }).map(coOut),   /* patch PORTALREQ: a request from the page shows under My requests until it is priced */
     rfis: arr(st.rfis).filter(function(x){ return x.status !== 'void' && x.status !== 'draft'; }).map(rfiOut),
-    docs: docs
+    docs: docs,
+    inspections: v.inspections || null   /* patch INSPECT2: date, type, a plain result (the job's "show on portal" switch) */
   };
   if (opts.staff) { out.staff = true; out.state = st; out.contacts = contactsOf(data, p); }
   return out;

@@ -222,6 +222,11 @@ try {
   const I = v && v.inspections, js = JSON.stringify(I || {});
   ok('D1 the portal view has the job\'s inspections: the electrical one on its new date ("Scheduled", 9 AM – 11 AM) and the old date "Rescheduled"', !!I && I.upcoming.some(x => x.type === 'Electrical inspection' && x.date === day(5) && x.window === '9 AM – 11 AM' && x.result === 'Scheduled') && I.past.some(x => x.type === 'Electrical inspection' && x.date === T1 && x.result === 'Rescheduled') && I.upcoming.some(x => x.type === 'Plumbing inspection'), I || v);
   ok('D1 … without anything internal: no notes, inspector, phone, who meets, the reason, "failed", the archived one, the carrier', !/INTERNAL|4411|Bartlett|Shelby|555-0177|Demo PM|Demo Pipe|GFCI|fail|Fire sprinkler|Zebra/i.test(js), js);
+  {   /* the GC / owner page (gc-portal) carries the same customer words */
+    const G = require(path.join(BUILD, 'netlify/functions/_lib/gcp.js')), C = require(path.join(BUILD, 'netlify/functions/portal.js'))._core;
+    const data = await C.crmData(true), job = C.findProject(data, P1.id), gv = await G.gcView(data, job), gjs = JSON.stringify(gv.inspections || {});
+    ok('D1 the GC / owner page gets the same plain list (gc-view), nothing internal', !!gv.inspections && gv.inspections.upcoming.some(x => x.type === 'Electrical inspection') && !/INTERNAL|4411|Bartlett|555-0177|GFCI|fail|Zebra/i.test(gjs) && gv.schedule.some(x => /Electrical inspection/.test(x.title)), { i: gv.inspections, s: gv.schedule });
+  }
   const { ctx, p } = await custPage();
   const card = await until(() => p.evaluate(() => { const c = document.getElementById('gcInsp'); return c ? c.innerText : null; }), 30000);
   ok('D2 the customer\'s Home page shows "📋 Inspections" (coming up + past) with plain words', !!card && /Inspections/.test(card) && /Electrical inspection/.test(card) && /Scheduled/.test(card) && /Rescheduled/.test(card) && /9 AM – 11 AM/.test(card), card || await p.evaluate(() => document.body.innerText.slice(0, 300)));
@@ -292,6 +297,11 @@ try {
   await toWorld();
   const v = (await W.handlerCall('portal', { action: 'view' }, { 'x-portal-token': LINK })).data;
   ok('F2 the portal view has no inspections now', v && v.ok && !v.inspections, v && v.inspections);
+  {
+    const G = require(path.join(BUILD, 'netlify/functions/_lib/gcp.js')), C = require(path.join(BUILD, 'netlify/functions/portal.js'))._core;
+    const data = await C.crmData(true), gv = await G.gcView(data, C.findProject(data, P1.id));
+    ok('F2 … nor the GC / owner page (its list, and the inspection items on its schedule)', !gv.inspections && !gv.schedule.some(x => /inspection/i.test(x.title)), { i: gv.inspections, s: gv.schedule });
+  }
   const { ctx, p } = await custPage();
   await until(() => p.evaluate(() => !!document.getElementById('hello') && !document.getElementById('hello').hidden), 30000); await sleep(800);
   ok('F2 … and the customer\'s page shows no "📋 Inspections" card', await p.evaluate(() => !document.getElementById('gcInsp')));
