@@ -241,9 +241,12 @@ try {
       if (ms() - since > 45000 && !covSlow) {
         covSlow = true; mark('slow'); stuck('slow', 'signed in, not ready after 45 s: ' + st[1] + (NAV.onLine === false ? ' (offline)' : ''));
         var t = D.getElementById('gc-bw-op-t'); if (t) t.textContent = 'Still loading — weak signal?';
-        cov.style.cursor = 'pointer'; st[1] = '<b style="display:inline-block;margin-top:6px;padding:10px 22px;border-radius:8px;background:#2563eb;color:#fff">Tap to retry</b><br><span style="font-size:12px">' + st[1] + '</span>';
+        cov.style.cursor = 'pointer';
       }
-      if (sub) { if (covSlow) { if (sub.getAttribute('data-s') !== st[1]) { sub.innerHTML = st[1]; sub.setAttribute('data-s', st[1]); } } else sub.textContent = st[1]; }
+      if (sub) {
+        var h = covSlow ? '<b style="display:inline-block;margin-top:6px;padding:10px 22px;border-radius:8px;background:#2563eb;color:#fff">Tap to retry</b><br><span style="font-size:12px">' + st[1] + '</span>' : '';
+        if (covSlow) { if (sub.getAttribute('data-s') !== h) { sub.innerHTML = h; sub.setAttribute('data-s', h); } } else sub.textContent = st[1];
+      }
     } catch (e) {}
   };
   bannerImpl = function(live){
