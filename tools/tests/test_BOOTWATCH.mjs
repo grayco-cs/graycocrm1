@@ -300,7 +300,8 @@ if (want('6b')) {
   ok(!!rep, 'and a stuck report is sent', capsFor(d2).map(x => x.json.boot.stuck));
   /* on this signal the new page takes minutes to be read: count the page being asked for again */
   let nv = 0; pb.on('request', r => { if (r.isNavigationRequest() && r.frame() === pb.mainFrame()) nv++; });
-  await pb.locator('#gc-bw-opening').click({ timeout: 10000 }).catch(e => console.log('    click: ' + String(e).slice(0, 200))); await sleep(4000);
+  /* a finger on the screen (the page is busy reading what has arrived, so no waiting for animation frames) */
+  await pb.mouse.click(195, 600).catch(e => console.log('    tap: ' + String(e).slice(0, 200))); await sleep(5000);
   ok(nv === 1, 'Tap to retry reloads the page', { nv });
   await B.close(); srv2.close();
 }
