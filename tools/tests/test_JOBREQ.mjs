@@ -164,7 +164,7 @@ await waitOn(C, k => document.querySelector('#gc-jd [data-jk="' + k + '"] [data-
 await C.ev(() => { window.prompt = () => 'the crew signs the company plan instead'; });
 await C.ev(k => document.querySelector('#gc-jd [data-jk="' + k + '"] [data-jd="xrm"]').click(), up.k);
 const arch = await waitOn(C, k => { const p = window._crm.projects.find(x => x.id === 'PJ'); const r = (p.jobDocs.extra || []).find(x => x.k === k); return r && r.removed && JSON.parse(JSON.stringify({ r, inItems: p.jobDocs.items.some(i => i.k === k), log: (p.jobDocs.log || []).filter(e => e.k === k).map(e => e.act) })); }, up.k, 8000);
-const hist = await waitOn(C, () => { const d = document.querySelector('#gc-jd [data-xr-hist]'); return d && d.textContent; }, null, 8000);
+const hist = await waitOn(C, () => { const d = document.querySelector('#gc-jd [data-xr-hist]'); return d && /Site safety plan/.test(d.textContent) && d.textContent; }, null, 8000);   /* the card repaints after the archive */
 ok('C2 removal archives the paper: who / when / why, off the list, the record + its log kept, shown under 🗄 Removed papers', arch && arch.r.removed.by === 'Wesley Johnson' && arch.r.removed.role === 'admin' && arch.r.removed.at && /company plan/.test(arch.r.removed.why) && !arch.inItems && arch.log.includes('added') && arch.log.includes('removed') && arch.r.fileRef && hist && /Site safety plan/.test(hist) && /Gate code/.test(hist), { arch, hist });
 await C.ev(() => { const d = document.querySelector('#gc-jd [data-xr-hist]'); if (d) { d.open = true; d.scrollIntoView({ block: 'center' }); } }); await sleep(300); await shot(C, 'C2-history');
 /* every new <type> job — admins */
