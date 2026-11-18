@@ -210622,12 +210622,14 @@ function leaveHome(){ try { var h = D.querySelector('#_gcJobPick.gc-fh'); if (h)
 /* the claims screen (#gcbb-ov, patch BB) opened from a job page (🛡 Claim info) closes when that job page is left for the Field Home —
    left behind it sat over the bottom bar and took every tap. One opened from Home (💧 Drying, Approvals) is not touched. */
 (function(){
-  var tm = 0;
+  var tm = 0, tapAt = 0;
+  try { D.addEventListener('pointerdown', function(e){ tapAt = e.target && e.target.closest && e.target.closest('#_gcJobDash') ? Date.now() : 0; }, true); } catch (e) {}
   function home(){ return D.querySelector('#_gcJobPick.gc-fh'); }
   function check(){
     var ov = D.getElementById('gcbb-ov'); if (!ov) return;
     var job = D.getElementById('_gcJobDash'), h = home();
-    if (job) { if (!ov.hasAttribute('data-pmf-job') && (!h || (h.compareDocumentPosition(job) & 4))) ov.setAttribute('data-pmf-job', '1'); return; }   /* opened over the job page (not over a Home that sits above one) */
+    if (!ov.hasAttribute('data-pmf-seen')) { ov.setAttribute('data-pmf-seen', '1'); if (job && tapAt && Date.now() - tapAt < 5000) ov.setAttribute('data-pmf-job', '1'); }   /* opened by a tap on the job page */
+    if (job) return;
     if (!ov.hasAttribute('data-pmf-job') || !h || tm) return;
     tm = later(function(){ tm = 0; var o = D.getElementById('gcbb-ov'); if (!o || !o.hasAttribute('data-pmf-job') || D.getElementById('_gcJobDash') || !home()) return;
       try { if (W._gcClaims && W._gcClaims.close) W._gcClaims.close(); else o.remove(); } catch (e) { warn(e); try { o.remove(); } catch (x) {} } }, 400);
