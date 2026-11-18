@@ -95,6 +95,8 @@ ok('C1 ACCTSUB: bill #85388 (three register lines: $2,000 no job, $2,000 no job,
 ok('A3 job costs = bill 3,000 + materials 500 (its register copy not again) + New Office desks 800 = 4,300; overhead = Office Shirts 150; nothing unassigned', y0.job === 4300 && y0.oh === 150 && y0.none === 0, y0);
 ok('A4 waiting items are out: the received sub bill #700 ($1,200) and the pending rental ($999); the payment line (money in) is not a cost', !y0.costIds.some(x => /^(R4|X4|R6|S2):/.test(x)), y0.costIds);
 ok('A5 net = 22,500 − 4,300 − 150 = 18,050', y0.net === 18050, y0.net);
+const cl = await A.ev(([f, t]) => { const r = window._gcPnL({ basis: 'accrual', from: f, to: t }); return { sub: Math.round(r.subCosts * 100) / 100, cogs: Math.round(r.cogs * 100) / 100, rev: r.revenue }; }, [YEAR.from, YEAR.to]);
+ok('A5b More tools → Classic P&L counts bill #85388 once too (sub bills 3,000 + the received 1,200 it counts as incurred; job costs 5,500, not 12,500)', cl.sub === 4200 && cl.cogs === 5500, cl);
 ok('A6 job costing: Acct Demo Kitchen billed 12,000, costs 3,500, profit 8,500, contract 20,000 + approved change order 2,000 = 22,000', y0.c1 && y0.c1.billed === 12000 && y0.c1.costs === 3500 && y0.c1.profit === 8500 && y0.c1.contract === 22000, y0.c1);
 ok('A7 the QuickBooks "customer" invoice is on its job: Acct Demo Roof billed 5,000 + 3,000 = 8,000', y0.c2 && y0.c2.billed === 8000, y0.c2);
 const yc = await M(YEAR, 'cash');
