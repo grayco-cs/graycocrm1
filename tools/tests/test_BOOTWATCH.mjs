@@ -278,7 +278,7 @@ if (want(6)) {
 }
 if (want('6b')) {
   console.log('6b · a signal so weak it is not ready 45 s after signing in');
-  const srv2 = await slowServer(70); const B = await localPhone('phone6b', srv2); const pb = B.page();
+  const srv2 = await slowServer(40);   /* slow enough that the page is not in (nor the reopen as the person) by 45 s */ const B = await localPhone('phone6b', srv2); const pb = B.page();
   const u0 = Date.now(); pb.goto('http://' + srv2.host + '/', { waitUntil: 'commit', timeout: 300000 }).catch(() => {});
   await pb.waitForSelector('#gc-auth-email', { state: 'visible', timeout: 90000 }).catch(() => {});
   await pb.fill('#gc-auth-email', PM); await pb.fill('#gc-auth-password', 'pw'); await pb.click('#gc-auth-submit');
