@@ -33,7 +33,7 @@ const tap = (A0) => A0.ev(() => document.body.dispatchEvent(new Event('pointerdo
 /* ═══ A · the office on the desk ═══ */
 const A = await computer('office@grayco-cs.com', { build: BUILD });
 await signIn(A, 'office@grayco-cs.com', 20000);
-ok('A0 the CRM is up for the office with ＋ JOBREQ, 📑 JOBDOCS and 🏛 EPAHUD', !!await waitOn(A, () => window._gcJobReq && window._gcJobDocs && window._gcEpaHud && (window._crm.projects || []).length >= 3 && window._gcDocLib && window._gcDocLib.builtins().length > 20, null, 60000));
+ok('A0 the CRM is up for the office with ＋ JOBREQ, 📑 JOBDOCS and 🏛 EPAHUD', !!await waitOn(A, () => window._gcJobReq && window._gcJobDocs && window._gcEpaHud && (window._crm.projects || []).length >= 3 && window._gcDocLib && window._gcDocLib.builtins().length > 20 && (window._gcMeUser() || {}).name === 'Office Demo', null, 60000)   /* the users list is in (not the built-in roster) */);
 /* a customer paper from the library that is not on the kitchen job by itself (clientFacing, e-signable by DOCAUTO) */
 const DOC = await A.ev(() => { const p = window._crm.projects.find(x => x.id === 'PJ'); const have = new Set(window._gcJobDocs.want(p).items.map(x => x.doc)); const NEVER = window._gcDocAuto.NEVER;
   const L = window._gcDocLib.builtins().filter(b => b && /^gcb_/.test(b.id) && b.clientFacing && !have.has(b.id) && !NEVER.test(b.name + ' ' + b.id + ' ' + (b.category || '')) && !/HR|Marketing/i.test(b.category || ''));
@@ -78,13 +78,14 @@ const d0 = A.dialogs.length;
 const finInv = await A.ev(() => { const p = window._crm.projects.find(x => x.id === 'PK'); const r = window._gcCreateFinalInvoice(p); return { made: !!r, wrapped: !!window._gcCreateFinalInvoice.__gcXr, miss: window._gcJobReq.finalMissing(p).map(x => x.label) }; });
 await sleep(400);
 ok('A10 🔒 the final invoice waits for its paper (none made, the reason shown)', !finInv.made && finInv.wrapped && finInv.miss.includes('Signed punch list') && A.dialogs.slice(d0).some(d => /final invoice[\s\S]*Signed punch list/.test(d.message)), { finInv, d: A.dialogs.slice(d0) });
+await sleep(2500);
 const errsA = A.errs.filter(e => /JobReq|jobreq|_gcJobReq|gc-xr/i.test(e));
 await A.close();
 
 /* ═══ B · the PM on a phone ═══ */
 const B = await computer('pm@grayco-cs.com', { build: BUILD, mobile: true, init: [SHARE] });
 await signIn(B, 'pm@grayco-cs.com', 20000);
-ok('B0 the PM\'s phone is up', !!await waitOn(B, () => window._gcJobReq && window._gcEpaHud && (window._crm.projects || []).length >= 3 && typeof window._gcJobDashboard === 'function', null, 60000));
+ok('B0 the PM\'s phone is up', !!await waitOn(B, () => window._gcJobReq && window._gcEpaHud && (window._crm.projects || []).length >= 3 && typeof window._gcJobDashboard === 'function' && (window._gcMeUser() || {}).name === 'Demo PM', null, 60000));
 await waitOn(B, () => { if (!document.querySelector('#_gcJobPick.gc-fh') && window._gcField && window._gcField.open) { try { window._gcField.open(); } catch (e) {} } return document.querySelector('#_gcJobPick.gc-fh'); }, null, 30000);
 const fh = await waitOn(B, k => { const b = document.getElementById('gc-ep-field'); return b && /papers? to send/i.test(b.textContent) && b.querySelector('[data-ep-pid="PJ"][data-ep-k="' + k + '"]') && b.textContent; }, rA.k, 20000);   /* the section header is upper-cased by CSS: textContent, not innerText */
 ok('B1 GrayCo Field home: the office\'s paper is in "Needs you · 📑 N papers to send" for the PM', fh && fh.includes(rA.label.split(' — ')[0].slice(0, 20)), fh);
@@ -144,6 +145,7 @@ await waitOn(B, k => document.querySelector('#gc-jd-f [data-jk="' + k + '"] [dat
 await B.ev(k => document.querySelector('#gc-jd-f [data-jk="' + k + '"] [data-jd="xrm"]').click(), fk);
 const gone = await waitOn(B, k => { const p = window._crm.projects.find(x => x.id === 'PJ'); const r = (p.jobDocs.extra || []).find(x => x.k === k); return r && r.removed && !p.jobDocs.items.some(i => i.k === k) && JSON.parse(JSON.stringify(r)); }, fk, 8000);
 ok('B12 the PM removes their own unsent paper: archived with who / why, off the list, kept in the history', gone && gone.removed.by === 'Demo PM' && /phone/.test(gone.removed.why) && gone.label === 'Gate code from the customer', gone);
+await sleep(2500);   /* the last change reaches the cloud before the phone is put away */
 const errsB = B.errs.filter(e => /JobReq|jobreq|_gcJobReq|gc-xr/i.test(e));
 await B.close();
 
