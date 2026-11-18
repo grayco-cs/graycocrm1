@@ -537,8 +537,9 @@ try {
       var done = function(){ if (hb) { set(HB_K, day()); hbDue = false; } del(PEND_K); };
       var fail = function(){ dirty = true; if (hb) hbDue = true; if (isProblem()) savePend(); };
       if (hb) hbDue = false;
-      /* signed in: fetch (the sign-in layer adds the token, so the function knows who); else a beacon */
-      if (authed() && typeof W.fetch === 'function') {
+      /* signed in: fetch (the sign-in layer adds the token, so the function knows who); else — and when the page is being
+         left, where only a beacon is sure to get out — a beacon */
+      if (!final && authed() && typeof W.fetch === 'function') {
         try { W.fetch(URL_FN, { method: 'POST', body: body, keepalive: true, headers: { 'Content-Type': 'text/plain;charset=UTF-8' } })
           .then(function(r){ if (r && r.ok) done(); else fail(); }, fail); ok = true; } catch (e) { ok = false; }
       }

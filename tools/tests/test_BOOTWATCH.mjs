@@ -82,7 +82,10 @@ const dev = A => A.ev(() => localStorage.getItem('gc_adm_device_id'));
 const rowOf = d => cget('gc_bootrep_' + d);
 const capsFor = d => CAP.filter(c => c.json && c.json.dev === d);
 async function until(fn, ms){ const t0 = Date.now(); while (Date.now() - t0 < ms) { const v = fn(); if (v) return v; await sleep(250); } return fn(); }
-const leave = A => A.page().goto('http://app.local/version.txt').catch(() => {});
+/* the person leaves: the phone app goes to the background (visibilitychange → hidden), then the page is closed (pagehide).
+   (A real navigation away is not used: requests a page makes while it unloads never reach the test's request handler.) */
+const leave = A => A.ev(() => { try { Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true }); Object.defineProperty(document, 'hidden', { value: true, configurable: true }); } catch (e) {}
+  document.dispatchEvent(new Event('visibilitychange')); window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: false })); }).catch(() => {});
 const T00 = Date.now();
 resetCloud();
 cset('users', [{ id: 'u1', name: 'Wesley Demo', email: ADMIN, role: 'Admin', payType: 'owner', active: true }, { id: 'u4', name: 'Demo Estimator', email: PM, role: 'Project Manager', active: true }]);
@@ -120,8 +123,8 @@ if (want(2)) {
   ok(!!okd, 'signed in: the device\'s signed-in e-mail is recorded (from the sign-in token, checked)', rowOf(d) && { email: !!rowOf(d).email, boots: rowOf(d).boots.map(x => x.m) });
   const withTok = capsFor(d).filter(x => x.headers.authorization);
   ok(withTok.length >= 1 && withTok.every(x => !x.body.includes(PM_LOCAL)), 'the signed-in send carries the token (the body never the e-mail)');
-  const first = (rowOf(d) || { boots: [] }).boots.find(x => x.si && x.si.length);
-  ok(first && first.si.some(x => x.err) && (first.si.some(x => x.ok) || first.m.signed > 0), 'the failed and the good try are both in that open', first && first.si);
+  const bs = (rowOf(d) || { boots: [] }).boots, first = bs.find(x => x.si && x.si.length);
+  ok(first && first.si.some(x => x.err) && bs.some(x => x.m && x.m.signed >= 0 && x.m.paint > 0 && /field/.test(x.m.paintV || '')), 'the failed try, then an open that is signed in with GrayCo Field on screen', bs.map(x => ({ m: x.m, si: x.si })));
   ok(capsFor(d).every(x => x.status === 200), 'no send was refused by the rate limit (the page keeps to it)', capsFor(d).map(x => x.status));
   await A.close();
 }
