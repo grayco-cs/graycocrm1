@@ -238465,7 +238465,9 @@ function myPmJobs(){ var n = low(me()), e = myEmail(); return projects().filter(
 function fieldModel(){
   var out = []; myPmJobs().forEach(function(p){ toSend(p).forEach(function(z){ out.push({ p: p, x: z.x, d: z.d }); }); });
   if (office()) projects().forEach(function(p){ if (!p || p.deleted || myPmJobs().indexOf(p) > -1) return; toSend(p).forEach(function(z){ if (z.d.over && (z.d.days || 0) <= -2) out.push({ p: p, x: z.x, d: z.d, esc: true }); }); });
-  return out.sort(function(a, b){ return (a.d.date || '9999') < (b.d.date || '9999') ? -1 : 1; });
+  /* soonest first; on the same day a paper that holds the job (🔒 Start job / the final invoice — JOBREQ) comes first; otherwise the list order stays */
+  var held = function(z){ return z.x && (z.x.gate || z.x.hold) ? 0 : 1; };
+  return out.map(function(z, i){ z.__i = i; return z; }).sort(function(a, b){ var da = a.d.date || '9999', db = b.d.date || '9999'; return da < db ? -1 : da > db ? 1 : (held(a) - held(b)) || (a.__i - b.__i); });
 }
 function myCerts(){ var e = myEmail(), n = low(me()); return certsAll().filter(function(c){ return c.holderType !== 'company' && ((e && low(c.holder) === e) || (n && low(c.holderName) === n)); }); }
 var FSIG = '';
