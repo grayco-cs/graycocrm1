@@ -298,8 +298,9 @@ if (want('6b')) {
   const d2 = await dev(B);
   const rep = await until(() => capsFor(d2).find(x => (x.json.boot.stuck || []).some(s => s.k === 'slow')), 40000);
   ok(!!rep, 'and a stuck report is sent', capsFor(d2).map(x => x.json.boot.stuck));
-  let nv = 0; pb.on('domcontentloaded', () => { nv++; });
-  await pb.locator('#gc-bw-opening').click({ timeout: 5000 }).catch(() => {}); await sleep(3000);
+  /* on this signal the new page takes minutes to be read: count the page being asked for again */
+  let nv = 0; pb.on('request', r => { if (r.isNavigationRequest() && r.frame() === pb.mainFrame()) nv++; });
+  await pb.locator('#gc-bw-opening').click({ timeout: 10000 }).catch(e => console.log('    click: ' + String(e).slice(0, 200))); await sleep(4000);
   ok(nv === 1, 'Tap to retry reloads the page', { nv });
   await B.close(); srv2.close();
 }
