@@ -238690,7 +238690,7 @@ function user(){ try { if (typeof W._gcMeUser === 'function') { var u = W._gcMeU
 function myEmail(){ try { var e = W.__GC_AUTH__ && W.__GC_AUTH__.email && W.__GC_AUTH__.email(); if (e) return low(e); } catch (e) {} return low(user().email); }
 function users(){ return arr(W._crm && W._crm.users); }
 function meRec(){ var e = myEmail(); return e ? users().find(function(z){ return z && low(z.email) === e; }) || null : null; }
-function me(){ var u = user(); if (s(u.name)) return s(u.name); var r = meRec(); return r ? s(r.name) : myEmail() || 'someone'; }
+function me(){ var r = meRec(); if (r && s(r.name)) return s(r.name); var u = user(); return s(u.name) || myEmail() || 'someone'; }   /* the users table first: the signed-in record can carry a short name early in the boot */
 function admin(){ try { if (W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()) return true; } catch (e) {} var u = user(); return /^admin$/i.test(s(u.role)) || low(u.payType) === 'owner'; }
 function office(){ if (admin()) return true; try { if (W._gcIsOfficeFull && W._gcIsOfficeFull()) return true; } catch (e) {} var u = user(), r = meRec() || {}; return /office/i.test(s(u.role) + ' ' + s(u.profile) + ' ' + s(r.role)); }
 function projects(){ return arr(W._crm && W._crm.projects); }
@@ -238731,10 +238731,14 @@ function mine(r){ var e = myEmail(); return !!r && ((e && low(r.addedByEmail) ==
 function canRemove(p, k){ var r = rec(p, k); if (!r || r.removed) return false; if (admin() || office()) return true; return isPM(p) && mine(r) && !wasSent(p, k); }
 
 /* one write through the list setter (the previous list, never a stale copy); the job's checklist is rebuilt in the same write */
-function saveJob(pid, fn){
+function saveJob(pid, fn, what){
   var now = nowIso();
   var f = function(list){ var out = arr(list).map(function(p){ if (!p || s(p.id) !== s(pid)) return p; var q = JSON.parse(JSON.stringify(p)); q = fn(q) || q; try { if (JD() && JD().next) q.jobDocs = JD().next(q); } catch (e) {} q.updatedAt = now; return q; }); try { if (W._gcApplySync) W._gcApplySync('projects', out); } catch (e) {} return out; };
-  if (typeof W._setProjects === 'function') W._setProjects(f); else if (W._crm) W._crm.projects = f(W._crm.projects);
+  /* a person's own change (＋ Add / 🗄 archive): it saves and goes to the cloud now, like any save of theirs — never parked as background work.
+     (Never says "delete" / "remove" to the manual flag: an archive is not a delete, nothing may be tombstoned.) */
+  try { W.__GC_MANUAL_SAVE__ = true; if (W._gcManualNow) W._gcManualNow(what || 'required paper saved on a job'); else W.__GC_MANUAL_AT__ = Date.now(); } catch (e) {}
+  try { if (typeof W._setProjects === 'function') W._setProjects(f); else if (W._crm) W._crm.projects = f(W._crm.projects); }
+  finally { ST.call(W, function(){ try { W.__GC_MANUAL_SAVE__ = false; } catch (e) {} }, 2000); }
 }
 function add(pid, spec){
   var p = proj(pid); spec = obj(spec);
@@ -238753,7 +238757,7 @@ function add(pid, spec){
   if (r.due === 'date') r.dueDate = s(spec.dueDate);
   ['doc', 'file', 'fileRef', 'fileName', 'fileType', 'src'].forEach(function(f){ if (s(spec[f])) r[f] = s(spec[f]); });
   if (s(spec.note)) r.note = s(spec.note).slice(0, 1000);
-  saveJob(pid, function(q){ var J = obj(q.jobDocs); J.extra = arr(J.extra).concat([r]); J.log = arr(J.log).concat([{ k: r.k, act: 'added', via: kind === 'lib' ? 'from the library' : kind === 'upload' ? 'uploaded file' : 'fill-out item', why: r.why, role: r.addedRole, hold: hold, at: at, by: r.addedBy }]); q.jobDocs = J; return q; });
+  saveJob(pid, function(q){ var J = obj(q.jobDocs); J.extra = arr(J.extra).concat([r]); J.log = arr(J.log).concat([{ k: r.k, act: 'added', via: kind === 'lib' ? 'from the library' : kind === 'upload' ? 'uploaded file' : 'fill-out item', why: r.why, role: r.addedRole, hold: hold, at: at, by: r.addedBy }]); q.jobDocs = J; return q; }, 'required paper added to a job');
   var out = { ok: true, k: r.k, rec: r };
   if (spec.allType) {
     if (!admin()) out.typeError = 'Only an admin can add a paper to every new job of a type.';
@@ -238769,7 +238773,7 @@ function remove(pid, k, why){
   if (!canRemove(p, k)) return { ok: false, error: admin() || office() ? 'Not allowed.' : !mine(r) ? 'Only an admin or the office can remove a paper someone else added.' : 'It was already sent — ask the office to remove it.' };
   why = s(why); if (!why) return { ok: false, error: 'Say why it comes off (kept in the history).' };
   var at = nowIso(), R = { by: me(), byEmail: myEmail(), role: roleName(p), at: at, why: why.slice(0, 400) };
-  saveJob(pid, function(q){ var J = obj(q.jobDocs); J.extra = arr(J.extra).map(function(x){ return x && x.k === k ? Object.assign({}, x, { removed: R }) : x; }); J.log = arr(J.log).concat([{ k: k, act: 'removed', via: 'archived', why: R.why, role: R.role, at: at, by: R.by }]); q.jobDocs = J; return q; });
+  saveJob(pid, function(q){ var J = obj(q.jobDocs); J.extra = arr(J.extra).map(function(x){ return x && x.k === k ? Object.assign({}, x, { removed: R }) : x; }); J.log = arr(J.log).concat([{ k: k, act: 'removed', via: 'archived', why: R.why, role: R.role, at: at, by: R.by }]); q.jobDocs = J; return q; }, 'required paper archived on a job');
   ST.call(W, paintAll, 80);
   return { ok: true };
 }
