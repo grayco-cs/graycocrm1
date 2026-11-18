@@ -238,11 +238,12 @@ if (PART === 'all' || PART === 'B') {
     const k = q => (c.querySelector('[data-k="' + q + '"]') || {}).innerText || '';
     const pay = [...document.querySelectorAll('#root b')].filter(__vis).some(b => /💰 Pay Structure|🏥 Insurance/.test(b.innerText || ''));
     const badge = !!document.querySelector('[data-gc1099-badge]');
-    return { text: c.innerText, w9: k('w9'), coi: k('coi'), agr: k('agreement'), ytd: k('ytd'), payShown: pay, badge };
+    const w4 = [...document.querySelectorAll('#root button')].filter(__vis).some(b => /W-4 & taxes/.test(b.innerText || ''));
+    return { text: c.innerText, w9: k('w9'), coi: k('coi'), agr: k('agreement'), ytd: k('ytd'), payShown: pay, badge, w4 };
   });
   let C1 = await card();
   ok('B2 his profile (admin): "1099 contractor" badge and the 🧾 Contractor paperwork card — W-9 ✗, COI not on file, agreement not signed, $0.00 paid this year', !!C1 && C1.badge && /✗/.test(C1.w9) && /COI not on file/.test(C1.coi) && /not signed/.test(C1.agr) && /\$0\.00 paid in /.test(C1.ytd), C1);
-  ok('B2 no 💰 Pay Structure / 🏥 Insurance (benefits) on a 1099 contractor\'s profile', !!C1 && !C1.payShown, C1);
+  ok('B2 no 💰 Pay Structure / 🏥 Insurance (benefits) / 🧾 W-4 & taxes on a 1099 contractor\'s profile', !!C1 && !C1.payShown && !C1.w4, C1);
   try { await A.page().screenshot({ path: SHOTS + 'b2_card.png' }); } catch (e) {}
 
   /* ── B3. his papers and invoice from the sub portal → the CRM ── */

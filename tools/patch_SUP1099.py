@@ -34,6 +34,8 @@ EDITS = [
   'e.jsxs("div",{style:ye.employment==="1099"?{display:"none"}:Ke,children:[e.jsx("b",{style:{fontSize:12,color:u.acc,display:"block",marginBottom:6},children:"💰 Pay Structure"})'),
  ('e.jsxs("div",{style:Ke,children:[e.jsx("b",{style:{fontSize:12,color:u.acc,display:"block",marginBottom:6},children:"🏥 Insurance"})',
   'e.jsxs("div",{style:ye.employment==="1099"?{display:"none"}:Ke,children:[e.jsx("b",{style:{fontSize:12,color:u.acc,display:"block",marginBottom:6},children:"🏥 Insurance"})'),
+ ('e.jsx("button",{style:{...ht,background:"#0f766e",color:"#fff"},onClick:()=>{window._gcPayrollOpenEmp&&window._gcPayrollOpenEmp(ye.id,ye.name)},children:"🧾 W-4 & taxes →"}),',
+  'ye.employment!=="1099"&&e.jsx("button",{style:{...ht,background:"#0f766e",color:"#fff"},onClick:()=>{window._gcPayrollOpenEmp&&window._gcPayrollOpenEmp(ye.id,ye.name)},children:"🧾 W-4 & taxes →"}),/* patch SUP1099: no W-4 / payroll tax for a 1099 contractor */'),
  # ── the Employees list: Pay Type says 1099 ──
  ('children:ye.role})}),e.jsx("td",{style:{padding:"6px 10px",fontSize:11},children:ye.payType==="owner"?"Owner"',
   'children:ye.role})}),e.jsx("td",{style:{padding:"6px 10px",fontSize:11},children:ye.employment==="1099"?"1099 contractor (invoices)":ye.payType==="owner"?"Owner"'),
