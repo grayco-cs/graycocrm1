@@ -35,6 +35,7 @@ try {
   var NST = W.setTimeout, now = function(){ return Date.now(); };
   var FG = W.__gcFG = { held: {}, dirty: {}, sentAgain: 0, stampOnly: 0, sameAsCloud: 0, passed: 0, personSent: 0, lsRefused: 0, lsRemoved: 0, lastInput: 0 };
   var EDIT = 20000, DK = 'gc_fieldguard_dirty';
+  var LOG = FG.log = [], note = function(k, act){ try { LOG.push([now(), String(k).slice(0, 60), act]); if (LOG.length > 60) LOG.shift(); } catch (e) {} };
   var SP = W.Storage && W.Storage.prototype, pSet = SP && SP.setItem, pGet = SP && SP.getItem;
 
   /* ── who / where ── */
@@ -57,7 +58,7 @@ try {
   var gAt = 0, gV = false;
   var guarded = FG.guarded = function(){
     var n = now(); if (n - gAt < 2000) return gV; gAt = n;
-    gV = !!(phone() && myEmail() && !full());
+    gV = !!(phone() && !full());   /* before the sign-in / role is known: held too (an admin's or the office's held lists are sent once the role is known) */
     return gV;
   };
 
@@ -69,7 +70,7 @@ try {
   var touchKey = function(k){
     if (!personNow() || typeof k !== 'string' || !k || k === DK || !guarded()) return;
     var b = base(k); if (FG.dirty[b] && now() - FG.dirty[b] < 1000) return;
-    FG.dirty[b] = now(); saveDirty();
+    FG.dirty[b] = now(); saveDirty(); note(b, 'person');
   };
   /* typing the e-mail and password on the sign-in screen is not a change to the company's data */
   var mark = function(e){
@@ -110,7 +111,7 @@ try {
     var lk = low(k);
     return lk.indexOf(e) >= 0 || lk.indexOf(e.replace(/[^a-z0-9]/g, '_')) >= 0 || lk.indexOf(e.replace(/[^a-z0-9]/g, '-')) >= 0;
   };
-  var hold = function(k){ var h = FG.held[k] || (FG.held[k] = { n: 0, at: 0 }); h.n++; h.at = now(); };
+  var hold = function(k){ var h = FG.held[k] || (FG.held[k] = { n: 0, at: 0 }); h.n++; h.at = now(); note(k, 'held'); };
 
   /* ── stamp-only records are sent as the cloud has them ── */
   var STAMP = { updatedAt: 1, updated_at: 1, savedAt: 1, modifiedAt: 1, _autoAssignChecked: 1 };
@@ -145,7 +146,7 @@ try {
 
   var EMPTY = function(pref){ var rep = /return=representation/.test(pref || ''); return new Response(rep ? '[]' : null, { status: 201, headers: rep ? { 'Content-Type': 'application/json' } : {} }); };
   /* sent: the database said OK — a person's change of that key is up (unless the key was changed again meanwhile) */
-  var sentOk = function(keys, at){ var ch = false; keys.forEach(function(k){ var b = base(k); if (FG.dirty[b] && FG.dirty[b] <= at) { delete FG.dirty[b]; ch = true; } }); if (ch) saveDirty(); };
+  var sentOk = function(keys, at){ var ch = false; keys.forEach(function(k){ var b = base(k); note(b, 'ok'); if (FG.dirty[b] && FG.dirty[b] <= at) { delete FG.dirty[b]; ch = true; } }); if (ch) saveDirty(); };
   var allowed = function(k){ return !k || mine(k) || !!FG.dirty[base(k)]; };
   var guardedFetch = function(input, init){
     try {
@@ -175,10 +176,11 @@ try {
       return Promise.all(keep.map(function(r){ var k = String(r.key || ''); return mine(k) ? Promise.resolve(r) : unstamp(url, init, k, r.value).then(function(v){ if (v === null) return null; if (v === r.value) return r; var c = Object.assign({}, r); c.value = v; return c; }); })).then(function(out){
         var keys = keep.map(function(r){ return String(r.key || ''); });
         out = out.filter(Boolean);
-        if (!out.length) { sentOk(keys, at); return EMPTY(pref); }   /* the cloud already has it */
+        if (!out.length) { keys.forEach(function(k){ note(k, 'same as cloud'); }); sentOk(keys, at); return EMPTY(pref); }   /* the cloud already has it */
         FG.passed += out.length;
         var body = Array.isArray(b) ? JSON.stringify(out) : JSON.stringify(out[0]);
-        return inner.call(self, input, Object.assign({}, init, { body: body })).then(function(r){ if (r && r.ok) { sentOk(keys, at); FG.personSent++; } return r; });
+        keys.forEach(function(k){ note(k, 'send'); });
+        return inner.call(self, input, Object.assign({}, init, { body: body })).then(function(r){ if (r && r.ok) { sentOk(keys, at); FG.personSent++; } else keys.forEach(function(k){ note(k, 'refused ' + (r && r.status)); }); return r; }, function(e){ keys.forEach(function(k){ note(k, 'no answer'); }); throw e; });
       });
     } catch (e) { return inner.apply(this, arguments); }
   };
@@ -211,7 +213,7 @@ try {
     })(0);
   }
 
-  FG.state = function(){ return { guarded: guarded(), phone: phone(), full: full(), email: myEmail(), lastInput: FG.lastInput ? new Date(FG.lastInput).toISOString() : '', held: JSON.parse(JSON.stringify(FG.held)), dirty: JSON.parse(JSON.stringify(FG.dirty)), sentAgain: FG.sentAgain, stampOnly: FG.stampOnly, sameAsCloud: FG.sameAsCloud, passed: FG.passed, personSent: FG.personSent, lsRefused: FG.lsRefused, lsRemoved: FG.lsRemoved }; };
+  FG.state = function(){ return { guarded: guarded(), phone: phone(), full: full(), email: myEmail(), lastInput: FG.lastInput ? new Date(FG.lastInput).toISOString() : '', held: JSON.parse(JSON.stringify(FG.held)), dirty: JSON.parse(JSON.stringify(FG.dirty)), sentAgain: FG.sentAgain, stampOnly: FG.stampOnly, sameAsCloud: FG.sameAsCloud, passed: FG.passed, personSent: FG.personSent, log: LOG.slice(-25), lsRefused: FG.lsRefused, lsRemoved: FG.lsRemoved }; };
 } catch (e) { try { console.warn('[GC] FIELDGUARD not installed:', e && e.message || e); } catch (x) {} }
 })();
 </script>

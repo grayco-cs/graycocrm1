@@ -73,7 +73,7 @@ try {
   const t0 = Date.now();
   ok(await H.signIn(pm, PM, 20000), 'PM signs in');
   await H.waitFor(pm, () => !!document.querySelector('#_gcJobPick'), null, 45000);
-  await sleep(40000);
+  await sleep(process.env.FG_QUICK ? 5000 : 40000);
   const st = await pm.ev(() => window.__gcFG && window.__gcFG.state());
   console.log('    state: ' + JSON.stringify(st));
   ok(st && st.guarded === true, 'the PM\'s phone is guarded', st);
@@ -107,17 +107,26 @@ try {
     ok(restamped === 0, 'the other 159 jobs kept the office\'s updatedAt (no mass restamp)', { restamped, dif });
     ok(up.length === before.length, 'no job lost or added', [up.length, before.length]);
   }
-  const editJob = (id, note) => pm.ev(async a => { const L = await window.idbGet('projects'); const j = L.find(p => p.id === a.id); j.notes = a.note; j.updatedAt = new Date().toISOString(); await window.idbSet('projects', L); window._gcSyncDirty(['projects']); }, { id, note });
+  /* the CRM's own job writer (a person's edit: this phone's copy, the screen's copy, stamped, then synced) */
+  const editJob = (id, note) => pm.ev(a => window._gcxPatchJob(a.id, { notes: a.note }, 'test edit'), { id, note });
   const cloudNote = id => ((H.cget('projects') || []).find(p => p.id === id) || {}).notes;
 
   // a save refused as busy (503) is retried and arrives, with no tap in between
   let n503 = 0, offline = false;
   await pm.ctx.route(/\/rest\/v1\/gc_kv/, async route => { const rq = route.request(); if (offline) return route.abort('internetdisconnected'); if (rq.method() === 'POST' && /"key":"projects"/.test(rq.postData() || '') && n503 < 2) { n503++; return route.fulfill({ status: 503, headers: { 'access-control-allow-origin': '*' }, contentType: 'application/json', body: '{"message":"busy"}' }); } return route.fallback(); });
+  const REPS = +(process.env.FG_BUSY_REPS || 1); let busyOk = false;
+  for (let rep = 0; rep < REPS; rep++) {
+  n503 = 0; const bid = 'P' + (9 + rep * 10), bnote = 'Saved while the database was busy ' + rep;
   await pm.page().touchscreen.tap(195, 120); await sleep(200);
-  await editJob('P9', 'Saved while the database was busy');
-  let busyOk = false; for (let i = 0; i < 240 && !busyOk; i++) { await sleep(500); busyOk = cloudNote('P9') === 'Saved while the database was busy'; }
-  ok(n503 >= 1 && busyOk, 'a save refused as busy (503) is retried and reaches the cloud (no tap in between)', { n503, busyOk, st: await pm.ev(() => window.__gcFG.state()) });
+  await editJob(bid, bnote);
+  busyOk = false; const tb = Date.now(); for (let i = 0; i < 240 && !busyOk; i++) { await sleep(500); busyOk = cloudNote(bid) === bnote; }
+  console.log('    busy rep ' + rep + ': ' + JSON.stringify({ n503, busyOk, secs: Math.round((Date.now() - tb) / 1000) }));
+  if (!busyOk) break;
+  }
+  if (!(n503 >= 1 && busyOk)) { const sx = await pm.ev(() => window.__gcFG.state()); console.log('    busy: ' + JSON.stringify({ n503, busyOk, dirty: sx.dirty, log: sx.log })); console.log('    unsent: ' + JSON.stringify(await pm.ev(() => window._gcUnsent ? window._gcUnsent() : null))); }
+  ok(n503 >= 1 && busyOk, 'a save refused as busy (503) is retried and reaches the cloud (no tap in between)', { n503, busyOk });
 
+  if (process.env.FG_QUICK) { console.log(`FIELDGUARD ${pass}/${pass + fail}`); process.exit(fail ? 1 : 0); }
   // a save made offline goes up when the signal returns, 2+ minutes later, with no tap in between
   await pm.page().touchscreen.tap(195, 120); await sleep(200);
   offline = true; await pm.ctx.setOffline(true);
