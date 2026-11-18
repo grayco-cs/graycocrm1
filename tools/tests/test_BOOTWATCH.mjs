@@ -275,6 +275,8 @@ if (want(6)) {
   ok(!!timed, 'the report has the real load times (first byte, downloaded, read, load event)', all.map(x => x.m));
   ok(all.some(x => x.m && x.m.ready > 0) && all.some(x => x.m && x.m.paint > 0 && /field/.test(x.m.paintV || '')), 'app ready and the first screen (Field) are recorded', all.map(x => x.m));
   await A.close(); srv.close();
+}
+if (want('6b')) {
   console.log('6b · a signal so weak it is not ready 45 s after signing in');
   const srv2 = await slowServer(70); const B = await localPhone('phone6b', srv2); const pb = B.page();
   const u0 = Date.now(); pb.goto('http://' + srv2.host + '/', { waitUntil: 'commit', timeout: 300000 }).catch(() => {});
