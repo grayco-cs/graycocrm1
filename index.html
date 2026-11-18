@@ -95727,6 +95727,10 @@ window._gcNormalizeInvoice = function(inv){
   // it off the pay list.
   var ty=String(inv.type||'').toLowerCase();
   if(ty==='sub' || ty==='supplier' || ty==='vendor' || ty==='bill') return false;
+  /* patch ACCTVOID: a voided / cancelled / written-off invoice is final. It is kept on file as it is —
+     never "draft" because it was never sent (rule 4), never "sent"/"overdue" because it was (rule 5),
+     never "paid" because a payment field is set. Only a person changing the status moves it. */
+  if(/^(void|voided|cancel+ed|written[ _-]?off)$/.test(String(inv.status||'').trim().toLowerCase())) return false;
   /* patch ACCT-7: QuickBooks history — sent (by QuickBooks) on its own date, paid on its own date, never a draft */
   if(inv.importedHistory===true || inv.noSend===true || inv.historyOnly===true){
     var _hd=String(inv.date||inv.recvDate||inv.invoiceDate||'').slice(0,10);
