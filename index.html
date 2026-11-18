@@ -235954,8 +235954,8 @@ function ymd(d){ return d.getFullYear() + '-' + String(d.getMonth() + 1).padStar
 function today(){ return ymd(new Date()); }
 function plus(day, n){ var d = new Date(s(day).slice(0, 10) + 'T12:00:00'); if (isNaN(d)) return ''; d.setDate(d.getDate() + n); return ymd(d); }
 function nice(day){ var d = new Date(s(day).slice(0, 10) + 'T12:00:00'); return isNaN(d) ? s(day) : (d.getMonth() + 1) + '/' + d.getDate(); }
-function user(){ try { if (typeof W._gcMeUserJSON === 'function') { var u = W._gcMeUserJSON('{}'); if (u && typeof u === 'object') return u; } } catch (e) {} try { return JSON.parse(localStorage.getItem('grayco_user') || '{}') || {}; } catch (e) { return {}; } }   /* grayco_user holds a plain name now (not JSON): the signed-in record, so the table's "by" is a person, not "someone" */
-function me(){ var u = user(); return s(u.name) || s(u.email) || 'someone'; }
+function user(){ try { return JSON.parse(localStorage.getItem('grayco_user') || '{}') || {}; } catch (e) { return {}; } }
+function me(){ var u = user(); if (s(u.name) || s(u.email)) return s(u.name) || s(u.email); try { var m = typeof W._gcMeUserJSON === 'function' ? W._gcMeUserJSON('{}') : null; if (m && (s(m.name) || s(m.email))) return s(m.name) || s(m.email); } catch (e) {} return 'someone'; }   /* grayco_user holds a plain name now (not JSON): then the signed-in record, so the table's "by" is a person, not "someone" */
 function admin(){ try { if (W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()) return true; } catch (e) {} var u = user(); return /admin/i.test(s(u.role)) || /owner/i.test(s(u.payType)); }
 function office(){ if (admin()) return true; try { if (W._gcIsOfficeFull && W._gcIsOfficeFull()) return true; } catch (e) {} var u = user(); return /office/i.test(s(u.role) + ' ' + s(u.profile)); }
 function signedIn(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.email && W.__GC_AUTH__.email()); } catch (e) { return false; } }
