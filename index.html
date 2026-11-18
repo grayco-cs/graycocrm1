@@ -237088,7 +237088,7 @@ function topTitle(){
     var kids = D.body.children;
     for (var i = kids.length - 1; i >= 0; i--) {
       var e = kids[i];
-      if (/^(SCRIPT|STYLE|LINK)$/.test(e.tagName) || /^gc-rp-/.test(e.id) || e.classList.contains('gc-hub-panel') || /toast/i.test(e.id + ' ' + e.className)) continue;
+      if (/^(SCRIPT|STYLE|LINK)$/.test(e.tagName) || /^gc-rp-/.test(e.id) || e.classList.contains('gc-hub-panel') || e.classList.contains('gc-fh-sheet') || e.classList.contains('gc-ra-sheet') || /toast/i.test(e.id + ' ' + e.className)) continue;   /* a menu (☰ More, 💎) is not the screen */
       if (e.id === '_gcJobPick' || e.id === '_gcJobDash' || e.id === 'gc-fh-tabs' || e.id === 'root') continue;
       var c = getComputedStyle(e); if (c.position !== 'fixed' || c.display === 'none' || c.visibility === 'hidden') continue;
       var r = e.getBoundingClientRect(); if (r.width * r.height < 0.2 * innerWidth * innerHeight) continue;
@@ -237403,7 +237403,7 @@ function list(focusId){
     var ans = card.querySelector('[data-rp-ans]'), text = s(ans && ans.value);
     if (a === 'answer' && text.length < 2) { msg.textContent = 'Write the answer first.'; msg.className = 'gc-rp-msg bad'; return; }
     b.disabled = true; msg.textContent = 'Saving…'; msg.className = 'gc-rp-msg';
-    act(x, a, text).then(function(r){ b.disabled = false; if (!r.ok) { msg.textContent = r.error || 'Could not save — try again.'; msg.className = 'gc-rp-msg bad'; return; } paint(); toast(a === 'answer' ? (x.signedOut ? 'Note saved.' : 'Answer sent.') : a === 'fixed' ? 'Marked fixed.' : 'Reopened.'); });
+    act(x, a, text).then(function(r){ b.disabled = false; if (!r.ok) { msg.textContent = r.error || 'Could not save — try again.'; msg.className = 'gc-rp-msg bad'; return; } paint(); toast(a === 'answer' ? (x.signedOut ? 'Note saved.' : 'Answer sent — it is under Answered now.') : a === 'fixed' ? 'Marked fixed — it is under Fixed now.' : 'Reopened.'); });
   });
   return M.ov;
 }
@@ -237433,12 +237433,12 @@ function act(x, a, text){
 }
 
 /* ═════ the reporter: answers as a CRM notice ═════ */
-var INB = { items: [], at: 0, shown: '' };
+var INB = { items: [], at: 0, shown: '' }, SEEN = {};   /* SEEN: marked seen here (a read that was already on its way does not bring the notice back) */
 function checkInbox(){
   if (!signedIn() || isMM()) return Promise.resolve([]);
   return kvRead(INBOX + slug(myEmail())).then(function(r){ if (r && (r.value == null || Array.isArray(r.value))) { INB.items = arr(r.value); INB.at = Date.now(); notice(); } return INB.items; });
 }
-function unseen(){ return INB.items.filter(function(n){ return n.seen !== true; }); }
+function unseen(){ return INB.items.filter(function(n){ return n.seen !== true && !SEEN[n.id]; }); }
 function notice(){
   var u = unseen(), old = D.getElementById('gc-rp-notice');
   if (!u.length || D.getElementById('gc-auth-email')) { if (old) old.remove(); return; }
@@ -237455,7 +237455,7 @@ function notice(){
 function markSeen(){
   var ids = unseen().map(function(n){ return n.id; }); var el = D.getElementById('gc-rp-notice'); if (el) el.remove();
   if (!ids.length) return;
-  INB.items.forEach(function(n){ if (ids.indexOf(n.id) >= 0) n.seen = true; });
+  INB.items.forEach(function(n){ if (ids.indexOf(n.id) >= 0) { n.seen = true; SEEN[n.id] = 1; } });
   listUpdate(INBOX + slug(myEmail()), function(l){ var ch = false; l.forEach(function(n){ if (ids.indexOf(n.id) >= 0 && n.seen !== true) { n.seen = true; n.seenAt = nowIso(); ch = true; } }); return ch ? l : null; }, function(l){ return l.every(function(n){ return ids.indexOf(n.id) < 0 || n.seen === true; }); });
 }
 function mine(){
@@ -237484,7 +237484,7 @@ function hubItem(panel){
   it.style.cssText = 'display:flex;align-items:center;gap:10px;padding:10px;cursor:pointer;font-size:13px';
   it.innerHTML = '<span class="gc-hub-icon" style="font-size:18px">🆘</span><span>Report a problem / Ask a question</span>';
   it.onclick = function(){ var c = capture(); later(function(){ open(c); }, 0); };
-  if (pinned()) { var first = panel.firstElementChild; panel.insertBefore(it, first ? first.nextSibling : null); }
+  if (pinned()) panel.insertBefore(it, panel.firstChild);
   else { it.id = 'gc-rp-hub-n'; it.style.cssText = 'display:flex;align-items:center;gap:10px;padding:10px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;color:#0f172a;border-bottom:1px solid #f1f5f9'; panel.appendChild(it); }
   if (canList() && !panel.querySelector('#gc-rp-hub-list')) {
     var l = D.createElement('div'); l.id = 'gc-rp-hub-list'; l.className = 'gc-hub-item'; l.setAttribute('data-label', 'Problem reports');
@@ -237495,8 +237495,10 @@ function hubItem(panel){
     panel.appendChild(l);
   }
 }
-D.addEventListener('gc-hub-open', function(e){ try { hubItem(e && e.detail && e.detail.panel); } catch (x) { warn(x); } });
-function hubPoll(){ var all = D.querySelectorAll('.gc-hub-panel'); for (var i = 0; i < all.length; i++) if (all[i].getClientRects().length) { hubItem(all[i]); break; } }
+/* pinned: it stays the first thing in the menu (other items that put themselves on top come in after it) */
+function keepFirst(panel){ var it = panel && panel.querySelector('#gc-rp-hub'); if (it && panel.firstChild !== it) panel.insertBefore(it, panel.firstChild); }
+D.addEventListener('gc-hub-open', function(e){ try { var p = e && e.detail && e.detail.panel; hubItem(p); later(function(){ keepFirst(p); }, 0); later(function(){ keepFirst(p); }, 200); } catch (x) { warn(x); } });
+function hubPoll(){ var all = D.querySelectorAll('.gc-hub-panel'); for (var i = 0; i < all.length; i++) if (all[i].getClientRects().length) { hubItem(all[i]); keepFirst(all[i]); break; } }
 /* GrayCo Field ☰ More: the Office rows */
 function moreRows(){
   var o = D.querySelector('.gc-fh-sheet[data-ra-more]'); if (!o || !signedIn()) return;
