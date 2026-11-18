@@ -201,6 +201,223 @@ try {
 } catch (e) { try { console.warn('[GC] LSGUARD not installed:', e && e.message || e); } catch (x) {} }
 })();
 </script>
+<script id="gc-patch-fieldguard">
+/* __GC_PATCH_FIELDGUARD__ — a Field phone never rewrites the company's lists by itself (tools/patch_FIELDGUARD.py).
+   11/18 20:31: Steven Biffle (PM) opened GrayCo Field on his iPhone for the first time in 16 days. With no tap, the phone
+   uploaded about 40 shared lists (projects, invs, leads, vendors, subs, gcAcctRegister, estimates, ccw_*, gc_office_tasks …):
+   133 "saves" in 5 minutes. 380 of 480 jobs went back to the cloud with only updatedAt changed, set to "now". The merge
+   keeps the copy with the newer updatedAt, so a phone's old copy stamped "now" can beat the office's newer edit.
+   On a device in GrayCo Field (a phone, or html._fieldmode) whose signed-in person is NOT an admin or the office
+   (_gcFullAccess()), this sits under every gc_kv upload (this script runs before the sign-in layer captures fetch):
+   1. A person's change is remembered per key, at the moment of the edit: a write of that key (IndexedDB "kv", localStorage,
+      or the upload itself) within 20 s of the person's own input (a trusted tap / key / typing, the CRM's _gcManualNow
+      note, or the end of a photo / file upload the person started) marks the key "changed by a person"
+      (gc_fieldguard_dirty, kept across a reload). That key goes up whenever it is sent — offline and sent when the signal
+      returns, refused as busy and retried, finished minutes after the tap — until the database answers OK.
+      Any other write of a shared key is not sent: the caller gets an empty 201, as for any upload, so nothing retries or
+      warns, and the office computer does the company's sweeps and migrations. Keys that belong to this device or this
+      person always go (gc_perfrep_ / gc_bootrep_ / gc_adm_dev_ / gc_activity_ / gc_timeclock_ / _probe_ / a key with
+      the person's e-mail in it). doc:<id> rows go with projectDocs; <key>__chunkN / __manifest with <key>.
+   2. Stamp-only records are not a change: before a list goes up, the cloud row is read. Each record that differs from the
+      cloud's copy only in updatedAt / savedAt / modifiedAt / _autoAssignChecked is sent as the cloud has it. A list that is
+      then the same as the cloud's (by id, in any order) is not sent.
+   3. Office-sized local copies (gc_snap_* / gc_safenet_* / gc_bak_* / gc_projects_backup / gc_sched_backup — the copies
+      LSGUARD may evict; the data is in IndexedDB and the cloud) are not written to localStorage on such a phone and are
+      removed once. This frees about 1.2 M characters of a full store.
+   Admins and the office, on any device, and every desk computer: nothing changes. An admin whose role was not known yet
+   when a list was held gets it sent once the role is known.
+   Console: __gcFG.state()   Off: localStorage gc_fieldguard_off = '1'. */
+(function(){
+'use strict';
+var W = window, D = document;
+try {
+  if (W.__gcFG) return;
+  var LS = null; try { LS = W.localStorage; } catch (e) {}
+  try { if (LS && LS.getItem('gc_fieldguard_off') === '1') return; } catch (e) {}
+  var inner = W.fetch; if (typeof inner !== 'function') return;
+  var NST = W.setTimeout, now = function(){ return Date.now(); };
+  var FG = W.__gcFG = { held: {}, dirty: {}, sentAgain: 0, stampOnly: 0, sameAsCloud: 0, passed: 0, personSent: 0, lsRefused: 0, lsRemoved: 0, lastInput: 0 };
+  var EDIT = 20000, DK = 'gc_fieldguard_dirty';
+  var SP = W.Storage && W.Storage.prototype, pSet = SP && SP.setItem, pGet = SP && SP.getItem;
+
+  /* ── who / where ── */
+  var low = function(x){ return String(x == null ? '' : x).toLowerCase(); };
+  var myEmail = function(){
+    try { var a = W.__GC_AUTH__; if (a && a.email) { var e = a.email(); if (e) return low(e); } } catch (e) {}
+    try { var v = JSON.parse((LS && pGet.call(LS, 'gc_auth_v1')) || 'null'); if (v && v.email) return low(v.email); } catch (e) {}
+    return '';
+  };
+  var phone = function(){
+    try { if (D.documentElement.classList.contains('_fieldmode')) return true; } catch (e) {}
+    var ua = String((W.navigator && W.navigator.userAgent) || '');
+    return /iPhone|iPod|Android.+Mobile|Windows Phone/i.test(ua) || (/iPad|Android/i.test(ua) && (W.innerWidth || 0) < 900);
+  };
+  var full = function(){
+    try { if (typeof W._gcFullAccess === 'function' && W._gcFullAccess()) return true; } catch (e) {}
+    try { if (W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()) return true; } catch (e) {}
+    return false;
+  };
+  var gAt = 0, gV = false;
+  var guarded = FG.guarded = function(){
+    var n = now(); if (n - gAt < 2000) return gV; gAt = n;
+    gV = !!(phone() && myEmail() && !full());
+    return gV;
+  };
+
+  /* ── a person's own input, and the keys a person changed ── */
+  var personNow = function(){ return !!FG.lastInput && now() - FG.lastInput < EDIT; };
+  var base = function(k){ k = String(k || ''); if (/^doc:/.test(k)) return 'projectDocs'; return k.replace(/__(chunk\d+|manifest)$/, ''); };
+  try { var dj = JSON.parse((LS && pGet.call(LS, DK)) || '{}'); if (dj && typeof dj === 'object') FG.dirty = dj; } catch (e) {}
+  var saveDirty = function(){ try { if (LS) pSet.call(LS, DK, JSON.stringify(FG.dirty)); } catch (e) {} };
+  var touchKey = function(k){
+    if (!personNow() || typeof k !== 'string' || !k || k === DK || !guarded()) return;
+    var b = base(k); if (FG.dirty[b] && now() - FG.dirty[b] < 1000) return;
+    FG.dirty[b] = now(); saveDirty();
+  };
+  /* typing the e-mail and password on the sign-in screen is not a change to the company's data */
+  var mark = function(e){
+    if (e && e.isTrusted === false) return;
+    try { var t = e && e.target; if (D.getElementById('gc-auth-gate') || (t && t.closest && t.closest('#gc-auth-gate,[id^="gc-auth"]'))) return; } catch (x) {}
+    FG.lastInput = now();
+  };
+  ['pointerdown', 'keydown', 'input', 'change'].forEach(function(t){ try { W.addEventListener(t, mark, { capture: true, passive: true }); } catch (e) {} });
+  (function wrapManual(n){   /* the CRM's "a person did this" note counts as input */
+    try {
+      var f = W._gcManualNow;
+      if (typeof f === 'function' && !f.__gcFG) { var w = function(){ FG.lastInput = now(); return f.apply(this, arguments); }; for (var p in f) { try { w[p] = f[p]; } catch (e) {} } w.__gcFG = true; W._gcManualNow = w; }
+    } catch (e) {}
+    if (n < 40) NST.call(W, function(){ wrapManual(n + 1); }, 3000);
+  })(0);
+  /* a write of a key while a person is acting marks it */
+  try {
+    var IP = W.IDBObjectStore && W.IDBObjectStore.prototype, oPut = IP && IP.put;
+    if (oPut) IP.put = function(value, key){ try { if (this.name === 'kv' && typeof key === 'string') touchKey(key); } catch (e) {} return oPut.apply(this, arguments); };
+  } catch (e) {}
+  /* a photo / file upload a person started: its end counts as that person acting (the save that follows it) */
+  var echo = function(){ FG.lastInput = Math.max(FG.lastInput, now()); };
+  try {
+    var XP = W.XMLHttpRequest && W.XMLHttpRequest.prototype, oSend = XP && XP.send;
+    if (oSend) XP.send = function(){ try { if (personNow()) this.addEventListener('loadend', echo); } catch (e) {} return oSend.apply(this, arguments); };
+  } catch (e) {}
+  /* an admin / the office whose role became known after an early hold: send what was held */
+  (function poll(){
+    try { var ks = Object.keys(FG.held); if (ks.length && !guarded()) { FG.held = {}; FG.sentAgain += ks.length; if (typeof W._gcSyncDirty === 'function') W._gcSyncDirty(ks); } } catch (e) {}
+    NST.call(W, poll, 5000);
+  })();
+
+  /* ── which keys go without a person's change ── */
+  var OWN = /^(gc_perfrep_|gc_bootrep_|gc_adm_dev_|gc_activity_|gc_timeclock_|_probe_|gc_fieldguard_)/;
+  var mine = function(k){
+    if (OWN.test(k)) return true;
+    var e = myEmail(); if (!e) return false;
+    var lk = low(k);
+    return lk.indexOf(e) >= 0 || lk.indexOf(e.replace(/[^a-z0-9]/g, '_')) >= 0 || lk.indexOf(e.replace(/[^a-z0-9]/g, '-')) >= 0;
+  };
+  var hold = function(k){ var h = FG.held[k] || (FG.held[k] = { n: 0, at: 0 }); h.n++; h.at = now(); };
+
+  /* ── stamp-only records are sent as the cloud has them ── */
+  var STAMP = { updatedAt: 1, updated_at: 1, savedAt: 1, modifiedAt: 1, _autoAssignChecked: 1 };
+  var idOf = function(r){ return r && typeof r === 'object' && r.id != null && r.id !== '' ? String(r.id) : null; };
+  var bare = function(r){ var o = {}; Object.keys(r).sort().forEach(function(f){ if (!STAMP[f]) o[f] = r[f]; }); return JSON.stringify(o); };
+  var sameList = function(a, b){
+    if (a.length !== b.length) return false;
+    var m = {}; for (var i = 0; i < b.length; i++) { var id = idOf(b[i]); if (id == null) return false; m[id] = JSON.stringify(b[i]); }
+    for (var j = 0; j < a.length; j++) { var jd = idOf(a[j]); if (jd == null || m[jd] !== JSON.stringify(a[j])) return false; }
+    return true;
+  };
+  var hdrs = function(init){
+    var o = {};
+    try { new Headers((init && init.headers) || undefined).forEach(function(v, k){ if (/^(apikey|authorization)$/i.test(k)) o[k] = v; }); } catch (e) {}
+    return o;
+  };
+  var unstamp = function(url, init, k, val){
+    if (!Array.isArray(val) || !val.length || /__(chunk\d+|manifest)$/.test(k)) return Promise.resolve(val);
+    var u; try { u = new URL(url, location.href); } catch (e) { return Promise.resolve(val); }
+    u.search = '?key=eq.' + encodeURIComponent(k) + '&select=value';
+    return inner.call(W, u.toString(), { method: 'GET', headers: hdrs(init) }).then(function(r){ return r.ok ? r.json() : null; }).then(function(rows){
+      var cv = rows && rows[0] && rows[0].value;
+      if (!Array.isArray(cv)) return val;
+      var c = {}; cv.forEach(function(r){ var id = idOf(r); if (id != null) c[id] = r; });
+      var n = 0;
+      var out = val.map(function(r){ var id = idOf(r), x = id != null ? c[id] : null; if (!x || x === r) return r; try { if (JSON.stringify(x) !== JSON.stringify(r) && bare(x) === bare(r)) { n++; return x; } } catch (e) {} return r; });
+      FG.stampOnly += n;
+      if (sameList(out, cv)) { FG.sameAsCloud++; return null; }   /* nothing to send */
+      return out;
+    }, function(){ return val; });
+  };
+
+  var EMPTY = function(pref){ var rep = /return=representation/.test(pref || ''); return new Response(rep ? '[]' : null, { status: 201, headers: rep ? { 'Content-Type': 'application/json' } : {} }); };
+  /* sent: the database said OK — a person's change of that key is up (unless the key was changed again meanwhile) */
+  var sentOk = function(keys, at){ var ch = false; keys.forEach(function(k){ var b = base(k); if (FG.dirty[b] && FG.dirty[b] <= at) { delete FG.dirty[b]; ch = true; } }); if (ch) saveDirty(); };
+  var allowed = function(k){ return !k || mine(k) || !!FG.dirty[base(k)]; };
+  var guardedFetch = function(input, init){
+    try {
+      var url = typeof input === 'string' ? input : (input && input.url) || String(input);
+      var m = String((init && init.method) || (input && input.method) || 'GET').toUpperCase();
+      if (m === 'GET' || m === 'HEAD' || m === 'OPTIONS') return inner.apply(this, arguments);
+      if (!/\/rest\/v1\/gc_kv(\?|$)/.test(url)) {
+        /* a file / photo upload a person started: when it ends, the save that follows it is the person's */
+        if (personNow() && /\/storage\/v1\/|\/\.netlify\/functions\//.test(url)) { var pr = inner.apply(this, arguments); try { pr.then(echo, echo); } catch (e) {} return pr; }
+        return inner.apply(this, arguments);
+      }
+      if (!guarded()) return inner.apply(this, arguments);
+      var pref = ''; try { pref = String(new Headers((init && init.headers) || undefined).get('Prefer') || ''); } catch (e) {}
+      var at = now();
+      if (m === 'DELETE' || m === 'PATCH') {
+        var qk = /[?&]key=eq\.([^&]+)/.exec(url), dk = qk ? decodeURIComponent(qk[1]) : '';
+        touchKey(dk);
+        if (allowed(dk)) { FG.passed++; var pd = inner.apply(this, arguments); try { pd.then(function(r){ if (r && r.ok) sentOk([dk], at); }, function(){}); } catch (e) {} return pd; }
+        hold(dk || '?'); return Promise.resolve(EMPTY(pref));
+      }
+      if (m !== 'POST' || !init || typeof init.body !== 'string') return inner.apply(this, arguments);
+      var b; try { b = JSON.parse(init.body); } catch (e) { return inner.apply(this, arguments); }
+      var rows = Array.isArray(b) ? b : [b], keep = [];
+      rows.forEach(function(r){ var k = r && r.key != null ? String(r.key) : ''; touchKey(k); if (allowed(k)) keep.push(r); else hold(k); });
+      if (!keep.length) return Promise.resolve(EMPTY(pref));
+      var self = this;
+      return Promise.all(keep.map(function(r){ var k = String(r.key || ''); return mine(k) ? Promise.resolve(r) : unstamp(url, init, k, r.value).then(function(v){ if (v === null) return null; if (v === r.value) return r; var c = Object.assign({}, r); c.value = v; return c; }); })).then(function(out){
+        var keys = keep.map(function(r){ return String(r.key || ''); });
+        out = out.filter(Boolean);
+        if (!out.length) { sentOk(keys, at); return EMPTY(pref); }   /* the cloud already has it */
+        FG.passed += out.length;
+        var body = Array.isArray(b) ? JSON.stringify(out) : JSON.stringify(out[0]);
+        return inner.call(self, input, Object.assign({}, init, { body: body })).then(function(r){ if (r && r.ok) { sentOk(keys, at); FG.personSent++; } return r; });
+      });
+    } catch (e) { return inner.apply(this, arguments); }
+  };
+  guardedFetch.__gcFG = true;
+  W.fetch = guardedFetch;
+
+  /* ── office-sized local copies stay off a Field phone; a person's write marks its key ── */
+  var COPY = /^(gc_snap_[A-Za-z]+|gc_bak_[A-Za-z]+|gc_safenet_[A-Za-z]+|gc_projects_backup|gc_sched_backup)$/;
+  if (SP && LS && typeof pSet === 'function') {
+    SP.setItem = function(k, v){
+      try {
+        if (this === LS) {
+          var ks = String(k);
+          if (COPY.test(ks) && ks !== 'gc_safenet_meta' && guarded()) { FG.lsRefused++; return; }
+          touchKey(ks);
+        }
+      } catch (e) {}
+      return pSet.apply(this, arguments);
+    };
+    var cleaned = false;
+    (function clean(n){
+      try {
+        if (!cleaned && guarded()) {
+          cleaned = true; var ks = [];
+          for (var i = 0; i < LS.length; i++) { var k = LS.key(i); if (k && COPY.test(k) && k !== 'gc_safenet_meta') ks.push(k); }
+          ks.forEach(function(k){ try { LS.removeItem(k); FG.lsRemoved++; } catch (e) {} });
+        }
+      } catch (e) {}
+      if (!cleaned && n < 60) NST.call(W, function(){ clean(n + 1); }, 5000);
+    })(0);
+  }
+
+  FG.state = function(){ return { guarded: guarded(), phone: phone(), full: full(), email: myEmail(), lastInput: FG.lastInput ? new Date(FG.lastInput).toISOString() : '', held: JSON.parse(JSON.stringify(FG.held)), dirty: JSON.parse(JSON.stringify(FG.dirty)), sentAgain: FG.sentAgain, stampOnly: FG.stampOnly, sameAsCloud: FG.sameAsCloud, passed: FG.passed, personSent: FG.personSent, lsRefused: FG.lsRefused, lsRemoved: FG.lsRemoved }; };
+} catch (e) { try { console.warn('[GC] FIELDGUARD not installed:', e && e.message || e); } catch (x) {} }
+})();
+</script>
 <script type="text/plain" id="gc-bw-late">
   onScreenImpl = function(){ var u = under(); return cov ? 'the Opening progress screen (' + stage()[1] + ') over ' + u : u; };
   var under = function(){
@@ -109978,11 +110195,22 @@ function note(key, kind, howMany, detail){
   var rec={ at:new Date().toISOString(), key:key, kind:kind, count:howMany, detail:detail||'' };
   REPAIRS.push(rec); if(REPAIRS.length>300) REPAIRS.shift();
   try{
-    var h=JSON.parse(localStorage.getItem('gc_kept_log')||'[]');
-    h.push(rec); if(h.length>300) h=h.slice(-300);
-    localStorage.setItem('gc_kept_log', JSON.stringify(h));
+    /* patch FIELDGUARD: the log is written at most once every 5 s (a phone's first open wrote this 300-entry log 97 times
+       in 2 minutes, 2.6 M characters into a full localStorage); every repair is still in it */
+    keptPend.push(rec);
+    if(!keptT) keptT = (window.__GC_NATIVE_SETTIMEOUT__ || setTimeout).call(window, flushKept, 5000);
   }catch(e){}
 }
+var keptPend = [], keptT = 0;
+function flushKept(){
+  keptT = 0; if(!keptPend.length) return;
+  try{
+    var h=JSON.parse(localStorage.getItem('gc_kept_log')||'[]'); if(!Array.isArray(h)) h=[];
+    h = h.concat(keptPend); keptPend = []; if(h.length>300) h=h.slice(-300);
+    localStorage.setItem('gc_kept_log', JSON.stringify(h));
+  }catch(e){ keptPend = []; }
+}
+try{ window.addEventListener('pagehide', flushKept); }catch(e){}
 
 /* ── whose delete is this? ──────────────────────────────────────────────── */
 /* A person's own delete is allowed to remove things. Everything else is not.
