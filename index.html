@@ -237403,9 +237403,9 @@ function homeCard(){
 D.addEventListener('click', function(e){ var b = e.target && e.target.closest ? e.target.closest('[data-gi2-home]') : null; if (!b) return; e.preventDefault(); e.stopPropagation(); open(b.getAttribute('data-gi2-home')); }, true);
 
 /* ── the day-before reminder: the PM / superintendent (+ whoever meets the inspector) and the subs it touches, once ── */
-function remindTick(){
+function remindTick(atHour){
   if (!myEmail() || D.hidden) return 0;
-  var hr = new Date().getHours(); if (hr < 7 || hr >= 21) return 0;
+  var hr = typeof atHour === 'number' ? atHour : new Date().getHours(); if (hr < 7 || hr >= 21) return 0;   /* the subs' messages: 7 AM – 9 PM only (staff notices also wait in _gcNotify's quiet hours) */
   var tmr = addDays(today(), 1), sent = 0;
   projects().forEach(function(p){
     if (!p || !canEdit(p)) return;

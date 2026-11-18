@@ -186,8 +186,8 @@ try {
   ok('C4 📅 Reschedule: the new date + window, back to Scheduled; the history keeps the old date (after the fail), who and why', !!RES && RES.date === day(5) && RES.from === '09:00' && !!hr && hr.from.date === T1 && hr.to.date === day(5) && hr.after === 'failed' && hr.by === 'Office Demo' && /GFCI installed/.test(hr.note) && RES.history.some(h => h.what === 'result' && h.result === 'Failed'), RES);
   const pan2 = await H.waitFor(off, () => { const o = document.getElementById('gi2-panel'); return o && /Rescheduled from/.test(o.innerText) ? o.innerText : null; }, null, 6000);
   ok('C4 … the panel shows "📅 Rescheduled from … to …" on the row', !!pan2, pan2);
-  const si2 = await H.waitFor(off, id => { const s = (window._crm.schedule || []).find(x => x && x.id === 'SCH_INS_' + id); return s && s.time === '09:00' ? s : null; }, INS.id, 8000);
-  ok('C5 the schedule item moved with it (same item, new day 9–11)', !!si2 && si2.date === day(5) && si2.endTime === '11:00' && !si2.done, si2 || await off.ev(id => ({ items: (window._crm.schedule || []).filter(x => x && /SCH_INS_/.test(x.id)).map(x => [x.id, x.date, x.time, x.done]), n: (window._crm.schedule || []).length, want: 'SCH_INS_' + id }), INS.id));
+  const si2 = await until(() => { const l = cloudJson('schedule'); const s = Array.isArray(l) && l.find(x => x && x.id === 'SCH_INS_' + INS.id); return s && s.time === '09:00' ? s : null; }, 20000);
+  ok('C5 the schedule item moved with it (same item, new day 9–11 — in the cloud for every device)', !!si2 && si2.date === day(5) && si2.endTime === '11:00' && !si2.done, si2 || await off.ev(id => ({ items: (window._crm.schedule || []).filter(x => x && /SCH_INS_/.test(x.id)).map(x => [x.id, x.date, x.time, x.done]), n: (window._crm.schedule || []).length, want: 'SCH_INS_' + id }), INS.id));
   const ft = await off.ev(id => (JSON.parse(localStorage.getItem('gc_office_tasks') || '[]')).filter(t => t.kind === 'insp_fail' && t.insId === id).map(t => t.done), INS.id);
   ok('C5 the "reschedule" To-Do is closed by the reschedule', ft.length >= 1 && ft.every(Boolean), ft);
   /* 🗄 archive (never delete) */
@@ -301,9 +301,10 @@ try {
 
 /* ═════ G. the day-before reminder (PM / super through _gcNotify; the subs it touches through their portal thread) ═════ */
 try {
-  const g = await pm.ev(([pid, d]) => { const r = window._gcInsp2.schedule(pid, { type: 'electrical', date: d, from: '10:00', to: '12:00', meet: 'Demo PM' }); const h = new Date().getHours(); const n = window._gcInsp2.remindTick(); const n2 = window._gcInsp2.remindTick(); return { id: r.row && r.row.id, n, n2, h }; }, [P1.id, day(1)]);
-  if (g.h < 7 || g.h >= 21) ok('G (the reminder waits for 7 AM – 9 PM — skipped at hour ' + g.h + ')', true);
-  else {
+  const g = await pm.ev(([pid]) => { const x = new Date(); x.setDate(x.getDate() + 1); const d = x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0');   /* the phone's own tomorrow */
+    const r = window._gcInsp2.schedule(pid, { type: 'electrical', date: d, from: '10:00', to: '12:00', meet: 'Demo PM' }); const night = window._gcInsp2.remindTick(22); const n = window._gcInsp2.remindTick(10); const n2 = window._gcInsp2.remindTick(11); return { id: r.row && r.row.id, night, n, n2, hidden: document.hidden }; }, [P1.id]);
+  ok('G0 at night (10 PM) nothing is sent — it waits for 7 AM', g.night === 0, g);
+  {
     await sleep(1500);
     ok('G1 the day before: one reminder (not twice)', g.n >= 1 && g.n2 === 0, g);
     ok('G1 … to the PM through window._gcNotify', NOTIFY.some(n => /Electrical inspection tomorrow/.test(n.title) && [].concat(n.to).includes(PM_E)), NOTIFY.map(n => n.title));
