@@ -237094,7 +237094,7 @@ function topTitle(){
       var r = e.getBoundingClientRect(); if (r.width * r.height < 0.2 * innerWidth * innerHeight) continue;
       var h = e.querySelector('h1,h2,h3,.hd b,[role="dialog"] b'); if (h && s(h.textContent)) return clip(h.textContent, 60);
     }
-    var h1 = D.querySelector('#root main h1'); if (h1 && visible(h1)) return clip(h1.textContent, 60);
+    var h1 = app() === 'desk' ? D.querySelector('#root main h1') : null; if (h1 && visible(h1)) return clip(h1.textContent, 60);   /* the Desk page's title (under GrayCo Field it is not what is on screen) */
   } catch (e) {}
   return '';
 }
