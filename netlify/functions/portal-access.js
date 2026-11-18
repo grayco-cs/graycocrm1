@@ -1795,6 +1795,14 @@ async function customerAction(action, body, pids){
 /* ═══ STAFF (the CRM) ═══════════════════════════════════════════════════════ */
 function staffName(data, who){ const u = arr(data.users).find(function(x){ return low(x.email) === who.email; }); return s(u && u.name) || who.name || who.email; }
 function isAdmin(who){ return require('./_lib/staff-role.js').isAdmin(who); }   /* patch AUTHFIX: the one admin rule (an owner counts) */
+/* SUBSIGNUP: (owner 11/16) every new sub sign-up is a card in ✅ Approvals for the admins and the office — the self sign-ups (not approved
+   yet) and the ones who joined from a job invite (approved at once for that job, never checked by GrayCo: vetPending, or — for sign-ups
+   made before this change — an invited profile since VET_SINCE with no bidsApprovedAt). ✅ Approve checks them (no e-mail when they were
+   already in); ✕ Deny takes the access away. */
+const VET_SINCE = '2026-11-09';
+function SR(){ return require('./_lib/staff-role.js'); }
+function vetDue(u){ return !!u && u.approved === true && u.bidsRevoked !== true && !u.bidsApprovedAt && !u.vettedAt && (u.vetPending === true || (!!s(u.invitedJobId) && s(u.createdAt) >= VET_SINCE)); }
+function officeUser(data, who){ const u = arr(data && data.users).find(function(x){ return x && low(x.email) === low(who && who.email); }); return !!(u && u.active !== false && /office/i.test(s(u.role)) && !/marketing/i.test(s(u.role))); }
 function canApproveFor(data, who, pid){
   if (isAdmin(who)) return true;
   const p = arr(data.projects).find(function(x){ return s(x.id) === s(pid); });
@@ -1828,8 +1836,8 @@ async function staffAction(action, body, who){
     try { bidsReq = (await dbGet('sp_rows', 'select=id,data&collection=eq.users&order=key.asc')).map(function(r){ return r.data || {}; })
       /* owner 11/11: "when accounts are created I want to approve them from admin approvals" — every sub who signed up on the bid site
          (Request Access, or from the sub portal) and is not approved or denied yet */
-      .filter(function(u){ return u.role === 'sub' && u.approved !== true && u.bidsRevoked !== true; })
-      .map(function(u){ return { id: s(u.id), company: s(u.company), name: s(u.name), email: low(u.email), crmSubId: s(u.crmSubId), at: s(u.bidsRequestedAt || u.createdAt), phone: s(u.phone), trades: arr(u.trades).slice(0, 6), selfSignup: u.bidsRequested !== true, claimed: u.papersClaimed || null, city: s(u.businessCity), state: s(u.businessState), area: s(u.serviceArea), crew: u.numEmployees || null }; }); } catch (e) {}
+      .filter(function(u){ return u.role === 'sub' && u.bidsRevoked !== true && (u.approved !== true || vetDue(u)); })   /* SUBSIGNUP: + joined from an invite, not checked yet */
+      .map(function(u){ return { id: s(u.id), company: s(u.company), name: s(u.name), email: low(u.email), crmSubId: s(u.crmSubId), at: s(u.bidsRequestedAt || u.createdAt), phone: s(u.phone), trades: (Array.isArray(u.trades) ? u.trades : []).map(s).filter(Boolean).slice(0, 6) /* SUBSIGNUP: arr() keeps objects only — the trades (text) were always dropped */, selfSignup: u.bidsRequested !== true, claimed: u.papersClaimed || null, city: s(u.businessCity), state: s(u.businessState), area: s(u.serviceArea), crew: u.numEmployees || null, vet: u.approved === true, invited: !!s(u.invitedJobId) }; }); } catch (e) {}
     try { bidsReq = await withPapers(bidsReq); } catch (e) {}   /* patch SIGNUPPAPERS: 📎 Papers + ⚡ Ready for quick approval */
     return { ok: true, events: events, unread: unread, links: links, waiting: waiting, bids: bidsReq, codes: relays, text: textReady(), admin: isAdmin(who), me: me, at: new Date().toISOString() };
   }
@@ -1925,18 +1933,19 @@ async function staffAction(action, body, who){
     return { ok: true, acked: ids.length };
   }
   if (action === 's-bids-approve') {
-    if (!isAdmin(who)) throw Fail(403, 'Only an owner (Wesley or Nick) approves the bid site.');
+    if (!SR().isOfficeOrAdmin(who) && !officeUser(data, who)) throw Fail(403, 'Only an admin or the office approves new subs.');   /* SUBSIGNUP: the office too */
     const rows = await dbGet('sp_rows', 'select=key,id,data&collection=eq.users&id=' + eq(body.id));
     const r = rows[0]; if (!r || (r.data || {}).role !== 'sub') throw Fail(404, 'That request is gone.');
     const ok = body.approve !== false, now = new Date().toISOString();
-    const prof = Object.assign({}, r.data, ok ? { approved: true, bidsRevoked: false, bidsApprovedAt: now, bidsApprovedBy: me } : { approved: false, bidsRevoked: true, bidsRevokedAt: now });
+    const already = (r.data || {}).approved === true && (r.data || {}).bidsRevoked !== true;   /* SUBSIGNUP: joined from an invite — already in; this is GrayCo's check */
+    const prof = Object.assign({}, r.data, ok ? { approved: true, bidsRevoked: false, bidsApprovedAt: now, bidsApprovedBy: me, vetPending: false, vettedAt: now, vettedBy: me } : { approved: false, bidsRevoked: true, bidsRevokedAt: now, bidsRevokedBy: me, vetPending: false });
     await dbPost('sp_rows?on_conflict=key', [{ key: r.key, collection: 'users', id: r.id, user_id: r.id, email: low(prof.email), data: prof, updated_at: now, updated_by: who.email }], 'resolution=merge-duplicates,return=minimal');
     if (ok) {   /* patch BPFAST: the papers copy and the approval e-mail run side by side (the Approve click waited for both, one after the other) */
       const L = MAIL[lang(prof.lang)];
       await Promise.all([ (async function(){ try { prof.papersCrm = await papersToCrm(r.id); if (prof.papersCrm.length) await dbPost('sp_rows?on_conflict=key', [{ key: r.key, collection: 'users', id: r.id, user_id: r.id, email: low(prof.email), data: prof, updated_at: new Date().toISOString(), updated_by: who.email }], 'resolution=merge-duplicates,return=minimal'); } catch (e) {} })(),   /* patch SIGNUPPAPERS: the papers go with them into the CRM's Subs */
-        require('./_lib/custquiet.js').run('reply', () => sendMail(prof.email, L.approvedSubj, mailHtml(L.approvedSubj, L.approvedBody, '', { href: portalBase(), label: L.approvedBtn }))) ]);   /* patch SIGNUPNOTE: the approval e-mail answers their sign-up — goes in data-entry mode too */
+        already ? Promise.resolve(null) : require('./_lib/custquiet.js').run('reply', () => sendMail(prof.email, L.approvedSubj, mailHtml(L.approvedSubj, L.approvedBody, '', { href: portalBase(), label: L.approvedBtn }))) ]);   /* patch SIGNUPNOTE: the approval e-mail answers their sign-up — goes in data-entry mode too */   /* SUBSIGNUP: already in — no e-mail */
     }
-    return { ok: true, approved: ok };
+    return { ok: true, approved: ok, checked: ok && already };
   }
   if (action === 's-login') {
     /* the customer's portal login, for the job's portal card: e-mail, starter = first name, changed yes/no */

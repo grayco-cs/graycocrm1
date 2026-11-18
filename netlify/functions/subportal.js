@@ -736,6 +736,7 @@ async function register(body){
     einLast4: s(p.einLast4).replace(/\D/g, '').slice(0, 4),
     trades: (Array.isArray(p.trades) ? p.trades : []).map(function(x){ return clip(x, 60); }).filter(Boolean).slice(0, 30),
     invitedJobId: invited ? inv.job_id : undefined,
+    vetPending: invited ? true : undefined,   /* SUBSIGNUP: (owner 11/16) an invited sub sees that job at once, but GrayCo still checks them: a card in ✅ Approvals */
     lang: s(p.lang) === 'es' ? 'es' : 'en',   /* patch SIGNUPPAPERS: their language, and the papers they SAY they have (not papers on file) */
     papersClaimed: (function(c){ c = c && typeof c === 'object' ? c : {}; return { w9: c.w9 === true, gl: c.gl === true, wc: c.wc === true, wcExempt: c.wcExempt === true, at: new Date().toISOString() }; })(p.papersClaimed),
     createdAt: new Date().toISOString()
@@ -1290,14 +1291,14 @@ async function notify(n){
     const u = n.user;
     const owners = String(process.env.OWNER_EMAILS || 'wjohnson@grayco-cs.com,nthomas@grayco-cs.com').split(',').map(low).filter(okEmail);
     /* patch SIGNUPNOTE (owner 11/13: "make sure we get the approval notification"): a phone notice to the owners too, and the e-mail opens ✅ Approvals in the CRM */
-    if (!u.approved) { try { await pushTo(owners, '🔨 New sub waiting for approval', s(u.company) + (u.trades && u.trades.length ? ' — ' + u.trades.slice(0, 3).join(', ') : '') + ' · open ✅ Approvals'); } catch (e) {} }
-    return sendMail([process.env.SUBPORTAL_NOTIFY || OFFICE].concat(owners), (u.approved ? 'New subcontractor sign-up — ' : '🔨 Approve new sub — ') + u.company,
+    try { await pushTo(owners, u.approved ? '🔨 New sub signed up (job invite) — please check' : '🔨 New sub waiting for approval', s(u.company) + (u.trades && u.trades.length ? ' — ' + u.trades.slice(0, 3).join(', ') : '') + ' · open ✅ Approvals'); } catch (e) {}   /* SUBSIGNUP: an invited one too */
+    return sendMail([process.env.SUBPORTAL_NOTIFY || OFFICE].concat(owners), (u.approved ? '🔨 Check new sub (job invite) — ' : '🔨 Approve new sub — ') + u.company,
       mailHtml('New subcontractor sign-up', [
         '<b>' + esc(u.company) + '</b>' + (u.dbaName ? ' (DBA ' + esc(u.dbaName) + ')' : ''),
         esc(u.name) + ' · ' + esc(u.email) + (u.phone ? ' · ' + esc(u.phone) : ''),
         u.trades && u.trades.length ? 'Trades: ' + esc(u.trades.join(', ')) : '',
-        u.approved ? 'They came from a job invite, so they are already approved.' : 'They are signed in and waiting for your approval — they see no jobs until you approve them. In the CRM: <b>✅ Approvals → 🏗 Bid portal</b> (⚡ Approve, or 📋 Review first).'
-      ].filter(Boolean), { href: crmUrl(), label: u.approved ? 'Open the CRM' : 'Open ✅ Approvals' }));
+        u.approved ? 'They came from a job invite, so they already see that job. Please check them: <b>✅ Approvals → 🏗 Bid portal</b> (✅ Approve, or ✕ Deny to take their access away).' : 'They are signed in and waiting for your approval — they see no jobs until you approve them. In the CRM: <b>✅ Approvals → 🏗 Bid portal</b> (⚡ Approve, or 📋 Review first).'
+      ].filter(Boolean), { href: crmUrl(), label: 'Open ✅ Approvals' }));
   }
   if (n.kind === 'approved') {
     /* patch SIGNUPNOTE: the 'you are approved' e-mail answers their own sign-up — it goes in ⏸ data-entry mode too */

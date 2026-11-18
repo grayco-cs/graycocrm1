@@ -54,6 +54,7 @@ async function run(opts){
   for (const r of invs) {
     const invId = s(r.id); if (!invId) continue;
     if (!C.isCustomerInvoice(r) || isFinal(r) || C.isHistoryInvoice(r) || r.recordOnly === true || qbCopy(r)) continue;
+    if (r.apprNoSend && typeof r.apprNoSend === 'object') continue;   /* APPRNOSEND: its e-mail was approved without sending — no reminders follow */
     if (/pending|ready_for_review/.test(low(r.status))) continue;
     const bal = C.invBalance(r); if (!(bal > 0)) continue;
     const due = ymd(r.dueDate || r.due); if (!due) continue;
