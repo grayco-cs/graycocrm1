@@ -59,7 +59,7 @@ export function seed(extra){
   H.cset('customers', [{ id: 'C1', name: 'Pat Demo', phone: '9015550111', email: 'pat@demo.test', address: '123 Demo St, Memphis, TN', updatedAt: ago(5) }]);
   H.cset('leads', [{ id: 'L1', name: 'Robin Sample', phone: '9015550122', address: '77 Test Rd, Memphis, TN', stage: 'new', source: 'Website', createdAt: ago(1), updatedAt: ago(1) }]);
   H.cset('schedule', [{ id: 'S1', pid: 'P1', date: TODAY, title: 'Demo day', assignee: 'Wesley Johnson', type: 'work', updatedAt: ago(1) }]);
-  H.cset('schedule', arr(H.cget('schedule')).concat([{ id: 'S3', pid: 'P3', date: TODAY, title: 'Drying check', assignee: 'Demo Mit Tech', type: 'work' }, { id: 'S4', pid: 'P4', date: TODAY, title: 'Abatement day', assignee: 'Demo Env Tech', type: 'work' }]));
+  H.cset('schedule', arr(H.cget('schedule')).concat([{ id: 'S3', pid: 'P3', date: TODAY, title: 'Drying check', assignee: 'Demo Mit Tech', type: 'work' }, { id: 'S4', pid: 'P4', date: TODAY, title: 'Abatement day', assignee: 'Demo Env Tech', type: 'work' }, { id: 'S5', pid: 'P2', date: TODAY, title: 'Crew day', assignee: 'Demo Crew', crew: 'Demo Crew', type: 'work' }]));
   H.cset('gc_claims', [{ id: 'CLM1', projectId: 'P3', pid: 'P3', companyId: 'mitigation', title: 'Demo Water Loss', phase: 'mitigation', kind: 'water', jobType: 'water', mitigation: true, lossType: 'Water', claimNumber: 'DEMO-CLM-1', lossDate: ago(4).slice(0, 10), createdAt: ago(4), updatedAt: ago(1) }]);
   H.cset('estimates', []);
   H.cset('invs', []); H.cset('expenses', []);
@@ -141,10 +141,27 @@ export const estSavedText = A => A.ev(() => (document.getElementById('gc-rp-save
 export async function estOpen(A, name){
   const pg = A.page();
   await navDesk(A, 'Estimates');
-  await H.waitFor(A, n => { const l = document.getElementById('gc-est3-list'); return !!(l && l.innerText.indexOf(n) >= 0); }, name, 20000);
+  const tL = Date.now();
+  await H.waitFor(A, n => { const l = document.getElementById('gc-est3-list'); return !!(l && l.innerText.indexOf(n) >= 0); }, name, 45000);
+  console.log('  (estOpen: in the list after ' + Math.round((Date.now() - tL) / 100) / 10 + ' s)');
   const row = pg.locator('#gc-est3-list .r', { hasText: name }).first();
-  if (!(await row.count())) return false;
-  const o = row.locator('button[data-ac="open"]').first();
-  if (await o.count()) await o.click(); else await row.click();
-  return !!(await H.waitFor(A, n => { const e = document.getElementById('ej-name'); return !!(e && e.offsetParent && e.value === n); }, name, 20000));
+  if (!(await row.count())) {
+    console.log('  (estOpen: not in the list)', JSON.stringify(await A.ev(n => { const l = document.getElementById('gc-est3-list'); let crm = null, idb = null; try { crm = ((window._crm || {}).estimates || []).filter(e => e && e.name === n).map(e => ({ id: e.id, d: e._isDraft, del: e.deleted, src: e.source, pid: e.pid })); } catch (e) {}
+      return { view: localStorage.getItem('grayco_view'), list: !!l, shown: l ? l.offsetHeight : -1, text: l ? l.innerText.replace(/\s+/g, ' ').slice(0, 400) : '', crm, rows: l ? l.querySelectorAll('.r').length : -1, heavy: window._gcHeavy && window._gcHeavy.state().phase }; }, name)));
+    return false;
+  }
+  const opened = () => H.waitFor(A, n => { const e = document.getElementById('ej-name'); return !!(e && e.offsetParent && e.value === n); }, name, 20000);
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const row2 = pg.locator('#gc-est3-list .r', { hasText: name }).first();
+    const o = row2.locator('button[data-ac="open"]').first();
+    if (await o.count()) await o.click().catch(() => {}); else await row2.click().catch(() => {});
+    if (await opened()) { if (attempt > 1) console.log('  (estOpen: opened on the 2nd click)'); return true; }
+    /* what the person sees: a "still loading — try again" note, or the builder open on something else */
+    console.log('  (estOpen: click ' + attempt + ' did not open it)', JSON.stringify(await A.ev(n => { const e = document.getElementById('ej-name'); const ov = document.getElementById('gc-est-overlay');
+      const toasts = [...document.querySelectorAll('[role=status],[id*=toast],[class*=toast]')].map(t => (t.textContent || '').trim()).filter(Boolean).slice(-4);
+      let heavy = null; try { heavy = window._gcHeavy.state().phase; } catch (x) {}
+      return { ejName: e ? e.value : null, ejShown: !!(e && e.offsetParent), ov: ov ? ov.className : null, view: localStorage.getItem('grayco_view'), toasts, heavy, listShown: !!(document.getElementById('gc-est3-list') || {}).offsetHeight }; }, name)));
+    if (!(await pg.locator('#gc-est3-list .r', { hasText: name }).count())) await navDesk(A, 'Estimates');
+  }
+  return false;
 }

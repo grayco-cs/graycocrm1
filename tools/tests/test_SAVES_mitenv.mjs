@@ -9,8 +9,10 @@ import { H, seed, device, reload, cloudWait, pageWait, R, table, arr, find, slee
 const only = process.argv.slice(3); const want = k => !only.length || only.includes(k);
 const W = [];
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
-async function tapText(A, rx){
-  const b = A.page().locator('button:visible, [role=button]:visible').filter({ hasText: rx }).first();
+async function tapText(A, rx, scope){
+  /* the person taps what is on top: GrayCo Field (or the job page / an open sheet), not the Desk behind it */
+  const top = scope || await A.ev(() => { const ids = ['gc-mws-sheet', '_gcJobDash', '_gcJobPick']; for (const id of ids) { const e = document.getElementById(id); if (e && e.offsetHeight) return '#' + id; } return 'body'; });
+  const b = A.page().locator(top + ' button:visible, ' + top + ' [role=button]:visible').filter({ hasText: rx }).first();
   if (!(await b.count())) return false;
   await b.tap({ timeout: 6000 }).catch(() => b.click({ timeout: 6000 }).catch(() => {})); await sleep(2200); return true;
 }
@@ -76,6 +78,7 @@ async function readings(){
   seed();
   const P = await device('phone', 'mit@grayco-cs.com'); W.push(P);
   const pg = P.page();
+  await H.waitFor(P, () => { try { return !!(window._gcClaims && window._gcClaims.forProject && window._gcClaims.forProject('P3')); } catch (e) { return false; } }, null, 30000);   /* the phone has the drying file */
   const opened = await tapText(P, /Moisture reading/);
   await pickJob(P, 'P3'); await sleep(2500);
   const f = pg.locator('.gcbb-moistform:visible').first();
@@ -111,20 +114,19 @@ async function readings(){
 }
 async function receipt(){
   seed();
-  const P = await device('phone', 'pm@grayco-cs.com'); W.push(P);   /* a PM: 🧾 Snap a receipt is one of the job's tools */
-  await P.page().locator('#_gcJobPick.gc-fh .fh-job[data-job="P2"] .fh-n').first().tap({ timeout: 8000 }).catch(() => {}); await sleep(2000);
-  let opened = await tapText(P, /^\s*🧾\s*Snap a receipt\s*$/);
+  const P = await device('phone'); W.push(P);   /* the owner's GrayCo Field home: the 🧾 Snap a receipt tile */
+  let opened = await tapText(P, /Snap a receipt/);
   await sleep(1500);
   const has = await P.page().locator('#_lePrice').count();
   R('field receipt', 'phone', 'form opens', !!has, has ? undefined : await screenSays(P));
   if (has) {
-    await P.ev(() => { const s = document.getElementById('_leJob'); if (s && s.tagName === 'SELECT') { s.value = 'P2'; s.dispatchEvent(new Event('change', { bubbles: true })); } });
+    await P.ev(() => { const s = document.getElementById('_leJob'); if (s && s.tagName === 'SELECT') { s.value = 'P1'; s.dispatchEvent(new Event('change', { bubbles: true })); } });
     await P.page().fill('#_leStore', 'Demo Hardware'); await P.page().fill('#_lePrice', '42.50');
     try { await P.page().setInputFiles('#_lePhoto', { name: 'receipt.png', mimeType: 'image/png', buffer: PNG }); } catch (e) {}
     await sleep(800);
     await P.page().locator('#_leSave').tap().catch(() => P.page().click('#_leSave'));
     await sleep(2000);
-    const db = await cloudWait(() => arr(H.cget('expenses')).find(x => +x.amt === 42.5 && x.pid === 'P2'), 30000);
+    const db = await cloudWait(() => arr(H.cget('expenses')).find(x => +x.amt === 42.5 && x.pid === 'P1'), 30000);
     R('field receipt', 'phone', 'db', !!db, { expenses: arr(H.cget('expenses')).map(x => [x.amt, x.pid]) });
     const photo = await cloudWait(() => [...H.cloud.keys()].some(k => /^doc:/.test(k)) || H.storage.size > 0, 20000);
     R('field receipt photo', 'phone', 'db', !!photo, { docs: [...H.cloud.keys()].filter(k => /^doc:/.test(k)), files: H.storage.size });
@@ -138,7 +140,34 @@ async function receipt(){
   }
   await P.close(); W.length = 0;
 }
-for (const [k, f] of [['env', env], ['read', readings], ['receipt', receipt]].concat(only.includes('equip') ? [['equip', equip]] : [])) {   /* equip = a rental on the job (the Desk's equipment sheet); the field's 🌬 is the drying screen, in 'read' */
+async function clock(){
+  seed();
+  const P = await device('phone', 'crew@grayco-cs.com'); W.push(P);
+  const KEY = 'gc_timeclock_crew_grayco_cs_com';
+  const opened = await tapText(P, /Clock in/);
+  if (!opened) console.log('  (no ⏱ Clock in)', JSON.stringify(await screenSays(P)));
+  await sleep(1500);
+  await tapText(P, /Regular time/, 'body').catch(() => {});   /* after hours: "Is this an emergency call-out?" → Regular time */
+  await sleep(2500);
+  const entry = () => arr(H.cget(KEY)).find(e => e && e.clockIn);
+  const db = await cloudWait(entry, 40000);
+  R('crew clock in', 'phone', 'db', !!db, { cloud: H.cget(KEY), keys: [...H.cloud.keys()].filter(k => /timeclock|timesheet|sitebook/.test(k)), screen: await screenSays(P) });
+  if (db) {
+    /* another phone (a new phone, or the crew member's second device): the clock entry comes back from the cloud */
+    const P2 = await device('phone', 'crew@grayco-cs.com'); W.push(P2);
+    const back = await H.waitFor(P2, id => { try { const o = JSON.parse(localStorage.getItem('gc_timeclock_mine_v1') || 'null'); return !!(o && (o.list || []).some(e => e.id === id)); } catch (e) { return false; } }, db.id, 40000);
+    R('crew clock in', 'phone', 'other phone reads it back', !!back);
+    const D = await device('desk', 'wjohnson@grayco-cs.com'); W.push(D);
+    const onDesk = await H.waitFor(D, id => window.idbGet('timesheets').then(l => (l || []).some(e => e && e.id === id)), db.id, 40000);
+    R('crew clock in', 'phone', 'office (timesheets)', !!onDesk);
+    await reload(P);
+    const kept = await H.waitFor(P, id => { try { const o = JSON.parse(localStorage.getItem('gc_timeclock_mine_v1') || 'null'); return !!(o && (o.list || []).some(e => e.id === id)); } catch (e) { return false; } }, db.id, 20000);
+    R('crew clock in', 'phone', 'reload', !!kept);
+    await P2.close(); await D.close();
+  }
+  await P.close(); W.length = 0;
+}
+for (const [k, f] of [['env', env], ['read', readings], ['receipt', receipt], ['clock', clock]].concat(only.includes('equip') ? [['equip', equip]] : [])) {   /* equip = a rental on the job (the Desk's equipment sheet); the field's 🌬 is the drying screen, in 'read' */
   if (!want(k)) continue;
   try { await f(); } catch (e) { console.log('  ✗ FAIL ' + k + ' crashed: ' + String(e && e.stack || e).slice(0, 600)); await closeAll(W); W.length = 0; }
 }

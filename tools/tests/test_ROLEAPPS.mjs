@@ -69,6 +69,13 @@ const ROLES = {
 const HOMEBTN = { admin: ['appr', 'leads', 'money', 'viewas', 'systems', 'addjob'], pm: ['log', 'photos', 'punch', 'sched', 'msgs', 'appr'], est: ['sendest', 'newcust', 'bids', 'visit', 'myleads', 'quickest', 'roofscout', 'photos'],   /* patch ESTPDF: 📤 Send estimate, 👤 New customer */
   ins: ['emerg', 'oncall', 'drying', 'equip', 'photos', 'claims', 'tpa'], crew: ['clock', 'photos', 'log', 'punch'], office: ['appr', 'msgs', 'match', 'todo'],
   mit: ['mws_read', 'mws_photos', 'mws_equip', 'mws_log', 'mws_auth', 'mws_note', 'clock', 'mws_emerg'] };   /* MITWS: the mitigation field buttons, in work order */
+/* patch PMFIELD (owner 11/16): on a phone the 5-button bars put ✅ Approvals (or the role's first button) bottom-left, 🏠 Home in the
+   middle and 📅 My Schedule where 📸 Photos was; the office bar gets the middle Home + 📅; crew unchanged. The PM-type roles (admin,
+   pm, ins, mit) get the Home dashboard: its quick actions + the role's own tiles (the role tiles follow the jobs, so only "some") */
+const FIELDBAR = { admin: ['Approvals', 'Jobs', 'Home', 'My Schedule', 'More'], pm: ['Approvals', 'My Jobs', 'Home', 'My Schedule', 'More'], est: ['Leads', 'Estimates', 'Home', 'My Schedule', 'More'],
+  ins: ['Claims', 'Leads', 'Home', 'My Schedule', 'More'], mit: ['Drying', 'Jobs', 'Home', 'My Schedule', 'More'], crew: ['Home', 'Today', 'Photos', 'Messages'], office: ['Approvals', 'Messages', 'Home', 'My Schedule', 'More'] };
+Object.keys(ROLES).forEach(k => { ROLES[k].field = FIELDBAR[k]; });
+const DASH = { admin: 1, pm: 1, ins: 1, mit: 1 };
 const ONLY = process.env.ONLY ? process.env.ONLY.split(',') : null;
 const W = []; const closeAll = async () => { for (const c of W) await c.b.close().catch(() => {}); W.length = 0; };
 
@@ -156,7 +163,8 @@ async function roleRun(role, where){
   const bl = await barLabels(c, where);
   ok(JSON.stringify(bl) === JSON.stringify(R[where]), `${role} ${where}: bottom bar ${R[where].join(' · ')}`, bl);
   const btns = await c.ev(([w, a]) => [...document.querySelectorAll(w === 'field' ? '#_gcJobPick .gc-ra-q [data-ra-a]' : '#gc-ra-desk .gc-ra-tiles [data-ra-a]')].map(b => b.getAttribute('data-ra-a')), [where, R.app]);
-  ok(JSON.stringify(btns) === JSON.stringify(HOMEBTN[R.app]), `${role} ${where}: the home buttons ${HOMEBTN[R.app].join(', ')}`, btns);
+  if (where === 'field' && DASH[R.app]) ok(btns.length > 0 && (await c.ev(() => !!document.querySelector('#_gcJobPick .gc-pmf .gc-pmf-q [data-pmf-a="appt"]'))), `${role} field: the Home dashboard (quick actions + the role's tiles: ${btns.join(', ')})`, btns);   /* patch PMFIELD */
+  else ok(JSON.stringify(btns) === JSON.stringify(HOMEBTN[R.app]), `${role} ${where}: the home buttons ${HOMEBTN[R.app].join(', ')}`, btns);
   if (where === 'desk') {
     const look = await c.ev(() => { const d = document.getElementById('gc-ra-desk'); const r = d.getBoundingClientRect(); const body = d.querySelector('.ra-body'); return { full: r.width >= innerWidth - 1 && r.bottom >= innerHeight - 1 && r.top < 120, bg: getComputedStyle(d).backgroundColor, pageScroll: document.scrollingElement.scrollHeight > innerHeight + 2 && getComputedStyle(document.body).overflow !== 'hidden', inner: getComputedStyle(body).overflowY }; });
     ok(look.full && /245, 246, 248/.test(look.bg) && look.inner === 'auto', `${role} desk: a full-window white app (only the cards scroll)`, look);
@@ -195,8 +203,8 @@ async function roleRun(role, where){
   if (keys.includes('more')) {
     await goHome(c, where);
     await c.page().locator((where === 'field' ? '#gc-fh-tabs' : '#gc-ra-dock') + ' [data-t="more"]').first().click({ timeout: 4000 }).catch(() => {}); await sleep(900);
-    const mo = await c.ev(w => { const sh = w === 'field' ? [...document.querySelectorAll('.gc-fh-sheet')].pop() : document.querySelector('.gc-ra-sheet'); if (!sh) return null; return { role: [...sh.querySelectorAll('[data-ra-a]')].map(b => b.getAttribute('data-ra-a')), sys: sh.querySelectorAll('[data-ra-a="nav"]').length, all: !!sh.querySelector('[data-m="tools"]') }; }, where);
-    ok(!!mo && mo.role.length > 0 && (where === 'field' ? mo.all : mo.sys >= 3), `${role} ${where}: More has the role's other buttons and all systems`, mo);
+    const mo = await c.ev(w => { const sh = w === 'field' ? [...document.querySelectorAll('.gc-fh-sheet')].pop() : document.querySelector('.gc-ra-sheet'); if (!sh) return null; return { role: [...sh.querySelectorAll('[data-ra-a]')].map(b => b.getAttribute('data-ra-a')), sys: sh.querySelectorAll('[data-ra-a="nav"]').length, all: !!sh.querySelector('[data-m="tools"]'), less: sh.querySelectorAll('[data-pmf-a^="m-"]').length }; }, where);
+    ok(!!mo && (mo.role.length > 0 || mo.less > 0) && (where === 'field' ? mo.all : mo.sys >= 3), `${role} ${where}: More has the role's other buttons (PMFIELD: the less-than-daily ones) and all systems`, mo);
     if (['admin', 'pm', 'office'].includes(role)) ok(!!mo && mo.role.includes('maint'), `${role} ${where}: More lists 🛠 Maintenance (patch MAINTTAB's tab)`, mo);   /* r17h */
     await c.page().screenshot({ path: SHOTS + `${role}_${where}_more.png` });
     if (where === 'desk' && mo && mo.sys) {

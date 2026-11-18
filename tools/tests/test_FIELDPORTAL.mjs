@@ -116,9 +116,11 @@ try {
   // bottom bar: 📸 Photos replaced 💬 Messages
   await home(O);
   const tb = await O.ev(() => [...document.querySelectorAll('#gc-fh-tabs [data-t]')].map(b => b.getAttribute('data-t') + ':' + b.textContent.trim()));
-  ok(tb.join('|') === 'home:▣Home|jobs:◫Jobs|appr:✅Approvals|photos:📸Photos|more:☰More', 'bottom bar: Home · Jobs · Approvals · 📸 Photos · More', tb);
-  await tap(O, '#gc-fh-tabs [data-t="photos"]'); await sleep(800);
-  ok(await O.ev(() => { const o = document.getElementById('gcuOv'); return !!o && getComputedStyle(o).display !== 'none'; }), 'the bar\'s 📸 Photos opens GrayCo Photos');
+  /* patch PMFIELD (owner 11/16): ✅ Approvals bottom-left · Jobs · 🏠 Home in the middle · 📅 My Schedule (where 📸 Photos was) · More;
+     📸 Photos is a big Home tile ("Photo to a job") and on every job page */
+  ok(tb.map(x => x.split(':')[0]).join('|') === 'appr|jobs|home|ra-sched|more', 'bottom bar: ✅ Approvals · Jobs · 🏠 Home · 📅 My Schedule · More', tb);
+  await tap(O, '#_gcJobPick .gc-pmf [data-pmf-a="photo"]'); await sleep(800);
+  ok(await O.ev(() => { const o = document.getElementById('gcuOv'); return !!o && getComputedStyle(o).display !== 'none'; }), 'Home\'s 📸 Photo to a job opens GrayCo Photos');
   // the message picker: the Jobs tab's list; while nothing is loaded it says so and fills itself in
   await home(O);
   const pk = await O.ev(async () => {
