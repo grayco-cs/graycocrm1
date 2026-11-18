@@ -69062,6 +69062,9 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
         var _tq = new Promise(function(_r, rej){ ST.call(window, function(){ rej(new Error('no answer')); }, 45000); });
         return Promise.race([Promise.resolve(now(key, val)), _tq]).then(function(res){
           if(res && res.blocked) return true;                          /* the shrink guard kept the cloud copy */
+          /* a send refused on this computer (the cloud-busy pause for this list, no signal) comes back from NETSAFE's wrapper as
+             { offline:true } instead of an error — it was not sent: keep it and try again (it was dropped as sent) */
+          if(res && res.offline) throw new Error('not sent (the cloud is busy or there is no connection)');
           if(res && typeof res.ok === 'boolean' && !res.ok) throw new Error('cloud answered '+res.status);
           if(lv && isIdList(lv.list) && !item.recover) BASE[key] = idsOf(lv.list);
           return true;
