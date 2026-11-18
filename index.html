@@ -141902,6 +141902,8 @@ async function fileEvents(events){
   filing = true;
   var done = [], projCh = {}, docs = [], invs = [], logs = [];
   function onProj(pid, fn){ pid = s(pid); if (!pid || !proj(pid)) return; var prev = projCh[pid]; projCh[pid] = prev ? function(q){ prev(q); fn(q); } : fn; }
+  var subCh = {};   /* patch SUP1099: the changes to each sub's record, applied once after the loop */
+  function onSub(sid, fn){ sid = s(sid); if (!sid) return; var prev = subCh[sid]; subCh[sid] = prev ? function(x){ prev(x); fn(x); } : fn; }
   var onJob = {};   /* events whose job changes are already there (a re-check) */
   try {
     for (var i = 0; i < events.length; i++) {
@@ -141940,7 +141942,7 @@ async function fileEvents(events){
           onProj(pid, function(q){ activity(q, 'SPA_' + ev.id, '☑ ' + nm + ' finished punch item: ' + (d.item || '')); });
         } else if (ev.kind === 'paper') {
           docs = docs.concat(fileDocs(ev, d.files, d.paper === 'coi' ? 'Insurance (COI)' : d.paper === 'w9' ? 'W-9' : d.paper === 'lien' ? 'Lien Waivers' : 'Sub agreement').map(function(x){ x.pid = pid || ''; x.unfiled = !pid; return x; }));
-          if (!alreadyOnSub(ev)) changeSub(ev.sub_id, function(x){
+          if (!alreadyOnSub(ev)) onSub(ev.sub_id, function(x){   /* patch SUP1099: every paper of one look in ONE change of the record (three at once lost each other) */
             if (d.paper === 'w9') x.w9 = true;
             if (d.paper === 'coi') { x.coi = true; if (d.exp) x.insExp = d.exp; }
             if (d.paper === 'agreement') x.subAgreement = true;
@@ -141969,7 +141971,7 @@ async function fileEvents(events){
           onProj(pid, function(q){ activity(q, 'SPA_' + ev.id, '📅 ' + nm + (d.op === 'cancel' ? ' cancelled ' : d.op === 'update' ? ' moved ' : ' scheduled ') + (d.task || 'their work') + ' ' + (d.line || '')); });
           try { if (window._gcSubSched) nST(function(){ window._gcSubSched.refresh(); }, 50); } catch (e) {}
         } else if (ev.kind === 'lang') {
-          if (!alreadyOnSub(ev)) changeSub(ev.sub_id, function(x){ x.lang = d.lang === 'es' ? 'es' : 'en'; });
+          if (!alreadyOnSub(ev)) onSub(ev.sub_id, function(x){ x.lang = d.lang === 'es' ? 'es' : 'en'; });
         } else if (ev.kind === 'receipt') {   /* patch POGUARD: 🧾 a receipt / expense from the sub portal → a pending expense "SPR_<id>" (gc-patch POGUARD); ✏️ Add PO moves it */
           if (!(window._gcPoGuard && window._gcPoGuard.fileSubReceipt)) { onProj = _onProj; return; }   /* not loaded yet: filed on the next look */
           window._gcPoGuard.fileSubReceipt(ev);
@@ -141980,6 +141982,7 @@ async function fileEvents(events){
         done.push(ev.id);
       })(ev, d, nm, pid);
     }
+    for (var sk in subCh) { try { await changeSub(sk, subCh[sk]); } catch (_sc) {} }   /* patch SUP1099 */
     if (invs.length) await addToList('invs', invs, '_setInvoices');
     if (docs.length) await addToList('projectDocs', docs, '_setProjectDocs');
     if (logs.length) await addToList('logs', logs, null);

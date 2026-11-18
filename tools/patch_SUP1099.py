@@ -36,6 +36,21 @@ EDITS = [
   'e.jsxs("div",{style:ye.employment==="1099"?{display:"none"}:Ke,children:[e.jsx("b",{style:{fontSize:12,color:u.acc,display:"block",marginBottom:6},children:"🏥 Insurance"})'),
  ('e.jsx("button",{style:{...ht,background:"#0f766e",color:"#fff"},onClick:()=>{window._gcPayrollOpenEmp&&window._gcPayrollOpenEmp(ye.id,ye.name)},children:"🧾 W-4 & taxes →"}),',
   'ye.employment!=="1099"&&e.jsx("button",{style:{...ht,background:"#0f766e",color:"#fff"},onClick:()=>{window._gcPayrollOpenEmp&&window._gcPayrollOpenEmp(ye.id,ye.name)},children:"🧾 W-4 & taxes →"}),/* patch SUP1099: no W-4 / payroll tax for a 1099 contractor */'),
+ # ── the sub portal's papers (patch SUB filing): all papers of one look in ONE change of the sub record (W-9 + COI + agreement
+ #    sent together lost each other: three changes, each from its own copy of the list) ──
+ ("""          if (!alreadyOnSub(ev)) changeSub(ev.sub_id, function(x){
+            if (d.paper === 'w9') x.w9 = true;""", """          if (!alreadyOnSub(ev)) onSub(ev.sub_id, function(x){   /* patch SUP1099: every paper of one look in ONE change of the record (three at once lost each other) */
+            if (d.paper === 'w9') x.w9 = true;"""),
+ ("""          if (!alreadyOnSub(ev)) changeSub(ev.sub_id, function(x){ x.lang = d.lang === 'es' ? 'es' : 'en'; });""",
+  """          if (!alreadyOnSub(ev)) onSub(ev.sub_id, function(x){ x.lang = d.lang === 'es' ? 'es' : 'en'; });"""),
+ ("""    if (invs.length) await addToList('invs', invs, '_setInvoices');
+    if (docs.length) await addToList('projectDocs', docs, '_setProjectDocs');""", """    for (var sk in subCh) { try { await changeSub(sk, subCh[sk]); } catch (_sc) {} }   /* patch SUP1099 */
+    if (invs.length) await addToList('invs', invs, '_setInvoices');
+    if (docs.length) await addToList('projectDocs', docs, '_setProjectDocs');"""),
+ ("""  function onProj(pid, fn){ pid = s(pid); if (!pid || !proj(pid)) return; var prev = projCh[pid]; projCh[pid] = prev ? function(q){ prev(q); fn(q); } : fn; }""",
+  """  function onProj(pid, fn){ pid = s(pid); if (!pid || !proj(pid)) return; var prev = projCh[pid]; projCh[pid] = prev ? function(q){ prev(q); fn(q); } : fn; }
+  var subCh = {};   /* patch SUP1099: the changes to each sub's record, applied once after the loop */
+  function onSub(sid, fn){ sid = s(sid); if (!sid) return; var prev = subCh[sid]; subCh[sid] = prev ? function(x){ prev(x); fn(x); } : fn; }"""),
  # ── the Employees list: Pay Type says 1099 ──
  ('children:ye.role})}),e.jsx("td",{style:{padding:"6px 10px",fontSize:11},children:ye.payType==="owner"?"Owner"',
   'children:ye.role})}),e.jsx("td",{style:{padding:"6px 10px",fontSize:11},children:ye.employment==="1099"?"1099 contractor (invoices)":ye.payType==="owner"?"Owner"'),
