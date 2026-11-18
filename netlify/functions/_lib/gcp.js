@@ -556,7 +556,7 @@ function x0(due){ return due.some(function(x){ return x.days <= 7; }); }
    ones set to warn that early: warnDays), the apply-by date reached, and expired. One e-mail to the admins + office and one Office To-Do per day with all of them, with the fee. ── */
 const K_CERTS = 'gc_certs', K_CERTST = 'gc_certs_state';
 function addDays(d, n){ const t = Date.parse(ymd(d) + 'T12:00:00Z'); return isNaN(t) ? '' : new Date(t + n * 864e5).toISOString().slice(0, 10); }
-const CERT_WARN = { tn_lic: 60, iicrc_tech: 90, rrp_renovator: 60, tdec_ind: 60 };   /* the types that need lead time; the rest warn at 30 */
+const CERT_WARN = { tn_lic: 60, iicrc_tech: 90, rrp_renovator: 60, tdec_ind: 60, epa_rrp_firm: 60, mdeq_firm: 60, tdec_firm: 60, adh_firm: 60, mdeq_ind: 60, adh_ind: 60 };   /* the types that need lead time; the rest warn at 30 · EPAHUD: the EPA / state lead firm + individual certificates warn at 60 / 30 / 7 too (the EPAHUD types carry warnDays 60 themselves) */
 function certWarn(c){ const w = parseInt(c && c.warnDays, 10); return w === 90 || w === 60 || w === 30 ? w : (CERT_WARN[s(c && c.tpl)] || 30); }
 function certApplyBy(c){ const e = ymd(c && c.expires); if (!e) return ''; const n = Math.max(0, Math.min(365, parseInt(c.leadDays, 10) || 0)); return addDays(e, -n); }
 function certStep(c, today){
