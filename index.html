@@ -238896,8 +238896,8 @@ function paintAll(){ try { if (JD() && JD().paint) JD().paint(); } catch (e) {} 
 function fieldPaint(force){
   try {
     var ov = D.getElementById('_gcJobDash'), cur = D.getElementById('gc-jd-f');
-    var pid = ov && ov.getAttribute('data-gcfp'), p = pid ? proj(pid) : null;
-    if (!p || !JD()) { if (cur) cur.remove(); return; }
+    var cj = W._gcCurrentJob, pid = ov && (ov.getAttribute('data-gcfp') || (cj && typeof cj === 'object' ? cj.id : cj)), p = pid ? proj(pid) : null;   /* the field shell may not have marked the page yet: the job it opened */
+    if (!ov || !p || !JD()) { if (cur) cur.remove(); return; }
     var J = obj(p.jobDocs); if (!canAdd(p) && !arr(J.items).length) { if (cur) cur.remove(); return; }
     var body = ov.querySelector('.gcfp-body') || ov.children[1]; if (!body) return;
     try { JD().css(); JD().signedRefresh(p.id); } catch (e) {}
