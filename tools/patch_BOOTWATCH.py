@@ -4,7 +4,7 @@
 Why (11/18): a PM could not open GrayCo Field on his phone and nobody knew. The device report (PERFREP) only goes out
 after sign-in, and only when something is dirty; his phone's last report was 11/04 on 33.164 (an old cached copy, or a
 sign-in that failed). This patch:
-  * puts tools/bootwatch_early.js (with tools/bootwatch_late.js inside it as text, compiled only when first needed) right after LSGUARD (the first script of the page): every open, signed in or not, records
+  * puts tools/bootwatch_early.js right after LSGUARD (tools/bootwatch_late.js just before it as text, compiled only when needed) (the first script of the page): every open, signed in or not, records
     its steps (page read, scripts loaded, sign-in screen, Sign in pressed -- e-mail domain + hash only, the sign-in error
     text, signed in, first screen Desk / Field) with page errors before the first screen, "stuck" conditions and an old
     build (older than /version.txt), and sends it to netlify/functions/bootwatch.js (gc_kv gc_bootrep_<device>) only when
@@ -17,20 +17,44 @@ sign-in that failed). This patch:
 Kill switch (a device): localStorage gc_bootwatch_off = '1'.  Console: _gcBootWatch.state()
 Usage: python3 tools/patch_BOOTWATCH.py [index.html]
 """
-import sys, os
+import sys, os, re
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+def strip_comments(js):
+    """Drop the block comments that START a line (the long notes; the page's copy only needs the code). A comment that starts
+    a line can never be inside a string or a regex, so this is safe; comments after code on a line are kept."""
+    out, i, lines = [], 0, js.split('\n')
+    while i < len(lines):
+        ln = lines[i]; t = ln.lstrip()
+        if t.startswith('/*'):
+            rest = t[2:]; j = i
+            while '*/' not in rest:
+                j += 1; rest = lines[j]
+            after = rest[rest.index('*/') + 2:].strip()
+            if after: out.append(ln[:len(ln) - len(t)] + after)
+            i = j + 1; continue
+        out.append(ln); i += 1
+    return '\n'.join(out)
+
+def scripts():
+    """(early, late): exactly what goes into the page (tests compare against this)."""
+    early = open(os.path.join(HERE, 'bootwatch_early.js'), encoding='utf-8').read()
+    late = open(os.path.join(HERE, 'bootwatch_late.js'), encoding='utf-8').read()
+    assert '</script' not in early and '</script' not in late
+    # the header note stays (it says what this is); the other notes are dropped from the page's copy
+    head_end = early.index('*/') + 2
+    early = early[:head_end] + strip_comments(early[head_end:])
+    return early.rstrip('\n'), strip_comments(late).strip('\n')
+
+if len(sys.argv) > 1 and sys.argv[1] == '--print':
+    e, l = scripts(); sys.stdout.write(e + '\n\u0000\n' + l); sys.exit(0)
 path = sys.argv[1] if len(sys.argv) > 1 else 'index.html'
 src = open(path, encoding='utf-8').read()
 MARK = '__GC_PATCH_BOOTWATCH__'
 if MARK in src:
     print('BOOTWATCH: already patched'); sys.exit(0)
-HERE = os.path.dirname(os.path.abspath(__file__))
-EARLY = open(os.path.join(HERE, 'bootwatch_early.js'), encoding='utf-8').read()
-LATE = open(os.path.join(HERE, 'bootwatch_late.js'), encoding='utf-8').read()
-assert MARK in EARLY and '</script' not in EARLY and '</script' not in LATE
-# the late part goes in as TEXT (a JS string: scanned, not compiled, until it is first needed)
-import json
-assert EARLY.count("'__BW_LATE__'") == 1
-EARLY = EARLY.replace("'__BW_LATE__'", json.dumps(LATE, ensure_ascii=True).replace('</', '<\\/'))
+EARLY, LATE = scripts()
+assert MARK in EARLY
 
 def rep(old, new):
     global src
@@ -38,8 +62,10 @@ def rep(old, new):
     src = src.replace(old, new)
 
 # 1. the early script, right after LSGUARD (which must stay the first script of the page)
+#    The rarely needed part (tools/bootwatch_late.js) goes in just before it as TEXT (type="text/plain": the browser does not
+#    compile it); the early script compiles it only when first needed.
 rep('</script>\n<script id="gc-patch-saves-lsheld">\n',
-    '</script>\n<script id="gc-patch-bootwatch">\n' + EARLY.rstrip('\n') + '\n</script>\n<script id="gc-patch-saves-lsheld">\n')
+    '</script>\n<script type="text/plain" id="gc-bw-late">\n' + LATE + '\n</script>\n<script id="gc-patch-bootwatch">\n' + EARLY + '\n</script>\n<script id="gc-patch-saves-lsheld">\n')
 
 # 2. the CRM's own version check: one update path, one bar, one request at open
 rep("""  function showUpdateBar(remote){

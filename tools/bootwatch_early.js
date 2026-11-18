@@ -52,14 +52,14 @@ try {
   var swUrl = function(){ try { var c = NAV.serviceWorker && NAV.serviceWorker.controller; return c ? path(c.scriptURL) || '?' : ''; } catch (e) { return ''; } };
   var sess = /"access_token"/.test(s(get('gc_auth_v1')));
   var B = { id: T0.toString(36) + Math.random().toString(36).slice(2, 5), at: new Date(T0).toISOString(), build: '', prev: s(get('gc_build_id')).slice(0, 40),
-    ua: UA.slice(0, 160), kind: '', sa: NAV.standalone === true, sw: swUrl(), on: NAV.onLine !== false, sess: sess,
+    ua: UA.slice(0, 160), kind: '', sa: NAV.standalone === true, sw: '', on: NAV.onLine !== false, sess: sess,
     nav: '', m: {}, si: [], errs: [], stuck: [], p: {} };
   /* read when the page is in (the load event), not now: nothing here may slow the open */
   var navInfo = function(){ try { var ne = PF.getEntriesByType && PF.getEntriesByType('navigation')[0];
     if (ne) B.nav = s(ne.type) + (ne.deliveryType ? ' ' + ne.deliveryType : '') + (typeof ne.transferSize === 'number' ? ' ts' + ne.transferSize : ''); } catch (e) {}
     if (!B.sa) B.sa = mq('(display-mode: standalone)'); };
   var fromCache = function(){
-    if (B.sw && !/crm-push-sw\.js$/.test(B.sw)) return 'sw';
+    B.sw = swUrl() || B.sw; if (B.sw && !/crm-push-sw\.js$/.test(B.sw)) return 'sw';
     try { var e = PF.getEntriesByType('navigation')[0]; if (e && (e.deliveryType === 'cache' || (e.transferSize === 0 && e.decodedBodySize > 0))) return 'http-cache'; } catch (x) {}
     return '';
   };
@@ -88,7 +88,7 @@ try {
   var NS_K = 'gc_bw_ns', BY_K = 'gc_bw_bytes';
   try { D.addEventListener('DOMContentLoaded', function(){ mark('html'); B.build = s(W.__GC_BUILD_ID__).slice(0, 40); try { set(NS_K, String(D.scripts.length)); } catch (e) {} NST.call(W, checkVersion, 1500); }); } catch (e) {}
   try { W.addEventListener('load', function(){
-    mark('load'); navInfo();
+    mark('load'); navInfo(); B.sw = swUrl(); if (W._crm || H.classList.contains('_fieldmode')) mark('ready');
     try { var e = PF.getEntriesByType('navigation')[0]; if (e) { if (e.responseStart > 0) B.m.ttfb = Math.round(e.responseStart); if (e.responseEnd > 0) B.m.dl = Math.round(e.responseEnd);
       B.bytes = { tr: e.transferSize || 0, enc: e.encodedBodySize || 0, dec: e.decodedBodySize || 0 }; if (e.encodedBodySize > 1e5) set(BY_K, String(e.encodedBodySize)); } } catch (x) {}
   }); } catch (e) {}
@@ -104,6 +104,7 @@ try {
       var v = s(em.value).trim().toLowerCase(), at = v.lastIndexOf('@');
       att = { t: ms(), dom: at > 0 ? v.slice(at + 1).slice(0, 60) : (v ? '(no @)' : '(empty)'), h: v ? hash(v) : '', on: NAV.onLine !== false };
       if (B.si.length >= 4) B.si.shift(); B.si.push(att); mark('try'); dirty = true; lastMsg = '\u0000';
+      watchGate();
       if (!pollOn) { pollOn = true; NST.call(W, poll, 400); }   /* signing in again later (after the idle sign-out) is watched too */
     } catch (e) {}
   }, true); } catch (e) {}
@@ -120,15 +121,15 @@ try {
         if (D.getElementById('_gcJobPick') || D.getElementById('_gcFieldHomeOv')) return 'field home';
         return '';
       }
-      if (D.querySelector('#root>div>aside')) return 'desk ' + s(get('grayco_view') || 'dashboard').slice(0, 30);
+      var r = D.getElementById('root'), c = r && r.firstElementChild;
+      if (c && c.tagName === 'DIV') for (var k = c.firstElementChild; k; k = k.nextElementSibling) if (k.tagName === 'ASIDE') return 'desk ' + s(get('grayco_view') || 'dashboard').slice(0, 30);
     } catch (e) {}
     return '';
   };
   /* the rest (the progress screen, the update banner, sending) is compiled only when first needed: a normal open never pays
-     for it before its first screen (tools/bootwatch_late.js, put here by the patch as text) */
+     for it before its first screen (tools/bootwatch_late.js: the patch puts it just before this script as <script type="text/plain">) */
   var onScreenImpl = null, drawImpl = null, bannerImpl = null, updateImpl = null, sendImpl = null, bar = null, lateOn = false;
-  var LATE = '__BW_LATE__';
-  function L(){ if (lateOn) return; lateOn = true; try { eval(LATE); } catch (e) { try { console.warn('[GC] BOOTWATCH late part:', e && e.message || e); } catch (x) {} } }
+  function L(){ if (lateOn) return; lateOn = true; try { var t = D.getElementById('gc-bw-late'); eval(t ? t.textContent : ''); } catch (e) { try { console.warn('[GC] BOOTWATCH late part:', e && e.message || e); } catch (x) {} } }
   var onScreen = function(){ L(); return onScreenImpl ? onScreenImpl() : '?'; };
   function banner(live){ L(); if (bannerImpl) bannerImpl(live); }
   function update(){ L(); return updateImpl ? updateImpl() : false; }
@@ -177,55 +178,43 @@ try {
      counted against the last open's count, with the last open's size in MB); then "Starting" (read) and "Loading your jobs"
      (every script in). Gone the moment the first screen is on (or 10 s after the app is ready, whatever it shows). After 45 s:
      "Still loading — weak signal? Tap to retry" and a stuck report. On a fast open it never appears. */
-  var cov = null, covWant = 0, covSlow = false;
+  var cov = null, covWant = 0, covSlow = false, gateMo = null;
+  /* Sign in pressed: the moment the sign-in screen goes (signed in), the progress screen is there — not 400 ms later. Watched
+     only from the press until the screen goes (or 60 s). */
+  function watchGate(){
+    try {
+      if (gateMo || typeof MutationObserver !== 'function') return;
+      gateMo = new MutationObserver(function(){ try { if (!gateUp() && authed()) { gateMo.disconnect(); gateMo = null; if (B.m.paint == null) { mark('signed', authed()); opening(false, authed(), true); } } } catch (e) {} });
+      gateMo.observe(H, { childList: true, subtree: false }); if (D.body) gateMo.observe(D.body, { childList: true, subtree: false });
+      NST.call(W, function(){ if (gateMo) { gateMo.disconnect(); gateMo = null; } }, 60000);
+    } catch (e) {}
+  }
   /* the CRM's own old sign-in screen while signed in here is a step (patch SIGNIN finds the person and reopens): covered 8 s */
   var appLog = 0;
   var other = function(){
     if (H.classList.contains('gc-applogin')) { if (!appLog) appLog = ms(); if (ms() - appLog > 8000) return true; } else appLog = 0;
     return H.classList.contains('gc-boot-field') || !!D.getElementById('gc-boot-cover') || !!D.getElementById('gc-bootsafe');
   };
-  function opening(g, au){
+  function opening(g, au, now){
     try {
       var since = Math.max(B.m.signed || 0, B.m.try || 0);
-      var want = !!au && !g && B.m.paint == null && !(B.m.ready != null && ms() - B.m.ready > 10000) && (!other() || covSlow);
+      /* 45 s after signing in (or opening signed in) with nothing to use: shown over anything (the Field splash too) */
+      var late45 = B.m.signed != null && ms() - since > 45000;
+      var want = !!au && !g && B.m.paint == null && !(B.m.ready != null && ms() - B.m.ready > 10000) && (!other() || covSlow || late45);
       if (!want) { covWant = 0; if (cov) { try { cov.remove(); } catch (e) {} cov = null; B.m.coverOff = ms(); } return; }
       if (!covWant) covWant = ms();
-      if (!cov && ms() - covWant < 600) return;
+      if (!cov && !now && !(B.m.try != null && B.m.signed != null) && ms() - covWant < 600) return;   /* right after a sign-in: at once */
       L(); if (drawImpl) drawImpl(since);
+      /* signed in before the app was ready (or the progress screen up 3 s): reported, with how long it took */
+      if (cov && !B.p.opening && (B.m.try != null || ms() - B.m.cover > 3000)) problem('opening');
     } catch (e) {}
   }
 
 
   /* ── an old build: /version.txt (no-store) against this page's build ── */
-  var num = function(v){ var m = /^(\d+)\.(\d+)(?:-(\d{4}-\d\d-\d\d))?(.*)$/.exec(s(v).trim()); return m ? [+m[1], +m[2], m[3] || '', m[4] || ''] : null; };
-  var older = function(mine, live){
-    mine = s(mine).trim(); live = s(live).trim(); if (!mine || !live || mine === live) return false;
-    var a = num(mine), b = num(live); if (!a || !b) return false;
-    for (var i = 0; i < 4; i++) { if (a[i] < b[i]) return true; if (a[i] > b[i]) return false; }
-    return false;
-  };
-  var LIVE = { v: '', at: 0 }, checking = null;
-  var fetchLive = function(){
-    if (checking) return checking;
-    checking = NF.call(W, '/version.txt?t=' + Date.now(), { cache: 'no-store' }).then(function(r){ return r && r.ok ? r.text() : ''; }, function(){ return ''; })
-      .then(function(v){ checking = null; v = s(v).trim().slice(0, 60); if (v) LIVE = { v: v, at: Date.now() }; return v; });
-    return checking;
-  };
-  function checkVersion(resumed){
-    return fetchLive().then(function(live){
-      var mine = B.build = s(W.__GC_BUILD_ID__ || B.build).slice(0, 40);
-      if (!older(mine, live)) return false;
-      var src = fromCache();
-      var healed = +get(HEAL_K) || 0, recent = healed && Date.now() - healed < 10 * 60e3;
-      B.old = { mine: mine, live: live, src: src || (resumed ? 'resumed' : 'network'), t: ms() };
-      if (recent) B.old.afterUpdate = Math.round((Date.now() - healed) / 1000) + ' s after Tap to update';
-      problem('old');
-      /* the banner: a cached / service-worker copy, an app back from the background, or the sign-in screen (the CRM's own
-         update bar cannot show over it); a fresh page while signed in gets the CRM's own bar (same update) */
-      if (!recent && (src || resumed || gateUp() || !authed())) banner(live);
-      return true;
-    });
-  }
+  var LIVE = { v: '', at: 0 }, olderImpl = null, checkImpl = null;
+  var older = function(mine, live){ L(); return olderImpl ? olderImpl(mine, live) : false; };
+  function checkVersion(resumed){ L(); return checkImpl ? checkImpl(resumed) : Promise.resolve(false); }
   /* the home-screen app comes back from the background (not a new open): look again, at most every 10 minutes */
   var lastResume = 0;
   var resume = function(){ if (D.visibilityState === 'hidden' || Date.now() - lastResume < 10 * 60e3 || Date.now() - T0 < 60e3) return; lastResume = Date.now(); checkVersion(true); };
@@ -233,7 +222,9 @@ try {
 
   /* ── sending ── */
   var isProblem = function(){ for (var k in B.p) return true; return false; };
-  function heartbeat(){ if (get(HB_K) !== day()) { hbDue = true; NST.call(W, function(){ send('hb'); }, 1500); } }
+  /* once a day, when the first screen is on — sent when the page is in (so it carries the real load times), 30 s at most */
+  function heartbeat(){ if (get(HB_K) === day()) return; hbDue = true; var t0 = Date.now();
+    var go = function(){ if (B.m.load == null && Date.now() - t0 < 30000) { NST.call(W, go, 1000); return; } send('hb'); }; NST.call(W, go, 1500); }
   function soon(){ if (!timer) timer = NST.call(W, function(){ timer = null; send('problem'); }, 1500); }
   var leaving = function(){
     try {

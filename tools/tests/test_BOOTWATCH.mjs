@@ -158,8 +158,13 @@ if (want(3)) {
   let nb = 0; pb.on('domcontentloaded', () => { nb++; });
   ok(!!(await waitFor(B, () => !!document.getElementById('gc-update-now'), null, 20000)), 'signed in, fresh page: the CRM\'s own "Yes, update" bar shows');
   ok(await B.ev(() => !document.getElementById('gc-bw-update')), 'only one update bar on screen');
+  const navT = () => B.ev(() => { const a = JSON.parse(sessionStorage.getItem('__navs') || '[]'); a.push((performance.getEntriesByType('navigation')[0] || {}).type + ' @' + location.pathname); sessionStorage.setItem('__navs', JSON.stringify(a)); return a; }).catch(() => []);
+  await navT(); pb.on('load', () => { navT(); });
   await pb.locator('#gc-update-now').click(); await sleep(9000);
-  ok(nb === 1 && await B.ev(() => +localStorage.getItem('gc_bw_heal_at') > 0), '"Yes, update" goes through the same update: one reload, remembered for the 10-minute rule', { nb });
+  const heal = await B.ev(() => +localStorage.getItem('gc_bw_heal_at') || 0), again = await B.ev(() => window._gcBootWatch.update());
+  const nl = await navT();
+  ok(nb >= 1 && heal > 0 && again === false, '"Yes, update" goes through the same update (remembered for the 10-minute rule; asking again does nothing)', { nb, nl });
+  ok(nl.filter(x => /^reload/.test(x)).length === 1, 'the update reloads the page once' + (nb > 1 ? ' (then the page opened ' + (nb - 1) + ' more time(s): ' + nl.slice(1).join(', ') + ')' : ''), nl);
   await B.close(); VER = '';
 }
 
@@ -178,6 +183,8 @@ if (want(4) || want(5)) {
   ok(capsFor(d).length === n0, 'the next open (heartbeat already sent today): nothing at all, not even when the page is left', capsFor(d).slice(n0).map(x => x.json.boot));
   if (want(5)) {
     console.log('5 · stuck: React never arrives');
+    /* the app never draws (as when its code fails): #root is kept empty */
+    await A.page().addInitScript(() => { new MutationObserver(() => { const r = document.getElementById('root'); if (r && r.firstChild) r.textContent = ''; }).observe(document, { childList: true, subtree: true }); });
     BLOCK_REACT = true; await A.goto();
     const c = await until(() => capsFor(d).slice(n0).find(x => (x.json.boot.stuck || []).length), 60000);
     const b = c && c.json.boot;
@@ -261,8 +268,9 @@ if (want(6)) {
   console.log('    screens: ' + S.filter((x, i) => i === 0 || ['gate', 'cover', 'splash', 'field', 'applogin', 'rs'].some(k => x[k] !== S[i - 1][k])).map(x => (x.t / 1000).toFixed(1) + 's ' + ['gate', 'cover', 'splash', 'bootCover', 'applogin', 'field'].filter(k => x[k]).join('+') + ' ' + x.rs).join(' | '));
   const d = await dev(A); await sleep(4000);
   const all = ((rowOf(d) || {}).boots || []);
-  const early = all.find(x => x.m && x.m.cover != null);
-  ok(early && early.m.try > 0 && early.m.dl > early.m.ttfb && early.m.html > 0 && early.m.load >= early.m.html, 'the report has the real load times (ttfb, dl, html, load) and when the cover showed', all.map(x => x.m));
+  const early = all.find(x => x.m && x.m.cover != null), timed = all.find(x => x.m && x.m.dl > x.m.ttfb && x.m.html > 0 && x.m.load >= x.m.html);
+  ok(early && early.m.try > 0 && early.m.signed >= early.m.try && early.p && early.p.opening, 'the open signed in early is reported: the sign-in and when the progress screen showed', all.map(x => ({ m: x.m, p: x.p })));
+  ok(!!timed, 'the report has the real load times (first byte, downloaded, read, load event)', all.map(x => x.m));
   ok(all.some(x => x.m && x.m.ready > 0) && all.some(x => x.m && x.m.paint > 0 && /field/.test(x.m.paintV || '')), 'app ready and the first screen (Field) are recorded', all.map(x => x.m));
   await A.close(); srv.close();
   console.log('6b · a signal so weak it is not ready 45 s after signing in');
@@ -270,7 +278,14 @@ if (want(6)) {
   const u0 = Date.now(); pb.goto('http://' + srv2.host + '/', { waitUntil: 'commit', timeout: 300000 }).catch(() => {});
   await pb.waitForSelector('#gc-auth-email', { state: 'visible', timeout: 90000 }).catch(() => {});
   await pb.fill('#gc-auth-email', PM); await pb.fill('#gc-auth-password', 'pw'); await pb.click('#gc-auth-submit');
-  const slow = await waitFor(B, () => { const t = document.getElementById('gc-bw-op-t'), c = document.getElementById('gc-bw-opening'); return t && c && /Still loading — weak signal\?/.test(t.textContent) && /Tap to retry/.test(c.textContent) && c.textContent; }, null, 80000);
+  const T6 = []; let slow = null; const s0 = Date.now();
+  while (Date.now() - s0 < 90000 && !slow) {
+    const st = await pb.evaluate(() => { const t = document.getElementById('gc-bw-op-t'), c = document.getElementById('gc-bw-opening'), H = document.documentElement, bw = window._gcBootWatch && window._gcBootWatch.state();
+      return { slow: t && c && /Still loading — weak signal\?/.test(t.textContent) && /Tap to retry/.test(c.textContent) ? c.textContent : null, cover: !!c, title: t ? t.textContent : '', gate: !!document.getElementById('gc-auth-email'),
+        cls: H.className.slice(0, 80), rs: document.readyState, m: bw && bw.boot.m, auth: !!(window.__GC_AUTH__ && window.__GC_AUTH__.email()) }; }).catch(e => ({ err: String(e).slice(0, 80) }));
+    slow = st.slow; T6.push(Object.assign({ t: Date.now() - u0 }, st)); await sleep(1000);
+  }
+  if (!slow) console.log('    6b screens: ' + T6.filter((x, i) => i === 0 || JSON.stringify([x.cover, x.gate, x.cls, x.rs, x.title, x.auth]) !== JSON.stringify([T6[i - 1].cover, T6[i - 1].gate, T6[i - 1].cls, T6[i - 1].rs, T6[i - 1].title, T6[i - 1].auth])).map(x => (x.t / 1000).toFixed(0) + 's ' + JSON.stringify(x)).join('\n      ').slice(0, 3000));
   ok(!!slow, '45 s after signing in: "Still loading — weak signal? Tap to retry" (' + ((Date.now() - u0) / 1000).toFixed(0) + ' s)', slow);
   const d2 = await dev(B);
   const rep = await until(() => capsFor(d2).find(x => (x.json.boot.stuck || []).some(s => s.k === 'slow')), 40000);

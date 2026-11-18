@@ -37,7 +37,7 @@
       }
       var st = stage(), bar = D.getElementById('gc-bw-op-bar'), sub = D.getElementById('gc-bw-op-s');
       if (bar) bar.style.width = st[0] + '%';
-      if (ms() - Math.max(since, covWant - 600) > 45000 && !covSlow) {
+      if (ms() - since > 45000 && !covSlow) {
         covSlow = true; mark('slow'); stuck('slow', 'signed in, not ready after 45 s: ' + st[1] + (NAV.onLine === false ? ' (offline)' : ''));
         var t = D.getElementById('gc-bw-op-t'); if (t) t.textContent = 'Still loading — weak signal?';
         cov.style.cursor = 'pointer'; st[1] = '<b style="display:inline-block;margin-top:6px;padding:10px 22px;border-radius:8px;background:#2563eb;color:#fff">Tap to retry</b><br><span style="font-size:12px">' + st[1] + '</span>';
@@ -127,4 +127,35 @@
       if (!ok) fail();
       return ok;
     } catch (e) { return false; }
+  };
+
+  /* ── an old build: /version.txt (no-store) against this page's build ── */
+  var num = function(v){ var m = /^(\d+)\.(\d+)(?:-(\d{4}-\d\d-\d\d))?(.*)$/.exec(s(v).trim()); return m ? [+m[1], +m[2], m[3] || '', m[4] || ''] : null; };
+  olderImpl = function(mine, live){
+    mine = s(mine).trim(); live = s(live).trim(); if (!mine || !live || mine === live) return false;
+    var a = num(mine), b = num(live); if (!a || !b) return false;
+    for (var i = 0; i < 4; i++) { if (a[i] < b[i]) return true; if (a[i] > b[i]) return false; }
+    return false;
+  };
+  var checking = null;
+  var fetchLive = function(){
+    if (checking) return checking;
+    checking = NF.call(W, '/version.txt?t=' + Date.now(), { cache: 'no-store' }).then(function(r){ return r && r.ok ? r.text() : ''; }, function(){ return ''; })
+      .then(function(v){ checking = null; v = s(v).trim().slice(0, 60); if (v) LIVE = { v: v, at: Date.now() }; return v; });
+    return checking;
+  };
+  checkImpl = function(resumed){
+    return fetchLive().then(function(live){
+      var mine = B.build = s(W.__GC_BUILD_ID__ || B.build).slice(0, 40);
+      if (!older(mine, live)) return false;
+      var src = fromCache();
+      var healed = +get(HEAL_K) || 0, recent = healed && Date.now() - healed < 10 * 60e3;
+      B.old = { mine: mine, live: live, src: src || (resumed ? 'resumed' : 'network'), t: ms() };
+      if (recent) B.old.afterUpdate = Math.round((Date.now() - healed) / 1000) + ' s after Tap to update';
+      problem('old');
+      /* the banner: a cached / service-worker copy, an app back from the background, or the sign-in screen (the CRM's own
+         update bar cannot show over it); a fresh page while signed in gets the CRM's own bar (same update) */
+      if (!recent && (src || resumed || gateUp() || !authed())) banner(live);
+      return true;
+    });
   };

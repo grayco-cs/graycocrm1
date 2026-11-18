@@ -8,14 +8,15 @@ let html = process.argv[2] || path.join(here, '..', '..', 'index.html');
 if (fs.existsSync(html) && fs.statSync(html).isDirectory()) html = path.join(html, 'index.html');
 let pass = 0, fail = 0; const ok = (c, m, i) => { if (c) { pass++; console.log('  ✓ ' + m); } else { fail++; console.log('  ✗ FAIL ' + m + (i !== undefined ? ' ' + JSON.stringify(i).slice(0, 400) : '')); } };
 const src = fs.readFileSync(html, 'utf8');
-const LATE = fs.readFileSync(path.join(here, '..', 'bootwatch_late.js'), 'utf8');
-const code = fs.readFileSync(path.join(here, '..', 'bootwatch_early.js'), 'utf8').replace("'__BW_LATE__'", JSON.stringify(LATE).replace(/[\u0080-\uffff]/g, c => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0')).replace(/<\//g, '<\\/'));
+/* exactly what the patch puts in the page: the early script, and the late part as text (tools/patch_BOOTWATCH.py --print) */
+const [code, LATE] = execFileSync('python3', [path.join(here, '..', 'patch_BOOTWATCH.py'), '--print']).toString().split('\n\u0000\n');
 ok((src.match(/<script id="gc-patch-bootwatch">/g) || []).length === 1, 'in the page once');
 ok(src.indexOf('<script') === src.indexOf('<script id="gc-patch-lsguard">'), 'LSGUARD is still the first script of the page');
 const at = src.indexOf('<script id="gc-patch-bootwatch">');
 ok(at < src.indexOf('<script id="gc-patch-saves-lsheld">') && at < src.indexOf('<script id="gc-patch-bootsafe">') && at < src.indexOf('COMPANY SIGN-IN'), 'right after LSGUARD: before BOOTSAFE, the sign-in and the app');
-ok(src.includes(code.trim()), 'the page carries tools/bootwatch_early.js with tools/bootwatch_late.js inside as text');
-ok(!/function\s*\(|=>/.test(code.slice(code.indexOf('var LATE = '), code.indexOf('var LATE = ') + 12)) && code.includes('var LATE = "'), 'the late part is a string (not compiled at open)');
+ok(src.includes('<script id="gc-patch-bootwatch">\n' + code + '\n</script>'), 'the page carries tools/bootwatch_early.js (its notes dropped)');
+ok(src.includes('<script type="text/plain" id="gc-bw-late">\n' + LATE + '\n</script>\n<script id="gc-patch-bootwatch">'), 'the late part sits just before it as text/plain (not compiled at open)');
+ok(code.length < 18000, 'the early script is small (' + code.length + ' characters)');
 { const tmp = path.join(os.tmpdir(), 'bootwatch_idem_' + process.pid + '.html'); fs.writeFileSync(tmp, src);
   const out = execFileSync('python3', [path.join(here, '..', 'patch_BOOTWATCH.py'), tmp]).toString(); ok(/already patched/.test(out) && fs.readFileSync(tmp, 'utf8') === src, 'patch is idempotent'); fs.unlinkSync(tmp); }
 ok(/_gcBootWatch && window\._gcBootWatch\.banner\(\)\) return;/.test(src) && /_gcBootWatch\.update\(\)\) return; }catch\(e\)\{\} location\.reload\(true\);/.test(src) && /_gcBootWatch\.live\(60000\)/.test(src), 'the CRM\'s own update bar: no second bar, the same update, the answer already fetched');
@@ -31,7 +32,7 @@ function world(ls, opt){
   const mk = (id, o) => Object.assign({ id, getClientRects(){ return { length: this.shown ? 1 : 0 }; }, style: {}, textContent: '', remove(){ delete els[id]; } }, o || {});
   const D = { readyState: 'loading', visibilityState: 'visible', scripts: { length: 10 },
     documentElement: { classList: { contains: c => cls.has(c), add: c => cls.add(c), remove: c => cls.delete(c) }, appendChild(x){ els[x.id] = x; x.isConnected = true; } },
-    getElementById: id => els[id] || null, querySelector: q => (q === '#root>div>aside' && opt.desk && opt.desk()) ? {} : null,
+    getElementById: id => id === 'gc-bw-late' ? { textContent: LATE } : (els[id] || null), querySelector: q => (q === '#root>div>aside' && opt.desk && opt.desk()) ? {} : null,
     createElement: () => ({ style: {}, setAttribute(){}, addEventListener(){}, appendChild(){} }),
     addEventListener: (n, f) => { (dev_[n] = dev_[n] || []).push(f); } };
   const beacons = [], fetches = [];
@@ -66,7 +67,7 @@ function world(ls, opt){
   for (let i = 0; i < 2; i++) {
     const w = world(ls, { now: Date.parse('2026-11-18T15:00:00Z') + i * 600e3 }); w.W.__GC_AUTH__ = { email: () => 'a@b.co', mode: () => 'online' };
     const sent = []; w.W.fetch = (u, o) => { if (/bootwatch/.test(u)) sent.push(JSON.parse(o.body)); return Promise.resolve({ ok: true, text: () => Promise.resolve('') }); };
-    w.run(); w.D.readyState = 'interactive'; w.dfire('DOMContentLoaded'); w.step(1000);
+    w.run(); w.D.readyState = 'interactive'; w.dfire('DOMContentLoaded'); w.step(1000); w.fire('load');
     w.cls.add('_fieldmode'); w.els._gcJobPick = w.mk('_gcJobPick'); w.step(1000); await new Promise(r => setImmediate(r)); w.step(4000); await new Promise(r => setImmediate(r));
     if (i === 0) ok(sent.length === 1 && sent[0].boot.hb === '2026-11-18' && /field home/.test(sent[0].boot.m.paintV) && w.beacons.length === 0, 'signed in, first open of the day: ONE heartbeat by fetch (the sign-in layer adds the token)', sent.map(x => x.boot));
     else ok(sent.length === 0 && w.beacons.length === 0, 'the next open the same day: nothing', sent);
@@ -76,7 +77,7 @@ function world(ls, opt){
 { const ls = new Storage(); const w = world(ls); w.W.__GC_AUTH__ = { email: () => 'a@b.co', mode: () => 'online' }; const sent = [];
   w.W.fetch = (u, o) => { if (/bootwatch/.test(u)) sent.push(JSON.parse(o.body)); return Promise.resolve({ ok: true, text: () => Promise.resolve('') }); };
   w.run(); w.step(23000); await new Promise(r => setImmediate(r));
-  const b = sent[0] && sent[0].boot; ok(b && b.stuck[0].k === 'screen' && /signed in, no first screen 2\d s: .*blank/.test(b.stuck[0].why), 'stuck: "signed in, no first screen in 20 s" + what is on screen', b && b.stuck);
+  const b = (sent.find(x => (x.boot.stuck || []).length) || {}).boot; ok(b && b.stuck[0].k === 'screen' && /signed in, no first screen 2\d s: .*blank/.test(b.stuck[0].why), 'stuck: "signed in, no first screen in 20 s" + what is on screen', b && b.stuck);
   ok(w.els['gc-bw-opening'], 'the "Opening GrayCo Field…" screen is up instead of a blank page'); }
 // no signal: kept and sent with the next open
 { const ls = new Storage(); const w = world(ls); w.W.navigator.onLine = false; w.run(); w.step(23000);
