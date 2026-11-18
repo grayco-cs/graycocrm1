@@ -237134,13 +237134,14 @@ function importLegacy(pid){
 }
 
 /* ── the company schedule (the crew sees it): one item per inspection, the same id the permit automation uses ── */
-function syncSched(pid, row){
+function syncSched(pid, row, portalOn){
   if (typeof W._setSchedule !== 'function' || !/^\d{4}-\d{2}-\d{2}$/.test(s(row.date))) return;
   var p = proj(pid) || {}, id = 'SCH_INS_' + row.id, st = statusOf(row);
   var fields = { title: s(p.name) + ' — ' + s(row.label), pid: String(pid), date: s(row.date), time: row.from || '09:00', endTime: row.to || '12:00', type: 'inspection', insId: row.id,
     assignee: s(row.meet) || s(p.pm), address: s(p.address), status: row.archived ? 'Archived' : st === 'scheduled' ? '' : (st === 'passed' ? 'Passed' : st === 'failed' ? 'Failed' : 'Partial'),
     done: row.archived === true || st !== 'scheduled', notes: '📋 ' + s(row.label) + (row.inspector ? ' — ' + s(row.inspector) : '') + (row.meet ? ' · meets: ' + s(row.meet) : ''), updatedAt: nowIso() };
   if (p.companyId) fields.companyId = p.companyId;
+  fields.customerVisible = typeof portalOn === 'boolean' ? portalOn : p.portalInspections !== false;   /* the job's "show inspections on the portal" switch also covers the GC page's schedule */
   W._setSchedule(function(prev){
     var l = Array.isArray(prev) ? prev.slice() : [], i = l.findIndex(function(x){ return x && x.id === id; });
     if (i >= 0) l[i] = Object.assign({}, l[i], fields);
@@ -237240,6 +237241,7 @@ function setPortal(pid, on){
   if (!isOffice()) return { error: 'Only the office or an admin changes this.' };
   var A = W._gcAut; if (!A || !A.saveProject) return { error: 'Not ready yet.' };
   A.saveProject(pid, function(q){ q.portalInspections = on === true; q.portalInspectionsBy = me().name; q.portalInspectionsAt = nowIso(); });
+  rowsOf(pid, true).forEach(function(r){ try { syncSched(pid, r, on === true); } catch (e) {} });
   return { ok: true };
 }
 

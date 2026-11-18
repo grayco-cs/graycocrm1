@@ -2227,6 +2227,12 @@ function gcDraw(){
     v.schedule.forEach(function(x){ sc.appendChild(h('div', { class: 'gcp-row' }, [h('span', { text: x.title }), h('span', { class: 'muted', text: dt(x.date) + (x.end && x.end !== x.date ? ' – ' + dt(x.end) : '') })])); });
     main.appendChild(sc);
   }
+  /* patch INSPECT2: the job's inspections — date, type, a plain result (nothing internal; the job's switch hides them) */
+  if (v.inspections && ((v.inspections.upcoming || []).length || (v.inspections.past || []).length)) {
+    var ic = card('📋 Inspections', [], 'gcInsp');
+    (v.inspections.upcoming || []).concat(v.inspections.past || []).slice(0, 30).forEach(function(x){ ic.appendChild(h('div', { class: 'gcp-row', 'data-insp': x.result }, [h('span', { text: x.type }), h('span', { class: 'muted', text: dt(x.date) + (x.window ? ' · ' + x.window : '') + ' · ' + x.result })])); });
+    main.appendChild(ic);
+  }
   /* updates */
   if (v.updates.length) {
     var uc = card('🛠 Updates', []);
