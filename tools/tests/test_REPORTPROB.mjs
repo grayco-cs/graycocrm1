@@ -111,7 +111,7 @@ try {
   /* ═════ 1. the PM's phone ═════ */
   console.log('1 · a PM on an iPhone reports a problem with a photo');
   const P = await phone('PM-phone', PM);
-  ok(!!(await waitFor(P, () => !!document.querySelector('#_gcJobPick.gc-fh .fh-top #gc-rp-q'), null, 8000)), 'the Field home has the small ❓ in its top bar');
+  ok(!!(await waitFor(P, () => !!document.querySelector('#_gcJobPick.gc-fh .fh-top #gc-rpb-q'), null, 8000)), 'the Field home has the small ❓ in its top bar');
   await P.ev(() => { setTimeout(() => { throw new Error('Demo boom from the job card'); }, 0); });   /* a page error PERFREP writes down */
   await sleep(400);
   await P.ev(() => { document.querySelector('#gc-fh-tabs [data-t="more"]').click(); });
@@ -120,18 +120,18 @@ try {
   ok(more.indexOf('gcrp') > -1 && (more.indexOf('tools') < 0 || more.indexOf('gcrp') < more.indexOf('tools')) && more.indexOf('gcrp-list') < 0, '…before 🧰 Other tools; no Problem reports list for a PM', more);
   const bb = await P.page().locator('.gc-fh-sheet[data-ra-more] [data-ra-a="gcrp"]').boundingBox();
   await P.page().touchscreen.tap(bb.x + bb.width / 2, bb.y + bb.height / 2);
-  ok(!!(await waitFor(P, () => !!document.getElementById('gc-rp-form') && !document.querySelector('.gc-fh-sheet[data-ra-more]'), null, 5000)), 'the tap opens the form (and closes ☰ More)');
-  const scr = await P.ev(() => (document.querySelector('#gc-rp-form .gc-rp-note b') || {}).textContent || '');
+  ok(!!(await waitFor(P, () => !!document.getElementById('gc-rpb-form') && !document.querySelector('.gc-fh-sheet[data-ra-more]'), null, 5000)), 'the tap opens the form (and closes ☰ More)');
+  const scr = await P.ev(() => (document.querySelector('#gc-rpb-form .gc-rpb-note b') || {}).textContent || '');
   ok(/^Field · home/.test(scr), '"what screen I was on" was taken by itself: ' + scr);
   await P.page().screenshot({ path: SHOTS + 'rp_phone_form.png' });
-  await P.page().tap('#gc-rp-form [data-rp-send]'); await sleep(300);
-  ok(/Pick what it is/.test(await P.ev(() => document.querySelector('#gc-rp-form .gc-rp-msg').textContent)), 'Send without a kind: asks for the kind');
-  await P.page().tap('#gc-rp-form [data-rp-type="broke"]');
-  await P.page().fill('#gc-rp-form textarea', 'The punch list button does nothing on the Demo Roof Job');
-  await P.page().setInputFiles('#gc-rp-form input[type=file]', { name: 'screen.png', mimeType: 'image/png', buffer: PHOTO });
-  ok(!!(await waitFor(P, () => { const i = document.querySelector('#gc-rp-form .pv img'); return i && /^data:image\/jpeg/.test(i.src) ? i.src.length : 0; }, null, 8000)), 'the photo is made small on the phone (JPEG preview)');
-  await P.page().tap('#gc-rp-form [data-rp-send]');
-  ok(!!(await waitFor(P, () => /Sent — thank you/.test((document.getElementById('gc-rp-form') || {}).textContent || ''), null, 15000)), 'Sent — thank you');
+  await P.page().tap('#gc-rpb-form [data-rp-send]'); await sleep(300);
+  ok(/Pick what it is/.test(await P.ev(() => document.querySelector('#gc-rpb-form .gc-rpb-msg').textContent)), 'Send without a kind: asks for the kind');
+  await P.page().tap('#gc-rpb-form [data-rp-type="broke"]');
+  await P.page().fill('#gc-rpb-form textarea', 'The punch list button does nothing on the Demo Roof Job');
+  await P.page().setInputFiles('#gc-rpb-form input[type=file]', { name: 'screen.png', mimeType: 'image/png', buffer: PHOTO });
+  ok(!!(await waitFor(P, () => { const i = document.querySelector('#gc-rpb-form .pv img'); return i && /^data:image\/jpeg/.test(i.src) ? i.src.length : 0; }, null, 8000)), 'the photo is made small on the phone (JPEG preview)');
+  await P.page().tap('#gc-rpb-form [data-rp-send]');
+  ok(!!(await waitFor(P, () => /Sent — thank you/.test((document.getElementById('gc-rpb-form') || {}).textContent || ''), null, 15000)), 'Sent — thank you');
   const L1 = list(), mine = L1.find(x => x.by && x.by.email === PM);
   ok(L1.length === 2 && L1.some(x => x.id === 'PRold1'), 'gc_problem_reports: appended (the older report kept)', L1.map(x => x.id));
   ok(mine && mine.type === 'broke' && mine.status === 'open' && mine.kind === 'phone' && mine.app === 'field' && /^Field · home/.test(mine.screen) && mine.by.name === 'Demo PM' && /punch list/.test(mine.text) && mine.dev && mine.build, 'the report: open, by Demo PM, phone · Field, the screen, the device and version', mine);
@@ -143,27 +143,27 @@ try {
   ok(det && Array.isArray(det.diag) && det.diag.length <= 20 && det.diag.some(d => /Demo boom/.test(d.t)), 'the page errors / slow taps (PERFREP) are attached: ' + (det && det.diag.length) + ' entries', det && det.diag.slice(0, 3));
   const n1 = NOTIFY.find(n => n.link === '#problems=' + (mine && mine.id));
   ok(n1 && [WES, NICK, OFF].every(e => [].concat(n1.to).includes(e)) && ![].concat(n1.to).includes(PM) && /Something broke — Demo PM/.test(n1.title), 'the admins and the office are told through window._gcNotify (AWAY), with a link to it; not the PM', n1);
-  await P.ev(() => { const f = document.getElementById('gc-rp-form'); if (f) f.querySelector('[data-rp-done]').click(); });
+  await P.ev(() => { const f = document.getElementById('gc-rpb-form'); if (f) f.querySelector('[data-rp-done]').click(); });
 
   /* ═════ 2. the owner answers ═════ */
   console.log('2 · the owner answers on the Desk');
   const O = await desk('OWNER', WES);
   ok(await openHub(O), '💎 opens with 🆘 Report a problem');
-  const hub = await O.ev(() => { const p = [...document.querySelectorAll('.gc-hub-panel')].filter(x => x.getClientRects().length).pop(); const items = [...p.querySelectorAll('.gc-hub-item')]; return { first: items[0] && items[0].id, firstText: items[0] && items[0].textContent, list: !!p.querySelector('#gc-rp-hub-list'), team: !!p.querySelector('#gc-ta-hub'), n: (p.querySelector('#gc-rp-hub-list .gc-rp-n') || {}).textContent || '' }; });
-  ok(hub.first === 'gc-rp-hub' && /Report a problem/.test(hub.firstText), 'the FIRST 💎 item is 🆘 Report a problem / Ask a question (pinned until 2026-12-16)', hub);
+  const hub = await O.ev(() => { const p = [...document.querySelectorAll('.gc-hub-panel')].filter(x => x.getClientRects().length).pop(); const items = [...p.querySelectorAll('.gc-hub-item')]; return { first: items[0] && items[0].id, firstText: items[0] && items[0].textContent, list: !!p.querySelector('#gc-rpb-hub-list'), team: !!p.querySelector('#gc-ta-hub'), n: (p.querySelector('#gc-rpb-hub-list .gc-rpb-n') || {}).textContent || '' }; });
+  ok(hub.first === 'gc-rpb-hub' && /Report a problem/.test(hub.firstText), 'the FIRST 💎 item is 🆘 Report a problem / Ask a question (pinned until 2026-12-16)', hub);
   ok(hub.list, '💎 has 🆘 Problem reports for the owner', hub);
   await O.page().screenshot({ path: SHOTS + 'rp_hub.png' });
-  await O.page().click('#gc-rp-hub-list');
-  ok(!!(await waitFor(O, () => !!document.querySelector('#gc-rp-list .gc-rp-it[data-rp-id]'), null, 8000)), '🆘 Problem reports opens');
-  const card = await O.ev(id => { const c = document.querySelector('#gc-rp-list [data-rp-id="' + id + '"]'); return c ? c.textContent : ''; }, mine.id);
+  await O.page().click('#gc-rpb-hub-list');
+  ok(!!(await waitFor(O, () => !!document.querySelector('#gc-rpb-list .gc-rpb-it[data-rp-id]'), null, 8000)), '🆘 Problem reports opens');
+  const card = await O.ev(id => { const c = document.querySelector('#gc-rpb-list [data-rp-id="' + id + '"]'); return c ? c.textContent : ''; }, mine.id);
   ok(/Demo PM/.test(card) && /punch list/.test(card) && /Field · home/.test(card) && /phone/.test(card), 'the open report shows who, what, the screen and the device');
-  await O.page().click(`#gc-rp-list [data-rp-id="${mine.id}"] [data-rp-a="shot"]`);
-  ok(!!(await waitFor(O, id => { const i = document.querySelector('#gc-rp-list [data-rp-id="' + id + '"] .gc-rp-more img'); return i && i.naturalWidth > 100; }, mine.id, 8000)), '📷 Photo shows the picture');
-  await O.page().click(`#gc-rp-list [data-rp-id="${mine.id}"] [data-rp-a="diag"]`);
-  ok(!!(await waitFor(O, id => /Demo boom/.test((document.querySelector('#gc-rp-list [data-rp-id="' + id + '"] .gc-rp-diag') || {}).textContent || ''), mine.id, 8000)), '🧾 Errors & slow taps shows the page error');
-  await O.page().fill(`#gc-rp-list [data-rp-id="${mine.id}"] [data-rp-ans]`, 'Thanks — fixed in the next update. Use ☰ More → Punch list for now.');
+  await O.page().click(`#gc-rpb-list [data-rp-id="${mine.id}"] [data-rp-a="shot"]`);
+  ok(!!(await waitFor(O, id => { const i = document.querySelector('#gc-rpb-list [data-rp-id="' + id + '"] .gc-rpb-more img'); return i && i.naturalWidth > 100; }, mine.id, 8000)), '📷 Photo shows the picture');
+  await O.page().click(`#gc-rpb-list [data-rp-id="${mine.id}"] [data-rp-a="diag"]`);
+  ok(!!(await waitFor(O, id => /Demo boom/.test((document.querySelector('#gc-rpb-list [data-rp-id="' + id + '"] .gc-rpb-diag') || {}).textContent || ''), mine.id, 8000)), '🧾 Errors & slow taps shows the page error');
+  await O.page().fill(`#gc-rpb-list [data-rp-id="${mine.id}"] [data-rp-ans]`, 'Thanks — fixed in the next update. Use ☰ More → Punch list for now.');
   const nBefore = NOTIFY.length;
-  await O.page().click(`#gc-rp-list [data-rp-id="${mine.id}"] [data-rp-a="answer"]`);
+  await O.page().click(`#gc-rpb-list [data-rp-id="${mine.id}"] [data-rp-a="answer"]`);
   ok(!!(await waitFor(O, () => true, null, 100)) && !!(await (async () => { for (let i = 0; i < 40; i++) { const x = list().find(y => y.id === mine.id); if (x && x.status === 'answered') return x; await sleep(250); } return null; })()), 'the report is answered in gc_problem_reports');
   const ans = list().find(y => y.id === mine.id);
   ok(ans && ans.replies.length === 1 && /next update/.test(ans.replies[0].text) && ans.replies[0].by === 'Wesley Johnson', 'the answer is on the report (who, when, what)', ans && ans.replies);
@@ -177,42 +177,42 @@ try {
   /* ═════ 3. the PM sees the answer ═════ */
   console.log('3 · the PM sees the answer as a CRM notice');
   await P.ev(() => window._gcReportProb.checkInbox());
-  ok(!!(await waitFor(P, () => { const n = document.getElementById('gc-rp-notice'); return n && n.getClientRects().length && /next update/.test(n.textContent) && /Wesley Johnson answered/.test(n.textContent); }, null, 8000)), 'the notice: "Wesley Johnson answered your problem report" + the answer');
+  ok(!!(await waitFor(P, () => { const n = document.getElementById('gc-rpb-notice'); return n && n.getClientRects().length && /next update/.test(n.textContent) && /Wesley Johnson answered/.test(n.textContent); }, null, 8000)), 'the notice: "Wesley Johnson answered your problem report" + the answer');
   await P.page().screenshot({ path: SHOTS + 'rp_phone_notice.png' });
-  await P.page().tap('#gc-rp-notice [data-rp-n="open"]');
-  ok(!!(await waitFor(P, () => /next update/.test((document.getElementById('gc-rp-mine') || {}).textContent || '') && /punch list/.test(document.getElementById('gc-rp-mine').textContent), null, 6000)), 'Open → My problem reports: the report with the answer');
+  await P.page().tap('#gc-rpb-notice [data-rp-n="open"]');
+  ok(!!(await waitFor(P, () => /next update/.test((document.getElementById('gc-rpb-mine') || {}).textContent || '') && /punch list/.test(document.getElementById('gc-rpb-mine').textContent), null, 6000)), 'Open → My problem reports: the report with the answer');
   ok(!!(await (async () => { for (let i = 0; i < 30; i++) { const v = cget('gc_problem_inbox_pm-grayco-cs-com'); const l = typeof v === 'string' ? JSON.parse(v) : v; if (l && l[0].seen === true) return true; await sleep(250); } return false; })()), 'opened = seen (the inbox row says so); the notice is gone');
-  ok(!(await P.ev(() => !!document.getElementById('gc-rp-notice'))), '…and the notice does not come back');
+  ok(!(await P.ev(() => !!document.getElementById('gc-rpb-notice'))), '…and the notice does not come back');
   await P.page().keyboard.press('Escape'); await sleep(200);
-  ok(!(await P.ev(() => !!document.getElementById('gc-rp-mine'))), 'Esc closes it');
-  await O.page().click('#gc-rp-list [data-rp-tab="answered"]'); await sleep(300);
-  await O.page().click(`#gc-rp-list [data-rp-id="${mine.id}"] [data-rp-a="fixed"]`);
+  ok(!(await P.ev(() => !!document.getElementById('gc-rpb-mine'))), 'Esc closes it');
+  await O.page().click('#gc-rpb-list [data-rp-tab="answered"]'); await sleep(300);
+  await O.page().click(`#gc-rpb-list [data-rp-id="${mine.id}"] [data-rp-a="fixed"]`);
   ok(!!(await (async () => { for (let i = 0; i < 40; i++) { const x = list().find(y => y.id === mine.id); if (x && x.status === 'fixed') return true; await sleep(250); } return false; })()), '✓ Mark fixed → fixed');
   ok(list().length === 2 && list().some(x => x.id === 'PRold1'), 'nothing was deleted');
   await O.page().keyboard.press('Escape'); await sleep(200);
-  ok(!(await O.ev(() => !!document.getElementById('gc-rp-list'))), 'Esc closes Problem reports');
+  ok(!(await O.ev(() => !!document.getElementById('gc-rpb-list'))), 'Esc closes Problem reports');
 
   /* ═════ 4. signed out ═════ */
   console.log("4 · signed out: Can't sign in? Report it");
   const S = await phone('SIGNED-OUT');
-  ok(!!(await waitFor(S, () => { const b = document.getElementById('gc-rp-signin'); return b && b.getClientRects().length > 0; }, null, 30000)), "the sign-in screen has \"Can't sign in? Report it\"");
+  ok(!!(await waitFor(S, () => { const b = document.getElementById('gc-rpb-signin'); return b && b.getClientRects().length > 0; }, null, 30000)), "the sign-in screen has \"Can't sign in? Report it\"");
   await S.page().screenshot({ path: SHOTS + 'rp_signin_link.png' });
-  await S.page().tap('#gc-rp-signin');
-  ok(!!(await waitFor(S, () => { const o = document.getElementById('gc-rp-signout'); if (!o) return false; const r = o.querySelector('[data-rp-send]').getBoundingClientRect(); const top = document.elementFromPoint(r.left + 5, r.top + 5); return !!(top && o.contains(top)); }, null, 5000)), 'the form opens ON TOP of the sign-in screen');
-  await S.page().fill('#gc-rp-signout [data-rp-name]', 'Sam Newhire');
-  await S.page().fill('#gc-rp-signout [data-rp-phone]', '901-555-0177');
-  await S.page().fill('#gc-rp-signout textarea', 'It says my password is wrong');
-  await S.page().tap('#gc-rp-signout [data-rp-send]');
-  ok(!!(await waitFor(S, () => /the office will call you/.test((document.getElementById('gc-rp-signout') || {}).textContent || ''), null, 15000)), 'Sent — the office will call you');
+  await S.page().tap('#gc-rpb-signin');
+  ok(!!(await waitFor(S, () => { const o = document.getElementById('gc-rpb-signout'); if (!o) return false; const r = o.querySelector('[data-rp-send]').getBoundingClientRect(); const top = document.elementFromPoint(r.left + 5, r.top + 5); return !!(top && o.contains(top)); }, null, 5000)), 'the form opens ON TOP of the sign-in screen');
+  await S.page().fill('#gc-rpb-signout [data-rp-name]', 'Sam Newhire');
+  await S.page().fill('#gc-rpb-signout [data-rp-phone]', '901-555-0177');
+  await S.page().fill('#gc-rpb-signout textarea', 'It says my password is wrong');
+  await S.page().tap('#gc-rpb-signout [data-rp-send]');
+  ok(!!(await waitFor(S, () => /the office will call you/.test((document.getElementById('gc-rpb-signout') || {}).textContent || ''), null, 15000)), 'Sent — the office will call you');
   const so = list().find(x => x.signedOut && x.by && x.by.name === 'Sam Newhire');
   ok(so && so.type === 'signin' && so.by.phone === '9015550177' && so.status === 'open' && so.kind === 'phone' && !so.by.email, "saved: Can't sign in, signed out, name + phone, the phone", so);
   const st = SERVER_TOLD.find(x => x.n && /Can't sign in — Sam Newhire/.test(x.n.title));
   ok(st && [WES, NICK, OFF].every(e => st.to.includes(e)) && /9015550177/.test(st.n.body), 'the admins and the office are told (by the server: the page has no sign-in)', st);
   /* a second one at once from the same phone: the 30 s limit */
   await S.ev(() => window._gcReportProb.signedOut());
-  await S.page().fill('#gc-rp-signout [data-rp-name]', 'Sam Newhire'); await S.page().fill('#gc-rp-signout [data-rp-phone]', '901-555-0177'); await S.page().fill('#gc-rp-signout textarea', 'again');
-  await S.page().tap('#gc-rp-signout [data-rp-send]');
-  ok(!!(await waitFor(S, () => /30 seconds/.test((document.querySelector('#gc-rp-signout .gc-rp-msg') || {}).textContent || ''), null, 10000)), 'a second report at once: "One report every 30 seconds" (rate-limited)');
+  await S.page().fill('#gc-rpb-signout [data-rp-name]', 'Sam Newhire'); await S.page().fill('#gc-rpb-signout [data-rp-phone]', '901-555-0177'); await S.page().fill('#gc-rpb-signout textarea', 'again');
+  await S.page().tap('#gc-rpb-signout [data-rp-send]');
+  ok(!!(await waitFor(S, () => /30 seconds/.test((document.querySelector('#gc-rpb-signout .gc-rpb-msg') || {}).textContent || ''), null, 10000)), 'a second report at once: "One report every 30 seconds" (rate-limited)');
   ok(list().filter(x => x.signedOut).length === 1, 'only one signed-out report saved');
   await S.page().screenshot({ path: SHOTS + 'rp_signout_limit.png' });
 
@@ -220,7 +220,7 @@ try {
   console.log('5 · the office sees Problem reports; a PM does not');
   const F = await desk('OFFICE', OFF);
   ok(await openHub(F), 'office: 💎 has 🆘 Report a problem');
-  ok(await F.ev(() => { const p = [...document.querySelectorAll('.gc-hub-panel')].filter(x => x.getClientRects().length).pop(); return !!p.querySelector('#gc-rp-hub-list') && !p.querySelector('#gc-ta-hub'); }), 'office: 💎 has 🆘 Problem reports (and no 👥 Team activity)');
+  ok(await F.ev(() => { const p = [...document.querySelectorAll('.gc-hub-panel')].filter(x => x.getClientRects().length).pop(); return !!p.querySelector('#gc-rpb-hub-list') && !p.querySelector('#gc-ta-hub'); }), 'office: 💎 has 🆘 Problem reports (and no 👥 Team activity)');
   await F.ev(() => window._gcCloseHub && window._gcCloseHub());
   ok(!(await P.ev(() => !!window._gcReportProb.list())), 'PM: the Problem reports list does not open');
   ok(P.errs.filter(e => !/Demo boom/.test(e)).length === 0 && O.errs.length === 0 && S.errs.length === 0, 'no page errors', [P.errs, O.errs, S.errs]);

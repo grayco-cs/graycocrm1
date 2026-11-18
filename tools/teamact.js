@@ -313,7 +313,7 @@ function css(){
 }
 var OV = null;
 function close(){ if (OV) { OV.remove(); OV = null; } }
-D.addEventListener('keydown', function(e){ if (e.key === 'Escape' && OV && OV.isConnected && !D.querySelector('.gc-rp-ov')) { close(); e.stopPropagation(); } }, true);
+D.addEventListener('keydown', function(e){ if (e.key === 'Escape' && OV && OV.isConnected && !D.querySelector('.gc-rpb-ov')) { close(); e.stopPropagation(); } }, true);
 function shell(title){
   css(); close();
   var ov = D.createElement('div'); ov.id = 'gc-ta'; ov.className = 'gc-ta-ov'; ov.setAttribute('data-gc-keep', '1'); ov.setAttribute('data-gcnav-ignore', '1');
