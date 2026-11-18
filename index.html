@@ -59708,6 +59708,14 @@ async function poll(silent){
       if(e.subInvId) expIds[String(e.subInvId)] = 1;
       if(e.srcInvId) expIds[String(e.srcInvId).replace(/^(EXPENSE_|SUB_)/,'')] = 1;
     });
+    /* patch ACCTSUB (accounting audit 11/18): a sub / supplier bill is ONE cost. The QuickBooks import wrote two or three
+       register lines for one bill ("<vendor> — QuickBooks bill #85388", "Sub paid: QuickBooks bill #85388" … with srcInvId =
+       the bill's own id, sometimes SUB_<id>), on different days and even different amounts — live: 125 bills counted
+       2–3 times (+$295,661 of costs). Every register line that names a bill in the invoice list now stands for that bill:
+       counted once, at the bill's amount, on the bill's job, on the bill's date; not at all when the bill is denied /
+       void / waiting for approval (the ACCTFIX2 gate) or deleted. */
+    var subInv = {}, subSeen = {};
+    ((window._crm && window._crm.invoices) || []).forEach(function(iv){ if(iv && iv.id && /^(sub|supplier)$/i.test(String(iv.type||''))) subInv[String(iv.id)] = iv; });
     live.forEach(function(e){
       if(!e || typeof e!=='object') return;
       var id = e.id || e._id;
@@ -59715,6 +59723,15 @@ async function poll(silent){
       if(e.__reg && e.srcInvId){
         var bare = String(e.srcInvId).replace(/^(EXPENSE_|SUB_)/,'');
         if(expIds[bare] || expIds[e.srcInvId]){ copies++; return; }
+        var sv = subInv[String(e.srcInvId).replace(/^(EXPENSE_|SUB_|SUPPLIER_)/,'')];
+        if(sv){
+          if(subSeen[sv.id]){ copies++; return; }
+          subSeen[sv.id] = 1;
+          try{ if(window._gcIsTombstoned && (window._gcIsTombstoned('invs', sv.id) || window._gcIsTombstoned('invoices', sv.id))) return; }catch(_t){}
+          try{ if(window._gcCostGate && window._gcCostGate(sv) !== 'ok') return; }catch(_g){}
+          var sa = num(sv.amt!=null ? sv.amt : sv.amount);
+          if(sa){ e = Object.assign({}, e, { amt: sa, amount: sa, pid: pidOf(sv) || pidOf(e), date: String(sv.recvDate||sv.date||e.date||'').slice(0,10), __subInv: sv.id }); }
+        }
       }
       if(tombstoned(e)) return;
       if(opts.includeUnassigned ? !isSpendAny(e) : !isSpend(e)) return;
