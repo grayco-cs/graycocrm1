@@ -183,7 +183,7 @@ async function scheduleOf(pid){
   try { rows = arr((await core().kvRead(['schedule'])).schedule); } catch (e) {}
   rows = require('./schedvis.js').visible(rows);   /* patch SCHEDPICK: never a template suggestion or a hidden duplicate bookend */
   return rows.filter(function(x){ return x && pidOf(x) === s(pid) && x.deleted !== true && x.internal !== true && x.private !== true && x.customerVisible !== false; })
-    .map(function(x){ return { title: clip(x.title || x.name || x.task, 90), date: ymd(x.date || x.start), end: ymd(x.endDate || x.end) }; })
+    .map(function(x){ return { title: clip(x.title || x.name || x.task, 90), date: ymd(x.date || x.start), end: ymd(x.endDate || x.end), insp: !!(x.insId || x.type === 'inspection') || undefined }; })
     .filter(function(x){ return x.title && x.date; }).sort(function(a, b){ return a.date < b.date ? -1 : 1; }).slice(0, 80);
 }
 async function gcView(data, p, opts){
@@ -197,12 +197,13 @@ async function gcView(data, p, opts){
     company: gcCompany(data, p),
     job: { name: v.job.name, po: v.job.po, address: v.job.address, stage: v.job.stage, stageName: v.job.stageName, steps: v.job.steps },
     pm: v.pm,
-    schedule: await scheduleOf(p.id),
+    schedule: (await scheduleOf(p.id)).filter(function(x){ return p.portalInspections !== false || !x.insp; }).map(function(x){ return { title: x.title, date: x.date, end: x.end }; }),   /* patch INSPECT2: the job's switch hides its inspection items too */
     updates: arr(v.posts).map(function(x){ return { at: x.at, by: x.by, text: x.text, photos: x.photos }; }),
     payapps: arr(st.payapps).filter(function(x){ return x.status !== 'void' && x.status !== 'draft' && x.status !== 'waiting'; }).map(payOut),
     cos: arr(st.cos).filter(function(x){ return x.status !== 'void' && x.status !== 'pricing' && !(x.preqId && x.status === 'requested' && !opts.staff); }).map(coOut),   /* patch PORTALREQ: a request from the page shows under My requests until it is priced */
     rfis: arr(st.rfis).filter(function(x){ return x.status !== 'void' && x.status !== 'draft'; }).map(rfiOut),
-    docs: docs
+    docs: docs,
+    inspections: v.inspections || null   /* patch INSPECT2: date, type, a plain result (the job's "show on portal" switch) */
   };
   if (opts.staff) { out.staff = true; out.state = st; out.contacts = contactsOf(data, p); }
   return out;

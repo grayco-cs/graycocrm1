@@ -695,11 +695,28 @@ function chCard(){
   if (!V || !V.claimHelp || !window.GCClaimHelp) return null;
   try { return window.GCClaimHelp.card(V.claimHelp, { extra: V.insurance && V.insurance.claim, preview: PREVIEW, onAsk: function(){ go('msgs'); } }); } catch (e) { return null; }
 }
+/* patch INSPECT2 (owner: "make sure in portals or on all jobs we can schedule inspections"): 📋 Inspections — the job's
+   upcoming and past inspections: the date, the type and a plain result (Scheduled / Passed / Rescheduled). The server sends
+   nothing internal (no notes, inspector, phone, office or who meets) and nothing when the job's "show on portal" switch is off. */
+function inspCard(){
+  var I = V && V.inspections; if (!I || (!(I.upcoming || []).length && !(I.past || []).length)) return null;
+  var es = LANG === 'es';
+  var word = function(r){ return !es ? r : ({ Scheduled: 'Programada', Passed: 'Aprobada', Rescheduled: 'Reprogramada' }[r] || r); };
+  var row = function(x, old){ return h('div', { class: 'gc-insp-row', 'data-insp': x.result, style: 'display:flex;justify-content:space-between;gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--rule,#e5e7eb)' + (old ? ';opacity:.8' : '') }, [
+    h('span', null, [h('b', { text: x.type }), h('div', { class: 'muted', text: dt(x.date) + (x.window ? ' · ' + x.window : '') })]),
+    h('span', { class: 'pill ' + (x.result === 'Passed' ? 'ok' : x.result === 'Scheduled' ? 'now' : 'skip'), text: word(x.result) })]); };
+  var kids = [h('h2', { text: es ? '📋 Inspecciones' : '📋 Inspections' })];
+  if ((I.upcoming || []).length) { kids.push(h('h3', { text: es ? 'Próximas' : 'Coming up', style: 'margin:6px 0 2px;font-size:14px' })); I.upcoming.forEach(function(x){ kids.push(row(x, false)); }); }
+  if ((I.past || []).length) { kids.push(h('h3', { text: es ? 'Anteriores' : 'Past', style: 'margin:12px 0 2px;font-size:14px' })); I.past.slice(0, 12).forEach(function(x){ kids.push(row(x, true)); }); }
+  kids.push(h('div', { class: 'muted', style: 'margin-top:8px', text: es ? 'La ciudad o el condado inspecciona el trabajo. Su Gerente de Proyecto le avisa si algo cambia.' : 'The city or county inspects the work. Your Project Manager will let you know if anything changes.' }));
+  return h('section', { class: 'card', id: 'gcInsp' }, kids);
+}
 function home(){
   var ch = chCard();
   var tr0 = V.insurance ? (ch ? [ch] : insHome()) : [tracker()].concat(ch ? [ch] : []);   /* patch INSP: an insurance job shows its claim instead of the job steps */
+  var icd = inspCard(); if (icd) tr0 = tr0.concat([icd]);   /* patch INSPECT2 */
   var ec = estCards().filter(function(c){ return !/Accepted|Declined/.test(c.textContent || ''); });   /* patch ESTPDF: an open estimate is on the Home page too */
-  if (wide()) return [ownPwCard()].concat(ec, V.insurance ? tr0 : (ch ? [ch] : []), [updates(), photosButton(), reviewCard()]);
+  if (wide()) return [ownPwCard()].concat(ec, V.insurance ? tr0 : (ch ? [ch] : []).concat(icd ? [icd] : []), [updates(), photosButton(), reviewCard()]);   /* patch INSPECT2: + icd */
   return [ownPwCard()].concat(ec, tr0, [updates(), pmCard(), photosButton(), reviewCard(), infoCard()]);
 }
 
@@ -2209,6 +2226,12 @@ function gcDraw(){
     (v.job.steps || []).forEach(function(x){ sc.appendChild(h('div', { class: 'gcp-row' }, [h('span', { text: (x.done ? '✓ ' : x.now ? '▶ ' : '') + x.name }), h('span', { class: 'muted', text: dt(x.date) + (x.end && x.end !== x.date ? ' – ' + dt(x.end) : '') })])); });
     v.schedule.forEach(function(x){ sc.appendChild(h('div', { class: 'gcp-row' }, [h('span', { text: x.title }), h('span', { class: 'muted', text: dt(x.date) + (x.end && x.end !== x.date ? ' – ' + dt(x.end) : '') })])); });
     main.appendChild(sc);
+  }
+  /* patch INSPECT2: the job's inspections — date, type, a plain result (nothing internal; the job's switch hides them) */
+  if (v.inspections && ((v.inspections.upcoming || []).length || (v.inspections.past || []).length)) {
+    var ic = card('📋 Inspections', [], 'gcInsp');
+    (v.inspections.upcoming || []).concat(v.inspections.past || []).slice(0, 30).forEach(function(x){ ic.appendChild(h('div', { class: 'gcp-row', 'data-insp': x.result }, [h('span', { text: x.type }), h('span', { class: 'muted', text: dt(x.date) + (x.window ? ' · ' + x.window : '') + ' · ' + x.result })])); });
+    main.appendChild(ic);
   }
   /* updates */
   if (v.updates.length) {

@@ -1182,7 +1182,28 @@ async function pJob(ctx, pid){
     lien: { required: sub.lien === true || p.lienRequired === true },
     docs: await subDocs(data, p)   /* patch SUBPORTAL3: plans / drawings / specs on the job, and files a person shared with subs */
   };
+  try { const ix = await inspOf(ctx, p); out.inspections = ix.list; out.inspReqs = ix.reqs; out.inspTypes = IN2().TYPES.map(function(t){ return { k: t[0], l: t[1] }; }); } catch (e) { out.inspections = []; out.inspReqs = []; }   /* patch INSPECT2 */
   return out;
+}
+/* ── patch INSPECT2: the job's inspections that touch this sub's trade (all of them when no trade is set) + "Request an inspection" ── */
+function IN2(){ return require('./_lib/inspect2.js'); }
+async function inspOf(ctx, p){
+  const kv = await kvRead([IN2().KEY, 'gc_office_tasks']), r = rowFor(p, ctx.sub);
+  const trade = s(r.trade) || s(ctx.sub.trade || ctx.sub.cat);
+  return { list: IN2().subView(kv[IN2().KEY], p, trade, todayCentral()), reqs: IN2().reqsFor(kv.gc_office_tasks, p.id, ctx.sub.id), trade: trade };
+}
+async function pInspReq(ctx, body){
+  const p = jobOf(ctx, body.projectId), sub = ctx.sub;
+  const f = IN2().cleanReq(body || {}, todayCentral()); if (f.error) throw Fail(400, f.error);
+  const at = new Date().toISOString(), r = rowFor(p, sub);
+  const req = Object.assign({ id: newId('IR'), subId: s(sub.id), subName: s(sub.company || sub.name), trade: s(r.trade) || s(sub.trade || sub.cat) }, f);
+  const owner = IN2().ownerOf(p, ctx.data.users), t = IN2().reqTodo(req, p, owner, at);
+  const C = require('./portal.js')._core;
+  const w = await C.kvListUpdate('gc_office_tasks', function(l){ if (l.some(function(x){ return x && s(x.id) === t.id; })) return null; return { list: l.concat([t]), check: function(a){ return a.some(function(x){ return x && s(x.id) === t.id; }); } }; });
+  if (!w.ok) throw Fail(503, 'GrayCo\'s list was busy — try again.');
+  if (owner.email && /@/.test(owner.email)) { try { await C.pushTo([owner.email], { title: t.label.slice(0, 120), body: 'For ' + f.date + (f.note ? ' — ' + f.note.slice(0, 120) : ''), tag: t.id }); } catch (e) {} }
+  const ix = await inspOf(ctx, p);
+  return { ok: true, request: { id: req.id, type: IN2().NAME[f.type] + ' inspection', date: f.date, state: 'requested' }, to: owner.role, inspections: ix.list, inspReqs: ix.reqs };
 }
 async function uploadsOf(sub, ids, pid){
   ids = (Array.isArray(ids) ? ids : []).map(s).filter(okId).slice(0, 12);
@@ -1328,6 +1349,7 @@ async function partnerAction(action, body, ctx){
   if (action === 'p-avail' || action === 'p-avail-set') return pAvail(ctx, body, action);   /* patch X10: my schedule + the days I can't work */
   if (action === 'p-codes') return pCodes(ctx, body.projectId);   /* patch X10: the job's access codes — only on my scheduled days, every look logged */   /* patch AUTO7: the sub's own scorecard (Papers, at the bottom) */
   if (action === 'p-job') return pJob(ctx, body.projectId);
+  if (action === 'p-insp-req') return pInspReq(ctx, body);   /* patch INSPECT2: 📋 Request an inspection → the job's PM (superintendent on commercial) To-Do */
   if (action === 'p-upload') {
     if (body.projectId) jobOf(ctx, body.projectId);
     const f = await storeFile(body.data, body.name);
@@ -2073,6 +2095,7 @@ exports.handler = async function (event) {
     }
     if (action === 'p-bid-request' && limited(ip, 'bid')) return reply(429, { ok: false, error: 'Too many requests sent from here. Wait a few minutes.' });   /* patch PLANREQ */
     if (action === 'p-bid-ask' && limited(ip, 'bid')) return reply(429, { ok: false, error: 'Too many questions sent from here. Wait a few minutes.' });   /* patch BIDPOST */
+    if (action === 'p-insp-req' && limited(ip, 'sched')) return reply(429, { ok: false, error: 'Too many requests sent from here. Wait a few minutes.' });   /* patch INSPECT2 */
     if (action === 'p-sched' && s(body.op) && s(body.op) !== 'list' && limited(ip, 'sched')) return reply(429, { ok: false, error: 'Too many schedule changes sent from here. Wait a few minutes.' });   /* patch SUBSCHED */
     if (action === 'p-bid-save' && limited(ip, 'bid')) return reply(429, { ok: false, error: 'Too many bids sent from here. Wait a few minutes.' });   /* patch SUBBIDS */
     if (action === 'p-invoice-make' && s(body.op) === 'send' && limited(ip, 'invmk')) return reply(429, { ok: false, error: 'Too many invoices sent from here. Wait a few minutes.' });   /* patch SUBINVMAKE */
