@@ -99,7 +99,7 @@ function subView(store, p, trade, today){
 }
 
 /* ── a sub's "Request an inspection" → the job's PM (the superintendent on a commercial job): a To-Do card ── */
-function commercial(p){ return /commercial|\bgc\b|tenant|\bti\b/i.test(s(p.type || p.jobType || p.projectType) + ' ' + s(p.division)); }
+function commercial(p){ return /commercial|industrial|\bgc\b|tenant|\bti\b/i.test(s(p.type || p.jobType || p.projectType) + ' ' + s(p.division)); }
 function ownerOf(p, users){
   const byName = function(n){ return arr(users).find(function(u){ return n && low(u.name) === low(n); }) || null; };
   const sup = s(p.superintendent || p.super), pm = s(p.pm || p.projectManager);
