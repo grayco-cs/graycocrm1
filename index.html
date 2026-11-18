@@ -210628,7 +210628,7 @@ function leaveHome(){ try { var h = D.querySelector('#_gcJobPick.gc-fh'); if (h)
   function check(){
     var ov = D.getElementById('gcbb-ov'); if (!ov) return;
     var job = D.getElementById('_gcJobDash'), h = home();
-    if (!ov.hasAttribute('data-pmf-seen')) { ov.setAttribute('data-pmf-seen', '1'); if (job && tapAt && Date.now() - tapAt < 5000) ov.setAttribute('data-pmf-job', '1'); }   /* opened by a tap on the job page */
+    if (!ov.hasAttribute('data-pmf-seen')) { ov.setAttribute('data-pmf-seen', '1'); if (tapAt && Date.now() - tapAt < 5000) ov.setAttribute('data-pmf-job', '1'); }   /* opened by a tap on the job page (the job page may be gone by now) */
     if (job) return;
     if (!ov.hasAttribute('data-pmf-job') || !h || tm) return;
     tm = later(function(){ tm = 0; var o = D.getElementById('gcbb-ov'); if (!o || !o.hasAttribute('data-pmf-job') || D.getElementById('_gcJobDash') || !home()) return;
