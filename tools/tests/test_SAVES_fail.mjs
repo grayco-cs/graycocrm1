@@ -21,6 +21,7 @@ async function dbOrTold(A, fn, ms){
 }
 const toldNow = A => A.ev(() => { const el = document.getElementById('gc-unsent-note') || document.getElementById('_jmNotSent'); if (el && el.textContent) return el.textContent.slice(0, 120); const s = document.getElementById('gc-rp-saved'); if (s && /not sent/i.test(s.textContent)) return s.textContent; const f = document.getElementById('gc-fh-sync'); if (f && /sending|will send/i.test(f.textContent)) return f.textContent; return ''; });
 async function estCase(label, fault, extra){
+  if (process.env.SAVES_ONLY && !process.env.SAVES_ONLY.split(',').some(x => label.indexOf(x) >= 0)) return;   /* run only some cases */
   seed();
   const A = await device('desk', 'sbiffle@grayco-cs.com', extra && extra.init ? { init: extra.init } : {}); W.push(A);
   const clog = []; A.page().on('console', m => { const t = m.text(); if (/GC Sync|backing off|recovered|Upload|Write failed|held/i.test(t)) clog.push(t.slice(0, 160)); });
@@ -47,12 +48,35 @@ async function estCase(label, fault, extra){
   await A.close(); W.length = 0;
 }
 
+/* a long outage: every estimates write fails for OUT ms (the database is down), then it answers again — the save must land
+   within 60 s of that; with reload: the page is reloaded in the middle of the outage (the save was only on this computer) */
+async function outageCase(label, OUT, reloadAt){
+  if (process.env.SAVES_ONLY && !process.env.SAVES_ONLY.split(',').some(x => label.indexOf(x) >= 0)) return;   /* run only some cases */
+  seed();
+  const A = await device('desk', 'sbiffle@grayco-cs.com'); W.push(A);
+  const NAME = 'Demo Outage ' + label.replace(/\W+/g, '') + Date.now().toString(36).slice(-3);
+  H.failFor(OUT, { table: 'gc_kv', key: /^(estimates|__est__gc_ests_v2)$/ });
+  const t0 = Date.now();
+  await estNew(A, NAME, [{ desc: 'Outage demo line', cost: 100, qty: 3 }]);
+  const upAt = t0 + OUT;
+  if (reloadAt) { await sleep(Math.max(0, t0 + reloadAt - Date.now())); await reload(A); }
+  const w = await dbOrTold(A, () => estIn(NAME).length ? estIn(NAME)[0] : null, Math.max(0, upAt - Date.now()) + 60000);
+  const after = w.got ? Math.round((Date.now() - upAt) / 1000) : null;
+  R('estimate ' + label, 'desk', 'told while down', !!w.told, { told: w.told });
+  R('estimate ' + label, 'desk', 'db within 60 s of the database answering', !!w.got, { secsAfterUp: after, injected: H.faultLog.filter(f => f.at >= t0).length });
+  if (!w.got) console.log('  (diagnosis)', JSON.stringify(await A.ev(() => ({ unsent: window._gcUnsent && window._gcUnsent(), dbg: window._gcSyncDebug && window._gcSyncDebug() }))));
+  else console.log('  (landed ' + after + ' s after the database answered again)');
+  await A.close(); W.length = 0;
+}
 async function msgCase(label, fault, extra){
+  if (process.env.SAVES_ONLY && !process.env.SAVES_ONLY.split(',').some(x => label.indexOf(x) >= 0)) return;   /* run only some cases */
   seed();
   const P = await device('phone', 'wjohnson@grayco-cs.com', extra && extra.init ? { init: extra.init } : {}); W.push(P);
+  const plog = []; P.page().on('console', m => { const t = m.text(); if (/job message|waiting save|GC Sync|cloud|LSGUARD|busy/i.test(t)) plog.push(t.slice(0, 160)); });
   const pg = P.page();
   const TEXT = 'Demo message ' + label + ' ' + Date.now().toString(36).slice(-4);
   await P.ev(() => window._gcOpenJobMessages('P1')); await H.waitFor(P, () => !!document.getElementById('_jmText'), null, 15000); await sleep(800);
+  await P.ev(t => { const f = window.fetch; window.__jmPosts = []; window.fetch = function(u, o){ let rec = null; try { if (o && /post/i.test(o.method || '') && typeof o.body === 'string' && /gc_job_messages/.test(o.body)) { rec = { t: Date.now(), has: o.body.indexOf(t) >= 0, st: 'pending', stack: String(new Error().stack).split('\n').slice(2, 5).join(' | ').slice(0, 260) }; window.__jmPosts.push(rec); } } catch (e) {} const p = f.apply(this, arguments); if (rec) p.then(r => { rec.st = r && r.status; }, e => { rec.st = 'rejected ' + String(e && e.message || e).slice(0, 80); }); return p; }; }, 'Demo message ' + label);
   if (fault) H.failNext(Object.assign({ table: 'gc_kv', key: 'gc_job_messages' }, fault));
   const t0 = Date.now();
   await pg.fill('#_jmText', TEXT); await pg.locator('#_jmSend').scrollIntoViewIfNeeded().catch(() => {}); await pg.locator('#_jmSend').tap({ timeout: 5000 }).catch(() => P.ev(() => document.getElementById('_jmSend').click()));   /* off screen in this panel: the person scrolls to it */ await sleep(1500);
@@ -62,7 +86,7 @@ async function msgCase(label, fault, extra){
   const w1 = await dbOrTold(P, inDb, 120000); let got = w1.got;
   if (fault) R('job message ' + label, 'phone', 'told', !!w1.told, { injected: H.faultLog.filter(f => f.at >= t0).length, told: w1.told });
   if (fault) R('job message ' + label, 'phone', 'retried by itself', !!got);
-  if (!got) console.log('  (diagnosis)', JSON.stringify(await P.ev(() => ({ q: window._gcSyncQ && window._gcSyncQ.waiting(), st: window._gcSyncQ && window._gcSyncQ.state() }))));
+  if (!got) console.log('  (diagnosis)', JSON.stringify(await P.ev(t => ({ q: window._gcSyncQ && window._gcSyncQ.waiting(), st: window._gcSyncQ && window._gcSyncQ.state(), local: String(localStorage.getItem('gc_job_messages') || '').indexOf(t) >= 0, held: window._gcLsHeld && window._gcLsHeld.state(), posts: window.__jmPosts }), TEXT)), JSON.stringify(plog.slice(-16)));
   if (!got && extra && extra.reopen) {   /* the person opens Messages again (or the app) — what is still only on the phone goes up */
     await P.ev(() => { document.querySelectorAll('#_jmX').forEach(b => b.click()); }); await sleep(500);
     await reload(P);
@@ -84,7 +108,8 @@ try {
   if (want('est')) {
     await estCase('503 once', { status: 503, times: 2 });
     await estCase('no answer', { hang: true, times: 2 });
-    if (!process.env.SAVES_QUICK) await estCase('503 x6 + reload', { status: 503, times: 6 }, { reloadFirst: true });
+    await outageCase('2-min outage', 120000, 0);
+    await outageCase('outage + reload', 90000, 40000);
     if (!process.env.SAVES_QUICK) await estCase('full storage', null, { init: [H.fillLocalStorage(20000)] });
   }
   if (want('msg')) {
