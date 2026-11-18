@@ -35,7 +35,7 @@ globalThis.fetch = async (url, init) => {
   }
   return res(404, {});
 };
-const fn = require(path.join(ROOT, 'netlify/functions/bootwatch.js'));
+const fn = require(path.join(ROOT, 'netlify/functions/bootwatch.js')); const cleanT = t => fn._test.scrub(t);
 const realNow = Date.now; let NOW = Date.parse('2026-11-18T15:00:00Z'); Date.now = () => NOW;
 const call = async (body, o) => { o = o || {}; const raw = typeof body === 'string' ? body : JSON.stringify(body);
   const headers = Object.assign({ origin: 'https://crm.grayco-cs.com', 'content-type': 'text/plain;charset=UTF-8' }, o.headers || {});
@@ -81,7 +81,7 @@ console.log('4 · nothing that looks like a password or a token is kept');
 { tick(31000); const JWT = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1MSIsImVtYWlsIjoieEB5LnoifQ.c2lnbmF0dXJlc2lnbmF0dXJl';
   const b = boot({ password: 'Hunter2!', token: JWT, access_token: JWT, email: 'someone@grayco-cs.com',
     errs: [{ t: 5, m: 'fetch failed Authorization: Bearer ' + JWT + ' password=Hunter2! for pm.demo@grayco-cs.com' }, { t: 6, m: 'key abcdefghijklmnopqrstuvwxyzABCDEFGHIJ0123456789 leaked', password: 'x' }],
-    si: [{ t: 9, dom: 'grayco-cs.com', h: 'a1b2c3d4e5f6', password: 'Hunter2!', pw: 'Hunter2!', email: 'pm.demo@grayco-cs.com', err: 'wrong password Hunter2! for pm.demo@grayco-cs.com' }],
+    si: [{ t: 9, dom: 'grayco-cs.com', h: 'a1b2c3d4e5f6', password: 'Hunter2!', pw: 'Hunter2!', email: 'pm.demo@grayco-cs.com', err: 'wrong password=Hunter2! for pm.demo@grayco-cs.com' }],
     m: { gate: 10, errV: 'token=' + JWT }, p: { signin: 1, password: 1, auth_token: 1 }, gateMsg: 'Signed out. pw: Hunter2!', view: 'desk ' + JWT });
   const r = await call({ v: 1, dev: 'Pdev4abc', boot: b, password: 'Hunter2!', email: 'claimed@grayco-cs.com' });
   const js = JSON.stringify(row('Pdev4abc'));
@@ -90,7 +90,7 @@ console.log('4 · nothing that looks like a password or a token is kept');
   ok(!/eyJ/.test(js) && !/abcdefghijklmnopqrstuvwxyzABCDEF/.test(js), 'no token / key-shaped string is stored');
   ok(!/pm\.demo@|someone@|claimed@/.test(js) && !row('Pdev4abc').email, 'no e-mail from the body (texts → "@", fields dropped)');
   ok(!/"password"|"pw"|"token"|"access_token"|auth_token/.test(js), 'password / token fields are dropped by name');
-  const st = row('Pdev4abc').boots[0]; ok(st.si[0].dom === 'grayco-cs.com' && st.si[0].h === 'a1b2c3d4e5f6' && /fetch failed/.test(st.errs[0].m), 'the useful parts stay (domain, hash, the error text)', st); }
+  const st = row('Pdev4abc').boots[0]; ok(st.boots === undefined && /password do not match/.test(cleanT('That email and password do not match a GrayCo sign-in.')) && st.si[0].dom === 'grayco-cs.com' && st.si[0].h === 'a1b2c3d4e5f6' && /fetch failed/.test(st.errs[0].m), 'the useful parts stay (domain, hash, the error text)', st); }
 console.log('5 · the signed-in e-mail: only from a real sign-in token');
 { tick(31000); let r = await call({ v: 1, dev: 'Pdev5abc', boot: boot() }, { headers: { authorization: 'Bearer tok-forged' } });
   ok(r.status === 200 && !row('Pdev5abc').email, 'a token Supabase does not know: no e-mail');

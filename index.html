@@ -244,7 +244,7 @@ try {
   var ms = function(){ return Math.round(pnow()); };
   var day = function(){ var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); };
   /* nothing that looks like an address, a token or a long secret ever leaves in a text */
-  var clean = function(t, n){ return s(t).replace(/eyJ[\w-]{6,}\.[\w-]{6,}\.[\w-]*/g, '[token]').replace(/\b(bearer|token|apikey|password|pw)\b[\s:=]+\S+/gi, '$1 [removed]')
+  var clean = function(t, n){ return s(t).replace(/eyJ[\w-]{6,}\.[\w-]{6,}\.[\w-]*/g, '[token]').replace(/\bbearer\s+\S+/gi, 'bearer [removed]').replace(/\b(token|apikey|password|passwd|pwd|pw|secret)\s*[:=]\s*\S+/gi, '$1=[removed]')
     .replace(/[^\s@]+@[^\s@]+/g, '@').replace(/[A-Za-z0-9+/_-]{32,}={0,2}/g, '[removed]').replace(/\s+/g, ' ').trim().slice(0, n || 160); };
   var path = function(u){ return s(u).replace(/^[a-z]+:\/\/[^/]+/i, '').replace(/[?#].*$/, '').slice(0, 80); };
 
@@ -285,8 +285,15 @@ try {
   try { W.addEventListener('error', onErr, true); W.addEventListener('unhandledrejection', onErr); } catch (e) {}
 
   /* ── the steps ── */
-  try { D.addEventListener('DOMContentLoaded', function(){ mark('html'); B.build = s(W.__GC_BUILD_ID__).slice(0, 40); NST.call(W, checkVersion, 1500); }); } catch (e) {}
-  try { W.addEventListener('load', function(){ mark('scripts'); }); } catch (e) {}
+  /* the page itself: first byte (ttfb) and the whole page downloaded (dl) from the browser's own timing; read (html); the load
+     event (load: every script in); the app ready (the CRM's data object, React drawn) — real phone load times */
+  var NS_K = 'gc_bw_ns', BY_K = 'gc_bw_bytes';
+  try { D.addEventListener('DOMContentLoaded', function(){ mark('html'); B.build = s(W.__GC_BUILD_ID__).slice(0, 40); try { set(NS_K, String(D.scripts.length)); } catch (e) {} NST.call(W, checkVersion, 1500); }); } catch (e) {}
+  try { W.addEventListener('load', function(){
+    mark('load');
+    try { var e = PF.getEntriesByType('navigation')[0]; if (e) { if (e.responseStart > 0) B.m.ttfb = Math.round(e.responseStart); if (e.responseEnd > 0) B.m.dl = Math.round(e.responseEnd);
+      B.bytes = { tr: e.transferSize || 0, enc: e.encodedBodySize || 0, dec: e.decodedBodySize || 0 }; if (e.encodedBodySize > 1e5) set(BY_K, String(e.encodedBodySize)); } } catch (x) {}
+  }); } catch (e) {}
   /* Sign in pressed: the e-mail's domain and a hash — the password field is never read */
   var hash = function(t){
     var h1 = 0x811c9dc5, h2 = 0x1b873593;
@@ -319,7 +326,8 @@ try {
     } catch (e) {}
     return '';
   };
-  var onScreen = function(){
+  var onScreen = function(){ var u = under(); return cov ? 'the Opening progress screen (' + stage()[1] + ') over ' + u : u; };
+  var under = function(){
     try {
       if (D.getElementById('gc-bootsafe')) return 'the "has not opened yet" panel';
       if (H.classList.contains('gc-boot-field')) return 'spinner (the GrayCo Field splash)';
@@ -351,8 +359,10 @@ try {
       }
       if (au && mark('signed', au)) dirty = true;
       if (au && att && !att.ok && !att.err) { att.ok = ms(); dirty = true; }
+      if (B.m.ready == null && (W._crm || H.classList.contains('_fieldmode'))) mark('ready');
       var fs = firstScreen();
       if (fs && mark('paint', fs)) { dirty = true; B.view = fs; heartbeat(); }
+      opening(g, au);
       /* stuck: nothing to use 20 s after the start, or after the sign-in */
       var since = Math.max(0, B.m.signed || 0);
       if (B.m.paint == null && !g && ms() - since > 20000) stuck('screen', (B.m.signed != null ? 'signed in, ' : '') + 'no first screen ' + Math.round((ms() - since) / 1000) + ' s: ' + onScreen());
@@ -360,10 +370,61 @@ try {
     } catch (e) {}
     cost += pnow() - c0;
     var waiting = att && !att.err && !att.ok && ms() - att.t < 60000;
-    if ((B.m.paint != null && !waiting) || (Date.now() - T0 > 15 * 60e3 && !waiting)) { pollOn = false; return; }
+    if ((B.m.paint != null && !waiting && !cov) || (Date.now() - T0 > 15 * 60e3 && !waiting)) { pollOn = false; opening(true, ''); return; }
     NST.call(W, poll, gateUp() ? 500 : 250);
   };
   pollOn = true; NST.call(W, poll, 250);
+
+  /* ── signed in before the app is ready: "Opening GrayCo Field…" with a progress bar, never a blank / frozen page ──
+     The page is ~7 MB to download: the sign-in box shows in under a second, the rest can take 10-20 s on a phone's signal.
+     Shown only while signed in, with no first screen yet, nothing else covering the page (the sign-in screen, the Field
+     splash, "Loading the CRM…") for 600 ms. Progress: while the page arrives, how much of it has been read (its scripts
+     counted against the last open's count, with the last open's size in MB); then "Starting" (read) and "Loading your jobs"
+     (every script in). Gone the moment the first screen is on (or 10 s after the app is ready, whatever it shows). After 45 s:
+     "Still loading — weak signal? Tap to retry" and a stuck report. On a fast open it never appears. */
+  var cov = null, covWant = 0, covSlow = false;
+  /* the CRM's own old sign-in screen while signed in here is a step (patch SIGNIN finds the person and reopens): covered 8 s */
+  var appLog = 0;
+  var other = function(){
+    if (H.classList.contains('gc-applogin')) { if (!appLog) appLog = ms(); if (ms() - appLog > 8000) return true; } else appLog = 0;
+    return H.classList.contains('gc-boot-field') || !!D.getElementById('gc-boot-cover') || !!D.getElementById('gc-bootsafe');
+  };
+  var stage = function(){
+    var nsT = +get(NS_K) || 900, mb = (+get(BY_K) || 0) / 1048576;
+    if (D.readyState === 'loading') { var p = Math.max(3, Math.min(88, Math.round(D.scripts.length / nsT * 88)));
+      return [p, 'Downloading the app' + (mb > 0.5 ? ' — ' + Math.round(p / 88 * 100) + '% of about ' + mb.toFixed(1) + ' MB' : ' — ' + Math.round(p / 88 * 100) + '%')]; }
+    if (B.m.load == null) return [92, 'Starting the app…'];
+    return [97, 'Loading your jobs…'];
+  };
+  function opening(g, au){
+    try {
+      var since = Math.max(B.m.signed || 0, B.m.try || 0);
+      var want = !!au && !g && B.m.paint == null && !(B.m.ready != null && ms() - B.m.ready > 10000) && (!other() || covSlow);
+      if (!want) { covWant = 0; if (cov) { try { cov.remove(); } catch (e) {} cov = null; B.m.coverOff = ms(); } return; }
+      if (!covWant) covWant = ms();
+      if (!cov && ms() - covWant < 600) return;
+      var fld = true; try { fld = W._gcDevice && W._gcDevice.fieldDevice ? !!W._gcDevice.fieldDevice() : /iPhone|iPod|iPad|Android/i.test(UA); } catch (e) {}
+      if (!cov) {
+        cov = D.createElement('div'); cov.id = 'gc-bw-opening'; cov.setAttribute('data-gc-keep', '1'); cov.setAttribute('data-gcnav-ignore', '1'); cov.setAttribute('role', 'status'); cov.setAttribute('aria-live', 'polite');
+        cov.style.cssText = 'position:fixed;inset:0;width:100vw;height:100vh;margin:0;padding:24px;box-sizing:border-box;z-index:2147483646;background:#fff;color:#0f2440;display:flex;flex-direction:column;' +
+          'align-items:center;justify-content:center;gap:14px;font:600 15px/1.4 -apple-system,BlinkMacSystemFont,Segoe UI,Inter,sans-serif;text-align:center;-webkit-user-select:none;user-select:none';
+        cov.innerHTML = '<img src="grayco-logo.jpg" alt="" style="width:84px;height:84px;border-radius:20px;object-fit:contain;box-shadow:0 6px 24px rgba(15,36,64,.14)" onerror="this.style.display=\'none\'">' +
+          '<div id="gc-bw-op-t" style="font-size:22px;font-weight:800">' + (fld ? 'Opening GrayCo Field…' : 'Opening the CRM…') + '</div>' +
+          '<div style="width:min(320px,80vw);height:8px;border-radius:4px;background:#e2e8f0;overflow:hidden"><div id="gc-bw-op-bar" style="height:100%;width:3%;background:#2563eb;border-radius:4px;transition:width .4s"></div></div>' +
+          '<div id="gc-bw-op-s" style="color:#475569;font-size:14px;min-height:20px"></div>';
+        cov.addEventListener('click', function(){ if (!covSlow) return; B.retry = ms(); dirty = true; send('retry', true); W.__GC_USER_WANTS_RELOAD__ = true; try { if (typeof W._gcReloadNow === 'function') W._gcReloadNow(); else W.location.reload(); } catch (e) {} });
+        H.appendChild(cov); mark('cover'); dirty = true;
+      }
+      var st = stage(), bar = D.getElementById('gc-bw-op-bar'), sub = D.getElementById('gc-bw-op-s');
+      if (bar) bar.style.width = st[0] + '%';
+      if (ms() - Math.max(since, covWant - 600) > 45000 && !covSlow) {
+        covSlow = true; mark('slow'); stuck('slow', 'signed in, not ready after 45 s: ' + st[1] + (NAV.onLine === false ? ' (offline)' : ''));
+        var t = D.getElementById('gc-bw-op-t'); if (t) t.textContent = 'Still loading — weak signal?';
+        cov.style.cursor = 'pointer'; st[1] = '<b style="display:inline-block;margin-top:6px;padding:10px 22px;border-radius:8px;background:#2563eb;color:#fff">Tap to retry</b><br><span style="font-size:12px">' + st[1] + '</span>';
+      }
+      if (sub) { if (covSlow) { if (sub.getAttribute('data-s') !== st[1]) { sub.innerHTML = st[1]; sub.setAttribute('data-s', st[1]); } } else sub.textContent = st[1]; }
+    } catch (e) {}
+  }
 
   /* ── an old build: /version.txt (no-store) against this page's build ── */
   var num = function(v){ var m = /^(\d+)\.(\d+)(?:-(\d{4}-\d\d-\d\d))?(.*)$/.exec(s(v).trim()); return m ? [+m[1], +m[2], m[3] || '', m[4] || ''] : null; };

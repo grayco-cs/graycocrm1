@@ -48,19 +48,21 @@ const SECRET_NAME = /pass|pwd|secret|token|auth(?!or)|api.?key|cookie|session|be
 function scrub(t, n){
   return s(t)
     .replace(/eyJ[\w-]{6,}\.[\w-]{6,}\.[\w-]*/g, '[removed]')                                   /* a JWT (a sign-in token, a key) */
-    .replace(/\b(bearer|token|apikey|api_key|access_token|refresh_token|password|passwd|pwd|pw|secret)\b(\s*[:=]\s*|\s+)\S+/gi, '$1 [removed]')
+    .replace(/\bbearer\s+\S+/gi, 'bearer [removed]')
+    .replace(/\b(token|apikey|api_key|access_token|refresh_token|password|passwd|pwd|pw|secret)\s*[:=]\s*\S+/gi, '$1=[removed]')   /* "password: x" — not the words "password do not match" */
     .replace(/[^\s@"'<>]+@[^\s@"'<>]+\.[a-z]{2,}/gi, '@')                                        /* an e-mail address */
     .replace(/[A-Za-z0-9+/_-]{32,}={0,2}/g, '[removed]')                                       /* a long key-shaped string */
     .replace(/[\u0000-\u001f]+/g, ' ').slice(0, n || 160);
 }
 const str = (v, n) => scrub(v, n);
 const num = v => { const x = +v; return isFinite(x) ? Math.max(-1, Math.min(Math.round(x), 864e5)) : undefined; };
+const big = v => { const x = +v; return isFinite(x) && x >= 0 ? Math.min(Math.round(x), 1e9) : undefined; };
 const bool = v => v === true || v === 1 || v === '1';
 const hex = v => /^[0-9a-f]{6,64}$/i.test(s(v)) ? s(v).toLowerCase().slice(0, 32) : '';
 const dom = v => { const x = s(v).toLowerCase().trim(); return /^(\(no @\)|\(empty\)|[a-z0-9.-]{1,60})$/.test(x) ? x : ''; };
 function list(v, max, fn){ return Array.isArray(v) ? v.slice(-max).map(fn).filter(Boolean) : []; }
 function drop(o){ Object.keys(o).forEach(k => { if (o[k] === undefined || o[k] === '' || (Array.isArray(o[k]) && !o[k].length)) delete o[k]; }); return o; }
-const MILESTONES = ['html', 'scripts', 'gate', 'try', 'err', 'signed', 'paint'];
+const MILESTONES = ['ttfb', 'dl', 'html', 'load', 'ready', 'gate', 'try', 'err', 'signed', 'cover', 'slow', 'coverOff', 'paint'];
 function cleanBoot(b){
   if (!b || typeof b !== 'object' || Array.isArray(b)) return null;
   const id = s(b.id);
@@ -75,7 +77,8 @@ function cleanBoot(b){
     id: id.toLowerCase(), at: at || undefined, build: str(b.build, 40), prev: str(b.prev, 40), ua: str(b.ua, 160),
     kind: /^(phone|tablet|pc)$/.test(s(b.kind)) ? s(b.kind) : undefined, sa: bool(b.sa) || undefined, sw: str(b.sw, 80), on: b.on === false ? false : undefined,
     sess: bool(b.sess) || undefined, nav: str(b.nav, 40), why: str(b.why, 12), t: num(b.t), hb: /^\d{4}-\d\d-\d\d$/.test(s(b.hb)) ? s(b.hb) : undefined,
-    view: str(b.view, 50), gateMsg: str(b.gateMsg, 160), banner: num(b.banner), heal: num(b.heal), left: num(b.left),
+    view: str(b.view, 50), gateMsg: str(b.gateMsg, 160), banner: num(b.banner), heal: num(b.heal), left: num(b.left), retry: num(b.retry),
+    bytes: b.bytes && typeof b.bytes === 'object' ? drop({ tr: big(b.bytes.tr), enc: big(b.bytes.enc), dec: big(b.bytes.dec) }) : undefined,
     m: Object.keys(m).length ? m : undefined, p: Object.keys(p).length ? p : undefined, old: old && Object.keys(old).length ? old : undefined,
     si: list(b.si, 4, a => a && typeof a === 'object' ? drop({ t: num(a.t), dom: dom(a.dom), h: hex(a.h), on: a.on === false ? false : undefined, ok: num(a.ok), err: str(a.err, 160), errT: num(a.errT) }) : null),
     errs: list(b.errs, 6, e => e && typeof e === 'object' ? drop({ t: num(e.t), m: str(e.m, 200) }) : null),
