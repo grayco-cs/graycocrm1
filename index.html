@@ -221117,24 +221117,30 @@ ST(textNotes, 20000); SI.call(W, textNotes, 120000);
 function textLog(){
   var u = '', k = ''; try { u = (localStorage.getItem('grayco_sb_url') || 'https://ieeonhpfahmwwecizdut.supabase.co').replace(/\/$/, ''); k = localStorage.getItem('grayco_sb_key') || ''; } catch (e) {}
   if (!u || !k || D.hidden) return;
-  W.fetch(u + '/rest/v1/gc_kv?select=value&key=eq.gc_text_log', { headers: { apikey: k, Authorization: 'Bearer ' + k }, cache: 'no-store' }).then(function(r){ return r.ok ? r.json() : null; }, function(){ return null; }).then(function(rows){
+  return W.fetch(u + '/rest/v1/gc_kv?select=value&key=eq.gc_text_log', { headers: { apikey: k, Authorization: 'Bearer ' + k }, cache: 'no-store' }).then(function(r){ return r.ok ? r.json() : null; }, function(){ return null; }).then(function(rows){
     if (!Array.isArray(rows) || !rows[0]) return; var v = rows[0].value; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = []; } }
     var list = (Array.isArray(v) ? v : []).filter(function(x){ return x && x.id && x.text && Date.now() - Date.parse(x.at || 0) < 30 * 864e5; }); if (!list.length) return;
     var byCode = {}; list.forEach(function(x){ if (x.code && x.leadId) byCode[x.code] = x.leadId; });
     var users = []; try { users = (W._crm && W._crm.users) || []; } catch (e) {}
+    var early = false, waits = false; try { early = !!(W.performance && W.performance.now() < 180000); } catch (e) {}   /* the first 3 minutes after the page opens */
     var nameOf = function(x){ if (s(x.who)) { var w0 = s(x.who), u0 = /@/.test(w0) ? users.find(function(z){ return z && low(z.email) === low(w0); }) : null; return u0 && s(u0.name) ? s(u0.name) : w0; }   /* TEXTEDPM */ var d = s(x.phone); var p = users.find(function(z){ return z && String(z.cell || z.mobile || z.phone || '').replace(/\D/g, '').slice(-10) === d; }); return p ? s(p.name) : (d ? '(' + d.slice(0, 3) + ') ' + d.slice(3, 6) + '-' + d.slice(6) : ''); };
     var add = {};
     list.forEach(function(x){ var id = s(x.leadId) || byCode[s(x.code)]; if (!id) return; (add[id] = add[id] || []).push(x); });
     Object.keys(add).forEach(function(id){
       var l = leads().find(function(y){ return y && (s(y.id) === id || s(y.inboxId) === id || s(y.leadInboxId) === id || s(y.fromInbox) === id); }); if (!l) return;
       var act = Array.isArray(l.activity) ? l.activity : [], have = {}; act.forEach(function(a){ if (a && a.id) have[a.id] = 1; });
-      var neu = add[id].filter(function(x){ return !have['TXT_' + x.id]; }).map(function(x){ var nm = nameOf(x);
-        return { id: 'TXT_' + x.id, at: s(x.at), by: x.dir === 'in' ? nm || 'GrayCo text' : 'GrayCo text', type: x.dir === 'in' ? 'text' : 'system', text: (x.dir === 'in' ? '📲 ' + (nm || 'Staff') + ' texted: "' + s(x.text) + '"' + (s(x.result) ? ' → ' + s(x.result) : '') : (x.type === 'assigned' ? '📱 texted ' + (nm || 'the PM') + ' (lead assigned): ' : '📤 GrayCo text to ' + (nm || 'staff') + ': ') + s(x.text)) }; });   /* TEXTEDPM */
-      if (!neu.length) return;
-      saveLead(l.id, { activity: act.concat(neu).sort(function(a, b){ return s(a.at) < s(b.at) ? -1 : 1; }).slice(-200) });
+      var entry = function(x){ var nm = nameOf(x);
+        return { id: 'TXT_' + x.id, at: s(x.at), by: x.dir === 'in' ? nm || 'GrayCo text' : 'GrayCo text', type: x.dir === 'in' ? 'text' : 'system', text: (x.dir === 'in' ? '📲 ' + (nm || 'Staff') + ' texted: "' + s(x.text) + '"' + (s(x.result) ? ' → ' + s(x.result) : '') : (x.type === 'assigned' ? '📱 texted ' + (nm || 'the PM') + ' (lead assigned): ' : '📤 GrayCo text to ' + (nm || 'staff') + ': ') + s(x.text)) }; };   /* TEXTEDPM */
+      var neu = add[id].filter(function(x){ if (have['TXT_' + x.id]) return false; if (/@/.test(s(x.who)) && nameOf(x) === s(x.who) && early) { waits = true; return false; } return true; }).map(entry);   /* the people list not loaded yet (no one has that e-mail in the first 3 minutes): it waits for the next read, written then with the name */
+      /* TEXTEDPM: an entry written before the people list was loaded holds the e-mail — once the name is known, write the name */
+      var fix = {}; add[id].forEach(function(x){ var w0 = s(x.who); if (!have['TXT_' + x.id] || !/@/.test(w0) || nameOf(x) === w0) return; var e = entry(x); act.forEach(function(a){ if (a && a.id === e.id && s(a.text).indexOf(w0) >= 0 && a.text !== e.text) fix[e.id] = e; }); });
+      if (!neu.length && !Object.keys(fix).length) return;
+      saveLead(l.id, { activity: act.map(function(a){ return a && fix[a.id] ? Object.assign({}, a, { by: fix[a.id].by, text: fix[a.id].text }) : a; }).concat(neu).sort(function(a, b){ return s(a.at) < s(b.at) ? -1 : 1; }).slice(-200) });
     });
+    if (waits && !TL_AGAIN) TL_AGAIN = ST(function(){ TL_AGAIN = 0; textLog(); }, 4000);   /* an entry waits for the people list: read again shortly */
   });
 }
+var TL_AGAIN = 0;
 ST(textLog, 25000); SI.call(W, textLog, 120000);
 /* APPTTEXT (owner 11/10): "appt / meeting / estimate / new job … <day> <time>" texted to the GrayCo number (server: gc_kv "gc_text_appts")
    → the texter's 👤 My schedule (a personal item, like a voice note's), added by THEIR CRM (only they see it); "new job" also makes a
