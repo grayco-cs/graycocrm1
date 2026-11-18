@@ -1,6 +1,7 @@
 /* tools/bootwatch_late.js — patch BOOTWATCH, the part of tools/bootwatch_early.js that is compiled only when first needed
    (eval'd inside that script, so it shares its variables): what was on screen, the "Opening GrayCo Field…" progress screen,
-   the "Tap to update" banner and its update, and sending. tools/patch_BOOTWATCH.py puts it into the early script as text. */
+   the "Tap to update" banner and its update, the version check, and sending. tools/patch_BOOTWATCH.py puts it in the page just
+   before the early script as <script type="text/plain" id="gc-bw-late"> (not compiled until needed; its notes dropped). */
   onScreenImpl = function(){ var u = under(); return cov ? 'the Opening progress screen (' + stage()[1] + ') over ' + u : u; };
   var under = function(){
     try {
