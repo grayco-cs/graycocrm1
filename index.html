@@ -237158,7 +237158,9 @@ function requests(pid){ return tasks().filter(function(t){ return t && t.kind ==
 
 /* ── the punch list (the CRM's own path, as the punch suggestions use) ── */
 function addPunch(pid, item, id){
-  var list = arr(crm().punch).slice(); if (list.some(function(x){ return x.id === id; })) return false;
+  /* the whole list first (the device store, as the punch suggestions read it) — never a list of one written over the rest */
+  return Promise.resolve(W.idbGet ? W.idbGet('punch') : null).then(function(v){ return Array.isArray(v) ? v : arr(crm().punch); }, function(){ return arr(crm().punch); }).then(function(base){
+  var list = arr(base).slice(); if (list.some(function(x){ return x.id === id; })) return false;
   var p = proj(pid) || {};
   list.push({ id: id, pid: String(pid), item: item, assignee: s(p.pm), status: 'open', by: me().name, date: today(), source: 'inspection', createdAt: nowIso(), updatedAt: nowIso() });
   try { if (W._gcApplySync) W._gcApplySync('punch', list); } catch (e) {}
@@ -237166,6 +237168,7 @@ function addPunch(pid, item, id){
   try { if (W._supaUpsert) W._supaUpsert('punch', list); } catch (e) {}
   try { if (W._gcPunch2 && W._gcPunch2.reload) W._gcPunch2.reload(); } catch (e) {}
   return true;
+  });
 }
 function notify(to, o){ to = to.filter(Boolean).filter(function(x, i, a){ return a.indexOf(x) === i; }); if (!to.length || typeof W._gcNotify !== 'function') return null; try { return W._gcNotify(to, Object.assign({ kind: 'inspection', link: '#projects' }, o)); } catch (e) { return null; } }
 function toast(m, bad){ try { var t = D.createElement('div'); t.className = 'gi2-toast'; t.setAttribute('role', 'status'); t.textContent = m; t.style.cssText = 'position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:2147483400;background:' + (bad ? '#7f1d1d' : '#0f172a') + ';color:#fff;border-radius:10px;padding:10px 14px;font:600 13px Inter,Arial,sans-serif;max-width:92vw;box-shadow:0 8px 26px rgba(0,0,0,.3)'; D.body.appendChild(t); ST(function(){ try { t.remove(); } catch (e) {} }, 4200); } catch (e) {} }
@@ -237217,14 +237220,14 @@ function result(pid, id, f){
     var out = { ok: true, row: row };
     if (r !== 'pass') {
       var what = (r === 'fail' ? 'Failed ' : 'Partly passed ') + row.label.toLowerCase();
-      out.punch = addPunch(pid, what + (note ? ' — ' + note : ''), 'PI-insp2-' + row.id + '-' + n);
+      var pun = addPunch(pid, what + (note ? ' — ' + note : ''), 'PI-insp2-' + row.id + '-' + n);
       var pmE = emailOf(p.pm), supE = emailOf(superOf(p));
       out.todo = addTask({ id: 'insp_fail_' + row.id + '_' + n, kind: 'insp_fail', insId: row.id, pid: String(pid), label: '📋 Reschedule the ' + row.label.toLowerCase() + ' — ' + s(p.name),
         note: what + ' on ' + dayTxt(row.date) + (note ? ': ' + note : '') + '. Fix the punch item, then book the re-inspection (job → 📋 Inspections → 📅 Reschedule).',
         assignees: [pmE].concat(officeEmails()).filter(Boolean), urgency: 'high', priority: 'high', addedBy: me().name || 'Inspections', addedAt: nowIso(), createdAt: nowIso(), updatedAt: nowIso(), done: false });
       notify([pmE || s(p.pm), supE].concat(officeEmails()).filter(function(e){ return e && e !== me().email; }), { title: '📋 ' + (r === 'fail' ? 'Inspection FAILED' : 'Inspection partly passed') + ': ' + row.label + ' — ' + s(p.name), body: (note || 'See the job → 📋 Inspections') + ' · punch item + To-Do to reschedule' });
     }
-    return out;
+    return pun ? pun.then(function(x){ out.punch = x; return out; }, function(){ return out; }) : out;
   });
 }
 function archive(pid, id, why){
