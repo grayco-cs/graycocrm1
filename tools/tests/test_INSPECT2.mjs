@@ -183,7 +183,7 @@ try {
   await op.click('#gi2-save');
   RES = await H.waitFor(off, ([pid, id]) => { const r = (JSON.parse(localStorage.getItem('gc_job_inspections') || '{}')[pid] || []).find(x => x.id === id); return r && r.status === 'scheduled' ? r : null; }, [P1.id, INS.id], 8000);
   const hr = RES && RES.history.find(h => h.what === 'rescheduled');
-  ok('C4 📅 Reschedule: the new date + window, back to Scheduled; the history keeps the old date (after the fail), who and why', !!RES && RES.date === day(5) && RES.from === '09:00' && !!hr && hr.from.date === T1 && hr.to.date === day(5) && hr.after === 'failed' && hr.by === 'Office Demo' && /GFCI installed/.test(hr.note) && RES.history.some(h => h.what === 'result' && h.result === 'Failed'), RES);
+  ok('C4 📅 Reschedule: the new date + window, back to Scheduled; the history keeps the old date (after the fail), who and why', !!RES && RES.date === day(5) && RES.from === '09:00' && !!hr && hr.from.date === T1 && hr.to.date === day(5) && hr.after === 'failed' && hr.by === 'Office Demo' && /GFCI installed/.test(hr.note) && RES.history.some(h => h.what === 'result' && h.result === 'Failed'), { hr, date: RES && RES.date, me: await off.ev(() => ({ u: (window._crm.users || []).map(u => u.name + '/' + u.email), m: window._gcMeNow && window._gcMeNow.name })) });
   const pan2 = await H.waitFor(off, () => { const o = document.getElementById('gi2-panel'); return o && /Rescheduled from/.test(o.innerText) ? o.innerText : null; }, null, 6000);
   ok('C4 … the panel shows "📅 Rescheduled from … to …" on the row', !!pan2, pan2);
   const si2 = await until(() => { const l = cloudJson('schedule'); const s = Array.isArray(l) && l.find(x => x && x.id === 'SCH_INS_' + INS.id); return s && s.time === '09:00' ? s : null; }, 20000);
@@ -191,7 +191,7 @@ try {
   const ft = await off.ev(id => (JSON.parse(localStorage.getItem('gc_office_tasks') || '[]')).filter(t => t.kind === 'insp_fail' && t.insId === id).map(t => t.done), INS.id);
   ok('C5 the "reschedule" To-Do is closed by the reschedule', ft.length >= 1 && ft.every(Boolean), ft);
   /* 🗄 archive (never delete) */
-  const arch = await off.ev(([pid, d]) => { const r = window._gcInsp2.schedule(pid, { type: 'other', other: 'Fire sprinkler', date: d }); const a = window._gcInsp2.archive(pid, r.row.id, 'not needed'); const all = window._gcInsp2.list(pid, true); return { a: !!a.ok, kept: all.some(x => x.id === r.row.id && x.archived === true && x.archivedBy === 'Office Demo'), shown: window._gcInsp2.list(pid).some(x => x.id === r.row.id) }; }, [P1.id, day(12)]);
+  const arch = await off.ev(([pid, d]) => { const r = window._gcInsp2.schedule(pid, { type: 'other', other: 'Fire sprinkler', date: d }); const a = window._gcInsp2.archive(pid, r.row.id, 'not needed'); const all = window._gcInsp2.list(pid, true); return { by: (all.find(x => x.id === r.row.id) || {}).archivedBy, a: !!a.ok, kept: all.some(x => x.id === r.row.id && x.archived === true && x.archivedBy === 'Office Demo'), shown: window._gcInsp2.list(pid).some(x => x.id === r.row.id) }; }, [P1.id, day(12)]);
   ok('C6 🗄 Archive keeps the row (archived, with who / why) — off the list, never deleted', arch.a && arch.kept && !arch.shown, arch);
   ok('C no page errors on the computer', off.errs.length === 0, off.errs.slice(0, 5));
 } catch (e) { ok('C crashed: ' + (e && e.stack || e), false); }
@@ -293,7 +293,7 @@ try {
   await op.waitForSelector('[data-gi2-portal]');
   await op.click('[data-gi2-portal]');
   const offp = await until(() => { const l = cloudJson('projects') || []; const p = l.find(x => x.id === P1.id); return p && p.portalInspections === false ? p : null; }, 20000);
-  ok('F1 the office turns "Show inspections on the customer portal" off → saved on the job', !!offp && offp.portalInspectionsBy === 'Office Demo', offp && { pi: offp.portalInspections });
+  ok('F1 the office turns "Show inspections on the customer portal" off → saved on the job', !!offp && offp.portalInspectionsBy === 'Office Demo', offp && { pi: offp.portalInspections, by: offp.portalInspectionsBy });
   await toWorld();
   const v = (await W.handlerCall('portal', { action: 'view' }, { 'x-portal-token': LINK })).data;
   ok('F2 the portal view has no inspections now', v && v.ok && !v.inspections, v && v.inspections);

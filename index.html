@@ -237075,7 +237075,7 @@ function projects(){ return arr(crm().projects); }
 function proj(pid){ return projects().filter(function(x){ return String(x.id) === String(pid); })[0] || (W._gcCurrentJob && String(W._gcCurrentJob.id) === String(pid) ? W._gcCurrentJob : null); }
 function users(){ return arr(crm().users); }
 function myEmail(){ try { if (W.__GC_AUTH__ && typeof W.__GC_AUTH__.email === 'function') return low(W.__GC_AUTH__.email()); } catch (e) {} return low(crm().user && crm().user.email); }
-function me(){ var e = myEmail(), u = users().filter(function(x){ return low(x.email) === e && e; })[0] || crm().user || {}; return { email: e, name: s(u.name) || e, role: s(u.role) }; }
+function me(){ var e = myEmail(), u = users().filter(function(x){ return low(x.email) === e && e; })[0], m = W._gcMeNow; if (!u && m && (!e || low(m.email) === e || !m.email)) u = m; u = u || crm().user || {}; return { email: e || low(u.email), name: s(u.name) || e, role: s(u.role) }; }
 function isAdmin(){ try { if (W._gcIsOfficeFull && W._gcIsOfficeFull()) return true; } catch (e) {} try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()); } catch (e) { return false; } }
 function isOffice(){ return isAdmin() || /office|admin|owner/i.test(me().role); }
 function onJob(p, m){ m = m || me(); var n = low(m.name); return !!n && [p.pm, p.projectManager, p.apm, p.superintendent, p.super].some(function(x){ return low(x) === n; }); }
