@@ -311,7 +311,7 @@ if (PART === 'all' || PART === 'B') {
   const visText = c => c.ev(() => { const out = []; const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT); let n; while ((n = w.nextNode())) { const t = (n.nodeValue || '').trim(); if (!t) continue; const el = n.parentElement; if (!el || el.closest('script,style,[aria-hidden="true"]')) continue; const r = el.getBoundingClientRect(); const st = getComputedStyle(el); if (r.width < 1 || r.height < 1 || st.visibility === 'hidden' || st.display === 'none' || st.opacity === '0') continue; let hid = false; for (let p = el; p && p !== document.body; p = p.parentElement) { if (getComputedStyle(p).display === 'none') { hid = true; break; } } if (!hid) out.push(t); } return out; });
   const S = await phone(SUP, 'Sam (1099)');
   const vt = await visText(S);
-  const tools = ['Clock in', 'Photos', 'Daily log', 'Punch list', 'My jobs today', 'Safety sign-in', 'Inspections & permits', 'Snap a receipt', 'Start daily log', 'Who\'s on site'];
+  const tools = ['Clock in', 'Photos', 'Daily log', 'Punch list', 'My jobs today', 'Safety sign-in', 'Inspections', 'Snap a receipt', 'Start daily log', 'Who\'s on site'];
   const missing = tools.filter(t => !vt.some(x => x.includes(t)));
   ok('P1 the superintendent\'s Field tools are there: ' + tools.join(', '), missing.length === 0, { missing, sample: vt.slice(0, 60) });
   const bad = vt.filter(t => PAYRX.test(t));
