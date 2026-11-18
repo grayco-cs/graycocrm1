@@ -16,6 +16,7 @@ const { computer, signIn, sleep, cset, cget, resetCloud, onFn } = await import(p
 const shot = async (A, name) => { if (SHOTS) await A.page().screenshot({ path: SHOTS + '/' + name + '.png' }); };
 const now = new Date().toISOString();
 resetCloud();
+const DBGC = async (lab, X) => { const p = (cget('projects')||[]).find(p=>p.id==='PJ'); const loc = X ? await X.ev(()=>{const p=window._crm.projects.find(x=>x.id==='PJ'); return p && p.jobDocs ? (p.jobDocs.extra||[]).length : -1;}).catch(()=>'x') : '-'; console.log('DBG', lab, 'cloud extra', p && p.jobDocs ? (p.jobDocs.extra||[]).length : -1, 'upd', p && p.updatedAt, 'local', loc); };
 cset('users', [{ id: 'u1', name: 'Wesley Johnson', email: 'wjohnson@grayco-cs.com', role: 'Admin', payType: 'owner', active: true },
   { id: 'u2', name: 'Office Demo', email: 'office@grayco-cs.com', role: 'Office Manager', active: true },
   { id: 'u5', name: 'Demo PM', email: 'pm@grayco-cs.com', role: 'Project Manager', active: true }]);
@@ -34,18 +35,22 @@ const tap = (A0) => A0.ev(() => document.body.dispatchEvent(new Event('pointerdo
 const A = await computer('office@grayco-cs.com', { build: BUILD });
 await signIn(A, 'office@grayco-cs.com', 20000);
 ok('A0 the CRM is up for the office with ＋ JOBREQ, 📑 JOBDOCS and 🏛 EPAHUD', !!await waitOn(A, () => window._gcJobReq && window._gcJobDocs && window._gcEpaHud && (window._crm.projects || []).length >= 3 && window._gcDocLib && window._gcDocLib.builtins().length > 20, null, 60000));
+await DBGC('A0', A);
 /* a customer paper from the library that is not on the kitchen job by itself (clientFacing, e-signable by DOCAUTO) */
 const DOC = await A.ev(() => { const p = window._crm.projects.find(x => x.id === 'PJ'); const have = new Set(window._gcJobDocs.want(p).items.map(x => x.doc)); const NEVER = window._gcDocAuto.NEVER;
   const L = window._gcDocLib.builtins().filter(b => b && /^gcb_/.test(b.id) && b.clientFacing && !have.has(b.id) && !NEVER.test(b.name + ' ' + b.id + ' ' + (b.category || '')) && !/HR|Marketing/i.test(b.category || ''));
   const pref = L.find(b => b.id === 'gcb_hoa_ack') || L.find(b => b.id === 'gcb_antimicrobial_consent') || L[0]; return pref ? { id: pref.id, name: pref.name } : null; });
 ok('A1 a library customer paper to add (not on the job by itself)', !!DOC, DOC);
+await DBGC('A1', A);
 await A.ev(() => { if (window._navToJob) window._navToJob('PJ'); });
 let bar = await waitOn(A, () => { const c = document.getElementById('gc-jd'); return c && c.getAttribute('data-pid') === 'PJ' && c.querySelector('[data-jd="xadd"]') && c.innerText; }, null, 20000);
 if (!bar) { await A.ev(() => { window._gcOpenProject = { id: 'PJ' }; }); bar = await waitOn(A, () => { const c = document.getElementById('gc-jd'); return c && c.querySelector('[data-jd="xadd"]') && c.innerText; }, null, 8000); }
 ok('A2 the job\'s 📑 Paperwork card has "＋ Add a required paper to this job" for the office', bar && /Add a required paper to this job/.test(bar), bar && bar.slice(0, 400));
+await DBGC('A2', A);
 await A.ev(() => document.querySelector('#gc-jd [data-jd="xadd"]').click());
 const sh = await waitOn(A, () => { const o = document.getElementById('gc-xr-sheet'); return o && o.querySelector('[data-xr="doc"] option') && { txt: o.innerText, hold: !!o.querySelector('[data-xr="hold"]'), type: !!o.querySelector('[data-xr="allType"]'), groups: [...o.querySelectorAll('[data-xr="doc"] optgroup')].map(g => g.label) }; }, null, 8000);
 ok('A3 the sheet: 📚 library (with the EPA / HUD forms and the job-type papers) / 📁 upload / ✍️ fill-out item, who, due, the hold; no "every new job type" box for the office', sh && /Library/.test(sh.txt) && /Upload/.test(sh.txt) && /Fill-out item/.test(sh.txt) && /Who fills it out or signs it/.test(sh.txt) && /When it is due/.test(sh.txt) && sh.hold && !sh.type && sh.groups.some(g => /EPA \/ HUD/.test(g)) && sh.groups.some(g => /Job-type/.test(g)), sh);
+await DBGC('A3', A);
 await shot(A, 'A3-add-sheet');
 await A.ev(D => { const o = document.getElementById('gc-xr-sheet'), g = n => o.querySelector('[data-xr="' + n + '"]');
   g('q').value = D.name; g('q').dispatchEvent(new Event('input')); g('doc').value = D.id; g('doc').dispatchEvent(new Event('change'));
@@ -54,21 +59,27 @@ await A.ev(D => { const o = document.getElementById('gc-xr-sheet'), g = n => o.q
 const jA = await waitOn(A, () => { const p = window._crm.projects.find(x => x.id === 'PJ'); const J = p && p.jobDocs; const r = J && (J.extra || []).find(x => x.doc); return r && (J.items || []).some(i => i.k === r.k) && JSON.parse(JSON.stringify(J)); }, null, 10000);
 const rA = jA && jA.extra.find(x => x.doc === DOC.id), iA = jA && rA && jA.items.find(x => x.k === rA.k);
 ok('A4 saved on the job only (project.jobDocs.extra): the library form, the customer signs, before the start, 🔒 Start job waits; who added it / when / why', rA && rA.kind === 'lib' && rA.party === 'customer' && rA.act === 'sign' && rA.due === 'start' && rA.hold === 'start' && rA.addedBy === 'Office Demo' && rA.addedRole === 'office' && rA.addedAt && /HOA/.test(rA.why) && iA && iA.gate === true && iA.to === 'owner' && iA.doc === DOC.id && (jA.log || []).some(e => e.k === rA.k && e.act === 'added' && e.by === 'Office Demo' && /HOA/.test(e.why)), { rA, iA });
+await DBGC('A4', A);
 ok('A5 the type table is untouched (per-job only)', cget('gc_jobdocs_table') === undefined && await A.ev(() => !JSON.stringify(window._gcJobDocs.table()).includes('fromXr')));
+await DBGC('A5', A);
 const card = await waitOn(A, k => { const r = document.querySelector('#gc-jd [data-jk="' + k + '"]'); return r && /Added by Office Demo/.test(r.innerText) && /Start job waits for it/.test(r.innerText) && document.getElementById('gc-jd').innerText; }, rA && rA.k, 8000);
 ok('A6 the card: the paper with 🔒, "Added by Office Demo (office)", 📤 Send…, and it counts in "📑 N papers to send"', card && /📑 \d+ papers? to send/.test(card) && await A.ev(k => !!document.querySelector('#gc-jd [data-jk="' + k + '"] [data-ep="menu"]'), rA.k), card && card.slice(0, 700));
+await DBGC('A6', A);
 await A.ev(() => { const c = document.getElementById('gc-jd'); if (c) c.scrollIntoView({ block: 'start' }); }); await sleep(300); await shot(A, 'A6-card');
 const libHtml = await A.ev(d => window._gcDocLib.render(d, 'PJ').then(r => r && r.page), DOC.id);
 ok('A7 the library form opens filled in from the job (customer, address) with the company letterhead', libHtml && /Client PJ/.test(libHtml) && /PJ Demo St/.test(libHtml) && /data-gc-logo|grayco-logo|data:image/.test(libHtml) && !/\{[a-z_]+\}/.test(libHtml), libHtml && libHtml.slice(0, 200));
+await DBGC('A7', A);
 const typeTry = await A.ev(() => { const r = window._gcJobReq.add('PK', { kind: 'fill', label: 'Office try type', party: 'pm', act: 'fill', due: 'start', allType: true, typeKey: 'construction' }); return { ok: r.ok, typeError: r.typeError || '', k: r.k }; });
 await sleep(800);
 ok('A8 "Also add to every new type" from the office → refused (admins only); the job gets it, the table does not', typeTry.ok && /Only an admin/.test(typeTry.typeError) && cget('gc_jobdocs_table') === undefined, typeTry);
+await DBGC('A8', A);
 /* 🔒 Start job is held */
 await sleep(1500);
 await A.ev(() => { document.body.dispatchEvent(new Event('pointerdown', { bubbles: true })); window._setProjects(prev => prev.map(p => p.id === 'PJ' ? Object.assign({}, p, { pct: 10, updatedAt: new Date().toISOString() }) : p)); });
 const gate = await waitOn(A, () => { const d = document.getElementById('gc-la3-gate'); return d && d.textContent; }, null, 8000);
 const pct0 = await waitOn(A, () => { const p = window._crm.projects.find(x => x.id === 'PJ'); return (+p.pct || 0) === 0 ? 'zero' : null; }, null, 5000);
 ok('A9 🔒 Start job waits for it: the start is taken back and the gate names the paper', gate && gate.includes(rA.label.split(' — ')[0].slice(0, 20)) && pct0 === 'zero', { gate, pct0 });
+await DBGC('A9', A);
 await shot(A, 'A9-gate');
 await A.ev(() => { const d = document.getElementById('gc-la3-gate'); if (d) d.remove(); });
 /* 🔒 the final invoice waits (office) */
@@ -78,53 +89,59 @@ const d0 = A.dialogs.length;
 const finInv = await A.ev(() => { const p = window._crm.projects.find(x => x.id === 'PK'); const r = window._gcCreateFinalInvoice(p); return { made: !!r, wrapped: !!window._gcCreateFinalInvoice.__gcXr, miss: window._gcJobReq.finalMissing(p).map(x => x.label) }; });
 await sleep(400);
 ok('A10 🔒 the final invoice waits for its paper (none made, the reason shown)', !finInv.made && finInv.wrapped && finInv.miss.includes('Signed punch list') && A.dialogs.slice(d0).some(d => /final invoice[\s\S]*Signed punch list/.test(d.message)), { finInv, d: A.dialogs.slice(d0) });
-console.log('DBG cloud PJ extra', JSON.stringify((cget('projects')||[]).find(p=>p.id==='PJ')?.jobDocs?.extra||null).slice(0,300));
+await DBGC('A10', A);
 const errsA = A.errs.filter(e => /JobReq|jobreq|_gcJobReq|gc-xr/i.test(e));
 await A.close();
+await DBGC('Aclosed'); await sleep(3000); await DBGC('Aclosed+3');
 
 /* ═══ B · the PM on a phone ═══ */
 const B = await computer('pm@grayco-cs.com', { build: BUILD, mobile: true, init: [SHARE] });
 await signIn(B, 'pm@grayco-cs.com', 20000);
 ok('B0 the PM\'s phone is up', !!await waitOn(B, () => window._gcJobReq && window._gcEpaHud && (window._crm.projects || []).length >= 3 && typeof window._gcJobDashboard === 'function', null, 60000));
-console.log('DBG B PJ', JSON.stringify(await B.ev(()=>{const p=window._crm.projects.find(x=>x.id==='PJ'); return {jd: p.jobDocs ? Object.keys(p.jobDocs):null, extra:(p.jobDocs||{}).extra, pm:p.pm, me: window._gcMeUser && window._gcMeUser(), isPM: window._gcJobReq.isPM(p)};})).slice(0,800));
-console.log('DBG cloud PJ extra2', JSON.stringify((cget('projects')||[]).find(p=>p.id==='PJ')?.jobDocs?.extra||null).slice(0,200));
+await DBGC('B0', B);
 await waitOn(B, () => { if (!document.querySelector('#_gcJobPick.gc-fh') && window._gcField && window._gcField.open) { try { window._gcField.open(); } catch (e) {} } return document.querySelector('#_gcJobPick.gc-fh'); }, null, 30000);
 const fh = await waitOn(B, () => { const b = document.getElementById('gc-ep-field'); return b && /papers? to send/.test(b.innerText) && b.innerText; }, null, 20000);
 ok('B1 GrayCo Field home: the office\'s paper is in "Needs you · 📑 N papers to send" for the PM', fh && fh.includes(rA.label.split(' — ')[0].slice(0, 20)), fh);
+await DBGC('B1', B);
 await B.ev(() => { document.querySelectorAll('#_gcJobPick,._gcSheetOv').forEach(o => o.remove()); window._gcJobDashboard('PJ'); });
 const fc = await waitOn(B, k => { const c = document.getElementById('gc-jd-f'); return c && c.getAttribute('data-pid') === 'PJ' && c.querySelector('[data-jk="' + k + '"]') && c.innerText; }, rA.k, 20000);
 ok('B2 the Field job page has the 📑 Paperwork card with ＋ Add and the office\'s paper (🔒, added by the office)', fc && /Add a required paper to this job/.test(fc) && /Added by Office Demo/.test(fc) && /Start job waits for it/.test(fc), fc && fc.slice(0, 600));
+await DBGC('B2', B);
 await B.ev(() => { const c = document.getElementById('gc-jd-f'); if (c) c.scrollIntoView({ block: 'start' }); }); await sleep(300); await shot(B, 'B2-field-card');
 const noRm = await B.ev(k => ({ btn: !!document.querySelector('#gc-jd-f [data-jk="' + k + '"] [data-jd="xrm"]'), api: window._gcJobReq.remove('PJ', k, 'PM tries') }), rA.k);
 await sleep(600);
 const stillA = await B.ev(k => { const p = window._crm.projects.find(x => x.id === 'PJ'); const r = (p.jobDocs.extra || []).find(x => x.k === k); return r && !r.removed && p.jobDocs.items.some(i => i.k === k); }, rA.k);
 ok('B3 the PM cannot remove the office\'s paper (no 🗄 Remove; refused; still on the job)', !noRm.btn && noRm.api && !noRm.api.ok && /admin or the office/.test(noRm.api.error) && stillA, noRm);
-console.log('DBG B PJ later', JSON.stringify(await B.ev(()=>{const p=window._crm.projects.find(x=>x.id==='PJ'); return {extra:(p.jobDocs||{}).extra, items:((p.jobDocs||{}).items||[]).map(i=>i.k), dash: !!document.getElementById('_gcJobDash'), err: window.__gcXrErr};})).slice(0,900));
-console.log('DBG cloud3', JSON.stringify((cget('projects')||[]).find(p=>p.id==='PJ')?.jobDocs?.extra||null).slice(0,200));
+await DBGC('B3', B);
 process.exit(1);
 /* 📤 Send… → customer portal (e-sign) */
 await B.ev(k => document.querySelector('#gc-jd-f [data-jk="' + k + '"] [data-ep="menu"]').click(), rA.k);
 const menu = await waitOn(B, () => { const o = document.getElementById('gc-ep-sheet'); return o && o.innerText; }, null, 6000);
 ok('B4 📤 Send… → 👤 customer portal (e-sign) / ✉️ e-mail / 📱 text a link / 📤 share from the phone / ✓ mark done', menu && /Customer portal \(e-sign\)/.test(menu) && /E-mail/.test(menu) && /Text a link/.test(menu) && /Share from this phone/.test(menu) && /Mark it done/.test(menu), menu);
+await DBGC('B4', B);
 await shot(B, 'B4-send-menu');
 await B.ev(() => document.querySelector('#gc-ep-sheet [data-ep-ch="portal"]').click());
 const req = await (async () => { for (let i = 0; i < 80; i++) { const r = SIGNREQ.find(b => b.projectId === 'PJ' && (b.items || []).some(it => it.refId === 'dl_' + DOC.id)); if (r) return r; await sleep(250); } return null; })();
 const lgB = await waitOn(B, k => { const p = window._crm.projects.find(x => x.id === 'PJ'); return (p.jobDocs.log || []).find(e => e.k === k && e.act === 'sent') || null; }, rA.k, 10000);
 ok('B5 → the customer\'s portal to e-sign (a portal-sign request for that paper) and logged on the paper (by the PM)', req && lgB && /portal/.test(lgB.via) && lgB.by === 'Demo PM', { req: req && req.items, lgB });
+await DBGC('B5', B);
 /* the customer signs → done → the hold clears */
 SIGNED.push({ id: 'SR1', projectId: 'PJ', kind: 'doc', refId: 'dl_' + DOC.id, status: 'signed', signedAt: new Date().toISOString(), signed: { name: 'Client PJ' } });
 const nS = await B.ev(() => window._gcJobReq.checkSigned('PJ'));
 const dn = await waitOn(B, k => { const p = window._crm.projects.find(x => x.id === 'PJ'); const d = (p.jobDocs.done || {})[k]; return d && Object.assign({ miss: window._gcJobDocs.gateMissing(p, []) }, d); }, rA.k, 8000);
 ok('B6 the customer\'s e-signature → the paper is done (e-signed in the portal, logged) and Start job no longer waits', nS === 1 && dn && /e-signed/.test(dn.how) && !dn.miss.includes(rA.k) && await B.ev(k => ((window._crm.projects.find(x => x.id === 'PJ').jobDocs.log) || []).some(e => e.k === k && e.act === 'signed' && e.by === 'customer'), rA.k), { nS, dn });
+await DBGC('B6', B);
 await sleep(1500);
 await B.ev(() => { document.body.dispatchEvent(new Event('pointerdown', { bubbles: true })); window._setProjects(prev => prev.map(p => p.id === 'PJ' ? Object.assign({}, p, { pct: 10, updatedAt: new Date().toISOString() }) : p)); });
 await sleep(3500);
 const st = await B.ev(() => ({ pct: +window._crm.projects.find(x => x.id === 'PJ').pct || 0, gate: !!document.getElementById('gc-la3-gate') }));
 ok('B7 …and the job starts (not taken back, no gate)', st.pct === 10 && !st.gate, st);
+await DBGC('B7', B);
 /* the PM uploads their own document as required (phone) */
 await B.ev(() => { const o = document.getElementById('gc-ep-sheet'); if (o) o.remove(); document.querySelector('#gc-jd-f [data-jd="xadd"]').click(); });
 const sB = await waitOn(B, () => { const o = document.getElementById('gc-xr-sheet'); return o && { hold: !!o.querySelector('[data-xr="hold"]'), type: !!o.querySelector('[data-xr="allType"]') }; }, null, 6000);
 ok('B8 the PM\'s add sheet: no hold and no "every new job type" (admins / office only)', sB && !sB.hold && !sB.type, sB);
+await DBGC('B8', B);
 await B.ev(() => document.querySelector('#gc-xr-sheet [data-xr-kind="upload"]').click());
 await B.page().setInputFiles('#gc-xr-sheet [data-xr="file"]', { name: 'Demo site safety plan.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n') });
 await B.ev(d => { const o = document.getElementById('gc-xr-sheet'), g = n => o.querySelector('[data-xr="' + n + '"]'); g('label').value = 'Site safety plan (signed by the crew)'; g('party').value = 'crew'; g('act').value = 'sign'; g('due').value = 'date'; g('due').dispatchEvent(new Event('change')); g('dueDate').value = d; g('why').value = 'my job needs it'; }, day(12));
@@ -132,8 +149,10 @@ await shot(B, 'B9-upload');
 await B.ev(() => document.querySelector('#gc-xr-sheet [data-xr-save]').click());
 const up = await waitOn(B, () => { const p = window._crm.projects.find(x => x.id === 'PJ'); const r = (p.jobDocs.extra || []).find(x => x.kind === 'upload'); return r && p.jobDocs.items.some(i => i.k === r.k) && JSON.parse(JSON.stringify(r)); }, null, 15000);
 ok('B9 the PM uploaded their own document as required: stored in the company file store, the crew signs, due by a date, added by the PM', up && /^sb:/.test(up.fileRef || '') && up.fileName === 'Demo site safety plan.pdf' && up.party === 'crew' && up.due === 'date' && up.dueDate === day(12) && up.addedBy === 'Demo PM' && up.addedRole === 'PM' && !up.hold, up);
+await DBGC('B9', B);
 const upRow = await waitOn(B, k => { const r = document.querySelector('#gc-jd-f [data-jk="' + k + '"]'); return r && r.innerText; }, up && up.k, 8000);
 ok('B10 on the card: added by the PM, 📁 the file, 🗄 Remove (their own, not sent yet), 📤 Share…', upRow && /Added by Demo PM \(PM\)/.test(upRow) && /Demo site safety plan/.test(upRow) && await B.ev(k => !!document.querySelector('#gc-jd-f [data-jk="' + k + '"] [data-jd="xrm"]') && !!document.querySelector('#gc-jd-f [data-jk="' + k + '"] [data-ep="menu"]'), up.k), upRow);
+await DBGC('B10', B);
 /* ⏸ data-entry mode holds the send */
 await B.ev(() => { window.__realPause = window._gcPause.state; window._gcPause.state = () => ({ paused: true, note: 'until Jan 3' }); });
 const n0 = QUEUED.length, s0 = SIGNREQ.length;
@@ -141,6 +160,7 @@ const held = await B.ev(k => window._gcEpaHud.sendVia('PJ', k, 'email'), up.k);
 await sleep(700);
 const lgH = await B.ev(k => ((window._crm.projects.find(x => x.id === 'PJ').jobDocs.log) || []).filter(e => e.k === k).map(e => e.act), up.k);
 ok('B11 ⏸ data-entry mode: the send is held (logged "held", nothing queued, nothing to the portal)', held && held.held === true && QUEUED.length === n0 && SIGNREQ.length === s0 && lgH.includes('held'), { held, lgH });
+await DBGC('B11', B);
 await B.ev(() => { window._gcPause.state = window.__realPause; });
 /* the PM removes their own unsent fill-out item → archived */
 const fk = await B.ev(() => window._gcJobReq.add('PJ', { kind: 'fill', label: 'Gate code from the customer', party: 'customer', act: 'fill', due: 'start' }).k);
@@ -150,6 +170,7 @@ await waitOn(B, k => document.querySelector('#gc-jd-f [data-jk="' + k + '"] [dat
 await B.ev(k => document.querySelector('#gc-jd-f [data-jk="' + k + '"] [data-jd="xrm"]').click(), fk);
 const gone = await waitOn(B, k => { const p = window._crm.projects.find(x => x.id === 'PJ'); const r = (p.jobDocs.extra || []).find(x => x.k === k); return r && r.removed && !p.jobDocs.items.some(i => i.k === k) && JSON.parse(JSON.stringify(r)); }, fk, 8000);
 ok('B12 the PM removes their own unsent paper: archived with who / why, off the list, kept in the history', gone && gone.removed.by === 'Demo PM' && /phone/.test(gone.removed.why) && gone.label === 'Gate code from the customer', gone);
+await DBGC('B12', B);
 const errsB = B.errs.filter(e => /JobReq|jobreq|_gcJobReq|gc-xr/i.test(e));
 await B.close();
 
