@@ -210616,6 +210616,22 @@ function sheet(title, html, cls){
 }
 function closeSheets(){ Array.prototype.forEach.call(D.querySelectorAll('.gc-ra-sheet'), function(o){ o.remove(); }); }
 function leaveHome(){ try { var h = D.querySelector('#_gcJobPick.gc-fh'); if (h) h.remove(); } catch (e) {} }
+/* the claims screen (#gcbb-ov, patch BB) opened from a job page (🛡 Claim info) closes when that job page is left for the Field Home —
+   left behind it sat over the bottom bar and took every tap. One opened from Home (💧 Drying, Approvals) is not touched. */
+(function(){
+  var tm = 0;
+  function home(){ return D.querySelector('#_gcJobPick.gc-fh'); }
+  function check(){
+    var ov = D.getElementById('gcbb-ov'); if (!ov) return;
+    var job = D.getElementById('_gcJobDash'), h = home();
+    if (job) { if (!ov.hasAttribute('data-pmf-job') && (!h || (h.compareDocumentPosition(job) & 4))) ov.setAttribute('data-pmf-job', '1'); return; }   /* opened over the job page (not over a Home that sits above one) */
+    if (!ov.hasAttribute('data-pmf-job') || !h || tm) return;
+    tm = later(function(){ tm = 0; var o = D.getElementById('gcbb-ov'); if (!o || !o.hasAttribute('data-pmf-job') || D.getElementById('_gcJobDash') || !home()) return;
+      try { if (W._gcClaims && W._gcClaims.close) W._gcClaims.close(); else o.remove(); } catch (e) { warn(e); try { o.remove(); } catch (x) {} } }, 400);
+  }
+  function start(){ if (!D.body) { later(start, 200); return; } try { new MutationObserver(check).observe(D.body, { childList: true }); } catch (e) { warn(e); } }
+  start();
+})();
 function openLead(id){ closeSheets(); leaveHome(); try { if (typeof W._gcOpenLead === 'function') { W._gcOpenLead(id); return; } } catch (e) { warn(e); } try { W._setView('leads'); } catch (e) {} }
 function leadLine(l, extra){ return '<div class="gc-ra-item"><div class="t"><b>' + esc(l.client || l.contactName || l.name || 'Lead') + '</b><small>' + esc([l.name !== l.client ? l.name : '', l.type || l.leadKind, l.address].filter(Boolean).join(' · ')) + '</small></div><div class="b">' + (extra || '') + '<button type="button" class="gc-ra-sm pri" data-pmf-a="lead1" data-id="' + esc(l.id) + '">Open</button></div></div>'; }
 function invLine(x){ var iv = x.iv || {}, p = proj(iv.pid); return '<div class="gc-ra-item"><div class="t"><b>' + esc(s(iv.client) || (p && p.client) || 'Invoice') + ' · ' + esc(usd(x.amt)) + '</b><small>' + esc(['#' + s(iv.num || iv.number || iv.id).slice(0, 12), p ? p.name : '', s(iv.date).slice(0, 10)].filter(Boolean).join(' · ')) + '</small></div><div class="b"><button type="button" class="gc-ra-sm pri" data-pmf-a="inv" data-id="' + esc(iv.id) + '">Open</button></div></div>'; }
