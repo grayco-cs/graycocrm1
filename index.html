@@ -57192,6 +57192,8 @@ console.log("[GC] Business Brain components loaded:", !!window.GrayCoBrain, !!wi
       /* 33.129 (audit): a sub bill is counted from the sub invoice. The expense the app writes
          when that bill is approved (_fromSub / subInvId / SUB_ shadow) is the SAME money. */
       if(ex._fromSub===true || ex.subInvId || /^SUB_/.test(String(ex.srcInvId||'')) || String(ex.subType||'').toLowerCase()==='sub-invoice') return false;
+      /* patch ACCTSUB: a register line that names a sub bill by its own id (the QuickBooks import's "Sub paid" lines) is that bill too */
+      if(ex.__subInv || (ex.srcInvId && II.some(function(iv){ return iv && (iv.type==='sub'||iv.type==='supplier') && String(iv.id)===String(ex.srcInvId); }))) return false;
       /* a paid commission is settled through the commissions line below, never as overhead too */
       if(/commission/i.test(String(ex.category||''))) return false;
       return true;
