@@ -215,7 +215,7 @@ W._gcPayManualOpen = async function(opts){
   if(!p){ alert('Payroll is still loading — try again in a moment.'); return; }
   if(!p.canSee()){ alert('Payroll is for admins and the office.'); return; }
   var admin = isAdmin();
-  var profs = []; try{ profs = (await p.profiles()).filter(function(x){ return x && x.name && x.active !== false; }); }catch(e){}
+  var profs = []; try{ profs = (await p.profiles()).filter(function(x){ return x && x.name && x.active !== false && !(window._gc1099 && window._gc1099.skipPay(x)); }); }catch(e){}   /* patch SUP1099 */
   profs.sort(function(a,b){ return String(a.name).localeCompare(String(b.name)); });
   var wk = opts.weekEnding ? weekOf(opts.weekEnding) : thisWeek();
   var payTyped = false;
