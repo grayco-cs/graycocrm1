@@ -945,6 +945,7 @@ function overview(){
   var sch = JOB.schedule || [];
   out.push(card(t('schedule'), sch.length ? sch.map(function(x){ return lateRow(x, h('div', { class: 'line' }, [h('span', { text: dts(x.date) }), h('span', { text: [x.time && x.endTime ? x.time + '–' + x.endTime : x.time, x.title].filter(Boolean).join(' · ') })])); }) : [h('div', { class: 'empty', text: t('noWeek') })]));
   { var msc = mySchedCard(); if (msc) out.splice(1, 0, msc); }   /* patch SUBSCHED: 📅 My schedule for this job — right under the job card */
+  { var isc = inspCardSub(); if (isc) out.splice(msc ? 2 : 1, 0, isc); }   /* patch INSPECT2: 📋 Inspections on this job (my trade) + Request an inspection */
   var rows = [['gate', s.gate], ['parking', s.parking], ['hours', s.hours], ['dumpster', s.dumpster], ['power', s.power], ['water', s.water], ['notes', s.notes]].filter(function(x){ return x[1]; });
   out.push(codesCard(j.id || (JOB.job && JOB.job.id)));   /* patch X10 */
   /* patch SUBPORTAL3: the job's plans / drawings / specs and files shared with subs (opened in the portal) */
@@ -1506,6 +1507,45 @@ function msForm(e){
     busy(go, true);
     var body = { projectId: JOB.job.id, op: 'save', id: e ? e.id : undefined, start: st.value, end: nd.value ? '' : (en.value || st.value), days: nd.value || undefined, weekends: wk.checked, time: tm.value, task: tk.value, crew: cr.value, notes: nt.value, lang: LANG };
     api('p-sched', body).then(function(r){ sh.close(); msApply(r, e ? 'msUpd' : 'msSaved'); }, function(x){ busy(go, false); err.textContent = x.message; });
+  });
+  return sh;
+}
+
+/* ── patch INSPECT2 (owner: "make sure in portals or on all jobs we can schedule inspections"): 📋 Inspections on the job page —
+   the job's inspections that touch the sub's trade (all of them when no trade is set): date, time, type, status; and
+   "📋 Request an inspection" (type, preferred day, note) → a To-Do card for the job's PM (the superintendent on a commercial
+   job), who books it (portal-access p-insp-req; _lib/inspect2.js). Nothing internal (notes, inspector, phone) is sent. ── */
+Object.assign(L.en, { inT: '📋 Inspections', inNone: 'No inspections on your part of this job yet.', inReq: '📋 Request an inspection', inType: 'Kind of inspection', inDay: 'Day you would like',
+  inNote: 'Note for your PM (optional)', inSend: 'Send the request', inSent: 'Sent — your PM will book it and you will see it here', inAsked: '⏳ Requested — waiting for your PM to book it', inBooked: '✅ Booked by GrayCo',
+  inSt_scheduled: 'Scheduled', inSt_passed: 'Passed', inSt_failed: 'Failed — your PM will send the fix list', inSt_partial: 'Partly passed — your PM will send the fix list', inPick: 'Pick the day.', inMine: 'My requests', inUp: 'Coming up', inPast: 'Past' });
+Object.assign(L.es, { inT: '📋 Inspecciones', inNone: 'Todavía no hay inspecciones de su parte de este trabajo.', inReq: '📋 Pedir una inspección', inType: 'Tipo de inspección', inDay: 'Día que prefiere',
+  inNote: 'Nota para su PM (opcional)', inSend: 'Enviar la solicitud', inSent: 'Enviado — su PM la programa y la verá aquí', inAsked: '⏳ Pedida — esperando que su PM la programe', inBooked: '✅ Programada por GrayCo',
+  inSt_scheduled: 'Programada', inSt_passed: 'Aprobada', inSt_failed: 'No aprobada — su PM le manda lo que hay que arreglar', inSt_partial: 'Aprobada en parte — su PM le manda lo que hay que arreglar', inPick: 'Escoja el día.', inMine: 'Mis solicitudes', inUp: 'Próximas', inPast: 'Anteriores' });
+function inspCardSub(){
+  if (!JOB || !Array.isArray(JOB.inspections)) return null;
+  var j = JOB.job || {}, list = JOB.inspections, reqs = JOB.inspReqs || [], kids = [];
+  var row = function(x){ return h('div', { class: 'line', 'data-insp-id': x.id, 'data-insp-st': x.status }, [h('span', { text: dts(x.date) + (x.window ? ' · ' + x.window : '') }), h('span', { text: x.type + ' · ' + t('inSt_' + x.status) })]); };
+  var up = list.filter(function(x){ return x.upcoming; }), past = list.filter(function(x){ return !x.upcoming; });
+  if (!list.length) kids.push(h('div', { class: 'empty', id: 'inNone', text: t('inNone') }));
+  if (up.length) { kids.push(h('div', { class: 'muted', text: t('inUp') })); up.forEach(function(x){ kids.push(row(x)); }); }
+  if (past.length) { kids.push(h('div', { class: 'muted', style: 'margin-top:6px', text: t('inPast') })); past.slice(0, 10).forEach(function(x){ kids.push(row(x)); }); }
+  if (reqs.length) { kids.push(h('div', { class: 'muted', style: 'margin-top:6px', text: t('inMine') })); reqs.slice().reverse().forEach(function(r){ kids.push(h('div', { class: 'line', 'data-insp-req': r.id, 'data-req-st': r.state }, [h('span', { text: dts(r.date) + ' · ' + r.type }), h('span', { text: t(r.state === 'scheduled' ? 'inBooked' : 'inAsked') })])); }); }
+  kids.push(h('button', { type: 'button', class: 'btn gold', id: 'inReqBtn', text: t('inReq'), on: { click: function(){ inspReqForm(); } } }));
+  return h('section', { class: 'card', id: 'subInsp', 'data-pid': j.id }, [h('h2', { text: t('inT') })].concat(kids));
+}
+function inspReqForm(){
+  var types = (JOB && JOB.inspTypes) || [];
+  var ty = h('select', { class: 'inp', id: 'inType' }, types.map(function(x){ return h('option', { value: x.k, text: x.l }); }));
+  var dd = h('input', { type: 'date', class: 'inp', id: 'inDay', min: todayYmd() });
+  var nt = h('textarea', { class: 'inp', id: 'inNote', rows: '3', maxlength: '500' });
+  var err = h('div', { class: 'err', role: 'alert', id: 'inErr' });
+  var go = h('button', { type: 'button', class: 'btn gold', id: 'inSend', text: t('inSend') });
+  var sh = sheet(t('inReq'), [field(t('inType'), ty), field(t('inDay'), dd), field(t('inNote'), nt), err, go]);
+  go.addEventListener('click', function(){
+    err.textContent = '';
+    if (!dd.value) { err.textContent = t('inPick'); return; }
+    busy(go, true);
+    api('p-insp-req', { projectId: JOB.job.id, type: ty.value, date: dd.value, note: nt.value, lang: LANG }).then(function(r){ sh.close(); if (JOB && r) { JOB.inspections = r.inspections || JOB.inspections; JOB.inspReqs = r.inspReqs || JOB.inspReqs; } toast(t('inSent')); drawJob(); }, function(x){ busy(go, false); err.textContent = x.message; });
   });
   return sh;
 }

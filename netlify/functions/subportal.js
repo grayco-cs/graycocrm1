@@ -1531,6 +1531,10 @@ async function myWork(profile){
         start: ymd(x.startDate), end: ymd(x.endDate), pm: pmOf(p), jobStatus: s(p.status || p.stage) });
     });
   });
+  try {   /* patch INSPECT2: each job's inspections that touch this sub's trade (all when no trade) — date, time, type, status only */
+    const IN2 = require('./_lib/inspect2.js'), ist = (await kvRead([IN2.KEY]))[IN2.KEY], tday = new Date(Date.now()).toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
+    jobs.forEach(function(j){ const p = projById[j.pid]; j.inspections = p ? IN2.subView(ist, p, j.trade || s(crm.trade || crm.cat), tday) : []; });
+  } catch (e) {}
   const scopes = arr(data.scopes).filter(function(sc){ return s(sc.subId) && s(sc.subId) === s(crm.id); }).map(function(sc){
     const p = projById[s(sc.pid)] || {};
     return { id: s(sc.id), job: s(sc.projectName || p.name), status: s(sc.status), sent: ymd(sc.sentDate), body: s(sc.body).slice(0, 6000) };

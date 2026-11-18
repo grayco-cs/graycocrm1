@@ -936,6 +936,11 @@ async function buildView(data, p, opts){
     showReview: stage >= 7,
     review: stage >= 7 && jaAllows(data, p, 'reviewRequest') ? (JA.otherCo(p) ? (JA.reviewLinkFor(p, jaAdmin(data), REVIEW_URL) ? { google: JA.reviewLinkFor(p, jaAdmin(data), REVIEW_URL), facebook: '' } : null) : { google: REVIEW_URL, facebook: FACEBOOK_URL }) : null   /* patch COTRAIN: never Construction's review pages on a Mitigation / Environmental job */
   };
+  try {   /* patch INSPECT2: the job's inspections — date, type, a plain result (never a note, the inspector, a phone or who meets); the job's switch hides them */
+    const IN2 = require('./_lib/inspect2.js'); let ist = data[IN2.KEY];
+    if (ist === undefined) { try { ist = (await kvRead([IN2.KEY]))[IN2.KEY]; } catch (e) { ist = null; } }
+    view.inspections = IN2.custView(ist, p, new Date(Date.now()).toLocaleDateString('en-CA', { timeZone: 'America/Chicago' }));
+  } catch (e) { view.inspections = null; }
   if (ins) {   /* patch INSP: the insurance-claim view */
     insTagDocs(view.docs, pdocs, signed);
     view.insurance = insuranceView(data, p, { stage: stage, cos: cos, invoices: invoices, docs: view.docs,
