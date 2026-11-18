@@ -17,7 +17,7 @@ const HN = process.env.GC_HARNESS_N || '/tmp/claude-0/-home-user-graycocrm1/6a5b
 const H = await import(HN);
 const { computer, signIn, sleep, cset, cget, resetCloud, ACCOUNTS, waitFor } = H;
 const BUILD = path.resolve(process.argv[2] || '.'), SHOTS = process.argv[3] || ''; if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
-const R = []; const ok = (n, c, i) => { R.push(!!c); console.log((c ? 'PASS ' : 'FAIL ') + n + (i !== undefined && !c ? '  ' + JSON.stringify(i).slice(0, 900) : '')); return !!c; };
+const R = []; let A = null, nErr = 0; const ok = (n, c, i) => { R.push(!!c); console.log((c ? 'PASS ' : 'FAIL ') + n + (i !== undefined && !c ? '  ' + JSON.stringify(i).slice(0, 900) : '')); if (A && A.errs.length > nErr) { console.log('   page error(s) before this step: ' + JSON.stringify(A.errs.slice(nErr))); nErr = A.errs.length; } return !!c; };
 const r2 = v => Math.round((+v || 0) * 100) / 100;
 const pad = n => String(n).padStart(2, '0');
 const ymd = d => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
@@ -40,7 +40,7 @@ cset('projects', [
   P('M1', { name: 'Acct Demo Water Loss', client: 'Sam Acct', address: '303 Ledger Ln, Memphis, TN', contract: 6000, contractSigned: true, autoPO: 'W303', type: 'Water Damage', companyId: 'mitigation', company: 'GrayCo Mitigation' }),
   P('OH', { name: 'New Office', client: 'Office', address: '6382 Stage Rd', contract: 0, autoPO: 'O046', status: 'completed', createdVia: 'invoice-entry', dataEntry: true })]);
 cset('customers', [{ id: 'CU1', name: 'Pat Acct', phone: '9015550111', address: '101 Ledger Ln, Memphis, TN' }]);
-cset('changeOrders', [{ id: 'CO1', pid: 'C1', amt: 2000, status: 'approved', desc: 'Add pantry', date: Y + '-02-01' }]);
+const COS = [{ id: 'CO1', pid: 'C1', amt: 2000, status: 'approved', desc: 'Add pantry', date: Y + '-02-01' }]; cset('cos', COS); cset('changeOrders', COS);
 const INV = [
   { id: 'I1', type: 'client', pid: 'C1', po: 'K101', client: 'Pat Acct', invNum: '2001', amt: 8000, date: Y + '-01-20', status: 'paid', paid: true, paidDate: Y + '-02-10', desc: 'Draw 1' },
   { id: 'I2', type: 'customer', pid: 'C2', po: '1056', client: 'Lee Acct', invNum: '1056', amt: 5000, date: Y + '-03-05', status: 'paid', paid: true, paidDate: Y + '-03-20', desc: 'QuickBooks history', source: 'quickbooks', importedHistory: true, noSend: true, qbKeys: ['QB:invoice:1056:lee'] },
@@ -67,7 +67,7 @@ cset('gcAcctRegister', [
   { id: 'R6', _id: 'R6', pid: 'C2', date: Y + '-03-20', desc: 'Client payment: QB #1056 — Lee Acct', type: 'income', isIncome: true, direction: 'in', amt: 5000, amount: 5000, category: 'Invoice', source: 'clientinvoice', srcInvId: 'QB_old_import_row' }]);
 cset('gc_tombstones', {}); cset('payrollRuns', []); cset('timesheets', []); cset('estimates', []); cset('leads', []); cset('schedule', []);
 
-const A = await computer('desk:office', { build: BUILD, init: [`try{localStorage.setItem('grayco_user','Brittany Demo')}catch(e){}`] });
+A = await computer('desk:office', { build: BUILD, init: [`try{localStorage.setItem('grayco_user','Brittany Demo')}catch(e){}`] });
 const shot = async n => { if (SHOTS) await A.page().screenshot({ path: path.join(SHOTS, 'acct100_' + n + '.png') }).catch(() => {}); };
 ok('0 the office signs in on the desk', await signIn(A, 'office@grayco-cs.com', 30000));
 await waitFor(A, () => !!(window._crm && window._crm.invoices && window._crm.invoices.length >= 8 && window._gcAcctModel && window._gcSpendRows), null, 40000);
@@ -81,11 +81,12 @@ const M = (range, basis, extra) => A.ev(([range, basis]) => { const m = window._
 /* ── A + B + C: the books tie out ── */
 const me = await A.ev(() => { try { const u = window._gcMeUser && window._gcMeUser(); return u && (u.name + '|' + u.role); } catch (e) { return String(e); } });
 ok('A0 signed in as the office (Brittany Demo, Office Admin)', /Brittany Demo\|Office Admin/.test(me || ''), me);
-const i2 = await A.ev(() => { const x = window._crm.invoices.find(i => i.id === 'I2'); return x && { type: x.type, amt: x.amt, invNum: x.invNum, pid: x.pid, keys: Object.keys(x).length }; });
-ok('B1 ACCTNORM: the QuickBooks history invoice typed "customer" is a customer invoice in the app (type client, nothing else changed)', i2 && i2.type === 'client' && i2.invNum === '1056' && i2.pid === 'C2' && i2.keys === Object.keys(INV[1]).length, i2);
+const i2 = await A.ev(seed => { const x = window._crm.invoices.find(i => i.id === 'I2'); if (!x) return null; const diff = Object.keys(seed).filter(k => !/^(type|updatedAt|savedAt)$/.test(k) && JSON.stringify(seed[k]) !== JSON.stringify(x[k])); return { type: x.type, diff }; }, INV[1]);
+ok('B1 ACCTNORM: the QuickBooks history invoice typed "customer" is a customer invoice in the app (type client; amount, number, job, dates unchanged)', i2 && i2.type === 'client' && !i2.diff.length, i2);
 await A.ev(() => window._setView('invoices')); await sleep(2500);
+await A.ev(() => { const b = [...document.querySelectorAll('button')].find(x => /^Client Invoices/.test(x.textContent.trim())); if (b) b.click(); }); await sleep(1200);
 const invTxt = await A.ev(() => (document.querySelector('#root main') || document.body).innerText);
-ok('B2 ▥ Invoices lists it with the other client invoices (#1056 next to #2001)', /1056/.test(invTxt) && /2001/.test(invTxt), invTxt.slice(0, 300));
+ok('B2 ▥ Invoices → Client Invoices lists it with the others (#1056 next to Draw 1 / #2002)', /1056/.test(invTxt) && (/2001/.test(invTxt) || /Draw 1/.test(invTxt)), invTxt.slice(0, 600));
 await shot('invoices');
 const y0 = await M(YEAR, 'accrual');
 ok('A1 revenue (accrual, this year) = every client invoice once: 8,000 + 5,000 (QB "customer") + 4,000 + 3,000 + 2,500 = 22,500 — the void #2004 is out', y0.rev === 22500, y0);
@@ -189,7 +190,8 @@ ok('F2 … the job is kept (archived, overhead), not deleted', ohP && ohP.overhe
 const csv = await A.ev(async () => { window._setView('accounting'); await new Promise(r => setTimeout(r, 2500)); const out = {}; for (const t of ['k_pnl', 'k_in']) { try { if (window._gcAcctOpenTab) window._gcAcctOpenTab(t); } catch (e) {} await new Promise(r => setTimeout(r, 1200)); try { out[t] = window._gcAcctCsv(t); } catch (e) { out[t] = 'ERR ' + e.message; } } return out; });
 await shot('accounting');
 const has = (t, n) => { const v = String(n), v2 = Number(n).toFixed(2); return typeof t === 'string' && (t.includes(v) || t.includes(v2)); };
-ok('G1 CSV export of Money In (A/R) carries the A/R total and the open invoices', has(csv.k_in, f1.ar.all) && /2003/.test(csv.k_in || ''), String(csv.k_in).slice(0, 400));
+const arSum = r2(String(csv.k_in || '').split(/\r?\n/).slice(1).filter(Boolean).reduce((t, l) => t + (parseFloat(l.split(',').pop()) || 0), 0));
+ok('G1 CSV export of Money In (A/R): one line per open invoice, the Balance column adds up to the A/R total (' + f1.ar.all + ')', arSum === f1.ar.all && /2003/.test(csv.k_in || ''), { arSum, csv: String(csv.k_in).slice(0, 400) });
 ok('G2 CSV export of the P&L carries the revenue and the net', has(csv.k_pnl, f1.rev) && has(csv.k_pnl, f1.net), String(csv.k_pnl).slice(0, 400));
 
 /* ── H: the office PC's browser storage is full ── */
