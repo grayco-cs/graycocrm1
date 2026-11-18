@@ -236137,17 +236137,21 @@ function want(p){
     var r = rows.find(function(x){ return s(x.key) === k; }); if (!r) return;
     arr(r.items).forEach(function(x){
       if (!x || !s(x.label) || !arr(x.only).every(function(c){ return cond(p, c); })) return;
+      if (x.fromXr && W._gcJobReq && W._gcJobReq.has(p, x.fromXr)) return;   /* JOBREQ: the job it was first added to keeps its own copy (no double) */
       var kk = keyOf(x);
       var gt = !!x.gate && arr(x.gateOnly).every(function(c){ return cond(p, c); });
       if (at[kk] != null) { var o = out[at[kk]]; if (o.for.indexOf(k) < 0) o.for.push(k); if (gt) o.gate = true; return; }
       at[kk] = out.length;
       var y = { k: kk, label: s(x.label), when: WHEN[x.when] ? x.when : 'before', for: [k], who: s(x.who) || 'customer' };
-      if (x.doc) y.doc = s(x.doc); if (x.file) y.file = s(x.file); if (!x.doc && !x.file) y.needsForm = true;
+      if (x.doc) y.doc = s(x.doc); if (x.file) y.file = s(x.file); if (!x.doc && !x.file && !x.fileRef && !x.fill) y.needsForm = true;
       if (gt) y.gate = true; if (x.la) y.la = s(x.la);
+      ['fileRef', 'fileName', 'fileType', 'fill', 'note', 'act', 'party', 'hold', 'dueDate'].forEach(function(f){ if (x[f]) y[f] = x[f]; });   /* JOBREQ: an upload / fill-out item an admin put on the type */
       if (EP) { var M = EP.meta(x); y.to = M.to; if (M.due) y.due = M.due; if (M.cite) y.cite = M.cite; if (x.ep) y.ep = 1; }   /* EPAHUD: recipient, timing, the rule */
       out.push(y);
     });
   });
+  /* JOBREQ: the papers someone added to this one job (project.jobDocs.extra — never the type table) */
+  try { if (W._gcJobReq && W._gcJobReq.items) W._gcJobReq.items(p).forEach(function(y){ if (at[y.k] != null) return; at[y.k] = out.length; out.push(y); }); } catch (e) {}
   return { types: d.types, items: out, emergency: d.emergency };
 }
 
@@ -236171,13 +236175,13 @@ function signedFile(pid, re){
 function jd(p){ return isObj(p && p.jobDocs) ? p.jobDocs : {}; }
 function given(p, x){   /* signed / given (what the 🔒 start gate needs) */
   var J = jd(p), a = la(p);
-  return !!((J.done || {})[x.k] || (x.la && (a.given || {})[x.la]) || (x.doc && ((p.docAuto || {}).given || {})[x.doc]) || portalSigned(p.id, x.doc) || signedFile(p.id, FILE_RX[x.la || x.doc]));
+  return !!((J.done || {})[x.k] || (x.la && (a.given || {})[x.la]) || (x.doc && ((p.docAuto || {}).given || {})[x.doc]) || portalSigned(p.id, x.doc) || (x.sref && portalSigned(p.id, x.sref)) || signedFile(p.id, FILE_RX[x.la || x.doc]));
 }
 function stateOfItem(p, x){
   var J = jd(p), a = la(p), dn = (J.done || {})[x.k], g = x.la && (a.given || {})[x.la];
   if (dn) return { done: true, txt: '✓ Done ' + nice(dn.on) + (dn.how ? ' (' + dn.how + ')' : '') + (dn.by ? ' · ' + dn.by : '') };
   if (g) return { done: true, txt: '✓ Given ' + nice(g.on) + (g.how ? ' (' + g.how + ')' : '') };
-  if (portalSigned(p.id, x.doc)) return { done: true, txt: '✅ E-signed in the portal' };
+  if (portalSigned(p.id, x.doc) || (x.sref && portalSigned(p.id, x.sref))) return { done: true, txt: '✅ E-signed in the portal' };
   if (x.la && signedFile(p.id, FILE_RX[x.la])) return { done: true, txt: '✓ Signed copy in the job\'s files' };
   var na = (J.na || {})[x.k]; if (na) return { done: true, na: true, txt: 'N/A · ' + (na.by || '') };
   var se = (J.sent || {})[x.k] || (x.la && (a.sent || {})[x.la]) || (x.doc && (p.docAuto || {}).sent && p.docAuto.sent[x.doc] && { on: p.docAuto.sent[x.doc] });
@@ -236194,6 +236198,7 @@ function merged(p){
     if (!x || !x.k) return;
     var n = have[x.k];
     if (n) { out.push(Object.assign({}, n, { addedAt: x.addedAt || new Date().toISOString() })); delete have[x.k]; n.__used = 1; }
+    else if (x.xr) return;   /* JOBREQ: removed → archived in jobDocs.extra (with who / why), off the list */
     else if (handled(p, x)) out.push(Object.assign({}, x, { stale: true }));   /* the job is no longer that type, but staff handled it: kept */
   });
   W2.items.forEach(function(x){ if (have[x.k]) { var y = Object.assign({}, x); delete y.__used; y.addedAt = new Date().toISOString(); out.push(y); } });
@@ -236251,12 +236256,13 @@ function send(pid, k){
 }
 function open(pid, k){
   var p = proj(pid), x = p && findItem(p, k); if (!x) return;
+  try { if (W._gcJobReq && W._gcJobReq.open(pid, x)) return; } catch (e) {}   /* JOBREQ: an uploaded file / a fill-out item */
   if (x.file) { try { W.open(x.file, '_blank', 'noopener'); } catch (e) {} return; }
   if (!x.doc) return;
   if (/^gcb_/.test(x.doc) && W._gcDocLib && W._gcDocLib.open) { try { W._gcDocLib.open(x.doc, pid); } catch (e) {} return; }
   try { if (W._gcDocs3 && W._gcDocs3.launch) W._gcDocs3.launch(x.doc, pid, true); } catch (e) {}
 }
-function nameOf(k){ if (LA_NAMES[k]) return LA_NAMES[k]; var r = null; table().types.some(function(t){ return arr(t.items).some(function(x){ if (keyOf(x) === k) { r = x; return true; } return false; }); }); return r ? s(r.label).split(' — ')[0].replace(/\s*\(.*$/, '') : k; }
+function nameOf(k){ if (LA_NAMES[k]) return LA_NAMES[k]; if (/^xr:/.test(s(k)) && W._gcJobReq) return W._gcJobReq.nameOf(k); var r = null; table().types.some(function(t){ return arr(t.items).some(function(x){ if (keyOf(x) === k) { r = x; return true; } return false; }); }); return r ? s(r.label).split(' — ')[0].replace(/\s*\(.*$/, '') : k; }
 
 /* ── 🔒 the start gate's list (asked by LEADSTART in patch LEADASB3) ── */
 function gateMissing(p, base){
@@ -236344,10 +236350,11 @@ function html(p){
   var done = items.filter(function(x){ return handled(p, x) && !(stateOfItem(p, x) || {}).sent; }).length;
   var h = '<h4>📑 Paperwork for this job' + (ty.length ? ' · ' + esc(rowsLabel(ty)) : '') + ' <span class="m">· ' + done + ' of ' + items.length + ' done</span></h4>'
     + '<div class="m">Picked by the job type. Nothing goes out by itself — 📤 Send is your click (⏸ data-entry mode holds it).' + (admin() ? ' <button type="button" data-jd="edit" style="min-height:28px;padding:2px 8px">✏️ Edit the table</button>' : '') + '</div>';
+  try { if (W._gcJobReq && W._gcJobReq.cardAdd) h += W._gcJobReq.cardAdd(p); } catch (e) {}   /* JOBREQ: ＋ Add a required paper to this job */
   try { if (W._gcEpaHud && W._gcEpaHud.cardTop) h += W._gcEpaHud.cardTop(p, items); } catch (e) {}   /* EPAHUD: 📑 N papers to send · 🏛 EPA / HUD facts · crew certified */
   if (em) h += '<div class="em">🚨 Emergency mitigation job — these papers are due, but they never hold the job back.</div>';
   var ef = em && company(p) !== 'environmental' ? envFound(p) : []; if (ef.length) h += '<div class="em" style="background:#fff7ed;border-color:#fed7aa;color:#9a3412">☣️ ' + esc(ef.join(' / ')) + ' found on this emergency job — GrayCo Environmental needs to get involved (a To-Do is on the office list). The work here is not held back.</div>';
-  if (!saved) h += '<div class="em" style="background:#f8fafc;border-color:#e2e8f0;color:#334155">This job does not have its paperwork list yet. <button type="button" data-jd="add" class="g">＋ Add this paperwork to the job</button></div>';
+  if (!saved && items.length) h += '<div class="em" style="background:#f8fafc;border-color:#e2e8f0;color:#334155">This job does not have its paperwork list yet. <button type="button" data-jd="add" class="g">＋ Add this paperwork to the job</button></div>';
   if (!items.length) h += '<div class="m" style="margin-top:6px">No paperwork for this job type yet — set the job type (water, fire, mold, asbestos, lead, construction …).</div>';
   ['before', 'during', 'after'].forEach(function(w){
     var L = items.filter(function(x){ return x.when === w; }); if (!L.length) return;
@@ -236356,14 +236363,16 @@ function html(p){
       var st = stateOfItem(p, x), lock = x.gate && !em && !x.stale && !given(p, x);
       var due = (EP && W._gcEpaHud && W._gcEpaHud.dueHtml && (x.due || EP.meta(x).due)) ? W._gcEpaHud.dueHtml(p, x) : w === 'before' ? (start ? (start < today() ? '<span class="bad">Was due before ' + esc(nice(start)) + '</span>' : '<span class="due">Due before ' + esc(nice(start)) + '</span>') : '<span class="due">Due before work starts</span>') : w === 'during' ? '<span class="due">During the job</span>' : '<span class="due">At completion</span>';
       h += '<div class="r' + (x.stale ? ' old' : '') + '" data-jk="' + esc(x.k) + '"><div class="l"><b>' + esc(x.label) + '</b>' + (x.needsForm ? ' <span class="nf">needs a form — upload yours</span>' : '') + (lock ? ' <span class="lock">🔒 Start job waits for it</span>' : '')
-        + '<div class="tag">' + (EP && EP.TO[x.to || EP.meta(x).to] ? '→ ' + esc(EP.TO[x.to || EP.meta(x).to].label) + (x.cite ? ' · ' + esc(x.cite) : '') : x.who === 'file' ? 'job file / crew' : 'customer') + (x.stale ? ' · no longer this job type — kept because it was handled' : '') + '</div></div>'
+        + '<div class="tag">' + (EP && EP.TO[x.to || EP.meta(x).to] ? '→ ' + esc(EP.TO[x.to || EP.meta(x).to].label) + (x.cite ? ' · ' + esc(x.cite) : '') : x.who === 'file' ? 'job file / crew' : 'customer') + (x.stale ? ' · no longer this job type — kept because it was handled' : '') + '</div>' + (x.xr && W._gcJobReq ? W._gcJobReq.rowTag(p, x) : '') + '</div>'
         + '<div class="b">' + (st ? '<span class="' + (st.sent ? 'due' : 'ok') + '">' + esc(st.txt) + '</span>' : due)
         + (x.needsForm ? (office() ? '<button type="button" data-jd="upload">📁 Upload yours</button>' : '') : '<button type="button" data-jd="open">👁 Open</button>')
         + (W._gcEpaHud && W._gcEpaHud.sendBtn ? W._gcEpaHud.sendBtn(p, x, st) : (!st && x.doc && /^gcb_/.test(x.doc) && x.who !== 'file' ? '<button type="button" data-jd="send">📤 Send</button>' : ''))   /* EPAHUD: 📤 Send… (portal / e-mail / text / share) · 🏛 Filed */
         + (st && !st.sent ? '<button type="button" data-jd="undo">Undo</button>' : '<button type="button" class="g" data-jd="done">✓ Done</button>' + (st ? '' : '<button type="button" data-jd="na" title="Not needed on this job">N/A</button>'))
+        + (x.xr && W._gcJobReq ? W._gcJobReq.rowBtns(p, x, st) : '')   /* JOBREQ: 🗄 Remove (archived, never deleted) */
         + '</div></div>';
     });
   });
+  try { if (W._gcJobReq && W._gcJobReq.cardBottom) h += W._gcJobReq.cardBottom(p); } catch (e) {}   /* JOBREQ: removed papers stay in the history */
   return h;
 }
 function findBack(){ var m = D.querySelector('main'); if (!m) return null; var bs = m.getElementsByTagName('button'); for (var i = 0; i < bs.length && i < 80; i++) if (/^\s*←\s*All Projects\s*$/.test(bs[i].textContent || '')) return bs[i]; return null; }
@@ -236371,7 +236380,7 @@ function paint(){
   try {
     if (D.hidden || D.documentElement.classList.contains('_fieldmode')) return;
     var op = W._gcOpenProject, p = op && op.id ? proj(op.id) : null, cur = D.getElementById('gc-jd');
-    if (!p || (!jd(p).items && !types(p).length)) { if (cur) cur.remove(); return; }
+    if (!p || (!jd(p).items && !types(p).length && !(W._gcJobReq && W._gcJobReq.canAdd(p)))) { if (cur) cur.remove(); return; }   /* JOBREQ: on every job for admins / office / the job's PM */
     signedRefresh(p.id); syncSigned(p);
     var back = findBack(); if (!back || typeof W._gcJobBox !== 'function') return;
     var box = W._gcJobBox(back); if (!box) return; css();
@@ -236390,12 +236399,13 @@ function syncSigned(p){
   if (Object.keys(add).length) patchLA(p.id, function(x){ x.given = Object.assign({}, x.given || {}, add); return x; });
 }
 D.addEventListener('click', function(e){
-  var b = e.target && e.target.closest ? e.target.closest('#gc-jd [data-jd]') : null; if (!b) return;
+  var b = e.target && e.target.closest ? e.target.closest('#gc-jd [data-jd], #gc-jd-f [data-jd]') : null; if (!b) return;
   e.preventDefault(); e.stopPropagation();
-  var c = D.getElementById('gc-jd'), pid = c && c.getAttribute('data-pid'), r = b.closest('[data-jk]'), k = r && r.getAttribute('data-jk'), a = b.getAttribute('data-jd');
+  var c = b.closest('#gc-jd, #gc-jd-f'), pid = c && c.getAttribute('data-pid'), r = b.closest('[data-jk]'), k = r && r.getAttribute('data-jk'), a = b.getAttribute('data-jd');
   if (a === 'edit') return openEditor();
   if (a === 'facts' && W._gcEpaHud) return W._gcEpaHud.facts(pid);   /* EPAHUD: 🏛 EPA / HUD facts */
   if (a === 'add') { assign(pid, true); toast('✓ Paperwork added to the job'); return; }
+  if (/^x/.test(a) && W._gcJobReq) { W._gcJobReq.action(pid, k, a, b); return; }   /* JOBREQ: xadd · xrm · xhist */
   if (!pid || !k) return;
   if (!jd(proj(pid)).items) assign(pid, true);
   if (a === 'open') return open(pid, k);
@@ -236521,6 +236531,7 @@ ST.call(W, pull, 6000); SI.call(W, pull, 300000);
 SI.call(W, sweep, 3000); SI.call(W, paint, 1500); SI.call(W, libBtn, 1500); ST.call(W, envSweep, 40000); SI.call(W, envSweep, 300000);
 W._gcJobDocs = { stateOfItem: stateOfItem, findItem: findItem, patchJD: patchJD, handled: handled, given: given, keyOf: keyOf, table: table, types: types, detect: detect, emergency: emergency, want: want, merged: merged, assign: assign, sweep: sweep, envSweep: envSweep, gateMissing: gateMissing, nameOf: nameOf,
   markDone: markDone, undo: undo, notNeeded: notNeeded, send: send, open: open, openEditor: openEditor, saveTable: saveTable, pull: pull, paint: paint, html: html, signed: SIGNED, DEFAULT: DEFAULT, CONDS: CONDS,
+  css: css, signedRefresh: signedRefresh, next: next, writeJobs: writeJobs, WHEN: WHEN,
   _reset: function(){ TABLE = null; RX = {}; } };
 })(window);
 </script>
@@ -238272,7 +238283,7 @@ function isOutgoing(x){ var T = EP.TO[EP.meta(x).to] || EP.TO.owner; return !T.i
 /* the papers the PM still has to send / give / file (customer-, occupant-, parent- or agency-facing, not handled, not stale) */
 function toSend(p){
   if (!p || p.deleted) return [];
-  return itemsOf(p).filter(function(x){ if (!x || x.stale || x.needsForm || !isOutgoing(x)) return false; return !stOf(p, x); })
+  return itemsOf(p).filter(function(x){ if (!x || x.stale || x.needsForm || (!isOutgoing(x) && !x.xr)) return false; return !stOf(p, x); })   /* JOBREQ: a paper added to the job is tracked whoever fills it out */
     .map(function(x){ return { x: x, d: dueOf(p, x) }; }).sort(function(a, b){ return (a.d.date || '9999') < (b.d.date || '9999') ? -1 : 1; });
 }
 function log(pid, k, o){
@@ -238314,6 +238325,7 @@ function share(p, x){
 }
 function sendVia(pid, k, ch){
   var p = proj(pid), x = p && JD() && JD().findItem(p, k); if (!x) return Promise.resolve({ ok: false });
+  if (x.xr && !/^gcb_/.test(s(x.doc)) && W._gcJobReq) return W._gcJobReq.sendVia(pid, k, ch);   /* JOBREQ: an uploaded paper / a fill-out item */
   var M = EP.meta(x), T = EP.TO[M.to] || EP.TO.owner, recipient = T.occupant && M.to === 'occupant' ? 'occupant' : '';
   if (ch === 'share') return share(p, x);
   if (paused()) { log(pid, k, { act: 'held', via: ch === 'portal' ? 'customer portal' : ch === 'sms' ? 'text' : 'e-mail', note: 'data-entry mode' }); toast(pauseNote(), true); return Promise.resolve({ ok: false, held: true }); }
@@ -238350,7 +238362,7 @@ function sheet(title, inner){
 var B = 'display:flex;align-items:center;gap:10px;width:100%;min-height:52px;margin:8px 0 0;padding:10px 14px;border-radius:12px;border:1px solid #cbd5e1;background:#fff;font:700 15px Inter,Arial,sans-serif;cursor:pointer;text-align:left;color:#0f172a';
 function menu(pid, k){
   var p = proj(pid), x = p && JD() && JD().findItem(p, k); if (!x) return null;
-  var M = EP.meta(x), T = EP.TO[M.to] || EP.TO.owner, chs = EP.channels(x), d = dueOf(p, x), occ = obj(obj(p.epahud).occupant), cust = s(p.client || p.customer);
+  var M = EP.meta(x), T = EP.TO[M.to] || EP.TO.owner, chs = x.xr && W._gcJobReq ? W._gcJobReq.channels(x) : EP.channels(x), d = dueOf(p, x), occ = obj(obj(p.epahud).occupant), cust = s(p.client || p.customer);
   var to = M.to === 'occupant' ? (s(occ.name) || 'the occupants') : M.to === 'parents' ? 'parents / guardians' : cust || 'the customer';
   var h = '<div style="font-size:13px;color:#475569;margin:4px 0 6px"><b>' + esc(x.label) + '</b><br>→ ' + esc(T.label) + (M.cite ? ' · ' + esc(M.cite) : '') + '<br>' + (d.date ? (d.over ? '<b style="color:#b91c1c">OVERDUE — was due ' : 'Due ') + esc(nice(d.date)) + (d.over ? '</b>' : '') + ' · ' : '') + esc(d.txt) + '</div>';
   if (paused()) h += '<div data-ep-paused="1" style="background:#fffbeb;border:1px solid #fcd34d;color:#92400e;border-radius:10px;padding:8px 10px;font-size:13px">' + esc(pauseNote()) + '</div>';
@@ -238360,7 +238372,8 @@ function menu(pid, k){
   if (chs.indexOf('text') > -1) h += opt('sms', '📱', 'Text a link', 'a secure link to the GrayCo portal — waits in ✅ Approvals');
   if (chs.indexOf('share') > -1) h += opt('share', '📤', 'Share from this phone', 'PDF to text, e-mail, AirDrop or print — works in data-entry mode');
   if (chs.indexOf('filed') > -1) h += opt('filed', '🏛', 'Filed with the agency', 'date + confirmation # — a filing, not a send (the abatement sub files the asbestos notice)');
-  h += opt('open', '👁', 'Open (filled in)', 'check it before it goes');
+  if (chs.indexOf('done') > -1) h += opt('done', '✓', 'Mark it done', T.internal ? 'filled out / signed by ' + T.label.replace(/ fills it out.*$/, '').toLowerCase() : 'signed / handed back');   /* JOBREQ */
+  h += opt('open', '👁', x.fill ? 'Open (what is needed)' : 'Open (filled in)', 'check it before it goes');
   if (arr(x.for).indexOf('lead') > -1 || /lead|hud/i.test(s(x.doc))) h += levelsCard(p);   /* 📏 the levels this paper is made with */
   var L = arr(obj(p.jobDocs).log).filter(function(e){ return e && e.k === x.k; });
   if (L.length) h += '<div style="margin-top:12px;font-size:12.5px;color:#334155"><b>Log</b>' + L.slice(-8).reverse().map(function(e){ return '<div data-ep-log="1">' + esc(new Date(e.at).toLocaleString()) + ' · ' + esc(e.act) + ' · ' + esc(e.via || '') + ' · ' + esc(e.by || '') + '</div>'; }).join('') + '</div>';
@@ -238369,11 +238382,13 @@ function menu(pid, k){
     var b = e.target.closest && e.target.closest('[data-ep-ch]'); if (!b) return; var ch = b.getAttribute('data-ep-ch');
     if (ch === 'open') { try { JD().open ? JD().open(pid, k) : W._gcDocLib.open(x.doc, pid); } catch (er) { try { W._gcDocLib.open(x.doc, pid); } catch (er2) {} } log(pid, k, { act: 'viewed', via: 'opened by staff' }); return; }
     if (ch === 'filed') { o.remove(); filed(pid, k); return; }
+    if (ch === 'done') { var how = W.prompt('How was "' + x.label + '" done? (signed, filled out, in the job file …)', T.internal ? 'filled out' : 'signed'); if (how == null) return; o.remove(); log(pid, k, { act: 'done', via: s(how) || 'done', doneHow: s(how) || 'done' }); toast('✓ Done — logged on the paper.'); return; }   /* JOBREQ */
     b.disabled = true; sendVia(pid, k, ch).then(function(r){ b.disabled = false; if (r && (r.ok || r.held)) o.remove(); });
   });
   return o;
 }
 function sendBtn(p, x, st){
+  if (x && x.xr && W._gcJobReq) return W._gcJobReq.sendBtn(p, x, st);   /* JOBREQ */
   if (!x || !x.doc || !/^gcb_/.test(x.doc)) return '';
   var M = EP.meta(x), T = EP.TO[M.to] || EP.TO.owner;
   if (T.filing) return st ? '' : '<button type="button" data-jd="ep" data-ep="filed">🏛 Filed…</button>';
@@ -238465,7 +238480,7 @@ function fieldPaint(){
     var h = '';
     if (M.length) {
       h += '<div class="fh-sec"><span>Needs you · 📑 ' + M.length + ' paper' + (M.length === 1 ? '' : 's') + ' to send</span></div>';
-      h += M.slice(0, 6).map(function(z){ return '<div class="fh-ap" data-ep-pid="' + esc(z.p.id) + '" data-ep-k="' + esc(z.x.k) + '" style="display:flex;gap:8px;align-items:center"><div class="t" style="flex:1;min-width:0"><b>' + esc(z.x.label.split(' — ')[0]) + ' · ' + esc(z.p.name) + '</b><span style="display:block;font-size:12.5px;color:' + (z.d.over ? '#b91c1c' : '#475569') + '">' + (z.d.date ? (z.d.over ? 'OVERDUE — was due ' : 'Due ') + esc(nice(z.d.date)) : 'Due ' + esc(z.d.txt)) + (z.esc ? ' · office' : '') + '</span></div><button type="button" data-ep-fa="send" style="min-height:44px;border-radius:10px;border:0;background:#241968;color:#fff;font-weight:800;padding:0 12px">' + (EP.TO[EP.meta(z.x).to] && EP.TO[EP.meta(z.x).to].filing ? '🏛 File' : '📤 Send') + '</button></div>'; }).join('');
+      h += M.slice(0, 6).map(function(z){ return '<div class="fh-ap" data-ep-pid="' + esc(z.p.id) + '" data-ep-k="' + esc(z.x.k) + '" style="display:flex;gap:8px;align-items:center"><div class="t" style="flex:1;min-width:0"><b>' + esc(z.x.label.split(' — ')[0]) + ' · ' + esc(z.p.name) + '</b><span style="display:block;font-size:12.5px;color:' + (z.d.over ? '#b91c1c' : '#475569') + '">' + (z.d.date ? (z.d.over ? 'OVERDUE — was due ' : 'Due ') + esc(nice(z.d.date)) : 'Due ' + esc(z.d.txt)) + (z.esc ? ' · office' : '') + '</span></div><button type="button" data-ep-fa="send" style="min-height:44px;border-radius:10px;border:0;background:#241968;color:#fff;font-weight:800;padding:0 12px">' + (EP.TO[EP.meta(z.x).to] && EP.TO[EP.meta(z.x).to].filing ? '🏛 File' : EP.TO[EP.meta(z.x).to] && EP.TO[EP.meta(z.x).to].internal ? '✓ Do it' : '📤 Send') + '</button></div>'; }).join('');
       if (M.length > 6) h += '<div class="fh-empty">+ ' + (M.length - 6) + ' more on the jobs\' 📑 Paperwork</div>';
     }
     h += '<button type="button" data-ep-fa="certs" style="display:flex;align-items:center;gap:8px;width:100%;min-height:46px;margin:8px 0;border:1px solid #e5e7eb;border-radius:12px;background:#fff;padding:8px 12px;font-weight:700;color:#0f172a">📜 My certifications (' + C.length + ')' + (bad ? ' <span style="color:#b91c1c">· ' + bad + ' expired</span>' : '') + '</button>';
@@ -238610,7 +238625,7 @@ function portalLog(p){
   var items = itemsOf(p); if (!items.length) return;
   try { W.fetch(SIGN_FN, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'list', projectId: String(p.id) }) }).then(function(r){ return r.json(); }).then(function(j){
     var L = arr(obj(p.jobDocs).log);
-    arr(j && j.items).forEach(function(r){ var doc = /^dl_/.test(s(r.refId)) ? s(r.refId).slice(3) : ''; var x = doc && items.find(function(y){ return y.doc === doc; }); if (!x) return;
+    arr(j && j.items).forEach(function(r){ var doc = /^dl_/.test(s(r.refId)) ? s(r.refId).slice(3) : ''; var x = doc && items.find(function(y){ return y.doc === doc || (y.sref && y.sref === doc); }); if (!x) return;
       var ev = [];
       if (s(r.viewedAt || r.openedAt || r.firstViewAt)) ev.push(['viewed', 'opened in the customer portal', s(r.viewedAt || r.openedAt || r.firstViewAt)]);
       if (r.status === 'signed') ev.push(['signed', 'e-signed in the customer portal', s(r.signedAt) || nowIso()]);
@@ -238632,5 +238647,396 @@ W._gcEpaHud = { fields: fields, autofill: autofill, dueHtml: dueHtml, dueOf: due
   facts: facts, saveFacts: saveFacts, sweep: sweep, wanted: wanted, fieldPaint: fieldPaint, mine: mine, schedCheck: schedCheck, problems: problems, crewLine: crewLine, seedDrafts: seedDrafts, addTemplates: addTemplates,
   certOf: certOf, roleOn: roleOn, pullCerts: pullCerts, pullLevels: pullLevels, levels: levelFields, stamp: stamp, levelsCard: levelsCard, _reset: function(){ SNAP = null; OVR = {}; FSIG = ''; } };
 try { console.log('[GC] 🏛 EPA / HUD papers to the PM + crew certification check (patch EPAHUD) — _gcEpaHud'); } catch (e) {}
+})(window);
+</script>
+<script id="gc-patch-jobreq">
+/* __GC_PATCH_JOBREQ__ — ＋ ADD A REQUIRED PAPER TO ONE JOB (owner 11/18: "Always be able to add documents to a PM's job as a requirement to
+   fill out, as admin or office. PMs can add documents to their jobs too, right?").
+   On every job's 📑 Paperwork card (the desk job page and the GrayCo Field job page): "＋ Add a required paper to this job" for admins,
+   the office (Office Manager) and the job's PM (an admin who is the PM counts as an admin) — by role, never by name.
+   • What: 📚 a paper from the CRM document library (the company documents, the EPA / HUD / job-type forms, the 📁 library uploads),
+     📁 a file uploaded now (PDF / Word / photo — the company file store), or ✍️ a typed "fill-out item" (a checklist requirement, no file).
+   • Who fills it out or signs it: the customer (signs / fills out), the PM, the crew / an employee, a sub, the office.
+   • Due: before the start · by a date · before the final invoice · at completion.
+   • Hold (admins and the office only): 🔒 "Start job" waits for it (the Lead 01 gate, LEADSTART) or 🔒 the final invoice waits for it
+     (making / sending / queuing a final invoice — an admin may send anyway, logged).
+   • Then it is one of the job's papers like the automatic ones: a library form opens filled in from the job with the job's company
+     letterhead (DOCLIB + EPAHUD auto-fill); "📑 N papers to send"; 📤 Send… → portal (e-sign when the customer signs) / e-mail /
+     text with the portal link / share from the phone; ⏸ data-entry mode holds every send (logged as held); every add / send / sign /
+     remove is logged on the paper (project.jobDocs.log); overdue → a To-Do for the job's PM, 2+ days late → the office + admins (EPAHUD).
+   • Kept on the job only: project.jobDocs.extra (never the type table). Remove = archived with who / why (it stays in the history,
+     nothing is deleted): admins and the office can remove any added paper; a PM only one they added, and only before it was sent.
+   • "Also add this to every new <job type> job" (admins only) writes the paper to 📑 Paperwork by job type through its own save (saveTable).
+   API: window._gcJobReq = { canAdd(p), items(p), add(pid, spec), remove(pid, k, why), openAdd(pid), addToType(key, rec), finalMissing(p),
+        checkSigned(pid), channels(x), sendVia(pid, k, ch), fieldPaint(), extra(p) } */
+(function(W){
+'use strict';
+if (W.__GC_PATCH_JOBREQ__) return; W.__GC_PATCH_JOBREQ__ = true;
+var D = W.document, ST = W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout, SI = W.__GC_NATIVE_SETINTERVAL__ || W.setInterval;
+var SIGN_FN = '/.netlify/functions/portal-sign', PORTAL = '/.netlify/functions/portal';
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v.filter(function(x){ return x != null; }) : []; }
+function obj(v){ return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function nowIso(){ return new Date().toISOString(); }
+function pad(n){ return (n < 10 ? '0' : '') + n; }
+function today(){ var d = new Date(); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+function nice(d){ d = s(d).slice(0, 10); return /^\d{4}-\d{2}-\d{2}$/.test(d) ? (+d.slice(5, 7)) + '/' + (+d.slice(8, 10)) : s(d); }
+function JD(){ return W._gcJobDocs || null; }
+function EH(){ return W._gcEpaHud || null; }
+function EP(){ return W._gcEpaHudCore || null; }
+function user(){ try { if (typeof W._gcMeUser === 'function') { var u = W._gcMeUser(); if (u && (u.name || u.email)) return u; } } catch (e) {} try { var j = JSON.parse(localStorage.getItem('grayco_user') || '{}'); if (j && typeof j === 'object') return j; } catch (e) {} return {}; }
+function myEmail(){ try { var e = W.__GC_AUTH__ && W.__GC_AUTH__.email && W.__GC_AUTH__.email(); if (e) return low(e); } catch (e) {} return low(user().email); }
+function users(){ return arr(W._crm && W._crm.users); }
+function meRec(){ var e = myEmail(); return e ? users().find(function(z){ return z && low(z.email) === e; }) || null : null; }
+function me(){ var u = user(); if (s(u.name)) return s(u.name); var r = meRec(); return r ? s(r.name) : myEmail() || 'someone'; }
+function admin(){ try { if (W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()) return true; } catch (e) {} var u = user(); return /^admin$/i.test(s(u.role)) || low(u.payType) === 'owner'; }
+function office(){ if (admin()) return true; try { if (W._gcIsOfficeFull && W._gcIsOfficeFull()) return true; } catch (e) {} var u = user(), r = meRec() || {}; return /office/i.test(s(u.role) + ' ' + s(u.profile) + ' ' + s(r.role)); }
+function projects(){ return arr(W._crm && W._crm.projects); }
+function proj(pid){ return projects().find(function(p){ return p && s(p.id) === s(pid); }) || null; }
+function paused(){ try { var st = W._gcPause && W._gcPause.state(); return !!(st && st.paused); } catch (e) { return false; } }
+function toast(m, bad){ try { if (W._gcSys && W._gcSys.toast) return W._gcSys.toast(m, bad); } catch (e) {} try { var t = D.createElement('div'); t.setAttribute('data-gc-keep', '1'); t.setAttribute('role', 'status'); t.className = 'gc-xr-toast'; t.textContent = m; t.style.cssText = 'position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:2147483100;background:' + (bad ? '#7f1d1d' : '#0f1d2f') + ';color:#fff;padding:10px 16px;border-radius:10px;font:600 13px Inter,Arial,sans-serif;max-width:90vw'; D.body.appendChild(t); ST.call(W, function(){ try { t.remove(); } catch (e) {} }, 4500); } catch (e) {} }
+
+/* ── who may do what (roles, never names) ── */
+function isPM(p){
+  if (!p) return false; var n = low(me()), e = myEmail(), r = meRec();
+  return !!((n && (low(p.pm) === n || low(p.projectManager) === n)) || (e && (low(p.pmEmail) === e || low(p.pm) === e)) || (r && s(r.id) && s(p.pmId) === s(r.id)));
+}
+function canAdd(p){ return !!p && !p.deleted && (admin() || office() || isPM(p)); }
+function canHold(){ return admin() || office(); }
+function roleName(p){ return admin() ? 'admin' : office() ? 'office' : isPM(p) ? 'PM' : 'staff'; }
+
+/* ── the job's own added papers: project.jobDocs.extra ── */
+var PARTY = { customer: 'Customer', pm: 'The PM', crew: 'Crew / employee', sub: 'Subcontractor', office: 'Office' };
+var DUEK = { start: 'Before work starts', date: 'By a date', final: 'Before the final invoice', atdone: 'At completion' };
+function extra(p){ return arr(obj(p && p.jobDocs).extra); }
+function rec(p, k){ return extra(p).find(function(r){ return r && r.k === k; }) || null; }
+function has(p, id){ return extra(p).some(function(r){ return r && r.id === id && !r.removed; }); }
+function toKey(r){ if (r.party === 'customer') return r.act === 'fill' ? 'xcust' : 'owner'; return { pm: 'xpm', crew: 'xcrew', sub: 'xsub', office: 'xoffice' }[r.party] || 'xpm'; }
+function whenOf(r, p){ if (r.due === 'final' || r.due === 'atdone') return 'after'; if (r.due === 'date') { var st = s(p && p.startDate).slice(0, 10); return st && s(r.dueDate) && s(r.dueDate) < st ? 'before' : 'during'; } return 'before'; }
+function itemOf(r, p){
+  var y = { k: r.k, label: s(r.label), when: whenOf(r, p), for: ['added'], who: r.party === 'customer' ? 'customer' : 'file', to: toKey(r), due: s(r.due) || 'start', xr: 1, party: s(r.party) || 'customer', act: s(r.act) || 'sign' };
+  if (r.dueDate) y.dueDate = s(r.dueDate);
+  if (r.doc) y.doc = s(r.doc); if (r.file) y.file = s(r.file);
+  if (r.fileRef) { y.fileRef = s(r.fileRef); y.sref = 'xr_' + s(r.id); if (r.fileName) y.fileName = s(r.fileName); if (r.fileType) y.fileType = s(r.fileType); }
+  if (r.kind === 'fill') y.fill = 1; if (r.note) y.note = s(r.note);
+  if (r.hold === 'start') y.gate = true; if (r.hold) y.hold = s(r.hold);
+  return y;
+}
+function items(p){ return extra(p).filter(function(r){ return r && r.k && !r.removed; }).map(function(r){ return itemOf(r, p); }); }
+function nameOf(k){ var r = null; projects().some(function(p){ r = rec(p, k); return !!r; }); return r ? s(r.label) : k; }
+function wasSent(p, k){ var J = obj(p && p.jobDocs); return !!(obj(J.sent)[k] || arr(J.log).some(function(e){ return e && e.k === k && /^(sent|shared)$/.test(s(e.act)); })); }
+function mine(r){ var e = myEmail(); return !!r && ((e && low(r.addedByEmail) === e) || (!s(r.addedByEmail) && low(r.addedBy) === low(me()))); }
+function canRemove(p, k){ var r = rec(p, k); if (!r || r.removed) return false; if (admin() || office()) return true; return isPM(p) && mine(r) && !wasSent(p, k); }
+
+/* one write through the list setter (the previous list, never a stale copy); the job's checklist is rebuilt in the same write */
+function saveJob(pid, fn){
+  var now = nowIso();
+  var f = function(list){ var out = arr(list).map(function(p){ if (!p || s(p.id) !== s(pid)) return p; var q = JSON.parse(JSON.stringify(p)); q = fn(q) || q; try { if (JD() && JD().next) q.jobDocs = JD().next(q); } catch (e) {} q.updatedAt = now; return q; }); try { if (W._gcApplySync) W._gcApplySync('projects', out); } catch (e) {} return out; };
+  if (typeof W._setProjects === 'function') W._setProjects(f); else if (W._crm) W._crm.projects = f(W._crm.projects);
+}
+function add(pid, spec){
+  var p = proj(pid); spec = obj(spec);
+  if (!p) return { ok: false, error: 'No such job.' };
+  if (!canAdd(p)) return { ok: false, error: 'Only an admin, the office or this job\'s PM can add a paper to it.' };
+  var kind = /^(lib|upload|fill)$/.test(s(spec.kind)) ? s(spec.kind) : 'lib', label = s(spec.label);
+  if (!label) return { ok: false, error: 'Give the paper a name.' };
+  if (kind === 'lib' && !s(spec.doc) && !s(spec.file) && !s(spec.fileRef)) return { ok: false, error: 'Pick a paper from the library.' };
+  if (kind === 'upload' && !s(spec.fileRef)) return { ok: false, error: 'Pick the file to upload.' };
+  if (spec.due === 'date' && !/^\d{4}-\d{2}-\d{2}$/.test(s(spec.dueDate))) return { ok: false, error: 'Pick the due date.' };
+  var hold = canHold() && /^(start|final)$/.test(s(spec.hold)) ? s(spec.hold) : '';
+  if (s(spec.hold) && !hold) return { ok: false, error: 'Only an admin or the office can make Start job / the final invoice wait for a paper.' };
+  var id = 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), at = nowIso();
+  var r = { id: id, k: 'xr:' + id, kind: kind, label: label.slice(0, 160), party: PARTY[spec.party] ? s(spec.party) : 'customer', act: spec.act === 'fill' ? 'fill' : 'sign',
+    due: DUEK[spec.due] ? s(spec.due) : 'start', hold: hold, why: s(spec.why).slice(0, 400), addedBy: me(), addedByEmail: myEmail(), addedRole: roleName(p), addedAt: at };
+  if (r.due === 'date') r.dueDate = s(spec.dueDate);
+  ['doc', 'file', 'fileRef', 'fileName', 'fileType', 'src'].forEach(function(f){ if (s(spec[f])) r[f] = s(spec[f]); });
+  if (s(spec.note)) r.note = s(spec.note).slice(0, 1000);
+  saveJob(pid, function(q){ var J = obj(q.jobDocs); J.extra = arr(J.extra).concat([r]); J.log = arr(J.log).concat([{ k: r.k, act: 'added', via: kind === 'lib' ? 'from the library' : kind === 'upload' ? 'uploaded file' : 'fill-out item', why: r.why, role: r.addedRole, hold: hold, at: at, by: r.addedBy }]); q.jobDocs = J; return q; });
+  var out = { ok: true, k: r.k, rec: r };
+  if (spec.allType) {
+    if (!admin()) out.typeError = 'Only an admin can add a paper to every new job of a type.';
+    else out.type = addToType(s(spec.typeKey), r);
+  }
+  ST.call(W, paintAll, 80);
+  return out;
+}
+function remove(pid, k, why){
+  var p = proj(pid); if (!p) return { ok: false, error: 'No such job.' };
+  var r = rec(p, k); if (!r) return { ok: false, error: 'That paper was not added on this job.' };
+  if (r.removed) return { ok: false, error: 'Already removed.' };
+  if (!canRemove(p, k)) return { ok: false, error: admin() || office() ? 'Not allowed.' : !mine(r) ? 'Only an admin or the office can remove a paper someone else added.' : 'It was already sent — ask the office to remove it.' };
+  why = s(why); if (!why) return { ok: false, error: 'Say why it comes off (kept in the history).' };
+  var at = nowIso(), R = { by: me(), byEmail: myEmail(), role: roleName(p), at: at, why: why.slice(0, 400) };
+  saveJob(pid, function(q){ var J = obj(q.jobDocs); J.extra = arr(J.extra).map(function(x){ return x && x.k === k ? Object.assign({}, x, { removed: R }) : x; }); J.log = arr(J.log).concat([{ k: k, act: 'removed', via: 'archived', why: R.why, role: R.role, at: at, by: R.by }]); q.jobDocs = J; return q; });
+  ST.call(W, paintAll, 80);
+  return { ok: true };
+}
+/* admins: the same paper on every new job of a type — the 📑 Paperwork by job type table, saved through its own save */
+function addToType(key, r){
+  if (!admin()) return Promise.resolve({ ok: false, error: 'Only an admin can change the paperwork table.' });
+  var J = JD(); if (!J || !J.table || !J.saveTable) return Promise.resolve({ ok: false, error: 'The paperwork table is not loaded.' });
+  var t = JSON.parse(JSON.stringify(J.table())), row = arr(t.types).find(function(x){ return s(x.key) === s(key); });
+  if (!row) return Promise.resolve({ ok: false, error: 'No job type "' + key + '" in the table.' });
+  var it = { label: s(r.label), when: whenOf(r, null), who: r.party === 'customer' ? 'customer' : 'file', to: toKey(r), fromXr: s(r.id), party: s(r.party), act: s(r.act) };
+  if (r.due && r.due !== 'date') it.due = s(r.due);
+  if (r.hold === 'start') it.gate = true; if (r.hold) it.hold = s(r.hold);
+  if (r.doc) it.doc = s(r.doc); else if (r.file) it.file = s(r.file); else if (r.fileRef) { it.fileRef = s(r.fileRef); if (r.fileName) it.fileName = s(r.fileName); if (r.fileType) it.fileType = s(r.fileType); } else it.fill = 1;
+  if (r.note) it.note = s(r.note);
+  row.items = arr(row.items).concat([it]);
+  return Promise.resolve(J.saveTable(t)).then(function(res){ if (res && res.ok) toast('✓ Also on every new ' + s(row.label) + ' job (📑 Paperwork by job type)'); return res; });
+}
+
+/* ── how an added paper goes out ── */
+function T(x){ var E = EP(); return E && E.TO[x.to] ? E.TO[x.to] : { label: 'Customer', send: true }; }
+function hasFile(x){ return !!(s(x.fileRef) || s(x.file) || s(x.doc)); }
+function channels(x){
+  if (T(x).internal) return (hasFile(x) ? ['share'] : []).concat(['done']);
+  if (x.fill && !hasFile(x)) return ['email', 'text', 'share', 'done'];
+  return ['portal', 'email', 'text', 'share', 'done'];
+}
+function sendBtn(p, x, st){
+  if (st && !st.sent) return '';
+  var I = T(x).internal;
+  if (I && !hasFile(x)) return '';
+  if (!I && x.doc && !/^gcb_/.test(s(x.doc))) return '';
+  return '<button type="button" data-jd="ep" data-ep="menu">' + (I ? '📤 Share…' : '📤 Send' + (st && st.sent ? ' again' : '') + '…') + '</button>';
+}
+function call(fn, body){ return W.fetch(fn, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(function(r){ return r.json().catch(function(){ return {}; }); }, function(){ return { ok: false, error: 'Cannot reach the server.' }; }); }
+function fileUrl(x){ if (s(x.fileRef)) return typeof W._gcFileUrl === 'function' ? Promise.resolve(W._gcFileUrl(x.fileRef)) : Promise.reject(new Error('no file store')); if (s(x.file)) return Promise.resolve(x.file); return Promise.reject(new Error('no file')); }
+function blobOf(x){ return fileUrl(x).then(function(u){ return W.fetch(u); }).then(function(r){ if (!r.ok) throw new Error('not found'); return r.blob(); }); }
+function fname(x){ var n = s(x.fileName) || s(x.file).replace(/^.*\//, ''); return n || (s(x.label).replace(/[\\\/:*?"<>|]+/g, ' ').slice(0, 80) + '.pdf'); }
+function log(pid, k, o){ try { if (EH() && EH().log) return EH().log(pid, k, o); } catch (e) {} return null; }
+function pauseMsg(){ return '⏸ Data-entry mode is on — CRM e-mail, text and portal sends are HELD (logged, nothing goes out). 📤 Share from this phone still works.'; }
+/* the paper in the customer's portal (e-sign / fill out): the stored file + one portal-sign request (idempotent on the server: one per job + paper) */
+function toPortal(p, x, attach){
+  var ref = s(x.fileRef), name = fname(x);
+  var step = ref ? Promise.resolve({ ref: ref }) : blobOf(x).then(function(b){ if (typeof W._gcStoreFile !== 'function') throw new Error('storage'); return W._gcStoreFile(new File([b], name, { type: b.type || 'application/octet-stream' }), { kind: 'doc', pid: p.id, name: name }); });
+  return step.then(function(meta){ if (!meta || !meta.ref) return { ok: false, error: 'The file could not be stored.' };
+    return call(SIGN_FN, { action: 'request-many', projectId: String(p.id), attach: !!attach, items: [{ refId: 'dl_' + s(x.sref || ('xr_' + s(x.k).slice(3))).replace(/[^A-Za-z0-9_.:-]/g, ''), title: s(x.label), docRef: meta.ref, docName: name }] }); }, function(e){ return { ok: false, error: s(e && e.message) || 'The file could not be read.' }; });
+}
+function notice(p, x, ch){
+  var F = {}; try { F = W._gcDocLib && W._gcDocLib.fields ? W._gcDocLib.fields(p) || {} : {}; } catch (e) {}
+  var job = s(p.name), phone = s(F.office_phone), cust = s(F.customer) || s(p.client) || 'there', what = s(x.label) + (s(x.note) ? ' — ' + s(x.note) : '');
+  var html = ch === 'sms' ? esc('GrayCo: ' + s(x.label) + ' for ' + (job || 'your property') + (hasFile(x) ? ' is in your GrayCo portal: https://portal.grayco-cs.com' : ' — we need this from you. Questions? Reply or call') + (phone ? ' (' + phone + ')' : '') + '.')
+    : '<p>Hi ' + esc(cust) + ',</p><p>For ' + esc(job || 'your project') + ' we need: <b>' + esc(what) + '</b>.</p>' + (hasFile(x) ? '<p>It is in your GrayCo customer portal' + (x.act === 'sign' ? ' to read and sign' : ' to fill out') + '.</p>' : '<p>Reply to this e-mail or bring it to the job.</p>') + (phone ? '<p>Questions? Call ' + esc(phone) + '.</p>' : '');
+  return call(PORTAL, { action: 'approval', op: 'queue', kind: 'document', channel: ch === 'sms' ? 'sms' : 'email', recipient: '', projectId: String(p.id), ref: s(x.k).replace(/[^A-Za-z0-9_.:-]/g, ''), subject: s(x.label) + ' — ' + job, title: (ch === 'sms' ? '📱 ' : '📄 ') + s(x.label) + ' — ' + job, html: html });
+}
+function share(p, x){
+  var name = (s(x.label) + ' — ' + s(p.name)).replace(/[\\\/:*?"<>|]+/g, ' ').slice(0, 90);
+  var done = function(via){ log(p.id, x.k, { act: 'shared', via: via, sentVia: 'shared from this device' }); toast('📤 Shared — logged on the paper.'); return { ok: true }; };
+  var nav = W.navigator;
+  if (!hasFile(x)) { var txt = s(x.label) + (s(x.note) ? ' — ' + s(x.note) : '') + ' (' + s(p.name) + ')'; if (nav && typeof nav.share === 'function') return Promise.resolve(nav.share({ title: name, text: txt })).then(function(){ return done('shared from the phone (text)'); }, function(e){ return { ok: false, cancelled: true }; }); return Promise.resolve(done('copied / told in person')); }
+  return blobOf(x).then(function(b){
+    var f = null; try { f = new File([b], fname(x), { type: b.type || 'application/octet-stream' }); } catch (e) {}
+    if (nav && typeof nav.share === 'function' && f && (!nav.canShare || nav.canShare({ files: [f] }))) return Promise.resolve(nav.share({ title: name, files: [f] })).then(function(){ return done('shared from the phone (file)'); }, function(e){ return e && e.name === 'AbortError' ? { ok: false, cancelled: true } : open(p.id, x) && done('opened on this device'); });
+    open(p.id, x); return done('opened on this device (print / save)');
+  }, function(){ toast('Could not open that file.', true); return { ok: false }; });
+}
+function sendVia(pid, k, ch){
+  var p = proj(pid), x = p && JD() && JD().findItem(p, k); if (!x) return Promise.resolve({ ok: false });
+  if (ch === 'share') return share(p, x);
+  var chName = ch === 'portal' ? 'customer portal' : ch === 'sms' ? 'text' : 'e-mail';
+  if (paused()) { log(pid, k, { act: 'held', via: chName, note: 'data-entry mode' }); toast(pauseMsg(), true); return Promise.resolve({ ok: false, held: true }); }
+  if (T(x).internal) { toast('This one is filled out by ' + T(x).label.replace(/ fills it out.*$/, '').toLowerCase() + ' — share it or mark it done.', true); return Promise.resolve({ ok: false }); }
+  if (ch === 'portal' || (ch === 'email' && hasFile(x))) {
+    return toPortal(p, x, ch === 'email').then(function(j){
+      if (j && j.ok) { var via = ch === 'email' ? 'e-mail with the file attached + customer portal' : 'customer portal — to ' + (x.act === 'fill' ? 'fill out' : 'e-sign'); log(pid, k, { act: 'sent', via: via, to: 'customer', sentVia: ch === 'email' ? 'e-mail + portal' : 'portal e-sign' }); toast(ch === 'email' ? '✉️ E-mailed to the customer (the file attached) and in their portal.' : '✍️ In the customer\'s portal to ' + (x.act === 'fill' ? 'fill out.' : 'sign.')); return { ok: true }; }
+      toast('Not sent: ' + s(j && j.error || 'try again'), true); return j || { ok: false };
+    });
+  }
+  var first = hasFile(x) ? toPortal(p, x, false) : Promise.resolve({ ok: true });
+  return first.then(function(){ return notice(p, x, ch); }).then(function(j){
+    if (j && j.ok) { var via = ch === 'sms' ? 'text with the portal link (approval)' : 'e-mail (approval)'; log(pid, k, { act: 'sent', via: via + ' — waiting in ✅ Approvals', to: 'customer', sentVia: via }); toast('✓ ' + (ch === 'sms' ? 'Text' : 'E-mail') + ' waiting in ✅ Approvals — it goes when approved.'); return j; }
+    toast('Not queued: ' + s(j && j.error || 'try again'), true); return j || { ok: false };
+  });
+}
+/* 👁 Open: an uploaded file, or the fill-out item's details (a library form opens filled in through JOBDOCS / DOCLIB) */
+function open(pid, x){
+  if (!x || !x.xr) return false;
+  if (s(x.fileRef)) { var w = null; try { w = W.open('', '_blank'); } catch (e) {} fileUrl(x).then(function(u){ if (w) w.location.href = u; else W.open(u, '_blank'); }, function(){ if (w) w.close(); toast('That file could not be opened.', true); }); return true; }
+  if (x.fill && !hasFile(x)) {
+    var p = proj(pid), r = rec(p, x.k) || {}, d = EH() && EH().dueOf ? EH().dueOf(p, x) : {};
+    sheet('✍️ ' + s(x.label), '<div data-xr-open="1" style="font-size:14px;line-height:1.5;margin-top:8px">' + (s(x.note) ? '<div>' + esc(x.note) + '</div>' : '') + '<div style="color:#475569;font-size:13px;margin-top:6px">→ ' + esc(T(x).label) + ' · due ' + esc(d.date ? nice(d.date) : d.txt || DUEK[x.due]) + '<br>Added by ' + esc(r.addedBy) + ' (' + esc(r.addedRole) + ') ' + esc(nice(r.addedAt)) + (s(r.why) ? ' — ' + esc(r.why) : '') + '</div></div>');
+    return true;
+  }
+  return false;
+}
+
+/* ── the card ── */
+function cardAdd(p){ return canAdd(p) ? '<div class="m" data-xr-bar="1" style="margin:6px 0"><button type="button" class="g" data-jd="xadd">＋ Add a required paper to this job</button></div>' : ''; }
+function rowTag(p, x){
+  var r = rec(p, x.k); if (!r) return '';
+  var lock = r.hold === 'final' && !(JD() && JD().given(p, x)) ? ' <span class="lock" data-xr-final="1">🔒 Final invoice waits for it</span>' : '';
+  return '<div class="tag" data-xr-tag="1">＋ Added by ' + esc(r.addedBy) + ' (' + esc(r.addedRole) + ') ' + esc(nice(r.addedAt)) + ' · ' + esc(PARTY[r.party] || '') + (r.party === 'customer' ? (r.act === 'fill' ? ' fills it out' : ' signs') : '') + (r.kind === 'upload' ? ' · 📁 ' + esc(r.fileName || 'uploaded file') : r.kind === 'fill' ? ' · ✍️ fill-out item' : '') + (s(r.why) ? ' · why: ' + esc(r.why) : '') + '</div>' + lock;
+}
+function rowBtns(p, x){ return canRemove(p, x.k) ? '<button type="button" data-jd="xrm" title="Take it off this job (kept in the history)">🗄 Remove</button>' : ''; }
+function cardBottom(p){
+  var L = extra(p).filter(function(r){ return r && r.removed; }); if (!L.length) return '';
+  return '<details data-xr-hist="1" style="margin-top:8px"><summary style="cursor:pointer;font-weight:700;font-size:12.5px;color:#475569">🗄 Removed papers (' + L.length + ') — kept in the history</summary>'
+    + L.map(function(r){ return '<div class="r old" data-xr-gone="' + esc(r.k) + '"><div class="l"><b>' + esc(r.label) + '</b><div class="tag">Added by ' + esc(r.addedBy) + ' (' + esc(r.addedRole) + ') ' + esc(nice(r.addedAt)) + ' · removed by ' + esc(r.removed.by) + ' (' + esc(r.removed.role) + ') ' + esc(nice(r.removed.at)) + ' — ' + esc(r.removed.why) + '</div></div></div>'; }).join('') + '</details>';
+}
+function paintAll(){ try { if (JD() && JD().paint) JD().paint(); } catch (e) {} fieldPaint(true); try { if (EH() && EH().fieldPaint) EH().fieldPaint(); } catch (e) {} }
+
+/* ── the GrayCo Field job page: the same 📑 Paperwork card ── */
+function fieldPaint(force){
+  try {
+    var ov = D.getElementById('_gcJobDash'), cur = D.getElementById('gc-jd-f');
+    var pid = ov && ov.getAttribute('data-gcfp'), p = pid ? proj(pid) : null;
+    if (!p || !JD()) { if (cur) cur.remove(); return; }
+    var J = obj(p.jobDocs); if (!canAdd(p) && !arr(J.items).length) { if (cur) cur.remove(); return; }
+    var body = ov.querySelector('.gcfp-body') || ov.children[1]; if (!body) return;
+    try { JD().css(); JD().signedRefresh(p.id); } catch (e) {}
+    var h = JD().html(p);
+    if (!force && cur && cur.__body === h && body.contains(cur) && cur.getAttribute('data-pid') === s(p.id)) return;
+    if (!cur) { cur = D.createElement('div'); cur.id = 'gc-jd-f'; cur.className = 'gc-jd'; cur.setAttribute('data-gc-keep', '1'); cur.style.margin = '10px 0'; }
+    cur.setAttribute('data-pid', p.id); cur.innerHTML = h; cur.__body = h;
+    if (!body.contains(cur)) { var top = body.querySelector('.gcfp-low') || body.querySelector('.gcfp-top'); if (top && top.parentElement === body) body.insertBefore(cur, top.nextSibling); else body.insertBefore(cur, body.firstChild); }
+  } catch (e) { W.__gcXrErr = String(e && e.stack || e); }
+}
+
+/* ── the ＋ Add dialog (phone-sized sheet) ── */
+function sheet(title, inner){
+  var old = D.getElementById('gc-xr-sheet'); if (old) old.remove();
+  var o = D.createElement('div'); o.id = 'gc-xr-sheet'; o.setAttribute('role', 'dialog'); o.setAttribute('aria-modal', 'true'); o.setAttribute('aria-label', title); o.setAttribute('data-gc-keep', '1');
+  o.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:rgba(15,23,42,.55);display:flex;align-items:flex-end;justify-content:center;padding:12px;font:15px Inter,Arial,sans-serif;color:#0f172a';
+  o.innerHTML = '<div class="in" style="background:#fff;border-radius:16px;max-width:560px;width:100%;max-height:90vh;overflow:auto;padding:16px;box-sizing:border-box"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><b style="font-size:17px">' + esc(title) + '</b><button type="button" data-xrs="x" aria-label="Close" style="border:0;background:none;font-size:22px;cursor:pointer;min-height:40px;min-width:40px">✕</button></div>' + inner + '</div>';
+  o.addEventListener('click', function(e){ if (e.target === o || (e.target.closest && e.target.closest('[data-xrs="x"]'))) o.remove(); });
+  D.body.appendChild(o); return o;
+}
+var LIBUP = null;
+function libList(){
+  var out = [], seen = {}, J = JD(), ep = {};
+  try { var E = EP(); Object.keys(E.ITEMS).forEach(function(t){ E.ITEMS[t].forEach(function(x){ ep[x.doc] = 1; }); }); } catch (e) {}
+  var inTable = {}; try { arr(J.table().types).forEach(function(t){ arr(t.items).forEach(function(x){ if (x.doc) inTable[x.doc] = 1; if (x.file && !seen['file:' + x.file]) { seen['file:' + x.file] = 1; out.push({ v: 'file:' + x.file, n: s(x.label), g: 'Company documents' }); } }); }); } catch (e) {}
+  try { arr(W._gcDocLib && W._gcDocLib.builtins && W._gcDocLib.builtins()).forEach(function(b){ if (!b || !b.id || seen[b.id] || /^HR$|Marketing/i.test(s(b.category))) return; seen[b.id] = 1; out.push({ v: b.id, n: s(b.name), g: ep[b.id] ? 'EPA / HUD forms' : inTable[b.id] ? 'Job-type papers (📑 by job type)' : (s(b.category) || 'Library'), cf: !!b.clientFacing }); }); } catch (e) {}
+  arr(LIBUP).forEach(function(u){ if (u && u.uid && /^up:/.test(u.uid) && !seen[u.uid]) { seen[u.uid] = 1; out.push({ v: u.uid, n: s(u.title || u.name), g: '📁 Library uploads', up: u.up || {} }); } });
+  return out;
+}
+var I = 'width:100%;box-sizing:border-box;padding:9px;border:1px solid #cbd5e1;border-radius:9px;font:15px Inter,Arial,sans-serif;min-height:44px';
+var LB = 'display:block;font-size:13px;font-weight:700;margin:10px 0 3px';
+function optsHtml(list, q){
+  q = low(q); var g = {}, h = '';
+  list.filter(function(o){ return !q || low(o.n + ' ' + o.g + ' ' + o.v).indexOf(q) > -1; }).forEach(function(o){ (g[o.g] = g[o.g] || []).push(o); });
+  Object.keys(g).forEach(function(k){ h += '<optgroup label="' + esc(k) + '">' + g[k].map(function(o){ return '<option value="' + esc(o.v) + '">' + esc(o.n) + '</option>'; }).join('') + '</optgroup>'; });
+  return h;
+}
+function openAdd(pid){
+  var p = proj(pid); if (!p) return null;
+  if (!canAdd(p)) { toast('Only an admin, the office or this job\'s PM can add a paper to it.', true); return null; }
+  var types = []; try { var t0 = arr(obj(p.jobDocs).types).length ? arr(obj(p.jobDocs).types) : JD().types(p); types = arr(JD().table().types).map(function(r){ return { k: s(r.key), l: s(r.label), on: t0.indexOf(s(r.key)) > -1 }; }); } catch (e) {}
+  var tab = function(k, l){ return '<button type="button" data-xr-kind="' + k + '" style="flex:1;min-height:44px;border-radius:10px;border:1px solid #cbd5e1;background:#fff;font:700 14px Inter,Arial,sans-serif;cursor:pointer">' + l + '</button>'; };
+  var h = '<div style="font-size:12.5px;color:#475569;margin:4px 0 8px">It goes on this job only, with the job\'s other papers: filled in from the job, "📑 papers to send", 📤 Send…, tracked to done and logged.</div>'
+    + '<div style="display:flex;gap:6px">' + tab('lib', '📚 Library') + tab('upload', '📁 Upload') + tab('fill', '✍️ Fill-out item') + '</div>'
+    + '<div data-xr-pane="lib"><label style="' + LB + '">Find a paper</label><input data-xr="q" placeholder="Search the library (contract, lead, HUD, permit …)" style="' + I + '"><select data-xr="doc" size="7" style="' + I + ';margin-top:6px;min-height:150px"></select></div>'
+    + '<div data-xr-pane="upload" hidden><label style="' + LB + '">File (PDF, Word or a photo)</label><input type="file" data-xr="file" accept=".pdf,.doc,.docx,image/*,application/pdf" style="' + I + '"></div>'
+    + '<div data-xr-pane="fill" hidden><label style="' + LB + '">What is needed (details)</label><textarea data-xr="note" placeholder="e.g. HOA approval letter, the gate code, a signed color choice …" style="' + I + ';min-height:70px"></textarea></div>'
+    + '<label style="' + LB + '">Name of the paper</label><input data-xr="label" style="' + I + '">'
+    + '<label style="' + LB + '">Who fills it out or signs it</label><div style="display:flex;gap:6px"><select data-xr="party" style="' + I + '">' + Object.keys(PARTY).map(function(k){ return '<option value="' + k + '">' + esc(PARTY[k]) + '</option>'; }).join('') + '</select><select data-xr="act" style="' + I + '"><option value="sign">signs it</option><option value="fill">fills it out</option></select></div>'
+    + '<label style="' + LB + '">When it is due</label><div style="display:flex;gap:6px"><select data-xr="due" style="' + I + '">' + Object.keys(DUEK).map(function(k){ return '<option value="' + k + '">' + esc(DUEK[k]) + '</option>'; }).join('') + '</select><input type="date" data-xr="dueDate" style="' + I + '" hidden></div>'
+    + (canHold() ? '<label style="' + LB + '">Hold (admins and the office)</label><select data-xr="hold" style="' + I + '"><option value="">No hold — it is tracked and reminded</option><option value="start">🔒 Start job waits for it</option><option value="final">🔒 The final invoice waits for it</option></select>' : '')
+    + '<label style="' + LB + '">Why it is needed (logged)</label><input data-xr="why" placeholder="optional" style="' + I + '">'
+    + (admin() && types.length ? '<label style="display:flex;gap:8px;align-items:center;margin:12px 0 0;font-size:14px"><input type="checkbox" data-xr="allType" style="width:20px;height:20px"> Also add this to every new</label><select data-xr="typeKey" style="' + I + ';margin-top:4px">' + types.map(function(t){ return '<option value="' + esc(t.k) + '"' + (t.on ? ' selected' : '') + '>' + esc(t.l) + ' job</option>'; }).join('') + '</select>' : '')
+    + '<button type="button" data-xr-save="1" style="display:block;width:100%;min-height:50px;margin-top:14px;border:0;border-radius:12px;background:#166534;color:#fff;font:800 15px Inter,Arial,sans-serif;cursor:pointer">＋ Add it to this job</button>';
+  var o = sheet('＋ Add a required paper — ' + (s(p.name) || 'job'), h), kind = 'lib', LIST = libList();
+  var g = function(n){ return o.querySelector('[data-xr="' + n + '"]'); };
+  var setKind = function(k){ kind = k; [].forEach.call(o.querySelectorAll('[data-xr-pane]'), function(x){ x.hidden = x.getAttribute('data-xr-pane') !== k; }); [].forEach.call(o.querySelectorAll('[data-xr-kind]'), function(b){ var on = b.getAttribute('data-xr-kind') === k; b.style.background = on ? '#241968' : '#fff'; b.style.color = on ? '#fff' : '#0f172a'; }); if (k === 'fill') { g('party').value = isPM(p) && !office() ? 'pm' : 'pm'; g('act').value = 'fill'; } };
+  var fillSel = function(){ g('doc').innerHTML = optsHtml(LIST, g('q').value); };
+  setKind('lib'); fillSel();
+  try { if (W._gcDocs3 && W._gcDocs3.list) W._gcDocs3.list().then(function(l){ LIBUP = l; LIST = libList(); fillSel(); }).catch(function(){}); } catch (e) {}
+  g('q').addEventListener('input', fillSel);
+  g('doc').addEventListener('change', function(){ var v = g('doc').value, it = LIST.find(function(z){ return z.v === v; }); if (!it) return; g('label').value = it.n; if (/^gcb_/.test(v)) { g('party').value = it.cf === false ? 'crew' : 'customer'; g('act').value = it.cf === false ? 'fill' : 'sign'; } });
+  g('file').addEventListener('change', function(){ var f = (g('file').files || [])[0]; if (f && !s(g('label').value)) g('label').value = f.name.replace(/\.[a-z0-9]{2,5}$/i, ''); });
+  g('due').addEventListener('change', function(){ g('dueDate').hidden = g('due').value !== 'date'; });
+  o.addEventListener('click', function(e){
+    var kb = e.target.closest && e.target.closest('[data-xr-kind]'); if (kb) { setKind(kb.getAttribute('data-xr-kind')); return; }
+    var sv = e.target.closest && e.target.closest('[data-xr-save]'); if (!sv) return;
+    var spec = { kind: kind, label: s(g('label').value), party: g('party').value, act: g('act').value, due: g('due').value, dueDate: s(g('dueDate').value), hold: g('hold') ? g('hold').value : '', why: s(g('why').value), allType: !!(g('allType') && g('allType').checked), typeKey: g('typeKey') ? g('typeKey').value : '' };
+    var go = function(){ var r = add(pid, spec); if (!r.ok) { toast(r.error, true); sv.disabled = false; return; } o.remove(); toast('✓ "' + spec.label + '" is on the job\'s 📑 Paperwork' + (spec.hold ? ' — ' + (spec.hold === 'start' ? 'Start job' : 'the final invoice') + ' waits for it' : '')); };
+    sv.disabled = true;
+    if (kind === 'fill') { spec.note = s(g('note').value); if (!spec.label) spec.label = spec.note.slice(0, 80); return go(); }
+    if (kind === 'lib') {
+      var v = g('doc').value, it = LIST.find(function(z){ return z.v === v; }); if (!it) { toast('Pick a paper from the library.', true); sv.disabled = false; return; }
+      if (!spec.label) spec.label = it.n;
+      if (/^file:/.test(v)) { spec.file = v.slice(5); spec.fileName = v.replace(/^.*\//, ''); spec.src = 'company documents'; return go(); }
+      if (/^up:/.test(v)) {
+        var u = it.up || {}; spec.src = 'library upload'; spec.fileName = s(u.fileName) || it.n; spec.fileType = s(u.fileType);
+        if (/^sb:/.test(s(u.ref || u.data))) { spec.fileRef = s(u.ref || u.data); return go(); }
+        if (/^data:/.test(s(u.data)) && typeof W._gcStoreFile === 'function') return W.fetch(u.data).then(function(r){ return r.blob(); }).then(function(b){ return W._gcStoreFile(new File([b], spec.fileName, { type: b.type }), { kind: 'doc', pid: pid, name: spec.fileName }); }).then(function(m){ spec.fileRef = s(m && m.ref); spec.kind = 'upload'; go(); }, function(){ toast('That library file could not be read.', true); sv.disabled = false; });
+        toast('That library file has no copy to attach.', true); sv.disabled = false; return;
+      }
+      spec.doc = v; spec.src = 'library'; return go();
+    }
+    var f = (g('file').files || [])[0]; if (!f) { toast('Pick the file to upload.', true); sv.disabled = false; return; }
+    if (typeof W._gcStoreFile !== 'function') { toast('The file store is not ready — try again in a moment.', true); sv.disabled = false; return; }
+    if (!spec.label) spec.label = f.name;
+    Promise.resolve(W._gcStoreFile(f, { kind: 'doc', pid: pid, name: f.name })).then(function(m){ if (!m || !m.ref) throw new Error('no ref'); spec.fileRef = m.ref; spec.fileName = f.name; spec.fileType = f.type; spec.src = 'uploaded'; go(); }, function(){ toast('The file could not be stored — try again.', true); sv.disabled = false; });
+  });
+  return o;
+}
+function action(pid, k, a, b){
+  if (a === 'xadd') return openAdd(pid);
+  if (a === 'xrm') {
+    var p = proj(pid), r = p && rec(p, k); if (!r) return null;
+    if (!canRemove(p, k)) { toast('Only an admin or the office can remove this one.', true); return null; }
+    var why = W.prompt('Take "' + r.label + '" off this job?\nIt is archived (who / when / why) and stays in the history.\n\nWhy?', ''); if (why == null) return null;
+    var res = remove(pid, k, why); toast(res.ok ? '🗄 Removed — kept in the history.' : res.error, !res.ok); return res;
+  }
+  return null;
+}
+
+/* ── signed in the portal → done on the paper (tracked to done; clears a 🔒 hold) ── */
+var CHK = {};
+function checkSigned(pid){
+  var p = proj(pid); if (!p) return Promise.resolve(0);
+  var J = obj(p.jobDocs), L = items(p).filter(function(x){ return !obj(J.done)[x.k] && (obj(J.sent)[x.k] || (x.doc && obj(obj(p.docAuto).sent)[x.doc])); });
+  if (!L.length) return Promise.resolve(0);
+  CHK[pid] = Date.now();
+  return call(SIGN_FN, { action: 'list', projectId: String(pid) }).then(function(j){
+    var signed = {}; arr(j && j.items).forEach(function(r){ if (r && r.status === 'signed' && /^dl_/.test(s(r.refId))) signed[s(r.refId).slice(3)] = r; });
+    try { var c = JD().signed; if (c) { c[pid] = c[pid] || { at: Date.now(), ids: {} }; Object.keys(signed).forEach(function(id){ c[pid].ids[id] = true; }); } } catch (e) {}
+    var n = 0;
+    L.forEach(function(x){ var r = signed[s(x.sref)] || signed[s(x.doc)]; if (!r) return; n++; log(pid, x.k, { act: 'signed', via: 'e-signed in the customer portal', ref: s(r.id), when: s(r.signedAt) || nowIso(), by: 'customer', doneHow: 'e-signed in the portal' }); });
+    if (n) ST.call(W, paintAll, 120);
+    return n;
+  }, function(){ return 0; });
+}
+function signSweep(){
+  try {
+    if (!(W.__GC_AUTH__ && W.__GC_AUTH__.email && W.__GC_AUTH__.email())) return;
+    var off = office(), n = 0;
+    projects().forEach(function(p){ if (n >= 8 || !p || p.deleted || !extra(p).length || (!off && !isPM(p))) return; if (CHK[p.id] && Date.now() - CHK[p.id] < 120000) return; var J = obj(p.jobDocs); if (!items(p).some(function(x){ return !obj(J.done)[x.k] && obj(J.sent)[x.k]; })) return; n++; checkSigned(p.id); });
+  } catch (e) {}
+}
+
+/* ── 🔒 the final invoice waits for its papers ── */
+function finalMissing(p){ if (!p || !JD()) return []; return items(p).filter(function(x){ return x.hold === 'final' && !JD().given(p, x); }); }
+function invOf(id){ return arr(W._crm && W._crm.invoices).find(function(i){ return i && s(i.id) === s(id); }) || null; }
+function isFinal(inv){ return !!inv && (inv.isFinal === true || /final/i.test(s(inv.drawType))); }
+function heldFor(p){
+  var m = finalMissing(p); if (!m.length) return false;
+  var msg = '⛔ The final invoice for "' + s(p.name) + '" waits for:\n• ' + m.map(function(x){ return x.label; }).join('\n• ') + '\n\nJob → 📑 Paperwork: send it / mark it done first.';
+  if (admin() && W.confirm(msg + '\n\nAdmin: go ahead anyway? (logged on the job)')) { m.forEach(function(x){ log(p.id, x.k, { act: 'override', via: 'final invoice went ahead (admin)', why: 'admin override' }); }); return false; }
+  try { W.alert(msg); } catch (e) {}
+  return true;
+}
+function wrapInv(){
+  var W1 = function(name, pick, held){ var f = W[name]; if (typeof f !== 'function' || f.__gcXr) return; var w = function(){ try { var p = pick.apply(this, arguments); if (p && heldFor(p)) return held(); } catch (e) {} return f.apply(this, arguments); }; try { Object.keys(f).forEach(function(k){ if (!(k in w)) w[k] = f[k]; }); } catch (e) {} w.__gcXr = true; W[name] = w; };
+  var byInv = function(inv){ return isFinal(inv) ? proj(inv.pid || inv.projectId) : null; };
+  W1('_gcCreateFinalInvoice', function(pj){ return pj && pj.id ? proj(pj.id) || pj : null; }, function(){ return null; });
+  W1('_gcSendInvoiceNow', function(id){ return byInv(invOf(id)); }, function(){ return undefined; });
+  W1('_gcSendInvoiceAsUser', function(id){ return byInv(invOf(id)); }, function(){ return undefined; });
+  W1('_gcEmailInvoiceToClient', function(inv){ return byInv(inv); }, function(){ return Promise.resolve({ sent: false, held: true }); });
+  W1('_gcQueueInvoiceApproval', function(inv){ return byInv(inv); }, function(){ return undefined; });
+}
+
+ST.call(W, wrapInv, 1500); SI.call(W, wrapInv, 4000);
+SI.call(W, function(){ fieldPaint(false); }, 1500);
+ST.call(W, signSweep, 20000); SI.call(W, signSweep, 60000);
+W._gcJobReq = { canAdd: canAdd, canHold: canHold, canRemove: canRemove, isPM: isPM, items: items, extra: extra, has: has, add: add, remove: remove, addToType: addToType, openAdd: openAdd, action: action,
+  cardAdd: cardAdd, rowTag: rowTag, rowBtns: rowBtns, cardBottom: cardBottom, sendBtn: sendBtn, channels: channels, sendVia: sendVia, open: open, nameOf: nameOf,
+  checkSigned: checkSigned, finalMissing: finalMissing, fieldPaint: fieldPaint, libList: libList, PARTY: PARTY, DUE: DUEK };
+try { console.log('[GC] ＋ required papers on one job (patch JOBREQ) — _gcJobReq'); } catch (e) {}
 })(window);
 </script>

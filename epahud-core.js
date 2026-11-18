@@ -34,7 +34,13 @@ var TO = {
   parents: { label: 'Parents / guardians (posted or handed out)', send: true, post: true },
   agency: { label: 'State / EPA program (a filing, not a send)', filing: true },
   sub: { label: 'Licensed abatement sub (internal)', internal: true },
-  file: { label: 'Job file / crew', internal: true }
+  file: { label: 'Job file / crew', internal: true },
+  /* JOBREQ: a paper someone added to one job — who fills it out or signs it */
+  xcust: { label: 'Customer fills it out', send: true },
+  xpm: { label: 'The PM fills it out / signs', internal: true },
+  xcrew: { label: 'Crew / employee fills it out / signs', internal: true },
+  xsub: { label: 'Subcontractor fills it out / signs', internal: true },
+  xoffice: { label: 'Office fills it out', internal: true }
 };
 /* ── the job's dates that start a clock (entered on the job's 📑 Paperwork → 🏛 EPA / HUD facts) ── */
 var EVENTS = [
@@ -71,7 +77,11 @@ var DUE = {
   ebll30: { txt: 'hazard reduction within 30 days of the investigation report', cite: '24 CFR 35.730(b) / 35.1225(b)' },
   wsr35: { txt: 'signed waste shipment record back from the landfill — follow up at 35 days, report to the state at 45', cite: '40 CFR 61.150(d)(3)–(4)' },
   done: { txt: 'at completion', cite: '' },
-  during: { txt: 'during the job', cite: '' }
+  during: { txt: 'during the job', cite: '' },
+  /* JOBREQ: the due dates a person picks for a paper added to one job */
+  date: { txt: 'by the date set', cite: '' },
+  final: { txt: 'before the final invoice', cite: '' },
+  atdone: { txt: 'at completion', cite: '' }
 };
 function events(p){ var E = obj(obj(p && p.epahud).events), a = obj(p && p.leadAsb), out = {}; EVENTS.forEach(function(e){ out[e[0]] = ymd(E[e[0]]); }); out.completedOn = out.completedOn || ymd(p && (p.completionDate || p.completedAt || p.completedDate)) || ''; return out; }
 function finished(p){ return /complete|closed|warrant|close.?out/i.test(s(p && p.status)) || (+(p && (p.pct != null ? p.pct : p.progress)) || 0) >= 100; }
@@ -91,6 +101,9 @@ function due(p, x, t){
   else if (k === 'ebll15') { date = E.ebllNotice ? addDays(E.ebllNotice, 15) : ''; basis = date ? 'notice ' + nice(E.ebllNotice) : ''; wait = date ? '' : 'the health department notice date'; }
   else if (k === 'ebll30') { date = E.envReport ? addDays(E.envReport, 30) : ''; basis = date ? 'report ' + nice(E.envReport) : ''; wait = date ? '' : 'the investigation report date'; }
   else if (k === 'wsr35') { date = E.wasteAccepted ? addDays(E.wasteAccepted, 35) : ''; basis = date ? 'waste accepted ' + nice(E.wasteAccepted) + ' (report at 45 days: ' + nice(addDays(E.wasteAccepted, 45)) + ')' : ''; wait = date ? '' : 'the date the waste left the site'; }
+  else if (k === 'date') { date = ymd(x && x.dueDate); basis = date ? 'set when it was added' : ''; wait = date ? '' : 'a due date'; }
+  else if (k === 'final') { date = E.finalInvoice || ymd(x && x.finalOn); basis = date ? 'final invoice ' + nice(date) : ''; wait = date ? '' : 'the final invoice date'; }
+  else if (k === 'atdone') { date = E.completedOn || ''; basis = date ? 'completed ' + nice(date) : ''; wait = date ? '' : 'the completion date'; }
   else if (k === 'done') { date = E.completedOn ? addDays(E.completedOn, 30) : ''; basis = date ? 'completed ' + nice(E.completedOn) : ''; wait = date ? '' : 'the completion date'; }
   var n = date ? daysBetween(t, date) : null;
   return { k: k, date: date, txt: R.txt, cite: R.cite, basis: basis, wait: wait, over: n != null && n < 0, soon: n != null && n >= 0 && n <= 3, days: n };
