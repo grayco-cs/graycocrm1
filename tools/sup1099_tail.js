@@ -180,8 +180,9 @@ function link(u0){
       return out;
     });
     pushVendors();
-    if (s(u.subId) !== s(rec.id) && typeof W._setUsers === 'function') {
-      try { W._setUsers(function(prev){ return Array.isArray(prev) ? prev.map(function(x){ return x && s(x.id) === s(u.id) ? Object.assign({}, x, { subId: rec.id, updatedAt: at }) : x; }) : prev; }); } catch (e2) { warn(e2); }
+    var setU = typeof W.__gcCoSetUsers === 'function' ? W.__gcCoSetUsers : W._setUsers;   /* the setter Admin's own employee editor uses (as COLEAK2) */
+    if (s(u.subId) !== s(rec.id) && typeof setU === 'function') {
+      try { setU(function(prev){ return Array.isArray(prev) ? prev.map(function(x){ return x && s(x.id) === s(u.id) ? Object.assign({}, x, { subId: rec.id, updatedAt: at }) : x; }) : prev; }); } catch (e2) { warn(e2); }
     }
     LINKS[s(u.id)] = { subId: rec.id, made: made, at: at, portal: 'turning on' };
     return portalOn(rec.id).then(function(p){

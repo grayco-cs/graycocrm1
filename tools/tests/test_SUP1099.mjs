@@ -148,7 +148,8 @@ if (PART === 'all' || PART === 'B') {
     { id: 'u1', name: 'Olive Owner', email: OWN, role: 'Admin', payType: 'owner', active: true, phone: '9015550100' },
     { id: 'u3', name: 'Pat PM', email: PM, role: 'Project Manager', active: true, phone: '9015550111', payType: 'revenue_pct', commPct: 5, title: 'PM' },
     { id: 'u9', name: 'Sam Super', email: SUP, role: 'Superintendent', active: true, phone: '9015550199', title: 'Superintendent', hireDate: '2026-11-18' },
-    { id: 'u7', name: 'Wade Wtwo', email: W2S, role: 'Superintendent', active: true, phone: '9015550177', payType: 'hourly', hourlyRate: '30' }];
+    { id: 'u7', name: 'Wade Wtwo', email: W2S, role: 'Superintendent', active: true, phone: '9015550177', payType: 'hourly', hourlyRate: '30' },
+    { id: 'u8', name: 'Cora Contract', email: 'cora.contract@sample-gc.test', role: 'Field Supervisor', employment: '1099', active: true, phone: '9015550166' }];
   H.cset('users', USERS0);
   H.cset('projects', [JOB_SUP, Object.assign({}, JOB_OTHER)]);
   H.cset('vendors', [{ id: 'SUBdry', name: 'Sample Drywall LLC', company: 'Sample Drywall LLC', contact: 'Dee Dry', email: 'dee@sampledrywall.test', phone: '901-555-0141', isSub: true, trade: 'Drywall', w9: true, insExp: '2027-01-01' }]);
@@ -157,12 +158,12 @@ if (PART === 'all' || PART === 'B') {
   H.onFn('portal-access', ({ body }) => {
     PORTAL.push(body);
     if (body.action === 's-link') return { ok: true, active: true, url: 'https://portal.example.test/#t=' + 'L'.repeat(43) };
-    if (body.action === 's-sync') { const evs = EVENTS.filter(e => !e.applied_at).map(e => Object.assign({}, e, { sub_id: SUBID || e.sub_id })); return { ok: true, events: evs, unread: {}, links: {}, waiting: [], bids: [], codes: [], admin: true, me: 'Olive Owner', at: now() }; }
+    if (body.action === 's-sync') { const evs = EVENTS.filter(e => EV_ON && !e.applied_at).map(e => Object.assign({}, e, { sub_id: SUBID || e.sub_id })); return { ok: true, events: evs, unread: {}, links: {}, waiting: [], bids: [], codes: [], admin: true, me: 'Olive Owner', at: now() }; }
     if (body.action === 's-ack') { (body.ids || []).forEach(id => { const e = EVENTS.find(x => x.id === id); if (e) e.applied_at = now(); }); return { ok: true, acked: (body.ids || []).length }; }
     return { ok: true };
   });
   H.onFn('appr-away', ({ body }) => { if (body && body.op === 'notify') NOTIFY.push(body); return { ok: true, pushed: 1 }; });
-  let SUBID = '';
+  let SUBID = '', EV_ON = false;
   const W = [];
   const HJS = () => {
     window.__vis = e => { if (!e) return false; const r = e.getBoundingClientRect(); const st = getComputedStyle(e); return r.width > 1 && r.height > 1 && st.visibility !== 'hidden' && st.display !== 'none' && !!e.offsetParent; };
@@ -173,17 +174,17 @@ if (PART === 'all' || PART === 'B') {
   async function desk(email, who){
     const c = await H.computer(who, { build: BUILD, init: [() => { try { ['_helpShown', 'gc_help_welcomed', 'gc_tour_done'].forEach(k => localStorage.setItem(k, '1')); } catch (e) {} }] }); W.push(c);
     await H.signIn(c, email, 9000);
-    await H.waitFor(c, () => !!(window._setView && window._crm && (window._crm.users || []).length >= 4 && (window._crm.projects || []).length >= 2), null, 60000);
+    await H.waitFor(c, () => !!(window._setView && window._crm && (window._crm.users || []).length >= 5 && (window._crm.projects || []).length >= 2), null, 60000);
     await sleep(3000); await c.ev(HJS);
     return c;
   }
-  async function openEmployees(c){
-    return c.ev(async () => {
+  async function openEmployees(c, name){
+    return c.ev(async name => {
       try { window._gcRA && window._gcRA.hide && window._gcRA.hide(); } catch (e) {}
       window._setView('admin'); await new Promise(z => setTimeout(z, 2500));
-      for (let i = 0; i < 8 && !__row('Sam Super'); i++) { const b = __btn('Employees'); if (b) b.click(); await new Promise(z => setTimeout(z, 1000)); }
-      return !!__row('Sam Super');
-    });
+      for (let i = 0; i < 8 && !__row(name); i++) { const bk = __btn('Back to Employees'); if (bk) bk.click(); else { const b = __btn('Employees'); if (b) b.click(); } await new Promise(z => setTimeout(z, 1000)); }
+      return !!__row(name);
+    }, name || 'Sam Super');
   }
   async function editRow(c, name){
     return c.ev(async name => {
@@ -191,7 +192,7 @@ if (PART === 'all' || PART === 'B') {
       const b = [...tr.querySelectorAll('button')].find(x => (x.innerText || '').trim() === 'EDIT'); if (!b) return { err: 'no EDIT' }; b.click();
       await new Promise(z => setTimeout(z, 900));
       const sel = document.querySelector('select[data-gc-employment]');
-      const tabs = [...document.querySelectorAll('#root button')].filter(__vis).map(x => (x.innerText || '').trim()).filter(t => /Info|Pay$|Insurance|Additional/.test(t));
+      const tabs = [...document.querySelectorAll('#root button')].filter(__vis).map(x => (x.innerText || '').trim()).filter(t => /^(👤 Info|💰 Pay|🏥 Insurance|📋 Additional)$/.test(t));
       const roleLab = sel ? [...sel.closest('div').parentElement.querySelectorAll('*')].map(x => x.children.length === 0 ? (x.textContent || '').trim() : '').filter(Boolean) : [];
       return { sel: !!sel, value: sel && sel.value, options: sel ? [...sel.options].map(o => o.text) : [], tabs, near: roleLab.slice(0, 4) };
     }, name);
@@ -206,7 +207,7 @@ if (PART === 'all' || PART === 'B') {
   const pick = await A.ev(async () => {
     const sel = document.querySelector('select[data-gc-employment]'); __setV(sel, '1099'); await new Promise(z => setTimeout(z, 600));
     const role = [...document.querySelectorAll('#root select')].find(s => [...s.options].some(o => o.text === 'Superintendent') && s !== sel);
-    const tabs = [...document.querySelectorAll('#root button')].filter(__vis).map(x => (x.innerText || '').trim()).filter(t => /👤 Info|💰 Pay|🏥 Insurance|📋 Additional/.test(t));
+    const tabs = [...document.querySelectorAll('#root button')].filter(__vis).map(x => (x.innerText || '').trim()).filter(t => /^(👤 Info|💰 Pay|🏥 Insurance|📋 Additional)$/.test(t));
     const note = document.querySelector('[data-gc-employment-note]');
     return { role: role && role.value, tabs, note: note && note.innerText };
   });
@@ -245,6 +246,7 @@ if (PART === 'all' || PART === 'B') {
   try { await A.page().screenshot({ path: SHOTS + 'b2_card.png' }); } catch (e) {}
 
   /* ── B3. his papers and invoice from the sub portal → the CRM ── */
+  EV_ON = true;
   const filed = await A.ev(async () => { try { await window._gcSubHub.sync(); } catch (e) { return String(e); } await new Promise(z => setTimeout(z, 2500)); try { await window._gcSubHub.sync(); } catch (e) {} return 'ok'; });
   await H.waitFor(A, sid => { const v = (window._crm.vendors || []).find(x => x && x.id === sid); return v && v.w9 === true && v.insExp === '2027-06-30' && v.subAgreement && (window._crm.invoices || []).some(i => i && i.id === 'SPI_Einv'); }, SUBID, 25000);
   const fv = await A.ev(sid => { const v = (window._crm.vendors || []).find(x => x && x.id === sid) || {}; const iv = (window._crm.invoices || []).find(i => i && i.id === 'SPI_Einv') || null; return { w9: v.w9, coi: v.coi, insExp: v.insExp, agr: v.subAgreement, files: (v.files || []).map(f => f.kind), iv: iv && { type: iv.type, subId: iv.subId, pid: iv.pid, amt: iv.amt, status: iv.status, sub: iv.sub } }; }, SUBID);
@@ -253,8 +255,12 @@ if (PART === 'all' || PART === 'B') {
   ok('B3 …and show on his profile card: W-9 ✓, COI expiry 2027-06-30, agreement signed', !!C1 && /✓/.test(C1.w9) && /✓/.test(C1.coi) && /expires 2027-06-30/.test(C1.coi) && /✓/.test(C1.agr) && /signed/.test(C1.agr), C1);
   ok('B3 his invoice is a sub bill on the job (type sub, his Subs record, PC, $2,400, received)', !!fv.iv && fv.iv.type === 'sub' && fv.iv.subId === SUBID && fv.iv.pid === 'PC' && fv.iv.amt === 2400 && fv.iv.status === 'received', fv.iv);
   const ap = await A.ev(async () => { window._gcQueueSubApprovals && window._gcQueueSubApprovals(); await new Promise(z => setTimeout(z, 300)); const q = JSON.parse(localStorage.getItem('gc_sub_approvals') || '[]').find(a => a.invId === 'SPI_Einv'); const jc = await window._gcJobExpenses('PC'); return { q: q && { status: q.status, pmName: q.pmName, amt: q.amt, pid: q.pid }, subs: jc.subs, lines: jc.lines }; });
-  ok('B3 it goes to ✅ Approvals — a sub invoice waiting on the job\'s PM (Pat PM)', !!ap.q && ap.q.status === 'pending_pm' && ap.q.pmName === 'Pat PM' && ap.q.amt === 2400, ap.q);
-  ok('B3 …and into the job\'s cost (sub costs on Sample Office TI: $2,400)', ap.subs === 2400 && ap.lines.some(l => /Sam Super/.test(l.what)), ap);
+  ok('B3 it goes to ✅ Approvals — a sub invoice waiting on the job\'s PM (Pat PM); not a job cost until approved (the existing rule)', !!ap.q && ap.q.status === 'pending_pm' && ap.q.pmName === 'Pat PM' && ap.q.amt === 2400 && ap.subs === 0, ap);
+  const apRow = await A.ev(async () => { window._setView('approvals'); for (let i = 0; i < 20; i++) { await new Promise(z => setTimeout(z, 500)); const m = (document.body.innerText.match(/Sub invoice — Sam Super[^\n]*/) || [])[0]; if (m) return m; } return ''; });
+  ok('B3 ✅ Approvals shows "Sub invoice — Sam Super" for the PM / an admin', /Sub invoice — Sam Super/.test(apRow), apRow);
+  try { await A.page().screenshot({ path: SHOTS + 'b3_approvals.png' }); } catch (e) {}
+  const jc2 = await A.ev(async () => { window._gcPmDecideSub('SPI_Einv', true, ''); await new Promise(z => setTimeout(z, 800)); const jc = await window._gcJobExpenses('PC'); return { subs: jc.subs, lines: jc.lines }; });
+  ok('B3 approved (✅ Approve) → it is in the job\'s cost (sub costs on Sample Office TI: $2,400)', jc2.subs === 2400 && jc2.lines.some(l => /Sam Super/.test(l.what)), { jc2, apRow });
   await A.ev(() => window._setInvoices(l => (l || []).map(i => i && i.id === 'SPI_Einv' ? Object.assign({}, i, { status: 'paid', paid: true, paidDate: new Date().toISOString().slice(0, 10) }) : i)));
   await sleep(1500);
   C1 = await card();
@@ -264,14 +270,14 @@ if (PART === 'all' || PART === 'B') {
   try { await A.page().screenshot({ path: SHOTS + 'b3_card_paid.png' }); } catch (e) {}
 
   /* ── B4. payroll skips him ── */
-  const pr = await A.ev(async () => { const P = window.__GC_PAY; const L = await P.profiles(); return { sam: L.filter(p => p && (p.userId === 'u9' || /Sam Super/.test(p.name || ''))).length, pat: L.filter(p => p && (p.userId === 'u3' || p.name === 'Pat PM')).length, wade: L.filter(p => p && (p.userId === 'u7' || p.name === 'Wade Wtwo')).length, skipSam: window._gc1099.skipPay({ userId: 'u9' }), skipWade: window._gc1099.skipPay({ userId: 'u7' }) }; });
-  ok('B4 payroll: no payroll profile for the 1099 superintendent; W-2 staff keep theirs; runs skip him', pr.sam === 0 && pr.pat >= 1 && pr.wade >= 1 && pr.skipSam === true && pr.skipWade === false, pr);
+  const pr = await A.ev(async () => { const P = window.__GC_PAY; const L0 = await P.profiles(); const L = L0.filter(p => p && p.active !== false && !window._gc1099.skipPay(p)); return { cora: L0.filter(p => p && (p.userId === 'u8' || p.name === 'Cora Contract')).length, sam: L.filter(p => p && (p.userId === 'u9' || /Sam Super/.test(p.name || ''))).length, pat: L.filter(p => p && (p.userId === 'u3' || p.name === 'Pat PM')).length, wade: L.filter(p => p && (p.userId === 'u7' || p.name === 'Wade Wtwo')).length, skipSam: window._gc1099.skipPay({ userId: 'u9' }), skipWade: window._gc1099.skipPay({ userId: 'u7' }) }; });
+  ok('B4 payroll: no payroll profile is made for a 1099 contractor (any role); the payroll runs\' list skips the 1099 superintendent; W-2 staff keep theirs', pr.cora === 0 && pr.sam === 0 && pr.pat >= 1 && pr.wade >= 1 && pr.skipSam === true && pr.skipWade === false, pr);
   const comm = await A.ev(() => { try { return typeof window._gcPmJobPay === 'function' ? window._gcPmJobPay(Object.assign({}, (window._crm.projects || []).find(p => p.id === 'PC'), { pm: 'Sam Super' })) : 'none'; } catch (e) { return 'err ' + e.message; } });
   ok('B4 commissions: a job run by a 1099 contractor pays him no PM commission (his share stays with GrayCo)', comm === 'none' || (comm && typeof comm === 'object' && !(+comm.pmPay > 0) && !(+comm.pay > 0) && !(+comm.toPm > 0)), comm);
 
   /* ── W1. W-2 staff unchanged in the editor ── */
   console.log('W. W-2 staff unchanged');
-  await openEmployees(A);
+  await openEmployees(A, 'Wade Wtwo');
   ed = await editRow(A, 'Wade Wtwo');
   const wadeBefore = await A.ev(() => JSON.stringify((window._crm.users || []).find(u => u.id === 'u7')));
   PORTAL.length = 0;
