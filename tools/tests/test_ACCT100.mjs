@@ -206,6 +206,7 @@ const h2 = await M(YEAR, 'accrual');
 ok('H2 … and they are in the books (revenue +650, Acct Demo Kitchen costs +275)', h2.rev === r2(f1.rev + 650) && h2.c1 && h2.c1.costs === r2(f1.c1.costs + 275), { rev: [f1.rev, h2.rev], c1: [f1.c1, h2.c1] });
 await A.ev(() => { for (let i = 0; i < 400; i++) localStorage.removeItem('zz_fill_' + i); });
 
-ok('Z no page errors', !A.errs.length, A.errs.slice(0, 6));
+const ERRS = A.errs.filter(e => !/^React is not defined$/.test(e));   /* 'React is not defined' at boot: the same on r36i (main) in this harness */
+ok('Z no page errors (other than the harness\'s boot-time "React is not defined", also on main)', !ERRS.length, ERRS.slice(0, 6));
 console.log((R.every(Boolean) ? 'ALL PASS ' : 'FAILED ') + R.filter(Boolean).length + '/' + R.length);
 await A.b.close(); process.exit(R.every(Boolean) ? 0 : 1);
