@@ -266,7 +266,9 @@ if (want(6)) {
   ok(maxBlank <= 1200, 'never a blank screen for more than a moment (' + maxBlank + ' ms at most)', S.filter(x => !x.gate && !x.cover && !x.splash && !x.field && !x.bootCover).slice(0, 5));
   ok(!S.some(x => /Still loading/.test(x.title)), 'no "Still loading" (it opened within 45 s of signing in)');
   console.log('    screens: ' + S.filter((x, i) => i === 0 || ['gate', 'cover', 'splash', 'field', 'applogin', 'rs'].some(k => x[k] !== S[i - 1][k])).map(x => (x.t / 1000).toFixed(1) + 's ' + ['gate', 'cover', 'splash', 'bootCover', 'applogin', 'field'].filter(k => x[k]).join('+') + ' ' + x.rs).join(' | '));
-  const d = await dev(A); await sleep(4000);
+  const d = await dev(A);
+  /* the reopened open's daily heartbeat goes once its page is in (it carries the load times), 30 s after the last send at the soonest */
+  await until(() => ((rowOf(d) || {}).boots || []).some(x => x.m && x.m.load > 0 && x.m.paint > 0), 60000);
   const all = ((rowOf(d) || {}).boots || []);
   const early = all.find(x => x.m && x.m.cover != null), timed = all.find(x => x.m && x.m.dl > x.m.ttfb && x.m.html > 0 && x.m.load >= x.m.html);
   ok(early && early.m.try > 0 && early.m.signed >= early.m.try && early.p && early.p.opening, 'the open signed in early is reported: the sign-in and when the progress screen showed', all.map(x => ({ m: x.m, p: x.p })));
