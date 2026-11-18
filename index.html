@@ -238691,8 +238691,8 @@ function EP(){ return W._gcEpaHudCore || null; }
 function user(){ try { if (typeof W._gcMeUser === 'function') { var u = W._gcMeUser(); if (u && (u.name || u.email)) return u; } } catch (e) {} try { var j = JSON.parse(localStorage.getItem('grayco_user') || '{}'); if (j && typeof j === 'object') return j; } catch (e) {} return {}; }
 function myEmail(){ try { var e = W.__GC_AUTH__ && W.__GC_AUTH__.email && W.__GC_AUTH__.email(); if (e) return low(e); } catch (e) {} return low(user().email); }
 function users(){ return arr(W._crm && W._crm.users); }
-function meRec(){ var e = myEmail(); return e ? users().find(function(z){ return z && low(z.email) === e; }) || null : null; }
-function me(){ var r = meRec(); if (r && s(r.name)) return s(r.name); var u = user(); return s(u.name) || myEmail() || 'someone'; }   /* the users table first: the signed-in record can carry a short name early in the boot */
+function meRec(){ var e = myEmail(); if (!e) return null; var L = users().filter(function(z){ return z && low(z.email) === e; }); if (L.length > 1 && typeof W._gcBestUserFor === 'function') { try { return W._gcBestUserFor(L) || L[0]; } catch (x) {} } return L[0] || null; }
+function me(){ var u = user(); if (u.id && s(u.name)) return s(u.name); var r = meRec(); if (r && s(r.name)) return s(r.name); return s(u.name) || myEmail() || 'someone'; }   /* the users table first: the signed-in record can carry a short name early in the boot */
 function admin(){ try { if (W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()) return true; } catch (e) {} var u = user(); return /^admin$/i.test(s(u.role)) || low(u.payType) === 'owner'; }
 function office(){ if (admin()) return true; try { if (W._gcIsOfficeFull && W._gcIsOfficeFull()) return true; } catch (e) {} var u = user(), r = meRec() || {}; return /office/i.test(s(u.role) + ' ' + s(u.profile) + ' ' + s(r.role)); }
 function projects(){ return arr(W._crm && W._crm.projects); }
