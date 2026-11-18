@@ -254,12 +254,14 @@ try {
   var UA = s(NAV.userAgent);
   var mq = function(q){ try { return !!(W.matchMedia && W.matchMedia(q).matches); } catch (e) { return false; } };
   var swUrl = function(){ try { var c = NAV.serviceWorker && NAV.serviceWorker.controller; return c ? path(c.scriptURL) || '?' : ''; } catch (e) { return ''; } };
-  var sess = false; try { var a0 = JSON.parse(get('gc_auth_v1') || 'null'); sess = !!(a0 && a0.access_token); } catch (e) {}
+  var sess = /"access_token"/.test(s(get('gc_auth_v1')));
   var B = { id: T0.toString(36) + Math.random().toString(36).slice(2, 5), at: new Date(T0).toISOString(), build: '', prev: s(get('gc_build_id')).slice(0, 40),
-    ua: UA.slice(0, 160), kind: '', sa: mq('(display-mode: standalone)') || NAV.standalone === true, sw: swUrl(), on: NAV.onLine !== false, sess: sess,
+    ua: UA.slice(0, 160), kind: '', sa: NAV.standalone === true, sw: swUrl(), on: NAV.onLine !== false, sess: sess,
     nav: '', m: {}, si: [], errs: [], stuck: [], p: {} };
-  try { var ne = PF.getEntriesByType && PF.getEntriesByType('navigation')[0];
+  /* read when the page is in (the load event), not now: nothing here may slow the open */
+  var navInfo = function(){ try { var ne = PF.getEntriesByType && PF.getEntriesByType('navigation')[0];
     if (ne) B.nav = s(ne.type) + (ne.deliveryType ? ' ' + ne.deliveryType : '') + (typeof ne.transferSize === 'number' ? ' ts' + ne.transferSize : ''); } catch (e) {}
+    if (!B.sa) B.sa = mq('(display-mode: standalone)'); };
   var fromCache = function(){
     if (B.sw && !/crm-push-sw\.js$/.test(B.sw)) return 'sw';
     try { var e = PF.getEntriesByType('navigation')[0]; if (e && (e.deliveryType === 'cache' || (e.transferSize === 0 && e.decodedBodySize > 0))) return 'http-cache'; } catch (x) {}
@@ -290,7 +292,7 @@ try {
   var NS_K = 'gc_bw_ns', BY_K = 'gc_bw_bytes';
   try { D.addEventListener('DOMContentLoaded', function(){ mark('html'); B.build = s(W.__GC_BUILD_ID__).slice(0, 40); try { set(NS_K, String(D.scripts.length)); } catch (e) {} NST.call(W, checkVersion, 1500); }); } catch (e) {}
   try { W.addEventListener('load', function(){
-    mark('load');
+    mark('load'); navInfo();
     try { var e = PF.getEntriesByType('navigation')[0]; if (e) { if (e.responseStart > 0) B.m.ttfb = Math.round(e.responseStart); if (e.responseEnd > 0) B.m.dl = Math.round(e.responseEnd);
       B.bytes = { tr: e.transferSize || 0, enc: e.encodedBodySize || 0, dec: e.decodedBodySize || 0 }; if (e.encodedBodySize > 1e5) set(BY_K, String(e.encodedBodySize)); } } catch (x) {}
   }); } catch (e) {}
@@ -306,12 +308,12 @@ try {
       var v = s(em.value).trim().toLowerCase(), at = v.lastIndexOf('@');
       att = { t: ms(), dom: at > 0 ? v.slice(at + 1).slice(0, 60) : (v ? '(no @)' : '(empty)'), h: v ? hash(v) : '', on: NAV.onLine !== false };
       if (B.si.length >= 4) B.si.shift(); B.si.push(att); mark('try'); dirty = true; lastMsg = '\u0000';
-      if (!pollOn) { pollOn = true; NST.call(W, poll, 250); }   /* signing in again later (after the idle sign-out) is watched too */
+      if (!pollOn) { pollOn = true; NST.call(W, poll, 400); }   /* signing in again later (after the idle sign-out) is watched too */
     } catch (e) {}
   }, true); } catch (e) {}
 
-  var vis = function(el){ try { return !!(el && el.getClientRects().length); } catch (e) { return false; } };
-  var gateUp = function(){ return vis(D.getElementById('gc-auth-email')); };
+  /* the sign-in screen is in the page only while it shows (it is removed when hidden): no layout is forced to know it */
+  var gateUp = function(){ return !!D.getElementById('gc-auth-email'); };
   var authed = function(){ try { var A = W.__GC_AUTH__; return A && A.email && A.email() ? s(A.mode && A.mode()) || 'on' : ''; } catch (e) { return ''; } };
   var H = D.documentElement;
   var firstScreen = function(){
@@ -326,19 +328,15 @@ try {
     } catch (e) {}
     return '';
   };
-  var onScreen = function(){ var u = under(); return cov ? 'the Opening progress screen (' + stage()[1] + ') over ' + u : u; };
-  var under = function(){
-    try {
-      if (D.getElementById('gc-bootsafe')) return 'the "has not opened yet" panel';
-      if (H.classList.contains('gc-boot-field')) return 'spinner (the GrayCo Field splash)';
-      if (D.getElementById('gc-boot-cover')) return 'spinner (Loading the CRM…)';
-      if (H.classList.contains('gc-applogin')) return 'the app\'s own sign-in screen';
-      var r = D.getElementById('root'), tx = r ? s(r.textContent).replace(/\s+/g, ' ').trim() : '';
-      if (!r || !r.firstElementChild || tx.length < 20) return 'blank' + (tx ? ': ' + clean(tx, 40) : '');
-      if (/loading|please wait/i.test(tx.slice(0, 200))) return 'spinner: ' + clean(tx, 60);
-      return 'other: ' + clean(tx, 60);
-    } catch (e) { return '?'; }
-  };
+  /* the rest (the progress screen, the update banner, sending) is compiled only when first needed: a normal open never pays
+     for it before its first screen (tools/bootwatch_late.js, put here by the patch as text) */
+  var onScreenImpl = null, drawImpl = null, bannerImpl = null, updateImpl = null, sendImpl = null, bar = null, lateOn = false;
+  var LATE = "/* tools/bootwatch_late.js \u2014 patch BOOTWATCH, the part of tools/bootwatch_early.js that is compiled only when first needed\n   (eval'd inside that script, so it shares its variables): what was on screen, the \"Opening GrayCo Field\u2026\" progress screen,\n   the \"Tap to update\" banner and its update, and sending. tools/patch_BOOTWATCH.py puts it into the early script as text. */\n  onScreenImpl = function(){ var u = under(); return cov ? 'the Opening progress screen (' + stage()[1] + ') over ' + u : u; };\n  var under = function(){\n    try {\n      if (D.getElementById('gc-bootsafe')) return 'the \"has not opened yet\" panel';\n      if (H.classList.contains('gc-boot-field')) return 'spinner (the GrayCo Field splash)';\n      if (D.getElementById('gc-boot-cover')) return 'spinner (Loading the CRM\u2026)';\n      if (H.classList.contains('gc-applogin')) return 'the app\\'s own sign-in screen';\n      var r = D.getElementById('root'), tx = r ? s(r.textContent).replace(/\\s+/g, ' ').trim() : '';\n      if (!r || !r.firstElementChild || tx.length < 20) return 'blank' + (tx ? ': ' + clean(tx, 40) : '');\n      if (/loading|please wait/i.test(tx.slice(0, 200))) return 'spinner: ' + clean(tx, 60);\n      return 'other: ' + clean(tx, 60);\n    } catch (e) { return '?'; }\n  };\n  var stage = function(){\n    var nsT = +get(NS_K) || 900, mb = (+get(BY_K) || 0) / 1048576;\n    if (D.readyState === 'loading') { var p = Math.max(3, Math.min(88, Math.round(D.scripts.length / nsT * 88)));\n      return [p, 'Downloading the app' + (mb > 0.5 ? ' \u2014 ' + Math.round(p / 88 * 100) + '% of about ' + mb.toFixed(1) + ' MB' : ' \u2014 ' + Math.round(p / 88 * 100) + '%')]; }\n    if (B.m.load == null) return [92, 'Starting the app\u2026'];\n    return [97, 'Loading your jobs\u2026'];\n  };\n  drawImpl = function(since){\n    try {\n      var fld = true; try { fld = W._gcDevice && W._gcDevice.fieldDevice ? !!W._gcDevice.fieldDevice() : /iPhone|iPod|iPad|Android/i.test(UA); } catch (e) {}\n      if (!cov) {\n        cov = D.createElement('div'); cov.id = 'gc-bw-opening'; cov.setAttribute('data-gc-keep', '1'); cov.setAttribute('data-gcnav-ignore', '1'); cov.setAttribute('role', 'status'); cov.setAttribute('aria-live', 'polite');\n        cov.style.cssText = 'position:fixed;inset:0;width:100vw;height:100vh;margin:0;padding:24px;box-sizing:border-box;z-index:2147483646;background:#fff;color:#0f2440;display:flex;flex-direction:column;' +\n          'align-items:center;justify-content:center;gap:14px;font:600 15px/1.4 -apple-system,BlinkMacSystemFont,Segoe UI,Inter,sans-serif;text-align:center;-webkit-user-select:none;user-select:none';\n        cov.innerHTML = '<img src=\"grayco-logo.jpg\" alt=\"\" style=\"width:84px;height:84px;border-radius:20px;object-fit:contain;box-shadow:0 6px 24px rgba(15,36,64,.14)\" onerror=\"this.style.display=\\'none\\'\">' +\n          '<div id=\"gc-bw-op-t\" style=\"font-size:22px;font-weight:800\">' + (fld ? 'Opening GrayCo Field\u2026' : 'Opening the CRM\u2026') + '<\/div>' +\n          '<div style=\"width:min(320px,80vw);height:8px;border-radius:4px;background:#e2e8f0;overflow:hidden\"><div id=\"gc-bw-op-bar\" style=\"height:100%;width:3%;background:#2563eb;border-radius:4px;transition:width .4s\"><\/div><\/div>' +\n          '<div id=\"gc-bw-op-s\" style=\"color:#475569;font-size:14px;min-height:20px\"><\/div>';\n        cov.addEventListener('click', function(){ if (!covSlow) return; B.retry = ms(); dirty = true; send('retry', true); W.__GC_USER_WANTS_RELOAD__ = true; try { if (typeof W._gcReloadNow === 'function') W._gcReloadNow(); else W.location.reload(); } catch (e) {} });\n        H.appendChild(cov); mark('cover'); dirty = true;\n      }\n      var st = stage(), bar = D.getElementById('gc-bw-op-bar'), sub = D.getElementById('gc-bw-op-s');\n      if (bar) bar.style.width = st[0] + '%';\n      if (ms() - Math.max(since, covWant - 600) > 45000 && !covSlow) {\n        covSlow = true; mark('slow'); stuck('slow', 'signed in, not ready after 45 s: ' + st[1] + (NAV.onLine === false ? ' (offline)' : ''));\n        var t = D.getElementById('gc-bw-op-t'); if (t) t.textContent = 'Still loading \u2014 weak signal?';\n        cov.style.cursor = 'pointer'; st[1] = '<b style=\"display:inline-block;margin-top:6px;padding:10px 22px;border-radius:8px;background:#2563eb;color:#fff\">Tap to retry<\/b><br><span style=\"font-size:12px\">' + st[1] + '<\/span>';\n      }\n      if (sub) { if (covSlow) { if (sub.getAttribute('data-s') !== st[1]) { sub.innerHTML = st[1]; sub.setAttribute('data-s', st[1]); } } else sub.textContent = st[1]; }\n    } catch (e) {}\n  };\n  bannerImpl = function(live){\n    try {\n      if (bar && bar.isConnected) return;\n      var old = D.getElementById('gc-update-bar'); if (old) old.remove();\n      bar = D.createElement('div'); bar.id = 'gc-bw-update'; bar.setAttribute('data-gc-keep', '1'); bar.setAttribute('role', 'alert');\n      bar.style.cssText = 'position:fixed;left:0;right:0;top:0;bottom:auto;height:auto;overflow:visible;z-index:2147483647;margin:0;border:0;width:100%;max-width:none;box-sizing:border-box;padding:calc(10px + env(safe-area-inset-top,0px)) 16px 10px;' +\n        'background:#2563eb;color:#fff;font:700 15px/1.3 -apple-system,BlinkMacSystemFont,Segoe UI,Inter,sans-serif;text-align:center;cursor:pointer;';\n      bar.innerHTML = '<button type=\"button\" id=\"gc-bw-update-btn\" style=\"all:unset;cursor:pointer;display:block;width:100%\">A newer version is ready \u2014 Tap to update<\/button>';\n      bar.title = 'This copy: ' + B.build + ' \u00b7 on the server: ' + live;\n      bar.addEventListener('click', function(ev){ try { ev.preventDefault(); ev.stopPropagation(); } catch (e) {} update(); }, true);\n      try { bar.setAttribute('popover', 'manual'); } catch (e) {}\n      H.appendChild(bar);   /* after <body>: above the sign-in screen even without the top layer */\n      try { if (bar.showPopover) bar.showPopover(); } catch (e) {}\n      B.banner = ms(); dirty = true;\n    } catch (e) {}\n  };\n  /* Tap to update: this site's caches emptied, its old service workers removed (the AWAY rule: never /crm-push-sw.js, the\n     phone notifications \u2014 it has no cache and no fetch handler), then ONE reload. At most once per 10 minutes. */\n  var updating = false;\n  updateImpl = function(){\n    var last = +get(HEAL_K) || 0;\n    if (updating || (last && Date.now() - last < 10 * 60e3)) {\n      try { var b = D.getElementById('gc-bw-update-btn'); if (b) b.textContent = 'Just updated \u2014 if this stays, close the app and open it again.'; } catch (e) {}\n      return false;\n    }\n    updating = true; set(HEAL_K, String(Date.now())); B.heal = ms(); B.p.heal = 1; dirty = true; send('update');\n    try { var b2 = D.getElementById('gc-bw-update-btn'); if (b2) b2.textContent = 'Updating\u2026'; } catch (e) {}\n    var jobs = [];\n    try { if (NAV.serviceWorker && NAV.serviceWorker.getRegistrations) jobs.push(NAV.serviceWorker.getRegistrations().then(function(rs){\n      return Promise.all(rs.map(function(w){ var u = ''; try { u = s((w.active || w.waiting || w.installing || {}).scriptURL); } catch (e) {} return /\\/crm-push-sw\\.js(\\?|$)/.test(u) ? null : w.unregister(); })); })); } catch (e) {}\n    try { if (typeof caches !== 'undefined' && caches.keys) jobs.push(caches.keys().then(function(k){ return Promise.all(k.map(function(n){ return caches.delete(n); })); })); } catch (e) {}\n    var go = false, reload = function(){\n      if (go) return; go = true;\n      W.__GC_USER_WANTS_RELOAD__ = true;   /* a person asked: the CRM's reload guard lets it through */\n      try { if (typeof W._gcReloadNow === 'function') W._gcReloadNow(); else W.location.reload(); } catch (e) { try { W.location.reload(); } catch (x) {} }\n    };\n    Promise.all(jobs).then(reload, reload); NST.call(W, reload, 2500);\n    return true;\n  };\n\n  var kind = function(){ try { var k = W._gcDevice && W._gcDevice.kind ? W._gcDevice.kind() : ''; if (k) return k === 'computer' ? 'pc' : k; } catch (e) {} return /iPhone|iPod|Android.*Mobile/i.test(UA) ? 'phone' : /iPad|Android/i.test(UA) ? 'tablet' : 'pc'; };\n  var prevBoot = function(){ var v = get(PEND_K); if (!v || v.length > 3500) return null; try { var pv = JSON.parse(v); return pv && pv.id && pv.id !== B.id ? pv : null; } catch (e) { del(PEND_K); return null; } };\n  var savePend = function(){ try { var j = JSON.stringify(B); if (j.length < 3500) set(PEND_K, j); } catch (e) {} };\n  function payload(why){\n    B.kind = kind(); B.on = NAV.onLine !== false; B.sw = swUrl() || B.sw; B.why = why; B.t = ms();\n    if (!B.build) B.build = s(W.__GC_BUILD_ID__).slice(0, 40);\n    if (hbDue) B.hb = day();\n    var o = { v: 1, dev: DEV, boot: B }, pv = prevBoot(); if (pv) o.prevBoot = pv;\n    var j = JSON.stringify(o);\n    if (j.length > 7800) { delete o.prevBoot; B.errs = B.errs.slice(0, 3); B.stuck = B.stuck.slice(0, 3); B.si = B.si.slice(-2); j = JSON.stringify(o); }\n    return { o: o, j: j };\n  }\n  /* the function's limits, kept here too: a new open 30 s after this device's last send; the same open again after 3 s, 6 times */\n  var mayNow = function(){\n    var t = Date.now(); if (sentN >= 6) return -1;\n    if (!sentN) { var la = +get(LAST_K) || 0; return !la || la > t || t - la >= 30000 ? 0 : 30000 - (t - la); }\n    return t - lastSent >= 3000 ? 0 : 3000 - (t - lastSent);\n  };\n  sendImpl = function(why, final){\n    try {\n      var hb = hbDue, pv = prevDue && !!get(PEND_K);\n      if (!hb && !pv && !(dirty && isProblem())) return false;\n      if (NAV.onLine === false) { if (isProblem()) savePend(); return false; }   /* sent when the signal is back, or with the next open */\n      var wait = mayNow();\n      if (wait < 0) return false;\n      if (wait > 0 && !final) { if (!timer) timer = NST.call(W, function(){ timer = null; send(why); }, wait + 50); return false; }\n      var p = payload(why), body = p.j, ok = false;\n      dirty = false; prevDue = false; lastSent = Date.now(); sentN++; set(LAST_K, String(lastSent));\n      var done = function(){ if (hb) { set(HB_K, day()); hbDue = false; } del(PEND_K); };\n      var fail = function(){ dirty = true; if (hb) hbDue = true; if (isProblem()) savePend(); };\n      if (hb) hbDue = false;\n      /* signed in: fetch (the sign-in layer adds the token, so the function knows who); else \u2014 and when the page is being\n         left, where only a beacon is sure to get out \u2014 a beacon */\n      if (!final && authed() && typeof W.fetch === 'function') {\n        try { W.fetch(URL_FN, { method: 'POST', body: body, keepalive: true, headers: { 'Content-Type': 'text/plain;charset=UTF-8' } })\n          .then(function(r){ if (r && r.ok) done(); else fail(); }, fail); ok = true; } catch (e) { ok = false; }\n      }\n      if (!ok && NAV.sendBeacon) { try { ok = NAV.sendBeacon(URL_FN, body); if (ok) done(); } catch (e) { ok = false; } }\n      if (!ok && typeof NF === 'function') { try { NF.call(W, URL_FN, { method: 'POST', body: body, keepalive: true, headers: { 'Content-Type': 'text/plain;charset=UTF-8' } }).then(function(r){ if (r && r.ok) done(); else fail(); }, fail); ok = true; } catch (e) {} }\n      if (!ok) fail();\n      return ok;\n    } catch (e) { return false; }\n  };\n";
+  function L(){ if (lateOn) return; lateOn = true; try { eval(LATE); } catch (e) { try { console.warn('[GC] BOOTWATCH late part:', e && e.message || e); } catch (x) {} } }
+  var onScreen = function(){ L(); return onScreenImpl ? onScreenImpl() : '?'; };
+  function banner(live){ L(); if (bannerImpl) bannerImpl(live); }
+  function update(){ L(); return updateImpl ? updateImpl() : false; }
+  function send(why, final){ L(); return sendImpl ? sendImpl(why, final) : false; }
   var stuck = function(k, why){ if (B.stuck.length < 5 && !B.p['stuck_' + k]) { B.stuck.push({ t: ms(), k: k, why: why, on: NAV.onLine !== false }); B.p['stuck_' + k] = 1; problem('stuck'); } };
   var lastMsg = '';
   var poll = function(){
@@ -359,7 +357,8 @@ try {
       }
       if (au && mark('signed', au)) dirty = true;
       if (au && att && !att.ok && !att.err) { att.ok = ms(); dirty = true; }
-      if (B.m.ready == null && (W._crm || H.classList.contains('_fieldmode'))) mark('ready');
+      /* the app ready: every script in AND the CRM's data object (React draws its own screens long before the page is in) */
+      if (B.m.ready == null && B.m.load != null && (W._crm || H.classList.contains('_fieldmode'))) mark('ready');
       var fs = firstScreen();
       if (fs && mark('paint', fs)) { dirty = true; B.view = fs; heartbeat(); }
       opening(g, au);
@@ -371,9 +370,9 @@ try {
     cost += pnow() - c0;
     var waiting = att && !att.err && !att.ok && ms() - att.t < 60000;
     if ((B.m.paint != null && !waiting && !cov) || (Date.now() - T0 > 15 * 60e3 && !waiting)) { pollOn = false; opening(true, ''); return; }
-    NST.call(W, poll, gateUp() ? 500 : 250);
+    NST.call(W, poll, gateUp() ? 800 : 400);
   };
-  pollOn = true; NST.call(W, poll, 250);
+  pollOn = true; NST.call(W, poll, 400);
 
   /* ── signed in before the app is ready: "Opening GrayCo Field…" with a progress bar, never a blank / frozen page ──
      The page is ~7 MB to download: the sign-in box shows in under a second, the rest can take 10-20 s on a phone's signal.
@@ -389,13 +388,6 @@ try {
     if (H.classList.contains('gc-applogin')) { if (!appLog) appLog = ms(); if (ms() - appLog > 8000) return true; } else appLog = 0;
     return H.classList.contains('gc-boot-field') || !!D.getElementById('gc-boot-cover') || !!D.getElementById('gc-bootsafe');
   };
-  var stage = function(){
-    var nsT = +get(NS_K) || 900, mb = (+get(BY_K) || 0) / 1048576;
-    if (D.readyState === 'loading') { var p = Math.max(3, Math.min(88, Math.round(D.scripts.length / nsT * 88)));
-      return [p, 'Downloading the app' + (mb > 0.5 ? ' — ' + Math.round(p / 88 * 100) + '% of about ' + mb.toFixed(1) + ' MB' : ' — ' + Math.round(p / 88 * 100) + '%')]; }
-    if (B.m.load == null) return [92, 'Starting the app…'];
-    return [97, 'Loading your jobs…'];
-  };
   function opening(g, au){
     try {
       var since = Math.max(B.m.signed || 0, B.m.try || 0);
@@ -403,28 +395,10 @@ try {
       if (!want) { covWant = 0; if (cov) { try { cov.remove(); } catch (e) {} cov = null; B.m.coverOff = ms(); } return; }
       if (!covWant) covWant = ms();
       if (!cov && ms() - covWant < 600) return;
-      var fld = true; try { fld = W._gcDevice && W._gcDevice.fieldDevice ? !!W._gcDevice.fieldDevice() : /iPhone|iPod|iPad|Android/i.test(UA); } catch (e) {}
-      if (!cov) {
-        cov = D.createElement('div'); cov.id = 'gc-bw-opening'; cov.setAttribute('data-gc-keep', '1'); cov.setAttribute('data-gcnav-ignore', '1'); cov.setAttribute('role', 'status'); cov.setAttribute('aria-live', 'polite');
-        cov.style.cssText = 'position:fixed;inset:0;width:100vw;height:100vh;margin:0;padding:24px;box-sizing:border-box;z-index:2147483646;background:#fff;color:#0f2440;display:flex;flex-direction:column;' +
-          'align-items:center;justify-content:center;gap:14px;font:600 15px/1.4 -apple-system,BlinkMacSystemFont,Segoe UI,Inter,sans-serif;text-align:center;-webkit-user-select:none;user-select:none';
-        cov.innerHTML = '<img src="grayco-logo.jpg" alt="" style="width:84px;height:84px;border-radius:20px;object-fit:contain;box-shadow:0 6px 24px rgba(15,36,64,.14)" onerror="this.style.display=\'none\'">' +
-          '<div id="gc-bw-op-t" style="font-size:22px;font-weight:800">' + (fld ? 'Opening GrayCo Field…' : 'Opening the CRM…') + '</div>' +
-          '<div style="width:min(320px,80vw);height:8px;border-radius:4px;background:#e2e8f0;overflow:hidden"><div id="gc-bw-op-bar" style="height:100%;width:3%;background:#2563eb;border-radius:4px;transition:width .4s"></div></div>' +
-          '<div id="gc-bw-op-s" style="color:#475569;font-size:14px;min-height:20px"></div>';
-        cov.addEventListener('click', function(){ if (!covSlow) return; B.retry = ms(); dirty = true; send('retry', true); W.__GC_USER_WANTS_RELOAD__ = true; try { if (typeof W._gcReloadNow === 'function') W._gcReloadNow(); else W.location.reload(); } catch (e) {} });
-        H.appendChild(cov); mark('cover'); dirty = true;
-      }
-      var st = stage(), bar = D.getElementById('gc-bw-op-bar'), sub = D.getElementById('gc-bw-op-s');
-      if (bar) bar.style.width = st[0] + '%';
-      if (ms() - Math.max(since, covWant - 600) > 45000 && !covSlow) {
-        covSlow = true; mark('slow'); stuck('slow', 'signed in, not ready after 45 s: ' + st[1] + (NAV.onLine === false ? ' (offline)' : ''));
-        var t = D.getElementById('gc-bw-op-t'); if (t) t.textContent = 'Still loading — weak signal?';
-        cov.style.cursor = 'pointer'; st[1] = '<b style="display:inline-block;margin-top:6px;padding:10px 22px;border-radius:8px;background:#2563eb;color:#fff">Tap to retry</b><br><span style="font-size:12px">' + st[1] + '</span>';
-      }
-      if (sub) { if (covSlow) { if (sub.getAttribute('data-s') !== st[1]) { sub.innerHTML = st[1]; sub.setAttribute('data-s', st[1]); } } else sub.textContent = st[1]; }
+      L(); if (drawImpl) drawImpl(since);
     } catch (e) {}
   }
+
 
   /* ── an old build: /version.txt (no-store) against this page's build ── */
   var num = function(v){ var m = /^(\d+)\.(\d+)(?:-(\d{4}-\d\d-\d\d))?(.*)$/.exec(s(v).trim()); return m ? [+m[1], +m[2], m[3] || '', m[4] || ''] : null; };
@@ -461,94 +435,10 @@ try {
   var resume = function(){ if (D.visibilityState === 'hidden' || Date.now() - lastResume < 10 * 60e3 || Date.now() - T0 < 60e3) return; lastResume = Date.now(); checkVersion(true); };
   try { D.addEventListener('visibilitychange', resume); W.addEventListener('pageshow', function(e){ if (e && e.persisted) { lastResume = 0; resume(); } }); } catch (e) {}
 
-  var bar = null;
-  function banner(live){
-    try {
-      if (bar && bar.isConnected) return;
-      var old = D.getElementById('gc-update-bar'); if (old) old.remove();
-      bar = D.createElement('div'); bar.id = 'gc-bw-update'; bar.setAttribute('data-gc-keep', '1'); bar.setAttribute('role', 'alert');
-      bar.style.cssText = 'position:fixed;left:0;right:0;top:0;bottom:auto;height:auto;overflow:visible;z-index:2147483647;margin:0;border:0;width:100%;max-width:none;box-sizing:border-box;padding:calc(10px + env(safe-area-inset-top,0px)) 16px 10px;' +
-        'background:#2563eb;color:#fff;font:700 15px/1.3 -apple-system,BlinkMacSystemFont,Segoe UI,Inter,sans-serif;text-align:center;cursor:pointer;';
-      bar.innerHTML = '<button type="button" id="gc-bw-update-btn" style="all:unset;cursor:pointer;display:block;width:100%">A newer version is ready — Tap to update</button>';
-      bar.title = 'This copy: ' + B.build + ' · on the server: ' + live;
-      bar.addEventListener('click', function(ev){ try { ev.preventDefault(); ev.stopPropagation(); } catch (e) {} update(); }, true);
-      try { bar.setAttribute('popover', 'manual'); } catch (e) {}
-      H.appendChild(bar);   /* after <body>: above the sign-in screen even without the top layer */
-      try { if (bar.showPopover) bar.showPopover(); } catch (e) {}
-      B.banner = ms(); dirty = true;
-    } catch (e) {}
-  }
-  /* Tap to update: this site's caches emptied, its old service workers removed (the AWAY rule: never /crm-push-sw.js, the
-     phone notifications — it has no cache and no fetch handler), then ONE reload. At most once per 10 minutes. */
-  var updating = false;
-  function update(){
-    var last = +get(HEAL_K) || 0;
-    if (updating || (last && Date.now() - last < 10 * 60e3)) {
-      try { var b = D.getElementById('gc-bw-update-btn'); if (b) b.textContent = 'Just updated — if this stays, close the app and open it again.'; } catch (e) {}
-      return false;
-    }
-    updating = true; set(HEAL_K, String(Date.now())); B.heal = ms(); B.p.heal = 1; dirty = true; send('update');
-    try { var b2 = D.getElementById('gc-bw-update-btn'); if (b2) b2.textContent = 'Updating…'; } catch (e) {}
-    var jobs = [];
-    try { if (NAV.serviceWorker && NAV.serviceWorker.getRegistrations) jobs.push(NAV.serviceWorker.getRegistrations().then(function(rs){
-      return Promise.all(rs.map(function(w){ var u = ''; try { u = s((w.active || w.waiting || w.installing || {}).scriptURL); } catch (e) {} return /\/crm-push-sw\.js(\?|$)/.test(u) ? null : w.unregister(); })); })); } catch (e) {}
-    try { if (typeof caches !== 'undefined' && caches.keys) jobs.push(caches.keys().then(function(k){ return Promise.all(k.map(function(n){ return caches.delete(n); })); })); } catch (e) {}
-    var go = false, reload = function(){
-      if (go) return; go = true;
-      W.__GC_USER_WANTS_RELOAD__ = true;   /* a person asked: the CRM's reload guard lets it through */
-      try { if (typeof W._gcReloadNow === 'function') W._gcReloadNow(); else W.location.reload(); } catch (e) { try { W.location.reload(); } catch (x) {} }
-    };
-    Promise.all(jobs).then(reload, reload); NST.call(W, reload, 2500);
-    return true;
-  }
-
   /* ── sending ── */
   var isProblem = function(){ for (var k in B.p) return true; return false; };
   function heartbeat(){ if (get(HB_K) !== day()) { hbDue = true; NST.call(W, function(){ send('hb'); }, 1500); } }
   function soon(){ if (!timer) timer = NST.call(W, function(){ timer = null; send('problem'); }, 1500); }
-  var kind = function(){ try { var k = W._gcDevice && W._gcDevice.kind ? W._gcDevice.kind() : ''; if (k) return k === 'computer' ? 'pc' : k; } catch (e) {} return /iPhone|iPod|Android.*Mobile/i.test(UA) ? 'phone' : /iPad|Android/i.test(UA) ? 'tablet' : 'pc'; };
-  var prevBoot = function(){ var v = get(PEND_K); if (!v || v.length > 3500) return null; try { var pv = JSON.parse(v); return pv && pv.id && pv.id !== B.id ? pv : null; } catch (e) { del(PEND_K); return null; } };
-  var savePend = function(){ try { var j = JSON.stringify(B); if (j.length < 3500) set(PEND_K, j); } catch (e) {} };
-  function payload(why){
-    B.kind = kind(); B.on = NAV.onLine !== false; B.sw = swUrl() || B.sw; B.why = why; B.t = ms();
-    if (!B.build) B.build = s(W.__GC_BUILD_ID__).slice(0, 40);
-    if (hbDue) B.hb = day();
-    var o = { v: 1, dev: DEV, boot: B }, pv = prevBoot(); if (pv) o.prevBoot = pv;
-    var j = JSON.stringify(o);
-    if (j.length > 7800) { delete o.prevBoot; B.errs = B.errs.slice(0, 3); B.stuck = B.stuck.slice(0, 3); B.si = B.si.slice(-2); j = JSON.stringify(o); }
-    return { o: o, j: j };
-  }
-  /* the function's limits, kept here too: a new open 30 s after this device's last send; the same open again after 3 s, 6 times */
-  var mayNow = function(){
-    var t = Date.now(); if (sentN >= 6) return -1;
-    if (!sentN) { var la = +get(LAST_K) || 0; return !la || la > t || t - la >= 30000 ? 0 : 30000 - (t - la); }
-    return t - lastSent >= 3000 ? 0 : 3000 - (t - lastSent);
-  };
-  function send(why, final){
-    try {
-      var hb = hbDue, pv = prevDue && !!get(PEND_K);
-      if (!hb && !pv && !(dirty && isProblem())) return false;
-      if (NAV.onLine === false) { if (isProblem()) savePend(); return false; }   /* sent when the signal is back, or with the next open */
-      var wait = mayNow();
-      if (wait < 0) return false;
-      if (wait > 0 && !final) { if (!timer) timer = NST.call(W, function(){ timer = null; send(why); }, wait + 50); return false; }
-      var p = payload(why), body = p.j, ok = false;
-      dirty = false; prevDue = false; lastSent = Date.now(); sentN++; set(LAST_K, String(lastSent));
-      var done = function(){ if (hb) { set(HB_K, day()); hbDue = false; } del(PEND_K); };
-      var fail = function(){ dirty = true; if (hb) hbDue = true; if (isProblem()) savePend(); };
-      if (hb) hbDue = false;
-      /* signed in: fetch (the sign-in layer adds the token, so the function knows who); else — and when the page is being
-         left, where only a beacon is sure to get out — a beacon */
-      if (!final && authed() && typeof W.fetch === 'function') {
-        try { W.fetch(URL_FN, { method: 'POST', body: body, keepalive: true, headers: { 'Content-Type': 'text/plain;charset=UTF-8' } })
-          .then(function(r){ if (r && r.ok) done(); else fail(); }, fail); ok = true; } catch (e) { ok = false; }
-      }
-      if (!ok && NAV.sendBeacon) { try { ok = NAV.sendBeacon(URL_FN, body); if (ok) done(); } catch (e) { ok = false; } }
-      if (!ok && typeof NF === 'function') { try { NF.call(W, URL_FN, { method: 'POST', body: body, keepalive: true, headers: { 'Content-Type': 'text/plain;charset=UTF-8' } }).then(function(r){ if (r && r.ok) done(); else fail(); }, fail); ok = true; } catch (e) {} }
-      if (!ok) fail();
-      return ok;
-    } catch (e) { return false; }
-  }
   var leaving = function(){
     try {
       if (gateUp() && B.m.signed == null && !authed() && !B.p.gate) { B.p.gate = 1; B.left = ms(); dirty = true; }   /* the sign-in screen left without getting in */

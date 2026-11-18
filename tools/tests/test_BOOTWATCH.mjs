@@ -121,6 +121,7 @@ if (want(2)) {
   await p.fill('#gc-auth-password', 'pw'); await p.click('#gc-auth-submit');
   const okd = await until(() => { const v = rowOf(d); return v && v.email === PM && v; }, 60000);
   ok(!!okd, 'signed in: the device\'s signed-in e-mail is recorded (from the sign-in token, checked)', rowOf(d) && { email: !!rowOf(d).email, boots: rowOf(d).boots.map(x => x.m) });
+  if (!okd) console.log('    page now: ' + JSON.stringify(await A.ev(() => ({ url: location.href, bw: window._gcBootWatch && window._gcBootWatch.state(), ls: { last: localStorage.getItem('gc_bw_last'), hb: localStorage.getItem('gc_bw_hb'), pend: !!localStorage.getItem('gc_bw_pend') }, gate: !!document.getElementById('gc-auth-email'), field: document.documentElement.className })).catch(e => String(e))).slice(0, 1500));
   const withTok = capsFor(d).filter(x => x.headers.authorization);
   ok(withTok.length >= 1 && withTok.every(x => !x.body.includes(PM_LOCAL)), 'the signed-in send carries the token (the body never the e-mail)');
   const bs = (rowOf(d) || { boots: [] }).boots, first = bs.find(x => x.si && x.si.length);
@@ -133,7 +134,7 @@ if (want(3)) {
   console.log('3 · an old build served by a service worker: Tap to update — exactly one reload');
   VER = '33.999-2026-12-31-r99z';
   const A = await computer('phone3', { build, mobile: true, init: [IPHONE, OLDSW] }); const p = A.page();
-  let navs = 0; p.on('framenavigated', f => { if (f === p.mainFrame()) navs++; });
+  let navs = 0; p.on('domcontentloaded', () => { navs++; });   /* a new document (framenavigated also counts same-page address changes) */
   ok(!!(await waitFor(A, () => { const b = document.getElementById('gc-bw-update'); return b && b.getClientRects().length && document.getElementById('gc-auth-email'); }, null, 30000)), 'the banner shows (with the sign-in screen up)');
   const top = await A.ev(() => { const b = document.getElementById('gc-bw-update').getBoundingClientRect(); const e = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2); return { txt: document.getElementById('gc-bw-update').textContent, onTop: !!(e && e.closest('#gc-bw-update')) }; });
   ok(top.onTop && /A newer version is ready — Tap to update/.test(top.txt), 'it reads "A newer version is ready — Tap to update" and is on top of the sign-in screen', top);
@@ -154,7 +155,7 @@ if (want(3)) {
   /* the CRM's own update bar (signed in, a fresh page from the network) uses the same update */
   const B = await computer('desk3', { build }); const pb = B.page();
   await signIn(B, ADMIN, 30000);
-  let nb = 0; pb.on('framenavigated', f => { if (f === pb.mainFrame()) nb++; });
+  let nb = 0; pb.on('domcontentloaded', () => { nb++; });
   ok(!!(await waitFor(B, () => !!document.getElementById('gc-update-now'), null, 20000)), 'signed in, fresh page: the CRM\'s own "Yes, update" bar shows');
   ok(await B.ev(() => !document.getElementById('gc-bw-update')), 'only one update bar on screen');
   await pb.locator('#gc-update-now').click(); await sleep(9000);
@@ -180,6 +181,7 @@ if (want(4) || want(5)) {
     BLOCK_REACT = true; await A.goto();
     const c = await until(() => capsFor(d).slice(n0).find(x => (x.json.boot.stuck || []).length), 60000);
     const b = c && c.json.boot;
+    if (!b) console.log('    sent: ' + JSON.stringify(capsFor(d).slice(n0).map(x => ({ st: x.status, j: x.j, b: x.json.boot }))).slice(0, 1500) + '\n    page: ' + JSON.stringify(await A.ev(() => ({ bw: window._gcBootWatch && window._gcBootWatch.state(), cls: document.documentElement.className, last: localStorage.getItem('gc_bw_last') })).catch(e => String(e))).slice(0, 1500));
     ok(b && b.stuck[0].k === 'screen' && /no first screen/.test(b.stuck[0].why), 'no first screen in 20 s: sent as stuck', b && b.stuck);
     ok(b && /blank|spinner|progress/.test(b.stuck[0].why), 'with what was on screen', b && b.stuck[0].why);
     ok(b && (b.errs || []).some(e => /load script .*react/.test(e.m)), 'and the script that failed to load', b && b.errs);
@@ -209,7 +211,8 @@ function slowServer(rateKBs){
     if (f.startsWith(build) && fs.existsSync(f) && fs.statSync(f).isFile()) { res.writeHead(200, { 'cache-control': 'no-cache' }); return fs.createReadStream(f).pipe(res); }
     res.writeHead(404); res.end();
   });
-  return new Promise(r => srv.listen(0, '127.0.0.1', () => { srv.host = '127.0.0.1:' + srv.address().port; srv.gzBytes = gz.length; r(srv); }));
+  return new Promise(r => srv.listen(0, '127.0.0.1', () => { srv.host = '127.0.0.1:' + srv.address().port; srv.gzBytes = gz.length;
+    process.env.SITE_ORIGIN += ',http://' + srv.host;   /* the function accepts calls from this test site */ r(srv); }));
 }
 async function localPhone(name, srv){
   const A = await computer(name, { build, mobile: true, init: [IPHONE] });
@@ -272,7 +275,7 @@ if (want(6)) {
   const d2 = await dev(B);
   const rep = await until(() => capsFor(d2).find(x => (x.json.boot.stuck || []).some(s => s.k === 'slow')), 40000);
   ok(!!rep, 'and a stuck report is sent', capsFor(d2).map(x => x.json.boot.stuck));
-  let nv = 0; pb.on('framenavigated', f => { if (f === pb.mainFrame()) nv++; });
+  let nv = 0; pb.on('domcontentloaded', () => { nv++; });
   await pb.locator('#gc-bw-opening').click({ timeout: 5000 }).catch(() => {}); await sleep(3000);
   ok(nv === 1, 'Tap to retry reloads the page', { nv });
   await B.close(); srv2.close();

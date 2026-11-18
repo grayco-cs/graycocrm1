@@ -8,17 +8,19 @@ let html = process.argv[2] || path.join(here, '..', '..', 'index.html');
 if (fs.existsSync(html) && fs.statSync(html).isDirectory()) html = path.join(html, 'index.html');
 let pass = 0, fail = 0; const ok = (c, m, i) => { if (c) { pass++; console.log('  ✓ ' + m); } else { fail++; console.log('  ✗ FAIL ' + m + (i !== undefined ? ' ' + JSON.stringify(i).slice(0, 400) : '')); } };
 const src = fs.readFileSync(html, 'utf8');
-const code = fs.readFileSync(path.join(here, '..', 'bootwatch_early.js'), 'utf8');
+const LATE = fs.readFileSync(path.join(here, '..', 'bootwatch_late.js'), 'utf8');
+const code = fs.readFileSync(path.join(here, '..', 'bootwatch_early.js'), 'utf8').replace("'__BW_LATE__'", JSON.stringify(LATE).replace(/[\u0080-\uffff]/g, c => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0')).replace(/<\//g, '<\\/'));
 ok((src.match(/<script id="gc-patch-bootwatch">/g) || []).length === 1, 'in the page once');
 ok(src.indexOf('<script') === src.indexOf('<script id="gc-patch-lsguard">'), 'LSGUARD is still the first script of the page');
 const at = src.indexOf('<script id="gc-patch-bootwatch">');
 ok(at < src.indexOf('<script id="gc-patch-saves-lsheld">') && at < src.indexOf('<script id="gc-patch-bootsafe">') && at < src.indexOf('COMPANY SIGN-IN'), 'right after LSGUARD: before BOOTSAFE, the sign-in and the app');
-ok(src.includes(code.trim()), 'the page carries tools/bootwatch_early.js exactly');
+ok(src.includes(code.trim()), 'the page carries tools/bootwatch_early.js with tools/bootwatch_late.js inside as text');
+ok(!/function\s*\(|=>/.test(code.slice(code.indexOf('var LATE = '), code.indexOf('var LATE = ') + 12)) && code.includes('var LATE = "'), 'the late part is a string (not compiled at open)');
 { const tmp = path.join(os.tmpdir(), 'bootwatch_idem_' + process.pid + '.html'); fs.writeFileSync(tmp, src);
   const out = execFileSync('python3', [path.join(here, '..', 'patch_BOOTWATCH.py'), tmp]).toString(); ok(/already patched/.test(out) && fs.readFileSync(tmp, 'utf8') === src, 'patch is idempotent'); fs.unlinkSync(tmp); }
 ok(/_gcBootWatch && window\._gcBootWatch\.banner\(\)\) return;/.test(src) && /_gcBootWatch\.update\(\)\) return; }catch\(e\)\{\} location\.reload\(true\);/.test(src) && /_gcBootWatch\.live\(60000\)/.test(src), 'the CRM\'s own update bar: no second bar, the same update, the answer already fetched');
 ok(/'claude-proxy': 1, bootwatch: 1 \}/.test(src), 'the Marketing Manager\'s page may report too');
-ok(!/password/i.test(code.replace(/\/\*[\s\S]*?\*\//g, '').replace(/'[^']*password[^']*'/gi, '')), 'the script never reads a password field (no code touches one)');
+ok(!/password/i.test((code + LATE).replace(/\/\*[\s\S]*?\*\//g, '').replace(/'[^']*password[^']*'/gi, '')), 'the script never reads a password field (no code touches one)');
 ok(!/gc-auth-password/.test(code), '… not even by id');
 
 /* the script in a tiny fake page */

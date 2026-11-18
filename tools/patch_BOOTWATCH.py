@@ -4,7 +4,7 @@
 Why (11/18): a PM could not open GrayCo Field on his phone and nobody knew. The device report (PERFREP) only goes out
 after sign-in, and only when something is dirty; his phone's last report was 11/04 on 33.164 (an old cached copy, or a
 sign-in that failed). This patch:
-  * puts tools/bootwatch_early.js right after LSGUARD (the first script of the page): every open, signed in or not, records
+  * puts tools/bootwatch_early.js (with tools/bootwatch_late.js inside it as text, compiled only when first needed) right after LSGUARD (the first script of the page): every open, signed in or not, records
     its steps (page read, scripts loaded, sign-in screen, Sign in pressed -- e-mail domain + hash only, the sign-in error
     text, signed in, first screen Desk / Field) with page errors before the first screen, "stuck" conditions and an old
     build (older than /version.txt), and sends it to netlify/functions/bootwatch.js (gc_kv gc_bootrep_<device>) only when
@@ -23,8 +23,14 @@ src = open(path, encoding='utf-8').read()
 MARK = '__GC_PATCH_BOOTWATCH__'
 if MARK in src:
     print('BOOTWATCH: already patched'); sys.exit(0)
-EARLY = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'bootwatch_early.js'), encoding='utf-8').read()
-assert MARK in EARLY and '</script' not in EARLY
+HERE = os.path.dirname(os.path.abspath(__file__))
+EARLY = open(os.path.join(HERE, 'bootwatch_early.js'), encoding='utf-8').read()
+LATE = open(os.path.join(HERE, 'bootwatch_late.js'), encoding='utf-8').read()
+assert MARK in EARLY and '</script' not in EARLY and '</script' not in LATE
+# the late part goes in as TEXT (a JS string: scanned, not compiled, until it is first needed)
+import json
+assert EARLY.count("'__BW_LATE__'") == 1
+EARLY = EARLY.replace("'__BW_LATE__'", json.dumps(LATE, ensure_ascii=True).replace('</', '<\\/'))
 
 def rep(old, new):
     global src
