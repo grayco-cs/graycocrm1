@@ -217,7 +217,7 @@ function modal(id, title, wide){
   D.body.appendChild(ov); OPEN.push(ov);
   return { ov: ov, bd: ov.querySelector('.gc-rp-bd'), close: close };
 }
-D.addEventListener('keydown', function(e){ if (e.key === 'Escape' && OPEN.length) { var o = OPEN[OPEN.length - 1]; if (o && o.__close) { o.__close(); e.stopPropagation(); } } }, true);
+D.addEventListener('keydown', function(e){ if (e.key !== 'Escape') return; OPEN = OPEN.filter(function(o){ return o.isConnected; }); if (OPEN.length) { var o = OPEN[OPEN.length - 1]; if (o && o.__close) { o.__close(); e.stopPropagation(); } } }, true);
 
 /* ═════ the form ═════ */
 var CTX = null;
@@ -388,7 +388,17 @@ function list(focusId){
     var card = b.closest('[data-rp-id]'), id = card && card.getAttribute('data-rp-id'), a = b.getAttribute('data-rp-a');
     var x = arr(LIST.items).filter(function(y){ return y.id === id; })[0]; if (!x) return;
     var more = card.querySelector('.gc-rp-more'), msg = card.querySelector('.gc-rp-msg');
-    if (a === 'shot') { more.innerHTML = '<div class="gc-rp-note">Loading the photo…</div>'; kvRead(SHOT + id).then(function(r){ var d = r && r.value && r.value.data; more.innerHTML = d && /^data:image\//.test(d) ? '<a href="' + d + '" target="_blank" rel="noopener"><img alt="The photo" src="' + d + '" style="max-width:100%;max-height:420px;border-radius:10px;border:1px solid #e2e8f0;margin-top:6px"></a>' : '<div class="gc-rp-note">The photo is not there (it may still be on its way).</div>'; }); return; }
+    if (a === 'shot') {
+      more.innerHTML = '<div class="gc-rp-note">Loading the photo…</div>';
+      /* the page's file door keeps pictures out of gc_kv: a signed-in report holds a file reference (sb:…), a signed-out one the picture itself */
+      kvRead(SHOT + id).then(function(r){ var d = s(r && r.value && r.value.data);
+        var isRef = /^sb:/.test(d) && typeof W._gcFileUrl === 'function';
+        return isRef ? W._gcFileUrl(d) : (/^data:image\//.test(d) ? d : '');
+      }).then(function(u){
+        more.innerHTML = u ? '<a href="' + esc(u) + '" target="_blank" rel="noopener"><img alt="The photo" src="' + esc(u) + '" style="max-width:100%;max-height:420px;border-radius:10px;border:1px solid #e2e8f0;margin-top:6px"></a>' : '<div class="gc-rp-note">The photo is not there (it may still be on its way).</div>';
+      }, function(){ more.innerHTML = '<div class="gc-rp-note">The photo is not in the file storage yet (the phone may still be sending it) — try again in a minute.</div>'; });
+      return;
+    }
     if (a === 'diag') { more.innerHTML = '<div class="gc-rp-note">Loading…</div>'; kvRead(DETAIL + id).then(function(r){ var v = (r && r.value) || {}; var dg = arr(v.diag); more.innerHTML = '<div class="gc-rp-diag">' + (dg.length ? dg.map(function(d){ return esc((d.k === 'slow' ? '🐢 ' + (d.ms || '?') + ' ms ' : d.k === 'net' ? '📡 ' : '⚠ ') + d.t + (d.n > 1 ? ' ×' + d.n : '') + (d.v ? '  [' + d.v + ']' : '') + (d.at ? '  ' + when(d.at) : '')); }).join('\n') : 'No page errors or slow taps on that device. 👍') + (v.gate ? '\n\nSign-in screen said: ' + esc(v.gate) : '') + (v.ua ? '\n\n' + esc(v.ua) : '') + '</div>'; }); return; }
     var ans = card.querySelector('[data-rp-ans]'), text = s(ans && ans.value);
     if (a === 'answer' && text.length < 2) { msg.textContent = 'Write the answer first.'; msg.className = 'gc-rp-msg bad'; return; }

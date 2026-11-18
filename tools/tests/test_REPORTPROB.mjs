@@ -55,7 +55,16 @@ globalThis.fetch = async (url, o) => {
 };
 const PR = createRequire(import.meta.url)(path.join(build, 'netlify/functions/problem-report.js'));
 const SERVER_TOLD = []; PR._test.setNotify(async (to, n) => { SERVER_TOLD.push({ to, n }); return { pushed: to, held: [], texted: [] }; });
+const STORE = new Map();   /* the file storage (Supabase storage), kept here so another computer can read what a phone sent */
 async function wireFn(A){
+  await A.ctx.route(u => /ieeonhpfahmwwecizdut\.supabase\.co\/storage\/v1\/object\//.test(String(u.href || u)), async route => {
+    const rq = route.request(), u = new URL(rq.url()), m = rq.method(), H0 = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' };
+    if (m === 'OPTIONS') return route.fulfill({ status: 200, headers: H0 });
+    const p = u.pathname.replace(/^\/storage\/v1\/object\/(authenticated\/|public\/)?/, '');
+    if (m === 'POST' || m === 'PUT') { STORE.set(p, { body: rq.postDataBuffer() || Buffer.alloc(0), type: rq.headers()['content-type'] || '' }); return route.fulfill({ status: 200, headers: H0, contentType: 'application/json', body: JSON.stringify({ Key: p }) }); }
+    if (m === 'HEAD' || m === 'GET') { const f = STORE.get(p); if (!f) return route.fulfill({ status: 404, headers: H0, contentType: 'application/json', body: '{"error":"not found"}' }); return route.fulfill({ status: 200, headers: H0, contentType: f.type || 'application/octet-stream', body: f.body }); }
+    return route.fulfill({ status: 200, headers: H0, body: '{}' });
+  });
   await A.ctx.route(u => /\/\.netlify\/functions\/problem-report/.test(String(u.href || u)), async route => {
     const rq = route.request();
     if (rq.method() === 'OPTIONS') return route.fulfill({ status: 200, headers: { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*' } });
@@ -127,7 +136,9 @@ try {
   ok(L1.length === 2 && L1.some(x => x.id === 'PRold1'), 'gc_problem_reports: appended (the older report kept)', L1.map(x => x.id));
   ok(mine && mine.type === 'broke' && mine.status === 'open' && mine.kind === 'phone' && mine.app === 'field' && /^Field · home/.test(mine.screen) && mine.by.name === 'Demo PM' && /punch list/.test(mine.text) && mine.dev && mine.build, 'the report: open, by Demo PM, phone · Field, the screen, the device and version', mine);
   const shot = mine && cget('gc_problem_shot_' + mine.id);
-  ok(shot && /^data:image\/jpeg;base64,/.test(shot.data) && shot.data.length < 650 * 1024 && mine.shot === true, 'the photo: its own row, a small JPEG (' + Math.round(((shot && shot.data.length) || 0) / 1024) + ' KB of a 1600×1200 picture)', { writes: H.writes.filter(w => /problem/.test(w.key)).map(w => [w.key, w.len]), keys: [...H.cloud.keys()].filter(k => /problem/.test(k)), errs: P.errs, fn: P.fn.slice(-5).map(f => f.name) });
+  ok(shot && /^sb:[a-z0-9_-]+\/[0-9a-f]{64}\.jpg$/.test(shot.data) && mine.shot === true, 'the photo: its own row, a file reference (the page\'s file door keeps pictures out of gc_kv): ' + (shot && shot.data), { writes: H.writes.filter(w => /problem/.test(w.key)).map(w => [w.key, w.len]), keys: [...H.cloud.keys()].filter(k => /problem/.test(k)), errs: P.errs, fn: P.fn.slice(-5).map(f => f.name) });
+  const up = await (async () => { for (let i = 0; i < 40; i++) { const k = [...STORE.keys()].find(k => /\.jpg$/.test(k)); if (k) return { k, n: STORE.get(k).body.length, type: STORE.get(k).type }; await sleep(250); } return null; })();
+  ok(up && up.n > 2000 && up.n < 650 * 1024 && /jpeg/.test(up.type), 'the photo went to the file storage, made small: ' + (up && Math.round(up.n / 1024)) + ' KB JPEG of a 1600×1200 picture', up);
   const det = mine && cget('gc_problem_detail_' + mine.id);
   ok(det && Array.isArray(det.diag) && det.diag.length <= 20 && det.diag.some(d => /Demo boom/.test(d.t)), 'the page errors / slow taps (PERFREP) are attached: ' + (det && det.diag.length) + ' entries', det && det.diag.slice(0, 3));
   const n1 = NOTIFY.find(n => n.link === '#problems=' + (mine && mine.id));

@@ -81,7 +81,7 @@ function screenNow(){
 }
 function standalone(){ try { return !!(navigator.standalone || (W.matchMedia && W.matchMedia('(display-mode: standalone)').matches)); } catch (e) { return false; } }
 var DEV = devId();
-var REC = null, MSET = null, dirty = false, lastT = 0, lastAny = 0, lastMin = -1, tracking = false, lastFlush = 0, flushBusy = false, ROW_OTHERS = {};
+var REC = null, MSET = null, dirty = false, lastT = 0, lastAny = 0, lastMin = -1, tracking = false, lastFlush = 0, flushBusy = false, ROW_OTHERS = null;
 function blank(day){ return { day: day, m: [], op: 0, si: 0, sv: 0, er: 0, sl: 0, ev: [], slAt: 0 }; }
 function load(day){
   var r = null; try { r = JSON.parse(lsGet(LS_REC) || 'null'); } catch (e) {}
@@ -192,20 +192,21 @@ function mergeDev(a, b){   /* the same device's entry in the row (a reload that 
 function name(){ var e = myEmail(), u = users().filter(function(x){ return low(x.email) === e; })[0]; return s(u && u.name) || e.split('@')[0]; }
 function flush(force, rec, keepalive){
   rec = rec || REC;
-  if (!tracking || !rec || (!dirty && !force) || flushBusy) return Promise.resolve(false);
+  if (!tracking || !rec || (!dirty && !force)) return Promise.resolve(false);
+  if (flushBusy) { if (rec !== REC) later(function(){ flush(true, rec); }, 3000); return Promise.resolve(false); }   /* the day that ended is not dropped */
   if (!rec.m.length && !rec.op && !rec.si) return Promise.resolve(false);
   slowCount();
   var email = myEmail(); if (!email) return Promise.resolve(false);
   var key = rowKey(rec.day, email), mine = devEntry(rec);
-  flushBusy = true; dirty = false; keep();
+  flushBusy = true; if (rec === REC) { dirty = false; keep(); }
   var write = function(cur){
     var v = cur && cur.value && typeof cur.value === 'object' && !Array.isArray(cur.value) ? cur.value : { d: {} };
     var d = Object.assign({}, v.d || {}); d[DEV] = mergeDev(d[DEV], mine);
-    ROW_OTHERS = d;
+    ROW_OTHERS = { key: key, d: d };
     return kvWrite(key, { email: email, name: name(), day: rec.day, upd: new Date().toISOString(), d: d }, keepalive);
   };
-  var p = keepalive ? write({ value: { d: ROW_OTHERS || {} } }) : kvRead(key).then(function(cur){ if (!cur) return false; return write(cur); });
-  return p.then(function(ok){ flushBusy = false; lastFlush = Date.now(); if (!ok) dirty = true; return ok; }, function(){ flushBusy = false; dirty = true; return false; });
+  var p = keepalive ? write({ value: { d: ROW_OTHERS && ROW_OTHERS.key === key ? ROW_OTHERS.d : {} } }) : kvRead(key).then(function(cur){ if (!cur) return false; return write(cur); });
+  return p.then(function(ok){ flushBusy = false; lastFlush = Date.now(); if (!ok && rec === REC) dirty = true; return ok; }, function(){ flushBusy = false; if (rec === REC) dirty = true; return false; });
 }
 /* start once signed in (never for the Marketing Manager) */
 function begin(){
@@ -312,7 +313,7 @@ function css(){
 }
 var OV = null;
 function close(){ if (OV) { OV.remove(); OV = null; } }
-D.addEventListener('keydown', function(e){ if (e.key === 'Escape' && OV && !D.querySelector('.gc-rp-ov')) { close(); e.stopPropagation(); } }, true);
+D.addEventListener('keydown', function(e){ if (e.key === 'Escape' && OV && OV.isConnected && !D.querySelector('.gc-rp-ov')) { close(); e.stopPropagation(); } }, true);
 function shell(title){
   css(); close();
   var ov = D.createElement('div'); ov.id = 'gc-ta'; ov.className = 'gc-ta-ov'; ov.setAttribute('data-gc-keep', '1'); ov.setAttribute('data-gcnav-ignore', '1');

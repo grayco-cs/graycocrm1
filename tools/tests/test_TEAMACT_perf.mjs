@@ -2,7 +2,7 @@
 // An iPhone-sized GrayCo Field page, CPU slowed 4× (Chrome DevTools throttling), the same PM; three rounds each with the heartbeat
 // ON and OFF (localStorage gc_teamact_off = '1', same page otherwise):
 //   a) 3000 pointerdown + 3000 keydown + 3000 scroll events dispatched → the time per event (every capture listener of the page);
-//   b) 20 real taps on the Field home → the browser's own Event Timing (input delay + handler time of pointerdown / click);
+//   b) 20 real taps on the Field home → tap to the next frame after its click (median);
 //   c) the 5-minute write itself (read + merge + write) → the longest main-thread task while it runs.
 // Pass: the ON−OFF difference per event < 0.02 ms (4× CPU), real-tap timings within noise (median ON ≤ median OFF + 4 ms),
 // the write's longest task < 50 ms.
