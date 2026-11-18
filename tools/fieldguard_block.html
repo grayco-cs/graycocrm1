@@ -7,8 +7,9 @@
    On a device in GrayCo Field (a phone, or html._fieldmode) whose signed-in person is NOT an admin or the office
    (_gcFullAccess()), this sits under every gc_kv upload (this script runs before the sign-in layer captures fetch):
    1. A person's change is remembered per key, at the moment of the edit: a write of that key (IndexedDB "kv", localStorage,
-      or the upload itself) within 20 s of the person's own input (a trusted tap / key / typing, the CRM's _gcManualNow
-      note, or the end of a photo / file upload the person started) marks the key "changed by a person"
+      or the upload itself) within 20 s of the person's own input (a trusted tap / key / typing, or the end of a photo /
+      file upload the person started; the CRM's _gcManualNow note is not input — background code calls it too) marks
+      the key "changed by a person"
       (gc_fieldguard_dirty, kept across a reload). That key goes up whenever it is sent — offline and sent when the signal
       returns, refused as busy and retried, finished minutes after the tap — until the database answers OK.
       Any other write of a shared key is not sent: the caller gets an empty 201, as for any upload, so nothing retries or
@@ -66,7 +67,15 @@ try {
   var personNow = function(){ return !!FG.lastInput && now() - FG.lastInput < EDIT; };
   var base = function(k){ k = String(k || ''); if (/^doc:/.test(k)) return 'projectDocs'; return k.replace(/__(chunk\d+|manifest)$/, ''); };
   try { var dj = JSON.parse((LS && pGet.call(LS, DK)) || '{}'); if (dj && typeof dj === 'object') FG.dirty = dj; } catch (e) {}
-  var saveDirty = function(){ try { if (LS) pSet.call(LS, DK, JSON.stringify(FG.dirty)); } catch (e) {} };
+  var dT = 0, flushDirty = function(){ dT = 0; try { if (LS) pSet.call(LS, DK, JSON.stringify(FG.dirty)); } catch (e) {} };
+  var saveDirty = function(){
+    /* at most 300 keys, none older than 14 days; written at most once a second (and when the page is left) */
+    var ks = Object.keys(FG.dirty), lim = now() - 14 * 864e5;
+    ks.forEach(function(k){ if (!(FG.dirty[k] > lim)) delete FG.dirty[k]; });
+    ks = Object.keys(FG.dirty); if (ks.length > 300) ks.sort(function(x, y){ return FG.dirty[x] - FG.dirty[y]; }).slice(0, ks.length - 300).forEach(function(k){ delete FG.dirty[k]; });
+    if (!dT) dT = NST.call(W, flushDirty, 1000);
+  };
+  try { W.addEventListener('pagehide', flushDirty); } catch (e) {}
   var touchKey = function(k){
     if (!personNow() || typeof k !== 'string' || !k || k === DK || !guarded()) return;
     var b = base(k); if (FG.dirty[b] && now() - FG.dirty[b] < 1000) return;
@@ -79,13 +88,7 @@ try {
     FG.lastInput = now();
   };
   ['pointerdown', 'keydown', 'input', 'change'].forEach(function(t){ try { W.addEventListener(t, mark, { capture: true, passive: true }); } catch (e) {} });
-  (function wrapManual(n){   /* the CRM's "a person did this" note counts as input */
-    try {
-      var f = W._gcManualNow;
-      if (typeof f === 'function' && !f.__gcFG) { var w = function(){ FG.lastInput = now(); return f.apply(this, arguments); }; for (var p in f) { try { w[p] = f[p]; } catch (e) {} } w.__gcFG = true; W._gcManualNow = w; }
-    } catch (e) {}
-    if (n < 40) NST.call(W, function(){ wrapManual(n + 1); }, 3000);
-  })(0);
+  /* the CRM's _gcManualNow note is NOT input: background code calls it too (the Cordova lift, sweeps) */
   /* a write of a key while a person is acting marks it */
   try {
     var IP = W.IDBObjectStore && W.IDBObjectStore.prototype, oPut = IP && IP.put;
