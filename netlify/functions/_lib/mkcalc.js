@@ -161,7 +161,7 @@ function build(D){
   D = D || {};
   var now = s(D.now) || new Date().toISOString().slice(0, 10);
   var leads = arr(D.leads).filter(function(x){ return !deleted(x) && x.id; });
-  var projects = arr(D.projects).filter(function(x){ return !deleted(x) && x.id; });
+  var projects = arr(D.projects).filter(function(x){ return !deleted(x) && x.id && x.overhead !== true; });
   var fix = D.srcfix || {};
   var leadById = {}, projById = {}, byPhone = {}, byEmail = {}, byName = {};
   leads.forEach(function(l){
