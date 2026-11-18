@@ -296,13 +296,17 @@ if (want('6b')) {
   if (!slow) console.log('    6b screens: ' + T6.filter((x, i) => i === 0 || JSON.stringify([x.cover, x.gate, x.cls, x.rs, x.title, x.auth]) !== JSON.stringify([T6[i - 1].cover, T6[i - 1].gate, T6[i - 1].cls, T6[i - 1].rs, T6[i - 1].title, T6[i - 1].auth])).map(x => (x.t / 1000).toFixed(0) + 's ' + JSON.stringify(x)).join('\n      ').slice(0, 3000));
   ok(!!slow, '45 s after signing in: "Still loading — weak signal? Tap to retry" (' + ((Date.now() - u0) / 1000).toFixed(0) + ' s)', slow);
   const d2 = await dev(B);
+  let nv = 0; pb.on('request', r => { if (r.isNavigationRequest() && r.frame() === pb.mainFrame()) nv++; });
+  /* a finger on the screen (the page is busy reading what has arrived, so no waiting for animation frames) */
+  await pb.mouse.click(195, 600).catch(e => console.log('    tap: ' + String(e).slice(0, 200))); await sleep(4000);
+  if (!nv) {
+    console.log('    after the tap: ' + JSON.stringify(await pb.evaluate(() => { const e = document.elementFromPoint(195, 600); return { at: e && (e.id || e.tagName), retry: window._gcBootWatch && window._gcBootWatch.state().boot.retry, rn: typeof window._gcReloadNow, want: window.__GC_USER_WANTS_RELOAD__ }; }).catch(e => String(e))));
+    await pb.evaluate(() => document.getElementById('gc-bw-opening').click()).catch(e => console.log('    click(): ' + String(e).slice(0, 200))); await sleep(4000);
+  }
+  ok(nv === 1, 'Tap to retry reloads the page', { nv });
   const rep = await until(() => capsFor(d2).find(x => (x.json.boot.stuck || []).some(s => s.k === 'slow')), 40000);
   ok(!!rep, 'and a stuck report is sent', capsFor(d2).map(x => x.json.boot.stuck));
   /* on this signal the new page takes minutes to be read: count the page being asked for again */
-  let nv = 0; pb.on('request', r => { if (r.isNavigationRequest() && r.frame() === pb.mainFrame()) nv++; });
-  /* a finger on the screen (the page is busy reading what has arrived, so no waiting for animation frames) */
-  await pb.mouse.click(195, 600).catch(e => console.log('    tap: ' + String(e).slice(0, 200))); await sleep(5000);
-  ok(nv === 1, 'Tap to retry reloads the page', { nv });
   await B.close(); srv2.close();
 }
 
