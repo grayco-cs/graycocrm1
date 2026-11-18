@@ -92205,6 +92205,15 @@ console.log('[GC] Approve sticks — one click, saved to device + cloud, invoice
           var paidNow=window._gcInvoicePaid(pays2, l.id);
           invs2[idx].status=statusFor(invs2[idx], paidNow);
           invs2[idx].paidDate = (invs2[idx].status==='paid') ? date : (invs2[idx].paidDate||'');
+          /* patch ACCTPAY (accounting audit 11/18): the payment goes on the invoice too — Accounting's A/R, collected and cash
+             P&L (and the job's Record Payment) read the invoice's own payments; a part payment kept only in invoicePayments
+             left the whole invoice owed there. */
+          var _have={}, _merged=(pays2[l.id]||[]).map(function(p){ _have[p.id]=1; return { id:p.id, amount:p.amount, date:p.date, method:p.method, note:p.note, type:p.type, batch:p.batch }; });
+          (Array.isArray(invs2[idx].payments)?invs2[idx].payments:[]).forEach(function(p){ if(p && !(p.id && _have[p.id])) _merged.push(p); });   /* one recorded on the job keeps its place */
+          invs2[idx].payments=_merged;
+          invs2[idx].amountPaid=Math.round(_merged.reduce(function(s,p){ return s+(parseFloat(p.amount!=null?p.amount:p.amt)||0); },0)*100)/100;
+          var _ta=parseFloat(invs2[idx].amt!=null?invs2[idx].amt:invs2[idx].amount)||0;
+          if(_ta>0 && invs2[idx].amountPaid>=_ta-0.005){ invs2[idx].status='paid'; invs2[idx].paid=true; invs2[idx].paidDate=invs2[idx].paidDate||date; }
           invs2[idx].updatedAt=new Date().toISOString();
         }
       });
