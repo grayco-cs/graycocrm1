@@ -103,6 +103,7 @@ await waitOn(B, () => { if (!document.querySelector('#_gcJobPick.gc-fh') && wind
 const fh = await waitOn(B, () => { const b = document.getElementById('gc-ep-field'); return b && /papers? to send/.test(b.innerText) && b.innerText; }, null, 20000);
 ok('B1 GrayCo Field home: the office\'s paper is in "Needs you · 📑 N papers to send" for the PM', fh && fh.includes(rA.label.split(' — ')[0].slice(0, 20)), fh);
 await DBGC('B1', B);
+console.log('DBG B1x', JSON.stringify(await B.ev(()=>{const p=window._crm.projects.find(x=>x.id==='PJ'); return {me: window._gcMeUser && window._gcMeUser(), gu: localStorage.getItem('grayco_user'), pm: p.pm, status: p.status, ts: window._gcEpaHud.toSend(p).map(z=>z.x.k), items: (p.jobDocs.items||[]).map(i=>i.k+':'+(i.to||'')), box: (document.getElementById('gc-ep-field')||{}).innerText, err: window.__gcEpErr, home: !!document.querySelector('#_gcJobPick.gc-fh .fh-wrap')};})).slice(0,2500));
 await B.ev(() => { document.querySelectorAll('#_gcJobPick,._gcSheetOv').forEach(o => o.remove()); window._gcJobDashboard('PJ'); });
 const fc = await waitOn(B, k => { const c = document.getElementById('gc-jd-f'); return c && c.getAttribute('data-pid') === 'PJ' && c.querySelector('[data-jk="' + k + '"]') && c.innerText; }, rA.k, 20000);
 ok('B2 the Field job page has the 📑 Paperwork card with ＋ Add and the office\'s paper (🔒, added by the office)', fc && /Add a required paper to this job/.test(fc) && /Added by Office Demo/.test(fc) && /Start job waits for it/.test(fc), fc && fc.slice(0, 600));
