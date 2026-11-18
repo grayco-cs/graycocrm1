@@ -954,11 +954,19 @@ async function partnerCtx(sess){
   const scopes = await dbGet('gc_sub_scope', 'select=*&sub_id=' + eq(sub.id) + '&status=in.(published,accepted,question)');
   const scopePids = new Set(scopes.map(function(x){ return s(x.project_id); }));
   const jobs = liveProjects(data).filter(function(p){
-    return arr(p.subs).some(function(r){ return rowIsSub(r, sub) && !/reject|declin/i.test(s(r.status)); }) || scopePids.has(s(p.id));
+    return arr(p.subs).some(function(r){ return rowIsSub(r, sub) && !/reject|declin/i.test(s(r.status)); }) || scopePids.has(s(p.id)) || staffJob(p, sub);   /* patch SUP1099 */
   }).map(SS().job);   /* patch SUBPORTAL3: the job's name / address as a sub sees them — never the carrier or a claim number */
   return { data: data, sub: sub, jobs: jobs, scopes: scopes };
 }
 function rowFor(p, sub){ return arr(p.subs).find(function(r){ return rowIsSub(r, sub); }) || {}; }
+/* patch SUP1099 (owner 11/18: a 1099 superintendent — a GrayCo Field sign-in AND a sub portal account for his W-9, COI, agreement and
+   invoices): the CRM links his staff record to a Subs record (staff1099: true, staffName). His sub portal then also lists the jobs where he
+   is the job's superintendent, so he can invoice them; nothing else of the CRM is read for him here (the same sub view of a job). */
+function staffJob(p, sub){
+  if (!sub || sub.staff1099 !== true) return false;
+  const who = [sub.staffName, sub.contact, sub.name].map(norm).filter(Boolean);
+  return [p.superintendent, p.superName, p.super].some(function(n){ return typeof n === 'string' && who.indexOf(norm(n)) > -1; });
+}
 function invState(iv){
   const st = low(iv.status) || 'received';
   if (st === 'paid' || iv.paid === true) return 'paid';
@@ -1236,6 +1244,7 @@ function jobTagOf(data, pid){
 /* patch SUBPHOTOS: the sub's photos on a job, the invoice photo rule, today's jobs (rules: _lib/subwork.js) */
 function SW(){ return require('./_lib/subwork.js'); }
 async function photoState(ctx, p){
+  if (ctx.sub && ctx.sub.staff1099 === true) return { ok: true, need: 0, have: 0, days: 0 };   /* patch SUP1099: his job photos are in the CRM (GrayCo Field) */
   const kv = await kvRead(['gc_photos']);
   const events = await dbGet('gc_sub_event', 'select=kind,project_id,sub_id,data&sub_id=' + eq(ctx.sub.id) + '&project_id=' + eq(p.id) + '&kind=in.(photos,progress,punch)&order=created_at.desc&limit=500');
   return SW().invoiceGate({ job: p, sub: ctx.sub, schedule: ctx.data.schedule, settings: settingsOf(ctx.data), gcPhotos: kv.gc_photos, events: events, today: todayCentral() });
