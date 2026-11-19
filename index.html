@@ -8051,7 +8051,7 @@ function check(){
   if (off) return Promise.resolve(ST.state);
   ST.mine = s(W.__GC_BUILD_ID__) || ST.mine;
   var quick = ''; try { quick = W._gcBootWatch && W._gcBootWatch.live ? W._gcBootWatch.live(60000) : ''; } catch (e) {}
-  var p = quick ? Promise.resolve(quick) : (typeof NF === 'function' ? NF.call(W, '/version.txt?t=' + Date.now(), { cache: 'no-store' }).then(function(r){ return r && r.ok ? r.text() : ''; }, function(){ return ''; }) : Promise.resolve(''));
+  var p = quick ? Promise.resolve(quick) : (typeof NF === 'function' ? Promise.race([NF.call(W, '/version.txt?t=' + Date.now(), { cache: 'no-store' }).then(function(r){ return r && r.ok ? r.text() : ''; }, function(){ return ''; }), new Promise(function(res){ NST.call(W, function(){ res(''); }, 15000); })]) : Promise.resolve(''));   /* APPLAG: no answer in 15 s = no answer */
   return p.then(function(v){
     v = s(v).trim().slice(0, 60); ST.tries++;
     if (!v) { if (ST.state === 'unknown' && Date.now() - ST.since > 20000) setState('current'); return ST.state; }   /* no answer: open up after 20 s */
@@ -8082,6 +8082,9 @@ NSI.call(W, function(){ wrap('_supaUpsert'); wrap('_supaUpsertNow'); }, 30000);
 NSI.call(W, check, 120000);
 try { W.addEventListener('focus', check); W.document && W.document.addEventListener('visibilitychange', function(){ if (!W.document.hidden) check(); }); } catch (e) {}
 NST.call(W, check, 0); NST.call(W, check, 5000); NST.call(W, check, 21000);
+/* APPLAG: the first answer can be slow on one bar (the version request queues behind the start-up downloads) — the uploads
+   waiting for it are let go at 20 s whatever happens to that request, never held for good by a request that hangs */
+NST.call(W, function(){ if (ST.state === 'unknown') { ST.openedBy = 'timer'; setState('current'); } }, 20000);
 W._gcStaleGate = {
   state: function(){ return ST.state; },
   info: function(){ return JSON.parse(JSON.stringify(ST)); },
@@ -52153,6 +52156,9 @@ sbWrite.onDone = function(key, value, ok, status){
     try{ if(window._gcSyncQ && window._gcSyncQ.waiting) window._gcSyncQ.waiting().forEach(function(x){ if(x && x.tries > 0 && keys.indexOf(x.key) < 0) keys.push(x.key); }); }catch(e){}
     try{ var _cs = window._gcClaims && window._gcClaims.status && window._gcClaims.status(); if(_cs && _cs.dirty && _cs.errors && ((_cs.dirty.claims && _cs.errors.claims) || (_cs.dirty.outbox && _cs.errors.outbox))) keys.push('gc_claims'); }catch(e){}   /* drying readings, equipment, claim notes */
     var el = document.getElementById('gc-unsent-note');
+    /* APPLAG: while this copy is out of date the stale gate holds shared uploads and shows its own "update the CRM" bar — that
+       is not "the database did not answer" */
+    try{ if(window._gcStaleGate && typeof window._gcStaleGate.stale === 'function' && window._gcStaleGate.stale()) keys = []; }catch(e){}
     if(!keys.length){ if(el) el.remove(); return; }
     if(!el){ el = document.createElement('div'); el.id = 'gc-unsent-note'; el.setAttribute('role', 'status'); el.setAttribute('data-gcnav-ignore', '1');
       el.style.cssText = 'position:fixed;left:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));z-index:2147482000;background:#92400e;color:#fff;padding:8px 12px;border-radius:10px;font:600 12.5px Arial,sans-serif;box-shadow:0 4px 14px rgba(0,0,0,.25);max-width:80vw;pointer-events:none;opacity:.94';   /* never in the way of a button under it (it retries by itself) */
