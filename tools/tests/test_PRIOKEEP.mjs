@@ -1,6 +1,6 @@
 // test_PRIOKEEP.mjs <build-dir> — PRIOKEEP + LSAVETTAB (owner 11/11). Offline harness, made-up data.
 // 1) a lead whose 1–10 priority was overwritten with "Medium" gets the number back from its history (admin computer);
-// 2) the 📞 LSA calls card is not at the top of Leads: a button with a red count sits next to Outreach and opens it.
+// 2) LSALEADS (11/19, replaces LSAVETTAB): no "real lead?" card; "📞 Google calls" sits next to Outreach and opens the calls panel.
 import { computer, signIn, sleep, cset, resetCloud } from '/tmp/claude-0/-home-user-graycocrm1/6a5b2b6b-8a4d-5505-9f82-62521adb6674/scratchpad/wN/harness_N.mjs';
 const R = []; const ok = (n, c, i) => { R.push(!!c); console.log((c ? 'PASS ' : 'FAIL ') + n + (i !== undefined ? '  ' + JSON.stringify(i).slice(0, 400) : '')); };
 resetCloud();
@@ -19,15 +19,14 @@ await signIn(A, 'wjohnson@grayco-cs.com', 15000); await sleep(6000);
 await A.ev(() => window._setView('leads')); await sleep(6000);
 const pr = await A.ev(() => Object.fromEntries((window._crm.leads || []).filter(l => /^LP/.test(l.id)).map(l => [l.id, l.priority])));
 ok('PRIOKEEP: "Medium" over a real priority → back to the last number in its history (9); a lead never given a number stays; a set 7 is untouched', pr.LP1 === 9 && pr.LP2 === 'Medium' && pr.LP3 === 7, pr);
-const st = await A.ev(() => { const hub = document.getElementById('gc-leads-hub'); const b = document.getElementById('gc-lsa-btn'); const v = hub && hub.querySelector('.gclu-views');
-  return { hub: !!hub, btn: b ? b.innerText.replace(/\s+/g, ' ').trim() : null, inViews: !!(b && v && b.parentElement === v), afterOutreach: !!(b && b.previousElementSibling && /Outreach/.test(b.previousElementSibling.innerText)), card: !!document.getElementById('gc-lsa-vet') }; });
-ok('LSAVETTAB: 📞 LSA calls (2) button next to Outreach; no card at the top until clicked', st.hub && /LSA calls\s*2/.test(st.btn || '') && st.inViews && st.afterOutreach && !st.card, st);
-await A.ev(() => document.getElementById('gc-lsa-btn').click()); await sleep(2000);
-const op = await A.ev(() => { const c = document.getElementById('gc-lsa-vet'), top = document.querySelector('#gc-leads-hub .gclu-top'); return { card: !!c, under: !!(c && top && c.previousElementSibling === top), n: c ? c.querySelectorAll('[data-vet]').length : 0 }; });
-ok('click → the card opens under the toolbar with both calls', op.card && op.under && op.n === 2, op);
-await sleep(3500);
-ok('it stays open on the next repaint', await A.ev(() => !!document.getElementById('gc-lsa-vet')));
-await A.ev(() => document.querySelector('#gc-lsa-vet [data-vet-x]').click()); await sleep(2000);
-ok('✕ closes it; the button stays', await A.ev(() => !document.getElementById('gc-lsa-vet') && !!document.getElementById('gc-lsa-btn')));
+/* LSALEADS (owner 11/19) replaces the LSAVET "real lead?" card: the admins are texted at once; the views row has "📞 Google calls" */
+const st = await A.ev(() => { const hub = document.getElementById('gc-leads-hub'); const b = document.getElementById('gc-lc-btn'), old = document.getElementById('gc-lsa-btn'); const v = hub && hub.querySelector('.gclu-views');
+  return { hub: !!hub, btn: b ? b.innerText.replace(/\s+/g, ' ').trim() : null, inViews: !!(b && v && b.parentElement === v), oldShown: !!(old && old.getClientRects().length), card: !!(document.getElementById('gc-lsa-vet') && document.getElementById('gc-lsa-vet').getClientRects().length) }; });
+ok('LSALEADS: "📞 Google calls" sits with the views (next to Outreach); the old "📞 LSA calls" check card is not shown', st.hub && /Google calls/.test(st.btn || '') && st.inViews && !st.oldShown && !st.card, st);
+await A.ev(() => document.getElementById('gc-lc-btn').click()); await sleep(2000);
+const op = await A.ev(() => { const c = document.getElementById('gc-lc-ov'); return { open: !!c, txt: c ? c.textContent.slice(0, 200) : '' }; });
+ok('click → the Google calls panel opens', op.open && /Google calls/.test(op.txt), op);
+await A.ev(() => document.querySelector('#gc-lc-ov [data-lc-x]').click()); await sleep(1000);
+ok('Close closes it; the button stays', await A.ev(() => !document.getElementById('gc-lc-ov') && !!document.getElementById('gc-lc-btn')));
 ok('no page errors', !errs.length, errs);
 const p = R.filter(Boolean).length; console.log('PRIOKEEP ' + p + '/' + R.length); await A.close?.(); process.exit(p === R.length ? 0 : 1);

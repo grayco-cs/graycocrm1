@@ -7,6 +7,9 @@ exports.handler = async function(){
   if (!(process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY)) return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: 'SUPABASE_SERVICE_KEY not set.' }) };
   try {
     const out = await require('./_lib/apprping.js').run({});
+    /* LSAHOLD (owner 11/19): lead texts held after hours go out at 7:00 AM Central on the next open day — this 5-minute run sends them
+       (the 10-minute bid-alerts run does too; each held text is taken once) */
+    try { out.leadTexts = await require('./_lib/smsalert.js').flushHeld(); } catch (e) { out.leadTexts = { error: String(e && e.message || e).slice(0, 120) }; }
     try { console.log('[appr-ping]', JSON.stringify({ sent: (out.sent || []).length, held: (out.held || []).length, unchanged: !!out.unchanged })); } catch (e) {}
     return { statusCode: out.ok ? 200 : 502, headers, body: JSON.stringify(out) };
   } catch (e) {

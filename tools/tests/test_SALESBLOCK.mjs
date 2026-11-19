@@ -188,13 +188,13 @@ const tedLead = { id: 'LI-40569a6f62ec9c86', type: 'insurance', leadKind: 'Insur
   ok(r.lead && byPhone('9015550161') && emergMail().length >= 1, 'a real leads@ emergency still alerts', { r, m: MAIL.map(x => x.subject) });
 
   /* LSACALL2 (owner 11/10): Google's "New call from a potential customer" e-mail — no caller number, only GrayCo's Customer ID */
-  world(); T = Date.parse('2026-11-10T18:05:00Z'); /* a Tuesday, office open (LSA247) */ const OE0 = process.env.OWNER_EMAILS; process.env.OWNER_EMAILS = 'nthomas@grayco-cs.com,wjohnson@grayco-cs.com';
+  world(); T = Date.parse('2026-11-10T18:05:00Z'); /* a Tuesday, office open */ const OE0 = process.env.OWNER_EMAILS; process.env.OWNER_EMAILS = 'nthomas@grayco-cs.com,wjohnson@grayco-cs.com';
   r = await WEB.fromEmail({ from: { email: 'localservices-noreply@google.com', name: 'Local Services by Google' }, subject: 'New call from a potential customer',
     text: 'Local Services By Google\n\nYour Customer ID: 555-434-6278\n\nNew event\n\nNew call from a potential customer\n\nA potential customer called you on 11/10/2026 at 2:31 PM.\n\nView Details', messageId: '<lsacall@x>' });
   const lc = inbox().find(x => /Google LSA caller \(2:31 PM\)/.test(JSON.stringify(x)));
   ok(r.lead && !!lc && !byPhone('5554346278'), 'LSA call e-mail → a lead "Google LSA caller (2:31 PM)", never GrayCo\'s Customer ID as a phone', { r, ids: inbox().map(x => x.title) });
-  st = staffSms(); ok(st.length === 0, 'LSAVET: an LSA call with no number → NO text yet (the office checks it is real first)', { st: st.map(x => x.Body), al: JSON.stringify(r.alerts).slice(0, 1500) });
-  ok((() => { let v = getKv('gc_office_tasks'); if (typeof v === 'string') v = JSON.parse(v); return Array.isArray(v) ? v : []; })().some(x => x && /^LSAVET_/.test(x.id)), 'LSAVET: an office To-Do "Google LSA call — real lead?"', getKv('gc_office_tasks'));
+  st = staffSms(); ok(st.length === 2 && st.every(x => /Google LSA call to the office/.test(x.Body)), 'LSADIRECT (owner 11/19, replaces LSAVET): an LSA call with no number → Wesley and Nick are texted at once', { st: st.map(x => x.Body), al: JSON.stringify(r.alerts).slice(0, 1500) });
+  ok((() => { let v = getKv('gc_office_tasks'); if (typeof v === 'string') v = JSON.parse(v); return Array.isArray(v) ? v : []; })().some(x => x && /^LSAIN_/.test(x.id) && x.kind === 'lsa_intake' && !x.done), 'LSAINTAKE: an office To-Do "📞 Google call — fill in the lead" (it holds nothing up)', getKv('gc_office_tasks'));
   process.env.OWNER_EMAILS = OE0;
   /* LSAPHONE (owner 11/10): the office phone logged the call (Twilio) → the caller's number is on the lead and in the text */
   world(); T = Date.parse('2026-11-10T21:31:00Z'); process.env.OWNER_EMAILS = 'nthomas@grayco-cs.com,wjohnson@grayco-cs.com';
@@ -202,7 +202,7 @@ const tedLead = { id: 'LI-40569a6f62ec9c86', type: 'insurance', leadKind: 'Insur
   r = await WEB.fromEmail({ from: { email: 'wjohnson@grayco-cs.com', name: 'Wesley' }, subject: 'Fwd: New call from a potential customer',
     text: '---------- Forwarded message ---------\nFrom: Local Services by Google <localservices-noreply@google.com>\nDate: Tue, Nov 10, 2026 at 3:33 PM\n\nYour Customer ID: 555-434-6278\nNew call from a potential customer\nA potential customer called you on 11/10/2026 at 3:31 PM.\nView Details', messageId: '<lsacall2@x>' });
   ok(r.lead && !!byPhone('9015550778'), 'LSA call e-mail + the office call log → the lead has the caller\'s number (the nearest call: 3:31:30 PM Central)', { r, ids: inbox().map(x => [x.title, x.phone]) });
-  st = staffSms(); ok(st.length === 0, 'even with the number: no text until the office says it is real (owner: "only if it\'s a real lead")', st.map(x => x.Body));
+  st = staffSms(); ok(st.length === 2 && st.every(x => /\(901\) 555-0778/.test(x.Body)), 'LSADIRECT: with the number from the call log → the text carries it at once', st.map(x => x.Body));
   process.env.OWNER_EMAILS = OE0;
 
   /* WEBTEXT + ONELEAD (owner 11/10): a website lead with a cell gets the auto text; their answer is THAT lead — no second lead, no new-lead text */

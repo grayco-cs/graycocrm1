@@ -63,6 +63,7 @@ var ROWS = [
   ['photo_tags', 'sync', 'D', 0, 1, 'server', 'Photo AI tags', 'AI tags on new photos (read-only).'],
   ['ads_insights', 'sync', 'D', 0, 1, 'server', 'Ads and social numbers', 'Google Ads, Meta and social likes / reach / clicks are read in.'],
   ['lsa_sync', 'sync', 'C', 1, 1, 'server', 'Google LSA calls → leads', 'Every 10 min: Google Local Services calls get the caller’s number, job type, length and recording (Google Ads API, the office call log, Wesley’s mailbox); a call that is not a lead yet becomes one.'],
+  ['lsa_hold_7am', 'sync', 'C', 0, 1, 'server', 'LSA after-hours: hold to 7 AM', 'Outside the 📞 Call order open hours a Google LSA text (and every other non-emergency lead text) to Wesley and Nick waits and goes out at 7:00 AM Central on the next open day — one bundled text when there are several. OFF: Google LSA texts go at once, day or night. Emergencies always go at once.'],
   ['call_transcribe', 'sync', 'D', 0, 1, 'server', 'Transcribe call recordings', 'A new call recording or voicemail is turned into text with a short summary on the lead (needs a transcription key).'],
   ['text_thread_copy', 'sync', 'D', 0, 1, 'server', 'Texted lead → job conversation copy', 'A texted lead that became a job gets its text conversation and notes copied onto the job.'],
   /* ── staff alerts ── */

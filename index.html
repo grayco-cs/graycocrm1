@@ -1512,6 +1512,7 @@ var ROWS = [
   ['photo_tags', 'sync', 'D', 0, 1, 'server', 'Photo AI tags', 'AI tags on new photos (read-only).'],
   ['ads_insights', 'sync', 'D', 0, 1, 'server', 'Ads and social numbers', 'Google Ads, Meta and social likes / reach / clicks are read in.'],
   ['lsa_sync', 'sync', 'C', 1, 1, 'server', 'Google LSA calls → leads', 'Every 10 min: Google Local Services calls get the caller’s number, job type, length and recording (Google Ads API, the office call log, Wesley’s mailbox); a call that is not a lead yet becomes one.'],
+  ['lsa_hold_7am', 'sync', 'C', 0, 1, 'server', 'LSA after-hours: hold to 7 AM', 'Outside the 📞 Call order open hours a Google LSA text (and every other non-emergency lead text) to Wesley and Nick waits and goes out at 7:00 AM Central on the next open day — one bundled text when there are several. OFF: Google LSA texts go at once, day or night. Emergencies always go at once.'],
   ['call_transcribe', 'sync', 'D', 0, 1, 'server', 'Transcribe call recordings', 'A new call recording or voicemail is turned into text with a short summary on the lead (needs a transcription key).'],
   ['text_thread_copy', 'sync', 'D', 0, 1, 'server', 'Texted lead → job conversation copy', 'A texted lead that became a job gets its text conversation and notes copied onto the job.'],
   /* ── staff alerts ── */
@@ -176975,6 +176976,19 @@ function lcPopClose(){ var p = D.getElementById('gcl-lprio-pop'); if (p) p.remov
 
 /* ── the header: title · search · views · More · New lead; chips; count boxes ── */
 var VIEWS = [['board', '🗂 Board'], ['list', '📋 List'], ['cal', '📅 Calendar'], ['map', '🗺 Map'], ['outreach', '🛰 Outreach'], ['roofscout', '🏠 RoofScout']];
+VIEWS.push(['permits', '🏗 Permits']);   /* PERMTAB (owner 11/19: "The permitted jobs scan needs to be a tab on Leads"): patch PERMITS' 🏗️ Permitted jobs under the Leads header */
+/* PERMTAB: admins, the office and the Marketing Manager; the same screen as the left menu's 🏗️ Permitted jobs (window._gcPermitJobs.mount — its data, filters,
+   ➕ Make it a lead / Dismiss), kept in one box between visits */
+function pjOk(){ try { if (!W._gcPermitJobs || typeof W._gcPermitJobs.mount !== 'function') return false; if (W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()) return true; if (W._gcIsOfficeFull && W._gcIsOfficeFull()) return true; if (W._gcIsMM && W._gcIsMM()) return true;
+  var u = (typeof W._gcMeUser === 'function' ? W._gcMeUser() : null) || {}, r = ''; try { r = String((W._gcRP && W._gcRP.role && W._gcRP.role()) || ''); } catch (e) {} return /\boffice\b|marketing/i.test([r, u.role, u.profile, u.title].join(' ')); } catch (e) { return false; } }
+function pjFrame(hub){
+  var on = UI.v === 'permits' && view() === 'leads' && !!hub && pjOk(), w = D.getElementById('gcl-pj-wrap');
+  if (!on) { if (w) w.style.display = 'none'; return; }
+  if (!w) { w = D.createElement('div'); w.id = 'gcl-pj-wrap'; w.setAttribute('data-gc-keep', '1'); }
+  if (w.previousElementSibling !== hub) hub.parentNode.insertBefore(w, hub.nextSibling);
+  if (w.style.display) w.style.display = '';
+  try { W._gcPermitJobs.mount(w); } catch (e) { warn(e); }
+}
 /* patch MITWS (owner 11/12: "give RoofScout its own tab on Leads"): 🏠 RoofScout — the RoofScout screen under the Leads header, Construction
    (and All companies) only, for the people whose menu has RoofScout (or admins); one frame kept between visits so it is not reloaded */
 function rsLeadsOk(){ try { var f = W._gcCo ? W._gcCo.filter() : 'all'; if (f !== 'all' && f !== 'construction') return false; if (W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()) return true; return !!D.querySelector('aside nav button, nav button') && Array.prototype.some.call(D.querySelectorAll('aside button, nav button'), function(b){ return /RoofScout/.test(b.textContent || ''); }); } catch (e) { return false; } }
@@ -177028,8 +177042,8 @@ function advRow(){
 }
 D.addEventListener('click', function(e){ var a = e.target && e.target.closest ? e.target.closest('[data-gcl-coall]') : null; if (!a) return; e.preventDefault(); try { W._gcCo.setLeadsAll(a.getAttribute('data-gcl-coall') === '1'); } catch (x) {} }, true);   /* LEADCO */
 function hubHtml(){
-  var m = model(), c = m.cnt, out = UI.v === 'outreach' || UI.v === 'roofscout';   /* patch MITWS: RoofScout fills the page like Outreach */
-  var views = VIEWS.filter(function(v){ return (v[0] !== 'outreach' || rsoOk()) && (v[0] !== 'roofscout' || rsLeadsOk()); });   /* patch MITWS */
+  var m = model(), c = m.cnt, out = UI.v === 'outreach' || UI.v === 'roofscout' || UI.v === 'permits';   /* patch MITWS: RoofScout fills the page like Outreach */   /* PERMTAB */
+  var views = VIEWS.filter(function(v){ return (v[0] !== 'outreach' || rsoOk()) && (v[0] !== 'roofscout' || rsLeadsOk()) && (v[0] !== 'permits' || pjOk()); });   /* patch MITWS */   /* PERMTAB */
   var mi = [0, 25, 50, 100, 200];
   var coBar = (function(){ try { var G = W._gcCo; if (!G || !G.leadView || G.filter() !== 'all') return ''; var all = G.leadsAll();
     return '<span class="gclu-co" style="font-size:12px;margin-left:6px">' + (all ? '🌐 Every company\'s leads' : '🏗 Construction leads') + ' · <a href="#" data-gcl-coall="' + (all ? '0' : '1') + '" style="color:#1d4ed8">' + (all ? 'show Construction only' : 'show every company') + '</a></span>'; } catch (e) { return ''; } })();
@@ -177369,7 +177383,9 @@ function mount(){
   var refocus = typing ? ae.getAttribute('data-gcl-f') : '', caret = typing && ae.type === 'search' ? ae.selectionStart : null; FORCE = false;
   if (UI.v === 'outreach' && !rsoOn()) UI.v = 'list';   /* patch LEADSUI: Outreach's own "Back to Leads" */
   if (UI.v === 'roofscout' && !rsLeadsOk()) UI.v = 'list';   /* patch MITWS: not on Mitigation / Environmental */
+  if (UI.v === 'permits' && !pjOk()) UI.v = 'list';   /* PERMTAB */
   try { rsFrame(hub); } catch (e) { warn(e); }
+  try { pjFrame(hub); } catch (e) { warn(e); }   /* PERMTAB */
   var sig = [refId(rawLeads()), OVL_V, (function(){ try { return W._gcCo ? (W._gcCo.leadView ? W._gcCo.leadView() : W._gcCo.filter()) : ''; } catch (e) { return ''; } })(), JSON.stringify(UI), JSON.stringify(MORE), Object.keys(PICK).filter(function(k){ return PICK[k]; }).length, myScope().kind, myScope().why, GEO.ver, GEO.from, Object.keys(LC_GONE).length, LU.more, LU.adv, rsoOk(), (typeof BULK === 'object' && BULK ? BULK.on + ':' + BULK.v : ''), Math.floor(Date.now() / 6e5)].join('|');   /* patch LEADBULK */   /* patch LEADSUI: the model's version — nothing changed, nothing drawn */
   if (sig === HUB_SIG) return;
   HUB_SIG = sig;
@@ -244321,5 +244337,331 @@ W._gcJobReq = { canAdd: canAdd, canHold: canHold, canRemove: canRemove, isPM: is
   cardAdd: cardAdd, rowTag: rowTag, rowBtns: rowBtns, cardBottom: cardBottom, sendBtn: sendBtn, channels: channels, sendVia: sendVia, open: open, nameOf: nameOf,
   checkSigned: checkSigned, finalMissing: finalMissing, fieldPaint: fieldPaint, libList: libList, PARTY: PARTY, DUE: DUEK };
 try { console.log('[GC] ＋ required papers on one job (patch JOBREQ) — _gcJobReq'); } catch (e) {}
+})(window);
+</script>
+<script id="gc-patch-lsaleads">
+/* __GC_PATCH_LSALEADS__ — 📞 GOOGLE CALLS ON THE LEADS PAGE + THE OFFICE INTAKE + 🏢 OUTREACH LIST SEED (owner 11/19)
+   "I don't see where any LSA leads are in the CRM anywhere." · "On any company LSA should be there too, but I want to see all my LSA calls,
+   recordings, numbers etc in these leads, so then I can also assign if I need to here, or I can assign in GrayCo text, whatever." ·
+   "As soon as office answers this call they get a notification in their CRM to rate the lead, describe the lead, send to admin to assign
+   PM, or send to PM directly." · "The company outreach is empty — it has hundreds."
+   a. LSAANYCO: a Google LSA lead is on every company's Leads page (a water-damage call no longer hides under Mitigation while the
+      Leads page shows "Construction leads"): window._gcCo.passLead / pass / leadCos let it through.
+   b. LSACALLS: Leads → views row → "📞 Google calls" (admins + the office; a red count = calls still to fill in). Every Google LSA call /
+      lead of the last 30 days from the server's lead inbox (Google's e-mail, the Google Ads API sync, the office call log): the caller's
+      number (tap to call), Google's call time, length, job type, ▶ the recording and the 📝 transcript summary (the r36p 🎧 Call box),
+      its code and its GOOD / BAD state, the PM — and, right there, ➡ Send to PM <picker> (= an admin's "GOOD <code> <PM>") or 👎 Bad.
+      The same list sits under the 📊 LSA by month table. A call that is not on the Leads list says so (deleted …) with ↩ Put back.
+      The main list / board show a small "📞 K7Q2 ⏳" chip on each Google lead; an open Google lead's page has the same bar.
+   c. LSAINTAKE: the office's "📞 Google call — fill in the lead" pop-up (checked every minute while the CRM is open; a phone push and
+      an office To-Do come from the server too): 👍 Good / 👎 Bad / ❓ Not sure, what they need (🎤 dictate where the phone can),
+      name / number / address, then the big "➡ Send to PM" with the PM list (preselected: ⚙ Default PM for Google LSA leads) or the
+      small "Send to admin to assign". Server: texts.js ?lsaleads / ?lsaintake / ?lsaassign / ?lsapm (admins + the office only).
+   d. OUTSEED: the 🏢 Company outreach list fills itself from the 607-company GrayCo Multifamily Outreach Tracker when the cloud list is
+      empty (bid-inbox ?outreachseed=1, staff only) — merged, never over what a person typed.
+   API: window._gcLsaCalls = { load, items, open, intake(id), assign(id, email), chips, state } */
+(function(W){
+'use strict';
+if (W.__GC_PATCH_LSALEADS__) return; W.__GC_PATCH_LSALEADS__ = true;
+var D = W.document, ST = W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout, SI = W.__GC_NATIVE_SETINTERVAL__ || W.setInterval;
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function me(){ try { return JSON.parse(localStorage.getItem('grayco_user') || '{}') || {}; } catch (e) { return {}; } }
+function admin(){ try { if (W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()) return true; } catch (e) {} var u = me(); return /admin/i.test(s(u.role)) || /owner/i.test(s(u.payType)); }
+function officeOnly(){ if (admin()) return false; try { if (W._gcIsOfficeFull && W._gcIsOfficeFull()) return true; } catch (e) {} var u = me(); return /office/i.test(s(u.role) + ' ' + s(u.profile) + ' ' + s(u.title)) || low(u.email) === 'office@grayco-cs.com'; }
+function staffOk(){ return admin() || officeOnly(); }
+function lsGet(k, d){ try { var v = JSON.parse(localStorage.getItem(k) || 'null'); return v == null ? d : v; } catch (e) { return d; } }
+function lsSet(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+function tidy(p){ p = s(p).replace(/\D/g, ''); if (p.length === 11 && p[0] === '1') p = p.slice(1); return p.length === 10 ? '(' + p.slice(0, 3) + ') ' + p.slice(3, 6) + '-' + p.slice(6) : s(p); }
+function crmLeads(){ return arr(W._crm && W._crm.leads); }
+function isLsa(l){ var ex = (l && l.leadExtra) || {}; return !!l && (!!l.lsaCheck || !!ex.lsaCheck || /google\s*lsa|local\s*services/i.test([l.source, l.leadSource, ex.leadSource, ex.mkSource === 'Google LSA' ? 'google lsa' : ''].join(' '))); }
+function inboxIdOf(l){ var id = s(l && l.id); return s(l && (l.inboxId || l.leadInboxId)) || (/^LEADIN-/.test(id) ? 'LI-' + id.slice(7) : id); }
+function leadIdOf(ib){ return 'LEADIN-' + s(ib).replace(/^LI-/, ''); }
+function toast(msg){ var t = D.createElement('div'); t.setAttribute('role', 'status'); t.setAttribute('data-gc-keep', '1'); t.textContent = msg;
+  t.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1b1640;color:#fff;padding:10px 16px;border-radius:8px;font:14px Inter,Arial,sans-serif;z-index:2147483600;max-width:90vw';
+  D.body.appendChild(t); ST.call(W, function(){ try { t.remove(); } catch (e) {} }, 3800); }
+function api(method, q, body){
+  return W.fetch('/.netlify/functions/texts?' + q, method === 'GET' ? { cache: 'no-store' } : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) })
+    .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ j.__s = r.status; return j; }); }, function(){ return { ok: false, error: 'No signal — try again.' }; });
+}
+
+/* ── a. every company's Leads page lists the Google leads ── */
+function coWrap(){
+  var C = W._gcCo; if (!C || C.__lsaWrapped) return !!C;
+  try {
+    var pl = C.passLead, pa = C.pass, lc = C.leadCos;
+    if (typeof pl === 'function') C.passLead = function(l, v){ if (isLsa(l)) return true; return pl.apply(this, arguments); };
+    if (typeof pa === 'function') C.pass = function(x, kind){ if (kind === 'lead' && isLsa(x)) return true; return pa.apply(this, arguments); };
+    if (typeof lc === 'function') C.leadCos = function(l){ var o = lc.apply(this, arguments); if (isLsa(l)) { try { arr(C.allCos && C.allCos()).forEach(function(c){ var id = s(c && (c.id || c)); if (id && o.indexOf(id) < 0) o.push(id); }); } catch (e) {} } return o; };
+    C.__lsaWrapped = true;
+  } catch (e) {}
+  return true;
+}
+(function tryCo(n){ if (!coWrap() && n < 120) ST.call(W, function(){ tryCo(n + 1); }, 500); })(0);
+
+/* ── b. the Google calls (server list) ── */
+var S = { items: [], pms: [], defaultPm: '', admin: false, at: 0, busy: null, err: '' };
+function load(force){
+  if (!staffOk()) return Promise.resolve(null);
+  if (S.busy) return S.busy;
+  if (!force && Date.now() - S.at < 45000) return Promise.resolve(S);
+  S.busy = api('GET', 'lsaleads=1&days=30').then(function(j){
+    S.busy = null; S.at = Date.now();
+    if (!j || !j.ok) { S.err = s(j && j.error) || 'Could not read the Google calls.'; return S; }
+    S.err = ''; S.items = arr(j.items); S.pms = arr(j.pms); S.defaultPm = s(j.defaultPm); S.admin = !!j.admin; paintBtn(); paintList(); notifyOffice(); chips(); return S;
+  }, function(){ S.busy = null; return S; });
+  return S.busy;
+}
+function byInbox(id){ return S.items.find(function(x){ return x && s(x.id) === s(id); }) || null; }
+function needsIntake(x){ return !!x && x.call !== false && !x.intake && /^(pending|)$/.test(s(x.check)) && !x.pm && !x.dismissed && !x.merged; }
+var CHK = { pending: ['⏳', 'not marked yet', '#92400e', '#fef3c7'], good: ['👍', 'GOOD', '#166534', '#dcfce7'], bad: ['👎', 'BAD', '#991b1b', '#fee2e2'], pm_bad: ['🔎', 'BAD? waiting for an admin', '#9a3412', '#ffedd5'], no_answer: ['📵', 'no answer yet', '#334155', '#e2e8f0'] };
+function chkChip(x){ var c = CHK[s(x.check)] || CHK.pending; return '<span style="display:inline-block;border-radius:999px;padding:1px 8px;font-size:12px;font-weight:800;color:' + c[2] + ';background:' + c[3] + '">' + c[0] + ' ' + esc(c[1]) + '</span>'; }
+function codeChip(x){ return '<span title="Reply GOOD ' + esc(x.code) + ' / BAD ' + esc(x.code) + ' by text" style="display:inline-block;border-radius:6px;padding:1px 7px;font:800 12px ui-monospace,Menlo,monospace;background:#1b1640;color:#fff">' + esc(x.code) + '</span>'; }
+function onList(x){ var lid = leadIdOf(x.id); return crmLeads().find(function(l){ return l && (s(l.id) === lid || s(l.inboxId) === s(x.id)); }) || null; }
+function tomb(x){ try { return !!(W._gcIsTombstoned && W._gcIsTombstoned('leads', leadIdOf(x.id))); } catch (e) { return false; } }
+function pmOptions(sel){
+  var h = '<option value="">— pick the PM —</option>';
+  S.pms.forEach(function(p){ h += '<option value="' + esc(p.email) + '"' + (low(sel) && low(sel) === low(p.email) ? ' selected' : '') + '>' + esc(p.name) + '</option>'; });
+  return h;
+}
+function defaultPmEmail(){ var p = S.pms.find(function(x){ return x.id === S.defaultPm; }); return p ? p.email : ''; }
+var BTN = 'min-height:40px;padding:0 12px;border-radius:9px;font:700 14px Inter,Arial,sans-serif;cursor:pointer;';
+function rowHtml(x, o){
+  o = o || {};
+  var i = x.info || {}, nm = s(x.name).replace(/^Google LSA caller.*$/i, '') || 'Google caller', ph = s(x.phone) || s(i.phone), l = onList(x);
+  var when = s(i.callAtLabel) || (x.at ? new Date(x.at).toLocaleString('en-US', { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '');
+  var head = '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center"><b style="font-size:15px">' + (x.emergency ? '🚨 ' : '') + esc(nm) + '</b>'
+    + (ph ? '<a href="tel:' + esc(ph) + '" style="color:#1d4ed8;font-weight:800">📞 ' + esc(tidy(ph)) + '</a>' : '<span style="color:#64748b">no number yet</span>')
+    + codeChip(x) + chkChip(x) + (x.pm ? '<span style="font-size:12.5px;color:#334155">PM <b>' + esc(x.pm) + '</b></span>' : '') + '</div>';
+  var bits = [when ? '🕒 ' + esc(when) : '', i.dur ? '⏱ ' + esc(i.dur) : '', i.job ? '🔧 ' + esc(i.job) : '', i.outcome ? esc(i.outcome) : '', x.call ? '' : '💬 message lead', x.repeats ? '🔁 ' + x.repeats + ' more time' + (x.repeats === 1 ? '' : 's') : ''].filter(Boolean);
+  var rec = ''; if (!o.noRec) try { rec = W._gcCallRec && W._gcCallRec.html ? W._gcCallRec.html({ ok: true, info: Object.assign({}, i, { phone: '', callAtLabel: '', dur: '', job: '', outcome: '' }), status: { recording: true, googleApi: { connected: true }, transcribe: true } }) : ''; } catch (e) { rec = ''; }
+  var intake = x.intake ? '<div style="font-size:13px;color:#334155;margin-top:4px">📝 Office (' + esc(x.intake.by) + '): ' + (x.intake.rating === 'good' ? '👍' : x.intake.rating === 'bad' ? '👎' : '❓') + ' ' + esc(x.intake.desc) + (x.intake.pm ? ' → PM ' + esc(x.intake.pm) : '') + '</div>' : '';
+  var where = l ? '<button type="button" data-lc-open="' + esc(l.id) + '" style="' + BTN + 'border:1px solid #cbd5e1;background:#fff;color:#241968">Open the lead</button>'
+    : (tomb(x) ? '<span style="font-size:12.5px;color:#b91c1c">Not on the Leads list — it was deleted.</span>' + (admin() && W._gcLDEL && W._gcLDEL.restore ? '<button type="button" data-lc-back="' + esc(x.id) + '" style="' + BTN + 'border:1px solid #166534;background:#f0fdf4;color:#166534">↩ Put back on Leads</button>' : '') : '<span style="font-size:12.5px;color:#64748b">Coming onto the Leads list…</span>');
+  var open = /^(pending|no_answer|pm_bad|)$/.test(s(x.check));
+  var acts = '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;align-items:center">'
+    + (needsIntake(x) ? '<button type="button" data-lc-in="' + esc(x.id) + '" style="' + BTN + 'border:1px solid #b45309;background:#f59e0b;color:#1b1640">📝 Fill in the lead</button>' : '')
+    + (open ? '<select data-lc-pm="' + esc(x.id) + '" aria-label="PM" style="min-height:40px;border:1px solid #cbd5e1;border-radius:9px;padding:0 8px;font:14px Inter,Arial,sans-serif;max-width:200px">' + pmOptions(x.pmEmail || defaultPmEmail()) + '</select>'
+      + '<button type="button" data-lc-go="' + esc(x.id) + '" style="' + BTN + 'border:1px solid #166534;background:#166534;color:#fff">➡ Send to PM (GOOD)</button>'
+      + '<button type="button" data-lc-bad="' + esc(x.id) + '" style="' + BTN + 'border:1px solid #fca5a5;background:#fee2e2;color:#991b1b">👎 Bad</button>' : '')
+    + where + '</div><div data-lc-msg style="font-size:12.5px;color:#b91c1c"></div>';
+  return '<div data-lc-row="' + esc(x.id) + '" style="border-top:1px solid #e2e8f0;padding:10px 0">' + head + (bits.length ? '<div style="font-size:13px;color:#334155;margin-top:3px">' + bits.join(' · ') + '</div>' : '')
+    + (rec ? '<div data-rec-id="' + esc(x.id) + '" style="margin-top:6px;padding:8px 10px;border-radius:9px;border:1px solid #c7d2fe;background:#f8fafc">' + rec + '</div>' : '') + intake + acts + '</div>';
+}
+function listHtml(){
+  if (!S.at) return '<div style="color:#64748b;padding:8px 0">Loading the Google calls…</div>';
+  if (S.err && !S.items.length) return '<div style="color:#b91c1c;padding:8px 0">' + esc(S.err) + '</div>';
+  if (!S.items.length) return '<div style="color:#475569;padding:8px 0">No Google LSA calls or leads in the last 30 days. They come in from Google\'s e-mail to leads@, the Google Ads sync and the office line.</div>';
+  return S.items.slice(0, 80).map(rowHtml).join('');
+}
+function setHtml(){
+  if (!S.admin) return '';
+  return '<label style="display:flex;gap:6px;align-items:center;font-size:12.5px;color:#334155">⚙ Default PM for Google LSA leads <select data-lc-def style="min-height:34px;border:1px solid #cbd5e1;border-radius:8px;font:13px Inter,Arial,sans-serif">'
+    + '<option value="">— none —</option>' + S.pms.map(function(p){ return '<option value="' + esc(p.id) + '"' + (p.id === S.defaultPm ? ' selected' : '') + '>' + esc(p.name) + '</option>'; }).join('') + '</select></label>';
+}
+function panel(){
+  var old = D.getElementById('gc-lc-ov'); if (old) old.remove();
+  var ov = D.createElement('div'); ov.id = 'gc-lc-ov'; ov.setAttribute('data-gc-keep', '1');
+  ov.style.cssText = 'position:fixed;inset:0;z-index:2147483300;background:rgba(15,23,42,.6);display:flex;align-items:flex-start;justify-content:center;padding:12px;overflow:auto;font:14px Inter,Arial,sans-serif';
+  ov.innerHTML = '<div role="dialog" aria-label="Google calls" style="background:#fff;color:#0f172a;border-radius:14px;width:min(860px,100%);padding:14px 16px;box-sizing:border-box">'
+    + '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between"><b style="font-size:17px">📞 Google calls &amp; leads (30 days)</b><span style="display:flex;gap:8px;flex-wrap:wrap">'
+    + (W._gcLsa2 && W._gcLsa2.panel ? '<button type="button" data-lc-month style="border:1px solid #cbd5e1;background:#fff;border-radius:8px;padding:6px 10px;cursor:pointer">📊 By month</button>' : '')
+    + '<button type="button" data-lc-x style="border:1px solid #cbd5e1;background:#fff;border-radius:8px;padding:6px 12px;cursor:pointer">Close</button></span></div>'
+    + '<div style="color:#64748b;font-size:12.5px;margin:4px 0 6px">Wesley and Nick get each call by text right away (after hours: 7:00 AM). Send it to a PM here or reply GOOD &lt;code&gt; &lt;PM&gt; by text — the same thing.</div>'
+    + '<div data-lc-set>' + setHtml() + '</div><div data-lc-list>' + listHtml() + '</div></div>';
+  D.body.appendChild(ov);
+  load(true);
+  return ov;
+}
+function paintList(){
+  [D.querySelector('#gc-lc-ov [data-lc-list]'), D.querySelector('#gc-lsa2-ov [data-lc-list]')].forEach(function(el){
+    if (!el) return; if (el.contains(D.activeElement) && /SELECT|INPUT|TEXTAREA/.test(D.activeElement.tagName)) return;
+    var h = listHtml(); if (el.__h !== h) { el.__h = h; el.innerHTML = h; } });
+  var st = D.querySelector('#gc-lc-ov [data-lc-set]'); if (st && !st.contains(D.activeElement)) { var h2 = setHtml(); if (st.__h !== h2) { st.__h = h2; st.innerHTML = h2; } }
+}
+/* the 📊 LSA by month panel gets the same list under its table */
+function intoMonth(){
+  var ov = D.getElementById('gc-lsa2-ov'); if (!ov || ov.querySelector('[data-lc-list]')) return;
+  var box = ov.querySelector('[role=dialog]'); if (!box) return;
+  var d = D.createElement('div'); d.innerHTML = '<div style="font-weight:800;margin:12px 0 4px">📞 Every Google call &amp; lead (30 days)</div><div data-lc-list></div>';
+  box.appendChild(d); load(false).then(paintList); paintList();
+}
+var OPEN_N = -1;
+function paintBtn(){
+  try {
+    var hub = D.getElementById('gc-leads-hub'), views = hub && hub.getClientRects().length ? hub.querySelector('.gclu-views') : null, btn = D.getElementById('gc-lc-btn');
+    if (!views || !staffOk()) { if (btn) btn.remove(); return; }
+    var n = S.items.filter(needsIntake).length;
+    if (!btn || btn.parentElement !== views) { if (btn) btn.remove(); btn = D.createElement('button'); btn.type = 'button'; btn.id = 'gc-lc-btn'; btn.setAttribute('data-gc-keep', '1'); btn.title = 'Every Google LSA call: number, recording, transcript, GOOD / BAD, send to a PM'; views.appendChild(btn); OPEN_N = -1; }
+    if (OPEN_N !== n) { OPEN_N = n; btn.innerHTML = '📞 Google calls' + (n ? ' <span style="display:inline-block;min-width:18px;padding:0 5px;margin-left:4px;border-radius:9px;background:#dc2626;color:#fff;font-size:11px;font-weight:800;line-height:18px;text-align:center">' + n + '</span>' : ''); }
+  } catch (e) {}
+}
+/* the old LSAVET "real lead?" card is gone (owner 11/19: the admins are texted at once; the office fills in the intake instead) */
+(function(){ var st = D.createElement('style'); st.id = 'gc-lsaleads-css'; st.textContent = '#gc-lsa-btn,#gc-lsa-vet{display:none!important}.gc-lc-chip{display:inline-block;margin-left:6px;border-radius:999px;padding:0 7px;font:800 11px Inter,Arial,sans-serif;line-height:18px;vertical-align:middle;white-space:nowrap}'; (D.head || D.documentElement).appendChild(st); })();
+
+/* the chip on the Leads list / board rows */
+function chips(){
+  try {
+    if (!staffOk() && !crmLeads().length) return;
+    var byLead = {}; S.items.forEach(function(x){ byLead[leadIdOf(x.id)] = x; });
+    Array.prototype.forEach.call(D.querySelectorAll('#gc-leads-hub [data-gcl-id]'), function(row){
+      var id = row.getAttribute('data-gcl-id'), x = byLead[id], l = x ? null : crmLeads().find(function(y){ return y && s(y.id) === id; });
+      if (!x && !(l && isLsa(l))) { var o = row.querySelector('.gc-lc-chip'); if (o) o.remove(); return; }
+      var c = CHK[s(x ? x.check : l.lsaCheck)] || CHK.pending, txt = '📞 ' + (x ? x.code + ' ' : 'Google ') + c[0];
+      var cell = row.querySelector('td.c-name') || row.querySelector('.gcl-card-name,.gcl-nm,b,strong') || row;
+      var ch = row.querySelector('.gc-lc-chip');
+      if (ch && ch.textContent === txt) return; if (ch) ch.remove();
+      ch = D.createElement('span'); ch.className = 'gc-lc-chip'; ch.textContent = txt; ch.title = 'Google LSA ' + (x ? 'code ' + x.code + ' — ' : '') + c[1]; ch.style.color = c[2]; ch.style.background = c[3];
+      cell.appendChild(ch);
+    });
+  } catch (e) {}
+}
+/* the open lead's page: the code / state / Send to PM bar under the 🎧 Call box */
+function drawerBar(){
+  try {
+    var d = D.getElementById('gcl-drawer'); if (!d || !d.getClientRects().length) return;
+    var H = W._gcLeadsHub, id = H && H.ui && H.ui().open, l = id && crmLeads().find(function(y){ return y && s(y.id) === s(id); }), have = d.querySelector('#gc-lc-bar');
+    if (!l || !isLsa(l) || !staffOk()) { if (have) have.remove(); return; }
+    var x = byInbox(inboxIdOf(l)); if (!x) { if (Date.now() - S.at > 45000) load(false); if (have) have.remove(); return; }
+    var sig = JSON.stringify([x.id, x.check, x.pm, !!x.intake, S.pms.length]);
+    if (have && have.getAttribute('data-sig') === sig) return;
+    if (have && have.contains(D.activeElement)) return;
+    if (have) have.remove();
+    var b = D.createElement('div'); b.id = 'gc-lc-bar'; b.setAttribute('data-sig', sig);
+    b.style.cssText = 'margin:0 0 10px;padding:8px 12px;border-radius:10px;border:1px solid #fde68a;background:#fffbeb;font:14px Inter,Arial,sans-serif;color:#0f172a';
+    b.innerHTML = '<div style="font-size:12px;font-weight:800;color:#92400e;margin-bottom:2px">📍 GOOGLE LSA — code, state, send to a PM</div>' + rowHtml(x, { noRec: true }).replace('border-top:1px solid #e2e8f0;padding:10px 0', 'padding:0');
+    var after = d.querySelector('#gc-call-rec') || d.querySelector('#gc-lsa-dispute');
+    if (after && after.parentElement === d) after.insertAdjacentElement('afterend', b); else d.insertBefore(b, d.firstChild);
+  } catch (e) {}
+}
+
+/* ── the actions ── */
+function rowMsg(id, t){ Array.prototype.forEach.call(D.querySelectorAll('[data-lc-row="' + String(id).replace(/["\\]/g, '') + '"] [data-lc-msg]'), function(m){ m.textContent = t; }); }
+function assign(id, email, btn){
+  if (!email) { rowMsg(id, 'Pick the PM first.'); return Promise.resolve(null); }
+  if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+  return api('POST', 'lsaassign=1', { leadId: id, pmEmail: email }).then(function(j){
+    if (btn) { btn.disabled = false; btn.textContent = '➡ Send to PM (GOOD)'; }
+    if (!j || !j.ok) { rowMsg(id, s(j && j.error) || 'Could not send — try again.'); return j; }
+    toast(j.code + ': GOOD — PM ' + j.pm + ' assigned (as if you texted GOOD ' + j.code + ' ' + j.pm.split(' ')[0] + ').');
+    var x = byInbox(id); if (x) { x.check = 'good'; x.pm = j.pm; x.pmEmail = low(email); }
+    paintList(); chips(); load(true); return j;
+  });
+}
+function bad(id){
+  var why = W.prompt('Why is it a bad lead? (spam, wrong service, out of area, no answer ever …)', ''); if (why == null) return;
+  api('POST', 'lsaassign=1', { leadId: id, verdict: 'bad', reason: s(why) || 'no reason given' }).then(function(j){
+    if (!j || !j.ok) { rowMsg(id, s(j && j.error) || 'Could not save — try again.'); return; }
+    toast(admin() ? (j.code || '') + ': BAD — closed; dispute it in Google within 30 days.' : 'Sent to the admins to confirm BAD.');
+    load(true);
+  });
+}
+D.addEventListener('click', function(e){
+  var t = e.target && e.target.closest ? e.target.closest('#gc-lc-btn,[data-lc-x],[data-lc-month],[data-lc-go],[data-lc-bad],[data-lc-in],[data-lc-open],[data-lc-back]') : null; if (!t) return;
+  e.preventDefault(); e.stopPropagation();
+  if (t.id === 'gc-lc-btn') { panel(); return; }
+  if (t.hasAttribute('data-lc-x')) { var o = D.getElementById('gc-lc-ov'); if (o) o.remove(); return; }
+  if (t.hasAttribute('data-lc-month')) { var o2 = D.getElementById('gc-lc-ov'); if (o2) o2.remove(); W._gcLsa2.panel(); ST.call(W, intoMonth, 50); return; }
+  if (t.hasAttribute('data-lc-go')) { var id = t.getAttribute('data-lc-go'), sel = t.parentElement.querySelector('[data-lc-pm]'); assign(id, sel ? sel.value : '', t); return; }
+  if (t.hasAttribute('data-lc-bad')) { bad(t.getAttribute('data-lc-bad')); return; }
+  if (t.hasAttribute('data-lc-in')) { intake(t.getAttribute('data-lc-in')); return; }
+  if (t.hasAttribute('data-lc-open')) { var o3 = D.getElementById('gc-lc-ov'); if (o3) o3.remove(); try { if (W._setView) W._setView('leads'); } catch (x) {} ST.call(W, function(){ try { W._gcLeadsHub.open(t.getAttribute('data-lc-open')); } catch (x) {} }, 300); return; }
+  if (t.hasAttribute('data-lc-back')) { var ib = t.getAttribute('data-lc-back'); if (!W.confirm('Put this Google lead back on the Leads list?')) return; try { var r = W._gcLDEL.restore([leadIdOf(ib)]); toast(r && r.restored ? 'Put back on the Leads list.' : 'It is no longer in the recently deleted leads (30 days).'); } catch (x) { toast('Could not put it back.'); } ST.call(W, paintList, 800); return; }
+}, true);
+D.addEventListener('change', function(e){
+  var t = e.target; if (!t || !t.hasAttribute || !t.hasAttribute('data-lc-def')) return;
+  api('POST', 'lsapm=1', { id: t.value }).then(function(j){ if (j && j.ok) { S.defaultPm = s(j.id); toast('Default PM for Google LSA leads saved.'); } else toast(s(j && j.error) || 'Could not save.'); });
+}, true);
+
+/* ── c. the office intake ── */
+function dictateBtn(){ return (W.SpeechRecognition || W.webkitSpeechRecognition) ? '<button type="button" data-in-mic style="' + BTN + 'border:1px solid #cbd5e1;background:#fff;color:#241968">🎤 Dictate</button>' : ''; }
+function intake(id){
+  var x = byInbox(id); if (!x) { load(true).then(function(){ if (byInbox(id)) intake(id); else toast('That Google call is not in the list yet — try again in a minute.'); }); return; }
+  var old = D.getElementById('gc-in-ov'); if (old) old.remove();
+  var i = x.info || {}, ph = s(x.phone) || s(i.phone), nm = s(x.name).replace(/^Google LSA caller.*$/i, ''), pre = defaultPmEmail();
+  var ov = D.createElement('div'); ov.id = 'gc-in-ov'; ov.setAttribute('data-gc-keep', '1'); ov.setAttribute('data-in-id', x.id);
+  ov.style.cssText = 'position:fixed;inset:0;z-index:2147483500;background:rgba(15,23,42,.6);display:flex;align-items:flex-start;justify-content:center;padding:12px;overflow:auto;font:15px Inter,Arial,sans-serif';
+  var IN = 'width:100%;box-sizing:border-box;min-height:42px;border:1px solid #cbd5e1;border-radius:9px;padding:0 10px;font:15px Inter,Arial,sans-serif;margin-top:3px';
+  var rb = function(v, l){ return '<button type="button" data-in-r="' + v + '" aria-pressed="false" style="flex:1;' + BTN + 'border:2px solid #cbd5e1;background:#fff;color:#0f172a">' + l + '</button>'; };
+  ov.innerHTML = '<div role="dialog" aria-label="Fill in the Google lead" style="background:#fff;color:#0f172a;border-radius:14px;width:min(560px,100%);padding:14px 16px;box-sizing:border-box">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:17px">📞 Google call — fill in the lead</b><button type="button" data-in-x aria-label="Close" style="border:0;background:none;font-size:22px;cursor:pointer">✕</button></div>'
+    + '<div style="font-size:13px;color:#475569;margin:2px 0 8px">' + codeChip(x) + ' ' + esc([s(i.callAtLabel), s(i.dur), s(i.job)].filter(Boolean).join(' · ')) + '</div>'
+    + '<div style="display:flex;gap:6px">' + rb('good', '👍 Good') + rb('bad', '👎 Bad') + rb('unsure', '❓ Not sure') + '</div>'
+    + '<label style="display:block;margin-top:10px;font-size:13px;font-weight:700">What they need (address, urgency…)<textarea data-in-desc rows="3" style="' + IN + ';padding:8px 10px;min-height:76px"></textarea></label>'
+    + '<div style="display:flex;gap:8px;margin-top:4px">' + dictateBtn() + '</div>'
+    + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-top:8px">'
+    + '<label style="font-size:13px;font-weight:700">Name<input data-in-name value="' + esc(nm) + '" style="' + IN + '"></label>'
+    + '<label style="font-size:13px;font-weight:700">Number<input data-in-ph type="tel" inputmode="tel" value="' + esc(tidy(ph)) + '" style="' + IN + '"></label></div>'
+    + '<label style="display:block;margin-top:8px;font-size:13px;font-weight:700">Address<input data-in-addr value="" style="' + IN + '"></label>'
+    + '<label style="display:block;margin-top:12px;font-size:13px;font-weight:700">PM<select data-in-pm style="' + IN + '">' + pmOptions(pre) + '</select></label>'
+    + '<button type="button" data-in-go="pm" style="width:100%;margin-top:10px;min-height:52px;border-radius:11px;border:0;background:#166534;color:#fff;font:800 17px Inter,Arial,sans-serif;cursor:pointer">➡ Send to PM</button>'
+    + '<div style="text-align:center;margin-top:8px"><button type="button" data-in-go="admin" style="border:1px solid #cbd5e1;background:#fff;color:#241968;border-radius:8px;padding:6px 12px;font:700 13px Inter,Arial,sans-serif;cursor:pointer">Send to admin to assign</button></div>'
+    + '<div data-in-msg style="font-size:13px;color:#b91c1c;margin-top:6px"></div></div>';
+  D.body.appendChild(ov);
+  var R = { rating: '' };
+  ov.addEventListener('click', function(e){
+    var t = e.target; if (t === ov || (t.closest && t.closest('[data-in-x]'))) { ov.remove(); return; }
+    var r = t.closest && t.closest('[data-in-r]');
+    if (r) { R.rating = r.getAttribute('data-in-r'); Array.prototype.forEach.call(ov.querySelectorAll('[data-in-r]'), function(b){ var on = b === r; b.setAttribute('aria-pressed', String(on)); b.style.borderColor = on ? '#1d4ed8' : '#cbd5e1'; b.style.background = on ? '#eff6ff' : '#fff'; }); return; }
+    var mic = t.closest && t.closest('[data-in-mic]');
+    if (mic) { try { var SR = W.SpeechRecognition || W.webkitSpeechRecognition, rec = new SR(), ta = ov.querySelector('[data-in-desc]'); rec.lang = 'en-US'; rec.interimResults = false; rec.onresult = function(ev){ var tx = ''; for (var k = 0; k < ev.results.length; k++) tx += ev.results[k][0].transcript; ta.value = (s(ta.value) ? s(ta.value) + ' ' : '') + tx; }; rec.onend = function(){ mic.textContent = '🎤 Dictate'; }; rec.start(); mic.textContent = '🎤 Listening…'; } catch (x2) { toast('Dictation is not available on this device.'); } return; }
+    var go = t.closest && t.closest('[data-in-go]'); if (!go) return;
+    var msg = ov.querySelector('[data-in-msg]'), act = go.getAttribute('data-in-go'), pm = s(ov.querySelector('[data-in-pm]').value);
+    if (!R.rating) { msg.textContent = 'Tap 👍 Good, 👎 Bad or ❓ Not sure first.'; return; }
+    if (act === 'pm' && R.rating !== 'bad' && !pm) { msg.textContent = 'Pick the PM (or send it to an admin).'; return; }
+    go.disabled = true; var was = go.textContent; go.textContent = 'Sending…';
+    api('POST', 'lsaintake=1', { leadId: x.id, rating: R.rating, desc: s(ov.querySelector('[data-in-desc]').value), name: s(ov.querySelector('[data-in-name]').value), phone: s(ov.querySelector('[data-in-ph]').value), address: s(ov.querySelector('[data-in-addr]').value), action: act, pmEmail: pm })
+      .then(function(j){
+        go.disabled = false; go.textContent = was;
+        if (!j || !j.ok) { msg.textContent = s(j && j.error) || 'Could not send — try again.'; return; }
+        ov.remove(); seen(x.id);
+        toast(R.rating === 'bad' ? 'Marked BAD — the admins are asked to confirm.' : j.pm ? 'Sent to ' + j.pm + ' — the admins are told.' : 'Sent to the admins to assign.');
+        load(true);
+      });
+  });
+  return ov;
+}
+function seen(id){ var m = lsGet('gc_lsain_seen', {}); m[id] = Date.now(); var ks = Object.keys(m); if (ks.length > 200) ks.slice(0, ks.length - 200).forEach(function(k){ delete m[k]; }); lsSet('gc_lsain_seen', m); }
+function notifyOffice(){
+  try {
+    if (!officeOnly() || D.getElementById('gc-in-ov') || D.getElementById('gc-in-pop')) return;
+    var m = lsGet('gc_lsain_seen', {}), now = Date.now();
+    var x = S.items.find(function(y){ return needsIntake(y) && !m[y.id] && y.at && now - Date.parse(y.at) < 4 * 3600e3; }); if (!x) return;
+    var p = D.createElement('div'); p.id = 'gc-in-pop'; p.setAttribute('data-gc-keep', '1'); p.setAttribute('role', 'alert');
+    p.style.cssText = 'position:fixed;right:12px;bottom:12px;left:auto;z-index:2147483400;max-width:min(380px,calc(100vw - 24px));background:#1b1640;color:#fff;border-radius:14px;padding:12px 14px;box-shadow:0 10px 30px rgba(0,0,0,.35);font:15px Inter,Arial,sans-serif';
+    p.innerHTML = '<b>📞 Google call — fill in the lead</b><div style="font-size:13.5px;margin:4px 0 8px;opacity:.9">' + esc((s(x.name).replace(/^Google LSA caller.*$/i, '') || 'A Google caller') + (x.phone ? ' ' + tidy(x.phone) : '')) + '</div>'
+      + '<div style="display:flex;gap:8px"><button type="button" data-pop-go style="flex:1;min-height:42px;border-radius:9px;border:0;background:#f59e0b;color:#1b1640;font:800 15px Inter,Arial,sans-serif;cursor:pointer">📝 Fill in</button><button type="button" data-pop-later style="min-height:42px;border-radius:9px;border:1px solid #fff;background:none;color:#fff;padding:0 12px;cursor:pointer">Later</button></div>';
+    D.body.appendChild(p);
+    p.addEventListener('click', function(e){ var g = e.target.closest && e.target.closest('[data-pop-go],[data-pop-later]'); if (!g) return; seen(x.id); p.remove(); if (g.hasAttribute('data-pop-go')) intake(x.id); });
+  } catch (e) {}
+}
+/* a tap on the phone push ("…#leads&lead=<id>&intake=1") opens the form */
+function fromHash(){ try { var h = s(W.location.hash), m = /[#&]lead=([^&]+)&intake=1/.exec(h); if (!m || !staffOk()) return; var id = decodeURIComponent(m[1]); W.history.replaceState(null, '', h.replace(/&intake=1/, '')); load(true).then(function(){ intake(id); }); } catch (e) {} }
+
+/* ── d. the 🏢 Company outreach list: the 607 companies when the cloud list is empty ── */
+var SEED = { tried: false };
+function seedOutreach(){
+  try {
+    var O = W._gcOutreach; if (!O || SEED.tried) return; var st = O.state(); if (!st || !st.loaded) return;
+    if (O.items().length) { SEED.tried = true; return; }
+    if (!D.body.classList.contains('gcrso-on')) return;
+    SEED.tried = true;
+    W.fetch('/.netlify/functions/bid-inbox?outreachseed=1', { cache: 'no-store' }).then(function(r){ return r.ok ? r.json() : null; }, function(){ return null; }).then(function(j){
+      if (!j || !Array.isArray(j.items) || !j.items.length) { SEED.tried = false; return; }
+      if (O.items().length) return;   /* someone else's copy arrived meanwhile */
+      var res = W._gcOutreachImport(j.items);
+      if (res && res.added) toast('🏢 Company outreach list: ' + res.added + ' companies loaded.');
+    });
+  } catch (e) { SEED.tried = false; }
+}
+
+SI.call(W, function(){ if (D.hidden) return; coWrap(); paintBtn(); chips(); drawerBar(); intoMonth(); seedOutreach(); }, 1000);
+SI.call(W, function(){ if (!D.hidden && staffOk()) load(false); }, 60000);
+ST.call(W, function(){ load(false); fromHash(); }, 6000);
+W.addEventListener('hashchange', fromHash);
+W._gcLsaCalls = { load: function(){ return load(true); }, items: function(){ return S.items.slice(); }, open: panel, intake: intake, assign: assign, chips: chips, state: function(){ return { n: S.items.length, open: S.items.filter(needsIntake).length, defaultPm: S.defaultPm, pms: S.pms.length, err: S.err, at: S.at }; }, seedOutreach: seedOutreach };
+try { console.log('[GC] 📞 Google calls on Leads + office intake + outreach seed (patch LSALEADS) — _gcLsaCalls'); } catch (e) {}
 })(window);
 </script>
