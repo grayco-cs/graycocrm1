@@ -652,7 +652,9 @@ async function deletePlansFor(jobId) {
   await sdel(`plans:${jobId}`);
 }
 function stripPlanBinaries(plans) {
-  return (plans || []).map(p => ({ name: p.name, size: p.size, type: p.type }));
+  /* patch BIDVIS: only the file itself (a picked "data:" copy) is left out — the plan's category, trades, version and the admin's
+     "Visible to subs" tick stay on the job (they were dropped here, so the tick never reached the server) */
+  return (plans || []).map(p => { const { dataUrl, ...rest } = p || {}; return rest; });
 }
 
 /* ============================================================
