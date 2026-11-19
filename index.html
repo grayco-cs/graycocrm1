@@ -146956,7 +146956,14 @@ function norm(t){ return low(t).replace(/[‘’'".,:;!?()\[\]]/g, '').replace(/
 function warn(e){ try { console.warn('[GC TD2]', e && e.message || e); } catch (x) {} }
 function crm(){ return W._crm || {}; }
 function users(){ return arr(crm().users); }
-function projects(){ return arr(crm().projects); }
+var PJIDB = null, PJIDB_AT = 0;
+function projects(){
+  var a = arr(crm().projects); if (a.length) return a;
+  /* BADGEFIX: a phone holds its screen updates (the Field home), so the screen's job list can be empty for minutes — the saved
+     copy (IndexedDB) is read instead, so PAPERS can tell an older job's papers (the To-Do and its badge said 532 instead of ~155) */
+  if (Date.now() - PJIDB_AT > 15000 && typeof W.idbGet === 'function') { PJIDB_AT = Date.now(); try { Promise.resolve(W.idbGet('projects')).then(function(v){ if (Array.isArray(v) && v.length) { PJIDB = v; dirty = true; } }, function(){}); } catch (e) {} }
+  return PJIDB || [];
+}
 function invoices(){ var c = crm(); var a = arr(c.invoices); return a.length ? a : arr(c.invs); }
 var PJ = {};
 function proj(pid){ if (!pid) return null; if (PJ[pid] !== undefined) return PJ[pid]; var p = projects().filter(function(x){ return x && x.id === pid; })[0] || null; PJ[pid] = p; return p; }
