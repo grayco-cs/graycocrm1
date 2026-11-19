@@ -3,7 +3,7 @@
 const assert = require('assert'), path = require('path');
 process.env.TWILIO_FROM = '+19015550999'; process.env.RESEND_API_KEY = 'k';
 const SA = require(path.join(__dirname, '../../netlify/functions/_lib/smsalert.js'));
-{ const AUTO = require(path.join(__dirname, '../../netlify/functions/_lib/automations.js')); const _on = AUTO.isOn; AUTO.isOn = async function(k, o){ return k === 'lead_customer_autotext' ? true : _on.call(AUTO, k, o); }; }   /* NOCUSTTEXT: these tests cover the customer texts, so the switch is ON here */
+{ const AUTO = require(path.join(__dirname, '../../netlify/functions/_lib/automations.js')); const _on = AUTO.isOn; AUTO.isOn = async function(k, o){ return /^lead_(qualify|good)_text$/.test(k) ? true : _on.call(AUTO, k, o); }; }   /* NOCUSTTEXT: these tests cover the customer texts, so the switch is ON here */
 const BA = require(path.join(__dirname, '../../netlify/functions/_lib/bid-alerts.js'));
 const USERS = [{ name: 'Nick Thomas', email: 'nthomas@grayco-cs.com', role: 'admin', cell: '9015550001', active: true },
   { name: 'Wesley Johnson', email: 'wjohnson@grayco-cs.com', role: 'admin', cell: '9015550002', active: true },
@@ -89,12 +89,14 @@ const A = BA.make({ env: k => ENV[k] != null ? ENV[k] : '', s: v => v == null ? 
   { texts.length = 0; const now1 = SA._D.now, hrs1 = SA._D.hours; SA._D.now = () => Date.parse('2026-11-10T03:00:00Z'); SA._D.hours = async () => null;
     await A.notifyNew([{ id: 'l5', title: 'Roof repair quote', source: 'Google LSA', leadExtra: { leadSource: 'Google LSA', lsaCheck: 'pending', service: 'Roof repair' }, contact: { name: 'Dana Lee', phone: '9015550155' } }]);
     const cust = texts.filter(x => x.to === '9015550155');
-    assert.ok(cust.length === 1 && /^Hi Dana, this is GrayCo Construction Services\. We got your request through Google about roof repair\. Our office is closed now — we'll call you in the morning\. To help us get ready, reply with what you need help with/.test(cust[0].body) && /reply EMERGENCY/.test(cust[0].body), 'night reply to the customer: ' + JSON.stringify(cust));
+    /* CUSTTEXT2 (owner 11/19: the customer texts obey the customer quiet hours): no night wording — the text is tagged 'customer', so the quiet
+       hours hold it to 7 AM (custquiet.js), and it reads right then */
+    assert.ok(cust.length === 1 && /^Hi Dana, this is GrayCo Construction Services\. We received your request through Google about roof repair\. Reply YES/.test(cust[0].body) && !/office is closed/.test(cust[0].body), 'night: the day wording (held to 7 AM by the customer quiet hours): ' + JSON.stringify(cust));
     assert.ok(!texts.some(x => x.to === '9015550001' || x.to === '9015550002'), 'staff are not texted at 9 PM (held for the morning)');
     SA._D.now = () => Date.parse('2026-11-14T03:00:00Z');   /* Friday 9 PM → Monday */
     texts.length = 0;
     await A.notifyNew([{ id: 'l6', title: 'Gutters', source: 'Google LSA', leadExtra: { leadSource: 'Google LSA', lsaCheck: 'pending' }, contact: { name: 'Eli Ray', phone: '9015550156' } }]);
-    assert.ok(texts.some(x => x.to === '9015550156' && /we'll call you on Monday morning/.test(x.body)), 'Friday night → Monday morning: ' + JSON.stringify(texts));
+    assert.ok(texts.some(x => x.to === '9015550156' && /Reply YES/.test(x.body) && !/Monday morning/.test(x.body)), 'Friday night: the day wording too (held by the quiet hours): ' + JSON.stringify(texts));
     SA._D.now = now1; SA._D.hours = hrs1; }
   /* WEBTEXT: a website lead with a cell → one text right away (day / night wording), once */
   { texts.length = 0; const now2 = SA._D.now; SA._D.now = () => Date.parse('2026-11-10T18:00:00Z');
@@ -106,7 +108,7 @@ const A = BA.make({ env: k => ENV[k] != null ? ENV[k] : '', s: v => v == null ? 
     SA._D.now = () => Date.parse('2026-11-11T03:30:00Z');   /* Tue 9:30 PM */
     await A.notifyNew([{ id: 'w2', title: 'Kitchen remodel', source: 'Website (grayco-cs.com)', contact: { name: 'Hal Ng', phone: '9015550171' } }]);
     c = texts.filter(x => x.to === '9015550171');
-    assert.ok(c.length === 1 && /Our office is closed now — we'll call you in the morning\./.test(c[0].body) && /reply EMERGENCY/.test(c[0].body), 'night web text: ' + JSON.stringify(c));
+    assert.ok(c.length === 1 && /someone from our team will call you shortly/.test(c[0].body) && !/office is closed/.test(c[0].body), 'night web text: the day wording (held to 7 AM by the customer quiet hours): ' + JSON.stringify(c));
     SA._D.now = now2; }
   console.log('TEXTFIRST: all passed');
 })().catch(e => { console.error('FAIL', e && e.stack || e); process.exit(1); });

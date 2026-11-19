@@ -1,9 +1,9 @@
 // test_LEADTXT_fn.mjs [worktree] — patch LEADTXT (owner 11/19: "How do I say good or bad if I get 2-3 or more texts … just say
 // bad bad bad good bad, or is there a better way"). Node only: netlify/functions/_lib/smsalert.js with a mocked store and a mocked SMS
 // sender (nothing is sent, nothing is written anywhere). Made-up people and leads.
-//   1. every lead text (Google LSA, website, text / missed-call, 🚨 emergency, NEW LEAD bid, office-checked LSA call, the PM's SEND text)
-//      carries its 4-letter code and "Reply GOOD <code> / BAD <code>" — also after the first month; the mitigation manager and a sub
-//      bid's estimator get no GOOD / BAD hint;
+//   1. every lead text (Google LSA, website, text / missed-call, 🚨 emergency, office-checked LSA call, the PM's SEND text)
+//      carries its 4-letter code and "Reply GOOD <code> / BAD <code>" — also after the first month; the mitigation manager gets no hint; LEADWATCH: a PRIME bid texts the owners with the code, a SUB bid texts nobody
+//      (CRM only);
 //   2. one reply answers several leads: "BAD c1 c2, GOOD c3 Steven", "bad c1 bad c2 good c3", "c1 bad, c2 good", "BAD c1 c2 spam",
 //      "bad c1, good" and the bare "bad bad good" (in order to the open leads, oldest first — only when the counts match; otherwise
 //      nothing is saved and the reply lists the open leads with code + name);
@@ -18,7 +18,7 @@ const WT = path.resolve(process.argv[2] || path.join(HERE, '../..'));
 Object.assign(process.env, { TWILIO_FROM: '+19015550999', CRM_URL: 'https://crm.test', OWNER_EMAILS: 'wjohnson@grayco-cs.com,nthomas@grayco-cs.com' });
 ['TWILIO_FROM_ALERTS', 'SMS_ALERTS_OFF', 'SUPABASE_URL', 'SUPABASE_SERVICE_KEY', 'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN'].forEach(k => { delete process.env[k]; });
 const SA = require(path.join(WT, 'netlify/functions/_lib/smsalert.js'));
-{ const AUTO = require(path.join(WT, 'netlify/functions/_lib/automations.js')); const _on = AUTO.isOn; AUTO.isOn = async function(k, o){ return k === 'lead_customer_autotext' ? true : _on.call(AUTO, k, o); }; }   /* NOCUSTTEXT: these tests cover the customer texts, so the switch is ON here */
+{ const AUTO = require(path.join(WT, 'netlify/functions/_lib/automations.js')); const _on = AUTO.isOn; AUTO.isOn = async function(k, o){ return /^lead_(qualify|good)_text$/.test(k) ? true : _on.call(AUTO, k, o); }; }   /* NOCUSTTEXT: these tests cover the customer texts, so the switch is ON here */
 
 let pass = 0, fail = 0;
 function ok(c, m, i){ if (c) { pass++; console.log('  ok   ' + m); } else { fail++; console.log('  FAIL ' + m + (i !== undefined ? '  ' + JSON.stringify(i).slice(0, 900) : '')); } }
@@ -82,11 +82,12 @@ async function three(){ await web('W1', 'Jo Smith', '9015550111'); await web('W2
   /* NEW LEAD (a prime bid) and a sub bid */
   sent.length = 0;
   await SA.leads([{ id: 'B1', key: 'B1', title: 'Church reroof', source: 'Dodge', type: 'bid', bidDue: '2026-11-20', contact: { name: 'Owner Rep', phone: '9015550215' } }], { B1: { id: 'B1', bidRole: 'prime' } }, () => false);
-  b = (to(WES)[0] || {}).body || '';
-  ok(/^GrayCo NEW LEAD: Owner Rep/.test(b) && b.indexOf('Reply GOOD ' + code('B1') + ' / BAD ' + code('B1') + '.') > 0, 'NEW LEAD (bid) to an admin: + the code hint', b);
+  b = (to(GLENN)[0] || {}).body || '';
+  /* LEADWATCH (owner decision 11/19): a PRIME bid (GrayCo bids to the owner, e.g. a city's sealed bid) → the owners as a lead, with a proper title */
+  ok(/^GrayCo PRIME BID [A-Z0-9]{4}: Church reroof · due /.test((to(WES)[0] || {}).body || '') && to(NICK).length === 1 && !to(GLENN).length && !/NEW LEAD: Unknown/.test(JSON.stringify(sent)) && /Reply GOOD [A-Z0-9]{4} \/ BAD/.test(to(WES)[0].body), 'a prime bid → the owners: "GrayCo PRIME BID <code>: <project> …" (GOOD / BAD by code), not the estimator', sent);
   sent.length = 0;
   await SA.leads([{ id: 'B2', key: 'B2', title: 'School', source: 'BuildingConnected', gc: 'Big GC', type: 'bid', bidDue: '2026-11-20', contact: { name: 'GC PM', phone: '9015550216' } }], { B2: { id: 'B2', bidRole: 'sub' } }, () => false);
-  ok(to(GLENN).length === 1 && !/Reply GOOD/.test(to(GLENN)[0].body) && !to(WES).length, 'a sub bid: only the estimator, no GOOD / BAD hint', sent);
+  ok(!sent.length, 'LEADWATCH: a SUB bid (a GC\'s invitation) → the CRM only, no texts', sent);
   /* office-checked LSA call (lsaVetted) */
   sent.length = 0;
   await SA.lsaVetted({ leadId: 'V1', phone: '9015550217', name: 'Google LSA caller (2:31 PM)', note: 'roof leak', by: 'Office Olivia' });
@@ -170,8 +171,8 @@ async function three(){ await web('W1', 'Jo Smith', '9015550111'); await web('W2
 
   reset(); await three();
   r = await txt(WES, 'NA ' + c1 + ', BAD ' + c2 + ' spam, GOOD ' + c3);
-  ok(r && r.multi && decided[0].noAnswer && decided[1].reason === 'spam' && decided[2].good && !decided[2].pm, 'NA / BAD / GOOD (no PM) together', decided.map(d => [d.leadId, d.noAnswer, d.good, d.reason]));
-  ok(/NO ANSWER, kept open/.test(to(WES)[0].body) && /GOOD, no PM yet/.test(to(WES)[0].body), 'NA and "no PM yet" lines', to(WES)[0].body);
+  ok(r && r.multi && decided[0].noAnswer && decided[1].reason === 'spam' && decided[2].good && decided[2].pm && decided[2].pm.name === 'Wesley Johnson', 'NA / BAD / GOOD (no PM → the owner who answered, LEADWATCH) together', decided.map(d => [d.leadId, d.noAnswer, d.good, d.reason]));
+  ok(/NO ANSWER, kept open/.test(to(WES)[0].body) && /GOOD, PM Wesley Johnson assigned/.test(to(WES)[0].body), 'NA and "GOOD, PM <the owner who answered>" lines', to(WES)[0].body);
   /* NA kept it open: "bad good" now maps to the 1 open lead? no — 1 open, 2 words → asked */
   r = await txt(WES, 'bad good');
   ok(r && r.lsaAsk === 'count' && /1 lead is open/.test(to(WES).slice(-1)[0].body) && to(WES).slice(-1)[0].body.indexOf(c1 + ' Jo Smith') > 0, 'after it: the NO ANSWER one is still open (listed)', to(WES).slice(-1)[0]);
@@ -195,7 +196,7 @@ async function three(){ await web('W1', 'Jo Smith', '9015550111'); await web('W2
   reset(); await web('W1', 'Jo Smith', '9015550111'); sent.length = 0; t += 60000;
   r = await txt(WES, 'GOOD');
   ok(r && r.lsa === 'W1' && r.good === true && decided.length === 1, 'one open lead + "GOOD" → that lead (as before)', r);
-  ok(/^GrayCo: [A-Z0-9]{4} Jo Smith marked GOOD — no PM set/.test(to(WES)[0].body) && !/Also open/.test(to(WES)[0].body), 'the old confirmation text', to(WES)[0]);
+  ok(/^GrayCo: [A-Z0-9]{4} Jo Smith marked GOOD — it's yours \(you answered it\)/.test(to(WES)[0].body) && !/Also open/.test(to(WES)[0].body), 'the single-lead confirmation (LEADWATCH: the owner who answered is the PM)', to(WES)[0]);
   sent.length = 0;
   r = await txt(WES, 'BAD');
   ok(r && r.lsaAsk === 'which lead' && decided.length === 1, 'no open lead + "BAD" → NOT re-marked (asked)', { r, decided: decided.length });

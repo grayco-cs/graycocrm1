@@ -4,7 +4,7 @@ const assert = require('assert');
 const path = require('path');
 process.env.TWILIO_FROM = '+19015550999'; process.env.CRM_URL = 'https://crm.test';
 const SA = require(path.join(__dirname, '../../netlify/functions/_lib/smsalert.js'));
-{ const AUTO = require(path.join(__dirname, '../../netlify/functions/_lib/automations.js')); const _on = AUTO.isOn; AUTO.isOn = async function(k, o){ return k === 'lead_customer_autotext' ? true : _on.call(AUTO, k, o); }; }   /* NOCUSTTEXT: these tests cover the customer texts, so the switch is ON here */
+{ const AUTO = require(path.join(__dirname, '../../netlify/functions/_lib/automations.js')); const _on = AUTO.isOn; AUTO.isOn = async function(k, o){ return /^lead_(qualify|good)_text(_pm)?$/.test(k) ? true : _on.call(AUTO, k, o); }; }   /* CUSTTEXT2: the named GOOD text (lead_good_text_pm on) is covered here · NOCUSTTEXT: these tests cover the customer texts, so the switch is ON here */
 const USERS = [{ name: 'Nick Thomas', email: 'nthomas@grayco-cs.com', role: 'admin', phone: '901-555-0001', active: true },
   { name: 'Wesley Johnson', email: 'wjohnson@grayco-cs.com', role: 'admin', cell: '(901) 555-0002', active: true },
   { name: 'Pat PM', email: 'pat@grayco-cs.com', role: 'PM', cell: '9015550003', active: true }];
@@ -78,7 +78,7 @@ const tasks = [], closedT = [], disputes = [];
   pmr = await SA.lsaPmText({ id: 'LSA3', source: 'Google LSA', lsaCheck: 'bad', contact: { name: 'X', phone: '9015550155' } }, { assignee: 'Pat PM', assigneeEmail: 'pat@grayco-cs.com' });
   assert.ok(pmr && pmr.skipped === 'marked bad');
   pmr = await SA.lsaPmText({ id: 'N9', source: 'Website', contact: { name: 'X', phone: '9015550155' } }, { assignee: 'Pat PM' });
-  assert.strictEqual(pmr, null, 'not an LSA lead');
+  assert.ok(pmr && pmr.sent, 'CUSTTEXT2: a website lead gets the GOOD text too');   /* was: not an LSA lead → nothing */
   /* ── LSAPM: "GOOD, PM is Pat" assigns the PM · LSANA: "no answer" keeps it open ── */
   decided.length = 0; sent.length = 0; t = Date.parse('2026-10-28T15:00:00Z');
   await SA.leads([{ id: 'LSA5', key: 'LSA5', title: 'Fire damage', source: 'Google LSA', contact: { name: 'Bo Roe', phone: '9015550166' } }], { LSA5: { id: 'LSA5', source: 'Google LSA', leadExtra: { lsaCheck: 'pending' } } }, () => false);
@@ -86,7 +86,8 @@ const tasks = [], closedT = [], disputes = [];
   assert.ok(g && g.good && g.pm === 'Pat PM' && decided[0].pm && decided[0].pm.email === 'pat@grayco-cs.com', JSON.stringify(g));
   assert.ok(sent.some(x => x.to === '9015550002' && /PM Pat PM assigned/.test(x.body)), 'Wesley is told the PM is set');
   g = await SA.staffInbound('9015550002', 'good zed', 'SM11');
-  assert.ok(g && g.good && !g.pm && g.notes === 'zed' && sent.some(x => /no PM set/.test(x.body)), JSON.stringify(g));
+  /* LEADWATCH (owner 11/19): an owner's GOOD with no PM named → the suggested PM is that owner himself */
+  assert.ok(g && g.good && g.pm === 'Wesley Johnson' && g.notes === 'zed' && sent.some(x => x.to === '9015550002' && /it's yours \(you answered it\)/.test(x.body)), JSON.stringify(g));
   let na = await SA.staffInbound('9015550001', 'no answer', 'SM12');
   assert.ok(na && na.noAnswer && decided.slice(-1)[0].noAnswer === true && sent.some(x => x.to === '9015550001' && /NO ANSWER — kept open/.test(x.body)), JSON.stringify(na));
   na = await SA.staffInbound('9015550001', 'NA', 'SM13');
@@ -137,8 +138,14 @@ const tasks = [], closedT = [], disputes = [];
   const c9 = SA._lsaCode('LSA9');
   assert.ok(pb && pb.byPm && pb.pmBad === 'just wanted a price for insurance' && decided[0].good === false && decided[0].reason === 'just wanted a price for insurance' && decided[0].byEmail === 'pat@grayco-cs.com' && decided[0].noTodo, JSON.stringify(pb));
   assert.ok(sent.some(x => x.to === '9015550003' && /marked BAD \(just wanted a price for insurance\)\. Dispute it in Google, pick the reason: https:\/\/ads\.google\.com\/localservices\/leads/.test(x.body)), 'Pat gets the dispute link');
-  assert.ok(['9015550001', '9015550002'].every(ph => sent.some(x => x.to === ph && new RegExp('Pat PM says BAD for ' + c9 + ' Ed Fox: just wanted a price for insurance\\. Dispute in Google: https://ads\\.google\\.com/localservices/leads').test(x.body))), 'Nick and Wesley get the same link: ' + JSON.stringify(sent));
-  assert.ok(tasks.length === 1 && tasks[0].id === 'LSADISPUTE_LSA9' && /^⚖️ Bad lead per Pat PM — confirm and dispute by \d+\/\d+: Ed Fox/.test(tasks[0].label), JSON.stringify(tasks));
+  /* LEADWATCH (owner 11/19): the dispute ladder — the PM first (he has it), then 1 hour apart the office, marketing, the owners (nobody in office /
+     marketing here → the owners at the first step after the hour); the owners are not texted at once any more */
+  assert.ok(!sent.some(x => x.to === '9015550001' || x.to === '9015550002'), 'the owners are not texted at once: ' + JSON.stringify(sent));
+  { const t0 = t; t += 30 * 60000; let es = await SA.lsaEscTick(); assert.ok(!es.sent.length, 'nothing before the hour: ' + JSON.stringify(es));
+    t = t0 + 61 * 60000; es = await SA.lsaEscTick();
+    assert.ok(['9015550001', '9015550002'].every(ph => sent.some(x => x.to === ph && new RegExp('BAD lead ' + c9 + ' Ed Fox \\(just wanted a price for insurance, per Pat PM\\).*https://ads\\.google\\.com/localservices/leads').test(x.body))), 'an hour later (no office / marketing cell): Nick and Wesley get the link: ' + JSON.stringify(sent));
+    t = t0 + 60000; }
+  assert.ok(tasks.length === 1 && tasks[0].id === 'LSADISPUTE_LSA9' && /^⚖️ Bad lead per Pat PM — confirm and dispute by \d+\/\d+, \d+:\d\d [AP]M: Ed Fox/.test(tasks[0].label), JSON.stringify(tasks));
   assert.ok(!sent.some(x => x.to === '9015550199'), 'nothing to the customer');
   /* Wesley disputed it in Google → "DISPUTED <code>" closes it for everyone */
   sent.length = 0;
