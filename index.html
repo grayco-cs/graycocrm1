@@ -86082,7 +86082,10 @@ window._gcForceFixSchedule = async function(silent){
         var manual = window.__GC_FORCE_PUSH__ || window.__GC_MANUAL_SAVE__;
         // Overnight quiet hours (8pm-8am): skip background cloud syncs when nobody's
         // actively on the CRM, so the database can rest. Manual saves still go through.
-        if(!manual && window._gcQuietHoursHold && window._gcQuietHoursHold()){
+        /* APPLAG: an upload is a save waiting to go (a person's, made earlier) — never held by the quiet hours: held, it answered
+           "503", and the phone said "Saved on this phone — not sent to the office yet" all evening until the next tap */
+        var _qm = 'GET'; try{ _qm = String((opts && opts.method) || (url && typeof url === 'object' && url.method) || 'GET').toUpperCase(); }catch(e){}
+        if(!manual && (_qm === 'GET' || _qm === 'HEAD') && window._gcQuietHoursHold && window._gcQuietHoursHold()){
           return Promise.resolve(new Response(null, { status: 503, statusText: 'quiet hours' }));
         }
         if(!manual && Date.now() < state.backoffUntil){

@@ -200,7 +200,7 @@ try {
   const sk0 = await c.ev(() => window.__gcSame.state()), tE = Date.now();
   await c.ev(async () => { const c = { u: localStorage.getItem('grayco_sb_url'), k: localStorage.getItem('grayco_sb_key') }; const v = Array.from({ length: 120 }, (_, i) => ({ id: 'X' + i, note: 'made-up row '.repeat(8) }));
     const send = () => window.fetch(c.u.replace(/\/$/, '') + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: { apikey: c.k, Authorization: 'Bearer ' + c.k, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ key: 'gc_perfrep_applagtest', value: v, updated_at: new Date().toISOString() }) });
-    await send(); for (let i = 0; i < 60 && !(window.__gcSame.known.gc_perfrep_applagtest); i++) await new Promise(r => setTimeout(r, 1000)); await send(); });
+    document.dispatchEvent(new Event('pointerdown')); await send(); for (let i = 0; i < 60 && !(window.__gcSame.known.gc_perfrep_applagtest); i++) await new Promise(r => setTimeout(r, 1000)); document.dispatchEvent(new Event('pointerdown')); await send(); });
   await sleep(3000);
   const sk1 = await c.ev(() => window.__gcSame.state()), twice = NET.log.filter(e => e.t >= tE && e.m === 'POST' && e.keys.includes('gc_perfrep_applagtest')).length;
   console.log('    the same row twice: ' + JSON.stringify({ posts: twice, before: sk0, after: sk1 }));
