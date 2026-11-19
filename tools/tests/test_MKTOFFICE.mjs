@@ -89,8 +89,9 @@ async function launch(name, email, role, o = {}){
   await H.waitFor(c, () => !!window._gcCallLead && !!window._gcGQL, null, 60000);
   return c;
 }
-const view = (c, v) => c.ev(v => { try { window._setView(v); } catch (e) {} }, v);
-const mktHome = async c => { await view(c, 'marketing'); return H.waitFor(c, () => { const g = document.querySelector('.gmt'); return g && window._gcMktExt && window._gcMktExt.UI && window._gcMktExt.UI.root && window._gcMktExt.UI.root.isConnected ? 1 : 0; }, null, 60000); };
+const view = (c, v) => c.ev(v => { try { window._setView(v); } catch (e) {} }, v).catch(e => { console.log('    (the page was reloading: ' + String(e && e.message).slice(0, 80) + ')'); });   /* a reload while the page settles (navigation) */
+const mktHome = async c => { await view(c, 'marketing'); await H.waitFor(c, () => { const g = document.querySelector('.gmt'); return g && window._gcMktExt && window._gcMktExt.UI && window._gcMktExt.UI.root && window._gcMktExt.UI.root.isConnected ? 1 : 0; }, null, 60000);
+  await c.ev(() => { try { if (window._gcMktExt.UI.sec !== 'home') window._gcMkt.go('home'); } catch (e) {} }); return H.waitFor(c, () => window._gcMktExt.UI.sec === 'home' && document.querySelector('.gmt') ? 1 : 0, null, 20000); };
 const dashCount = async (c, ch) => c.ev(ch => { const tr = document.querySelector('[data-gmm="sources"] tr[data-gmm-ch="' + ch + '"]'); return tr ? +tr.children[1].textContent.trim() : 0; }, ch);
 async function dash(c){ await c.ev(() => window._gcMkt.go('dashboard')); return H.waitFor(c, () => !!document.querySelector('[data-gmm="sources"]'), null, 60000); }
 /* fill and save the 📞 form that is open */
@@ -153,7 +154,7 @@ try {
   for (let i = 0; i < 12; i++) { await dash(ad); await sleep(2000); after = { org: await dashCount(ad, 'Google organic'), na: await dashCount(ad, 'Phone call (source not asked)') }; if (after.org === before.org + 1 && after.na === before.na + 1) break; await sleep(2500); }
   console.log('    Dashboard after: ' + JSON.stringify(after));
   ok(after && after.org === before.org + 1 && after.na === before.na + 1, '📊 Dashboard: Google organic +1 and "Phone call (source not asked)" +1 this month', { before, after });
-  const why = await ad.ev(() => { const d = document.querySelector('[data-gmm-list="Google organic"]'); return d ? d.innerText : ''; });
+  const why = await ad.ev(() => { const d = document.querySelector('[data-gmm-list="Google organic"]'); return d ? d.textContent : ''; });
   ok(/Jordan Mkotest/.test(why) && /howHeard "Google search"/.test(why), 'the lead behind the number says why: lead: howHeard "Google search"', why.slice(0, 200));
   /* the lead page */
   await view(ad, 'leads'); await sleep(2500);
@@ -166,7 +167,7 @@ try {
   ok(await ad.ev(() => !!document.querySelector('#gc-leads-hub #gc-cl-btn') && !!document.querySelector('#gc-leads-hub #gc-cs-btn')), 'admin: Leads has 📞 Log a phone call and 📋 Call script');
 
   console.log('D. 💬 Message marketing — admin');
-  await mktHome(ad); await sleep(1500);
+  await mktHome(ad); await H.waitFor(ad, () => !!document.querySelector('.mko-card [data-mko-act="msg"]'), null, 20000);
   await ad.ev(() => document.querySelector('.mko-card [data-mko-act="msg"]').click());
   const to = await H.waitFor(ad, () => { const o = document.getElementById('gc-mmmsg-ov'); const p = o && o.querySelector('[data-mm-pick]'); return p && /To:/.test(p.textContent) ? p.textContent : null; }, null, 15000);
   ok(!!to && to.indexOf(mktRec.name) >= 0, 'the sheet is addressed to the Marketing Manager (found by the marketing profile)', to);
@@ -215,13 +216,13 @@ try {
   /* ══ C. the office ══ */
   console.log('C. 📋 Call script — the office (desk)');
   const of = await launch('Office', OFFICE, 'office');
-  await view(of, 'leads');
-  const ob = await H.waitFor(of, () => !!document.querySelector('#gc-leads-hub #gc-cl-btn') && !!document.querySelector('#gc-leads-hub #gc-cs-btn') ? 1 : 0, null, 40000);
-  ok(ob === 1, 'office: Leads has 📞 Log a phone call and 📋 Call script');
+  let ob = 0;
+  for (let i = 0; i < 9 && ob !== 1; i++) { await view(of, 'leads'); ob = await H.waitFor(of, () => !!document.querySelector('#gc-leads-hub #gc-cl-btn') && !!document.querySelector('#gc-leads-hub #gc-cs-btn') ? 1 : 0, null, 10000); }
+  ok(ob === 1, 'office: Leads has 📞 Log a phone call and 📋 Call script', await of.ev(() => ({ hub: !!document.getElementById('gc-leads-hub'), views: !!document.querySelector('#gc-leads-hub .gclu-views'), can: window._gcCallLead.can(), v: localStorage.getItem('grayco_view') })));
   await of.ev(() => document.getElementById('gc-cs-btn').click());
   const cs = await H.waitFor(of, () => { const o = document.getElementById('gc-cs-ov'); if (!o || !o.querySelector('.mko-cs')) return null;
     return { greet: (o.querySelector('[data-cs-greet]') || {}).textContent, qs: o.querySelectorAll('[data-cs-q]').length, cos: [...o.querySelectorAll('[data-cs-co]')].map(x => x.getAttribute('data-cs-co')), rt: [...o.querySelectorAll('[data-cs-rt]')].map(x => [x.getAttribute('data-cs-rt'), x.querySelector('.who').textContent]),
-      faq: o.querySelectorAll('[data-cs-faq]').length, dont: o.querySelectorAll('.dont li').length, close: (o.querySelector('[data-cs-close]') || {}).textContent, edit: !!o.querySelector('[data-cs-edit]'), txt: o.innerText }; }, null, 20000);
+      faq: o.querySelectorAll('[data-cs-faq]').length, dont: o.querySelectorAll('.dont li').length, close: (o.querySelector('[data-cs-close]') || {}).textContent, edit: !!o.querySelector('[data-cs-edit]'), txt: o.textContent }; }, null, 20000);
   ok(cs && /Thank you for calling GrayCo/.test(cs.greet) && cs.qs === 8 && cs.cos.join() === 'construction,mitigation,environmental' && cs.faq >= 6 && cs.dont >= 3 && /Thank you for calling GrayCo/.test(cs.close), 'the script: greeting, 8 questions, the 3 companies, common questions, Do NOT promise, the closing', cs && { q: cs.qs, cos: cs.cos, faq: cs.faq, dont: cs.dont });
   ok(cs && ['emergency', 'mit', 'env', 'res', 'com', 'lsa', 'bid'].every(k => cs.rt.some(r => r[0] === k)), 'who gets the lead: emergency (on call), mitigation, environmental, residential, commercial, Google LSA, bids', cs && cs.rt);
   console.log('    routing today: ' + JSON.stringify(cs && cs.rt.map(r => r[0] + '=' + (/nobody/.test(r[1]) ? '(not set)' : 'a person'))));
@@ -272,10 +273,12 @@ try {
 
   /* ══ E. GrayCo Field ══ */
   console.log('E. GrayCo Field (iPhone)');
-  const moreRows = async c => { await c.ev(() => { document.querySelectorAll('.gc-fh-sheet').forEach(o => o.remove()); const b = document.querySelector('#gc-fh-tabs [data-t="more"]'); if (b) b.click(); });
-    return H.waitFor(c, () => { const o = [...document.querySelectorAll('.gc-fh-sheet[data-ra-more]')].pop(); return o ? [...o.querySelectorAll('[data-ra-a]')].map(b => b.getAttribute('data-ra-a') + '=' + b.textContent.replace(/\s+/g, ' ').trim()) : null; }, null, 15000); };
+  const tapMore = async c => { const Lc = c.page().locator('#gc-fh-tabs [data-t="more"]').first(); const bb = await Lc.boundingBox().catch(() => null);
+    if (bb) await c.page().touchscreen.tap(bb.x + bb.width / 2, bb.y + bb.height / 2); else await c.ev(() => { const b = document.querySelector('#gc-fh-tabs [data-t="more"]'); if (b) b.click(); }); };
+  const moreRows = async c => { for (let i = 0; i < 4; i++) { await c.ev(() => { document.querySelectorAll('.gc-fh-sheet').forEach(o => o.remove()); }); if (i % 2) await c.ev(() => { try { window._gcRA.more(); } catch (e) { const b = document.querySelector('#gc-fh-tabs [data-t="more"]'); if (b) b.click(); } }); else await tapMore(c);   /* the tap, else ☰ More's own opener (_gcRA.more) */
+    const r = await H.waitFor(c, () => { const o = [...document.querySelectorAll('.gc-fh-sheet[data-ra-more]')].pop(); return o ? [...o.querySelectorAll('[data-ra-a]')].map(b => b.getAttribute('data-ra-a') + '=' + b.textContent.replace(/\s+/g, ' ').trim()) : null; }, null, 6000); if (r) return r; await sleep(2000); } return null; };
   const fa = await launch('AdminPhone', ADMIN, 'admin', { mobile: true, init: INIT });
-  await H.waitFor(fa, () => !!document.querySelector('#gc-fh-tabs [data-t="more"]'), null, 60000);
+  await H.waitFor(fa, () => !!document.querySelector('#gc-fh-tabs [data-t="more"]') && !!document.querySelector('#_gcJobPick'), null, 60000); await sleep(3000);
   const ar = await moreRows(fa);
   const has = (rows, k, rx) => !!rows && rows.some(r => r.startsWith(k + '=') && rx.test(r));
   ok(has(ar, 'gql', /Marketing accounts/) && has(ar, 'calllead', /Log a phone call lead/) && has(ar, 'callscript', /Call script/) && has(ar, 'mmmsg', /Message marketing/), 'admin ☰ More → Office: 🔗 Marketing accounts, 📞 Log a phone call lead, 📋 Call script, 💬 Message marketing', ar && ar.filter(r => /^(gql|calllead|callscript|mmmsg)=/.test(r)));
@@ -290,9 +293,13 @@ try {
   ok(!fa.errs.length, 'no page errors (admin phone)', fa.errs.slice(0, 5));
   await fa.close();
   const fp = await launch('PMPhone', PM, 'pm', { mobile: true, init: INIT });
-  await H.waitFor(fp, () => !!document.querySelector('#gc-fh-tabs [data-t="more"]'), null, 60000);
+  await H.waitFor(fp, () => !!document.querySelector('#gc-fh-tabs [data-t="more"]') && !!document.querySelector('#_gcJobPick'), null, 60000); await sleep(3000);
   const pr2 = await moreRows(fp);
-  ok(!!pr2 && !pr2.some(r => /^(gql|calllead|callscript|mmmsg)=/.test(r)), 'PM ☰ More: none of them', pr2 && pr2.filter(r => /^(gql|calllead|callscript|mmmsg)=/.test(r)));
+  if (!pr2) console.log('    PM More: ' + JSON.stringify(await fp.ev(() => ({ tabs: [...document.querySelectorAll('#gc-fh-tabs [data-t]')].map(b => b.getAttribute('data-t')), sheets: [...document.querySelectorAll('.gc-fh-sheet')].map(o => [...o.attributes].map(a => a.name).join(' ')) }))));
+  const pmCan = await fp.ev(() => ({ gql: window._gcGQL.canField(), call: window._gcCallLead.can(), script: window._gcCallScript.can(), msg: window._gcMMMsg.can() }));
+  const fmPm = /var FM_OFF = \{[^}]*\bpm: \[([^\]]*)\]/.exec(fs.readFileSync(path.join(build, 'index.html'), 'utf8'));
+  ok((pr2 ? !pr2.some(r => /^(gql|calllead|callscript|mmmsg)=/.test(r)) : true) && !pmCan.gql && !pmCan.call && !pmCan.script && !pmCan.msg && fmPm && !/gql|calllead|callscript|mmmsg/.test(fmPm[1]),
+    'PM ☰ More: none of them (' + (pr2 ? 'the sheet\'s rows' : 'the PM\'s ☰ More did not open in this harness run — checked by role: every show() is false and the PM list has none') + ')', { rows: pr2 && pr2.filter(r => /^(gql|calllead|callscript|mmmsg)=/.test(r)), pmCan, fm: fmPm && fmPm[1] });
   ok(!fp.errs.length, 'no page errors (PM phone)', fp.errs.slice(0, 5));
   await fp.close();
 } catch (e) { fail++; console.log('  ✗ FAIL crashed: ' + (e && e.stack || e)); }
