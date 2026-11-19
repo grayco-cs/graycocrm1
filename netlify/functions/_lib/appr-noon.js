@@ -4,6 +4,7 @@
    gets ONE phone push, ONE e-mail ("You have N approvals waiting") and an ASAP To-Do. Never during ⏸ data-entry mode.
    "Opened Approvals today": the server stamp gc_kv "gc_appr_seen" ([{ id: email, email, at }]) — the CRM writes it when
    📋 Approvals is opened (auto-wins.js { action: 'appr-seen' }); the old gc_appr_seen_<email> is only in that browser.
+   APPRONCE (owner 11/19): OFF by default — nothing is sent unless Netlify APPR_NOON_ON=1.
    seenRows(): who checked and who did not, for the office (window._gcApprovalsCheckedToday in the CRM). */
 'use strict';
 const A = require('./auto-common.js');
@@ -23,6 +24,9 @@ function due(box, seen, now, nameOf){
 async function run(opts){
   opts = opts || {};
   await A.loadStaff();   /* patch OFFICEFIX: staff = @grayco-cs.com or a gc_staff staff e-mail (the Marketing Manager) */
+  /* APPRONCE (owner 11/19: "I don't need 3 reminders" — the noon one off too): OFF unless Netlify APPR_NOON_ON=1; the one daily reminder
+     is the 8 AM "Still waiting on you" (_lib/apprping.js) */
+  if (s(process.env.APPR_NOON_ON) !== '1') return { ok: true, skipped: 'off (APPR_NOON_ON=1 turns the noon reminder on)' };
   const now = now0(opts), c = A.central(now);
   if (!BIZ[c.wd]) return { ok: true, skipped: 'not a business day' };
   if (await A.paused()) return { ok: true, skipped: 'data-entry mode' };

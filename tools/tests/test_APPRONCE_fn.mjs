@@ -203,5 +203,16 @@ await t('the 7 AM digest: textable() — a staff cell, not switched off, not opt
   } finally { Object.assign(SA._D, D0); }
 });
 
+await t('the 12 PM reminder is off by default (no push, e-mail or To-Do); APPR_NOON_ON=1 turns it back on', async () => {
+  const NOON = require(path.join(FN, '_lib/appr-noon.js')), DG = require(path.join(FN, '_lib/auto-digest.js'));
+  const was = DG.collect; let asked = 0; DG.collect = async () => { asked++; return { box: {}, nameOf: {}, base: 'https://crm.test' }; };
+  try {
+    delete process.env.APPR_NOON_ON;
+    const r = await NOON.run({ now: at(TUE, '12:05') }); assert.match(String(r.skipped), /^off/); assert.strictEqual(asked, 0, 'nothing even looked up');
+    process.env.APPR_NOON_ON = '1';
+    const r2 = await NOON.run({ now: at(TUE, '12:05') }); assert.ok(!/^off/.test(String(r2.skipped || '')), JSON.stringify(r2));
+  } finally { DG.collect = was; delete process.env.APPR_NOON_ON; }
+});
+
 console.log('\n' + (fail ? 'FAILED ' : 'OK ') + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
