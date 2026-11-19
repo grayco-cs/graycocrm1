@@ -205,7 +205,21 @@ export function pageAudit(opt){
     for (let y = 6; y < vh; y += 24) for (let x = 6; x < vw; x += 24) { const e = document.elementFromPoint(x, y); if (!e) continue; n++; let hit = null; for (let a = e; a && a.nodeType === 1; a = a.parentElement) { const bc = rgba(getComputedStyle(a).backgroundColor); if (bc && bc.a >= 0.85) { hit = a; break; } } if (hit) { const c = rgba(getComputedStyle(hit).backgroundColor); if (isNavy(c)) { nv++; const k = P('', hit) + ' ' + getComputedStyle(hit).backgroundColor; who[k] = (who[k] || 0) + 1; } } }
     out.info.navyPct = n ? Math.round(nv * 100 / n) : 0;
     if (n && nv / n > 0.30) out.fails.push({ check: 'navy', msg: `dark navy covers ${out.info.navyPct}% of the phone screen (owner rule: white pages, no navy)`, el: Object.entries(who).sort((a, b) => b[1] - a[1]).slice(0, 3).map(x => x[0]).join(' · ') });
-    else if (nv / n > 0.12) out.warns.push({ check: 'navy', msg: `dark navy covers ${out.info.navyPct}% of the screen`, el: Object.entries(who).sort((a, b) => b[1] - a[1]).slice(0, 2).map(x => x[0]).join(' · ') });
+    /* owner 11/19: ANY dark-navy card or background region on a phone page is a failure, by count, not by area (each My Approvals
+       card was navy and under the 30 % line); buttons are left out */
+    else {
+      const nc = [], seenN = new Set();
+      for (const e of document.querySelectorAll('body *')) {
+        if (/^(BUTTON|A|INPUT|SELECT|OPTION|TEXTAREA|svg|path|IMG)$/i.test(e.tagName) || e.closest('button,[role=button],a[href]')) continue;
+        const r = e.getBoundingClientRect(); if (r.width < 60 || r.height < 30 || r.bottom <= 0 || r.top >= vh || r.right <= 0 || r.left >= vw) continue;
+        const c = rgba(getComputedStyle(e).backgroundColor); if (!c || c.a < 0.85 || !isNavy(c)) continue;
+        const h = document.elementFromPoint(Math.min(vw - 1, Math.max(0, r.left + r.width / 2)), Math.min(vh - 1, Math.max(0, r.top + Math.min(r.height / 2, 20)))); if (!h || !(e === h || e.contains(h))) continue;
+        if ([...seenN].some(x => x.contains(e))) continue; seenN.add(e); nc.push(P(txt(e), e) + ' ' + getComputedStyle(e).backgroundColor);
+      }
+      out.info.navyCards = nc.length;
+      if (nc.length) out.fails.push({ check: 'navy', msg: `${nc.length} dark navy card(s) / region(s) on the phone screen (owner rule: no navy on the phone)`, list: nc.slice(0, 8) });
+    }
+    if (n && nv / n <= 0.30 && nv / n > 0.12) out.warns.push({ check: 'navy', msg: `dark navy covers ${out.info.navyPct}% of the screen`, el: Object.entries(who).sort((a, b) => b[1] - a[1]).slice(0, 2).map(x => x[0]).join(' · ') });
   }
   // 2. the unsent note
   const un = document.getElementById('gc-unsent-note'); if (un && vis(un)) { let what = ''; try { const u = window._gcUnsent ? window._gcUnsent() : null; what = JSON.stringify(u).slice(0, 300); } catch (e) {} out.fails.push({ check: 'unsent', msg: '#gc-unsent-note is showing: "' + (un.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 120) + '"', el: what ? 'unsent: ' + what : '' }); }
