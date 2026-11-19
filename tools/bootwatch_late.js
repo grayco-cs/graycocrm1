@@ -151,7 +151,7 @@
   };
   /* an OLD copy that came from the browser's cache or back from the background (Safari's back / forward and tab restore hand
      back the cached page whatever its Cache-Control says: Steven's iPhone opened 33.273 when the server had 33.277): besides
-     the banner, the update runs by itself at the first safe moment — the page on screen, nobody tapping or typing for 15 s,
+     the banner, the update runs by itself at the first safe moment — the page on screen, nobody tapping or typing for 15 s (an empty box that only has the focus is not typing),
      no upload on its way. The stale gate (REGFIX) holds this copy's shared uploads until then; what is saved here stays in
      IndexedDB and goes up from the new copy. At most once per 10 minutes (updateImpl), so it can never loop. */
   var autoT = null, lastAct = 0, autoN = 0;
@@ -164,7 +164,7 @@
       try {
         if (D.visibilityState === 'hidden') busy = 'hidden';
         else if (Date.now() - lastAct < 15000) busy = 'in use';
-        else { var a = D.activeElement; if (a && a !== D.body && (/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) || a.isContentEditable)) busy = 'typing'; }
+        else { var a = D.activeElement; if (a && a !== D.body && ((/^(INPUT|TEXTAREA)$/.test(a.tagName) && String(a.value || '').trim()) || (a.isContentEditable && String(a.textContent || '').trim()))) busy = 'typing'; }
         if (!busy && W._gcSending && W._gcSending().length) busy = 'sending';
       } catch (e) {}
       if (!busy) { B.autoUpd = ms(); dirty = true; if (update()) return; }

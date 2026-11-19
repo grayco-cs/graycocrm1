@@ -847,7 +847,7 @@ try {
       try {
         if (D.visibilityState === 'hidden') busy = 'hidden';
         else if (Date.now() - lastAct < 15000) busy = 'in use';
-        else { var a = D.activeElement; if (a && a !== D.body && (/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) || a.isContentEditable)) busy = 'typing'; }
+        else { var a = D.activeElement; if (a && a !== D.body && ((/^(INPUT|TEXTAREA)$/.test(a.tagName) && String(a.value || '').trim()) || (a.isContentEditable && String(a.textContent || '').trim()))) busy = 'typing'; }
         if (!busy && W._gcSending && W._gcSending().length) busy = 'sending';
       } catch (e) {}
       if (!busy) { B.autoUpd = ms(); dirty = true; if (update()) return; }
