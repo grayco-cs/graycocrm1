@@ -5,6 +5,8 @@ const path = require('path');
 const P = require(path.join(__dirname, '../../netlify/functions/_lib/permits.js'));
 const W = require(path.join(__dirname, '../../netlify/functions/permit-watch.js'));
 const OS = require(path.join(__dirname, '../../netlify/functions/owner-setup.js'));
+const PERMIT_HOSTS = ['services2.arcgis.com', 'services1.arcgis.com', 'littlerock.gov', 'api.shovels.ai'];   /* Nashville + Memphis (ArcGIS), Collierville (ArcGIS), Little Rock, Shovels */
+const FX = n => require('fs').readFileSync(path.join(__dirname, 'fixtures/permits', n), 'utf8');   /* patch PERMITS3: real public samples (fetched 11/19) */
 const R = []; const ok = (n, c, i) => { R.push(!!c); console.log((c ? 'PASS ' : 'FAIL ') + n + (c || i === undefined ? '' : '  ' + JSON.stringify(i).slice(0, 400))); };
 
 const NOW = Date.parse('2026-11-12T14:00:00Z');
@@ -53,11 +55,23 @@ function rig(o){
   D.env = k => (o.env && o.env[k] != null ? String(o.env[k]) : '');
   D.kvGet = async k => (k in kv ? JSON.parse(JSON.stringify(kv[k])) : null);
   D.kvCas = async (k, f) => { const n = f(k in kv ? JSON.parse(JSON.stringify(kv[k])) : null); if (n !== undefined) kv[k] = JSON.parse(JSON.stringify(n)); return { ok: true, value: kv[k] }; };
+  D.jobs = async () => (o.jobs || []);   /* patch PERMITS3: the CRM's projects (active jobs' map points) */
   D.staffAuth = async e => { const t = ((e.headers || {}).authorization || '').replace(/^Bearer /, ''); return t === 'admin' ? { ok: true, email: 'admin@example.com', name: 'Ada Admin', admin: true } : t === 'staff' ? { ok: true, email: 'pm@example.com', name: 'Pat PM', admin: false } : { ok: false, code: 401, error: 'Sign in' }; };
-  const st = { shovelsStatus: o.shovelsStatus || 200, usage: o.usage || { credits_used: 120, credit_limit: 5000, is_over_limit: false }, nash: o.nash || NASH_ROWS, shov: o.shov || SHOV };
+  const st = { mem: o.mem || [], coll: o.coll || [], lrPage: o.lrPage != null ? o.lrPage : FX('littlerock_data_page.html'), lrCsv: o.lrCsv != null ? o.lrCsv : FX('littlerock_permits_head.csv'), lrRanges: [], shovelsStatus: o.shovelsStatus || 200, usage: o.usage || { credits_used: 120, credit_limit: 5000, is_over_limit: false }, nash: o.nash || NASH_ROWS, shov: o.shov || SHOV };
   D.fetch = async (u, init) => {
     const url = new URL(u); calls.push({ host: url.host, path: url.pathname, q: url.search, key: init && init.headers && init.headers['X-API-Key'] });
     const J = (status, body) => ({ status, ok: status >= 200 && status < 300, json: async () => body });
+    if (url.host === 'services2.arcgis.com' && /DPD_Building_Permits/.test(url.pathname)) {   /* patch PERMITS3: Memphis */
+      if (o.memDown) return J(500, null);
+      const off = +url.searchParams.get('resultOffset') || 0, n = +url.searchParams.get('resultRecordCount') || 1000;
+      return J(200, { features: st.mem.slice(off, off + n), exceededTransferLimit: off + n < st.mem.length });
+    }
+    if (url.host === 'services1.arcgis.com' && /DevelopmentActivity_iWorQ/.test(url.pathname)) return o.collDown ? J(500, null) : J(200, { features: st.coll });   /* patch PERMITS3: Collierville */
+    if (url.host === 'littlerock.gov') {   /* patch PERMITS3: the page, then a range of the file */
+      const T = (status, text) => ({ status, ok: status >= 200 && status < 300, text: async () => text, json: async () => null });
+      if (/city-of-lr-data/.test(url.pathname)) return o.lrDown ? T(503, '') : T(200, st.lrPage);
+      if (/\.csv$/.test(url.pathname)) { const rg = (init && init.headers && init.headers.Range) || ''; st.lrRanges.push(rg); return T(206, st.lrCsv); }
+    }
     if (url.host === 'services2.arcgis.com') {
       if (o.nashDown) return J(500, null);
       const off = +url.searchParams.get('resultOffset') || 0, n = +url.searchParams.get('resultRecordCount') || 1000;
@@ -126,7 +140,7 @@ async function act(token, body){ const r = await W.handler(ev(token, body)); ret
   ok('the Nashville query asks for the last 14 days, newest first, no geometry', (() => { const q = new URLSearchParams(g.calls.find(x => x.host === 'services2.arcgis.com').q); return /Date_Issued >= TIMESTAMP '\d{4}-\d{2}-\d{2} 00:00:00'/.test(q.get('where')) && q.get('orderByFields') === 'Date_Issued DESC' && q.get('returnGeometry') === 'false' && q.get('f') === 'json'; })());
   ok('stored: one per permit, all "new", newest issued first, each with reasons + hint', items1.length === want1 && items1.every(x => x.state === 'new' && x.key === 'nashville:' + x.id && x.reasons.length && x.hint) && items1.every((x, i) => i === 0 || items1[i - 1].issued >= x.issued), items1.map(x => x.issued));
   ok('no alerts: nothing into the Lead Inbox, the To-Do, Approvals or alert keys — only the gc_permit_* keys are written', Object.keys(g.kv).every(k => /^gc_permit_/.test(k)), Object.keys(g.kv));
-  ok('no alerts: the only hosts called are the permit sources (no e-mail / text / push service)', g.calls.every(x => x.host === 'services2.arcgis.com' || x.host === 'api.shovels.ai'), [...new Set(g.calls.map(x => x.host))]);
+  ok('no alerts: the only hosts called are the permit sources (no e-mail / text / push service)', g.calls.every(x => PERMIT_HOSTS.includes(x.host)), [...new Set(g.calls.map(x => x.host))]);
   ok('run result: added counts', r.ok && r.added.nashville === want1 && r.added.shovels === 0, r);
   /* the same run again → no duplicates, a person's choice kept */
   g.kv.gc_permit_leads[0].state = 'dismissed';
@@ -168,7 +182,7 @@ async function act(token, body){ const r = await W.handler(ev(token, body)); ret
   ok('everything paid for is kept: 4 matching + 2 "pulled, not matching" (pool, electrical)', shItems.length === 6 && shItems.filter(x => x.nomatch).length === 2 && shItems.filter(x => !x.nomatch).length === 4, shItems.map(x => [x.desc, !!x.nomatch]));
   ok('…with the property owner of record; no contractor look-up was made (that is on demand)', shItems.every(x => x.owner === 'SAMPLE OWNER TRUST') && !g.calls.some(x => x.path === '/v2/contractors') && shItems.every(x => !x.contractorPhone));
   ok('the hail roof in Memphis → Mitigation, "Roof $15k" + 🌪', shItems.some(x => x.hint === 'mitigation' && x.reasons.includes('Roof $15k') && x.reasons.includes('🌪 storm/hail/wind words')), shItems.map(x => x.reasons));
-  ok('no alerts with Shovels on either: only gc_permit_* keys, only the permit hosts', Object.keys(g.kv).every(k => /^gc_permit_/.test(k)) && g.calls.every(x => x.host === 'services2.arcgis.com' || x.host === 'api.shovels.ai'), { keys: Object.keys(g.kv), hosts: [...new Set(g.calls.map(x => x.host))] });
+  ok('no alerts with Shovels on either: only gc_permit_* keys, only the permit hosts', Object.keys(g.kv).every(k => /^gc_permit_/.test(k)) && g.calls.every(x => PERMIT_HOSTS.includes(x.host)), { keys: Object.keys(g.kv), hosts: [...new Set(g.calls.map(x => x.host))] });
   /* browsing never spends */
   const nBefore = g.calls.length;
   for (const b of [{ action: 'list' }, { action: 'settings-get' }, { action: 'shovels-preview' }, { action: 'list' }]) await act('staff', b);
@@ -264,7 +278,7 @@ async function act(token, body){ const r = await W.handler(ev(token, body)); ret
   a = await act('admin', { action: 'settings-set', settings: { minValue: 75000 } });
   ok('⚙ Filters saving only its part keeps the Shovels settings (merge)', g.kv.gc_permit_settings.shovels.perRun === 40 && g.kv.gc_permit_settings.shovels.on === true && g.kv.gc_permit_settings.maxAgeDays === 30, g.kv.gc_permit_settings.shovels);
   a = await act('staff', { action: 'settings-get' });
-  ok('settings round trip: settings-get gives back what was saved + the defaults and the labels', a.body.ok && a.body.settings.minValue === 75000 && a.body.settings.maxAgeDays === 30 && a.body.settings.include.residentialNew === true && a.body.settings.shovels.perRun === 40 && a.body.settings.shovels.budget === 300 && a.body.settings.shovels.auto === true && a.body.defaults.minValue === 1000000 && a.body.include.length === P.INCLUDE.length && a.body.zipGroups.length === 7 && a.body.tags.length > 5, a.body.settings);
+  ok('settings round trip: settings-get gives back what was saved + the defaults and the labels', a.body.ok && a.body.settings.minValue === 75000 && a.body.settings.maxAgeDays === 30 && a.body.settings.include.residentialNew === true && a.body.settings.shovels.perRun === 40 && a.body.settings.shovels.budget === 300 && a.body.settings.shovels.auto === true && a.body.defaults.minValue === 1000000 && a.body.include.length === P.INCLUDE.length && a.body.zipGroups.length === P.ZIP_GROUPS.length && a.body.builtInGroups === P.ZIP_GROUPS.length && a.body.tags.length > 5 && a.body.kinds.fire && a.body.sources.memphis, a.body.settings);
   const k0 = g.kv.gc_permit_leads[1].key;
   a = await act('staff', { action: 'set-state', id: k0, state: 'lead', leadId: 'LPMT_abc' });
   ok('set-state lead → state, who, the lead id', a.code === 200 && g.kv.gc_permit_leads[1].state === 'lead' && g.kv.gc_permit_leads[1].leadId === 'LPMT_abc' && g.kv.gc_permit_leads[1].stateBy === 'Pat PM', g.kv.gc_permit_leads[1]);
@@ -294,13 +308,14 @@ async function act(token, body){ const r = await W.handler(ev(token, body)); ret
     ok('a $1.5M single-family house → out (no residential)', !cl({ type: 'Building Residential - New', subtype: 'Single Family Residence', value: 1500000 }).match);
     ok('a $1.1M duplex → out (two-family is residential)', !cl({ type: 'Building Residential - New', subtype: 'Duplex', value: 1100000 }).match);
     ok('a $2M residential pool / a sign / a tent → out', !cl({ type: 'Building Residential - Rehab', subtype: 'Accessory Structure, Pools - Residential', value: 2000000 }).match && !cl({ type: 'Building Sign Permit', value: 2000000 }).match && !cl({ type: 'Building Commercial - New', subtype: 'Tent', desc: 'tent for event', value: 2000000 }).match);
-    ok('a $9k fire repair → out by default (repair words are off), in when they are ticked', !cl({ type: 'Building Commercial - Fire Damage', value: 9000 }).match && P.classify({ src: 'n', id: 'f', type: 'Building Commercial - Fire Damage', value: 9000, issued: isoAgo(1) }, P.clean({ include: { repair: true } }), NOW).match);
+    ok('PERMITS3: a $9k fire repair → IN by default now (Mitigation: damage repairs at any value), out when Mitigation and repair words are both off', cl({ type: 'Building Commercial - Fire Damage', value: 9000 }).match && cl({ type: 'Building Commercial - Fire Damage', value: 9000 }).hint === 'mitigation' && !P.classify({ src: 'n', id: 'f', type: 'Building Commercial - Fire Damage', value: 9000, issued: isoAgo(1) }, P.clean({ include: { repair: false, mitigation: false } }), NOW).match);
     ok('a $3M demolition → out by default (demolition is off)', !cl({ type: 'Building Demolition Permit', subtype: 'Demolition Permit - Commercial', value: 3000000 }).match);
     ok('a $1.2M commercial re-roof → in as a commercial job', cl({ type: 'Building Commercial - Roofing / Siding', subtype: 'Warehouse, Storage S-1', value: 1200000 }).match);
     ok('no value listed → out at $1M', !cl({ type: 'Building Commercial - New', value: null }).match);
     const noHotel = P.clean({ uses: { hotel: false } });
     ok('kinds of building are editable: hotels left out → the hotel is out, an office is still in', !P.classify(Object.assign({ src: 'n', id: 'h', issued: isoAgo(1) }, { type: 'Building Commercial - New', subtype: 'Hotel / Motel', value: 12000000 }), noHotel, NOW).match && P.classify({ src: 'n', id: 'o', issued: isoAgo(1), type: 'Building Commercial - New', subtype: 'General Office, Professional Services', value: 3000000 }, noHotel, NOW).match);
-    ok('the Nashville query asks ArcGIS for $1M+ commercial / multifamily only (☢️ box off)', W._test.nashWhere(P.clean({ include: { environmental: false } }), '2026-11-01') === "Date_Issued >= TIMESTAMP '2026-11-01 00:00:00' AND Const_Cost >= 1000000 AND (Permit_Type_Description LIKE '%Commercial%' OR Permit_Subtype_Description LIKE '%Multifamily%' OR Permit_Subtype_Description LIKE '%Apartment%' OR Permit_Subtype_Description LIKE '%Condominium%')", W._test.nashWhere(P.clean({ include: { environmental: false } }), '2026-11-01'));
+    ok('the Nashville query asks ArcGIS for $1M+ commercial / multifamily only (☢️ box off)', W._test.nashWhere(P.clean({ include: { environmental: false, mitigation: false } }), '2026-11-01') === "Date_Issued >= TIMESTAMP '2026-11-01 00:00:00' AND Const_Cost >= 1000000 AND (Permit_Type_Description LIKE '%Commercial%' OR Permit_Subtype_Description LIKE '%Multifamily%' OR Permit_Subtype_Description LIKE '%Apartment%' OR Permit_Subtype_Description LIKE '%Condominium%')", W._test.nashWhere(P.clean({ include: { environmental: false, mitigation: false } }), '2026-11-01'));
+    ok('PERMITS3: …with Mitigation on (default) it also asks for fire / water / storm damage words at any value', /OR \(UPPER\(Purpose\) LIKE '%FIRE DAMAGE%'/.test(W._test.nashWhere(D0, '2026-11-01')) && /TREE FELL/.test(W._test.nashWhere(D0, '2026-11-01')));
     ok('…with ☢️ on (default) it also asks for the asbestos / lead / mold words at any value (LEADBOTH)', / OR \(UPPER\(Purpose\) LIKE '%ASBESTOS%'/.test(W._test.nashWhere(D0, '2026-11-01')), W._test.nashWhere(D0, '2026-11-01'));
     ok('…with the small kinds ticked (repairs, roofs, demolitions) it asks by date only (classify filters)', W._test.nashWhere(P.clean(BROAD), '2026-11-01') === "Date_Issued >= TIMESTAMP '2026-11-01 00:00:00'");
     /* already stored rows follow today's filters */
@@ -362,7 +377,7 @@ async function act(token, body){ const r = await W.handler(ev(token, body)); ret
     PR.D.todo = async (id, label, o) => { if (todos.some(x => x.id === id)) return false; todos.push({ id, label, note: o && o.note, by: o && o.by }); return true; };
     PR.D.fetch = async (u, init) => { mails.push({ u, body: JSON.parse(init.body) }); return { ok: true, status: 200, json: async () => resendBody }; };
     let w = await PR.weeklyTask();
-    ok('Monday: one Office To-Do "Download new Shelby County permits from Develop 901 … import them" with the link and steps', w.made && todos.length === 1 && /Develop 901/.test(todos[0].label) && todos[0].note.includes('https://aca-prod.accela.com/SHELBYCO') && /Import a permit list/.test(todos[0].note) && /office manager/.test(todos[0].by), todos);
+    ok('Monday: one Office To-Do "Download new Shelby County permits from Develop 901 … import them" with the link and steps', w.made && todos.length === 1 && /Develop 901/.test(todos[0].label) && todos[0].note.includes('https://aca-prod.accela.com/SHELBYCO') && /Import a permit list/.test(todos[0].note) && /only when the Memphis feed is not working/.test(todos[0].by) && /Why: the Memphis feed has not run yet/.test(todos[0].note), todos);
     clock += 3600e3; w = await PR.weeklyTask();
     ok('…once a week (a second run the same week adds nothing)', !w.made && todos.length === 1);
     clock = Date.parse('2026-11-17T15:00:00Z'); w = await PR.weeklyTask();
@@ -411,6 +426,171 @@ async function act(token, body){ const r = await W.handler(ev(token, body)); ret
     ok('Send now (confirmed) → one e-mail', a6.code === 200 && a6.body.ok && mails.length === 1, a6.body); }
   { const toml = require('fs').readFileSync(path.join(__dirname, '../../netlify.toml'), 'utf8');
     ok('netlify.toml schedules permit-records-scheduled daily (~8:41 AM Central)', /\[functions\."permit-records-scheduled"\]\s*\n\s*schedule = "41 14 \* \* \*"/.test(toml)); }
+
+  /* ── 7. patch PERMITS3 (owner-approved items 2–6): the free feeds found, more kinds by company, the score, the new areas ──
+     The adapters run on REAL public responses saved 11/19 in tools/tests/fixtures/permits/:
+       memphis_dpd_newest.json / memphis_dpd_words.json / memphis_dpd_layer.json — data.memphistn.gov "DPD Building Permits" (Develop 901)
+       littlerock_data_page.html (the CSV links of littlerock.gov's City of LR Data page) + littlerock_permits_head.csv (its first 150 kB)
+       collierville_devactivity.json — Collierville's "DevelopmentActivity_iWorQ" layer */
+  const MEM0 = JSON.parse(FX('memphis_dpd_newest.json')).features;
+  const MEM = MEM0.concat(JSON.parse(FX('memphis_dpd_words.json')).features.filter(f => !MEM0.some(g => g.attributes.Record_ID === f.attributes.Record_ID)));
+  const COLL = JSON.parse(FX('collierville_devactivity.json')).features;
+  const NOW_M = Date.parse('2026-11-02T15:00:00Z'), D3 = P.defaults(), SM = Object.assign({}, D3, { maxAgeDays: 45 });
+  const memOf = id => P.fromMemphis(MEM.find(f => f.attributes.Record_ID === id));
+  const cm = id => P.classify(memOf(id), SM, NOW_M);
+  { const lay = JSON.parse(FX('memphis_dpd_layer.json'));
+    ok('PERMITS3 fixture: the Memphis layer has the fields the adapter reads', P.MEM_FIELDS.every(f => lay.fields.some(x => x.name === f)), lay.fields.map(x => x.name));
+    const p = memOf('COM-NEW-26-000054');
+    ok('Memphis adapter (real row): Record_ID, "Commercial - New", $14M, issued day, ZIP, map point, Develop 901 link', p.src === 'memphis' && p.id === 'COM-NEW-26-000054' && p.type === 'Commercial - New' && p.value === 14000000 && p.issued === '2026-10-26' && p.zip === '38117' && p.lat > 35 && p.lon < -89 && p.link === P.DEVELOP901_RECORD + 'COM-NEW-26-000054', p);
+    ok('Memphis adapter: "APPLY CREDIT" prefix dropped, no contractor in this feed', !/^apply credit/i.test(memOf('COM-ALT-25-001014').desc) && memOf('COM-ALT-25-001014').contractor === '' && memOf('COM-ALT-25-001014').pulledBy === '');
+    ok('Memphis, defaults: the $14M clubhouse → Construction, "Commercial new $14M"', cm('COM-NEW-26-000054').match && cm('COM-NEW-26-000054').reasons.includes('Commercial new $14M') && cm('COM-NEW-26-000054').hint === 'construction', cm('COM-NEW-26-000054'));
+    ok('Memphis, defaults: "REPAIR FIRE DAMAGE, TOTAL RENOVATION" $65k → Mitigation 🔥 at any value', cm('RES-ALT-26-001677').match && cm('RES-ALT-26-001677').hint === 'mitigation' && cm('RES-ALT-26-001677').kinds.includes('fire'), cm('RES-ALT-26-001677'));
+    ok('Memphis, defaults: "rebuild garage due to tree damage" and "damage caused by tree" → Mitigation 🌪 (deck words do not exclude a damage repair)', cm('RES-ALT-26-001684').match && cm('RES-ALT-26-001684').kinds.includes('storm') && cm('RES-ALT-26-001616').match && cm('RES-ALT-26-001616').hint === 'mitigation', [cm('RES-ALT-26-001684'), cm('RES-ALT-26-001616')]);
+    ok('Memphis, defaults: "a tree fell on the house during a storm … replace the roof" → 🏠 Roof after a storm', cm('RES-ALT-26-001497').match && cm('RES-ALT-26-001497').reasons.includes('🏠 Roof after a storm') && cm('RES-ALT-26-001497').kinds.includes('stormRoof'), cm('RES-ALT-26-001497'));
+    ok('Memphis, defaults: the $75M data-center build-out → Construction "🏬 Build-out / tenant improvement"', cm('COM-ALT-26-000531').match && cm('COM-ALT-26-000531').reasons.includes('🏬 Build-out / tenant improvement') && cm('COM-ALT-26-000531').kinds.includes('buildout'), cm('COM-ALT-26-000531'));
+    ok('Memphis, defaults: a certificate of occupancy ("No hazardous materials") is not a lead and not ☢️', !cm('COO-26-000912').match && !(cm('COO-26-000912').flags.envWords || []).length, cm('COO-26-000912'));
+    ok('Memphis, defaults: "brick mold" trim and "inspection for water damage, mold …" are not ☢️ findings', !cm('RES-ALT-26-001691').match && !cm('RES-ALT-26-001648').match, [cm('RES-ALT-26-001691').why, cm('RES-ALT-26-001648').why]);
+    ok('Memphis, defaults: a $1.1M new house and a $668k office remodel stay out ($1M, no residential)', !cm('RES-NEW-26-000844').match && !cm('COM-ALT-26-000623').match);
+    ok('…the same office remodel is in with a $250k minimum, as a build-out', (() => { const c = P.classify(memOf('COM-ALT-26-000623'), Object.assign(P.clean({ minValue: 250000 }), { maxAgeDays: 45 }), NOW_M); return c.match && c.kinds.includes('buildout'); })()); }
+
+  { const L = P.fromLittleRockCsv(FX('littlerock_permits_head.csv'), 'https://littlerock.gov/x.csv'), by = id => L.find(x => x.id === id);
+    const raw = FX('littlerock_permits_head.csv'), cutRow = raw.slice(raw.lastIndexOf('\n') + 1);
+    ok('Little Rock adapter (real file head): one permit per number (the file has a row per fee), the cut-off last row dropped', L.length === new Set(L.map(x => x.id)).size && L.length > 50 && L.every(x => x.type && x.number) && L.filter(x => x.address).length > 100 && cutRow.length > 0, { n: L.length });
+    const c1 = by('202613274');
+    ok('…a row: "Building Permit - New", Commercial, $455,000, contractor, filed day, pulled by a contractor', c1.type === 'Building Permit - New' && c1.subtype === 'Commercial' && c1.value === 455000 && c1.contractor === 'Junkin Construction Company' && c1.filed === '2026-04-24' && c1.pulledBy === 'contractor', c1);
+    ok('…"2026 Apr 24 03:43:02 PM" → 2026-04-24; a contractor class prefix ("cl 3", "under 50k") is trimmed', P.lrDay('2026 Apr 24 03:43:02 PM') === '2026-04-24' && by('202613297').contractor === 'HAYS PROPERTY SOLUTIONS LLC' && by('202613188').contractor === 'Rebath of Little Rock', [by('202613297').contractor, by('202613188').contractor]);
+    const NOW_L = Date.parse('2026-04-26T15:00:00Z'), SL = Object.assign(P.defaults(), { maxAgeDays: 30 });
+    const cl2 = id => P.classify(by(id), SL, NOW_L);
+    ok('Little Rock, defaults: "Repairing damage caused fire near chimney" $64,628 → Mitigation 🔥', cl2('202613295').match && cl2('202613295').hint === 'mitigation', cl2('202613295'));
+    ok('…"install fire blocking" in a new house is not a fire', !P.classify(by('202613196'), P.clean({ maxAgeDays: 30, minValue: 25000, include: { residentialNew: true } }), NOW_L).flags.fire);
+    ok('…electrical / plumbing / mechanical permits only show for damage words (trade-only otherwise)', L.filter(x => /^(Electrical|Plumbing|Mechanical) Permit/.test(x.type)).filter(x => P.classify(x, SL, NOW_L).match).every(x => P.classify(x, SL, NOW_L).hint === 'mitigation'));
+    ok('lrLatest: the newest "Planning_and_Development_Permits…csv" link on the page', P.lrLatest(FX('littlerock_data_page.html')) === 'https://littlerock.gov/wp-content/uploads/Planning_and_Development_Permits_-_January_2019_to_Year_to_Date_20260430.csv' && P.lrLatest('<a href="https://littlerock.gov/wp-content/uploads/Planning_and_Development_Permits_-_x_20260430.csv">a</a><a href="https://littlerock.gov/wp-content/uploads/Planning_and_Development_Permits_-_x_20261031.csv">b</a>').endsWith('20261031.csv'));
+    ok('csvRows: quotes, "" and line breaks inside quotes; a cut-off row is not returned', (() => { const r = P.csvRows('a,b\n"x, ""y""","line1\nline2"\n"cut'); return r.rows.length === 2 && r.rows[1][0] === 'x, "y"' && r.rows[1][1] === 'line1\nline2' && r.cut === true; })()); }
+
+  { const C = id => P.fromCollierville(COLL.find(f => String(f.attributes.PermitNum) === id)), NOW_C = Date.parse('2026-10-08T15:00:00Z'), SC = Object.assign(P.defaults(), { maxAgeDays: 120 });
+    const cc = id => P.classify(C(id), SC, NOW_C);
+    ok('Collierville adapter (real row): application #, type, project + description, status, the plan PDF link, a planning application', C('262144').src === 'collierville' && C('262144').type === 'Final Site Plan (Major)' && /Chick-fil-A/.test(C('262144').desc) && C('262144').devApp === true && /^https:\/\//.test(C('262144').link) && C('262144').filed === '2026-08-20', C('262144'));
+    ok('Collierville: a major final site plan (new restaurant) → Construction "📐 Planning application (before the permit)", no value needed', cc('262144').match && cc('262144').reasons.includes('📐 Planning application (before the permit)') && cc('262144').hint === 'construction', cc('262144'));
+    ok('…a 100,000 sf senior-living preliminary site plan → in, 🧓', cc('262147').match && cc('262147').reasons.includes('🧓 Senior living'));
+    ok('…a site-plan change with a 40,750 sf building addition → in; a trash-enclosure change, a mural, a plat, a rezoning → out', cc('262141').match && !cc('262212').match && !cc('262214').match && !cc('262166').match && !cc('261909').match, [cc('262141').why, cc('262212').why]);
+    ok('…planning applications can be switched off (⚙ Filters)', !P.classify(C('262144'), Object.assign(P.clean({ include: { planning: false } }), { maxAgeDays: 120 }), NOW_C).match); }
+
+  /* filters per company (made-up permits) */
+  { const D4 = P.defaults(), cl = o => P.classify(Object.assign({ src: 'x', id: 'X', issued: isoAgo(1) }, o), D4, NOW);
+    const r75 = cl({ type: 'Building Residential - Rehab', desc: 'kitchen remodel', value: 5000, yearBuilt: 1975 });
+    ok('Environmental: a $5k remodel of a 1975 house → in by default, lead + asbestos flags, "Built 1975 (pre-1978 …)"', r75.match && r75.leadRisk && r75.asbestosRisk && r75.hint === 'environmental' && r75.reasons.includes('Built 1975 (pre-1978: lead / asbestos)') && r75.kinds.includes('oldBuilding'), r75);
+    const r79 = cl({ type: 'Building Residential - Rehab', desc: 'bathroom renovation', value: 8000, yearBuilt: 1979 });
+    ok('…built 1979 → asbestos only (pre-1980), "Built 1979 (pre-1980: asbestos)"', r79.match && !r79.leadRisk && r79.asbestosRisk && r79.reasons.includes('Built 1979 (pre-1980: asbestos)'), r79);
+    ok('…built 1990 → no flag, and a $8k remodel is out', !cl({ type: 'Building Residential - Rehab', desc: 'bathroom renovation', value: 8000, yearBuilt: 1990 }).match);
+    const d79 = cl({ type: 'Demolition', desc: 'demolish existing house', value: 9000, yearBuilt: 1979 });
+    ok('…a demolition built 1979 → in, "Demolition — built 1979 (Environmental)"', d79.match && d79.reasons[0] === 'Demolition — built 1979 (Environmental)' && d79.hint === 'environmental', d79);
+    const big70 = cl({ type: 'Building Commercial - Rehab', desc: 'interior renovation', value: 2500000, yearBuilt: 1970 });
+    ok('…a $2.5M commercial renovation of a 1970 building → Construction AND Environmental', big70.match && big70.cos.join() === 'construction,environmental' && big70.hint === 'construction', big70);
+    ok('…the older-building rule can be switched off', !P.classify(Object.assign({ src: 'x', id: 'X', issued: isoAgo(1) }, { type: 'Building Residential - Rehab', desc: 'kitchen remodel', value: 5000, yearBuilt: 1975 }), P.clean({ include: { oldBuilding: false } }), NOW).match);
+    const w = cl({ type: 'Building Residential - Rehab', desc: 'water damage from burst pipe, replace drywall', value: 12000 });
+    ok('Mitigation: a $12k water-damage repair → in by default 💧', w.match && w.hint === 'mitigation' && w.kinds.includes('water'), w);
+    const fr = cl({ type: 'Building Commercial - Rehab', desc: 'rebuild after fire damage to restaurant', value: 900000 });
+    ok('…a $900k commercial fire rebuild → Mitigation AND Construction', fr.match && fr.cos.join() === 'mitigation,construction', fr);
+    const sr = cl({ type: 'Building Residential - Roofing', desc: 'replace roof after hail storm', value: 14000 });
+    ok('…a hail roof → "🏠 Roof after a storm"', sr.match && sr.reasons.includes('🏠 Roof after a storm'), sr);
+    ok('…a plain $14k re-roof (no storm words) stays out by default', !cl({ type: 'Building Residential - Roofing', desc: 'replace shingles', value: 14000 }).match);
+    const ti = cl({ type: 'Building Commercial - Rehab', desc: 'tenant improvement for medical office suite', value: 1400000 });
+    ok('Construction: a $1.4M tenant improvement → "🏬 Build-out / tenant improvement"', ti.match && ti.reasons.includes('🏬 Build-out / tenant improvement') && ti.kinds.includes('buildout'), ti);
+    const ad = P.classify({ src: 'x', id: 'A', issued: isoAgo(1), type: 'Building Residential - Addition', desc: 'add master bedroom addition 600 sq ft', value: 120000 }, P.clean({ minValue: 50000, include: { residentialRehab: true } }), NOW);
+    ok('…a residential addition (when residential is ticked) → "➕ Addition"', ad.match && ad.reasons.includes('➕ Addition') && ad.kinds.includes('addition'), ad);
+    ok('…an "office" room in a house is not a 🏢 Office building', !P.classify({ src: 'x', id: 'B', issued: isoAgo(1), type: 'Building Residential - New', desc: '3 bed 2 bath office laundry', value: 300000 }, P.clean({ minValue: 50000, include: { residentialNew: true } }), NOW).reasons.some(r => /Office/.test(r))); }
+
+  /* the score */
+  { const base = { src: 'x', id: 'S', issued: isoAgo(1), type: 'Building Commercial - New', subtype: 'Office', desc: 'new office building', value: 2000000, lat: 35.21, lon: -89.86 };
+    const sc = (o, ctx) => { const p = Object.assign({}, base, o), c = P.classify(p, P.clean({ minValue: 0, include: { residentialRehab: true, residentialNew: true } }), NOW); return P.score(p, c, Object.assign({ nowMs: NOW }, ctx || {})); };
+    const a = sc({});
+    ok('score: 0–100, the parts add up, a short why ("$2M · Construction: commercial new · 0.9 mi from GrayCo · 1 day old")', a.score >= 0 && a.score <= 100 && a.score === Object.values(a.scoreParts).reduce((x, y) => x + y, 0) && /^\$2M · Construction: commercial new · [\d.]+ mi from GrayCo · 1 day old$/.test(a.scoreWhy), a);
+    ok('…value: $20M > $2M > $200k (everything else the same)', sc({ value: 20000000 }).score > a.score && a.score > sc({ value: 200000 }).score);
+    ok('…recency: 1 day > 10 days > 45 days', a.score > sc({ issued: isoAgo(10) }).score && sc({ issued: isoAgo(10) }).score > sc({ issued: isoAgo(45) }).score);
+    ok('…distance: Bartlett > Nashville (lat/lon)', a.scoreParts.distance > sc({ lat: 36.16, lon: -86.78 }).scoreParts.distance && sc({ lat: 36.16, lon: -86.78 }).miles > 150);
+    const nearJob = sc({}, { jobs: [[35.212, -89.861]] });
+    ok('…an active job 0.2 mi away adds up to 5 and says so', nearJob.scoreParts.distance === Math.min(15, a.scoreParts.distance + 5) && nearJob.jobMiles < 1 && /mi from an active job/.test(nearJob.scoreWhy), nearJob);
+    const res = { type: 'Building Residential - Rehab', subtype: 'Single Family', desc: 'fire damage repair', value: 60000 };
+    const own = sc(Object.assign({ contractor: 'HOMEOWNER' }, res)), con = sc(Object.assign({ contractor: 'Example Builders LLC' }, res));
+    ok('…residential: owner-pulled scores higher than contractor-pulled (10 vs 4)', own.score > con.score && own.scoreParts.who === 10 && con.scoreParts.who === 4 && own.pulledBy === 'owner' && /owner-pulled/.test(own.scoreWhy), [own, con]);
+    ok('…company fit: a fire repair is Mitigation\'s core (fit 20, type 15)', own.scoreParts.fit === 20 && own.scoreParts.type === 15 && /Mitigation: fire damage/.test(own.scoreWhy));
+    ok('…no map point → the ZIP\'s area ("~24 mi" for DeSoto)', (() => { const x = sc({ lat: null, lon: null, zip: '38671' }); return x.milesAbout === true && x.miles === 24 && /~24 mi/.test(x.scoreWhy); })());
+    const nm = P.score(Object.assign({}, base, { nomatch: true }), { match: false, bucket: 'other' }, { nowMs: NOW });
+    ok('…a permit that does not match: fit and type 0', nm.scoreParts.fit === 0 && nm.scoreParts.type === 0 && nm.score < a.score);
+    ok('jobPoints: only active jobs with a map point', P.jobPoints([{ status: 'Active', geoLat: 35.1, geoLng: -89.9 }, { status: 'Complete', geoLat: 35.1, geoLng: -89.9 }, { status: 'Active' }, { status: 'Active', geoLat: 35.2, geoLng: -89.8, deleted: true }]).length === 1); }
+
+  /* the run: Memphis + Little Rock + Collierville stored with the score; list sorts the best first */
+  { const g = rig({ mem: MEM, coll: COLL, jobs: [{ id: 'J1', status: 'Active', geoLat: 35.0960, geoLng: -89.9620 }] });
+    g.kv.gc_permit_settings = P.defaults();
+    const r = await W.run({});
+    const st = g.kv.gc_permit_status, items = g.kv.gc_permit_leads || [], mem = items.filter(x => x.src === 'memphis');
+    ok('run: Memphis read ' + MEM.length + ' (real rows), matched > 5, newest 2026-10-30, no error; added counted', st.memphis.ok && st.memphis.read === MEM.length && st.memphis.matched > 5 && st.memphis.newest === '2026-10-30' && r.added.memphis === mem.length && st.memphis.added === mem.length, st.memphis);
+    const mq = new URLSearchParams(g.calls.find(x => /DPD_Building_Permits/.test(x.path)).q);
+    ok('…the Memphis query: its own 45-day window (the feed is weekly), no certificates of occupancy, newest first', mq.get('where') === "Issued_Date >= TIMESTAMP '" + W._test.centralDay(NOW - 45 * 864e5) + " 00:00:00' AND Sub_Type <> 'CER'" && mq.get('orderByFields') === 'Issued_Date DESC', mq.get('where'));
+    ok('…stored Memphis permits carry score, why, parts, kinds, flags, miles', mem.length > 5 && mem.every(x => typeof x.score === 'number' && x.scoreWhy && x.scoreParts && Array.isArray(x.kinds) && typeof x.leadRisk === 'boolean' && typeof x.miles === 'number' && x.key === 'memphis:' + x.id), mem[0]);
+    ok('…a permit near an active job says "mi from an active job"', mem.some(x => /mi from an active job/.test(x.scoreWhy)), mem.map(x => x.scoreWhy).slice(0, 6));
+    ok('run: Little Rock read the file once (a range of 2.5 MB); its April rows are older than 30 days → 0 matched, no error', st.littlerock.ok && st.littlerock.read > 50 && st.littlerock.matched === 0 && g.st.lrRanges.length === 1 && g.st.lrRanges[0] === 'bytes=0-2499999' && /20260430\.csv$/.test(st.littlerock.fileRead), st.littlerock);
+    ok('run: Collierville read ' + COLL.length + ', only planning applications kept', st.collierville.ok && st.collierville.read === COLL.length && items.filter(x => x.src === 'collierville').every(x => x.kinds.includes('planning')), st.collierville);
+    ok('…no alerts: only gc_permit_* keys, only the permit hosts', Object.keys(g.kv).every(k => /^gc_permit_/.test(k)) && g.calls.every(x => PERMIT_HOSTS.includes(x.host)), [...new Set(g.calls.map(x => x.host))]);
+    await W.run({});
+    ok('second run: Little Rock\'s page is read, the same file is NOT read again ("No newer file")', g.st.lrRanges.length === 1 && g.kv.gc_permit_status.littlerock.skipped === true && /No newer file/.test(g.kv.gc_permit_status.littlerock.note), g.kv.gc_permit_status.littlerock);
+    g.st.lrPage = '<a href="https://littlerock.gov/wp-content/uploads/Planning_and_Development_Permits_-_January_2019_to_Year_to_Date_20261031.csv">new</a>';
+    await W.run({});
+    ok('…a newer file on the page → read once more', g.st.lrRanges.length === 2 && /20261031\.csv$/.test(g.kv.gc_permit_status.littlerock.fileRead));
+    let a = await act('staff', { action: 'list', sort: 'score' });
+    const scs = a.body.items.filter(x => !x.filtered && !x.nomatch).map(x => x.score);
+    ok('list {sort:"score"}: the best first; every item has a score and a why; kinds labels and sources come with it', a.code === 200 && scs.length > 5 && scs.every((v, i) => i === 0 || scs[i - 1] >= v) && a.body.items.every(x => typeof x.score === 'number') && a.body.kinds.buildout && a.body.sources.memphis && a.body.active.memphis === true, scs.slice(0, 10));
+    const top = a.body.items.filter(x => !x.filtered && !x.nomatch)[0];
+    ok('…the top permit is a big job with a why', top.value >= 1000000 && /Construction/.test(top.scoreWhy), top.scoreWhy);
+    a = await act('staff', { action: 'list' });
+    ok('…list without sort keeps newest first', a.body.items[0].issued >= a.body.items[a.body.items.length - 1].issued);
+    const before = JSON.stringify(g.kv.gc_permit_leads.map(x => x.updatedAt));
+    g.tick(5 * 864e5); await W.run({});
+    ok('a later run moves the score as permits age, without marking them "updated"', JSON.stringify(g.kv.gc_permit_leads.map(x => x.updatedAt)) === before && g.kv.gc_permit_leads.filter(x => x.src === 'memphis').some(x => x.scoredAt === W._test.centralDay(NOW + 5 * 864e5)));
+    const g2 = rig({ mem: MEM, coll: COLL, memDown: true, lrDown: true, collDown: true }); await W.run({});
+    ok('a feed that fails → its error in its own status, the others still run', /Memphis answered 500/.test(g2.kv.gc_permit_status.memphis.error) && /503/.test(g2.kv.gc_permit_status.littlerock.error) && /Collierville answered 500/.test(g2.kv.gc_permit_status.collierville.error) && g2.kv.gc_permit_status.nashville.ok, g2.kv.gc_permit_status.memphis);
+    const g3 = rig({ mem: MEM }); g3.kv.gc_permit_settings = P.clean({ memphis: { on: false }, littlerock: { on: false }, collierville: { on: false } }); await W.run({});
+    ok('the new feeds can be turned off in ⚙ Filters (not called)', !g3.calls.some(x => /DPD_Building_Permits|DevelopmentActivity/.test(x.path) || x.host === 'littlerock.gov') && g3.kv.gc_permit_status.memphis.on === false);
+    rig({ mem: MEM });
+    a = await act('admin', { action: 'settings-set', settings: { memphis: { on: false, windowDays: 60 } } });
+    ok('settings-set keeps the feed switches + windows (merge)', a.body.settings.memphis.on === false && a.body.settings.memphis.windowDays === 60 && a.body.settings.littlerock.on === true); }
+
+  /* the new ZIP groups and Owner setup → 🏗️ Permit areas */
+  { const names = ['Tipton Co., TN', 'Fayette Co., TN', 'Marshall Co., MS', 'Crittenden Co., AR'];
+    const grp = n => P.ZIP_GROUPS.find(g => g[0].indexOf(n) === 0);
+    ok('ZIP groups: Tipton, Fayette, Marshall MS, Crittenden AR (West Memphis) listed, OFF by default', names.every(n => grp(n) && grp(n)[2] === false && grp(n)[1].length >= 7) && names.every(n => grp(n)[1].every(z => P.DEFAULT_ZIPS.indexOf(z) < 0)), names.map(grp));
+    ok('…every ZIP is 5 digits and in one group only', (() => { const all = P.ZIP_GROUPS.reduce((x, g) => x.concat(g[1]), []); return all.every(z => /^\d{5}$/.test(z)) && new Set(all).size === all.length; })());
+    ok('…West Memphis 72301 → Crittenden; Covington 38019 → Tipton; Holly Springs 38635 → Marshall MS; Somerville 38068 → Fayette', /^Crittenden/.test(P.areaOfZip('72301')) && /^Tipton/.test(P.areaOfZip('38019')) && /^Marshall/.test(P.areaOfZip('38635')) && /^Fayette/.test(P.areaOfZip('38068')));
+    const cg = P.clean({ customGroups: [['Lauderdale Co., TN', '38063, 38041, 123, 38063', true], { name: 'lauderdale co., tn', zips: ['38001'] }, ['Tipton Co., TN (Covington, Atoka, Munford, Brighton)', ['38019']], ['', ['38001']]] }).customGroups;
+    ok('custom areas cleaned: bad / repeated ZIPs dropped, a repeated name or a built-in name refused', cg.length === 1 && cg[0][0] === 'Lauderdale Co., TN' && cg[0][1].join() === '38063,38041' && cg[0][2] === true, cg);
+    ok('…areaOfZip knows a custom area', P.areaOfZip('38063', cg) === 'Lauderdale Co., TN');
+    const g = rig(); g.kv.gc_permit_settings = P.defaults();
+    ok('areas-set: admins / office only', (await act('staff', { action: 'areas-set', custom: [] })).code === 403);
+    let a = await act('admin', { action: 'areas-set', custom: [['Lauderdale Co., TN', ['38063', '38041'], true]], on: { 'Tipton Co., TN (Covington, Atoka, Munford, Brighton)': true, 'Lauderdale Co., TN': true } });
+    const z = g.kv.gc_permit_settings.shovels.zips;
+    ok('…tick Tipton + add Lauderdale → their ZIPs go on the Shovels list; the area is kept; settings-get lists it', a.code === 200 && z.includes('38019') && z.includes('38063') && g.kv.gc_permit_settings.customGroups[0][0] === 'Lauderdale Co., TN' && (await act('staff', { action: 'settings-get' })).body.zipGroups.some(x => x[0] === 'Lauderdale Co., TN'), a.body);
+    a = await act('admin', { action: 'areas-set', on: { 'Tipton Co., TN (Covington, Atoka, Munford, Brighton)': false } });
+    ok('…untick Tipton → its ZIPs leave the list; Lauderdale stays', !g.kv.gc_permit_settings.shovels.zips.includes('38019') && g.kv.gc_permit_settings.shovels.zips.includes('38063') && g.kv.gc_permit_settings.customGroups.length === 1);
+    const html = require('fs').readFileSync(path.join(__dirname, '../../index.html'), 'utf8');
+    ok('Owner setup has the step "🏗️ Permit areas: add counties or ZIP codes" (opens window._gcPermitAreasOpen, which calls areas-set)', /id: 'permit_areas'[^\n]*open: '_gcPermitAreasOpen'/.test(html) && /W\._gcPermitAreasOpen = function/.test(html) && /action: 'areas-set'/.test(html)); }
+
+  /* the weekly Develop 901 To-Do is only a fallback now */
+  { const PR = require(path.join(__dirname, '../../netlify/functions/_lib/permit-records.js'));
+    const kv = {}, todos = []; const clock = Date.parse('2026-11-30T15:00:00Z');   /* a Monday */
+    PR.D.now = () => clock; PR.D.kvGet = async k => (k in kv ? JSON.parse(JSON.stringify(kv[k])) : null);
+    PR.D.todo = async (id, label, o) => { if (todos.some(x => x.id === id)) return false; todos.push({ id, label, note: o && o.note }); return true; };
+    kv.gc_permit_status = { memphis: { on: true, ok: true, lastRun: '2026-11-30T11:30:00Z', lastOk: '2026-11-30T11:30:00Z', newest: '2026-11-20', error: '' } };
+    let w = await PR.weeklyTask();
+    ok('Develop 901 To-Do: the Memphis feed is working → no To-Do', w.skipped === 'the Memphis feed is working' && !todos.length, w);
+    kv.gc_permit_status.memphis.error = 'Memphis answered 500';
+    w = await PR.weeklyTask();
+    ok('…the feed failed → the To-Do, with why', w.made && todos.length === 1 && /Why: the Memphis feed failed: Memphis answered 500/.test(todos[0].note), todos);
+    todos.length = 0; delete kv.gc_permit_status.memphis.error; kv.gc_permit_status.memphis.newest = '2026-10-01';
+    await PR.weeklyTask({ force: true });
+    ok('…the feed is stale (newest permit 2 months old) → the To-Do', todos.length === 1 && /stale/.test(todos[0].note), todos);
+    todos.length = 0; kv.gc_permit_settings = { memphis: { on: false } }; kv.gc_permit_status.memphis.newest = '2026-11-20';
+    await PR.weeklyTask({ force: true });
+    ok('…the feed turned off → the To-Do', todos.length === 1 && /turned off/.test(todos[0].note), todos); }
 
   const n = R.filter(Boolean).length; console.log('PERMITS ' + n + '/' + R.length); process.exit(n === R.length ? 0 : 1);
 })().catch(e => { console.error(e); process.exit(1); });

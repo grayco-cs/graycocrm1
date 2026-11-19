@@ -1,0 +1,82 @@
+{
+ "_source": "https://services2.arcgis.com/saWmpKJIUAjyyNVc/arcgis/rest/services/DPD_Building_Permits/FeatureServer/0?f=json (fetched 2026-11-19, trimmed to the shape)",
+ "name": "DPD_Building_Permits",
+ "maxRecordCount": 1000,
+ "editingInfo": {
+  "lastEditDate": 1793546177706,
+  "schemaLastEditDate": 1763622301041,
+  "dataLastEditDate": 1793546177706
+ },
+ "fields": [
+  {
+   "name": "Record_ID",
+   "type": "esriFieldTypeString",
+   "alias": "Record ID"
+  },
+  {
+   "name": "Issued_Date",
+   "type": "esriFieldTypeDate",
+   "alias": "Issued Date"
+  },
+  {
+   "name": "Sub_Type",
+   "type": "esriFieldTypeString",
+   "alias": "Sub Type"
+  },
+  {
+   "name": "Construction_Type",
+   "type": "esriFieldTypeString",
+   "alias": "Construction Type"
+  },
+  {
+   "name": "Valuation",
+   "type": "esriFieldTypeDouble",
+   "alias": "Valuation"
+  },
+  {
+   "name": "Address",
+   "type": "esriFieldTypeString",
+   "alias": "Address"
+  },
+  {
+   "name": "City",
+   "type": "esriFieldTypeString",
+   "alias": "City"
+  },
+  {
+   "name": "Description",
+   "type": "esriFieldTypeString",
+   "alias": "Description"
+  },
+  {
+   "name": "ZIP_Code",
+   "type": "esriFieldTypeString",
+   "alias": "ZIP Code"
+  },
+  {
+   "name": "State",
+   "type": "esriFieldTypeString",
+   "alias": "State"
+  },
+  {
+   "name": "Latitude",
+   "type": "esriFieldTypeDouble",
+   "alias": "Latitude"
+  },
+  {
+   "name": "Longitude",
+   "type": "esriFieldTypeDouble",
+   "alias": "Longitude"
+  },
+  {
+   "name": "ObjectId",
+   "type": "esriFieldTypeOID",
+   "alias": "ObjectId"
+  },
+  {
+   "name": "GlobalID",
+   "type": "esriFieldTypeGlobalID",
+   "alias": "GlobalID"
+  }
+ ]
+}
