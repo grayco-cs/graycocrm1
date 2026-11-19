@@ -56,7 +56,7 @@ if (!flag('child')) {
       try { r = JSON.parse(fs.readFileSync(jf, 'utf8')); } catch (e) {}
       if (!r) r = { profile: p, label: (L.PROFILES[p] || {}).label || p, steps: [], crashed: true, notes: ['the walk did not finish (exit ' + rc + ') — see ' + path.join(runDir, p + '.log')] };
       r.wallSec = Math.round((Date.now() - t0) / 1000);
-      console.log(`  ${p}: ${r.steps.length} steps, ${r.steps.filter(s => s.fails.length).length} with failures (${r.wallSec}s)`);
+      console.log(`  ${p}: ${r.steps.length} steps, ${r.steps.filter(s => s.fails.some(f => f.sev !== 'minor')).length} with critical / major failures, ${r.steps.filter(s => s.fails.length && s.fails.every(f => f.sev === 'minor')).length} with minor findings only (${r.wallSec}s)`);
     } else r = { profile: p, label: (L.PROFILES[p] || {}).label || p, steps: [], notes: [], crawlOnly: true, finished: true };
     if (!flag('no-crawl')) {
       const cf = path.join(runDir, p + '.crawl.json'); const reuse = flag('reuse-crawl') && fs.existsSync(cf);
@@ -74,7 +74,7 @@ if (!flag('child')) {
   fs.writeFileSync(js, JSON.stringify(summary, null, 1));
   fs.writeFileSync(rep, renderHTML(summary, rep));
   console.log(`report: ${rep}\nsummary: ${js}`);
-  console.log(`${summary.pass ? 'PASS' : 'FAIL'} ${buildName}: ${summary.counts.steps} steps on ${results.length} profile(s), ${summary.counts.failedSteps} failed, ${summary.counts.fails} failures (${summary.counts.critical} critical, ${summary.counts.major} major, ${summary.counts.minor} minor); buttons ${summary.counts.buttons || 0}: ${summary.counts.buttonsFail || 0} FAIL (${summary.counts.dead || 0} dead), ${summary.counts.buttonsSlow || 0} SLOW${summary.crashed.length ? '; did not finish: ' + summary.crashed.join(', ') : ''}`);
+  console.log(`${summary.pass ? 'PASS' : 'FAIL'} ${buildName}: ${summary.counts.steps} steps on ${results.length} profile(s), ${summary.counts.failedSteps} failed (critical / major), ${summary.counts.minorSteps} with minor findings only, ${summary.counts.fails} failures (${summary.counts.critical} critical, ${summary.counts.major} major, ${summary.counts.minor} minor); buttons ${summary.counts.buttons || 0}: ${summary.counts.buttonsFail || 0} FAIL (${summary.counts.dead || 0} dead), ${summary.counts.buttonsSlow || 0} SLOW${summary.crashed.length ? '; did not finish: ' + summary.crashed.join(', ') : ''}`);
   process.exit(summary.pass ? 0 : 1);
 }
 function runLocked(p, jf, snapDir, logf, mode){
@@ -125,7 +125,7 @@ async function tapAt(x, y){ lastTap = Date.now(); if (phone) await page.touchscr
 async function locate(q){
   return A.ev(q => {
     const rx = q.rx ? new RegExp(q.rx, q.fl || 'i') : null;
-    const vis = e => { const s = getComputedStyle(e); if (s.display === 'none' || s.visibility === 'hidden') return false; const r = e.getBoundingClientRect(); return r.width > 2 && r.height > 2; };
+    const vis = e => { if (e.checkVisibility && !e.checkVisibility()) return false; const s = getComputedStyle(e); if (s.display === 'none' || s.visibility === 'hidden') return false; const r = e.getBoundingClientRect(); return r.width > 2 && r.height > 2; };
     const t = e => (e.innerText || e.getAttribute('aria-label') || e.title || e.value || '').replace(/\s+/g, ' ').trim();
     let L = [...document.querySelectorAll(q.sel || 'button,[role=button],a,[onclick],[data-ra-a],[data-t],.btn,label,summary,[tabindex]')].filter(vis);
     if (q.within) { const W = [...document.querySelectorAll(q.within)].filter(vis).pop(); L = W ? L.filter(e => W.contains(e)) : []; }
@@ -163,7 +163,10 @@ async function scrollEnd(){
     const doc = document.scrollingElement; let n = 0;
     if (!sc && doc.scrollHeight > innerHeight + 40) sc = doc;
     if (!sc) return { scrolled: false };
-    for (let i = 0; i < 40; i++) { const before = sc.scrollTop; sc.scrollTop = sc.scrollHeight; await new Promise(r => setTimeout(r, 120)); n++; if (Math.abs(sc.scrollTop - before) < 2) break; }
+    /* to the real end: a page that draws more as it is scrolled (or finishes drawing a moment later) is followed until its
+       height and position hold still for ~0.6 s */
+    let still = 0;
+    for (let i = 0; i < 60 && still < 3; i++) { const before = sc.scrollTop, h0 = sc.scrollHeight; sc.scrollTop = sc.scrollHeight; await new Promise(r => setTimeout(r, 200)); n++; if (Math.abs(sc.scrollTop - before) < 2 && sc.scrollHeight === h0) still++; else still = 0; }
     return { scrolled: true, el: (sc.id ? '#' + sc.id : sc.tagName) + (typeof sc.className === 'string' && sc.className ? '.' + sc.className.split(' ')[0] : ''), h: sc.scrollHeight, n };
   }).catch(e => ({ scrolled: false, err: e.message }));
 }
@@ -242,16 +245,27 @@ async function open(roleKey, extraInit){
 }
 
 /* close what is on top (the way a person does: the ✕ / Close / ‹ Back on screen) */
+/* PHONEUI: every Field page / sheet has ONE ‹ Back (.gc-pu-back, in its top bar; the panel's own Back / ✕ is hidden with
+   data-gc-pu-own-back). It is taken first: a small ✕ inside the page is often a row's "remove", not the way out. */
+const PU_BACK = '.gc-pu-back:not([data-gc-pu-own-back])';
 async function back(st, rx){
-  const p = await locate({ rx: rx || '^(‹ ?Back|‹|←|✕|×|Close|Done|‹ Home)$' });
-  if (!p) throw new Error('could not find a close / back button');
+  let p = rx ? null : await locate({ sel: PU_BACK });
+  if (!p) p = await locate({ rx: rx || '^(‹ ?Back|‹|←|✕|×|Close|Done|‹ Home)$' });
+  if (!p) {
+    /* the screen closed by itself (approving the last item on it, a save that returns to the job): the walk is where Back
+       would have taken it — noted, not a failure */
+    const where = await A.ev(() => !!document.querySelector('#_gcJobDash') && document.querySelector('#_gcJobDash').getBoundingClientRect().width > 0 ? 'the job page' : '').catch(() => '');
+    if ((await fieldHome()) || where) { if (st) st.info.back = 'no Back needed: already on ' + (where || 'Field home') + ' (the screen closed itself)'; return null; }
+    throw new Error('could not find a close / back button');
+  }
   if (p.covered && st) st.fails.push({ check: 'closeback', msg: `"${p.text}" is covered by ${p.by}` });
   await tapAt(p.x, p.y); await sleep(600); return p;
 }
 /* the crawler's way back: the ✕ / Close / ‹ Back / Cancel of what is on top (Esc on the desk) */
 async function crawlBack(){
   const sig0 = await A.ev(() => [...document.body.children].filter(e => getComputedStyle(e).display !== 'none' && getComputedStyle(e).position === 'fixed').length + '|' + (localStorage.getItem('grayco_view') || '') + '|' + (document.elementFromPoint(innerWidth / 2, innerHeight * 0.4) || {}).className).catch(() => '');
-  const p = await locate({ rx: '^(‹ ?Back|‹|←|✕|×|✖|Close|Done|Cancel|‹ Home|Back|Not now|OK)$' });
+  let p = await locate({ sel: PU_BACK });
+  if (!p) p = await locate({ rx: '^(‹ ?Back|‹|←|✕|×|✖|Close|Done|Cancel|‹ Home|Back|Not now|OK)$' });
   if (p) { await tapAt(p.x, p.y); await sleep(700); const s1 = await A.ev(() => [...document.body.children].filter(e => getComputedStyle(e).display !== 'none' && getComputedStyle(e).position === 'fixed').length + '|' + (localStorage.getItem('grayco_view') || '') + '|' + (document.elementFromPoint(innerWidth / 2, innerHeight * 0.4) || {}).className).catch(() => ''); return s1 !== sig0 ? { ok: true, how: p.text } : { ok: false, how: p.text, why: `"${p.text}" did not close it` }; }
   if (!phone) { await page.keyboard.press('Escape'); await sleep(500); return { ok: true, how: 'left menu / Esc' }; }
   /* the phone's bottom bar is always a way out */
@@ -322,7 +336,7 @@ async function summarize(results, snapDir, feats){
       status: !B.length ? (f.ids.length + f.data.length + f.labels.length ? 'NOT SEEN' : 'NO UI') : B.some(b => b.result === 'FAIL') ? 'FAIL' : B.some(b => b.result === 'SLOW') ? 'SLOW' : 'OK' }; });
   const crawlErr = results.filter(r => r.crawl && r.crawl.error).map(r => r.profile + ': ' + r.crawl.error);
   const all = []; results.forEach(r => r.steps.forEach(s => s.fails.forEach(f => all.push(Object.assign({ profile: r.profile, step: s.name, n: s.n, shot: (s.shots[0] || {}).file }, f)))));
-  const c = { steps: results.reduce((a, r) => a + r.steps.length, 0), failedSteps: results.reduce((a, r) => a + r.steps.filter(s => s.fails.length).length, 0), fails: all.length, critical: all.filter(f => f.sev === 'critical').length, major: all.filter(f => f.sev === 'major').length, minor: all.filter(f => f.sev === 'minor').length };
+  const c = { steps: results.reduce((a, r) => a + r.steps.length, 0), failedSteps: results.reduce((a, r) => a + r.steps.filter(s => s.fails.some(f => f.sev !== 'minor')).length, 0), minorSteps: results.reduce((a, r) => a + r.steps.filter(s => s.fails.length && s.fails.every(f => f.sev === 'minor')).length, 0), fails: all.length, critical: all.filter(f => f.sev === 'critical').length, major: all.filter(f => f.sev === 'major').length, minor: all.filter(f => f.sev === 'minor').length };
   const crashed = results.filter(r => r.crashed || !r.finished || r.stopped || !r.steps.length).map(r => r.profile + (r.stopped ? ' (' + r.stopped + ')' : ''));
   /* the bug list: the same failure on many screens is one bug (with every place and screenshot) */
   const bugMap = new Map(); const norm = m => String(m).replace(/\d+(\.\d+)?/g, '#').replace(/"[^"]{0,80}"/g, '"…"').slice(0, 140);

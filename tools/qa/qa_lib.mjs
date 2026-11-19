@@ -76,7 +76,15 @@ export function lsInitScript(plan){
 
 /* in-page probes, installed before the page's own scripts */
 export const PROBE_INIT = `(() => {
-  const Q = window.__qa = { lt: [], err: [] };
+  const Q = window.__qa = { lt: [], err: [], clip: 0, ext: 0 };
+  /* a copy to the clipboard, and a tap that hands off to another app (tel: / sms: / mailto: / maps): reactions the page itself
+     does not draw — counted so the crawler does not call those buttons dead */
+  try { const cb = navigator.clipboard; if (cb) { const w = cb.writeText && cb.writeText.bind(cb); if (w) cb.writeText = t => { Q.clip++; return w(t).catch(() => {}); }; const w2 = cb.write && cb.write.bind(cb); if (w2) cb.write = d => { Q.clip++; return w2(d).catch(() => {}); }; } } catch (e) {}
+  try { const ex = document.execCommand.bind(document); document.execCommand = function(c){ if (/^(copy|cut)$/i.test(c)) Q.clip++; return ex.apply(document, arguments); }; } catch (e) {}
+  const EXT = /^(tel|sms|mailto|maps|geo|facetime|whatsapp):|^https?:[/][/](maps[.](google|apple)[.]com|www[.]google[.]com[/]maps)/i;
+  try { const op = window.open; window.open = function(u){ if (EXT.test(String(u || ''))) Q.ext++; return op.apply(window, arguments); }; } catch (e) {}
+  try { document.addEventListener('click', ev => { const a = ev.target && ev.target.closest && ev.target.closest('a[href]'); if (a && EXT.test(a.getAttribute('href') || '')) Q.ext++; }, true); } catch (e) {}
+  try { const as = Location.prototype.assign, rp = Location.prototype.replace; Location.prototype.assign = function(u){ if (EXT.test(String(u))) { Q.ext++; return; } return as.call(this, u); }; Location.prototype.replace = function(u){ if (EXT.test(String(u))) { Q.ext++; return; } return rp.call(this, u); }; } catch (e) {}
   try { new PerformanceObserver(l => { for (const e of l.getEntries()) Q.lt.push({ t: e.startTime, ms: Math.round(e.duration) }); }).observe({ type: 'longtask', buffered: true }); } catch (e) {}
   /* the offline harness serves the CRM as app.local: the CRM's own "⛔ WRONG SITE" bar (for copies on other hosts) is the
      harness's doing, not the release's — take it away so it does not cover the real screen */
@@ -183,7 +191,8 @@ export function pageAudit(opt){
   const P = (s, el) => { const e = el || {}; return (e.id ? '#' + e.id : '') + (e.className && typeof e.className === 'string' ? '.' + e.className.trim().split(/\s+/).slice(0, 2).join('.') : '') + (s ? ' "' + s + '"' : ''); };
   const txt = e => (e.innerText || e.textContent || e.getAttribute('aria-label') || e.title || '').replace(/\s+/g, ' ').trim().slice(0, 40);
   const rgba = s => { const m = /rgba?\(([^)]+)\)/.exec(s || ''); if (!m) return null; const p = m[1].split(/[ ,/]+/).filter(Boolean).map(Number); return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 }; };
-  const vis = e => { if (!e || !e.isConnected) return false; const s = getComputedStyle(e); if (s.display === 'none' || s.visibility === 'hidden' || +s.opacity === 0) return false; const r = e.getBoundingClientRect(); return r.width > 2 && r.height > 2 && r.bottom > 0 && r.top < vh && r.right > 0 && r.left < vw; };
+  /* (checkVisibility: the inside of a closed <details> / a content-visibility:hidden box still has a layout box, but is not drawn) */
+  const vis = e => { if (!e || !e.isConnected) return false; if (e.checkVisibility && !e.checkVisibility()) return false; const s = getComputedStyle(e); if (s.display === 'none' || s.visibility === 'hidden' || +s.opacity === 0) return false; const r = e.getBoundingClientRect(); return r.width > 2 && r.height > 2 && r.bottom > 0 && r.top < vh && r.right > 0 && r.left < vw; };
   const bgOf = e => { let c = { r: 255, g: 255, b: 255 }; const stack = []; for (let x = e; x && x.nodeType === 1; x = x.parentElement) { const s = getComputedStyle(x); const bc = rgba(s.backgroundColor); if (s.backgroundImage && s.backgroundImage !== 'none' && !/url\(/.test(s.backgroundImage)) { const m = /rgba?\([^)]+\)/.exec(s.backgroundImage); if (m) stack.push(Object.assign(rgba(m[0]), { grad: true })); } if (bc && bc.a > 0) { stack.push(bc); if (bc.a >= 0.99) break; } }
     for (let i = stack.length - 1; i >= 0; i--) { const s = stack[i]; c = { r: s.r * s.a + c.r * (1 - s.a), g: s.g * s.a + c.g * (1 - s.a), b: s.b * s.a + c.b * (1 - s.a), grad: c.grad || s.grad }; } return c; };
   const hsl = c => { const r = c.r / 255, g = c.g / 255, b = c.b / 255, mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2; let h = 0, s = 0; if (mx !== mn) { const d = mx - mn; s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn); h = mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4; h *= 60; } return { h, s, l }; };
@@ -248,6 +257,9 @@ export function pageAudit(opt){
       if (e.closest('[role=dialog]')) continue; const par = e.parentElement && e.parentElement.closest && [...document.querySelectorAll('body *')].length && null;
       let inLayer = false; for (let a = e.parentElement; a && a !== document.body; a = a.parentElement) { const q = getComputedStyle(a); if (q.position === 'fixed') { inLayer = true; break; } } if (inLayer) continue;
       if (!txt(e) && !e.querySelector('button,svg,img')) continue;
+      /* a status note that cannot take a tap (the "☁ Sent ✓" chip, a toast): it fades by itself and covers no button — listed, not a failure
+         (the unsent note has its own check) */
+      if (s.pointerEvents === 'none' || /^(status|alert)$/.test(e.getAttribute('role') || '')) { if (e.id !== 'gc-unsent-note') out.warns.push({ check: 'floating', msg: 'a status note over the content: ' + P(txt(e), e) }); continue; }
       fl.push(P(txt(e), e) + ` @${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}x${Math.round(r.height)}`);
     }
     if (fl.length) out.fails.push({ check: 'floating', msg: `${fl.length} floating pill/button over the content mid-screen`, list: fl.slice(0, 6) });
@@ -264,7 +276,7 @@ export function pageAudit(opt){
   }
   // 7. text contrast (AA spot check)
   const tx = []; const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-  for (let n = walker.nextNode(); n && tx.length < 220; n = walker.nextNode()) { if (!n.nodeValue.trim() || n.nodeValue.trim().length < 2) continue; const e = n.parentElement; if (!e || tx.includes(e) || !vis(e) || !onScreen(e)) continue; const r = e.getBoundingClientRect(); if (r.top < 0 || r.bottom > vh) continue; const hh = document.elementFromPoint(Math.min(vw - 1, r.left + r.width / 2), r.top + r.height / 2); if (!hh || !(e === hh || e.contains(hh) || hh.contains(e))) continue; tx.push(e); }
+  for (let n = walker.nextNode(); n && tx.length < 220; n = walker.nextNode()) { if (!n.nodeValue.trim() || n.nodeValue.trim().length < 2) continue; if (!/[\p{L}\p{N}]/u.test(n.nodeValue)) continue; /* an emoji / symbol alone (🎤): drawn in its own colors, not the text color */ const e = n.parentElement; if (!e || tx.includes(e) || !vis(e) || !onScreen(e)) continue; const r = e.getBoundingClientRect(); if (r.top < 0 || r.bottom > vh) continue; const hh = document.elementFromPoint(Math.min(vw - 1, r.left + r.width / 2), r.top + r.height / 2); if (!hh || !(e === hh || e.contains(hh) || hh.contains(e))) continue; tx.push(e); }
   const low = [];
   for (const e of tx) { const s = getComputedStyle(e); const fg = rgba(s.color); if (!fg || fg.a < 0.3) continue; const bg = bgOf(e); if (bg.grad) continue; const f = { r: fg.r * fg.a + bg.r * (1 - fg.a), g: fg.g * fg.a + bg.g * (1 - fg.a), b: fg.b * fg.a + bg.b * (1 - fg.a) }; const size = parseFloat(s.fontSize); const big = size >= 24 || (size >= 18.6 && +s.fontWeight >= 700); const need = big ? 3 : 4.5; const c = cr(f, bg); if (c < need) low.push({ t: txt(e), c: Math.round(c * 100) / 100, need, fg: s.color, bg: `rgb(${Math.round(bg.r)},${Math.round(bg.g)},${Math.round(bg.b)})` }); }
   out.info.contrastChecked = tx.length; out.info.contrastLow = low.length;
