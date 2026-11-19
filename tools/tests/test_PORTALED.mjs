@@ -32,6 +32,9 @@ const LIST_KEYS = ['projects', 'projectDocs', 'users', 'customers', 'schedule', 
 {
   const jobs = W.get('projects');
   const j = jobs.find(x => x.id === S.pid), o = jobs.find(x => x.id === S.other);
+  /* PORTALPOL: the sample's sent estimates / approved change orders count as already told (patch Q's 30-s background "new papers" scan
+     starts 90 s after load — this test's admin session now runs longer; the check below is about what the EDITOR asks for) */
+  j.portalNotified = Object.fromEntries((W.get('estimates') || []).filter(e => e.pid === S.pid).map(e => ['est:' + e.id, '2026-10-30T12:00:00Z']).concat((W.get('cos') || W.get('changeOrders') || []).filter(c => c.pid === S.pid).map(c => ['co:' + c.id, '2026-10-30T12:00:00Z'])));
   Object.assign(j, { pm: 'Demo PM', portalUrl: 'https://crm.grayco-cs.com/portal.html#t=' + S.link, portalAt: '2026-10-02T12:00:00Z', updatedAt: '2026-11-01T12:00:00Z', createdAt: '2026-10-01T12:00:00Z' });
   Object.assign(o, { pm: 'Other PM', portalUrl: 'https://crm.grayco-cs.com/portal.html#t=' + S.otherLink, updatedAt: '2026-11-01T12:00:00Z', createdAt: '2026-10-01T12:00:00Z' });
   jobs.push({ id: 'PNOPORT', name: 'Sample Customer — Deck', client: S.customer.name, clientEmail: S.customer.email, clientPhone: S.customer.phone, address: S.customer.address, autoPO: 'S1002', pm: 'Demo PM', status: 'bidding', type: 'Residential', created: '2026-10-01', createdAt: '2026-10-01T12:00:00Z', updatedAt: '2026-11-01T12:00:00Z' });
