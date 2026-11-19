@@ -86078,7 +86078,10 @@ window._gcForceFixSchedule = async function(silent){
           window._gcReportSync(res.ok || (res.status>=400 && res.status<500 && res.status!==429), res.status);  // 409 = conflict but reachable
           return res;
         }).catch(function(err){
-          window._gcReportSync(false, 0);
+          /* APPLAG: a request this page cut short itself (a closed screen, a give-up timer) is not the cloud failing — counted as
+             "no signal" it paused every cloud call for 2–8 s (answered "503 sync backoff", so saves showed "not sent") and sent the
+             save queue's lists the long way (a full read of each, then the upload) */
+          if(!(err && err.name === 'AbortError')) window._gcReportSync(false, 0);
           throw err;
         });
       }
