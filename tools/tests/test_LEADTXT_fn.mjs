@@ -180,7 +180,7 @@ async function three(){ await web('W1', 'Jo Smith', '9015550111'); await web('W2
   for (const [id, nm, ph] of [['L1', 'Lu One', '9015550311'], ['L2', 'Lu Two', '9015550312']]) { t += 60000; await SA.leads([{ id, key: id, title: 'Roof', source: 'Google LSA', contact: { name: nm, phone: ph } }], { [id]: { id, source: 'Google LSA', leadExtra: { leadSource: 'Google LSA', lsaCheck: 'pending' } } }, () => false); }
   sent.length = 0;
   r = await txt(NICK, 'bad bad');
-  ok(r && r.multi && decided.length === 2 && decided.every(d => d.isLsa && !d.good) && /Dispute the BAD Google LSA leads: https:\/\/ads\.google\.com\/localservices\/leads/.test(to(NICK)[0].body), 'two Google LSA BADs → one dispute line', to(NICK)[0] && to(NICK)[0].body);
+  ok(r && r.multi && decided.length === 2 && decided.every(d => d.isLsa && !d.good) && ((to(NICK)[0].body.match(/\nDispute [A-Z0-9]{4} .*: https:\/\/ads\.google\.com\/localservices\/leads/g) || []).length === 2), 'two Google LSA BADs → a dispute link for each', to(NICK)[0] && to(NICK)[0].body);
 
   /* a PM answers two of his leads at once */
   reset(); await three();

@@ -764,11 +764,17 @@ async function lsaMulti(ph, who, isAdm, list, mp){
     results.push(Object.assign({ code: t.rec.code, verb: t.a.verb, mapped: !!t.mapped }, r.res)); lines.push(r.line); }
   const disp = todo.filter(t => t.a.verb === 'bad' && isAdm && t.rec.isLsa !== false);
   let txt = 'GrayCo: ' + (todo.length ? todo.length + ' lead' + (todo.length === 1 ? '' : 's') + ' updated:\n' + lines.join('\n') : 'nothing saved.');
-  if (disp.length) txt += '\nDispute the BAD Google LSA lead' + (disp.length > 1 ? 's' : '') + ': ' + (s(disp[0].rec.link) || LSA_LEADS_URL);
+  /* LSALINKS: every BAD Google LSA lead gets its own dispute link, right under the list (owner 11/19) */
+  let dispTxt = '';
+  if (disp.length === 1) dispTxt = '\nDispute ' + disp[0].rec.code + ' in Google: ' + (s(disp[0].rec.link) || LSA_LEADS_URL);
+  else if (disp.length) disp.forEach(t => { dispTxt += '\nDispute ' + t.rec.code + ' ' + clip(t.rec.name, 24) + ': ' + (s(t.rec.link) || LSA_LEADS_URL); });
   if (dup.length) txt += '\n' + dup.join(', ') + ' answered twice — the first answer counts.';
   if (mp.unclear.length) txt += '\n' + mp.unclear.join(', ') + ': no GOOD / BAD after the code — not saved.';
   if (askMore) txt += '\n' + askMore;
-  let c = null; try { c = await sendL(ph, txt.slice(0, 900), leadNum()); } catch (e) {}
+  let c = null, dispSep = false;
+  if (dispTxt && (txt + dispTxt).length > 900) dispSep = true; else txt += dispTxt;   /* never cut a dispute link off: too long → its own text right after */
+  try { c = await sendL(ph, txt.slice(0, 900), leadNum()); } catch (e) {}
+  if (dispSep) { try { await sendL(ph, ('GrayCo: dispute ' + (disp.length === 1 ? 'this lead' : 'these leads') + ' in Google:' + dispTxt).slice(0, 900), leadNum()); } catch (e) {} }
   return { handled: true, staff: who.email, multi: true, lsa: results.length ? results[0].lsa : '', results, summary: todo.map(t => t.a.verb.toUpperCase() + ' ' + t.rec.code).join(', '), confirmed: !!(c && c.ok), notSaved: bare.length && !todo.some(t => t.mapped) ? bare.length : 0, unclear: mp.unclear };
 }
 async function lsaReply(ph, body, who){
