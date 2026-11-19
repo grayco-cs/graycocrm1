@@ -259,7 +259,13 @@ async function desk(X){
   await X.open('office');
   const A = K.A, page = K.page; const D = deskKit(X, K);
   await step('Open the CRM (time to the dashboard)', { scroll: false }, async () => { await page().reload({ waitUntil: 'commit' }); return !!(await until(() => A().ev(() => !!window._crm && document.querySelectorAll('nav button, aside button').length > 5), 60000)); });
-  await step('Dashboard', {}, st => D.go('^(🏠 ?|📊 ?)?Dashboard$', 'dashboard', null, st));
+  await step('Dashboard', {}, async st => { const ok = await D.go('^(🏠 ?|📊 ?)?Dashboard$', 'dashboard', null, st);
+    /* owner 11/19: REGFIX's "Fix bill amounts the 11-13 import changed" is out of the release (the import guard stays) */
+    const r = await A().ev(() => ({ fix: typeof window._gcBillAmtFix !== 'undefined', guard: typeof window._gcQbBillAmtHold === 'function' })).catch(() => ({}));
+    st.info.regfixAmt = r;
+    if (r.fix) st.fails.push({ check: 'stuck', sev: 'critical', msg: 'the bill-amount restore (REGFIX-AMT, "Fix bill amounts the 11-13 import changed") is in the build — the owner took it out' });
+    if (r.guard === false) st.fails.push({ check: 'stuck', sev: 'major', msg: 'the QuickBooks import guard (_gcQbBillAmtHold) is missing' });
+    return ok; });
   await step('To-Do (collapsed groups)', {}, async st => { const ok = await D.go('^(☑ ?|✅ ?)?To-?Do', 'todo', null, st); st.info.groups = await A().ev(() => { const d = [...document.querySelectorAll('details')].filter(e => e.getBoundingClientRect().width > 0); return { details: d.length, open: d.filter(e => e.open).length }; }); return ok; });
   for (const [tab, rx] of [['Client', '^[^a-z]*Client'], ['Sub', '^[^a-z]*Sub( invoices| bills)?'], ['Supplier', '^[^a-z]*Supplier']]) await step(`Invoices → ${tab} tab`, {}, st => D.go('^(🧾 ?|💵 ?)?Invoices$', 'invoices', rx, st));
   await step('Accounting', {}, st => D.go('^(📒 ?|🏦 ?|💼 ?)?Accounting$', 'taxcenter', null, st));
@@ -271,6 +277,24 @@ async function desk(X){
     if (ok && c === 'construction' && (st.info.sdsText || !st.info.notConstruction)) st.fails.push({ check: 'stuck', sev: 'major', msg: 'on Construction the Materials & SDS tab should say it is for Mitigation / Environmental and show no library' + (st.info.sdsText ? ' (it showed the library)' : '') });
     return ok; });
   await step('Marketing dashboard (office)', {}, st => D.go('^(📣 ?|📈 ?)?Marketing', 'marketing', null, st));
+  /* AUTOUPD (owner 11/19): the server gets a newer build → this copy updates by itself: no "Yes, update" / "Tap to update" bar,
+     an "Updating…" note, one reload */
+  await step('Server has a newer build → updates by itself (no bar)', { scroll: false, timed: false, passive: false }, async st => {
+    const pg = page(); let navs = 0; const onNav = () => { navs++; }; pg.on('domcontentloaded', onNav);
+    const newer = '99.999-2099-12-31-qa';
+    await pg.route('**/version.txt*', r => r.fulfill({ status: 200, contentType: 'text/plain', body: newer })).catch(() => {});
+    await A().ev(() => { try { if (window._gcBootWatch && window._gcBootWatch.check) window._gcBootWatch.check(); window.dispatchEvent(new Event('focus')); } catch (e) {} }).catch(() => {});
+    let bar = false, toast = false; const t0 = Date.now();
+    while (Date.now() - t0 < 40000 && !navs) { await X.sleep(300); const v = await A().ev(() => ({ b: !!(document.getElementById('gc-update-bar') || document.getElementById('gc-bw-update')), t: !!document.getElementById('gc-bw-updating') })).catch(() => ({})); if (v.b) bar = true; if (v.t) toast = true; }
+    st.info.autoUpdate = { reloadSec: navs ? Math.round((Date.now() - t0) / 1000) : null, toast, bar };
+    await X.sleep(6000);
+    await pg.unroute('**/version.txt*').catch(() => {}); pg.off('domcontentloaded', onNav);
+    if (bar) st.fails.push({ check: 'floating', sev: 'major', msg: 'an update bar ("Yes, update" / "Tap to update") showed — the owner wants it to update by itself' });
+    if (!navs) st.fails.push({ check: 'stuck', sev: 'critical', msg: 'the server had a newer build and this copy did not update by itself within 40 s' });
+    if (navs > 1) st.fails.push({ check: 'stuck', sev: 'critical', msg: `it reloaded ${navs} times (one update, never a loop)` });
+    await X.until(() => A().ev(() => !!window._crm && document.querySelectorAll('nav button, aside button').length > 5), 60000);
+    return true;
+  });
   if (X.acc.map.marketing) {
     try { await A().close(); } catch (e) {}
     await X.open('marketing');
