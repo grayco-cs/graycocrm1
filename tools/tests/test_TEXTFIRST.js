@@ -3,6 +3,7 @@
 const assert = require('assert'), path = require('path');
 process.env.TWILIO_FROM = '+19015550999'; process.env.RESEND_API_KEY = 'k';
 const SA = require(path.join(__dirname, '../../netlify/functions/_lib/smsalert.js'));
+{ const AUTO = require(path.join(__dirname, '../../netlify/functions/_lib/automations.js')); const _on = AUTO.isOn; AUTO.isOn = async function(k, o){ return k === 'lead_customer_autotext' ? true : _on.call(AUTO, k, o); }; }   /* NOCUSTTEXT: these tests cover the customer texts, so the switch is ON here */
 const BA = require(path.join(__dirname, '../../netlify/functions/_lib/bid-alerts.js'));
 const USERS = [{ name: 'Nick Thomas', email: 'nthomas@grayco-cs.com', role: 'admin', cell: '9015550001', active: true },
   { name: 'Wesley Johnson', email: 'wjohnson@grayco-cs.com', role: 'admin', cell: '9015550002', active: true },

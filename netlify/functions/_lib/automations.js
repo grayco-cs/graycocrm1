@@ -128,6 +128,7 @@ var ROWS = [
   ['price_index_monthly', 'rec', 'C', 0, 0, 'server', 'Monthly price update (PPI)', 'On the 3rd, moves every Products price by the national Producer Price Index change.'],
   ['companycam_new_jobs', 'rec', 'C', 0, 0, 'both', 'CompanyCam "make new jobs"', 'A new 2026+ CompanyCam project becomes a Bidding job with its PM. This is how PM jobs arrive from CompanyCam — while it is OFF, new projects wait on the review list.'],
   ['approval_escalation', 'rec', 'C', 0, 0, 'server', 'Approval escalation', 'An admin-step approval waiting 24 h becomes approvable by the office.'],
+  ['lead_customer_autotext', 'cust', 'A', 0, 0, 'server', 'Automatic texts to new leads', 'OFF (owner 11/19: "we don\'t tell the customer anything unless we physically call or text them"): no automatic text to a lead — no "we got your call" / "reply with what you need" ask, no "your PM is …" text when a PM is assigned.'],
   ['lead_auto_assign', 'rec', 'C', 0, 1, 'both', '5 PM lead auto-assign', 'A held lead is assigned to the suggested person at 5 PM. OFF: it stays "Suggested" until an admin acts.'],   /* LEADAUTO (owner 11/9): ON by default */
   ['bid_watch', 'rec', 'C', 0, 1, 'server', 'Public bid watch', 'Reads public bid listings; makes CRM leads and draft bid-portal jobs.'],   /* BIDWATCHON (owner 11/9: are we scanning all public bid websites) */
   ['bid_portal_drafts', 'rec', 'C', 0, 1, 'server', 'Bid-portal drafts', 'Creates the draft bid-portal jobs that waited for the portal.'],   /* BPDRAFTSON (owner 11/9: yes turn on bid portal drafts) */

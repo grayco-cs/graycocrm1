@@ -706,7 +706,7 @@ function make(d){
     let cell = null; try { cell = await require('./smsalert.js').assigned(x); } catch (e) {}   /* patch SMSALERT */   /* TEXTFIRST: the text first — texted → no e-mail too */
     const r = await deliver(mailAssigned(x), null, [x.assigneeEmail], cell && Array.isArray(cell.to) ? cell.to : []);
     if (!r.ok) await kvCas(KA, v => { const st = loadState(v); if (st.assigned) delete st.assigned[k]; return st; }).catch(() => {});
-    try { await require('./smsalert.js').lsaPmText(lead, x); } catch (e) {}   /* patch LSAFLOW: the LSA customer gets the PM's name and number */
+    try { if (await require('./automations.js').isOn('lead_customer_autotext')) await require('./smsalert.js').lsaPmText(lead, x); } catch (e) {}   /* NOCUSTTEXT (owner 11/19): off unless switched on */   /* patch LSAFLOW: the LSA customer gets the PM's name and number */
     return { sent: r.ok ? 1 : 0, to: r.to, why: r.why || '', cell };
   }
   /* every 10 minutes: an assignment nobody's page reported (a phone offline, …). The first run only takes note. */

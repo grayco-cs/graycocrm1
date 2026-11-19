@@ -621,8 +621,9 @@ async function leads(list, raw, isEm){
         const room2 = room - more2.length;
         return head + (said && !callNote && !cb.sum && room2 > 12 ? ' says "' + clip(said, room2) + '".' : '.') + callNote + more2 + ' ' + link + tail; };   /* LEADLINK */
       try { out.push(await notify({ type: 'lead', lsa: { leadId: s(x.id), code, name: clip(name, 60), phone: callPh, link: s(obj(r.leadExtra).lsaLink || r.lsaLink), said: clip(s(msg).replace(/\s+/g, ' '), 140), em: !!em, isLsa: lsaL, label }, text: lt(0), body: lt, link, only: lsaAdmins(), thread: ph ? 'p:' + ph : 'lsa:' + s(x.id), emergency: em }));   /* a texter's lead and their first text collapse into one alert */ } catch (e) { out.push({ error: s(e && e.message) }); }
-      if (lsaL && !obj(r.leadExtra).lsaCall) try { out.push({ lsaAsk: await lsaAsk(callPh, { leadId: s(x.id), code, name, em, svc: s(obj(r.leadExtra).service || r.service || x.title) }) }); } catch (e) { out.push({ lsaAskError: s(e && e.message) }); }   /* LSAFLOW */
-      else if (!lsaL && /website lead/i.test(label) && callPh.length === 10) try { out.push({ webAsk: await webAsk(callPh, { leadId: s(x.id), name, em, svc: s(obj(r.leadExtra).service || r.service || '') }) }); } catch (e) { out.push({ webAskError: s(e && e.message) }); }   /* WEBTEXT */
+      const custTxt = await require('./automations.js').isOn('lead_customer_autotext').catch(() => false);   /* NOCUSTTEXT (owner 11/19): no automatic text to the lead */
+      if (custTxt && lsaL && !obj(r.leadExtra).lsaCall) try { out.push({ lsaAsk: await lsaAsk(callPh, { leadId: s(x.id), code, name, em, svc: s(obj(r.leadExtra).service || r.service || x.title) }) }); } catch (e) { out.push({ lsaAskError: s(e && e.message) }); }   /* LSAFLOW */
+      else if (custTxt && !lsaL && /website lead/i.test(label) && callPh.length === 10) try { out.push({ webAsk: await webAsk(callPh, { leadId: s(x.id), name, em, svc: s(obj(r.leadExtra).service || r.service || '') }) }); } catch (e) { out.push({ webAskError: s(e && e.message) }); }   /* WEBTEXT */
       continue;
     }
     let tail = link; if (em && callPh.length === 10) { try { tail = link + ' Not real? Block: ' + require('./salesguard.js').blockLink(site(), callPh); } catch (e) {} }   /* patch SALESBLOCK: one tap to block (signed; admins / office, asked first) */
@@ -786,7 +787,7 @@ async function lsaApply(ph, who, isAdm, verb, rec, reason, o){
   if (!good) notes = reason;
   const r = await _D.lsaDecide({ leadId: rec.leadId, name: rec.name, phone: rec.phone, code: rec.code, good, reason: good ? '' : (reason || 'no reason given'), by: who.name || who.email, byEmail: who.email, pm, notes, link: s(rec.link) || LSA_LEADS_URL, isLsa: rec.isLsa !== false });
   await _D.kvCas(SKEY, v => { const st = loadState(v); lsaMarkDone(st, rec.leadId, good ? 'good' : 'bad'); return st; }).catch(() => {});
-  const gTxt = (pm ? 'GOOD — PM ' + pm.name + ' assigned; ' + pm.name.split(' ')[0] + ' and the customer are told.' : 'GOOD — no PM set: pick the PM in CRM Approvals (or reply GOOD ' + rec.code + ' <PM name>).') + (notes ? ' Notes saved on the lead.' : '');
+  const gTxt = (pm ? 'GOOD — PM ' + pm.name + ' assigned; ' + pm.name.split(' ')[0] + ' is told (nothing goes to the customer).' : 'GOOD — no PM set: pick the PM in CRM Approvals (or reply GOOD ' + rec.code + ' <PM name>).') + (notes ? ' Notes saved on the lead.' : '');
   let conf = null; if (!o.quiet) { try { conf = await sendL(ph, 'GrayCo: ' + rec.code + ' ' + clip(rec.name, 40) + ' marked ' + (good ? gTxt : 'BAD (' + clip(reason || 'no reason given', 50) + ') — closed, no PM.' + (rec.isLsa !== false ? ' Dispute it in Google: ' + (s(rec.link) || LSA_LEADS_URL) : '')) + more, leadNum()); } catch (e) {} }
   const line = lsaShort(rec) + ' — ' + (good ? (pm ? 'GOOD, PM ' + pm.name + ' assigned' : 'GOOD, no PM yet (GOOD ' + rec.code + ' <PM>)') + (notes ? ', notes saved' : '') : 'BAD (' + clip(reason || 'no reason given', 40) + '), closed');
   return { res: { handled: true, staff: who.email, lsa: rec.leadId, good, reason: good ? '' : reason, pm: pm ? pm.name : '', pmAsked, notes, saved: r, confirmed: !!(conf && conf.ok) }, line };

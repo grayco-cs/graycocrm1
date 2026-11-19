@@ -4,6 +4,7 @@ const assert = require('assert');
 const path = require('path');
 process.env.TWILIO_FROM = '+19015550999'; process.env.CRM_URL = 'https://crm.test';
 const SA = require(path.join(__dirname, '../../netlify/functions/_lib/smsalert.js'));
+{ const AUTO = require(path.join(__dirname, '../../netlify/functions/_lib/automations.js')); const _on = AUTO.isOn; AUTO.isOn = async function(k, o){ return k === 'lead_customer_autotext' ? true : _on.call(AUTO, k, o); }; }   /* NOCUSTTEXT: these tests cover the customer texts, so the switch is ON here */
 const USERS = [{ name: 'Nick Thomas', email: 'nthomas@grayco-cs.com', role: 'admin', phone: '901-555-0001', active: true },
   { name: 'Wesley Johnson', email: 'wjohnson@grayco-cs.com', role: 'admin', cell: '(901) 555-0002', active: true },
   { name: 'Pat PM', email: 'pat@grayco-cs.com', role: 'PM', cell: '9015550003', active: true }];

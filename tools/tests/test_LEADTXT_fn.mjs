@@ -18,6 +18,7 @@ const WT = path.resolve(process.argv[2] || path.join(HERE, '../..'));
 Object.assign(process.env, { TWILIO_FROM: '+19015550999', CRM_URL: 'https://crm.test', OWNER_EMAILS: 'wjohnson@grayco-cs.com,nthomas@grayco-cs.com' });
 ['TWILIO_FROM_ALERTS', 'SMS_ALERTS_OFF', 'SUPABASE_URL', 'SUPABASE_SERVICE_KEY', 'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN'].forEach(k => { delete process.env[k]; });
 const SA = require(path.join(WT, 'netlify/functions/_lib/smsalert.js'));
+{ const AUTO = require(path.join(WT, 'netlify/functions/_lib/automations.js')); const _on = AUTO.isOn; AUTO.isOn = async function(k, o){ return k === 'lead_customer_autotext' ? true : _on.call(AUTO, k, o); }; }   /* NOCUSTTEXT: these tests cover the customer texts, so the switch is ON here */
 
 let pass = 0, fail = 0;
 function ok(c, m, i){ if (c) { pass++; console.log('  ok   ' + m); } else { fail++; console.log('  FAIL ' + m + (i !== undefined ? '  ' + JSON.stringify(i).slice(0, 900) : '')); } }
