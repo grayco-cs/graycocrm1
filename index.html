@@ -142653,6 +142653,12 @@ function ensureCss(){
     + '#gc-la-dash .hd{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;font-size:14px}#gc-la-dash .hd select{padding:4px 8px;border:1px solid #cfd5e3;border-radius:6px;font:inherit;font-size:13px}#gc-la-dash .cnt{color:#64748b;font-size:12px}'
     + '#gc-la-dash .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:6px;margin-bottom:10px}#gc-la-dash .tile{background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:7px 9px}#gc-la-dash .tile .v{font-size:16px;font-weight:800}#gc-la-dash .tile .l{font-size:10px;color:#64748b;text-transform:uppercase;font-weight:700}#gc-la-dash .tile.warn .v{color:#b45309}#gc-la-dash .tile.hot .v{color:#b91c1c}'
     + '#gc-la-dash .tw{overflow-x:auto}#gc-la-dash table{width:100%;border-collapse:collapse}#gc-la-dash th{text-align:left;font-size:10px;color:#64748b;text-transform:uppercase;padding:5px 6px;border-bottom:1px solid #e2e8f0}#gc-la-dash td{padding:6px;border-bottom:1px solid #f1f5f9;vertical-align:top}#gc-la-dash .sub{color:#64748b;font-size:11px}#gc-la-dash .miss{color:#b45309;font-weight:700}#gc-la-dash .acts{display:flex;gap:4px;flex-wrap:wrap}#gc-la-dash select.gc-la-st{padding:4px 6px;border:1px solid #cfd5e3;border-radius:6px;font:inherit}#gc-la-dash .empty{color:#64748b;padding:6px 0}'
+    /* patch DESKFIT: on a desk the estimating table fits its box (it ran off the right edge, Status cut off) and its rows are one line of
+       buttons again (the action cell was a flex box, which broke it out of the row: four buttons stacked, very tall rows) */
+    + '@media (min-width:641px){#gc-la-dash table{table-layout:fixed}#gc-la-dash th:nth-child(2){width:150px}#gc-la-dash th:nth-child(3){width:18%}#gc-la-dash th:nth-child(4){width:120px}#gc-la-dash th:nth-child(5){width:306px}'
+    + '#gc-la-dash td{overflow:hidden;overflow-wrap:break-word}#gc-la-dash td:first-child b{white-space:normal}#gc-la-dash td.acts{display:table-cell;white-space:nowrap}'
+    + '#gc-la-dash td.acts button,#gc-la-dash .gc-la-due{font-size:12px;padding:3px 7px;min-height:28px;margin:0 4px 0 0;max-width:100%}#gc-la-dash select.gc-la-st{max-width:100%;font-size:12px}}'
+    + '@media (min-width:641px) and (max-width:1199px){#gc-la-dash th:nth-child(5){width:176px}#gc-la-dash td.acts{white-space:normal}#gc-la-dash td.acts button{margin:0 4px 4px 0}}'
     + '@media (max-width:640px){#gc-la-dash table,#gc-la-dash tbody,#gc-la-dash tr,#gc-la-dash td{display:block}#gc-la-dash thead{display:none}#gc-la-dash tr{border:1px solid #e2e8f0;border-radius:6px;margin-bottom:6px;padding:4px}#gc-la-dash td{border:0;padding:3px 4px}}'
     + '.gc-la-new{display:inline-block;margin-left:6px;background:#dc2626;color:#fff;border-radius:4px;padding:0 5px;font:800 9px/16px inherit;font-family:inherit;letter-spacing:.04em;vertical-align:middle}'
     + 'tr[data-gc-new="1"]{background:#fff7ed}tr[data-gc-new="1"]>td:first-child{box-shadow:inset 3px 0 0 #dc2626}'
@@ -223732,7 +223738,7 @@ ST.call(W, sweep, 25000); SI.call(W, sweep, 180000);
 (function(W){
 'use strict';
 if (W.__GC_PATCH_NEWLEAD__) return; W.__GC_PATCH_NEWLEAD__ = true;
-var D = W.document, ST = W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout, SI = W.__GC_NATIVE_SETINTERVAL__ || W.setInterval;
+var D = W.document, ST = W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout, SI = W.__GC_REAL_SETINTERVAL__ || W.__GC_NATIVE_SETINTERVAL__ || W.setInterval;   /* patch NEWLEADSPOP: light work, never idle-paced */
 function s(v){ return v == null ? '' : String(v).trim(); }
 function low(v){ return s(v).toLowerCase(); }
 function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
@@ -223868,7 +223874,7 @@ function closePop(){ POP.open = false; var p = D.getElementById('gc-nl-pop'); if
 function popPaint(L){
   var c = chipEl(), r = c && c.isConnected ? c.getBoundingClientRect() : null;
   if (!L.length || !r || !r.width) { closePop(); return; }
-  var p = D.getElementById('gc-nl-pop');
+  css(); popCss(); var p = D.getElementById('gc-nl-pop');
   if (!p) { p = D.createElement('div'); p.id = 'gc-nl-pop'; p.className = 'gc-nl'; p.setAttribute('role', 'dialog'); p.setAttribute('aria-label', 'New leads for you'); p.setAttribute('data-gc-keep', '1'); D.body.appendChild(p); }
   var sig = L.map(function(l){ return l.id; }).join('|');
   if (p.getAttribute('data-sig') !== sig) { p.setAttribute('data-sig', sig); p.innerHTML = popHtml(L); }

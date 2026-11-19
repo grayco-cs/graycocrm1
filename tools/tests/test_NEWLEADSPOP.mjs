@@ -9,7 +9,7 @@
 //     reload keeps it closed; a newly assigned lead brings the chip back (1);
 //   • the admin on Leads: no card inside the list either, no flicker;
 //   • no sideways scrolling: the page and the Leads list fit at 1366 and 1920 (and 1180: Source moves onto the Lead line);
-//     Projects and Invoices fit their box at 1366.
+//     Projects and Invoices fit their box at 1366; the estimator's Dashboard "My estimating" table too, with short rows.
 // Env: GC_HARNESS (default the session's harness_N.mjs), QA_SNAP (default the newest snapshot under the scratchpad's qa/snap).
 import path from 'path'; import { pathToFileURL } from 'url';
 const SCR = '/tmp/claude-0/-home-user/6a5b2b6b-8a4d-5505-9f82-62521adb6674/scratchpad';
@@ -32,9 +32,11 @@ async function open(who){
   ok(who.role + ': signed in', await H.signIn(A, who.email, 120000));
   await H.waitFor(A, () => (window._crm && window._crm.leads || []).length > 50, null, 120000);
   await sleep(6000);
-  await A.ev(() => window._setView('leads'));
-  await H.waitFor(A, () => !!document.querySelector('#gc-leads-hub #gc-leads-chips'), null, 30000);
-  await sleep(4000);
+  for (let i = 0; i < 3; i++) {   /* the Leads page, its header drawn and the 🔔 chip in it when there is a batch */
+    await A.ev(() => window._setView('leads'));
+    if (await H.waitFor(A, () => !!document.querySelector('#gc-leads-hub #gc-leads-chips') && (!window._gcNewLead.mine().length || !!document.querySelector('#gc-leads-chips #gc-nl-chip')), null, 20000)) break;
+  }
+  await sleep(2000);
   return { A, errs };
 }
 /* watch the chip / card for `ms` while teammates' edits arrive every 3 s (each one redraws the list) */
@@ -101,6 +103,11 @@ async function watch(A, ms){
   await A.ev(nm => window._setLeads(prev => prev.concat([{ id: 'QA-NLP-1', name: 'QA new lead', stage: 'New Lead', assignedTo: nm, assignedBy: 'Office', assignedAt: new Date().toISOString(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }])), est.name);
   await sleep(3000);
   ok('a newly assigned lead brings the chip back (1 new)', await A.ev(() => /\b1 new for you/.test((document.getElementById('gc-nl-chip') || {}).textContent || '') && document.getElementById('gc-nl-chip').isConnected));
+  /* the estimator's Dashboard: "My estimating" fits its box, one line of buttons per row */
+  await A.page().setViewportSize({ width: 1366, height: 900 }); await A.ev(() => window._setView('dashboard'));
+  await H.waitFor(A, () => !!document.querySelector('#gc-la-dash .tw tbody tr'), null, 30000); await sleep(1500);
+  const dsh = await A.ev(() => { const t = document.querySelector('#gc-la-dash .tw'); if (!t) return null; const r = [...t.querySelectorAll('tbody tr')].map(x => x.getBoundingClientRect().height); return { over: t.scrollWidth - t.clientWidth, avg: Math.round(r.reduce((a, b) => a + b, 0) / r.length) }; });
+  ok('Dashboard "My estimating" at 1366 px: no sideways scroll, rows ≈ ' + (dsh && dsh.avg) + ' px (were ~157)', dsh && dsh.over <= 1 && dsh.avg <= 80, dsh);
   ok('no page errors (estimator)', !errs.length, errs);
   await A.close();
 }
