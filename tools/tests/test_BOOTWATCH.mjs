@@ -156,13 +156,15 @@ if (want(3)) {
   /* 3b · someone is TYPING in a box: the update waits while they type, and runs once the box is left */
   {
     const TYPE = `(() => { addEventListener('DOMContentLoaded', () => { if (sessionStorage.getItem('__typed')) return; const t = document.createElement('textarea'); t.id = 'qa-box'; t.style.cssText = 'position:fixed;top:120px;left:10px;z-index:2147483647;width:200px;height:60px'; document.body.appendChild(t); t.focus(); let n = 0; const iv = setInterval(() => { t.focus(); t.value += 'x'; t.dispatchEvent(new Event('input', { bubbles: true })); if (++n >= 16) { clearInterval(iv); sessionStorage.setItem('__typed', '1'); t.blur(); } }, 500); }); })()`;
-    const C = await computer('phone3b', { build, mobile: true, init: [IPHONE, OLDSW, TYPE] }); const pc = C.page();
+    const RL3 = `(() => { try { const L = window.location, r = L.reload.bind(L); Object.defineProperty(L, 'reload', { configurable: true, value: function(){ try { const a = JSON.parse(sessionStorage.getItem('__rl3') || '[]'); a.push({ t: Date.now(), ae: (document.activeElement || {}).id || (document.activeElement || {}).tagName, st: String(new Error().stack).split('\\n').slice(1, 7).join(' | ').slice(0, 700) }); sessionStorage.setItem('__rl3', JSON.stringify(a)); } catch (e) {} return r(); } }); } catch (e) {} })()`;
+    const C = await computer('phone3b', { build, mobile: true, init: [IPHONE, OLDSW, TYPE, RL3] }); const pc = C.page();
     let nc = 0, tReload = 0; const tc = Date.now(); pc.on('domcontentloaded', () => { nc++; if (!tReload) tReload = Date.now() - tc; });
     const c0 = nc; tReload = 0;
     await sleep(6000);
     ok(nc - c0 === 0, '3b: while the box is being typed in, no reload', { navs: nc - c0 });
     await sleep(12000);
     ok(nc - c0 === 1, '3b: once the box was left, it updated by itself (one reload)', { navs: nc - c0, atMs: tReload });
+    console.log('    3b reload calls: ' + JSON.stringify(await C.ev(() => JSON.parse(sessionStorage.getItem('__rl3') || '[]')).catch(() => [])).slice(0, 2500));
     await C.close();
   }
 
