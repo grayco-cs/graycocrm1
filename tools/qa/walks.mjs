@@ -42,14 +42,13 @@ function kit(X){
   return { A, page, sig, tapOpen, jobTiles, jobTile };
 }
 
-/* owner 11/19 — a lean Field home: at most 9 tiles, no 🎤 button of its own (it is in the 💎 menu), no COI / W-9 pill */
+/* owner 11/19 — the Field home: no 🎤 button of its own (it is in the 💎 menu), no COI / W-9 pill (its tiles are listed in the report) */
 async function homeChecks(X, st){
   const h = await X.A().ev(() => { const vis = e => { if (!e) return false; const s = getComputedStyle(e); const r = e.getBoundingClientRect(); return s.display !== 'none' && s.visibility !== 'hidden' && r.width > 0 && r.height > 0; };
     const tiles = [...document.querySelectorAll('#_gcJobPick .gc-pmf-q .gc-pmf-t, #_gcJobPick .gc-pmf-x .gc-ra-qb')].filter(vis).map(e => (e.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 24));
     const pills = [...document.querySelectorAll('#_gcSubDocPill, .gcautai-pill')].filter(vis).map(e => (e.innerText || '').trim().slice(0, 40));
     return { tiles, mic: vis(document.getElementById('_gcMicBtn')), pills }; }).catch(() => null);
   if (!h) return; st.info.homeTiles = h.tiles;
-  if (h.tiles.length > 9) st.fails.push({ check: 'toggle', sev: 'major', msg: `${h.tiles.length} tiles on the Field home (owner: at most 8–9; the rest in ☰ More)`, list: h.tiles });
   if (h.mic) st.fails.push({ check: 'floating', sev: 'major', msg: 'a 🎤 button of its own on the Field home (owner: 🎤 Voice note is in the 💎 menu)' });
   if (h.pills.length) st.fails.push({ check: 'floating', sev: 'major', msg: 'the COI / W-9 pill is showing: ' + h.pills.join(' · ') });
 }

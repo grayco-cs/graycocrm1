@@ -8058,6 +8058,8 @@ function push(){
   try { W.__GC_UPDATE_PENDING__ = true; } catch (e) {}          /* the next tap on a menu or tab reloads (existing rule) */
   try {
     var D = W.document; if (!D || !D.body) return;
+    /* AUTOUPD (owner 11/19): no bar — the update runs by itself (BOOTWATCH); the uploads stay held until it does */
+    try { if (W._gcBootWatch && typeof W._gcBootWatch.auto === 'function' && W._gcBootWatch.auto()) return; } catch (e) {}
     var note = D.getElementById('gc-stalegate-note'); if (note) return;
     note = D.createElement('div'); note.id = 'gc-stalegate-note'; note.setAttribute('data-gc-keep', '1'); note.setAttribute('role', 'alert');
     note.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:2147483646;background:#7c2d12;color:#fff;padding:10px 16px;font:700 13px/1.35 -apple-system,Segoe UI,Arial,sans-serif;text-align:center;cursor:pointer';
@@ -8083,9 +8085,10 @@ function holdSweeps(){ if (off) return false; var h = ST.state !== 'current'; if
 function gateUpload(f, self, args){
   var key = s(args[0]);
   if (off || ST.state === 'current' || OWN.test(key) || person()) { if (ST.state === 'stale') ST.passed++; return f.apply(self, args); }
-  if (ST.state === 'unknown') return new Promise(function(res, rej){ waiting.push({ f: f, self: self, args: args, res: res, rej: rej }); });
+  /* (a held upload's promise is marked handled: a caller that fires and forgets does not raise an unhandled-rejection page error) */
+  if (ST.state === 'unknown') { var pw = new Promise(function(res, rej){ waiting.push({ f: f, self: self, args: args, res: res, rej: rej }); }); pw.catch(function(){}); return pw; }
   ST.held++; ST.heldKeys[key] = Date.now();
-  return Promise.reject(new Error('held: this copy of the CRM is out of date — update to save'));
+  var ph = Promise.reject(new Error('held: this copy of the CRM is out of date — update to save')); ph.catch(function(){}); return ph;
 }
 function wrap(name){
   var f = W[name];
@@ -159012,6 +159015,8 @@ var LABELS = { insCarrier: 'GL insurer', insPolicy: 'GL policy #', insEff: 'GL e
   autoInsCarrier: 'Auto insurer', autoInsExp: 'Auto expires', umbCarrier: 'Umbrella insurer', umbExp: 'Umbrella expires', addlInsured: 'GrayCo additional insured', insuredName: 'Insured', certHolder: 'Certificate holder',
   legalName: 'Legal name', businessName: 'Business name', taxClass: 'Tax classification', address: 'Address', tinType: 'Tax ID type' };
 function confirmSubRead(ov, rd, subId, form, meta){
+  /* QA gate 11/19: an answer without the read values (the reader failed / sent nothing back) threw here and left "Reading…" up for good */
+  if (!rd || typeof rd !== 'object') { try { ov.body.innerHTML = '<div class="gcautai-msg gcautai-bad">⚠ The reader sent nothing back for this file. Try 📄 Read & confirm again in a minute, or open 📄 The file and fill the sub record by hand.</div>'; } catch (e) {} return; }
   var f = rd.fields || {}, guess = subId || (subByName(f.businessName || f.legalName || f.insuredName) || {}).id || '';
   var rows = Object.keys(LABELS).filter(function(k){ return f[k] != null && f[k] !== '' && !(k === 'addlInsured' && rd.kind !== 'coi'); }).map(function(k){
     var v = f[k]; if (typeof v === 'number') v = money(v).replace('.00', ''); if (typeof v === 'boolean') v = v ? 'Yes' : 'NO — ask for it';
@@ -159033,6 +159038,7 @@ function confirmSubRead(ov, rd, subId, form, meta){
 function applySubRead(rd, sid, form, meta){
   var sb = subById(sid); if (!sb) return { ok: false, error: 'That sub is not loaded.' };
   if (typeof W._setSubs !== 'function') return { ok: false, error: 'The sub list is not ready on this screen.' };
+  if (!rd || typeof rd !== 'object') return { ok: false, error: 'Nothing was read from that file.' };
   var f = rd.fields || {}, at = nowIso(), by = myName(), ch = {}, extra = {};
   var file = { id: uid('F'), cat: rd.kind === 'coi' ? 'COI' : 'W-9', ref: s(rd.ref || (meta && meta.ref)), data: s(rd.ref || (meta && meta.ref)), name: s(rd.name || (meta && meta.name)) || (rd.kind === 'coi' ? 'COI.pdf' : 'W-9.pdf'), by: by, at: at, aiRead: rd.id };
   if (rd.kind === 'coi') {
@@ -159123,7 +159129,7 @@ function subDocGo(ov, x){
   fn('sub-doc-read', { ref: x.ref, name: x.name, subId: x.subId, kind: /w-?9/i.test(s(x.cat) + s(x.name)) ? 'w9' : 'coi', source: 'sub-docs' }).then(function(j){
     if (!j.ok) { ov.body.innerHTML = '<div class="gcautai-msg gcautai-bad">⚠ ' + esc(j.error) + '</div>'; return; }
     confirmSubRead(ov, j.read, x.subId, null, { ref: x.ref, name: x.name });
-  });
+  }, function(e){ try { ov.body.innerHTML = '<div class="gcautai-msg gcautai-bad">⚠ ' + esc((e && e.message) || 'Could not read it — try again') + '</div>'; } catch (x2) {} });   /* never stuck on "Reading…" */
 }
 function openSubDoc(ref){
   var x = SDQ.filter(function(z){ return z.ref === s(ref); })[0]; if (!x) return false;
@@ -204129,6 +204135,7 @@ try { console.log('[GC] 👁 Every left-menu tab can be turned off (patch TABVIS
 })();
 </script>
 <script id="gc-patch-perfclick-saves">
+function _gcSaveNoteDev(){ try { return /iPhone|iPod|Android.+Mobile/i.test(navigator.userAgent || '') || (window.innerWidth || 999) < 600 ? 'phone' : 'computer'; } catch (e) { return 'computer'; } }   /* owner 11/19: a phone says "phone" */
 /* patch PERFCLICK: the save note — what this computer still has to send to the cloud, in plain words. Reads the save
    queue (window._gcSyncQ.state / .waiting) every 1.5 s on the browser's own timer; draws only when the words change. */
 (function(){
@@ -204154,15 +204161,15 @@ function tick(){
   try {
     var q = W._gcSyncQ; if (!q || typeof q.state !== 'function') return;
     var lf = W.__gcLiveFail;   /* patch SCHEDQUIET: the live push could not send a list: say so (it retries on its own) */
-    if (lf && Date.now() - lf.at < 120000) { show('\u26a0 A save is kept on this computer \u2014 not sent yet, trying again' + (lf.why ? ' (' + lf.why + ')' : ''), 'warn'); prevWaiting = prevWaiting || 1; return; }
+    if (lf && Date.now() - lf.at < 120000) { show('\u26a0 A save is kept on this ' + _gcSaveNoteDev() + ' \u2014 not sent yet, trying again' + (lf.why ? ' (' + lf.why + ')' : ''), 'warn'); prevWaiting = prevWaiting || 1; return; }
     var st = q.state(), n = st.waiting || 0, now = Date.now();
     if (n > 0) {
       if (!prevWaiting) since = now;
       var tries = 0; try { (q.waiting() || []).forEach(function(w){ if ((w.tries || 0) > tries) tries = w.tries || 0; }); } catch (e) {}
       /* patch SAVEWHY: which list and the cloud's own answer */
       var why = ''; try { why = String(st.lastError || '').slice(0, 140); var wk = (q.waiting() || []).map(function(w){ return w.key; }).slice(0, 3).join(', '); if (!why && wk) why = wk; if (why && why !== W.__gcSaveWhyLast) { W.__gcSaveWhyLast = why; try { console.warn('[GC] save not sent yet: ' + why + ' (waiting: ' + wk + ')'); } catch (e2) {} } } catch (e) {}
-      if (tries >= 2 || (!navigator.onLine)) { show('\u26a0 ' + n + (n === 1 ? ' save is' : ' saves are') + ' kept on this computer \u2014 not sent yet, trying again' + (why ? ' (' + why + ')' : ''), 'warn'); try { box().title = why; } catch (e) {} }
-      else if (now - since > 1200) show('\u2601 Saved on this computer \u2014 sending\u2026', 'info');
+      if (tries >= 2 || (!navigator.onLine)) { show('\u26a0 ' + n + (n === 1 ? ' save is' : ' saves are') + ' kept on this ' + _gcSaveNoteDev() + ' \u2014 not sent yet, trying again' + (why ? ' (' + why + ')' : ''), 'warn'); try { box().title = why; } catch (e) {} }
+      else if (now - since > 1200) show('\u2601 Saved on this ' + _gcSaveNoteDev() + ' \u2014 sending\u2026', 'info');
       prevWaiting = n; return;
     }
     if (prevWaiting) { prevWaiting = 0; sentUntil = now + 2500; show('\u2601 Sent \u2713', 'ok'); return; }
@@ -213216,26 +213223,17 @@ function alsoPm(){ var n = low(myName()); if (!n) return false; return arr(C().p
 function kindOf(p){ try { return W._gcFieldMore && W._gcFieldMore.kind ? s(W._gcFieldMore.kind(p)) : ''; } catch (e) { return ''; } }
 function insJobs(){ return myJobs().some(function(p){ return kindOf(p) === 'ins' || (kindOf(p) === 'mit' && insFlag(p)); }); }
 function mitJobsMine(){ return myJobs().some(function(p){ try { return W._gcCo && W._gcCo.ofJob(p) === 'mitigation'; } catch (e) { return false; } }); }
-/* LEANHOME (owner 11/19: "Don't need a lot of buttons on the Field view"): Home keeps the big tiles + Leads + Today's to-dos (a PM's
-   📒 Daily log too); the rest moved to ☰ More → "From Home" (movedOf), nothing removed. Mitigation / environmental keep their tiles. */
-function movedOf(a, k){
-  var L = [];
-  if (a === 'admin') L = ['viewas', 'systems', 'addjob', 'sendest'];
-  else if (a === 'pm') L = ['sendest'];
-  if ((a === 'pm' || a === 'admin') && insJobs()) L.push('claims', 'tpa');
-  if ((a === 'pm' || a === 'admin') && mitJobsMine()) L.push('equip', 'drying');
-  var seen = {}; return L.filter(function(id){ if (seen[id]) return false; seen[id] = 1; try { return k.shown(id); } catch (e) { return false; } });
-}
 function extrasOf(a, k){
   var L = [];
-  if (a === 'admin') L = ['leads', 'todo'].concat(alsoPm() ? ['log'] : []);   /* LEANHOME; 🧾 Snap a receipt: a quick action; 💵 Money: ☰ More (owner 11/16) */
-  else if (a === 'pm') L = ['log', 'todo'];   /* LEANHOME: 📤 Send estimate → ☰ More; ☐ Punch list / 💬 Messages: on each job page */
+  if (a === 'admin') L = ['leads', 'viewas', 'systems', 'addjob', 'todo'].concat(alsoPm() ? ['log', 'sendest'] : []);   /* 🧾 Snap a receipt: a quick action */   /* 💵 Money: ☰ More (owner 11/16) */
+  else if (a === 'pm') L = ['log', 'todo', 'sendest'];   /* ☐ Punch list: on each job page; 💬 Messages: on each job page */
   else if (a === 'mit' || a === 'dual') L = ['emerg', 'drying', 'equip'].concat(insJobs() ? ['tpa'] : []);   /* owner 11/16: 🚨 new losses · 💧 readings due · 🌀 equipment out · 📆 TPA (insurance) — the drying / env tools are on each job page */
   else if (a === 'env') L = ['emerg'];   /* 🚨 Emergency leads (trauma / biohazard calls included — no "trauma" button, owner 11/16) + 🧪 lab results · 📋 paperwork · 🚧 blocked (below) */
   else { try { L = arr(k.actions(a, 'home')).filter(function(id){ return !DUPE[id]; }); } catch (e) { L = []; }
     if (a === 'ins') ['claims', 'tpa'].forEach(function(id){ if (L.indexOf(id) < 0) L.push(id); });
     L.push('todo'); }
-  /* LEANHOME: a PM's / admin's 📆 TPA dates · 🛡 Claim info · 🌀 Equipment · 💧 Drying are in ☰ More → From Home (movedOf) */
+  if ((a === 'pm' || a === 'admin') && insJobs()) ['claims', 'tpa'].forEach(function(id){ if (L.indexOf(id) < 0) L.push(id); });   /* insurance jobs: 📆 TPA dates · 🛡 Claim info */
+  if (a === 'pm' || a === 'admin') ['equip', 'drying'].forEach(function(id){ if (mitJobsMine() && L.indexOf(id) < 0) L.push(id); });
   var seen = {}; return L.filter(function(id){ if (seen[id]) return false; seen[id] = 1; return k.shown(id); });
 }
 /* environmental: the jobs whose hazard papers (lead / asbestos / mold) are not in the customer's hands yet — patch DOCAUTO2's Start-job gate */
@@ -213268,7 +213266,7 @@ function dashHtml(a, h0){
     : '<div class="fh-empty">Nothing on your schedule today. Tap <b>📅 New appointment</b> or <b>🛠 Schedule work</b>.</div>';
   /* 2. the quick actions — big tiles */
   var com = !hourly();
-  h += '<div class="gc-pmf-q">' + QUICK.filter(function(q){ return q[0] === 'sched' ? false : q[0] === 'clock' ? !com : true; }).map(function(q){   /* LEANHOME: 📅 My Schedule is in the bottom bar; ⏱ Clock in (optional) → ☰ More (an hourly person keeps Start / end my day) */
+  h += '<div class="gc-pmf-q">' + QUICK.map(function(q){
     var l = q[2], sm = q[3];
     if (q[0] === 'clock') { try { l = RA() && RA().label ? RA().label('clock') || l : l; } catch (e) {} sm = com ? 'Optional — only if you want to log it' : 'Start / end my day'; }
     return '<button type="button" class="gc-pmf-t" data-pmf-a="' + q[0] + '"><span class="e">' + q[1] + '</span><span class="l">' + esc(l) + '</span>' + (sm ? '<small>' + esc(sm) + '</small>' : '') + '</button>';
@@ -213653,11 +213651,6 @@ W._gcRaMoreHook = function(a, o, pk){
   var box = D.createElement('div'); box.className = 'gc-pmf-less';
   box.innerHTML = '<div class="gc-fm-k" data-fm="less">Less often</div>' + lessRows(a).map(function(r){ return '<button type="button" class="gc-fm-r" data-pmf-a="' + r[0] + '"><span class="e">' + r[1] + '</span><span>' + esc(r[2]) + '<small>' + esc(r[3]) + '</small></span></button>'; }).join('');
   pk.insertBefore(box, pk.firstChild);
-  /* LEANHOME: what left Home is here, first */
-  try { var k9 = K(), mv = movedOf(a, k9), fh = D.createElement('div'); fh.className = 'gc-pmf-less gc-pmf-fromhome';
-    fh.innerHTML = '<div class="gc-fm-k" data-fm="fromhome">From Home</div>' + (!hourly() ? '<button type="button" class="gc-fm-r" data-pmf-a="clock"><span class="e">⏱</span><span>Clock in (optional)<small>Only if you want to log it</small></span></button>' : '') +
-      '<button type="button" class="gc-fm-r" data-pmf-a="sched"><span class="e">📅</span><span>My Schedule<small>Day · week · time off</small></span></button>' + mv.map(function(id){ return k9.tileHtml(id, 'gc-fm-r'); }).join('');
-    pk.insertBefore(fh, pk.firstChild); } catch (e) { warn(e); }
   var anchor = off0 ? off0.nextSibling : null;
   moved.forEach(function(b){ if (off0) pk.insertBefore(b, anchor); else pk.appendChild(b); });
   if (!pk.querySelector('[data-m="search"],[data-ra-a="search"]') && K() && K().shown('search')) { var sr = D.createElement('button'); sr.type = 'button'; sr.className = 'gc-fm-r'; sr.setAttribute('data-ra-a', 'search'); sr.setAttribute('data-m', 'search'); sr.setAttribute('data-ra-close', ''); sr.innerHTML = '<span class="e">🔍</span><span>Search</span>'; pk.insertBefore(sr, pk.querySelector('[data-m="tools"]') || null); }
@@ -249936,6 +249929,10 @@ try {
     'html.gc-pu-app,html.gc-pu-app body{background:#F3F5F8!important}' +
     'html.gc-pu-app .gc-rpb-ov{padding-top:calc(14px + env(safe-area-inset-top,0px))!important;padding-bottom:calc(14px + env(safe-area-inset-bottom,0px))!important}html.gc-pu-app .gc-rpb-card{max-height:100%!important}' +
     'html.gc-pu-app #_gcMicBtn,html._fieldmode.gc-pu #_gcMicBtn{display:none!important}' +
+    'html.gc-pu-app [data-gc-appr-other]{background:#fff!important;border-color:#e2e8f0!important}html.gc-pu-app [data-gc-appr-other]>div>div:first-child{color:#0f172a!important}html.gc-pu-app [data-gc-appr-other]>div>div+div{color:#475569!important}' +
+    'html.gc-pu-app [data-gc-appr-total]{background:#f0fdf4!important;border-color:#bbf7d0!important;color:#166534!important}html.gc-pu-app [data-gc-appr-other-box]>div:first-child{color:#b45309!important}' +
+    'html.gc-pu-app [style*="background:#0a1628"]:not(button),html.gc-pu-app [style*="background: rgb(10, 22, 40)"]:not(button),html.gc-pu-app [style*="background:#0f2440"]:not(button),html.gc-pu-app [style*="background: rgb(15, 36, 64)"]:not(button){background:#fff!important;border-color:#e2e8f0!important}' +
+    'html.gc-pu-app [style*="background:#0a1628"] :not(button)[style*="color:#fff"],html.gc-pu-app [style*="background: rgb(15, 36, 64)"] :not(button)[style*="color:#fff"],html.gc-pu-app [style*="background: rgb(15, 36, 64)"] :not(button)[style*="color: rgb(255, 255, 255)"]{color:#0f172a!important}html.gc-pu-app [style*="background: rgb(15, 36, 64)"] [style*="color:#8fa8c4"]{color:#475569!important}' +
     'html.gc-pu-app main{padding-bottom:calc(var(--gc-pu-tabs,0px) + 24px)!important}' +
     /* the end of every Field page clears the bottom bar (a spacer as well as the padding: a page that scrolls inside
        itself does not always count its padding), and "scroll this into view" stops clear of the header and the bar */

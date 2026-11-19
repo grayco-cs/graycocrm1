@@ -85,6 +85,11 @@ try {
     /* 🆘 Problem reports and its other cards: clear of the status bar and the home bar (its ✕ sat under the clock) */
     'html.gc-pu-app .gc-rpb-ov{padding-top:calc(14px + env(safe-area-inset-top,0px))!important;padding-bottom:calc(14px + env(safe-area-inset-bottom,0px))!important}html.gc-pu-app .gc-rpb-card{max-height:100%!important}' +
     'html.gc-pu-app #_gcMicBtn,html._fieldmode.gc-pu #_gcMicBtn{display:none!important}' +
+    /* owner 11/19: My Approvals on the phone — the cards are light (they were navy until the slow recolor caught up); the green buttons keep their colours */
+    'html.gc-pu-app [data-gc-appr-other]{background:#fff!important;border-color:#e2e8f0!important}html.gc-pu-app [data-gc-appr-other]>div>div:first-child{color:#0f172a!important}html.gc-pu-app [data-gc-appr-other]>div>div+div{color:#475569!important}' +
+    'html.gc-pu-app [data-gc-appr-total]{background:#f0fdf4!important;border-color:#bbf7d0!important;color:#166534!important}html.gc-pu-app [data-gc-appr-other-box]>div:first-child{color:#b45309!important}' +
+    'html.gc-pu-app [style*="background:#0a1628"]:not(button),html.gc-pu-app [style*="background: rgb(10, 22, 40)"]:not(button),html.gc-pu-app [style*="background:#0f2440"]:not(button),html.gc-pu-app [style*="background: rgb(15, 36, 64)"]:not(button){background:#fff!important;border-color:#e2e8f0!important}' +
+    'html.gc-pu-app [style*="background:#0a1628"] :not(button)[style*="color:#fff"],html.gc-pu-app [style*="background: rgb(15, 36, 64)"] :not(button)[style*="color:#fff"],html.gc-pu-app [style*="background: rgb(15, 36, 64)"] :not(button)[style*="color: rgb(255, 255, 255)"]{color:#0f172a!important}html.gc-pu-app [style*="background: rgb(15, 36, 64)"] [style*="color:#8fa8c4"]{color:#475569!important}' +
     'html.gc-pu-app main{padding-bottom:calc(var(--gc-pu-tabs,0px) + 24px)!important}' +
     /* the end of every Field page clears the bottom bar (a spacer as well as the padding: a page that scrolls inside
        itself does not always count its padding), and "scroll this into view" stops clear of the header and the bar */
