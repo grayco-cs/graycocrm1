@@ -8113,7 +8113,7 @@ W._gcStaleGate = {
 };
 })();
 </script>
-<style>html._fieldmode #gc-hub-btn{display:none !important;}</style><style id="_gcHideFabs">/* Only the diamond hub + voice stay out; everything else lives in the diamond menu. *//* HUBFIX: #_cashPos, #_ctrRevWrap, #_pmComm, #_subXtra, #_teamStat are the SCREENS 💎 Cash Position / contract review / PM Commission Setup / Sub Details / Team Status open, not floating buttons — hiding them made those items do nothing */#_gc1099Btn,#_gcAlertsBtn,#_gcContractBtn,#_gcDeskProfileBtn,#_gcFinBtn,#_gcHelpBtn,#_gcInvPill,#_gcMergeBtn,#_gcMergeProjBtn,#_gcMoveSchedBtn,#_gcMyFinBtn,#_gcPmApprovalPill,#_gcPmBell,#_gcPrintSchedBtn,#_gcProgPill,#_gcQAFab,#_gcRunOfficeBtn,#_gcSubPill,#_gcSubSearchBtn,#_officeHomeBtn,#_officeHomeWrap{display:none !important;}</style>
+<style>html._fieldmode #gc-hub-btn{display:none !important;}@media (max-width:640px) and (hover:none) and (pointer:coarse){html._fieldmode #_gcMicBtn{display:none!important}html._fieldmode body>#_gcFieldHubBtn{visibility:hidden!important}}/* owner 11/19 (phone, Field): no 🎤 button of its own (🎤 Voice note is in the 💎 menu), and the 💎 shows once it sits in the bottom bar — not floating over the home's tiles while the page is still starting */</style><style id="_gcHideFabs">/* Only the diamond hub + voice stay out; everything else lives in the diamond menu. *//* HUBFIX: #_cashPos, #_ctrRevWrap, #_pmComm, #_subXtra, #_teamStat are the SCREENS 💎 Cash Position / contract review / PM Commission Setup / Sub Details / Team Status open, not floating buttons — hiding them made those items do nothing */#_gc1099Btn,#_gcAlertsBtn,#_gcContractBtn,#_gcDeskProfileBtn,#_gcFinBtn,#_gcHelpBtn,#_gcInvPill,#_gcMergeBtn,#_gcMergeProjBtn,#_gcMoveSchedBtn,#_gcMyFinBtn,#_gcPmApprovalPill,#_gcPmBell,#_gcPrintSchedBtn,#_gcProgPill,#_gcQAFab,#_gcRunOfficeBtn,#_gcSubPill,#_gcSubSearchBtn,#_officeHomeBtn,#_officeHomeWrap{display:none !important;}</style>
 </head>
   <body>
 <script>
@@ -243346,7 +243346,7 @@ function hubItem(panel){
   }
 }
 /* pinned: it stays the first thing in the menu (other items that put themselves on top come in after it) */
-function keepFirst(panel){ var it = panel && panel.querySelector('#gc-rpb-hub'); if (it && panel.firstChild !== it) panel.insertBefore(it, panel.firstChild); }
+function keepFirst(panel){ var it = panel && panel.querySelector('#gc-rpb-hub'); if (!it) return; var mic = panel.querySelector('[data-gc-pu-mic]'); if (mic) { if (mic.nextSibling !== it) mic.parentNode.insertBefore(it, mic.nextSibling); return; } if (panel.firstChild !== it) panel.insertBefore(it, panel.firstChild); }   /* the Field's 🎤 Voice note stays first (owner 11/19) */
 D.addEventListener('gc-hub-open', function(e){ try { var p = e && e.detail && e.detail.panel; hubItem(p); later(function(){ keepFirst(p); }, 0); later(function(){ keepFirst(p); }, 200); } catch (x) { warn(x); } });
 function hubPoll(){ var all = D.querySelectorAll('.gc-hub-panel'); for (var i = 0; i < all.length; i++) if (all[i].getClientRects().length) { hubItem(all[i]); keepFirst(all[i]); break; } }
 /* GrayCo Field ☰ More: the Office rows */
