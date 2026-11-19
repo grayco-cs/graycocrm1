@@ -192,7 +192,7 @@ function newLeadForm(g){
   const msg = (g.type === 'PHONE_CALL' ? 'A potential customer called the office through Google Local Services' : g.type === 'MESSAGE' ? 'A potential customer messaged GrayCo through Google Local Services' : 'A Google Local Services ' + low(g.type || 'lead'))
     + (when ? ' on ' + when + ' (Central)' : '') + '.' + (g.job ? ' Job: ' + g.job + '.' : '') + (c && c.durSec ? ' Call length: ' + durLabel(c.durSec) + '.' : '') + (g.texts.length ? ' They wrote: “' + clip(g.texts[0], 300) + '”.' : '');
   return { type: 'estimate', name: g.name || (g.phone ? 'Google LSA caller ' + tidy(g.phone) : 'Google LSA caller (' + (when.split(', ')[1] || when) + ')'), email: g.email, phone: g.phone, address: '', city: '', state: '', zip: '',
-    message: msg, company: '', service: g.job, property: '', bestTime: '', damageDate: '', carrier: '', claimFiled: '', claimNumber: '', project: '', bidDue: '', plansLink: '', buildings: '', plan: '', urgency: '' };
+    message: msg, company: '', service: g.service || g.category, property: '', bestTime: '', damageDate: '', carrier: '', claimFiled: '', claimNumber: '', project: '', bidDue: '', plansLink: '', buildings: '', plan: '', urgency: '' };
 }
 /* Google's leads → the inbox: enrich the ones we have, file the ones we do not (a new one texts the admins / goes to the office check
    like an e-mailed LSA call — only when it is recent: an older one is filed quietly, its note says so) */
