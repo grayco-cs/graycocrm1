@@ -84,6 +84,7 @@ try {
     'html.gc-pu-app,html.gc-pu-app body{background:#F3F5F8!important}' +
     /* 🆘 Problem reports and its other cards: clear of the status bar and the home bar (its ✕ sat under the clock) */
     'html.gc-pu-app .gc-rpb-ov{padding-top:calc(14px + env(safe-area-inset-top,0px))!important;padding-bottom:calc(14px + env(safe-area-inset-bottom,0px))!important}html.gc-pu-app .gc-rpb-card{max-height:100%!important}' +
+    'html.gc-pu-app #_gcMicBtn{display:none!important}' +
     'html.gc-pu-app main{padding-bottom:calc(var(--gc-pu-tabs,0px) + 24px)!important}' +
     /* the end of every Field page clears the bottom bar (a spacer as well as the padding: a page that scrolls inside
        itself does not always count its padding), and "scroll this into view" stops clear of the header and the bar */
@@ -554,6 +555,9 @@ try {
   function dock(){
     var app = H.classList.contains('gc-pu-app'), tabs = D.getElementById('gc-fh-tabs'), d = D.getElementById('gc-pu-dock');
     var mic = D.getElementById('_gcMicBtn'), hub = D.getElementById('_gcFieldHubBtn');
+    /* owner 11/19: no 🎤 button of its own in the Field — "🎤 Voice note" is the first item of the 💎 menu (micInMenu); the row keeps 💎 */
+    if (mic && d && d.contains(mic)) D.body.appendChild(mic);
+    mic = null;
     var home = function(){ if (d) { if (mic && d.contains(mic)) D.body.appendChild(mic); if (hub && d.contains(hub)) D.body.appendChild(hub); d.remove(); } if (tabs) tabs.classList.remove('gc-pu-hasdock'); };
     if (!app || !tabs || (!mic && !hub)) { home(); return; }
     if (!d || d.parentNode !== tabs) {
@@ -575,6 +579,17 @@ try {
     if (!mic) { var a = sm.querySelector('.gc-pu-l'); if (a) a.remove(); }
     if (!hub) { var b = sh.querySelector('.gc-pu-l'); if (b) b.remove(); }
   }
+  /* the 💎 menu in the Field: "🎤 Voice note" first (the same voice note the 🎤 button started) */
+  function micInMenu(ev){
+    try {
+      var pn = ev && ev.detail && ev.detail.panel; if (!pn || !H.classList.contains('gc-pu-app') || pn.querySelector('[data-gc-pu-mic]')) return;
+      var it = D.createElement('div'); it.className = 'gc-hub-item'; it.setAttribute('data-gc-pu-mic', '1'); it.setAttribute('data-label', 'Voice note'); it.setAttribute('role', 'button');
+      it.innerHTML = "<span class='gc-hub-icon'>🎤</span><span>Voice note</span>";
+      it.addEventListener('click', function(){ try { if (W._gcAUTAI && typeof W._gcAUTAI.mic === 'function') { W._gcAUTAI.mic(); return; } } catch (e) {} var vb = D.getElementById('_gcMicBtn') || D.getElementById('_voiceBtn'); if (vb) vb.click(); });
+      var first = pn.querySelector('.gc-hub-item'); if (first) first.parentNode.insertBefore(it, first); else pn.appendChild(it);
+    } catch (e) {}
+  }
+  D.addEventListener('gc-hub-open', micInMenu);
   function head(){
     try { dock(); } catch (e) {}
     var hd = D.getElementById('_gcAppHead');
