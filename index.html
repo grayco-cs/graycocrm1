@@ -837,24 +837,30 @@ try {
       .then(function(v){ checking = null; v = s(v).trim().slice(0, 60); if (v) LIVE = { v: v, at: Date.now() }; return v; });
     return checking;
   };
-  var autoT = null, lastAct = 0, autoN = 0;
+  var autoT = null, lastType = 0, autoN = 0, autoT0 = 0;
   var autoUpdate = function(){
-    if (autoT || autoN) return;
-    try { ['keydown', 'input', 'pointerdown', 'touchstart', 'wheel'].forEach(function(t){ D.addEventListener(t, function(){ lastAct = Date.now(); }, true); }); } catch (e) {}
+    if (autoT) return;
+    if (!autoN) { try { ['keydown', 'input', 'compositionupdate'].forEach(function(t){ D.addEventListener(t, function(){ lastType = Date.now(); }, true); }); } catch (e) {} }
+    autoT0 = autoT0 || Date.now();
     var tick = function(){
-      autoT = null; if (++autoN > 600) return;
+      autoT = null; if (++autoN > 2000) return;
       var busy = '';
       try {
-        if (D.visibilityState === 'hidden') busy = 'hidden';
-        else if (Date.now() - lastAct < 15000) busy = 'in use';
-        else { var a = D.activeElement; if (a && a !== D.body && ((/^(INPUT|TEXTAREA)$/.test(a.tagName) && String(a.value || '').trim()) || (a.isContentEditable && String(a.textContent || '').trim()))) busy = 'typing'; }
-        if (!busy && W._gcSending && W._gcSending().length) busy = 'sending';
+        var a = D.activeElement, editing = a && a !== D.body && ((/^(INPUT|TEXTAREA)$/.test(a.tagName) && String(a.value || '').trim()) || (a.isContentEditable && String(a.textContent || '').trim()));
+        if (editing && Date.now() - lastType < 60000) busy = 'typing';
+        if (!busy && W._gcSending && W._gcSending().length && Date.now() - autoT0 < 180000) busy = 'sending';
       } catch (e) {}
-      if (!busy) { B.autoUpd = ms(); dirty = true; if (update()) return; }
-      autoT = NST.call(W, tick, 3000);
+      if (!busy) { B.autoUpd = ms(); dirty = true; autoToast(); NST.call(W, function(){ if (!update()) { autoT0 = 0; } }, 2000); return; }
+      autoT = NST.call(W, tick, 1500);
     };
-    autoT = NST.call(W, tick, 1500);
+    autoT = NST.call(W, tick, 300);
   };
+  var autoToast = function(){
+    try { var t = D.getElementById('gc-bw-updating'); if (t) return; t = D.createElement('div'); t.id = 'gc-bw-updating'; t.setAttribute('role', 'status'); t.setAttribute('data-gc-keep', '1');
+      t.style.cssText = 'position:fixed;left:50%;bottom:calc(90px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:2147483647;background:#1e293b;color:#fff;padding:8px 16px;border-radius:999px;font:700 14px -apple-system,Segoe UI,Arial,sans-serif;pointer-events:none;box-shadow:0 4px 14px rgba(0,0,0,.25)';
+      t.textContent = 'Updating…'; (D.body || H).appendChild(t); NST.call(W, function(){ try { t.remove(); } catch (e) {} }, 4000); } catch (e) {}
+  };
+  autoImpl = autoUpdate;
   checkImpl = function(resumed){
     return fetchLive().then(function(live){
       var mine = B.build = s(W.__GC_BUILD_ID__ || B.build).slice(0, 40);
@@ -864,7 +870,7 @@ try {
       B.old = { mine: mine, live: live, src: src || (resumed ? 'resumed' : 'network'), t: ms() };
       if (recent) B.old.afterUpdate = Math.round((Date.now() - healed) / 1000) + ' s after Tap to update';
       problem('old');
-      if (!recent && (src || resumed || gateUp() || !authed())) { banner(live); autoUpdate(); }
+      if (!recent) autoUpdate();   /* AUTOUPD: no bar, no button — the update runs by itself */
       return true;
     });
   };
@@ -988,10 +994,11 @@ try {
     } catch (e) {}
     return '';
   };
-  var onScreenImpl = null, drawImpl = null, bannerImpl = null, updateImpl = null, sendImpl = null, bar = null, lateOn = false;
+  var onScreenImpl = null, drawImpl = null, bannerImpl = null, updateImpl = null, sendImpl = null, autoImpl = null, bar = null, lateOn = false;
   function L(){ if (lateOn) return; lateOn = true; try { var t = D.getElementById('gc-bw-late'); eval(t ? t.textContent : ''); } catch (e) { try { console.warn('[GC] BOOTWATCH late part:', e && e.message || e); } catch (x) {} } }
   var onScreen = function(){ L(); return onScreenImpl ? onScreenImpl() : '?'; };
   function banner(live){ L(); if (bannerImpl) bannerImpl(live); }
+  function auto(){ L(); if (autoImpl) autoImpl(); return !!autoImpl; }
   function update(){ L(); return updateImpl ? updateImpl() : false; }
   function send(why, final){ L(); return sendImpl ? sendImpl(why, final) : false; }
   var stuck = function(k, why){ if (B.stuck.length < 5 && !B.p['stuck_' + k]) { B.stuck.push({ t: ms(), k: k, why: why, on: NAV.onLine !== false }); B.p['stuck_' + k] = 1; problem('stuck'); } };
@@ -1060,7 +1067,7 @@ try {
   var older = function(mine, live){ L(); return olderImpl ? olderImpl(mine, live) : false; };
   function checkVersion(resumed){ L(); return checkImpl ? checkImpl(resumed) : Promise.resolve(false); }
   var lastResume = 0;
-  var resume = function(){ if (D.visibilityState === 'hidden' || Date.now() - lastResume < 10 * 60e3 || Date.now() - T0 < 60e3) return; lastResume = Date.now(); checkVersion(true); };
+  var resume = function(){ if (D.visibilityState === 'hidden' || Date.now() - lastResume < 60e3 || Date.now() - T0 < 60e3) return; lastResume = Date.now(); checkVersion(true); };
   try { D.addEventListener('visibilitychange', resume); W.addEventListener('pageshow', function(e){ if (e && e.persisted) { lastResume = Date.now(); checkVersion(true); } }); } catch (e) {}
 
   var isProblem = function(){ for (var k in B.p) return true; return false; };
@@ -1079,7 +1086,7 @@ try {
 
   W._gcBootWatch = {
     state: function(){ return { dev: DEV, boot: JSON.parse(JSON.stringify(B)), sent: sentN, live: LIVE.v, cost: { syncMs: +syncMs.toFixed(3), pollMs: +cost.toFixed(3), polls: polls } }; },
-    older: older, update: update, banner: function(){ return !!(bar && bar.isConnected); },
+    older: older, update: update, banner: function(){ return !!(bar && bar.isConnected); }, auto: auto, check: function(){ return checkVersion(true); },
     live: function(maxAge){ return LIVE.v && Date.now() - LIVE.at < (maxAge || 60000) ? LIVE.v : ''; },
     send: function(){ dirty = true; return send('manual'); }
   };
@@ -7935,28 +7942,14 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
 
   var barShown = false;
 
+  /* AUTOUPD (owner 11/19): no "Yes, update / Not now" bar — a newer build on the server updates this copy by itself
+     (BOOTWATCH: right away when nobody is typing and nothing is on its way; else once the field is left / 60 s after the last
+     key; a 2-second "Updating…" note). Without BOOTWATCH on this device: a reload once nobody is typing. */
   function showUpdateBar(remote){
-    if(barShown) return;
-    /* patch BOOTWATCH: its "Tap to update" banner is already up (a cached copy / the sign-in screen) */
-    try{ if(window._gcBootWatch && window._gcBootWatch.banner()) return; }catch(e){}
-    barShown = true;
-    var bar = document.createElement('div');
-    bar.id = 'gc-update-bar';
-    bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:2147483647;background:#2563eb;color:#fff;padding:10px 20px;text-align:center;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:12px';
-    bar.innerHTML = '\uD83D\uDD04 A newer version of the CRM is ready (' + remote + ') \u2014 ' +
-      '<button id="gc-update-now" style="background:#fff;color:#2563eb;border:none;border-radius:5px;padding:4px 14px;font-weight:700;cursor:pointer">Yes, update</button>' +
-      '<button id="gc-update-later" style="background:transparent;color:#fff;border:1px solid #fff;border-radius:5px;padding:4px 14px;font-weight:700;cursor:pointer">Not now</button>';
-    document.body.prepend(bar);
-    var btn = document.getElementById('gc-update-now');
-    /* patch BOOTWATCH: the same update as its banner — caches emptied, old service workers removed, one reload (≤ 1 per 10 min) */
-    if(btn) btn.onclick = function(){ try{ if(window._gcBootWatch && window._gcBootWatch.update()) return; }catch(e){} location.reload(true); };
-    var laterBtn = document.getElementById('gc-update-later');
-    if(laterBtn) laterBtn.onclick = function(){ var b=document.getElementById('gc-update-bar'); if(b) b.remove(); barShown=false; window.__GC_UPDATE_PENDING__=false; };
-
-    // NEVER reload on a timer — that would throw someone off the page they are
-    // working on mid-task. Instead, arm a one-time reload that fires the next
-    // time the person changes tabs/views (a natural break where nothing is lost).
-    window.__GC_UPDATE_PENDING__ = false; // only update when the user clicks Yes
+    if(barShown) return; barShown = true;
+    try{ if(window._gcBootWatch && window._gcBootWatch.auto && window._gcBootWatch.auto()) return; }catch(e){}
+    var t0 = Date.now(), go = function(){ if(window.__GC_IS_TYPING__ && Date.now() - t0 < 60000){ setTimeout(go, 1500); return; } window.__GC_USER_WANTS_RELOAD__ = true; location.reload(); };
+    go();
   }
 
   // When an update is pending, reload on the NEXT navigation click — never while
@@ -7992,8 +7985,10 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
       .catch(function(){});
   }
 
-  setInterval(checkVersion, 2 * 60 * 1000);   // every 2 minutes
+  setInterval(checkVersion, 60 * 1000);       // AUTOUPD: every minute while the page is on screen (checkVersion skips a hidden page)
   window.addEventListener('focus', checkVersion);
+  document.addEventListener('visibilitychange', function(){ if(!document.hidden) checkVersion(); });
+  window.addEventListener('pageshow', function(e){ if(e && e.persisted) checkVersion(); });
   setTimeout(checkVersion, 8000);             // and shortly after load
 })();
 </script>

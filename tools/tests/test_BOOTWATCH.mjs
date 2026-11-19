@@ -4,7 +4,7 @@
 //   1 phone, signed out: the sign-in screen is recorded (sent by a beacon when the page is left; no e-mail)
 //   2 phone, a wrong password: the error text is recorded, the e-mail only as domain + hash, never the password; then the right
 //     password: signed in → the signed-in e-mail is recorded (from the sign-in token)
-//   3 old build (version.txt newer) served by a service worker: "A newer version is ready — Tap to update" over the sign-in
+//   3 old build (version.txt newer) served by a service worker: it updates by itself (AUTOUPD — no bar), once; 3b typing waits; 3c desk
 //     screen (while a person is using the phone it waits for the tap; 3b: nobody touching it, it updates by itself, once)
 //     screen; the tap removes the old worker (never /crm-push-sw.js) and reloads EXACTLY once; no second banner / reload within
 //     10 min; the CRM's own "Yes, update" bar (signed in, fresh page) goes through the same one update
@@ -132,61 +132,55 @@ if (want(2)) {
 }
 
 if (want(3)) {
-  console.log('3 · an old build served by a service worker: Tap to update — exactly one reload');
+  /* AUTOUPD (owner 11/19: "automatic update as soon as the CRM updates, and don't have the blue update button"): an old copy
+     updates by itself — never a "Tap to update" / "Yes, update" bar; a 2-second "Updating…" note; once (never a loop) */
+  console.log('3 · an old build served by a service worker: it updates by itself — no bar, exactly one reload');
   VER = '33.999-2026-12-31-r99z';
-  /* a person is using the phone (a touch every half second): the update waits for the tap, it does not run by itself */
-  const BUSY = `(() => { setInterval(() => { try { document.dispatchEvent(new Event('pointerdown')); } catch (e) {} }, 500); })()`;
-  const A = await computer('phone3', { build, mobile: true, init: [IPHONE, OLDSW, BUSY] }); const p = A.page();
-  let navs = 0; p.on('domcontentloaded', () => { navs++; });   /* a new document (framenavigated also counts same-page address changes) */
-  ok(!!(await waitFor(A, () => { const b = document.getElementById('gc-bw-update'); return b && b.getClientRects().length && document.getElementById('gc-auth-email'); }, null, 30000)), 'the banner shows (with the sign-in screen up)');
-  const top = await A.ev(() => { const b = document.getElementById('gc-bw-update').getBoundingClientRect(); const e = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2); return { txt: document.getElementById('gc-bw-update').textContent, onTop: !!(e && e.closest('#gc-bw-update')) }; });
-  ok(top.onTop && /A newer version is ready — Tap to update/.test(top.txt), 'it reads "A newer version is ready — Tap to update" and is on top of the sign-in screen', top);
+  const BARS = () => !!(document.getElementById('gc-bw-update') || document.getElementById('gc-update-bar'));
+  const A = await computer('phone3', { build, mobile: true, init: [IPHONE, OLDSW] }); const p = A.page();
+  let navs = 0; p.on('domcontentloaded', () => { navs++; });
+  const n0 = navs; let bars = false, toast = false; const t0 = Date.now();
+  while (Date.now() - t0 < 15000) { await sleep(250); const v = await A.ev(() => ({ b: !!(document.getElementById('gc-bw-update') || document.getElementById('gc-update-bar')), t: !!document.getElementById('gc-bw-updating') })).catch(() => ({})); if (v.b) bars = true; if (v.t) toast = true; }
+  ok(!bars, 'no "Tap to update" / "Yes, update" bar at any moment');
+  ok(toast, 'an "Updating…" note shows just before the reload');
+  const st = await A.ev(() => ({ unreg: JSON.parse(sessionStorage.getItem('__unreg') || '[]'), heal: +localStorage.getItem('gc_bw_heal_at') || 0 })).catch(() => ({}));
+  ok(navs - n0 === 1 && st.heal > 0, 'it updated by itself: exactly one reload', { navs: navs - n0, st });
+  ok(st.unreg && st.unreg.includes('/sw-old.js') && !st.unreg.includes('/crm-push-sw.js'), 'the old service worker is removed; the phone-notifications one is kept', st.unreg);
+  await sleep(10000);
+  ok(navs - n0 === 1 && !(await A.ev(BARS).catch(() => true)), 'still old after the update (the server is "newer" for good here): no second reload, no bar (never a loop)', { navs: navs - n0 });
   const d = await dev(A);
-  const st0 = await A.ev(() => window._gcBootWatch.state().boot.old);
-  ok(st0 && st0.src === 'sw' && st0.live === VER, 'recorded: old build, served by a service worker', st0);
-  const n0 = navs; await p.locator('#gc-bw-update-btn').click();
-  await sleep(12000);
-  ok(navs - n0 === 1, 'the tap reloads exactly once', { navs: navs - n0 });
-  const after = await A.ev(() => ({ unreg: JSON.parse(sessionStorage.getItem('__unreg') || '[]'), banner: !!document.getElementById('gc-bw-update'), old: window._gcBootWatch.state().boot.old }));
-  ok(after.unreg.includes('/sw-old.js') && !after.unreg.includes('/crm-push-sw.js'), 'the old service worker is removed; the phone-notifications one is kept', after.unreg);
-  ok(!after.banner && after.old && /after Tap to update/.test(after.old.afterUpdate || ''), 'still old after the update: no second banner, noted for the report', after);
-  const r2 = await A.ev(() => window._gcBootWatch.update()); await sleep(4000);
-  ok(r2 === false && navs - n0 === 1, 'asking again within 10 minutes: no reload (never a loop)', { r2, navs: navs - n0 });
   const sent = await until(() => ((rowOf(d) || {}).boots || []).find(x => x.old && x.old.afterUpdate), 40000);
-  ok(!!sent && rowOf(d).boots.some(x => x.heal >= 0), 'both opens reach the report (the tap, and "still old after the update")', rowOf(d) && rowOf(d).boots.map(x => ({ old: x.old, heal: x.heal })));
+  ok(!!sent && rowOf(d).boots.some(x => x.heal >= 0), 'both opens reach the report (the update, and "still old after the update")', rowOf(d) && rowOf(d).boots.map(x => ({ old: x.old, heal: x.heal })));
   await A.close();
-  /* 3b · the same old copy on a phone nobody is touching (Safari's back / forward cache or tab restore): it updates BY ITSELF
-     at the first quiet moment — once, never a loop */
+
+  /* 3b · someone is TYPING in a box: the update waits while they type, and runs once the box is left */
   {
-    const C = await computer('phone3b', { build, mobile: true, init: [IPHONE, OLDSW] }); const pc = C.page();
-    let nc = 0; pc.on('domcontentloaded', () => { nc++; });
-    ok(!!(await waitFor(C, () => !!(window._gcBootWatch && window._gcBootWatch.state().boot.old), null, 30000)), '3b: the old copy is seen');
-    const c0 = nc; await sleep(15000);
-    const st = await C.ev(() => ({ unreg: JSON.parse(sessionStorage.getItem('__unreg') || '[]'), heal: +localStorage.getItem('gc_bw_heal_at') || 0, banner: !!document.getElementById('gc-bw-update') })).catch(() => ({}));
-    ok(nc - c0 === 1 && st.heal > 0, '3b: nobody tapping — the update ran by itself, exactly one reload', { navs: nc - c0, st });
-    ok(st.unreg && st.unreg.includes('/sw-old.js') && !st.unreg.includes('/crm-push-sw.js') && !st.banner, '3b: the old worker removed (the notifications one kept), no second banner', st);
-    await sleep(8000);
-    ok(nc - c0 === 1, '3b: still exactly one reload 8 s later (never a loop)', { navs: nc - c0 });
+    const TYPE = `(() => { addEventListener('DOMContentLoaded', () => { if (sessionStorage.getItem('__typed')) return; const t = document.createElement('textarea'); t.id = 'qa-box'; t.style.cssText = 'position:fixed;top:120px;left:10px;z-index:2147483647;width:200px;height:60px'; document.body.appendChild(t); t.focus(); let n = 0; const iv = setInterval(() => { t.value += 'x'; t.dispatchEvent(new Event('input', { bubbles: true })); if (++n >= 16) { clearInterval(iv); sessionStorage.setItem('__typed', '1'); t.blur(); } }, 500); }); })()`;
+    const C = await computer('phone3b', { build, mobile: true, init: [IPHONE, OLDSW, TYPE] }); const pc = C.page();
+    let nc = 0, tReload = 0; const tc = Date.now(); pc.on('domcontentloaded', () => { nc++; if (!tReload) tReload = Date.now() - tc; });
+    const c0 = nc; tReload = 0;
+    await sleep(6000);
+    ok(nc - c0 === 0, '3b: while the box is being typed in, no reload', { navs: nc - c0 });
+    await sleep(12000);
+    ok(nc - c0 === 1, '3b: once the box was left, it updated by itself (one reload)', { navs: nc - c0, atMs: tReload });
     await C.close();
   }
-  /* the CRM's own update bar (signed in, a fresh page from the network) uses the same update */
-  /* who reloads: every location.reload() call is written down with its stack (for the report) */
-  const RLOG = `(() => { try { const L = window.location, r = L.reload.bind(L); Object.defineProperty(L, 'reload', { configurable: true, value: function(){ try { const a = JSON.parse(sessionStorage.getItem('__rl') || '[]'); a.push(String(new Error().stack).split('\\n').slice(1, 6).join(' | ').slice(0, 600)); sessionStorage.setItem('__rl', JSON.stringify(a)); } catch (e) {} return r(); } }); } catch (e) {} })()`;
-  const B = await computer('desk3', { build, init: [RLOG] }); const pb = B.page();
-  await signIn(B, ADMIN, 30000);
-  let nb = 0; pb.on('domcontentloaded', () => { nb++; });
-  ok(!!(await waitFor(B, () => !!document.getElementById('gc-update-now'), null, 20000)), 'signed in, fresh page: the CRM\'s own "Yes, update" bar shows');
-  ok(await B.ev(() => !document.getElementById('gc-bw-update')), 'only one update bar on screen');
-  const navT = () => B.ev(() => { const a = JSON.parse(sessionStorage.getItem('__navs') || '[]'); const k = (performance.getEntriesByType('navigation')[0] || {}).type + ' @' + Math.round(performance.timeOrigin); if (a.indexOf(k) < 0) a.push(k); sessionStorage.setItem('__navs', JSON.stringify(a)); return a; }).catch(() => []);
-  await navT(); pb.on('load', () => { navT(); });
-  await pb.locator('#gc-update-now').click(); await sleep(9000);
-  const heal = await B.ev(() => +localStorage.getItem('gc_bw_heal_at') || 0), again = await B.ev(() => window._gcBootWatch.update());
-  const nl = await navT();
-  const rl = await B.ev(() => JSON.parse(sessionStorage.getItem('__rl') || '[]')).catch(() => []);
-  console.log('    reload calls: ' + JSON.stringify(rl).slice(0, 2500));
-  ok(nb >= 1 && heal > 0 && again === false, '"Yes, update" goes through the same update (remembered for the 10-minute rule; asking again does nothing)', { nb, nl });
-  ok(nl.length === 2 && /^reload/.test(nl[1]), 'the update reloads the page once (one new page after the tap)', { nl, nb });
-  await B.close(); VER = '';
+
+  /* 3c · signed in on a desk, a fresh page from the network while the server has a newer build: no "Yes, update" bar — it updates by itself, once */
+  {
+    const RLOG = `(() => { try { const L = window.location, r = L.reload.bind(L); Object.defineProperty(L, 'reload', { configurable: true, value: function(){ try { const a = JSON.parse(sessionStorage.getItem('__rl') || '[]'); a.push(String(new Error().stack).split('\\n').slice(1, 6).join(' | ').slice(0, 600)); sessionStorage.setItem('__rl', JSON.stringify(a)); } catch (e) {} return r(); } }); } catch (e) {} })()`;
+    VER = '';   /* the server's build moves on while the desk is signed in and working (the 60-second look / focus / back from the background) */
+    const B = await computer('desk3', { build, init: [RLOG] }); const pb = B.page();
+    await signIn(B, ADMIN, 30000); await sleep(3000);
+    let nb = 0, sawBar = false; pb.on('domcontentloaded', () => { nb++; });
+    VER = '33.999-2026-12-31-r99z'; await B.ev(() => window._gcBootWatch && window._gcBootWatch.check && window._gcBootWatch.check()).catch(() => {});
+    const tb = Date.now(); while (Date.now() - tb < 25000 && nb < 1) { await sleep(300); if (await B.ev(() => !!(document.getElementById('gc-update-bar') || document.getElementById('gc-bw-update'))).catch(() => false)) sawBar = true; }
+    await sleep(8000);
+    ok(!sawBar, '3c desk: no "Yes, update / Not now" bar');
+    ok(nb === 1, '3c desk: it updated by itself, one reload', { nb });
+    await B.close();
+  }
+  VER = '';
 }
 
 if (want(4) || want(5)) {

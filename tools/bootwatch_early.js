@@ -128,10 +128,11 @@ try {
   };
   /* the rest (the progress screen, the update banner, sending) is compiled only when first needed: a normal open never pays
      for it before its first screen (tools/bootwatch_late.js: the patch puts it just before this script as <script type="text/plain">) */
-  var onScreenImpl = null, drawImpl = null, bannerImpl = null, updateImpl = null, sendImpl = null, bar = null, lateOn = false;
+  var onScreenImpl = null, drawImpl = null, bannerImpl = null, updateImpl = null, sendImpl = null, autoImpl = null, bar = null, lateOn = false;
   function L(){ if (lateOn) return; lateOn = true; try { var t = D.getElementById('gc-bw-late'); eval(t ? t.textContent : ''); } catch (e) { try { console.warn('[GC] BOOTWATCH late part:', e && e.message || e); } catch (x) {} } }
   var onScreen = function(){ L(); return onScreenImpl ? onScreenImpl() : '?'; };
   function banner(live){ L(); if (bannerImpl) bannerImpl(live); }
+  function auto(){ L(); if (autoImpl) autoImpl(); return !!autoImpl; }
   function update(){ L(); return updateImpl ? updateImpl() : false; }
   function send(why, final){ L(); return sendImpl ? sendImpl(why, final) : false; }
   var stuck = function(k, why){ if (B.stuck.length < 5 && !B.p['stuck_' + k]) { B.stuck.push({ t: ms(), k: k, why: why, on: NAV.onLine !== false }); B.p['stuck_' + k] = 1; problem('stuck'); } };
@@ -215,9 +216,9 @@ try {
   var LIVE = { v: '', at: 0 }, olderImpl = null, checkImpl = null;
   var older = function(mine, live){ L(); return olderImpl ? olderImpl(mine, live) : false; };
   function checkVersion(resumed){ L(); return checkImpl ? checkImpl(resumed) : Promise.resolve(false); }
-  /* the home-screen app comes back from the background (not a new open): look again, at most every 10 minutes */
+  /* the home-screen app comes back from the background (not a new open): look again, at most once a minute (AUTOUPD) */
   var lastResume = 0;
-  var resume = function(){ if (D.visibilityState === 'hidden' || Date.now() - lastResume < 10 * 60e3 || Date.now() - T0 < 60e3) return; lastResume = Date.now(); checkVersion(true); };
+  var resume = function(){ if (D.visibilityState === 'hidden' || Date.now() - lastResume < 60e3 || Date.now() - T0 < 60e3) return; lastResume = Date.now(); checkVersion(true); };
   /* a page Safari hands back from its back / forward cache (persisted): always looked at, even in its first minute */
   try { D.addEventListener('visibilitychange', resume); W.addEventListener('pageshow', function(e){ if (e && e.persisted) { lastResume = Date.now(); checkVersion(true); } }); } catch (e) {}
 
@@ -240,7 +241,7 @@ try {
 
   W._gcBootWatch = {
     state: function(){ return { dev: DEV, boot: JSON.parse(JSON.stringify(B)), sent: sentN, live: LIVE.v, cost: { syncMs: +syncMs.toFixed(3), pollMs: +cost.toFixed(3), polls: polls } }; },
-    older: older, update: update, banner: function(){ return !!(bar && bar.isConnected); },
+    older: older, update: update, banner: function(){ return !!(bar && bar.isConnected); }, auto: auto, check: function(){ return checkVersion(true); },
     /* the CRM's own version check uses the answer this open already has (no second request) */
     live: function(maxAge){ return LIVE.v && Date.now() - LIVE.at < (maxAge || 60000) ? LIVE.v : ''; },
     send: function(){ dirty = true; return send('manual'); }
