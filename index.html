@@ -250127,9 +250127,10 @@ try {
     });
     var watchKid = function(n){ if (n.nodeType === 1 && !/^(SCRIPT|STYLE|LINK)$/.test(n.tagName)) try { ma.observe(n, { attributes: true, attributeFilter: ['class', 'style'] }); } catch (e) {} };
     Array.prototype.forEach.call((D.body || H).children, watchKid); PU.mo.push(ma);
+    var mbRun = 0;
     var mb = new MO(function(ms){
       var hit = false;
-      for (var i = 0; i < ms.length; i++) if (ms[i].addedNodes.length) { var a = ms[i].addedNodes; for (var k = 0; k < a.length; k++) if (a[k].nodeType === 1 && a[k].id !== 'gc-pu-sat') { if (a[k].id === '_gcAppHead') head(); else if (/^(_gcMicBtn|_gcFieldHubBtn|gc-fh-tabs|_gcJobPick)$/.test(a[k].id)) { try { run(); } catch (e) {} } fresh(a[k]); watchKid(a[k]); hit = true; } }
+      for (var i = 0; i < ms.length; i++) if (ms[i].addedNodes.length) { var a = ms[i].addedNodes; for (var k = 0; k < a.length; k++) if (a[k].nodeType === 1 && a[k].id !== 'gc-pu-sat') { if (a[k].id === '_gcAppHead') head(); else if (/^(_gcMicBtn|_gcFieldHubBtn|gc-fh-tabs)$/.test(a[k].id) && !(mbRun > Date.now() - 1000)) { mbRun = Date.now(); try { run(); } catch (e) {} } fresh(a[k]); watchKid(a[k]); hit = true; } }
       if (hit) { safeUntil = Date.now() + 3000; soon(); }
     });
     mb.observe(D.body || H, { childList: true }); PU.mo.push(mb);
