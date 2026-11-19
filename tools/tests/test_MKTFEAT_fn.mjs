@@ -198,7 +198,10 @@ const D = await F.reportData(RM);
 const g = D.table.rows.find(r => r.channel === 'Google Ads'), fb = D.table.rows.find(r => r.channel === 'Facebook/Instagram Ads');
 ok(g && g.leads === 3 && g.spend === 300 && g.cpl === 100 && g.won === 1 && g.revenue === 12000, 'Google Ads: 3 leads, $300 spend, $100 per lead, 1 won, $12,000 sold', g);
 ok(fb && fb.leads === 2 && fb.spend === 150 && fb.cpl === 75 && fb.won === 0, 'Facebook / Instagram: 2 leads, $150, $75 per lead, 0 won', fb);
-ok(D.table.totals.leads === 5 && D.table.totals.spend === 450 && D.table.totals.cpl === 90, 'totals: 5 leads, $450, $90 per lead', D.table.totals);
+/* the win-back leads are dated relative to today, so one of them can arrive in the report month too (no source → "(not set)");
+   patch MKTMATH: count those instead of assuming none (the test failed whenever "20 days ago" fell in last month) */
+const wbIn = leads.filter(l => /^WB/.test(l.id) && l.createdAt && new Date(new Date(l.createdAt).getTime() - 6 * 3600e3).toISOString().slice(0, 7) === RM).length;
+ok(D.table.totals.leads === 5 + wbIn && D.table.totals.spend === 450 && D.table.totals.cpl === Math.round(450 / (5 + wbIn) * 100) / 100, 'totals: ' + (5 + wbIn) + ' leads (5 ad leads + ' + wbIn + ' win-back lead(s) that arrived that month), $450, $' + Math.round(450 / (5 + wbIn) * 100) / 100 + ' per lead', D.table.totals);
 ok(D.reviews.gained === 2 && D.posts === 3, 'reviews gained 2, posts published 3', { r: D.reviews, p: D.posts });
 ok(D.best && D.best.campaign === 'g-roof' && D.worst && D.worst.campaign === 'fb-water', 'top campaign g-roof, worst fb-water', { b: D.best, w: D.worst });
 const html = F.reportHtml(D);
