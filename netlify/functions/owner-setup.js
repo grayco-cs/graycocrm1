@@ -32,6 +32,10 @@ async function inbound(){
   return t ? (Date.now() - Date.parse(t) < 14 * 864e5) : null;   /* mail reached the CRM lately = the receiving domain is verified */
 }
 async function moneyMail(){ let v = null; try { v = await D.kvGet('gc_mail_money'); } catch (e) {} if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } } return Array.isArray(v) && v.length ? true : null; }
+async function localNumbers(){
+  try { const LN = require('./_lib/localnums.js'); const l = LN.list(await D.kvGet(LN.KEY), k => String(process.env[k] == null ? '' : process.env[k]).trim()).filter(x => x.codes.length);
+    return l.some(x => x.state === 'MS') && l.some(x => x.state === 'AR'); } catch (e) { return null; }
+}
 async function checks(){
   const c = {};
   const [pay, mail, tok, mkt, store, cc, inb, mm, trn] = await Promise.all([klass('payrollStubs_2026'), klass('gc_mail_x'), klass('gcal_token_x'), rpcExists('gc_is_marketing'), rpcExists('gc_storage_usage'), companyCam(), inbound(), moneyMail(), klass('gc_train_items')]);
@@ -44,6 +48,7 @@ async function checks(){
   c.companycam = cc;
   c.resend_inbound = inb;
   c.money_mail = mm;
+  c.local_numbers = await localNumbers();   /* patch LOCALNUMS: a Mississippi and an Arkansas local text number are saved */
   c.twilio = has('TWILIO_ACCOUNT_SID') && has('TWILIO_AUTH_TOKEN') && has('TWILIO_FROM');
   c.google_sa = has('GOOGLE_SA_EMAIL') && has('GOOGLE_SA_KEY');
   c.vapid = has('VAPID_PUBLIC_KEY') && has('VAPID_PRIVATE_KEY');

@@ -142,6 +142,8 @@ async function sendSms(to10, body, from){   /* patch SMSROUTE: from = one of our
   } catch (e) { return { ok: false, why: 'Twilio unreachable' }; }
 }
 
+/* patch LOCALNUMS: the local text numbers + the per-customer sticky number (_lib/localnums.js) */
+function LNS(){ return require('./_lib/localnums.js').make({ env, kvGet: k => L().kvGet(k), kvCas: (k, f) => L().kvCas(k, f) }); }
 /* ── e-mail to the admins (+ the PM) ── */
 async function mailStaff(extra, subject, html, text){
   const key = env('RESEND_API_KEY'); if (!key) return { ok: false, why: 'RESEND_API_KEY is not set' };
@@ -459,7 +461,11 @@ async function inboundSms(p){
   /* HELP: the standard answer, nothing else */
   /* patch SMSMENU: on the Customers / default number HELP opens the 1–5 menu (with the STOP line) further down */
   const menuLine0 = ['customers', 'main'].indexOf(require('./_lib/smsroute.js').purposeOf(phone10(p.To), set, env)) >= 0;
-  if (S.HELP.test(body) && !menuLine0) { out.help = optedOut ? { skipped: 'opted out' } : await require('./_lib/custquiet.js').run('reply', () => sendSms(ph, S.HELP_TEXT)); return out; }   /* patch CUSTQUIET: the HELP answer carriers require goes at once */
+  /* patch LOCALNUMS: a text to one of our local numbers (Admin → 📱 Local text numbers / TWILIO_LOCAL_NUMBERS) — same webhook, same
+     routing; it is answered from that number, the relay says "via (662)", and it is remembered as their number (used only when no local number matches their area code) */
+  let lnList = []; try { lnList = await LNS().load(); } catch (e) {}
+  const lnTo = require('./_lib/localnums.js').byNumber(lnList, p.To);
+  if (S.HELP.test(body) && !menuLine0) { out.help = optedOut ? { skipped: 'opted out' } : await require('./_lib/custquiet.js').run('reply', () => sendSms(ph, S.HELP_TEXT, lnTo ? '+1' + lnTo.number : '')); return out; }   /* patch CUSTQUIET: the HELP answer carriers require goes at once */
   /* patch SUBTXT: an answer to a sub's schedule text — Y → ✓ Confirmed; anything else → the job's PM at once (push, 🔴 To-Do, e-mail) */
   try { const sh = await require('./sub-texts.js')._lib.handleReply(ph, body, at); if (sh && sh.handled) { out.subText = { confirmed: !!sh.confirmed, issue: !!sh.issue, key: sh.key }; return out; } } catch (e) { out.subTextError = s(e && e.message); }
   let data = {};
@@ -481,12 +487,16 @@ async function inboundSms(p){
     insurance: insP, oncall: onP, leadsPerson: set.leadsPerson ? { name: '', email: set.leadsPerson } : null });
   if (rt.pid && !pid) { pid = rt.pid; job = rt.job || job; }
   out.route = { purpose, to: rt.to.map(x => x.email || x.name), office: rt.office, urgent: rt.urgent, why: rt.why };
+  const viaLocal = lnTo ? require('./_lib/localnums.js').via(lnTo.number) : '';
+  if (viaLocal) out.route.via = viaLocal;
+  /* patch LOCALNUMS: sticky — the customer texted this number of ours; a person's answer goes back on it unless a local number matches their area code (staff / subs keep their own) */
+  if (!(who && (who.kind === 'staff' || who.kind === 'sub')) && (lnTo || RT.isOurs(toNum, set, env) || toNum === phone10(env('TWILIO_FROM')))) { try { if (await LNS().remember(ph, toNum, 'texted us')) out.sticky = toNum; } catch (e) {} }
   const name = s(who && who.name);
   const label = jobLabelOf(job);
   const shown = (name || tidy(ph)) + (who && who.kind === 'sub' ? ' (sub)' : '');
   /* 1) Job Messages (by job; no job → 📥 Unsorted) + the job's 💬 Communication timeline */
-  out.msg = await postJobMsg({ id: 'SMS_' + sid, pid, authorId: 'sms:' + ph, authorName: '📱 ' + shown + ' (text)', text: clip(body, 1600), tags: RT.tagsFor(rt.to, data.users), at, source: 'sms', channel: 'sms', dir: 'in', smsFrom: ph,
-    smsTo: toNum, purpose, routedTo: rt.to.map(x => ({ name: s(x.name), email: s(x.email), why: s(x.why) })), office: !!rt.office, urgent: !!rt.urgent, urgency: rt.urgent ? 'asap' : '' });
+  out.msg = await postJobMsg({ id: 'SMS_' + sid, pid, authorId: 'sms:' + ph, authorName: '📱 ' + shown + (viaLocal ? ' (text via ' + viaLocal + ')' : ' (text)'), text: clip(body, 1600), tags: RT.tagsFor(rt.to, data.users), at, source: 'sms', channel: 'sms', dir: 'in', smsFrom: ph,
+    smsTo: toNum, viaLocal: viaLocal || undefined, purpose, routedTo: rt.to.map(x => ({ name: s(x.name), email: s(x.email), why: s(x.why) })), office: !!rt.office, urgent: !!rt.urgent, urgency: rt.urgent ? 'asap' : '' });
   await commsAdd(pid, { id: 'sms_' + sid, kind: 'text', dir: 'in', at, from: tidy(ph), fromName: name, text: body });
   /* 2) a missed-call lead / call-back to-do this number already has: the text is added there too (patch AUTO6) */
   const line = '📱 Text from ' + tidy(ph) + ' (' + at.slice(0, 16).replace('T', ' ') + ' UTC): ' + clip(body, 1000);
@@ -535,7 +545,7 @@ async function inboundSms(p){
   /* 5) the job's PM hears too */
   let pm = null; try { pm = job ? core().pmOf(data, job) : (own.pm ? await core().pmByName(own.pm) : null); } catch (e) {}
   if (!(who && (who.kind === 'staff' || who.kind === 'sub'))) { try { const eq = await SA().emqOnCustomer(ph); if (eq) out.emq = eq; } catch (e) {} }   /* EMQ: they texted back after we answered an emergency → the insurance / access questions */
-  try { out.cellAlerts = await SA().inboundText({ ph, body, who, pid, label, urgent: !!rt.urgent, mine: rt.to.map(x => x.email).concat(pm && pm.email ? [pm.email] : [], st0.lastOut && st0.lastOut[ph] ? [st0.lastOut[ph].email] : []) }); } catch (e) {}   /* patch SMSALERT */
+  try { out.cellAlerts = await SA().inboundText({ ph, body, who, pid, label, via: viaLocal, urgent: !!rt.urgent, mine: rt.to.map(x => x.email).concat(pm && pm.email ? [pm.email] : [], st0.lastOut && st0.lastOut[ph] ? [st0.lastOut[ph].email] : []) }); } catch (e) {}   /* patch SMSALERT */
   /* patch SMSCONSENT: texting us first is consent (via 'text') — only when nothing is recorded yet, never over STOP, never for subs / staff;
      the first reply to that number carries the subscription notice, once (prepended to the automatic answer, never a second text) */
   let noticeNow = false;
@@ -625,7 +635,7 @@ async function inboundSms(p){
     /* patch CUSTQUIET: 7 PM–7 AM Central the automatic answer is queued for 7 AM — unless the texter reported an EMERGENCY
        (emergency words, the emergency answer, menu 5): that reply goes now, as before */
     let emergT = !!(rule && rule.id === 'emergency') || (menu && menu.choice === '5'); if (!emergT) { try { emergT = !!RT.topics(body).emergency; } catch (e) {} }
-    out.reply = await require('./_lib/custquiet.js').run(emergT ? 'emergency' : S.HELP.test(body) ? 'reply' : 'customer', () => sendSms(ph, reply, RT.isOurs(toNum, set, env) ? '+1' + toNum : ''));   /* patch SMSROUTE: answered from the number they texted */
+    out.reply = await require('./_lib/custquiet.js').run(emergT ? 'emergency' : S.HELP.test(body) ? 'reply' : 'customer', () => sendSms(ph, reply, RT.isOurs(toNum, set, env) || lnTo ? '+1' + toNum : ''));   /* patch SMSROUTE: answered from the number they texted (patch LOCALNUMS: a local number too) */
     if (out.reply && out.reply.held) out.replyHeldUntil = out.reply.held.releaseAt;
     if (out.reply.ok && noticeNow) { out.notice = true; await stateCas(st => { st.welcomed = st.welcomed && typeof st.welcomed === 'object' ? st.welcomed : {}; st.welcomed[ph] = at; return true; }).catch(() => {}); }   /* patch SMSCONSENT */
     if (out.reply.ok) {

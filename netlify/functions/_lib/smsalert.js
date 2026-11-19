@@ -352,6 +352,25 @@ function leadNum(){ return env('TWILIO_FROM') || fromNum(); }
 /* TEXTLOG: every send goes through here — the text is logged for the CRM (never blocks the send) */
 let TLN = 0;
 async function tlog(row){ try { row.id = row.id || ('T' + now().toString(36) + '_' + (++TLN).toString(36) + Math.random().toString(36).slice(2, 6)); row.at = row.at || new Date(now()).toISOString(); row.text = clip(row.text, 600); if (!row.leadId) { const m = /^GrayCo: ([A-HJ-NP-Z2-9]{4}) /.exec(s(row.text)); if (m) row.code = m[1]; } await _D.textLog(row); } catch (e) {} }
+/* patch LOCALNUMS: a text to a CUSTOMER goes out on their local number (sticky / area code — _lib/localnums.js), else the main GrayCo
+   number as before. It never decides whether they are texted (STOP / consent / automations are checked by each caller first). */
+async function custFrom(ph){
+  const main = env('TWILIO_FROM');
+  try {
+    const LN = require('./localnums.js'), RT = require('./smsroute.js');
+    let ours = [main]; try { const S = require('./sms.js'); ours = ours.concat(RT.numbers(S.settings(await _D.kvGet(S.SETTINGS_KEY)), env).map(x => x.number)); } catch (e) {}
+    const st = LN.make({ env, now: _D.now, kvGet: k => _D.kvGet(k), kvCas: (k, f) => _D.kvCas(k, f) });
+    const r = await st.fromFor(ph, { fallback: main, ours });
+    return r && r.from ? Object.assign({ store: st }, r) : { from: main, why: 'main' };
+  } catch (e) { return { from: main, why: 'main' }; }
+}
+async function sendC(ph, body, tag, ctx){
+  const pk = await custFrom(ph);
+  const r = await sendL(ph, body, pk.from, tag, ctx);
+  if (r && r.ok && pk.store) { try { await pk.store.afterSend(ph, pk); } catch (e) {} }
+  if (r && typeof r === 'object' && pk.local) { try { r.via = require('./localnums.js').via(pk.number); } catch (e) {} }
+  return r;
+}
 async function sendL(ph, body, from, tag, ctx){
   const r = await _D.send(ph, body, from, tag);
   if (r && r.ok) await tlog(Object.assign({ dir: 'out', phone: phone10(ph), text: body, kind: tag || 'staff' }, ctx || {}));
@@ -552,7 +571,7 @@ async function staffInbound0(ph, body, sid){
   signed = signed.slice(0, 600);
   /* patch CUSTQUIET: a staff reply relayed to a customer is a customer text — 7 PM–7 AM Central it waits for 7 AM, except the
      answer to an EMERGENCY the customer started (rep.emergency), which goes now */
-  const r = await sendL(to, signed, env('TWILIO_FROM'), rep.emergency ? 'emergency' : 'customer');
+  const r = await sendC(to, signed, rep.emergency ? 'emergency' : 'customer');
   if (!r || !r.ok) return { handled: true, staff: email, notSent: 'Twilio did not send it' };
   const id = 'SMSC_' + (sid || t.toString(36));
   if (rep.emergency) { try { await emqArm(to, { pid: rep.pid, leadId: rep.leadId, staff: p.name || email }); } catch (e) {} }   /* EMQ: we answered — the questions come next */
@@ -579,11 +598,12 @@ async function inboundText(o){
   if (lc) {
     const shown = clip(s(who.name) || s(lc.name) || tidy(o.ph), 40) + ' ' + tidy(o.ph);
     const lcode = s(lc.code) || lsaCode(lc.leadId);   /* ONELEAD: a website lead has no code saved yet */
-    return notify({ type: 'cust', lsa: { leadId: lc.leadId, code: lcode, name: lc.name, phone: phone10(o.ph) }, text: (lc.stage === 'web' ? 'Website lead ' : 'LSA lead ') + lcode + ' ' + shown + ' texted: ' + quote(o.body) + ' Reply here within 30 min to answer them (or in CRM Messages).',
+    return notify({ type: 'cust', lsa: { leadId: lc.leadId, code: lcode, name: lc.name, phone: phone10(o.ph) }, text: (lc.stage === 'web' ? 'Website lead ' : 'LSA lead ') + lcode + ' ' + shown + ' texted' + (s(o.via) ? ' via ' + s(o.via) : '') + ': ' + quote(o.body) + ' Reply here within 30 min to answer them (or in CRM Messages).',
       link: site() + '/?jobmsg=' + encodeURIComponent(o.pid || 'unsorted'), thread: 'p:' + phone10(o.ph), only: lsaAdmins(), replyTo: { phone: o.ph, pid: o.pid || '', name: who.name || lc.name || '' } });
   }
   const shown = clip(s(who.name) || tidy(o.ph), 40) + (who.name ? ' ' + tidy(o.ph) : '');
-  const text = (o.urgent ? '🚨 ' : '') + 'text from ' + shown + (o.label ? ' — ' + clip(o.label, 40) : '') + ': ' + quote(o.body) + ' Reply here within 30 min to answer.';
+  const via = s(o.via) ? ' via ' + s(o.via) : '';   /* patch LOCALNUMS: it came in on a local number — "via (662)" */
+  const text = (o.urgent ? '🚨 ' : '') + 'text from ' + shown + via + (o.label ? ' — ' + clip(o.label, 40) : '') + ': ' + quote(o.body) + ' Reply here within 30 min to answer.';
   return notify({ type: kind, text, link: site() + '/?jobmsg=' + encodeURIComponent(o.pid || 'unsorted'), thread: 'p:' + phone10(o.ph), mine: o.mine || [], emergency: !!o.urgent,
     replyTo: { phone: o.ph, pid: o.pid || '', name: who.name || '' } });
 }
@@ -1149,7 +1169,7 @@ async function webAsk(ph, o){
   if (night) { const wd = new Date(now() + 6 * 3600e3).toLocaleDateString('en-US', { timeZone: 'America/Chicago', weekday: 'short' });
     body = 'Hi' + (f ? ' ' + f : '') + ', this is GrayCo Construction Services. We got your request from our website' + about + '. Our office is closed now — we\'ll call you ' + (/^(Sat|Sun)/.test(wd) ? 'on Monday morning' : 'in the morning') + '. To help us get ready, reply with what you need help with (roof, water damage, remodel…) and the property address. If water is coming in or it\'s an emergency, reply EMERGENCY. Reply STOP to opt out.'; }
   else body = 'Hi' + (f ? ' ' + f : '') + ', this is GrayCo Construction Services. We got your request from our website' + about + ' — someone from our team will call you shortly. Reply here with any details or photos that help. Reply STOP to opt out.';
-  const r = await sendL(ph, body.slice(0, 480), env('TWILIO_FROM'), o.em ? 'emergency' : 'customer', { kind: 'customer', leadId: s(o.leadId) });   /* CUSTTEXT2: the customer quiet hours hold it */
+  const r = await sendC(ph, body.slice(0, 480), o.em ? 'emergency' : 'customer', { kind: 'customer', leadId: s(o.leadId) });   /* CUSTTEXT2: the customer quiet hours hold it */
   return { sent: !!(r && r.ok), night };
 }
 async function lsaAsk(ph, o){
@@ -1171,12 +1191,12 @@ async function lsaAsk(ph, o){
     const wd = new Date(now() + 6 * 3600e3).toLocaleDateString('en-US', { timeZone: 'America/Chicago', weekday: 'short' });   /* the day after the night's 6 AM side */
     const when = /^(Sat|Sun)/.test(wd) ? 'on Monday morning' : 'in the morning';
     const nb = 'Hi' + (f ? ' ' + f : '') + ', this is GrayCo Construction Services. We got your request through Google' + (svc ? ' about ' + svc.toLowerCase() : '') + '. Our office is closed now — we\'ll call you ' + when + '. To help us get ready, reply with what you need help with (roof, water damage, remodel…) and the property address. If water is coming in or it\'s an emergency, reply EMERGENCY. Reply STOP to opt out.';
-    const rn = await sendL(ph, nb.slice(0, 480), env('TWILIO_FROM'), 'customer', { kind: 'customer', leadId: s(o.leadId) });   /* CUSTTEXT2: the customer quiet hours hold it (was 'reply') */
+    const rn = await sendC(ph, nb.slice(0, 480), 'customer', { kind: 'customer', leadId: s(o.leadId) });   /* CUSTTEXT2: the customer quiet hours hold it (was 'reply') */
     await _D.kvCas(SKEY, v => { const st = loadState(v); if (st.lsaCust[ph]) st.lsaCust[ph].stage = 'night'; return st; }).catch(() => {});
     return { sent: !!(rn && rn.ok), night: true };
   }
   const body = 'Hi' + (f ? ' ' + f : '') + ', this is GrayCo Construction Services. We received your request through Google' + (svc ? ' about ' + svc.toLowerCase() : '') + '. Reply YES to confirm you\'d like a call and a GrayCo project manager will reach out to you shortly. Reply STOP to opt out.';   /* CUSTTEXT2: no PM name / number promised */
-  const r = await sendL(ph, body.slice(0, 320), env('TWILIO_FROM'), o.em ? 'emergency' : 'customer');
+  const r = await sendC(ph, body.slice(0, 320), o.em ? 'emergency' : 'customer');
   return { sent: !!(r && r.ok), held: !!(r && r.held) };
 }
 /* a text from a customer (missed-call.js, before the normal path): their YES to the qualify text. Never stops the normal path. */
@@ -1187,7 +1207,7 @@ async function lsaCustomer(ph, body){
   const at = new Date(now()).toISOString();
   await _D.kvCas(SKEY, v => { const st = loadState(v); if (st.lsaCust[ph]) { st.lsaCust[ph].stage = 'yes'; st.lsaCust[ph].yesAt = at; } return st; }).catch(() => {});
   let saved = null; try { saved = await _D.lsaVerified(rec.leadId); } catch (e) {}
-  let ack = null; try { ack = await sendL(ph, 'Thank you' + (firstOf(rec.name) ? ', ' + firstOf(rec.name) : '') + ' — you\'re confirmed. A GrayCo project manager will reach out to you shortly.', env('TWILIO_FROM'), 'customer'); } catch (e) {}
+  let ack = null; try { ack = await sendC(ph, 'Thank you' + (firstOf(rec.name) ? ', ' + firstOf(rec.name) : '') + ' — you\'re confirmed. A GrayCo project manager will reach out to you shortly.', 'customer'); } catch (e) {}
   let told = null; try { told = await notify({ type: 'lead', lsa: { leadId: rec.leadId, code: rec.code, name: rec.name, phone: ph }, text: '✅ ' + rec.code + ' ' + clip(rec.name, 40) + ' ' + tidy(ph) + ' confirmed by text (YES). Reply GOOD ' + rec.code + ' or BAD ' + rec.code + ' + why.', link: site() + '/#leads', only: lsaAdmins(), thread: 'lsa:' + rec.leadId + ':yes' }); } catch (e) {}
   return { lsaVerified: rec.leadId, saved, acked: !!(ack && ack.ok), told: told && told.sent };
 }
@@ -1224,7 +1244,7 @@ async function lsaPmText(lead, x){
   const f = firstOf(c.name || lead.name);
   const body = named && s(x && x.assignee) ? 'Hi' + (f ? ' ' + f : '') + ', your GrayCo project manager is ' + (again ? 'now ' : '') + pmName + (pmPh.length === 10 ? ' — ' + tidy(pmPh) : '') + '. They will be calling you shortly. — GrayCo Construction Services'
     : 'Hi' + (f ? ' ' + f : '') + ', thanks for reaching out to GrayCo Construction Services. A project manager will reach out to you shortly.';   /* CUSTTEXT2: no name / number by default */
-  const r = await sendL(ph, body.slice(0, 320), env('TWILIO_FROM'), 'customer');
+  const r = await sendC(ph, body.slice(0, 320), 'customer');
   return { sent: !!(r && r.ok), to: ph, pm: pmName };
 }
 /* "<head>: <who> — "<message…>" <link>" in ≤ 300 characters; the message is what gets trimmed */
@@ -1399,7 +1419,7 @@ async function emqSend(ph, why){
   if (await _D.paused()) return { ph, notSent: 'data-entry mode is on' };
   const opt = await _D.optouts(); if (opt[ph]) return { ph, notSent: 'that number texted STOP' };
   if (await _D.consentNo(ph)) return { ph, notSent: 'that customer declined texts' };
-  const r = await sendL(ph, emqText(), env('TWILIO_FROM'), 'emergency', { kind: 'customer', leadId: s(rec.leadId), pid: s(rec.pid) });
+  const r = await sendC(ph, emqText(), 'emergency', { kind: 'customer', leadId: s(rec.leadId), pid: s(rec.pid) });
   return { ph, sent: !!(r && r.ok), why };
 }
 /* the customer texted back after we answered */
@@ -1815,5 +1835,5 @@ async function lsaAgeCheck(){
   return out;
 }
 
-module.exports = { jobReady, lsaQualifiedG, goodLadder, escStart, pmAppt, LSA_DISPUTE_WINDOW_H, LSA_WARN_LEFT_H, lsaEscTick, goodCust, pmLeadText, speedText, bidDueText, pmAssignText, lsaBad, lsaDisputed, lsaMark, lsaMine, lsaAgeCheck, _lsaQualified: lsaQualified, loadOwners, lsaAdmins, lsaFollowUp, lsaIntake, lsaAssign, lsaPms, lsaDefaultPm, lsaSetDefaultPm, lsaList, sevenOk, bundleTexts, lsaCallBits, HOLD_KEY, emqArm, emqSend, emqOnCustomer, emqDue, _emqText: emqText, lsaCustOf, webAsk, _findJob: findJob, apptText, lsaVetted, jobNote, lsaAsk, lsaCustomer, lsaPmText, _lsaCode: lsaCode, _lsaParseMulti: lsaParseMulti, _isLsaLead: isLsaLead, _lsaReply: lsaReply, _D: _D, _isSubBid: isSubBid, ROLE_MIT, DEFAULT_PEOPLE, resolve, mitigationHolders, leadText, KEY, SKEY, TYPES, RATE_MS, REPLY_MS, settings, cleanPerson, staffList, load, save, notify, flushHeld, staffInbound, isStaffPhone, inboundText, missedCall, leads, assigned, approvals, textable, system,
+module.exports = { custFrom, sendC, jobReady, lsaQualifiedG, goodLadder, escStart, pmAppt, LSA_DISPUTE_WINDOW_H, LSA_WARN_LEFT_H, lsaEscTick, goodCust, pmLeadText, speedText, bidDueText, pmAssignText, lsaBad, lsaDisputed, lsaMark, lsaMine, lsaAgeCheck, _lsaQualified: lsaQualified, loadOwners, lsaAdmins, lsaFollowUp, lsaIntake, lsaAssign, lsaPms, lsaDefaultPm, lsaSetDefaultPm, lsaList, sevenOk, bundleTexts, lsaCallBits, HOLD_KEY, emqArm, emqSend, emqOnCustomer, emqDue, _emqText: emqText, lsaCustOf, webAsk, _findJob: findJob, apptText, lsaVetted, jobNote, lsaAsk, lsaCustomer, lsaPmText, _lsaCode: lsaCode, _lsaParseMulti: lsaParseMulti, _isLsaLead: isLsaLead, _lsaReply: lsaReply, _D: _D, _isSubBid: isSubBid, ROLE_MIT, DEFAULT_PEOPLE, resolve, mitigationHolders, leadText, KEY, SKEY, TYPES, RATE_MS, REPLY_MS, settings, cleanPerson, staffList, load, save, notify, flushHeld, staffInbound, isStaffPhone, inboundText, missedCall, leads, assigned, approvals, textable, system,
   inQuiet, quietNow, centralHour, compose, wants, _D };

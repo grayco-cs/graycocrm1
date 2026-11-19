@@ -186270,6 +186270,7 @@ function send(to, text, pid, anyway){
   return j(FN + '?send=1', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to: to, text: text, pid: pid || '', checkQuiet: !anyway }) }).then(function(o){
     /* patch SMSROUTE: after 7 PM the CRM asks before texting (patch CUSTQUIET: 7 PM; the server now queues the text for 7 AM) */
     if (o && o.quiet && !anyway) { var yes = false; try { yes = W.confirm('It is after 7 PM (or before 7 AM). Texts to customers wait until 7:00 AM. Send it now anyway?'); } catch (e) {} if (yes) return send(to, text, pid, true); }
+    if (o && o.ok) { try { delete FROMC[d10(to)]; } catch (e) {} }   /* patch LOCALNUMS: the sticky number may have changed */
     if (o && o.ok && o.message) { try { var l = msgs(); if (!l.some(function(m){ return m && m.id === o.message.id; })) { l.push(o.message); localStorage.setItem('gc_job_messages', JSON.stringify(l)); } } catch (e) {} }
     return o;
   });
@@ -186285,6 +186286,27 @@ function phoneFor(pid){
   return ph.length === 10 ? ph : '';
 }
 
+/* patch LOCALNUMS: "📱 Sending from (662) 555-0142 · MS local number" under the bar — the server's own pick for the phone typed / picked
+   (the local number for the area code, else the number they last texted / were texted on, else the main GrayCo number); it follows the phone box */
+var FROMC = {};
+function fromFor(to){
+  to = d10(to); if (to.length !== 10) return Promise.resolve(null);
+  if (FROMC[to] && Date.now() - FROMC[to].t < 60000) return Promise.resolve(FROMC[to].o);
+  return j(FN + '?fromfor=1&to=' + encodeURIComponent(to)).then(function(o){ if (o && o.ok) { FROMC[to] = { o: o, t: Date.now() }; return o; } return null; });
+}
+function fromLabel(b){
+  var el = b.querySelector('.gctx-from'), last = null, seq = 0;
+  if (!el) return;
+  function check(){
+    var inp = b.querySelector('.gctx-to'), to = d10(inp ? inp.value : '');
+    if (to === last) return; last = to;
+    var my = ++seq;
+    if (to.length !== 10) { el.textContent = ''; return; }
+    fromFor(to).then(function(o){ if (my !== seq || !b.isConnected) return; el.textContent = o && o.label ? '📱 ' + o.label : ''; if (o) { el.setAttribute('data-from', s(o.number)); el.setAttribute('data-local', o.local ? '1' : ''); } });
+  }
+  check();
+  var iv = RI.call(W, function(){ if (!b.isConnected) { clearInterval(iv); return; } check(); }, 700);
+}
 /* ── Job Messages: the "📱 Text them" bar ── */
 var DRAFT = { pid: '', to: '', text: '' };
 function bar(ov, pid){
@@ -186300,6 +186322,7 @@ function bar(ov, pid){
     + '<input class="gctx-to" inputmode="tel" placeholder="Phone" value="' + esc(DRAFT.to) + '" style="width:140px;padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">'
     + '<input class="gctx-msg" maxlength="600" placeholder="Text from the GrayCo number…" value="' + esc(DRAFT.text) + '" style="flex:1 1 200px;min-width:0;padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">'
     + '<button type="button" class="gctx-send" style="padding:7px 12px;border:0;border-radius:6px;background:#0e7490;color:#fff;font-weight:700;cursor:pointer">Send text</button></div>'
+    + '<div class="gctx-from" data-gc-keep="1" style="font-size:11.5px;color:#0e7490;font-weight:700;margin-top:4px"></div>'   /* patch LOCALNUMS: "Sending from (662) …" */
     + '<div class="gctx-note" style="font-size:11px;color:#475569;margin-top:4px">Goes out from the GrayCo texting number and shows on this thread. Customers can text that number too — their texts land here.</div>';
   var thr = card.querySelector('#_jmThread');
   if (thr && thr.parentNode === card) card.insertBefore(b, thr); else card.insertBefore(b, card.children[1] || null);
@@ -186309,8 +186332,9 @@ function bar(ov, pid){
     var n = b.querySelector('.gctx-note'); if (!n || !st) return;
     if (!st.ready) n.textContent = 'Texting is not set up yet (Netlify TWILIO_* — see docs/TEXT-MESSAGES.md).';
     else if (st.paused) n.textContent = '⏸ Data-entry mode is on — no texts go out until an admin turns it off.';
-    else if (st.number) n.textContent = 'Goes out from ' + st.number + ' and shows on this thread. Customers can text that number too — their texts land here.';
+    else if (st.number) n.textContent = 'Goes out from the number above (the customer\'s local number, else ' + st.number + ') and shows on this thread. Their replies land here.';   /* patch LOCALNUMS */
   });
+  fromLabel(b);   /* patch LOCALNUMS */
   b.querySelector('.gctx-send').onclick = function(){
     var to = d10(b.querySelector('.gctx-to').value), tx = s(b.querySelector('.gctx-msg').value), btn = this;
     /* patch BTNFIX: the answer shows in the bar itself (the note at the bottom of the screen sat under the job page) */
@@ -186508,8 +186532,114 @@ W._gcSmsNumbers = function(){   /* an array once the texting status is loaded, e
   if (STATUS && Array.isArray(STATUS.numbers)) return pubNums(STATUS.numbers);
   return status().then(function(st){ return st && Array.isArray(st.numbers) ? pubNums(st.numbers) : []; }, function(){ return []; });
 };
-W._gcTexts = { status: status, send: send, textUsLine: textUsLine, open: function(pid){ if (W._gcOpenJobMessages) W._gcOpenJobMessages(pid); }, _phoneFor: phoneFor, _decorate: decorateUnsorted };
+W._gcTexts = { status: status, send: send, textUsLine: textUsLine, open: function(pid){ if (W._gcOpenJobMessages) W._gcOpenJobMessages(pid); }, _phoneFor: phoneFor, _decorate: decorateUnsorted, fromFor: fromFor };
 try { console.log('[GC] 💬 Text us: Job Messages "📱 Text them", Unsorted "📱 Text back", Admin → 💬 Text auto-answers (patch TXT) — _gcTexts'); } catch (e) {}
+})();
+</script>
+<script id="gc-patch-localnums">
+/* __GC_PATCH_LOCALNUMS__ — 📱 LOCAL TEXT NUMBERS (owner 11/19: "I'll need to make more Twilio numbers for Mississippi area codes and
+   Arkansas area codes so the right text number texts them, and then those texts route to our cell phones").
+     • Admin → 📱 Local text numbers (admins): { state, area codes, Twilio number, label } rows — texts.js?localnums=1, gc_kv
+       "gc_sms_local" (phone numbers only; the Twilio SID / token stay in Netlify). Netlify TWILIO_LOCAL_NUMBERS (JSON) is the fallback.
+     • A person's text to a customer ALWAYS goes out on the local number for their area code; with no match, on the number they last
+       texted / were texted on (sticky), else the main GrayCo number; the "📱 Text them" bar says "Sending from (662) …" (patch TXT, texts.js?fromfor=1).
+     • Replies to any of these numbers use the same webhook (missed-call?event=sms) and reach the same people, noted "via (662)".
+     • STOP and consent are per customer phone, across every number. Nothing here texts a customer by itself.
+   API: window._gcLocalNumsOpen() — opens the section (🔧 Owner setup's step uses it) */
+(function(){
+'use strict';
+if (window.__GC_PATCH_LOCALNUMS__) return; window.__GC_PATCH_LOCALNUMS__ = true;
+var W = window, D = document;
+var RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+var FN = '/.netlify/functions/texts?localnums=1';
+var STATES = [['MS', 'Mississippi'], ['AR', 'Arkansas'], ['TN', 'Tennessee'], ['AL', 'Alabama'], ['MO', 'Missouri'], ['KY', 'Kentucky'], ['LA', 'Louisiana']];
+var EX = [{ state: 'MS', codes: ['662', '601', '769', '228'] }, { state: 'AR', codes: ['870', '501', '479'] }, { state: 'TN', codes: ['901', '731'] }];
+var LAST = null;
+function s(v){ return v == null ? '' : String(v).trim(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function d10(v){ var d = s(v).replace(/\D/g, ''); return d.length === 11 && d[0] === '1' ? d.slice(1) : d; }
+function tidy(v){ var d = d10(v); return d.length === 10 ? '(' + d.slice(0, 3) + ') ' + d.slice(3, 6) + '-' + d.slice(6) : s(v); }
+/* gate by role: a real admin (the server checks the same) */
+function isAdmin(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()); } catch (e) { return false; } }
+function j(path, opts){
+  return W.fetch(path, opts).then(function(r){ return r.text().then(function(t){ var o = {}; try { o = JSON.parse(t); } catch (e) { o = { error: t.slice(0, 200) }; } o.__status = r.status; return o; }); },
+    function(e){ return { error: 'Cannot reach the server (' + e.message + ').', __status: 0 }; });
+}
+function toast(msg, bad){
+  try { var t = D.createElement('div'); t.setAttribute('data-gc-keep', '1'); t.textContent = msg;
+    t.style.cssText = 'position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:100260;background:' + (bad ? '#7f1d1d' : '#14532d') + ';color:#fff;padding:10px 16px;border-radius:10px;font:600 13px Inter,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.3);max-width:90vw';
+    D.body.appendChild(t); setTimeout(function(){ try { t.remove(); } catch (e) {} }, 4500); } catch (e) {}
+}
+var IN = 'border:1px solid #cbd5e1;border-radius:6px;padding:6px;font:13px Inter,sans-serif;box-sizing:border-box';
+function row(x){
+  x = x || {};
+  var st = s(x.state).toUpperCase(), known = STATES.some(function(p){ return p[0] === st; });
+  return '<div class="gcln-row" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:5px 0;padding:6px;border:1px solid #e2e8f0;border-radius:8px;background:#fff">'
+    + '<select data-l="state" aria-label="State" style="' + IN + '">' + STATES.map(function(p){ return '<option value="' + p[0] + '"' + (p[0] === st ? ' selected' : '') + '>' + p[0] + ' · ' + p[1] + '</option>'; }).join('')
+    + (st && !known ? '<option value="' + esc(st) + '" selected>' + esc(st) + '</option>' : '') + '</select>'
+    + '<input data-l="codes" aria-label="Area codes" placeholder="Area codes: 662, 601" value="' + esc(arr(x.codes).join(', ')) + '" style="' + IN + ';width:170px">'
+    + '<input data-l="number" aria-label="Twilio number" inputmode="tel" placeholder="Twilio number (662) 555-0100" value="' + esc(x.number ? tidy(x.number) : '') + '" style="' + IN + ';width:170px">'
+    + '<input data-l="label" aria-label="Label" placeholder="Label (e.g. North MS)" value="' + esc(x.label || '') + '" style="' + IN + ';width:150px">'
+    + '<button type="button" data-g="del" title="Remove" style="border:0;background:#fee2e2;color:#991b1b;border-radius:6px;padding:5px 9px;cursor:pointer">✕</button></div>';
+}
+function read(box){
+  return Array.prototype.map.call(box.querySelectorAll('.gcln-row'), function(el){
+    var v = function(k){ var i = el.querySelector('[data-l="' + k + '"]'); return i ? s(i.value) : ''; };
+    return { state: v('state'), codes: v('codes').split(/[^0-9]+/).filter(Boolean), number: v('number'), label: v('label') };
+  }).filter(function(x){ return x.number || x.codes.length; });
+}
+function render(box){
+  if (!isAdmin()) { box.innerHTML = '<div style="color:#64748b">Only an admin can change the local text numbers.</div>'; return; }
+  box.innerHTML = '<div style="color:#64748b">Loading…</div>';
+  j(FN).then(function(o){
+    if (!o || !o.ok) { box.innerHTML = '<div style="color:#b91c1c">' + esc((o && o.error) || 'Could not load.') + '</div>'; return; }
+    LAST = o;
+    var envL = arr(o.netlify);
+    box.innerHTML = '<div class="gcln" style="font:13px Inter,sans-serif;color:#0f172a">'
+      + '<div style="color:#334155;line-height:1.5">When anyone at GrayCo texts a customer from the CRM (📱 Text them, templates, the PM\'s texts, the portal welcome), it goes out from the number that matches the customer\'s <b>area code</b>, so a 662 customer sees a 662 number. '
+      + 'A local number for their area code is always used, even if they last texted the main number. With no match, they get the number they last texted (or were texted from), else the main GrayCo number' + (o.main ? ' <b>' + esc(o.main) + '</b>' : '') + '. Their replies come into the CRM the same way and go to the same cell phones (the job\'s PM and the owners), marked "via (662)". '
+      + 'STOP and consent are per customer, across every number. Subs keep the Subs number.</div>'
+      + '<div class="gcln-a2p" style="margin:10px 0;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 10px;color:#78350f"><b>⚠ ' + esc(o.a2p || '') + '</b></div>'
+      + '<div style="font-size:12px;color:#475569;margin-bottom:6px">Each number\'s "A message comes in" webhook (Twilio → Phone Numbers → the number): <code class="gcln-hook">' + esc(o.webhook || '') + '</code> (HTTP POST) — the same as the main GrayCo number. '
+      + '<button type="button" data-g="copy" style="border:0;border-radius:6px;padding:3px 8px;background:#e2e8f0;cursor:pointer">Copy</button></div>'
+      + (arr(o.clash).length ? '<div style="color:#b91c1c;font-weight:700;margin:6px 0">' + esc(o.clash.join(', ')) + ' is already one of the 💬 Our numbers lines — use a separate number here.</div>' : '')
+      + '<div data-g="list">' + arr(o.list).map(row).join('') + '</div>'
+      + (arr(o.list).length ? '' : '<div class="gcln-empty" style="color:#64748b;margin:6px 0">No local numbers yet — every text goes out from the main GrayCo number.</div>')
+      + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">'
+      + '<button type="button" data-g="add" style="border:0;border-radius:6px;padding:6px 10px;background:#e2e8f0;cursor:pointer">＋ Add a number</button>'
+      + '<button type="button" data-g="example" style="border:0;border-radius:6px;padding:6px 10px;background:#e2e8f0;cursor:pointer">＋ MS / AR / TN rows (fill in the numbers)</button>'
+      + '<button type="button" data-g="save" style="border:0;border-radius:8px;padding:7px 16px;background:#16a34a;color:#fff;font-weight:800;cursor:pointer">Save</button></div>'
+      + (envL.length ? '<div style="font-size:12px;margin-top:10px;color:#334155">From Netlify (TWILIO_LOCAL_NUMBERS, used when not on the list above): ' + envL.map(function(x){ return '<b>' + esc(tidy(x.number)) + '</b> ' + esc(x.state) + ' ' + esc(arr(x.codes).join('/')); }).join(' · ') + '</div>' : '')
+      + '<div style="font-size:12px;color:#64748b;margin-top:8px">Examples: MS 662 / 601 / 769 / 228 · AR 870 / 501 / 479 · TN 901 / 731. Only phone numbers are saved here — never a Twilio key or token.</div></div>';
+    box.onclick = function(ev){
+      var g = ev.target && ev.target.getAttribute && ev.target.getAttribute('data-g'), list = box.querySelector('[data-g="list"]');
+      if (g === 'copy') { try { navigator.clipboard.writeText(s(o.webhook)); toast('Copied the webhook address.'); } catch (e) {} }
+      if (g === 'add' && list) { list.insertAdjacentHTML('beforeend', row({ state: 'MS' })); var em = box.querySelector('.gcln-empty'); if (em) em.remove(); }
+      if (g === 'example' && list) { var have = read(box).map(function(x){ return x.state; }); EX.filter(function(x){ return have.indexOf(x.state) < 0; }).forEach(function(x){ list.insertAdjacentHTML('beforeend', row(x)); }); var em2 = box.querySelector('.gcln-empty'); if (em2) em2.remove(); }
+      if (g === 'del') { var r = ev.target.closest('.gcln-row'); if (r) r.remove(); }
+      if (g === 'save') {
+        var v = read(box), bad = v.filter(function(x){ return d10(x.number).length !== 10; })[0] || v.filter(function(x){ return !x.codes.length; })[0];
+        if (bad) { toast(d10(bad.number).length !== 10 ? 'Type the 10-digit Twilio number for ' + (bad.state || 'each row') + '.' : 'Add at least one area code for ' + tidy(bad.number) + '.', true); return; }
+        ev.target.disabled = true;
+        j(FN, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ list: v }) }).then(function(r){
+          ev.target.disabled = false;
+          if (r && r.ok) { toast('✅ Local text numbers saved (' + arr(r.list).length + ').'); render(box); } else toast('Not saved: ' + s(r && r.error), true);
+        });
+      }
+    };
+  });
+}
+function addSection(){
+  if (typeof W._gcAdmAddSection !== 'function') return false;
+  W._gcAdmAddSection({ id: 'localnums', after: 'texts', ic: '📱', t: 'Local text numbers', d: 'Mississippi / Arkansas / Tennessee numbers: customers are texted from their own area code',
+    render: render, count: function(){ return LAST ? (arr(LAST.list).length + arr(LAST.netlify).length) + ' numbers' : ''; } });
+  return true;
+}
+if (!addSection()) { var tries = 0, iv = RI.call(W, function(){ if (addSection() || ++tries > 120) clearInterval(iv); }, 500); }
+W._gcLocalNumsOpen = function(){ try { if (W._gcAdm && typeof W._gcAdm.open === 'function') { W._gcAdm.open('localnums'); return true; } } catch (e) {} return false; };
+W._gcLocalNums = { render: render, read: read };
+try { console.log('[GC] 📱 Local text numbers: Admin → 📱 Local text numbers, "Sending from" in the text bar (patch LOCALNUMS) — _gcLocalNumsOpen'); } catch (e) {}
 })();
 </script>
 <script id="gc-patch-smsalert">
@@ -196030,6 +196160,12 @@ var ITEMS = [
   { id: 'drive_file', g: 'soon', t: 'Google: allow "New Google Doc estimate" (drive.file)', how: 'admin.google.com → Security → Access and data control → API controls → Manage Domain Wide Delegation → the CRM\'s client ID → Edit → add https://www.googleapis.com/auth/drive.file to its scopes → Authorize. (It lets the CRM make only its own Docs — the GrayCo estimate template.) People using their own Connect Google press Connect Google once more.' },
   { id: 'twilio', g: 'soon', t: 'Twilio texting', how: 'Sign up at twilio.com with accounts@grayco-cs.com, upgrade to paid, buy a 901 number (Voice + SMS). Netlify: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM → Trigger deploy. Twilio → the number → "A message comes in" → Webhook POST https://crm.grayco-cs.com/.netlify/functions/missed-call?event=sms. Register A2P 10DLC (brand with the EIN + a "Customer care" campaign); it takes a few days.', auto: 'twilio' },
   { id: 'twilio_numbers', g: 'soon', t: 'Buy separate Twilio numbers: Subs, Customers, Marketing / leads (+1–2 spare later)', how: 'Twilio → Phone Numbers → Buy a 901 number (Voice + SMS) for each. On each number set "A message comes in" → Webhook, HTTP POST: https://crm.grayco-cs.com/.netlify/functions/missed-call?event=sms ("A call comes in" only on the published office line). A2P 10DLC: one Brand (GrayCo, with the EIN); a "Customer care" campaign for the Subs and Customers numbers, a "Marketing" campaign for the marketing number; add each number to its campaign\'s Messaging Service. Then enter each number with its purpose in ⚙ Admin → 💬 Text auto-answers → 📱 Our numbers (or Netlify TWILIO_FROM_SUBS / TWILIO_FROM_LEADS / TWILIO_FROM_CUSTOMERS → Trigger deploy). (docs/TEXT-ROUTING.md)', auto: 'sms_numbers' },
+  { id: 'local_numbers', g: 'soon', t: '📱 Add local text numbers for Mississippi and Arkansas', pre: true, auto: 'local_numbers', open: '_gcLocalNumsOpen', openLabel: 'Open 📱 Local text numbers',   /* patch LOCALNUMS */
+    how: '1. Twilio → Phone Numbers → Buy a number. Search by area code — 662 and 601 for Mississippi, 870, 501 and 479 for Arkansas — and tick SMS. Buy one for each area you want.\n' +
+      '2. A2P 10DLC (required): Twilio → Messaging → Services → the GrayCo messaging service → Sender pool → Add → add each new number. A number that is not in the existing campaign\'s sender pool will NOT deliver texts.\n' +
+      '3. Each new number: Twilio → Phone Numbers → the number → Messaging → "A message comes in" → the same Webhook URL as the current GrayCo number (open that number\'s settings and copy it; HTTP POST). Then Save.\n' +
+      '4. In the CRM: ⚙ Admin settings → 📱 Local text numbers → ＋ Add a number for each: its state, its area codes (e.g. MS 662, 601) and the Twilio number → Save. (Phone numbers only — never a key or token.)\n' +
+      '5. Test: from a phone with a 662 number that is on a job, text the new 662 number. It should show on that job\'s 💬 Job Messages "via (662)" and reach the PM\'s and owners\' cells. Then open that job\'s 📱 Text them bar: it says "Sending from (662) …".' },
   { id: 'twilio_num', g: 'soon', t: 'Send Claude the Twilio number', how: 'Paste the new 901 number in the chat with Claude. The website\'s "Text us" button needs it.' },
   { id: 'groups_copy', g: 'soon', t: 'Add the CRM\'s copy address to each group', how: 'admin.google.com → Groups → leads@ → Members → Add: leads@in.grayco-cs.com. claims@ → Add: claims@in.grayco-cs.com.' },
   { id: 'bids_group', g: 'soon', t: 'Make bids@ a group: Glenn, Wesley, Nick, office', how: 'admin.google.com → Groups → bids@grayco-cs.com with Glenn, Wesley, Nick, office@ and bids@in.grayco-cs.com as members.' },
@@ -196108,7 +196244,7 @@ function rowHtml(it){
   else right = '<button type="button" class="ot-b p" data-ot-done="' + esc(it.id) + '">Done</button>';
   var hint = !st.done && it.auto && st.auto === false ? '<div class="ot-h" style="color:#b45309">The CRM checked: not done yet.</div>' : '';
   var opn = it.open && typeof W[it.open] === 'function' ? '<button type="button" class="ot-b" data-ot-open="' + esc(it.id) + '" style="color:#241968;background:#fff">' + esc(it.openLabel || 'Open') + '</button> ' : '';   /* patch PERMITS2: a step with its own settings opens them here */
-  return '<div class="ot-r' + (st.done ? ' done' : '') + '"><div class="ot-main"><div class="ot-t">' + esc(it.t) + '</div><div class="ot-h">' + esc(it.how) + '</div>' + hint + '</div>' + opn + right + '</div>';
+  return '<div class="ot-r' + (st.done ? ' done' : '') + '"><div class="ot-main"><div class="ot-t">' + esc(it.t) + '</div><div class="ot-h"' + (it.pre ? ' style="white-space:pre-line"' : '') + '>' + esc(it.how) + '</div>' + hint + '</div>' + opn + right + '</div>';
 }
 function cardHtml(){
   var n = left();

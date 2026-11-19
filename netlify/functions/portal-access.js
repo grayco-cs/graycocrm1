@@ -435,7 +435,7 @@ async function sendMail(to, subject, html){
 /* texting: Twilio, once TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN and TWILIO_FROM are set on Netlify (A2P 10DLC
    registration first). Until then nothing is texted from here: the CRM offers "Text from my phone" instead. */
 function textReady(){ return !!(s(process.env.TWILIO_ACCOUNT_SID) && s(process.env.TWILIO_AUTH_TOKEN) && s(process.env.TWILIO_FROM)) && !mailOff(); }
-async function sendText(to, body){
+async function sendText(to, body, from){   /* patch LOCALNUMS: from = the customer's local number (welcome text), else TWILIO_FROM */
   const p = phone10(to);
   if (!textReady()) return { ok: false, skipped: 'text-not-set-up' };
   if (!p) return { ok: false, skipped: 'no-number' };
@@ -443,7 +443,7 @@ async function sendText(to, body){
   try {
     const r = await fetch('https://api.twilio.com/2010-04-01/Accounts/' + encodeURIComponent(sid) + '/Messages.json', { method: 'POST',
       headers: { Authorization: 'Basic ' + Buffer.from(sid + ':' + s(process.env.TWILIO_AUTH_TOKEN)).toString('base64'), 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ To: '+1' + p, From: s(process.env.TWILIO_FROM), Body: clip(body, 600) }).toString() });
+      body: new URLSearchParams({ To: '+1' + p, From: s(from) || s(process.env.TWILIO_FROM), Body: clip(body, 600) }).toString() });
     let held = null; try { held = require('./_lib/custquiet.js').heldOf(r); } catch (e) {}   /* patch CUSTQUIET */
     return held ? { ok: r.ok, status: r.status, held } : { ok: r.ok, status: r.status };
   } catch (e) { return { ok: false }; }
@@ -2025,7 +2025,8 @@ async function staffAction(action, body, who){
       const msg = 'Hi ' + (firstName || 'there') + ', this is GrayCo. Your project page: ' + link + ' — or sign in at ' + portalBase().replace(/^https:\/\//, '') + ' · ' + (phone && !email ? 'Phone: ' + phone : 'E-mail: ' + email) + (ch ? ' · Password: the one you chose' : ' · Your password is your first name: ' + (firstName.replace(/[^A-Za-z0-9'-]/g, '') || first || 'your first name') + ' (you can change it after you sign in).');   /* patch CUSTPORTAL (owner 11/02) */
       out.message = msg;
       let smsNo = false; try { const SC = require('./_lib/smsconsent.js'); smsNo = SC.statusFor({ projects: [p] }, phone, await SC.registry()) === 'no' || (await SC.live(phone)) === 'no'; } catch (e) {}   /* patch SMSCONSENT: declined → the PM sends it from their own phone */
-      if (phone && textReady() && !smsNo && body.via !== 'pm-phone') { const tx = await sendText(phone, msg); out.sent = tx.ok ? 'text' : ''; if (tx.held) { out.held = true; out.scheduled = true; out.releaseAt = tx.held.releaseAt; out.say = require('./_lib/custquiet.js').SAY; } }   /* patch CUSTQUIET: 7 PM–7 AM it waits for 7 AM */
+      if (phone && textReady() && !smsNo && body.via !== 'pm-phone') { let pk = null; try { pk = await require('./_lib/smsalert.js').custFrom(phone); } catch (e) {}   /* patch LOCALNUMS: the PM's welcome goes out on the customer's local number */
+        const tx = await sendText(phone, msg, pk && pk.from); out.sent = tx.ok ? 'text' : ''; if (tx.ok && pk && pk.store) { try { await pk.store.afterSend(phone, pk); } catch (e) {} } if (tx.held) { out.held = true; out.scheduled = true; out.releaseAt = tx.held.releaseAt; out.say = require('./_lib/custquiet.js').SAY; } }   /* patch CUSTQUIET: 7 PM–7 AM it waits for 7 AM */
       if (!out.sent && phone) out.sms = 'sms:' + phone + '?body=' + encodeURIComponent(msg);
     }
     return out;

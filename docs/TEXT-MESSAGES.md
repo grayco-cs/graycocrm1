@@ -47,6 +47,22 @@ The owner asked (10/23): "Can customers text the number for advice? Texts go to 
 - The text goes out from the GrayCo number and shows on the thread.
 - It is refused while data-entry mode is on, and to a number that texted STOP.
 
+## 📱 Local text numbers (patch LOCALNUMS)
+
+- **Admin → 📱 Local text numbers** (admins only): rows of state, area codes, Twilio number and a label, for example MS 662 / 601 / 769 / 228, AR 870 / 501 / 479, TN 901 / 731. Saved in gc_kv `gc_sms_local`. Only phone numbers are stored; the Twilio SID and token stay in Netlify.
+- **Netlify fallback:** `TWILIO_LOCAL_NUMBERS`, JSON in the same shape, e.g. `[{"state":"MS","codes":["662","601"],"number":"+16625550100","label":"North MS"}]`. It is used for numbers that are not on the admin list.
+- **Which number a person's text goes out on** (📱 Text them, templates, the PM's texts from the CRM, the portal welcome, a PM's reply from their cell to a customer alert):
+  1. The local number whose area codes include the customer's area code — always, even if they last texted the main number (owner 11/19: "texts get moved to the local number").
+  2. Only when no local number matches: **sticky**, the number this customer's conversation is already on (they texted it, or we texted them from a local number), as long as it is still one of ours. It is stored in gc_kv `gc_sms_local_sticky`.
+  3. Otherwise, the main GrayCo number (as before).
+
+  Subs, the billing / insurance lines, and texts to staff cells keep their own numbers. The bar shows "📱 Sending from (662) …".
+- **Replies** to any of our numbers (local or main) land on the job thread. They use the same webhook (`missed-call?event=sms`). They are matched to the customer and the job thread, and relayed to the same cells (the job's PM and the owners, per 📱 Text alerts), marked "via (662)". Automatic answers and the HELP answer go back from the number that was texted.
+- **STOP and consent are per customer phone, across every number.** STOP on any number blocks all of them; START on any number undoes it.
+- Nothing here texts a customer by itself. It only picks the From number.
+- **A2P 10DLC:** every new number must be added to the existing messaging campaign's sender pool (Twilio → Messaging → Services → the service → Sender pool → Add), or its texts will not be delivered.
+- 🔧 Owner setup has the step "📱 Add local text numbers for Mississippi and Arkansas". It ticks itself once an MS and an AR number are saved.
+
 ## Owner setup (Twilio console)
 
 1. **Netlify → Environment variables:** `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM` (the GrayCo Twilio number, `+1XXXXXXXXXX`). Set them for Functions / Production, then **Trigger deploy**. Missed-call text-back uses the same three.
