@@ -8,6 +8,10 @@
 //   POST ?act=notspam { id }    → "Not spam → make lead": the lead is filed (or let back into the Lead Inbox) and alerted as
 //                                 usual; the sender is never filtered again (allow list)
 //   POST ?act=dismiss { id }    → keep it as spam (off the list)
+// patch SUBPITCH (owner 11/19): a sales pitch (kind 'sales', hidden) never shows in held / done — only in the audit log
+//   GET ?list=1&audit=1 → + hidden: [the blocked sales pitches] (⚙ Admin settings → 🚫 Blocked; "Not spam → make lead" still works);
+//   a sub / supplier looking for work (status 'sub') → subs: [...] (Leads → 🤝 Subs & suppliers; "Actually a customer lead" = notspam,
+//   "Done" = dismiss); ?count=1 → { held, subs }.
 'use strict';
 require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const SGL = require('./_lib/salesguard.js');
@@ -58,12 +62,15 @@ exports.handler = async function(event){
   const who = await T().staffAuth(event); if (!who.ok) return J(who.code || 401, { ok: false, error: who.error }, C);
   if (!(who.admin || who.office)) return J(403, { ok: false, error: 'Only an admin or the office can see Sales & spam and the block list.' }, C);
   try {
-    if (m === 'GET' && qs.count) { const st = await G().store(); return J(200, { ok: true, held: st.list.filter(x => x.status === 'held').length }, C); }
+    if (m === 'GET' && qs.count) { const st = await G().store(); return J(200, { ok: true, held: st.list.filter(x => x.status === 'held' && !x.hidden).length, subs: st.list.filter(x => x.status === 'sub').length }, C); }
     if (m === 'GET' && qs.list) {
-      const st = await G().store(), block = await G().blockList(true);
-      const held = st.list.filter(x => x.status === 'held').reverse().map(slim);
-      const done = st.list.filter(x => x.status !== 'held').sort((a, b) => s(b.doneAt || b.at).localeCompare(s(a.doneAt || a.at))).slice(0, 40).map(slim);
-      return J(200, { ok: true, held, done, block, counts: st.counts, log: st.log.slice(-150).reverse() }, C);
+      const st = await G().store(), block = await G().blockList(true), shown = st.list.filter(x => !x.hidden);
+      const held = shown.filter(x => x.status === 'held').reverse().map(slim);
+      const subs = shown.filter(x => x.status === 'sub').reverse().map(slim);
+      const done = shown.filter(x => x.status !== 'held' && x.status !== 'sub').sort((a, b) => s(b.doneAt || b.at).localeCompare(s(a.doneAt || a.at))).slice(0, 40).map(slim);
+      const out = { ok: true, held, subs, done, block, counts: st.counts, hiddenN: st.list.filter(x => x.hidden).length, log: st.log.slice(-150).reverse() };
+      if (qs.audit) out.hidden = st.list.filter(x => x.hidden).reverse().map(slim);
+      return J(200, out, C);
     }
     if (m !== 'POST') return J(400, { ok: false, error: 'Bad request.' }, C);
     let b = {}; try { b = JSON.parse(event.body || '{}') || {}; } catch (e) { return J(400, { ok: false, error: 'Not JSON.' }, C); }

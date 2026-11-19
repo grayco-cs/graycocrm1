@@ -327,11 +327,14 @@ const tedLead = { id: 'LI-40569a6f62ec9c86', type: 'insurance', leadKind: 'Insur
   await web(tedForm());
   await sms('9015554400', PITCHES[0]);
   await sms('9015554401', PITCHES[4]);
+  /* patch SUBPITCH (owner 11/19): a sales pitch is blocked — never in the CRM's lists, only in the audit log (?audit=1) */
   a = await api('tok-office', 'GET', { list: '1' });
-  ok(a.ok && a.held.length === 3 && a.held.every(x => x.canLead && !x.refile) && a.counts.sales === 3, 'the office sees the 3 held (no internals)', a.held && a.held.map(x => [x.via, x.phone]));
+  ok(a.ok && !a.held.length && !a.done.length && a.hiddenN === 3 && !a.hidden && a.counts.sales === 3, 'the office\'s normal list shows none of the 3 pitches (blocked, counted)', a.held && a.held.map(x => [x.via, x.phone]));
+  a = await api('tok-office', 'GET', { list: '1', audit: '1' });
+  ok(a.ok && a.hidden.length === 3 && a.hidden.every(x => x.canLead && !x.refile && x.kind === 'sales'), 'the audit log keeps all 3 (no internals)', a.hidden && a.hidden.map(x => [x.via, x.phone]));
   a = await api('tok-pm', 'GET', { count: '1' }); ok(a.__code === 403, 'a PM does not');
-  a = await api('tok-owner', 'GET', { count: '1' }); ok(a.ok && a.held === 3, 'the count');
-  const tedItem = (await api('tok-owner', 'GET', { list: '1' })).held.find(x => x.via === 'website');
+  a = await api('tok-owner', 'GET', { count: '1' }); ok(a.ok && a.held === 0, 'the count (nothing to review)');
+  const tedItem = (await api('tok-owner', 'GET', { list: '1', audit: '1' })).hidden.find(x => x.via === 'website');
   T = DAY; MAIL.length = 0; SMS.length = 0;
   a = await api('tok-owner', 'POST', { act: 'notspam' }, { id: tedItem.id });
   let made = openInbox().find(x => x.id === a.leadId);

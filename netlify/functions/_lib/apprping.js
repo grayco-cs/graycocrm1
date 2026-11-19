@@ -78,9 +78,12 @@ function ck(k){
   return k;
 }
 /* APPRONCE: one person's list for notifications — one per steady key; the page's "Payroll waiting …" alert is the payroll run when that is in the list */
+/* patch SUBPITCH (owner 11/19): a new lead's first-contact approval is never its own text — the NEW LEAD text already went out;
+   it stays in the CRM's approvals list (only the ping skips it) */
+function quietKind(it){ const r = (it && it.raw) || {}; return s(r.kind) === 'lead_first_contact'; }
 function noteList(items){
   const out = [], have = {}, pay = items.some(function(x){ return /^pay:/.test(s(x.key)); });
-  items.forEach(function(it){ const c = ck(it.key); if (have[c]) return; if (pay && /^td:otd:alert_.*payroll/.test(c)) return; have[c] = 1; it.ck = c; out.push(it); });
+  items.forEach(function(it){ const c = ck(it.key); if (have[c] || quietKind(it)) return; if (pay && /^td:otd:alert_.*payroll/.test(c)) return; have[c] = 1; it.ck = c; out.push(it); });
   return out;
 }
 function keyOf(it){ if (it.key) return s(it.key); const r = it.raw || {}; return r.id ? 'ap2:' + s(r.id) : 'x:' + s(it.title); }

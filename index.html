@@ -186802,10 +186802,10 @@ var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
 var FN = '/.netlify/functions/salesblock';
 /* RULES-BEGIN — patch SALESBLOCK: the same text runs in the CRM page (index.html); keep it ES5 */
 var SG_STRONG = [
-  ['vendor intro: "we are a … firm / agency"', /\b(we\s+are|we\x27re|i\s+am|i\x27m)\s+(a|an)\s+[^.!?\n]{0,40}\b(firm|agency|consultancy|consulting\s+(firm|company)|outsourcing\s+company|service\s+provider)\b/i],
+  ['vendor intro: "we are a … firm / agency"', /\b(we\s+are|we\x27re|i\s+am|i\x27m)\s+(a|an)\s+[^.!?\n]{0,40}\b(firm|agency|consultancy|consulting\s+(firm|company)|outsourcing\s+company|service\s+provider)\b/i, 1],
   ['bookkeeping / accounting services', /\b(bookkeeping|book\s*keeping|accounting\s+(firm|services|team)|tax\s+(preparation|services)|payroll\s+services|fractional\s+cfo|virtual\s+cfo)\b/i],
-  ['pitch: "we build / help businesses like…"', /\b(i|we)\s+(build|create|design|develop|make|do|help|provide|offer|specialize\s+in|work\s+with|serve)\b[^.!?\n]{0,80}\b(businesses|companies|contractors|roofers|business\s+owners|brands|agencies|home\s*service)/i],
-  ['pitch: "businesses like yours / GrayCo"', /\b(businesses|companies|contractors|roofers|brands|owners)\s+like\s+(yours|you|grayco|your\s+(company|business))\b/i],
+  ['pitch: "we build / help businesses like…"', /\b(i|we)\s+(build|create|design|develop|make|do|help|provide|offer|specialize\s+in|work\s+with|serve)\b[^.!?\n]{0,80}\b(businesses|companies|contractors|roofers|business\s+owners|brands|agencies|home\s*service)/i, 1],
+  ['pitch: "businesses like yours / GrayCo"', /\b(businesses|companies|contractors|roofers|brands|owners)\s+like\s+(yours|you|grayco|your\s+(company|business))\b/i, 1],
   ['AI agent / AI receptionist', /\bai[\s-]*(agents?|receptionists?|assistants?|chat\s*bots?|voice\s*(agents?|assistants?)|phone\s*(agents?|answering)|employees?|sales\s*reps?|powered)\b/i],
   ['chatbot', /\bchat\s*-?\s*bots?\b/i],
   ['SEO', /\bseo\b|search\s+engine\s+optimi[sz]/i],
@@ -186813,13 +186813,18 @@ var SG_STRONG = [
   ['leads for your business', /\b(leads?|appointments|customers|clients|calls|jobs)\s+(for|to)\s+your\s+(business|company)\b|\blead[\s-]*gen(eration)?\b|\b(generate|deliver|send\s+you|get\s+you|drive|bring\s+you)\s+(more\s+)?(\w+\s+){0,2}(leads|appointments)\b|\b(get|generate|drive|win)\s+more\s+(customers|clients|leads|calls|reviews|jobs)\b/i],
   ['marketing agency', /\b(marketing|advertising|digital|growth|social\s+media|seo|web)\s+(agency|agencies|company|firm|services|partner|consultant|expert)s?\b|\bdigital\s+marketing\b|\bpay[\s-]per[\s-](click|lead)\b|\bppc\b/i],
   ['web design', /\bweb\s*(site)?\s*(design|designer|development|developer|redesign|makeover|audit)\b/i],
-  ['partnership', /\bpartner(ship)?\s+(with\s+(you|grayco|your)|opportunit)|\bstrategic\s+partnership\b|\b(white[\s-]label|affiliate)\s+(program|partner)/i],
+  ['partnership', /\bpartner(ship)?\s+(with\s+(you|grayco|your)|opportunit)|\bstrategic\s+partnership\b|\b(white[\s-]label|affiliate)\s+(program|partner)/i, 1],
   ['funding / working capital', /\bworking\s+capital\b|\bbusiness\s+(funding|loans?|line\s+of\s+credit|financing)\b|\bmerchant\s+cash\b|\bpre[\s-]?approved\s+for\b|\bfunding\s+(offer|for\s+your)\b|\bsba\s+loan\b/i],
   ['merchant / card processing', /\b(credit\s+card|card|merchant|payment)\s+processing\b|\bprocessing\s+fees\b|\bmerchant\s+services\b/i],
   ['virtual assistant / outsourcing', /\bvirtual\s+(assistants?|receptionists?|staff)\b|\boutsourc/i],
-  ['book a call / demo', /\b(book|schedule|set\s+up|hop\s+on|jump\s+on|grab)\s+(a\s+|an\s+)?(quick\s+|short\s+|brief\s+|free\s+)?(\d+[\s-]*min(ute)?s?\s+)?(call|demo|meeting|chat|zoom)\b|\b\d{1,2}[\s-]*min(ute)?s?\s+(call|chat|meeting|demo|zoom|of\s+your\s+time)\b|\bfree\s+(demo|trial|audit|analysis)\b/i],
-  ['unsubscribe / reply STOP', /\bunsubscribe\b|\breply\s+["'“]?stop\b|\btext\s+["'“]?stop\b|\bstop\s+to\s+(opt|unsub|end|cancel)/i],
-  ['reviews / listing', /\breview\s+(management|generation)\b|\b(google|business)\s+(listing|profile)\b[^.]{0,60}\b(suspend|verif|update|optimi|claim)/i]
+  ['book a call / demo', /\b(book|schedule|set\s+up|hop\s+on|jump\s+on|grab)\s+(a\s+|an\s+)?(quick\s+|short\s+|brief\s+|free\s+)?(\d+[\s-]*min(ute)?s?\s+)?(call|demo|meeting|chat|zoom)\b|\b\d{1,2}[\s-]*min(ute)?s?\s+(call|chat|meeting|demo|zoom|of\s+your\s+time)\b|\bfree\s+(demo|trial|audit|analysis)\b/i, 1],
+  ['unsubscribe / reply STOP', /\bunsubscribe\b|\breply\s+["'“]?stop\b|\btext\s+["'“]?stop\b|\bstop\s+to\s+(opt|unsub|end|cancel)/i, 1],
+  ['reviews / listing', /\breview\s+(management|generation)\b|\b(google|business)\s+(listing|profile)\b[^.]{0,60}\b(suspend|verif|update|optimi|claim)/i],
+  /* patch SUBPITCH (owner 11/19: "We shouldn't be getting texts like these") — the follow-up pitch ("interested in the offer? I could set it up for free, then you can test it out") */
+  ['"interested in the offer"', /\binterested\s+in\s+(the|my|our|this)\s+(offer|deal|program|proposal)\b|\b(the|my|our)\s+offer\s+(i|we)\s+(sent|mentioned|made)\b/i],
+  ['"set it up for free / test it out"', /\bset\s+(it|this|that|everything|you|it\s+all)\s+up\s+(for\s+)?(free|at\s+no\s+(cost|charge))\b|\b(test|try)\s+it\s+out\b|\bfree\s+(setup|set[\s-]up|onboarding|trial)\b/i],
+  ['staffing / recruiting', /\b(staffing|recruiting|recruitment)\s+(agency|agencies|firm|company|services|solutions)\b|\btemp(orary)?\s+(labor|workers|staff)\s+(for|to)\s+your\b/i],
+  ['customer financing program', /\b(offer|provide)\s+(your\s+)?(customers|clients|homeowners)\s+financing\b|\b(customer|consumer|homeowner|contractor)\s+financing\s+(program|platform|solution|partner)s?\b/i]
 ];
 var SG_WEAK = [
   ['"can we connect"', /\b(can|could|may)\s+we\s+connect\b|\blet\x27?s\s+connect\b|\bhappy\s+to\s+connect\b/i],
@@ -186830,7 +186835,10 @@ var SG_WEAK = [
   ['offer / pricing', /\bper\s+month\b|\/mo\b|\bmonthly\s+fee\b|\bno\s+contract\b|\blimited\s+time\b|\bspecial\s+offer\b|\brisk[\s-]free\b|\bguaranteed?\s+results\b/i],
   ['"send details / interested?"', /\bwant\s+me\s+to\s+send\b|\bcan\s+i\s+send\b|\bwould\s+you\s+be\s+(open|interested)\b|\binterested\s*\?|\bworth\s+a\s+(chat|call|look)\b|\bopen\s+to\s+(a|learning)\b/i],
   ['software / automation', /\b(software|platform|automat(e|ion|ed)|saas)\b/i],
-  ['uses the business name', /\bgrayco\s+construction(\s+services)?\b/i]
+  ['uses the business name', /\bgrayco\s+construction(\s+services)?\b/i],
+  /* patch SUBPITCH */
+  ['chaser: "checking in one more time"', /\bjust\s+(checking|following)\s+(in|up)\s+(one\s+(more|last|final)\s+time|again\s+to\s+see\s+if\s+you)\b|\bone\s+(more|last|final)\s+(time|follow[\s-]?up)\b[^.]{0,40}\b(interested|offer)\b/i],
+  ['"close more projects / decide if you…"', /\bclose\s+(a\s+few|more|some)\s+(projects|deals|jobs|sales)\b|\bdecide\s+if\s+(you|it)\b/i]
 ];
 /* a customer's own need (water, a leak, the roof, a claim, an estimate, my house …): a pitch must be much clearer then */
 var SG_NEED = /\b(water|leak(s|ing|ed)?|roof(s|ing)?|storm|hail|wind\s+damage|tree|fire|smoke|flood(ed|ing)?|pipe|burst|mou?ld|insurance|claim|adjuster|estimate|inspection|repair|damage|ceiling|gutters?|siding|shingles?|project|bids?|renovat\w*|remodel\w*|building|sq\s*ft|square\s+feet)\b|\bmy\s+(house|home|roof|property|ceiling|basement|kitchen|bathroom|attic|garage)\b/i;
@@ -186860,6 +186868,38 @@ function sgWhy(text, sender){
   return hit ? why.join('; ') + ' (score ' + score + ')' : '';
 }
 function sgIsSales(text, sender){ return !!sgWhy(text, sender); }
+/* patch SUBPITCH (owner 11/19: a steel sub's "if you have any steel jobs coming up, we'd be glad to help" came as a NEW LEAD text):
+   a sub / supplier looking for work is WANTED but is no customer lead — it goes to Leads → 🤝 Subs & suppliers (CRM only:
+   no text, approval or lead-watch). Scored: [label, rule, points]; a sub at 4+ points, never a bid invitation / an adjuster,
+   and never when the message also sells a product (SEO, software, funding … — that stays a sales pitch). */
+var SG_SUB = [
+  ['"if you have any … jobs coming up"', /\bif\s+you\s+(ever\s+)?(have|get|need|are\s+bidding|got)\s+(any(thing)?\s+)?([\w\/&-]+\s+){0,3}(jobs?|projects?|work|bids?|scopes?)\s+(coming\s+up|in\s+the\s+(works|pipeline)|on\s+the\s+horizon|that\s+(need|require))/i, 3],
+  ['"we\x27d be glad to help / bid"', /\bwe(\x27d|\s+would|\x27re|\s+are|\x27ll|\s+will)\s+be\s+(glad|happy|eager|pleased)\s+to\s+(help|bid|quote|price|support|assist|work\s+(with|for)\s+you|partner)\b/i, 3],
+  ['"add us to your bid / vendor list"', /\b(add|put|include|keep)\s+(us|me|our\s+(company|firm|team))\s+(to|on|in)\s+(your\s+)?(bid(ders?)?|bidding|vendor|sub(contractor)?s?|supplier|approved)\s*(list|database|pool)\b/i, 4],
+  ['introduces a trade sub / supplier', /\b(we\s+are|we\x27re|i\s+am|i\x27m|our\s+company\s+is)\s+(a|an)\s+([\w,&\/-]+\s+){0,5}(sub[\s-]?contractors?|suppliers?|distributors?|fabricators?|erectors?)\b/i, 4],
+  ['looking for sub work', /\blooking\s+(for|to\s+(get|do|pick\s+up|take\s+on))\s+(more\s+)?(sub(contract(ing|or))?\s+)?(work|jobs|projects|opportunities)\s+(with|from|for)\s+(you|your|grayco)\b|\b(subcontract(ing|or)?|vendor)\s+(work|opportunit\w*|relationship)\b|\bwork\s+(with|for)\s+you\s+as\s+(a|your)\s+(sub|supplier|vendor)\b/i, 3],
+  ['the "Becoming a GrayCo subcontractor" form', /\bSUBCONTRACTOR INQUIRY\./, 4],
+  ['"following up on the note we sent"', /\bfollow(ing)?\s+up\s+on\s+(the|my|our)\s+(note|e-?mail|message|letter|intro(duction)?|info(rmation)?)\s+(we|i)\s+sent\b/i, 1],
+  ['licensed / insured crew', /\b(licensed|bonded)\s+(and|&)\s+(insured|bonded)\b|\bour\s+(crews?|shop)\b|\bcapabilit(y|ies)\s+statement\b/i, 1]
+];
+var SG_BIDINV = /\binvit\w*\s+(you\s+|grayco\s+)?(to\s+)?(submit\s+a\s+)?bid\b|\bbid\s+invit\w*|\brequest\s+for\s+(proposals?|quotes?|bids?)\b|\bRFP\b|\bITB\b|\bbids?\s+(are\s+)?due\b|\bplans\s+(and|&)\s+specs\b/i;
+/* → '' or the reasons, e.g. '"if you have any … jobs coming up"; … (score 7)' */
+function sgSubWhy(text){
+  var t = sgStr(text), why = [], score = 0, i;
+  if (!t.replace(/\s+/g, '') || SG_BIDINV.test(t) || SG_TRUST.test(t.replace(/\b(licensed|bonded)\s+(and|&)\s+(bonded\s+(and|&)\s+)?insured\b|\binsured\s+(and|&)\s+(licensed|bonded)\b/ig, ' '))) return '';   /* "licensed and insured" is no insurance claim */
+  for (i = 0; i < SG_SUB.length; i++) if (SG_SUB[i][1].test(t)) { why.push(SG_SUB[i][0]); score += SG_SUB[i][2]; }
+  return score >= 4 ? why.join('; ') + ' (score ' + score + ')' : '';
+}
+/* → { kind: 'sub' | 'sales' | '', why } — a sub / supplier wins unless the message also sells a product */
+function sgClass(text, sender){
+  var t = sgStr(text), sub = sgSubWhy(t), i;
+  if (sub) {
+    for (i = 0; i < SG_STRONG.length; i++) if (!SG_STRONG[i][2] && SG_STRONG[i][1].test(t)) { sub = ''; break; }
+    if (sub) return { kind: 'sub', why: sub };
+  }
+  var w = sgWhy(t, sender);
+  return { kind: w ? 'sales' : '', why: w };
+}
 /* patch SPAMGIB — a bot's random-letter form (owner 11/02, a 10:45 AM "NEW LEAD: IOwirBRUMGvsiaemuM … aElwvnTekCEguDEsBXoSmdl
    Project location: Peuhzbszn": "Seems like a lead that should've never reached me"). Each field (name, message, location,
    company) is cut into letter words (links, e-mails and anything with a digit are left out):
@@ -186951,21 +186991,22 @@ function block(who, id, sig){
 }
 
 /* ── Leads: the quiet line + the list ── */
-var COUNT = null, COUNT_AT = 0;
+var COUNT = null, COUNT_AT = 0, SUBS = 0;   /* patch SUBPITCH: SUBS = subs / suppliers waiting in 🤝 Subs & suppliers */
 function strip(){
   if (D.hidden || !signedIn() || !allowed()) return;
   var hub = D.getElementById('gc-leads-hub'); if (!hub || !hub.parentNode) return;
   css();
-  if (Date.now() - COUNT_AT > 180000) { COUNT_AT = Date.now(); j('?count=1').then(function(o){ if (o && o.ok) { COUNT = o.held; paint(); } }); }
+  if (Date.now() - COUNT_AT > 180000) { COUNT_AT = Date.now(); j('?count=1').then(function(o){ if (o && o.ok) { COUNT = o.held; SUBS = +o.subs || 0; paint(); } }); }
   paint();
 }
 function paint(){
   var hub = D.getElementById('gc-leads-hub'), CH = W._gcLeadsChips; if (!hub || !hub.parentNode || COUNT == null || !CH) return;
   var el = D.getElementById('gcsb-strip') || CH.els['gcsb-strip'];   /* patch BARSTILL2: a small chip in the Leads header row */
   if (!el) { el = D.createElement('span'); el.id = 'gcsb-strip'; el.setAttribute('data-gc-keep', '1'); el.addEventListener('click', function(e){ if (e.target && e.target.getAttribute('data-gcsb') === 'open') { e.preventDefault(); openList(); } }); }
-  if (!COUNT) { CH.off(el); return; }   /* nothing waiting: nothing shown */
+  if (!COUNT && !SUBS) { CH.off(el); return; }   /* nothing waiting: nothing shown */
   try { var CV = W._gcCo && W._gcCo.leadView ? W._gcCo.leadView() : 'all'; if (CV === 'mitigation' || CV === 'environmental') { CH.off(el); return; } } catch (e) {}   /* patch LEADCO2: Sales & spam review sits on the Construction / All companies Leads page */
-  var h = '<button type="button" data-gcsb="open" title="Sales &amp; spam: ' + COUNT + ' held for review (no one was alerted). Review">🧹 ' + COUNT + ' to review</button>';
+  var h = (COUNT ? '<button type="button" data-gcsb="open" title="Sales &amp; spam: ' + COUNT + ' held for review (no one was alerted). Review">🧹 ' + COUNT + ' to review</button>' : '')
+    + (SUBS ? '<button type="button" data-gcsb="open" title="Subs &amp; suppliers: ' + SUBS + ' want to work with us — not a customer lead, nobody was texted">🤝 ' + SUBS + ' sub' + (SUBS === 1 ? '' : 's') + ' / suppliers</button>' : '');   /* patch SUBPITCH */
   if (el.__gcH !== h || !el.firstChild) { el.__gcH = h; el.innerHTML = h; }   /* patch BARSTILL: only a real change is written */
   CH.on(el, hub);
 }
@@ -186974,10 +187015,26 @@ function itemHtml(x, done){
   return '<div class="gcsb-it" data-id="' + esc(x.id) + '"><div>' + esc(VIA[x.via] || x.via) + ' · ' + esc(when(x.at)) + (who ? ' · ' + who : '') + '</div>'
     + '<div class="gcsb-why">🧹 ' + esc(x.why) + '</div><pre>' + esc(x.text) + '</pre>'
     + (done ? '<div style="font-size:12px;color:#64748b">' + esc({ lead: '✅ made a lead', blocked: '🚫 blocked', dismissed: 'dismissed' }[x.status] || x.status) + (x.by ? ' by ' + esc(x.by) : '') + (x.doneAt ? ' · ' + esc(when(x.doneAt)) : '') + '</div>'
+      : x.status === 'sub' ? subBtns(x)
       : (x.canLead ? '<button type="button" class="gcsb-btn go" data-a="notspam">✅ Not spam → make lead</button>' : '')
         + ((x.phone || x.email) ? '<button type="button" class="gcsb-btn stop" data-a="block">🚫 Block</button>' : '')
         + '<button type="button" class="gcsb-btn" data-a="dismiss">Dismiss (keep as spam)</button>')
     + '</div>';
+}
+/* patch SUBPITCH: a sub / supplier looking for work — 📨 invite to the bid site (their own e-mail / text app), a customer after all, or done */
+var BIDSITE = 'https://bids.grayco-cs.com/';
+function inviteHref(x){
+  var msg = 'Hi' + (x.name ? ' ' + s(x.name).split(/\s+/)[0] : '') + ', thanks for reaching out to GrayCo Construction Services. Please sign up on our bid site so we can invite you to bid on upcoming jobs: ' + BIDSITE;
+  if (x.email) return 'mailto:' + encodeURIComponent(x.email) + '?subject=' + encodeURIComponent('GrayCo bid site — sign up to get bid invitations') + '&body=' + encodeURIComponent(msg);
+  if (d10(x.phone).length === 10) return 'sms:+1' + d10(x.phone) + '?&body=' + encodeURIComponent(msg);
+  return '';
+}
+function subBtns(x){
+  var h = inviteHref(x);
+  return (h ? '<a class="gcsb-btn go" style="text-decoration:none;display:inline-block" href="' + esc(h) + '" target="_blank" rel="noopener">📨 Invite to bid site</a>' : '')
+    + (x.canLead ? '<button type="button" class="gcsb-btn" data-a="notspam">Actually a customer lead → make lead</button>' : '')
+    + ((x.phone || x.email) ? '<button type="button" class="gcsb-btn stop" data-a="block">🚫 Block</button>' : '')
+    + '<button type="button" class="gcsb-btn" data-a="dismiss">Done</button>';
 }
 var LIST = null;
 function openList(){
@@ -186991,7 +187048,7 @@ function openList(){
     if (e.target === ov) { ov.remove(); return; }
     var b = e.target && e.target.closest && e.target.closest('[data-a]'); if (!b) return;
     var a = b.getAttribute('data-a'); if (a === 'close') { ov.remove(); return; }
-    var card = b.closest('[data-id]'), id = card && card.getAttribute('data-id'), x = LIST && arr(LIST.held).filter(function(y){ return y.id === id; })[0];
+    var card = b.closest('[data-id]'), id = card && card.getAttribute('data-id'), x = LIST && arr(LIST.held).concat(arr(LIST.subs)).filter(function(y){ return y.id === id; })[0];
     if (!x) return;
     b.disabled = true;
     var done = function(o, msg){ b.disabled = false; if (o && o.ok) { if (msg) toast(msg); load(ov); COUNT_AT = 0; } else if (o) toast(s(o.error) || 'Not done.', true); };
@@ -187005,10 +187062,11 @@ function load(ov){
   var body = ov.querySelector('.gcsb-body');
   j('?list=1').then(function(o){
     if (!o || !o.ok) { body.innerHTML = '<div style="color:#b91c1c">' + esc((o && o.error) || 'Could not load.') + '</div>'; return; }
-    LIST = o; COUNT = arr(o.held).length; paint();
+    LIST = o; COUNT = arr(o.held).length; SUBS = arr(o.subs).length; paint();
     var c = o.counts || {};
-    body.innerHTML = '<div style="color:#475569;margin:6px 0 4px">Sales pitches and spam never page, text or call anyone (day or night) and get no automatic reply. They wait here. '
-      + 'So far: ' + (+c.sales || 0) + ' held, ' + (+c.blocked || 0) + ' dropped from blocked senders. Blocked list: ⚙ Admin settings → 🚫 Blocked.</div>'
+    body.innerHTML = (SUBS ? '<div style="margin:6px 0 4px"><b>🤝 Subs &amp; suppliers — want to work with us</b> <span style="color:#64748b">(not a customer lead; nobody was texted)</span></div>' + arr(o.subs).map(function(x){ return itemHtml(x, false); }).join('') + '<div style="height:10px"></div>' : '')
+      + '<div style="color:#475569;margin:6px 0 4px">Sales pitches and spam never page, text or call anyone (day or night) and get no automatic reply. A sales pitch (someone selling us something) is blocked and not shown; spam that looks like a bot waits here. '
+      + 'So far: ' + (+c.sales || 0) + ' caught, ' + (+c.blocked || 0) + ' dropped from blocked senders. Blocked list + the blocked-pitch log: ⚙ Admin settings → 🚫 Blocked.</div>'
       + (arr(o.held).length ? arr(o.held).map(function(x){ return itemHtml(x, false); }).join('') : '<div style="padding:12px;color:#64748b">Nothing waiting. 👍</div>')
       + (arr(o.done).length ? '<details style="margin-top:10px"><summary style="cursor:pointer;color:#475569">Recently handled (' + arr(o.done).length + ')</summary>' + arr(o.done).map(function(x){ return itemHtml(x, true); }).join('') + '</details>' : '');
   });
@@ -187020,9 +187078,10 @@ function renderBlocked(box){
   if (!allowed()) { box.innerHTML = '<div style="color:#64748b">Only an admin or the office can change the block list.</div>'; return; }
   css();
   box.innerHTML = '<div style="color:#64748b">Loading…</div>';
-  j('?list=1').then(function(o){
+  j('?list=1&audit=1').then(function(o){
     if (!o || !o.ok) { box.innerHTML = '<div style="color:#b91c1c">' + esc((o && o.error) || 'Could not load.') + '</div>'; return; }
     BL = o; var b = o.block || {}, c = o.counts || {};
+    var hid = arr(o.hidden).filter(function(x){ return x.status === 'held'; }), hidHtml = hid.slice(0, 60).map(function(x){ return itemHtml(x, false).replace('data-a="dismiss">Dismiss (keep as spam)', 'data-a="dismiss">Dismiss'); }).join('');   /* patch SUBPITCH */
     var row = function(kind, v, label){ return '<tr><td style="padding:4px 8px">' + esc(label) + '</td><td style="padding:4px 8px;color:#64748b">' + esc(kind) + '</td><td style="padding:4px 8px"><button type="button" class="gcsb-btn" data-ub="' + esc(kind) + '" data-v="' + esc(v) + '">Unblock</button></td></tr>'; };
     var rows = arr(b.phones).map(function(p){ return row('phone', p, tidy(p)); }).concat(arr(b.emails).map(function(e){ return row('email', e, e); }), arr(b.domains).map(function(d){ return row('domain', d, '@' + d); }));
     var log = arr(o.log).slice(0, 30).map(function(x){ return '<tr><td style="padding:3px 8px;white-space:nowrap">' + esc(when(x.at)) + '</td><td style="padding:3px 8px">' + esc(x.decision) + '</td><td style="padding:3px 8px">' + esc(x.via) + '</td><td style="padding:3px 8px">' + esc(x.phone ? tidy(x.phone) : x.email || '') + '</td><td style="padding:3px 8px;color:#64748b">' + esc(x.why) + '</td></tr>'; }).join('');
@@ -187031,9 +187090,16 @@ function renderBlocked(box){
       + 'Totals: <b>' + (+c.blocked || 0) + '</b> dropped · <b>' + (+c.sales || 0) + '</b> sales pitches held · <b>' + (+c.night || 0) + '</b> night "emergencies" that were not paged.</div>'
       + '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px"><input data-sb="add" placeholder="Phone number, e-mail, or @domain" style="flex:1;min-width:220px;padding:7px 9px;border:1px solid #cbd5e1;border-radius:8px"><button type="button" class="gcsb-btn stop" data-sb="go">🚫 Block</button></div>'
       + (rows.length ? '<table style="border-collapse:collapse;font-size:13px;margin-bottom:10px">' + rows.join('') + '</table>' : '<div style="color:#64748b;margin-bottom:10px">Nobody is blocked.</div>')
-      + '<details><summary style="cursor:pointer;color:#475569">Recent decisions (sales / blocked / night)</summary><div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:12px">' + log + '</table></div></details></div>';
+      + '<details><summary style="cursor:pointer;color:#475569">Recent decisions (sales / blocked / night)</summary><div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:12px">' + log + '</table></div></details>'
+      + '<details data-sb="audit"><summary style="cursor:pointer;color:#475569">🔒 Blocked sales pitches — audit log (' + hid.length + ' kept, never shown in Leads)</summary>' + (hidHtml || '<div style="color:#64748b;padding:6px">None.</div>') + '</details></div>';
     box.onclick = function(e){
       var t = e.target; if (!t || !t.getAttribute) return;
+      var aa = t.getAttribute('data-a'), card = aa && t.closest && t.closest('[data-id]'), hx = card && hid.filter(function(y){ return y.id === card.getAttribute('data-id'); })[0];   /* patch SUBPITCH: the audit log's buttons */
+      if (hx) { t.disabled = true; var fin = function(r, msg){ if (r && r.ok) { if (msg) toast(msg); renderBlocked(box); } else { t.disabled = false; if (r) toast(s(r.error) || 'Not done.', true); } };
+        if (aa === 'notspam') j('?act=notspam', { id: hx.id }).then(function(r){ fin(r, '✅ Made a lead — it is in the Lead Inbox now.'); });
+        else if (aa === 'dismiss') j('?act=dismiss', { id: hx.id }).then(function(r){ fin(r, 'Dismissed.'); });
+        else if (aa === 'block') block({ phone: hx.phone, email: hx.email }, hx.id).then(function(r){ fin(r, ''); });
+        return; }
       var kind = t.getAttribute('data-ub');
       if (kind) { var v = t.getAttribute('data-v'), q = {}; q[kind] = v; t.disabled = true; j('?act=unblock', q).then(function(r){ if (r && r.ok) { toast('Unblocked.'); renderBlocked(box); } else { t.disabled = false; toast('Not unblocked: ' + s(r && r.error), true); } }); return; }
       if (t.getAttribute('data-sb') === 'go') {
@@ -187050,7 +187116,7 @@ function renderBlocked(box){
 function count(){ if (!BL || !BL.block) return ''; var b = BL.block, n = arr(b.phones).length + arr(b.emails).length + arr(b.domains).length; return n ? n + ' blocked' : 'none'; }
 function addSection(){
   if (typeof W._gcAdmAddSection !== 'function') return false;
-  W._gcAdmAddSection({ id: 'salesblock', after: 'smsalerts', ic: '🚫', t: 'Blocked', d: 'Numbers / e-mails that never reach anyone (sales, spam) — unblock here; sales pitches wait in Leads → 🧹 Sales & spam', render: renderBlocked, count: count });
+  W._gcAdmAddSection({ id: 'salesblock', after: 'smsalerts', ic: '🚫', t: 'Blocked', d: 'Numbers / e-mails that never reach anyone (sales, spam) — unblock here; the blocked sales-pitch log is here too', render: renderBlocked, count: count });
   return true;
 }
 if (!addSection()) { var tries = 0, iv = RI.call(W, function(){ if (addSection() || ++tries > 120) clearInterval(iv); }, 500); }
