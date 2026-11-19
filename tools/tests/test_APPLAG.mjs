@@ -30,6 +30,9 @@ ok(/var CACHE = \{\}, CROW = \{\}, PULLS = \[\];/.test(t) && /FG\.wouldHold = fu
 ok(/var tRead = Math\.min\(150000, 30000 \+ Math\.round\(sz \/ 20\)\)/.test(t), 'save queue: its waits fit the list');
 ok(/var _pushing=false;\s*async function pushChanged\(\)/.test(t), 'CROSS-BROWSER push: one pass at a time');
 ok(/a save waited for them/.test(t), 'STUCKFIX: a phone loads the estimates when a screen wants them (or a save waits for them)');
+ok(t.indexOf('<script id="gc-patch-samekv">') > 0 && t.indexOf('<script id="gc-patch-samekv">') < t.indexOf('<script id="gc-patch-fieldguard">'), 'SAMEKV: an upload the cloud already has, exactly, is not sent (under every gc_kv upload)');
+ok(/if \(!ph && js\.length < 2500000 && last !== day/.test(t) && /migrate\.__idbSkip/.test(t), 'estimate backups: never from a phone; a desk once a day when changed; the "migrated" flag kept in IndexedDB too');
+ok(/gc_doc_snap_idb/.test(t) && /is the cloud's copy/.test(t), 'documents: upload fingerprints kept in IndexedDB too, and a document the cloud already has is not sent again');
 
 const H = await import(pathToFileURL(HARNESS).href);
 const sleep = H.sleep;
@@ -59,9 +62,11 @@ const INIT = `(() => {
   const P = window.__al = { lt: [], note: [], err: [] };
   window.addEventListener('error', e => { try { if (P.err.length < 5) P.err.push(String(e.error && e.error.stack || e.message).slice(0, 500)); } catch (x) {} });
   try { new PerformanceObserver(l => { for (const e of l.getEntries()) P.lt.push([Math.round(e.startTime), Math.round(e.duration)]); }).observe({ type: 'longtask', buffered: true }); } catch (e) {}
+  P.rd = {};
+  document.addEventListener('DOMContentLoaded', () => { const of = window.fetch; window.fetch = function (i, init) { try { const u = typeof i === 'string' ? i : i.url; if (/gc_kv\?key=eq\.(projects|gcAcctRegister)&select=value/.test(u) && !(init && init.method && init.method !== 'GET')) { const k = String(new Error().stack).split(String.fromCharCode(10)).slice(2, 6).map(x => x.trim().replace('http://app.local/', '')).join(' < '); P.rd[k] = (P.rd[k] || 0) + 1; } } catch (e) {} return of.apply(this, arguments); }; });
   setInterval(() => { try { const n = document.getElementById('gc-unsent-note'); if (n) P.note.push([Math.round(performance.now()), (window._gcUnsent ? window._gcUnsent().map(x => x.key + ':' + x.why).join('|') : '') + ' Q:' + (window._gcSyncQ ? window._gcSyncQ.waiting().filter(x => x.tries).map(x => x.key).join(',') : '')]); } catch (e) {} }, 1000);
   if (!localStorage.getItem('__filled')) {
-    [['gc_dupes_removed', 515000], ['gcLDEL_cache', 267000], ['gc_lead_keep', 115000], ['gc_td2_seen', 77000]].forEach(([k, n]) => { try { localStorage.setItem(k, JSON.stringify(['y'.repeat(n)])); } catch (e) {} });
+    [['__applag_fill_a', 515000], ['__applag_fill_b', 267000], ['__applag_fill_c', 115000], ['__applag_fill_d', 77000]].forEach(([k, n]) => { try { localStorage.setItem(k, 'y'.repeat(n)); } catch (e) {} });
     const chunk = 'z'.repeat(100000); for (let n = 0; n < 18; n++) { try { localStorage.setItem('__fill' + n, chunk); } catch (e) { break; } }
     localStorage.setItem('__filled', '1');
   }
@@ -167,6 +172,16 @@ try {
   const fg2 = await c.ev(() => window.__gcFG.state());
   ok(l2 && fg2.cacheHits > fg1.cacheHits && fg2.fullReads === fg1.fullReads, 'a second upload of the row uses a cheap updated_at check (no second full download)', { l2, before: [fg1.fullReads, fg1.cacheHits], after: [fg2.fullReads, fg2.cacheHits] });
 
+  /* 3c. the same list again, unchanged (another uploader, a repeated "done once" step): not sent — the cloud has exactly that */
+  await sleep(3000);
+  const sm0 = await c.ev(() => Object.assign(window.__gcSame.state(), { fgSame: window.__gcFG.state().sameAsCloud })), tD = Date.now();
+  await p.touchscreen.tap(195, 300); await sleep(200);
+  await c.ev(async () => { const L = await window.idbGet('projects'); window._gcSbPush('projects', L); });
+  await sleep(40000);
+  const samePosts = NET.log.filter(e => e.t >= tD && e.m === 'POST' && e.keys.includes('projects')).length, sm1 = await c.ev(() => Object.assign(window.__gcSame.state(), { fgSame: window.__gcFG.state().sameAsCloud }));
+  console.log('    the same job list again: ' + JSON.stringify({ samePosts, before: sm0, after: sm1 }));
+  ok(l2 && samePosts === 0 && (sm1.skipped > sm0.skipped || sm1.fgSame > sm0.fgSame), 'the unchanged job list is not uploaded again (the cloud already has it)', { samePosts, sm0, sm1 });
+
   /* 4. an upload slower than its timeout: "sending", then sent — never "not sent" */
   await p.touchscreen.tap(195, 300); await sleep(200);
   NET.slowKey = 'gcAcctRegister'; NET.slowUntil = Date.now() + 70000;
@@ -187,12 +202,13 @@ try {
   const fin = await c.ev(() => ({ unsent: window._gcUnsent(), q: window._gcSyncQ.waiting(), sending: window._gcSending() }));
   ok(!fin.unsent.length && !fin.q.filter(x => x.tries).length && !fin.sending.length, 'at the end: nothing unsent, nothing retried in the queue', fin);
   const kv = NET.log.filter(e => e.kv && e.t >= t0), posts = kv.filter(e => e.m === 'POST');
-  const per = {}; posts.forEach(e => e.keys.forEach(k => { per[k] = (per[k] || 0) + 1; }));
+  const per = {}; posts.forEach(e => e.keys.forEach(k => { if (!/^(gc_perfrep_|gc_bootrep_|gc_adm_dev_|gc_activity_|gc_timeclock_|_probe_)/.test(k)) per[k] = (per[k] || 0) + 1; }));   /* the phone's own rows (reports, heartbeat) are not lists */
   const upMB = posts.reduce((a, e) => a + e.up, 0) / 1e6, worst = Object.entries(per).sort((a, b) => b[1] - a[1])[0] || ['', 0];
   console.log('    gc_kv on one bar: ' + JSON.stringify({ requests: kv.length, gets: kv.length - posts.length, posts: posts.length, upMB: +upMB.toFixed(2), downMB: +(kv.reduce((a, e) => a + e.down, 0) / 1e6).toFixed(2), per }));
   ok(worst[1] <= 3, 'no list uploaded more than 3 times (' + worst.join(': ') + ')', per);
   ok(posts.length < 40 && upMB < 4, 'fewer than 40 uploads, under 4 MB up (' + posts.length + ', ' + upMB.toFixed(2) + ' MB)', per);
-  { const g = {}; kv.filter(e => e.m === 'GET').forEach(e => { const k = (e.keys[0] || '(bulk)') + (/value/.test(e.sel) ? '' : ' [' + e.sel + ']'); const x = g[k] || (g[k] = [0, 0]); x[0]++; x[1] += e.down; }); console.log('    GETs: ' + JSON.stringify(Object.entries(g).sort((a, b) => b[1][1] - a[1][1]).slice(0, 14))); }
+  { const g = {}; kv.filter(e => e.m === 'GET').forEach(e => { const k = (e.keys[0] || '(bulk)').slice(0, 40) + ' [' + e.sel + ']'; const x = g[k] || (g[k] = [0, 0]); x[0]++; x[1] += e.down; }); console.log('    GETs: ' + JSON.stringify(Object.entries(g).sort((a, b) => b[1][1] - a[1][1]).slice(0, 14))); }
+  console.log('    big-row readers: ' + JSON.stringify(Object.entries(await c.ev(() => window.__al.rd)).sort((a, b) => b[1] - a[1]).slice(0, 8)));
   ok(!c.errs.length, 'no page errors', { errs: c.errs.slice(0, 3), stacks: ESTK });
 } catch (e) { fail++; console.log('  ✗ FAIL threw: ' + (e && e.stack || e)); }
 finally { clearInterval(tick); for (const c of OPEN) { try { await c.close(); } catch (e) {} } }

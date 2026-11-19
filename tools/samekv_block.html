@@ -1,0 +1,87 @@
+<script id="gc-patch-samekv">
+/* __GC_PATCH_SAMEKV__ — an upload of a list the cloud already has, exactly, is not sent again (APPLAG, QA gate 11/19).
+   Measured on the real data (owner's iPhone at 400 kbps, and the office desk): the same lists went up again and again with
+   nothing changed — gc_office_tasks (684 KB), projects, invs, commissionQueue on every Invoices tab, 46–91 identical doc:*
+   rows on Approvals / SDS / Marketing — from several uploaders, and after every open where a "done once" flag could not be
+   written into a full localStorage. Under every gc_kv upload of 8 KB or more, on every device:
+   · after an upload the database took, this page remembers a fingerprint of each row's value and the row's updated_at
+     (asked in a ~100-byte read); kept in IndexedDB (grayco_samekv), so it holds across reloads and a full localStorage;
+   · an upload whose value has the same fingerprint as the one remembered for that row is checked first: when the cloud's
+     updated_at is still the one remembered (nobody wrote the row since), that row is not sent — the caller gets the usual
+     201. Anything else (a changed value, another device's write since, a failed check, a row never sent from here) goes up
+     as before.
+   Console: __gcSame.state()   Off: localStorage gc_samekv_off = '1'. */
+(function(){
+'use strict';
+var W = window;
+try {
+  if (W.__gcSame) return;
+  try { if (W.localStorage && W.localStorage.getItem('gc_samekv_off') === '1') return; } catch (e) {}
+  var inner = W.fetch; if (typeof inner !== 'function') return;
+  var NST = W.setTimeout, MIN = 8000, MAXK = 3000;
+  var S = W.__gcSame = { known: {}, skipped: 0, skippedBytes: 0, checked: 0, sent: 0, learned: 0, loaded: false };
+  var K = S.known;
+  var fp = function(str){ var h1 = 2166136261, h2 = 5381, n = str.length; for (var i = 0; i < n; i++) { var c = str.charCodeAt(i); h1 ^= c; h1 = Math.imul(h1, 16777619); h2 = (Math.imul(h2, 33) + c) | 0; } return n + ':' + (h1 >>> 0).toString(36) + ':' + (h2 >>> 0).toString(36); };
+  var tsEq = function(a, b){ if (!a || !b) return false; if (String(a) === String(b)) return true; var x = Date.parse(a), y = Date.parse(b); return !isNaN(x) && x === y; };
+  /* the remembered fingerprints: IndexedDB, not localStorage (a full localStorage is where this went wrong) */
+  var db = null;
+  var dbOpen = function(){ if (db) return db; db = new Promise(function(res){ try { var r = indexedDB.open('grayco_samekv', 1); r.onupgradeneeded = function(){ try { r.result.createObjectStore('k'); } catch (e) {} }; r.onsuccess = function(){ res(r.result); }; r.onerror = function(){ res(null); }; } catch (e) { res(null); } }); return db; };
+  dbOpen().then(function(d){ if (!d) { S.loaded = true; return; } try { var g = d.transaction('k', 'readonly').objectStore('k').get('known'); g.onsuccess = function(){ var v = g.result; if (v && typeof v === 'object') Object.keys(v).forEach(function(k){ if (!K[k]) K[k] = v[k]; }); S.loaded = true; }; g.onerror = function(){ S.loaded = true; }; } catch (e) { S.loaded = true; } });
+  var saveT = 0;
+  var save = function(){
+    if (saveT) return;
+    saveT = NST.call(W, function(){
+      saveT = 0;
+      var ks = Object.keys(K); if (ks.length > MAXK) { ks.sort(function(a, b){ return (K[a].t || 0) - (K[b].t || 0); }).slice(0, ks.length - MAXK).forEach(function(k){ delete K[k]; }); }
+      dbOpen().then(function(d){ if (!d) return; try { d.transaction('k', 'readwrite').objectStore('k').put(K, 'known'); } catch (e) {} });
+    }, 2000);
+  };
+  var hdrs = function(init){ var o = {}; try { new Headers((init && init.headers) || undefined).forEach(function(v, k){ if (/^(apikey|authorization)$/i.test(k)) o[k] = v; }); } catch (e) {} return o; };
+  var stamps = function(url, init, keys){
+    var u; try { u = new URL(url, location.href); } catch (e) { return Promise.resolve(null); }
+    u.search = '?select=key,updated_at&key=in.(' + keys.map(function(k){ return '"' + encodeURIComponent(k) + '"'; }).join(',') + ')';
+    return inner.call(W, u.toString(), { method: 'GET', headers: hdrs(init), cache: 'no-store' }).then(function(r){ return r.ok ? r.json() : null; }).then(function(rows){
+      if (!Array.isArray(rows)) return null; var m = {}; rows.forEach(function(x){ if (x && x.key) m[x.key] = x.updated_at; }); return m;
+    }, function(){ return null; });
+  };
+  var EMPTY = function(pref){ var rep = /return=representation/.test(pref || ''); return new Response(rep ? '[]' : null, { status: 201, headers: rep ? { 'Content-Type': 'application/json' } : {} }); };
+  var sameFetch = function(input, init){
+    try {
+      var url = typeof input === 'string' ? input : (input && input.url) || String(input);
+      var m = String((init && init.method) || (input && input.method) || 'GET').toUpperCase();
+      if (m !== 'POST' || !/\/rest\/v1\/gc_kv(\?|$)/.test(url) || !init || typeof init.body !== 'string' || init.body.length < MIN || (init.signal && init.signal.aborted)) return inner.apply(this, arguments);
+      var b; try { b = JSON.parse(init.body); } catch (e) { return inner.apply(this, arguments); }
+      var rows = Array.isArray(b) ? b : [b];
+      var info = rows.map(function(r){ if (!r || r.key == null || !('value' in r)) return null; var t; try { t = JSON.stringify(r.value); } catch (e) { return null; } return { key: String(r.key), h: fp(String(t)), len: t ? t.length : 0 }; });
+      var self = this, args = arguments, pref = ''; try { pref = String(new Headers(init.headers || undefined).get('Prefer') || ''); } catch (e) {}
+      var cand = info.filter(function(x){ return x && K[x.key] && K[x.key].h === x.h; });
+      var learn = function(sentInfo){
+        var ks = sentInfo.filter(Boolean).map(function(x){ return x.key; }); if (!ks.length) return;
+        stamps(url, init, ks).then(function(st){ if (!st) return; sentInfo.forEach(function(x){ if (x && st[x.key]) { K[x.key] = { h: x.h, at: String(st[x.key]), t: Date.now() }; S.learned++; } }); save(); });
+      };
+      var send = function(keepRows, keepInfo){
+        var a2 = args;
+        if (keepRows.length !== rows.length) { var i2 = Object.assign({}, init, { body: JSON.stringify(Array.isArray(b) ? keepRows : keepRows[0]) }); a2 = [input, i2]; }
+        S.sent++;
+        return inner.apply(self, a2).then(function(r){ if (r && r.ok) learn(keepInfo); return r; });
+      };
+      if (!cand.length) return send(rows, info);
+      S.checked++;
+      return stamps(url, init, cand.map(function(x){ return x.key; })).then(function(st){
+        var keepRows = [], keepInfo = [];
+        rows.forEach(function(r, i){
+          var x = info[i];
+          if (st && x && K[x.key] && K[x.key].h === x.h && tsEq(st[x.key], K[x.key].at)) { S.skipped++; S.skippedBytes += x.len; K[x.key].t = Date.now(); return; }
+          keepRows.push(r); keepInfo.push(x);
+        });
+        if (!keepRows.length) return EMPTY(pref);   /* the cloud has exactly this already */
+        return send(keepRows, keepInfo);
+      });
+    } catch (e) { return inner.apply(this, arguments); }
+  };
+  sameFetch.__gcSame = true;
+  W.fetch = sameFetch;
+  S.state = function(){ return { loaded: S.loaded, known: Object.keys(K).length, skipped: S.skipped, skippedKB: Math.round(S.skippedBytes / 1024), checked: S.checked, sent: S.sent, learned: S.learned }; };
+} catch (e) { try { console.warn('[GC] SAMEKV not installed:', e && e.message || e); } catch (x) {} }
+})();
+</script>
